@@ -3,10 +3,9 @@
 
 include(FetchContent)
 
-# Keep downloads next to the build tree so a clean rebuild of one preset does not re-download.
-if(NOT FETCHCONTENT_BASE_DIR OR FETCHCONTENT_BASE_DIR STREQUAL "${CMAKE_BINARY_DIR}/_deps")
-	set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/../_deps" CACHE PATH "" FORCE)
-endif()
+# Dependencies are downloaded and built inside each build directory (the FetchContent default,
+# <build>/_deps). Do not share this directory between presets: FetchContent also puts the
+# dependencies' build trees there, so different compilers would overwrite each other's objects.
 
 # --- flecs v4.1.6 ---
 set(FLECS_STATIC ON CACHE BOOL "" FORCE)
@@ -35,7 +34,37 @@ FetchContent_Declare(enet
 	GIT_SHALLOW FALSE
 )
 
-FetchContent_MakeAvailable(flecs box3d enet)
+# --- ozz-animation 0.17.0 (scalar math so poses are bit-exact everywhere) ---
+set(ozz_build_simd_ref ON CACHE BOOL "" FORCE)
+set(ozz_build_tools ON CACHE BOOL "" FORCE)
+set(ozz_build_gltf ON CACHE BOOL "" FORCE)
+set(ozz_build_fbx OFF CACHE BOOL "" FORCE)
+set(ozz_build_data OFF CACHE BOOL "" FORCE)
+set(ozz_build_samples OFF CACHE BOOL "" FORCE)
+set(ozz_build_howtos OFF CACHE BOOL "" FORCE)
+set(ozz_build_tests OFF CACHE BOOL "" FORCE)
+set(ozz_build_postfix OFF CACHE BOOL "" FORCE)
+set(ozz_build_msvc_rt_dll ON CACHE BOOL "" FORCE) # match the rest of the project (DLL CRT)
+FetchContent_Declare(ozz
+	GIT_REPOSITORY https://github.com/guillaumeblanc/ozz-animation.git
+	GIT_TAG 744eb9d99f606eda849acb0b1204f7a3dc20bca1 # 0.17.0
+	GIT_SHALLOW FALSE
+)
+
+FetchContent_MakeAvailable(flecs box3d enet ozz)
+
+# ozz builds with warnings-as-errors; a newer compiler must not break our build.
+foreach(t ozz_base ozz_animation ozz_animation_offline ozz_animation_tools ozz_options ozz_geometry gltf2ozz dump2ozz)
+	if(TARGET ${t})
+		set_target_properties(${t} PROPERTIES COMPILE_WARNING_AS_ERROR OFF)
+	endif()
+endforeach()
+if(TARGET gltf2ozz)
+	# ozz sets per-configuration output directories, which win over the generic property.
+	foreach(cfg "" _DEBUG _RELEASE _RELWITHDEBINFO _MINSIZEREL)
+		set_target_properties(gltf2ozz PROPERTIES RUNTIME_OUTPUT_DIRECTORY${cfg} "${CMAKE_BINARY_DIR}/bin")
+	endforeach()
+endif()
 
 # --- raylib 5.5 (client only) ---
 if(CB_BUILD_CLIENT)

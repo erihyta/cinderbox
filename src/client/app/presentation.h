@@ -7,12 +7,14 @@
 // start a destroy effect, and poses are interpolated between the last two ticks. The small
 // "scripts" (flecs systems in scripts/) animate spawning, destroying and the player body.
 
+#include "pose.h"
 #include "simulation.h"
 
 #include "flecs.h"
 #include "raylib.h"
 
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
 
 namespace cb
@@ -65,16 +67,24 @@ struct RenderPose
 	float scale = 1.0f;
 };
 
-// Player locomotion values the animation scripts read (M3 feeds these into ozz).
-struct PlayerMotion
+// Player animation: the simulation's AnimState at the last two ticks, and the ozz evaluator
+// that turns the interpolated state into a pose (see scripts/player_animation.cpp).
+struct PlayerAnim
 {
-	float groundSpeed = 0.0f;
-	float verticalSpeed = 0.0f;
-	bool grounded = true;
-	bool sprinting = false;
-	uint32_t airTicks = 0;
-	uint32_t groundTicks = 0;
-	float phase = 0.0f; // walk cycle phase in [0, 1)
+	AnimState previous;
+	AnimState current;
+	std::shared_ptr<anim::PoseEvaluator> evaluator;
+};
+
+// World singletons read by the scripts.
+struct AnimLibrary
+{
+	std::shared_ptr<const anim::AnimSet> set;
+};
+
+struct FrameTiming
+{
+	float tickAlpha = 0.0f; // interpolation factor between the last two ticks
 };
 
 // Script state
@@ -88,10 +98,13 @@ struct DestroyEffect
 	float time = 0.0f;
 };
 
+// Draws an evaluated pose as one box per bone. `feet` is where the skeleton origin goes.
+void DrawSkeleton( Vector3 feet, Quaternion rotation, float scale, const anim::PoseEvaluator* eval, Color color );
+
 class Presentation
 {
 public:
-	Presentation();
+	explicit Presentation( std::shared_ptr<const anim::AnimSet> animSet );
 
 	// Mirror the client's simulation into the presentation world and run the scripts.
 	void Update( GameClient& client, float frameSeconds );
@@ -111,6 +124,7 @@ private:
 	flecs::entity CreateVisual( Simulation& sim, flecs::entity simEntity, uint32_t netId, bool withEffect );
 
 	flecs::world m_world;
+	std::shared_ptr<const anim::AnimSet> m_animSet;
 	struct Entry
 	{
 		flecs::entity_t entity;

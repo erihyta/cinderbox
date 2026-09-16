@@ -1,5 +1,6 @@
 #include "simulation.h"
 
+#include "anim_controller.h"
 #include "box3d_shim.h"
 #include "detmath.h"
 #include "level.h"
@@ -172,6 +173,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<Character>();
 	RegisterSnapComponent<Prop>();
 	RegisterSnapComponent<StaticGeometry>();
+	RegisterSnapComponent<AnimState>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -353,6 +355,7 @@ flecs::entity Simulation::CreatePlayer( PlayerSlot slot )
 	e.set<Shape>( shape );
 	e.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );
 	e.set<Character>( c );
+	e.set<AnimState>( {} );
 
 	m_globals.playerNetIds[slot] = netId;
 	return e;
@@ -411,6 +414,10 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 
 		MoveCharacter( c, t, pb, in, pressed );
 		c.prevButtons = in.buttons;
+
+		AnimState anim = e.get<AnimState>();
+		UpdateAnimState( anim, c, m_globals.tick, m_config.TimeStep() );
+		e.set<AnimState>( anim );
 
 		e.set<Character>( c );
 		e.set<Transform>( t );
@@ -728,6 +735,7 @@ void Simulation::HandleOutOfBounds()
 			c.airTicks = 0;
 			c.groundTicks = 0;
 			e.set<Character>( c );
+			e.set<AnimState>( {} );
 			e.set<Transform>( respawn );
 			e.set<Velocity>( {} );
 

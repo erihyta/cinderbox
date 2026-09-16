@@ -22,6 +22,12 @@ elseif(MSVC)
 	add_compile_options(/fp:precise)
 endif()
 
+if(MINGW)
+	# Self-contained executables: otherwise whichever libstdc++-6.dll comes first on PATH (e.g. Git
+	# for Windows ships an older one) is loaded, and the program fails to start.
+	add_link_options(-static)
+endif()
+
 if(WIN32)
 	add_compile_definitions(_CRT_SECURE_NO_WARNINGS _WINSOCK_DEPRECATED_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()

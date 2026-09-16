@@ -40,6 +40,17 @@ for p in "${presets[@]}"; do
 	"$exe" --save-portable "$work/portable-$p.bin" >/dev/null
 done
 
+anim_ref="$(head -1 "$root/tests/reference_anim_hash.txt" | tr -d '\r')"
+for p in "${presets[@]}"; do
+	h="$("$build_root/$p/bin/cb_tests" --anim-hash)"
+	if [[ "$h" == "$anim_ref" ]]; then
+		echo "== anim pose hash $p: $h matches reference"
+	else
+		echo "== anim pose hash $p: $h DIFFERS from reference $anim_ref"
+		failed=1
+	fi
+done
+
 for from in "${presets[@]}"; do
 	for to in "${presets[@]}"; do
 		printf "== portable %s -> %s: " "$from" "$to"

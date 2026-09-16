@@ -78,6 +78,28 @@ struct Prop
 	uint32_t despawnTick = 0; // 0 = never
 };
 
+enum class AnimMode : uint8_t
+{
+	Locomotion = 0, // idle / walk / run, blended by groundSpeed
+	JumpStart = 1,
+	Fall = 2,
+	Land = 3,
+};
+
+// Deterministic animation controller state. The simulation only decides *what* plays and at which
+// time; poses are sampled from it with ozz (client now, server too once gameplay needs them).
+// Times are in seconds and independent of clip data, so the sim never depends on asset files.
+struct AnimState
+{
+	AnimMode mode = AnimMode::Locomotion;
+	AnimMode previousMode = AnimMode::Locomotion; // faded out over the first moments of `mode`
+	uint8_t reserved[2] = {};
+	float modeTime = 0.0f;		  // seconds since `mode` started
+	float locomotionPhase = 0.0f; // [0, 1), shared by walk and run so their feet stay in sync
+	float idleTime = 0.0f;		  // seconds, wraps every kAnimTimeWrap
+	float groundSpeed = 0.0f;	  // smoothed horizontal speed (m/s) that drives the 1D blend
+};
+
 // Tag: part of the static level.
 struct StaticGeometry
 {
@@ -94,6 +116,7 @@ CB_CHECK_COMPONENT( Shape, 16 );
 CB_CHECK_COMPONENT( PhysicsBody, 16 );
 CB_CHECK_COMPONENT( Character, 36 );
 CB_CHECK_COMPONENT( Prop, 12 );
+CB_CHECK_COMPONENT( AnimState, 20 );
 
 #undef CB_CHECK_COMPONENT
 

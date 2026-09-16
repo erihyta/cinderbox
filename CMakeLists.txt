@@ -20,6 +20,7 @@ include(Determinism)
 include(Dependencies)
 
 add_subdirectory(src/sim)
+add_subdirectory(src/anim)
 add_subdirectory(src/net)
 add_subdirectory(src/server)
 if(CB_BUILD_CLIENT)

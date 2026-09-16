@@ -68,6 +68,17 @@ foreach ($p in $presets) {
 	& $exe --save-portable (Join-Path $work "portable-$p.bin") | Out-Null
 }
 
+# Animation poses (ozz, scalar build) must match too.
+$animRefFile = Join-Path $root "tests\reference_anim_hash.txt"
+$animRef = (Get-Content $animRefFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+foreach ($p in $presets) {
+	$exe = Join-Path $buildRoot "$p\bin\cb_tests.exe"
+	$h = (& $exe --anim-hash).Trim()
+	$ok = ($h -eq $animRef)
+	Write-Host "== anim pose hash $p`: $h $(if ($ok) { 'matches reference' } else { 'DIFFERS from reference ' + $animRef })"
+	if (-not $ok) { $failed = $true }
+}
+
 foreach ($from in $presets) {
 	foreach ($to in $presets) {
 		$exe = Join-Path $buildRoot "$to\bin\cb_tests.exe"

@@ -1,7 +1,11 @@
 // Cinderbox client.
 //
 //   cb_client [--host ADDRESS] [--port N] [--rollback TICKS] [--width W] [--height H]
-//             [--autoplay SECONDS] [--screenshot FILE]
+//             [--assets DIR | --procedural-anim] [--autoplay SECONDS] [--screenshot FILE]
+//   cb_client --anim-viewer [--assets DIR | --procedural-anim] [--autoplay SECONDS --screenshot FILE]
+//
+// Animation assets are looked up in --assets, then ./assets/anim, then next to the executable, then
+// in the source tree. Without an anim.cfg the procedural placeholder rig is used.
 //
 // --autoplay drives the player with scripted input for the given time after joining, optionally
 // saves a screenshot, and exits with 0 if the session stayed in sync (smoke test).
@@ -12,6 +16,8 @@
 #include "game_client.h"
 #include "presentation.h"
 
+#include "anim_set.h"
+#include "anim_viewer.h"
 #include "detmath.h"
 #include "util.h"
 
@@ -22,6 +28,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <memory>
 #include <string>
 
 using namespace cb;
@@ -36,6 +44,10 @@ struct AppOptions
 	int height = 720;
 	double autoplaySeconds = 0.0;
 	std::string screenshot;
+	std::string assetsDir;
+	bool proceduralAnim = false;
+	bool animViewer = false;
+	float viewerYaw = 0.35f;
 };
 
 bool ParseArgs( int argc, char** argv, AppOptions& o )
@@ -43,6 +55,16 @@ bool ParseArgs( int argc, char** argv, AppOptions& o )
 	for ( int i = 1; i < argc; ++i )
 	{
 		std::string arg = argv[i];
+		if ( arg == "--procedural-anim" )
+		{
+			o.proceduralAnim = true;
+			continue;
+		}
+		if ( arg == "--anim-viewer" )
+		{
+			o.animViewer = true;
+			continue;
+		}
 		if ( i + 1 >= argc )
 		{
 			std::printf( "missing value for %s\n", arg.c_str() );
@@ -63,6 +85,10 @@ bool ParseArgs( int argc, char** argv, AppOptions& o )
 			o.autoplaySeconds = std::atof( value.c_str() );
 		else if ( arg == "--screenshot" )
 			o.screenshot = value;
+		else if ( arg == "--viewer-yaw" )
+			o.viewerYaw = float( std::atof( value.c_str() ) );
+		else if ( arg == "--assets" )
+			o.assetsDir = value;
 		else
 		{
 			std::printf( "unknown option %s\n", arg.c_str() );
@@ -131,7 +157,47 @@ PlayerInput SampleInput( const OrbitCamera& camera, bool hasFocus )
 	return in;
 }
 
-void DrawHud( GameClient& client, bool showDebug )
+std::shared_ptr<const anim::AnimSet> LoadAnimations( const AppOptions& options, const char* exePath )
+{
+	if ( options.proceduralAnim == false )
+	{
+		std::vector<std::filesystem::path> candidates;
+		if ( options.assetsDir.empty() == false )
+		{
+			candidates.push_back( options.assetsDir );
+		}
+		candidates.push_back( std::filesystem::current_path() / "assets" / "anim" );
+		candidates.push_back( std::filesystem::path( exePath ).parent_path() / "assets" / "anim" );
+#ifdef CB_SOURCE_ASSETS_DIR
+		candidates.push_back( CB_SOURCE_ASSETS_DIR );
+#endif
+		for ( const auto& dir : candidates )
+		{
+			if ( std::filesystem::exists( dir / "anim.cfg" ) == false )
+			{
+				continue;
+			}
+			std::string error, warnings;
+			auto set = anim::AnimSet::Load( dir.string(), error, warnings );
+			if ( set != nullptr )
+			{
+				std::printf( "animations: %s\n", set->Description().c_str() );
+				if ( warnings.empty() == false )
+				{
+					std::printf( "animation warnings: %s\n", warnings.c_str() );
+				}
+				return set;
+			}
+			std::printf( "animations: %s, using the placeholder rig\n", error.c_str() );
+			break;
+		}
+	}
+	auto set = anim::AnimSet::CreateProcedural();
+	std::printf( "animations: %s\n", set->Description().c_str() );
+	return set;
+}
+
+void DrawHud( GameClient& client, bool showDebug, const anim::AnimSet& animSet )
 {
 	int y = 10;
 	auto line = [&]( Color color, const char* fmt, auto... args ) {
@@ -170,6 +236,7 @@ void DrawHud( GameClient& client, bool showDebug )
 		line( s.desyncs ? RED : BLACK, "checksums ok %llu   desyncs %llu   welcomes %llu", (unsigned long long)s.checksumsVerified,
 			  (unsigned long long)s.desyncs, (unsigned long long)s.welcomes );
 		line( BLACK, "entities %zu   physics %zu KB", session->Sim().Entities().size(), session->Sim().PhysicsBytesInUse() / 1024 );
+		line( BLACK, "animation: %s", animSet.Description().c_str() );
 	}
 	y += 6;
 	line( DARKGRAY, "WASD move  Shift sprint  Space jump  F spawn prop" );
@@ -193,9 +260,17 @@ int main( int argc, char** argv )
 	InitWindow( options.width, options.height, "Cinderbox" );
 	SetExitKey( KEY_NULL );
 
+	auto animSet = LoadAnimations( options, argv[0] );
+	if ( options.animViewer )
+	{
+		int code = present::RunAnimViewer( animSet, { options.autoplaySeconds, options.screenshot, options.viewerYaw } );
+		CloseWindow();
+		return code;
+	}
+
 	GameClient client;
 	client.Start( options.client, GetTime() );
-	present::Presentation presentation;
+	present::Presentation presentation( animSet );
 	OrbitCamera camera;
 
 	bool autoplay = options.autoplaySeconds > 0.0;
@@ -282,7 +357,7 @@ int main( int argc, char** argv )
 		BeginMode3D( camera.ToCamera() );
 		presentation.Render();
 		EndMode3D();
-		DrawHud( client, showDebug );
+		DrawHud( client, showDebug, *animSet );
 		EndDrawing();
 
 		if ( autoplayDone )

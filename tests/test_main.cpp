@@ -4,8 +4,11 @@
 //   cb_tests <name>             run one test
 //   cb_tests --dump <file>      write per-tick hashes of the reference scenario (cross-build check)
 //   cb_tests --compare <file>   compare against a dump from another build/platform
+//   cb_tests --anim-hash         pose hash of the procedural rig (cross-build check)
 //   cb_tests --save-portable <file> / --load-portable <file>   portable snapshot across builds
 
+#include "anim_controller.h"
+#include "pose.h"
 #include "rollback.h"
 #include "scenario.h"
 #include "simulation.h"
@@ -14,6 +17,7 @@
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <vector>
@@ -433,6 +437,141 @@ void TestGameplaySanity()
 	CHECK( sim.IsPlayerActive( 0 ) == false );
 }
 
+void TestAnimController()
+{
+	Simulation sim( TestConfig() );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+		}
+	};
+	auto state = [&]() { return sim.FindEntity( sim.Globals().playerNetIds[0] ).get<AnimState>(); };
+
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 90 );
+	CHECK( state().mode == AnimMode::Locomotion );
+	CHECK( state().groundSpeed < 0.05f );
+
+	f.inputs[0].moveForward = 127;
+	step( 90 );
+	std::printf( "    walking: groundSpeed %.3f phase %.3f\n", state().groundSpeed, state().locomotionPhase );
+	CHECK( b3AbsFloat( state().groundSpeed - anim_tuning::kWalkSpeed ) < 0.1f );
+
+	// Phase advances at the walk cycle rate.
+	float before = state().locomotionPhase;
+	step( 6 );
+	float advanced = state().locomotionPhase - before;
+	if ( advanced < 0.0f )
+	{
+		advanced += 1.0f;
+	}
+	float expected = 6.0f * sim.Config().TimeStep() / anim_tuning::kWalkCycleSeconds;
+	CHECK( b3AbsFloat( advanced - expected ) < 0.01f );
+
+	// Jump: JumpStart -> Fall -> Land -> Locomotion, in that order.
+	f.inputs[0] = {};
+	step( 30 );
+	f.inputs[0].buttons = BtnJump;
+	step( 1 );
+	f.inputs[0].buttons = 0;
+	std::vector<AnimMode> modes = { state().mode };
+	for ( int i = 0; i < 120; ++i )
+	{
+		step( 1 );
+		if ( state().mode != modes.back() )
+		{
+			modes.push_back( state().mode );
+		}
+	}
+	std::printf( "    jump modes:" );
+	for ( AnimMode m : modes )
+	{
+		std::printf( " %d", int( m ) );
+	}
+	std::printf( "\n" );
+	CHECK( modes.size() == 4 );
+	CHECK( modes[0] == AnimMode::JumpStart );
+	CHECK( modes[1] == AnimMode::Fall );
+	CHECK( modes[2] == AnimMode::Land );
+	CHECK( modes[3] == AnimMode::Locomotion );
+}
+
+// Pose hash over a spread of animation states: the same on every compiler/platform.
+uint64_t AnimPoseHash( const anim::AnimSet& set )
+{
+	anim::PoseEvaluator eval( set );
+	uint64_t hash = kHashSeed;
+	uint64_t rng = 99;
+	for ( int i = 0; i < 400; ++i )
+	{
+		AnimState s;
+		s.mode = AnimMode( NextRandom( rng ) % 4 );
+		s.previousMode = AnimMode( NextRandom( rng ) % 4 );
+		s.modeTime = RandomRange( rng, 0.0f, 3.0f );
+		s.locomotionPhase = RandomUnit( rng );
+		s.idleTime = RandomRange( rng, 0.0f, 60.0f );
+		s.groundSpeed = RandomRange( rng, 0.0f, 8.0f );
+		eval.Evaluate( s );
+		for ( const auto& m : eval.Models() )
+		{
+			for ( const auto& col : m.cols )
+			{
+				float v[4];
+				ozz::math::StorePtrU( col, v );
+				hash = HashBytes( hash, v, sizeof( v ) );
+			}
+		}
+	}
+	return hash;
+}
+
+void TestAnimPipeline()
+{
+	auto procedural = anim::AnimSet::CreateProcedural();
+	CHECK( procedural != nullptr );
+	CHECK( procedural->Skeleton().num_joints() > 20 );
+	for ( int c = 0; c < anim::ClipCount; ++c )
+	{
+		CHECK( procedural->Get( anim::Clip( c ) ) != nullptr );
+	}
+
+	// Feet on the ground, head up, in the rest-ish idle pose.
+	anim::PoseEvaluator eval( *procedural );
+	eval.Evaluate( AnimState{} );
+	float minY = 1e9f, maxY = -1e9f;
+	for ( const auto& m : eval.Models() )
+	{
+		float y = ozz::math::GetY( m.cols[3] );
+		minY = std::min( minY, y );
+		maxY = std::max( maxY, y );
+	}
+	std::printf( "    idle pose height: %.3f .. %.3f\n", minY, maxY );
+	CHECK( minY > -0.05f && minY < 0.08f );
+	CHECK( maxY > 1.6f && maxY < 2.0f );
+
+	// Save to .ozz files and load back through the asset path: identical poses.
+	std::filesystem::path dir = std::filesystem::temp_directory_path() / "cinderbox_anim_test";
+	std::filesystem::create_directories( dir );
+	CHECK( procedural->Save( dir.string() ) );
+	std::string error, warnings;
+	auto loaded = anim::AnimSet::Load( dir.string(), error, warnings );
+	if ( loaded == nullptr )
+	{
+		std::printf( "    load failed: %s\n", error.c_str() );
+	}
+	CHECK( loaded != nullptr );
+	CHECK( warnings.empty() );
+	uint64_t a = AnimPoseHash( *procedural );
+	uint64_t b = AnimPoseHash( *loaded );
+	std::printf( "    pose hash %016" PRIx64 " (procedural) %016" PRIx64 " (from files)\n", a, b );
+	CHECK( a == b );
+	std::filesystem::remove_all( dir );
+}
+
 int DumpHashes( const char* path )
 {
 	auto frames = test::MakeScenario( {} );
@@ -557,6 +696,11 @@ int LoadPortableFile( const char* path )
 
 int main( int argc, char** argv )
 {
+	if ( argc == 2 && std::strcmp( argv[1], "--anim-hash" ) == 0 )
+	{
+		std::printf( "%016" PRIx64 "\n", AnimPoseHash( *anim::AnimSet::CreateProcedural() ) );
+		return 0;
+	}
 	if ( argc == 3 && std::strcmp( argv[1], "--save-portable" ) == 0 )
 	{
 		return SavePortableFile( argv[2] );
@@ -586,6 +730,8 @@ int main( int argc, char** argv )
 		{ "rollback", TestRollback },
 		{ "rollback_reset", TestRollbackReset },
 		{ "gameplay_sanity", TestGameplaySanity },
+		{ "anim_controller", TestAnimController },
+		{ "anim_pipeline", TestAnimPipeline },
 		{ "stress", TestStress },
 	};
 

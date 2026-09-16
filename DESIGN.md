@@ -6,10 +6,10 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 | Concern | Choice |
 |---|---|
 | Language / build | C++20, CMake + Ninja, Clang primary (MSVC and GCC also supported) |
-| Dependencies | CMake FetchContent, pinned to exact commits |
+| Dependencies | CMake FetchContent, pinned to exact commits, downloaded and built inside each build directory (never shared between compilers) |
 | ECS | flecs 4.x |
 | Physics | Box3D (erincatto/box3d), single-threaded, cross-platform determinism mode |
-| Animation | ozz-animation 0.9.x, **scalar (non-SIMD) build** |
+| Animation | ozz-animation 0.17.0, **scalar (non-SIMD) build**; gltf2ozz for asset conversion |
 | Networking | ENet (UDP), dedicated headless server |
 | Client rendering / input | raylib |
 | Client "scripts" | Small C++ flecs systems and observers |
@@ -75,14 +75,23 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 - **Players**: spawn on join and despawn on leave. A player who falls below the kill-Y respawns.
 
 ## Animation (visual now, gameplay-ready)
-- ozz is evaluated inside the deterministic tick using the scalar build, so root motion and hitboxes can be added later without breaking determinism.
-- Animation time is derived from ticks, not wall-clock time.
-- **Locomotion states**:
-  - Idle, walk and run form a 1D blend by ground speed, with synchronized cycle phase.
-  - Jump start, fall and land are driven by the grounded flag and vertical velocity.
-- **Placeholder**: until real assets arrive, a procedural humanoid ozz skeleton with a procedural walk cycle, drawn as one box per bone.
-- **Real assets**: Mixamo rig. FBX is exported to glTF with Blender, then converted with `gltf2ozz`. Bone names are mapped in a config file.
-- The client scripts own the blend weights and the spawn and destroy visual effects.
+- **Split (M3)**:
+  - The simulation owns the animation state. `AnimState` (mode, previous mode, mode time, synchronized locomotion phase, idle time, smoothed ground speed) is a snapshotted component, advanced every tick by `UpdateAnimState` (`src/sim/anim_controller.*`).
+  - ozz pose sampling (`src/anim/pose.*`) is a pure function of that state plus the clip data. It uses only IEEE arithmetic and the scalar ozz build, and a cross-compiler pose-hash check verifies it (`cb_tests --anim-hash`).
+  - The client evaluates poses every frame from the state interpolated between ticks. The server does not sample poses yet; running 64 skeletons inside every rolled-back tick would cost CPU for nothing that gameplay uses today. Hitboxes or root motion can call the same evaluator on the server later.
+- **Assets and the simulation**: the simulation never reads asset data. Clip lengths only affect rendering. The walk and run cycle lengths that drive the phase are simulation constants in `anim_tuning`. If poses ever feed into gameplay, the server must load the same asset files, and their hash should become part of the build fingerprint.
+- **Locomotion**:
+  - Idle, walk and run form a 1D blend on ground speed (0, 3 and 6.5 m/s). Walk and run share one phase, so the feet stay in sync.
+  - JumpStart, Fall and Land are chosen from the grounded flag, the time since the last jump, and air time.
+  - Modes crossfade over 0.15 s. A mode that is fading out holds its last pose.
+- **Placeholder**: a procedural 27-joint rig with Mixamo joint names and procedural clips, built with deterministic trig. Drawn as one box per bone.
+- **Real assets**: Mixamo FBX → Blender → glTF → `gltf2ozz` via `tools/convert_animations.*`, loaded through `assets/anim/anim.cfg`.
+  - Centimetre rigs are detected automatically.
+  - `lock_root_xz` cancels horizontal root motion.
+  - A clip built for a different skeleton is rejected.
+  - Bone names are used only to pick box sizes; no mapping file is needed until gameplay uses specific bones.
+- **Preview**: `cb_client --anim-viewer` shows every clip plus a live speed sweep.
+- **Client scripts**: the pose-evaluator creation observer, the per-frame pose evaluation system, and the spawn and destroy effects.
 
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds.
@@ -93,5 +102,5 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 ## Milestones (check-in after each)
 1. **M1** (done): build system, deterministic sim core (flecs + Box3D + mover + props), snapshot/restore, rollback session, determinism tests (Clang, GCC and MSVC verified identical).
 2. **M2** (done): ENet server and raylib client, rollback netcode, join/leave/reconnect, loopback integration tests. Verified with an MSVC server and GCC and Clang clients in one session.
-3. **M3**: ozz integration, procedural box skeleton, locomotion blend, glTF pipeline docs.
+3. **M3** (done): ozz integration, procedural box skeleton, locomotion blend, glTF pipeline (script and docs, tested with generated Blender-style glTF files), animation viewer.
 4. **M4**: replay tool, network simulator, bots, 32-player stress test.

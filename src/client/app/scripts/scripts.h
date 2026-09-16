@@ -11,13 +11,13 @@ namespace cb::present::scripts
 // Pop-in when something appears, shrink-out when it disappears.
 void RegisterSpawnDestroyEffects( flecs::world& world );
 
-// Player body motion: walk-cycle phase, and (from M3) ozz blend weights.
-void RegisterPlayerMotion( flecs::world& world );
+// Player animation: interpolate the simulation's AnimState and evaluate the ozz pose.
+void RegisterPlayerAnimation( flecs::world& world );
 
 inline void RegisterAll( flecs::world& world )
 {
 	RegisterSpawnDestroyEffects( world );
-	RegisterPlayerMotion( world );
+	RegisterPlayerAnimation( world );
 }
 
 } // namespace cb::present::scripts

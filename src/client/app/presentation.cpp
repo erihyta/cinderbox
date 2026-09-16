@@ -6,6 +6,9 @@
 #include "raymath.h"
 #include "rlgl.h"
 
+#include <algorithm>
+#include <string>
+
 #include <cmath>
 
 namespace cb::present
@@ -71,66 +74,161 @@ void DrawBlock( Vector3 center, Vector3 size, Color color )
 	DrawCubeWires( center, size.x, size.y, size.z, Fade( BLACK, 0.35f ) );
 }
 
-// A limb hanging from a pivot, swung around the local X axis.
-void DrawLimb( Vector3 pivot, float swing, Vector3 size, Color color )
+// Bone box sizes by joint name (Mixamo naming; anything unknown gets a size from its length).
+struct BoneStyle
 {
+	float width;
+	float depth;
+	bool body; // body colour instead of limb colour
+};
+
+BoneStyle StyleFor( const char* name, float length )
+{
+	std::string n = name;
+	auto has = [&]( const char* part ) { return n.find( part ) != std::string::npos; };
+	if ( has( "HeadTop" ) )
+		return { 0.26f, 0.26f, true };
+	if ( has( "Spine" ) )
+		return { 0.34f, 0.2f, true };
+	if ( has( "Neck" ) || has( "Head" ) )
+		return { 0.1f, 0.1f, true };
+	if ( has( "Shoulder" ) )
+		return { 0.1f, 0.1f, true };
+	if ( has( "UpLeg" ) )
+		return { 0.15f, 0.16f, false };
+	if ( has( "Leg" ) )
+		return { 0.12f, 0.13f, false };
+	if ( has( "Toe" ) || has( "Foot" ) )
+		return { 0.1f, 0.1f, false };
+	if ( has( "Hand" ) )
+		return { 0.07f, 0.04f, false };
+	if ( has( "Arm" ) )
+		return { 0.1f, 0.1f, false };
+	float w = std::clamp( length * 0.4f, 0.02f, 0.12f );
+	return { w, w, false };
+}
+
+Vector3 Column( const ozz::math::Float4x4& m, int c )
+{
+	float v[4];
+	ozz::math::StorePtrU( m.cols[c], v );
+	return { v[0], v[1], v[2] };
+}
+
+// A box spanning from `a` to `b`, oriented by `refX` (usually the parent joint's X axis).
+void DrawBone( Vector3 a, Vector3 b, Vector3 refX, float width, float depth, Color color )
+{
+	Vector3 axis = Vector3Subtract( b, a );
+	float length = Vector3Length( axis );
+	if ( length < 1e-4f )
+	{
+		return;
+	}
+	Vector3 y = Vector3Scale( axis, 1.0f / length );
+	Vector3 x = Vector3Subtract( refX, Vector3Scale( y, Vector3DotProduct( refX, y ) ) );
+	if ( Vector3Length( x ) < 1e-3f )
+	{
+		x = std::fabs( y.x ) < 0.9f ? Vector3{ 1, 0, 0 } : Vector3{ 0, 0, 1 };
+		x = Vector3Subtract( x, Vector3Scale( y, Vector3DotProduct( x, y ) ) );
+	}
+	x = Vector3Normalize( x );
+	Vector3 z = Vector3CrossProduct( x, y );
+	Vector3 mid = Vector3Lerp( a, b, 0.5f );
+
+	Matrix m = { 0 };
+	m.m0 = x.x * width;
+	m.m1 = x.y * width;
+	m.m2 = x.z * width;
+	m.m4 = y.x * length;
+	m.m5 = y.y * length;
+	m.m6 = y.z * length;
+	m.m8 = z.x * depth;
+	m.m9 = z.y * depth;
+	m.m10 = z.z * depth;
+	m.m12 = mid.x;
+	m.m13 = mid.y;
+	m.m14 = mid.z;
+	m.m15 = 1.0f;
+
 	rlPushMatrix();
-	rlTranslatef( pivot.x, pivot.y, pivot.z );
-	rlRotatef( swing * RAD2DEG, 1.0f, 0.0f, 0.0f );
-	DrawBlock( { 0.0f, -0.5f * size.y, 0.0f }, size, color );
+	rlMultMatrixf( MatrixToFloat( m ) );
+	DrawCube( { 0, 0, 0 }, 1.0f, 1.0f, 1.0f, color );
+	DrawCubeWires( { 0, 0, 0 }, 1.0f, 1.0f, 1.0f, Fade( BLACK, 0.35f ) );
 	rlPopMatrix();
 }
 
-void DrawPlayer( const RenderPose& pose, const Visual& v, const PlayerMotion* motion )
+} // namespace
+
+void DrawSkeleton( Vector3 feet, Quaternion rotation, float scale, const anim::PoseEvaluator* eval, Color color )
 {
-	PushPose( pose.position, pose.rotation );
-	rlScalef( pose.scale, pose.scale, pose.scale );
+	Color body = color;
+	Color limbs = ColorBrightness( color, -0.25f );
 
-	float phase = motion ? motion->phase : 0.0f;
-	bool grounded = motion ? motion->grounded : true;
-	float speed = motion ? motion->groundSpeed : 0.0f;
+	// Skeleton space: feet at the origin, facing +Z.
+	PushPose( feet, rotation );
+	rlScalef( scale, scale, scale );
 
-	// Placeholder locomotion: swing amplitude grows with speed. Replaced by ozz in M3.
-	float amount = std::fmin( speed / 6.5f, 1.0f );
-	float swing = std::sin( phase * 2.0f * PI ) * ( 0.25f + 0.55f * amount );
-	float bob = std::fabs( std::sin( phase * 2.0f * PI ) ) * 0.05f * amount;
-	float legL = grounded ? swing : 0.5f;
-	float legR = grounded ? -swing : -0.2f;
-	float armL = grounded ? -swing : -2.4f;
-	float armR = grounded ? swing : -2.4f;
+	if ( eval != nullptr )
+	{
+		const auto& skeleton = eval->Set().Skeleton();
+		const auto& models = eval->Models();
+		auto parents = skeleton.joint_parents();
+		auto names = skeleton.joint_names();
 
-	Color body = v.color;
-	Color limbs = ColorBrightness( v.color, -0.25f );
-	float feet = -kFeetOffset;
-	float hip = feet + 0.8f + bob;
+		for ( int j = 0; j < skeleton.num_joints(); ++j )
+		{
+			int p = parents[j];
+			if ( p < 0 )
+			{
+				continue;
+			}
+			Vector3 a = Column( models[p], 3 );
+			Vector3 b = Column( models[j], 3 );
+			BoneStyle style = StyleFor( names[j], Vector3Distance( a, b ) );
+			DrawBone( a, b, Vector3Normalize( Column( models[p], 0 ) ), style.width, style.depth, style.body ? body : limbs );
 
-	DrawLimb( { -0.12f, hip, 0.0f }, legL, { 0.16f, 0.8f, 0.18f }, limbs );
-	DrawLimb( { 0.12f, hip, 0.0f }, legR, { 0.16f, 0.8f, 0.18f }, limbs );
-	DrawBlock( { 0.0f, hip + 0.37f, 0.0f }, { 0.48f, 0.74f, 0.28f }, body );
-	DrawLimb( { -0.33f, hip + 0.68f, 0.0f }, armL, { 0.14f, 0.66f, 0.14f }, limbs );
-	DrawLimb( { 0.33f, hip + 0.68f, 0.0f }, armR, { 0.14f, 0.66f, 0.14f }, limbs );
-	DrawBlock( { 0.0f, hip + 0.94f, 0.0f }, { 0.32f, 0.32f, 0.32f }, ColorBrightness( body, 0.2f ) );
-	// Nose shows which way the player faces (+Z local).
-	DrawBlock( { 0.0f, hip + 0.94f, 0.2f }, { 0.08f, 0.08f, 0.1f }, DARKGRAY );
-
+			// Nose on the head so facing is readable.
+			if ( std::string( names[j] ).find( "HeadTop" ) != std::string::npos )
+			{
+				Vector3 mid = Vector3Lerp( a, b, 0.45f );
+				DrawCube( { mid.x, mid.y, mid.z + 0.14f }, 0.06f, 0.06f, 0.06f, DARKGRAY );
+			}
+		}
+	}
+	else
+	{
+		DrawCube( { 0.0f, 0.9f, 0.0f }, 0.5f, 1.8f, 0.3f, body );
+	}
 	rlPopMatrix();
+}
+
+namespace
+{
+
+void DrawPlayer( const RenderPose& pose, const Visual& v, const PlayerAnim* anim )
+{
+	Vector3 feet = { pose.position.x, pose.position.y - kFeetOffset, pose.position.z };
+	DrawSkeleton( feet, pose.rotation, pose.scale, anim ? anim->evaluator.get() : nullptr, v.color );
 
 	if ( v.isLocalPlayer )
 	{
-		Vector3 top = { pose.position.x, pose.position.y + feet + 1.15f * 2.0f, pose.position.z };
+		Vector3 top = { feet.x, feet.y + 2.1f, feet.z };
 		DrawCylinder( top, 0.12f, 0.0f, 0.2f, 4, GOLD );
 	}
 }
 
 } // namespace
 
-Presentation::Presentation()
+Presentation::Presentation( std::shared_ptr<const anim::AnimSet> animSet )
+	: m_animSet( std::move( animSet ) )
 {
 	m_world.component<SimLink>();
 	m_world.component<Visual>();
 	m_world.component<TickPoses>();
 	m_world.component<RenderPose>();
-	m_world.component<PlayerMotion>();
+	m_world.component<PlayerAnim>();
+	m_world.set<AnimLibrary>( { m_animSet } );
+	m_world.set<FrameTiming>( {} );
 	m_world.component<SpawnEffect>();
 	m_world.component<DestroyEffect>();
 	scripts::RegisterAll( m_world );
@@ -171,7 +269,8 @@ flecs::entity Presentation::CreateVisual( Simulation& sim, flecs::entity simEnti
 	e.set<RenderPose>( {} );
 	if ( v.kind == VisualKind::Player )
 	{
-		e.set<PlayerMotion>( {} );
+		const AnimState& state = simEntity.get<AnimState>();
+		e.set<PlayerAnim>( { state, state, nullptr } );
 	}
 	if ( withEffect )
 	{
@@ -184,6 +283,7 @@ flecs::entity Presentation::CreateVisual( Simulation& sim, flecs::entity simEnti
 void Presentation::Update( GameClient& client, float frameSeconds )
 {
 	Sync( client, frameSeconds );
+	m_world.set<FrameTiming>( { client.TickAlpha() } );
 	m_world.progress( frameSeconds );
 }
 
@@ -277,15 +377,18 @@ void Presentation::Sync( GameClient& client, float frameSeconds )
 		rp.correction = Vector3Scale( rp.correction, decay );
 		rp.position = Vector3Add( interpolated, rp.correction );
 
-		if ( const Character* ch = se.try_get<Character>() )
+		if ( const AnimState* state = se.try_get<AnimState>() )
 		{
-			PlayerMotion& m = ve.get_mut<PlayerMotion>();
-			m.groundSpeed = std::sqrt( tp.velocity.x * tp.velocity.x + tp.velocity.z * tp.velocity.z );
-			m.verticalSpeed = tp.velocity.y;
-			m.grounded = ch->grounded != 0;
-			m.sprinting = ch->sprinting != 0;
-			m.airTicks = ch->airTicks;
-			m.groundTicks = ch->groundTicks;
+			PlayerAnim& pa = ve.get_mut<PlayerAnim>();
+			if ( created || reset )
+			{
+				pa.previous = *state;
+			}
+			else if ( advanced )
+			{
+				pa.previous = pa.current;
+			}
+			pa.current = *state;
 		}
 	}
 
@@ -333,7 +436,7 @@ void Presentation::Render()
 
 		if ( v.kind == VisualKind::Player )
 		{
-			DrawPlayer( pose, v, e.try_get<PlayerMotion>() );
+			DrawPlayer( pose, v, e.try_get<PlayerAnim>() );
 			return;
 		}
 

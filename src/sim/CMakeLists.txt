@@ -1,4 +1,5 @@
 add_library(cb_sim STATIC
+	anim_controller.cpp
 	box3d_shim.c
 	fingerprint.cpp
 	level.cpp

@@ -1,7 +1,7 @@
 # Cinderbox
 
-A deterministic multiplayer third-person physics sandbox, built with flecs, Box3D and (from M3)
-ozz-animation. See [DESIGN.md](DESIGN.md) for the architecture and decisions.
+A deterministic multiplayer third-person physics sandbox, built with flecs, Box3D, ENet,
+ozz-animation and raylib. See [DESIGN.md](DESIGN.md) for the architecture and decisions.
 
 ## Status
 
@@ -9,8 +9,8 @@ ozz-animation. See [DESIGN.md](DESIGN.md) for the architecture and decisions.
 |---|---|
 | M1: build, deterministic sim core, snapshots, determinism tests | done |
 | M2: ENet server, raylib client, rollback netcode, join/leave/reconnect | done |
-| M3: ozz animation, procedural box skeleton, locomotion blend | next |
-| M4: replay tool, network simulator, bots, stress test | |
+| M3: ozz animation, procedural box skeleton, locomotion blend, asset pipeline | done |
+| M4: replay tool, network simulator, bots, stress test | next |
 
 ## Building
 
@@ -42,6 +42,18 @@ Both executables are in `<build dir>/bin`. The server options are `--tick-rate`,
 `--prop-lifetime`, `--props-per-player` and `--props-global`. The client options are `--rollback TICKS`,
 `--width`, `--height`, and `--autoplay SECONDS [--screenshot FILE]` for an unattended smoke test.
 
+## Animations
+
+Players are drawn as one box per bone of an ozz skeleton. Until you add clips, a procedural
+placeholder rig with Mixamo joint names is used. To add your own clips:
+
+1. Put `idle`, `walk`, `run`, `jump_start`, `fall` and `land` `.glb` files in a folder.
+2. Run `tools\convert_animations.ps1 -Source <folder>` (or `tools/convert_animations.sh <folder>`).
+3. Preview them with `cb_client --anim-viewer`.
+
+[assets/anim/README.md](assets/anim/README.md) has the Mixamo → Blender steps and the `anim.cfg`
+reference. `--assets DIR` selects a different asset folder, and `--procedural-anim` forces the placeholder.
+
 Client controls:
 - WASD moves, Shift sprints, Space jumps, and F spawns a prop.
 - The mouse orbits the camera and the wheel zooms.
@@ -72,7 +84,8 @@ simulation code or tuning legitimately changes them. Regenerate the file with
 ## Layout
 
 ```
-cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, Box3D, ENet, raylib)
+cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, Box3D, ENet, ozz, raylib)
+assets/anim/      your converted animation clips (see its README)
 src/sim/          deterministic simulation shared by server and client
   types.h           inputs, input frames, config
   components.h      snapshotted ECS components (POD, no padding)
@@ -82,11 +95,15 @@ src/sim/          deterministic simulation shared by server and client
   box3d_shim.c      access to Box3D internals (world struct, portable serializer)
   detmath.h         deterministic trig and the yaw convention
   fingerprint.*     build fingerprint checked when a client connects
+  anim_controller.* deterministic locomotion state machine (AnimState)
+src/anim/         ozz: procedural rig, asset loading (anim_set.*), pose evaluation (pose.*)
 src/net/          wire protocol (protocol.*) and ENet wrapper (transport.*)
 src/server/       authoritative GameServer (library) and cb_server
 src/client/       GameClient core (no rendering) and the raylib app
   app/              presentation flecs world, rendering, camera, HUD
-  app/scripts/      client scripts: spawn/destroy effects, player motion
-tests/            determinism, rollback, gameplay and loopback network tests
+  app/anim_viewer.* offline clip preview (--anim-viewer)
+  app/scripts/      client scripts: spawn/destroy effects, player pose evaluation
+tests/            determinism, rollback, gameplay, animation and loopback network tests
 scripts/          cross-compiler determinism check
+tools/            animation conversion (convert_animations.*), test glTF generator
 ```
