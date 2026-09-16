@@ -72,6 +72,8 @@ struct SimConfig
 	// Memory reserved for Box3D. Only the used part is copied per snapshot.
 	uint32_t physicsArenaMB = 256;
 
+	bool operator==( const SimConfig& ) const = default;
+
 	float TimeStep() const
 	{
 		return 1.0f / float( tickRate );

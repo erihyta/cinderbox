@@ -28,7 +28,27 @@ FetchContent_Declare(box3d
 	GIT_SHALLOW FALSE
 )
 
-FetchContent_MakeAvailable(flecs box3d)
+# --- ENet v1.3.18 (networking) ---
+FetchContent_Declare(enet
+	GIT_REPOSITORY https://github.com/lsalzman/enet.git
+	GIT_TAG 2662c0de09e36f2a2030ccc2c528a3e4c9e8138a # v1.3.18
+	GIT_SHALLOW FALSE
+)
+
+FetchContent_MakeAvailable(flecs box3d enet)
+
+# --- raylib 5.5 (client only) ---
+if(CB_BUILD_CLIENT)
+	set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+	set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
+	set(CUSTOMIZE_BUILD OFF CACHE BOOL "" FORCE)
+	FetchContent_Declare(raylib
+		GIT_REPOSITORY https://github.com/raysan5/raylib.git
+		GIT_TAG c1ab645ca298a2801097931d1079b10ff7eb9df8 # 5.5
+		GIT_SHALLOW FALSE
+	)
+	FetchContent_MakeAvailable(raylib)
+endif()
 
 # Box3D internal headers are needed by the physics snapshot shim (see src/sim/box3d_shim.c).
 set(CB_BOX3D_SOURCE_DIR "${box3d_SOURCE_DIR}" CACHE INTERNAL "")

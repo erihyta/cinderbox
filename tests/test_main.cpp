@@ -272,7 +272,7 @@ void TestRollbackReset()
 	CHECK( session.Sim().LoadPortable( image ) );
 	Snapshot snap;
 	session.Sim().Save( snap );
-	session.Reset( snap );
+	session.Reset( snap, frames[399].inputs );
 	CHECK( session.CurrentTick() == 400 );
 
 	for ( uint32_t t = 400; t < frames.size(); ++t )

@@ -1,0 +1,11 @@
+add_library(cb_server_core STATIC game_server.cpp)
+target_include_directories(cb_server_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(cb_server_core PUBLIC cb_net)
+cb_target_warnings(cb_server_core)
+
+add_executable(cb_server main.cpp)
+target_link_libraries(cb_server PRIVATE cb_server_core)
+if(WIN32)
+	target_link_libraries(cb_server PRIVATE winmm)
+endif()
+cb_target_warnings(cb_server)

@@ -33,10 +33,32 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 - **Target**: 32+ players, so re-simulation must be cheap. This is verified with the bot stress test.
   - M1 measurement (Clang Release, 64 players, 277 props): 0.55 ms per step, 0.12 ms per save, 0.09 ms per load, about 2.1 MB per snapshot. A worst-case 8-tick rollback costs about 5.5 ms.
 
+### Protocol (M2)
+- **Channel 0** (reliable, ordered) carries all server messages, so a Welcome and the frames after it always arrive in order:
+  - `Welcome`: config, slot, reconnect token, a portable snapshot of the state before tick S, and the inputs of frame S-1.
+  - `Frame`: delta-coded against the previous frame.
+  - `Checksum`: sent every 30 ticks.
+  - `Reject`.
+- **Channel 1** (unreliable) carries `Input`. Each packet repeats the last 12 ticks of input, so losing a packet costs nothing.
+- **Handshake**: the client sends `Hello` with the protocol version, the build fingerprint (hash of a short scripted simulation run) and an optional reconnect token. Mismatched builds are rejected.
+- **Welcome covers three cases**: joining, reconnecting, and recovering from a desync (the client sends `ResyncRequest` when a checksum does not match).
+- **Clock sync**: the client aims to be `rtt/2 + jitter + 2 ticks` ahead of its estimate of the server's current tick, so its input for tick T arrives before the server simulates T.
+  - It corrects small errors by running up to ±15% faster or slower.
+  - If it falls more than 30 ticks behind, it catches up at up to 8 ticks per frame. If it gets more than 30 ticks ahead, it pauses.
+  - Measured on loopback: 0 late inputs once settled. Late inputs only occur while a client catches up right after joining.
+- **Latency limit**: with an 8-tick window, a round-trip time above roughly 100 ms makes the client hit the window and stall briefly. Raise it with `cb_client --rollback N`.
+- **Disconnects**:
+  - ENet detects a dead connection within 1–3 s.
+  - The server keeps a disconnected player in the world with zeroed input for 10 s. If the client reconnects with its token in that time, it gets the same slot back through a Welcome. Otherwise the server issues a `Leave` event.
+  - While disconnected, the client's time is frozen.
+
 ## State and snapshots
 - **Two flecs worlds on the client**
   - Simulation world: POD components listed in a snapshot registry. Entities are addressed by a stable `NetId`, never by a flecs entity id.
-  - Presentation world: meshes, effects, ozz poses and interpolation.
+  - Presentation world (`src/client/app/presentation.*`), which is never rolled back. Each frame it compares itself against the simulation:
+    - new NetIds get visuals with a spawn effect, and vanished NetIds get a destroy effect;
+    - poses are interpolated between the last two ticks;
+    - position jumps caused by a rollback are faded out over about 80 ms.
   - The server runs only the simulation world.
 - **Rollback snapshots (in-process, fast)**: Box3D allocates from a per-world arena (`PhysicsArena`). A snapshot copies the used part of the arena plus the `b3World` struct from Box3D's static world table (`box3d_shim.c`). These snapshots contain raw pointers, so they only load back into the same `Simulation` instance.
 - **Portable snapshots (join / desync recovery)**: the canonical ECS image plus Box3D's own world serializer (the one its replay system uses). No pointers. Verified to continue bit-identically across Clang, GCC and MSVC builds. Box3D rejects the image if struct layouts differ.
@@ -70,6 +92,6 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 
 ## Milestones (check-in after each)
 1. **M1** (done): build system, deterministic sim core (flecs + Box3D + mover + props), snapshot/restore, rollback session, determinism tests (Clang, GCC and MSVC verified identical).
-2. **M2**: ENet server and raylib client, rollback netcode, join/leave/reconnect.
+2. **M2** (done): ENet server and raylib client, rollback netcode, join/leave/reconnect, loopback integration tests. Verified with an MSVC server and GCC and Clang clients in one session.
 3. **M3**: ozz integration, procedural box skeleton, locomotion blend, glTF pipeline docs.
 4. **M4**: replay tool, network simulator, bots, 32-player stress test.

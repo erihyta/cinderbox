@@ -28,8 +28,9 @@ public:
 	RollbackSession( const SimConfig& config, PlayerSlot localSlot, uint32_t maxRollbackTicks = 8 );
 
 	// Start from a server-provided state (join or desync recovery). Drops all history.
-	// The snapshot must have been produced by a Simulation with the same config.
-	void Reset( const Snapshot& snapshot );
+	// The snapshot must come from this session's Simulation (e.g. Save() right after LoadPortable()).
+	// `previousInputs` are the inputs of frame snapshot.tick - 1; they seed remote-player prediction.
+	void Reset( const Snapshot& snapshot, const std::array<PlayerInput, kMaxPlayers>& previousInputs );
 
 	// Authoritative frames must arrive in order starting at ConfirmedTick(). Others are ignored.
 	void AddAuthoritativeFrame( const InputFrame& frame );

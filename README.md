@@ -8,8 +8,8 @@ ozz-animation. See [DESIGN.md](DESIGN.md) for the architecture and decisions.
 | Milestone | State |
 |---|---|
 | M1: build, deterministic sim core, snapshots, determinism tests | done |
-| M2: ENet server, raylib client, rollback netcode | next |
-| M3: ozz animation, procedural box skeleton, locomotion blend | |
+| M2: ENet server, raylib client, rollback netcode, join/leave/reconnect | done |
+| M3: ozz animation, procedural box skeleton, locomotion blend | next |
 | M4: replay tool, network simulator, bots, stress test | |
 
 ## Building
@@ -28,6 +28,30 @@ ctest --preset clang-release
 
 Presets: `clang-debug`, `clang-release`, `gcc-release`, `msvc-release` (run from a VS developer
 prompt), `unix-clang-release`, `unix-gcc-release`.
+
+## Playing
+
+```sh
+# terminal 1
+cb_server --port 7777
+# terminal 2, 3, ...
+cb_client --host 127.0.0.1 --port 7777
+```
+
+Both executables are in `<build dir>/bin`. The server options are `--tick-rate`, `--seed`, `--substeps`,
+`--prop-lifetime`, `--props-per-player` and `--props-global`. The client options are `--rollback TICKS`,
+`--width`, `--height`, and `--autoplay SECONDS [--screenshot FILE]` for an unattended smoke test.
+
+Client controls:
+- WASD moves, Shift sprints, Space jumps, and F spawns a prop.
+- The mouse orbits the camera and the wheel zooms.
+- Esc releases the mouse and F1 toggles the debug HUD.
+
+The HUD shows the predicted and confirmed ticks, round-trip time, clock error, rollbacks, stalls and
+checksum results.
+
+Server and clients can be built with different compilers. The server rejects a client whose
+simulation fingerprint differs from its own.
 
 ## Determinism checks
 
@@ -48,7 +72,7 @@ simulation code or tuning legitimately changes them. Regenerate the file with
 ## Layout
 
 ```
-cmake/            float flags (Determinism.cmake), pinned dependencies
+cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, Box3D, ENet, raylib)
 src/sim/          deterministic simulation shared by server and client
   types.h           inputs, input frames, config
   components.h      snapshotted ECS components (POD, no padding)
@@ -57,6 +81,12 @@ src/sim/          deterministic simulation shared by server and client
   physics_arena.*   Box3D allocator arena (makes the physics state copyable)
   box3d_shim.c      access to Box3D internals (world struct, portable serializer)
   detmath.h         deterministic trig and the yaw convention
-tests/            determinism, rollback and gameplay tests
+  fingerprint.*     build fingerprint checked when a client connects
+src/net/          wire protocol (protocol.*) and ENet wrapper (transport.*)
+src/server/       authoritative GameServer (library) and cb_server
+src/client/       GameClient core (no rendering) and the raylib app
+  app/              presentation flecs world, rendering, camera, HUD
+  app/scripts/      client scripts: spawn/destroy effects, player motion
+tests/            determinism, rollback, gameplay and loopback network tests
 scripts/          cross-compiler determinism check
 ```

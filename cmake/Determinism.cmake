@@ -23,7 +23,7 @@ elseif(MSVC)
 endif()
 
 if(WIN32)
-	add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
+	add_compile_definitions(_CRT_SECURE_NO_WARNINGS _WINSOCK_DEPRECATED_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
 # Warnings for our own targets only.

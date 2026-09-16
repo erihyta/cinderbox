@@ -1,0 +1,124 @@
+#pragma once
+
+// Authoritative server. Runs the one true Simulation at a fixed rate, collects client inputs, and
+// streams the input frames it actually used. It never rolls back: a late input is replaced by the
+// player's previous input.
+
+#include "protocol.h"
+#include "simulation.h"
+#include "transport.h"
+
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace cb
+{
+
+struct ServerOptions
+{
+	uint16_t port = net::kDefaultPort;
+	SimConfig config;
+	uint32_t maxClients = kMaxPlayers;
+	uint32_t checksumInterval = 30; // ticks
+	double reconnectGraceSeconds = 10.0;
+	double resyncCooldownSeconds = 2.0;
+	bool verbose = true;
+	// Keep a hash for every tick (tests only; costs a serialization per tick).
+	bool recordHashes = false;
+};
+
+class GameServer
+{
+public:
+	GameServer();
+	~GameServer();
+
+	bool Start( const ServerOptions& options );
+
+	// Poll the network and run every tick that is due at `now` (seconds, monotonic).
+	void Update( double now );
+
+	// Seconds until the next tick is due (for sleeping).
+	double TimeUntilNextTick( double now ) const;
+
+	Simulation& Sim()
+	{
+		return *m_sim;
+	}
+	uint32_t Tick() const
+	{
+		return m_sim->Tick();
+	}
+	int ConnectedClients() const;
+	bool GetRecordedHash( uint32_t tick, uint64_t& hash ) const;
+
+	struct Stats
+	{
+		uint64_t lateInputs = 0; // ticks where a connected player's input had not arrived
+		uint64_t snapshotsSent = 0; // welcomes: joins, reconnects and desync recoveries
+		uint64_t resyncRequests = 0;
+		uint64_t joins = 0;
+		uint64_t reconnects = 0;
+	};
+	const Stats& GetStats() const
+	{
+		return m_stats;
+	}
+
+	// Test hook: drop a player's connection without telling them.
+	void DropClientHard( PlayerSlot slot, double now );
+
+private:
+	static constexpr uint32_t kInputBuffer = 128;
+
+	struct Client
+	{
+		bool used = false;
+		bool connected = false;
+		net::PeerId peer = 0;
+		PlayerSlot slot = 0;
+		uint64_t token = 0;
+		double disconnectedAt = 0.0;
+		double lastResyncAt = -1e9;
+		bool needsSnapshot = false; // send Welcome/Resync before the next tick
+		bool welcomed = false;		// has received a Welcome for the current connection
+		bool inWorld = false;		// Join event has been issued
+		PlayerInput lastInput{};
+		struct Slot
+		{
+			uint32_t tick = UINT32_MAX;
+			PlayerInput input{};
+		};
+		Slot inputs[kInputBuffer];
+	};
+
+	void HandleEvent( const net::NetEvent& ev, double now );
+	void HandleHello( net::PeerId peer, const net::MsgHello& hello, double now );
+	void HandleInput( Client& client, const net::MsgInput& msg );
+	Client* FindByPeer( net::PeerId peer );
+	void Reject( net::PeerId peer, const std::string& reason );
+	void RunTick( double now );
+	void SendSnapshots();
+	void Log( const char* fmt, ... ) const;
+
+	ServerOptions m_options;
+	std::unique_ptr<Simulation> m_sim;
+	net::Transport m_transport;
+	net::FrameCodec m_codec;
+	Client m_clients[kMaxPlayers];
+	std::vector<PlayerEvent> m_pendingEvents;
+	net::InputArray m_lastInputs{};
+
+	double m_nextTickTime = -1.0;
+	uint64_t m_tokenState = 0;
+	Stats m_stats;
+
+	std::vector<net::NetEvent> m_events;
+	std::vector<uint8_t> m_buffer;
+	std::vector<uint8_t> m_image;
+	std::vector<uint64_t> m_hashes;
+};
+
+} // namespace cb

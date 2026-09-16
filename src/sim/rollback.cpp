@@ -27,7 +27,7 @@ RollbackSession::RollbackSession( const SimConfig& config, PlayerSlot localSlot,
 	m_confirmedHashes[m_finalized % kConfirmedHashHistory] = { m_finalized, m_sim->ComputeHash() };
 }
 
-void RollbackSession::Reset( const Snapshot& snapshot )
+void RollbackSession::Reset( const Snapshot& snapshot, const std::array<PlayerInput, kMaxPlayers>& previousInputs )
 {
 	m_sim->Load( snapshot );
 	for ( TickRecord& r : m_records )
@@ -42,6 +42,15 @@ void RollbackSession::Reset( const Snapshot& snapshot )
 	m_authFrames.clear();
 	m_authBase = snapshot.tick;
 	m_confirmedEnd = snapshot.tick;
+	if ( snapshot.tick > 0 )
+	{
+		// Stand-in for the frame before the snapshot, so prediction repeats real inputs.
+		InputFrame previous;
+		previous.tick = snapshot.tick - 1;
+		previous.inputs = previousInputs;
+		m_authFrames.push_back( previous );
+		m_authBase = previous.tick;
+	}
 	m_rollbackFrom = kNone;
 	m_finalized = snapshot.tick;
 	m_confirmedHashes[m_finalized % kConfirmedHashHistory] = { m_finalized, snapshot.hash };

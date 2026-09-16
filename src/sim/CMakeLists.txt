@@ -1,5 +1,6 @@
 add_library(cb_sim STATIC
 	box3d_shim.c
+	fingerprint.cpp
 	level.cpp
 	physics_arena.cpp
 	rollback.cpp
