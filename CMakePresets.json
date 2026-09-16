@@ -1,0 +1,75 @@
+{
+	"version": 6,
+	"configurePresets": [
+		{
+			"name": "base",
+			"hidden": true,
+			"generator": "Ninja",
+			"cacheVariables": {
+				"CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+			}
+		},
+		{
+			"name": "win-base",
+			"hidden": true,
+			"inherits": "base",
+			"binaryDir": "$env{LOCALAPPDATA}/cinderbox-build/${presetName}",
+			"condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+		},
+		{
+			"name": "unix-base",
+			"hidden": true,
+			"inherits": "base",
+			"binaryDir": "$env{HOME}/.cache/cinderbox-build/${presetName}",
+			"condition": { "type": "notEquals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+		},
+		{
+			"name": "clang-debug",
+			"displayName": "Clang Debug (Windows)",
+			"inherits": "win-base",
+			"cacheVariables": { "CMAKE_C_COMPILER": "clang", "CMAKE_CXX_COMPILER": "clang++", "CMAKE_BUILD_TYPE": "Debug" }
+		},
+		{
+			"name": "clang-release",
+			"displayName": "Clang Release (Windows)",
+			"inherits": "win-base",
+			"cacheVariables": { "CMAKE_C_COMPILER": "clang", "CMAKE_CXX_COMPILER": "clang++", "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+		},
+		{
+			"name": "gcc-release",
+			"displayName": "MinGW GCC Release (Windows)",
+			"inherits": "win-base",
+			"cacheVariables": { "CMAKE_C_COMPILER": "gcc", "CMAKE_CXX_COMPILER": "g++", "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+		},
+		{
+			"name": "msvc-release",
+			"displayName": "MSVC Release (run from a VS developer prompt)",
+			"inherits": "win-base",
+			"cacheVariables": { "CMAKE_C_COMPILER": "cl", "CMAKE_CXX_COMPILER": "cl", "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+		},
+		{
+			"name": "unix-clang-release",
+			"displayName": "Clang Release (Linux/macOS)",
+			"inherits": "unix-base",
+			"cacheVariables": { "CMAKE_C_COMPILER": "clang", "CMAKE_CXX_COMPILER": "clang++", "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+		},
+		{
+			"name": "unix-gcc-release",
+			"displayName": "GCC Release (Linux)",
+			"inherits": "unix-base",
+			"cacheVariables": { "CMAKE_C_COMPILER": "gcc", "CMAKE_CXX_COMPILER": "g++", "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+		}
+	],
+	"buildPresets": [
+		{ "name": "clang-debug", "configurePreset": "clang-debug" },
+		{ "name": "clang-release", "configurePreset": "clang-release" },
+		{ "name": "gcc-release", "configurePreset": "gcc-release" },
+		{ "name": "msvc-release", "configurePreset": "msvc-release" },
+		{ "name": "unix-clang-release", "configurePreset": "unix-clang-release" },
+		{ "name": "unix-gcc-release", "configurePreset": "unix-gcc-release" }
+	],
+	"testPresets": [
+		{ "name": "clang-debug", "configurePreset": "clang-debug", "output": { "outputOnFailure": true } },
+		{ "name": "clang-release", "configurePreset": "clang-release", "output": { "outputOnFailure": true } }
+	]
+}
