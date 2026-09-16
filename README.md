@@ -10,7 +10,7 @@ ozz-animation and raylib. See [DESIGN.md](DESIGN.md) for the architecture and de
 | M1: build, deterministic sim core, snapshots, determinism tests | done |
 | M2: ENet server, raylib client, rollback netcode, join/leave/reconnect | done |
 | M3: ozz animation, procedural box skeleton, locomotion blend, asset pipeline | done |
-| M4: replay tool, network simulator, bots, stress test | next |
+| M4: replay tool, network simulator, bots, stress test | done |
 
 ## Building
 
@@ -65,6 +65,29 @@ checksum results.
 Server and clients can be built with different compilers. The server rejects a client whose
 simulation fingerprint differs from its own.
 
+## Testing tools
+
+All tools are in `<build dir>/bin`.
+
+| Tool | What it does |
+|---|---|
+| `cb_server --record FILE` | Records the whole session (input frames plus checksums) |
+| `cb_replay info\|verify FILE` | Summarizes a recording, or re-simulates it and checks every checksum |
+| `cb_client --replay FILE [--replay-start S]` | Watches a recording |
+| `cb_netsim --listen P --target HOST:PORT --latency MS --jitter MS --loss % [--duplicate %]` | UDP relay that degrades traffic (latency is added in each direction) |
+| `cb_bot --port P --count N --full M --duration S` | Headless players; the M "full" bots run prediction and rollback and report its cost |
+| `scripts/stress_test.sh --bots N --full M --latency MS --jitter MS --loss % --rollback T` | Starts a server, the simulator and the bots, and prints a summary |
+
+Replay viewer controls:
+- Space pauses, Up/Down change the speed, Left/Right seek 5 s, and `,` / `.` step one tick.
+- Home restarts, Tab follows the next player, and Backspace switches to a free camera.
+- The right mouse button or Esc orbits the camera.
+
+```sh
+# a lossy 64-player session, recorded and verified afterwards
+scripts/stress_test.sh --bots 64 --full 4 --latency 25 --jitter 5 --loss 1 --duration 60 --record session.cbr
+```
+
 ## Determinism checks
 
 ```powershell
@@ -97,13 +120,15 @@ src/sim/          deterministic simulation shared by server and client
   fingerprint.*     build fingerprint checked when a client connects
   anim_controller.* deterministic locomotion state machine (AnimState)
 src/anim/         ozz: procedural rig, asset loading (anim_set.*), pose evaluation (pose.*)
-src/net/          wire protocol (protocol.*) and ENet wrapper (transport.*)
+src/net/          wire protocol, ENet wrapper, network simulator (netsim.*), replay files (replay.*)
 src/server/       authoritative GameServer (library) and cb_server
-src/client/       GameClient core (no rendering) and the raylib app
+src/tools/        cb_netsim, cb_replay, cb_bot
+src/client/       GameClient core (no rendering, also "lite" mode), bot brain, and the raylib app
   app/              presentation flecs world, rendering, camera, HUD
   app/anim_viewer.* offline clip preview (--anim-viewer)
+  app/replay_viewer.* recording playback (--replay)
   app/scripts/      client scripts: spawn/destroy effects, player pose evaluation
 tests/            determinism, rollback, gameplay, animation and loopback network tests
-scripts/          cross-compiler determinism check
+scripts/          cross-compiler determinism check, stress test
 tools/            animation conversion (convert_animations.*), test glTF generator
 ```

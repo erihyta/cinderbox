@@ -33,17 +33,31 @@ struct EnetLibrary
 	}
 };
 
-void EnsureEnet()
+} // namespace
+
+void EnsureNetworkInitialized()
 {
 	static EnetLibrary library;
 }
-
-} // namespace
 
 struct Transport::Impl
 {
 	ENetHost* host = nullptr;
 	PeerId nextId = 1;
+	uint64_t bytesSent = 0;
+	uint64_t bytesReceived = 0;
+
+	// ENet's counters are 32-bit; move them into 64-bit totals before they can wrap.
+	void AccumulateCounters()
+	{
+		if ( host != nullptr )
+		{
+			bytesSent += host->totalSentData;
+			bytesReceived += host->totalReceivedData;
+			host->totalSentData = 0;
+			host->totalReceivedData = 0;
+		}
+	}
 	// Lookup only, never iterated for anything order-dependent.
 	std::unordered_map<PeerId, ENetPeer*> peers;
 
@@ -70,7 +84,7 @@ struct Transport::Impl
 Transport::Transport()
 	: m_impl( std::make_unique<Impl>() )
 {
-	EnsureEnet();
+	EnsureNetworkInitialized();
 }
 
 Transport::~Transport()
@@ -130,6 +144,7 @@ void Transport::Poll( std::vector<NetEvent>& events )
 		return;
 	}
 
+	m_impl->AccumulateCounters();
 	ENetEvent ev;
 	while ( enet_host_service( m_impl->host, &ev, 0 ) > 0 )
 	{
@@ -218,6 +233,16 @@ void Transport::DropHard( PeerId peer )
 			m_serverPeer = 0;
 		}
 	}
+}
+
+uint64_t Transport::BytesSent() const
+{
+	return m_impl->bytesSent + ( m_impl->host ? m_impl->host->totalSentData : 0 );
+}
+
+uint64_t Transport::BytesReceived() const
+{
+	return m_impl->bytesReceived + ( m_impl->host ? m_impl->host->totalReceivedData : 0 );
 }
 
 PeerStats Transport::Stats( PeerId peer ) const

@@ -1,6 +1,5 @@
 #include "presentation.h"
 
-#include "game_client.h"
 #include "scripts/scripts.h"
 
 #include "raymath.h"
@@ -280,31 +279,30 @@ flecs::entity Presentation::CreateVisual( Simulation& sim, flecs::entity simEnti
 	return e;
 }
 
-void Presentation::Update( GameClient& client, float frameSeconds )
+void Presentation::Update( const SimView& view, float frameSeconds )
 {
-	Sync( client, frameSeconds );
-	m_world.set<FrameTiming>( { client.TickAlpha() } );
+	Sync( view, frameSeconds );
+	m_world.set<FrameTiming>( { view.tickAlpha } );
 	m_world.progress( frameSeconds );
 }
 
-void Presentation::Sync( GameClient& client, float frameSeconds )
+void Presentation::Sync( const SimView& view, float frameSeconds )
 {
-	RollbackSession* session = client.Session();
-	if ( session == nullptr )
+	if ( view.sim == nullptr )
 	{
 		return;
 	}
 
-	Simulation& sim = session->Sim();
-	bool reset = client.ResetGeneration() != m_resetGeneration;
-	m_resetGeneration = client.ResetGeneration();
+	Simulation& sim = *view.sim;
+	bool reset = view.resetGeneration != m_resetGeneration;
+	m_resetGeneration = view.resetGeneration;
 	uint32_t tick = sim.Tick();
 	bool advanced = tick != m_lastTick;
 	m_lastTick = tick;
-	bool rolledBack = client.GetStats().rolledBackLastFrame;
-	float alpha = client.TickAlpha();
+	bool rolledBack = view.rolledBack;
+	float alpha = view.tickAlpha;
 	float decay = std::exp( -frameSeconds / kCorrectionTime );
-	uint32_t localNetId = sim.Globals().playerNetIds[client.Slot()];
+	uint32_t localNetId = view.hasLocalPlayer ? sim.Globals().playerNetIds[view.localSlot] : 0;
 	++m_syncStamp;
 	m_localPlayer = flecs::entity();
 

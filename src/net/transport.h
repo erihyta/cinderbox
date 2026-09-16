@@ -13,6 +13,9 @@ namespace cb::net
 
 using PeerId = uint32_t;
 
+// Initializes ENet once for the process (safe to call from any thread, any number of times).
+void EnsureNetworkInitialized();
+
 struct NetEvent
 {
 	enum class Type
@@ -60,6 +63,10 @@ public:
 	void DropHard( PeerId peer );
 
 	PeerStats Stats( PeerId peer ) const;
+
+	// Totals over the host's lifetime, UDP payload bytes including ENet headers.
+	uint64_t BytesSent() const;
+	uint64_t BytesReceived() const;
 
 	// The server peer when used as a client (0 if none).
 	PeerId ServerPeer() const

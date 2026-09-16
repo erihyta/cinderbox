@@ -3,6 +3,7 @@
 #include "fingerprint.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 
@@ -18,6 +19,7 @@ constexpr double kSnapTicks = 30.0;
 constexpr double kRateGain = 0.02;
 constexpr double kMaxRateAdjust = 0.15;
 constexpr uint32_t kChecksumHistory = 600;
+constexpr double kClockDecayTicksPerSecond = 0.25;
 } // namespace
 
 const char* ToString( ClientState state )
@@ -188,6 +190,12 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 					{
 						break;
 					}
+					if ( m_session == nullptr )
+					{
+						// Lite client: only the clock matters.
+						OnServerTick( r.Read<uint32_t>() + 1, now );
+						break;
+					}
 					InputFrame frame;
 					if ( m_codec.Decode( r, frame ) == false )
 					{
@@ -197,14 +205,13 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 						break;
 					}
 					m_session->AddAuthoritativeFrame( frame );
-					m_latestServerTick = frame.tick + 1;
-					m_latestFrameTime = now;
+					OnServerTick( frame.tick + 1, now );
 					break;
 				}
 				case MsgType::Checksum:
 				{
 					MsgChecksum msg;
-					if ( m_state == ClientState::Playing && Decode( r, msg ) )
+					if ( m_state == ClientState::Playing && m_session != nullptr && Decode( r, msg ) )
 					{
 						m_pendingChecksums.push_back( msg );
 					}
@@ -237,32 +244,36 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 		return;
 	}
 
-	bool rebuild = m_session == nullptr || !( msg.config == m_config ) || msg.slot != m_slot;
-	if ( rebuild )
+	if ( m_options.simulate )
 	{
-		m_config = msg.config;
-		m_slot = msg.slot;
-		m_session = std::make_unique<RollbackSession>( m_config, m_slot, m_options.maxRollbackTicks );
-	}
+		bool rebuild = m_session == nullptr || !( msg.config == m_config ) || msg.slot != m_slot;
+		if ( rebuild )
+		{
+			m_session = std::make_unique<RollbackSession>( msg.config, msg.slot, m_options.maxRollbackTicks );
+		}
 
-	if ( m_session->Sim().LoadPortable( msg.image ) == false )
-	{
-		m_rejectReason = "could not load the server state";
-		m_state = ClientState::Rejected;
-		Log( "rejected: %s", m_rejectReason.c_str() );
-		return;
-	}
+		if ( m_session->Sim().LoadPortable( msg.image ) == false )
+		{
+			m_rejectReason = "could not load the server state";
+			m_state = ClientState::Rejected;
+			Log( "rejected: %s", m_rejectReason.c_str() );
+			return;
+		}
 
-	Snapshot snapshot;
-	m_session->Sim().Save( snapshot );
-	m_session->Reset( snapshot, msg.baseInputs );
+		Snapshot snapshot;
+		m_session->Sim().Save( snapshot );
+		m_session->Reset( snapshot, msg.baseInputs );
+	}
+	m_config = msg.config;
+	m_slot = msg.slot;
+	m_liteTick = msg.snapshotTick;
 	m_codec.Reset( msg.baseInputs );
 
 	bool reconnect = m_token != 0 && m_token == msg.reconnectToken;
 	m_token = msg.reconnectToken;
 	m_state = ClientState::Playing;
-	m_latestServerTick = msg.snapshotTick;
-	m_latestFrameTime = now;
+	m_haveClock = false;
+	OnServerTick( msg.snapshotTick, now );
 	m_accumulator = 0.0;
 	m_lastUpdate = -1.0;
 	m_pendingChecksums.clear();
@@ -278,6 +289,19 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 		 msg.image.size() / 1024 );
 }
 
+// `tickAfter` is the server's tick right after it sent the message that just arrived.
+void GameClient::OnServerTick( uint32_t tickAfter, double now )
+{
+	double offset = double( tickAfter ) - now * double( m_config.tickRate );
+	if ( m_haveClock == false || offset > m_clockOffset )
+	{
+		m_clockOffset = offset;
+		m_haveClock = true;
+	}
+	m_latestServerTick = tickAfter;
+	m_latestFrameTime = now;
+}
+
 void GameClient::Advance( double now, const InputSampler& sampleInput )
 {
 	const double rate = double( m_config.tickRate );
@@ -288,15 +312,26 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	double jitter = double( ps.roundTripVarianceMs ) / 1000.0;
 	m_stats.rttMs = ps.roundTripMs;
 
-	// Be far enough ahead of the server that our input for tick T arrives before it simulates T.
-	double sinceFrame = std::min( now - m_latestFrameTime, 1.0 );
-	double serverNow = double( m_latestServerTick ) + ( sinceFrame + 0.5 * rtt ) * rate;
-	double target = serverNow + ( 0.5 * rtt + jitter ) * rate + double( m_options.leadMarginTicks );
-	double current = double( m_session->CurrentTick() ) + m_accumulator * rate;
-	double error = target - current;
-
 	double frameDt = m_lastUpdate < 0.0 ? 0.0 : std::clamp( now - m_lastUpdate, 0.0, 0.25 );
+	m_stats.playingSeconds += frameDt;
 	m_lastUpdate = now;
+
+	// Server clock estimate: the fastest frame arrivals define the offset (frames held back behind a
+	// lost packet arrive late and would make the server look slower than it is). The estimate
+	// decays slowly so it still follows a real increase in latency.
+	m_clockOffset -= kClockDecayTicksPerSecond * frameDt;
+	double serverNow = now * rate + m_clockOffset + 0.5 * rtt * rate;
+	double sinceFrame = now - m_latestFrameTime;
+	if ( sinceFrame > 1.0 )
+	{
+		// The server went quiet; do not keep extrapolating.
+		serverNow = std::min( serverNow, double( m_latestServerTick ) + ( 1.0 + 0.5 * rtt ) * rate );
+	}
+
+	// Be far enough ahead of the server that our input for tick T arrives before it simulates T.
+	double target = serverNow + ( 0.5 * rtt + jitter ) * rate + double( m_options.leadMarginTicks );
+	double current = double( CurrentTick() ) + m_accumulator * rate;
+	double error = target - current;
 
 	double scale = 1.0;
 	if ( error > kSnapTicks )
@@ -316,19 +351,28 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	m_stats.tickError = error;
 	m_stats.rateScale = scale;
 
-	uint64_t rollbacksBefore = m_session->GetStats().rollbacks;
-	m_session->Reconcile();
+	auto workStart = std::chrono::steady_clock::now();
+	uint64_t rollbacksBefore = m_session ? m_session->GetStats().rollbacks : 0;
+	if ( m_session )
+	{
+		m_session->Reconcile();
+	}
 
 	uint32_t ticks = 0;
 	while ( m_accumulator >= dt && ticks < kMaxTicksPerFrame )
 	{
-		uint32_t tick = m_session->CurrentTick();
+		uint32_t tick = CurrentTick();
 		PlayerInput input = sampleInput( tick );
-		if ( m_session->AdvanceOne( input ) == false )
+		if ( m_session == nullptr )
+		{
+			m_liteTick += 1;
+		}
+		else if ( m_session->AdvanceOne( input ) == false )
 		{
 			// Too far ahead of confirmed data (latency above the rollback window, or the server
 			// stopped sending): hold time instead of drifting.
 			m_accumulator = std::min( m_accumulator, dt );
+			m_stats.stalledSeconds += frameDt;
 			break;
 		}
 		m_inputHistory[tick % m_inputHistory.size()] = { tick, input };
@@ -343,13 +387,20 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	}
 
 	m_stats.ticksLastFrame = ticks;
-	m_stats.rolledBackLastFrame = m_session->GetStats().rollbacks != rollbacksBefore;
+	m_stats.rolledBackLastFrame = m_session && m_session->GetStats().rollbacks != rollbacksBefore;
+	m_stats.simMsLastFrame = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - workStart ).count();
+	m_stats.simMsMax = std::max( m_stats.simMsMax, m_stats.simMsLastFrame );
+	m_stats.bytesSent = m_transport.BytesSent();
+	m_stats.bytesReceived = m_transport.BytesReceived();
 
 	if ( ticks > 0 )
 	{
 		SendInputs();
 	}
-	VerifyChecksums();
+	if ( m_session )
+	{
+		VerifyChecksums();
+	}
 }
 
 void GameClient::SendInputs()

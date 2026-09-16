@@ -2,13 +2,20 @@
 //
 //   cb_net_tests [name]
 
+#include "bot_brain.h"
+#include "fingerprint.h"
 #include "game_client.h"
 #include "game_server.h"
+#include "netsim.h"
+#include "replay.h"
+#include "simulation.h"
 #include "util.h"
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <thread>
@@ -42,32 +49,11 @@ using Clock = std::chrono::steady_clock;
 struct Bot
 {
 	std::unique_ptr<GameClient> client;
-	uint64_t rng = 0;
-	PlayerInput held{};
+	BotBrain brain;
 
 	PlayerInput Sample( uint32_t )
 	{
-		uint64_t r = NextRandom( rng );
-		if ( ( r & 31 ) == 0 )
-		{
-			held.moveForward = int8_t( int( ( r >> 8 ) % 255 ) - 127 );
-			held.moveRight = int8_t( int( ( r >> 16 ) % 255 ) - 127 );
-			held.cameraYaw = uint16_t( r >> 24 );
-		}
-		held.buttons = 0;
-		if ( ( ( r >> 40 ) % 50 ) == 0 )
-		{
-			held.buttons |= BtnJump;
-		}
-		if ( ( ( r >> 48 ) % 40 ) == 0 )
-		{
-			held.buttons |= BtnSpawnProp;
-		}
-		if ( ( r >> 56 ) & 1 )
-		{
-			held.buttons |= BtnSprint;
-		}
-		return held;
+		return brain.Next();
 	}
 };
 
@@ -77,9 +63,12 @@ struct Harness
 	std::vector<Bot> bots;
 	Clock::time_point start = Clock::now();
 	uint16_t port = 0;
+	uint16_t clientPort = 0; // port bots connect to (the proxy's, when there is one)
+	std::unique_ptr<net::NetSimProxy> proxy;
 
-	explicit Harness( uint16_t p )
+	explicit Harness( uint16_t p, const std::string& recordPath = {} )
 		: port( p )
+		, clientPort( p )
 	{
 		ServerOptions options;
 		options.port = port;
@@ -87,10 +76,22 @@ struct Harness
 		options.verbose = false;
 		options.config.physicsArenaMB = 64;
 		options.reconnectGraceSeconds = 10.0;
+		options.recordPath = recordPath;
 		if ( server.Start( options ) == false )
 		{
 			std::printf( "    server failed to start on port %u\n", port );
 		}
+	}
+
+	// Route bots added from now on through a degraded link.
+	void AddNetSim( uint16_t proxyPort, const net::NetSimConfig& config )
+	{
+		proxy = std::make_unique<net::NetSimProxy>();
+		if ( proxy->Start( proxyPort, "127.0.0.1", port, config ) == false )
+		{
+			std::printf( "    netsim failed to start on port %u\n", proxyPort );
+		}
+		clientPort = proxyPort;
 	}
 
 	double Now() const
@@ -98,13 +99,14 @@ struct Harness
 		return std::chrono::duration<double>( Clock::now() - start ).count();
 	}
 
-	Bot& AddBot()
+	Bot& AddBot( uint32_t rollbackWindow = 8 )
 	{
 		Bot bot;
 		bot.client = std::make_unique<GameClient>();
-		bot.rng = 1000 + bots.size();
+		bot.brain = BotBrain( 1000 + bots.size() );
 		ClientOptions options;
-		options.port = port;
+		options.port = clientPort;
+		options.maxRollbackTicks = rollbackWindow;
 		options.verbose = false;
 		options.logName = "bot" + std::to_string( bots.size() );
 		bot.client->Start( options, Now() );
@@ -118,6 +120,10 @@ struct Harness
 		{
 			double now = Now();
 			server.Update( now );
+			if ( proxy )
+			{
+				proxy->Update( now );
+			}
 			for ( Bot& b : bots )
 			{
 				b.client->Update( now, [&b]( uint32_t tick ) { return b.Sample( tick ); } );
@@ -315,6 +321,68 @@ void TestGraceExpiry()
 	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
 }
 
+void TestLossySession()
+{
+	// A bad connection: ~70 ms RTT with jitter, 3% loss and duplicates each way.
+	std::filesystem::path replayPath = std::filesystem::temp_directory_path() / "cinderbox_net_test.cbr";
+	{
+		Harness h( 17805, replayPath.string() );
+		net::NetSimConfig bad;
+		bad.latencyMs = 30;
+		bad.jitterMs = 10;
+		bad.lossPercent = 3.0f;
+		bad.duplicatePercent = 1.0f;
+		bad.seed = 7;
+		h.AddNetSim( 17806, bad );
+		for ( int i = 0; i < 4; ++i )
+		{
+			h.AddBot();
+		}
+		h.RunUntil( 10.0 );
+		h.Report();
+
+		auto ps = h.proxy->GetStats();
+		std::printf( "    netsim: %u links, %llu forwarded, %llu dropped, %llu duplicated\n", ps.links,
+					 (unsigned long long)ps.forwarded, (unsigned long long)ps.dropped, (unsigned long long)ps.duplicated );
+		CHECK( ps.dropped > 0 );
+		CHECK( CountPlayers( h.server.Sim() ) == 4 );
+		for ( Bot& b : h.bots )
+		{
+			CHECK( b.client->State() == ClientState::Playing );
+			CHECK( b.client->GetStats().desyncs == 0 );
+			CHECK( b.client->GetStats().rttMs >= 50 );
+			CHECK( b.client->Session()->GetStats().rollbacks > 0 );
+			int compared = 0;
+			CHECK( h.CompareWithServer( b, compared ) == 0 );
+			CHECK( compared > 100 );
+		}
+	}
+
+	// The server recorded the session; replaying it reproduces every recorded checksum.
+	net::ReplayReader replay;
+	std::string error;
+	CHECK( replay.Open( replayPath.string(), error ) );
+	CHECK( replay.Fingerprint() == BuildFingerprint() );
+	CHECK( replay.Frames().size() > 500 );
+	CHECK( replay.Checksums().size() > 5 );
+	Simulation sim( replay.Config() );
+	size_t next = 0;
+	size_t verified = 0;
+	for ( const InputFrame& frame : replay.Frames() )
+	{
+		while ( next < replay.Checksums().size() && replay.Checksums()[next].tick == sim.Tick() )
+		{
+			CHECK( sim.ComputeHash() == replay.Checksums()[next].hash );
+			++verified;
+			++next;
+		}
+		sim.Step( frame );
+	}
+	std::printf( "    replay: %zu ticks, %zu checksums verified\n", replay.Frames().size(), verified );
+	CHECK( verified > 5 );
+	std::filesystem::remove( replayPath );
+}
+
 void TestProtocol()
 {
 	using namespace net;
@@ -408,6 +476,7 @@ int main( int argc, char** argv )
 		{ "late_join", TestLateJoin },
 		{ "reconnect", TestReconnect },
 		{ "grace_expiry", TestGraceExpiry },
+		{ "lossy_session", TestLossySession },
 	};
 
 	const char* filter = argc > 1 ? argv[1] : nullptr;

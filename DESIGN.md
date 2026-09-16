@@ -46,7 +46,7 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
   - It corrects small errors by running up to ±15% faster or slower.
   - If it falls more than 30 ticks behind, it catches up at up to 8 ticks per frame. If it gets more than 30 ticks ahead, it pauses.
   - Measured on loopback: 0 late inputs once settled. Late inputs only occur while a client catches up right after joining.
-- **Latency limit**: with an 8-tick window, a round-trip time above roughly 100 ms makes the client hit the window and stall briefly. Raise it with `cb_client --rollback N`.
+- **Latency limit**: with an 8-tick window at 60 Hz, a round-trip time above roughly 75 ms pins the client to the window (measured in M4, see Findings). Raise the window with `cb_client --rollback N`.
 - **Disconnects**:
   - ENet detects a dead connection within 1–3 s.
   - The server keeps a disconnected player in the world with zeroed input for 10 s. If the client reconnects with its token in that time, it gets the same slot back through a Welcome. Otherwise the server issues a `Leave` event.
@@ -94,13 +94,48 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 - **Client scripts**: the pose-evaluator creation observer, the per-frame pose evaluation system, and the spawn and destroy effects.
 
 ## Tooling
-- **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds.
-- **Replay**: the server records its input log, and a tool plays it back headless or in the client.
-- **Network simulator**: adds latency, jitter and packet loss.
-- **Headless bot clients**: random inputs, for the 32+ player stress test.
+- **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*`).
+- **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
+- **Network simulator**: `cb_netsim` is a UDP relay with per-direction latency, jitter, loss and duplication, one upstream socket per client. ENet is not modified, so RTT measurement and retransmission behave as on a real network. The same code runs inside the lossy integration test.
+- **Headless bots**: `cb_bot`.
+  - "Full" bots run the real client and report its cost. Each gets its own thread, because a rollback can take several milliseconds and would otherwise delay the bots sharing its thread.
+  - "Lite" bots keep pace and send input without simulating.
+  - `scripts/stress_test.sh` runs a complete scenario.
+- **Threading**: many simulations may run in one process. flecs and Box3D world creation and destruction are serialized by a process-wide mutex. The physics arena reserves address space and commits it in 16 MB steps.
+
+## Measurements (M4, Clang Release, 32-thread desktop, everything on one machine)
+
+Bots change their inputs almost every tick, which is a worst case for mispredictions. "Client work" is reconcile plus the predicted ticks, per rendered frame, for a full bot.
+
+| Scenario | Server tick | Client work avg / max | Rollback window | Stalled | Late inputs (settled) | Desyncs |
+|---|---|---|---|---|---|---|
+| 32 bots, loopback | 0.56 ms | 0.66 / 7.3 ms | 8 | 0% | ~0% | 0 |
+| 64 bots, loopback | 0.72 ms | 0.94 / 6.7 ms | 8 | 0% | ~0% | 0 |
+| 64 bots, 25±5 ms each way, 1% loss (RTT 60 ms) | – | 2.05 / 12.6 ms | 8 | 1.8% | – | 0 |
+| 64 bots, 45±10 ms, 2% loss (RTT 106 ms) | 0.75 ms | 1.98 / 17.1 ms | 8 | 7.9% | 4.5% | 0 |
+| same | 0.78 ms | 1.63 / 15.5 ms | 16 | 1.1% | 0.17% | 0 |
+
+- **Bandwidth**: with 64 players, about 115 kbit/s down and 47 kbit/s up per client. The server sends about 7.4 Mbit/s in total.
+- **Join**: one portable snapshot per join, about 80–250 KB.
+- **Replay**: `cb_replay verify` re-simulated a 64-player recording at about 0.4 ms per tick.
+
+### Findings
+- **Rollback window vs latency**: a client must stay about `RTT × tick rate + jitter + 2` ticks ahead of the confirmed state. With the chosen 8-tick window at 60 Hz, that caps the round trip at about 75 ms.
+  - Above that, the client is pinned to the window. Every input it sends arrives late, the server repeats the previous one, and that player's own actions get corrected constantly.
+  - At 106 ms RTT this showed up as 8% stalled time and about 5% late inputs server-wide, coming from 4 of 64 players.
+  - A 16-tick window fixed it at the cost of deeper re-simulation.
+- **Head-of-line blocking**: input frames travel on a reliable, ordered ENet channel. A lost frame delays every later frame until it is retransmitted (about RTT + 4 × variance, which is 9+ ticks at 106 ms), so confirmation stalls in bursts.
+  - With 3% loss in the integration test, late inputs were about 80% with window 8 and about 11% with window 16.
+  - The usual fix is to send frames unreliably, repeating every frame the client has not yet acknowledged, with the client's acknowledgement carried in its input packets. That is a pending decision (see below).
+- **Clock estimate**: the client now takes the server clock from the fastest frame arrivals, decaying slowly, rather than from the latest arrival.
+- **No spurious disconnects**: the 1–3 s ENet timeout caused none in a 2-minute, 64-player run at 2% loss.
+
+### Open decisions
+1. Frame transport: keep reliable ordered frames, or move to acknowledged, redundant unreliable frames.
+2. Rollback window: keep 8, raise the default, or pick it automatically from the measured RTT.
 
 ## Milestones (check-in after each)
 1. **M1** (done): build system, deterministic sim core (flecs + Box3D + mover + props), snapshot/restore, rollback session, determinism tests (Clang, GCC and MSVC verified identical).
 2. **M2** (done): ENet server and raylib client, rollback netcode, join/leave/reconnect, loopback integration tests. Verified with an MSVC server and GCC and Clang clients in one session.
 3. **M3** (done): ozz integration, procedural box skeleton, locomotion blend, glTF pipeline (script and docs, tested with generated Blender-style glTF files), animation viewer.
-4. **M4**: replay tool, network simulator, bots, 32-player stress test.
+4. **M4** (done): replay recording, verification and playback, network simulator, bots (full and lite), stress-test script, lossy integration test, 64-player measurements.

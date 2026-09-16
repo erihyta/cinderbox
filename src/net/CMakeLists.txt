@@ -1,4 +1,6 @@
 add_library(cb_net STATIC
+	netsim.cpp
+	replay.cpp
 	protocol.cpp
 	transport.cpp
 )

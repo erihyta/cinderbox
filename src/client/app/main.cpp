@@ -3,6 +3,7 @@
 //   cb_client [--host ADDRESS] [--port N] [--rollback TICKS] [--width W] [--height H]
 //             [--assets DIR | --procedural-anim] [--autoplay SECONDS] [--screenshot FILE]
 //   cb_client --anim-viewer [--assets DIR | --procedural-anim] [--autoplay SECONDS --screenshot FILE]
+//   cb_client --replay FILE [--replay-start SECONDS] [--autoplay SECONDS --screenshot FILE]
 //
 // Animation assets are looked up in --assets, then ./assets/anim, then next to the executable, then
 // in the source tree. Without an anim.cfg the procedural placeholder rig is used.
@@ -14,7 +15,9 @@
 // Esc toggles the mouse cursor, F1 toggles the debug HUD.
 
 #include "game_client.h"
+#include "orbit_camera.h"
 #include "presentation.h"
+#include "replay_viewer.h"
 
 #include "anim_set.h"
 #include "anim_viewer.h"
@@ -47,6 +50,8 @@ struct AppOptions
 	std::string assetsDir;
 	bool proceduralAnim = false;
 	bool animViewer = false;
+	std::string replayPath;
+	double replayStart = 0.0;
 	float viewerYaw = 0.35f;
 };
 
@@ -87,6 +92,10 @@ bool ParseArgs( int argc, char** argv, AppOptions& o )
 			o.screenshot = value;
 		else if ( arg == "--viewer-yaw" )
 			o.viewerYaw = float( std::atof( value.c_str() ) );
+		else if ( arg == "--replay" )
+			o.replayPath = value;
+		else if ( arg == "--replay-start" )
+			o.replayStart = std::atof( value.c_str() );
 		else if ( arg == "--assets" )
 			o.assetsDir = value;
 		else
@@ -98,38 +107,7 @@ bool ParseArgs( int argc, char** argv, AppOptions& o )
 	return true;
 }
 
-struct OrbitCamera
-{
-	float yaw = 0.0f; // detmath convention: 0 looks down +Z, positive turns left
-	float pitch = 0.35f;
-	float distance = 6.0f;
-	Vector3 target = { 0.0f, 1.0f, 0.0f };
-
-	void HandleInput( bool mouseCaptured )
-	{
-		if ( mouseCaptured )
-		{
-			Vector2 d = GetMouseDelta();
-			yaw -= d.x * 0.003f;
-			pitch = Clamp( pitch + d.y * 0.003f, -0.4f, 1.3f );
-		}
-		distance = Clamp( distance - GetMouseWheelMove() * 0.5f, 2.0f, 20.0f );
-	}
-
-	Camera3D ToCamera() const
-	{
-		Vector3 forward = { std::sin( yaw ) * std::cos( pitch ), -std::sin( pitch ), std::cos( yaw ) * std::cos( pitch ) };
-		Camera3D cam{};
-		cam.target = target;
-		cam.position = Vector3Subtract( target, Vector3Scale( forward, distance ) );
-		cam.up = { 0.0f, 1.0f, 0.0f };
-		cam.fovy = 55.0f;
-		cam.projection = CAMERA_PERSPECTIVE;
-		return cam;
-	}
-};
-
-PlayerInput SampleInput( const OrbitCamera& camera, bool hasFocus )
+PlayerInput SampleInput( const present::OrbitCamera& camera, bool hasFocus )
 {
 	PlayerInput in;
 	in.cameraYaw = detmath::RadiansToYaw( camera.yaw );
@@ -251,7 +229,8 @@ int main( int argc, char** argv )
 	if ( ParseArgs( argc, argv, options ) == false )
 	{
 		std::printf( "usage: cb_client [--host ADDRESS] [--port N] [--rollback TICKS] [--width W] [--height H]\n"
-					 "                 [--autoplay SECONDS] [--screenshot FILE]\n" );
+					 "                 [--assets DIR | --procedural-anim] [--autoplay SECONDS] [--screenshot FILE]\n"
+					 "       cb_client --anim-viewer | --replay FILE [--replay-start SECONDS]\n" );
 		return 1;
 	}
 
@@ -261,6 +240,13 @@ int main( int argc, char** argv )
 	SetExitKey( KEY_NULL );
 
 	auto animSet = LoadAnimations( options, argv[0] );
+	if ( options.replayPath.empty() == false )
+	{
+		int code = present::RunReplayViewer( animSet, { options.replayPath, options.autoplaySeconds, options.screenshot,
+														options.replayStart } );
+		CloseWindow();
+		return code;
+	}
 	if ( options.animViewer )
 	{
 		int code = present::RunAnimViewer( animSet, { options.autoplaySeconds, options.screenshot, options.viewerYaw } );
@@ -271,7 +257,7 @@ int main( int argc, char** argv )
 	GameClient client;
 	client.Start( options.client, GetTime() );
 	present::Presentation presentation( animSet );
-	OrbitCamera camera;
+	present::OrbitCamera camera;
 
 	bool autoplay = options.autoplaySeconds > 0.0;
 	bool mouseCaptured = !autoplay;
@@ -344,7 +330,17 @@ int main( int argc, char** argv )
 		bool autoplayDone = autoplay && playingSince >= 0.0 && GetTime() - playingSince >= options.autoplaySeconds;
 
 		float frameSeconds = GetFrameTime();
-		presentation.Update( client, frameSeconds );
+		present::SimView view;
+		if ( RollbackSession* session = client.Session() )
+		{
+			view.sim = &session->Sim();
+			view.resetGeneration = client.ResetGeneration();
+			view.tickAlpha = client.TickAlpha();
+			view.rolledBack = client.GetStats().rolledBackLastFrame;
+			view.hasLocalPlayer = true;
+			view.localSlot = client.Slot();
+		}
+		presentation.Update( view, frameSeconds );
 
 		Vector3 playerPos;
 		if ( presentation.LocalPlayerPosition( playerPos ) )

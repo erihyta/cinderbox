@@ -127,16 +127,32 @@ struct Reader
 	}
 };
 
+// flecs (OS API init counter) and Box3D (static world table) are not safe to create or destroy
+// worlds from several threads at once. Bots and tests run many simulations on many threads.
+std::mutex& LifetimeMutex()
+{
+	static std::mutex mutex;
+	return mutex;
+}
+
+flecs::world CreateWorldLocked()
+{
+	std::lock_guard<std::mutex> lock( LifetimeMutex() );
+	return flecs::world();
+}
+
 } // namespace
 
 Simulation::Simulation( const SimConfig& config )
 	: m_config( config )
+	, m_world( CreateWorldLocked() )
 {
 	m_arena = std::make_unique<PhysicsArena>( size_t( config.physicsArenaMB ) * 1024 * 1024 );
 	m_globals.rngState = config.seed;
 
 	RegisterComponents();
 
+	std::unique_lock<std::mutex> lock( LifetimeMutex() );
 	PhysicsArena::Scope scope( *m_arena );
 	b3WorldDef def = b3DefaultWorldDef();
 	def.gravity = kGravityVector;
@@ -144,14 +160,19 @@ Simulation::Simulation( const SimConfig& config )
 	def.enqueueTask = nullptr;
 	def.finishTask = nullptr;
 	m_physicsWorld = b3CreateWorld( &def );
+	lock.unlock();
 
 	BuildLevel();
 }
 
 Simulation::~Simulation()
 {
-	PhysicsArena::Scope scope( *m_arena );
-	b3DestroyWorld( m_physicsWorld );
+	std::lock_guard<std::mutex> lock( LifetimeMutex() );
+	{
+		PhysicsArena::Scope scope( *m_arena );
+		b3DestroyWorld( m_physicsWorld );
+	}
+	m_world.release();
 }
 
 template <typename T>

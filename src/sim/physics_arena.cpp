@@ -6,8 +6,13 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <algorithm>
+#include <mutex>
+
 #if defined( _WIN32 )
-#include <malloc.h>
+#include <windows.h>
+#else
+#include <sys/mman.h>
 #endif
 
 namespace cb
@@ -38,21 +43,38 @@ thread_local PhysicsArena* t_current = nullptr;
 	std::abort();
 }
 
-void* AlignedAlloc( size_t size )
+constexpr size_t kCommitChunk = 16u * 1024u * 1024u;
+
+// Page-aligned address space from the OS. Memory is committed in chunks as the arena grows
+// (CommitPages), so many simulations can each reserve a large arena cheaply. Fresh pages are zero.
+void* ReservePages( size_t size )
 {
 #if defined( _WIN32 )
-	return _aligned_malloc( size, kBlockAlign );
+	return VirtualAlloc( nullptr, size, MEM_RESERVE, PAGE_NOACCESS );
 #else
-	return std::aligned_alloc( kBlockAlign, size );
+	void* p = mmap( nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0 );
+	return p == MAP_FAILED ? nullptr : p;
 #endif
 }
 
-void AlignedFree( void* p )
+bool CommitPages( void* p, size_t size )
 {
 #if defined( _WIN32 )
-	_aligned_free( p );
+	return VirtualAlloc( p, size, MEM_COMMIT, PAGE_READWRITE ) != nullptr;
 #else
-	std::free( p );
+	(void)p;
+	(void)size;
+	return true; // mmap pages are committed lazily by the kernel
+#endif
+}
+
+void ReleasePages( void* p, size_t size )
+{
+#if defined( _WIN32 )
+	(void)size;
+	VirtualFree( p, 0, MEM_RELEASE );
+#else
+	munmap( p, size );
 #endif
 }
 
@@ -99,12 +121,13 @@ PhysicsArena::PhysicsArena( size_t capacityBytes )
 	InstallAllocator();
 
 	m_capacity = ( capacityBytes + kBlockAlign - 1 ) & ~( kBlockAlign - 1 );
-	m_base = static_cast<uint8_t*>( AlignedAlloc( m_capacity ) );
+	// Page size (4 KiB+) is a multiple of the 64-byte block alignment.
+	m_base = static_cast<uint8_t*>( ReservePages( m_capacity ) );
 	if ( m_base == nullptr )
 	{
-		Fatal( "out of memory reserving the arena" );
+		Fatal( "out of address space reserving the arena" );
 	}
-	std::memset( m_base, 0, m_capacity );
+	EnsureCommitted( kCommitChunk );
 
 	Header* h = GetHeader();
 	h->top = ( sizeof( Header ) + kBlockAlign - 1 ) & ~( kBlockAlign - 1 );
@@ -116,7 +139,21 @@ PhysicsArena::~PhysicsArena()
 	{
 		t_current = nullptr;
 	}
-	AlignedFree( m_base );
+	ReleasePages( m_base, m_capacity );
+}
+
+void PhysicsArena::EnsureCommitted( size_t bytes )
+{
+	if ( bytes <= m_committed )
+	{
+		return;
+	}
+	size_t target = std::min( m_capacity, ( bytes + kCommitChunk - 1 ) / kCommitChunk * kCommitChunk );
+	if ( CommitPages( m_base + m_committed, target - m_committed ) == false )
+	{
+		Fatal( "out of memory committing arena pages" );
+	}
+	m_committed = target;
 }
 
 PhysicsArena::Header* PhysicsArena::GetHeader() const
@@ -154,6 +191,7 @@ void* PhysicsArena::Allocate( size_t size, size_t alignment )
 		{
 			Fatal( "arena exhausted, raise SimConfig::physicsArenaMB" );
 		}
+		EnsureCommitted( size_t( blockOffset + blockSize ) );
 		h->top += blockSize;
 	}
 
@@ -214,6 +252,7 @@ void PhysicsArena::Restore( const uint8_t* data, size_t size )
 	{
 		Fatal( "restore size mismatch" );
 	}
+	EnsureCommitted( size );
 	std::memcpy( m_base, data, size );
 }
 
@@ -230,12 +269,8 @@ PhysicsArena::Scope::~Scope()
 
 void PhysicsArena::InstallAllocator()
 {
-	static bool installed = false;
-	if ( installed == false )
-	{
-		b3SetAllocator( BoxAlloc, BoxFree );
-		installed = true;
-	}
+	static std::once_flag once;
+	std::call_once( once, [] { b3SetAllocator( BoxAlloc, BoxFree ); } );
 }
 
 } // namespace cb

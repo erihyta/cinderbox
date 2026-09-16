@@ -58,9 +58,11 @@ public:
 private:
 	struct Header;
 	Header* GetHeader() const;
+	void EnsureCommitted( size_t bytes );
 
 	uint8_t* m_base = nullptr;
 	size_t m_capacity = 0;
+	size_t m_committed = 0;
 };
 
 } // namespace cb

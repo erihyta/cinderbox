@@ -2,6 +2,7 @@
 //
 //   cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]
 //             [--prop-lifetime SEC] [--props-per-player N] [--props-global N]
+//             [--record FILE] [--quiet]
 
 #include "game_server.h"
 
@@ -23,7 +24,8 @@ namespace
 void Usage()
 {
 	std::printf( "usage: cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]\n"
-				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n" );
+				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
+				 "                 [--record FILE] [--quiet]\n" );
 }
 
 bool ParseArgs( int argc, char** argv, cb::ServerOptions& o )
@@ -34,6 +36,16 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o )
 		if ( arg == "--help" || arg == "-h" )
 		{
 			return false;
+		}
+		if ( arg == "--quiet" )
+		{
+			o.verbose = false;
+			continue;
+		}
+		if ( arg == "--record" && i + 1 < argc )
+		{
+			o.recordPath = argv[++i];
+			continue;
 		}
 		if ( i + 1 >= argc )
 		{
@@ -100,6 +112,10 @@ int main( int argc, char** argv )
 	auto seconds = [&] { return std::chrono::duration<double>( Clock::now() - start ).count(); };
 
 	double nextStatus = 5.0;
+	double lastStatus = 0.0;
+	uint64_t lastBytesSent = 0;
+	uint64_t lastLate = 0;
+	uint64_t lastInputTicks = 0;
 	for ( ;; )
 	{
 		double now = seconds();
@@ -108,11 +124,21 @@ int main( int argc, char** argv )
 		if ( now >= nextStatus )
 		{
 			const auto& s = server.GetStats();
-			std::printf( "[server %6u] %d connected, %zu entities, %zu KB physics, late inputs %llu, snapshots sent %llu\n",
+			double avg = s.ticks ? s.tickMsTotal / double( s.ticks ) : 0.0;
+			double upKbps = double( s.bytesSent - lastBytesSent ) * 8.0 / 1000.0 / ( now - lastStatus );
+			uint64_t expected = s.inputTicks - lastInputTicks;
+			double latePercent = expected ? 100.0 * double( s.lateInputs - lastLate ) / double( expected ) : 0.0;
+			std::printf( "[server %6u] %d connected, %zu entities, %zu KB physics | tick %.2f ms avg %.2f max | "
+						 "late inputs %.2f%% | snapshots %llu | out %.0f kbit/s\n",
 						 server.Tick(), server.ConnectedClients(), server.Sim().Entities().size(),
-						 server.Sim().PhysicsBytesInUse() / 1024, (unsigned long long)s.lateInputs,
-						 (unsigned long long)s.snapshotsSent );
+						 server.Sim().PhysicsBytesInUse() / 1024, avg, s.tickMsMax, latePercent,
+						 (unsigned long long)s.snapshotsSent, upKbps );
 			std::fflush( stdout );
+			server.ResetTickTiming();
+			lastBytesSent = s.bytesSent;
+			lastLate = s.lateInputs;
+			lastInputTicks = s.inputTicks;
+			lastStatus = now;
 			nextStatus = now + 5.0;
 		}
 

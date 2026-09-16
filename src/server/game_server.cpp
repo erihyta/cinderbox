@@ -3,6 +3,7 @@
 #include "fingerprint.h"
 #include "util.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
@@ -33,6 +34,17 @@ bool GameServer::Start( const ServerOptions& options )
 	if ( options.recordHashes )
 	{
 		m_hashes.push_back( m_sim->ComputeHash() );
+	}
+
+	if ( options.recordPath.empty() == false )
+	{
+		if ( m_replay.Open( options.recordPath, BuildFingerprint(), options.config ) == false )
+		{
+			Log( "cannot write replay %s", options.recordPath.c_str() );
+			return false;
+		}
+		m_replay.AddChecksum( 0, m_sim->ComputeHash() );
+		Log( "recording to %s", options.recordPath.c_str() );
 	}
 
 	Log( "listening on port %u, %u Hz, fingerprint %016llx", options.port, options.config.tickRate,
@@ -136,7 +148,12 @@ void GameServer::Update( double now )
 	int ran = 0;
 	while ( now >= m_nextTickTime && ran < 8 )
 	{
+		auto start = std::chrono::steady_clock::now();
 		RunTick( now );
+		double ms = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
+		m_stats.ticks += 1;
+		m_stats.tickMsTotal += ms;
+		m_stats.tickMsMax = std::max( m_stats.tickMsMax, ms );
 		m_nextTickTime += dt;
 		++ran;
 	}
@@ -147,6 +164,8 @@ void GameServer::Update( double now )
 	}
 
 	m_transport.Flush();
+	m_stats.bytesSent = m_transport.BytesSent();
+	m_stats.bytesReceived = m_transport.BytesReceived();
 }
 
 void GameServer::HandleEvent( const NetEvent& ev, double now )
@@ -354,6 +373,7 @@ void GameServer::RunTick( double now )
 
 		if ( c.connected && c.welcomed )
 		{
+			m_stats.inputTicks += 1;
 			const Client::Slot& s = c.inputs[tick % kInputBuffer];
 			if ( s.tick == tick )
 			{
@@ -392,6 +412,7 @@ void GameServer::RunTick( double now )
 		}
 	}
 	m_lastInputs = frame.inputs;
+	m_replay.AddFrame( frame );
 
 	uint32_t stateTick = tick + 1;
 	uint64_t hash = 0;
@@ -401,6 +422,20 @@ void GameServer::RunTick( double now )
 		hash = m_sim->ComputeHash();
 		haveHash = true;
 		m_hashes.push_back( hash );
+	}
+
+	if ( m_replay.IsOpen() && m_options.replayChecksumInterval > 0 && stateTick % m_options.replayChecksumInterval == 0 )
+	{
+		if ( haveHash == false )
+		{
+			hash = m_sim->ComputeHash();
+			haveHash = true;
+		}
+		m_replay.AddChecksum( stateTick, hash );
+		if ( stateTick % ( 10 * m_options.replayChecksumInterval ) == 0 )
+		{
+			m_replay.Flush();
+		}
 	}
 
 	if ( m_options.checksumInterval > 0 && stateTick % m_options.checksumInterval == 0 )

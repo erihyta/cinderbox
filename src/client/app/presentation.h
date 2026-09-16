@@ -20,8 +20,6 @@
 namespace cb
 {
 
-class GameClient;
-
 namespace present
 {
 
@@ -98,6 +96,17 @@ struct DestroyEffect
 	float time = 0.0f;
 };
 
+// What to show: the client's predicted simulation, or a replay.
+struct SimView
+{
+	Simulation* sim = nullptr;
+	uint64_t resetGeneration = 0; // changes when the world was replaced (snap instead of smooth)
+	float tickAlpha = 0.0f;
+	bool rolledBack = false;
+	bool hasLocalPlayer = false;
+	PlayerSlot localSlot = 0;
+};
+
 // Draws an evaluated pose as one box per bone. `feet` is where the skeleton origin goes.
 void DrawSkeleton( Vector3 feet, Quaternion rotation, float scale, const anim::PoseEvaluator* eval, Color color );
 
@@ -107,7 +116,7 @@ public:
 	explicit Presentation( std::shared_ptr<const anim::AnimSet> animSet );
 
 	// Mirror the client's simulation into the presentation world and run the scripts.
-	void Update( GameClient& client, float frameSeconds );
+	void Update( const SimView& view, float frameSeconds );
 
 	void Render();
 
@@ -120,7 +129,7 @@ public:
 	}
 
 private:
-	void Sync( GameClient& client, float frameSeconds );
+	void Sync( const SimView& view, float frameSeconds );
 	flecs::entity CreateVisual( Simulation& sim, flecs::entity simEntity, uint32_t netId, bool withEffect );
 
 	flecs::world m_world;

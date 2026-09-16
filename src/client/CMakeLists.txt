@@ -7,6 +7,7 @@ add_executable(cb_client
 	app/anim_viewer.cpp
 	app/main.cpp
 	app/presentation.cpp
+	app/replay_viewer.cpp
 	app/scripts/player_animation.cpp
 	app/scripts/spawn_destroy_effects.cpp
 )

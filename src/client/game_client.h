@@ -25,6 +25,9 @@ struct ClientOptions
 	double reconnectIntervalSeconds = 1.0;
 	bool verbose = true;
 	std::string logName = "client";
+	// false: "lite" client that keeps pace with the server and sends input without simulating
+	// (cheap load for stress tests).
+	bool simulate = true;
 };
 
 enum class ClientState
@@ -56,6 +59,12 @@ public:
 		bool rolledBackLastFrame = false;
 		double tickError = 0.0; // target tick - current tick
 		double rateScale = 1.0;
+		double simMsLastFrame = 0.0; // reconcile + predicted ticks this frame
+		double simMsMax = 0.0;
+		uint64_t bytesSent = 0;
+		uint64_t bytesReceived = 0;
+		double stalledSeconds = 0.0; // time the prediction window was full and the clock was held
+		double playingSeconds = 0.0;
 	};
 
 	GameClient();
@@ -73,7 +82,18 @@ public:
 		return m_rejectReason;
 	}
 
-	// Null until the first Welcome.
+	// Tick the next Update will simulate (or, for a lite client, send input for).
+	uint32_t CurrentTick() const
+	{
+		return m_session ? m_session->CurrentTick() : m_liteTick;
+	}
+
+	void ResetMaxStats()
+	{
+		m_stats.simMsMax = 0.0;
+	}
+
+	// Null until the first Welcome, and always null for a lite client.
 	RollbackSession* Session()
 	{
 		return m_session.get();
@@ -110,6 +130,7 @@ private:
 	void HandleEvent( const net::NetEvent& ev, double now );
 	void HandleWelcome( net::MsgWelcome& msg, double now );
 	void Advance( double now, const InputSampler& sampleInput );
+	void OnServerTick( uint32_t tickAfter, double now );
 	void SendInputs();
 	void VerifyChecksums();
 	void BeginReconnect( double now );
@@ -131,6 +152,9 @@ private:
 
 	// Clock sync
 	uint32_t m_latestServerTick = 0;
+	uint32_t m_liteTick = 0;
+	double m_clockOffset = 0.0; // server tick ~= now * rate + offset, at the moment a message arrives
+	bool m_haveClock = false;
 	double m_latestFrameTime = 0.0;
 	double m_accumulator = 0.0;
 	double m_lastUpdate = -1.0;

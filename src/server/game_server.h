@@ -5,6 +5,7 @@
 // player's previous input.
 
 #include "protocol.h"
+#include "replay.h"
 #include "simulation.h"
 #include "transport.h"
 
@@ -27,6 +28,9 @@ struct ServerOptions
 	bool verbose = true;
 	// Keep a hash for every tick (tests only; costs a serialization per tick).
 	bool recordHashes = false;
+	// Write a replay of the whole session (empty = off).
+	std::string recordPath;
+	uint32_t replayChecksumInterval = 60;
 };
 
 class GameServer
@@ -57,14 +61,26 @@ public:
 	struct Stats
 	{
 		uint64_t lateInputs = 0; // ticks where a connected player's input had not arrived
+		uint64_t inputTicks = 0; // ticks where a connected player's input was expected
 		uint64_t snapshotsSent = 0; // welcomes: joins, reconnects and desync recoveries
 		uint64_t resyncRequests = 0;
 		uint64_t joins = 0;
 		uint64_t reconnects = 0;
+		uint64_t ticks = 0;
+		double tickMsTotal = 0.0; // simulation + snapshot + send work per tick
+		double tickMsMax = 0.0;
+		uint64_t bytesSent = 0;
+		uint64_t bytesReceived = 0;
 	};
 	const Stats& GetStats() const
 	{
 		return m_stats;
+	}
+	void ResetTickTiming()
+	{
+		m_stats.ticks = 0;
+		m_stats.tickMsTotal = 0.0;
+		m_stats.tickMsMax = 0.0;
 	}
 
 	// Test hook: drop a player's connection without telling them.
@@ -107,6 +123,7 @@ private:
 	std::unique_ptr<Simulation> m_sim;
 	net::Transport m_transport;
 	net::FrameCodec m_codec;
+	net::ReplayWriter m_replay;
 	Client m_clients[kMaxPlayers];
 	std::vector<PlayerEvent> m_pendingEvents;
 	net::InputArray m_lastInputs{};
