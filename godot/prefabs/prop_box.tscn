@@ -1,0 +1,12 @@
+[gd_scene load_steps=3 format=3]
+
+[sub_resource type="BoxMesh" id="Box"]
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(0.8, 0.6, 0.45, 1)
+roughness = 0.7
+
+[node name="PropBox" type="MeshInstance3D"]
+mesh = SubResource("Box")
+surface_material_override/0 = SubResource("Mat")
+metadata/tint_by_net_id = true

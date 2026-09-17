@@ -3,6 +3,10 @@
 
 include(FetchContent)
 
+# One C runtime for everything on the MSVC ABI (godot-cpp would otherwise switch later targets to
+# the static CRT through a cache variable).
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL" CACHE STRING "" FORCE)
+
 # Dependencies are downloaded and built inside each build directory (the FetchContent default,
 # <build>/_deps). Do not share this directory between presets: FetchContent also puts the
 # dependencies' build trees there, so different compilers would overwrite each other's objects.
@@ -10,7 +14,7 @@ include(FetchContent)
 # --- flecs v4.1.6 ---
 set(FLECS_STATIC ON CACHE BOOL "" FORCE)
 set(FLECS_SHARED OFF CACHE BOOL "" FORCE)
-set(FLECS_PIC OFF CACHE BOOL "" FORCE)
+set(FLECS_PIC ON CACHE BOOL "" FORCE)
 set(FLECS_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(flecs
 	GIT_REPOSITORY https://github.com/SanderMertens/flecs.git
@@ -77,6 +81,30 @@ if(CB_BUILD_CLIENT)
 		GIT_SHALLOW FALSE
 	)
 	FetchContent_MakeAvailable(raylib)
+endif()
+
+# --- godot-cpp 4.5 (API 4.5, runs in Godot 4.5 and later; the project targets 4.7) ---
+if(CB_BUILD_GODOT)
+	set(GODOTCPP_TARGET "${CB_GODOT_TARGET}" CACHE STRING "" FORCE)
+	set(GODOTCPP_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+	set(GODOTCPP_USE_STATIC_CPP OFF CACHE BOOL "" FORCE)
+	set(GODOTCPP_SYSTEM_HEADERS ON CACHE BOOL "" FORCE)
+	FetchContent_Declare(godotcpp
+		GIT_REPOSITORY https://github.com/godotengine/godot-cpp.git
+		GIT_TAG e83fd0904c13356ed1d4c3d09f8bb9132bdc6b77 # godot-4.5-stable
+		GIT_SHALLOW FALSE
+	)
+	FetchContent_MakeAvailable(godotcpp)
+
+	# Clang with the GNU driver targeting the MSVC ABI: godot-cpp only treats cl/clang-cl as MSVC.
+	# It needs the MSVC-specific method binding (member pointer sizes differ), and the GNU link
+	# flags it adds for clang (-lstdc++, --no-undefined) do not apply to lld-link.
+	if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC"
+	   AND NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+		target_compile_definitions(godot-cpp PUBLIC TYPED_METHOD_BIND NOMINMAX)
+		set_property(TARGET godot-cpp PROPERTY INTERFACE_LINK_OPTIONS "")
+		set_property(TARGET godot-cpp PROPERTY LINK_OPTIONS "")
+	endif()
 endif()
 
 # Box3D internal headers are needed by the physics snapshot shim (see src/sim/box3d_shim.c).

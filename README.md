@@ -1,7 +1,7 @@
 # Cinderbox
 
-A deterministic multiplayer third-person physics sandbox, built with flecs, Box3D, ENet,
-ozz-animation and raylib. See [DESIGN.md](DESIGN.md) for the architecture and decisions.
+A deterministic multiplayer third-person physics sandbox, built with flecs, Box3D, ENet and
+ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib debug viewer. See [DESIGN.md](DESIGN.md) for the architecture and decisions.
 
 ## Status
 
@@ -12,6 +12,7 @@ ozz-animation and raylib. See [DESIGN.md](DESIGN.md) for the architecture and de
 | M3: ozz animation, procedural box skeleton, locomotion blend, asset pipeline | done |
 | M4: replay tool, network simulator, bots, stress test | done |
 | M5: unreliable frame batches, automatic prediction window | done |
+| M6: Godot client (GDExtension), prefabs, VFX, HUD, mod packs, Windows export | done |
 
 ## Building
 
@@ -28,20 +29,72 @@ ctest --preset clang-release
 ```
 
 Presets: `clang-debug`, `clang-release`, `gcc-release`, `msvc-release` (run from a VS developer
-prompt), `unix-clang-release`, `unix-gcc-release`.
+prompt), `unix-clang-release`, `unix-gcc-release`, and `godot-export`.
+
+`clang-release` and `unix-clang-release` also build the Godot extension (`CB_BUILD_GODOT`, via
+godot-cpp) into `godot/bin/` as `template_debug`. `godot-export` builds only the `template_release`
+extension used by exported games. The other presets skip Godot, so they never overwrite that DLL.
 
 ## Playing
+
+The main client is the Godot project in `godot/` (Godot 4.7 or later). The raylib client `cb_client` is kept
+as a debug viewer; it runs the same simulation and also plays recordings and previews animations.
 
 ```sh
 # terminal 1
 cb_server --port 7777
-# terminal 2, 3, ...
+# terminal 2, 3, ...: the Godot client (after building clang-release)
+godot --path godot -- --host=127.0.0.1 --port=7777
+# or the raylib debug viewer
 cb_client --host 127.0.0.1 --port 7777
 ```
 
-Both executables are in `<build dir>/bin`. The server options are `--tick-rate`, `--seed`, `--substeps`,
-`--prop-lifetime`, `--props-per-player` and `--props-global`. The client options are `--rollback TICKS` (fixes the prediction window, which is otherwise chosen from latency),
+Open `godot/` in the Godot editor to edit scenes, then press Play. Godot client options, given after `--`:
+- `--host=H`, `--port=P`: the server address.
+- `--rollback=N`: fixes the prediction window.
+- `--animations=DIR`: a folder of converted clips.
+- `--mods=DIR`: an extra mod folder.
+- `--autoplay=SECONDS`, `--screenshot=FILE`: an unattended smoke test. The exit code is non-zero on a desync.
+
+### Exporting the Godot client (Windows)
+
+```powershell
+cmake --preset godot-export; cmake --build --preset godot-export
+powershell -ExecutionPolicy Bypass -File tools\export_client.ps1     # -> dist\Cinderbox\Cinderbox.exe
+```
+
+The export needs the Godot 4.7.2 export templates, installed either from the editor or extracted to
+`%LOCALAPPDATA%\cinderbox-build\tools\godot\templates`. Packs in `mods\` are copied to `dist\Cinderbox\mods`.
+
+`cb_server` and `cb_client` are in `<build dir>/bin`. The server options are `--tick-rate`, `--seed`, `--substeps`,
+`--prop-lifetime`, `--props-per-player` and `--props-global`. The `cb_client` options are `--rollback TICKS` (fixes the prediction window, which is otherwise chosen from latency),
 `--width`, `--height`, and `--autoplay SECONDS [--screenshot FILE]` for an unattended smoke test.
+
+## Mods
+
+Mods are cosmetic Godot resource packs (`.zip`). A mod can replace or add:
+- entity visuals in `prefabs/`;
+- effects in `vfx/`;
+- the HUD in `ui/`;
+- maps in `maps/` (reserved; see DESIGN.md);
+- shared files in `assets/`.
+
+Mods cannot contain code. The game refuses a pack that contains scripts, native libraries or files
+outside these folders, and one whose resources reference a script. Gameplay stays in the simulation
+and on the server, so a mod cannot change it.
+
+1. Create a Godot project under `mods_src/<name>`. Copy `mods_src/example_neon` as a starting point.
+2. Put your files at the same paths the game uses, for example `vfx/prop_spawn.tscn`.
+3. List them in the project's "Mod" export preset.
+4. Run `tools\pack_mod.ps1 -Project mods_src\<name>` to create `mods\<name>.zip`.
+
+The game loads packs from these places, in this order:
+1. `<game folder>/mods`
+2. `user://mods`
+3. each `--mods=DIR`
+
+Within a folder, packs load in alphabetical order, and a later pack overrides an earlier one.
+[mods_src/README.md](mods_src/README.md) lists the files the game looks up.
 
 ## Animations
 
@@ -51,6 +104,7 @@ placeholder rig with Mixamo joint names is used. To add your own clips:
 1. Put `idle`, `walk`, `run`, `jump_start`, `fall` and `land` `.glb` files in a folder.
 2. Run `tools\convert_animations.ps1 -Source <folder>` (or `tools/convert_animations.sh <folder>`).
 3. Preview them with `cb_client --anim-viewer`.
+4. For the Godot client, pass `--animations=<build dir or assets/anim>`. Clips are loaded from disk, not from the Godot pack.
 
 [assets/anim/README.md](assets/anim/README.md) has the Mixamo → Blender steps and the `anim.cfg`
 reference. `--assets DIR` selects a different asset folder, and `--procedural-anim` forces the placeholder.
@@ -124,12 +178,18 @@ src/anim/         ozz: procedural rig, asset loading (anim_set.*), pose evaluati
 src/net/          wire protocol, ENet wrapper, network simulator (netsim.*), replay files (replay.*)
 src/server/       authoritative GameServer (library) and cb_server
 src/tools/        cb_netsim, cb_replay, cb_bot
-src/client/       GameClient core (no rendering, also "lite" mode), bot brain, and the raylib app
-  app/              presentation flecs world, rendering, camera, HUD
+src/client/       GameClient core (no rendering, also "lite" mode), bot brain, and the raylib debug viewer
+  app/              raylib rendering, camera, HUD over the presentation mirror
   app/anim_viewer.* offline clip preview (--anim-viewer)
   app/replay_viewer.* recording playback (--replay)
-  app/scripts/      client scripts: spawn/destroy effects, player pose evaluation
+src/present/      engine-independent presentation, shared by Godot and raylib
+  frame.*           PresentationFrame: a copy of what the simulation shows at one tick
+  mirror.*          presentation flecs world: interpolation, error smoothing, visual events
+  scripts/          spawn/destroy effects, player pose evaluation
+src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals), CinderboxSkeleton
+godot/            Godot client project: boot (mod loader), game (input, camera, HUD, VFX), prefabs, vfx, ui
+mods_src/         mod projects (example_neon)
 tests/            determinism, rollback, gameplay, animation and loopback network tests
 scripts/          cross-compiler determinism check, stress test
-tools/            animation conversion (convert_animations.*), test glTF generator
+tools/            animation conversion (convert_animations.*), test glTF generator, pack_mod.ps1, export_client.ps1
 ```

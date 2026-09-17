@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3]
+
+[sub_resource type="SphereMesh" id="Sphere"]
+radius = 0.5
+height = 1.0
+radial_segments = 24
+rings = 12
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(0.5, 0.75, 0.8, 1)
+roughness = 0.5
+
+[node name="PropSphere" type="MeshInstance3D"]
+mesh = SubResource("Sphere")
+surface_material_override/0 = SubResource("Mat")
+metadata/tint_by_net_id = true

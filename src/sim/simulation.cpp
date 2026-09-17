@@ -127,32 +127,36 @@ struct Reader
 	}
 };
 
-// flecs (OS API init counter) and Box3D (static world table) are not safe to create or destroy
-// worlds from several threads at once. Bots and tests run many simulations on many threads.
-std::mutex& LifetimeMutex()
+} // namespace
+
+std::mutex& WorldLifetimeMutex()
 {
 	static std::mutex mutex;
 	return mutex;
 }
 
-flecs::world CreateWorldLocked()
+flecs::world CreateFlecsWorld()
 {
-	std::lock_guard<std::mutex> lock( LifetimeMutex() );
+	std::lock_guard<std::mutex> lock( WorldLifetimeMutex() );
 	return flecs::world();
 }
 
-} // namespace
+void ReleaseFlecsWorld( flecs::world& world )
+{
+	std::lock_guard<std::mutex> lock( WorldLifetimeMutex() );
+	world.release();
+}
 
 Simulation::Simulation( const SimConfig& config )
 	: m_config( config )
-	, m_world( CreateWorldLocked() )
+	, m_world( CreateFlecsWorld() )
 {
 	m_arena = std::make_unique<PhysicsArena>( size_t( config.physicsArenaMB ) * 1024 * 1024 );
 	m_globals.rngState = config.seed;
 
 	RegisterComponents();
 
-	std::unique_lock<std::mutex> lock( LifetimeMutex() );
+	std::unique_lock<std::mutex> lock( WorldLifetimeMutex() );
 	PhysicsArena::Scope scope( *m_arena );
 	b3WorldDef def = b3DefaultWorldDef();
 	def.gravity = kGravityVector;
@@ -167,12 +171,12 @@ Simulation::Simulation( const SimConfig& config )
 
 Simulation::~Simulation()
 {
-	std::lock_guard<std::mutex> lock( LifetimeMutex() );
 	{
+		std::lock_guard<std::mutex> lock( WorldLifetimeMutex() );
 		PhysicsArena::Scope scope( *m_arena );
 		b3DestroyWorld( m_physicsWorld );
 	}
-	m_world.release();
+	ReleaseFlecsWorld( m_world );
 }
 
 template <typename T>

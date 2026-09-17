@@ -1,0 +1,10 @@
+; Example Cinderbox mod: neon prop-spawn sparks and glowing box props.
+; Author content under the moddable folders (prefabs/, vfx/, ui/, maps/, assets/) using the same
+; paths as the game, then pack it: tools/pack_mod.ps1 -Project mods_src/example_neon
+
+config_version=5
+
+[application]
+
+config/name="Cinderbox mod: example_neon"
+config/features=PackedStringArray("4.7", "Forward Plus")

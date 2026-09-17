@@ -6,3 +6,15 @@ out/
 compile_commands.json
 *.replay
 CMakeUserPresets.json
+
+# Godot
+godot/.godot/
+godot/bin/
+*.cbr
+
+# Mods
+mods/
+mods_src/*/.godot/
+
+# Exported client
+dist/

@@ -1,0 +1,13 @@
+[gd_scene load_steps=3 format=3]
+
+[sub_resource type="BoxMesh" id="Box"]
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(0.46, 0.48, 0.53, 1)
+roughness = 0.9
+uv1_triplanar = true
+uv1_world_triplanar = true
+
+[node name="StaticBox" type="MeshInstance3D"]
+mesh = SubResource("Box")
+surface_material_override/0 = SubResource("Mat")

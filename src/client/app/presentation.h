@@ -1,100 +1,16 @@
 #pragma once
 
-// Client presentation: a second flecs world that mirrors the simulation for rendering.
-//
-// The simulation world is authoritative and gets rolled back; this world is never rolled back.
-// Each frame Sync() diffs the simulation against it: new NetIds spawn visuals, vanished NetIds
-// start a destroy effect, and poses are interpolated between the last two ticks. The small
-// "scripts" (flecs systems in scripts/) animate spawning, destroying and the player body.
+// raylib rendering of the client presentation (see src/present/mirror.h for the logic).
 
-#include "pose.h"
+#include "mirror.h"
 #include "simulation.h"
 
-#include "flecs.h"
 #include "raylib.h"
 
-#include <cstdint>
 #include <memory>
-#include <unordered_map>
 
-namespace cb
+namespace cb::present
 {
-
-namespace present
-{
-
-// Which simulation entity this visual follows. Removed when the sim entity disappears.
-struct SimLink
-{
-	uint32_t netId = 0;
-};
-
-enum class VisualKind : uint8_t
-{
-	Static,
-	Prop,
-	Player,
-};
-
-struct Visual
-{
-	VisualKind kind = VisualKind::Prop;
-	ShapeKind shape = ShapeKind::Box;
-	b3Vec3 halfExtents = { 0.5f, 0.5f, 0.5f };
-	Color color = WHITE;
-	PlayerSlot slot = 0;
-	bool isLocalPlayer = false;
-};
-
-// Poses at the two most recent ticks, for interpolation.
-struct TickPoses
-{
-	b3Vec3 prevPosition = {};
-	b3Quat prevRotation = { { 0, 0, 0 }, 1 };
-	b3Vec3 position = {};
-	b3Quat rotation = { { 0, 0, 0 }, 1 };
-	b3Vec3 velocity = {};
-};
-
-// Final pose used for drawing, written by Sync() and the scripts.
-struct RenderPose
-{
-	Vector3 position = {};
-	Quaternion rotation = { 0, 0, 0, 1 };
-	Vector3 correction = {}; // decaying visual offset that hides rollback corrections
-	float scale = 1.0f;
-};
-
-// Player animation: the simulation's AnimState at the last two ticks, and the ozz evaluator
-// that turns the interpolated state into a pose (see scripts/player_animation.cpp).
-struct PlayerAnim
-{
-	AnimState previous;
-	AnimState current;
-	std::shared_ptr<anim::PoseEvaluator> evaluator;
-};
-
-// World singletons read by the scripts.
-struct AnimLibrary
-{
-	std::shared_ptr<const anim::AnimSet> set;
-};
-
-struct FrameTiming
-{
-	float tickAlpha = 0.0f; // interpolation factor between the last two ticks
-};
-
-// Script state
-struct SpawnEffect
-{
-	float time = 0.0f;
-};
-
-struct DestroyEffect
-{
-	float time = 0.0f;
-};
 
 // What to show: the client's predicted simulation, or a replay.
 struct SimView
@@ -115,7 +31,7 @@ class Presentation
 public:
 	explicit Presentation( std::shared_ptr<const anim::AnimSet> animSet );
 
-	// Mirror the client's simulation into the presentation world and run the scripts.
+	// Capture the simulation, update the mirror and run the presentation scripts.
 	void Update( const SimView& view, float frameSeconds );
 
 	void Render();
@@ -123,28 +39,14 @@ public:
 	// Interpolated position of the local player's capsule center, if it exists.
 	bool LocalPlayerPosition( Vector3& out ) const;
 
-	flecs::world& World()
+	Mirror& GetMirror()
 	{
-		return m_world;
+		return m_mirror;
 	}
 
 private:
-	void Sync( const SimView& view, float frameSeconds );
-	flecs::entity CreateVisual( Simulation& sim, flecs::entity simEntity, uint32_t netId, bool withEffect );
-
-	flecs::world m_world;
-	std::shared_ptr<const anim::AnimSet> m_animSet;
-	struct Entry
-	{
-		flecs::entity_t entity;
-		uint64_t stamp;
-	};
-	std::unordered_map<uint32_t, Entry> m_byNetId; // presentation only, order never matters
-	uint64_t m_resetGeneration = UINT64_MAX;
-	uint32_t m_lastTick = 0;
-	flecs::entity m_localPlayer;
-	uint64_t m_syncStamp = 0;
+	Mirror m_mirror;
+	PresentationFrame m_frame;
 };
 
-} // namespace present
-} // namespace cb
+} // namespace cb::present

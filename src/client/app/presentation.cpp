@@ -1,6 +1,5 @@
 #include "presentation.h"
 
-#include "scripts/scripts.h"
 
 #include "raymath.h"
 #include "rlgl.h"
@@ -16,9 +15,6 @@ namespace cb::present
 namespace
 {
 
-constexpr float kCorrectionTime = 0.08f; // seconds for a rollback correction to fade
-constexpr float kMaxCorrection = 2.0f;	 // larger corrections snap
-constexpr float kFeetOffset = 1.38f;	 // capsule center to the ground while standing
 
 constexpr Color kPlayerColors[] = {
 	{ 230, 80, 70, 255 },  { 70, 140, 230, 255 }, { 90, 200, 110, 255 }, { 200, 120, 220, 255 },
@@ -204,10 +200,10 @@ void DrawSkeleton( Vector3 feet, Quaternion rotation, float scale, const anim::P
 namespace
 {
 
-void DrawPlayer( const RenderPose& pose, const Visual& v, const PlayerAnim* anim )
+void DrawPlayer( const RenderPose& pose, const Visual& v, const PlayerAnim* anim, Color color )
 {
 	Vector3 feet = { pose.position.x, pose.position.y - kFeetOffset, pose.position.z };
-	DrawSkeleton( feet, pose.rotation, pose.scale, anim ? anim->evaluator.get() : nullptr, v.color );
+	DrawSkeleton( feet, ToRay( pose.rotation ), pose.scale, anim ? anim->evaluator.get() : nullptr, color );
 
 	if ( v.isLocalPlayer )
 	{
@@ -219,237 +215,73 @@ void DrawPlayer( const RenderPose& pose, const Visual& v, const PlayerAnim* anim
 } // namespace
 
 Presentation::Presentation( std::shared_ptr<const anim::AnimSet> animSet )
-	: m_animSet( std::move( animSet ) )
+	: m_mirror( std::move( animSet ) )
 {
-	m_world.component<SimLink>();
-	m_world.component<Visual>();
-	m_world.component<TickPoses>();
-	m_world.component<RenderPose>();
-	m_world.component<PlayerAnim>();
-	m_world.set<AnimLibrary>( { m_animSet } );
-	m_world.set<FrameTiming>( {} );
-	m_world.component<SpawnEffect>();
-	m_world.component<DestroyEffect>();
-	scripts::RegisterAll( m_world );
-}
-
-flecs::entity Presentation::CreateVisual( Simulation& sim, flecs::entity simEntity, uint32_t netId, bool withEffect )
-{
-	Visual v;
-	const Shape& shape = simEntity.get<Shape>();
-	v.shape = shape.kind;
-	v.halfExtents = shape.halfExtents;
-
-	if ( simEntity.has<StaticGeometry>() )
-	{
-		v.kind = VisualKind::Static;
-		float shade = 0.35f + 0.1f * std::fmin( simEntity.get<Transform>().position.y, 3.0f );
-		unsigned char c = uint8_t( 255.0f * std::fmin( shade, 0.75f ) );
-		v.color = { c, c, uint8_t( c + 12 ), 255 };
-		withEffect = false;
-	}
-	else if ( const Character* ch = simEntity.try_get<Character>() )
-	{
-		v.kind = VisualKind::Player;
-		v.slot = ch->slot;
-		v.color = kPlayerColors[ch->slot % ( sizeof( kPlayerColors ) / sizeof( kPlayerColors[0] ) )];
-	}
-	else
-	{
-		v.kind = VisualKind::Prop;
-		v.color = PropColor( netId, shape.kind == ShapeKind::Sphere );
-	}
-	(void)sim;
-
-	flecs::entity e = m_world.entity();
-	e.set<SimLink>( { netId } );
-	e.set<Visual>( v );
-	e.set<TickPoses>( {} );
-	e.set<RenderPose>( {} );
-	if ( v.kind == VisualKind::Player )
-	{
-		const AnimState& state = simEntity.get<AnimState>();
-		e.set<PlayerAnim>( { state, state, nullptr } );
-	}
-	if ( withEffect )
-	{
-		e.set<SpawnEffect>( {} );
-		e.get_mut<RenderPose>().scale = 0.0f;
-	}
-	return e;
 }
 
 void Presentation::Update( const SimView& view, float frameSeconds )
-{
-	Sync( view, frameSeconds );
-	m_world.set<FrameTiming>( { view.tickAlpha } );
-	m_world.progress( frameSeconds );
-}
-
-void Presentation::Sync( const SimView& view, float frameSeconds )
 {
 	if ( view.sim == nullptr )
 	{
 		return;
 	}
-
-	Simulation& sim = *view.sim;
-	bool reset = view.resetGeneration != m_resetGeneration;
-	m_resetGeneration = view.resetGeneration;
-	uint32_t tick = sim.Tick();
-	bool advanced = tick != m_lastTick;
-	m_lastTick = tick;
-	bool rolledBack = view.rolledBack;
-	float alpha = view.tickAlpha;
-	float decay = std::exp( -frameSeconds / kCorrectionTime );
-	uint32_t localNetId = view.hasLocalPlayer ? sim.Globals().playerNetIds[view.localSlot] : 0;
-	++m_syncStamp;
-	m_localPlayer = flecs::entity();
-
-	for ( const Simulation::EntityRef& ref : sim.Entities() )
-	{
-		flecs::entity se( sim.World(), ref.entity );
-		const Transform& t = se.get<Transform>();
-
-		auto found = m_byNetId.find( ref.netId );
-		bool created = found == m_byNetId.end();
-		flecs::entity ve;
-		if ( created )
-		{
-			ve = CreateVisual( sim, se, ref.netId, reset == false );
-			found = m_byNetId.emplace( ref.netId, Entry{ ve.id(), 0 } ).first;
-		}
-		else
-		{
-			ve = flecs::entity( m_world, found->second.entity );
-		}
-		found->second.stamp = m_syncStamp;
-
-		Visual& visual = ve.get_mut<Visual>();
-		visual.isLocalPlayer = ref.netId == localNetId;
-		if ( visual.isLocalPlayer )
-		{
-			m_localPlayer = ve;
-		}
-		if ( visual.kind == VisualKind::Static && !created && !reset )
-		{
-			continue; // never moves
-		}
-
-		TickPoses& tp = ve.get_mut<TickPoses>();
-		RenderPose& rp = ve.get_mut<RenderPose>();
-		Vector3 before = rp.position;
-
-		if ( created || reset )
-		{
-			tp.prevPosition = t.position;
-			tp.prevRotation = t.rotation;
-			rp.correction = {};
-		}
-		else if ( advanced )
-		{
-			tp.prevPosition = tp.position;
-			tp.prevRotation = tp.rotation;
-		}
-		tp.position = t.position;
-		tp.rotation = t.rotation;
-		if ( const Velocity* vel = se.try_get<Velocity>() )
-		{
-			tp.velocity = vel->linear;
-		}
-
-		Vector3 interpolated = Vector3Lerp( ToRay( tp.prevPosition ), ToRay( tp.position ), alpha );
-		rp.rotation = QuaternionNlerp( ToRay( tp.prevRotation ), ToRay( tp.rotation ), alpha );
-
-		if ( rolledBack && !created && !reset )
-		{
-			// Whatever moved beyond normal motion this frame is a correction: fade it out.
-			Vector3 expected = Vector3Add( before, Vector3Scale( ToRay( tp.velocity ), frameSeconds ) );
-			Vector3 jump = Vector3Subtract( expected, Vector3Add( interpolated, rp.correction ) );
-			rp.correction = Vector3Add( rp.correction, jump );
-			if ( Vector3Length( rp.correction ) > kMaxCorrection )
-			{
-				rp.correction = {};
-			}
-		}
-		rp.correction = Vector3Scale( rp.correction, decay );
-		rp.position = Vector3Add( interpolated, rp.correction );
-
-		if ( const AnimState* state = se.try_get<AnimState>() )
-		{
-			PlayerAnim& pa = ve.get_mut<PlayerAnim>();
-			if ( created || reset )
-			{
-				pa.previous = *state;
-			}
-			else if ( advanced )
-			{
-				pa.previous = pa.current;
-			}
-			pa.current = *state;
-		}
-	}
-
-	// Anything the simulation no longer has plays its destroy effect (or vanishes on a reset).
-	for ( auto it = m_byNetId.begin(); it != m_byNetId.end(); )
-	{
-		if ( it->second.stamp == m_syncStamp )
-		{
-			++it;
-			continue;
-		}
-		flecs::entity ve( m_world, it->second.entity );
-		if ( ve.is_alive() )
-		{
-			if ( reset || ve.get<Visual>().kind == VisualKind::Static )
-			{
-				ve.destruct();
-			}
-			else
-			{
-				ve.add<DestroyEffect>();
-			}
-		}
-		it = m_byNetId.erase( it );
-	}
+	CaptureFrame( *view.sim, m_frame );
+	m_frame.resetGeneration = view.resetGeneration;
+	m_frame.rolledBack = view.rolledBack;
+	m_frame.localNetId = view.hasLocalPlayer ? view.sim->Globals().playerNetIds[view.localSlot] : 0;
+	m_mirror.Update( m_frame, view.tickAlpha, frameSeconds );
 }
 
 bool Presentation::LocalPlayerPosition( Vector3& out ) const
 {
-	if ( m_localPlayer.is_valid() == false || m_localPlayer.is_alive() == false )
+	RenderPose pose;
+	if ( m_mirror.LocalPlayer( pose ) == false )
 	{
 		return false;
 	}
-	out = m_localPlayer.get<RenderPose>().position;
+	out = ToRay( pose.position );
 	return true;
 }
 
 void Presentation::Render()
 {
-	m_world.each( [&]( flecs::entity e, const Visual& v, const RenderPose& pose ) {
+	m_mirror.ForEach( [&]( uint64_t, const Visual& v, const RenderPose& pose, const PlayerAnim* anim ) {
 		if ( pose.scale <= 0.001f )
 		{
 			return;
 		}
 
-		if ( v.kind == VisualKind::Player )
+		Color color;
+		switch ( v.kind )
 		{
-			DrawPlayer( pose, v, e.try_get<PlayerAnim>() );
-			return;
+			case VisualKind::Static:
+			{
+				float shade = 0.35f + 0.1f * std::fmin( pose.position.y, 3.0f );
+				unsigned char c = uint8_t( 255.0f * std::fmin( shade, 0.75f ) );
+				color = { c, c, uint8_t( c + 12 ), 255 };
+				break;
+			}
+			case VisualKind::Player:
+				color = kPlayerColors[v.slot % ( sizeof( kPlayerColors ) / sizeof( kPlayerColors[0] ) )];
+				DrawPlayer( pose, v, anim, color );
+				return;
+			case VisualKind::Prop:
+				color = PropColor( v.netId, v.shape == ShapeKind::Sphere );
+				break;
 		}
 
 		Vector3 size = { 2.0f * v.halfExtents.x * pose.scale, 2.0f * v.halfExtents.y * pose.scale,
 						 2.0f * v.halfExtents.z * pose.scale };
-		PushPose( pose.position, pose.rotation );
+		PushPose( ToRay( pose.position ), ToRay( pose.rotation ) );
 		switch ( v.shape )
 		{
 			case ShapeKind::Box:
-				DrawBlock( { 0, 0, 0 }, size, v.color );
+				DrawBlock( { 0, 0, 0 }, size, color );
 				break;
 			case ShapeKind::Sphere:
 			{
 				float r = v.halfExtents.x * pose.scale;
-				DrawSphereEx( { 0, 0, 0 }, r, 10, 12, v.color );
+				DrawSphereEx( { 0, 0, 0 }, r, 10, 12, color );
 				// A band so rolling is visible.
 				DrawCylinderWires( { 0, -0.05f * r, 0 }, r * 1.01f, r * 1.01f, 0.1f * r, 12, Fade( BLACK, 0.5f ) );
 				break;
@@ -458,7 +290,7 @@ void Presentation::Render()
 			{
 				float r = v.halfExtents.x * pose.scale;
 				float h = v.halfExtents.y * pose.scale;
-				DrawCapsule( { 0, -h, 0 }, { 0, h, 0 }, r, 10, 6, v.color );
+				DrawCapsule( { 0, -h, 0 }, { 0, h, 0 }, r, 10, 6, color );
 				break;
 			}
 		}
