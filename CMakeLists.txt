@@ -12,6 +12,12 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 option(CB_BUILD_TESTS "Build tests" ON)
 option(CB_BUILD_CLIENT "Build the raylib client" ON)
+option(CB_BUILD_GODOT "Build the Godot GDExtension client (writes into godot/bin; enable in one preset only)" OFF)
+set(CB_GODOT_TARGET "template_debug" CACHE STRING "godot-cpp target: template_debug (editor and debug exports) or template_release")
+
+# Everything may end up inside the Godot extension (a shared library). PIC does not change
+# floating-point semantics, so all builds use it to stay identical.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -21,11 +27,13 @@ include(Dependencies)
 
 add_subdirectory(src/sim)
 add_subdirectory(src/anim)
+add_subdirectory(src/present)
 add_subdirectory(src/net)
 add_subdirectory(src/server)
 add_subdirectory(src/tools)
-if(CB_BUILD_CLIENT)
-	add_subdirectory(src/client)
+add_subdirectory(src/client) # the core is always needed; the raylib app is optional inside
+if(CB_BUILD_GODOT)
+	add_subdirectory(src/godot)
 endif()
 
 if(CB_BUILD_TESTS)

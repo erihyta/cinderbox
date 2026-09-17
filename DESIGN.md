@@ -11,8 +11,9 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 | Physics | Box3D (erincatto/box3d), single-threaded, cross-platform determinism mode |
 | Animation | ozz-animation 0.17.0, **scalar (non-SIMD) build**; gltf2ozz for asset conversion |
 | Networking | ENet (UDP), dedicated headless server |
-| Client rendering / input | raylib |
-| Client "scripts" | Small C++ flecs systems and observers |
+| Client rendering / input | Godot 4.7 through a GDExtension (godot-cpp 4.5 API); raylib as a debug viewer |
+| Client "scripts" | Small C++ flecs systems and observers (engine-independent, `src/present`) |
+| Client content and mods | Godot scenes and resource packs (VFX, materials, meshes, UI) |
 | Build directory | `%LOCALAPPDATA%/cinderbox-build` (outside OneDrive) |
 
 ## Determinism
@@ -97,6 +98,65 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 - **Preview**: `cb_client --anim-viewer` shows every clip plus a live speed sweep.
 - **Client scripts**: the pose-evaluator creation observer, the per-frame pose evaluation system, and the spawn and destroy effects.
 
+## Godot client (M6)
+Godot is only the presentation layer. The simulation, prediction, rollback, networking and animation
+evaluation are the same C++ code the raylib client and the server use; none of it runs through Godot.
+
+```
+server ──ENet──> GameClient + Simulation (sim thread) ──PresentationFrame──> Mirror (main thread)
+                                                                              │ events, poses
+                                                            CinderboxClient ──┴─> prefab nodes, signals ──> game.gd (VFX, HUD)
+```
+
+- **Layers**:
+  - `src/present` holds what both clients share:
+    - `CaptureFrame` copies the visible state of one tick (a `PresentationFrame`);
+    - the `Mirror` flecs world interpolates between ticks, smooths rollback corrections and evaluates ozz poses;
+    - the mirror emits visual events (spawned, destroying, removed, jumped, landed).
+  - The raylib viewer and the Godot extension only draw the mirror.
+- **Simulation thread**: `CinderboxClient` runs `GameClient` on its own thread and publishes a frame whenever the tick, the state or a rollback changes.
+  - The main thread takes the newest frame and extrapolates the interpolation alpha from the time it was published.
+  - Input is latched: a jump or spawn press is kept until the simulation thread has consumed it.
+- **Floating-point environment**: Godot is free to change the FPU state of its own threads.
+  - The simulation thread resets MXCSR to the default (round-to-nearest, no denormals-as-zero) before doing anything.
+  - It computes the build fingerprint on that thread, so a wrong environment would be rejected by the server instead of desyncing. The HUD statistics report `fp_environment_ok`.
+  - The template_release extension (`-O3`, `Release`) produces the same fingerprint as the native builds.
+- **Nodes**:
+  - Each visual gets a node instantiated from `prefab_dir` (`res://prefabs`): `static_box`, `prop_box`, `prop_sphere`, `player`.
+  - Boxes are unit scenes scaled to the entity's size. Players are positioned at the feet.
+  - `CinderboxSkeleton` draws bone boxes with one MultiMesh and can drive a `Skeleton3D` by Mixamo bone name.
+    This makes an imported character mesh a drop-in replacement; an AnimationTree-to-ozz binding is future work.
+- **Signals**: `visual_spawned`, `visual_destroying`, `visual_removed`, `player_jumped`, `player_landed` and `connection_state_changed`.
+  - `game.gd` turns them into VFX: `res://vfx/<event>.tscn`, one-shot `GPUParticles3D`.
+  - The HUD is `res://ui/hud.tscn`.
+- **Non-deterministic physics**: Jolt is enabled for client-only effects. Simulation entities never get Godot physics bodies.
+- **Camera**: yaw uses the simulation convention internally; Godot yaw = simulation yaw − π (Godot cameras look down −Z).
+- **Build**:
+  - `CB_BUILD_GODOT` fetches godot-cpp (tag godot-4.5-stable, the newest API tag; Godot 4.7 loads it through `compatibility_minimum`).
+  - It builds `godot/bin/libcinderbox.<platform>.<target>.<arch>`.
+  - On Windows, everything uses the DLL C runtime. Clang with the GNU driver needs `TYPED_METHOD_BIND`.
+- **Export**:
+  - `godot/export_presets.cfg` has a "Windows" preset, and `tools/export_client.ps1` runs it with the 4.7.2 templates.
+  - An exported client is a 109 MB engine executable, a 3 MB extension and a 53 KB pack.
+
+## Mods (M6)
+- **Content**: mods are Godot resource packs (`.zip`, made with `--export-pack`) that replace or add files under `prefabs/`, `vfx/`, `ui/`, `maps/` and `assets/`.
+  - They hold Godot's runtime formats (binary scenes, compressed textures), so they are small and load fast.
+  - `boot.tscn` loads them before the game scene is opened. The load order is: the game folder, then `user://mods`, then `--mods=`, alphabetically within each.
+- **No code**: the loader refuses a pack that
+  - contains scripts, native libraries, extension files, nested packs or files outside those folders; or
+  - contains a resource mentioning a script type or GDExtension.
+
+  The pack tool removes the mod project's `project.binary` and caches, which would otherwise replace the game's own.
+- **Cosmetic only**: gameplay, collision and timing live in the simulation, so a mod cannot change them. The server needs no knowledge of mods.
+- **Maps**: `maps/` is reserved.
+  - The level is still built by the simulation (`level.cpp`).
+  - Moddable maps need a deterministic map format that the server loads and hashes into the join handshake, with a Godot scene for the visuals.
+- **Animations**: the Godot client currently loads ozz clips from a folder on disk (`--animations=`).
+  - Loading `.ozz` files from packs requires reading them through Godot's `FileAccess` into an ozz memory stream.
+  - This is future work, as are clips shipped by mods.
+  - Clips shipped by mods also need a skeleton compatibility check, and gameplay-relevant clips must stay the server's.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*`).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -151,6 +211,11 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 ### Possible next steps
 - **Less download at high latency**: skip frames that are probably still in flight and resend them only after a timeout. This trades bandwidth for a slower recovery from loss.
 - **Camera**: add camera collision in the client (it can currently clip into walls).
+- **Godot**:
+  - an AnimationTree-to-ozz binding;
+  - ozz clips loaded from packs;
+  - a shared map format;
+  - Linux and macOS exports (the extension builds with `unix-clang-release`; not yet tested).
 
 ## Milestones (check-in after each)
 1. **M1** (done): build system, deterministic sim core (flecs + Box3D + mover + props), snapshot/restore, rollback session, determinism tests (Clang, GCC and MSVC verified identical).
@@ -158,3 +223,4 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 3. **M3** (done): ozz integration, procedural box skeleton, locomotion blend, glTF pipeline (script and docs, tested with generated Blender-style glTF files), animation viewer.
 4. **M4** (done): replay recording, verification and playback, network simulator, bots (full and lite), stress-test script, lossy integration test, 64-player measurements.
 5. **M5** (done): unreliable acknowledged frame batches, per-field input encoding, automatic prediction window, realistic and chaotic bots, re-measured.
+6. **M6** (done): engine-independent presentation layer (`src/present`), Godot GDExtension client on its own simulation thread, prefab/VFX/HUD scenes, mod packs with a no-code validator and an example mod, Windows export. Verified: same fingerprint as native builds (editor and exported release), no desyncs with bots.

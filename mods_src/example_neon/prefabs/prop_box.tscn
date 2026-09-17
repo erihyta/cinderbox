@@ -1,0 +1,13 @@
+[gd_scene load_steps=3 format=3]
+
+[sub_resource type="BoxMesh" id="Box"]
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(0.1, 0.1, 0.12, 1)
+emission_enabled = true
+emission = Color(0, 1, 0.85, 1)
+emission_energy_multiplier = 2.5
+
+[node name="NeonBox" type="MeshInstance3D"]
+mesh = SubResource("Box")
+surface_material_override/0 = SubResource("Mat")
