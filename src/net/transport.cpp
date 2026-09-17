@@ -13,10 +13,11 @@ namespace cb::net
 namespace
 {
 
-// Detect a dead connection within a few seconds instead of ENet's default ~30 s.
-constexpr enet_uint32 kTimeoutLimit = 8;
-constexpr enet_uint32 kTimeoutMinMs = 1000;
-constexpr enet_uint32 kTimeoutMaxMs = 3000;
+// Detect a dead connection within 2-6 s instead of ENet's default ~30 s. Time already freezes on
+// the client as soon as frames stop arriving (the prediction window fills), so this can be patient.
+constexpr enet_uint32 kTimeoutLimit = 32;
+constexpr enet_uint32 kTimeoutMinMs = 2000;
+constexpr enet_uint32 kTimeoutMaxMs = 6000;
 
 struct EnetLibrary
 {
@@ -198,7 +199,10 @@ void Transport::Send( PeerId peer, uint8_t channel, const std::vector<uint8_t>& 
 	{
 		return;
 	}
-	ENetPacket* packet = enet_packet_create( data.data(), data.size(), reliable ? ENET_PACKET_FLAG_RELIABLE : 0 );
+	// Without UNRELIABLE_FRAGMENT, ENet sends large "unreliable" packets as reliable fragments,
+	// which would bring back head-of-line blocking.
+	enet_uint32 flags = reliable ? ENET_PACKET_FLAG_RELIABLE : ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT;
+	ENetPacket* packet = enet_packet_create( data.data(), data.size(), flags );
 	if ( enet_peer_send( p, channel, packet ) != 0 )
 	{
 		enet_packet_destroy( packet );

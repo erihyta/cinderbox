@@ -12,6 +12,18 @@ constexpr uint32_t kMaxBlobBytes = 64u * 1024u * 1024u;
 constexpr size_t kMaxReasonLength = 256;
 constexpr uint8_t kMaxInputsPerPacket = 32;
 
+// Per-player field mask inside a frame.
+enum InputField : uint8_t
+{
+	FieldMoveRight = 1 << 0,
+	FieldMoveForward = 1 << 1,
+	FieldYaw = 1 << 2,		// absolute, u16
+	FieldYawDelta = 1 << 3, // relative, i8
+	FieldButtons = 1 << 4,
+	FieldReserved = 1 << 5,
+	FieldAll = ( 1 << 6 ) - 1,
+};
+
 void Begin( std::vector<uint8_t>& out, MsgType type )
 {
 	out.clear();
@@ -81,7 +93,7 @@ bool ReadInputs( ByteReader& r, InputArray& inputs )
 std::optional<MsgType> ReadType( ByteReader& r )
 {
 	uint8_t t = r.Read<uint8_t>();
-	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::Input ) )
+	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::FrameBatch ) )
 	{
 		return std::nullopt;
 	}
@@ -192,6 +204,7 @@ void Encode( const MsgInput& m, std::vector<uint8_t>& out )
 	ByteWriter w( out );
 	size_t n = std::min<size_t>( m.inputs.size(), kMaxInputsPerPacket );
 	w.Write( m.newestTick );
+	w.Write( m.ackTick );
 	w.Write( uint8_t( n ) );
 	w.WriteBytes( m.inputs.data() + ( m.inputs.size() - n ), n * sizeof( PlayerInput ) );
 }
@@ -199,6 +212,7 @@ void Encode( const MsgInput& m, std::vector<uint8_t>& out )
 bool Decode( ByteReader& r, MsgInput& m )
 {
 	m.newestTick = r.Read<uint32_t>();
+	m.ackTick = r.Read<uint32_t>();
 	uint8_t n = r.Read<uint8_t>();
 	if ( r.Ok() == false || n > kMaxInputsPerPacket || n > m.newestTick + 1 )
 	{
@@ -220,6 +234,16 @@ void FrameCodec::Encode( const InputFrame& frame, std::vector<uint8_t>& out )
 {
 	Begin( out, MsgType::Frame );
 	ByteWriter w( out );
+	EncodeBody( frame, w );
+}
+
+bool FrameCodec::Decode( ByteReader& r, InputFrame& frame )
+{
+	return DecodeBody( r, frame );
+}
+
+void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
+{
 	w.Write( frame.tick );
 	w.Write( uint8_t( frame.events.size() ) );
 	for ( const PlayerEvent& e : frame.events )
@@ -241,13 +265,39 @@ void FrameCodec::Encode( const InputFrame& frame, std::vector<uint8_t>& out )
 	{
 		if ( changed & ( uint64_t( 1 ) << i ) )
 		{
-			w.Write( frame.inputs[i] );
+			// Only the fields that changed; small camera turns as a one-byte delta.
+			const PlayerInput& now = frame.inputs[i];
+			const PlayerInput& before = m_previous[i];
+			int yawDelta = int16_t( uint16_t( now.cameraYaw - before.cameraYaw ) );
+			uint8_t fields = 0;
+			fields |= now.moveRight != before.moveRight ? FieldMoveRight : 0;
+			fields |= now.moveForward != before.moveForward ? FieldMoveForward : 0;
+			if ( now.cameraYaw != before.cameraYaw )
+			{
+				fields |= ( yawDelta >= -128 && yawDelta <= 127 ) ? FieldYawDelta : FieldYaw;
+			}
+			fields |= now.buttons != before.buttons ? FieldButtons : 0;
+			fields |= now.reserved != before.reserved ? FieldReserved : 0;
+
+			w.Write( fields );
+			if ( fields & FieldMoveRight )
+				w.Write( now.moveRight );
+			if ( fields & FieldMoveForward )
+				w.Write( now.moveForward );
+			if ( fields & FieldYaw )
+				w.Write( now.cameraYaw );
+			if ( fields & FieldYawDelta )
+				w.Write( int8_t( yawDelta ) );
+			if ( fields & FieldButtons )
+				w.Write( now.buttons );
+			if ( fields & FieldReserved )
+				w.Write( now.reserved );
 		}
 	}
 	m_previous = frame.inputs;
 }
 
-bool FrameCodec::Decode( ByteReader& r, InputFrame& frame )
+bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame )
 {
 	frame.tick = r.Read<uint32_t>();
 	uint8_t eventCount = r.Read<uint8_t>();
@@ -267,16 +317,72 @@ bool FrameCodec::Decode( ByteReader& r, InputFrame& frame )
 	frame.inputs = m_previous;
 	for ( int i = 0; i < kMaxPlayers && r.Ok(); ++i )
 	{
-		if ( changed & ( uint64_t( 1 ) << i ) )
+		if ( ( changed & ( uint64_t( 1 ) << i ) ) == 0 )
 		{
-			frame.inputs[i] = r.Read<PlayerInput>();
+			continue;
 		}
+		PlayerInput& in = frame.inputs[i];
+		uint8_t fields = r.Read<uint8_t>();
+		if ( fields == 0 || ( fields & ~FieldAll ) != 0 || ( ( fields & FieldYaw ) && ( fields & FieldYawDelta ) ) )
+		{
+			return false;
+		}
+		if ( fields & FieldMoveRight )
+			in.moveRight = r.Read<int8_t>();
+		if ( fields & FieldMoveForward )
+			in.moveForward = r.Read<int8_t>();
+		if ( fields & FieldYaw )
+			in.cameraYaw = r.Read<uint16_t>();
+		if ( fields & FieldYawDelta )
+			in.cameraYaw = uint16_t( in.cameraYaw + uint16_t( int16_t( r.Read<int8_t>() ) ) );
+		if ( fields & FieldButtons )
+			in.buttons = r.Read<uint8_t>();
+		if ( fields & FieldReserved )
+			in.reserved = r.Read<uint8_t>();
 	}
 	if ( r.Ok() == false )
 	{
 		return false;
 	}
 	m_previous = frame.inputs;
+	return true;
+}
+
+void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, size_t count, std::vector<uint8_t>& out )
+{
+	Begin( out, MsgType::FrameBatch );
+	ByteWriter w( out );
+	count = std::min( count, kMaxBatchFrames );
+	w.Write( count > 0 ? frames[0]->tick : uint32_t( 0 ) );
+	w.Write( uint8_t( count ) );
+	FrameCodec codec;
+	codec.Reset( base );
+	for ( size_t i = 0; i < count; ++i )
+	{
+		codec.EncodeBody( *frames[i], w );
+	}
+}
+
+bool ReadFrameBatchHeader( ByteReader& r, uint32_t& firstTick, uint32_t& count )
+{
+	firstTick = r.Read<uint32_t>();
+	count = r.Read<uint8_t>();
+	return r.Ok() && count > 0 && count <= kMaxBatchFrames;
+}
+
+bool ReadFrameBatchBody( ByteReader& r, const InputArray& base, uint32_t firstTick, uint32_t count,
+						 std::vector<InputFrame>& out )
+{
+	FrameCodec codec;
+	codec.Reset( base );
+	out.resize( count );
+	for ( uint32_t i = 0; i < count; ++i )
+	{
+		if ( codec.DecodeBody( r, out[i] ) == false || out[i].tick != firstTick + i )
+		{
+			return false;
+		}
+	}
 	return true;
 }
 

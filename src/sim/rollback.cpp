@@ -13,14 +13,16 @@ constexpr uint32_t kNone = UINT32_MAX;
 constexpr size_t kConfirmedHashHistory = 512;
 } // namespace
 
-RollbackSession::RollbackSession( const SimConfig& config, PlayerSlot localSlot, uint32_t maxRollbackTicks )
+RollbackSession::RollbackSession( const SimConfig& config, PlayerSlot localSlot, uint32_t maxRollbackTicks,
+								  uint32_t maxRollbackCap )
 	: m_config( config )
 	, m_localSlot( localSlot )
 	, m_maxRollback( std::max<uint32_t>( maxRollbackTicks, 1 ) )
+	, m_maxRollbackCap( std::max( maxRollbackCap, m_maxRollback ) )
 {
 	m_sim = std::make_unique<Simulation>( config );
-	// The window, plus the same again of history for hash checks, plus slack.
-	m_records.resize( 2 * size_t( m_maxRollback ) + 4 );
+	// The largest window, plus the same again of history for finalizing hashes, plus slack.
+	m_records.resize( 2 * size_t( m_maxRollbackCap ) + 4 );
 	m_confirmedHashes.resize( kConfirmedHashHistory );
 
 	m_finalized = m_sim->Tick();
@@ -54,6 +56,11 @@ void RollbackSession::Reset( const Snapshot& snapshot, const std::array<PlayerIn
 	m_rollbackFrom = kNone;
 	m_finalized = snapshot.tick;
 	m_confirmedHashes[m_finalized % kConfirmedHashHistory] = { m_finalized, snapshot.hash };
+}
+
+void RollbackSession::SetMaxRollback( uint32_t ticks )
+{
+	m_maxRollback = std::clamp<uint32_t>( ticks, 1, m_maxRollbackCap );
 }
 
 RollbackSession::TickRecord& RollbackSession::Record( uint32_t tick )

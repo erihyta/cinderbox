@@ -21,6 +21,11 @@ bool GameServer::Start( const ServerOptions& options )
 {
 	m_options = options;
 	m_sim = std::make_unique<Simulation>( options.config );
+	m_history.assign( kFrameHistory, InputFrame{} );
+	for ( InputFrame& f : m_history )
+	{
+		f.tick = UINT32_MAX;
+	}
 
 	if ( m_transport.Listen( options.port, options.maxClients ) == false )
 	{
@@ -310,6 +315,8 @@ void GameServer::HandleHello( PeerId peer, const MsgHello& hello, double now )
 void GameServer::HandleInput( Client& client, const MsgInput& msg )
 {
 	uint32_t current = m_sim->Tick();
+	// Acknowledgements only move forward (input packets can arrive out of order).
+	client.ackTick = std::max( client.ackTick, std::min( msg.ackTick, current ) );
 	uint32_t count = uint32_t( msg.inputs.size() );
 	uint32_t first = msg.newestTick + 1 - count;
 	for ( uint32_t i = 0; i < count; ++i )
@@ -352,6 +359,8 @@ void GameServer::SendSnapshots()
 
 		c.needsSnapshot = false;
 		c.welcomed = true;
+		// The welcome carries the inputs of snapshotTick - 1, so frames start at snapshotTick.
+		c.ackTick = m_sim->Tick();
 		m_stats.snapshotsSent += 1;
 	}
 }
@@ -403,15 +412,9 @@ void GameServer::RunTick( double now )
 
 	m_sim->Step( frame );
 
-	m_codec.Encode( frame, m_buffer );
-	for ( const Client& c : m_clients )
-	{
-		if ( c.used && c.connected && c.welcomed )
-		{
-			m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
-		}
-	}
+	m_history[tick % kFrameHistory] = frame;
 	m_lastInputs = frame.inputs;
+	SendFrames( now );
 	m_replay.AddFrame( frame );
 
 	uint32_t stateTick = tick + 1;
@@ -452,6 +455,77 @@ void GameServer::RunTick( double now )
 				m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
 			}
 		}
+	}
+}
+
+const InputFrame* GameServer::HistoryFrame( uint32_t tick ) const
+{
+	const InputFrame& f = m_history[tick % kFrameHistory];
+	return f.tick == tick ? &f : nullptr;
+}
+
+// Every client gets all frames from its acknowledgement up to the newest, unreliably, every tick.
+// Clients that acknowledge the same tick share one encoded batch.
+void GameServer::SendFrames( double now )
+{
+	uint32_t newest = m_sim->Tick() - 1;
+	struct Encoded
+	{
+		uint32_t ack;
+		size_t frames;
+		std::vector<uint8_t> bytes;
+	};
+	std::vector<Encoded> cache;
+	std::vector<const InputFrame*> frames;
+
+	for ( Client& c : m_clients )
+	{
+		if ( c.used == false || c.connected == false || c.welcomed == false || c.ackTick > newest )
+		{
+			continue;
+		}
+
+		if ( newest - c.ackTick >= kFrameHistory - 1 )
+		{
+			// Too far behind to catch up with frames; send the state instead.
+			if ( c.needsSnapshot == false )
+			{
+				Log( "slot %u is %u ticks behind, resending state", c.slot, newest - c.ackTick );
+				m_stats.ackTooOld += 1;
+				c.needsSnapshot = true;
+				c.lastResyncAt = now;
+			}
+			continue;
+		}
+
+		Encoded* hit = nullptr;
+		for ( Encoded& e : cache )
+		{
+			if ( e.ack == c.ackTick )
+			{
+				hit = &e;
+				break;
+			}
+		}
+		if ( hit == nullptr )
+		{
+			frames.clear();
+			for ( uint32_t t = c.ackTick; t <= newest && frames.size() < kMaxBatchFrames; ++t )
+			{
+				frames.push_back( HistoryFrame( t ) );
+			}
+			InputArray base{};
+			if ( c.ackTick > 0 )
+			{
+				base = HistoryFrame( c.ackTick - 1 ) ? HistoryFrame( c.ackTick - 1 )->inputs : m_lastInputs;
+			}
+			cache.push_back( { c.ackTick, frames.size(), {} } );
+			hit = &cache.back();
+			EncodeFrameBatch( base, frames.data(), frames.size(), hit->bytes );
+		}
+		m_transport.Send( c.peer, ChannelInput, hit->bytes, false );
+		m_stats.batchesSent += 1;
+		m_stats.framesSent += hit->frames;
 	}
 }
 

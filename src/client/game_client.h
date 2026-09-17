@@ -19,7 +19,9 @@ struct ClientOptions
 {
 	std::string host = "127.0.0.1";
 	uint16_t port = net::kDefaultPort;
-	uint32_t maxRollbackTicks = 8;
+	// The prediction window follows the measured latency within [min, max]. Equal values fix it.
+	uint32_t minRollbackTicks = 8;
+	uint32_t maxRollbackTicks = 20;
 	uint32_t inputRedundancy = 12; // each input packet repeats this many recent ticks
 	uint32_t leadMarginTicks = 2;  // extra lead over the server beyond the measured latency
 	double reconnectIntervalSeconds = 1.0;
@@ -63,6 +65,9 @@ public:
 		double simMsMax = 0.0;
 		uint64_t bytesSent = 0;
 		uint64_t bytesReceived = 0;
+		uint32_t rollbackWindow = 0;
+		uint64_t batchesReceived = 0;
+		uint64_t batchesIgnored = 0; // stale, or older than the frames we still know
 		double stalledSeconds = 0.0; // time the prediction window was full and the clock was held
 		double playingSeconds = 0.0;
 	};
@@ -131,6 +136,9 @@ private:
 	void HandleWelcome( net::MsgWelcome& msg, double now );
 	void Advance( double now, const InputSampler& sampleInput );
 	void OnServerTick( uint32_t tickAfter, double now );
+	void HandleFrameBatch( net::ByteReader& r, double now );
+	void UpdateRollbackWindow( double rttTicks, double frameDt );
+	uint32_t AckTick() const;
 	void SendInputs();
 	void VerifyChecksums();
 	void BeginReconnect( double now );
@@ -138,7 +146,16 @@ private:
 
 	ClientOptions m_options;
 	net::Transport m_transport;
-	net::FrameCodec m_codec;
+	// Inputs of recent authoritative frames (delta bases for batches), indexed by tick % size.
+	struct KnownInputs
+	{
+		uint32_t tick = UINT32_MAX;
+		net::InputArray inputs{};
+	};
+	std::vector<KnownInputs> m_knownInputs;
+	std::vector<InputFrame> m_batchScratch;
+	uint32_t m_liteConfirmed = 0;
+	double m_windowShrinkTimer = 0.0;
 	std::unique_ptr<RollbackSession> m_session;
 	SimConfig m_config;
 

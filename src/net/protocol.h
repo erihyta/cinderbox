@@ -2,9 +2,11 @@
 
 // Wire protocol between server and clients.
 //
-// Channel 0 (reliable, ordered) carries everything the server sends, so a client always sees
-// Welcome/Resync and the input frames that follow them in the right order.
-// Channel 1 (unreliable) carries client inputs, each packet repeating the last few ticks.
+// Channel 0 (reliable, ordered): Hello, Welcome, Reject, Checksum, ResyncRequest.
+// Channel 1 (unreliable), both directions:
+//   client -> server: Input, repeating the last few ticks and acknowledging received frames;
+//   server -> client: FrameBatch, every frame from the client's acknowledgement to the newest.
+// Nothing waits for a retransmission: a lost batch is simply covered by the next one.
 
 #include "bytes.h"
 #include "types.h"
@@ -18,7 +20,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 1;
+inline constexpr uint32_t kProtocolVersion = 2;
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t
@@ -37,6 +39,7 @@ enum class MsgType : uint8_t
 	Checksum = 5,
 	ResyncRequest = 6,
 	Input = 7,
+	FrameBatch = 8,
 };
 
 using InputArray = std::array<PlayerInput, kMaxPlayers>;
@@ -84,6 +87,7 @@ struct MsgResyncRequest
 struct MsgInput
 {
 	uint32_t newestTick = 0;
+	uint32_t ackTick = 0; // the client has every authoritative frame with tick < ackTick
 	std::vector<PlayerInput> inputs; // oldest first
 };
 
@@ -116,6 +120,10 @@ public:
 	void Encode( const InputFrame& frame, std::vector<uint8_t>& out );
 	bool Decode( ByteReader& r, InputFrame& frame );
 
+	// Frame without the message type byte (used inside batches).
+	void EncodeBody( const InputFrame& frame, ByteWriter& w );
+	bool DecodeBody( ByteReader& r, InputFrame& frame );
+
 	const InputArray& Previous() const
 	{
 		return m_previous;
@@ -124,6 +132,17 @@ public:
 private:
 	InputArray m_previous{};
 };
+
+// S -> C frame batch: `frames` must be consecutive; `base` holds the inputs of the frame before
+// the first one (the delta base). Layout: type, u32 firstTick, u8 count, frame bodies.
+inline constexpr size_t kMaxBatchFrames = 64;
+void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, size_t count, std::vector<uint8_t>& out );
+
+// First step of decoding: which ticks does the batch cover?
+bool ReadFrameBatchHeader( ByteReader& r, uint32_t& firstTick, uint32_t& count );
+// Second step, once the caller has found the inputs of firstTick - 1.
+bool ReadFrameBatchBody( ByteReader& r, const InputArray& base, uint32_t firstTick, uint32_t count,
+						 std::vector<InputFrame>& out );
 
 // Canonical input sanitation, applied by the server before an input enters a frame.
 inline PlayerInput SanitizeInput( PlayerInput in )

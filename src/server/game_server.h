@@ -63,6 +63,9 @@ public:
 		uint64_t lateInputs = 0; // ticks where a connected player's input had not arrived
 		uint64_t inputTicks = 0; // ticks where a connected player's input was expected
 		uint64_t snapshotsSent = 0; // welcomes: joins, reconnects and desync recoveries
+		uint64_t batchesSent = 0;
+		uint64_t framesSent = 0;	 // frames inside batches (resends included)
+		uint64_t ackTooOld = 0;		 // clients that fell out of the frame history and got a snapshot
 		uint64_t resyncRequests = 0;
 		uint64_t joins = 0;
 		uint64_t reconnects = 0;
@@ -88,6 +91,7 @@ public:
 
 private:
 	static constexpr uint32_t kInputBuffer = 128;
+	static constexpr uint32_t kFrameHistory = 256; // frames kept for resending
 
 	struct Client
 	{
@@ -101,6 +105,7 @@ private:
 		bool needsSnapshot = false; // send Welcome/Resync before the next tick
 		bool welcomed = false;		// has received a Welcome for the current connection
 		bool inWorld = false;		// Join event has been issued
+		uint32_t ackTick = 0;		// the client has every frame with tick < ackTick
 		PlayerInput lastInput{};
 		struct Slot
 		{
@@ -117,13 +122,15 @@ private:
 	void Reject( net::PeerId peer, const std::string& reason );
 	void RunTick( double now );
 	void SendSnapshots();
+	void SendFrames( double now );
+	const InputFrame* HistoryFrame( uint32_t tick ) const;
 	void Log( const char* fmt, ... ) const;
 
 	ServerOptions m_options;
 	std::unique_ptr<Simulation> m_sim;
 	net::Transport m_transport;
-	net::FrameCodec m_codec;
 	net::ReplayWriter m_replay;
+	std::vector<InputFrame> m_history; // indexed by tick % kFrameHistory
 	Client m_clients[kMaxPlayers];
 	std::vector<PlayerEvent> m_pendingEvents;
 	net::InputArray m_lastInputs{};

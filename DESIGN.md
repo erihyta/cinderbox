@@ -26,31 +26,35 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 ## Netcode: authoritative server + client rollback
 - **Tick rate** is configurable (default 60 Hz). The server announces it when a client joins.
 - **Client**: sends its own inputs each tick and immediately simulates the full world, predicting remote players by repeating their last input. When the server's authoritative input frame for tick N differs from the prediction, the client restores the snapshot at N and re-simulates to the present, at most once per rendered frame.
-- **Rollback window**: 8 ticks. Beyond that, the client stops predicting and waits.
+- **Rollback window**: chosen automatically from latency, between 8 and 20 ticks (M5). Beyond the window, the client stops predicting and waits.
 - **Server**: never rolls back. It waits briefly for each player's input. If an input is late, it reuses that player's last input and broadcasts the inputs it actually used.
 - **Server → client**: authoritative input frames plus periodic state checksums. A full snapshot is sent on join, and again when a checksum mismatch shows a desync.
 - **Connection loss**: the client freezes its own time, reconnects, and resynchronizes from a snapshot.
 - **Target**: 32+ players, so re-simulation must be cheap. This is verified with the bot stress test.
   - M1 measurement (Clang Release, 64 players, 277 props): 0.55 ms per step, 0.12 ms per save, 0.09 ms per load, about 2.1 MB per snapshot. A worst-case 8-tick rollback costs about 5.5 ms.
 
-### Protocol (M2)
-- **Channel 0** (reliable, ordered) carries all server messages, so a Welcome and the frames after it always arrive in order:
-  - `Welcome`: config, slot, reconnect token, a portable snapshot of the state before tick S, and the inputs of frame S-1.
-  - `Frame`: delta-coded against the previous frame.
-  - `Checksum`: sent every 30 ticks.
-  - `Reject`.
-- **Channel 1** (unreliable) carries `Input`. Each packet repeats the last 12 ticks of input, so losing a packet costs nothing.
-- **Handshake**: the client sends `Hello` with the protocol version, the build fingerprint (hash of a short scripted simulation run) and an optional reconnect token. Mismatched builds are rejected.
+### Protocol (version 2, M5)
+- **Channel 0** (reliable, ordered): `Hello`, `Welcome`, `Reject`, `Checksum` (every 30 ticks) and `ResyncRequest`.
+  - `Welcome` carries the config, slot, reconnect token, a portable snapshot of the state before tick S, and the inputs of frame S-1.
+- **Channel 1** (unreliable), which is never blocked by retransmissions:
+  - **Client → server**: `Input` repeats the last 12 ticks of input and carries `ackTick`, meaning the client has every frame before that tick.
+  - **Server → client**: every tick, a `FrameBatch` with all frames from the client's acknowledged tick to the newest. Frames are delta-chained from the acknowledged frame.
+    - A lost batch costs nothing: the next one carries the same frames.
+    - The server keeps 256 frames. A client that falls further behind gets a new `Welcome`.
+    - Clients with the same acknowledgement share one encoded batch.
+    - Large batches are sent as unreliable fragments.
+- **Frame encoding**: a mask of the players whose input changed, then per player only the changed fields. A small camera turn takes one byte.
+- **Handshake**: `Hello` carries the protocol version, the build fingerprint (hash of a short scripted simulation run) and an optional reconnect token. Mismatched builds are rejected.
 - **Welcome covers three cases**: joining, reconnecting, and recovering from a desync (the client sends `ResyncRequest` when a checksum does not match).
-- **Clock sync**: the client aims to be `rtt/2 + jitter + 2 ticks` ahead of its estimate of the server's current tick, so its input for tick T arrives before the server simulates T.
-  - It corrects small errors by running up to ±15% faster or slower.
-  - If it falls more than 30 ticks behind, it catches up at up to 8 ticks per frame. If it gets more than 30 ticks ahead, it pauses.
-  - Measured on loopback: 0 late inputs once settled. Late inputs only occur while a client catches up right after joining.
-- **Latency limit**: with an 8-tick window at 60 Hz, a round-trip time above roughly 75 ms pins the client to the window (measured in M4, see Findings). Raise the window with `cb_client --rollback N`.
+- **Clock sync**: the client aims to be `rtt/2 + jitter + 2 ticks` ahead of the server's current tick, so its input for tick T arrives before the server simulates T.
+  - The server clock is estimated from the fastest frame arrivals, decaying slowly.
+  - Small errors are corrected by running up to ±15% faster or slower. Beyond 30 ticks the client catches up (8 ticks per frame) or pauses.
+- **Prediction window (automatic)**: the client needs about `RTT × rate + 2 × jitter × rate + 4` ticks between the confirmed state and its prediction.
+  - It grows the window at once, up to 20 ticks, and shrinks it one tick at a time after 3 s of lower latency. The minimum is 8.
+  - `cb_client --rollback N` / `cb_bot --rollback N` fix the window. The HUD shows it.
 - **Disconnects**:
-  - ENet detects a dead connection within 1–3 s.
+  - ENet declares a connection dead after 2–6 s. Time freezes sooner: without frames the prediction window fills and the client holds its clock.
   - The server keeps a disconnected player in the world with zeroed input for 10 s. If the client reconnects with its token in that time, it gets the same slot back through a Welcome. Otherwise the server issues a `Leave` event.
-  - While disconnected, the client's time is frozen.
 
 ## State and snapshots
 - **Two flecs worlds on the client**
@@ -103,39 +107,54 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
   - `scripts/stress_test.sh` runs a complete scenario.
 - **Threading**: many simulations may run in one process. flecs and Box3D world creation and destruction are serialized by a process-wide mutex. The physics arena reserves address space and commits it in 16 MB steps.
 
-## Measurements (M4, Clang Release, 32-thread desktop, everything on one machine)
+## Measurements (Clang Release, 32-thread desktop, everything on one machine)
 
-Bots change their inputs almost every tick, which is a worst case for mispredictions. "Client work" is reconcile plus the predicted ticks, per rendered frame, for a full bot.
+"Client work" is reconcile plus the predicted ticks, per rendered frame, for a full bot. There are two kinds of bot:
+- **Realistic bots** hold directions and sprint, turn the camera smoothly now and then, and jump and spawn props occasionally.
+- **Chaotic bots** (`--chaotic`) change every input field every tick. They are the worst case for mispredictions and bandwidth.
 
-| Scenario | Server tick | Client work avg / max | Rollback window | Stalled | Late inputs (settled) | Desyncs |
+### M5 (unreliable frame batches, automatic window), 64 bots, 4 of them full
+
+| Link | Bots | Window | Server tick | Client work avg / max | Stalled | Late inputs | Down / up per client | Server out |
+|---|---|---|---|---|---|---|---|---|
+| loopback | realistic | 8 | 0.80 ms | 0.86 / 8.9 ms | 0% | 0% | 42 / 45 kbit/s | 2.6 Mbit/s |
+| 25±5 ms each way, 1% loss (RTT 61 ms) | realistic | 10 | 0.88 ms | 0.93 / 8.8 ms | 0% | 0% | 162 / 45 kbit/s | 10.5 Mbit/s |
+| 45±10 ms, 2% loss (RTT 106 ms) | realistic | 13 | 0.94 ms | 2.48 / 16.4 ms | 0% | 0.01% | 254 / 44 kbit/s | 17 Mbit/s |
+| 45±10 ms, 2% loss (RTT 106 ms) | chaotic | 13 | 1.08 ms | 1.17 / 24.2 ms | 0% | 0% | 1.4 Mbit / 44 kbit/s | 90 Mbit/s |
+| loopback | chaotic | 8 | 0.81 ms | 1.18 / 10.7 ms | 0% | 0% | 196 / 45 kbit/s | 12.5 Mbit/s |
+
+- **Bandwidth**: download grows with round trip, because each batch repeats the frames still in flight (about RTT × rate + 1 of them).
+- **Integration test** (3% loss and 1% duplication each way, RTT about 74 ms): 0% late inputs once settled, with windows of 10–11. Before M5 it was about 80%.
+- **Mixed build**: MSVC server, GCC network simulator and bots, and a Clang client over a lossy link. No desyncs, and the GCC build verified the MSVC server's recording.
+
+### M4 (reliable ordered frames, fixed window, chaotic bots) for comparison
+
+| Link | Window | Server tick | Client work avg / max | Stalled | Late inputs | Down per client |
 |---|---|---|---|---|---|---|
-| 32 bots, loopback | 0.56 ms | 0.66 / 7.3 ms | 8 | 0% | ~0% | 0 |
-| 64 bots, loopback | 0.72 ms | 0.94 / 6.7 ms | 8 | 0% | ~0% | 0 |
-| 64 bots, 25±5 ms each way, 1% loss (RTT 60 ms) | – | 2.05 / 12.6 ms | 8 | 1.8% | – | 0 |
-| 64 bots, 45±10 ms, 2% loss (RTT 106 ms) | 0.75 ms | 1.98 / 17.1 ms | 8 | 7.9% | 4.5% | 0 |
-| same | 0.78 ms | 1.63 / 15.5 ms | 16 | 1.1% | 0.17% | 0 |
+| loopback, 64 bots | 8 | 0.72 ms | 0.94 / 6.7 ms | 0% | ~0% | 118 kbit/s |
+| RTT 106 ms, 2% loss | 8 | 0.75 ms | 1.98 / 17.1 ms | 7.9% | 4.5% | 115 kbit/s |
+| RTT 106 ms, 2% loss | 16 | 0.78 ms | 1.63 / 15.5 ms | 1.1% | 0.17% | 120 kbit/s |
 
-- **Bandwidth**: with 64 players, about 115 kbit/s down and 47 kbit/s up per client. The server sends about 7.4 Mbit/s in total.
 - **Join**: one portable snapshot per join, about 80–250 KB.
-- **Replay**: `cb_replay verify` re-simulated a 64-player recording at about 0.4 ms per tick.
+- **Replay**: `cb_replay verify` re-simulates at 0.15–0.4 ms per tick.
 
 ### Findings
-- **Rollback window vs latency**: a client must stay about `RTT × tick rate + jitter + 2` ticks ahead of the confirmed state. With the chosen 8-tick window at 60 Hz, that caps the round trip at about 75 ms.
-  - Above that, the client is pinned to the window. Every input it sends arrives late, the server repeats the previous one, and that player's own actions get corrected constantly.
-  - At 106 ms RTT this showed up as 8% stalled time and about 5% late inputs server-wide, coming from 4 of 64 players.
-  - A 16-tick window fixed it at the cost of deeper re-simulation.
-- **Head-of-line blocking**: input frames travel on a reliable, ordered ENet channel. A lost frame delays every later frame until it is retransmitted (about RTT + 4 × variance, which is 9+ ticks at 106 ms), so confirmation stalls in bursts.
-  - With 3% loss in the integration test, late inputs were about 80% with window 8 and about 11% with window 16.
-  - The usual fix is to send frames unreliably, repeating every frame the client has not yet acknowledged, with the client's acknowledgement carried in its input packets. That is a pending decision (see below).
-- **Clock estimate**: the client now takes the server clock from the fastest frame arrivals, decaying slowly, rather than from the latest arrival.
-- **No spurious disconnects**: the 1–3 s ENet timeout caused none in a 2-minute, 64-player run at 2% loss.
+- **Window vs latency**: with a fixed 8-tick window at 60 Hz, a round trip above about 75 ms pins the client to the window.
+  - Every input it sends then arrives late, and that player's own actions get corrected constantly.
+  - The automatic window fixes this, at the cost of deeper re-simulation when latency is high (client work up to about 16–24 ms in the worst frames at 106 ms with 64 very active players).
+- **Head-of-line blocking** (M4): with reliable ordered frames, one lost frame stalled confirmation until it was retransmitted. The M5 unreliable batches removed it.
+- **Test harness pitfalls**:
+  - A full bot sharing a thread with lite bots made their inputs late; each full bot now runs on its own thread.
+  - Debug builds cannot keep real time with a server and four simulating clients on one thread, so the late-input thresholds are only checked in optimized builds.
+- **Rare reconnect**: an occasional client reconnect (about one per several minutes of 64 bots at 2% loss) was seen with the 1–3 s ENet timeout. The timeout is now 2–6 s; no reconnects occurred in the M5 runs.
 
-### Open decisions
-1. Frame transport: keep reliable ordered frames, or move to acknowledged, redundant unreliable frames.
-2. Rollback window: keep 8, raise the default, or pick it automatically from the measured RTT.
+### Possible next steps
+- **Less download at high latency**: skip frames that are probably still in flight and resend them only after a timeout. This trades bandwidth for a slower recovery from loss.
+- **Camera**: add camera collision in the client (it can currently clip into walls).
 
 ## Milestones (check-in after each)
 1. **M1** (done): build system, deterministic sim core (flecs + Box3D + mover + props), snapshot/restore, rollback session, determinism tests (Clang, GCC and MSVC verified identical).
 2. **M2** (done): ENet server and raylib client, rollback netcode, join/leave/reconnect, loopback integration tests. Verified with an MSVC server and GCC and Clang clients in one session.
 3. **M3** (done): ozz integration, procedural box skeleton, locomotion blend, glTF pipeline (script and docs, tested with generated Blender-style glTF files), animation viewer.
 4. **M4** (done): replay recording, verification and playback, network simulator, bots (full and lite), stress-test script, lossy integration test, 64-player measurements.
+5. **M5** (done): unreliable acknowledged frame batches, per-field input encoding, automatic prediction window, realistic and chaotic bots, re-measured.

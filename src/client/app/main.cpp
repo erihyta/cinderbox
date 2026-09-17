@@ -81,7 +81,7 @@ bool ParseArgs( int argc, char** argv, AppOptions& o )
 		else if ( arg == "--port" )
 			o.client.port = uint16_t( std::strtoul( value.c_str(), nullptr, 10 ) );
 		else if ( arg == "--rollback" )
-			o.client.maxRollbackTicks = uint32_t( std::strtoul( value.c_str(), nullptr, 10 ) );
+			o.client.minRollbackTicks = o.client.maxRollbackTicks = uint32_t( std::strtoul( value.c_str(), nullptr, 10 ) );
 		else if ( arg == "--width" )
 			o.width = std::atoi( value.c_str() );
 		else if ( arg == "--height" )
@@ -209,8 +209,8 @@ void DrawHud( GameClient& client, bool showDebug, const anim::AnimSet& animSet )
 		uint32_t confirmed = session->ConfirmedTick();
 		line( BLACK, "tick %u   confirmed %u   predicting %d ahead", current, confirmed, int( current ) - int( confirmed ) );
 		line( BLACK, "rtt %u ms   clock error %+.1f ticks   rate x%.3f", s.rttMs, s.tickError, s.rateScale );
-		line( BLACK, "rollbacks %llu (last depth %u)   resimulated %llu   stalls %llu", (unsigned long long)rs.rollbacks,
-			  rs.lastRollbackDepth, (unsigned long long)rs.resimulatedTicks, (unsigned long long)rs.stalls );
+		line( BLACK, "window %u   rollbacks %llu (last depth %u)   resimulated %llu   stalled %.1f s", session->MaxRollback(),
+			  (unsigned long long)rs.rollbacks, rs.lastRollbackDepth, (unsigned long long)rs.resimulatedTicks, s.stalledSeconds );
 		line( s.desyncs ? RED : BLACK, "checksums ok %llu   desyncs %llu   welcomes %llu", (unsigned long long)s.checksumsVerified,
 			  (unsigned long long)s.desyncs, (unsigned long long)s.welcomes );
 		line( BLACK, "entities %zu   physics %zu KB", session->Sim().Entities().size(), session->Sim().PhysicsBytesInUse() / 1024 );

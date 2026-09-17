@@ -9,7 +9,7 @@ namespace cb::net
 namespace
 {
 constexpr uint32_t kMagic = 0x50524243u; // "CBRP"
-constexpr uint32_t kVersion = 1;
+constexpr uint32_t kVersion = 2; // 2: per-field input encoding
 constexpr uint8_t kRecordFrame = 1;
 constexpr uint8_t kRecordChecksum = 2;
 } // namespace

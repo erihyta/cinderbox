@@ -1,7 +1,10 @@
 // Headless bot clients for load and soak testing.
 //
 //   cb_bot [--host H] [--port P] [--count N] [--full M] [--threads T (for lite bots)] [--duration SEC]
-//          [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC]
+//          [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC] [--chaotic]
+//
+// --chaotic makes every bot change every input field every tick (worst case for rollback and
+// bandwidth). By default bots hold directions and turn smoothly, closer to real players.
 //
 // --count bots join; the first --full of them run the complete client (prediction, rollback,
 // checksum verification) and report its cost. The rest are "lite": they keep pace and send input
@@ -43,6 +46,7 @@ struct Options
 	int staggerMs = 50;
 	uint32_t spawnOneIn = 40;
 	double reportSeconds = 5.0;
+	bool chaotic = false;
 };
 
 struct Bot
@@ -72,6 +76,8 @@ struct Summary
 	uint64_t resimulated = 0;
 	double stalledSeconds = 0.0;
 	double playingSeconds = 0.0;
+	uint32_t windowSum = 0;
+	uint32_t windowMax = 0;
 	double simMsSum = 0.0;
 	uint64_t frames = 0;
 	double simMsMax = 0.0;
@@ -94,6 +100,8 @@ struct Summary
 		resimulated += o.resimulated;
 		stalledSeconds += o.stalledSeconds;
 		playingSeconds += o.playingSeconds;
+		windowSum += o.windowSum;
+		windowMax = std::max( windowMax, o.windowMax );
 		simMsSum += o.simMsSum;
 		frames += o.frames;
 		simMsMax = std::max( simMsMax, o.simMsMax );
@@ -188,6 +196,8 @@ void RunWorker( Worker& w, Clock::time_point start, const std::atomic<bool>& sto
 					s.simMsMax = std::max( s.simMsMax, cs.simMsMax );
 					s.stalledSeconds += cs.stalledSeconds;
 					s.playingSeconds += cs.playingSeconds;
+					s.windowSum += cs.rollbackWindow;
+					s.windowMax = std::max( s.windowMax, cs.rollbackWindow );
 					if ( RollbackSession* session = c.Session() )
 					{
 						s.rollbacks += session->GetStats().rollbacks;
@@ -215,6 +225,11 @@ bool Parse( int argc, char** argv, Options& o )
 	for ( int i = 1; i < argc; ++i )
 	{
 		std::string arg = argv[i];
+		if ( arg == "--chaotic" )
+		{
+			o.chaotic = true;
+			continue;
+		}
 		if ( i + 1 >= argc )
 		{
 			return false;
@@ -237,7 +252,7 @@ bool Parse( int argc, char** argv, Options& o )
 		else if ( arg == "--spawn-one-in" )
 			o.spawnOneIn = uint32_t( std::atoi( v.c_str() ) );
 		else if ( arg == "--rollback" )
-			o.client.maxRollbackTicks = uint32_t( std::atoi( v.c_str() ) );
+			o.client.minRollbackTicks = o.client.maxRollbackTicks = uint32_t( std::atoi( v.c_str() ) );
 		else if ( arg == "--report" )
 			o.reportSeconds = std::atof( v.c_str() );
 		else
@@ -280,6 +295,7 @@ int main( int argc, char** argv )
 		bot.full = i < o.full;
 		bot.brain = BotBrain( uint64_t( i ) + 1 );
 		bot.brain.spawnOneIn = o.spawnOneIn;
+		bot.brain.chaotic = o.chaotic;
 		bot.startAt = double( i ) * double( o.staggerMs ) / 1000.0;
 		bot.client = std::make_unique<GameClient>();
 		ClientOptions co = o.client;
@@ -333,9 +349,9 @@ int main( int argc, char** argv )
 		if ( s.fullBots > 0 )
 		{
 			std::printf( "          full bots: client work %.2f ms/frame avg, %.2f max | rollbacks %.1f/s, resimulated %.1f "
-						 "ticks/s per bot | stalled %.1f%% of the time | checksums ok %llu | DESYNCS %llu\n",
+						 "ticks/s per bot | window %.1f avg %u max | stalled %.1f%% | checksums ok %llu | DESYNCS %llu\n",
 						 s.frames ? s.simMsSum / double( s.frames ) : 0.0, s.simMsMax, rollbacksPerSec, resimPerSec,
-						 stalledPercent, (unsigned long long)s.checksums, (unsigned long long)s.desyncs );
+						 double( s.windowSum ) / double( s.fullBots ), s.windowMax, stalledPercent, (unsigned long long)s.checksums, (unsigned long long)s.desyncs );
 		}
 		std::fflush( stdout );
 		previous = s;

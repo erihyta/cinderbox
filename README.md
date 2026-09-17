@@ -11,6 +11,7 @@ ozz-animation and raylib. See [DESIGN.md](DESIGN.md) for the architecture and de
 | M2: ENet server, raylib client, rollback netcode, join/leave/reconnect | done |
 | M3: ozz animation, procedural box skeleton, locomotion blend, asset pipeline | done |
 | M4: replay tool, network simulator, bots, stress test | done |
+| M5: unreliable frame batches, automatic prediction window | done |
 
 ## Building
 
@@ -39,7 +40,7 @@ cb_client --host 127.0.0.1 --port 7777
 ```
 
 Both executables are in `<build dir>/bin`. The server options are `--tick-rate`, `--seed`, `--substeps`,
-`--prop-lifetime`, `--props-per-player` and `--props-global`. The client options are `--rollback TICKS`,
+`--prop-lifetime`, `--props-per-player` and `--props-global`. The client options are `--rollback TICKS` (fixes the prediction window, which is otherwise chosen from latency),
 `--width`, `--height`, and `--autoplay SECONDS [--screenshot FILE]` for an unattended smoke test.
 
 ## Animations
@@ -75,7 +76,7 @@ All tools are in `<build dir>/bin`.
 | `cb_replay info\|verify FILE` | Summarizes a recording, or re-simulates it and checks every checksum |
 | `cb_client --replay FILE [--replay-start S]` | Watches a recording |
 | `cb_netsim --listen P --target HOST:PORT --latency MS --jitter MS --loss % [--duplicate %]` | UDP relay that degrades traffic (latency is added in each direction) |
-| `cb_bot --port P --count N --full M --duration S` | Headless players; the M "full" bots run prediction and rollback and report its cost |
+| `cb_bot --port P --count N --full M --duration S [--chaotic]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick |
 | `scripts/stress_test.sh --bots N --full M --latency MS --jitter MS --loss % --rollback T` | Starts a server, the simulator and the bots, and prints a summary |
 
 Replay viewer controls:

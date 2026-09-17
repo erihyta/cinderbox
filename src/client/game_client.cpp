@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 
@@ -20,6 +21,8 @@ constexpr double kRateGain = 0.02;
 constexpr double kMaxRateAdjust = 0.15;
 constexpr uint32_t kChecksumHistory = 600;
 constexpr double kClockDecayTicksPerSecond = 0.25;
+constexpr size_t kKnownInputHistory = 256;
+constexpr double kWindowShrinkDelay = 3.0; // seconds of lower latency before the window shrinks
 } // namespace
 
 const char* ToString( ClientState state )
@@ -64,6 +67,8 @@ bool GameClient::Start( const ClientOptions& options, double now )
 {
 	m_options = options;
 	m_inputHistory.assign( std::max<uint32_t>( 64, options.inputRedundancy * 2 ), SentInput{} );
+	m_knownInputs.assign( kKnownInputHistory, KnownInputs{} );
+	m_options.maxRollbackTicks = std::max( m_options.maxRollbackTicks, m_options.minRollbackTicks );
 	m_state = ClientState::Connecting;
 	m_nextConnectAttempt = now;
 	m_lastNow = now;
@@ -184,30 +189,12 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 					}
 					break;
 				}
-				case MsgType::Frame:
-				{
-					if ( m_state != ClientState::Playing )
+				case MsgType::FrameBatch:
+					if ( m_state == ClientState::Playing )
 					{
-						break;
+						HandleFrameBatch( r, now );
 					}
-					if ( m_session == nullptr )
-					{
-						// Lite client: only the clock matters.
-						OnServerTick( r.Read<uint32_t>() + 1, now );
-						break;
-					}
-					InputFrame frame;
-					if ( m_codec.Decode( r, frame ) == false )
-					{
-						Log( "corrupt frame, requesting state" );
-						Encode( MsgResyncRequest{ m_session->ConfirmedTick() }, m_buffer );
-						m_transport.Send( ev.peer, ChannelReliable, m_buffer, true );
-						break;
-					}
-					m_session->AddAuthoritativeFrame( frame );
-					OnServerTick( frame.tick + 1, now );
 					break;
-				}
 				case MsgType::Checksum:
 				{
 					MsgChecksum msg;
@@ -249,7 +236,8 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 		bool rebuild = m_session == nullptr || !( msg.config == m_config ) || msg.slot != m_slot;
 		if ( rebuild )
 		{
-			m_session = std::make_unique<RollbackSession>( msg.config, msg.slot, m_options.maxRollbackTicks );
+			m_session = std::make_unique<RollbackSession>( msg.config, msg.slot, m_options.minRollbackTicks,
+														   m_options.maxRollbackTicks );
 		}
 
 		if ( m_session->Sim().LoadPortable( msg.image ) == false )
@@ -267,7 +255,15 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 	m_config = msg.config;
 	m_slot = msg.slot;
 	m_liteTick = msg.snapshotTick;
-	m_codec.Reset( msg.baseInputs );
+	m_liteConfirmed = msg.snapshotTick;
+	for ( KnownInputs& k : m_knownInputs )
+	{
+		k.tick = UINT32_MAX;
+	}
+	if ( msg.snapshotTick > 0 )
+	{
+		m_knownInputs[( msg.snapshotTick - 1 ) % kKnownInputHistory] = { msg.snapshotTick - 1, msg.baseInputs };
+	}
 
 	bool reconnect = m_token != 0 && m_token == msg.reconnectToken;
 	m_token = msg.reconnectToken;
@@ -287,6 +283,100 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 
 	Log( "%s as slot %u at tick %u (%zu KB state)", reconnect ? "resumed" : "joined", m_slot, msg.snapshotTick,
 		 msg.image.size() / 1024 );
+}
+
+uint32_t GameClient::AckTick() const
+{
+	return m_session ? m_session->ConfirmedTick() : m_liteConfirmed;
+}
+
+// A batch holds every frame from our last acknowledgement to the server's newest. Old or
+// duplicate batches are harmless: frames we already have are skipped.
+void GameClient::HandleFrameBatch( ByteReader& r, double now )
+{
+	uint32_t firstTick, count;
+	if ( ReadFrameBatchHeader( r, firstTick, count ) == false )
+	{
+		return;
+	}
+	m_stats.batchesReceived += 1;
+	uint32_t confirmed = AckTick();
+	uint32_t lastTick = firstTick + count - 1;
+	OnServerTick( lastTick + 1, now );
+
+	if ( firstTick > confirmed || lastTick < confirmed )
+	{
+		// A gap before this batch (cannot happen with in-order acks) or nothing new.
+		m_stats.batchesIgnored += firstTick > confirmed ? 1 : 0;
+		return;
+	}
+
+	if ( m_session == nullptr )
+	{
+		m_liteConfirmed = lastTick + 1;
+		return;
+	}
+
+	InputArray base{};
+	if ( firstTick > 0 )
+	{
+		const KnownInputs& k = m_knownInputs[( firstTick - 1 ) % kKnownInputHistory];
+		if ( k.tick != firstTick - 1 )
+		{
+			m_stats.batchesIgnored += 1;
+			return;
+		}
+		base = k.inputs;
+	}
+
+	if ( ReadFrameBatchBody( r, base, firstTick, count, m_batchScratch ) == false )
+	{
+		Log( "corrupt frame batch at tick %u", firstTick );
+		m_stats.batchesIgnored += 1;
+		return;
+	}
+
+	for ( const InputFrame& frame : m_batchScratch )
+	{
+		if ( frame.tick != m_session->ConfirmedTick() )
+		{
+			continue;
+		}
+		m_session->AddAuthoritativeFrame( frame );
+		m_knownInputs[frame.tick % kKnownInputHistory] = { frame.tick, frame.inputs };
+	}
+}
+
+// Prediction must reach about RTT + jitter + the lead margin ahead of confirmed frames. Grow the
+// window at once when latency rises; shrink it only after latency has stayed lower for a while.
+void GameClient::UpdateRollbackWindow( double rttTicks, double frameDt )
+{
+	if ( m_session == nullptr )
+	{
+		return;
+	}
+	double needed = std::ceil( rttTicks ) + double( m_options.leadMarginTicks ) + 2.0;
+	uint32_t desired = uint32_t( std::clamp( needed, double( m_options.minRollbackTicks ), double( m_options.maxRollbackTicks ) ) );
+	uint32_t current = m_session->MaxRollback();
+	if ( desired > current )
+	{
+		m_session->SetMaxRollback( desired );
+		m_windowShrinkTimer = 0.0;
+	}
+	else if ( desired + 1 < current )
+	{
+		m_windowShrinkTimer += frameDt;
+		if ( m_windowShrinkTimer >= kWindowShrinkDelay )
+		{
+			m_session->SetMaxRollback( current - 1 );
+			m_windowShrinkTimer = 0.0;
+		}
+	}
+	else
+	{
+		m_windowShrinkTimer = 0.0;
+	}
+	m_stats.rollbackWindow = m_session->MaxRollback();
 }
 
 // `tickAfter` is the server's tick right after it sent the message that just arrived.
@@ -327,6 +417,8 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 		// The server went quiet; do not keep extrapolating.
 		serverNow = std::min( serverNow, double( m_latestServerTick ) + ( 1.0 + 0.5 * rtt ) * rate );
 	}
+
+	UpdateRollbackWindow( ( rtt + 2.0 * jitter ) * rate, frameDt );
 
 	// Be far enough ahead of the server that our input for tick T arrives before it simulates T.
 	double target = serverNow + ( 0.5 * rtt + jitter ) * rate + double( m_options.leadMarginTicks );
@@ -412,6 +504,7 @@ void GameClient::SendInputs()
 
 	MsgInput msg;
 	msg.newestTick = m_newestInputTick;
+	msg.ackTick = AckTick();
 	uint32_t count = std::min( m_options.inputRedundancy, m_newestInputTick + 1 );
 	uint32_t first = m_newestInputTick + 1 - count;
 	for ( uint32_t t = first; t <= m_newestInputTick; ++t )

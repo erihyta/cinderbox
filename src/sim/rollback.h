@@ -25,7 +25,15 @@ public:
 		uint32_t lastRollbackDepth = 0;
 	};
 
-	RollbackSession( const SimConfig& config, PlayerSlot localSlot, uint32_t maxRollbackTicks = 8 );
+	// `maxRollbackCap` bounds SetMaxRollback() and sizes the snapshot ring.
+	RollbackSession( const SimConfig& config, PlayerSlot localSlot, uint32_t maxRollbackTicks = 8, uint32_t maxRollbackCap = 0 );
+
+	// How far prediction may run ahead of confirmed frames. Clamped to [1, cap].
+	void SetMaxRollback( uint32_t ticks );
+	uint32_t MaxRollback() const
+	{
+		return m_maxRollback;
+	}
 
 	// Start from a server-provided state (join or desync recovery). Drops all history.
 	// The snapshot must come from this session's Simulation (e.g. Save() right after LoadPortable()).
@@ -92,6 +100,7 @@ private:
 	SimConfig m_config;
 	PlayerSlot m_localSlot;
 	uint32_t m_maxRollback;
+	uint32_t m_maxRollbackCap;
 	std::unique_ptr<Simulation> m_sim;
 
 	std::vector<TickRecord> m_records; // ring indexed by tick % size

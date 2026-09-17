@@ -32,6 +32,14 @@ namespace
 
 int g_failures = 0;
 
+// Real-time thresholds (late inputs) only hold when the simulation runs at optimized speed: in a
+// Debug build the server and four simulating clients cannot keep up on one thread.
+#if defined( NDEBUG )
+constexpr bool kTimingChecks = true;
+#else
+constexpr bool kTimingChecks = false;
+#endif
+
 #define CHECK( cond )                                                                                                            \
 	do                                                                                                                           \
 	{                                                                                                                            \
@@ -106,7 +114,8 @@ struct Harness
 		bot.brain = BotBrain( 1000 + bots.size() );
 		ClientOptions options;
 		options.port = clientPort;
-		options.maxRollbackTicks = rollbackWindow;
+		options.minRollbackTicks = rollbackWindow;
+		options.maxRollbackTicks = std::max<uint32_t>( rollbackWindow, 20 );
 		options.verbose = false;
 		options.logName = "bot" + std::to_string( bots.size() );
 		bot.client->Start( options, Now() );
@@ -209,7 +218,7 @@ void TestLoopbackSession()
 	uint64_t playerTicks = uint64_t( h.server.Tick() - tickAtJoin ) * 4;
 	std::printf( "    steady state: %llu late inputs of %llu player-ticks\n", (unsigned long long)lateSteady,
 				 (unsigned long long)playerTicks );
-	CHECK( lateSteady * 100 < playerTicks );
+	CHECK( kTimingChecks == false || lateSteady * 100 < playerTicks );
 
 	CHECK( CountPlayers( h.server.Sim() ) == 4 );
 	for ( Bot& b : h.bots )
@@ -338,8 +347,24 @@ void TestLossySession()
 		{
 			h.AddBot();
 		}
+		h.RunUntil( 4.0 );
+		uint64_t lateBefore = h.server.GetStats().lateInputs;
+		uint64_t expectedBefore = h.server.GetStats().inputTicks;
 		h.RunUntil( 10.0 );
 		h.Report();
+
+		// Once settled, lost packets must not make inputs late (no head-of-line blocking, and the
+		// prediction window grows with the latency).
+		uint64_t late = h.server.GetStats().lateInputs - lateBefore;
+		uint64_t expected = h.server.GetStats().inputTicks - expectedBefore;
+		std::printf( "    steady state: %llu late inputs of %llu (%.2f%%), windows", (unsigned long long)late,
+					 (unsigned long long)expected, expected ? 100.0 * double( late ) / double( expected ) : 0.0 );
+		for ( Bot& b : h.bots )
+		{
+			std::printf( " %u", b.client->GetStats().rollbackWindow );
+		}
+		std::printf( "\n" );
+		CHECK( kTimingChecks == false || late * 50 < expected ); // under 2%
 
 		auto ps = h.proxy->GetStats();
 		std::printf( "    netsim: %u links, %llu forwarded, %llu dropped, %llu duplicated\n", ps.links,
@@ -417,6 +442,58 @@ void TestProtocol()
 		CHECK( r.AtEnd() );
 	}
 
+	// Frame batches: a chain from any starting tick decodes back to the same frames.
+	{
+		std::vector<InputFrame> history( 40 );
+		InputArray running{};
+		for ( uint32_t t = 0; t < history.size(); ++t )
+		{
+			history[t].tick = t;
+			running[t % 8].moveForward = int8_t( t );
+			running[( t * 3 ) % 64].cameraYaw = uint16_t( t * 977 );
+			history[t].inputs = running;
+			if ( t % 7 == 0 )
+			{
+				history[t].events.push_back( { PlayerEventType::Leave, PlayerSlot( t % 64 ) } );
+			}
+		}
+		for ( uint32_t first : { 0u, 1u, 17u, 39u } )
+		{
+			std::vector<const InputFrame*> ptrs;
+			for ( uint32_t t = first; t < history.size(); ++t )
+			{
+				ptrs.push_back( &history[t] );
+			}
+			InputArray base = first > 0 ? history[first - 1].inputs : InputArray{};
+			std::vector<uint8_t> bytes;
+			EncodeFrameBatch( base, ptrs.data(), ptrs.size(), bytes );
+			ByteReader r( bytes.data(), bytes.size() );
+			CHECK( ReadType( r ) == MsgType::FrameBatch );
+			uint32_t firstTick, count;
+			CHECK( ReadFrameBatchHeader( r, firstTick, count ) );
+			CHECK( firstTick == first && count == ptrs.size() );
+			std::vector<InputFrame> decoded;
+			CHECK( ReadFrameBatchBody( r, base, firstTick, count, decoded ) );
+			CHECK( r.AtEnd() );
+			for ( uint32_t i = 0; i < count; ++i )
+			{
+				CHECK( decoded[i] == history[first + i] );
+			}
+			// A wrong base must not silently produce the right frames.
+			if ( first > 0 )
+			{
+				InputArray wrong{};
+				wrong[5].moveRight = 99;
+				ByteReader r2( bytes.data(), bytes.size() );
+				ReadType( r2 );
+				ReadFrameBatchHeader( r2, firstTick, count );
+				std::vector<InputFrame> bad;
+				ReadFrameBatchBody( r2, wrong, firstTick, count, bad );
+				CHECK( bad.empty() || !( bad[0] == history[first] ) || history[first].inputs[5] == wrong[5] );
+			}
+		}
+	}
+
 	// Garbage must never crash or be accepted as a welcome with an absurd blob.
 	std::vector<uint8_t> junk;
 	for ( int i = 0; i < 20000; ++i )
@@ -451,6 +528,16 @@ void TestProtocol()
 			case MsgType::Frame:
 				fc.Decode( r, f );
 				break;
+			case MsgType::FrameBatch:
+			{
+				uint32_t firstTick, count;
+				std::vector<InputFrame> frames;
+				if ( ReadFrameBatchHeader( r, firstTick, count ) )
+				{
+					ReadFrameBatchBody( r, InputArray{}, firstTick, count, frames );
+				}
+				break;
+			}
 			default:
 				break;
 		}
