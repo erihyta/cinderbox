@@ -231,13 +231,24 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 		return;
 	}
 
+	LevelLayout map;
+	std::string mapError;
+	if ( DeserializeMap( msg.map.data(), msg.map.size(), map, mapError ) == false )
+	{
+		m_rejectReason = "bad map from the server: " + mapError;
+		m_state = ClientState::Rejected;
+		Log( "rejected: %s", m_rejectReason.c_str() );
+		return;
+	}
+
 	if ( m_options.simulate )
 	{
-		bool rebuild = m_session == nullptr || !( msg.config == m_config ) || msg.slot != m_slot;
+		// A different map means a different level, so the session cannot be reused.
+		bool rebuild = m_session == nullptr || !( msg.config == m_config ) || msg.slot != m_slot || msg.mapHash != m_mapHash;
 		if ( rebuild )
 		{
 			m_session = std::make_unique<RollbackSession>( msg.config, msg.slot, m_options.minRollbackTicks,
-														   m_options.maxRollbackTicks );
+														   m_options.maxRollbackTicks, map );
 		}
 
 		if ( m_session->Sim().LoadPortable( msg.image ) == false )
@@ -253,6 +264,8 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 		m_session->Reset( snapshot, msg.baseInputs );
 	}
 	m_config = msg.config;
+	m_map = std::move( map );
+	m_mapHash = msg.mapHash;
 	m_slot = msg.slot;
 	m_liteTick = msg.snapshotTick;
 	m_liteConfirmed = msg.snapshotTick;

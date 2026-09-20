@@ -30,6 +30,9 @@ struct PublishedFrame
 	uint32_t confirmedTick = 0;
 	uint32_t rollbackWindow = 0;
 	uint64_t fingerprint = 0;
+	// Identity and name of the server's map, for loading its visuals.
+	uint64_t mapHash = 0;
+	std::string mapName;
 	bool fpEnvironmentOk = true;
 	bool hasSimulation = false;
 	double publishedAt = 0.0; // seconds on the thread clock

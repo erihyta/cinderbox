@@ -38,6 +38,10 @@ void PrintInfo( const net::ReplayReader& replay )
 	std::printf( "joins/leaves %u / %u\n", joins, leaves );
 	std::printf( "seed         %llu, substeps %u, props %u per player / %u global, lifetime %u s\n",
 				 (unsigned long long)c.seed, c.subSteps, c.propsPerPlayer, c.propsGlobal, c.propLifetimeSeconds );
+	const LevelLayout& map = replay.Map();
+	std::printf( "map          %s (%zu statics, %zu props, hash %016llx)\n", map.name.empty() ? "unnamed" : map.name.c_str(),
+				 map.statics.size(), map.props.size(),
+				 (unsigned long long)MapHash( replay.MapBytes().data(), replay.MapBytes().size() ) );
 	bool same = replay.Fingerprint() == BuildFingerprint();
 	std::printf( "fingerprint  %016llx (%s)\n", (unsigned long long)replay.Fingerprint(),
 				 same ? "matches this build" : "DIFFERENT simulation build" );
@@ -51,7 +55,7 @@ int Verify( const net::ReplayReader& replay )
 		std::printf( "warning: recorded with a different simulation build; checksums will likely not match\n" );
 	}
 
-	Simulation sim( replay.Config() );
+	Simulation sim( replay.Config(), replay.Map() );
 	const auto& checksums = replay.Checksums();
 	size_t nextChecksum = 0;
 	size_t verified = 0;

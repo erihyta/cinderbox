@@ -26,7 +26,9 @@ public:
 	};
 
 	// `maxRollbackCap` bounds SetMaxRollback() and sizes the snapshot ring.
-	RollbackSession( const SimConfig& config, PlayerSlot localSlot, uint32_t maxRollbackTicks = 8, uint32_t maxRollbackCap = 0 );
+	// `map` must be the server's map (the client receives it on join).
+	RollbackSession( const SimConfig& config, PlayerSlot localSlot, uint32_t maxRollbackTicks = 8, uint32_t maxRollbackCap = 0,
+					 const LevelLayout& map = GetLevelLayout() );
 
 	// How far prediction may run ahead of confirmed frames. Clamped to [1, cap].
 	void SetMaxRollback( uint32_t ticks );

@@ -4,6 +4,7 @@
 // streams the input frames it actually used. It never rolls back: a late input is replaced by the
 // player's previous input.
 
+#include "map.h"
 #include "protocol.h"
 #include "replay.h"
 #include "simulation.h"
@@ -28,6 +29,8 @@ struct ServerOptions
 	bool verbose = true;
 	// Keep a hash for every tick (tests only; costs a serialization per tick).
 	bool recordHashes = false;
+	// Baked map to play (empty = the built-in sandbox).
+	std::string mapPath;
 	// Write a replay of the whole session (empty = off).
 	std::string recordPath;
 	uint32_t replayChecksumInterval = 60;
@@ -142,6 +145,10 @@ private:
 	std::vector<net::NetEvent> m_events;
 	std::vector<uint8_t> m_buffer;
 	std::vector<uint8_t> m_image;
+	// The map as loaded, forwarded to every client on join.
+	LevelLayout m_map;
+	std::vector<uint8_t> m_mapBytes;
+	uint64_t m_mapHash = 0;
 	std::vector<uint64_t> m_hashes;
 };
 

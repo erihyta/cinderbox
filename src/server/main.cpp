@@ -2,7 +2,7 @@
 //
 //   cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]
 //             [--prop-lifetime SEC] [--props-per-player N] [--props-global N]
-//             [--record FILE] [--quiet]
+//             [--map FILE.cbmap] [--record FILE] [--quiet]
 
 #include "game_server.h"
 
@@ -45,6 +45,11 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o )
 		if ( arg == "--record" && i + 1 < argc )
 		{
 			o.recordPath = argv[++i];
+			continue;
+		}
+		if ( arg == "--map" && i + 1 < argc )
+		{
+			o.mapPath = argv[++i];
 			continue;
 		}
 		if ( i + 1 >= argc )

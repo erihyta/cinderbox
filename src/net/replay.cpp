@@ -9,7 +9,7 @@ namespace cb::net
 namespace
 {
 constexpr uint32_t kMagic = 0x50524243u; // "CBRP"
-constexpr uint32_t kVersion = 2; // 2: per-field input encoding
+constexpr uint32_t kVersion = 3; // 2: per-field input encoding, 3: baked map in the header
 constexpr uint8_t kRecordFrame = 1;
 constexpr uint8_t kRecordChecksum = 2;
 } // namespace
@@ -19,7 +19,7 @@ ReplayWriter::~ReplayWriter()
 	Close();
 }
 
-bool ReplayWriter::Open( const std::string& path, uint64_t fingerprint, const SimConfig& config )
+bool ReplayWriter::Open( const std::string& path, uint64_t fingerprint, const SimConfig& config, const std::vector<uint8_t>& map )
 {
 	Close();
 	m_file = std::fopen( path.c_str(), "wb" );
@@ -32,6 +32,8 @@ bool ReplayWriter::Open( const std::string& path, uint64_t fingerprint, const Si
 	MsgWelcome header;
 	header.fingerprint = fingerprint;
 	header.config = config;
+	header.map = map;
+	header.mapHash = MapHash( map.data(), map.size() );
 	std::vector<uint8_t> bytes;
 	Encode( header, bytes );
 
@@ -125,6 +127,13 @@ bool ReplayReader::Open( const std::string& path, std::string& error )
 	}
 	m_fingerprint = header.fingerprint;
 	m_config = header.config;
+	m_mapBytes = std::move( header.map );
+	std::string mapError;
+	if ( DeserializeMap( m_mapBytes.data(), m_mapBytes.size(), m_map, mapError ) == false )
+	{
+		error = "replay map: " + mapError;
+		return false;
+	}
 
 	FrameCodec codec;
 	m_frames.clear();

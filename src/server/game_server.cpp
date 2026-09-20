@@ -20,7 +20,24 @@ GameServer::~GameServer() = default;
 bool GameServer::Start( const ServerOptions& options )
 {
 	m_options = options;
-	m_sim = std::make_unique<Simulation>( options.config );
+
+	m_map = GetLevelLayout();
+	if ( options.mapPath.empty() == false )
+	{
+		std::string error;
+		if ( LoadMapFile( options.mapPath, m_map, m_mapBytes, error ) == false )
+		{
+			Log( "cannot load map %s: %s", options.mapPath.c_str(), error.c_str() );
+			return false;
+		}
+	}
+	else
+	{
+		SerializeMap( m_map, m_mapBytes );
+	}
+	m_mapHash = MapHash( m_mapBytes.data(), m_mapBytes.size() );
+
+	m_sim = std::make_unique<Simulation>( options.config, m_map );
 	m_history.assign( kFrameHistory, InputFrame{} );
 	for ( InputFrame& f : m_history )
 	{
@@ -43,7 +60,7 @@ bool GameServer::Start( const ServerOptions& options )
 
 	if ( options.recordPath.empty() == false )
 	{
-		if ( m_replay.Open( options.recordPath, BuildFingerprint(), options.config ) == false )
+		if ( m_replay.Open( options.recordPath, BuildFingerprint(), options.config, m_mapBytes ) == false )
 		{
 			Log( "cannot write replay %s", options.recordPath.c_str() );
 			return false;
@@ -52,8 +69,10 @@ bool GameServer::Start( const ServerOptions& options )
 		Log( "recording to %s", options.recordPath.c_str() );
 	}
 
-	Log( "listening on port %u, %u Hz, fingerprint %016llx", options.port, options.config.tickRate,
-		 (unsigned long long)BuildFingerprint() );
+	Log( "listening on port %u, %u Hz, fingerprint %016llx, map %s (%u statics, %u props, hash %016llx)", options.port,
+		 options.config.tickRate, (unsigned long long)BuildFingerprint(),
+		 options.mapPath.empty() ? "built-in sandbox" : options.mapPath.c_str(), unsigned( m_map.statics.size() ),
+		 unsigned( m_map.props.size() ), (unsigned long long)m_mapHash );
 	return true;
 }
 
@@ -353,6 +372,8 @@ void GameServer::SendSnapshots()
 		welcome.reconnectToken = c.token;
 		welcome.snapshotTick = m_sim->Tick();
 		welcome.baseInputs = m_lastInputs;
+		welcome.mapHash = m_mapHash;
+		welcome.map = m_mapBytes;
 		welcome.image = m_image;
 		Encode( welcome, m_buffer );
 		m_transport.Send( c.peer, ChannelReliable, m_buffer, true );

@@ -8,6 +8,7 @@
 // three are captured by Save()/Load().
 
 #include "components.h"
+#include "level.h"
 #include "physics_arena.h"
 #include "types.h"
 
@@ -49,7 +50,9 @@ struct SimGlobals
 class Simulation
 {
 public:
-	explicit Simulation( const SimConfig& config );
+	// `map` is the level to build. It must be identical on the server and every client; the server
+	// sends the bytes it loaded to each client on join.
+	explicit Simulation( const SimConfig& config, const LevelLayout& map = GetLevelLayout() );
 	~Simulation();
 
 	Simulation( const Simulation& ) = delete;
@@ -156,6 +159,7 @@ private:
 	void DeserializeEcs( const std::vector<uint8_t>& in );
 
 	SimConfig m_config;
+	LevelLayout m_map;
 	SimGlobals m_globals;
 	flecs::world m_world;
 	std::unique_ptr<PhysicsArena> m_arena;

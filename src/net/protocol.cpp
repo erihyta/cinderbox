@@ -128,6 +128,8 @@ void Encode( const MsgWelcome& m, std::vector<uint8_t>& out )
 	w.Write( m.reconnectToken );
 	w.Write( m.snapshotTick );
 	WriteInputs( w, m.baseInputs );
+	w.Write( m.mapHash );
+	w.WriteBlob( m.map );
 	w.WriteBlob( m.image );
 }
 
@@ -142,7 +144,12 @@ bool Decode( ByteReader& r, MsgWelcome& m )
 	m.slot = r.Read<PlayerSlot>();
 	m.reconnectToken = r.Read<uint64_t>();
 	m.snapshotTick = r.Read<uint32_t>();
-	return ReadInputs( r, m.baseInputs ) && ReadBlobChecked( r, m.image ) && m.slot < kMaxPlayers;
+	if ( ReadInputs( r, m.baseInputs ) == false )
+	{
+		return false;
+	}
+	m.mapHash = r.Read<uint64_t>();
+	return ReadBlobChecked( r, m.map ) && ReadBlobChecked( r, m.image ) && m.slot < kMaxPlayers;
 }
 
 void Encode( const MsgReject& m, std::vector<uint8_t>& out )

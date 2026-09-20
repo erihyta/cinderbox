@@ -20,7 +20,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 2;
+inline constexpr uint32_t kProtocolVersion = 3;
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t
@@ -55,6 +55,10 @@ struct MsgHello
 // S -> C, on join, reconnect and desync recovery. The client loads `image` (the state before
 // `snapshotTick`), then applies frames starting at `snapshotTick`. `baseInputs` are the inputs of
 // frame snapshotTick - 1 (the delta base and the prediction seed).
+//
+// `map` is the server's baked level (a .cbmap, see sim/map.h). The client builds its simulation
+// from these bytes, so it can never run a different level: entities created later (a player
+// spawning, a prop) depend on the map, and a mismatch would desync.
 struct MsgWelcome
 {
 	uint32_t version = kProtocolVersion;
@@ -64,6 +68,8 @@ struct MsgWelcome
 	uint64_t reconnectToken = 0;
 	uint32_t snapshotTick = 0;
 	InputArray baseInputs{};
+	uint64_t mapHash = 0;
+	std::vector<uint8_t> map;
 	std::vector<uint8_t> image;
 };
 

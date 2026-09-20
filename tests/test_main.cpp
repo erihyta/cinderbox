@@ -8,6 +8,7 @@
 //   cb_tests --save-portable <file> / --load-portable <file>   portable snapshot across builds
 
 #include "anim_controller.h"
+#include "map.h"
 #include "pose.h"
 #include "rollback.h"
 #include "scenario.h"
@@ -68,6 +69,110 @@ std::vector<uint64_t> RunReference( const std::vector<InputFrame>& frames, const
 		hashes.push_back( sim.ComputeHash() );
 	}
 	return hashes;
+}
+
+bool SameLayout( const LevelLayout& a, const LevelLayout& b )
+{
+	auto sameVec = []( const b3Vec3& u, const b3Vec3& v ) { return u.x == v.x && u.y == v.y && u.z == v.z; };
+	if ( a.name != b.name || a.statics.size() != b.statics.size() || a.props.size() != b.props.size() )
+	{
+		return false;
+	}
+	if ( sameVec( a.spawnCenter, b.spawnCenter ) == false || a.spawnRadius != b.spawnRadius )
+	{
+		return false;
+	}
+	for ( size_t i = 0; i < a.statics.size(); ++i )
+	{
+		const LevelBox& x = a.statics[i];
+		const LevelBox& y = b.statics[i];
+		if ( sameVec( x.center, y.center ) == false || sameVec( x.halfExtents, y.halfExtents ) == false || x.pitch != y.pitch ||
+			 x.yaw != y.yaw )
+		{
+			return false;
+		}
+	}
+	for ( size_t i = 0; i < a.props.size(); ++i )
+	{
+		const LevelProp& x = a.props[i];
+		const LevelProp& y = b.props[i];
+		if ( x.kind != y.kind || sameVec( x.position, y.position ) == false || sameVec( x.halfExtents, y.halfExtents ) == false )
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+// A map must survive a bake -> load round trip bit-exactly, and a simulation built from the loaded
+// map must be identical to one built from the layout in memory. Otherwise a client that received
+// the map would desync from the server that baked it.
+void TestMapFormat()
+{
+	const LevelLayout& builtin = GetLevelLayout();
+	std::vector<uint8_t> bytes;
+	SerializeMap( builtin, bytes );
+
+	LevelLayout loaded;
+	std::string error;
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) );
+	CHECK( SameLayout( builtin, loaded ) );
+	std::printf( "    built-in map: %zu bytes, %zu statics, %zu props, hash %016" PRIx64 "\n", bytes.size(),
+				 loaded.statics.size(), loaded.props.size(), MapHash( bytes.data(), bytes.size() ) );
+
+	// Re-baking the loaded map must produce the same file.
+	std::vector<uint8_t> again;
+	SerializeMap( loaded, again );
+	CHECK( again == bytes );
+
+	// Values off the storage grid (what an editor produces) must land on it, and stay there.
+	LevelLayout authored;
+	authored.name = "authored";
+	authored.spawnCenter = { 1.0f / 3.0f, 0.7071067f, -12.3456f };
+	authored.spawnRadius = 2.5f;
+	authored.statics.push_back( { { 0.1234f, -0.5f, 9.87654f }, { 3.3333f, 0.25f, 1.7f }, 0.4567f, -1.2345f } );
+	authored.props.push_back( { ShapeKind::Sphere, { -4.4444f, 1.1111f, 0.0f }, { 0.5f, 0.0f, 0.0f } } );
+	QuantizeLayout( authored );
+	std::vector<uint8_t> authoredBytes;
+	SerializeMap( authored, authoredBytes );
+	LevelLayout authoredBack;
+	CHECK( DeserializeMap( authoredBytes.data(), authoredBytes.size(), authoredBack, error ) );
+	CHECK( SameLayout( authored, authoredBack ) );
+
+	// Bad input is refused, never trusted.
+	LevelLayout ignored;
+	CHECK( DeserializeMap( nullptr, 0, ignored, error ) == false );
+	std::vector<uint8_t> truncated( bytes.begin(), bytes.begin() + 40 );
+	CHECK( DeserializeMap( truncated.data(), truncated.size(), ignored, error ) == false );
+	std::vector<uint8_t> wrongVersion = bytes;
+	wrongVersion[4] = 99;
+	CHECK( DeserializeMap( wrongVersion.data(), wrongVersion.size(), ignored, error ) == false );
+
+	// The real requirement: same map bytes => same simulation, tick for tick.
+	auto frames = test::MakeScenario( { 300, 4, 6, 99, true } );
+	SimConfig config = TestConfig();
+	Simulation fromMemory( config, builtin );
+	Simulation fromFile( config, loaded );
+	for ( const InputFrame& f : frames )
+	{
+		fromMemory.Step( f );
+		fromFile.Step( f );
+		if ( fromMemory.ComputeHash() != fromFile.ComputeHash() )
+		{
+			std::printf( "    diverged at tick %u\n", f.tick );
+			CHECK( false );
+			break;
+		}
+	}
+
+	// A different map must produce a different simulation, or the hash would not protect anything.
+	LevelLayout moved = loaded;
+	moved.statics[0].center.y += 0.5f;
+	std::vector<uint8_t> movedBytes;
+	SerializeMap( moved, movedBytes );
+	CHECK( MapHash( movedBytes.data(), movedBytes.size() ) != MapHash( bytes.data(), bytes.size() ) );
+	Simulation other( config, moved );
+	CHECK( other.ComputeHash() != fromMemory.ComputeHash() );
 }
 
 void TestRepeatability()
@@ -724,6 +829,7 @@ int main( int argc, char** argv )
 		std::function<void()> fn;
 	};
 	const Test tests[] = {
+		{ "map_format", TestMapFormat },
 		{ "repeatability", TestRepeatability },
 		{ "snapshot_roundtrip", TestSnapshotRoundTrip },
 		{ "portable_snapshot", TestPortableSnapshot },

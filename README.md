@@ -13,6 +13,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M4: replay tool, network simulator, bots, stress test | done |
 | M5: unreliable frame batches, automatic prediction window | done |
 | M6: Godot client (GDExtension), prefabs, VFX, HUD, mod packs, Windows export | done |
+| M7: maps authored in the Godot editor, baked .cbmap format, map sent on join | done |
 
 ## Building
 
@@ -76,7 +77,7 @@ Mods are cosmetic Godot resource packs (`.zip`). A mod can replace or add:
 - entity visuals in `prefabs/`;
 - effects in `vfx/`;
 - the HUD in `ui/`;
-- maps in `maps/` (reserved; see DESIGN.md);
+- map visuals in `maps/` (the scene named after the map the server runs);
 - shared files in `assets/`.
 
 Mods cannot contain code. The game refuses a pack that contains scripts, native libraries or files
@@ -95,6 +96,31 @@ The game loads packs from these places, in this order:
 
 Within a folder, packs load in alphabetical order, and a later pack overrides an earlier one.
 [mods_src/README.md](mods_src/README.md) lists the files the game looks up.
+
+## Maps
+
+A map is a Godot scene with three marker nodes in it, baked into a `.cbmap` file the server loads.
+The markers carry the collision the simulation needs; everything else in the scene is the look.
+
+| Node | What it becomes |
+|---|---|
+| `CbStatic` | A solid box: floor, wall, ramp, step, platform. `size` is the full size in metres. |
+| `CbProp` | A dynamic box or sphere the level starts with. |
+| `CbSpawn` | Where players appear. One per map. |
+
+1. Make a scene in `godot/maps/`, for example `arena.tscn` (copy `example_arena.tscn` to start).
+2. Place `CbStatic` boxes for the collision, and your own meshes, lights and effects for the look.
+3. Press **Bake Map** in the 3D toolbar, or run `tools\bake_map.ps1 -Scene res://maps/arena.tscn`.
+4. Run the server on it: `cb_server --map godot\maps\arena.cbmap`.
+
+The server sends the baked map to every client when it joins, so clients always play the server's
+level and can never disagree about it. Clients then look for `res://maps/<name>.tscn` to draw it; if
+they do not have that scene, they draw the baked collision boxes instead, which is what the
+built-in sandbox does.
+
+Baked values are rounded to fixed-point (1/1024 m, 1/4096 rad) so a map is identical on every
+platform, and the order of the nodes in the scene is the order entities are created in, which is
+part of the map's identity. See `src/sim/map.h` for the format.
 
 ## Animations
 
@@ -126,6 +152,7 @@ All tools are in `<build dir>/bin`.
 
 | Tool | What it does |
 |---|---|
+| `cb_server --map FILE.cbmap` | Runs an authored map instead of the built-in sandbox |
 | `cb_server --record FILE` | Records the whole session (input frames plus checksums) |
 | `cb_replay info\|verify FILE` | Summarizes a recording, or re-simulates it and checks every checksum |
 | `cb_client --replay FILE [--replay-start S]` | Watches a recording |
@@ -166,6 +193,7 @@ cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, B
 assets/anim/      your converted animation clips (see its README)
 src/sim/          deterministic simulation shared by server and client
   types.h           inputs, input frames, config
+  map.*             baked map format (.cbmap): fixed-point collision and spawn data
   components.h      snapshotted ECS components (POD, no padding)
   simulation.*      the game: level, character mover, props, snapshots, hashing
   rollback.*        client prediction + rollback session
@@ -188,8 +216,11 @@ src/present/      engine-independent presentation, shared by Godot and raylib
   scripts/          spawn/destroy effects, player pose evaluation
 src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals), CinderboxSkeleton
 godot/            Godot client project: boot (mod loader), game (input, camera, HUD, VFX), prefabs, vfx, ui
+  maps/             map scenes and their baked .cbmap files
+  addons/cinderbox_maps/  editor plugin: the Bake Map button and the headless baker
 mods_src/         mod projects (example_neon)
 tests/            determinism, rollback, gameplay, animation and loopback network tests
 scripts/          cross-compiler determinism check, stress test
-tools/            animation conversion (convert_animations.*), test glTF generator, pack_mod.ps1, export_client.ps1
+tools/            animation conversion (convert_animations.*), test glTF generator, pack_mod.ps1,
+                  export_client.ps1, bake_map.ps1
 ```

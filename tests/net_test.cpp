@@ -6,6 +6,7 @@
 #include "fingerprint.h"
 #include "game_client.h"
 #include "game_server.h"
+#include "map.h"
 #include "netsim.h"
 #include "replay.h"
 #include "simulation.h"
@@ -74,12 +75,13 @@ struct Harness
 	uint16_t clientPort = 0; // port bots connect to (the proxy's, when there is one)
 	std::unique_ptr<net::NetSimProxy> proxy;
 
-	explicit Harness( uint16_t p, const std::string& recordPath = {} )
+	explicit Harness( uint16_t p, const std::string& recordPath = {}, const std::string& mapPath = {} )
 		: port( p )
 		, clientPort( p )
 	{
 		ServerOptions options;
 		options.port = port;
+		options.mapPath = mapPath;
 		options.recordHashes = true;
 		options.verbose = false;
 		options.config.physicsArenaMB = 64;
@@ -198,6 +200,67 @@ size_t CountPlayers( Simulation& sim )
 		n += sim.IsPlayerActive( PlayerSlot( i ) ) ? 1 : 0;
 	}
 	return n;
+}
+
+// A client must play the server's map, not its own idea of a level. The server sends the baked
+// bytes on join; if that were skipped, entities created later (players spawning) would differ.
+void TestMapSync()
+{
+	// A small map that is clearly not the built-in sandbox.
+	LevelLayout authored;
+	authored.name = "net_test_arena";
+	authored.spawnCenter = { -6.0f, 1.5f, -9.0f };
+	authored.spawnRadius = 3.0f;
+	authored.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 25.0f, 0.5f, 25.0f }, 0.0f, 0.0f } );
+	authored.statics.push_back( { { 0.0f, 1.0f, -14.0f }, { 25.0f, 1.0f, 0.5f }, 0.0f, 0.0f } );
+	authored.props.push_back( { ShapeKind::Box, { -6.0f, 0.5f, -5.0f }, { 0.5f, 0.5f, 0.5f } } );
+	QuantizeLayout( authored );
+
+	std::vector<uint8_t> bytes;
+	SerializeMap( authored, bytes );
+	std::filesystem::path mapPath = std::filesystem::temp_directory_path() / "cb_net_test_arena.cbmap";
+	std::string error;
+	CHECK( WriteMapFile( mapPath.string(), bytes, error ) );
+
+	Harness h( 17806, {}, mapPath.string() );
+	h.AddBot();
+	h.AddBot();
+	h.RunUntil( 3.0 );
+	h.AddBot(); // late joiner: gets the map with its snapshot
+	h.RunUntil( 6.0 );
+	h.Report();
+
+	CHECK( CountPlayers( h.server.Sim() ) == 3 );
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->State() == ClientState::Playing );
+		CHECK( b.client->GetStats().desyncs == 0 );
+		// The client rebuilt its simulation from the server's map, not from the built-in one.
+		CHECK( b.client->Map().name == authored.name );
+		CHECK( b.client->Map().statics.size() == authored.statics.size() );
+		CHECK( b.client->MapHash() == MapHash( bytes.data(), bytes.size() ) );
+		int compared = 0;
+		CHECK( h.CompareWithServer( b, compared ) == 0 );
+		CHECK( compared > 20 );
+	}
+
+	// Players really did spawn where the map says, not where the sandbox would have put them.
+	bool sawPlayer = false;
+	Simulation& sim = h.server.Sim();
+	for ( const auto& r : sim.Entities() )
+	{
+		flecs::entity e( sim.World(), r.entity );
+		if ( e.has<Character>() == false )
+		{
+			continue;
+		}
+		sawPlayer = true;
+		const Transform& t = e.get<Transform>();
+		CHECK( t.position.z < 0.0f );
+	}
+	CHECK( sawPlayer );
+
+	std::filesystem::remove( mapPath );
 }
 
 void TestLoopbackSession()
@@ -559,6 +622,7 @@ int main( int argc, char** argv )
 	};
 	const Test tests[] = {
 		{ "protocol", TestProtocol },
+		{ "map_sync", TestMapSync },
 		{ "loopback_session", TestLoopbackSession },
 		{ "late_join", TestLateJoin },
 		{ "reconnect", TestReconnect },

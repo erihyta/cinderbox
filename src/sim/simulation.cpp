@@ -147,8 +147,9 @@ void ReleaseFlecsWorld( flecs::world& world )
 	world.release();
 }
 
-Simulation::Simulation( const SimConfig& config )
+Simulation::Simulation( const SimConfig& config, const LevelLayout& map )
 	: m_config( config )
+	, m_map( map )
 	, m_world( CreateFlecsWorld() )
 {
 	m_arena = std::make_unique<PhysicsArena>( size_t( config.physicsArenaMB ) * 1024 * 1024 );
@@ -276,7 +277,7 @@ b3ShapeId Simulation::CreateShape( b3BodyId body, const Shape& shape, uint64_t c
 
 void Simulation::BuildLevel()
 {
-	const LevelLayout& layout = GetLevelLayout();
+	const LevelLayout& layout = m_map;
 
 	for ( const LevelBox& box : layout.statics )
 	{
@@ -351,7 +352,7 @@ b3ShapeId Simulation::ShapeOf( const PhysicsBody& pb ) const
 
 b3Vec3 Simulation::SpawnPoint( PlayerSlot slot ) const
 {
-	const LevelLayout& layout = GetLevelLayout();
+	const LevelLayout& layout = m_map;
 	float col = float( slot % 8 );
 	float row = float( slot / 8 );
 	return { layout.spawnCenter.x - 5.25f + 1.5f * col, layout.spawnCenter.y, layout.spawnCenter.z + 1.5f * row };
