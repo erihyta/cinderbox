@@ -31,6 +31,7 @@ Godot converts scenes and imported assets into its runtime formats when packing.
 | `vfx/prop_spawn.tscn`, `vfx/prop_destroy.tscn` | prop spawned / removed | One-shot effects. Every `GPUParticles3D` in the scene is restarted; the node is freed after 3 s. |
 | `vfx/jump.tscn`, `vfx/land.tscn` | a player jumps / lands | Placed at the player's feet. |
 | `ui/hud.tscn` | HUD | Any `Control` tree. Optional labels with unique names `%Stats`, `%Banner` and `%Help` are filled by the game. |
+| `maps/<name>.tscn` | the level's visuals | The scene the server's map was baked from, named after it. A mod can replace it to re-skin a level. |
 
 Prop prefabs whose root has the metadata `tint_by_net_id = true` get a per-prop color from the game.
 Leave it out to keep your own material.
@@ -39,8 +40,10 @@ Prefabs are purely visual. Collision, movement and timing come from the simulati
 bodies in a prefab are not used for gameplay. Jolt bodies may still be used for debris and similar
 effects that only exist on one client.
 
-`maps/` is reserved. Levels are defined by the simulation today; a map format shared with the server
-is future work.
+A map mod replaces only how a level looks. The collision comes from the baked map the server sends,
+so moving a wall in a map mod moves the picture and not the wall: players still collide with the
+server's geometry. Changing a level for real means baking a new map and running a server on it (see
+the Maps section of the README).
 
 ## example_neon
 

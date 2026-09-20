@@ -1,4 +1,5 @@
 #include "cinderbox_client.h"
+#include "cinderbox_map_nodes.h"
 #include "cinderbox_skeleton.h"
 
 #include <gdextension_interface.h>
@@ -19,6 +20,11 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	}
 	GDREGISTER_CLASS( cb::gd::CinderboxSkeleton );
 	GDREGISTER_CLASS( cb::gd::CinderboxClient );
+	// Map authoring: inert marker nodes plus the baker they are baked with.
+	GDREGISTER_CLASS( cb::gd::CbStatic );
+	GDREGISTER_CLASS( cb::gd::CbProp );
+	GDREGISTER_CLASS( cb::gd::CbSpawn );
+	GDREGISTER_CLASS( cb::gd::CinderboxMapBaker );
 }
 
 void UninitializeCinderbox( ModuleInitializationLevel )

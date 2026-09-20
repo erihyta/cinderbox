@@ -30,7 +30,7 @@ public:
 		{
 			return false;
 		}
-		m_sim = std::make_unique<Simulation>( m_reader.Config() );
+		m_sim = std::make_unique<Simulation>( m_reader.Config(), m_reader.Map() );
 		CaptureKeyframe();
 		return true;
 	}

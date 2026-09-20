@@ -4,6 +4,7 @@
 // rollback, input upload and desync detection. The raylib app and headless bots both use it.
 
 #include "protocol.h"
+#include "map.h"
 #include "rollback.h"
 #include "transport.h"
 
@@ -103,6 +104,16 @@ public:
 	{
 		return m_session.get();
 	}
+
+	// The map the server sent. Presentation uses its name to find the map's visuals.
+	const LevelLayout& Map() const
+	{
+		return m_map;
+	}
+	uint64_t MapHash() const
+	{
+		return m_mapHash;
+	}
 	PlayerSlot Slot() const
 	{
 		return m_slot;
@@ -158,6 +169,9 @@ private:
 	double m_windowShrinkTimer = 0.0;
 	std::unique_ptr<RollbackSession> m_session;
 	SimConfig m_config;
+	// The map the server sent on join. The session is rebuilt when it changes.
+	LevelLayout m_map;
+	uint64_t m_mapHash = 0;
 
 	ClientState m_state = ClientState::Idle;
 	std::string m_rejectReason;

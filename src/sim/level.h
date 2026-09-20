@@ -4,6 +4,7 @@
 
 #include "components.h"
 
+#include <string>
 #include <vector>
 
 namespace cb
@@ -26,6 +27,9 @@ struct LevelProp
 
 struct LevelLayout
 {
+	// Short name of the map, used by clients to find its visuals (res://maps/<name>.tscn).
+	// The simulation ignores it: it is presentation data that travels with the level.
+	std::string name;
 	std::vector<LevelBox> statics;
 	std::vector<LevelProp> props;
 	b3Vec3 spawnCenter;

@@ -1,6 +1,7 @@
 #include "level.h"
 
 #include "detmath.h"
+#include "map.h"
 
 namespace cb
 {
@@ -11,6 +12,7 @@ namespace
 LevelLayout BuildLayout()
 {
 	LevelLayout L;
+	L.name = "sandbox";
 	const float arenaHalf = 30.0f;
 	const float wallHeight = 2.0f;
 	const float wallThickness = 0.5f;
@@ -84,7 +86,13 @@ LevelLayout BuildLayout()
 
 const LevelLayout& GetLevelLayout()
 {
-	static const LevelLayout layout = BuildLayout();
+	// Quantized like a baked map, so the built-in sandbox and a .cbmap of it are the same level.
+	static const LevelLayout layout = []
+	{
+		LevelLayout L = BuildLayout();
+		QuantizeLayout( L );
+		return L;
+	}();
 	return layout;
 }
 

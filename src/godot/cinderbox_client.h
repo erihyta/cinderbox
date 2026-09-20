@@ -89,6 +89,16 @@ public:
 	{
 		return m_prefabDir;
 	}
+	void set_map_dir( const godot::String& v )
+	{
+		m_mapDir = v;
+	}
+	godot::String get_map_dir() const
+	{
+		return m_mapDir;
+	}
+	// Name of the map the server is running, "" until it has been received.
+	godot::String get_map_name() const;
 	void set_animation_dir( const godot::String& v )
 	{
 		m_animationDir = v;
@@ -103,6 +113,7 @@ protected:
 
 private:
 	void EnsureAnimations();
+	void UpdateMapVisual();
 	void HandleEvents();
 	void UpdateNodes();
 	godot::Ref<godot::PackedScene> Prefab( const present::Visual& v );
@@ -114,6 +125,7 @@ private:
 	int m_rollbackMin = 8;
 	int m_rollbackMax = 20;
 	godot::String m_prefabDir = "res://prefabs";
+	godot::String m_mapDir = "res://maps";
 	godot::String m_animationDir;
 
 	std::shared_ptr<const anim::AnimSet> m_animSet;
@@ -124,6 +136,11 @@ private:
 	godot::String m_lastState;
 
 	std::unordered_map<uint64_t, godot::ObjectID> m_nodes; // visual id -> node
+	// The map's own scene, when it ships one. With it loaded the baked collision boxes are not
+	// drawn: the mapper's geometry stands in for them.
+	godot::ObjectID m_mapVisual;
+	uint64_t m_visualMapHash = 0;
+	bool m_hideStaticBoxes = false;
 	std::unordered_map<std::string, godot::Ref<godot::PackedScene>> m_prefabs;
 };
 

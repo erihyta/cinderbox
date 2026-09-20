@@ -149,13 +149,49 @@ server ──ENet──> GameClient + Simulation (sim thread) ──Presentation
 
   The pack tool removes the mod project's `project.binary` and caches, which would otherwise replace the game's own.
 - **Cosmetic only**: gameplay, collision and timing live in the simulation, so a mod cannot change them. The server needs no knowledge of mods.
-- **Maps**: `maps/` is reserved.
-  - The level is still built by the simulation (`level.cpp`).
-  - Moddable maps need a deterministic map format that the server loads and hashes into the join handshake, with a Godot scene for the visuals.
+- **Maps** (M7): authored in Godot, baked to `.cbmap` and sent on join. See the Maps section.
 - **Animations**: the Godot client currently loads ozz clips from a folder on disk (`--animations=`).
   - Loading `.ozz` files from packs requires reading them through Godot's `FileAccess` into an ozz memory stream.
   - This is future work, as are clips shipped by mods.
   - Clips shipped by mods also need a skeleton compatibility check, and gameplay-relevant clips must stay the server's.
+
+## Maps (M7)
+A map is authored in the Godot editor and **baked offline** into a `.cbmap` the server loads. Godot
+is the editor, never a runtime dependency of the server: `cb_server` is a headless C++ binary and
+stays one. The bake is the same kind of build step as `gltf2ozz` for animations and `--export-pack`
+for mods.
+
+```
+maps/arena.tscn ──bake──> arena.cbmap ──> cb_server ──welcome──> every client's simulation
+      │                                                                    │
+      └── meshes, lights, particles ─────────> res://maps/arena.tscn ──> what the client draws
+```
+
+- **Authoring**: three marker nodes, registered by the extension and inert at runtime:
+  `CbStatic` (a solid box: floor, wall, ramp, step, platform), `CbProp` (a dynamic box or sphere)
+  and `CbSpawn` (where players appear).
+  - They are not Godot physics bodies. Collision belongs to Box3D, on the server and inside the
+    client's prediction; Godot's own physics never sees a simulation entity.
+  - Everything else in the scene is the look, and the mapper builds it however they like.
+- **Baking** (`tools/bake_map.ps1`, or the Bake Map button):
+  - The baker walks the scene and accumulates transforms itself, so it works headless and is
+    always relative to the map root.
+  - Values are quantized to fixed-point: 1/1024 m for positions and extents, 1/4096 rad for angles.
+    Both grids are powers of two, so quantizing and dequantizing are exact; a map produces the same
+    floats on every platform without depending on anyone's decimal parsing or libm.
+  - A static box keeps yaw and pitch only. Roll is dropped, and the baker says so.
+  - Scene-tree order is the order the simulation creates entities in, so it decides flecs ids,
+    Box3D body order and every state hash. It is part of the format.
+- **Distribution**: the map is sent in the welcome, next to the state snapshot.
+  - A client cannot play the wrong level, so there is nothing to negotiate.
+  - It is needed even though the snapshot already has the level: entities created *later*, such as
+    a player spawning, come from the map, and a mismatch would desync from that moment on.
+  - The built-in sandbox is serialized the same way, so there is one code path.
+  - A baked map is small: the sandbox is 1.6 KB and the example arena is 0.5 KB.
+- **Visuals**: a client draws `res://maps/<name>.tscn`, the scene the map was baked from, and then
+  does not draw the baked boxes. Without that scene it draws the boxes, so a client is never left
+  in the void. Mods replace map visuals like any other scene.
+- **Replays** carry the map in their header, so a recording of an authored map still verifies.
 
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*`).
@@ -214,8 +250,13 @@ server ──ENet──> GameClient + Simulation (sim thread) ──Presentation
 - **Godot**:
   - an AnimationTree-to-ozz binding;
   - ozz clips loaded from packs;
-  - a shared map format;
   - Linux and macOS exports (the extension builds with `unix-clang-release`; not yet tested).
+- **Maps, next steps**:
+  - entity templates a map can place and the server can spawn at runtime, which needs a component
+    registry (reflection over the simulation's components) so an author can set initial values;
+  - shapes beyond boxes and spheres, and a way to author them without one node per box;
+  - static geometry left out of the portable snapshot: it is immutable and both sides build it from
+    the map, so a large map should not pay for it on every join.
 
 ## Milestones (check-in after each)
 1. **M1** (done): build system, deterministic sim core (flecs + Box3D + mover + props), snapshot/restore, rollback session, determinism tests (Clang, GCC and MSVC verified identical).
@@ -224,3 +265,4 @@ server ──ENet──> GameClient + Simulation (sim thread) ──Presentation
 4. **M4** (done): replay recording, verification and playback, network simulator, bots (full and lite), stress-test script, lossy integration test, 64-player measurements.
 5. **M5** (done): unreliable acknowledged frame batches, per-field input encoding, automatic prediction window, realistic and chaotic bots, re-measured.
 6. **M6** (done): engine-independent presentation layer (`src/present`), Godot GDExtension client on its own simulation thread, prefab/VFX/HUD scenes, mod packs with a no-code validator and an example mod, Windows export. Verified: same fingerprint as native builds (editor and exported release), no desyncs with bots.
+7. **M7** (done): maps authored in the Godot editor (CbStatic / CbProp / CbSpawn), a fixed-point `.cbmap` bake, the map sent to clients on join, map visuals drawn from the authored scene, `cb_server --map`, and maps in replays.

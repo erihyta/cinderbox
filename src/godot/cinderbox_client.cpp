@@ -100,6 +100,9 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_rollback_min" ), &CinderboxClient::get_rollback_min );
 	ClassDB::bind_method( D_METHOD( "set_rollback_max", "ticks" ), &CinderboxClient::set_rollback_max );
 	ClassDB::bind_method( D_METHOD( "get_rollback_max" ), &CinderboxClient::get_rollback_max );
+	ClassDB::bind_method( D_METHOD( "set_map_dir", "dir" ), &CinderboxClient::set_map_dir );
+	ClassDB::bind_method( D_METHOD( "get_map_dir" ), &CinderboxClient::get_map_dir );
+	ClassDB::bind_method( D_METHOD( "get_map_name" ), &CinderboxClient::get_map_name );
 	ClassDB::bind_method( D_METHOD( "set_prefab_dir", "dir" ), &CinderboxClient::set_prefab_dir );
 	ClassDB::bind_method( D_METHOD( "get_prefab_dir" ), &CinderboxClient::get_prefab_dir );
 	ClassDB::bind_method( D_METHOD( "set_animation_dir", "dir" ), &CinderboxClient::set_animation_dir );
@@ -110,6 +113,7 @@ void CinderboxClient::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "rollback_min", PROPERTY_HINT_RANGE, "1,64" ), "set_rollback_min", "get_rollback_min" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "rollback_max", PROPERTY_HINT_RANGE, "1,64" ), "set_rollback_max", "get_rollback_max" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "prefab_dir", PROPERTY_HINT_DIR ), "set_prefab_dir", "get_prefab_dir" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "map_dir", PROPERTY_HINT_DIR ), "set_map_dir", "get_map_dir" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "animation_dir", PROPERTY_HINT_GLOBAL_DIR ), "set_animation_dir",
 				  "get_animation_dir" );
 
@@ -250,6 +254,11 @@ void CinderboxClient::HandleEvents()
 					break;
 				}
 				const present::Visual& v = ve.get<present::Visual>();
+				if ( v.kind == present::VisualKind::Static && m_hideStaticBoxes )
+				{
+					// The map scene already draws this geometry.
+					break;
+				}
 				Ref<PackedScene> prefab = Prefab( v );
 				Node3D* node = nullptr;
 				if ( prefab.is_valid() )
@@ -394,8 +403,65 @@ void CinderboxClient::_process( double delta )
 	// A rollback is reported once; later updates of the same frame are ordinary.
 	m_frame.frame.rolledBack = false;
 
+	UpdateMapVisual();
 	HandleEvents();
 	UpdateNodes();
+}
+
+String CinderboxClient::get_map_name() const
+{
+	return String( m_frame.mapName.c_str() );
+}
+
+// The map's visuals are an ordinary Godot scene named after the map, which a mod can replace. If
+// it is missing, the baked collision boxes are drawn instead, so a client is never left in the void.
+void CinderboxClient::UpdateMapVisual()
+{
+	if ( m_frame.mapHash == m_visualMapHash )
+	{
+		return;
+	}
+	m_visualMapHash = m_frame.mapHash;
+	m_hideStaticBoxes = false;
+
+	if ( auto* old = Object::cast_to<Node>( ObjectDB::get_instance( m_mapVisual ) ) )
+	{
+		old->queue_free();
+	}
+	m_mapVisual = ObjectID();
+
+	// The level itself changed, so every visual belongs to the previous map.
+	for ( const auto& entry : m_nodes )
+	{
+		if ( auto* node = Object::cast_to<Node>( ObjectDB::get_instance( entry.second ) ) )
+		{
+			node->queue_free();
+		}
+	}
+	m_nodes.clear();
+
+	if ( m_frame.mapName.empty() )
+	{
+		return;
+	}
+	String path = m_mapDir.path_join( String( m_frame.mapName.c_str() ) + ".tscn" );
+	if ( ResourceLoader::get_singleton()->exists( path ) == false )
+	{
+		UtilityFunctions::print( "Cinderbox: no visuals for map \"", String( m_frame.mapName.c_str() ),
+								 "\", drawing collision boxes" );
+		return;
+	}
+	Ref<PackedScene> scene = ResourceLoader::get_singleton()->load( path );
+	Node3D* node = scene.is_valid() ? Object::cast_to<Node3D>( scene->instantiate() ) : nullptr;
+	if ( node == nullptr )
+	{
+		UtilityFunctions::push_warning( "Cinderbox: cannot instantiate ", path );
+		return;
+	}
+	node->set_name( "MapVisual" );
+	add_child( node );
+	m_mapVisual = node->get_instance_id();
+	m_hideStaticBoxes = true;
 }
 
 Dictionary CinderboxClient::get_stats() const

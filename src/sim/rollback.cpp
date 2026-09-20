@@ -14,13 +14,13 @@ constexpr size_t kConfirmedHashHistory = 512;
 } // namespace
 
 RollbackSession::RollbackSession( const SimConfig& config, PlayerSlot localSlot, uint32_t maxRollbackTicks,
-								  uint32_t maxRollbackCap )
+								  uint32_t maxRollbackCap, const LevelLayout& map )
 	: m_config( config )
 	, m_localSlot( localSlot )
 	, m_maxRollback( std::max<uint32_t>( maxRollbackTicks, 1 ) )
 	, m_maxRollbackCap( std::max( maxRollbackCap, m_maxRollback ) )
 {
-	m_sim = std::make_unique<Simulation>( config );
+	m_sim = std::make_unique<Simulation>( config, map );
 	// The largest window, plus the same again of history for finalizing hashes, plus slack.
 	m_records.resize( 2 * size_t( m_maxRollbackCap ) + 4 );
 	m_confirmedHashes.resize( kConfirmedHashHistory );
