@@ -61,6 +61,11 @@ func _ready() -> void:
 		_play_effects(CbEffect.EVENT_JUMPED, "jump", {"kind": "player", "position": pos, "is_local": is_local}))
 	client.player_landed.connect(func(_id, pos, is_local):
 		_play_effects(CbEffect.EVENT_LANDED, "land", {"kind": "player", "position": pos, "is_local": is_local}))
+	client.footstep.connect(func(_id, pos, is_local):
+		_play_effects(CbEffect.EVENT_FOOTSTEP, "", {"kind": "player", "position": pos, "is_local": is_local}))
+	client.impact.connect(func(_id, pos, strength, kind, template_name):
+		_play_effects(CbEffect.EVENT_IMPACT, "", {"kind": kind, "template": template_name, "position": pos,
+			"strength": strength}))
 	client.connection_state_changed.connect(func(state): print("connection: ", state))
 
 	_load_effects()
@@ -246,6 +251,8 @@ func _play_effects(event: int, fallback: String, ctx: Dictionary) -> void:
 		if effect.who == CbEffect.WHO_LOCAL and not ctx.get("is_local", false):
 			continue
 		if effect.who == CbEffect.WHO_REMOTE and ctx.get("is_local", false):
+			continue
+		if effect.min_strength > 0.0 and ctx.get("strength", 0.0) < effect.min_strength:
 			continue
 		if effect.cooldown > 0.0:
 			# Keeps a busy event (twenty props at once) from stacking twenty sounds.

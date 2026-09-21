@@ -69,6 +69,10 @@ struct Character
 	uint32_t groundTicks = 0;
 	// Tick of the most recent jump, 0 if never.
 	uint32_t lastJumpTick = 0;
+	// Distance walked since the last footstep, and how many steps this character has taken.
+	// Presentation plays a step whenever the count changes.
+	float stepDistance = 0.0f;
+	uint32_t stepCount = 0;
 };
 
 struct Prop
@@ -124,7 +128,7 @@ CB_CHECK_COMPONENT( Transform, 28 );
 CB_CHECK_COMPONENT( Velocity, 24 );
 CB_CHECK_COMPONENT( Shape, 16 );
 CB_CHECK_COMPONENT( PhysicsBody, 16 );
-CB_CHECK_COMPONENT( Character, 36 );
+CB_CHECK_COMPONENT( Character, 44 );
 CB_CHECK_COMPONENT( Prop, 12 );
 CB_CHECK_COMPONENT( AnimState, 20 );
 CB_CHECK_COMPONENT( TemplateRef, 4 );

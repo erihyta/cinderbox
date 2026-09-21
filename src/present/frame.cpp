@@ -9,6 +9,12 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 {
 	out.tick = sim.Tick();
 	out.tickSeconds = sim.Config().TimeStep();
+
+	// The whole ring travels with the frame: it is small, and a renderer that skipped ticks can
+	// then still see every impact it missed.
+	const SimGlobals& globals = sim.Globals();
+	out.impactCount = globals.impactCount;
+	out.impacts.assign( globals.impacts, globals.impacts + kImpactHistory );
 	out.entities.clear();
 	out.entities.reserve( sim.Entities().size() );
 
@@ -39,6 +45,10 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 		if ( const TemplateRef* t = e.try_get<TemplateRef>() )
 		{
 			f.templateIndex = t->index;
+		}
+		if ( const Character* ch = e.try_get<Character>() )
+		{
+			f.stepCount = ch->stepCount;
 		}
 		if ( const Velocity* v = e.try_get<Velocity>() )
 		{

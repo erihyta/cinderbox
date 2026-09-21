@@ -28,6 +28,8 @@ public:
 		EVENT_DESTROYING = 1,
 		EVENT_JUMPED = 2,
 		EVENT_LANDED = 3,
+		EVENT_FOOTSTEP = 4,
+		EVENT_IMPACT = 5,
 	};
 
 	enum Who
@@ -108,6 +110,15 @@ public:
 	float get_cooldown() const
 	{
 		return m_cooldown;
+	}
+
+	void set_min_strength( float value )
+	{
+		m_minStrength = value;
+	}
+	float get_min_strength() const
+	{
+		return m_minStrength;
 	}
 
 	void set_sound( const godot::String& value )
@@ -210,6 +221,8 @@ private:
 	int m_who = WHO_ANYONE;
 	// Shortest gap between two plays of this binding, in seconds. 0 lets it fire every time.
 	float m_cooldown = 0.0f;
+	// Impacts only: ignore anything softer than this approach speed, in m/s.
+	float m_minStrength = 0.0f;
 
 	// Sound played at the event, positional unless max_distance is 0.
 	godot::String m_sound;

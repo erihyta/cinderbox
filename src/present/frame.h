@@ -5,6 +5,7 @@
 // only ever see frames.
 
 #include "components.h"
+#include "simulation.h"
 #include "types.h"
 
 #include <cstdint>
@@ -34,6 +35,8 @@ struct FrameEntity
 	bool hasAnim = false;
 	// Map template this came from, or kNoTemplate. Presentation uses it to pick the prefab.
 	uint32_t templateIndex = kNoTemplate;
+	// Steps this character has taken; presentation plays one whenever it changes.
+	uint32_t stepCount = 0;
 	b3Vec3 halfExtents = {};
 	Transform transform;
 	b3Vec3 velocity = {};
@@ -48,6 +51,10 @@ struct PresentationFrame
 	uint32_t localNetId = 0;	  // 0: no local player (e.g. replay free camera)
 	float tickSeconds = 1.0f / 60.0f;
 	std::vector<FrameEntity> entities; // sorted by netId
+	// Impacts the simulation has recorded, and how many in total, so presentation can tell what it
+	// missed between two frames. Copied straight out of the simulation's ring.
+	uint32_t impactCount = 0;
+	std::vector<ImpactRecord> impacts;
 };
 
 // Fills `out.tick` and `out.entities`; the other fields are the caller's.

@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <mutex>
 #include <vector>
 
@@ -46,14 +47,40 @@ struct Snapshot
 	std::vector<uint8_t> physics; // arena image followed by the b3World struct
 };
 
+// One collision hard enough to be worth showing. Both entities are named so presentation can pick
+// an effect by what was hit; a static is an entity too, so its NetId appears here like any other.
+struct ImpactRecord
+{
+	uint32_t netIdA = 0;
+	uint32_t netIdB = 0;
+	uint32_t tick = 0;
+	float speed = 0.0f; // approach speed along the contact normal, m/s
+	b3Vec3 point = {};
+};
+
+// How many impacts presentation can pick up at once. A renderer that falls far behind drops the
+// rest, which is the right trade for an effect.
+inline constexpr uint32_t kImpactHistory = 16;
+inline constexpr uint32_t kImpactsPerTick = 8;
+
 // Singleton sim state that is not a component.
+// Hashed as raw bytes, so it must stay free of padding.
 struct SimGlobals
 {
 	uint32_t tick = 0;
 	uint32_t nextNetId = 1;
 	uint64_t rngState = 0;
 	uint32_t playerNetIds[kMaxPlayers] = {}; // 0 = slot empty
+	// Only ever grows, so presentation can tell how many impacts it missed. The ring holds the
+	// most recent ones, newest at (impactCount - 1) % kImpactHistory.
+	uint32_t impactCount = 0;
+	uint32_t reserved = 0;
+	ImpactRecord impacts[kImpactHistory] = {};
 };
+
+static_assert( sizeof( ImpactRecord ) == 28, "ImpactRecord layout changed: check for padding" );
+static_assert( sizeof( SimGlobals ) == 16 + 4 * kMaxPlayers + 8 + kImpactHistory * sizeof( ImpactRecord ),
+			   "SimGlobals has padding: it is hashed as raw bytes" );
 
 class Simulation
 {
@@ -165,6 +192,10 @@ private:
 	void ExpireProps();
 	void EnforcePropCaps();
 	void SyncFromPhysics();
+	// Reads Box3D's contact hit events into the impact ring, strongest first.
+	void CollectImpacts();
+	// Advances each character's stride and counts a step whenever it completes one.
+	void UpdateFootsteps();
 	void HandleOutOfBounds();
 
 	void SerializeEcs( std::vector<uint8_t>& out ) const;
@@ -184,6 +215,9 @@ private:
 	std::vector<uint32_t> m_spawnRequests;
 	std::vector<EntityRef> m_scratch;
 	std::vector<uint8_t> m_hashScratch;
+	// Shape index -> NetId, rebuilt only on ticks that produced impacts.
+	std::vector<std::pair<uint32_t, uint32_t>> m_shapeLookup;
+	std::vector<ImpactRecord> m_impactScratch;
 };
 
 } // namespace cb
