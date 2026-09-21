@@ -26,7 +26,7 @@ void CbEffect::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_who", "value" ), &CbEffect::set_who );
 	ClassDB::bind_method( D_METHOD( "get_who" ), &CbEffect::get_who );
 
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "event", PROPERTY_HINT_ENUM, "Spawned,Destroying,Jumped,Landed" ), "set_event",
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "event", PROPERTY_HINT_ENUM, "Spawned,Destroying,Jumped,Landed,Footstep,Impact" ), "set_event",
 				  "get_event" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "template_name" ), "set_template_name", "get_template_name" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "kind", PROPERTY_HINT_ENUM_SUGGESTION, "any,prop,player,static" ), "set_kind",
@@ -41,6 +41,11 @@ void CbEffect::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_cooldown", "value" ), &CbEffect::set_cooldown );
 	ClassDB::bind_method( D_METHOD( "get_cooldown" ), &CbEffect::get_cooldown );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "cooldown", PROPERTY_HINT_RANGE, "0,10,0.01" ), "set_cooldown", "get_cooldown" );
+
+	ClassDB::bind_method( D_METHOD( "set_min_strength", "value" ), &CbEffect::set_min_strength );
+	ClassDB::bind_method( D_METHOD( "get_min_strength" ), &CbEffect::get_min_strength );
+	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "min_strength", PROPERTY_HINT_RANGE, "0,50,0.1" ), "set_min_strength",
+				  "get_min_strength" );
 
 	ClassDB::bind_method( D_METHOD( "set_sound", "value" ), &CbEffect::set_sound );
 	ClassDB::bind_method( D_METHOD( "get_sound" ), &CbEffect::get_sound );
@@ -88,6 +93,8 @@ void CbEffect::_bind_methods()
 	BIND_ENUM_CONSTANT( EVENT_DESTROYING );
 	BIND_ENUM_CONSTANT( EVENT_JUMPED );
 	BIND_ENUM_CONSTANT( EVENT_LANDED );
+	BIND_ENUM_CONSTANT( EVENT_FOOTSTEP );
+	BIND_ENUM_CONSTANT( EVENT_IMPACT );
 	BIND_ENUM_CONSTANT( WHO_ANYONE );
 	BIND_ENUM_CONSTANT( WHO_LOCAL );
 	BIND_ENUM_CONSTANT( WHO_REMOTE );

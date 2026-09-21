@@ -130,6 +130,12 @@ void CinderboxClient::_bind_methods()
 							PropertyInfo( Variant::BOOL, "is_local" ) ) );
 	ADD_SIGNAL( MethodInfo( "player_landed", PropertyInfo( Variant::INT, "net_id" ), PropertyInfo( Variant::VECTOR3, "position" ),
 							PropertyInfo( Variant::BOOL, "is_local" ) ) );
+	ADD_SIGNAL( MethodInfo( "footstep", PropertyInfo( Variant::INT, "net_id" ), PropertyInfo( Variant::VECTOR3, "position" ),
+							PropertyInfo( Variant::BOOL, "is_local" ) ) );
+	// strength is the approach speed in m/s, so an effect can be chosen by how hard the hit was.
+	ADD_SIGNAL( MethodInfo( "impact", PropertyInfo( Variant::INT, "net_id" ), PropertyInfo( Variant::VECTOR3, "position" ),
+							PropertyInfo( Variant::FLOAT, "strength" ), PropertyInfo( Variant::STRING, "kind" ),
+							PropertyInfo( Variant::STRING, "template_name" ) ) );
 	ADD_SIGNAL( MethodInfo( "connection_state_changed", PropertyInfo( Variant::STRING, "state" ) ) );
 }
 
@@ -333,6 +339,20 @@ void CinderboxClient::HandleEvents()
 				bool isLocal = e.netId == m_frame.frame.localNetId;
 				emit_signal( e.type == present::EventType::Jumped ? "player_jumped" : "player_landed", int64_t( e.netId ),
 							 position - Vector3( 0, present::kFeetOffset, 0 ), isLocal );
+				break;
+			}
+			case present::EventType::Footstep:
+			{
+				bool isLocal = e.netId == m_frame.frame.localNetId;
+				emit_signal( "footstep", int64_t( e.netId ), position - Vector3( 0, present::kFeetOffset, 0 ), isLocal );
+				break;
+			}
+			case present::EventType::Impact:
+			{
+				flecs::entity ve( visuals, e.visual );
+				uint32_t templateIndex = ve.is_alive() ? ve.get<present::Visual>().templateIndex : kNoTemplate;
+				emit_signal( "impact", int64_t( e.netId ), position, e.strength, String( KindName( e.kind ) ),
+							 TemplateName( templateIndex ) );
 				break;
 			}
 		}

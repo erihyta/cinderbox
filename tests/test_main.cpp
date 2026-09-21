@@ -388,6 +388,117 @@ void TestTemplates()
 	CHECK( TemplateFloat( hostile, Fnv32( "Material" ), Fnv32( "friction" ), 0.0f ) <= 10.0f );
 }
 
+// Impacts and footsteps are simulation state, not presentation guesses: they have to be produced
+// identically by every build, survive rollback, and stay in the ring long enough to be seen.
+void TestSimEvents()
+{
+	SimConfig config = TestConfig();
+
+	// A ball dropped onto the floor registers an impact, with the entities and a sane speed.
+	LevelLayout map;
+	map.name = "impacts";
+	map.spawnCenter = { 0.0f, 1.5f, 8.0f };
+	map.spawnRadius = 2.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+	map.props.push_back( { ShapeKind::Sphere, { 0.0f, 5.0f, 0.0f }, { 0.4f, 0.0f, 0.0f } } );
+	QuantizeLayout( map );
+
+	Simulation sim( config, map );
+	CHECK( sim.Globals().impactCount == 0 );
+
+	InputFrame frame;
+	for ( uint32_t t = 0; t < 120; ++t )
+	{
+		frame.tick = t;
+		sim.Step( frame );
+	}
+
+	uint32_t impacts = sim.Globals().impactCount;
+	std::printf( "    %u impacts after a 5 m drop\n", impacts );
+	CHECK( impacts > 0 );
+
+	const ImpactRecord& first = sim.Globals().impacts[0];
+	CHECK( first.netIdA != 0 );
+	CHECK( first.netIdB != 0 );
+	CHECK( first.netIdA != first.netIdB );
+	// It fell about 5 m under gravity, so it cannot have been a gentle touch.
+	CHECK( first.speed > 2.0f );
+	CHECK( first.point.y < 2.0f );
+
+	// Two simulations of the same map must agree on every impact, not just on positions.
+	Simulation other( config, map );
+	for ( uint32_t t = 0; t < 120; ++t )
+	{
+		frame.tick = t;
+		other.Step( frame );
+	}
+	CHECK( other.Globals().impactCount == impacts );
+	CHECK( other.ComputeHash() == sim.ComputeHash() );
+
+	// Footsteps: a walking player takes steps, a standing one does not, and a sprinting one takes
+	// more of them over the same time.
+	auto stepsAfter = []( bool sprint, bool move, uint32_t ticks ) {
+		SimConfig cfg = TestConfig();
+		Simulation s( cfg );
+		InputFrame f;
+		f.events.push_back( { PlayerEventType::Join, 0 } );
+		f.tick = 0;
+		s.Step( f );
+		f.events.clear();
+		for ( uint32_t t = 1; t < ticks; ++t )
+		{
+			f.tick = t;
+			f.inputs[0].moveForward = move ? 127 : 0;
+			f.inputs[0].buttons = sprint ? BtnSprint : 0;
+			s.Step( f );
+		}
+		for ( const auto& r : s.Entities() )
+		{
+			const Character* c = flecs::entity( s.World(), r.entity ).try_get<Character>();
+			if ( c != nullptr )
+			{
+				return c->stepCount;
+			}
+		}
+		return uint32_t( 0 );
+	};
+
+	uint32_t standing = stepsAfter( false, false, 180 );
+	uint32_t walking = stepsAfter( false, true, 180 );
+	uint32_t sprinting = stepsAfter( true, true, 180 );
+	std::printf( "    steps in 3 s: standing %u, walking %u, sprinting %u\n", standing, walking, sprinting );
+	CHECK( standing == 0 );
+	CHECK( walking > 0 );
+	CHECK( sprinting > walking );
+
+	// A rollback must not invent or lose either kind of event: restoring an older state restores
+	// the counters with it, and re-simulating the same inputs reproduces them exactly.
+	Simulation rolled( config, map );
+	Snapshot snapshot;
+	for ( uint32_t t = 0; t < 40; ++t )
+	{
+		frame.tick = t;
+		rolled.Step( frame );
+	}
+	rolled.Save( snapshot );
+	uint32_t atSave = rolled.Globals().impactCount;
+	for ( uint32_t t = 40; t < 120; ++t )
+	{
+		frame.tick = t;
+		rolled.Step( frame );
+	}
+	uint32_t atEnd = rolled.Globals().impactCount;
+	rolled.Load( snapshot );
+	CHECK( rolled.Globals().impactCount == atSave );
+	for ( uint32_t t = 40; t < 120; ++t )
+	{
+		frame.tick = t;
+		rolled.Step( frame );
+	}
+	CHECK( rolled.Globals().impactCount == atEnd );
+	CHECK( rolled.ComputeHash() == sim.ComputeHash() );
+}
+
 void TestRepeatability()
 {
 	// Two simulations interleaved in one process also proves the arenas are isolated.
@@ -1044,6 +1155,7 @@ int main( int argc, char** argv )
 	const Test tests[] = {
 		{ "map_format", TestMapFormat },
 		{ "templates", TestTemplates },
+		{ "sim_events", TestSimEvents },
 		{ "repeatability", TestRepeatability },
 		{ "snapshot_roundtrip", TestSnapshotRoundTrip },
 		{ "portable_snapshot", TestPortableSnapshot },

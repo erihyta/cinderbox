@@ -35,6 +35,8 @@ struct Visual
 	PlayerSlot slot = 0;
 	bool isLocalPlayer = false;
 	uint32_t templateIndex = kNoTemplate;
+	// Last step count seen for this character, to notice new ones.
+	uint32_t stepCount = 0;
 	b3Vec3 halfExtents = { 0.5f, 0.5f, 0.5f };
 };
 
@@ -94,6 +96,8 @@ enum class EventType : uint8_t
 	Removed,	// the visual is gone; renderers free their node
 	Jumped,		// a player entered the jump-start pose (predicted, may be rolled back)
 	Landed,		// a player entered the landing pose
+	Footstep,	// a player completed a stride
+	Impact,		// two bodies hit hard enough for the simulation to record it
 };
 
 struct Event
@@ -104,6 +108,10 @@ struct Event
 	VisualKind kind = VisualKind::Prop;
 	bool withEffect = false;
 	b3Vec3 position = {};
+	// Impact only: how fast the two bodies were approaching, so an effect can be picked by force.
+	float strength = 0.0f;
+	// Impact only: the other entity, 0 when it is not one presentation knows about.
+	uint32_t otherNetId = 0;
 };
 
 // Capsule center to the ground while standing (the skeleton origin is at the feet).
@@ -153,6 +161,7 @@ public:
 
 private:
 	void Sync( const PresentationFrame& frame, float tickAlpha, float frameSeconds );
+	void SyncImpacts( const PresentationFrame& frame, bool reset );
 	flecs::entity CreateVisual( const FrameEntity& f, bool withEffect );
 
 	std::vector<Event> m_events; // declared before the world: observers write to it on teardown
@@ -167,6 +176,8 @@ private:
 	};
 	std::unordered_map<uint32_t, Entry> m_byNetId; // presentation only, order never matters
 	uint64_t m_resetGeneration = UINT64_MAX;
+	// Impacts already played, so a rollback or a skipped frame neither replays nor drops one.
+	uint32_t m_impactCount = 0;
 	uint32_t m_lastTick = 0;
 	flecs::entity m_localPlayer;
 	uint64_t m_syncStamp = 0;

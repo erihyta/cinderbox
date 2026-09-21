@@ -32,6 +32,7 @@ constexpr float kStopSpeed = 1.0f;
 constexpr float kMinSpeed = 0.01f;
 constexpr float kGravity = 18.0f;
 constexpr float kJumpSpeed = 6.5f;
+
 constexpr float kTurnRate = 12.0f; // rad/s
 constexpr float kPogoHertz = 5.0f;
 constexpr float kPogoDamping = 0.7f;
@@ -40,6 +41,13 @@ constexpr int kMoverIterations = 5;
 constexpr int kMaxPlanes = 8;
 
 constexpr b3Vec3 kGravityVector = { 0.0f, -10.0f, 0.0f };
+
+// Footsteps. A stride is a distance, so the step rate follows the speed on its own.
+constexpr float kStrideLength = 1.6f;
+constexpr float kStepMinSpeed = 0.5f;
+
+// Collisions approaching slower than this never become impacts.
+constexpr float kImpactThreshold = 1.5f;
 
 constexpr uint32_t kSnapMagic = 0x43425331u; // 'CBS1'
 
@@ -161,6 +169,7 @@ Simulation::Simulation( const SimConfig& config, const LevelLayout& map )
 	PhysicsArena::Scope scope( *m_arena );
 	b3WorldDef def = b3DefaultWorldDef();
 	def.gravity = kGravityVector;
+	def.hitEventThreshold = kImpactThreshold;
 	def.workerCount = 1;
 	def.enqueueTask = nullptr;
 	def.finishTask = nullptr;
@@ -255,6 +264,8 @@ b3ShapeId Simulation::CreateShape( b3BodyId body, const Shape& shape, uint64_t c
 	def.baseMaterial.restitution = material.restitution;
 	def.filter.categoryBits = category;
 	def.filter.maskBits = ~uint64_t( 0 );
+	// Either shape enabling hit events is enough, so the static level does not need them.
+	def.enableHitEvents = category != CatStatic;
 
 	switch ( shape.kind )
 	{
@@ -844,6 +855,98 @@ void Simulation::SyncFromPhysics()
 	}
 }
 
+void Simulation::CollectImpacts()
+{
+	b3ContactEvents events = b3World_GetContactEvents( m_physicsWorld );
+	if ( events.hitCount <= 0 )
+	{
+		return;
+	}
+
+	// Shapes know nothing about entities, so map them back by shape index. Rebuilt only on ticks
+	// that actually produced a hit, which is rare enough to keep this off the common path.
+	m_shapeLookup.clear();
+	for ( const EntityRef& r : m_entities )
+	{
+		const PhysicsBody* pb = flecs::entity( m_world, r.entity ).try_get<PhysicsBody>();
+		if ( pb != nullptr )
+		{
+			m_shapeLookup.push_back( { uint32_t( pb->shape.index1 ), r.netId } );
+		}
+	}
+	std::sort( m_shapeLookup.begin(), m_shapeLookup.end() );
+
+	auto netIdOf = [this]( b3ShapeId shape ) -> uint32_t {
+		uint32_t index = uint32_t( shape.index1 );
+		auto it = std::lower_bound( m_shapeLookup.begin(), m_shapeLookup.end(), std::make_pair( index, uint32_t( 0 ) ) );
+		return ( it != m_shapeLookup.end() && it->first == index ) ? it->second : 0;
+	};
+
+	m_impactScratch.clear();
+	for ( int i = 0; i < events.hitCount; ++i )
+	{
+		const b3ContactHitEvent& hit = events.hitEvents[i];
+		ImpactRecord record;
+		record.netIdA = netIdOf( hit.shapeIdA );
+		record.netIdB = netIdOf( hit.shapeIdB );
+		record.tick = m_globals.tick;
+		record.speed = hit.approachSpeed;
+		record.point = { hit.point.x, hit.point.y, hit.point.z };
+		m_impactScratch.push_back( record );
+	}
+
+	// Box3D reports these in its own order. Sorting by strength, then by the entities involved,
+	// keeps what lands in the state independent of that order, and keeps the loudest hits when
+	// more happen in one tick than the ring can hold.
+	std::sort( m_impactScratch.begin(), m_impactScratch.end(), []( const ImpactRecord& a, const ImpactRecord& b ) {
+		if ( a.speed != b.speed )
+		{
+			return a.speed > b.speed;
+		}
+		if ( a.netIdA != b.netIdA )
+		{
+			return a.netIdA < b.netIdA;
+		}
+		return a.netIdB < b.netIdB;
+	} );
+
+	size_t count = std::min( m_impactScratch.size(), size_t( kImpactsPerTick ) );
+	for ( size_t i = 0; i < count; ++i )
+	{
+		m_globals.impacts[m_globals.impactCount % kImpactHistory] = m_impactScratch[i];
+		m_globals.impactCount += 1;
+	}
+}
+
+void Simulation::UpdateFootsteps()
+{
+	const float dt = m_config.TimeStep();
+	for ( const EntityRef& r : m_entities )
+	{
+		flecs::entity e( m_world, r.entity );
+		Character* c = e.try_get_mut<Character>();
+		if ( c == nullptr )
+		{
+			continue;
+		}
+
+		// Stride phase, not a timer: steps stay in step with how far the character actually moved,
+		// so walking and sprinting sound right without a separate rate for each.
+		float speed = b3Length( b3Vec3{ c->velocity.x, 0.0f, c->velocity.z } );
+		if ( c->grounded == 0 || speed < kStepMinSpeed )
+		{
+			c->stepDistance = 0.0f;
+			continue;
+		}
+		c->stepDistance += speed * dt;
+		if ( c->stepDistance >= kStrideLength )
+		{
+			c->stepDistance -= kStrideLength;
+			c->stepCount += 1;
+		}
+	}
+}
+
 void Simulation::HandleOutOfBounds()
 {
 	float killY = m_config.killY;
@@ -907,7 +1010,9 @@ void Simulation::Step( const InputFrame& frame )
 
 	b3World_Step( m_physicsWorld, m_config.TimeStep(), int( m_config.subSteps ) );
 
+	CollectImpacts();
 	SyncFromPhysics();
+	UpdateFootsteps();
 	HandleOutOfBounds();
 
 	m_globals.tick += 1;

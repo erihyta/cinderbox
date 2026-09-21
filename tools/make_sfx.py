@@ -81,6 +81,28 @@ def shatter(n=int(RATE * 0.26)):
     return out
 
 
+def step(n=int(RATE * 0.10)):
+    rng = random.Random(41)
+    out = []
+    prev = 0.0
+    p = 0.0
+    for i in range(n):
+        prev = prev + 0.35 * ((rng.random() * 2 - 1) - prev)
+        p += 2 * math.pi * (190.0 * math.exp(-8.0 * i / n) + 60.0) / RATE
+        out.append((prev * 0.55 + math.sin(p) * 0.45) * env(i, n, 0.002, 6.0) * 0.5)
+    return out
+
+
+def knock(n=int(RATE * 0.14)):
+    out = []
+    p1 = p2 = 0.0
+    for i in range(n):
+        p1 += 2 * math.pi * (330.0 * math.exp(-5.0 * i / n) + 110.0) / RATE
+        p2 += 2 * math.pi * (155.0 * math.exp(-5.0 * i / n) + 55.0) / RATE
+        out.append((math.sin(p1) * 0.5 + math.sin(p2) * 0.6) * env(i, n, 0.001, 5.0) * 0.7)
+    return out
+
+
 def blip(n=int(RATE * 0.09)):
     out = []
     phase = 0.0
@@ -98,6 +120,8 @@ write_wav(os.path.join(out_dir, "prop_spawn.wav"), pop())
 write_wav(os.path.join(out_dir, "prop_destroy.wav"), shatter())
 write_wav(os.path.join(out_dir, "jump.wav"), whoosh())
 write_wav(os.path.join(out_dir, "land.wav"), thud())
+write_wav(os.path.join(out_dir, "footstep.wav"), step())
+write_wav(os.path.join(out_dir, "impact.wav"), knock())
 
 mod_dir = "mods_src/example_neon/assets/sfx"
 os.makedirs(mod_dir, exist_ok=True)

@@ -174,6 +174,19 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 		rp.correction = b3MulSV( decay, rp.correction );
 		rp.position = b3Add( interpolated, rp.correction );
 
+		// Footsteps are a counter in the simulation, so a renderer that skipped ticks still gets
+		// one step per stride instead of one per frame. A count that went backwards means a
+		// rollback or a reset, and is resynced without playing anything.
+		if ( created || reset || f.stepCount < visual.stepCount )
+		{
+			visual.stepCount = f.stepCount;
+		}
+		else if ( f.stepCount > visual.stepCount )
+		{
+			visual.stepCount = f.stepCount;
+			m_events.push_back( { EventType::Footstep, ve.id(), f.netId, visual.kind, false, rp.position } );
+		}
+
 		if ( f.hasAnim )
 		{
 			PlayerAnim& pa = ve.get_mut<PlayerAnim>();
@@ -226,6 +239,52 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 		}
 		it = m_byNetId.erase( it );
 	}
+
+	SyncImpacts( frame, reset );
+}
+
+// Impacts are a ring in the simulation with a count that only grows, so presentation replays
+// exactly what it has not seen yet. A count that went backwards is a rollback or a reset: the
+// impacts behind it were already played, or belong to a world that no longer exists.
+void Mirror::SyncImpacts( const PresentationFrame& frame, bool reset )
+{
+	if ( reset || frame.impactCount < m_impactCount )
+	{
+		m_impactCount = frame.impactCount;
+		return;
+	}
+	if ( frame.impacts.size() < kImpactHistory )
+	{
+		return;
+	}
+
+	uint32_t missed = frame.impactCount - m_impactCount;
+	uint32_t replay = std::min( missed, kImpactHistory );
+	for ( uint32_t i = 0; i < replay; ++i )
+	{
+		// Oldest of the ones still worth playing, first.
+		uint32_t index = ( frame.impactCount - replay + i ) % kImpactHistory;
+		const ImpactRecord& record = frame.impacts[index];
+
+		Event event;
+		event.type = EventType::Impact;
+		event.netId = record.netIdA;
+		event.otherNetId = record.netIdB;
+		event.strength = record.speed;
+		event.position = record.point;
+		auto found = m_byNetId.find( record.netIdA );
+		if ( found != m_byNetId.end() )
+		{
+			flecs::entity ve( m_world, found->second.entity );
+			if ( ve.is_alive() )
+			{
+				event.visual = ve.id();
+				event.kind = ve.get<Visual>().kind;
+			}
+		}
+		m_events.push_back( event );
+	}
+	m_impactCount = frame.impactCount;
 }
 
 bool Mirror::LocalPlayer( RenderPose& out ) const

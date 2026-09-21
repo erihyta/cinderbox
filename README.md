@@ -17,6 +17,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M8: component registry, entity templates authored in the inspector, runtime spawning | done |
 | M9: declarative effect bindings, so mods add effects as data | done |
 | M10: sounds and screen effects in the same bindings | done |
+| M11: impacts and footsteps reported by the simulation | done |
 
 ## Building
 
@@ -168,7 +169,7 @@ shipping a file of its own, so two mods can add effects without fighting over on
 
 | Field | Meaning |
 |---|---|
-| `event` | Spawned, Destroying, Jumped or Landed |
+| `event` | Spawned, Destroying, Jumped, Landed, Footstep or Impact |
 | `template_name` | Only for entities from this map template; empty matches any |
 | `kind` | `any`, `prop`, `player` or `static` |
 | `scene` | The effect scene to play |
@@ -177,12 +178,22 @@ shipping a file of its own, so two mods can add effects without fighting over on
 | `follow` | Parent it to the entity so it travels with it, instead of staying put |
 | `who` | Anyone, only the local player, or only other players |
 | `cooldown` | Shortest gap between two plays, so a busy event does not stack twenty sounds |
+| `min_strength` | Impacts only: ignore anything approaching slower than this, in m/s |
 | `sound` | A `.wav`/`.ogg` played at the event, with `volume_db`, `pitch_scale`, `pitch_jitter`, `bus` and `max_distance` |
 | `shake`, `shake_time` | Camera shake for the viewer |
 | `flash_color`, `flash_time` | A full-screen flash; the colour's alpha is its strength |
 
 A binding can carry a scene, a sound, a screen effect, or any combination. Screen effects are what
 the viewer feels, so they usually go with `who = Local player`.
+
+Footsteps and impacts come from the simulation, not from the renderer guessing:
+- A **footstep** is a stride, counted by distance walked, so the rate follows the speed on its own.
+- An **impact** is a collision the physics engine reported above 1.5 m/s, carrying where it
+  happened, both entities and how fast they were approaching. Two bindings with different
+  `min_strength` give a soft hit and a hard one different effects.
+
+Both are part of the simulation's state, so they are identical on every machine, survive rollback,
+and a client that skipped frames still sees them.
 
 Every binding that matches plays, so bindings add to each other. When nothing matches, the older
 convention still applies: `res://vfx/<event>.tscn`, one of `prop_spawn`, `prop_destroy`, `jump`
