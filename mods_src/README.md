@@ -28,6 +28,7 @@ Godot converts scenes and imported assets into its runtime formats when packing.
 | `prefabs/prop_box.tscn` | box props | Unit cube (1×1×1). The node is scaled to the prop's size. |
 | `prefabs/prop_sphere.tscn` | sphere props | Unit-diameter sphere, scaled like the box. |
 | `prefabs/static_box.tscn` | level geometry | Unit cube, scaled to each wall, ramp, step or platform. |
+| `prefabs/<visual>.tscn` | entities from a map template | A template names the prefab it draws as. Unit-sized like the others: the client scales it to the shape the template authored. |
 | `vfx/prop_spawn.tscn`, `vfx/prop_destroy.tscn` | prop spawned / removed | One-shot effects. Every `GPUParticles3D` in the scene is restarted; the node is freed after 3 s. |
 | `vfx/jump.tscn`, `vfx/land.tscn` | a player jumps / lands | Placed at the player's feet. |
 | `ui/hud.tscn` | HUD | Any `Control` tree. Optional labels with unique names `%Stats`, `%Banner` and `%Help` are filled by the game. |

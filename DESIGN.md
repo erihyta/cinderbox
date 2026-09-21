@@ -193,6 +193,32 @@ maps/arena.tscn ──bake──> arena.cbmap ──> cb_server ──welcome─
   in the void. Mods replace map visuals like any other scene.
 - **Replays** carry the map in their header, so a recording of an authored map still verifies.
 
+## Entity templates and the component registry (M8)
+The registry (`src/sim/reflect.h`) is one description of what an author may attach to an entity,
+read by three things: the Godot inspector, the baker, and the simulation that applies the values.
+Adding a field to it makes the field appear in the editor with no code on the Godot side, which is
+what keeps authoring drag-and-drop instead of scripting.
+
+- **A schema, not storage.** Some entries map to flecs components (`Velocity`, `Prop`), others
+  describe how the entity is created (`Body` and `Material` feed Box3D's body and shape
+  definitions). All of them are initial values; none are runtime state.
+- **The editor builds itself from it.** `CbComponent` is one node whose inspector comes from
+  `_get_property_list()` over the registry: pick "Body" and the body fields appear, with enum
+  dropdowns and ranges out of the same table.
+- **Values are identified by name hash**, not by position, so the registry can grow and be
+  reordered without invalidating baked maps. Unknown components and fields are dropped when a map
+  is read, and everything else is clamped to its range, so a map file can never push the simulation
+  outside what the registry allows.
+- **Templates live in the map**, which means they are already hashed and already sent to clients on
+  join. A template carries a `visual` name so clients know which prefab to draw, and entities made
+  from one carry a `TemplateRef` so presentation can look it up.
+- **Runtime spawning**: a map can mark one template `spawnable`, and the spawn button creates that
+  instead of the built-in random prop. Anything a player spawns is still given a `Prop` component
+  if the template did not, so it expires and counts against the caps; a map cannot let players fill
+  the world.
+- **Absent means default.** A component that was not attached leaves Box3D's own defaults in place.
+  That is also the compatibility rule: a map baked before a field existed keeps working.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*`).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -252,11 +278,12 @@ maps/arena.tscn ──bake──> arena.cbmap ──> cb_server ──welcome─
   - ozz clips loaded from packs;
   - Linux and macOS exports (the extension builds with `unix-clang-release`; not yet tested).
 - **Maps, next steps**:
-  - entity templates a map can place and the server can spawn at runtime, which needs a component
-    registry (reflection over the simulation's components) so an author can set initial values;
-  - shapes beyond boxes and spheres, and a way to author them without one node per box;
+  - shapes beyond boxes, spheres and capsules, and a way to author them without one node per box;
   - static geometry left out of the portable snapshot: it is immutable and both sides build it from
-    the map, so a large map should not pay for it on every join.
+    the map, so a large map should not pay for it on every join;
+  - templates shared between maps, instead of one copy per map file.
+- **Presentation sandbox**: the registry is the shape the creator-facing sandbox should take, with
+  declarative event-to-effect bindings (a template or event names an effect) rather than mod code.
 
 ## Milestones (check-in after each)
 1. **M1** (done): build system, deterministic sim core (flecs + Box3D + mover + props), snapshot/restore, rollback session, determinism tests (Clang, GCC and MSVC verified identical).
@@ -266,3 +293,4 @@ maps/arena.tscn ──bake──> arena.cbmap ──> cb_server ──welcome─
 5. **M5** (done): unreliable acknowledged frame batches, per-field input encoding, automatic prediction window, realistic and chaotic bots, re-measured.
 6. **M6** (done): engine-independent presentation layer (`src/present`), Godot GDExtension client on its own simulation thread, prefab/VFX/HUD scenes, mod packs with a no-code validator and an example mod, Windows export. Verified: same fingerprint as native builds (editor and exported release), no desyncs with bots.
 7. **M7** (done): maps authored in the Godot editor (CbStatic / CbProp / CbSpawn), a fixed-point `.cbmap` bake, the map sent to clients on join, map visuals drawn from the authored scene, `cb_server --map`, and maps in replays.
+8. **M8** (done): the authorable component registry, `CbTemplate` / `CbComponent` / `CbEntity` authoring with an inspector generated from the registry, templates and instances in the map format, entities spawned from templates at runtime, and per-template visuals on the client.

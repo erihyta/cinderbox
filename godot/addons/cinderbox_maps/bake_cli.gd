@@ -38,6 +38,7 @@ func _initialize() -> void:
 		quit(2)
 		return
 
-	print("baked %s: name %s, %d statics, %d props, %d bytes, hash %s" % [
-		out_path, result["name"], result["statics"], result["props"], result["bytes"], result["hash"]])
+	print("baked %s: name %s, %d statics, %d props, %d templates, %d instances, %d bytes, hash %s" % [
+		out_path, result["name"], result["statics"], result["props"], result["templates"], result["instances"],
+		result["bytes"], result["hash"]])
 	quit(0)

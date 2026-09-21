@@ -30,6 +30,14 @@ std::mutex& WorldLifetimeMutex();
 flecs::world CreateFlecsWorld();
 void ReleaseFlecsWorld( flecs::world& world );
 
+// Surface values Box3D needs when a shape is created. Authored through the Material component.
+struct ShapeMaterial
+{
+	float density = 1.0f;
+	float friction = 0.6f;
+	float restitution = 0.0f;
+};
+
 struct Snapshot
 {
 	uint32_t tick = 0;
@@ -141,9 +149,13 @@ private:
 
 	flecs::entity CreateProp( ShapeKind kind, b3Vec3 position, b3Quat rotation, b3Vec3 halfExtents, b3Vec3 velocity,
 							  uint32_t owner, uint32_t lifetimeTicks );
+	// Builds an entity from a map template: shape, body, material and initial velocity all come
+	// from the authored values, with the engine's defaults for anything the author left alone.
+	flecs::entity CreateFromTemplate( uint32_t templateIndex, b3Vec3 position, b3Quat rotation, b3Vec3 extraVelocity,
+									  uint32_t owner );
 	flecs::entity CreatePlayer( PlayerSlot slot );
 	b3Vec3 SpawnPoint( PlayerSlot slot ) const;
-	b3ShapeId CreateShape( b3BodyId body, const Shape& shape, uint64_t category );
+	b3ShapeId CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material = {} );
 	static PhysicsBody MakePhysicsBody( b3BodyId body, b3ShapeId shape );
 
 	void ApplyEvents( const InputFrame& frame );

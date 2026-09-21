@@ -84,8 +84,16 @@ void ClientThread::Publish( GameClient& client, double now, bool rolledBack )
 	f.publishedAt = now;
 	f.alphaAtPublish = client.TickAlpha();
 	f.hasSimulation = false;
-	f.mapHash = client.MapHash();
-	f.mapName = client.Map().name;
+	if ( f.mapHash != client.MapHash() )
+	{
+		f.mapHash = client.MapHash();
+		f.mapName = client.Map().name;
+		f.templateVisuals.clear();
+		for ( const EntityTemplate& t : client.Map().templates )
+		{
+			f.templateVisuals.push_back( t.visual );
+		}
+	}
 
 	if ( RollbackSession* session = client.Session() )
 	{

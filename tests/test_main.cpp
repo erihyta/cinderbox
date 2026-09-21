@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace cb;
@@ -173,6 +174,218 @@ void TestMapFormat()
 	CHECK( MapHash( movedBytes.data(), movedBytes.size() ) != MapHash( bytes.data(), bytes.size() ) );
 	Simulation other( config, moved );
 	CHECK( other.ComputeHash() != fromMemory.ComputeHash() );
+}
+
+// Builds a template the way the baker does: every field of a component the author added.
+AuthoredComponent MakeComponent( const char* componentName, const std::vector<std::pair<const char*, float>>& values )
+{
+	AuthoredComponent component;
+	component.id = Fnv32( componentName );
+	for ( const auto& entry : values )
+	{
+		AuthoredField field;
+		field.id = Fnv32( entry.first );
+		field.raw[0] = MapQuantize( entry.second, kMapPositionScale );
+		component.fields.push_back( field );
+	}
+	return component;
+}
+
+// Enums and ints are stored raw, not on the fixed-point grid.
+AuthoredComponent MakeIntComponent( const char* componentName, const std::vector<std::pair<const char*, int32_t>>& values )
+{
+	AuthoredComponent component;
+	component.id = Fnv32( componentName );
+	for ( const auto& entry : values )
+	{
+		AuthoredField field;
+		field.id = Fnv32( entry.first );
+		field.raw[0] = entry.second;
+		component.fields.push_back( field );
+	}
+	return component;
+}
+
+size_t CountFromTemplate( Simulation& sim, uint32_t index )
+{
+	size_t count = 0;
+	for ( const auto& r : sim.Entities() )
+	{
+		const TemplateRef* ref = flecs::entity( sim.World(), r.entity ).try_get<TemplateRef>();
+		count += ( ref != nullptr && ref->index == index ) ? 1 : 0;
+	}
+	return count;
+}
+
+float BallHeightAfter( float restitution, uint32_t ticks )
+{
+	LevelLayout map;
+	map.name = "bounce";
+	map.spawnCenter = { 0.0f, 1.5f, 6.0f };
+	map.spawnRadius = 2.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+
+	EntityTemplate ball;
+	ball.name = "ball";
+	ball.visual = "prop_bouncy";
+	ball.components.push_back( MakeIntComponent( "Shape", { { "kind", int32_t( ShapeKind::Sphere ) } } ) );
+	ball.components.push_back( MakeComponent( "Shape", { { "radius", 0.4f } } ) );
+	// Two entries for the same component would be odd; merge them instead.
+	ball.components[0].fields.push_back( ball.components[1].fields[0] );
+	ball.components.pop_back();
+	ball.components.push_back( MakeIntComponent( "Body", { { "type", 2 } } ) );
+	ball.components.push_back( MakeComponent( "Material", { { "restitution", restitution }, { "friction", 0.2f } } ) );
+	map.templates.push_back( ball );
+	map.instances.push_back( { 0, { 0.0f, 6.0f, 0.0f }, 0.0f, 0.0f } );
+	QuantizeLayout( map );
+
+	SimConfig config = TestConfig();
+	Simulation sim( config, map );
+	InputFrame frame;
+	for ( uint32_t t = 0; t < ticks; ++t )
+	{
+		frame.tick = t;
+		sim.Step( frame );
+	}
+
+	for ( const auto& r : sim.Entities() )
+	{
+		flecs::entity e( sim.World(), r.entity );
+		const TemplateRef* ref = e.try_get<TemplateRef>();
+		if ( ref != nullptr && ref->index == 0 )
+		{
+			return e.get<Transform>().position.y;
+		}
+	}
+	return -1.0f;
+}
+
+// Entities described by components in the editor must reach the simulation exactly as authored:
+// the same shape, the same body, the same material, and the same behaviour on every machine.
+void TestTemplates()
+{
+	LevelLayout map;
+	map.name = "templates";
+	map.spawnCenter = { 0.0f, 1.5f, 6.0f };
+	map.spawnRadius = 2.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+
+	EntityTemplate crate;
+	crate.name = "crate";
+	crate.visual = "prop_heavy";
+	crate.components.push_back( MakeIntComponent( "Shape", { { "kind", int32_t( ShapeKind::Box ) } } ) );
+	AuthoredField size;
+	size.id = Fnv32( "size" );
+	size.raw[0] = MapQuantize( 1.5f, kMapPositionScale );
+	size.raw[1] = MapQuantize( 0.5f, kMapPositionScale );
+	size.raw[2] = MapQuantize( 2.0f, kMapPositionScale );
+	crate.components[0].fields.push_back( size );
+	crate.components.push_back( MakeIntComponent( "Body", { { "type", 2 } } ) );
+	crate.components.push_back( MakeComponent( "Prop", { { "lifetime_seconds", 2.0f } } ) );
+
+	EntityTemplate pillar;
+	pillar.name = "pillar";
+	pillar.visual = "prop_heavy";
+	pillar.components.push_back( MakeIntComponent( "Shape", { { "kind", int32_t( ShapeKind::Box ) } } ) );
+	pillar.components.push_back( MakeIntComponent( "Body", { { "type", 0 } } ) ); // static
+
+	map.templates.push_back( crate );
+	map.templates.push_back( pillar );
+	map.instances.push_back( { 0, { 2.0f, 3.0f, 0.0f }, 0.0f, 0.0f } );
+	map.instances.push_back( { 1, { -3.0f, 1.0f, 0.0f }, 0.0f, 0.0f } );
+	map.spawnTemplate = 0;
+	QuantizeLayout( map );
+
+	// A map with templates has to survive the bake -> load round trip like everything else.
+	std::vector<uint8_t> bytes;
+	SerializeMap( map, bytes );
+	LevelLayout loaded;
+	std::string error;
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) );
+	CHECK( loaded.templates.size() == 2 );
+	CHECK( loaded.templates[0].name == "crate" );
+	CHECK( loaded.templates[0].visual == "prop_heavy" );
+	CHECK( loaded.instances.size() == 2 );
+	CHECK( loaded.spawnTemplate == 0 );
+	CHECK( TemplateFloat( loaded.templates[0], Fnv32( "Prop" ), Fnv32( "lifetime_seconds" ), 0.0f ) == 2.0f );
+
+	SimConfig config = TestConfig();
+	Simulation sim( config, loaded );
+
+	// The authored values became a real entity: half the authored size, and a prop with a lifetime.
+	bool sawCrate = false;
+	bool sawPillar = false;
+	for ( const auto& r : sim.Entities() )
+	{
+		flecs::entity e( sim.World(), r.entity );
+		const TemplateRef* ref = e.try_get<TemplateRef>();
+		if ( ref == nullptr )
+		{
+			continue;
+		}
+		const Shape& shape = e.get<Shape>();
+		if ( ref->index == 0 )
+		{
+			sawCrate = true;
+			CHECK( shape.kind == ShapeKind::Box );
+			CHECK( shape.halfExtents.x == 0.75f );
+			CHECK( shape.halfExtents.y == 0.25f );
+			CHECK( shape.halfExtents.z == 1.0f );
+			CHECK( e.has<Prop>() );
+			CHECK( e.has<StaticGeometry>() == false );
+		}
+		if ( ref->index == 1 )
+		{
+			sawPillar = true;
+			// A static body is level geometry, and must not be swept up by the kill plane.
+			CHECK( e.has<StaticGeometry>() );
+			CHECK( e.has<Prop>() == false );
+		}
+	}
+	CHECK( sawCrate );
+	CHECK( sawPillar );
+
+	// The spawn button makes the map's template, not the built-in random prop.
+	InputFrame frame;
+	frame.events.push_back( { PlayerEventType::Join, 0 } );
+	frame.tick = 0;
+	sim.Step( frame );
+	frame.events.clear();
+
+	size_t before = CountFromTemplate( sim, 0 );
+	for ( uint32_t t = 1; t < 30; ++t )
+	{
+		frame.tick = t;
+		frame.inputs[0].buttons = ( t % 4 == 0 ) ? BtnSpawnProp : 0;
+		sim.Step( frame );
+	}
+	size_t spawned = CountFromTemplate( sim, 0 );
+	std::printf( "    spawned %zu entities from the map's template\n", spawned - before );
+	CHECK( spawned > before );
+
+	// The authored lifetime expires them; the level's own instance stays.
+	frame.inputs[0].buttons = 0;
+	for ( uint32_t t = 30; t < 30 + 2 * config.tickRate + 30; ++t )
+	{
+		frame.tick = t;
+		sim.Step( frame );
+	}
+	CHECK( CountFromTemplate( sim, 0 ) < spawned );
+
+	// Authored material values really reach Box3D: a bouncy ball ends up higher than a dead one.
+	float bouncy = BallHeightAfter( 0.9f, 150 );
+	float dead = BallHeightAfter( 0.0f, 150 );
+	std::printf( "    after 150 ticks: restitution 0.9 at y=%.3f, restitution 0 at y=%.3f\n", bouncy, dead );
+	CHECK( bouncy > dead + 0.1f );
+
+	// Values the registry does not know are dropped, and the rest is clamped into range.
+	EntityTemplate hostile;
+	hostile.components.push_back( MakeComponent( "NotAComponent", { { "whatever", 1.0f } } ) );
+	hostile.components.push_back( MakeComponent( "Material", { { "friction", 9999.0f }, { "nope", 3.0f } } ) );
+	SanitizeTemplate( hostile );
+	CHECK( hostile.components.size() == 1 );
+	CHECK( hostile.components[0].fields.size() == 1 );
+	CHECK( TemplateFloat( hostile, Fnv32( "Material" ), Fnv32( "friction" ), 0.0f ) <= 10.0f );
 }
 
 void TestRepeatability()
@@ -830,6 +1043,7 @@ int main( int argc, char** argv )
 	};
 	const Test tests[] = {
 		{ "map_format", TestMapFormat },
+		{ "templates", TestTemplates },
 		{ "repeatability", TestRepeatability },
 		{ "snapshot_roundtrip", TestSnapshotRoundTrip },
 		{ "portable_snapshot", TestPortableSnapshot },

@@ -5,6 +5,7 @@ add_library(cb_sim STATIC
 	level.cpp
 	map.cpp
 	physics_arena.cpp
+	reflect.cpp
 	rollback.cpp
 	simulation.cpp
 )

@@ -214,6 +214,26 @@ void TestMapSync()
 	authored.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 25.0f, 0.5f, 25.0f }, 0.0f, 0.0f } );
 	authored.statics.push_back( { { 0.0f, 1.0f, -14.0f }, { 25.0f, 1.0f, 0.5f }, 0.0f, 0.0f } );
 	authored.props.push_back( { ShapeKind::Box, { -6.0f, 0.5f, -5.0f }, { 0.5f, 0.5f, 0.5f } } );
+
+	// A template the spawn button creates, so the bots exercise it over the network.
+	EntityTemplate ball;
+	ball.name = "ball";
+	ball.visual = "prop_bouncy";
+	AuthoredComponent shape;
+	shape.id = Fnv32( "Shape" );
+	shape.fields.push_back( { Fnv32( "kind" ), { int32_t( ShapeKind::Sphere ), 0, 0 } } );
+	shape.fields.push_back( { Fnv32( "radius" ), { MapQuantize( 0.3f, kMapPositionScale ), 0, 0 } } );
+	AuthoredComponent material;
+	material.id = Fnv32( "Material" );
+	material.fields.push_back( { Fnv32( "restitution" ), { MapQuantize( 0.8f, kMapPositionScale ), 0, 0 } } );
+	AuthoredComponent prop;
+	prop.id = Fnv32( "Prop" );
+	prop.fields.push_back( { Fnv32( "lifetime_seconds" ), { MapQuantize( 4.0f, kMapPositionScale ), 0, 0 } } );
+	ball.components = { shape, material, prop };
+	authored.templates.push_back( ball );
+	authored.instances.push_back( { 0, { -6.0f, 4.0f, -6.0f }, 0.0f, 0.0f } );
+	authored.spawnTemplate = 0;
+
 	QuantizeLayout( authored );
 
 	std::vector<uint8_t> bytes;
@@ -239,6 +259,10 @@ void TestMapSync()
 		CHECK( b.client->Map().name == authored.name );
 		CHECK( b.client->Map().statics.size() == authored.statics.size() );
 		CHECK( b.client->MapHash() == MapHash( bytes.data(), bytes.size() ) );
+		// Templates travel with the map, so clients can create the same entities the server does.
+		CHECK( b.client->Map().templates.size() == 1 );
+		CHECK( b.client->Map().templates[0].visual == "prop_bouncy" );
+		CHECK( b.client->Map().spawnTemplate == 0 );
 		int compared = 0;
 		CHECK( h.CompareWithServer( b, compared ) == 0 );
 		CHECK( compared > 20 );

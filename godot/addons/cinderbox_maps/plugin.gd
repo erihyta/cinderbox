@@ -13,7 +13,7 @@ var _button: Button
 func _enter_tree() -> void:
 	_button = Button.new()
 	_button.text = "Bake Map"
-	_button.tooltip_text = "Write %s/<scene name>.cbmap from CbStatic / CbProp / CbSpawn nodes" % MAP_DIR
+	_button.tooltip_text = "Write %s/<scene name>.cbmap from the CbStatic / CbProp / CbSpawn / CbTemplate / CbEntity nodes" % MAP_DIR
 	_button.pressed.connect(_bake)
 	add_control_to_container(CONTAINER_SPATIAL_EDITOR_MENU, _button)
 
@@ -43,6 +43,7 @@ func _bake() -> void:
 		push_error("Bake Map failed: %s" % result.get("error", "unknown error"))
 		return
 
-	print("Baked %s: %d statics, %d props, %d bytes, hash %s" % [
-		out_path, result["statics"], result["props"], result["bytes"], result["hash"]])
+	print("Baked %s: %d statics, %d props, %d templates, %d instances, %d bytes, hash %s" % [
+		out_path, result["statics"], result["props"], result["templates"], result["instances"],
+		result["bytes"], result["hash"]])
 	EditorInterface.get_resource_filesystem().scan()

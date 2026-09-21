@@ -15,6 +15,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace cb::gd
 {
@@ -33,6 +34,8 @@ struct PublishedFrame
 	// Identity and name of the server's map, for loading its visuals.
 	uint64_t mapHash = 0;
 	std::string mapName;
+	// Prefab each map template draws as, indexed by template. Only refreshed with the map.
+	std::vector<std::string> templateVisuals;
 	bool fpEnvironmentOk = true;
 	bool hasSimulation = false;
 	double publishedAt = 0.0; // seconds on the thread clock

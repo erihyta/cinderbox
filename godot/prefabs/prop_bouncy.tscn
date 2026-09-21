@@ -1,0 +1,22 @@
+[gd_scene load_steps=3 format=3]
+
+; Drawn for the "bouncy_ball" template of the example map. Unit diameter: the client scales it to
+; the radius the template authored.
+
+[sub_resource type="SphereMesh" id="Sphere"]
+radius = 0.5
+height = 1.0
+radial_segments = 28
+rings = 14
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(0.95, 0.35, 0.55, 1)
+emission_enabled = true
+emission = Color(0.9, 0.2, 0.45, 1)
+emission_energy_multiplier = 0.8
+roughness = 0.25
+metallic = 0.1
+
+[node name="PropBouncy" type="MeshInstance3D"]
+mesh = SubResource("Sphere")
+surface_material_override/0 = SubResource("Mat")

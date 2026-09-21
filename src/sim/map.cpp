@@ -14,7 +14,9 @@ namespace
 
 const char kMagic[4] = { 'C', 'B', 'M', 'P' };
 
-int32_t Quantize( float value, float scale )
+} // namespace
+
+int32_t MapQuantize( float value, float scale )
 {
 	float limit = kMapPositionLimit * scale;
 	float scaled = value * scale;
@@ -31,14 +33,17 @@ int32_t Quantize( float value, float scale )
 	return int32_t( std::roundf( scaled ) );
 }
 
-float Dequantize( int32_t value, float scale )
+float MapDequantize( int32_t value, float scale )
 {
 	return float( value ) * ( 1.0f / scale );
 }
 
+namespace
+{
+
 void Snap( float& value, float scale )
 {
-	value = Dequantize( Quantize( value, scale ), scale );
+	value = MapDequantize( MapQuantize( value, scale ), scale );
 }
 
 void SnapVec( b3Vec3& v, float scale )
@@ -61,11 +66,18 @@ void AppendI32( std::vector<uint8_t>& out, int32_t value )
 	AppendU32( out, uint32_t( value ) );
 }
 
+void AppendString( std::vector<uint8_t>& out, const std::string& text )
+{
+	std::string clipped = text.substr( 0, kMapNameLimit );
+	AppendU32( out, uint32_t( clipped.size() ) );
+	out.insert( out.end(), clipped.begin(), clipped.end() );
+}
+
 void AppendPos( std::vector<uint8_t>& out, const b3Vec3& v )
 {
-	AppendI32( out, Quantize( v.x, kMapPositionScale ) );
-	AppendI32( out, Quantize( v.y, kMapPositionScale ) );
-	AppendI32( out, Quantize( v.z, kMapPositionScale ) );
+	AppendI32( out, MapQuantize( v.x, kMapPositionScale ) );
+	AppendI32( out, MapQuantize( v.y, kMapPositionScale ) );
+	AppendI32( out, MapQuantize( v.z, kMapPositionScale ) );
 }
 
 struct Reader
@@ -106,12 +118,40 @@ struct Reader
 	b3Vec3 Pos()
 	{
 		b3Vec3 v;
-		v.x = Dequantize( I32(), kMapPositionScale );
-		v.y = Dequantize( I32(), kMapPositionScale );
-		v.z = Dequantize( I32(), kMapPositionScale );
+		v.x = MapDequantize( I32(), kMapPositionScale );
+		v.y = MapDequantize( I32(), kMapPositionScale );
+		v.z = MapDequantize( I32(), kMapPositionScale );
 		return v;
 	}
+
+	std::string Text()
+	{
+		uint32_t length = U32();
+		if ( ok == false || length > kMapNameLimit || cursor + length > size )
+		{
+			ok = false;
+			return {};
+		}
+		std::string text( reinterpret_cast<const char*>( data + cursor ), length );
+		cursor += length;
+		return text;
+	}
 };
+
+// Names reach clients as resource paths (res://maps/<name>.tscn, res://prefabs/<visual>.tscn) and
+// they come from the server, so they may not contain anything that walks out of those folders.
+bool SafeName( const std::string& name )
+{
+	for ( char c : name )
+	{
+		bool allowed = ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) || ( c >= '0' && c <= '9' ) || c == '_' || c == '-';
+		if ( allowed == false )
+		{
+			return false;
+		}
+	}
+	return true;
+}
 
 } // namespace
 
@@ -145,15 +185,15 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 	out.insert( out.end(), name.begin(), name.end() );
 
 	AppendPos( out, layout.spawnCenter );
-	AppendI32( out, Quantize( layout.spawnRadius, kMapPositionScale ) );
+	AppendI32( out, MapQuantize( layout.spawnRadius, kMapPositionScale ) );
 
 	AppendU32( out, uint32_t( layout.statics.size() ) );
 	for ( const LevelBox& box : layout.statics )
 	{
 		AppendPos( out, box.center );
 		AppendPos( out, box.halfExtents );
-		AppendI32( out, Quantize( box.pitch, kMapAngleScale ) );
-		AppendI32( out, Quantize( box.yaw, kMapAngleScale ) );
+		AppendI32( out, MapQuantize( box.pitch, kMapAngleScale ) );
+		AppendI32( out, MapQuantize( box.yaw, kMapAngleScale ) );
 	}
 
 	AppendU32( out, uint32_t( layout.props.size() ) );
@@ -166,6 +206,37 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 		AppendPos( out, prop.position );
 		AppendPos( out, prop.halfExtents );
 	}
+
+	AppendU32( out, uint32_t( layout.templates.size() ) );
+	for ( const EntityTemplate& t : layout.templates )
+	{
+		AppendString( out, t.name );
+		AppendString( out, t.visual );
+		AppendU32( out, uint32_t( t.components.size() ) );
+		for ( const AuthoredComponent& component : t.components )
+		{
+			AppendU32( out, component.id );
+			AppendU32( out, uint32_t( component.fields.size() ) );
+			for ( const AuthoredField& field : component.fields )
+			{
+				AppendU32( out, field.id );
+				AppendI32( out, field.raw[0] );
+				AppendI32( out, field.raw[1] );
+				AppendI32( out, field.raw[2] );
+			}
+		}
+	}
+
+	AppendU32( out, uint32_t( layout.instances.size() ) );
+	for ( const LevelInstance& instance : layout.instances )
+	{
+		AppendU32( out, instance.templateIndex );
+		AppendPos( out, instance.position );
+		AppendI32( out, MapQuantize( instance.pitch, kMapAngleScale ) );
+		AppendI32( out, MapQuantize( instance.yaw, kMapAngleScale ) );
+	}
+
+	AppendU32( out, layout.spawnTemplate );
 }
 
 bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::string& error )
@@ -186,28 +257,15 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 	rd.U32(); // flags
 
 	LevelLayout layout;
-	uint32_t nameLength = rd.U32();
-	if ( rd.ok == false || nameLength > kMapNameLimit || rd.cursor + nameLength > size )
+	layout.name = rd.Text();
+	if ( rd.ok == false || SafeName( layout.name ) == false )
 	{
 		error = "bad map name";
 		return false;
 	}
-	layout.name.assign( reinterpret_cast<const char*>( data + rd.cursor ), nameLength );
-	rd.cursor += nameLength;
-	// Clients turn the name into a resource path, and the map comes from the server, so keep it to
-	// characters that cannot walk out of the maps folder.
-	for ( char c : layout.name )
-	{
-		bool allowed = ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) || ( c >= '0' && c <= '9' ) || c == '_' || c == '-';
-		if ( allowed == false )
-		{
-			error = "map name has characters outside a-z, A-Z, 0-9, _ and -";
-			return false;
-		}
-	}
 
 	layout.spawnCenter = rd.Pos();
-	layout.spawnRadius = Dequantize( rd.I32(), kMapPositionScale );
+	layout.spawnRadius = MapDequantize( rd.I32(), kMapPositionScale );
 
 	uint32_t staticCount = rd.U32();
 	// Each entry is 32 bytes, so a count larger than the remaining bytes is corrupt input.
@@ -222,8 +280,8 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 		LevelBox box;
 		box.center = rd.Pos();
 		box.halfExtents = rd.Pos();
-		box.pitch = Dequantize( rd.I32(), kMapAngleScale );
-		box.yaw = Dequantize( rd.I32(), kMapAngleScale );
+		box.pitch = MapDequantize( rd.I32(), kMapAngleScale );
+		box.yaw = MapDequantize( rd.I32(), kMapAngleScale );
 		layout.statics.push_back( box );
 	}
 
@@ -250,6 +308,87 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 		prop.position = rd.Pos();
 		prop.halfExtents = rd.Pos();
 		layout.props.push_back( prop );
+	}
+
+	uint32_t templateCount = rd.U32();
+	// The smallest a template can be is two empty strings and a component count.
+	if ( rd.ok == false || templateCount > ( size - rd.cursor ) / 12 )
+	{
+		error = "corrupt template list";
+		return false;
+	}
+	layout.templates.reserve( templateCount );
+	for ( uint32_t i = 0; i < templateCount; ++i )
+	{
+		EntityTemplate t;
+		t.name = rd.Text();
+		t.visual = rd.Text();
+		if ( rd.ok == false || SafeName( t.name ) == false || SafeName( t.visual ) == false )
+		{
+			error = "bad template name";
+			return false;
+		}
+
+		uint32_t componentCount = rd.U32();
+		if ( rd.ok == false || componentCount > ( size - rd.cursor ) / 8 )
+		{
+			error = "corrupt template components";
+			return false;
+		}
+		for ( uint32_t c = 0; c < componentCount; ++c )
+		{
+			AuthoredComponent component;
+			component.id = rd.U32();
+			uint32_t fieldCount = rd.U32();
+			if ( rd.ok == false || fieldCount > ( size - rd.cursor ) / 16 )
+			{
+				error = "corrupt template fields";
+				return false;
+			}
+			for ( uint32_t f = 0; f < fieldCount; ++f )
+			{
+				AuthoredField field;
+				field.id = rd.U32();
+				field.raw[0] = rd.I32();
+				field.raw[1] = rd.I32();
+				field.raw[2] = rd.I32();
+				component.fields.push_back( field );
+			}
+			t.components.push_back( std::move( component ) );
+		}
+		// Values this build does not understand are dropped, and the rest is clamped to its range,
+		// so a map can never push the simulation outside what the registry allows.
+		SanitizeTemplate( t );
+		layout.templates.push_back( std::move( t ) );
+	}
+
+	uint32_t instanceCount = rd.U32();
+	if ( rd.ok == false || instanceCount > ( size - rd.cursor ) / 24 )
+	{
+		error = "corrupt instance list";
+		return false;
+	}
+	layout.instances.reserve( instanceCount );
+	for ( uint32_t i = 0; i < instanceCount; ++i )
+	{
+		LevelInstance instance;
+		instance.templateIndex = rd.U32();
+		instance.position = rd.Pos();
+		instance.pitch = MapDequantize( rd.I32(), kMapAngleScale );
+		instance.yaw = MapDequantize( rd.I32(), kMapAngleScale );
+		if ( instance.templateIndex >= layout.templates.size() )
+		{
+			error = "instance refers to a template that is not in the map";
+			return false;
+		}
+		layout.instances.push_back( instance );
+	}
+
+	layout.spawnTemplate = rd.U32();
+	if ( layout.spawnTemplate != kNoTemplate && layout.spawnTemplate >= layout.templates.size() )
+	{
+		error = "spawn template is not in the map";
+		return false;
 	}
 
 	if ( rd.ok == false )

@@ -71,6 +71,7 @@ flecs::entity Mirror::CreateVisual( const FrameEntity& f, bool withEffect )
 	v.shape = f.shape;
 	v.halfExtents = f.halfExtents;
 	v.slot = f.slot;
+	v.templateIndex = f.templateIndex;
 	if ( f.kind == VisualKind::Static )
 	{
 		withEffect = false;

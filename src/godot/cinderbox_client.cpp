@@ -226,6 +226,22 @@ Ref<PackedScene> CinderboxClient::LoadPrefab( const char* name )
 
 Ref<PackedScene> CinderboxClient::Prefab( const present::Visual& v )
 {
+	// An entity made from a map template draws as whatever the template names, so a map author
+	// picks the look without touching the client.
+	if ( v.templateIndex < m_frame.templateVisuals.size() )
+	{
+		const std::string& visual = m_frame.templateVisuals[v.templateIndex];
+		if ( visual.empty() == false )
+		{
+			Ref<PackedScene> scene = LoadPrefab( visual.c_str() );
+			if ( scene.is_valid() )
+			{
+				return scene;
+			}
+			// Fall through to the shape's default prefab, so a missing one is not an invisible entity.
+		}
+	}
+
 	switch ( v.kind )
 	{
 		case present::VisualKind::Static:
