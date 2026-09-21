@@ -29,7 +29,8 @@ Godot converts scenes and imported assets into its runtime formats when packing.
 | `prefabs/prop_sphere.tscn` | sphere props | Unit-diameter sphere, scaled like the box. |
 | `prefabs/static_box.tscn` | level geometry | Unit cube, scaled to each wall, ramp, step or platform. |
 | `prefabs/<visual>.tscn` | entities from a map template | A template names the prefab it draws as. Unit-sized like the others: the client scales it to the shape the template authored. |
-| `vfx/bindings*.tres` | what plays on which event | A `CbEffectTable`. Every file matching this name is loaded, so ship `vfx/bindings_<yourmod>.tres` and your effects are added to the game's instead of replacing them. |
+| `vfx/bindings*.tres` | what plays on which event | A `CbEffectTable`: scenes, sounds, camera shake and screen flashes. Every file matching this name is loaded, so ship `vfx/bindings_<yourmod>.tres` and your effects are added to the game's instead of replacing them. |
+| `assets/...` | sounds and other shared files | A binding can name any stream your mod ships, for example `res://assets/sfx/<yours>.wav`. |
 | `vfx/prop_spawn.tscn`, `vfx/prop_destroy.tscn` | prop spawned / removed | One-shot effects used when no binding matches. Every `GPUParticles3D` in the scene is restarted; the node is freed after its lifetime. |
 | `vfx/jump.tscn`, `vfx/land.tscn` | a player jumps / lands | Placed at the player's feet. |
 | `ui/hud.tscn` | HUD | Any `Control` tree. Optional labels with unique names `%Stats`, `%Banner` and `%Help` are filled by the game. |
@@ -58,5 +59,6 @@ contained one would be refused.
 ## example_neon
 
 This mod replaces the prop spawn effect with a magenta burst, gives box props a glowing cyan
-material, and adds two effect bindings of its own (`vfx/bindings_neon.tres`): a landing puff only
-the local player sees, and a burst when a `heavy_crate` is destroyed.
+material, and adds three effect bindings of its own (`vfx/bindings_neon.tres`): a landing puff and
+blip only the local player gets, using a sound the mod ships itself; a burst when a `heavy_crate`
+is destroyed; and a magenta screen flash when the local player spawns something.

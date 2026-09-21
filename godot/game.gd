@@ -3,7 +3,7 @@ extends Node3D
 ##
 ## Everything visual it uses is loaded by path, so mods can replace it:
 ##   res://ui/hud.tscn          HUD layout. Optional unique nodes: %Stats, %Banner, %Help.
-##   res://vfx/bindings*.tres   effect bindings (CbEffectTable): what plays on which event.
+##   res://vfx/bindings*.tres   effect bindings (CbEffectTable): scenes, sounds and screen effects.
 ##   res://vfx/<event>.tscn     fallback one-shot effects: prop_spawn, prop_destroy, jump, land.
 ##   res://prefabs/*.tscn       entity visuals (loaded by CinderboxClient).
 ##
@@ -30,7 +30,16 @@ var auto_rng := RandomNumberGenerator.new()
 var auto_move := Vector2.ZERO
 
 var _vfx_cache := {}
+var _sound_cache := {}
 var _effects: Array = []
+var _cooldowns := {}
+
+var _shake := 0.0
+var _shake_decay := 1.0
+var _flash := 0.0
+var _flash_decay := 1.0
+var _flash_color := Color.WHITE
+var _flash_rect: ColorRect
 
 
 func _ready() -> void:
@@ -55,6 +64,7 @@ func _ready() -> void:
 	client.connection_state_changed.connect(func(state): print("connection: ", state))
 
 	_load_effects()
+	_make_flash_overlay()
 
 	var hud_scene: PackedScene = load("res://ui/hud.tscn")
 	if hud_scene:
@@ -97,6 +107,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	_send_input(delta)
+	_update_screen_effects(delta)
 	_update_camera()
 	_update_hud()
 	_autoplay_finish()
@@ -131,6 +142,11 @@ func _update_camera() -> void:
 		target = client.get_local_player_position() + Vector3(0, 0.4, 0)
 	camera.rotation = Vector3(pitch, yaw, 0)
 	camera.global_position = target + camera.global_transform.basis.z * distance
+	if _shake > 0.0:
+		camera.global_position += Vector3(
+			auto_rng.randf_range(-_shake, _shake),
+			auto_rng.randf_range(-_shake, _shake),
+			auto_rng.randf_range(-_shake, _shake))
 
 
 func _update_hud() -> void:
@@ -178,6 +194,19 @@ func _autoplay_finish() -> void:
 	get_tree().quit(0 if stats.get("desyncs", 1) == 0 and stats.get("state") == "playing" else 2)
 
 
+func _make_flash_overlay() -> void:
+	# Its own layer, so a mod replacing the HUD cannot remove it by accident.
+	var layer := CanvasLayer.new()
+	layer.layer = 100
+	add_child(layer)
+	_flash_rect = ColorRect.new()
+	_flash_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_flash_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_flash_rect.color = Color(1, 1, 1, 0)
+	_flash_rect.visible = false
+	layer.add_child(_flash_rect)
+
+
 # --- VFX director -------------------------------------------------------------------------------
 #
 # What plays when is data: every res://vfx/bindings*.tres is loaded, so a mod adds effects by
@@ -206,6 +235,7 @@ func _load_effects() -> void:
 
 func _play_effects(event: int, fallback: String, ctx: Dictionary) -> void:
 	var played := false
+	var now := Time.get_ticks_msec() / 1000.0
 	for effect in _effects:
 		if effect.event != event:
 			continue
@@ -217,11 +247,59 @@ func _play_effects(event: int, fallback: String, ctx: Dictionary) -> void:
 			continue
 		if effect.who == CbEffect.WHO_REMOTE and ctx.get("is_local", false):
 			continue
-		_play_scene(effect.scene, ctx.get("position", Vector3.ZERO) + effect.offset, effect.lifetime,
+		if effect.cooldown > 0.0:
+			# Keeps a busy event (twenty props at once) from stacking twenty sounds.
+			var last: float = _cooldowns.get(effect, -1e9)
+			if now - last < effect.cooldown:
+				continue
+			_cooldowns[effect] = now
+
+		var position: Vector3 = ctx.get("position", Vector3.ZERO)
+		_play_scene(effect.scene, position + effect.offset, effect.lifetime,
 			ctx.get("node", null) if effect.follow else null)
+		_play_sound(effect, position + effect.offset)
+		if effect.shake > 0.0:
+			_shake = max(_shake, effect.shake)
+			_shake_decay = effect.shake / max(effect.shake_time, 0.05)
+		if effect.flash_color.a > 0.0:
+			_flash_color = effect.flash_color
+			_flash = effect.flash_color.a
+			_flash_decay = effect.flash_color.a / max(effect.flash_time, 0.02)
 		played = true
 	if not played and fallback != "":
 		_play_scene("res://vfx/%s.tscn" % fallback, ctx.get("position", Vector3.ZERO), VFX_LIFETIME, null)
+
+
+func _play_sound(effect: CbEffect, position: Vector3) -> void:
+	if effect.sound == "":
+		return
+	if not _sound_cache.has(effect.sound):
+		_sound_cache[effect.sound] = load(effect.sound) if ResourceLoader.exists(effect.sound) else null
+		if _sound_cache[effect.sound] == null:
+			push_warning("missing sound %s" % effect.sound)
+	var stream: AudioStream = _sound_cache[effect.sound]
+	if stream == null:
+		return
+	var player := AudioStreamPlayer3D.new()
+	player.stream = stream
+	player.volume_db = effect.volume_db
+	player.pitch_scale = max(0.01, effect.pitch_scale + auto_rng.randf_range(-effect.pitch_jitter, effect.pitch_jitter))
+	if effect.bus != "":
+		player.bus = effect.bus
+	if effect.max_distance > 0.0:
+		player.max_distance = effect.max_distance
+	add_child(player)
+	player.global_position = position
+	player.finished.connect(player.queue_free)
+	player.play()
+
+
+func _update_screen_effects(delta: float) -> void:
+	_shake = max(0.0, _shake - _shake_decay * delta)
+	if _flash > 0.0:
+		_flash = max(0.0, _flash - _flash_decay * delta)
+		_flash_rect.color = Color(_flash_color.r, _flash_color.g, _flash_color.b, _flash)
+		_flash_rect.visible = _flash > 0.0
 
 
 func _play_scene(path: String, position: Vector3, lifetime: float, parent: Node3D) -> void:

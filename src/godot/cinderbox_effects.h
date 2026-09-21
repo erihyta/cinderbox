@@ -10,6 +10,7 @@
 // decides *when* an event happens lives in the simulation.
 
 #include <godot_cpp/classes/resource.hpp>
+#include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
 
 namespace cb::gd
@@ -100,6 +101,96 @@ public:
 	{
 		return m_who;
 	}
+	void set_cooldown( float value )
+	{
+		m_cooldown = value;
+	}
+	float get_cooldown() const
+	{
+		return m_cooldown;
+	}
+
+	void set_sound( const godot::String& value )
+	{
+		m_sound = value;
+	}
+	godot::String get_sound() const
+	{
+		return m_sound;
+	}
+	void set_volume_db( float value )
+	{
+		m_volumeDb = value;
+	}
+	float get_volume_db() const
+	{
+		return m_volumeDb;
+	}
+	void set_pitch_scale( float value )
+	{
+		m_pitchScale = value;
+	}
+	float get_pitch_scale() const
+	{
+		return m_pitchScale;
+	}
+	void set_pitch_jitter( float value )
+	{
+		m_pitchJitter = value;
+	}
+	float get_pitch_jitter() const
+	{
+		return m_pitchJitter;
+	}
+	void set_bus( const godot::String& value )
+	{
+		m_bus = value;
+	}
+	godot::String get_bus() const
+	{
+		return m_bus;
+	}
+	void set_max_distance( float value )
+	{
+		m_maxDistance = value;
+	}
+	float get_max_distance() const
+	{
+		return m_maxDistance;
+	}
+
+	void set_shake( float value )
+	{
+		m_shake = value;
+	}
+	float get_shake() const
+	{
+		return m_shake;
+	}
+	void set_shake_time( float value )
+	{
+		m_shakeTime = value;
+	}
+	float get_shake_time() const
+	{
+		return m_shakeTime;
+	}
+	void set_flash_color( const godot::Color& value )
+	{
+		m_flashColor = value;
+	}
+	godot::Color get_flash_color() const
+	{
+		return m_flashColor;
+	}
+	void set_flash_time( float value )
+	{
+		m_flashTime = value;
+	}
+	float get_flash_time() const
+	{
+		return m_flashTime;
+	}
 
 protected:
 	static void _bind_methods();
@@ -117,6 +208,24 @@ private:
 	// Parent the effect to the entity's node so it follows it, instead of staying where it started.
 	bool m_follow = false;
 	int m_who = WHO_ANYONE;
+	// Shortest gap between two plays of this binding, in seconds. 0 lets it fire every time.
+	float m_cooldown = 0.0f;
+
+	// Sound played at the event, positional unless max_distance is 0.
+	godot::String m_sound;
+	float m_volumeDb = 0.0f;
+	float m_pitchScale = 1.0f;
+	// Randomises the pitch by +/- this much. Presentation only, so it never has to be repeatable.
+	float m_pitchJitter = 0.0f;
+	godot::String m_bus;
+	float m_maxDistance = 0.0f;
+
+	// Screen effects. They only make sense for what the viewer can feel, so bindings that use them
+	// normally set who = Local player.
+	float m_shake = 0.0f;
+	float m_shakeTime = 0.3f;
+	godot::Color m_flashColor = godot::Color( 1.0f, 1.0f, 1.0f, 0.0f );
+	float m_flashTime = 0.15f;
 };
 
 class CbEffectTable : public godot::Resource

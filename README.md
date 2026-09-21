@@ -16,6 +16,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M7: maps authored in the Godot editor, baked .cbmap format, map sent on join | done |
 | M8: component registry, entity templates authored in the inspector, runtime spawning | done |
 | M9: declarative effect bindings, so mods add effects as data | done |
+| M10: sounds and screen effects in the same bindings | done |
 
 ## Building
 
@@ -78,9 +79,9 @@ The export needs the Godot 4.7.2 export templates, installed either from the edi
 Mods are cosmetic Godot resource packs (`.zip`). A mod can replace or add:
 - entity visuals in `prefabs/`;
 - effects in `vfx/`, and effect bindings as `vfx/bindings_<name>.tres`;
+- sounds and other shared files in `assets/`;
 - the HUD in `ui/`;
 - map visuals in `maps/` (the scene named after the map the server runs);
-- shared files in `assets/`.
 
 Mods cannot contain code. The game refuses a pack that contains scripts, native libraries or files
 outside these folders, and one whose resources reference a script. Gameplay stays in the simulation
@@ -175,13 +176,23 @@ shipping a file of its own, so two mods can add effects without fighting over on
 | `lifetime` | Seconds before it is freed |
 | `follow` | Parent it to the entity so it travels with it, instead of staying put |
 | `who` | Anyone, only the local player, or only other players |
+| `cooldown` | Shortest gap between two plays, so a busy event does not stack twenty sounds |
+| `sound` | A `.wav`/`.ogg` played at the event, with `volume_db`, `pitch_scale`, `pitch_jitter`, `bus` and `max_distance` |
+| `shake`, `shake_time` | Camera shake for the viewer |
+| `flash_color`, `flash_time` | A full-screen flash; the colour's alpha is its strength |
+
+A binding can carry a scene, a sound, a screen effect, or any combination. Screen effects are what
+the viewer feels, so they usually go with `who = Local player`.
 
 Every binding that matches plays, so bindings add to each other. When nothing matches, the older
 convention still applies: `res://vfx/<event>.tscn`, one of `prop_spawn`, `prop_destroy`, `jump`
 or `land`.
 
 `godot/vfx/bindings.tres` is the game's own set; `mods_src/example_neon/vfx/bindings_neon.tres`
-shows a mod adding two more. Both are edited in the Godot inspector.
+shows a mod adding three more, including its own sound. Both are edited in the Godot inspector.
+
+The sounds in `godot/assets/sfx/` are placeholders in the same spirit as the procedural rig: short,
+synthetic, and meant to be replaced. `tools/make_sfx.py` regenerates them.
 
 ## Animations
 
@@ -285,5 +296,5 @@ mods_src/         mod projects (example_neon)
 tests/            determinism, rollback, gameplay, animation and loopback network tests
 scripts/          cross-compiler determinism check, stress test
 tools/            animation conversion (convert_animations.*), test glTF generator, pack_mod.ps1,
-                  export_client.ps1, bake_map.ps1
+                  export_client.ps1, bake_map.ps1, make_sfx.py (placeholder sounds)
 ```
