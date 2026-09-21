@@ -1,34 +1,60 @@
-[gd_resource type="CbEffectTable" load_steps=6 format=3]
+[gd_resource type="CbEffectTable" load_steps=7 format=3]
 
 ; What plays when. Mods add their own res://vfx/bindings_<name>.tres instead of replacing this one.
 ;   event:         0 spawned, 1 destroying, 2 jumped, 3 landed
 ;   template_name: "" matches any map template
 ;   kind:          "" or "any", or "prop" / "player" / "static"
 ;   who:           0 anyone, 1 the local player, 2 other players
+; A binding can carry a scene, a sound, a screen effect, or any combination of them.
 
 [sub_resource type="CbEffect" id="PropSpawn"]
 event = 0
 kind = "prop"
 scene = "res://vfx/prop_spawn.tscn"
 lifetime = 3.0
+sound = "res://assets/sfx/prop_spawn.wav"
+volume_db = -8.0
+pitch_jitter = 0.15
+max_distance = 40.0
+cooldown = 0.05
 
 [sub_resource type="CbEffect" id="PropDestroy"]
 event = 1
 kind = "prop"
 scene = "res://vfx/prop_destroy.tscn"
 lifetime = 3.0
+sound = "res://assets/sfx/prop_destroy.wav"
+volume_db = -12.0
+pitch_jitter = 0.2
+max_distance = 35.0
+cooldown = 0.08
 
 [sub_resource type="CbEffect" id="Jump"]
 event = 2
 kind = "player"
 scene = "res://vfx/jump.tscn"
 lifetime = 2.0
+sound = "res://assets/sfx/jump.wav"
+volume_db = -14.0
+pitch_jitter = 0.1
+max_distance = 25.0
 
 [sub_resource type="CbEffect" id="Land"]
 event = 3
 kind = "player"
 scene = "res://vfx/land.tscn"
 lifetime = 2.0
+sound = "res://assets/sfx/land.wav"
+volume_db = -10.0
+pitch_jitter = 0.12
+max_distance = 30.0
+
+[sub_resource type="CbEffect" id="LandShake"]
+event = 3
+kind = "player"
+who = 1
+shake = 0.06
+shake_time = 0.22
 
 [sub_resource type="CbEffect" id="BouncyTrail"]
 event = 0
@@ -38,4 +64,4 @@ lifetime = 25.0
 follow = true
 
 [resource]
-effects = [SubResource("PropSpawn"), SubResource("PropDestroy"), SubResource("Jump"), SubResource("Land"), SubResource("BouncyTrail")]
+effects = [SubResource("PropSpawn"), SubResource("PropDestroy"), SubResource("Jump"), SubResource("Land"), SubResource("LandShake"), SubResource("BouncyTrail")]
