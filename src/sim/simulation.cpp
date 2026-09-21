@@ -200,6 +200,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<Prop>();
 	RegisterSnapComponent<StaticGeometry>();
 	RegisterSnapComponent<AnimState>();
+	RegisterSnapComponent<TemplateRef>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -246,11 +247,12 @@ void Simulation::DestroyEntity( flecs::entity e )
 	e.destruct();
 }
 
-b3ShapeId Simulation::CreateShape( b3BodyId body, const Shape& shape, uint64_t category )
+b3ShapeId Simulation::CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material )
 {
 	b3ShapeDef def = b3DefaultShapeDef();
-	def.density = 1.0f;
-	def.baseMaterial.friction = 0.6f;
+	def.density = material.density;
+	def.baseMaterial.friction = material.friction;
+	def.baseMaterial.restitution = material.restitution;
 	def.filter.categoryBits = category;
 	def.filter.maskBits = ~uint64_t( 0 );
 
@@ -302,6 +304,13 @@ void Simulation::BuildLevel()
 	{
 		CreateProp( prop.kind, prop.position, b3Quat{ { 0.0f, 0.0f, 0.0f }, 1.0f }, prop.halfExtents, { 0.0f, 0.0f, 0.0f }, 0, 0 );
 	}
+
+	// Template instances come last, in the order the map lists them.
+	for ( const LevelInstance& instance : layout.instances )
+	{
+		CreateFromTemplate( instance.templateIndex, instance.position, MakeRotation( instance.yaw, instance.pitch ),
+							{ 0.0f, 0.0f, 0.0f }, 0 );
+	}
 }
 
 flecs::entity Simulation::CreateProp( ShapeKind kind, b3Vec3 position, b3Quat rotation, b3Vec3 halfExtents, b3Vec3 velocity,
@@ -324,6 +333,90 @@ flecs::entity Simulation::CreateProp( ShapeKind kind, b3Vec3 position, b3Quat ro
 	e.set<Shape>( shape );
 	e.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );
 	e.set<Prop>( { owner, m_globals.tick, despawn } );
+	return e;
+}
+
+flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 position, b3Quat rotation, b3Vec3 extraVelocity,
+											  uint32_t owner )
+{
+	if ( templateIndex >= m_map.templates.size() )
+	{
+		return {};
+	}
+	const EntityTemplate& t = m_map.templates[templateIndex];
+
+	// Shape. The author picks a kind and the fields that kind uses; the rest are ignored.
+	constexpr uint32_t kShape = Fnv32( "Shape" );
+	Shape shape;
+	shape.kind = ShapeKind( std::clamp( TemplateInt( t, kShape, Fnv32( "kind" ), 0 ), 0, int32_t( ShapeKind::Capsule ) ) );
+	switch ( shape.kind )
+	{
+		case ShapeKind::Sphere:
+			shape.halfExtents = { TemplateFloat( t, kShape, Fnv32( "radius" ), 0.5f ), 0.0f, 0.0f };
+			break;
+		case ShapeKind::Capsule:
+		{
+			float radius = TemplateFloat( t, kShape, Fnv32( "radius" ), 0.5f );
+			float height = TemplateFloat( t, kShape, Fnv32( "height" ), 2.0f );
+			// Box3D wants the distance between the two sphere centres, which cannot go negative.
+			shape.halfExtents = { radius, std::max( 0.5f * height - radius, 0.0f ), 0.0f };
+			break;
+		}
+		case ShapeKind::Box:
+		default:
+		{
+			b3Vec3 size = TemplateVec3( t, kShape, Fnv32( "size" ), b3Vec3{ 1.0f, 1.0f, 1.0f } );
+			shape.halfExtents = b3MulSV( 0.5f, size );
+			break;
+		}
+	}
+
+	// Body. Defaults come from Box3D, so an unauthored field behaves exactly as before.
+	constexpr uint32_t kBody = Fnv32( "Body" );
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	int32_t bodyType = std::clamp( TemplateInt( t, kBody, Fnv32( "type" ), int32_t( b3_dynamicBody ) ), 0, 2 );
+	bodyDef.type = b3BodyType( bodyType );
+	bodyDef.gravityScale = TemplateFloat( t, kBody, Fnv32( "gravity_scale" ), bodyDef.gravityScale );
+	bodyDef.linearDamping = TemplateFloat( t, kBody, Fnv32( "linear_damping" ), bodyDef.linearDamping );
+	bodyDef.angularDamping = TemplateFloat( t, kBody, Fnv32( "angular_damping" ), bodyDef.angularDamping );
+
+	constexpr uint32_t kVelocity = Fnv32( "Velocity" );
+	b3Vec3 linear = b3Add( TemplateVec3( t, kVelocity, Fnv32( "linear" ), b3Vec3{ 0.0f, 0.0f, 0.0f } ), extraVelocity );
+	b3Vec3 angular = TemplateVec3( t, kVelocity, Fnv32( "angular" ), b3Vec3{ 0.0f, 0.0f, 0.0f } );
+	bodyDef.position = position;
+	bodyDef.rotation = rotation;
+	bodyDef.linearVelocity = linear;
+	bodyDef.angularVelocity = angular;
+
+	constexpr uint32_t kMaterial = Fnv32( "Material" );
+	ShapeMaterial material;
+	material.density = TemplateFloat( t, kMaterial, Fnv32( "density" ), material.density );
+	material.friction = TemplateFloat( t, kMaterial, Fnv32( "friction" ), material.friction );
+	material.restitution = TemplateFloat( t, kMaterial, Fnv32( "restitution" ), material.restitution );
+
+	bool isStatic = bodyDef.type == b3_staticBody;
+	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
+	b3ShapeId shapeId = CreateShape( body, shape, isStatic ? CatStatic : CatProp, material );
+
+	flecs::entity e = CreateEntity();
+	e.set<Transform>( { position, rotation } );
+	e.set<Velocity>( { linear, angular } );
+	e.set<Shape>( shape );
+	e.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );
+	e.set<TemplateRef>( { templateIndex } );
+
+	constexpr uint32_t kProp = Fnv32( "Prop" );
+	if ( TemplateHas( t, kProp ) )
+	{
+		float lifetime = TemplateFloat( t, kProp, Fnv32( "lifetime_seconds" ), 0.0f );
+		uint32_t ticks = uint32_t( std::max( lifetime, 0.0f ) * float( m_config.tickRate ) );
+		e.set<Prop>( { owner, m_globals.tick, ticks > 0 ? m_globals.tick + ticks : 0 } );
+	}
+	if ( isStatic )
+	{
+		// Level geometry: it does not fall, so it must not be culled by the kill plane either.
+		e.add<StaticGeometry>();
+	}
 	return e;
 }
 
@@ -637,6 +730,19 @@ void Simulation::SpawnProps()
 		b3Vec3 pos = b3Add( t.position, b3Add( b3MulSV( 1.2f, fwd ), b3Vec3{ 0.0f, 0.6f, 0.0f } ) );
 		b3Vec3 vel = b3Add( c.velocity, b3Add( b3MulSV( 3.0f, fwd ), b3Vec3{ 0.0f, 2.0f, 0.0f } ) );
 
+		// A map can say what the spawn button makes; without one, the built-in random prop.
+		if ( m_map.spawnTemplate != kNoTemplate )
+		{
+			flecs::entity e = CreateFromTemplate( m_map.spawnTemplate, pos, detmath::YawRotation( c.facingYaw ), vel, ownerId );
+			// Whatever the template says, something a player spawned expires and counts against
+			// the caps; otherwise a map could let players fill the world.
+			if ( e.is_valid() && e.has<Prop>() == false )
+			{
+				e.set<Prop>( { ownerId, m_globals.tick, m_globals.tick + lifetime } );
+			}
+			continue;
+		}
+
 		uint64_t& rng = m_globals.rngState;
 		bool sphere = ( NextRandom( rng ) & 1 ) != 0;
 		float size = RandomRange( rng, 0.2f, 0.45f );
@@ -724,7 +830,9 @@ void Simulation::SyncFromPhysics()
 	for ( const EntityRef& r : m_entities )
 	{
 		flecs::entity e( m_world, r.entity );
-		if ( e.has<Prop>() == false )
+		// Everything the physics engine moves: props and entities placed from a map template.
+		// Static geometry never moves, and characters are driven by the mover instead.
+		if ( e.has<PhysicsBody>() == false || e.has<StaticGeometry>() || e.has<Character>() )
 		{
 			continue;
 		}

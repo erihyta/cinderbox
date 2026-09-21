@@ -1,6 +1,9 @@
 #include "cinderbox_map_nodes.h"
 
+#include "cinderbox_entity_nodes.h"
+
 #include "map.h"
+#include "reflect.h"
 
 #include <godot_cpp/classes/box_mesh.hpp>
 #include <godot_cpp/classes/engine.hpp>
@@ -10,6 +13,7 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -64,6 +68,174 @@ struct BakeContext
 	int spawnCount = 0;
 };
 
+int32_t QuantizeField( const FieldDef& field, const Variant& value, int component )
+{
+	switch ( field.type )
+	{
+		case FieldType::Vec3:
+		{
+			Vector3 v = value;
+			float raw = component == 0 ? float( v.x ) : ( component == 1 ? float( v.y ) : float( v.z ) );
+			return MapQuantize( std::clamp( raw, field.min, field.max ), kMapPositionScale );
+		}
+		case FieldType::Bool:
+			return bool( value ) ? 1 : 0;
+		case FieldType::Int:
+		case FieldType::Enum:
+			return std::clamp( int32_t( int64_t( value ) ), int32_t( field.min ), int32_t( field.max ) );
+		case FieldType::Float:
+		default:
+			return MapQuantize( std::clamp( float( double( value ) ), field.min, field.max ), kMapPositionScale );
+	}
+}
+
+// Reads the CbComponent children of a template or entity node into authored values.
+std::vector<AuthoredComponent> ReadComponents( Node* node, const String& owner, BakeContext& ctx )
+{
+	std::vector<AuthoredComponent> components;
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		auto* source = Object::cast_to<CbComponent>( node->get_child( i ) );
+		if ( source == nullptr )
+		{
+			continue;
+		}
+		const ComponentDef* def = FindComponent( std::string( source->component_name().utf8().get_data() ) );
+		if ( def == nullptr )
+		{
+			ctx.warnings.push_back( String( "skipped a component with nothing selected on " ) + owner );
+			continue;
+		}
+
+		AuthoredComponent component;
+		component.id = def->Id();
+		Dictionary values = source->get_values();
+		for ( const FieldDef& field : def->fields )
+		{
+			Variant value = values[String( field.name )];
+			AuthoredField authored;
+			authored.id = field.Id();
+			int count = field.type == FieldType::Vec3 ? 3 : 1;
+			for ( int c = 0; c < count; ++c )
+			{
+				authored.raw[c] = QuantizeField( field, value, c );
+			}
+			component.fields.push_back( authored );
+		}
+		components.push_back( std::move( component ) );
+	}
+	return components;
+}
+
+bool SameComponents( const std::vector<AuthoredComponent>& a, const std::vector<AuthoredComponent>& b )
+{
+	if ( a.size() != b.size() )
+	{
+		return false;
+	}
+	for ( size_t i = 0; i < a.size(); ++i )
+	{
+		if ( a[i].id != b[i].id || a[i].fields.size() != b[i].fields.size() )
+		{
+			return false;
+		}
+		for ( size_t f = 0; f < a[i].fields.size(); ++f )
+		{
+			const AuthoredField& x = a[i].fields[f];
+			const AuthoredField& y = b[i].fields[f];
+			if ( x.id != y.id || x.raw[0] != y.raw[0] || x.raw[1] != y.raw[1] || x.raw[2] != y.raw[2] )
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+// Names become resource paths on clients, so they are kept to what the map format accepts.
+std::string SafeText( const String& text )
+{
+	std::string out = std::string( text.utf8().get_data() ).substr( 0, kMapNameLimit );
+	for ( char& c : out )
+	{
+		bool allowed = ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) || ( c >= '0' && c <= '9' ) || c == '_' || c == '-';
+		if ( allowed == false )
+		{
+			c = '_';
+		}
+	}
+	return out;
+}
+
+// Adds a template, reusing an identical one so that a hundred crates do not write a hundred copies.
+uint32_t AddTemplate( BakeContext& ctx, EntityTemplate&& candidate )
+{
+	for ( size_t i = 0; i < ctx.layout.templates.size(); ++i )
+	{
+		const EntityTemplate& existing = ctx.layout.templates[i];
+		if ( existing.visual == candidate.visual && SameComponents( existing.components, candidate.components ) )
+		{
+			return uint32_t( i );
+		}
+	}
+	ctx.layout.templates.push_back( std::move( candidate ) );
+	return uint32_t( ctx.layout.templates.size() - 1 );
+}
+
+uint32_t FindTemplateByName( const BakeContext& ctx, const std::string& name )
+{
+	for ( size_t i = 0; i < ctx.layout.templates.size(); ++i )
+	{
+		if ( ctx.layout.templates[i].name == name )
+		{
+			return uint32_t( i );
+		}
+	}
+	return kNoTemplate;
+}
+
+// First pass: named templates, so an entity can reference one that appears later in the scene.
+void CollectTemplates( Node* node, BakeContext& ctx )
+{
+	if ( auto* source = Object::cast_to<CbTemplate>( node ) )
+	{
+		EntityTemplate t;
+		// An unnamed template is known by its node name, which is what an author sees in the tree.
+		String templateName = source->get_template_name();
+		t.name = SafeText( templateName.is_empty() ? String( source->get_name() ) : templateName );
+		t.visual = SafeText( source->get_visual() );
+		t.components = ReadComponents( source, source->get_name(), ctx );
+
+		if ( FindTemplateByName( ctx, t.name ) != kNoTemplate )
+		{
+			ctx.warnings.push_back( String( "duplicate template name \"" ) + String( t.name.c_str() ) + "\", the later one is ignored" );
+		}
+		else
+		{
+			bool spawnable = source->get_spawnable();
+			// Templates are added by name here, never deduplicated: an author named them on purpose.
+			ctx.layout.templates.push_back( std::move( t ) );
+			uint32_t index = uint32_t( ctx.layout.templates.size() - 1 );
+			if ( spawnable )
+			{
+				if ( ctx.layout.spawnTemplate != kNoTemplate )
+				{
+					ctx.warnings.push_back( String( "more than one spawnable template, using the first" ) );
+				}
+				else
+				{
+					ctx.layout.spawnTemplate = index;
+				}
+			}
+		}
+	}
+
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		CollectTemplates( node->get_child( i ), ctx );
+	}
+}
+
 // Transforms are accumulated down the tree instead of read with get_global_transform(), so baking
 // works on a scene that is not inside a tree (headless) and is always relative to the map root.
 void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
@@ -116,6 +288,48 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 			out.halfExtents = ToSim( prop->get_size() * scale * 0.5f );
 		}
 		ctx.layout.props.push_back( out );
+	}
+	else if ( auto* entity = Object::cast_to<CbEntity>( node ) )
+	{
+		std::string named = SafeText( entity->get_template_name() );
+		uint32_t index = kNoTemplate;
+		if ( named.empty() == false )
+		{
+			index = FindTemplateByName( ctx, named );
+			if ( index == kNoTemplate )
+			{
+				ctx.warnings.push_back( String( "skipped " ) + entity->get_name() + ": no CbTemplate named \"" +
+										entity->get_template_name() + "\"" );
+			}
+		}
+		else
+		{
+			// No name: the node's own components define a template just for it.
+			EntityTemplate inlineTemplate;
+			inlineTemplate.name = SafeText( entity->get_name() );
+			inlineTemplate.visual = SafeText( entity->get_visual() );
+			inlineTemplate.components = ReadComponents( entity, entity->get_name(), ctx );
+			if ( inlineTemplate.components.empty() )
+			{
+				ctx.warnings.push_back( String( "skipped " ) + entity->get_name() +
+										": it has no CbComponent children and names no template" );
+			}
+			else
+			{
+				index = AddTemplate( ctx, std::move( inlineTemplate ) );
+			}
+		}
+
+		if ( index != kNoTemplate )
+		{
+			Vector3 euler = here.basis.get_euler( EULER_ORDER_YXZ );
+			LevelInstance instance;
+			instance.templateIndex = index;
+			instance.position = ToSim( here.origin );
+			instance.pitch = float( euler.x );
+			instance.yaw = float( euler.y );
+			ctx.layout.instances.push_back( instance );
+		}
 	}
 	else if ( auto* spawn = Object::cast_to<CbSpawn>( node ) )
 	{
@@ -318,16 +532,19 @@ Dictionary CinderboxMapBaker::bake( Node* root, const String& path )
 	ctx.layout.name = name;
 	ctx.layout.spawnCenter = b3Vec3{ 0.0f, 1.5f, 0.0f };
 	ctx.layout.spawnRadius = 4.0f;
+	CollectTemplates( root, ctx );
 	BakeNode( root, Transform3D(), ctx );
 
 	result["statics"] = int( ctx.layout.statics.size() );
 	result["props"] = int( ctx.layout.props.size() );
+	result["templates"] = int( ctx.layout.templates.size() );
+	result["instances"] = int( ctx.layout.instances.size() );
 	result["spawn_found"] = ctx.spawnCount > 0;
 	result["warnings"] = ctx.warnings;
 
-	if ( ctx.layout.statics.empty() )
+	if ( ctx.layout.statics.empty() && ctx.layout.instances.empty() )
 	{
-		result["error"] = "the scene has no CbStatic nodes";
+		result["error"] = "the scene has no CbStatic or CbEntity nodes";
 		return result;
 	}
 	if ( ctx.spawnCount == 0 )

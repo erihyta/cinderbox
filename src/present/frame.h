@@ -32,6 +32,8 @@ struct FrameEntity
 	ShapeKind shape = ShapeKind::Box;
 	PlayerSlot slot = 0;
 	bool hasAnim = false;
+	// Map template this came from, or kNoTemplate. Presentation uses it to pick the prefab.
+	uint32_t templateIndex = kNoTemplate;
 	b3Vec3 halfExtents = {};
 	Transform transform;
 	b3Vec3 velocity = {};

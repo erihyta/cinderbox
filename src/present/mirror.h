@@ -34,6 +34,7 @@ struct Visual
 	ShapeKind shape = ShapeKind::Box;
 	PlayerSlot slot = 0;
 	bool isLocalPlayer = false;
+	uint32_t templateIndex = kNoTemplate;
 	b3Vec3 halfExtents = { 0.5f, 0.5f, 0.5f };
 };
 

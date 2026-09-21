@@ -1,0 +1,15 @@
+[gd_scene load_steps=3 format=3]
+
+; Drawn for the "heavy_crate" template and the static pedestal of the example map. Unit cube: the
+; client scales it to the size the template authored.
+
+[sub_resource type="BoxMesh" id="Box"]
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(0.29, 0.3, 0.34, 1)
+roughness = 0.55
+metallic = 0.45
+
+[node name="PropHeavy" type="MeshInstance3D"]
+mesh = SubResource("Box")
+surface_material_override/0 = SubResource("Mat")

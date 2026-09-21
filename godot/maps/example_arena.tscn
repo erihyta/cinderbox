@@ -133,3 +133,73 @@ radius = 0.5
 [node name="Spawn" type="CbSpawn" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, -0, 1, 0, 1.5, 4)
 radius = 4.0
+
+[node name="Templates" type="Node3D" parent="."]
+
+[node name="bouncy_ball" type="CbTemplate" parent="Templates"]
+template_name = "bouncy_ball"
+visual = "prop_bouncy"
+spawnable = true
+
+[node name="Shape" type="CbComponent" parent="Templates/bouncy_ball"]
+component = 1
+kind = 1
+radius = 0.35
+
+[node name="Body" type="CbComponent" parent="Templates/bouncy_ball"]
+component = 2
+type = 2
+gravity_scale = 0.75
+linear_damping = 0.05
+angular_damping = 0.05
+
+[node name="Material" type="CbComponent" parent="Templates/bouncy_ball"]
+component = 3
+density = 0.4
+friction = 0.3
+restitution = 0.85
+
+[node name="Prop" type="CbComponent" parent="Templates/bouncy_ball"]
+component = 5
+lifetime_seconds = 25.0
+
+[node name="heavy_crate" type="CbTemplate" parent="Templates"]
+template_name = "heavy_crate"
+visual = "prop_heavy"
+
+[node name="Shape" type="CbComponent" parent="Templates/heavy_crate"]
+component = 1
+kind = 0
+size = Vector3(1.2, 1.2, 1.2)
+
+[node name="Body" type="CbComponent" parent="Templates/heavy_crate"]
+component = 2
+type = 2
+angular_damping = 0.4
+
+[node name="Material" type="CbComponent" parent="Templates/heavy_crate"]
+component = 3
+density = 12.0
+friction = 0.9
+restitution = 0.0
+
+[node name="HeavyCrateA" type="CbEntity" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, -0, 1, -2, 0.6, -8)
+template_name = "heavy_crate"
+
+[node name="HeavyCrateB" type="CbEntity" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, -0, 1, -2, 1.85, -8)
+template_name = "heavy_crate"
+
+[node name="Pedestal" type="CbEntity" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, -0, 1, 6, 0.4, -14)
+visual = "prop_heavy"
+
+[node name="Shape" type="CbComponent" parent="Pedestal"]
+component = 1
+kind = 0
+size = Vector3(2.5, 0.8, 2.5)
+
+[node name="Body" type="CbComponent" parent="Pedestal"]
+component = 2
+type = 0

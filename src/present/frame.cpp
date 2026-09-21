@@ -36,6 +36,10 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.kind = VisualKind::Prop;
 		}
 
+		if ( const TemplateRef* t = e.try_get<TemplateRef>() )
+		{
+			f.templateIndex = t->index;
+		}
 		if ( const Velocity* v = e.try_get<Velocity>() )
 		{
 			f.velocity = v->linear;

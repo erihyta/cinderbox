@@ -105,6 +105,16 @@ struct StaticGeometry
 {
 };
 
+// "This entity did not come from a template."
+inline constexpr uint32_t kNoTemplate = 0xFFFFFFFFu;
+
+// The map template this entity was created from (see reflect.h). The simulation only carries it so
+// that presentation can look up which prefab to draw.
+struct TemplateRef
+{
+	uint32_t index = kNoTemplate;
+};
+
 #define CB_CHECK_COMPONENT( T, size )                                                                                            \
 	static_assert( std::is_trivially_copyable_v<T> );                                                                            \
 	static_assert( sizeof( T ) == size, #T " layout changed: check for padding" )
@@ -117,6 +127,7 @@ CB_CHECK_COMPONENT( PhysicsBody, 16 );
 CB_CHECK_COMPONENT( Character, 36 );
 CB_CHECK_COMPONENT( Prop, 12 );
 CB_CHECK_COMPONENT( AnimState, 20 );
+CB_CHECK_COMPONENT( TemplateRef, 4 );
 
 #undef CB_CHECK_COMPONENT
 

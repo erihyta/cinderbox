@@ -17,9 +17,18 @@
 //   i32 spawnCenter[3], i32 spawnRadius,
 //   u32 staticCount,  per static: i32 center[3], i32 halfExtents[3], i32 pitch, i32 yaw
 //   u32 propCount,    per prop:   u8 kind, u8 pad[3], i32 position[3], i32 halfExtents[3]
+//   u32 templateCount, per template: name, visual, u32 componentCount,
+//                        per component: u32 componentId, u32 fieldCount,
+//                          per field: u32 fieldId, i32 value[3]
+//   u32 instanceCount, per instance: u32 templateIndex, i32 position[3], i32 pitch, i32 yaw
+//   u32 spawnTemplate (kNoTemplate for none)
 //
-// The name is the only text in the file and the only part the simulation ignores; it tells a
-// client which scene to draw. Everything else is collision the server and clients must agree on.
+// Component and field ids are name hashes (see reflect.h), so the registry can grow and be
+// reordered without invalidating baked maps: unknown entries are dropped when the map is read.
+//
+// Names (of the map, of templates, and of the prefab a template draws as) are the only text in the
+// file and the only parts the simulation ignores: they tell a client what to draw. Everything else
+// is collision and initial state the server and clients must agree on.
 //
 // The order of the entries is the order in which entities are created, which decides flecs ids,
 // Box3D body order and therefore every state hash. It is part of the format: never reorder a
@@ -34,7 +43,7 @@
 namespace cb
 {
 
-inline constexpr uint32_t kMapVersion = 1;
+inline constexpr uint32_t kMapVersion = 2;
 
 // Fixed-point grids. Powers of two, see above.
 inline constexpr float kMapPositionScale = 1024.0f;
@@ -44,6 +53,11 @@ inline constexpr uint32_t kMapNameLimit = 64;
 
 // Largest magnitude a quantized value can hold (int -> float stays exact below 2^24).
 inline constexpr float kMapPositionLimit = 16000.0f;
+
+// The grid conversions. Both are exact: the scales are powers of two, roundf is a specified exact
+// operation, and int -> float is exact below 2^24. Authored component values use them too.
+int32_t MapQuantize( float value, float scale );
+float MapDequantize( int32_t value, float scale );
 
 // Rounds every value in the layout onto the storage grid, so that serializing and reading it back
 // yields exactly the same floats. Call this on any layout built in code.
