@@ -29,7 +29,8 @@ Godot converts scenes and imported assets into its runtime formats when packing.
 | `prefabs/prop_sphere.tscn` | sphere props | Unit-diameter sphere, scaled like the box. |
 | `prefabs/static_box.tscn` | level geometry | Unit cube, scaled to each wall, ramp, step or platform. |
 | `prefabs/<visual>.tscn` | entities from a map template | A template names the prefab it draws as. Unit-sized like the others: the client scales it to the shape the template authored. |
-| `vfx/prop_spawn.tscn`, `vfx/prop_destroy.tscn` | prop spawned / removed | One-shot effects. Every `GPUParticles3D` in the scene is restarted; the node is freed after 3 s. |
+| `vfx/bindings*.tres` | what plays on which event | A `CbEffectTable`. Every file matching this name is loaded, so ship `vfx/bindings_<yourmod>.tres` and your effects are added to the game's instead of replacing them. |
+| `vfx/prop_spawn.tscn`, `vfx/prop_destroy.tscn` | prop spawned / removed | One-shot effects used when no binding matches. Every `GPUParticles3D` in the scene is restarted; the node is freed after its lifetime. |
 | `vfx/jump.tscn`, `vfx/land.tscn` | a player jumps / lands | Placed at the player's feet. |
 | `ui/hud.tscn` | HUD | Any `Control` tree. Optional labels with unique names `%Stats`, `%Banner` and `%Help` are filled by the game. |
 | `maps/<name>.tscn` | the level's visuals | The scene the server's map was baked from, named after it. A mod can replace it to re-skin a level. |
@@ -46,7 +47,16 @@ so moving a wall in a map mod moves the picture and not the wall: players still 
 server's geometry. Changing a level for real means baking a new map and running a server on it (see
 the Maps section of the README).
 
+## Authoring Cinderbox resources
+
+Effect bindings (and any other Cinderbox type) need the game's extension present while the mod
+project is open and while it is packed. `tools\pack_mod.ps1` copies `cinderbox.gdextension` and
+`godot\bin` into the mod project for you and keeps them out of the pack; to edit them in the
+editor, copy those two by hand into your mod project as well. They are developer files: a pack that
+contained one would be refused.
+
 ## example_neon
 
-This mod replaces the prop spawn effect with a magenta burst and gives box props a glowing cyan
-material.
+This mod replaces the prop spawn effect with a magenta burst, gives box props a glowing cyan
+material, and adds two effect bindings of its own (`vfx/bindings_neon.tres`): a landing puff only
+the local player sees, and a burst when a `heavy_crate` is destroyed.

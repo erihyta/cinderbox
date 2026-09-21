@@ -120,9 +120,11 @@ void CinderboxClient::_bind_methods()
 	// visual_id is stable for the whole life of a visual (including its destroy effect).
 	ADD_SIGNAL( MethodInfo( "visual_spawned", PropertyInfo( Variant::INT, "visual_id" ), PropertyInfo( Variant::INT, "net_id" ),
 							PropertyInfo( Variant::STRING, "kind" ), PropertyInfo( Variant::OBJECT, "node" ),
-							PropertyInfo( Variant::VECTOR3, "position" ), PropertyInfo( Variant::BOOL, "with_effect" ) ) );
+							PropertyInfo( Variant::VECTOR3, "position" ), PropertyInfo( Variant::BOOL, "with_effect" ),
+							PropertyInfo( Variant::STRING, "template_name" ) ) );
 	ADD_SIGNAL( MethodInfo( "visual_destroying", PropertyInfo( Variant::INT, "visual_id" ), PropertyInfo( Variant::INT, "net_id" ),
-							PropertyInfo( Variant::STRING, "kind" ), PropertyInfo( Variant::VECTOR3, "position" ) ) );
+							PropertyInfo( Variant::STRING, "kind" ), PropertyInfo( Variant::VECTOR3, "position" ),
+							PropertyInfo( Variant::STRING, "template_name" ) ) );
 	ADD_SIGNAL( MethodInfo( "visual_removed", PropertyInfo( Variant::INT, "visual_id" ) ) );
 	ADD_SIGNAL( MethodInfo( "player_jumped", PropertyInfo( Variant::INT, "net_id" ), PropertyInfo( Variant::VECTOR3, "position" ),
 							PropertyInfo( Variant::BOOL, "is_local" ) ) );
@@ -300,12 +302,17 @@ void CinderboxClient::HandleEvents()
 					}
 				}
 				emit_signal( "visual_spawned", int64_t( e.visual ), int64_t( e.netId ), String( KindName( e.kind ) ), node, position,
-							 e.withEffect );
+							 e.withEffect, TemplateName( v.templateIndex ) );
 				break;
 			}
 			case present::EventType::Destroying:
-				emit_signal( "visual_destroying", int64_t( e.visual ), int64_t( e.netId ), String( KindName( e.kind ) ), position );
+			{
+				flecs::entity ve( visuals, e.visual );
+				uint32_t templateIndex = ve.is_alive() ? ve.get<present::Visual>().templateIndex : kNoTemplate;
+				emit_signal( "visual_destroying", int64_t( e.visual ), int64_t( e.netId ), String( KindName( e.kind ) ), position,
+							 TemplateName( templateIndex ) );
 				break;
+			}
 			case present::EventType::Removed:
 			{
 				auto it = m_nodes.find( e.visual );
@@ -422,6 +429,11 @@ void CinderboxClient::_process( double delta )
 	UpdateMapVisual();
 	HandleEvents();
 	UpdateNodes();
+}
+
+String CinderboxClient::TemplateName( uint32_t index ) const
+{
+	return index < m_frame.templateNames.size() ? String( m_frame.templateNames[index].c_str() ) : String();
 }
 
 String CinderboxClient::get_map_name() const

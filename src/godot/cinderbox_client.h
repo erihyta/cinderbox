@@ -112,6 +112,7 @@ protected:
 	static void _bind_methods();
 
 private:
+	godot::String TemplateName( uint32_t index ) const;
 	void EnsureAnimations();
 	void UpdateMapVisual();
 	void HandleEvents();

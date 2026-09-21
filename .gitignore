@@ -18,3 +18,8 @@ mods_src/*/.godot/
 
 # Exported client
 dist/
+
+# Mod projects get a copy of the extension while packing.
+mods_src/*/bin/
+mods_src/*/cinderbox.gdextension
+mods_src/*/cinderbox.gdextension.uid

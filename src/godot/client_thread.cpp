@@ -88,9 +88,11 @@ void ClientThread::Publish( GameClient& client, double now, bool rolledBack )
 	{
 		f.mapHash = client.MapHash();
 		f.mapName = client.Map().name;
+		f.templateNames.clear();
 		f.templateVisuals.clear();
 		for ( const EntityTemplate& t : client.Map().templates )
 		{
+			f.templateNames.push_back( t.name );
 			f.templateVisuals.push_back( t.visual );
 		}
 	}

@@ -3,7 +3,8 @@ extends Node3D
 ##
 ## Everything visual it uses is loaded by path, so mods can replace it:
 ##   res://ui/hud.tscn          HUD layout. Optional unique nodes: %Stats, %Banner, %Help.
-##   res://vfx/<event>.tscn     one-shot effects: prop_spawn, prop_destroy, jump, land.
+##   res://vfx/bindings*.tres   effect bindings (CbEffectTable): what plays on which event.
+##   res://vfx/<event>.tscn     fallback one-shot effects: prop_spawn, prop_destroy, jump, land.
 ##   res://prefabs/*.tscn       entity visuals (loaded by CinderboxClient).
 ##
 ## Command line (after `--`): --host=H --port=P --rollback=N --animations=DIR
@@ -29,6 +30,7 @@ var auto_rng := RandomNumberGenerator.new()
 var auto_move := Vector2.ZERO
 
 var _vfx_cache := {}
+var _effects: Array = []
 
 
 func _ready() -> void:
@@ -46,9 +48,13 @@ func _ready() -> void:
 
 	client.visual_spawned.connect(_on_visual_spawned)
 	client.visual_destroying.connect(_on_visual_destroying)
-	client.player_jumped.connect(func(_id, pos, _local): _spawn_vfx("jump", pos))
-	client.player_landed.connect(func(_id, pos, _local): _spawn_vfx("land", pos))
+	client.player_jumped.connect(func(_id, pos, is_local):
+		_play_effects(CbEffect.EVENT_JUMPED, "jump", {"kind": "player", "position": pos, "is_local": is_local}))
+	client.player_landed.connect(func(_id, pos, is_local):
+		_play_effects(CbEffect.EVENT_LANDED, "land", {"kind": "player", "position": pos, "is_local": is_local}))
 	client.connection_state_changed.connect(func(state): print("connection: ", state))
+
+	_load_effects()
 
 	var hud_scene: PackedScene = load("res://ui/hud.tscn")
 	if hud_scene:
@@ -173,34 +179,91 @@ func _autoplay_finish() -> void:
 
 
 # --- VFX director -------------------------------------------------------------------------------
+#
+# What plays when is data: every res://vfx/bindings*.tres is loaded, so a mod adds effects by
+# adding a file of its own instead of replacing the game's. A binding picks an event and may narrow
+# it to one map template, one kind of entity, or only the local player. When nothing matches, the
+# old convention still applies: res://vfx/<event>.tscn.
 
-func _on_visual_spawned(_visual_id: int, net_id: int, kind: String, node: Node3D, position: Vector3, with_effect: bool) -> void:
-	if kind == "prop" and node.has_meta("tint_by_net_id"):
-		_tint(node, net_id)
-	if with_effect and kind == "prop":
-		_spawn_vfx("prop_spawn", position)
+func _load_effects() -> void:
+	var names := []
+	for file in DirAccess.get_files_at("res://vfx"):
+		# Exported games list resources under their remapped names.
+		var clean: String = file.trim_suffix(".remap")
+		if clean.begins_with("bindings") and (clean.ends_with(".tres") or clean.ends_with(".res")):
+			names.append(clean)
+	names.sort()
+	for file in names:
+		var table = load("res://vfx/%s" % file)
+		if table is CbEffectTable:
+			for effect in table.effects:
+				if effect is CbEffect:
+					_effects.append(effect)
+		else:
+			push_warning("vfx/%s is not a CbEffectTable" % file)
+	print("effect bindings: %d from %d file(s)" % [_effects.size(), names.size()])
 
 
-func _on_visual_destroying(_visual_id: int, _net_id: int, kind: String, position: Vector3) -> void:
-	if kind == "prop":
-		_spawn_vfx("prop_destroy", position)
+func _play_effects(event: int, fallback: String, ctx: Dictionary) -> void:
+	var played := false
+	for effect in _effects:
+		if effect.event != event:
+			continue
+		if effect.template_name != "" and effect.template_name != ctx.get("template", ""):
+			continue
+		if effect.kind != "" and effect.kind != "any" and effect.kind != ctx.get("kind", ""):
+			continue
+		if effect.who == CbEffect.WHO_LOCAL and not ctx.get("is_local", false):
+			continue
+		if effect.who == CbEffect.WHO_REMOTE and ctx.get("is_local", false):
+			continue
+		_play_scene(effect.scene, ctx.get("position", Vector3.ZERO) + effect.offset, effect.lifetime,
+			ctx.get("node", null) if effect.follow else null)
+		played = true
+	if not played and fallback != "":
+		_play_scene("res://vfx/%s.tscn" % fallback, ctx.get("position", Vector3.ZERO), VFX_LIFETIME, null)
 
 
-func _spawn_vfx(effect: String, position: Vector3) -> void:
-	if not _vfx_cache.has(effect):
-		var path := "res://vfx/%s.tscn" % effect
-		_vfx_cache[effect] = load(path) if ResourceLoader.exists(path) else null
-	var scene: PackedScene = _vfx_cache[effect]
+func _play_scene(path: String, position: Vector3, lifetime: float, parent: Node3D) -> void:
+	if path == "":
+		return
+	if not _vfx_cache.has(path):
+		_vfx_cache[path] = load(path) if ResourceLoader.exists(path) else null
+		if _vfx_cache[path] == null:
+			push_warning("missing effect scene %s" % path)
+	var scene: PackedScene = _vfx_cache[path]
 	if scene == null:
 		return
 	var node := scene.instantiate() as Node3D
 	if node == null:
 		return
-	add_child(node)
-	node.global_position = position
+	# Following an entity means living under it, so it dies with it too.
+	if parent != null and is_instance_valid(parent):
+		parent.add_child(node)
+		node.position = Vector3.ZERO
+	else:
+		add_child(node)
+		node.global_position = position
 	for particles in node.find_children("*", "GPUParticles3D", true, false) + ([node] if node is GPUParticles3D else []):
 		particles.restart()
-	get_tree().create_timer(VFX_LIFETIME).timeout.connect(node.queue_free)
+	get_tree().create_timer(lifetime).timeout.connect(func():
+		if is_instance_valid(node):
+			node.queue_free())
+
+
+func _on_visual_spawned(_visual_id: int, net_id: int, kind: String, node: Node3D, position: Vector3, with_effect: bool,
+		template_name: String) -> void:
+	if kind == "prop" and node != null and node.has_meta("tint_by_net_id"):
+		_tint(node, net_id)
+	if not with_effect:
+		return
+	_play_effects(CbEffect.EVENT_SPAWNED, "prop_spawn" if kind == "prop" else "",
+		{"kind": kind, "template": template_name, "position": position, "node": node})
+
+
+func _on_visual_destroying(_visual_id: int, _net_id: int, kind: String, position: Vector3, template_name: String) -> void:
+	_play_effects(CbEffect.EVENT_DESTROYING, "prop_destroy" if kind == "prop" else "",
+		{"kind": kind, "template": template_name, "position": position})
 
 
 func _tint(node: Node3D, net_id: int) -> void:
