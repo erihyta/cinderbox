@@ -219,6 +219,31 @@ what keeps authoring drag-and-drop instead of scripting.
 - **Absent means default.** A component that was not attached leaves Box3D's own defaults in place.
   That is also the compatibility rule: a map baked before a field existed keeps working.
 
+## Effect bindings (M9)
+The last piece of presentation that was still code is *what plays when*. It is now data:
+`CbEffect` is one binding, `CbEffectTable` is a list of them saved as a `.tres`, and the client
+loads every `res://vfx/bindings*.tres`.
+
+- **Additive, not exclusive.** Every binding that matches an event plays, and files are loaded by
+  name, so a mod ships `bindings_<name>.tres` and adds to the game's set instead of replacing it.
+  Two mods can add effects without either one winning.
+- **Matching** narrows an event by map template, by kind of entity, and by whether it is the local
+  player's. That is enough for "this template sparks when it spawns" or "only I see my own landing
+  puff" without a line of script.
+- **`follow`** parents the effect to the entity's node, so a trail travels with the thing it
+  belongs to and dies with it.
+- **Compatibility**: when no binding matches, the old `res://vfx/<event>.tscn` convention still
+  applies, so mods written before this keep working.
+- **Why a resource and not a text format**: mods may not ship code, and the mod validator refuses
+  `.json`. A Godot resource is inspector-editable, binary in the exported pack, and carries no
+  script. Authoring one needs the extension present, so `tools/pack_mod.ps1` copies it into a mod
+  project while packing and keeps it out of the pack.
+- **The simulation is untouched.** Events come from the mirror as before; bindings only decide what
+  presentation does with them.
+
+This is the shape the creator-facing sandbox should keep growing in: a schema in C++, data in the
+editor, no mod code. Sounds and screen effects are the obvious next entries in the same table.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*`).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -282,8 +307,12 @@ what keeps authoring drag-and-drop instead of scripting.
   - static geometry left out of the portable snapshot: it is immutable and both sides build it from
     the map, so a large map should not pay for it on every join;
   - templates shared between maps, instead of one copy per map file.
-- **Presentation sandbox**: the registry is the shape the creator-facing sandbox should take, with
-  declarative event-to-effect bindings (a template or event names an effect) rather than mod code.
+- **Presentation sandbox** (started in M9): effect bindings are data. Next in the same table are
+  sounds, screen effects and material overrides, and bindings for events the simulation does not
+  report yet (impacts, footsteps).
+- **Marker nodes on the client**: a map's visual scene still carries its authoring nodes, which
+  cost about 0.3 ms per 1000 at load and nothing per frame. If maps ever get large, the bake can
+  write a visual-only copy with the markers replaced by plain Node3D.
 
 ## Milestones (check-in after each)
 1. **M1** (done): build system, deterministic sim core (flecs + Box3D + mover + props), snapshot/restore, rollback session, determinism tests (Clang, GCC and MSVC verified identical).
@@ -294,3 +323,4 @@ what keeps authoring drag-and-drop instead of scripting.
 6. **M6** (done): engine-independent presentation layer (`src/present`), Godot GDExtension client on its own simulation thread, prefab/VFX/HUD scenes, mod packs with a no-code validator and an example mod, Windows export. Verified: same fingerprint as native builds (editor and exported release), no desyncs with bots.
 7. **M7** (done): maps authored in the Godot editor (CbStatic / CbProp / CbSpawn), a fixed-point `.cbmap` bake, the map sent to clients on join, map visuals drawn from the authored scene, `cb_server --map`, and maps in replays.
 8. **M8** (done): the authorable component registry, `CbTemplate` / `CbComponent` / `CbEntity` authoring with an inspector generated from the registry, templates and instances in the map format, entities spawned from templates at runtime, and per-template visuals on the client.
+9. **M9** (done): effect bindings as data (`CbEffect` / `CbEffectTable`), additive binding files so mods add effects without replacing the game's, matching by template, kind and local player, effects that follow their entity, and a mod that ships its own bindings.

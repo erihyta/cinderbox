@@ -1,0 +1,41 @@
+[gd_resource type="CbEffectTable" load_steps=6 format=3]
+
+; What plays when. Mods add their own res://vfx/bindings_<name>.tres instead of replacing this one.
+;   event:         0 spawned, 1 destroying, 2 jumped, 3 landed
+;   template_name: "" matches any map template
+;   kind:          "" or "any", or "prop" / "player" / "static"
+;   who:           0 anyone, 1 the local player, 2 other players
+
+[sub_resource type="CbEffect" id="PropSpawn"]
+event = 0
+kind = "prop"
+scene = "res://vfx/prop_spawn.tscn"
+lifetime = 3.0
+
+[sub_resource type="CbEffect" id="PropDestroy"]
+event = 1
+kind = "prop"
+scene = "res://vfx/prop_destroy.tscn"
+lifetime = 3.0
+
+[sub_resource type="CbEffect" id="Jump"]
+event = 2
+kind = "player"
+scene = "res://vfx/jump.tscn"
+lifetime = 2.0
+
+[sub_resource type="CbEffect" id="Land"]
+event = 3
+kind = "player"
+scene = "res://vfx/land.tscn"
+lifetime = 2.0
+
+[sub_resource type="CbEffect" id="BouncyTrail"]
+event = 0
+template_name = "bouncy_ball"
+scene = "res://vfx/bouncy_trail.tscn"
+lifetime = 25.0
+follow = true
+
+[resource]
+effects = [SubResource("PropSpawn"), SubResource("PropDestroy"), SubResource("Jump"), SubResource("Land"), SubResource("BouncyTrail")]

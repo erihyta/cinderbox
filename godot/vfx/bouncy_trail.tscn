@@ -1,0 +1,33 @@
+[gd_scene load_steps=4 format=3]
+
+; Follows a bouncy ball around: bound to the "bouncy_ball" template with follow = true.
+
+[sub_resource type="ParticleProcessMaterial" id="Process"]
+emission_shape = 1
+emission_sphere_radius = 0.2
+direction = Vector3(0, 1, 0)
+spread = 180.0
+initial_velocity_min = 0.1
+initial_velocity_max = 0.6
+gravity = Vector3(0, -1.2, 0)
+scale_min = 0.5
+scale_max = 1.0
+color = Color(1, 0.45, 0.75, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+shading_mode = 0
+vertex_color_use_as_albedo = true
+billboard_mode = 3
+emission_enabled = true
+emission = Color(1, 0.3, 0.6, 1)
+emission_energy_multiplier = 1.5
+
+[sub_resource type="QuadMesh" id="Quad"]
+material = SubResource("Mat")
+size = Vector2(0.1, 0.1)
+
+[node name="BouncyTrail" type="GPUParticles3D"]
+amount = 24
+lifetime = 0.8
+process_material = SubResource("Process")
+draw_pass_1 = SubResource("Quad")

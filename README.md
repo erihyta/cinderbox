@@ -15,6 +15,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M6: Godot client (GDExtension), prefabs, VFX, HUD, mod packs, Windows export | done |
 | M7: maps authored in the Godot editor, baked .cbmap format, map sent on join | done |
 | M8: component registry, entity templates authored in the inspector, runtime spawning | done |
+| M9: declarative effect bindings, so mods add effects as data | done |
 
 ## Building
 
@@ -76,7 +77,7 @@ The export needs the Godot 4.7.2 export templates, installed either from the edi
 
 Mods are cosmetic Godot resource packs (`.zip`). A mod can replace or add:
 - entity visuals in `prefabs/`;
-- effects in `vfx/`;
+- effects in `vfx/`, and effect bindings as `vfx/bindings_<name>.tres`;
 - the HUD in `ui/`;
 - map visuals in `maps/` (the scene named after the map the server runs);
 - shared files in `assets/`.
@@ -157,6 +158,30 @@ left at the engine's default, which is also how a map baked before a field exist
 Templates are part of the map, so they travel to clients with it and the server can spawn them at
 runtime. They are initial values only: a template says what an entity starts as, never how it
 behaves. Behaviour stays in the simulation.
+
+## Effects
+
+What plays when is data, not code. A binding says "on this event, for this entity, play this
+scene", and the client loads every `res://vfx/bindings*.tres` it can find. A mod adds effects by
+shipping a file of its own, so two mods can add effects without fighting over one list.
+
+| Field | Meaning |
+|---|---|
+| `event` | Spawned, Destroying, Jumped or Landed |
+| `template_name` | Only for entities from this map template; empty matches any |
+| `kind` | `any`, `prop`, `player` or `static` |
+| `scene` | The effect scene to play |
+| `offset` | Moves it relative to the entity |
+| `lifetime` | Seconds before it is freed |
+| `follow` | Parent it to the entity so it travels with it, instead of staying put |
+| `who` | Anyone, only the local player, or only other players |
+
+Every binding that matches plays, so bindings add to each other. When nothing matches, the older
+convention still applies: `res://vfx/<event>.tscn`, one of `prop_spawn`, `prop_destroy`, `jump`
+or `land`.
+
+`godot/vfx/bindings.tres` is the game's own set; `mods_src/example_neon/vfx/bindings_neon.tres`
+shows a mod adding two more. Both are edited in the Godot inspector.
 
 ## Animations
 
@@ -251,7 +276,8 @@ src/present/      engine-independent presentation, shared by Godot and raylib
   frame.*           PresentationFrame: a copy of what the simulation shows at one tick
   mirror.*          presentation flecs world: interpolation, error smoothing, visual events
   scripts/          spawn/destroy effects, player pose evaluation
-src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals), CinderboxSkeleton
+src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals), CinderboxSkeleton,
+                  map and entity authoring nodes, effect bindings (cinderbox_effects.*)
 godot/            Godot client project: boot (mod loader), game (input, camera, HUD, VFX), prefabs, vfx, ui
   maps/             map scenes and their baked .cbmap files
   addons/cinderbox_maps/  editor plugin: the Bake Map button and the headless baker

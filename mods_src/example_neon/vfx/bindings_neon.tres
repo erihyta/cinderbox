@@ -1,0 +1,22 @@
+[gd_resource type="CbEffectTable" load_steps=3 format=3]
+
+; A mod adds effects by shipping its own bindings file; the game loads every vfx/bindings*.tres.
+; This one adds a landing puff for the local player and a burst when a heavy crate is destroyed.
+; It needs no code, and it does not replace the game's own bindings.
+
+[sub_resource type="CbEffect" id="LocalLand"]
+event = 3
+kind = "player"
+who = 1
+scene = "res://vfx/prop_spawn.tscn"
+offset = Vector3(0, 0.1, 0)
+lifetime = 2.0
+
+[sub_resource type="CbEffect" id="CrateBreak"]
+event = 1
+template_name = "heavy_crate"
+scene = "res://vfx/prop_spawn.tscn"
+lifetime = 3.0
+
+[resource]
+effects = [SubResource("LocalLand"), SubResource("CrateBreak")]
