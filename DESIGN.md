@@ -306,6 +306,35 @@ timing still comes from the simulation.
   characters animate needs no code, which is the clearest demonstration so far that presentation is
   fully replaceable from outside.
 
+## Humanoid bone names and retargeting (M13)
+The rig's joints are named after Godot's `SkeletonProfileHumanoid`. That profile is what Godot's
+importer retargets any character onto — Mixamo, Rigify, Ready Player Me — so adopting its names
+means an imported character can be driven without a per-character mapping written by us. Clips that
+still carry Mixamo names are matched through a small alias table at bind time, so existing assets
+keep working.
+
+Naming alone is not enough, and this is the part that decides whether it works at all:
+
+- **Rotation relative to rest, not position.** `CinderboxSkeleton` used to push model-space poses
+  into `set_bone_global_pose`, which forces every bone to where *our* rig has it and tears apart any
+  character with different limb lengths. It now sets local rotations and lets the target's own rest
+  supply the bone lengths, so proportions are the character's own.
+- **Rest postures are bridged.** Our placeholder rests with its arms down; the profile's rest is a
+  T-pose. Read naively, "our rest" and "their rest" would be treated as the same posture and every
+  retargeted arm would stick out sideways. At bind time each mapped joint gets a constant that
+  carries our rest posture onto the target's rest, so a pose that means "arms down" arrives as arms
+  down on a T-posed character.
+- **Hips are the exception that also translates**, scaled by the ratio of hip heights, so a taller
+  character crouches by proportionally more.
+- **Bones we do not drive keep their rest** and follow whatever drives their parent, which is what
+  lets a character have bones our rig has never heard of.
+- **`apply_anim_state()` is exposed to scripts**, so a rig can be posed without a server. That is
+  what `check_retarget.gd` uses: it builds a humanoid with 1.35x legs and 0.7x arms, poses it, and
+  asserts the arms come out of the T-pose, every bone keeps its rest length, and the legs swing.
+
+None of this touches the simulation: bone names and poses are presentation, and the simulation only
+ever deals in the animation mode, its time and the ground speed.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*`).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -362,9 +391,8 @@ timing still comes from the simulation.
 - **Camera**: add camera collision in the client (it can currently clip into walls).
 - **Godot**:
   - ozz clips loaded from packs;
-  - skinned characters: `CinderboxSkeleton` can already drive a `Skeleton3D` by bone name, and
-    `CinderboxAnimator` can drive an imported rig's tree, but neither has been tried with a real
-    imported character;
+  - a real imported character: retargeting is checked against a synthetic humanoid, but no
+    skinned model with a mesh has been through the pipeline yet;
   - Linux and macOS exports (the extension builds with `unix-clang-release`; not yet tested).
 - **Maps, next steps**:
   - shapes beyond boxes, spheres and capsules, and a way to author them without one node per box;
@@ -392,3 +420,4 @@ timing still comes from the simulation.
 10. **M10** (done): sounds, camera shake, screen flash and per-binding cooldowns as further fields of the same effect bindings, placeholder sound effects and a generator for them, and an example mod that ships its own sound.
 11. **M11** (done): impacts from Box3D contact events and footsteps from stride distance, both part of the hashed simulation state and both rollback-safe, exposed to presentation as counters and bound to effects by `min_strength`.
 12. **M12** (done): `CinderboxAnimator`, which drives a Godot AnimationTree from the simulation's animation mode, ground speed and locomotion phase, with drift resync; a generated example prefab shipped as a mod, and a headless check that a prefab's tree follows the simulation.
+13. **M13** (done): the rig renamed to Godot's humanoid profile with Mixamo aliases, and `CinderboxSkeleton` retargeting by rotation onto a character's own rest, bridging the arms-down and T-pose rest postures, verified on a deliberately differently proportioned humanoid.

@@ -4,6 +4,8 @@
 
 #include "ozz/animation/runtime/animation.h"
 #include "ozz/animation/runtime/skeleton.h"
+#include "ozz/base/containers/vector.h"
+#include "ozz/base/maths/simd_math.h"
 #include "ozz/base/memory/unique_ptr.h"
 
 #include <array>
@@ -44,6 +46,12 @@ public:
 	{
 		return *m_skeleton;
 	}
+	// The skeleton's rest in model space, with the set's scale applied. Retargeting needs it as
+	// the baseline a pose is a deviation from.
+	const ozz::vector<ozz::math::Float4x4>& RestModels() const
+	{
+		return m_restModels;
+	}
 	// Null if the clip is not available.
 	const ozz::animation::Animation* Get( Clip clip ) const
 	{
@@ -71,6 +79,7 @@ public:
 
 private:
 	ozz::unique_ptr<ozz::animation::Skeleton> m_skeleton;
+	ozz::vector<ozz::math::Float4x4> m_restModels;
 	std::array<ozz::unique_ptr<ozz::animation::Animation>, ClipCount> m_clips;
 	float m_scale = 1.0f;
 	bool m_lockRootXZ = true;

@@ -54,38 +54,41 @@ namespace
 {
 
 // ---------------------------------------------------------------------------------------------
-// Procedural rig. Mixamo joint names, Y up, facing +Z, character's left on +X, feet at y = 0.
+// Procedural rig. Godot's SkeletonProfileHumanoid joint names, Y up, facing +Z, character's left
+// on +X, feet at y = 0. Those names are what Godot retargets any imported character onto, so a rig
+// that uses them can be driven without a per-character mapping. Two tip joints (HeadTop, ToesEnd)
+// are not in the profile; they only give the box renderer something to measure.
 // Everything uses detmath trig so the generated data is identical on every platform.
 
 enum Joint : int
 {
 	Hips,
 	Spine,
-	Spine1,
-	Spine2,
+	Chest,
+	UpperChest,
 	Neck,
 	Head,
 	HeadTopEnd,
 	LeftShoulder,
-	LeftArm,
-	LeftForeArm,
+	LeftUpperArm,
+	LeftLowerArm,
 	LeftHand,
 	LeftHandEnd,
 	RightShoulder,
-	RightArm,
-	RightForeArm,
+	RightUpperArm,
+	RightLowerArm,
 	RightHand,
 	RightHandEnd,
-	LeftUpLeg,
-	LeftLeg,
+	LeftUpperLeg,
+	LeftLowerLeg,
 	LeftFoot,
-	LeftToeBase,
-	LeftToeEnd,
-	RightUpLeg,
-	RightLeg,
+	LeftToes,
+	LeftToesEnd,
+	RightUpperLeg,
+	RightLowerLeg,
 	RightFoot,
-	RightToeBase,
-	RightToeEnd,
+	RightToes,
+	RightToesEnd,
 	JointCount,
 };
 
@@ -97,33 +100,33 @@ struct JointDef
 };
 
 const JointDef kJoints[JointCount] = {
-	{ "mixamorig:Hips", -1, { 0.0f, 0.95f, 0.0f } },
-	{ "mixamorig:Spine", Hips, { 0.0f, 0.10f, 0.0f } },
-	{ "mixamorig:Spine1", Spine, { 0.0f, 0.12f, 0.0f } },
-	{ "mixamorig:Spine2", Spine1, { 0.0f, 0.12f, 0.0f } },
-	{ "mixamorig:Neck", Spine2, { 0.0f, 0.14f, 0.0f } },
-	{ "mixamorig:Head", Neck, { 0.0f, 0.08f, 0.0f } },
-	{ "mixamorig:HeadTop_End", Head, { 0.0f, 0.24f, 0.0f } },
-	{ "mixamorig:LeftShoulder", Spine2, { 0.06f, 0.10f, 0.0f } },
-	{ "mixamorig:LeftArm", LeftShoulder, { 0.12f, 0.0f, 0.0f } },
-	{ "mixamorig:LeftForeArm", LeftArm, { 0.0f, -0.27f, 0.0f } },
-	{ "mixamorig:LeftHand", LeftForeArm, { 0.0f, -0.25f, 0.0f } },
-	{ "mixamorig:LeftHandMiddle1", LeftHand, { 0.0f, -0.09f, 0.0f } },
-	{ "mixamorig:RightShoulder", Spine2, { -0.06f, 0.10f, 0.0f } },
-	{ "mixamorig:RightArm", RightShoulder, { -0.12f, 0.0f, 0.0f } },
-	{ "mixamorig:RightForeArm", RightArm, { 0.0f, -0.27f, 0.0f } },
-	{ "mixamorig:RightHand", RightForeArm, { 0.0f, -0.25f, 0.0f } },
-	{ "mixamorig:RightHandMiddle1", RightHand, { 0.0f, -0.09f, 0.0f } },
-	{ "mixamorig:LeftUpLeg", Hips, { 0.10f, -0.05f, 0.0f } },
-	{ "mixamorig:LeftLeg", LeftUpLeg, { 0.0f, -0.42f, 0.0f } },
-	{ "mixamorig:LeftFoot", LeftLeg, { 0.0f, -0.42f, 0.0f } },
-	{ "mixamorig:LeftToeBase", LeftFoot, { 0.0f, -0.06f, 0.12f } },
-	{ "mixamorig:LeftToe_End", LeftToeBase, { 0.0f, 0.0f, 0.07f } },
-	{ "mixamorig:RightUpLeg", Hips, { -0.10f, -0.05f, 0.0f } },
-	{ "mixamorig:RightLeg", RightUpLeg, { 0.0f, -0.42f, 0.0f } },
-	{ "mixamorig:RightFoot", RightLeg, { 0.0f, -0.42f, 0.0f } },
-	{ "mixamorig:RightToeBase", RightFoot, { 0.0f, -0.06f, 0.12f } },
-	{ "mixamorig:RightToe_End", RightToeBase, { 0.0f, 0.0f, 0.07f } },
+	{ "Hips", -1, { 0.0f, 0.95f, 0.0f } },
+	{ "Spine", Hips, { 0.0f, 0.10f, 0.0f } },
+	{ "Chest", Spine, { 0.0f, 0.12f, 0.0f } },
+	{ "UpperChest", Chest, { 0.0f, 0.12f, 0.0f } },
+	{ "Neck", UpperChest, { 0.0f, 0.14f, 0.0f } },
+	{ "Head", Neck, { 0.0f, 0.08f, 0.0f } },
+	{ "HeadTop", Head, { 0.0f, 0.24f, 0.0f } },
+	{ "LeftShoulder", UpperChest, { 0.06f, 0.10f, 0.0f } },
+	{ "LeftUpperArm", LeftShoulder, { 0.12f, 0.0f, 0.0f } },
+	{ "LeftLowerArm", LeftUpperArm, { 0.0f, -0.27f, 0.0f } },
+	{ "LeftHand", LeftLowerArm, { 0.0f, -0.25f, 0.0f } },
+	{ "LeftMiddleProximal", LeftHand, { 0.0f, -0.09f, 0.0f } },
+	{ "RightShoulder", UpperChest, { -0.06f, 0.10f, 0.0f } },
+	{ "RightUpperArm", RightShoulder, { -0.12f, 0.0f, 0.0f } },
+	{ "RightLowerArm", RightUpperArm, { 0.0f, -0.27f, 0.0f } },
+	{ "RightHand", RightLowerArm, { 0.0f, -0.25f, 0.0f } },
+	{ "RightMiddleProximal", RightHand, { 0.0f, -0.09f, 0.0f } },
+	{ "LeftUpperLeg", Hips, { 0.10f, -0.05f, 0.0f } },
+	{ "LeftLowerLeg", LeftUpperLeg, { 0.0f, -0.42f, 0.0f } },
+	{ "LeftFoot", LeftLowerLeg, { 0.0f, -0.42f, 0.0f } },
+	{ "LeftToes", LeftFoot, { 0.0f, -0.06f, 0.12f } },
+	{ "LeftToesEnd", LeftToes, { 0.0f, 0.0f, 0.07f } },
+	{ "RightUpperLeg", Hips, { -0.10f, -0.05f, 0.0f } },
+	{ "RightLowerLeg", RightUpperLeg, { 0.0f, -0.42f, 0.0f } },
+	{ "RightFoot", RightLowerLeg, { 0.0f, -0.42f, 0.0f } },
+	{ "RightToes", RightFoot, { 0.0f, -0.06f, 0.12f } },
+	{ "RightToesEnd", RightToes, { 0.0f, 0.0f, 0.07f } },
 };
 
 constexpr float kKeyRate = 30.0f;
@@ -187,12 +190,12 @@ Pose IdlePose( float time, float duration )
 {
 	Pose p;
 	float breath = Sin01( time / duration );
-	p.rotation[Spine1] = RotX( 0.02f * breath );
+	p.rotation[Chest] = RotX( 0.02f * breath );
 	p.rotation[Neck] = RotX( -0.02f * breath );
-	p.rotation[LeftArm] = RotZ( 0.12f + 0.02f * breath );
-	p.rotation[RightArm] = RotZ( -0.12f - 0.02f * breath );
-	p.rotation[LeftForeArm] = RotX( -0.15f );
-	p.rotation[RightForeArm] = RotX( -0.15f );
+	p.rotation[LeftUpperArm] = RotZ( 0.12f + 0.02f * breath );
+	p.rotation[RightUpperArm] = RotZ( -0.12f - 0.02f * breath );
+	p.rotation[LeftLowerArm] = RotX( -0.15f );
+	p.rotation[RightLowerArm] = RotX( -0.15f );
 	p.hipsHeight = 0.94f + 0.005f * breath;
 	return p;
 }
@@ -206,17 +209,17 @@ Pose CyclePose( float phase, float legSwing, float kneeBend, float armSwing, flo
 
 	p.rotation[Hips] = RotY( 0.08f * s );
 	p.rotation[Spine] = RotX( lean );
-	p.rotation[Spine1] = RotY( -0.1f * s );
-	p.rotation[LeftUpLeg] = RotX( -legSwing * s );
-	p.rotation[RightUpLeg] = RotX( legSwing * s );
-	p.rotation[LeftLeg] = RotX( kneeL );
-	p.rotation[RightLeg] = RotX( kneeR );
+	p.rotation[Chest] = RotY( -0.1f * s );
+	p.rotation[LeftUpperLeg] = RotX( -legSwing * s );
+	p.rotation[RightUpperLeg] = RotX( legSwing * s );
+	p.rotation[LeftLowerLeg] = RotX( kneeL );
+	p.rotation[RightLowerLeg] = RotX( kneeR );
 	p.rotation[LeftFoot] = RotX( -0.3f * kneeL );
 	p.rotation[RightFoot] = RotX( -0.3f * kneeR );
-	p.rotation[LeftArm] = RotZ( 0.1f ) * RotX( armSwing * s );
-	p.rotation[RightArm] = RotZ( -0.1f ) * RotX( -armSwing * s );
-	p.rotation[LeftForeArm] = RotX( -elbow );
-	p.rotation[RightForeArm] = RotX( -elbow );
+	p.rotation[LeftUpperArm] = RotZ( 0.1f ) * RotX( armSwing * s );
+	p.rotation[RightUpperArm] = RotZ( -0.1f ) * RotX( -armSwing * s );
+	p.rotation[LeftLowerArm] = RotX( -elbow );
+	p.rotation[RightLowerArm] = RotX( -elbow );
 	// Two bobs per cycle (one per step).
 	float c2 = Cos01( 2.0f * phase );
 	p.hipsHeight = height - bob * 0.5f * ( 1.0f + c2 );
@@ -238,15 +241,15 @@ Pose JumpStartPose( float time, float duration )
 	Pose p;
 	float t = Smooth( std::min( time / duration, 1.0f ) );
 	float knee = Lerp( 1.0f, 0.15f, t );
-	p.rotation[LeftUpLeg] = RotX( -0.5f * knee );
-	p.rotation[RightUpLeg] = RotX( -0.5f * knee );
-	p.rotation[LeftLeg] = RotX( knee );
-	p.rotation[RightLeg] = RotX( knee );
+	p.rotation[LeftUpperLeg] = RotX( -0.5f * knee );
+	p.rotation[RightUpperLeg] = RotX( -0.5f * knee );
+	p.rotation[LeftLowerLeg] = RotX( knee );
+	p.rotation[RightLowerLeg] = RotX( knee );
 	p.rotation[Spine] = RotX( Lerp( 0.35f, 0.0f, t ) );
-	p.rotation[LeftArm] = RotZ( 0.2f ) * RotX( Lerp( 0.5f, -2.6f, t ) );
-	p.rotation[RightArm] = RotZ( -0.2f ) * RotX( Lerp( 0.5f, -2.6f, t ) );
-	p.rotation[LeftForeArm] = RotX( -0.2f );
-	p.rotation[RightForeArm] = RotX( -0.2f );
+	p.rotation[LeftUpperArm] = RotZ( 0.2f ) * RotX( Lerp( 0.5f, -2.6f, t ) );
+	p.rotation[RightUpperArm] = RotZ( -0.2f ) * RotX( Lerp( 0.5f, -2.6f, t ) );
+	p.rotation[LeftLowerArm] = RotX( -0.2f );
+	p.rotation[RightLowerArm] = RotX( -0.2f );
 	p.hipsHeight = Lerp( 0.78f, 0.97f, t );
 	return p;
 }
@@ -255,14 +258,14 @@ Pose FallPose( float time, float duration )
 {
 	Pose p;
 	float s = Sin01( time / duration );
-	p.rotation[LeftUpLeg] = RotX( -0.5f - 0.15f * s );
-	p.rotation[RightUpLeg] = RotX( -0.15f + 0.15f * s );
-	p.rotation[LeftLeg] = RotX( 0.7f );
-	p.rotation[RightLeg] = RotX( 0.35f );
-	p.rotation[LeftArm] = RotZ( 1.3f + 0.2f * s );
-	p.rotation[RightArm] = RotZ( -1.3f - 0.2f * s );
-	p.rotation[LeftForeArm] = RotZ( 0.3f );
-	p.rotation[RightForeArm] = RotZ( -0.3f );
+	p.rotation[LeftUpperLeg] = RotX( -0.5f - 0.15f * s );
+	p.rotation[RightUpperLeg] = RotX( -0.15f + 0.15f * s );
+	p.rotation[LeftLowerLeg] = RotX( 0.7f );
+	p.rotation[RightLowerLeg] = RotX( 0.35f );
+	p.rotation[LeftUpperArm] = RotZ( 1.3f + 0.2f * s );
+	p.rotation[RightUpperArm] = RotZ( -1.3f - 0.2f * s );
+	p.rotation[LeftLowerArm] = RotZ( 0.3f );
+	p.rotation[RightLowerArm] = RotZ( -0.3f );
 	p.rotation[Spine] = RotX( -0.1f );
 	p.hipsHeight = 0.93f;
 	return p;
@@ -273,15 +276,15 @@ Pose LandPose( float time, float duration )
 	Pose p;
 	float t = Smooth( std::min( time / duration, 1.0f ) );
 	float crouch = 1.0f - t;
-	p.rotation[LeftUpLeg] = RotX( -0.9f * crouch );
-	p.rotation[RightUpLeg] = RotX( -0.9f * crouch );
-	p.rotation[LeftLeg] = RotX( 1.3f * crouch + 0.1f );
-	p.rotation[RightLeg] = RotX( 1.3f * crouch + 0.1f );
+	p.rotation[LeftUpperLeg] = RotX( -0.9f * crouch );
+	p.rotation[RightUpperLeg] = RotX( -0.9f * crouch );
+	p.rotation[LeftLowerLeg] = RotX( 1.3f * crouch + 0.1f );
+	p.rotation[RightLowerLeg] = RotX( 1.3f * crouch + 0.1f );
 	p.rotation[LeftFoot] = RotX( -0.4f * crouch );
 	p.rotation[RightFoot] = RotX( -0.4f * crouch );
 	p.rotation[Spine] = RotX( 0.4f * crouch );
-	p.rotation[LeftArm] = RotZ( 0.3f ) * RotX( -0.7f * crouch );
-	p.rotation[RightArm] = RotZ( -0.3f ) * RotX( -0.7f * crouch );
+	p.rotation[LeftUpperArm] = RotZ( 0.3f ) * RotX( -0.7f * crouch );
+	p.rotation[RightUpperArm] = RotZ( -0.3f ) * RotX( -0.7f * crouch );
 	p.hipsHeight = Lerp( 0.7f, 0.94f, t );
 	return p;
 }
@@ -418,6 +421,28 @@ bool SaveArchive( const std::string& path, const T& object )
 
 } // namespace
 
+// Model-space rest, scaled like the poses are. Retargeting reads a pose as a deviation from this.
+void ComputeRestModels( AnimSet& set, ozz::vector<ozz::math::Float4x4>& out, float scale )
+{
+	const ozz::animation::Skeleton& skeleton = set.Skeleton();
+	out.resize( size_t( skeleton.num_joints() ) );
+	ozz::animation::LocalToModelJob ltm;
+	ltm.skeleton = &skeleton;
+	ltm.input = skeleton.joint_rest_poses();
+	ltm.output = ozz::make_span( out );
+	if ( ltm.Run() == false )
+	{
+		return;
+	}
+	if ( scale != 1.0f )
+	{
+		for ( ozz::math::Float4x4& m : out )
+		{
+			m = ozz::math::Float4x4::Scaling( ozz::math::simd_float4::Load1( scale ) ) * m;
+		}
+	}
+}
+
 std::unique_ptr<AnimSet> AnimSet::CreateProcedural()
 {
 	auto set = std::make_unique<AnimSet>();
@@ -429,6 +454,7 @@ std::unique_ptr<AnimSet> AnimSet::CreateProcedural()
 	set->m_clips[ClipFall] = BuildClip( "fall", 1.0f, FallPose );
 	set->m_clips[ClipLand] = BuildClip( "land", anim_tuning::kLandSeconds, LandPose );
 	set->m_description = "procedural placeholder rig";
+	ComputeRestModels( *set, set->m_restModels, set->m_scale );
 	return set;
 }
 
@@ -504,6 +530,7 @@ std::unique_ptr<AnimSet> AnimSet::Load( const std::string& dir, std::string& err
 		++loaded;
 	}
 
+	ComputeRestModels( *set, set->m_restModels, set->m_scale );
 	set->m_description = dir + " (" + std::to_string( set->m_skeleton->num_joints() ) + " joints, " + std::to_string( loaded ) +
 						 "/" + std::to_string( int( ClipCount ) ) + " clips)";
 	return set;

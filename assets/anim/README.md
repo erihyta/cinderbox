@@ -81,3 +81,14 @@ In this order:
 4. this folder in the source tree
 
 `--procedural-anim` forces the placeholder rig.
+
+## Bone names
+
+The runtime rig uses the bone names of Godot's `SkeletonProfileHumanoid` (`Hips`, `Spine`, `Chest`,
+`UpperChest`, `Neck`, `Head`, `Left/RightShoulder`, `UpperArm`, `LowerArm`, `Hand`, `UpperLeg`,
+`LowerLeg`, `Foot`, `Toes`). Clips exported straight from Mixamo keep their `mixamorig:` names and
+still work: the client maps them onto the profile when it binds to a character.
+
+For a new character, the simplest path is Godot's own: import the model, set its bone map to
+`SkeletonProfileHumanoid` in the import dock, and the skeleton comes out with those names. It can
+then be posed by ozz with no mapping of your own, whatever its proportions.

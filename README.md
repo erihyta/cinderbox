@@ -19,6 +19,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M10: sounds and screen effects in the same bindings | done |
 | M11: impacts and footsteps reported by the simulation | done |
 | M12: Godot AnimationTree driven by the simulation's animation state | done |
+| M13: humanoid-profile bone names and retargeting onto any character | done |
 
 ## Building
 
@@ -209,7 +210,13 @@ synthetic, and meant to be replaced. `tools/make_sfx.py` regenerates them.
 ## Animations
 
 Players are drawn as one box per bone of an ozz skeleton. Until you add clips, a procedural
-placeholder rig with Mixamo joint names is used. To add your own clips:
+placeholder rig is used, with the bone names of Godot's `SkeletonProfileHumanoid`: `Hips`, `Spine`,
+`Chest`, `UpperChest`, `Neck`, `Head`, `Left/RightShoulder`, `UpperArm`, `LowerArm`, `Hand`,
+`UpperLeg`, `LowerLeg`, `Foot`, `Toes`. That is the profile Godot retargets imported characters
+onto, so a character imported the normal way can be driven with no mapping of our own. Clips whose
+joints still carry Mixamo names are recognised through an alias table.
+
+To add your own clips:
 
 1. Put `idle`, `walk`, `run`, `jump_start`, `fall` and `land` `.glb` files in a folder.
 2. Run `tools\convert_animations.ps1 -Source <folder>` (or `tools/convert_animations.sh <folder>`).
@@ -245,6 +252,22 @@ godot --headless --path godot --script res://addons/cinderbox_maps/check_animtre
 A prefab may contain a `CinderboxSkeleton`, a `CinderboxAnimator`, or both; whichever it has is
 driven. The ozz pose is still evaluated for every player even when only the AnimationTree is used,
 which costs a little work no one reads.
+
+### Driving an imported character with ozz
+
+Point a `CinderboxSkeleton` at a `Skeleton3D` and it retargets onto it: each bone is rotated
+relative to **its own rest**, so the character keeps its proportions, and the hips move by an
+amount scaled to its height. Our placeholder rests with its arms down while the humanoid profile
+rests in a T-pose, and the difference between those two postures is bridged when the skeleton is
+bound, so arms end up down rather than sticking out.
+
+Turn `retarget` off to force every bone to exactly where our rig has it, which only makes sense for
+a character built to our proportions.
+
+```sh
+# a humanoid with long legs and short arms, posed from the simulation's animation state
+godot --headless --path godot --script res://addons/cinderbox_maps/check_retarget.gd
+```
 
 [assets/anim/README.md](assets/anim/README.md) has the Mixamo → Blender steps and the `anim.cfg`
 reference. `--assets DIR` selects a different asset folder, and `--procedural-anim` forces the placeholder.
