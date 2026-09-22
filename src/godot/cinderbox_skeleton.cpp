@@ -5,9 +5,12 @@
 #include <godot_cpp/classes/box_mesh.hpp>
 #include <godot_cpp/classes/standard_material3d.hpp>
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <string>
 
 using namespace godot;
 
@@ -95,6 +98,10 @@ void CinderboxSkeleton::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_skeleton_path" ), &CinderboxSkeleton::get_skeleton_path );
 	ClassDB::bind_method( D_METHOD( "set_body_color", "color" ), &CinderboxSkeleton::set_body_color );
 	ClassDB::bind_method( D_METHOD( "get_body_color" ), &CinderboxSkeleton::get_body_color );
+	ClassDB::bind_method( D_METHOD( "apply_anim_state", "mode", "mode_time", "locomotion_phase", "ground_speed" ),
+						  &CinderboxSkeleton::apply_anim_state );
+	ClassDB::bind_method( D_METHOD( "set_retarget", "value" ), &CinderboxSkeleton::set_retarget );
+	ClassDB::bind_method( D_METHOD( "get_retarget" ), &CinderboxSkeleton::get_retarget );
 	ClassDB::bind_method( D_METHOD( "set_use_slot_color", "value" ), &CinderboxSkeleton::set_use_slot_color );
 	ClassDB::bind_method( D_METHOD( "get_use_slot_color" ), &CinderboxSkeleton::get_use_slot_color );
 
@@ -103,6 +110,7 @@ void CinderboxSkeleton::_bind_methods()
 				  "set_skeleton_path", "get_skeleton_path" );
 	ADD_PROPERTY( PropertyInfo( Variant::COLOR, "body_color" ), "set_body_color", "get_body_color" );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "use_slot_color" ), "set_use_slot_color", "get_use_slot_color" );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "retarget" ), "set_retarget", "get_retarget" );
 }
 
 void CinderboxSkeleton::_ready()
@@ -128,6 +136,12 @@ void CinderboxSkeleton::set_draw_bone_boxes( bool value )
 void CinderboxSkeleton::set_skeleton_path( const NodePath& path )
 {
 	m_skeletonPath = path;
+	m_mappedSkeleton = 0;
+}
+
+void CinderboxSkeleton::set_retarget( bool value )
+{
+	m_retarget = value;
 	m_mappedSkeleton = 0;
 }
 
@@ -212,22 +226,203 @@ void CinderboxSkeleton::ApplyPose( const anim::PoseEvaluator& pose )
 		}
 		if ( m_mappedSkeleton != target->get_instance_id() || int( m_boneMap.size() ) != joints )
 		{
-			m_boneMap.assign( size_t( joints ), -1 );
-			for ( int j = 0; j < joints; ++j )
-			{
-				m_boneMap[size_t( j )] = target->find_bone( String( names[j] ) );
-			}
-			m_mappedSkeleton = target->get_instance_id();
+			Bind( target, pose );
 		}
-		// Model-space poses map directly when the rig shares the ozz skeleton's root space.
+		DriveSkeleton( target, pose );
+	}
+}
+
+// Joint names we may meet that mean one of the humanoid profile's bones. Godot retargets imported
+// characters onto that profile, so matching its names is what lets any character be driven; these
+// aliases cover rigs whose own names came straight from Mixamo.
+struct BoneAlias
+{
+	const char* from;
+	const char* to;
+};
+
+const BoneAlias kBoneAliases[] = {
+	{ "mixamorig:Hips", "Hips" },
+	{ "mixamorig:Spine", "Spine" },
+	{ "mixamorig:Spine1", "Chest" },
+	{ "mixamorig:Spine2", "UpperChest" },
+	{ "mixamorig:Neck", "Neck" },
+	{ "mixamorig:Head", "Head" },
+	{ "mixamorig:LeftShoulder", "LeftShoulder" },
+	{ "mixamorig:LeftArm", "LeftUpperArm" },
+	{ "mixamorig:LeftForeArm", "LeftLowerArm" },
+	{ "mixamorig:LeftHand", "LeftHand" },
+	{ "mixamorig:RightShoulder", "RightShoulder" },
+	{ "mixamorig:RightArm", "RightUpperArm" },
+	{ "mixamorig:RightForeArm", "RightLowerArm" },
+	{ "mixamorig:RightHand", "RightHand" },
+	{ "mixamorig:LeftUpLeg", "LeftUpperLeg" },
+	{ "mixamorig:LeftLeg", "LeftLowerLeg" },
+	{ "mixamorig:LeftFoot", "LeftFoot" },
+	{ "mixamorig:LeftToeBase", "LeftToes" },
+	{ "mixamorig:RightUpLeg", "RightUpperLeg" },
+	{ "mixamorig:RightLeg", "RightLowerLeg" },
+	{ "mixamorig:RightFoot", "RightFoot" },
+	{ "mixamorig:RightToeBase", "RightToes" },
+};
+
+namespace
+{
+
+int FindTargetBone( Skeleton3D* target, const char* jointName )
+{
+	int bone = target->find_bone( String( jointName ) );
+	if ( bone >= 0 )
+	{
+		return bone;
+	}
+	for ( const BoneAlias& alias : kBoneAliases )
+	{
+		if ( std::strcmp( alias.from, jointName ) == 0 )
+		{
+			return target->find_bone( String( alias.to ) );
+		}
+	}
+	return -1;
+}
+
+// Our rig hangs its arms at rest; the humanoid profile's rest is a T-pose. Without this the two
+// rests would be read as the same posture and every retargeted arm would stick out sideways.
+Quaternion RestPosture( const char* jointName )
+{
+	std::string name = jointName;
+	bool left = name.find( "Left" ) != std::string::npos;
+	bool arm = name.find( "Arm" ) != std::string::npos || name.find( "Hand" ) != std::string::npos ||
+			   name.find( "Shoulder" ) != std::string::npos;
+	if ( arm == false )
+	{
+		return Quaternion();
+	}
+	// A quarter turn about Z takes the profile's outstretched arm down to where ours rests.
+	float angle = left ? Math_PI * 0.5f : -Math_PI * 0.5f;
+	return Quaternion( Vector3( 0, 0, 1 ), angle );
+}
+
+} // namespace
+
+void CinderboxSkeleton::apply_anim_state( int mode, float mode_time, float locomotion_phase, float ground_speed )
+{
+	if ( !m_previewPose )
+	{
+		m_previewSet = anim::AnimSet::CreateProcedural();
+		m_previewPose = std::make_unique<anim::PoseEvaluator>( *m_previewSet );
+	}
+	AnimState state;
+	state.mode = AnimMode( std::min( std::max( mode, 0 ), int( AnimMode::Land ) ) );
+	state.modeTime = mode_time;
+	state.locomotionPhase = locomotion_phase;
+	state.groundSpeed = ground_speed;
+	m_previewPose->Evaluate( state );
+	ApplyPose( *m_previewPose );
+}
+
+void CinderboxSkeleton::Bind( Skeleton3D* target, const anim::PoseEvaluator& pose )
+{
+	const auto& skeleton = pose.Set().Skeleton();
+	auto names = skeleton.joint_names();
+	int joints = skeleton.num_joints();
+
+	m_boneMap.assign( size_t( joints ), -1 );
+	m_restBridge.assign( size_t( joints ), Quaternion() );
+	m_mappedSkeleton = target->get_instance_id();
+	m_targetHips = -1;
+	m_hipScale = 1.0f;
+
+	// Our rig's rest in model space, which is what the pose is relative to.
+	const ozz::vector<ozz::math::Float4x4>& restModels = pose.Set().RestModels();
+
+	for ( int j = 0; j < joints; ++j )
+	{
+		int bone = FindTargetBone( target, names[j] );
+		m_boneMap[size_t( j )] = bone;
+		if ( bone < 0 )
+		{
+			continue;
+		}
+
+		Basis sourceRest = ToTransform( restModels[size_t( j )] ).basis;
+		Quaternion sourceRestRotation = sourceRest.orthonormalized().get_rotation_quaternion();
+		Quaternion targetRest = target->get_bone_global_rest( bone ).basis.orthonormalized().get_rotation_quaternion();
+
+		// Reading our rest as if it were the target's rest posture, this is the constant that
+		// turns one into the other. Applying it to a pose keeps the target's own rest as the
+		// baseline, so its proportions and its rest posture both survive.
+		Quaternion reference = sourceRestRotation * RestPosture( names[j] );
+		m_restBridge[size_t( j )] = reference.inverse() * targetRest;
+
+		if ( std::strcmp( names[j], "Hips" ) == 0 || std::strcmp( names[j], "mixamorig:Hips" ) == 0 )
+		{
+			m_targetHips = bone;
+			m_sourceHipsRest = ToTransform( restModels[size_t( j )] ).origin;
+			m_targetHipsRest = target->get_bone_global_rest( bone ).origin;
+			// A taller character's hips have to travel further for the same crouch.
+			m_hipScale = m_sourceHipsRest.y > 0.001f ? float( m_targetHipsRest.y / m_sourceHipsRest.y ) : 1.0f;
+		}
+	}
+}
+
+void CinderboxSkeleton::DriveSkeleton( Skeleton3D* target, const anim::PoseEvaluator& pose )
+{
+	const auto& models = pose.Models();
+	int joints = int( m_boneMap.size() );
+
+	if ( m_retarget == false )
+	{
+		// Exact-match rigs: force every bone where our rig has it.
 		for ( int j = 0; j < joints; ++j )
 		{
 			int bone = m_boneMap[size_t( j )];
 			if ( bone >= 0 )
 			{
-				target->set_bone_global_pose( bone, ToTransform( models[j] ) );
+				target->set_bone_global_pose( bone, ToTransform( models[size_t( j )] ) );
 			}
 		}
+		return;
+	}
+
+	// Rotation only, bone by bone, so the target keeps its own bone lengths. Global rotations are
+	// built first and then turned into local ones, because a target may have bones ours does not.
+	int boneCount = target->get_bone_count();
+	size_t bones = size_t( boneCount );
+	std::vector<Quaternion> global( bones );
+	std::vector<bool> known( bones, false );
+
+	for ( int j = 0; j < joints; ++j )
+	{
+		int bone = m_boneMap[size_t( j )];
+		if ( bone < 0 )
+		{
+			continue;
+		}
+		Quaternion sourcePose = ToTransform( models[size_t( j )] ).basis.orthonormalized().get_rotation_quaternion();
+		global[size_t( bone )] = sourcePose * m_restBridge[size_t( j )];
+		known[size_t( bone )] = true;
+	}
+
+	for ( int bone = 0; bone < boneCount; ++bone )
+	{
+		int parent = target->get_bone_parent( bone );
+		Quaternion parentGlobal = parent >= 0 ? global[size_t( parent )] : Quaternion();
+		if ( known[size_t( bone )] == false )
+		{
+			// A bone we do not drive keeps its rest shape and follows whatever drives its parent.
+			global[size_t( bone )] = parentGlobal * target->get_bone_rest( bone ).basis.orthonormalized().get_rotation_quaternion();
+			continue;
+		}
+		target->set_bone_pose_rotation( bone, parentGlobal.inverse() * global[size_t( bone )] );
+	}
+
+	if ( m_targetHips >= 0 )
+	{
+		// The hips are the one bone that also moves: crouching and bobbing live there.
+		Vector3 offset = ToTransform( models[0] ).origin - m_sourceHipsRest;
+		Vector3 rest = target->get_bone_rest( m_targetHips ).origin;
+		target->set_bone_pose_position( m_targetHips, rest + offset * m_hipScale );
 	}
 }
 

@@ -11,11 +11,13 @@
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/skeleton3d.hpp>
 
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace cb::anim
 {
+class AnimSet;
 class PoseEvaluator;
 }
 
@@ -53,8 +55,18 @@ public:
 		return m_useSlotColor;
 	}
 
+	void set_retarget( bool value );
+	bool get_retarget() const
+	{
+		return m_retarget;
+	}
+
 	// Called by CinderboxClient every frame.
 	void ApplyPose( const anim::PoseEvaluator& pose );
+
+	// Poses the rig from a script with the placeholder clips, for previewing a character or
+	// checking a retarget without a server. mode: 0 locomotion, 1 jump, 2 fall, 3 land.
+	void apply_anim_state( int mode, float mode_time, float locomotion_phase, float ground_speed );
 
 protected:
 	static void _bind_methods();
@@ -70,9 +82,28 @@ private:
 	godot::MultiMeshInstance3D* m_boxes = nullptr;
 	godot::Ref<godot::MultiMesh> m_multimesh;
 
+	// Drive the target by rotation relative to its own rest (retargeting), instead of forcing
+	// each bone to the rig's exact position. Off only makes sense for a rig built like ours.
+	bool m_retarget = true;
+
 	// ozz joint index -> Skeleton3D bone index (-1: not present), rebuilt when the skeleton changes.
 	std::vector<int> m_boneMap;
 	uint64_t m_mappedSkeleton = 0;
+
+	// Per mapped joint: the constant that carries our rig's pose onto the target's rest, so the
+	// target keeps its own proportions and its own rest posture. See Bind().
+	std::vector<godot::Quaternion> m_restBridge;
+	// Target bone index of the hips, and how much taller or shorter the target is than our rig.
+	int m_targetHips = -1;
+	float m_hipScale = 1.0f;
+	godot::Vector3 m_sourceHipsRest;
+	godot::Vector3 m_targetHipsRest;
+
+	std::shared_ptr<const anim::AnimSet> m_previewSet;
+	std::unique_ptr<anim::PoseEvaluator> m_previewPose;
+
+	void Bind( godot::Skeleton3D* target, const anim::PoseEvaluator& pose );
+	void DriveSkeleton( godot::Skeleton3D* target, const anim::PoseEvaluator& pose );
 };
 
 } // namespace cb::gd
