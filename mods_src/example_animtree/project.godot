@@ -1,0 +1,12 @@
+; Example Cinderbox mod: replaces the player with one animated by Godot's AnimationTree instead of
+; ozz. Nothing in it is code: the prefab holds an AnimationPlayer, an AnimationTree and a
+; CinderboxAnimator, which the game drives from the simulation's animation state.
+;
+;   tools/pack_mod.ps1 -Project mods_src/example_animtree
+
+config_version=5
+
+[application]
+
+config/name="Cinderbox mod: example_animtree"
+config/features=PackedStringArray("4.7", "Forward Plus")

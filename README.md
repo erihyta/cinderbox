@@ -18,6 +18,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M9: declarative effect bindings, so mods add effects as data | done |
 | M10: sounds and screen effects in the same bindings | done |
 | M11: impacts and footsteps reported by the simulation | done |
+| M12: Godot AnimationTree driven by the simulation's animation state | done |
 
 ## Building
 
@@ -215,6 +216,36 @@ placeholder rig with Mixamo joint names is used. To add your own clips:
 3. Preview them with `cb_client --anim-viewer`.
 4. For the Godot client, pass `--animations=<build dir or assets/anim>`. Clips are loaded from disk, not from the Godot pack.
 
+### Animating with Godot instead of ozz
+
+A character can be animated entirely with Godot's own animation system, driven by the same
+simulation state. Put a `CinderboxAnimator` in a player prefab next to an `AnimationTree` and point
+it at the tree:
+
+| It sets | From |
+|---|---|
+| the state machine's state | the simulation's mode: locomotion, jump, fall, land |
+| the blend position | the smoothed ground speed, in m/s, so the blend points sit at 3.0 and 6.5 |
+| the clip time | the simulation's locomotion phase, resynced when the tree drifts past `sync_threshold` |
+
+The phase is shared by walk and run, so feet line up between the two clips and between clients.
+Transitions use `travel()`, so the transitions authored in the tree are respected.
+
+`mods_src/example_animtree` is a mod that replaces the player with one built this way: an
+`AnimationPlayer` with six clips, a state machine over a 1D blend space, and nothing else. It is a
+mod, so it needs no code.
+
+```sh
+# rebuild the example prefab (it is an ordinary scene; edit it in the editor instead if you prefer)
+godot --headless --path godot --script res://addons/cinderbox_maps/make_animtree_example.gd -- --out=res://prefabs/player.tscn
+# check that a prefab's tree follows the simulation, without joining a server
+godot --headless --path godot --script res://addons/cinderbox_maps/check_animtree.gd -- mods/example_animtree.zip
+```
+
+A prefab may contain a `CinderboxSkeleton`, a `CinderboxAnimator`, or both; whichever it has is
+driven. The ozz pose is still evaluated for every player even when only the AnimationTree is used,
+which costs a little work no one reads.
+
 [assets/anim/README.md](assets/anim/README.md) has the Mixamo → Blender steps and the `anim.cfg`
 reference. `--assets DIR` selects a different asset folder, and `--procedural-anim` forces the placeholder.
 
@@ -302,8 +333,10 @@ src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, sign
                   map and entity authoring nodes, effect bindings (cinderbox_effects.*)
 godot/            Godot client project: boot (mod loader), game (input, camera, HUD, VFX), prefabs, vfx, ui
   maps/             map scenes and their baked .cbmap files
-  addons/cinderbox_maps/  editor plugin: the Bake Map button and the headless baker
-mods_src/         mod projects (example_neon)
+  assets/sfx/       placeholder sounds (tools/make_sfx.py)
+  addons/cinderbox_maps/  editor and dev tooling: the Bake Map button, the headless baker,
+                    the AnimationTree example generator and its check
+mods_src/         mod projects (example_neon, example_animtree)
 tests/            determinism, rollback, gameplay, animation and loopback network tests
 scripts/          cross-compiler determinism check, stress test
 tools/            animation conversion (convert_animations.*), test glTF generator, pack_mod.ps1,

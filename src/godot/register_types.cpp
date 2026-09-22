@@ -1,3 +1,4 @@
+#include "cinderbox_animator.h"
 #include "cinderbox_client.h"
 #include "cinderbox_effects.h"
 #include "cinderbox_entity_nodes.h"
@@ -21,6 +22,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 		return;
 	}
 	GDREGISTER_CLASS( cb::gd::CinderboxSkeleton );
+	GDREGISTER_CLASS( cb::gd::CinderboxAnimator );
 	GDREGISTER_CLASS( cb::gd::CinderboxClient );
 	// Map authoring: inert marker nodes plus the baker they are baked with.
 	GDREGISTER_CLASS( cb::gd::CbStatic );

@@ -280,6 +280,32 @@ makes them a determinism problem rather than a presentation one.
 - **Verified across compilers.** Because the ring is hashed, the Clang/GCC/MSVC determinism check
   now covers contact events as well; all three agree.
 
+## Godot animation driven by the simulation (M12)
+Until now a character was posed by ozz from the simulation's animation state. M12 adds the other
+option: hand that state to Godot's own animation system, so a character can be built the way a
+Godot artist expects — imported clips, blend spaces, state machines, retargeting, IK — while its
+timing still comes from the simulation.
+
+- **`CinderboxAnimator`** sits in a player prefab beside an `AnimationTree`. Each frame it sets the
+  state machine's state from the mode, the blend position from the ground speed, and advances the
+  tree by hand (the tree is switched to manual callbacks: it runs on the simulation's clock, not
+  Godot's).
+- **Phase, not just state.** The simulation's `locomotionPhase` is shared by walk and run so their
+  feet line up. The animator turns it back into seconds using the clip lengths the simulation was
+  tuned with, and resyncs when the tree drifts more than `sync_threshold`, wrapping the comparison
+  for looping clips. Catching up by advancing preserves the transition blend, which restarting the
+  state would throw away.
+- **The blend space is in metres per second**, the same units the simulation smooths, so its blend
+  points sit exactly on the walk and run speeds rather than on invented normalized values.
+- **Both paths coexist.** A prefab may have a `CinderboxSkeleton`, a `CinderboxAnimator` or both,
+  and the client drives whichever it finds. ozz stays the default and remains the path that can
+  move server-side once animation affects gameplay.
+- **`apply_state()` is exposed to scripts**, which is what makes the whole thing checkable without
+  a server: `check_animtree.gd` drives a prefab through every mode and asserts the tree follows.
+- **The example is a mod.** `example_animtree` ships only `prefabs/player.tscn`, and replacing how
+  characters animate needs no code, which is the clearest demonstration so far that presentation is
+  fully replaceable from outside.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*`).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -335,8 +361,10 @@ makes them a determinism problem rather than a presentation one.
 - **Less download at high latency**: skip frames that are probably still in flight and resend them only after a timeout. This trades bandwidth for a slower recovery from loss.
 - **Camera**: add camera collision in the client (it can currently clip into walls).
 - **Godot**:
-  - an AnimationTree-to-ozz binding;
   - ozz clips loaded from packs;
+  - skinned characters: `CinderboxSkeleton` can already drive a `Skeleton3D` by bone name, and
+    `CinderboxAnimator` can drive an imported rig's tree, but neither has been tried with a real
+    imported character;
   - Linux and macOS exports (the extension builds with `unix-clang-release`; not yet tested).
 - **Maps, next steps**:
   - shapes beyond boxes, spheres and capsules, and a way to author them without one node per box;
@@ -363,3 +391,4 @@ makes them a determinism problem rather than a presentation one.
 9. **M9** (done): effect bindings as data (`CbEffect` / `CbEffectTable`), additive binding files so mods add effects without replacing the game's, matching by template, kind and local player, effects that follow their entity, and a mod that ships its own bindings.
 10. **M10** (done): sounds, camera shake, screen flash and per-binding cooldowns as further fields of the same effect bindings, placeholder sound effects and a generator for them, and an example mod that ships its own sound.
 11. **M11** (done): impacts from Box3D contact events and footsteps from stride distance, both part of the hashed simulation state and both rollback-safe, exposed to presentation as counters and bound to effects by `min_strength`.
+12. **M12** (done): `CinderboxAnimator`, which drives a Godot AnimationTree from the simulation's animation mode, ground speed and locomotion phase, with drift resync; a generated example prefab shipped as a mod, and a headless check that a prefab's tree follows the simulation.

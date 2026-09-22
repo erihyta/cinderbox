@@ -1,5 +1,6 @@
 #include "cinderbox_client.h"
 
+#include "cinderbox_animator.h"
 #include "cinderbox_skeleton.h"
 #include "detmath.h"
 #include "types.h"
@@ -55,20 +56,26 @@ std::string ToStd( const String& s )
 	return std::string( utf8.get_data(), size_t( utf8.length() ) );
 }
 
-CinderboxSkeleton* FindSkeleton( Node* node )
+template <typename T>
+T* FindInPrefab( Node* node )
 {
-	if ( auto* s = Object::cast_to<CinderboxSkeleton>( node ) )
+	if ( auto* found = Object::cast_to<T>( node ) )
 	{
-		return s;
+		return found;
 	}
 	for ( int i = 0; i < node->get_child_count(); ++i )
 	{
-		if ( auto* s = FindSkeleton( node->get_child( i ) ) )
+		if ( auto* found = FindInPrefab<T>( node->get_child( i ) ) )
 		{
-			return s;
+			return found;
 		}
 	}
 	return nullptr;
+}
+
+CinderboxSkeleton* FindSkeleton( Node* node )
+{
+	return FindInPrefab<CinderboxSkeleton>( node );
 }
 
 } // namespace
@@ -379,11 +386,20 @@ void CinderboxClient::UpdateNodes()
 		{
 			Vector3 feet = ToGodot( pose.position ) - Vector3( 0, present::kFeetOffset, 0 );
 			node->set_transform( Transform3D( rotation.scaled( Vector3( s, s, s ) ), feet ) );
-			if ( anim != nullptr && anim->evaluator )
+			if ( anim != nullptr )
 			{
-				if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
+				// A prefab poses its character with ozz, with Godot's own animation system, or
+				// with both; whichever it contains is what gets driven.
+				if ( anim->evaluator )
 				{
-					skeleton->ApplyPose( *anim->evaluator );
+					if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
+					{
+						skeleton->ApplyPose( *anim->evaluator );
+					}
+				}
+				if ( CinderboxAnimator* animator = FindInPrefab<CinderboxAnimator>( node ) )
+				{
+					animator->ApplyState( anim->current );
 				}
 			}
 			return;
