@@ -164,6 +164,7 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 				MsgHello hello;
 				hello.fingerprint = BuildFingerprint();
 				hello.reconnectToken = m_token;
+				hello.name = m_options.playerName;
 				Encode( hello, m_buffer );
 				m_transport.Send( ev.peer, ChannelReliable, m_buffer, true );
 				m_state = ClientState::AwaitingWelcome;
@@ -207,6 +208,20 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 					if ( m_state == ClientState::Playing && m_session != nullptr && Decode( r, msg ) )
 					{
 						m_pendingChecksums.push_back( msg );
+					}
+					break;
+				}
+				case MsgType::PlayerNames:
+				{
+					MsgPlayerNames msg;
+					if ( Decode( r, msg ) )
+					{
+						m_names = {};
+						for ( const auto& [slot, name] : msg.names )
+						{
+							m_names[slot] = name;
+						}
+						m_namesGeneration += 1;
 					}
 					break;
 				}

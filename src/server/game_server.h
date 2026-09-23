@@ -112,6 +112,7 @@ private:
 		bool connected = false;
 		net::PeerId peer = 0;
 		PlayerSlot slot = 0;
+		std::string name;
 		uint64_t token = 0;
 		double disconnectedAt = 0.0;
 		double lastResyncAt = -1e9;
@@ -134,6 +135,10 @@ private:
 	Client* FindByPeer( net::PeerId peer );
 	void Reject( net::PeerId peer, const std::string& reason );
 	void RunTick( double now );
+	// Everyone's names, to every welcomed client (or only to `only`).
+	void SendNames( net::PeerId only = 0 );
+	std::string UniqueName( const std::string& wanted, const Client& self ) const;
+	bool m_namesDirty = false;
 	void RunMods( InputFrame& frame );
 	void SendSnapshots();
 	void SendFrames( double now );

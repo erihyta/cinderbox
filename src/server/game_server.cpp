@@ -211,6 +211,7 @@ void GameServer::Update( double now )
 			}
 			Log( "slot %u left (reconnect grace expired)", c.slot );
 			c = Client{};
+			m_namesDirty = true;
 		}
 	}
 
@@ -236,6 +237,12 @@ void GameServer::Update( double now )
 	{
 		Log( "running %.0f ms behind, skipping ahead", ( now - m_nextTickTime ) * 1000.0 );
 		m_nextTickTime = now;
+	}
+
+	if ( m_namesDirty )
+	{
+		m_namesDirty = false;
+		SendNames();
 	}
 
 	m_transport.Flush();
@@ -367,7 +374,9 @@ void GameServer::HandleHello( PeerId peer, const MsgHello& hello, double now )
 		target->inWorld = true;
 		m_pendingEvents.push_back( { PlayerEventType::Join, slot } );
 		m_stats.joins += 1;
-		Log( "peer %u joins as slot %u", peer, slot );
+		target->name = UniqueName( SanitizeName( hello.name, slot ), *target );
+		Log( "peer %u joins as slot %u (%s)", peer, slot, target->name.c_str() );
+		m_namesDirty = true;
 	}
 
 	target->connected = true;
@@ -432,6 +441,7 @@ void GameServer::SendSnapshots()
 
 		c.needsSnapshot = false;
 		c.welcomed = true;
+		SendNames( c.peer );
 		// The welcome carries the inputs of snapshotTick - 1, so frames start at snapshotTick.
 		c.ackTick = m_sim->Tick();
 		m_stats.snapshotsSent += 1;
@@ -549,6 +559,53 @@ void GameServer::RunMods( InputFrame& frame )
 	frame.commands.erase( std::remove_if( frame.commands.begin(), frame.commands.end(),
 										  []( const SimCommand& c ) { return IsSendableCommand( c ) == false; } ),
 						  frame.commands.end() );
+}
+
+std::string GameServer::UniqueName( const std::string& wanted, const Client& self ) const
+{
+	auto taken = [&]( const std::string& name ) {
+		for ( const Client& c : m_clients )
+		{
+			if ( &c != &self && c.used && c.name == name )
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	if ( taken( wanted ) == false )
+	{
+		return wanted;
+	}
+	for ( int n = 2;; ++n )
+	{
+		std::string suffix = " (" + std::to_string( n ) + ")";
+		std::string candidate = wanted.substr( 0, kMaxPlayerName - suffix.size() ) + suffix;
+		if ( taken( candidate ) == false )
+		{
+			return candidate;
+		}
+	}
+}
+
+void GameServer::SendNames( PeerId only )
+{
+	MsgPlayerNames msg;
+	for ( const Client& c : m_clients )
+	{
+		if ( c.used )
+		{
+			msg.names.push_back( { c.slot, c.name } );
+		}
+	}
+	Encode( msg, m_buffer );
+	for ( const Client& c : m_clients )
+	{
+		if ( c.used && c.connected && c.welcomed && ( only == 0 || c.peer == only ) )
+		{
+			m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
+		}
+	}
 }
 
 const InputFrame* GameServer::HistoryFrame( uint32_t tick ) const

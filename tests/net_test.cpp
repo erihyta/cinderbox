@@ -124,7 +124,7 @@ struct Harness
 		return std::chrono::duration<double>( Clock::now() - start ).count();
 	}
 
-	Bot& AddBot( uint32_t rollbackWindow = 8 )
+	Bot& AddBot( uint32_t rollbackWindow = 8, const std::string& name = {} )
 	{
 		Bot bot;
 		bot.client = std::make_unique<GameClient>();
@@ -135,6 +135,7 @@ struct Harness
 		options.maxRollbackTicks = std::max<uint32_t>( rollbackWindow, 20 );
 		options.verbose = false;
 		options.logName = "bot" + std::to_string( bots.size() );
+		options.playerName = name.empty() ? options.logName : name;
 		bot.client->Start( options, Now() );
 		bots.push_back( std::move( bot ) );
 		return bots.back();
@@ -653,6 +654,44 @@ void TestStallRecovery()
 	CHECK( stalled.client->GetStats().desyncs == 0 );
 }
 
+// Names: cleaned up by the server, made unique, and known to every client by slot.
+void TestNames()
+{
+	using namespace net;
+	CHECK( SanitizeName( "  Sam  ", 0 ) == "Sam" );
+	CHECK( SanitizeName( "a\tb\nc", 0 ) == "abc" );
+	CHECK( SanitizeName( "", 4 ) == "Player 5" );
+	CHECK( SanitizeName( std::string( 40, 'x' ), 0 ).size() == kMaxPlayerName );
+	// A cut never lands inside a UTF-8 character ("\xc3\xa9" is one).
+	std::string accents;
+	for ( int i = 0; i < 20; ++i )
+	{
+		accents += "\xc3\xa9";
+	}
+	std::string cut = SanitizeName( accents, 0 );
+	CHECK( cut.size() % 2 == 0 && cut.size() <= kMaxPlayerName );
+
+	Harness h( 47797 );
+	h.AddBot( 8, "Sam" );
+	h.AddBot( 8, "Sam" );
+	h.AddBot( 8, "\x01" );
+	h.RunUntil( 2.0 );
+	for ( Bot& b : h.bots )
+	{
+		const auto& names = b.client->Names();
+		std::printf( "    bot sees: [%s] [%s] [%s]\n", names[0].c_str(), names[1].c_str(), names[2].c_str() );
+		CHECK( names[0] == "Sam" );
+		CHECK( names[1] == "Sam (2)" );
+		CHECK( names[2] == "Player 3" );
+	}
+
+	// A player leaving is gone from everyone's roster.
+	h.bots[1].client->DropConnectionHard();
+	h.bots.erase( h.bots.begin() + 1 );
+	h.RunUntil( h.Now() + 18.0 ); // up to 6 s to notice the drop, then the 10 s reconnect grace
+	CHECK( h.bots[0].client->Names()[1].empty() );
+}
+
 void TestProtocol()
 {
 	using namespace net;
@@ -865,6 +904,7 @@ int main( int argc, char** argv )
 		{ "lossy_session", TestLossySession },
 		{ "mods_session", TestModsSession },
 		{ "stall_recovery", TestStallRecovery },
+		{ "names", TestNames },
 	};
 
 	const char* filter = argc > 1 ? argv[1] : nullptr;

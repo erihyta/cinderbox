@@ -374,6 +374,7 @@ int main( int argc, char** argv )
 		co.simulate = bot.full;
 		co.verbose = false;
 		co.logName = "bot" + std::to_string( i );
+		co.playerName = "bot " + std::to_string( i + 1 );
 		bot.client->Start( co, bot.startAt );
 		size_t worker = bot.full ? size_t( i ) : size_t( o.full ) + size_t( i - o.full ) % size_t( liteThreads );
 		workers[worker]->bots.push_back( std::move( bot ) );
