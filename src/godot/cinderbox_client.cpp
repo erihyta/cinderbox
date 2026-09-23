@@ -768,9 +768,28 @@ bool CinderboxClient::check_local_conditions( const PackedStringArray& condition
 
 String CinderboxClient::format_local_fields( const String& format ) const
 {
-	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
-	std::string text = present::FormatFields( m_frame.schema, ToStd( format ), BoardOf( uint32_t( get_local_net_id() ) ), globals );
-	return String::utf8( text.c_str() );
+	return format_fields( get_local_net_id(), format );
+}
+
+// "{name:deathmatch.winner}": the field holds a player's NetId; show that player's name.
+String CinderboxClient::ResolveNameFields( int64_t net_id, const String& format ) const
+{
+	String out = format;
+	int64_t at = out.find( "{name:" );
+	while ( at >= 0 )
+	{
+		int64_t close = out.find( "}", at );
+		if ( close < 0 )
+		{
+			break;
+		}
+		String field = out.substr( at + 6, close - at - 6 );
+		Variant id = get_field( net_id, field );
+		String name = id.get_type() == Variant::NIL || int64_t( id ) == 0 ? String() : get_player_name( int64_t( id ) );
+		out = out.substr( 0, at ) + name.replace( "{", "(" ) + out.substr( close + 1 );
+		at = out.find( "{name:", at + name.length() );
+	}
+	return out;
 }
 
 int64_t CinderboxClient::get_local_net_id() const
@@ -889,7 +908,7 @@ String CinderboxClient::get_player_name( int64_t net_id ) const
 
 String CinderboxClient::format_fields( int64_t net_id, const String& format ) const
 {
-	String withName = format.replace( "{name}", get_player_name( net_id ).replace( "{", "(" ) );
+	String withName = ResolveNameFields( net_id, format.replace( "{name}", get_player_name( net_id ).replace( "{", "(" ) ) );
 	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
 	std::string text = present::FormatFields( m_frame.schema, ToStd( withName ), BoardOf( uint32_t( net_id ) ), globals );
 	return String::utf8( text.c_str() );

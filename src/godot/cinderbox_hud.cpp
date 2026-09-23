@@ -248,6 +248,9 @@ void CbScoreboard::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_show_action" ), &CbScoreboard::get_show_action );
 	ClassDB::bind_method( D_METHOD( "set_label_settings", "value" ), &CbScoreboard::set_label_settings );
 	ClassDB::bind_method( D_METHOD( "get_label_settings" ), &CbScoreboard::get_label_settings );
+	ClassDB::bind_method( D_METHOD( "set_conditions", "value" ), &CbScoreboard::set_conditions );
+	ClassDB::bind_method( D_METHOD( "get_conditions" ), &CbScoreboard::get_conditions );
+	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "conditions" ), "set_conditions", "get_conditions" );
 	ClassDB::bind_method( D_METHOD( "set_local_settings", "value" ), &CbScoreboard::set_local_settings );
 	ClassDB::bind_method( D_METHOD( "get_local_settings" ), &CbScoreboard::get_local_settings );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "headers" ), "set_headers", "get_headers" );
@@ -279,7 +282,7 @@ void CbScoreboard::_process( double )
 	CinderboxClient* client = FindClient( this, m_client );
 	bool held = m_showAction.is_empty() ||
 				( InputMap::get_singleton()->has_action( m_showAction ) && Input::get_singleton()->is_action_pressed( m_showAction ) );
-	bool show = client != nullptr && held && m_cells.is_empty() == false;
+	bool show = client != nullptr && held && m_cells.is_empty() == false && client->check_local_conditions( m_conditions );
 	set_visible( show );
 	if ( show == false )
 	{

@@ -78,7 +78,9 @@ struct Character
 	// Set by a Kill command, cleared by Respawn. A dead character takes no input, has its body
 	// disabled, and is not drawn (its ragdoll, if it left one, is a separate entity).
 	uint8_t dead = 0;
-	uint8_t reserved[3] = {};
+	// Set by a Freeze command: movement and jump inputs are ignored (between rounds, in a cutscene).
+	uint8_t frozen = 0;
+	uint8_t reserved[2] = {};
 	// Times this character fell below the kill plane and was put back. Mods watch it to count the
 	// fall as a death; the engine only rescues the character.
 	uint32_t fallCount = 0;

@@ -463,6 +463,38 @@ late for seconds and the server dropped its presses. Being behind costs input wh
 costs latency, so beyond 1.5 ticks behind it now runs up to twice as fast. A 0.4 s stall went from 60
 late inputs in the next second to 0; joins went from ~90 late inputs to ~8.
 
+## Deathmatch rounds (M16)
+The game loop is a server mod like any other (`server_mods/deathmatch`), so a server that wants no
+rounds leaves it out. It needed three engine additions, none of them about rounds:
+
+| Addition | Why |
+|---|---|
+| `Freeze` command (`Character::frozen`, hashed) | the intermission: players stop moving and acting but still look around, identically on every client |
+| `Context::Option` and `--mod-option NAME=VALUE` | operators tune mods without recompiling |
+| `RecentEvents`, `SpawnedProps`, `Ragdolls` | mods react to each other's events and clear the world between rounds |
+
+| Phase | What happens |
+|---|---|
+| playing | `combat.killed` scores +1 for the killer; a world death (no killer) costs the fall penalty; the round ends at the kill limit or when time runs out |
+| intermission | winner, round and seconds published; `deathmatch.round_end` emitted; everyone frozen |
+| next round | spawned props and ragdolls destroyed, everyone respawned and unfrozen, scores reset, `game.round_start` emitted |
+
+- **Mods cooperate by event, not by call.** The pistol knows nothing about rounds; it refills on
+  `game.round_start`, which any game mode can emit.
+- **Events are one tick late for other mods.** `RecentEvents` returns the previous tick's events, so a
+  refill lands a tick after the respawn. Nobody can act in that tick, so this is harmless here.
+- **Another mod's respawn is visible only through state.** The pistol now records the tick a player
+  died and treats "alive again after that tick" as a respawn by someone else. Without that, a player
+  killed in the same tick the pistol ran never came back (found by the deathmatch net test).
+- **The look is a workshop item** (round HUD, winner banner, scoreboard with scores, two chimes). The
+  pistol's scoreboard hides itself with the new `!?deathmatch.score` condition when the deathmatch
+  one is there; `{name:deathmatch.winner}` shows the winner's name from a field holding a NetId.
+- **Verified:** a net test (duel, first to 2) checks scoring, the frozen intermission, the winner and
+  round 2 with no desyncs; a rendered session with 3 shooting bots saw 3 round ends and no desyncs;
+  the scenario now freezes and releases players, and Clang, GCC and MSVC agree on all 1201 hashes.
+- **Limits:** no teams and no spectators; a player joining mid-round just plays (one joining in the
+  intermission waits frozen); every round puts each player back at its slot's spawn point.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*`).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -551,3 +583,4 @@ late inputs in the next second to 0; joins went from ~90 late inputs to ~8.
 13. **M13** (done): the rig renamed to Godot's humanoid profile with Mixamo aliases, and `CinderboxSkeleton` retargeting by rotation onto a character's own rest, bridging the arms-down and T-pose rest postures, verified on a deliberately differently proportioned humanoid.
 14. **M14** (done): server gameplay mods in C++ with commands in the authoritative frame, a board and mod events, the mod schema sent on join, pitch and mod actions in the input, deterministic ragdolls, data-driven presentation of mod state (conditional effects, predicted action feedback, held items, aimed arms, HUD labels), a pistol demo (loadout, props, pistol mods), `cb_bot --shoot`, and ENet's throttle drops disabled. Verified identical across Clang, GCC and MSVC.
 15. **M15** (done): mods' looks as workshop items announced by hash and never sent (publish tool, local workshop, join refusal, load order), the pistol's look moved into its item, an allowlist pack validator with a hostile-pack check, HUD nodes driven by fields and events (health bar, kill feed, scoreboard), player names, and a fast clock catch-up.
+16. **M16** (done): deathmatch rounds as a server mod with its own workshop item, the `Freeze` command, mod options, event and world queries in the mod API, the `!?field` condition, `{name:field}`, scoreboard conditions, and a deathmatch net test. Verified identical across Clang, GCC and MSVC.

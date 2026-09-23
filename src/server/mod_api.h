@@ -25,6 +25,7 @@
 #include "flecs.h"
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -182,6 +183,23 @@ public:
 	}
 	bool IsDynamic( uint32_t netId ) const;
 
+	// Entities of a kind, in NetId order (creation order).
+	std::vector<uint32_t> Props() const;
+	// Only props a player spawned (the level's own props are left out).
+	std::vector<uint32_t> SpawnedProps() const;
+	std::vector<uint32_t> Ragdolls() const;
+
+	// Mod events the previous tick recorded (any mod's): how one mod reacts to another's news
+	// ("combat.killed") without knowing it. At most the ring's size per tick.
+	std::vector<ModEventRecord> RecentEvents() const;
+
+	// Server options for mods: cb_server --mod-option deathmatch.kills=15.
+	double Option( const std::string& name, double fallback ) const;
+	void SetOptions( const std::map<std::string, std::string>* options )
+	{
+		m_options = options;
+	}
+
 	// The mods' shared world for their own state. Never rolled back, never sent anywhere.
 	flecs::world& World()
 	{
@@ -212,6 +230,8 @@ public:
 			   uint32_t ragdollCap = 0 );
 	void Respawn( uint32_t target );
 	void RespawnAt( uint32_t target, b3Vec3 position, float yaw );
+	// A frozen player ignores movement and jump (mods decide what else a freeze means for them).
+	void Freeze( uint32_t target, bool frozen );
 
 	// Commands emitted so far this tick (tests).
 	const std::vector<SimCommand>& Commands() const
@@ -228,6 +248,7 @@ private:
 	const std::array<PlayerInput, kMaxPlayers>& m_previous;
 	flecs::world& m_world;
 	uint64_t& m_rng;
+	const std::map<std::string, std::string>* m_options = nullptr;
 };
 
 class ServerMod

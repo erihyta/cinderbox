@@ -3,7 +3,7 @@
 //   cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]
 //             [--prop-lifetime SEC] [--props-per-player N] [--props-global N]
 //             [--map FILE.cbmap] [--record FILE] [--mods A,B | --mods none] [--list-mods]
-//             [--items DIR] [--quiet]
+//             [--items DIR] [--mod-option NAME=VALUE]... [--quiet]
 //
 // Every gameplay mod compiled in (server_mods/) runs unless --mods names a subset. Mods with a look
 // need their workshop item: its SHA-256 is read from <items dir>/<mod>.item (default: items/ next
@@ -36,7 +36,7 @@ void Usage()
 	std::printf( "usage: cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]\n"
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
 				 "                 [--map FILE.cbmap] [--record FILE] [--mods A,B | --mods none] [--list-mods]\n"
-				 "                 [--items DIR] [--quiet]\n" );
+				 "                 [--items DIR] [--mod-option NAME=VALUE]... [--quiet]\n" );
 }
 
 // <dir>/<mod>.item: "sha256=<64 hex digits>" (written by tools/publish_mod.ps1).
@@ -120,6 +120,18 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 		if ( arg == "--items" && i + 1 < argc )
 		{
 			itemsDir = argv[++i];
+			continue;
+		}
+		if ( arg == "--mod-option" && i + 1 < argc )
+		{
+			std::string kv = argv[++i];
+			size_t eq = kv.find( '=' );
+			if ( eq == std::string::npos )
+			{
+				std::printf( "--mod-option wants name=value, got %s\n", kv.c_str() );
+				return false;
+			}
+			o.modOptions[kv.substr( 0, eq )] = kv.substr( eq + 1 );
 			continue;
 		}
 		if ( i + 1 >= argc )

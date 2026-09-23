@@ -1,0 +1,10 @@
+; The deathmatch mod's look: a workshop item players subscribe to. It contains no code; everything here
+; is keyed on names the deathmatch server mod declares ("deathmatch.*", "game.round_start").
+; Publish it with: tools\publish_mod.ps1 -Mod deathmatch
+
+config_version=5
+
+[application]
+
+config/name="Cinderbox item: deathmatch"
+config/features=PackedStringArray("4.7", "Forward Plus")

@@ -96,8 +96,11 @@ enum class CommandType : uint8_t
 	Kill = 6,
 	// target (a player), mode = 1 places it at a with yaw index, otherwise at its spawn point.
 	Respawn = 7,
+	// target (a player), mode = 1 freezes it (it stands, falls and can be pushed, but its movement
+	// and jump inputs are ignored), 0 releases it.
+	Freeze = 8,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Respawn );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Freeze );
 
 enum ImpulseMode : uint8_t
 {

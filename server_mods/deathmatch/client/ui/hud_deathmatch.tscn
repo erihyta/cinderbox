@@ -1,0 +1,117 @@
+[gd_scene load_steps=6 format=3]
+
+; The round HUD, laid over the game's when a server runs deathmatch. Fields and events only:
+;   deathmatch.phase (0 playing, 1 between rounds), .seconds, .round, .kill_limit, .winner (a player),
+;   deathmatch.score per player.
+
+[sub_resource type="LabelSettings" id="Timer"]
+font_size = 24
+outline_size = 5
+outline_color = Color(0, 0, 0, 0.8)
+
+[sub_resource type="LabelSettings" id="Banner"]
+font_size = 44
+font_color = Color(1, 0.86, 0.35, 1)
+outline_size = 8
+outline_color = Color(0, 0, 0, 0.85)
+
+[sub_resource type="LabelSettings" id="Small"]
+font_size = 20
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.8)
+
+[sub_resource type="LabelSettings" id="Row"]
+font_size = 20
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.85)
+
+[sub_resource type="LabelSettings" id="RowLocal"]
+font_size = 20
+font_color = Color(1, 0.85, 0.35, 1)
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.85)
+
+[node name="DeathmatchHud" type="CanvasLayer"]
+
+[node name="Round" type="CbFieldLabel" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -300.0
+offset_top = 10.0
+offset_right = 300.0
+offset_bottom = 44.0
+label_settings = SubResource("Timer")
+horizontal_alignment = 1
+text_format = "ROUND {deathmatch.round}   {deathmatch.seconds}s   FIRST TO {deathmatch.kill_limit}"
+conditions = PackedStringArray("?deathmatch.phase", "deathmatch.phase == 0")
+
+[node name="Score" type="CbFieldLabel" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -300.0
+offset_top = 44.0
+offset_right = 300.0
+offset_bottom = 72.0
+label_settings = SubResource("Small")
+horizontal_alignment = 1
+text_format = "your score {deathmatch.score}"
+conditions = PackedStringArray("?deathmatch.score", "deathmatch.phase == 0")
+
+[node name="Winner" type="CbFieldLabel" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -420.0
+offset_top = 110.0
+offset_right = 420.0
+offset_bottom = 170.0
+label_settings = SubResource("Banner")
+horizontal_alignment = 1
+text_format = "{name:deathmatch.winner} WINS ROUND {deathmatch.round}"
+conditions = PackedStringArray("deathmatch.phase == 1", "deathmatch.winner")
+
+[node name="Nobody" type="CbFieldLabel" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -420.0
+offset_top = 110.0
+offset_right = 420.0
+offset_bottom = 170.0
+label_settings = SubResource("Banner")
+horizontal_alignment = 1
+text = "NOBODY SCORED"
+conditions = PackedStringArray("deathmatch.phase == 1", "!deathmatch.winner")
+
+[node name="Next" type="CbFieldLabel" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -300.0
+offset_top = 172.0
+offset_right = 300.0
+offset_bottom = 204.0
+label_settings = SubResource("Small")
+horizontal_alignment = 1
+text_format = "next round in {deathmatch.seconds}"
+conditions = PackedStringArray("deathmatch.phase == 1")
+
+[node name="Scoreboard" type="CbScoreboard" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -200.0
+offset_right = 300.0
+offset_bottom = 200.0
+theme_override_constants/h_separation = 40
+columns = 4
+headers = PackedStringArray("Player", "Score", "Kills", "Deaths")
+cells = PackedStringArray("{name}", "{deathmatch.score}", "{combat.kills}", "{combat.deaths}")
+sort_field = "deathmatch.score"
+label_settings = SubResource("Row")
+local_settings = SubResource("RowLocal")

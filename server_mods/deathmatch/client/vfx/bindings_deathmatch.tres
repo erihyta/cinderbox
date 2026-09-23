@@ -1,0 +1,26 @@
+[gd_resource type="CbEffectTable" load_steps=4 format=3]
+
+; How rounds sound and feel. Keyed on the deathmatch mod's events.
+
+[sub_resource type="CbEffect" id="RoundEnd"]
+event = 6
+name = "deathmatch.round_end"
+sound = "res://assets/sfx/round_end.wav"
+volume_db = -4.0
+
+; The winner gets a golden flash.
+[sub_resource type="CbEffect" id="YouWon"]
+event = 6
+name = "deathmatch.round_end"
+who = 1
+flash_color = Color(1, 0.85, 0.3, 0.35)
+flash_time = 1.0
+
+[sub_resource type="CbEffect" id="RoundStart"]
+event = 6
+name = "game.round_start"
+sound = "res://assets/sfx/round_start.wav"
+volume_db = -6.0
+
+[resource]
+effects = [SubResource("RoundEnd"), SubResource("YouWon"), SubResource("RoundStart")]

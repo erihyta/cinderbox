@@ -67,6 +67,10 @@ bool CheckCondition( const ModSchema& schema, const std::string& condition, cons
 	{
 		return true;
 	}
+	if ( text.rfind( "!?", 0 ) == 0 )
+	{
+		return schema.FindField( Trim( text.substr( 2 ) ) ) == nullptr;
+	}
 	if ( text[0] == '!' )
 	{
 		return ReadField( schema, Trim( text.substr( 1 ) ), board, globals ).AsBool() == false;

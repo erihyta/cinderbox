@@ -149,6 +149,14 @@ inline std::vector<InputFrame> MakeScenario( const ScenarioOptions& opt )
 				field.value = int32_t( c >> 36 );
 				f.commands.push_back( field );
 			}
+			if ( ( ( c >> 4 ) % 150 ) == 0 )
+			{
+				SimCommand freeze;
+				freeze.type = CommandType::Freeze;
+				freeze.mode = uint8_t( ( c >> 10 ) & 1 );
+				freeze.target = SlotTarget( PlayerSlot( i ) );
+				f.commands.push_back( freeze );
+			}
 			if ( ( ( c >> 12 ) % 90 ) == 0 )
 			{
 				SimCommand push;

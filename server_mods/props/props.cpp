@@ -41,7 +41,7 @@ public:
 			uint32_t netId = ctx.PlayerNetId( slot );
 			const Character* c = ctx.PlayerCharacter( slot );
 			const Transform* t = ctx.EntityTransform( netId );
-			if ( c == nullptr || t == nullptr || c->dead || ctx.Get( netId, m_loadout ) > 1 )
+			if ( c == nullptr || t == nullptr || c->dead || c->frozen || ctx.Get( netId, m_loadout ) > 1 )
 			{
 				continue;
 			}

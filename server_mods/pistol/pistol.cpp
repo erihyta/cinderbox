@@ -44,6 +44,7 @@ struct Gunner
 struct Dead
 {
 	uint32_t respawnTick = 0;
+	uint32_t diedTick = 0; // the Kill command is applied in this tick's frame
 };
 
 struct Reloading
@@ -87,6 +88,9 @@ public:
 		m_dry = declare.Event( "pistol.dry" );
 		// a = killer (0: the world, e.g. a fall), b = who died.
 		m_killed = declare.Event( "combat.killed" );
+		// Announced by a game-mode mod when a round begins: everyone gets full health and a full
+		// magazine. The pistol does not know which mod runs rounds, only this name.
+		m_roundStart = declare.Event( "game.round_start" );
 	}
 
 	void Start( Context& ctx ) override
@@ -123,11 +127,21 @@ public:
 			}
 		}
 
+		bool newRound = false;
+		for ( const ModEventRecord& e : ctx.RecentEvents() )
+		{
+			newRound |= int( e.type ) == m_roundStart.index;
+		}
+
 		// Collected first: firing changes other players' components (a kill adds Dead).
 		m_scratch.clear();
 		m_gunners.each( [&]( flecs::entity e, Gunner& ) { m_scratch.push_back( e ); } );
 		for ( flecs::entity e : m_scratch )
 		{
+			if ( e.is_alive() && newRound )
+			{
+				Refill( ctx, e );
+			}
 			if ( e.is_alive() )
 			{
 				Update( ctx, e );
@@ -146,6 +160,17 @@ private:
 		ctx.Set( target, m_deaths, g.deaths );
 		ctx.Set( target, m_dead, dead ? 1 : 0 );
 		ctx.Set( target, m_reloading, reloading ? 1 : 0 );
+	}
+
+	void Refill( Context& ctx, flecs::entity e )
+	{
+		Gunner g = e.get<Gunner>();
+		g.health = kMaxHealth;
+		g.ammo = kMagazine;
+		e.remove<Dead>();
+		e.remove<Reloading>();
+		e.set<Gunner>( g );
+		Publish( ctx, g, false, false );
 	}
 
 	// Works on a copy that is written back at the end: adding or removing Dead and Reloading moves
@@ -173,6 +198,17 @@ private:
 
 		if ( const Dead* dead = e.try_get<Dead>() )
 		{
+			// Alive in the world after the kill was applied: someone else brought the player back
+			// (a round restart), so stop waiting. In the tick of the kill itself the world has not
+			// applied it yet and still shows the player alive.
+			if ( c->dead == 0 && tick > dead->diedTick )
+			{
+				e.remove<Dead>();
+				g.health = kMaxHealth;
+				g.ammo = kMagazine;
+				Publish( ctx, g, false, false );
+				return;
+			}
 			if ( tick >= dead->respawnTick )
 			{
 				e.remove<Dead>();
@@ -207,7 +243,7 @@ private:
 			}
 		}
 
-		if ( ctx.Get( netId, m_loadout ) != kPistolSlot )
+		if ( ctx.Get( netId, m_loadout ) != kPistolSlot || c->frozen )
 		{
 			return;
 		}
@@ -278,7 +314,7 @@ private:
 			shooter.kills += 1;
 			victim.set<Gunner>( v );
 			victim.remove<Reloading>();
-			victim.set<Dead>( { ctx.Tick() + Ticks( ctx, kRespawnSeconds ) } );
+			victim.set<Dead>( { ctx.Tick() + Ticks( ctx, kRespawnSeconds ), ctx.Tick() } );
 			ctx.Set( victimTarget, m_dead, 1 );
 			ctx.Set( victimTarget, m_deaths, v.deaths );
 			ctx.Set( victimTarget, m_reloading, 0 );
@@ -310,6 +346,7 @@ private:
 	EventHandle m_reloadEvent;
 	EventHandle m_dry;
 	EventHandle m_killed;
+	EventHandle m_roundStart;
 
 	flecs::query<Gunner> m_gunners;
 	flecs::entity m_bySlot[kMaxPlayers];

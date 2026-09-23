@@ -262,6 +262,14 @@ public:
 	{
 		return m_labelSettings;
 	}
+	void set_conditions( const godot::PackedStringArray& v )
+	{
+		m_conditions = v;
+	}
+	godot::PackedStringArray get_conditions() const
+	{
+		return m_conditions;
+	}
 	void set_local_settings( const godot::Ref<godot::LabelSettings>& v )
 	{
 		m_localSettings = v;
@@ -286,6 +294,9 @@ private:
 	godot::String m_showAction = "scoreboard";
 	godot::Ref<godot::LabelSettings> m_labelSettings;
 	godot::Ref<godot::LabelSettings> m_localSettings; // the local player's row
+	// Local-player conditions for showing it at all (e.g. "!?deathmatch.score": step aside when a
+	// game mode brings its own scoreboard).
+	godot::PackedStringArray m_conditions;
 	godot::ObjectID m_client;
 };
 

@@ -213,6 +213,7 @@ private:
 	uint64_t m_namesGeneration = 0;
 	godot::String m_playerName;
 	int SlotOfNetId( uint32_t netId ) const;
+	godot::String ResolveNameFields( int64_t net_id, const godot::String& format ) const;
 };
 
 } // namespace cb::gd

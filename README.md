@@ -22,6 +22,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M13: humanoid-profile bone names and retargeting onto any character | done |
 | M14: server gameplay mods (C++), commands in the frame, board and mod events, deterministic ragdolls, data-driven mod presentation, pistol demo | done |
 | M15: workshop items (mods' looks, announced by servers, never sent), hardened pack validator, HUD from fields (bars, kill feed, scoreboard), player names, fast clock catch-up | done |
+| M16: deathmatch rounds as a server mod, `Freeze` command, mod options (`--mod-option`) | done |
 
 ## Building
 
@@ -108,6 +109,7 @@ and mods need no determinism of their own.
 | `Push` | an impulse or a velocity change; knockback for characters |
 | `Kill` | a player dies, optionally leaving a ragdoll (lifetime and cap chosen by the mod) |
 | `Respawn` / `RespawnAt` | brings a dead player back |
+| `Freeze` | stops a player moving and acting (it still looks around), or releases it |
 
 ```cpp
 // server_mods/jumper/jumper.cpp: a jump boost on Q, the whole mod.
@@ -143,9 +145,25 @@ The mods that ship:
 | `loadout` | `loadout.slot`; actions `slot_1` (1), `slot_2` (2) | 1 is empty hands, 2 is the pistol |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
 | `pistol` | `combat.*`, `pistol.*` fields; `fire` (left mouse), `reload` (R); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `combat.killed` | hitscan from the camera pivot, 25 damage, 12 rounds, 1.5 s reload; death leaves a ragdoll (10 s, at most 16); respawn after 3 s; falling out of the world counts as a death |
+| `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
 Mods cooperate through the board: `props` and `pistol` read the `loadout.slot` that `loadout`
-publishes.
+publishes. They also cooperate through events: `deathmatch` scores the pistol's `combat.killed`, and
+the pistol refills health and ammo on `game.round_start`.
+
+Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod reads them with
+`ctx.Option( "deathmatch.kills", 10 )`.
+
+| Option | Default |
+|---|---|
+| `deathmatch.kills` | 10 kills to win a round |
+| `deathmatch.round_seconds` | 300 |
+| `deathmatch.pause_seconds` | 6 (the intermission) |
+| `deathmatch.fall_penalty` | 1 point lost for falling out of the world |
+
+```bash
+cb_server --port 7777 --mod-option deathmatch.kills=5 --mod-option deathmatch.round_seconds=120
+```
 
 ### Workshop items
 
@@ -312,6 +330,7 @@ Conditions read the server mods' **board** by name:
 | `name` | the field is not zero |
 | `!name` | the field is zero |
 | `?name` | the server declared the field (its mod is running) |
+| `!?name` | the server did not declare it (e.g. hide the pistol's scoreboard when deathmatch shows its own) |
 | `name == 2`, `!=`, `>`, `>=`, `<`, `<=` | the comparison holds (`true` / `false` count as 1 / 0) |
 
 A field the server did not declare reads as zero, so bindings for a mod that is not running never
@@ -333,7 +352,10 @@ The HUD reads the board too, through script-free nodes any HUD scene can use:
 | `CbFieldLabel` | a Label with a `text_format` (`"AMMO {pistol.ammo} / 12"`), shown while its `conditions` hold |
 | `CbFieldBinding` | writes a field into any property of its `target` (default: its parent), `value = field * multiply + add`; with conditions it hides the target while they fail. A `ProgressBar`'s `value` and `max_value`, a panel's `visible`, a colour |
 | `CbEventFeed` | a line per mod event, `"{a}  >  {b}"` with player names, fading after `line_seconds` (a kill feed) |
-| `CbScoreboard` | players as rows: `cells` like `"{name}"`, `"{combat.kills}"`, sorted by `sort_field`, shown while Tab is held |
+| `CbScoreboard` | players as rows: `cells` like `"{name}"`, `"{combat.kills}"`, sorted by `sort_field`, shown while Tab is held and its `conditions` hold |
+
+In formats, `{field}` is the local player's field, `{name}` a player's name, and `{name:field}` the
+name of the player a field points at (`"{name:deathmatch.winner} WINS"`).
 
 The pistol's HUD (`server_mods/pistol/client/ui/hud_pistol.tscn`) is built from these: a health bar
 (`ProgressBar` from `combat.health` and `combat.max_health`), ammo, reloading, crosshair, kills and
@@ -507,7 +529,7 @@ src/sim/          deterministic simulation shared by server and client
 src/anim/         ozz: procedural rig, asset loading (anim_set.*), pose evaluation (pose.*), joint names (profile.*)
 src/net/          wire protocol, ENet wrapper, network simulator (netsim.*), replay files (replay.*)
 src/server/       authoritative GameServer (library), the mod API (mod_api.*) and cb_server
-server_mods/      gameplay mods compiled into cb_server: loadout, props, pistol
+server_mods/      gameplay mods compiled into cb_server: loadout, props, pistol, deathmatch
   <mod>/client/     a mod's look as a Godot project, published as a workshop item
   <mod>/client_item.cfg  the published item's SHA-256, which servers announce
 src/tools/        cb_netsim, cb_replay, cb_bot

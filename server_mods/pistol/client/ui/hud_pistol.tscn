@@ -191,5 +191,6 @@ columns = 3
 headers = PackedStringArray("Player", "Kills", "Deaths")
 cells = PackedStringArray("{name}", "{combat.kills}", "{combat.deaths}")
 sort_field = "combat.kills"
+conditions = PackedStringArray("!?deathmatch.score")
 label_settings = SubResource("Row")
 local_settings = SubResource("RowLocal")

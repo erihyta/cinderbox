@@ -12,6 +12,7 @@
 #include "transport.h"
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -36,6 +37,8 @@ struct ServerOptions
 	std::string recordPath;
 	// The workshop items clients need for the mods this server runs (announced, never sent).
 	std::vector<ModItem> items;
+	// Options mods read with Context::Option ("deathmatch.kills" -> "15").
+	std::map<std::string, std::string> modOptions;
 	uint32_t replayChecksumInterval = 60;
 };
 
