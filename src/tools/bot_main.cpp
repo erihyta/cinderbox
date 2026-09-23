@@ -1,7 +1,11 @@
 // Headless bot clients for load and soak testing.
 //
 //   cb_bot [--host H] [--port P] [--count N] [--full M] [--threads T (for lite bots)] [--duration SEC]
-//          [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC] [--chaotic]
+//          [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC] [--chaotic] [--shoot]
+//
+// --shoot makes full bots take out the pistol (the server's "slot_2" action) and fire at the
+// nearest other player a couple of times a second, aiming from their own predicted world. It
+// exercises the pistol mod, deaths and ragdolls under load; lite bots cannot aim and keep moving.
 //
 // --chaotic makes every bot change every input field every tick (worst case for rollback and
 // bandwidth). By default bots hold directions and turn smoothly, closer to real players.
@@ -12,6 +16,7 @@
 // Exit code 0 if no full bot saw a desync.
 
 #include "bot_brain.h"
+#include "detmath.h"
 #include "game_client.h"
 
 #include <algorithm>
@@ -47,7 +52,11 @@ struct Options
 	uint32_t spawnOneIn = 40;
 	double reportSeconds = 5.0;
 	bool chaotic = false;
+	bool shoot = false;
 };
+
+struct Bot;
+PlayerInput Aim( Bot& bot, PlayerInput in, uint32_t tick );
 
 struct Bot
 {
@@ -56,11 +65,65 @@ struct Bot
 	double startAt = 0.0;
 	bool started = false;
 	bool full = false;
+	bool shoot = false;
+	uint32_t shotTick = 0;
 
 	// Per-report accumulators (owned by the bot's thread).
 	double simMsSum = 0.0;
 	uint64_t frames = 0;
 };
+
+// Take out the pistol and fire at the nearest living player, aiming in our own predicted world.
+PlayerInput Aim( Bot& bot, PlayerInput in, uint32_t tick )
+{
+	const ModSchema& schema = bot.client->Schema();
+	in.actions = schema.ActionMask( "slot_2" );
+	RollbackSession* session = bot.client->Session();
+	if ( session == nullptr )
+	{
+		return in;
+	}
+	Simulation& sim = session->Sim();
+	PlayerSlot me = bot.client->Slot();
+	const Transform* mine = sim.EntityTransform( sim.PlayerNetId( me ) );
+	if ( mine == nullptr )
+	{
+		return in;
+	}
+	b3Vec3 eye = b3Add( mine->position, b3Vec3{ 0.0f, 0.4f, 0.0f } );
+	float best = 1e9f;
+	b3Vec3 target = {};
+	for ( int slot = 0; slot < kMaxPlayers; ++slot )
+	{
+		const Character* c = sim.PlayerCharacter( PlayerSlot( slot ) );
+		const Transform* t = sim.EntityTransform( sim.PlayerNetId( PlayerSlot( slot ) ) );
+		if ( slot == me || c == nullptr || t == nullptr || c->dead )
+		{
+			continue;
+		}
+		float d = b3Distance( eye, t->position );
+		if ( d < best )
+		{
+			best = d;
+			target = t->position;
+		}
+	}
+	if ( best > 60.0f )
+	{
+		return in;
+	}
+	b3Vec3 d = b3Sub( target, eye );
+	float yaw = detmath::Atan2( d.x, d.z );
+	float pitch = detmath::Atan2( d.y, std::sqrt( d.x * d.x + d.z * d.z ) );
+	in.cameraYaw = detmath::RadiansToYaw( yaw );
+	in.cameraPitch = int16_t( std::clamp( int( pitch * ( 65536.0f / detmath::kTwoPi ) ), -int( kMaxCameraPitch ), int( kMaxCameraPitch ) ) );
+	// Held for a few ticks like a real click, twice a second.
+	if ( ( tick + bot.shotTick ) % 30 < 3 )
+	{
+		in.actions |= schema.ActionMask( "fire" );
+	}
+	return in;
+}
 
 // Summary a worker publishes for the reporter.
 struct Summary
@@ -142,7 +205,9 @@ void RunWorker( Worker& w, Clock::time_point start, const std::atomic<bool>& sto
 				}
 				b.started = true;
 			}
-			b.client->Update( now, [&b]( uint32_t ) { return b.brain.Next(); } );
+			// The spawn button is a mod action now; its bit comes from the server's schema.
+			b.brain.spawnAction = b.client->Schema().ActionMask( "spawn_prop" );
+			b.client->Update( now, [&b]( uint32_t tick ) { return b.shoot ? Aim( b, b.brain.Next(), tick ) : b.brain.Next(); } );
 			if ( b.full && b.client->GetStats().ticksLastFrame > 0 )
 			{
 				b.simMsSum += b.client->GetStats().simMsLastFrame;
@@ -230,6 +295,11 @@ bool Parse( int argc, char** argv, Options& o )
 			o.chaotic = true;
 			continue;
 		}
+		if ( arg == "--shoot" )
+		{
+			o.shoot = true;
+			continue;
+		}
 		if ( i + 1 >= argc )
 		{
 			return false;
@@ -296,6 +366,8 @@ int main( int argc, char** argv )
 		bot.brain = BotBrain( uint64_t( i ) + 1 );
 		bot.brain.spawnOneIn = o.spawnOneIn;
 		bot.brain.chaotic = o.chaotic;
+		bot.shoot = o.shoot && bot.full;
+		bot.shotTick = uint32_t( i * 7 );
 		bot.startAt = double( i ) * double( o.staggerMs ) / 1000.0;
 		bot.client = std::make_unique<GameClient>();
 		ClientOptions co = o.client;

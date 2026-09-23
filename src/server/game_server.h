@@ -5,6 +5,7 @@
 // player's previous input.
 
 #include "map.h"
+#include "mod_api.h"
 #include "protocol.h"
 #include "replay.h"
 #include "simulation.h"
@@ -42,7 +43,16 @@ public:
 	GameServer();
 	~GameServer();
 
+	// Gameplay mods, added before Start(). They tick in the order they were added.
+	void AddMod( std::unique_ptr<mods::ServerMod> mod );
+
 	bool Start( const ServerOptions& options );
+
+	// What the mods declared (sent to clients on join).
+	const ModSchema& Schema() const
+	{
+		return m_schema;
+	}
 
 	// Poll the network and run every tick that is due at `now` (seconds, monotonic).
 	void Update( double now );
@@ -124,6 +134,7 @@ private:
 	Client* FindByPeer( net::PeerId peer );
 	void Reject( net::PeerId peer, const std::string& reason );
 	void RunTick( double now );
+	void RunMods( InputFrame& frame );
 	void SendSnapshots();
 	void SendFrames( double now );
 	const InputFrame* HistoryFrame( uint32_t tick ) const;
@@ -150,6 +161,13 @@ private:
 	std::vector<uint8_t> m_mapBytes;
 	uint64_t m_mapHash = 0;
 	std::vector<uint64_t> m_hashes;
+
+	std::vector<std::unique_ptr<mods::ServerMod>> m_mods;
+	ModSchema m_schema;
+	std::vector<uint8_t> m_schemaBytes;
+	// The mods' own state lives here; the simulation never sees it.
+	std::unique_ptr<flecs::world> m_modWorld;
+	uint64_t m_modRng = 0;
 };
 
 } // namespace cb

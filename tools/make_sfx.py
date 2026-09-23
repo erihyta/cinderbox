@@ -114,6 +114,76 @@ def blip(n=int(RATE * 0.09)):
     return out
 
 
+def gunshot(n=int(RATE * 0.35)):
+    rng = random.Random(53)
+    out = []
+    prev = 0.0
+    p = 0.0
+    for i in range(n):
+        raw = rng.random() * 2 - 1
+        # A bright crack that darkens into a short tail, over a low body.
+        alpha = 0.9 * math.exp(-10.0 * i / n) + 0.05
+        prev = prev + alpha * (raw - prev)
+        p += 2 * math.pi * (140.0 * math.exp(-7.0 * i / n) + 45.0) / RATE
+        out.append((prev * 0.85 + math.sin(p) * 0.5) * env(i, n, 0.0005, 6.0) * 0.9)
+    return out
+
+
+def dry_click(n=int(RATE * 0.05)):
+    rng = random.Random(59)
+    out = []
+    for i in range(n):
+        out.append((rng.random() * 2 - 1) * env(i, n, 0.0005, 12.0) * 0.5)
+    return out
+
+
+def reload_clack(n=int(RATE * 0.45)):
+    # Two mechanical clicks: magazine out, magazine in.
+    rng = random.Random(61)
+    out = []
+    for i in range(n):
+        t = i / n
+        v = 0.0
+        for at in (0.05, 0.62):
+            if t >= at:
+                k = (t - at) * n
+                v += (rng.random() * 2 - 1) * math.exp(-k / (RATE * 0.012)) * 0.6
+                v += math.sin(2 * math.pi * 900.0 * k / RATE) * math.exp(-k / (RATE * 0.02)) * 0.25
+        out.append(v)
+    return out
+
+
+def hit_marker(n=int(RATE * 0.08)):
+    out = []
+    phase = 0.0
+    for i in range(n):
+        phase += 2 * math.pi * 1800.0 / RATE
+        out.append(math.sin(phase) * env(i, n, 0.002, 4.0) * 0.35)
+    return out
+
+
+def body_hit(n=int(RATE * 0.16)):
+    rng = random.Random(67)
+    out = []
+    prev = 0.0
+    p = 0.0
+    for i in range(n):
+        prev = prev + 0.25 * ((rng.random() * 2 - 1) - prev)
+        p += 2 * math.pi * (95.0 * math.exp(-4.0 * i / n) + 50.0) / RATE
+        out.append((prev * 0.6 + math.sin(p) * 0.7) * env(i, n, 0.001, 5.0) * 0.8)
+    return out
+
+
+def ricochet(n=int(RATE * 0.25)):
+    out = []
+    phase = 0.0
+    for i in range(n):
+        freq = 2400.0 * math.exp(-2.5 * i / n) + 600.0
+        phase += 2 * math.pi * freq / RATE
+        out.append(math.sin(phase) * env(i, n, 0.001, 3.0) * 0.3)
+    return out
+
+
 out_dir = "godot/assets/sfx"
 os.makedirs(out_dir, exist_ok=True)
 write_wav(os.path.join(out_dir, "prop_spawn.wav"), pop())
@@ -122,6 +192,12 @@ write_wav(os.path.join(out_dir, "jump.wav"), whoosh())
 write_wav(os.path.join(out_dir, "land.wav"), thud())
 write_wav(os.path.join(out_dir, "footstep.wav"), step())
 write_wav(os.path.join(out_dir, "impact.wav"), knock())
+write_wav(os.path.join(out_dir, "gunshot.wav"), gunshot())
+write_wav(os.path.join(out_dir, "dry_click.wav"), dry_click())
+write_wav(os.path.join(out_dir, "reload.wav"), reload_clack())
+write_wav(os.path.join(out_dir, "hit_marker.wav"), hit_marker())
+write_wav(os.path.join(out_dir, "body_hit.wav"), body_hit())
+write_wav(os.path.join(out_dir, "ricochet.wav"), ricochet())
 
 mod_dir = "mods_src/example_neon/assets/sfx"
 os.makedirs(mod_dir, exist_ok=True)

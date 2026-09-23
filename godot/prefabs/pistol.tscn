@@ -1,0 +1,40 @@
+[gd_scene load_steps=6 format=3]
+
+; A placeholder pistol, held by the "armed" state binding in vfx/bindings_pistol.tres.
+; Built the usual Godot way round: the barrel points along -Z and the sights along +Y. The binding's
+; attach_rotation turns it into the hand's frame (the hand's -Y runs along the arm).
+
+[sub_resource type="StandardMaterial3D" id="Metal"]
+albedo_color = Color(0.16, 0.16, 0.18, 1)
+metallic = 0.6
+roughness = 0.35
+
+[sub_resource type="BoxMesh" id="Slide"]
+material = SubResource("Metal")
+size = Vector3(0.035, 0.045, 0.2)
+
+[sub_resource type="StandardMaterial3D" id="Grip"]
+albedo_color = Color(0.32, 0.22, 0.14, 1)
+roughness = 0.8
+
+[sub_resource type="BoxMesh" id="GripMesh"]
+material = SubResource("Grip")
+size = Vector3(0.03, 0.1, 0.045)
+
+[sub_resource type="BoxMesh" id="Sight"]
+material = SubResource("Metal")
+size = Vector3(0.01, 0.012, 0.012)
+
+[node name="Pistol" type="Node3D"]
+
+[node name="Slide" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.06)
+mesh = SubResource("Slide")
+
+[node name="Grip" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.966, 0.259, 0, -0.259, 0.966, 0, -0.035, 0.015)
+mesh = SubResource("GripMesh")
+
+[node name="Sight" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.047, -0.15)
+mesh = SubResource("Sight")

@@ -19,6 +19,21 @@ constexpr enet_uint32 kTimeoutLimit = 32;
 constexpr enet_uint32 kTimeoutMinMs = 2000;
 constexpr enet_uint32 kTimeoutMaxMs = 6000;
 
+void ConfigurePeer( ENetPeer* peer )
+{
+	enet_peer_timeout( peer, kTimeoutLimit, kTimeoutMinMs, kTimeoutMaxMs );
+}
+
+// ENet's packet throttle drops unreliable packets whenever the round trip rises, and a large
+// reliable transfer (a Welcome snapshot) is enough to make it drop every frame batch for about
+// half a second. Batches repeat everything not yet acknowledged, so dropping them saves nothing
+// and only stalls the client; with no deceleration the throttle never drops them.
+// This sends a command to the other side, so it has to wait until the connection is up.
+void DisableThrottleDrops( ENetPeer* peer )
+{
+	enet_peer_throttle_configure( peer, ENET_PEER_PACKET_THROTTLE_INTERVAL, ENET_PEER_PACKET_THROTTLE_ACCELERATION, 0 );
+}
+
 struct EnetLibrary
 {
 	EnetLibrary()
@@ -133,7 +148,7 @@ bool Transport::Connect( const std::string& hostName, uint16_t port )
 	{
 		return false;
 	}
-	enet_peer_timeout( peer, kTimeoutLimit, kTimeoutMinMs, kTimeoutMaxMs );
+	ConfigurePeer( peer );
 	m_serverPeer = m_impl->Register( peer );
 	return true;
 }
@@ -158,8 +173,9 @@ void Transport::Poll( std::vector<NetEvent>& events )
 				{
 					// Incoming connection on a listening host.
 					id = m_impl->Register( ev.peer );
-					enet_peer_timeout( ev.peer, kTimeoutLimit, kTimeoutMinMs, kTimeoutMaxMs );
+					ConfigurePeer( ev.peer );
 				}
+				DisableThrottleDrops( ev.peer );
 				events.push_back( { NetEvent::Type::Connected, id, 0, {} } );
 				break;
 			}

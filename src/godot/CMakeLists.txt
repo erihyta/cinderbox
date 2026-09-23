@@ -5,6 +5,7 @@ add_library(cinderbox_gd SHARED
 	cinderbox_client.cpp
 	cinderbox_effects.cpp
 	cinderbox_entity_nodes.cpp
+	cinderbox_hud.cpp
 	cinderbox_map_nodes.cpp
 	cinderbox_skeleton.cpp
 	client_thread.cpp

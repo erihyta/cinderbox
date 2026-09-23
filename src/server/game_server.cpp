@@ -15,11 +15,41 @@ namespace cb
 using namespace net;
 
 GameServer::GameServer() = default;
-GameServer::~GameServer() = default;
+
+GameServer::~GameServer()
+{
+	m_mods.clear(); // before the world their state lives in
+	if ( m_modWorld )
+	{
+		ReleaseFlecsWorld( *m_modWorld );
+	}
+}
+
+void GameServer::AddMod( std::unique_ptr<mods::ServerMod> mod )
+{
+	m_mods.push_back( std::move( mod ) );
+}
 
 bool GameServer::Start( const ServerOptions& options )
 {
 	m_options = options;
+
+	mods::Declarations declarations;
+	for ( const auto& mod : m_mods )
+	{
+		declarations.BeginMod( mod->Name() );
+		mod->Declare( declarations );
+	}
+	for ( const std::string& error : declarations.Errors() )
+	{
+		Log( "mod error: %s", error.c_str() );
+	}
+	if ( declarations.Errors().empty() == false )
+	{
+		return false;
+	}
+	m_schema = declarations.Schema();
+	EncodeSchema( m_schema, m_schemaBytes );
 
 	m_map = GetLevelLayout();
 	if ( options.mapPath.empty() == false )
@@ -38,6 +68,8 @@ bool GameServer::Start( const ServerOptions& options )
 	m_mapHash = MapHash( m_mapBytes.data(), m_mapBytes.size() );
 
 	m_sim = std::make_unique<Simulation>( options.config, m_map );
+	m_modWorld = std::make_unique<flecs::world>( CreateFlecsWorld() );
+	m_modRng = options.config.seed ^ 0x6D6F6473ull; // "mods"
 	m_history.assign( kFrameHistory, InputFrame{} );
 	for ( InputFrame& f : m_history )
 	{
@@ -60,7 +92,7 @@ bool GameServer::Start( const ServerOptions& options )
 
 	if ( options.recordPath.empty() == false )
 	{
-		if ( m_replay.Open( options.recordPath, BuildFingerprint(), options.config, m_mapBytes ) == false )
+		if ( m_replay.Open( options.recordPath, BuildFingerprint(), options.config, m_mapBytes, m_schemaBytes ) == false )
 		{
 			Log( "cannot write replay %s", options.recordPath.c_str() );
 			return false;
@@ -73,6 +105,25 @@ bool GameServer::Start( const ServerOptions& options )
 		 options.config.tickRate, (unsigned long long)BuildFingerprint(),
 		 options.mapPath.empty() ? "built-in sandbox" : options.mapPath.c_str(), unsigned( m_map.statics.size() ),
 		 unsigned( m_map.props.size() ), (unsigned long long)m_mapHash );
+
+	if ( m_mods.empty() == false )
+	{
+		std::string names;
+		for ( const auto& mod : m_mods )
+		{
+			names += names.empty() ? "" : ", ";
+			names += mod->Name();
+		}
+		Log( "mods: %s (%zu fields, %zu events, %zu actions)", names.c_str(), m_schema.fields.size(), m_schema.events.size(),
+			 m_schema.actions.size() );
+		InputFrame none;
+		none.tick = m_sim->Tick();
+		mods::Context ctx( *m_sim, m_schema, none, m_lastInputs, *m_modWorld, m_modRng );
+		for ( const auto& mod : m_mods )
+		{
+			mod->Start( ctx );
+		}
+	}
 	return true;
 }
 
@@ -375,6 +426,7 @@ void GameServer::SendSnapshots()
 		welcome.mapHash = m_mapHash;
 		welcome.map = m_mapBytes;
 		welcome.image = m_image;
+		welcome.schema = m_schemaBytes;
 		Encode( welcome, m_buffer );
 		m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
 
@@ -420,6 +472,8 @@ void GameServer::RunTick( double now )
 		}
 		frame.inputs[c.slot] = c.lastInput;
 	}
+
+	RunMods( frame );
 
 	// Joining / reconnecting / desynced clients get the state before this tick.
 	for ( Client& c : m_clients )
@@ -477,6 +531,24 @@ void GameServer::RunTick( double now )
 			}
 		}
 	}
+}
+
+// The mods see this tick's inputs and the world before it, and add their commands to the frame.
+void GameServer::RunMods( InputFrame& frame )
+{
+	if ( m_mods.empty() )
+	{
+		return;
+	}
+	mods::Context ctx( *m_sim, m_schema, frame, m_lastInputs, *m_modWorld, m_modRng );
+	for ( const auto& mod : m_mods )
+	{
+		mod->Tick( ctx );
+	}
+	// Whatever the mods produced, clients must be able to apply exactly the same list.
+	frame.commands.erase( std::remove_if( frame.commands.begin(), frame.commands.end(),
+										  []( const SimCommand& c ) { return IsSendableCommand( c ) == false; } ),
+						  frame.commands.end() );
 }
 
 const InputFrame* GameServer::HistoryFrame( uint32_t tick ) const

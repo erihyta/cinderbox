@@ -9,7 +9,7 @@ namespace cb::net
 namespace
 {
 constexpr uint32_t kMagic = 0x50524243u; // "CBRP"
-constexpr uint32_t kVersion = 3; // 2: per-field input encoding, 3: baked map in the header
+constexpr uint32_t kVersion = 4; // 2: per-field input encoding, 3: baked map, 4: commands and mod schema
 constexpr uint8_t kRecordFrame = 1;
 constexpr uint8_t kRecordChecksum = 2;
 } // namespace
@@ -19,7 +19,8 @@ ReplayWriter::~ReplayWriter()
 	Close();
 }
 
-bool ReplayWriter::Open( const std::string& path, uint64_t fingerprint, const SimConfig& config, const std::vector<uint8_t>& map )
+bool ReplayWriter::Open( const std::string& path, uint64_t fingerprint, const SimConfig& config, const std::vector<uint8_t>& map,
+						const std::vector<uint8_t>& schema )
 {
 	Close();
 	m_file = std::fopen( path.c_str(), "wb" );
@@ -34,6 +35,7 @@ bool ReplayWriter::Open( const std::string& path, uint64_t fingerprint, const Si
 	header.config = config;
 	header.map = map;
 	header.mapHash = MapHash( map.data(), map.size() );
+	header.schema = schema;
 	std::vector<uint8_t> bytes;
 	Encode( header, bytes );
 
@@ -128,6 +130,11 @@ bool ReplayReader::Open( const std::string& path, std::string& error )
 	m_fingerprint = header.fingerprint;
 	m_config = header.config;
 	m_mapBytes = std::move( header.map );
+	if ( DecodeSchema( header.schema.data(), header.schema.size(), m_schema ) == false )
+	{
+		error = "corrupt mod schema in the replay header";
+		return false;
+	}
 	std::string mapError;
 	if ( DeserializeMap( m_mapBytes.data(), m_mapBytes.size(), m_map, mapError ) == false )
 	{

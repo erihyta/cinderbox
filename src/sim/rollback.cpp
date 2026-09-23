@@ -250,6 +250,17 @@ void RollbackSession::TrimHistory()
 	}
 }
 
+const InputFrame* RollbackSession::LastSimulatedFrame() const
+{
+	uint32_t tick = m_sim->Tick();
+	if ( tick == 0 )
+	{
+		return nullptr;
+	}
+	const TickRecord& r = m_records[( tick - 1 ) % m_records.size()];
+	return r.tick == tick - 1 ? &r.used : nullptr;
+}
+
 bool RollbackSession::GetConfirmedHash( uint32_t tick, uint64_t& hash ) const
 {
 	const ConfirmedHash& h = m_confirmedHashes[tick % kConfirmedHashHistory];

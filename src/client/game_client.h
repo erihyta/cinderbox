@@ -5,6 +5,7 @@
 
 #include "protocol.h"
 #include "map.h"
+#include "mod_schema.h"
 #include "rollback.h"
 #include "transport.h"
 
@@ -114,6 +115,16 @@ public:
 	{
 		return m_mapHash;
 	}
+	// What the server's mods declared: field, event and action names. Empty until joined.
+	const ModSchema& Schema() const
+	{
+		return m_schema;
+	}
+	// Changes whenever a new schema arrives (a different server), so users can rebind.
+	uint64_t SchemaGeneration() const
+	{
+		return m_schemaGeneration;
+	}
 	PlayerSlot Slot() const
 	{
 		return m_slot;
@@ -172,6 +183,8 @@ private:
 	// The map the server sent on join. The session is rebuilt when it changes.
 	LevelLayout m_map;
 	uint64_t m_mapHash = 0;
+	ModSchema m_schema;
+	uint64_t m_schemaGeneration = 0;
 
 	ClientState m_state = ClientState::Idle;
 	std::string m_rejectReason;

@@ -1,6 +1,7 @@
 #include "cinderbox_skeleton.h"
 
 #include "pose.h"
+#include "profile.h"
 
 #include <godot_cpp/classes/box_mesh.hpp>
 #include <godot_cpp/classes/standard_material3d.hpp>
@@ -102,6 +103,7 @@ void CinderboxSkeleton::_bind_methods()
 						  &CinderboxSkeleton::apply_anim_state );
 	ClassDB::bind_method( D_METHOD( "set_retarget", "value" ), &CinderboxSkeleton::set_retarget );
 	ClassDB::bind_method( D_METHOD( "get_retarget" ), &CinderboxSkeleton::get_retarget );
+	ClassDB::bind_method( D_METHOD( "get_joint_global_transform", "profile_name" ), &CinderboxSkeleton::get_joint_global_transform );
 	ClassDB::bind_method( D_METHOD( "set_use_slot_color", "value" ), &CinderboxSkeleton::set_use_slot_color );
 	ClassDB::bind_method( D_METHOD( "get_use_slot_color" ), &CinderboxSkeleton::get_use_slot_color );
 
@@ -178,8 +180,44 @@ void CinderboxSkeleton::EnsureMultiMesh( int instances )
 
 void CinderboxSkeleton::ApplyPose( const anim::PoseEvaluator& pose )
 {
-	const auto& skeleton = pose.Set().Skeleton();
-	const auto& models = pose.Models();
+	ApplyPose( pose.Set(), pose.Models() );
+}
+
+bool CinderboxSkeleton::JointTransform( const String& profileName, Transform3D& out ) const
+{
+	if ( m_lastSet == nullptr )
+	{
+		return false;
+	}
+	CharString name = profileName.utf8();
+	auto names = m_lastSet->Skeleton().joint_names();
+	for ( size_t j = 0; j < names.size() && j < m_lastModels.size(); ++j )
+	{
+		const char* profile = anim::ProfileName( names[j] );
+		if ( profile != nullptr && std::strcmp( profile, name.get_data() ) == 0 )
+		{
+			out = ToTransform( m_lastModels[j] ).orthonormalized();
+			return true;
+		}
+	}
+	return false;
+}
+
+Transform3D CinderboxSkeleton::get_joint_global_transform( const String& profile_name ) const
+{
+	Transform3D local;
+	if ( JointTransform( profile_name, local ) == false )
+	{
+		return get_global_transform();
+	}
+	return get_global_transform() * local;
+}
+
+void CinderboxSkeleton::ApplyPose( const anim::AnimSet& set, const ozz::vector<ozz::math::Float4x4>& models )
+{
+	m_lastSet = &set;
+	m_lastModels = models;
+	const auto& skeleton = set.Skeleton();
 	auto parents = skeleton.joint_parents();
 	auto names = skeleton.joint_names();
 	int joints = skeleton.num_joints();
@@ -226,49 +264,17 @@ void CinderboxSkeleton::ApplyPose( const anim::PoseEvaluator& pose )
 		}
 		if ( m_mappedSkeleton != target->get_instance_id() || int( m_boneMap.size() ) != joints )
 		{
-			Bind( target, pose );
+			Bind( target, set );
 		}
-		DriveSkeleton( target, pose );
+		DriveSkeleton( target, models );
 	}
 }
-
-// Joint names we may meet that mean one of the humanoid profile's bones. Godot retargets imported
-// characters onto that profile, so matching its names is what lets any character be driven; these
-// aliases cover rigs whose own names came straight from Mixamo.
-struct BoneAlias
-{
-	const char* from;
-	const char* to;
-};
-
-const BoneAlias kBoneAliases[] = {
-	{ "mixamorig:Hips", "Hips" },
-	{ "mixamorig:Spine", "Spine" },
-	{ "mixamorig:Spine1", "Chest" },
-	{ "mixamorig:Spine2", "UpperChest" },
-	{ "mixamorig:Neck", "Neck" },
-	{ "mixamorig:Head", "Head" },
-	{ "mixamorig:LeftShoulder", "LeftShoulder" },
-	{ "mixamorig:LeftArm", "LeftUpperArm" },
-	{ "mixamorig:LeftForeArm", "LeftLowerArm" },
-	{ "mixamorig:LeftHand", "LeftHand" },
-	{ "mixamorig:RightShoulder", "RightShoulder" },
-	{ "mixamorig:RightArm", "RightUpperArm" },
-	{ "mixamorig:RightForeArm", "RightLowerArm" },
-	{ "mixamorig:RightHand", "RightHand" },
-	{ "mixamorig:LeftUpLeg", "LeftUpperLeg" },
-	{ "mixamorig:LeftLeg", "LeftLowerLeg" },
-	{ "mixamorig:LeftFoot", "LeftFoot" },
-	{ "mixamorig:LeftToeBase", "LeftToes" },
-	{ "mixamorig:RightUpLeg", "RightUpperLeg" },
-	{ "mixamorig:RightLeg", "RightLowerLeg" },
-	{ "mixamorig:RightFoot", "RightFoot" },
-	{ "mixamorig:RightToeBase", "RightToes" },
-};
 
 namespace
 {
 
+// Joint names are matched as they are, then through the humanoid profile Godot retargets imported
+// characters onto (so Mixamo-named clips drive a profile-named character and the other way round).
 int FindTargetBone( Skeleton3D* target, const char* jointName )
 {
 	int bone = target->find_bone( String( jointName ) );
@@ -276,11 +282,16 @@ int FindTargetBone( Skeleton3D* target, const char* jointName )
 	{
 		return bone;
 	}
-	for ( const BoneAlias& alias : kBoneAliases )
+	if ( const char* profile = anim::ProfileName( jointName ) )
 	{
-		if ( std::strcmp( alias.from, jointName ) == 0 )
+		bone = target->find_bone( String( profile ) );
+		if ( bone >= 0 )
 		{
-			return target->find_bone( String( alias.to ) );
+			return bone;
+		}
+		if ( const char* mixamo = anim::MixamoName( profile ) )
+		{
+			return target->find_bone( String( mixamo ) );
 		}
 	}
 	return -1;
@@ -321,9 +332,9 @@ void CinderboxSkeleton::apply_anim_state( int mode, float mode_time, float locom
 	ApplyPose( *m_previewPose );
 }
 
-void CinderboxSkeleton::Bind( Skeleton3D* target, const anim::PoseEvaluator& pose )
+void CinderboxSkeleton::Bind( Skeleton3D* target, const anim::AnimSet& set )
 {
-	const auto& skeleton = pose.Set().Skeleton();
+	const auto& skeleton = set.Skeleton();
 	auto names = skeleton.joint_names();
 	int joints = skeleton.num_joints();
 
@@ -334,7 +345,7 @@ void CinderboxSkeleton::Bind( Skeleton3D* target, const anim::PoseEvaluator& pos
 	m_hipScale = 1.0f;
 
 	// Our rig's rest in model space, which is what the pose is relative to.
-	const ozz::vector<ozz::math::Float4x4>& restModels = pose.Set().RestModels();
+	const ozz::vector<ozz::math::Float4x4>& restModels = set.RestModels();
 
 	for ( int j = 0; j < joints; ++j )
 	{
@@ -366,9 +377,8 @@ void CinderboxSkeleton::Bind( Skeleton3D* target, const anim::PoseEvaluator& pos
 	}
 }
 
-void CinderboxSkeleton::DriveSkeleton( Skeleton3D* target, const anim::PoseEvaluator& pose )
+void CinderboxSkeleton::DriveSkeleton( Skeleton3D* target, const ozz::vector<ozz::math::Float4x4>& models )
 {
-	const auto& models = pose.Models();
 	int joints = int( m_boneMap.size() );
 
 	if ( m_retarget == false )

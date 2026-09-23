@@ -60,7 +60,8 @@ void ClientThread::SetInput( const PlayerInput& input )
 {
 	std::lock_guard<std::mutex> lock( m_inputMutex );
 	m_input = input;
-	m_latchedButtons |= uint8_t( input.buttons & ( BtnJump | BtnSpawnProp ) );
+	m_latchedButtons |= uint8_t( input.buttons & BtnJump );
+	m_latchedActions |= input.actions;
 }
 
 bool ClientThread::TakeFrame( PublishedFrame& out )
@@ -97,10 +98,22 @@ void ClientThread::Publish( GameClient& client, double now, bool rolledBack )
 		}
 	}
 
+	if ( f.schemaGeneration != client.SchemaGeneration() )
+	{
+		f.schemaGeneration = client.SchemaGeneration();
+		f.schema = client.Schema();
+	}
+
 	if ( RollbackSession* session = client.Session() )
 	{
 		Simulation& sim = session->Sim();
 		present::CaptureFrame( sim, f.frame );
+		const InputFrame* last = session->LastSimulatedFrame();
+		f.frame.hasInputs = last != nullptr;
+		if ( last != nullptr )
+		{
+			f.frame.inputs = last->inputs;
+		}
 		f.frame.resetGeneration = client.ResetGeneration();
 		f.frame.localNetId = sim.Globals().playerNetIds[client.Slot()];
 		f.rollback = session->GetStats();
@@ -138,7 +151,9 @@ void ClientThread::Run( ClientOptions options )
 			std::lock_guard<std::mutex> lock( m_inputMutex );
 			PlayerInput in = m_input;
 			in.buttons |= m_latchedButtons;
+			in.actions |= m_latchedActions;
 			m_latchedButtons = 0;
+			m_latchedActions = 0;
 			return in;
 		} );
 

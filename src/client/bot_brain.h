@@ -17,6 +17,8 @@ struct BotBrain
 	uint32_t turnTicksLeft = 0;
 	uint32_t spawnOneIn = 40;  // chance per tick to press "spawn prop" (0 = never)
 	uint32_t jumpOneIn = 50;
+	// The server's "spawn_prop" action bit (from the mod schema); 0 when the server has none.
+	uint16_t spawnAction = 0;
 	bool chaotic = false; // worst case: every input field changes every tick
 
 	explicit BotBrain( uint64_t seed = 1 )
@@ -33,7 +35,9 @@ struct BotBrain
 			in.moveForward = int8_t( int( r % 255 ) - 127 );
 			in.moveRight = int8_t( int( ( r >> 8 ) % 255 ) - 127 );
 			in.cameraYaw = uint16_t( r >> 16 );
-			in.buttons = uint8_t( ( r >> 32 ) & ( BtnJump | BtnSprint | BtnSpawnProp ) );
+			in.buttons = uint8_t( ( r >> 32 ) & kEngineButtons );
+			in.cameraPitch = int16_t( int( ( r >> 40 ) % 8000 ) - 4000 );
+			in.actions = uint16_t( r >> 48 );
 			return in;
 		}
 
@@ -65,7 +69,7 @@ struct BotBrain
 		}
 		if ( spawnOneIn != 0 && ( ( r2 >> 20 ) % spawnOneIn ) == 0 )
 		{
-			out.buttons |= BtnSpawnProp;
+			out.actions |= spawnAction;
 		}
 		return out;
 	}

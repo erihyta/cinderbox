@@ -4,6 +4,7 @@ add_library(cb_sim STATIC
 	fingerprint.cpp
 	level.cpp
 	map.cpp
+	mod_schema.cpp
 	physics_arena.cpp
 	reflect.cpp
 	rollback.cpp

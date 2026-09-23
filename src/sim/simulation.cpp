@@ -4,6 +4,7 @@
 #include "box3d_shim.h"
 #include "detmath.h"
 #include "level.h"
+#include "ragdoll.h"
 #include "util.h"
 
 #include "box3d/box3d.h"
@@ -50,6 +51,22 @@ constexpr float kStepMinSpeed = 0.5f;
 constexpr float kImpactThreshold = 1.5f;
 
 constexpr uint32_t kSnapMagic = 0x43425331u; // 'CBS1'
+
+b3Vec3 ToVec( const Float3& f )
+{
+	return { f.x, f.y, f.z };
+}
+
+// Deterministic: inf - inf and NaN - NaN are NaN, which never compares equal.
+bool IsFinite( float f )
+{
+	return f - f == 0.0f;
+}
+
+bool IsFinite( const Float3& f )
+{
+	return IsFinite( f.x ) && IsFinite( f.y ) && IsFinite( f.z );
+}
 
 bool SameShape( b3ShapeId a, b3ShapeId b )
 {
@@ -210,6 +227,10 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<StaticGeometry>();
 	RegisterSnapComponent<AnimState>();
 	RegisterSnapComponent<TemplateRef>();
+	RegisterSnapComponent<Blackboard>();
+	RegisterSnapComponent<Ragdoll>();
+	RegisterSnapComponent<RagdollBodies>();
+	RegisterSnapComponent<RagdollPose>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -244,6 +265,15 @@ void Simulation::DestroyEntity( flecs::entity e )
 	if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
 	{
 		b3DestroyBody( BodyOf( *pb ) );
+	}
+	if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
+	{
+		// Destroying a body destroys its joints with it.
+		for ( b3BodyId body : rb->body )
+		{
+			body.world0 = uint16_t( m_physicsWorld.index1 - 1 );
+			b3DestroyBody( body );
+		}
 	}
 
 	uint32_t netId = e.get<NetId>().value;
@@ -491,6 +521,27 @@ flecs::entity Simulation::CreatePlayer( PlayerSlot slot )
 	return e;
 }
 
+void Simulation::PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw )
+{
+	Character c = e.get<Character>();
+	Transform t{ position, detmath::YawRotation( yaw ) };
+	c.velocity = { 0.0f, 0.0f, 0.0f };
+	c.pogoVelocity = 0.0f;
+	c.facingYaw = yaw;
+	c.grounded = 0;
+	c.airTicks = 0;
+	c.groundTicks = 0;
+	c.stepDistance = 0.0f;
+	e.set<Character>( c );
+	e.set<AnimState>( {} );
+	e.set<Transform>( t );
+	e.set<Velocity>( {} );
+
+	b3BodyId body = BodyOf( e.get<PhysicsBody>() );
+	b3Body_SetTransform( body, t.position, t.rotation );
+	b3Body_SetLinearVelocity( body, { 0.0f, 0.0f, 0.0f } );
+}
+
 void Simulation::ApplyEvents( const InputFrame& frame )
 {
 	for ( const PlayerEvent& ev : frame.events )
@@ -519,8 +570,6 @@ void Simulation::ApplyEvents( const InputFrame& frame )
 
 void Simulation::MoveCharacters( const InputFrame& frame )
 {
-	m_spawnRequests.clear();
-
 	// Slot order == deterministic order, and independent of entity creation history.
 	for ( int slot = 0; slot < kMaxPlayers; ++slot )
 	{
@@ -533,14 +582,17 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		flecs::entity e = FindEntity( netId );
 		const PlayerInput& in = frame.inputs[slot];
 		Character c = e.get<Character>();
+		if ( c.dead )
+		{
+			// Held buttons are still tracked, so a jump held through the respawn is not a press.
+			c.prevButtons = in.buttons;
+			e.set<Character>( c );
+			continue;
+		}
 		Transform t = e.get<Transform>();
 		PhysicsBody pb = e.get<PhysicsBody>();
 
 		uint8_t pressed = uint8_t( in.buttons & ~c.prevButtons );
-		if ( pressed & BtnSpawnProp )
-		{
-			m_spawnRequests.push_back( netId );
-		}
 
 		MoveCharacter( c, t, pb, in, pressed );
 		c.prevButtons = in.buttons;
@@ -626,7 +678,7 @@ void Simulation::MoveCharacter( Character& c, Transform& t, const PhysicsBody& p
 	float pogoRest = 3.0f * kCapsuleRadius;
 	float rayLength = pogoRest + kCapsuleRadius;
 	b3Pos rayOrigin = b3Add( t.position, capsule.center1 );
-	b3QueryFilter groundFilter = { CatPlayer, CatStatic | CatProp, 0, nullptr };
+	b3QueryFilter groundFilter = { CatPlayer, CatStatic | CatProp | CatRagdoll, 0, nullptr };
 	b3RayResult ray = b3World_CastRayClosest( m_physicsWorld, rayOrigin, { 0.0f, -rayLength, 0.0f }, groundFilter );
 
 	bool wasGrounded = c.grounded != 0;
@@ -728,42 +780,6 @@ void Simulation::MoveCharacter( Character& c, Transform& t, const PhysicsBody& p
 	b3Body_SetTargetTransform( BodyOf( pb ), { t.position, t.rotation }, dt, true );
 }
 
-void Simulation::SpawnProps()
-{
-	uint32_t lifetime = m_config.PropLifetimeTicks();
-	for ( uint32_t ownerId : m_spawnRequests )
-	{
-		flecs::entity owner = FindEntity( ownerId );
-		const Character& c = owner.get<Character>();
-		const Transform& t = owner.get<Transform>();
-
-		b3Vec3 fwd = detmath::YawForward( c.facingYaw );
-		b3Vec3 pos = b3Add( t.position, b3Add( b3MulSV( 1.2f, fwd ), b3Vec3{ 0.0f, 0.6f, 0.0f } ) );
-		b3Vec3 vel = b3Add( c.velocity, b3Add( b3MulSV( 3.0f, fwd ), b3Vec3{ 0.0f, 2.0f, 0.0f } ) );
-
-		// A map can say what the spawn button makes; without one, the built-in random prop.
-		if ( m_map.spawnTemplate != kNoTemplate )
-		{
-			flecs::entity e = CreateFromTemplate( m_map.spawnTemplate, pos, detmath::YawRotation( c.facingYaw ), vel, ownerId );
-			// Whatever the template says, something a player spawned expires and counts against
-			// the caps; otherwise a map could let players fill the world.
-			if ( e.is_valid() && e.has<Prop>() == false )
-			{
-				e.set<Prop>( { ownerId, m_globals.tick, m_globals.tick + lifetime } );
-			}
-			continue;
-		}
-
-		uint64_t& rng = m_globals.rngState;
-		bool sphere = ( NextRandom( rng ) & 1 ) != 0;
-		float size = RandomRange( rng, 0.2f, 0.45f );
-		b3Vec3 half = sphere ? b3Vec3{ size, 0.0f, 0.0f } : b3Vec3{ size, size, size };
-
-		CreateProp( sphere ? ShapeKind::Sphere : ShapeKind::Box, pos, detmath::YawRotation( c.facingYaw ), half, vel, ownerId,
-					lifetime );
-	}
-}
-
 void Simulation::ExpireProps()
 {
 	uint32_t tick = m_globals.tick;
@@ -773,6 +789,12 @@ void Simulation::ExpireProps()
 		flecs::entity e( m_world, r.entity );
 		const Prop* p = e.try_get<Prop>();
 		if ( p != nullptr && p->despawnTick != 0 && tick >= p->despawnTick )
+		{
+			m_scratch.push_back( r );
+			continue;
+		}
+		const Ragdoll* rd = e.try_get<Ragdoll>();
+		if ( rd != nullptr && rd->despawnTick != 0 && tick >= rd->despawnTick )
 		{
 			m_scratch.push_back( r );
 		}
@@ -841,6 +863,22 @@ void Simulation::SyncFromPhysics()
 	for ( const EntityRef& r : m_entities )
 	{
 		flecs::entity e( m_world, r.entity );
+		if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
+		{
+			RagdollPose pose;
+			for ( int i = 0; i < kRagdollParts; ++i )
+			{
+				b3BodyId body = rb->body[i];
+				body.world0 = uint16_t( m_physicsWorld.index1 - 1 );
+				b3WorldTransform xf = b3Body_GetTransform( body );
+				pose.part[i] = { xf.p, xf.q };
+				pose.linear[i] = b3Body_GetLinearVelocity( body );
+			}
+			e.set<RagdollPose>( pose );
+			e.set<Transform>( pose.part[ragdoll::Pelvis] );
+			continue;
+		}
+
 		// Everything the physics engine moves: props and entities placed from a map template.
 		// Static geometry never moves, and characters are driven by the mover instead.
 		if ( e.has<PhysicsBody>() == false || e.has<StaticGeometry>() || e.has<Character>() )
@@ -865,22 +903,8 @@ void Simulation::CollectImpacts()
 
 	// Shapes know nothing about entities, so map them back by shape index. Rebuilt only on ticks
 	// that actually produced a hit, which is rare enough to keep this off the common path.
-	m_shapeLookup.clear();
-	for ( const EntityRef& r : m_entities )
-	{
-		const PhysicsBody* pb = flecs::entity( m_world, r.entity ).try_get<PhysicsBody>();
-		if ( pb != nullptr )
-		{
-			m_shapeLookup.push_back( { uint32_t( pb->shape.index1 ), r.netId } );
-		}
-	}
-	std::sort( m_shapeLookup.begin(), m_shapeLookup.end() );
-
-	auto netIdOf = [this]( b3ShapeId shape ) -> uint32_t {
-		uint32_t index = uint32_t( shape.index1 );
-		auto it = std::lower_bound( m_shapeLookup.begin(), m_shapeLookup.end(), std::make_pair( index, uint32_t( 0 ) ) );
-		return ( it != m_shapeLookup.end() && it->first == index ) ? it->second : 0;
-	};
+	BuildShapeLookup();
+	auto netIdOf = [this]( b3ShapeId shape ) { return NetIdOfShape( shape ); };
 
 	m_impactScratch.clear();
 	for ( int i = 0; i < events.hitCount; ++i )
@@ -933,7 +957,7 @@ void Simulation::UpdateFootsteps()
 		// Stride phase, not a timer: steps stay in step with how far the character actually moved,
 		// so walking and sprinting sound right without a separate rate for each.
 		float speed = b3Length( b3Vec3{ c->velocity.x, 0.0f, c->velocity.z } );
-		if ( c->grounded == 0 || speed < kStepMinSpeed )
+		if ( c->dead || c->grounded == 0 || speed < kStepMinSpeed )
 		{
 			c->stepDistance = 0.0f;
 			continue;
@@ -964,21 +988,14 @@ void Simulation::HandleOutOfBounds()
 		if ( e.has<Character>() )
 		{
 			Character c = e.get<Character>();
-			Transform respawn{ SpawnPoint( c.slot ), detmath::YawRotation( 0.0f ) };
-			c.velocity = { 0.0f, 0.0f, 0.0f };
-			c.pogoVelocity = 0.0f;
-			c.facingYaw = 0.0f;
-			c.grounded = 0;
-			c.airTicks = 0;
-			c.groundTicks = 0;
+			if ( c.dead )
+			{
+				continue; // its body is disabled and it does not move
+			}
+			// The engine only rescues the character; whether that was a death is a mod's call.
+			c.fallCount += 1;
 			e.set<Character>( c );
-			e.set<AnimState>( {} );
-			e.set<Transform>( respawn );
-			e.set<Velocity>( {} );
-
-			b3BodyId body = BodyOf( e.get<PhysicsBody>() );
-			b3Body_SetTransform( body, respawn.position, respawn.rotation );
-			b3Body_SetLinearVelocity( body, { 0.0f, 0.0f, 0.0f } );
+			PlaceCharacter( e, SpawnPoint( c.slot ), 0.0f );
 		}
 		else
 		{
@@ -1003,8 +1020,8 @@ void Simulation::Step( const InputFrame& frame )
 	PhysicsArena::Scope scope( *m_arena );
 
 	ApplyEvents( frame );
+	ApplyCommands( frame );
 	MoveCharacters( frame );
-	SpawnProps();
 	ExpireProps();
 	EnforcePropCaps();
 
@@ -1187,6 +1204,514 @@ bool Simulation::LoadPortable( const std::vector<uint8_t>& in )
 	m_hashScratch.assign( ecs, ecs + ecsSize );
 	DeserializeEcs( m_hashScratch );
 	return true;
+}
+
+} // namespace cb
+
+// --- Commands --------------------------------------------------------------------------------------
+
+namespace cb
+{
+
+uint32_t Simulation::ResolveTarget( uint32_t target ) const
+{
+	if ( target & kSlotTargetBit )
+	{
+		uint32_t slot = target & ~kSlotTargetBit;
+		return slot < uint32_t( kMaxPlayers ) ? m_globals.playerNetIds[slot] : 0;
+	}
+	return target;
+}
+
+void Simulation::ApplyCommands( const InputFrame& frame )
+{
+	for ( const SimCommand& command : frame.commands )
+	{
+		ApplyCommand( command );
+	}
+}
+
+void Simulation::ApplyCommand( const SimCommand& command )
+{
+	// A server never sends these, but a bad value must not reach Box3D on anyone's machine.
+	if ( IsFinite( command.a ) == false || IsFinite( command.b ) == false || IsFinite( command.c ) == false )
+	{
+		return;
+	}
+
+	switch ( command.type )
+	{
+		case CommandType::SetField:
+		{
+			if ( command.index >= kBoardSlots )
+			{
+				return;
+			}
+			if ( command.target == 0 )
+			{
+				m_globals.board[command.index] = command.value;
+				return;
+			}
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() == false )
+			{
+				return;
+			}
+			Blackboard board = e.has<Blackboard>() ? e.get<Blackboard>() : Blackboard{};
+			board.values[command.index] = command.value;
+			e.set<Blackboard>( board );
+			return;
+		}
+
+		case CommandType::Event:
+		{
+			ModEventRecord record;
+			record.type = command.index;
+			record.netIdA = ResolveTarget( command.target );
+			record.netIdB = ResolveTarget( command.other );
+			record.tick = m_globals.tick;
+			record.value = command.value;
+			record.point = ToVec( command.a );
+			record.vector = ToVec( command.b );
+			m_globals.modEvents[m_globals.modEventCount % kModEventHistory] = record;
+			m_globals.modEventCount += 1;
+			return;
+		}
+
+		case CommandType::SpawnProp:
+		{
+			uint32_t owner = 0;
+			if ( command.target != 0 )
+			{
+				owner = ResolveTarget( command.target );
+				if ( owner == 0 || FindEntity( owner ).is_valid() == false )
+				{
+					return; // the player it was for has left
+				}
+			}
+			b3Vec3 position = ToVec( command.a );
+			b3Vec3 velocity = ToVec( command.b );
+			b3Quat rotation = detmath::YawRotation( detmath::YawToRadians( command.index ) );
+			uint32_t lifetime = command.other;
+
+			if ( command.value >= 0 )
+			{
+				flecs::entity e = CreateFromTemplate( uint32_t( command.value ), position, rotation, velocity, owner );
+				// Whatever the template says, something a player spawned expires and counts against
+				// the caps; otherwise a mod could let players fill the world.
+				if ( e.is_valid() && owner != 0 && ( e.has<Prop>() == false || e.get<Prop>().despawnTick == 0 ) )
+				{
+					uint32_t ticks = lifetime > 0 ? lifetime : m_config.PropLifetimeTicks();
+					e.set<Prop>( { owner, m_globals.tick, m_globals.tick + ticks } );
+				}
+				return;
+			}
+
+			ShapeKind kind = ShapeKind( std::min<uint8_t>( command.mode, uint8_t( ShapeKind::Capsule ) ) );
+			b3Vec3 half = ToVec( command.c );
+			half = { std::clamp( half.x, 0.02f, 8.0f ), std::clamp( half.y, 0.0f, 8.0f ), std::clamp( half.z, 0.02f, 8.0f ) };
+			if ( kind == ShapeKind::Box )
+			{
+				half.y = std::max( half.y, 0.02f );
+			}
+			CreateProp( kind, position, rotation, half, velocity, owner, lifetime );
+			return;
+		}
+
+		case CommandType::Destroy:
+		{
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			// Players come and go with join and leave events, never by command.
+			if ( e.is_valid() && e.has<Character>() == false )
+			{
+				DestroyEntity( e );
+			}
+			return;
+		}
+
+		case CommandType::Impulse:
+		{
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() )
+			{
+				ApplyImpulse( e, command );
+			}
+			return;
+		}
+
+		case CommandType::Kill:
+		{
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() && e.has<Character>() )
+			{
+				KillPlayer( e, command );
+			}
+			return;
+		}
+
+		case CommandType::Respawn:
+		{
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() && e.has<Character>() )
+			{
+				RespawnPlayer( e, command );
+			}
+			return;
+		}
+	}
+}
+
+namespace
+{
+
+void PushBody( b3BodyId body, b3Vec3 point, b3Vec3 vector, uint8_t mode )
+{
+	if ( b3Body_GetType( body ) != b3_dynamicBody )
+	{
+		return;
+	}
+	b3Vec3 impulse = mode == ImpulseVelocity ? b3MulSV( b3Body_GetMass( body ), vector ) : vector;
+	b3Body_ApplyLinearImpulse( body, impulse, point, true );
+}
+
+} // namespace
+
+void Simulation::ApplyImpulse( flecs::entity e, const SimCommand& command )
+{
+	b3Vec3 point = ToVec( command.a );
+	b3Vec3 vector = ToVec( command.b );
+
+	if ( e.has<Character>() )
+	{
+		// Characters are moved by the mover, not by forces, and have no mass it knows about:
+		// knockback is a change of velocity whatever the mode.
+		Character c = e.get<Character>();
+		if ( c.dead == 0 )
+		{
+			c.velocity = b3Add( c.velocity, vector );
+			if ( vector.y > 0.0f )
+			{
+				// A grounded character has its vertical speed cleared by the mover; a push
+				// upward has to leave the ground to count, the same way a jump does.
+				c.grounded = 0;
+			}
+			e.set<Character>( c );
+		}
+		return;
+	}
+
+	if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
+	{
+		// The part nearest the point takes the hit; the joints pass it on.
+		int nearest = 0;
+		float best = FLT_MAX;
+		for ( int i = 0; i < kRagdollParts; ++i )
+		{
+			b3BodyId body = rb->body[i];
+			body.world0 = uint16_t( m_physicsWorld.index1 - 1 );
+			float d = b3DistanceSquared( b3Body_GetWorldCenter( body ), point );
+			if ( d < best )
+			{
+				best = d;
+				nearest = i;
+			}
+		}
+		b3BodyId body = rb->body[nearest];
+		body.world0 = uint16_t( m_physicsWorld.index1 - 1 );
+		PushBody( body, point, vector, command.mode );
+		return;
+	}
+
+	if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
+	{
+		PushBody( BodyOf( *pb ), point, vector, command.mode );
+	}
+}
+
+void Simulation::KillPlayer( flecs::entity e, const SimCommand& command )
+{
+	Character c = e.get<Character>();
+	if ( c.dead )
+	{
+		return;
+	}
+
+	if ( command.mode == 1 )
+	{
+		flecs::entity body = CreateRagdoll( e, command.other );
+		SimCommand hit = command;
+		hit.mode = ImpulseVelocity;
+		ApplyImpulse( body, hit );
+		EnforceRagdollCap( command.value > 0 ? uint32_t( command.value ) : 0 );
+	}
+
+	c.dead = 1;
+	c.velocity = { 0.0f, 0.0f, 0.0f };
+	c.pogoVelocity = 0.0f;
+	c.grounded = 0;
+	c.sprinting = 0;
+	c.airTicks = 0;
+	c.groundTicks = 0;
+	c.stepDistance = 0.0f;
+	e.set<Character>( c );
+	e.set<Velocity>( {} );
+	// Out of the broadphase: nothing collides with it or hits it with a ray until it respawns.
+	b3Body_Disable( BodyOf( e.get<PhysicsBody>() ) );
+}
+
+void Simulation::RespawnPlayer( flecs::entity e, const SimCommand& command )
+{
+	Character c = e.get<Character>();
+	b3BodyId body = BodyOf( e.get<PhysicsBody>() );
+	if ( c.dead )
+	{
+		c.dead = 0;
+		e.set<Character>( c );
+		b3Body_Enable( body );
+	}
+	if ( command.mode == 1 )
+	{
+		PlaceCharacter( e, ToVec( command.a ), detmath::YawToRadians( command.index ) );
+	}
+	else
+	{
+		PlaceCharacter( e, SpawnPoint( c.slot ), 0.0f );
+	}
+}
+
+flecs::entity Simulation::CreateRagdoll( flecs::entity player, uint32_t lifetimeTicks )
+{
+	using namespace ragdoll;
+
+	const Transform t = player.get<Transform>();
+	const Character c = player.get<Character>();
+	b3Quat facing = detmath::YawRotation( c.facingYaw );
+	b3Vec3 feet = b3Sub( t.position, b3Vec3{ 0.0f, kFeetBelowCenter, 0.0f } );
+
+	RagdollBodies bodies;
+	b3BodyId live[PartCount];
+	for ( int i = 0; i < PartCount; ++i )
+	{
+		const PartDef& part = kParts[i];
+		b3BodyDef def = b3DefaultBodyDef();
+		def.type = b3_dynamicBody;
+		def.position = b3Add( feet, b3RotateVector( facing, part.center ) );
+		def.rotation = facing;
+		def.linearVelocity = c.velocity;
+		def.linearDamping = kLinearDamping;
+		def.angularDamping = kAngularDamping;
+		live[i] = b3CreateBody( m_physicsWorld, &def );
+
+		Shape shape{ part.shape, {}, part.size };
+		ShapeMaterial material{ kDensity, ragdoll::kFriction, 0.0f };
+		b3ShapeId shapeId = CreateShape( live[i], shape, CatRagdoll, material );
+
+		PhysicsBody stored = MakePhysicsBody( live[i], shapeId );
+		bodies.body[i] = stored.body;
+		bodies.shape[i] = stored.shape;
+	}
+
+	// Joint frames point their z axis along the bone (spherical joints: the cone and twist axis)
+	// or along the character's X (hinges: the axis a knee or elbow turns about). Every part starts
+	// with the same orientation, so one frame rotation serves both sides of a joint.
+	const b3Vec3 xAxis = { 1.0f, 0.0f, 0.0f };
+	const b3Vec3 yAxis = { 0.0f, 1.0f, 0.0f };
+	for ( int i = 0; i < PartCount; ++i )
+	{
+		const PartDef& part = kParts[i];
+		if ( part.parent < 0 )
+		{
+			continue;
+		}
+		const PartDef& parent = kParts[part.parent];
+		b3Transform frameA = { b3Sub( part.anchor, parent.center ), b3Quat_identity };
+		b3Transform frameB = { b3Sub( part.anchor, part.center ), b3Quat_identity };
+
+		if ( part.joint == JointKind::Hinge )
+		{
+			b3Quat q = b3MakeQuatFromAxisAngle( yAxis, 0.5f * detmath::kPi );
+			frameA.q = q;
+			frameB.q = q;
+			b3RevoluteJointDef def = b3DefaultRevoluteJointDef();
+			def.base.bodyIdA = live[part.parent];
+			def.base.bodyIdB = live[i];
+			def.base.localFrameA = frameA;
+			def.base.localFrameB = frameB;
+			def.enableLimit = true;
+			def.lowerAngle = part.lower;
+			def.upperAngle = part.upper;
+			b3CreateRevoluteJoint( m_physicsWorld, &def );
+		}
+		else
+		{
+			b3Quat q = b3MakeQuatFromAxisAngle( xAxis, -part.direction * 0.5f * detmath::kPi );
+			frameA.q = q;
+			frameB.q = q;
+			b3SphericalJointDef def = b3DefaultSphericalJointDef();
+			def.base.bodyIdA = live[part.parent];
+			def.base.bodyIdB = live[i];
+			def.base.localFrameA = frameA;
+			def.base.localFrameB = frameB;
+			def.enableConeLimit = true;
+			def.coneAngle = part.cone;
+			def.enableTwistLimit = true;
+			def.lowerTwistAngle = part.lower;
+			def.upperTwistAngle = part.upper;
+			b3CreateSphericalJoint( m_physicsWorld, &def );
+		}
+	}
+
+	RagdollPose pose;
+	for ( int i = 0; i < PartCount; ++i )
+	{
+		pose.part[i] = { b3Add( feet, b3RotateVector( facing, kParts[i].center ) ), facing };
+		pose.linear[i] = c.velocity;
+	}
+
+	flecs::entity e = CreateEntity();
+	Ragdoll r;
+	r.owner = player.get<NetId>().value;
+	r.slot = c.slot;
+	r.spawnTick = m_globals.tick;
+	r.despawnTick = lifetimeTicks > 0 ? m_globals.tick + lifetimeTicks : 0;
+	r.yaw = c.facingYaw;
+	e.set<Ragdoll>( r );
+	e.set<RagdollBodies>( bodies );
+	e.set<RagdollPose>( pose );
+	e.set<Transform>( pose.part[Pelvis] );
+	return e;
+}
+
+void Simulation::EnforceRagdollCap( uint32_t cap )
+{
+	if ( cap == 0 )
+	{
+		return;
+	}
+	uint32_t count = 0;
+	for ( const EntityRef& r : m_entities )
+	{
+		count += flecs::entity( m_world, r.entity ).has<Ragdoll>() ? 1 : 0;
+	}
+	// NetId order is creation order, so the oldest go first.
+	m_scratch.clear();
+	for ( const EntityRef& r : m_entities )
+	{
+		if ( count <= cap )
+		{
+			break;
+		}
+		if ( flecs::entity( m_world, r.entity ).has<Ragdoll>() )
+		{
+			m_scratch.push_back( r );
+			count -= 1;
+		}
+	}
+	for ( const EntityRef& r : m_scratch )
+	{
+		DestroyEntity( flecs::entity( m_world, r.entity ) );
+	}
+}
+
+// --- Queries ---------------------------------------------------------------------------------------
+
+void Simulation::BuildShapeLookup()
+{
+	m_shapeLookup.clear();
+	for ( const EntityRef& r : m_entities )
+	{
+		flecs::entity e( m_world, r.entity );
+		if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
+		{
+			m_shapeLookup.push_back( { uint32_t( pb->shape.index1 ), r.netId } );
+		}
+		if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
+		{
+			for ( const b3ShapeId& shape : rb->shape )
+			{
+				m_shapeLookup.push_back( { uint32_t( shape.index1 ), r.netId } );
+			}
+		}
+	}
+	std::sort( m_shapeLookup.begin(), m_shapeLookup.end() );
+}
+
+uint32_t Simulation::NetIdOfShape( b3ShapeId shape ) const
+{
+	uint32_t index = uint32_t( shape.index1 );
+	auto it = std::lower_bound( m_shapeLookup.begin(), m_shapeLookup.end(), std::make_pair( index, uint32_t( 0 ) ) );
+	return ( it != m_shapeLookup.end() && it->first == index ) ? it->second : 0;
+}
+
+const Character* Simulation::PlayerCharacter( PlayerSlot slot ) const
+{
+	if ( slot >= kMaxPlayers || m_globals.playerNetIds[slot] == 0 )
+	{
+		return nullptr;
+	}
+	flecs::entity e = FindEntity( m_globals.playerNetIds[slot] );
+	return e.is_valid() ? e.try_get<Character>() : nullptr;
+}
+
+const Transform* Simulation::EntityTransform( uint32_t netId ) const
+{
+	flecs::entity e = FindEntity( netId );
+	return e.is_valid() ? e.try_get<Transform>() : nullptr;
+}
+
+int32_t Simulation::BoardValue( uint32_t netId, int slot ) const
+{
+	if ( slot < 0 || slot >= kBoardSlots )
+	{
+		return 0;
+	}
+	flecs::entity e = FindEntity( netId );
+	const Blackboard* board = e.is_valid() ? e.try_get<Blackboard>() : nullptr;
+	return board != nullptr ? board->values[slot] : 0;
+}
+
+namespace
+{
+
+struct RayContext
+{
+	const Simulation* sim;
+	uint32_t ignore;
+	RayHit* hit;
+	bool found;
+};
+
+} // namespace
+
+// Friend-free access to the lookup: the callback only needs NetIdOfShape.
+float Simulation::RayCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t, int, int, void* context )
+{
+	auto* ctx = static_cast<RayContext*>( context );
+	uint32_t netId = ctx->sim->NetIdOfShape( shapeId );
+	if ( netId != 0 && netId == ctx->ignore )
+	{
+		return -1.0f; // filter: carry on as if it were not there
+	}
+	if ( ctx->found == false || fraction < ctx->hit->fraction )
+	{
+		ctx->hit->netId = netId;
+		ctx->hit->point = point;
+		ctx->hit->normal = normal;
+		ctx->hit->fraction = fraction;
+		ctx->found = true;
+	}
+	return fraction; // clip: only closer hits from here on
+}
+
+bool Simulation::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit )
+{
+	PhysicsArena::Scope scope( *m_arena );
+	BuildShapeLookup();
+	hit = RayHit{};
+	RayContext ctx{ this, ignoreNetId, &hit, false };
+	b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( 0 ), 0, nullptr };
+	b3World_CastRay( m_physicsWorld, origin, translation, filter, &Simulation::RayCallback, &ctx );
+	return ctx.found;
 }
 
 } // namespace cb

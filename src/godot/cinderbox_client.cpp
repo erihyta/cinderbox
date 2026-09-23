@@ -3,6 +3,7 @@
 #include "cinderbox_animator.h"
 #include "cinderbox_skeleton.h"
 #include "detmath.h"
+#include "pose_tools.h"
 #include "types.h"
 
 #include <godot_cpp/classes/engine.hpp>
@@ -44,6 +45,8 @@ const char* KindName( present::VisualKind kind )
 			return "static";
 		case present::VisualKind::Player:
 			return "player";
+		case present::VisualKind::Ragdoll:
+			return "ragdoll";
 		case present::VisualKind::Prop:
 		default:
 			return "prop";
@@ -92,7 +95,24 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "connect_to_server" ), &CinderboxClient::connect_to_server );
 	ClassDB::bind_method( D_METHOD( "disconnect_from_server" ), &CinderboxClient::disconnect_from_server );
 	ClassDB::bind_method( D_METHOD( "is_running" ), &CinderboxClient::is_running );
-	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "jump", "sprint", "spawn_prop" ), &CinderboxClient::set_input );
+	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "actions" ),
+						  &CinderboxClient::set_input );
+	ClassDB::bind_method( D_METHOD( "get_actions" ), &CinderboxClient::get_actions );
+	ClassDB::bind_method( D_METHOD( "get_mod_names" ), &CinderboxClient::get_mod_names );
+	ClassDB::bind_method( D_METHOD( "get_field", "net_id", "name" ), &CinderboxClient::get_field );
+	ClassDB::bind_method( D_METHOD( "get_local_field", "name" ), &CinderboxClient::get_local_field );
+	ClassDB::bind_method( D_METHOD( "check_conditions", "net_id", "conditions" ), &CinderboxClient::check_conditions );
+	ClassDB::bind_method( D_METHOD( "check_local_conditions", "conditions" ), &CinderboxClient::check_local_conditions );
+	ClassDB::bind_method( D_METHOD( "format_local_fields", "format" ), &CinderboxClient::format_local_fields );
+	ClassDB::bind_method( D_METHOD( "get_local_net_id" ), &CinderboxClient::get_local_net_id );
+	ClassDB::bind_method( D_METHOD( "is_local_player_dead" ), &CinderboxClient::is_local_player_dead );
+	ClassDB::bind_method( D_METHOD( "get_camera_target" ), &CinderboxClient::get_camera_target );
+	ClassDB::bind_method( D_METHOD( "get_bone_position", "net_id", "bone" ), &CinderboxClient::get_bone_position );
+	ClassDB::bind_method( D_METHOD( "get_kind", "net_id" ), &CinderboxClient::get_kind );
+	ClassDB::bind_method( D_METHOD( "get_entity_template_name", "net_id" ), &CinderboxClient::get_entity_template_name );
+	ClassDB::bind_method( D_METHOD( "get_entity_node", "net_id" ), &CinderboxClient::get_entity_node );
+	ClassDB::bind_method( D_METHOD( "add_state_binding", "binding" ), &CinderboxClient::add_state_binding );
+	ClassDB::bind_method( D_METHOD( "clear_state_bindings" ), &CinderboxClient::clear_state_bindings );
 	ClassDB::bind_method( D_METHOD( "get_stats" ), &CinderboxClient::get_stats );
 	ClassDB::bind_method( D_METHOD( "get_connection_state" ), &CinderboxClient::get_connection_state );
 	ClassDB::bind_method( D_METHOD( "has_local_player" ), &CinderboxClient::has_local_player );
@@ -144,6 +164,14 @@ void CinderboxClient::_bind_methods()
 							PropertyInfo( Variant::FLOAT, "strength" ), PropertyInfo( Variant::STRING, "kind" ),
 							PropertyInfo( Variant::STRING, "template_name" ) ) );
 	ADD_SIGNAL( MethodInfo( "connection_state_changed", PropertyInfo( Variant::STRING, "state" ) ) );
+	// The server's mods changed (a first join, or a different server): actions and fields to rebind.
+	ADD_SIGNAL( MethodInfo( "schema_changed" ) );
+	// A server mod announced something. a is who it is about, b the other entity (0 if none).
+	ADD_SIGNAL( MethodInfo( "mod_event", PropertyInfo( Variant::STRING, "name" ), PropertyInfo( Variant::INT, "net_id_a" ),
+							PropertyInfo( Variant::INT, "net_id_b" ), PropertyInfo( Variant::INT, "value" ),
+							PropertyInfo( Variant::VECTOR3, "position" ), PropertyInfo( Variant::VECTOR3, "vector" ) ) );
+	// The local player just pressed a mod action; the server has not answered yet.
+	ADD_SIGNAL( MethodInfo( "action_pressed", PropertyInfo( Variant::STRING, "name" ) ) );
 }
 
 void CinderboxClient::EnsureAnimations()
@@ -209,7 +237,14 @@ void CinderboxClient::_exit_tree()
 	m_thread.Stop();
 }
 
-void CinderboxClient::set_input( const Vector2& move, double camera_yaw, bool jump, bool sprint, bool spawn_prop )
+void CinderboxClient::_enter_tree()
+{
+	// HUD nodes (CbFieldLabel) find the client through this group.
+	add_to_group( "cinderbox_client" );
+}
+
+void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double camera_pitch, bool jump, bool sprint,
+								 int64_t actions )
 {
 	// Godot's camera yaw: 0 looks down -Z. The simulation's: 0 looks down +Z, positive turns left
 	// (toward +X). A Godot camera with rotation.y = r looks along (-sin r, 0, -cos r), which is
@@ -218,8 +253,23 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, bool ju
 	in.moveRight = int8_t( std::clamp( int( std::lround( move.x * 127.0 ) ), -127, 127 ) );
 	in.moveForward = int8_t( std::clamp( int( std::lround( move.y * 127.0 ) ), -127, 127 ) );
 	in.cameraYaw = detmath::RadiansToYaw( float( camera_yaw ) + detmath::kPi );
-	in.buttons = uint8_t( ( jump ? BtnJump : 0 ) | ( sprint ? BtnSprint : 0 ) | ( spawn_prop ? BtnSpawnProp : 0 ) );
+	in.buttons = uint8_t( ( jump ? BtnJump : 0 ) | ( sprint ? BtnSprint : 0 ) );
+	// Pitch: a positive Godot rotation.x looks up, which is the simulation's convention too.
+	double pitchTurns = std::clamp( camera_pitch / ( 2.0 * detmath::kPi ), -0.24, 0.24 );
+	in.cameraPitch = int16_t( std::clamp( int( std::lround( pitchTurns * 65536.0 ) ), -int( kMaxCameraPitch ), int( kMaxCameraPitch ) ) );
+	in.actions = uint16_t( actions );
 	m_thread.SetInput( in );
+
+	// Presses are announced here, before the server has seen them, so feedback does not wait.
+	uint16_t pressed = uint16_t( in.actions & ~m_lastActions );
+	m_lastActions = in.actions;
+	for ( const ModAction& a : m_frame.schema.actions )
+	{
+		if ( pressed & ( 1u << a.bit ) )
+		{
+			emit_signal( "action_pressed", String( a.name.c_str() ) );
+		}
+	}
 }
 
 Ref<PackedScene> CinderboxClient::LoadPrefab( const char* name )
@@ -263,6 +313,11 @@ Ref<PackedScene> CinderboxClient::Prefab( const present::Visual& v )
 			return LoadPrefab( "static_box" );
 		case present::VisualKind::Player:
 			return LoadPrefab( "player" );
+		case present::VisualKind::Ragdoll:
+		{
+			String path = m_prefabDir.path_join( "ragdoll.tscn" );
+			return ResourceLoader::get_singleton()->exists( path ) ? LoadPrefab( "ragdoll" ) : LoadPrefab( "player" );
+		}
 		case present::VisualKind::Prop:
 		default:
 			return LoadPrefab( v.shape == ShapeKind::Sphere ? "prop_sphere" : "prop_box" );
@@ -304,7 +359,7 @@ void CinderboxClient::HandleEvents()
 				add_child( node );
 				m_nodes[e.visual] = node->get_instance_id();
 
-				if ( v.kind == present::VisualKind::Player )
+				if ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll )
 				{
 					if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
 					{
@@ -328,6 +383,7 @@ void CinderboxClient::HandleEvents()
 			}
 			case present::EventType::Removed:
 			{
+				m_attachments.erase( e.visual );
 				auto it = m_nodes.find( e.visual );
 				if ( it != m_nodes.end() )
 				{
@@ -362,13 +418,33 @@ void CinderboxClient::HandleEvents()
 							 TemplateName( templateIndex ) );
 				break;
 			}
+			case present::EventType::Mod:
+			{
+				if ( e.modType >= m_frame.schema.events.size() )
+				{
+					break;
+				}
+				String name( m_frame.schema.events[e.modType].c_str() );
+				// A character's own animation can react too (a recoil clip on "pistol.fired").
+				if ( Node3D* node = get_entity_node( int64_t( e.netId ) ) )
+				{
+					if ( CinderboxAnimator* animator = FindInPrefab<CinderboxAnimator>( node ) )
+					{
+						animator->on_mod_event( name );
+					}
+				}
+				emit_signal( "mod_event", name, int64_t( e.netId ), int64_t( e.otherNetId ), int64_t( e.value ), position,
+							 ToGodot( e.vector ) );
+				break;
+			}
 		}
 	}
 }
 
 void CinderboxClient::UpdateNodes()
 {
-	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose& pose, const present::PlayerAnim* anim ) {
+	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose& pose, const present::PlayerAnim* anim,
+							const present::RagdollAnim* ragdoll ) {
 		auto it = m_nodes.find( id );
 		if ( it == m_nodes.end() )
 		{
@@ -382,26 +458,53 @@ void CinderboxClient::UpdateNodes()
 
 		float s = std::max( pose.scale, 0.0001f );
 		Basis rotation( ToGodot( pose.rotation ) );
-		if ( v.kind == present::VisualKind::Player )
+		if ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll )
 		{
-			Vector3 feet = ToGodot( pose.position ) - Vector3( 0, present::kFeetOffset, 0 );
-			node->set_transform( Transform3D( rotation.scaled( Vector3( s, s, s ) ), feet ) );
+			// A dead player is its ragdoll now (if the mod left one); its own node waits unseen.
+			node->set_visible( v.dead == false );
+			if ( v.dead )
+			{
+				return;
+			}
+			Vector3 origin = ToGodot( pose.position );
+			if ( v.kind == present::VisualKind::Player )
+			{
+				origin -= Vector3( 0, present::kFeetOffset, 0 );
+			}
+			node->set_transform( Transform3D( rotation.scaled( Vector3( s, s, s ) ), origin ) );
+
+			// The pose: evaluated for players, hung off the parts for ragdolls. State bindings
+			// may aim it before it is applied.
+			present::Models* models = nullptr;
+			if ( anim != nullptr && anim->evaluator )
+			{
+				m_pose = anim->evaluator->Models();
+				models = &m_pose;
+			}
+			else if ( ragdoll != nullptr && ragdoll->models.empty() == false )
+			{
+				m_pose = ragdoll->models;
+				models = &m_pose;
+			}
+			ApplyStates( id, v, pose, node, models );
+
+			if ( models != nullptr )
+			{
+				if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
+				{
+					skeleton->ApplyPose( *m_animSet, *models );
+				}
+			}
+			// A prefab poses its character with ozz, with Godot's own animation system, or with
+			// both; whichever it contains is what gets driven.
 			if ( anim != nullptr )
 			{
-				// A prefab poses its character with ozz, with Godot's own animation system, or
-				// with both; whichever it contains is what gets driven.
-				if ( anim->evaluator )
-				{
-					if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
-					{
-						skeleton->ApplyPose( *anim->evaluator );
-					}
-				}
 				if ( CinderboxAnimator* animator = FindInPrefab<CinderboxAnimator>( node ) )
 				{
 					animator->ApplyState( anim->current );
 				}
 			}
+			PlaceAttachments( id, v, node );
 			return;
 		}
 
@@ -422,6 +525,332 @@ void CinderboxClient::UpdateNodes()
 		// Local scale is applied before rotation, so boxes keep their shape when they turn.
 		node->set_transform( Transform3D( rotation * Basis::from_scale( size * s ), ToGodot( pose.position ) ) );
 	} );
+}
+
+// --- Mod data: fields, conditions and state bindings ------------------------------------------------
+
+const Blackboard* CinderboxClient::BoardOf( uint32_t netId ) const
+{
+	if ( !m_mirror )
+	{
+		return nullptr;
+	}
+	flecs::entity ve = m_mirror->VisualOf( netId );
+	if ( ve.is_valid() == false )
+	{
+		return nullptr;
+	}
+	const present::Visual& v = ve.get<present::Visual>();
+	return v.hasBoard ? &v.board : nullptr;
+}
+
+std::vector<std::string> CinderboxClient::Conditions( const PackedStringArray& conditions ) const
+{
+	std::vector<std::string> out;
+	out.reserve( size_t( conditions.size() ) );
+	for ( int64_t i = 0; i < conditions.size(); ++i )
+	{
+		out.push_back( ToStd( conditions[i] ) );
+	}
+	return out;
+}
+
+bool CinderboxClient::StateHolds( const CbStateBinding& state, const present::Visual& v ) const
+{
+	String kind = state.get_kind();
+	if ( kind.is_empty() == false && kind != "any" && kind != String( KindName( v.kind ) ) )
+	{
+		return false;
+	}
+	if ( state.get_who() == CbEffect::WHO_LOCAL && v.isLocalPlayer == false )
+	{
+		return false;
+	}
+	if ( state.get_who() == CbEffect::WHO_REMOTE && v.isLocalPlayer )
+	{
+		return false;
+	}
+	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
+	return present::CheckConditions( m_frame.schema, Conditions( state.get_conditions() ), v.hasBoard ? &v.board : nullptr, globals );
+}
+
+void CinderboxClient::ApplyStates( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, Node3D* node,
+								   present::Models* models )
+{
+	m_active.assign( m_states.size(), false );
+	CinderboxAnimator* animator = FindInPrefab<CinderboxAnimator>( node );
+	for ( size_t i = 0; i < m_states.size(); ++i )
+	{
+		const CbStateBinding& state = **m_states[i];
+		bool holds = StateHolds( state, v );
+		m_active[i] = holds;
+
+		if ( animator != nullptr && state.get_tree_parameter().is_empty() == false )
+		{
+			animator->set_tree_parameter( state.get_tree_parameter(), holds );
+		}
+		if ( holds == false || models == nullptr || v.hasAim == false || state.get_aim_bone().is_empty() )
+		{
+			continue;
+		}
+		int joint = present::FindJoint( *m_animSet, state.get_aim_bone().utf8().get_data() );
+		int tip = present::FindJoint( *m_animSet, state.get_aim_tip().utf8().get_data() );
+		// Where the camera looks, in the character's own frame (feet at the origin, facing +Z).
+		b3CosSin p = b3ComputeCosSin( v.aimPitch );
+		b3CosSin y = b3ComputeCosSin( v.aimYaw );
+		b3Vec3 world = { y.sine * p.cosine, p.sine, y.cosine * p.cosine };
+		b3Vec3 local = b3RotateVector( b3Conjugate( pose.rotation ), world );
+		present::AimChain( *m_animSet, *models, joint, tip, local, state.get_aim_weight() );
+	}
+	(void)visual;
+}
+
+// Attached scenes follow their joint. They live under the visual's node, so they vanish with it.
+void CinderboxClient::PlaceAttachments( uint64_t visual, const present::Visual& v, Node3D* node )
+{
+	std::vector<ObjectID>& attached = m_attachments[visual];
+	attached.resize( m_states.size() );
+	CinderboxSkeleton* skeleton = FindSkeleton( node );
+	for ( size_t i = 0; i < m_states.size(); ++i )
+	{
+		const CbStateBinding& state = **m_states[i];
+		Node3D* item = Object::cast_to<Node3D>( ObjectDB::get_instance( attached[i] ) );
+		bool wanted = i < m_active.size() && m_active[i] && state.get_attach_scene().is_empty() == false && v.dead == false;
+		if ( wanted == false )
+		{
+			if ( item != nullptr )
+			{
+				item->queue_free();
+			}
+			attached[i] = ObjectID();
+			continue;
+		}
+		if ( item == nullptr )
+		{
+			Ref<PackedScene> scene = LoadScene( state.get_attach_scene() );
+			item = scene.is_valid() ? Object::cast_to<Node3D>( scene->instantiate() ) : nullptr;
+			if ( item == nullptr )
+			{
+				continue;
+			}
+			node->add_child( item );
+			attached[i] = item->get_instance_id();
+		}
+
+		Transform3D joint;
+		if ( skeleton == nullptr || skeleton->JointTransform( state.get_attach_bone(), joint ) == false )
+		{
+			item->set_visible( false );
+			continue;
+		}
+		Vector3 degrees = state.get_attach_rotation();
+		Basis turn = Basis::from_euler( Vector3( Math::deg_to_rad( degrees.x ), Math::deg_to_rad( degrees.y ), Math::deg_to_rad( degrees.z ) ) );
+		Transform3D offset( turn, state.get_attach_offset() );
+		item->set_visible( true );
+		item->set_global_transform( skeleton->get_global_transform() * joint * offset );
+	}
+}
+
+void CinderboxClient::add_state_binding( const Ref<CbStateBinding>& binding )
+{
+	if ( binding.is_valid() )
+	{
+		m_states.push_back( binding );
+	}
+}
+
+void CinderboxClient::clear_state_bindings()
+{
+	m_states.clear();
+	for ( auto& entry : m_attachments )
+	{
+		for ( ObjectID id : entry.second )
+		{
+			if ( auto* node = Object::cast_to<Node>( ObjectDB::get_instance( id ) ) )
+			{
+				node->queue_free();
+			}
+		}
+	}
+	m_attachments.clear();
+}
+
+Ref<PackedScene> CinderboxClient::LoadScene( const String& path )
+{
+	std::string key = "scene:" + ToStd( path );
+	auto it = m_prefabs.find( key );
+	if ( it != m_prefabs.end() )
+	{
+		return it->second;
+	}
+	Ref<PackedScene> scene;
+	if ( ResourceLoader::get_singleton()->exists( path ) )
+	{
+		scene = ResourceLoader::get_singleton()->load( path, "PackedScene" );
+	}
+	if ( scene.is_null() )
+	{
+		UtilityFunctions::push_warning( "Cinderbox: missing scene ", path );
+	}
+	m_prefabs[key] = scene;
+	return scene;
+}
+
+Array CinderboxClient::get_actions() const
+{
+	Array out;
+	for ( const ModAction& a : m_frame.schema.actions )
+	{
+		Dictionary d;
+		d["name"] = String( a.name.c_str() );
+		d["bit"] = int64_t( a.bit );
+		d["key"] = String( a.key.c_str() );
+		out.push_back( d );
+	}
+	return out;
+}
+
+PackedStringArray CinderboxClient::get_mod_names() const
+{
+	PackedStringArray out;
+	for ( const std::string& name : m_frame.schema.mods )
+	{
+		out.push_back( String( name.c_str() ) );
+	}
+	return out;
+}
+
+Variant CinderboxClient::get_field( int64_t net_id, const String& name ) const
+{
+	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
+	present::FieldValue value = present::ReadField( m_frame.schema, ToStd( name ), BoardOf( uint32_t( net_id ) ), globals );
+	if ( value.declared == false )
+	{
+		return Variant();
+	}
+	switch ( value.type )
+	{
+		case BoardType::Float:
+			return value.AsFloat();
+		case BoardType::Bool:
+			return value.AsBool();
+		case BoardType::Int:
+		default:
+			return int64_t( value.raw );
+	}
+}
+
+Variant CinderboxClient::get_local_field( const String& name ) const
+{
+	return get_field( get_local_net_id(), name );
+}
+
+bool CinderboxClient::check_conditions( int64_t net_id, const PackedStringArray& conditions ) const
+{
+	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
+	return present::CheckConditions( m_frame.schema, Conditions( conditions ), BoardOf( uint32_t( net_id ) ), globals );
+}
+
+bool CinderboxClient::check_local_conditions( const PackedStringArray& conditions ) const
+{
+	return check_conditions( get_local_net_id(), conditions );
+}
+
+String CinderboxClient::format_local_fields( const String& format ) const
+{
+	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
+	std::string text = present::FormatFields( m_frame.schema, ToStd( format ), BoardOf( uint32_t( get_local_net_id() ) ), globals );
+	return String::utf8( text.c_str() );
+}
+
+int64_t CinderboxClient::get_local_net_id() const
+{
+	return m_haveFrame ? int64_t( m_frame.frame.localNetId ) : 0;
+}
+
+bool CinderboxClient::is_local_player_dead() const
+{
+	if ( !m_mirror )
+	{
+		return false;
+	}
+	flecs::entity ve = m_mirror->VisualOf( uint32_t( get_local_net_id() ) );
+	return ve.is_valid() && ve.get<present::Visual>().dead;
+}
+
+Vector3 CinderboxClient::get_camera_target() const
+{
+	if ( !m_mirror )
+	{
+		return Vector3( 0, 1, 0 );
+	}
+	if ( is_local_player_dead() )
+	{
+		// Watch the body fall.
+		flecs::entity body = m_mirror->RagdollOf( uint32_t( get_local_net_id() ) );
+		if ( body.is_valid() )
+		{
+			if ( const present::RagdollAnim* ra = body.try_get<present::RagdollAnim>() )
+			{
+				return ToGodot( ra->current[0].position ) + Vector3( 0, 0.3f, 0 );
+			}
+		}
+	}
+	present::RenderPose pose;
+	if ( m_mirror->LocalPlayer( pose ) )
+	{
+		// The same point the server casts the crosshair ray from (Context::EyePosition).
+		return ToGodot( pose.position ) + Vector3( 0, 0.4f, 0 );
+	}
+	return Vector3( 0, 1, 0 );
+}
+
+Node3D* CinderboxClient::get_entity_node( int64_t net_id ) const
+{
+	if ( !m_mirror )
+	{
+		return nullptr;
+	}
+	flecs::entity ve = m_mirror->VisualOf( uint32_t( net_id ) );
+	return ve.is_valid() ? get_visual_node( int64_t( ve.id() ) ) : nullptr;
+}
+
+Vector3 CinderboxClient::get_bone_position( int64_t net_id, const String& bone ) const
+{
+	Node3D* node = get_entity_node( net_id );
+	if ( node == nullptr )
+	{
+		return Vector3();
+	}
+	if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
+	{
+		Transform3D joint;
+		if ( bone.is_empty() == false && skeleton->JointTransform( bone, joint ) )
+		{
+			return ( skeleton->get_global_transform() * joint ).origin;
+		}
+	}
+	return node->get_global_position();
+}
+
+String CinderboxClient::get_kind( int64_t net_id ) const
+{
+	if ( !m_mirror )
+	{
+		return String();
+	}
+	flecs::entity ve = m_mirror->VisualOf( uint32_t( net_id ) );
+	return ve.is_valid() ? String( KindName( ve.get<present::Visual>().kind ) ) : String();
+}
+
+String CinderboxClient::get_entity_template_name( int64_t net_id ) const
+{
+	if ( !m_mirror )
+	{
+		return String();
+	}
+	flecs::entity ve = m_mirror->VisualOf( uint32_t( net_id ) );
+	return ve.is_valid() ? TemplateName( ve.get<present::Visual>().templateIndex ) : String();
 }
 
 void CinderboxClient::_process( double delta )
@@ -445,6 +874,11 @@ void CinderboxClient::_process( double delta )
 	{
 		m_lastState = state;
 		emit_signal( "connection_state_changed", state );
+	}
+	if ( m_frame.schemaGeneration != m_schemaGeneration )
+	{
+		m_schemaGeneration = m_frame.schemaGeneration;
+		emit_signal( "schema_changed" );
 	}
 	if ( m_frame.hasSimulation == false )
 	{

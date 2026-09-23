@@ -11,7 +11,19 @@
 
 #include <godot_cpp/classes/resource.hpp>
 #include <godot_cpp/variant/color.hpp>
+#include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
+
+// A property with a plain getter and setter.
+#define CB_PROPERTY( Type, name, member )                                                                                        \
+	void set_##name( const Type& value )                                                                                         \
+	{                                                                                                                            \
+		member = value;                                                                                                          \
+	}                                                                                                                            \
+	Type get_##name() const                                                                                                      \
+	{                                                                                                                            \
+		return member;                                                                                                           \
+	}
 
 namespace cb::gd
 {
@@ -30,6 +42,25 @@ public:
 		EVENT_LANDED = 3,
 		EVENT_FOOTSTEP = 4,
 		EVENT_IMPACT = 5,
+		// A server mod's event, by name ("pistol.fired"). Entity A is the one it is about.
+		EVENT_MOD = 6,
+		// The local player pressed a mod action ("fire"), before the server has answered: the
+		// place for feedback that must not wait a round trip. Conditions decide whether it would
+		// have worked (ammo left, the right slot out).
+		EVENT_ACTION = 7,
+	};
+
+	enum Subject
+	{
+		SUBJECT_A = 0, // who a mod event is about (the shooter, the killer)
+		SUBJECT_B = 1, // the other entity it names (what was hit, who died)
+	};
+
+	enum ValueFilter
+	{
+		VALUE_ANY = 0,
+		VALUE_POSITIVE = 1, // e.g. a hit that did damage
+		VALUE_ZERO = 2,		// e.g. a hit that did not
 	};
 
 	enum Who
@@ -203,11 +234,33 @@ public:
 		return m_flashTime;
 	}
 
+	CB_PROPERTY( godot::String, name, m_name )
+	CB_PROPERTY( godot::PackedStringArray, conditions, m_conditions )
+	CB_PROPERTY( int, subject, m_subject )
+	CB_PROPERTY( int, value_filter, m_valueFilter )
+	CB_PROPERTY( godot::String, bone, m_bone )
+	CB_PROPERTY( bool, at_end, m_atEnd )
+	CB_PROPERTY( bool, beam, m_beam )
+
 protected:
 	static void _bind_methods();
 
 private:
 	int m_event = EVENT_SPAWNED;
+	// Mod events and actions: which one, by name.
+	godot::String m_name;
+	// Board conditions on the subject ("pistol.ammo > 0", "!combat.dead"); all must hold.
+	godot::PackedStringArray m_conditions;
+	// Mod events: whose kind, template, "who", conditions and bone are checked.
+	int m_subject = SUBJECT_A;
+	int m_valueFilter = VALUE_ANY;
+	// Play at this joint of the subject's skeleton (a humanoid-profile name, "RightHand").
+	godot::String m_bone;
+	// Mod events: play at the event's vector (where a shot ended) instead of its point.
+	bool m_atEnd = false;
+	// Stretch the scene from where it plays to the event's end point along its local -Z, like a
+	// tracer. The scene should be one metre long.
+	bool m_beam = false;
 	// Empty matches any map template; otherwise the template's name.
 	godot::String m_templateName;
 	// "", "any", "prop", "player" or "static".
@@ -241,6 +294,48 @@ private:
 	float m_flashTime = 0.15f;
 };
 
+// A look that holds while a condition does: "while loadout.slot == 2, hold a pistol in the right hand
+// and aim that arm". Checked every frame for each matching entity, so it follows the board as the
+// server's mods change it.
+class CbStateBinding : public godot::Resource
+{
+	GDCLASS( CbStateBinding, godot::Resource )
+
+public:
+	CB_PROPERTY( godot::PackedStringArray, conditions, m_conditions )
+	CB_PROPERTY( godot::String, kind, m_kind )
+	CB_PROPERTY( int, who, m_who )
+	CB_PROPERTY( godot::String, attach_scene, m_attachScene )
+	CB_PROPERTY( godot::String, attach_bone, m_attachBone )
+	CB_PROPERTY( godot::Vector3, attach_offset, m_attachOffset )
+	CB_PROPERTY( godot::Vector3, attach_rotation, m_attachRotation )
+	CB_PROPERTY( godot::String, aim_bone, m_aimBone )
+	CB_PROPERTY( godot::String, aim_tip, m_aimTip )
+	CB_PROPERTY( float, aim_weight, m_aimWeight )
+	CB_PROPERTY( godot::String, tree_parameter, m_treeParameter )
+
+protected:
+	static void _bind_methods();
+
+private:
+	godot::PackedStringArray m_conditions;
+	// "player" (the default), "ragdoll", "prop" or "any".
+	godot::String m_kind = "player";
+	int m_who = 0; // CbEffect::Who
+	// A scene kept at a joint while the conditions hold (a held item).
+	godot::String m_attachScene;
+	godot::String m_attachBone = "RightHand";
+	godot::Vector3 m_attachOffset;
+	godot::Vector3 m_attachRotation; // degrees
+	// Turn this joint so the line to aim_tip points where the player looks (an arm holding a gun).
+	godot::String m_aimBone;
+	godot::String m_aimTip;
+	float m_aimWeight = 1.0f;
+	// An AnimationTree parameter set to whether the conditions hold, for prefabs animated by a
+	// CinderboxAnimator (e.g. "parameters/conditions/armed").
+	godot::String m_treeParameter;
+};
+
 class CbEffectTable : public godot::Resource
 {
 	GDCLASS( CbEffectTable, godot::Resource )
@@ -254,15 +349,26 @@ public:
 	{
 		return m_effects;
 	}
+	void set_states( const godot::TypedArray<CbStateBinding>& states )
+	{
+		m_states = states;
+	}
+	godot::TypedArray<CbStateBinding> get_states() const
+	{
+		return m_states;
+	}
 
 protected:
 	static void _bind_methods();
 
 private:
 	godot::TypedArray<CbEffect> m_effects;
+	godot::TypedArray<CbStateBinding> m_states;
 };
 
 } // namespace cb::gd
 
 VARIANT_ENUM_CAST( cb::gd::CbEffect::Event );
 VARIANT_ENUM_CAST( cb::gd::CbEffect::Who );
+VARIANT_ENUM_CAST( cb::gd::CbEffect::Subject );
+VARIANT_ENUM_CAST( cb::gd::CbEffect::ValueFilter );

@@ -14,6 +14,7 @@
 
 #include <godot_cpp/classes/animation_tree.hpp>
 #include <godot_cpp/classes/node3d.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 
 namespace cb
 {
@@ -38,6 +39,22 @@ public:
 	void apply_state( int mode, float mode_time, float locomotion_phase, float ground_speed );
 	// Name of the state the tree is playing, "" when it has no state machine.
 	godot::String get_current_state() const;
+
+	// A server mod announced something about this character ("pistol.fired"). If event_parameters
+	// names a parameter for it, that parameter is fired: set to 1, which is what an
+	// AnimationNodeOneShot's request takes. This is how a shot plays a recoil clip with no code.
+	void on_mod_event( const godot::String& name );
+	// Sets one tree parameter, if the tree exists (used by state bindings).
+	void set_tree_parameter( const godot::String& path, const godot::Variant& value );
+
+	void set_event_parameters( const godot::Dictionary& value )
+	{
+		m_eventParameters = value;
+	}
+	godot::Dictionary get_event_parameters() const
+	{
+		return m_eventParameters;
+	}
 
 	void set_animation_tree_path( const godot::NodePath& path );
 	godot::NodePath get_animation_tree_path() const
@@ -121,6 +138,9 @@ private:
 	// Resync when the tree drifts this far from the simulation, in seconds. 0 never resyncs, which
 	// leaves Godot to play the clips at its own pace.
 	float m_syncThreshold = 0.12f;
+
+	// Mod event name -> AnimationTree parameter to fire.
+	godot::Dictionary m_eventParameters;
 
 	godot::ObjectID m_tree;
 	int m_lastMode = -1;

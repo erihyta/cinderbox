@@ -25,6 +25,7 @@ struct SimView
 
 // Draws an evaluated pose as one box per bone. `feet` is where the skeleton origin goes.
 void DrawSkeleton( Vector3 feet, Quaternion rotation, float scale, const anim::PoseEvaluator* eval, Color color );
+void DrawSkeleton( Vector3 feet, Quaternion rotation, float scale, const anim::AnimSet* set, const Models* pose, Color color );
 
 class Presentation
 {

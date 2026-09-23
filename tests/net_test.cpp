@@ -3,6 +3,7 @@
 //   cb_net_tests [name]
 
 #include "bot_brain.h"
+#include "registry.h"
 #include "fingerprint.h"
 #include "game_client.h"
 #include "game_server.h"
@@ -18,6 +19,7 @@
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <thread>
 
@@ -59,9 +61,17 @@ struct Bot
 {
 	std::unique_ptr<GameClient> client;
 	BotBrain brain;
+	// Replaces the brain when set.
+	std::function<PlayerInput( uint32_t )> script;
 
-	PlayerInput Sample( uint32_t )
+	PlayerInput Sample( uint32_t tick )
 	{
+		if ( script )
+		{
+			return script( tick );
+		}
+		// The spawn button is a mod action; its bit comes from the server's schema.
+		brain.spawnAction = client->Schema().ActionMask( "spawn_prop" );
 		return brain.Next();
 	}
 };
@@ -75,10 +85,15 @@ struct Harness
 	uint16_t clientPort = 0; // port bots connect to (the proxy's, when there is one)
 	std::unique_ptr<net::NetSimProxy> proxy;
 
+	// Runs every compiled server mod, like cb_server does by default.
 	explicit Harness( uint16_t p, const std::string& recordPath = {}, const std::string& mapPath = {} )
 		: port( p )
 		, clientPort( p )
 	{
+		for ( const mods::ModInfo& info : mods::CompiledMods() )
+		{
+			server.AddMod( info.create() );
+		}
 		ServerOptions options;
 		options.port = port;
 		options.mapPath = mapPath;
@@ -495,11 +510,154 @@ void TestLossySession()
 	std::filesystem::remove( replayPath );
 }
 
+// Server mods end to end: one player picks the pistol and shoots another until it dies. The rules
+// run only on the server; the clients only receive commands and must agree with it on everything,
+// ragdoll included, while seeing the board values and events the mods published.
+void TestModsSession()
+{
+	Harness h( 47790 );
+	const ModSchema& schema = h.server.Schema();
+	CHECK( schema.FindField( "combat.health" ) != nullptr );
+	CHECK( schema.FindEvent( "pistol.fired" ) >= 0 );
+	CHECK( schema.ActionMask( "fire" ) != 0 );
+	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t pistol = schema.ActionMask( "slot_2" );
+	uint16_t spawn = schema.ActionMask( "spawn_prop" );
+
+	// Slot 0 stands at x = -5.25 and slot 1 at x = -3.75 (the sandbox spawn grid): slot 0 looks
+	// toward +X, straight at slot 1.
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraYaw = 16384;
+		uint32_t t = tick % 1000;
+		if ( t >= 100 && t < 110 )
+		{
+			in.actions = pistol;
+		}
+		else if ( t >= 150 && t < 400 && ( t % 20 ) < 3 )
+		{
+			// Held for a few ticks like a real click, so one late input cannot swallow it.
+			in.actions = fire;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.actions = ( tick % 40 ) < 3 ? spawn : 0;
+		return in;
+	};
+	Bot& shooter = h.bots[0];
+	Bot& target = h.bots[1];
+
+	bool sawDeadOnClient = false;
+	bool sawRagdollOnClient = false;
+	uint32_t targetEventsSeen = 0;
+	int killedEvent = schema.FindEvent( "combat.killed" );
+	const BoardField* deadField = schema.FindField( "combat.dead" );
+	h.RunUntil( 9.0, [&]( double ) {
+		RollbackSession* s = target.client->Session();
+		if ( s == nullptr || target.client->Schema().fields.empty() )
+		{
+			return;
+		}
+		Simulation& sim = s->Sim();
+		uint32_t me = sim.PlayerNetId( target.client->Slot() );
+		if ( me != 0 && sim.BoardValue( me, deadField->slot ) == 1 )
+		{
+			sawDeadOnClient = true;
+		}
+		for ( const auto& r : sim.Entities() )
+		{
+			sawRagdollOnClient |= flecs::entity( sim.World(), r.entity ).has<Ragdoll>();
+		}
+		const SimGlobals& g = sim.Globals();
+		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+		{
+			const ModEventRecord& e = g.modEvents[i];
+			if ( int( e.type ) == killedEvent && e.netIdB == me )
+			{
+				++targetEventsSeen;
+			}
+		}
+	} );
+	h.Report();
+
+	Simulation& server = h.server.Sim();
+	uint32_t shooterId = server.PlayerNetId( shooter.client->Slot() );
+	uint32_t targetId = server.PlayerNetId( target.client->Slot() );
+	const BoardField* kills = schema.FindField( "combat.kills" );
+	const BoardField* deaths = schema.FindField( "combat.deaths" );
+	std::printf( "    shooter kills %d, target deaths %d, target health %d\n", server.BoardValue( shooterId, kills->slot ),
+				 server.BoardValue( targetId, deaths->slot ), server.BoardValue( targetId, schema.FindField( "combat.health" )->slot ) );
+	CHECK( server.BoardValue( shooterId, kills->slot ) >= 1 );
+	CHECK( server.BoardValue( targetId, deaths->slot ) >= 1 );
+	CHECK( sawDeadOnClient );
+	CHECK( sawRagdollOnClient );
+	CHECK( targetEventsSeen > 0 );
+	// Respawned by the time the session ends.
+	CHECK( server.PlayerCharacter( target.client->Slot() )->dead == 0 );
+
+	// The target's spawn presses made props through the props mod.
+	uint32_t owned = 0;
+	for ( const auto& r : server.Entities() )
+	{
+		const Prop* p = flecs::entity( server.World(), r.entity ).try_get<Prop>();
+		owned += p != nullptr && p->owner == targetId ? 1 : 0;
+	}
+	std::printf( "    target owns %u props\n", owned );
+	CHECK( owned > 0 );
+
+	for ( Bot& b : h.bots )
+	{
+		int compared = 0;
+		CHECK( h.CompareWithServer( b, compared ) == 0 );
+		CHECK( compared > 100 );
+		CHECK( b.client->GetStats().desyncs == 0 );
+		CHECK( b.client->GetStats().checksumsVerified > 0 );
+	}
+}
+
 void TestProtocol()
 {
 	using namespace net;
 
-	// Frame delta codec round trip.
+	// The mod schema survives the trip, and a client refuses one that points outside the board or
+	// the action bits, so presentation can index with what it read.
+	{
+		ModSchema schema;
+		schema.mods = { "pistol" };
+		schema.fields.push_back( { "pistol.ammo", BoardType::Int, BoardScope::Entity, 3 } );
+		schema.fields.push_back( { "round.time", BoardType::Float, BoardScope::Global, 0 } );
+		schema.events = { "pistol.fired", "combat.killed" };
+		schema.actions.push_back( { "fire", 0, "MouseLeft" } );
+		std::vector<uint8_t> bytes;
+		EncodeSchema( schema, bytes );
+		ModSchema back;
+		CHECK( DecodeSchema( bytes.data(), bytes.size(), back ) );
+		CHECK( back == schema );
+		CHECK( back.ActionMask( "fire" ) == 1 );
+		CHECK( back.FindEvent( "combat.killed" ) == 1 );
+
+		ModSchema bad = schema;
+		bad.fields[0].slot = kBoardSlots;
+		EncodeSchema( bad, bytes );
+		CHECK( DecodeSchema( bytes.data(), bytes.size(), back ) == false );
+		bytes.resize( bytes.size() - 1 );
+		CHECK( DecodeSchema( bytes.data(), bytes.size(), back ) == false );
+
+		// An empty schema (a server without mods) is valid.
+		CHECK( DecodeSchema( nullptr, 0, back ) && back.fields.empty() );
+
+		// Non-finite commands never leave the server.
+		SimCommand c;
+		c.type = CommandType::Impulse;
+		CHECK( IsSendableCommand( c ) );
+		c.b.y = std::numeric_limits<float>::infinity();
+		CHECK( IsSendableCommand( c ) == false );
+	}
+
+	// Frame delta codec round trip, with every input field and every kind of command.
 	FrameCodec enc, dec;
 	uint64_t rng = 5;
 	for ( uint32_t t = 0; t < 500; ++t )
@@ -517,7 +675,25 @@ void TestProtocol()
 			{
 				f.inputs[i].moveForward = int8_t( NextRandom( rng ) % 255 - 127 );
 				f.inputs[i].cameraYaw = uint16_t( NextRandom( rng ) );
+				f.inputs[i].cameraPitch = int16_t( int( NextRandom( rng ) % 32000 ) - 16000 );
+				f.inputs[i].actions = uint16_t( NextRandom( rng ) );
 			}
+		}
+		uint64_t kinds = NextRandom( rng ) % 4;
+		for ( uint64_t k = 0; k < kinds; ++k )
+		{
+			SimCommand c;
+			c.type = CommandType( 1 + NextRandom( rng ) % kLastCommandType );
+			c.mode = uint8_t( NextRandom( rng ) % 3 );
+			c.index = uint16_t( NextRandom( rng ) % 5 );
+			c.target = ( NextRandom( rng ) & 1 ) ? SlotTarget( 3 ) : uint32_t( NextRandom( rng ) % 1000 );
+			c.value = int32_t( NextRandom( rng ) % 7 ) - 3;
+			c.a = { RandomRange( rng, -5.0f, 5.0f ), 0.0f, -0.0f };
+			if ( NextRandom( rng ) & 1 )
+			{
+				c.b = { 1.0f, 2.0f, 3.0f };
+			}
+			f.commands.push_back( c );
 		}
 		std::vector<uint8_t> bytes;
 		enc.Encode( f, bytes );
@@ -652,6 +828,7 @@ int main( int argc, char** argv )
 		{ "reconnect", TestReconnect },
 		{ "grace_expiry", TestGraceExpiry },
 		{ "lossy_session", TestLossySession },
+		{ "mods_session", TestModsSession },
 	};
 
 	const char* filter = argc > 1 ? argv[1] : nullptr;
