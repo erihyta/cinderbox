@@ -1,4 +1,8 @@
-# Mod projects
+# Client mod projects
+
+These are **client** mods: cosmetic packs for the Godot client. The game's rules are server mods,
+compiled into `cb_server` (see `server_mods/` and the README's Server mods section); a client mod
+changes how those rules look and sound, never what they do.
 
 Each folder here is a small Godot project that is packed into a cosmetic mod with
 `tools\pack_mod.ps1 -Project mods_src\<name>`. The result is `mods\<name>.zip`.
@@ -29,11 +33,14 @@ Godot converts scenes and imported assets into its runtime formats when packing.
 | `prefabs/prop_sphere.tscn` | sphere props | Unit-diameter sphere, scaled like the box. |
 | `prefabs/static_box.tscn` | level geometry | Unit cube, scaled to each wall, ramp, step or platform. |
 | `prefabs/<visual>.tscn` | entities from a map template | A template names the prefab it draws as. Unit-sized like the others: the client scales it to the shape the template authored. |
-| `vfx/bindings*.tres` | what plays on which event | A `CbEffectTable`: scenes, sounds, camera shake and screen flashes. Every file matching this name is loaded, so ship `vfx/bindings_<yourmod>.tres` and your effects are added to the game's instead of replacing them. |
+| `prefabs/ragdoll.tscn` | ragdolls (optional) | Posed like a player; without it the player prefab is used. It needs a `CinderboxSkeleton` to be posed. |
+| `vfx/bindings*.tres` | what plays on which event | A `CbEffectTable`: scenes, sounds, camera shake and screen flashes, plus state bindings (held items, aimed arms). Every file matching this name is loaded, so ship `vfx/bindings_<yourmod>.tres` and your effects are added to the game's instead of replacing them. Bindings can react to the server mods' events and actions by name and check their fields. |
+| `vfx/bindings_pistol.tres` | the pistol's look | Replace it to restyle the pistol mod wholesale, or add a file of your own next to it. |
+| `prefabs/pistol.tscn`, `vfx/muzzle_flash.tscn`, `vfx/tracer.tscn`, `vfx/bullet_spark.tscn`, `vfx/hit_puff.tscn` | the pistol and its effects | Named by `bindings_pistol.tres`. The tracer is one metre long along -Z; beam bindings stretch it. |
 | `assets/...` | sounds and other shared files | A binding can name any stream your mod ships, for example `res://assets/sfx/<yours>.wav`. |
 | `vfx/prop_spawn.tscn`, `vfx/prop_destroy.tscn` | prop spawned / removed | One-shot effects used when no binding matches. Every `GPUParticles3D` in the scene is restarted; the node is freed after its lifetime. |
 | `vfx/jump.tscn`, `vfx/land.tscn` | a player jumps / lands | Placed at the player's feet. |
-| `ui/hud.tscn` | HUD | Any `Control` tree. Optional labels with unique names `%Stats`, `%Banner` and `%Help` are filled by the game. |
+| `ui/hud.tscn` | HUD | Any `Control` tree. Optional labels with unique names `%Stats`, `%Banner` and `%Help` are filled by the game. `CbFieldLabel` nodes show the server mods' fields (`"AMMO {pistol.ammo}"`) while their conditions hold. |
 | `maps/<name>.tscn` | the level's visuals | The scene the server's map was baked from, named after it. A mod can replace it to re-skin a level. |
 
 Prop prefabs whose root has the metadata `tint_by_net_id = true` get a per-prop color from the game.

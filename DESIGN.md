@@ -12,7 +12,8 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 | Animation | ozz-animation 0.17.0, **scalar (non-SIMD) build**; gltf2ozz for asset conversion |
 | Networking | ENet (UDP), dedicated headless server |
 | Client rendering / input | Godot 4.7 through a GDExtension (godot-cpp 4.5 API); raylib as a debug viewer |
-| Client "scripts" | Small C++ flecs systems and observers (engine-independent, `src/present`) |
+| Game rules | C++ server mods compiled into `cb_server` (`server_mods/`), talking to the world only through commands |
+| Client "scripts" | Small C++ flecs systems and observers (engine-independent, `src/present`); mod presentation as data bindings |
 | Client content and mods | Godot scenes and resource packs (VFX, materials, meshes, UI) |
 | Build directory | `%LOCALAPPDATA%/cinderbox-build` (outside OneDrive) |
 
@@ -73,11 +74,14 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 - **Ring buffer**: a snapshot for each tick that might still be rolled back, plus hashes of confirmed states so they can be checked against server checksums.
 
 ## Gameplay
+The engine provides the mechanisms below; the rules on top (what spawns props, what hurts, when a
+player dies) are server mods (M14).
+
 - **World**: flat ground, enclosing walls, ramps, steps, platforms and dynamic boxes/spheres.
 - **Player movement**: a kinematic capsule mover (move-and-slide with Box3D's mover casts and plane solver). A pogo spring keeps the capsule hovering, which carries it over steps. There is no explicit slope limit yet. The mover pushes dynamic bodies with impulses and turns to face its movement direction.
-- **Controls**: WASD moves relative to the camera, Shift sprints, Space jumps, the mouse orbits the third-person camera, and one key spawns a prop.
-- **Props**: spawned in front of the player, with a 20 s lifetime and at most 10 per player (the oldest despawns first), plus a global cap. All values are configurable.
-- **Players**: spawn on join and despawn on leave. A player who falls below the kill-Y respawns.
+- **Controls**: WASD moves relative to the camera, Shift sprints, Space jumps and the mouse orbits the third-person camera. Every other control is an action a server mod declares.
+- **Props**: the `props` mod throws one in front of the player; the engine keeps the budget: a 20 s lifetime and at most 10 per player (the oldest despawns first), plus a global cap. All values are configurable.
+- **Players**: spawn on join and despawn on leave. A player who falls below the kill-Y is put back at a spawn point and the fall is counted (`Character::fallCount`) for mods to see. A `Kill` command makes a player dead (no input, body disabled, not drawn) until a `Respawn`.
 
 ## Animation (visual now, gameplay-ready)
 - **Split (M3)**:
@@ -137,9 +141,9 @@ server ──ENet──> GameClient + Simulation (sim thread) ──Presentation
   - On Windows, everything uses the DLL C runtime. Clang with the GNU driver needs `TYPED_METHOD_BIND`.
 - **Export**:
   - `godot/export_presets.cfg` has a "Windows" preset, and `tools/export_client.ps1` runs it with the 4.7.2 templates.
-  - An exported client is a 109 MB engine executable, a 3 MB extension and a 53 KB pack.
+  - An exported client is a 109 MB engine executable, a 3.4 MB extension and a 147 KB pack (M14: with the pistol content and its sounds).
 
-## Mods (M6)
+## Client mods (M6)
 - **Content**: mods are Godot resource packs (`.zip`, made with `--export-pack`) that replace or add files under `prefabs/`, `vfx/`, `ui/`, `maps/` and `assets/`.
   - They hold Godot's runtime formats (binary scenes, compressed textures), so they are small and load fast.
   - `boot.tscn` loads them before the game scene is opened. The load order is: the game folder, then `user://mods`, then `--mods=`, alphabetically within each.
@@ -335,6 +339,84 @@ Naming alone is not enough, and this is the part that decides whether it works a
 None of this touches the simulation: bone names and poses are presentation, and the simulation only
 ever deals in the animation mode, its time and the ground speed.
 
+## Server gameplay mods (M14)
+The rules of the game now live in **server mods**: C++ compiled into `cb_server`, running only on the
+server. Clients stay presentation only: they simulate the engine (movement, physics, props,
+ragdolls) and draw what the mods publish, but they never run a rule and never learn what a pistol is.
+
+```
+inputs ──> server: mods read the world + this tick's inputs ──> commands in the frame
+                                                                      │
+            every simulation (server and clients) applies them ◄──────┘  like inputs, deterministic
+```
+
+- **Commands, not access.** A mod never touches the simulation. It adds commands to the tick's
+  authoritative frame (`Set`, `Emit`, `SpawnProp`, `Destroy`, `Push`, `Kill`, `Respawn`), and every
+  simulation applies them in order after join/leave events and before movement.
+  - Mods need no determinism of their own: their randomness and decisions reach clients as the
+    values in the commands.
+  - Clients predict inputs, not commands. A mod's effect shows up when its frame arrives and rollback
+    folds it in, the same way a remote player's input does.
+  - Mods read the state *before* the tick, so a hitscan is resolved against the world the shooter's
+    input was predicted in, minus other players' mispredictions. No lag compensation is needed yet.
+- **Targets** are NetIds, or a player slot (`SlotTarget`), which also works for a player joining in
+  the same frame. A target that no longer exists is ignored the same way everywhere.
+- **Board and events.** `Blackboard` (16 int slots per entity) and a global board are hashed state;
+  mod events go into a ring like impacts. The **schema** (field names and types, event names, action
+  names and suggested keys) goes out in the Welcome and in replay headers. It is never hashed:
+  different mods on the same build are fine.
+- **Actions.** `PlayerInput` gained camera pitch and 16 action bits (10 bytes). The engine keeps only
+  jump and sprint; the spawn button became the `props` mod's `spawn_prop` action.
+- **Mod state** lives in one flecs world shared by all mods (the `pistol` mod keeps a `Gunner` per
+  player, plus `Dead` and `Reloading` while those last). This is where flecs earns its keep: queries
+  over gameplay state, not the simulation's storage.
+- **Protocol v4.** Commands travel in frames with a field mask each (a board write costs about
+  10 bytes). The server drops non-finite commands before sending; the simulation also ignores them.
+
+### Ragdolls
+- `Kill` with a ragdoll builds eleven Box3D bodies from a **fixed standing pose** (`src/sim/ragdoll.h`),
+  turned to the player's facing, carrying its velocity plus the hit's velocity change on the nearest
+  part. No asset data enters the simulation.
+- Joints: cone-and-twist for spine, neck, shoulders and hips; limited hinges for elbows and knees
+  (checked: knees only fold backwards, elbows only forwards, no joint separates).
+- Hashed, snapshotted, portable, and verified identical across Clang, GCC and MSVC with the rest of
+  the scenario. The mod chooses lifetime and cap; the oldest go first.
+- Presentation hangs any skeleton off the parts: each joint follows its nearest ragdoll part and keeps
+  its own rest offset from that part's joint. The pose the player was last drawn in blends into the
+  ragdoll over 0.15 s.
+
+### Presentation as data
+- **Bindings on names.** `CbEffect` gained mod events and local **action presses** (feedback that
+  cannot wait a round trip, with conditions that say whether the server will accept it), board
+  conditions, subject A or B, value filters, bones and beams.
+- **State bindings** hold while conditions do: a held item at a joint, an arm aimed where the player
+  looks, an AnimationTree parameter. **`CbFieldLabel`** puts fields in a HUD scene.
+- Everything is resolved through the schema, so a binding for a mod that is not running never matches,
+  and none of it is script: client mods can restyle all of it.
+
+### Transport: ENet's throttle
+ENet's packet throttle drops *unreliable* packets whenever the round trip rises. A Welcome (a large
+reliable transfer) could make it drop every frame batch to that client for about half a second; the
+client stalled at its prediction window, fell ~20 ticks behind, and every input it sent in the ~3 s
+of rate correction arrived late, so the server discarded its presses. Frame batches repeat everything
+unacknowledged, so dropping them never saved anything: throttle deceleration is now 0 on every peer.
+(Found by the M14 network test; seen in about 1 run in 6 on this branch and never on master, for
+reasons not pinned down beyond timing.)
+
+### Measurements (Clang Release, loopback, 32 bots, 4 full ones firing the pistol, props on)
+| Server tick | Late inputs | Full client work avg / max | Down / up per client | Server out | Desyncs |
+|---|---|---|---|---|---|
+| 0.7 ms (max 7) | 0% | 0.7–1.2 / 16 ms | ~55 / 68 kbit/s | 1.7–1.9 Mbit/s | 0 |
+
+- Upload grew from 45 to 68 kbit/s: inputs are 10 bytes and each packet repeats 12 of them.
+- Commands cost little: a kill is about 8 commands (fields, event, kill), resent until acknowledged.
+
+### Honest limits
+- Mods are compiled in; hot-loading or DLL mods would need a C API over `mod_api.h`.
+- Hit detection uses the player capsule only (no head or limbs).
+- A prefab animated only by an AnimationTree needs a `CinderboxSkeleton` for its ragdoll.
+- The raylib viewer draws ragdolls and hides the dead; it has none of the new bindings.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*`).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -421,3 +503,4 @@ ever deals in the animation mode, its time and the ground speed.
 11. **M11** (done): impacts from Box3D contact events and footsteps from stride distance, both part of the hashed simulation state and both rollback-safe, exposed to presentation as counters and bound to effects by `min_strength`.
 12. **M12** (done): `CinderboxAnimator`, which drives a Godot AnimationTree from the simulation's animation mode, ground speed and locomotion phase, with drift resync; a generated example prefab shipped as a mod, and a headless check that a prefab's tree follows the simulation.
 13. **M13** (done): the rig renamed to Godot's humanoid profile with Mixamo aliases, and `CinderboxSkeleton` retargeting by rotation onto a character's own rest, bridging the arms-down and T-pose rest postures, verified on a deliberately differently proportioned humanoid.
+14. **M14** (done): server gameplay mods in C++ with commands in the authoritative frame, a board and mod events, the mod schema sent on join, pitch and mod actions in the input, deterministic ragdolls, data-driven presentation of mod state (conditional effects, predicted action feedback, held items, aimed arms, HUD labels), a pistol demo (loadout, props, pistol mods), `cb_bot --shoot`, and ENet's throttle drops disabled. Verified identical across Clang, GCC and MSVC.

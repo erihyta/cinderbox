@@ -20,6 +20,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M11: impacts and footsteps reported by the simulation | done |
 | M12: Godot AnimationTree driven by the simulation's animation state | done |
 | M13: humanoid-profile bone names and retargeting onto any character | done |
+| M14: server gameplay mods (C++), commands in the frame, board and mod events, deterministic ragdolls, data-driven mod presentation, pistol demo | done |
 
 ## Building
 
@@ -74,21 +75,86 @@ The export needs the Godot 4.7.2 export templates, installed either from the edi
 `%LOCALAPPDATA%\cinderbox-build\tools\godot\templates`. Packs in `mods\` are copied to `dist\Cinderbox\mods`.
 
 `cb_server` and `cb_client` are in `<build dir>/bin`. The server options are `--tick-rate`, `--seed`, `--substeps`,
-`--prop-lifetime`, `--props-per-player` and `--props-global`. The `cb_client` options are `--rollback TICKS` (fixes the prediction window, which is otherwise chosen from latency),
+`--prop-lifetime`, `--props-per-player`, `--props-global`, and `--mods A,B` / `--mods none` / `--list-mods`
+(every compiled server mod runs by default, see [Server mods](#server-mods)). The `cb_client` options are `--rollback TICKS` (fixes the prediction window, which is otherwise chosen from latency),
 `--width`, `--height`, and `--autoplay SECONDS [--screenshot FILE]` for an unattended smoke test.
 
-## Mods
+## Server mods
 
-Mods are cosmetic Godot resource packs (`.zip`). A mod can replace or add:
+The game's rules live in C++ mods compiled into `cb_server` (`server_mods/<name>/<name>.cpp`). They run
+**only on the server**. Clients never run gameplay code and never learn what a pistol is.
+
+| What a mod does | How |
+|---|---|
+| Reads the world | the state before this tick: players, positions, board values, ray casts |
+| Reads input | this tick's inputs; `Pressed()` / `Held()` on actions it declared |
+| Changes the world | **commands** added to the tick's authoritative frame |
+| Keeps its own state | a flecs world shared by all mods (never rolled back, never sent) |
+| Talks to presentation | board fields and mod events, by name |
+
+Every client applies the frame's commands exactly like inputs, so the world stays deterministic
+and mods need no determinism of their own.
+
+| Command | Effect |
+|---|---|
+| `Set` | writes a board field of an entity, or of the game (global) |
+| `Emit` | announces a mod event (`"pistol.fired"`): two entities, a value, a point, a vector |
+| `SpawnProp` / `SpawnTemplate` | creates a prop, owned by a player or the level |
+| `Destroy` | removes an entity (never a player) |
+| `Push` | an impulse or a velocity change; knockback for characters |
+| `Kill` | a player dies, optionally leaving a ragdoll (lifetime and cap chosen by the mod) |
+| `Respawn` / `RespawnAt` | brings a dead player back |
+
+```cpp
+// server_mods/jumper/jumper.cpp: a jump boost on Q, the whole mod.
+class JumperMod final : public cb::mods::ServerMod {
+	cb::mods::ActionHandle m_boost;
+	cb::mods::EventHandle m_boosted;
+public:
+	const char* Name() const override { return "jumper"; }
+	void Declare( cb::mods::Declarations& d ) override {
+		m_boost = d.Action( "boost", "Q" );       // clients bind Q to it
+		m_boosted = d.Event( "jumper.boosted" );  // bindings can play something on it
+	}
+	void Tick( cb::mods::Context& ctx ) override {
+		for ( int i = 0; i < cb::kMaxPlayers; ++i )
+			if ( ctx.InWorld( i ) && ctx.Pressed( i, m_boost ) ) {
+				ctx.Push( cb::SlotTarget( i ), {}, { 0, 9, 0 }, cb::ImpulseVelocity );
+				ctx.Emit( m_boosted, cb::SlotTarget( i ) );
+			}
+	}
+};
+std::unique_ptr<cb::mods::ServerMod> CreateMod_jumper() { return std::make_unique<JumperMod>(); }
+```
+
+Add the folder, re-run CMake, and the mod is in `cb_server --list-mods`. The server sends every client
+a **schema** on join: field names and types, event names, and action names with suggested keys. The
+Godot client binds those keys (InputMap actions `cb_<name>`), and bindings refer to fields and events
+by name.
+
+The mods that ship:
+
+| Mod | Declares | Rules |
+|---|---|---|
+| `loadout` | `loadout.slot`; actions `slot_1` (1), `slot_2` (2) | 1 is empty hands, 2 is the pistol |
+| `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
+| `pistol` | `combat.*`, `pistol.*` fields; `fire` (left mouse), `reload` (R); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `combat.killed` | hitscan from the camera pivot, 25 damage, 12 rounds, 1.5 s reload; death leaves a ragdoll (10 s, at most 16); respawn after 3 s; falling out of the world counts as a death |
+
+Mods cooperate through the board: `props` and `pistol` read the `loadout.slot` that `loadout`
+publishes.
+
+## Client mods
+
+Client mods are cosmetic Godot resource packs (`.zip`). A mod can replace or add:
 - entity visuals in `prefabs/`;
 - effects in `vfx/`, and effect bindings as `vfx/bindings_<name>.tres`;
 - sounds and other shared files in `assets/`;
 - the HUD in `ui/`;
 - map visuals in `maps/` (the scene named after the map the server runs);
 
-Mods cannot contain code. The game refuses a pack that contains scripts, native libraries or files
-outside these folders, and one whose resources reference a script. Gameplay stays in the simulation
-and on the server, so a mod cannot change it.
+Client mods cannot contain code. The game refuses a pack that contains scripts, native libraries or
+files outside these folders, and one whose resources reference a script. Gameplay stays in the
+simulation and in the server's mods, so a client mod cannot change it.
 
 1. Create a Godot project under `mods_src/<name>`. Copy `mods_src/example_neon` as a starting point.
 2. Put your files at the same paths the game uses, for example `vfx/prop_spawn.tscn`.
@@ -171,7 +237,14 @@ shipping a file of its own, so two mods can add effects without fighting over on
 
 | Field | Meaning |
 |---|---|
-| `event` | Spawned, Destroying, Jumped, Landed, Footstep or Impact |
+| `event` | Spawned, Destroying, Jumped, Landed, Footstep, Impact, **Mod event** or **Action** |
+| `name` | Mod event or action: which one (`pistol.fired`, `fire`) |
+| `conditions` | Board conditions on the subject, all must hold (see below) |
+| `subject` | Mod events: entity A (who it is about) or B (the other one). `who`, `kind`, `template`, `conditions` and `bone` are checked on it |
+| `value_filter` | Mod events: any, value > 0 (a hit that did damage), or value == 0 |
+| `bone` | Play at a joint of the subject's character (`RightHand`, `Head`) |
+| `at_end` | Mod events: play at the event's vector (where a shot ended) instead of its point |
+| `beam` | Stretch a one-metre scene from where it plays to the event's end, like a tracer |
 | `template_name` | Only for entities from this map template; empty matches any |
 | `kind` | `any`, `prop`, `player` or `static` |
 | `scene` | The effect scene to play |
@@ -197,12 +270,44 @@ Footsteps and impacts come from the simulation, not from the renderer guessing:
 Both are part of the simulation's state, so they are identical on every machine, survive rollback,
 and a client that skipped frames still sees them.
 
+An **Action** binding plays the moment the local player presses a mod action, before the server
+answers. That is where feedback that cannot wait a round trip goes (a muzzle flash); its conditions
+say whether the server will accept the press (`pistol.ammo > 0`). Other players' shots arrive as mod
+events.
+
+Conditions read the server mods' **board** by name:
+
+| Condition | True when |
+|---|---|
+| `name` | the field is not zero |
+| `!name` | the field is zero |
+| `?name` | the server declared the field (its mod is running) |
+| `name == 2`, `!=`, `>`, `>=`, `<`, `<=` | the comparison holds (`true` / `false` count as 1 / 0) |
+
+A field the server did not declare reads as zero, so bindings for a mod that is not running never
+match.
+
+**State bindings** (`CbStateBinding`, the table's `states`) hold while their conditions do:
+
+| Field | Meaning |
+|---|---|
+| `conditions`, `kind`, `who` | when and for whom |
+| `attach_scene`, `attach_bone`, `attach_offset`, `attach_rotation` | a scene kept at a joint (a held item) |
+| `aim_bone`, `aim_tip`, `aim_weight` | turn a chain so it points where the player looks (an arm holding a gun) |
+| `tree_parameter` | an AnimationTree parameter set to whether the conditions hold |
+
+The HUD reads the board too: a **`CbFieldLabel`** is a Label with a `text_format` (`"AMMO {pistol.ammo} / 12"`)
+and `conditions` for when it shows. `ui/hud.tscn` uses them for health, ammo, reloading, the crosshair,
+kills and deaths, and the death message. None of it is script, so a client mod can restyle all of it.
+
 Every binding that matches plays, so bindings add to each other. When nothing matches, the older
 convention still applies: `res://vfx/<event>.tscn`, one of `prop_spawn`, `prop_destroy`, `jump`
 or `land`.
 
-`godot/vfx/bindings.tres` is the game's own set; `mods_src/example_neon/vfx/bindings_neon.tres`
-shows a mod adding three more, including its own sound. Both are edited in the Godot inspector.
+`godot/vfx/bindings.tres` is the game's own set and `godot/vfx/bindings_pistol.tres` is the pistol's
+look (predicted shots, tracers, hits, hurt and death feedback, reload, the held and aimed pistol);
+`mods_src/example_neon/vfx/bindings_neon.tres` shows a mod adding three more, including its own sound.
+All are edited in the Godot inspector.
 
 The sounds in `godot/assets/sfx/` are placeholders in the same spirit as the procedural rig: short,
 synthetic, and meant to be replaced. `tools/make_sfx.py` regenerates them.
@@ -250,7 +355,20 @@ godot --headless --path godot --script res://addons/cinderbox_maps/check_animtre
 ```
 
 A prefab may contain a `CinderboxSkeleton`, a `CinderboxAnimator`, or both; whichever it has is
-driven. The ozz pose is still evaluated for every player even when only the AnimationTree is used,
+driven. `event_parameters` on the animator maps mod events to tree parameters it fires (set to 1, the
+request of an `AnimationNodeOneShot`), e.g. `"pistol.fired": "parameters/shoot/request"` for a recoil
+clip.
+
+### Ragdolls
+
+A `Kill` command can leave a ragdoll: eleven Box3D bodies joined by cone-and-twist and hinge joints,
+built from a fixed standing pose in the simulation (`src/sim/ragdoll.h`). It is simulation state,
+identical on every machine, pushable, shootable, and it piles up with props and other ragdolls.
+
+Clients draw it with the player's own prefab (or `prefabs/ragdoll.tscn` if there is one): every joint
+of the skeleton follows the nearest body part, so any character works, and the pose the player was
+last drawn in is blended into the ragdoll over 0.15 s, so there is no snap. A prefab animated only by
+an AnimationTree needs a `CinderboxSkeleton` for its ragdoll to be posed. The ozz pose is still evaluated for every player even when only the AnimationTree is used,
 which costs a little work no one reads.
 
 ### Driving an imported character with ozz
@@ -273,7 +391,9 @@ godot --headless --path godot --script res://addons/cinderbox_maps/check_retarge
 reference. `--assets DIR` selects a different asset folder, and `--procedural-anim` forces the placeholder.
 
 Client controls:
-- WASD moves, Shift sprints, Space jumps, and F spawns a prop.
+- WASD moves, Shift sprints and Space jumps: the engine's own controls.
+- Everything else comes from the server's mods, bound to the keys they suggest. With the shipped mods:
+  1 and 2 switch hands and pistol, the left mouse button fires, R reloads, and F spawns a prop.
 - The mouse orbits the camera and the wheel zooms.
 - Esc releases the mouse and F1 toggles the debug HUD.
 
@@ -294,7 +414,8 @@ All tools are in `<build dir>/bin`.
 | `cb_replay info\|verify FILE` | Summarizes a recording, or re-simulates it and checks every checksum |
 | `cb_client --replay FILE [--replay-start S]` | Watches a recording |
 | `cb_netsim --listen P --target HOST:PORT --latency MS --jitter MS --loss % [--duplicate %]` | UDP relay that degrades traffic (latency is added in each direction) |
-| `cb_bot --port P --count N --full M --duration S [--chaotic]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick |
+| `cb_bot --port P --count N --full M --duration S [--chaotic] [--shoot]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick; `--shoot` makes full bots take out the pistol and fire at the nearest player |
+| `godot --path godot -- --autoplay=S --screenshot=F.png --screenshot-every=S2` | Unattended client; also saves `F_1.png`, `F_2.png`, ... and prints the mod events it saw |
 | `scripts/stress_test.sh --bots N --full M --latency MS --jitter MS --loss % --rollback T` | Starts a server, the simulator and the bots, and prints a summary |
 
 Replay viewer controls:
@@ -329,20 +450,23 @@ simulation code or tuning legitimately changes them. Regenerate the file with
 cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, Box3D, ENet, ozz, raylib)
 assets/anim/      your converted animation clips (see its README)
 src/sim/          deterministic simulation shared by server and client
-  types.h           inputs, input frames, config
+  types.h           inputs, commands, input frames, config
+  mod_schema.*      names of the mods' board fields, events and actions (sent on join)
+  ragdoll.h         the ragdoll's bodies and joints
   map.*             baked map format (.cbmap): fixed-point collision, templates and spawn data
   reflect.*         the authorable component registry the editor and the baker both read
   components.h      snapshotted ECS components (POD, no padding)
-  simulation.*      the game: level, character mover, props, snapshots, hashing
+  simulation.*      the engine: level, character mover, props, commands, ragdolls, snapshots, hashing
   rollback.*        client prediction + rollback session
   physics_arena.*   Box3D allocator arena (makes the physics state copyable)
   box3d_shim.c      access to Box3D internals (world struct, portable serializer)
   detmath.h         deterministic trig and the yaw convention
   fingerprint.*     build fingerprint checked when a client connects
   anim_controller.* deterministic locomotion state machine (AnimState)
-src/anim/         ozz: procedural rig, asset loading (anim_set.*), pose evaluation (pose.*)
+src/anim/         ozz: procedural rig, asset loading (anim_set.*), pose evaluation (pose.*), joint names (profile.*)
 src/net/          wire protocol, ENet wrapper, network simulator (netsim.*), replay files (replay.*)
-src/server/       authoritative GameServer (library) and cb_server
+src/server/       authoritative GameServer (library), the mod API (mod_api.*) and cb_server
+server_mods/      gameplay mods compiled into cb_server: loadout, props, pistol
 src/tools/        cb_netsim, cb_replay, cb_bot
 src/client/       GameClient core (no rendering, also "lite" mode), bot brain, and the raylib debug viewer
   app/              raylib rendering, camera, HUD over the presentation mirror
@@ -350,16 +474,19 @@ src/client/       GameClient core (no rendering, also "lite" mode), bot brain, a
   app/replay_viewer.* recording playback (--replay)
 src/present/      engine-independent presentation, shared by Godot and raylib
   frame.*           PresentationFrame: a copy of what the simulation shows at one tick
-  mirror.*          presentation flecs world: interpolation, error smoothing, visual events
-  scripts/          spawn/destroy effects, player pose evaluation
-src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals), CinderboxSkeleton,
-                  map and entity authoring nodes, effect bindings (cinderbox_effects.*)
+  mirror.*          presentation flecs world: interpolation, error smoothing, visual and mod events
+  fields.*          board fields and conditions by name
+  pose_tools.*      ragdoll poses, pose blending, aiming a limb
+  scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
+src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals, state bindings),
+                  CinderboxSkeleton, map and entity authoring nodes, effect and state bindings
+                  (cinderbox_effects.*), HUD labels (cinderbox_hud.*)
 godot/            Godot client project: boot (mod loader), game (input, camera, HUD, VFX), prefabs, vfx, ui
   maps/             map scenes and their baked .cbmap files
   assets/sfx/       placeholder sounds (tools/make_sfx.py)
   addons/cinderbox_maps/  editor and dev tooling: the Bake Map button, the headless baker,
                     the AnimationTree example generator and its check
-mods_src/         mod projects (example_neon, example_animtree)
+mods_src/         client mod projects (example_neon, example_animtree)
 tests/            determinism, rollback, gameplay, animation and loopback network tests
 scripts/          cross-compiler determinism check, stress test
 tools/            animation conversion (convert_animations.*), test glTF generator, pack_mod.ps1,
