@@ -193,6 +193,23 @@ write_wav(os.path.join(out_dir, "land.wav"), thud())
 write_wav(os.path.join(out_dir, "footstep.wav"), step())
 write_wav(os.path.join(out_dir, "impact.wav"), knock())
 
+def chime(notes, note_seconds=0.14):
+    out = []
+    for freq in notes:
+        n = int(RATE * note_seconds)
+        phase = 0.0
+        for i in range(n):
+            phase += 2 * math.pi * freq / RATE
+            out.append((math.sin(phase) * 0.6 + math.sin(2 * phase) * 0.2) * env(i, n, 0.01, 2.0) * 0.6)
+    return out
+
+
+# The deathmatch mod's sounds belong to its workshop item.
+deathmatch_dir = "server_mods/deathmatch/client/assets/sfx"
+os.makedirs(deathmatch_dir, exist_ok=True)
+write_wav(os.path.join(deathmatch_dir, "round_end.wav"), chime([523.0, 659.0, 784.0, 1047.0], 0.16))
+write_wav(os.path.join(deathmatch_dir, "round_start.wav"), chime([392.0, 392.0, 784.0], 0.12))
+
 # The pistol's sounds belong to its workshop item, not the base game.
 pistol_dir = "server_mods/pistol/client/assets/sfx"
 os.makedirs(pistol_dir, exist_ok=True)
