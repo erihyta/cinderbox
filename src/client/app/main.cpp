@@ -107,7 +107,8 @@ bool ParseArgs( int argc, char** argv, AppOptions& o )
 	return true;
 }
 
-PlayerInput SampleInput( const present::OrbitCamera& camera, bool hasFocus )
+// `spawnAction`: the server's "spawn_prop" action bit, bound to F here (0: the server has none).
+PlayerInput SampleInput( const present::OrbitCamera& camera, bool hasFocus, uint16_t spawnAction )
 {
 	PlayerInput in;
 	in.cameraYaw = detmath::RadiansToYaw( camera.yaw );
@@ -127,6 +128,10 @@ PlayerInput SampleInput( const present::OrbitCamera& camera, bool hasFocus )
 	if ( IsKeyDown( KEY_LEFT_SHIFT ) || IsKeyDown( KEY_RIGHT_SHIFT ) )
 	{
 		in.buttons |= BtnSprint;
+	}
+	if ( IsKeyDown( KEY_F ) )
+	{
+		in.actions |= spawnAction;
 	}
 	return in;
 }
@@ -292,7 +297,7 @@ int main( int argc, char** argv )
 		client.Update( GetTime(), [&]( uint32_t ) {
 			if ( autoplay == false )
 			{
-				return SampleInput( camera, focused );
+				return SampleInput( camera, focused, client.Schema().ActionMask( "spawn_prop" ) );
 			}
 			// Scripted player: runs around, jumps, spawns props, turns the camera.
 			uint64_t r = NextRandom( autoRng );
@@ -306,6 +311,7 @@ int main( int argc, char** argv )
 			{
 				autoInput.buttons |= BtnJump;
 			}
+			autoInput.actions = ( ( r >> 32 ) % 20 ) == 0 ? client.Schema().ActionMask( "spawn_prop" ) : 0;
 			camera.yaw += 0.01f;
 			autoInput.cameraYaw = detmath::RadiansToYaw( camera.yaw );
 			return autoInput;

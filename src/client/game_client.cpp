@@ -231,6 +231,15 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 		return;
 	}
 
+	ModSchema schema;
+	if ( DecodeSchema( msg.schema.data(), msg.schema.size(), schema ) == false )
+	{
+		m_rejectReason = "bad mod schema from the server";
+		m_state = ClientState::Rejected;
+		Log( "rejected: %s", m_rejectReason.c_str() );
+		return;
+	}
+
 	LevelLayout map;
 	std::string mapError;
 	if ( DeserializeMap( msg.map.data(), msg.map.size(), map, mapError ) == false )
@@ -265,6 +274,11 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 	}
 	m_config = msg.config;
 	m_map = std::move( map );
+	if ( !( schema == m_schema ) || m_schemaGeneration == 0 )
+	{
+		m_schema = std::move( schema );
+		m_schemaGeneration += 1;
+	}
 	m_mapHash = msg.mapHash;
 	m_slot = msg.slot;
 	m_liteTick = msg.snapshotTick;

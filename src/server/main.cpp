@@ -2,16 +2,21 @@
 //
 //   cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]
 //             [--prop-lifetime SEC] [--props-per-player N] [--props-global N]
-//             [--map FILE.cbmap] [--record FILE] [--quiet]
+//             [--map FILE.cbmap] [--record FILE] [--mods A,B | --mods none] [--list-mods] [--quiet]
+//
+// Every gameplay mod compiled in (server_mods/) runs unless --mods names a subset.
 
 #include "game_server.h"
+#include "registry.h"
 
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #if defined( _WIN32 )
 #include <windows.h>
@@ -25,10 +30,31 @@ void Usage()
 {
 	std::printf( "usage: cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]\n"
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
-				 "                 [--record FILE] [--quiet]\n" );
+				 "                 [--map FILE.cbmap] [--record FILE] [--mods A,B | --mods none] [--list-mods] [--quiet]\n" );
 }
 
-bool ParseArgs( int argc, char** argv, cb::ServerOptions& o )
+std::vector<std::string> SplitList( const std::string& list )
+{
+	std::vector<std::string> out;
+	size_t start = 0;
+	while ( start <= list.size() )
+	{
+		size_t comma = list.find( ',', start );
+		std::string item = list.substr( start, comma == std::string::npos ? std::string::npos : comma - start );
+		if ( item.empty() == false )
+		{
+			out.push_back( item );
+		}
+		if ( comma == std::string::npos )
+		{
+			break;
+		}
+		start = comma + 1;
+	}
+	return out;
+}
+
+bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::string>& mods, bool& listMods )
 {
 	for ( int i = 1; i < argc; ++i )
 	{
@@ -50,6 +76,17 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o )
 		if ( arg == "--map" && i + 1 < argc )
 		{
 			o.mapPath = argv[++i];
+			continue;
+		}
+		if ( arg == "--mods" && i + 1 < argc )
+		{
+			std::string list = argv[++i];
+			mods = list == "none" ? std::vector<std::string>{} : SplitList( list );
+			continue;
+		}
+		if ( arg == "--list-mods" )
+		{
+			listMods = true;
 			continue;
 		}
 		if ( i + 1 >= argc )
@@ -96,10 +133,24 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o )
 int main( int argc, char** argv )
 {
 	cb::ServerOptions options;
-	if ( ParseArgs( argc, argv, options ) == false )
+	std::vector<std::string> modNames;
+	for ( const cb::mods::ModInfo& info : cb::mods::CompiledMods() )
+	{
+		modNames.push_back( info.name );
+	}
+	bool listMods = false;
+	if ( ParseArgs( argc, argv, options, modNames, listMods ) == false )
 	{
 		Usage();
 		return 1;
+	}
+	if ( listMods )
+	{
+		for ( const cb::mods::ModInfo& info : cb::mods::CompiledMods() )
+		{
+			std::printf( "%s\n", info.name );
+		}
+		return 0;
 	}
 
 #if defined( _WIN32 )
@@ -107,6 +158,16 @@ int main( int argc, char** argv )
 #endif
 
 	cb::GameServer server;
+	for ( const std::string& name : modNames )
+	{
+		std::unique_ptr<cb::mods::ServerMod> mod = cb::mods::CreateMod( name );
+		if ( mod == nullptr )
+		{
+			std::printf( "no mod named %s (see --list-mods)\n", name.c_str() );
+			return 1;
+		}
+		server.AddMod( std::move( mod ) );
+	}
 	if ( server.Start( options ) == false )
 	{
 		return 1;

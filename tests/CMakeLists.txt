@@ -7,11 +7,11 @@ foreach(name map_format templates sim_events gameplay_sanity commands ragdoll an
 endforeach()
 
 add_executable(cb_net_tests net_test.cpp)
-target_link_libraries(cb_net_tests PRIVATE cb_server_core cb_client_core)
+target_link_libraries(cb_net_tests PRIVATE cb_server_mods cb_client_core)
 if(WIN32)
 	target_link_libraries(cb_net_tests PRIVATE winmm)
 endif()
 cb_target_warnings(cb_net_tests)
-foreach(name protocol map_sync loopback_session late_join reconnect grace_expiry lossy_session)
+foreach(name protocol map_sync loopback_session late_join reconnect grace_expiry lossy_session mods_session)
 	add_test(NAME net_${name} COMMAND cb_net_tests ${name})
 endforeach()

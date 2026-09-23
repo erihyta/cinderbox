@@ -4,11 +4,12 @@
 // plus periodic state checksums. Because the simulation is deterministic, that is enough to
 // reproduce every tick of the session exactly.
 //
-// Layout: "CBRP", u32 version, u64 fingerprint, config, map, then records of
+// Layout: "CBRP", u32 version, a Welcome (fingerprint, config, map, mod schema), then records of
 //   u8 type (1 = frame, 2 = checksum), u32 payload size, payload.
 // Frames are delta-coded like on the wire. A truncated last record (crash) is ignored.
 
 #include "map.h"
+#include "mod_schema.h"
 #include "protocol.h"
 
 #include <cstdio>
@@ -26,7 +27,9 @@ public:
 	ReplayWriter( const ReplayWriter& ) = delete;
 	ReplayWriter& operator=( const ReplayWriter& ) = delete;
 
-	bool Open( const std::string& path, uint64_t fingerprint, const SimConfig& config, const std::vector<uint8_t>& map );
+	// `schema` is the server's encoded ModSchema, so a viewer can name fields and events.
+	bool Open( const std::string& path, uint64_t fingerprint, const SimConfig& config, const std::vector<uint8_t>& map,
+			   const std::vector<uint8_t>& schema = {} );
 	void AddFrame( const InputFrame& frame );
 	void AddChecksum( uint32_t tick, uint64_t hash );
 	void Flush();
@@ -68,6 +71,11 @@ public:
 	{
 		return m_map;
 	}
+	// What the server's mods declared (empty for a server without mods).
+	const ModSchema& Schema() const
+	{
+		return m_schema;
+	}
 	// frames[i].tick == i
 	const std::vector<InputFrame>& Frames() const
 	{
@@ -87,6 +95,7 @@ private:
 	SimConfig m_config;
 	std::vector<uint8_t> m_mapBytes;
 	LevelLayout m_map;
+	ModSchema m_schema;
 	std::vector<InputFrame> m_frames;
 	std::vector<MsgChecksum> m_checksums;
 	bool m_truncated = false;

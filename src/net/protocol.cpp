@@ -1,6 +1,7 @@
 #include "protocol.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace cb::net
 {
@@ -21,8 +22,90 @@ enum InputField : uint8_t
 	FieldYawDelta = 1 << 3, // relative, i8
 	FieldButtons = 1 << 4,
 	FieldReserved = 1 << 5,
-	FieldAll = ( 1 << 6 ) - 1,
+	FieldPitch = 1 << 6,
+	FieldActions = 1 << 7,
+	FieldAll = 0xFF,
 };
+
+// Which members of a command follow its type byte. Anything left out is zero, so most commands
+// cost a handful of bytes.
+enum CommandField : uint8_t
+{
+	CmdMode = 1 << 0,
+	CmdIndex = 1 << 1,
+	CmdTarget = 1 << 2,
+	CmdOther = 1 << 3,
+	CmdValue = 1 << 4,
+	CmdA = 1 << 5,
+	CmdB = 1 << 6,
+	CmdC = 1 << 7,
+};
+
+bool IsZero( const Float3& f )
+{
+	return f.x == 0.0f && f.y == 0.0f && f.z == 0.0f && std::signbit( f.x ) == false && std::signbit( f.y ) == false &&
+		   std::signbit( f.z ) == false;
+}
+
+void WriteCommand( ByteWriter& w, const SimCommand& c )
+{
+	uint8_t fields = 0;
+	fields |= c.mode != 0 ? CmdMode : 0;
+	fields |= c.index != 0 ? CmdIndex : 0;
+	fields |= c.target != 0 ? CmdTarget : 0;
+	fields |= c.other != 0 ? CmdOther : 0;
+	fields |= c.value != 0 ? CmdValue : 0;
+	fields |= IsZero( c.a ) ? 0 : CmdA;
+	fields |= IsZero( c.b ) ? 0 : CmdB;
+	fields |= IsZero( c.c ) ? 0 : CmdC;
+	w.Write( uint8_t( c.type ) );
+	w.Write( fields );
+	if ( fields & CmdMode )
+		w.Write( c.mode );
+	if ( fields & CmdIndex )
+		w.Write( c.index );
+	if ( fields & CmdTarget )
+		w.Write( c.target );
+	if ( fields & CmdOther )
+		w.Write( c.other );
+	if ( fields & CmdValue )
+		w.Write( c.value );
+	if ( fields & CmdA )
+		w.Write( c.a );
+	if ( fields & CmdB )
+		w.Write( c.b );
+	if ( fields & CmdC )
+		w.Write( c.c );
+}
+
+bool ReadCommand( ByteReader& r, SimCommand& c )
+{
+	c = SimCommand{};
+	uint8_t type = r.Read<uint8_t>();
+	uint8_t fields = r.Read<uint8_t>();
+	if ( r.Ok() == false || type == 0 || type > kLastCommandType )
+	{
+		return false;
+	}
+	c.type = CommandType( type );
+	if ( fields & CmdMode )
+		c.mode = r.Read<uint8_t>();
+	if ( fields & CmdIndex )
+		c.index = r.Read<uint16_t>();
+	if ( fields & CmdTarget )
+		c.target = r.Read<uint32_t>();
+	if ( fields & CmdOther )
+		c.other = r.Read<uint32_t>();
+	if ( fields & CmdValue )
+		c.value = r.Read<int32_t>();
+	if ( fields & CmdA )
+		c.a = r.Read<Float3>();
+	if ( fields & CmdB )
+		c.b = r.Read<Float3>();
+	if ( fields & CmdC )
+		c.c = r.Read<Float3>();
+	return r.Ok();
+}
 
 void Begin( std::vector<uint8_t>& out, MsgType type )
 {
@@ -131,6 +214,7 @@ void Encode( const MsgWelcome& m, std::vector<uint8_t>& out )
 	w.Write( m.mapHash );
 	w.WriteBlob( m.map );
 	w.WriteBlob( m.image );
+	w.WriteBlob( m.schema );
 }
 
 bool Decode( ByteReader& r, MsgWelcome& m )
@@ -149,7 +233,7 @@ bool Decode( ByteReader& r, MsgWelcome& m )
 		return false;
 	}
 	m.mapHash = r.Read<uint64_t>();
-	return ReadBlobChecked( r, m.map ) && ReadBlobChecked( r, m.image ) && m.slot < kMaxPlayers;
+	return ReadBlobChecked( r, m.map ) && ReadBlobChecked( r, m.image ) && ReadBlobChecked( r, m.schema ) && m.slot < kMaxPlayers;
 }
 
 void Encode( const MsgReject& m, std::vector<uint8_t>& out )
@@ -235,8 +319,9 @@ bool Decode( ByteReader& r, MsgInput& m )
 	return true;
 }
 
-// Frame layout: type, tick u32, eventCount u8, events (type u8, slot u8)*, changedMask u64,
-// then one PlayerInput per set bit in slot order.
+// Frame layout: type, tick u32, eventCount u8, events (type u8, slot u8)*, commandCount u16,
+// commands (type u8, field mask u8, the fields present)*, changedMask u64, then the changed fields
+// of each player whose bit is set, in slot order.
 void FrameCodec::Encode( const InputFrame& frame, std::vector<uint8_t>& out )
 {
 	Begin( out, MsgType::Frame );
@@ -257,6 +342,12 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
 	{
 		w.Write( uint8_t( e.type ) );
 		w.Write( e.slot );
+	}
+	size_t commands = std::min( frame.commands.size(), kMaxCommandsPerFrame );
+	w.Write( uint16_t( commands ) );
+	for ( size_t i = 0; i < commands; ++i )
+	{
+		WriteCommand( w, frame.commands[i] );
 	}
 
 	uint64_t changed = 0;
@@ -285,6 +376,8 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
 			}
 			fields |= now.buttons != before.buttons ? FieldButtons : 0;
 			fields |= now.reserved != before.reserved ? FieldReserved : 0;
+			fields |= now.cameraPitch != before.cameraPitch ? FieldPitch : 0;
+			fields |= now.actions != before.actions ? FieldActions : 0;
 
 			w.Write( fields );
 			if ( fields & FieldMoveRight )
@@ -299,6 +392,10 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
 				w.Write( now.buttons );
 			if ( fields & FieldReserved )
 				w.Write( now.reserved );
+			if ( fields & FieldPitch )
+				w.Write( now.cameraPitch );
+			if ( fields & FieldActions )
+				w.Write( now.actions );
 		}
 	}
 	m_previous = frame.inputs;
@@ -318,6 +415,20 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame )
 			return false;
 		}
 		frame.events.push_back( { PlayerEventType( type ), slot } );
+	}
+
+	uint16_t commandCount = r.Read<uint16_t>();
+	if ( r.Ok() == false || commandCount > kMaxCommandsPerFrame )
+	{
+		return false;
+	}
+	frame.commands.resize( commandCount );
+	for ( SimCommand& c : frame.commands )
+	{
+		if ( ReadCommand( r, c ) == false )
+		{
+			return false;
+		}
 	}
 
 	uint64_t changed = r.Read<uint64_t>();
@@ -346,6 +457,10 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame )
 			in.buttons = r.Read<uint8_t>();
 		if ( fields & FieldReserved )
 			in.reserved = r.Read<uint8_t>();
+		if ( fields & FieldPitch )
+			in.cameraPitch = r.Read<int16_t>();
+		if ( fields & FieldActions )
+			in.actions = r.Read<uint16_t>();
 	}
 	if ( r.Ok() == false )
 	{
@@ -353,6 +468,12 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame )
 	}
 	m_previous = frame.inputs;
 	return true;
+}
+
+bool IsSendableCommand( const SimCommand& c )
+{
+	auto finite = []( const Float3& f ) { return std::isfinite( f.x ) && std::isfinite( f.y ) && std::isfinite( f.z ); };
+	return uint8_t( c.type ) >= 1 && uint8_t( c.type ) <= kLastCommandType && finite( c.a ) && finite( c.b ) && finite( c.c );
 }
 
 void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, size_t count, std::vector<uint8_t>& out )

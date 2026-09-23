@@ -142,6 +142,8 @@ void RunWorker( Worker& w, Clock::time_point start, const std::atomic<bool>& sto
 				}
 				b.started = true;
 			}
+			// The spawn button is a mod action now; its bit comes from the server's schema.
+			b.brain.spawnAction = b.client->Schema().ActionMask( "spawn_prop" );
 			b.client->Update( now, [&b]( uint32_t ) { return b.brain.Next(); } );
 			if ( b.full && b.client->GetStats().ticksLastFrame > 0 )
 			{

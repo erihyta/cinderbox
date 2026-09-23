@@ -20,7 +20,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 3;
+inline constexpr uint32_t kProtocolVersion = 4; // 4: pitch, mod actions, commands, mod schema
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t
@@ -59,6 +59,9 @@ struct MsgHello
 // `map` is the server's baked level (a .cbmap, see sim/map.h). The client builds its simulation
 // from these bytes, so it can never run a different level: entities created later (a player
 // spawning, a prop) depend on the map, and a mismatch would desync.
+//
+// `schema` names what the server's mods declared (sim/mod_schema.h): board fields, mod events and
+// actions. Presentation and input binding read it; the simulation never does.
 struct MsgWelcome
 {
 	uint32_t version = kProtocolVersion;
@@ -71,6 +74,7 @@ struct MsgWelcome
 	uint64_t mapHash = 0;
 	std::vector<uint8_t> map;
 	std::vector<uint8_t> image;
+	std::vector<uint8_t> schema;
 };
 
 struct MsgReject
@@ -149,6 +153,10 @@ bool ReadFrameBatchHeader( ByteReader& r, uint32_t& firstTick, uint32_t& count )
 // Second step, once the caller has found the inputs of firstTick - 1.
 bool ReadFrameBatchBody( ByteReader& r, const InputArray& base, uint32_t firstTick, uint32_t count,
 						 std::vector<InputFrame>& out );
+
+// Commands a server is about to send: anything that is not finite, or not a known type, is dropped
+// here so every client applies exactly the same list.
+bool IsSendableCommand( const SimCommand& command );
 
 // Canonical input sanitation, applied by the server before an input enters a frame.
 inline PlayerInput SanitizeInput( PlayerInput in )
