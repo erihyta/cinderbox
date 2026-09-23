@@ -618,6 +618,41 @@ void TestModsSession()
 	}
 }
 
+// A client that stalls for a moment (a hitch, a dragged window) comes back behind the server. It must
+// catch up quickly: until it does, every input it sends arrives late and the server drops presses.
+void TestStallRecovery()
+{
+	Harness h( 47795 );
+	h.AddBot();
+	h.AddBot();
+	h.RunUntil( 2.0 );
+
+	// Stall the second bot for 0.4 s: the server keeps ticking, the bot does nothing.
+	Bot& stalled = h.bots[1];
+	double resumeAt = h.Now() + 0.4;
+	while ( h.Now() < resumeAt )
+	{
+		double now = h.Now();
+		h.server.Update( now );
+		h.bots[0].client->Update( now, [&]( uint32_t tick ) { return h.bots[0].Sample( tick ); } );
+		std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+	}
+
+	// Let it notice, then count what arrives late over the next second.
+	h.RunUntil( h.Now() + 0.25 );
+	uint64_t lateBefore = h.server.GetStats().lateInputs;
+	h.RunUntil( h.Now() + 1.0 );
+	uint64_t late = h.server.GetStats().lateInputs - lateBefore;
+	std::printf( "    after a 0.4 s stall: %llu late inputs in the next second, clock error %.1f ticks\n",
+				 (unsigned long long)late, stalled.client->GetStats().tickError );
+	h.Report();
+	if ( kTimingChecks )
+	{
+		CHECK( late < 10 );
+	}
+	CHECK( stalled.client->GetStats().desyncs == 0 );
+}
+
 void TestProtocol()
 {
 	using namespace net;
@@ -829,6 +864,7 @@ int main( int argc, char** argv )
 		{ "grace_expiry", TestGraceExpiry },
 		{ "lossy_session", TestLossySession },
 		{ "mods_session", TestModsSession },
+		{ "stall_recovery", TestStallRecovery },
 	};
 
 	const char* filter = argc > 1 ? argv[1] : nullptr;
