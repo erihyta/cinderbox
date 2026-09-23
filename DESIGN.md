@@ -417,6 +417,52 @@ reasons not pinned down beyond timing.)
 - A prefab animated only by an AnimationTree needs a `CinderboxSkeleton` for its ragdoll.
 - The raylib viewer draws ragdolls and hides the dead; it has none of the new bindings.
 
+## Workshop items, HUD from fields, names (M15)
+
+### Mods are distributed like workshop items
+A server mod has two halves. Its **rules** are C++ compiled into `cb_server`, built by whoever runs the
+server. Its **look** is a workshop item that players subscribe to, like a Steam Workshop or
+Counter-Strike mod. **The game connection never carries mod files.**
+
+```
+server_mods/pistol/client/  ──publish_mod.ps1──>  workshop: pistol/<sha256>.zip   (players have it)
+                                     │
+                                     └──> client_item.cfg (sha256) ──build──> bin/items/pistol.item
+                                                                                    │
+cb_server announces "pistol <sha256>" in the schema  <───────────────────────────────┘
+client: has that exact item? load it, else leave and say what is missing
+```
+
+- **Identity is the content hash** (SHA-256 of the pack). Unambiguous: every player on a server sees
+  the same look, and an update is a new item that servers opt into by announcing its hash.
+- **Load order**: base game, then the server's items, then the player's own mods (loaded again, so
+  they keep the last word). Bindings and `ui/hud_<mod>.tscn` overlays reload after items load.
+- **A missing item refuses the join** with the list of items to get; half a look is worse than none.
+- **The workshop is a folder for now** (`user://workshop/<mod>/<sha256>.zip`). `godot/workshop.gd` is
+  the single place a real one (Steamworks UGC) plugs in.
+- **The validator became an allowlist**, since items come from other people: known files in known
+  places, redirects that stay in the pack, no compressed resources (they hid their contents from the
+  old byte scan), and no script types or script paths in any resource. Honest limit: it cannot make
+  Godot's own resource parsers safe against deliberately malformed files.
+
+### HUD from fields
+The health display used to be a label in the base game. It is now the pistol item's own 2D HUD, and
+any mod can build one the same way, from ordinary controls plus four script-free nodes:
+`CbFieldLabel` (text), `CbFieldBinding` (a field into any property of any node: a `ProgressBar`'s
+`value` from `combat.health` and `max_value` from `combat.max_health`), `CbEventFeed` (a kill feed from
+`combat.killed`) and `CbScoreboard` (players by name with field columns, while Tab is held).
+
+### Names
+Hello carries the name a player asks for; the server keeps it printable, trims it to 24 bytes on a
+character boundary, makes duplicates unique ("Sam (2)") and sends the roster to everyone on the
+reliable channel. Names are presentation: never simulated, never hashed. Protocol 5.
+
+### Clock sync: catch up fast
+A client a few ticks behind (a join, a hitch) used to speed up by at most 15%, so its inputs arrived
+late for seconds and the server dropped its presses. Being behind costs input while being ahead only
+costs latency, so beyond 1.5 ticks behind it now runs up to twice as fast. A 0.4 s stall went from 60
+late inputs in the next second to 0; joins went from ~90 late inputs to ~8.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*`).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -504,3 +550,4 @@ reasons not pinned down beyond timing.)
 12. **M12** (done): `CinderboxAnimator`, which drives a Godot AnimationTree from the simulation's animation mode, ground speed and locomotion phase, with drift resync; a generated example prefab shipped as a mod, and a headless check that a prefab's tree follows the simulation.
 13. **M13** (done): the rig renamed to Godot's humanoid profile with Mixamo aliases, and `CinderboxSkeleton` retargeting by rotation onto a character's own rest, bridging the arms-down and T-pose rest postures, verified on a deliberately differently proportioned humanoid.
 14. **M14** (done): server gameplay mods in C++ with commands in the authoritative frame, a board and mod events, the mod schema sent on join, pitch and mod actions in the input, deterministic ragdolls, data-driven presentation of mod state (conditional effects, predicted action feedback, held items, aimed arms, HUD labels), a pistol demo (loadout, props, pistol mods), `cb_bot --shoot`, and ENet's throttle drops disabled. Verified identical across Clang, GCC and MSVC.
+15. **M15** (done): mods' looks as workshop items announced by hash and never sent (publish tool, local workshop, join refusal, load order), the pistol's look moved into its item, an allowlist pack validator with a hostile-pack check, HUD nodes driven by fields and events (health bar, kill feed, scoreboard), player names, and a fast clock catch-up.

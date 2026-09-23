@@ -21,6 +21,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M12: Godot AnimationTree driven by the simulation's animation state | done |
 | M13: humanoid-profile bone names and retargeting onto any character | done |
 | M14: server gameplay mods (C++), commands in the frame, board and mod events, deterministic ragdolls, data-driven mod presentation, pistol demo | done |
+| M15: workshop items (mods' looks, announced by servers, never sent), hardened pack validator, HUD from fields (bars, kill feed, scoreboard), player names, fast clock catch-up | done |
 
 ## Building
 
@@ -60,6 +61,8 @@ cb_client --host 127.0.0.1 --port 7777
 
 Open `godot/` in the Godot editor to edit scenes, then press Play. Godot client options, given after `--`:
 - `--host=H`, `--port=P`: the server address.
+- `--name=NAME`: your name (otherwise the one saved from the name field, which Esc shows).
+- `--workshop=DIR`: where subscribed workshop items are (default `user://workshop`).
 - `--rollback=N`: fixes the prediction window.
 - `--animations=DIR`: a folder of converted clips.
 - `--mods=DIR`: an extra mod folder.
@@ -144,6 +147,28 @@ The mods that ship:
 Mods cooperate through the board: `props` and `pistol` read the `loadout.slot` that `loadout`
 publishes.
 
+### Workshop items
+
+A mod's **look** (bindings, HUD, meshes, sounds) is a workshop item, like a Steam Workshop or
+Counter-Strike mod. **Game servers never send it**: a server only announces which item each of its
+mods needs, and players must already have that exact item.
+
+| Piece | Where |
+|---|---|
+| The item's source | `server_mods/<mod>/client/`, a Godot project next to the mod's code, with a "Mod" export preset |
+| Publishing | `tools\publish_mod.ps1 -Mod <mod>`: packs it, names it by its SHA-256, installs it into the local workshop, writes `server_mods/<mod>/client_item.cfg` (commit it) |
+| The workshop | for now a folder: `user://workshop/<mod>/<sha256>.zip` (`%APPDATA%\Godot\app_userdata\Cinderbox\workshop`); `godot/workshop.gd` is the one place a real workshop would plug in |
+| What the server announces | the hash from `bin/items/<mod>.item` (the build copies `client_item.cfg` there; `--items DIR` to use another folder) |
+
+Joining a server:
+1. The server's schema lists the items its mods need.
+2. Anything missing or different: the client leaves and says exactly which items to get.
+3. Otherwise items load after the base game and **before your own mods**, which load again last, so you
+   can still restyle what an item ships. Their `ui/hud_<mod>.tscn` is laid over the game's HUD.
+
+After changing a mod's client project, publish it again and rebuild: the new hash is what servers
+announce, and older copies stay in the workshop for servers that still announce them.
+
 ## Client mods
 
 Client mods are cosmetic Godot resource packs (`.zip`). A mod can replace or add:
@@ -153,9 +178,13 @@ Client mods are cosmetic Godot resource packs (`.zip`). A mod can replace or add
 - the HUD in `ui/`;
 - map visuals in `maps/` (the scene named after the map the server runs);
 
-Client mods cannot contain code. The game refuses a pack that contains scripts, native libraries or
-files outside these folders, and one whose resources reference a script. Gameplay stays in the
-simulation and in the server's mods, so a client mod cannot change it.
+Client mods and workshop items cannot contain code. Every pack is checked against an allowlist
+before it loads: only known kinds of files in these folders (and Godot's converted copies of them),
+redirects that stay inside the pack, no compressed resources, and no resource that names a script
+type or a script file. `godot/addons/cinderbox_maps/check_mod_validator.gd` checks real packs and a
+set of hostile ones. Gameplay stays in the simulation and in the server's mods, so a pack cannot
+change it. What no validator can promise is that Godot's own parsers are safe against a deliberately
+malformed file, so packs are still something to take from people you trust.
 
 1. Create a Godot project under `mods_src/<name>`. Copy `mods_src/example_neon` as a starting point.
 2. Put your files at the same paths the game uses, for example `vfx/prop_spawn.tscn`.
@@ -297,16 +326,26 @@ match.
 | `aim_bone`, `aim_tip`, `aim_weight` | turn a chain so it points where the player looks (an arm holding a gun) |
 | `tree_parameter` | an AnimationTree parameter set to whether the conditions hold |
 
-The HUD reads the board too: a **`CbFieldLabel`** is a Label with a `text_format` (`"AMMO {pistol.ammo} / 12"`)
-and `conditions` for when it shows. `ui/hud.tscn` uses them for health, ammo, reloading, the crosshair,
-kills and deaths, and the death message. None of it is script, so a client mod can restyle all of it.
+The HUD reads the board too, through script-free nodes any HUD scene can use:
+
+| Node | Does |
+|---|---|
+| `CbFieldLabel` | a Label with a `text_format` (`"AMMO {pistol.ammo} / 12"`), shown while its `conditions` hold |
+| `CbFieldBinding` | writes a field into any property of its `target` (default: its parent), `value = field * multiply + add`; with conditions it hides the target while they fail. A `ProgressBar`'s `value` and `max_value`, a panel's `visible`, a colour |
+| `CbEventFeed` | a line per mod event, `"{a}  >  {b}"` with player names, fading after `line_seconds` (a kill feed) |
+| `CbScoreboard` | players as rows: `cells` like `"{name}"`, `"{combat.kills}"`, sorted by `sort_field`, shown while Tab is held |
+
+The pistol's HUD (`server_mods/pistol/client/ui/hud_pistol.tscn`) is built from these: a health bar
+(`ProgressBar` from `combat.health` and `combat.max_health`), ammo, reloading, crosshair, kills and
+deaths, the kill feed and the scoreboard. None of it is script, so a client mod can restyle all of it.
 
 Every binding that matches plays, so bindings add to each other. When nothing matches, the older
 convention still applies: `res://vfx/<event>.tscn`, one of `prop_spawn`, `prop_destroy`, `jump`
 or `land`.
 
-`godot/vfx/bindings.tres` is the game's own set and `godot/vfx/bindings_pistol.tres` is the pistol's
-look (predicted shots, tracers, hits, hurt and death feedback, reload, the held and aimed pistol);
+`godot/vfx/bindings.tres` is the game's own set; the pistol's look (predicted shots, tracers, hits,
+hurt and death feedback, reload, the held and aimed pistol) is `vfx/bindings_pistol.tres` in its
+workshop item;
 `mods_src/example_neon/vfx/bindings_neon.tres` shows a mod adding three more, including its own sound.
 All are edited in the Godot inspector.
 
@@ -395,8 +434,8 @@ Client controls:
 - WASD moves, Shift sprints and Space jumps: the engine's own controls.
 - Everything else comes from the server's mods, bound to the keys they suggest. With the shipped mods:
   1 and 2 switch hands and pistol, the left mouse button fires, R reloads, and F spawns a prop.
-- The mouse orbits the camera and the wheel zooms.
-- Esc releases the mouse and F1 toggles the debug HUD.
+- Tab shows the scoreboard, the mouse orbits the camera and the wheel zooms.
+- Esc releases the mouse (and shows the name field; Enter rejoins with the new name), F1 toggles the debug HUD.
 
 The HUD shows the predicted and confirmed ticks, round-trip time, clock error, rollbacks, stalls and
 checksum results.
@@ -415,6 +454,7 @@ All tools are in `<build dir>/bin`.
 | `cb_replay info\|verify FILE` | Summarizes a recording, or re-simulates it and checks every checksum |
 | `cb_client --replay FILE [--replay-start S]` | Watches a recording |
 | `cb_netsim --listen P --target HOST:PORT --latency MS --jitter MS --loss % [--duplicate %]` | UDP relay that degrades traffic (latency is added in each direction) |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_mod_validator.gd -- PACK.zip...` | Checks the pack validator: the named packs pass, built-in hostile packs are refused |
 | `cb_bot --port P --count N --full M --duration S [--chaotic] [--shoot]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick; `--shoot` makes full bots take out the pistol and fire at the nearest player |
 | `godot --path godot -- --autoplay=S --screenshot=F.png --screenshot-every=S2` | Unattended client; also saves `F_1.png`, `F_2.png`, ... and prints the mod events it saw |
 | `scripts/stress_test.sh --bots N --full M --latency MS --jitter MS --loss % --rollback T` | Starts a server, the simulator and the bots, and prints a summary |
@@ -468,6 +508,8 @@ src/anim/         ozz: procedural rig, asset loading (anim_set.*), pose evaluati
 src/net/          wire protocol, ENet wrapper, network simulator (netsim.*), replay files (replay.*)
 src/server/       authoritative GameServer (library), the mod API (mod_api.*) and cb_server
 server_mods/      gameplay mods compiled into cb_server: loadout, props, pistol
+  <mod>/client/     a mod's look as a Godot project, published as a workshop item
+  <mod>/client_item.cfg  the published item's SHA-256, which servers announce
 src/tools/        cb_netsim, cb_replay, cb_bot
 src/client/       GameClient core (no rendering, also "lite" mode), bot brain, and the raylib debug viewer
   app/              raylib rendering, camera, HUD over the presentation mirror
@@ -482,14 +524,15 @@ src/present/      engine-independent presentation, shared by Godot and raylib
 src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals, state bindings),
                   CinderboxSkeleton, map and entity authoring nodes, effect and state bindings
                   (cinderbox_effects.*), HUD labels (cinderbox_hud.*)
-godot/            Godot client project: boot (mod loader), game (input, camera, HUD, VFX), prefabs, vfx, ui
+godot/            Godot client project: boot (player mods, pack validator), game (input, camera, HUD, VFX,
+                  joining with workshop items), workshop.gd (where items are), prefabs, vfx, ui
   maps/             map scenes and their baked .cbmap files
   assets/sfx/       placeholder sounds (tools/make_sfx.py)
   addons/cinderbox_maps/  editor and dev tooling: the Bake Map button, the headless baker,
-                    the AnimationTree example generator and its check
+                    the AnimationTree example generator and its check, the pack validator check
 mods_src/         client mod projects (example_neon, example_animtree)
 tests/            determinism, rollback, gameplay, animation and loopback network tests
 scripts/          cross-compiler determinism check, stress test
-tools/            animation conversion (convert_animations.*), test glTF generator, pack_mod.ps1,
+tools/            animation conversion (convert_animations.*), test glTF generator, pack_mod.ps1, publish_mod.ps1,
                   export_client.ps1, bake_map.ps1, make_sfx.py (placeholder sounds)
 ```

@@ -1,8 +1,9 @@
 # Client mod projects
 
-These are **client** mods: cosmetic packs for the Godot client. The game's rules are server mods,
-compiled into `cb_server` (see `server_mods/` and the README's Server mods section); a client mod
-changes how those rules look and sound, never what they do.
+These are **client** mods: cosmetic packs for the Godot client that players install themselves. The
+game's rules are server mods, compiled into `cb_server`, and each server mod's own look is a workshop
+item (`server_mods/<mod>/client/`, see the README's Workshop items section). A client mod loads after
+both, so it can restyle the base game and any item, but never change what the rules do.
 
 Each folder here is a small Godot project that is packed into a cosmetic mod with
 `tools\pack_mod.ps1 -Project mods_src\<name>`. The result is `mods\<name>.zip`.
@@ -12,11 +13,13 @@ pack is loaded, the game uses the mod's file instead. New files can go in the sa
 
 ## Rules
 
-The game checks each pack before it loads it. A pack is refused if:
-- it contains a file outside `prefabs/`, `vfx/`, `ui/`, `maps/`, `assets/` or Godot's
-  import folders;
-- it contains a script (`.gd`, `.cs`), a native library, `.gdextension`, `.json`, or a nested pack;
-- one of its resources references a script or a GDExtension.
+The game checks each pack before it loads it, against an allowlist. A pack is refused if:
+- it contains a file outside `prefabs/`, `vfx/`, `ui/`, `maps/`, `assets/` or Godot's converted
+  copies (`.godot/exported`, `.godot/imported`), or a kind of file not on the list (scenes,
+  resources, textures, samples, audio, fonts);
+- a `.remap` or `.import` points anywhere but the pack's own converted files;
+- a resource is compressed (its contents could not be checked);
+- a resource names a script type (`GDScript`, `Script`, `GDExtension`, ...) or a script file (`.gd`, `.cs`).
 
 The mod projects' own settings and caches (`project.binary`, `uid_cache.bin`) are removed by the pack
 tool, so a mod never replaces the game's project settings.
@@ -35,12 +38,12 @@ Godot converts scenes and imported assets into its runtime formats when packing.
 | `prefabs/<visual>.tscn` | entities from a map template | A template names the prefab it draws as. Unit-sized like the others: the client scales it to the shape the template authored. |
 | `prefabs/ragdoll.tscn` | ragdolls (optional) | Posed like a player; without it the player prefab is used. It needs a `CinderboxSkeleton` to be posed. |
 | `vfx/bindings*.tres` | what plays on which event | A `CbEffectTable`: scenes, sounds, camera shake and screen flashes, plus state bindings (held items, aimed arms). Every file matching this name is loaded, so ship `vfx/bindings_<yourmod>.tres` and your effects are added to the game's instead of replacing them. Bindings can react to the server mods' events and actions by name and check their fields. |
-| `vfx/bindings_pistol.tres` | the pistol's look | Replace it to restyle the pistol mod wholesale, or add a file of your own next to it. |
-| `prefabs/pistol.tscn`, `vfx/muzzle_flash.tscn`, `vfx/tracer.tscn`, `vfx/bullet_spark.tscn`, `vfx/hit_puff.tscn` | the pistol and its effects | Named by `bindings_pistol.tres`. The tracer is one metre long along -Z; beam bindings stretch it. |
+| `vfx/bindings_pistol.tres`, `ui/hud_pistol.tscn`, `prefabs/pistol.tscn`, `vfx/muzzle_flash.tscn`, `vfx/tracer.tscn`, `vfx/bullet_spark.tscn`, `vfx/hit_puff.tscn` | the pistol's look | These come with the pistol's workshop item; a client mod can override any of them at the same path, because player mods load after items. The tracer is one metre long along -Z; beam bindings stretch it. |
 | `assets/...` | sounds and other shared files | A binding can name any stream your mod ships, for example `res://assets/sfx/<yours>.wav`. |
 | `vfx/prop_spawn.tscn`, `vfx/prop_destroy.tscn` | prop spawned / removed | One-shot effects used when no binding matches. Every `GPUParticles3D` in the scene is restarted; the node is freed after its lifetime. |
 | `vfx/jump.tscn`, `vfx/land.tscn` | a player jumps / lands | Placed at the player's feet. |
-| `ui/hud.tscn` | HUD | Any `Control` tree. Optional labels with unique names `%Stats`, `%Banner` and `%Help` are filled by the game. `CbFieldLabel` nodes show the server mods' fields (`"AMMO {pistol.ammo}"`) while their conditions hold. |
+| `ui/hud.tscn` | the game's HUD | Any `Control` tree. Optional nodes with unique names `%Stats`, `%Banner`, `%Help` and `%Name` (a LineEdit) are filled by the game. |
+| `ui/hud_<mod>.tscn` | a mod's HUD | Laid over the game's HUD. Build it from ordinary controls plus `CbFieldLabel`, `CbFieldBinding`, `CbEventFeed` and `CbScoreboard`, which read the server mods' fields and events by name. |
 | `maps/<name>.tscn` | the level's visuals | The scene the server's map was baked from, named after it. A mod can replace it to re-skin a level. |
 
 Prop prefabs whose root has the metadata `tint_by_net_id = true` get a per-prop color from the game.
