@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <functional>
 #include <limits>
+#include <map>
 #include <memory>
 #include <thread>
 
@@ -86,7 +87,8 @@ struct Harness
 	std::unique_ptr<net::NetSimProxy> proxy;
 
 	// Runs every compiled server mod, like cb_server does by default.
-	explicit Harness( uint16_t p, const std::string& recordPath = {}, const std::string& mapPath = {} )
+	explicit Harness( uint16_t p, const std::string& recordPath = {}, const std::string& mapPath = {},
+					  const std::map<std::string, std::string>& modOptions = {} )
 		: port( p )
 		, clientPort( p )
 	{
@@ -102,6 +104,7 @@ struct Harness
 		options.config.physicsArenaMB = 64;
 		options.reconnectGraceSeconds = 10.0;
 		options.recordPath = recordPath;
+		options.modOptions = modOptions;
 		if ( server.Start( options ) == false )
 		{
 			std::printf( "    server failed to start on port %u\n", port );
@@ -692,6 +695,64 @@ void TestNames()
 	CHECK( h.bots[0].client->Names()[1].empty() );
 }
 
+// Deathmatch rounds end to end: kills score, the limit ends the round, everyone is frozen through
+// the intermission, and the next round starts clean. Clients agree with the server throughout.
+void TestDeathmatch()
+{
+	Harness h( 47799, {}, {}, { { "deathmatch.kills", "2" }, { "deathmatch.pause_seconds", "2" } } );
+	const ModSchema& schema = h.server.Schema();
+	CHECK( schema.FindField( "deathmatch.score" ) != nullptr );
+	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t pistol = schema.ActionMask( "slot_2" );
+
+	// The same duel as mods_session: slot 0 shoots slot 1, which stands still.
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraYaw = 16384;
+		in.actions = pistol;
+		if ( tick > 90 && ( tick % 20 ) < 3 )
+		{
+			in.actions |= fire;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; };
+
+	Simulation& server = h.server.Sim();
+	const BoardField* phase = schema.FindField( "deathmatch.phase" );
+	const BoardField* round = schema.FindField( "deathmatch.round" );
+	const BoardField* winner = schema.FindField( "deathmatch.winner" );
+	bool sawIntermission = false;
+	bool frozenInIntermission = true;
+	uint32_t winnerSeen = 0;
+	h.RunUntil( 16.0, [&]( double ) {
+		if ( server.GlobalBoardValue( phase->slot ) == 1 )
+		{
+			sawIntermission = true;
+			winnerSeen = uint32_t( server.GlobalBoardValue( winner->slot ) );
+			for ( int s = 0; s < 2; ++s )
+			{
+				const Character* c = server.PlayerCharacter( PlayerSlot( s ) );
+				frozenInIntermission &= c == nullptr || c->frozen == 1;
+			}
+		}
+	} );
+	h.Report();
+	std::printf( "    round %d, phase %d, winner seen %u (shooter %u)\n", server.GlobalBoardValue( round->slot ),
+				 server.GlobalBoardValue( phase->slot ), winnerSeen, server.PlayerNetId( 0 ) );
+	CHECK( sawIntermission );
+	CHECK( frozenInIntermission );
+	CHECK( winnerSeen == server.PlayerNetId( 0 ) );
+	CHECK( server.GlobalBoardValue( round->slot ) >= 2 );
+	for ( Bot& b : h.bots )
+	{
+		int compared = 0;
+		CHECK( h.CompareWithServer( b, compared ) == 0 );
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 void TestProtocol()
 {
 	using namespace net;
@@ -912,6 +973,7 @@ int main( int argc, char** argv )
 		{ "mods_session", TestModsSession },
 		{ "stall_recovery", TestStallRecovery },
 		{ "names", TestNames },
+		{ "deathmatch", TestDeathmatch },
 	};
 
 	const char* filter = argc > 1 ? argv[1] : nullptr;

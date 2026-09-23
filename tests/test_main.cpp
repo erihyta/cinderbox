@@ -11,6 +11,7 @@
 #include "map.h"
 #include "pose.h"
 #include "pose_tools.h"
+#include "fields.h"
 #include "detmath.h"
 #include "ragdoll.h"
 #include "rollback.h"
@@ -1048,6 +1049,26 @@ void TestCommands()
 	CHECK( b3Distance( sim.EntityTransform( p0 )->position, b3Vec3{ 5.0f, 1.5f, -5.0f } ) < 0.5f );
 	f.inputs[0].moveForward = 0;
 
+	// Frozen: movement input does nothing; released, it moves again.
+	{
+		SimCommand* c = command( CommandType::Freeze, SlotTarget( 0 ) );
+		c->mode = 1;
+	}
+	step( 1 );
+	CHECK( sim.PlayerCharacter( 0 )->frozen == 1 );
+	b3Vec3 frozenAt = sim.EntityTransform( p0 )->position;
+	f.inputs[0].moveForward = 127;
+	f.inputs[0].buttons = BtnJump;
+	step( 30 );
+	b3Vec3 stillAt = sim.EntityTransform( p0 )->position;
+	CHECK( b3Distance( b3Vec3{ stillAt.x, 0.0f, stillAt.z }, b3Vec3{ frozenAt.x, 0.0f, frozenAt.z } ) < 0.01f );
+	CHECK( stillAt.y < frozenAt.y + 0.05f );
+	command( CommandType::Freeze, SlotTarget( 0 ) );
+	f.inputs[0].buttons = 0;
+	step( 30 );
+	CHECK( b3Distance( sim.EntityTransform( p0 )->position, stillAt ) > 0.5f );
+	f.inputs[0].moveForward = 0;
+
 	// Falling out of the world puts the player back and counts it, for a mod to see.
 	uint32_t falls = sim.PlayerCharacter( 1 )->fallCount;
 	{
@@ -1246,6 +1267,37 @@ void TestPoseTools()
 		worst = std::max( worst, b3Distance( position( moved[j] ), position( models[j] ) ) );
 	}
 	CHECK( worst < 1e-4f );
+}
+
+// Conditions and formats presentation evaluates against the mods' board, by name.
+void TestFields()
+{
+	ModSchema schema;
+	schema.fields.push_back( { "pistol.ammo", BoardType::Int, BoardScope::Entity, 0 } );
+	schema.fields.push_back( { "combat.dead", BoardType::Bool, BoardScope::Entity, 1 } );
+	schema.fields.push_back( { "round.time", BoardType::Float, BoardScope::Global, 0 } );
+	Blackboard board;
+	board.values[0] = 3;
+	board.values[1] = 0;
+	int32_t globals[kBoardSlots] = {};
+	globals[0] = BoardFromFloat( 12.5f );
+	auto check = [&]( const char* condition ) { return present::CheckCondition( schema, condition, &board, globals ); };
+
+	CHECK( check( "pistol.ammo" ) );
+	CHECK( check( "pistol.ammo > 2" ) && check( "pistol.ammo >= 3" ) && check( "pistol.ammo == 3" ) );
+	CHECK( check( "pistol.ammo < 3" ) == false && check( "pistol.ammo != 3" ) == false );
+	CHECK( check( "!combat.dead" ) && check( "combat.dead == false" ) );
+	CHECK( check( "round.time > 12" ) && check( "round.time < 13" ) );
+	CHECK( check( "?pistol.ammo" ) && check( "?nope" ) == false );
+	CHECK( check( "!?nope" ) && check( "!?pistol.ammo" ) == false );
+	// Not declared reads as zero, so bindings for a mod that is not running never match.
+	CHECK( check( "nope" ) == false && check( "!nope" ) );
+	CHECK( present::CheckConditions( schema, {}, &board, globals ) );
+	CHECK( present::CheckConditions( schema, { "pistol.ammo > 0", "!combat.dead" }, &board, globals ) );
+	CHECK( present::CheckConditions( schema, { "pistol.ammo > 0", "combat.dead" }, &board, globals ) == false );
+	CHECK( present::FormatFields( schema, "AMMO {pistol.ammo} {{ {round.time} {combat.dead}", &board, globals ) == "AMMO 3 { 12.5 no" );
+	// Nothing published yet (no board) reads as zero too.
+	CHECK( present::CheckCondition( schema, "pistol.ammo == 0", nullptr, globals ) );
 }
 
 void TestAnimController()
@@ -1548,6 +1600,7 @@ int main( int argc, char** argv )
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
 		{ "pose_tools", TestPoseTools },
+		{ "fields", TestFields },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "stress", TestStress },
 	};
