@@ -594,7 +594,10 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 
 		uint8_t pressed = uint8_t( in.buttons & ~c.prevButtons );
 
-		MoveCharacter( c, t, pb, in, pressed );
+		// Frozen: the mover still runs (gravity, the ground, being pushed), with no intent.
+		PlayerInput still;
+		still.cameraYaw = in.cameraYaw;
+		MoveCharacter( c, t, pb, c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed );
 		c.prevButtons = in.buttons;
 
 		AnimState anim = e.get<AnimState>();
@@ -1355,6 +1358,18 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			if ( e.is_valid() && e.has<Character>() )
 			{
 				RespawnPlayer( e, command );
+			}
+			return;
+		}
+
+		case CommandType::Freeze:
+		{
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() && e.has<Character>() )
+			{
+				Character c = e.get<Character>();
+				c.frozen = command.mode != 0 ? 1 : 0;
+				e.set<Character>( c );
 			}
 			return;
 		}

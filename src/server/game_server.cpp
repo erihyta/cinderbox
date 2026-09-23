@@ -124,6 +124,7 @@ bool GameServer::Start( const ServerOptions& options )
 		InputFrame none;
 		none.tick = m_sim->Tick();
 		mods::Context ctx( *m_sim, m_schema, none, m_lastInputs, *m_modWorld, m_modRng );
+		ctx.SetOptions( &m_options.modOptions );
 		for ( const auto& mod : m_mods )
 		{
 			mod->Start( ctx );
@@ -556,6 +557,7 @@ void GameServer::RunMods( InputFrame& frame )
 		return;
 	}
 	mods::Context ctx( *m_sim, m_schema, frame, m_lastInputs, *m_modWorld, m_modRng );
+	ctx.SetOptions( &m_options.modOptions );
 	for ( const auto& mod : m_mods )
 	{
 		mod->Tick( ctx );

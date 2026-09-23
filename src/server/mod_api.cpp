@@ -6,6 +6,7 @@
 #include "box3d/box3d.h"
 
 #include <algorithm>
+#include <cstdlib>
 
 namespace cb::mods
 {
@@ -214,6 +215,78 @@ bool Context::IsDynamic( uint32_t netId ) const
 		   b3Body_GetType( m_sim.BodyOf( *pb ) ) == b3_dynamicBody;
 }
 
+std::vector<uint32_t> Context::Props() const
+{
+	std::vector<uint32_t> out;
+	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	{
+		if ( flecs::entity( m_sim.World(), r.entity ).has<Prop>() )
+		{
+			out.push_back( r.netId );
+		}
+	}
+	return out;
+}
+
+std::vector<uint32_t> Context::SpawnedProps() const
+{
+	std::vector<uint32_t> out;
+	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	{
+		const Prop* p = flecs::entity( m_sim.World(), r.entity ).try_get<Prop>();
+		if ( p != nullptr && p->owner != 0 )
+		{
+			out.push_back( r.netId );
+		}
+	}
+	return out;
+}
+
+std::vector<uint32_t> Context::Ragdolls() const
+{
+	std::vector<uint32_t> out;
+	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	{
+		if ( flecs::entity( m_sim.World(), r.entity ).has<Ragdoll>() )
+		{
+			out.push_back( r.netId );
+		}
+	}
+	return out;
+}
+
+std::vector<ModEventRecord> Context::RecentEvents() const
+{
+	std::vector<ModEventRecord> out;
+	const SimGlobals& g = m_sim.Globals();
+	uint32_t kept = std::min( g.modEventCount, kModEventHistory );
+	for ( uint32_t i = 0; i < kept; ++i )
+	{
+		const ModEventRecord& e = g.modEvents[( g.modEventCount - kept + i ) % kModEventHistory];
+		if ( e.tick + 1 == m_frame.tick )
+		{
+			out.push_back( e );
+		}
+	}
+	return out;
+}
+
+double Context::Option( const std::string& name, double fallback ) const
+{
+	if ( m_options == nullptr )
+	{
+		return fallback;
+	}
+	auto it = m_options->find( name );
+	if ( it == m_options->end() )
+	{
+		return fallback;
+	}
+	char* end = nullptr;
+	double value = std::strtod( it->second.c_str(), &end );
+	return end != it->second.c_str() ? value : fallback;
+}
+
 uint64_t Context::Random()
 {
 	return NextRandom( m_rng );
@@ -330,6 +403,15 @@ void Context::Respawn( uint32_t target )
 {
 	SimCommand c;
 	c.type = CommandType::Respawn;
+	c.target = target;
+	Add( c );
+}
+
+void Context::Freeze( uint32_t target, bool frozen )
+{
+	SimCommand c;
+	c.type = CommandType::Freeze;
+	c.mode = frozen ? 1 : 0;
 	c.target = target;
 	Add( c );
 }
