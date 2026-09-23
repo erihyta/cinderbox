@@ -11,7 +11,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$buildRoot = Join-Path $env:LOCALAPPDATA "cinderbox-build"
+# Presets build into cinderbox-build\<project folder>\<preset>, so two checkouts never share one.
+$buildRoot = Join-Path (Join-Path $env:LOCALAPPDATA "cinderbox-build") (Split-Path -Leaf $root)
 $work = Join-Path $buildRoot "determinism-check"
 New-Item -ItemType Directory -Force $work | Out-Null
 

@@ -13,7 +13,7 @@
 			"name": "win-base",
 			"hidden": true,
 			"inherits": "base",
-			"binaryDir": "$env{LOCALAPPDATA}/cinderbox-build/${presetName}",
+			"binaryDir": "$env{LOCALAPPDATA}/cinderbox-build/${sourceDirName}/${presetName}",
 			"condition": {
 				"type": "equals",
 				"lhs": "${hostSystemName}",
@@ -25,7 +25,7 @@
 			"name": "unix-base",
 			"hidden": true,
 			"inherits": "base",
-			"binaryDir": "$env{HOME}/.cache/cinderbox-build/${presetName}",
+			"binaryDir": "$env{HOME}/.cache/cinderbox-build/${sourceDirName}/${presetName}",
 			"condition": {
 				"type": "notEquals",
 				"lhs": "${hostSystemName}",

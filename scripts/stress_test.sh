@@ -40,11 +40,13 @@ while [[ $# -gt 0 ]]; do
 	shift 2
 done
 
+# Presets build into cinderbox-build/<project folder>/<preset>.
+project="$(basename "$(cd "$(dirname "$0")/.." && pwd)")"
 if [[ -n "${LOCALAPPDATA:-}" ]]; then
-	bin="$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || echo "$LOCALAPPDATA")/cinderbox-build/$preset/bin"
+	bin="$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || echo "$LOCALAPPDATA")/cinderbox-build/$project/$preset/bin"
 	ext=".exe"
 else
-	bin="$HOME/.cache/cinderbox-build/$preset/bin"
+	bin="$HOME/.cache/cinderbox-build/$project/$preset/bin"
 	ext=""
 fi
 work="$(mktemp -d)"

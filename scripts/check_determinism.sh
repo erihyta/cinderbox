@@ -8,7 +8,8 @@
 
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-build_root="${HOME}/.cache/cinderbox-build"
+# Presets build into cinderbox-build/<project folder>/<preset>, so two checkouts never share one.
+build_root="${HOME}/.cache/cinderbox-build/$(basename "$root")"
 work="${build_root}/determinism-check"
 mkdir -p "$work"
 reference="${1:-}"

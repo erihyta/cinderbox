@@ -15,7 +15,7 @@ Multiplayer third-person physics sandbox. The look doesn't matter. The goals are
 | Game rules | C++ server mods compiled into `cb_server` (`server_mods/`), talking to the world only through commands |
 | Client "scripts" | Small C++ flecs systems and observers (engine-independent, `src/present`); mod presentation as data bindings |
 | Client content and mods | Godot scenes and resource packs (VFX, materials, meshes, UI) |
-| Build directory | `%LOCALAPPDATA%/cinderbox-build` (outside OneDrive) |
+| Build directory | `%LOCALAPPDATA%/cinderbox-build/<project folder>/<preset>` (outside OneDrive, one per checkout) |
 
 ## Determinism
 - The simulation must be bit-exact across Windows x64, Linux x64 and macOS/ARM64, and across MSVC, Clang and GCC.

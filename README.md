@@ -27,8 +27,9 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 Requirements: CMake 3.24+, Ninja, and one of Clang, GCC or MSVC. Dependencies are downloaded at
 configure time and pinned in `cmake/Dependencies.cmake`.
 
-Build output goes outside the source tree (`%LOCALAPPDATA%\cinderbox-build\<preset>` on Windows,
-`~/.cache/cinderbox-build/<preset>` elsewhere), which keeps it out of OneDrive.
+Build output goes outside the source tree (`%LOCALAPPDATA%\cinderbox-build\<project folder>\<preset>` on
+Windows, `~/.cache/cinderbox-build/<project folder>/<preset>` elsewhere), which keeps it out of OneDrive.
+The project folder's name is part of the path, so two checkouts never build into each other.
 
 ```sh
 cmake --preset clang-release
