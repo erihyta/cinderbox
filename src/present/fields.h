@@ -11,6 +11,7 @@
 //     name                 true when the value is not zero
 //     !name                true when it is zero
 //     ?name                true when the server declared the field (its mod is running)
+//     !?name               true when it did not
 //     name <op> number     op is one of == != > >= < <= ; "true" and "false" count as 1 and 0
 // A field the server did not declare reads as zero, so a binding for a mod that is not running
 // simply never matches.
