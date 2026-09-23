@@ -218,7 +218,8 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, bool ju
 	in.moveRight = int8_t( std::clamp( int( std::lround( move.x * 127.0 ) ), -127, 127 ) );
 	in.moveForward = int8_t( std::clamp( int( std::lround( move.y * 127.0 ) ), -127, 127 ) );
 	in.cameraYaw = detmath::RadiansToYaw( float( camera_yaw ) + detmath::kPi );
-	in.buttons = uint8_t( ( jump ? BtnJump : 0 ) | ( sprint ? BtnSprint : 0 ) | ( spawn_prop ? BtnSpawnProp : 0 ) );
+	in.buttons = uint8_t( ( jump ? BtnJump : 0 ) | ( sprint ? BtnSprint : 0 ) );
+	(void)spawn_prop;
 	m_thread.SetInput( in );
 }
 

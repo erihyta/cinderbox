@@ -161,7 +161,15 @@ inline PlayerInput SanitizeInput( PlayerInput in )
 	{
 		in.moveForward = -127;
 	}
-	in.buttons &= uint8_t( BtnJump | BtnSprint | BtnSpawnProp );
+	if ( in.cameraPitch > kMaxCameraPitch )
+	{
+		in.cameraPitch = kMaxCameraPitch;
+	}
+	if ( in.cameraPitch < -kMaxCameraPitch )
+	{
+		in.cameraPitch = -kMaxCameraPitch;
+	}
+	in.buttons &= kEngineButtons;
 	in.reserved = 0;
 	return in;
 }

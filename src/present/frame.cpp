@@ -21,6 +21,10 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 	for ( const Simulation::EntityRef& ref : sim.Entities() )
 	{
 		flecs::entity e( sim.World(), ref.entity );
+		if ( e.has<Shape>() == false )
+		{
+			continue; // ragdolls: not drawn yet
+		}
 		FrameEntity f;
 		f.netId = ref.netId;
 		f.transform = e.get<Transform>();

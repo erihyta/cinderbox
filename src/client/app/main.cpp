@@ -128,10 +128,6 @@ PlayerInput SampleInput( const present::OrbitCamera& camera, bool hasFocus )
 	{
 		in.buttons |= BtnSprint;
 	}
-	if ( IsKeyDown( KEY_F ) )
-	{
-		in.buttons |= BtnSpawnProp;
-	}
 	return in;
 }
 
@@ -309,10 +305,6 @@ int main( int argc, char** argv )
 			if ( ( ( r >> 24 ) % 45 ) == 0 )
 			{
 				autoInput.buttons |= BtnJump;
-			}
-			if ( ( ( r >> 32 ) % 20 ) == 0 )
-			{
-				autoInput.buttons |= BtnSpawnProp;
 			}
 			camera.yaw += 0.01f;
 			autoInput.cameraYaw = detmath::RadiansToYaw( camera.yaw );

@@ -63,6 +63,23 @@ struct ImpactRecord
 inline constexpr uint32_t kImpactHistory = 16;
 inline constexpr uint32_t kImpactsPerTick = 8;
 
+// Something a server mod announced (an Event command): "pistol fired", "player killed". The type
+// indexes the event names the server sends on join; the simulation only keeps the record, so
+// presentation can play it and a rollback can un-count it.
+struct ModEventRecord
+{
+	uint16_t type = 0;
+	uint16_t reserved = 0;
+	uint32_t netIdA = 0;
+	uint32_t netIdB = 0;
+	uint32_t tick = 0;
+	int32_t value = 0;
+	b3Vec3 point = {};
+	b3Vec3 vector = {};
+};
+
+inline constexpr uint32_t kModEventHistory = 32;
+
 // Singleton sim state that is not a component.
 // Hashed as raw bytes, so it must stay free of padding.
 struct SimGlobals
@@ -74,13 +91,28 @@ struct SimGlobals
 	// Only ever grows, so presentation can tell how many impacts it missed. The ring holds the
 	// most recent ones, newest at (impactCount - 1) % kImpactHistory.
 	uint32_t impactCount = 0;
-	uint32_t reserved = 0;
+	// Same shape for mod events.
+	uint32_t modEventCount = 0;
 	ImpactRecord impacts[kImpactHistory] = {};
+	ModEventRecord modEvents[kModEventHistory] = {};
+	// The global blackboard: values a mod publishes about the whole game (a round timer, a score).
+	int32_t board[kBoardSlots] = {};
 };
 
 static_assert( sizeof( ImpactRecord ) == 28, "ImpactRecord layout changed: check for padding" );
-static_assert( sizeof( SimGlobals ) == 16 + 4 * kMaxPlayers + 8 + kImpactHistory * sizeof( ImpactRecord ),
+static_assert( sizeof( ModEventRecord ) == 44, "ModEventRecord layout changed: check for padding" );
+static_assert( sizeof( SimGlobals ) == 16 + 4 * kMaxPlayers + 8 + kImpactHistory * sizeof( ImpactRecord ) +
+											 kModEventHistory * sizeof( ModEventRecord ) + 4 * kBoardSlots,
 			   "SimGlobals has padding: it is hashed as raw bytes" );
+
+// What a ray hit, for server mods (hitscan weapons, line of sight).
+struct RayHit
+{
+	uint32_t netId = 0; // 0: the level has no entity for it (never happens today)
+	b3Vec3 point = {};
+	b3Vec3 normal = {};
+	float fraction = 1.0f;
+};
 
 class Simulation
 {
@@ -140,6 +172,34 @@ public:
 		return m_globals.playerNetIds[slot] != 0;
 	}
 
+	// --- Read-only queries (server mods, tools) ------------------------------------------------
+	// None of these change the state, and none are used by Step().
+
+	// 0 if the slot is empty.
+	uint32_t PlayerNetId( PlayerSlot slot ) const
+	{
+		return m_globals.playerNetIds[slot];
+	}
+	// Null if the slot is empty.
+	const Character* PlayerCharacter( PlayerSlot slot ) const;
+	const Transform* EntityTransform( uint32_t netId ) const;
+	// The entity's board value, or 0 when it has none.
+	int32_t BoardValue( uint32_t netId, int slot ) const;
+	int32_t GlobalBoardValue( int slot ) const
+	{
+		return slot >= 0 && slot < kBoardSlots ? m_globals.board[slot] : 0;
+	}
+	// The closest thing a ray from `origin` along `translation` hits, skipping entity `ignoreNetId`
+	// and disabled bodies. Returns false when it hits nothing.
+	bool CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit );
+	// The level this simulation was built from (templates, spawn template).
+	const LevelLayout& Map() const
+	{
+		return m_map;
+	}
+	// Where a player in `slot` appears when joining or respawning.
+	b3Vec3 SpawnPoint( PlayerSlot slot ) const;
+
 	// 0 if not found. Lookup only; never iterate this for simulation order.
 	flecs::entity FindEntity( uint32_t netId ) const;
 
@@ -181,14 +241,21 @@ private:
 	flecs::entity CreateFromTemplate( uint32_t templateIndex, b3Vec3 position, b3Quat rotation, b3Vec3 extraVelocity,
 									  uint32_t owner );
 	flecs::entity CreatePlayer( PlayerSlot slot );
-	b3Vec3 SpawnPoint( PlayerSlot slot ) const;
+	void PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw );
 	b3ShapeId CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material = {} );
 	static PhysicsBody MakePhysicsBody( b3BodyId body, b3ShapeId shape );
 
 	void ApplyEvents( const InputFrame& frame );
+	void ApplyCommands( const InputFrame& frame );
+	void ApplyCommand( const SimCommand& command );
+	uint32_t ResolveTarget( uint32_t target ) const;
+	void ApplyImpulse( flecs::entity e, const SimCommand& command );
+	void KillPlayer( flecs::entity e, const SimCommand& command );
+	void RespawnPlayer( flecs::entity e, const SimCommand& command );
+	flecs::entity CreateRagdoll( flecs::entity player, uint32_t lifetimeTicks );
+	void EnforceRagdollCap( uint32_t cap );
 	void MoveCharacters( const InputFrame& frame );
 	void MoveCharacter( Character& c, Transform& t, const PhysicsBody& pb, const PlayerInput& in, uint8_t pressed );
-	void SpawnProps();
 	void ExpireProps();
 	void EnforcePropCaps();
 	void SyncFromPhysics();
@@ -211,11 +278,16 @@ private:
 	std::vector<SnapComponent> m_snapComponents;
 	std::vector<EntityRef> m_entities; // sorted by netId
 
+	// Rebuilds m_shapeLookup (shape index -> NetId) for every shape in the world.
+	void BuildShapeLookup();
+	uint32_t NetIdOfShape( b3ShapeId shape ) const;
+	static float RayCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t material, int triangle,
+							  int child, void* context );
+
 	// Per-step scratch, never part of the state.
-	std::vector<uint32_t> m_spawnRequests;
 	std::vector<EntityRef> m_scratch;
 	std::vector<uint8_t> m_hashScratch;
-	// Shape index -> NetId, rebuilt only on ticks that produced impacts.
+	// Shape index -> NetId, rebuilt only when a shape has to be named (impacts, ray casts).
 	std::vector<std::pair<uint32_t, uint32_t>> m_shapeLookup;
 	std::vector<ImpactRecord> m_impactScratch;
 };

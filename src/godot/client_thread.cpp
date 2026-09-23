@@ -60,7 +60,7 @@ void ClientThread::SetInput( const PlayerInput& input )
 {
 	std::lock_guard<std::mutex> lock( m_inputMutex );
 	m_input = input;
-	m_latchedButtons |= uint8_t( input.buttons & ( BtnJump | BtnSpawnProp ) );
+	m_latchedButtons |= uint8_t( input.buttons & BtnJump );
 }
 
 bool ClientThread::TakeFrame( PublishedFrame& out )

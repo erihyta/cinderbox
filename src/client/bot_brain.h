@@ -33,7 +33,7 @@ struct BotBrain
 			in.moveForward = int8_t( int( r % 255 ) - 127 );
 			in.moveRight = int8_t( int( ( r >> 8 ) % 255 ) - 127 );
 			in.cameraYaw = uint16_t( r >> 16 );
-			in.buttons = uint8_t( ( r >> 32 ) & ( BtnJump | BtnSprint | BtnSpawnProp ) );
+			in.buttons = uint8_t( ( r >> 32 ) & kEngineButtons );
 			return in;
 		}
 
@@ -62,10 +62,6 @@ struct BotBrain
 		if ( jumpOneIn != 0 && ( r2 % jumpOneIn ) == 0 )
 		{
 			out.buttons |= BtnJump;
-		}
-		if ( spawnOneIn != 0 && ( ( r2 >> 20 ) % spawnOneIn ) == 0 )
-		{
-			out.buttons |= BtnSpawnProp;
 		}
 		return out;
 	}
