@@ -1,0 +1,87 @@
+# Builds the simulation with every compiler we ship on, runs all tests, and checks that every build
+# computes the same per-tick hashes, the same animation poses, and can continue every other build's
+# portable snapshot. See scripts/ci_check.sh for what one build checks.
+name: determinism
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-clang, os: windows-2022, preset: clang-release }
+          - { name: windows-gcc, os: windows-2022, preset: gcc-release }
+          - { name: windows-msvc, os: windows-2022, preset: msvc-release }
+          - { name: linux-gcc, os: ubuntu-24.04, preset: unix-gcc-release }
+          - { name: linux-clang, os: ubuntu-24.04, preset: unix-clang-release }
+          - { name: macos-arm64-clang, os: macos-15, preset: unix-clang-release }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: MSVC environment
+        if: matrix.preset == 'msvc-release'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: MinGW GCC
+        if: matrix.preset == 'gcc-release'
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: mingw-w64-ucrt-x86_64-gcc
+          path-type: inherit
+
+      - name: Put MinGW first on PATH
+        if: matrix.preset == 'gcc-release'
+        shell: bash
+        run: cygpath -w "${{ steps.msys2.outputs.msys2-location }}/ucrt64/bin" >> "$GITHUB_PATH"
+
+      - name: Build, test, check
+        shell: bash
+        run: scripts/ci_check.sh "${{ matrix.preset }}" "${{ matrix.name }}" out
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: det-${{ matrix.name }}
+          path: out/
+          if-no-files-found: ignore
+
+  # Every build must continue every other build's portable snapshot. A binary only runs on its own
+  # OS, so each OS loads all snapshots with its own builds.
+  cross:
+    name: cross-load on ${{ matrix.family }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { family: windows, os: windows-2022 }
+          - { family: linux, os: ubuntu-24.04 }
+          - { family: macos, os: macos-15 }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: det-*
+          path: art
+      - name: Cross-load snapshots and compare dumps
+        shell: bash
+        run: scripts/ci_cross.sh art "${{ matrix.family }}"
