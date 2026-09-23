@@ -40,6 +40,9 @@ struct PublishedFrame
 	// What the server's mods declared; only refreshed when the server sends a new one.
 	ModSchema schema;
 	uint64_t schemaGeneration = 0;
+	// Players' names by slot.
+	std::array<std::string, kMaxPlayers> names;
+	uint64_t namesGeneration = 0;
 	bool fpEnvironmentOk = true;
 	bool hasSimulation = false;
 	double publishedAt = 0.0; // seconds on the thread clock

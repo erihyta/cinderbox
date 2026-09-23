@@ -176,11 +176,30 @@ bool ReadInputs( ByteReader& r, InputArray& inputs )
 std::optional<MsgType> ReadType( ByteReader& r )
 {
 	uint8_t t = r.Read<uint8_t>();
-	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::FrameBatch ) )
+	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::PlayerNames ) )
 	{
 		return std::nullopt;
 	}
 	return MsgType( t );
+}
+
+void WriteShortString( ByteWriter& w, const std::string& s, size_t limit )
+{
+	size_t n = std::min( s.size(), limit );
+	w.Write( uint8_t( n ) );
+	w.WriteBytes( s.data(), n );
+}
+
+bool ReadShortString( ByteReader& r, std::string& s, size_t limit )
+{
+	uint8_t n = r.Read<uint8_t>();
+	const uint8_t* p = r.Ok() && n <= limit ? r.Take( n ) : nullptr;
+	if ( p == nullptr )
+	{
+		return false;
+	}
+	s.assign( reinterpret_cast<const char*>( p ), n );
+	return true;
 }
 
 void Encode( const MsgHello& m, std::vector<uint8_t>& out )
@@ -190,6 +209,7 @@ void Encode( const MsgHello& m, std::vector<uint8_t>& out )
 	w.Write( m.version );
 	w.Write( m.fingerprint );
 	w.Write( m.reconnectToken );
+	WriteShortString( w, m.name, kMaxPlayerName );
 }
 
 bool Decode( ByteReader& r, MsgHello& m )
@@ -197,7 +217,76 @@ bool Decode( ByteReader& r, MsgHello& m )
 	m.version = r.Read<uint32_t>();
 	m.fingerprint = r.Read<uint64_t>();
 	m.reconnectToken = r.Read<uint64_t>();
-	return r.Ok();
+	if ( r.Ok() && m.version != kProtocolVersion )
+	{
+		return true; // an older client: let the server reject it by version
+	}
+	return ReadShortString( r, m.name, kMaxPlayerName );
+}
+
+void Encode( const MsgPlayerNames& m, std::vector<uint8_t>& out )
+{
+	Begin( out, MsgType::PlayerNames );
+	ByteWriter w( out );
+	size_t n = std::min<size_t>( m.names.size(), kMaxPlayers );
+	w.Write( uint8_t( n ) );
+	for ( size_t i = 0; i < n; ++i )
+	{
+		w.Write( m.names[i].first );
+		WriteShortString( w, m.names[i].second, kMaxPlayerName );
+	}
+}
+
+bool Decode( ByteReader& r, MsgPlayerNames& m )
+{
+	uint8_t n = r.Read<uint8_t>();
+	if ( r.Ok() == false || n > kMaxPlayers )
+	{
+		return false;
+	}
+	m.names.clear();
+	for ( uint8_t i = 0; i < n; ++i )
+	{
+		PlayerSlot slot = r.Read<PlayerSlot>();
+		std::string name;
+		if ( ReadShortString( r, name, kMaxPlayerName ) == false || slot >= kMaxPlayers )
+		{
+			return false;
+		}
+		m.names.push_back( { slot, std::move( name ) } );
+	}
+	return true;
+}
+
+std::string SanitizeName( const std::string& name, PlayerSlot slot )
+{
+	std::string out;
+	for ( unsigned char c : name )
+	{
+		// Printable ASCII and UTF-8 continuation/lead bytes; no control characters.
+		if ( c >= 0x20 && c != 0x7F )
+		{
+			out += char( c );
+		}
+	}
+	size_t a = out.find_first_not_of( ' ' );
+	size_t b = out.find_last_not_of( ' ' );
+	out = a == std::string::npos ? std::string() : out.substr( a, b - a + 1 );
+	if ( out.size() > kMaxPlayerName )
+	{
+		// Cut on a character boundary, not inside a UTF-8 sequence.
+		size_t cut = kMaxPlayerName;
+		while ( cut > 0 && ( uint8_t( out[cut] ) & 0xC0 ) == 0x80 )
+		{
+			--cut;
+		}
+		out.resize( cut );
+	}
+	if ( out.empty() )
+	{
+		out = "Player " + std::to_string( int( slot ) + 1 );
+	}
+	return out;
 }
 
 void Encode( const MsgWelcome& m, std::vector<uint8_t>& out )

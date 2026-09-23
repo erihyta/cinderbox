@@ -19,6 +19,12 @@ constexpr uint32_t kMaxTicksPerFrame = 8;
 constexpr double kSnapTicks = 30.0;
 constexpr double kRateGain = 0.02;
 constexpr double kMaxRateAdjust = 0.15;
+// Behind the server, every input arrives late and the server drops presses, so catching up is urgent:
+// beyond this many ticks the client runs up to kMaxCatchUp times as fast. Ahead only costs latency,
+// so slowing down stays gentle.
+constexpr double kCatchUpTicks = 1.5;
+constexpr double kCatchUpGain = 0.25;
+constexpr double kMaxCatchUp = 2.0;
 constexpr uint32_t kChecksumHistory = 600;
 constexpr double kClockDecayTicksPerSecond = 0.25;
 constexpr size_t kKnownInputHistory = 256;
@@ -158,6 +164,7 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 				MsgHello hello;
 				hello.fingerprint = BuildFingerprint();
 				hello.reconnectToken = m_token;
+				hello.name = m_options.playerName;
 				Encode( hello, m_buffer );
 				m_transport.Send( ev.peer, ChannelReliable, m_buffer, true );
 				m_state = ClientState::AwaitingWelcome;
@@ -201,6 +208,20 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 					if ( m_state == ClientState::Playing && m_session != nullptr && Decode( r, msg ) )
 					{
 						m_pendingChecksums.push_back( msg );
+					}
+					break;
+				}
+				case MsgType::PlayerNames:
+				{
+					MsgPlayerNames msg;
+					if ( Decode( r, msg ) )
+					{
+						m_names = {};
+						for ( const auto& [slot, name] : msg.names )
+						{
+							m_names[slot] = name;
+						}
+						m_namesGeneration += 1;
 					}
 					break;
 				}
@@ -461,6 +482,10 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	else if ( error < -kSnapTicks )
 	{
 		scale = 0.0; // far ahead: wait for the server
+	}
+	else if ( error > kCatchUpTicks )
+	{
+		scale = 1.0 + std::min( error * kCatchUpGain, kMaxCatchUp - 1.0 );
 	}
 	else
 	{

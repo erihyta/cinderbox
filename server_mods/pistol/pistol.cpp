@@ -71,6 +71,7 @@ public:
 		m_loadout = declare.Field( "loadout.slot", BoardType::Int );
 
 		m_health = declare.Field( "combat.health", BoardType::Int );
+		m_maxHealth = declare.Field( "combat.max_health", BoardType::Int );
 		m_dead = declare.Field( "combat.dead", BoardType::Bool );
 		m_kills = declare.Field( "combat.kills", BoardType::Int );
 		m_deaths = declare.Field( "combat.deaths", BoardType::Int );
@@ -139,6 +140,7 @@ private:
 	{
 		uint32_t target = SlotTarget( g.slot );
 		ctx.Set( target, m_health, g.health );
+		ctx.Set( target, m_maxHealth, kMaxHealth );
 		ctx.Set( target, m_ammo, g.ammo );
 		ctx.Set( target, m_kills, g.kills );
 		ctx.Set( target, m_deaths, g.deaths );
@@ -297,6 +299,7 @@ private:
 	ActionHandle m_reload;
 	FieldHandle m_loadout;
 	FieldHandle m_health;
+	FieldHandle m_maxHealth;
 	FieldHandle m_dead;
 	FieldHandle m_kills;
 	FieldHandle m_deaths;

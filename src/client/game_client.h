@@ -29,6 +29,8 @@ struct ClientOptions
 	double reconnectIntervalSeconds = 1.0;
 	bool verbose = true;
 	std::string logName = "client";
+	// The name to ask the server for (it may be cleaned up or made unique).
+	std::string playerName;
 	// false: "lite" client that keeps pace with the server and sends input without simulating
 	// (cheap load for stress tests).
 	bool simulate = true;
@@ -125,6 +127,15 @@ public:
 	{
 		return m_schemaGeneration;
 	}
+	// Players' names by slot, as the server last sent them ("" for an empty slot).
+	const std::array<std::string, kMaxPlayers>& Names() const
+	{
+		return m_names;
+	}
+	uint64_t NamesGeneration() const
+	{
+		return m_namesGeneration;
+	}
 	PlayerSlot Slot() const
 	{
 		return m_slot;
@@ -185,6 +196,8 @@ private:
 	uint64_t m_mapHash = 0;
 	ModSchema m_schema;
 	uint64_t m_schemaGeneration = 0;
+	std::array<std::string, kMaxPlayers> m_names;
+	uint64_t m_namesGeneration = 0;
 
 	ClientState m_state = ClientState::Idle;
 	std::string m_rejectReason;

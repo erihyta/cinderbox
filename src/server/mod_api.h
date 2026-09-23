@@ -250,6 +250,8 @@ struct ModInfo
 {
 	const char* name;
 	ModFactory create;
+	// The mod has a client project (server_mods/<name>/client): players need its workshop item.
+	bool clientContent;
 };
 
 } // namespace cb::mods

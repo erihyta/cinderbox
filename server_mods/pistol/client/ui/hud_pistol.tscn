@@ -1,0 +1,195 @@
+[gd_scene load_steps=8 format=3]
+
+; The pistol mod's HUD, loaded over the game's own HUD when a server runs the pistol mod. Ordinary
+; Godot controls driven by the mod's fields and events: no scripts. Restyle it freely, or override it
+; from a player mod at res://ui/hud_pistol.tscn.
+;   CbFieldBinding  field -> a property of its target (default: its parent)
+;   CbFieldLabel    "{field}" text, shown while its conditions hold
+;   CbEventFeed     a line per mod event; CbScoreboard a table shown while Tab is held
+
+[sub_resource type="StyleBoxFlat" id="BarBack"]
+bg_color = Color(0.08, 0.08, 0.1, 0.65)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0, 0, 0, 0.8)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="BarFill"]
+bg_color = Color(0.86, 0.2, 0.2, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="LabelSettings" id="Big"]
+font_size = 26
+outline_size = 5
+outline_color = Color(0, 0, 0, 0.75)
+
+[sub_resource type="LabelSettings" id="Feed"]
+font_size = 18
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.8)
+
+[sub_resource type="LabelSettings" id="Row"]
+font_size = 20
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.85)
+
+[sub_resource type="LabelSettings" id="RowLocal"]
+font_size = 20
+font_color = Color(1, 0.85, 0.35, 1)
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.85)
+
+[sub_resource type="LabelSettings" id="BarText"]
+font_size = 16
+outline_size = 3
+outline_color = Color(0, 0, 0, 0.8)
+
+[node name="PistolHud" type="CanvasLayer"]
+
+[node name="HealthBar" type="ProgressBar" parent="."]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -284.0
+offset_top = -112.0
+offset_right = -24.0
+offset_bottom = -84.0
+theme_override_styles/background = SubResource("BarBack")
+theme_override_styles/fill = SubResource("BarFill")
+max_value = 100.0
+value = 100.0
+show_percentage = false
+
+[node name="Value" type="CbFieldBinding" parent="HealthBar"]
+field = "combat.health"
+conditions = PackedStringArray("?combat.health", "!combat.dead")
+
+[node name="Max" type="CbFieldBinding" parent="HealthBar"]
+field = "combat.max_health"
+property = "max_value"
+
+[node name="Text" type="CbFieldLabel" parent="HealthBar"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+label_settings = SubResource("BarText")
+horizontal_alignment = 1
+vertical_alignment = 1
+text_format = "{combat.health} / {combat.max_health}"
+
+[node name="Ammo" type="CbFieldLabel" parent="."]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -284.0
+offset_top = -76.0
+offset_right = -24.0
+offset_bottom = -42.0
+label_settings = SubResource("Big")
+horizontal_alignment = 2
+text_format = "AMMO {pistol.ammo} / 12"
+conditions = PackedStringArray("loadout.slot == 2", "!pistol.reloading", "!combat.dead")
+
+[node name="Reloading" type="CbFieldLabel" parent="."]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -284.0
+offset_top = -76.0
+offset_right = -24.0
+offset_bottom = -42.0
+label_settings = SubResource("Big")
+horizontal_alignment = 2
+text = "RELOADING"
+conditions = PackedStringArray("loadout.slot == 2", "pistol.reloading", "!combat.dead")
+
+[node name="Crosshair" type="CbFieldLabel" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+label_settings = SubResource("Big")
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "+"
+conditions = PackedStringArray("loadout.slot == 2", "!combat.dead")
+
+[node name="Dead" type="CbFieldLabel" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -90.0
+offset_right = 300.0
+offset_bottom = -40.0
+theme_override_colors/font_color = Color(0.95, 0.25, 0.25, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.8)
+theme_override_constants/outline_size = 6
+theme_override_font_sizes/font_size = 40
+horizontal_alignment = 1
+text = "YOU DIED"
+conditions = PackedStringArray("combat.dead")
+
+[node name="Score" type="CbFieldLabel" parent="."]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -284.0
+offset_top = 12.0
+offset_right = -24.0
+offset_bottom = 40.0
+label_settings = SubResource("Feed")
+horizontal_alignment = 2
+text_format = "Kills {combat.kills}   Deaths {combat.deaths}"
+conditions = PackedStringArray("?combat.kills")
+
+[node name="KillFeed" type="CbEventFeed" parent="."]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -424.0
+offset_top = 44.0
+offset_right = -24.0
+offset_bottom = 200.0
+event = "combat.killed"
+text_format = "{a}  >  {b}"
+label_settings = SubResource("Feed")
+
+[node name="Scoreboard" type="CbScoreboard" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -260.0
+offset_top = -200.0
+offset_right = 260.0
+offset_bottom = 200.0
+theme_override_constants/h_separation = 48
+columns = 3
+headers = PackedStringArray("Player", "Kills", "Deaths")
+cells = PackedStringArray("{name}", "{combat.kills}", "{combat.deaths}")
+sort_field = "combat.kills"
+label_settings = SubResource("Row")
+local_settings = SubResource("RowLocal")

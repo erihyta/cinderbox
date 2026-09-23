@@ -2,8 +2,8 @@ extends Node3D
 ## Base game presentation: input, camera, HUD binding and the VFX director.
 ##
 ## Everything visual it uses is loaded by path, so mods can replace it:
-##   res://ui/hud.tscn          HUD layout. Optional unique nodes: %Stats, %Banner, %Help.
-##                              CbFieldLabel nodes in it show the server mods' fields.
+##   res://ui/hud.tscn          HUD layout. Optional unique nodes: %Stats, %Banner, %Help, %Name.
+##   res://ui/hud_*.tscn        HUDs that come with workshop items, laid over the game's.
 ##   res://vfx/bindings*.tres   effect bindings (CbEffectTable): scenes, sounds and screen effects,
 ##                              plus state bindings (held items, aimed arms).
 ##   res://vfx/<event>.tscn     fallback one-shot effects: prop_spawn, prop_destroy, jump, land.
@@ -13,13 +13,21 @@ extends Node3D
 ## (move, sprint, jump, camera); everything else is an action the server declared, bound to the key
 ## it suggested, and every mod event plays whatever the bindings say.
 ##
-## Command line (after `--`): --host=H --port=P --rollback=N --animations=DIR
-##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS --mods=DIR
+## Joining: the server announces the workshop items its mods need. They must all be in the local
+## workshop (workshop.gd), exactly as announced, or the game leaves and says what is missing. Loaded
+## items come before the player's own mods, which are loaded again after them.
+##
+## Command line (after `--`): --host=H --port=P --name=NAME --rollback=N --animations=DIR
+##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS
+##                            --mods=DIR --workshop=DIR
 ## With --screenshot-every, autoplay also saves FILE_1.png, FILE_2.png, ... along the way.
 
 const MOUSE_SENSITIVITY := 0.003
 const VFX_LIFETIME := 3.0
 const ACTION_PREFIX := "cb_"
+const Boot := preload("res://boot.gd")
+const Workshop := preload("res://workshop.gd")
+const SETTINGS := "user://player.cfg"
 
 @onready var client: CinderboxClient = $Client
 @onready var camera: Camera3D = $Camera
@@ -40,6 +48,9 @@ var screenshot_every := 0.0
 var _next_screenshot := 0.0
 var _screenshots := 0
 var _event_counts := {}
+var _loaded_items := {} # sha256 -> true, loaded this session
+var _item_huds: Array[Node] = []
+var _refused := "" # why this server cannot be joined, shown on the banner
 
 var _vfx_cache := {}
 var _sound_cache := {}
@@ -64,6 +75,12 @@ func _ready() -> void:
 		client.rollback_max = int(args["rollback"])
 	if args.has("animations"):
 		client.animation_dir = args["animations"]
+	client.player_name = _player_name()
+	if not InputMap.has_action("scoreboard"):
+		InputMap.add_action("scoreboard")
+		var tab := InputEventKey.new()
+		tab.physical_keycode = KEY_TAB
+		InputMap.action_add_event("scoreboard", tab)
 	autoplay = float(args.get("autoplay", "0"))
 	screenshot = args.get("screenshot", "")
 	screenshot_every = float(args.get("screenshot-every", "0"))
@@ -82,7 +99,7 @@ func _ready() -> void:
 			"strength": strength}))
 	client.mod_event.connect(_on_mod_event)
 	client.action_pressed.connect(_on_action_pressed)
-	client.schema_changed.connect(_bind_actions)
+	client.schema_changed.connect(_on_schema_changed)
 	client.connection_state_changed.connect(func(state): print("connection: ", state))
 
 	_load_effects()
@@ -92,6 +109,10 @@ func _ready() -> void:
 	if hud_scene:
 		hud = hud_scene.instantiate()
 		add_child(hud)
+		var name_edit := hud.get_node_or_null("%Name") as LineEdit
+		if name_edit:
+			name_edit.text = client.player_name
+			name_edit.text_submitted.connect(_on_name_submitted)
 
 	if autoplay <= 0.0:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -133,6 +154,101 @@ func _process(delta: float) -> void:
 	_update_camera()
 	_update_hud()
 	_autoplay_finish()
+
+
+# --- Names and workshop items ---------------------------------------------------------------------
+
+func _player_name() -> String:
+	if args.has("name"):
+		return args["name"]
+	var config := ConfigFile.new()
+	if config.load(SETTINGS) == OK:
+		return String(config.get_value("player", "name", ""))
+	return ""
+
+
+func _on_name_submitted(text: String) -> void:
+	var config := ConfigFile.new()
+	config.load(SETTINGS)
+	config.set_value("player", "name", text.strip_edges())
+	config.save(SETTINGS)
+	# The server learns names when a player joins, so a new name means joining again.
+	client.player_name = text.strip_edges()
+	client.disconnect_from_server()
+	client.connect_to_server()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _on_schema_changed() -> void:
+	if _load_items():
+		_bind_actions()
+
+
+## Loads the workshop items the server announced. False (and leaves) if any is missing or refused.
+func _load_items() -> bool:
+	var missing: Array[String] = []
+	var paths: Array[String] = []
+	for item in client.get_required_items():
+		var path := Workshop.find_item(item["mod"], item["sha256"])
+		if path == "":
+			missing.append("%s (%s)" % [item["mod"], String(item["sha256"]).substr(0, 12)])
+		else:
+			paths.append(path)
+	if not missing.is_empty():
+		_refuse("This server needs workshop items you do not have:\n%s\nSubscribe to them and join again." % ", ".join(missing))
+		return false
+
+	var added := false
+	for path in paths:
+		var sha := path.get_file().get_basename()
+		if _loaded_items.has(sha):
+			continue
+		var problem: String = Boot.check_mod(path)
+		if problem != "":
+			_refuse("Workshop item %s was refused: %s" % [path.get_base_dir().get_file(), problem])
+			return false
+		if not ProjectSettings.load_resource_pack(path, true):
+			_refuse("Workshop item %s could not be loaded" % path.get_base_dir().get_file())
+			return false
+		_loaded_items[sha] = true
+		added = true
+		print("workshop item loaded: %s/%s" % [path.get_base_dir().get_file(), path.get_file()])
+	if added:
+		# The player's own mods come last, so they can restyle what an item ships.
+		for mod in Boot.player_mods:
+			ProjectSettings.load_resource_pack(mod, true)
+		_reload_presentation()
+	return true
+
+
+func _refuse(reason: String) -> void:
+	_refused = reason
+	push_warning(reason.replace("\n", " "))
+	client.disconnect_from_server()
+
+
+## Bindings and item HUDs, loaded again now that items may have added or replaced some.
+func _reload_presentation() -> void:
+	_effects.clear()
+	_cooldowns.clear()
+	client.clear_state_bindings()
+	_load_effects()
+	for node in _item_huds:
+		node.queue_free()
+	_item_huds.clear()
+	var names := []
+	for file in DirAccess.get_files_at("res://ui"):
+		var clean: String = file.trim_suffix(".remap")
+		if clean.begins_with("hud_") and clean.ends_with(".tscn"):
+			names.append(clean)
+	names.sort()
+	for file in names:
+		var scene := ResourceLoader.load("res://ui/%s" % file, "PackedScene", ResourceLoader.CACHE_MODE_REPLACE) as PackedScene
+		if scene:
+			var node := scene.instantiate()
+			add_child(node)
+			_item_huds.append(node)
+	print("item HUDs: ", names)
 
 
 # --- Input ----------------------------------------------------------------------------------------
@@ -207,6 +323,9 @@ func _send_input(delta: float) -> void:
 			actions |= _action_bit("slot_2")
 			if auto_rng.randf() < delta * 3.0:
 				actions |= _action_bit("fire")
+		# Hold Tab at the end, so screenshots show the scoreboard too.
+		if elapsed > autoplay * 0.8 and not Input.is_action_pressed("scoreboard"):
+			Input.action_press("scoreboard")
 	elif get_window().has_focus():
 		move.x = float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A))
 		move.y = float(Input.is_physical_key_pressed(KEY_W)) - float(Input.is_physical_key_pressed(KEY_S))
@@ -241,7 +360,7 @@ func _update_help() -> void:
 	for action in _actions:
 		var key: String = String(action["key"]).replace("Mouse", "Mouse ")
 		text += "   %s %s" % [key, String(action["name"]).replace("_", " ")]
-	help.text = text + "   Mouse orbit   Wheel zoom   Esc cursor   F1 stats"
+	help.text = text + "   Tab scores   Mouse orbit   Wheel zoom   Esc name & cursor   F1 stats"
 
 
 func _update_hud() -> void:
@@ -257,11 +376,16 @@ func _update_hud() -> void:
 			stats.get("rtt_ms", 0), stats.get("rollbacks", 0), stats.get("last_rollback_depth", 0), stats.get("stalled_seconds", 0.0),
 			stats.get("checksums_verified", 0), stats.get("desyncs", 0),
 			stats.get("entities", 0), stats.get("animation", ""), ", ".join(client.get_mod_names())]
+	var name_edit := hud.get_node_or_null("%Name") as LineEdit
+	if name_edit:
+		name_edit.visible = Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and autoplay <= 0.0
 	var banner := hud.get_node_or_null("%Banner") as Label
 	if banner:
 		var state: String = stats.get("state", "")
 		banner.visible = state != "playing"
-		if state == "rejected":
+		if _refused != "" and state == "stopped":
+			banner.text = _refused
+		elif state == "rejected":
 			banner.text = "Rejected: %s" % stats.get("reject_reason", "")
 		elif state == "reconnecting" or (state == "joining" and stats.get("welcomes", 0) > 0):
 			banner.text = "Connection lost - time is paused, reconnecting..."
@@ -271,6 +395,11 @@ func _update_hud() -> void:
 
 func _autoplay_finish() -> void:
 	if autoplay <= 0.0:
+		return
+	if _refused != "":
+		print("autoplay refused: ", _refused.replace("\n", " "))
+		autoplay = 0.0
+		get_tree().quit(3)
 		return
 	if playing_since < 0.0:
 		if client.get_connection_state() == "playing":
@@ -329,7 +458,7 @@ func _load_effects() -> void:
 	names.sort()
 	var states := 0
 	for file in names:
-		var table = load("res://vfx/%s" % file)
+		var table = ResourceLoader.load("res://vfx/%s" % file, "", ResourceLoader.CACHE_MODE_REPLACE)
 		if table is CbEffectTable:
 			for effect in table.effects:
 				if effect is CbEffect:

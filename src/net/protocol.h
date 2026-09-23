@@ -2,7 +2,7 @@
 
 // Wire protocol between server and clients.
 //
-// Channel 0 (reliable, ordered): Hello, Welcome, Reject, Checksum, ResyncRequest.
+// Channel 0 (reliable, ordered): Hello, Welcome, Reject, Checksum, ResyncRequest, PlayerNames.
 // Channel 1 (unreliable), both directions:
 //   client -> server: Input, repeating the last few ticks and acknowledging received frames;
 //   server -> client: FrameBatch, every frame from the client's acknowledgement to the newest.
@@ -20,7 +20,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 4; // 4: pitch, mod actions, commands, mod schema
+inline constexpr uint32_t kProtocolVersion = 5; // 4: pitch, mod actions, commands, mod schema; 5: names
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t
@@ -40,7 +40,10 @@ enum class MsgType : uint8_t
 	ResyncRequest = 6,
 	Input = 7,
 	FrameBatch = 8,
+	PlayerNames = 9,
 };
+
+inline constexpr size_t kMaxPlayerName = 24;
 
 using InputArray = std::array<PlayerInput, kMaxPlayers>;
 
@@ -50,7 +53,19 @@ struct MsgHello
 	uint32_t version = kProtocolVersion;
 	uint64_t fingerprint = 0;
 	uint64_t reconnectToken = 0;
+	std::string name; // what the player wants to be called; the server sanitizes it
 };
+
+// S -> C, whenever the roster changes, and after every Welcome. The names of the players in the
+// world, by slot. Presentation only: never part of the simulation or its hash.
+struct MsgPlayerNames
+{
+	std::vector<std::pair<PlayerSlot, std::string>> names;
+};
+
+// The name the server keeps: printable characters only, trimmed, at most kMaxPlayerName bytes,
+// "Player <slot + 1>" when nothing is left.
+std::string SanitizeName( const std::string& name, PlayerSlot slot );
 
 // S -> C, on join, reconnect and desync recovery. The client loads `image` (the state before
 // `snapshotTick`), then applies frames starting at `snapshotTick`. `baseInputs` are the inputs of
@@ -107,6 +122,7 @@ void Encode( const MsgReject& m, std::vector<uint8_t>& out );
 void Encode( const MsgChecksum& m, std::vector<uint8_t>& out );
 void Encode( const MsgResyncRequest& m, std::vector<uint8_t>& out );
 void Encode( const MsgInput& m, std::vector<uint8_t>& out );
+void Encode( const MsgPlayerNames& m, std::vector<uint8_t>& out );
 
 bool Decode( ByteReader& r, MsgHello& m );
 bool Decode( ByteReader& r, MsgWelcome& m );
@@ -114,6 +130,7 @@ bool Decode( ByteReader& r, MsgReject& m );
 bool Decode( ByteReader& r, MsgChecksum& m );
 bool Decode( ByteReader& r, MsgResyncRequest& m );
 bool Decode( ByteReader& r, MsgInput& m );
+bool Decode( ByteReader& r, MsgPlayerNames& m );
 
 // Returns the message type and leaves the reader positioned at the payload.
 std::optional<MsgType> ReadType( ByteReader& r );

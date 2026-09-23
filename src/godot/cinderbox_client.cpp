@@ -111,6 +111,13 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_kind", "net_id" ), &CinderboxClient::get_kind );
 	ClassDB::bind_method( D_METHOD( "get_entity_template_name", "net_id" ), &CinderboxClient::get_entity_template_name );
 	ClassDB::bind_method( D_METHOD( "get_entity_node", "net_id" ), &CinderboxClient::get_entity_node );
+	ClassDB::bind_method( D_METHOD( "get_players" ), &CinderboxClient::get_players );
+	ClassDB::bind_method( D_METHOD( "get_player_name", "net_id" ), &CinderboxClient::get_player_name );
+	ClassDB::bind_method( D_METHOD( "format_fields", "net_id", "format" ), &CinderboxClient::format_fields );
+	ClassDB::bind_method( D_METHOD( "get_required_items" ), &CinderboxClient::get_required_items );
+	ClassDB::bind_method( D_METHOD( "set_player_name", "name" ), &CinderboxClient::set_player_name );
+	ClassDB::bind_method( D_METHOD( "get_player_name_setting" ), &CinderboxClient::get_player_name_setting );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "player_name" ), "set_player_name", "get_player_name_setting" );
 	ClassDB::bind_method( D_METHOD( "add_state_binding", "binding" ), &CinderboxClient::add_state_binding );
 	ClassDB::bind_method( D_METHOD( "clear_state_bindings" ), &CinderboxClient::clear_state_bindings );
 	ClassDB::bind_method( D_METHOD( "get_stats" ), &CinderboxClient::get_stats );
@@ -172,6 +179,8 @@ void CinderboxClient::_bind_methods()
 							PropertyInfo( Variant::VECTOR3, "position" ), PropertyInfo( Variant::VECTOR3, "vector" ) ) );
 	// The local player just pressed a mod action; the server has not answered yet.
 	ADD_SIGNAL( MethodInfo( "action_pressed", PropertyInfo( Variant::STRING, "name" ) ) );
+	// Someone joined, left or was renamed.
+	ADD_SIGNAL( MethodInfo( "names_changed" ) );
 }
 
 void CinderboxClient::EnsureAnimations()
@@ -219,6 +228,7 @@ void CinderboxClient::connect_to_server()
 	options.minRollbackTicks = uint32_t( std::max( 1, m_rollbackMin ) );
 	options.maxRollbackTicks = uint32_t( std::max( m_rollbackMin, m_rollbackMax ) );
 	options.logName = "godot";
+	options.playerName = ToStd( m_playerName );
 	m_thread.Start( options );
 }
 
@@ -833,6 +843,71 @@ Vector3 CinderboxClient::get_bone_position( int64_t net_id, const String& bone )
 	return node->get_global_position();
 }
 
+int CinderboxClient::SlotOfNetId( uint32_t netId ) const
+{
+	if ( !m_mirror )
+	{
+		return -1;
+	}
+	flecs::entity ve = m_mirror->VisualOf( netId );
+	if ( ve.is_valid() == false )
+	{
+		return -1;
+	}
+	const present::Visual& v = ve.get<present::Visual>();
+	bool person = v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll;
+	return person ? int( v.slot ) : -1;
+}
+
+PackedInt64Array CinderboxClient::get_players() const
+{
+	PackedInt64Array out;
+	if ( !m_mirror )
+	{
+		return out;
+	}
+	m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
+							const present::RagdollAnim* ) {
+		if ( v.kind == present::VisualKind::Player )
+		{
+			out.push_back( int64_t( v.netId ) );
+		}
+	} );
+	return out;
+}
+
+String CinderboxClient::get_player_name( int64_t net_id ) const
+{
+	int slot = SlotOfNetId( uint32_t( net_id ) );
+	if ( slot < 0 )
+	{
+		return String();
+	}
+	const std::string& name = m_frame.names[size_t( slot )];
+	return name.empty() ? String( "Player " ) + String::num_int64( slot + 1 ) : String::utf8( name.c_str() );
+}
+
+String CinderboxClient::format_fields( int64_t net_id, const String& format ) const
+{
+	String withName = format.replace( "{name}", get_player_name( net_id ).replace( "{", "(" ) );
+	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
+	std::string text = present::FormatFields( m_frame.schema, ToStd( withName ), BoardOf( uint32_t( net_id ) ), globals );
+	return String::utf8( text.c_str() );
+}
+
+Array CinderboxClient::get_required_items() const
+{
+	Array out;
+	for ( const ModItem& item : m_frame.schema.items )
+	{
+		Dictionary d;
+		d["mod"] = String( item.mod.c_str() );
+		d["sha256"] = String( item.sha256.c_str() );
+		out.push_back( d );
+	}
+	return out;
+}
+
 String CinderboxClient::get_kind( int64_t net_id ) const
 {
 	if ( !m_mirror )
@@ -879,6 +954,11 @@ void CinderboxClient::_process( double delta )
 	{
 		m_schemaGeneration = m_frame.schemaGeneration;
 		emit_signal( "schema_changed" );
+	}
+	if ( m_frame.namesGeneration != m_namesGeneration )
+	{
+		m_namesGeneration = m_frame.namesGeneration;
+		emit_signal( "names_changed" );
 	}
 	if ( m_frame.hasSimulation == false )
 	{

@@ -23,3 +23,7 @@ dist/
 mods_src/*/bin/
 mods_src/*/cinderbox.gdextension
 mods_src/*/cinderbox.gdextension.uid
+server_mods/*/client/.godot/
+server_mods/*/client/bin/
+server_mods/*/client/cinderbox.gdextension
+server_mods/*/client/cinderbox.gdextension.uid

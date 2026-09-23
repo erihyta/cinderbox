@@ -53,9 +53,21 @@ struct ModAction
 	bool operator==( const ModAction& ) const = default;
 };
 
+// A mod's client content, as a workshop item: the look players subscribe to (bindings, HUD,
+// meshes, sounds). The server never sends it; it only says which item, and clients must have that
+// exact content (the SHA-256 of the item's pack) to join.
+struct ModItem
+{
+	std::string mod;	// "pistol"
+	std::string sha256; // 64 lowercase hex digits
+
+	bool operator==( const ModItem& ) const = default;
+};
+
 struct ModSchema
 {
 	std::vector<std::string> mods; // names of the mods the server runs, for display
+	std::vector<ModItem> items;	   // the client items those mods need
 	std::vector<BoardField> fields;
 	std::vector<std::string> events; // index = ModEventRecord::type
 	std::vector<ModAction> actions;
@@ -71,6 +83,9 @@ struct ModSchema
 };
 
 inline constexpr size_t kMaxSchemaName = 64;
+
+// True for 64 lowercase hex digits.
+bool IsSha256( const std::string& hex );
 
 void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out );
 // Rejects anything out of range (slots, bits, name lengths), so a client can trust what it read.
