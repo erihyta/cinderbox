@@ -32,6 +32,7 @@ add_subdirectory(src/net)
 add_subdirectory(src/server)
 add_subdirectory(server_mods)
 target_link_libraries(cb_server PRIVATE cb_server_mods)
+add_dependencies(cb_server cb_server_items)
 add_subdirectory(src/tools)
 add_subdirectory(src/client) # the core is always needed; the raylib app is optional inside
 if(CB_BUILD_GODOT)

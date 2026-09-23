@@ -39,6 +39,9 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbEffectTable );
 	// HUD nodes that read the mods' board.
 	GDREGISTER_CLASS( cb::gd::CbFieldLabel );
+	GDREGISTER_CLASS( cb::gd::CbFieldBinding );
+	GDREGISTER_CLASS( cb::gd::CbEventFeed );
+	GDREGISTER_CLASS( cb::gd::CbScoreboard );
 }
 
 void UninitializeCinderbox( ModuleInitializationLevel )

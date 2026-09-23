@@ -705,6 +705,7 @@ void TestProtocol()
 		schema.fields.push_back( { "round.time", BoardType::Float, BoardScope::Global, 0 } );
 		schema.events = { "pistol.fired", "combat.killed" };
 		schema.actions.push_back( { "fire", 0, "MouseLeft" } );
+		schema.items.push_back( { "pistol", std::string( 64, 'a' ) } );
 		std::vector<uint8_t> bytes;
 		EncodeSchema( schema, bytes );
 		ModSchema back;
@@ -718,6 +719,12 @@ void TestProtocol()
 		EncodeSchema( bad, bytes );
 		CHECK( DecodeSchema( bytes.data(), bytes.size(), back ) == false );
 		bytes.resize( bytes.size() - 1 );
+		CHECK( DecodeSchema( bytes.data(), bytes.size(), back ) == false );
+
+		// An item hash has to be a real SHA-256.
+		bad = schema;
+		bad.items[0].sha256 = "not-a-hash";
+		EncodeSchema( bad, bytes );
 		CHECK( DecodeSchema( bytes.data(), bytes.size(), back ) == false );
 
 		// An empty schema (a server without mods) is valid.

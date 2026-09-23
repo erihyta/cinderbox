@@ -2,9 +2,12 @@
 //
 //   cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]
 //             [--prop-lifetime SEC] [--props-per-player N] [--props-global N]
-//             [--map FILE.cbmap] [--record FILE] [--mods A,B | --mods none] [--list-mods] [--quiet]
+//             [--map FILE.cbmap] [--record FILE] [--mods A,B | --mods none] [--list-mods]
+//             [--items DIR] [--quiet]
 //
-// Every gameplay mod compiled in (server_mods/) runs unless --mods names a subset.
+// Every gameplay mod compiled in (server_mods/) runs unless --mods names a subset. Mods with a look
+// need their workshop item: its SHA-256 is read from <items dir>/<mod>.item (default: items/ next
+// to this executable) and announced to clients, who must have that exact item to join.
 
 #include "game_server.h"
 #include "registry.h"
@@ -13,6 +16,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -30,7 +35,29 @@ void Usage()
 {
 	std::printf( "usage: cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]\n"
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
-				 "                 [--map FILE.cbmap] [--record FILE] [--mods A,B | --mods none] [--list-mods] [--quiet]\n" );
+				 "                 [--map FILE.cbmap] [--record FILE] [--mods A,B | --mods none] [--list-mods]\n"
+				 "                 [--items DIR] [--quiet]\n" );
+}
+
+// <dir>/<mod>.item: "sha256=<64 hex digits>" (written by tools/publish_mod.ps1).
+bool ReadItem( const std::string& dir, const std::string& mod, cb::ModItem& out )
+{
+	std::ifstream in( std::filesystem::path( dir ) / ( mod + ".item" ) );
+	std::string line;
+	while ( std::getline( in, line ) )
+	{
+		while ( line.empty() == false && ( line.back() == '\r' || line.back() == ' ' ) )
+		{
+			line.pop_back();
+		}
+		if ( line.rfind( "sha256=", 0 ) == 0 && cb::IsSha256( line.substr( 7 ) ) )
+		{
+			out.mod = mod;
+			out.sha256 = line.substr( 7 );
+			return true;
+		}
+	}
+	return false;
 }
 
 std::vector<std::string> SplitList( const std::string& list )
@@ -54,7 +81,8 @@ std::vector<std::string> SplitList( const std::string& list )
 	return out;
 }
 
-bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::string>& mods, bool& listMods )
+bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::string>& mods, bool& listMods,
+				std::string& itemsDir )
 {
 	for ( int i = 1; i < argc; ++i )
 	{
@@ -87,6 +115,11 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 		if ( arg == "--list-mods" )
 		{
 			listMods = true;
+			continue;
+		}
+		if ( arg == "--items" && i + 1 < argc )
+		{
+			itemsDir = argv[++i];
 			continue;
 		}
 		if ( i + 1 >= argc )
@@ -139,7 +172,8 @@ int main( int argc, char** argv )
 		modNames.push_back( info.name );
 	}
 	bool listMods = false;
-	if ( ParseArgs( argc, argv, options, modNames, listMods ) == false )
+	std::string itemsDir = ( std::filesystem::absolute( argv[0] ).parent_path() / "items" ).string();
+	if ( ParseArgs( argc, argv, options, modNames, listMods, itemsDir ) == false )
 	{
 		Usage();
 		return 1;
@@ -167,6 +201,27 @@ int main( int argc, char** argv )
 			return 1;
 		}
 		server.AddMod( std::move( mod ) );
+
+		// The item players need for this mod's look, if it has one.
+		bool clientContent = false;
+		for ( const cb::mods::ModInfo& info : cb::mods::CompiledMods() )
+		{
+			clientContent |= name == info.name && info.clientContent;
+		}
+		if ( clientContent == false )
+		{
+			continue;
+		}
+		cb::ModItem item;
+		if ( ReadItem( itemsDir, name, item ) )
+		{
+			options.items.push_back( item );
+		}
+		else
+		{
+			std::printf( "warning: mod %s has client content but no item manifest in %s; clients will not load its look\n",
+						 name.c_str(), itemsDir.c_str() );
+		}
 	}
 	if ( server.Start( options ) == false )
 	{

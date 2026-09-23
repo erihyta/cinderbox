@@ -192,12 +192,16 @@ write_wav(os.path.join(out_dir, "jump.wav"), whoosh())
 write_wav(os.path.join(out_dir, "land.wav"), thud())
 write_wav(os.path.join(out_dir, "footstep.wav"), step())
 write_wav(os.path.join(out_dir, "impact.wav"), knock())
-write_wav(os.path.join(out_dir, "gunshot.wav"), gunshot())
-write_wav(os.path.join(out_dir, "dry_click.wav"), dry_click())
-write_wav(os.path.join(out_dir, "reload.wav"), reload_clack())
-write_wav(os.path.join(out_dir, "hit_marker.wav"), hit_marker())
-write_wav(os.path.join(out_dir, "body_hit.wav"), body_hit())
-write_wav(os.path.join(out_dir, "ricochet.wav"), ricochet())
+
+# The pistol's sounds belong to its workshop item, not the base game.
+pistol_dir = "server_mods/pistol/client/assets/sfx"
+os.makedirs(pistol_dir, exist_ok=True)
+write_wav(os.path.join(pistol_dir, "gunshot.wav"), gunshot())
+write_wav(os.path.join(pistol_dir, "dry_click.wav"), dry_click())
+write_wav(os.path.join(pistol_dir, "reload.wav"), reload_clack())
+write_wav(os.path.join(pistol_dir, "hit_marker.wav"), hit_marker())
+write_wav(os.path.join(pistol_dir, "body_hit.wav"), body_hit())
+write_wav(os.path.join(pistol_dir, "ricochet.wav"), ricochet())
 
 mod_dir = "mods_src/example_neon/assets/sfx"
 os.makedirs(mod_dir, exist_ok=True)

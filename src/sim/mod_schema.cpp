@@ -8,7 +8,7 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x43424D53u; // 'CBMS'
+constexpr uint32_t kSchemaMagic = 0x3242434Du; // 'MCB2': 2 added workshop items
 
 void PutU8( std::vector<uint8_t>& out, uint8_t v )
 {
@@ -131,6 +131,28 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutU8( out, a.bit );
 		PutString( out, a.key );
 	}
+	PutU8( out, uint8_t( std::min<size_t>( schema.items.size(), 255 ) ) );
+	for ( size_t i = 0; i < schema.items.size() && i < 255; ++i )
+	{
+		PutString( out, schema.items[i].mod );
+		PutString( out, schema.items[i].sha256 );
+	}
+}
+
+bool IsSha256( const std::string& hex )
+{
+	if ( hex.size() != 64 )
+	{
+		return false;
+	}
+	for ( char c : hex )
+	{
+		if ( ( c < '0' || c > '9' ) && ( c < 'a' || c > 'f' ) )
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
@@ -193,6 +215,18 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 			return false;
 		}
 		out.actions.push_back( std::move( a ) );
+	}
+	uint8_t items = r.U8();
+	for ( uint8_t i = 0; i < items && r.ok; ++i )
+	{
+		ModItem item;
+		item.mod = r.String();
+		item.sha256 = r.String();
+		if ( IsSha256( item.sha256 ) == false || item.mod.empty() )
+		{
+			return false;
+		}
+		out.items.push_back( std::move( item ) );
 	}
 	return r.ok && r.at == size;
 }

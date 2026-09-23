@@ -1,8 +1,8 @@
 [gd_scene format=3]
 
-; The HUD. Stats, Banner and Help are filled by game.gd. The CbFieldLabel nodes read the server
-; mods' fields by name and show only while their conditions hold, so a server without the pistol
-; mod simply shows none of them ("?name" means the field is declared).
+; The game's own HUD: engine information only. Stats, Banner and Help are filled by game.gd; Name
+; edits the player's name (shown while the mouse is free, applied by rejoining).
+; A server mod's HUD comes with its workshop item as res://ui/hud_<mod>.tscn and is laid over this.
 
 [node name="Hud" type="CanvasLayer"]
 
@@ -25,7 +25,7 @@ offset_top = -34.0
 offset_right = 1200.0
 offset_bottom = -10.0
 theme_override_colors/font_color = Color(0.2, 0.2, 0.25, 1)
-text = "WASD move   Shift sprint   Space jump   Mouse orbit   Wheel zoom   Esc cursor   F1 stats"
+text = "WASD move   Shift sprint   Space jump   Tab scores   Mouse orbit   Wheel zoom   Esc cursor   F1 stats"
 
 [node name="Banner" type="Label" parent="."]
 unique_name_in_owner = true
@@ -35,116 +35,25 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -300.0
+offset_left = -420.0
 offset_top = -20.0
-offset_right = 300.0
-offset_bottom = 20.0
+offset_right = 420.0
+offset_bottom = 120.0
 theme_override_colors/font_color = Color(1, 0.55, 0.1, 1)
-theme_override_font_sizes/font_size = 26
+theme_override_font_sizes/font_size = 24
 horizontal_alignment = 1
+autowrap_mode = 3
 text = "Connecting..."
 
-[node name="Crosshair" type="CbFieldLabel" parent="."]
-anchors_preset = 8
+[node name="Name" type="LineEdit" parent="."]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 5
 anchor_left = 0.5
-anchor_top = 0.5
 anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -20.0
-offset_top = -20.0
-offset_right = 20.0
-offset_bottom = 20.0
-theme_override_colors/font_color = Color(1, 1, 1, 0.9)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.8)
-theme_override_constants/outline_size = 4
-theme_override_font_sizes/font_size = 26
-horizontal_alignment = 1
-vertical_alignment = 1
-text = "+"
-conditions = PackedStringArray("loadout.slot == 2", "!combat.dead")
-
-[node name="Health" type="CbFieldLabel" parent="."]
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -260.0
-offset_top = -110.0
-offset_right = -24.0
-offset_bottom = -76.0
-theme_override_colors/font_color = Color(0.95, 0.3, 0.3, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.7)
-theme_override_constants/outline_size = 5
-theme_override_font_sizes/font_size = 26
-horizontal_alignment = 2
-text_format = "HP {combat.health}"
-conditions = PackedStringArray("?combat.health", "!combat.dead")
-
-[node name="Ammo" type="CbFieldLabel" parent="."]
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -260.0
-offset_top = -74.0
-offset_right = -24.0
-offset_bottom = -40.0
-theme_override_colors/font_color = Color(1, 0.9, 0.6, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.7)
-theme_override_constants/outline_size = 5
-theme_override_font_sizes/font_size = 26
-horizontal_alignment = 2
-text_format = "AMMO {pistol.ammo} / 12"
-conditions = PackedStringArray("loadout.slot == 2", "!pistol.reloading", "!combat.dead")
-
-[node name="Reloading" type="CbFieldLabel" parent="."]
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -260.0
-offset_top = -74.0
-offset_right = -24.0
-offset_bottom = -40.0
-theme_override_colors/font_color = Color(1, 0.75, 0.3, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.7)
-theme_override_constants/outline_size = 5
-theme_override_font_sizes/font_size = 26
-horizontal_alignment = 2
-text = "RELOADING"
-conditions = PackedStringArray("loadout.slot == 2", "pistol.reloading", "!combat.dead")
-
-[node name="Score" type="CbFieldLabel" parent="."]
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -260.0
+offset_left = -160.0
 offset_top = 12.0
-offset_right = -24.0
-offset_bottom = 40.0
-theme_override_colors/font_color = Color(0.1, 0.1, 0.12, 1)
-theme_override_font_sizes/font_size = 20
-horizontal_alignment = 2
-text_format = "Kills {combat.kills}   Deaths {combat.deaths}"
-conditions = PackedStringArray("?combat.kills")
-
-[node name="Dead" type="CbFieldLabel" parent="."]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -300.0
-offset_top = -90.0
-offset_right = 300.0
-offset_bottom = -40.0
-theme_override_colors/font_color = Color(0.95, 0.25, 0.25, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.8)
-theme_override_constants/outline_size = 6
-theme_override_font_sizes/font_size = 40
-horizontal_alignment = 1
-text = "YOU DIED"
-conditions = PackedStringArray("combat.dead")
+offset_right = 160.0
+offset_bottom = 44.0
+placeholder_text = "Your name (Enter to rejoin with it)"
+max_length = 24

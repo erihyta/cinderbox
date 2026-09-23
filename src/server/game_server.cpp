@@ -49,6 +49,7 @@ bool GameServer::Start( const ServerOptions& options )
 		return false;
 	}
 	m_schema = declarations.Schema();
+	m_schema.items = options.items;
 	EncodeSchema( m_schema, m_schemaBytes );
 
 	m_map = GetLevelLayout();
@@ -116,6 +117,10 @@ bool GameServer::Start( const ServerOptions& options )
 		}
 		Log( "mods: %s (%zu fields, %zu events, %zu actions)", names.c_str(), m_schema.fields.size(), m_schema.events.size(),
 			 m_schema.actions.size() );
+		for ( const ModItem& item : m_schema.items )
+		{
+			Log( "clients need workshop item %s %.12s", item.mod.c_str(), item.sha256.c_str() );
+		}
 		InputFrame none;
 		none.tick = m_sim->Tick();
 		mods::Context ctx( *m_sim, m_schema, none, m_lastInputs, *m_modWorld, m_modRng );

@@ -103,6 +103,11 @@ void ClientThread::Publish( GameClient& client, double now, bool rolledBack )
 		f.schemaGeneration = client.SchemaGeneration();
 		f.schema = client.Schema();
 	}
+	if ( f.namesGeneration != client.NamesGeneration() )
+	{
+		f.namesGeneration = client.NamesGeneration();
+		f.names = client.Names();
+	}
 
 	if ( RollbackSession* session = client.Session() )
 	{

@@ -1,0 +1,10 @@
+; The pistol mod's look: a workshop item players subscribe to. It contains no code; everything here
+; is keyed on names the pistol server mod declares (the "fire" action, "combat.*" and "pistol.*").
+; Publish it with: tools\publish_mod.ps1 -Mod pistol
+
+config_version=5
+
+[application]
+
+config/name="Cinderbox item: pistol"
+config/features=PackedStringArray("4.7", "Forward Plus")

@@ -34,6 +34,8 @@ struct ServerOptions
 	std::string mapPath;
 	// Write a replay of the whole session (empty = off).
 	std::string recordPath;
+	// The workshop items clients need for the mods this server runs (announced, never sent).
+	std::vector<ModItem> items;
 	uint32_t replayChecksumInterval = 60;
 };
 

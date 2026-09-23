@@ -76,6 +76,23 @@ public:
 	godot::Node3D* get_entity_node( int64_t net_id ) const;
 	void add_state_binding( const godot::Ref<CbStateBinding>& binding );
 	void clear_state_bindings();
+
+	// Players: net ids of everyone in the world, and their names.
+	godot::PackedInt64Array get_players() const;
+	godot::String get_player_name( int64_t net_id ) const;
+	// "{name}: {combat.kills}" for one entity: {name} is its player's name, the rest board fields.
+	godot::String format_fields( int64_t net_id, const godot::String& format ) const;
+	// The workshop items this server's mods need: [{ mod, sha256 }].
+	godot::Array get_required_items() const;
+
+	void set_player_name( const godot::String& v )
+	{
+		m_playerName = v;
+	}
+	godot::String get_player_name_setting() const
+	{
+		return m_playerName;
+	}
 	godot::Dictionary get_stats() const;
 	godot::String get_connection_state() const;
 	bool has_local_player() const;
@@ -193,6 +210,9 @@ private:
 	present::Models m_pose;		// scratch: the pose being built
 	uint16_t m_lastActions = 0;
 	uint64_t m_schemaGeneration = 0;
+	uint64_t m_namesGeneration = 0;
+	godot::String m_playerName;
+	int SlotOfNetId( uint32_t netId ) const;
 };
 
 } // namespace cb::gd
