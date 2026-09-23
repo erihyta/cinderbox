@@ -3,6 +3,7 @@
 #include "scripts/scripts.h"
 #include "simulation.h"
 
+#include <algorithm>
 #include <cmath>
 #include <mutex>
 
@@ -38,7 +39,8 @@ Mirror::Mirror( std::shared_ptr<const anim::AnimSet> animSet )
 	m_world.component<PlayerAnim>();
 	m_world.component<SpawnEffect>();
 	m_world.component<DestroyEffect>();
-	m_world.set<AnimLibrary>( { m_animSet } );
+	m_world.component<RagdollAnim>();
+	m_world.set<AnimLibrary>( { m_animSet, std::make_shared<RagdollRig>( BuildRagdollRig( *m_animSet ) ) } );
 	m_world.set<FrameTiming>( {} );
 	m_world.set_ctx( this );
 	scripts::RegisterAll( m_world );
@@ -72,6 +74,10 @@ flecs::entity Mirror::CreateVisual( const FrameEntity& f, bool withEffect )
 	v.halfExtents = f.halfExtents;
 	v.slot = f.slot;
 	v.templateIndex = f.templateIndex;
+	if ( f.kind == VisualKind::Ragdoll && f.ragdoll < m_pendingRagdolls.size() )
+	{
+		v.owner = m_pendingRagdolls[f.ragdoll].owner;
+	}
 	if ( f.kind == VisualKind::Static )
 	{
 		withEffect = false;
@@ -85,6 +91,22 @@ flecs::entity Mirror::CreateVisual( const FrameEntity& f, bool withEffect )
 	if ( f.kind == VisualKind::Player && f.hasAnim )
 	{
 		e.set<PlayerAnim>( { f.anim, f.anim, nullptr } );
+	}
+	if ( f.kind == VisualKind::Ragdoll )
+	{
+		// Starts from whatever its player was last drawn doing.
+		RagdollAnim ra;
+		flecs::entity owner = VisualOf( v.owner );
+		if ( owner.is_valid() )
+		{
+			const PlayerAnim* pa = owner.try_get<PlayerAnim>();
+			if ( pa != nullptr && pa->evaluator )
+			{
+				ra.start = pa->evaluator->Models();
+				ra.hasStart = true;
+			}
+		}
+		e.set<RagdollAnim>( std::move( ra ) );
 	}
 	if ( withEffect )
 	{
@@ -104,6 +126,8 @@ void Mirror::Update( const PresentationFrame& frame, float tickAlpha, float fram
 
 void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSeconds )
 {
+	m_pendingRagdolls = frame.ragdolls;
+	std::copy( frame.board, frame.board + kBoardSlots, m_board );
 	bool reset = frame.resetGeneration != m_resetGeneration;
 	m_resetGeneration = frame.resetGeneration;
 	bool advanced = frame.tick != m_lastTick;
@@ -130,6 +154,16 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 
 		Visual& visual = ve.get_mut<Visual>();
 		visual.isLocalPlayer = f.netId == frame.localNetId && frame.localNetId != 0;
+		visual.dead = f.dead;
+		visual.hasBoard = f.hasBoard;
+		visual.board = f.board;
+		if ( frame.hasInputs && f.kind == VisualKind::Player )
+		{
+			const PlayerInput& in = frame.inputs[f.slot];
+			visual.hasAim = true;
+			visual.aimYaw = float( in.cameraYaw ) * ( 6.28318530718f / 65536.0f );
+			visual.aimPitch = float( in.cameraPitch ) * ( 6.28318530718f / 65536.0f );
+		}
 		if ( visual.isLocalPlayer )
 		{
 			m_localPlayer = ve;
@@ -187,6 +221,22 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 			m_events.push_back( { EventType::Footstep, ve.id(), f.netId, visual.kind, false, rp.position } );
 		}
 
+		if ( f.kind == VisualKind::Ragdoll && f.ragdoll < frame.ragdolls.size() )
+		{
+			RagdollAnim& ra = ve.get_mut<RagdollAnim>();
+			const FrameRagdoll& fr = frame.ragdolls[f.ragdoll];
+			ra.yaw = fr.yaw;
+			if ( created || reset )
+			{
+				std::copy( fr.parts, fr.parts + kRagdollParts, ra.previous );
+			}
+			else if ( advanced )
+			{
+				std::copy( ra.current, ra.current + kRagdollParts, ra.previous );
+			}
+			std::copy( fr.parts, fr.parts + kRagdollParts, ra.current );
+		}
+
 		if ( f.hasAnim )
 		{
 			PlayerAnim& pa = ve.get_mut<PlayerAnim>();
@@ -241,6 +291,76 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 	}
 
 	SyncImpacts( frame, reset );
+	SyncModEvents( frame, reset );
+}
+
+// The same shape as impacts: a ring and a count that only grows.
+void Mirror::SyncModEvents( const PresentationFrame& frame, bool reset )
+{
+	if ( reset || frame.modEventCount < m_modEventCount )
+	{
+		m_modEventCount = frame.modEventCount;
+		return;
+	}
+	if ( frame.modEvents.size() < kModEventHistory )
+	{
+		return;
+	}
+
+	uint32_t missed = frame.modEventCount - m_modEventCount;
+	uint32_t replay = std::min( missed, kModEventHistory );
+	for ( uint32_t i = 0; i < replay; ++i )
+	{
+		const ModEventRecord& record = frame.modEvents[( frame.modEventCount - replay + i ) % kModEventHistory];
+		Event event;
+		event.type = EventType::Mod;
+		event.netId = record.netIdA;
+		event.otherNetId = record.netIdB;
+		event.modType = record.type;
+		event.value = record.value;
+		event.position = record.point;
+		event.vector = record.vector;
+		flecs::entity ve = VisualOf( record.netIdA );
+		if ( ve.is_valid() )
+		{
+			event.visual = ve.id();
+			event.kind = ve.get<Visual>().kind;
+		}
+		m_events.push_back( event );
+	}
+	m_modEventCount = frame.modEventCount;
+}
+
+flecs::entity Mirror::VisualOf( uint32_t netId ) const
+{
+	auto found = m_byNetId.find( netId );
+	if ( netId == 0 || found == m_byNetId.end() )
+	{
+		return flecs::entity();
+	}
+	flecs::entity ve( m_world, found->second.entity );
+	return ve.is_alive() ? ve : flecs::entity();
+}
+
+flecs::entity Mirror::RagdollOf( uint32_t playerNetId ) const
+{
+	flecs::entity newest;
+	uint32_t newestId = 0;
+	for ( const auto& entry : m_byNetId )
+	{
+		flecs::entity ve( m_world, entry.second.entity );
+		if ( ve.is_alive() == false )
+		{
+			continue;
+		}
+		const Visual& v = ve.get<Visual>();
+		if ( v.kind == VisualKind::Ragdoll && v.owner == playerNetId && entry.first > newestId )
+		{
+			newest = ve;
+			newestId = entry.first;
+		}
+	}
+	return newest;
 }
 
 // Impacts are a ring in the simulation with a count that only grows, so presentation replays

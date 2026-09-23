@@ -73,6 +73,8 @@ public:
 	{
 		return *m_sim;
 	}
+	// The frame the most recent tick was simulated with (predicted or authoritative), if kept.
+	const InputFrame* LastSimulatedFrame() const;
 	const Stats& GetStats() const
 	{
 		return m_stats;

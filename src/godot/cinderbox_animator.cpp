@@ -49,6 +49,32 @@ void CinderboxAnimator::_bind_methods()
 	ADD_GROUP( "", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "sync_threshold", PROPERTY_HINT_RANGE, "0,1,0.01" ), "set_sync_threshold",
 				  "get_sync_threshold" );
+
+	ClassDB::bind_method( D_METHOD( "on_mod_event", "name" ), &CinderboxAnimator::on_mod_event );
+	ClassDB::bind_method( D_METHOD( "set_tree_parameter", "path", "value" ), &CinderboxAnimator::set_tree_parameter );
+	ClassDB::bind_method( D_METHOD( "set_event_parameters", "value" ), &CinderboxAnimator::set_event_parameters );
+	ClassDB::bind_method( D_METHOD( "get_event_parameters" ), &CinderboxAnimator::get_event_parameters );
+	ADD_PROPERTY( PropertyInfo( Variant::DICTIONARY, "event_parameters" ), "set_event_parameters", "get_event_parameters" );
+}
+
+void CinderboxAnimator::on_mod_event( const String& name )
+{
+	if ( m_eventParameters.has( name ) == false )
+	{
+		return;
+	}
+	set_tree_parameter( String( m_eventParameters[name] ), 1 );
+}
+
+void CinderboxAnimator::set_tree_parameter( const String& path, const Variant& value )
+{
+	if ( AnimationTree* tree = Tree() )
+	{
+		if ( path.is_empty() == false )
+		{
+			tree->set( path, value );
+		}
+	}
 }
 
 void CinderboxAnimator::_ready()

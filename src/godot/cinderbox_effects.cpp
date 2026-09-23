@@ -4,6 +4,12 @@
 
 using namespace godot;
 
+// Binds a CB_PROPERTY's accessors and exposes it to the inspector.
+#define CB_BIND( Class, name, ... )                                                                                              \
+	ClassDB::bind_method( D_METHOD( "set_" #name, "value" ), &Class::set_##name );                                               \
+	ClassDB::bind_method( D_METHOD( "get_" #name ), &Class::get_##name );                                                        \
+	ADD_PROPERTY( PropertyInfo( __VA_ARGS__ ), "set_" #name, "get_" #name )
+
 namespace cb::gd
 {
 
@@ -26,8 +32,15 @@ void CbEffect::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_who", "value" ), &CbEffect::set_who );
 	ClassDB::bind_method( D_METHOD( "get_who" ), &CbEffect::get_who );
 
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "event", PROPERTY_HINT_ENUM, "Spawned,Destroying,Jumped,Landed,Footstep,Impact" ), "set_event",
-				  "get_event" );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "event", PROPERTY_HINT_ENUM, "Spawned,Destroying,Jumped,Landed,Footstep,Impact,Mod event,Action" ),
+				  "set_event", "get_event" );
+	CB_BIND( CbEffect, name, Variant::STRING, "name" );
+	CB_BIND( CbEffect, conditions, Variant::PACKED_STRING_ARRAY, "conditions" );
+	CB_BIND( CbEffect, subject, Variant::INT, "subject", PROPERTY_HINT_ENUM, "Entity A,Entity B" );
+	CB_BIND( CbEffect, value_filter, Variant::INT, "value_filter", PROPERTY_HINT_ENUM, "Any,Positive,Zero" );
+	CB_BIND( CbEffect, bone, Variant::STRING, "bone" );
+	CB_BIND( CbEffect, at_end, Variant::BOOL, "at_end" );
+	CB_BIND( CbEffect, beam, Variant::BOOL, "beam" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "template_name" ), "set_template_name", "get_template_name" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "kind", PROPERTY_HINT_ENUM_SUGGESTION, "any,prop,player,static" ), "set_kind",
 				  "get_kind" );
@@ -95,13 +108,44 @@ void CbEffect::_bind_methods()
 	BIND_ENUM_CONSTANT( EVENT_LANDED );
 	BIND_ENUM_CONSTANT( EVENT_FOOTSTEP );
 	BIND_ENUM_CONSTANT( EVENT_IMPACT );
+	BIND_ENUM_CONSTANT( EVENT_MOD );
+	BIND_ENUM_CONSTANT( EVENT_ACTION );
+	BIND_ENUM_CONSTANT( SUBJECT_A );
+	BIND_ENUM_CONSTANT( SUBJECT_B );
+	BIND_ENUM_CONSTANT( VALUE_ANY );
+	BIND_ENUM_CONSTANT( VALUE_POSITIVE );
+	BIND_ENUM_CONSTANT( VALUE_ZERO );
 	BIND_ENUM_CONSTANT( WHO_ANYONE );
 	BIND_ENUM_CONSTANT( WHO_LOCAL );
 	BIND_ENUM_CONSTANT( WHO_REMOTE );
 }
 
+void CbStateBinding::_bind_methods()
+{
+	CB_BIND( CbStateBinding, conditions, Variant::PACKED_STRING_ARRAY, "conditions" );
+	CB_BIND( CbStateBinding, kind, Variant::STRING, "kind", PROPERTY_HINT_ENUM_SUGGESTION, "player,ragdoll,prop,any" );
+	CB_BIND( CbStateBinding, who, Variant::INT, "who", PROPERTY_HINT_ENUM, "Anyone,Local player,Other players" );
+	ADD_GROUP( "Attach", "attach_" );
+	CB_BIND( CbStateBinding, attach_scene, Variant::STRING, "attach_scene", PROPERTY_HINT_FILE, "*.tscn,*.scn" );
+	CB_BIND( CbStateBinding, attach_bone, Variant::STRING, "attach_bone" );
+	CB_BIND( CbStateBinding, attach_offset, Variant::VECTOR3, "attach_offset" );
+	CB_BIND( CbStateBinding, attach_rotation, Variant::VECTOR3, "attach_rotation" );
+	ADD_GROUP( "Aim", "aim_" );
+	CB_BIND( CbStateBinding, aim_bone, Variant::STRING, "aim_bone" );
+	CB_BIND( CbStateBinding, aim_tip, Variant::STRING, "aim_tip" );
+	CB_BIND( CbStateBinding, aim_weight, Variant::FLOAT, "aim_weight", PROPERTY_HINT_RANGE, "0,1,0.01" );
+	ADD_GROUP( "", "" );
+	CB_BIND( CbStateBinding, tree_parameter, Variant::STRING, "tree_parameter" );
+}
+
 void CbEffectTable::_bind_methods()
 {
+	ClassDB::bind_method( D_METHOD( "set_states", "states" ), &CbEffectTable::set_states );
+	ClassDB::bind_method( D_METHOD( "get_states" ), &CbEffectTable::get_states );
+	ADD_PROPERTY( PropertyInfo( Variant::ARRAY, "states", PROPERTY_HINT_ARRAY_TYPE,
+								String::num_int64( Variant::OBJECT ) + "/" + String::num_int64( PROPERTY_HINT_RESOURCE_TYPE ) +
+									":CbStateBinding" ),
+				  "set_states", "get_states" );
 	ClassDB::bind_method( D_METHOD( "set_effects", "effects" ), &CbEffectTable::set_effects );
 	ClassDB::bind_method( D_METHOD( "get_effects" ), &CbEffectTable::get_effects );
 	ADD_PROPERTY( PropertyInfo( Variant::ARRAY, "effects", PROPERTY_HINT_ARRAY_TYPE,

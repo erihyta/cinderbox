@@ -10,10 +10,18 @@
 //   <prefab_dir>/prop_sphere.tscn   sphere props          (unit-diameter sphere)
 //   <prefab_dir>/player.tscn        players               (origin at the feet, facing +Z;
 //                                                          contains a CinderboxSkeleton)
+//   <prefab_dir>/ragdoll.tscn       ragdolls (optional; player.tscn is used without it)
 // Gameplay never depends on these: the simulation does not know Godot exists.
+//
+// What the server's mods add reaches presentation as names, never as code: the actions a player
+// can press (with suggested keys), board fields ("pistol.ammo") and mod events ("pistol.fired").
+// This node exposes them to scripts and HUD nodes, and applies CbStateBindings (held items, aimed
+// arms, AnimationTree parameters) while their conditions hold.
 
 #include "anim_set.h"
+#include "cinderbox_effects.h"
 #include "client_thread.h"
+#include "fields.h"
 #include "mirror.h"
 
 #include <godot_cpp/classes/node3d.hpp>
@@ -35,13 +43,39 @@ public:
 	~CinderboxClient() override;
 
 	void _process( double delta ) override;
+	void _enter_tree() override;
 	void _exit_tree() override;
 
 	// Scripting API
 	void connect_to_server();
 	void disconnect_from_server();
 	bool is_running() const;
-	void set_input( const godot::Vector2& move, double camera_yaw, bool jump, bool sprint, bool spawn_prop );
+	// camera_yaw / camera_pitch: the Godot camera's rotation (radians). actions: bits of the
+	// server's mod actions (get_actions() says which bit is which).
+	void set_input( const godot::Vector2& move, double camera_yaw, double camera_pitch, bool jump, bool sprint, int64_t actions );
+
+	// What the server's mods declared. Each action: { name, bit, key }.
+	godot::Array get_actions() const;
+	godot::PackedStringArray get_mod_names() const;
+	// A board value by name (int, float or bool as declared; null when it is not declared).
+	godot::Variant get_field( int64_t net_id, const godot::String& name ) const;
+	godot::Variant get_local_field( const godot::String& name ) const;
+	bool check_conditions( int64_t net_id, const godot::PackedStringArray& conditions ) const;
+	bool check_local_conditions( const godot::PackedStringArray& conditions ) const;
+	// "{pistol.ammo} / 12" with the local player's values filled in.
+	godot::String format_local_fields( const godot::String& format ) const;
+	int64_t get_local_net_id() const;
+	bool is_local_player_dead() const;
+	// The point the camera should orbit: the local player's head, or its ragdoll while dead.
+	godot::Vector3 get_camera_target() const;
+	// Where a joint of an entity's character is ("RightHand"), or its node's position.
+	godot::Vector3 get_bone_position( int64_t net_id, const godot::String& bone ) const;
+	// "player", "prop", "static", "ragdoll", or "" if the entity has no visual.
+	godot::String get_kind( int64_t net_id ) const;
+	godot::String get_entity_template_name( int64_t net_id ) const;
+	godot::Node3D* get_entity_node( int64_t net_id ) const;
+	void add_state_binding( const godot::Ref<CbStateBinding>& binding );
+	void clear_state_bindings();
 	godot::Dictionary get_stats() const;
 	godot::String get_connection_state() const;
 	bool has_local_player() const;
@@ -119,6 +153,14 @@ private:
 	void UpdateNodes();
 	godot::Ref<godot::PackedScene> Prefab( const present::Visual& v );
 	godot::Ref<godot::PackedScene> LoadPrefab( const char* name );
+	godot::Ref<godot::PackedScene> LoadScene( const godot::String& path );
+	const Blackboard* BoardOf( uint32_t netId ) const;
+	std::vector<std::string> Conditions( const godot::PackedStringArray& conditions ) const;
+	bool StateHolds( const CbStateBinding& state, const present::Visual& v ) const;
+	// Aims, attaches and sets tree parameters for one visual; `models` is posed in place.
+	void ApplyStates( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, godot::Node3D* node,
+					  present::Models* models );
+	void PlaceAttachments( uint64_t visual, const present::Visual& v, godot::Node3D* node );
 
 	// Properties
 	godot::String m_host = "127.0.0.1";
@@ -143,6 +185,14 @@ private:
 	uint64_t m_visualMapHash = 0;
 	bool m_hideStaticBoxes = false;
 	std::unordered_map<std::string, godot::Ref<godot::PackedScene>> m_prefabs;
+
+	std::vector<godot::Ref<CbStateBinding>> m_states;
+	// Per visual: the attachment node of each state binding that holds (0 when none).
+	std::unordered_map<uint64_t, std::vector<godot::ObjectID>> m_attachments;
+	std::vector<bool> m_active; // scratch: which state bindings hold for the visual being posed
+	present::Models m_pose;		// scratch: the pose being built
+	uint16_t m_lastActions = 0;
+	uint64_t m_schemaGeneration = 0;
 };
 
 } // namespace cb::gd

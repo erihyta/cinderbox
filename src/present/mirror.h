@@ -10,6 +10,7 @@
 
 #include "frame.h"
 #include "pose.h"
+#include "pose_tools.h"
 
 #include "flecs.h"
 
@@ -38,6 +39,17 @@ struct Visual
 	// Last step count seen for this character, to notice new ones.
 	uint32_t stepCount = 0;
 	b3Vec3 halfExtents = { 0.5f, 0.5f, 0.5f };
+	// A dead player is not drawn; its ragdoll is.
+	bool dead = false;
+	// What the server's mods published about this entity, as of the newest frame.
+	bool hasBoard = false;
+	Blackboard board;
+	// Players: where the camera of this player looks (world yaw/pitch, radians), from its input.
+	bool hasAim = false;
+	float aimYaw = 0.0f;
+	float aimPitch = 0.0f;
+	// Ragdolls: the player it came from.
+	uint32_t owner = 0;
 };
 
 // Poses at the two most recent ticks, for interpolation.
@@ -67,10 +79,25 @@ struct PlayerAnim
 	std::shared_ptr<anim::PoseEvaluator> evaluator;
 };
 
+// A ragdoll's parts at the last two ticks, and the pose built from them.
+struct RagdollAnim
+{
+	float yaw = 0.0f;
+	Transform previous[kRagdollParts];
+	Transform current[kRagdollParts];
+	float age = 0.0f; // seconds since it appeared
+	// The pose its player was last drawn in, blended out over the first moments, so a character
+	// never snaps from its animation into the ragdoll's standing start.
+	bool hasStart = false;
+	Models start;
+	Models models;
+};
+
 // World singletons read by the scripts.
 struct AnimLibrary
 {
 	std::shared_ptr<const anim::AnimSet> set;
+	std::shared_ptr<const RagdollRig> ragdoll;
 };
 
 struct FrameTiming
@@ -98,6 +125,7 @@ enum class EventType : uint8_t
 	Landed,		// a player entered the landing pose
 	Footstep,	// a player completed a stride
 	Impact,		// two bodies hit hard enough for the simulation to record it
+	Mod,		// a server mod announced something (modType indexes the schema's event names)
 };
 
 struct Event
@@ -110,8 +138,12 @@ struct Event
 	b3Vec3 position = {};
 	// Impact only: how fast the two bodies were approaching, so an effect can be picked by force.
 	float strength = 0.0f;
-	// Impact only: the other entity, 0 when it is not one presentation knows about.
+	// Impact and Mod: the other entity, 0 when there is none.
 	uint32_t otherNetId = 0;
+	// Mod only: the event's type, value and vector.
+	uint16_t modType = 0;
+	int32_t value = 0;
+	b3Vec3 vector = {};
 };
 
 // Capsule center to the ground while standing (the skeleton origin is at the feet).
@@ -134,12 +166,24 @@ public:
 		return m_events;
 	}
 
-	// fn( uint64_t visual, const Visual&, const RenderPose&, const PlayerAnim* )
+	// fn( uint64_t visual, const Visual&, const RenderPose&, const PlayerAnim*, const RagdollAnim* )
 	template <typename Fn>
 	void ForEach( Fn&& fn ) const
 	{
-		m_query.each( [&]( flecs::entity e, const Visual& v, const RenderPose& p ) { fn( e.id(), v, p, e.try_get<PlayerAnim>() ); } );
+		m_query.each( [&]( flecs::entity e, const Visual& v, const RenderPose& p ) {
+			fn( e.id(), v, p, e.try_get<PlayerAnim>(), e.try_get<RagdollAnim>() );
+		} );
 	}
+
+	// The global board, as of the newest frame.
+	const int32_t* GlobalBoard() const
+	{
+		return m_board;
+	}
+	// The visual of an entity, if it has one.
+	flecs::entity VisualOf( uint32_t netId ) const;
+	// The newest ragdoll left by a player, if it still exists.
+	flecs::entity RagdollOf( uint32_t playerNetId ) const;
 
 	// The local player's render pose, if there is one.
 	bool LocalPlayer( RenderPose& out ) const;
@@ -162,6 +206,7 @@ public:
 private:
 	void Sync( const PresentationFrame& frame, float tickAlpha, float frameSeconds );
 	void SyncImpacts( const PresentationFrame& frame, bool reset );
+	void SyncModEvents( const PresentationFrame& frame, bool reset );
 	flecs::entity CreateVisual( const FrameEntity& f, bool withEffect );
 
 	std::vector<Event> m_events; // declared before the world: observers write to it on teardown
@@ -178,9 +223,13 @@ private:
 	uint64_t m_resetGeneration = UINT64_MAX;
 	// Impacts already played, so a rollback or a skipped frame neither replays nor drops one.
 	uint32_t m_impactCount = 0;
+	uint32_t m_modEventCount = 0;
+	int32_t m_board[kBoardSlots] = {};
 	uint32_t m_lastTick = 0;
 	flecs::entity m_localPlayer;
 	uint64_t m_syncStamp = 0;
+	// The frame's ragdolls while it is being synced (CreateVisual reads their owners).
+	std::vector<FrameRagdoll> m_pendingRagdolls;
 };
 
 } // namespace cb::present

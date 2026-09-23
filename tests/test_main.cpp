@@ -10,6 +10,7 @@
 #include "anim_controller.h"
 #include "map.h"
 #include "pose.h"
+#include "pose_tools.h"
 #include "detmath.h"
 #include "ragdoll.h"
 #include "rollback.h"
@@ -1179,6 +1180,74 @@ void TestRagdoll()
 	CHECK( sim.PlayerCharacter( 0 )->dead == 0 );
 }
 
+// Presentation pose tools: an aimed arm points where it was told, and a ragdoll lying exactly in
+// its rest pose puts every joint of the skeleton back where the rig's rest has it.
+void TestPoseTools()
+{
+	auto set = anim::AnimSet::CreateProcedural();
+	anim::PoseEvaluator eval( *set );
+	eval.Evaluate( AnimState{} );
+
+	auto position = []( const ozz::math::Float4x4& m ) {
+		float v[4];
+		ozz::math::StorePtrU( m.cols[3], v );
+		return b3Vec3{ v[0], v[1], v[2] };
+	};
+
+	int shoulder = present::FindJoint( *set, "RightUpperArm" );
+	int hand = present::FindJoint( *set, "RightHand" );
+	CHECK( shoulder >= 0 && hand >= 0 );
+	// The character's right is -X (left is +X, facing +Z).
+	CHECK( position( eval.Models()[size_t( shoulder )] ).x < 0.0f );
+
+	for ( b3Vec3 dir : { b3Vec3{ 0.0f, 0.0f, 1.0f }, b3Vec3{ 1.0f, 0.0f, 0.0f }, b3Normalize( b3Vec3{ -0.3f, 0.5f, 0.8f } ) } )
+	{
+		present::Models models = eval.Models();
+		present::AimChain( *set, models, shoulder, hand, dir, 1.0f );
+		b3Vec3 arm = b3Normalize( b3Sub( position( models[size_t( hand )] ), position( models[size_t( shoulder )] ) ) );
+		std::printf( "    aim (%.2f %.2f %.2f) -> arm (%.2f %.2f %.2f)\n", dir.x, dir.y, dir.z, arm.x, arm.y, arm.z );
+		CHECK( b3Dot( arm, dir ) > 0.999f );
+		// The shoulder itself stays put.
+		CHECK( b3Distance( position( models[size_t( shoulder )] ), position( eval.Models()[size_t( shoulder )] ) ) < 1e-5f );
+	}
+
+	// A ragdoll at rest, facing +Z at the origin, is the rig at rest.
+	present::RagdollRig rig = present::BuildRagdollRig( *set );
+	Transform parts[kRagdollParts];
+	for ( int i = 0; i < kRagdollParts; ++i )
+	{
+		parts[i] = { ragdoll::kParts[i].center, b3Quat_identity };
+	}
+	Transform frame = present::RagdollFrame( parts[ragdoll::Pelvis], 0.0f );
+	CHECK( b3Length( frame.position ) < 1e-5f );
+	present::Models models;
+	present::RagdollModels( rig, parts, frame, models );
+	float worst = 0.0f;
+	for ( size_t j = 0; j < models.size(); ++j )
+	{
+		worst = std::max( worst, b3Distance( position( models[j] ), position( set->RestModels()[j] ) ) );
+	}
+	std::printf( "    ragdoll at rest: worst joint off by %.4f m\n", worst );
+	CHECK( worst < 1e-4f );
+
+	// Turned and moved, the frame carries the whole pose along: same model-space result.
+	b3Quat turn = b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, 1.1f );
+	b3Vec3 at = { 4.0f, 2.0f, -3.0f };
+	for ( int i = 0; i < kRagdollParts; ++i )
+	{
+		parts[i] = { b3Add( at, b3RotateVector( turn, ragdoll::kParts[i].center ) ), turn };
+	}
+	frame = present::RagdollFrame( parts[ragdoll::Pelvis], 1.1f );
+	present::Models moved;
+	present::RagdollModels( rig, parts, frame, moved );
+	worst = 0.0f;
+	for ( size_t j = 0; j < models.size(); ++j )
+	{
+		worst = std::max( worst, b3Distance( position( moved[j] ), position( models[j] ) ) );
+	}
+	CHECK( worst < 1e-4f );
+}
+
 void TestAnimController()
 {
 	Simulation sim( TestConfig() );
@@ -1478,6 +1547,7 @@ int main( int argc, char** argv )
 		{ "commands", TestCommands },
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
+		{ "pose_tools", TestPoseTools },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "stress", TestStress },
 	};

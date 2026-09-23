@@ -24,6 +24,7 @@ enum class VisualKind : uint8_t
 	Static,
 	Prop,
 	Player,
+	Ragdoll,
 };
 
 struct FrameEntity
@@ -38,9 +39,25 @@ struct FrameEntity
 	// Steps this character has taken; presentation plays one whenever it changes.
 	uint32_t stepCount = 0;
 	b3Vec3 halfExtents = {};
-	Transform transform;
+	Transform transform; // a ragdoll's is its pose frame (see RagdollFrame)
 	b3Vec3 velocity = {};
 	AnimState anim;
+	// A dead character is not drawn (its ragdoll, if it left one, is its own entity).
+	bool dead = false;
+	// Values the server's mods published about this entity (names in the mod schema).
+	bool hasBoard = false;
+	Blackboard board;
+	// Index into PresentationFrame::ragdolls, for ragdolls.
+	uint32_t ragdoll = UINT32_MAX;
+};
+
+struct FrameRagdoll
+{
+	uint32_t netId = 0;
+	uint32_t owner = 0; // the player it came from
+	PlayerSlot slot = 0;
+	float yaw = 0.0f;
+	Transform parts[kRagdollParts];
 };
 
 struct PresentationFrame
@@ -55,9 +72,20 @@ struct PresentationFrame
 	// missed between two frames. Copied straight out of the simulation's ring.
 	uint32_t impactCount = 0;
 	std::vector<ImpactRecord> impacts;
+	// Same for mod events.
+	uint32_t modEventCount = 0;
+	std::vector<ModEventRecord> modEvents;
+	std::vector<FrameRagdoll> ragdolls;
+	// The global board.
+	int32_t board[kBoardSlots] = {};
+	// Inputs of the last simulated tick (predicted for other players), when the caller has them:
+	// presentation aims arms from them.
+	bool hasInputs = false;
+	std::array<PlayerInput, kMaxPlayers> inputs{};
 };
 
-// Fills `out.tick` and `out.entities`; the other fields are the caller's.
+// Fills everything the simulation knows; resetGeneration, rolledBack, localNetId and inputs are the
+// caller's.
 void CaptureFrame( Simulation& sim, PresentationFrame& out );
 
 } // namespace cb::present

@@ -156,6 +156,11 @@ void DrawBone( Vector3 a, Vector3 b, Vector3 refX, float width, float depth, Col
 
 void DrawSkeleton( Vector3 feet, Quaternion rotation, float scale, const anim::PoseEvaluator* eval, Color color )
 {
+	DrawSkeleton( feet, rotation, scale, eval ? &eval->Set() : nullptr, eval ? &eval->Models() : nullptr, color );
+}
+
+void DrawSkeleton( Vector3 feet, Quaternion rotation, float scale, const anim::AnimSet* set, const Models* pose, Color color )
+{
 	Color body = color;
 	Color limbs = ColorBrightness( color, -0.25f );
 
@@ -163,10 +168,10 @@ void DrawSkeleton( Vector3 feet, Quaternion rotation, float scale, const anim::P
 	PushPose( feet, rotation );
 	rlScalef( scale, scale, scale );
 
-	if ( eval != nullptr )
+	if ( set != nullptr && pose != nullptr && pose->empty() == false )
 	{
-		const auto& skeleton = eval->Set().Skeleton();
-		const auto& models = eval->Models();
+		const auto& skeleton = set->Skeleton();
+		const auto& models = *pose;
 		auto parents = skeleton.joint_parents();
 		auto names = skeleton.joint_names();
 
@@ -245,9 +250,18 @@ bool Presentation::LocalPlayerPosition( Vector3& out ) const
 
 void Presentation::Render()
 {
-	m_mirror.ForEach( [&]( uint64_t, const Visual& v, const RenderPose& pose, const PlayerAnim* anim ) {
-		if ( pose.scale <= 0.001f )
+	m_mirror.ForEach( [&]( uint64_t, const Visual& v, const RenderPose& pose, const PlayerAnim* anim, const RagdollAnim* ragdoll ) {
+		if ( pose.scale <= 0.001f || v.dead )
 		{
+			return;
+		}
+		if ( v.kind == VisualKind::Ragdoll )
+		{
+			if ( ragdoll != nullptr )
+			{
+				Color body = kPlayerColors[v.slot % ( sizeof( kPlayerColors ) / sizeof( kPlayerColors[0] ) )];
+				DrawSkeleton( ToRay( pose.position ), ToRay( pose.rotation ), pose.scale, &m_mirror.AnimSet(), &ragdoll->models, body );
+			}
 			return;
 		}
 
@@ -268,6 +282,8 @@ void Presentation::Render()
 			case VisualKind::Prop:
 				color = PropColor( v.netId, v.shape == ShapeKind::Sphere );
 				break;
+			case VisualKind::Ragdoll:
+				return;
 		}
 
 		Vector3 size = { 2.0f * v.halfExtents.x * pose.scale, 2.0f * v.halfExtents.y * pose.scale,

@@ -14,10 +14,14 @@ void RegisterSpawnDestroyEffects( flecs::world& world );
 // Player animation: interpolate the simulation's AnimState and evaluate the ozz pose.
 void RegisterPlayerAnimation( flecs::world& world );
 
+// Ragdolls: interpolate the parts and hang the skeleton off them, blending in from the player.
+void RegisterRagdolls( flecs::world& world );
+
 inline void RegisterAll( flecs::world& world )
 {
 	RegisterSpawnDestroyEffects( world );
 	RegisterPlayerAnimation( world );
+	RegisterRagdolls( world );
 }
 
 } // namespace cb::present::scripts

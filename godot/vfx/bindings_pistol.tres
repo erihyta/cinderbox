@@ -1,0 +1,131 @@
+[gd_resource type="CbEffectTable" load_steps=13 format=3]
+
+; How the pistol mod looks and sounds. The client does not know what a pistol is: everything here is
+; keyed on names the server's mods declared (the "fire" action, "pistol.*" and "combat.*" fields and
+; events). A mod can replace this file, or add its own bindings_<name>.tres next to it.
+;   event 6 = mod event (by name), 7 = local action press (by name, before the server answers)
+;   who:     0 anyone, 1 the local player, 2 other players (checked on the subject)
+;   subject: 0 entity A (the shooter), 1 entity B (what was hit, who died)
+;   value_filter: 0 any, 1 value > 0 (damage done), 2 value == 0
+
+; The local shot plays at once, predicted: the conditions say whether the server will accept it.
+[sub_resource type="CbEffect" id="FirePredicted"]
+event = 7
+name = "fire"
+who = 1
+conditions = PackedStringArray("loadout.slot == 2", "pistol.ammo > 0", "!pistol.reloading", "!combat.dead")
+bone = "RightHand"
+scene = "res://vfx/muzzle_flash.tscn"
+lifetime = 0.3
+sound = "res://assets/sfx/gunshot.wav"
+volume_db = -6.0
+pitch_jitter = 0.06
+cooldown = 0.19
+shake = 0.035
+shake_time = 0.12
+
+[sub_resource type="CbEffect" id="DryPredicted"]
+event = 7
+name = "fire"
+who = 1
+conditions = PackedStringArray("loadout.slot == 2", "pistol.ammo == 0", "!pistol.reloading", "!combat.dead")
+bone = "RightHand"
+sound = "res://assets/sfx/dry_click.wav"
+volume_db = -8.0
+cooldown = 0.2
+
+; Everyone else's shots come from the server.
+[sub_resource type="CbEffect" id="FiredRemote"]
+event = 6
+name = "pistol.fired"
+who = 2
+bone = "RightHand"
+scene = "res://vfx/muzzle_flash.tscn"
+lifetime = 0.3
+sound = "res://assets/sfx/gunshot.wav"
+volume_db = -4.0
+pitch_jitter = 0.06
+max_distance = 70.0
+
+[sub_resource type="CbEffect" id="Tracer"]
+event = 6
+name = "pistol.fired"
+bone = "RightHand"
+beam = true
+scene = "res://vfx/tracer.tscn"
+lifetime = 0.06
+
+[sub_resource type="CbEffect" id="HitSurface"]
+event = 6
+name = "pistol.hit"
+value_filter = 2
+scene = "res://vfx/bullet_spark.tscn"
+lifetime = 1.0
+sound = "res://assets/sfx/ricochet.wav"
+volume_db = -16.0
+pitch_jitter = 0.3
+max_distance = 30.0
+
+[sub_resource type="CbEffect" id="HitPlayer"]
+event = 6
+name = "pistol.hit"
+value_filter = 1
+scene = "res://vfx/hit_puff.tscn"
+lifetime = 1.0
+sound = "res://assets/sfx/body_hit.wav"
+volume_db = -8.0
+pitch_jitter = 0.15
+max_distance = 40.0
+
+; "I hit someone": a tick at the shooter's own head, so it sounds close.
+[sub_resource type="CbEffect" id="HitMarker"]
+event = 6
+name = "pistol.hit"
+value_filter = 1
+who = 1
+bone = "Head"
+sound = "res://assets/sfx/hit_marker.wav"
+volume_db = -6.0
+
+; "I got hit" and "I died": screen effects for the victim (entity B).
+[sub_resource type="CbEffect" id="Hurt"]
+event = 6
+name = "pistol.hit"
+value_filter = 1
+subject = 1
+who = 1
+shake = 0.05
+shake_time = 0.2
+flash_color = Color(0.8, 0.05, 0.05, 0.22)
+flash_time = 0.3
+
+[sub_resource type="CbEffect" id="Died"]
+event = 6
+name = "combat.killed"
+subject = 1
+who = 1
+flash_color = Color(0.6, 0, 0, 0.55)
+flash_time = 1.2
+
+[sub_resource type="CbEffect" id="Reload"]
+event = 6
+name = "pistol.reload"
+bone = "RightHand"
+sound = "res://assets/sfx/reload.wav"
+volume_db = -10.0
+max_distance = 25.0
+
+; While the pistol is out: hold it in the right hand and point that arm where the player looks.
+[sub_resource type="CbStateBinding" id="Armed"]
+conditions = PackedStringArray("loadout.slot == 2", "!combat.dead")
+attach_scene = "res://prefabs/pistol.tscn"
+attach_bone = "RightHand"
+attach_offset = Vector3(0, -0.07, 0.02)
+attach_rotation = Vector3(-90, 180, 0)
+aim_bone = "RightUpperArm"
+aim_tip = "RightHand"
+tree_parameter = "parameters/conditions/armed"
+
+[resource]
+effects = [SubResource("FirePredicted"), SubResource("DryPredicted"), SubResource("FiredRemote"), SubResource("Tracer"), SubResource("HitSurface"), SubResource("HitPlayer"), SubResource("HitMarker"), SubResource("Hurt"), SubResource("Died"), SubResource("Reload")]
+states = [SubResource("Armed")]

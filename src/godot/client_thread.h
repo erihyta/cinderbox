@@ -37,6 +37,9 @@ struct PublishedFrame
 	// Name and prefab of each map template, indexed by template. Only refreshed with the map.
 	std::vector<std::string> templateNames;
 	std::vector<std::string> templateVisuals;
+	// What the server's mods declared; only refreshed when the server sends a new one.
+	ModSchema schema;
+	uint64_t schemaGeneration = 0;
 	bool fpEnvironmentOk = true;
 	bool hasSimulation = false;
 	double publishedAt = 0.0; // seconds on the thread clock
@@ -76,6 +79,7 @@ private:
 	std::mutex m_inputMutex;
 	PlayerInput m_input{};
 	uint8_t m_latchedButtons = 0; // presses shorter than a tick still reach the simulation
+	uint16_t m_latchedActions = 0;
 
 	std::mutex m_frameMutex;
 	PublishedFrame m_latest;

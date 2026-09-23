@@ -11,6 +11,9 @@
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/skeleton3d.hpp>
 
+#include "ozz/base/containers/vector.h"
+#include "ozz/base/maths/simd_math.h"
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -61,8 +64,16 @@ public:
 		return m_retarget;
 	}
 
-	// Called by CinderboxClient every frame.
+	// Called by CinderboxClient every frame, with an evaluated pose or one built from it (aimed, or
+	// a ragdoll's). Model space: feet at the origin, facing +Z.
 	void ApplyPose( const anim::PoseEvaluator& pose );
+	void ApplyPose( const anim::AnimSet& set, const ozz::vector<ozz::math::Float4x4>& models );
+
+	// Where a joint of the last applied pose is, relative to this node. False when the rig has no
+	// joint by that humanoid-profile name.
+	bool JointTransform( const godot::String& profileName, godot::Transform3D& out ) const;
+	// The same in world space, for scripts: where a hand or the head is right now.
+	godot::Transform3D get_joint_global_transform( const godot::String& profile_name ) const;
 
 	// Poses the rig from a script with the placeholder clips, for previewing a character or
 	// checking a retarget without a server. mode: 0 locomotion, 1 jump, 2 fall, 3 land.
@@ -102,8 +113,12 @@ private:
 	std::shared_ptr<const anim::AnimSet> m_previewSet;
 	std::unique_ptr<anim::PoseEvaluator> m_previewPose;
 
-	void Bind( godot::Skeleton3D* target, const anim::PoseEvaluator& pose );
-	void DriveSkeleton( godot::Skeleton3D* target, const anim::PoseEvaluator& pose );
+	void Bind( godot::Skeleton3D* target, const anim::AnimSet& set );
+	void DriveSkeleton( godot::Skeleton3D* target, const ozz::vector<ozz::math::Float4x4>& models );
+
+	// The last applied pose, for joint lookups.
+	const anim::AnimSet* m_lastSet = nullptr;
+	ozz::vector<ozz::math::Float4x4> m_lastModels;
 };
 
 } // namespace cb::gd
