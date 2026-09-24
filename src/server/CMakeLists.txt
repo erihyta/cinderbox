@@ -1,6 +1,6 @@
-add_library(cb_server_core STATIC game_server.cpp mod_api.cpp)
+add_library(cb_server_core STATIC game_server.cpp mod_api.cpp character_item.cpp hit_test.cpp sha256.cpp)
 target_include_directories(cb_server_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(cb_server_core PUBLIC cb_net)
+target_link_libraries(cb_server_core PUBLIC cb_net cb_anim PRIVATE miniz)
 cb_target_warnings(cb_server_core)
 
 add_executable(cb_server main.cpp)

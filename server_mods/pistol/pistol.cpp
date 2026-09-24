@@ -10,6 +10,9 @@
 
 #include "mod_api.h"
 
+#include <algorithm>
+#include <string>
+
 namespace
 {
 
@@ -297,9 +300,18 @@ private:
 		if ( victim.is_valid() && victim.has<Dead>() == false )
 		{
 			Gunner v = victim.get<Gunner>();
-			v.health -= kDamage;
+			// Where it hit scales the damage: --mod-option pistol.zone.<zone>=<multiplier>, for any
+			// zone the server's character defines (head x2 unless told otherwise).
+			int32_t damage = kDamage;
+			if ( hit.zone != nullptr )
+			{
+				std::string zone = hit.zone;
+				double multiplier = ctx.Option( "pistol.zone." + zone, zone == "head" ? 2.0 : 1.0 );
+				damage = std::max( int32_t( double( kDamage ) * multiplier + 0.5 ), 0 );
+			}
+			v.health -= damage;
 			uint32_t victimTarget = SlotTarget( v.slot );
-			ctx.Emit( m_hit, shooterTarget, hit.netId, kDamage, hit.point, hit.normal );
+			ctx.Emit( m_hit, shooterTarget, hit.netId, damage, hit.point, hit.normal );
 			ctx.Set( victimTarget, m_health, std::max( v.health, 0 ) );
 			if ( v.health > 0 )
 			{

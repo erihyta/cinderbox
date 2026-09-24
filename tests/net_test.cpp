@@ -3,6 +3,8 @@
 //   cb_net_tests [name]
 
 #include "bot_brain.h"
+#include "character_item.h"
+#include "sha256.h"
 #include "registry.h"
 #include "fingerprint.h"
 #include "game_client.h"
@@ -18,11 +20,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <limits>
 #include <map>
 #include <memory>
 #include <thread>
+
+#include "miniz.h"
 
 #if defined( _WIN32 )
 #include <windows.h>
@@ -514,6 +519,9 @@ void TestLossySession()
 	std::filesystem::remove( replayPath );
 }
 
+// About 18 degrees down (65536 = a full turn): from one spawn point's eye to the next one's chest.
+constexpr int16_t kAimAtChest = -3300;
+
 // Server mods end to end: one player picks the pistol and shoots another until it dies. The rules
 // run only on the server; the clients only receive commands and must agree with it on everything,
 // ragdoll included, while seeing the board values and events the mods published.
@@ -529,10 +537,12 @@ void TestModsSession()
 	uint16_t spawn = schema.ActionMask( "spawn_prop" );
 
 	// Slot 0 stands at x = -5.25 and slot 1 at x = -3.75 (the sandbox spawn grid): slot 0 looks
-	// toward +X, straight at slot 1.
+	// toward +X at slot 1, 1.5 m away, and a little down from its eye to the chest (players are hit
+	// by their hitboxes, and the eye is level with the top of the head).
 	h.AddBot().script = [=]( uint32_t tick ) {
 		PlayerInput in;
 		in.cameraYaw = 16384;
+		in.cameraPitch = kAimAtChest;
 		uint32_t t = tick % 1000;
 		if ( t >= 100 && t < 110 )
 		{
@@ -697,6 +707,139 @@ void TestNames()
 
 // Deathmatch rounds end to end: kills score, the limit ends the round, everyone is frozen through
 // the intermission, and the next round starts clean. Clients agree with the server throughout.
+// SHA-256 test vectors, and a character item read the way the server reads one: from the zip
+// players have, checked against its hash.
+void TestCharacterItem()
+{
+	CHECK( Sha256Hex( "", 0 ) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" );
+	CHECK( Sha256Hex( "abc", 3 ) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" );
+	const char* twoBlocks = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"; // 56 bytes: padding spills over
+	CHECK( Sha256Hex( twoBlocks, std::strlen( twoBlocks ) ) == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1" );
+
+	namespace fs = std::filesystem;
+	fs::path dir = fs::temp_directory_path() / "cinderbox_character_test";
+	fs::remove_all( dir );
+	fs::create_directories( dir / "baked" );
+	CHECK( anim::AnimSet::CreateProcedural()->Save( ( dir / "baked" ).string() ) );
+
+	auto makeZip = [&]( bool withHitboxes ) {
+		mz_zip_archive zip = {};
+		mz_zip_writer_init_heap( &zip, 0, 0 );
+		for ( const auto& entry : fs::directory_iterator( dir / "baked" ) )
+		{
+			std::string bytes;
+			anim::DiskReader( ( dir / "baked" ).string() )( entry.path().filename().string(), bytes );
+			std::string name = "characters/robot/" + entry.path().filename().string();
+			mz_zip_writer_add_mem( &zip, name.c_str(), bytes.data(), bytes.size(), MZ_DEFAULT_COMPRESSION );
+		}
+		if ( withHitboxes )
+		{
+			std::string text = anim::FormatHitboxes( anim::DefaultHitboxes() );
+			mz_zip_writer_add_mem( &zip, "characters/robot/hitboxes.cfg", text.data(), text.size(), MZ_DEFAULT_COMPRESSION );
+		}
+		mz_zip_writer_add_mem( &zip, "characters/robot/character.tscn", "[gd_scene]", 10, 0 );
+		void* data = nullptr;
+		size_t size = 0;
+		mz_zip_writer_finalize_heap_archive( &zip, &data, &size );
+		std::string bytes( static_cast<const char*>( data ), size );
+		mz_zip_writer_end( &zip );
+		return bytes;
+	};
+	auto install = [&]( const std::string& bytes, ModItem& item ) {
+		item.mod = "robot";
+		item.sha256 = Sha256Hex( bytes.data(), bytes.size() );
+		fs::path path = dir / "workshop" / "robot" / ( item.sha256 + ".zip" );
+		fs::create_directories( path.parent_path() );
+		std::ofstream( path, std::ios::binary ).write( bytes.data(), std::streamsize( bytes.size() ) );
+		return path.string();
+	};
+
+	ModItem item;
+	std::string path = install( makeZip( true ), item );
+	std::string error, warnings;
+	auto character = LoadCharacterItem( path, item, error, warnings );
+	CHECK( character != nullptr );
+	if ( character != nullptr )
+	{
+		CHECK( character->name == "robot" );
+		CHECK( character->hitboxes.boxes.size() == anim::DefaultHitboxes().boxes.size() );
+		CHECK( character->animations->Skeleton().num_joints() == anim::AnimSet::CreateProcedural()->Skeleton().num_joints() );
+	}
+
+	// Not the file the manifest names: refused.
+	ModItem wrong = item;
+	wrong.sha256[0] = wrong.sha256[0] == '0' ? '1' : '0';
+	CHECK( LoadCharacterItem( path, wrong, error, warnings ) == nullptr );
+	CHECK( error.find( "not the item" ) != std::string::npos );
+
+	// No hitboxes: refused.
+	ModItem bare;
+	std::string barePath = install( makeZip( false ), bare );
+	CHECK( LoadCharacterItem( barePath, bare, error, warnings ) == nullptr );
+	CHECK( error.find( "hitboxes.cfg" ) != std::string::npos );
+
+	fs::remove_all( dir );
+}
+
+// Hitboxes in a session: aiming at the head does the pistol's head damage (x2 by default), so the
+// target falls in two hits instead of four.
+void TestHeadshot()
+{
+	Harness h( 47801 );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t pistol = schema.ActionMask( "slot_2" );
+	int hitEvent = schema.FindEvent( "pistol.hit" );
+
+	// From one spawn point's eye to the next one's head: 0.15 m down over 1.5 m, about 5.7 degrees.
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraYaw = 16384;
+		in.cameraPitch = -1040;
+		in.actions = pistol;
+		if ( tick > 200 && ( tick % 20 ) < 3 ) // once the target has landed
+		{
+			in.actions |= fire;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; }; // stands still
+
+	std::map<uint32_t, int32_t> damageByTick;
+	// Only the player hits: the pistol also reports a wall or the ground as a hit, with 0 damage.
+	const uint32_t shooterId = h.server.Sim().PlayerNetId( h.bots[0].client->Slot() );
+	h.RunUntil( 5.0, [&]( double ) {
+		const SimGlobals& g = h.server.Sim().Globals();
+		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+		{
+			const ModEventRecord& e = g.modEvents[i];
+			if ( int( e.type ) == hitEvent && e.netIdB != shooterId && h.server.Sim().EntityAnimState( e.netIdB ) != nullptr )
+			{
+				damageByTick[e.tick] = e.value;
+			}
+		}
+	} );
+	h.Report();
+
+	int heads = 0;
+	int others = 0;
+	for ( const auto& [tick, damage] : damageByTick )
+	{
+		( damage == 50 ? heads : others ) += 1;
+	}
+	std::printf( "    %d head hits, %d other hits\n", heads, others );
+	CHECK( heads >= 2 );
+	CHECK( others == 0 );
+	Simulation& server = h.server.Sim();
+	uint32_t targetId = server.PlayerNetId( h.bots[1].client->Slot() );
+	CHECK( server.BoardValue( targetId, schema.FindField( "combat.deaths" )->slot ) >= 1 );
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 void TestDeathmatch()
 {
 	Harness h( 47799, {}, {}, { { "deathmatch.kills", "2" }, { "deathmatch.pause_seconds", "2" } } );
@@ -709,6 +852,7 @@ void TestDeathmatch()
 	h.AddBot().script = [=]( uint32_t tick ) {
 		PlayerInput in;
 		in.cameraYaw = 16384;
+		in.cameraPitch = kAimAtChest;
 		in.actions = pistol;
 		if ( tick > 90 && ( tick % 20 ) < 3 )
 		{
@@ -974,6 +1118,8 @@ int main( int argc, char** argv )
 		{ "stall_recovery", TestStallRecovery },
 		{ "names", TestNames },
 		{ "deathmatch", TestDeathmatch },
+		{ "character_item", TestCharacterItem },
+		{ "headshot", TestHeadshot },
 	};
 
 	const char* filter = argc > 1 ? argv[1] : nullptr;

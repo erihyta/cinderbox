@@ -30,6 +30,11 @@
 #include <string>
 #include <vector>
 
+namespace cb
+{
+class HitTester;
+}
+
 namespace cb::mods
 {
 
@@ -171,10 +176,9 @@ public:
 	}
 	int32_t GetGlobal( FieldHandle field ) const;
 
-	bool CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit ) const
-	{
-		return m_sim.CastRay( origin, translation, ignoreNetId, hit );
-	}
+	// The closest thing along the ray. Players are hit by their character's hitboxes, posed as they
+	// are this tick, and `hit.zone` names the one hit ("head", "torso", ...).
+	bool CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit ) const;
 
 	// What kind of entity a NetId is.
 	bool IsPlayer( uint32_t netId ) const
@@ -195,6 +199,10 @@ public:
 
 	// Server options for mods: cb_server --mod-option deathmatch.kills=15.
 	double Option( const std::string& name, double fallback ) const;
+	void SetHitTester( HitTester* hits )
+	{
+		m_hits = hits;
+	}
 	void SetOptions( const std::map<std::string, std::string>* options )
 	{
 		m_options = options;
@@ -249,6 +257,7 @@ private:
 	flecs::world& m_world;
 	uint64_t& m_rng;
 	const std::map<std::string, std::string>* m_options = nullptr;
+	HitTester* m_hits = nullptr;
 };
 
 class ServerMod

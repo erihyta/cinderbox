@@ -1,6 +1,7 @@
 #include "mod_api.h"
 
 #include "detmath.h"
+#include "hit_test.h"
 #include "util.h"
 
 #include "box3d/box3d.h"
@@ -157,6 +158,15 @@ int Context::SlotOf( uint32_t netId ) const
 		}
 	}
 	return -1;
+}
+
+bool Context::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit ) const
+{
+	if ( m_hits != nullptr )
+	{
+		return m_hits->CastRay( m_sim, origin, translation, ignoreNetId, hit );
+	}
+	return m_sim.CastRay( origin, translation, ignoreNetId, hit );
 }
 
 b3Vec3 Context::EyePosition( PlayerSlot slot ) const

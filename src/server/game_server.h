@@ -4,6 +4,8 @@
 // streams the input frames it actually used. It never rolls back: a late input is replaced by the
 // player's previous input.
 
+#include "character_item.h"
+#include "hit_test.h"
 #include "map.h"
 #include "mod_api.h"
 #include "protocol.h"
@@ -37,6 +39,8 @@ struct ServerOptions
 	std::string recordPath;
 	// The workshop items clients need for the mods this server runs (announced, never sent).
 	std::vector<ModItem> items;
+	// The character everyone plays as (null: the built-in rig). Its item must be in `items`.
+	std::shared_ptr<const CharacterAsset> character;
 	// Options mods read with Context::Option ("deathmatch.kills" -> "15").
 	std::map<std::string, std::string> modOptions;
 	uint32_t replayChecksumInterval = 60;
@@ -177,6 +181,7 @@ private:
 	std::vector<uint8_t> m_schemaBytes;
 	// The mods' own state lives here; the simulation never sees it.
 	std::unique_ptr<flecs::world> m_modWorld;
+	std::unique_ptr<HitTester> m_hits;
 	uint64_t m_modRng = 0;
 };
 

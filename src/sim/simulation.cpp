@@ -1674,6 +1674,12 @@ const Transform* Simulation::EntityTransform( uint32_t netId ) const
 	return e.is_valid() ? e.try_get<Transform>() : nullptr;
 }
 
+const AnimState* Simulation::EntityAnimState( uint32_t netId ) const
+{
+	flecs::entity e = FindEntity( netId );
+	return e.is_valid() ? e.try_get<AnimState>() : nullptr;
+}
+
 int32_t Simulation::BoardValue( uint32_t netId, int slot ) const
 {
 	if ( slot < 0 || slot >= kBoardSlots )
@@ -1694,6 +1700,7 @@ struct RayContext
 	uint32_t ignore;
 	RayHit* hit;
 	bool found;
+	bool skipPlayers;
 };
 
 } // namespace
@@ -1707,6 +1714,16 @@ float Simulation::RayCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, fl
 	{
 		return -1.0f; // filter: carry on as if it were not there
 	}
+	if ( ctx->skipPlayers && netId != 0 )
+	{
+		for ( uint32_t player : ctx->sim->m_globals.playerNetIds )
+		{
+			if ( player == netId )
+			{
+				return -1.0f;
+			}
+		}
+	}
 	if ( ctx->found == false || fraction < ctx->hit->fraction )
 	{
 		ctx->hit->netId = netId;
@@ -1718,12 +1735,12 @@ float Simulation::RayCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, fl
 	return fraction; // clip: only closer hits from here on
 }
 
-bool Simulation::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit )
+bool Simulation::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit, bool skipPlayers )
 {
 	PhysicsArena::Scope scope( *m_arena );
 	BuildShapeLookup();
 	hit = RayHit{};
-	RayContext ctx{ this, ignoreNetId, &hit, false };
+	RayContext ctx{ this, ignoreNetId, &hit, false, skipPlayers };
 	b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( 0 ), 0, nullptr };
 	b3World_CastRay( m_physicsWorld, origin, translation, filter, &Simulation::RayCallback, &ctx );
 	return ctx.found;
