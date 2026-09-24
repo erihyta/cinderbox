@@ -4,6 +4,7 @@ add_library(cinderbox_gd SHARED
 	cinderbox_animator.cpp
 	cinderbox_character.cpp
 	cinderbox_client.cpp
+	cinderbox_companion.cpp
 	cinderbox_effects.cpp
 	cinderbox_entity_nodes.cpp
 	cinderbox_hud.cpp
