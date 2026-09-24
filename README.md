@@ -23,6 +23,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M14: server gameplay mods (C++), commands in the frame, board and mod events, deterministic ragdolls, data-driven mod presentation, pistol demo | done |
 | M15: workshop items (mods' looks, announced by servers, never sent), hardened pack validator, HUD from fields (bars, kill feed, scoreboard), player names, fast clock catch-up | done |
 | M16: deathmatch rounds as a server mod, `Freeze` command, mod options (`--mod-option`) | done |
+| M17: CI on GitHub Actions: six compilers on Windows, Linux and macOS ARM64 must agree bit for bit | done |
 
 ## Building
 
@@ -506,6 +507,26 @@ scripts/check_determinism.sh tests/reference_hashes.txt
 `tests/reference_hashes.txt` holds the per-tick state hashes of the reference scenario. Any change to
 simulation code or tuning legitimately changes them. Regenerate the file with
 `cb_tests --dump tests/reference_hashes.txt` and commit it together with the change.
+
+### Continuous integration
+
+Every push runs `.github/workflows/determinism.yml` on GitHub Actions:
+
+| Job | Runs |
+|---|---|
+| `windows-clang`, `windows-gcc`, `windows-msvc` | Windows x64: Clang 20, MinGW GCC 16, MSVC 19.44 |
+| `linux-gcc`, `linux-clang` | Ubuntu 24.04 x64: GCC 13, Clang 18 |
+| `macos-arm64-clang` | macOS 15 on Apple silicon: Apple Clang 17, ARM64 |
+| `cross-load on windows / linux / macos` | after all builds: every build of that OS continues every build's portable snapshot |
+
+Each build job (`scripts/ci_check.sh <preset> <name> <out-dir>`, also usable locally):
+
+- builds the simulation, server, mods and tests (no Godot, no raylib);
+- runs every test (`ctest`, network sessions included);
+- compares the per-tick hashes with `tests/reference_hashes.txt` and the pose hash with
+  `tests/reference_anim_hash.txt`;
+- uploads its hash dump, a portable snapshot and `cb_tests` for the cross-load jobs
+  (`scripts/ci_cross.sh`), which also check that all dumps are identical.
 
 ## Layout
 

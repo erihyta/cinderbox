@@ -28,7 +28,7 @@ jobs:
           - { name: linux-clang, os: ubuntu-24.04, preset: unix-clang-release }
           - { name: macos-arm64-clang, os: macos-15, preset: unix-clang-release }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: seanmiddleditch/gha-setup-ninja@v5
 
@@ -54,7 +54,7 @@ jobs:
         shell: bash
         run: scripts/ci_check.sh "${{ matrix.preset }}" "${{ matrix.name }}" out
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: det-${{ matrix.name }}
@@ -75,10 +75,10 @@ jobs:
           - { family: linux, os: ubuntu-24.04 }
           - { family: macos, os: macos-15 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           sparse-checkout: scripts
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: det-*
           path: art
