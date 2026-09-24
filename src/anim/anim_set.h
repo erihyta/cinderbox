@@ -113,6 +113,17 @@ public:
 	{
 		return m_aimTipName;
 	}
+	// The joints the legs turn about (the hips) and the upper body turns back about (the spine),
+	// by humanoid-profile name; -1 when the skeleton lacks them (the legs then stay straight).
+	int HipsJoint() const
+	{
+		return m_hipsJoint;
+	}
+	int SpineJoint() const
+	{
+		return m_spineJoint;
+	}
+
 	// Resolves the names against the skeleton; unknown joints go to `warnings`.
 	void SetAim( const std::string& chain, const std::string& tip, std::string& warnings );
 
@@ -124,6 +135,8 @@ private:
 	bool m_lockRootXZ = true;
 	std::string m_description;
 	std::vector<std::pair<int, float>> m_aimJoints;
+	int m_hipsJoint = -1;
+	int m_spineJoint = -1;
 	int m_aimTip = -1;
 	std::string m_aimConfig = "RightUpperArm:1";
 	std::string m_aimTipName = "RightHand";

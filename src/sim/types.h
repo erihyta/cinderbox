@@ -101,8 +101,11 @@ enum class CommandType : uint8_t
 	Freeze = 8,
 	// target (a player), mode = 1 turns its aim chain toward where it looks, 0 lets it go.
 	Aim = 9,
+	// target (a player), mode = 1: the body faces where the camera looks; 0: it turns toward where
+	// it walks (freelook, the default).
+	Facing = 10,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Aim );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Facing );
 
 enum ImpulseMode : uint8_t
 {

@@ -426,6 +426,15 @@ void Context::Freeze( uint32_t target, bool frozen )
 	Add( c );
 }
 
+void Context::FaceCamera( uint32_t target, bool faceCamera )
+{
+	SimCommand c;
+	c.type = CommandType::Facing;
+	c.mode = faceCamera ? 1 : 0;
+	c.target = target;
+	Add( c );
+}
+
 void Context::Aim( uint32_t target, bool aiming )
 {
 	SimCommand c;

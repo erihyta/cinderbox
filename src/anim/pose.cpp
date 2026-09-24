@@ -97,8 +97,10 @@ ClipWeights ComputeClipWeights( const AnimState& s, const AnimSet& set )
 	}
 
 	w.ratio[ClipIdle] = LoopRatio( s.idleTime, set.Duration( ClipIdle ) );
-	w.ratio[ClipWalk] = s.locomotionPhase;
-	w.ratio[ClipRun] = s.locomotionPhase;
+	// Walking backwards: the same cycle, played in reverse.
+	float phase = s.legsBackward != 0 && s.locomotionPhase > 0.0f ? 1.0f - s.locomotionPhase : s.locomotionPhase;
+	w.ratio[ClipWalk] = phase;
+	w.ratio[ClipRun] = phase;
 	// A mode that is fading out holds its last pose.
 	w.ratio[ClipJumpStart] = s.mode == AnimMode::JumpStart ? OnceRatio( s.modeTime, set.Duration( ClipJumpStart ) ) : 1.0f;
 	w.ratio[ClipLand] = s.mode == AnimMode::Land ? OnceRatio( s.modeTime, set.Duration( ClipLand ) ) : 1.0f;
@@ -130,6 +132,7 @@ AnimState InterpolateAnimState( const AnimState& from, const AnimState& to, floa
 	// Aim: the short way round, so a turn across the back does not swing through the front.
 	s.aimYaw = detmath::WrapAngle( from.aimYaw + detmath::WrapAngle( to.aimYaw - from.aimYaw ) * t );
 	s.aimPitch = from.aimPitch + ( to.aimPitch - from.aimPitch ) * t;
+	s.legYaw = from.legYaw + ( to.legYaw - from.legYaw ) * t;
 	float dIdle = to.idleTime - from.idleTime;
 	if ( dIdle < 0.0f )
 	{
@@ -212,6 +215,15 @@ void PoseEvaluator::Evaluate( const AnimState& state )
 	ltm.input = ozz::make_span( m_blended );
 	ltm.output = ozz::make_span( m_models );
 	ltm.Run();
+
+	if ( state.legYaw != 0.0f && m_set.HipsJoint() >= 0 && m_set.SpineJoint() >= 0 )
+	{
+		// Hips toward the direction of travel, the spine back: the legs walk where the character
+		// goes while the upper body keeps facing where it faces.
+		b3Vec3 up = { 0.0f, 1.0f, 0.0f };
+		RotateSubtree( m_set, m_models, m_set.HipsJoint(), b3MakeQuatFromAxisAngle( up, state.legYaw ) );
+		RotateSubtree( m_set, m_models, m_set.SpineJoint(), b3MakeQuatFromAxisAngle( up, -state.legYaw ) );
+	}
 
 	if ( state.aiming != 0 && m_set.AimJoints().empty() == false )
 	{

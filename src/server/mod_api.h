@@ -243,6 +243,9 @@ public:
 	// Points the player's aim chain (its character's arm, by default) where it looks, or lets it
 	// go. Part of the pose every client draws and every hit test uses.
 	void Aim( uint32_t target, bool aiming );
+	// true: the body faces where the camera looks (a shooter's stance; the legs still walk where it
+	// goes). false: it turns toward where it walks (freelook, the default).
+	void FaceCamera( uint32_t target, bool faceCamera );
 
 	// Commands emitted so far this tick (tests).
 	const std::vector<SimCommand>& Commands() const

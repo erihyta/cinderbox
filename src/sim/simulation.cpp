@@ -770,10 +770,14 @@ void Simulation::MoveCharacter( Character& c, Transform& t, const PhysicsBody& p
 	v = b3ClipVector( v, ctx.planes, ctx.count );
 	c.velocity = v;
 
-	// Face the direction of travel
+	// Face where the camera looks (a mod chose it), or turn toward the direction of travel.
 	b3Vec3 moved = b3Sub( t.position, startPosition );
 	float horizontalSq = moved.x * moved.x + moved.z * moved.z;
-	if ( horizontalSq > ( 0.2f * dt ) * ( 0.2f * dt ) && desiredSpeed > 0.0f )
+	if ( c.faceCamera != 0 )
+	{
+		c.facingYaw = detmath::WrapAngle( detmath::YawToRadians( in.cameraYaw ) );
+	}
+	else if ( horizontalSq > ( 0.2f * dt ) * ( 0.2f * dt ) && desiredSpeed > 0.0f )
 	{
 		float targetYaw = detmath::Atan2( moved.x, moved.z );
 		float diff = detmath::WrapAngle( targetYaw - c.facingYaw );
@@ -1362,6 +1366,18 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			if ( e.is_valid() && e.has<Character>() )
 			{
 				RespawnPlayer( e, command );
+			}
+			return;
+		}
+
+		case CommandType::Facing:
+		{
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() && e.has<Character>() )
+			{
+				Character c = e.get<Character>();
+				c.faceCamera = command.mode != 0 ? 1 : 0;
+				e.set<Character>( c );
 			}
 			return;
 		}

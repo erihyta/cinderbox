@@ -27,6 +27,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M18: Box3D snapshots no longer carry stale memory; byte-identical across all builds | done |
 | M19: characters as workshop items (baked in the editor: ozz skeleton, clips, hitboxes), `cb_server --character`, hit zones for mods | done |
 | M20: one pose for players: aiming is part of the ozz pose (so hitboxes follow the raised arm), Godot animation on players is cosmetic only | done |
+| M21: facing modes for mods: freelook (default) or camera-facing, with legs that walk where the body goes | done |
 
 ## Building
 
@@ -115,6 +116,7 @@ and mods need no determinism of their own.
 | `Respawn` / `RespawnAt` | brings a dead player back |
 | `Freeze` | stops a player moving and acting (it still looks around), or releases it |
 | `Aim` | turns the player's aim chain (its character's arm, by default) toward where it looks, or lets it go |
+| `Facing` | the body faces where the camera looks, or turns toward where it walks (freelook, the default) |
 
 ```cpp
 // server_mods/jumper/jumper.cpp: a jump boost on Q, the whole mod.
@@ -559,6 +561,18 @@ Aiming is part of the pose. A mod sends `ctx.Aim( player, true )` (the pistol do
 and the pose turns the character's aim chain toward where the player looks, relative to its body.
 Every client draws that and every server hit test uses it, so a raised arm can be hit where it is
 seen. Respawning keeps the aim; only the mod lets it go.
+
+### Facing
+
+| Mode | The body | Set by |
+|---|---|---|
+| Freelook (default) | turns toward where the player walks; the camera looks around freely | nothing |
+| Camera-facing | faces where the camera looks, every tick (a shooter's stance) | `ctx.FaceCamera( player, true )` |
+
+The pistol switches to camera-facing while it is out, together with aiming. In camera-facing the
+legs still walk where the player goes: the hips turn toward the direction of travel (up to 90
+degrees) and the spine turns back, and moving away from the facing plays the walk cycle backwards.
+This works with any character's six clips, no strafe clips needed.
 
 ## Testing tools
 

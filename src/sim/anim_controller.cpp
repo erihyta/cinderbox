@@ -41,6 +41,30 @@ void UpdateAnimState( AnimState& s, const Character& c, const PlayerInput& input
 	}
 	s.groundSpeed += ( speed - s.groundSpeed ) * std::min( 1.0f, kSpeedSmoothing * dt );
 
+	// Legs toward the direction of travel, relative to the facing; backwards past ~100 degrees.
+	float legTarget = 0.0f;
+	if ( c.grounded != 0 && speed > kLegMinSpeed )
+	{
+		float travel = detmath::WrapAngle( detmath::Atan2( c.velocity.x, c.velocity.z ) - c.facingYaw );
+		float away = travel < 0.0f ? -travel : travel;
+		if ( away > kBackwardAbove )
+		{
+			s.legsBackward = 1;
+		}
+		else if ( away < kForwardBelow )
+		{
+			s.legsBackward = 0;
+		}
+		legTarget = s.legsBackward != 0 ? detmath::WrapAngle( travel + detmath::kPi ) : travel;
+		legTarget = std::clamp( legTarget, -0.5f * detmath::kPi, 0.5f * detmath::kPi );
+	}
+	else if ( c.grounded != 0 )
+	{
+		s.legsBackward = 0;
+	}
+	float legStep = kLegTurnRate * dt;
+	s.legYaw += std::clamp( legTarget - s.legYaw, -legStep, legStep );
+
 	bool jumpedRecently = c.lastJumpTick != 0 && float( tick - c.lastJumpTick ) * dt < kJumpStartSeconds;
 
 	AnimMode next = s.mode;
