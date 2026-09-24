@@ -42,6 +42,7 @@ struct Gunner
 	int32_t kills = 0;
 	int32_t deaths = 0;
 	uint32_t falls = 0; // Character::fallCount last seen
+	bool aiming = false; // what the last Aim command said
 };
 
 struct Dead
@@ -246,7 +247,16 @@ private:
 			}
 		}
 
-		if ( ctx.Get( netId, m_loadout ) != kPistolSlot || c->frozen )
+		// The pistol out means the arm points it where the player looks: in the pose everyone
+		// draws, and in the hitboxes shots are tested against.
+		bool holding = ctx.Get( netId, m_loadout ) == kPistolSlot;
+		if ( holding != g.aiming )
+		{
+			g.aiming = holding;
+			ctx.Aim( target, holding );
+		}
+
+		if ( holding == false || c->frozen )
 		{
 			return;
 		}
