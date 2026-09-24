@@ -1,5 +1,6 @@
 add_library(cb_anim STATIC
 	anim_set.cpp
+	hitboxes.cpp
 	pose.cpp
 	profile.cpp
 )

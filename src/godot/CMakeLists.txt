@@ -2,6 +2,7 @@
 
 add_library(cinderbox_gd SHARED
 	cinderbox_animator.cpp
+	cinderbox_character.cpp
 	cinderbox_client.cpp
 	cinderbox_effects.cpp
 	cinderbox_entity_nodes.cpp
@@ -12,7 +13,7 @@ add_library(cinderbox_gd SHARED
 	register_types.cpp
 )
 
-target_link_libraries(cinderbox_gd PRIVATE cb_client_core cb_present godot::cpp)
+target_link_libraries(cinderbox_gd PRIVATE cb_client_core cb_present godot::cpp ozz_animation_offline)
 cb_target_warnings(cinderbox_gd)
 
 get_target_property(CB_GODOTCPP_SUFFIX godot-cpp GODOTCPP_SUFFIX)

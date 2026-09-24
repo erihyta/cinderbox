@@ -35,6 +35,16 @@ foreach(entry ${CB_MOD_ENTRIES})
 	endif()
 endforeach()
 
+# Character items (characters/<name>/client, published with tools\publish_mod.ps1 -Character <name>)
+# are announced the same way when a server runs them with --character <name>.
+file(GLOB CB_CHARACTER_ENTRIES LIST_DIRECTORIES true RELATIVE "${PROJECT_SOURCE_DIR}/characters" CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/characters/*")
+foreach(entry ${CB_CHARACTER_ENTRIES})
+	set(item "${PROJECT_SOURCE_DIR}/characters/${entry}/client_item.cfg")
+	if(EXISTS "${item}")
+		list(APPEND CB_MOD_ITEM_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy_if_different "${item}" "${CMAKE_BINARY_DIR}/bin/items/${entry}.item")
+	endif()
+endforeach()
+
 configure_file(registry.cpp.in "${CMAKE_CURRENT_BINARY_DIR}/registry.cpp" @ONLY)
 
 add_library(cb_server_mods STATIC ${CB_MOD_SOURCES} "${CMAKE_CURRENT_BINARY_DIR}/registry.cpp")

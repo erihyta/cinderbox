@@ -27,3 +27,7 @@ server_mods/*/client/.godot/
 server_mods/*/client/bin/
 server_mods/*/client/cinderbox.gdextension
 server_mods/*/client/cinderbox.gdextension.uid
+characters/*/client/.godot/
+characters/*/client/bin/
+characters/*/client/cinderbox.gdextension
+characters/*/client/cinderbox.gdextension.uid

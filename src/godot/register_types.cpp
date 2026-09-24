@@ -1,4 +1,5 @@
 #include "cinderbox_animator.h"
+#include "cinderbox_character.h"
 #include "cinderbox_client.h"
 #include "cinderbox_effects.h"
 #include "cinderbox_entity_nodes.h"
@@ -25,6 +26,9 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CinderboxSkeleton );
 	GDREGISTER_CLASS( cb::gd::CinderboxAnimator );
 	GDREGISTER_CLASS( cb::gd::CinderboxClient );
+	// Character authoring: hit zones on bones, and the node that bakes a character for the game.
+	GDREGISTER_CLASS( cb::gd::CbHitbox );
+	GDREGISTER_CLASS( cb::gd::CbCharacter );
 	// Map authoring: inert marker nodes plus the baker they are baked with.
 	GDREGISTER_CLASS( cb::gd::CbStatic );
 	GDREGISTER_CLASS( cb::gd::CbProp );

@@ -28,6 +28,13 @@ b3Quat Nlerp( b3Quat a, b3Quat b, float t )
 
 } // namespace
 
+void Mirror::SetAnimSet( std::shared_ptr<const anim::AnimSet> animSet )
+{
+	m_animSet = std::move( animSet );
+	m_world.set<AnimLibrary>( { m_animSet, std::make_shared<RagdollRig>( BuildRagdollRig( *m_animSet ) ) } );
+	m_world.each( [&]( PlayerAnim& a ) { a.evaluator = std::make_shared<anim::PoseEvaluator>( *m_animSet ); } );
+}
+
 Mirror::Mirror( std::shared_ptr<const anim::AnimSet> animSet )
 	: m_animSet( std::move( animSet ) )
 	, m_world( CreateFlecsWorld() ) // the simulation may be creating worlds on another thread

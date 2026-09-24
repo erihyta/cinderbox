@@ -50,6 +50,9 @@ bool GameServer::Start( const ServerOptions& options )
 	}
 	m_schema = declarations.Schema();
 	m_schema.items = options.items;
+	std::shared_ptr<const CharacterAsset> character = options.character ? options.character : BuiltInCharacter();
+	m_schema.character = character->name;
+	m_hits = std::make_unique<HitTester>( character );
 	EncodeSchema( m_schema, m_schemaBytes );
 
 	m_map = GetLevelLayout();
@@ -125,6 +128,7 @@ bool GameServer::Start( const ServerOptions& options )
 		none.tick = m_sim->Tick();
 		mods::Context ctx( *m_sim, m_schema, none, m_lastInputs, *m_modWorld, m_modRng );
 		ctx.SetOptions( &m_options.modOptions );
+		ctx.SetHitTester( m_hits.get() );
 		for ( const auto& mod : m_mods )
 		{
 			mod->Start( ctx );
@@ -558,6 +562,7 @@ void GameServer::RunMods( InputFrame& frame )
 	}
 	mods::Context ctx( *m_sim, m_schema, frame, m_lastInputs, *m_modWorld, m_modRng );
 	ctx.SetOptions( &m_options.modOptions );
+	ctx.SetHitTester( m_hits.get() );
 	for ( const auto& mod : m_mods )
 	{
 		mod->Tick( ctx );

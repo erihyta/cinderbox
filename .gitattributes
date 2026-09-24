@@ -2,3 +2,4 @@
 *.sh text eol=lf
 tests/reference_hashes.txt text eol=lf
 *.patch text eol=lf
+*.ozz binary

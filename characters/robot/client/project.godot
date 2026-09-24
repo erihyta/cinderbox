@@ -1,0 +1,11 @@
+; The robot character: a workshop item servers name with cb_server --character robot. No code; the
+; character's scene and what the editor baked from it (ozz skeleton and clips, hitboxes) live in
+; characters/robot/. Open character.tscn, edit, press Bake on the CbCharacter, then publish with:
+;   tools\publish_mod.ps1 -Character robot
+
+config_version=5
+
+[application]
+
+config/name="Cinderbox item: robot"
+config/features=PackedStringArray("4.7", "Forward Plus")

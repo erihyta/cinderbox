@@ -7,6 +7,7 @@
 #include "types.h"
 
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -115,6 +116,8 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_player_name", "net_id" ), &CinderboxClient::get_player_name );
 	ClassDB::bind_method( D_METHOD( "format_fields", "net_id", "format" ), &CinderboxClient::format_fields );
 	ClassDB::bind_method( D_METHOD( "get_required_items" ), &CinderboxClient::get_required_items );
+	ClassDB::bind_method( D_METHOD( "get_character" ), &CinderboxClient::get_character );
+	ClassDB::bind_method( D_METHOD( "use_character", "name" ), &CinderboxClient::use_character );
 	ClassDB::bind_method( D_METHOD( "set_player_name", "name" ), &CinderboxClient::set_player_name );
 	ClassDB::bind_method( D_METHOD( "get_player_name_setting" ), &CinderboxClient::get_player_name_setting );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "player_name" ), "set_player_name", "get_player_name_setting" );
@@ -322,9 +325,18 @@ Ref<PackedScene> CinderboxClient::Prefab( const present::Visual& v )
 		case present::VisualKind::Static:
 			return LoadPrefab( "static_box" );
 		case present::VisualKind::Player:
+			if ( m_characterFolder.is_empty() == false )
+			{
+				return LoadScene( m_characterFolder + "character.tscn" );
+			}
 			return LoadPrefab( "player" );
 		case present::VisualKind::Ragdoll:
 		{
+			if ( m_characterFolder.is_empty() == false )
+			{
+				String own = m_characterFolder + "ragdoll.tscn";
+				return LoadScene( ResourceLoader::get_singleton()->exists( own ) ? own : m_characterFolder + "character.tscn" );
+			}
 			String path = m_prefabDir.path_join( "ragdoll.tscn" );
 			return ResourceLoader::get_singleton()->exists( path ) ? LoadPrefab( "ragdoll" ) : LoadPrefab( "player" );
 		}
@@ -355,30 +367,7 @@ void CinderboxClient::HandleEvents()
 					// The map scene already draws this geometry.
 					break;
 				}
-				Ref<PackedScene> prefab = Prefab( v );
-				Node3D* node = nullptr;
-				if ( prefab.is_valid() )
-				{
-					node = Object::cast_to<Node3D>( prefab->instantiate() );
-				}
-				if ( node == nullptr )
-				{
-					node = memnew( Node3D );
-				}
-				node->set_name( String( KindName( v.kind ) ) + "_" + String::num_int64( int64_t( v.netId ) ) );
-				add_child( node );
-				m_nodes[e.visual] = node->get_instance_id();
-
-				if ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll )
-				{
-					if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
-					{
-						if ( skeleton->get_use_slot_color() )
-						{
-							skeleton->set_body_color( kSlotColors[v.slot % ( sizeof( kSlotColors ) / sizeof( kSlotColors[0] ) )] );
-						}
-					}
-				}
+				Node3D* node = CreateNode( e.visual, v );
 				emit_signal( "visual_spawned", int64_t( e.visual ), int64_t( e.netId ), String( KindName( e.kind ) ), node, position,
 							 e.withEffect, TemplateName( v.templateIndex ) );
 				break;
@@ -683,6 +672,121 @@ void CinderboxClient::clear_state_bindings()
 		}
 	}
 	m_attachments.clear();
+}
+
+Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
+{
+	Ref<PackedScene> prefab = Prefab( v );
+	Node3D* node = nullptr;
+	if ( prefab.is_valid() )
+	{
+		node = Object::cast_to<Node3D>( prefab->instantiate() );
+	}
+	if ( node == nullptr )
+	{
+		node = memnew( Node3D );
+	}
+	node->set_name( String( KindName( v.kind ) ) + "_" + String::num_int64( int64_t( v.netId ) ) );
+	add_child( node );
+	m_nodes[visual] = node->get_instance_id();
+
+	if ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll )
+	{
+		if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
+		{
+			if ( skeleton->get_use_slot_color() )
+			{
+				skeleton->set_body_color( kSlotColors[v.slot % ( sizeof( kSlotColors ) / sizeof( kSlotColors[0] ) )] );
+			}
+		}
+	}
+	return node;
+}
+
+void CinderboxClient::RebuildCharacterNodes()
+{
+	if ( !m_mirror )
+	{
+		return;
+	}
+	std::vector<std::pair<uint64_t, present::Visual>> rebuild;
+	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
+							const present::RagdollAnim* ) {
+		if ( ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll ) && m_nodes.count( id ) )
+		{
+			rebuild.emplace_back( id, v );
+		}
+	} );
+	for ( const auto& [id, v] : rebuild )
+	{
+		if ( auto* old = Object::cast_to<Node>( ObjectDB::get_instance( m_nodes[id] ) ) )
+		{
+			old->queue_free();
+		}
+		m_attachments.erase( id );
+		CreateNode( id, v );
+	}
+}
+
+String CinderboxClient::get_character() const
+{
+	return String::utf8( m_frame.schema.character.c_str() );
+}
+
+String CinderboxClient::use_character( const String& name )
+{
+	if ( name == m_character )
+	{
+		return String();
+	}
+	std::shared_ptr<const anim::AnimSet> set;
+	String folder;
+	if ( name.is_empty() )
+	{
+		m_animSet.reset();
+		EnsureAnimations(); // the built-in rig, or --animations
+		set = m_animSet;
+	}
+	else
+	{
+		folder = "res://characters/" + name + "/";
+		anim::FileReader read = [folder]( const std::string& file, std::string& bytes ) {
+			String path = folder + String::utf8( file.c_str() );
+			if ( FileAccess::file_exists( path ) == false )
+			{
+				return false;
+			}
+			PackedByteArray data = FileAccess::get_file_as_bytes( path );
+			bytes.assign( reinterpret_cast<const char*>( data.ptr() ), size_t( data.size() ) );
+			return true;
+		};
+		std::string error, warnings;
+		std::unique_ptr<anim::AnimSet> loaded = anim::AnimSet::Load( read, ToStd( folder ), error, warnings );
+		if ( loaded == nullptr )
+		{
+			return String::utf8( ( "character " + ToStd( name ) + ": " + error ).c_str() );
+		}
+		if ( warnings.empty() == false )
+		{
+			UtilityFunctions::push_warning( "Cinderbox character ", name, ": ", String::utf8( warnings.c_str() ) );
+		}
+		if ( ResourceLoader::get_singleton()->exists( folder + "character.tscn" ) == false )
+		{
+			return "character " + name + " has no " + folder + "character.tscn";
+		}
+		set = std::move( loaded );
+	}
+	UtilityFunctions::print( "Cinderbox character: ", name.is_empty() ? String( "built-in" ) : name, " (",
+							 String::utf8( set->Description().c_str() ), ")" );
+	m_character = name;
+	m_characterFolder = folder;
+	m_animSet = set;
+	if ( m_mirror )
+	{
+		m_mirror->SetAnimSet( set );
+	}
+	RebuildCharacterNodes();
+	return String();
 }
 
 Ref<PackedScene> CinderboxClient::LoadScene( const String& path )

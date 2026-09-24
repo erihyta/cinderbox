@@ -112,6 +112,8 @@ struct RayHit
 	b3Vec3 point = {};
 	b3Vec3 normal = {};
 	float fraction = 1.0f;
+	// The hitbox zone ("head", "torso") when the server's hit test found a player; null otherwise.
+	const char* zone = nullptr;
 };
 
 class Simulation
@@ -183,6 +185,8 @@ public:
 	// Null if the slot is empty.
 	const Character* PlayerCharacter( PlayerSlot slot ) const;
 	const Transform* EntityTransform( uint32_t netId ) const;
+	// A player's animation state, or null.
+	const AnimState* EntityAnimState( uint32_t netId ) const;
 	// The entity's board value, or 0 when it has none.
 	int32_t BoardValue( uint32_t netId, int slot ) const;
 	int32_t GlobalBoardValue( int slot ) const
@@ -190,8 +194,9 @@ public:
 		return slot >= 0 && slot < kBoardSlots ? m_globals.board[slot] : 0;
 	}
 	// The closest thing a ray from `origin` along `translation` hits, skipping entity `ignoreNetId`
-	// and disabled bodies. Returns false when it hits nothing.
-	bool CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit );
+	// and disabled bodies (and every player's capsule with `skipPlayers`). Returns false when it hits
+	// nothing.
+	bool CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit, bool skipPlayers = false );
 	// The level this simulation was built from (templates, spawn template).
 	const LevelLayout& Map() const
 	{

@@ -540,6 +540,50 @@ rounds leaves it out. It needed three engine additions, none of them about round
 - **Not covered yet**: Linux ARM64, the Godot extension build, and a Godot client in a session against
   a server built by another compiler (the fingerprint check covers the build flags, not a live session).
 
+## Characters and hit zones (M19)
+A character is a workshop item, and everything in it is baked at authoring time. Joining only
+mounts packs that are already on disk: no import, no conversion, nothing sent by the server.
+
+| Step | Where | What |
+|---|---|---|
+| Import | editor | Godot's own importer, retargeted to `SkeletonProfileHumanoid` |
+| Author | editor | `CbCharacter` root, `CinderboxSkeleton`, `CbHitbox` shapes under `BoneAttachment3D` |
+| Bake | editor (the Bake button) | ozz skeleton and six clips sampled from the AnimationPlayer, `anim.cfg`, `hitboxes.cfg` |
+| Ship | `publish_mod.ps1 -Character` | the scene and the baked files, one hashed zip |
+| Play | server | `--character NAME` opens the same zip, checks its SHA-256, reads the baked files |
+| Play | client | mounts the item, `use_character()` reads `res://characters/<name>/` through `FileAccess` |
+
+- **One source of truth.** The server reads the item players mount, and the hash guarantees
+  identical bytes. The server never sends content: the schema only names the character, which is
+  also one of the announced items (protocol 6).
+- **Hitboxes are server-only.** Gameplay mods (and so hit tests) run only on the server. A ray is
+  cast against the world with players left out, then each live player it passes near is posed from
+  its `AnimState` at that tick and its hitboxes are tested; the closest hit in front of the world
+  wins, and `RayHit::zone` names it. This costs clients nothing and keeps poses out of the
+  rolled-back, hashed simulation. It stays deterministic anyway: the pose is a pure function of
+  simulation state and the hashed item, with the scalar ozz build.
+- **Spaces.** Hitboxes, poses and visuals share one space: the character's root at the feet, facing
+  +Z. The bake refuses a `Skeleton3D` that is moved, turned or scaled relative to the
+  `CbCharacter`, and the client drives the skeleton with `retarget` off, since the baked skeleton
+  is that skeleton.
+- **Mods stay character-agnostic.** They see zone names, not bones; the pistol's damage per zone is
+  a server option (`pistol.zone.head=2`).
+- **Validator.** `.ozz` and `.cfg` are allowed in packs only under `characters/`. They are data read
+  by our loaders, never loaded as Godot resources. ozz's archive reader does little validation of
+  its input, so a malformed `.ozz` in a pack someone installed could still crash the client (the
+  same caveat as Godot's own resource parsers).
+- **Verified:** unit tests for zones, misses and turning; the committed robot bake loads and its
+  head is where the head zone is; a character item read from a zip (hash mismatch and missing
+  hitboxes refused); a headshot session (two head hits kill, no desyncs); a rendered session with
+  three bots playing as the robot (no desyncs).
+- **Not done yet:**
+  - capsule size and movement speeds per character (they change the simulation, so they need exact
+    values on every client);
+  - per-player character choice;
+  - the visual aim offsets that state bindings add (an arm raised to aim) do not move hitboxes;
+  - an imported, skinned character has not been through the whole path yet (the robot is generated
+    rigid parts; the importer route is the standard Godot one but untested here).
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -631,3 +675,4 @@ rounds leaves it out. It needed three engine additions, none of them about round
 16. **M16** (done): deathmatch rounds as a server mod with its own workshop item, the `Freeze` command, mod options, event and world queries in the mod API, the `!?field` condition, `{name:field}`, scoreboard conditions, and a deathmatch net test. Verified identical across Clang, GCC and MSVC.
 17. **M17** (done): CI on GitHub Actions: Windows (Clang, MinGW GCC, MSVC), Linux (GCC, Clang) and macOS ARM64 (Apple Clang) each run every test and match the reference hashes, and every OS continues every build's portable snapshot. Identical on the first run.
 18. **M18** (done): Box3D snapshots zero padding, stale union bytes and geometry pointers (a patch applied at fetch), so they no longer leak server memory to joining clients; ARM64 min/max match x64 for signed zeros (a second patch); snapshots are byte-identical across all six builds, checked by `portable_bytes` and CI.
+19. **M19** (done): characters as workshop items baked in the editor (`CbCharacter` Bake button: ozz skeleton and clips, `hitboxes.cfg` from `CbHitbox` zones), `cb_server --character` reading the same zip players mount (SHA-256 checked, miniz), the client playing as it from the pack, server-side hit tests against posed hitboxes with zones for mods, the pistol's damage per zone, the robot example item, and tests.
