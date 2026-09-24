@@ -68,7 +68,14 @@ FetchContent_Declare(ozz
 	GIT_SHALLOW FALSE
 )
 
-FetchContent_MakeAvailable(flecs box3d enet ozz)
+# --- miniz 3.1.2 (the server reads a character's workshop item, a zip) ---
+FetchContent_Declare(miniz
+	GIT_REPOSITORY https://github.com/richgel999/miniz.git
+	GIT_TAG 77d0dce8627735138c51770d1799a1ef48f2117d # 3.1.2
+	GIT_SHALLOW FALSE
+)
+
+FetchContent_MakeAvailable(flecs box3d enet ozz miniz)
 
 # ozz builds with warnings-as-errors; a newer compiler must not break our build.
 foreach(t ozz_base ozz_animation ozz_animation_offline ozz_animation_tools ozz_options ozz_geometry gltf2ozz dump2ozz)

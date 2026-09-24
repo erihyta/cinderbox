@@ -8,7 +8,7 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x3242434Du; // 'MCB2': 2 added workshop items
+constexpr uint32_t kSchemaMagic = 0x3342434Du; // 'MCB3': 2 added workshop items, 3 the character
 
 void PutU8( std::vector<uint8_t>& out, uint8_t v )
 {
@@ -137,6 +137,7 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutString( out, schema.items[i].mod );
 		PutString( out, schema.items[i].sha256 );
 	}
+	PutString( out, schema.character );
 }
 
 bool IsSha256( const std::string& hex )
@@ -227,6 +228,12 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 			return false;
 		}
 		out.items.push_back( std::move( item ) );
+	}
+	out.character = r.String();
+	if ( out.character.empty() == false &&
+		 std::none_of( out.items.begin(), out.items.end(), [&]( const ModItem& i ) { return i.mod == out.character; } ) )
+	{
+		return false; // the character always comes as one of the items
 	}
 	return r.ok && r.at == size;
 }

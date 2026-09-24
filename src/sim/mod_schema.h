@@ -67,7 +67,10 @@ struct ModItem
 struct ModSchema
 {
 	std::vector<std::string> mods; // names of the mods the server runs, for display
-	std::vector<ModItem> items;	   // the client items those mods need
+	std::vector<ModItem> items;	   // the client items those mods need, and the character's
+	// The character item everyone plays as (its folder in the pack is characters/<name>/); empty
+	// for the built-in placeholder rig.
+	std::string character;
 	std::vector<BoardField> fields;
 	std::vector<std::string> events; // index = ModEventRecord::type
 	std::vector<ModAction> actions;

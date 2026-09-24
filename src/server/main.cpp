@@ -3,11 +3,16 @@
 //   cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]
 //             [--prop-lifetime SEC] [--props-per-player N] [--props-global N]
 //             [--map FILE.cbmap] [--record FILE] [--mods A,B | --mods none] [--list-mods]
-//             [--items DIR] [--mod-option NAME=VALUE]... [--quiet]
+//             [--items DIR] [--mod-option NAME=VALUE]... [--character NAME [--workshop DIR]] [--quiet]
 //
 // Every gameplay mod compiled in (server_mods/) runs unless --mods names a subset. Mods with a look
 // need their workshop item: its SHA-256 is read from <items dir>/<mod>.item (default: items/ next
 // to this executable) and announced to clients, who must have that exact item to join.
+//
+// --character NAME: everyone plays as the character item NAME. It is announced like a mod's item,
+// and the server reads its skeleton, clips and hitboxes from the same file players have:
+// <workshop>/NAME/<sha256>.zip (default workshop: the game's user folder, where
+// tools/publish_mod.ps1 installs items). Without it, players use the built-in rig.
 
 #include "game_server.h"
 #include "registry.h"
@@ -36,7 +41,7 @@ void Usage()
 	std::printf( "usage: cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]\n"
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
 				 "                 [--map FILE.cbmap] [--record FILE] [--mods A,B | --mods none] [--list-mods]\n"
-				 "                 [--items DIR] [--mod-option NAME=VALUE]... [--quiet]\n" );
+				 "                 [--items DIR] [--mod-option NAME=VALUE]... [--character NAME [--workshop DIR]] [--quiet]\n" );
 }
 
 // <dir>/<mod>.item: "sha256=<64 hex digits>" (written by tools/publish_mod.ps1).
@@ -82,7 +87,7 @@ std::vector<std::string> SplitList( const std::string& list )
 }
 
 bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::string>& mods, bool& listMods,
-				std::string& itemsDir )
+				std::string& itemsDir, std::string& character, std::string& workshopDir )
 {
 	for ( int i = 1; i < argc; ++i )
 	{
@@ -120,6 +125,16 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 		if ( arg == "--items" && i + 1 < argc )
 		{
 			itemsDir = argv[++i];
+			continue;
+		}
+		if ( arg == "--character" && i + 1 < argc )
+		{
+			character = argv[++i];
+			continue;
+		}
+		if ( arg == "--workshop" && i + 1 < argc )
+		{
+			workshopDir = argv[++i];
 			continue;
 		}
 		if ( arg == "--mod-option" && i + 1 < argc )
@@ -185,7 +200,9 @@ int main( int argc, char** argv )
 	}
 	bool listMods = false;
 	std::string itemsDir = ( std::filesystem::absolute( argv[0] ).parent_path() / "items" ).string();
-	if ( ParseArgs( argc, argv, options, modNames, listMods, itemsDir ) == false )
+	std::string characterName;
+	std::string workshopDir = cb::DefaultWorkshopDir();
+	if ( ParseArgs( argc, argv, options, modNames, listMods, itemsDir, characterName, workshopDir ) == false )
 	{
 		Usage();
 		return 1;
@@ -234,6 +251,31 @@ int main( int argc, char** argv )
 			std::printf( "warning: mod %s has client content but no item manifest in %s; clients will not load its look\n",
 						 name.c_str(), itemsDir.c_str() );
 		}
+	}
+	if ( characterName.empty() == false )
+	{
+		cb::ModItem item;
+		if ( ReadItem( itemsDir, characterName, item ) == false )
+		{
+			std::printf( "no item manifest for character %s in %s (publish it with tools/publish_mod.ps1 -Character %s)\n",
+						 characterName.c_str(), itemsDir.c_str(), characterName.c_str() );
+			return 1;
+		}
+		std::string zip = ( std::filesystem::path( workshopDir ) / characterName / ( item.sha256 + ".zip" ) ).string();
+		std::string error, warnings;
+		options.character = cb::LoadCharacterItem( zip, item, error, warnings );
+		if ( options.character == nullptr )
+		{
+			std::printf( "%s\n", error.c_str() );
+			return 1;
+		}
+		if ( warnings.empty() == false )
+		{
+			std::printf( "character %s: %s\n", characterName.c_str(), warnings.c_str() );
+		}
+		std::printf( "character: %s (%s, %zu hitboxes)\n", characterName.c_str(),
+					 options.character->animations->Description().c_str(), options.character->hitboxes.boxes.size() );
+		options.items.push_back( item );
 	}
 	if ( server.Start( options ) == false )
 	{
