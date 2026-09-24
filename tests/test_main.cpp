@@ -18,6 +18,7 @@
 #include "scenario.h"
 #include "simulation.h"
 
+#include <algorithm>
 #include <chrono>
 #include <limits>
 #include <cinttypes>
@@ -613,6 +614,62 @@ void TestPortableSnapshot()
 			CHECK( false );
 		}
 	}
+}
+
+// Fills a stretch of the stack with a byte, so whatever a struct copy picks up from the stack differs
+// between two runs.
+#if defined( _MSC_VER )
+__declspec( noinline )
+#else
+__attribute__( ( noinline ) )
+#endif
+void DirtyStack( uint8_t value )
+{
+	volatile uint8_t junk[64 * 1024];
+	for ( size_t i = 0; i < sizeof( junk ); ++i )
+	{
+		junk[i] = value;
+	}
+}
+
+// A portable snapshot holds only simulation state: two worlds that ran the same frames give the same
+// bytes, whatever the stack held while they ran and saved. (Box3D used to write struct padding and a
+// heap pointer; cmake/patches/box3d-snapshot-padding.patch.)
+void TestPortableBytes()
+{
+	auto frames = test::MakeScenario( {} );
+	SimConfig config = TestConfig();
+	std::vector<uint8_t> images[2];
+	const uint8_t patterns[2] = { 0x00, 0xA5 };
+	for ( int run = 0; run < 2; ++run )
+	{
+		Simulation sim( config );
+		for ( uint32_t t = 0; t < 300; ++t )
+		{
+			DirtyStack( patterns[run] );
+			sim.Step( frames[t] );
+		}
+		DirtyStack( patterns[run] );
+		sim.SavePortable( images[run] );
+	}
+	CHECK( images[0].size() == images[1].size() );
+	size_t differing = 0;
+	for ( size_t i = 0; i < std::min( images[0].size(), images[1].size() ); ++i )
+	{
+		if ( images[0][i] != images[1][i] )
+		{
+			if ( differing == 0 )
+			{
+				std::printf( "    first differing byte at %zu of %zu\n", i, images[0].size() );
+			}
+			++differing;
+		}
+	}
+	if ( differing != 0 )
+	{
+		std::printf( "    %zu bytes differ\n", differing );
+	}
+	CHECK( differing == 0 );
 }
 
 // Deliver authoritative frames late and out of step with the client, and have the client
@@ -1593,6 +1650,7 @@ int main( int argc, char** argv )
 		{ "repeatability", TestRepeatability },
 		{ "snapshot_roundtrip", TestSnapshotRoundTrip },
 		{ "portable_snapshot", TestPortableSnapshot },
+		{ "portable_bytes", TestPortableBytes },
 		{ "rollback", TestRollback },
 		{ "rollback_reset", TestRollbackReset },
 		{ "gameplay_sanity", TestGameplaySanity },

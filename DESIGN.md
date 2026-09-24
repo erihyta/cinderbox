@@ -511,18 +511,30 @@ rounds leaves it out. It needed three engine additions, none of them about round
 - **Each build** runs all tests, then compares its 1201 per-tick hashes with
   `tests/reference_hashes.txt` and its pose hash with `tests/reference_anim_hash.txt`. A failure names
   the first tick that differs.
-- **Cross-load**: one job per OS loads all six portable snapshots with each of its builds and runs
-  them 900 ticks to the reference's final hash (30 load pairs in all). A binary only runs on its own
-  OS, and the snapshot files cannot simply be compared: they are not byte-identical, not even two saves
-  from the same binary (below).
+- **Cross-load**: all six portable snapshots must be byte-identical, and one job per OS loads each
+  of them with each of its builds and runs them 900 ticks to the reference's final hash (30 load pairs
+  in all; a binary only runs on its own OS).
 - **First result**: everything agreed on the first run, including ARM64. This is the first check
   that is not x86: the flags that matter (`-ffp-contract=off`, no fast-math) already hold on ARM64.
-- **Found: Box3D writes uninitialized bytes into snapshots.** `b3SerShapes` copies each `b3Shape`
-  to the stack and writes the raw struct, including its padding (a byte before the geometry union,
-  4 bytes at the end, more inside the material and filter). The simulation never reads them, so hashes
-  and desyncs are unaffected, but a joining client receives a few bytes of the server's stack per
-  shape, and snapshots cannot be compared byte for byte. The fix belongs in Box3D (zero the copy,
-  then copy field by field); not applied yet.
+- **Found and fixed (M18): Box3D wrote stale memory into snapshots.** Its snapshot writer copies
+  structs out raw, padding included, and struct copies from stack temporaries carry stack bytes into
+  that padding. Shapes also carried their hull's heap address. The simulation never reads those bytes,
+  so hashes were unaffected, but every joining client received scraps of server memory and a heap
+  address, and no two saves were byte-identical. `cmake/patches/box3d-snapshot-padding.patch`, applied
+  when Box3D is fetched, zeroes the padding, the union bytes past the active member and the geometry
+  union in each written copy; the image format is unchanged, so old and new builds interoperate. The
+  holes were found from Clang's record layouts (`-Xclang -fdump-record-layouts`) and are named by the
+  fields around them, so a Box3D update that renames a field fails to compile. `cb_tests
+  portable_bytes` runs the scenario twice with the stack filled with different bytes and requires
+  identical snapshots (330 bytes differed before), and CI requires all six builds' snapshots to be
+  identical. Worth sending upstream.
+- **Found and fixed (M18): ARM64 clamped to a zero of the other sign.** With the snapshots finally
+  comparable, macOS differed from x64 in 37 bytes, all the sign bit of a manifold's `twistImpulse`.
+  Box3D's `b3SymClampW` is `min( max( -b, a ), b )`; SSE's `maxps`/`minps` return the second operand
+  when the values compare equal, NEON's `vmaxq`/`vminq` order -0 below +0, so with a zero friction
+  limit x64 stored +0 and ARM64 -0. The hashes never saw it (warm-started zeros add nothing), but a
+  signed zero can flip later through `atan2` or a division. `cmake/patches/box3d-neon-minmax.patch`
+  gives NEON the SSE semantics (compare and select), which also matches SSE for NaN inputs.
 - **Cost**: one run takes about 7 minutes of wall time. On a private repository macOS minutes count
   ten times and Windows twice, about 150 billed minutes per push.
 - **Not covered yet**: Linux ARM64, the Godot extension build, and a Godot client in a session against
@@ -618,3 +630,4 @@ rounds leaves it out. It needed three engine additions, none of them about round
 15. **M15** (done): mods' looks as workshop items announced by hash and never sent (publish tool, local workshop, join refusal, load order), the pistol's look moved into its item, an allowlist pack validator with a hostile-pack check, HUD nodes driven by fields and events (health bar, kill feed, scoreboard), player names, and a fast clock catch-up.
 16. **M16** (done): deathmatch rounds as a server mod with its own workshop item, the `Freeze` command, mod options, event and world queries in the mod API, the `!?field` condition, `{name:field}`, scoreboard conditions, and a deathmatch net test. Verified identical across Clang, GCC and MSVC.
 17. **M17** (done): CI on GitHub Actions: Windows (Clang, MinGW GCC, MSVC), Linux (GCC, Clang) and macOS ARM64 (Apple Clang) each run every test and match the reference hashes, and every OS continues every build's portable snapshot. Identical on the first run.
+18. **M18** (done): Box3D snapshots zero padding, stale union bytes and geometry pointers (a patch applied at fetch), so they no longer leak server memory to joining clients; ARM64 min/max match x64 for signed zeros (a second patch); snapshots are byte-identical across all six builds, checked by `portable_bytes` and CI.

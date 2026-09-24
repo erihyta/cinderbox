@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# The cross-load step of CI: every build's hash dump must be identical, and every build of this OS
-# must continue every build's portable snapshot (from any OS) to the same final state.
+# The cross-load step of CI: every build's hash dump and portable snapshot must be identical, and
+# every build of this OS must continue every build's portable snapshot (from any OS) to the same
+# final state.
 #
 #   scripts/ci_cross.sh <artifacts-dir> <windows|linux|macos>
 #
@@ -17,6 +18,20 @@ for f in "$art"/det-*/hashes-*.txt; do
 	if [[ -z "$first" ]]; then
 		first="$f"
 	elif ! cmp -s <(tr -d '\r' < "$first") <(tr -d '\r' < "$f"); then
+		echo "$(basename "$f") DIFFERS from $(basename "$first")"
+		failed=1
+		continue
+	fi
+	echo "$(basename "$f") identical"
+done
+
+# Snapshots hold only simulation state, so every build writes the same bytes.
+echo "== portable snapshots"
+first=""
+for f in "$art"/det-*/portable-*.bin; do
+	if [[ -z "$first" ]]; then
+		first="$f"
+	elif ! cmp -s "$first" "$f"; then
 		echo "$(basename "$f") DIFFERS from $(basename "$first")"
 		failed=1
 		continue
