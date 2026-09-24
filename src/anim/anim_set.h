@@ -12,6 +12,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace cb::anim
 {
@@ -90,6 +92,30 @@ public:
 		return m_description;
 	}
 
+	// What the pose turns toward where the player looks while it aims (AnimState::aiming): joints
+	// with weights, applied in order, and the joint that ends up on the line of sight. anim.cfg:
+	//   aim = RightUpperArm:1          (joints by humanoid-profile name, "name:weight" each)
+	//   aim_tip = RightHand
+	// Those are the defaults. Empty when the skeleton has none of them.
+	const std::vector<std::pair<int, float>>& AimJoints() const
+	{
+		return m_aimJoints;
+	}
+	int AimTip() const
+	{
+		return m_aimTip;
+	}
+	const std::string& AimConfig() const
+	{
+		return m_aimConfig;
+	}
+	const std::string& AimTipName() const
+	{
+		return m_aimTipName;
+	}
+	// Resolves the names against the skeleton; unknown joints go to `warnings`.
+	void SetAim( const std::string& chain, const std::string& tip, std::string& warnings );
+
 private:
 	ozz::unique_ptr<ozz::animation::Skeleton> m_skeleton;
 	ozz::vector<ozz::math::Float4x4> m_restModels;
@@ -97,6 +123,10 @@ private:
 	float m_scale = 1.0f;
 	bool m_lockRootXZ = true;
 	std::string m_description;
+	std::vector<std::pair<int, float>> m_aimJoints;
+	int m_aimTip = -1;
+	std::string m_aimConfig = "RightUpperArm:1";
+	std::string m_aimTipName = "RightHand";
 };
 
 } // namespace cb::anim

@@ -1,5 +1,7 @@
 #include "anim_controller.h"
 
+#include "detmath.h"
+
 #include <algorithm>
 
 namespace cb
@@ -24,8 +26,13 @@ float LocomotionCycleRate( float groundSpeed )
 	return walkRate + ( runRate - walkRate ) * t;
 }
 
-void UpdateAnimState( AnimState& s, const Character& c, uint32_t tick, float dt )
+void UpdateAnimState( AnimState& s, const Character& c, const PlayerInput& input, uint32_t tick, float dt )
 {
+	// Where the camera looks, relative to the body (kept up to date even while not aiming, so an
+	// Aim command takes effect at once).
+	s.aimYaw = detmath::WrapAngle( detmath::YawToRadians( input.cameraYaw ) - c.facingYaw );
+	s.aimPitch = float( input.cameraPitch ) * ( detmath::kTwoPi / 65536.0f );
+
 	float speed = b3Length( b3Vec3{ c.velocity.x, 0.0f, c.velocity.z } );
 	if ( c.grounded == 0 )
 	{

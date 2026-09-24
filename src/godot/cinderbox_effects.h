@@ -309,9 +309,6 @@ public:
 	CB_PROPERTY( godot::String, attach_bone, m_attachBone )
 	CB_PROPERTY( godot::Vector3, attach_offset, m_attachOffset )
 	CB_PROPERTY( godot::Vector3, attach_rotation, m_attachRotation )
-	CB_PROPERTY( godot::String, aim_bone, m_aimBone )
-	CB_PROPERTY( godot::String, aim_tip, m_aimTip )
-	CB_PROPERTY( float, aim_weight, m_aimWeight )
 	CB_PROPERTY( godot::String, tree_parameter, m_treeParameter )
 
 protected:
@@ -327,10 +324,6 @@ private:
 	godot::String m_attachBone = "RightHand";
 	godot::Vector3 m_attachOffset;
 	godot::Vector3 m_attachRotation; // degrees
-	// Turn this joint so the line to aim_tip points where the player looks (an arm holding a gun).
-	godot::String m_aimBone;
-	godot::String m_aimTip;
-	float m_aimWeight = 1.0f;
 	// An AnimationTree parameter set to whether the conditions hold, for prefabs animated by a
 	// CinderboxAnimator (e.g. "parameters/conditions/armed").
 	godot::String m_treeParameter;

@@ -580,9 +580,41 @@ mounts packs that are already on disk: no import, no conversion, nothing sent by
   - capsule size and movement speeds per character (they change the simulation, so they need exact
     values on every client);
   - per-player character choice;
-  - the visual aim offsets that state bindings add (an arm raised to aim) do not move hitboxes;
+  - the visual aim offsets that state bindings add (an arm raised to aim) do not move hitboxes
+    (done in M20: aiming is in the pose);
   - an imported, skinned character has not been through the whole path yet (the robot is generated
     rigid parts; the importer route is the standard Godot one but untested here).
+
+## One pose for players (M20)
+Since M19 the server hits players where their ozz pose puts them. Anything else that moved a
+player's body on screen would be a lie: shots would land where nothing is drawn, or miss what is.
+So the rule is: **the ozz pose places a player's body; Godot animation only adds.**
+
+| Before | Now |
+|---|---|
+| The pistol's arm was raised by a client-only state binding (`aim_bone`) | `AnimState` carries `aiming` and the look direction relative to the body; mods set `aiming` with an `Aim` command; `PoseEvaluator` turns the character's aim chain, so clients draw it and hit tests use it |
+| A `CinderboxAnimator` + `AnimationTree` could pose the whole body | A `CbPoseModifier` (first skeleton modifier) re-applies the ozz pose after any animation mixer; the tree only animates what the pose leaves alone |
+| The example AnimationTree mod animated a box body | It animates a jetpack's flames; the body is the ozz pose |
+
+- **Aim chain per character**: `aim` and `aim_tip` in `anim.cfg`, written by the bake from the
+  `CbCharacter`, default the right arm. Several joints with weights are turned in order, so a chest
+  can lean part of the way while the arm ends exactly on the line.
+- **Mods decide when**: aiming is a gameplay rule, so the engine only offers the command. The pistol
+  aims while it is out. Placing a character (respawn, falling out) keeps the flag, because the mod,
+  not the engine, lets it go (found in a rendered session: a respawned player's arm hung down).
+- **Determinism**: the aim angles come from the inputs and the body's facing inside the simulation
+  (`WrapAngle`, `detmath::CosSin`), so they are hashed and identical everywhere; `AnimState` grew
+  from 20 to 28 bytes (protocol 7).
+- **A bug the checks caught**: `CinderboxSkeleton` looked for its modifier among the skeleton's
+  ordinary children, but had added it as an internal one, so it added a new modifier every frame; a
+  robot session fell to 40 FPS. `check_pose_wins.gd` now requires exactly one modifier, and exact
+  driving writes local poses parents-first instead of `set_bone_global_pose` per bone.
+- **Verified**: aim through `Evaluate` (straight, turned, a two-joint chain), a hitbox that is hit
+  only while aiming, the robot's hand an arm's length in front of its shoulder while aiming, the Aim
+  command and respawn in `commands`, the shooter aiming in `mods_session`, `check_pose_wins.gd`
+  (with a negative run that must fail), the AnimationTree example still following the simulation,
+  and a rendered session.
+- **Not done**: a chain per weapon (one chain per character for now); IK for the second hand.
 
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
@@ -676,3 +708,4 @@ mounts packs that are already on disk: no import, no conversion, nothing sent by
 17. **M17** (done): CI on GitHub Actions: Windows (Clang, MinGW GCC, MSVC), Linux (GCC, Clang) and macOS ARM64 (Apple Clang) each run every test and match the reference hashes, and every OS continues every build's portable snapshot. Identical on the first run.
 18. **M18** (done): Box3D snapshots zero padding, stale union bytes and geometry pointers (a patch applied at fetch), so they no longer leak server memory to joining clients; ARM64 min/max match x64 for signed zeros (a second patch); snapshots are byte-identical across all six builds, checked by `portable_bytes` and CI.
 19. **M19** (done): characters as workshop items baked in the editor (`CbCharacter` Bake button: ozz skeleton and clips, `hitboxes.cfg` from `CbHitbox` zones), `cb_server --character` reading the same zip players mount (SHA-256 checked, miniz), the client playing as it from the pack, server-side hit tests against posed hitboxes with zones for mods, the pistol's damage per zone, the robot example item, and tests.
+20. **M20** (done): aiming in the ozz pose (`Aim` command, aim chain per character, hit tests follow it), `CbPoseModifier` so Godot animation on players is cosmetic only, the AnimationTree example turned cosmetic (a jetpack), bake warnings for animation that could move hitbox bones, and the modifier-per-frame bug fixed.

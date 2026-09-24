@@ -267,6 +267,50 @@ void CinderboxSkeleton::ApplyPose( const anim::AnimSet& set, const ozz::vector<o
 			Bind( target, set );
 		}
 		DriveSkeleton( target, models );
+		EnsureModifier( target );
+	}
+}
+
+void CinderboxSkeleton::EnsureModifier( Skeleton3D* target )
+{
+	// The modifier is an internal child: it has to be looked for among those too.
+	for ( int i = 0; i < target->get_child_count( true ); ++i )
+	{
+		if ( auto* existing = Object::cast_to<CbPoseModifier>( target->get_child( i, true ) ) )
+		{
+			existing->set_driver( this );
+			return;
+		}
+	}
+	CbPoseModifier* modifier = memnew( CbPoseModifier );
+	modifier->set_name( "CinderboxPose" );
+	modifier->set_driver( this );
+	target->add_child( modifier, false, Node::INTERNAL_MODE_FRONT );
+}
+
+void CinderboxSkeleton::ReapplyPose( Skeleton3D* target )
+{
+	if ( m_lastSet == nullptr || m_lastModels.empty() || target == nullptr )
+	{
+		return;
+	}
+	if ( m_mappedSkeleton != target->get_instance_id() || int( m_boneMap.size() ) != m_lastSet->Skeleton().num_joints() )
+	{
+		Bind( target, *m_lastSet );
+	}
+	DriveSkeleton( target, m_lastModels );
+}
+
+void CbPoseModifier::set_driver( CinderboxSkeleton* driver )
+{
+	m_driver = driver != nullptr ? uint64_t( driver->get_instance_id() ) : 0;
+}
+
+void CbPoseModifier::_process_modification()
+{
+	if ( auto* driver = Object::cast_to<CinderboxSkeleton>( ObjectDB::get_instance( ObjectID( m_driver ) ) ) )
+	{
+		driver->ReapplyPose( get_skeleton() );
 	}
 }
 
@@ -339,6 +383,21 @@ void CinderboxSkeleton::Bind( Skeleton3D* target, const anim::AnimSet& set )
 	int joints = skeleton.num_joints();
 
 	m_boneMap.assign( size_t( joints ), -1 );
+	// Parents before children, whatever order the target lists its bones in.
+	m_boneOrder.clear();
+	PackedInt32Array roots = target->get_parentless_bones();
+	for ( int64_t r = 0; r < roots.size(); ++r )
+	{
+		m_boneOrder.push_back( roots[r] );
+	}
+	for ( size_t i = 0; i < m_boneOrder.size(); ++i )
+	{
+		PackedInt32Array children = target->get_bone_children( m_boneOrder[i] );
+		for ( int64_t c = 0; c < children.size(); ++c )
+		{
+			m_boneOrder.push_back( children[c] );
+		}
+	}
 	m_restBridge.assign( size_t( joints ), Quaternion() );
 	m_mappedSkeleton = target->get_instance_id();
 	m_targetHips = -1;
@@ -383,14 +442,37 @@ void CinderboxSkeleton::DriveSkeleton( Skeleton3D* target, const ozz::vector<ozz
 
 	if ( m_retarget == false )
 	{
-		// Exact-match rigs: force every bone where our rig has it.
+		// Exact-match rigs: every driven bone where our rig has it. Its global pose is the model
+		// matrix; bones we do not drive follow their parent with their current local pose. Setting
+		// local poses parents first lets the skeleton rebuild its globals once, not once per bone
+		// (set_bone_global_pose recomputes the hierarchy on every call, which cost milliseconds per
+		// character when it ran twice a frame).
+		size_t bones = size_t( target->get_bone_count() );
+		m_globals.resize( bones );
+		m_known.assign( bones, 0 );
 		for ( int j = 0; j < joints; ++j )
 		{
 			int bone = m_boneMap[size_t( j )];
-			if ( bone >= 0 )
+			if ( bone >= 0 && size_t( bone ) < bones )
 			{
-				target->set_bone_global_pose( bone, ToTransform( models[size_t( j )] ) );
+				m_globals[size_t( bone )] = ToTransform( models[size_t( j )] );
+				m_known[size_t( bone )] = 1;
 			}
+		}
+		for ( int bone : m_boneOrder )
+		{
+			int parent = target->get_bone_parent( bone );
+			Transform3D parentGlobal = parent >= 0 ? m_globals[size_t( parent )] : Transform3D();
+			if ( m_known[size_t( bone )] == 0 )
+			{
+				m_globals[size_t( bone )] = parentGlobal * target->get_bone_pose( bone );
+				continue;
+			}
+			Transform3D local = parentGlobal.affine_inverse() * m_globals[size_t( bone )];
+			Vector3 scale = local.basis.get_scale();
+			target->set_bone_pose_position( bone, local.origin );
+			target->set_bone_pose_rotation( bone, local.basis.orthonormalized().get_rotation_quaternion() );
+			target->set_bone_pose_scale( bone, scale );
 		}
 		return;
 	}

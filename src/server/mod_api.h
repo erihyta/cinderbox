@@ -240,6 +240,9 @@ public:
 	void RespawnAt( uint32_t target, b3Vec3 position, float yaw );
 	// A frozen player ignores movement and jump (mods decide what else a freeze means for them).
 	void Freeze( uint32_t target, bool frozen );
+	// Points the player's aim chain (its character's arm, by default) where it looks, or lets it
+	// go. Part of the pose every client draws and every hit test uses.
+	void Aim( uint32_t target, bool aiming );
 
 	// Commands emitted so far this tick (tests).
 	const std::vector<SimCommand>& Commands() const

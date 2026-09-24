@@ -581,14 +581,14 @@ _data = {
 &"walk": SubResource("Animation_omccf")
 }
 
-[node name="Robot" type="CbCharacter" unique_id=565614694]
+[node name="Robot" type="CbCharacter" unique_id=553429201]
 character_name = "robot"
 skeleton_path = NodePath("Model/Skeleton3D")
 animation_player_path = NodePath("Model/AnimationPlayer")
 
-[node name="Model" type="Node3D" parent="." unique_id=147116271]
+[node name="Model" type="Node3D" parent="." unique_id=1148009872]
 
-[node name="Skeleton3D" type="Skeleton3D" parent="Model" unique_id=1002589447]
+[node name="Skeleton3D" type="Skeleton3D" parent="Model" unique_id=1855129193]
 bones/0/name = "Hips"
 bones/0/parent = -1
 bones/0/rest = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.02, 0)
@@ -744,202 +744,202 @@ bones/21/position = Vector3(0, -0.05, 0.13)
 bones/21/rotation = Quaternion(0, 0, 0, 1)
 bones/21/scale = Vector3(1, 1, 1)
 
-[node name="At_Hips" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=897764007]
+[node name="At_Hips" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=471990676]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.02, 0)
 bone_name = "Hips"
 bone_idx = 0
 
-[node name="Hips_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_Hips" unique_id=2043022336]
+[node name="Hips_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_Hips" unique_id=1255418297]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, 0)
 mesh = SubResource("BoxMesh_6pt8a")
 
-[node name="Hitbox_torso" type="CbHitbox" parent="Model/Skeleton3D/At_Hips" unique_id=337386345]
+[node name="Hitbox_torso" type="CbHitbox" parent="Model/Skeleton3D/At_Hips" unique_id=644534654]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, 0)
 shape = SubResource("BoxShape3D_a8qh1")
 
-[node name="At_Chest" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=1466757494]
+[node name="At_Chest" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=178421951]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.26, 0)
 bone_name = "Chest"
 bone_idx = 2
 
-[node name="Chest_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_Chest" unique_id=1045858213]
+[node name="Chest_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_Chest" unique_id=115428079]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12, 0)
 mesh = SubResource("BoxMesh_dx85e")
 
-[node name="Hitbox_torso" type="CbHitbox" parent="Model/Skeleton3D/At_Chest" unique_id=2145527047]
+[node name="Hitbox_torso" type="CbHitbox" parent="Model/Skeleton3D/At_Chest" unique_id=676528631]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
 shape = SubResource("CapsuleShape3D_1s68v")
 
-[node name="At_Head" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=887236050]
+[node name="At_Head" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=372681274]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.65, 0)
 bone_name = "Head"
 bone_idx = 5
 
-[node name="Head_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_Head" unique_id=1795556599]
+[node name="Head_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_Head" unique_id=1380913470]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.13, 0)
 mesh = SubResource("BoxMesh_36kso")
 
-[node name="Head_1" type="MeshInstance3D" parent="Model/Skeleton3D/At_Head" unique_id=660043013]
+[node name="Head_1" type="MeshInstance3D" parent="Model/Skeleton3D/At_Head" unique_id=1445908518]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15, 0.12)
 mesh = SubResource("BoxMesh_6mkpw")
 
-[node name="Hitbox_head" type="CbHitbox" parent="Model/Skeleton3D/At_Head" unique_id=167139733]
+[node name="Hitbox_head" type="CbHitbox" parent="Model/Skeleton3D/At_Head" unique_id=375231281]
 zone = "head"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.13, 0)
 shape = SubResource("SphereShape3D_i7e1j")
 
-[node name="At_LeftUpperArm" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=406032276]
+[node name="At_LeftUpperArm" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=1393360793]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.22, 1.52, 0)
 bone_name = "LeftUpperArm"
 bone_idx = 7
 
-[node name="LeftUpperArm_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_LeftUpperArm" unique_id=1077274959]
+[node name="LeftUpperArm_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_LeftUpperArm" unique_id=1508262003]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.15, 0)
 mesh = SubResource("BoxMesh_vof32")
 
-[node name="Hitbox_arm" type="CbHitbox" parent="Model/Skeleton3D/At_LeftUpperArm" unique_id=554707686]
+[node name="Hitbox_arm" type="CbHitbox" parent="Model/Skeleton3D/At_LeftUpperArm" unique_id=904085097]
 zone = "arm"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.15, 0)
 shape = SubResource("CapsuleShape3D_ptt2l")
 
-[node name="At_LeftLowerArm" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=1677283161]
+[node name="At_LeftLowerArm" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=1719551234]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.22, 1.22, 0)
 bone_name = "LeftLowerArm"
 bone_idx = 8
 
-[node name="LeftLowerArm_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_LeftLowerArm" unique_id=790218093]
+[node name="LeftLowerArm_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_LeftLowerArm" unique_id=1903609752]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.14, 0)
 mesh = SubResource("BoxMesh_mgkb4")
 
-[node name="Hitbox_arm" type="CbHitbox" parent="Model/Skeleton3D/At_LeftLowerArm" unique_id=1364009639]
+[node name="Hitbox_arm" type="CbHitbox" parent="Model/Skeleton3D/At_LeftLowerArm" unique_id=1560447479]
 zone = "arm"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.19, 0)
 shape = SubResource("CapsuleShape3D_2o8vt")
 
-[node name="At_LeftHand" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=1770046040]
+[node name="At_LeftHand" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=1162147556]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.22, 0.94000006, 0)
 bone_name = "LeftHand"
 bone_idx = 9
 
-[node name="LeftHand_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_LeftHand" unique_id=1300720411]
+[node name="LeftHand_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_LeftHand" unique_id=426682998]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.06, 0)
 mesh = SubResource("BoxMesh_peet7")
 
-[node name="At_RightUpperArm" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=545617634]
+[node name="At_RightUpperArm" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=210533066]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.22, 1.52, 0)
 bone_name = "RightUpperArm"
 bone_idx = 11
 
-[node name="RightUpperArm_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_RightUpperArm" unique_id=1582196892]
+[node name="RightUpperArm_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_RightUpperArm" unique_id=1592409295]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.15, 0)
 mesh = SubResource("BoxMesh_ehqt8")
 
-[node name="Hitbox_arm" type="CbHitbox" parent="Model/Skeleton3D/At_RightUpperArm" unique_id=976039255]
+[node name="Hitbox_arm" type="CbHitbox" parent="Model/Skeleton3D/At_RightUpperArm" unique_id=341151762]
 zone = "arm"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.15, 0)
 shape = SubResource("CapsuleShape3D_l42p2")
 
-[node name="At_RightLowerArm" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=1390795835]
+[node name="At_RightLowerArm" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=1108706244]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.22, 1.22, 0)
 bone_name = "RightLowerArm"
 bone_idx = 12
 
-[node name="RightLowerArm_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_RightLowerArm" unique_id=27857931]
+[node name="RightLowerArm_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_RightLowerArm" unique_id=1789576486]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.14, 0)
 mesh = SubResource("BoxMesh_mxhgi")
 
-[node name="Hitbox_arm" type="CbHitbox" parent="Model/Skeleton3D/At_RightLowerArm" unique_id=1073013419]
+[node name="Hitbox_arm" type="CbHitbox" parent="Model/Skeleton3D/At_RightLowerArm" unique_id=125650471]
 zone = "arm"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.19, 0)
 shape = SubResource("CapsuleShape3D_owyso")
 
-[node name="At_RightHand" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=421273398]
+[node name="At_RightHand" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=2023508031]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.22, 0.94000006, 0)
 bone_name = "RightHand"
 bone_idx = 13
 
-[node name="RightHand_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_RightHand" unique_id=1741167012]
+[node name="RightHand_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_RightHand" unique_id=1749558806]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.06, 0)
 mesh = SubResource("BoxMesh_wh5dt")
 
-[node name="At_LeftUpperLeg" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=473071342]
+[node name="At_LeftUpperLeg" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=80712533]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.11, 0.96999997, 0)
 bone_name = "LeftUpperLeg"
 bone_idx = 14
 
-[node name="LeftUpperLeg_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_LeftUpperLeg" unique_id=1210307286]
+[node name="LeftUpperLeg_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_LeftUpperLeg" unique_id=1030731881]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.23, 0)
 mesh = SubResource("BoxMesh_31v34")
 
-[node name="Hitbox_leg" type="CbHitbox" parent="Model/Skeleton3D/At_LeftUpperLeg" unique_id=632385663]
+[node name="Hitbox_leg" type="CbHitbox" parent="Model/Skeleton3D/At_LeftUpperLeg" unique_id=394905957]
 zone = "leg"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.23, 0)
 shape = SubResource("CapsuleShape3D_1k8s2")
 
-[node name="At_LeftLowerLeg" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=1674825524]
+[node name="At_LeftLowerLeg" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=630770956]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.11, 0.51, 0)
 bone_name = "LeftLowerLeg"
 bone_idx = 15
 
-[node name="LeftLowerLeg_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_LeftLowerLeg" unique_id=1282064409]
+[node name="LeftLowerLeg_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_LeftLowerLeg" unique_id=641484583]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.23, 0)
 mesh = SubResource("BoxMesh_co60c")
 
-[node name="Hitbox_leg" type="CbHitbox" parent="Model/Skeleton3D/At_LeftLowerLeg" unique_id=1442914755]
+[node name="Hitbox_leg" type="CbHitbox" parent="Model/Skeleton3D/At_LeftLowerLeg" unique_id=1558189744]
 zone = "leg"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.25, 0)
 shape = SubResource("CapsuleShape3D_nxn3i")
 
-[node name="At_LeftFoot" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=1346666361]
+[node name="At_LeftFoot" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=621461354]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.11, 0.049999982, 0)
 bone_name = "LeftFoot"
 bone_idx = 16
 
-[node name="LeftFoot_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_LeftFoot" unique_id=1578440144]
+[node name="LeftFoot_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_LeftFoot" unique_id=1421415300]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.03, 0.05)
 mesh = SubResource("BoxMesh_h0c7o")
 
-[node name="At_RightUpperLeg" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=1399824892]
+[node name="At_RightUpperLeg" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=289593416]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.11, 0.96999997, 0)
 bone_name = "RightUpperLeg"
 bone_idx = 18
 
-[node name="RightUpperLeg_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_RightUpperLeg" unique_id=749218468]
+[node name="RightUpperLeg_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_RightUpperLeg" unique_id=1301131766]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.23, 0)
 mesh = SubResource("BoxMesh_7pawa")
 
-[node name="Hitbox_leg" type="CbHitbox" parent="Model/Skeleton3D/At_RightUpperLeg" unique_id=1047947981]
+[node name="Hitbox_leg" type="CbHitbox" parent="Model/Skeleton3D/At_RightUpperLeg" unique_id=1034826567]
 zone = "leg"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.23, 0)
 shape = SubResource("CapsuleShape3D_dijiq")
 
-[node name="At_RightLowerLeg" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=597725427]
+[node name="At_RightLowerLeg" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=2087850674]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.11, 0.51, 0)
 bone_name = "RightLowerLeg"
 bone_idx = 19
 
-[node name="RightLowerLeg_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_RightLowerLeg" unique_id=320636723]
+[node name="RightLowerLeg_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_RightLowerLeg" unique_id=2034754146]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.23, 0)
 mesh = SubResource("BoxMesh_l7b0d")
 
-[node name="Hitbox_leg" type="CbHitbox" parent="Model/Skeleton3D/At_RightLowerLeg" unique_id=914997833]
+[node name="Hitbox_leg" type="CbHitbox" parent="Model/Skeleton3D/At_RightLowerLeg" unique_id=1340483737]
 zone = "leg"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.25, 0)
 shape = SubResource("CapsuleShape3D_tj7pf")
 
-[node name="At_RightFoot" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=13943229]
+[node name="At_RightFoot" type="BoneAttachment3D" parent="Model/Skeleton3D" unique_id=1371999605]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.11, 0.049999982, 0)
 bone_name = "RightFoot"
 bone_idx = 20
 
-[node name="RightFoot_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_RightFoot" unique_id=2080350317]
+[node name="RightFoot_0" type="MeshInstance3D" parent="Model/Skeleton3D/At_RightFoot" unique_id=127485641]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.03, 0.05)
 mesh = SubResource("BoxMesh_qwgxq")
 
-[node name="AnimationPlayer" type="AnimationPlayer" parent="Model" unique_id=1384691006]
+[node name="AnimationPlayer" type="AnimationPlayer" parent="Model" unique_id=779856990]
 libraries/ = SubResource("AnimationLibrary_ik7au")
 
-[node name="CinderboxSkeleton" type="CinderboxSkeleton" parent="." unique_id=966107459]
+[node name="CinderboxSkeleton" type="CinderboxSkeleton" parent="." unique_id=1505878394]
 draw_bone_boxes = false
 skeleton_path = NodePath("../Model/Skeleton3D")
 use_slot_color = false

@@ -606,6 +606,9 @@ void TestModsSession()
 				 server.BoardValue( targetId, deaths->slot ), server.BoardValue( targetId, schema.FindField( "combat.health" )->slot ) );
 	CHECK( server.BoardValue( shooterId, kills->slot ) >= 1 );
 	CHECK( server.BoardValue( targetId, deaths->slot ) >= 1 );
+	// The pistol out means aiming, in the pose itself: the shooter aims, the target does not.
+	CHECK( server.EntityAnimState( shooterId ) != nullptr && server.EntityAnimState( shooterId )->aiming == 1 );
+	CHECK( server.EntityAnimState( targetId ) != nullptr && server.EntityAnimState( targetId )->aiming == 0 );
 	CHECK( sawDeadOnClient );
 	CHECK( sawRagdollOnClient );
 	CHECK( targetEventsSeen > 0 );

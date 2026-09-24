@@ -1,6 +1,8 @@
 #include "pose.h"
 
 #include "anim_controller.h"
+#include "detmath.h"
+#include "joint_math.h"
 
 #include "ozz/animation/runtime/blending_job.h"
 #include "ozz/animation/runtime/local_to_model_job.h"
@@ -125,6 +127,9 @@ AnimState InterpolateAnimState( const AnimState& from, const AnimState& to, floa
 	{
 		s.locomotionPhase -= 1.0f;
 	}
+	// Aim: the short way round, so a turn across the back does not swing through the front.
+	s.aimYaw = detmath::WrapAngle( from.aimYaw + detmath::WrapAngle( to.aimYaw - from.aimYaw ) * t );
+	s.aimPitch = from.aimPitch + ( to.aimPitch - from.aimPitch ) * t;
 	float dIdle = to.idleTime - from.idleTime;
 	if ( dIdle < 0.0f )
 	{
@@ -207,6 +212,16 @@ void PoseEvaluator::Evaluate( const AnimState& state )
 	ltm.input = ozz::make_span( m_blended );
 	ltm.output = ozz::make_span( m_models );
 	ltm.Run();
+
+	if ( state.aiming != 0 && m_set.AimJoints().empty() == false )
+	{
+		// Where the player looks, in the body's frame (facing +Z). detmath's sine and cosine are
+		// the same on every platform, like the rest of the pose.
+		b3CosSin pitch = detmath::CosSin( state.aimPitch );
+		b3CosSin yaw = detmath::CosSin( state.aimYaw );
+		b3Vec3 direction = { yaw.sine * pitch.cosine, pitch.sine, yaw.cosine * pitch.cosine };
+		AimChain( m_set, m_models, m_set.AimJoints(), m_set.AimTip(), direction );
+	}
 }
 
 } // namespace cb::anim

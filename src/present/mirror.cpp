@@ -164,13 +164,6 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 		visual.dead = f.dead;
 		visual.hasBoard = f.hasBoard;
 		visual.board = f.board;
-		if ( frame.hasInputs && f.kind == VisualKind::Player )
-		{
-			const PlayerInput& in = frame.inputs[f.slot];
-			visual.hasAim = true;
-			visual.aimYaw = float( in.cameraYaw ) * ( 6.28318530718f / 65536.0f );
-			visual.aimPitch = float( in.cameraPitch ) * ( 6.28318530718f / 65536.0f );
-		}
 		if ( visual.isLocalPlayer )
 		{
 			m_localPlayer = ve;

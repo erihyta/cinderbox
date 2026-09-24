@@ -7,6 +7,7 @@
 
 #include "anim_set.h"
 #include "components.h"
+#include "joint_math.h"
 
 #include "ozz/base/containers/vector.h"
 #include "ozz/base/maths/simd_math.h"
@@ -16,7 +17,8 @@
 namespace cb::present
 {
 
-using Models = ozz::vector<ozz::math::Float4x4>;
+using Models = anim::Models;
+using anim::FindJoint;
 
 // How a skeleton hangs off the ragdoll's parts. Built once per AnimSet: each joint follows the
 // part of its nearest ancestor that one of the parts drives (sim/ragdoll.h names them), keeping
@@ -43,11 +45,5 @@ void RagdollModels( const RagdollRig& rig, const Transform* parts, const Transfo
 // out = a blended toward b by t in [0, 1] (translation lerp, rotation nlerp, per joint).
 void BlendModels( const Models& a, const Models& b, float t, Models& out );
 
-// Rotates `joint` and everything below it about the joint, so the line from it to `tip` points
-// along `direction` (model space, normalized). `weight` 0 leaves the pose alone, 1 aims fully.
-void AimChain( const anim::AnimSet& set, Models& models, int joint, int tip, b3Vec3 direction, float weight );
-
-// Index of a joint by its humanoid-profile name (Mixamo names match too), -1 if absent.
-int FindJoint( const anim::AnimSet& set, const char* profileName );
 
 } // namespace cb::present

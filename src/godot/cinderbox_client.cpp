@@ -588,20 +588,12 @@ void CinderboxClient::ApplyStates( uint64_t visual, const present::Visual& v, co
 		{
 			animator->set_tree_parameter( state.get_tree_parameter(), holds );
 		}
-		if ( holds == false || models == nullptr || v.hasAim == false || state.get_aim_bone().is_empty() )
-		{
-			continue;
-		}
-		int joint = present::FindJoint( *m_animSet, state.get_aim_bone().utf8().get_data() );
-		int tip = present::FindJoint( *m_animSet, state.get_aim_tip().utf8().get_data() );
-		// Where the camera looks, in the character's own frame (feet at the origin, facing +Z).
-		b3CosSin p = b3ComputeCosSin( v.aimPitch );
-		b3CosSin y = b3ComputeCosSin( v.aimYaw );
-		b3Vec3 world = { y.sine * p.cosine, p.sine, y.cosine * p.cosine };
-		b3Vec3 local = b3RotateVector( b3Conjugate( pose.rotation ), world );
-		present::AimChain( *m_animSet, *models, joint, tip, local, state.get_aim_weight() );
 	}
+	// Aiming is not a presentation effect any more: it is in the pose itself (AnimState::aiming,
+	// set by a mod), so every client and the server's hit tests agree on where the arm is.
 	(void)visual;
+	(void)pose;
+	(void)models;
 }
 
 // Attached scenes follow their joint. They live under the visual's node, so they vanish with it.

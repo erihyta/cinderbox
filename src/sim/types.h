@@ -99,8 +99,10 @@ enum class CommandType : uint8_t
 	// target (a player), mode = 1 freezes it (it stands, falls and can be pushed, but its movement
 	// and jump inputs are ignored), 0 releases it.
 	Freeze = 8,
+	// target (a player), mode = 1 turns its aim chain toward where it looks, 0 lets it go.
+	Aim = 9,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Freeze );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Aim );
 
 enum ImpulseMode : uint8_t
 {

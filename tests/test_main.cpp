@@ -1127,6 +1127,32 @@ void TestCommands()
 	CHECK( b3Distance( sim.EntityTransform( p0 )->position, stillAt ) > 0.5f );
 	f.inputs[0].moveForward = 0;
 
+	// Aim: the flag follows the command, and the look direction follows the input, relative to
+	// where the body faces.
+	{
+		SimCommand* c = command( CommandType::Aim, SlotTarget( 0 ) );
+		c->mode = 1;
+	}
+	f.inputs[0].cameraPitch = 4096; // 22.5 degrees up
+	step( 1 );
+	const AnimState* look = sim.EntityAnimState( p0 );
+	CHECK( look != nullptr && look->aiming == 1 );
+	CHECK( std::fabs( look->aimPitch - 0.25f * detmath::kPi / 2.0f ) < 1e-4f );
+	float facing = sim.PlayerCharacter( 0 )->facingYaw;
+	CHECK( std::fabs( detmath::WrapAngle( look->aimYaw + facing - detmath::YawToRadians( f.inputs[0].cameraYaw ) ) ) < 1e-4f );
+	// Being placed (a respawn, falling out of the world) keeps the aim a mod asked for.
+	{
+		SimCommand* c = command( CommandType::Respawn, SlotTarget( 0 ) );
+		c->mode = 1;
+		c->a = { 4.0f, 1.5f, -4.0f };
+	}
+	step( 1 );
+	CHECK( sim.EntityAnimState( p0 )->aiming == 1 );
+	command( CommandType::Aim, SlotTarget( 0 ) );
+	step( 1 );
+	CHECK( sim.EntityAnimState( p0 )->aiming == 0 );
+	f.inputs[0].cameraPitch = 0;
+
 	// Falling out of the world puts the player back and counts it, for a mod to see.
 	uint32_t falls = sim.PlayerCharacter( 1 )->fallCount;
 	{
@@ -1282,12 +1308,54 @@ void TestPoseTools()
 	for ( b3Vec3 dir : { b3Vec3{ 0.0f, 0.0f, 1.0f }, b3Vec3{ 1.0f, 0.0f, 0.0f }, b3Normalize( b3Vec3{ -0.3f, 0.5f, 0.8f } ) } )
 	{
 		present::Models models = eval.Models();
-		present::AimChain( *set, models, shoulder, hand, dir, 1.0f );
+		anim::AimChain( *set, models, { { shoulder, 1.0f } }, hand, dir );
 		b3Vec3 arm = b3Normalize( b3Sub( position( models[size_t( hand )] ), position( models[size_t( shoulder )] ) ) );
 		std::printf( "    aim (%.2f %.2f %.2f) -> arm (%.2f %.2f %.2f)\n", dir.x, dir.y, dir.z, arm.x, arm.y, arm.z );
 		CHECK( b3Dot( arm, dir ) > 0.999f );
 		// The shoulder itself stays put.
 		CHECK( b3Distance( position( models[size_t( shoulder )] ), position( eval.Models()[size_t( shoulder )] ) ) < 1e-5f );
+	}
+
+	// Aiming is part of the pose now: an aiming state points the arm where the player looks,
+	// relative to the body, with no presentation step involved (the server's hit tests use it).
+	AnimState aiming;
+	aiming.aiming = 1;
+	aiming.aimYaw = 0.5f;
+	aiming.aimPitch = 0.3f;
+	anim::PoseEvaluator aimed( *set );
+	aimed.Evaluate( aiming );
+	{
+		b3CosSin p = detmath::CosSin( 0.3f );
+		b3CosSin y = detmath::CosSin( 0.5f );
+		b3Vec3 look = { y.sine * p.cosine, p.sine, y.cosine * p.cosine };
+		b3Vec3 arm = b3Normalize( b3Sub( position( aimed.Models()[size_t( hand )] ), position( aimed.Models()[size_t( shoulder )] ) ) );
+		CHECK( b3Dot( arm, look ) > 0.999f );
+		CHECK( set->AimJoints().size() == 1 && set->AimTip() == hand );
+	}
+	aiming.aiming = 0;
+	aimed.Evaluate( aiming );
+	CHECK( b3Distance( position( aimed.Models()[size_t( hand )] ), position( eval.Models()[size_t( hand )] ) ) < 1e-5f );
+
+	// A chain: the chest leans part of the way, the arm still ends up exactly on the line.
+	{
+		std::string warnings;
+		auto chained = anim::AnimSet::CreateProcedural();
+		chained->SetAim( "UpperChest:0.4 RightUpperArm:1", "RightHand", warnings );
+		CHECK( warnings.empty() );
+		CHECK( chained->AimJoints().size() == 2 );
+		anim::PoseEvaluator chainPose( *chained );
+		aiming.aiming = 1;
+		chainPose.Evaluate( aiming );
+		b3CosSin p = detmath::CosSin( 0.3f );
+		b3CosSin y = detmath::CosSin( 0.5f );
+		b3Vec3 look = { y.sine * p.cosine, p.sine, y.cosine * p.cosine };
+		int head = present::FindJoint( *chained, "Head" );
+		b3Vec3 arm = b3Normalize( b3Sub( position( chainPose.Models()[size_t( hand )] ), position( chainPose.Models()[size_t( shoulder )] ) ) );
+		CHECK( b3Dot( arm, look ) > 0.999f );
+		CHECK( b3Distance( position( chainPose.Models()[size_t( head )] ), position( eval.Models()[size_t( head )] ) ) > 0.01f );
+		chained->SetAim( "Nope:1", "RightHand", warnings );
+		CHECK( warnings.find( "Nope" ) != std::string::npos );
+		CHECK( chained->AimJoints().empty() );
 	}
 
 	// A ragdoll at rest, facing +Z at the origin, is the rig at rest.
@@ -1498,6 +1566,17 @@ void TestHitboxes()
 	const b3Vec3 across = { 10.0f, 0.0f, 0.0f };
 	CHECK( zoneAt( facing, { -3.0f, 1.20f, 3.20f }, across ).empty() );
 	CHECK( zoneAt( turned, { -3.0f, 1.20f, 3.20f }, across ) == "arm" );
+
+	// Aiming straight ahead raises the right arm to shoulder height in front of the body: a shot
+	// across there hits it only while aiming, because hit tests pose the same aim.
+	AnimState aiming;
+	aiming.aiming = 1;
+	anim::PoseEvaluator aimed( *set );
+	aimed.Evaluate( aiming );
+	anim::HitboxHit hit;
+	const b3Vec3 armLine = { -3.0f, 1.39f, 3.35f }; // 0.35 m in front of the body, at the shoulder
+	CHECK( anim::RayHitboxes( hitboxes, pose.Models(), feet, facing, armLine, across, 1.0f, hit ) == false );
+	CHECK( anim::RayHitboxes( hitboxes, aimed.Models(), feet, facing, armLine, across, 1.0f, hit ) && hit.box->zone == "arm" );
 	CHECK( pointsMatch );
 }
 
@@ -1545,6 +1624,23 @@ void TestRobotCharacter()
 	CHECK( zoneAt( 1.80f ) == "head" ); // above the built-in rig's head
 	CHECK( zoneAt( 1.25f ) == "torso" );
 	CHECK( zoneAt( 2.05f ).empty() );
+
+	// Aiming straight ahead: the robot's own aim chain (the default, its right arm) points the hand
+	// forward from the shoulder, an arm's length out, at shoulder height.
+	AnimState aiming;
+	aiming.aiming = 1;
+	pose.Evaluate( aiming );
+	auto at = [&]( const char* joint ) {
+		float v[4];
+		ozz::math::StorePtrU( pose.Models()[size_t( anim::FindJoint( *set, joint ) )].cols[3], v );
+		return b3Vec3{ v[0], v[1], v[2] };
+	};
+	b3Vec3 shoulder = at( "RightUpperArm" );
+	b3Vec3 hand = at( "RightHand" );
+	std::printf( "    aiming: shoulder (%.2f %.2f %.2f) hand (%.2f %.2f %.2f)\n", shoulder.x, shoulder.y, shoulder.z, hand.x, hand.y,
+				 hand.z );
+	CHECK( hand.z - shoulder.z > 0.5f );
+	CHECK( std::fabs( hand.y - shoulder.y ) < 0.05f );
 }
 
 void TestAnimPipeline()

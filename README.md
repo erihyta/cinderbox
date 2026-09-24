@@ -26,6 +26,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M17: CI on GitHub Actions: six compilers on Windows, Linux and macOS ARM64 must agree bit for bit | done |
 | M18: Box3D snapshots no longer carry stale memory; byte-identical across all builds | done |
 | M19: characters as workshop items (baked in the editor: ozz skeleton, clips, hitboxes), `cb_server --character`, hit zones for mods | done |
+| M20: one pose for players: aiming is part of the ozz pose (so hitboxes follow the raised arm), Godot animation on players is cosmetic only | done |
 
 ## Building
 
@@ -113,6 +114,7 @@ and mods need no determinism of their own.
 | `Kill` | a player dies, optionally leaving a ragdoll (lifetime and cap chosen by the mod) |
 | `Respawn` / `RespawnAt` | brings a dead player back |
 | `Freeze` | stops a player moving and acting (it still looks around), or releases it |
+| `Aim` | turns the player's aim chain (its character's arm, by default) toward where it looks, or lets it go |
 
 ```cpp
 // server_mods/jumper/jumper.cpp: a jump boost on Q, the whole mod.
@@ -346,7 +348,6 @@ match.
 |---|---|
 | `conditions`, `kind`, `who` | when and for whom |
 | `attach_scene`, `attach_bone`, `attach_offset`, `attach_rotation` | a scene kept at a joint (a held item) |
-| `aim_bone`, `aim_tip`, `aim_weight` | turn a chain so it points where the player looks (an arm holding a gun) |
 | `tree_parameter` | an AnimationTree parameter set to whether the conditions hold |
 
 The HUD reads the board too, through script-free nodes any HUD scene can use:
@@ -370,7 +371,7 @@ convention still applies: `res://vfx/<event>.tscn`, one of `prop_spawn`, `prop_d
 or `land`.
 
 `godot/vfx/bindings.tres` is the game's own set; the pistol's look (predicted shots, tracers, hits,
-hurt and death feedback, reload, the held and aimed pistol) is `vfx/bindings_pistol.tres` in its
+hurt and death feedback, reload, the held pistol) is `vfx/bindings_pistol.tres` in its
 workshop item;
 `mods_src/example_neon/vfx/bindings_neon.tres` shows a mod adding three more, including its own sound.
 All are edited in the Godot inspector.
@@ -394,11 +395,21 @@ To add your own clips:
 3. Preview them with `cb_client --anim-viewer`.
 4. For the Godot client, pass `--animations=<build dir or assets/anim>`. Clips are loaded from disk, not from the Godot pack.
 
-### Animating with Godot instead of ozz
+### Godot animation on players: cosmetic only
 
-A character can be animated entirely with Godot's own animation system, driven by the same
-simulation state. Put a `CinderboxAnimator` in a player prefab next to an `AnimationTree` and point
-it at the tree:
+**One rule:** the ozz pose, computed from the simulation's state, is the only thing that places a
+player's body. It is the pose the server poses hitboxes with, so a body drawn any other way would
+be shot where it is not. Godot animation may add to a player what the pose leaves alone: faces,
+fingers, props, materials, effects.
+
+This is enforced, not just advised. A `CinderboxSkeleton` driving a `Skeleton3D` gives it a
+`CbPoseModifier` as its first skeleton modifier, which applies the ozz pose again after any
+`AnimationPlayer` or `AnimationTree` has run. Modifiers after it (look-at, spring bones) run on top of
+the pose; the character bake warns about them and about an `AnimationTree`, naming the bones that
+have hitboxes.
+
+To drive cosmetic animation from the game, put a `CinderboxAnimator` in a player prefab next to an
+`AnimationTree` and point it at the tree:
 
 | It sets | From |
 |---|---|
@@ -409,13 +420,16 @@ it at the tree:
 The phase is shared by walk and run, so feet line up between the two clips and between clients.
 Transitions use `travel()`, so the transitions authored in the tree are respected.
 
-`mods_src/example_animtree` is a mod that replaces the player with one built this way: an
-`AnimationPlayer` with six clips, a state machine over a 1D blend space, and nothing else. It is a
-mod, so it needs no code.
+`mods_src/example_animtree` is a mod that shows the pattern: the body is the ozz pose (bone boxes
+from a `CinderboxSkeleton`), and a state machine over a 1D blend space animates a jetpack whose
+flames follow the same states (idle flicker, walk and run by speed, a burst on jump). It is a mod, so
+it needs no code.
 
 ```sh
 # rebuild the example prefab (it is an ordinary scene; edit it in the editor instead if you prefer)
-godot --headless --path godot --script res://addons/cinderbox_maps/make_animtree_example.gd -- --out=res://prefabs/player.tscn
+godot --headless --path godot --script res://addons/cinderbox_maps/make_animtree_example.gd -- --out=<abs path>/mods_src/example_animtree/prefabs/player.tscn
+# check that the ozz pose wins over Godot animation on a driven skeleton
+godot --headless --path godot --script res://addons/cinderbox_maps/check_pose_wins.gd
 # check that a prefab's tree follows the simulation, without joining a server
 godot --headless --path godot --script res://addons/cinderbox_maps/check_animtree.gd -- mods/example_animtree.zip
 ```
@@ -511,7 +525,10 @@ torso, arm, leg).
    - a `CinderboxSkeleton` whose `skeleton_path` points at the `Skeleton3D`, with `retarget` off
      (the baked skeleton is that skeleton) and `draw_bone_boxes` off;
    - `BoneAttachment3D` nodes with `CbHitbox` children: sphere, capsule or box shapes, each with a
-     `zone` ("head", "torso", "arm", "leg", or your own).
+     `zone` ("head", "torso", "arm", "leg", or your own);
+   - the aim chain on the `CbCharacter`: `aim_chain` (bones with weights, turned in order, e.g.
+     `UpperChest:0.3 RightUpperArm:1`) and `aim_tip` (the bone that ends up on the line of sight).
+     The default, `RightUpperArm:1` to `RightHand`, points the right arm.
 4. Select the `CbCharacter` and press **Bake character** in the inspector. It writes the `.ozz` files,
    `anim.cfg` and `hitboxes.cfg` next to the scene (clips are sampled at `sample_rate`, 30 Hz).
 5. List `character.tscn` in the preset's `export_files` and the baked files in its
@@ -535,6 +552,13 @@ Gameplay mods cast rays with `ctx.CastRay`. Players are hit by their character's
 from the simulation's animation state at that tick, and `hit.zone` names the zone. Only the server
 does this (mods run there), so hit tests cost clients nothing and never enter the rolled-back
 simulation. The pistol multiplies its damage by `pistol.zone.<zone>`.
+
+### Aiming
+
+Aiming is part of the pose. A mod sends `ctx.Aim( player, true )` (the pistol does while it is out),
+and the pose turns the character's aim chain toward where the player looks, relative to its body.
+Every client draws that and every server hit test uses it, so a raised arm can be hit where it is
+seen. Respawning keeps the aim; only the mod lets it go.
 
 ## Testing tools
 
@@ -637,7 +661,7 @@ src/present/      engine-independent presentation, shared by Godot and raylib
   frame.*           PresentationFrame: a copy of what the simulation shows at one tick
   mirror.*          presentation flecs world: interpolation, error smoothing, visual and mod events
   fields.*          board fields and conditions by name
-  pose_tools.*      ragdoll poses, pose blending, aiming a limb
+  pose_tools.*      ragdoll poses, pose blending
   scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
 src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals, state bindings),
                   CinderboxSkeleton, map and entity authoring nodes, effect and state bindings

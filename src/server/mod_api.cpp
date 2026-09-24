@@ -426,6 +426,15 @@ void Context::Freeze( uint32_t target, bool frozen )
 	Add( c );
 }
 
+void Context::Aim( uint32_t target, bool aiming )
+{
+	SimCommand c;
+	c.type = CommandType::Aim;
+	c.mode = aiming ? 1 : 0;
+	c.target = target;
+	Add( c );
+}
+
 void Context::RespawnAt( uint32_t target, b3Vec3 position, float yaw )
 {
 	SimCommand c;
