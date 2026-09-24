@@ -29,6 +29,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M20: one pose for players: aiming is part of the ozz pose (so hitboxes follow the raised arm), Godot animation on players is cosmetic only | done |
 | M21: facing modes for mods: freelook (default) or camera-facing, with legs that walk where the body goes | done |
 | M22: animation layers and stances chosen by mods (the pistol on the upper body, a new melee bat on the whole body) | done |
+| M23: companion tracks: VFX, sounds, lights and props keyed in a character's Godot animations play in step with the ozz pose | done |
 
 ## Building
 
@@ -595,6 +596,32 @@ nothing (both are reported when the character is loaded). A single-clip stance p
 it was set, which is how a swing is made. Stances are part of the simulation's animation state, so
 everyone draws them and the server's hit tests use them. The built-in rig and the robot ship the
 pistol and bat stances.
+
+### Companion tracks
+
+A character's animations are ordinary Godot animations: bone tracks next to any other track. The
+bake splits them:
+
+| Tracks | Become | Played by |
+|---|---|---|
+| bone position / rotation / scale | ozz clips | the pose (drawn by clients, hit-tested by the server) |
+| everything else: value (`emitting`, `visible`, `light_energy`, material colours), method, audio, animation | `companion.tres`, same clip names | each client, in step with the pose |
+
+So a flame on the swing is two keys on the swing animation (`Flame:emitting` on at 0.1 s, off at
+0.34 s), and a whoosh is an audio key, all in Godot's animation editor. At runtime a
+`CbCompanionPlayer` plays, per channel (the base locomotion, each stance layer), the clip the pose is
+playing at the time it is at: values land exactly, method and audio keys fire once (a rollback that
+replays a moment does not fire it again, a long jump such as a join fires nothing), and a channel
+whose clip has no companion tracks returns to the `RESET` animation's values. No scripts: tracks call
+built-in methods (`restart`, `play`) or set properties. The robot's bat swing has a fire trail and a
+whoosh made this way.
+
+```sh
+godot --headless --path godot --script res://addons/cinderbox_maps/check_companion.gd
+```
+
+Put the companion's scene nodes (particles, lights, an `AudioStreamPlayer3D`) in the character
+scene, and list `companion.tres` and the sounds in the item's export preset.
 
 ## Testing tools
 

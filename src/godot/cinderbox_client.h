@@ -24,6 +24,7 @@
 #include "fields.h"
 #include "mirror.h"
 
+#include <godot_cpp/classes/animation_library.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/packed_scene.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -202,6 +203,8 @@ private:
 	std::unique_ptr<present::Mirror> m_mirror;
 	godot::String m_character;		 // the character in use ("" = built-in)
 	godot::String m_characterFolder; // res://characters/<name>/
+	godot::Ref<godot::AnimationLibrary> m_companionLibrary; // the character's companion.tres, if any
+	std::unordered_map<uint64_t, godot::ObjectID> m_companions; // visual id -> CbCompanionPlayer
 	ClientThread m_thread;
 	PublishedFrame m_frame;
 	bool m_haveFrame = false;

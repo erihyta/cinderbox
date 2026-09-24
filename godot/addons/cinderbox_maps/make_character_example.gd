@@ -167,7 +167,30 @@ func _initialize() -> void:
 	library.add_animation("bat_idle", _clip(2.0, true, _bat_idle))
 	library.add_animation("bat_walk", _clip(1.0, true, _bat_stride.bind(0.45)))
 	library.add_animation("bat_run", _clip(0.7, true, _bat_stride.bind(0.8)))
-	library.add_animation("bat_swing", _clip(0.45, false, _bat_swing))
+	# The swing's companion tracks: a fire trail from the hand while the bat comes through, and a
+	# whoosh. Ordinary tracks next to the bone ones; the bake keeps them as Godot animation and the
+	# game plays them in step with the swing.
+	_add_swing_effects(attachments)
+	var swing := _clip(0.45, false, _bat_swing)
+	var flame_path := NodePath("Skeleton3D/At_RightHand/Flame:emitting")
+	var flame := swing.add_track(Animation.TYPE_VALUE)
+	swing.track_set_path(flame, flame_path)
+	swing.value_track_set_update_mode(flame, Animation.UPDATE_DISCRETE)
+	swing.track_insert_key(flame, 0.0, false)
+	swing.track_insert_key(flame, 0.1, true)
+	swing.track_insert_key(flame, 0.34, false)
+	var whoosh := swing.add_track(Animation.TYPE_AUDIO)
+	swing.track_set_path(whoosh, NodePath("Whoosh"))
+	swing.audio_track_insert_key(whoosh, 0.08, _whoosh_stream)
+	library.add_animation("bat_swing", swing)
+	# What a channel returns to when the clip playing has nothing to say: no flame.
+	var reset := Animation.new()
+	reset.length = 0.001
+	var reset_flame := reset.add_track(Animation.TYPE_VALUE)
+	reset.track_set_path(reset_flame, flame_path)
+	reset.value_track_set_update_mode(reset_flame, Animation.UPDATE_DISCRETE)
+	reset.track_insert_key(reset_flame, 0.0, false)
+	library.add_animation("RESET", reset)
 	_root.stance_clips = {
 		"pistol": "pistol_hold",
 		"melee_idle": "bat_idle",
@@ -220,6 +243,55 @@ func _initialize() -> void:
 func _own(parent: Node, child: Node) -> void:
 	parent.add_child(child)
 	child.owner = _root
+
+
+var _whoosh_stream: AudioStream
+
+
+
+func _add_swing_effects(attachments: Dictionary) -> void:
+	var particles := GPUParticles3D.new()
+	particles.name = "Flame"
+	particles.emitting = false
+	particles.amount = 48
+	particles.lifetime = 0.35
+	particles.local_coords = false # a trail in the world, behind the moving hand
+	particles.position = Vector3(0, -0.12, 0)
+	var process := ParticleProcessMaterial.new()
+	process.direction = Vector3(0, 1, 0)
+	process.spread = 25.0
+	process.initial_velocity_min = 0.4
+	process.initial_velocity_max = 1.0
+	process.gravity = Vector3(0, 1.5, 0)
+	process.scale_min = 0.6
+	process.scale_max = 1.2
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1.0, 0.8, 0.3, 1.0))
+	fade.set_color(1, Color(1.0, 0.2, 0.05, 0.0))
+	var ramp := GradientTexture1D.new()
+	ramp.gradient = fade
+	process.color_ramp = ramp
+	particles.process_material = process
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.12, 0.12)
+	var glow := StandardMaterial3D.new()
+	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glow.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	glow.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glow.vertex_color_use_as_albedo = true
+	glow.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	quad.material = glow
+	particles.draw_pass_1 = quad
+	_own(_attachment(attachments, "RightHand"), particles)
+
+	# The sound lives in the item (characters/robot/whoosh.wav, written by tools/make_sfx.py); the
+	# scene refers to it by path.
+	_whoosh_stream = AudioStreamWAV.new()
+	_whoosh_stream.take_over_path("res://characters/robot/whoosh.wav")
+	var audio := AudioStreamPlayer3D.new()
+	audio.name = "Whoosh"
+	audio.max_distance = 30.0
+	_own(_root.get_node("Model"), audio)
 
 
 func _attachment(cache: Dictionary, bone: String) -> BoneAttachment3D:

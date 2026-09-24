@@ -1,6 +1,8 @@
 #include "cinderbox_client.h"
 
 #include "cinderbox_animator.h"
+#include "cinderbox_character.h"
+#include "cinderbox_companion.h"
 #include "cinderbox_skeleton.h"
 #include "detmath.h"
 #include "pose_tools.h"
@@ -502,6 +504,22 @@ void CinderboxClient::UpdateNodes()
 				{
 					animator->ApplyState( anim->current );
 				}
+				auto companionIt = m_companions.find( id );
+				auto* companion = companionIt != m_companions.end()
+									  ? Object::cast_to<CbCompanionPlayer>( ObjectDB::get_instance( companionIt->second ) )
+									  : nullptr;
+				if ( companion != nullptr )
+				{
+					const auto& library = m_mirror->World().get<present::AnimLibrary>();
+					float alpha = m_mirror->World().get<present::FrameTiming>().tickAlpha;
+					AnimState state = anim::InterpolateAnimState( anim->previous, anim->current, alpha );
+					companion->begin_frame();
+					for ( const anim::ActiveClip& clip : anim::ActiveClips( state, *library.set, library.stances.get() ) )
+					{
+						companion->play_at( clip.channel, String::utf8( clip.name.c_str() ), clip.time, clip.loops );
+					}
+					companion->end_frame();
+				}
 			}
 			PlaceAttachments( id, v, node );
 			return;
@@ -682,6 +700,24 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 	add_child( node );
 	m_nodes[visual] = node->get_instance_id();
 
+	m_companions.erase( visual );
+	if ( v.kind == present::VisualKind::Player && m_companionLibrary.is_valid() )
+	{
+		// The character's own AnimationPlayer names the root its tracks' paths start from.
+		if ( CbCharacter* character = FindInPrefab<CbCharacter>( node ) )
+		{
+			auto* source = Object::cast_to<AnimationPlayer>( character->get_node_or_null( character->get_animation_player_path() ) );
+			Node* root = source != nullptr ? source->get_node_or_null( source->get_root_node() ) : nullptr;
+			if ( root != nullptr )
+			{
+				auto* companion = memnew( CbCompanionPlayer );
+				companion->set_name( "Companion" );
+				source->get_parent()->add_child( companion );
+				companion->setup( m_companionLibrary, root );
+				m_companions[visual] = companion->get_instance_id();
+			}
+		}
+	}
 	if ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll )
 	{
 		if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
@@ -779,6 +815,11 @@ String CinderboxClient::use_character( const String& name )
 							 String::utf8( set->Description().c_str() ), ")" );
 	m_character = name;
 	m_characterFolder = folder;
+	m_companionLibrary.unref();
+	if ( folder.is_empty() == false && ResourceLoader::get_singleton()->exists( folder + "companion.tres" ) )
+	{
+		m_companionLibrary = ResourceLoader::get_singleton()->load( folder + "companion.tres", "AnimationLibrary" );
+	}
 	m_animSet = set;
 	std::string stanceWarnings;
 	auto stances = anim::BuildStanceTable( *set, m_frame.schema.layers, m_frame.schema.stances, stanceWarnings );

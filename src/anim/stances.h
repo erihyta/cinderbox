@@ -29,6 +29,7 @@ struct StanceTable
 {
 	struct Stance
 	{
+		std::string name; // the schema's
 		// Per clip slot: the stance's own clip, or null to use the default one.
 		std::array<const ozz::animation::Animation*, ClipCount> clips{};
 		// A single looping clip for the whole stance (played by the layer's time), or null.

@@ -24,7 +24,9 @@
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/editor_file_system.hpp>
 #include <godot_cpp/classes/editor_interface.hpp>
+#include <godot_cpp/classes/animation_library.hpp>
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/resource_saver.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/skeleton3d.hpp>
 #include <godot_cpp/classes/skeleton_modifier3d.hpp>
@@ -488,6 +490,31 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		return String();
 	};
 
+	// Companion tracks: everything but the bones, kept as Godot animations with the baked clips' names
+	// (see cinderbox_companion.h). A track is a bone track when it moves a bone of the skeleton.
+	Ref<AnimationLibrary> companion;
+	companion.instantiate();
+	auto addCompanion = [&]( const String& animationName, const String& clipName ) {
+		Ref<Animation> source = player->get_animation( animationName );
+		Ref<Animation> rest = source->duplicate();
+		for ( int t = rest->get_track_count() - 1; t >= 0; --t )
+		{
+			Animation::TrackType type = rest->track_get_type( t );
+			bool transform = type == Animation::TYPE_POSITION_3D || type == Animation::TYPE_ROTATION_3D || type == Animation::TYPE_SCALE_3D;
+			String path = String( rest->track_get_path( t ) );
+			int colon = path.find( ":" );
+			Node* target = animationRoot != nullptr && colon >= 0 ? animationRoot->get_node_or_null( NodePath( path.substr( 0, colon ) ) ) : nullptr;
+			if ( transform && target == skeleton )
+			{
+				rest->remove_track( t );
+			}
+		}
+		if ( rest->get_track_count() > 0 )
+		{
+			companion->add_animation( clipName, rest );
+		}
+	};
+
 	int clips = 0;
 	for ( int c = 0; c < anim::ClipCount; ++c )
 	{
@@ -505,6 +532,7 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 			return fail( problem );
 		}
 		cfg += std::string( clipName ) + " = " + Std( file ) + "\n";
+		addCompanion( animationName, clipName );
 		++clips;
 	}
 
@@ -532,6 +560,7 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 			return fail( problem );
 		}
 		cfg += "stance." + Std( name ) + " = " + Std( file ) + "\n";
+		addCompanion( animationName, "stance_" + name );
 		++stanceClips;
 	}
 
@@ -551,6 +580,15 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		cfg += "mask." + Std( layer ) + " = " + Std( roots ) + "\n";
 	}
 	result["stance_clips"] = stanceClips;
+	if ( player->has_animation( "RESET" ) )
+	{
+		addCompanion( "RESET", "RESET" ); // what a channel returns to when its clip has nothing to say
+	}
+	if ( ResourceSaver::get_singleton()->save( companion, folder + "companion.tres" ) != OK )
+	{
+		return fail( "cannot write " + folder + "companion.tres" );
+	}
+	result["companion_clips"] = int64_t( companion->get_animation_list().size() );
 
 	if ( WriteText( folder + "anim.cfg", cfg, error ) == false )
 	{

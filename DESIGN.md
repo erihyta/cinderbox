@@ -665,6 +665,31 @@ bat the whole body, and neither mod knows what a character looks like.
 - **Not done**: the stance clips are placeholders (rigid robot, procedural box rig); no per-layer
   additive blending (layers replace, weighted); a freelook key while camera-facing.
 
+## Companion tracks (M23)
+Godot animations already carry VFX and sound: value tracks toggle `emitting`, audio tracks play
+streams, method tracks call built-in methods. The bake used to keep only the bone tracks. Now it
+splits each animation: bones to ozz (the shared pose), the rest to `companion.tres`, an
+AnimationLibrary with the same clip names. The body stays the ozz pose's (hitboxes exact); the rest
+is presentation, timed by the same simulation clocks.
+
+- **Which clip, when**: `anim::ActiveClips` (pure, tested) gives per channel the clip and time the
+  pose is playing: the dominant base clip, each layer's own stance clip.
+- **Playing**: `CbCompanionPlayer` runs one hidden `AnimationPlayer` per channel in manual mode.
+  Forward steps under 0.25 s `advance()` (keys fire); back steps, long jumps and clip changes
+  `seek( t, true, true )` (values only). A high-water mark per clip makes a rollback's replay fire
+  nothing twice. Deterministic mode is off, because channels share a library and would overwrite
+  each other; when a channel resets to `RESET`, the others re-apply their values.
+- **Godot facts found on the way**: animation players fire method keys only once they have been
+  through a frame; `seek( t, true )` runs method and audio keys, `seek( t, true, true )` does not.
+- **Verified**: `check_companion.gd` (value timing, one fire through a rollback, none on a long
+  jump, loops every cycle, resets without clobbering), `stances` (ActiveClips), a rendered session
+  with the robot's fire trail mid-swing, no desyncs.
+- **Known**: an item's resources refer to its other files by an item-local uid:// that the game
+  cannot resolve (the item's uid cache is stripped from its pack so it cannot replace the game's), so
+  Godot warns once and uses the path. Harmless; cleaning it needs a pack-time rewrite.
+- **Not done**: companion tracks for the partial weights of blends (only the dominant clip per
+  channel plays); presentation state machines driven the same way.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -760,3 +785,4 @@ bat the whole body, and neither mod knows what a character looks like.
 20. **M20** (done): aiming in the ozz pose (`Aim` command, aim chain per character, hit tests follow it), `CbPoseModifier` so Godot animation on players is cosmetic only, the AnimationTree example turned cosmetic (a jetpack), bake warnings for animation that could move hitbox bones, and the modifier-per-frame bug fixed.
 21. **M21** (done): facing modes chosen by mods (`Facing` command: freelook by default, camera-facing for the pistol), legs that turn toward the direction of travel with the spine turned back and a reversed walk when backing up.
 22. **M22** (done): animation layers (bone masks from the character) and stances (clip sets with fallback) declared by mods and set with a `Stance` command, blended per joint with fades, in the pose the server hit-tests; the pistol's upper-body stance, a melee mod with a full-body stance and swing, `combat.damage` between mods, bake support (`stance_clips`, `masks`), the robot's stance clips, and tests.
+23. **M23** (done): companion tracks: the bake keeps every non-bone track of a character's animations in `companion.tres`, and `CbCompanionPlayer` plays them per channel in step with the ozz pose (values exact, keys once through rollbacks, RESET between clips); the robot's bat swing gets a fire trail and a whoosh as ordinary tracks.

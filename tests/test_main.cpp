@@ -1796,6 +1796,23 @@ void TestStances()
 	withMissing.Evaluate( missing );
 	CHECK( b3Distance( at( withMissing, *set, "RightHand" ), at( base, *set, "RightHand" ) ) < 1e-4f );
 
+	// What plays alongside the pose, for companion tracks: the dominant base clip, and each layer's
+	// own clip (a single loop by its layer clock, or its version of the dominant clip).
+	{
+		AnimState s;
+		s.stances[0] = 1; // pistol on upper: a single loop
+		s.layerTime[0] = 0.5f;
+		s.stances[1] = 2; // melee on full: its own idle
+		auto clips = anim::ActiveClips( s, *set, table.get() );
+		CHECK( clips.size() == 3 );
+		CHECK( clips[0].channel == 0 && clips[0].name == "idle" && clips[0].loops );
+		CHECK( clips[1].channel == 1 && clips[1].name == "stance_pistol" && std::fabs( clips[1].time - 0.5f ) < 1e-5f );
+		CHECK( clips[2].channel == 2 && clips[2].name == "stance_melee_idle" );
+		s.stances[1] = 3; // "sword": no clips on this character, nothing of its own
+		CHECK( anim::ActiveClips( s, *set, table.get() ).size() == 2 );
+		CHECK( anim::ActiveClips( s, *set, nullptr ).size() == 1 );
+	}
+
 	// Without a table (a renderer that knows no schema) stances are ignored.
 	anim::PoseEvaluator plain( *set );
 	plain.Evaluate( pistol );

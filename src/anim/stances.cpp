@@ -90,6 +90,7 @@ std::shared_ptr<const StanceTable> BuildStanceTable( const AnimSet& set, const s
 	for ( const std::string& name : stances )
 	{
 		StanceTable::Stance stance;
+		stance.name = name;
 		bool any = false;
 		for ( int c = 0; c < ClipCount; ++c )
 		{
