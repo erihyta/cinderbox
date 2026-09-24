@@ -616,6 +616,26 @@ So the rule is: **the ozz pose places a player's body; Godot animation only adds
   and a rendered session.
 - **Not done**: a chain per weapon (one chain per character for now); IK for the second hand.
 
+## Facing modes (M21)
+A mod chooses how a player's body turns: freelook (the default: toward the direction of travel) or
+camera-facing (toward the camera's yaw, snapped every tick, like third-person shooters). It is a
+`Facing` command setting `Character::faceCamera`, read by the mover, so it is simulation state:
+hashed, predicted and identical everywhere. The pistol uses it while it is out.
+
+- **Legs follow movement.** `AnimState::legYaw` turns the hips toward the direction of travel,
+  relative to the facing, clamped to 90 degrees and turned at 10 rad/s; the pose rotates the hips
+  by it and the spine back, so only the legs turn. Past ~100 degrees away from the facing the legs
+  walk backwards (`legsBackward`, the walk and run cycles reversed); below ~80 they walk forwards
+  again, so walking exactly sideways does not flip every tick.
+- **Why procedural legs.** Strafe clips (8-way blends) look better but every character would need
+  more clips; this works with the six every character has. Upper/lower body layers chosen by mods
+  (a pistol changes the upper body, a sword both) are the planned next step, and would replace it.
+- **Verified**: `commands` (camera-facing snaps to the camera, strafing turns the legs 90 degrees,
+  backing up reverses them, freelook turns the body back around), `pose_tools` (turned legs move the
+  feet, not the head or hands), reference hashes regenerated (protocol 8), a rendered session.
+- **Not done**: a freelook key while camera-facing (hold to look around without turning); strafe
+  or layered clips.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -709,3 +729,4 @@ So the rule is: **the ozz pose places a player's body; Godot animation only adds
 18. **M18** (done): Box3D snapshots zero padding, stale union bytes and geometry pointers (a patch applied at fetch), so they no longer leak server memory to joining clients; ARM64 min/max match x64 for signed zeros (a second patch); snapshots are byte-identical across all six builds, checked by `portable_bytes` and CI.
 19. **M19** (done): characters as workshop items baked in the editor (`CbCharacter` Bake button: ozz skeleton and clips, `hitboxes.cfg` from `CbHitbox` zones), `cb_server --character` reading the same zip players mount (SHA-256 checked, miniz), the client playing as it from the pack, server-side hit tests against posed hitboxes with zones for mods, the pistol's damage per zone, the robot example item, and tests.
 20. **M20** (done): aiming in the ozz pose (`Aim` command, aim chain per character, hit tests follow it), `CbPoseModifier` so Godot animation on players is cosmetic only, the AnimationTree example turned cosmetic (a jetpack), bake warnings for animation that could move hitbox bones, and the modifier-per-frame bug fixed.
+21. **M21** (done): facing modes chosen by mods (`Facing` command: freelook by default, camera-facing for the pistol), legs that turn toward the direction of travel with the spine turned back and a reversed walk when backing up.
