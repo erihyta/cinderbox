@@ -28,11 +28,14 @@ b3Quat Nlerp( b3Quat a, b3Quat b, float t )
 
 } // namespace
 
-void Mirror::SetAnimSet( std::shared_ptr<const anim::AnimSet> animSet )
+void Mirror::SetAnimSet( std::shared_ptr<const anim::AnimSet> animSet, std::shared_ptr<const anim::StanceTable> stances )
 {
 	m_animSet = std::move( animSet );
-	m_world.set<AnimLibrary>( { m_animSet, std::make_shared<RagdollRig>( BuildRagdollRig( *m_animSet ) ) } );
-	m_world.each( [&]( PlayerAnim& a ) { a.evaluator = std::make_shared<anim::PoseEvaluator>( *m_animSet ); } );
+	m_world.set<AnimLibrary>( { m_animSet, std::make_shared<RagdollRig>( BuildRagdollRig( *m_animSet ) ), stances } );
+	m_world.each( [&]( PlayerAnim& a ) {
+		a.evaluator = std::make_shared<anim::PoseEvaluator>( *m_animSet );
+		a.evaluator->SetStances( stances );
+	} );
 }
 
 Mirror::Mirror( std::shared_ptr<const anim::AnimSet> animSet )

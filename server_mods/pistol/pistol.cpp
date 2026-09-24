@@ -95,6 +95,12 @@ public:
 		// Announced by a game-mode mod when a round begins: everyone gets full health and a full
 		// magazine. The pistol does not know which mod runs rounds, only this name.
 		m_roundStart = declare.Event( "game.round_start" );
+		// Damage from another mod (a melee swing): a = attacker, b = victim, value = damage,
+		// point = where, vector = the push if it kills. Health lives here, so this mod applies it.
+		m_damage = declare.Event( "combat.damage" );
+
+		m_upper = declare.Layer( "upper" );
+		m_stance = declare.Stance( "pistol" );
 	}
 
 	void Start( Context& ctx ) override
@@ -135,6 +141,23 @@ public:
 		for ( const ModEventRecord& e : ctx.RecentEvents() )
 		{
 			newRound |= int( e.type ) == m_roundStart.index;
+			if ( int( e.type ) == m_damage.index )
+			{
+				int attackerSlot = ctx.SlotOf( e.netIdA );
+				flecs::entity attacker = attackerSlot >= 0 ? m_bySlot[attackerSlot] : flecs::entity();
+				Gunner a;
+				Gunner* killer = nullptr;
+				if ( attacker.is_valid() )
+				{
+					a = attacker.get<Gunner>();
+					killer = &a;
+				}
+				Hurt( ctx, killer, e.netIdB, e.value, e.point, e.vector );
+				if ( killer != nullptr && attacker.is_alive() )
+				{
+					attacker.set<Gunner>( a );
+				}
+			}
 		}
 
 		// Collected first: firing changes other players' components (a kill adds Dead).
@@ -247,15 +270,19 @@ private:
 			}
 		}
 
-		// The pistol out means a shooter's stance: the body faces where the camera looks and the arm
-		// points the pistol there, in the pose everyone draws and hit tests use. Put away, the
-		// player is back to freelook.
+		// The pistol out means a shooter's stance: the body faces where the camera looks, the upper
+		// body holds the pistol and the arm points it there, in the pose everyone draws and hit
+		// tests use. Put away, the pistol clears only what is its own (the loadout decides facing).
 		bool holding = ctx.Get( netId, m_loadout ) == kPistolSlot;
 		if ( holding != g.aiming )
 		{
 			g.aiming = holding;
 			ctx.Aim( target, holding );
-			ctx.FaceCamera( target, holding );
+			ctx.SetStance( target, m_upper, holding ? m_stance : StanceHandle{} );
+			if ( holding )
+			{
+				ctx.FaceCamera( target, true );
+			}
 		}
 
 		if ( holding == false || c->frozen )
@@ -286,6 +313,45 @@ private:
 		Fire( ctx, g, netId );
 	}
 
+	// Damage to a player, from the pistol or from another mod. `killer` (null: nobody, or someone
+	// without a gunner) gets the kill; it is a copy the caller writes back.
+	void Hurt( Context& ctx, Gunner* killer, uint32_t victimNetId, int32_t damage, b3Vec3 point, b3Vec3 push )
+	{
+		int victimSlot = ctx.SlotOf( victimNetId );
+		flecs::entity victim = victimSlot >= 0 ? m_bySlot[victimSlot] : flecs::entity();
+		if ( victim.is_valid() == false || victim.has<Dead>() )
+		{
+			return;
+		}
+		Gunner v = victim.get<Gunner>();
+		v.health -= damage;
+		uint32_t victimTarget = SlotTarget( v.slot );
+		ctx.Set( victimTarget, m_health, std::max( v.health, 0 ) );
+		if ( v.health > 0 )
+		{
+			victim.set<Gunner>( v );
+			return;
+		}
+
+		ctx.Kill( victimTarget, true, point, push, Ticks( ctx, kRagdollSeconds ), kRagdollCap );
+		v.health = 0;
+		v.deaths += 1;
+		victim.set<Gunner>( v );
+		victim.remove<Reloading>();
+		victim.set<Dead>( { ctx.Tick() + Ticks( ctx, kRespawnSeconds ), ctx.Tick() } );
+		ctx.Set( victimTarget, m_dead, 1 );
+		ctx.Set( victimTarget, m_deaths, v.deaths );
+		ctx.Set( victimTarget, m_reloading, 0 );
+		uint32_t killerTarget = 0;
+		if ( killer != nullptr )
+		{
+			killer->kills += 1;
+			killerTarget = SlotTarget( killer->slot );
+			ctx.Set( killerTarget, m_kills, killer->kills );
+		}
+		ctx.Emit( m_killed, killerTarget, victimTarget );
+	}
+
 	void StartReload( Context& ctx, flecs::entity e, uint32_t target )
 	{
 		e.set<Reloading>( { ctx.Tick() + Ticks( ctx, kReloadSeconds ) } );
@@ -311,7 +377,6 @@ private:
 		flecs::entity victim = victimSlot >= 0 ? m_bySlot[victimSlot] : flecs::entity();
 		if ( victim.is_valid() && victim.has<Dead>() == false )
 		{
-			Gunner v = victim.get<Gunner>();
 			// Where it hit scales the damage: --mod-option pistol.zone.<zone>=<multiplier>, for any
 			// zone the server's character defines (head x2 unless told otherwise).
 			int32_t damage = kDamage;
@@ -321,29 +386,9 @@ private:
 				double multiplier = ctx.Option( "pistol.zone." + zone, zone == "head" ? 2.0 : 1.0 );
 				damage = std::max( int32_t( double( kDamage ) * multiplier + 0.5 ), 0 );
 			}
-			v.health -= damage;
-			uint32_t victimTarget = SlotTarget( v.slot );
 			ctx.Emit( m_hit, shooterTarget, hit.netId, damage, hit.point, hit.normal );
-			ctx.Set( victimTarget, m_health, std::max( v.health, 0 ) );
-			if ( v.health > 0 )
-			{
-				victim.set<Gunner>( v );
-				return;
-			}
-
 			b3Vec3 push = b3Add( b3MulSV( kDeathPush, dir ), b3Vec3{ 0.0f, 1.5f, 0.0f } );
-			ctx.Kill( victimTarget, true, hit.point, push, Ticks( ctx, kRagdollSeconds ), kRagdollCap );
-			v.health = 0;
-			v.deaths += 1;
-			shooter.kills += 1;
-			victim.set<Gunner>( v );
-			victim.remove<Reloading>();
-			victim.set<Dead>( { ctx.Tick() + Ticks( ctx, kRespawnSeconds ), ctx.Tick() } );
-			ctx.Set( victimTarget, m_dead, 1 );
-			ctx.Set( victimTarget, m_deaths, v.deaths );
-			ctx.Set( victimTarget, m_reloading, 0 );
-			ctx.Set( shooterTarget, m_kills, shooter.kills );
-			ctx.Emit( m_killed, shooterTarget, victimTarget );
+			Hurt( ctx, &shooter, hit.netId, damage, hit.point, push );
 			return;
 		}
 
@@ -371,6 +416,9 @@ private:
 	EventHandle m_dry;
 	EventHandle m_killed;
 	EventHandle m_roundStart;
+	EventHandle m_damage;
+	LayerHandle m_upper;
+	StanceHandle m_stance;
 
 	flecs::query<Gunner> m_gunners;
 	flecs::entity m_bySlot[kMaxPlayers];
