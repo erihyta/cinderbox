@@ -12,6 +12,7 @@
 #include "pose.h"
 #include "pose_tools.h"
 #include "fields.h"
+#include "hitboxes.h"
 #include "detmath.h"
 #include "ragdoll.h"
 #include "rollback.h"
@@ -1449,6 +1450,57 @@ uint64_t AnimPoseHash( const anim::AnimSet& set )
 	return hash;
 }
 
+// Hitboxes follow the posed skeleton: a ray finds the zone it passes through, misses the gap between
+// the legs, and turns with the body.
+void TestHitboxes()
+{
+	anim::HitboxSet parsed;
+	std::string error;
+	CHECK( anim::ParseHitboxes( anim::FormatHitboxes( anim::DefaultHitboxes() ), parsed, error ) );
+	CHECK( parsed.boxes.size() == anim::DefaultHitboxes().boxes.size() );
+	CHECK( anim::ParseHitboxes( "head Head cube 0 0 0 0 0 0 1 1\n", parsed, error ) == false );
+
+	auto set = anim::AnimSet::CreateProcedural();
+	anim::HitboxSet hitboxes = anim::DefaultHitboxes();
+	std::string warnings;
+	anim::BindHitboxes( hitboxes, *set, warnings );
+	CHECK( warnings.empty() );
+	CHECK( hitboxes.boxes.size() == 10 );
+
+	anim::PoseEvaluator pose( *set );
+	pose.Evaluate( AnimState{} );
+	const b3Vec3 feet = { 2.0f, 0.0f, 3.0f };
+	const b3Quat facing = { { 0.0f, 0.0f, 0.0f }, 1.0f };
+
+	bool pointsMatch = true;
+	auto zoneAt = [&]( b3Quat rotation, b3Vec3 from, b3Vec3 translation ) -> std::string {
+		anim::HitboxHit hit;
+		if ( anim::RayHitboxes( hitboxes, pose.Models(), feet, rotation, from, translation, 1.0f, hit ) == false )
+		{
+			return "";
+		}
+		b3Vec3 again = b3MulAdd( from, hit.fraction, translation );
+		pointsMatch = pointsMatch && b3Length( b3Sub( again, hit.point ) ) < 1e-4f;
+		return hit.box->zone;
+	};
+	// Shots from behind (-Z) towards +Z, 10 m long.
+	const b3Vec3 forward = { 0.0f, 0.0f, 10.0f };
+	CHECK( zoneAt( facing, { 2.0f, 1.62f, -2.0f }, forward ) == "head" );
+	CHECK( zoneAt( facing, { 2.0f, 1.20f, -2.0f }, forward ) == "torso" );
+	CHECK( zoneAt( facing, { 2.1f, 0.40f, -2.0f }, forward ) == "leg" );
+	CHECK( zoneAt( facing, { 2.0f, 0.30f, -2.0f }, forward ).empty() );
+	CHECK( zoneAt( facing, { 2.0f, 2.20f, -2.0f }, forward ).empty() );
+	CHECK( zoneAt( facing, { 2.0f, 1.62f, -2.0f }, { 0.0f, 0.0f, 1.0f } ).empty() ); // too short
+
+	// Turned 90 degrees: the arms now stick out along Z, and a sideways shot at the arm's height
+	// that used to pass beside the body hits one.
+	const b3Quat turned = b3MakeQuatFromAxisAngle( { 0.0f, 1.0f, 0.0f }, 0.5f * detmath::kPi );
+	const b3Vec3 across = { 10.0f, 0.0f, 0.0f };
+	CHECK( zoneAt( facing, { -3.0f, 1.20f, 3.20f }, across ).empty() );
+	CHECK( zoneAt( turned, { -3.0f, 1.20f, 3.20f }, across ) == "arm" );
+	CHECK( pointsMatch );
+}
+
 void TestAnimPipeline()
 {
 	auto procedural = anim::AnimSet::CreateProcedural();
@@ -1659,6 +1711,7 @@ int main( int argc, char** argv )
 		{ "anim_controller", TestAnimController },
 		{ "pose_tools", TestPoseTools },
 		{ "fields", TestFields },
+		{ "hitboxes", TestHitboxes },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "stress", TestStress },
 	};
