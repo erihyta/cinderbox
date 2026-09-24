@@ -1,5 +1,8 @@
 #include "cinderbox_character.h"
 
+#include "cinderbox_skeleton.h"
+#include "pose.h" // CinderboxSkeleton holds a PoseEvaluator
+
 #include "anim_set.h"
 #include "hitboxes.h"
 
@@ -14,6 +17,7 @@
 
 #include <godot_cpp/classes/animation.hpp>
 #include <godot_cpp/classes/animation_player.hpp>
+#include <godot_cpp/classes/animation_tree.hpp>
 #include <godot_cpp/classes/bone_attachment3d.hpp>
 #include <godot_cpp/classes/box_shape3d.hpp>
 #include <godot_cpp/classes/capsule_shape3d.hpp>
@@ -23,6 +27,7 @@
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/skeleton3d.hpp>
+#include <godot_cpp/classes/skeleton_modifier3d.hpp>
 #include <godot_cpp/classes/sphere_shape3d.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -210,6 +215,9 @@ void CbCharacter::_bind_methods()
 	ADD_GROUP( "Bake", "" );
 	CB_PROP( Variant::FLOAT, sample_rate, PROPERTY_HINT_RANGE, "10,120,1,suffix:Hz" )
 	CB_PROP( Variant::BOOL, lock_root_xz, PROPERTY_HINT_NONE, "" )
+	ADD_GROUP( "Aim", "aim_" );
+	CB_PROP( Variant::STRING, aim_chain, PROPERTY_HINT_PLACEHOLDER_TEXT, "UpperChest:0.3 RightUpperArm:1" )
+	CB_PROP( Variant::STRING, aim_tip, PROPERTY_HINT_NONE, "" )
 #undef CB_PROP
 	ADD_PROPERTY( PropertyInfo( Variant::CALLABLE, "bake_button", PROPERTY_HINT_TOOL_BUTTON, "Bake character,Save",
 								PROPERTY_USAGE_EDITOR ),
@@ -343,6 +351,23 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	std::string cfg = "# Baked by CbCharacter in the editor. The game reads these files; edit the scene and bake again.\n";
 	cfg += "skeleton = skeleton.ozz\nscale = 1\n";
 	cfg += std::string( "lock_root_xz = " ) + ( m_lockRootXZ ? "true" : "false" ) + "\n";
+	cfg += "aim = " + Std( m_aimChain.strip_edges() ) + "\n";
+	cfg += "aim_tip = " + Std( m_aimTip.strip_edges() ) + "\n";
+	{
+		PackedStringArray entries = m_aimChain.strip_edges().split( " ", false );
+		for ( const String& entry : entries )
+		{
+			String bone = entry.get_slice( ":", 0 );
+			if ( skeleton->find_bone( bone ) < 0 )
+			{
+				warnings += "aim chain bone " + bone + " is not in the skeleton; ";
+			}
+		}
+		if ( entries.is_empty() == false && skeleton->find_bone( m_aimTip.strip_edges() ) < 0 )
+		{
+			warnings += "aim tip " + m_aimTip + " is not in the skeleton; ";
+		}
+	}
 	int clips = 0;
 	for ( int c = 0; c < anim::ClipCount; ++c )
 	{
@@ -530,6 +555,41 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	{
 		return fail( "no hitboxes: add CbHitbox shapes under BoneAttachment3D nodes" );
 	}
+
+	// The ozz pose places the body; hitboxes follow it. Godot animation may add to a player, but
+	// nothing it does to a bone with a hitbox is seen by the server.
+	String hitBones;
+	for ( const anim::Hitbox& box : hitboxes.boxes )
+	{
+		String bone = String::utf8( box.bone.c_str() );
+		if ( hitBones.contains( bone ) == false )
+		{
+			hitBones += ( hitBones.is_empty() ? "" : ", " ) + bone;
+		}
+	}
+	std::function<void( Node* )> scan = [&]( Node* node ) {
+		if ( auto* tree = Object::cast_to<AnimationTree>( node ) )
+		{
+			warnings += "AnimationTree " + String( tree->get_name() ) +
+						" runs before the ozz pose: on players only what the pose leaves alone survives (faces, props, "
+						"materials; not " +
+						hitBones + "); ";
+		}
+		if ( auto* modifier = Object::cast_to<SkeletonModifier3D>( node ) )
+		{
+			if ( Object::cast_to<CbPoseModifier>( node ) == nullptr )
+			{
+				warnings += "skeleton modifier " + String( modifier->get_name() ) +
+							" runs after the ozz pose: keep it off the bones with hitboxes (" + hitBones +
+							"), or the server will hit where it is not drawn; ";
+			}
+		}
+		for ( int i = 0; i < node->get_child_count(); ++i )
+		{
+			scan( node->get_child( i ) );
+		}
+	};
+	scan( this );
 	if ( WriteText( folder + "hitboxes.cfg", anim::FormatHitboxes( hitboxes ), error ) == false )
 	{
 		return fail( error );

@@ -44,10 +44,6 @@ struct Visual
 	// What the server's mods published about this entity, as of the newest frame.
 	bool hasBoard = false;
 	Blackboard board;
-	// Players: where the camera of this player looks (world yaw/pitch, radians), from its input.
-	bool hasAim = false;
-	float aimYaw = 0.0f;
-	float aimPitch = 0.0f;
 	// Ragdolls: the player it came from.
 	uint32_t owner = 0;
 };

@@ -24,6 +24,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 		return;
 	}
 	GDREGISTER_CLASS( cb::gd::CinderboxSkeleton );
+	GDREGISTER_CLASS( cb::gd::CbPoseModifier );
 	GDREGISTER_CLASS( cb::gd::CinderboxAnimator );
 	GDREGISTER_CLASS( cb::gd::CinderboxClient );
 	// Character authoring: hit zones on bones, and the node that bakes a character for the game.

@@ -135,6 +135,22 @@ public:
 	{
 		return m_sampleRate;
 	}
+	void set_aim_chain( const godot::String& v )
+	{
+		m_aimChain = v;
+	}
+	godot::String get_aim_chain() const
+	{
+		return m_aimChain;
+	}
+	void set_aim_tip( const godot::String& v )
+	{
+		m_aimTip = v;
+	}
+	godot::String get_aim_tip() const
+	{
+		return m_aimTip;
+	}
 	void set_lock_root_xz( bool v )
 	{
 		m_lockRootXZ = v;
@@ -156,6 +172,10 @@ private:
 	godot::String m_clips[6] = { "idle", "walk", "run", "jump_start", "fall", "land" };
 	double m_sampleRate = 30.0;
 	bool m_lockRootXZ = true;
+	// What the pose turns toward where the player looks while a mod has it aim: bones (profile
+	// names) with weights, in order, and the bone that ends up on the line of sight.
+	godot::String m_aimChain = "RightUpperArm:1";
+	godot::String m_aimTip = "RightHand";
 };
 
 } // namespace cb::gd

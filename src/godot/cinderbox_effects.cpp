@@ -131,9 +131,6 @@ void CbStateBinding::_bind_methods()
 	CB_BIND( CbStateBinding, attach_offset, Variant::VECTOR3, "attach_offset" );
 	CB_BIND( CbStateBinding, attach_rotation, Variant::VECTOR3, "attach_rotation" );
 	ADD_GROUP( "Aim", "aim_" );
-	CB_BIND( CbStateBinding, aim_bone, Variant::STRING, "aim_bone" );
-	CB_BIND( CbStateBinding, aim_tip, Variant::STRING, "aim_tip" );
-	CB_BIND( CbStateBinding, aim_weight, Variant::FLOAT, "aim_weight", PROPERTY_HINT_RANGE, "0,1,0.01" );
 	ADD_GROUP( "", "" );
 	CB_BIND( CbStateBinding, tree_parameter, Variant::STRING, "tree_parameter" );
 }

@@ -5,11 +5,18 @@
 // - If `skeleton_path` points at a Skeleton3D, its bones are driven by name instead, so a
 //   modded skinned character follows the same animation. Set `draw_bone_boxes` off then.
 // The node's origin is the character's feet, facing +Z (the simulation's convention).
+//
+// The ozz pose is the only thing that places a player's body bones: it is what the server's hit
+// tests pose too. A driven Skeleton3D gets a CbPoseModifier as its first modifier, which applies
+// the pose again after any AnimationPlayer or AnimationTree has run, so Godot animation on a player
+// can only add what the pose leaves alone (faces, fingers, props, materials) and modifiers placed
+// after it (look-at, springs) run on top of the pose.
 
 #include <godot_cpp/classes/multi_mesh.hpp>
 #include <godot_cpp/classes/multi_mesh_instance3d.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/skeleton3d.hpp>
+#include <godot_cpp/classes/skeleton_modifier3d.hpp>
 
 #include "ozz/base/containers/vector.h"
 #include "ozz/base/maths/simd_math.h"
@@ -27,11 +34,34 @@ class PoseEvaluator;
 namespace cb::gd
 {
 
+class CinderboxSkeleton;
+
+// Created by CinderboxSkeleton under the skeleton it drives; never saved with a scene.
+class CbPoseModifier : public godot::SkeletonModifier3D
+{
+	GDCLASS( CbPoseModifier, godot::SkeletonModifier3D )
+
+public:
+	void set_driver( CinderboxSkeleton* driver );
+	void _process_modification() override;
+
+protected:
+	static void _bind_methods()
+	{
+	}
+
+private:
+	uint64_t m_driver = 0;
+};
+
 class CinderboxSkeleton : public godot::Node3D
 {
 	GDCLASS( CinderboxSkeleton, godot::Node3D )
 
 public:
+	// Called by the CbPoseModifier: apply the last pose to `target` again.
+	void ReapplyPose( godot::Skeleton3D* target );
+
 	void _ready() override;
 
 	void set_draw_bone_boxes( bool value );
@@ -100,6 +130,10 @@ private:
 	// ozz joint index -> Skeleton3D bone index (-1: not present), rebuilt when the skeleton changes.
 	std::vector<int> m_boneMap;
 	uint64_t m_mappedSkeleton = 0;
+	// The target's bones, parents first, and scratch space for exact driving.
+	std::vector<int> m_boneOrder;
+	std::vector<godot::Transform3D> m_globals;
+	std::vector<uint8_t> m_known;
 
 	// Per mapped joint: the constant that carries our rig's pose onto the target's rest, so the
 	// target keeps its own proportions and its own rest posture. See Bind().
@@ -114,6 +148,7 @@ private:
 	std::unique_ptr<anim::PoseEvaluator> m_previewPose;
 
 	void Bind( godot::Skeleton3D* target, const anim::AnimSet& set );
+	void EnsureModifier( godot::Skeleton3D* target );
 	void DriveSkeleton( godot::Skeleton3D* target, const ozz::vector<ozz::math::Float4x4>& models );
 
 	// The last applied pose, for joint lookups.
