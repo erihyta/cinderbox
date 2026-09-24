@@ -495,8 +495,41 @@ rounds leaves it out. It needed three engine additions, none of them about round
 - **Limits:** no teams and no spectators; a player joining mid-round just plays (one joining in the
   intermission waits frozen); every round puts each player back at its slot's spawn point.
 
+## Continuous integration (M17)
+`.github/workflows/determinism.yml` runs on every push. Determinism is the whole netcode's premise
+(clients only exchange inputs), so CI checks it on every compiler and CPU family we can get:
+
+| Build | Compiler | CPU |
+|---|---|---|
+| windows-clang | Clang 20 | x64 |
+| windows-gcc | MinGW GCC 16 (MSYS2 UCRT64) | x64 |
+| windows-msvc | MSVC 19.44 | x64 |
+| linux-gcc | GCC 13 | x64 |
+| linux-clang | Clang 18 | x64 |
+| macos-arm64-clang | Apple Clang 17 | ARM64 (Apple silicon) |
+
+- **Each build** runs all tests, then compares its 1201 per-tick hashes with
+  `tests/reference_hashes.txt` and its pose hash with `tests/reference_anim_hash.txt`. A failure names
+  the first tick that differs.
+- **Cross-load**: one job per OS loads all six portable snapshots with each of its builds and runs
+  them 900 ticks to the reference's final hash (30 load pairs in all). A binary only runs on its own
+  OS, and the snapshot files cannot simply be compared: they are not byte-identical, not even two saves
+  from the same binary (below).
+- **First result**: everything agreed on the first run, including ARM64. This is the first check
+  that is not x86: the flags that matter (`-ffp-contract=off`, no fast-math) already hold on ARM64.
+- **Found: Box3D writes uninitialized bytes into snapshots.** `b3SerShapes` copies each `b3Shape`
+  to the stack and writes the raw struct, including its padding (a byte before the geometry union,
+  4 bytes at the end, more inside the material and filter). The simulation never reads them, so hashes
+  and desyncs are unaffected, but a joining client receives a few bytes of the server's stack per
+  shape, and snapshots cannot be compared byte for byte. The fix belongs in Box3D (zero the copy,
+  then copy field by field); not applied yet.
+- **Cost**: one run takes about 7 minutes of wall time. On a private repository macOS minutes count
+  ten times and Windows twice, about 150 billed minutes per push.
+- **Not covered yet**: Linux ARM64, the Godot extension build, and a Godot client in a session against
+  a server built by another compiler (the fingerprint check covers the build flags, not a live session).
+
 ## Tooling
-- **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*`).
+- **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
 - **Network simulator**: `cb_netsim` is a UDP relay with per-direction latency, jitter, loss and duplication, one upstream socket per client. ENet is not modified, so RTT measurement and retransmission behave as on a real network. The same code runs inside the lossy integration test.
 - **Headless bots**: `cb_bot`.
@@ -584,3 +617,4 @@ rounds leaves it out. It needed three engine additions, none of them about round
 14. **M14** (done): server gameplay mods in C++ with commands in the authoritative frame, a board and mod events, the mod schema sent on join, pitch and mod actions in the input, deterministic ragdolls, data-driven presentation of mod state (conditional effects, predicted action feedback, held items, aimed arms, HUD labels), a pistol demo (loadout, props, pistol mods), `cb_bot --shoot`, and ENet's throttle drops disabled. Verified identical across Clang, GCC and MSVC.
 15. **M15** (done): mods' looks as workshop items announced by hash and never sent (publish tool, local workshop, join refusal, load order), the pistol's look moved into its item, an allowlist pack validator with a hostile-pack check, HUD nodes driven by fields and events (health bar, kill feed, scoreboard), player names, and a fast clock catch-up.
 16. **M16** (done): deathmatch rounds as a server mod with its own workshop item, the `Freeze` command, mod options, event and world queries in the mod API, the `!?field` condition, `{name:field}`, scoreboard conditions, and a deathmatch net test. Verified identical across Clang, GCC and MSVC.
+17. **M17** (done): CI on GitHub Actions: Windows (Clang, MinGW GCC, MSVC), Linux (GCC, Clang) and macOS ARM64 (Apple Clang) each run every test and match the reference hashes, and every OS continues every build's portable snapshot. Identical on the first run.
