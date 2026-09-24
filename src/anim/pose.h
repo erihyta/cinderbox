@@ -6,6 +6,7 @@
 
 #include "anim_set.h"
 #include "components.h"
+#include "stances.h"
 
 #include "ozz/animation/runtime/sampling_job.h"
 #include "ozz/base/containers/vector.h"
@@ -37,6 +38,13 @@ public:
 	PoseEvaluator( const PoseEvaluator& ) = delete;
 	PoseEvaluator& operator=( const PoseEvaluator& ) = delete;
 
+	// Layers and stances for this character under a server's schema (BuildStanceTable); without
+	// one, stances in the state are ignored.
+	void SetStances( std::shared_ptr<const StanceTable> stances )
+	{
+		m_stances = std::move( stances );
+	}
+
 	void Evaluate( const AnimState& state );
 
 	// Model-space joint matrices (skeleton space: feet at the origin, facing +Z), scale applied.
@@ -60,6 +68,16 @@ private:
 	ozz::vector<ozz::math::SoaTransform> m_blended;
 	ozz::vector<ozz::math::Float4x4> m_models;
 	ClipWeights m_lastWeights;
+
+	// Stance layers.
+	void ApplyStance( int stance, int layer, float weight, float layerTime );
+	std::shared_ptr<const StanceTable> m_stances;
+	ozz::animation::SamplingJob::Context m_stanceContext;
+	std::array<ozz::vector<ozz::math::SoaTransform>, ClipCount> m_stanceClipLocals;
+	ozz::vector<ozz::math::SoaTransform> m_stanceLocals;
+	ozz::vector<ozz::math::SoaTransform> m_scratch;
+	ozz::vector<ozz::math::SimdFloat4> m_keepWeights;
+	ozz::vector<ozz::math::SimdFloat4> m_stanceWeights;
 };
 
 } // namespace cb::anim

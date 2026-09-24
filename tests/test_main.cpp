@@ -1172,6 +1172,31 @@ void TestCommands()
 	f.inputs[0].cameraYaw = 0;
 	step( 30 );
 
+	// Stances: a layer takes the stance, remembers the one it replaced, and restarts its clock.
+	{
+		SimCommand* c = command( CommandType::Stance, SlotTarget( 0 ) );
+		c->index = 1;
+		c->value = 3;
+	}
+	step( 5 );
+	{
+		const AnimState* a = sim.EntityAnimState( p0 );
+		CHECK( a->stances[1] == 3 && a->previousStances[1] == 0 );
+		CHECK( a->layerTime[1] > 0.0f && a->layerTime[1] < 0.1f );
+	}
+	{
+		SimCommand* c = command( CommandType::Stance, SlotTarget( 0 ) );
+		c->index = 1;
+		c->value = 2;
+	}
+	{
+		SimCommand* bad = command( CommandType::Stance, SlotTarget( 0 ) );
+		bad->index = kMaxAnimLayers; // out of range: ignored
+		bad->value = 1;
+	}
+	step( 1 );
+	CHECK( sim.EntityAnimState( p0 )->stances[1] == 2 && sim.EntityAnimState( p0 )->previousStances[1] == 3 );
+
 	// Being placed (a respawn, falling out of the world) keeps the aim a mod asked for.
 	{
 		SimCommand* c = command( CommandType::Respawn, SlotTarget( 0 ) );
@@ -1180,6 +1205,7 @@ void TestCommands()
 	}
 	step( 1 );
 	CHECK( sim.EntityAnimState( p0 )->aiming == 1 );
+	CHECK( sim.EntityAnimState( p0 )->stances[1] == 2 ); // and the stances
 	command( CommandType::Aim, SlotTarget( 0 ) );
 	step( 1 );
 	CHECK( sim.EntityAnimState( p0 )->aiming == 0 );
@@ -1689,6 +1715,83 @@ void TestRobotCharacter()
 	CHECK( std::fabs( hand.y - shoulder.y ) < 0.05f );
 }
 
+// Layers and stances: an upper-body stance moves the arms and not the legs, a full-body one moves
+// the legs too, a fresh stance is half faded in half way through its fade, and what a character
+// lacks is reported and ignored.
+void TestStances()
+{
+	auto set = anim::AnimSet::CreateProcedural();
+	std::string warnings;
+	auto table = anim::BuildStanceTable( *set, { "upper", "full", "arms" }, { "pistol", "melee", "sword" }, warnings );
+	CHECK( table->masks.size() == 3 && table->stances.size() == 3 );
+	CHECK( table->masks[0].empty() == false && table->masks[1].empty() == false );
+	CHECK( table->masks[2].empty() ); // no "arms" mask on this character
+	CHECK( warnings.find( "'arms'" ) != std::string::npos );
+	CHECK( warnings.find( "'sword'" ) != std::string::npos );
+	CHECK( table->stances[0].single != nullptr );				   // one pistol loop
+	CHECK( table->stances[1].clips[anim::ClipWalk] != nullptr ); // melee has its own walk
+	CHECK( table->stances[1].clips[anim::ClipFall] == nullptr ); // ...and falls like everyone else
+
+	std::string ignored;
+	std::vector<float> upper = anim::MaskWeights( *set, "Spine", ignored );
+	CHECK( upper[size_t( present::FindJoint( *set, "Hips" ) )] == 0.0f );
+	CHECK( upper[size_t( present::FindJoint( *set, "Head" ) )] == 1.0f );
+	CHECK( upper[size_t( present::FindJoint( *set, "LeftUpperLeg" ) )] == 0.0f );
+
+	auto at = []( const anim::PoseEvaluator& pose, const anim::AnimSet& s, const char* joint ) {
+		float v[4];
+		ozz::math::StorePtrU( pose.Models()[size_t( present::FindJoint( s, joint ) )].cols[3], v );
+		return b3Vec3{ v[0], v[1], v[2] };
+	};
+	anim::PoseEvaluator base( *set );
+	base.SetStances( table );
+	base.Evaluate( AnimState{} );
+
+	// Pistol on the upper layer, fully faded in.
+	AnimState pistol;
+	pistol.stances[0] = 1;
+	pistol.layerTime[0] = 1.0f;
+	anim::PoseEvaluator withPistol( *set );
+	withPistol.SetStances( table );
+	withPistol.Evaluate( pistol );
+	CHECK( b3Distance( at( withPistol, *set, "RightHand" ), at( base, *set, "RightHand" ) ) > 0.2f );
+	CHECK( b3Distance( at( withPistol, *set, "LeftFoot" ), at( base, *set, "LeftFoot" ) ) < 1e-4f );
+
+	// Half way through the fade: about half way there.
+	pistol.layerTime[0] = 0.5f * kStanceFadeSeconds;
+	withPistol.Evaluate( pistol );
+	float half = b3Distance( at( withPistol, *set, "RightHand" ), at( base, *set, "RightHand" ) );
+	pistol.layerTime[0] = 1.0f;
+	withPistol.Evaluate( pistol );
+	float full = b3Distance( at( withPistol, *set, "RightHand" ), at( base, *set, "RightHand" ) );
+	std::printf( "    pistol hand moved %.3f m, %.3f half way through the fade\n", full, half );
+	CHECK( half > 0.2f * full && half < 0.8f * full );
+
+	// Melee on the full layer: the legs change too.
+	AnimState melee;
+	melee.stances[1] = 2;
+	melee.layerTime[1] = 1.0f;
+	anim::PoseEvaluator withMelee( *set );
+	withMelee.SetStances( table );
+	withMelee.Evaluate( melee );
+	CHECK( b3Distance( at( withMelee, *set, "LeftFoot" ), at( base, *set, "LeftFoot" ) ) > 0.02f );
+
+	// A stance the character lacks, or a layer it cannot mask, changes nothing.
+	AnimState missing;
+	missing.stances[0] = 3;
+	missing.stances[2] = 1;
+	missing.layerTime[0] = missing.layerTime[2] = 1.0f;
+	anim::PoseEvaluator withMissing( *set );
+	withMissing.SetStances( table );
+	withMissing.Evaluate( missing );
+	CHECK( b3Distance( at( withMissing, *set, "RightHand" ), at( base, *set, "RightHand" ) ) < 1e-4f );
+
+	// Without a table (a renderer that knows no schema) stances are ignored.
+	anim::PoseEvaluator plain( *set );
+	plain.Evaluate( pistol );
+	CHECK( b3Distance( at( plain, *set, "RightHand" ), at( base, *set, "RightHand" ) ) < 1e-4f );
+}
+
 void TestAnimPipeline()
 {
 	auto procedural = anim::AnimSet::CreateProcedural();
@@ -1900,6 +2003,7 @@ int main( int argc, char** argv )
 		{ "pose_tools", TestPoseTools },
 		{ "fields", TestFields },
 		{ "hitboxes", TestHitboxes },
+		{ "stances", TestStances },
 		{ "robot_character", TestRobotCharacter },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "stress", TestStress },

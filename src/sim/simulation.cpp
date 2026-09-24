@@ -535,8 +535,16 @@ void Simulation::PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw )
 	e.set<Character>( c );
 	// A fresh start for the animation, but aiming is a mod's decision (the pistol is still out), so
 	// placing the character does not undo it.
+	const AnimState& old = e.get<AnimState>();
 	AnimState anim;
-	anim.aiming = e.get<AnimState>().aiming;
+	anim.aiming = old.aiming;
+	for ( int l = 0; l < kMaxAnimLayers; ++l )
+	{
+		// The stances stay (the mod still has the weapon out), already faded in.
+		anim.stances[l] = old.stances[l];
+		anim.previousStances[l] = old.stances[l];
+		anim.layerTime[l] = kStanceFadeSeconds;
+	}
 	e.set<AnimState>( anim );
 	e.set<Transform>( t );
 	e.set<Velocity>( {} );
@@ -1367,6 +1375,26 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			{
 				RespawnPlayer( e, command );
 			}
+			return;
+		}
+
+		case CommandType::Stance:
+		{
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() == false || e.has<AnimState>() == false || command.index >= kMaxAnimLayers ||
+				 command.value < 0 || command.value > kMaxStances )
+			{
+				return;
+			}
+			AnimState a = e.get<AnimState>();
+			uint8_t stance = uint8_t( command.value );
+			if ( a.stances[command.index] != stance )
+			{
+				a.previousStances[command.index] = a.stances[command.index];
+				a.stances[command.index] = stance;
+				a.layerTime[command.index] = 0.0f;
+			}
+			e.set<AnimState>( a );
 			return;
 		}
 

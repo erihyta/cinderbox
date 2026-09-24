@@ -10,6 +10,7 @@
 
 #include <array>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -113,6 +114,34 @@ public:
 	{
 		return m_aimTipName;
 	}
+	// A stance clip by name ("pistol", "melee_walk"), null if the character has none. anim.cfg:
+	//   stance.pistol = pistol.ozz
+	const ozz::animation::Animation* StanceClip( const std::string& name ) const
+	{
+		auto it = m_stanceClips.find( name );
+		return it != m_stanceClips.end() ? it->second.get() : nullptr;
+	}
+	const std::map<std::string, ozz::unique_ptr<ozz::animation::Animation>>& StanceClips() const
+	{
+		return m_stanceClips;
+	}
+	// A layer's mask ("Spine", "Spine:0.5 RightShoulder"), "" when the character defines none. anim.cfg:
+	//   mask.upper = Spine
+	// "upper" defaults to "Spine"; "full" (every bone) needs no mask.
+	std::string Mask( const std::string& layer ) const
+	{
+		auto it = m_masks.find( layer );
+		if ( it != m_masks.end() )
+		{
+			return it->second;
+		}
+		return layer == "upper" ? "Spine" : "";
+	}
+	const std::map<std::string, std::string>& Masks() const
+	{
+		return m_masks;
+	}
+
 	// The joints the legs turn about (the hips) and the upper body turns back about (the spine),
 	// by humanoid-profile name; -1 when the skeleton lacks them (the legs then stay straight).
 	int HipsJoint() const
@@ -134,6 +163,8 @@ private:
 	float m_scale = 1.0f;
 	bool m_lockRootXZ = true;
 	std::string m_description;
+	std::map<std::string, ozz::unique_ptr<ozz::animation::Animation>> m_stanceClips;
+	std::map<std::string, std::string> m_masks;
 	std::vector<std::pair<int, float>> m_aimJoints;
 	int m_hipsJoint = -1;
 	int m_spineJoint = -1;

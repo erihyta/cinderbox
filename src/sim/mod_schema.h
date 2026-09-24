@@ -74,6 +74,10 @@ struct ModSchema
 	std::vector<BoardField> fields;
 	std::vector<std::string> events; // index = ModEventRecord::type
 	std::vector<ModAction> actions;
+	// Animation layers (each a bone mask the character defines, "full" = every bone) and stances
+	// (named clip sets a character may ship), declared by mods. AnimState stores their indices.
+	std::vector<std::string> layers; // at most kMaxAnimLayers
+	std::vector<std::string> stances;
 
 	bool operator==( const ModSchema& ) const = default;
 
@@ -83,6 +87,9 @@ struct ModSchema
 	const ModAction* FindAction( const std::string& name ) const;
 	// Bit mask of the named action, 0 when not declared.
 	uint16_t ActionMask( const std::string& name ) const;
+	// -1 when not declared.
+	int FindLayer( const std::string& name ) const;
+	int FindStance( const std::string& name ) const;
 };
 
 inline constexpr size_t kMaxSchemaName = 64;

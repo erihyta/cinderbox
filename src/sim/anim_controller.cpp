@@ -62,6 +62,11 @@ void UpdateAnimState( AnimState& s, const Character& c, const PlayerInput& input
 	{
 		s.legsBackward = 0;
 	}
+	for ( float& t : s.layerTime )
+	{
+		t = std::min( t + dt, kMaxModeTime );
+	}
+
 	float legStep = kLegTurnRate * dt;
 	s.legYaw += std::clamp( legTarget - s.legYaw, -legStep, legStep );
 
