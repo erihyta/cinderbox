@@ -1,6 +1,7 @@
 #include "anim_set.h"
 
 #include "anim_controller.h"
+#include "joint_math.h"
 #include "detmath.h"
 
 #include "ozz/animation/offline/animation_builder.h"
@@ -459,6 +460,8 @@ std::unique_ptr<AnimSet> AnimSet::CreateProcedural()
 	set->m_clips[ClipLand] = BuildClip( "land", anim_tuning::kLandSeconds, LandPose );
 	set->m_description = "procedural placeholder rig";
 	ComputeRestModels( *set, set->m_restModels, set->m_scale );
+	std::string ignored;
+	set->SetAim( set->m_aimConfig, set->m_aimTipName, ignored );
 	return set;
 }
 
@@ -556,9 +559,42 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 	}
 
 	ComputeRestModels( *set, set->m_restModels, set->m_scale );
+	set->SetAim( cfg.count( "aim" ) ? cfg["aim"] : set->m_aimConfig, cfg.count( "aim_tip" ) ? cfg["aim_tip"] : set->m_aimTipName,
+				 warnings );
 	set->m_description = dir + " (" + std::to_string( set->m_skeleton->num_joints() ) + " joints, " + std::to_string( loaded ) +
 						 "/" + std::to_string( int( ClipCount ) ) + " clips)";
 	return set;
+}
+
+void AnimSet::SetAim( const std::string& chain, const std::string& tip, std::string& warnings )
+{
+	m_aimConfig = chain;
+	m_aimTipName = tip;
+	m_aimJoints.clear();
+	std::istringstream in( chain );
+	std::string entry;
+	while ( in >> entry )
+	{
+		size_t colon = entry.find( ':' );
+		std::string name = entry.substr( 0, colon );
+		float weight = colon == std::string::npos ? 1.0f : float( std::atof( entry.c_str() + colon + 1 ) );
+		int joint = FindJoint( *this, name.c_str() );
+		if ( joint < 0 )
+		{
+			warnings += "aim joint '" + name + "' is not in the skeleton; ";
+			continue;
+		}
+		m_aimJoints.emplace_back( joint, weight );
+	}
+	m_aimTip = FindJoint( *this, tip.c_str() );
+	if ( m_aimTip < 0 )
+	{
+		if ( m_aimJoints.empty() == false )
+		{
+			warnings += "aim tip '" + tip + "' is not in the skeleton; ";
+		}
+		m_aimJoints.clear();
+	}
 }
 
 bool AnimSet::Save( const std::string& dir ) const
@@ -572,6 +608,8 @@ bool AnimSet::Save( const std::string& dir ) const
 	cfg << "skeleton = skeleton.ozz\n";
 	cfg << "scale = " << m_scale << "\n";
 	cfg << "lock_root_xz = " << ( m_lockRootXZ ? "true" : "false" ) << "\n";
+	cfg << "aim = " << m_aimConfig << "\n";
+	cfg << "aim_tip = " << m_aimTipName << "\n";
 	for ( int c = 0; c < ClipCount; ++c )
 	{
 		if ( m_clips[c] == nullptr )

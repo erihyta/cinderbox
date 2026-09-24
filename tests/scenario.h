@@ -157,6 +157,14 @@ inline std::vector<InputFrame> MakeScenario( const ScenarioOptions& opt )
 				freeze.target = SlotTarget( PlayerSlot( i ) );
 				f.commands.push_back( freeze );
 			}
+			if ( ( ( c >> 6 ) % 120 ) == 0 )
+			{
+				SimCommand aim;
+				aim.type = CommandType::Aim;
+				aim.mode = uint8_t( ( c >> 11 ) & 1 );
+				aim.target = SlotTarget( PlayerSlot( i ) );
+				f.commands.push_back( aim );
+			}
 			if ( ( ( c >> 12 ) % 90 ) == 0 )
 			{
 				SimCommand push;

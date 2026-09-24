@@ -533,7 +533,11 @@ void Simulation::PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw )
 	c.groundTicks = 0;
 	c.stepDistance = 0.0f;
 	e.set<Character>( c );
-	e.set<AnimState>( {} );
+	// A fresh start for the animation, but aiming is a mod's decision (the pistol is still out), so
+	// placing the character does not undo it.
+	AnimState anim;
+	anim.aiming = e.get<AnimState>().aiming;
+	e.set<AnimState>( anim );
 	e.set<Transform>( t );
 	e.set<Velocity>( {} );
 
@@ -601,7 +605,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		c.prevButtons = in.buttons;
 
 		AnimState anim = e.get<AnimState>();
-		UpdateAnimState( anim, c, m_globals.tick, m_config.TimeStep() );
+		UpdateAnimState( anim, c, in, m_globals.tick, m_config.TimeStep() );
 		e.set<AnimState>( anim );
 
 		e.set<Character>( c );
@@ -1358,6 +1362,18 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			if ( e.is_valid() && e.has<Character>() )
 			{
 				RespawnPlayer( e, command );
+			}
+			return;
+		}
+
+		case CommandType::Aim:
+		{
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() && e.has<AnimState>() )
+			{
+				AnimState a = e.get<AnimState>();
+				a.aiming = command.mode != 0 ? 1 : 0;
+				e.set<AnimState>( a );
 			}
 			return;
 		}

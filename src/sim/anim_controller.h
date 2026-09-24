@@ -3,6 +3,7 @@
 // Deterministic locomotion state machine. Runs inside the simulation tick for every character.
 
 #include "components.h"
+#include "types.h"
 
 namespace cb
 {
@@ -28,7 +29,7 @@ inline constexpr float kMaxModeTime = 600.0f;
 } // namespace anim_tuning
 
 // Advance `state` by one tick. `c` is the character after this tick's movement.
-void UpdateAnimState( AnimState& state, const Character& c, uint32_t tick, float dt );
+void UpdateAnimState( AnimState& state, const Character& c, const PlayerInput& input, uint32_t tick, float dt );
 
 // Cycles per second of the synchronized walk/run phase at a given ground speed.
 float LocomotionCycleRate( float groundSpeed );
