@@ -1501,6 +1501,52 @@ void TestHitboxes()
 	CHECK( pointsMatch );
 }
 
+// The example character as the editor baked it (characters/robot): it loads like any item's files,
+// every hitbox binds to its skeleton, and its taller head is where a ray finds the head zone. The
+// built-in rig's head would be lower, so this also shows which character the hit test used.
+void TestRobotCharacter()
+{
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/characters/robot/client/characters/robot";
+	std::string error, warnings;
+	auto set = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( set != nullptr );
+	if ( set == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	CHECK( warnings.empty() );
+	CHECK( set->Skeleton().num_joints() == 22 );
+	for ( int c = 0; c < anim::ClipCount; ++c )
+	{
+		CHECK( set->Get( anim::Clip( c ) ) != nullptr );
+	}
+
+	std::string text;
+	CHECK( anim::DiskReader( dir )( "hitboxes.cfg", text ) );
+	anim::HitboxSet hitboxes;
+	CHECK( anim::ParseHitboxes( text, hitboxes, error ) );
+	size_t count = hitboxes.boxes.size();
+	anim::BindHitboxes( hitboxes, *set, warnings );
+	CHECK( hitboxes.boxes.size() == count );
+	CHECK( count == 11 );
+
+	anim::PoseEvaluator pose( *set );
+	pose.Evaluate( AnimState{} );
+	auto zoneAt = [&]( float height ) -> std::string {
+		anim::HitboxHit hit;
+		b3Quat facing = { { 0.0f, 0.0f, 0.0f }, 1.0f };
+		if ( anim::RayHitboxes( hitboxes, pose.Models(), {}, facing, { 0.0f, height, -3.0f }, { 0.0f, 0.0f, 6.0f }, 1.0f, hit ) == false )
+		{
+			return "";
+		}
+		return hit.box->zone;
+	};
+	CHECK( zoneAt( 1.80f ) == "head" ); // above the built-in rig's head
+	CHECK( zoneAt( 1.25f ) == "torso" );
+	CHECK( zoneAt( 2.05f ).empty() );
+}
+
 void TestAnimPipeline()
 {
 	auto procedural = anim::AnimSet::CreateProcedural();
@@ -1712,6 +1758,7 @@ int main( int argc, char** argv )
 		{ "pose_tools", TestPoseTools },
 		{ "fields", TestFields },
 		{ "hitboxes", TestHitboxes },
+		{ "robot_character", TestRobotCharacter },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "stress", TestStress },
 	};
