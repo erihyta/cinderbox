@@ -220,6 +220,12 @@ write_wav(os.path.join(pistol_dir, "hit_marker.wav"), hit_marker())
 write_wav(os.path.join(pistol_dir, "body_hit.wav"), body_hit())
 write_wav(os.path.join(pistol_dir, "ricochet.wav"), ricochet())
 
+# The melee mod's sounds belong to its workshop item.
+melee_dir = "server_mods/melee/client/assets/sfx"
+os.makedirs(melee_dir, exist_ok=True)
+write_wav(os.path.join(melee_dir, "swing.wav"), whoosh(int(RATE * 0.28)))
+write_wav(os.path.join(melee_dir, "bat_hit.wav"), thud(int(RATE * 0.18)))
+
 mod_dir = "mods_src/example_neon/assets/sfx"
 os.makedirs(mod_dir, exist_ok=True)
 write_wav(os.path.join(mod_dir, "neon_blip.wav"), blip())

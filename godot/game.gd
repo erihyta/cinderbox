@@ -313,7 +313,8 @@ func _send_input(delta: float) -> void:
 	var sprint := false
 	var actions := 0
 	if autoplay > 0.0:
-		# Scripted player for unattended runs: props first, then the pistol.
+		# Scripted player for unattended runs: props first, then the pistol, then the bat (if the
+		# server runs the melee mod).
 		if auto_rng.randf() < delta * 1.5:
 			auto_move = Vector2(auto_rng.randf_range(-1, 1), auto_rng.randf_range(0.2, 1))
 		move = auto_move
@@ -324,9 +325,13 @@ func _send_input(delta: float) -> void:
 		if elapsed < autoplay * 0.4:
 			if auto_rng.randf() < delta * 2.0:
 				actions |= _action_bit("spawn_prop")
-		else:
+		elif elapsed < autoplay * 0.7 or _action_bit("slot_3") == 0:
 			actions |= _action_bit("slot_2")
 			if auto_rng.randf() < delta * 3.0:
+				actions |= _action_bit("fire")
+		else:
+			actions |= _action_bit("slot_3")
+			if auto_rng.randf() < delta * 2.0:
 				actions |= _action_bit("fire")
 		# Hold Tab at the end, so screenshots show the scoreboard too.
 		if elapsed > autoplay * 0.8 and not Input.is_action_pressed("scoreboard"):

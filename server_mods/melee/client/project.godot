@@ -1,0 +1,11 @@
+; The melee mod's look: a workshop item players subscribe to. No code; everything here is keyed on
+; names the melee server mod declares ("loadout.slot", "melee.swing", "melee.hit").
+; The swing itself is not here: it is a stance in the character (melee_swing), part of the pose.
+; Publish it with: tools\publish_mod.ps1 -Mod melee
+
+config_version=5
+
+[application]
+
+config/name="Cinderbox item: melee"
+config/features=PackedStringArray("4.7", "Forward Plus")
