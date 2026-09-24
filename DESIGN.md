@@ -528,6 +528,13 @@ rounds leaves it out. It needed three engine additions, none of them about round
   portable_bytes` runs the scenario twice with the stack filled with different bytes and requires
   identical snapshots (330 bytes differed before), and CI requires all six builds' snapshots to be
   identical. Worth sending upstream.
+- **Found and fixed (M18): ARM64 clamped to a zero of the other sign.** With the snapshots finally
+  comparable, macOS differed from x64 in 37 bytes, all the sign bit of a manifold's `twistImpulse`.
+  Box3D's `b3SymClampW` is `min( max( -b, a ), b )`; SSE's `maxps`/`minps` return the second operand
+  when the values compare equal, NEON's `vmaxq`/`vminq` order -0 below +0, so with a zero friction
+  limit x64 stored +0 and ARM64 -0. The hashes never saw it (warm-started zeros add nothing), but a
+  signed zero can flip later through `atan2` or a division. `cmake/patches/box3d-neon-minmax.patch`
+  gives NEON the SSE semantics (compare and select), which also matches SSE for NaN inputs.
 - **Cost**: one run takes about 7 minutes of wall time. On a private repository macOS minutes count
   ten times and Windows twice, about 150 billed minutes per push.
 - **Not covered yet**: Linux ARM64, the Godot extension build, and a Godot client in a session against
@@ -623,4 +630,4 @@ rounds leaves it out. It needed three engine additions, none of them about round
 15. **M15** (done): mods' looks as workshop items announced by hash and never sent (publish tool, local workshop, join refusal, load order), the pistol's look moved into its item, an allowlist pack validator with a hostile-pack check, HUD nodes driven by fields and events (health bar, kill feed, scoreboard), player names, and a fast clock catch-up.
 16. **M16** (done): deathmatch rounds as a server mod with its own workshop item, the `Freeze` command, mod options, event and world queries in the mod API, the `!?field` condition, `{name:field}`, scoreboard conditions, and a deathmatch net test. Verified identical across Clang, GCC and MSVC.
 17. **M17** (done): CI on GitHub Actions: Windows (Clang, MinGW GCC, MSVC), Linux (GCC, Clang) and macOS ARM64 (Apple Clang) each run every test and match the reference hashes, and every OS continues every build's portable snapshot. Identical on the first run.
-18. **M18** (done): Box3D snapshots zero padding, stale union bytes and geometry pointers (a patch applied at fetch), so they no longer leak server memory to joining clients; snapshots are byte-identical across all six builds, checked by `portable_bytes` and CI.
+18. **M18** (done): Box3D snapshots zero padding, stale union bytes and geometry pointers (a patch applied at fetch), so they no longer leak server memory to joining clients; ARM64 min/max match x64 for signed zeros (a second patch); snapshots are byte-identical across all six builds, checked by `portable_bytes` and CI.
