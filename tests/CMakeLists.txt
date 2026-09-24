@@ -2,7 +2,7 @@ add_executable(cb_tests test_main.cpp)
 target_link_libraries(cb_tests PRIVATE cb_sim cb_anim cb_present)
 cb_target_warnings(cb_tests)
 
-foreach(name map_format templates sim_events gameplay_sanity commands ragdoll anim_controller pose_tools fields anim_pipeline repeatability snapshot_roundtrip portable_snapshot rollback rollback_reset stress)
+foreach(name map_format templates sim_events gameplay_sanity commands ragdoll anim_controller pose_tools fields anim_pipeline repeatability snapshot_roundtrip portable_snapshot portable_bytes rollback rollback_reset stress)
 	add_test(NAME ${name} COMMAND cb_tests ${name})
 endforeach()
 
