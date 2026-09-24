@@ -226,6 +226,11 @@ os.makedirs(melee_dir, exist_ok=True)
 write_wav(os.path.join(melee_dir, "swing.wav"), whoosh(int(RATE * 0.28)))
 write_wav(os.path.join(melee_dir, "bat_hit.wav"), thud(int(RATE * 0.18)))
 
+# The robot character's own sound (its bat swing's companion track).
+robot_dir = "characters/robot/client/characters/robot"
+os.makedirs(robot_dir, exist_ok=True)
+write_wav(os.path.join(robot_dir, "whoosh.wav"), whoosh(int(RATE * 0.32)))
+
 mod_dir = "mods_src/example_neon/assets/sfx"
 os.makedirs(mod_dir, exist_ok=True)
 write_wav(os.path.join(mod_dir, "neon_blip.wav"), blip())
