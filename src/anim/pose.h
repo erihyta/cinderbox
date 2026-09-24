@@ -14,6 +14,8 @@
 #include "ozz/base/maths/soa_transform.h"
 
 #include <array>
+#include <string>
+#include <vector>
 
 namespace cb::anim
 {
@@ -26,6 +28,19 @@ struct ClipWeights
 
 // Blend weights and playback ratios for a state. Pure function of the state and clip lengths.
 ClipWeights ComputeClipWeights( const AnimState& state, const AnimSet& set );
+
+// A clip that is playing, for what presentation plays alongside the pose: companion tracks (VFX,
+// sounds, lights, props) authored on the same timeline as the bones. One per channel: 0 is the base
+// locomotion, 1 + l is stance layer l. Names are the baked clips': "walk", or "stance_<clip key>"
+// ("stance_pistol", "stance_melee_walk"). Channels with nothing of their own playing are left out.
+struct ActiveClip
+{
+	int channel = 0;
+	std::string name;
+	float time = 0.0f; // seconds into the clip
+	bool loops = false;
+};
+std::vector<ActiveClip> ActiveClips( const AnimState& state, const AnimSet& set, const StanceTable* stances );
 
 // Interpolate between two consecutive tick states for rendering between ticks.
 AnimState InterpolateAnimState( const AnimState& from, const AnimState& to, float alpha );

@@ -108,6 +108,57 @@ ClipWeights ComputeClipWeights( const AnimState& s, const AnimSet& set )
 	return w;
 }
 
+std::vector<ActiveClip> ActiveClips( const AnimState& state, const AnimSet& set, const StanceTable* stances )
+{
+	std::vector<ActiveClip> out;
+	ClipWeights w = ComputeClipWeights( state, set );
+	int dominant = 0;
+	for ( int c = 1; c < ClipCount; ++c )
+	{
+		if ( w.weight[c] > w.weight[dominant] )
+		{
+			dominant = c;
+		}
+	}
+	auto loops = []( int c ) { return c == ClipIdle || c == ClipWalk || c == ClipRun || c == ClipFall; };
+	out.push_back( { 0, ClipName( Clip( dominant ) ), w.ratio[dominant] * set.Duration( Clip( dominant ) ), loops( dominant ) } );
+
+	if ( stances == nullptr )
+	{
+		return out;
+	}
+	for ( int l = 0; l < kMaxAnimLayers && l < int( stances->masks.size() ); ++l )
+	{
+		int current = int( state.stances[l] ) - 1;
+		if ( current < 0 || current >= int( stances->stances.size() ) || stances->masks[size_t( l )].empty() )
+		{
+			continue;
+		}
+		const StanceTable::Stance& st = stances->stances[size_t( current )];
+		bool perClip = false;
+		for ( const auto* clip : st.clips )
+		{
+			perClip |= clip != nullptr;
+		}
+		if ( perClip )
+		{
+			// The stance's own version of the dominant clip; if it has none, the base plays it.
+			const ozz::animation::Animation* own = st.clips[size_t( dominant )];
+			if ( own != nullptr )
+			{
+				out.push_back( { 1 + l, "stance_" + st.name + "_" + ClipName( Clip( dominant ) ), w.ratio[dominant] * own->duration(),
+								 loops( dominant ) } );
+			}
+		}
+		else if ( st.single != nullptr )
+		{
+			float duration = st.single->duration();
+			out.push_back( { 1 + l, "stance_" + st.name, LoopRatio( state.layerTime[l], duration ) * duration, true } );
+		}
+	}
+	return out;
+}
+
 AnimState InterpolateAnimState( const AnimState& from, const AnimState& to, float alpha )
 {
 	AnimState s = to;
