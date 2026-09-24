@@ -1697,6 +1697,16 @@ void TestRobotCharacter()
 	CHECK( zoneAt( 1.25f ) == "torso" );
 	CHECK( zoneAt( 2.05f ).empty() );
 
+	// Its stance clips, as the editor baked them: the shipped mods' stances resolve without warnings.
+	{
+		std::string stanceWarnings;
+		auto stances = anim::BuildStanceTable( *set, { "full", "upper" }, { "melee", "melee_swing", "pistol" }, stanceWarnings );
+		CHECK( stanceWarnings.empty() );
+		CHECK( stances->stances[0].clips[anim::ClipRun] != nullptr );
+		CHECK( stances->stances[1].single != nullptr && stances->stances[2].single != nullptr );
+		CHECK( set->Mask( "upper" ) == "Spine" );
+	}
+
 	// Aiming straight ahead: the robot's own aim chain (the default, its right arm) points the hand
 	// forward from the shoulder, an arm's length out, at shoulder height.
 	AnimState aiming;

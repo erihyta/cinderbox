@@ -162,6 +162,20 @@ func _initialize() -> void:
 	library.add_animation("jump_start", _clip(0.25, false, _crouch.bind(0.6)))
 	library.add_animation("fall", _clip(1.0, true, _fall))
 	library.add_animation("land", _clip(0.3, false, _crouch.bind(0.8)))
+	# Stances the shipped mods use: the pistol on the upper body, the bat on the whole body.
+	library.add_animation("pistol_hold", _clip(2.0, true, _pistol))
+	library.add_animation("bat_idle", _clip(2.0, true, _bat_idle))
+	library.add_animation("bat_walk", _clip(1.0, true, _bat_stride.bind(0.45)))
+	library.add_animation("bat_run", _clip(0.7, true, _bat_stride.bind(0.8)))
+	library.add_animation("bat_swing", _clip(0.45, false, _bat_swing))
+	_root.stance_clips = {
+		"pistol": "pistol_hold",
+		"melee_idle": "bat_idle",
+		"melee_walk": "bat_walk",
+		"melee_run": "bat_run",
+		"melee_swing": "bat_swing",
+	}
+	_root.masks = {"upper": "Spine"}
 	var player := AnimationPlayer.new()
 	player.name = "AnimationPlayer"
 	player.root_node = NodePath("..")
@@ -288,6 +302,53 @@ func _crouch(phase: float, depth: float) -> Dictionary:
 		"RightUpperArm": Vector3(-0.6 * k, 0, -0.2),
 		"hips_y": -0.22 * k,
 	}
+
+
+func _pistol(phase: float) -> Dictionary:
+	var p := _idle(phase)
+	p["RightUpperArm"] = Vector3(-1.35, 0, 0.1)
+	p["RightLowerArm"] = Vector3(-0.1, 0, 0)
+	p["LeftUpperArm"] = Vector3(-1.2, 0, -0.45)
+	p["LeftLowerArm"] = Vector3(-0.3, 0.9, 0)
+	p["Chest"] = Vector3(0, 0.12, 0)
+	return p
+
+
+func _bat_arms(p: Dictionary) -> Dictionary:
+	p["RightUpperArm"] = Vector3(-0.5, 0, -0.5)
+	p["RightLowerArm"] = Vector3(-2.0, 0, 0)
+	p["LeftUpperArm"] = Vector3(-0.9, 0, -0.35)
+	p["LeftLowerArm"] = Vector3(-1.2, 0.8, 0)
+	return p
+
+
+func _bat_idle(phase: float) -> Dictionary:
+	var p := _bat_arms(_idle(phase))
+	p["Spine"] = Vector3(0.08, 0.25, 0)
+	p["LeftUpperLeg"] = Vector3(-0.25, 0, 0.12)
+	p["RightUpperLeg"] = Vector3(-0.15, 0, -0.12)
+	p["LeftLowerLeg"] = Vector3(0.4, 0, 0)
+	p["RightLowerLeg"] = Vector3(0.3, 0, 0)
+	p["hips_y"] = -0.06
+	return p
+
+
+func _bat_stride(phase: float, legs: float) -> Dictionary:
+	var p := _bat_arms(_stride(phase, legs, 0.0, 0.04, 0.12))
+	p["Spine"] = Vector3(0.15, 0.2, 0)
+	return p
+
+
+func _bat_swing(phase: float) -> Dictionary:
+	var p := _bat_idle(0.0)
+	var wind: float = smoothstep(0.0, 0.3, phase)
+	var strike: float = smoothstep(0.3, 0.75, phase)
+	p["Spine"] = Vector3(0.1, 0.25 + 0.35 * wind - 1.5 * strike, 0)
+	p["RightUpperArm"] = Vector3(-1.3, 0.3 * wind - 0.9 * strike, -0.4 + 0.2 * strike)
+	p["RightLowerArm"] = Vector3(lerp(-1.2, -0.2, strike), 0, 0)
+	p["LeftUpperArm"] = Vector3(-1.2, -0.6 * strike, -0.5)
+	p["LeftLowerArm"] = Vector3(-0.6, 0.8, 0)
+	return p
 
 
 func _fall(phase: float) -> Dictionary:

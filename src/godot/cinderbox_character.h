@@ -15,6 +15,7 @@
 
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/node3d.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 
 namespace cb::gd
 {
@@ -135,6 +136,22 @@ public:
 	{
 		return m_sampleRate;
 	}
+	void set_stance_clips( const godot::Dictionary& v )
+	{
+		m_stanceClips = v;
+	}
+	godot::Dictionary get_stance_clips() const
+	{
+		return m_stanceClips;
+	}
+	void set_masks( const godot::Dictionary& v )
+	{
+		m_masks = v;
+	}
+	godot::Dictionary get_masks() const
+	{
+		return m_masks;
+	}
 	void set_aim_chain( const godot::String& v )
 	{
 		m_aimChain = v;
@@ -174,6 +191,11 @@ private:
 	bool m_lockRootXZ = true;
 	// What the pose turns toward where the player looks while a mod has it aim: bones (profile
 	// names) with weights, in order, and the bone that ends up on the line of sight.
+	// Stance clips the mods' stances use: "pistol" (one loop) or "melee_walk" (one of the six) ->
+	// the name of an animation of the AnimationPlayer.
+	godot::Dictionary m_stanceClips;
+	// Layer masks: "upper" -> "Spine" (the default), "arms" -> "LeftShoulder RightShoulder", ...
+	godot::Dictionary m_masks;
 	godot::String m_aimChain = "RightUpperArm:1";
 	godot::String m_aimTip = "RightHand";
 };
