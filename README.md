@@ -28,6 +28,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M19: characters as workshop items (baked in the editor: ozz skeleton, clips, hitboxes), `cb_server --character`, hit zones for mods | done |
 | M20: one pose for players: aiming is part of the ozz pose (so hitboxes follow the raised arm), Godot animation on players is cosmetic only | done |
 | M21: facing modes for mods: freelook (default) or camera-facing, with legs that walk where the body goes | done |
+| M22: animation layers and stances chosen by mods (the pistol on the upper body, a new melee bat on the whole body) | done |
 
 ## Building
 
@@ -117,6 +118,7 @@ and mods need no determinism of their own.
 | `Freeze` | stops a player moving and acting (it still looks around), or releases it |
 | `Aim` | turns the player's aim chain (its character's arm, by default) toward where it looks, or lets it go |
 | `Facing` | the body faces where the camera looks, or turns toward where it walks (freelook, the default) |
+| `Stance` | plays a stance on one of the player's animation layers, or clears it |
 
 ```cpp
 // server_mods/jumper/jumper.cpp: a jump boost on Q, the whole mod.
@@ -149,9 +151,10 @@ The mods that ship:
 
 | Mod | Declares | Rules |
 |---|---|---|
-| `loadout` | `loadout.slot`; actions `slot_1` (1), `slot_2` (2) | 1 is empty hands, 2 is the pistol |
+| `loadout` | `loadout.slot`; actions `slot_1` (1), `slot_2` (2), `slot_3` (3) | 1 is empty hands (and freelook), 2 the pistol, 3 the bat |
+| `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage` | the bat: a full-body stance while it is out; left mouse swings (0.45 s, every 0.6 s), a fan of 1.8 m rays from the chest at the strike, 40 damage through `combat.damage` |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
-| `pistol` | `combat.*`, `pistol.*` fields; `fire` (left mouse), `reload` (R); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `combat.killed` | hitscan from the camera pivot, 25 damage, 12 rounds, 1.5 s reload; death leaves a ragdoll (10 s, at most 16); respawn after 3 s; falling out of the world counts as a death |
+| `pistol` | `combat.*`, `pistol.*` fields; `fire` (left mouse), `reload` (R); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `combat.killed` | hitscan from the camera pivot, 25 damage, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; keeps health, so it also applies other mods' `combat.damage`; death leaves a ragdoll (10 s, at most 16); respawn after 3 s; falling out of the world counts as a death |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
 Mods cooperate through the board: `props` and `pistol` read the `loadout.slot` that `loadout`
@@ -530,7 +533,9 @@ torso, arm, leg).
      `zone` ("head", "torso", "arm", "leg", or your own);
    - the aim chain on the `CbCharacter`: `aim_chain` (bones with weights, turned in order, e.g.
      `UpperChest:0.3 RightUpperArm:1`) and `aim_tip` (the bone that ends up on the line of sight).
-     The default, `RightUpperArm:1` to `RightHand`, points the right arm.
+     The default, `RightUpperArm:1` to `RightHand`, points the right arm;
+   - the stances it supports: `stance_clips` maps stance clip names (`pistol`, `melee_walk`) to
+     animations, and `masks` maps layers to bones (`upper` → `Spine`).
 4. Select the `CbCharacter` and press **Bake character** in the inspector. It writes the `.ozz` files,
    `anim.cfg` and `hitboxes.cfg` next to the scene (clips are sampled at `sample_rate`, 30 Hz).
 5. List `character.tscn` in the preset's `export_files` and the baked files in its
@@ -573,6 +578,23 @@ The pistol switches to camera-facing while it is out, together with aiming. In c
 legs still walk where the player goes: the hips turn toward the direction of travel (up to 90
 degrees) and the spine turns back, and moving away from the facing plays the walk cycle backwards.
 This works with any character's six clips, no strafe clips needed.
+
+### Layers and stances
+
+Mods choose what a player's body plays, by layer:
+
+| Mods declare | Characters provide | Example |
+|---|---|---|
+| a **layer** (`d.Layer( "upper" )`), applied in declaration order | its bone mask: `mask.upper = Spine` in `anim.cfg`, set on the `CbCharacter`'s `masks` | `full` is every bone; `upper` defaults to the spine up |
+| a **stance** (`d.Stance( "pistol" )`) | its clips: `<stance>_<clip>` for any of the six (`melee_walk`) or one looping `<stance>` clip, set on the `CbCharacter`'s `stance_clips` | the pistol's `pistol` loop; the bat's `melee_idle`, `melee_walk`, `melee_run` and `melee_swing` |
+
+`ctx.SetStance( player, layer, stance )` plays it (a default `StanceHandle` clears it). The pose
+blends each layer's stance over the ones below by the mask's per-joint weights, fading over 0.2 s;
+whatever a stance lacks falls back to the default clips, and a layer the character cannot mask does
+nothing (both are reported when the character is loaded). A single-clip stance plays from the moment
+it was set, which is how a swing is made. Stances are part of the simulation's animation state, so
+everyone draws them and the server's hit tests use them. The built-in rig and the robot ship the
+pistol and bat stances.
 
 ## Testing tools
 

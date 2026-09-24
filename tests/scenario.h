@@ -173,6 +173,15 @@ inline std::vector<InputFrame> MakeScenario( const ScenarioOptions& opt )
 				facing.target = SlotTarget( PlayerSlot( i ) );
 				f.commands.push_back( facing );
 			}
+			if ( ( ( c >> 9 ) % 70 ) == 0 )
+			{
+				SimCommand stance;
+				stance.type = CommandType::Stance;
+				stance.index = uint16_t( ( c >> 15 ) % kMaxAnimLayers );
+				stance.value = int32_t( ( c >> 18 ) % 4 );
+				stance.target = SlotTarget( PlayerSlot( i ) );
+				f.commands.push_back( stance );
+			}
 			if ( ( ( c >> 12 ) % 90 ) == 0 )
 			{
 				SimCommand push;

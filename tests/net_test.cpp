@@ -843,6 +843,75 @@ void TestHeadshot()
 	}
 }
 
+// Layers end to end: slot 0 takes out the bat (a full-body stance) and swings at slot 1, which
+// stands still. Swings play the swing stance, hits go out as combat.damage, the pistol mod (which
+// keeps health) applies them and credits the kill, and clients agree on every pose-carrying tick.
+void TestMelee()
+{
+	Harness h( 47802 );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t bat = schema.ActionMask( "slot_3" );
+	int full = schema.FindLayer( "full" );
+	int ready = schema.FindStance( "melee" );
+	int swing = schema.FindStance( "melee_swing" );
+	int upper = schema.FindLayer( "upper" );
+	CHECK( fire != 0 && bat != 0 && full >= 0 && ready >= 0 && swing >= 0 && upper >= 0 );
+
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraYaw = 16384; // toward slot 1
+		if ( tick >= 100 && tick < 110 )
+		{
+			in.actions = bat;
+		}
+		else if ( tick >= 200 && ( tick % 45 ) < 3 )
+		{
+			in.actions = fire;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; };
+
+	Simulation& server = h.server.Sim();
+	bool sawReady = false;
+	bool sawSwing = false;
+	int killedEvent = schema.FindEvent( "combat.killed" );
+	uint32_t kills = 0;
+	std::map<uint32_t, bool> counted;
+	h.RunUntil( 8.0, [&]( double ) {
+		uint32_t attacker = server.PlayerNetId( h.bots[0].client->Slot() );
+		if ( const AnimState* a = server.EntityAnimState( attacker ) )
+		{
+			sawReady |= a->stances[full] == ready + 1;
+			sawSwing |= a->stances[full] == swing + 1;
+		}
+		const SimGlobals& g = server.Globals();
+		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+		{
+			const ModEventRecord& e = g.modEvents[i];
+			if ( int( e.type ) == killedEvent && e.netIdA == attacker && counted[e.tick] == false )
+			{
+				counted[e.tick] = true;
+				++kills;
+			}
+		}
+	} );
+	h.Report();
+	std::printf( "    ready stance %d, swing stance %d, kills by the bat %u\n", int( sawReady ), int( sawSwing ), kills );
+	CHECK( sawReady );
+	CHECK( sawSwing );
+	CHECK( kills >= 1 );
+	uint32_t attackerId = server.PlayerNetId( h.bots[0].client->Slot() );
+	CHECK( server.BoardValue( attackerId, schema.FindField( "combat.kills" )->slot ) >= 1 );
+	CHECK( server.PlayerCharacter( h.bots[0].client->Slot() )->faceCamera == 1 );
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 void TestDeathmatch()
 {
 	Harness h( 47799, {}, {}, { { "deathmatch.kills", "2" }, { "deathmatch.pause_seconds", "2" } } );
@@ -1123,6 +1192,7 @@ int main( int argc, char** argv )
 		{ "deathmatch", TestDeathmatch },
 		{ "character_item", TestCharacterItem },
 		{ "headshot", TestHeadshot },
+		{ "melee", TestMelee },
 	};
 
 	const char* filter = argc > 1 ? argv[1] : nullptr;

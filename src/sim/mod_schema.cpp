@@ -8,7 +8,7 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x3342434Du; // 'MCB3': 2 added workshop items, 3 the character
+constexpr uint32_t kSchemaMagic = 0x3442434Du; // 'MCB4': 2 workshop items, 3 the character, 4 layers and stances
 
 void PutU8( std::vector<uint8_t>& out, uint8_t v )
 {
@@ -65,6 +65,30 @@ const BoardField* ModSchema::FindField( const std::string& name ) const
 		}
 	}
 	return nullptr;
+}
+
+int ModSchema::FindLayer( const std::string& name ) const
+{
+	for ( size_t i = 0; i < layers.size(); ++i )
+	{
+		if ( layers[i] == name )
+		{
+			return int( i );
+		}
+	}
+	return -1;
+}
+
+int ModSchema::FindStance( const std::string& name ) const
+{
+	for ( size_t i = 0; i < stances.size(); ++i )
+	{
+		if ( stances[i] == name )
+		{
+			return int( i );
+		}
+	}
+	return -1;
 }
 
 int ModSchema::FindEvent( const std::string& name ) const
@@ -138,6 +162,16 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutString( out, schema.items[i].sha256 );
 	}
 	PutString( out, schema.character );
+	PutU8( out, uint8_t( std::min<size_t>( schema.layers.size(), size_t( kMaxAnimLayers ) ) ) );
+	for ( size_t i = 0; i < schema.layers.size() && i < size_t( kMaxAnimLayers ); ++i )
+	{
+		PutString( out, schema.layers[i] );
+	}
+	PutU8( out, uint8_t( std::min<size_t>( schema.stances.size(), size_t( kMaxStances ) ) ) );
+	for ( size_t i = 0; i < schema.stances.size() && i < size_t( kMaxStances ); ++i )
+	{
+		PutString( out, schema.stances[i] );
+	}
 }
 
 bool IsSha256( const std::string& hex )
@@ -234,6 +268,24 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		 std::none_of( out.items.begin(), out.items.end(), [&]( const ModItem& i ) { return i.mod == out.character; } ) )
 	{
 		return false; // the character always comes as one of the items
+	}
+	uint8_t layers = r.U8();
+	if ( layers > kMaxAnimLayers )
+	{
+		return false;
+	}
+	for ( uint8_t i = 0; i < layers && r.ok; ++i )
+	{
+		out.layers.push_back( r.String() );
+	}
+	uint8_t stances = r.U8();
+	if ( stances > kMaxStances )
+	{
+		return false;
+	}
+	for ( uint8_t i = 0; i < stances && r.ok; ++i )
+	{
+		out.stances.push_back( r.String() );
 	}
 	return r.ok && r.at == size;
 }

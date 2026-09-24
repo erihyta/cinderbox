@@ -50,6 +50,11 @@ HitTester::HitTester( std::shared_ptr<const CharacterAsset> character )
 	m_reach = extent * 1.5f + largest * m_character->animations->Scale() + 0.25f;
 }
 
+void HitTester::SetStances( const std::vector<std::string>& layers, const std::vector<std::string>& stances, std::string& warnings )
+{
+	m_pose.SetStances( anim::BuildStanceTable( *m_character->animations, layers, stances, warnings ) );
+}
+
 bool HitTester::CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit )
 {
 	bool found = sim.CastRay( origin, translation, ignoreNetId, hit, true );

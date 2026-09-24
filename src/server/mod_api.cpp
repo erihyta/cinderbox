@@ -83,6 +83,38 @@ EventHandle Declarations::Event( const std::string& name )
 	return { int( m_schema.events.size() - 1 ) };
 }
 
+LayerHandle Declarations::Layer( const std::string& name )
+{
+	int existing = m_schema.FindLayer( name );
+	if ( existing >= 0 )
+	{
+		return { existing };
+	}
+	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.layers.size() >= size_t( kMaxAnimLayers ) )
+	{
+		m_errors.push_back( m_mod + ": bad or one too many animation layers (\"" + name + "\")" );
+		return {};
+	}
+	m_schema.layers.push_back( name );
+	return { int( m_schema.layers.size() - 1 ) };
+}
+
+StanceHandle Declarations::Stance( const std::string& name )
+{
+	int existing = m_schema.FindStance( name );
+	if ( existing >= 0 )
+	{
+		return { existing };
+	}
+	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.stances.size() >= size_t( kMaxStances ) )
+	{
+		m_errors.push_back( m_mod + ": bad stance \"" + name + "\"" );
+		return {};
+	}
+	m_schema.stances.push_back( name );
+	return { int( m_schema.stances.size() - 1 ) };
+}
+
 ActionHandle Declarations::Action( const std::string& name, const std::string& key )
 {
 	if ( const ModAction* existing = m_schema.FindAction( name ) )
@@ -422,6 +454,20 @@ void Context::Freeze( uint32_t target, bool frozen )
 	SimCommand c;
 	c.type = CommandType::Freeze;
 	c.mode = frozen ? 1 : 0;
+	c.target = target;
+	Add( c );
+}
+
+void Context::SetStance( uint32_t target, LayerHandle layer, StanceHandle stance )
+{
+	if ( layer.Valid() == false )
+	{
+		return;
+	}
+	SimCommand c;
+	c.type = CommandType::Stance;
+	c.index = uint16_t( layer.index );
+	c.value = stance.Valid() ? stance.index + 1 : 0;
 	c.target = target;
 	Add( c );
 }

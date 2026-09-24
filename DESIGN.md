@@ -636,6 +636,35 @@ hashed, predicted and identical everywhere. The pistol uses it while it is out.
 - **Not done**: a freelook key while camera-facing (hold to look around without turning); strafe
   or layered clips.
 
+## Layers and stances (M22)
+Mods dictate what the body plays; characters provide the motion. A pistol changes the upper body, a
+bat the whole body, and neither mod knows what a character looks like.
+
+| Piece | Where | What |
+|---|---|---|
+| Layer | declared by mods (schema), at most 4 | a name; its bone mask comes from the character (`mask.<layer>`), `full` = every bone, `upper` defaults to `Spine` |
+| Stance | declared by mods (schema) | a name; the character's clips `<stance>_<clip>` or one `<stance>` loop, falling back to the defaults |
+| State | `AnimState` (hashed, 56 bytes) | per layer: stance, the one it replaced, seconds since set |
+| Pose | `PoseEvaluator` with a `StanceTable` | base locomotion, then each layer's stance blended by per-joint mask weights (ozz joint weights), crossfading 0.2 s; then leg turn and aim |
+
+- **Resolved per character**: `BuildStanceTable` turns the schema's names into masks and clips for
+  one character, on the server (hit tests) and on each client (once the schema and character are
+  known). Missing masks and clips are warnings, not errors: the body keeps its default motion there.
+- **Swings are stances**: a single-clip stance plays by the layer's clock, which restarts when the
+  stance is set, so a mod plays a one-shot by setting it and setting the ready stance back after.
+- **Mods cooperate by event**: health stays in the pistol mod; the melee mod emits `combat.damage`,
+  which the pistol applies (kills credited, deathmatch scores them). Facing has one owner per
+  transition: a weapon turns camera-facing on when it comes out, the loadout turns it off with empty
+  hands, so switching weapons never races two mods ticking in a fixed order.
+- **Verified**: `stances` (the upper layer moves hands but not feet, the full layer moves feet, half
+  way through a fade is about half way, missing stances and masks do nothing and are reported, no
+  table means no stances), `commands` (the Stance command, out-of-range layers ignored, respawn
+  keeps stances), `robot_character` (its baked stances resolve cleanly), the `melee` net session
+  (ready and swing stances on the server, a kill by the bat, no desyncs), reference hashes
+  regenerated (protocol 9), and a rendered session with the bat.
+- **Not done**: the stance clips are placeholders (rigid robot, procedural box rig); no per-layer
+  additive blending (layers replace, weighted); a freelook key while camera-facing.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -730,3 +759,4 @@ hashed, predicted and identical everywhere. The pistol uses it while it is out.
 19. **M19** (done): characters as workshop items baked in the editor (`CbCharacter` Bake button: ozz skeleton and clips, `hitboxes.cfg` from `CbHitbox` zones), `cb_server --character` reading the same zip players mount (SHA-256 checked, miniz), the client playing as it from the pack, server-side hit tests against posed hitboxes with zones for mods, the pistol's damage per zone, the robot example item, and tests.
 20. **M20** (done): aiming in the ozz pose (`Aim` command, aim chain per character, hit tests follow it), `CbPoseModifier` so Godot animation on players is cosmetic only, the AnimationTree example turned cosmetic (a jetpack), bake warnings for animation that could move hitbox bones, and the modifier-per-frame bug fixed.
 21. **M21** (done): facing modes chosen by mods (`Facing` command: freelook by default, camera-facing for the pistol), legs that turn toward the direction of travel with the spine turned back and a reversed walk when backing up.
+22. **M22** (done): animation layers (bone masks from the character) and stances (clip sets with fallback) declared by mods and set with a `Stance` command, blended per joint with fades, in the pose the server hit-tests; the pistol's upper-body stance, a melee mod with a full-body stance and swing, `combat.damage` between mods, bake support (`stance_clips`, `masks`), the robot's stance clips, and tests.

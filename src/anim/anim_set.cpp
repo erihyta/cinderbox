@@ -290,6 +290,74 @@ Pose LandPose( float time, float duration )
 	return p;
 }
 
+// Stances of the placeholder rig, for the shipped mods: the pistol (upper body) and the melee bat
+// (full body). They only set what they change; the layer masks decide which bones they reach.
+
+// Both hands forward, the left one under the right, as if holding a pistol; the aim chain then
+// points the right arm exactly.
+Pose PistolPose( float time, float duration )
+{
+	Pose p = IdlePose( time, duration );
+	p.rotation[RightUpperArm] = RotX( -1.35f ) * RotZ( 0.15f );
+	p.rotation[RightLowerArm] = RotX( -0.1f );
+	p.rotation[LeftUpperArm] = RotX( -1.2f ) * RotZ( -0.45f );
+	p.rotation[LeftLowerArm] = RotY( 0.9f ) * RotX( -0.3f );
+	p.rotation[Chest] = RotY( 0.12f );
+	return p;
+}
+
+// The bat over the right shoulder, feet apart, knees soft.
+Pose MeleeArms( Pose p )
+{
+	p.rotation[RightUpperArm] = RotX( -0.5f ) * RotZ( -0.5f );
+	p.rotation[RightLowerArm] = RotX( -2.0f );
+	p.rotation[LeftUpperArm] = RotX( -0.9f ) * RotZ( -0.35f );
+	p.rotation[LeftLowerArm] = RotY( 0.8f ) * RotX( -1.2f );
+	return p;
+}
+
+Pose MeleeIdlePose( float time, float duration )
+{
+	Pose p = MeleeArms( IdlePose( time, duration ) );
+	p.rotation[Spine] = RotY( 0.25f ) * RotX( 0.08f );
+	p.rotation[LeftUpperLeg] = RotZ( 0.12f ) * RotX( -0.25f );
+	p.rotation[RightUpperLeg] = RotZ( -0.12f ) * RotX( -0.15f );
+	p.rotation[LeftLowerLeg] = RotX( 0.4f );
+	p.rotation[RightLowerLeg] = RotX( 0.3f );
+	p.hipsHeight = 0.9f;
+	return p;
+}
+
+Pose MeleeWalkPose( float time, float duration )
+{
+	Pose p = MeleeArms( CyclePose( time / duration, 0.4f, 0.6f, 0.0f, 0.0f, 0.12f, 0.03f, 0.92f ) );
+	p.rotation[Spine] = RotY( 0.2f ) * RotX( 0.12f );
+	return p;
+}
+
+Pose MeleeRunPose( float time, float duration )
+{
+	Pose p = MeleeArms( CyclePose( time / duration, 0.75f, 1.0f, 0.0f, 0.0f, 0.3f, 0.06f, 0.9f ) );
+	p.rotation[Spine] = RotY( 0.15f ) * RotX( 0.3f );
+	return p;
+}
+
+// A horizontal swing from the right shoulder across to the left.
+Pose MeleeSwingPose( float time, float duration )
+{
+	Pose p = MeleeIdlePose( 0.0f, 1.0f );
+	float t = std::min( time / duration, 1.0f );
+	float wind = t < 0.3f ? Smooth( t / 0.3f ) : 1.0f;				  // wind up
+	float strike = t < 0.3f ? 0.0f : Smooth( ( t - 0.3f ) / 0.45f ); // swing through
+	strike = std::min( strike, 1.0f );
+	p.rotation[Spine] = RotY( 0.25f + 0.35f * wind - 1.5f * strike ) * RotX( 0.1f );
+	p.rotation[RightUpperArm] = RotY( 0.3f * wind - 0.9f * strike ) * RotX( -1.3f ) * RotZ( -0.4f + 0.2f * strike );
+	p.rotation[RightLowerArm] = RotX( Lerp( -1.2f, -0.2f, strike ) );
+	p.rotation[LeftUpperArm] = RotY( -0.6f * strike ) * RotX( -1.2f ) * RotZ( -0.5f );
+	p.rotation[LeftLowerArm] = RotY( 0.8f ) * RotX( -0.6f );
+	return p;
+}
+
 ozz::unique_ptr<ozz::animation::Animation> BuildClip( const char* name, float duration, PoseFn fn )
 {
 	RawAnimation raw;
@@ -458,6 +526,11 @@ std::unique_ptr<AnimSet> AnimSet::CreateProcedural()
 	set->m_clips[ClipJumpStart] = BuildClip( "jump_start", anim_tuning::kJumpStartSeconds, JumpStartPose );
 	set->m_clips[ClipFall] = BuildClip( "fall", 1.0f, FallPose );
 	set->m_clips[ClipLand] = BuildClip( "land", anim_tuning::kLandSeconds, LandPose );
+	set->m_stanceClips["pistol"] = BuildClip( "pistol", 2.0f, PistolPose );
+	set->m_stanceClips["melee_idle"] = BuildClip( "melee_idle", 2.0f, MeleeIdlePose );
+	set->m_stanceClips["melee_walk"] = BuildClip( "melee_walk", anim_tuning::kWalkCycleSeconds, MeleeWalkPose );
+	set->m_stanceClips["melee_run"] = BuildClip( "melee_run", anim_tuning::kRunCycleSeconds, MeleeRunPose );
+	set->m_stanceClips["melee_swing"] = BuildClip( "melee_swing", 0.45f, MeleeSwingPose );
 	set->m_description = "procedural placeholder rig";
 	ComputeRestModels( *set, set->m_restModels, set->m_scale );
 	std::string ignored;
@@ -559,6 +632,24 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 	}
 
 	ComputeRestModels( *set, set->m_restModels, set->m_scale );
+	for ( const auto& [key, value] : cfg )
+	{
+		if ( key.rfind( "stance.", 0 ) == 0 )
+		{
+			std::string name = key.substr( 7 );
+			auto clip = LoadArchive<ozz::animation::Animation>( read, value );
+			if ( clip == nullptr || clip->num_tracks() != set->m_skeleton->num_joints() )
+			{
+				warnings += "stance clip '" + name + "' (" + value + ") could not be loaded for this skeleton; ";
+				continue;
+			}
+			set->m_stanceClips[name] = std::move( clip );
+		}
+		else if ( key.rfind( "mask.", 0 ) == 0 )
+		{
+			set->m_masks[key.substr( 5 )] = value;
+		}
+	}
 	set->SetAim( cfg.count( "aim" ) ? cfg["aim"] : set->m_aimConfig, cfg.count( "aim_tip" ) ? cfg["aim_tip"] : set->m_aimTipName,
 				 warnings );
 	set->m_description = dir + " (" + std::to_string( set->m_skeleton->num_joints() ) + " joints, " + std::to_string( loaded ) +
@@ -612,6 +703,19 @@ bool AnimSet::Save( const std::string& dir ) const
 	cfg << "lock_root_xz = " << ( m_lockRootXZ ? "true" : "false" ) << "\n";
 	cfg << "aim = " << m_aimConfig << "\n";
 	cfg << "aim_tip = " << m_aimTipName << "\n";
+	for ( const auto& [layer, roots] : m_masks )
+	{
+		cfg << "mask." << layer << " = " << roots << "\n";
+	}
+	for ( const auto& [name, clip] : m_stanceClips )
+	{
+		std::string file = "stance_" + name + ".ozz";
+		if ( SaveArchive( dir + "/" + file, *clip ) == false )
+		{
+			return false;
+		}
+		cfg << "stance." << name << " = " << file << "\n";
+	}
 	for ( int c = 0; c < ClipCount; ++c )
 	{
 		if ( m_clips[c] == nullptr )

@@ -1,0 +1,30 @@
+[gd_scene load_steps=5 format=3]
+
+; A placeholder bat, held by the "armed" state binding in vfx/bindings_melee.tres. Like the pistol,
+; it points along -Z from the grip; the binding's attach_rotation turns it into the hand's frame.
+
+[sub_resource type="StandardMaterial3D" id="Wood"]
+albedo_color = Color(0.62, 0.43, 0.24, 1)
+roughness = 0.7
+
+[sub_resource type="BoxMesh" id="Barrel"]
+material = SubResource("Wood")
+size = Vector3(0.07, 0.07, 0.55)
+
+[sub_resource type="StandardMaterial3D" id="Tape"]
+albedo_color = Color(0.1, 0.1, 0.12, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="Handle"]
+material = SubResource("Tape")
+size = Vector3(0.04, 0.04, 0.3)
+
+[node name="Bat" type="Node3D"]
+
+[node name="Handle" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.05)
+mesh = SubResource("Handle")
+
+[node name="Barrel" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)
+mesh = SubResource("Barrel")

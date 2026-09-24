@@ -727,8 +727,15 @@ String CinderboxClient::get_character() const
 
 String CinderboxClient::use_character( const String& name )
 {
-	if ( name == m_character )
+	if ( name == m_character && m_animSet )
 	{
+		// Same character; the server's layers and stances may still be new.
+		std::string warnings;
+		auto stances = anim::BuildStanceTable( *m_animSet, m_frame.schema.layers, m_frame.schema.stances, warnings );
+		if ( m_mirror )
+		{
+			m_mirror->SetAnimSet( m_animSet, stances );
+		}
 		return String();
 	}
 	std::shared_ptr<const anim::AnimSet> set;
@@ -773,9 +780,16 @@ String CinderboxClient::use_character( const String& name )
 	m_character = name;
 	m_characterFolder = folder;
 	m_animSet = set;
+	std::string stanceWarnings;
+	auto stances = anim::BuildStanceTable( *set, m_frame.schema.layers, m_frame.schema.stances, stanceWarnings );
+	if ( stanceWarnings.empty() == false )
+	{
+		UtilityFunctions::push_warning( "Cinderbox character ", name.is_empty() ? String( "built-in" ) : name, ": ",
+										String::utf8( stanceWarnings.c_str() ) );
+	}
 	if ( m_mirror )
 	{
-		m_mirror->SetAnimSet( set );
+		m_mirror->SetAnimSet( set, stances );
 	}
 	RebuildCharacterNodes();
 	return String();

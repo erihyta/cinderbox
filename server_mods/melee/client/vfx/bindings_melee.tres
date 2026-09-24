@@ -1,0 +1,55 @@
+[gd_resource type="CbEffectTable" load_steps=6 format=3]
+
+; How the melee mod looks and sounds, keyed on names it declares. The swing's motion is the
+; character's melee_swing stance (in the pose everyone draws and hit tests use); this adds the bat,
+; the whoosh and the hit.
+
+[sub_resource type="CbEffect" id="Swing"]
+event = 6
+name = "melee.swing"
+bone = "RightHand"
+sound = "res://assets/sfx/swing.wav"
+volume_db = -6.0
+pitch_jitter = 0.08
+max_distance = 30.0
+
+[sub_resource type="CbEffect" id="HitPlayer"]
+event = 6
+name = "melee.hit"
+value_filter = 1
+sound = "res://assets/sfx/bat_hit.wav"
+volume_db = -2.0
+pitch_jitter = 0.1
+max_distance = 40.0
+
+[sub_resource type="CbEffect" id="Hurt"]
+event = 6
+name = "melee.hit"
+value_filter = 1
+subject = 1
+who = 1
+shake = 0.08
+shake_time = 0.25
+flash_color = Color(0.8, 0.05, 0.05, 0.25)
+flash_time = 0.3
+
+[sub_resource type="CbEffect" id="HitProp"]
+event = 6
+name = "melee.hit"
+value_filter = 2
+sound = "res://assets/sfx/bat_hit.wav"
+volume_db = -10.0
+pitch_jitter = 0.2
+max_distance = 25.0
+
+; While the bat is out: in the right hand.
+[sub_resource type="CbStateBinding" id="Armed"]
+conditions = PackedStringArray("loadout.slot == 3", "!combat.dead")
+attach_scene = "res://prefabs/bat.tscn"
+attach_bone = "RightHand"
+attach_offset = Vector3(0, -0.06, 0)
+attach_rotation = Vector3(-90, 180, 0)
+
+[resource]
+effects = [SubResource("Swing"), SubResource("HitPlayer"), SubResource("Hurt"), SubResource("HitProp")]
+states = [SubResource("Armed")]

@@ -125,6 +125,11 @@ struct AnimState
 	// How far the hips turn from the body's facing toward the direction of travel, in [-pi/2, pi/2]
 	// (the spine turns back, so the upper body keeps facing). Zero when walking straight ahead.
 	float legYaw = 0.0f;
+	// Per layer: the stance a mod set (0 = none), the one it replaced (fading out), and seconds since
+	// it was set (fades, and the playback of a single-clip stance like a swing).
+	uint8_t stances[kMaxAnimLayers] = {};
+	uint8_t previousStances[kMaxAnimLayers] = {};
+	float layerTime[kMaxAnimLayers] = {};
 };
 
 // Values a server mod published about an entity, for presentation to read by name. The schema
@@ -187,7 +192,7 @@ CB_CHECK_COMPONENT( Shape, 16 );
 CB_CHECK_COMPONENT( PhysicsBody, 16 );
 CB_CHECK_COMPONENT( Character, 52 );
 CB_CHECK_COMPONENT( Prop, 12 );
-CB_CHECK_COMPONENT( AnimState, 32 );
+CB_CHECK_COMPONENT( AnimState, 56 );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( Blackboard, 4 * kBoardSlots );
 CB_CHECK_COMPONENT( Ragdoll, 20 );

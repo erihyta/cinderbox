@@ -70,6 +70,28 @@ struct ActionHandle
 	}
 };
 
+// An animation layer (a bone mask the character defines: "upper", "full", ...) and a stance (a clip
+// set a character may ship: "pistol", "melee"). A default StanceHandle means "no stance".
+struct LayerHandle
+{
+	int index = -1;
+
+	bool Valid() const
+	{
+		return index >= 0;
+	}
+};
+
+struct StanceHandle
+{
+	int index = -1;
+
+	bool Valid() const
+	{
+		return index >= 0;
+	}
+};
+
 // Collects what every mod declares. Names are shared: two mods declaring the same field get the
 // same slot (so one mod can read what another publishes), as long as they agree on its type.
 class Declarations
@@ -79,6 +101,11 @@ public:
 	EventHandle Event( const std::string& name );
 	// `key` is the suggested binding, as Godot names keys ("F", "R", "1") or "MouseLeft".
 	ActionHandle Action( const std::string& name, const std::string& key );
+	// Layers apply in declaration order (a later one wins where masks overlap). At most
+	// kMaxAnimLayers. "full" (every bone) and "upper" (the spine up) work on any character; others
+	// need the character to define the mask.
+	LayerHandle Layer( const std::string& name );
+	StanceHandle Stance( const std::string& name );
 
 	const ModSchema& Schema() const
 	{
@@ -246,6 +273,10 @@ public:
 	// true: the body faces where the camera looks (a shooter's stance; the legs still walk where it
 	// goes). false: it turns toward where it walks (freelook, the default).
 	void FaceCamera( uint32_t target, bool faceCamera );
+	// Plays `stance` on the player's `layer` (a default StanceHandle clears it), fading over
+	// kStanceFadeSeconds. Part of the pose everyone draws and hit tests use. Setting the stance a
+	// layer already has does nothing; setting another restarts the layer's clock (a swing).
+	void SetStance( uint32_t target, LayerHandle layer, StanceHandle stance );
 
 	// Commands emitted so far this tick (tests).
 	const std::vector<SimCommand>& Commands() const

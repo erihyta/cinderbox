@@ -215,6 +215,9 @@ void CbCharacter::_bind_methods()
 	ADD_GROUP( "Bake", "" );
 	CB_PROP( Variant::FLOAT, sample_rate, PROPERTY_HINT_RANGE, "10,120,1,suffix:Hz" )
 	CB_PROP( Variant::BOOL, lock_root_xz, PROPERTY_HINT_NONE, "" )
+	ADD_GROUP( "Layers", "" );
+	CB_PROP( Variant::DICTIONARY, stance_clips, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
+	CB_PROP( Variant::DICTIONARY, masks, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
 	ADD_GROUP( "Aim", "aim_" );
 	CB_PROP( Variant::STRING, aim_chain, PROPERTY_HINT_PLACEHOLDER_TEXT, "UpperChest:0.3 RightUpperArm:1" )
 	CB_PROP( Variant::STRING, aim_tip, PROPERTY_HINT_NONE, "" )
@@ -368,16 +371,9 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 			warnings += "aim tip " + m_aimTip + " is not in the skeleton; ";
 		}
 	}
-	int clips = 0;
-	for ( int c = 0; c < anim::ClipCount; ++c )
-	{
-		const char* clipName = anim::ClipName( anim::Clip( c ) );
-		String animationName = m_clips[c].strip_edges();
-		if ( animationName.is_empty() || player->has_animation( animationName ) == false )
-		{
-			warnings += String( "no animation '" ) + animationName + "' for clip " + clipName + "; ";
-			continue;
-		}
+	// One clip: sampled from an animation of the AnimationPlayer at a fixed rate, bone by bone,
+	// built by ozz and written as `file`. Returns an error, or "".
+	auto bakeClip = [&]( const String& animationName, const String& file ) -> String {
 		Ref<Animation> animation = player->get_animation( animationName );
 		float duration = std::max( float( animation->get_length() ), 1.0f / float( m_sampleRate ) );
 
@@ -477,21 +473,85 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		}
 		if ( rawClip.Validate() == false )
 		{
-			return fail( String( "clip " ) + clipName + " is not valid for ozz" );
+			return "animation " + animationName + " is not valid for ozz";
 		}
 		ozz::unique_ptr<ozz::animation::Animation> builtClip = AnimationBuilder()( rawClip );
 		if ( builtClip == nullptr )
 		{
-			return fail( String( "ozz could not build clip " ) + clipName );
+			return "ozz could not build animation " + animationName;
+		}
+		String writeError;
+		if ( WriteFile( folder + file, Archive( *builtClip ), writeError ) == false )
+		{
+			return writeError;
+		}
+		return String();
+	};
+
+	int clips = 0;
+	for ( int c = 0; c < anim::ClipCount; ++c )
+	{
+		const char* clipName = anim::ClipName( anim::Clip( c ) );
+		String animationName = m_clips[c].strip_edges();
+		if ( animationName.is_empty() || player->has_animation( animationName ) == false )
+		{
+			warnings += String( "no animation '" ) + animationName + "' for clip " + clipName + "; ";
+			continue;
 		}
 		String file = String( clipName ) + ".ozz";
-		if ( WriteFile( folder + file, Archive( *builtClip ), error ) == false )
+		String problem = bakeClip( animationName, file );
+		if ( problem.is_empty() == false )
 		{
-			return fail( error );
+			return fail( problem );
 		}
 		cfg += std::string( clipName ) + " = " + Std( file ) + "\n";
 		++clips;
 	}
+
+	// Stances: "<stance>" (one loop) or "<stance>_<clip>" -> an animation of the player.
+	int stanceClips = 0;
+	Array stanceNames = m_stanceClips.keys();
+	for ( int64_t i = 0; i < stanceNames.size(); ++i )
+	{
+		String name = String( stanceNames[i] ).strip_edges();
+		String animationName = String( m_stanceClips[stanceNames[i]] ).strip_edges();
+		if ( name.is_empty() || name.contains( " " ) || name.contains( "/" ) )
+		{
+			warnings += "stance clip name '" + name + "' must be one word; ";
+			continue;
+		}
+		if ( player->has_animation( animationName ) == false )
+		{
+			warnings += "no animation '" + animationName + "' for stance clip " + name + "; ";
+			continue;
+		}
+		String file = "stance_" + name + ".ozz";
+		String problem = bakeClip( animationName, file );
+		if ( problem.is_empty() == false )
+		{
+			return fail( problem );
+		}
+		cfg += "stance." + Std( name ) + " = " + Std( file ) + "\n";
+		++stanceClips;
+	}
+
+	// Layer masks: "<layer>" -> bones whose subtrees it covers ("Spine", "Spine:0.5 RightShoulder").
+	Array layerNames = m_masks.keys();
+	for ( int64_t i = 0; i < layerNames.size(); ++i )
+	{
+		String layer = String( layerNames[i] ).strip_edges();
+		String roots = String( m_masks[layerNames[i]] ).strip_edges();
+		for ( const String& entry : roots.split( " ", false ) )
+		{
+			if ( skeleton->find_bone( entry.get_slice( ":", 0 ) ) < 0 )
+			{
+				warnings += "mask " + layer + ": no bone " + entry.get_slice( ":", 0 ) + "; ";
+			}
+		}
+		cfg += "mask." + Std( layer ) + " = " + Std( roots ) + "\n";
+	}
+	result["stance_clips"] = stanceClips;
+
 	if ( WriteText( folder + "anim.cfg", cfg, error ) == false )
 	{
 		return fail( error );

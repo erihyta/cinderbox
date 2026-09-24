@@ -53,6 +53,14 @@ bool GameServer::Start( const ServerOptions& options )
 	std::shared_ptr<const CharacterAsset> character = options.character ? options.character : BuiltInCharacter();
 	m_schema.character = character->name;
 	m_hits = std::make_unique<HitTester>( character );
+	{
+		std::string warnings;
+		m_hits->SetStances( m_schema.layers, m_schema.stances, warnings );
+		if ( warnings.empty() == false )
+		{
+			Log( "character %s: %s", character->name.empty() ? "built-in" : character->name.c_str(), warnings.c_str() );
+		}
+	}
 	EncodeSchema( m_schema, m_schemaBytes );
 
 	m_map = GetLevelLayout();
