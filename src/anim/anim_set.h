@@ -9,6 +9,7 @@
 #include "ozz/base/memory/unique_ptr.h"
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -29,6 +30,14 @@ enum Clip : int
 // Names used in anim.cfg and for the converted file names.
 const char* ClipName( Clip clip );
 
+// Reads a file of a character folder by its name relative to the folder ("anim.cfg", "run.ozz").
+// Returns false when it does not exist. Lets the same loader read a folder on disk, a mounted Godot
+// pack (res://) or a workshop item's zip on the server.
+using FileReader = std::function<bool( const std::string& name, std::string& bytes )>;
+
+// A FileReader over a folder on disk.
+FileReader DiskReader( const std::string& dir );
+
 class AnimSet
 {
 public:
@@ -38,6 +47,10 @@ public:
 	// Loads `<dir>/anim.cfg` (see assets/anim/README.md). Returns null and sets `error` on failure.
 	// Missing clips are allowed (that layer falls back to the rest pose) and reported in `warnings`.
 	static std::unique_ptr<AnimSet> Load( const std::string& dir, std::string& error, std::string& warnings );
+
+	// The same, reading through `read`; `label` names the source in the description and messages.
+	static std::unique_ptr<AnimSet> Load( const FileReader& read, const std::string& label, std::string& error,
+										  std::string& warnings );
 
 	// Writes skeleton, clips and anim.cfg to `dir` (used to test the file pipeline).
 	bool Save( const std::string& dir ) const;

@@ -360,11 +360,10 @@ ozz::unique_ptr<ozz::animation::Skeleton> BuildSkeleton()
 }
 
 // Tiny "key = value" config reader.
-std::map<std::string, std::string> ReadConfig( const std::string& path, bool& ok )
+std::map<std::string, std::string> ReadConfig( const std::string& text )
 {
 	std::map<std::string, std::string> values;
-	std::ifstream in( path );
-	ok = in.good();
+	std::istringstream in( text );
 	std::string line;
 	while ( std::getline( in, line ) )
 	{
@@ -389,14 +388,19 @@ std::map<std::string, std::string> ReadConfig( const std::string& path, bool& ok
 }
 
 template <typename T>
-ozz::unique_ptr<T> LoadArchive( const std::string& path )
+ozz::unique_ptr<T> LoadArchive( const FileReader& read, const std::string& name )
 {
-	ozz::io::File file( path.c_str(), "rb" );
-	if ( file.opened() == false )
+	std::string bytes;
+	if ( read( name, bytes ) == false )
 	{
 		return nullptr;
 	}
-	ozz::io::IArchive archive( &file );
+	ozz::io::MemoryStream stream;
+	if ( stream.Write( bytes.data(), bytes.size() ) != bytes.size() || stream.Seek( 0, ozz::io::Stream::kSet ) != 0 )
+	{
+		return nullptr;
+	}
+	ozz::io::IArchive archive( &stream );
 	if ( archive.TestTag<T>() == false )
 	{
 		return nullptr;
@@ -458,19 +462,40 @@ std::unique_ptr<AnimSet> AnimSet::CreateProcedural()
 	return set;
 }
 
+FileReader DiskReader( const std::string& dir )
+{
+	return [dir]( const std::string& name, std::string& bytes ) {
+		std::ifstream in( dir + "/" + name, std::ios::binary );
+		if ( in.good() == false )
+		{
+			return false;
+		}
+		std::ostringstream all;
+		all << in.rdbuf();
+		bytes = all.str();
+		return true;
+	};
+}
+
 std::unique_ptr<AnimSet> AnimSet::Load( const std::string& dir, std::string& error, std::string& warnings )
 {
-	bool ok = false;
-	auto cfg = ReadConfig( dir + "/anim.cfg", ok );
-	if ( ok == false )
+	return Load( DiskReader( dir ), dir, error, warnings );
+}
+
+std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::string& dir, std::string& error,
+										std::string& warnings )
+{
+	std::string text;
+	if ( read( "anim.cfg", text ) == false )
 	{
 		error = "no anim.cfg in " + dir;
 		return nullptr;
 	}
+	auto cfg = ReadConfig( text );
 
 	auto set = std::make_unique<AnimSet>();
 	std::string skeletonFile = cfg.count( "skeleton" ) ? cfg["skeleton"] : "skeleton.ozz";
-	set->m_skeleton = LoadArchive<ozz::animation::Skeleton>( dir + "/" + skeletonFile );
+	set->m_skeleton = LoadArchive<ozz::animation::Skeleton>( read, skeletonFile );
 	if ( set->m_skeleton == nullptr )
 	{
 		error = "cannot load skeleton " + dir + "/" + skeletonFile;
@@ -515,7 +540,7 @@ std::unique_ptr<AnimSet> AnimSet::Load( const std::string& dir, std::string& err
 	{
 		const char* name = ClipName( Clip( c ) );
 		std::string file = cfg.count( name ) ? cfg[name] : std::string( name ) + ".ozz";
-		auto clip = LoadArchive<ozz::animation::Animation>( dir + "/" + file );
+		auto clip = LoadArchive<ozz::animation::Animation>( read, file );
 		if ( clip == nullptr )
 		{
 			warnings += std::string( "missing clip '" ) + name + "' (" + file + "); ";
