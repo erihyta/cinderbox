@@ -80,7 +80,10 @@ struct Character
 	uint8_t dead = 0;
 	// Set by a Freeze command: movement and jump inputs are ignored (between rounds, in a cutscene).
 	uint8_t frozen = 0;
-	uint8_t reserved[2] = {};
+	// Set by a Facing command: the body faces where the camera looks (a shooter's stance) instead
+	// of turning toward where it walks (freelook, the default).
+	uint8_t faceCamera = 0;
+	uint8_t reserved = 0;
 	// Times this character fell below the kill plane and was put back. Mods watch it to count the
 	// fall as a death; the engine only rescues the character.
 	uint32_t fallCount = 0;
@@ -111,13 +114,17 @@ struct AnimState
 	// Set by an Aim command (a mod: "the pistol is out"): the pose turns the character's aim chain
 	// toward aimYaw / aimPitch, on every client and on the server's hit tests alike.
 	uint8_t aiming = 0;
-	uint8_t reserved = 0;
+	// The legs walk backwards (the walk cycle plays in reverse): moving away from where it faces.
+	uint8_t legsBackward = 0;
 	float modeTime = 0.0f;		  // seconds since `mode` started
 	float locomotionPhase = 0.0f; // [0, 1), shared by walk and run so their feet stay in sync
 	float idleTime = 0.0f;		  // seconds, wraps every kAnimTimeWrap
 	float groundSpeed = 0.0f;	  // smoothed horizontal speed (m/s) that drives the 1D blend
 	float aimYaw = 0.0f;		  // where the player looks, relative to the body's facing (radians, [-pi, pi))
 	float aimPitch = 0.0f;		  // radians, up is positive
+	// How far the hips turn from the body's facing toward the direction of travel, in [-pi/2, pi/2]
+	// (the spine turns back, so the upper body keeps facing). Zero when walking straight ahead.
+	float legYaw = 0.0f;
 };
 
 // Values a server mod published about an entity, for presentation to read by name. The schema
@@ -180,7 +187,7 @@ CB_CHECK_COMPONENT( Shape, 16 );
 CB_CHECK_COMPONENT( PhysicsBody, 16 );
 CB_CHECK_COMPONENT( Character, 52 );
 CB_CHECK_COMPONENT( Prop, 12 );
-CB_CHECK_COMPONENT( AnimState, 28 );
+CB_CHECK_COMPONENT( AnimState, 32 );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( Blackboard, 4 * kBoardSlots );
 CB_CHECK_COMPONENT( Ragdoll, 20 );

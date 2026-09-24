@@ -1140,6 +1140,38 @@ void TestCommands()
 	CHECK( std::fabs( look->aimPitch - 0.25f * detmath::kPi / 2.0f ) < 1e-4f );
 	float facing = sim.PlayerCharacter( 0 )->facingYaw;
 	CHECK( std::fabs( detmath::WrapAngle( look->aimYaw + facing - detmath::YawToRadians( f.inputs[0].cameraYaw ) ) ) < 1e-4f );
+	// Facing: freelook turns toward the direction of travel; camera-facing snaps to the camera and
+	// the legs turn toward where the body goes instead (backwards past ~100 degrees).
+	{
+		SimCommand* c = command( CommandType::Facing, SlotTarget( 0 ) );
+		c->mode = 1;
+	}
+	f.inputs[0].cameraYaw = 16384; // a quarter turn
+	f.inputs[0].moveRight = 127;   // strafing: sideways relative to the camera
+	step( 40 );
+	CHECK( sim.PlayerCharacter( 0 )->faceCamera == 1 );
+	CHECK( std::fabs( detmath::WrapAngle( sim.PlayerCharacter( 0 )->facingYaw - detmath::YawToRadians( 16384 ) ) ) < 1e-4f );
+	const AnimState* legs = sim.EntityAnimState( p0 );
+	std::printf( "    strafing: legYaw %.2f backward %d\n", legs->legYaw, int( legs->legsBackward ) );
+	CHECK( std::fabs( std::fabs( legs->legYaw ) - 0.5f * detmath::kPi ) < 0.2f );
+	f.inputs[0].moveRight = 0;
+	f.inputs[0].moveForward = -127; // backing away from where it faces
+	step( 40 );
+	legs = sim.EntityAnimState( p0 );
+	std::printf( "    backing up: legYaw %.2f backward %d\n", legs->legYaw, int( legs->legsBackward ) );
+	CHECK( legs->legsBackward == 1 );
+	CHECK( std::fabs( legs->legYaw ) < 0.2f );
+	CHECK( std::fabs( detmath::WrapAngle( sim.PlayerCharacter( 0 )->facingYaw - detmath::YawToRadians( 16384 ) ) ) < 1e-4f );
+	command( CommandType::Facing, SlotTarget( 0 ) );
+	step( 60 );
+	// Freelook again: it turns around to face the way it walks.
+	CHECK( sim.PlayerCharacter( 0 )->faceCamera == 0 );
+	CHECK( std::fabs( detmath::WrapAngle( sim.PlayerCharacter( 0 )->facingYaw - detmath::YawToRadians( 16384 ) ) ) > 2.5f );
+	CHECK( sim.EntityAnimState( p0 )->legsBackward == 0 );
+	f.inputs[0].moveForward = 0;
+	f.inputs[0].cameraYaw = 0;
+	step( 30 );
+
 	// Being placed (a respawn, falling out of the world) keeps the aim a mod asked for.
 	{
 		SimCommand* c = command( CommandType::Respawn, SlotTarget( 0 ) );
@@ -1335,6 +1367,20 @@ void TestPoseTools()
 	aiming.aiming = 0;
 	aimed.Evaluate( aiming );
 	CHECK( b3Distance( position( aimed.Models()[size_t( hand )] ), position( eval.Models()[size_t( hand )] ) ) < 1e-5f );
+
+	// Legs turned toward the direction of travel: the hips and legs turn, the upper body does not.
+	{
+		AnimState strafing;
+		strafing.legYaw = 1.2f;
+		anim::PoseEvaluator turned( *set );
+		turned.Evaluate( strafing );
+		int leftFoot = present::FindJoint( *set, "LeftFoot" );
+		int head = present::FindJoint( *set, "Head" );
+		int leftHand = present::FindJoint( *set, "LeftHand" );
+		CHECK( b3Distance( position( turned.Models()[size_t( leftFoot )] ), position( eval.Models()[size_t( leftFoot )] ) ) > 0.05f );
+		CHECK( b3Distance( position( turned.Models()[size_t( head )] ), position( eval.Models()[size_t( head )] ) ) < 1e-4f );
+		CHECK( b3Distance( position( turned.Models()[size_t( leftHand )] ), position( eval.Models()[size_t( leftHand )] ) ) < 1e-4f );
+	}
 
 	// A chain: the chest leans part of the way, the arm still ends up exactly on the line.
 	{

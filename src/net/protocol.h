@@ -20,7 +20,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 7; // 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose
+inline constexpr uint32_t kProtocolVersion = 8; // 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t

@@ -26,6 +26,13 @@ inline constexpr float kFallDelaySeconds = 0.12f; // airborne this long (without
 inline constexpr float kSpeedSmoothing = 12.0f;	  // 1/s
 inline constexpr float kTimeWrap = 60.0f;		  // idle time wraps here to keep float precision
 inline constexpr float kMaxModeTime = 600.0f;
+// Legs: turn toward the direction of travel at this rate (rad/s), from this ground speed (m/s).
+// Past kBackwardAbove from the facing they walk backwards; they walk forwards again below
+// kForwardBelow (the gap keeps a sideways walk from flipping every tick).
+inline constexpr float kLegTurnRate = 10.0f;
+inline constexpr float kLegMinSpeed = 0.3f;
+inline constexpr float kBackwardAbove = 1.75f; // ~100 degrees
+inline constexpr float kForwardBelow = 1.40f;  // ~80 degrees
 } // namespace anim_tuning
 
 // Advance `state` by one tick. `c` is the character after this tick's movement.

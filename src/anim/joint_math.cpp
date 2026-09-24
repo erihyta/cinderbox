@@ -81,6 +81,42 @@ int FindJoint( const AnimSet& set, const char* profileName )
 	return -1;
 }
 
+void RotateSubtree( const AnimSet& set, Models& models, int joint, b3Quat turn )
+{
+	const int joints = int( models.size() );
+	if ( joint < 0 || joint >= joints )
+	{
+		return;
+	}
+	b3Vec3 pivot;
+	b3Quat unused;
+	float scale;
+	Decompose( models[size_t( joint )], pivot, unused, scale );
+	// Everything below the joint turns with it (ozz orders parents first).
+	auto parents = set.Skeleton().joint_parents();
+	std::vector<bool> below( size_t( joints ), false );
+	below[size_t( joint )] = true;
+	for ( int j = joint + 1; j < joints; ++j )
+	{
+		int parent = parents[size_t( j )];
+		below[size_t( j )] = parent >= 0 && below[size_t( parent )];
+	}
+	for ( int j = joint; j < joints; ++j )
+	{
+		if ( below[size_t( j )] == false )
+		{
+			continue;
+		}
+		b3Vec3 p;
+		b3Quat q;
+		float s;
+		Decompose( models[size_t( j )], p, q, s );
+		p = b3Add( pivot, b3RotateVector( turn, b3Sub( p, pivot ) ) );
+		q = b3MulQuat( turn, q );
+		models[size_t( j )] = Compose( p, q, s );
+	}
+}
+
 void AimChain( const AnimSet& set, Models& models, const std::vector<std::pair<int, float>>& chain, int tip, b3Vec3 direction )
 {
 	const int joints = int( models.size() );
@@ -88,8 +124,6 @@ void AimChain( const AnimSet& set, Models& models, const std::vector<std::pair<i
 	{
 		return;
 	}
-	auto parents = set.Skeleton().joint_parents();
-	std::vector<bool> below( size_t( joints ), false );
 	for ( const auto& [joint, weight] : chain )
 	{
 		if ( joint < 0 || joint >= joints || weight <= 0.0f )
@@ -107,29 +141,7 @@ void AimChain( const AnimSet& set, Models& models, const std::vector<std::pair<i
 			continue;
 		}
 		b3Quat turn = Nlerp( b3Quat_identity, Arc( b3Normalize( current ), direction ), std::clamp( weight, 0.0f, 1.0f ) );
-
-		// Everything below the joint turns with it, about the joint (ozz orders parents first).
-		std::fill( below.begin(), below.end(), false );
-		below[size_t( joint )] = true;
-		for ( int j = joint + 1; j < joints; ++j )
-		{
-			int parent = parents[size_t( j )];
-			below[size_t( j )] = parent >= 0 && below[size_t( parent )];
-		}
-		for ( int j = joint; j < joints; ++j )
-		{
-			if ( below[size_t( j )] == false )
-			{
-				continue;
-			}
-			b3Vec3 p;
-			b3Quat q;
-			float s;
-			Decompose( models[size_t( j )], p, q, s );
-			p = b3Add( root, b3RotateVector( turn, b3Sub( p, root ) ) );
-			q = b3MulQuat( turn, q );
-			models[size_t( j )] = Compose( p, q, s );
-		}
+		RotateSubtree( set, models, joint, turn );
 	}
 }
 
