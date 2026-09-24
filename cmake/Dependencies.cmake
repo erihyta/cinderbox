@@ -23,9 +23,12 @@ FetchContent_Declare(flecs
 )
 
 # --- Box3D (main @ 2026-08-29) ---
-# Patched: snapshots zero struct padding, union bytes past the active member, and geometry
-# pointers, so a snapshot holds only simulation state (it used to carry stack bytes and a heap
-# address to every joining client). See cmake/patches/box3d-snapshot-padding.patch.
+# Two local patches (cmake/patches/):
+# - box3d-snapshot-padding.patch: snapshots zero struct padding, union bytes past the active member,
+#   and geometry pointers, so a snapshot holds only simulation state (it used to carry stack bytes
+#   and a heap address to every joining client).
+# - box3d-neon-minmax.patch: ARM64 min/max return the same zero sign as x64 (SSE semantics), so
+#   clamped impulses stay bit-identical across architectures.
 set(BOX3D_DISABLE_SIMD OFF CACHE BOOL "" FORCE)
 set(BOX3D_DOUBLE_PRECISION OFF CACHE BOOL "" FORCE)
 find_package(Git REQUIRED)
@@ -35,6 +38,9 @@ FetchContent_Declare(box3d
 	GIT_SHALLOW FALSE
 	PATCH_COMMAND "${CMAKE_COMMAND}" -DGIT=${GIT_EXECUTABLE}
 		-DPATCH=${CMAKE_CURRENT_LIST_DIR}/patches/box3d-snapshot-padding.patch
+		-P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
+	COMMAND "${CMAKE_COMMAND}" -DGIT=${GIT_EXECUTABLE}
+		-DPATCH=${CMAKE_CURRENT_LIST_DIR}/patches/box3d-neon-minmax.patch
 		-P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
 )
 

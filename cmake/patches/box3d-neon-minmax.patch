@@ -1,0 +1,24 @@
+diff --git a/src/simd.h b/src/simd.h
+index 6e313a0..a1c628b 100644
+--- a/src/simd.h
++++ b/src/simd.h
+@@ -445,14 +445,17 @@ static inline b3FloatW b3MulAddW( b3FloatW a, b3FloatW b, b3FloatW c )
+ 	return vaddq_f32( a, vmulq_f32( b, c ) );
+ }
+ 
++// Same results as SSE's minps/maxps: when the values compare equal (-0 and +0) or either is NaN, the
++// second operand. vminq/vmaxq order -0 below +0, so clamps would return a zero of a different sign
++// than on x64 and simulations would stop being bit-identical across architectures.
+ static inline b3FloatW b3MinW( b3FloatW a, b3FloatW b )
+ {
+-	return vminq_f32( a, b );
++	return vbslq_f32( vcltq_f32( a, b ), a, b );
+ }
+ 
+ static inline b3FloatW b3MaxW( b3FloatW a, b3FloatW b )
+ {
+-	return vmaxq_f32( a, b );
++	return vbslq_f32( vcgtq_f32( a, b ), a, b );
+ }
+ 
+ // clamp a to [-b, b]
