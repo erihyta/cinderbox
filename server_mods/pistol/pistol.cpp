@@ -247,13 +247,15 @@ private:
 			}
 		}
 
-		// The pistol out means the arm points it where the player looks: in the pose everyone
-		// draws, and in the hitboxes shots are tested against.
+		// The pistol out means a shooter's stance: the body faces where the camera looks and the arm
+		// points the pistol there, in the pose everyone draws and hit tests use. Put away, the
+		// player is back to freelook.
 		bool holding = ctx.Get( netId, m_loadout ) == kPistolSlot;
 		if ( holding != g.aiming )
 		{
 			g.aiming = holding;
 			ctx.Aim( target, holding );
+			ctx.FaceCamera( target, holding );
 		}
 
 		if ( holding == false || c->frozen )
