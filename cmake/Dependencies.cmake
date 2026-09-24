@@ -23,12 +23,19 @@ FetchContent_Declare(flecs
 )
 
 # --- Box3D (main @ 2026-08-29) ---
+# Patched: snapshots zero struct padding, union bytes past the active member, and geometry
+# pointers, so a snapshot holds only simulation state (it used to carry stack bytes and a heap
+# address to every joining client). See cmake/patches/box3d-snapshot-padding.patch.
 set(BOX3D_DISABLE_SIMD OFF CACHE BOOL "" FORCE)
 set(BOX3D_DOUBLE_PRECISION OFF CACHE BOOL "" FORCE)
+find_package(Git REQUIRED)
 FetchContent_Declare(box3d
 	GIT_REPOSITORY https://github.com/erincatto/box3d.git
 	GIT_TAG 47d7f7cc7e091142c08d11dc7d2e493c5d34f536
 	GIT_SHALLOW FALSE
+	PATCH_COMMAND "${CMAKE_COMMAND}" -DGIT=${GIT_EXECUTABLE}
+		-DPATCH=${CMAKE_CURRENT_LIST_DIR}/patches/box3d-snapshot-padding.patch
+		-P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
 )
 
 # --- ENet v1.3.18 (networking) ---

@@ -1,0 +1,284 @@
+diff --git a/src/world_snapshot.c b/src/world_snapshot.c
+index 9efaee9..0a3ac48 100644
+--- a/src/world_snapshot.c
++++ b/src/world_snapshot.c
+@@ -29,6 +29,7 @@
+ #include "box3d/collision.h"
+ #include "box3d/types.h"
+ 
++#include <stddef.h>
+ #include <string.h>
+ 
+ // Snapshot image magic 'BNS3' and version
+@@ -169,6 +170,148 @@ static bool b3SnapCheckCount( const b3SnapReader* r, int count, int memSize, int
+ 	}                                                                                                                            \
+ 	while ( 0 )
+ 
++// Padding bytes, and the bytes of a union past its active member, are never read. They hold whatever
++// the memory held before, and struct copies from stack temporaries carry stack contents into them. The
++// images written below zero them, so a snapshot depends only on the simulation state: two saves of
++// the same state are byte-identical, and no stale process memory leaves the machine.
++static void b3ZeroBytes( void* p, size_t from, size_t to )
++{
++	if ( to > from )
++	{
++		memset( (char*)p + from, 0, to - from );
++	}
++}
++
++#define B3_FIELD_END( type, field ) ( offsetof( type, field ) + sizeof( ( (type*)0 )->field ) )
++#define B3_ZERO_BETWEEN( p, type, a, b ) b3ZeroBytes( ( p ), B3_FIELD_END( type, a ), offsetof( type, b ) )
++#define B3_ZERO_TAIL( p, type, last ) b3ZeroBytes( ( p ), B3_FIELD_END( type, last ), sizeof( type ) )
++
++static void b3ScrubFilter( b3Filter* f )
++{
++	B3_ZERO_TAIL( f, b3Filter, groupIndex );
++}
++
++static void b3ScrubShape( b3Shape* s )
++{
++	b3ScrubFilter( &s->filter );
++	B3_ZERO_BETWEEN( s, b3Shape, flags, capsule );
++
++	// The geometry follows the struct image and is restored from there (hulls, meshes, height fields
++	// and compounds through the registry), so the union in the image is never read. Its hull, mesh,
++	// height field or compound pointer would reveal a heap address. The union is the last member:
++	// this also clears the tail padding.
++	b3ZeroBytes( s, offsetof( b3Shape, capsule ), sizeof( b3Shape ) );
++}
++
++static void b3ScrubBody( b3Body* b )
++{
++	B3_ZERO_TAIL( b, b3Body, generation );
++}
++
++static void b3ScrubJoint( b3Joint* j )
++{
++	B3_ZERO_TAIL( j, b3Joint, collideConnected );
++}
++
++static void b3ScrubContact( b3Contact* c )
++{
++	B3_ZERO_BETWEEN( c, b3Contact, friction, convexContact );
++	size_t active;
++	if ( c->flags & b3_simMeshContact )
++	{
++		active = sizeof( b3MeshContact );
++	}
++	else
++	{
++		// The cache is a union; the simplex cache is its larger member.
++		_Static_assert( sizeof( b3SATCache ) <= sizeof( b3SimplexCache ), "simplex cache is the larger member" );
++		b3ZeroBytes( &c->convexContact, sizeof( b3SimplexCache ), sizeof( b3ConvexContact ) );
++		active = sizeof( b3ConvexContact );
++	}
++	b3ZeroBytes( c, offsetof( b3Contact, convexContact ) + active, offsetof( b3Contact, restitution ) );
++	B3_ZERO_TAIL( c, b3Contact, generation );
++}
++
++static void b3ScrubManifold( b3Manifold* m )
++{
++	for ( int i = 0; i < (int)( sizeof( m->points ) / sizeof( m->points[0] ) ); ++i )
++	{
++		B3_ZERO_TAIL( m->points + i, b3ManifoldPoint, persisted );
++	}
++}
++
++static void b3ScrubJointSim( b3JointSim* j )
++{
++	B3_ZERO_BETWEEN( j, b3JointSim, fixedRotation, distanceJoint );
++
++	size_t active = 0;
++	switch ( j->type )
++	{
++		case b3_distanceJoint:
++			B3_ZERO_TAIL( &j->distanceJoint, b3DistanceJoint, enableMotor );
++			active = sizeof( b3DistanceJoint );
++			break;
++		case b3_motorJoint:
++			active = sizeof( b3MotorJoint );
++			break;
++		case b3_parallelJoint:
++			active = sizeof( b3ParallelJoint );
++			break;
++		case b3_prismaticJoint:
++			B3_ZERO_TAIL( &j->prismaticJoint, b3PrismaticJoint, enableMotor );
++			active = sizeof( b3PrismaticJoint );
++			break;
++		case b3_revoluteJoint:
++			B3_ZERO_TAIL( &j->revoluteJoint, b3RevoluteJoint, enableLimit );
++			active = sizeof( b3RevoluteJoint );
++			break;
++		case b3_sphericalJoint:
++			active = sizeof( b3SphericalJoint );
++			break;
++		case b3_weldJoint:
++			active = sizeof( b3WeldJoint );
++			break;
++		case b3_wheelJoint:
++			B3_ZERO_TAIL( &j->wheelJoint, b3WheelJoint, enableSteeringMotor );
++			active = sizeof( b3WheelJoint );
++			break;
++		default:
++			break;
++	}
++	// The union is the last member: this also clears the tail padding.
++	b3ZeroBytes( j, offsetof( b3JointSim, distanceJoint ) + active, sizeof( b3JointSim ) );
++}
++
++static void b3ScrubContactSpec( b3ContactSpec* s )
++{
++	B3_ZERO_TAIL( s, b3ContactSpec, manifoldCount );
++}
++
++static void b3ScrubVisitor( b3Visitor* v )
++{
++	B3_ZERO_TAIL( v, b3Visitor, generation );
++}
++
++static void b3ScrubSetItem( b3SetItem* item )
++{
++	B3_ZERO_TAIL( item, b3SetItem, hash );
++}
++
++// A POD array whose elements have padding: count + scrubbed copies of the elements
++#define b3SerScrubbedArray( buf, arr, type, scrub )                                                                               \
++	do                                                                                                                           \
++	{                                                                                                                            \
++		b3SnapW_I32( buf, ( arr ).count );                                                                                       \
++		for ( int k_ = 0; k_ < ( arr ).count; ++k_ )                                                                             \
++		{                                                                                                                        \
++			type copy_;                                                                                                          \
++			memcpy( &copy_, ( arr ).data + k_, sizeof( type ) );                                                                 \
++			scrub( &copy_ );                                                                                                     \
++			b3SnapW_Bytes( buf, &copy_, (int)sizeof( type ) );                                                                   \
++		}                                                                                                                        \
++	}                                                                                                                            \
++	while ( 0 )
++
+ #define b3DesPodArray( r, arr )                                                                                                  \
+ 	do                                                                                                                           \
+ 	{                                                                                                                            \
+@@ -243,7 +386,12 @@ static void b3SerHashSet( b3RecBuffer* buf, const b3HashSet* hs )
+ 	b3SnapW_U32( buf, hs->count );
+ 	if ( hs->capacity > 0 )
+ 	{
+-		b3SnapW_Bytes( buf, hs->items, (int)( hs->capacity * sizeof( b3SetItem ) ) );
++		for ( uint32_t i = 0; i < hs->capacity; ++i )
++		{
++			b3SetItem item = hs->items[i];
++			b3ScrubSetItem( &item );
++			b3SnapW_Bytes( buf, &item, (int)sizeof( b3SetItem ) );
++		}
+ 	}
+ }
+ 
+@@ -346,7 +494,7 @@ static void b3SerSolverSet( b3RecBuffer* buf, const b3SolverSet* set )
+ 	b3SnapW_I32( buf, set->setIndex );
+ 	b3SerPodArray( buf, set->bodySims );
+ 	b3SerPodArray( buf, set->bodyStates );
+-	b3SerPodArray( buf, set->jointSims );
++	b3SerScrubbedArray( buf, set->jointSims, b3JointSim, b3ScrubJointSim );
+ 	b3SerPodArray( buf, set->contactIndices );
+ 	b3SerPodArray( buf, set->islandSims );
+ }
+@@ -412,9 +560,9 @@ static void b3SerGraphColor( b3RecBuffer* buf, const b3GraphColor* color, bool i
+ 	{
+ 		b3SerBitSet( buf, &color->bodySet );
+ 	}
+-	b3SerPodArray( buf, color->jointSims );
++	b3SerScrubbedArray( buf, color->jointSims, b3JointSim, b3ScrubJointSim );
+ 	b3SerPodArray( buf, color->convexContacts );
+-	b3SerPodArray( buf, color->contacts );
++	b3SerScrubbedArray( buf, color->contacts, b3ContactSpec, b3ScrubContactSpec );
+ 	// wideConstraints / manifoldConstraints / contactConstraints are transient, not serialized
+ }
+ 
+@@ -490,7 +638,8 @@ static void b3SerShapes( b3RecBuffer* buf, b3World* world, b3Recording* rec )
+ 
+ 	for ( int i = 0; i < count; ++i )
+ 	{
+-		b3Shape shape = world->shapes.data[i];
++		b3Shape shape;
++		memcpy( &shape, world->shapes.data + i, sizeof( b3Shape ) );
+ 		bool isLive = ( shape.id == i );
+ 
+ 		// Null out pointer fields before writing the raw struct
+@@ -502,6 +651,7 @@ static void b3SerShapes( b3RecBuffer* buf, b3World* world, b3Recording* rec )
+ 		{
+ 			memset( &shape.capsule, 0, sizeof( shape.capsule ) );
+ 		}
++		b3ScrubShape( &shape );
+ 		b3SnapW_Bytes( buf, &shape, sizeof( b3Shape ) );
+ 
+ 		if ( !isLive )
+@@ -793,7 +943,8 @@ static void b3SerContacts( b3RecBuffer* buf, b3World* world )
+ 		bool isLive = ( c->contactId == i );
+ 
+ 		// Write raw struct with pointer fields zeroed
+-		b3Contact copy = *c;
++		b3Contact copy;
++		memcpy( &copy, c, sizeof( b3Contact ) );
+ 		copy.manifolds = NULL;
+ 		copy.bodySimIndexA = B3_NULL_INDEX;
+ 		copy.bodySimIndexB = B3_NULL_INDEX;
+@@ -803,6 +954,7 @@ static void b3SerContacts( b3RecBuffer* buf, b3World* world )
+ 			copy.meshContact.triangleCache.count = 0;
+ 			copy.meshContact.triangleCache.capacity = 0;
+ 		}
++		b3ScrubContact( &copy );
+ 		b3SnapW_Bytes( buf, &copy, sizeof( b3Contact ) );
+ 
+ 		if ( !isLive )
+@@ -817,7 +969,13 @@ static void b3SerContacts( b3RecBuffer* buf, b3World* world )
+ 		b3SnapW_I32( buf, c->manifoldCount );
+ 		if ( c->manifoldCount > 0 && c->manifolds != NULL )
+ 		{
+-			b3SnapW_Bytes( buf, c->manifolds, c->manifoldCount * (int)sizeof( b3Manifold ) );
++			for ( int m = 0; m < c->manifoldCount; ++m )
++			{
++				b3Manifold manifold;
++				memcpy( &manifold, c->manifolds + m, sizeof( b3Manifold ) );
++				b3ScrubManifold( &manifold );
++				b3SnapW_Bytes( buf, &manifold, (int)sizeof( b3Manifold ) );
++			}
+ 		}
+ 
+ 		// Mesh triangleCache
+@@ -1017,8 +1175,10 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
+ 		b3SnapW_I32( buf, bodyCount );
+ 		for ( int i = 0; i < bodyCount; ++i )
+ 		{
+-			b3Body elem = world->bodies.data[i];
++			b3Body elem;
++			memcpy( &elem, world->bodies.data + i, sizeof( b3Body ) );
+ 			elem.userData = NULL;
++			b3ScrubBody( &elem );
+ 			b3SnapW_Bytes( buf, &elem, sizeof( b3Body ) );
+ 		}
+ 	}
+@@ -1035,8 +1195,10 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
+ 		b3SnapW_I32( buf, jointCount );
+ 		for ( int i = 0; i < jointCount; ++i )
+ 		{
+-			b3Joint elem = world->joints.data[i];
++			b3Joint elem;
++			memcpy( &elem, world->joints.data + i, sizeof( b3Joint ) );
+ 			elem.userData = NULL;
++			b3ScrubJoint( &elem );
+ 			b3SnapW_Bytes( buf, &elem, sizeof( b3Joint ) );
+ 		}
+ 	}
+@@ -1049,9 +1211,9 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
+ 		{
+ 			b3Sensor* s = world->sensors.data + i;
+ 			b3SnapW_I32( buf, s->shapeId );
+-			b3SerPodArray( buf, s->hits );
+-			b3SerPodArray( buf, s->overlaps1 );
+-			b3SerPodArray( buf, s->overlaps2 );
++			b3SerScrubbedArray( buf, s->hits, b3Visitor, b3ScrubVisitor );
++			b3SerScrubbedArray( buf, s->overlaps1, b3Visitor, b3ScrubVisitor );
++			b3SerScrubbedArray( buf, s->overlaps2, b3Visitor, b3ScrubVisitor );
+ 		}
+ 	}
+ 
