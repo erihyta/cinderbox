@@ -157,6 +157,10 @@ public:
 	Mirror( const Mirror& ) = delete;
 	Mirror& operator=( const Mirror& ) = delete;
 
+	// Switch to another character's skeleton and clips (the server's character is known only once
+	// it has welcomed us). Every player gets a new pose evaluator; the ragdoll rig follows.
+	void SetAnimSet( std::shared_ptr<const anim::AnimSet> animSet );
+
 	// `tickAlpha`: how far between frame.tick - 1 and frame.tick to draw.
 	void Update( const PresentationFrame& frame, float tickAlpha, float frameSeconds );
 

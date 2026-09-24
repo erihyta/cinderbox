@@ -84,6 +84,13 @@ public:
 	godot::String format_fields( int64_t net_id, const godot::String& format ) const;
 	// The workshop items this server's mods need: [{ mod, sha256 }].
 	godot::Array get_required_items() const;
+	// The character item everyone plays as on this server ("" for the built-in rig).
+	godot::String get_character() const;
+	// Plays as characters/<name>/ from the mounted packs: its baked ozz skeleton and clips
+	// (anim.cfg) drive every player, and character.tscn is the player prefab. "" goes back to the
+	// built-in rig. Returns an error message, or "" when it worked. Nothing is imported here: the
+	// files were baked in the editor and shipped in the item.
+	godot::String use_character( const godot::String& name );
 
 	void set_player_name( const godot::String& v )
 	{
@@ -171,6 +178,9 @@ private:
 	godot::Ref<godot::PackedScene> Prefab( const present::Visual& v );
 	godot::Ref<godot::PackedScene> LoadPrefab( const char* name );
 	godot::Ref<godot::PackedScene> LoadScene( const godot::String& path );
+	godot::Node3D* CreateNode( uint64_t visual, const present::Visual& v );
+	// Players and ragdolls again with the current prefab (after the character changed).
+	void RebuildCharacterNodes();
 	const Blackboard* BoardOf( uint32_t netId ) const;
 	std::vector<std::string> Conditions( const godot::PackedStringArray& conditions ) const;
 	bool StateHolds( const CbStateBinding& state, const present::Visual& v ) const;
@@ -190,6 +200,8 @@ private:
 
 	std::shared_ptr<const anim::AnimSet> m_animSet;
 	std::unique_ptr<present::Mirror> m_mirror;
+	godot::String m_character;		 // the character in use ("" = built-in)
+	godot::String m_characterFolder; // res://characters/<name>/
 	ClientThread m_thread;
 	PublishedFrame m_frame;
 	bool m_haveFrame = false;

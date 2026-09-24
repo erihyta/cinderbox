@@ -218,6 +218,11 @@ func _load_items() -> bool:
 		for mod in Boot.player_mods:
 			ProjectSettings.load_resource_pack(mod, true)
 		_reload_presentation()
+	# The server's character (one of the items just loaded), or the built-in rig.
+	var character_problem: String = client.use_character(client.get_character())
+	if character_problem != "":
+		_refuse("This server's character could not be used: %s" % character_problem)
+		return false
 	return true
 
 

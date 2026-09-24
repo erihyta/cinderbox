@@ -26,9 +26,12 @@ func _initialize() -> void:
 	_hostile("a file outside the moddable folders", {"project.binary": "x"})
 	_hostile("a native library", {"assets/lib.dll": "MZ"})
 	_hostile("a path escape", {"vfx/../../evil.tscn": "x"})
+	_hostile("a script in a character folder", {"characters/robot/brain.gd": "extends Node"})
+	_hostile("ozz data outside characters/", {"assets/skeleton.ozz": "ozz-skeleton"})
 
 	# Things that look close but are fine.
 	_friendly("a shader named .gdshader", {"vfx/glow.tres": "[gd_resource type=\"ShaderMaterial\" format=3]\n\n[ext_resource type=\"Shader\" path=\"res://vfx/glow.gdshader\" id=\"1\"]\n\n[resource]\nshader = ExtResource(\"1\")\n"})
+	_friendly("a character's baked data", {"characters/robot/skeleton.ozz": "ozz-skeleton", "characters/robot/anim.cfg": "skeleton = skeleton.ozz\n", "characters/robot/hitboxes.cfg": "head Head sphere 0 0 0 0 0 0 1 0.1\n"})
 	_friendly("an import redirect", {"assets/sfx/a.wav.import": "[remap]\n\nimporter=\"wav\"\npath=\"res://.godot/imported/a.wav-1.sample\"\n\n[deps]\n\nsource_file=\"res://assets/sfx/a.wav\"\ndest_files=[\"res://.godot/imported/a.wav-1.sample\"]\n"})
 
 	print("mod validator: %s" % ("ok" if failures == 0 else "%d failure(s)" % failures))
