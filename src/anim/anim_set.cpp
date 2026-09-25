@@ -779,6 +779,8 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 		set->m_lockRootXZ = cfg["lock_root_xz"] != "false" && cfg["lock_root_xz"] != "0";
 	}
 
+	// A character with a state machine plays its own clips; the six built-in ones are optional.
+	bool graph = read( "graph.cfg", set->m_graphText ) && set->m_graphText.empty() == false;
 	int loaded = 0;
 	for ( int c = 0; c < ClipCount; ++c )
 	{
@@ -787,7 +789,10 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 		auto clip = LoadArchive<ozz::animation::Animation>( read, file );
 		if ( clip == nullptr )
 		{
-			warnings += std::string( "missing clip '" ) + name + "' (" + file + "); ";
+			if ( graph == false )
+			{
+				warnings += std::string( "missing clip '" ) + name + "' (" + file + "); ";
+			}
 			continue;
 		}
 		if ( clip->num_tracks() != set->m_skeleton->num_joints() )
@@ -818,11 +823,23 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 		{
 			set->m_masks[key.substr( 5 )] = value;
 		}
+		else if ( key.rfind( "clip.", 0 ) == 0 )
+		{
+			std::string name = key.substr( 5 );
+			auto clip = LoadArchive<ozz::animation::Animation>( read, value );
+			if ( clip == nullptr || clip->num_tracks() != set->m_skeleton->num_joints() )
+			{
+				warnings += "clip '" + name + "' (" + value + ") could not be loaded for this skeleton; ";
+				continue;
+			}
+			set->m_namedClips[name] = std::move( clip );
+		}
 	}
 	set->SetAim( cfg.count( "aim" ) ? cfg["aim"] : set->m_aimConfig, cfg.count( "aim_tip" ) ? cfg["aim_tip"] : set->m_aimTipName,
 				 warnings );
-	set->m_description = dir + " (" + std::to_string( set->m_skeleton->num_joints() ) + " joints, " + std::to_string( loaded ) +
-						 "/" + std::to_string( int( ClipCount ) ) + " clips)";
+	set->m_description = dir + " (" + std::to_string( set->m_skeleton->num_joints() ) + " joints, " +
+						 ( graph ? "a state machine with " + std::to_string( set->m_namedClips.size() ) + " clips)"
+								 : std::to_string( loaded ) + "/" + std::to_string( int( ClipCount ) ) + " clips)" );
 	return set;
 }
 

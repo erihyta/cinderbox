@@ -504,7 +504,9 @@ int FindState( const AnimGraphLayer& layer, const std::string& name )
 
 // --- Running --------------------------------------------------------------------------------------
 
-float PointWeight( const AnimGraphState& state, float blend, size_t point )
+} // namespace
+
+float AnimGraphPointWeight( const AnimGraphState& state, float blend, size_t point )
 {
 	const auto& p = state.points;
 	if ( p.size() == 1 || state.blend == false )
@@ -539,6 +541,9 @@ float PointWeight( const AnimGraphState& state, float blend, size_t point )
 	return 0.0f;
 }
 
+namespace
+{
+
 // Advances a state's clock by dt. Returns true when it came round (a loop, or a blend space's
 // cycle); `ended` is set when a one-shot clip is within `window` seconds of its end.
 bool Advance( const AnimGraph& graph, const AnimGraphState& state, float blend, float& time, float dt, float window, bool& ended )
@@ -554,7 +559,7 @@ bool Advance( const AnimGraph& graph, const AnimGraphState& state, float blend, 
 		float rate = 0.0f;
 		for ( size_t i = 0; i < state.points.size(); ++i )
 		{
-			float w = PointWeight( state, blend, i );
+			float w = AnimGraphPointWeight( state, blend, i );
 			if ( w > 0.0f )
 			{
 				rate += w / graph.clips[size_t( state.points[i].clip )].length;

@@ -179,6 +179,9 @@ struct AnimGraphInputs
 
 float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& inputs, float stateTime );
 
+// How much of a state's point plays at a blend input (1 for a single clip's only point).
+float AnimGraphPointWeight( const AnimGraphState& state, float blend, size_t point );
+
 // Advances the graph's layers in `state` by one tick (a layer not started yet begins in its start
 // state). Markers crossed append their schema event
 // indices to `markers`.

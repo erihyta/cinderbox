@@ -136,6 +136,21 @@ public:
 	{
 		return m_stanceClips;
 	}
+	// A clip the character's state machine plays, by its Godot animation's name ("Walk"); null if the
+	// character has none. anim.cfg:
+	//   clip.Walk = clip_Walk.ozz
+	const ozz::animation::Animation* NamedClip( const std::string& name ) const
+	{
+		auto it = m_namedClips.find( name );
+		return it != m_namedClips.end() ? it->second.get() : nullptr;
+	}
+	// The character's baked state machine (graph.cfg, see sim/anim_graph.h) as text; empty when it
+	// has none and plays the built-in locomotion instead. The server puts it in the schema.
+	const std::string& GraphText() const
+	{
+		return m_graphText;
+	}
+
 	// A layer's mask ("Spine", "Spine:0.5 RightShoulder"), "" when the character defines none. anim.cfg:
 	//   mask.upper = Spine
 	// "upper" defaults to "Spine"; "full" (every bone) needs no mask.
@@ -180,6 +195,8 @@ private:
 	std::string m_description;
 	std::map<std::string, ozz::unique_ptr<ozz::animation::Animation>> m_stanceClips;
 	std::map<std::string, std::string> m_masks;
+	std::map<std::string, ozz::unique_ptr<ozz::animation::Animation>> m_namedClips;
+	std::string m_graphText;
 	std::vector<std::pair<int, float>> m_aimJoints;
 	int m_hipsJoint = -1;
 	int m_spineJoint = -1;

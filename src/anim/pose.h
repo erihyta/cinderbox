@@ -4,6 +4,7 @@
 // Uses only IEEE arithmetic and the scalar ozz build, so the same state gives the same pose on
 // every platform; the server can run this too once gameplay needs bone positions.
 
+#include "anim_graph.h"
 #include "anim_set.h"
 #include "components.h"
 #include "stances.h"
@@ -41,6 +42,9 @@ struct ActiveClip
 	bool loops = false;
 };
 std::vector<ActiveClip> ActiveClips( const AnimState& state, const AnimSet& set, const StanceTable* stances );
+// The same for a character with a state machine: per layer (channel = layer), the clip of its state
+// that weighs most, by the Godot animation's name.
+std::vector<ActiveClip> ActiveGraphClips( const AnimState& state, const AnimGraph& graph );
 
 // Interpolate between two consecutive tick states for rendering between ticks.
 AnimState InterpolateAnimState( const AnimState& from, const AnimState& to, float alpha );
@@ -58,6 +62,14 @@ public:
 	void SetStances( std::shared_ptr<const StanceTable> stances )
 	{
 		m_stances = std::move( stances );
+	}
+	// The character's state machine, as the simulation runs it (the schema's, compiled); the pose then
+	// follows its layers instead of the built-in clips and stances. Clips it names that this
+	// character lacks drop out of the blend and are listed in `warnings`. Null goes back.
+	void SetGraph( std::shared_ptr<const AnimGraph> graph, std::string& warnings );
+	const AnimGraph* Graph() const
+	{
+		return m_graph.get();
 	}
 
 	void Evaluate( const AnimState& state );
@@ -84,8 +96,22 @@ private:
 	ozz::vector<ozz::math::Float4x4> m_models;
 	ClipWeights m_lastWeights;
 
+	void EvaluateBuiltIn( const AnimState& state );
+	void Finish( const AnimState& state );
+
 	// Stance layers.
 	void ApplyStance( int stance, int layer, float weight, float layerTime );
+	// Blends `pose` over m_blended by per-joint `mask` (empty: every joint) times `weight`.
+	void BlendOver( const ozz::vector<ozz::math::SoaTransform>& pose, const ozz::vector<ozz::math::SimdFloat4>* mask, float weight );
+
+	// State machine layers.
+	void EvaluateGraph( const AnimState& state );
+	std::shared_ptr<const AnimGraph> m_graph;
+	std::vector<const ozz::animation::Animation*> m_graphClips;	  // per graph clip, null when missing
+	std::vector<ozz::vector<ozz::math::SimdFloat4>> m_graphMasks; // per layer, empty: every joint
+	std::vector<std::unique_ptr<ozz::animation::SamplingJob::Context>> m_graphContexts;
+	std::vector<ozz::vector<ozz::math::SoaTransform>> m_graphLocals;
+	ozz::vector<ozz::math::SoaTransform> m_layerPose;
 	std::shared_ptr<const StanceTable> m_stances;
 	ozz::animation::SamplingJob::Context m_stanceContext;
 	std::array<ozz::vector<ozz::math::SoaTransform>, ClipCount> m_stanceClipLocals;
