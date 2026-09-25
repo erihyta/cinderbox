@@ -2043,8 +2043,18 @@ void TestRobotCharacter()
 // lacks is reported and ignored.
 void TestStances()
 {
-	auto set = anim::AnimSet::CreateProcedural();
-	std::string warnings;
+	// The robot (a workshop character) ships stance clips for the shipped mods; the engine's own
+	// placeholder rig has none.
+	std::string error, warnings;
+	auto set = anim::AnimSet::Load( std::string( CB_SOURCE_DIR ) + "/characters/robot/client/characters/robot", error, warnings );
+	CHECK( set != nullptr );
+	if ( set == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	CHECK( anim::AnimSet::CreateProcedural()->StanceClips().empty() );
+	warnings.clear();
 	auto table = anim::BuildStanceTable( *set, { "upper", "full", "arms" }, { "pistol", "melee", "sword" }, warnings );
 	CHECK( table->masks.size() == 3 && table->stances.size() == 3 );
 	CHECK( table->masks[0].empty() == false && table->masks[1].empty() == false );

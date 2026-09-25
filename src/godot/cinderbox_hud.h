@@ -202,7 +202,7 @@ protected:
 	static void _bind_methods();
 
 private:
-	godot::String m_event = "combat.killed";
+	godot::String m_event; // the mod event it lists (a mod names it; "combat.killed")
 	// {a} and {b}: the two entities' player names ({nobody} when there is none), {value}: the value.
 	godot::String m_format = "{a}  >  {b}";
 	godot::String m_nobody = "the world";
