@@ -8,18 +8,16 @@
 
 config_version=5
 
+[animation]
+
+warnings/check_invalid_track_paths=false
+
 [application]
 
 config/name="Cinderbox"
 config/description="Cinderbox client (Godot presentation layer)"
 run/main_scene="res://boot.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
-
-[animation]
-
-; A character's animations reach into its sockets (.../RightHand/Item/AnimationPlayer); an empty
-; hand is normal, not a broken track.
-warnings/check_invalid_track_paths=false
 
 [display]
 

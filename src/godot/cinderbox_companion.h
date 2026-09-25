@@ -44,6 +44,9 @@ public:
 
 	// What a channel plays ("" when none), for tests and debugging.
 	godot::String get_channel_clip( int channel ) const;
+	// Forget which nodes the tracks reached: a socket's item was swapped, and Godot's players keep
+	// pointing at the one that is gone.
+	void clear_caches();
 
 protected:
 	static void _bind_methods();

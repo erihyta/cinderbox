@@ -240,6 +240,10 @@ private:
 	void PlaceSockets( uint64_t visual, godot::Node3D* node );
 	godot::Node3D* SocketNode( uint32_t holderNetId, uint8_t socket ) const;
 	void UpdateItem( const present::Visual& v, godot::Node3D* node );
+	// Puts an item node in a socket as its "Item" (a leaving one steps aside), and tells the holder's
+	// companion tracks to look again.
+	void PlaceItem( uint32_t holderNetId, godot::Node3D* socket, godot::Node3D* item );
+	void ItemsChanged( uint32_t holderNetId );
 	// Per visual: the attachment node of each state binding that holds (0 when none).
 	std::unordered_map<uint64_t, std::vector<godot::ObjectID>> m_attachments;
 	std::vector<bool> m_active; // scratch: which state bindings hold for the visual being posed

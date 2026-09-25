@@ -394,6 +394,18 @@ void CinderboxClient::HandleEvents()
 			case present::EventType::Destroying:
 			{
 				flecs::entity ve( visuals, e.visual );
+				if ( ve.is_alive() && ve.get<present::Visual>().kind == present::VisualKind::Item )
+				{
+					// Out of the hand now, not when its destroy effect has played out: a new item may
+					// take the socket this very frame.
+					auto found = m_nodes.find( e.visual );
+					if ( auto* node = found != m_nodes.end() ? Object::cast_to<Node3D>( ObjectDB::get_instance( found->second ) ) : nullptr )
+					{
+						node->set_name( "Leaving" );
+						node->set_visible( false );
+					}
+					ItemsChanged( ve.get<present::Visual>().holder );
+				}
 				uint32_t templateIndex = ve.is_alive() ? ve.get<present::Visual>().templateIndex : kNoTemplate;
 				emit_signal( "visual_destroying", int64_t( e.visual ), int64_t( e.netId ), String( KindName( e.kind ) ), position,
 							 TemplateName( templateIndex ) );
@@ -858,6 +870,40 @@ Node3D* CinderboxClient::SocketNode( uint32_t holderNetId, uint8_t socket ) cons
 	return nullptr; // this character has no such socket
 }
 
+void CinderboxClient::PlaceItem( uint32_t holderNetId, Node3D* socket, Node3D* item )
+{
+	// One "Item" per socket: whatever still carries the name is on its way out.
+	if ( Node* old = socket->get_node_or_null( "Item" ); old != nullptr && old != item )
+	{
+		old->set_name( "Leaving" );
+	}
+	if ( item->get_parent() == nullptr )
+	{
+		socket->add_child( item );
+	}
+	else if ( item->get_parent() != socket )
+	{
+		item->reparent( socket, false );
+	}
+	item->set_name( "Item" );
+	ItemsChanged( holderNetId );
+}
+
+void CinderboxClient::ItemsChanged( uint32_t holderNetId )
+{
+	// The holder's animations reach its items by path; Godot's players cache what a path found.
+	flecs::entity holder = m_mirror ? m_mirror->VisualOf( holderNetId ) : flecs::entity();
+	if ( holder.is_valid() == false )
+	{
+		return;
+	}
+	auto it = m_companions.find( holder.id() );
+	if ( auto* companion = it != m_companions.end() ? Object::cast_to<CbCompanionPlayer>( ObjectDB::get_instance( it->second ) ) : nullptr )
+	{
+		companion->clear_caches();
+	}
+}
+
 void CinderboxClient::UpdateItem( const present::Visual& v, Node3D* node )
 {
 	// In its holder's socket (the holder's node may have been rebuilt since).
@@ -869,12 +915,10 @@ void CinderboxClient::UpdateItem( const present::Visual& v, Node3D* node )
 	}
 	if ( node->get_parent() != socket )
 	{
-		node->reparent( socket, false );
-		node->set_name( "Item" );
+		PlaceItem( v.holder, socket, node );
 		node->set_transform( Transform3D() );
 	}
 	node->set_visible( true );
-
 	// Its own board drives its AnimationTree: every field is an advance condition of that name, and
 	// "!<name>" holds while it is off (Godot's conditions cannot be negated).
 	if ( auto* tree = FindInPrefab<AnimationTree>( node ) )
@@ -949,8 +993,7 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 		node->set_visible( socket != nullptr );
 		if ( socket != nullptr )
 		{
-			socket->add_child( node );
-			node->set_name( "Item" );
+			PlaceItem( v.holder, socket, node );
 		}
 		else
 		{
