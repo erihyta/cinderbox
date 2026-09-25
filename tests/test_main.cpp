@@ -2246,6 +2246,71 @@ void TestMannequinCharacter()
 	CheckHeldItem( *procedural, placeholder );
 }
 
+// The character built from the paid animation pack, where it was built (it is never in the
+// repository, so CI and fresh clones skip this): strafing plays its sideways jog, hips straight.
+void TestUalMannequin()
+{
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/ual_mannequin";
+	if ( std::filesystem::exists( dir + "/anim.cfg" ) == false )
+	{
+		std::printf( "    skipped: the paid pack's character is not built here\n" );
+		return;
+	}
+	std::string error, warnings;
+	auto set = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( set != nullptr && warnings.empty() );
+	if ( set == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	CHECK( set->TurnLegs() == false );
+	ModSchema schema;
+	schema.stances = { "melee", "melee_swing", "pistol" };
+	schema.events = { "pistol.fired", "melee.strike" };
+	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
+	CHECK( graph != nullptr && warnings.empty() );
+	if ( graph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	anim::PoseEvaluator pose( *set );
+	pose.SetGraph( graph, warnings );
+	CHECK( warnings.empty() );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	InputFrame f;
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	SimCommand face;
+	face.type = CommandType::Facing;
+	face.target = SlotTarget( 0 );
+	face.mode = 1;
+	f.commands.push_back( face );
+	for ( int i = 0; i < 120; ++i )
+	{
+		f.tick = sim.Tick();
+		f.inputs[0].moveRight = i >= 30 ? int8_t( 127 ) : int8_t( 0 );
+		sim.Step( f );
+		f.events.clear();
+		f.commands.clear();
+	}
+	AnimState state = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
+	auto clips = anim::ActiveGraphClips( state, *graph );
+	std::printf( "    strafing right: blend (%.2f, %.2f), leg yaw %.2f, playing %s\n", state.graph[0].blend, state.graph[0].blendY,
+				 state.legYaw, clips.empty() ? "nothing" : clips[0].name.c_str() );
+	CHECK( clips.empty() == false && clips[0].name == "Jog_Right" );
+
+	// The hips face where the body faces although the legs' yaw says sideways: no twist.
+	pose.Evaluate( state );
+	float hips[4];
+	ozz::math::StorePtrU( pose.Models()[size_t( anim::FindJoint( *set, "Hips" ) )].cols[2], hips );
+	std::printf( "    hips z axis (%.2f %.2f %.2f)\n", hips[0], hips[1], hips[2] );
+	CHECK( std::fabs( state.legYaw ) > 1.0f ); // the simulation still says the legs go sideways
+	CHECK( hips[2] > 0.7f );					 // but the hips only lean as the clip leans them
+}
+
 void TestAnimPipeline()
 {
 	auto procedural = anim::AnimSet::CreateProcedural();
@@ -2462,6 +2527,7 @@ int main( int argc, char** argv )
 		{ "stances", TestStances },
 		{ "robot_character", TestRobotCharacter },
 		{ "mannequin_character", TestMannequinCharacter },
+		{ "ual_mannequin", TestUalMannequin },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "stress", TestStress },
 	};

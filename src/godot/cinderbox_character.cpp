@@ -38,6 +38,7 @@
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/resource_saver.hpp>
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/geometry2d.hpp>
 #include <godot_cpp/classes/skeleton3d.hpp>
 #include <godot_cpp/classes/skeleton_modifier3d.hpp>
 #include <godot_cpp/classes/sphere_shape3d.hpp>
@@ -566,10 +567,29 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 					body += "point2\t" + Num( at.x ) + "\t" + Num( at.y ) + "\t" + Std( String( point->get_animation() ) ) + "\t" +
 							( backward ? "1" : "0" ) + "\n";
 				}
-				for ( int t = 0; t < plane->get_triangle_count(); ++t )
+				if ( plane->get_auto_triangles() )
 				{
-					body += "triangle\t" + std::to_string( plane->get_triangle_point( t, 0 ) ) + "\t" +
-							std::to_string( plane->get_triangle_point( t, 1 ) ) + "\t" + std::to_string( plane->get_triangle_point( t, 2 ) ) + "\n";
+					// What Godot computes for auto triangles (it does so in a deferred call, which a
+					// script that builds the space and bakes at once never sees run).
+					PackedVector2Array positions;
+					for ( int p = 0; p < plane->get_blend_point_count(); ++p )
+					{
+						positions.push_back( plane->get_blend_point_position( p ) );
+					}
+					PackedInt32Array corners = Geometry2D::get_singleton()->triangulate_delaunay( positions );
+					for ( int64_t i = 0; i + 2 < corners.size(); i += 3 )
+					{
+						body += "triangle\t" + std::to_string( corners[i] ) + "\t" + std::to_string( corners[i + 1] ) + "\t" +
+								std::to_string( corners[i + 2] ) + "\n";
+					}
+				}
+				else
+				{
+					for ( int t = 0; t < plane->get_triangle_count(); ++t )
+					{
+						body += "triangle\t" + std::to_string( plane->get_triangle_point( t, 0 ) ) + "\t" +
+								std::to_string( plane->get_triangle_point( t, 1 ) ) + "\t" + std::to_string( plane->get_triangle_point( t, 2 ) ) + "\n";
+					}
 				}
 			}
 			else

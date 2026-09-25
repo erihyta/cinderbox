@@ -21,10 +21,29 @@ extends SceneTree
 ## gets a "melee.strike" marker where the hand is fastest, which the melee mod hits on, and a track
 ## that sets the right hand on fire for the swing. Everything here is what an author would do by hand in
 ## the editor; open the scene and edit freely.
+##
+## `-- --pack=source` builds characters/ual_mannequin/ from the library's paid Source version instead
+## (put UAL1.glb in characters/ual_mannequin/source/ and give its import the same settings as the
+## Standard one). It has jogs in eight directions, so its locomotion is a 2D blend space on
+## move_right / move_forward and its legs are not turned. That folder is git-ignored: the paid pack,
+## and everything baked from it, stays out of the repository.
 
-const SOURCE := "res://characters/mannequin/source/UAL1_Standard.glb"
-const OUT_DIR := "res://characters/mannequin"
-const SWING := "res://characters/mannequin/animations/Sword_Attack.res"
+const PACKS := {
+	"standard": {
+		"source": "res://characters/mannequin/source/UAL1_Standard.glb",
+		"out": "res://characters/mannequin",
+		"name": "mannequin",
+	},
+	"source": {
+		"source": "res://characters/ual_mannequin/source/UAL1.glb",
+		"out": "res://characters/ual_mannequin",
+		"name": "ual_mannequin",
+	},
+}
+var SOURCE: String
+var OUT_DIR: String
+var SWING: String
+var _pack := "standard"
 const FIRE_PATH := "Armature/Skeleton3D/At_RightHand/HandFire" # from the model's root, as tracks see it
 
 # The six built-in clips, used only if the state machine is removed (animation_tree_path cleared).
@@ -33,11 +52,22 @@ const CLIPS := {
 	"jump_start": "Jump_Start", "fall": "Jump", "land": "Jump_Land",
 }
 
-# Blend space points at the speeds the clips actually cover (measured from their foot travel), so
-# the feet stay planted: walking backwards plays the same clips in reverse.
+# Standard: blend space points at the speeds the clips actually cover (measured from their foot
+# travel), so the feet stay planted: walking backwards plays the same clips in reverse.
 const LOCOMOTION := [
 	[-3.0, "Jog_Fwd", true], [-0.9, "Walk", true], [0.0, "Idle", false],
 	[0.9, "Walk", false], [3.0, "Jog_Fwd", false], [5.0, "Sprint", false],
+]
+# Source: the eight jog directions on a circle at the game's jog speed (x = right, y = forward), a
+# walk inside it and the sprint ahead of it. The measured directions: _L is forward-left, Left and
+# Right are straight sideways.
+const JOG := 3.0
+const DIAGONAL := JOG * 0.70710678
+const LOCOMOTION_2D := [
+	[Vector2(0, 0), "Idle"], [Vector2(0, 1.0), "Walk"], [Vector2(0, 6.5), "Sprint"],
+	[Vector2(0, JOG), "Jog_Fwd"], [Vector2(-DIAGONAL, DIAGONAL), "Jog_Fwd_L"], [Vector2(DIAGONAL, DIAGONAL), "Jog_Fwd_R"],
+	[Vector2(-JOG, 0), "Jog_Left"], [Vector2(JOG, 0), "Jog_Right"],
+	[Vector2(0, -JOG), "Jog_Bwd"], [Vector2(-DIAGONAL, -DIAGONAL), "Jog_Bwd_L"], [Vector2(DIAGONAL, -DIAGONAL), "Jog_Bwd_R"],
 ]
 const STRIKE_TIME := 0.4 # Sword_Attack: the hand is fastest here
 
@@ -53,6 +83,16 @@ var _skeleton: Skeleton3D
 
 
 func _initialize() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--pack="):
+			_pack = arg.substr(7)
+	if not PACKS.has(_pack):
+		printerr("unknown pack ", _pack, " (standard or source)")
+		quit(2)
+		return
+	SOURCE = PACKS[_pack]["source"]
+	OUT_DIR = PACKS[_pack]["out"]
+	SWING = OUT_DIR.path_join("animations/Sword_Attack.res")
 	var scene_path := OUT_DIR.path_join("character.tscn")
 	if ResourceLoader.exists(scene_path) and not ("--force" in OS.get_cmdline_user_args()):
 		var existing := (load(scene_path) as PackedScene).instantiate() as CbCharacter
@@ -69,7 +109,9 @@ func _initialize() -> void:
 
 	_root = CbCharacter.new()
 	_root.name = "Mannequin"
-	_root.character_name = "mannequin"
+	_root.character_name = PACKS[_pack]["name"]
+	# Directional clips walk sideways by themselves; without them the hips turn toward the travel.
+	_root.turn_legs = _pack != "source"
 	var model := source.instantiate(PackedScene.GEN_EDIT_STATE_INSTANCE) # as the editor does: saves only what differs
 	model.name = "Model"
 	_root.add_child(model)
@@ -132,12 +174,22 @@ func _bake(character: CbCharacter) -> void:
 
 func _add_tree(player: AnimationPlayer) -> void:
 	var base := AnimationNodeStateMachine.new()
-	var locomotion := AnimationNodeBlendSpace1D.new()
-	locomotion.min_space = -4.0
-	locomotion.max_space = 6.0
-	for point in LOCOMOTION:
-		var label: String = ("Back" if point[2] else "") + point[1]
-		locomotion.add_blend_point(_clip(point[1], point[2]), point[0], -1, label)
+	var locomotion: AnimationRootNode
+	if _pack == "source":
+		var plane := AnimationNodeBlendSpace2D.new()
+		plane.min_space = Vector2(-4, -4)
+		plane.max_space = Vector2(4, 7)
+		for point in LOCOMOTION_2D:
+			plane.add_blend_point(_clip(point[1]), point[0], -1, point[1])
+		locomotion = plane
+	else:
+		var line := AnimationNodeBlendSpace1D.new()
+		line.min_space = -4.0
+		line.max_space = 6.0
+		for point in LOCOMOTION:
+			var label: String = ("Back" if point[2] else "") + point[1]
+			line.add_blend_point(_clip(point[1], point[2]), point[0], -1, label)
+		locomotion = line
 	base.add_node("Locomotion", locomotion, Vector2(300, 100))
 	base.add_node("JumpStart", _clip("Jump_Start"), Vector2(550, 0))
 	base.add_node("Fall", _clip("Jump"), Vector2(800, 100))
@@ -203,7 +255,7 @@ func _add_tree(player: AnimationPlayer) -> void:
 	_root.animation_tree_path = _root.get_path_to(tree)
 	# What drives the tree's numbers, as the simulation computes them.
 	_root.graph_inputs = {
-		"Base/Locomotion/blend_position": "forward_speed",
+		"Base/Locomotion/blend_position": "move_right, move_forward" if _pack == "source" else "forward_speed",
 		"UpperBlend/blend_amount": "pistol or melee or melee_swing",
 	}
 
