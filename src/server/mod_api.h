@@ -92,6 +92,34 @@ struct StanceHandle
 	}
 };
 
+// A kind of held item ("melee.bat") and a socket to hold it in ("RightHand"; the two hands are
+// built in).
+struct ItemKindHandle
+{
+	int index = -1;
+
+	bool Valid() const
+	{
+		return index >= 0;
+	}
+};
+
+struct SocketHandle
+{
+	int index = -1;
+
+	bool Valid() const
+	{
+		return index >= 0;
+	}
+};
+
+// The item the player in `slot` holds in `socket`, as a command target (SetField, Emit, Destroy).
+inline uint32_t ItemTarget( PlayerSlot slot, SocketHandle socket )
+{
+	return cb::ItemTarget( slot, uint32_t( socket.index ) );
+}
+
 // Collects what every mod declares. Names are shared: two mods declaring the same field get the
 // same slot (so one mod can read what another publishes), as long as they agree on its type.
 class Declarations
@@ -106,6 +134,11 @@ public:
 	// need the character to define the mask.
 	LayerHandle Layer( const std::string& name );
 	StanceHandle Stance( const std::string& name );
+	// Held items: a kind (its look is the mod's client item's, by this name) and a socket.
+	// "RightHand" and "LeftHand" exist on every character; another socket is drawn only on
+	// characters that define it.
+	ItemKindHandle ItemKind( const std::string& name );
+	SocketHandle Socket( const std::string& name );
 
 	const ModSchema& Schema() const
 	{
@@ -282,6 +315,12 @@ public:
 	// kStanceFadeSeconds. Part of the pose everyone draws and hit tests use. Setting the stance a
 	// layer already has does nothing; setting another restarts the layer's clock (a swing).
 	void SetStance( uint32_t target, LayerHandle layer, StanceHandle stance );
+	// Gives the player `holder` (SlotTarget) an item of `kind` in `socket`, replacing what it held
+	// there. The item is an entity of its own: address it with ItemTarget( slot, socket ) (from this
+	// tick on) to set its fields, send it events, or Destroy it.
+	void SpawnItem( uint32_t holder, ItemKindHandle kind, SocketHandle socket );
+	// The NetId of what the player in `slot` holds in `socket` (as of the start of this tick), or 0.
+	uint32_t HeldItem( PlayerSlot slot, SocketHandle socket ) const;
 
 	// Commands emitted so far this tick (tests).
 	const std::vector<SimCommand>& Commands() const

@@ -35,6 +35,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M26: strafing with real clips: 2D blend spaces, body-frame velocity, per-character leg turning; a local-only character from the paid animation pack | done |
 | M27: the chest faces the camera while strafing (`face_forward`), though the strafe clips turn the torso | done |
 | M28: the bat burns while it swings, as the melee mod's own look (not the character's) | done |
+| M29: held items are entities with their own state, drawn in sockets; a character's animations play the held item's animations | done |
 
 ## Building
 
@@ -689,10 +690,25 @@ godot --headless --path godot --script res://addons/cinderbox_maps/check_compani
 Put the companion's scene nodes (particles, lights, an `AudioStreamPlayer3D`) in the character
 scene, and list `companion.tres` and the sounds in the item's export preset.
 
-Companion tracks reach only what is in the character scene. Effects on something a mod hands the
-character (a weapon) belong to that mod's look instead: the melee mod publishes `melee.swinging`
-while a swing lasts, and its item holds `bat_fire.tscn` in the right hand exactly like the bat
-while `loadout.slot == 3` and `melee.swinging`. Any character swinging the bat burns the same.
+### Held items and sockets
+
+A weapon, a torch, a shield: a **held item** is a simulation entity of its own (NetId, board,
+events), held by a player in a **socket**. One small command changes its state; everything it
+looks like is authored in Godot.
+
+| Piece | Where | What |
+|---|---|---|
+| socket | the character scene: a `CbSocket` under a `BoneAttachment3D` | where items go, in the item's frame (grip at the origin, pointing along -Z); `RightHand` and `LeftHand` exist on every character (made at the hands if the scene has none) |
+| item kind | the mod: `declare.ItemKind( "melee.bat" )` | spawned with `ctx.SpawnItem( SlotTarget( slot ), kind, socket )`, addressed with `ItemTarget( slot, socket )` for `Set`, `Emit`, `Destroy` |
+| look | the mod's effect table: `CbItemLook` (kind -> scene) | drawn as the socket's child `Item` |
+| item state | the item scene's `AnimationTree` | every board field of the item is an advance condition (`melee.hot`), and `!melee.hot` while it is off |
+| item events | the item scene's `AnimationPlayer` | an event sent to the item plays its animation of that name |
+| character -> item | an Animation Playback track in the character's animation | `.../RightHand/Item/AnimationPlayer` plays `slash` at the right frame of the swing |
+
+The bat: the melee mod spawns a `melee.bat` when the bat is taken out. The mannequin's swing plays
+the bat's `slash` (flames along the barrel) 0.2 s in, and a hit sets `melee.hot` on the bat, which
+its own tree turns into a glow. Any character with a right hand swings any item that has a
+`slash`; an empty socket, or an item without one, is simply quiet.
 
 ### State machines
 

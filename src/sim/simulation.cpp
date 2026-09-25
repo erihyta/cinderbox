@@ -232,6 +232,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<Ragdoll>();
 	RegisterSnapComponent<RagdollBodies>();
 	RegisterSnapComponent<RagdollPose>();
+	RegisterSnapComponent<HeldItem>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -571,12 +572,37 @@ void Simulation::ApplyEvents( const InputFrame& frame )
 		}
 		else if ( ev.type == PlayerEventType::Leave && netId != 0 )
 		{
+			// What it held goes with it.
+			for ( uint32_t socket = 0; socket < 256; ++socket )
+			{
+				if ( uint32_t item = HeldItemOf( netId, socket ) )
+				{
+					DestroyEntity( FindEntity( item ) );
+				}
+			}
 			flecs::entity e = FindEntity( netId );
 			if ( e.is_valid() )
 			{
 				DestroyEntity( e );
 			}
 			netId = 0;
+		}
+	}
+}
+
+void Simulation::FollowHolders()
+{
+	// A held item is where its holder is (presentation puts it in the socket).
+	for ( const EntityRef& r : m_entities )
+	{
+		flecs::entity e( m_world, r.entity );
+		if ( const HeldItem* item = e.try_get<HeldItem>() )
+		{
+			flecs::entity holder = FindEntity( item->holder );
+			if ( holder.is_valid() && holder.has<Transform>() )
+			{
+				e.set<Transform>( holder.get<Transform>() );
+			}
 		}
 	}
 }
@@ -1090,6 +1116,7 @@ void Simulation::Step( const InputFrame& frame )
 
 	CollectImpacts();
 	SyncFromPhysics();
+	FollowHolders();
 	UpdateFootsteps();
 	HandleOutOfBounds();
 
@@ -1281,7 +1308,31 @@ uint32_t Simulation::ResolveTarget( uint32_t target ) const
 		uint32_t slot = target & ~kSlotTargetBit;
 		return slot < uint32_t( kMaxPlayers ) ? m_globals.playerNetIds[slot] : 0;
 	}
+	if ( target & kItemTargetBit )
+	{
+		uint32_t slot = target & 0xFFu;
+		uint32_t socket = ( target >> 8 ) & 0xFFu;
+		uint32_t holder = slot < uint32_t( kMaxPlayers ) ? m_globals.playerNetIds[slot] : 0;
+		return holder != 0 ? HeldItemOf( holder, socket ) : 0;
+	}
 	return target;
+}
+
+uint32_t Simulation::HeldItemOf( uint32_t holder, uint32_t socket ) const
+{
+	// NetId order: the same answer everywhere.
+	for ( const EntityRef& r : m_entities )
+	{
+		flecs::entity e( m_world, r.entity );
+		if ( const HeldItem* item = e.try_get<HeldItem>() )
+		{
+			if ( item->holder == holder && item->socket == socket )
+			{
+				return r.netId;
+			}
+		}
+	}
+	return 0;
 }
 
 void Simulation::ApplyCommands( const InputFrame& frame )
@@ -1416,6 +1467,24 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			{
 				RespawnPlayer( e, command );
 			}
+			return;
+		}
+
+		case CommandType::SpawnItem:
+		{
+			uint32_t holder = ResolveTarget( command.target );
+			flecs::entity player = FindEntity( holder );
+			if ( holder == 0 || player.is_valid() == false || player.has<Character>() == false )
+			{
+				return;
+			}
+			if ( uint32_t old = HeldItemOf( holder, command.mode ) )
+			{
+				DestroyEntity( FindEntity( old ) );
+			}
+			flecs::entity item = CreateEntity();
+			item.set<HeldItem>( { holder, command.index, command.mode, 0 } );
+			item.set<Transform>( player.get<Transform>() );
 			return;
 		}
 

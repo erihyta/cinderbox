@@ -815,6 +815,34 @@ attached by the mod's client item. So the effect moved to where the bat is.
   desyncs), a close-up of the swing with the bat placed as the client places it, a rendered
   session with melee bots. The melee item was republished.
 
+## Held items and sockets (M29)
+The rule for a presentation-only client: one small piece of state from the server, everything else
+authored as data. A character's animations could reach only nodes in the character scene, and a
+weapon was a mod's scene attached from outside, so "the sword's trail on this frame of the swing"
+could not be authored; M28 fell back to a board flag with the timing in the mod.
+
+- **Items are entities** (`HeldItem`: holder, kind, socket). `SpawnItem` replaces what the socket
+  held; the item follows its holder and goes when the holder leaves. It has its own board and
+  receives events like any entity. `ItemTarget( slot, socket )` resolves to it inside the
+  simulation, so a mod addresses an item it spawned in the same tick, without its NetId.
+- **Sockets** are `CbSocket` nodes in the character scene, in the item's frame; the client places
+  them from the pose every frame (the same joint transforms the server's hit tests use) and parents
+  the item under them as `Item`. RightHand and LeftHand are built in: a character without them gets
+  them at the hands in the frame items were already made in.
+- **Composition**: the character's animation keys *when* (an Animation Playback track on
+  `.../RightHand/Item/AnimationPlayer`, baked into the companion tracks), the item's scene says *what*
+  (its `slash`). An item's own state drives its AnimationTree (board fields as advance conditions),
+  events sent to it play its animations.
+- **Verified**: `held_items` (spawn and address in the same tick, events, following, snapshot and
+  hash, replacement, leaving), the swing firing a stand-in item's `slash` at its 0.2 s key through
+  the companion player, quiet empty sockets, the melee network test (the bat item held, hot after a
+  hit, no desyncs), a rendered session with the bat glowing and trailing flames mid-swing. Reference
+  hashes unchanged; protocol 12.
+- **Not done**: the pistol still uses its attach binding; items cannot be dropped into the world or
+  handed over (only spawned and destroyed); rollback does not undo an item animation that already
+  played (as with companion tracks, a replay does not fire twice, but a mispredicted swing that
+  never happened has already shown).
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -916,3 +944,4 @@ attached by the mod's client item. So the effect moved to where the bat is.
 26. **M26** (done): strafing with real clips: 2D blend spaces (Godot's triangles), `move_forward` / `move_right`, `turn_legs` per character; `ual_mannequin`, a local-only character built from the paid Source pack with eight-way jogs (the pack and its bakes are git-ignored), preferred by the server where it exists.
 27. **M27** (done): `face_forward`: the chest (and head) face where the body faces while strafe clips turn the hips; on for `ual_mannequin`.
 28. **M28** (done): the bat's fire is the melee mod's look: `melee.swinging` on the board during a swing, `bat_fire.tscn` held like the bat while it holds; the characters' hand fire is gone.
+29. **M29** (done): held items as entities with their own state (`SpawnItem`, `ItemTarget`), sockets (`CbSocket`, built-in hands), item looks (`CbItemLook`), item boards as AnimationTree conditions and events as animations, characters' animations playing the held item's animations; the melee bat converted.

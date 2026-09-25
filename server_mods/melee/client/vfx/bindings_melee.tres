@@ -1,8 +1,9 @@
-[gd_resource type="CbEffectTable" load_steps=7 format=3]
+[gd_resource type="CbEffectTable" load_steps=6 format=3]
 
 ; How the melee mod looks and sounds, keyed on names it declares. The swing's motion is the
 ; character's melee_swing stance (in the pose everyone draws and hit tests use); this adds the bat,
-; the fire it swings with, the whoosh and the hit.
+; the whoosh and the hit. The bat is a held item (melee.bat, in the right hand): its scene has its
+; own animations ("slash", which the character's swing plays; "cold" / "hot", by its own state).
 
 [sub_resource type="CbEffect" id="Swing"]
 event = 6
@@ -42,23 +43,11 @@ volume_db = -10.0
 pitch_jitter = 0.2
 max_distance = 25.0
 
-; While the bat is out: in the right hand.
-[sub_resource type="CbStateBinding" id="Armed"]
-conditions = PackedStringArray("loadout.slot == 3", "!combat.dead")
-attach_scene = "res://prefabs/bat.tscn"
-attach_bone = "RightHand"
-attach_offset = Vector3(0, -0.06, 0)
-attach_rotation = Vector3(-90, 180, 0)
-
-; While it swings: fire along the barrel, held exactly like the bat so it follows the swing. The
-; particles stay where they were born, so the swing leaves a trail.
-[sub_resource type="CbStateBinding" id="Swinging"]
-conditions = PackedStringArray("loadout.slot == 3", "melee.swinging", "!combat.dead")
-attach_scene = "res://prefabs/bat_fire.tscn"
-attach_bone = "RightHand"
-attach_offset = Vector3(0, -0.06, 0)
-attach_rotation = Vector3(-90, 180, 0)
+; The bat item's look.
+[sub_resource type="CbItemLook" id="Bat"]
+kind = "melee.bat"
+scene = "res://prefabs/bat.tscn"
 
 [resource]
 effects = [SubResource("Swing"), SubResource("HitPlayer"), SubResource("Hurt"), SubResource("HitProp")]
-states = [SubResource("Armed"), SubResource("Swinging")]
+items = [SubResource("Bat")]

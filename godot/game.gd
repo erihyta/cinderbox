@@ -477,6 +477,9 @@ func _load_effects() -> void:
 				if state is CbStateBinding:
 					client.add_state_binding(state)
 					states += 1
+			for look in table.items:
+				if look is CbItemLook:
+					client.add_item_look(look)
 		else:
 			push_warning("vfx/%s is not a CbEffectTable" % file)
 	print("effect bindings: %d, state bindings: %d, from %d file(s)" % [_effects.size(), states, names.size()])

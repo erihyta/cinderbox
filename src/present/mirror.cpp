@@ -87,6 +87,9 @@ flecs::entity Mirror::CreateVisual( const FrameEntity& f, bool withEffect )
 	v.halfExtents = f.halfExtents;
 	v.slot = f.slot;
 	v.templateIndex = f.templateIndex;
+	v.holder = f.holder;
+	v.itemKind = f.itemKind;
+	v.socket = f.socket;
 	if ( f.kind == VisualKind::Ragdoll && f.ragdoll < m_pendingRagdolls.size() )
 	{
 		v.owner = m_pendingRagdolls[f.ragdoll].owner;
@@ -170,6 +173,9 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 		visual.dead = f.dead;
 		visual.hasBoard = f.hasBoard;
 		visual.board = f.board;
+		visual.holder = f.holder;
+		visual.itemKind = f.itemKind;
+		visual.socket = f.socket;
 		if ( visual.isLocalPlayer )
 		{
 			m_localPlayer = ve;

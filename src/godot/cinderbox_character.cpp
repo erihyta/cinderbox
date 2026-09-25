@@ -203,6 +203,26 @@ PackedStringArray CbHitbox::_get_configuration_warnings() const
 	return warnings;
 }
 
+// --- CbSocket ---------------------------------------------------------------------------------------
+
+void CbSocket::_bind_methods()
+{
+	ClassDB::bind_method( D_METHOD( "set_bone", "value" ), &CbSocket::set_bone );
+	ClassDB::bind_method( D_METHOD( "get_bone" ), &CbSocket::get_bone );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "bone", PROPERTY_HINT_PLACEHOLDER_TEXT, "the parent BoneAttachment3D's" ), "set_bone",
+				  "get_bone" );
+}
+
+PackedStringArray CbSocket::_get_configuration_warnings() const
+{
+	PackedStringArray warnings;
+	if ( m_bone.is_empty() && Object::cast_to<BoneAttachment3D>( get_parent() ) == nullptr )
+	{
+		warnings.push_back( "Put the socket under a BoneAttachment3D, or name its bone." );
+	}
+	return warnings;
+}
+
 // --- CbCharacter ------------------------------------------------------------------------------------
 
 void CbCharacter::_bind_methods()

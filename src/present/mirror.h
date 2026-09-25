@@ -46,6 +46,10 @@ struct Visual
 	Blackboard board;
 	// Ragdolls: the player it came from.
 	uint32_t owner = 0;
+	// Items: who holds it (NetId), in which socket, and what it is (schema indices).
+	uint32_t holder = 0;
+	uint16_t itemKind = 0;
+	uint8_t socket = 0;
 };
 
 // Poses at the two most recent ticks, for interpolation.

@@ -31,6 +31,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	// Character authoring: hit zones on bones, and the node that bakes a character for the game.
 	GDREGISTER_CLASS( cb::gd::CbHitbox );
 	GDREGISTER_CLASS( cb::gd::CbCharacter );
+	GDREGISTER_CLASS( cb::gd::CbSocket );
 	GDREGISTER_CLASS( cb::gd::CbCompanionPlayer );
 	// Map authoring: inert marker nodes plus the baker they are baked with.
 	GDREGISTER_CLASS( cb::gd::CbStatic );
@@ -43,6 +44,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	// Effect bindings: data a mod ships to say what plays when.
 	GDREGISTER_CLASS( cb::gd::CbEffect );
 	GDREGISTER_CLASS( cb::gd::CbStateBinding );
+	GDREGISTER_CLASS( cb::gd::CbItemLook );
 	GDREGISTER_CLASS( cb::gd::CbEffectTable );
 	// HUD nodes that read the mods' board.
 	GDREGISTER_CLASS( cb::gd::CbFieldLabel );

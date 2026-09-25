@@ -73,8 +73,9 @@ struct Float3
 // the commands they produced, and clients apply them exactly like inputs, so the world stays
 // deterministic while the rules stay on the server.
 //
-// A command names its target by NetId, or by player slot with SlotTarget(). Commands whose target
-// does not exist (any more) are ignored, identically everywhere.
+// A command names its target by NetId, by player slot with SlotTarget(), or as the item a player
+// holds in a socket with ItemTarget(). Commands whose target does not exist (any more) are
+// ignored, identically everywhere.
 
 enum class CommandType : uint8_t
 {
@@ -106,8 +107,12 @@ enum class CommandType : uint8_t
 	Facing = 10,
 	// target (a player), index = layer (schema order), value = stance + 1, or 0 for none.
 	Stance = 11,
+	// target (the player who holds it), index = item kind (schema order), mode = socket (schema
+	// order). A new entity with its own board, drawn in that socket; it replaces whatever that
+	// socket held. Destroy removes it; it also goes when its holder leaves.
+	SpawnItem = 12,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Stance );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::SpawnItem );
 
 enum ImpulseMode : uint8_t
 {
@@ -120,6 +125,18 @@ inline constexpr uint32_t SlotTarget( PlayerSlot slot )
 {
 	return kSlotTargetBit | uint32_t( slot );
 }
+
+// The item the player in `slot` holds in `socket` (schema order): an item a command spawned this
+// very tick can be addressed before anyone knows its NetId.
+inline constexpr uint32_t kItemTargetBit = 0x40000000u;
+inline constexpr uint32_t ItemTarget( PlayerSlot slot, uint32_t socket )
+{
+	return kItemTargetBit | ( ( socket & 0xFFu ) << 8 ) | uint32_t( slot );
+}
+
+// Sockets every character has (the first in every schema); characters may add their own.
+inline constexpr uint32_t kSocketRightHand = 0;
+inline constexpr uint32_t kSocketLeftHand = 1;
 
 // Per-entity and global board sizes (see Blackboard in components.h).
 inline constexpr int kBoardSlots = 16;

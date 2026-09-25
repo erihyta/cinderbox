@@ -261,7 +261,7 @@ nodes/UpperBlend/node = SubResource("AnimationNodeBlend2_0qnk2")
 nodes/UpperBlend/position = Vector2(250, 100)
 node_connections = [&"output", 0, &"UpperBlend", &"UpperBlend", 0, &"Base", &"UpperBlend", 1, &"Upper"]
 
-[node name="Mannequin" type="CbCharacter" unique_id=90802760]
+[node name="Mannequin" type="CbCharacter" unique_id=510387797]
 character_name = "mannequin"
 skeleton_path = NodePath("Model/Armature/Skeleton3D")
 animation_player_path = NodePath("Model/AnimationPlayer")
@@ -279,126 +279,140 @@ graph_inputs = {
 
 [node name="Model" parent="." unique_id=984932362 instance=ExtResource("1_3txul")]
 
-[node name="At_Spine" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="1" unique_id=1616323904]
+[node name="At_Spine" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="1" unique_id=2076031825]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0505, -0.015600067)
 bone_name = "Spine"
 
-[node name="Hitbox_torso" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_Spine" unique_id=348375550]
+[node name="Hitbox_torso" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_Spine" unique_id=852399986]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.06201742, 0)
 shape = SubResource("CapsuleShape3D_aq8sn")
 
-[node name="At_Chest" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="2" unique_id=1152079173]
+[node name="At_Chest" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="2" unique_id=2001242170]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1736, -0.00040008593)
 bone_name = "Chest"
 
-[node name="Hitbox_torso" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_Chest" unique_id=482756360]
+[node name="Hitbox_torso" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_Chest" unique_id=422550532]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.07063592, 0)
 shape = SubResource("CapsuleShape3D_i4hb1")
 
-[node name="At_UpperChest" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="3" unique_id=931501017]
+[node name="At_UpperChest" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="3" unique_id=148084130]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3148001, -0.004900111)
 bone_name = "UpperChest"
 
-[node name="Hitbox_torso" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_UpperChest" unique_id=2117591960]
+[node name="Hitbox_torso" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_UpperChest" unique_id=265186586]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.08644537, 0)
 shape = SubResource("CapsuleShape3D_x7aol")
 
-[node name="At_LeftUpperArm" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="4" unique_id=1918461268]
+[node name="At_LeftUpperArm" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="4" unique_id=326418444]
 transform = Transform3D(0, 1, 0, 0, 0, -1, -1, 0, 0, 0.19189997, 1.4408001, -0.06540018)
 bone_name = "LeftUpperArm"
 
-[node name="Hitbox_arm" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_LeftUpperArm" unique_id=1661516355]
+[node name="Hitbox_arm" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_LeftUpperArm" unique_id=1414040628]
 zone = "arm"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.13722014, 0)
 shape = SubResource("CapsuleShape3D_mknv4")
 
-[node name="At_LeftLowerArm" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="5" unique_id=1359876096]
+[node name="At_LeftLowerArm" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="5" unique_id=826073317]
 transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0.4663, 1.4408001, -0.07010015)
 bone_name = "LeftLowerArm"
 
-[node name="Hitbox_arm" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_LeftLowerArm" unique_id=2121872747]
+[node name="Hitbox_arm" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_LeftLowerArm" unique_id=2020362182]
 zone = "arm"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.13632028, 0)
 shape = SubResource("CapsuleShape3D_14rtg")
 
-[node name="At_RightUpperArm" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="6" unique_id=1321258066]
+[node name="At_RightUpperArm" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="6" unique_id=1805424963]
 transform = Transform3D(0, -1, 0, 0, 0, -1, 1, 0, 0, -0.19189997, 1.4408001, -0.06540018)
 bone_name = "RightUpperArm"
 
-[node name="Hitbox_arm" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_RightUpperArm" unique_id=357566993]
+[node name="Hitbox_arm" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_RightUpperArm" unique_id=455593460]
 zone = "arm"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.13722013, 0)
 shape = SubResource("CapsuleShape3D_0nmta")
 
-[node name="At_RightLowerArm" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="7" unique_id=1241252565]
+[node name="At_RightLowerArm" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="7" unique_id=1211909596]
 transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, -0.46629995, 1.4408, -0.07010015)
 bone_name = "RightLowerArm"
 
-[node name="Hitbox_arm" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_RightLowerArm" unique_id=1620408988]
+[node name="Hitbox_arm" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_RightLowerArm" unique_id=1487517936]
 zone = "arm"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.13632025, 0)
 shape = SubResource("CapsuleShape3D_ns1ee")
 
-[node name="At_LeftUpperLeg" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="8" unique_id=2063298904]
+[node name="At_LeftUpperLeg" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="8" unique_id=776566764]
 transform = Transform3D(-1, 0, 0, 0, -1, 0, 0, 0, 1, 0.089, 0.93210006, 0.0013999566)
 bone_name = "LeftUpperLeg"
 
-[node name="Hitbox_leg" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_LeftUpperLeg" unique_id=1275573290]
+[node name="Hitbox_leg" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_LeftUpperLeg" unique_id=774771108]
 zone = "leg"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.20015489, 0)
 shape = SubResource("CapsuleShape3D_ahipq")
 
-[node name="At_LeftLowerLeg" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="9" unique_id=552204341]
+[node name="At_LeftLowerLeg" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="9" unique_id=1167615929]
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, 0.08900001, 0.5318001, -0.0013999327)
 bone_name = "LeftLowerLeg"
 
-[node name="Hitbox_leg" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_LeftLowerLeg" unique_id=1565686448]
+[node name="Hitbox_leg" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_LeftLowerLeg" unique_id=618479144]
 zone = "leg"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.21473992, 0)
 shape = SubResource("CapsuleShape3D_0g03q")
 
-[node name="At_RightUpperLeg" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="10" unique_id=519903991]
+[node name="At_RightUpperLeg" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="10" unique_id=183605572]
 transform = Transform3D(-1, 0, 0, 0, -1, 0, 0, 0, 1, -0.089, 0.93210006, 0.0013999566)
 bone_name = "RightUpperLeg"
 
-[node name="Hitbox_leg" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_RightUpperLeg" unique_id=942138699]
+[node name="Hitbox_leg" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_RightUpperLeg" unique_id=1280615234]
 zone = "leg"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.20015489, 0)
 shape = SubResource("CapsuleShape3D_ckni7")
 
-[node name="At_RightLowerLeg" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="11" unique_id=580498751]
+[node name="At_RightLowerLeg" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="11" unique_id=965265697]
 transform = Transform3D(1, 0, 0, 0, -1, 0, 0, 0, -1, -0.08900001, 0.5318001, -0.0013999327)
 bone_name = "RightLowerLeg"
 
-[node name="Hitbox_leg" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_RightLowerLeg" unique_id=544876218]
+[node name="Hitbox_leg" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_RightLowerLeg" unique_id=1593723129]
 zone = "leg"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.21473989, 0)
 shape = SubResource("CapsuleShape3D_4ddtk")
 
-[node name="At_Head" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="12" unique_id=1945497953]
+[node name="At_Head" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="12" unique_id=532078637]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5687002, 0.0050998395)
 bone_name = "Head"
 
-[node name="Hitbox_head" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_Head" unique_id=1305593207]
+[node name="Hitbox_head" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_Head" unique_id=880674458]
 zone = "head"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.09, 0.02)
 shape = SubResource("SphereShape3D_2i51g")
 
-[node name="At_Hips" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="13" unique_id=748710887]
+[node name="At_Hips" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="13" unique_id=1277654084]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9167, -0.05010003)
 bone_name = "Hips"
 
-[node name="Hitbox_torso" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_Hips" unique_id=24469571]
+[node name="Hitbox_torso" type="CbHitbox" parent="Model/Armature/Skeleton3D/At_Hips" unique_id=936084463]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, 0)
 shape = SubResource("BoxShape3D_y0lhl")
 
-[node name="CinderboxSkeleton" type="CinderboxSkeleton" parent="." unique_id=1537291481]
+[node name="At_RightHand" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="14" unique_id=1786766487]
+transform = Transform3D(0, -1, 0, 0, 0, -1, 1, 0, 0, -0.73889995, 1.4408, -0.06540011)
+bone_name = "RightHand"
+
+[node name="RightHand" type="CbSocket" parent="Model/Armature/Skeleton3D/At_RightHand" unique_id=303200659]
+transform = Transform3D(-0.04282566, 0.99816865, -0.04272413, -0.001456622, -0.042825703, -0.9990815, -0.9990815, -0.042724088, 0.0032880288, 0.0025634503, 0.059944887, -0.00019728183)
+
+[node name="At_LeftHand" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" parent_id_path=PackedInt32Array(984932362, 403527701) index="15" unique_id=362477911]
+transform = Transform3D(0, 1, 0, 0, 0, -1, -1, 0, 0, 0.73890007, 1.4408001, -0.065400116)
+bone_name = "LeftHand"
+
+[node name="LeftHand" type="CbSocket" parent="Model/Armature/Skeleton3D/At_LeftHand" unique_id=1824491291]
+transform = Transform3D(-0.042825796, -0.99816865, 0.042724095, 0.0014566146, -0.042825665, -0.9990815, 0.9990815, -0.042724226, 0.0032880288, -0.0025634484, 0.059944887, -0.00019728183)
+
+[node name="CinderboxSkeleton" type="CinderboxSkeleton" parent="." unique_id=222350825]
 draw_bone_boxes = false
 skeleton_path = NodePath("../Model/Armature/Skeleton3D")
 use_slot_color = false
 retarget = false
 
-[node name="AnimationTree" type="AnimationTree" parent="." unique_id=779472118]
+[node name="AnimationTree" type="AnimationTree" parent="." unique_id=1929326204]
 root_node = NodePath("../Model")
 callback_mode_discrete = 0
 tree_root = SubResource("AnimationNodeBlendTree_km0ko")

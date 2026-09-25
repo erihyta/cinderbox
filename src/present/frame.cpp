@@ -55,6 +55,23 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			out.entities.push_back( f );
 			continue;
 		}
+		if ( const HeldItem* item = e.try_get<HeldItem>() )
+		{
+			FrameEntity f;
+			f.netId = ref.netId;
+			f.kind = VisualKind::Item;
+			f.transform = e.get<Transform>();
+			f.holder = item->holder;
+			f.itemKind = item->kind;
+			f.socket = item->socket;
+			if ( const Blackboard* b = e.try_get<Blackboard>() )
+			{
+				f.board = *b;
+				f.hasBoard = true;
+			}
+			out.entities.push_back( f );
+			continue;
+		}
 		if ( e.has<Shape>() == false )
 		{
 			continue;

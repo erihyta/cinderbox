@@ -283,6 +283,7 @@ void Presentation::Render()
 				color = PropColor( v.netId, v.shape == ShapeKind::Sphere );
 				break;
 			case VisualKind::Ragdoll:
+			case VisualKind::Item: // the debug view draws no held items
 				return;
 		}
 

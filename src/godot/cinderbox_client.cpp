@@ -8,6 +8,7 @@
 #include "pose_tools.h"
 #include "types.h"
 
+#include <godot_cpp/classes/bone_attachment3d.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
@@ -50,6 +51,8 @@ const char* KindName( present::VisualKind kind )
 			return "player";
 		case present::VisualKind::Ragdoll:
 			return "ragdoll";
+		case present::VisualKind::Item:
+			return "item";
 		case present::VisualKind::Prop:
 		default:
 			return "prop";
@@ -125,6 +128,7 @@ void CinderboxClient::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "player_name" ), "set_player_name", "get_player_name_setting" );
 	ClassDB::bind_method( D_METHOD( "add_state_binding", "binding" ), &CinderboxClient::add_state_binding );
 	ClassDB::bind_method( D_METHOD( "clear_state_bindings" ), &CinderboxClient::clear_state_bindings );
+	ClassDB::bind_method( D_METHOD( "add_item_look", "look" ), &CinderboxClient::add_item_look );
 	ClassDB::bind_method( D_METHOD( "get_stats" ), &CinderboxClient::get_stats );
 	ClassDB::bind_method( D_METHOD( "get_connection_state" ), &CinderboxClient::get_connection_state );
 	ClassDB::bind_method( D_METHOD( "has_local_player" ), &CinderboxClient::has_local_player );
@@ -342,6 +346,19 @@ Ref<PackedScene> CinderboxClient::Prefab( const present::Visual& v )
 			String path = m_prefabDir.path_join( "ragdoll.tscn" );
 			return ResourceLoader::get_singleton()->exists( path ) ? LoadPrefab( "ragdoll" ) : LoadPrefab( "player" );
 		}
+		case present::VisualKind::Item:
+		{
+			// The look a mod gave this kind of item; nothing drawn without one.
+			if ( v.itemKind < m_frame.schema.itemKinds.size() )
+			{
+				auto it = m_itemLooks.find( m_frame.schema.itemKinds[v.itemKind] );
+				if ( it != m_itemLooks.end() )
+				{
+					return LoadScene( it->second );
+				}
+			}
+			return Ref<PackedScene>();
+		}
 		case present::VisualKind::Prop:
 		default:
 			return LoadPrefab( v.shape == ShapeKind::Sphere ? "prop_sphere" : "prop_box" );
@@ -385,11 +402,13 @@ void CinderboxClient::HandleEvents()
 			case present::EventType::Removed:
 			{
 				m_attachments.erase( e.visual );
+				m_sockets.erase( e.visual );
 				auto it = m_nodes.find( e.visual );
 				if ( it != m_nodes.end() )
 				{
 					if ( auto* node = Object::cast_to<Node>( ObjectDB::get_instance( it->second ) ) )
 					{
+						node->set_name( "Removed" );
 						node->queue_free();
 					}
 					m_nodes.erase( it );
@@ -433,6 +452,16 @@ void CinderboxClient::HandleEvents()
 					{
 						animator->on_mod_event( name );
 					}
+					// An item plays its animation named after the event, from the start.
+					flecs::entity ve( visuals, e.visual );
+					if ( ve.is_alive() && ve.get<present::Visual>().kind == present::VisualKind::Item )
+					{
+						if ( auto* player = FindInPrefab<AnimationPlayer>( node ); player != nullptr && player->has_animation( name ) )
+						{
+							player->stop();
+							player->play( name );
+						}
+					}
 				}
 				emit_signal( "mod_event", name, int64_t( e.netId ), int64_t( e.otherNetId ), int64_t( e.value ), position,
 							 ToGodot( e.vector ) );
@@ -454,6 +483,11 @@ void CinderboxClient::UpdateNodes()
 		auto* node = Object::cast_to<Node3D>( ObjectDB::get_instance( it->second ) );
 		if ( node == nullptr )
 		{
+			return;
+		}
+		if ( v.kind == present::VisualKind::Item )
+		{
+			UpdateItem( v, node );
 			return;
 		}
 
@@ -524,6 +558,7 @@ void CinderboxClient::UpdateNodes()
 				}
 			}
 			PlaceAttachments( id, v, node );
+			PlaceSockets( id, node );
 			return;
 		}
 
@@ -662,6 +697,184 @@ void CinderboxClient::PlaceAttachments( uint64_t visual, const present::Visual& 
 	}
 }
 
+void CinderboxClient::add_item_look( const Ref<CbItemLook>& look )
+{
+	if ( look.is_valid() && look->get_kind().is_empty() == false )
+	{
+		m_itemLooks[ToStd( look->get_kind() )] = look->get_scene();
+	}
+}
+
+// --- Sockets and held items ------------------------------------------------------------------------
+
+namespace
+{
+
+// Where a built-in hand socket sits in the items' hand frame (AnimSet::AttachFrame): the grip a
+// little along the fingers, the item pointing where the hand points.
+Transform3D HandSocketFrame()
+{
+	Basis turn = Basis::from_euler( Vector3( Math::deg_to_rad( -90.0 ), Math::deg_to_rad( 180.0 ), 0.0 ) );
+	return Transform3D( turn, Vector3( 0, -0.06, 0 ) );
+}
+
+void CollectSocketNodes( Node* node, std::vector<CbSocket*>& out )
+{
+	if ( auto* socket = Object::cast_to<CbSocket>( node ) )
+	{
+		out.push_back( socket );
+	}
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		CollectSocketNodes( node->get_child( i ), out );
+	}
+}
+
+} // namespace
+
+void CinderboxClient::CollectSockets( uint64_t visual, Node3D* node )
+{
+	std::vector<SocketPlace>& places = m_sockets[visual];
+	places.clear();
+	std::vector<CbSocket*> found;
+	CollectSocketNodes( node, found );
+	for ( CbSocket* socket : found )
+	{
+		// What sits in a socket in the editor is a preview.
+		for ( int i = socket->get_child_count() - 1; i >= 0; --i )
+		{
+			Node* preview = socket->get_child( i );
+			socket->remove_child( preview );
+			preview->queue_free();
+		}
+		SocketPlace place;
+		place.node = socket->get_instance_id();
+		place.name = socket->get_name();
+		place.bone = socket->get_bone();
+		place.local = socket->get_transform();
+		if ( auto* attachment = Object::cast_to<BoneAttachment3D>( socket->get_parent() ) )
+		{
+			if ( place.bone.is_empty() )
+			{
+				place.bone = attachment->get_bone_name();
+			}
+		}
+		else
+		{
+			place.local = Transform3D(); // not under a bone: at the bone itself
+		}
+		places.push_back( place );
+	}
+	// Every character has hands to hold things in.
+	for ( const char* hand : { "RightHand", "LeftHand" } )
+	{
+		bool have = false;
+		for ( const SocketPlace& place : places )
+		{
+			have |= place.name == hand;
+		}
+		if ( have )
+		{
+			continue;
+		}
+		auto* socket = memnew( CbSocket );
+		socket->set_name( hand );
+		socket->set_bone( hand );
+		node->add_child( socket );
+		SocketPlace place;
+		place.node = socket->get_instance_id();
+		place.name = hand;
+		place.bone = hand;
+		place.local = HandSocketFrame();
+		place.itemFrame = true;
+		places.push_back( place );
+	}
+}
+
+void CinderboxClient::PlaceSockets( uint64_t visual, Node3D* node )
+{
+	auto it = m_sockets.find( visual );
+	CinderboxSkeleton* skeleton = FindSkeleton( node );
+	if ( it == m_sockets.end() || skeleton == nullptr )
+	{
+		return;
+	}
+	// From the pose itself, so what a socket holds is where the server's pose has the bone.
+	for ( const SocketPlace& place : it->second )
+	{
+		auto* socket = Object::cast_to<Node3D>( ObjectDB::get_instance( place.node ) );
+		Transform3D joint;
+		if ( socket == nullptr || skeleton->JointTransform( place.bone, joint, place.itemFrame ) == false )
+		{
+			continue;
+		}
+		socket->set_global_transform( skeleton->get_global_transform() * joint * place.local );
+	}
+}
+
+Node3D* CinderboxClient::SocketNode( uint32_t holderNetId, uint8_t socket ) const
+{
+	if ( socket >= m_frame.schema.sockets.size() )
+	{
+		return nullptr;
+	}
+	flecs::entity holder = m_mirror ? m_mirror->VisualOf( holderNetId ) : flecs::entity();
+	if ( holder.is_valid() == false )
+	{
+		return nullptr;
+	}
+	auto it = m_sockets.find( holder.id() );
+	if ( it == m_sockets.end() )
+	{
+		return nullptr;
+	}
+	String name = String::utf8( m_frame.schema.sockets[socket].c_str() );
+	for ( const SocketPlace& place : it->second )
+	{
+		if ( place.name == name )
+		{
+			return Object::cast_to<Node3D>( ObjectDB::get_instance( place.node ) );
+		}
+	}
+	return nullptr; // this character has no such socket
+}
+
+void CinderboxClient::UpdateItem( const present::Visual& v, Node3D* node )
+{
+	// In its holder's socket (the holder's node may have been rebuilt since).
+	Node3D* socket = SocketNode( v.holder, v.socket );
+	if ( socket == nullptr )
+	{
+		node->set_visible( false );
+		return;
+	}
+	if ( node->get_parent() != socket )
+	{
+		node->reparent( socket, false );
+		node->set_name( "Item" );
+		node->set_transform( Transform3D() );
+	}
+	node->set_visible( true );
+
+	// Its own board drives its AnimationTree: every field is an advance condition of that name, and
+	// "!<name>" holds while it is off (Godot's conditions cannot be negated).
+	if ( auto* tree = FindInPrefab<AnimationTree>( node ) )
+	{
+		for ( const BoardField& field : m_frame.schema.fields )
+		{
+			if ( field.scope != BoardScope::Entity )
+			{
+				continue;
+			}
+			int32_t raw = v.hasBoard ? v.board.values[field.slot] : 0;
+			bool on = field.type == BoardType::Float ? BoardToFloat( raw ) != 0.0f : raw != 0;
+			String name = String::utf8( field.name.c_str() );
+			tree->set( "parameters/conditions/" + name, on );
+			tree->set( "parameters/conditions/!" + name, !on );
+		}
+	}
+}
+
 void CinderboxClient::add_state_binding( const Ref<CbStateBinding>& binding )
 {
 	if ( binding.is_valid() )
@@ -673,6 +886,7 @@ void CinderboxClient::add_state_binding( const Ref<CbStateBinding>& binding )
 void CinderboxClient::clear_state_bindings()
 {
 	m_states.clear();
+	m_itemLooks.clear();
 	for ( auto& entry : m_attachments )
 	{
 		for ( ObjectID id : entry.second )
@@ -709,8 +923,30 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 			tree->set_active( false );
 		}
 	}
-	add_child( node );
+	if ( v.kind == present::VisualKind::Item )
+	{
+		// In its holder's socket if that is there yet; UpdateItem moves it there otherwise.
+		Node3D* socket = SocketNode( v.holder, v.socket );
+		node->set_visible( socket != nullptr );
+		if ( socket != nullptr )
+		{
+			socket->add_child( node );
+			node->set_name( "Item" );
+		}
+		else
+		{
+			add_child( node );
+		}
+	}
+	else
+	{
+		add_child( node );
+	}
 	m_nodes[visual] = node->get_instance_id();
+	if ( v.kind == present::VisualKind::Player )
+	{
+		CollectSockets( visual, node );
+	}
 
 	m_companions.erase( visual );
 	if ( v.kind == present::VisualKind::Player && m_companionLibrary.is_valid() )
