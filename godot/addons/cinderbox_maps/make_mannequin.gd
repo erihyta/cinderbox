@@ -57,6 +57,7 @@ func _initialize() -> void:
 	if ResourceLoader.exists(scene_path) and not ("--force" in OS.get_cmdline_user_args()):
 		var existing := (load(scene_path) as PackedScene).instantiate() as CbCharacter
 		print("baking the existing ", scene_path, " (--force rebuilds it)")
+		_mark_swing() # a reimport of the glb may have dropped the marker
 		_bake(existing)
 		return
 
@@ -233,8 +234,8 @@ func _go(machine: AnimationNodeStateMachine, from: String, to: String, when := "
 # --- The swing: a marker for the server, fire for the eyes ----------------------------------------
 
 # Sword_Attack is saved to its own file by the glb's import settings (Save to File, Keep Custom
-# Tracks), which is how an imported animation becomes editable: a marker and a track added to it
-# survive reimports.
+# Tracks), which is how an imported animation becomes editable. A track added to it survives
+# reimports; a reimport in Godot 4.7.1 dropped the marker, so this puts it back when it is missing.
 func _mark_swing() -> void:
 	var swing := load(SWING) as Animation
 	if swing == null:

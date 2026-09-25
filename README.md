@@ -698,7 +698,9 @@ state machines, other blend nodes, a missing animation).
 A mod times its effect by the animation with `ctx.AnimationEmits( event )`: the melee mod hits on
 the mannequin's `melee.strike` marker, and on its own timer for characters without one. To edit an
 imported animation (add a marker or a track), save it to a file in the import settings (Save to
-File, Keep Custom Tracks), as the mannequin does with `Sword_Attack`.
+File, Keep Custom Tracks), as the mannequin does with `Sword_Attack`. Check markers after a
+reimport: a reimport in Godot 4.7.1 kept the added track but dropped the marker (4.7.2 kept both).
+The mannequin's generator puts its marker back whenever it bakes.
 
 ## Testing tools
 
