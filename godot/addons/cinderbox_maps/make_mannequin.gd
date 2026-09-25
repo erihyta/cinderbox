@@ -46,6 +46,10 @@ var SWING: String
 var _pack := "standard"
 # The hand fire earlier versions keyed on the swing (the bat's own look has it now).
 const OLD_FIRE_PATH := "Armature/Skeleton3D/At_RightHand/HandFire"
+# The right hand's socket, and the AnimationPlayer of whatever item is held there, as the
+# character's animations see them (from the model's root).
+const HELD_ITEM_PLAYER := "Armature/Skeleton3D/At_RightHand/RightHand/Item/AnimationPlayer"
+const SLASH_TIME := 0.2 # Sword_Attack: the swing comes forward from here
 
 # The six built-in clips, used only if the state machine is removed (animation_tree_path cleared).
 const CLIPS := {
@@ -140,6 +144,7 @@ func _initialize() -> void:
 	driver.skeleton_path = driver.get_path_to(_skeleton)
 
 	_add_hitboxes()
+	_add_sockets()
 	_mark_swing()
 	_add_tree(player)
 
@@ -300,8 +305,44 @@ func _mark_swing() -> void:
 	var old := swing.find_track(NodePath(OLD_FIRE_PATH + ":emitting"), Animation.TYPE_VALUE)
 	if old >= 0:
 		swing.remove_track(old)
+	# The held item swings with it: its own "slash" (a bat's trail, a sword's glint), whatever the
+	# mod put in the hand. A Godot Animation Playback track on the socket's item.
+	var held := swing.find_track(NodePath(HELD_ITEM_PLAYER), Animation.TYPE_ANIMATION)
+	if held < 0:
+		held = swing.add_track(Animation.TYPE_ANIMATION)
+		swing.track_set_path(held, NodePath(HELD_ITEM_PLAYER))
+		swing.animation_track_insert_key(held, SLASH_TIME, "slash")
 	if ResourceSaver.save(swing, SWING) != OK:
 		printerr("cannot save ", SWING)
+
+
+# --- Sockets ----------------------------------------------------------------------------------------
+
+# RightHand and LeftHand, where held items go. The game would make them at the hands anyway; here
+# they are real nodes, so the swing's track can reach what the right hand holds, and an author can
+# move them. The frame is the one items are made in: the grip on the palm, the item along -Z (the
+# way the hand points it), which is the placeholder rig's hand frame turned onto this skeleton.
+func _add_sockets() -> void:
+	var grip := Transform3D(Basis.from_euler(Vector3(deg_to_rad(-90), deg_to_rad(180), 0)), Vector3(0, -0.06, 0))
+	for hand in ["RightHand", "LeftHand"]:
+		var bone := _skeleton.find_bone(hand)
+		var finger := _skeleton.find_bone(hand.replace("Hand", "MiddleProximal"))
+		var rest := _skeleton.get_bone_global_rest(bone)
+		var along := (_skeleton.get_bone_global_rest(finger).origin - rest.origin).normalized()
+		var frame := Basis(rest.basis.orthonormalized().inverse() * Basis(Quaternion(Vector3(0, -1, 0), along)))
+		var attachment := _skeleton.get_node_or_null("At_" + hand) as BoneAttachment3D
+		if attachment == null:
+			attachment = BoneAttachment3D.new()
+			attachment.name = "At_" + hand
+			attachment.bone_name = hand
+			_skeleton.add_child(attachment)
+			attachment.owner = _root
+			attachment.transform = rest
+		var socket := CbSocket.new()
+		socket.name = hand
+		socket.transform = Transform3D(frame, Vector3.ZERO) * grip
+		attachment.add_child(socket)
+		socket.owner = _root
 
 
 # --- Hitboxes ----------------------------------------------------------------------------------------
