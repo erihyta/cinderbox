@@ -3,7 +3,7 @@ target_link_libraries(cb_tests PRIVATE cb_sim cb_anim cb_present)
 target_compile_definitions(cb_tests PRIVATE CB_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 cb_target_warnings(cb_tests)
 
-foreach(name map_format templates sim_events gameplay_sanity commands ragdoll anim_controller anim_graph pose_tools fields hitboxes stances robot_character mannequin_character anim_pipeline repeatability snapshot_roundtrip portable_snapshot portable_bytes rollback rollback_reset stress)
+foreach(name map_format templates sim_events gameplay_sanity commands ragdoll anim_controller anim_graph anim_blend2d pose_tools fields hitboxes stances robot_character mannequin_character ual_mannequin anim_pipeline repeatability snapshot_roundtrip portable_snapshot portable_bytes rollback rollback_reset stress)
 	add_test(NAME ${name} COMMAND cb_tests ${name})
 endforeach()
 

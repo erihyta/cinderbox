@@ -32,6 +32,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M23: companion tracks: VFX, sounds, lights and props keyed in a character's Godot animations play in step with the ozz pose | done |
 | M24: a real default character: the Universal Animation Library's mannequin ships with the game; held items sit the same on every rig | done |
 | M25: state machines authored in Godot: a character's AnimationTree is baked and run by the simulation, markers become mod events | done |
+| M26: strafing with real clips: 2D blend spaces, body-frame velocity, per-character leg turning; a local-only character from the paid animation pack | done |
 
 ## Building
 
@@ -534,6 +535,31 @@ Items held in a hand (the pistol, the bat) use a hand frame that is the same on 
 (`AnimSet::AttachFrame`), so a binding's `attach_offset` / `attach_rotation` work on the
 mannequin, the robot and the placeholder rig alike.
 
+### The paid animation pack (local only)
+
+The library's paid **Source** version has 120 animations, among them jogs in eight directions. It
+must never reach GitHub (the repository is public), so neither it nor anything baked from it is
+committed:
+
+| Where | What | In git |
+|---|---|---|
+| `Universal Animation Library[Source]/` | the purchase | ignored |
+| `godot/characters/ual_mannequin/` | `source/UAL1.glb`, the scene, the baked clips | ignored |
+| `make_mannequin.gd --pack=source` | how to build it | committed (names only) |
+
+To build it: copy `Unreal-Godot/UAL1.glb` to `godot/characters/ual_mannequin/source/`, give its
+import the same settings as `mannequin/source/UAL1_Standard.glb.import` (the bone map, and
+`Sword_Attack` saved to `res://characters/ual_mannequin/animations/`), then:
+
+```sh
+godot --headless --path godot --script res://addons/cinderbox_maps/make_mannequin.gd -- --pack=source --force
+```
+
+Its locomotion is a 2D blend space: idle in the middle, the eight jogs on a circle at the game's
+jog speed (3 m/s), a walk inside and the sprint ahead; `turn_legs` is off. `cb_server` picks
+`ual_mannequin` by default where it is built, and `mannequin` everywhere else; its test
+(`ual_mannequin`) skips itself when the character is not there, as on CI.
+
 ### Workshop characters
 
 A workshop character is a **workshop item**, like a mod's look: the server announces it by name and SHA-256
@@ -669,7 +695,7 @@ and rollback replays it exactly; the tree itself never runs in the game.
 | In the tree | Baked as |
 |---|---|
 | root: a state machine, or a blend tree of state machines stacked with `Blend2` nodes | layers (at most 4); a `Blend2`'s filter is the layer's bone mask |
-| states: `Animation` nodes, `BlendSpace1D` (points are animations, play mode forward or backward) | clip states, blend states (phase-synced, so feet stay in step) |
+| states: `Animation` nodes, `BlendSpace1D`, `BlendSpace2D` (points are animations, play mode forward or backward) | clip states, blend states (phase-synced, so feet stay in step; 2D blends inside Godot's triangles) |
 | transitions: Auto advance, advance condition, advance expression, priority, crossfade, Immediate / At End | the same (Sync switching becomes Immediate; crossfades are linear) |
 | markers on animations | the mod event of the same name, from the player, when the clip passes it |
 | every other track (particles, sounds, lights) | companion tracks, played by clients in step |
@@ -679,12 +705,16 @@ Set it up on the `CbCharacter`:
 - `animation_tree_path`: the tree. Its `root_node` should be the model (tracks' paths start there).
 - `graph_inputs`: what drives the tree's numbers, by parameter path:
   `"Base/Locomotion/blend_position": "forward_speed"`, `"UpperBlend/blend_amount": "pistol or melee"`.
+  A 2D blend space takes two expressions, x then y: `"move_right, move_forward"`.
+- `turn_legs`: on (the default), the hips turn toward the direction of travel so a forward walk
+  goes sideways. Turn it off for a character with its own directional clips (strafes).
 
 Conditions and expressions read simulation values, never scripts:
 
 | Name | Value |
 |---|---|
 | `speed`, `forward_speed` | smoothed ground speed (m/s); negative forward_speed while backing up |
+| `move_forward`, `move_right` | smoothed ground velocity in the body's frame (m/s): for directional blend spaces |
 | `vertical_speed`, `grounded`, `airborne_time`, `jumped` | the body's movement (`jumped`: on the tick of a jump) |
 | `aiming`, `backward`, `state_time` | a mod's Aim; walking backwards; seconds in the current state |
 | a stance's name (`pistol`, `melee`) | true while any layer has it (mods' `SetStance`) |

@@ -1598,6 +1598,74 @@ ModSchema TestGraphSchema()
 	return schema;
 }
 
+// Directional clips in a 2D blend space, as Godot triangulates it (idle in the middle, four
+// directions around), and the body-frame velocity that drives it.
+void TestAnimBlend2D()
+{
+	const char* text = "cinderbox_graph\t1\n"
+					   "clip\tidle\t2\t1\n"
+					   "clip\tfwd\t1\t1\n"
+					   "clip\tleft\t1\t1\n"
+					   "clip\tright\t1\t1\n"
+					   "clip\tback\t1\t1\n"
+					   "layer\tbase\n"
+					   "state\tMove\tblend2d\tmove_right\tmove_forward\n"
+					   "point2\t0\t0\tidle\n"
+					   "point2\t0\t3\tfwd\n"
+					   "point2\t-3\t0\tleft\n"
+					   "point2\t3\t0\tright\n"
+					   "point2\t0\t-3\tback\n"
+					   "triangle\t0\t1\t3\n"
+					   "triangle\t0\t3\t4\n"
+					   "triangle\t0\t4\t2\n"
+					   "triangle\t0\t2\t1\n"
+					   "start\tMove\n";
+	std::string error, warnings;
+	auto graph = CompileAnimGraph( text, ModSchema{}, error, warnings );
+	CHECK( graph != nullptr );
+	if ( graph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	CHECK( warnings.empty() );
+	const AnimGraphState& move = graph->layers[0].states[0];
+	CHECK( move.planar && move.points.size() == 5 && move.triangles.size() == 4 );
+	AnimBlendWeights w;
+	AnimGraphWeights( move, 0.0f, 1.5f, w ); // halfway forward: idle and fwd
+	CHECK( std::fabs( w[0] - 0.5f ) < 1e-5f && std::fabs( w[1] - 0.5f ) < 1e-5f );
+	AnimGraphWeights( move, 1.0f, 1.0f, w ); // inside the forward-right triangle: a third each
+	std::printf( "    weights at (1, 1): idle %.2f fwd %.2f right %.2f\n", w[0], w[1], w[3] );
+	CHECK( std::fabs( w[0] - 1.0f / 3.0f ) < 1e-5f && std::fabs( w[1] - 1.0f / 3.0f ) < 1e-5f && std::fabs( w[3] - 1.0f / 3.0f ) < 1e-5f );
+	CHECK( w[2] == 0.0f && w[4] == 0.0f );
+	AnimGraphWeights( move, 6.0f, 0.0f, w ); // outside: the nearest edge's end, right
+	CHECK( std::fabs( w[3] - 1.0f ) < 1e-5f );
+
+	// A camera-facing player strafing right: the body keeps facing, the velocity is to its right.
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	InputFrame f;
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	SimCommand face;
+	face.type = CommandType::Facing;
+	face.target = SlotTarget( 0 );
+	face.mode = 1;
+	f.commands.push_back( face );
+	for ( int i = 0; i < 90; ++i )
+	{
+		f.tick = sim.Tick();
+		f.inputs[0].moveRight = i >= 30 ? int8_t( 127 ) : int8_t( 0 );
+		sim.Step( f );
+		f.events.clear();
+		f.commands.clear();
+	}
+	AnimState a = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
+	std::printf( "    strafing right: move_right %.2f move_forward %.2f, blend (%.2f, %.2f)\n", a.moveRight, a.moveForward, a.graph[0].blend,
+				 a.graph[0].blendY );
+	CHECK( a.moveRight > 2.5f && std::fabs( a.moveForward ) < 0.3f );
+	CHECK( a.graph[0].blend == a.moveRight && a.graph[0].blendY == a.moveForward );
+}
+
 void TestAnimGraph()
 {
 	// Numbers read the same everywhere.
@@ -2178,6 +2246,71 @@ void TestMannequinCharacter()
 	CheckHeldItem( *procedural, placeholder );
 }
 
+// The character built from the paid animation pack, where it was built (it is never in the
+// repository, so CI and fresh clones skip this): strafing plays its sideways jog, hips straight.
+void TestUalMannequin()
+{
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/ual_mannequin";
+	if ( std::filesystem::exists( dir + "/anim.cfg" ) == false )
+	{
+		std::printf( "    skipped: the paid pack's character is not built here\n" );
+		return;
+	}
+	std::string error, warnings;
+	auto set = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( set != nullptr && warnings.empty() );
+	if ( set == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	CHECK( set->TurnLegs() == false );
+	ModSchema schema;
+	schema.stances = { "melee", "melee_swing", "pistol" };
+	schema.events = { "pistol.fired", "melee.strike" };
+	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
+	CHECK( graph != nullptr && warnings.empty() );
+	if ( graph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	anim::PoseEvaluator pose( *set );
+	pose.SetGraph( graph, warnings );
+	CHECK( warnings.empty() );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	InputFrame f;
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	SimCommand face;
+	face.type = CommandType::Facing;
+	face.target = SlotTarget( 0 );
+	face.mode = 1;
+	f.commands.push_back( face );
+	for ( int i = 0; i < 120; ++i )
+	{
+		f.tick = sim.Tick();
+		f.inputs[0].moveRight = i >= 30 ? int8_t( 127 ) : int8_t( 0 );
+		sim.Step( f );
+		f.events.clear();
+		f.commands.clear();
+	}
+	AnimState state = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
+	auto clips = anim::ActiveGraphClips( state, *graph );
+	std::printf( "    strafing right: blend (%.2f, %.2f), leg yaw %.2f, playing %s\n", state.graph[0].blend, state.graph[0].blendY,
+				 state.legYaw, clips.empty() ? "nothing" : clips[0].name.c_str() );
+	CHECK( clips.empty() == false && clips[0].name == "Jog_Right" );
+
+	// The hips face where the body faces although the legs' yaw says sideways: no twist.
+	pose.Evaluate( state );
+	float hips[4];
+	ozz::math::StorePtrU( pose.Models()[size_t( anim::FindJoint( *set, "Hips" ) )].cols[2], hips );
+	std::printf( "    hips z axis (%.2f %.2f %.2f)\n", hips[0], hips[1], hips[2] );
+	CHECK( std::fabs( state.legYaw ) > 1.0f ); // the simulation still says the legs go sideways
+	CHECK( hips[2] > 0.7f );					 // but the hips only lean as the clip leans them
+}
+
 void TestAnimPipeline()
 {
 	auto procedural = anim::AnimSet::CreateProcedural();
@@ -2387,12 +2520,14 @@ int main( int argc, char** argv )
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },
+		{ "anim_blend2d", TestAnimBlend2D },
 		{ "pose_tools", TestPoseTools },
 		{ "fields", TestFields },
 		{ "hitboxes", TestHitboxes },
 		{ "stances", TestStances },
 		{ "robot_character", TestRobotCharacter },
 		{ "mannequin_character", TestMannequinCharacter },
+		{ "ual_mannequin", TestUalMannequin },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "stress", TestStress },
 	};

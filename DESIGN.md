@@ -756,6 +756,30 @@ is baked into data the simulation runs, as ozz already does for the bones.
   markers inside blend spaces, and previewing expressions in Godot's own editor (its Expression
   cannot read simulation values; conditions can be toggled by hand).
 
+## Strafing with real clips (M26)
+The mannequin walked sideways by turning its hips 90 degrees over a forward walk (the M21 leg
+twist). The library's paid Source version has jogs in eight directions, so a character can now
+blend real directional clips instead.
+
+- **2D blend spaces**: Godot's `BlendSpace2D` bakes as points plus triangles and blends like Godot:
+  barycentric inside a triangle, the nearest hull edge outside. Auto triangles are computed by the
+  bake with Godot's own `Geometry2D.triangulate_delaunay` (Godot builds them in a deferred call).
+- **Inputs**: `move_forward` / `move_right`, the ground velocity in the body's frame, smoothed like
+  the speed, kept while airborne. Only camera-facing players really strafe; in freelook the body
+  turns toward where it goes.
+- **turn_legs** (anim.cfg, `CbCharacter`): off keeps the hips straight; the simulation still
+  computes the leg yaw (it is state), the pose ignores it.
+- **Paid content stays local**: the pack and `godot/characters/ual_mannequin/` are git-ignored;
+  the generator (`--pack=source`) holds only names. The server prefers `ual_mannequin` where it is
+  built, the game export includes it there, and clones and CI keep the CC0 `mannequin`.
+- **Verified**: `anim_blend2d` (Godot's weights inside and outside the triangles, `move_right`
+  from a real strafe), `ual_mannequin` locally (a right strafe plays `Jog_Right`, hips straight;
+  skipped on CI), a rendered session against the server with pistol bots, no desyncs. AnimState
+  grew to 224 bytes; reference hashes regenerated.
+- **Not done**: walk and sprint have no side or back versions in the pack, so slow sideways
+  movement blends idle with the sideways jog; clips play at their own rate, so moving faster or
+  slower than a point's speed slides the feet a little.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -854,3 +878,4 @@ is baked into data the simulation runs, as ozz already does for the bones.
 23. **M23** (done): companion tracks: the bake keeps every non-bone track of a character's animations in `companion.tres`, and `CbCompanionPlayer` plays them per channel in step with the ozz pose (values exact, keys once through rollbacks, RESET between clips); the robot's bat swing gets a fire trail and a whoosh as ordinary tracks.
 24. **M24** (done): the default character: the Universal Animation Library's mannequin retargeted onto the humanoid profile, shipped with the game and read by `cb_server` from `bin/characters/` (no item needed), and a hand frame for held items that is the same on every rig.
 25. **M25** (done): state machines authored in Godot: a character's `AnimationTree` (state machines, Blend2 layers, 1D blend spaces, Godot's transitions with conditions and expressions) is baked to `graph.cfg` and run by the simulation, travelling in the schema; markers emit mod events (the melee swing strikes on one); the mannequin's tree with a flaming swing; `cb_bot --melee`.
+26. **M26** (done): strafing with real clips: 2D blend spaces (Godot's triangles), `move_forward` / `move_right`, `turn_legs` per character; `ual_mannequin`, a local-only character built from the paid Source pack with eight-way jogs (the pack and its bakes are git-ignored), preferred by the server where it exists.

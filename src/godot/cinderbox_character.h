@@ -193,6 +193,14 @@ public:
 	{
 		return m_graphInputs;
 	}
+	void set_turn_legs( bool v )
+	{
+		m_turnLegs = v;
+	}
+	bool get_turn_legs() const
+	{
+		return m_turnLegs;
+	}
 	void set_lock_root_xz( bool v )
 	{
 		m_lockRootXZ = v;
@@ -218,6 +226,9 @@ private:
 	godot::String m_clips[6] = { "idle", "walk", "run", "jump_start", "fall", "land" };
 	double m_sampleRate = 30.0;
 	bool m_lockRootXZ = true;
+	// Turn the hips toward where the body walks (a forward walk going sideways); off when the
+	// character has its own directional clips (strafes).
+	bool m_turnLegs = true;
 	// What the pose turns toward where the player looks while a mod has it aim: bones (profile
 	// names) with weights, in order, and the bone that ends up on the line of sight.
 	// Stance clips the mods' stances use: "pistol" (one loop) or "melee_walk" (one of the six) ->

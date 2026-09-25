@@ -171,10 +171,12 @@ std::vector<ActiveClip> ActiveGraphClips( const AnimState& state, const AnimGrap
 			continue;
 		}
 		const AnimGraphState& s = layer.states[L.state];
+		AnimBlendWeights weights;
+		AnimGraphWeights( s, L.blend, L.blendY, weights );
 		size_t best = 0;
 		for ( size_t p = 1; p < s.points.size(); ++p )
 		{
-			if ( AnimGraphPointWeight( s, L.blend, p ) > AnimGraphPointWeight( s, L.blend, best ) )
+			if ( weights[p] > weights[best] )
 			{
 				best = p;
 			}
@@ -195,6 +197,8 @@ AnimState InterpolateAnimState( const AnimState& from, const AnimState& to, floa
 	AnimState s = to;
 	float t = std::clamp( alpha, 0.0f, 1.0f );
 	s.groundSpeed = from.groundSpeed + ( to.groundSpeed - from.groundSpeed ) * t;
+	s.moveForward = from.moveForward + ( to.moveForward - from.moveForward ) * t;
+	s.moveRight = from.moveRight + ( to.moveRight - from.moveRight ) * t;
 
 	// Extrapolate forward from `from` instead of lerping across wraps and mode switches.
 	if ( from.mode == to.mode )
@@ -235,6 +239,7 @@ AnimState InterpolateAnimState( const AnimState& from, const AnimState& to, floa
 		}
 		o.stateTime = a.stateTime + ( b.stateTime - a.stateTime ) * t;
 		o.blend = a.blend + ( b.blend - a.blend ) * t;
+		o.blendY = a.blendY + ( b.blendY - a.blendY ) * t;
 		if ( b.time >= a.time )
 		{
 			o.time = a.time + ( b.time - a.time ) * t;
@@ -371,10 +376,12 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 		float in = L.fadeLength > 0.0f ? std::min( L.stateTime / L.fadeLength, 1.0f ) : 1.0f;
 		layers.clear();
 		size_t buffer = 0;
-		auto sample = [&]( const AnimGraphState& s, float time, float blend, float weight ) {
+		auto sample = [&]( const AnimGraphState& s, float time, float blend, float blendY, float weight ) {
+			AnimBlendWeights weights;
+			AnimGraphWeights( s, blend, blendY, weights );
 			for ( size_t p = 0; p < s.points.size() && buffer < m_graphLocals.size(); ++p )
 			{
-				float w = weight * AnimGraphPointWeight( s, blend, p );
+				float w = weight * weights[p];
 				const AnimGraphState::Point& point = s.points[p];
 				const ozz::animation::Animation* clip = m_graphClips[size_t( point.clip )];
 				if ( w < kMinWeight || clip == nullptr )
@@ -397,10 +404,10 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 				}
 			}
 		};
-		sample( layer.states[L.state], L.time, L.blend, in );
+		sample( layer.states[L.state], L.time, L.blend, L.blendY, in );
 		if ( in < 1.0f )
 		{
-			sample( layer.states[L.previous], L.previousTime, L.previousBlend, 1.0f - in );
+			sample( layer.states[L.previous], L.previousTime, L.previousBlend, L.previousBlendY, 1.0f - in );
 		}
 
 		ozz::animation::BlendingJob blending;
@@ -624,7 +631,7 @@ void PoseEvaluator::Finish( const AnimState& state )
 	ltm.output = ozz::make_span( m_models );
 	ltm.Run();
 
-	if ( state.legYaw != 0.0f && m_set.HipsJoint() >= 0 && m_set.SpineJoint() >= 0 )
+	if ( state.legYaw != 0.0f && m_set.TurnLegs() && m_set.HipsJoint() >= 0 && m_set.SpineJoint() >= 0 )
 	{
 		// Hips toward the direction of travel, the spine back: the legs walk where the character
 		// goes while the upper body keeps facing where it faces.
