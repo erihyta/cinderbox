@@ -100,6 +100,8 @@ struct AnimLibrary
 	std::shared_ptr<const RagdollRig> ragdoll;
 	std::shared_ptr<const anim::StanceTable> stances; // the server's layers and stances, for this set
 	std::shared_ptr<const AnimGraph> graph;			  // the server's state machine for the character, or null
+	AnimGraphPacks packs;								  // the mods' animation packs (as the simulation has them)
+	std::vector<std::shared_ptr<const anim::PackClips>> packClips; // and their clips fitted to the character
 };
 
 struct FrameTiming
@@ -162,7 +164,8 @@ public:
 	// Switch to another character's skeleton and clips (the server's character is known only once
 	// it has welcomed us). Every player gets a new pose evaluator; the ragdoll rig follows.
 	void SetAnimSet( std::shared_ptr<const anim::AnimSet> animSet, std::shared_ptr<const anim::StanceTable> stances = nullptr,
-					 std::shared_ptr<const AnimGraph> graph = nullptr );
+					 std::shared_ptr<const AnimGraph> graph = nullptr, AnimGraphPacks packs = {},
+					 std::vector<std::shared_ptr<const anim::PackClips>> packClips = {} );
 
 	// `tickAlpha`: how far between frame.tick - 1 and frame.tick to draw.
 	void Update( const PresentationFrame& frame, float tickAlpha, float frameSeconds );

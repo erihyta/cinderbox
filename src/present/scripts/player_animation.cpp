@@ -16,6 +16,7 @@ void RegisterPlayerAnimation( flecs::world& world )
 			a.evaluator->SetStances( lib.stances );
 			std::string ignored;
 			a.evaluator->SetGraph( lib.graph, ignored );
+			a.evaluator->SetPacks( lib.packs, lib.packClips );
 		}
 	} );
 

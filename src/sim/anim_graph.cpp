@@ -865,6 +865,26 @@ bool AnimGraph::EmitsEvent( int event ) const
 	return false;
 }
 
+AnimGraphPacks CompileAnimPacks( const ModSchema& schema, std::string& warnings )
+{
+	AnimGraphPacks packs;
+	for ( const AnimPackInfo& pack : schema.animPacks )
+	{
+		std::shared_ptr<const AnimGraph> graph;
+		if ( pack.graph.empty() == false )
+		{
+			std::string error;
+			graph = CompileAnimGraph( pack.graph, schema, error, warnings );
+			if ( graph == nullptr )
+			{
+				warnings += "animation pack " + pack.name + ": " + error + "; ";
+			}
+		}
+		packs.push_back( graph );
+	}
+	return packs;
+}
+
 bool CompileAnimExpr( const std::string& text, const ModSchema& schema, AnimExpr& out, std::string& error, std::string& warnings )
 {
 	ExprCompiler compiler( text, schema, out, warnings );
@@ -1223,16 +1243,42 @@ float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& in, float s
 	return top > 0 ? stack[top - 1] : 0.0f;
 }
 
-void UpdateAnimGraph( AnimState& s, const AnimGraph& graph, AnimGraphInputs& in, float dt, std::vector<int>& markers )
+const AnimGraphLayer& ResolveLayer( const AnimGraph& character, const AnimGraphPacks& packs, size_t l, uint8_t source,
+									const AnimGraph*& owner )
+{
+	owner = &character;
+	const AnimGraphLayer& own = character.layers[l];
+	if ( source == 0 || size_t( source - 1 ) >= packs.size() || !packs[size_t( source - 1 )] )
+	{
+		return own;
+	}
+	const AnimGraph& pack = *packs[size_t( source - 1 )];
+	for ( const AnimGraphLayer& layer : pack.layers )
+	{
+		if ( layer.name == own.name )
+		{
+			owner = &pack;
+			return layer;
+		}
+	}
+	return own;
+}
+
+void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphPacks& packs, AnimGraphInputs& in, float dt,
+					  std::vector<int>& markers )
 {
 	in.state = &s;
-	for ( size_t l = 0; l < graph.layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	for ( size_t l = 0; l < character.layers.size() && l < size_t( kMaxAnimLayers ); ++l )
 	{
-		const AnimGraphLayer& layer = graph.layers[l];
 		AnimGraphLayerState& L = s.graph[l];
+		const AnimGraph* owner = nullptr;
+		const AnimGraphLayer& layer = ResolveLayer( character, packs, l, L.source, owner );
+		const AnimGraph& graph = *owner; // the clips this layer plays
 		if ( L.started == 0 || L.state >= layer.states.size() || L.previous >= layer.states.size() )
 		{
+			uint8_t source = L.source;
 			L = AnimGraphLayerState{};
+			L.source = source;
 			L.started = 1;
 			L.state = L.previous = uint8_t( layer.start );
 			const AnimGraphState& first = layer.states[size_t( layer.start )];

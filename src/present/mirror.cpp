@@ -29,15 +29,17 @@ b3Quat Nlerp( b3Quat a, b3Quat b, float t )
 } // namespace
 
 void Mirror::SetAnimSet( std::shared_ptr<const anim::AnimSet> animSet, std::shared_ptr<const anim::StanceTable> stances,
-						 std::shared_ptr<const AnimGraph> graph )
+						 std::shared_ptr<const AnimGraph> graph, AnimGraphPacks packs,
+						 std::vector<std::shared_ptr<const anim::PackClips>> packClips )
 {
 	m_animSet = std::move( animSet );
-	m_world.set<AnimLibrary>( { m_animSet, std::make_shared<RagdollRig>( BuildRagdollRig( *m_animSet ) ), stances, graph } );
+	m_world.set<AnimLibrary>( { m_animSet, std::make_shared<RagdollRig>( BuildRagdollRig( *m_animSet ) ), stances, graph, packs, packClips } );
 	m_world.each( [&]( PlayerAnim& a ) {
 		a.evaluator = std::make_shared<anim::PoseEvaluator>( *m_animSet );
 		a.evaluator->SetStances( stances );
 		std::string ignored; // reported once, by whoever set the graph
 		a.evaluator->SetGraph( graph, ignored );
+		a.evaluator->SetPacks( packs, packClips );
 	} );
 }
 

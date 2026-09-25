@@ -110,7 +110,7 @@ struct AnimGraphLayerState
 	uint8_t state = 0;
 	uint8_t previous = 0; // faded out over the first fadeLength seconds of `state`
 	uint8_t started = 0;  // 0 until the graph first runs (a new or respawned player)
-	uint8_t reserved = 0;
+	uint8_t source = 0;	  // 0: the character's own layer; n: animation pack n-1's layer of that name
 	float time = 0.0f;		   // seconds into the state's clip, or the phase [0, 1) of a blend space
 	float previousTime = 0.0f; // the same for `previous`, still advancing while it fades
 	float stateTime = 0.0f;	   // seconds since `state` started

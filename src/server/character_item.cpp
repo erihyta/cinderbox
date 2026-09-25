@@ -109,6 +109,58 @@ std::shared_ptr<const CharacterAsset> LoadCharacterItem( const std::string& zipP
 	return character;
 }
 
+std::shared_ptr<const anim::AnimSet> LoadAnimPackItem( const std::string& zipPath, const ModItem& item, const std::string& pack,
+													   std::string& error, std::string& warnings )
+{
+	std::ifstream in( zipPath, std::ios::binary );
+	if ( in.good() == false )
+	{
+		error = "no workshop item at " + zipPath;
+		return nullptr;
+	}
+	std::ostringstream all;
+	all << in.rdbuf();
+	const std::string bytes = all.str();
+	if ( Sha256Hex( bytes.data(), bytes.size() ) != item.sha256 )
+	{
+		error = zipPath + " is not the item the manifest names";
+		return nullptr;
+	}
+	mz_zip_archive zip = {};
+	if ( mz_zip_reader_init_mem( &zip, bytes.data(), bytes.size(), 0 ) == MZ_FALSE )
+	{
+		error = zipPath + " is not a zip";
+		return nullptr;
+	}
+	const std::string folder = "anim/" + pack + "/";
+	anim::FileReader read = [&]( const std::string& name, std::string& out ) {
+		std::string path = folder + name;
+		int index = mz_zip_reader_locate_file( &zip, path.c_str(), nullptr, 0 );
+		if ( index < 0 )
+		{
+			return false;
+		}
+		size_t size = 0;
+		void* data = mz_zip_reader_extract_to_heap( &zip, mz_uint( index ), &size, 0 );
+		if ( data == nullptr )
+		{
+			return false;
+		}
+		out.assign( static_cast<const char*>( data ), size );
+		mz_free( data );
+		return true;
+	};
+	std::shared_ptr<const anim::AnimSet> set = anim::AnimSet::Load( read, pack, error, warnings );
+	mz_zip_reader_end( &zip );
+	return set;
+}
+
+std::shared_ptr<const anim::AnimSet> LoadAnimPackFolder( const std::string& dir, const std::string& pack, std::string& error,
+														 std::string& warnings )
+{
+	return anim::AnimSet::Load( anim::DiskReader( dir + "/anim/" + pack ), pack, error, warnings );
+}
+
 std::shared_ptr<const CharacterAsset> LoadCharacterFolder( const std::string& dir, const std::string& name, std::string& error,
 														   std::string& warnings )
 {

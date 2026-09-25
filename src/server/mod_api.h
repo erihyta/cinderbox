@@ -114,6 +114,17 @@ struct SocketHandle
 	}
 };
 
+// An animation pack the mod ships (AnimationTree layers baked into its item under anim/<name>/).
+struct AnimPackHandle
+{
+	int index = -1;
+
+	bool Valid() const
+	{
+		return index >= 0;
+	}
+};
+
 // The item the player in `slot` holds in `socket`, as a command target (SetField, Emit, Destroy).
 inline uint32_t ItemTarget( PlayerSlot slot, SocketHandle socket )
 {
@@ -138,6 +149,9 @@ public:
 	// "RightHand" and "LeftHand" exist on every character; another socket is drawn only on
 	// characters that define it.
 	ItemKindHandle ItemKind( const std::string& name );
+	// An animation pack in this mod's client item: its layers can replace a player's own of the same
+	// name (Context::SwapLayer). Name it like the mod's other names ("sneak.crouch").
+	AnimPackHandle AnimPack( const std::string& name );
 	SocketHandle Socket( const std::string& name );
 
 	const ModSchema& Schema() const
@@ -319,6 +333,12 @@ public:
 	// there. The item is an entity of its own: address it with ItemTarget( slot, socket ) (from this
 	// tick on) to set its fields, send it events, or Destroy it.
 	void SpawnItem( uint32_t holder, ItemKindHandle kind, SocketHandle socket );
+	// Plays `pack`'s layer named `layer` ("Base") instead of the player's own, from its start; the
+	// layer's name is the character's (its AnimationTree's). Does nothing when the character has no
+	// such layer. The pose follows it everywhere, the server's hit tests too.
+	void SwapLayer( uint32_t target, AnimPackHandle pack, const std::string& layer );
+	// The player's own layer again.
+	void RestoreLayer( uint32_t target, const std::string& layer );
 	// The NetId of what the player in `slot` holds in `socket` (as of the start of this tick), or 0.
 	uint32_t HeldItem( PlayerSlot slot, SocketHandle socket ) const;
 

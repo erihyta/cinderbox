@@ -159,13 +159,15 @@ std::vector<ActiveClip> ActiveClips( const AnimState& state, const AnimSet& set,
 	return out;
 }
 
-std::vector<ActiveClip> ActiveGraphClips( const AnimState& state, const AnimGraph& graph )
+std::vector<ActiveClip> ActiveGraphClips( const AnimState& state, const AnimGraph& character, const AnimGraphPacks& packs )
 {
 	std::vector<ActiveClip> out;
-	for ( size_t l = 0; l < graph.layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	for ( size_t l = 0; l < character.layers.size() && l < size_t( kMaxAnimLayers ); ++l )
 	{
-		const AnimGraphLayer& layer = graph.layers[l];
 		const AnimGraphLayerState& L = state.graph[l];
+		const AnimGraph* owner = nullptr;
+		const AnimGraphLayer& layer = ResolveLayer( character, packs, l, L.source, owner );
+		const AnimGraph& graph = *owner;
 		if ( L.state >= layer.states.size() || ( l > 0 && L.weight <= 0.0f ) )
 		{
 			continue;
@@ -285,14 +287,12 @@ PoseEvaluator::PoseEvaluator( const AnimSet& set )
 void PoseEvaluator::SetGraph( std::shared_ptr<const AnimGraph> graph, std::string& warnings )
 {
 	m_graph = std::move( graph );
-	m_graphClips.clear();
-	m_graphMasks.clear();
-	m_graphNeckMask.clear();
+	m_sources.clear();
 	if ( !m_graph )
 	{
 		return;
 	}
-	const auto& skeleton = m_set.Skeleton();
+	std::vector<const ozz::animation::Animation*> clips;
 	for ( const AnimGraphClip& clip : m_graph->clips )
 	{
 		const ozz::animation::Animation* own = m_set.NamedClip( clip.name );
@@ -300,19 +300,59 @@ void PoseEvaluator::SetGraph( std::shared_ptr<const AnimGraph> graph, std::strin
 		{
 			warnings += "the state machine plays '" + clip.name + "', which this character has no clip for; ";
 		}
-		m_graphClips.push_back( own );
+		clips.push_back( own );
 	}
+	m_sources.resize( 1 );
+	BindSource( m_sources[0], *m_graph, std::move( clips ) );
+	SetPacks( m_packs, m_packClips );
+}
+
+void PoseEvaluator::SetPacks( AnimGraphPacks packs, std::vector<std::shared_ptr<const PackClips>> clips )
+{
+	m_packs = std::move( packs );
+	m_packClips = std::move( clips );
+	if ( m_sources.empty() )
+	{
+		return;
+	}
+	m_sources.resize( 1 + m_packs.size() );
+	for ( size_t i = 0; i < m_packs.size(); ++i )
+	{
+		GraphSource& source = m_sources[1 + i];
+		source = GraphSource{};
+		if ( !m_packs[i] )
+		{
+			continue;
+		}
+		std::vector<const ozz::animation::Animation*> fitted;
+		if ( i < m_packClips.size() && m_packClips[i] )
+		{
+			fitted = m_packClips[i]->clips;
+		}
+		fitted.resize( m_packs[i]->clips.size(), nullptr ); // a pack this machine cannot play stays at rest
+		BindSource( source, *m_packs[i], std::move( fitted ) );
+	}
+}
+
+void PoseEvaluator::BindSource( GraphSource& source, const AnimGraph& graph, std::vector<const ozz::animation::Animation*> clips )
+{
+	const auto& skeleton = m_set.Skeleton();
+	source.graph = &graph;
+	source.clips = std::move( clips );
 	// Masks: exactly the bones the layer's Blend2 filter lists, as Godot filters them.
 	const int joints = skeleton.num_joints();
 	auto names = skeleton.joint_names();
-	for ( const AnimGraphLayer& layer : m_graph->layers )
+	for ( const AnimGraphLayer& layer : graph.layers )
 	{
 		ozz::vector<ozz::math::SimdFloat4> packed;
+		float neck = 1.0f;
 		if ( layer.mask.empty() == false )
 		{
+			neck = 0.0f;
 			std::vector<float> weights( size_t( joints ), 0.0f );
 			for ( const std::string& bone : layer.mask )
 			{
+				neck = bone == "Neck" ? 1.0f : neck;
 				int j = FindJoint( m_set, bone.c_str() );
 				for ( int k = 0; k < joints && j < 0; ++k )
 				{
@@ -335,21 +375,12 @@ void PoseEvaluator::SetGraph( std::shared_ptr<const AnimGraph> graph, std::strin
 				packed[size_t( i )] = ozz::math::simd_float4::Load( lane[0], lane[1], lane[2], lane[3] );
 			}
 		}
-		m_graphMasks.push_back( std::move( packed ) );
-		float neck = 1.0f;
-		if ( layer.mask.empty() == false )
-		{
-			neck = 0.0f;
-			for ( const std::string& bone : layer.mask )
-			{
-				neck = bone == "Neck" ? 1.0f : neck;
-			}
-		}
-		m_graphNeckMask.push_back( neck );
+		source.masks.push_back( std::move( packed ) );
+		source.neck.push_back( neck );
 	}
 	// Sample buffers: every point of a state and of the one fading out.
 	size_t most = 1;
-	for ( const AnimGraphLayer& layer : m_graph->layers )
+	for ( const AnimGraphLayer& layer : graph.layers )
 	{
 		for ( const AnimGraphState& state : layer.states )
 		{
@@ -366,13 +397,22 @@ void PoseEvaluator::SetGraph( std::shared_ptr<const AnimGraph> graph, std::strin
 void PoseEvaluator::EvaluateGraph( const AnimState& state )
 {
 	const auto& skeleton = m_set.Skeleton();
-	const AnimGraph& graph = *m_graph;
 	std::vector<ozz::animation::BlendingJob::Layer> layers;
 	float neckKept = 1.0f;
-	for ( size_t l = 0; l < graph.layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	for ( size_t l = 0; l < m_graph->layers.size() && l < size_t( kMaxAnimLayers ); ++l )
 	{
-		const AnimGraphLayer& layer = graph.layers[l];
 		AnimGraphLayerState L = state.graph[l];
+		// The layer as the simulation plays it: the character's own, or a pack's it was swapped to.
+		const AnimGraph* owner = nullptr;
+		const AnimGraphLayer& layer = ResolveLayer( *m_graph, m_packs, l, L.source, owner );
+		const AnimGraph& graph = *owner;
+		size_t sourceIndex = owner == m_graph.get() ? 0 : size_t( L.source );
+		if ( sourceIndex >= m_sources.size() || m_sources[sourceIndex].graph != owner )
+		{
+			continue; // a pack this machine has not bound
+		}
+		const GraphSource& source = m_sources[sourceIndex];
+		size_t layerIndex = size_t( &layer - &graph.layers[0] );
 		if ( L.started == 0 || L.state >= layer.states.size() || L.previous >= layer.states.size() )
 		{
 			L = AnimGraphLayerState{};
@@ -395,7 +435,7 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 			{
 				float w = weight * weights[p];
 				const AnimGraphState::Point& point = s.points[p];
-				const ozz::animation::Animation* clip = m_graphClips[size_t( point.clip )];
+				const ozz::animation::Animation* clip = source.clips[size_t( point.clip )];
 				if ( w < kMinWeight || clip == nullptr )
 				{
 					continue;
@@ -430,9 +470,9 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 		blending.Run();
 		if ( l > 0 )
 		{
-			const auto& mask = m_graphMasks[l];
+			const auto& mask = source.masks[layerIndex];
 			BlendOver( m_layerPose, mask.empty() ? nullptr : &mask, L.weight );
-			neckKept *= 1.0f - std::min( L.weight, 1.0f ) * m_graphNeckMask[l];
+			neckKept *= 1.0f - std::min( L.weight, 1.0f ) * source.neck[layerIndex];
 		}
 	}
 	m_neckCover = 1.0f - neckKept;

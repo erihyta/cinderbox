@@ -83,6 +83,10 @@ public:
 	{
 		return m_graph;
 	}
+	const AnimGraphPacks& Packs() const
+	{
+		return m_packs;
+	}
 	// frames[i].tick == i
 	const std::vector<InputFrame>& Frames() const
 	{
@@ -104,6 +108,7 @@ private:
 	LevelLayout m_map;
 	ModSchema m_schema;
 	std::shared_ptr<const AnimGraph> m_graph;
+	AnimGraphPacks m_packs;
 	std::vector<InputFrame> m_frames;
 	std::vector<MsgChecksum> m_checksums;
 	bool m_truncated = false;

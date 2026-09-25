@@ -2620,6 +2620,94 @@ void TestRetarget()
 	CHECK( std::fabs( shin - 0.42f ) < 0.01f );
 }
 
+// A mod's animation pack: its "Base" layer swapped in for a player's own, in the simulation and in
+// the pose; its "Upper" (which it does not have) stays the character's; restored on command.
+void TestLayerSwap()
+{
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
+	std::string error, warnings;
+	std::shared_ptr<const anim::AnimSet> set = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( set != nullptr );
+	if ( set == nullptr )
+	{
+		return;
+	}
+	ModSchema schema;
+	schema.stances = { "melee", "melee_swing", "pistol" };
+	schema.events = { "pistol.fired", "melee.strike" };
+	// The pack's own graph: a crouch (standing in: the landing clip, held) on the Base layer.
+	schema.animPacks.push_back( { "test", "test.crouch",
+								  "cinderbox_graph\t1\n"
+								  "clip\tJump_Land\t1.2666667\t0\n"
+								  "layer\tBase\n"
+								  "state\tCrouch\tclip\tJump_Land\t0\n"
+								  "start\tCrouch\n" } );
+	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
+	AnimGraphPacks packs = CompileAnimPacks( schema, warnings );
+	CHECK( graph != nullptr && packs.size() == 1 && packs[0] != nullptr );
+	if ( graph == nullptr || packs.empty() || packs[0] == nullptr )
+	{
+		std::printf( "    %s %s\n", error.c_str(), warnings.c_str() );
+		return;
+	}
+	// The pack's clips come from its own baked files; here the mannequin's stand in for them (same
+	// skeleton: they fit as they are).
+	auto fitted = anim::FitPack( set, *packs[0], *set, warnings );
+	CHECK( fitted->clips.size() == 1 && fitted->clips[0] == set->NamedClip( "Jump_Land" ) );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	sim.SetAnimPacks( packs );
+	anim::PoseEvaluator pose( *set );
+	pose.SetGraph( graph, warnings );
+	pose.SetPacks( packs, { fitted } );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto swap = [&]( int layer, int source ) {
+		SimCommand c;
+		c.type = CommandType::SwapLayer;
+		c.target = SlotTarget( 0 );
+		c.index = uint16_t( layer );
+		c.value = source;
+		f.commands.push_back( c );
+	};
+	auto head = [&]() {
+		pose.Evaluate( sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>() );
+		float v[4];
+		ozz::math::StorePtrU( pose.Models()[size_t( anim::FindJoint( *set, "Head" ) )].cols[3], v );
+		return v[1];
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	float standing = head();
+
+	swap( 0, 1 );
+	swap( 1, 1 ); // the pack has no Upper: that layer stays the character's
+	step( 30 );
+	AnimState a = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
+	CHECK( a.graph[0].source == 1 && a.graph[0].state == 0 );
+	std::vector<anim::ActiveClip> clips = anim::ActiveGraphClips( a, *graph, packs );
+	CHECK( clips.empty() == false && clips[0].name == "Jump_Land" );
+	float crouched = head();
+
+	swap( 0, 0 );
+	step( 30 );
+	a = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
+	CHECK( a.graph[0].source == 0 );
+	float again = head();
+	std::printf( "    head: standing %.2f, the pack's crouch %.2f, restored %.2f\n", standing, crouched, again );
+	CHECK( crouched < standing - 0.2f );
+	CHECK( std::fabs( again - standing ) < 0.1f );
+}
+
 void TestAnimPipeline()
 {
 	auto procedural = anim::AnimSet::CreateProcedural();
@@ -2839,6 +2927,7 @@ int main( int argc, char** argv )
 		{ "robot_character", TestRobotCharacter },
 		{ "mannequin_character", TestMannequinCharacter },
 		{ "retarget", TestRetarget },
+		{ "layer_swap", TestLayerSwap },
 		{ "ual_mannequin", TestUalMannequin },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "stress", TestStress },

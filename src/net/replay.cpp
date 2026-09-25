@@ -136,6 +136,10 @@ bool ReplayReader::Open( const std::string& path, std::string& error )
 		return false;
 	}
 	m_graph.reset();
+	{
+		std::string ignored;
+		m_packs = CompileAnimPacks( m_schema, ignored );
+	}
 	if ( m_schema.animGraph.empty() == false )
 	{
 		std::string graphError, warnings;

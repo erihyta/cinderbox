@@ -88,6 +88,42 @@ float RestHeight( const ozz::animation::Skeleton& skeleton, const char* profile 
 
 } // namespace
 
+std::shared_ptr<const PackClips> FitPack( std::shared_ptr<const AnimSet> packSet, const AnimGraph& graph, const AnimSet& character,
+										  std::string& warnings )
+{
+	auto fitted = std::make_shared<PackClips>();
+	fitted->pack = packSet;
+	const AnimSet& pack = *packSet;
+	bool same = SameSkeleton( pack.Skeleton(), character.Skeleton() );
+	for ( const AnimGraphClip& clip : graph.clips )
+	{
+		const ozz::animation::Animation* source = pack.NamedClip( clip.name );
+		if ( source == nullptr )
+		{
+			warnings += "the pack plays '" + clip.name + "', which it has no clip for; ";
+			fitted->clips.push_back( nullptr );
+			continue;
+		}
+		if ( same )
+		{
+			fitted->clips.push_back( source );
+			continue;
+		}
+		std::string error;
+		auto rebuilt = RetargetClip( *source, pack.Skeleton(), character.Skeleton(), 30.0f, error );
+		if ( rebuilt == nullptr )
+		{
+			warnings += "clip '" + clip.name + "': " + error + "; ";
+		}
+		fitted->clips.push_back( rebuilt.get() );
+		if ( rebuilt )
+		{
+			fitted->owned.push_back( std::move( rebuilt ) );
+		}
+	}
+	return fitted;
+}
+
 bool SameSkeleton( const ozz::animation::Skeleton& a, const ozz::animation::Skeleton& b )
 {
 	if ( a.num_joints() != b.num_joints() )

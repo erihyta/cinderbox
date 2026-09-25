@@ -8,8 +8,8 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x3642434Du; // 'MCB6': 2 workshop items, 3 the character, 4 layers and stances, 5 the
-												// character's state machine, 6 item kinds and sockets
+constexpr uint32_t kSchemaMagic = 0x3742434Du; // 'MCB7': 2 workshop items, 3 the character, 4 layers and stances, 5 the
+												// character's state machine, 6 item kinds and sockets, 7 animation packs
 
 void PutU8( std::vector<uint8_t>& out, uint8_t v )
 {
@@ -235,6 +235,13 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 	{
 		PutString( out, schema.sockets[i] );
 	}
+	PutU8( out, uint8_t( std::min<size_t>( schema.animPacks.size(), 255 ) ) );
+	for ( size_t i = 0; i < schema.animPacks.size() && i < 255; ++i )
+	{
+		PutString( out, schema.animPacks[i].mod );
+		PutString( out, schema.animPacks[i].name );
+		PutText( out, schema.animPacks[i].graph );
+	}
 }
 
 bool IsSha256( const std::string& hex )
@@ -357,6 +364,15 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 	for ( uint8_t i = 0; i < sockets && r.ok; ++i )
 	{
 		out.sockets.push_back( r.String() );
+	}
+	uint8_t packs = r.U8();
+	for ( uint8_t i = 0; i < packs && r.ok; ++i )
+	{
+		AnimPackInfo pack;
+		pack.mod = r.String();
+		pack.name = r.String();
+		pack.graph = r.Text();
+		out.animPacks.push_back( std::move( pack ) );
 	}
 	return r.ok && r.at == size;
 }

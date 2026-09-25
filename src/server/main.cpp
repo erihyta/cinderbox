@@ -311,6 +311,18 @@ int main( int argc, char** argv )
 					 options.character->animations->Description().c_str(), options.character->hitboxes.boxes.size() );
 		options.items.push_back( item );
 	}
+	// Animation packs come from their mod's workshop item, like a workshop character.
+	options.loadAnimPack = [itemsDir, workshopDir]( const std::string& mod, const std::string& pack, std::string& error,
+													std::string& warnings ) -> std::shared_ptr<const cb::anim::AnimSet> {
+		cb::ModItem item;
+		if ( ReadItem( itemsDir, mod, item ) == false )
+		{
+			error = "no item manifest for mod " + mod;
+			return nullptr;
+		}
+		std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
+		return cb::LoadAnimPackItem( zip, item, pack, error, warnings );
+	};
 	if ( server.Start( options ) == false )
 	{
 		return 1;

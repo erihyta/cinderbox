@@ -96,6 +96,9 @@ public:
 	godot::String use_character( const godot::String& name );
 	// The schema's state machine for this character, compiled; warns when it will not fit.
 	std::shared_ptr<const AnimGraph> ServerGraph( const anim::AnimSet& set, const godot::String& name );
+	// The server's animation packs, compiled, and their clips (res://anim/<pack>/, from the mods'
+	// items) fitted to this character.
+	void ServerPacks( const anim::AnimSet& set, AnimGraphPacks& packs, std::vector<std::shared_ptr<const anim::PackClips>>& clips );
 
 	void set_player_name( const godot::String& v )
 	{

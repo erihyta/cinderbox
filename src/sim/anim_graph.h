@@ -168,11 +168,24 @@ struct AnimGraph
 	bool EmitsEvent( int event ) const;
 };
 
+// Animation packs a server's mods provide (sim/mod_schema.h animPacks), compiled; index = source - 1.
+using AnimGraphPacks = std::vector<std::shared_ptr<const AnimGraph>>;
+
+// The layer that plays as the character's layer `l` for `source` (0: its own; n: pack n-1's layer of
+// the same name), and the graph it belongs to (its clips, markers). A source that does not provide
+// that layer falls back to the character's own.
+const AnimGraphLayer& ResolveLayer( const AnimGraph& character, const AnimGraphPacks& packs, size_t l, uint8_t source,
+									const AnimGraph*& owner );
+
 // Compiles graph.cfg text against the server's schema (names in conditions become board slots,
 // stances and events). Unknown names read as 0 and are listed in `warnings`; a malformed file
 // fails with `error`.
 std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, const ModSchema& schema, std::string& error,
 												   std::string& warnings );
+
+// Compiles every animation pack of a schema (index = source - 1); a pack whose graph does not
+// compile (or is empty: its item was missing) is null, so its swaps fall back to the character's own.
+AnimGraphPacks CompileAnimPacks( const ModSchema& schema, std::string& warnings );
 
 // Compiles one expression on its own (tests, and the bake's validation). `schema` may be empty.
 bool CompileAnimExpr( const std::string& text, const ModSchema& schema, AnimExpr& out, std::string& error, std::string& warnings );
@@ -203,7 +216,8 @@ void AnimGraphWeights( const AnimGraphState& state, float x, float y, AnimBlendW
 // Advances the graph's layers in `state` by one tick (a layer not started yet begins in its start
 // state). Markers crossed append their schema event
 // indices to `markers`.
-void UpdateAnimGraph( AnimState& state, const AnimGraph& graph, AnimGraphInputs& inputs, float dt, std::vector<int>& markers );
+void UpdateAnimGraph( AnimState& state, const AnimGraph& graph, const AnimGraphPacks& packs, AnimGraphInputs& inputs, float dt,
+					  std::vector<int>& markers );
 
 // Parses a decimal number the same way on every machine (not the C library's, which depends on the
 // locale and the platform's rounding): graph.cfg and expressions feed the simulation.

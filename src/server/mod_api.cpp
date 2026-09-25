@@ -133,6 +133,24 @@ ItemKindHandle Declarations::ItemKind( const std::string& name )
 	return { int( m_schema.itemKinds.size() - 1 ) };
 }
 
+AnimPackHandle Declarations::AnimPack( const std::string& name )
+{
+	for ( size_t i = 0; i < m_schema.animPacks.size(); ++i )
+	{
+		if ( m_schema.animPacks[i].name == name )
+		{
+			return { int( i ) };
+		}
+	}
+	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.animPacks.size() >= 254 )
+	{
+		m_errors.push_back( m_mod + ": bad animation pack \"" + name + "\"" );
+		return {};
+	}
+	m_schema.animPacks.push_back( { m_mod, name, "" } );
+	return { int( m_schema.animPacks.size() - 1 ) };
+}
+
 SocketHandle Declarations::Socket( const std::string& name )
 {
 	int existing = m_schema.FindSocket( name );
@@ -523,6 +541,46 @@ void Context::SpawnItem( uint32_t holder, ItemKindHandle kind, SocketHandle sock
 	c.index = uint16_t( kind.index );
 	c.mode = uint8_t( socket.index );
 	Add( c );
+}
+
+void Context::SwapLayer( uint32_t target, AnimPackHandle pack, const std::string& layer )
+{
+	const AnimGraph* graph = m_sim.Graph();
+	if ( graph == nullptr || pack.Valid() == false )
+	{
+		return;
+	}
+	for ( size_t l = 0; l < graph->layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	{
+		if ( graph->layers[l].name == layer )
+		{
+			SimCommand c;
+			c.type = CommandType::SwapLayer;
+			c.target = target;
+			c.index = uint16_t( l );
+			c.value = pack.index + 1;
+			Add( c );
+			return;
+		}
+	}
+}
+
+void Context::RestoreLayer( uint32_t target, const std::string& layer )
+{
+	const AnimGraph* graph = m_sim.Graph();
+	for ( size_t l = 0; graph != nullptr && l < graph->layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	{
+		if ( graph->layers[l].name == layer )
+		{
+			SimCommand c;
+			c.type = CommandType::SwapLayer;
+			c.target = target;
+			c.index = uint16_t( l );
+			c.value = 0;
+			Add( c );
+			return;
+		}
+	}
 }
 
 uint32_t Context::HeldItem( PlayerSlot slot, SocketHandle socket ) const

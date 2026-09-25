@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -42,6 +43,11 @@ struct ServerOptions
 	std::vector<ModItem> items;
 	// The character everyone plays as (null: the built-in rig). Its item must be in `items`.
 	std::shared_ptr<const CharacterAsset> character;
+	// Reads a mod's animation pack (the baked files under anim/<pack>/ in its workshop item). Unset
+	// or failing: the pack's swaps do nothing.
+	std::function<std::shared_ptr<const anim::AnimSet>( const std::string& mod, const std::string& pack, std::string& error,
+														std::string& warnings )>
+		loadAnimPack;
 	// Options mods read with Context::Option ("deathmatch.kills" -> "15").
 	std::map<std::string, std::string> modOptions;
 	uint32_t replayChecksumInterval = 60;
@@ -184,6 +190,7 @@ private:
 	std::unique_ptr<flecs::world> m_modWorld;
 	std::unique_ptr<HitTester> m_hits;
 	std::shared_ptr<const AnimGraph> m_animGraph;
+	AnimGraphPacks m_animPacks;
 	uint64_t m_modRng = 0;
 };
 

@@ -579,7 +579,7 @@ void CinderboxClient::UpdateNodes()
 					float alpha = m_mirror->World().get<present::FrameTiming>().tickAlpha;
 					AnimState state = anim::InterpolateAnimState( anim->previous, anim->current, alpha );
 					companion->begin_frame();
-					auto clips = library.graph ? anim::ActiveGraphClips( state, *library.graph )
+					auto clips = library.graph ? anim::ActiveGraphClips( state, *library.graph, library.packs )
 											   : anim::ActiveClips( state, *library.set, library.stances.get() );
 					for ( const anim::ActiveClip& clip : clips )
 					{
@@ -1096,6 +1096,46 @@ std::shared_ptr<const AnimGraph> CinderboxClient::ServerGraph( const anim::AnimS
 	return graph;
 }
 
+void CinderboxClient::ServerPacks( const anim::AnimSet& set, AnimGraphPacks& packs,
+								   std::vector<std::shared_ptr<const anim::PackClips>>& clips )
+{
+	std::string warnings;
+	packs = CompileAnimPacks( m_frame.schema, warnings );
+	clips.assign( packs.size(), nullptr );
+	for ( size_t i = 0; i < packs.size(); ++i )
+	{
+		if ( !packs[i] )
+		{
+			continue;
+		}
+		// The pack's baked files, from its mod's item (mounted like every other item).
+		const AnimPackInfo& info = m_frame.schema.animPacks[i];
+		String folder = "res://anim/" + String::utf8( info.name.c_str() ) + "/";
+		anim::FileReader read = [folder]( const std::string& file, std::string& bytes ) {
+			String path = folder + String::utf8( file.c_str() );
+			if ( FileAccess::file_exists( path ) == false )
+			{
+				return false;
+			}
+			PackedByteArray data = FileAccess::get_file_as_bytes( path );
+			bytes.assign( reinterpret_cast<const char*>( data.ptr() ), size_t( data.size() ) );
+			return true;
+		};
+		std::string error;
+		std::shared_ptr<const anim::AnimSet> packSet = anim::AnimSet::Load( read, ToStd( folder ), error, warnings );
+		if ( packSet == nullptr )
+		{
+			warnings += "animation pack " + info.name + ": " + error + "; ";
+			continue;
+		}
+		clips[i] = anim::FitPack( packSet, *packs[i], set, warnings );
+	}
+	if ( warnings.empty() == false )
+	{
+		UtilityFunctions::push_warning( "Cinderbox animation packs: ", String::utf8( warnings.c_str() ) );
+	}
+}
+
 String CinderboxClient::get_character() const
 {
 	return String::utf8( m_frame.schema.character.c_str() );
@@ -1109,9 +1149,12 @@ String CinderboxClient::use_character( const String& name )
 		std::string warnings;
 		auto stances = anim::BuildStanceTable( *m_animSet, m_frame.schema.layers, m_frame.schema.stances, warnings );
 		auto graph = ServerGraph( *m_animSet, name );
+		AnimGraphPacks packs;
+		std::vector<std::shared_ptr<const anim::PackClips>> packClips;
+		ServerPacks( *m_animSet, packs, packClips );
 		if ( m_mirror )
 		{
-			m_mirror->SetAnimSet( m_animSet, stances, graph );
+			m_mirror->SetAnimSet( m_animSet, stances, graph, packs, packClips );
 		}
 		return String();
 	}
@@ -1170,9 +1213,12 @@ String CinderboxClient::use_character( const String& name )
 										String::utf8( stanceWarnings.c_str() ) );
 	}
 	auto graph = ServerGraph( *set, name );
+	AnimGraphPacks packs;
+	std::vector<std::shared_ptr<const anim::PackClips>> packClips;
+	ServerPacks( *set, packs, packClips );
 	if ( m_mirror )
 	{
-		m_mirror->SetAnimSet( set, stances, graph );
+		m_mirror->SetAnimSet( set, stances, graph, packs, packClips );
 	}
 	RebuildCharacterNodes();
 	return String();
