@@ -22,6 +22,44 @@ std::shared_ptr<const CharacterAsset> BuiltInCharacter()
 	return character;
 }
 
+namespace
+{
+
+// The baked files of a character (anim.cfg, the .ozz files, hitboxes.cfg), wherever they are read from.
+std::shared_ptr<const CharacterAsset> LoadCharacter( const anim::FileReader& read, const std::string& name, const std::string& where,
+													 std::string& error, std::string& warnings )
+{
+	auto character = std::make_shared<CharacterAsset>();
+	character->name = name;
+	std::unique_ptr<anim::AnimSet> set = anim::AnimSet::Load( read, name, error, warnings );
+	if ( set == nullptr )
+	{
+		error = "character " + name + ": " + error;
+		return nullptr;
+	}
+	std::string hitboxText;
+	if ( read( "hitboxes.cfg", hitboxText ) == false )
+	{
+		error = "character " + name + " has no " + where + "hitboxes.cfg";
+		return nullptr;
+	}
+	if ( anim::ParseHitboxes( hitboxText, character->hitboxes, error ) == false )
+	{
+		error = "character " + name + ": " + error;
+		return nullptr;
+	}
+	anim::BindHitboxes( character->hitboxes, *set, warnings );
+	if ( character->hitboxes.boxes.empty() )
+	{
+		error = "character " + name + " has no hitboxes on its skeleton";
+		return nullptr;
+	}
+	character->animations = std::move( set );
+	return character;
+}
+
+} // namespace
+
 std::shared_ptr<const CharacterAsset> LoadCharacterItem( const std::string& zipPath, const ModItem& item, std::string& error,
 													std::string& warnings )
 {
@@ -66,35 +104,15 @@ std::shared_ptr<const CharacterAsset> LoadCharacterItem( const std::string& zipP
 		return true;
 	};
 
-	auto character = std::make_shared<CharacterAsset>();
-	character->name = item.mod;
-	std::unique_ptr<anim::AnimSet> set = anim::AnimSet::Load( read, item.mod, error, warnings );
-	std::string hitboxText;
-	bool haveHitboxes = set != nullptr && read( "hitboxes.cfg", hitboxText );
+	auto character = LoadCharacter( read, item.mod, folder, error, warnings );
 	mz_zip_reader_end( &zip );
-	if ( set == nullptr )
-	{
-		error = "character " + item.mod + ": " + error;
-		return nullptr;
-	}
-	if ( haveHitboxes == false )
-	{
-		error = "character " + item.mod + " has no " + folder + "hitboxes.cfg";
-		return nullptr;
-	}
-	if ( anim::ParseHitboxes( hitboxText, character->hitboxes, error ) == false )
-	{
-		error = "character " + item.mod + ": " + error;
-		return nullptr;
-	}
-	anim::BindHitboxes( character->hitboxes, *set, warnings );
-	if ( character->hitboxes.boxes.empty() )
-	{
-		error = "character " + item.mod + " has no hitboxes on its skeleton";
-		return nullptr;
-	}
-	character->animations = std::move( set );
 	return character;
+}
+
+std::shared_ptr<const CharacterAsset> LoadCharacterFolder( const std::string& dir, const std::string& name, std::string& error,
+														   std::string& warnings )
+{
+	return LoadCharacter( anim::DiskReader( dir ), name, dir + "/", error, warnings );
 }
 
 std::string DefaultWorkshopDir()

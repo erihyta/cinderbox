@@ -68,8 +68,8 @@ struct ModSchema
 {
 	std::vector<std::string> mods; // names of the mods the server runs, for display
 	std::vector<ModItem> items;	   // the client items those mods need, and the character's
-	// The character item everyone plays as (its folder in the pack is characters/<name>/); empty
-	// for the built-in placeholder rig.
+	// The character everyone plays as: res://characters/<name>/, from a workshop item (then also in
+	// `items`) or from the game itself (the default, "mannequin"). Empty for the procedural rig.
 	std::string character;
 	std::vector<BoardField> fields;
 	std::vector<std::string> events; // index = ModEventRecord::type
