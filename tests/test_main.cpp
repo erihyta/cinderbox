@@ -1819,6 +1819,113 @@ void TestStances()
 	CHECK( b3Distance( at( plain, *set, "RightHand" ), at( base, *set, "RightHand" ) ) < 1e-4f );
 }
 
+// The default player character, as the editor baked it from the Universal Animation Library's
+// mannequin (godot/characters/mannequin): it loads cleanly, stands about 1.8 m tall on its feet,
+// and a ray finds each zone where the body is.
+// Aiming with the pistol, where an item held in the right hand points: the pistol binding turns
+// the gun's -Z (muzzle) onto the hand frame's -Y and its +Y (top) onto +Z. Both should follow the
+// line of sight (+Z) and stay upright, whatever the rig's own bone axes.
+void CheckHeldItem( const anim::AnimSet& set, anim::PoseEvaluator& pose )
+{
+	int hand = anim::FindJoint( set, "RightHand" );
+	CHECK( hand >= 0 );
+	if ( hand < 0 )
+	{
+		return;
+	}
+	ozz::math::Float4x4 frame = pose.Models()[size_t( hand )] * set.AttachFrame( hand );
+	auto axis = [&]( int column ) {
+		float v[4];
+		ozz::math::StorePtrU( frame.cols[column], v );
+		float length = std::sqrt( v[0] * v[0] + v[1] * v[1] + v[2] * v[2] );
+		return b3Vec3{ v[0] / length, v[1] / length, v[2] / length };
+	};
+	b3Vec3 y = axis( 1 ), z = axis( 2 );
+	b3Vec3 muzzle = { -y.x, -y.y, -y.z };
+	std::printf( "    %s: held item points (%.2f %.2f %.2f), its top (%.2f %.2f %.2f)\n", set.Description().c_str(), muzzle.x, muzzle.y,
+				 muzzle.z, z.x, z.y, z.z );
+	CHECK( muzzle.z > 0.9f );
+	CHECK( z.y > 0.7f );
+}
+
+void TestMannequinCharacter()
+{
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
+	std::string error, warnings;
+	auto set = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( set != nullptr );
+	if ( set == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	std::printf( "    %s; warnings: %s\n", set->Description().c_str(), warnings.empty() ? "none" : warnings.c_str() );
+	CHECK( warnings.empty() );
+	for ( int c = 0; c < anim::ClipCount; ++c )
+	{
+		CHECK( set->Get( anim::Clip( c ) ) != nullptr );
+	}
+	std::string text;
+	CHECK( anim::DiskReader( dir )( "hitboxes.cfg", text ) );
+	anim::HitboxSet hitboxes;
+	CHECK( anim::ParseHitboxes( text, hitboxes, error ) );
+	size_t count = hitboxes.boxes.size();
+	anim::BindHitboxes( hitboxes, *set, warnings );
+	CHECK( hitboxes.boxes.size() == count && count >= 10 );
+
+	anim::PoseEvaluator pose( *set );
+	pose.Evaluate( AnimState{} );
+	auto at = [&]( const char* joint ) {
+		float v[4];
+		ozz::math::StorePtrU( pose.Models()[size_t( anim::FindJoint( *set, joint ) )].cols[3], v );
+		return b3Vec3{ v[0], v[1], v[2] };
+	};
+	b3Vec3 head = at( "Head" );
+	b3Vec3 foot = at( "LeftFoot" );
+	std::printf( "    idle: head (%.2f %.2f %.2f), left foot (%.2f %.2f %.2f)\n", head.x, head.y, head.z, foot.x, foot.y, foot.z );
+	CHECK( head.y > 1.4f && head.y < 1.8f );
+	CHECK( foot.y > -0.05f && foot.y < 0.25f );
+	CHECK( foot.x > 0.0f ); // its left is +X: it faces +Z like every character
+
+	auto zoneAt = [&]( float height ) -> std::string {
+		anim::HitboxHit hit;
+		b3Quat facing = { { 0.0f, 0.0f, 0.0f }, 1.0f };
+		if ( anim::RayHitboxes( hitboxes, pose.Models(), {}, facing, { 0.0f, height, -3.0f }, { 0.0f, 0.0f, 6.0f }, 1.0f, hit ) == false )
+		{
+			return "";
+		}
+		return hit.box->zone;
+	};
+	CHECK( zoneAt( head.y + 0.08f ) == "head" );
+	CHECK( zoneAt( 1.2f ) == "torso" );
+	CHECK( zoneAt( 2.1f ).empty() );
+
+	std::string stanceWarnings;
+	auto stances = anim::BuildStanceTable( *set, { "full", "upper" }, { "melee", "melee_swing", "pistol" }, stanceWarnings );
+	CHECK( stanceWarnings.empty() );
+
+	// Holding the pistol and aiming straight ahead: the hand is out in front of the shoulder.
+	AnimState aiming;
+	aiming.aiming = 1;
+	aiming.stances[1] = 3; // pistol on the upper layer
+	aiming.layerTime[1] = 1.0f;
+	pose.SetStances( stances );
+	pose.Evaluate( aiming );
+	b3Vec3 shoulder = at( "RightUpperArm" );
+	b3Vec3 hand = at( "RightHand" );
+	std::printf( "    aiming with the pistol: shoulder (%.2f %.2f %.2f) hand (%.2f %.2f %.2f)\n", shoulder.x, shoulder.y, shoulder.z,
+				 hand.x, hand.y, hand.z );
+	CHECK( hand.z - shoulder.z > 0.35f );
+	CHECK( std::fabs( hand.y - shoulder.y ) < 0.1f );	CheckHeldItem( *set, pose );
+
+	// The placeholder rig, for which the bindings were made, holds it the same way.
+	auto procedural = anim::AnimSet::CreateProcedural();
+	anim::PoseEvaluator placeholder( *procedural );
+	placeholder.SetStances( anim::BuildStanceTable( *procedural, { "full", "upper" }, { "melee", "melee_swing", "pistol" }, stanceWarnings ) );
+	placeholder.Evaluate( aiming );
+	CheckHeldItem( *procedural, placeholder );
+}
+
 void TestAnimPipeline()
 {
 	auto procedural = anim::AnimSet::CreateProcedural();
@@ -2032,6 +2139,7 @@ int main( int argc, char** argv )
 		{ "hitboxes", TestHitboxes },
 		{ "stances", TestStances },
 		{ "robot_character", TestRobotCharacter },
+		{ "mannequin_character", TestMannequinCharacter },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "stress", TestStress },
 	};

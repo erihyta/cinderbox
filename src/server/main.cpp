@@ -9,10 +9,14 @@
 // need their workshop item: its SHA-256 is read from <items dir>/<mod>.item (default: items/ next
 // to this executable) and announced to clients, who must have that exact item to join.
 //
-// --character NAME: everyone plays as the character item NAME. It is announced like a mod's item,
-// and the server reads its skeleton, clips and hitboxes from the same file players have:
-// <workshop>/NAME/<sha256>.zip (default workshop: the game's user folder, where
-// tools/publish_mod.ps1 installs items). Without it, players use the built-in rig.
+// --character NAME: everyone plays as NAME (default: mannequin, the game's own character).
+//   - A workshop character (NAME has an item manifest) is announced like a mod's item, and the server
+//     reads its skeleton, clips and hitboxes from the same file players have:
+//     <workshop>/NAME/<sha256>.zip (default workshop: the game's user folder, where
+//     tools/publish_mod.ps1 installs items).
+//   - A character that ships with the game is read from characters/NAME/ next to this executable
+//     (the build copies godot/characters/NAME/ there); players have it in their base game.
+//   - none: the procedural placeholder rig.
 
 #include "game_server.h"
 #include "registry.h"
@@ -200,7 +204,8 @@ int main( int argc, char** argv )
 	}
 	bool listMods = false;
 	std::string itemsDir = ( std::filesystem::absolute( argv[0] ).parent_path() / "items" ).string();
-	std::string characterName;
+	const std::filesystem::path exeDir = std::filesystem::absolute( argv[0] ).parent_path();
+	std::string characterName = std::filesystem::exists( exeDir / "characters" / "mannequin" / "anim.cfg" ) ? "mannequin" : "none";
 	std::string workshopDir = cb::DefaultWorkshopDir();
 	if ( ParseArgs( argc, argv, options, modNames, listMods, itemsDir, characterName, workshopDir ) == false )
 	{
@@ -252,7 +257,25 @@ int main( int argc, char** argv )
 						 name.c_str(), itemsDir.c_str() );
 		}
 	}
-	if ( characterName.empty() == false )
+	const std::filesystem::path builtIn = exeDir / "characters" / characterName;
+	if ( characterName != "none" && characterName.empty() == false && std::filesystem::exists( builtIn / "anim.cfg" ) &&
+		 std::filesystem::exists( std::filesystem::path( itemsDir ) / ( characterName + ".item" ) ) == false )
+	{
+		std::string error, warnings;
+		options.character = cb::LoadCharacterFolder( builtIn.string(), characterName, error, warnings );
+		if ( options.character == nullptr )
+		{
+			std::printf( "%s\n", error.c_str() );
+			return 1;
+		}
+		if ( warnings.empty() == false )
+		{
+			std::printf( "character %s: %s\n", characterName.c_str(), warnings.c_str() );
+		}
+		std::printf( "character: %s, shipped with the game (%s, %zu hitboxes)\n", characterName.c_str(),
+					 options.character->animations->Description().c_str(), options.character->hitboxes.boxes.size() );
+	}
+	else if ( characterName != "none" && characterName.empty() == false )
 	{
 		cb::ModItem item;
 		if ( ReadItem( itemsDir, characterName, item ) == false )

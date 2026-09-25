@@ -100,8 +100,9 @@ public:
 	void ApplyPose( const anim::AnimSet& set, const ozz::vector<ozz::math::Float4x4>& models );
 
 	// Where a joint of the last applied pose is, relative to this node. False when the rig has no
-	// joint by that humanoid-profile name.
-	bool JointTransform( const godot::String& profileName, godot::Transform3D& out ) const;
+	// joint by that humanoid-profile name. forItems: in the frame items attach to (AnimSet::AttachFrame),
+	// the same on every rig, rather than the bone's own axes.
+	bool JointTransform( const godot::String& profileName, godot::Transform3D& out, bool forItems = false ) const;
 	// The same in world space, for scripts: where a hand or the head is right now.
 	godot::Transform3D get_joint_global_transform( const godot::String& profile_name ) const;
 

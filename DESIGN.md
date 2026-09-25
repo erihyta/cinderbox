@@ -690,6 +690,30 @@ is presentation, timed by the same simulation clocks.
 - **Not done**: companion tracks for the partial weights of blends (only the dominant clip per
   channel plays); presentation state machines driven the same way.
 
+## The default character (M24)
+Players were blocks until now: the procedural rig. The default is now a real, skinned character
+that ships with the game, the Universal Animation Library's mannequin (Quaternius, CC0).
+
+- **Shipped, not downloaded**: `godot/characters/mannequin/` is in the base pack, so no item is
+  announced for it. The build copies its baked files next to `cb_server` (`bin/characters/`), which
+  reads them with the same loader as a workshop zip (`LoadCharacterFolder`). The schema no longer
+  requires the character to be an item. Protocol 10.
+- **Import**: the in-place glb, retargeted onto the humanoid profile by a `BoneMap` (UE names to
+  profile names) with the rest fixer, so it is a character like any other: profile bone names,
+  `Skeleton3D` at identity, baked by the ordinary bake.
+- **Held items**: bindings were tuned on the placeholder rig's hand, whose `-Y` runs along the
+  fingers; a profile hand points `+Y`, so the pistol pointed backwards. `AnimSet::AttachFrame`
+  swings the placeholder's frame onto each rig's rest bone direction (shortest arc), which is
+  identity on the placeholder and right for a T-pose with palms down. Only item attachment uses
+  it; poses and hitboxes are unchanged.
+- **Verified**: `mannequin_character` (loads without warnings, stands on the ground, the right zones
+  are hit, aiming raises the arm, the held item points along the line of sight on both rigs), a
+  rendered session with shooting bots and no desyncs, reference hashes unchanged.
+- **Known**: the simulation's walk and run cycles (1.0 s, 0.7 s) are not the clips' lengths
+  (`Walk` is 1.33 s), so the feet slide a little; the bat has no walk clip of its own (the ordinary
+  walk plays); the aim chain turns the right arm only, so the left hand of `Pistol_Idle` can
+  drift off the grip while aiming up or down.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -786,3 +810,4 @@ is presentation, timed by the same simulation clocks.
 21. **M21** (done): facing modes chosen by mods (`Facing` command: freelook by default, camera-facing for the pistol), legs that turn toward the direction of travel with the spine turned back and a reversed walk when backing up.
 22. **M22** (done): animation layers (bone masks from the character) and stances (clip sets with fallback) declared by mods and set with a `Stance` command, blended per joint with fades, in the pose the server hit-tests; the pistol's upper-body stance, a melee mod with a full-body stance and swing, `combat.damage` between mods, bake support (`stance_clips`, `masks`), the robot's stance clips, and tests.
 23. **M23** (done): companion tracks: the bake keeps every non-bone track of a character's animations in `companion.tres`, and `CbCompanionPlayer` plays them per channel in step with the ozz pose (values exact, keys once through rollbacks, RESET between clips); the robot's bat swing gets a fire trail and a whoosh as ordinary tracks.
+24. **M24** (done): the default character: the Universal Animation Library's mannequin retargeted onto the humanoid profile, shipped with the game and read by `cb_server` from `bin/characters/` (no item needed), and a hand frame for held items that is the same on every rig.

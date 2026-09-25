@@ -3,6 +3,7 @@
 #include "anim_controller.h"
 #include "joint_math.h"
 #include "detmath.h"
+#include "profile.h"
 
 #include "ozz/animation/offline/animation_builder.h"
 #include "ozz/animation/offline/raw_animation.h"
@@ -13,7 +14,9 @@
 #include "ozz/base/io/stream.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <map>
 #include <sstream>
@@ -516,6 +519,170 @@ void ComputeRestModels( AnimSet& set, ozz::vector<ozz::math::Float4x4>& out, flo
 	}
 }
 
+namespace
+{
+
+struct Mat3
+{
+	float c[3][3]; // columns
+};
+
+Mat3 RestRotation( const ozz::math::Float4x4& m )
+{
+	Mat3 r;
+	for ( int i = 0; i < 3; ++i )
+	{
+		float col[4];
+		ozz::math::StorePtrU( m.cols[i], col );
+		float length = std::sqrt( col[0] * col[0] + col[1] * col[1] + col[2] * col[2] );
+		for ( int k = 0; k < 3; ++k )
+		{
+			r.c[i][k] = length > 0.0f ? col[k] / length : ( i == k ? 1.0f : 0.0f );
+		}
+	}
+	return r;
+}
+
+bool Direction( const float from[3], const float to[3], float out[3] )
+{
+	float d[3] = { to[0] - from[0], to[1] - from[1], to[2] - from[2] };
+	float length = std::sqrt( d[0] * d[0] + d[1] * d[1] + d[2] * d[2] );
+	if ( length < 1e-6f )
+	{
+		return false;
+	}
+	for ( int k = 0; k < 3; ++k )
+	{
+		out[k] = d[k] / length;
+	}
+	return true;
+}
+
+// The rotation taking unit vector a onto unit vector b by the shortest arc (Rodrigues).
+Mat3 Arc( const float a[3], const float b[3] )
+{
+	float v[3] = { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] };
+	float cosine = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+	Mat3 r;
+	if ( cosine < -0.9999f )
+	{
+		// Opposite: half a turn about any axis perpendicular to a.
+		float axis[3] = { 0.0f, -a[2], a[1] };
+		if ( std::fabs( a[0] ) > 0.9f )
+		{
+			axis[0] = -a[1], axis[1] = a[0], axis[2] = 0.0f;
+		}
+		float length = std::sqrt( axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2] );
+		for ( int i = 0; i < 3; ++i )
+		{
+			for ( int k = 0; k < 3; ++k )
+			{
+				r.c[i][k] = 2.0f * axis[i] * axis[k] / ( length * length ) - ( i == k ? 1.0f : 0.0f );
+			}
+		}
+		return r;
+	}
+	// R = I + [v] + [v]^2 / (1 + cos); element (row k, column i).
+	float h = 1.0f / ( 1.0f + cosine );
+	float cross[3][3] = { { 0.0f, v[2], -v[1] }, { -v[2], 0.0f, v[0] }, { v[1], -v[0], 0.0f } }; // [column][row]
+	for ( int i = 0; i < 3; ++i )
+	{
+		for ( int k = 0; k < 3; ++k )
+		{
+			float square = v[k] * v[i] - ( i == k ? v[0] * v[0] + v[1] * v[1] + v[2] * v[2] : 0.0f );
+			r.c[i][k] = ( i == k ? 1.0f : 0.0f ) + cross[i][k] + square * h;
+		}
+	}
+	return r;
+}
+
+// a^T * b
+Mat3 TransposeTimes( const Mat3& a, const Mat3& b )
+{
+	Mat3 r;
+	for ( int i = 0; i < 3; ++i )
+	{
+		for ( int k = 0; k < 3; ++k )
+		{
+			// row k of a^T is column k of a
+			r.c[i][k] = a.c[k][0] * b.c[i][0] + a.c[k][1] * b.c[i][1] + a.c[k][2] * b.c[i][2];
+		}
+	}
+	return r;
+}
+
+// The placeholder rig's direction from a joint to the joint that continues it (its first child).
+bool PlaceholderDirection( const char* profile, float out[3], const char*& child )
+{
+	for ( int j = 0; j < JointCount; ++j )
+	{
+		if ( std::strcmp( kJoints[j].name, profile ) != 0 )
+		{
+			continue;
+		}
+		for ( int c = j + 1; c < JointCount; ++c )
+		{
+			if ( kJoints[c].parent == j )
+			{
+				float zero[3] = { 0.0f, 0.0f, 0.0f };
+				float offset[3] = { kJoints[c].offset.x, kJoints[c].offset.y, kJoints[c].offset.z };
+				child = kJoints[c].name;
+				return Direction( zero, offset, out );
+			}
+		}
+		return false;
+	}
+	return false;
+}
+
+} // namespace
+
+void AnimSet::ComputeAttachFrames()
+{
+	const ozz::animation::Skeleton& skeleton = *m_skeleton;
+	int joints = skeleton.num_joints();
+	auto names = skeleton.joint_names();
+	m_attachFrames.assign( size_t( joints ), ozz::math::Float4x4::identity() );
+	for ( int j = 0; j < joints && size_t( j ) < m_restModels.size(); ++j )
+	{
+		const char* profile = ProfileName( names[j] );
+		float placeholder[3];
+		const char* childProfile = nullptr;
+		if ( profile == nullptr || PlaceholderDirection( profile, placeholder, childProfile ) == false )
+		{
+			continue;
+		}
+		int child = -1;
+		for ( int c = 0; c < joints; ++c )
+		{
+			const char* name = ProfileName( names[c] );
+			if ( name != nullptr && std::strcmp( name, childProfile ) == 0 )
+			{
+				child = c;
+				break;
+			}
+		}
+		if ( child < 0 )
+		{
+			continue;
+		}
+		float from[4], to[4], here[3];
+		ozz::math::StorePtrU( m_restModels[size_t( j )].cols[3], from );
+		ozz::math::StorePtrU( m_restModels[size_t( child )].cols[3], to );
+		if ( Direction( from, to, here ) == false )
+		{
+			continue;
+		}
+		// The placeholder's frame, swung onto this rig's bone, expressed in this joint's rest frame.
+		Mat3 frame = TransposeTimes( RestRotation( m_restModels[size_t( j )] ), Arc( placeholder, here ) );
+		ozz::math::Float4x4& out = m_attachFrames[size_t( j )];
+		for ( int i = 0; i < 3; ++i )
+		{
+			out.cols[i] = ozz::math::simd_float4::Load( frame.c[i][0], frame.c[i][1], frame.c[i][2], 0.0f );
+		}
+	}
+}
+
 std::unique_ptr<AnimSet> AnimSet::CreateProcedural()
 {
 	auto set = std::make_unique<AnimSet>();
@@ -533,6 +700,7 @@ std::unique_ptr<AnimSet> AnimSet::CreateProcedural()
 	set->m_stanceClips["melee_swing"] = BuildClip( "melee_swing", 0.45f, MeleeSwingPose );
 	set->m_description = "procedural placeholder rig";
 	ComputeRestModels( *set, set->m_restModels, set->m_scale );
+	set->ComputeAttachFrames();
 	std::string ignored;
 	set->SetAim( set->m_aimConfig, set->m_aimTipName, ignored );
 	return set;
@@ -632,6 +800,7 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 	}
 
 	ComputeRestModels( *set, set->m_restModels, set->m_scale );
+	set->ComputeAttachFrames();
 	for ( const auto& [key, value] : cfg )
 	{
 		if ( key.rfind( "stance.", 0 ) == 0 )

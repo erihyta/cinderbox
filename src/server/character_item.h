@@ -33,6 +33,11 @@ std::shared_ptr<const CharacterAsset> BuiltInCharacter();
 std::shared_ptr<const CharacterAsset> LoadCharacterItem( const std::string& zipPath, const ModItem& item, std::string& error,
 													std::string& warnings );
 
+// A character that ships with the game (godot/characters/<name>/, which every client has in its base
+// pack): the build copies its baked files next to cb_server, into characters/<name>/.
+std::shared_ptr<const CharacterAsset> LoadCharacterFolder( const std::string& dir, const std::string& name, std::string& error,
+														   std::string& warnings );
+
 // Where a player's workshop keeps items (the game's user:// folder), for the default --workshop.
 std::string DefaultWorkshopDir();
 

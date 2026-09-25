@@ -263,12 +263,8 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		}
 		out.items.push_back( std::move( item ) );
 	}
+	// A workshop character is also one of the items; one that ships with the game is not.
 	out.character = r.String();
-	if ( out.character.empty() == false &&
-		 std::none_of( out.items.begin(), out.items.end(), [&]( const ModItem& i ) { return i.mod == out.character; } ) )
-	{
-		return false; // the character always comes as one of the items
-	}
 	uint8_t layers = r.U8();
 	if ( layers > kMaxAnimLayers )
 	{

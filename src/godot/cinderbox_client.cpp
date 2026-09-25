@@ -647,7 +647,7 @@ void CinderboxClient::PlaceAttachments( uint64_t visual, const present::Visual& 
 		}
 
 		Transform3D joint;
-		if ( skeleton == nullptr || skeleton->JointTransform( state.get_attach_bone(), joint ) == false )
+		if ( skeleton == nullptr || skeleton->JointTransform( state.get_attach_bone(), joint, true ) == false )
 		{
 			item->set_visible( false );
 			continue;

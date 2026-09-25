@@ -45,6 +45,20 @@ foreach(entry ${CB_CHARACTER_ENTRIES})
 	endif()
 endforeach()
 
+# Characters that ship with the game (godot/characters/<name>/, baked in the editor): the server reads
+# their baked files from bin/characters/<name>/.
+file(GLOB CB_GAME_CHARACTER_FILES CONFIGURE_DEPENDS
+	"${PROJECT_SOURCE_DIR}/godot/characters/*/anim.cfg"
+	"${PROJECT_SOURCE_DIR}/godot/characters/*/hitboxes.cfg"
+	"${PROJECT_SOURCE_DIR}/godot/characters/*/*.ozz")
+foreach(file ${CB_GAME_CHARACTER_FILES})
+	get_filename_component(character_dir "${file}" DIRECTORY)
+	get_filename_component(character "${character_dir}" NAME)
+	get_filename_component(file_name "${file}" NAME)
+	list(APPEND CB_MOD_ITEM_COMMANDS COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin/characters/${character}")
+	list(APPEND CB_MOD_ITEM_COMMANDS COMMAND ${CMAKE_COMMAND} -E copy_if_different "${file}" "${CMAKE_BINARY_DIR}/bin/characters/${character}/${file_name}")
+endforeach()
+
 configure_file(registry.cpp.in "${CMAKE_CURRENT_BINARY_DIR}/registry.cpp" @ONLY)
 
 add_library(cb_server_mods STATIC ${CB_MOD_SOURCES} "${CMAKE_CURRENT_BINARY_DIR}/registry.cpp")

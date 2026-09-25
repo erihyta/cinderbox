@@ -1,0 +1,30 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://characters/mannequin/source/UAL1_Standard.glb" id="1_3txul"]
+
+[node name="Mannequin" type="CbCharacter" unique_id=1819567160]
+character_name = "mannequin"
+skeleton_path = NodePath("Model/Armature/Skeleton3D")
+animation_player_path = NodePath("Model/AnimationPlayer")
+clip_idle = "Idle"
+clip_walk = "Walk"
+clip_run = "Jog_Fwd"
+clip_jump_start = "Jump_Start"
+clip_fall = "Jump"
+clip_land = "Jump_Land"
+stance_clips = {
+"melee_idle": "Sword_Idle",
+"melee_swing": "Sword_Attack",
+"pistol": "Pistol_Idle"
+}
+masks = {
+"upper": "Spine"
+}
+
+[node name="Model" type="Node3D" parent="." unique_id=648867197 instance=ExtResource("1_3txul")]
+
+[node name="CinderboxSkeleton" type="CinderboxSkeleton" parent="." unique_id=1711880359]
+draw_bone_boxes = false
+skeleton_path = NodePath("../Model/Armature/Skeleton3D")
+use_slot_color = false
+retarget = false

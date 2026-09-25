@@ -78,6 +78,17 @@ public:
 		return m_clips[clip] ? m_clips[clip]->duration() : 1.0f;
 	}
 
+	// Per joint, what turns its model-space frame into the frame items attach to (a pistol in the
+	// RightHand): the placeholder rig's frames, whatever axes this skeleton's bones use. The
+	// placeholder rig's arms hang down with identity joints, so a hand's -Y runs along the fingers;
+	// on another rig the frame is that one, swung from the placeholder's bone direction onto this
+	// rig's rest bone direction (a T-pose's hand gets it turned out to the side, palm down).
+	// Rotation only; identity on the placeholder rig. Applied as model * AttachFrame(j).
+	const ozz::math::Float4x4& AttachFrame( int joint ) const
+	{
+		return m_attachFrames[size_t( joint )];
+	}
+
 	// Uniform scale applied to model-space poses (e.g. 0.01 for centimetre rigs).
 	float Scale() const
 	{
@@ -153,12 +164,16 @@ public:
 		return m_spineJoint;
 	}
 
+	// Fills AttachFrame from the rest; the loaders call it.
+	void ComputeAttachFrames();
+
 	// Resolves the names against the skeleton; unknown joints go to `warnings`.
 	void SetAim( const std::string& chain, const std::string& tip, std::string& warnings );
 
 private:
 	ozz::unique_ptr<ozz::animation::Skeleton> m_skeleton;
 	ozz::vector<ozz::math::Float4x4> m_restModels;
+	ozz::vector<ozz::math::Float4x4> m_attachFrames;
 	std::array<ozz::unique_ptr<ozz::animation::Animation>, ClipCount> m_clips;
 	float m_scale = 1.0f;
 	bool m_lockRootXZ = true;
