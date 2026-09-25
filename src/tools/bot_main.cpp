@@ -2,13 +2,15 @@
 //
 //   cb_bot [--host H] [--port P] [--count N] [--full M] [--threads T (for lite bots)] [--duration SEC]
 //          [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC] [--chaotic] [--shoot]
-//          [--melee]
+//          [--melee] [--sneak]
 //
 // --shoot makes full bots take out the pistol (the server's "slot_2" action) and fire at the
 // nearest other player a couple of times a second, aiming from their own predicted world. It
 // exercises the pistol mod, deaths and ragdolls under load; lite bots cannot aim and keep moving.
 // --melee does the same with the bat ("slot_3"), swinging once the nearest player is in reach, and
 // swaps to the pistol for a second every five (so the bat item comes and goes).
+// --sneak makes full bots hold the "crouch" action two seconds in every seven (the sneak mod's
+// animation pack swapped in and out).
 //
 // --chaotic makes every bot change every input field every tick (worst case for rollback and
 // bandwidth). By default bots hold directions and turn smoothly, closer to real players.
@@ -57,6 +59,7 @@ struct Options
 	bool chaotic = false;
 	bool shoot = false;
 	bool melee = false;
+	bool sneak = false;
 };
 
 struct Bot;
@@ -71,6 +74,7 @@ struct Bot
 	bool full = false;
 	bool shoot = false;
 	bool melee = false;
+	bool sneak = false;
 	uint32_t shotTick = 0;
 
 	// Per-report accumulators (owned by the bot's thread).
@@ -224,7 +228,14 @@ void RunWorker( Worker& w, Clock::time_point start, const std::atomic<bool>& sto
 			}
 			// The spawn button is a mod action now; its bit comes from the server's schema.
 			b.brain.spawnAction = b.client->Schema().ActionMask( "spawn_prop" );
-			b.client->Update( now, [&b]( uint32_t tick ) { return b.shoot ? Aim( b, b.brain.Next(), tick ) : b.brain.Next(); } );
+			b.client->Update( now, [&b]( uint32_t tick ) {
+				PlayerInput in = b.shoot ? Aim( b, b.brain.Next(), tick ) : b.brain.Next();
+				if ( b.sneak && ( ( tick + b.shotTick * 50 ) / 60 ) % 7 < 2 )
+				{
+					in.actions |= b.client->Schema().ActionMask( "crouch" );
+				}
+				return in;
+			} );
 			if ( b.full && b.client->GetStats().ticksLastFrame > 0 )
 			{
 				b.simMsSum += b.client->GetStats().simMsLastFrame;
@@ -323,6 +334,11 @@ bool Parse( int argc, char** argv, Options& o )
 			o.melee = true;
 			continue;
 		}
+		if ( arg == "--sneak" )
+		{
+			o.sneak = true;
+			continue;
+		}
 		if ( i + 1 >= argc )
 		{
 			return false;
@@ -363,7 +379,7 @@ int main( int argc, char** argv )
 	{
 		std::printf( "usage: cb_bot [--host H] [--port P] [--count N] [--full M] [--threads T] [--duration SEC]\n"
 					 "              [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC]\n"
-					 "              [--chaotic] [--shoot] [--melee]\n" );
+					 "              [--chaotic] [--shoot] [--melee] [--sneak]\n" );
 		return 1;
 	}
 
@@ -392,6 +408,7 @@ int main( int argc, char** argv )
 		bot.brain.chaotic = o.chaotic;
 		bot.shoot = o.shoot && bot.full;
 		bot.melee = o.melee;
+		bot.sneak = o.sneak && bot.full;
 		bot.shotTick = uint32_t( i * 7 );
 		bot.startAt = double( i ) * double( o.staggerMs ) / 1000.0;
 		bot.client = std::make_unique<GameClient>();
