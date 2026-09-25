@@ -31,6 +31,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M22: animation layers and stances chosen by mods (the pistol on the upper body, a new melee bat on the whole body) | done |
 | M23: companion tracks: VFX, sounds, lights and props keyed in a character's Godot animations play in step with the ozz pose | done |
 | M24: a real default character: the Universal Animation Library's mannequin ships with the game; held items sit the same on every rig | done |
+| M25: state machines authored in Godot: a character's AnimationTree is baked and run by the simulation, markers become mod events | done |
 
 ## Building
 
@@ -517,11 +518,13 @@ The [Universal Animation Library](https://quaternius.com) mannequin by Quaterniu
   which the simulation does not want: it moves the player itself). Its import retargets the
   UE-style bones (`pelvis`, `spine_01`, `upperarm_r`) onto `SkeletonProfileHumanoid` with
   `source/bone_map.tres`.
-- **Clips**: idle `Idle`, walk `Walk`, run `Jog_Fwd`, jump `Jump_Start` / `Jump` / `Jump_Land`;
-  stances pistol `Pistol_Idle` (upper body), bat `Sword_Idle` and `Sword_Attack`.
+- **State machine**: an ordinary `AnimationTree` in `character.tscn` (see
+  [State machines](#state-machines)): locomotion, jumps, and an upper-body layer for the pistol
+  (with a shot on `pistol.fired`) and the bat (with a flaming swing that strikes on a marker).
 - **Hitboxes**: capsules along the spine, arms and legs sized from the bone lengths, a head
   sphere, a hips box.
-- **Rebuild** (after changing the import or the clip choice):
+- **Edit it** in the editor like any scene and press **Bake character**. The generator that made
+  it only re-bakes an existing scene; `-- --force` builds it from scratch (and discards edits):
 
 ```sh
 godot --headless --path godot --script res://addons/cinderbox_maps/make_mannequin.gd
@@ -657,6 +660,46 @@ godot --headless --path godot --script res://addons/cinderbox_maps/check_compani
 Put the companion's scene nodes (particles, lights, an `AudioStreamPlayer3D`) in the character
 scene, and list `companion.tres` and the sounds in the item's export preset.
 
+### State machines
+
+A character's animation logic is authored as a Godot `AnimationTree`, the normal way, and baked.
+The simulation runs the baked machine every tick, so the server's hit tests and every screen agree
+and rollback replays it exactly; the tree itself never runs in the game.
+
+| In the tree | Baked as |
+|---|---|
+| root: a state machine, or a blend tree of state machines stacked with `Blend2` nodes | layers (at most 4); a `Blend2`'s filter is the layer's bone mask |
+| states: `Animation` nodes, `BlendSpace1D` (points are animations, play mode forward or backward) | clip states, blend states (phase-synced, so feet stay in step) |
+| transitions: Auto advance, advance condition, advance expression, priority, crossfade, Immediate / At End | the same (Sync switching becomes Immediate; crossfades are linear) |
+| markers on animations | the mod event of the same name, from the player, when the clip passes it |
+| every other track (particles, sounds, lights) | companion tracks, played by clients in step |
+
+Set it up on the `CbCharacter`:
+
+- `animation_tree_path`: the tree. Its `root_node` should be the model (tracks' paths start there).
+- `graph_inputs`: what drives the tree's numbers, by parameter path:
+  `"Base/Locomotion/blend_position": "forward_speed"`, `"UpperBlend/blend_amount": "pistol or melee"`.
+
+Conditions and expressions read simulation values, never scripts:
+
+| Name | Value |
+|---|---|
+| `speed`, `forward_speed` | smoothed ground speed (m/s); negative forward_speed while backing up |
+| `vertical_speed`, `grounded`, `airborne_time`, `jumped` | the body's movement (`jumped`: on the tick of a jump) |
+| `aiming`, `backward`, `state_time` | a mod's Aim; walking backwards; seconds in the current state |
+| a stance's name (`pistol`, `melee`) | true while any layer has it (mods' `SetStance`) |
+| a mod event's name (`pistol.fired`) | true on the tick it is emitted at this player: a trigger |
+| a board field's name (`loadout.slot`) | the player's value (or the global one) |
+
+Operators: `and or not && || ! == != < <= > >= + - * /` and parentheses. A name no mod declares
+reads as 0 (the server logs it). The bake fails with a reason for anything it cannot run (nested
+state machines, other blend nodes, a missing animation).
+
+A mod times its effect by the animation with `ctx.AnimationEmits( event )`: the melee mod hits on
+the mannequin's `melee.strike` marker, and on its own timer for characters without one. To edit an
+imported animation (add a marker or a track), save it to a file in the import settings (Save to
+File, Keep Custom Tracks), as the mannequin does with `Sword_Attack`.
+
 ## Testing tools
 
 All tools are in `<build dir>/bin`.
@@ -669,7 +712,7 @@ All tools are in `<build dir>/bin`.
 | `cb_client --replay FILE [--replay-start S]` | Watches a recording |
 | `cb_netsim --listen P --target HOST:PORT --latency MS --jitter MS --loss % [--duplicate %]` | UDP relay that degrades traffic (latency is added in each direction) |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_mod_validator.gd -- PACK.zip...` | Checks the pack validator: the named packs pass, built-in hostile packs are refused |
-| `cb_bot --port P --count N --full M --duration S [--chaotic] [--shoot]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick; `--shoot` makes full bots take out the pistol and fire at the nearest player |
+| `cb_bot --port P --count N --full M --duration S [--chaotic] [--shoot] [--melee]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick; `--shoot` makes full bots take out the pistol and fire at the nearest player; `--melee` makes them close in with the bat and swing |
 | `godot --path godot -- --autoplay=S --screenshot=F.png --screenshot-every=S2` | Unattended client; also saves `F_1.png`, `F_2.png`, ... and prints the mod events it saw |
 | `scripts/stress_test.sh --bots N --full M --latency MS --jitter MS --loss % --rollback T` | Starts a server, the simulator and the bots, and prints a summary |
 
