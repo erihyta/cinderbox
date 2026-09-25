@@ -30,6 +30,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M21: facing modes for mods: freelook (default) or camera-facing, with legs that walk where the body goes | done |
 | M22: animation layers and stances chosen by mods (the pistol on the upper body, a new melee bat on the whole body) | done |
 | M23: companion tracks: VFX, sounds, lights and props keyed in a character's Godot animations play in step with the ozz pose | done |
+| M24: a real default character: the Universal Animation Library's mannequin ships with the game; held items sit the same on every rig | done |
 
 ## Building
 
@@ -387,8 +388,9 @@ synthetic, and meant to be replaced. `tools/make_sfx.py` regenerates them.
 
 ## Animations
 
-Players are drawn as one box per bone of an ozz skeleton. Until you add clips, a procedural
-placeholder rig is used, with the bone names of Godot's `SkeletonProfileHumanoid`: `Hips`, `Spine`,
+Players are posed by ozz and drawn as their character (by default the mannequin, see
+[Characters](#characters)). With `--character none`, a procedural placeholder rig is drawn as one box
+per bone, with the bone names of Godot's `SkeletonProfileHumanoid`: `Hips`, `Spine`,
 `Chest`, `UpperChest`, `Neck`, `Head`, `Left/RightShoulder`, `UpperArm`, `LowerArm`, `Hand`,
 `UpperLeg`, `LowerLeg`, `Foot`, `Toes`. That is the profile Godot retargets imported characters
 onto, so a character imported the normal way can be driven with no mapping of our own. Clips whose
@@ -496,10 +498,42 @@ simulation fingerprint differs from its own.
 Everyone on a server plays as one character, chosen by the server:
 
 ```bash
-cb_server --character robot [--workshop DIR]
+cb_server                      # the default: mannequin, shipped with the game
+cb_server --character robot    # a workshop item [--workshop DIR]
+cb_server --character none     # the procedural placeholder rig
 ```
 
-A character is a **workshop item**, like a mod's look: the server announces it by name and SHA-256
+| Kind | Lives in | Server reads | Players need |
+|---|---|---|---|
+| shipped with the game (`mannequin`) | `godot/characters/<name>/` | `bin/characters/<name>/` (the build copies the baked files there) | nothing: it is in the base game |
+| workshop item (`robot`) | `characters/<name>/client/` | the item's zip in the workshop | the exact item (by SHA-256) |
+
+### The default character: the mannequin
+
+The [Universal Animation Library](https://quaternius.com) mannequin by Quaternius (CC0), in
+`godot/characters/mannequin/`:
+
+- **Source**: `source/UAL1_Standard.glb`, the in-place version (the `_RM` files carry root motion,
+  which the simulation does not want: it moves the player itself). Its import retargets the
+  UE-style bones (`pelvis`, `spine_01`, `upperarm_r`) onto `SkeletonProfileHumanoid` with
+  `source/bone_map.tres`.
+- **Clips**: idle `Idle`, walk `Walk`, run `Jog_Fwd`, jump `Jump_Start` / `Jump` / `Jump_Land`;
+  stances pistol `Pistol_Idle` (upper body), bat `Sword_Idle` and `Sword_Attack`.
+- **Hitboxes**: capsules along the spine, arms and legs sized from the bone lengths, a head
+  sphere, a hips box.
+- **Rebuild** (after changing the import or the clip choice):
+
+```sh
+godot --headless --path godot --script res://addons/cinderbox_maps/make_mannequin.gd
+```
+
+Items held in a hand (the pistol, the bat) use a hand frame that is the same on every rig
+(`AnimSet::AttachFrame`), so a binding's `attach_offset` / `attach_rotation` work on the
+mannequin, the robot and the placeholder rig alike.
+
+### Workshop characters
+
+A workshop character is a **workshop item**, like a mod's look: the server announces it by name and SHA-256
 and players must already have that exact item (a missing one refuses the join). It is shipped in
 Godot's runtime format, and **nothing is imported or converted when a player joins**: the item
 already holds what the game needs, baked in the editor.
@@ -510,8 +544,8 @@ already holds what the game needs, baked in the editor.
 | `skeleton.ozz`, `idle.ozz`, `walk.ozz`, `run.ozz`, `jump_start.ozz`, `fall.ozz`, `land.ozz`, `anim.cfg` | the Bake button | clients (poses) and the server (hit tests) |
 | `hitboxes.cfg` | the Bake button | the server |
 
-Without `--character`, players use the built-in placeholder rig, which has default zones (head,
-torso, arm, leg).
+With `--character none`, players use the procedural placeholder rig, which has default zones
+(head, torso, arm, leg).
 
 ### Making a character
 
@@ -712,6 +746,7 @@ src/anim/         ozz: procedural rig, asset loading (anim_set.*), pose evaluati
 src/net/          wire protocol, ENet wrapper, network simulator (netsim.*), replay files (replay.*)
 src/server/       authoritative GameServer (library), the mod API (mod_api.*) and cb_server
 server_mods/      gameplay mods compiled into cb_server: loadout, props, pistol, deathmatch
+godot/characters/ characters shipped with the game (mannequin: source glb, bone map, scene, baked files)
 characters/       character items: <name>/client is the item's Godot project, <name>/client_item.cfg its hash
   <mod>/client/     a mod's look as a Godot project, published as a workshop item
   <mod>/client_item.cfg  the published item's SHA-256, which servers announce
@@ -741,3 +776,8 @@ scripts/          cross-compiler determinism check, stress test
 tools/            animation conversion (convert_animations.*), test glTF generator, pack_mod.ps1, publish_mod.ps1,
                   export_client.ps1, bake_map.ps1, make_sfx.py (placeholder sounds)
 ```
+
+## Credits
+
+- Default character and its animations: [Universal Animation Library](https://quaternius.com) by
+  Quaternius, CC0 (`godot/characters/mannequin/source/LICENSE.txt`).
