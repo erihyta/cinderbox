@@ -843,6 +843,24 @@ could not be authored; M28 fell back to a board flag with the timing in the mod.
   played (as with companion tracks, a replay does not fire twice, but a mispredicted swing that
   never happened has already shown).
 
+## One event, resolved by what is held (M30)
+"Attack" should look like a bat swing with a bat, a slash with a sword, a punch with empty hands,
+from the one small command the server already sends. The resolver is the character's state
+machine and the items' own animations; they only had to be able to see each other.
+
+- **Item kinds are condition names**: true while the player holds one (any socket). The simulation
+  collects who holds what once per tick for the graphs that run.
+- **Events carry their value into conditions**: a fired event reads as its value, or 1 when that is
+  0, so `attack` stays a trigger and `attack == 2` picks a heavy attack.
+- **Events at a holder reach its items**: an event sent to a player plays each held item's
+  animation of that name. Verified in a session: 23 of 23 `melee.hit` events played on the bat in
+  the attacker's `RightHand` socket.
+- **No game content in the engine**: the placeholder rig's pistol and melee stance clips are gone
+  (the stance test uses the robot's), and the event feed has no default event. What remains built
+  in is the humanoid-sandbox vocabulary: aim, facing, stances, ragdolls, sockets and held items.
+- **Verified**: `attack_resolve` (the same event: Punch empty-handed, BatSwing holding a bat, Heavy
+  on value 2), all suites, reference hashes unchanged.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -945,3 +963,4 @@ could not be authored; M28 fell back to a board flag with the timing in the mod.
 27. **M27** (done): `face_forward`: the chest (and head) face where the body faces while strafe clips turn the hips; on for `ual_mannequin`.
 28. **M28** (done): the bat's fire is the melee mod's look: `melee.swinging` on the board during a swing, `bat_fire.tscn` held like the bat while it holds; the characters' hand fire is gone.
 29. **M29** (done): held items as entities with their own state (`SpawnItem`, `ItemTarget`), sockets (`CbSocket`, built-in hands), item looks (`CbItemLook`), item boards as AnimationTree conditions and events as animations, characters' animations playing the held item's animations; the melee bat converted.
+30. **M30** (done): one event resolved by what the player holds: item kinds and event values in state machine conditions, events at a player played by its held items (the bat's hit sparks); the engine's placeholder rig and HUD lose their game content.

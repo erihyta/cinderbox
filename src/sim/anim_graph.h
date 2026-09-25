@@ -17,8 +17,10 @@
 //
 // Conditions read simulation values only, so every machine gets the same answer:
 //   speed, forward_speed, move_forward, move_right, vertical_speed, grounded, airborne_time, jumped,
-//   aiming, backward, state_time; a stance's name (true while any layer has it); a mod event's name (true on the tick
-//   it is emitted at this player); a board field's name (the player's value, or the global one).
+//   aiming, backward, state_time; a stance's name (true while any layer has it); a mod event's name (on the tick it
+//   is emitted at this player: its value, or 1 when that is 0, so "attack" and "attack == 2" both
+//   read); a board field's name (the player's value, or the global one); an item kind's name (true
+//   while the player holds one, in any socket: "attack and melee.bat").
 // Markers on clips emit the mod event of the same name when the playing state crosses them.
 
 #include "components.h"
@@ -67,7 +69,8 @@ struct AnimExpr
 		Event,		 // index: schema event
 		EntityField, // index: board slot
 		GlobalField,
-		Zero, // an unknown name: reads as 0 (reported when the graph is compiled)
+		HeldKind, // index: schema item kind
+		Zero,	  // an unknown name: reads as 0 (reported when the graph is compiled)
 	};
 	enum Builtin : uint8_t
 	{
@@ -185,6 +188,9 @@ struct AnimGraphInputs
 	uint32_t eventCount = 0; // SimGlobals::modEventCount
 	uint32_t tick = 0;
 	uint32_t netId = 0;
+	// Kinds of the items the player holds (schema indices).
+	const uint16_t* heldKinds = nullptr;
+	uint32_t heldCount = 0;
 };
 
 float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& inputs, float stateTime );
