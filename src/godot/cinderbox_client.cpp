@@ -703,6 +703,18 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 	m_nodes[visual] = node->get_instance_id();
 
 	m_companions.erase( visual );
+	if ( v.kind == present::VisualKind::Player )
+	{
+		// The character's AnimationTree is where its state machine was authored; the simulation runs
+		// the baked one, so the tree itself stays off in the game.
+		if ( CbCharacter* character = FindInPrefab<CbCharacter>( node ); character != nullptr && character->get_animation_tree_path().is_empty() == false )
+		{
+			if ( auto* tree = Object::cast_to<AnimationTree>( character->get_node_or_null( character->get_animation_tree_path() ) ) )
+			{
+				tree->set_active( false );
+			}
+		}
+	}
 	if ( v.kind == present::VisualKind::Player && m_companionLibrary.is_valid() )
 	{
 		// The character's own AnimationPlayer names the root its tracks' paths start from.

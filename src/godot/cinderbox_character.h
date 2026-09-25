@@ -10,12 +10,21 @@
 // The inspector's "Bake" writes, next to the scene, what the game reads at runtime:
 //   skeleton.ozz and one .ozz per clip (idle, walk, run, jump_start, fall, land), anim.cfg,
 //   hitboxes.cfg.
+// With an AnimationTree (animation_tree_path), the character plays its own state machine instead
+// of the six built-in clips: the bake writes graph.cfg (states, transitions, layers; see
+// sim/anim_graph.h) and one .ozz per animation the tree uses. The simulation runs the machine, so
+// every screen and the server's hit tests agree; the tree itself never runs in the game.
 // Exporting the item ships them in its pack. Nothing is imported or converted when a player joins:
 // the client and the server read these baked files.
 
+#include <godot_cpp/classes/animation_player.hpp>
+#include <godot_cpp/classes/animation_tree.hpp>
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+
+#include <string>
+#include <vector>
 
 namespace cb::gd
 {
@@ -168,6 +177,22 @@ public:
 	{
 		return m_aimTip;
 	}
+	void set_animation_tree_path( const godot::NodePath& v )
+	{
+		m_tree = v;
+	}
+	godot::NodePath get_animation_tree_path() const
+	{
+		return m_tree;
+	}
+	void set_graph_inputs( const godot::Dictionary& v )
+	{
+		m_graphInputs = v;
+	}
+	godot::Dictionary get_graph_inputs() const
+	{
+		return m_graphInputs;
+	}
 	void set_lock_root_xz( bool v )
 	{
 		m_lockRootXZ = v;
@@ -183,6 +208,10 @@ protected:
 	static void _bind_methods();
 
 private:
+	// graph.cfg from the AnimationTree, and the animations it plays; an error, or "".
+	godot::String BakeGraph( godot::AnimationTree* tree, godot::AnimationPlayer* player, std::string& out,
+							 std::vector<godot::String>& animations, godot::String& warnings ) const;
+
 	godot::String m_name;
 	godot::NodePath m_skeleton;
 	godot::NodePath m_player;
@@ -196,6 +225,13 @@ private:
 	godot::Dictionary m_stanceClips;
 	// Layer masks: "upper" -> "Spine" (the default), "arms" -> "LeftShoulder RightShoulder", ...
 	godot::Dictionary m_masks;
+	// The state machine: an AnimationTree whose root is a state machine, or a blend tree of state
+	// machines layered with Blend2 nodes (the filter is the layer's mask).
+	godot::NodePath m_tree;
+	// What drives the tree's numeric parameters, by their path under "parameters/":
+	//   "Base/Locomotion/blend_position" -> "speed",  "Upper/blend_amount" -> "pistol or melee"
+	// Expressions over simulation values (see sim/anim_graph.h).
+	godot::Dictionary m_graphInputs;
 	godot::String m_aimChain = "RightUpperArm:1";
 	godot::String m_aimTip = "RightHand";
 };
