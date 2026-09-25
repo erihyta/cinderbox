@@ -7,7 +7,8 @@
 // --shoot makes full bots take out the pistol (the server's "slot_2" action) and fire at the
 // nearest other player a couple of times a second, aiming from their own predicted world. It
 // exercises the pistol mod, deaths and ragdolls under load; lite bots cannot aim and keep moving.
-// --melee does the same with the bat ("slot_3"), swinging once the nearest player is in reach.
+// --melee does the same with the bat ("slot_3"), swinging once the nearest player is in reach, and
+// swaps to the pistol for a second every five (so the bat item comes and goes).
 //
 // --chaotic makes every bot change every input field every tick (worst case for rollback and
 // bandwidth). By default bots hold directions and turn smoothly, closer to real players.
@@ -82,6 +83,12 @@ PlayerInput Aim( Bot& bot, PlayerInput in, uint32_t tick )
 {
 	const ModSchema& schema = bot.client->Schema();
 	in.actions = schema.ActionMask( bot.melee ? "slot_3" : "slot_2" );
+	if ( bot.melee && ( ( tick + bot.shotTick * 40 ) / 60 ) % 5 == 4 )
+	{
+		// Every five seconds, a second with the pistol: the bat is put away and taken out again.
+		in.actions = schema.ActionMask( "slot_2" );
+		return in;
+	}
 	RollbackSession* session = bot.client->Session();
 	if ( session == nullptr )
 	{
