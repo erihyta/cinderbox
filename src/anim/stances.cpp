@@ -50,6 +50,9 @@ std::shared_ptr<const StanceTable> BuildStanceTable( const AnimSet& set, const s
 													 const std::vector<std::string>& stances, std::string& warnings )
 {
 	auto table = std::make_shared<StanceTable>();
+	// A character with its own state machine plays the mods' stances through it; nothing is missing.
+	std::string ignored;
+	std::string& report = set.GraphText().empty() ? warnings : ignored;
 	const int joints = set.Skeleton().num_joints();
 	const int soaJoints = set.Skeleton().num_soa_joints();
 
@@ -63,11 +66,11 @@ std::shared_ptr<const StanceTable> BuildStanceTable( const AnimSet& set, const s
 		}
 		else if ( roots.empty() )
 		{
-			warnings += "this character has no mask for layer '" + layer + "'; ";
+			report += "this character has no mask for layer '" + layer + "'; ";
 		}
 		else
 		{
-			weights = MaskWeights( set, roots, warnings );
+			weights = MaskWeights( set, roots, report );
 		}
 		ozz::vector<ozz::math::SimdFloat4> packed;
 		if ( weights.empty() == false )
@@ -101,7 +104,7 @@ std::shared_ptr<const StanceTable> BuildStanceTable( const AnimSet& set, const s
 		any |= stance.single != nullptr;
 		if ( any == false )
 		{
-			warnings += "this character has no clips for stance '" + name + "'; ";
+			report += "this character has no clips for stance '" + name + "'; ";
 		}
 		table->stances.push_back( stance );
 	}

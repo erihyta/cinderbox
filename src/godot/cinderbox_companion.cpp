@@ -74,6 +74,10 @@ void CbCompanionPlayer::Reset( Channel& c )
 		c.player->play( "RESET" );
 		Seek( c, 0.0 );
 	}
+	else
+	{
+		Seek( c, 0.0 ); // no RESET: what the clip leaves behind goes back to how it starts
+	}
 	c.player->stop();
 	c.clip = String();
 	m_resetThisFrame = true;

@@ -518,7 +518,7 @@ void CinderboxClient::UpdateNodes()
 											   : anim::ActiveClips( state, *library.set, library.stances.get() );
 					for ( const anim::ActiveClip& clip : clips )
 					{
-						companion->play_at( clip.channel, String::utf8( clip.name.c_str() ), clip.time, clip.loops );
+						companion->play_at( clip.channel, CompanionName( String::utf8( clip.name.c_str() ) ), clip.time, clip.loops );
 					}
 					companion->end_frame();
 				}
@@ -699,22 +699,20 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 		node = memnew( Node3D );
 	}
 	node->set_name( String( KindName( v.kind ) ) + "_" + String::num_int64( int64_t( v.netId ) ) );
+	// A character's AnimationTree is where its state machine was authored; the simulation runs the
+	// baked one, so the tree stays off in the game (switched off before it enters the scene, so it
+	// never sets itself up).
+	if ( CbCharacter* character = FindInPrefab<CbCharacter>( node ); character != nullptr && character->get_animation_tree_path().is_empty() == false )
+	{
+		if ( auto* tree = Object::cast_to<AnimationTree>( character->get_node_or_null( character->get_animation_tree_path() ) ) )
+		{
+			tree->set_active( false );
+		}
+	}
 	add_child( node );
 	m_nodes[visual] = node->get_instance_id();
 
 	m_companions.erase( visual );
-	if ( v.kind == present::VisualKind::Player )
-	{
-		// The character's AnimationTree is where its state machine was authored; the simulation runs
-		// the baked one, so the tree itself stays off in the game.
-		if ( CbCharacter* character = FindInPrefab<CbCharacter>( node ); character != nullptr && character->get_animation_tree_path().is_empty() == false )
-		{
-			if ( auto* tree = Object::cast_to<AnimationTree>( character->get_node_or_null( character->get_animation_tree_path() ) ) )
-			{
-				tree->set_active( false );
-			}
-		}
-	}
 	if ( v.kind == present::VisualKind::Player && m_companionLibrary.is_valid() )
 	{
 		// The character's own AnimationPlayer names the root its tracks' paths start from.

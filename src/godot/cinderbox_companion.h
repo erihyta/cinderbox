@@ -21,6 +21,13 @@
 namespace cb::gd
 {
 
+// A clip's name in companion.tres. Animations from a named library ("mannequin/Swing") keep their
+// name in the state machine, but a library cannot hold a '/' in a name.
+inline godot::String CompanionName( const godot::String& clip )
+{
+	return clip.replace( "/", "." );
+}
+
 class CbCompanionPlayer : public godot::Node
 {
 	GDCLASS( CbCompanionPlayer, godot::Node )

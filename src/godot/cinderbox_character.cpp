@@ -1,5 +1,6 @@
 #include "cinderbox_character.h"
 
+#include "cinderbox_companion.h"
 #include "cinderbox_skeleton.h"
 #include "pose.h" // CinderboxSkeleton holds a PoseEvaluator
 
@@ -919,7 +920,7 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 				return fail( problem );
 			}
 			cfg += "clip." + Std( animationName ) + " = " + Std( file ) + "\n";
-			addCompanion( animationName, animationName );
+			addCompanion( animationName, CompanionName( animationName ) );
 			++clips;
 		}
 		if ( WriteText( folder + "graph.cfg", graph, error ) == false )
@@ -999,9 +1000,15 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		cfg += "mask." + Std( layer ) + " = " + Std( roots ) + "\n";
 	}
 	result["stance_clips"] = stanceClips;
-	if ( player->has_animation( "RESET" ) )
+	// What a channel returns to when its clip has nothing to say: RESET, from whichever library has it.
+	PackedStringArray animationNames = player->get_animation_list();
+	for ( const String& animationName : animationNames )
 	{
-		addCompanion( "RESET", "RESET" ); // what a channel returns to when its clip has nothing to say
+		if ( animationName == "RESET" || animationName.ends_with( "/RESET" ) )
+		{
+			addCompanion( animationName, "RESET" );
+			break;
+		}
 	}
 	if ( ResourceSaver::get_singleton()->save( companion, folder + "companion.tres" ) != OK )
 	{
