@@ -54,6 +54,8 @@ public:
 	{
 		m_fire = declare.Action( "fire", "MouseLeft" ); // shared with the pistol: whichever is out
 		m_loadout = declare.Field( "loadout.slot", BoardType::Int );
+		// On for the length of a swing: what the bat's look keys its fire on.
+		m_swinging = declare.Field( "melee.swinging", BoardType::Bool );
 		m_full = declare.Layer( "full" );
 		m_ready = declare.Stance( "melee" );
 		m_swingStance = declare.Stance( "melee_swing" );
@@ -92,6 +94,10 @@ public:
 			if ( holding != s.out )
 			{
 				s.out = holding;
+				if ( s.swinging )
+				{
+					ctx.Set( target, m_swinging, 0 );
+				}
 				s.swinging = false;
 				ctx.SetStance( target, m_full, holding ? m_ready : StanceHandle{} );
 				if ( holding )
@@ -121,6 +127,7 @@ public:
 				{
 					s.swinging = false;
 					ctx.SetStance( target, m_full, m_ready );
+					ctx.Set( target, m_swinging, 0 );
 				}
 				continue;
 			}
@@ -132,6 +139,7 @@ public:
 				s.nextSwing = tick + Ticks( ctx, kCooldownSeconds );
 				ctx.SetStance( target, m_full, m_swingStance );
 				ctx.Emit( m_swing, target );
+				ctx.Set( target, m_swinging, 1 );
 			}
 		}
 	}
@@ -172,6 +180,7 @@ private:
 	std::array<Swinger, kMaxPlayers> m_swingers{};
 	ActionHandle m_fire;
 	FieldHandle m_loadout;
+	FieldHandle m_swinging;
 	LayerHandle m_full;
 	StanceHandle m_ready;
 	StanceHandle m_swingStance;
