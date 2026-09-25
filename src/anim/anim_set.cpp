@@ -774,6 +774,10 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 			warnings += "rig is " + std::to_string( int( height ) ) + " units tall, assuming centimetres (scale 0.01); ";
 		}
 	}
+	if ( cfg.count( "turn_legs" ) )
+	{
+		set->m_turnLegs = cfg["turn_legs"] != "false" && cfg["turn_legs"] != "0";
+	}
 	if ( cfg.count( "lock_root_xz" ) )
 	{
 		set->m_lockRootXZ = cfg["lock_root_xz"] != "false" && cfg["lock_root_xz"] != "0";

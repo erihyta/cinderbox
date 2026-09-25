@@ -94,6 +94,13 @@ public:
 	{
 		return m_scale;
 	}
+	// Turn the hips toward the direction of travel and the spine back (AnimState::legYaw), so a
+	// forward walk goes sideways. Off for characters with their own directional clips (strafes):
+	// anim.cfg "turn_legs = false".
+	bool TurnLegs() const
+	{
+		return m_turnLegs;
+	}
 	// Keep the root joint from drifting horizontally (clips exported without "In Place").
 	bool LockRootXZ() const
 	{
@@ -192,6 +199,7 @@ private:
 	std::array<ozz::unique_ptr<ozz::animation::Animation>, ClipCount> m_clips;
 	float m_scale = 1.0f;
 	bool m_lockRootXZ = true;
+	bool m_turnLegs = true;
 	std::string m_description;
 	std::map<std::string, ozz::unique_ptr<ozz::animation::Animation>> m_stanceClips;
 	std::map<std::string, std::string> m_masks;

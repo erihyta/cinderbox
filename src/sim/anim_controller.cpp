@@ -40,6 +40,17 @@ void UpdateAnimState( AnimState& s, const Character& c, const PlayerInput& input
 		speed = s.groundSpeed;
 	}
 	s.groundSpeed += ( speed - s.groundSpeed ) * std::min( 1.0f, kSpeedSmoothing * dt );
+	if ( c.grounded != 0 )
+	{
+		// The velocity in the body's frame: forward along its facing, right to its right (a body
+		// facing +Z has its right at -X).
+		b3CosSin facing = detmath::CosSin( c.facingYaw );
+		float forward = c.velocity.x * facing.sine + c.velocity.z * facing.cosine;
+		float right = -c.velocity.x * facing.cosine + c.velocity.z * facing.sine;
+		float k = std::min( 1.0f, kSpeedSmoothing * dt );
+		s.moveForward += ( forward - s.moveForward ) * k;
+		s.moveRight += ( right - s.moveRight ) * k;
+	}
 
 	// Legs toward the direction of travel, relative to the facing; backwards past ~100 degrees.
 	float legTarget = 0.0f;

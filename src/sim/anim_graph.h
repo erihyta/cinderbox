@@ -10,19 +10,21 @@
 //
 //   - Layers: state machines stacked like the AnimationTree's Blend2 nodes (the first is the base,
 //     each later one blends over it through its bone mask, by its weight expression).
-//   - States: one clip, or a 1D blend space (clips by an input expression, phase-synced).
+//   - States: one clip, or a 1D or 2D blend space (clips by input expressions, phase-synced; a 2D
+//     space blends inside Godot's triangles, like BlendSpace2D).
 //   - Transitions: Godot's (priority, crossfade, immediate or at end), taken when their condition
 //     holds: the advance condition and the advance expression, both compiled here.
 //
 // Conditions read simulation values only, so every machine gets the same answer:
-//   speed, forward_speed, vertical_speed, grounded, airborne_time, jumped, aiming, backward,
-//   state_time; a stance's name (true while any layer has it); a mod event's name (true on the tick
+//   speed, forward_speed, move_forward, move_right, vertical_speed, grounded, airborne_time, jumped,
+//   aiming, backward, state_time; a stance's name (true while any layer has it); a mod event's name (true on the tick
 //   it is emitted at this player); a board field's name (the player's value, or the global one).
 // Markers on clips emit the mod event of the same name when the playing state crosses them.
 
 #include "components.h"
 #include "mod_schema.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -33,7 +35,8 @@ namespace cb
 
 struct ModEventRecord;
 
-inline constexpr int kMaxGraphStates = 64; // per layer
+inline constexpr int kMaxGraphStates = 64;	   // per layer
+inline constexpr int kMaxBlendPoints = 32;	   // per blend space
 
 // A compiled condition or input: a little stack program over the values above.
 struct AnimExpr
@@ -77,6 +80,8 @@ struct AnimExpr
 		Aiming,
 		Backward,
 		StateTime,
+		MoveForward,
+		MoveRight,
 		BuiltinCount,
 	};
 	struct Step
@@ -122,16 +127,21 @@ struct AnimGraphTransition
 struct AnimGraphState
 {
 	std::string name;
-	// One clip (a single point) or a blend space (points by position, blended by `input`).
+	// One clip (a single point) or a blend space: points by position, blended by `input` (and
+	// `inputY` for a 2D space, inside `triangles`).
 	struct Point
 	{
 		float position = 0.0f;
+		float y = 0.0f; // 2D spaces
 		int clip = 0;
 		bool backward = false;
 	};
 	std::vector<Point> points;
 	bool blend = false;
+	bool planar = false; // a 2D blend space
 	AnimExpr input;
+	AnimExpr inputY;
+	std::vector<std::array<int, 3>> triangles; // point indices, as Godot triangulated them
 	std::vector<AnimGraphTransition> transitions; // in the order they are tried
 };
 
@@ -179,8 +189,10 @@ struct AnimGraphInputs
 
 float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& inputs, float stateTime );
 
-// How much of a state's point plays at a blend input (1 for a single clip's only point).
-float AnimGraphPointWeight( const AnimGraphState& state, float blend, size_t point );
+// How much of each of a state's points plays at a blend input (x, and y for a 2D space); a single
+// clip's only point gets 1. Weights sum to 1.
+using AnimBlendWeights = std::array<float, kMaxBlendPoints>;
+void AnimGraphWeights( const AnimGraphState& state, float x, float y, AnimBlendWeights& out );
 
 // Advances the graph's layers in `state` by one tick (a layer not started yet begins in its start
 // state). Markers crossed append their schema event

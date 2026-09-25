@@ -21,6 +21,7 @@
 #include <godot_cpp/classes/animation_node_animation.hpp>
 #include <godot_cpp/classes/animation_node_blend2.hpp>
 #include <godot_cpp/classes/animation_node_blend_space1_d.hpp>
+#include <godot_cpp/classes/animation_node_blend_space2d.hpp>
 #include <godot_cpp/classes/animation_node_blend_tree.hpp>
 #include <godot_cpp/classes/animation_node_state_machine.hpp>
 #include <godot_cpp/classes/animation_node_state_machine_transition.hpp>
@@ -227,6 +228,7 @@ void CbCharacter::_bind_methods()
 	ADD_GROUP( "Bake", "" );
 	CB_PROP( Variant::FLOAT, sample_rate, PROPERTY_HINT_RANGE, "10,120,1,suffix:Hz" )
 	CB_PROP( Variant::BOOL, lock_root_xz, PROPERTY_HINT_NONE, "" )
+	CB_PROP( Variant::BOOL, turn_legs, PROPERTY_HINT_NONE, "" )
 	ADD_GROUP( "Layers", "" );
 	CB_PROP( Variant::DICTIONARY, stance_clips, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
 	CB_PROP( Variant::DICTIONARY, masks, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
@@ -507,10 +509,73 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 							"\t" + ( backward ? "1" : "0" ) + "\n";
 				}
 			}
+			else if ( Ref<AnimationNodeBlendSpace2D> plane = node; plane.is_valid() )
+			{
+				// Two expressions, "x, y" (the blend position is a Vector2).
+				String driver = input( layer.prefix + name + "/blend_position" );
+				if ( driver.is_empty() )
+				{
+					driver = input( name + "/blend_position" );
+				}
+				int comma = -1, depth = 0;
+				for ( int i = 0; i < driver.length() && comma < 0; ++i )
+				{
+					char32_t c = driver[i];
+					depth += c == '(' ? 1 : c == ')' ? -1 : 0;
+					comma = ( c == ',' && depth == 0 ) ? i : -1;
+				}
+				if ( comma < 0 )
+				{
+					return "2D blend space " + layer.prefix + name + " needs a graph_inputs entry for " + layer.prefix + name +
+						   "/blend_position with two expressions, x and y (like \"move_right, move_forward\")";
+				}
+				String x = driver.substr( 0, comma ).strip_edges();
+				String y = driver.substr( comma + 1 ).strip_edges();
+				String problem = checkExpression( x, layer.prefix + name + "/blend_position x" );
+				if ( problem.is_empty() )
+				{
+					problem = checkExpression( y, layer.prefix + name + "/blend_position y" );
+				}
+				if ( problem.is_empty() == false )
+				{
+					return problem;
+				}
+				if ( plane->get_blend_point_count() == 0 )
+				{
+					return "2D blend space " + layer.prefix + name + " has no points";
+				}
+				if ( plane->get_blend_mode() != AnimationNodeBlendSpace2D::BLEND_MODE_INTERPOLATED )
+				{
+					warnings += layer.prefix + name + ": only the interpolated blend mode is baked; ";
+				}
+				body += "state\t" + Std( name ) + "\tblend2d\t" + Std( x ) + "\t" + Std( y ) + "\n";
+				for ( int p = 0; p < plane->get_blend_point_count(); ++p )
+				{
+					Ref<AnimationNodeAnimation> point = plane->get_blend_point_node( p );
+					if ( point.is_null() )
+					{
+						return "2D blend space " + layer.prefix + name + ": its points must be animations";
+					}
+					problem = useAnimation( point->get_animation() );
+					if ( problem.is_empty() == false )
+					{
+						return layer.prefix + name + ": " + problem;
+					}
+					Vector2 at = plane->get_blend_point_position( p );
+					bool backward = point->get_play_mode() == AnimationNodeAnimation::PLAY_MODE_BACKWARD;
+					body += "point2\t" + Num( at.x ) + "\t" + Num( at.y ) + "\t" + Std( String( point->get_animation() ) ) + "\t" +
+							( backward ? "1" : "0" ) + "\n";
+				}
+				for ( int t = 0; t < plane->get_triangle_count(); ++t )
+				{
+					body += "triangle\t" + std::to_string( plane->get_triangle_point( t, 0 ) ) + "\t" +
+							std::to_string( plane->get_triangle_point( t, 1 ) ) + "\t" + std::to_string( plane->get_triangle_point( t, 2 ) ) + "\n";
+				}
+			}
 			else
 			{
 				return layer.prefix + name + " is a " + node->get_class() +
-					   "; states are animations or 1D blend spaces (nested machines are not baked yet)";
+					   "; states are animations or 1D and 2D blend spaces (nested machines are not baked yet)";
 			}
 			if ( states == 0 )
 			{
@@ -735,6 +800,7 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	std::string cfg = "# Baked by CbCharacter in the editor. The game reads these files; edit the scene and bake again.\n";
 	cfg += "skeleton = skeleton.ozz\nscale = 1\n";
 	cfg += std::string( "lock_root_xz = " ) + ( m_lockRootXZ ? "true" : "false" ) + "\n";
+	cfg += std::string( "turn_legs = " ) + ( m_turnLegs ? "true" : "false" ) + "\n";
 	cfg += "aim = " + Std( m_aimChain.strip_edges() ) + "\n";
 	cfg += "aim_tip = " + Std( m_aimTip.strip_edges() ) + "\n";
 	{

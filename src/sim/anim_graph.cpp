@@ -17,7 +17,8 @@ constexpr float kMaxStateTime = 600.0f;
 constexpr float kMinClipLength = 1.0f / 1024.0f;
 
 const char* const kBuiltinNames[AnimExpr::BuiltinCount] = {
-	"speed", "forward_speed", "vertical_speed", "grounded", "airborne_time", "jumped", "aiming", "backward", "state_time",
+	"speed",	  "forward_speed", "vertical_speed", "grounded",	"airborne_time", "jumped",
+	"aiming",	  "backward",	   "state_time",	 "move_forward", "move_right",
 };
 
 // --- Expressions ----------------------------------------------------------------------------------
@@ -506,20 +507,21 @@ int FindState( const AnimGraphLayer& layer, const std::string& name )
 
 } // namespace
 
-float AnimGraphPointWeight( const AnimGraphState& state, float blend, size_t point )
+namespace
+{
+
+void Weights1D( const AnimGraphState& state, float blend, AnimBlendWeights& out )
 {
 	const auto& p = state.points;
-	if ( p.size() == 1 || state.blend == false )
-	{
-		return point == 0 ? 1.0f : 0.0f;
-	}
 	if ( blend <= p.front().position )
 	{
-		return point == 0 ? 1.0f : 0.0f;
+		out[0] = 1.0f;
+		return;
 	}
 	if ( blend >= p.back().position )
 	{
-		return point + 1 == p.size() ? 1.0f : 0.0f;
+		out[p.size() - 1] = 1.0f;
+		return;
 	}
 	for ( size_t i = 0; i + 1 < p.size(); ++i )
 	{
@@ -527,18 +529,112 @@ float AnimGraphPointWeight( const AnimGraphState& state, float blend, size_t poi
 		if ( blend >= a && blend <= b )
 		{
 			float t = b > a ? ( blend - a ) / ( b - a ) : 0.0f;
-			if ( point == i )
-			{
-				return 1.0f - t;
-			}
-			if ( point == i + 1 )
-			{
-				return t;
-			}
-			return 0.0f;
+			out[i] = 1.0f - t;
+			out[i + 1] += t;
+			return;
 		}
 	}
-	return 0.0f;
+}
+
+// Inside a triangle: barycentric weights. Outside them all: the closest point on any triangle's
+// edge, split between that edge's ends. That is how Godot's BlendSpace2D blends.
+void Weights2D( const AnimGraphState& state, float x, float y, AnimBlendWeights& out )
+{
+	const auto& p = state.points;
+	if ( state.triangles.empty() )
+	{
+		// Fewer than three points: the nearest one plays.
+		size_t best = 0;
+		float bestDistance = 0.0f;
+		for ( size_t i = 0; i < p.size(); ++i )
+		{
+			float dx = p[i].position - x, dy = p[i].y - y;
+			float d = dx * dx + dy * dy;
+			if ( i == 0 || d < bestDistance )
+			{
+				best = i;
+				bestDistance = d;
+			}
+		}
+		out[best] = 1.0f;
+		return;
+	}
+	for ( const auto& t : state.triangles )
+	{
+		const auto& a = p[size_t( t[0] )];
+		const auto& b = p[size_t( t[1] )];
+		const auto& c = p[size_t( t[2] )];
+		float v0x = b.position - a.position, v0y = b.y - a.y;
+		float v1x = c.position - a.position, v1y = c.y - a.y;
+		float v2x = x - a.position, v2y = y - a.y;
+		float d00 = v0x * v0x + v0y * v0y, d01 = v0x * v1x + v0y * v1y, d11 = v1x * v1x + v1y * v1y;
+		float d20 = v2x * v0x + v2y * v0y, d21 = v2x * v1x + v2y * v1y;
+		float denominator = d00 * d11 - d01 * d01;
+		if ( denominator == 0.0f )
+		{
+			continue;
+		}
+		float wb = ( d11 * d20 - d01 * d21 ) / denominator;
+		float wc = ( d00 * d21 - d01 * d20 ) / denominator;
+		float wa = 1.0f - wb - wc;
+		if ( wa >= 0.0f && wb >= 0.0f && wc >= 0.0f )
+		{
+			out[size_t( t[0] )] += wa;
+			out[size_t( t[1] )] += wb;
+			out[size_t( t[2] )] += wc;
+			return;
+		}
+	}
+	float bestDistance = -1.0f;
+	int bestA = 0, bestB = 0;
+	float bestT = 0.0f;
+	for ( const auto& t : state.triangles )
+	{
+		for ( int e = 0; e < 3; ++e )
+		{
+			int ia = t[size_t( e )], ib = t[size_t( ( e + 1 ) % 3 )];
+			const auto& a = p[size_t( ia )];
+			const auto& b = p[size_t( ib )];
+			float ex = b.position - a.position, ey = b.y - a.y;
+			float length = ex * ex + ey * ey;
+			float along = length > 0.0f ? ( ( x - a.position ) * ex + ( y - a.y ) * ey ) / length : 0.0f;
+			along = std::clamp( along, 0.0f, 1.0f );
+			float cx = a.position + ex * along - x, cy = a.y + ey * along - y;
+			float d = cx * cx + cy * cy;
+			if ( bestDistance < 0.0f || d < bestDistance )
+			{
+				bestDistance = d;
+				bestA = ia;
+				bestB = ib;
+				bestT = along;
+			}
+		}
+	}
+	out[size_t( bestA )] += 1.0f - bestT;
+	out[size_t( bestB )] += bestT;
+}
+
+} // namespace
+
+void AnimGraphWeights( const AnimGraphState& state, float x, float y, AnimBlendWeights& out )
+{
+	out.fill( 0.0f );
+	if ( state.points.empty() )
+	{
+		return;
+	}
+	if ( state.blend == false || state.points.size() == 1 )
+	{
+		out[0] = 1.0f;
+	}
+	else if ( state.planar )
+	{
+		Weights2D( state, x, y, out );
+	}
+	else
+	{
+		Weights1D( state, x, out );
+	}
 }
 
 namespace
@@ -546,7 +642,8 @@ namespace
 
 // Advances a state's clock by dt. Returns true when it came round (a loop, or a blend space's
 // cycle); `ended` is set when a one-shot clip is within `window` seconds of its end.
-bool Advance( const AnimGraph& graph, const AnimGraphState& state, float blend, float& time, float dt, float window, bool& ended )
+bool Advance( const AnimGraph& graph, const AnimGraphState& state, float blend, float blendY, float& time, float dt, float window,
+			  bool& ended )
 {
 	ended = false;
 	if ( state.points.empty() )
@@ -557,9 +654,11 @@ bool Advance( const AnimGraph& graph, const AnimGraphState& state, float blend, 
 	{
 		// Phase-synced: every clip at the same fraction of its cycle, like the feet of walk and run.
 		float rate = 0.0f;
+		AnimBlendWeights weights;
+		AnimGraphWeights( state, blend, blendY, weights );
 		for ( size_t i = 0; i < state.points.size(); ++i )
 		{
-			float w = AnimGraphPointWeight( state, blend, i );
+			float w = weights[i];
 			if ( w > 0.0f )
 			{
 				rate += w / graph.clips[size_t( state.points[i].clip )].length;
@@ -872,7 +971,7 @@ std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, cons
 				{
 					return fail( "state '" + state.name + "' plays an unknown clip '" + f[3] + "'" );
 				}
-				state.points.push_back( { 0.0f, clip, f.size() > 4 && f[4] == "1" } );
+				state.points.push_back( { 0.0f, 0.0f, clip, f.size() > 4 && f[4] == "1" } );
 			}
 			else if ( f[2] == "blend" )
 			{
@@ -881,6 +980,17 @@ std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, cons
 				if ( CompileAnimExpr( f[3], schema, state.input, why, warnings ) == false )
 				{
 					return fail( why );
+				}
+			}
+			else if ( f[2] == "blend2d" )
+			{
+				state.blend = true;
+				state.planar = true;
+				std::string why;
+				if ( f.size() < 5 || CompileAnimExpr( f[3], schema, state.input, why, warnings ) == false ||
+					 CompileAnimExpr( f[4], schema, state.inputY, why, warnings ) == false )
+				{
+					return fail( why.empty() ? std::string( "a 2D blend state needs two inputs" ) : why );
 				}
 			}
 			else
@@ -900,6 +1010,29 @@ std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, cons
 			}
 			point.backward = f.size() > 3 && f[3] == "1";
 			layer.states.back().points.push_back( point );
+		}
+		else if ( kind == "point2" )
+		{
+			AnimGraphLayer& layer = graph->layers.back();
+			AnimGraphState::Point point;
+			if ( layer.states.empty() || layer.states.back().planar == false || f.size() < 4 || ToFloat( f[1], point.position ) == false ||
+				 ToFloat( f[2], point.y ) == false || ( point.clip = graph->FindClip( f[3] ) ) < 0 )
+			{
+				return fail( "point2 needs a 2D blend state before it, x, y and a known clip" );
+			}
+			point.backward = f.size() > 4 && f[4] == "1";
+			layer.states.back().points.push_back( point );
+		}
+		else if ( kind == "triangle" )
+		{
+			AnimGraphLayer& layer = graph->layers.back();
+			std::array<int, 3> t{};
+			if ( layer.states.empty() || layer.states.back().planar == false || f.size() < 4 || ToInt( f[1], t[0] ) == false ||
+				 ToInt( f[2], t[1] ) == false || ToInt( f[3], t[2] ) == false )
+			{
+				return fail( "triangle needs a 2D blend state before it and three point numbers" );
+			}
+			layer.states.back().triangles.push_back( t );
 		}
 		else if ( kind == "start" )
 		{
@@ -962,13 +1095,28 @@ std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, cons
 		}
 		for ( AnimGraphState& state : layer.states )
 		{
-			if ( state.points.empty() )
+			if ( state.points.empty() || state.points.size() > size_t( kMaxBlendPoints ) )
 			{
-				error = "state '" + state.name + "' has no clips";
+				error = "state '" + state.name + "' has no clips, or more than " + std::to_string( kMaxBlendPoints );
 				return nullptr;
 			}
-			std::stable_sort( state.points.begin(), state.points.end(),
-							  []( const AnimGraphState::Point& a, const AnimGraphState::Point& b ) { return a.position < b.position; } );
+			for ( const auto& t : state.triangles )
+			{
+				for ( int i : t )
+				{
+					if ( i < 0 || size_t( i ) >= state.points.size() )
+					{
+						error = "state '" + state.name + "' has a triangle with a point it does not have";
+						return nullptr;
+					}
+				}
+			}
+			if ( state.planar == false )
+			{
+				// A 1D space's points in order (a 2D space's triangles refer to them as declared).
+				std::stable_sort( state.points.begin(), state.points.end(),
+								  []( const AnimGraphState::Point& a, const AnimGraphState::Point& b ) { return a.position < b.position; } );
+			}
 			// Godot tries lower priorities first; equal ones keep their order.
 			std::stable_sort( state.transitions.begin(), state.transitions.end(),
 							  []( const AnimGraphTransition& a, const AnimGraphTransition& b ) { return a.priority < b.priority; } );
@@ -1073,6 +1221,7 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& graph, AnimGraphInputs& in,
 			L.state = L.previous = uint8_t( layer.start );
 			const AnimGraphState& first = layer.states[size_t( layer.start )];
 			L.blend = L.previousBlend = first.blend ? EvaluateAnimExpr( first.input, in, 0.0f ) : 0.0f;
+			L.blendY = L.previousBlendY = first.planar ? EvaluateAnimExpr( first.inputY, in, 0.0f ) : 0.0f;
 			L.weight = ( l == 0 || layer.weight.Empty() ) ? 1.0f : std::clamp( EvaluateAnimExpr( layer.weight, in, 0.0f ), 0.0f, 1.0f );
 		}
 
@@ -1088,14 +1237,15 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& graph, AnimGraphInputs& in,
 		if ( state.blend )
 		{
 			L.blend = EvaluateAnimExpr( state.input, in, L.stateTime );
+			L.blendY = state.planar ? EvaluateAnimExpr( state.inputY, in, L.stateTime ) : 0.0f;
 		}
 		bool entered = L.stateTime == 0.0f;
 		float before = L.time;
 		bool ended = false, previousEnded = false;
-		bool wrapped = Advance( graph, state, L.blend, L.time, dt, 0.0f, ended );
+		bool wrapped = Advance( graph, state, L.blend, L.blendY, L.time, dt, 0.0f, ended );
 		if ( L.stateTime < L.fadeLength )
 		{
-			Advance( graph, layer.states[L.previous], L.previousBlend, L.previousTime, dt, 0.0f, previousEnded );
+			Advance( graph, layer.states[L.previous], L.previousBlend, L.previousBlendY, L.previousTime, dt, 0.0f, previousEnded );
 		}
 		L.stateTime = std::min( L.stateTime + dt, kMaxStateTime );
 		FireMarkers( graph, state, before, L.time, wrapped, entered, markers );
@@ -1123,11 +1273,13 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& graph, AnimGraphInputs& in,
 			L.previous = L.state;
 			L.previousTime = L.time;
 			L.previousBlend = L.blend;
+			L.previousBlendY = L.blendY;
 			L.state = uint8_t( t.to );
 			L.time = 0.0f; // the state starts over (Godot's reset; this has no memory of where it was)
 			L.stateTime = 0.0f;
 			L.fadeLength = t.xfade;
 			L.blend = next.blend ? EvaluateAnimExpr( next.input, in, 0.0f ) : 0.0f;
+			L.blendY = next.planar ? EvaluateAnimExpr( next.inputY, in, 0.0f ) : 0.0f;
 			break;
 		}
 	}

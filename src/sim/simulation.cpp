@@ -635,6 +635,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			graphIn.builtins[AnimExpr::Jumped] = c.lastJumpTick != 0 && c.lastJumpTick == m_globals.tick ? 1.0f : 0.0f;
 			graphIn.builtins[AnimExpr::Aiming] = anim.aiming != 0 ? 1.0f : 0.0f;
 			graphIn.builtins[AnimExpr::Backward] = anim.legsBackward != 0 ? 1.0f : 0.0f;
+			graphIn.builtins[AnimExpr::MoveForward] = anim.moveForward;
+			graphIn.builtins[AnimExpr::MoveRight] = anim.moveRight;
 			graphIn.board = board.values;
 			graphIn.globalBoard = m_globals.board;
 			graphIn.events = m_globals.modEvents;

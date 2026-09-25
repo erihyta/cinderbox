@@ -116,8 +116,10 @@ struct AnimGraphLayerState
 	float stateTime = 0.0f;	   // seconds since `state` started
 	float fadeLength = 0.0f;
 	float weight = 0.0f;		// the layer's weight, eased toward its weight expression
-	float blend = 0.0f;			// a blend space's input this tick
+	float blend = 0.0f;			// a blend space's input this tick (x of a 2D one)
 	float previousBlend = 0.0f; // and the fading state's
+	float blendY = 0.0f;		// a 2D blend space's y
+	float previousBlendY = 0.0f;
 };
 
 // Deterministic animation controller state. The simulation only decides *what* plays and at which
@@ -146,6 +148,10 @@ struct AnimState
 	uint8_t stances[kMaxAnimLayers] = {};
 	uint8_t previousStances[kMaxAnimLayers] = {};
 	float layerTime[kMaxAnimLayers] = {};
+	// Smoothed ground velocity in the body's frame (m/s): along its facing, and to its right. Blend
+	// spaces of directional clips (strafing) read them.
+	float moveForward = 0.0f;
+	float moveRight = 0.0f;
 	// The baked state machine's layers; unused for characters without one.
 	AnimGraphLayerState graph[kMaxAnimLayers] = {};
 };
@@ -210,8 +216,8 @@ CB_CHECK_COMPONENT( Shape, 16 );
 CB_CHECK_COMPONENT( PhysicsBody, 16 );
 CB_CHECK_COMPONENT( Character, 52 );
 CB_CHECK_COMPONENT( Prop, 12 );
-CB_CHECK_COMPONENT( AnimGraphLayerState, 32 );
-CB_CHECK_COMPONENT( AnimState, 56 + 32 * kMaxAnimLayers );
+CB_CHECK_COMPONENT( AnimGraphLayerState, 40 );
+CB_CHECK_COMPONENT( AnimState, 64 + 40 * kMaxAnimLayers );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( Blackboard, 4 * kBoardSlots );
 CB_CHECK_COMPONENT( Ragdoll, 20 );

@@ -1598,6 +1598,74 @@ ModSchema TestGraphSchema()
 	return schema;
 }
 
+// Directional clips in a 2D blend space, as Godot triangulates it (idle in the middle, four
+// directions around), and the body-frame velocity that drives it.
+void TestAnimBlend2D()
+{
+	const char* text = "cinderbox_graph\t1\n"
+					   "clip\tidle\t2\t1\n"
+					   "clip\tfwd\t1\t1\n"
+					   "clip\tleft\t1\t1\n"
+					   "clip\tright\t1\t1\n"
+					   "clip\tback\t1\t1\n"
+					   "layer\tbase\n"
+					   "state\tMove\tblend2d\tmove_right\tmove_forward\n"
+					   "point2\t0\t0\tidle\n"
+					   "point2\t0\t3\tfwd\n"
+					   "point2\t-3\t0\tleft\n"
+					   "point2\t3\t0\tright\n"
+					   "point2\t0\t-3\tback\n"
+					   "triangle\t0\t1\t3\n"
+					   "triangle\t0\t3\t4\n"
+					   "triangle\t0\t4\t2\n"
+					   "triangle\t0\t2\t1\n"
+					   "start\tMove\n";
+	std::string error, warnings;
+	auto graph = CompileAnimGraph( text, ModSchema{}, error, warnings );
+	CHECK( graph != nullptr );
+	if ( graph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	CHECK( warnings.empty() );
+	const AnimGraphState& move = graph->layers[0].states[0];
+	CHECK( move.planar && move.points.size() == 5 && move.triangles.size() == 4 );
+	AnimBlendWeights w;
+	AnimGraphWeights( move, 0.0f, 1.5f, w ); // halfway forward: idle and fwd
+	CHECK( std::fabs( w[0] - 0.5f ) < 1e-5f && std::fabs( w[1] - 0.5f ) < 1e-5f );
+	AnimGraphWeights( move, 1.0f, 1.0f, w ); // inside the forward-right triangle: a third each
+	std::printf( "    weights at (1, 1): idle %.2f fwd %.2f right %.2f\n", w[0], w[1], w[3] );
+	CHECK( std::fabs( w[0] - 1.0f / 3.0f ) < 1e-5f && std::fabs( w[1] - 1.0f / 3.0f ) < 1e-5f && std::fabs( w[3] - 1.0f / 3.0f ) < 1e-5f );
+	CHECK( w[2] == 0.0f && w[4] == 0.0f );
+	AnimGraphWeights( move, 6.0f, 0.0f, w ); // outside: the nearest edge's end, right
+	CHECK( std::fabs( w[3] - 1.0f ) < 1e-5f );
+
+	// A camera-facing player strafing right: the body keeps facing, the velocity is to its right.
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	InputFrame f;
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	SimCommand face;
+	face.type = CommandType::Facing;
+	face.target = SlotTarget( 0 );
+	face.mode = 1;
+	f.commands.push_back( face );
+	for ( int i = 0; i < 90; ++i )
+	{
+		f.tick = sim.Tick();
+		f.inputs[0].moveRight = i >= 30 ? int8_t( 127 ) : int8_t( 0 );
+		sim.Step( f );
+		f.events.clear();
+		f.commands.clear();
+	}
+	AnimState a = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
+	std::printf( "    strafing right: move_right %.2f move_forward %.2f, blend (%.2f, %.2f)\n", a.moveRight, a.moveForward, a.graph[0].blend,
+				 a.graph[0].blendY );
+	CHECK( a.moveRight > 2.5f && std::fabs( a.moveForward ) < 0.3f );
+	CHECK( a.graph[0].blend == a.moveRight && a.graph[0].blendY == a.moveForward );
+}
+
 void TestAnimGraph()
 {
 	// Numbers read the same everywhere.
@@ -2387,6 +2455,7 @@ int main( int argc, char** argv )
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },
+		{ "anim_blend2d", TestAnimBlend2D },
 		{ "pose_tools", TestPoseTools },
 		{ "fields", TestFields },
 		{ "hitboxes", TestHitboxes },
