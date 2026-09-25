@@ -34,6 +34,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M25: state machines authored in Godot: a character's AnimationTree is baked and run by the simulation, markers become mod events | done |
 | M26: strafing with real clips: 2D blend spaces, body-frame velocity, per-character leg turning; a local-only character from the paid animation pack | done |
 | M27: the chest faces the camera while strafing (`face_forward`), though the strafe clips turn the torso | done |
+| M28: the bat burns while it swings, as the melee mod's own look (not the character's) | done |
 
 ## Building
 
@@ -522,7 +523,8 @@ The [Universal Animation Library](https://quaternius.com) mannequin by Quaterniu
   `source/bone_map.tres`.
 - **State machine**: an ordinary `AnimationTree` in `character.tscn` (see
   [State machines](#state-machines)): locomotion, jumps, and an upper-body layer for the pistol
-  (with a shot on `pistol.fired`) and the bat (with a flaming swing that strikes on a marker).
+  (with a shot on `pistol.fired`) and the bat (with a swing that strikes on a marker; the bat's
+  fire is the melee mod's own look).
 - **Hitboxes**: capsules along the spine, arms and legs sized from the bone lengths, a head
   sphere, a hips box.
 - **Edit it** in the editor like any scene and press **Bake character**. The generator that made
@@ -686,6 +688,11 @@ godot --headless --path godot --script res://addons/cinderbox_maps/check_compani
 
 Put the companion's scene nodes (particles, lights, an `AudioStreamPlayer3D`) in the character
 scene, and list `companion.tres` and the sounds in the item's export preset.
+
+Companion tracks reach only what is in the character scene. Effects on something a mod hands the
+character (a weapon) belong to that mod's look instead: the melee mod publishes `melee.swinging`
+while a swing lasts, and its item holds `bat_fire.tscn` in the right hand exactly like the bat
+while `loadout.slot == 3` and `melee.swinging`. Any character swinging the bat burns the same.
 
 ### State machines
 

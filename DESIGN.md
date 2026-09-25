@@ -797,6 +797,24 @@ with only the head looking ahead: facing the camera, the character still looked 
   default the game chose in M21), so there is nothing to strafe; with the pistol or bat it faces
   the camera and strafes.
 
+## The bat's fire belongs to the bat (M28)
+The fire had been a companion track on the character's swing animation (its right hand burned). A
+companion track can only reach nodes of the character scene, and the bat is the melee mod's: it is
+attached by the mod's client item. So the effect moved to where the bat is.
+
+- **Server**: the melee mod publishes `melee.swinging` (bool, per player) from the swing's start to
+  its end; like any board value it is simulation state, so everyone agrees and rollback covers it.
+- **Look**: a state binding in the item holds `bat_fire.tscn` in the right hand with the bat's
+  offset and rotation while `loadout.slot == 3` and `melee.swinging`. Flames spawn along the barrel
+  and stay in the world, so the swing draws a trail; any character gets it.
+- **Characters**: the mannequins lost their hand fire (node and track); the swing keeps the
+  `melee.strike` marker the mod hits on.
+- **Timing**: the fire follows the mod's swing window (0.45 s), not the animation's keys. That is
+  the trade: the mod owns the swing, the character owns the motion.
+- **Verified**: the melee network test (the field is on during swings and off after, kills, no
+  desyncs), a close-up of the swing with the bat placed as the client places it, a rendered
+  session with melee bots. The melee item was republished.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -897,3 +915,4 @@ with only the head looking ahead: facing the camera, the character still looked 
 25. **M25** (done): state machines authored in Godot: a character's `AnimationTree` (state machines, Blend2 layers, 1D blend spaces, Godot's transitions with conditions and expressions) is baked to `graph.cfg` and run by the simulation, travelling in the schema; markers emit mod events (the melee swing strikes on one); the mannequin's tree with a flaming swing; `cb_bot --melee`.
 26. **M26** (done): strafing with real clips: 2D blend spaces (Godot's triangles), `move_forward` / `move_right`, `turn_legs` per character; `ual_mannequin`, a local-only character built from the paid Source pack with eight-way jogs (the pack and its bakes are git-ignored), preferred by the server where it exists.
 27. **M27** (done): `face_forward`: the chest (and head) face where the body faces while strafe clips turn the hips; on for `ual_mannequin`.
+28. **M28** (done): the bat's fire is the melee mod's look: `melee.swinging` on the board during a swing, `bat_fire.tscn` held like the bat while it holds; the characters' hand fire is gone.
