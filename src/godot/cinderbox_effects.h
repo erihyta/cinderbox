@@ -329,11 +329,40 @@ private:
 	godot::String m_treeParameter;
 };
 
+// How a kind of held item looks: the scene drawn in its holder's socket ("melee.bat" ->
+// res://prefabs/bat.tscn). The scene is the item's frame (the socket's): the grip at the origin,
+// pointing along -Z. It may carry an AnimationPlayer (events sent to the item play its animation of
+// the same name, and the character's animations can play its animations) and an AnimationTree
+// (the item's board fields are its advance conditions, "parameters/conditions/<field>").
+class CbItemLook : public godot::Resource
+{
+	GDCLASS( CbItemLook, godot::Resource )
+
+public:
+	CB_PROPERTY( godot::String, kind, m_kind )
+	CB_PROPERTY( godot::String, scene, m_scene )
+
+protected:
+	static void _bind_methods();
+
+private:
+	godot::String m_kind;
+	godot::String m_scene;
+};
+
 class CbEffectTable : public godot::Resource
 {
 	GDCLASS( CbEffectTable, godot::Resource )
 
 public:
+	void set_items( const godot::TypedArray<CbItemLook>& items )
+	{
+		m_items = items;
+	}
+	godot::TypedArray<CbItemLook> get_items() const
+	{
+		return m_items;
+	}
 	void set_effects( const godot::TypedArray<CbEffect>& effects )
 	{
 		m_effects = effects;
@@ -357,6 +386,7 @@ protected:
 private:
 	godot::TypedArray<CbEffect> m_effects;
 	godot::TypedArray<CbStateBinding> m_states;
+	godot::TypedArray<CbItemLook> m_items;
 };
 
 } // namespace cb::gd

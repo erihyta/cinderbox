@@ -29,6 +29,37 @@
 namespace cb::gd
 {
 
+// A place on the character where a held item goes (a mod's sword, a torch): put it under a
+// BoneAttachment3D, placed in that bone's frame. Its node name is the socket's ("RightHand", "Back").
+// An item held there becomes its child "Item", so the character's own animations can reach it,
+// for example an Animation Playback track on .../RightHand/Item/AnimationPlayer that plays the
+// item's "slash". The socket's frame is the item's: the grip at its origin, the item pointing
+// along -Z, +Y up. Children it has in the editor are previews; the game removes them.
+// Every character has RightHand and LeftHand (made at the hands when the scene has none).
+class CbSocket : public godot::Node3D
+{
+	GDCLASS( CbSocket, godot::Node3D )
+
+public:
+	// The bone it rides on; empty: the parent BoneAttachment3D's.
+	void set_bone( const godot::String& v )
+	{
+		m_bone = v;
+	}
+	godot::String get_bone() const
+	{
+		return m_bone;
+	}
+
+	godot::PackedStringArray _get_configuration_warnings() const override;
+
+protected:
+	static void _bind_methods();
+
+private:
+	godot::String m_bone;
+};
+
 // A hit zone on a bone: put it under a BoneAttachment3D. Sphere, capsule and box shapes.
 class CbHitbox : public godot::CollisionShape3D
 {

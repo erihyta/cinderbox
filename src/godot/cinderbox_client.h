@@ -76,6 +76,8 @@ public:
 	godot::String get_entity_template_name( int64_t net_id ) const;
 	godot::Node3D* get_entity_node( int64_t net_id ) const;
 	void add_state_binding( const godot::Ref<CbStateBinding>& binding );
+	// How a kind of held item looks (from a mod's effect table); cleared with the state bindings.
+	void add_item_look( const godot::Ref<CbItemLook>& look );
 	void clear_state_bindings();
 
 	// Players: net ids of everyone in the world, and their names.
@@ -221,6 +223,23 @@ private:
 	std::unordered_map<std::string, godot::Ref<godot::PackedScene>> m_prefabs;
 
 	std::vector<godot::Ref<CbStateBinding>> m_states;
+
+	// Held items: their looks by kind, and each character's sockets (placed from the pose every
+	// frame; items are their children).
+	std::map<std::string, godot::String> m_itemLooks;
+	struct SocketPlace
+	{
+		godot::ObjectID node;
+		godot::String name;
+		godot::String bone;
+		godot::Transform3D local; // in the bone's frame, or in the items' hand frame
+		bool itemFrame = false;	  // a built-in hand: `local` is in AnimSet::AttachFrame's frame
+	};
+	std::map<uint64_t, std::vector<SocketPlace>> m_sockets;
+	void CollectSockets( uint64_t visual, godot::Node3D* node );
+	void PlaceSockets( uint64_t visual, godot::Node3D* node );
+	godot::Node3D* SocketNode( uint32_t holderNetId, uint8_t socket ) const;
+	void UpdateItem( const present::Visual& v, godot::Node3D* node );
 	// Per visual: the attachment node of each state binding that holds (0 when none).
 	std::unordered_map<uint64_t, std::vector<godot::ObjectID>> m_attachments;
 	std::vector<bool> m_active; // scratch: which state bindings hold for the visual being posed

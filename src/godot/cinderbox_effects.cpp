@@ -135,8 +135,20 @@ void CbStateBinding::_bind_methods()
 	CB_BIND( CbStateBinding, tree_parameter, Variant::STRING, "tree_parameter" );
 }
 
+void CbItemLook::_bind_methods()
+{
+	CB_BIND( CbItemLook, kind, Variant::STRING, "kind" );
+	CB_BIND( CbItemLook, scene, Variant::STRING, "scene" );
+}
+
 void CbEffectTable::_bind_methods()
 {
+	ClassDB::bind_method( D_METHOD( "set_items", "items" ), &CbEffectTable::set_items );
+	ClassDB::bind_method( D_METHOD( "get_items" ), &CbEffectTable::get_items );
+	ADD_PROPERTY( PropertyInfo( Variant::ARRAY, "items", PROPERTY_HINT_ARRAY_TYPE,
+								String::num_int64( Variant::OBJECT ) + "/" + String::num_int64( PROPERTY_HINT_RESOURCE_TYPE ) +
+									":CbItemLook" ),
+				  "set_items", "get_items" );
 	ClassDB::bind_method( D_METHOD( "set_states", "states" ), &CbEffectTable::set_states );
 	ClassDB::bind_method( D_METHOD( "get_states" ), &CbEffectTable::get_states );
 	ADD_PROPERTY( PropertyInfo( Variant::ARRAY, "states", PROPERTY_HINT_ARRAY_TYPE,
