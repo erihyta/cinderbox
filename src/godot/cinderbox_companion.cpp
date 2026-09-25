@@ -25,6 +25,7 @@ void CbCompanionPlayer::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "play_at", "channel", "clip", "time", "loops" ), &CbCompanionPlayer::play_at );
 	ClassDB::bind_method( D_METHOD( "end_frame" ), &CbCompanionPlayer::end_frame );
 	ClassDB::bind_method( D_METHOD( "get_channel_clip", "channel" ), &CbCompanionPlayer::get_channel_clip );
+	ClassDB::bind_method( D_METHOD( "clear_caches" ), &CbCompanionPlayer::clear_caches );
 }
 
 void CbCompanionPlayer::setup( const Ref<AnimationLibrary>& library, Node* root )
@@ -183,6 +184,17 @@ void CbCompanionPlayer::end_frame()
 			}
 		}
 		m_resetThisFrame = false;
+	}
+}
+
+void CbCompanionPlayer::clear_caches()
+{
+	for ( Channel& c : m_channels )
+	{
+		if ( c.player != nullptr )
+		{
+			c.player->clear_caches();
+		}
 	}
 }
 
