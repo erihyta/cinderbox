@@ -230,6 +230,7 @@ void CbCharacter::_bind_methods()
 	CB_PROP( Variant::FLOAT, sample_rate, PROPERTY_HINT_RANGE, "10,120,1,suffix:Hz" )
 	CB_PROP( Variant::BOOL, lock_root_xz, PROPERTY_HINT_NONE, "" )
 	CB_PROP( Variant::BOOL, turn_legs, PROPERTY_HINT_NONE, "" )
+	CB_PROP( Variant::BOOL, face_forward, PROPERTY_HINT_NONE, "" )
 	ADD_GROUP( "Layers", "" );
 	CB_PROP( Variant::DICTIONARY, stance_clips, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
 	CB_PROP( Variant::DICTIONARY, masks, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
@@ -821,6 +822,7 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	cfg += "skeleton = skeleton.ozz\nscale = 1\n";
 	cfg += std::string( "lock_root_xz = " ) + ( m_lockRootXZ ? "true" : "false" ) + "\n";
 	cfg += std::string( "turn_legs = " ) + ( m_turnLegs ? "true" : "false" ) + "\n";
+	cfg += std::string( "face_forward = " ) + ( m_faceForward ? "true" : "false" ) + "\n";
 	cfg += "aim = " + Std( m_aimChain.strip_edges() ) + "\n";
 	cfg += "aim_tip = " + Std( m_aimTip.strip_edges() ) + "\n";
 	{
