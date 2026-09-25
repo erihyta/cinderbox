@@ -313,6 +313,7 @@ private:
 	std::vector<std::pair<uint32_t, uint32_t>> m_shapeLookup;
 	std::vector<ImpactRecord> m_impactScratch;
 	std::vector<int> m_markerScratch;
+	std::vector<std::pair<uint32_t, uint16_t>> m_heldScratch; // holder NetId, item kind
 
 	std::shared_ptr<const AnimGraph> m_animGraph;
 	void RecordModEvent( const ModEventRecord& record );

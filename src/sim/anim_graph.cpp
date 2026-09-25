@@ -366,6 +366,13 @@ private:
 			step.index = uint8_t( stance + 1 );
 			return;
 		}
+		int kind = m_schema.FindItemKind( name );
+		if ( kind >= 0 && kind < 256 )
+		{
+			step.kind = AnimExpr::VarKind::HeldKind;
+			step.index = uint8_t( kind );
+			return;
+		}
 		step.kind = AnimExpr::VarKind::Zero;
 		if ( m_warnings.find( "'" + name + "'" ) == std::string::npos )
 		{
@@ -412,7 +419,7 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 				}
 				if ( e.type == step.index && e.netIdA == in.netId )
 				{
-					return 1.0f;
+					return e.value != 0 ? float( e.value ) : 1.0f;
 				}
 			}
 			return 0.0f;
@@ -433,6 +440,15 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 			}
 			return 0.0f;
 		}
+		case AnimExpr::VarKind::HeldKind:
+			for ( uint32_t i = 0; in.heldKinds != nullptr && i < in.heldCount; ++i )
+			{
+				if ( in.heldKinds[i] == step.index )
+				{
+					return 1.0f;
+				}
+			}
+			return 0.0f;
 		case AnimExpr::VarKind::Zero:
 			return 0.0f;
 	}

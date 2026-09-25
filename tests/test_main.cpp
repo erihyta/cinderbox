@@ -1686,6 +1686,83 @@ void TestHeldItems()
 	std::printf( "    items: %u, then %u replacing it; the other player's %u went with them\n", item, second, theirs );
 }
 
+// One "attack" from the server, resolved by the character's state machine: by what the player holds
+// (an item kind is a condition) and by the event's value (a heavy attack).
+void TestAttackResolve()
+{
+	const char* text = "cinderbox_graph\t1\n"
+					   "clip\tidle\t2\t1\n"
+					   "clip\tpunch\t0.5\t0\n"
+					   "clip\tswing\t0.6\t0\n"
+					   "clip\theavy\t0.8\t0\n"
+					   "layer\tbase\n"
+					   "state\tIdle\tclip\tidle\t0\n"
+					   "state\tPunch\tclip\tpunch\t0\n"
+					   "state\tBatSwing\tclip\tswing\t0\n"
+					   "state\tHeavy\tclip\theavy\t0\n"
+					   "start\tIdle\n"
+					   "transition\tIdle\tHeavy\t0\t0\timmediate\t1\tattack == 2\n"
+					   "transition\tIdle\tBatSwing\t1\t0\timmediate\t1\tattack and test.bat\n"
+					   "transition\tIdle\tPunch\t2\t0\timmediate\t1\tattack\n"
+					   "transition\tPunch\tIdle\t1\t0\tat_end\t1\t\n"
+					   "transition\tBatSwing\tIdle\t1\t0\tat_end\t1\t\n"
+					   "transition\tHeavy\tIdle\t1\t0\tat_end\t1\t\n";
+	ModSchema schema;
+	schema.events = { "attack" };
+	schema.itemKinds = { "test.bat" };
+	std::string error, warnings;
+	auto graph = CompileAnimGraph( text, schema, error, warnings );
+	CHECK( graph != nullptr && warnings.empty() );
+	if ( graph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto attack = [&]( int32_t value ) {
+		SimCommand c;
+		c.type = CommandType::Event;
+		c.target = SlotTarget( 0 );
+		c.index = 0;
+		c.value = value;
+		f.commands.push_back( c );
+		step( 1 );
+		const auto& states = graph->layers[0].states;
+		std::string now = states[sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>().graph[0].state].name;
+		step( 60 ); // the attack plays out
+		return now;
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+
+	std::string bare = attack( 0 );
+	SimCommand give;
+	give.type = CommandType::SpawnItem;
+	give.target = SlotTarget( 0 );
+	give.index = 0; // test.bat
+	give.mode = uint8_t( kSocketRightHand );
+	f.commands.push_back( give );
+	step( 1 );
+	std::string armed = attack( 0 );
+	std::string heavy = attack( 2 );
+	std::printf( "    \"attack\": empty hands -> %s, holding test.bat -> %s, value 2 -> %s\n", bare.c_str(), armed.c_str(), heavy.c_str() );
+	CHECK( bare == "Punch" );
+	CHECK( armed == "BatSwing" );
+	CHECK( heavy == "Heavy" );
+}
+
 void TestAnimBlend2D()
 {
 	const char* text = "cinderbox_graph\t1\n"
@@ -2671,6 +2748,7 @@ int main( int argc, char** argv )
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },
 		{ "held_items", TestHeldItems },
+		{ "attack_resolve", TestAttackResolve },
 		{ "anim_blend2d", TestAnimBlend2D },
 		{ "pose_tools", TestPoseTools },
 		{ "fields", TestFields },

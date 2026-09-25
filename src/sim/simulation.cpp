@@ -615,6 +615,19 @@ void Simulation::RecordModEvent( const ModEventRecord& record )
 
 void Simulation::MoveCharacters( const InputFrame& frame )
 {
+	// What everyone holds, for state machines that ask ("attack and melee.bat").
+	m_heldScratch.clear();
+	if ( m_animGraph )
+	{
+		for ( const EntityRef& r : m_entities )
+		{
+			flecs::entity e( m_world, r.entity );
+			if ( const HeldItem* item = e.try_get<HeldItem>() )
+			{
+				m_heldScratch.push_back( { item->holder, item->kind } );
+			}
+		}
+	}
 	// Slot order == deterministic order, and independent of entity creation history.
 	for ( int slot = 0; slot < kMaxPlayers; ++slot )
 	{
@@ -669,6 +682,17 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			graphIn.eventCount = m_globals.modEventCount;
 			graphIn.tick = m_globals.tick;
 			graphIn.netId = netId;
+			uint16_t held[16];
+			uint32_t heldCount = 0;
+			for ( const auto& [holder, kind] : m_heldScratch )
+			{
+				if ( holder == netId && heldCount < 16 )
+				{
+					held[heldCount++] = kind;
+				}
+			}
+			graphIn.heldKinds = held;
+			graphIn.heldCount = heldCount;
 			m_markerScratch.clear();
 			UpdateAnimGraph( anim, *m_animGraph, graphIn, m_config.TimeStep(), m_markerScratch );
 			for ( int event : m_markerScratch )
