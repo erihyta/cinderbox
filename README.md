@@ -37,6 +37,8 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M28: the bat burns while it swings, as the melee mod's own look (not the character's) | done |
 | M29: held items are entities with their own state, drawn in sockets; a character's animations play the held item's animations | done |
 | M30: one event resolved by what the player holds (item kinds and event values in conditions; events reach held items); no game content left in the engine | done |
+| M31: a bat taken out again still slashes (item swaps refresh the animation track caches) | done |
+| M32: animation packs: mods ship AnimationTree layers and swap a player's own for them (a crouch walk), retargeted to any humanoid-profile character | done |
 
 ## Building
 
@@ -690,6 +692,31 @@ godot --headless --path godot --script res://addons/cinderbox_maps/check_compani
 
 Put the companion's scene nodes (particles, lights, an `AudioStreamPlayer3D`) in the character
 scene, and list `companion.tres` and the sounds in the item's export preset.
+
+### Animation packs
+
+A mod can ship **layers** of an AnimationTree and swap a player's own layer of the same name for them:
+a crouch walk for `Base`, a swim, a limp. The character keeps its other layers (the pistol still aims
+while crouched).
+
+| Step | Where |
+|---|---|
+| author | a `CbAnimPack` scene in the mod's client project: a model on a humanoid-profile skeleton, its AnimationPlayer, an AnimationTree whose state machines are named like the characters' layers; **Bake** writes `anim/<pack>/` |
+| declare | `declare.AnimPack( "sneak.crouch" )` in the server mod |
+| swap | `ctx.SwapLayer( SlotTarget( slot ), pack, "Base" )`, back with `ctx.RestoreLayer( ..., "Base" )` |
+| fit | the game rebuilds the pack's clips for each character's skeleton by profile bone names, once (as they are when the skeleton is the same) |
+
+The swap is simulation state: the server's hit tests and every client pose the swapped layer, and a
+rollback replays it. The server reads the pack from the mod's workshop item; its graph travels in the
+schema; each player's pack clips come from the item they subscribed to.
+
+Retargeting assumes characters imported the Godot way: the humanoid bone map, the rest fixer's
+**Overwrite Axis**, and **Fix Silhouette** when rest shapes differ (T-pose vs A-pose), so a joint's
+turn from rest means the same on every skeleton. `sneak` is the example: hold C to crouch.
+
+```sh
+godot --headless --path godot --script res://addons/cinderbox_maps/make_sneak_pack.gd -- --out=<abs>/server_mods/sneak/client/anim/sneak.crouch
+```
 
 ### Held items and sockets
 
