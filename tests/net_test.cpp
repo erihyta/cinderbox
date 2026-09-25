@@ -877,11 +877,13 @@ void TestMelee()
 	Simulation& server = h.server.Sim();
 	bool sawReady = false;
 	bool sawSwing = false;
-	// melee.swinging (what the bat's fire keys on): on during a swing, off once it is over.
-	const BoardField* swinging = schema.FindField( "melee.swinging" );
-	CHECK( swinging != nullptr && swinging->type == BoardType::Bool );
-	bool swingingDuringSwing = false;
-	bool swingingAfterSwing = false;
+	// The bat is an item in the attacker's right hand, with its own state: hot after a hit.
+	int batKind = schema.FindItemKind( "melee.bat" );
+	int hand = schema.FindSocket( "RightHand" );
+	const BoardField* hot = schema.FindField( "melee.hot" );
+	CHECK( batKind >= 0 && hand == int( kSocketRightHand ) && hot != nullptr );
+	bool heldBat = false;
+	bool batWasHot = false;
 	int killedEvent = schema.FindEvent( "combat.killed" );
 	uint32_t kills = 0;
 	std::map<uint32_t, bool> counted;
@@ -891,9 +893,12 @@ void TestMelee()
 		{
 			sawReady |= a->stances[full] == ready + 1;
 			sawSwing |= a->stances[full] == swing + 1;
-			int32_t on = server.BoardValue( attacker, swinging->slot );
-			swingingDuringSwing |= a->stances[full] == swing + 1 && on != 0;
-			swingingAfterSwing |= a->stances[full] == ready + 1 && on != 0;
+			if ( uint32_t bat = server.HeldItemOf( attacker, uint32_t( hand ) ) )
+			{
+				flecs::entity e = server.FindEntity( bat );
+				heldBat |= e.is_valid() && e.get<HeldItem>().kind == uint16_t( batKind );
+				batWasHot |= server.BoardValue( bat, hot->slot ) != 0;
+			}
 		}
 		const SimGlobals& g = server.Globals();
 		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
@@ -910,7 +915,9 @@ void TestMelee()
 	std::printf( "    ready stance %d, swing stance %d, kills by the bat %u\n", int( sawReady ), int( sawSwing ), kills );
 	CHECK( sawReady );
 	CHECK( sawSwing );
-	CHECK( swingingDuringSwing && swingingAfterSwing == false );
+	std::printf( "    the bat: held %d, hot after a hit %d\n", int( heldBat ), int( batWasHot ) );
+	CHECK( heldBat );
+	CHECK( batWasHot );
 	CHECK( kills >= 1 );
 	uint32_t attackerId = server.PlayerNetId( h.bots[0].client->Slot() );
 	CHECK( server.BoardValue( attackerId, schema.FindField( "combat.kills" )->slot ) >= 1 );

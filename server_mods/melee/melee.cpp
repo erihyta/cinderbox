@@ -24,6 +24,7 @@ constexpr int32_t kDamage = 40;
 constexpr float kSwingSeconds = 0.45f;	// the swing stance, then back to the ready stance
 constexpr float kStrikeSeconds = 0.2f;	// when in the swing the hit is tested, unless the animation says
 constexpr float kCooldownSeconds = 0.6f;
+constexpr float kHotSeconds = 2.0f; // how long the bat glows after it hits someone
 constexpr float kReach = 1.8f;			// metres from the chest
 constexpr float kFan = 0.45f;			// radians either side of straight ahead
 constexpr float kPush = 7.0f;			// m/s given to whatever it knocks over
@@ -40,6 +41,7 @@ struct Swinger
 	bool struck = false;
 	uint32_t swingStart = 0;
 	uint32_t nextSwing = 0;
+	uint32_t hotUntil = 0; // 0: the bat is cold
 };
 
 class MeleeMod final : public ServerMod
@@ -54,8 +56,11 @@ public:
 	{
 		m_fire = declare.Action( "fire", "MouseLeft" ); // shared with the pistol: whichever is out
 		m_loadout = declare.Field( "loadout.slot", BoardType::Int );
-		// On for the length of a swing: what the bat's look keys its fire on.
-		m_swinging = declare.Field( "melee.swinging", BoardType::Bool );
+		// The bat is an item of its own in the right hand: the swing animation plays its "slash",
+		// and it has its own state (hot for a while after it hits someone).
+		m_bat = declare.ItemKind( "melee.bat" );
+		m_hand = declare.Socket( "RightHand" );
+		m_hot = declare.Field( "melee.hot", BoardType::Bool );
 		m_full = declare.Layer( "full" );
 		m_ready = declare.Stance( "melee" );
 		m_swingStance = declare.Stance( "melee_swing" );
@@ -94,12 +99,18 @@ public:
 			if ( holding != s.out )
 			{
 				s.out = holding;
-				if ( s.swinging )
-				{
-					ctx.Set( target, m_swinging, 0 );
-				}
 				s.swinging = false;
+				s.hotUntil = 0;
 				ctx.SetStance( target, m_full, holding ? m_ready : StanceHandle{} );
+				// Taking the bat out puts one in the hand; putting it away (or dying) takes it.
+				if ( holding )
+				{
+					ctx.SpawnItem( target, m_bat, m_hand );
+				}
+				else if ( ctx.HeldItem( slot, m_hand ) != 0 )
+				{
+					ctx.Destroy( ItemTarget( slot, m_hand ) );
+				}
 				if ( holding )
 				{
 					ctx.FaceCamera( target, true );
@@ -108,6 +119,11 @@ public:
 			if ( holding == false )
 			{
 				continue;
+			}
+			if ( s.hotUntil != 0 && tick >= s.hotUntil )
+			{
+				s.hotUntil = 0;
+				ctx.Set( ItemTarget( slot, m_hand ), m_hot, 0 );
 			}
 
 			if ( s.swinging )
@@ -121,13 +137,17 @@ public:
 				if ( s.struck == false && strike )
 				{
 					s.struck = true;
-					Strike( ctx, slot, netId );
+					if ( Strike( ctx, slot, netId ) )
+					{
+						// A hit heats the bat: one field on the bat itself.
+						ctx.Set( ItemTarget( slot, m_hand ), m_hot, 1 );
+						s.hotUntil = tick + Ticks( ctx, kHotSeconds );
+					}
 				}
 				if ( elapsed >= Ticks( ctx, kSwingSeconds ) )
 				{
 					s.swinging = false;
 					ctx.SetStance( target, m_full, m_ready );
-					ctx.Set( target, m_swinging, 0 );
 				}
 				continue;
 			}
@@ -139,13 +159,13 @@ public:
 				s.nextSwing = tick + Ticks( ctx, kCooldownSeconds );
 				ctx.SetStance( target, m_full, m_swingStance );
 				ctx.Emit( m_swing, target );
-				ctx.Set( target, m_swinging, 1 );
 			}
 		}
 	}
 
 private:
-	void Strike( Context& ctx, PlayerSlot slot, uint32_t netId )
+	// True when it hit a player.
+	bool Strike( Context& ctx, PlayerSlot slot, uint32_t netId )
 	{
 		uint32_t target = SlotTarget( slot );
 		// From the chest, level, fanned out across where the player looks.
@@ -166,21 +186,24 @@ private:
 				b3Vec3 push = b3Add( b3MulSV( kPush, dir ), b3Vec3{ 0.0f, 2.0f, 0.0f } );
 				ctx.Emit( m_hit, target, hit.netId, kDamage, hit.point, hit.normal );
 				ctx.Emit( m_damage, target, hit.netId, kDamage, hit.point, push );
-				return; // one player per swing
+				return true; // one player per swing
 			}
 			if ( ctx.IsDynamic( hit.netId ) )
 			{
 				ctx.Emit( m_hit, target, hit.netId, 0, hit.point, hit.normal );
 				ctx.Push( hit.netId, hit.point, b3MulSV( kPush, dir ), ImpulseVelocity );
-				return;
+				return false;
 			}
 		}
+		return false;
 	}
 
 	std::array<Swinger, kMaxPlayers> m_swingers{};
 	ActionHandle m_fire;
 	FieldHandle m_loadout;
-	FieldHandle m_swinging;
+	ItemKindHandle m_bat;
+	SocketHandle m_hand;
+	FieldHandle m_hot;
 	LayerHandle m_full;
 	StanceHandle m_ready;
 	StanceHandle m_swingStance;
