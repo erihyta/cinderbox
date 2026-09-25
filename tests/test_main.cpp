@@ -2020,10 +2020,7 @@ void TestMannequinCharacter()
 	}
 	std::printf( "    %s; warnings: %s\n", set->Description().c_str(), warnings.empty() ? "none" : warnings.c_str() );
 	CHECK( warnings.empty() );
-	for ( int c = 0; c < anim::ClipCount; ++c )
-	{
-		CHECK( set->Get( anim::Clip( c ) ) != nullptr );
-	}
+	CHECK( set->GraphText().empty() == false ); // it plays its own state machine
 	std::string text;
 	CHECK( anim::DiskReader( dir )( "hitboxes.cfg", text ) );
 	anim::HitboxSet hitboxes;
@@ -2032,13 +2029,68 @@ void TestMannequinCharacter()
 	anim::BindHitboxes( hitboxes, *set, warnings );
 	CHECK( hitboxes.boxes.size() == count && count >= 10 );
 
+	// The shipped mods' names, as a server would send them.
+	ModSchema schema;
+	schema.layers = { "full", "upper" };
+	schema.stances = { "melee", "melee_swing", "pistol" };
+	schema.events = { "pistol.fired", "melee.strike" };
+	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
+	CHECK( graph != nullptr );
+	if ( graph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	CHECK( warnings.empty() );
+	CHECK( graph->layers.size() == 2 && graph->EmitsEvent( 1 ) );
 	anim::PoseEvaluator pose( *set );
-	pose.Evaluate( AnimState{} );
+	pose.SetGraph( graph, warnings );
+	CHECK( warnings.empty() );
+	auto stateOf = [&]( int layer, const char* name ) {
+		const auto& states = graph->layers[size_t( layer )].states;
+		for ( size_t i = 0; i < states.size(); ++i )
+		{
+			if ( states[i].name == name )
+			{
+				return int( i );
+			}
+		}
+		return -1;
+	};
+
+	// The simulation runs the state machine; the pose follows it.
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto state = [&]() { return sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>(); };
+	auto command = [&]( CommandType type, uint8_t index, int32_t value, uint8_t mode ) {
+		SimCommand c;
+		c.type = type;
+		c.target = SlotTarget( 0 );
+		c.index = index;
+		c.value = value;
+		c.mode = mode;
+		f.commands.push_back( c );
+	};
 	auto at = [&]( const char* joint ) {
 		float v[4];
 		ozz::math::StorePtrU( pose.Models()[size_t( anim::FindJoint( *set, joint ) )].cols[3], v );
 		return b3Vec3{ v[0], v[1], v[2] };
 	};
+
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	CHECK( state().graph[0].state == stateOf( 0, "Locomotion" ) );
+	pose.Evaluate( state() );
 	b3Vec3 head = at( "Head" );
 	b3Vec3 foot = at( "LeftFoot" );
 	std::printf( "    idle: head (%.2f %.2f %.2f), left foot (%.2f %.2f %.2f)\n", head.x, head.y, head.z, foot.x, foot.y, foot.z );
@@ -2059,25 +2111,66 @@ void TestMannequinCharacter()
 	CHECK( zoneAt( 1.2f ) == "torso" );
 	CHECK( zoneAt( 2.1f ).empty() );
 
-	std::string stanceWarnings;
-	auto stances = anim::BuildStanceTable( *set, { "full", "upper" }, { "melee", "melee_swing", "pistol" }, stanceWarnings );
-	CHECK( stanceWarnings.empty() );
+	// Walking: the blend space on forward_speed; a jump goes through JumpStart and lands.
+	f.inputs[0].moveForward = 127;
+	step( 60 );
+	std::printf( "    walking: blend %.2f\n", state().graph[0].blend );
+	CHECK( state().graph[0].state == stateOf( 0, "Locomotion" ) && state().graph[0].blend > 2.5f );
+	f.inputs[0].buttons = BtnJump;
+	step( 1 );
+	f.inputs[0].buttons = 0;
+	CHECK( state().graph[0].state == stateOf( 0, "JumpStart" ) );
+	f.inputs[0] = {};
+	step( 120 );
+	CHECK( state().graph[0].state == stateOf( 0, "Locomotion" ) );
 
-	// Holding the pistol and aiming straight ahead: the hand is out in front of the shoulder.
-	AnimState aiming;
-	aiming.aiming = 1;
-	aiming.stances[1] = 3; // pistol on the upper layer
-	aiming.layerTime[1] = 1.0f;
-	pose.SetStances( stances );
-	pose.Evaluate( aiming );
+	// The pistol: the upper layer draws it, aims (the aim chain), and plays a shot on pistol.fired.
+	command( CommandType::Stance, 1, 3, 0 ); // upper layer, pistol
+	command( CommandType::Aim, 0, 0, 1 );
+	step( 30 );
+	CHECK( state().graph[1].state == stateOf( 1, "Pistol" ) && state().graph[1].weight == 1.0f );
+	pose.Evaluate( state() );
 	b3Vec3 shoulder = at( "RightUpperArm" );
 	b3Vec3 hand = at( "RightHand" );
 	std::printf( "    aiming with the pistol: shoulder (%.2f %.2f %.2f) hand (%.2f %.2f %.2f)\n", shoulder.x, shoulder.y, shoulder.z,
 				 hand.x, hand.y, hand.z );
 	CHECK( hand.z - shoulder.z > 0.35f );
-	CHECK( std::fabs( hand.y - shoulder.y ) < 0.1f );	CheckHeldItem( *set, pose );
+	CHECK( std::fabs( hand.y - shoulder.y ) < 0.1f );
+	CheckHeldItem( *set, pose );
+	command( CommandType::Event, 0, 0, 0 ); // pistol.fired, by this player
+	step( 1 );
+	CHECK( state().graph[1].state == stateOf( 1, "Shoot" ) );
+	step( 60 );
+	CHECK( state().graph[1].state == stateOf( 1, "Pistol" ) );
 
-	// The placeholder rig, for which the bindings were made, holds it the same way.
+	// The bat: the swing's marker emits melee.strike once, 0.4 s in.
+	command( CommandType::Stance, 1, 0, 0 );
+	command( CommandType::Aim, 0, 0, 0 );
+	command( CommandType::Stance, 0, 1, 0 ); // full layer, melee
+	step( 30 );
+	CHECK( state().graph[1].state == stateOf( 1, "Ready" ) );
+	auto strikes = [&]() {
+		int n = 0;
+		for ( uint32_t i = 0; i < std::min( sim.Globals().modEventCount, kModEventHistory ); ++i )
+		{
+			n += sim.Globals().modEvents[i].type == 1 ? 1 : 0;
+		}
+		return n;
+	};
+	command( CommandType::Stance, 0, 2, 0 ); // melee_swing
+	step( 1 );
+	CHECK( state().graph[1].state == stateOf( 1, "Swing" ) );
+	step( 20 );
+	CHECK( strikes() == 0 );
+	step( 10 );
+	CHECK( strikes() == 1 );
+
+	// The placeholder rig, for which the bindings were made, holds an item the same way.
+	AnimState aiming;
+	aiming.aiming = 1;
+	aiming.stances[1] = 3; // pistol on the upper layer
+	aiming.layerTime[1] = 1.0f;
+	std::string stanceWarnings;
 	auto procedural = anim::AnimSet::CreateProcedural();
 	anim::PoseEvaluator placeholder( *procedural );
 	placeholder.SetStances( anim::BuildStanceTable( *procedural, { "full", "upper" }, { "melee", "melee_swing", "pistol" }, stanceWarnings ) );
