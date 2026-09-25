@@ -774,6 +774,10 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 			warnings += "rig is " + std::to_string( int( height ) ) + " units tall, assuming centimetres (scale 0.01); ";
 		}
 	}
+	if ( cfg.count( "face_forward" ) )
+	{
+		set->m_faceForward = cfg["face_forward"] == "true" || cfg["face_forward"] == "1";
+	}
 	if ( cfg.count( "turn_legs" ) )
 	{
 		set->m_turnLegs = cfg["turn_legs"] != "false" && cfg["turn_legs"] != "0";
@@ -870,6 +874,7 @@ void AnimSet::SetAim( const std::string& chain, const std::string& tip, std::str
 	m_aimTip = FindJoint( *this, tip.c_str() );
 	m_hipsJoint = FindJoint( *this, "Hips" );
 	m_spineJoint = FindJoint( *this, "Spine" );
+	m_neckJoint = FindJoint( *this, "Neck" );
 	if ( m_aimTip < 0 )
 	{
 		if ( m_aimJoints.empty() == false )

@@ -287,6 +287,7 @@ void PoseEvaluator::SetGraph( std::shared_ptr<const AnimGraph> graph, std::strin
 	m_graph = std::move( graph );
 	m_graphClips.clear();
 	m_graphMasks.clear();
+	m_graphNeckMask.clear();
 	if ( !m_graph )
 	{
 		return;
@@ -335,6 +336,16 @@ void PoseEvaluator::SetGraph( std::shared_ptr<const AnimGraph> graph, std::strin
 			}
 		}
 		m_graphMasks.push_back( std::move( packed ) );
+		float neck = 1.0f;
+		if ( layer.mask.empty() == false )
+		{
+			neck = 0.0f;
+			for ( const std::string& bone : layer.mask )
+			{
+				neck = bone == "Neck" ? 1.0f : neck;
+			}
+		}
+		m_graphNeckMask.push_back( neck );
 	}
 	// Sample buffers: every point of a state and of the one fading out.
 	size_t most = 1;
@@ -357,6 +368,7 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 	const auto& skeleton = m_set.Skeleton();
 	const AnimGraph& graph = *m_graph;
 	std::vector<ozz::animation::BlendingJob::Layer> layers;
+	float neckKept = 1.0f;
 	for ( size_t l = 0; l < graph.layers.size() && l < size_t( kMaxAnimLayers ); ++l )
 	{
 		const AnimGraphLayer& layer = graph.layers[l];
@@ -420,8 +432,10 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 		{
 			const auto& mask = m_graphMasks[l];
 			BlendOver( m_layerPose, mask.empty() ? nullptr : &mask, L.weight );
+			neckKept *= 1.0f - std::min( L.weight, 1.0f ) * m_graphNeckMask[l];
 		}
 	}
+	m_neckCover = 1.0f - neckKept;
 }
 
 void PoseEvaluator::BlendOver( const ozz::vector<ozz::math::SoaTransform>& pose, const ozz::vector<ozz::math::SimdFloat4>* mask,
@@ -551,6 +565,7 @@ void PoseEvaluator::Evaluate( const AnimState& state )
 
 void PoseEvaluator::EvaluateBuiltIn( const AnimState& state )
 {
+	m_neckCover = 0.0f;
 	const auto& skeleton = m_set.Skeleton();
 	m_lastWeights = ComputeClipWeights( state, m_set );
 
@@ -638,6 +653,46 @@ void PoseEvaluator::Finish( const AnimState& state )
 		b3Vec3 up = { 0.0f, 1.0f, 0.0f };
 		RotateSubtree( m_set, m_models, m_set.HipsJoint(), b3MakeQuatFromAxisAngle( up, state.legYaw ) );
 		RotateSubtree( m_set, m_models, m_set.SpineJoint(), b3MakeQuatFromAxisAngle( up, -state.legYaw ) );
+	}
+
+	if ( m_set.FaceForward() && m_set.HipsJoint() >= 0 && m_set.SpineJoint() >= 0 )
+	{
+		// How far the clips turned the hips from their rest, about the vertical.
+		const ozz::math::Float4x4& hips = m_models[size_t( m_set.HipsJoint() )];
+		const ozz::math::Float4x4& rest = m_set.RestModels()[size_t( m_set.HipsJoint() )];
+		float r[3][4], h[3][4];
+		for ( int i = 0; i < 3; ++i )
+		{
+			ozz::math::StorePtrU( rest.cols[i], r[i] );
+			ozz::math::StorePtrU( hips.cols[i], h[i] );
+		}
+		auto length = []( const float* v ) { return std::sqrt( v[0] * v[0] + v[1] * v[1] + v[2] * v[2] ); };
+		// The rest's forward (+Z) in the hips' own frame, then where the posed hips point it.
+		float local[3];
+		for ( int i = 0; i < 3; ++i )
+		{
+			float n = length( r[i] );
+			local[i] = n > 0.0f ? r[i][2] / n : 0.0f;
+		}
+		float f[3] = { 0.0f, 0.0f, 0.0f };
+		for ( int i = 0; i < 3; ++i )
+		{
+			float n = length( h[i] );
+			for ( int k = 0; k < 3; ++k )
+			{
+				f[k] += n > 0.0f ? h[i][k] / n * local[i] : 0.0f;
+			}
+		}
+		float turn = detmath::Atan2( f[0], f[2] );
+		b3Vec3 up = { 0.0f, 1.0f, 0.0f };
+		RotateSubtree( m_set, m_models, m_set.SpineJoint(), b3MakeQuatFromAxisAngle( up, -turn ) );
+		// The head: the clips that turned the hips already looked forward with it; an upper layer's
+		// clip did not.
+		float keep = 1.0f - m_neckCover;
+		if ( m_set.NeckJoint() >= 0 && keep > 0.0f )
+		{
+			RotateSubtree( m_set, m_models, m_set.NeckJoint(), b3MakeQuatFromAxisAngle( up, turn * keep ) );
+		}
 	}
 
 	if ( state.aiming != 0 && m_set.AimJoints().empty() == false )

@@ -101,6 +101,17 @@ public:
 	{
 		return m_turnLegs;
 	}
+	// Turn the spine back by however much the clips turned the hips, so the chest faces where the
+	// body faces while the legs run where they run (strafe clips turn the hips toward the travel),
+	// and give the head back that turn where the base layer set it. anim.cfg "face_forward = true".
+	bool FaceForward() const
+	{
+		return m_faceForward;
+	}
+	int NeckJoint() const
+	{
+		return m_neckJoint;
+	}
 	// Keep the root joint from drifting horizontally (clips exported without "In Place").
 	bool LockRootXZ() const
 	{
@@ -200,6 +211,8 @@ private:
 	float m_scale = 1.0f;
 	bool m_lockRootXZ = true;
 	bool m_turnLegs = true;
+	bool m_faceForward = false;
+	int m_neckJoint = -1;
 	std::string m_description;
 	std::map<std::string, ozz::unique_ptr<ozz::animation::Animation>> m_stanceClips;
 	std::map<std::string, std::string> m_masks;

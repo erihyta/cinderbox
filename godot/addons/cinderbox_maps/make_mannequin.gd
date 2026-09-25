@@ -112,6 +112,8 @@ func _initialize() -> void:
 	_root.character_name = PACKS[_pack]["name"]
 	# Directional clips walk sideways by themselves; without them the hips turn toward the travel.
 	_root.turn_legs = _pack != "source"
+	# Its strafe clips turn the hips and chest toward the travel; the chest should face the camera.
+	_root.face_forward = _pack == "source"
 	var model := source.instantiate(PackedScene.GEN_EDIT_STATE_INSTANCE) # as the editor does: saves only what differs
 	model.name = "Model"
 	_root.add_child(model)

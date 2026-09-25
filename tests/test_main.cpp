@@ -2309,6 +2309,60 @@ void TestUalMannequin()
 	std::printf( "    hips z axis (%.2f %.2f %.2f)\n", hips[0], hips[1], hips[2] );
 	CHECK( std::fabs( state.legYaw ) > 1.0f ); // the simulation still says the legs go sideways
 	CHECK( hips[2] > 0.7f );					 // but the hips only lean as the clip leans them
+
+	// Every direction, camera-facing: the chest and the head look where the body faces, whatever
+	// the legs do (the strafe clips turn hips and chest up to 50 degrees; face_forward undoes it).
+	CHECK( set->FaceForward() );
+	auto yawOf = [&]( const char* joint ) {
+		int j = anim::FindJoint( *set, joint );
+		float m[3][4], r[3][4];
+		for ( int i = 0; i < 3; ++i )
+		{
+			ozz::math::StorePtrU( pose.Models()[size_t( j )].cols[i], m[i] );
+			ozz::math::StorePtrU( set->RestModels()[size_t( j )].cols[i], r[i] );
+		}
+		float f[3] = { 0.0f, 0.0f, 0.0f };
+		for ( int i = 0; i < 3; ++i )
+		{
+			float nm = std::sqrt( m[i][0] * m[i][0] + m[i][1] * m[i][1] + m[i][2] * m[i][2] );
+			float nr = std::sqrt( r[i][0] * r[i][0] + r[i][1] * r[i][1] + r[i][2] * r[i][2] );
+			for ( int k = 0; k < 3; ++k )
+			{
+				f[k] += m[i][k] / nm * ( r[i][2] / nr );
+			}
+		}
+		return std::atan2( f[0], f[2] ) * 57.29578f;
+	};
+	const int8_t directions[8][2] = { { 0, 127 }, { 90, 90 }, { 127, 0 }, { 90, -90 }, { 0, -127 }, { -90, -90 }, { -127, 0 }, { -90, 90 } };
+	for ( const auto& d : directions )
+	{
+		// Settle into the direction, then average over a second: a jog twists the chest back and
+		// forth with every stride, so any one instant says little.
+		float hipsYaw = 0.0f, chest = 0.0f, head = 0.0f;
+		std::string playing;
+		for ( int i = 0; i < 120; ++i )
+		{
+			f.tick = sim.Tick();
+			f.inputs[0].moveRight = d[0];
+			f.inputs[0].moveForward = d[1];
+			sim.Step( f );
+			if ( i < 60 )
+			{
+				continue;
+			}
+			AnimState now = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
+			pose.Evaluate( now );
+			hipsYaw += yawOf( "Hips" ) / 60.0f;
+			chest += yawOf( "UpperChest" ) / 60.0f;
+			head += yawOf( "Head" ) / 60.0f;
+			auto clips = anim::ActiveGraphClips( now, *graph );
+			playing = clips.empty() ? "-" : clips[0].name;
+		}
+		std::printf( "    right %4d forward %4d: %-10s average hips %6.1f chest %6.1f head %6.1f\n", d[0], d[1], playing.c_str(), hipsYaw,
+					 chest, head );
+		CHECK( std::fabs( chest ) < 15.0f );
+		CHECK( std::fabs( head ) < 15.0f );
+	}
 }
 
 void TestAnimPipeline()

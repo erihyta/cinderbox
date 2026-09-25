@@ -780,6 +780,23 @@ blend real directional clips instead.
   movement blends idle with the sideways jog; clips play at their own rate, so moving faster or
   slower than a point's speed slides the feet a little.
 
+## Facing forward while strafing (M27)
+The paid pack's strafe jogs turn the hips 29-45 degrees toward the travel and the chest up to 50,
+with only the head looking ahead: facing the camera, the character still looked off to the side.
+
+- **face_forward** (anim.cfg, `CbCharacter`): after the layers, the pose measures how far the hips
+  turned from their rest about the vertical and turns the spine subtree back by it; the neck
+  subtree gets the turn back in proportion to how much of the neck the base layer set (the strafe
+  clips already point the head ahead; an upper layer's clip, like the pistol's, did not).
+- **Measured** (per direction, averaged over a second, since a jog twists the chest with every
+  stride): chest within 14 degrees of the facing, head within 7, hips as the clip has them.
+  It was 26-50 degrees for the chest.
+- It is part of the pose, so the server's hit tests see the same torso; nothing in the simulation
+  changed (hashes identical).
+- **Freelook is unchanged**: without a weapon out, the body turns toward where it walks (the
+  default the game chose in M21), so there is nothing to strafe; with the pistol or bat it faces
+  the camera and strafes.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -879,3 +896,4 @@ blend real directional clips instead.
 24. **M24** (done): the default character: the Universal Animation Library's mannequin retargeted onto the humanoid profile, shipped with the game and read by `cb_server` from `bin/characters/` (no item needed), and a hand frame for held items that is the same on every rig.
 25. **M25** (done): state machines authored in Godot: a character's `AnimationTree` (state machines, Blend2 layers, 1D blend spaces, Godot's transitions with conditions and expressions) is baked to `graph.cfg` and run by the simulation, travelling in the schema; markers emit mod events (the melee swing strikes on one); the mannequin's tree with a flaming swing; `cb_bot --melee`.
 26. **M26** (done): strafing with real clips: 2D blend spaces (Godot's triangles), `move_forward` / `move_right`, `turn_legs` per character; `ual_mannequin`, a local-only character built from the paid Source pack with eight-way jogs (the pack and its bakes are git-ignored), preferred by the server where it exists.
+27. **M27** (done): `face_forward`: the chest (and head) face where the body faces while strafe clips turn the hips; on for `ual_mannequin`.

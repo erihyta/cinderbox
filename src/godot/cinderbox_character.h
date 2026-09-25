@@ -193,6 +193,14 @@ public:
 	{
 		return m_graphInputs;
 	}
+	void set_face_forward( bool v )
+	{
+		m_faceForward = v;
+	}
+	bool get_face_forward() const
+	{
+		return m_faceForward;
+	}
 	void set_turn_legs( bool v )
 	{
 		m_turnLegs = v;
@@ -229,6 +237,8 @@ private:
 	// Turn the hips toward where the body walks (a forward walk going sideways); off when the
 	// character has its own directional clips (strafes).
 	bool m_turnLegs = true;
+	// The chest faces where the body faces even when the clips turn the hips (strafes).
+	bool m_faceForward = false;
 	// What the pose turns toward where the player looks while a mod has it aim: bones (profile
 	// names) with weights, in order, and the bone that ends up on the line of sight.
 	// Stance clips the mods' stances use: "pistol" (one loop) or "melee_walk" (one of the six) ->

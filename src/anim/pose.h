@@ -112,6 +112,8 @@ private:
 	std::vector<std::unique_ptr<ozz::animation::SamplingJob::Context>> m_graphContexts;
 	std::vector<ozz::vector<ozz::math::SoaTransform>> m_graphLocals;
 	ozz::vector<ozz::math::SoaTransform> m_layerPose;
+	std::vector<float> m_graphNeckMask; // per layer: how much its mask covers the neck
+	float m_neckCover = 0.0f;			// this pose: how much of the neck the upper layers set
 	std::shared_ptr<const StanceTable> m_stances;
 	ozz::animation::SamplingJob::Context m_stanceContext;
 	std::array<ozz::vector<ozz::math::SoaTransform>, ClipCount> m_stanceClipLocals;

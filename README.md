@@ -33,6 +33,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M24: a real default character: the Universal Animation Library's mannequin ships with the game; held items sit the same on every rig | done |
 | M25: state machines authored in Godot: a character's AnimationTree is baked and run by the simulation, markers become mod events | done |
 | M26: strafing with real clips: 2D blend spaces, body-frame velocity, per-character leg turning; a local-only character from the paid animation pack | done |
+| M27: the chest faces the camera while strafing (`face_forward`), though the strafe clips turn the torso | done |
 
 ## Building
 
@@ -556,7 +557,7 @@ godot --headless --path godot --script res://addons/cinderbox_maps/make_mannequi
 ```
 
 Its locomotion is a 2D blend space: idle in the middle, the eight jogs on a circle at the game's
-jog speed (3 m/s), a walk inside and the sprint ahead; `turn_legs` is off. `cb_server` picks
+jog speed (3 m/s), a walk inside and the sprint ahead; `turn_legs` is off and `face_forward` on. `cb_server` picks
 `ual_mannequin` by default where it is built, and `mannequin` everywhere else; its test
 (`ual_mannequin`) skips itself when the character is not there, as on CI.
 
@@ -708,6 +709,9 @@ Set it up on the `CbCharacter`:
   A 2D blend space takes two expressions, x then y: `"move_right, move_forward"`.
 - `turn_legs`: on (the default), the hips turn toward the direction of travel so a forward walk
   goes sideways. Turn it off for a character with its own directional clips (strafes).
+- `face_forward`: off by default. On, the spine is turned back by however much the clips turned the
+  hips, so the chest faces where the body faces (strafe clips often turn the torso toward the
+  travel); the head keeps looking ahead. The legs still run where they run.
 
 Conditions and expressions read simulation values, never scripts:
 
