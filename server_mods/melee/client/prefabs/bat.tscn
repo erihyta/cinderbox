@@ -64,6 +64,23 @@ particles_anim_loop = false
 material = SubResource("Glow")
 size = Vector2(0.1, 0.1)
 
+[sub_resource type="Animation" id="Animation_cfl35"]
+length = 0.5
+tracks/0/type = "method"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Sparks")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"values": [{
+"args": [],
+"method": &"restart"
+}]
+}
+
 [sub_resource type="Animation" id="Animation_tqqgl"]
 length = 0.5
 tracks/0/type = "value"
@@ -81,6 +98,7 @@ tracks/0/keys = {
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_gysuc"]
 _data = {
+&"melee.hit": SubResource("Animation_cfl35"),
 &"slash": SubResource("Animation_tqqgl")
 }
 
@@ -148,6 +166,35 @@ states/Hot/node = SubResource("AnimationNodeAnimation_6gwcp")
 states/Hot/position = Vector2(450, 100)
 transitions = ["Start", "Cold", SubResource("AnimationNodeStateMachineTransition_58tl8"), "Cold", "Hot", SubResource("AnimationNodeStateMachineTransition_mahjg"), "Hot", "Cold", SubResource("AnimationNodeStateMachineTransition_qb7k6")]
 
+[sub_resource type="Gradient" id="Gradient_tqqgl"]
+colors = PackedColorArray(1, 0.95, 0.6, 1, 1, 0.4, 0.05, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_gysuc"]
+gradient = SubResource("Gradient_tqqgl")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_at8pt"]
+direction = Vector3(0, 1, 0)
+spread = 180.0
+initial_velocity_min = 2.0
+initial_velocity_max = 5.0
+scale_min = 0.4
+scale_max = 0.9
+color_ramp = SubResource("GradientTexture1D_gysuc")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_lxpvx"]
+transparency = 1
+blend_mode = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+billboard_mode = 3
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_hofwm"]
+material = SubResource("StandardMaterial3D_lxpvx")
+size = Vector2(0.04, 0.04)
+
 [node name="Bat" type="Node3D" unique_id=1599722703]
 
 [node name="Handle" type="MeshInstance3D" parent="." unique_id=1253657060]
@@ -179,3 +226,13 @@ tree_root = SubResource("AnimationNodeStateMachine_1cea2")
 anim_player = NodePath("../Looks")
 parameters/conditions/!melee.hot = false
 parameters/conditions/melee.hot = false
+
+[node name="Sparks" type="GPUParticles3D" parent="." unique_id=829386494]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.7)
+emitting = false
+amount = 48
+lifetime = 0.45
+one_shot = true
+explosiveness = 0.9
+process_material = SubResource("ParticleProcessMaterial_at8pt")
+draw_pass_1 = SubResource("QuadMesh_hofwm")

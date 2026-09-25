@@ -452,15 +452,34 @@ void CinderboxClient::HandleEvents()
 					{
 						animator->on_mod_event( name );
 					}
-					// An item plays its animation named after the event, from the start.
-					flecs::entity ve( visuals, e.visual );
-					if ( ve.is_alive() && ve.get<present::Visual>().kind == present::VisualKind::Item )
-					{
-						if ( auto* player = FindInPrefab<AnimationPlayer>( node ); player != nullptr && player->has_animation( name ) )
+					// An item plays its animation named after the event, from the start; an event at a player
+					// reaches what it holds too ("attack": each item shows its own).
+					auto playOn = [&]( Node3D* target ) {
+						if ( auto* player = FindInPrefab<AnimationPlayer>( target ); player != nullptr && player->has_animation( name ) )
 						{
 							player->stop();
 							player->play( name );
 						}
+					};
+					flecs::entity ve( visuals, e.visual );
+					if ( ve.is_alive() && ve.get<present::Visual>().kind == present::VisualKind::Item )
+					{
+						playOn( node );
+					}
+					else if ( ve.is_alive() && ve.get<present::Visual>().kind == present::VisualKind::Player )
+					{
+						m_mirror->ForEach( [&]( uint64_t id, const present::Visual& held, const present::RenderPose&, const present::PlayerAnim*,
+												const present::RagdollAnim* ) {
+							auto it = m_nodes.find( id );
+							if ( held.kind != present::VisualKind::Item || held.holder != e.netId || it == m_nodes.end() )
+							{
+								return;
+							}
+							if ( auto* itemNode = Object::cast_to<Node3D>( ObjectDB::get_instance( it->second ) ) )
+							{
+								playOn( itemNode );
+							}
+						} );
 					}
 				}
 				emit_signal( "mod_event", name, int64_t( e.netId ), int64_t( e.otherNetId ), int64_t( e.value ), position,
