@@ -8,7 +8,8 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x3442434Du; // 'MCB4': 2 workshop items, 3 the character, 4 layers and stances
+constexpr uint32_t kSchemaMagic = 0x3542434Du; // 'MCB5': 2 workshop items, 3 the character, 4 layers and stances, 5 the
+												// character's state machine
 
 void PutU8( std::vector<uint8_t>& out, uint8_t v )
 {
@@ -19,6 +20,16 @@ void PutString( std::vector<uint8_t>& out, const std::string& s )
 {
 	size_t n = std::min( s.size(), kMaxSchemaName );
 	out.push_back( uint8_t( n ) );
+	out.insert( out.end(), s.begin(), s.begin() + std::ptrdiff_t( n ) );
+}
+
+void PutText( std::vector<uint8_t>& out, const std::string& s )
+{
+	uint32_t n = uint32_t( std::min( s.size(), kMaxSchemaText ) );
+	for ( int i = 0; i < 4; ++i )
+	{
+		out.push_back( uint8_t( n >> ( 8 * i ) ) );
+	}
 	out.insert( out.end(), s.begin(), s.begin() + std::ptrdiff_t( n ) );
 }
 
@@ -43,6 +54,23 @@ struct Reader
 	{
 		uint8_t n = U8();
 		if ( n > kMaxSchemaName || at + n > size )
+		{
+			ok = false;
+			return {};
+		}
+		std::string s( reinterpret_cast<const char*>( data + at ), n );
+		at += n;
+		return s;
+	}
+
+	std::string Text()
+	{
+		uint32_t n = 0;
+		for ( int i = 0; i < 4; ++i )
+		{
+			n |= uint32_t( U8() ) << ( 8 * i );
+		}
+		if ( ok == false || n > kMaxSchemaText || at + n > size )
 		{
 			ok = false;
 			return {};
@@ -172,6 +200,7 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 	{
 		PutString( out, schema.stances[i] );
 	}
+	PutText( out, schema.animGraph );
 }
 
 bool IsSha256( const std::string& hex )
@@ -283,6 +312,7 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 	{
 		out.stances.push_back( r.String() );
 	}
+	out.animGraph = r.Text();
 	return r.ok && r.at == size;
 }
 

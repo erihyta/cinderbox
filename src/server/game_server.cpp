@@ -56,6 +56,20 @@ bool GameServer::Start( const ServerOptions& options )
 	{
 		std::string warnings;
 		m_hits->SetStances( m_schema.layers, m_schema.stances, warnings );
+		// The character's state machine, if it has one: the simulation runs it, the hit tests pose by
+		// it, and it goes to every client in the schema.
+		m_schema.animGraph = character->animations->GraphText();
+		if ( m_schema.animGraph.empty() == false )
+		{
+			std::string error;
+			m_animGraph = CompileAnimGraph( m_schema.animGraph, m_schema, error, warnings );
+			if ( m_animGraph == nullptr )
+			{
+				Log( "character %s: its state machine does not load: %s", character->name.c_str(), error.c_str() );
+				return false;
+			}
+			m_hits->SetGraph( m_animGraph, warnings );
+		}
 		if ( warnings.empty() == false )
 		{
 			Log( "character %s: %s", character->name.empty() ? "built-in" : character->name.c_str(), warnings.c_str() );
@@ -80,6 +94,7 @@ bool GameServer::Start( const ServerOptions& options )
 	m_mapHash = MapHash( m_mapBytes.data(), m_mapBytes.size() );
 
 	m_sim = std::make_unique<Simulation>( options.config, m_map );
+	m_sim->SetAnimGraph( m_animGraph );
 	m_modWorld = std::make_unique<flecs::world>( CreateFlecsWorld() );
 	m_modRng = options.config.seed ^ 0x6D6F6473ull; // "mods"
 	m_history.assign( kFrameHistory, InputFrame{} );

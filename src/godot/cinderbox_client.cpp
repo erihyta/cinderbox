@@ -514,7 +514,9 @@ void CinderboxClient::UpdateNodes()
 					float alpha = m_mirror->World().get<present::FrameTiming>().tickAlpha;
 					AnimState state = anim::InterpolateAnimState( anim->previous, anim->current, alpha );
 					companion->begin_frame();
-					for ( const anim::ActiveClip& clip : anim::ActiveClips( state, *library.set, library.stances.get() ) )
+					auto clips = library.graph ? anim::ActiveGraphClips( state, *library.graph )
+											   : anim::ActiveClips( state, *library.set, library.stances.get() );
+					for ( const anim::ActiveClip& clip : clips )
 					{
 						companion->play_at( clip.channel, String::utf8( clip.name.c_str() ), clip.time, clip.loops );
 					}
@@ -756,6 +758,36 @@ void CinderboxClient::RebuildCharacterNodes()
 	}
 }
 
+std::shared_ptr<const AnimGraph> CinderboxClient::ServerGraph( const anim::AnimSet& set, const String& name )
+{
+	const std::string& text = m_frame.schema.animGraph;
+	if ( text.empty() )
+	{
+		return nullptr;
+	}
+	// The server's state machine, the one the simulation runs; the pose must follow the same one.
+	std::string error, warnings;
+	auto graph = CompileAnimGraph( text, m_frame.schema, error, warnings );
+	if ( graph == nullptr )
+	{
+		UtilityFunctions::push_warning( "Cinderbox character ", name, ": the server's state machine does not load: ",
+										String::utf8( error.c_str() ) );
+		return nullptr;
+	}
+	if ( set.GraphText() != text )
+	{
+		UtilityFunctions::push_warning( "Cinderbox character ", name,
+										": this copy's state machine differs from the server's; playing the server's" );
+	}
+	anim::PoseEvaluator probe( set );
+	probe.SetGraph( graph, warnings );
+	if ( warnings.empty() == false )
+	{
+		UtilityFunctions::push_warning( "Cinderbox character ", name, ": ", String::utf8( warnings.c_str() ) );
+	}
+	return graph;
+}
+
 String CinderboxClient::get_character() const
 {
 	return String::utf8( m_frame.schema.character.c_str() );
@@ -768,9 +800,10 @@ String CinderboxClient::use_character( const String& name )
 		// Same character; the server's layers and stances may still be new.
 		std::string warnings;
 		auto stances = anim::BuildStanceTable( *m_animSet, m_frame.schema.layers, m_frame.schema.stances, warnings );
+		auto graph = ServerGraph( *m_animSet, name );
 		if ( m_mirror )
 		{
-			m_mirror->SetAnimSet( m_animSet, stances );
+			m_mirror->SetAnimSet( m_animSet, stances, graph );
 		}
 		return String();
 	}
@@ -828,9 +861,10 @@ String CinderboxClient::use_character( const String& name )
 		UtilityFunctions::push_warning( "Cinderbox character ", name.is_empty() ? String( "built-in" ) : name, ": ",
 										String::utf8( stanceWarnings.c_str() ) );
 	}
+	auto graph = ServerGraph( *set, name );
 	if ( m_mirror )
 	{
-		m_mirror->SetAnimSet( set, stances );
+		m_mirror->SetAnimSet( set, stances, graph );
 	}
 	RebuildCharacterNodes();
 	return String();

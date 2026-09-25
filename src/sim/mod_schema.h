@@ -8,7 +8,9 @@
 // therefore never needs to know what a pistol is to show "pistol.ammo" or play "pistol.fired".
 //
 // It is not simulation state and is never hashed: two servers with different mods can run the same
-// build, and a client simply shows what its server declared.
+// build, and a client simply shows what its server declared. One part feeds the simulation: the
+// character's state machine, which travels here (like the map in the welcome) so that every client
+// runs exactly the server's.
 
 #include "types.h"
 
@@ -78,6 +80,9 @@ struct ModSchema
 	// (named clip sets a character may ship), declared by mods. AnimState stores their indices.
 	std::vector<std::string> layers; // at most kMaxAnimLayers
 	std::vector<std::string> stances;
+	// The character's baked state machine (graph.cfg text, sim/anim_graph.h); empty when it plays the
+	// built-in locomotion.
+	std::string animGraph;
 
 	bool operator==( const ModSchema& ) const = default;
 
@@ -93,6 +98,7 @@ struct ModSchema
 };
 
 inline constexpr size_t kMaxSchemaName = 64;
+inline constexpr size_t kMaxSchemaText = 1u << 20;
 
 // True for 64 lowercase hex digits.
 bool IsSha256( const std::string& hex );

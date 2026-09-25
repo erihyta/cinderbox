@@ -221,8 +221,13 @@ public:
 	std::vector<uint32_t> Ragdolls() const;
 
 	// Mod events the previous tick recorded (any mod's): how one mod reacts to another's news
-	// ("combat.killed") without knowing it. At most the ring's size per tick.
+	// ("combat.killed") without knowing it. At most the ring's size per tick. Markers in the
+	// character's animations record events too, from the player they played on.
 	std::vector<ModEventRecord> RecentEvents() const;
+	// Whether the character's animations have a marker that emits `event` ("melee.strike" on the
+	// frame the swing connects). A mod can then time its effect by the animation, and keep its own
+	// timer for characters without one.
+	bool AnimationEmits( EventHandle event ) const;
 
 	// Server options for mods: cb_server --mod-option deathmatch.kills=15.
 	double Option( const std::string& name, double fallback ) const;

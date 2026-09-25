@@ -983,6 +983,7 @@ void TestProtocol()
 		schema.events = { "pistol.fired", "combat.killed" };
 		schema.actions.push_back( { "fire", 0, "MouseLeft" } );
 		schema.items.push_back( { "pistol", std::string( 64, 'a' ) } );
+		schema.animGraph = std::string( 70000, 'g' ); // longer than any name: its own length prefix
 		std::vector<uint8_t> bytes;
 		EncodeSchema( schema, bytes );
 		ModSchema back;

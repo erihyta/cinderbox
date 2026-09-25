@@ -92,6 +92,8 @@ public:
 	// built-in rig. Returns an error message, or "" when it worked. Nothing is imported here: the
 	// files were baked in the editor and shipped in the item.
 	godot::String use_character( const godot::String& name );
+	// The schema's state machine for this character, compiled; warns when it will not fit.
+	std::shared_ptr<const AnimGraph> ServerGraph( const anim::AnimSet& set, const godot::String& name );
 
 	void set_player_name( const godot::String& v )
 	{

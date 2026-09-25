@@ -1,5 +1,7 @@
 #include "game_client.h"
 
+#include "anim_graph.h"
+
 #include "fingerprint.h"
 
 #include <algorithm>
@@ -261,6 +263,21 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 		return;
 	}
 
+	// The character's state machine: the simulation must run exactly the server's.
+	std::shared_ptr<const AnimGraph> graph;
+	if ( schema.animGraph.empty() == false )
+	{
+		std::string error, warnings;
+		graph = CompileAnimGraph( schema.animGraph, schema, error, warnings );
+		if ( graph == nullptr )
+		{
+			m_rejectReason = "bad animation state machine from the server: " + error;
+			m_state = ClientState::Rejected;
+			Log( "rejected: %s", m_rejectReason.c_str() );
+			return;
+		}
+	}
+
 	LevelLayout map;
 	std::string mapError;
 	if ( DeserializeMap( msg.map.data(), msg.map.size(), map, mapError ) == false )
@@ -280,6 +297,7 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 			m_session = std::make_unique<RollbackSession>( msg.config, msg.slot, m_options.minRollbackTicks,
 														   m_options.maxRollbackTicks, map );
 		}
+		m_session->Sim().SetAnimGraph( graph );
 
 		if ( m_session->Sim().LoadPortable( msg.image ) == false )
 		{

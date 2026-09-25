@@ -4,6 +4,7 @@
 // streams the input frames it actually used. It never rolls back: a late input is replaced by the
 // player's previous input.
 
+#include "anim_graph.h"
 #include "character_item.h"
 #include "hit_test.h"
 #include "map.h"
@@ -182,6 +183,7 @@ private:
 	// The mods' own state lives here; the simulation never sees it.
 	std::unique_ptr<flecs::world> m_modWorld;
 	std::unique_ptr<HitTester> m_hits;
+	std::shared_ptr<const AnimGraph> m_animGraph;
 	uint64_t m_modRng = 0;
 };
 
