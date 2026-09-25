@@ -36,6 +36,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M27: the chest faces the camera while strafing (`face_forward`), though the strafe clips turn the torso | done |
 | M28: the bat burns while it swings, as the melee mod's own look (not the character's) | done |
 | M29: held items are entities with their own state, drawn in sockets; a character's animations play the held item's animations | done |
+| M30: one event resolved by what the player holds (item kinds and event values in conditions; events reach held items); no game content left in the engine | done |
 
 ## Building
 
@@ -661,8 +662,8 @@ blends each layer's stance over the ones below by the mask's per-joint weights, 
 whatever a stance lacks falls back to the default clips, and a layer the character cannot mask does
 nothing (both are reported when the character is loaded). A single-clip stance plays from the moment
 it was set, which is how a swing is made. Stances are part of the simulation's animation state, so
-everyone draws them and the server's hit tests use them. The built-in rig and the robot ship the
-pistol and bat stances.
+everyone draws them and the server's hit tests use them. The robot ships the pistol and bat
+stances; the engine's placeholder rig has none (the engine carries no game content).
 
 ### Companion tracks
 
@@ -702,12 +703,27 @@ looks like is authored in Godot.
 | item kind | the mod: `declare.ItemKind( "melee.bat" )` | spawned with `ctx.SpawnItem( SlotTarget( slot ), kind, socket )`, addressed with `ItemTarget( slot, socket )` for `Set`, `Emit`, `Destroy` |
 | look | the mod's effect table: `CbItemLook` (kind -> scene) | drawn as the socket's child `Item` |
 | item state | the item scene's `AnimationTree` | every board field of the item is an advance condition (`melee.hot`), and `!melee.hot` while it is off |
-| item events | the item scene's `AnimationPlayer` | an event sent to the item plays its animation of that name |
+| item events | the item scene's `AnimationPlayer` | an event sent to the item plays its animation of that name, and so does an event sent to its holder (each item shows its own version) |
 | character -> item | an Animation Playback track in the character's animation | `.../RightHand/Item/AnimationPlayer` plays `slash` at the right frame of the swing |
+
+One attack, resolved by what is held, with no client code:
+
+```
+server:    Emit( attack, SlotTarget( slot ), value )          one small command
+character: Idle -> Heavy      [attack == 2]                    priority 0
+           Idle -> BatSwing   [attack and melee.bat]           priority 1
+           Idle -> SwordSlash [attack and melee.sword]         priority 1
+           Idle -> Punch      [attack]                         priority 2
+item:      its own "attack" animation, if it has one
+```
+
+The body's choice runs in the simulation, so the server's hit tests follow it; each item decides
+what an attack looks like on it.
 
 The bat: the melee mod spawns a `melee.bat` when the bat is taken out. The mannequin's swing plays
 the bat's `slash` (flames along the barrel) 0.2 s in, and a hit sets `melee.hot` on the bat, which
-its own tree turns into a glow. Any character with a right hand swings any item that has a
+its own tree turns into a glow; `melee.hit`, which the mod sends to whoever swung, bursts it into
+sparks. Any character with a right hand swings any item that has a
 `slash`; an empty socket, or an item without one, is simply quiet.
 
 ### State machines
@@ -745,8 +761,9 @@ Conditions and expressions read simulation values, never scripts:
 | `vertical_speed`, `grounded`, `airborne_time`, `jumped` | the body's movement (`jumped`: on the tick of a jump) |
 | `aiming`, `backward`, `state_time` | a mod's Aim; walking backwards; seconds in the current state |
 | a stance's name (`pistol`, `melee`) | true while any layer has it (mods' `SetStance`) |
-| a mod event's name (`pistol.fired`) | true on the tick it is emitted at this player: a trigger |
+| a mod event's name (`pistol.fired`, `attack`) | on the tick it is emitted at this player: its value (1 if the value is 0), so `attack` and `attack == 2` both work: a trigger |
 | a board field's name (`loadout.slot`) | the player's value (or the global one) |
+| an item kind's name (`melee.bat`) | true while the player holds one, in any socket |
 
 Operators: `and or not && || ! == != < <= > >= + - * /` and parentheses. A name no mod declares
 reads as 0 (the server logs it). The bake fails with a reason for anything it cannot run (nested
