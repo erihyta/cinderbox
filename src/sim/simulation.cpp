@@ -1,6 +1,7 @@
 #include "simulation.h"
 
 #include "anim_controller.h"
+#include "anim_graph.h"
 #include "box3d_shim.h"
 #include "detmath.h"
 #include "level.h"
@@ -580,6 +581,12 @@ void Simulation::ApplyEvents( const InputFrame& frame )
 	}
 }
 
+void Simulation::RecordModEvent( const ModEventRecord& record )
+{
+	m_globals.modEvents[m_globals.modEventCount % kModEventHistory] = record;
+	m_globals.modEventCount += 1;
+}
+
 void Simulation::MoveCharacters( const InputFrame& frame )
 {
 	// Slot order == deterministic order, and independent of entity creation history.
@@ -614,6 +621,39 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 
 		AnimState anim = e.get<AnimState>();
 		UpdateAnimState( anim, c, in, m_globals.tick, m_config.TimeStep() );
+		if ( m_animGraph )
+		{
+			// The character's own state machine, on what this tick's movement and commands left.
+			Blackboard board = e.has<Blackboard>() ? e.get<Blackboard>() : Blackboard{};
+			AnimGraphInputs graphIn;
+			float speed = anim.groundSpeed;
+			graphIn.builtins[AnimExpr::Speed] = speed;
+			graphIn.builtins[AnimExpr::ForwardSpeed] = anim.legsBackward != 0 ? -speed : speed;
+			graphIn.builtins[AnimExpr::VerticalSpeed] = c.velocity.y;
+			graphIn.builtins[AnimExpr::Grounded] = c.grounded != 0 ? 1.0f : 0.0f;
+			graphIn.builtins[AnimExpr::AirborneTime] = c.grounded != 0 ? 0.0f : float( c.airTicks ) * m_config.TimeStep();
+			graphIn.builtins[AnimExpr::Jumped] = c.lastJumpTick != 0 && c.lastJumpTick == m_globals.tick ? 1.0f : 0.0f;
+			graphIn.builtins[AnimExpr::Aiming] = anim.aiming != 0 ? 1.0f : 0.0f;
+			graphIn.builtins[AnimExpr::Backward] = anim.legsBackward != 0 ? 1.0f : 0.0f;
+			graphIn.board = board.values;
+			graphIn.globalBoard = m_globals.board;
+			graphIn.events = m_globals.modEvents;
+			graphIn.eventCount = m_globals.modEventCount;
+			graphIn.tick = m_globals.tick;
+			graphIn.netId = netId;
+			m_markerScratch.clear();
+			UpdateAnimGraph( anim, *m_animGraph, graphIn, m_config.TimeStep(), m_markerScratch );
+			for ( int event : m_markerScratch )
+			{
+				// A marker the playing clip crossed: the mod event of its name, from this player.
+				ModEventRecord record;
+				record.type = uint16_t( event );
+				record.netIdA = netId;
+				record.tick = m_globals.tick;
+				record.point = t.position;
+				RecordModEvent( record );
+			}
+		}
 		e.set<AnimState>( anim );
 
 		e.set<Character>( c );
@@ -1292,8 +1332,7 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			record.value = command.value;
 			record.point = ToVec( command.a );
 			record.vector = ToVec( command.b );
-			m_globals.modEvents[m_globals.modEventCount % kModEventHistory] = record;
-			m_globals.modEventCount += 1;
+			RecordModEvent( record );
 			return;
 		}
 

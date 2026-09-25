@@ -14,6 +14,8 @@ void RegisterPlayerAnimation( flecs::world& world )
 			const AnimLibrary& lib = it.world().get<AnimLibrary>();
 			a.evaluator = std::make_shared<anim::PoseEvaluator>( *lib.set );
 			a.evaluator->SetStances( lib.stances );
+			std::string ignored;
+			a.evaluator->SetGraph( lib.graph, ignored );
 		}
 	} );
 

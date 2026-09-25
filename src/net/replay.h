@@ -8,6 +8,7 @@
 //   u8 type (1 = frame, 2 = checksum), u32 payload size, payload.
 // Frames are delta-coded like on the wire. A truncated last record (crash) is ignored.
 
+#include "anim_graph.h"
 #include "map.h"
 #include "mod_schema.h"
 #include "protocol.h"
@@ -76,6 +77,12 @@ public:
 	{
 		return m_schema;
 	}
+	// The character's state machine, compiled from the schema (null: the built-in locomotion).
+	// Re-simulating needs it: Simulation::SetAnimGraph.
+	const std::shared_ptr<const AnimGraph>& Graph() const
+	{
+		return m_graph;
+	}
 	// frames[i].tick == i
 	const std::vector<InputFrame>& Frames() const
 	{
@@ -96,6 +103,7 @@ private:
 	std::vector<uint8_t> m_mapBytes;
 	LevelLayout m_map;
 	ModSchema m_schema;
+	std::shared_ptr<const AnimGraph> m_graph;
 	std::vector<InputFrame> m_frames;
 	std::vector<MsgChecksum> m_checksums;
 	bool m_truncated = false;

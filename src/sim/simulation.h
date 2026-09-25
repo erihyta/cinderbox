@@ -24,6 +24,8 @@
 namespace cb
 {
 
+struct AnimGraph;
+
 // flecs (OS API init counter) and Box3D (static world table) are not safe to create or destroy
 // worlds on several threads at once. Everything that creates flecs or Box3D worlds while
 // simulations may run on other threads goes through these.
@@ -205,6 +207,18 @@ public:
 	// Where a player in `slot` appears when joining or respawning.
 	b3Vec3 SpawnPoint( PlayerSlot slot ) const;
 
+	// The character's baked state machine (sim/anim_graph.h), compiled against the server's schema,
+	// or null for the built-in locomotion controller. Like the map it must be the same everywhere,
+	// so it travels in the schema; set it before the first Step.
+	void SetAnimGraph( std::shared_ptr<const AnimGraph> graph )
+	{
+		m_animGraph = std::move( graph );
+	}
+	const AnimGraph* Graph() const
+	{
+		return m_animGraph.get();
+	}
+
 	// 0 if not found. Lookup only; never iterate this for simulation order.
 	flecs::entity FindEntity( uint32_t netId ) const;
 
@@ -295,6 +309,10 @@ private:
 	// Shape index -> NetId, rebuilt only when a shape has to be named (impacts, ray casts).
 	std::vector<std::pair<uint32_t, uint32_t>> m_shapeLookup;
 	std::vector<ImpactRecord> m_impactScratch;
+	std::vector<int> m_markerScratch;
+
+	std::shared_ptr<const AnimGraph> m_animGraph;
+	void RecordModEvent( const ModEventRecord& record );
 };
 
 } // namespace cb

@@ -8,6 +8,7 @@
 //   cb_tests --save-portable <file> / --load-portable <file>   portable snapshot across builds
 
 #include "anim_controller.h"
+#include "anim_graph.h"
 #include "map.h"
 #include "pose.h"
 #include "pose_tools.h"
@@ -1561,6 +1562,164 @@ void TestAnimController()
 	CHECK( modes[3] == AnimMode::Locomotion );
 }
 
+// A baked state machine, as the bake writes it: a locomotion blend space and a jump on the base
+// layer, and an upper layer that punches when a mod's event says so; the punch's marker emits
+// another event.
+const char* const kTestGraph = "cinderbox_graph\t1\n"
+							   "clip\tidle\t2\t1\n"
+							   "clip\twalk\t1\t1\n"
+							   "clip\trun\t0.5\t1\n"
+							   "clip\tjump\t0.4\t0\n"
+							   "clip\tpunch\t0.5\t0\n"
+							   "marker\tpunch\t0.2\ttest.impact\n"
+							   "layer\tbase\n"
+							   "state\tMove\tblend\tspeed\n"
+							   "point\t0\tidle\n"
+							   "point\t6.5\trun\n"
+							   "point\t3\twalk\n"
+							   "state\tJump\tclip\tjump\t0\n"
+							   "start\tMove\n"
+							   "transition\tMove\tJump\t1\t0.1\timmediate\t1\tjumped\n"
+							   "transition\tJump\tMove\t1\t0.1\timmediate\t1\tgrounded and state_time > 0.1\n"
+							   "layer\tupper\n"
+							   "mask\tSpine\n"
+							   "weight\ttest.armed\n"
+							   "state\tRest\tclip\tidle\t0\n"
+							   "state\tPunch\tclip\tpunch\t0\n"
+							   "start\tRest\n"
+							   "transition\tRest\tPunch\t1\t0.05\timmediate\t1\ttest.punch\n"
+							   "transition\tPunch\tRest\t1\t0.1\tat_end\t1\n";
+
+ModSchema TestGraphSchema()
+{
+	ModSchema schema;
+	schema.events = { "test.punch", "test.impact" };
+	schema.fields.push_back( { "test.armed", BoardType::Bool, BoardScope::Entity, 0 } );
+	return schema;
+}
+
+void TestAnimGraph()
+{
+	// Numbers read the same everywhere.
+	float v = 0.0f;
+	CHECK( ParseAnimFloat( "0.1", 3, v ) && v == 0.1f );
+	CHECK( ParseAnimFloat( "6.5", 3, v ) && v == 6.5f );
+	CHECK( ParseAnimFloat( "-3", 2, v ) && v == -3.0f );
+	CHECK( ParseAnimFloat( "1e-3", 4, v ) && v == 0.001f );
+	CHECK( ParseAnimFloat( "0.333333333", 11, v ) && v == 0.333333333f );
+	CHECK( ParseAnimFloat( "abc", 3, v ) == false );
+	CHECK( ParseAnimFloat( "1.5x", 4, v ) == false );
+
+	// Expressions: Godot's operators and precedence, simulation values by name.
+	ModSchema schema = TestGraphSchema();
+	auto eval = [&]( const char* text, const AnimGraphInputs& in ) -> float {
+		AnimExpr expr;
+		std::string error, warnings;
+		if ( CompileAnimExpr( text, schema, expr, error, warnings ) == false )
+		{
+			std::printf( "    %s\n", error.c_str() );
+			return -1000.0f; // fails the comparison
+		}
+		return EvaluateAnimExpr( expr, in, 0.25f );
+	};
+	AnimGraphInputs in;
+	in.builtins[AnimExpr::Speed] = 4.0f;
+	CHECK( eval( "1 + 2 * 3 == 7 and not false", in ) == 1.0f );
+	CHECK( eval( "speed > 3 && !(speed >= 5)", in ) == 1.0f );
+	CHECK( eval( "-speed / 2", in ) == -2.0f );
+	CHECK( eval( "state_time < 0.3 or grounded", in ) == 1.0f );
+	CHECK( eval( "", in ) == 0.0f );
+	{
+		AnimExpr expr;
+		std::string error, warnings;
+		CHECK( CompileAnimExpr( "speed > (2", schema, expr, error, warnings ) == false && error.empty() == false );
+		CHECK( CompileAnimExpr( "nobody.declared > 1", schema, expr, error, warnings ) );
+		CHECK( warnings.find( "nobody.declared" ) != std::string::npos );
+	}
+
+	std::string error, warnings;
+	auto graph = CompileAnimGraph( kTestGraph, schema, error, warnings );
+	CHECK( graph != nullptr );
+	if ( graph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	CHECK( warnings.empty() );
+	CHECK( graph->layers.size() == 2 && graph->layers[0].states[0].points[1].clip == graph->FindClip( "walk" ) ); // sorted
+	CHECK( graph->EmitsEvent( 1 ) && graph->EmitsEvent( 0 ) == false );
+	CHECK( CompileAnimGraph( "cinderbox_graph\t1\nlayer\tx\nstate\tA\tclip\tnothing\t0\n", schema, error, warnings ) == nullptr );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto layer = [&]( int l ) { return sim.FindEntity( sim.Globals().playerNetIds[0] ).get<AnimState>().graph[l]; };
+	auto impacts = [&]() {
+		int count = 0;
+		const SimGlobals& g = sim.Globals();
+		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+		{
+			count += g.modEvents[i].type == 1 && g.modEvents[i].netIdA == sim.PlayerNetId( 0 ) ? 1 : 0;
+		}
+		return count;
+	};
+
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	CHECK( layer( 0 ).started == 1 && layer( 0 ).state == 0 );
+	CHECK( layer( 1 ).state == 0 && layer( 1 ).weight == 0.0f );
+
+	// Walking: the blend space follows the speed, its phase at the blended cycle rate.
+	f.inputs[0].moveForward = 127;
+	step( 90 );
+	std::printf( "    walking: blend %.2f phase %.3f\n", layer( 0 ).blend, layer( 0 ).time );
+	CHECK( std::fabs( layer( 0 ).blend - anim_tuning::kWalkSpeed ) < 0.1f );
+
+	// A jump: into Jump on the tick it happens, back to Move once grounded again.
+	f.inputs[0] = {};
+	step( 30 );
+	f.inputs[0].buttons = BtnJump;
+	step( 1 );
+	f.inputs[0].buttons = 0;
+	CHECK( layer( 0 ).state == 1 && layer( 0 ).fadeLength == 0.1f );
+	step( 120 );
+	CHECK( layer( 0 ).state == 0 );
+
+	// A punch: a mod arms the upper layer (a board field) and triggers it (an event at the player).
+	SimCommand arm;
+	arm.type = CommandType::SetField;
+	arm.target = SlotTarget( 0 );
+	arm.index = 0;
+	arm.value = 1;
+	f.commands.push_back( arm );
+	step( 30 );
+	CHECK( layer( 1 ).weight == 1.0f && layer( 1 ).state == 0 );
+	SimCommand punch;
+	punch.type = CommandType::Event;
+	punch.target = SlotTarget( 0 );
+	punch.index = 0;
+	f.commands.push_back( punch );
+	step( 1 );
+	CHECK( layer( 1 ).state == 1 );
+	int before = impacts();
+	step( 10 ); // 0.17 s: not yet at the marker
+	CHECK( impacts() == before );
+	step( 5 ); // 0.25 s: past it, once
+	CHECK( impacts() == before + 1 );
+	step( 30 ); // the punch ends and the layer goes back to rest
+	CHECK( impacts() == before + 1 );
+	CHECK( layer( 1 ).state == 0 );
+}
+
 // Pose hash over a spread of animation states: the same on every compiler/platform.
 uint64_t AnimPoseHash( const anim::AnimSet& set )
 {
@@ -1861,10 +2020,7 @@ void TestMannequinCharacter()
 	}
 	std::printf( "    %s; warnings: %s\n", set->Description().c_str(), warnings.empty() ? "none" : warnings.c_str() );
 	CHECK( warnings.empty() );
-	for ( int c = 0; c < anim::ClipCount; ++c )
-	{
-		CHECK( set->Get( anim::Clip( c ) ) != nullptr );
-	}
+	CHECK( set->GraphText().empty() == false ); // it plays its own state machine
 	std::string text;
 	CHECK( anim::DiskReader( dir )( "hitboxes.cfg", text ) );
 	anim::HitboxSet hitboxes;
@@ -1873,13 +2029,68 @@ void TestMannequinCharacter()
 	anim::BindHitboxes( hitboxes, *set, warnings );
 	CHECK( hitboxes.boxes.size() == count && count >= 10 );
 
+	// The shipped mods' names, as a server would send them.
+	ModSchema schema;
+	schema.layers = { "full", "upper" };
+	schema.stances = { "melee", "melee_swing", "pistol" };
+	schema.events = { "pistol.fired", "melee.strike" };
+	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
+	CHECK( graph != nullptr );
+	if ( graph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	CHECK( warnings.empty() );
+	CHECK( graph->layers.size() == 2 && graph->EmitsEvent( 1 ) );
 	anim::PoseEvaluator pose( *set );
-	pose.Evaluate( AnimState{} );
+	pose.SetGraph( graph, warnings );
+	CHECK( warnings.empty() );
+	auto stateOf = [&]( int layer, const char* name ) {
+		const auto& states = graph->layers[size_t( layer )].states;
+		for ( size_t i = 0; i < states.size(); ++i )
+		{
+			if ( states[i].name == name )
+			{
+				return int( i );
+			}
+		}
+		return -1;
+	};
+
+	// The simulation runs the state machine; the pose follows it.
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto state = [&]() { return sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>(); };
+	auto command = [&]( CommandType type, uint8_t index, int32_t value, uint8_t mode ) {
+		SimCommand c;
+		c.type = type;
+		c.target = SlotTarget( 0 );
+		c.index = index;
+		c.value = value;
+		c.mode = mode;
+		f.commands.push_back( c );
+	};
 	auto at = [&]( const char* joint ) {
 		float v[4];
 		ozz::math::StorePtrU( pose.Models()[size_t( anim::FindJoint( *set, joint ) )].cols[3], v );
 		return b3Vec3{ v[0], v[1], v[2] };
 	};
+
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	CHECK( state().graph[0].state == stateOf( 0, "Locomotion" ) );
+	pose.Evaluate( state() );
 	b3Vec3 head = at( "Head" );
 	b3Vec3 foot = at( "LeftFoot" );
 	std::printf( "    idle: head (%.2f %.2f %.2f), left foot (%.2f %.2f %.2f)\n", head.x, head.y, head.z, foot.x, foot.y, foot.z );
@@ -1900,25 +2111,66 @@ void TestMannequinCharacter()
 	CHECK( zoneAt( 1.2f ) == "torso" );
 	CHECK( zoneAt( 2.1f ).empty() );
 
-	std::string stanceWarnings;
-	auto stances = anim::BuildStanceTable( *set, { "full", "upper" }, { "melee", "melee_swing", "pistol" }, stanceWarnings );
-	CHECK( stanceWarnings.empty() );
+	// Walking: the blend space on forward_speed; a jump goes through JumpStart and lands.
+	f.inputs[0].moveForward = 127;
+	step( 60 );
+	std::printf( "    walking: blend %.2f\n", state().graph[0].blend );
+	CHECK( state().graph[0].state == stateOf( 0, "Locomotion" ) && state().graph[0].blend > 2.5f );
+	f.inputs[0].buttons = BtnJump;
+	step( 1 );
+	f.inputs[0].buttons = 0;
+	CHECK( state().graph[0].state == stateOf( 0, "JumpStart" ) );
+	f.inputs[0] = {};
+	step( 120 );
+	CHECK( state().graph[0].state == stateOf( 0, "Locomotion" ) );
 
-	// Holding the pistol and aiming straight ahead: the hand is out in front of the shoulder.
-	AnimState aiming;
-	aiming.aiming = 1;
-	aiming.stances[1] = 3; // pistol on the upper layer
-	aiming.layerTime[1] = 1.0f;
-	pose.SetStances( stances );
-	pose.Evaluate( aiming );
+	// The pistol: the upper layer draws it, aims (the aim chain), and plays a shot on pistol.fired.
+	command( CommandType::Stance, 1, 3, 0 ); // upper layer, pistol
+	command( CommandType::Aim, 0, 0, 1 );
+	step( 30 );
+	CHECK( state().graph[1].state == stateOf( 1, "Pistol" ) && state().graph[1].weight == 1.0f );
+	pose.Evaluate( state() );
 	b3Vec3 shoulder = at( "RightUpperArm" );
 	b3Vec3 hand = at( "RightHand" );
 	std::printf( "    aiming with the pistol: shoulder (%.2f %.2f %.2f) hand (%.2f %.2f %.2f)\n", shoulder.x, shoulder.y, shoulder.z,
 				 hand.x, hand.y, hand.z );
 	CHECK( hand.z - shoulder.z > 0.35f );
-	CHECK( std::fabs( hand.y - shoulder.y ) < 0.1f );	CheckHeldItem( *set, pose );
+	CHECK( std::fabs( hand.y - shoulder.y ) < 0.1f );
+	CheckHeldItem( *set, pose );
+	command( CommandType::Event, 0, 0, 0 ); // pistol.fired, by this player
+	step( 1 );
+	CHECK( state().graph[1].state == stateOf( 1, "Shoot" ) );
+	step( 60 );
+	CHECK( state().graph[1].state == stateOf( 1, "Pistol" ) );
 
-	// The placeholder rig, for which the bindings were made, holds it the same way.
+	// The bat: the swing's marker emits melee.strike once, 0.4 s in.
+	command( CommandType::Stance, 1, 0, 0 );
+	command( CommandType::Aim, 0, 0, 0 );
+	command( CommandType::Stance, 0, 1, 0 ); // full layer, melee
+	step( 30 );
+	CHECK( state().graph[1].state == stateOf( 1, "Ready" ) );
+	auto strikes = [&]() {
+		int n = 0;
+		for ( uint32_t i = 0; i < std::min( sim.Globals().modEventCount, kModEventHistory ); ++i )
+		{
+			n += sim.Globals().modEvents[i].type == 1 ? 1 : 0;
+		}
+		return n;
+	};
+	command( CommandType::Stance, 0, 2, 0 ); // melee_swing
+	step( 1 );
+	CHECK( state().graph[1].state == stateOf( 1, "Swing" ) );
+	step( 20 );
+	CHECK( strikes() == 0 );
+	step( 10 );
+	CHECK( strikes() == 1 );
+
+	// The placeholder rig, for which the bindings were made, holds an item the same way.
+	AnimState aiming;
+	aiming.aiming = 1;
+	aiming.stances[1] = 3; // pistol on the upper layer
+	aiming.layerTime[1] = 1.0f;
+	std::string stanceWarnings;
 	auto procedural = anim::AnimSet::CreateProcedural();
 	anim::PoseEvaluator placeholder( *procedural );
 	placeholder.SetStances( anim::BuildStanceTable( *procedural, { "full", "upper" }, { "melee", "melee_swing", "pistol" }, stanceWarnings ) );
@@ -2134,6 +2386,7 @@ int main( int argc, char** argv )
 		{ "commands", TestCommands },
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
+		{ "anim_graph", TestAnimGraph },
 		{ "pose_tools", TestPoseTools },
 		{ "fields", TestFields },
 		{ "hitboxes", TestHitboxes },

@@ -25,6 +25,11 @@ public:
 
 	// The mods' layers and stances, resolved for the character; warnings for what it lacks.
 	void SetStances( const std::vector<std::string>& layers, const std::vector<std::string>& stances, std::string& warnings );
+	// The character's state machine, the one the simulation runs.
+	void SetGraph( std::shared_ptr<const AnimGraph> graph, std::string& warnings )
+	{
+		m_pose.SetGraph( std::move( graph ), warnings );
+	}
 
 	const CharacterAsset& Get() const
 	{

@@ -104,6 +104,22 @@ enum class AnimMode : uint8_t
 	Land = 3,
 };
 
+// One layer of a character's baked state machine (sim/anim_graph.h), for characters that have one.
+struct AnimGraphLayerState
+{
+	uint8_t state = 0;
+	uint8_t previous = 0; // faded out over the first fadeLength seconds of `state`
+	uint8_t started = 0;  // 0 until the graph first runs (a new or respawned player)
+	uint8_t reserved = 0;
+	float time = 0.0f;		   // seconds into the state's clip, or the phase [0, 1) of a blend space
+	float previousTime = 0.0f; // the same for `previous`, still advancing while it fades
+	float stateTime = 0.0f;	   // seconds since `state` started
+	float fadeLength = 0.0f;
+	float weight = 0.0f;		// the layer's weight, eased toward its weight expression
+	float blend = 0.0f;			// a blend space's input this tick
+	float previousBlend = 0.0f; // and the fading state's
+};
+
 // Deterministic animation controller state. The simulation only decides *what* plays and at which
 // time; poses are sampled from it with ozz (client now, server too once gameplay needs them).
 // Times are in seconds and independent of clip data, so the sim never depends on asset files.
@@ -130,6 +146,8 @@ struct AnimState
 	uint8_t stances[kMaxAnimLayers] = {};
 	uint8_t previousStances[kMaxAnimLayers] = {};
 	float layerTime[kMaxAnimLayers] = {};
+	// The baked state machine's layers; unused for characters without one.
+	AnimGraphLayerState graph[kMaxAnimLayers] = {};
 };
 
 // Values a server mod published about an entity, for presentation to read by name. The schema
@@ -192,7 +210,8 @@ CB_CHECK_COMPONENT( Shape, 16 );
 CB_CHECK_COMPONENT( PhysicsBody, 16 );
 CB_CHECK_COMPONENT( Character, 52 );
 CB_CHECK_COMPONENT( Prop, 12 );
-CB_CHECK_COMPONENT( AnimState, 56 );
+CB_CHECK_COMPONENT( AnimGraphLayerState, 32 );
+CB_CHECK_COMPONENT( AnimState, 56 + 32 * kMaxAnimLayers );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( Blackboard, 4 * kBoardSlots );
 CB_CHECK_COMPONENT( Ragdoll, 20 );

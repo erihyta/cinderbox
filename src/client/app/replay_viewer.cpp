@@ -31,6 +31,7 @@ public:
 			return false;
 		}
 		m_sim = std::make_unique<Simulation>( m_reader.Config(), m_reader.Map() );
+		m_sim->SetAnimGraph( m_reader.Graph() );
 		CaptureKeyframe();
 		return true;
 	}

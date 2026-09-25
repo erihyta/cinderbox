@@ -1,5 +1,7 @@
 #include "mod_api.h"
 
+#include "anim_graph.h"
+
 #include "detmath.h"
 #include "hit_test.h"
 #include "util.h"
@@ -295,6 +297,11 @@ std::vector<uint32_t> Context::Ragdolls() const
 		}
 	}
 	return out;
+}
+
+bool Context::AnimationEmits( EventHandle event ) const
+{
+	return event.Valid() && m_sim.Graph() != nullptr && m_sim.Graph()->EmitsEvent( event.index );
 }
 
 std::vector<ModEventRecord> Context::RecentEvents() const

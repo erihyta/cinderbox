@@ -714,6 +714,48 @@ that ships with the game, the Universal Animation Library's mannequin (Quaterniu
   walk plays); the aim chain turns the right arm only, so the left hand of `Pistol_Idle` can
   drift off the grip while aiming up or down.
 
+## State machines from Godot (M25)
+The goal from M23 was a presentation-only client with animations, tracks and state machines all
+authored in Godot. M23 did the tracks; M25 does the state machine: a character's `AnimationTree`
+is baked into data the simulation runs, as ozz already does for the bones.
+
+- **Why the simulation**: which state plays decides the pose, the pose decides the hitboxes, and
+  the server hit-tests those. So the machine must run the same everywhere and roll back:
+  `UpdateAnimGraph` runs in `MoveCharacters` after the movement, per player, per layer.
+- **Format** (`graph.cfg`, text): clips (length, loop, markers), layers (mask, weight expression),
+  states (a clip, or a 1D blend space on an expression), transitions. Numbers go through
+  `ParseAnimFloat`, plain double arithmetic, never the C library's locale-dependent parser.
+- **Expressions**: compiled once to a small stack program; names resolve against the schema
+  (built-ins, board fields, stances, events). Events are triggers: true on the tick a mod emits
+  them at the player (commands apply before movement, so the same tick).
+- **Markers** record the mod event of their name, from the player, as a command would. Mods see
+  them next tick (`RecentEvents`), effect bindings play them, a rollback un-counts them.
+- **State**: `AnimGraphLayerState` (32 bytes, per layer) in `AnimState`: state and previous, their
+  clocks, time in state, crossfade length, the layer's eased weight, blend inputs. AnimState grew
+  from 56 to 184 bytes; reference hashes were regenerated.
+- **Transport**: the graph text rides in the schema (like the map in the welcome), so every client,
+  bot and replay runs exactly the server's; a client whose copy differs warns and plays the
+  server's. Protocol 11. Clips stay local (ozz files in the pack), found by animation name.
+- **Pose**: `PoseEvaluator::SetGraph` samples each layer's state (blend points, crossfade from the
+  previous state) and blends layers through their masks; the leg twist and the aim chain still
+  run after it.
+- **Bake**: reads the tree through Godot's API; unsupported pieces fail with a reason. In the game
+  the tree is switched off before it enters the scene.
+- **Found on the way**: the M24 `character.tscn` had lost its hitboxes (nodes under an instanced
+  glb need Editable Children to be saved), and a script-instanced scene needs
+  `GEN_EDIT_STATE_INSTANCE` or saving it copies the whole glb in (3.9 MB instead of 23 KB).
+- **Verified**: `anim_graph` (numbers, expressions, a walk/jump/punch graph in a simulation, a
+  marker once), `mannequin_character` (the baked tree end to end: idle, blend, jump, pistol draw and
+  shot, swing marker once at 0.4 s), a rendered session of melee bots against the real server
+  (hits landed on the marker, no desyncs), all hashes identical across builds.
+- **The mannequin's feet**: M24's sliding is mostly gone: its blend space puts Walk, Jog and
+  Sprint at the speeds they cover (about 0.9, 3 and 5 m/s, measured from the foot travel) and
+  plays each at its own rate. Sprinting at 6.5 m/s still outruns the Sprint clip a little.
+- **Not done**: nested state machines, 2D blend spaces, OneShot/Add/TimeScale nodes, `travel()`
+  (only Auto transitions), per-transition reset memory (a state always restarts), crossfade curves,
+  markers inside blend spaces, and previewing expressions in Godot's own editor (its Expression
+  cannot read simulation values; conditions can be toggled by hand).
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -811,3 +853,4 @@ that ships with the game, the Universal Animation Library's mannequin (Quaterniu
 22. **M22** (done): animation layers (bone masks from the character) and stances (clip sets with fallback) declared by mods and set with a `Stance` command, blended per joint with fades, in the pose the server hit-tests; the pistol's upper-body stance, a melee mod with a full-body stance and swing, `combat.damage` between mods, bake support (`stance_clips`, `masks`), the robot's stance clips, and tests.
 23. **M23** (done): companion tracks: the bake keeps every non-bone track of a character's animations in `companion.tres`, and `CbCompanionPlayer` plays them per channel in step with the ozz pose (values exact, keys once through rollbacks, RESET between clips); the robot's bat swing gets a fire trail and a whoosh as ordinary tracks.
 24. **M24** (done): the default character: the Universal Animation Library's mannequin retargeted onto the humanoid profile, shipped with the game and read by `cb_server` from `bin/characters/` (no item needed), and a hand frame for held items that is the same on every rig.
+25. **M25** (done): state machines authored in Godot: a character's `AnimationTree` (state machines, Blend2 layers, 1D blend spaces, Godot's transitions with conditions and expressions) is baked to `graph.cfg` and run by the simulation, travelling in the schema; markers emit mod events (the melee swing strikes on one); the mannequin's tree with a flaming swing; `cb_bot --melee`.

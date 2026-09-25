@@ -2,10 +2,12 @@
 //
 //   cb_bot [--host H] [--port P] [--count N] [--full M] [--threads T (for lite bots)] [--duration SEC]
 //          [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC] [--chaotic] [--shoot]
+//          [--melee]
 //
 // --shoot makes full bots take out the pistol (the server's "slot_2" action) and fire at the
 // nearest other player a couple of times a second, aiming from their own predicted world. It
 // exercises the pistol mod, deaths and ragdolls under load; lite bots cannot aim and keep moving.
+// --melee does the same with the bat ("slot_3"), swinging once the nearest player is in reach.
 //
 // --chaotic makes every bot change every input field every tick (worst case for rollback and
 // bandwidth). By default bots hold directions and turn smoothly, closer to real players.
@@ -53,6 +55,7 @@ struct Options
 	double reportSeconds = 5.0;
 	bool chaotic = false;
 	bool shoot = false;
+	bool melee = false;
 };
 
 struct Bot;
@@ -66,6 +69,7 @@ struct Bot
 	bool started = false;
 	bool full = false;
 	bool shoot = false;
+	bool melee = false;
 	uint32_t shotTick = 0;
 
 	// Per-report accumulators (owned by the bot's thread).
@@ -77,7 +81,7 @@ struct Bot
 PlayerInput Aim( Bot& bot, PlayerInput in, uint32_t tick )
 {
 	const ModSchema& schema = bot.client->Schema();
-	in.actions = schema.ActionMask( "slot_2" );
+	in.actions = schema.ActionMask( bot.melee ? "slot_3" : "slot_2" );
 	RollbackSession* session = bot.client->Session();
 	if ( session == nullptr )
 	{
@@ -117,8 +121,14 @@ PlayerInput Aim( Bot& bot, PlayerInput in, uint32_t tick )
 	float pitch = detmath::Atan2( d.y, std::sqrt( d.x * d.x + d.z * d.z ) );
 	in.cameraYaw = detmath::RadiansToYaw( yaw );
 	in.cameraPitch = int16_t( std::clamp( int( pitch * ( 65536.0f / detmath::kTwoPi ) ), -int( kMaxCameraPitch ), int( kMaxCameraPitch ) ) );
-	// Held for a few ticks like a real click, twice a second.
-	if ( ( tick + bot.shotTick ) % 30 < 3 )
+	if ( bot.melee )
+	{
+		// Closing in: movement is camera-relative, and the camera faces the target.
+		in.moveForward = best > 1.2f ? int8_t( 127 ) : int8_t( 0 );
+		in.moveRight = 0;
+	}
+	// Held for a few ticks like a real click, twice a second (the bat only once in reach).
+	if ( ( tick + bot.shotTick ) % 30 < 3 && ( bot.melee == false || best < 2.0f ) )
 	{
 		in.actions |= schema.ActionMask( "fire" );
 	}
@@ -300,6 +310,12 @@ bool Parse( int argc, char** argv, Options& o )
 			o.shoot = true;
 			continue;
 		}
+		if ( arg == "--melee" )
+		{
+			o.shoot = true;
+			o.melee = true;
+			continue;
+		}
 		if ( i + 1 >= argc )
 		{
 			return false;
@@ -339,7 +355,8 @@ int main( int argc, char** argv )
 	if ( Parse( argc, argv, o ) == false )
 	{
 		std::printf( "usage: cb_bot [--host H] [--port P] [--count N] [--full M] [--threads T] [--duration SEC]\n"
-					 "              [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC]\n" );
+					 "              [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC]\n"
+					 "              [--chaotic] [--shoot] [--melee]\n" );
 		return 1;
 	}
 
@@ -367,6 +384,7 @@ int main( int argc, char** argv )
 		bot.brain.spawnOneIn = o.spawnOneIn;
 		bot.brain.chaotic = o.chaotic;
 		bot.shoot = o.shoot && bot.full;
+		bot.melee = o.melee;
 		bot.shotTick = uint32_t( i * 7 );
 		bot.startAt = double( i ) * double( o.staggerMs ) / 1000.0;
 		bot.client = std::make_unique<GameClient>();

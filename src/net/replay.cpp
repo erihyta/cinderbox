@@ -135,6 +135,17 @@ bool ReplayReader::Open( const std::string& path, std::string& error )
 		error = "corrupt mod schema in the replay header";
 		return false;
 	}
+	m_graph.reset();
+	if ( m_schema.animGraph.empty() == false )
+	{
+		std::string graphError, warnings;
+		m_graph = CompileAnimGraph( m_schema.animGraph, m_schema, graphError, warnings );
+		if ( m_graph == nullptr )
+		{
+			error = "replay's animation state machine: " + graphError;
+			return false;
+		}
+	}
 	std::string mapError;
 	if ( DeserializeMap( m_mapBytes.data(), m_mapBytes.size(), m_map, mapError ) == false )
 	{

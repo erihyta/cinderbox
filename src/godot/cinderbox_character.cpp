@@ -1,8 +1,10 @@
 #include "cinderbox_character.h"
 
+#include "cinderbox_companion.h"
 #include "cinderbox_skeleton.h"
 #include "pose.h" // CinderboxSkeleton holds a PoseEvaluator
 
+#include "anim_graph.h"
 #include "anim_set.h"
 #include "hitboxes.h"
 
@@ -16,11 +18,18 @@
 #include "ozz/base/io/stream.h"
 
 #include <godot_cpp/classes/animation.hpp>
+#include <godot_cpp/classes/animation_node_animation.hpp>
+#include <godot_cpp/classes/animation_node_blend2.hpp>
+#include <godot_cpp/classes/animation_node_blend_space1_d.hpp>
+#include <godot_cpp/classes/animation_node_blend_tree.hpp>
+#include <godot_cpp/classes/animation_node_state_machine.hpp>
+#include <godot_cpp/classes/animation_node_state_machine_transition.hpp>
 #include <godot_cpp/classes/animation_player.hpp>
 #include <godot_cpp/classes/animation_tree.hpp>
 #include <godot_cpp/classes/bone_attachment3d.hpp>
 #include <godot_cpp/classes/box_shape3d.hpp>
 #include <godot_cpp/classes/capsule_shape3d.hpp>
+#include <godot_cpp/classes/curve.hpp>
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/editor_file_system.hpp>
 #include <godot_cpp/classes/editor_interface.hpp>
@@ -34,6 +43,7 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
+#include <charconv>
 #include <cmath>
 #include <functional>
 #include <string>
@@ -220,6 +230,9 @@ void CbCharacter::_bind_methods()
 	ADD_GROUP( "Layers", "" );
 	CB_PROP( Variant::DICTIONARY, stance_clips, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
 	CB_PROP( Variant::DICTIONARY, masks, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
+	ADD_GROUP( "State machine", "" );
+	CB_PROP( Variant::NODE_PATH, animation_tree_path, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "AnimationTree" )
+	CB_PROP( Variant::DICTIONARY, graph_inputs, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
 	ADD_GROUP( "Aim", "aim_" );
 	CB_PROP( Variant::STRING, aim_chain, PROPERTY_HINT_PLACEHOLDER_TEXT, "UpperChest:0.3 RightUpperArm:1" )
 	CB_PROP( Variant::STRING, aim_tip, PROPERTY_HINT_NONE, "" )
@@ -242,6 +255,372 @@ PackedStringArray CbCharacter::_get_configuration_warnings() const
 		warnings.push_back( "Name the character: it is the item's name, and the bake writes to res://characters/<name>/." );
 	}
 	return warnings;
+}
+
+namespace
+{
+
+// A number for graph.cfg: the shortest form that reads back as the same float, always with a '.'.
+std::string Num( double value )
+{
+	char buffer[32];
+	auto end = std::to_chars( buffer, buffer + sizeof( buffer ), float( value ) ).ptr;
+	return std::string( buffer, end );
+}
+
+bool Plain( const String& name )
+{
+	return name.is_empty() == false && name.contains( "\t" ) == false && name.contains( "\n" ) == false &&
+		   name.contains( "=" ) == false && name.contains( "#" ) == false;
+}
+
+} // namespace
+
+String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std::string& out, std::vector<String>& animations,
+							   String& warnings ) const
+{
+	Ref<AnimationRootNode> root = tree->get_tree_root();
+	if ( root.is_null() )
+	{
+		return "the AnimationTree has no tree root";
+	}
+
+	struct Layer
+	{
+		String name;
+		Ref<AnimationNodeStateMachine> machine;
+		String prefix; // its parameters' path under "parameters/"
+		PackedStringArray mask;
+		String weight;
+	};
+	std::vector<Layer> layers;
+
+	auto input = [&]( String path ) -> String {
+		if ( m_graphInputs.has( path ) )
+		{
+			return String( m_graphInputs[path] ).strip_edges();
+		}
+		return String();
+	};
+
+	if ( Ref<AnimationNodeStateMachine> machine = root; machine.is_valid() )
+	{
+		layers.push_back( { "Base", machine, "", {}, "" } );
+	}
+	else if ( Ref<AnimationNodeBlendTree> blendTree = root; blendTree.is_valid() )
+	{
+		// [node with the input, input index, node feeding it] * n
+		Array connections = blendTree->get( "node_connections" );
+		auto inputOf = [&]( String node, int index ) -> String {
+			for ( int64_t i = 0; i + 2 < connections.size(); i += 3 )
+			{
+				if ( String( connections[i] ) == node && int( connections[i + 1] ) == index )
+				{
+					return String( connections[i + 2] );
+				}
+			}
+			return String();
+		};
+		// From the output back: Blend2 nodes stack a state machine over what is below them.
+		std::function<String( String )> walk = [&]( String name ) -> String {
+			if ( name.is_empty() )
+			{
+				return "the blend tree's output is not connected";
+			}
+			Ref<AnimationNode> node = blendTree->get_node( name );
+			if ( Ref<AnimationNodeStateMachine> machine = node; machine.is_valid() )
+			{
+				layers.push_back( { name, machine, name + "/", {}, "" } );
+				return String();
+			}
+			Ref<AnimationNodeBlend2> blend = node;
+			if ( blend.is_null() )
+			{
+				return "blend tree node " + name + " is a " + node->get_class() +
+					   "; the bake takes state machines layered with Blend2 nodes";
+			}
+			String problem = walk( inputOf( name, 0 ) );
+			if ( problem.is_empty() == false )
+			{
+				return problem;
+			}
+			String overName = inputOf( name, 1 );
+			Ref<AnimationNodeStateMachine> over = overName.is_empty() ? Ref<AnimationNode>() : blendTree->get_node( overName );
+			if ( over.is_null() )
+			{
+				return "Blend2 " + name + ": its blend input must be a state machine";
+			}
+			Layer layer{ overName, over, overName + "/", {}, input( name + "/blend_amount" ) };
+			if ( layer.weight.is_empty() )
+			{
+				warnings += "Blend2 " + name + " has no graph_inputs entry for " + name + "/blend_amount: the layer always plays; ";
+			}
+			if ( blend->is_filter_enabled() )
+			{
+				Array filters = blend->get( "filters" );
+				for ( int64_t i = 0; i < filters.size(); ++i )
+				{
+					NodePath path = filters[i];
+					String bone = path.get_concatenated_subnames();
+					if ( bone.is_empty() == false )
+					{
+						layer.mask.push_back( bone );
+					}
+				}
+			}
+			layers.push_back( layer );
+			return String();
+		};
+		String problem = walk( inputOf( "output", 0 ) );
+		if ( problem.is_empty() == false )
+		{
+			return problem;
+		}
+	}
+	else
+	{
+		return "the AnimationTree's root is a " + root->get_class() + "; use a state machine, or a blend tree of state machines";
+	}
+	if ( layers.size() > size_t( kMaxAnimLayers ) )
+	{
+		return "at most " + String::num_int64( kMaxAnimLayers ) + " state machine layers";
+	}
+
+	// Expressions are checked here; the names in them are resolved against the server's mods later.
+	ModSchema noMods;
+	auto checkExpression = [&]( String text, String where ) -> String {
+		AnimExpr expr;
+		std::string error, ignored;
+		if ( CompileAnimExpr( Std( text ), noMods, expr, error, ignored ) == false )
+		{
+			return where + ": " + String::utf8( error.c_str() );
+		}
+		if ( text.contains( "\t" ) || text.contains( "\n" ) )
+		{
+			return where + ": an expression is one line";
+		}
+		return String();
+	};
+
+	std::string body;
+	auto useAnimation = [&]( const StringName& name ) -> String {
+		String animation = name;
+		if ( player->has_animation( animation ) == false )
+		{
+			return "the tree plays '" + animation + "', which the AnimationPlayer does not have";
+		}
+		if ( Plain( animation ) == false )
+		{
+			return "animation name '" + animation + "' cannot be baked (no '=', '#', tabs or new lines)";
+		}
+		if ( std::find( animations.begin(), animations.end(), animation ) == animations.end() )
+		{
+			animations.push_back( animation );
+		}
+		return String();
+	};
+
+	for ( Layer& layer : layers )
+	{
+		body += "layer\t" + Std( layer.name ) + "\n";
+		if ( layer.mask.is_empty() == false )
+		{
+			body += "mask";
+			for ( String bone : layer.mask )
+			{
+				body += "\t" + Std( bone );
+			}
+			body += "\n";
+		}
+		if ( layer.weight.is_empty() == false )
+		{
+			String problem = checkExpression( layer.weight, layer.name + " weight" );
+			if ( problem.is_empty() == false )
+			{
+				return problem;
+			}
+			body += "weight\t" + Std( layer.weight ) + "\n";
+		}
+
+		Ref<AnimationNodeStateMachine> machine = layer.machine;
+		TypedArray<StringName> names = machine->get_node_list();
+		int states = 0;
+		String first;
+		for ( int64_t i = 0; i < names.size(); ++i )
+		{
+			String name = String( StringName( names[i] ) );
+			if ( name == "Start" || name == "End" )
+			{
+				continue;
+			}
+			if ( Plain( name ) == false )
+			{
+				return "state name '" + name + "' cannot be baked (no '=', '#', tabs or new lines)";
+			}
+			Ref<AnimationNode> node = machine->get_node( name );
+			if ( Ref<AnimationNodeAnimation> clip = node; clip.is_valid() )
+			{
+				String problem = useAnimation( clip->get_animation() );
+				if ( problem.is_empty() == false )
+				{
+					return layer.name + "/" + name + ": " + problem;
+				}
+				bool backward = clip->get_play_mode() == AnimationNodeAnimation::PLAY_MODE_BACKWARD;
+				body += "state\t" + Std( name ) + "\tclip\t" + Std( String( clip->get_animation() ) ) + "\t" + ( backward ? "1" : "0" ) + "\n";
+			}
+			else if ( Ref<AnimationNodeBlendSpace1D> space = node; space.is_valid() )
+			{
+				String driver = input( layer.prefix + name + "/blend_position" );
+				if ( driver.is_empty() )
+				{
+					driver = input( name + "/blend_position" );
+				}
+				if ( driver.is_empty() )
+				{
+					return "blend space " + layer.prefix + name + " needs a graph_inputs entry for " + layer.prefix + name +
+						   "/blend_position (like \"speed\")";
+				}
+				String problem = checkExpression( driver, layer.prefix + name + "/blend_position" );
+				if ( problem.is_empty() == false )
+				{
+					return problem;
+				}
+				body += "state\t" + Std( name ) + "\tblend\t" + Std( driver ) + "\n";
+				if ( space->get_blend_point_count() == 0 )
+				{
+					return "blend space " + layer.prefix + name + " has no points";
+				}
+				for ( int p = 0; p < space->get_blend_point_count(); ++p )
+				{
+					Ref<AnimationNodeAnimation> point = space->get_blend_point_node( p );
+					if ( point.is_null() )
+					{
+						return "blend space " + layer.prefix + name + ": its points must be animations";
+					}
+					problem = useAnimation( point->get_animation() );
+					if ( problem.is_empty() == false )
+					{
+						return layer.prefix + name + ": " + problem;
+					}
+					bool backward = point->get_play_mode() == AnimationNodeAnimation::PLAY_MODE_BACKWARD;
+					body += "point\t" + Num( space->get_blend_point_position( p ) ) + "\t" + Std( String( point->get_animation() ) ) +
+							"\t" + ( backward ? "1" : "0" ) + "\n";
+				}
+			}
+			else
+			{
+				return layer.prefix + name + " is a " + node->get_class() +
+					   "; states are animations or 1D blend spaces (nested machines are not baked yet)";
+			}
+			if ( states == 0 )
+			{
+				first = name;
+			}
+			++states;
+		}
+		if ( states == 0 )
+		{
+			return "state machine " + layer.name + " has no states";
+		}
+
+		String start;
+		for ( int t = 0; t < machine->get_transition_count(); ++t )
+		{
+			String from = String( machine->get_transition_from( t ) );
+			String to = String( machine->get_transition_to( t ) );
+			Ref<AnimationNodeStateMachineTransition> transition = machine->get_transition( t );
+			if ( from == "Start" )
+			{
+				start = to;
+				continue;
+			}
+			String where = layer.prefix + from + " -> " + to;
+			if ( to == "End" )
+			{
+				warnings += where + ": transitions to End are not baked; ";
+				continue;
+			}
+			switch ( transition->get_advance_mode() )
+			{
+				case AnimationNodeStateMachineTransition::ADVANCE_MODE_AUTO:
+					break;
+				case AnimationNodeStateMachineTransition::ADVANCE_MODE_ENABLED:
+					warnings += where + " advances only by travel(), which the game does not call: set it to Auto; ";
+					continue;
+				default:
+					continue;
+			}
+			String condition = String( transition->get_advance_condition() ).strip_edges();
+			String expression = transition->get_advance_expression().strip_edges();
+			String combined = condition;
+			if ( expression.is_empty() == false )
+			{
+				combined = condition.is_empty() ? expression : "(" + condition + ") and (" + expression + ")";
+			}
+			if ( combined.is_empty() == false )
+			{
+				String problem = checkExpression( combined, where );
+				if ( problem.is_empty() == false )
+				{
+					return problem;
+				}
+			}
+			const char* mode = "immediate";
+			switch ( transition->get_switch_mode() )
+			{
+				case AnimationNodeStateMachineTransition::SWITCH_MODE_AT_END:
+					mode = "at_end";
+					break;
+				case AnimationNodeStateMachineTransition::SWITCH_MODE_SYNC:
+					warnings += where + ": Sync switching is baked as Immediate; ";
+					break;
+				default:
+					break;
+			}
+			if ( transition->get_xfade_curve().is_valid() )
+			{
+				warnings += where + ": the crossfade curve is not baked (it fades linearly); ";
+			}
+			body += "transition\t" + Std( from ) + "\t" + Std( to ) + "\t" + std::to_string( transition->get_priority() ) + "\t" +
+					Num( transition->get_xfade_time() ) + "\t" + mode + "\t1\t" + Std( combined ) + "\n";
+		}
+		if ( start.is_empty() )
+		{
+			warnings += "state machine " + layer.name + " has no transition from Start: it starts in " + first + "; ";
+			start = first;
+		}
+		body += "start\t" + Std( start ) + "\n";
+	}
+
+	out = "cinderbox_graph\t1\n# Baked from the AnimationTree by CbCharacter. Edit the tree and bake again.\n";
+	for ( String name : animations )
+	{
+		Ref<Animation> animation = player->get_animation( name );
+		Animation::LoopMode loop = animation->get_loop_mode();
+		if ( loop == Animation::LOOP_PINGPONG )
+		{
+			warnings += "animation " + name + " loops ping-pong; it is baked as a plain loop; ";
+		}
+		out += "clip\t" + Std( name ) + "\t" + Num( animation->get_length() ) + "\t" + ( loop != Animation::LOOP_NONE ? "1" : "0" ) + "\n";
+		PackedStringArray markers = animation->get_marker_names();
+		for ( String marker : markers )
+		{
+			if ( Plain( marker ) == false )
+			{
+				return "marker '" + marker + "' on " + name + " cannot be baked (no '=', '#', tabs or new lines)";
+			}
+			out += "marker\t" + Std( name ) + "\t" + Num( animation->get_marker_time( marker ) ) + "\t" + Std( marker ) + "\n";
+		}
+	}
+	out += body;
+
+	// The whole file must load the way the game will load it.
+	std::string error, ignored;
+	if ( CompileAnimGraph( out, noMods, error, ignored ) == nullptr )
+	{
+		return "the baked state machine does not load: " + String::utf8( error.c_str() );
+	}
+	return String();
 }
 
 void CbCharacter::bake()
@@ -516,7 +895,48 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	};
 
 	int clips = 0;
-	for ( int c = 0; c < anim::ClipCount; ++c )
+	AnimationTree* tree = m_tree.is_empty() ? nullptr : Object::cast_to<AnimationTree>( get_node_or_null( m_tree ) );
+	if ( m_tree.is_empty() == false && tree == nullptr )
+	{
+		return fail( "animation_tree_path does not point at an AnimationTree" );
+	}
+	if ( tree != nullptr )
+	{
+		// The character's own state machine replaces the six built-in clips and the stances.
+		std::string graph;
+		std::vector<String> animations;
+		String problem = BakeGraph( tree, player, graph, animations, warnings );
+		if ( problem.is_empty() == false )
+		{
+			return fail( problem );
+		}
+		for ( size_t i = 0; i < animations.size(); ++i )
+		{
+			const String& animationName = animations[i];
+			String file = "clip_" + String::num_int64( int64_t( i ) ) + ".ozz";
+			problem = bakeClip( animationName, file );
+			if ( problem.is_empty() == false )
+			{
+				return fail( problem );
+			}
+			cfg += "clip." + Std( animationName ) + " = " + Std( file ) + "\n";
+			addCompanion( animationName, CompanionName( animationName ) );
+			++clips;
+		}
+		if ( WriteText( folder + "graph.cfg", graph, error ) == false )
+		{
+			return fail( error );
+		}
+		if ( m_stanceClips.is_empty() == false )
+		{
+			warnings += "stance_clips are not used with a state machine (its layers replace them); ";
+		}
+	}
+	else if ( FileAccess::file_exists( folder + "graph.cfg" ) )
+	{
+		DirAccess::remove_absolute( folder + "graph.cfg" ); // from an earlier bake with a tree
+	}
+	for ( int c = 0; c < anim::ClipCount && tree == nullptr; ++c )
 	{
 		const char* clipName = anim::ClipName( anim::Clip( c ) );
 		String animationName = m_clips[c].strip_edges();
@@ -538,7 +958,7 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 
 	// Stances: "<stance>" (one loop) or "<stance>_<clip>" -> an animation of the player.
 	int stanceClips = 0;
-	Array stanceNames = m_stanceClips.keys();
+	Array stanceNames = tree == nullptr ? m_stanceClips.keys() : Array();
 	for ( int64_t i = 0; i < stanceNames.size(); ++i )
 	{
 		String name = String( stanceNames[i] ).strip_edges();
@@ -580,9 +1000,15 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		cfg += "mask." + Std( layer ) + " = " + Std( roots ) + "\n";
 	}
 	result["stance_clips"] = stanceClips;
-	if ( player->has_animation( "RESET" ) )
+	// What a channel returns to when its clip has nothing to say: RESET, from whichever library has it.
+	PackedStringArray animationNames = player->get_animation_list();
+	for ( const String& animationName : animationNames )
 	{
-		addCompanion( "RESET", "RESET" ); // what a channel returns to when its clip has nothing to say
+		if ( animationName == "RESET" || animationName.ends_with( "/RESET" ) )
+		{
+			addCompanion( animationName, "RESET" );
+			break;
+		}
 	}
 	if ( ResourceSaver::get_singleton()->save( companion, folder + "companion.tres" ) != OK )
 	{
@@ -666,9 +1092,9 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		}
 	}
 	std::function<void( Node* )> scan = [&]( Node* node ) {
-		if ( auto* tree = Object::cast_to<AnimationTree>( node ) )
+		if ( auto* other = Object::cast_to<AnimationTree>( node ); other != nullptr && other != tree )
 		{
-			warnings += "AnimationTree " + String( tree->get_name() ) +
+			warnings += "AnimationTree " + String( other->get_name() ) +
 						" runs before the ozz pose: on players only what the pose leaves alone survives (faces, props, "
 						"materials; not " +
 						hitBones + "); ";

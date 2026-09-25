@@ -159,6 +159,37 @@ std::vector<ActiveClip> ActiveClips( const AnimState& state, const AnimSet& set,
 	return out;
 }
 
+std::vector<ActiveClip> ActiveGraphClips( const AnimState& state, const AnimGraph& graph )
+{
+	std::vector<ActiveClip> out;
+	for ( size_t l = 0; l < graph.layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	{
+		const AnimGraphLayer& layer = graph.layers[l];
+		const AnimGraphLayerState& L = state.graph[l];
+		if ( L.state >= layer.states.size() || ( l > 0 && L.weight <= 0.0f ) )
+		{
+			continue;
+		}
+		const AnimGraphState& s = layer.states[L.state];
+		size_t best = 0;
+		for ( size_t p = 1; p < s.points.size(); ++p )
+		{
+			if ( AnimGraphPointWeight( s, L.blend, p ) > AnimGraphPointWeight( s, L.blend, best ) )
+			{
+				best = p;
+			}
+		}
+		const AnimGraphClip& clip = graph.clips[size_t( s.points[best].clip )];
+		float time = s.blend ? L.time * clip.length : L.time;
+		if ( s.points[best].backward )
+		{
+			time = clip.length - time;
+		}
+		out.push_back( { int( l ), clip.name, time, clip.loops } );
+	}
+	return out;
+}
+
 AnimState InterpolateAnimState( const AnimState& from, const AnimState& to, float alpha )
 {
 	AnimState s = to;
@@ -191,6 +222,28 @@ AnimState InterpolateAnimState( const AnimState& from, const AnimState& to, floa
 			s.layerTime[l] = from.layerTime[l] + ( to.layerTime[l] - from.layerTime[l] ) * t;
 		}
 	}
+	for ( int l = 0; l < kMaxAnimLayers; ++l )
+	{
+		// A state machine layer: its clocks move on within a state; a switch shows the new state.
+		const AnimGraphLayerState& a = from.graph[l];
+		const AnimGraphLayerState& b = to.graph[l];
+		AnimGraphLayerState& o = s.graph[l];
+		o.weight = a.weight + ( b.weight - a.weight ) * t;
+		if ( a.started == 0 || a.state != b.state || b.stateTime < a.stateTime )
+		{
+			continue;
+		}
+		o.stateTime = a.stateTime + ( b.stateTime - a.stateTime ) * t;
+		o.blend = a.blend + ( b.blend - a.blend ) * t;
+		if ( b.time >= a.time )
+		{
+			o.time = a.time + ( b.time - a.time ) * t;
+		}
+		if ( a.previous == b.previous && b.previousTime >= a.previousTime )
+		{
+			o.previousTime = a.previousTime + ( b.previousTime - a.previousTime ) * t;
+		}
+	}
 	float dIdle = to.idleTime - from.idleTime;
 	if ( dIdle < 0.0f )
 	{
@@ -221,6 +274,176 @@ PoseEvaluator::PoseEvaluator( const AnimSet& set )
 	m_scratch.resize( soaJoints );
 	m_keepWeights.resize( soaJoints );
 	m_stanceWeights.resize( soaJoints );
+	m_layerPose.resize( soaJoints );
+}
+
+void PoseEvaluator::SetGraph( std::shared_ptr<const AnimGraph> graph, std::string& warnings )
+{
+	m_graph = std::move( graph );
+	m_graphClips.clear();
+	m_graphMasks.clear();
+	if ( !m_graph )
+	{
+		return;
+	}
+	const auto& skeleton = m_set.Skeleton();
+	for ( const AnimGraphClip& clip : m_graph->clips )
+	{
+		const ozz::animation::Animation* own = m_set.NamedClip( clip.name );
+		if ( own == nullptr )
+		{
+			warnings += "the state machine plays '" + clip.name + "', which this character has no clip for; ";
+		}
+		m_graphClips.push_back( own );
+	}
+	// Masks: exactly the bones the layer's Blend2 filter lists, as Godot filters them.
+	const int joints = skeleton.num_joints();
+	auto names = skeleton.joint_names();
+	for ( const AnimGraphLayer& layer : m_graph->layers )
+	{
+		ozz::vector<ozz::math::SimdFloat4> packed;
+		if ( layer.mask.empty() == false )
+		{
+			std::vector<float> weights( size_t( joints ), 0.0f );
+			for ( const std::string& bone : layer.mask )
+			{
+				int j = FindJoint( m_set, bone.c_str() );
+				for ( int k = 0; k < joints && j < 0; ++k )
+				{
+					j = bone == names[size_t( k )] ? k : -1; // a bone the profile does not name
+				}
+				if ( j >= 0 )
+				{
+					weights[size_t( j )] = 1.0f;
+				}
+			}
+			packed.resize( size_t( skeleton.num_soa_joints() ) );
+			for ( int i = 0; i < skeleton.num_soa_joints(); ++i )
+			{
+				float lane[4];
+				for ( int k = 0; k < 4; ++k )
+				{
+					int j = i * 4 + k;
+					lane[k] = j < joints ? weights[size_t( j )] : 0.0f;
+				}
+				packed[size_t( i )] = ozz::math::simd_float4::Load( lane[0], lane[1], lane[2], lane[3] );
+			}
+		}
+		m_graphMasks.push_back( std::move( packed ) );
+	}
+	// Sample buffers: every point of a state and of the one fading out.
+	size_t most = 1;
+	for ( const AnimGraphLayer& layer : m_graph->layers )
+	{
+		for ( const AnimGraphState& state : layer.states )
+		{
+			most = std::max( most, state.points.size() );
+		}
+	}
+	while ( m_graphContexts.size() < 2 * most )
+	{
+		m_graphContexts.push_back( std::make_unique<ozz::animation::SamplingJob::Context>( joints ) );
+		m_graphLocals.emplace_back( size_t( skeleton.num_soa_joints() ) );
+	}
+}
+
+void PoseEvaluator::EvaluateGraph( const AnimState& state )
+{
+	const auto& skeleton = m_set.Skeleton();
+	const AnimGraph& graph = *m_graph;
+	std::vector<ozz::animation::BlendingJob::Layer> layers;
+	for ( size_t l = 0; l < graph.layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	{
+		const AnimGraphLayer& layer = graph.layers[l];
+		AnimGraphLayerState L = state.graph[l];
+		if ( L.started == 0 || L.state >= layer.states.size() || L.previous >= layer.states.size() )
+		{
+			L = AnimGraphLayerState{};
+			L.state = L.previous = uint8_t( layer.start );
+			L.weight = l == 0 ? 1.0f : 0.0f;
+		}
+		if ( l > 0 && L.weight <= 0.0f )
+		{
+			continue;
+		}
+
+		// The state, crossfading from the one before it.
+		float in = L.fadeLength > 0.0f ? std::min( L.stateTime / L.fadeLength, 1.0f ) : 1.0f;
+		layers.clear();
+		size_t buffer = 0;
+		auto sample = [&]( const AnimGraphState& s, float time, float blend, float weight ) {
+			for ( size_t p = 0; p < s.points.size() && buffer < m_graphLocals.size(); ++p )
+			{
+				float w = weight * AnimGraphPointWeight( s, blend, p );
+				const AnimGraphState::Point& point = s.points[p];
+				const ozz::animation::Animation* clip = m_graphClips[size_t( point.clip )];
+				if ( w < kMinWeight || clip == nullptr )
+				{
+					continue;
+				}
+				float ratio = s.blend ? time : OnceRatio( time, graph.clips[size_t( point.clip )].length );
+				ozz::animation::SamplingJob sampling;
+				sampling.animation = clip;
+				sampling.context = m_graphContexts[buffer].get();
+				sampling.ratio = std::clamp( point.backward ? 1.0f - ratio : ratio, 0.0f, 1.0f );
+				sampling.output = ozz::make_span( m_graphLocals[buffer] );
+				if ( sampling.Run() )
+				{
+					ozz::animation::BlendingJob::Layer out;
+					out.weight = w;
+					out.transform = ozz::make_span( m_graphLocals[buffer] );
+					layers.push_back( out );
+					++buffer;
+				}
+			}
+		};
+		sample( layer.states[L.state], L.time, L.blend, in );
+		if ( in < 1.0f )
+		{
+			sample( layer.states[L.previous], L.previousTime, L.previousBlend, 1.0f - in );
+		}
+
+		ozz::animation::BlendingJob blending;
+		blending.threshold = 0.1f;
+		blending.layers = ozz::span<const ozz::animation::BlendingJob::Layer>( layers.data(), layers.size() );
+		blending.rest_pose = skeleton.joint_rest_poses();
+		blending.output = ozz::make_span( l == 0 ? m_blended : m_layerPose );
+		blending.Run();
+		if ( l > 0 )
+		{
+			const auto& mask = m_graphMasks[l];
+			BlendOver( m_layerPose, mask.empty() ? nullptr : &mask, L.weight );
+		}
+	}
+}
+
+void PoseEvaluator::BlendOver( const ozz::vector<ozz::math::SoaTransform>& pose, const ozz::vector<ozz::math::SimdFloat4>* mask,
+							   float weight )
+{
+	const auto& skeleton = m_set.Skeleton();
+	const ozz::math::SimdFloat4 one = ozz::math::simd_float4::one();
+	const ozz::math::SimdFloat4 w = ozz::math::simd_float4::Load1( std::min( weight, 1.0f ) );
+	for ( size_t i = 0; i < m_stanceWeights.size(); ++i )
+	{
+		m_stanceWeights[i] = mask != nullptr ? w * ( *mask )[i] : w;
+		m_keepWeights[i] = one - m_stanceWeights[i];
+	}
+	std::array<ozz::animation::BlendingJob::Layer, 2> layers;
+	layers[0].weight = 1.0f;
+	layers[0].transform = ozz::make_span( m_blended );
+	layers[0].joint_weights = ozz::make_span( m_keepWeights );
+	layers[1].weight = 1.0f;
+	layers[1].transform = ozz::make_span( pose );
+	layers[1].joint_weights = ozz::make_span( m_stanceWeights );
+	ozz::animation::BlendingJob blending;
+	blending.threshold = 0.001f;
+	blending.layers = ozz::make_span( layers );
+	blending.rest_pose = skeleton.joint_rest_poses();
+	blending.output = ozz::make_span( m_scratch );
+	if ( blending.Run() )
+	{
+		std::swap( m_blended, m_scratch );
+	}
 }
 
 void PoseEvaluator::ApplyStance( int stance, int layer, float weight, float layerTime )
@@ -301,34 +524,25 @@ void PoseEvaluator::ApplyStance( int stance, int layer, float weight, float laye
 	}
 
 	// Over what is there so far, by the mask: per joint, (1 - w * mask) of it and w * mask of the stance.
-	const ozz::math::SimdFloat4 one = ozz::math::simd_float4::one();
-	const ozz::math::SimdFloat4 w = ozz::math::simd_float4::Load1( std::min( weight, 1.0f ) );
-	for ( size_t i = 0; i < mask.size(); ++i )
-	{
-		m_stanceWeights[i] = w * mask[i];
-		m_keepWeights[i] = one - m_stanceWeights[i];
-	}
-	std::array<ozz::animation::BlendingJob::Layer, 2> layers;
-	layers[0].weight = 1.0f;
-	layers[0].transform = ozz::make_span( m_blended );
-	layers[0].joint_weights = ozz::make_span( m_keepWeights );
-	layers[1].weight = 1.0f;
-	layers[1].transform = ozz::make_span( m_stanceLocals );
-	layers[1].joint_weights = ozz::make_span( m_stanceWeights );
-	ozz::animation::BlendingJob blending;
-	blending.threshold = 0.001f;
-	blending.layers = ozz::make_span( layers );
-	blending.rest_pose = skeleton.joint_rest_poses();
-	blending.output = ozz::make_span( m_scratch );
-	if ( blending.Run() )
-	{
-		std::swap( m_blended, m_scratch );
-	}
+	BlendOver( m_stanceLocals, &mask, weight );
 }
 
 PoseEvaluator::~PoseEvaluator() = default;
 
 void PoseEvaluator::Evaluate( const AnimState& state )
+{
+	if ( m_graph )
+	{
+		EvaluateGraph( state );
+	}
+	else
+	{
+		EvaluateBuiltIn( state );
+	}
+	Finish( state );
+}
+
+void PoseEvaluator::EvaluateBuiltIn( const AnimState& state )
 {
 	const auto& skeleton = m_set.Skeleton();
 	m_lastWeights = ComputeClipWeights( state, m_set );
@@ -385,7 +599,11 @@ void PoseEvaluator::Evaluate( const AnimState& state )
 			}
 		}
 	}
+}
 
+void PoseEvaluator::Finish( const AnimState& state )
+{
+	const auto& skeleton = m_set.Skeleton();
 	if ( m_set.LockRootXZ() && skeleton.num_joints() > 0 )
 	{
 		// Clips exported with root motion would walk away from the capsule; pin the root's

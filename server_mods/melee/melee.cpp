@@ -11,6 +11,7 @@
 #include "mod_api.h"
 
 #include <array>
+#include <vector>
 
 namespace
 {
@@ -21,7 +22,7 @@ using namespace cb::mods;
 constexpr int32_t kMeleeSlot = 3; // loadout.slot value while the bat is out
 constexpr int32_t kDamage = 40;
 constexpr float kSwingSeconds = 0.45f;	// the swing stance, then back to the ready stance
-constexpr float kStrikeSeconds = 0.2f;	// when in the swing the hit is tested
+constexpr float kStrikeSeconds = 0.2f;	// when in the swing the hit is tested, unless the animation says
 constexpr float kCooldownSeconds = 0.6f;
 constexpr float kReach = 1.8f;			// metres from the chest
 constexpr float kFan = 0.45f;			// radians either side of straight ahead
@@ -61,11 +62,16 @@ public:
 		// a = who swung, b = who or what was hit, value = damage, point = where, vector = normal.
 		m_hit = declare.Event( "melee.hit" );
 		m_damage = declare.Event( "combat.damage" );
+		// A marker in the character's swing animation: the frame it connects (a = who swings).
+		m_strike = declare.Event( "melee.strike" );
 	}
 
 	void Tick( Context& ctx ) override
 	{
 		uint32_t tick = ctx.Tick();
+		// Characters whose swing carries a strike marker hit on it; the rest on the timer.
+		bool marked = ctx.AnimationEmits( m_strike );
+		std::vector<ModEventRecord> recent = marked ? ctx.RecentEvents() : std::vector<ModEventRecord>();
 		for ( int i = 0; i < kMaxPlayers; ++i )
 		{
 			PlayerSlot slot = PlayerSlot( i );
@@ -101,7 +107,12 @@ public:
 			if ( s.swinging )
 			{
 				uint32_t elapsed = tick - s.swingStart;
-				if ( s.struck == false && elapsed >= Ticks( ctx, kStrikeSeconds ) )
+				bool strike = marked == false && elapsed >= Ticks( ctx, kStrikeSeconds );
+				for ( const ModEventRecord& e : recent )
+				{
+					strike |= e.type == uint16_t( m_strike.index ) && e.netIdA == netId;
+				}
+				if ( s.struck == false && strike )
 				{
 					s.struck = true;
 					Strike( ctx, slot, netId );
@@ -167,6 +178,7 @@ private:
 	EventHandle m_swing;
 	EventHandle m_hit;
 	EventHandle m_damage;
+	EventHandle m_strike;
 };
 
 } // namespace
