@@ -183,7 +183,7 @@ void CinderboxSkeleton::ApplyPose( const anim::PoseEvaluator& pose )
 	ApplyPose( pose.Set(), pose.Models() );
 }
 
-bool CinderboxSkeleton::JointTransform( const String& profileName, Transform3D& out ) const
+bool CinderboxSkeleton::JointTransform( const String& profileName, Transform3D& out, bool forItems ) const
 {
 	if ( m_lastSet == nullptr )
 	{
@@ -196,7 +196,12 @@ bool CinderboxSkeleton::JointTransform( const String& profileName, Transform3D& 
 		const char* profile = anim::ProfileName( names[j] );
 		if ( profile != nullptr && std::strcmp( profile, name.get_data() ) == 0 )
 		{
-			out = ToTransform( m_lastModels[j] ).orthonormalized();
+			out = ToTransform( m_lastModels[j] );
+			if ( forItems )
+			{
+				out = out * ToTransform( m_lastSet->AttachFrame( int( j ) ) );
+			}
+			out = out.orthonormalized();
 			return true;
 		}
 	}
