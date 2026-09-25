@@ -14,10 +14,11 @@ extends Node
 ## Player mods are searched in (later packs override earlier ones, alphabetically within a folder):
 ##   <game folder>/mods, user://mods, and every --mods=<dir> on the command line.
 
-const MODDABLE_PREFIXES := ["prefabs/", "vfx/", "ui/", "maps/", "assets/", "characters/"]
-## A character item's baked data, next to its scene under characters/<name>/: ozz skeleton and clips
-## (.ozz) and anim.cfg / hitboxes.cfg. Read by the engine as data, never loaded as resources.
-const CHARACTER_PREFIX := "characters/"
+const MODDABLE_PREFIXES := ["prefabs/", "vfx/", "ui/", "maps/", "assets/", "characters/", "anim/"]
+## Baked animation data: a character item's next to its scene under characters/<name>/, and a mod's
+## animation packs under anim/<pack>/: ozz skeleton and clips (.ozz) and anim.cfg / graph.cfg /
+## hitboxes.cfg. Read by the engine as data, never loaded as resources.
+const DATA_PREFIXES := ["characters/", "anim/"]
 const CHARACTER_DATA_EXTENSIONS := ["ozz", "cfg"]
 ## Converted resources Godot writes into exported packs.
 const EXPORTED_PREFIX := ".godot/exported/"
@@ -116,8 +117,9 @@ static func _check_file(zip: ZIPReader, file: String) -> String:
 		return _check_resource(file, zip.read_file(file))
 	if ext in MEDIA_EXTENSIONS:
 		return ""
-	if file.begins_with(CHARACTER_PREFIX) and ext in CHARACTER_DATA_EXTENSIONS:
-		return ""
+	for prefix in DATA_PREFIXES:
+		if file.begins_with(prefix) and ext in CHARACTER_DATA_EXTENSIONS:
+			return ""
 	return "%s: files of this kind are not allowed" % file
 
 

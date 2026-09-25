@@ -32,6 +32,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbHitbox );
 	GDREGISTER_CLASS( cb::gd::CbCharacter );
 	GDREGISTER_CLASS( cb::gd::CbSocket );
+	GDREGISTER_CLASS( cb::gd::CbAnimPack );
 	GDREGISTER_CLASS( cb::gd::CbCompanionPlayer );
 	// Map authoring: inert marker nodes plus the baker they are baked with.
 	GDREGISTER_CLASS( cb::gd::CbStatic );

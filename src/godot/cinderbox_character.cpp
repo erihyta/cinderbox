@@ -223,6 +223,23 @@ PackedStringArray CbSocket::_get_configuration_warnings() const
 	return warnings;
 }
 
+// --- CbAnimPack -------------------------------------------------------------------------------------
+
+PackedStringArray CbAnimPack::_get_configuration_warnings() const
+{
+	PackedStringArray warnings;
+	if ( get_character_name().strip_edges().is_empty() )
+	{
+		warnings.push_back( "Name the pack (character_name): the server mod declares it by this name, and the bake writes to "
+							"res://anim/<name>/." );
+	}
+	if ( get_animation_tree_path().is_empty() )
+	{
+		warnings.push_back( "An animation pack is its AnimationTree: set animation_tree_path." );
+	}
+	return warnings;
+}
+
 // --- CbCharacter ------------------------------------------------------------------------------------
 
 void CbCharacter::_bind_methods()
@@ -762,7 +779,7 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	{
 		return fail( "character_name must be one word (the item's name)" );
 	}
-	String folder = requestedFolder.is_empty() ? "res://characters/" + name + "/" : requestedFolder;
+	String folder = requestedFolder.is_empty() ? ( IsPack() ? "res://anim/" : "res://characters/" ) + name + "/" : requestedFolder;
 	if ( folder.ends_with( "/" ) == false )
 	{
 		folder += "/";
@@ -1008,6 +1025,10 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	{
 		return fail( "animation_tree_path does not point at an AnimationTree" );
 	}
+	if ( IsPack() && tree == nullptr )
+	{
+		return fail( "an animation pack is its AnimationTree: set animation_tree_path" );
+	}
 	if ( tree != nullptr )
 	{
 		// The character's own state machine replaces the six built-in clips and the stances.
@@ -1183,7 +1204,7 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		}
 		hitboxes.boxes.push_back( box );
 	}
-	if ( hitboxes.boxes.empty() )
+	if ( hitboxes.boxes.empty() && IsPack() == false )
 	{
 		return fail( "no hitboxes: add CbHitbox shapes under BoneAttachment3D nodes" );
 	}
@@ -1222,7 +1243,7 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		}
 	};
 	scan( this );
-	if ( WriteText( folder + "hitboxes.cfg", anim::FormatHitboxes( hitboxes ), error ) == false )
+	if ( IsPack() == false && WriteText( folder + "hitboxes.cfg", anim::FormatHitboxes( hitboxes ), error ) == false )
 	{
 		return fail( error );
 	}
