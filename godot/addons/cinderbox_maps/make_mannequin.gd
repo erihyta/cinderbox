@@ -4,26 +4,42 @@ extends SceneTree
 ##
 ##   godot --headless --path godot --script res://addons/cinderbox_maps/make_mannequin.gd
 ##
+## If characters/mannequin/character.tscn already exists, this only bakes it again, so edits made in
+## the editor stay. Add `-- --force` to build it from scratch (that discards them).
+##
 ## The source is characters/mannequin/source/UAL1_Standard.glb (the in-place version; _RM has root
 ## motion, which the simulation does not want). Its import retargets it onto Godot's
 ## SkeletonProfileHumanoid with source/bone_map.tres, so bones have the profile's names. This script
-## puts it under a CbCharacter with a CinderboxSkeleton, hitboxes sized from the skeleton's own bone
-## lengths, and the clips the game uses, saves characters/mannequin/character.tscn and bakes it.
-## Everything here is what an author would do by hand in the editor; open the scene and edit freely.
+## puts it under a CbCharacter with a CinderboxSkeleton and hitboxes sized from the skeleton's own
+## bone lengths, and authors its state machine as an ordinary AnimationTree:
+##
+##   UpperBlend (Blend2, filter: the spine and everything above it)
+##     Base:  Locomotion (1D blend space on forward_speed) <-> JumpStart / Fall / Land
+##     Upper: Rest, Pistol <-> Shoot (on pistol.fired), Ready <-> Swing (the melee mod's stances)
+##
+## The swing (Sword_Attack, saved to animations/ by the glb's import settings so it can be edited)
+## gets a "melee.strike" marker where the hand is fastest, which the melee mod hits on, and a track
+## that sets the right hand on fire for the swing. Everything here is what an author would do by hand in
+## the editor; open the scene and edit freely.
 
 const SOURCE := "res://characters/mannequin/source/UAL1_Standard.glb"
 const OUT_DIR := "res://characters/mannequin"
+const SWING := "res://characters/mannequin/animations/Sword_Attack.res"
+const FIRE_PATH := "Armature/Skeleton3D/At_RightHand/HandFire" # from the model's root, as tracks see it
 
-# The six clips the simulation's states play, and the stance clips the shipped mods use.
+# The six built-in clips, used only if the state machine is removed (animation_tree_path cleared).
 const CLIPS := {
 	"idle": "Idle", "walk": "Walk", "run": "Jog_Fwd",
 	"jump_start": "Jump_Start", "fall": "Jump", "land": "Jump_Land",
 }
-const STANCES := {
-	"pistol": "Pistol_Idle",	  # upper body, one loop
-	"melee_idle": "Sword_Idle",	  # full body; walking with the bat uses the normal walk
-	"melee_swing": "Sword_Attack",
-}
+
+# Blend space points at the speeds the clips actually cover (measured from their foot travel), so
+# the feet stay planted: walking backwards plays the same clips in reverse.
+const LOCOMOTION := [
+	[-3.0, "Jog_Fwd", true], [-0.9, "Walk", true], [0.0, "Idle", false],
+	[0.9, "Walk", false], [3.0, "Jog_Fwd", false], [5.0, "Sprint", false],
+]
+const STRIKE_TIME := 0.4 # Sword_Attack: the hand is fastest here
 
 # zone, bone, radius; capsules run along the bone to its child (the profile's +Y), spheres sit on it.
 const CAPSULES := [
@@ -37,6 +53,13 @@ var _skeleton: Skeleton3D
 
 
 func _initialize() -> void:
+	var scene_path := OUT_DIR.path_join("character.tscn")
+	if ResourceLoader.exists(scene_path) and not ("--force" in OS.get_cmdline_user_args()):
+		var existing := (load(scene_path) as PackedScene).instantiate() as CbCharacter
+		print("baking the existing ", scene_path, " (--force rebuilds it)")
+		_bake(existing)
+		return
+
 	var source := load(SOURCE) as PackedScene
 	if source == null:
 		printerr("cannot load ", SOURCE, " (import the project first)")
@@ -46,17 +69,19 @@ func _initialize() -> void:
 	_root = CbCharacter.new()
 	_root.name = "Mannequin"
 	_root.character_name = "mannequin"
-	var model := source.instantiate()
+	var model := source.instantiate(PackedScene.GEN_EDIT_STATE_INSTANCE) # as the editor does: saves only what differs
 	model.name = "Model"
 	_root.add_child(model)
 	model.owner = _root
+	# Editable Children: what is added under the model (hitboxes, the hand's fire) is saved with the
+	# scene, and shows in the editor.
+	_root.set_editable_instance(model, true)
 	_skeleton = model.get_node("Armature/Skeleton3D") as Skeleton3D
+	var player := model.get_node("AnimationPlayer") as AnimationPlayer
 	_root.skeleton_path = _root.get_path_to(_skeleton)
-	_root.animation_player_path = _root.get_path_to(model.get_node("AnimationPlayer"))
+	_root.animation_player_path = _root.get_path_to(player)
 	for clip in CLIPS:
 		_root.set("clip_" + clip, CLIPS[clip])
-	_root.stance_clips = STANCES
-	_root.masks = {"upper": "Spine"}
 
 	# The game poses this skeleton from the simulation; it is exactly the baked one, so no retargeting.
 	var driver := CinderboxSkeleton.new()
@@ -69,31 +94,213 @@ func _initialize() -> void:
 	driver.skeleton_path = driver.get_path_to(_skeleton)
 
 	_add_hitboxes()
+	_add_hand_fire()
+	_mark_swing()
+	_add_tree(player)
 
 	var packed := PackedScene.new()
 	if packed.pack(_root) != OK:
 		printerr("cannot pack the character")
 		quit(2)
 		return
-	var scene_path := OUT_DIR.path_join("character.tscn")
 	if ResourceSaver.save(packed, scene_path) != OK:
 		printerr("cannot save ", scene_path)
 		quit(2)
 		return
 	print("saved ", scene_path)
-
-	var result: Dictionary = _root.bake_to(OUT_DIR)
 	_root.free()
+	# Bake what was saved, the way the editor's button would.
+	_bake((load(scene_path) as PackedScene).instantiate() as CbCharacter)
+
+
+func _bake(character: CbCharacter) -> void:
+	var result: Dictionary = character.bake_to(OUT_DIR)
+	character.free()
 	if not result["ok"]:
 		printerr("bake failed: ", result["error"])
 		quit(1)
 		return
-	print("baked %d joints, %d clips, %d stance clips, %d hitboxes, %d companion clips into %s" % [result["joints"],
-		result["clips"], result["stance_clips"], result["hitboxes"], result["companion_clips"], OUT_DIR])
+	print("baked %d joints, %d clips, %d hitboxes, %d companion clips into %s" % [result["joints"], result["clips"],
+		result["hitboxes"], result["companion_clips"], OUT_DIR])
 	if result["warnings"] != "":
 		print("warnings: ", result["warnings"])
 	quit(0)
 
+
+# --- The state machine -------------------------------------------------------------------------------
+
+func _add_tree(player: AnimationPlayer) -> void:
+	var base := AnimationNodeStateMachine.new()
+	var locomotion := AnimationNodeBlendSpace1D.new()
+	locomotion.min_space = -4.0
+	locomotion.max_space = 6.0
+	for point in LOCOMOTION:
+		var label: String = ("Back" if point[2] else "") + point[1]
+		locomotion.add_blend_point(_clip(point[1], point[2]), point[0], -1, label)
+	base.add_node("Locomotion", locomotion, Vector2(300, 100))
+	base.add_node("JumpStart", _clip("Jump_Start"), Vector2(550, 0))
+	base.add_node("Fall", _clip("Jump"), Vector2(800, 100))
+	base.add_node("Land", _clip("Jump_Land"), Vector2(550, 220))
+	_go(base, "Start", "Locomotion")
+	_go(base, "Locomotion", "JumpStart", "jumped", 0.1)
+	_go(base, "Locomotion", "Fall", "not grounded and airborne_time > 0.12", 0.2)
+	_go(base, "JumpStart", "Land", "grounded and state_time > 0.1", 0.1)
+	_go(base, "JumpStart", "Fall", "state_time > 0.3", 0.2)
+	_go(base, "Fall", "Land", "grounded", 0.1)
+	_go(base, "Land", "JumpStart", "jumped", 0.1)
+	_go(base, "Land", "Locomotion", "state_time > 0.35 or speed > 1.5", 0.25)
+
+	# The upper body follows the mods' stances (and the pistol's shots).
+	var upper := AnimationNodeStateMachine.new()
+	upper.add_node("Rest", _clip("Idle"), Vector2(300, 100))
+	upper.add_node("Pistol", _clip("Pistol_Idle"), Vector2(550, 0))
+	upper.add_node("Shoot", _clip("Pistol_Shoot"), Vector2(800, 0))
+	upper.add_node("Ready", _clip("Sword_Idle"), Vector2(550, 220))
+	upper.add_node("Swing", _clip("Sword_Attack"), Vector2(800, 220))
+	_go(upper, "Start", "Rest")
+	_go(upper, "Rest", "Pistol", "pistol", 0.15)
+	_go(upper, "Rest", "Ready", "melee", 0.15)
+	_go(upper, "Rest", "Swing", "melee_swing", 0.05)
+	_go(upper, "Pistol", "Shoot", "pistol.fired", 0.05)
+	_go(upper, "Shoot", "Pistol", "", 0.15, true)
+	_go(upper, "Pistol", "Ready", "melee", 0.15)
+	_go(upper, "Pistol", "Rest", "not pistol", 0.15)
+	_go(upper, "Shoot", "Rest", "not pistol", 0.15)
+	_go(upper, "Ready", "Swing", "melee_swing", 0.05)
+	_go(upper, "Ready", "Pistol", "pistol", 0.15)
+	_go(upper, "Ready", "Rest", "not melee and not melee_swing", 0.15)
+	_go(upper, "Swing", "Ready", "not melee_swing and melee", 0.25)
+	_go(upper, "Swing", "Rest", "not melee_swing and not melee", 0.25)
+
+	var blend := AnimationNodeBlend2.new()
+	blend.filter_enabled = true
+	var spine := _skeleton.find_bone("Spine")
+	for bone in range(_skeleton.get_bone_count()):
+		var b := bone
+		while b >= 0 and b != spine:
+			b = _skeleton.get_bone_parent(b)
+		if b == spine:
+			blend.set_filter_path(NodePath("Armature/Skeleton3D:" + _skeleton.get_bone_name(bone)), true)
+
+	var root := AnimationNodeBlendTree.new()
+	root.add_node("Base", base, Vector2(0, 0))
+	root.add_node("Upper", upper, Vector2(0, 200))
+	root.add_node("UpperBlend", blend, Vector2(250, 100))
+	root.connect_node("UpperBlend", 0, "Base")
+	root.connect_node("UpperBlend", 1, "Upper")
+	root.connect_node("output", 0, "UpperBlend")
+
+	var tree := AnimationTree.new()
+	tree.name = "AnimationTree"
+	tree.tree_root = root
+	_root.add_child(tree)
+	tree.owner = _root
+	tree.root_node = NodePath("../Model")
+	# The fire's "emitting" is a one-shot property: set it when keys pass, not every frame.
+	tree.callback_mode_discrete = AnimationMixer.ANIMATION_CALLBACK_MODE_DISCRETE_DOMINANT
+	tree.anim_player = tree.get_path_to(player)
+	_root.animation_tree_path = _root.get_path_to(tree)
+	# What drives the tree's numbers, as the simulation computes them.
+	_root.graph_inputs = {
+		"Base/Locomotion/blend_position": "forward_speed",
+		"UpperBlend/blend_amount": "pistol or melee or melee_swing",
+	}
+
+
+func _clip(animation: String, backward := false) -> AnimationNodeAnimation:
+	var node := AnimationNodeAnimation.new()
+	node.animation = animation
+	if backward:
+		node.play_mode = AnimationNodeAnimation.PLAY_MODE_BACKWARD
+	return node
+
+
+# A transition taken by itself once its condition holds: a single name is Godot's advance
+# condition, anything longer its advance expression.
+func _go(machine: AnimationNodeStateMachine, from: String, to: String, when := "", xfade := 0.0, at_end := false) -> void:
+	var t := AnimationNodeStateMachineTransition.new()
+	t.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+	if when.contains(" "):
+		t.advance_expression = when
+	elif when != "":
+		t.advance_condition = when
+	t.xfade_time = xfade
+	if at_end:
+		t.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
+	machine.add_transition(from, to, t)
+
+
+# --- The swing: a marker for the server, fire for the eyes ----------------------------------------
+
+# Sword_Attack is saved to its own file by the glb's import settings (Save to File, Keep Custom
+# Tracks), which is how an imported animation becomes editable: a marker and a track added to it
+# survive reimports.
+func _mark_swing() -> void:
+	var swing := load(SWING) as Animation
+	if swing == null:
+		printerr("no ", SWING, ": the glb's import must save Sword_Attack to that file")
+		return
+	if not swing.has_marker("melee.strike"):
+		swing.add_marker("melee.strike", STRIKE_TIME)
+	var fire := swing.find_track(NodePath(FIRE_PATH + ":emitting"), Animation.TYPE_VALUE)
+	if fire < 0:
+		fire = swing.add_track(Animation.TYPE_VALUE)
+		swing.track_set_path(fire, NodePath(FIRE_PATH + ":emitting"))
+		swing.value_track_set_update_mode(fire, Animation.UPDATE_DISCRETE)
+		swing.track_insert_key(fire, 0.0, false)
+		swing.track_insert_key(fire, 0.2, true)
+		swing.track_insert_key(fire, 0.75, false)
+	if ResourceSaver.save(swing, SWING) != OK:
+		printerr("cannot save ", SWING)
+
+
+func _add_hand_fire() -> void:
+	var attachment := BoneAttachment3D.new()
+	attachment.name = "At_RightHand"
+	attachment.bone_name = "RightHand"
+	_skeleton.add_child(attachment)
+	attachment.owner = _root
+	attachment.transform = _skeleton.get_bone_global_rest(_skeleton.find_bone("RightHand"))
+
+	var fire := GPUParticles3D.new()
+	fire.name = "HandFire"
+	fire.emitting = false
+	fire.amount = 64
+	fire.lifetime = 0.35
+	fire.local_coords = false
+	fire.position = Vector3(0, 0.08, 0)
+	var process := ParticleProcessMaterial.new()
+	process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	process.emission_sphere_radius = 0.06
+	process.direction = Vector3(0, 1, 0)
+	process.spread = 25.0
+	process.initial_velocity_min = 0.4
+	process.initial_velocity_max = 1.0
+	process.gravity = Vector3(0, 1.5, 0)
+	process.scale_min = 0.6
+	process.scale_max = 1.2
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1.0, 0.85, 0.3, 1.0))
+	fade.set_color(1, Color(1.0, 0.15, 0.0, 0.0))
+	var ramp := GradientTexture1D.new()
+	ramp.gradient = fade
+	process.color_ramp = ramp
+	fire.process_material = process
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.09, 0.09)
+	var look := StandardMaterial3D.new()
+	look.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	look.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	look.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	look.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	look.vertex_color_use_as_albedo = true
+	quad.material = look
+	fire.draw_pass_1 = quad
+	attachment.add_child(fire)
+	fire.owner = _root
+
+
+# --- Hitboxes ----------------------------------------------------------------------------------------
 
 func _add_hitboxes() -> void:
 	for spec in CAPSULES:

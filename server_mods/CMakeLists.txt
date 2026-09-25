@@ -50,6 +50,7 @@ endforeach()
 file(GLOB CB_GAME_CHARACTER_FILES CONFIGURE_DEPENDS
 	"${PROJECT_SOURCE_DIR}/godot/characters/*/anim.cfg"
 	"${PROJECT_SOURCE_DIR}/godot/characters/*/hitboxes.cfg"
+	"${PROJECT_SOURCE_DIR}/godot/characters/*/graph.cfg"
 	"${PROJECT_SOURCE_DIR}/godot/characters/*/*.ozz")
 foreach(file ${CB_GAME_CHARACTER_FILES})
 	get_filename_component(character_dir "${file}" DIRECTORY)
