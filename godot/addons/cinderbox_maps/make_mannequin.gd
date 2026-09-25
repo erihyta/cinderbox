@@ -18,9 +18,9 @@ extends SceneTree
 ##     Upper: Rest, Pistol <-> Shoot (on pistol.fired), Ready <-> Swing (the melee mod's stances)
 ##
 ## The swing (Sword_Attack, saved to animations/ by the glb's import settings so it can be edited)
-## gets a "melee.strike" marker where the hand is fastest, which the melee mod hits on, and a track
-## that sets the right hand on fire for the swing. Everything here is what an author would do by hand in
-## the editor; open the scene and edit freely.
+## gets a "melee.strike" marker where the hand is fastest, which the melee mod hits on. (The bat's
+## fire is the melee mod's own look, not the character's.) Everything here is what an author would
+## do by hand in the editor; open the scene and edit freely.
 ##
 ## `-- --pack=source` builds characters/ual_mannequin/ from the library's paid Source version instead
 ## (put UAL1.glb in characters/ual_mannequin/source/ and give its import the same settings as the
@@ -44,7 +44,8 @@ var SOURCE: String
 var OUT_DIR: String
 var SWING: String
 var _pack := "standard"
-const FIRE_PATH := "Armature/Skeleton3D/At_RightHand/HandFire" # from the model's root, as tracks see it
+# The hand fire earlier versions keyed on the swing (the bat's own look has it now).
+const OLD_FIRE_PATH := "Armature/Skeleton3D/At_RightHand/HandFire"
 
 # The six built-in clips, used only if the state machine is removed (animation_tree_path cleared).
 const CLIPS := {
@@ -118,7 +119,7 @@ func _initialize() -> void:
 	model.name = "Model"
 	_root.add_child(model)
 	model.owner = _root
-	# Editable Children: what is added under the model (hitboxes, the hand's fire) is saved with the
+	# Editable Children: what is added under the model (the hitboxes) is saved with the
 	# scene, and shows in the editor.
 	_root.set_editable_instance(model, true)
 	_skeleton = model.get_node("Armature/Skeleton3D") as Skeleton3D
@@ -139,7 +140,6 @@ func _initialize() -> void:
 	driver.skeleton_path = driver.get_path_to(_skeleton)
 
 	_add_hitboxes()
-	_add_hand_fire()
 	_mark_swing()
 	_add_tree(player)
 
@@ -251,7 +251,7 @@ func _add_tree(player: AnimationPlayer) -> void:
 	_root.add_child(tree)
 	tree.owner = _root
 	tree.root_node = NodePath("../Model")
-	# The fire's "emitting" is a one-shot property: set it when keys pass, not every frame.
+	# Tracks with one-shot properties (a particle's "emitting"): set them when keys pass, not every frame.
 	tree.callback_mode_discrete = AnimationMixer.ANIMATION_CALLBACK_MODE_DISCRETE_DOMINANT
 	tree.anim_player = tree.get_path_to(player)
 	_root.animation_tree_path = _root.get_path_to(tree)
@@ -285,7 +285,7 @@ func _go(machine: AnimationNodeStateMachine, from: String, to: String, when := "
 	machine.add_transition(from, to, t)
 
 
-# --- The swing: a marker for the server, fire for the eyes ----------------------------------------
+# --- The swing: a marker for the server ------------------------------------------------------------
 
 # Sword_Attack is saved to its own file by the glb's import settings (Save to File, Keep Custom
 # Tracks), which is how an imported animation becomes editable. A track added to it survives
@@ -297,62 +297,11 @@ func _mark_swing() -> void:
 		return
 	if not swing.has_marker("melee.strike"):
 		swing.add_marker("melee.strike", STRIKE_TIME)
-	var fire := swing.find_track(NodePath(FIRE_PATH + ":emitting"), Animation.TYPE_VALUE)
-	if fire < 0:
-		fire = swing.add_track(Animation.TYPE_VALUE)
-		swing.track_set_path(fire, NodePath(FIRE_PATH + ":emitting"))
-		swing.value_track_set_update_mode(fire, Animation.UPDATE_DISCRETE)
-		swing.track_insert_key(fire, 0.0, false)
-		swing.track_insert_key(fire, 0.2, true)
-		swing.track_insert_key(fire, 0.75, false)
+	var old := swing.find_track(NodePath(OLD_FIRE_PATH + ":emitting"), Animation.TYPE_VALUE)
+	if old >= 0:
+		swing.remove_track(old)
 	if ResourceSaver.save(swing, SWING) != OK:
 		printerr("cannot save ", SWING)
-
-
-func _add_hand_fire() -> void:
-	var attachment := BoneAttachment3D.new()
-	attachment.name = "At_RightHand"
-	attachment.bone_name = "RightHand"
-	_skeleton.add_child(attachment)
-	attachment.owner = _root
-	attachment.transform = _skeleton.get_bone_global_rest(_skeleton.find_bone("RightHand"))
-
-	var fire := GPUParticles3D.new()
-	fire.name = "HandFire"
-	fire.emitting = false
-	fire.amount = 64
-	fire.lifetime = 0.35
-	fire.local_coords = false
-	fire.position = Vector3(0, 0.08, 0)
-	var process := ParticleProcessMaterial.new()
-	process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	process.emission_sphere_radius = 0.06
-	process.direction = Vector3(0, 1, 0)
-	process.spread = 25.0
-	process.initial_velocity_min = 0.4
-	process.initial_velocity_max = 1.0
-	process.gravity = Vector3(0, 1.5, 0)
-	process.scale_min = 0.6
-	process.scale_max = 1.2
-	var fade := Gradient.new()
-	fade.set_color(0, Color(1.0, 0.85, 0.3, 1.0))
-	fade.set_color(1, Color(1.0, 0.15, 0.0, 0.0))
-	var ramp := GradientTexture1D.new()
-	ramp.gradient = fade
-	process.color_ramp = ramp
-	fire.process_material = process
-	var quad := QuadMesh.new()
-	quad.size = Vector2(0.09, 0.09)
-	var look := StandardMaterial3D.new()
-	look.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	look.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	look.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	look.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	look.vertex_color_use_as_albedo = true
-	quad.material = look
-	fire.draw_pass_1 = quad
-	attachment.add_child(fire)
-	fire.owner = _root
 
 
 # --- Hitboxes ----------------------------------------------------------------------------------------

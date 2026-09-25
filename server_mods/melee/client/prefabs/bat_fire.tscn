@@ -1,0 +1,56 @@
+[gd_scene load_steps=7 format=3]
+
+; Fire along the bat's barrel, attached like the bat (vfx/bindings_melee.tres) while the melee mod
+; says it swings. Same frame as bat.tscn: the grip at the origin, the barrel along -Z. The particles
+; are left in the world where they are born, so the swing draws a trail.
+
+[sub_resource type="Gradient" id="Fade"]
+offsets = PackedFloat32Array(0, 0.35, 1)
+colors = PackedColorArray(1, 0.9, 0.45, 1, 1, 0.45, 0.05, 0.85, 0.6, 0.08, 0, 0)
+
+[sub_resource type="GradientTexture1D" id="Ramp"]
+gradient = SubResource("Fade")
+
+[sub_resource type="Curve" id="Shrink"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0.2), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="ShrinkTexture"]
+curve = SubResource("Shrink")
+
+[sub_resource type="ParticleProcessMaterial" id="Flames"]
+emission_shape = 3
+emission_box_extents = Vector3(0.035, 0.035, 0.25)
+direction = Vector3(0, 1, 0)
+spread = 30.0
+initial_velocity_min = 0.3
+initial_velocity_max = 0.8
+gravity = Vector3(0, 1.2, 0)
+scale_min = 0.7
+scale_max = 1.3
+scale_curve = SubResource("ShrinkTexture")
+color_ramp = SubResource("Ramp")
+
+[sub_resource type="StandardMaterial3D" id="Glow"]
+transparency = 1
+blend_mode = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+billboard_mode = 3
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="Flake"]
+material = SubResource("Glow")
+size = Vector2(0.1, 0.1)
+
+[node name="BatFire" type="Node3D"]
+
+[node name="Flames" type="GPUParticles3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)
+amount = 96
+lifetime = 0.3
+local_coords = false
+process_material = SubResource("Flames")
+draw_pass_1 = SubResource("Flake")
