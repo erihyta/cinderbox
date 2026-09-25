@@ -31,3 +31,9 @@ characters/*/client/.godot/
 characters/*/client/bin/
 characters/*/client/cinderbox.gdextension
 characters/*/client/cinderbox.gdextension.uid
+
+# Paid assets: never on GitHub (the repo is public). Keep the purchased packs here, outside git.
+Universal Animation Library*/
+/paid/
+# The character built from the paid Source pack (its glb, scene, baked clips): local only.
+godot/characters/ual_mannequin/
