@@ -16,6 +16,9 @@
 #include "hitboxes.h"
 #include "detmath.h"
 #include "ragdoll.h"
+#include "retarget.h"
+#include "ozz/animation/runtime/local_to_model_job.h"
+#include "ozz/animation/runtime/sampling_job.h"
 #include "rollback.h"
 #include "scenario.h"
 #include "simulation.h"
@@ -2538,6 +2541,85 @@ void TestUalMannequin()
 	}
 }
 
+// Retargeting: a clip rebuilt for its own skeleton plays the same pose (the math is a turn from
+// rest, onto the same rest); for another profile skeleton it keeps that skeleton's proportions and
+// moves the same joints.
+void TestRetarget()
+{
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
+	std::string error, warnings;
+	auto set = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( set != nullptr );
+	if ( set == nullptr )
+	{
+		return;
+	}
+	const ozz::animation::Animation* walk = set->NamedClip( "Walk" );
+	CHECK( walk != nullptr );
+	CHECK( anim::SameSkeleton( set->Skeleton(), set->Skeleton() ) );
+	auto procedural = anim::AnimSet::CreateProcedural();
+	CHECK( anim::SameSkeleton( set->Skeleton(), procedural->Skeleton() ) == false );
+
+	auto again = anim::RetargetClip( *walk, set->Skeleton(), set->Skeleton(), 30.0f, error );
+	CHECK( again != nullptr );
+	if ( again == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	// Both sampled into model space halfway through: joints within a couple of millimetres (the
+	// rebuilt clip is resampled at 30 Hz).
+	auto models = [&]( const ozz::animation::Animation& clip, const ozz::animation::Skeleton& skeleton, float ratio ) {
+		ozz::animation::SamplingJob::Context context( skeleton.num_joints() );
+		ozz::vector<ozz::math::SoaTransform> locals( size_t( skeleton.num_soa_joints() ) );
+		ozz::vector<ozz::math::Float4x4> out( size_t( skeleton.num_joints() ) );
+		ozz::animation::SamplingJob sampling;
+		sampling.animation = &clip;
+		sampling.context = &context;
+		sampling.ratio = ratio;
+		sampling.output = ozz::make_span( locals );
+		sampling.Run();
+		ozz::animation::LocalToModelJob ltm;
+		ltm.skeleton = &skeleton;
+		ltm.input = ozz::make_span( locals );
+		ltm.output = ozz::make_span( out );
+		ltm.Run();
+		return out;
+	};
+	float worst = 0.0f;
+	auto a = models( *walk, set->Skeleton(), 0.5f );
+	auto b = models( *again, set->Skeleton(), 0.5f );
+	for ( size_t j = 0; j < a.size(); ++j )
+	{
+		float va[4], vb[4];
+		ozz::math::StorePtrU( a[j].cols[3], va );
+		ozz::math::StorePtrU( b[j].cols[3], vb );
+		worst = std::max( worst, std::sqrt( ( va[0] - vb[0] ) * ( va[0] - vb[0] ) + ( va[1] - vb[1] ) * ( va[1] - vb[1] ) + ( va[2] - vb[2] ) * ( va[2] - vb[2] ) ) );
+	}
+	std::printf( "    Walk rebuilt for its own skeleton: worst joint off by %.4f m\n", worst );
+	CHECK( worst < 0.005f );
+
+	// Onto the placeholder rig: the same joints move (the legs swing), its own bone lengths stay.
+	auto onto = anim::RetargetClip( *walk, set->Skeleton(), procedural->Skeleton(), 30.0f, error );
+	CHECK( onto != nullptr && onto->num_tracks() == procedural->Skeleton().num_joints() );
+	if ( onto == nullptr )
+	{
+		return;
+	}
+	auto early = models( *onto, procedural->Skeleton(), 0.0f );
+	auto late = models( *onto, procedural->Skeleton(), 0.5f );
+	int foot = anim::FindJoint( *procedural, "LeftFoot" );
+	int knee = anim::FindJoint( *procedural, "LeftLowerLeg" );
+	float f0[4], f1[4], k1[4];
+	ozz::math::StorePtrU( early[size_t( foot )].cols[3], f0 );
+	ozz::math::StorePtrU( late[size_t( foot )].cols[3], f1 );
+	ozz::math::StorePtrU( late[size_t( knee )].cols[3], k1 );
+	float shin = std::sqrt( ( f1[0] - k1[0] ) * ( f1[0] - k1[0] ) + ( f1[1] - k1[1] ) * ( f1[1] - k1[1] ) + ( f1[2] - k1[2] ) * ( f1[2] - k1[2] ) );
+	std::printf( "    onto the placeholder rig: left foot z %.2f -> %.2f, shin %.2f m (its own 0.42)\n", f0[2], f1[2], shin );
+	CHECK( std::fabs( f1[2] - f0[2] ) > 0.1f );
+	CHECK( std::fabs( shin - 0.42f ) < 0.01f );
+}
+
 void TestAnimPipeline()
 {
 	auto procedural = anim::AnimSet::CreateProcedural();
@@ -2756,6 +2838,7 @@ int main( int argc, char** argv )
 		{ "stances", TestStances },
 		{ "robot_character", TestRobotCharacter },
 		{ "mannequin_character", TestMannequinCharacter },
+		{ "retarget", TestRetarget },
 		{ "ual_mannequin", TestUalMannequin },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "stress", TestStress },
