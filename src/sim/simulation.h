@@ -207,6 +207,9 @@ public:
 	// Where a player in `slot` appears when joining or respawning.
 	b3Vec3 SpawnPoint( PlayerSlot slot ) const;
 
+	// The item `holder` (a player's NetId) holds in `socket`, or 0.
+	uint32_t HeldItemOf( uint32_t holder, uint32_t socket ) const;
+
 	// The character's baked state machine (sim/anim_graph.h), compiled against the server's schema,
 	// or null for the built-in locomotion controller. Like the map it must be the same everywhere,
 	// so it travels in the schema; set it before the first Step.
@@ -313,6 +316,7 @@ private:
 
 	std::shared_ptr<const AnimGraph> m_animGraph;
 	void RecordModEvent( const ModEventRecord& record );
+	void FollowHolders();
 };
 
 } // namespace cb

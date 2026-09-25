@@ -83,6 +83,11 @@ struct ModSchema
 	// The character's baked state machine (graph.cfg text, sim/anim_graph.h); empty when it plays the
 	// built-in locomotion.
 	std::string animGraph;
+	// Kinds of held items mods spawn ("melee.bat"; a look per kind in the mod's client item), and
+	// the sockets they go in: the hands every character has, then any a mod names (a character
+	// provides it as a CbSocket node, or the item is not drawn there).
+	std::vector<std::string> itemKinds;
+	std::vector<std::string> sockets = { "RightHand", "LeftHand" };
 
 	bool operator==( const ModSchema& ) const = default;
 
@@ -95,6 +100,8 @@ struct ModSchema
 	// -1 when not declared.
 	int FindLayer( const std::string& name ) const;
 	int FindStance( const std::string& name ) const;
+	int FindItemKind( const std::string& name ) const;
+	int FindSocket( const std::string& name ) const;
 };
 
 inline constexpr size_t kMaxSchemaName = 64;

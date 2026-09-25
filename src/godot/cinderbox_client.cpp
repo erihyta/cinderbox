@@ -50,6 +50,8 @@ const char* KindName( present::VisualKind kind )
 			return "player";
 		case present::VisualKind::Ragdoll:
 			return "ragdoll";
+		case present::VisualKind::Item:
+			return "item";
 		case present::VisualKind::Prop:
 		default:
 			return "prop";

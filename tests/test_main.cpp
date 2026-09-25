@@ -1600,6 +1600,92 @@ ModSchema TestGraphSchema()
 
 // Directional clips in a 2D blend space, as Godot triangulates it (idle in the middle, four
 // directions around), and the body-frame velocity that drives it.
+// Held items: entities of their own, spawned into a player's socket, addressed by holder and
+// socket before anyone knows their NetId, following their holder, gone with it.
+void TestHeldItems()
+{
+	Simulation sim( TestConfig(), FlatMap() );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto command = [&]( CommandType type, uint32_t target ) {
+		SimCommand c;
+		c.type = type;
+		c.target = target;
+		f.commands.push_back( c );
+		return &f.commands.back();
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	f.events.push_back( { PlayerEventType::Join, 1 } );
+	step( 30 );
+	uint32_t holder = sim.PlayerNetId( 0 );
+
+	// Spawn, and in the same tick set a field on it and send it an event, by holder and socket.
+	SimCommand* spawn = command( CommandType::SpawnItem, SlotTarget( 0 ) );
+	spawn->index = 2; // kind
+	spawn->mode = kSocketRightHand;
+	SimCommand* set = command( CommandType::SetField, ItemTarget( 0, kSocketRightHand ) );
+	set->index = 3;
+	set->value = 77;
+	SimCommand* event = command( CommandType::Event, ItemTarget( 0, kSocketRightHand ) );
+	event->index = 5;
+	step( 1 );
+	uint32_t item = sim.HeldItemOf( holder, kSocketRightHand );
+	CHECK( item != 0 && item != holder );
+	CHECK( sim.HeldItemOf( holder, kSocketLeftHand ) == 0 );
+	flecs::entity e = sim.FindEntity( item );
+	CHECK( e.get<HeldItem>().kind == 2 && e.get<HeldItem>().holder == holder );
+	CHECK( sim.BoardValue( item, 3 ) == 77 );
+	const ModEventRecord& last = sim.Globals().modEvents[( sim.Globals().modEventCount - 1 ) % kModEventHistory];
+	CHECK( last.type == 5 && last.netIdA == item );
+
+	// It goes where its holder goes.
+	f.inputs[0].moveForward = 127;
+	step( 30 );
+	f.inputs[0] = {};
+	b3Vec3 a = sim.EntityTransform( item )->position, b = sim.EntityTransform( holder )->position;
+	CHECK( a.x == b.x && a.y == b.y && a.z == b.z );
+
+	// Its state is part of the snapshot and the hash.
+	Snapshot snapshot;
+	sim.Save( snapshot );
+	uint64_t hash = sim.ComputeHash();
+	command( CommandType::SetField, ItemTarget( 0, kSocketRightHand ) )->value = 5;
+	step( 1 );
+	CHECK( sim.ComputeHash() != hash || sim.BoardValue( item, 0 ) == 5 );
+	sim.Load( snapshot );
+	CHECK( sim.ComputeHash() == hash && sim.HeldItemOf( holder, kSocketRightHand ) == item );
+
+	// A new item in the same socket replaces it; Destroy removes one; leaving takes it along.
+	SimCommand* again = command( CommandType::SpawnItem, SlotTarget( 0 ) );
+	again->index = 4;
+	again->mode = kSocketRightHand;
+	step( 1 );
+	uint32_t second = sim.HeldItemOf( holder, kSocketRightHand );
+	CHECK( second != 0 && second != item && sim.FindEntity( item ).is_valid() == false );
+	SimCommand* other = command( CommandType::SpawnItem, SlotTarget( 1 ) );
+	other->mode = kSocketLeftHand;
+	command( CommandType::Destroy, ItemTarget( 0, kSocketRightHand ) );
+	step( 1 );
+	CHECK( sim.HeldItemOf( holder, kSocketRightHand ) == 0 );
+	uint32_t theirs = sim.HeldItemOf( sim.PlayerNetId( 1 ), kSocketLeftHand );
+	CHECK( theirs != 0 );
+	f.events.push_back( { PlayerEventType::Leave, 1 } );
+	step( 1 );
+	CHECK( sim.FindEntity( theirs ).is_valid() == false );
+	// A spawn for someone who is not there does nothing.
+	command( CommandType::SpawnItem, SlotTarget( 5 ) );
+	step( 1 );
+	std::printf( "    items: %u, then %u replacing it; the other player's %u went with them\n", item, second, theirs );
+}
+
 void TestAnimBlend2D()
 {
 	const char* text = "cinderbox_graph\t1\n"
@@ -2574,6 +2660,7 @@ int main( int argc, char** argv )
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },
+		{ "held_items", TestHeldItems },
 		{ "anim_blend2d", TestAnimBlend2D },
 		{ "pose_tools", TestPoseTools },
 		{ "fields", TestFields },

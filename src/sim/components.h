@@ -198,6 +198,16 @@ struct StaticGeometry
 // "This entity did not come from a template."
 inline constexpr uint32_t kNoTemplate = 0xFFFFFFFFu;
 
+// Something a player holds (a sword, a torch): an entity of its own, with its own board and
+// events, drawn in its holder's socket. The kind names its look (declared by a mod).
+struct HeldItem
+{
+	uint32_t holder = 0; // NetId of the player
+	uint16_t kind = 0;	 // schema item kind
+	uint8_t socket = 0;	 // schema socket
+	uint8_t reserved = 0;
+};
+
 // The map template this entity was created from (see reflect.h). The simulation only carries it so
 // that presentation can look up which prefab to draw.
 struct TemplateRef
@@ -219,6 +229,7 @@ CB_CHECK_COMPONENT( Prop, 12 );
 CB_CHECK_COMPONENT( AnimGraphLayerState, 40 );
 CB_CHECK_COMPONENT( AnimState, 64 + 40 * kMaxAnimLayers );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
+CB_CHECK_COMPONENT( HeldItem, 8 );
 CB_CHECK_COMPONENT( Blackboard, 4 * kBoardSlots );
 CB_CHECK_COMPONENT( Ragdoll, 20 );
 CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );

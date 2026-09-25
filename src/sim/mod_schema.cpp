@@ -8,8 +8,8 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x3542434Du; // 'MCB5': 2 workshop items, 3 the character, 4 layers and stances, 5 the
-												// character's state machine
+constexpr uint32_t kSchemaMagic = 0x3642434Du; // 'MCB6': 2 workshop items, 3 the character, 4 layers and stances, 5 the
+												// character's state machine, 6 item kinds and sockets
 
 void PutU8( std::vector<uint8_t>& out, uint8_t v )
 {
@@ -119,6 +119,30 @@ int ModSchema::FindStance( const std::string& name ) const
 	return -1;
 }
 
+int ModSchema::FindItemKind( const std::string& name ) const
+{
+	for ( size_t i = 0; i < itemKinds.size(); ++i )
+	{
+		if ( itemKinds[i] == name )
+		{
+			return int( i );
+		}
+	}
+	return -1;
+}
+
+int ModSchema::FindSocket( const std::string& name ) const
+{
+	for ( size_t i = 0; i < sockets.size(); ++i )
+	{
+		if ( sockets[i] == name )
+		{
+			return int( i );
+		}
+	}
+	return -1;
+}
+
 int ModSchema::FindEvent( const std::string& name ) const
 {
 	for ( size_t i = 0; i < events.size(); ++i )
@@ -201,6 +225,16 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutString( out, schema.stances[i] );
 	}
 	PutText( out, schema.animGraph );
+	PutU8( out, uint8_t( std::min<size_t>( schema.itemKinds.size(), 255 ) ) );
+	for ( size_t i = 0; i < schema.itemKinds.size() && i < 255; ++i )
+	{
+		PutString( out, schema.itemKinds[i] );
+	}
+	PutU8( out, uint8_t( std::min<size_t>( schema.sockets.size(), 255 ) ) );
+	for ( size_t i = 0; i < schema.sockets.size() && i < 255; ++i )
+	{
+		PutString( out, schema.sockets[i] );
+	}
 }
 
 bool IsSha256( const std::string& hex )
@@ -313,6 +347,17 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		out.stances.push_back( r.String() );
 	}
 	out.animGraph = r.Text();
+	uint8_t kinds = r.U8();
+	for ( uint8_t i = 0; i < kinds && r.ok; ++i )
+	{
+		out.itemKinds.push_back( r.String() );
+	}
+	uint8_t sockets = r.U8();
+	out.sockets.clear();
+	for ( uint8_t i = 0; i < sockets && r.ok; ++i )
+	{
+		out.sockets.push_back( r.String() );
+	}
 	return r.ok && r.at == size;
 }
 

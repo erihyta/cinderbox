@@ -117,6 +117,38 @@ StanceHandle Declarations::Stance( const std::string& name )
 	return { int( m_schema.stances.size() - 1 ) };
 }
 
+ItemKindHandle Declarations::ItemKind( const std::string& name )
+{
+	int existing = m_schema.FindItemKind( name );
+	if ( existing >= 0 )
+	{
+		return { existing };
+	}
+	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.itemKinds.size() >= 255 )
+	{
+		m_errors.push_back( m_mod + ": bad item kind \"" + name + "\"" );
+		return {};
+	}
+	m_schema.itemKinds.push_back( name );
+	return { int( m_schema.itemKinds.size() - 1 ) };
+}
+
+SocketHandle Declarations::Socket( const std::string& name )
+{
+	int existing = m_schema.FindSocket( name );
+	if ( existing >= 0 )
+	{
+		return { existing };
+	}
+	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.sockets.size() >= 255 )
+	{
+		m_errors.push_back( m_mod + ": bad socket \"" + name + "\"" );
+		return {};
+	}
+	m_schema.sockets.push_back( name );
+	return { int( m_schema.sockets.size() - 1 ) };
+}
+
 ActionHandle Declarations::Action( const std::string& name, const std::string& key )
 {
 	if ( const ModAction* existing = m_schema.FindAction( name ) )
@@ -477,6 +509,26 @@ void Context::SetStance( uint32_t target, LayerHandle layer, StanceHandle stance
 	c.value = stance.Valid() ? stance.index + 1 : 0;
 	c.target = target;
 	Add( c );
+}
+
+void Context::SpawnItem( uint32_t holder, ItemKindHandle kind, SocketHandle socket )
+{
+	if ( kind.Valid() == false || socket.Valid() == false )
+	{
+		return;
+	}
+	SimCommand c;
+	c.type = CommandType::SpawnItem;
+	c.target = holder;
+	c.index = uint16_t( kind.index );
+	c.mode = uint8_t( socket.index );
+	Add( c );
+}
+
+uint32_t Context::HeldItem( PlayerSlot slot, SocketHandle socket ) const
+{
+	uint32_t holder = m_sim.PlayerNetId( slot );
+	return holder != 0 && socket.Valid() ? m_sim.HeldItemOf( holder, uint32_t( socket.index ) ) : 0;
 }
 
 void Context::FaceCamera( uint32_t target, bool faceCamera )

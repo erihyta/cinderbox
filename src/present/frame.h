@@ -25,6 +25,7 @@ enum class VisualKind : uint8_t
 	Prop,
 	Player,
 	Ragdoll,
+	Item, // held by a player, drawn in its socket
 };
 
 struct FrameEntity
@@ -49,6 +50,10 @@ struct FrameEntity
 	Blackboard board;
 	// Index into PresentationFrame::ragdolls, for ragdolls.
 	uint32_t ragdoll = UINT32_MAX;
+	// Items: who holds it, in which socket, and what it is (schema indices).
+	uint32_t holder = 0;
+	uint16_t itemKind = 0;
+	uint8_t socket = 0;
 };
 
 struct FrameRagdoll
