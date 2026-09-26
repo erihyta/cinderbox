@@ -115,16 +115,12 @@ sound = "res://assets/sfx/reload.wav"
 volume_db = -10.0
 max_distance = 25.0
 
-; While the pistol is out: hold it in the right hand. (The pistol mod makes the arm aim, in the pose
-; itself, so hitboxes follow it too.)
-[sub_resource type="CbStateBinding" id="Armed"]
-conditions = PackedStringArray("loadout.slot == 2", "!combat.dead")
-attach_scene = "res://prefabs/pistol.tscn"
-attach_bone = "RightHand"
-attach_offset = Vector3(0, -0.07, 0.02)
-attach_rotation = Vector3(-90, 180, 0)
-tree_parameter = "parameters/conditions/armed"
+; The pistol the mod puts in the right hand while it is out (the "pistol.gun" item). The mod makes
+; the arm aim, in the pose itself, so hitboxes follow it too.
+[sub_resource type="CbItemLook" id="Gun"]
+kind = "pistol.gun"
+scene = "res://prefabs/pistol.tscn"
 
 [resource]
 effects = [SubResource("FirePredicted"), SubResource("DryPredicted"), SubResource("FiredRemote"), SubResource("Tracer"), SubResource("HitSurface"), SubResource("HitPlayer"), SubResource("HitMarker"), SubResource("Hurt"), SubResource("Died"), SubResource("Reload")]
-states = [SubResource("Armed")]
+items = [SubResource("Gun")]

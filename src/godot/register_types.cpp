@@ -46,7 +46,6 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CinderboxMapBaker );
 	// Effect bindings: data a mod ships to say what plays when.
 	GDREGISTER_CLASS( cb::gd::CbEffect );
-	GDREGISTER_CLASS( cb::gd::CbStateBinding );
 	GDREGISTER_CLASS( cb::gd::CbItemLook );
 	GDREGISTER_CLASS( cb::gd::CbEffectTable );
 	// HUD nodes that read the mods' board.

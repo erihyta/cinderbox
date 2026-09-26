@@ -70,7 +70,7 @@ func _initialize() -> void:
 	ResourceSaver.save(spark, "user://check_reaction_spark.tscn")
 	_burst = _reaction("Burst", CbReaction.WHEN_EVENT)
 	_burst.scene = "user://check_reaction_spark.tscn"
-	_burst.scene_lifetime = 0.05
+	_burst.scene_lifetime = 1.0 # outlives frame 4 even when a frame is slow
 	_aura = _reaction("Aura", CbReaction.WHEN_WHILE)
 	_aura.scene = "user://check_reaction_spark.tscn"
 

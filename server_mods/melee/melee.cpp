@@ -107,9 +107,9 @@ public:
 				{
 					ctx.SpawnItem( target, m_bat, m_hand );
 				}
-				else if ( ctx.HeldItem( slot, m_hand ) != 0 )
+				else if ( uint32_t held = ctx.HeldItem( slot, m_hand ) )
 				{
-					ctx.Destroy( ItemTarget( slot, m_hand ) );
+					ctx.Destroy( held ); // this one: another mod may put its item in the hand this tick
 				}
 				if ( holding )
 				{

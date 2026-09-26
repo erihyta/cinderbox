@@ -331,7 +331,9 @@ public:
 	void SetStance( uint32_t target, LayerHandle layer, StanceHandle stance );
 	// Gives the player `holder` (SlotTarget) an item of `kind` in `socket`, replacing what it held
 	// there. The item is an entity of its own: address it with ItemTarget( slot, socket ) (from this
-	// tick on) to set its fields, send it events, or Destroy it.
+	// tick on) to set its fields, send it events, or Destroy it. To take away your own item, Destroy
+	// the NetId HeldItem() gives, not ItemTarget: ItemTarget is resolved when the command runs, and
+	// another mod may have put its item in that socket in the same tick (a weapon swap).
 	void SpawnItem( uint32_t holder, ItemKindHandle kind, SocketHandle socket );
 	// Plays `pack`'s layer named `layer` ("Base") instead of the player's own, from its start; the
 	// layer's name is the character's (its AnimationTree's). Does nothing when the character has no
