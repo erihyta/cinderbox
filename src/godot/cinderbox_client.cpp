@@ -3,6 +3,7 @@
 #include "cinderbox_animator.h"
 #include "cinderbox_character.h"
 #include "cinderbox_companion.h"
+#include "cinderbox_reaction.h"
 #include "cinderbox_skeleton.h"
 #include "detmath.h"
 #include "pose_tools.h"
@@ -126,8 +127,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_player_name", "name" ), &CinderboxClient::set_player_name );
 	ClassDB::bind_method( D_METHOD( "get_player_name_setting" ), &CinderboxClient::get_player_name_setting );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "player_name" ), "set_player_name", "get_player_name_setting" );
-	ClassDB::bind_method( D_METHOD( "add_state_binding", "binding" ), &CinderboxClient::add_state_binding );
-	ClassDB::bind_method( D_METHOD( "clear_state_bindings" ), &CinderboxClient::clear_state_bindings );
+	ClassDB::bind_method( D_METHOD( "clear_item_looks" ), &CinderboxClient::clear_item_looks );
 	ClassDB::bind_method( D_METHOD( "add_item_look", "look" ), &CinderboxClient::add_item_look );
 	ClassDB::bind_method( D_METHOD( "get_stats" ), &CinderboxClient::get_stats );
 	ClassDB::bind_method( D_METHOD( "get_connection_state" ), &CinderboxClient::get_connection_state );
@@ -413,7 +413,7 @@ void CinderboxClient::HandleEvents()
 			}
 			case present::EventType::Removed:
 			{
-				m_attachments.erase( e.visual );
+				m_reactions.erase( e.visual );
 				m_sockets.erase( e.visual );
 				auto it = m_nodes.find( e.visual );
 				if ( it != m_nodes.end() )
@@ -464,36 +464,8 @@ void CinderboxClient::HandleEvents()
 					{
 						animator->on_mod_event( name );
 					}
-					// An item plays its animation named after the event, from the start; an event at a player
-					// reaches what it holds too ("attack": each item shows its own).
-					auto playOn = [&]( Node3D* target ) {
-						if ( auto* player = FindInPrefab<AnimationPlayer>( target ); player != nullptr && player->has_animation( name ) )
-						{
-							player->stop();
-							player->play( name );
-						}
-					};
-					flecs::entity ve( visuals, e.visual );
-					if ( ve.is_alive() && ve.get<present::Visual>().kind == present::VisualKind::Item )
-					{
-						playOn( node );
-					}
-					else if ( ve.is_alive() && ve.get<present::Visual>().kind == present::VisualKind::Player )
-					{
-						m_mirror->ForEach( [&]( uint64_t id, const present::Visual& held, const present::RenderPose&, const present::PlayerAnim*,
-												const present::RagdollAnim* ) {
-							auto it = m_nodes.find( id );
-							if ( held.kind != present::VisualKind::Item || held.holder != e.netId || it == m_nodes.end() )
-							{
-								return;
-							}
-							if ( auto* itemNode = Object::cast_to<Node3D>( ObjectDB::get_instance( it->second ) ) )
-							{
-								playOn( itemNode );
-							}
-						} );
-					}
 				}
+				FireReactions( ToStd( name ), e.netId );
 				emit_signal( "mod_event", name, int64_t( e.netId ), int64_t( e.otherNetId ), int64_t( e.value ), position,
 							 ToGodot( e.vector ) );
 				break;
@@ -516,6 +488,7 @@ void CinderboxClient::UpdateNodes()
 		{
 			return;
 		}
+		UpdateReactions( id, v );
 		if ( v.kind == present::VisualKind::Item )
 		{
 			UpdateItem( v, node );
@@ -539,8 +512,7 @@ void CinderboxClient::UpdateNodes()
 			}
 			node->set_transform( Transform3D( rotation.scaled( Vector3( s, s, s ) ), origin ) );
 
-			// The pose: evaluated for players, hung off the parts for ragdolls. State bindings
-			// may aim it before it is applied.
+			// The pose: evaluated for players, hung off the parts for ragdolls.
 			present::Models* models = nullptr;
 			if ( anim != nullptr && anim->evaluator )
 			{
@@ -552,7 +524,6 @@ void CinderboxClient::UpdateNodes()
 				m_pose = ragdoll->models;
 				models = &m_pose;
 			}
-			ApplyStates( id, v, pose, node, models );
 
 			if ( models != nullptr )
 			{
@@ -588,7 +559,6 @@ void CinderboxClient::UpdateNodes()
 					companion->end_frame();
 				}
 			}
-			PlaceAttachments( id, v, node );
 			PlaceSockets( id, node );
 			return;
 		}
@@ -612,7 +582,7 @@ void CinderboxClient::UpdateNodes()
 	} );
 }
 
-// --- Mod data: fields, conditions and state bindings ------------------------------------------------
+// --- Mod data: fields and conditions ------------------------------------------------
 
 const Blackboard* CinderboxClient::BoardOf( uint32_t netId ) const
 {
@@ -638,94 +608,6 @@ std::vector<std::string> CinderboxClient::Conditions( const PackedStringArray& c
 		out.push_back( ToStd( conditions[i] ) );
 	}
 	return out;
-}
-
-bool CinderboxClient::StateHolds( const CbStateBinding& state, const present::Visual& v ) const
-{
-	String kind = state.get_kind();
-	if ( kind.is_empty() == false && kind != "any" && kind != String( KindName( v.kind ) ) )
-	{
-		return false;
-	}
-	if ( state.get_who() == CbEffect::WHO_LOCAL && v.isLocalPlayer == false )
-	{
-		return false;
-	}
-	if ( state.get_who() == CbEffect::WHO_REMOTE && v.isLocalPlayer )
-	{
-		return false;
-	}
-	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
-	return present::CheckConditions( m_frame.schema, Conditions( state.get_conditions() ), v.hasBoard ? &v.board : nullptr, globals );
-}
-
-void CinderboxClient::ApplyStates( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, Node3D* node,
-								   present::Models* models )
-{
-	m_active.assign( m_states.size(), false );
-	CinderboxAnimator* animator = FindInPrefab<CinderboxAnimator>( node );
-	for ( size_t i = 0; i < m_states.size(); ++i )
-	{
-		const CbStateBinding& state = **m_states[i];
-		bool holds = StateHolds( state, v );
-		m_active[i] = holds;
-
-		if ( animator != nullptr && state.get_tree_parameter().is_empty() == false )
-		{
-			animator->set_tree_parameter( state.get_tree_parameter(), holds );
-		}
-	}
-	// Aiming is not a presentation effect any more: it is in the pose itself (AnimState::aiming,
-	// set by a mod), so every client and the server's hit tests agree on where the arm is.
-	(void)visual;
-	(void)pose;
-	(void)models;
-}
-
-// Attached scenes follow their joint. They live under the visual's node, so they vanish with it.
-void CinderboxClient::PlaceAttachments( uint64_t visual, const present::Visual& v, Node3D* node )
-{
-	std::vector<ObjectID>& attached = m_attachments[visual];
-	attached.resize( m_states.size() );
-	CinderboxSkeleton* skeleton = FindSkeleton( node );
-	for ( size_t i = 0; i < m_states.size(); ++i )
-	{
-		const CbStateBinding& state = **m_states[i];
-		Node3D* item = Object::cast_to<Node3D>( ObjectDB::get_instance( attached[i] ) );
-		bool wanted = i < m_active.size() && m_active[i] && state.get_attach_scene().is_empty() == false && v.dead == false;
-		if ( wanted == false )
-		{
-			if ( item != nullptr )
-			{
-				item->queue_free();
-			}
-			attached[i] = ObjectID();
-			continue;
-		}
-		if ( item == nullptr )
-		{
-			Ref<PackedScene> scene = LoadScene( state.get_attach_scene() );
-			item = scene.is_valid() ? Object::cast_to<Node3D>( scene->instantiate() ) : nullptr;
-			if ( item == nullptr )
-			{
-				continue;
-			}
-			node->add_child( item );
-			attached[i] = item->get_instance_id();
-		}
-
-		Transform3D joint;
-		if ( skeleton == nullptr || skeleton->JointTransform( state.get_attach_bone(), joint, true ) == false )
-		{
-			item->set_visible( false );
-			continue;
-		}
-		Vector3 degrees = state.get_attach_rotation();
-		Basis turn = Basis::from_euler( Vector3( Math::deg_to_rad( degrees.x ), Math::deg_to_rad( degrees.y ), Math::deg_to_rad( degrees.z ) ) );
-		Transform3D offset( turn, state.get_attach_offset() );
-		item->set_visible( true );
-		item->set_global_transform( skeleton->get_global_transform() * joint * offset );
-	}
 }
 
 void CinderboxClient::add_item_look( const Ref<CbItemLook>& look )
@@ -919,48 +801,125 @@ void CinderboxClient::UpdateItem( const present::Visual& v, Node3D* node )
 		node->set_transform( Transform3D() );
 	}
 	node->set_visible( true );
-	// Its own board drives its AnimationTree: every field is an advance condition of that name, and
-	// "!<name>" holds while it is off (Godot's conditions cannot be negated).
-	if ( auto* tree = FindInPrefab<AnimationTree>( node ) )
+}
+
+void CinderboxClient::clear_item_looks()
+{
+	m_itemLooks.clear();
+}
+
+// --- Reactions ------------------------------------------------------------------------------------
+
+namespace
+{
+
+void CollectReactionNodes( Node* node, std::vector<CbReaction*>& out )
+{
+	if ( auto* reaction = Object::cast_to<CbReaction>( node ) )
 	{
-		for ( const BoardField& field : m_frame.schema.fields )
+		out.push_back( reaction );
+	}
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		CollectReactionNodes( node->get_child( i ), out );
+	}
+}
+
+} // namespace
+
+void CinderboxClient::CollectReactions( uint64_t visual, Node* node )
+{
+	std::vector<CbReaction*> found;
+	CollectReactionNodes( node, found );
+	if ( found.empty() )
+	{
+		m_reactions.erase( visual );
+		return;
+	}
+	std::vector<ReactionRef>& refs = m_reactions[visual];
+	refs.clear();
+	for ( CbReaction* reaction : found )
+	{
+		ReactionRef ref;
+		ref.node = reaction->get_instance_id();
+		ref.isWhile = reaction->get_when() == CbReaction::WHEN_WHILE;
+		ref.holder = reaction->get_subject() == CbReaction::SUBJECT_HOLDER;
+		ref.event = ToStd( reaction->get_event().strip_edges() );
+		ref.conditions = Conditions( reaction->get_conditions() );
+		refs.push_back( std::move( ref ) );
+	}
+}
+
+uint32_t CinderboxClient::ReactionSubject( const ReactionRef& r, const present::Visual& v, const Blackboard** board ) const
+{
+	*board = nullptr;
+	if ( r.holder == false )
+	{
+		*board = v.hasBoard ? &v.board : nullptr;
+		return v.netId;
+	}
+	if ( v.kind != present::VisualKind::Item )
+	{
+		return 0; // only a held item has a holder
+	}
+	*board = BoardOf( v.holder );
+	return v.holder;
+}
+
+void CinderboxClient::UpdateReactions( uint64_t visual, const present::Visual& v )
+{
+	auto it = m_reactions.find( visual );
+	if ( it == m_reactions.end() )
+	{
+		return;
+	}
+	const int32_t* globals = m_mirror->GlobalBoard();
+	for ( const ReactionRef& r : it->second )
+	{
+		auto* reaction = r.isWhile ? Object::cast_to<CbReaction>( ObjectDB::get_instance( r.node ) ) : nullptr;
+		if ( reaction == nullptr )
 		{
-			if ( field.scope != BoardScope::Entity )
+			continue;
+		}
+		const Blackboard* board = nullptr;
+		bool on = ReactionSubject( r, v, &board ) != 0 && present::CheckConditions( m_frame.schema, r.conditions, board, globals );
+		reaction->set_on( on );
+	}
+}
+
+void CinderboxClient::FireReactions( const std::string& event, uint32_t netId )
+{
+	if ( m_reactions.empty() )
+	{
+		return;
+	}
+	const auto& visuals = m_mirror->World();
+	const int32_t* globals = m_mirror->GlobalBoard();
+	for ( const auto& [visual, refs] : m_reactions )
+	{
+		flecs::entity ve( visuals, visual );
+		if ( ve.is_alive() == false || ve.has<present::Visual>() == false )
+		{
+			continue;
+		}
+		const present::Visual& v = ve.get<present::Visual>();
+		for ( const ReactionRef& r : refs )
+		{
+			if ( r.isWhile || r.event != event )
 			{
 				continue;
 			}
-			int32_t raw = v.hasBoard ? v.board.values[field.slot] : 0;
-			bool on = field.type == BoardType::Float ? BoardToFloat( raw ) != 0.0f : raw != 0;
-			String name = String::utf8( field.name.c_str() );
-			tree->set( "parameters/conditions/" + name, on );
-			tree->set( "parameters/conditions/!" + name, !on );
-		}
-	}
-}
-
-void CinderboxClient::add_state_binding( const Ref<CbStateBinding>& binding )
-{
-	if ( binding.is_valid() )
-	{
-		m_states.push_back( binding );
-	}
-}
-
-void CinderboxClient::clear_state_bindings()
-{
-	m_states.clear();
-	m_itemLooks.clear();
-	for ( auto& entry : m_attachments )
-	{
-		for ( ObjectID id : entry.second )
-		{
-			if ( auto* node = Object::cast_to<Node>( ObjectDB::get_instance( id ) ) )
+			const Blackboard* board = nullptr;
+			if ( ReactionSubject( r, v, &board ) != netId || present::CheckConditions( m_frame.schema, r.conditions, board, globals ) == false )
 			{
-				node->queue_free();
+				continue;
+			}
+			if ( auto* reaction = Object::cast_to<CbReaction>( ObjectDB::get_instance( r.node ) ) )
+			{
+				reaction->fire();
 			}
 		}
 	}
-	m_attachments.clear();
 }
 
 Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
@@ -1009,6 +968,7 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 	{
 		CollectSockets( visual, node );
 	}
+	CollectReactions( visual, node );
 
 	m_companions.erase( visual );
 	if ( v.kind == present::VisualKind::Player && m_companionLibrary.is_valid() )
@@ -1061,7 +1021,6 @@ void CinderboxClient::RebuildCharacterNodes()
 		{
 			old->queue_free();
 		}
-		m_attachments.erase( id );
 		CreateNode( id, v );
 	}
 }

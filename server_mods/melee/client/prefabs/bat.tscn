@@ -1,5 +1,10 @@
 [gd_scene format=3]
 
+; The look of the "melee.bat" item. The character's swing animation plays "slash" (the flames) through
+; RightHand/Item/AnimationPlayer; the two CbReaction nodes follow what the melee mod sends: the barrel
+; glows while the bat is hot, and sparks fly when its holder lands a hit. The barrel's material is
+; local to each bat, so one hot bat does not light them all.
+
 [sub_resource type="StandardMaterial3D" id="Tape"]
 albedo_color = Color(0.1, 0.1, 0.12, 1)
 roughness = 0.9
@@ -17,6 +22,7 @@ material = SubResource("Wood")
 size = Vector3(0.07, 0.07, 0.55)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_cfl35"]
+resource_local_to_scene = true
 albedo_color = Color(0.62, 0.43, 0.24, 1)
 roughness = 0.7
 emission_enabled = true
@@ -64,23 +70,6 @@ particles_anim_loop = false
 material = SubResource("Glow")
 size = Vector2(0.1, 0.1)
 
-[sub_resource type="Animation" id="Animation_cfl35"]
-length = 0.5
-tracks/0/type = "method"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("Sparks")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = {
-"times": PackedFloat32Array(0),
-"transitions": PackedFloat32Array(1),
-"values": [{
-"args": [],
-"method": &"restart"
-}]
-}
-
 [sub_resource type="Animation" id="Animation_tqqgl"]
 length = 0.5
 tracks/0/type = "value"
@@ -98,73 +87,8 @@ tracks/0/keys = {
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_gysuc"]
 _data = {
-&"melee.hit": SubResource("Animation_cfl35"),
 &"slash": SubResource("Animation_tqqgl")
 }
-
-[sub_resource type="Animation" id="Animation_at8pt"]
-length = 0.1
-loop_mode = 1
-tracks/0/type = "value"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("Barrel:surface_material_override/0:emission_energy_multiplier")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = {
-"times": PackedFloat32Array(0),
-"transitions": PackedFloat32Array(1),
-"update": 0,
-"values": [0.0]
-}
-
-[sub_resource type="Animation" id="Animation_lxpvx"]
-length = 0.1
-loop_mode = 1
-tracks/0/type = "value"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("Barrel:surface_material_override/0:emission_energy_multiplier")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = {
-"times": PackedFloat32Array(0),
-"transitions": PackedFloat32Array(1),
-"update": 0,
-"values": [4.0]
-}
-
-[sub_resource type="AnimationLibrary" id="AnimationLibrary_hofwm"]
-_data = {
-&"cold": SubResource("Animation_at8pt"),
-&"hot": SubResource("Animation_lxpvx")
-}
-
-[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_q2gju"]
-animation = &"cold"
-
-[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_6gwcp"]
-animation = &"hot"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_58tl8"]
-advance_mode = 2
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_mahjg"]
-xfade_time = 0.3
-advance_mode = 2
-advance_condition = &"melee.hot"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_qb7k6"]
-xfade_time = 0.3
-advance_mode = 2
-advance_condition = &"!melee.hot"
-
-[sub_resource type="AnimationNodeStateMachine" id="AnimationNodeStateMachine_1cea2"]
-states/Cold/node = SubResource("AnimationNodeAnimation_q2gju")
-states/Cold/position = Vector2(200, 100)
-states/Hot/node = SubResource("AnimationNodeAnimation_6gwcp")
-states/Hot/position = Vector2(450, 100)
-transitions = ["Start", "Cold", SubResource("AnimationNodeStateMachineTransition_58tl8"), "Cold", "Hot", SubResource("AnimationNodeStateMachineTransition_mahjg"), "Hot", "Cold", SubResource("AnimationNodeStateMachineTransition_qb7k6")]
 
 [sub_resource type="Gradient" id="Gradient_tqqgl"]
 colors = PackedColorArray(1, 0.95, 0.6, 1, 1, 0.4, 0.05, 0)
@@ -217,16 +141,6 @@ draw_pass_1 = SubResource("Flake")
 [node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=311034086]
 libraries/ = SubResource("AnimationLibrary_gysuc")
 
-[node name="Looks" type="AnimationPlayer" parent="." unique_id=176459559]
-libraries/ = SubResource("AnimationLibrary_hofwm")
-
-[node name="AnimationTree" type="AnimationTree" parent="." unique_id=1430915333]
-deterministic = false
-tree_root = SubResource("AnimationNodeStateMachine_1cea2")
-anim_player = NodePath("../Looks")
-parameters/conditions/!melee.hot = false
-parameters/conditions/melee.hot = false
-
 [node name="Sparks" type="GPUParticles3D" parent="." unique_id=829386494]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.7)
 emitting = false
@@ -236,3 +150,16 @@ one_shot = true
 explosiveness = 0.9
 process_material = SubResource("ParticleProcessMaterial_at8pt")
 draw_pass_1 = SubResource("QuadMesh_hofwm")
+
+[node name="GlowWhileHot" type="CbReaction" parent="."]
+when = 1
+conditions = PackedStringArray("melee.hot")
+target = NodePath("../Barrel")
+property = "surface_material_override/0:emission_energy_multiplier"
+value = 4.0
+
+[node name="SparksOnHit" type="CbReaction" parent="."]
+event = "melee.hit"
+subject = 1
+target = NodePath("../Sparks")
+method = "restart"

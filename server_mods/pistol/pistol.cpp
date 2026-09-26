@@ -43,6 +43,7 @@ struct Gunner
 	int32_t deaths = 0;
 	uint32_t falls = 0; // Character::fallCount last seen
 	bool aiming = false; // what the last Aim command said
+	bool armed = false;	 // a pistol item is in the hand
 };
 
 struct Dead
@@ -101,6 +102,8 @@ public:
 
 		m_upper = declare.Layer( "upper" );
 		m_stance = declare.Stance( "pistol" );
+		m_gun = declare.ItemKind( "pistol.gun" );
+		m_hand = declare.Socket( "RightHand" );
 	}
 
 	void Start( Context& ctx ) override
@@ -222,6 +225,21 @@ private:
 		}
 		uint32_t target = SlotTarget( g.slot );
 		uint32_t tick = ctx.Tick();
+
+		// The pistol out (and the player alive) puts one in the hand; anything else takes it away.
+		bool armed = ctx.Get( netId, m_loadout ) == kPistolSlot && c->dead == 0;
+		if ( armed != g.armed )
+		{
+			g.armed = armed;
+			if ( armed )
+			{
+				ctx.SpawnItem( target, m_gun, m_hand );
+			}
+			else if ( uint32_t held = ctx.HeldItem( g.slot, m_hand ) )
+			{
+				ctx.Destroy( held ); // this one: another mod may put its item in the hand this tick
+			}
+		}
 
 		if ( const Dead* dead = e.try_get<Dead>() )
 		{
@@ -419,6 +437,8 @@ private:
 	EventHandle m_damage;
 	LayerHandle m_upper;
 	StanceHandle m_stance;
+	ItemKindHandle m_gun;
+	SocketHandle m_hand;
 
 	flecs::query<Gunner> m_gunners;
 	flecs::entity m_bySlot[kMaxPlayers];

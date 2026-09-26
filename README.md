@@ -39,6 +39,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M30: one event resolved by what the player holds (item kinds and event values in conditions; events reach held items); no game content left in the engine | done |
 | M31: a bat taken out again still slashes (item swaps refresh the animation track caches) | done |
 | M32: animation packs: mods ship AnimationTree layers and swap a player's own for them (a crouch walk), retargeted to any humanoid-profile character | done |
+| M33: `CbReaction` nodes: an entity's scene reacts to its board and events with no code; the pistol is a held item; state bindings and the implicit item rules are gone | done |
 
 ## Building
 
@@ -357,13 +358,9 @@ Conditions read the server mods' **board** by name:
 A field the server did not declare reads as zero, so bindings for a mod that is not running never
 match.
 
-**State bindings** (`CbStateBinding`, the table's `states`) hold while their conditions do:
-
-| Field | Meaning |
-|---|---|
-| `conditions`, `kind`, `who` | when and for whom |
-| `attach_scene`, `attach_bone`, `attach_offset`, `attach_rotation` | a scene kept at a joint (a held item) |
-| `tree_parameter` | an AnimationTree parameter set to whether the conditions hold |
+Bindings are for the world and the screen: one-shots at a place, sounds, shakes, flashes. What an
+entity looks like *while* something holds (a glowing bat) is authored inside its own scene as
+[`CbReaction` nodes](#reactions).
 
 The HUD reads the board too, through script-free nodes any HUD scene can use:
 
@@ -386,7 +383,7 @@ convention still applies: `res://vfx/<event>.tscn`, one of `prop_spawn`, `prop_d
 or `land`.
 
 `godot/vfx/bindings.tres` is the game's own set; the pistol's look (predicted shots, tracers, hits,
-hurt and death feedback, reload, the held pistol) is `vfx/bindings_pistol.tres` in its
+hurt and death feedback, reload, the pistol item's look) is `vfx/bindings_pistol.tres` in its
 workshop item;
 `mods_src/example_neon/vfx/bindings_neon.tres` shows a mod adding three more, including its own sound.
 All are edited in the Godot inspector.
@@ -729,8 +726,7 @@ looks like is authored in Godot.
 | socket | the character scene: a `CbSocket` under a `BoneAttachment3D` | where items go, in the item's frame (grip at the origin, pointing along -Z); `RightHand` and `LeftHand` exist on every character (made at the hands if the scene has none) |
 | item kind | the mod: `declare.ItemKind( "melee.bat" )` | spawned with `ctx.SpawnItem( SlotTarget( slot ), kind, socket )`, addressed with `ItemTarget( slot, socket )` for `Set`, `Emit`, `Destroy` |
 | look | the mod's effect table: `CbItemLook` (kind -> scene) | drawn as the socket's child `Item` |
-| item state | the item scene's `AnimationTree` | every board field of the item is an advance condition (`melee.hot`), and `!melee.hot` while it is off |
-| item events | the item scene's `AnimationPlayer` | an event sent to the item plays its animation of that name, and so does an event sent to its holder (each item shows its own version) |
+| item state and events | `CbReaction` nodes in the item scene | glow while `melee.hot`, sparks on its holder's `melee.hit` (see [Reactions](#reactions)) |
 | character -> item | an Animation Playback track in the character's animation | `.../RightHand/Item/AnimationPlayer` plays `slash` at the right frame of the swing |
 
 One attack, resolved by what is held, with no client code:
@@ -741,7 +737,7 @@ character: Idle -> Heavy      [attack == 2]                    priority 0
            Idle -> BatSwing   [attack and melee.bat]           priority 1
            Idle -> SwordSlash [attack and melee.sword]         priority 1
            Idle -> Punch      [attack]                         priority 2
-item:      its own "attack" animation, if it has one
+item:      its own CbReaction on "attack" (subject: its holder), if it has one
 ```
 
 The body's choice runs in the simulation, so the server's hit tests follow it; each item decides
@@ -749,9 +745,47 @@ what an attack looks like on it.
 
 The bat: the melee mod spawns a `melee.bat` when the bat is taken out. The mannequin's swing plays
 the bat's `slash` (flames along the barrel) 0.2 s in, and a hit sets `melee.hot` on the bat, which
-its own tree turns into a glow; `melee.hit`, which the mod sends to whoever swung, bursts it into
-sparks. Any character with a right hand swings any item that has a
-`slash`; an empty socket, or an item without one, is simply quiet.
+one of its reactions turns into a glow; `melee.hit`, which the mod sends to whoever swung, bursts it
+into sparks through another. Any character with a right hand swings any item that has a
+`slash`; an empty socket, or an item without one, is simply quiet. The pistol works the same way:
+the pistol mod spawns a `pistol.gun` while slot 2 is out.
+
+A mod taking its item away destroys the NetId `ctx.HeldItem( slot, socket )` gives, not
+`ItemTarget`: another mod may put its item in that socket in the same tick (a weapon swap), and
+`ItemTarget` would find that one.
+
+### Reactions
+
+A `CbReaction` node makes the scene it sits in react to its entity, with no code. Put it in any
+entity's scene: a held item, a character, a prop's prefab. The client drives it by name from what
+the server's mods declared.
+
+```
+Bat
+├── Barrel
+├── Sparks                       (GPUParticles3D, one shot)
+├── GlowWhileHot   CbReaction    while  melee.hot     set Barrel : surface_material_override/0:emission_energy_multiplier = 4
+└── SparksOnHit    CbReaction    on     melee.hit     call Sparks.restart()      subject: its holder
+```
+
+| Field | Meaning |
+|---|---|
+| `when` | **On event** (once per event) or **While** (its conditions hold) |
+| `event` | On event: the mod event's name (`melee.hit`) |
+| `conditions` | Board conditions, [as in bindings](#effects); on event they must hold too |
+| `subject` | **This entity**, or **Its holder** (for a held item: the player). Events must be *at* the subject; conditions read the subject's board |
+| `animation_player`, `animation` | play this animation from the start; `animation_off` when a While ends |
+| `target`, `property`, `value` | set a property on a node; a While puts the old value back when it ends. Sub-paths work: `surface_material_override/0:albedo_color` |
+| `target`, `method` | call a built-in method with no arguments (`restart`, `play`, `show`) |
+| `scene`, `scene_parent`, `scene_lifetime` | add a scene (under the reaction's parent by default); an event's goes after `scene_lifetime` s, a While's when it ends |
+
+- **Presentation only**: nothing here changes the simulation. Everything that exists in the game
+  (an item, a prop) is spawned by a server mod.
+- **Resources are shared** between instances of a scene. A reaction that changes a material changes
+  every copy, unless the material is **Local to Scene** (the bat's barrel is).
+- **Rollback**: like companion tracks, an event reaction that already played is not taken back if
+  a prediction turns out wrong.
+- **Check**: `godot --headless --path godot --script res://addons/cinderbox_maps/check_reactions.gd`.
 
 ### State machines
 
@@ -907,9 +941,9 @@ src/present/      engine-independent presentation, shared by Godot and raylib
   fields.*          board fields and conditions by name
   pose_tools.*      ragdoll poses, pose blending
   scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
-src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals, state bindings),
-                  CinderboxSkeleton, map and entity authoring nodes, effect and state bindings
-                  (cinderbox_effects.*), HUD labels (cinderbox_hud.*)
+src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals, items, reactions),
+                  CinderboxSkeleton, map and entity authoring nodes, effect bindings and item looks
+                  (cinderbox_effects.*), CbReaction (cinderbox_reaction.*), HUD labels (cinderbox_hud.*)
 godot/            Godot client project: boot (player mods, pack validator), game (input, camera, HUD, VFX,
                   joining with workshop items), workshop.gd (where items are), prefabs, vfx, ui
   maps/             map scenes and their baked .cbmap files

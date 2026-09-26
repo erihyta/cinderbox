@@ -236,7 +236,7 @@ func _refuse(reason: String) -> void:
 func _reload_presentation() -> void:
 	_effects.clear()
 	_cooldowns.clear()
-	client.clear_state_bindings()
+	client.clear_item_looks()
 	_load_effects()
 	for node in _item_huds:
 		node.queue_free()
@@ -466,23 +466,20 @@ func _load_effects() -> void:
 		if clean.begins_with("bindings") and (clean.ends_with(".tres") or clean.ends_with(".res")):
 			names.append(clean)
 	names.sort()
-	var states := 0
+	var looks := 0
 	for file in names:
 		var table = ResourceLoader.load("res://vfx/%s" % file, "", ResourceLoader.CACHE_MODE_REPLACE)
 		if table is CbEffectTable:
 			for effect in table.effects:
 				if effect is CbEffect:
 					_effects.append(effect)
-			for state in table.states:
-				if state is CbStateBinding:
-					client.add_state_binding(state)
-					states += 1
 			for look in table.items:
 				if look is CbItemLook:
 					client.add_item_look(look)
+					looks += 1
 		else:
 			push_warning("vfx/%s is not a CbEffectTable" % file)
-	print("effect bindings: %d, state bindings: %d, from %d file(s)" % [_effects.size(), states, names.size()])
+	print("effect bindings: %d, item looks: %d, from %d file(s)" % [_effects.size(), looks, names.size()])
 
 
 func _on_mod_event(name: String, a: int, b: int, value: int, position: Vector3, vector: Vector3) -> void:

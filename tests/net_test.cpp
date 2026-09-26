@@ -929,8 +929,8 @@ void TestHeadshot()
 	}
 }
 
-// Layers end to end: slot 0 takes out the bat (a full-body stance) and swings at slot 1, which
-// stands still. Swings play the swing stance, hits go out as combat.damage, the pistol mod (which
+// Layers end to end: slot 0 takes out the pistol, then the bat (a full-body stance), and swings at
+// slot 1, which stands still. Swings play the swing stance, hits go out as combat.damage, the pistol mod (which
 // keeps health) applies them and credits the kill, and clients agree on every pose-carrying tick.
 void TestMelee()
 {
@@ -938,20 +938,25 @@ void TestMelee()
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fire = schema.ActionMask( "fire" );
 	uint16_t bat = schema.ActionMask( "slot_3" );
+	uint16_t pistol = schema.ActionMask( "slot_2" );
 	int full = schema.FindLayer( "full" );
 	int ready = schema.FindStance( "melee" );
 	int swing = schema.FindStance( "melee_swing" );
 	int upper = schema.FindLayer( "upper" );
-	CHECK( fire != 0 && bat != 0 && full >= 0 && ready >= 0 && swing >= 0 && upper >= 0 );
+	CHECK( fire != 0 && bat != 0 && pistol != 0 && full >= 0 && ready >= 0 && swing >= 0 && upper >= 0 );
 
 	h.AddBot().script = [=]( uint32_t tick ) {
 		PlayerInput in;
 		in.cameraYaw = 16384; // toward slot 1
 		if ( tick >= 100 && tick < 110 )
 		{
+			in.actions = pistol;
+		}
+		else if ( tick >= 160 && tick < 170 )
+		{
 			in.actions = bat;
 		}
-		else if ( tick >= 200 && ( tick % 45 ) < 3 )
+		else if ( tick >= 220 && ( tick % 45 ) < 3 )
 		{
 			in.actions = fire;
 		}
@@ -963,11 +968,16 @@ void TestMelee()
 	Simulation& server = h.server.Sim();
 	bool sawReady = false;
 	bool sawSwing = false;
-	// The bat is an item in the attacker's right hand, with its own state: hot after a hit.
+	// The pistol and then the bat are items in the attacker's right hand (the swap is one tick: the
+	// pistol mod takes its gun away as the melee mod puts the bat there). The bat has its own state:
+	// hot after a hit.
+	int gunKind = schema.FindItemKind( "pistol.gun" );
 	int batKind = schema.FindItemKind( "melee.bat" );
 	int hand = schema.FindSocket( "RightHand" );
 	const BoardField* hot = schema.FindField( "melee.hot" );
-	CHECK( batKind >= 0 && hand == int( kSocketRightHand ) && hot != nullptr );
+	CHECK( gunKind >= 0 && batKind >= 0 && hand == int( kSocketRightHand ) && hot != nullptr );
+	bool heldGun = false;
+	bool gunAfterBat = false;
 	bool heldBat = false;
 	bool batWasHot = false;
 	int killedEvent = schema.FindEvent( "combat.killed" );
@@ -982,7 +992,10 @@ void TestMelee()
 			if ( uint32_t bat = server.HeldItemOf( attacker, uint32_t( hand ) ) )
 			{
 				flecs::entity e = server.FindEntity( bat );
-				heldBat |= e.is_valid() && e.get<HeldItem>().kind == uint16_t( batKind );
+				uint16_t kind = e.is_valid() ? e.get<HeldItem>().kind : uint16_t( 0xFFFF );
+				heldGun |= kind == uint16_t( gunKind );
+				gunAfterBat |= heldBat && kind == uint16_t( gunKind );
+				heldBat |= kind == uint16_t( batKind );
 				batWasHot |= server.BoardValue( bat, hot->slot ) != 0;
 			}
 		}
@@ -1001,7 +1014,10 @@ void TestMelee()
 	std::printf( "    ready stance %d, swing stance %d, kills by the bat %u\n", int( sawReady ), int( sawSwing ), kills );
 	CHECK( sawReady );
 	CHECK( sawSwing );
-	std::printf( "    the bat: held %d, hot after a hit %d\n", int( heldBat ), int( batWasHot ) );
+	std::printf( "    the pistol: held %d, still there after the bat %d; the bat: held %d, hot after a hit %d\n", int( heldGun ),
+				 int( gunAfterBat ), int( heldBat ), int( batWasHot ) );
+	CHECK( heldGun );
+	CHECK( gunAfterBat == false );
 	CHECK( heldBat );
 	CHECK( batWasHot );
 	CHECK( kills >= 1 );

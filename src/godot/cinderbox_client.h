@@ -15,8 +15,8 @@
 //
 // What the server's mods add reaches presentation as names, never as code: the actions a player
 // can press (with suggested keys), board fields ("pistol.ammo") and mod events ("pistol.fired").
-// This node exposes them to scripts and HUD nodes, and applies CbStateBindings (held items, aimed
-// arms, AnimationTree parameters) while their conditions hold.
+// This node exposes them to scripts and HUD nodes, and drives the CbReaction nodes in every entity's
+// scene from its board and events.
 
 #include "anim_set.h"
 #include "cinderbox_effects.h"
@@ -75,10 +75,9 @@ public:
 	godot::String get_kind( int64_t net_id ) const;
 	godot::String get_entity_template_name( int64_t net_id ) const;
 	godot::Node3D* get_entity_node( int64_t net_id ) const;
-	void add_state_binding( const godot::Ref<CbStateBinding>& binding );
-	// How a kind of held item looks (from a mod's effect table); cleared with the state bindings.
+	// How a kind of held item looks (from a mod's effect table).
 	void add_item_look( const godot::Ref<CbItemLook>& look );
-	void clear_state_bindings();
+	void clear_item_looks();
 
 	// Players: net ids of everyone in the world, and their names.
 	godot::PackedInt64Array get_players() const;
@@ -191,11 +190,6 @@ private:
 	void RebuildCharacterNodes();
 	const Blackboard* BoardOf( uint32_t netId ) const;
 	std::vector<std::string> Conditions( const godot::PackedStringArray& conditions ) const;
-	bool StateHolds( const CbStateBinding& state, const present::Visual& v ) const;
-	// Aims, attaches and sets tree parameters for one visual; `models` is posed in place.
-	void ApplyStates( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, godot::Node3D* node,
-					  present::Models* models );
-	void PlaceAttachments( uint64_t visual, const present::Visual& v, godot::Node3D* node );
 
 	// Properties
 	godot::String m_host = "127.0.0.1";
@@ -225,7 +219,21 @@ private:
 	bool m_hideStaticBoxes = false;
 	std::unordered_map<std::string, godot::Ref<godot::PackedScene>> m_prefabs;
 
-	std::vector<godot::Ref<CbStateBinding>> m_states;
+	// Each visual's CbReaction nodes (found when its node was made), with what the game checks.
+	struct ReactionRef
+	{
+		godot::ObjectID node;
+		bool isWhile = false;
+		bool holder = false; // the subject is the item's holder, not the entity itself
+		std::string event;
+		std::vector<std::string> conditions;
+	};
+	std::unordered_map<uint64_t, std::vector<ReactionRef>> m_reactions;
+	void CollectReactions( uint64_t visual, godot::Node* node );
+	// The net id and board a reaction of this visual is about (0 when it has none).
+	uint32_t ReactionSubject( const ReactionRef& r, const present::Visual& v, const Blackboard** board ) const;
+	void UpdateReactions( uint64_t visual, const present::Visual& v );
+	void FireReactions( const std::string& event, uint32_t netId );
 
 	// Held items: their looks by kind, and each character's sockets (placed from the pose every
 	// frame; items are their children).
@@ -247,9 +255,6 @@ private:
 	// companion tracks to look again.
 	void PlaceItem( uint32_t holderNetId, godot::Node3D* socket, godot::Node3D* item );
 	void ItemsChanged( uint32_t holderNetId );
-	// Per visual: the attachment node of each state binding that holds (0 when none).
-	std::unordered_map<uint64_t, std::vector<godot::ObjectID>> m_attachments;
-	std::vector<bool> m_active; // scratch: which state bindings hold for the visual being posed
 	present::Models m_pose;		// scratch: the pose being built
 	uint16_t m_lastActions = 0;
 	uint64_t m_schemaGeneration = 0;

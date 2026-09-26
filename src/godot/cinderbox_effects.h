@@ -294,46 +294,10 @@ private:
 	float m_flashTime = 0.15f;
 };
 
-// A look that holds while a condition does: "while loadout.slot == 2, hold a pistol in the right hand
-// and aim that arm". Checked every frame for each matching entity, so it follows the board as the
-// server's mods change it.
-class CbStateBinding : public godot::Resource
-{
-	GDCLASS( CbStateBinding, godot::Resource )
-
-public:
-	CB_PROPERTY( godot::PackedStringArray, conditions, m_conditions )
-	CB_PROPERTY( godot::String, kind, m_kind )
-	CB_PROPERTY( int, who, m_who )
-	CB_PROPERTY( godot::String, attach_scene, m_attachScene )
-	CB_PROPERTY( godot::String, attach_bone, m_attachBone )
-	CB_PROPERTY( godot::Vector3, attach_offset, m_attachOffset )
-	CB_PROPERTY( godot::Vector3, attach_rotation, m_attachRotation )
-	CB_PROPERTY( godot::String, tree_parameter, m_treeParameter )
-
-protected:
-	static void _bind_methods();
-
-private:
-	godot::PackedStringArray m_conditions;
-	// "player" (the default), "ragdoll", "prop" or "any".
-	godot::String m_kind = "player";
-	int m_who = 0; // CbEffect::Who
-	// A scene kept at a joint while the conditions hold (a held item).
-	godot::String m_attachScene;
-	godot::String m_attachBone = "RightHand";
-	godot::Vector3 m_attachOffset;
-	godot::Vector3 m_attachRotation; // degrees
-	// An AnimationTree parameter set to whether the conditions hold, for prefabs animated by a
-	// CinderboxAnimator (e.g. "parameters/conditions/armed").
-	godot::String m_treeParameter;
-};
-
 // How a kind of held item looks: the scene drawn in its holder's socket ("melee.bat" ->
 // res://prefabs/bat.tscn). The scene is the item's frame (the socket's): the grip at the origin,
-// pointing along -Z. It may carry an AnimationPlayer (events sent to the item play its animation of
-// the same name, and the character's animations can play its animations) and an AnimationTree
-// (the item's board fields are its advance conditions, "parameters/conditions/<field>").
+// pointing along -Z. The character's animations can play the item's animations (a track on
+// .../RightHand/Item/AnimationPlayer), and CbReaction nodes in it react to its board and events.
 class CbItemLook : public godot::Resource
 {
 	GDCLASS( CbItemLook, godot::Resource )
@@ -371,21 +335,12 @@ public:
 	{
 		return m_effects;
 	}
-	void set_states( const godot::TypedArray<CbStateBinding>& states )
-	{
-		m_states = states;
-	}
-	godot::TypedArray<CbStateBinding> get_states() const
-	{
-		return m_states;
-	}
 
 protected:
 	static void _bind_methods();
 
 private:
 	godot::TypedArray<CbEffect> m_effects;
-	godot::TypedArray<CbStateBinding> m_states;
 	godot::TypedArray<CbItemLook> m_items;
 };
 

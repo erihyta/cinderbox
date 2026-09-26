@@ -120,21 +120,6 @@ void CbEffect::_bind_methods()
 	BIND_ENUM_CONSTANT( WHO_REMOTE );
 }
 
-void CbStateBinding::_bind_methods()
-{
-	CB_BIND( CbStateBinding, conditions, Variant::PACKED_STRING_ARRAY, "conditions" );
-	CB_BIND( CbStateBinding, kind, Variant::STRING, "kind", PROPERTY_HINT_ENUM_SUGGESTION, "player,ragdoll,prop,any" );
-	CB_BIND( CbStateBinding, who, Variant::INT, "who", PROPERTY_HINT_ENUM, "Anyone,Local player,Other players" );
-	ADD_GROUP( "Attach", "attach_" );
-	CB_BIND( CbStateBinding, attach_scene, Variant::STRING, "attach_scene", PROPERTY_HINT_FILE, "*.tscn,*.scn" );
-	CB_BIND( CbStateBinding, attach_bone, Variant::STRING, "attach_bone" );
-	CB_BIND( CbStateBinding, attach_offset, Variant::VECTOR3, "attach_offset" );
-	CB_BIND( CbStateBinding, attach_rotation, Variant::VECTOR3, "attach_rotation" );
-	ADD_GROUP( "Aim", "aim_" );
-	ADD_GROUP( "", "" );
-	CB_BIND( CbStateBinding, tree_parameter, Variant::STRING, "tree_parameter" );
-}
-
 void CbItemLook::_bind_methods()
 {
 	CB_BIND( CbItemLook, kind, Variant::STRING, "kind" );
@@ -149,12 +134,6 @@ void CbEffectTable::_bind_methods()
 								String::num_int64( Variant::OBJECT ) + "/" + String::num_int64( PROPERTY_HINT_RESOURCE_TYPE ) +
 									":CbItemLook" ),
 				  "set_items", "get_items" );
-	ClassDB::bind_method( D_METHOD( "set_states", "states" ), &CbEffectTable::set_states );
-	ClassDB::bind_method( D_METHOD( "get_states" ), &CbEffectTable::get_states );
-	ADD_PROPERTY( PropertyInfo( Variant::ARRAY, "states", PROPERTY_HINT_ARRAY_TYPE,
-								String::num_int64( Variant::OBJECT ) + "/" + String::num_int64( PROPERTY_HINT_RESOURCE_TYPE ) +
-									":CbStateBinding" ),
-				  "set_states", "get_states" );
 	ClassDB::bind_method( D_METHOD( "set_effects", "effects" ), &CbEffectTable::set_effects );
 	ClassDB::bind_method( D_METHOD( "get_effects" ), &CbEffectTable::get_effects );
 	ADD_PROPERTY( PropertyInfo( Variant::ARRAY, "effects", PROPERTY_HINT_ARRAY_TYPE,

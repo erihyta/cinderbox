@@ -838,7 +838,7 @@ could not be authored; M28 fell back to a board flag with the timing in the mod.
   the companion player, quiet empty sockets, the melee network test (the bat item held, hot after a
   hit, no desyncs), a rendered session with the bat glowing and trailing flames mid-swing. Reference
   hashes unchanged; protocol 12.
-- **Not done**: the pistol still uses its attach binding; items cannot be dropped into the world or
+- **Not done**: the pistol still uses its attach binding (a held item since M33); items cannot be dropped into the world or
   handed over (only spawned and destroyed); rollback does not undo an item animation that already
   played (as with companion tracks, a replay does not fire twice, but a mispredicted swing that
   never happened has already shown).
@@ -887,6 +887,36 @@ humanoid profile.
   layers the character has, they cannot add new ones; the placeholder rig does not conform to the
   profile's rest shape, so packs look off on it; crouching does not slow movement (speed is not a
   mod control yet).
+
+## Reactions as nodes (M33)
+Godot's `MultiplayerSynchronizer` copies node properties from an authority to peers. That does not
+fit here: the server has no Godot scene (it runs the simulation), and what reaches clients is small
+simulation state that has to *mean* something on screen. The missing piece was on the receiving
+side: a way for a scene to say what it does with that state, without scripts.
+
+- **`CbReaction`**: a node in any entity's scene. When: on a mod event, or while board conditions
+  hold. Subject: the entity, or a held item's holder. Does: plays an animation (and an off
+  animation), sets a property (sub-paths into materials; put back when a While ends), calls a
+  built-in method with no arguments, adds a scene (freed after a lifetime, or when a While ends).
+- **Client**: collects each visual's reactions when its node is made; checks every While each
+  frame against the subject's board (and the global board); fires event reactions whose subject the
+  event is at. Presentation only.
+- **One mechanism instead of conventions**: gone are the item rules of M29/M30 (item board fields
+  as AnimationTree conditions; events playing same-named animations on items and on a holder's
+  items) and `CbStateBinding` (a scene kept at a joint, a tree parameter). Effect bindings stay for
+  one-shots in the world and on screen.
+- **The pistol is a held item** (`pistol.gun`, slot 2, gone when dead). Its scene moved into the
+  socket frame at exactly the old attach offset (checked in Godot). The bat's glow and hit sparks
+  are two reactions; its barrel material is local to the scene, or one hot bat lit every bat.
+- **Found on the way**: taking your item away with `Destroy( ItemTarget(...) )` destroyed the
+  *other* mod's item on a same-tick swap (melee spawns the bat, then the pistol's destroy resolves
+  to it). Both mods now destroy the NetId `HeldItem()` gave. The melee network test swaps pistol ->
+  bat and fails on the old code.
+- **Verified**: `check_reactions.gd` (10 checks), all suites, reference hashes unchanged; a
+  rendered session with `cb_bot --melee`: 14 hit-spark and 10 glow reactions fired, both item looks
+  loaded, no desyncs.
+- **Not done**: reactions to the built-in events (jumped, landed, footstep, impact); methods with
+  arguments; an event reaction is not taken back when rollback removes its event.
 
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
@@ -993,3 +1023,4 @@ humanoid profile.
 30. **M30** (done): one event resolved by what the player holds: item kinds and event values in state machine conditions, events at a player played by its held items (the bat's hit sparks); the engine's placeholder rig and HUD lose their game content.
 31. **M31** (done): item swaps clear the holder's companion track caches, so a bat taken out again still slashes; `cb_bot --melee` swaps weapons.
 32. **M32** (done): animation packs: mods ship AnimationTree layers (`CbAnimPack`) and swap a player's layer for them by name (`SwapLayer` / `RestoreLayer`), in the simulation and every pose; clips retargeted by humanoid-profile names; the `sneak` mod's crouch.
+33. **M33** (done): `CbReaction` nodes (on event / while, self / holder; animation, property, method, scene); the implicit item rules and `CbStateBinding` removed; the pistol as a held item; the bat's glow and sparks as reactions; item swaps across mods destroy by NetId.

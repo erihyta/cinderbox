@@ -9,6 +9,7 @@ add_library(cinderbox_gd SHARED
 	cinderbox_entity_nodes.cpp
 	cinderbox_hud.cpp
 	cinderbox_map_nodes.cpp
+	cinderbox_reaction.cpp
 	cinderbox_skeleton.cpp
 	client_thread.cpp
 	register_types.cpp
