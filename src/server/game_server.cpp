@@ -56,6 +56,27 @@ bool GameServer::Start( const ServerOptions& options )
 	{
 		std::string warnings;
 		m_hits->SetStances( m_schema.layers, m_schema.stances, warnings );
+		// The mods' animation packs, from their items: their graphs go to everyone in the schema.
+		std::vector<std::shared_ptr<const anim::AnimSet>> packSets;
+		for ( AnimPackInfo& pack : m_schema.animPacks )
+		{
+			std::shared_ptr<const anim::AnimSet> set;
+			std::string packError;
+			if ( options.loadAnimPack )
+			{
+				set = options.loadAnimPack( pack.mod, pack.name, packError, warnings );
+			}
+			if ( set == nullptr || set->GraphText().empty() )
+			{
+				Log( "animation pack %s (mod %s) is not available%s%s; its swaps do nothing", pack.name.c_str(), pack.mod.c_str(),
+					 packError.empty() ? "" : ": ", packError.c_str() );
+			}
+			else
+			{
+				pack.graph = set->GraphText();
+			}
+			packSets.push_back( set );
+		}
 		// The character's state machine, if it has one: the simulation runs it, the hit tests pose by
 		// it, and it goes to every client in the schema.
 		m_schema.animGraph = character->animations->GraphText();
@@ -69,6 +90,14 @@ bool GameServer::Start( const ServerOptions& options )
 				return false;
 			}
 			m_hits->SetGraph( m_animGraph, warnings );
+			m_animPacks = CompileAnimPacks( m_schema, warnings );
+			std::vector<std::shared_ptr<const anim::PackClips>> fitted;
+			for ( size_t i = 0; i < m_animPacks.size(); ++i )
+			{
+				fitted.push_back( m_animPacks[i] && packSets[i] ? anim::FitPack( packSets[i], *m_animPacks[i], *character->animations, warnings )
+															   : nullptr );
+			}
+			m_hits->SetPacks( m_animPacks, fitted );
 		}
 		if ( warnings.empty() == false )
 		{
@@ -95,6 +124,7 @@ bool GameServer::Start( const ServerOptions& options )
 
 	m_sim = std::make_unique<Simulation>( options.config, m_map );
 	m_sim->SetAnimGraph( m_animGraph );
+	m_sim->SetAnimPacks( m_animPacks );
 	m_modWorld = std::make_unique<flecs::world>( CreateFlecsWorld() );
 	m_modRng = options.config.seed ^ 0x6D6F6473ull; // "mods"
 	m_history.assign( kFrameHistory, InputFrame{} );

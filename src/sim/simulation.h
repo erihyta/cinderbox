@@ -221,6 +221,15 @@ public:
 	{
 		return m_animGraph.get();
 	}
+	// The mods' animation packs (compiled from the schema), whose layers players can swap to.
+	void SetAnimPacks( std::vector<std::shared_ptr<const AnimGraph>> packs )
+	{
+		m_animPacks = std::move( packs );
+	}
+	const std::vector<std::shared_ptr<const AnimGraph>>& Packs() const
+	{
+		return m_animPacks;
+	}
 
 	// 0 if not found. Lookup only; never iterate this for simulation order.
 	flecs::entity FindEntity( uint32_t netId ) const;
@@ -316,6 +325,7 @@ private:
 	std::vector<std::pair<uint32_t, uint16_t>> m_heldScratch; // holder NetId, item kind
 
 	std::shared_ptr<const AnimGraph> m_animGraph;
+	std::vector<std::shared_ptr<const AnimGraph>> m_animPacks;
 	void RecordModEvent( const ModEventRecord& record );
 	void FollowHolders();
 };

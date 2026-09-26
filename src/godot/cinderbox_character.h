@@ -252,6 +252,11 @@ public:
 	godot::PackedStringArray _get_configuration_warnings() const override;
 
 protected:
+	// An animation pack bakes to res://anim/<name>/ and has no hitboxes (CbAnimPack).
+	virtual bool IsPack() const
+	{
+		return false;
+	}
 	static void _bind_methods();
 
 private:
@@ -286,6 +291,27 @@ private:
 	godot::Dictionary m_graphInputs;
 	godot::String m_aimChain = "RightUpperArm:1";
 	godot::String m_aimTip = "RightHand";
+};
+
+// Authoring a mod's animation pack: layers a server mod can swap a player's own for (a crouch walk
+// for "Base"). The same as a character (a model with a humanoid-profile Skeleton3D, an
+// AnimationPlayer, an AnimationTree whose state machines are named like the characters' layers),
+// without hitboxes; Bake writes res://anim/<character_name>/ (graph.cfg, the skeleton the clips were
+// made on, one .ozz per animation, companion.tres) into the mod's client project. The game fits the
+// clips to each character by the profile's bone names.
+class CbAnimPack : public CbCharacter
+{
+	GDCLASS( CbAnimPack, CbCharacter )
+
+public:
+	godot::PackedStringArray _get_configuration_warnings() const override;
+
+protected:
+	static void _bind_methods() {}
+	bool IsPack() const override
+	{
+		return true;
+	}
 };
 
 } // namespace cb::gd

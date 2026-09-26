@@ -861,6 +861,33 @@ machine and the items' own animations; they only had to be able to see each othe
 - **Verified**: `attack_resolve` (the same event: Punch empty-handed, BatSwing holding a bat, Heavy
   on value 2), all suites, reference hashes unchanged.
 
+## Animation packs (M32)
+Mods author AnimationTree layers and swap a player's own for them. Decisions: swap by layer name (the
+rest of the tree stays), packs live in the mod's workshop item, every character follows Godot's
+humanoid profile.
+
+- **Simulation**: each layer's state records its `source` (0: the character's; n: pack n-1). A
+  `SwapLayer` command sets it and restarts the layer; `ResolveLayer` gives the layer that plays and
+  the graph that owns its clips, shared by the simulation and the pose so they cannot disagree.
+- **Transport**: the server loads each pack from its mod's item (SHA-checked zip, `anim/<pack>/`),
+  puts its graph in the schema (like the character's) and compiles it; clients, bots and replays
+  compile the same text. Protocol 13.
+- **Retargeting** (`retarget.*`): per target joint, the source joint of the same profile name; its
+  turn from rest (in its own frame) applied to the target's rest; the hips' movement scaled by the
+  hips' heights; other bones keep the target's lengths. A clip for its own skeleton comes back exact
+  (0.0000 m off); the same skeleton skips it. `ProfileName` learned every humanoid-profile name
+  (the fingers were missing).
+- **Fitting** (`FitPack`): once per character, shared by every player's pose and the hit tests.
+- **Authoring**: `CbAnimPack` is a `CbCharacter` without hitboxes that bakes to `res://anim/`;
+  items may carry `anim/<pack>/` data (the validator allows .ozz and .cfg there, never scripts).
+- **Verified**: `retarget`, `layer_swap` (head 1.60 m, 1.18 m swapped, 1.60 m restored), the `sneak`
+  network test (the server's pose: head 1.61 m, 0.88 m crouched, restored, no desyncs), a rendered
+  session with sneaking bots, reference hashes unchanged.
+- **Not done**: a pack's companion tracks (VFX keyed in its clips) are not played yet; packs replace
+  layers the character has, they cannot add new ones; the placeholder rig does not conform to the
+  profile's rest shape, so packs look off on it; crouching does not slow movement (speed is not a
+  mod control yet).
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -964,3 +991,5 @@ machine and the items' own animations; they only had to be able to see each othe
 28. **M28** (done): the bat's fire is the melee mod's look: `melee.swinging` on the board during a swing, `bat_fire.tscn` held like the bat while it holds; the characters' hand fire is gone.
 29. **M29** (done): held items as entities with their own state (`SpawnItem`, `ItemTarget`), sockets (`CbSocket`, built-in hands), item looks (`CbItemLook`), item boards as AnimationTree conditions and events as animations, characters' animations playing the held item's animations; the melee bat converted.
 30. **M30** (done): one event resolved by what the player holds: item kinds and event values in state machine conditions, events at a player played by its held items (the bat's hit sparks); the engine's placeholder rig and HUD lose their game content.
+31. **M31** (done): item swaps clear the holder's companion track caches, so a bat taken out again still slashes; `cb_bot --melee` swaps weapons.
+32. **M32** (done): animation packs: mods ship AnimationTree layers (`CbAnimPack`) and swap a player's layer for them by name (`SwapLayer` / `RestoreLayer`), in the simulation and every pose; clips retargeted by humanoid-profile names; the `sneak` mod's crouch.

@@ -30,6 +30,10 @@ public:
 	{
 		m_pose.SetGraph( std::move( graph ), warnings );
 	}
+	void SetPacks( AnimGraphPacks packs, std::vector<std::shared_ptr<const anim::PackClips>> clips )
+	{
+		m_pose.SetPacks( std::move( packs ), std::move( clips ) );
+	}
 
 	const CharacterAsset& Get() const
 	{

@@ -111,8 +111,11 @@ enum class CommandType : uint8_t
 	// order). A new entity with its own board, drawn in that socket; it replaces whatever that
 	// socket held. Destroy removes it; it also goes when its holder leaves.
 	SpawnItem = 12,
+	// target (a player), index = the character's layer (graph order), value = source: 0 plays its
+	// own layer again, n plays animation pack n-1's layer of the same name. The layer starts over.
+	SwapLayer = 13,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::SpawnItem );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::SwapLayer );
 
 enum ImpulseMode : uint8_t
 {

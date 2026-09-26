@@ -38,6 +38,13 @@ std::shared_ptr<const CharacterAsset> LoadCharacterItem( const std::string& zipP
 std::shared_ptr<const CharacterAsset> LoadCharacterFolder( const std::string& dir, const std::string& name, std::string& error,
 														   std::string& warnings );
 
+// A mod's animation pack: anim/<pack>/ of its workshop item (checked against the item's SHA-256), or of
+// a folder (tests, a mod's client project).
+std::shared_ptr<const anim::AnimSet> LoadAnimPackItem( const std::string& zipPath, const ModItem& item, const std::string& pack,
+													   std::string& error, std::string& warnings );
+std::shared_ptr<const anim::AnimSet> LoadAnimPackFolder( const std::string& dir, const std::string& pack, std::string& error,
+														 std::string& warnings );
+
 // Where a player's workshop keeps items (the game's user:// folder), for the default --workshop.
 std::string DefaultWorkshopDir();
 

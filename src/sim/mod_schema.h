@@ -66,6 +66,18 @@ struct ModItem
 	bool operator==( const ModItem& ) const = default;
 };
 
+// An animation pack a mod provides: AnimationTree layers a player's own can be swapped for ("Base"
+// for a crouch walk). Baked into the mod's workshop item under anim/<name>/; the graph travels here
+// so every simulation runs the server's.
+struct AnimPackInfo
+{
+	std::string mod;
+	std::string name;
+	std::string graph; // graph.cfg text
+
+	bool operator==( const AnimPackInfo& ) const = default;
+};
+
 struct ModSchema
 {
 	std::vector<std::string> mods; // names of the mods the server runs, for display
@@ -88,6 +100,7 @@ struct ModSchema
 	// provides it as a CbSocket node, or the item is not drawn there).
 	std::vector<std::string> itemKinds;
 	std::vector<std::string> sockets = { "RightHand", "LeftHand" };
+	std::vector<AnimPackInfo> animPacks;
 
 	bool operator==( const ModSchema& ) const = default;
 

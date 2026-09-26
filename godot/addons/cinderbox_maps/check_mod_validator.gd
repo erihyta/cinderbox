@@ -28,10 +28,14 @@ func _initialize() -> void:
 	_hostile("a path escape", {"vfx/../../evil.tscn": "x"})
 	_hostile("a script in a character folder", {"characters/robot/brain.gd": "extends Node"})
 	_hostile("ozz data outside characters/", {"assets/skeleton.ozz": "ozz-skeleton"})
+	_hostile("a script in an animation pack", {"anim/sneak.crouch/brain.gd": "extends Node"})
 
 	# Things that look close but are fine.
 	_friendly("a shader named .gdshader", {"vfx/glow.tres": "[gd_resource type=\"ShaderMaterial\" format=3]\n\n[ext_resource type=\"Shader\" path=\"res://vfx/glow.gdshader\" id=\"1\"]\n\n[resource]\nshader = ExtResource(\"1\")\n"})
 	_friendly("a character's baked data", {"characters/robot/skeleton.ozz": "ozz-skeleton", "characters/robot/anim.cfg": "skeleton = skeleton.ozz\n", "characters/robot/hitboxes.cfg": "head Head sphere 0 0 0 0 0 0 1 0.1\n"})
+	_friendly("an animation pack's baked data", {"anim/sneak.crouch/skeleton.ozz": "ozz-skeleton", "anim/sneak.crouch/anim.cfg": "skeleton = skeleton.ozz
+", "anim/sneak.crouch/graph.cfg": "cinderbox_graph	1
+"})
 	_friendly("an import redirect", {"assets/sfx/a.wav.import": "[remap]\n\nimporter=\"wav\"\npath=\"res://.godot/imported/a.wav-1.sample\"\n\n[deps]\n\nsource_file=\"res://assets/sfx/a.wav\"\ndest_files=[\"res://.godot/imported/a.wav-1.sample\"]\n"})
 
 	print("mod validator: %s" % ("ok" if failures == 0 else "%d failure(s)" % failures))

@@ -298,6 +298,8 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 														   m_options.maxRollbackTicks, map );
 		}
 		m_session->Sim().SetAnimGraph( graph );
+		std::string packWarnings;
+		m_session->Sim().SetAnimPacks( CompileAnimPacks( schema, packWarnings ) );
 
 		if ( m_session->Sim().LoadPortable( msg.image ) == false )
 		{

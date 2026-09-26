@@ -7,6 +7,7 @@
 #include "anim_graph.h"
 #include "anim_set.h"
 #include "components.h"
+#include "retarget.h"
 #include "stances.h"
 
 #include "ozz/animation/runtime/sampling_job.h"
@@ -44,7 +45,7 @@ struct ActiveClip
 std::vector<ActiveClip> ActiveClips( const AnimState& state, const AnimSet& set, const StanceTable* stances );
 // The same for a character with a state machine: per layer (channel = layer), the clip of its state
 // that weighs most, by the Godot animation's name.
-std::vector<ActiveClip> ActiveGraphClips( const AnimState& state, const AnimGraph& graph );
+std::vector<ActiveClip> ActiveGraphClips( const AnimState& state, const AnimGraph& graph, const AnimGraphPacks& packs = {} );
 
 // Interpolate between two consecutive tick states for rendering between ticks.
 AnimState InterpolateAnimState( const AnimState& from, const AnimState& to, float alpha );
@@ -67,6 +68,9 @@ public:
 	// follows its layers instead of the built-in clips and stances. Clips it names that this
 	// character lacks drop out of the blend and are listed in `warnings`. Null goes back.
 	void SetGraph( std::shared_ptr<const AnimGraph> graph, std::string& warnings );
+	// The mods' animation packs (as the simulation has them) and their clips fitted to this
+	// character (FitPack), index for index: layers a player swapped to one play from it.
+	void SetPacks( AnimGraphPacks packs, std::vector<std::shared_ptr<const PackClips>> clips );
 	const AnimGraph* Graph() const
 	{
 		return m_graph.get();
@@ -107,12 +111,22 @@ private:
 	// State machine layers.
 	void EvaluateGraph( const AnimState& state );
 	std::shared_ptr<const AnimGraph> m_graph;
-	std::vector<const ozz::animation::Animation*> m_graphClips;	  // per graph clip, null when missing
-	std::vector<ozz::vector<ozz::math::SimdFloat4>> m_graphMasks; // per layer, empty: every joint
+	AnimGraphPacks m_packs;
+	std::vector<std::shared_ptr<const PackClips>> m_packClips;
+	// Per graph that layers play from ([0] the character's, [n] pack n-1's): its clips, and per
+	// layer its mask (empty: every joint) and how much of it covers the neck.
+	struct GraphSource
+	{
+		const AnimGraph* graph = nullptr;
+		std::vector<const ozz::animation::Animation*> clips;
+		std::vector<ozz::vector<ozz::math::SimdFloat4>> masks;
+		std::vector<float> neck;
+	};
+	std::vector<GraphSource> m_sources;
+	void BindSource( GraphSource& source, const AnimGraph& graph, std::vector<const ozz::animation::Animation*> clips );
 	std::vector<std::unique_ptr<ozz::animation::SamplingJob::Context>> m_graphContexts;
 	std::vector<ozz::vector<ozz::math::SoaTransform>> m_graphLocals;
 	ozz::vector<ozz::math::SoaTransform> m_layerPose;
-	std::vector<float> m_graphNeckMask; // per layer: how much its mask covers the neck
 	float m_neckCover = 0.0f;			// this pose: how much of the neck the upper layers set
 	std::shared_ptr<const StanceTable> m_stances;
 	ozz::animation::SamplingJob::Context m_stanceContext;

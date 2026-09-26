@@ -3,7 +3,10 @@
 //   cb_net_tests [name]
 
 #include "bot_brain.h"
+#include "anim_graph.h"
 #include "character_item.h"
+#include "joint_math.h"
+#include "pose.h"
 #include "sha256.h"
 #include "registry.h"
 #include "fingerprint.h"
@@ -93,7 +96,8 @@ struct Harness
 
 	// Runs every compiled server mod, like cb_server does by default.
 	explicit Harness( uint16_t p, const std::string& recordPath = {}, const std::string& mapPath = {},
-					  const std::map<std::string, std::string>& modOptions = {} )
+					  const std::map<std::string, std::string>& modOptions = {},
+					  const std::function<void( ServerOptions& )>& configure = {} )
 		: port( p )
 		, clientPort( p )
 	{
@@ -110,6 +114,10 @@ struct Harness
 		options.reconnectGraceSeconds = 10.0;
 		options.recordPath = recordPath;
 		options.modOptions = modOptions;
+		if ( configure )
+		{
+			configure( options );
+		}
 		if ( server.Start( options ) == false )
 		{
 			std::printf( "    server failed to start on port %u\n", port );
@@ -786,6 +794,84 @@ void TestCharacterItem()
 
 // Hitboxes in a session: aiming at the head does the pistol's head damage (x2 by default), so the
 // target falls in two hits instead of four.
+// The sneak mod: holding the crouch key swaps the player's Base layer for the mod's pack (loaded
+// from its client project, fitted to the mannequin), in the server's simulation and so in its hit
+// tests; letting go restores it. Bots follow without desyncs.
+void TestSneak()
+{
+	const std::string root = CB_SOURCE_DIR;
+	std::shared_ptr<const CharacterAsset> mannequin;
+	Harness h( 47803, {}, {}, {}, [&]( ServerOptions& options ) {
+		std::string error, warnings;
+		mannequin = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
+		options.character = mannequin;
+		options.loadAnimPack = [root]( const std::string& mod, const std::string& pack, std::string& error, std::string& warnings ) {
+			return LoadAnimPackFolder( root + "/server_mods/" + mod + "/client", pack, error, warnings );
+		};
+	} );
+	CHECK( mannequin != nullptr );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t crouch = schema.ActionMask( "crouch" );
+	CHECK( crouch != 0 && schema.animPacks.size() == 1 && schema.animPacks[0].graph.empty() == false );
+	if ( mannequin == nullptr || crouch == 0 || schema.animPacks.empty() )
+	{
+		return;
+	}
+
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		if ( tick >= 120 && tick < 300 )
+		{
+			in.actions = crouch;
+		}
+		return in;
+	};
+	std::string error, warnings;
+	auto graph = CompileAnimGraph( schema.animGraph, schema, error, warnings );
+	AnimGraphPacks packs = CompileAnimPacks( schema, warnings );
+	auto packSet = LoadAnimPackFolder( root + "/server_mods/sneak/client", "sneak.crouch", error, warnings );
+	CHECK( graph != nullptr && packs.size() == 1 && packs[0] != nullptr && packSet != nullptr );
+	if ( graph == nullptr || packs.empty() || packs[0] == nullptr || packSet == nullptr )
+	{
+		return;
+	}
+	anim::PoseEvaluator pose( *mannequin->animations );
+	pose.SetGraph( graph, warnings );
+	pose.SetPacks( packs, { anim::FitPack( packSet, *packs[0], *mannequin->animations, warnings ) } );
+	Simulation& server = h.server.Sim();
+	float standing = 0.0f, sneaking = 10.0f;
+	bool swapped = false, restored = false;
+	h.RunUntil( 7.0, [&]( double ) {
+		uint32_t netId = server.PlayerNetId( h.bots[0].client->Slot() );
+		const AnimState* a = server.EntityAnimState( netId );
+		if ( a == nullptr || a->graph[0].started == 0 )
+		{
+			return;
+		}
+		pose.Evaluate( *a );
+		float v[4];
+		ozz::math::StorePtrU( pose.Models()[size_t( anim::FindJoint( *mannequin->animations, "Head" ) )].cols[3], v );
+		if ( a->graph[0].source == 1 && a->graph[0].stateTime > 0.5f )
+		{
+			swapped = true;
+			sneaking = std::min( sneaking, v[1] );
+		}
+		else if ( a->graph[0].source == 0 )
+		{
+			restored |= swapped;
+			if ( swapped == false )
+			{
+				standing = std::max( standing, v[1] );
+			}
+		}
+	} );
+	h.Report();
+	std::printf( "    head: standing %.2f, sneaking %.2f; swapped %d, restored %d\n", standing, sneaking, int( swapped ), int( restored ) );
+	CHECK( swapped && restored );
+	CHECK( sneaking < standing - 0.3f );
+	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
+}
+
 void TestHeadshot()
 {
 	Harness h( 47801 );
@@ -1208,6 +1294,7 @@ int main( int argc, char** argv )
 		{ "names", TestNames },
 		{ "deathmatch", TestDeathmatch },
 		{ "character_item", TestCharacterItem },
+		{ "sneak", TestSneak },
 		{ "headshot", TestHeadshot },
 		{ "melee", TestMelee },
 	};

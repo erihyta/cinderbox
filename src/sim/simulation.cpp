@@ -694,7 +694,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			graphIn.heldKinds = held;
 			graphIn.heldCount = heldCount;
 			m_markerScratch.clear();
-			UpdateAnimGraph( anim, *m_animGraph, graphIn, m_config.TimeStep(), m_markerScratch );
+			UpdateAnimGraph( anim, *m_animGraph, m_animPacks, graphIn, m_config.TimeStep(), m_markerScratch );
 			for ( int event : m_markerScratch )
 			{
 				// A marker the playing clip crossed: the mod event of its name, from this player.
@@ -1509,6 +1509,25 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			flecs::entity item = CreateEntity();
 			item.set<HeldItem>( { holder, command.index, command.mode, 0 } );
 			item.set<Transform>( player.get<Transform>() );
+			return;
+		}
+
+		case CommandType::SwapLayer:
+		{
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() == false || e.has<AnimState>() == false || command.index >= kMaxAnimLayers || command.value < 0 ||
+				 command.value > 255 )
+			{
+				return;
+			}
+			AnimState a = e.get<AnimState>();
+			AnimGraphLayerState& layer = a.graph[command.index];
+			if ( layer.source != uint8_t( command.value ) )
+			{
+				layer.source = uint8_t( command.value );
+				layer.started = 0; // starts over in the new layer's start state
+			}
+			e.set<AnimState>( a );
 			return;
 		}
 

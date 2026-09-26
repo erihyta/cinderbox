@@ -1,0 +1,11 @@
+; The sneak mod's look: a workshop item players subscribe to. It contains no code, only the crouch
+; animation pack (anim/sneak.crouch, baked by godot/addons/cinderbox_maps/make_sneak_pack.gd), which
+; the sneak server mod swaps in for a player's "Base" layer while they hold the crouch key.
+; Publish it with: tools\publish_mod.ps1 -Mod sneak
+
+config_version=5
+
+[application]
+
+config/name="Cinderbox item: sneak"
+config/features=PackedStringArray("4.7", "Forward Plus")
