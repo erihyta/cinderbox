@@ -918,6 +918,29 @@ side: a way for a scene to say what it does with that state, without scripts.
 - **Not done**: reactions to the built-in events (jumped, landed, footstep, impact); methods with
   arguments; an event reaction is not taken back when rollback removes its event.
 
+## Entity paths (M34)
+A reaction could only watch its own entity or its holder, and its node paths only reached its own
+scene. Godot's node tree cannot be the way out: entity nodes are named by NetId (`player_52`), items
+are reparented into sockets, players are rebuilt when the character changes. So entities are named
+through the simulation's relations instead.
+
+- **Paths** (`src/present/entity_path.*`, engine-independent): `self`, `holder`, `item:<socket>`,
+  `event.a`, `event.b`, `local`, `world`, chained with `/`. Parsing and resolving are unit-tested;
+  resolving takes callbacks (holder of, item in), so tests need no mirror.
+- **Reactions**: `subject` is a path; `event_side` says whether the event names the subject as A,
+  B or either; `act_on` is a path to the scene node paths resolve in; conditions take a
+  `path:` prefix (`!holder:combat.dead`). The client keeps an index of held items per frame.
+- **Limits** (the user's call: read anything, write only presentation, never outside entity
+  scenes): node lookups outside the scene they resolve in return nothing; `free`, `queue_free`
+  and `script` are refused. A While whose `act_on` moves to another scene ends in the old one first.
+- **Verified**: `entity_paths` (parsing, errors, chains, empty hands, events, path conditions),
+  `check_reactions.gd` (15 checks: `act_on` roots, restoring there, containment, refusals), a
+  session with temporary reactions on the bat: acting on `event.b` found the victim's scene on each
+  hit, side B fired when the holder was hit, `!holder:combat.dead` acting on the holder turned off
+  at death; no desyncs. Reference hashes unchanged.
+- **Not done**: reactions still live only in entity scenes (world reactions and replacing
+  `CbEffect` are M35); paths cannot name "the nearest player" or an entity by template.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1024,3 +1047,4 @@ side: a way for a scene to say what it does with that state, without scripts.
 31. **M31** (done): item swaps clear the holder's companion track caches, so a bat taken out again still slashes; `cb_bot --melee` swaps weapons.
 32. **M32** (done): animation packs: mods ship AnimationTree layers (`CbAnimPack`) and swap a player's layer for them by name (`SwapLayer` / `RestoreLayer`), in the simulation and every pose; clips retargeted by humanoid-profile names; the `sneak` mod's crouch.
 33. **M33** (done): `CbReaction` nodes (on event / while, self / holder; animation, property, method, scene); the implicit item rules and `CbStateBinding` removed; the pistol as a held item; the bat's glow and sparks as reactions; item swaps across mods destroy by NetId.
+34. **M34** (done): entity paths (`self`, `holder`, `item:<socket>`, `event.a`, `event.b`, `local`, `world`) for a reaction's subject, conditions and `act_on`; `event_side`; lookups contained in the scene they resolve in, `free` / `queue_free` / `script` refused.

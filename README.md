@@ -40,6 +40,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M31: a bat taken out again still slashes (item swaps refresh the animation track caches) | done |
 | M32: animation packs: mods ship AnimationTree layers and swap a player's own for them (a crouch walk), retargeted to any humanoid-profile character | done |
 | M33: `CbReaction` nodes: an entity's scene reacts to its board and events with no code; the pistol is a held item; state bindings and the implicit item rules are gone | done |
+| M34: entity paths: a reaction's subject, conditions and the scene it acts in can be any related entity (`holder/item:LeftHand`, `event.b`, `local`, `world`) | done |
 
 ## Building
 
@@ -756,24 +757,42 @@ A mod taking its item away destroys the NetId `ctx.HeldItem( slot, socket )` giv
 
 ### Reactions
 
-A `CbReaction` node makes the scene it sits in react to its entity, with no code. Put it in any
-entity's scene: a held item, a character, a prop's prefab. The client drives it by name from what
-the server's mods declared.
+A `CbReaction` node makes a scene react to the game, with no code. Put it in any entity's scene:
+a held item, a character, a prop's prefab. The client drives it by name from what the server's mods
+declared, and it can read and act on related entities through **entity paths**.
 
 ```
 Bat
 ├── Barrel
 ├── Sparks                       (GPUParticles3D, one shot)
 ├── GlowWhileHot   CbReaction    while  melee.hot     set Barrel : surface_material_override/0:emission_energy_multiplier = 4
-└── SparksOnHit    CbReaction    on     melee.hit     call Sparks.restart()      subject: its holder
+└── SparksOnHit    CbReaction    on     melee.hit     call Sparks.restart()      subject: holder
 ```
+
+**Entity paths** name an entity through the simulation's relations, not the scene tree (entity
+nodes are named by NetId and move between parents, so Godot paths cannot reach them reliably):
+
+| Step | Means |
+|---|---|
+| `self` | the entity whose scene holds the reaction (an empty path is `self`) |
+| `holder` | the player holding this item |
+| `item:RightHand` | the item in that socket |
+| `event.a`, `event.b` | the entities the event names: who it is about (the attacker), the other one (the victim) |
+| `local` | the local player |
+| `world` | the map's scene, and the global board; nothing follows it |
+
+Steps chain with `/`: `holder/item:LeftHand` (the shield in my holder's other hand),
+`event.b/item:RightHand` (the victim's weapon). A step that finds nothing (an empty hand) makes the
+reaction do nothing.
 
 | Field | Meaning |
 |---|---|
 | `when` | **On event** (once per event) or **While** (its conditions hold) |
 | `event` | On event: the mod event's name (`melee.hit`) |
-| `conditions` | Board conditions, [as in bindings](#effects); on event they must hold too |
-| `subject` | **This entity**, or **Its holder** (for a held item: the player). Events must be *at* the subject; conditions read the subject's board |
+| `conditions` | Board conditions, [as in bindings](#effects); on event they must hold too. Plain names read the subject's board; a path and a colon read another's: `!holder:combat.dead`, `event.b:combat.health < 20`, `world:deathmatch.round` |
+| `subject` | an entity path (default `self`) |
+| `event_side` | On event: **A**, the event is about the subject (`melee.hit` at the attacker); **B**, the subject is the other one (the victim); or **Either**. A subject starting with `event.a` / `event.b` matches every event of the name |
+| `act_on` | an entity path: the scene the node paths below are resolved in, from its root (`.` is the root). Empty: this reaction's own scene, relative to the reaction |
 | `animation_player`, `animation` | play this animation from the start; `animation_off` when a While ends |
 | `target`, `property`, `value` | set a property on a node; a While puts the old value back when it ends. Sub-paths work: `surface_material_override/0:albedo_color` |
 | `target`, `method` | call a built-in method with no arguments (`restart`, `play`, `show`) |
@@ -781,6 +800,13 @@ Bat
 
 - **Presentation only**: nothing here changes the simulation. Everything that exists in the game
   (an item, a prop) is spawned by a server mod.
+- **Contained**: node paths never leave the entity scene they are resolved in (a player's scene
+  includes what it holds), so a workshop item cannot reach the game's HUD or menus. `free`,
+  `queue_free` and the `script` property are refused.
+- **A While follows its scene**: when `act_on` finds another scene (a new item in the hand), it
+  ends in the old one (puts values back) and starts in the new one.
+- **Mistakes show in the editor**: a path or condition that does not parse is a configuration
+  warning on the node, and the game skips that reaction.
 - **Resources are shared** between instances of a scene. A reaction that changes a material changes
   every copy, unless the material is **Local to Scene** (the bat's barrel is).
 - **Rollback**: like companion tracks, an event reaction that already played is not taken back if
