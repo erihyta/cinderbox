@@ -967,6 +967,39 @@ two ways: "when this happens, do that". Now there is one: `CbReaction`.
 - **Not done**: a While in a world scene cannot place things at an event (it has none); screen
   effects are still applied by `game.gd`, so a mod replacing the camera must handle the signal.
 
+## Reactions on the scene tree (M36)
+M34 named entities through the simulation's relations (`holder/item:LeftHand`) because the client's
+scene tree was not stable: nodes were named by NetId, sockets sat at a rig-dependent depth, and
+nodes were rebuilt. The better fix was to make the tree stable and address it directly, the Roblox
+way, and to split the reaction system out of Cinderbox.
+
+- **Stable tree**: everything lives under the client's `World` node. Players are `player_<slot>`
+  (the user's call: stable while connected), other entities `<kind>_<net id>`, the map `Map`, held
+  items `Item` in their socket. A node being replaced gives up its name first.
+- **Sockets are children of the entity** in the game: `CollectSockets` moves them there (placement
+  was already from the pose, in world space), and `Head` joined the built-in hands. The companion
+  tracks that reached an item through a socket's authored place are rewritten once per loaded
+  library (`Armature/Skeleton3D/At_RightHand/RightHand/Item/AnimationPlayer` ->
+  `../RightHand/Item/AnimationPlayer`); a live session showed the bat still burning mid-swing.
+- **Anchors** (the user left the syntax to me): `^` my entity, `^^` the one above, `$at`, `$other`,
+  `$local`, `$world`, then an ordinary NodePath. Anchors compose with Godot paths, so a new
+  relation needs no new vocabulary; presets would have covered only what was foreseen.
+- **Standalone addon** (`src/godot/cue`, library `cb_cue`, godot-cpp only): `CbDirector` holds
+  entities (metadata: kind, template, `state`), the world state and the local entity, indexes the
+  reactions that register themselves under it, fires them on `cue()` and re-checks Whiles on
+  `update()`. The client is an adapter: `add_entity` on create, `set_state` when a board changes
+  (hashed, so unchanged boards cost nothing), `cue` for every event, `set_local`.
+- **Replaced**: M34's entity paths and `act_on` (every path can be anchored), `bone` (a socket
+  path: `$at/RightHand`), the client's reaction bookkeeping. `CbItemLook` stays Cinderbox's.
+- **Verified**: `check_reactions.gd` drives a bare director (18 checks: state and Whiles, `$local`
+  following `set_local`, `^^`, `^/Timer`, side A and B, `$other:` conditions, `event.value`,
+  placing at `$other/Head`, `is_local` and `screen_effect`, containment, refusal, lifetimes); all
+  suites and reference hashes (`lossy_session`'s timing check still fails on this machine only);
+  a rendered melee session: the companion path rewritten, 22 hits and 22 `SparksOnHit` through `^^`,
+  footsteps, jumps, impacts, pistol tracers and predicted shots, no desyncs.
+- **Not done**: an editor preview dock (pick a node, fire a cue, toggle state) comes next; the addon
+  is its own library but still ships inside the Cinderbox extension.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1019,6 +1052,9 @@ two ways: "when this happens, do that". Now there is one: `CbReaction`.
 - **Rare reconnect**: an occasional client reconnect (about one per several minutes of 64 bots at 2% loss) was seen with the 1–3 s ENet timeout. The timeout is now 2–6 s; no reconnects occurred in the M5 runs.
 
 ### Possible next steps
+- **Reaction preview dock** (asked for after M36): in the editor, pick an entity node, fire a cue
+  (`melee.hit` with $other, value, point) or toggle its state, and watch the scene's reactions
+  play, with no server. The addon already runs without Cinderbox (`check_reactions.gd`).
 - **Less download at high latency**: skip frames that are probably still in flight and resend them only after a timeout. This trades bandwidth for a slower recovery from loss.
 - **Camera**: add camera collision in the client (it can currently clip into walls).
 - **Godot**:
@@ -1075,3 +1111,4 @@ two ways: "when this happens, do that". Now there is one: `CbReaction`.
 33. **M33** (done): `CbReaction` nodes (on event / while, self / holder; animation, property, method, scene); the implicit item rules and `CbStateBinding` removed; the pistol as a held item; the bat's glow and sparks as reactions; item swaps across mods destroy by NetId.
 34. **M34** (done): entity paths (`self`, `holder`, `item:<socket>`, `event.a`, `event.b`, `local`, `world`) for a reaction's subject, conditions and `act_on`; `event_side`; lookups contained in the scene they resolve in, `free` / `queue_free` / `script` refused.
 35. **M35** (done): world reactions: `vfx/reactions*.tscn` scenes loaded once replace `CbEffect` / `CbEffectTable`; built-in events and `pressed:<action>` by name; filters, cooldown, placement, sound and screen effects on `CbReaction`; `CbItemLook` as a node; all bindings converted.
+36. **M36** (done): the scene tree as the address space: a stable World tree (`player_<slot>`, sockets as entity children, companion tracks rewritten), anchors (`^`, `^^`, `$at`, `$other`, `$local`, `$world`) on ordinary NodePaths; `CbDirector` + `CbReaction` as a standalone addon (`cb_cue`) driven by cues and entity state; M34's entity paths replaced.
