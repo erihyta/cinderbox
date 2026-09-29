@@ -4,6 +4,7 @@
 add_library(cb_cue STATIC
 	cue_director.cpp
 	cue_paths.cpp
+	cue_preview.cpp
 	cue_reaction.cpp
 )
 target_include_directories(cb_cue PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
