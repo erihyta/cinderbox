@@ -1,0 +1,50 @@
+[gd_scene format=3]
+
+; How the melee mod sounds, as world reactions; the bat's own glow and sparks are reactions in
+; prefabs/bat.tscn. The Bat node says how the "melee.bat" item looks.
+
+[node name="MeleeReactions" type="Node3D"]
+
+[node name="Swing" type="CbReaction" parent="."]
+event = "melee.swing"
+subject = "event.a"
+place = 4
+bone = "RightHand"
+sound = "res://assets/sfx/swing.wav"
+volume_db = -6.0
+pitch_jitter = 0.08
+max_distance = 30.0
+
+[node name="HitPlayer" type="CbReaction" parent="."]
+event = "melee.hit"
+subject = "event.a"
+conditions = PackedStringArray("event.value > 0")
+place = 1
+sound = "res://assets/sfx/bat_hit.wav"
+volume_db = -2.0
+pitch_jitter = 0.1
+max_distance = 40.0
+
+[node name="Hurt" type="CbReaction" parent="."]
+event = "melee.hit"
+subject = "event.b"
+conditions = PackedStringArray("is_local", "event.value > 0")
+place = 1
+shake = 0.08
+shake_time = 0.25
+flash_color = Color(0.8, 0.05, 0.05, 0.25)
+flash_time = 0.3
+
+[node name="HitProp" type="CbReaction" parent="."]
+event = "melee.hit"
+subject = "event.a"
+conditions = PackedStringArray("event.value == 0")
+place = 1
+sound = "res://assets/sfx/bat_hit.wav"
+volume_db = -10.0
+pitch_jitter = 0.2
+max_distance = 25.0
+
+[node name="Bat" type="CbItemLook" parent="."]
+kind = "melee.bat"
+scene = "res://prefabs/bat.tscn"

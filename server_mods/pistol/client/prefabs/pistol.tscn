@@ -1,6 +1,6 @@
 [gd_scene load_steps=6 format=3]
 
-; A placeholder pistol: the look of the "pistol.gun" item (vfx/bindings_pistol.tres), drawn in the
+; A placeholder pistol: the look of the "pistol.gun" item (vfx/reactions_pistol.tscn), drawn in the
 ; holder's RightHand socket. The socket's frame: the grip at the origin, the barrel along -Z, the
 ; sights along +Y.
 

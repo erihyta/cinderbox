@@ -41,6 +41,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M32: animation packs: mods ship AnimationTree layers and swap a player's own for them (a crouch walk), retargeted to any humanoid-profile character | done |
 | M33: `CbReaction` nodes: an entity's scene reacts to its board and events with no code; the pistol is a held item; state bindings and the implicit item rules are gone | done |
 | M34: entity paths: a reaction's subject, conditions and the scene it acts in can be any related entity (`holder/item:LeftHand`, `event.b`, `local`, `world`) | done |
+| M35: world reactions: `vfx/reactions*.tscn` scenes of `CbReaction` nodes replace effect bindings (`CbEffect`); built-in events, placement, sounds and screen effects on the same node | done |
 
 ## Building
 
@@ -141,7 +142,7 @@ public:
 	const char* Name() const override { return "jumper"; }
 	void Declare( cb::mods::Declarations& d ) override {
 		m_boost = d.Action( "boost", "Q" );       // clients bind Q to it
-		m_boosted = d.Event( "jumper.boosted" );  // bindings can play something on it
+		m_boosted = d.Event( "jumper.boosted" );  // reactions can play something on it
 	}
 	void Tick( cb::mods::Context& ctx ) override {
 		for ( int i = 0; i < cb::kMaxPlayers; ++i )
@@ -156,7 +157,7 @@ std::unique_ptr<cb::mods::ServerMod> CreateMod_jumper() { return std::make_uniqu
 
 Add the folder, re-run CMake, and the mod is in `cb_server --list-mods`. The server sends every client
 a **schema** on join: field names and types, event names, and action names with suggested keys. The
-Godot client binds those keys (InputMap actions `cb_<name>`), and bindings refer to fields and events
+Godot client binds those keys (InputMap actions `cb_<name>`), and reactions refer to fields and events
 by name.
 
 The mods that ship:
@@ -190,7 +191,7 @@ cb_server --port 7777 --mod-option deathmatch.kills=5 --mod-option deathmatch.ro
 
 ### Workshop items
 
-A mod's **look** (bindings, HUD, meshes, sounds) is a workshop item, like a Steam Workshop or
+A mod's **look** (reactions, HUD, meshes, sounds) is a workshop item, like a Steam Workshop or
 Counter-Strike mod. **Game servers never send it**: a server only announces which item each of its
 mods needs, and players must already have that exact item.
 
@@ -214,7 +215,7 @@ announce, and older copies stay in the workshop for servers that still announce 
 
 Client mods are cosmetic Godot resource packs (`.zip`). A mod can replace or add:
 - entity visuals in `prefabs/`;
-- effects in `vfx/`, and effect bindings as `vfx/bindings_<name>.tres`;
+- effects in `vfx/`, and world reactions as `vfx/reactions_<name>.tscn`;
 - sounds and other shared files in `assets/`;
 - the HUD in `ui/`;
 - map visuals in `maps/` (the scene named after the map the server runs);
@@ -302,49 +303,51 @@ behaves. Behaviour stays in the simulation.
 
 ## Effects
 
-What plays when is data, not code. A binding says "on this event, for this entity, play this
-scene", and the client loads every `res://vfx/bindings*.tres` it can find. A mod adds effects by
-shipping a file of its own, so two mods can add effects without fighting over one list.
+What plays when is data, not code: **world reactions**. A mod ships `res://vfx/reactions_<name>.tscn`,
+a scene of `CbReaction` nodes, and the client loads every `res://vfx/reactions*.tscn` once. They are
+the same node as the reactions inside entity scenes ([Reactions](#reactions)), with no entity of
+their own: each names what it is about from the event (`event.a`, `event.b`). Files add to each
+other, so two mods add effects without fighting over one list; a mod replaces
+`vfx/reactions.tscn` to change the game's own.
+
+```
+PistolReactions                      (vfx/reactions_pistol.tscn)
+├── FiredRemote   on pistol.fired     subject event.a   !is_local          muzzle flash + gunshot at its RightHand
+├── Tracer        on pistol.fired     subject event.a                      beam from its RightHand to the event's end
+├── Hurt          on pistol.hit       subject event.b   is_local           camera shake + red flash
+└── Gun           CbItemLook          pistol.gun -> res://prefabs/pistol.tscn
+```
+
+| Events | Carry |
+|---|---|
+| a mod's, by name (`pistol.hit`) | A (who it is about), B (the other one), `event.value`, the point and the end (where a shot ended) |
+| `spawned`, `destroying` | the entity; its position (`spawned` only for entities that appear in play, not a world reset) |
+| `jumped`, `landed`, `footstep` | the player; at its feet |
+| `impact` | both bodies; `event.strength` (approach speed, m/s) |
+| `pressed:<action>` (`pressed:fire`) | the local player, the moment it presses, before the server answers |
+
+What a world reaction adds to the [reaction fields](#reactions):
 
 | Field | Meaning |
 |---|---|
-| `event` | Spawned, Destroying, Jumped, Landed, Footstep, Impact, **Mod event** or **Action** |
-| `name` | Mod event or action: which one (`pistol.fired`, `fire`) |
-| `conditions` | Board conditions on the subject, all must hold (see below) |
-| `subject` | Mod events: entity A (who it is about) or B (the other one). `who`, `kind`, `template`, `conditions` and `bone` are checked on it |
-| `value_filter` | Mod events: any, value > 0 (a hit that did damage), or value == 0 |
-| `bone` | Play at a joint of the subject's character (`RightHand`, `Head`) |
-| `at_end` | Mod events: play at the event's vector (where a shot ended) instead of its point |
-| `beam` | Stretch a one-metre scene from where it plays to the event's end, like a tracer |
-| `template_name` | Only for entities from this map template; empty matches any |
-| `kind` | `any`, `prop`, `player` or `static` |
-| `scene` | The effect scene to play |
-| `offset` | Moves it relative to the entity |
-| `lifetime` | Seconds before it is freed |
-| `follow` | Parent it to the entity so it travels with it, instead of staying put |
-| `who` | Anyone, only the local player, or only other players |
-| `cooldown` | Shortest gap between two plays, so a busy event does not stack twenty sounds |
-| `min_strength` | Impacts only: ignore anything approaching slower than this, in m/s |
-| `sound` | A `.wav`/`.ogg` played at the event, with `volume_db`, `pitch_scale`, `pitch_jitter`, `bus` and `max_distance` |
-| `shake`, `shake_time` | Camera shake for the viewer |
-| `flash_color`, `flash_time` | A full-screen flash; the colour's alpha is its strength |
-
-A binding can carry a scene, a sound, a screen effect, or any combination. Screen effects are what
-the viewer feels, so they usually go with `who = Local player`.
+| `subject_kind`, `subject_template` | only for a player / prop / static / ragdoll / item, or entities from one map template |
+| `cooldown` | shortest gap between two firings (twenty props landing at once play one sound) |
+| `place`, `bone`, `offset` | where its scene and sound go: under its parent, at the event's **point** or **end**, a **beam** from the point (or `bone`) to the end, at a **bone** of the subject, or **following** the subject |
+| `sound`, `volume_db`, `pitch_scale`, `pitch_jitter`, `bus`, `max_distance` | a sound, once per firing |
+| `shake`, `shake_time`, `flash_color`, `flash_time` | camera shake and a full-screen flash: the viewer's, so pair them with `is_local` or subject `local` |
 
 Footsteps and impacts come from the simulation, not from the renderer guessing:
 - A **footstep** is a stride, counted by distance walked, so the rate follows the speed on its own.
 - An **impact** is a collision the physics engine reported above 1.5 m/s, carrying where it
-  happened, both entities and how fast they were approaching. Two bindings with different
-  `min_strength` give a soft hit and a hard one different effects.
+  happened, both entities and how fast they were approaching. Two reactions with different
+  `event.strength` conditions give a soft hit and a hard one different effects.
 
 Both are part of the simulation's state, so they are identical on every machine, survive rollback,
 and a client that skipped frames still sees them.
 
-An **Action** binding plays the moment the local player presses a mod action, before the server
-answers. That is where feedback that cannot wait a round trip goes (a muzzle flash); its conditions
-say whether the server will accept the press (`pistol.ammo > 0`). Other players' shots arrive as mod
-events.
+A `pressed:` reaction is where feedback that cannot wait a round trip goes (a muzzle flash); its
+conditions say whether the server will accept the press (`pistol.ammo > 0`). Other players' shots
+arrive as mod events.
 
 Conditions read the server mods' **board** by name:
 
@@ -356,12 +359,12 @@ Conditions read the server mods' **board** by name:
 | `!?name` | the server did not declare it (e.g. hide the pistol's scoreboard when deathmatch shows its own) |
 | `name == 2`, `!=`, `>`, `>=`, `<`, `<=` | the comparison holds (`true` / `false` count as 1 / 0) |
 
-A field the server did not declare reads as zero, so bindings for a mod that is not running never
-match.
+`is_local`, `event.value` and `event.strength` are not board fields: whether the entity is the
+local player, and what the event carries. A field the server did not declare reads as zero, so
+reactions for a mod that is not running never match.
 
-Bindings are for the world and the screen: one-shots at a place, sounds, shakes, flashes. What an
-entity looks like *while* something holds (a glowing bat) is authored inside its own scene as
-[`CbReaction` nodes](#reactions).
+What an entity looks like *while* something holds (a glowing bat) is authored inside its own scene,
+with the same [`CbReaction` nodes](#reactions).
 
 The HUD reads the board too, through script-free nodes any HUD scene can use:
 
@@ -379,15 +382,10 @@ The pistol's HUD (`server_mods/pistol/client/ui/hud_pistol.tscn`) is built from 
 (`ProgressBar` from `combat.health` and `combat.max_health`), ammo, reloading, crosshair, kills and
 deaths, the kill feed and the scoreboard. None of it is script, so a client mod can restyle all of it.
 
-Every binding that matches plays, so bindings add to each other. When nothing matches, the older
-convention still applies: `res://vfx/<event>.tscn`, one of `prop_spawn`, `prop_destroy`, `jump`
-or `land`.
-
-`godot/vfx/bindings.tres` is the game's own set; the pistol's look (predicted shots, tracers, hits,
-hurt and death feedback, reload, the pistol item's look) is `vfx/bindings_pistol.tres` in its
-workshop item;
-`mods_src/example_neon/vfx/bindings_neon.tres` shows a mod adding three more, including its own sound.
-All are edited in the Godot inspector.
+`godot/vfx/reactions.tscn` is the game's own set; the pistol's look (predicted shots, tracers, hits,
+hurt and death feedback, reload, the pistol item's look) is `vfx/reactions_pistol.tscn` in its
+workshop item; `mods_src/example_neon/vfx/reactions_neon.tscn` shows a mod adding three more,
+including its own sound. All are edited in the Godot editor, as scenes.
 
 The sounds in `godot/assets/sfx/` are placeholders in the same spirit as the procedural rig: short,
 synthetic, and meant to be replaced. `tools/make_sfx.py` regenerates them.
@@ -537,7 +535,7 @@ godot --headless --path godot --script res://addons/cinderbox_maps/make_mannequi
 ```
 
 Items held in a hand (the pistol, the bat) use a hand frame that is the same on every rig
-(`AnimSet::AttachFrame`), so a binding's `attach_offset` / `attach_rotation` work on the
+(`AnimSet::AttachFrame`), so an item scene made for the hand socket sits the same on the
 mannequin, the robot and the placeholder rig alike.
 
 ### The paid animation pack (local only)
@@ -726,7 +724,7 @@ looks like is authored in Godot.
 |---|---|---|
 | socket | the character scene: a `CbSocket` under a `BoneAttachment3D` | where items go, in the item's frame (grip at the origin, pointing along -Z); `RightHand` and `LeftHand` exist on every character (made at the hands if the scene has none) |
 | item kind | the mod: `declare.ItemKind( "melee.bat" )` | spawned with `ctx.SpawnItem( SlotTarget( slot ), kind, socket )`, addressed with `ItemTarget( slot, socket )` for `Set`, `Emit`, `Destroy` |
-| look | the mod's effect table: `CbItemLook` (kind -> scene) | drawn as the socket's child `Item` |
+| look | a `CbItemLook` node (kind -> scene) in the mod's `vfx/reactions_<name>.tscn` | drawn as the socket's child `Item` |
 | item state and events | `CbReaction` nodes in the item scene | glow while `melee.hot`, sparks on its holder's `melee.hit` (see [Reactions](#reactions)) |
 | character -> item | an Animation Playback track in the character's animation | `.../RightHand/Item/AnimationPlayer` plays `slash` at the right frame of the swing |
 
@@ -789,7 +787,7 @@ reaction do nothing.
 |---|---|
 | `when` | **On event** (once per event) or **While** (its conditions hold) |
 | `event` | On event: the mod event's name (`melee.hit`) |
-| `conditions` | Board conditions, [as in bindings](#effects); on event they must hold too. Plain names read the subject's board; a path and a colon read another's: `!holder:combat.dead`, `event.b:combat.health < 20`, `world:deathmatch.round` |
+| `conditions` | Board conditions ([names, comparisons](#effects), `is_local`, `event.value`); on event they must hold too. Plain names read the subject's board; a path and a colon read another's: `!holder:combat.dead`, `event.b:combat.health < 20`, `world:deathmatch.round` |
 | `subject` | an entity path (default `self`) |
 | `event_side` | On event: **A**, the event is about the subject (`melee.hit` at the attacker); **B**, the subject is the other one (the victim); or **Either**. A subject starting with `event.a` / `event.b` matches every event of the name |
 | `act_on` | an entity path: the scene the node paths below are resolved in, from its root (`.` is the root). Empty: this reaction's own scene, relative to the reaction |
@@ -968,8 +966,8 @@ src/present/      engine-independent presentation, shared by Godot and raylib
   pose_tools.*      ragdoll poses, pose blending
   scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
 src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals, items, reactions),
-                  CinderboxSkeleton, map and entity authoring nodes, effect bindings and item looks
-                  (cinderbox_effects.*), CbReaction (cinderbox_reaction.*), HUD labels (cinderbox_hud.*)
+                  CinderboxSkeleton, map and entity authoring nodes, CbReaction and CbItemLook
+                  (cinderbox_reaction.*), HUD labels (cinderbox_hud.*)
 godot/            Godot client project: boot (player mods, pack validator), game (input, camera, HUD, VFX,
                   joining with workshop items), workshop.gd (where items are), prefabs, vfx, ui
   maps/             map scenes and their baked .cbmap files

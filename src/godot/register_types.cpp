@@ -2,7 +2,6 @@
 #include "cinderbox_character.h"
 #include "cinderbox_client.h"
 #include "cinderbox_companion.h"
-#include "cinderbox_effects.h"
 #include "cinderbox_entity_nodes.h"
 #include "cinderbox_hud.h"
 #include "cinderbox_map_nodes.h"
@@ -45,9 +44,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbEntity );
 	GDREGISTER_CLASS( cb::gd::CinderboxMapBaker );
 	// Effect bindings: data a mod ships to say what plays when.
-	GDREGISTER_CLASS( cb::gd::CbEffect );
 	GDREGISTER_CLASS( cb::gd::CbItemLook );
-	GDREGISTER_CLASS( cb::gd::CbEffectTable );
 	// HUD nodes that read the mods' board.
 	GDREGISTER_CLASS( cb::gd::CbFieldLabel );
 	GDREGISTER_CLASS( cb::gd::CbFieldBinding );

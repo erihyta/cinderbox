@@ -1,0 +1,36 @@
+[gd_scene format=3]
+
+; An example client mod adding its own reactions next to the game's (its own spawn effect and sound).
+
+[node name="NeonReactions" type="Node3D"]
+
+[node name="LocalLand" type="CbReaction" parent="."]
+event = "landed"
+subject = "event.a"
+conditions = PackedStringArray("is_local")
+subject_kind = "player"
+scene = "res://vfx/prop_spawn.tscn"
+scene_lifetime = 2.0
+place = 1
+sound = "res://assets/sfx/neon_blip.wav"
+volume_db = -14.0
+pitch_jitter = 0.25
+offset = Vector3(0, 0.1, 0)
+
+[node name="CrateBreak" type="CbReaction" parent="."]
+event = "destroying"
+subject = "event.a"
+subject_template = "heavy_crate"
+scene = "res://vfx/prop_spawn.tscn"
+scene_lifetime = 3.0
+place = 1
+
+[node name="SpawnFlash" type="CbReaction" parent="."]
+event = "spawned"
+subject = "event.a"
+conditions = PackedStringArray("is_local")
+subject_kind = "prop"
+place = 1
+flash_color = Color(1, 0.2, 0.8, 0.12)
+flash_time = 0.12
+cooldown = 0.4
