@@ -465,7 +465,7 @@ void CinderboxClient::HandleEvents()
 						animator->on_mod_event( name );
 					}
 				}
-				FireReactions( ToStd( name ), e.netId );
+				FireReactions( ToStd( name ), e.netId, e.otherNetId );
 				emit_signal( "mod_event", name, int64_t( e.netId ), int64_t( e.otherNetId ), int64_t( e.value ), position,
 							 ToGodot( e.vector ) );
 				break;
@@ -840,30 +840,118 @@ void CinderboxClient::CollectReactions( uint64_t visual, Node* node )
 	refs.clear();
 	for ( CbReaction* reaction : found )
 	{
+		// A path that does not parse finds nothing (the editor shows why).
 		ReactionRef ref;
 		ref.node = reaction->get_instance_id();
 		ref.isWhile = reaction->get_when() == CbReaction::WHEN_WHILE;
-		ref.holder = reaction->get_subject() == CbReaction::SUBJECT_HOLDER;
 		ref.event = ToStd( reaction->get_event().strip_edges() );
-		ref.conditions = Conditions( reaction->get_conditions() );
+		ref.eventSide = reaction->get_event_side();
+		bool ok = present::ParseEntityPath( ToStd( reaction->get_subject() ), ref.subject );
+		ref.actOnOwnScene = reaction->get_act_on().strip_edges().is_empty();
+		ok &= present::ParseEntityPath( ToStd( reaction->get_act_on() ), ref.actOn );
+		PackedStringArray conditions = reaction->get_conditions();
+		for ( int64_t i = 0; i < conditions.size(); ++i )
+		{
+			present::PathCondition condition;
+			ok &= present::ParsePathCondition( ToStd( conditions[i] ), condition );
+			ref.conditions.push_back( std::move( condition ) );
+		}
+		if ( ok == false )
+		{
+			UtilityFunctions::push_warning( "CbReaction ", reaction->get_path(), ": a path or condition does not parse; it will not act" );
+			continue;
+		}
 		refs.push_back( std::move( ref ) );
 	}
 }
 
-uint32_t CinderboxClient::ReactionSubject( const ReactionRef& r, const present::Visual& v, const Blackboard** board ) const
+void CinderboxClient::RefreshItemIndex()
 {
-	*board = nullptr;
-	if ( r.holder == false )
+	m_itemIndex.clear();
+	if ( !m_mirror )
 	{
-		*board = v.hasBoard ? &v.board : nullptr;
-		return v.netId;
+		return;
 	}
-	if ( v.kind != present::VisualKind::Item )
+	m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
+							const present::RagdollAnim* ) {
+		if ( v.kind == present::VisualKind::Item && v.holder != 0 )
+		{
+			m_itemIndex[( uint64_t( v.holder ) << 8 ) | v.socket] = v.netId;
+		}
+	} );
+}
+
+present::PathContext CinderboxClient::PathContextFor( uint32_t self, uint32_t eventA, uint32_t eventB ) const
+{
+	present::PathContext context;
+	context.self = self;
+	context.eventA = eventA;
+	context.eventB = eventB;
+	context.local = m_frame.frame.localNetId;
+	context.holderOf = [this]( uint32_t netId ) -> uint32_t {
+		flecs::entity ve = m_mirror->VisualOf( netId );
+		if ( ve.is_valid() == false )
+		{
+			return 0;
+		}
+		const present::Visual& v = ve.get<present::Visual>();
+		return v.kind == present::VisualKind::Item ? v.holder : 0;
+	};
+	context.itemIn = [this]( uint32_t holder, const std::string& socket ) -> uint32_t {
+		for ( size_t i = 0; i < m_frame.schema.sockets.size(); ++i )
+		{
+			if ( m_frame.schema.sockets[i] == socket )
+			{
+				auto it = m_itemIndex.find( ( uint64_t( holder ) << 8 ) | i );
+				return it != m_itemIndex.end() ? it->second : 0;
+			}
+		}
+		return 0; // no mod declared that socket
+	};
+	return context;
+}
+
+const Blackboard* CinderboxClient::TargetBoard( const present::PathTarget& target ) const
+{
+	return target.world ? nullptr : BoardOf( target.netId ); // global fields read the global board anyway
+}
+
+bool CinderboxClient::ReactionHolds( const ReactionRef& r, const present::PathContext& context, const present::PathTarget& subject ) const
+{
+	const int32_t* globals = m_mirror->GlobalBoard();
+	for ( const present::PathCondition& c : r.conditions )
 	{
-		return 0; // only a held item has a holder
+		present::PathTarget whose = c.path.parts.empty() ? subject : present::ResolveEntityPath( c.path, context );
+		if ( whose.Found() == false || present::CheckCondition( m_frame.schema, c.condition, TargetBoard( whose ), globals ) == false )
+		{
+			return false;
+		}
 	}
-	*board = BoardOf( v.holder );
-	return v.holder;
+	return true;
+}
+
+bool CinderboxClient::ReactionScope( const ReactionRef& r, uint64_t visual, const present::PathContext& context, Node*& root,
+									 Node*& limit ) const
+{
+	root = nullptr;
+	limit = nullptr;
+	if ( r.actOnOwnScene )
+	{
+		auto it = m_nodes.find( visual );
+		limit = it != m_nodes.end() ? Object::cast_to<Node>( ObjectDB::get_instance( it->second ) ) : nullptr;
+		return limit != nullptr;
+	}
+	present::PathTarget target = present::ResolveEntityPath( r.actOn, context );
+	if ( target.world )
+	{
+		root = Object::cast_to<Node>( ObjectDB::get_instance( m_mapVisual ) ); // the map's own scene, if it has one
+	}
+	else if ( target.netId != 0 )
+	{
+		root = get_entity_node( int64_t( target.netId ) );
+	}
+	limit = root;
+	return root != nullptr;
 }
 
 void CinderboxClient::UpdateReactions( uint64_t visual, const present::Visual& v )
@@ -873,28 +961,35 @@ void CinderboxClient::UpdateReactions( uint64_t visual, const present::Visual& v
 	{
 		return;
 	}
-	const int32_t* globals = m_mirror->GlobalBoard();
-	for ( const ReactionRef& r : it->second )
+	present::PathContext context = PathContextFor( v.netId, 0, 0 );
+	for ( ReactionRef& r : it->second )
 	{
 		auto* reaction = r.isWhile ? Object::cast_to<CbReaction>( ObjectDB::get_instance( r.node ) ) : nullptr;
 		if ( reaction == nullptr )
 		{
 			continue;
 		}
-		const Blackboard* board = nullptr;
-		bool on = ReactionSubject( r, v, &board ) != 0 && present::CheckConditions( m_frame.schema, r.conditions, board, globals );
-		reaction->set_on( on );
+		present::PathTarget subject = present::ResolveEntityPath( r.subject, context );
+		Node* root = nullptr;
+		Node* limit = nullptr;
+		bool on = subject.Found() && ReactionScope( r, visual, context, root, limit ) && ReactionHolds( r, context, subject );
+		ObjectID where = limit != nullptr ? ObjectID( limit->get_instance_id() ) : ObjectID();
+		if ( on && reaction->is_on() && where != r.onRoot )
+		{
+			reaction->SetOnIn( false, nullptr, nullptr ); // the scene it acts in changed (another item in the hand)
+		}
+		reaction->SetOnIn( on, root, limit );
+		r.onRoot = on ? where : ObjectID();
 	}
 }
 
-void CinderboxClient::FireReactions( const std::string& event, uint32_t netId )
+void CinderboxClient::FireReactions( const std::string& event, uint32_t netId, uint32_t otherNetId )
 {
 	if ( m_reactions.empty() )
 	{
 		return;
 	}
 	const auto& visuals = m_mirror->World();
-	const int32_t* globals = m_mirror->GlobalBoard();
 	for ( const auto& [visual, refs] : m_reactions )
 	{
 		flecs::entity ve( visuals, visual );
@@ -902,21 +997,31 @@ void CinderboxClient::FireReactions( const std::string& event, uint32_t netId )
 		{
 			continue;
 		}
-		const present::Visual& v = ve.get<present::Visual>();
+		present::PathContext context = PathContextFor( ve.get<present::Visual>().netId, netId, otherNetId );
 		for ( const ReactionRef& r : refs )
 		{
 			if ( r.isWhile || r.event != event )
 			{
 				continue;
 			}
-			const Blackboard* board = nullptr;
-			if ( ReactionSubject( r, v, &board ) != netId || present::CheckConditions( m_frame.schema, r.conditions, board, globals ) == false )
+			// The event names the subject on the reaction's side (a subject from the event: any).
+			present::PathTarget subject = present::ResolveEntityPath( r.subject, context );
+			bool atA = subject.netId == netId;
+			bool atB = subject.netId == otherNetId && otherNetId != 0;
+			bool named = r.eventSide == CbReaction::SIDE_A ? atA : r.eventSide == CbReaction::SIDE_B ? atB : ( atA || atB );
+			if ( subject.Found() == false || ( r.subject.UsesEvent() == false && named == false ) )
+			{
+				continue;
+			}
+			Node* root = nullptr;
+			Node* limit = nullptr;
+			if ( ReactionHolds( r, context, subject ) == false || ReactionScope( r, visual, context, root, limit ) == false )
 			{
 				continue;
 			}
 			if ( auto* reaction = Object::cast_to<CbReaction>( ObjectDB::get_instance( r.node ) ) )
 			{
-				reaction->fire();
+				reaction->FireIn( root, limit );
 			}
 		}
 	}
@@ -1494,6 +1599,7 @@ void CinderboxClient::_process( double delta )
 	m_frame.frame.rolledBack = false;
 
 	UpdateMapVisual();
+	RefreshItemIndex();
 	HandleEvents();
 	UpdateNodes();
 }

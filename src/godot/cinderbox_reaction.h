@@ -8,11 +8,18 @@
 //   ├── Barrel
 //   ├── Sparks
 //   ├── CbReaction  while "melee.hot"         set  Barrel : surface_material_override/0:emission_energy_multiplier = 4
-//   └── CbReaction  on event "melee.hit"      call Sparks.restart()      (subject: the holder)
+//   └── CbReaction  on event "melee.hit"      call Sparks.restart()      (subject: holder)
 //
-// When:    on an event (sent to the subject), or while board conditions hold (the subject's board;
-//          global fields read the global board).
-// Subject: the entity the scene draws, or (for a held item) the player holding it.
+// Entities are named by entity paths (entity_path.h): self, holder, item:<socket>, event.a,
+// event.b, local, world, chained with '/' ("holder/item:LeftHand").
+//
+// When:    on an event, or while board conditions hold. Conditions read the subject's board, or
+//          another entity's with a path ("holder:combat.dead", "event.b:combat.health < 20").
+// Subject: an entity path (default: self). An event must name the subject on its event_side: A
+//          (who it is about: "melee.hit" is at the attacker), B (the other one: the victim), or
+//          either. A subject that starts with event.a or event.b matches every event of the name.
+// Act on:  an entity path whose scene the node paths below are resolved in, from its root node;
+//          empty: this reaction's own scene, relative to the reaction.
 // Do:      any of: play an animation on an AnimationPlayer (and another when a "while" ends); set a
 //          property on a node (put back when a "while" ends); call a built-in method with no
 //          arguments ("restart", "play"); add a scene as a child (removed when a "while" ends, or
@@ -20,7 +27,8 @@
 //
 // Presentation only: nothing here changes the simulation, so every screen can differ in looks but
 // never in what happened. Anything that exists in the game (a prop, an item) is spawned by the
-// server's mods. Node paths are relative to the reaction.
+// server's mods. In the game, node paths stay inside the entity scene they are resolved in (a
+// player's scene holds its items), and "free", "queue_free" and "script" are refused.
 
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/node_path.hpp>
@@ -39,16 +47,20 @@ public:
 		WHEN_EVENT = 0,
 		WHEN_WHILE = 1,
 	};
-	enum Subject
+	enum EventSide
 	{
-		SUBJECT_SELF = 0,
-		SUBJECT_HOLDER = 1,
+		SIDE_A = 0,
+		SIDE_B = 1,
+		SIDE_EITHER = 2,
 	};
-
 	// An event arrived (the game checked the name, the subject and the conditions).
 	void fire();
 	// A "while" reaction's conditions: acts when this changes.
 	void set_on( bool on );
+	// The same for the game: node paths resolve from `root` (null: from this reaction), and only
+	// nodes inside `limit` are touched (null: anywhere).
+	void FireIn( godot::Node* root, godot::Node* limit );
+	void SetOnIn( bool on, godot::Node* root, godot::Node* limit );
 	bool is_on() const
 	{
 		return m_on;
@@ -78,13 +90,29 @@ public:
 	{
 		return m_conditions;
 	}
-	void set_subject( int v )
+	void set_subject( const godot::String& v )
 	{
 		m_subject = v;
 	}
-	int get_subject() const
+	godot::String get_subject() const
 	{
 		return m_subject;
+	}
+	void set_event_side( int v )
+	{
+		m_eventSide = v;
+	}
+	int get_event_side() const
+	{
+		return m_eventSide;
+	}
+	void set_act_on( const godot::String& v )
+	{
+		m_actOn = v;
+	}
+	godot::String get_act_on() const
+	{
+		return m_actOn;
 	}
 	void set_animation_player( const godot::NodePath& v )
 	{
@@ -173,12 +201,16 @@ protected:
 	static void _bind_methods();
 
 private:
-	void Act( bool on );
+	void Act( bool on, godot::Node* root, godot::Node* limit );
+	godot::Node* Find( const godot::NodePath& path, godot::Node* root, godot::Node* limit ) const;
+	static bool Refused( const godot::String& method, const godot::String& property );
 
 	int m_when = WHEN_EVENT;
 	godot::String m_event;
 	godot::PackedStringArray m_conditions;
-	int m_subject = SUBJECT_SELF;
+	godot::String m_subject;
+	int m_eventSide = SIDE_A;
+	godot::String m_actOn;
 	godot::NodePath m_player;
 	godot::String m_animation;
 	godot::String m_animationOff;
@@ -193,10 +225,12 @@ private:
 	bool m_on = false;
 	bool m_haveOriginal = false;
 	godot::Variant m_original; // what the property was before a "while" set it
+	godot::ObjectID m_onTarget; // where a "while" set it
+	godot::ObjectID m_onPlayer; // where a "while" played its animation
 	godot::ObjectID m_spawned;
 };
 
 } // namespace cb::gd
 
 VARIANT_ENUM_CAST( cb::gd::CbReaction::When );
-VARIANT_ENUM_CAST( cb::gd::CbReaction::Subject );
+VARIANT_ENUM_CAST( cb::gd::CbReaction::EventSide );

@@ -12,6 +12,7 @@
 #include "map.h"
 #include "pose.h"
 #include "pose_tools.h"
+#include "entity_path.h"
 #include "fields.h"
 #include "hitboxes.h"
 #include "detmath.h"
@@ -1502,6 +1503,59 @@ void TestFields()
 	CHECK( present::CheckCondition( schema, "pistol.ammo == 0", nullptr, globals ) );
 }
 
+// Entity paths: parsing, resolving through holders and sockets and events, and conditions that
+// read another entity's board.
+void TestEntityPaths()
+{
+	using present::EntityPath;
+	EntityPath path;
+	std::string error;
+	CHECK( present::ParseEntityPath( "", path ) && path.parts.empty() );
+	CHECK( present::ParseEntityPath( " holder / item:LeftHand ", path ) && path.parts.size() == 2 );
+	CHECK( path.parts[1].step == EntityPath::Step::Item && path.parts[1].socket == "LeftHand" );
+	CHECK( present::ParseEntityPath( "event.b/item:RightHand", path ) && path.UsesEvent() );
+	CHECK( present::ParseEntityPath( "world", path ) && path.IsWorld() );
+	CHECK( present::ParseEntityPath( "world/holder", path, &error ) == false && error.empty() == false );
+	CHECK( present::ParseEntityPath( "holder/local", path ) == false );
+	CHECK( present::ParseEntityPath( "hodler", path ) == false );
+	CHECK( present::ParseEntityPath( "item:", path ) == false );
+
+	// Player 10 holds item 20 in RightHand; player 11 holds 21 in LeftHand; 12 is the local player.
+	present::PathContext context;
+	context.self = 20;
+	context.local = 12;
+	context.holderOf = []( uint32_t id ) { return id == 20 ? 10u : id == 21 ? 11u : 0u; };
+	context.itemIn = []( uint32_t holder, const std::string& socket ) {
+		return holder == 10 && socket == "RightHand" ? 20u : holder == 11 && socket == "LeftHand" ? 21u : 0u;
+	};
+	auto resolve = [&]( const char* text ) {
+		EntityPath p;
+		present::ParseEntityPath( text, p );
+		return present::ResolveEntityPath( p, context );
+	};
+	CHECK( resolve( "" ).netId == 20 );
+	CHECK( resolve( "holder" ).netId == 10 );
+	CHECK( resolve( "holder/item:RightHand" ).netId == 20 );
+	CHECK( resolve( "holder/item:LeftHand" ).Found() == false ); // an empty hand
+	CHECK( resolve( "holder/holder" ).Found() == false );		  // a player is held by no one
+	CHECK( resolve( "local" ).netId == 12 );
+	CHECK( resolve( "event.a" ).Found() == false ); // no event
+	context.eventA = 10;
+	context.eventB = 11;
+	CHECK( resolve( "event.b/item:LeftHand" ).netId == 21 );
+	CHECK( resolve( "world" ).world && resolve( "world" ).Found() );
+
+	present::PathCondition c;
+	CHECK( present::ParsePathCondition( "melee.hot", c ) && c.path.parts.empty() && c.condition == "melee.hot" );
+	CHECK( present::ParsePathCondition( "!holder:melee.hot", c ) && c.path.parts.size() == 1 && c.condition == "!melee.hot" );
+	CHECK( present::ParsePathCondition( "event.b:combat.health < 20", c ) && c.path.UsesEvent() &&
+		   c.condition == "combat.health < 20" );
+	CHECK( present::ParsePathCondition( "?holder/item:LeftHand:shield.up", c ) && c.path.parts.size() == 2 &&
+		   c.path.parts[1].socket == "LeftHand" && c.condition == "?shield.up" );
+	CHECK( present::ParsePathCondition( "pistol.ammo >= 2", c ) && c.path.parts.empty() && c.condition == "pistol.ammo >= 2" );
+	CHECK( present::ParsePathCondition( "nobody:x", c ) == false );
+}
+
 void TestAnimController()
 {
 	Simulation sim( TestConfig() );
@@ -2922,6 +2976,7 @@ int main( int argc, char** argv )
 		{ "anim_blend2d", TestAnimBlend2D },
 		{ "pose_tools", TestPoseTools },
 		{ "fields", TestFields },
+		{ "entity_paths", TestEntityPaths },
 		{ "hitboxes", TestHitboxes },
 		{ "stances", TestStances },
 		{ "robot_character", TestRobotCharacter },

@@ -1,5 +1,7 @@
 #include "cinderbox_reaction.h"
 
+#include "entity_path.h"
+
 #include <godot_cpp/classes/animation_player.hpp>
 #include <godot_cpp/classes/packed_scene.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
@@ -17,6 +19,8 @@ void CbReaction::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "fire" ), &CbReaction::fire );
 	ClassDB::bind_method( D_METHOD( "set_on", "on" ), &CbReaction::set_on );
 	ClassDB::bind_method( D_METHOD( "is_on" ), &CbReaction::is_on );
+	ClassDB::bind_method( D_METHOD( "fire_in", "root", "limit" ), &CbReaction::FireIn );
+	ClassDB::bind_method( D_METHOD( "set_on_in", "on", "root", "limit" ), &CbReaction::SetOnIn );
 
 #define CB_REACTION_PROP( type, name, hint, hintText )                                                                             \
 	ClassDB::bind_method( D_METHOD( "set_" #name, "value" ), &CbReaction::set_##name );                                            \
@@ -27,7 +31,9 @@ void CbReaction::_bind_methods()
 	CB_REACTION_PROP( Variant::INT, when, PROPERTY_HINT_ENUM, "On event,While" )
 	CB_REACTION_PROP( Variant::STRING, event, PROPERTY_HINT_PLACEHOLDER_TEXT, "melee.hit" )
 	CB_REACTION_PROP( Variant::PACKED_STRING_ARRAY, conditions, PROPERTY_HINT_NONE, "" )
-	CB_REACTION_PROP( Variant::INT, subject, PROPERTY_HINT_ENUM, "This entity,Its holder" )
+	CB_REACTION_PROP( Variant::STRING, subject, PROPERTY_HINT_PLACEHOLDER_TEXT, "self, holder, event.b, local" )
+	CB_REACTION_PROP( Variant::INT, event_side, PROPERTY_HINT_ENUM, "A: it is about the subject,B: the subject is the other one,Either" )
+	CB_REACTION_PROP( Variant::STRING, act_on, PROPERTY_HINT_PLACEHOLDER_TEXT, "this scene, or holder, event.b/item:RightHand, world" )
 	ADD_GROUP( "Animation", "" );
 	CB_REACTION_PROP( Variant::NODE_PATH, animation_player, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "AnimationPlayer" )
 	CB_REACTION_PROP( Variant::STRING, animation, PROPERTY_HINT_NONE, "" )
@@ -48,8 +54,9 @@ void CbReaction::_bind_methods()
 
 	BIND_ENUM_CONSTANT( WHEN_EVENT );
 	BIND_ENUM_CONSTANT( WHEN_WHILE );
-	BIND_ENUM_CONSTANT( SUBJECT_SELF );
-	BIND_ENUM_CONSTANT( SUBJECT_HOLDER );
+	BIND_ENUM_CONSTANT( SIDE_A );
+	BIND_ENUM_CONSTANT( SIDE_B );
+	BIND_ENUM_CONSTANT( SIDE_EITHER );
 }
 
 PackedStringArray CbReaction::_get_configuration_warnings() const
@@ -71,42 +78,97 @@ PackedStringArray CbReaction::_get_configuration_warnings() const
 	{
 		warnings.push_back( "Calling a method needs a target node." );
 	}
+	if ( Refused( m_method, m_property ) )
+	{
+		warnings.push_back( "The game refuses \"free\", \"queue_free\" and \"script\"." );
+	}
+	std::string error;
+	present::EntityPath path;
+	if ( present::ParseEntityPath( m_subject.utf8().get_data(), path, &error ) == false )
+	{
+		warnings.push_back( "Subject: " + String::utf8( error.c_str() ) );
+	}
+	if ( present::ParseEntityPath( m_actOn.utf8().get_data(), path, &error ) == false )
+	{
+		warnings.push_back( "Act on: " + String::utf8( error.c_str() ) );
+	}
+	for ( int64_t i = 0; i < m_conditions.size(); ++i )
+	{
+		present::PathCondition condition;
+		if ( present::ParsePathCondition( m_conditions[i].utf8().get_data(), condition, &error ) == false )
+		{
+			warnings.push_back( "Condition \"" + m_conditions[i] + "\": " + String::utf8( error.c_str() ) );
+		}
+	}
 	return warnings;
 }
 
 void CbReaction::fire()
 {
-	Act( true );
+	FireIn( nullptr, nullptr );
 }
 
 void CbReaction::set_on( bool on )
+{
+	SetOnIn( on, nullptr, nullptr );
+}
+
+void CbReaction::FireIn( Node* root, Node* limit )
+{
+	Act( true, root, limit );
+}
+
+void CbReaction::SetOnIn( bool on, Node* root, Node* limit )
 {
 	if ( on == m_on )
 	{
 		return;
 	}
 	m_on = on;
-	Act( on );
+	Act( on, root, limit );
 }
 
-void CbReaction::Act( bool on )
+bool CbReaction::Refused( const String& method, const String& property )
+{
+	return method == "free" || method == "queue_free" || property == "script" || property.begins_with( "script:" );
+}
+
+Node* CbReaction::Find( const NodePath& path, Node* root, Node* limit ) const
+{
+	if ( path.is_empty() )
+	{
+		return nullptr;
+	}
+	Node* found = root != nullptr ? root->get_node_or_null( path ) : get_node_or_null( path );
+	if ( found != nullptr && limit != nullptr && found != limit && limit->is_ancestor_of( found ) == false )
+	{
+		return nullptr; // outside the entity's scene
+	}
+	return found;
+}
+
+void CbReaction::Act( bool on, Node* root, Node* limit )
 {
 	bool event = m_when == WHEN_EVENT;
+	bool refused = Refused( m_method, m_property );
 
-	// Animation: the one for on; for a "while" ending, the off one if there is one.
+	// Animation: the one for on; for a "while" ending, the off one (where the on one played).
 	String animation = on ? m_animation : m_animationOff;
-	if ( animation.is_empty() == false )
+	auto* player = on ? Object::cast_to<AnimationPlayer>( Find( m_player, root, limit ) )
+					  : Object::cast_to<AnimationPlayer>( ObjectDB::get_instance( m_onPlayer ) );
+	if ( on && event == false )
 	{
-		if ( auto* player = Object::cast_to<AnimationPlayer>( get_node_or_null( m_player ) ); player != nullptr && player->has_animation( animation ) )
-		{
-			player->stop();
-			player->play( animation );
-		}
+		m_onPlayer = player != nullptr ? player->get_instance_id() : ObjectID();
+	}
+	if ( player != nullptr && animation.is_empty() == false && player->has_animation( animation ) )
+	{
+		player->stop();
+		player->play( animation );
 	}
 
-	Node* target = m_target.is_empty() ? nullptr : get_node_or_null( m_target );
-	// Property: set it; a "while" puts back what was there when it ends.
-	if ( target != nullptr && m_property.is_empty() == false )
+	// Property: set it; a "while" puts back what was there when it ends (on the node it set).
+	Node* target = on ? Find( m_target, root, limit ) : Object::cast_to<Node>( ObjectDB::get_instance( m_onTarget ) );
+	if ( target != nullptr && m_property.is_empty() == false && refused == false )
 	{
 		NodePath path = NodePath( m_property ).get_as_property_path();
 		if ( on )
@@ -115,28 +177,33 @@ void CbReaction::Act( bool on )
 			{
 				m_original = target->get_indexed( path );
 				m_haveOriginal = true;
+				m_onTarget = target->get_instance_id();
 			}
 			target->set_indexed( path, m_value );
 		}
 		else if ( m_haveOriginal )
 		{
 			target->set_indexed( path, m_original );
-			m_haveOriginal = false;
 		}
 	}
+	if ( on == false )
+	{
+		m_haveOriginal = false;
+		m_onTarget = ObjectID();
+	}
 	// Method: built-in methods with no arguments only ("restart", "play", "show").
-	if ( on && target != nullptr && m_method.is_empty() == false && target->has_method( m_method ) )
+	if ( on && target != nullptr && m_method.is_empty() == false && refused == false && target->has_method( m_method ) )
 	{
 		target->call( m_method );
 	}
 
-	// Scene: added under the parent (this reaction's parent by default).
+	// Scene: added under the parent (this reaction's parent, or the acted-on entity's root).
 	if ( m_scene.is_empty() == false )
 	{
 		if ( on )
 		{
 			Ref<PackedScene> packed = ResourceLoader::get_singleton()->load( m_scene, "PackedScene" );
-			Node* parent = m_sceneParent.is_empty() ? get_parent() : get_node_or_null( m_sceneParent );
+			Node* parent = m_sceneParent.is_empty() ? ( root != nullptr ? root : get_parent() ) : Find( m_sceneParent, root, limit );
 			Node* spawned = packed.is_valid() && parent != nullptr ? packed->instantiate() : nullptr;
 			if ( spawned != nullptr )
 			{
