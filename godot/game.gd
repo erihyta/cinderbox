@@ -82,7 +82,7 @@ func _ready() -> void:
 
 	client.visual_spawned.connect(_on_visual_spawned)
 	client.mod_event.connect(_on_mod_event)
-	client.screen_effect.connect(_on_screen_effect)
+	client.get_director().screen_effect.connect(_on_screen_effect)
 	client.schema_changed.connect(_on_schema_changed)
 	client.connection_state_changed.connect(func(state): print("connection: ", state))
 

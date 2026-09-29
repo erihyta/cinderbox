@@ -160,6 +160,6 @@ value = 4.0
 
 [node name="SparksOnHit" type="CbReaction" parent="."]
 event = "melee.hit"
-subject = "holder"
+subject = NodePath("^^")
 target = NodePath("../Sparks")
 method = "restart"

@@ -15,13 +15,14 @@
 //
 // What the server's mods add reaches presentation as names, never as code: the actions a player
 // can press (with suggested keys), board fields ("pistol.ammo") and mod events ("pistol.fired").
-// This node exposes them to scripts and HUD nodes, and drives the CbReaction nodes in every entity's
-// scene from its board and events.
+// This node exposes them to scripts and HUD nodes. Entity nodes live under its World node, a
+// CbDirector (cue_director.h), which it tells about entities, their board as state, and events as
+// cues; the CbReaction nodes in the scenes do the rest.
 
 #include "anim_set.h"
-#include "cinderbox_reaction.h"
+#include "cinderbox_item_look.h"
+#include "cue_director.h"
 #include "client_thread.h"
-#include "entity_path.h"
 #include "fields.h"
 #include "mirror.h"
 
@@ -80,6 +81,8 @@ public:
 	// nodes react to every event, its CbItemLook nodes say how held items look.
 	void add_world_scene( godot::Node* scene );
 	void clear_world_scenes();
+	// The World node (creates it on first use).
+	CbDirector* get_director();
 
 	// Players: net ids of everyone in the world, and their names.
 	godot::PackedInt64Array get_players() const;
@@ -221,56 +224,22 @@ private:
 	bool m_hideStaticBoxes = false;
 	std::unordered_map<std::string, godot::Ref<godot::PackedScene>> m_prefabs;
 
-	// Each visual's CbReaction nodes (found when its node was made), with what the game checks.
-	struct ReactionRef
-	{
-		godot::ObjectID node;
-		godot::ObjectID ownRoot; // the scene it sits in: its entity's node, or its world scene
-		bool isWhile = false;
-		int eventSide = 0; // CbReaction::EventSide
-		std::string event;
-		present::EntityPath subject;
-		std::string subjectKind;
-		std::string subjectTemplate;
-		present::EntityPath actOn;
-		bool actOnOwnScene = true; // no act_on: node paths from the reaction, inside its own scene
-		std::vector<present::PathCondition> conditions;
-		double cooldown = 0.0;
-		double lastFired = -1e9;
-		int place = 0; // CbReaction::Place
-		godot::String bone;
-		godot::Vector3 offset;
-		godot::ObjectID onRoot; // a "while" that holds: the scene it acted in
-	};
-	// What an event tells reactions.
-	struct ReactionEvent
-	{
-		std::string name;
-		uint32_t a = 0;
-		uint32_t b = 0;
-		int32_t value = 0;
-		float strength = 0.0f;
-		godot::Vector3 point;
-		godot::Vector3 end;
-	};
-	static constexpr uint64_t kWorldReactions = 0; // m_reactions key of the world scenes (never a visual id)
-	godot::ObjectID m_worldRoot;
-	godot::Node3D* WorldRoot();
-	std::unordered_map<uint64_t, std::vector<ReactionRef>> m_reactions;
-	// Held items by holder and socket index, for item:<socket> steps (refreshed every frame).
-	std::unordered_map<uint64_t, uint32_t> m_itemIndex;
-	void RefreshItemIndex();
-	present::PathContext PathContextFor( uint32_t self, uint32_t eventA, uint32_t eventB ) const;
-	const Blackboard* TargetBoard( const present::PathTarget& target ) const;
-	bool ReactionHolds( const ReactionRef& r, const present::PathContext& context, const present::PathTarget& subject,
-						const ReactionEvent* event ) const;
-	bool SubjectMatches( const ReactionRef& r, const present::PathTarget& subject ) const;
-	CbReaction::Placement PlacementFor( const ReactionRef& r, const present::PathTarget& subject, const ReactionEvent* event );
-	// Where a reaction's node paths resolve (null: from the reaction) and what they may touch.
-	bool ReactionScope( const ReactionRef& r, const present::PathContext& context, godot::Node*& root, godot::Node*& limit ) const;
-	void CollectReactions( uint64_t visual, godot::Node* node, bool append );
-	void UpdateReactions( uint64_t visual, uint32_t self );
-	void FireReactions( const ReactionEvent& event );
+	// The World node, a CbDirector: every entity node, world reaction scene and placed effect lives
+	// under it, and it runs the CbReaction nodes in them from cues and entity state.
+	godot::ObjectID m_director;
+	CbDirector* Director();
+	std::vector<godot::ObjectID> m_worldScenes;
+	std::unordered_map<uint64_t, uint64_t> m_stateHashes; // visual -> hash of the board last pushed
+	uint64_t m_worldStateHash = 0;
+	void PushStates();
+	void Cue( const std::string& name, uint32_t a, uint32_t b, const godot::Dictionary& args );
+	godot::String EntityName( const present::Visual& v ) const;
+	// Sockets are moved to their entity's root in the game (so "^^/RightHand/Item" means the same on
+	// every rig); the companion tracks that reached an item through the socket's authored place are
+	// pointed at the new one, once per library.
+	std::vector<std::pair<godot::String, godot::String>> m_socketMoves; // from the entity: old path, new
+	godot::ObjectID m_retargetedLibrary;
+	void RetargetCompanion( godot::Node* entity, godot::Node* root );
 
 	// Held items: their looks by kind, and each character's sockets (placed from the pose every
 	// frame; items are their children).

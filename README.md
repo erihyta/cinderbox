@@ -42,6 +42,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M33: `CbReaction` nodes: an entity's scene reacts to its board and events with no code; the pistol is a held item; state bindings and the implicit item rules are gone | done |
 | M34: entity paths: a reaction's subject, conditions and the scene it acts in can be any related entity (`holder/item:LeftHand`, `event.b`, `local`, `world`) | done |
 | M35: world reactions: `vfx/reactions*.tscn` scenes of `CbReaction` nodes replace effect bindings (`CbEffect`); built-in events, placement, sounds and screen effects on the same node | done |
+| M36: reactions address the scene tree the Roblox way (`^^/RightHand/Item`, `$other/Head`); `CbDirector` + `CbReaction` are a standalone Godot addon the client drives with cues and state | done |
 
 ## Building
 
@@ -306,15 +307,15 @@ behaves. Behaviour stays in the simulation.
 What plays when is data, not code: **world reactions**. A mod ships `res://vfx/reactions_<name>.tscn`,
 a scene of `CbReaction` nodes, and the client loads every `res://vfx/reactions*.tscn` once. They are
 the same node as the reactions inside entity scenes ([Reactions](#reactions)), with no entity of
-their own: each names what it is about from the event (`event.a`, `event.b`). Files add to each
+their own: each names what it is about from the cue (`$at`, `$other`). Files add to each
 other, so two mods add effects without fighting over one list; a mod replaces
 `vfx/reactions.tscn` to change the game's own.
 
 ```
 PistolReactions                      (vfx/reactions_pistol.tscn)
-├── FiredRemote   on pistol.fired     subject event.a   !is_local          muzzle flash + gunshot at its RightHand
-├── Tracer        on pistol.fired     subject event.a                      beam from its RightHand to the event's end
-├── Hurt          on pistol.hit       subject event.b   is_local           camera shake + red flash
+├── FiredRemote   on pistol.fired     subject $at      !is_local          muzzle flash + gunshot at $at/RightHand
+├── Tracer        on pistol.fired     subject $at                         beam from $at/RightHand to the cue's end
+├── Hurt          on pistol.hit       subject $other   is_local           camera shake + red flash
 └── Gun           CbItemLook          pistol.gun -> res://prefabs/pistol.tscn
 ```
 
@@ -332,7 +333,7 @@ What a world reaction adds to the [reaction fields](#reactions):
 |---|---|
 | `subject_kind`, `subject_template` | only for a player / prop / static / ragdoll / item, or entities from one map template |
 | `cooldown` | shortest gap between two firings (twenty props landing at once play one sound) |
-| `place`, `bone`, `offset` | where its scene and sound go: under its parent, at the event's **point** or **end**, a **beam** from the point (or `bone`) to the end, at a **bone** of the subject, or **following** the subject |
+| `place`, `place_node`, `offset` | where its scene and sound go: under its parent, at the cue's **point** or **end**, a **beam** from `place_node` (or the point) to the end, **at** `place_node` (a socket: `$at/RightHand`, `$at/Head`), or **following** the subject |
 | `sound`, `volume_db`, `pitch_scale`, `pitch_jitter`, `bus`, `max_distance` | a sound, once per firing |
 | `shake`, `shake_time`, `flash_color`, `flash_time` | camera shake and a full-screen flash: the viewer's, so pair them with `is_local` or subject `local` |
 
@@ -755,61 +756,79 @@ A mod taking its item away destroys the NetId `ctx.HeldItem( slot, socket )` giv
 
 ### Reactions
 
-A `CbReaction` node makes a scene react to the game, with no code. Put it in any entity's scene:
-a held item, a character, a prop's prefab. The client drives it by name from what the server's mods
-declared, and it can read and act on related entities through **entity paths**.
+A `CbReaction` node makes a scene react to the game, with no code, the way a Roblox script uses
+its hierarchy: `^^/RightHand/Item` is "the item in my holder's right hand". It is part of a
+standalone Godot addon (`src/godot/cue`, godot-cpp only): a **`CbDirector`** runs the reactions
+under it from **cues** ("melee.hit" at an entity) and **entity state** ("melee.hot" = true). In
+the game the director is the client's `World` node, and the client is only an adapter that tells
+it what the simulation shows.
 
 ```
-Bat
-├── Barrel
-├── Sparks                       (GPUParticles3D, one shot)
-├── GlowWhileHot   CbReaction    while  melee.hot     set Barrel : surface_material_override/0:emission_energy_multiplier = 4
-└── SparksOnHit    CbReaction    on     melee.hit     call Sparks.restart()      subject: holder
+World (CbDirector)
+├── player_0                       an entity: state {combat.health, loadout.slot, ...}
+│   ├── (the character's scene)
+│   ├── RightHand, LeftHand, Head  sockets: children of the entity in the game, on every rig
+│   │   └── Item                   the held item, an entity too: state {melee.hot}
+│   │       ├── Barrel, Sparks
+│   │       ├── GlowWhileHot       CbReaction  while melee.hot          set Barrel emission = 4
+│   │       └── SparksOnHit        CbReaction  on melee.hit, subject ^^  Sparks.restart()
+├── player_1 ...                   players by slot; everything else <kind>_<net id>
+├── Map                            the map's own scene
+└── PistolReactions ...            world reactions (vfx/reactions*.tscn)
 ```
 
-**Entity paths** name an entity through the simulation's relations, not the scene tree (entity
-nodes are named by NetId and move between parents, so Godot paths cannot reach them reliably):
+Every node path in a reaction is a Godot `NodePath`; its first name may be an **anchor**:
 
-| Step | Means |
+| Path | Means |
 |---|---|
-| `self` | the entity whose scene holds the reaction (an empty path is `self`) |
-| `holder` | the player holding this item |
-| `item:RightHand` | the item in that socket |
-| `event.a`, `event.b` | the entities the event names: who it is about (the attacker), the other one (the victim) |
-| `local` | the local player |
-| `world` | the map's scene, and the global board; nothing follows it |
+| `Barrel`, `../Sparks` | an ordinary path from the reaction |
+| `^` | my entity: the nearest entity at or above the reaction (the default subject) |
+| `^^`, `^^^` | the entity above that one (a held item's holder), and so on |
+| `$at`, `$other` | the entities the cue names: who it is about (the attacker), the other one (the victim) |
+| `$local` | the local player |
+| `$world` | the World node (its state is the global board) |
+| `^^/RightHand/Item`, `$other/Head` | an anchor, then an ordinary path from it |
 
-Steps chain with `/`: `holder/item:LeftHand` (the shield in my holder's other hand),
-`event.b/item:RightHand` (the victim's weapon). A step that finds nothing (an empty hand) makes the
-reaction do nothing.
+A path that finds nothing (an empty hand) makes the reaction do nothing, and no path leaves the
+World node: a workshop item cannot reach the game's HUD or menus.
 
 | Field | Meaning |
 |---|---|
-| `when` | **On event** (once per event) or **While** (its conditions hold) |
-| `event` | On event: the mod event's name (`melee.hit`) |
-| `conditions` | Board conditions ([names, comparisons](#effects), `is_local`, `event.value`); on event they must hold too. Plain names read the subject's board; a path and a colon read another's: `!holder:combat.dead`, `event.b:combat.health < 20`, `world:deathmatch.round` |
-| `subject` | an entity path (default `self`) |
-| `event_side` | On event: **A**, the event is about the subject (`melee.hit` at the attacker); **B**, the subject is the other one (the victim); or **Either**. A subject starting with `event.a` / `event.b` matches every event of the name |
-| `act_on` | an entity path: the scene the node paths below are resolved in, from its root (`.` is the root). Empty: this reaction's own scene, relative to the reaction |
+| `when` | **On a cue** (once per cue) or **While** (its conditions hold) |
+| `event` | On a cue: its name (`melee.hit`, `footstep`, `pressed:fire`: see [Effects](#effects)) |
+| `subject` | a path (default `^`): whose state plain condition names read |
+| `event_side` | On a cue: **A**, the cue is at the subject (`melee.hit` is at the attacker); **B**, the subject is the other one (the victim); or **Either**. A subject starting with `$at` / `$other` matches every cue of the name |
+| `subject_kind`, `subject_template` | only for a player / prop / static / ragdoll / item, or one map template (for an item: its kind, `melee.bat`) |
+| `conditions` | [names and comparisons](#effects), `is_local`, `event.value`, `event.strength`. Plain names read the subject's state, then the world's; a path and a colon read another's: `!^^:combat.dead`, `$other:combat.health < 20`, `$world:deathmatch.round` |
+| `cooldown` | shortest gap between two firings |
 | `animation_player`, `animation` | play this animation from the start; `animation_off` when a While ends |
 | `target`, `property`, `value` | set a property on a node; a While puts the old value back when it ends. Sub-paths work: `surface_material_override/0:albedo_color` |
 | `target`, `method` | call a built-in method with no arguments (`restart`, `play`, `show`) |
-| `scene`, `scene_parent`, `scene_lifetime` | add a scene (under the reaction's parent by default); an event's goes after `scene_lifetime` s, a While's when it ends |
+| `scene`, `scene_parent`, `scene_lifetime` | add a scene (under the reaction's parent by default); a cue's goes after `scene_lifetime` s, a While's when it ends |
+| `place`, `place_node`, `offset` | where the scene and sound go: under its parent, at the cue's **point** or **end**, a **beam** from `place_node` (or the point) to the end, **at** `place_node` (`$at/RightHand`), or **following** the subject |
+| `sound`, `volume_db`, `pitch_scale`, `pitch_jitter`, `bus`, `max_distance` | a sound, once per firing |
+| `shake`, `shake_time`, `flash_color`, `flash_time` | camera shake and a full-screen flash (the director's `screen_effect` signal): the viewer's, so pair them with `is_local` |
 
 - **Presentation only**: nothing here changes the simulation. Everything that exists in the game
   (an item, a prop) is spawned by a server mod.
-- **Contained**: node paths never leave the entity scene they are resolved in (a player's scene
-  includes what it holds), so a workshop item cannot reach the game's HUD or menus. `free`,
-  `queue_free` and the `script` property are refused.
-- **A While follows its scene**: when `act_on` finds another scene (a new item in the hand), it
-  ends in the old one (puts values back) and starts in the new one.
-- **Mistakes show in the editor**: a path or condition that does not parse is a configuration
-  warning on the node, and the game skips that reaction.
+- **State is visible**: every entity node carries its state as `state` metadata, so the Remote
+  inspector shows `melee.hot` changing live.
+- **Sockets are children of the entity** in the game, whatever bone they were authored under, so
+  paths through them are the same on every character. The character's animation tracks that
+  reached an item through a socket's authored place (the bat's `slash`) are pointed at the new
+  place when the game loads them.
+- **A While follows its target**: when its path finds another node (a new item in the hand), it
+  ends on the old one (puts values back) and starts on the new one.
+- **Refused**: `free`, `queue_free` and the `script` property. A path or condition that does not
+  parse is a configuration warning on the node, and the game skips that reaction.
 - **Resources are shared** between instances of a scene. A reaction that changes a material changes
   every copy, unless the material is **Local to Scene** (the bat's barrel is).
-- **Rollback**: like companion tracks, an event reaction that already played is not taken back if
-  a prediction turns out wrong.
-- **Check**: `godot --headless --path godot --script res://addons/cinderbox_maps/check_reactions.gd`.
+- **Rollback**: like companion tracks, a cue reaction that already played is not taken back if a
+  prediction turns out wrong.
+- **Anything can drive a director**: `add_entity( node, kind, template )`, `set_state( node, {...} )`,
+  `set_world_state`, `set_local`, `cue( name, at, other, { value, strength, point, end } )`.
+  `check_reactions.gd` drives one by hand, with no server:
+  `godot --headless --path godot --script res://addons/cinderbox_maps/check_reactions.gd`.
 
 ### State machines
 
@@ -965,9 +984,10 @@ src/present/      engine-independent presentation, shared by Godot and raylib
   fields.*          board fields and conditions by name
   pose_tools.*      ragdoll poses, pose blending
   scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
-src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals, items, reactions),
-                  CinderboxSkeleton, map and entity authoring nodes, CbReaction and CbItemLook
-                  (cinderbox_reaction.*), HUD labels (cinderbox_hud.*)
+src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals, items, the adapter
+                  that drives the World director), CinderboxSkeleton, map and entity authoring nodes,
+                  CbItemLook, HUD labels (cinderbox_hud.*)
+  cue/            the reaction addon, godot-cpp only: CbDirector, CbReaction, cue paths and conditions
 godot/            Godot client project: boot (player mods, pack validator), game (input, camera, HUD, VFX,
                   joining with workshop items), workshop.gd (where items are), prefabs, vfx, ui
   maps/             map scenes and their baked .cbmap files
