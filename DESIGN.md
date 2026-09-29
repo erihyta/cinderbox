@@ -1000,6 +1000,28 @@ way, and to split the reaction system out of Cinderbox.
 - **Not done**: an editor preview dock (pick a node, fire a cue, toggle state) comes next; the addon
   is its own library but still ships inside the Cinderbox extension.
 
+## Cue Preview (M37)
+Reactions were only visible in a running game (a server, bots, the right moment). The addon already
+ran without Cinderbox, so the preview is a stage for it inside the editor.
+
+- **A C++ editor plugin in the cue addon** (godot-cpp only), registered at the editor level with
+  `EditorPlugins::add_by_type`: every project that has the extension gets it, including the mod
+  client projects where items and reaction scenes are authored. A GDScript addon would have needed
+  a copy in each of them.
+- **The stage**: a SubViewport with its own world (floor, light, camera), a `CbDirector`, two
+  stand-in players with sockets, and a copy of the edited scene (`duplicate()`, so unsaved edits
+  show and the scene itself is never touched) as a held item, a character or world reactions.
+- **Controls**: cue name (listed from the scene's reactions plus the game's), `$at` / `$other`,
+  value, strength; one field per state name the scene's conditions read, per entity; the local
+  player. Screen effects drive a flash overlay and a camera shake.
+- **Verified in the real editor** (a temporary hook opened the panel, set state, fired a cue and saved
+  the viewport): the bat glowed with `melee.hot` = 1, sparked on `melee.hit` and went back to wood;
+  `reactions_pistol.tscn` put a hit puff at player_1's chest and the hit marker at `$at/Head`; the
+  mannequin stood in as player_0. A hidden bottom panel does not draw, which first looked like a
+  bug (the Animation panel takes over when a character opens).
+- **Not done**: the stand-ins do not animate (a character's clips, and so its companion tracks, do
+  not play); there is no timeline to script a sequence of cues; the camera cannot be moved.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1052,9 +1074,6 @@ way, and to split the reaction system out of Cinderbox.
 - **Rare reconnect**: an occasional client reconnect (about one per several minutes of 64 bots at 2% loss) was seen with the 1–3 s ENet timeout. The timeout is now 2–6 s; no reconnects occurred in the M5 runs.
 
 ### Possible next steps
-- **Reaction preview dock** (asked for after M36): in the editor, pick an entity node, fire a cue
-  (`melee.hit` with $other, value, point) or toggle its state, and watch the scene's reactions
-  play, with no server. The addon already runs without Cinderbox (`check_reactions.gd`).
 - **Less download at high latency**: skip frames that are probably still in flight and resend them only after a timeout. This trades bandwidth for a slower recovery from loss.
 - **Camera**: add camera collision in the client (it can currently clip into walls).
 - **Godot**:
@@ -1112,3 +1131,4 @@ way, and to split the reaction system out of Cinderbox.
 34. **M34** (done): entity paths (`self`, `holder`, `item:<socket>`, `event.a`, `event.b`, `local`, `world`) for a reaction's subject, conditions and `act_on`; `event_side`; lookups contained in the scene they resolve in, `free` / `queue_free` / `script` refused.
 35. **M35** (done): world reactions: `vfx/reactions*.tscn` scenes loaded once replace `CbEffect` / `CbEffectTable`; built-in events and `pressed:<action>` by name; filters, cooldown, placement, sound and screen effects on `CbReaction`; `CbItemLook` as a node; all bindings converted.
 36. **M36** (done): the scene tree as the address space: a stable World tree (`player_<slot>`, sockets as entity children, companion tracks rewritten), anchors (`^`, `^^`, `$at`, `$other`, `$local`, `$world`) on ordinary NodePaths; `CbDirector` + `CbReaction` as a standalone addon (`cb_cue`) driven by cues and entity state; M34's entity paths replaced.
+37. **M37** (done): Cue Preview, an editor bottom panel in the cue addon: the edited scene on a stage with stand-in players, cues fired and state set by hand, screen effects shown; verified on the bat, the pistol's world reactions and the mannequin.

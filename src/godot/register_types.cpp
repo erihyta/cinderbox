@@ -7,10 +7,12 @@
 #include "cinderbox_map_nodes.h"
 #include "cinderbox_item_look.h"
 #include "cue_director.h"
+#include "cue_preview.h"
 #include "cue_reaction.h"
 #include "cinderbox_skeleton.h"
 
 #include <gdextension_interface.h>
+#include <godot_cpp/classes/editor_plugin_registration.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/godot.hpp>
@@ -22,6 +24,14 @@ namespace
 
 void InitializeCinderbox( ModuleInitializationLevel level )
 {
+	if ( level == MODULE_INITIALIZATION_LEVEL_EDITOR )
+	{
+		// Cue Preview: plays the edited scene's reactions in a bottom panel, with no game running.
+		GDREGISTER_INTERNAL_CLASS( cb::gd::CbCuePreviewDock );
+		GDREGISTER_INTERNAL_CLASS( cb::gd::CbCuePreviewPlugin );
+		EditorPlugins::add_by_type<cb::gd::CbCuePreviewPlugin>();
+		return;
+	}
 	if ( level != MODULE_INITIALIZATION_LEVEL_SCENE )
 	{
 		return;
