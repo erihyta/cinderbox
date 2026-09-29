@@ -19,7 +19,7 @@
 // scene from its board and events.
 
 #include "anim_set.h"
-#include "cinderbox_effects.h"
+#include "cinderbox_reaction.h"
 #include "client_thread.h"
 #include "entity_path.h"
 #include "fields.h"
@@ -76,9 +76,10 @@ public:
 	godot::String get_kind( int64_t net_id ) const;
 	godot::String get_entity_template_name( int64_t net_id ) const;
 	godot::Node3D* get_entity_node( int64_t net_id ) const;
-	// How a kind of held item looks (from a mod's effect table).
-	void add_item_look( const godot::Ref<CbItemLook>& look );
-	void clear_item_looks();
+	// A world reactions scene (res://vfx/reactions*.tscn): kept under this node, its CbReaction
+	// nodes react to every event, its CbItemLook nodes say how held items look.
+	void add_world_scene( godot::Node* scene );
+	void clear_world_scenes();
 
 	// Players: net ids of everyone in the world, and their names.
 	godot::PackedInt64Array get_players() const;
@@ -224,28 +225,52 @@ private:
 	struct ReactionRef
 	{
 		godot::ObjectID node;
+		godot::ObjectID ownRoot; // the scene it sits in: its entity's node, or its world scene
 		bool isWhile = false;
 		int eventSide = 0; // CbReaction::EventSide
 		std::string event;
 		present::EntityPath subject;
+		std::string subjectKind;
+		std::string subjectTemplate;
 		present::EntityPath actOn;
-		bool actOnOwnScene = true; // no act_on: node paths from the reaction, inside its own entity
+		bool actOnOwnScene = true; // no act_on: node paths from the reaction, inside its own scene
 		std::vector<present::PathCondition> conditions;
+		double cooldown = 0.0;
+		double lastFired = -1e9;
+		int place = 0; // CbReaction::Place
+		godot::String bone;
+		godot::Vector3 offset;
 		godot::ObjectID onRoot; // a "while" that holds: the scene it acted in
 	};
+	// What an event tells reactions.
+	struct ReactionEvent
+	{
+		std::string name;
+		uint32_t a = 0;
+		uint32_t b = 0;
+		int32_t value = 0;
+		float strength = 0.0f;
+		godot::Vector3 point;
+		godot::Vector3 end;
+	};
+	static constexpr uint64_t kWorldReactions = 0; // m_reactions key of the world scenes (never a visual id)
+	godot::ObjectID m_worldRoot;
+	godot::Node3D* WorldRoot();
 	std::unordered_map<uint64_t, std::vector<ReactionRef>> m_reactions;
 	// Held items by holder and socket index, for item:<socket> steps (refreshed every frame).
 	std::unordered_map<uint64_t, uint32_t> m_itemIndex;
 	void RefreshItemIndex();
 	present::PathContext PathContextFor( uint32_t self, uint32_t eventA, uint32_t eventB ) const;
 	const Blackboard* TargetBoard( const present::PathTarget& target ) const;
-	bool ReactionHolds( const ReactionRef& r, const present::PathContext& context, const present::PathTarget& subject ) const;
+	bool ReactionHolds( const ReactionRef& r, const present::PathContext& context, const present::PathTarget& subject,
+						const ReactionEvent* event ) const;
+	bool SubjectMatches( const ReactionRef& r, const present::PathTarget& subject ) const;
+	CbReaction::Placement PlacementFor( const ReactionRef& r, const present::PathTarget& subject, const ReactionEvent* event );
 	// Where a reaction's node paths resolve (null: from the reaction) and what they may touch.
-	bool ReactionScope( const ReactionRef& r, uint64_t visual, const present::PathContext& context, godot::Node*& root,
-						godot::Node*& limit ) const;
-	void CollectReactions( uint64_t visual, godot::Node* node );
-	void UpdateReactions( uint64_t visual, const present::Visual& v );
-	void FireReactions( const std::string& event, uint32_t netId, uint32_t otherNetId );
+	bool ReactionScope( const ReactionRef& r, const present::PathContext& context, godot::Node*& root, godot::Node*& limit ) const;
+	void CollectReactions( uint64_t visual, godot::Node* node, bool append );
+	void UpdateReactions( uint64_t visual, uint32_t self );
+	void FireReactions( const ReactionEvent& event );
 
 	// Held items: their looks by kind, and each character's sockets (placed from the pose every
 	// frame; items are their children).

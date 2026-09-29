@@ -1,0 +1,119 @@
+[gd_scene format=3]
+
+; How the pistol mod looks and sounds, as world reactions. Everything is keyed on names the
+; server's mods declared: the "fire" action (pressed:fire, the local press before the server
+; answers), "pistol.*" and "combat.*" fields and events. event.a is who an event is about (the
+; shooter), event.b the other entity (what was hit, who died). The Gun node says how the
+; "pistol.gun" item looks.
+
+[node name="PistolReactions" type="Node3D"]
+
+[node name="FirePredicted" type="CbReaction" parent="."]
+event = "pressed:fire"
+subject = "event.a"
+conditions = PackedStringArray("loadout.slot == 2", "pistol.ammo > 0", "!pistol.reloading", "!combat.dead", "is_local")
+scene = "res://vfx/muzzle_flash.tscn"
+scene_lifetime = 0.3
+place = 4
+bone = "RightHand"
+sound = "res://assets/sfx/gunshot.wav"
+volume_db = -6.0
+pitch_jitter = 0.06
+shake = 0.035
+shake_time = 0.12
+cooldown = 0.19
+
+[node name="DryPredicted" type="CbReaction" parent="."]
+event = "pressed:fire"
+subject = "event.a"
+conditions = PackedStringArray("loadout.slot == 2", "pistol.ammo == 0", "!pistol.reloading", "!combat.dead", "is_local")
+place = 4
+bone = "RightHand"
+sound = "res://assets/sfx/dry_click.wav"
+volume_db = -8.0
+cooldown = 0.2
+
+[node name="FiredRemote" type="CbReaction" parent="."]
+event = "pistol.fired"
+subject = "event.a"
+conditions = PackedStringArray("!is_local")
+scene = "res://vfx/muzzle_flash.tscn"
+scene_lifetime = 0.3
+place = 4
+bone = "RightHand"
+sound = "res://assets/sfx/gunshot.wav"
+volume_db = -4.0
+pitch_jitter = 0.06
+max_distance = 70.0
+
+[node name="Tracer" type="CbReaction" parent="."]
+event = "pistol.fired"
+subject = "event.a"
+scene = "res://vfx/tracer.tscn"
+scene_lifetime = 0.06
+place = 3
+bone = "RightHand"
+
+[node name="HitSurface" type="CbReaction" parent="."]
+event = "pistol.hit"
+subject = "event.a"
+conditions = PackedStringArray("event.value == 0")
+scene = "res://vfx/bullet_spark.tscn"
+scene_lifetime = 1.0
+place = 1
+sound = "res://assets/sfx/ricochet.wav"
+volume_db = -16.0
+pitch_jitter = 0.3
+max_distance = 30.0
+
+[node name="HitPlayer" type="CbReaction" parent="."]
+event = "pistol.hit"
+subject = "event.a"
+conditions = PackedStringArray("event.value > 0")
+scene = "res://vfx/hit_puff.tscn"
+scene_lifetime = 1.0
+place = 1
+sound = "res://assets/sfx/body_hit.wav"
+volume_db = -8.0
+pitch_jitter = 0.15
+max_distance = 40.0
+
+[node name="HitMarker" type="CbReaction" parent="."]
+event = "pistol.hit"
+subject = "event.a"
+conditions = PackedStringArray("is_local", "event.value > 0")
+place = 4
+bone = "Head"
+sound = "res://assets/sfx/hit_marker.wav"
+volume_db = -6.0
+
+[node name="Hurt" type="CbReaction" parent="."]
+event = "pistol.hit"
+subject = "event.b"
+conditions = PackedStringArray("is_local", "event.value > 0")
+place = 1
+shake = 0.05
+shake_time = 0.2
+flash_color = Color(0.8, 0.05, 0.05, 0.22)
+flash_time = 0.3
+
+[node name="Died" type="CbReaction" parent="."]
+event = "combat.killed"
+subject = "event.b"
+conditions = PackedStringArray("is_local")
+place = 1
+flash_color = Color(0.6, 0, 0, 0.55)
+flash_time = 1.2
+
+[node name="Reload" type="CbReaction" parent="."]
+event = "pistol.reload"
+subject = "event.a"
+place = 4
+bone = "RightHand"
+sound = "res://assets/sfx/reload.wav"
+volume_db = -10.0
+max_distance = 25.0
+
+[node name="Gun" type="CbItemLook" parent="."]
+kind = "pistol.gun"
+scene = "res://prefabs/pistol.tscn"

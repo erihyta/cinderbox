@@ -2,7 +2,12 @@
 
 #include "entity_path.h"
 
+#include <godot_cpp/classes/audio_stream.hpp>
+#include <godot_cpp/classes/audio_stream_player3d.hpp>
 #include <godot_cpp/classes/animation_player.hpp>
+#include <godot_cpp/classes/gpu_particles3d.hpp>
+#include <godot_cpp/classes/node3d.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/classes/packed_scene.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/classes/scene_tree.hpp>
@@ -33,6 +38,9 @@ void CbReaction::_bind_methods()
 	CB_REACTION_PROP( Variant::PACKED_STRING_ARRAY, conditions, PROPERTY_HINT_NONE, "" )
 	CB_REACTION_PROP( Variant::STRING, subject, PROPERTY_HINT_PLACEHOLDER_TEXT, "self, holder, event.b, local" )
 	CB_REACTION_PROP( Variant::INT, event_side, PROPERTY_HINT_ENUM, "A: it is about the subject,B: the subject is the other one,Either" )
+	CB_REACTION_PROP( Variant::STRING, subject_kind, PROPERTY_HINT_ENUM_SUGGESTION, "any,player,prop,static,ragdoll,item" )
+	CB_REACTION_PROP( Variant::STRING, subject_template, PROPERTY_HINT_NONE, "" )
+	CB_REACTION_PROP( Variant::FLOAT, cooldown, PROPERTY_HINT_RANGE, "0,10,0.01,suffix:s" )
 	CB_REACTION_PROP( Variant::STRING, act_on, PROPERTY_HINT_PLACEHOLDER_TEXT, "this scene, or holder, event.b/item:RightHand, world" )
 	ADD_GROUP( "Animation", "" );
 	CB_REACTION_PROP( Variant::NODE_PATH, animation_player, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "AnimationPlayer" )
@@ -50,6 +58,22 @@ void CbReaction::_bind_methods()
 	CB_REACTION_PROP( Variant::STRING, scene, PROPERTY_HINT_FILE, "*.tscn,*.scn" )
 	CB_REACTION_PROP( Variant::NODE_PATH, scene_parent, PROPERTY_HINT_NONE, "" )
 	CB_REACTION_PROP( Variant::FLOAT, scene_lifetime, PROPERTY_HINT_RANGE, "0,30,0.05,suffix:s" )
+	ADD_GROUP( "Place", "" );
+	CB_REACTION_PROP( Variant::INT, place, PROPERTY_HINT_ENUM, "Under its parent,Event point,Event end,Beam (point to end),Subject's bone,Follow the subject" )
+	CB_REACTION_PROP( Variant::STRING, bone, PROPERTY_HINT_PLACEHOLDER_TEXT, "RightHand" )
+	CB_REACTION_PROP( Variant::VECTOR3, offset, PROPERTY_HINT_NONE, "" )
+	ADD_GROUP( "Sound", "" );
+	CB_REACTION_PROP( Variant::STRING, sound, PROPERTY_HINT_FILE, "*.wav,*.ogg,*.mp3" )
+	CB_REACTION_PROP( Variant::FLOAT, volume_db, PROPERTY_HINT_RANGE, "-60,24,0.1,suffix:dB" )
+	CB_REACTION_PROP( Variant::FLOAT, pitch_scale, PROPERTY_HINT_RANGE, "0.01,4,0.01" )
+	CB_REACTION_PROP( Variant::FLOAT, pitch_jitter, PROPERTY_HINT_RANGE, "0,1,0.01" )
+	CB_REACTION_PROP( Variant::STRING, bus, PROPERTY_HINT_NONE, "" )
+	CB_REACTION_PROP( Variant::FLOAT, max_distance, PROPERTY_HINT_RANGE, "0,500,0.1,suffix:m" )
+	ADD_GROUP( "Screen", "" );
+	CB_REACTION_PROP( Variant::FLOAT, shake, PROPERTY_HINT_RANGE, "0,1,0.001" )
+	CB_REACTION_PROP( Variant::FLOAT, shake_time, PROPERTY_HINT_RANGE, "0,5,0.01,suffix:s" )
+	CB_REACTION_PROP( Variant::COLOR, flash_color, PROPERTY_HINT_NONE, "" )
+	CB_REACTION_PROP( Variant::FLOAT, flash_time, PROPERTY_HINT_RANGE, "0,5,0.01,suffix:s" )
 #undef CB_REACTION_PROP
 
 	BIND_ENUM_CONSTANT( WHEN_EVENT );
@@ -57,6 +81,12 @@ void CbReaction::_bind_methods()
 	BIND_ENUM_CONSTANT( SIDE_A );
 	BIND_ENUM_CONSTANT( SIDE_B );
 	BIND_ENUM_CONSTANT( SIDE_EITHER );
+	BIND_ENUM_CONSTANT( PLACE_PARENT );
+	BIND_ENUM_CONSTANT( PLACE_EVENT_POINT );
+	BIND_ENUM_CONSTANT( PLACE_EVENT_END );
+	BIND_ENUM_CONSTANT( PLACE_BEAM );
+	BIND_ENUM_CONSTANT( PLACE_BONE );
+	BIND_ENUM_CONSTANT( PLACE_FOLLOW );
 }
 
 PackedStringArray CbReaction::_get_configuration_warnings() const
@@ -70,9 +100,14 @@ PackedStringArray CbReaction::_get_configuration_warnings() const
 	{
 		warnings.push_back( "A \"while\" reaction needs conditions (like melee.hot, or pistol.ammo > 0)." );
 	}
-	if ( m_animation.is_empty() && m_property.is_empty() && m_method.is_empty() && m_scene.is_empty() )
+	if ( m_animation.is_empty() && m_property.is_empty() && m_method.is_empty() && m_scene.is_empty() && m_sound.is_empty() &&
+		 m_shake <= 0.0 && m_flashColor.a <= 0.0f )
 	{
-		warnings.push_back( "It does nothing yet: set an animation, a property, a method or a scene." );
+		warnings.push_back( "It does nothing yet: set an animation, a property, a method, a scene, a sound or a screen effect." );
+	}
+	if ( m_when == WHEN_WHILE && m_place != PLACE_PARENT && m_place != PLACE_FOLLOW )
+	{
+		warnings.push_back( "A \"while\" has no event to place things at: use Under its parent or Follow the subject." );
 	}
 	if ( m_method.is_empty() == false && m_target.is_empty() )
 	{
@@ -115,7 +150,12 @@ void CbReaction::set_on( bool on )
 
 void CbReaction::FireIn( Node* root, Node* limit )
 {
-	Act( true, root, limit );
+	Act( true, root, limit, nullptr );
+}
+
+void CbReaction::FireAt( Node* root, Node* limit, const Placement* place )
+{
+	Act( true, root, limit, place );
 }
 
 void CbReaction::SetOnIn( bool on, Node* root, Node* limit )
@@ -125,7 +165,7 @@ void CbReaction::SetOnIn( bool on, Node* root, Node* limit )
 		return;
 	}
 	m_on = on;
-	Act( on, root, limit );
+	Act( on, root, limit, nullptr );
 }
 
 bool CbReaction::Refused( const String& method, const String& property )
@@ -147,7 +187,35 @@ Node* CbReaction::Find( const NodePath& path, Node* root, Node* limit ) const
 	return found;
 }
 
-void CbReaction::Act( bool on, Node* root, Node* limit )
+void CbReaction::PlaySound( Node* parent, const Placement* place )
+{
+	Ref<AudioStream> stream = ResourceLoader::get_singleton()->load( m_sound, "AudioStream" );
+	if ( stream.is_null() || parent == nullptr )
+	{
+		return;
+	}
+	auto* player = memnew( AudioStreamPlayer3D );
+	player->set_stream( stream );
+	player->set_volume_db( float( m_volumeDb ) );
+	player->set_pitch_scale( float( std::max( 0.01, m_pitchScale + UtilityFunctions::randf_range( -m_pitchJitter, m_pitchJitter ) ) ) );
+	if ( m_bus.is_empty() == false )
+	{
+		player->set_bus( m_bus );
+	}
+	if ( m_maxDistance > 0.0 )
+	{
+		player->set_max_distance( float( m_maxDistance ) );
+	}
+	parent->add_child( player );
+	if ( place != nullptr && place->global )
+	{
+		player->set_global_position( place->transform.origin );
+	}
+	player->connect( "finished", Callable( player, "queue_free" ) );
+	player->play();
+}
+
+void CbReaction::Act( bool on, Node* root, Node* limit, const Placement* place )
 {
 	bool event = m_when == WHEN_EVENT;
 	bool refused = Refused( m_method, m_property );
@@ -204,10 +272,38 @@ void CbReaction::Act( bool on, Node* root, Node* limit )
 		{
 			Ref<PackedScene> packed = ResourceLoader::get_singleton()->load( m_scene, "PackedScene" );
 			Node* parent = m_sceneParent.is_empty() ? ( root != nullptr ? root : get_parent() ) : Find( m_sceneParent, root, limit );
+			if ( place != nullptr && place->parent != nullptr )
+			{
+				parent = place->parent;
+			}
 			Node* spawned = packed.is_valid() && parent != nullptr ? packed->instantiate() : nullptr;
 			if ( spawned != nullptr )
 			{
 				parent->add_child( spawned );
+				if ( auto* spatial = Object::cast_to<Node3D>( spawned ) )
+				{
+					if ( place != nullptr && place->global )
+					{
+						spatial->set_global_transform( place->transform );
+					}
+					else if ( place != nullptr )
+					{
+						spatial->set_position( m_offset );
+					}
+				}
+				// One-shot particles start over, so a pooled or cached scene still bursts.
+				TypedArray<Node> particles = spawned->find_children( "*", "GPUParticles3D", true, false );
+				if ( auto* self = Object::cast_to<GPUParticles3D>( spawned ) )
+				{
+					particles.push_back( self );
+				}
+				for ( int64_t i = 0; i < particles.size(); ++i )
+				{
+					if ( auto* emitter = Object::cast_to<GPUParticles3D>( particles[i] ) )
+					{
+						emitter->restart();
+					}
+				}
 				if ( event )
 				{
 					if ( m_sceneLifetime > 0.0 && is_inside_tree() )
@@ -228,6 +324,23 @@ void CbReaction::Act( bool on, Node* root, Node* limit )
 			m_spawned = ObjectID();
 		}
 	}
+
+	// Sound: once, where the scene would go.
+	if ( on && m_sound.is_empty() == false )
+	{
+		Node* parent = place != nullptr && place->parent != nullptr ? place->parent : ( root != nullptr ? root : get_parent() );
+		PlaySound( parent, place );
+	}
+}
+
+void CbItemLook::_bind_methods()
+{
+	ClassDB::bind_method( D_METHOD( "set_kind", "value" ), &CbItemLook::set_kind );
+	ClassDB::bind_method( D_METHOD( "get_kind" ), &CbItemLook::get_kind );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "kind", PROPERTY_HINT_PLACEHOLDER_TEXT, "melee.bat" ), "set_kind", "get_kind" );
+	ClassDB::bind_method( D_METHOD( "set_scene", "value" ), &CbItemLook::set_scene );
+	ClassDB::bind_method( D_METHOD( "get_scene" ), &CbItemLook::get_scene );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "scene", PROPERTY_HINT_FILE, "*.tscn,*.scn" ), "set_scene", "get_scene" );
 }
 
 } // namespace cb::gd

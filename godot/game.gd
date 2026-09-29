@@ -1,17 +1,16 @@
 extends Node3D
-## Base game presentation: input, camera, HUD binding and the VFX director.
+## Base game presentation: input, camera, HUD binding, and loading world reactions.
 ##
 ## Everything visual it uses is loaded by path, so mods can replace it:
 ##   res://ui/hud.tscn          HUD layout. Optional unique nodes: %Stats, %Banner, %Help, %Name.
 ##   res://ui/hud_*.tscn        HUDs that come with workshop items, laid over the game's.
-##   res://vfx/bindings*.tres   effect bindings (CbEffectTable): scenes, sounds and screen effects,
-##                              plus state bindings (held items, aimed arms).
-##   res://vfx/<event>.tscn     fallback one-shot effects: prop_spawn, prop_destroy, jump, land.
+##   res://vfx/reactions*.tscn  world reactions (CbReaction nodes: scenes, sounds and screen effects
+##                              on events) and item looks (CbItemLook nodes), run by the client.
 ##   res://prefabs/*.tscn       entity visuals (loaded by CinderboxClient).
 ##
 ## The game rules live in the server's mods. This script only knows the engine's own controls
 ## (move, sprint, jump, camera); everything else is an action the server declared, bound to the key
-## it suggested, and every mod event plays whatever the bindings say.
+## it suggested, and every event plays whatever the reactions say.
 ##
 ## Joining: the server announces the workshop items its mods need. They must all be in the local
 ## workshop (workshop.gd), exactly as announced, or the game leaves and says what is missing. Loaded
@@ -23,7 +22,6 @@ extends Node3D
 ## With --screenshot-every, autoplay also saves FILE_1.png, FILE_2.png, ... along the way.
 
 const MOUSE_SENSITIVITY := 0.003
-const VFX_LIFETIME := 3.0
 const ACTION_PREFIX := "cb_"
 const Boot := preload("res://boot.gd")
 const Workshop := preload("res://workshop.gd")
@@ -52,10 +50,6 @@ var _loaded_items := {} # sha256 -> true, loaded this session
 var _item_huds: Array[Node] = []
 var _refused := "" # why this server cannot be joined, shown on the banner
 
-var _vfx_cache := {}
-var _sound_cache := {}
-var _effects: Array = []
-var _cooldowns := {}
 var _actions: Array = [] # [{ name, bit, key }] from the server's mods
 
 var _shake := 0.0
@@ -87,22 +81,12 @@ func _ready() -> void:
 	auto_rng.seed = Time.get_ticks_usec()
 
 	client.visual_spawned.connect(_on_visual_spawned)
-	client.visual_destroying.connect(_on_visual_destroying)
-	client.player_jumped.connect(func(_id, pos, is_local):
-		_play_effects(CbEffect.EVENT_JUMPED, "jump", {"kind": "player", "position": pos, "is_local": is_local}))
-	client.player_landed.connect(func(_id, pos, is_local):
-		_play_effects(CbEffect.EVENT_LANDED, "land", {"kind": "player", "position": pos, "is_local": is_local}))
-	client.footstep.connect(func(_id, pos, is_local):
-		_play_effects(CbEffect.EVENT_FOOTSTEP, "", {"kind": "player", "position": pos, "is_local": is_local}))
-	client.impact.connect(func(_id, pos, strength, kind, template_name):
-		_play_effects(CbEffect.EVENT_IMPACT, "", {"kind": kind, "template": template_name, "position": pos,
-			"strength": strength}))
 	client.mod_event.connect(_on_mod_event)
-	client.action_pressed.connect(_on_action_pressed)
+	client.screen_effect.connect(_on_screen_effect)
 	client.schema_changed.connect(_on_schema_changed)
 	client.connection_state_changed.connect(func(state): print("connection: ", state))
 
-	_load_effects()
+	_load_reactions()
 	_make_flash_overlay()
 
 	var hud_scene: PackedScene = load("res://ui/hud.tscn")
@@ -232,12 +216,10 @@ func _refuse(reason: String) -> void:
 	client.disconnect_from_server()
 
 
-## Bindings and item HUDs, loaded again now that items may have added or replaced some.
+## Reactions and item HUDs, loaded again now that items may have added or replaced some.
 func _reload_presentation() -> void:
-	_effects.clear()
-	_cooldowns.clear()
-	client.clear_item_looks()
-	_load_effects()
+	client.clear_world_scenes()
+	_load_reactions()
 	for node in _item_huds:
 		node.queue_free()
 	_item_huds.clear()
@@ -448,143 +430,42 @@ func _make_flash_overlay() -> void:
 	layer.add_child(_flash_rect)
 
 
-# --- VFX director -------------------------------------------------------------------------------
+# --- World reactions -----------------------------------------------------------------------------
 #
-# What plays when is data: every res://vfx/bindings*.tres is loaded, so a mod adds effects by
-# adding a file of its own instead of replacing the game's. A binding picks an event and may narrow
-# it to one map template, one kind of entity, the local player, or board conditions. When nothing
-# matches, the old convention still applies: res://vfx/<event>.tscn.
-#
-# Mod events name two entities: a (who it is about) and b (the other one). A binding picks which
-# of them is its subject, and kind, template, who, conditions and bone are all checked on it.
+# What plays when is data: every res://vfx/reactions*.tscn is loaded once and handed to the client,
+# which runs its CbReaction nodes on every event (spawns, jumps, impacts, mod events, the local
+# player's presses). A mod adds reactions by adding a file of its own instead of replacing the
+# game's. Screen effects come back here, since the camera and the overlay are the game's.
 
-func _load_effects() -> void:
+func _load_reactions() -> void:
 	var names := []
 	for file in DirAccess.get_files_at("res://vfx"):
 		# Exported games list resources under their remapped names.
 		var clean: String = file.trim_suffix(".remap")
-		if clean.begins_with("bindings") and (clean.ends_with(".tres") or clean.ends_with(".res")):
+		if clean.begins_with("reactions") and (clean.ends_with(".tscn") or clean.ends_with(".scn")):
 			names.append(clean)
 	names.sort()
-	var looks := 0
 	for file in names:
-		var table = ResourceLoader.load("res://vfx/%s" % file, "", ResourceLoader.CACHE_MODE_REPLACE)
-		if table is CbEffectTable:
-			for effect in table.effects:
-				if effect is CbEffect:
-					_effects.append(effect)
-			for look in table.items:
-				if look is CbItemLook:
-					client.add_item_look(look)
-					looks += 1
-		else:
-			push_warning("vfx/%s is not a CbEffectTable" % file)
-	print("effect bindings: %d, item looks: %d, from %d file(s)" % [_effects.size(), looks, names.size()])
+		var scene := ResourceLoader.load("res://vfx/%s" % file, "PackedScene", ResourceLoader.CACHE_MODE_REPLACE) as PackedScene
+		if scene == null:
+			push_warning("vfx/%s is not a scene" % file)
+			continue
+		client.add_world_scene(scene.instantiate())
+	print("world reactions: ", names)
 
 
-func _on_mod_event(name: String, a: int, b: int, value: int, position: Vector3, vector: Vector3) -> void:
+func _on_mod_event(name: String, _a: int, _b: int, _value: int, _position: Vector3, _vector: Vector3) -> void:
 	_event_counts[name] = _event_counts.get(name, 0) + 1
-	_play_effects(CbEffect.EVENT_MOD, "", {"name": name, "subjects": [a, b], "value": value, "position": position,
-		"end": vector})
 
 
-func _on_action_pressed(name: String) -> void:
-	var me: int = client.get_local_net_id()
-	if me == 0:
-		return
-	_play_effects(CbEffect.EVENT_ACTION, "", {"name": name, "subjects": [me, 0], "value": 0,
-		"position": client.get_camera_target(), "end": Vector3.ZERO})
-
-
-# The kind, template and locality of the entity a binding is about.
-func _subject(effect: CbEffect, ctx: Dictionary) -> Dictionary:
-	if not ctx.has("subjects"):
-		return ctx
-	var id: int = ctx["subjects"][effect.subject]
-	return {"id": id, "kind": client.get_kind(id), "template": client.get_entity_template_name(id),
-		"is_local": id != 0 and id == client.get_local_net_id()}
-
-
-func _play_effects(event: int, fallback: String, ctx: Dictionary) -> void:
-	var played := false
-	var now := Time.get_ticks_msec() / 1000.0
-	for effect in _effects:
-		if effect.event != event:
-			continue
-		if (event == CbEffect.EVENT_MOD or event == CbEffect.EVENT_ACTION) and effect.name != ctx.get("name", ""):
-			continue
-		var subject := _subject(effect, ctx)
-		if effect.template_name != "" and effect.template_name != subject.get("template", ""):
-			continue
-		if effect.kind != "" and effect.kind != "any" and effect.kind != subject.get("kind", ""):
-			continue
-		if effect.who == CbEffect.WHO_LOCAL and not subject.get("is_local", false):
-			continue
-		if effect.who == CbEffect.WHO_REMOTE and subject.get("is_local", false):
-			continue
-		if effect.min_strength > 0.0 and ctx.get("strength", 0.0) < effect.min_strength:
-			continue
-		var value: int = ctx.get("value", 0)
-		if effect.value_filter == CbEffect.VALUE_POSITIVE and value <= 0:
-			continue
-		if effect.value_filter == CbEffect.VALUE_ZERO and value != 0:
-			continue
-		if not effect.conditions.is_empty() and not client.check_conditions(subject.get("id", 0), effect.conditions):
-			continue
-		if effect.cooldown > 0.0:
-			# Keeps a busy event (twenty props at once) from stacking twenty sounds.
-			var last: float = _cooldowns.get(effect, -1e9)
-			if now - last < effect.cooldown:
-				continue
-			_cooldowns[effect] = now
-
-		var position: Vector3 = ctx.get("position", Vector3.ZERO)
-		if effect.at_end:
-			position = ctx.get("end", position)
-		if effect.bone != "" and subject.get("id", 0) != 0:
-			position = client.get_bone_position(subject["id"], effect.bone)
-		var follow: Node3D = ctx.get("node", null)
-		if follow == null and effect.follow and subject.get("id", 0) != 0:
-			follow = client.get_entity_node(subject["id"])
-		if effect.beam:
-			_play_beam(effect.scene, position + effect.offset, ctx.get("end", position), effect.lifetime)
-		else:
-			_play_scene(effect.scene, position + effect.offset, effect.lifetime, follow if effect.follow else null)
-		_play_sound(effect, position + effect.offset)
-		if effect.shake > 0.0:
-			_shake = max(_shake, effect.shake)
-			_shake_decay = effect.shake / max(effect.shake_time, 0.05)
-		if effect.flash_color.a > 0.0:
-			_flash_color = effect.flash_color
-			_flash = effect.flash_color.a
-			_flash_decay = effect.flash_color.a / max(effect.flash_time, 0.02)
-		played = true
-	if not played and fallback != "":
-		_play_scene("res://vfx/%s.tscn" % fallback, ctx.get("position", Vector3.ZERO), VFX_LIFETIME, null)
-
-
-func _play_sound(effect: CbEffect, position: Vector3) -> void:
-	if effect.sound == "":
-		return
-	if not _sound_cache.has(effect.sound):
-		_sound_cache[effect.sound] = load(effect.sound) if ResourceLoader.exists(effect.sound) else null
-		if _sound_cache[effect.sound] == null:
-			push_warning("missing sound %s" % effect.sound)
-	var stream: AudioStream = _sound_cache[effect.sound]
-	if stream == null:
-		return
-	var player := AudioStreamPlayer3D.new()
-	player.stream = stream
-	player.volume_db = effect.volume_db
-	player.pitch_scale = max(0.01, effect.pitch_scale + auto_rng.randf_range(-effect.pitch_jitter, effect.pitch_jitter))
-	if effect.bus != "":
-		player.bus = effect.bus
-	if effect.max_distance > 0.0:
-		player.max_distance = effect.max_distance
-	add_child(player)
-	player.global_position = position
-	player.finished.connect(player.queue_free)
-	player.play()
+func _on_screen_effect(shake: float, shake_time: float, flash_color: Color, flash_time: float) -> void:
+	if shake > 0.0:
+		_shake = max(_shake, shake)
+		_shake_decay = shake / max(shake_time, 0.05)
+	if flash_color.a > 0.0:
+		_flash_color = flash_color
+		_flash = flash_color.a
+		_flash_decay = flash_color.a / max(flash_time, 0.02)
 
 
 func _update_screen_effects(delta: float) -> void:
@@ -595,69 +476,10 @@ func _update_screen_effects(delta: float) -> void:
 		_flash_rect.visible = _flash > 0.0
 
 
-func _instance(path: String) -> Node3D:
-	if path == "":
-		return null
-	if not _vfx_cache.has(path):
-		_vfx_cache[path] = load(path) if ResourceLoader.exists(path) else null
-		if _vfx_cache[path] == null:
-			push_warning("missing effect scene %s" % path)
-	var scene: PackedScene = _vfx_cache[path]
-	if scene == null:
-		return null
-	return scene.instantiate() as Node3D
-
-
-func _start(node: Node3D, lifetime: float) -> void:
-	for particles in node.find_children("*", "GPUParticles3D", true, false) + ([node] if node is GPUParticles3D else []):
-		particles.restart()
-	get_tree().create_timer(lifetime).timeout.connect(func():
-		if is_instance_valid(node):
-			node.queue_free())
-
-
-func _play_scene(path: String, position: Vector3, lifetime: float, parent: Node3D) -> void:
-	var node := _instance(path)
-	if node == null:
-		return
-	# Following an entity means living under it, so it dies with it too.
-	if parent != null and is_instance_valid(parent):
-		parent.add_child(node)
-		node.position = Vector3.ZERO
-	else:
-		add_child(node)
-		node.global_position = position
-	_start(node, lifetime)
-
-
-# A one-metre scene stretched along its -Z from `from` to `to`, like a tracer.
-func _play_beam(path: String, from: Vector3, to: Vector3, lifetime: float) -> void:
-	var length := from.distance_to(to)
-	if length < 0.01:
-		return
-	var node := _instance(path)
-	if node == null:
-		return
-	add_child(node)
-	node.global_position = from
-	node.look_at(to, Vector3.UP if abs((to - from).normalized().y) < 0.99 else Vector3.RIGHT)
-	node.scale = Vector3(1, 1, length)
-	_start(node, lifetime)
-
-
-func _on_visual_spawned(_visual_id: int, net_id: int, kind: String, node: Node3D, position: Vector3, with_effect: bool,
-		template_name: String) -> void:
+func _on_visual_spawned(_visual_id: int, net_id: int, kind: String, node: Node3D, _position: Vector3,
+		_with_effect: bool, _template_name: String) -> void:
 	if kind == "prop" and node != null and node.has_meta("tint_by_net_id"):
 		_tint(node, net_id)
-	if not with_effect:
-		return
-	_play_effects(CbEffect.EVENT_SPAWNED, "prop_spawn" if kind == "prop" else "",
-		{"kind": kind, "template": template_name, "position": position, "node": node})
-
-
-func _on_visual_destroying(_visual_id: int, _net_id: int, kind: String, position: Vector3, template_name: String) -> void:
-	_play_effects(CbEffect.EVENT_DESTROYING, "prop_destroy" if kind == "prop" else "",
-		{"kind": kind, "template": template_name, "position": position})
 
 
 func _tint(node: Node3D, net_id: int) -> void:
