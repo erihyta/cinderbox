@@ -2,14 +2,14 @@
 
 ; The game's own reactions to the world: spawns, jumps, landings, footsteps, impacts. Loaded once
 ; (like every res://vfx/reactions*.tscn), so these CbReaction nodes have no entity of their own:
-; each names what it is about from the event ("event.a"). A mod adds its own
+; each names what it is about from the cue ($at). A mod adds its own
 ; reactions_<name>.tscn, or replaces this file to change the game's.
 
 [node name="GameReactions" type="Node3D"]
 
 [node name="PropSpawn" type="CbReaction" parent="."]
 event = "spawned"
-subject = "event.a"
+subject = NodePath("$at")
 subject_kind = "prop"
 scene = "res://vfx/prop_spawn.tscn"
 scene_lifetime = 3.0
@@ -22,7 +22,7 @@ cooldown = 0.05
 
 [node name="PropDestroy" type="CbReaction" parent="."]
 event = "destroying"
-subject = "event.a"
+subject = NodePath("$at")
 subject_kind = "prop"
 scene = "res://vfx/prop_destroy.tscn"
 scene_lifetime = 3.0
@@ -35,7 +35,7 @@ cooldown = 0.08
 
 [node name="Jump" type="CbReaction" parent="."]
 event = "jumped"
-subject = "event.a"
+subject = NodePath("$at")
 subject_kind = "player"
 scene = "res://vfx/jump.tscn"
 scene_lifetime = 2.0
@@ -47,7 +47,7 @@ max_distance = 25.0
 
 [node name="Land" type="CbReaction" parent="."]
 event = "landed"
-subject = "event.a"
+subject = NodePath("$at")
 subject_kind = "player"
 scene = "res://vfx/land.tscn"
 scene_lifetime = 2.0
@@ -59,7 +59,7 @@ max_distance = 30.0
 
 [node name="LandShake" type="CbReaction" parent="."]
 event = "landed"
-subject = "event.a"
+subject = NodePath("$at")
 conditions = PackedStringArray("is_local")
 subject_kind = "player"
 place = 1
@@ -68,7 +68,7 @@ shake_time = 0.22
 
 [node name="BouncyTrail" type="CbReaction" parent="."]
 event = "spawned"
-subject = "event.a"
+subject = NodePath("$at")
 subject_template = "bouncy_ball"
 scene = "res://vfx/bouncy_trail.tscn"
 scene_lifetime = 25.0
@@ -76,7 +76,7 @@ place = 5
 
 [node name="Footstep" type="CbReaction" parent="."]
 event = "footstep"
-subject = "event.a"
+subject = NodePath("$at")
 subject_kind = "player"
 place = 1
 sound = "res://assets/sfx/footstep.wav"
@@ -86,7 +86,7 @@ max_distance = 18.0
 
 [node name="Impact" type="CbReaction" parent="."]
 event = "impact"
-subject = "event.a"
+subject = NodePath("$at")
 conditions = PackedStringArray("event.strength >= 2.5")
 place = 1
 sound = "res://assets/sfx/impact.wav"
@@ -97,7 +97,7 @@ cooldown = 0.03
 
 [node name="HardImpact" type="CbReaction" parent="."]
 event = "impact"
-subject = "event.a"
+subject = NodePath("$at")
 conditions = PackedStringArray("event.strength >= 8.0")
 scene = "res://vfx/prop_destroy.tscn"
 scene_lifetime = 1.5

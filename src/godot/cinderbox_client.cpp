@@ -3,12 +3,12 @@
 #include "cinderbox_animator.h"
 #include "cinderbox_character.h"
 #include "cinderbox_companion.h"
-#include "cinderbox_reaction.h"
 #include "cinderbox_skeleton.h"
 #include "detmath.h"
 #include "pose_tools.h"
 #include "types.h"
 
+#include <godot_cpp/classes/animation.hpp>
 #include <godot_cpp/classes/bone_attachment3d.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
@@ -130,6 +130,7 @@ void CinderboxClient::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "player_name" ), "set_player_name", "get_player_name_setting" );
 	ClassDB::bind_method( D_METHOD( "add_world_scene", "scene" ), &CinderboxClient::add_world_scene );
 	ClassDB::bind_method( D_METHOD( "clear_world_scenes" ), &CinderboxClient::clear_world_scenes );
+	ClassDB::bind_method( D_METHOD( "get_director" ), &CinderboxClient::get_director );
 	ClassDB::bind_method( D_METHOD( "get_stats" ), &CinderboxClient::get_stats );
 	ClassDB::bind_method( D_METHOD( "get_connection_state" ), &CinderboxClient::get_connection_state );
 	ClassDB::bind_method( D_METHOD( "has_local_player" ), &CinderboxClient::has_local_player );
@@ -189,9 +190,6 @@ void CinderboxClient::_bind_methods()
 							PropertyInfo( Variant::VECTOR3, "position" ), PropertyInfo( Variant::VECTOR3, "vector" ) ) );
 	// The local player just pressed a mod action; the server has not answered yet.
 	ADD_SIGNAL( MethodInfo( "action_pressed", PropertyInfo( Variant::STRING, "name" ) ) );
-	// A reaction shook the camera or flashed the screen (the game applies it to the viewer).
-	ADD_SIGNAL( MethodInfo( "screen_effect", PropertyInfo( Variant::FLOAT, "shake" ), PropertyInfo( Variant::FLOAT, "shake_time" ),
-							PropertyInfo( Variant::COLOR, "flash_color" ), PropertyInfo( Variant::FLOAT, "flash_time" ) ) );
 	// Someone joined, left or was renamed.
 	ADD_SIGNAL( MethodInfo( "names_changed" ) );
 }
@@ -293,12 +291,9 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 			emit_signal( "action_pressed", String( a.name.c_str() ) );
 			if ( m_mirror )
 			{
-				ReactionEvent e;
-				e.name = "pressed:" + a.name;
-				e.a = m_frame.frame.localNetId;
-				e.point = get_camera_target();
-				e.end = e.point;
-				FireReactions( e );
+				Dictionary args;
+				args["point"] = get_camera_target();
+				Cue( "pressed:" + a.name, m_frame.frame.localNetId, 0, args );
 			}
 		}
 	}
@@ -426,7 +421,7 @@ void CinderboxClient::HandleEvents()
 			}
 			case present::EventType::Removed:
 			{
-				m_reactions.erase( e.visual );
+				m_stateHashes.erase( e.visual );
 				m_sockets.erase( e.visual );
 				auto it = m_nodes.find( e.visual );
 				if ( it != m_nodes.end() )
@@ -484,50 +479,48 @@ void CinderboxClient::HandleEvents()
 			}
 		}
 
-		// Reactions hear the same events, by name (after a spawned entity's node exists).
-		ReactionEvent re;
-		re.a = e.netId;
-		re.point = position;
-		re.end = position;
+		// Reactions hear the same events as cues, by name (after a spawned entity's node exists).
+		std::string cue;
+		uint32_t other = 0;
+		Dictionary args;
+		args["point"] = position;
 		switch ( e.type )
 		{
 			case present::EventType::Spawned:
-				re.name = e.withEffect ? "spawned" : "";
+				cue = e.withEffect ? "spawned" : "";
 				break;
 			case present::EventType::Destroying:
-				re.name = "destroying";
+				cue = "destroying";
 				break;
 			case present::EventType::Jumped:
 			case present::EventType::Landed:
 			case present::EventType::Footstep:
-				re.name = e.type == present::EventType::Jumped ? "jumped" : e.type == present::EventType::Landed ? "landed" : "footstep";
-				re.point = position - Vector3( 0, present::kFeetOffset, 0 );
-				re.end = re.point;
+				cue = e.type == present::EventType::Jumped ? "jumped" : e.type == present::EventType::Landed ? "landed" : "footstep";
+				args["point"] = position - Vector3( 0, present::kFeetOffset, 0 );
 				break;
 			case present::EventType::Impact:
-				re.name = "impact";
-				re.b = e.otherNetId;
-				re.strength = e.strength;
+				cue = "impact";
+				other = e.otherNetId;
+				args["strength"] = e.strength;
 				break;
 			case present::EventType::Mod:
-				re.name = e.modType < m_frame.schema.events.size() ? m_frame.schema.events[e.modType] : "";
-				re.b = e.otherNetId;
-				re.value = e.value;
-				re.end = ToGodot( e.vector );
+				cue = e.modType < m_frame.schema.events.size() ? m_frame.schema.events[e.modType] : "";
+				other = e.otherNetId;
+				args["value"] = e.value;
+				args["end"] = ToGodot( e.vector );
 				break;
 			default:
 				break;
 		}
-		if ( re.name.empty() == false )
+		if ( cue.empty() == false )
 		{
-			FireReactions( re );
+			Cue( cue, e.netId, other, args );
 		}
 	}
 }
 
 void CinderboxClient::UpdateNodes()
 {
-	UpdateReactions( kWorldReactions, 0 );
 	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose& pose, const present::PlayerAnim* anim,
 							const present::RagdollAnim* ragdoll ) {
 		auto it = m_nodes.find( id );
@@ -540,7 +533,6 @@ void CinderboxClient::UpdateNodes()
 		{
 			return;
 		}
-		UpdateReactions( id, v.netId );
 		if ( v.kind == present::VisualKind::Item )
 		{
 			UpdateItem( v, node );
@@ -693,6 +685,7 @@ void CinderboxClient::CollectSockets( uint64_t visual, Node3D* node )
 {
 	std::vector<SocketPlace>& places = m_sockets[visual];
 	places.clear();
+	m_socketMoves.clear();
 	std::vector<CbSocket*> found;
 	CollectSocketNodes( node, found );
 	for ( CbSocket* socket : found )
@@ -721,9 +714,17 @@ void CinderboxClient::CollectSockets( uint64_t visual, Node3D* node )
 			place.local = Transform3D(); // not under a bone: at the bone itself
 		}
 		places.push_back( place );
+		// In the game every socket is a child of the entity itself, placed from the pose every frame:
+		// "^^/RightHand/Item" is the same path on every rig.
+		if ( socket->get_parent() != node )
+		{
+			m_socketMoves.emplace_back( String( node->get_path_to( socket ) ), String( socket->get_name() ) );
+			socket->get_parent()->remove_child( socket );
+			node->add_child( socket );
+		}
 	}
-	// Every character has hands to hold things in.
-	for ( const char* hand : { "RightHand", "LeftHand" } )
+	// Every character has hands to hold things in, and a head to hang things on.
+	for ( const char* hand : { "RightHand", "LeftHand", "Head" } )
 	{
 		bool have = false;
 		for ( const SocketPlace& place : places )
@@ -742,8 +743,9 @@ void CinderboxClient::CollectSockets( uint64_t visual, Node3D* node )
 		place.node = socket->get_instance_id();
 		place.name = hand;
 		place.bone = hand;
-		place.local = HandSocketFrame();
-		place.itemFrame = true;
+		bool isHand = String( hand ) != "Head";
+		place.local = isHand ? HandSocketFrame() : Transform3D();
+		place.itemFrame = isHand;
 		places.push_back( place );
 	}
 }
@@ -847,22 +849,10 @@ void CinderboxClient::UpdateItem( const present::Visual& v, Node3D* node )
 	node->set_visible( true );
 }
 
-// --- Reactions ------------------------------------------------------------------------------------
+// --- World: the director, cues and state ------------------------------------------------------------
 
 namespace
 {
-
-void CollectReactionNodes( Node* node, std::vector<CbReaction*>& out )
-{
-	if ( auto* reaction = Object::cast_to<CbReaction>( node ) )
-	{
-		out.push_back( reaction );
-	}
-	for ( int i = 0; i < node->get_child_count(); ++i )
-	{
-		CollectReactionNodes( node->get_child( i ), out );
-	}
-}
 
 void CollectItemLooks( Node* node, std::vector<CbItemLook*>& out )
 {
@@ -876,25 +866,55 @@ void CollectItemLooks( Node* node, std::vector<CbItemLook*>& out )
 	}
 }
 
-double NowSeconds()
+uint64_t Mix( uint64_t hash, uint64_t value )
 {
-	return double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
+	return ( hash ^ value ) * 1099511628211ull;
+}
+
+Variant FieldVariant( const BoardField& field, int32_t raw )
+{
+	switch ( field.type )
+	{
+		case BoardType::Bool:
+			return raw != 0;
+		case BoardType::Float:
+			return double( BoardToFloat( raw ) );
+		case BoardType::Int:
+		default:
+			return int64_t( raw );
+	}
 }
 
 } // namespace
 
-Node3D* CinderboxClient::WorldRoot()
+CbDirector* CinderboxClient::Director()
 {
-	if ( auto* root = Object::cast_to<Node3D>( ObjectDB::get_instance( m_worldRoot ) ) )
+	if ( auto* director = Object::cast_to<CbDirector>( ObjectDB::get_instance( m_director ) ) )
 	{
-		return root;
+		return director;
 	}
-	// Where world reaction scenes and placed effects live: at the origin, never moved.
-	auto* root = memnew( Node3D );
-	root->set_name( "World" );
-	add_child( root );
-	m_worldRoot = root->get_instance_id();
-	return root;
+	// At the origin, never moved: placed effects keep their world positions under it.
+	auto* director = memnew( CbDirector );
+	director->set_name( "World" );
+	director->set_auto_update( false ); // updated after the entities have moved, see _process
+	add_child( director );
+	m_director = ObjectID( director->get_instance_id() );
+	return director;
+}
+
+CbDirector* CinderboxClient::get_director()
+{
+	return Director();
+}
+
+String CinderboxClient::EntityName( const present::Visual& v ) const
+{
+	// Players by slot: stable while they are connected, so paths can name them.
+	if ( v.kind == present::VisualKind::Player )
+	{
+		return "player_" + String::num_int64( int64_t( v.slot ) );
+	}
+	return String( KindName( v.kind ) ) + "_" + String::num_int64( int64_t( v.netId ) );
 }
 
 void CinderboxClient::add_world_scene( Node* scene )
@@ -903,8 +923,8 @@ void CinderboxClient::add_world_scene( Node* scene )
 	{
 		return;
 	}
-	WorldRoot()->add_child( scene );
-	CollectReactions( kWorldReactions, scene, true );
+	Director()->add_child( scene );
+	m_worldScenes.push_back( ObjectID( scene->get_instance_id() ) );
 	std::vector<CbItemLook*> looks;
 	CollectItemLooks( scene, looks );
 	for ( CbItemLook* look : looks )
@@ -918,336 +938,115 @@ void CinderboxClient::add_world_scene( Node* scene )
 
 void CinderboxClient::clear_world_scenes()
 {
-	m_reactions.erase( kWorldReactions );
 	m_itemLooks.clear();
-	if ( auto* root = Object::cast_to<Node3D>( ObjectDB::get_instance( m_worldRoot ) ) )
+	for ( ObjectID id : m_worldScenes )
 	{
-		for ( int i = root->get_child_count() - 1; i >= 0; --i )
+		if ( auto* scene = Object::cast_to<Node>( ObjectDB::get_instance( id ) ) )
 		{
-			Node* child = root->get_child( i );
-			root->remove_child( child );
-			child->queue_free();
+			scene->get_parent()->remove_child( scene );
+			scene->queue_free();
 		}
 	}
+	m_worldScenes.clear();
 }
 
-void CinderboxClient::CollectReactions( uint64_t visual, Node* node, bool append )
+void CinderboxClient::Cue( const std::string& name, uint32_t a, uint32_t b, const Dictionary& args )
 {
-	std::vector<CbReaction*> found;
-	CollectReactionNodes( node, found );
-	if ( found.empty() && append == false )
-	{
-		m_reactions.erase( visual );
-		return;
-	}
-	std::vector<ReactionRef>& refs = m_reactions[visual];
-	if ( append == false )
-	{
-		refs.clear();
-	}
-	for ( CbReaction* reaction : found )
-	{
-		// A path that does not parse finds nothing (the editor shows why).
-		ReactionRef ref;
-		ref.node = reaction->get_instance_id();
-		ref.ownRoot = node->get_instance_id();
-		ref.isWhile = reaction->get_when() == CbReaction::WHEN_WHILE;
-		ref.event = ToStd( reaction->get_event().strip_edges() );
-		ref.eventSide = reaction->get_event_side();
-		bool ok = present::ParseEntityPath( ToStd( reaction->get_subject() ), ref.subject );
-		ref.subjectKind = ToStd( reaction->get_subject_kind().strip_edges() );
-		ref.subjectTemplate = ToStd( reaction->get_subject_template().strip_edges() );
-		ref.actOnOwnScene = reaction->get_act_on().strip_edges().is_empty();
-		ok &= present::ParseEntityPath( ToStd( reaction->get_act_on() ), ref.actOn );
-		PackedStringArray conditions = reaction->get_conditions();
-		for ( int64_t i = 0; i < conditions.size(); ++i )
-		{
-			present::PathCondition condition;
-			ok &= present::ParsePathCondition( ToStd( conditions[i] ), condition );
-			ref.conditions.push_back( std::move( condition ) );
-		}
-		ref.cooldown = reaction->get_cooldown();
-		ref.place = reaction->get_place();
-		ref.bone = reaction->get_bone();
-		ref.offset = reaction->get_offset();
-		if ( ok == false )
-		{
-			UtilityFunctions::push_warning( "CbReaction ", reaction->get_path(), ": a path or condition does not parse; it will not act" );
-			continue;
-		}
-		refs.push_back( std::move( ref ) );
-	}
+	Node* at = a != 0 ? get_entity_node( int64_t( a ) ) : nullptr;
+	Node* other = b != 0 ? get_entity_node( int64_t( b ) ) : nullptr;
+	Director()->cue( String::utf8( name.c_str() ), at, other, args );
 }
 
-void CinderboxClient::RefreshItemIndex()
+void CinderboxClient::PushStates()
 {
-	m_itemIndex.clear();
-	if ( !m_mirror )
-	{
-		return;
-	}
-	m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
+	CbDirector* director = Director();
+	const ModSchema& schema = m_frame.schema;
+	// Each entity's board as its state, when it changed: {"melee.hot": true, "pistol.ammo": 7}.
+	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
 							const present::RagdollAnim* ) {
-		if ( v.kind == present::VisualKind::Item && v.holder != 0 )
+		auto it = m_nodes.find( id );
+		auto* node = it != m_nodes.end() ? Object::cast_to<Node>( ObjectDB::get_instance( it->second ) ) : nullptr;
+		if ( node == nullptr || v.hasBoard == false )
 		{
-			m_itemIndex[( uint64_t( v.holder ) << 8 ) | v.socket] = v.netId;
+			return;
 		}
+		uint64_t hash = 1469598103934665603ull;
+		for ( const BoardField& field : schema.fields )
+		{
+			if ( field.scope == BoardScope::Entity )
+			{
+				hash = Mix( hash, uint32_t( v.board.values[field.slot] ) );
+			}
+		}
+		auto found = m_stateHashes.find( id );
+		if ( found != m_stateHashes.end() && found->second == hash )
+		{
+			return;
+		}
+		m_stateHashes[id] = hash;
+		Dictionary state;
+		for ( const BoardField& field : schema.fields )
+		{
+			if ( field.scope == BoardScope::Entity )
+			{
+				state[String::utf8( field.name.c_str() )] = FieldVariant( field, v.board.values[field.slot] );
+			}
+		}
+		director->set_state( node, state );
 	} );
-}
-
-present::PathContext CinderboxClient::PathContextFor( uint32_t self, uint32_t eventA, uint32_t eventB ) const
-{
-	present::PathContext context;
-	context.self = self;
-	context.eventA = eventA;
-	context.eventB = eventB;
-	context.local = m_frame.frame.localNetId;
-	context.holderOf = [this]( uint32_t netId ) -> uint32_t {
-		flecs::entity ve = m_mirror->VisualOf( netId );
-		if ( ve.is_valid() == false )
-		{
-			return 0;
-		}
-		const present::Visual& v = ve.get<present::Visual>();
-		return v.kind == present::VisualKind::Item ? v.holder : 0;
-	};
-	context.itemIn = [this]( uint32_t holder, const std::string& socket ) -> uint32_t {
-		for ( size_t i = 0; i < m_frame.schema.sockets.size(); ++i )
-		{
-			if ( m_frame.schema.sockets[i] == socket )
-			{
-				auto it = m_itemIndex.find( ( uint64_t( holder ) << 8 ) | i );
-				return it != m_itemIndex.end() ? it->second : 0;
-			}
-		}
-		return 0; // no mod declared that socket
-	};
-	return context;
-}
-
-const Blackboard* CinderboxClient::TargetBoard( const present::PathTarget& target ) const
-{
-	return target.world ? nullptr : BoardOf( target.netId ); // global fields read the global board anyway
-}
-
-bool CinderboxClient::ReactionHolds( const ReactionRef& r, const present::PathContext& context, const present::PathTarget& subject,
-									 const ReactionEvent* event ) const
-{
+	// The global board as the world's state; every declared name is known (?name).
 	const int32_t* globals = m_mirror->GlobalBoard();
-	for ( const present::PathCondition& c : r.conditions )
+	uint64_t hash = Mix( 1469598103934665603ull, schema.fields.size() );
+	for ( const BoardField& field : schema.fields )
 	{
-		present::PathTarget whose = c.path.parts.empty() ? subject : present::ResolveEntityPath( c.path, context );
-		if ( whose.Found() == false )
-		{
-			return false;
-		}
-		// Names that are not board fields: what the event carries, and whether it is about the viewer.
-		present::ExtraFields extra = [&]( const std::string& name, float& value ) {
-			if ( name == "is_local" )
-			{
-				value = whose.world == false && whose.netId != 0 && whose.netId == m_frame.frame.localNetId ? 1.0f : 0.0f;
-				return true;
-			}
-			if ( event != nullptr && name == "event.value" )
-			{
-				value = float( event->value );
-				return true;
-			}
-			if ( event != nullptr && name == "event.strength" )
-			{
-				value = event->strength;
-				return true;
-			}
-			return false;
-		};
-		if ( present::CheckCondition( m_frame.schema, c.condition, TargetBoard( whose ), globals, &extra ) == false )
-		{
-			return false;
-		}
+		hash = Mix( hash, field.scope == BoardScope::Global && globals != nullptr ? uint32_t( globals[field.slot] ) : field.slot );
 	}
-	return true;
+	if ( hash != m_worldStateHash )
+	{
+		m_worldStateHash = hash;
+		Dictionary world;
+		PackedStringArray known;
+		for ( const BoardField& field : schema.fields )
+		{
+			known.push_back( String::utf8( field.name.c_str() ) );
+			if ( field.scope == BoardScope::Global )
+			{
+				world[String::utf8( field.name.c_str() )] = FieldVariant( field, globals != nullptr ? globals[field.slot] : 0 );
+			}
+		}
+		director->set_world_state( world );
+		director->set_known( known );
+	}
+	director->set_local( m_frame.frame.localNetId != 0 ? get_entity_node( int64_t( m_frame.frame.localNetId ) ) : nullptr );
 }
 
-bool CinderboxClient::SubjectMatches( const ReactionRef& r, const present::PathTarget& subject ) const
+void CinderboxClient::RetargetCompanion( Node* entity, Node* root )
 {
-	if ( ( r.subjectKind.empty() || r.subjectKind == "any" ) && r.subjectTemplate.empty() )
-	{
-		return true;
-	}
-	flecs::entity ve = subject.world ? flecs::entity() : m_mirror->VisualOf( subject.netId );
-	if ( ve.is_valid() == false )
-	{
-		return false;
-	}
-	const present::Visual& v = ve.get<present::Visual>();
-	if ( r.subjectKind.empty() == false && r.subjectKind != "any" && r.subjectKind != KindName( v.kind ) )
-	{
-		return false;
-	}
-	return r.subjectTemplate.empty() || ToStd( TemplateName( v.templateIndex ) ) == r.subjectTemplate;
-}
-
-CbReaction::Placement CinderboxClient::PlacementFor( const ReactionRef& r, const present::PathTarget& subject, const ReactionEvent* event )
-{
-	CbReaction::Placement place;
-	Vector3 point = event != nullptr ? event->point : Vector3();
-	Vector3 end = event != nullptr ? event->end : point;
-	switch ( r.place )
-	{
-		case CbReaction::PLACE_EVENT_POINT:
-		case CbReaction::PLACE_EVENT_END:
-		case CbReaction::PLACE_BONE:
-		{
-			Vector3 at = r.place == CbReaction::PLACE_EVENT_END ? end : point;
-			if ( r.place == CbReaction::PLACE_BONE && subject.netId != 0 )
-			{
-				at = get_bone_position( int64_t( subject.netId ), r.bone );
-			}
-			place.global = true;
-			place.transform = Transform3D( Basis(), at + r.offset );
-			place.parent = WorldRoot(); // stays where it happened
-			break;
-		}
-		case CbReaction::PLACE_BEAM:
-		{
-			// A one-metre scene along its -Z, stretched from the point (or the subject's bone) to the
-			// end: a tracer from the muzzle hand.
-			Vector3 from = ( r.bone.is_empty() == false && subject.netId != 0 ? get_bone_position( int64_t( subject.netId ), r.bone ) : point ) +
-						   r.offset;
-			Vector3 along = end - from;
-			float length = along.length();
-			Basis basis;
-			if ( length > 0.01f )
-			{
-				Vector3 up = std::abs( along.normalized().y ) < 0.99f ? Vector3( 0, 1, 0 ) : Vector3( 1, 0, 0 );
-				basis = Basis::looking_at( along, up ).scaled_local( Vector3( 1, 1, length ) );
-			}
-			place.global = true;
-			place.transform = Transform3D( basis, from );
-			place.parent = WorldRoot();
-			break;
-		}
-		case CbReaction::PLACE_FOLLOW:
-			place.parent = subject.netId != 0 ? get_entity_node( int64_t( subject.netId ) ) : nullptr;
-			break;
-		case CbReaction::PLACE_PARENT:
-		default:
-			break;
-	}
-	return place;
-}
-
-bool CinderboxClient::ReactionScope( const ReactionRef& r, const present::PathContext& context, Node*& root, Node*& limit ) const
-{
-	root = nullptr;
-	limit = nullptr;
-	if ( r.actOnOwnScene )
-	{
-		limit = Object::cast_to<Node>( ObjectDB::get_instance( r.ownRoot ) );
-		return limit != nullptr;
-	}
-	present::PathTarget target = present::ResolveEntityPath( r.actOn, context );
-	if ( target.world )
-	{
-		root = Object::cast_to<Node>( ObjectDB::get_instance( m_mapVisual ) ); // the map's own scene, if it has one
-	}
-	else if ( target.netId != 0 )
-	{
-		root = get_entity_node( int64_t( target.netId ) );
-	}
-	limit = root;
-	return root != nullptr;
-}
-
-void CinderboxClient::UpdateReactions( uint64_t visual, uint32_t self )
-{
-	auto it = m_reactions.find( visual );
-	if ( it == m_reactions.end() )
+	if ( m_companionLibrary.is_null() || m_socketMoves.empty() ||
+		 ObjectID( m_companionLibrary->get_instance_id() ) == m_retargetedLibrary )
 	{
 		return;
 	}
-	present::PathContext context = PathContextFor( self, 0, 0 );
-	for ( ReactionRef& r : it->second )
+	m_retargetedLibrary = ObjectID( m_companionLibrary->get_instance_id() );
+	// Track paths are from `root`; the moves are from the entity.
+	String rootFromEntity = String( entity->get_path_to( root ) );
+	String entityFromRoot = String( root->get_path_to( entity ) );
+	TypedArray<StringName> names = m_companionLibrary->get_animation_list();
+	for ( int64_t i = 0; i < names.size(); ++i )
 	{
-		auto* reaction = r.isWhile ? Object::cast_to<CbReaction>( ObjectDB::get_instance( r.node ) ) : nullptr;
-		if ( reaction == nullptr )
+		Ref<Animation> animation = m_companionLibrary->get_animation( names[i] );
+		for ( int32_t t = 0; animation.is_valid() && t < animation->get_track_count(); ++t )
 		{
-			continue;
-		}
-		present::PathTarget subject = present::ResolveEntityPath( r.subject, context );
-		Node* root = nullptr;
-		Node* limit = nullptr;
-		bool on = subject.Found() && SubjectMatches( r, subject ) && ReactionScope( r, context, root, limit ) &&
-				  ReactionHolds( r, context, subject, nullptr );
-		ObjectID where = limit != nullptr ? ObjectID( limit->get_instance_id() ) : ObjectID();
-		if ( on && reaction->is_on() && where != r.onRoot )
-		{
-			reaction->SetOnIn( false, nullptr, nullptr ); // the scene it acts in changed (another item in the hand)
-		}
-		reaction->SetOnIn( on, root, limit );
-		r.onRoot = on ? where : ObjectID();
-	}
-}
-
-void CinderboxClient::FireReactions( const ReactionEvent& event )
-{
-	if ( m_reactions.empty() || !m_mirror )
-	{
-		return;
-	}
-	const auto& visuals = m_mirror->World();
-	double now = NowSeconds();
-	for ( auto& [visual, refs] : m_reactions )
-	{
-		uint32_t self = 0; // world reactions have no entity of their own
-		if ( visual != kWorldReactions )
-		{
-			flecs::entity ve( visuals, visual );
-			if ( ve.is_alive() == false || ve.has<present::Visual>() == false )
+			String path = String( animation->track_get_path( t ) );
+			String full = rootFromEntity == "." ? path : rootFromEntity + "/" + path;
+			for ( const auto& [from, to] : m_socketMoves )
 			{
-				continue;
-			}
-			self = ve.get<present::Visual>().netId;
-		}
-		present::PathContext context = PathContextFor( self, event.a, event.b );
-		for ( ReactionRef& r : refs )
-		{
-			if ( r.isWhile || r.event != event.name )
-			{
-				continue;
-			}
-			// The event names the subject on the reaction's side (a subject from the event: any).
-			present::PathTarget subject = present::ResolveEntityPath( r.subject, context );
-			bool atA = subject.netId == event.a && event.a != 0;
-			bool atB = subject.netId == event.b && event.b != 0;
-			bool named = r.eventSide == CbReaction::SIDE_A ? atA : r.eventSide == CbReaction::SIDE_B ? atB : ( atA || atB );
-			if ( subject.Found() == false || ( r.subject.UsesEvent() == false && named == false ) || SubjectMatches( r, subject ) == false )
-			{
-				continue;
-			}
-			Node* root = nullptr;
-			Node* limit = nullptr;
-			if ( ReactionHolds( r, context, subject, &event ) == false || ReactionScope( r, context, root, limit ) == false )
-			{
-				continue;
-			}
-			// Keeps a busy event (twenty props at once) from stacking twenty sounds.
-			if ( r.cooldown > 0.0 && now - r.lastFired < r.cooldown )
-			{
-				continue;
-			}
-			r.lastFired = now;
-			auto* reaction = Object::cast_to<CbReaction>( ObjectDB::get_instance( r.node ) );
-			if ( reaction == nullptr )
-			{
-				continue;
-			}
-			CbReaction::Placement place = PlacementFor( r, subject, &event );
-			reaction->FireAt( root, limit, &place );
-			if ( reaction->get_shake() > 0.0 || reaction->get_flash_color().a > 0.0f )
-			{
-				emit_signal( "screen_effect", reaction->get_shake(), reaction->get_shake_time(), reaction->get_flash_color(),
-							 reaction->get_flash_time() );
+				if ( full == from || full.begins_with( from + String( "/" ) ) || full.begins_with( from + String( ":" ) ) )
+				{
+					String moved = to + full.substr( from.length() );
+					animation->track_set_path( t, NodePath( entityFromRoot == "." ? moved : entityFromRoot + "/" + moved ) );
+					break;
+				}
 			}
 		}
 	}
@@ -1265,7 +1064,7 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 	{
 		node = memnew( Node3D );
 	}
-	node->set_name( String( KindName( v.kind ) ) + "_" + String::num_int64( int64_t( v.netId ) ) );
+	node->set_name( EntityName( v ) );
 	// A character's AnimationTree is where its state machine was authored; the simulation runs the
 	// baked one, so the tree stays off in the game (switched off before it enters the scene, so it
 	// never sets itself up).
@@ -1287,19 +1086,23 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 		}
 		else
 		{
-			add_child( node );
+			Director()->add_child( node );
 		}
 	}
 	else
 	{
-		add_child( node );
+		Director()->add_child( node );
 	}
 	m_nodes[visual] = node->get_instance_id();
+	m_stateHashes.erase( visual );
+	String templateName = v.kind == present::VisualKind::Item && v.itemKind < m_frame.schema.itemKinds.size()
+							  ? String::utf8( m_frame.schema.itemKinds[v.itemKind].c_str() )
+							  : TemplateName( v.templateIndex );
+	Director()->add_entity( node, String( KindName( v.kind ) ), templateName );
 	if ( v.kind == present::VisualKind::Player )
 	{
 		CollectSockets( visual, node );
 	}
-	CollectReactions( visual, node, false );
 
 	m_companions.erase( visual );
 	if ( v.kind == present::VisualKind::Player && m_companionLibrary.is_valid() )
@@ -1314,6 +1117,7 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 				auto* companion = memnew( CbCompanionPlayer );
 				companion->set_name( "Companion" );
 				source->get_parent()->add_child( companion );
+				RetargetCompanion( node, root );
 				companion->setup( m_companionLibrary, root );
 				m_companions[visual] = companion->get_instance_id();
 			}
@@ -1350,6 +1154,7 @@ void CinderboxClient::RebuildCharacterNodes()
 	{
 		if ( auto* old = Object::cast_to<Node>( ObjectDB::get_instance( m_nodes[id] ) ) )
 		{
+			old->set_name( "Removed" ); // the new one takes its name now
 			old->queue_free();
 		}
 		CreateNode( id, v );
@@ -1825,9 +1630,10 @@ void CinderboxClient::_process( double delta )
 	m_frame.frame.rolledBack = false;
 
 	UpdateMapVisual();
-	RefreshItemIndex();
 	HandleEvents();
 	UpdateNodes();
+	PushStates();
+	Director()->update();
 }
 
 String CinderboxClient::TemplateName( uint32_t index ) const
@@ -1862,10 +1668,12 @@ void CinderboxClient::UpdateMapVisual()
 	{
 		if ( auto* node = Object::cast_to<Node>( ObjectDB::get_instance( entry.second ) ) )
 		{
+			node->set_name( "Removed" );
 			node->queue_free();
 		}
 	}
 	m_nodes.clear();
+	m_stateHashes.clear();
 
 	if ( m_frame.mapName.empty() )
 	{
@@ -1885,8 +1693,8 @@ void CinderboxClient::UpdateMapVisual()
 		UtilityFunctions::push_warning( "Cinderbox: cannot instantiate ", path );
 		return;
 	}
-	node->set_name( "MapVisual" );
-	add_child( node );
+	node->set_name( "Map" );
+	Director()->add_child( node );
 	m_mapVisual = node->get_instance_id();
 	m_hideStaticBoxes = true;
 }

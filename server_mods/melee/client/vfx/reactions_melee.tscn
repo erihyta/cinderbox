@@ -7,9 +7,9 @@
 
 [node name="Swing" type="CbReaction" parent="."]
 event = "melee.swing"
-subject = "event.a"
+subject = NodePath("$at")
 place = 4
-bone = "RightHand"
+place_node = NodePath("$at/RightHand")
 sound = "res://assets/sfx/swing.wav"
 volume_db = -6.0
 pitch_jitter = 0.08
@@ -17,7 +17,7 @@ max_distance = 30.0
 
 [node name="HitPlayer" type="CbReaction" parent="."]
 event = "melee.hit"
-subject = "event.a"
+subject = NodePath("$at")
 conditions = PackedStringArray("event.value > 0")
 place = 1
 sound = "res://assets/sfx/bat_hit.wav"
@@ -27,7 +27,7 @@ max_distance = 40.0
 
 [node name="Hurt" type="CbReaction" parent="."]
 event = "melee.hit"
-subject = "event.b"
+subject = NodePath("$other")
 conditions = PackedStringArray("is_local", "event.value > 0")
 place = 1
 shake = 0.08
@@ -37,7 +37,7 @@ flash_time = 0.3
 
 [node name="HitProp" type="CbReaction" parent="."]
 event = "melee.hit"
-subject = "event.a"
+subject = NodePath("$at")
 conditions = PackedStringArray("event.value == 0")
 place = 1
 sound = "res://assets/sfx/bat_hit.wav"

@@ -1,5 +1,7 @@
 # Cinderbox GDExtension: the Godot client (see cinderbox_client.h).
 
+add_subdirectory(cue)
+
 add_library(cinderbox_gd SHARED
 	cinderbox_animator.cpp
 	cinderbox_character.cpp
@@ -7,14 +9,14 @@ add_library(cinderbox_gd SHARED
 	cinderbox_companion.cpp
 	cinderbox_entity_nodes.cpp
 	cinderbox_hud.cpp
+	cinderbox_item_look.cpp
 	cinderbox_map_nodes.cpp
-	cinderbox_reaction.cpp
 	cinderbox_skeleton.cpp
 	client_thread.cpp
 	register_types.cpp
 )
 
-target_link_libraries(cinderbox_gd PRIVATE cb_client_core cb_present godot::cpp ozz_animation_offline)
+target_link_libraries(cinderbox_gd PRIVATE cb_client_core cb_present cb_cue godot::cpp ozz_animation_offline)
 cb_target_warnings(cinderbox_gd)
 
 get_target_property(CB_GODOTCPP_SUFFIX godot-cpp GODOTCPP_SUFFIX)

@@ -5,7 +5,9 @@
 #include "cinderbox_entity_nodes.h"
 #include "cinderbox_hud.h"
 #include "cinderbox_map_nodes.h"
-#include "cinderbox_reaction.h"
+#include "cinderbox_item_look.h"
+#include "cue_director.h"
+#include "cue_reaction.h"
 #include "cinderbox_skeleton.h"
 
 #include <gdextension_interface.h>
@@ -33,6 +35,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbCharacter );
 	GDREGISTER_CLASS( cb::gd::CbSocket );
 	GDREGISTER_CLASS( cb::gd::CbAnimPack );
+	GDREGISTER_CLASS( cb::gd::CbDirector );
 	GDREGISTER_CLASS( cb::gd::CbReaction );
 	GDREGISTER_CLASS( cb::gd::CbCompanionPlayer );
 	// Map authoring: inert marker nodes plus the baker they are baked with.

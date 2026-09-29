@@ -6,7 +6,7 @@
 
 [node name="LocalLand" type="CbReaction" parent="."]
 event = "landed"
-subject = "event.a"
+subject = NodePath("$at")
 conditions = PackedStringArray("is_local")
 subject_kind = "player"
 scene = "res://vfx/prop_spawn.tscn"
@@ -19,7 +19,7 @@ offset = Vector3(0, 0.1, 0)
 
 [node name="CrateBreak" type="CbReaction" parent="."]
 event = "destroying"
-subject = "event.a"
+subject = NodePath("$at")
 subject_template = "heavy_crate"
 scene = "res://vfx/prop_spawn.tscn"
 scene_lifetime = 3.0
@@ -27,7 +27,7 @@ place = 1
 
 [node name="SpawnFlash" type="CbReaction" parent="."]
 event = "spawned"
-subject = "event.a"
+subject = NodePath("$at")
 conditions = PackedStringArray("is_local")
 subject_kind = "prop"
 place = 1
