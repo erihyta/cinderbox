@@ -43,6 +43,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M34: entity paths: a reaction's subject, conditions and the scene it acts in can be any related entity (`holder/item:LeftHand`, `event.b`, `local`, `world`) | done |
 | M35: world reactions: `vfx/reactions*.tscn` scenes of `CbReaction` nodes replace effect bindings (`CbEffect`); built-in events, placement, sounds and screen effects on the same node | done |
 | M36: reactions address the scene tree the Roblox way (`^^/RightHand/Item`, `$other/Head`); `CbDirector` + `CbReaction` are a standalone Godot addon the client drives with cues and state | done |
+| M37: Cue Preview: an editor panel that plays a scene's reactions (fire cues, set state, pick the viewer) with no game running | done |
 
 ## Building
 
@@ -829,6 +830,30 @@ World node: a workshop item cannot reach the game's HUD or menus.
   `set_world_state`, `set_local`, `cue( name, at, other, { value, strength, point, end } )`.
   `check_reactions.gd` drives one by hand, with no server:
   `godot --headless --path godot --script res://addons/cinderbox_maps/check_reactions.gd`.
+
+#### Cue Preview (editor)
+
+Every project with the Cinderbox extension has a **Cue Preview** bottom panel: it plays the edited
+scene's reactions with no game running. The scene is copied onto a small stage (unsaved edits
+included; the edited scene is never touched), next to two stand-in players with `RightHand`,
+`LeftHand` and `Head` sockets:
+
+| The scene is | It goes | Found by |
+|---|---|---|
+| a held item (the bat) | `player_0/RightHand/Item`, so `^^` is player_0 | default |
+| a character | `player_0` itself | it has a `Skeleton3D` |
+| world reactions (`vfx/reactions*.tscn`) | under the World | subjects start with `$`, nothing to draw |
+
+The mode can be picked by hand, and **Reload** copies the scene again after edits.
+
+- **Fire a cue**: its name (the scene's own cues are listed, and the game's), `$at` and `$other`
+  (player_0, player_1, the item), `value` and `strength`. The cue's point is `$other`'s chest.
+- **State**: every name the scene's conditions read gets a field, on player_0, player_1, the item
+  or the world (0 is false). The bat: `melee.hot` = 1 lights the barrel, 0 puts it out.
+- **local**: which stand-in is the viewer (`$local`, `is_local`).
+- Screen effects flash and shake the preview; sounds play.
+- Like the game's other bottom panels, it only draws while it is showing (opening a character
+  brings up the Animation panel instead).
 
 ### State machines
 
