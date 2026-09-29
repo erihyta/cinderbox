@@ -941,6 +941,32 @@ through the simulation's relations instead.
 - **Not done**: reactions still live only in entity scenes (world reactions and replacing
   `CbEffect` are M35); paths cannot name "the nearest player" or an entity by template.
 
+## World reactions (M35)
+Effect bindings (`CbEffect` in a `CbEffectTable`, M9-M15) and reactions (M33-M34) did the same job
+two ways: "when this happens, do that". Now there is one: `CbReaction`.
+
+- **World scenes**: every `res://vfx/reactions*.tscn` is loaded once and given to the client
+  (`add_world_scene`), which keeps it under a `World` node. Its reactions have no self; they name
+  their subject from the event. Its `CbItemLook` nodes (now nodes, not resources) say how items look.
+- **Events**: the simulation's own are names now (`spawned`, `destroying`, `jumped`, `landed`,
+  `footstep`, `impact`) next to mod events, plus `pressed:<action>` for the local player's press.
+  Entity scenes hear them too (a player's scene can react to its own footsteps).
+- **What bindings had, as reaction fields**: kind and template filters, cooldown, placement (event
+  point or end, a beam from the point or a bone, a bone, following the subject), sound, camera
+  shake and flash (emitted to the game as `screen_effect`). `who` and `value_filter` and
+  `min_strength` became conditions: `is_local`, `event.value > 0`, `event.strength >= 8`.
+- **Converted**: all 29 bindings of the game, pistol, melee, deathmatch and the neon example, by a
+  one-off script; the `res://vfx/<event>.tscn` fallback is gone (the game's own reactions name
+  those scenes). `game.gd` lost its effect director; it loads scenes and applies screen effects.
+- **Verified**: every reactions scene loads in its project; `check_reactions.gd`; all suites and
+  reference hashes (`lossy_session`'s timing check fails on this machine right now, and did so with
+  a binary from before M33 as well; it passes in CI); a rendered session with three pistol bots:
+  126 impacts, 86 footsteps, 37 jumps, 35 landings, 14 spawns, 93 tracers (82 remote shots and 11
+  predicted local ones), 77 player hits, 17 surface hits, 20 hurt flashes, 5 death flashes, no
+  desyncs.
+- **Not done**: a While in a world scene cannot place things at an event (it has none); screen
+  effects are still applied by `game.gd`, so a mod replacing the camera must handle the signal.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1048,3 +1074,4 @@ through the simulation's relations instead.
 32. **M32** (done): animation packs: mods ship AnimationTree layers (`CbAnimPack`) and swap a player's layer for them by name (`SwapLayer` / `RestoreLayer`), in the simulation and every pose; clips retargeted by humanoid-profile names; the `sneak` mod's crouch.
 33. **M33** (done): `CbReaction` nodes (on event / while, self / holder; animation, property, method, scene); the implicit item rules and `CbStateBinding` removed; the pistol as a held item; the bat's glow and sparks as reactions; item swaps across mods destroy by NetId.
 34. **M34** (done): entity paths (`self`, `holder`, `item:<socket>`, `event.a`, `event.b`, `local`, `world`) for a reaction's subject, conditions and `act_on`; `event_side`; lookups contained in the scene they resolve in, `free` / `queue_free` / `script` refused.
+35. **M35** (done): world reactions: `vfx/reactions*.tscn` scenes loaded once replace `CbEffect` / `CbEffectTable`; built-in events and `pressed:<action>` by name; filters, cooldown, placement, sound and screen effects on `CbReaction`; `CbItemLook` as a node; all bindings converted.
