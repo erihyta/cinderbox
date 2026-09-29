@@ -21,6 +21,7 @@
 #include "anim_set.h"
 #include "cinderbox_effects.h"
 #include "client_thread.h"
+#include "entity_path.h"
 #include "fields.h"
 #include "mirror.h"
 
@@ -224,16 +225,27 @@ private:
 	{
 		godot::ObjectID node;
 		bool isWhile = false;
-		bool holder = false; // the subject is the item's holder, not the entity itself
+		int eventSide = 0; // CbReaction::EventSide
 		std::string event;
-		std::vector<std::string> conditions;
+		present::EntityPath subject;
+		present::EntityPath actOn;
+		bool actOnOwnScene = true; // no act_on: node paths from the reaction, inside its own entity
+		std::vector<present::PathCondition> conditions;
+		godot::ObjectID onRoot; // a "while" that holds: the scene it acted in
 	};
 	std::unordered_map<uint64_t, std::vector<ReactionRef>> m_reactions;
+	// Held items by holder and socket index, for item:<socket> steps (refreshed every frame).
+	std::unordered_map<uint64_t, uint32_t> m_itemIndex;
+	void RefreshItemIndex();
+	present::PathContext PathContextFor( uint32_t self, uint32_t eventA, uint32_t eventB ) const;
+	const Blackboard* TargetBoard( const present::PathTarget& target ) const;
+	bool ReactionHolds( const ReactionRef& r, const present::PathContext& context, const present::PathTarget& subject ) const;
+	// Where a reaction's node paths resolve (null: from the reaction) and what they may touch.
+	bool ReactionScope( const ReactionRef& r, uint64_t visual, const present::PathContext& context, godot::Node*& root,
+						godot::Node*& limit ) const;
 	void CollectReactions( uint64_t visual, godot::Node* node );
-	// The net id and board a reaction of this visual is about (0 when it has none).
-	uint32_t ReactionSubject( const ReactionRef& r, const present::Visual& v, const Blackboard** board ) const;
 	void UpdateReactions( uint64_t visual, const present::Visual& v );
-	void FireReactions( const std::string& event, uint32_t netId );
+	void FireReactions( const std::string& event, uint32_t netId, uint32_t otherNetId );
 
 	// Held items: their looks by kind, and each character's sockets (placed from the pose every
 	// frame; items are their children).

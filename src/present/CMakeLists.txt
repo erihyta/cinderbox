@@ -1,4 +1,5 @@
 add_library(cb_present STATIC
+	entity_path.cpp
 	fields.cpp
 	frame.cpp
 	mirror.cpp
