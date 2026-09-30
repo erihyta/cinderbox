@@ -1022,6 +1022,31 @@ ran without Cinderbox, so the preview is a stage for it inside the editor.
 - **Not done**: the stand-ins do not animate (a character's clips, and so its companion tracks, do
   not play); there is no timeline to script a sequence of cues; the camera cannot be moved.
 
+## Reaction polish (M38)
+A review of `CbReaction` before anything else is built on it.
+
+- **Fixed**: a While leaving the tree while on (a world scene reloaded, an item put away) left its
+  property set and its scene behind; a method needing arguments failed on every firing; `call`,
+  `callv`, `propagate_call`, `set` and others could do what `queue_free` is refused for; a cue scene
+  with `scene_lifetime` 0 was never freed, silently; a reaction that did not parse was skipped
+  silently in the game; a While's looping animation kept playing after it ended.
+- **New**: `method_args`; a Timing group (`delay`, `chance`, `cooldown`); `blend_time` (a tween, so
+  the bat's glow can fade as its old AnimationTree crossfade did); `CbDirector.explain()`, which the
+  Cue Preview uses to say what every listening reaction did or why not; screen effects are emitted
+  by the reaction itself (after its delay).
+- **Help**: a class reference (`doc_classes/*.xml`, compiled in with godot-cpp's
+  `target_doc_sources`) for hover texts and F1; an inspector plugin that opens every group with an
+  info line and a button for more; info buttons on the Cue Preview's controls. A missing colon in
+  a path condition (`^^combat.health`) is now a warning with the fix.
+- **Found on the way**: an unescaped `default=""` made the XML invalid and Godot dropped the whole
+  reference without a word; the enum hint "A: ..." was read as `name:value`.
+- **Verified**: `check_reactions.gd` (28 checks, 10 new: explain, method_args, the refused `call`,
+  delay, chance 0, blend_time, a While undoing itself on leaving the tree); in the editor, the info
+  rows, the popup and the class page (captured with a temporary hook).
+- **Ideas not built**: a value that follows state continuously (a light's energy from
+  `combat.health`); a reaction that sends a cue of its own (chains); a timeline of cues in the
+  preview; text fields with anchor completion instead of the NodePath picker.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1132,3 +1157,4 @@ ran without Cinderbox, so the preview is a stage for it inside the editor.
 35. **M35** (done): world reactions: `vfx/reactions*.tscn` scenes loaded once replace `CbEffect` / `CbEffectTable`; built-in events and `pressed:<action>` by name; filters, cooldown, placement, sound and screen effects on `CbReaction`; `CbItemLook` as a node; all bindings converted.
 36. **M36** (done): the scene tree as the address space: a stable World tree (`player_<slot>`, sockets as entity children, companion tracks rewritten), anchors (`^`, `^^`, `$at`, `$other`, `$local`, `$world`) on ordinary NodePaths; `CbDirector` + `CbReaction` as a standalone addon (`cb_cue`) driven by cues and entity state; M34's entity paths replaced.
 37. **M37** (done): Cue Preview, an editor bottom panel in the cue addon: the edited scene on a stage with stand-in players, cues fired and state set by hand, screen effects shown; verified on the bat, the pistol's world reactions and the mannequin.
+38. **M38** (done): reaction polish: fixes (a While undoes itself when it leaves the tree, a wider refused list, warnings for leaks and parse errors), `method_args`, `delay` / `chance`, `blend_time`, `explain()` in the Cue Preview, and in-editor help (class reference, info rows, info buttons).
