@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbItemLook" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		How a kind of held item looks: the scene drawn in its holder's socket.
+	</brief_description>
+	<description>
+		Put it in a world reactions scene ([code]vfx/reactions_*.tscn[/code]). The scene is the item's frame (the socket's): the grip at the origin, pointing along -Z.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="kind" type="String" setter="set_kind" getter="get_kind" default="&quot;&quot;">
+			The item kind a server mod declared: [code]melee.bat[/code].
+		</member>
+		<member name="scene" type="String" setter="set_scene" getter="get_scene" default="&quot;&quot;">
+			The scene drawn in the socket, named [code]Item[/code].
+		</member>
+	</members>
+</class>

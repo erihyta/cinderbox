@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbDirector" inherits="Node3D" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		Runs the CbReaction nodes under it from cues and entity state. Plain Godot: anything can drive it.
+	</brief_description>
+	<description>
+		The World node: entities (nodes told about with [method add_entity]) carry their kind, template and state as metadata, and every [CbReaction] under it registers itself. In the game the Cinderbox client drives it; the Cue Preview panel and tests drive one by hand.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="add_entity">
+			<return type="void" />
+			<param index="0" name="node" type="Node" />
+			<param index="1" name="kind" type="String" />
+			<param index="2" name="template_name" type="String" />
+			<description>
+				Makes [param node] an entity: [code]^[/code] stops at it, and it can have state.
+			</description>
+		</method>
+		<method name="set_state">
+			<return type="void" />
+			<param index="0" name="entity" type="Node" />
+			<param index="1" name="state" type="Dictionary" />
+			<description>
+				Replaces an entity's named values: [code]{"melee.hot": true}[/code]. Shown as its [code]state[/code] metadata.
+			</description>
+		</method>
+		<method name="get_state">
+			<return type="Dictionary" />
+			<param index="0" name="entity" type="Node" />
+			<description>
+				An entity's named values.
+			</description>
+		</method>
+		<method name="set_world_state">
+			<return type="void" />
+			<param index="0" name="state" type="Dictionary" />
+			<description>
+				The world's named values (plain names fall back to them; [code]$world:[/code] reads them).
+			</description>
+		</method>
+		<method name="set_known">
+			<return type="void" />
+			<param index="0" name="names" type="PackedStringArray" />
+			<description>
+				Names that exist even where no state holds them: [code]?name[/code] is true for them.
+			</description>
+		</method>
+		<method name="set_local">
+			<return type="void" />
+			<param index="0" name="entity" type="Node" />
+			<description>
+				The viewer's own entity: [code]$local[/code] and [code]is_local[/code].
+			</description>
+		</method>
+		<method name="get_local">
+			<return type="Node" />
+			<description>
+				The viewer's own entity.
+			</description>
+		</method>
+		<method name="cue">
+			<return type="void" />
+			<param index="0" name="name" type="String" />
+			<param index="1" name="at" type="Node" default="null" />
+			<param index="2" name="other" type="Node" default="null" />
+			<param index="3" name="args" type="Dictionary" default="{}" />
+			<description>
+				Something happened: the reactions listening for [param name] act. [param args]: [code]value[/code], [code]strength[/code], [code]point[/code], [code]end[/code].
+			</description>
+		</method>
+		<method name="explain">
+			<return type="Dictionary" />
+			<param index="0" name="name" type="String" />
+			<param index="1" name="at" type="Node" default="null" />
+			<param index="2" name="other" type="Node" default="null" />
+			<param index="3" name="args" type="Dictionary" default="{}" />
+			<description>
+				What that cue would do, without doing it: each listening reaction's path, and "acts" or why not.
+			</description>
+		</method>
+		<method name="update">
+			<return type="void" />
+			<description>
+				Re-checks every "while" reaction (every frame, unless [member auto_update] is off).
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="auto_update" type="bool" setter="set_auto_update" getter="get_auto_update" default="true">
+			Call [method update] every frame. The Cinderbox client turns it off and updates after the entities have moved.
+		</member>
+	</members>
+	<signals>
+		<signal name="screen_effect">
+			<param index="0" name="shake" type="float" />
+			<param index="1" name="shake_time" type="float" />
+			<param index="2" name="flash_color" type="Color" />
+			<param index="3" name="flash_time" type="float" />
+			<description>
+				A reaction shook the camera or flashed the screen: whoever draws the screen applies it.
+			</description>
+		</signal>
+	</signals>
+</class>

@@ -23,6 +23,8 @@ void CbDirector::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_local" ), &CbDirector::get_local );
 	ClassDB::bind_method( D_METHOD( "cue", "name", "at", "other", "args" ), &CbDirector::cue, DEFVAL( Variant() ),
 						  DEFVAL( Dictionary() ) );
+	ClassDB::bind_method( D_METHOD( "explain", "name", "at", "other", "args" ), &CbDirector::explain, DEFVAL( Variant() ),
+						  DEFVAL( Dictionary() ) );
 	ClassDB::bind_method( D_METHOD( "update" ), &CbDirector::update );
 	ClassDB::bind_method( D_METHOD( "set_auto_update", "value" ), &CbDirector::set_auto_update );
 	ClassDB::bind_method( D_METHOD( "get_auto_update" ), &CbDirector::get_auto_update );
@@ -129,6 +131,39 @@ cue::Context CbDirector::BaseContext() const
 	return context;
 }
 
+cue::Context CbDirector::CueContext( Node* at, Node* other, const Dictionary& args ) const
+{
+	cue::Context context = BaseContext();
+	context.event = true;
+	context.at = at;
+	context.other = other;
+	context.args = args;
+	context.point = args.get( "point", Vector3() );
+	context.end = args.get( "end", context.point );
+	return context;
+}
+
+Dictionary CbDirector::explain( const String& name, Node* at, Node* other, const Dictionary& args )
+{
+	Index();
+	Dictionary result;
+	auto it = m_byCue.find( name );
+	if ( it == m_byCue.end() )
+	{
+		return result;
+	}
+	cue::Context context = CueContext( at, other, args );
+	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
+	for ( ObjectID id : it->second )
+	{
+		if ( auto* reaction = Object::cast_to<CbReaction>( ObjectDB::get_instance( id ) ) )
+		{
+			result[String( get_path_to( reaction ) )] = reaction->Explain( context, now );
+		}
+	}
+	return result;
+}
+
 void CbDirector::cue( const String& name, Node* at, Node* other, const Dictionary& args )
 {
 	Index();
@@ -137,23 +172,16 @@ void CbDirector::cue( const String& name, Node* at, Node* other, const Dictionar
 	{
 		return;
 	}
-	cue::Context context = BaseContext();
-	context.event = true;
-	context.at = at;
-	context.other = other;
-	context.args = args;
-	context.point = args.get( "point", Vector3() );
-	context.end = args.get( "end", context.point );
+	cue::Context context = CueContext( at, other, args );
 	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
 	// A copy: a reaction may add scenes with reactions of their own.
 	std::vector<ObjectID> ids = it->second;
 	for ( ObjectID id : ids )
 	{
 		auto* reaction = Object::cast_to<CbReaction>( ObjectDB::get_instance( id ) );
-		if ( reaction != nullptr && reaction->Fire( context, now ) && reaction->HasScreenEffect() )
+		if ( reaction != nullptr )
 		{
-			emit_signal( "screen_effect", reaction->get_shake(), reaction->get_shake_time(), reaction->get_flash_color(),
-						 reaction->get_flash_time() );
+			reaction->Fire( context, now );
 		}
 	}
 }

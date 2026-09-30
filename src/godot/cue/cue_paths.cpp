@@ -222,6 +222,21 @@ bool ParseCondition( const String& text, Condition& out, String* error )
 		}
 		return false;
 	}
+	// "^^combat.health": a path without its colon would test a name nothing has.
+	if ( out.hasPath == false && ( rest.begins_with( "^" ) || rest.begins_with( "$" ) ) )
+	{
+		int64_t split = rest.begins_with( "^" ) ? 0 : rest.find( "/" );
+		while ( split < rest.length() && rest[split] == '^' )
+		{
+			++split;
+		}
+		if ( error != nullptr )
+		{
+			*error = "put a colon between the path and the name, like " +
+					 ( rest.begins_with( "^" ) ? rest.substr( 0, split ) + ":" + rest.substr( split ) : String( "$other:combat.health" ) );
+		}
+		return false;
+	}
 	out.test = prefix + rest;
 	return true;
 }

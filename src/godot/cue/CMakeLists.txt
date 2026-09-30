@@ -3,6 +3,7 @@
 
 add_library(cb_cue STATIC
 	cue_director.cpp
+	cue_info.cpp
 	cue_paths.cpp
 	cue_preview.cpp
 	cue_reaction.cpp

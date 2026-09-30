@@ -188,6 +188,14 @@ void CbCuePreviewDock::Build()
 	m_mode->set_tooltip_text( "How the scene is put on the stage: in player_0's right hand, as player_0, or under the World." );
 	m_mode->connect( "item_selected", callable_mp( this, &CbCuePreviewDock::OnReload ).unbind( 1 ) );
 	top->add_child( m_mode );
+	top->add_child( CbInfoButton::Make(
+		"Plays the edited scene's reactions on a stage, with no game running.",
+		"The scene is copied (unsaved edits too; the scene itself is never touched) next to two stand-ins, "
+		"[b]player_0[/b] (blue) and [b]player_1[/b] (orange), each with RightHand, LeftHand and Head.\n"
+		"[b]Held item[/b]: the scene is in player_0's right hand, so ^^ is player_0.\n"
+		"[b]Character[/b]: the scene is player_0.\n"
+		"[b]World[/b]: the scene sits under the World, like a vfx/reactions_*.tscn.\n"
+		"Press [b]Reload[/b] after editing the scene." ) );
 	auto* reload = memnew( Button );
 	reload->set_text( "Reload" );
 	reload->set_tooltip_text( "Copy the edited scene onto the stage again (unsaved edits included)." );
@@ -206,6 +214,11 @@ void CbCuePreviewDock::Build()
 	m_cueNames->set_tooltip_text( "Cues this scene's reactions listen for, and the game's own." );
 	m_cueNames->connect( "item_selected", callable_mp( this, &CbCuePreviewDock::OnCuePicked ) );
 	cueRow->add_child( m_cueNames );
+	cueRow->add_child( CbInfoButton::Make( "The cue to send: one the scene listens for, or any name.",
+										   "A mod's event (melee.hit), the game's (footstep, jumped, landed, impact, spawned, "
+										   "destroying) or the viewer's key press (pressed:fire).\n"
+										   "After firing, the panel lists what each reaction listening for it did, or why "
+										   "not." ) );
 
 	auto* whoRow = memnew( HBoxContainer );
 	column->add_child( whoRow );
@@ -215,6 +228,11 @@ void CbCuePreviewDock::Build()
 	whoRow->add_child( MakeLabel( "$other" ) );
 	m_other = MakeWho( { WHO_PLAYER1, WHO_PLAYER0, WHO_ITEM, WHO_NONE }, WHO_PLAYER1 );
 	whoRow->add_child( m_other );
+	whoRow->add_child( CbInfoButton::Make( "Who the cue names: $at is who it is about, $other the other one.",
+										   "melee.hit is at the attacker ($at), and $other is the victim. A reaction with "
+										   "event_side A needs its subject to be $at; with B, $other.\n"
+										   "The bat's SparksOnHit has subject ^^ (its holder, player_0), so it fires when "
+										   "$at is player_0.\nThe cue happens at $other's chest (or in front of $at)." ) );
 
 	auto* argRow = memnew( HBoxContainer );
 	column->add_child( argRow );
@@ -230,6 +248,9 @@ void CbCuePreviewDock::Build()
 	m_strength->set_step( 0.1 );
 	m_strength->set_value( 5 );
 	argRow->add_child( m_strength );
+	argRow->add_child( CbInfoButton::Make( "What the cue carries: event.value and event.strength in conditions.",
+										   "value: a mod's number (damage done: pistol.hit with value 0 is a miss).\n"
+										   "strength: an impact's speed in m/s (impact reactions test event.strength >= 8)." ) );
 	auto* fire = memnew( Button );
 	fire->set_text( "Fire cue" );
 	fire->set_tooltip_text( "The cue's point and end are $other's chest (or in front of $at)." );
@@ -247,6 +268,12 @@ void CbCuePreviewDock::Build()
 	m_local = MakeWho( { WHO_PLAYER0, WHO_PLAYER1, WHO_NONE }, WHO_PLAYER0 );
 	m_local->connect( "item_selected", callable_mp( this, &CbCuePreviewDock::OnLocal ) );
 	stateRow->add_child( m_local );
+	stateRow->add_child( CbInfoButton::Make( "State: what the game would say about each entity. local: who is watching.",
+											 "One field for every name the scene's conditions read, set on the entity picked "
+											 "on the left (0 is false, anything else true). The bat glows while the item's "
+											 "melee.hot is 1.\n"
+											 "[b]local[/b] is the stand-in whose screen this is: $local and is_local "
+											 "(hurt flashes, hit markers)." ) );
 	m_stateRows = memnew( VBoxContainer );
 	column->add_child( m_stateRows );
 
@@ -574,9 +601,22 @@ void CbCuePreviewDock::OnFire()
 	args["strength"] = m_strength->get_value();
 	args["point"] = point;
 	args["end"] = point;
+	// What each reaction listening for it will do, or why not: asked before firing (cooldowns).
+	Dictionary why = m_director->explain( name, at, other, args );
 	m_director->cue( name, at, other, args );
-	m_log->set_text( "cue " + name + " at " + String( kWhoNames[m_at->get_selected_id()] ) + ", other " +
-					 String( kWhoNames[m_other->get_selected_id()] ) );
+	String log = "cue " + name + " at " + String( kWhoNames[m_at->get_selected_id()] ) + ", other " +
+				 String( kWhoNames[m_other->get_selected_id()] ) + ":";
+	if ( why.is_empty() )
+	{
+		log += "\nno reaction listens for " + name;
+	}
+	Array paths = why.keys();
+	for ( int64_t i = 0; i < paths.size(); ++i )
+	{
+		String path = paths[i];
+		log += "\n- " + path.get_file() + ": " + String( why[paths[i]] );
+	}
+	m_log->set_text( log );
 }
 
 void CbCuePreviewDock::OnScreenEffect( double shake, double shakeTime, Color flash, double flashTime )
@@ -617,6 +657,8 @@ void CbCuePreviewPlugin::_enter_tree()
 	m_dock = memnew( CbCuePreviewDock );
 	m_dock->Build();
 	add_control_to_bottom_panel( m_dock, "Cue Preview" );
+	m_inspector.instantiate();
+	add_inspector_plugin( m_inspector );
 	connect( "scene_changed", callable_mp( this, &CbCuePreviewPlugin::OnSceneChanged ) );
 	m_dock->SetEdited( EditorInterface::get_singleton()->get_edited_scene_root() );
 }
@@ -628,6 +670,11 @@ void CbCuePreviewPlugin::_exit_tree()
 		remove_control_from_bottom_panel( m_dock );
 		m_dock->queue_free();
 		m_dock = nullptr;
+	}
+	if ( m_inspector.is_valid() )
+	{
+		remove_inspector_plugin( m_inspector );
+		m_inspector.unref();
 	}
 }
 

@@ -20,7 +20,9 @@ extends SceneTree
 ##     ├── Burst               on melee.hit, subject $other, $other:combat.health < 50   a scene at the cue point
 ##     ├── Mark                on melee.hit, subject $at   a scene at $other/Head
 ##     ├── Shake               on melee.hit, subject $at, is_local   screen_effect
-##     └── Blind               while $local exists: hide $local/Head (follows set_local)
+##     └── Blind               while $local exists: hide $local/Head (follows set_local; undone when it leaves)
+## And on the item: Later (delay), Never (chance 0), Args (method_args), Sneaky ("call" refused), Fade
+## (blend_time), checked with the director's explain() as well.
 
 var _failures := 0
 var _frames := 0
@@ -35,6 +37,11 @@ var _outside: Timer
 var _player: AnimationPlayer
 var _effects: Node3D
 var _shakes := 0
+var _blind: CbReaction
+var _later: Timer
+var _never: Timer
+var _args_timer: Timer
+var _barrel: MeshInstance3D
 
 
 func _check(what: String, ok: bool) -> void:
@@ -170,6 +177,37 @@ func _initialize() -> void:
 	blind.target = NodePath("$local/Head")
 	blind.property = "visible"
 	blind.value = false
+	_blind = blind
+
+	_later = _timer_node("LaterTimer", _item)
+	_never = _timer_node("NeverTimer", _item)
+	_args_timer = _timer_node("ArgsTimer", _item)
+	var later := _reaction("Later", _item, CbReaction.WHEN_EVENT, "test.later")
+	later.subject = NodePath("^^")
+	later.target = NodePath("../LaterTimer")
+	later.method = "start"
+	later.delay = 0.15
+	var never := _reaction("Never", _item, CbReaction.WHEN_EVENT, "test.later")
+	never.subject = NodePath("^^")
+	never.target = NodePath("../NeverTimer")
+	never.method = "start"
+	never.chance = 0.0
+	var args := _reaction("Args", _item, CbReaction.WHEN_EVENT, "test.args")
+	args.subject = NodePath("^^")
+	args.target = NodePath("../ArgsTimer")
+	args.method = "start"
+	args.method_args = [2.5]
+	var sneaky := _reaction("Sneaky", _item, CbReaction.WHEN_EVENT, "test.args")
+	sneaky.subject = NodePath("^^")
+	sneaky.target = NodePath("../Barrel")
+	sneaky.method = "call"
+	sneaky.method_args = ["queue_free"]
+	var fade := _reaction("Fade", _item, CbReaction.WHEN_WHILE, "")
+	fade.conditions = PackedStringArray(["test.fade"])
+	fade.target = NodePath("../Barrel")
+	fade.property = "position:y"
+	fade.value = 1.0
+	fade.blend_time = 0.2
 
 
 func _sparks_at(where: Vector3) -> bool:
@@ -215,6 +253,19 @@ func _process(_delta: float) -> bool:
 		_check("cue: side B fires when the holder is the other one", not _hurt_timer.is_stopped())
 		_check("cue: conditions hold back a world reaction (event.value 0)", not _sparks_at(Vector3(7, 7, 7)))
 		_check("cue: is_local is false for the other player", _shakes == 1)
+
+		# Timing, arguments, blending, and why.
+		var why: Dictionary = _world.explain("melee.hit", _p1, _p0, {"value": 0})
+		_check("explain: says the item's holder is not at the cue", String(why.get("player_0/RightHand/Item/Hit", "")).contains("not at"))
+		_check("explain: names the condition that failed", String(why.get("Effects/Burst", "")).contains("event.value > 0"))
+		_world.cue("test.args", _p0, null, {})
+		_check("method_args: start(2.5)", is_equal_approx(_args_timer.time_left, 2.5))
+		_world.cue("test.later", _p0, null, {})
+		_check("delay: not yet", _later.is_stopped())
+		_barrel = _item.get_node("Barrel")
+		_world.set_state(_item, {"melee.hot": false, "test.fade": true})
+		_world.update()
+		_check("blend_time: fading, not there at once", _barrel.position.y < 0.9)
 	if _frames == 4:
 		_check("queue_free is refused", _item.get_node_or_null("Barrel") != null)
 	if _frames > 4:
@@ -222,8 +273,15 @@ func _process(_delta: float) -> bool:
 		for child in _world.get_children():
 			if child.scene_file_path == "user://check_reaction_spark.tscn":
 				left += 1
-		if left == 0 or _frames == 600:
+		if (left == 0 and _frames > 40) or _frames == 600:
 			_check("cue scenes go after their lifetime", left == 0)
+			_check("delay: acted later", not _later.is_stopped())
+			_check("chance 0: never", _never.is_stopped())
+			_check("\"call\" is refused (the barrel is still there)", _item.get_node_or_null("Barrel") != null)
+			_check("blend_time: arrives", is_equal_approx(_barrel.position.y, 1.0))
+			_blind.get_parent().remove_child(_blind)
+			_check("a while leaving the tree undoes itself", _p0.get_node("Head").visible)
+			_blind.free()
 			print("reactions: %s" % ("ok" if _failures == 0 else "%d FAILED" % _failures))
 			quit(0 if _failures == 0 else 1)
 			return true

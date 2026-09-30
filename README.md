@@ -44,6 +44,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M35: world reactions: `vfx/reactions*.tscn` scenes of `CbReaction` nodes replace effect bindings (`CbEffect`); built-in events, placement, sounds and screen effects on the same node | done |
 | M36: reactions address the scene tree the Roblox way (`^^/RightHand/Item`, `$other/Head`); `CbDirector` + `CbReaction` are a standalone Godot addon the client drives with cues and state | done |
 | M37: Cue Preview: an editor panel that plays a scene's reactions (fire cues, set state, pick the viewer) with no game running | done |
+| M38: reaction polish: fixes, `method_args`, delay and chance, blended properties, "why didn't it fire" in the preview, and help in the editor (hover texts, info buttons, class reference) | done |
 
 ## Building
 
@@ -801,10 +802,11 @@ World node: a workshop item cannot reach the game's HUD or menus.
 | `event_side` | On a cue: **A**, the cue is at the subject (`melee.hit` is at the attacker); **B**, the subject is the other one (the victim); or **Either**. A subject starting with `$at` / `$other` matches every cue of the name |
 | `subject_kind`, `subject_template` | only for a player / prop / static / ragdoll / item, or one map template (for an item: its kind, `melee.bat`) |
 | `conditions` | [names and comparisons](#effects), `is_local`, `event.value`, `event.strength`. Plain names read the subject's state, then the world's; a path and a colon read another's: `!^^:combat.dead`, `$other:combat.health < 20`, `$world:deathmatch.round` |
-| `cooldown` | shortest gap between two firings |
-| `animation_player`, `animation` | play this animation from the start; `animation_off` when a While ends |
+| `delay`, `chance`, `cooldown` | cue reactions: act N seconds later, only sometimes (0-1), and not more often than every N seconds |
+| `animation_player`, `animation` | play this animation from the start; `animation_off` when a While ends (without one, the animation stops) |
 | `target`, `property`, `value` | set a property on a node; a While puts the old value back when it ends. Sub-paths work: `surface_material_override/0:albedo_color` |
-| `target`, `method` | call a built-in method with no arguments (`restart`, `play`, `show`) |
+| `blend_time` | fade the property there (and back) instead of snapping: numbers, vectors, colours |
+| `target`, `method`, `method_args` | call a method: `restart`, `play` `["slash"]`, `set_visible` `[false]` |
 | `scene`, `scene_parent`, `scene_lifetime` | add a scene (under the reaction's parent by default); a cue's goes after `scene_lifetime` s, a While's when it ends |
 | `place`, `place_node`, `offset` | where the scene and sound go: under its parent, at the cue's **point** or **end**, a **beam** from `place_node` (or the point) to the end, **at** `place_node` (`$at/RightHand`), or **following** the subject |
 | `sound`, `volume_db`, `pitch_scale`, `pitch_jitter`, `bus`, `max_distance` | a sound, once per firing |
@@ -820,8 +822,15 @@ World node: a workshop item cannot reach the game's HUD or menus.
   place when the game loads them.
 - **A While follows its target**: when its path finds another node (a new item in the hand), it
   ends on the old one (puts values back) and starts on the new one.
-- **Refused**: `free`, `queue_free` and the `script` property. A path or condition that does not
-  parse is a configuration warning on the node, and the game skips that reaction.
+- **Refused**: anything that removes nodes, changes scripts or calls something else by name (`free`,
+  `queue_free`, `call`, `set`, `set_script`, `propagate_call`, ...) and the `script` property. A path
+  or condition that does not parse is a configuration warning on the node (`^^combat.health` asks
+  for its colon), and the game skips that reaction with a warning.
+- **Nothing is left behind**: a While that leaves the tree while on (an item put away, a world scene
+  reloaded) puts back what it set and frees its scene.
+- **Help in the editor**: every group in the inspector starts with an info line (click the icon for
+  more), every property has a hover text, and F1 on `CbReaction` opens its class reference. Anchors
+  are typed into a path field through its ⋮ menu, Edit.
 - **Resources are shared** between instances of a scene. A reaction that changes a material changes
   every copy, unless the material is **Local to Scene** (the bat's barrel is).
 - **Rollback**: like companion tracks, a cue reaction that already played is not taken back if a
@@ -848,10 +857,12 @@ The mode can be picked by hand, and **Reload** copies the scene again after edit
 
 - **Fire a cue**: its name (the scene's own cues are listed, and the game's), `$at` and `$other`
   (player_0, player_1, the item), `value` and `strength`. The cue's point is `$other`'s chest.
+  Below, every reaction listening for it says what it did, or why not ("the subject (player_1) is
+  not at ($at) in this cue", "condition \"melee.hot\" is false", "cooling down").
 - **State**: every name the scene's conditions read gets a field, on player_0, player_1, the item
   or the world (0 is false). The bat: `melee.hot` = 1 lights the barrel, 0 puts it out.
 - **local**: which stand-in is the viewer (`$local`, `is_local`).
-- Screen effects flash and shake the preview; sounds play.
+- Screen effects flash and shake the preview; sounds play. Each control has an info icon.
 - Like the game's other bottom panels, it only draws while it is showing (opening a character
   brings up the Animation panel instead).
 

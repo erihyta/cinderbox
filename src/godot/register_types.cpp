@@ -27,6 +27,8 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	if ( level == MODULE_INITIALIZATION_LEVEL_EDITOR )
 	{
 		// Cue Preview: plays the edited scene's reactions in a bottom panel, with no game running.
+		GDREGISTER_INTERNAL_CLASS( cb::gd::CbInfoButton );
+		GDREGISTER_INTERNAL_CLASS( cb::gd::CbReactionInspector );
 		GDREGISTER_INTERNAL_CLASS( cb::gd::CbCuePreviewDock );
 		GDREGISTER_INTERNAL_CLASS( cb::gd::CbCuePreviewPlugin );
 		EditorPlugins::add_by_type<cb::gd::CbCuePreviewPlugin>();
