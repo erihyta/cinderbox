@@ -1,4 +1,8 @@
-// Melee: a bat on slot 3.
+// Melee: a bat, from slot 3 or picked up.
+//
+// What is in the right hand decides: a "melee.bat" there is out, wherever it came from. Slot 3
+// gives one when the hand has none, and putting the slot away takes back only that one (a bat
+// picked up stays in the hand).
 //
 // Out, it is a full-body stance ("melee": the character's own idle, walk and run with the bat) and
 // the body faces where the camera looks. The left mouse button swings: the full-body layer plays the
@@ -36,6 +40,9 @@ uint32_t Ticks( const Context& ctx, float seconds )
 
 struct Swinger
 {
+	bool loadout = false;	// slot 3 is out
+	bool expectGiven = false; // slot 3 put a bat in the hand this tick; learn its NetId next tick
+	uint32_t given = 0;		// the bat slot 3 gave
 	bool out = false;
 	bool swinging = false;
 	bool struck = false;
@@ -58,7 +65,8 @@ public:
 		m_loadout = declare.Field( "loadout.slot", BoardType::Int );
 		// The bat is an item of its own in the right hand: the swing animation plays its "slash",
 		// and it has its own state (hot for a while after it hits someone).
-		m_bat = declare.ItemKind( "melee.bat" );
+		// Lying in the world: handle and barrel, about 0.83 m from the grip forward.
+		m_bat = declare.ItemKind( "melee.bat", BoxItem( { 0.035f, 0.035f, 0.41f }, { 0.0f, 0.0f, -0.31f }, 1.1f ) );
 		m_hand = declare.Socket( "RightHand" );
 		m_hot = declare.Field( "melee.hot", BoardType::Bool );
 		m_full = declare.Layer( "full" );
@@ -95,22 +103,41 @@ public:
 			}
 			uint32_t target = SlotTarget( slot );
 
-			bool holding = ctx.Get( netId, m_loadout ) == kMeleeSlot && c->dead == 0;
+			uint32_t inHand = ctx.HeldItem( slot, m_hand );
+			bool batInHand = inHand != 0 && ctx.ItemKindOf( inHand ).index == m_bat.index;
+			if ( s.expectGiven && batInHand )
+			{
+				s.given = inHand;
+				s.expectGiven = false;
+			}
+			// Slot 3 gives a bat when the hand has none; putting it away (or dying) takes that one back.
+			bool loadout = ctx.Get( netId, m_loadout ) == kMeleeSlot && c->dead == 0;
+			if ( loadout != s.loadout )
+			{
+				s.loadout = loadout;
+				if ( loadout && batInHand == false )
+				{
+					ctx.SpawnItem( target, m_bat, m_hand );
+					s.expectGiven = true;
+				}
+				else if ( loadout == false && s.given != 0 && inHand == s.given )
+				{
+					ctx.Destroy( s.given ); // this one: another mod may put its item in the hand this tick
+				}
+				if ( loadout == false )
+				{
+					s.given = 0;
+					s.expectGiven = false;
+				}
+			}
+
+			bool holding = batInHand && c->dead == 0;
 			if ( holding != s.out )
 			{
 				s.out = holding;
 				s.swinging = false;
 				s.hotUntil = 0;
 				ctx.SetStance( target, m_full, holding ? m_ready : StanceHandle{} );
-				// Taking the bat out puts one in the hand; putting it away (or dying) takes it.
-				if ( holding )
-				{
-					ctx.SpawnItem( target, m_bat, m_hand );
-				}
-				else if ( uint32_t held = ctx.HeldItem( slot, m_hand ) )
-				{
-					ctx.Destroy( held ); // this one: another mod may put its item in the hand this tick
-				}
 				if ( holding )
 				{
 					ctx.FaceCamera( target, true );

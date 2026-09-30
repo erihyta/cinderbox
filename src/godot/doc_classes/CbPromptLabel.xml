@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbPromptLabel" inherits="Label3D" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		A label in the world, upright above its parent: a proximity prompt.
+	</brief_description>
+	<description>
+		Facing the camera, the same size at any distance, never hidden by what it is about, and hidden while its text is empty. Its text is formatted from the local player: [code]{field}[/code], [code]{name:field}[/code], [code]{look:field}[/code] (what the entity a field names is called), [code]{key:action}[/code] (the key that action is bound to now). A [CbReaction] puts it where it belongs, e.g. under [code]$local@pickup.target[/code].
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="text_format" type="String" setter="set_text_format" getter="get_text_format" default="&quot;[{key:pickup}]  Pick up {look:pickup.target}&quot;">
+			The text: [code][{key:pickup}]  Pick up {look:pickup.target}[/code].
+		</member>
+		<member name="height" type="float" setter="set_height" getter="get_height" default="0.35">
+			Metres above its parent, straight up whatever way the parent lies.
+		</member>
+	</members>
+</class>

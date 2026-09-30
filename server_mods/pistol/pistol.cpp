@@ -43,7 +43,9 @@ struct Gunner
 	int32_t deaths = 0;
 	uint32_t falls = 0; // Character::fallCount last seen
 	bool aiming = false; // what the last Aim command said
-	bool armed = false;	 // a pistol item is in the hand
+	bool loadout = false;	  // slot 2 is out
+	bool expectGiven = false; // slot 2 put a gun in the hand this tick; learn its NetId next tick
+	uint32_t given = 0;		  // the gun slot 2 gave
 };
 
 struct Dead
@@ -102,7 +104,8 @@ public:
 
 		m_upper = declare.Layer( "upper" );
 		m_stance = declare.Stance( "pistol" );
-		m_gun = declare.ItemKind( "pistol.gun" );
+		// Lying in the world: slide and grip.
+		m_gun = declare.ItemKind( "pistol.gun", BoxItem( { 0.02f, 0.064f, 0.1f }, { 0.0f, 0.0f, -0.07f }, 0.9f ) );
 		m_hand = declare.Socket( "RightHand" );
 	}
 
@@ -226,18 +229,32 @@ private:
 		uint32_t target = SlotTarget( g.slot );
 		uint32_t tick = ctx.Tick();
 
-		// The pistol out (and the player alive) puts one in the hand; anything else takes it away.
-		bool armed = ctx.Get( netId, m_loadout ) == kPistolSlot && c->dead == 0;
-		if ( armed != g.armed )
+		// What is in the right hand decides: a "pistol.gun" there fires, wherever it came from. Slot 2
+		// gives one when the hand has none; putting it away (or dying) takes back only that one.
+		uint32_t inHand = ctx.HeldItem( g.slot, m_hand );
+		bool gunInHand = inHand != 0 && ctx.ItemKindOf( inHand ).index == m_gun.index;
+		if ( g.expectGiven && gunInHand )
 		{
-			g.armed = armed;
-			if ( armed )
+			g.given = inHand;
+			g.expectGiven = false;
+		}
+		bool loadout = ctx.Get( netId, m_loadout ) == kPistolSlot && c->dead == 0;
+		if ( loadout != g.loadout )
+		{
+			g.loadout = loadout;
+			if ( loadout && gunInHand == false )
 			{
 				ctx.SpawnItem( target, m_gun, m_hand );
+				g.expectGiven = true;
 			}
-			else if ( uint32_t held = ctx.HeldItem( g.slot, m_hand ) )
+			else if ( loadout == false && g.given != 0 && inHand == g.given )
 			{
-				ctx.Destroy( held ); // this one: another mod may put its item in the hand this tick
+				ctx.Destroy( g.given ); // this one: another mod may put its item in the hand this tick
+			}
+			if ( loadout == false )
+			{
+				g.given = 0;
+				g.expectGiven = false;
 			}
 		}
 
@@ -291,7 +308,7 @@ private:
 		// The pistol out means a shooter's stance: the body faces where the camera looks, the upper
 		// body holds the pistol and the arm points it there, in the pose everyone draws and hit
 		// tests use. Put away, the pistol clears only what is its own (the loadout decides facing).
-		bool holding = ctx.Get( netId, m_loadout ) == kPistolSlot;
+		bool holding = gunInHand && c->dead == 0;
 		if ( holding != g.aiming )
 		{
 			g.aiming = holding;

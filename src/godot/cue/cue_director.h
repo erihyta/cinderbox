@@ -31,7 +31,8 @@ class CbDirector : public godot::Node3D
 	GDCLASS( CbDirector, godot::Node3D )
 
 public:
-	void add_entity( godot::Node* node, const godot::String& kind, const godot::String& template_name );
+	// `id`: a number state values can name the entity by (a NetId); cue paths find it with "@field".
+	void add_entity( godot::Node* node, const godot::String& kind, const godot::String& template_name, int64_t id = 0 );
 	void set_state( godot::Node* entity, const godot::Dictionary& state );
 	godot::Dictionary get_state( godot::Node* entity ) const;
 	void set_world_state( const godot::Dictionary& state );

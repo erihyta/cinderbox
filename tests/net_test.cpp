@@ -797,6 +797,77 @@ void TestCharacterItem()
 // The sneak mod: holding the crouch key swaps the player's Base layer for the mod's pack (loaded
 // from its client project, fitted to the mannequin), in the server's simulation and so in its hit
 // tests; letting go restores it. Bots follow without desyncs.
+// Items in the world, end to end: the pickup mod drops one of every item kind around the spawn;
+// slot 0 takes out the bat, throws it (G), walks after it and presses E until it holds something
+// again. The thrown bat's physics runs on the server and on both clients, which must agree.
+void TestPickup()
+{
+	Harness h( 47804, {}, {}, { { "pickup.spawn_each", "1" } } );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t bat = schema.ActionMask( "slot_3" );
+	uint16_t pickup = schema.ActionMask( "pickup" );
+	uint16_t drop = schema.ActionMask( "drop" );
+	const BoardField* target = schema.FindField( "pickup.target" );
+	CHECK( bat != 0 && pickup != 0 && drop != 0 && target != nullptr && schema.itemKinds.size() >= 2 );
+	if ( target == nullptr )
+	{
+		return;
+	}
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		if ( tick >= 100 && tick < 110 )
+		{
+			in.actions = bat;
+		}
+		else if ( tick >= 170 && tick < 175 )
+		{
+			in.actions = drop;
+		}
+		else if ( tick >= 200 && tick < 420 )
+		{
+			in.moveForward = tick < 260 ? 127 : 0;
+			in.actions = ( tick % 20 ) < 2 ? pickup : 0;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; };
+
+	Simulation& server = h.server.Sim();
+	auto lying = [&]() {
+		int n = 0;
+		for ( const Simulation::EntityRef& r : server.Entities() )
+		{
+			const HeldItem* item = flecs::entity( server.World(), r.entity ).try_get<HeldItem>();
+			n += item != nullptr && item->holder == 0 ? 1 : 0;
+		}
+		return n;
+	};
+	int mostLying = 0;
+	bool heldBat = false;
+	bool thrown = false;
+	bool targeted = false;
+	bool heldAgain = false;
+	h.RunUntil( 8.0, [&]( double ) {
+		uint32_t me = server.PlayerNetId( h.bots[0].client->Slot() );
+		uint32_t inHand = server.HeldItemOf( me, kSocketRightHand );
+		mostLying = std::max( mostLying, lying() );
+		heldBat |= inHand != 0 && server.Tick() < 170;
+		thrown |= heldBat && inHand == 0 && server.Tick() > 175 && server.Tick() < 200;
+		targeted |= server.BoardValue( me, target->slot ) != 0;
+		heldAgain |= thrown && inHand != 0 && server.Tick() > 200;
+	} );
+	h.Report();
+	std::printf( "    most lying %d, bat held %d, thrown %d, targeted %d, held again %d\n", mostLying, int( heldBat ), int( thrown ),
+				 int( targeted ), int( heldAgain ) );
+	CHECK( mostLying >= int( schema.itemKinds.size() ) );
+	CHECK( heldBat && thrown && targeted && heldAgain );
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 void TestSneak()
 {
 	const std::string root = CB_SOURCE_DIR;
@@ -1313,6 +1384,7 @@ int main( int argc, char** argv )
 		{ "sneak", TestSneak },
 		{ "headshot", TestHeadshot },
 		{ "melee", TestMelee },
+		{ "pickup", TestPickup },
 	};
 
 	const char* filter = argc > 1 ? argv[1] : nullptr;

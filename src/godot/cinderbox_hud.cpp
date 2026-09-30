@@ -1,5 +1,7 @@
 #include "cinderbox_hud.h"
 
+#include <godot_cpp/classes/base_material3d.hpp>
+
 #include "cinderbox_client.h"
 
 #include <godot_cpp/classes/engine.hpp>
@@ -44,6 +46,52 @@ CinderboxClient* FindClient( Node* from, ObjectID& cache )
 	auto* client = Object::cast_to<CinderboxClient>( from->get_tree()->get_first_node_in_group( "cinderbox_client" ) );
 	cache = client != nullptr ? client->get_instance_id() : ObjectID();
 	return client;
+}
+
+// --- CbPromptLabel ---------------------------------------------------------------------------------
+
+CbPromptLabel::CbPromptLabel()
+{
+	// Readable from anywhere: facing the camera, the same size on screen, never hidden by the thing
+	// it is about.
+	set_billboard_mode( BaseMaterial3D::BILLBOARD_ENABLED );
+	set_draw_flag( FLAG_FIXED_SIZE, true );
+	set_draw_flag( FLAG_DISABLE_DEPTH_TEST, true );
+	set_pixel_size( 0.0012f );
+	set_font_size( 26 );
+	set_outline_size( 10 );
+}
+
+void CbPromptLabel::_bind_methods()
+{
+	ClassDB::bind_method( D_METHOD( "set_text_format", "value" ), &CbPromptLabel::set_text_format );
+	ClassDB::bind_method( D_METHOD( "get_text_format" ), &CbPromptLabel::get_text_format );
+	ClassDB::bind_method( D_METHOD( "set_height", "value" ), &CbPromptLabel::set_height );
+	ClassDB::bind_method( D_METHOD( "get_height" ), &CbPromptLabel::get_height );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "text_format", PROPERTY_HINT_MULTILINE_TEXT ), "set_text_format", "get_text_format" );
+	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "height", PROPERTY_HINT_RANGE, "0,3,0.01,suffix:m" ), "set_height", "get_height" );
+}
+
+void CbPromptLabel::_ready()
+{
+	set_process( InGame() );
+}
+
+void CbPromptLabel::_process( double )
+{
+	if ( is_queued_for_deletion() )
+	{
+		return; // leaving: its reaction has moved on to another target this frame
+	}
+	// Upright above whatever it is about, however that lies (a bat on its side).
+	if ( auto* parent = Object::cast_to<Node3D>( get_parent() ) )
+	{
+		set_global_transform( Transform3D( Basis(), parent->get_global_position() + Vector3( 0, float( m_height ), 0 ) ) );
+	}
+	CinderboxClient* client = FindClient( this, m_client );
+	String text = client != nullptr && client->has_local_player() ? client->format_local_fields( m_format ).strip_edges() : String();
+	set_visible( text.is_empty() == false );
+	set_text( text );
 }
 
 // --- CbFieldLabel ----------------------------------------------------------------------------------

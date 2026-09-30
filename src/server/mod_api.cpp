@@ -130,7 +130,28 @@ ItemKindHandle Declarations::ItemKind( const std::string& name )
 		return {};
 	}
 	m_schema.itemKinds.push_back( name );
+	m_schema.itemShapes.push_back( ItemShape{} );
 	return { int( m_schema.itemKinds.size() - 1 ) };
+}
+
+ItemKindHandle Declarations::ItemKind( const std::string& name, const ItemShape& shape )
+{
+	ItemKindHandle handle = ItemKind( name );
+	if ( handle.Valid() == false )
+	{
+		return handle;
+	}
+	size_t index = size_t( handle.index );
+	if ( m_shapeDeclared.size() <= index )
+	{
+		m_shapeDeclared.resize( index + 1, false );
+	}
+	if ( m_shapeDeclared[index] == false )
+	{
+		m_schema.itemShapes[index] = shape;
+		m_shapeDeclared[index] = true;
+	}
+	return handle;
 }
 
 AnimPackHandle Declarations::AnimPack( const std::string& name )
@@ -587,6 +608,104 @@ uint32_t Context::HeldItem( PlayerSlot slot, SocketHandle socket ) const
 {
 	uint32_t holder = m_sim.PlayerNetId( slot );
 	return holder != 0 && socket.Valid() ? m_sim.HeldItemOf( holder, uint32_t( socket.index ) ) : 0;
+}
+
+namespace
+{
+
+const cb::HeldItem* ItemOf( Simulation& sim, uint32_t netId )
+{
+	flecs::entity e = sim.FindEntity( netId );
+	return e.is_valid() ? e.try_get<cb::HeldItem>() : nullptr;
+}
+
+// A command's rotation: a unit quaternion's x, y, z with w >= 0 (the simulation rebuilds w).
+Float3 CommandRotation( b3Quat q )
+{
+	float length = std::sqrt( q.v.x * q.v.x + q.v.y * q.v.y + q.v.z * q.v.z + q.s * q.s );
+	float sign = q.s < 0.0f ? -1.0f : 1.0f;
+	if ( ( length > 0.0f ) == false )
+	{
+		return {};
+	}
+	return { sign * q.v.x / length, sign * q.v.y / length, sign * q.v.z / length };
+}
+
+} // namespace
+
+ItemKindHandle Context::ItemKindOf( uint32_t netId ) const
+{
+	const cb::HeldItem* item = ItemOf( m_sim, netId );
+	return item != nullptr ? ItemKindHandle{ int( item->kind ) } : ItemKindHandle{};
+}
+
+uint32_t Context::ItemHolder( uint32_t netId ) const
+{
+	const cb::HeldItem* item = ItemOf( m_sim, netId );
+	return item != nullptr ? item->holder : 0;
+}
+
+std::vector<WorldItem> Context::ItemsNear( b3Vec3 point, float radius ) const
+{
+	std::vector<WorldItem> out;
+	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	{
+		flecs::entity e( m_sim.World(), r.entity );
+		const cb::HeldItem* item = e.try_get<cb::HeldItem>();
+		if ( item == nullptr || item->holder != 0 || e.has<Transform>() == false )
+		{
+			continue;
+		}
+		b3Vec3 at = e.get<Transform>().position;
+		float distance = b3Length( b3Sub( at, point ) );
+		if ( distance <= radius )
+		{
+			out.push_back( { r.netId, ItemKindHandle{ int( item->kind ) }, at, distance } );
+		}
+	}
+	std::stable_sort( out.begin(), out.end(), []( const WorldItem& a, const WorldItem& b ) { return a.distance < b.distance; } );
+	return out;
+}
+
+void Context::SpawnWorldItem( ItemKindHandle kind, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity )
+{
+	if ( kind.Valid() == false )
+	{
+		return;
+	}
+	SimCommand c;
+	c.type = CommandType::SpawnItem;
+	c.target = 0;
+	c.index = uint16_t( kind.index );
+	c.a = { grip.x, grip.y, grip.z };
+	c.b = { velocity.x, velocity.y, velocity.z };
+	c.c = CommandRotation( rotation );
+	Add( c );
+}
+
+void Context::DropItem( uint32_t item, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity )
+{
+	SimCommand c;
+	c.type = CommandType::DropItem;
+	c.target = item;
+	c.a = { grip.x, grip.y, grip.z };
+	c.b = { velocity.x, velocity.y, velocity.z };
+	c.c = CommandRotation( rotation );
+	Add( c );
+}
+
+void Context::PickUpItem( uint32_t holder, uint32_t item, SocketHandle socket )
+{
+	if ( socket.Valid() == false )
+	{
+		return;
+	}
+	SimCommand c;
+	c.type = CommandType::PickUpItem;
+	c.target = holder;
+	c.other = item;
+	c.mode = uint8_t( socket.index );
+	Add( c );
 }
 
 void Context::FaceCamera( uint32_t target, bool faceCamera )

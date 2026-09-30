@@ -64,6 +64,8 @@ struct Float3
 	float x = 0.0f;
 	float y = 0.0f;
 	float z = 0.0f;
+
+	bool operator==( const Float3& ) const = default;
 };
 
 // --- Commands ------------------------------------------------------------------------------------
@@ -108,14 +110,22 @@ enum class CommandType : uint8_t
 	// target (a player), index = layer (schema order), value = stance + 1, or 0 for none.
 	Stance = 11,
 	// target (the player who holds it), index = item kind (schema order), mode = socket (schema
-	// order). A new entity with its own board, drawn in that socket; it replaces whatever that
-	// socket held. Destroy removes it; it also goes when its holder leaves.
+	// order). A new entity with its own board, drawn in that socket; what that socket held is
+	// dropped at the holder's chest. Destroy removes it; it also goes when its holder leaves.
+	// target 0: the item lies in the world instead, at a (its grip) turned by c (a unit
+	// quaternion's x, y, z; w >= 0 follows), moving at b.
 	SpawnItem = 12,
 	// target (a player), index = the character's layer (graph order), value = source: 0 plays its
 	// own layer again, n plays animation pack n-1's layer of the same name. The layer starts over.
 	SwapLayer = 13,
+	// target (a held item), a = its grip, c = its rotation (as SpawnItem), b = velocity: it leaves
+	// the hand and lies in the world, with a body of its kind's shape.
+	DropItem = 14,
+	// target (a player), other = an item lying in the world, mode = socket: the player holds it.
+	// Nothing happens when that socket is taken, or the item is held already.
+	PickUpItem = 15,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::SwapLayer );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::PickUpItem );
 
 enum ImpulseMode : uint8_t
 {

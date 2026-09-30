@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+; Upright above the item, facing the camera, the same size at any distance.
+
+[node name="Prompt" type="CbPromptLabel"]
+text_format = "[{key:pickup}]  Pick up {look:pickup.target}"
+height = 0.35

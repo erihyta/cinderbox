@@ -1,6 +1,8 @@
 #include "mod_schema.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 
 namespace cb
 {
@@ -8,12 +10,23 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x3742434Du; // 'MCB7': 2 workshop items, 3 the character, 4 layers and stances, 5 the
-												// character's state machine, 6 item kinds and sockets, 7 animation packs
+constexpr uint32_t kSchemaMagic = 0x3842434Du; // 'MCB8': 2 workshop items, 3 the character, 4 layers and stances, 5 the
+												// character's state machine, 6 item kinds and sockets, 7 animation packs,
+												// 8 item shapes
 
 void PutU8( std::vector<uint8_t>& out, uint8_t v )
 {
 	out.push_back( v );
+}
+
+void PutF32( std::vector<uint8_t>& out, float v )
+{
+	uint32_t bits;
+	std::memcpy( &bits, &v, 4 );
+	for ( int i = 0; i < 4; ++i )
+	{
+		out.push_back( uint8_t( bits >> ( 8 * i ) ) );
+	}
 }
 
 void PutString( std::vector<uint8_t>& out, const std::string& s )
@@ -48,6 +61,18 @@ struct Reader
 			return 0;
 		}
 		return data[at++];
+	}
+
+	float F32()
+	{
+		uint32_t bits = 0;
+		for ( int i = 0; i < 4; ++i )
+		{
+			bits |= uint32_t( U8() ) << ( 8 * i );
+		}
+		float v;
+		std::memcpy( &v, &bits, 4 );
+		return v;
 	}
 
 	std::string String()
@@ -229,6 +254,12 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 	for ( size_t i = 0; i < schema.itemKinds.size() && i < 255; ++i )
 	{
 		PutString( out, schema.itemKinds[i] );
+		ItemShape shape = i < schema.itemShapes.size() ? schema.itemShapes[i] : ItemShape{};
+		PutU8( out, shape.kind );
+		for ( float v : { shape.half.x, shape.half.y, shape.half.z, shape.center.x, shape.center.y, shape.center.z, shape.mass } )
+		{
+			PutF32( out, v );
+		}
 	}
 	PutU8( out, uint8_t( std::min<size_t>( schema.sockets.size(), 255 ) ) );
 	for ( size_t i = 0; i < schema.sockets.size() && i < 255; ++i )
@@ -358,6 +389,25 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 	for ( uint8_t i = 0; i < kinds && r.ok; ++i )
 	{
 		out.itemKinds.push_back( r.String() );
+		ItemShape shape;
+		shape.kind = r.U8();
+		float v[7];
+		for ( float& f : v )
+		{
+			f = r.F32();
+		}
+		shape.half = { v[0], v[1], v[2] };
+		shape.center = { v[3], v[4], v[5] };
+		shape.mass = v[6];
+		// A body the physics can build: finite, not tiny, not huge.
+		auto sane = []( float f, float lo, float hi ) { return std::isfinite( f ) && f >= lo && f <= hi; };
+		if ( shape.kind > 1 || sane( v[0], 0.005f, 4.0f ) == false || sane( v[1], 0.005f, 4.0f ) == false ||
+			 sane( v[2], 0.005f, 4.0f ) == false || sane( v[3], -4.0f, 4.0f ) == false || sane( v[4], -4.0f, 4.0f ) == false ||
+			 sane( v[5], -4.0f, 4.0f ) == false || sane( v[6], 0.01f, 1000.0f ) == false )
+		{
+			return false;
+		}
+		out.itemShapes.push_back( shape );
 	}
 	uint8_t sockets = r.U8();
 	out.sockets.clear();

@@ -12,6 +12,9 @@
 		<member name="kind" type="String" setter="set_kind" getter="get_kind" default="&quot;&quot;">
 			The item kind a server mod declared: [code]melee.bat[/code].
 		</member>
+		<member name="display_name" type="String" setter="set_display_name" getter="get_display_name" default="&quot;&quot;">
+			What prompts call it ([code]{look:pickup.target}[/code]): [code]Bat[/code]. Empty: the kind.
+		</member>
 		<member name="scene" type="String" setter="set_scene" getter="get_scene" default="&quot;&quot;">
 			The scene drawn in the socket, named [code]Item[/code].
 		</member>

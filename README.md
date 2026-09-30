@@ -45,6 +45,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M36: reactions address the scene tree the Roblox way (`^^/RightHand/Item`, `$other/Head`); `CbDirector` + `CbReaction` are a standalone Godot addon the client drives with cues and state | done |
 | M37: Cue Preview: an editor panel that plays a scene's reactions (fire cues, set state, pick the viewer) with no game running | done |
 | M38: reaction polish: fixes, `method_args`, delay and chance, blended properties, "why didn't it fire" in the preview, and help in the editor (hover texts, info buttons, class reference) | done |
+| M39: items in the world: dropped, thrown and picked up, with physics everyone agrees on; a pickup mod with a proximity prompt made of data (`CbPromptLabel`, `$local@pickup.target`, `{key:pickup}`) | done |
 
 ## Building
 
@@ -187,6 +188,7 @@ Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod re
 | `deathmatch.pause_seconds` | 6 (the intermission) |
 | `deathmatch.fall_penalty` | 1 point lost for falling out of the world |
 | `pistol.zone.<zone>` | damage multiplier for a hit zone of the server's character: `head` 2, anything else 1 |
+| `pickup.spawn_each` | 0; N drops N of every item kind the mods declared around the spawn point at start |
 
 ```bash
 cb_server --port 7777 --mod-option deathmatch.kills=5 --mod-option deathmatch.round_seconds=120
@@ -378,8 +380,14 @@ The HUD reads the board too, through script-free nodes any HUD scene can use:
 | `CbEventFeed` | a line per mod event, `"{a}  >  {b}"` with player names, fading after `line_seconds` (a kill feed) |
 | `CbScoreboard` | players as rows: `cells` like `"{name}"`, `"{combat.kills}"`, sorted by `sort_field`, shown while Tab is held and its `conditions` hold |
 
-In formats, `{field}` is the local player's field, `{name}` a player's name, and `{name:field}` the
-name of the player a field points at (`"{name:deathmatch.winner} WINS"`).
+In formats, `{field}` is the local player's field, `{name}` a player's name, `{name:field}` the
+name of the player a field points at (`"{name:deathmatch.winner} WINS"`), `{look:field}` what the
+entity a field points at is called (an item's `display_name`: `"Bat"`), and `{key:action}` the key
+the player has that action bound to now (`"E"`, `"LMB"`: rebinding shows).
+
+`CbPromptLabel` is the same in the world: a `Label3D` with a `text_format`, upright above its parent,
+facing the camera, the same size at any distance, hidden while its text is empty. A reaction puts
+it where it belongs (see [Items in the world](#items-in-the-world)).
 
 The pistol's HUD (`server_mods/pistol/client/ui/hud_pistol.tscn`) is built from these: a health bar
 (`ProgressBar` from `combat.health` and `combat.max_health`), ammo, reloading, crosshair, kills and
@@ -754,7 +762,41 @@ the pistol mod spawns a `pistol.gun` while slot 2 is out.
 
 A mod taking its item away destroys the NetId `ctx.HeldItem( slot, socket )` gives, not
 `ItemTarget`: another mod may put its item in that socket in the same tick (a weapon swap), and
-`ItemTarget` would find that one.
+`ItemTarget` would find that one. What is in the hand decides: the melee mod swings any `melee.bat`
+in the right hand and the pistol fires any `pistol.gun`, whether a loadout slot gave it or it was
+picked up; a slot takes back only the item it gave.
+
+### Items in the world
+
+An item can also **lie in the world**: the same entity (NetId, board, look) with a physics body,
+so it falls, tumbles, gets shot across the floor, and does so identically on every screen.
+
+| Mod API | Does |
+|---|---|
+| `declare.ItemKind( "melee.bat", BoxItem( half, center, mass ) )` | its body in the world (`SphereItem` too), in the grip's frame: the bat is a 0.83 m box whose centre is 0.31 m in front of the grip |
+| `ctx.SpawnWorldItem( kind, grip, rotation, velocity )` | one on the floor |
+| `ctx.DropItem( item, grip, rotation, velocity )` | out of the hand; thrown if it has a velocity |
+| `ctx.PickUpItem( SlotTarget( slot ), item, socket )` | into a free socket (drop what is there first, in the same tick) |
+| `ctx.ItemsNear( point, radius )`, `ctx.ItemKindOf( id )`, `ctx.ItemHolder( id )` | what lies around, nearest first |
+| `ctx.SpawnItem` into a taken socket | drops what was there (it may be one someone picked up) |
+
+Who may pick up what, and when, is a mod's. The **pickup** mod is the example:
+
+- Near an item (1.5 m along the ground, not behind you), its NetId goes on your board as
+  `pickup.target`. **E** takes it into the right hand (what was there drops), **G** throws what you
+  hold, dying drops it. Items a loadout slot gave are that mod's to take back.
+- Its look is a proximity prompt, all data: a world reaction while `$local`'s `pickup.target` is set
+  puts `prompt.tscn` (a `CbPromptLabel`: `"[{key:pickup}]  Pick up {look:pickup.target}"`) on the
+  item it names, `$local@pickup.target`, and moves it when that changes.
+
+```
+PickupReactions            (vfx/reactions_pickup.tscn)
+└── Prompt   CbReaction  while  $local: pickup.target   scene prompt.tscn   under $local@pickup.target
+                                                        -> "[E]  Pick up Bat" above the bat
+```
+
+The same pieces make any prompt: a mod puts an entity's NetId in a field, its look shows a
+`CbPromptLabel` on `$local@thatfield`.
 
 ### Reactions
 
@@ -789,6 +831,7 @@ Every node path in a reaction is a Godot `NodePath`; its first name may be an **
 | `$at`, `$other` | the entities the cue names: who it is about (the attacker), the other one (the victim) |
 | `$local` | the local player |
 | `$world` | the World node (its state is the global board) |
+| `$local@pickup.target`, `@field` | the entity whose NetId is in that entity's state field (`@field`: my entity's) |
 | `^^/RightHand/Item`, `$other/Head` | an anchor, then an ordinary path from it |
 
 A path that finds nothing (an empty hand) makes the reaction do nothing, and no path leaves the

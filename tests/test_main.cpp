@@ -1605,6 +1605,105 @@ ModSchema TestGraphSchema()
 // directions around), and the body-frame velocity that drives it.
 // Held items: entities of their own, spawned into a player's socket, addressed by holder and
 // socket before anyone knows their NetId, following their holder, gone with it.
+// Items in the world: spawned on the floor they fall and rest; picked up they lose their body and
+// follow the hand; dropped they get it back. All of it rolls back and replays exactly.
+void TestWorldItems()
+{
+	Simulation sim( TestConfig(), FlatMap() );
+	ItemShape bat;
+	bat.half = { 0.04f, 0.04f, 0.36f };
+	bat.center = { 0.0f, 0.0f, -0.36f };
+	bat.mass = 1.2f;
+	sim.SetItemShapes( { bat } );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto command = [&]( CommandType type, uint32_t target ) {
+		SimCommand c;
+		c.type = type;
+		c.target = target;
+		f.commands.push_back( c );
+		return &f.commands.back();
+	};
+	auto lying = [&]() {
+		std::vector<uint32_t> out;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+			if ( item != nullptr && item->holder == 0 )
+			{
+				out.push_back( r.netId );
+			}
+		}
+		return out;
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	uint32_t holder = sim.PlayerNetId( 0 );
+
+	// Spawned in the world (no holder): a body at its grip, turned a little, falling.
+	SimCommand* spawn = command( CommandType::SpawnItem, 0 );
+	spawn->a = { 3.0f, 2.0f, 0.0f };
+	spawn->c = { 0.0f, 0.3826834f, 0.0f }; // 45 degrees about Y
+	step( 1 );
+	std::vector<uint32_t> world = lying();
+	CHECK( world.size() == 1 );
+	uint32_t item = world.empty() ? 0 : world[0];
+	CHECK( sim.FindEntity( item ).has<PhysicsBody>() );
+	Snapshot midFall;
+	sim.Save( midFall );
+	step( 90 );
+	uint64_t landed = sim.ComputeHash();
+	float restY = sim.EntityTransform( item )->position.y;
+	CHECK( restY > 0.0f && restY < 0.2f ); // lying on the floor, its body's centre a few cm up
+	sim.Load( midFall );
+	step( 90 );
+	CHECK( sim.ComputeHash() == landed ); // the fall replays exactly
+
+	// Picked up: no body, in the hand, following the holder.
+	SimCommand* pick = command( CommandType::PickUpItem, SlotTarget( 0 ) );
+	pick->other = item;
+	pick->mode = kSocketRightHand;
+	step( 1 );
+	CHECK( sim.HeldItemOf( holder, kSocketRightHand ) == item );
+	CHECK( sim.FindEntity( item ).has<PhysicsBody>() == false && lying().empty() );
+	// A second pick-up of a held item does nothing.
+	SimCommand* twice = command( CommandType::PickUpItem, SlotTarget( 0 ) );
+	twice->other = item;
+	twice->mode = kSocketLeftHand;
+	step( 1 );
+	CHECK( sim.HeldItemOf( holder, kSocketLeftHand ) == 0 );
+
+	// Dropped: back in the world where the command says, thrown.
+	SimCommand* drop = command( CommandType::DropItem, ItemTarget( 0, kSocketRightHand ) );
+	drop->a = { 0.0f, 1.5f, -1.0f };
+	drop->b = { 0.0f, 1.0f, -3.0f };
+	step( 1 );
+	CHECK( sim.HeldItemOf( holder, kSocketRightHand ) == 0 && lying().size() == 1 );
+	CHECK( sim.EntityTransform( item )->position.z < -1.0f ); // moving away along -Z
+	// A rotation that is too long is made a unit one; a NaN one refuses the command.
+	SimCommand* odd = command( CommandType::SpawnItem, 0 );
+	odd->a = { -2.0f, 1.0f, 0.0f };
+	odd->c = { 3.0f, 0.0f, 4.0f };
+	SimCommand* broken = command( CommandType::SpawnItem, 0 );
+	broken->a = { -3.0f, 1.0f, 0.0f };
+	broken->c = { 0.0f, std::numeric_limits<float>::quiet_NaN(), 0.0f };
+	step( 60 );
+	CHECK( lying().size() == 2 );
+	for ( uint32_t id : lying() )
+	{
+		b3Vec3 at = sim.EntityTransform( id )->position;
+		CHECK( std::isfinite( at.x ) && std::isfinite( at.y ) && std::isfinite( at.z ) );
+	}
+}
+
 void TestHeldItems()
 {
 	Simulation sim( TestConfig(), FlatMap() );
@@ -1666,13 +1765,15 @@ void TestHeldItems()
 	sim.Load( snapshot );
 	CHECK( sim.ComputeHash() == hash && sim.HeldItemOf( holder, kSocketRightHand ) == item );
 
-	// A new item in the same socket replaces it; Destroy removes one; leaving takes it along.
+	// A new item in the same socket takes its place (the old one is dropped into the world); Destroy
+	// removes one; leaving takes it along.
 	SimCommand* again = command( CommandType::SpawnItem, SlotTarget( 0 ) );
 	again->index = 4;
 	again->mode = kSocketRightHand;
 	step( 1 );
 	uint32_t second = sim.HeldItemOf( holder, kSocketRightHand );
-	CHECK( second != 0 && second != item && sim.FindEntity( item ).is_valid() == false );
+	CHECK( second != 0 && second != item && sim.FindEntity( item ).is_valid() );
+	CHECK( sim.FindEntity( item ).get<HeldItem>().holder == 0 && sim.FindEntity( item ).has<PhysicsBody>() );
 	SimCommand* other = command( CommandType::SpawnItem, SlotTarget( 1 ) );
 	other->mode = kSocketLeftHand;
 	command( CommandType::Destroy, ItemTarget( 0, kSocketRightHand ) );
@@ -2918,6 +3019,7 @@ int main( int argc, char** argv )
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },
 		{ "held_items", TestHeldItems },
+		{ "world_items", TestWorldItems },
 		{ "attack_resolve", TestAttackResolve },
 		{ "anim_blend2d", TestAnimBlend2D },
 		{ "pose_tools", TestPoseTools },

@@ -125,6 +125,7 @@ bool GameServer::Start( const ServerOptions& options )
 	m_sim = std::make_unique<Simulation>( options.config, m_map );
 	m_sim->SetAnimGraph( m_animGraph );
 	m_sim->SetAnimPacks( m_animPacks );
+	m_sim->SetItemShapes( m_schema.itemShapes );
 	m_modWorld = std::make_unique<flecs::world>( CreateFlecsWorld() );
 	m_modRng = options.config.seed ^ 0x6D6F6473ull; // "mods"
 	m_history.assign( kFrameHistory, InputFrame{} );

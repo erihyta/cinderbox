@@ -1047,6 +1047,40 @@ A review of `CbReaction` before anything else is built on it.
   `combat.health`); a reaction that sends a cue of its own (chains); a timeline of cues in the
   preview; text fields with anchor completion instead of the NodePath picker.
 
+## Items in the world (M39)
+Decisions (the user's): a dropped item is a physics body in the simulation; its shape is declared
+by the mod in C++ for now (authored in Godot and baked is a later milestone); pickup rules and the
+prompt are a mod, with the engine providing verbs and a few general pieces.
+
+- **Simulation**: `HeldItem.holder == 0` means "lying in the world": the same entity (NetId, board)
+  with a dynamic body of its kind's shape (`ItemShape`: box or sphere, centre in the grip's frame,
+  mass). `DropItem` and `PickUpItem` move it between hand and world; `SpawnItem` with no holder puts
+  one on the floor, and `SpawnItem` into a taken socket drops what was there instead of destroying
+  it. Shapes travel in the schema (MCB8) and are set on every simulation (server, clients, replays).
+  Commands carry a rotation as a unit quaternion's x, y, z. Protocol 14. Reference hashes unchanged.
+- **Presentation**: the frame hands out the item's grip (its body sits at the shape's centre); the
+  client moves the node between `World/item_<id>` and `<holder>/<socket>/Item`, and clears the
+  holder's companion caches when it leaves a hand.
+- **Mods**: melee and pistol now look at what is in the hand, not at the loadout slot: any
+  `melee.bat` swings, any `pistol.gun` fires; a slot gives an item when the hand has none and takes
+  back only its own. The new **pickup** mod: nearest item within 1.5 m along the ground (its
+  distance was first measured from the body's centre, 1.4 m up, which put a bat at the feet out of
+  reach), E to pick up, G to throw, drop on death, `pickup.spawn_each` to seed the map.
+- **The prompt as data**: the director keeps ids for entities (`add_entity(..., id)`) and cue paths
+  gained `<anchor>@field` (the entity a state field names); a "while" whose `scene_parent` resolves
+  to another node starts over there; `CbPromptLabel` (upright, billboarded, fixed size); formats
+  gained `{key:action}` and `{look:field}`; `CbItemLook.display_name`.
+- **Found on the way**: the protocol refused command types above `SwapLayer` (so the first drop
+  vanished between server and simulation); a prompt leaving an item drew the next item's name for
+  one frame.
+- **Verified**: `world_items` (fall and rest, rollback replays the fall exactly, pick up, drop,
+  spawn into a taken hand drops, rotations sanitised or refused); the `pickup` network test (a bot
+  throws its bat, walks after it and picks it up; two clients simulate the throw with no desyncs);
+  `check_reactions.gd` (31 checks; `@field` follows and moves); a rendered session with items on the
+  floor and the prompt reading "[E]  Pick up Bat" / "Pistol" on the right items.
+- **Not done**: shapes authored in Godot; items walking their holder differently (their own
+  layers); a hold-to-use duration on prompts; items expiring when nobody picks them up.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1158,3 +1192,4 @@ A review of `CbReaction` before anything else is built on it.
 36. **M36** (done): the scene tree as the address space: a stable World tree (`player_<slot>`, sockets as entity children, companion tracks rewritten), anchors (`^`, `^^`, `$at`, `$other`, `$local`, `$world`) on ordinary NodePaths; `CbDirector` + `CbReaction` as a standalone addon (`cb_cue`) driven by cues and entity state; M34's entity paths replaced.
 37. **M37** (done): Cue Preview, an editor bottom panel in the cue addon: the edited scene on a stage with stand-in players, cues fired and state set by hand, screen effects shown; verified on the bat, the pistol's world reactions and the mannequin.
 38. **M38** (done): reaction polish: fixes (a While undoes itself when it leaves the tree, a wider refused list, warnings for leaks and parse errors), `method_args`, `delay` / `chance`, `blend_time`, `explain()` in the Cue Preview, and in-editor help (class reference, info rows, info buttons).
+39. **M39** (done): items in the world: physics bodies of declared shapes, DropItem / PickUpItem / SpawnItem on the floor, spawn into a taken hand drops; melee and pistol follow what is in the hand; the pickup mod (E, G, drop on death, spawn_each) with a data-only proximity prompt (`CbPromptLabel`, `$local@field`, `{key:}`, `{look:}`); protocol 14.

@@ -12,6 +12,7 @@
 #include "box3d/collision.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cfloat>
 #include <cstdio>
 #include <cstdlib>
@@ -56,6 +57,23 @@ constexpr uint32_t kSnapMagic = 0x43425331u; // 'CBS1'
 b3Vec3 ToVec( const Float3& f )
 {
 	return { f.x, f.y, f.z };
+}
+
+// How commands carry a rotation: a unit quaternion's x, y, z, with w >= 0 following from them.
+// Anything that is not one (NaN, too long) becomes the nearest sane rotation.
+b3Quat CommandRotation( const Float3& f )
+{
+	float xyz = f.x * f.x + f.y * f.y + f.z * f.z;
+	if ( ( xyz >= 0.0f ) == false || xyz > 1e6f )
+	{
+		return b3Quat{ { 0.0f, 0.0f, 0.0f }, 1.0f };
+	}
+	if ( xyz > 1.0f )
+	{
+		float scale = 1.0f / std::sqrt( xyz );
+		return b3Quat{ { f.x * scale, f.y * scale, f.z * scale }, 0.0f };
+	}
+	return b3Quat{ { f.x, f.y, f.z }, std::sqrt( 1.0f - xyz ) };
 }
 
 // Deterministic: inf - inf and NaN - NaN are NaN, which never compares equal.
@@ -465,6 +483,52 @@ flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 pos
 
 // Box3D ids embed the world slot, which differs between processes. Components store them with
 // world0 = 0 so hashes and portable snapshots match everywhere; the slot is patched in on use.
+void Simulation::PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity )
+{
+	HeldItem held = item.get<HeldItem>();
+	ItemShape look = ItemShapeOf( held.kind );
+	// The body sits at the shape's centre; the item's frame (its grip) is `center` away from it.
+	Shape shape;
+	shape.kind = look.kind == 1 ? ShapeKind::Sphere : ShapeKind::Box;
+	shape.halfExtents = { look.half.x, look.half.y, look.half.z };
+	b3Vec3 position = b3Add( grip, b3RotateVector( rotation, b3Vec3{ look.center.x, look.center.y, look.center.z } ) );
+	float volume = shape.kind == ShapeKind::Sphere ? 4.18879f * look.half.x * look.half.x * look.half.x
+												   : 8.0f * look.half.x * look.half.y * look.half.z;
+
+	b3BodyDef bodyDef = b3DefaultBodyDef();
+	bodyDef.type = b3_dynamicBody;
+	bodyDef.position = position;
+	bodyDef.rotation = rotation;
+	bodyDef.linearVelocity = velocity;
+	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
+	ShapeMaterial material;
+	material.density = look.mass / std::max( volume, 1e-6f );
+	b3ShapeId shapeId = CreateShape( body, shape, CatProp, material );
+
+	held.holder = 0;
+	held.socket = 0;
+	item.set<HeldItem>( held );
+	item.set<Transform>( { position, rotation } );
+	item.set<Velocity>( { velocity, { 0.0f, 0.0f, 0.0f } } );
+	item.set<Shape>( shape );
+	item.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );
+}
+
+void Simulation::TakeItemFromWorld( flecs::entity item, uint32_t holder, uint8_t socket )
+{
+	if ( const PhysicsBody* pb = item.try_get<PhysicsBody>() )
+	{
+		b3DestroyBody( BodyOf( *pb ) );
+	}
+	item.remove<PhysicsBody>();
+	item.remove<Shape>();
+	item.remove<Velocity>();
+	HeldItem held = item.get<HeldItem>();
+	held.holder = holder;
+	held.socket = socket;
+	item.set<HeldItem>( held );
+}
+
 PhysicsBody Simulation::MakePhysicsBody( b3BodyId body, b3ShapeId shape )
 {
 	body.world0 = 0;
@@ -596,7 +660,7 @@ void Simulation::FollowHolders()
 	for ( const EntityRef& r : m_entities )
 	{
 		flecs::entity e( m_world, r.entity );
-		if ( const HeldItem* item = e.try_get<HeldItem>() )
+		if ( const HeldItem* item = e.try_get<HeldItem>(); item != nullptr && item->holder != 0 )
 		{
 			flecs::entity holder = FindEntity( item->holder );
 			if ( holder.is_valid() && holder.has<Transform>() )
@@ -622,7 +686,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		for ( const EntityRef& r : m_entities )
 		{
 			flecs::entity e( m_world, r.entity );
-			if ( const HeldItem* item = e.try_get<HeldItem>() )
+			if ( const HeldItem* item = e.try_get<HeldItem>(); item != nullptr && item->holder != 0 )
 			{
 				m_heldScratch.push_back( { item->holder, item->kind } );
 			}
@@ -1344,6 +1408,10 @@ uint32_t Simulation::ResolveTarget( uint32_t target ) const
 
 uint32_t Simulation::HeldItemOf( uint32_t holder, uint32_t socket ) const
 {
+	if ( holder == 0 )
+	{
+		return 0; // items in the world are held by no one
+	}
 	// NetId order: the same answer everywhere.
 	for ( const EntityRef& r : m_entities )
 	{
@@ -1497,6 +1565,14 @@ void Simulation::ApplyCommand( const SimCommand& command )
 		case CommandType::SpawnItem:
 		{
 			uint32_t holder = ResolveTarget( command.target );
+			if ( command.target == 0 )
+			{
+				// Straight into the world.
+				flecs::entity item = CreateEntity();
+				item.set<HeldItem>( { 0, command.index, 0, 0 } );
+				PutItemInWorld( item, ToVec( command.a ), CommandRotation( command.c ), ToVec( command.b ) );
+				return;
+			}
 			flecs::entity player = FindEntity( holder );
 			if ( holder == 0 || player.is_valid() == false || player.has<Character>() == false )
 			{
@@ -1504,10 +1580,40 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			}
 			if ( uint32_t old = HeldItemOf( holder, command.mode ) )
 			{
-				DestroyEntity( FindEntity( old ) );
+				// Dropped, not destroyed: it may be one someone picked up.
+				const Transform& at = player.get<Transform>();
+				PutItemInWorld( FindEntity( old ), b3Add( at.position, b3Vec3{ 0.0f, 0.4f, 0.0f } ), at.rotation, b3Vec3{ 0.0f, 0.0f, 0.0f } );
 			}
 			flecs::entity item = CreateEntity();
 			item.set<HeldItem>( { holder, command.index, command.mode, 0 } );
+			item.set<Transform>( player.get<Transform>() );
+			return;
+		}
+
+		case CommandType::DropItem:
+		{
+			flecs::entity item = FindEntity( ResolveTarget( command.target ) );
+			const HeldItem* held = item.is_valid() ? item.try_get<HeldItem>() : nullptr;
+			if ( held == nullptr || held->holder == 0 )
+			{
+				return;
+			}
+			PutItemInWorld( item, ToVec( command.a ), CommandRotation( command.c ), ToVec( command.b ) );
+			return;
+		}
+
+		case CommandType::PickUpItem:
+		{
+			uint32_t holder = ResolveTarget( command.target );
+			flecs::entity player = FindEntity( holder );
+			flecs::entity item = FindEntity( ResolveTarget( command.other ) );
+			const HeldItem* held = item.is_valid() ? item.try_get<HeldItem>() : nullptr;
+			if ( holder == 0 || player.is_valid() == false || player.has<Character>() == false || held == nullptr ||
+				 held->holder != 0 || HeldItemOf( holder, command.mode ) != 0 )
+			{
+				return;
+			}
+			TakeItemFromWorld( item, holder, command.mode );
 			item.set<Transform>( player.get<Transform>() );
 			return;
 		}

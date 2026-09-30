@@ -14,7 +14,7 @@ namespace cb::gd
 
 void CbDirector::_bind_methods()
 {
-	ClassDB::bind_method( D_METHOD( "add_entity", "node", "kind", "template_name" ), &CbDirector::add_entity );
+	ClassDB::bind_method( D_METHOD( "add_entity", "node", "kind", "template_name", "id" ), &CbDirector::add_entity, DEFVAL( 0 ) );
 	ClassDB::bind_method( D_METHOD( "set_state", "entity", "state" ), &CbDirector::set_state );
 	ClassDB::bind_method( D_METHOD( "get_state", "entity" ), &CbDirector::get_state );
 	ClassDB::bind_method( D_METHOD( "set_world_state", "state" ), &CbDirector::set_world_state );
@@ -35,11 +35,17 @@ void CbDirector::_bind_methods()
 							PropertyInfo( Variant::COLOR, "flash_color" ), PropertyInfo( Variant::FLOAT, "flash_time" ) ) );
 }
 
-void CbDirector::add_entity( Node* node, const String& kind, const String& template_name )
+void CbDirector::add_entity( Node* node, const String& kind, const String& template_name, int64_t id )
 {
 	if ( node == nullptr )
 	{
 		return;
+	}
+	if ( id != 0 )
+	{
+		Dictionary ids = get_meta( cue::kIdsMeta, Dictionary() );
+		ids[id] = int64_t( node->get_instance_id() );
+		set_meta( cue::kIdsMeta, ids );
 	}
 	node->set_meta( cue::kEntityMeta, true );
 	node->set_meta( cue::kKindMeta, kind );

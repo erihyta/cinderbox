@@ -19,7 +19,7 @@ add_library(cinderbox_gd SHARED
 # The class reference shown in the editor (hover texts, F1): compiled into the extension.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 target_doc_sources(cinderbox_gd
-	"${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbReaction.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbDirector.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItemLook.xml")
+	"${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbReaction.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbDirector.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItemLook.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbPromptLabel.xml")
 
 target_link_libraries(cinderbox_gd PRIVATE cb_client_core cb_present cb_cue godot::cpp ozz_animation_offline)
 cb_target_warnings(cinderbox_gd)

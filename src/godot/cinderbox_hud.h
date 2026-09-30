@@ -11,9 +11,16 @@
 //                   visibility, a colour's alpha), so any 2D asset can show mod state
 //   CbEventFeed     a line per mod event ("{a} > {b}" for combat.killed), fading after a while
 //   CbScoreboard    a table of players: name and field columns, sorted, shown while a key is held
+//   CbPromptLabel   a label in the world, upright above its parent: "[{key:pickup}] Pick up
+//                   {look:pickup.target}" (a proximity prompt, placed by a CbReaction)
+//
+// Formats: {field} is the local player's value, {name} its name, {name:field} the name of the
+// player the field points at, {look:field} what the entity the field points at is called (an
+// item's display name), {key:action} the key the action is bound to now.
 
 #include <godot_cpp/classes/grid_container.hpp>
 #include <godot_cpp/classes/label.hpp>
+#include <godot_cpp/classes/label3d.hpp>
 #include <godot_cpp/classes/label_settings.hpp>
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/v_box_container.hpp>
@@ -28,6 +35,41 @@ class CinderboxClient;
 
 // The client these nodes read from: the scene tree's CinderboxClient (group "cinderbox_client").
 CinderboxClient* FindClient( godot::Node* from, godot::ObjectID& cache );
+
+class CbPromptLabel : public godot::Label3D
+{
+	GDCLASS( CbPromptLabel, godot::Label3D )
+
+public:
+	CbPromptLabel();
+	void _ready() override;
+	void _process( double delta ) override;
+
+	void set_text_format( const godot::String& value )
+	{
+		m_format = value;
+	}
+	godot::String get_text_format() const
+	{
+		return m_format;
+	}
+	void set_height( double value )
+	{
+		m_height = value;
+	}
+	double get_height() const
+	{
+		return m_height;
+	}
+
+protected:
+	static void _bind_methods();
+
+private:
+	godot::String m_format = "[{key:pickup}]  Pick up {look:pickup.target}";
+	double m_height = 0.35;
+	godot::ObjectID m_client;
+};
 
 class CbFieldLabel : public godot::Label
 {

@@ -1,0 +1,11 @@
+; The pickup mod's look: a workshop item players subscribe to. No code: a world reaction that puts a
+; prompt ("[E] Pick up Bat") above the item the local player can pick up, keyed on the pickup mod's
+; "pickup.target" field and "pickup" action.
+; Publish it with: tools\publish_mod.ps1 -Mod pickup
+
+config_version=5
+
+[application]
+
+config/name="Cinderbox item: pickup"
+config/features=PackedStringArray("4.7", "Forward Plus")

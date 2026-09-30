@@ -244,6 +244,11 @@ private:
 	// Held items: their looks by kind, and each character's sockets (placed from the pose every
 	// frame; items are their children).
 	std::map<std::string, godot::String> m_itemLooks;
+	std::map<std::string, godot::String> m_itemNames; // what prompts call a kind ("Bat")
+	std::unordered_map<uint64_t, uint32_t> m_itemHolders; // item visual -> the holder it was last drawn with
+	// "{key:pickup}" -> the binding of the server's action; "{look:pickup.target}" -> what the entity
+	// whose NetId the field holds is called (an item's display name, a player's name).
+	godot::String ResolveKeysAndLooks( int64_t net_id, const godot::String& format ) const;
 	struct SocketPlace
 	{
 		godot::ObjectID node;
@@ -256,7 +261,7 @@ private:
 	void CollectSockets( uint64_t visual, godot::Node3D* node );
 	void PlaceSockets( uint64_t visual, godot::Node3D* node );
 	godot::Node3D* SocketNode( uint32_t holderNetId, uint8_t socket ) const;
-	void UpdateItem( const present::Visual& v, godot::Node3D* node );
+	void UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, godot::Node3D* node );
 	// Puts an item node in a socket as its "Item" (a leaving one steps aside), and tells the holder's
 	// companion tracks to look again.
 	void PlaceItem( uint32_t holderNetId, godot::Node3D* socket, godot::Node3D* item );

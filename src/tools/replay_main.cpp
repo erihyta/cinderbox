@@ -58,6 +58,7 @@ int Verify( const net::ReplayReader& replay )
 	Simulation sim( replay.Config(), replay.Map() );
 	sim.SetAnimGraph( replay.Graph() );
 	sim.SetAnimPacks( replay.Packs() );
+	sim.SetItemShapes( replay.Schema().itemShapes );
 	const auto& checksums = replay.Checksums();
 	size_t nextChecksum = 0;
 	size_t verified = 0;

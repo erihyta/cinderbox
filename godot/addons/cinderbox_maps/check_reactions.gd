@@ -22,7 +22,8 @@ extends SceneTree
 ##     ├── Shake               on melee.hit, subject $at, is_local   screen_effect
 ##     └── Blind               while $local exists: hide $local/Head (follows set_local; undone when it leaves)
 ## And on the item: Later (delay), Never (chance 0), Args (method_args), Sneaky ("call" refused), Fade
-## (blend_time), checked with the director's explain() as well.
+## (blend_time), checked with the director's explain() as well. And a prompt in Effects, following
+## the entity whose id is in $local's "pickup.target" ($local@pickup.target).
 
 var _failures := 0
 var _frames := 0
@@ -42,6 +43,7 @@ var _later: Timer
 var _never: Timer
 var _args_timer: Timer
 var _barrel: MeshInstance3D
+var _prompt_scene := ""
 
 
 func _check(what: String, ok: bool) -> void:
@@ -93,16 +95,16 @@ func _initialize() -> void:
 	_world.screen_effect.connect(func(_s, _t, _c, _f): _shakes += 1)
 
 	_p0 = _node3d("player_0", _world)
-	_world.add_entity(_p0, "player", "")
+	_world.add_entity(_p0, "player", "", 10)
 	_world.set_state(_p0, {"combat.dead": false})
 	_node3d("Head", _p0).position = Vector3(0, 1.7, 0)
 	var hand := _node3d("RightHand", _p0)
 	_item = _node3d("Item", hand)
-	_world.add_entity(_item, "item", "test.bat")
+	_world.add_entity(_item, "item", "test.bat", 12)
 	_world.set_state(_item, {"melee.hot": false})
 	_p1 = _node3d("player_1", _world)
 	_p1.position = Vector3(5, 0, 0)
-	_world.add_entity(_p1, "player", "")
+	_world.add_entity(_p1, "player", "", 11)
 	_world.set_state(_p1, {"combat.health": 100})
 	_node3d("Head", _p1).position = Vector3(0, 1.7, 0)
 	_world.set_local(_p0)
@@ -209,10 +211,31 @@ func _initialize() -> void:
 	fade.value = 1.0
 	fade.blend_time = 0.2
 
+	# A prompt that follows whatever $local's "pickup.target" names.
+	var marker := PackedScene.new()
+	var marker_root := Node3D.new()
+	marker_root.name = "PromptMarker"
+	marker.pack(marker_root)
+	marker_root.free()
+	ResourceSaver.save(marker, "user://check_reaction_prompt.tscn")
+	_prompt_scene = "user://check_reaction_prompt.tscn"
+	var prompt := _reaction("Prompt", _effects, CbReaction.WHEN_WHILE, "")
+	prompt.subject = NodePath("$local")
+	prompt.conditions = PackedStringArray(["pickup.target"])
+	prompt.scene = _prompt_scene
+	prompt.scene_parent = NodePath("$local@pickup.target")
+
 
 func _sparks_at(where: Vector3) -> bool:
 	for child in _world.get_children():
 		if child.scene_file_path == "user://check_reaction_spark.tscn" and (child as Node3D).global_position.is_equal_approx(where):
+			return true
+	return false
+
+
+func _has_prompt(node: Node) -> bool:
+	for child in node.get_children():
+		if child.scene_file_path == _prompt_scene and not child.is_queued_for_deletion():
 			return true
 	return false
 
@@ -266,6 +289,17 @@ func _process(_delta: float) -> bool:
 		_world.set_state(_item, {"melee.hot": false, "test.fade": true})
 		_world.update()
 		_check("blend_time: fading, not there at once", _barrel.position.y < 0.9)
+
+		# $local@pickup.target: the entity whose id is in the local player's field.
+		_world.set_state(_p0, {"combat.dead": false, "pickup.target": 11})
+		_world.update()
+		_check("@field: the prompt is on the entity the field names", _has_prompt(_p1))
+		_world.set_state(_p0, {"combat.dead": false, "pickup.target": 12})
+		_world.update()
+		_check("@field: it moves when the field changes", _has_prompt(_item) and not _has_prompt(_p1))
+		_world.set_state(_p0, {"combat.dead": false, "pickup.target": 0})
+		_world.update()
+		_check("@field: gone when the field is 0", not _has_prompt(_item))
 	if _frames == 4:
 		_check("queue_free is refused", _item.get_node_or_null("Barrel") != null)
 	if _frames > 4:

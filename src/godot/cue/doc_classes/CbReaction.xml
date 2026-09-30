@@ -5,7 +5,7 @@
 	</brief_description>
 	<description>
 		Put it in any scene the game draws (a held item, a character, a prop) or in a [code]vfx/reactions_*.tscn[/code]. A [CbDirector] above it runs it from cues (events: [code]melee.hit[/code] at an entity) and entity state ([code]melee.hot[/code] = true).
-Every node path may start with an anchor: [code]^[/code] my entity, [code]^^[/code] the entity above it (a held item's holder), [code]$at[/code] and [code]$other[/code] the cue's entities, [code]$local[/code] the viewer, [code]$world[/code] the director. Then an ordinary path: [code]^^/RightHand/Item[/code], [code]$other/Head[/code].
+Every node path may start with an anchor: [code]^[/code] my entity, [code]^^[/code] the entity above it (a held item's holder), [code]$at[/code] and [code]$other[/code] the cue's entities, [code]$local[/code] the viewer, [code]$world[/code] the director; [code]$local@pickup.target[/code] is the entity whose id is in that state field. Then an ordinary path: [code]^^/RightHand/Item[/code], [code]$other/Head[/code].
 Looks only: it never changes the game itself, and no path leaves the director. Try reactions without a server in the Cue Preview bottom panel.
 	</description>
 	<tutorials>
