@@ -431,6 +431,13 @@ void CbReaction::Update( const cue::Context& context )
 		Node* player = cue::Resolve( m_player, this, context );
 		bool moved = ( m_haveOriginal && ( target == nullptr || ObjectID( target->get_instance_id() ) != m_onTarget ) ) ||
 					 ( m_onPlayer.is_valid() && ( player == nullptr || ObjectID( player->get_instance_id() ) != m_onPlayer ) );
+		// Its scene too: a prompt above "$local@pickup.target" moves to the next item in reach.
+		if ( m_sceneParent.is_empty() == false )
+		{
+			auto* spawned = Object::cast_to<Node>( ObjectDB::get_instance( m_spawned ) );
+			Node* parent = cue::Resolve( m_sceneParent, this, context );
+			moved |= ( spawned != nullptr ? spawned->get_parent() : nullptr ) != parent;
+		}
 		if ( moved )
 		{
 			m_on = false;

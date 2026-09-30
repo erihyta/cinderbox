@@ -9,6 +9,7 @@
 
 #include "components.h"
 #include "level.h"
+#include "mod_schema.h"
 #include "physics_arena.h"
 #include "types.h"
 
@@ -222,6 +223,16 @@ public:
 		return m_animGraph.get();
 	}
 	// The mods' animation packs (compiled from the schema), whose layers players can swap to.
+	// The bodies of items lying in the world, by kind (ModSchema::itemShapes); set before the first
+	// Step, like the graph.
+	void SetItemShapes( std::vector<ItemShape> shapes )
+	{
+		m_itemShapes = std::move( shapes );
+	}
+	ItemShape ItemShapeOf( uint16_t kind ) const
+	{
+		return kind < m_itemShapes.size() ? m_itemShapes[kind] : ItemShape{};
+	}
 	void SetAnimPacks( std::vector<std::shared_ptr<const AnimGraph>> packs )
 	{
 		m_animPacks = std::move( packs );
@@ -326,6 +337,11 @@ private:
 
 	std::shared_ptr<const AnimGraph> m_animGraph;
 	std::vector<std::shared_ptr<const AnimGraph>> m_animPacks;
+	std::vector<ItemShape> m_itemShapes;
+	// An item leaves the hand and lies in the world at its grip (a body of its kind's shape), or
+	// the other way round.
+	void PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity );
+	void TakeItemFromWorld( flecs::entity item, uint32_t holder, uint8_t socket );
 	void RecordModEvent( const ModEventRecord& record );
 	void FollowHolders();
 };

@@ -9,6 +9,8 @@
 //     $at, $other            the entities a cue names (who it is about, the other one)
 //     $local                 the local player's entity
 //     $world                 the director (the World node)
+//     <anchor>@field         the entity whose id is in that entity's state field: "$local@pickup.target"
+//                            (what the local player may pick up); "@field" is "^@field"
 // followed by an ordinary path from there: "^^/RightHand/Item", "$other/Head". A path that finds
 // nothing, or a node outside the director's tree, is nothing.
 //
@@ -50,6 +52,7 @@ inline constexpr const char* kEntityMeta = "cue_entity";
 inline constexpr const char* kKindMeta = "cue_kind";
 inline constexpr const char* kTemplateMeta = "cue_template";
 inline constexpr const char* kStateMeta = "state";
+inline constexpr const char* kIdsMeta = "cue_ids"; // on the director: { id: instance id }
 
 bool IsEntity( const godot::Node* node );
 // The entity at or above `node` (stopping at `stop`, which is not searched), or null.

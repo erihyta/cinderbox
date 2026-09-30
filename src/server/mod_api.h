@@ -125,6 +125,27 @@ struct AnimPackHandle
 	}
 };
 
+// The body an item has when it lies in the world, in its grip's frame (held in a socket, the grip is
+// at the socket and the item points along -Z): a box of half extents, or a sphere, whose centre is
+// `center` from the grip, weighing `mass` kg.
+inline ItemShape BoxItem( b3Vec3 halfExtents, b3Vec3 center, float mass )
+{
+	return { 0, { halfExtents.x, halfExtents.y, halfExtents.z }, { center.x, center.y, center.z }, mass };
+}
+inline ItemShape SphereItem( float radius, b3Vec3 center, float mass )
+{
+	return { 1, { radius, radius, radius }, { center.x, center.y, center.z }, mass };
+}
+
+// An item lying in the world, as ItemsNear finds it.
+struct WorldItem
+{
+	uint32_t netId = 0;
+	ItemKindHandle kind;
+	b3Vec3 position = {}; // its body's centre
+	float distance = 0.0f;
+};
+
 // The item the player in `slot` holds in `socket`, as a command target (SetField, Emit, Destroy).
 inline uint32_t ItemTarget( PlayerSlot slot, SocketHandle socket )
 {
@@ -149,6 +170,9 @@ public:
 	// "RightHand" and "LeftHand" exist on every character; another socket is drawn only on
 	// characters that define it.
 	ItemKindHandle ItemKind( const std::string& name );
+	// The same, with the body it has when it lies in the world (BoxItem, SphereItem). Without one it
+	// gets a small box. The first shape declared for a kind is the one it keeps.
+	ItemKindHandle ItemKind( const std::string& name, const ItemShape& shape );
 	// An animation pack in this mod's client item: its layers can replace a player's own of the same
 	// name (Context::SwapLayer). Name it like the mod's other names ("sneak.crouch").
 	AnimPackHandle AnimPack( const std::string& name );
@@ -170,6 +194,7 @@ private:
 	ModSchema m_schema;
 	std::vector<std::string> m_errors;
 	std::string m_mod;
+	std::vector<bool> m_shapeDeclared; // per item kind: a mod gave it a shape
 	int m_entitySlots = 0;
 	int m_globalSlots = 0;
 };
@@ -343,6 +368,21 @@ public:
 	void RestoreLayer( uint32_t target, const std::string& layer );
 	// The NetId of what the player in `slot` holds in `socket` (as of the start of this tick), or 0.
 	uint32_t HeldItem( PlayerSlot slot, SocketHandle socket ) const;
+	// Its kind (an invalid handle when it is not an item), and who holds it (0: it lies in the world).
+	ItemKindHandle ItemKindOf( uint32_t netId ) const;
+	uint32_t ItemHolder( uint32_t netId ) const;
+	// Items lying in the world within `radius` of `point` (their bodies' centres), nearest first
+	// (ties by NetId).
+	std::vector<WorldItem> ItemsNear( b3Vec3 point, float radius ) const;
+
+	// Items in the world. `grip` is where the item's grip goes, `rotation` how it is turned (the item
+	// points along its -Z); it gets its kind's body and falls from there.
+	void SpawnWorldItem( ItemKindHandle kind, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity = {} );
+	// Out of the hand (any item target: a NetId, or ItemTarget) into the world.
+	void DropItem( uint32_t item, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity = {} );
+	// Into `holder`'s (SlotTarget) socket, from the world. Nothing happens when the socket is taken
+	// (drop what is there first, in the same tick) or the item is held already.
+	void PickUpItem( uint32_t holder, uint32_t item, SocketHandle socket );
 
 	// Commands emitted so far this tick (tests).
 	const std::vector<SimCommand>& Commands() const

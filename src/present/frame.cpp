@@ -61,6 +61,13 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.netId = ref.netId;
 			f.kind = VisualKind::Item;
 			f.transform = e.get<Transform>();
+			if ( item->holder == 0 )
+			{
+				// In the world the body sits at the shape's centre; presentation draws the item from its grip.
+				ItemShape shape = sim.ItemShapeOf( item->kind );
+				b3Vec3 center = b3RotateVector( f.transform.rotation, b3Vec3{ shape.center.x, shape.center.y, shape.center.z } );
+				f.transform.position = b3Sub( f.transform.position, center );
+			}
 			f.holder = item->holder;
 			f.itemKind = item->kind;
 			f.socket = item->socket;

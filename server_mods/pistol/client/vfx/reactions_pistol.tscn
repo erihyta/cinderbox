@@ -116,4 +116,5 @@ max_distance = 25.0
 
 [node name="Gun" type="CbItemLook" parent="."]
 kind = "pistol.gun"
+display_name = "Pistol"
 scene = "res://prefabs/pistol.tscn"

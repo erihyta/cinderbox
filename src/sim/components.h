@@ -200,9 +200,10 @@ inline constexpr uint32_t kNoTemplate = 0xFFFFFFFFu;
 
 // Something a player holds (a sword, a torch): an entity of its own, with its own board and
 // events, drawn in its holder's socket. The kind names its look (declared by a mod).
+// An item: held in a socket, or (holder 0) lying in the world with a body of its kind's shape.
 struct HeldItem
 {
-	uint32_t holder = 0; // NetId of the player
+	uint32_t holder = 0; // NetId of the player; 0: in the world
 	uint16_t kind = 0;	 // schema item kind
 	uint8_t socket = 0;	 // schema socket
 	uint8_t reserved = 0;

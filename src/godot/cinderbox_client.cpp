@@ -14,6 +14,10 @@
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
+#include <godot_cpp/classes/input_event_key.hpp>
+#include <godot_cpp/classes/input_event_mouse_button.hpp>
+#include <godot_cpp/classes/input_map.hpp>
+#include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/time.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -422,6 +426,7 @@ void CinderboxClient::HandleEvents()
 			case present::EventType::Removed:
 			{
 				m_stateHashes.erase( e.visual );
+				m_itemHolders.erase( e.visual );
 				m_sockets.erase( e.visual );
 				auto it = m_nodes.find( e.visual );
 				if ( it != m_nodes.end() )
@@ -535,7 +540,7 @@ void CinderboxClient::UpdateNodes()
 		}
 		if ( v.kind == present::VisualKind::Item )
 		{
-			UpdateItem( v, node );
+			UpdateItem( id, v, pose, node );
 			return;
 		}
 
@@ -832,8 +837,29 @@ void CinderboxClient::ItemsChanged( uint32_t holderNetId )
 	}
 }
 
-void CinderboxClient::UpdateItem( const present::Visual& v, Node3D* node )
+void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, Node3D* node )
 {
+	uint32_t& drawnWith = m_itemHolders[visual];
+	if ( v.holder == 0 )
+	{
+		// Lying in the world, where its body is (the frame gives its grip).
+		CbDirector* world = Director();
+		if ( node->get_parent() != world )
+		{
+			node->set_name( "Leaving" ); // the socket's "Item" is free for the next one
+			node->reparent( world, false );
+			node->set_name( "item_" + String::num_int64( int64_t( v.netId ) ) );
+		}
+		if ( drawnWith != 0 )
+		{
+			ItemsChanged( drawnWith );
+			drawnWith = 0;
+		}
+		node->set_visible( true );
+		node->set_transform( Transform3D( Basis( ToGodot( pose.rotation ) ), ToGodot( pose.position ) ) );
+		return;
+	}
+	drawnWith = v.holder;
 	// In its holder's socket (the holder's node may have been rebuilt since).
 	Node3D* socket = SocketNode( v.holder, v.socket );
 	if ( socket == nullptr )
@@ -914,6 +940,10 @@ String CinderboxClient::EntityName( const present::Visual& v ) const
 	{
 		return "player_" + String::num_int64( int64_t( v.slot ) );
 	}
+	if ( v.kind == present::VisualKind::Item && v.holder != 0 )
+	{
+		return "Item"; // in its holder's socket
+	}
 	return String( KindName( v.kind ) ) + "_" + String::num_int64( int64_t( v.netId ) );
 }
 
@@ -932,6 +962,7 @@ void CinderboxClient::add_world_scene( Node* scene )
 		if ( look->get_kind().is_empty() == false )
 		{
 			m_itemLooks[ToStd( look->get_kind() )] = look->get_scene();
+			m_itemNames[ToStd( look->get_kind() )] = look->get_display_name();
 		}
 	}
 }
@@ -939,6 +970,7 @@ void CinderboxClient::add_world_scene( Node* scene )
 void CinderboxClient::clear_world_scenes()
 {
 	m_itemLooks.clear();
+	m_itemNames.clear();
 	for ( ObjectID id : m_worldScenes )
 	{
 		if ( auto* scene = Object::cast_to<Node>( ObjectDB::get_instance( id ) ) )
@@ -1075,7 +1107,11 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 			tree->set_active( false );
 		}
 	}
-	if ( v.kind == present::VisualKind::Item )
+	if ( v.kind == present::VisualKind::Item && v.holder == 0 )
+	{
+		Director()->add_child( node ); // lying in the world; UpdateItem places it
+	}
+	else if ( v.kind == present::VisualKind::Item )
 	{
 		// In its holder's socket if that is there yet; UpdateItem moves it there otherwise.
 		Node3D* socket = SocketNode( v.holder, v.socket );
@@ -1098,7 +1134,8 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 	String templateName = v.kind == present::VisualKind::Item && v.itemKind < m_frame.schema.itemKinds.size()
 							  ? String::utf8( m_frame.schema.itemKinds[v.itemKind].c_str() )
 							  : TemplateName( v.templateIndex );
-	Director()->add_entity( node, String( KindName( v.kind ) ), templateName );
+	Director()->add_entity( node, String( KindName( v.kind ) ), templateName, int64_t( v.netId ) );
+	m_itemHolders[visual] = v.kind == present::VisualKind::Item ? v.holder : 0;
 	if ( v.kind == present::VisualKind::Player )
 	{
 		CollectSockets( visual, node );
@@ -1540,9 +1577,75 @@ String CinderboxClient::get_player_name( int64_t net_id ) const
 	return name.empty() ? String( "Player " ) + String::num_int64( slot + 1 ) : String::utf8( name.c_str() );
 }
 
+String CinderboxClient::ResolveKeysAndLooks( int64_t net_id, const String& format ) const
+{
+	String out = format;
+	// {key:action}: what the player pressed to do it, as bound now (rebinding shows).
+	for ( int64_t at = out.find( "{key:" ); at >= 0; at = out.find( "{key:", at + 1 ) )
+	{
+		int64_t close = out.find( "}", at );
+		if ( close < 0 )
+		{
+			break;
+		}
+		String action = "cb_" + out.substr( at + 5, close - at - 5 );
+		String key = "?";
+		InputMap* map = InputMap::get_singleton();
+		if ( map->has_action( action ) )
+		{
+			TypedArray<InputEvent> events = map->action_get_events( action );
+			Ref<InputEvent> first = events.size() > 0 ? Ref<InputEvent>( events[0] ) : Ref<InputEvent>();
+			if ( Ref<InputEventKey> k = first; k.is_valid() )
+			{
+				Key code = k->get_physical_keycode() != KEY_NONE ? k->get_physical_keycode() : k->get_keycode();
+				key = OS::get_singleton()->get_keycode_string( code );
+			}
+			else if ( Ref<InputEventMouseButton> m = first; m.is_valid() )
+			{
+				MouseButton button = m->get_button_index();
+				key = button == MOUSE_BUTTON_LEFT ? "LMB" : button == MOUSE_BUTTON_RIGHT ? "RMB" : button == MOUSE_BUTTON_MIDDLE ? "MMB" : "Mouse";
+			}
+			else if ( first.is_valid() )
+			{
+				key = first->as_text();
+			}
+		}
+		out = out.substr( 0, at ) + key + out.substr( close + 1 );
+	}
+	// {look:field}: the field holds an entity's NetId; what is it called?
+	for ( int64_t at = out.find( "{look:" ); at >= 0; at = out.find( "{look:", at + 1 ) )
+	{
+		int64_t close = out.find( "}", at );
+		if ( close < 0 )
+		{
+			break;
+		}
+		Variant id = get_field( net_id, out.substr( at + 6, close - at - 6 ) );
+		String name;
+		flecs::entity ve = m_mirror && id.get_type() != Variant::NIL ? m_mirror->VisualOf( uint32_t( int64_t( id ) ) ) : flecs::entity();
+		if ( ve.is_valid() )
+		{
+			const present::Visual& target = ve.get<present::Visual>();
+			if ( target.kind == present::VisualKind::Item && target.itemKind < m_frame.schema.itemKinds.size() )
+			{
+				const std::string& kind = m_frame.schema.itemKinds[target.itemKind];
+				auto found = m_itemNames.find( kind );
+				name = found != m_itemNames.end() && found->second.is_empty() == false ? found->second : String::utf8( kind.c_str() );
+			}
+			else if ( target.kind == present::VisualKind::Player )
+			{
+				name = get_player_name( int64_t( id ) );
+			}
+		}
+		out = out.substr( 0, at ) + name.replace( "{", "(" ) + out.substr( close + 1 );
+	}
+	return out;
+}
+
 String CinderboxClient::format_fields( int64_t net_id, const String& format ) const
 {
-	String withName = ResolveNameFields( net_id, format.replace( "{name}", get_player_name( net_id ).replace( "{", "(" ) ) );
+	String withName = ResolveNameFields(
+		net_id, ResolveKeysAndLooks( net_id, format ).replace( "{name}", get_player_name( net_id ).replace( "{", "(" ) ) );
 	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
 	std::string text = present::FormatFields( m_frame.schema, ToStd( withName ), BoardOf( uint32_t( net_id ) ), globals );
 	return String::utf8( text.c_str() );

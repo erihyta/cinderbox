@@ -65,6 +65,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbFieldBinding );
 	GDREGISTER_CLASS( cb::gd::CbEventFeed );
 	GDREGISTER_CLASS( cb::gd::CbScoreboard );
+	GDREGISTER_CLASS( cb::gd::CbPromptLabel );
 }
 
 void UninitializeCinderbox( ModuleInitializationLevel )

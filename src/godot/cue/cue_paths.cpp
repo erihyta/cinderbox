@@ -27,7 +27,19 @@ int Carets( const String& name )
 
 bool IsAnchorName( const String& name )
 {
-	return Carets( name ) > 0 || name == "$at" || name == "$other" || name == "$local" || name == "$world";
+	return Carets( name ) > 0 || name == "$at" || name == "$other" || name == "$local" || name == "$world" || name.contains( "@" );
+}
+
+// "$local@pickup.target" -> "$local" and "pickup.target"; "@x" -> "^" and "x".
+void SplitAnchor( const String& first, String& anchor, String& field )
+{
+	int64_t at = first.find( "@" );
+	anchor = at < 0 ? first : first.substr( 0, at );
+	field = at < 0 ? String() : first.substr( at + 1 );
+	if ( at >= 0 && anchor.is_empty() )
+	{
+		anchor = "^";
+	}
 }
 
 double AsNumber( const Variant& v )
@@ -109,8 +121,9 @@ bool FromCue( const NodePath& path )
 	{
 		return false;
 	}
-	String first = path.get_name( 0 );
-	return first == "$at" || first == "$other";
+	String anchor, field;
+	SplitAnchor( path.get_name( 0 ), anchor, field );
+	return anchor == "$at" || anchor == "$other";
 }
 
 Node* Resolve( const NodePath& path, Node* origin, const Context& context )
@@ -119,7 +132,8 @@ Node* Resolve( const NodePath& path, Node* origin, const Context& context )
 	{
 		return nullptr;
 	}
-	String first = path.get_name( 0 );
+	String first, field;
+	SplitAnchor( path.get_name( 0 ), first, field );
 	Node* base = nullptr;
 	int64_t skip = 1;
 	if ( int carets = Carets( first ) )
@@ -154,6 +168,19 @@ Node* Resolve( const NodePath& path, Node* origin, const Context& context )
 	if ( base == nullptr )
 	{
 		return nullptr;
+	}
+	if ( field.is_empty() == false )
+	{
+		// The entity whose id that state field holds.
+		Node* holder = base == context.director ? base : EntityOf( base, context.director );
+		Dictionary state = holder != nullptr ? Dictionary( holder->get_meta( kStateMeta, Dictionary() ) ) : Dictionary();
+		int64_t id = int64_t( state.get( field, 0 ) );
+		Dictionary ids = context.director != nullptr ? Dictionary( context.director->get_meta( kIdsMeta, Dictionary() ) ) : Dictionary();
+		base = id != 0 ? Object::cast_to<Node>( ObjectDB::get_instance( ObjectID( uint64_t( int64_t( ids.get( id, 0 ) ) ) ) ) ) : nullptr;
+		if ( base == nullptr )
+		{
+			return nullptr;
+		}
 	}
 	Node* found = base;
 	if ( path.get_name_count() > skip )

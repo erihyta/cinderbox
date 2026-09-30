@@ -14,8 +14,9 @@
 			<param index="0" name="node" type="Node" />
 			<param index="1" name="kind" type="String" />
 			<param index="2" name="template_name" type="String" />
+			<param index="3" name="id" type="int" default="0" />
 			<description>
-				Makes [param node] an entity: [code]^[/code] stops at it, and it can have state.
+				Makes [param node] an entity: [code]^[/code] stops at it, and it can have state. With an [param id], state fields can name it: [code]$local@pickup.target[/code].
 			</description>
 		</method>
 		<method name="set_state">

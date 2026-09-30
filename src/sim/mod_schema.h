@@ -78,6 +78,18 @@ struct AnimPackInfo
 	bool operator==( const AnimPackInfo& ) const = default;
 };
 
+// The body of an item lying in the world. The item's frame is its grip (held in a socket's frame:
+// the grip at the origin, pointing along -Z); `center` is where the shape's centre is in it.
+struct ItemShape
+{
+	uint8_t kind = 0; // ShapeKind: 0 box (half extents), 1 sphere (radius = half.x)
+	Float3 half = { 0.05f, 0.05f, 0.15f };
+	Float3 center = { 0.0f, 0.0f, -0.15f };
+	float mass = 1.0f;
+
+	bool operator==( const ItemShape& ) const = default;
+};
+
 struct ModSchema
 {
 	std::vector<std::string> mods; // names of the mods the server runs, for display
@@ -95,10 +107,12 @@ struct ModSchema
 	// The character's baked state machine (graph.cfg text, sim/anim_graph.h); empty when it plays the
 	// built-in locomotion.
 	std::string animGraph;
-	// Kinds of held items mods spawn ("melee.bat"; a look per kind in the mod's client item), and
-	// the sockets they go in: the hands every character has, then any a mod names (a character
-	// provides it as a CbSocket node, or the item is not drawn there).
+	// Kinds of items mods spawn ("melee.bat"; a look per kind in the mod's client item), their
+	// bodies when they lie in the world (same index), and the sockets they are held in: the hands
+	// every character has, then any a mod names (a character provides it as a CbSocket node, or the
+	// item is not drawn there).
 	std::vector<std::string> itemKinds;
+	std::vector<ItemShape> itemShapes;
 	std::vector<std::string> sockets = { "RightHand", "LeftHand" };
 	std::vector<AnimPackInfo> animPacks;
 
