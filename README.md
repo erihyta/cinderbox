@@ -46,6 +46,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M37: Cue Preview: an editor panel that plays a scene's reactions (fire cues, set state, pick the viewer) with no game running | done |
 | M38: reaction polish: fixes, `method_args`, delay and chance, blended properties, "why didn't it fire" in the preview, and help in the editor (hover texts, info buttons, class reference) | done |
 | M39: items in the world: dropped, thrown and picked up, with physics everyone agrees on; a pickup mod with a proximity prompt made of data (`CbPromptLabel`, `$local@pickup.target`, `{key:pickup}`) | done |
+| M40: looks follow what is held: item kinds are conditions in the HUD and reactions (`pistol.gun`), so picked-up items look and sound right | done |
 
 ## Building
 
@@ -361,6 +362,7 @@ Conditions read the server mods' **board** by name:
 | `name` | the field is not zero |
 | `!name` | the field is zero |
 | `?name` | the server declared the field (its mod is running) |
+| `pistol.gun` (an item kind) | the player holds one, in any socket: what a look should ask, not which loadout slot is out |
 | `!?name` | the server did not declare it (e.g. hide the pistol's scoreboard when deathmatch shows its own) |
 | `name == 2`, `!=`, `>`, `>=`, `<`, `<=` | the comparison holds (`true` / `false` count as 1 / 0) |
 
@@ -764,7 +766,9 @@ A mod taking its item away destroys the NetId `ctx.HeldItem( slot, socket )` giv
 `ItemTarget`: another mod may put its item in that socket in the same tick (a weapon swap), and
 `ItemTarget` would find that one. What is in the hand decides: the melee mod swings any `melee.bat`
 in the right hand and the pistol fires any `pistol.gun`, whether a loadout slot gave it or it was
-picked up; a slot takes back only the item it gave.
+picked up; a slot takes back only the item it gave. Looks follow the same rule: the pistol's HUD
+and its predicted shot ask `pistol.gun` (true while the player holds one), never `loadout.slot == 2`,
+so a picked-up pistol shows its ammo and a bat held with slot 2 out swings without a muzzle flash.
 
 ### Items in the world
 
