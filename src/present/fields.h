@@ -19,6 +19,7 @@
 #include "components.h"
 #include "mod_schema.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -44,7 +45,11 @@ struct FieldValue
 // `board` may be null (the entity has published nothing), `globals` holds kBoardSlots values.
 FieldValue ReadField( const ModSchema& schema, const std::string& name, const Blackboard* board, const int32_t* globals );
 
-bool CheckCondition( const ModSchema& schema, const std::string& condition, const Blackboard* board, const int32_t* globals );
+// Names the caller knows that are not board fields ("event.value"): true with the value when known.
+using ExtraFields = std::function<bool( const std::string& name, float& value )>;
+
+bool CheckCondition( const ModSchema& schema, const std::string& condition, const Blackboard* board, const int32_t* globals,
+					 const ExtraFields* extra = nullptr );
 // True when every condition holds (and when there are none).
 bool CheckConditions( const ModSchema& schema, const std::vector<std::string>& conditions, const Blackboard* board,
 					  const int32_t* globals );

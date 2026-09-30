@@ -100,7 +100,7 @@ offset_bottom = -42.0
 label_settings = SubResource("Big")
 horizontal_alignment = 2
 text_format = "AMMO {pistol.ammo} / 12"
-conditions = PackedStringArray("loadout.slot == 2", "!pistol.reloading", "!combat.dead")
+conditions = PackedStringArray("pistol.gun", "!pistol.reloading", "!combat.dead")
 
 [node name="Reloading" type="CbFieldLabel" parent="."]
 anchors_preset = 3
@@ -115,7 +115,7 @@ offset_bottom = -42.0
 label_settings = SubResource("Big")
 horizontal_alignment = 2
 text = "RELOADING"
-conditions = PackedStringArray("loadout.slot == 2", "pistol.reloading", "!combat.dead")
+conditions = PackedStringArray("pistol.gun", "pistol.reloading", "!combat.dead")
 
 [node name="Crosshair" type="CbFieldLabel" parent="."]
 anchors_preset = 8
@@ -131,7 +131,7 @@ label_settings = SubResource("Big")
 horizontal_alignment = 1
 vertical_alignment = 1
 text = "+"
-conditions = PackedStringArray("loadout.slot == 2", "!combat.dead")
+conditions = PackedStringArray("pistol.gun", "!combat.dead")
 
 [node name="Dead" type="CbFieldLabel" parent="."]
 anchors_preset = 8

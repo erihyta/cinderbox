@@ -246,6 +246,11 @@ private:
 	std::map<std::string, godot::String> m_itemLooks;
 	std::map<std::string, godot::String> m_itemNames; // what prompts call a kind ("Bat")
 	std::unordered_map<uint64_t, uint32_t> m_itemHolders; // item visual -> the holder it was last drawn with
+	// What every player holds, by item kind (refreshed every frame): an item kind's name is a
+	// condition, true while the player holds one ("pistol.gun"), as in the state machines.
+	std::unordered_map<uint32_t, std::vector<uint16_t>> m_heldKinds;
+	void RefreshHeldKinds();
+	bool Holds( uint32_t netId, uint16_t kind ) const;
 	// "{key:pickup}" -> the binding of the server's action; "{look:pickup.target}" -> what the entity
 	// whose NetId the field holds is called (an item's display name, a player's name).
 	godot::String ResolveKeysAndLooks( int64_t net_id, const godot::String& format ) const;
