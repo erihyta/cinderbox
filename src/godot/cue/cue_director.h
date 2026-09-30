@@ -40,6 +40,8 @@ public:
 	void set_local( godot::Node* entity );
 	godot::Node* get_local() const;
 	void cue( const godot::String& name, godot::Node* at, godot::Node* other, const godot::Dictionary& args );
+	// What that cue would do, without doing it: { reaction path: "acts" or why not }.
+	godot::Dictionary explain( const godot::String& name, godot::Node* at, godot::Node* other, const godot::Dictionary& args );
 	void update();
 
 	void set_auto_update( bool v )
@@ -73,6 +75,7 @@ private:
 		}
 	};
 	cue::Context BaseContext() const;
+	cue::Context CueContext( godot::Node* at, godot::Node* other, const godot::Dictionary& args ) const;
 	void Index();
 
 	bool m_autoUpdate = true;

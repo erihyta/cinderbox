@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbReaction" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		Reacts to the game with no code: on a cue, or while conditions hold, it changes how things look.
+	</brief_description>
+	<description>
+		Put it in any scene the game draws (a held item, a character, a prop) or in a [code]vfx/reactions_*.tscn[/code]. A [CbDirector] above it runs it from cues (events: [code]melee.hit[/code] at an entity) and entity state ([code]melee.hot[/code] = true).
+Every node path may start with an anchor: [code]^[/code] my entity, [code]^^[/code] the entity above it (a held item's holder), [code]$at[/code] and [code]$other[/code] the cue's entities, [code]$local[/code] the viewer, [code]$world[/code] the director. Then an ordinary path: [code]^^/RightHand/Item[/code], [code]$other/Head[/code].
+Looks only: it never changes the game itself, and no path leaves the director. Try reactions without a server in the Cue Preview bottom panel.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="fire">
+			<return type="void" />
+			<description>
+				Acts now, as if a cue came, without checking the cue or the conditions.
+			</description>
+		</method>
+		<method name="set_on">
+			<return type="void" />
+			<param index="0" name="on" type="bool" />
+			<description>
+				Turns a "while" on or off by hand (the director does this every frame).
+			</description>
+		</method>
+		<method name="is_on">
+			<return type="bool" />
+			<description>
+				Whether a "while" is on.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="when" type="int" setter="set_when" getter="get_when" enum="CbReaction.When" default="0">
+			On a cue: acts once per cue named [member event]. While: on as long as [member conditions] hold, and undoes what it did when they stop.
+		</member>
+		<member name="event" type="String" setter="set_event" getter="get_event" default="&quot;&quot;">
+			The cue's name: a mod's event ([code]melee.hit[/code]), the game's ([code]footstep[/code], [code]jumped[/code], [code]landed[/code], [code]impact[/code], [code]spawned[/code], [code]destroying[/code]) or the viewer's key press ([code]pressed:fire[/code]).
+		</member>
+		<member name="event_side" type="int" setter="set_event_side" getter="get_event_side" enum="CbReaction.EventSide" default="0">
+			A: the cue happened at the subject ([code]melee.hit[/code] is at the attacker). B: the subject is the other entity the cue names (the victim). Either: both. Ignored when [member subject] starts with [code]$at[/code] or [code]$other[/code].
+		</member>
+		<member name="subject" type="NodePath" setter="set_subject" getter="get_subject" default="NodePath(&quot;&quot;)">
+			Whose state plain condition names read, and who the cue must name. Empty is [code]^[/code] (my entity). [code]^^[/code]: my holder. [code]$at[/code] / [code]$other[/code]: whoever any cue of this name names (world reactions).
+		</member>
+		<member name="subject_kind" type="String" setter="set_subject_kind" getter="get_subject_kind" default="&quot;&quot;">
+			Only when the subject is this kind of entity: [code]player[/code], [code]prop[/code], [code]static[/code], [code]ragdoll[/code], [code]item[/code]. Empty or [code]any[/code]: all.
+		</member>
+		<member name="subject_template" type="String" setter="set_subject_template" getter="get_subject_template" default="&quot;&quot;">
+			Only when the subject comes from this template (a map template's name; an item's kind: [code]melee.bat[/code]).
+		</member>
+		<member name="conditions" type="PackedStringArray" setter="set_conditions" getter="get_conditions" default="PackedStringArray()">
+			All must hold. [code]name[/code] / [code]!name[/code] (not zero / zero), [code]?name[/code] (known), comparisons ([code]pistol.ammo &gt; 0[/code]). A path and a colon read another entity: [code]^^:combat.dead[/code], [code]$world:deathmatch.round[/code]. Also [code]is_local[/code], [code]event.value[/code], [code]event.strength[/code].
+		</member>
+		<member name="delay" type="float" setter="set_delay" getter="get_delay" default="0.0">
+			Cue reactions: act this many seconds after the cue.
+		</member>
+		<member name="chance" type="float" setter="set_chance" getter="get_chance" default="1.0">
+			Cue reactions: how often it acts, from 0 to 1 (0.3: about a third of the cues).
+		</member>
+		<member name="cooldown" type="float" setter="set_cooldown" getter="get_cooldown" default="0.0">
+			At least this many seconds between two firings: twenty props landing at once play one sound.
+		</member>
+		<member name="animation_player" type="NodePath" setter="set_animation_player" getter="get_animation_player" default="NodePath(&quot;&quot;)">
+			The AnimationPlayer that plays [member animation] ([code]../AnimationPlayer[/code]). Looks only: bone tracks on a player's body are overwritten by the game's pose.
+		</member>
+		<member name="animation" type="String" setter="set_animation" getter="get_animation" default="&quot;&quot;">
+			Played from the start when it acts.
+		</member>
+		<member name="animation_off" type="String" setter="set_animation_off" getter="get_animation_off" default="&quot;&quot;">
+			Played when a "while" ends. Without one, [member animation] stops.
+		</member>
+		<member name="target" type="NodePath" setter="set_target" getter="get_target" default="NodePath(&quot;&quot;)">
+			The node whose [member property] is set, or whose [member method] is called: [code]../Barrel[/code], [code]^^/Head[/code].
+		</member>
+		<member name="property" type="String" setter="set_property" getter="get_property" default="&quot;&quot;">
+			The property to set; sub-paths work: [code]visible[/code], [code]surface_material_override/0:emission_energy_multiplier[/code]. A "while" puts the old value back when it ends.
+		</member>
+		<member name="value" type="Variant" setter="set_value" getter="get_value" default="null">
+			What [member property] becomes.
+		</member>
+		<member name="blend_time" type="float" setter="set_blend_time" getter="get_blend_time" default="0.0">
+			Fade to [member value] (and back, when a "while" ends) over this many seconds. Numbers, vectors and colours; anything else changes at once.
+		</member>
+		<member name="method" type="String" setter="set_method" getter="get_method" default="&quot;&quot;">
+			A method of [member target] to call: [code]restart[/code], [code]play[/code], [code]set_visible[/code]. Anything that removes nodes, changes scripts or calls something else by name is refused.
+		</member>
+		<member name="method_args" type="Array" setter="set_method_args" getter="get_method_args" default="[]">
+			[member method]'s arguments: [code]["slash"][/code], [code][false][/code].
+		</member>
+		<member name="scene" type="String" setter="set_scene" getter="get_scene" default="&quot;&quot;">
+			A scene to add: particles, a decal, a light. One-shot particles restart, so the burst always plays.
+		</member>
+		<member name="scene_parent" type="NodePath" setter="set_scene_parent" getter="get_scene_parent" default="NodePath(&quot;&quot;)">
+			Where [member scene] goes when [member place] is "Under its parent". Empty: next to this reaction.
+		</member>
+		<member name="scene_lifetime" type="float" setter="set_scene_lifetime" getter="get_scene_lifetime" default="2.0">
+			Seconds before a cue's scene is freed. A "while"'s scene goes when the "while" ends.
+		</member>
+		<member name="place" type="int" setter="set_place" getter="get_place" enum="CbReaction.Place" default="0">
+			Where the scene and the sound go: under its parent, at the cue's point or end (where a shot ended), a beam from [member place_node] (or the point) to the end, at [member place_node], or following the subject.
+		</member>
+		<member name="place_node" type="NodePath" setter="set_place_node" getter="get_place_node" default="NodePath(&quot;&quot;)">
+			For "At place_node" and "Beam": [code]$at/RightHand[/code], [code]$other/Head[/code].
+		</member>
+		<member name="offset" type="Vector3" setter="set_offset" getter="get_offset" default="Vector3(0, 0, 0)">
+			Added to where the scene and the sound go.
+		</member>
+		<member name="sound" type="String" setter="set_sound" getter="get_sound" default="&quot;&quot;">
+			A sound, once, where [member place] puts it. For variety, use an AudioStreamRandomizer.
+		</member>
+		<member name="volume_db" type="float" setter="set_volume_db" getter="get_volume_db" default="0.0">
+			The sound's volume.
+		</member>
+		<member name="pitch_scale" type="float" setter="set_pitch_scale" getter="get_pitch_scale" default="1.0">
+			The sound's pitch.
+		</member>
+		<member name="pitch_jitter" type="float" setter="set_pitch_jitter" getter="get_pitch_jitter" default="0.0">
+			A random ± added to [member pitch_scale] each time.
+		</member>
+		<member name="bus" type="String" setter="set_bus" getter="get_bus" default="&quot;&quot;">
+			The audio bus. Empty: the default.
+		</member>
+		<member name="max_distance" type="float" setter="set_max_distance" getter="get_max_distance" default="0.0">
+			Silent beyond this distance. 0: the default falloff.
+		</member>
+		<member name="shake" type="float" setter="set_shake" getter="get_shake" default="0.0">
+			Camera shake strength. The viewer's: add the condition [code]is_local[/code] for what only the affected player should feel.
+		</member>
+		<member name="shake_time" type="float" setter="set_shake_time" getter="get_shake_time" default="0.3">
+			Seconds the shake takes to fade.
+		</member>
+		<member name="flash_color" type="Color" setter="set_flash_color" getter="get_flash_color" default="Color(1, 1, 1, 0)">
+			A full-screen flash; its alpha is the strength. The viewer's, like [member shake].
+		</member>
+		<member name="flash_time" type="float" setter="set_flash_time" getter="get_flash_time" default="0.15">
+			Seconds the flash takes to fade.
+		</member>
+	</members>
+	<constants>
+		<constant name="WHEN_EVENT" value="0" enum="When">
+			Acts once per cue.
+		</constant>
+		<constant name="WHEN_WHILE" value="1" enum="When">
+			On while its conditions hold.
+		</constant>
+		<constant name="SIDE_A" value="0" enum="EventSide">
+			The cue happened at the subject.
+		</constant>
+		<constant name="SIDE_B" value="1" enum="EventSide">
+			The subject is the other entity the cue names.
+		</constant>
+		<constant name="SIDE_EITHER" value="2" enum="EventSide">
+			Either one.
+		</constant>
+		<constant name="PLACE_PARENT" value="0" enum="Place">
+			Under its parent.
+		</constant>
+		<constant name="PLACE_EVENT_POINT" value="1" enum="Place">
+			At the cue's point.
+		</constant>
+		<constant name="PLACE_EVENT_END" value="2" enum="Place">
+			At the cue's end (where a shot ended).
+		</constant>
+		<constant name="PLACE_BEAM" value="3" enum="Place">
+			A one-metre scene stretched from place_node (or the point) to the end.
+		</constant>
+		<constant name="PLACE_NODE" value="4" enum="Place">
+			At place_node.
+		</constant>
+		<constant name="PLACE_FOLLOW" value="5" enum="Place">
+			Under the subject, following it.
+		</constant>
+	</constants>
+</class>

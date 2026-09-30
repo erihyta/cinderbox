@@ -12,6 +12,7 @@
 // and shake the preview. The stage is only a copy: nothing here touches the edited scene.
 
 #include "cue_director.h"
+#include "cue_info.h"
 
 #include <godot_cpp/classes/camera3d.hpp>
 #include <godot_cpp/classes/color_rect.hpp>
@@ -124,6 +125,7 @@ protected:
 private:
 	void OnSceneChanged( godot::Node* root );
 	CbCuePreviewDock* m_dock = nullptr;
+	godot::Ref<CbReactionInspector> m_inspector;
 };
 
 } // namespace cb::gd

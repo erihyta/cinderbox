@@ -19,10 +19,12 @@
 //          condition names read; a cue must name the subject on its event_side (A: the cue is at
 //          it, B: it is the other one), unless the subject starts from $at or $other (then every
 //          cue of the name is about whoever it names).
-// Do:      any of: play an animation (and another when a "while" ends); set a property (put back
-//          when a "while" ends); call a built-in method with no arguments; add a scene (freed
-//          after scene_lifetime for a cue, when a "while" ends); play a sound; shake the camera or
-//          flash the screen (the director's screen_effect signal: pair them with is_local).
+// Timing:  a cue reaction may wait (delay), act only sometimes (chance) and not too often (cooldown).
+// Do:      any of: play an animation (and another, or a stop, when a "while" ends); set a property,
+//          at once or blended over blend_time (put back when a "while" ends); call a method with
+//          method_args; add a scene (freed after scene_lifetime for a cue, when a "while" ends);
+//          play a sound; shake the camera or flash the screen (the director's screen_effect
+//          signal: pair them with is_local).
 // Place:   where a scene or sound goes: under its parent, at the cue's point or end, a beam from
 //          place_node (or the point) to the end, at place_node, or following the subject.
 //
@@ -32,6 +34,7 @@
 #include "cue_paths.h"
 
 #include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/classes/tween.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/node_path.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
@@ -87,8 +90,12 @@ public:
 	{
 		return m_event;
 	}
-	// Whether this cue is for this reaction, and its conditions hold: then it acts. True when it did.
+	// Whether this cue is for this reaction, and its conditions hold: then it acts (now, or after its
+	// delay). True when it did.
 	bool Fire( const cue::Context& context, double now );
+	// Why this cue would or would not make it act ("acts", "condition melee.hot is false", ...),
+	// without acting. For the Cue Preview.
+	godot::String Explain( const cue::Context& context, double now ) const;
 	// Re-checks a "while" (no cue).
 	void Update( const cue::Context& context );
 	bool HasScreenEffect() const
@@ -114,13 +121,17 @@ public:
 	CB_REACTION_FIELD( godot::String, subject_template, m_subjectTemplate )
 	CB_REACTION_FIELD( godot::PackedStringArray, conditions, m_conditions )
 	CB_REACTION_FIELD( double, cooldown, m_cooldown )
+	CB_REACTION_FIELD( double, delay, m_delay )
+	CB_REACTION_FIELD( double, chance, m_chance )
 	CB_REACTION_FIELD( godot::NodePath, animation_player, m_player )
 	CB_REACTION_FIELD( godot::String, animation, m_animation )
 	CB_REACTION_FIELD( godot::String, animation_off, m_animationOff )
 	CB_REACTION_FIELD( godot::NodePath, target, m_target )
 	CB_REACTION_FIELD( godot::String, property, m_property )
 	CB_REACTION_FIELD( godot::Variant, value, m_value )
+	CB_REACTION_FIELD( double, blend_time, m_blendTime )
 	CB_REACTION_FIELD( godot::String, method, m_method )
+	CB_REACTION_FIELD( godot::Array, method_args, m_methodArgs )
 	CB_REACTION_FIELD( godot::String, scene, m_scene )
 	CB_REACTION_FIELD( godot::NodePath, scene_parent, m_sceneParent )
 	CB_REACTION_FIELD( double, scene_lifetime, m_sceneLifetime )
@@ -148,11 +159,16 @@ protected:
 private:
 	void Changed();
 	bool Parse();
-	bool Holds( const cue::Context& context, godot::Node* subject ) const;
+	bool Holds( const cue::Context& context, godot::Node* subject, godot::String* why = nullptr ) const;
+	// The part of Fire that decides; "" when it acts.
+	godot::String Refusal( const cue::Context& context, double now, bool rolled ) const;
+	void Delayed( uint64_t at, uint64_t other, godot::Dictionary args );
+	void SetProperty( godot::Node* target, const godot::NodePath& path, const godot::Variant& value );
 	godot::Node* Subject( const cue::Context& context ) const;
 	void Act( bool on, const cue::Context& context );
 	void PlaySound( godot::Node* parent, bool global, const godot::Vector3& where );
 	static bool Refused( const godot::String& method, const godot::String& property );
+	void End(); // a "while" that is on ends where it acted (leaving the tree)
 
 	int m_when = WHEN_EVENT;
 	godot::String m_event;
@@ -162,13 +178,17 @@ private:
 	godot::String m_subjectTemplate;
 	godot::PackedStringArray m_conditions;
 	double m_cooldown = 0.0;
+	double m_delay = 0.0;
+	double m_chance = 1.0;
 	godot::NodePath m_player;
 	godot::String m_animation;
 	godot::String m_animationOff;
 	godot::NodePath m_target;
 	godot::String m_property;
 	godot::Variant m_value;
+	double m_blendTime = 0.0;
 	godot::String m_method;
+	godot::Array m_methodArgs;
 	godot::String m_scene;
 	godot::NodePath m_sceneParent;
 	double m_sceneLifetime = 2.0;
@@ -191,6 +211,8 @@ private:
 	bool m_valid = false;
 	std::vector<cue::Condition> m_tests;
 	double m_lastFired = -1e9;
+	bool m_warned = false; // said once that a path or condition does not parse
+	godot::Ref<godot::Tween> m_tween;
 
 	bool m_on = false;
 	bool m_haveOriginal = false;
