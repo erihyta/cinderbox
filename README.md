@@ -60,6 +60,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M51: two extensions: the viewer (no simulation, no networking; all a mod's project needs) and the peer (joins servers, plays recordings), with frames crossing as bytes; any object, even a script, can be a viewer's source | done |
 | M52: packs are contained: a scene is checked before it is used (listed node classes only, no scripts, no wired signals, no paths out of the scene, animations and reactions call only listed methods) | done |
 | M53: smaller frames: compact packets and fewer frames than ticks, what a stream will carry (32 players: 6.8 Mbit/s down to 0.43); view files can be recorded that way | done |
+| M54: streaming clients: a client that does not simulate is sent the frames to draw (`--stream`); the server's mods decide what each one sees (fog of war, the `fog` mod); a third, simulation-free extension | done |
 
 ## Building
 
@@ -79,11 +80,12 @@ ctest --preset clang-release
 Presets: `clang-debug`, `clang-release`, `gcc-release`, `msvc-release` (run from a VS developer
 prompt), `unix-clang-release`, `unix-gcc-release`, and `godot-export`.
 
-`clang-release` and `unix-clang-release` also build the two Godot extensions (`CB_BUILD_GODOT`, via
+`clang-release` and `unix-clang-release` also build the three Godot extensions (`CB_BUILD_GODOT`, via
 godot-cpp) into `godot/bin/` as `template_debug`: `libcinderbox` (the viewer) and
-`libcinderbox_peer` (the simulation and the networking, for joining servers). `godot-export` builds
-only their `template_release` versions, used by exported games. The other presets skip Godot, so
-they never overwrite those DLLs.
+`libcinderbox_peer` (the simulation and the networking, for joining servers) and
+`libcinderbox_stream` (networking only, for being sent frames). `godot-export` builds only their
+`template_release` versions, used by exported games. The other presets skip Godot, so they never
+overwrite those DLLs.
 
 Godot learns of an extension when the project is imported: after the first build (or after
 pulling a change that adds one), open `godot/` in the editor once or run
@@ -101,6 +103,8 @@ cb_server --port 7777
 godot --path godot
 # or straight into a server
 godot --path godot -- --host=127.0.0.1 --port=7777
+# or join without simulating: the server sends the frames to draw (nothing is predicted)
+godot --path godot -- --host=127.0.0.1 --port=7777 --stream
 # or watch a recording (cb_server --record FILE), or a view file (cb_server --record-view FILE)
 godot --path godot -- --replay=FILE
 godot --path godot -- --view=FILE
@@ -156,8 +160,32 @@ themselves, not inputs to re-simulate, so it plays on any build and shows the pl
 is also much bigger (about 0.1 MB a second for 4 players, 1.2 MB for 64; with `--view-rate 20
 --view-compact`, 0.01 and 0.09 MB).
 
+### Streaming
+
+`--stream` joins a server without simulating it. The server sends 20 frames a second
+(`cb_server --stream-rate HZ`) and plays the input it is sent.
+
+| | A client that simulates | A streaming client |
+|---|---|---|
+| Runs | the whole world, with prediction and rollback | nothing: it draws what it is sent |
+| Your own character | answers at once | answers a round trip later |
+| Is shown | everything (it has the world) | what the server's mods let it see |
+| Needs | the same build of the simulation as the server | any build that speaks the protocol |
+| Downloads | inputs: ~55 kbit/s at 32 players | frames: ~565 kbit/s at 32 players, ~117 with `fog.radius=12` |
+
+**Fog of war** is a server mod's decision: `ServerMod::Sees( ctx, viewer, netId )` is asked for
+every entity of every frame a streaming client is sent. The `fog` mod is the example:
+
+```bash
+cb_server --mod-option fog.radius=12     # streaming clients are sent the level and what is within 12 m
+```
+
+A client that simulates cannot be kept in the dark, so a server that depends on fog should turn
+away clients that are not streaming (it does not yet).
+
 Open `godot/` in the Godot editor to edit scenes, then press Play. Godot client options, given after `--`:
 - `--host=H`, `--port=P`: join this server without the menu (leaving it lands in the menu).
+- `--stream`: join as a streaming client: no simulation, no prediction, shown what the server sends (see [Streaming](#streaming)).
 - `--replay=FILE`, `--view=FILE`: watch a recording or a view file instead (see above).
 - `--name=NAME`: your name (otherwise the one typed in the menu).
 - `--config=FILE`: where name, settings and recent servers are kept (default `user://player.cfg`).
@@ -247,6 +275,7 @@ The mods that ship:
 | `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage` | the bat: a full-body stance while it is out; left mouse swings (0.45 s, every 0.6 s), a fan of 1.8 m rays from the chest at the strike, 40 damage through `combat.damage` |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
 | `pistol` | `combat.*`, `pistol.*` fields; `fire` (left mouse), `reload` (R); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `combat.killed` | hitscan from the camera pivot, 25 damage, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; keeps health, so it also applies other mods' `combat.damage`; death leaves a ragdoll (10 s, at most 16); respawn after 3 s; falling out of the world counts as a death |
+| `fog` | nothing; option `fog.radius` | streaming clients are sent only what is within the radius of their player (off by default) |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
 Mods cooperate through the board (`pickup` reads the `inventory.slot` that `inventory` publishes, to
@@ -267,6 +296,7 @@ Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod re
 | `pickup.spawn_each` | 0; N drops N of every item kind the mods declared around the spawn point at start |
 | `pickup.hold_seconds` | 0 (a tap); how long E must be held to pick up an item whose mod does not say (see item properties) |
 | `expire.seconds` | 60; an item that was held and then left lying is removed after this long (0: never) |
+| `fog.radius` | 0 (off); streaming clients are sent the level and what is within this many metres of their player |
 
 ```bash
 cb_server --port 7777 --mod-option deathmatch.kills=5 --mod-option deathmatch.round_seconds=120
@@ -1250,11 +1280,13 @@ src/tools/        cb_netsim, cb_replay, cb_bot
 src/client/       GameClient core (no rendering, also "lite" mode), the view sources, bot brain, and the raylib debug viewer
   live_source.*     a view source that plays on a server (GameClient on its own thread)
   replay_source.*   a view source that plays a recording (replay_player.* on its own thread)
-  source_thread.*   what both share: the thread, the float environment, the newest frame
   app/              raylib rendering, camera, HUD over the presentation mirror
   app/anim_viewer.* offline clip preview (--anim-viewer)
   app/replay_viewer.* recording playback (--replay)
+src/stream/       StreamSource: a view source that is sent frames by a server (networking, no simulation)
 src/present/      engine-independent presentation, shared by Godot and raylib
+  visibility.*      a frame with what one viewer must not be shown taken out
+  source_thread.*   what sources with a thread share: the thread, the float environment, the newest frame
   view.h            the viewer protocol: ViewFrame (what a viewer is told), ViewSource (who tells it)
   view_codec.*      a ViewFrame as bytes: whole, or a delta against a frame both sides have
   view_file.*       view files: frames recorded as bytes, and the source that plays them
@@ -1269,6 +1301,8 @@ src/godot/        the viewer GDExtension (cinderbox): CinderboxClient (draws a v
                   CbItemLook, HUD labels (cinderbox_hud.*). No simulation, no networking
   object_source.*   a source that is a Godot object handing over packets (the peer, or a script)
   peer/             the peer GDExtension (cinderbox_peer): CinderboxPeer, the sources that simulate
+  stream/           the stream GDExtension (cinderbox_stream): CinderboxStream, the source a server sends frames to
+  packet_handoff.*  what both hand a viewer: the newest frame as a packet
   cue/            the reaction addon, godot-cpp only: CbDirector, CbReaction, cue paths and conditions
 godot/            Godot client project: boot (player mods, pack validator), game (input, camera, HUD, VFX,
                   joining with workshop items), workshop.gd (where items are), prefabs, vfx, ui
