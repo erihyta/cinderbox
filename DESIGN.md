@@ -1263,10 +1263,7 @@ that slot's pistol and marked the slot spent (M41).
   still on the back, no desyncs.
 
 **Not done**
-- **No slot HUD.** The board has 16 names per entity and all 16 are used (`inventory.slot` took the
-  place of `loadout.slot`), so the slots' contents cannot be published. Raising `kBoardSlots`
-  changes the snapshot layout and the reference hashes; it needs its own milestone, and it blocks
-  any new mod that wants a field.
+- **No slot HUD** (done in M48: the board had 16 names per entity and all 16 were used).
 - Holster positions were placed by numbers and checked in two screenshots, not tuned by eye. The
   paid mannequin got the same two sockets locally (it is not in the repository).
 - Two kinds sharing one holster socket would be drawn on top of each other.
@@ -1298,6 +1295,25 @@ Three leftovers from the item milestones.
   reference hashes unchanged.
 - **Not done**: the button was pressed from a script, not clicked in the editor. A bake reaches
   servers only when the mod is published again (the item's hash changes), which the button says.
+
+## A bigger board (M48)
+Every field a mod publishes has a name, and a server's mods share 16 names per scope (entity,
+global). M46 used the last entity name: one more field from any mod and the server refused to start.
+
+- **`kBoardSlots` 16 -> 32.** One constant sizes the `Blackboard` component, the global board in
+  `SimGlobals`, the presentation frame and the schema check. It is part of the snapshot layout, so
+  every state hash changed: `tests/reference_hashes.txt` was written again (`cb_tests --dump`), and
+  the protocol is 16. A board is 128 bytes instead of 64, on entities that have one (players, items).
+- **Why not more, or dynamic**: a fixed array keeps the component a plain block of bytes (snapshots
+  and rollback copy it as is). 32 leaves room (19 entity names are used now) without making every
+  snapshot pay for space nobody uses.
+- **The inventory's slots on the board**: `inventory.item_2` .. `item_4` (NetIds), and a HUD made of
+  them (`hud_inventory.tscn`: two `CbFieldLabel`s per slot, one shown while the slot is out).
+- **Verified**: all unit and network suites with the new size; the new reference hashes agree
+  across the CI compilers; the `inventory` test checks the board's slots at the start, after the
+  swap and after the throw; a rendered session shows the row ("1 Hands, 2 Pistol, 3 Bat, 4").
+- **Not done**: the row shows names only (no icons, no ammo); when a server reaches 32 names the
+  same wall is back, with the same one-constant fix.
 
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
@@ -1419,3 +1435,4 @@ Three leftovers from the item milestones.
 45. **M45** (done): join menu (address, recent servers), Esc menu and settings in a script-free scene; failed joins come back with the reason; leaving reloads the scene, other mods restart the game; camera collision against the frame's static shapes.
 46. **M46** (done): stowed items in the engine (`MoveItem`, `HeldItem::stowed`), an `inventory` mod owning slots 1 to 4 in place of `loadout`, item properties for slot / start / holster, holster sockets on the mannequin; fixes items dropping on switch and on pick-up.
 47. **M47** (done): item properties authored on the `CbItemBody` and baked with the body (the bat's hold time), a Bake button on it, and `pickup.since` (a start tick) in place of a progress field set every tick.
+48. **M48** (done): `kBoardSlots` 32 (new reference hashes, protocol 16); the inventory publishes its slots and shows them on a HUD row.

@@ -157,8 +157,10 @@ inline constexpr uint32_t ItemTarget( PlayerSlot slot, uint32_t socket )
 inline constexpr uint32_t kSocketRightHand = 0;
 inline constexpr uint32_t kSocketLeftHand = 1;
 
-// Per-entity and global board sizes (see Blackboard in components.h).
-inline constexpr int kBoardSlots = 16;
+// Per-entity and global board sizes (see Blackboard in components.h): how many field names all the
+// mods of a server can declare per scope. Part of the snapshot layout: changing it changes every
+// state hash (tests/reference_hashes.txt) and the protocol version.
+inline constexpr int kBoardSlots = 32;
 // Most commands one frame can carry.
 inline constexpr size_t kMaxCommandsPerFrame = 1024;
 

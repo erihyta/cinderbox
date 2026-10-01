@@ -54,6 +54,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M45: join menu (address, recent servers), Esc menu, settings; failed joins say why; camera collision with the map | done |
 | M46: an inventory (slots, stowed items, optional holsters): switching and picking up no longer drop other items | done |
 | M47: item properties and hold times authored on the `CbItemBody`, a Bake button for it, hold progress drawn from a start tick | done |
+| M48: 32 board fields per scope instead of 16 (all 16 were used); the inventory shows its slots on the HUD | done |
 
 ## Building
 
@@ -204,7 +205,7 @@ The mods that ship:
 
 | Mod | Declares | Rules |
 |---|---|---|
-| `inventory` | `inventory.slot`; actions `slot_1` .. `slot_4` (keys 1 to 4) | what a player carries: slot 1 is empty hands (and freelook), slots 2 to 4 hold one item each; the slot that is out has its item in the right hand, the rest are stowed. See [The inventory](#the-inventory) |
+| `inventory` | `inventory.slot`, `inventory.item_2` .. `item_4`; actions `slot_1` .. `slot_4` (keys 1 to 4) | what a player carries: slot 1 is empty hands (and freelook), slots 2 to 4 hold one item each; the slot that is out has its item in the right hand, the rest are stowed. See [The inventory](#the-inventory) |
 | `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage` | the bat: a full-body stance while it is out; left mouse swings (0.45 s, every 0.6 s), a fan of 1.8 m rays from the chest at the strike, 40 damage through `combat.damage` |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
 | `pistol` | `combat.*`, `pistol.*` fields; `fire` (left mouse), `reload` (R); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `combat.killed` | hitscan from the camera pivot, 25 damage, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; keeps health, so it also applies other mods' `combat.damage`; death leaves a ragdoll (10 s, at most 16); respawn after 3 s; falling out of the world counts as a death |
@@ -842,6 +843,11 @@ The `inventory` mod's rules:
 | An item is picked up (E) | It goes to its kind's slot and comes into the hand. If that slot had an item, the old one drops (one per slot). Other slots are untouched |
 | G | Throws what is in the hand; its slot is empty until something is picked up |
 | Death | What the life started with is taken back; anything else carried drops where the player stood. The next life starts with the slot that was out |
+
+The mod's look (`server_mods/inventory/client`, a workshop item like the others) is a row of slots
+along the bottom of the screen, all data: `inventory.item_N` holds the NetId of slot N's item, a
+label shows `{look:inventory.item_N}` (what that item is called), and the slot that is out
+(`inventory.slot == N`) is highlighted.
 
 Other mods describe their items with properties and never touch the slots:
 

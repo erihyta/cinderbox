@@ -919,8 +919,11 @@ void TestInventory()
 	int gunKind = schema.FindItemKind( "pistol.gun" );
 	int batKind = schema.FindItemKind( "melee.bat" );
 	const BoardField* slotField = schema.FindField( "inventory.slot" );
+	const BoardField* slot2 = schema.FindField( "inventory.item_2" );
+	const BoardField* slot3 = schema.FindField( "inventory.item_3" );
 	CHECK( gunSlot != 0 && batSlot != 0 && pickup != 0 && drop != 0 && gunKind >= 0 && batKind >= 0 && slotField != nullptr );
-	if ( gunKind < 0 || batKind < 0 || slotField == nullptr )
+	CHECK( slot2 != nullptr && slot3 != nullptr );
+	if ( gunKind < 0 || batKind < 0 || slotField == nullptr || slot2 == nullptr || slot3 == nullptr )
 	{
 		return;
 	}
@@ -1000,6 +1003,9 @@ void TestInventory()
 	bool thrown = false;
 	bool noSecondBat = false;
 	bool gunAfterThrow = false;
+	bool boardSaysStart = false;
+	bool boardSaysSwap = false;
+	bool boardSaysEmpty = false;
 	uint32_t ownBat = 0;
 	int startTotal = 0;
 	int leastTotal = 1000;
@@ -1033,6 +1039,12 @@ void TestInventory()
 			batOut = c.carried == 2 && c.stowed == 1;
 			ownBat = inHand;
 		}
+		// The board names what is in each slot, for the HUD: the life's own, then the picked-up bat, then nothing.
+		uint32_t in2 = uint32_t( server.BoardValue( me, slot2->slot ) );
+		uint32_t in3 = uint32_t( server.BoardValue( me, slot3->slot ) );
+		boardSaysStart |= tick > 130 && tick < 150 && ownBat != 0 && in3 == ownBat && kindOf( in2 ) == gunKind;
+		boardSaysSwap |= reached && tick < 600 && in3 == lyingBat && kindOf( in2 ) == gunKind;
+		boardSaysEmpty |= tick > 700 && in3 == 0 && kindOf( in2 ) == gunKind;
 		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == 2 && c.stowed == 1;
 		droppedBySwitching |= tick > 100 && tick < 200 && c.lying != 2;
 		// The lying bat is in the hand: the swap happened.
@@ -1064,6 +1076,9 @@ void TestInventory()
 	CHECK( reached && swapped && gunKept );
 	CHECK( awayAndKept && backInHand );
 	CHECK( thrown && gunAfterThrow && noSecondBat );
+	std::printf( "    the board's slots: at the start %d, after the swap %d, empty after the throw %d\n", int( boardSaysStart ),
+				 int( boardSaysSwap ), int( boardSaysEmpty ) );
+	CHECK( boardSaysStart && boardSaysSwap && boardSaysEmpty );
 	CHECK( startTotal == 6 && leastTotal == 6 && mostTotal == 6 ); // two lying, two per player; none made, none lost
 	for ( Bot& b : h.bots )
 	{

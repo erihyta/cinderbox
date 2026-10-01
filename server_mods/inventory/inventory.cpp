@@ -20,8 +20,9 @@
 //
 // Dying takes back what the life started with and drops the rest where the player stood.
 //
-// It publishes "inventory.slot" (which slot is out) on the player's board. What is in the other
-// slots is not published: the board has no names to spare for it (kBoardSlots).
+// It publishes "inventory.slot" (which slot is out) and "inventory.item_2" .. "inventory.item_4"
+// (the NetId of each slot's item, 0: empty) on the player's board. Its look (client/ui) is a row of
+// slots at the bottom of the screen, built from those.
 
 #include "mod_api.h"
 
@@ -42,7 +43,8 @@ constexpr float kDropSpeed = 1.0f;	// m/s, when an item is pushed out of its slo
 
 struct Bag
 {
-	std::array<uint32_t, kSlots + 1> item{}; // slot -> NetId (0: empty); [0] and [1] stay 0
+	std::array<uint32_t, kSlots + 1> item{};	  // slot -> NetId (0: empty); [0] and [1] stay 0
+	std::array<int32_t, kSlots + 1> published{}; // what the board says about them
 	int current = 1;
 	bool full = false;				// the hand has (or is getting) an item
 	bool dead = false;
@@ -65,6 +67,10 @@ public:
 		for ( int s = 1; s <= kSlots; ++s )
 		{
 			m_keys[size_t( s )] = declare.Action( "slot_" + std::to_string( s ), std::to_string( s ) );
+			if ( s >= 2 )
+			{
+				m_items[size_t( s )] = declare.Field( "inventory.item_" + std::to_string( s ), BoardType::Int );
+			}
 		}
 		m_hand = declare.Socket( "RightHand" );
 	}
@@ -211,6 +217,7 @@ public:
 				bag.current = wanted;
 				ctx.Set( target, m_slot, wanted );
 			}
+			Publish( ctx, target, bag );
 		}
 	}
 
@@ -259,12 +266,28 @@ private:
 		// The slot that was out stays the one that is out: the next life's item for it comes out.
 		Bag next;
 		next.current = bag.current;
+		next.published = bag.published;
 		next.dead = true;
 		bag = next;
 		ctx.FaceCamera( SlotTarget( slot ), false );
+		Publish( ctx, SlotTarget( slot ), bag );
+	}
+
+	void Publish( Context& ctx, uint32_t target, Bag& bag )
+	{
+		for ( int s = 2; s <= kSlots; ++s )
+		{
+			int32_t value = int32_t( bag.item[size_t( s )] );
+			if ( value != bag.published[size_t( s )] )
+			{
+				bag.published[size_t( s )] = value;
+				ctx.Set( target, m_items[size_t( s )], value );
+			}
+		}
 	}
 
 	FieldHandle m_slot;
+	std::array<FieldHandle, kSlots + 1> m_items;
 	std::array<ActionHandle, kSlots + 1> m_keys;
 	SocketHandle m_hand;
 	std::array<Bag, kMaxPlayers> m_bags;
