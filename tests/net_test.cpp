@@ -114,6 +114,9 @@ struct Harness
 		options.reconnectGraceSeconds = 10.0;
 		options.recordPath = recordPath;
 		options.modOptions = modOptions;
+		options.loadItemShape = []( const std::string& mod, const std::string& kind, ItemShape& shape, std::string& error ) {
+			return LoadItemShapeFolder( std::string( CB_SOURCE_DIR ) + "/server_mods/" + mod + "/client", kind, shape, error );
+		};
 		if ( configure )
 		{
 			configure( options );
@@ -861,6 +864,9 @@ void TestPickup()
 	std::printf( "    most lying %d, bat held %d, thrown %d, targeted %d, held again %d\n", mostLying, int( heldBat ), int( thrown ),
 				 int( targeted ), int( heldAgain ) );
 	CHECK( mostLying >= int( schema.itemKinds.size() ) );
+	// The bat's body is the one authored in its scene and baked (not the default small box).
+	int batKind = schema.FindItemKind( "melee.bat" );
+	CHECK( batKind >= 0 && schema.itemShapes[size_t( batKind )].half.z > 0.3f && schema.itemShapes[size_t( batKind )].mass > 1.0f );
 	CHECK( heldBat && thrown && targeted && heldAgain );
 	for ( Bot& b : h.bots )
 	{
@@ -932,6 +938,28 @@ void TestInventory()
 	{
 		CHECK( b.client->GetStats().desyncs == 0 );
 	}
+}
+
+// An item's body as its scene's bake writes it (items/<kind>.cfg): parsed, and refused when it is
+// not a body the physics can build.
+void TestItemShapes()
+{
+	ItemShape shape;
+	std::string error;
+	CHECK( ParseItemShape( "# baked\nshape box\nhalf 0.035 0.035 0.41\ncenter 0 0 -0.31\nmass 1.1\n", shape, error ) );
+	CHECK( shape.kind == 0 && shape.half.z == 0.41f && shape.center.z == -0.31f && shape.mass == 1.1f );
+	CHECK( ParseItemShape( "shape sphere\r\nhalf 0.2 0.2 0.2\r\n", shape, error ) && shape.kind == 1 && shape.mass == 1.0f );
+	CHECK( ParseItemShape( "shape capsule\nhalf 0.1 0.1 0.1\n", shape, error ) == false && error.empty() == false );
+	CHECK( ParseItemShape( "shape box\n", shape, error ) == false );				   // no size
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1\n", shape, error ) == false );	   // two numbers
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 9\n", shape, error ) == false );   // 18 m long
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nmass 0\n", shape, error ) == false );
+	CHECK( ParseItemShape( "shape box\nhalf nan 0.1 0.1\n", shape, error ) == false );
+	// The ones the mods ship.
+	const std::string root = CB_SOURCE_DIR;
+	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "melee.bat", shape, error ) && shape.half.z > 0.3f );
+	CHECK( LoadItemShapeFolder( root + "/server_mods/pistol/client", "pistol.gun", shape, error ) && shape.mass < 1.0f );
+	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "no.such", shape, error ) == false );
 }
 
 void TestSneak()
@@ -1447,6 +1475,7 @@ int main( int argc, char** argv )
 		{ "names", TestNames },
 		{ "deathmatch", TestDeathmatch },
 		{ "character_item", TestCharacterItem },
+		{ "item_shapes", TestItemShapes },
 		{ "sneak", TestSneak },
 		{ "headshot", TestHeadshot },
 		{ "melee", TestMelee },

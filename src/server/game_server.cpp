@@ -50,6 +50,26 @@ bool GameServer::Start( const ServerOptions& options )
 	}
 	m_schema = declarations.Schema();
 	m_schema.items = options.items;
+	// Item bodies authored in Godot (baked into the declaring mod's item) replace declared ones.
+	for ( size_t kind = 0; kind < m_schema.itemKinds.size() && options.loadItemShape; ++kind )
+	{
+		for ( const std::string& mod : declarations.ItemMods()[kind] )
+		{
+			ItemShape shape;
+			std::string shapeError;
+			if ( options.loadItemShape( mod, m_schema.itemKinds[kind], shape, shapeError ) )
+			{
+				m_schema.itemShapes[kind] = shape;
+				Log( "item %s: body from mod %s's item (%s, %.2f kg)", m_schema.itemKinds[kind].c_str(), mod.c_str(),
+					 shape.kind == 1 ? "sphere" : "box", double( shape.mass ) );
+				break;
+			}
+			if ( shapeError.empty() == false )
+			{
+				Log( "item %s: %s (mod %s); using the declared body", m_schema.itemKinds[kind].c_str(), shapeError.c_str(), mod.c_str() );
+			}
+		}
+	}
 	std::shared_ptr<const CharacterAsset> character = options.character ? options.character : BuiltInCharacter();
 	m_schema.character = character->name;
 	m_hits = std::make_unique<HitTester>( character );

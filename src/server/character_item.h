@@ -45,6 +45,18 @@ std::shared_ptr<const anim::AnimSet> LoadAnimPackItem( const std::string& zipPat
 std::shared_ptr<const anim::AnimSet> LoadAnimPackFolder( const std::string& dir, const std::string& pack, std::string& error,
 														 std::string& warnings );
 
+// An item kind's body when it lies in the world, baked from its scene's CbItemBody into
+// items/<kind>.cfg of the mod's item:
+//     shape box            or sphere
+//     half 0.035 0.035 0.41    half extents in metres (a sphere: its radius, three times)
+//     center 0 0 -0.31     the shape's centre in the grip's frame
+//     mass 1.1             kg
+bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error );
+// From a workshop item (checked against its SHA-256), or from a folder (tests, a mod's client
+// project). False when the item has no such file, or it does not parse (then `error` says why).
+bool LoadItemShapeItem( const std::string& zipPath, const ModItem& item, const std::string& kind, ItemShape& out, std::string& error );
+bool LoadItemShapeFolder( const std::string& dir, const std::string& kind, ItemShape& out, std::string& error );
+
 // Where a player's workshop keeps items (the game's user:// folder), for the default --workshop.
 std::string DefaultWorkshopDir();
 

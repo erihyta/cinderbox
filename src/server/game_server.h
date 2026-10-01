@@ -48,6 +48,9 @@ struct ServerOptions
 	std::function<std::shared_ptr<const anim::AnimSet>( const std::string& mod, const std::string& pack, std::string& error,
 														std::string& warnings )>
 		loadAnimPack;
+	// Reads an item kind's body from a mod's workshop item (items/<kind>.cfg, baked from its scene).
+	// Unset or false: the kind keeps the body its mod declared, or a small box.
+	std::function<bool( const std::string& mod, const std::string& kind, ItemShape& shape, std::string& error )> loadItemShape;
 	// Options mods read with Context::Option ("deathmatch.kills" -> "15").
 	std::map<std::string, std::string> modOptions;
 	uint32_t replayChecksumInterval = 60;

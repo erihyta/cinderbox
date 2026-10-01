@@ -170,8 +170,9 @@ public:
 	// "RightHand" and "LeftHand" exist on every character; another socket is drawn only on
 	// characters that define it.
 	ItemKindHandle ItemKind( const std::string& name );
-	// The same, with the body it has when it lies in the world (BoxItem, SphereItem). Without one it
-	// gets a small box. The first shape declared for a kind is the one it keeps.
+	// The same, with the body it has when it lies in the world (BoxItem, SphereItem), for a mod
+	// without a look. A body baked from the item's scene (a CbItemBody, items/<kind>.cfg in the mod's
+	// item) replaces it; with neither it is a small box. The first shape declared for a kind is kept.
 	ItemKindHandle ItemKind( const std::string& name, const ItemShape& shape );
 	// An animation pack in this mod's client item: its layers can replace a player's own of the same
 	// name (Context::SwapLayer). Name it like the mod's other names ("sneak.crouch").
@@ -195,6 +196,14 @@ private:
 	std::vector<std::string> m_errors;
 	std::string m_mod;
 	std::vector<bool> m_shapeDeclared; // per item kind: a mod gave it a shape
+	std::vector<std::vector<std::string>> m_itemMods; // per item kind: the mods that declared it
+
+public:
+	// The mods that declared each item kind (schema order): where its baked body may be found.
+	const std::vector<std::vector<std::string>>& ItemMods() const
+	{
+		return m_itemMods;
+	}
 	int m_entitySlots = 0;
 	int m_globalSlots = 0;
 };

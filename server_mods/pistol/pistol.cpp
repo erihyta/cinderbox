@@ -105,8 +105,9 @@ public:
 
 		m_upper = declare.Layer( "upper" );
 		m_stance = declare.Stance( "pistol" );
-		// Lying in the world: slide and grip.
-		m_gun = declare.ItemKind( "pistol.gun", BoxItem( { 0.02f, 0.064f, 0.1f }, { 0.0f, 0.0f, -0.07f }, 0.9f ) );
+		// Its body when it lies in the world is authored in its scene (client/prefabs/pistol.tscn, the
+		// CbItemBody) and baked to client/items/pistol.gun.cfg.
+		m_gun = declare.ItemKind( "pistol.gun" );
 		m_hand = declare.Socket( "RightHand" );
 	}
 

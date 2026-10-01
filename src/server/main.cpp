@@ -323,6 +323,17 @@ int main( int argc, char** argv )
 		std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
 		return cb::LoadAnimPackItem( zip, item, pack, error, warnings );
 	};
+	// Item bodies too: items/<kind>.cfg, baked from the item's scene.
+	options.loadItemShape = [itemsDir, workshopDir]( const std::string& mod, const std::string& kind, cb::ItemShape& shape,
+													 std::string& error ) {
+		cb::ModItem item;
+		if ( ReadItem( itemsDir, mod, item ) == false )
+		{
+			return false;
+		}
+		std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
+		return cb::LoadItemShapeItem( zip, item, kind, shape, error );
+	};
 	if ( server.Start( options ) == false )
 	{
 		return 1;
