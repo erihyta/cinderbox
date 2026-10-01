@@ -868,6 +868,72 @@ void TestPickup()
 	}
 }
 
+// A slot gives its item once per life, and what is left lying expires. Slot 0 takes out the bat,
+// throws it, switches to its hands and back to the bat: no second bat. Two seconds later (the
+// expire mod's clock here) the thrown one is gone too.
+void TestInventory()
+{
+	Harness h( 47805, {}, {}, { { "expire.seconds", "2" } } );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t hands = schema.ActionMask( "slot_1" );
+	uint16_t bat = schema.ActionMask( "slot_3" );
+	uint16_t drop = schema.ActionMask( "drop" );
+	CHECK( hands != 0 && bat != 0 && drop != 0 );
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		if ( ( tick >= 100 && tick < 110 ) || ( tick >= 230 && tick < 240 ) )
+		{
+			in.actions = bat;
+		}
+		else if ( tick >= 170 && tick < 175 )
+		{
+			in.actions = drop;
+		}
+		else if ( tick >= 200 && tick < 210 )
+		{
+			in.actions = hands;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; };
+
+	Simulation& server = h.server.Sim();
+	auto items = [&]( bool lying ) {
+		int n = 0;
+		for ( const Simulation::EntityRef& r : server.Entities() )
+		{
+			const HeldItem* item = flecs::entity( server.World(), r.entity ).try_get<HeldItem>();
+			n += item != nullptr && ( item->holder == 0 ) == lying ? 1 : 0;
+		}
+		return n;
+	};
+	bool heldFirst = false;
+	bool thrown = false;
+	bool heldSecond = false;
+	int mostItems = 0;
+	h.RunUntil( 8.0, [&]( double ) {
+		uint32_t tick = server.Tick();
+		uint32_t me = server.PlayerNetId( h.bots[0].client->Slot() );
+		bool inHand = server.HeldItemOf( me, kSocketRightHand ) != 0;
+		heldFirst |= inHand && tick < 170;
+		thrown |= heldFirst && inHand == false && items( true ) == 1 && tick > 175 && tick < 200;
+		heldSecond |= inHand && tick > 245; // slot 3 again, after throwing its bat away
+		mostItems = std::max( mostItems, items( true ) + items( false ) );
+	} );
+	h.Report();
+	std::printf( "    held %d, thrown %d, a second bat %d, most items at once %d, left lying at the end %d\n", int( heldFirst ),
+				 int( thrown ), int( heldSecond ), mostItems, items( true ) );
+	CHECK( heldFirst && thrown );
+	CHECK( heldSecond == false ); // one bat per life
+	CHECK( mostItems == 1 );
+	CHECK( items( true ) == 0 ); // the thrown one expired
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 void TestSneak()
 {
 	const std::string root = CB_SOURCE_DIR;
@@ -1385,6 +1451,7 @@ int main( int argc, char** argv )
 		{ "headshot", TestHeadshot },
 		{ "melee", TestMelee },
 		{ "pickup", TestPickup },
+		{ "inventory", TestInventory },
 	};
 
 	const char* filter = argc > 1 ? argv[1] : nullptr;

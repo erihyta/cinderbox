@@ -1,8 +1,9 @@
 // Melee: a bat, from slot 3 or picked up.
 //
 // What is in the right hand decides: a "melee.bat" there is out, wherever it came from. Slot 3
-// gives one when the hand has none, and putting the slot away takes back only that one (a bat
-// picked up stays in the hand).
+// gives one bat per life: putting the slot away takes it back and taking the slot out returns it,
+// but once it leaves the hand any other way (dropped, thrown, swapped for something picked up) the
+// slot is empty until the next life. A bat picked up stays in the hand.
 //
 // Out, it is a full-body stance ("melee": the character's own idle, walk and run with the bat) and
 // the body faces where the camera looks. The left mouse button swings: the full-body layer plays the
@@ -43,6 +44,7 @@ struct Swinger
 	bool loadout = false;	// slot 3 is out
 	bool expectGiven = false; // slot 3 put a bat in the hand this tick; learn its NetId next tick
 	uint32_t given = 0;		// the bat slot 3 gave
+	bool spent = false;		// this life's bat left the hand: slot 3 has none to give
 	bool out = false;
 	bool swinging = false;
 	bool struck = false;
@@ -110,12 +112,22 @@ public:
 				s.given = inHand;
 				s.expectGiven = false;
 			}
-			// Slot 3 gives a bat when the hand has none; putting it away (or dying) takes that one back.
+			// One bat per life: gone from the hand while the slot is out means dropped, not put away.
+			if ( c->dead != 0 )
+			{
+				s.spent = false;
+			}
+			else if ( s.loadout && s.given != 0 && inHand != s.given )
+			{
+				s.spent = true;
+				s.given = 0;
+			}
+			// Slot 3 gives its bat when the hand has none; putting it away (or dying) takes that one back.
 			bool loadout = ctx.Get( netId, m_loadout ) == kMeleeSlot && c->dead == 0;
 			if ( loadout != s.loadout )
 			{
 				s.loadout = loadout;
-				if ( loadout && batInHand == false )
+				if ( loadout && batInHand == false && s.spent == false )
 				{
 					ctx.SpawnItem( target, m_bat, m_hand );
 					s.expectGiven = true;

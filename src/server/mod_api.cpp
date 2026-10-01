@@ -645,6 +645,19 @@ uint32_t Context::ItemHolder( uint32_t netId ) const
 	return item != nullptr ? item->holder : 0;
 }
 
+std::vector<uint32_t> Context::Items() const
+{
+	std::vector<uint32_t> out;
+	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	{
+		if ( flecs::entity( m_sim.World(), r.entity ).has<cb::HeldItem>() )
+		{
+			out.push_back( r.netId );
+		}
+	}
+	return out;
+}
+
 std::vector<WorldItem> Context::ItemsNear( b3Vec3 point, float radius ) const
 {
 	std::vector<WorldItem> out;
