@@ -23,6 +23,8 @@
 #include "rollback.h"
 #include "scenario.h"
 #include "simulation.h"
+#include "view_codec.h"
+#include "view_file.h"
 
 #include <algorithm>
 #include <chrono>
@@ -3181,6 +3183,305 @@ int LoadPortableFile( const char* path )
 	return 0;
 }
 
+// --- The viewer protocol as bytes (present/view_codec.h, view_file.h) ----------------------------
+
+// The frames of a scripted session, the way a source would publish them: a ViewFrame per tick.
+std::vector<present::ViewFrame> ScenarioViewFrames( uint32_t ticks )
+{
+	test::ScenarioOptions options;
+	options.ticks = ticks;
+	std::vector<InputFrame> inputs = test::MakeScenario( options );
+	SimConfig config;
+	config.physicsArenaMB = 64;
+	Simulation sim( config );
+
+	ModSchema schema;
+	schema.mods = { "pistol", "deathmatch" };
+	schema.events = { "pistol.fired", "combat.killed" };
+	schema.character = "mannequin";
+
+	std::vector<present::ViewFrame> frames;
+	present::ViewFrame f;
+	for ( const InputFrame& in : inputs )
+	{
+		sim.Step( in );
+		f.serial += 1;
+		f.state = "playing";
+		f.rate = 1.0f;
+		f.alphaAtPublish = float( in.tick % 7 ) / 7.0f;
+		f.localPressed = uint16_t( in.tick % 5 == 0 ? 2 : 0 );
+		f.mapHash = 0x1234;
+		f.mapName = "sandbox";
+		f.templateNames = { "ball" };
+		f.templateVisuals = { "prop_bouncy" };
+		f.schema = schema;
+		f.schemaGeneration = 1;
+		// A name changes halfway, the way a late joiner's would.
+		f.names[0] = "Ada";
+		f.names[3] = in.tick < ticks / 2 ? "" : "Grace";
+		f.namesGeneration = in.tick < ticks / 2 ? 1 : 2;
+		f.stats.clear();
+		f.stats.push_back( { "tick", int64_t( in.tick ) } );
+		f.stats.push_back( { "clock_error", 0.25 * double( in.tick % 3 ) } );
+		f.stats.push_back( { "fp_environment_ok", true } );
+		f.stats.push_back( { "fingerprint", std::string( "9c11ed5d70f50c6" ) } );
+		present::CaptureFrame( sim, f.frame );
+		f.frame.resetGeneration = 1;
+		f.frame.rolledBack = in.tick % 11 == 0;
+		f.frame.localNetId = sim.Globals().playerNetIds[0];
+		f.frame.hasInputs = true;
+		f.frame.inputs = in.inputs;
+		f.hasWorld = true;
+		frames.push_back( f );
+	}
+	return frames;
+}
+
+// A frame standing alone as bytes: two frames are the same exactly when these are.
+std::vector<uint8_t> WholeBytes( const present::ViewFrame& frame )
+{
+	std::vector<uint8_t> bytes;
+	present::EncodeView( frame, nullptr, 0.0, bytes );
+	return bytes;
+}
+
+void TestViewCodec()
+{
+	std::vector<present::ViewFrame> frames = ScenarioViewFrames( 600 );
+
+	// Every frame survives the trip, whole (every 100th) or as a delta against the one before, and
+	// decodes to the same bytes it was.
+	present::ViewFrame decoded[2];
+	std::vector<uint8_t> packet;
+	size_t deltaBytes = 0, deltaMax = 0, deltaCount = 0, wholeBytes = 0, wholeCount = 0;
+	size_t most = 0;
+	bool allEqual = true;
+	bool allDecoded = true;
+	for ( size_t i = 0; i < frames.size(); ++i )
+	{
+		bool whole = i % 100 == 0;
+		const present::ViewFrame* encodeBase = whole ? nullptr : &frames[i - 1];
+		const present::ViewFrame* decodeBase = whole ? nullptr : &decoded[( i + 1 ) % 2];
+		present::EncodeView( frames[i], encodeBase, 0.0, packet );
+		CHECK( present::ViewPacketBase( packet.data(), packet.size() ) == ( whole ? 0 : frames[i - 1].serial ) );
+		present::ViewFrame& out = decoded[i % 2];
+		allDecoded &= present::DecodeView( packet.data(), packet.size(), decodeBase, out );
+		allEqual &= WholeBytes( out ) == WholeBytes( frames[i] );
+		most = std::max( most, frames[i].frame.entities.size() );
+		( whole ? wholeBytes : deltaBytes ) += packet.size();
+		( whole ? wholeCount : deltaCount ) += 1;
+		deltaMax = whole ? deltaMax : std::max( deltaMax, packet.size() );
+	}
+	CHECK( allDecoded );
+	CHECK( allEqual );
+	std::printf( "    up to %zu entities: a whole frame is %zu bytes, a delta %zu on average (%zu at most)\n", most,
+				 wholeBytes / wholeCount, deltaBytes / deltaCount, deltaMax );
+	CHECK( deltaBytes / deltaCount < wholeBytes / wholeCount );
+
+	// A tick in which nothing moved costs next to nothing, however big the world.
+	present::ViewFrame still = frames.back();
+	still.serial += 1;
+	still.frame.tick += 1;
+	present::EncodeView( still, &frames.back(), 0.0, packet );
+	std::printf( "    a tick in which nothing changed: %zu bytes\n", packet.size() );
+	CHECK( packet.size() < 128 );
+
+	// What is not in the world travels too.
+	const present::ViewFrame& last = frames.back();
+	const present::ViewFrame& got = decoded[( frames.size() - 1 ) % 2];
+	CHECK( got.serial == last.serial && got.state == "playing" && got.rate == 1.0f );
+	CHECK( got.alphaAtPublish == last.alphaAtPublish && got.localPressed == last.localPressed );
+	CHECK( got.stats == last.stats );
+	CHECK( got.mapHash == 0x1234 && got.mapName == "sandbox" && got.templateVisuals == last.templateVisuals );
+	CHECK( got.schema.character == "mannequin" && got.schema.events == last.schema.events );
+	CHECK( got.names[0] == "Ada" && got.names[3] == "Grace" && got.namesGeneration == 2 );
+	CHECK( got.frame.tick == last.frame.tick && got.frame.localNetId == last.frame.localNetId );
+	CHECK( got.frame.entities.size() == last.frame.entities.size() && got.frame.ragdolls.size() == last.frame.ragdolls.size() );
+	CHECK( got.frame.inputs == last.frame.inputs );
+
+	// The age travels, not the sender's clock.
+	present::EncodeView( last, nullptr, 0.5, packet );
+	present::ViewFrame aged;
+	CHECK( present::DecodeView( packet.data(), packet.size(), nullptr, aged ) );
+	double age = present::ViewClock() - aged.publishedAt;
+	CHECK( age > 0.49 && age < 1.0 );
+
+	// A frame with no world yet (still connecting), and a rejected one.
+	present::ViewFrame waiting;
+	waiting.serial = 7;
+	waiting.state = "rejected";
+	waiting.stats.push_back( { "reject_reason", std::string( "the server is full" ) } );
+	present::EncodeView( waiting, nullptr, 0.0, packet );
+	present::ViewFrame waitingGot;
+	CHECK( present::DecodeView( packet.data(), packet.size(), nullptr, waitingGot ) );
+	CHECK( waitingGot.hasWorld == false && waitingGot.state == "rejected" && waitingGot.stats == waiting.stats );
+
+	// A delta needs its base, and that base.
+	present::EncodeView( frames[10], &frames[9], 0.0, packet );
+	present::ViewFrame scratch;
+	CHECK( present::DecodeView( packet.data(), packet.size(), nullptr, scratch ) == false );
+	CHECK( present::DecodeView( packet.data(), packet.size(), &frames[8], scratch ) == false );
+	CHECK( present::DecodeView( packet.data(), packet.size(), &frames[9], scratch ) );
+
+	// Bytes that are not a packet are refused, never trusted: every truncation fails, and damaged
+	// packets either fail or decode to something (no crash, no endless loop).
+	bool truncationsFail = true;
+	for ( size_t size = 0; size < packet.size(); size += 1 + size / 64 )
+	{
+		truncationsFail &= present::DecodeView( packet.data(), size, &frames[9], scratch ) == false;
+	}
+	CHECK( truncationsFail );
+	uint64_t rng = 99;
+	int survived = 0;
+	std::vector<uint8_t> whole = WholeBytes( frames[300] );
+	for ( int i = 0; i < 3000; ++i )
+	{
+		std::vector<uint8_t> damaged = whole;
+		int flips = 1 + int( NextRandom( rng ) % 4 );
+		for ( int k = 0; k < flips; ++k )
+		{
+			damaged[size_t( NextRandom( rng ) % damaged.size() )] ^= uint8_t( 1u << ( NextRandom( rng ) % 8 ) );
+		}
+		survived += present::DecodeView( damaged.data(), damaged.size(), nullptr, scratch ) ? 1 : 0;
+	}
+	std::printf( "    3000 damaged packets: %d still decoded, none crashed\n", survived );
+}
+
+// The world of a frame, without what a file source says for itself (its own serial, state, stats,
+// timing, who is local).
+std::vector<uint8_t> WorldBytes( present::ViewFrame frame )
+{
+	frame.serial = 0;
+	frame.state.clear();
+	frame.stats.clear();
+	frame.alphaAtPublish = 0.0f;
+	frame.rate = 0.0f;
+	frame.localPressed = 0;
+	frame.frame.localNetId = 0;
+	frame.frame.resetGeneration = 0;
+	frame.frame.rolledBack = false;
+	return WholeBytes( frame );
+}
+
+void TestViewFile()
+{
+	std::vector<present::ViewFrame> frames = ScenarioViewFrames( 700 );
+	for ( present::ViewFrame& f : frames )
+	{
+		f.frame.localNetId = 0; // as a server records it: nobody is local
+	}
+	std::filesystem::path path = std::filesystem::temp_directory_path() / "cinderbox_view_test.cbv";
+	{
+		present::ViewFileWriter writer;
+		CHECK( writer.Open( path.string() ) );
+		for ( const present::ViewFrame& f : frames )
+		{
+			writer.Add( f );
+		}
+	}
+	auto stat = []( const present::ViewFrame& f, const char* name ) {
+		for ( const present::ViewStat& s : f.stats )
+		{
+			if ( s.name == name )
+			{
+				return s.value;
+			}
+		}
+		return decltype( present::ViewStat::value )( int64_t( -999 ) );
+	};
+	auto frameOf = []( const present::ViewFrame& f ) { return size_t( f.frame.tick - 1 ); }; // the scenario's tick t is frame t - 1
+
+	present::ViewFileSource source( path.string() );
+	CHECK( source.Length() == frames.size() );
+	CHECK( source.TakesInput() == false );
+	source.Control( "pause", 1.0 );
+	present::ViewFrame got;
+	CHECK( source.Take( got ) );
+	CHECK( got.state == "playing" && got.hasWorld && got.rate == 0.0f );
+	CHECK( frameOf( got ) == 0 && WorldBytes( got ) == WorldBytes( frames[0] ) );
+	CHECK( std::get<bool>( stat( got, "replay_paused" ) ) );
+	CHECK( std::fabs( std::get<double>( stat( got, "replay_length_seconds" ) ) - 700.0 / 60.0 ) < 1e-3 );
+	// Nobody was local in the file: the first player there is gets followed.
+	CHECK( got.frame.localNetId != 0 );
+	CHECK( std::get<int64_t>( stat( got, "replay_follow" ) ) == 0 );
+	CHECK( source.Take( got ) == false ); // paused: nothing new
+
+	// Seeking lands on the frame asked for, across keys (every 300th) and back; each is a jump.
+	uint64_t generation = got.frame.resetGeneration;
+	for ( double seconds : { 5.0, 10.5, 0.0, 9.0, 4.99 } )
+	{
+		source.Control( "seek", seconds );
+		CHECK( source.Take( got ) );
+		size_t expected = size_t( seconds * 60.0 + 0.5 );
+		CHECK( frameOf( got ) == expected );
+		CHECK( WorldBytes( got ) == WorldBytes( frames[expected] ) );
+		CHECK( got.frame.resetGeneration != generation );
+		generation = got.frame.resetGeneration;
+	}
+	size_t at = frameOf( got );
+	source.Control( "step", 1.0 );
+	CHECK( source.Take( got ) && frameOf( got ) == at + 1 && WorldBytes( got ) == WorldBytes( frames[at + 1] ) );
+	source.Control( "step", -2.0 );
+	CHECK( source.Take( got ) && frameOf( got ) == at - 1 && WorldBytes( got ) == WorldBytes( frames[at - 1] ) );
+	source.Control( "skip", 1.0 );
+	CHECK( source.Take( got ) && frameOf( got ) == at - 1 + 60 );
+
+	// Following: the next player, a slot, nobody.
+	uint32_t first = got.frame.localNetId;
+	int64_t firstSlot = std::get<int64_t>( stat( got, "replay_follow" ) );
+	source.Control( "follow_next", 1.0 );
+	CHECK( source.Take( got ) && got.frame.localNetId != 0 && got.frame.localNetId != first );
+	source.Control( "follow", -1.0 );
+	CHECK( source.Take( got ) && got.frame.localNetId == 0 );
+	source.Control( "follow", double( firstSlot ) );
+	CHECK( source.Take( got ) && got.frame.localNetId == first );
+
+	// From the start to the end at 16x: frames come in order, the followed player's presses are
+	// reported, and the end is said once.
+	source.Control( "seek", 0.0 );
+	source.Control( "speed", 16.0 );
+	source.Control( "pause", 0.0 );
+	bool inOrder = true;
+	bool ended = false;
+	uint16_t pressed = 0;
+	size_t previous = 0;
+	auto start = std::chrono::steady_clock::now();
+	while ( ended == false && std::chrono::duration<double>( std::chrono::steady_clock::now() - start ).count() < 10.0 )
+	{
+		if ( source.Take( got ) )
+		{
+			inOrder &= frameOf( got ) >= previous;
+			previous = frameOf( got );
+			pressed |= got.localPressed;
+			ended = std::get<bool>( stat( got, "replay_ended" ) );
+		}
+	}
+	CHECK( ended && inOrder );
+	CHECK( frameOf( got ) == frames.size() - 1 && got.rate == 0.0f );
+	CHECK( WorldBytes( got ) == WorldBytes( frames.back() ) );
+	CHECK( pressed != 0 );
+
+	// A file cut short loses only its last frame; a file that is not one is rejected with a reason.
+	std::filesystem::path cut = std::filesystem::temp_directory_path() / "cinderbox_view_test_cut.cbv";
+	{
+		std::error_code ignored;
+		std::filesystem::copy_file( path, cut, std::filesystem::copy_options::overwrite_existing, ignored );
+		std::filesystem::resize_file( cut, std::filesystem::file_size( cut ) - 10, ignored );
+	}
+	present::ViewFileSource shorter( cut.string() );
+	CHECK( shorter.Length() == frames.size() - 1 );
+	present::ViewFileSource missing( ( std::filesystem::temp_directory_path() / "cinderbox_no_such_file.cbv" ).string() );
+	CHECK( missing.Take( got ) && got.state == "rejected" && got.hasWorld == false );
+	CHECK( std::get<std::string>( stat( got, "reject_reason" ) ).empty() == false );
+	CHECK( missing.Take( got ) == false );
+
+	std::printf( "    %zu frames in %llu bytes (%.0f per frame)\n", frames.size(), (unsigned long long)std::filesystem::file_size( path ),
+				 double( std::filesystem::file_size( path ) ) / double( frames.size() ) );
+	std::error_code ignored;
+	std::filesystem::remove( path, ignored );
+	std::filesystem::remove( cut, ignored );
+}
+
 } // namespace
 
 int main( int argc, char** argv )
@@ -3235,6 +3536,8 @@ int main( int argc, char** argv )
 		{ "pose_tools", TestPoseTools },
 		{ "fields", TestFields },
 		{ "camera_collision", TestCameraCollision },
+		{ "view_codec", TestViewCodec },
+		{ "view_file", TestViewFile },
 		{ "hitboxes", TestHitboxes },
 		{ "stances", TestStances },
 		{ "robot_character", TestRobotCharacter },

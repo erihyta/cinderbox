@@ -8,6 +8,8 @@ add_library(cb_present STATIC
 	scripts/ragdolls.cpp
 	scripts/spawn_destroy_effects.cpp
 	view.cpp
+	view_codec.cpp
+	view_file.cpp
 )
 target_include_directories(cb_present PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(cb_present PUBLIC cb_sim cb_anim)

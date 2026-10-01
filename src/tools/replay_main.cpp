@@ -2,12 +2,14 @@
 //
 //   cb_replay info FILE      summary of a recorded session
 //   cb_replay verify FILE    re-simulate the whole session and check every recorded checksum
+//   cb_replay view FILE      summary of a view file (cb_server --record-view): frames and their sizes
 //
 // Exit codes: 0 ok, 1 usage / unreadable file, 2 checksum mismatch, 3 recorded with another build.
 
 #include "fingerprint.h"
 #include "replay.h"
 #include "simulation.h"
+#include "view_file.h"
 
 #include <chrono>
 #include <cstdio>
@@ -103,13 +105,38 @@ int Verify( const net::ReplayReader& replay )
 	return 0;
 }
 
+int PrintViewInfo( const char* path )
+{
+	present::ViewFileInfo info;
+	std::string error;
+	if ( present::ReadViewFileInfo( path, info, error ) == false )
+	{
+		std::printf( "error: %s\n", error.c_str() );
+		return 1;
+	}
+	size_t deltas = info.frames - info.keys;
+	double perDelta = deltas > 0 ? double( info.deltaBytes ) / double( deltas ) : 0.0;
+	double rate = info.seconds > 0.0 ? double( info.frames ) / info.seconds : 0.0;
+	std::printf( "frames       %zu (%.1f s), %zu of them stand alone\n", info.frames, info.seconds, info.keys );
+	std::printf( "map          %s\n", info.map.c_str() );
+	std::printf( "most         %zu players, %zu entities\n", info.mostPlayers, info.mostEntities );
+	std::printf( "whole frame  %.0f bytes on average\n", info.keys > 0 ? double( info.keyBytes ) / double( info.keys ) : 0.0 );
+	std::printf( "delta frame  %.0f bytes on average, %u at most (%.0f kbit/s at %.0f frames a second)\n", perDelta, info.deltaMost,
+				 perDelta * rate * 8.0 / 1000.0, rate );
+	return 0;
+}
+
 } // namespace
 
 int main( int argc, char** argv )
 {
+	if ( argc == 3 && std::strcmp( argv[1], "view" ) == 0 )
+	{
+		return PrintViewInfo( argv[2] );
+	}
 	if ( argc != 3 || ( std::strcmp( argv[1], "info" ) != 0 && std::strcmp( argv[1], "verify" ) != 0 ) )
 	{
-		std::printf( "usage: cb_replay info FILE\n       cb_replay verify FILE\n" );
+		std::printf( "usage: cb_replay info FILE\n       cb_replay verify FILE\n       cb_replay view FILE\n" );
 		return 1;
 	}
 

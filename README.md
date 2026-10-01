@@ -56,6 +56,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M47: item properties and hold times authored on the `CbItemBody`, a Bake button for it, hold progress drawn from a start tick | done |
 | M48: 32 board fields per scope instead of 16 (all 16 were used); the inventory shows its slots on the HUD | done |
 | M49: the viewer protocol: the Godot client draws frames from a source (a live connection, a recording) and knows neither; recordings are watched in the game, as the player they follow | done |
+| M50: frames as bytes: a viewer's frames encode to packets (whole or as deltas), the server records view files that play with no simulation, and the Godot client watches them | done |
 
 ## Building
 
@@ -91,8 +92,9 @@ cb_server --port 7777
 godot --path godot
 # or straight into a server
 godot --path godot -- --host=127.0.0.1 --port=7777
-# or watch a recording (cb_server --record FILE)
+# or watch a recording (cb_server --record FILE), or a view file (cb_server --record-view FILE)
 godot --path godot -- --replay=FILE
+godot --path godot -- --view=FILE
 # or the raylib debug viewer
 cb_client --host 127.0.0.1 --port 7777
 ```
@@ -140,9 +142,13 @@ so its HUD, its hit markers and its camera target are what that player had.
 The recording must come from the same build of the simulation (the stats say `build_matches`), and
 checksums it does not reproduce count as `desyncs`.
 
+`--view=FILE` plays a **view file** the same way, with the same keys. It holds the frames
+themselves, not inputs to re-simulate, so it plays on any build and shows the players' names; it
+is also much bigger (about 0.1 MB a second for 4 players, 1.2 MB for 64).
+
 Open `godot/` in the Godot editor to edit scenes, then press Play. Godot client options, given after `--`:
 - `--host=H`, `--port=P`: join this server without the menu (leaving it lands in the menu).
-- `--replay=FILE`: watch a recording instead (see above).
+- `--replay=FILE`, `--view=FILE`: watch a recording or a view file instead (see above).
 - `--name=NAME`: your name (otherwise the one typed in the menu).
 - `--config=FILE`: where name, settings and recent servers are kept (default `user://player.cfg`).
 - `--workshop=DIR`: where subscribed workshop items are (default `user://workshop`).
@@ -1128,7 +1134,9 @@ All tools are in `<build dir>/bin`.
 | `cb_server --map FILE.cbmap` | Runs an authored map instead of the built-in sandbox |
 | `cb_server --record FILE` | Records the whole session (input frames plus checksums) |
 | `cb_replay info\|verify FILE` | Summarizes a recording, or re-simulates it and checks every checksum |
-| `godot --path godot -- --replay=FILE` | Watches a recording in the game, with the mods' looks and the followed player's HUD |
+| `cb_server --record-view FILE` | Records the session as a view file: the frames a viewer is shown, playable without a simulation |
+| `cb_replay view FILE` | Summarizes a view file: frames, players, bytes per frame |
+| `godot --path godot -- --replay=FILE` (or `--view=FILE`) | Watches a recording (or a view file) in the game, with the mods' looks and the followed player's HUD |
 | `cb_client --replay FILE [--replay-start S]` | Watches a recording in the raylib debug viewer |
 | `cb_netsim --listen P --target HOST:PORT --latency MS --jitter MS --loss % [--duplicate %]` | UDP relay that degrades traffic (latency is added in each direction) |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_mod_validator.gd -- PACK.zip...` | Checks the pack validator: the named packs pass, built-in hostile packs are refused |
@@ -1224,6 +1232,8 @@ src/client/       GameClient core (no rendering, also "lite" mode), the view sou
   app/replay_viewer.* recording playback (--replay)
 src/present/      engine-independent presentation, shared by Godot and raylib
   view.h            the viewer protocol: ViewFrame (what a viewer is told), ViewSource (who tells it)
+  view_codec.*      a ViewFrame as bytes: whole, or a delta against a frame both sides have
+  view_file.*       view files: frames recorded as bytes, and the source that plays them
   frame.*           PresentationFrame: a copy of what the simulation shows at one tick
   mirror.*          presentation flecs world: interpolation, error smoothing, visual and mod events
   fields.*          board fields and conditions by name

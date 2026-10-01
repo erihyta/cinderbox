@@ -56,6 +56,8 @@ public:
 	void connect_to_server();
 	// Plays a recording (cb_server --record). `path` may be res://, user:// or a file system path.
 	void open_replay( const godot::String& path );
+	// Plays a view file (cb_server --record-view): frames as they were, with no simulation.
+	void open_view( const godot::String& path );
 	void stop();
 	bool is_running() const;
 	// A named command for the source, with a number ("pause" 1, "skip" -5: see the source's

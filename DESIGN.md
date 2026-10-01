@@ -1382,6 +1382,70 @@ source  <──control───   viewer        named commands with a number ("p
   failed; alone, repeated three times each, and in a second full run they passed. They check
   real-time thresholds, and nothing they run was changed; not looked into further.
 
+## Frames as bytes (M50)
+A `ViewFrame` was a C++ object, so a source and its viewer had to be one library. It is now also a
+packet of bytes (`src/present/view_codec.*`), which is what lets them be two libraries, a file, or
+a network apart.
+
+- **One packet is one frame**: whole, or a delta against a frame both sides have (the base, named
+  by its serial). The encoder and decoder are two functions with the base passed in, so the same
+  code serves a library boundary (the base is the frame before), a file (a whole frame now and
+  then) and, later, a network (the base is the frame the receiver acknowledged).
+- **Deltas are per 32-bit word.** An entity is laid out as a block of words with no padding
+  (identity, shape, transform, velocity, the whole animation state, the whole board); a bit per
+  word says which differ from the base, and only those travel.
+
+  | What changed | Costs |
+  |---|---|
+  | nothing about an entity | 1 bit |
+  | a board write | 1 word, plus the entity's 14-byte mask |
+  | a prop that moved | its transform and velocity words |
+  | a tick in which nothing changed, 155 entities | 106 bytes in all |
+
+  The global board, the inputs and the two event rings are blocks of the same kind; the session
+  (map, schema, names) and the stats are only in a packet when they differ from the base's.
+- **Time travels as an age**, not a timestamp: sender and receiver have no clock in common.
+- **Never trusted.** Counts are bounded, a short packet fails, slots and ragdoll indices are
+  clamped. Every truncation of a packet is refused; 3000 packets with flipped bits either fail or
+  decode to some frame, none crash.
+- **View files** (`src/present/view_file.*`): `"CBVF"`, then packets, every 300th whole for seeking.
+  `cb_server --record-view FILE` writes one (the world after each tick, names included);
+  `ViewFileSource` plays it with the replay source's controls and no simulation, so it plays on any
+  build. `godot -- --view=FILE` watches one; `cb_replay view FILE` summarizes one.
+- **`ByteWriter` / `ByteReader`** moved from `src/net` to `src/sim/bytes.h`: the codec must not need
+  the network library.
+
+**Measured** (a server with bots that shoot, 21 s each, `cb_replay view`):
+
+| Players | Entities | Whole frame | Delta frame, average / most | At 60 frames a second |
+|---|---|---|---|---|
+| 4 | 85 | 13.7 KB | 1.7 / 3.3 KB | 0.8 Mbit/s |
+| 32 | 409 | 34.6 KB | 14.2 / 20.6 KB | 6.8 Mbit/s |
+| 64 | 504 | 43.9 KB | 20.6 / 27.6 KB | 9.9 Mbit/s |
+
+Fine between two libraries and for a file (1.2 MB a second at 64 players); too much for a stream.
+Whatever moves sends exact floats every tick, and word deltas cannot shrink a float that changed.
+ROADMAP.md says what a stream needs first.
+
+**Verified**
+- `view_codec`: 600 frames of the scripted session (joins, leaves, ragdolls, props, board writes),
+  whole and as deltas: every one decodes to the same bytes it was; the session, stats, presses and
+  age arrive; a delta is refused without its base or with another; truncated and damaged packets.
+- `view_file`: 700 frames written and played: seek across the whole frames and back, step, skip,
+  follow (next, a slot, nobody), 16x to the end with the followed player's presses, a file cut
+  short, a missing file.
+- A Godot client watching a 4-bot session from its view file: the workshop items load, names, HUD,
+  inventory and kill feed show, exit code 0. Replays and live play still work.
+
+**Not done**
+- The frame sizes above were not broken down by what they are spent on.
+- A view file is recorded by the server only; a client cannot record what it saw.
+- On this machine the two late-input tests (`net_loopback_session`, `net_lossy_session`) failed in
+  this session's last runs, the unchanged M49 build's as much as this one's: the machine, not the
+  change. CI is the judge.
+- Unattended Godot runs sometimes end with "ObjectDB instances were leaked at exit" (seen on
+  recordings and view files, roughly every other run); not looked into.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1505,3 +1569,4 @@ The ordered plan for the client is in [ROADMAP.md](ROADMAP.md). These are loose 
 47. **M47** (done): item properties authored on the `CbItemBody` and baked with the body (the bat's hold time), a Bake button on it, and `pickup.since` (a start tick) in place of a progress field set every tick.
 48. **M48** (done): `kBoardSlots` 32 (new reference hashes, protocol 16); the inventory publishes its slots and shows them on a HUD row.
 49. **M49** (done): the viewer protocol: `ViewFrame` / `ViewSource` (`src/present/view.h`), `LiveSource` and `ReplaySource` in `src/client`, `CinderboxClient` as a viewer that knows no source, recordings watched in the Godot client (`--replay=FILE`) as the followed player; ROADMAP.md.
+50. **M50** (done): frames as bytes: `EncodeView` / `DecodeView` with per-word deltas against a base, view files (`cb_server --record-view`, `ViewFileSource`, `--view=FILE`, `cb_replay view`), measured sizes; `bytes.h` moved to `src/sim`.

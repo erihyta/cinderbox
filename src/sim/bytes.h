@@ -7,7 +7,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace cb::net
+namespace cb
 {
 
 class ByteWriter
@@ -88,6 +88,11 @@ public:
 	{
 		return m_ok;
 	}
+	// For a reader's user that found the data wrong in a way the reader cannot see.
+	void Fail()
+	{
+		m_ok = false;
+	}
 	bool AtEnd() const
 	{
 		return m_cursor == m_size;
@@ -100,4 +105,4 @@ private:
 	bool m_ok = true;
 };
 
-} // namespace cb::net
+} // namespace cb

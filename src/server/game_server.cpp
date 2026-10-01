@@ -187,6 +187,15 @@ bool GameServer::Start( const ServerOptions& options )
 		m_replay.AddChecksum( 0, m_sim->ComputeHash() );
 		Log( "recording to %s", options.recordPath.c_str() );
 	}
+	if ( options.recordViewPath.empty() == false )
+	{
+		if ( m_viewFile.Open( options.recordViewPath ) == false )
+		{
+			Log( "cannot write view file %s", options.recordViewPath.c_str() );
+			return false;
+		}
+		Log( "recording the view to %s", options.recordViewPath.c_str() );
+	}
 
 	Log( "listening on port %u, %u Hz, fingerprint %016llx, map %s (%u statics, %u props, hash %016llx)", options.port,
 		 options.config.tickRate, (unsigned long long)BuildFingerprint(),
@@ -595,6 +604,7 @@ void GameServer::RunTick( double now )
 	m_lastInputs = frame.inputs;
 	SendFrames( now );
 	m_replay.AddFrame( frame );
+	RecordView( frame );
 
 	uint32_t stateTick = tick + 1;
 	uint64_t hash = 0;
@@ -705,6 +715,55 @@ void GameServer::SendNames( PeerId only )
 		{
 			m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
 		}
+	}
+}
+
+void GameServer::RecordView( const InputFrame& frame )
+{
+	if ( m_viewFile.IsOpen() == false )
+	{
+		return;
+	}
+	present::ViewFrame& v = m_viewFrame;
+	v.state = "playing";
+	v.rate = 1.0f;
+	if ( v.schemaGeneration == 0 )
+	{
+		// The session: fixed for as long as the server runs.
+		v.mapHash = m_mapHash;
+		v.mapName = m_map.name;
+		for ( const EntityTemplate& t : m_map.templates )
+		{
+			v.templateNames.push_back( t.name );
+			v.templateVisuals.push_back( t.visual );
+		}
+		v.schema = m_schema;
+		v.schemaGeneration = 1;
+	}
+	std::array<std::string, kMaxPlayers> names;
+	for ( const Client& c : m_clients )
+	{
+		if ( c.used )
+		{
+			names[c.slot] = c.name;
+		}
+	}
+	if ( v.namesGeneration == 0 || names != v.names )
+	{
+		v.names = names;
+		v.namesGeneration += 1;
+	}
+	present::CaptureFrame( *m_sim, v.frame );
+	v.frame.resetGeneration = 1;
+	v.frame.hasInputs = true;
+	v.frame.inputs = frame.inputs;
+	v.hasWorld = true;
+	v.stats.clear();
+	v.stats.push_back( { "tick", int64_t( v.frame.tick ) } );
+	m_viewFile.Add( v );
+	if ( v.frame.tick % 600 == 0 )
+	{
+		m_viewFile.Flush();
 	}
 }
 
