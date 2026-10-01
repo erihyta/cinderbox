@@ -50,6 +50,8 @@ public:
 	bool Listen( uint16_t port, uint32_t maxPeers );
 	// Starts connecting; the result arrives as a Connected or Disconnected event.
 	bool Connect( const std::string& host, uint16_t port );
+	// Whether `host` names an address at all (a lookup, which may block for a moment).
+	static bool Resolves( const std::string& host );
 
 	// Collects all pending events without blocking.
 	void Poll( std::vector<NetEvent>& events );

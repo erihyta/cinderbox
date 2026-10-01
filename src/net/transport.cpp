@@ -153,6 +153,12 @@ bool Transport::Connect( const std::string& hostName, uint16_t port )
 	return true;
 }
 
+bool Transport::Resolves( const std::string& hostName )
+{
+	ENetAddress address{};
+	return enet_address_set_host( &address, hostName.c_str() ) == 0;
+}
+
 void Transport::Poll( std::vector<NetEvent>& events )
 {
 	if ( m_impl->host == nullptr )
