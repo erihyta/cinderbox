@@ -1515,6 +1515,61 @@ CinderboxPeer (peer library)                         CinderboxClient (viewer lib
 - A frame is copied twice more per drawn frame than before (encode, decode); not measured, and not
   visible in the frame rate of the runs above.
 
+## Packs are contained (M52)
+The pack validator refused scripts, and a scene with no script could still act: any built-in node
+could be in it, and a reaction called any method not on a short list of forbidden ones. A pack
+could carry an `HTTPRequest` and a reaction that calls `request` on it.
+
+The fix is a second check at the other end: not what a pack's files are, but what a scene is made
+of, just before it is instantiated (`src/godot/cue/cue_guard.*`, in the cue library, read from the
+scene's `SceneState` without creating a node).
+
+| A scene is refused for | Because |
+|---|---|
+| a node whose class is not on the list | the list is what looks are made of; everything else (network, windows, cameras, viewports, timers) is out |
+| a script on a node or on a resource a node holds | second line behind the validator's byte scan |
+| any signal connection | a wired signal is a method call nobody listed |
+| a `NodePath` property that climbs above the scene's root, or is absolute | a look reaches nothing outside itself |
+| an animation method track that calls an unlisted method | Godot runs these itself; they never pass through `CbReaction` |
+| an animation track whose path has `..` or starts at the root, or that sets `script` | the same containment for what animations move |
+| any of these in a scene instanced inside it | all the way down |
+
+- **One method list** for reactions and animation method tracks (`restart`, `play`, `stop`, `show`,
+  `hide`, a few setters). It replaced `CbReaction`'s list of forbidden names: what is not listed is
+  not called.
+- **Advance expressions are cleared** in the game. An `AnimationTree` evaluates them against a
+  node, so they can call its methods; the baked state machines the simulation runs do not use the
+  tree at all. Not in the editor, where the scene being edited is the author's own.
+- **Where it runs**: every place a moddable scene becomes nodes. The viewer's prefabs, items,
+  characters and map scene; a reaction's `scene`; the HUD, item HUDs, world reactions and the menu
+  (`CbDirector.instantiate( scene )` from scripts); a character's companion animations
+  (`CheckResource`). A refused scene is not instantiated, a warning names what was found, and the
+  game shows what it shows for a missing one.
+- **Own nodes by prefix**: a class named `Cb*` or `Cinderbox*` that exists is allowed. A pack
+  cannot define a class, so the names cannot be borrowed.
+
+**Verified**
+- `check_guard.gd`: the game's 16 scenes pass; refused: `HTTPRequest`, `Window`, `Camera3D`,
+  `SubViewport`, `LinkButton`, `Timer`, one nested in an instanced scene, a scripted node, a wired
+  signal, a path climbing out, a path from the root, method tracks calling `queue_free` and
+  `call_deferred`, tracks climbing out or from the root, a track setting `script`; accepted: a
+  method track calling `restart`, a value track, skinned meshes with a sibling path, a reaction and
+  its target. A reaction does not call `queue_free` or `propagate_call`, calls `hide`, and adds
+  nothing when its scene is refused.
+- A live session with the six workshop items and the local character: nothing refused, no desyncs.
+
+**Not done**
+- The check runs when a scene is used, not when a pack is loaded: a bad scene in a pack is found
+  the first time the game wants it. The pack tool does not run it for authors yet.
+- The robot character and the two example mods were not run through it (their projects hold old
+  copies of the extension).
+- An `AnimationPlayer` at a scene's root keeps Godot's default `root_node` (`..`), one level above
+  the scene: its tracks can reach its parent's other children, no further.
+- `CbFieldBinding` writes a number into any property of its target; the target path is contained
+  like every path, the property is not on a list.
+- What the allowed classes do by themselves is not judged: a sound that plays at full volume on
+  load, a UI panel over the whole screen.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1640,3 +1695,4 @@ The ordered plan for the client is in [ROADMAP.md](ROADMAP.md). These are loose 
 49. **M49** (done): the viewer protocol: `ViewFrame` / `ViewSource` (`src/present/view.h`), `LiveSource` and `ReplaySource` in `src/client`, `CinderboxClient` as a viewer that knows no source, recordings watched in the Godot client (`--replay=FILE`) as the followed player; ROADMAP.md.
 50. **M50** (done): frames as bytes: `EncodeView` / `DecodeView` with per-word deltas against a base, view files (`cb_server --record-view`, `ViewFileSource`, `--view=FILE`, `cb_replay view`), measured sizes; `bytes.h` moved to `src/sim`.
 51. **M51** (done): two extensions: the viewer (`cinderbox`: no simulation, no networking) and the peer (`cinderbox_peer`: `CinderboxPeer`, the live and replay sources) with packets between them; `set_source( object )`; `cb_sim_data` and `cb_capture` split out so the viewer cannot link a simulation; mod projects get the viewer only.
+52. **M52** (done): packs are contained: the scene guard (node class list, no scripts, no connections, contained paths, method list for animations and reactions, advance expressions cleared), run wherever a moddable scene is instantiated; `check_guard.gd`.

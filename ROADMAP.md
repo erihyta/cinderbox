@@ -99,16 +99,6 @@ Each step is a milestone of its own, and each leaves the game playable.
 - **Done when**: `CbFieldBinding` is a `CbReaction` with a value expression, and one test file
   covers the grammar.
 
-## Before anyone else's packs are loaded
-
-Not a step on the path above, but it should not wait for it.
-
-| What | Why |
-|---|---|
-| Allowlist the node classes a pack's scenes may contain | scripts are refused, but any built-in node is accepted (an `HTTPRequest`, a `Window`) |
-| Allowlist the methods `CbReaction` may call | it refuses a list of names and calls anything else |
-| Apply the same list to animation method tracks | they call methods without passing through `CbReaction` |
-
 ## Housekeeping
 
 Independent of the path; each is small.

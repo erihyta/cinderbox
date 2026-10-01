@@ -58,6 +58,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M49: the viewer protocol: the Godot client draws frames from a source (a live connection, a recording) and knows neither; recordings are watched in the game, as the player they follow | done |
 | M50: frames as bytes: a viewer's frames encode to packets (whole or as deltas), the server records view files that play with no simulation, and the Godot client watches them | done |
 | M51: two extensions: the viewer (no simulation, no networking; all a mod's project needs) and the peer (joins servers, plays recordings), with frames crossing as bytes; any object, even a script, can be a viewer's source | done |
+| M52: packs are contained: a scene is checked before it is used (listed node classes only, no scripts, no wired signals, no paths out of the scene, animations and reactions call only listed methods) | done |
 
 ## Building
 
@@ -300,12 +301,17 @@ Client mods are cosmetic Godot resource packs (`.zip`). A mod can replace or add
 - the HUD in `ui/`;
 - map visuals in `maps/` (the scene named after the map the server runs);
 
-Client mods and workshop items cannot contain code. Every pack is checked against an allowlist
-before it loads: only known kinds of files in these folders (and Godot's converted copies of them),
-redirects that stay inside the pack, no compressed resources, and no resource that names a script
-type or a script file. `godot/addons/cinderbox_maps/check_mod_validator.gd` checks real packs and a
-set of hostile ones. Gameplay stays in the simulation and in the server's mods, so a pack cannot
-change it. What no validator can promise is that Godot's own parsers are safe against a deliberately
+Client mods and workshop items cannot contain code, and a scene without code cannot act like code.
+Two checks:
+
+| When | What | Checked by |
+|---|---|---|
+| Before a pack loads | only known kinds of files in these folders (and Godot's converted copies of them), redirects that stay inside the pack, no compressed resources, no resource that names a script type or a script file | `boot.gd`; `check_mod_validator.gd` runs it on real packs and hostile ones |
+| Before a scene is used | only listed node classes (meshes, particles, lights, sounds, animation, UI controls, the `Cb*` nodes: never an `HTTPRequest`, a `Window`, a camera), no script, no signal wired to a method, no node path that leaves the scene, animations that call only listed methods | the scene guard (`src/godot/cue/cue_guard.h`); `check_guard.gd` |
+
+A scene the guard refuses is not instantiated (a warning says what it found); the game draws its
+plain stand-in instead. Gameplay stays in the simulation and in the server's mods, so a pack cannot
+change it. What no check can promise is that Godot's own parsers are safe against a deliberately
 malformed file, so packs are still something to take from people you trust.
 
 1. Create a Godot project under `mods_src/<name>`. Copy `mods_src/example_neon` as a starting point.
@@ -1038,10 +1044,13 @@ World node: a workshop item cannot reach the game's HUD or menus.
   place when the game loads them.
 - **A While follows its target**: when its path finds another node (a new item in the hand), it
   ends on the old one (puts values back) and starts on the new one.
-- **Refused**: anything that removes nodes, changes scripts or calls something else by name (`free`,
-  `queue_free`, `call`, `set`, `set_script`, `propagate_call`, ...) and the `script` property. A path
-  or condition that does not parse is a configuration warning on the node (`^^combat.health` asks
-  for its colon), and the game skips that reaction with a warning.
+- **Only listed methods**: `restart`, `play`, `play_backwards`, `stop`, `pause`, `queue`, `seek`,
+  `advance`, `show`, `hide`, `set_visible`, `set_emitting`, `set_text`, `set_value`, `set_frame`,
+  `set_modulate`, `set_volume_db`, `set_pitch_scale`, `set_speed_scale`. Anything else is not called
+  (set it with `property` instead); the `script` property and metadata are never set. A scene a
+  reaction adds goes through the scene guard first. A path or condition that does not parse is a
+  configuration warning on the node (`^^combat.health` asks for its colon), and the game skips that
+  reaction with a warning.
 - **Nothing is left behind**: a While that leaves the tree while on (an item put away, a world scene
   reloaded) puts back what it set and frees its scene.
 - **Help in the editor**: every group in the inspector starts with an info line (click the icon for
@@ -1149,6 +1158,7 @@ All tools are in `<build dir>/bin`.
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_mod_validator.gd -- PACK.zip...` | Checks the pack validator: the named packs pass, built-in hostile packs are refused |
 | `cb_bot --port P --count N --full M --duration S [--chaotic] [--shoot] [--melee]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick; `--shoot` makes full bots take out the pistol and fire at the nearest player; `--melee` makes them close in with the bat and swing |
 | `godot --path godot --script res://addons/cinderbox_maps/check_menu.gd -- --test-port=P --config=FILE [--shots=DIR]` | Drives the menus against a running server: bad address, unknown host, dead port, join, camera, Esc menu, settings, leave, rejoin from the recent list. With `--other-port=P2 --result=FILE` (a server running other mods) also the restart that joins it |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_guard.gd` | Checks the scene guard: the game's own scenes pass, and scenes with an `HTTPRequest`, a script, a wired signal, a climbing path or an animation that calls `queue_free` are refused |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_object_source.gd -- FILE.cbv` | Checks that the viewer draws from any object that hands it packets: a GDScript source reads a view file, with no peer extension involved |
 | `godot --path godot -- --autoplay=S --screenshot=F.png --screenshot-every=S2` | Unattended client; also saves `F_1.png`, `F_2.png`, ... and prints the mod events it saw |
 | `scripts/stress_test.sh --bots N --full M --latency MS --jitter MS --loss % --rollback T` | Starts a server, the simulator and the bots, and prints a summary |
