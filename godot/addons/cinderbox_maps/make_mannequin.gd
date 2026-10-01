@@ -343,6 +343,24 @@ func _add_sockets() -> void:
 		socket.transform = Transform3D(frame, Vector3.ZERO) * grip
 		attachment.add_child(socket)
 		socket.owner = _root
+	# Holsters, where the inventory hangs what is put away: a bat across the back (grip at the right
+	# shoulder, pointing down to the left hip), a pistol on the right hip (barrel down, grip back).
+	for spec in [
+			["Back", "UpperChest", Transform3D(Basis(Vector3(0.912, 0.41, 0), Vector3(0, 0, -1), Vector3(-0.41, 0.912, 0)), Vector3(-0.18, 0.12, -0.17))],
+			["Hip", "Hips", Transform3D(Basis(Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)), Vector3(-0.19, 0.02, 0.02))]]:
+		var at := _skeleton.get_node_or_null("At_" + spec[1]) as BoneAttachment3D
+		if at == null:
+			at = BoneAttachment3D.new()
+			at.name = "At_" + spec[1]
+			at.bone_name = spec[1]
+			_skeleton.add_child(at)
+			at.owner = _root
+			at.transform = _skeleton.get_bone_global_rest(_skeleton.find_bone(spec[1]))
+		var holster := CbSocket.new()
+		holster.name = spec[0]
+		holster.transform = spec[2]
+		at.add_child(holster)
+		holster.owner = _root
 
 
 # --- Hitboxes ----------------------------------------------------------------------------------------

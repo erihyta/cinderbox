@@ -1211,6 +1211,68 @@ nobody was there. A stranger needs a place to type an address and an answer when
   - Very close to a wall the camera ends up near the player's head, and the character is not faded out.
   - No key rebinding in settings (mod actions already are InputMap actions, so a page for it is possible).
 
+## The inventory (M46)
+**The bug.** Picking up an item sometimes dropped another slot's item, and switching away from a
+picked-up item dropped it. Nothing in the client was involved: three server mods shared one hand
+with no shared idea of what a player carries.
+
+| Who | What it believed |
+|---|---|
+| `loadout` | only a number (`loadout.slot`) |
+| `pistol`, `melee` | "my slot came out and the hand has none of mine: spawn one" |
+| `pickup` | "E puts it in the hand; what was there drops" |
+| simulation | `SpawnItem` into a taken socket drops what was there (M39) |
+
+So slot 2 coming out threw a picked-up bat on the floor, and picking up with slot 2 out dropped
+that slot's pistol and marked the slot spent (M41).
+
+**The fix** gives items a place to be when they are not in a hand, and the slots one owner.
+
+- **Engine: stowed.** `HeldItem::stowed` (the byte that was reserved, so snapshots and hashes keep
+  their layout) with `socket` = a holster socket or `kNoSocket`. `HeldItemOf` only answers items in
+  use, so everything that asked "what is in the hand" (mods, item layers, state machine conditions)
+  ignores stowed items without a change. New command `MoveItem` (stow / take in use); `SpawnItem`
+  and `PickUpItem` take `value = 1` for "stowed". A leaving player's stowed items go with it.
+  Protocol 15.
+- **Mod: `inventory`** replaces `loadout`. It reconciles every tick instead of trusting events:
+  slots whose item is no longer carried are emptied, carried items in no slot are arrivals and get
+  their kind's slot (pushing out what was there), then the slot that is out is made true in the hand
+  with `StowItem` / `HoldItem`. That one rule covers a pick-up, a throw, an expired item and another
+  mod handing an item over.
+- **`pickup`** only makes the player carry the item (`PickUpStowed`) when an inventory runs; the
+  old one-hand swap stays for servers without it.
+- **`pistol`, `melee`** lost their give / take back / spent code. They declare three item
+  properties (`inventory.slot`, `.start`, `.holster`) and otherwise only look at the hand.
+- **Holsters** are a property with a socket (`ItemProperty( kind, name, SocketHandle )`, stored as
+  socket + 1) and a `CbSocket` in the character scene. The engine has no notion of a holster: a
+  stowed item is drawn in its socket if the character has it, else hidden. On the client a hidden
+  one gives up the socket's `Item` name, so `^^/RightHand/Item` is always the one in use.
+- **Client**: item-kind conditions (`pistol.gun`) count items in use only, so a holstered pistol
+  shows no ammo HUD.
+
+**Verified**
+- `stowed_items` unit test: give stowed, the full-hand refusal, swap in one frame, a holster is not
+  a hand, spawning into the hand never drops a stowed item, snapshot round trip, pick up to stowed,
+  drop, leave.
+- `inventory` network test, a bot steered to a lying bat: starts with 2 stowed; switching 2 and 3
+  drops nothing; the pick-up swaps bats and keeps the pistol; switching away from the picked-up bat
+  and back keeps it; a thrown bat leaves slot 3 empty; 6 items from start to end; no desyncs.
+- `headshot` test: a death leaves nothing lying, the dead carry nothing, the next life has 2 items.
+- All unit and network suites pass; the 1201 reference hashes are unchanged; reactions check passes.
+- A rendered session with bots: bat across the back, pistol on the hip, pistol out with the bat
+  still on the back, no desyncs.
+
+**Not done**
+- **No slot HUD.** The board has 16 names per entity and all 16 are used (`inventory.slot` took the
+  place of `loadout.slot`), so the slots' contents cannot be published. Raising `kBoardSlots`
+  changes the snapshot layout and the reference hashes; it needs its own milestone, and it blocks
+  any new mod that wants a field.
+- Holster positions were placed by numbers and checked in two screenshots, not tuned by eye. The
+  paid mannequin got the same two sockets locally (it is not in the repository).
+- Two kinds sharing one holster socket would be drawn on top of each other.
+- A death was seen in one screenshot with the body upright in a T-pose at the instant of the kill;
+  not looked into, and nothing here touches ragdolls.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1329,3 +1391,4 @@ nobody was there. A stranger needs a place to type an address and an answer when
 43. **M43** (done): hold-to-use prompts: item properties (`ItemProperty`), the pickup mod's hold (`pickup.hold_seconds`, `pickup.hold`, `pickup.progress`), `CbPromptLabel.progress_field` and its bar, a second prompt scene.
 44. **M44** (done): held items bring layers: `ItemLayers( kind, pack )`, mods' swaps kept as wishes and resolved with item layers into `SwapLayer` commands (a mod's swap wins); the bat's `melee.carry` pack.
 45. **M45** (done): join menu (address, recent servers), Esc menu and settings in a script-free scene; failed joins come back with the reason; leaving reloads the scene, other mods restart the game; camera collision against the frame's static shapes.
+46. **M46** (done): stowed items in the engine (`MoveItem`, `HeldItem::stowed`), an `inventory` mod owning slots 1 to 4 in place of `loadout`, item properties for slot / start / holster, holster sockets on the mannequin; fixes items dropping on switch and on pick-up.
