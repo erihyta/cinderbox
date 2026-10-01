@@ -59,6 +59,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M50: frames as bytes: a viewer's frames encode to packets (whole or as deltas), the server records view files that play with no simulation, and the Godot client watches them | done |
 | M51: two extensions: the viewer (no simulation, no networking; all a mod's project needs) and the peer (joins servers, plays recordings), with frames crossing as bytes; any object, even a script, can be a viewer's source | done |
 | M52: packs are contained: a scene is checked before it is used (listed node classes only, no scripts, no wired signals, no paths out of the scene, animations and reactions call only listed methods) | done |
+| M53: smaller frames: compact packets and fewer frames than ticks, what a stream will carry (32 players: 6.8 Mbit/s down to 0.43); view files can be recorded that way | done |
 
 ## Building
 
@@ -152,7 +153,8 @@ checksums it does not reproduce count as `desyncs`.
 
 `--view=FILE` plays a **view file** the same way, with the same keys. It holds the frames
 themselves, not inputs to re-simulate, so it plays on any build and shows the players' names; it
-is also much bigger (about 0.1 MB a second for 4 players, 1.2 MB for 64).
+is also much bigger (about 0.1 MB a second for 4 players, 1.2 MB for 64; with `--view-rate 20
+--view-compact`, 0.01 and 0.09 MB).
 
 Open `godot/` in the Godot editor to edit scenes, then press Play. Godot client options, given after `--`:
 - `--host=H`, `--port=P`: join this server without the menu (leaving it lands in the menu).
@@ -1150,8 +1152,8 @@ All tools are in `<build dir>/bin`.
 | `cb_server --map FILE.cbmap` | Runs an authored map instead of the built-in sandbox |
 | `cb_server --record FILE` | Records the whole session (input frames plus checksums) |
 | `cb_replay info\|verify FILE` | Summarizes a recording, or re-simulates it and checks every checksum |
-| `cb_server --record-view FILE` | Records the session as a view file: the frames a viewer is shown, playable without a simulation |
-| `cb_replay view FILE` | Summarizes a view file: frames, players, bytes per frame |
+| `cb_server --record-view FILE [--view-rate HZ] [--view-compact]` | Records the session as a view file: the frames a viewer is shown, playable without a simulation. `--view-rate 20` keeps 20 frames a second instead of one per tick; `--view-compact` writes them the way a stream would (positions and animation on a grid, a few millimetres off at most) |
+| `cb_replay view FILE` | Summarizes a view file: frames, players, bytes per frame and where they go |
 | `godot --path godot -- --replay=FILE` (or `--view=FILE`) | Watches a recording (or a view file) in the game, with the mods' looks and the followed player's HUD |
 | `cb_client --replay FILE [--replay-start S]` | Watches a recording in the raylib debug viewer |
 | `cb_netsim --listen P --target HOST:PORT --latency MS --jitter MS --loss % [--duplicate %]` | UDP relay that degrades traffic (latency is added in each direction) |

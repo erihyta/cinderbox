@@ -1570,6 +1570,69 @@ scene's `SceneState` without creating a node).
 - What the allowed classes do by themselves is not judged: a sound that plays at full volume on
   load, a UI panel over the whole screen.
 
+## Smaller frames (M53)
+An exact frame is what two libraries of one process hand each other. A stream cannot afford it:
+6.8 Mbit/s for 32 players (M50). Two things make frames that a network can carry, and a view file
+can now be recorded with both, which is how they are measured and watched before a stream exists.
+
+- **Compact packets** (`ViewPrecision::Compact`). The picture, not the state:
+
+  | Part of an entity | Exact | Compact |
+  |---|---|---|
+  | position | 3 floats when any changed | how far it moved on a 1/512 m grid: 1 or 2 bytes an axis |
+  | rotation | 4 floats | 32 bits (the largest component named, the other three in 10 bits) |
+  | velocity | 3 floats | not sent (only rollback smoothing reads it) |
+  | animation state | the words that changed | floats on a 1/1024 grid, as how far they moved; the rest as it is |
+  | an item in a hand | its holder's transform, every tick | no transform: it is drawn in the socket |
+  | inputs | all 64 players' | not sent (nothing draws them) |
+
+  Whatever lands on the same grid point as before is not sent, so a body that settles stops
+  costing anything.
+- **The two sides stay on the same grid.** The sender keeps exact frames, the receiver only what it
+  decoded, and a delta is "how many grid steps from the base". They agree because a value that
+  came through a compact packet is exactly on the grid (an integer below 2^24 over a power of two
+  is exact in a float), so both compute the same grid point for the base. Rotations are not
+  deltas: the code is sent when it differs from the base's code, which only the sender computes.
+- **Fewer frames than ticks** (`ViewFrame::stride`). A source may send every third tick; the
+  viewer draws from the frame before to this one over that many ticks. What happened in between
+  is not lost: events are counters with rings. `cb_server --record-view FILE --view-rate 20`.
+- **Also smaller, in both precisions**: when entities come and go, only those are named (it was
+  every NetId: 1.4 KB of a 3.9 KB frame for 32 players); an event ring sends the records that are
+  new, not a mask over all its words.
+- **`cb_replay view FILE`** says where an average delta frame's bytes go.
+
+**Measured** (a server with bots that shoot, 21 s each):
+
+| Players | Exact, 60 a second (M50) | Compact, 60 a second | Compact, 20 a second |
+|---|---|---|---|
+| 4 | 829 kbit/s | 161 | 67 |
+| 32 | 6809 kbit/s | 1072 | 429 |
+| 64 | 9909 kbit/s | 1648 | 671 |
+
+Where a 32-player compact frame at 20 a second goes (2684 bytes): animation 768, positions 619,
+rotations 575, events 243, which entities and which changed 229, header and stats 92, ragdolls 72,
+identity and step counts 62. The aim was 300 kbit/s for 32 players; it is 429. ROADMAP.md lists
+what is left to take.
+
+**How far the picture is from the truth**: at most 1.7 mm and 0.22 degrees, over the scripted
+session.
+
+**Verified**
+- `view_codec`: 600 compact deltas in a row, the sender on exact frames and the receiver on what it
+  decoded: every frame is bit for bit what one whole compact packet of the true frame decodes to
+  (no drift); the error bound above; 3000 damaged compact deltas, none crash; exact packets still
+  round-trip to identical bytes.
+- `view_file`: every third tick, compact: a third of the frames, each lasting three ticks; seek and
+  step land on the right tick with the true world on the grid.
+- A Godot client watching a compact 20-a-second view file of a 4-bot session: items, HUD, names,
+  kill feed, exit code 0; the script source check passes on the same file.
+
+**Not done**
+- Whether 20 frames a second looks smooth was not judged by eye: a still frame looks right.
+- A compact view file has no inputs, so `pressed:` reactions do not play for the player it follows.
+- View files written before this (packet "CBV1", file version 1) no longer read.
+- The header is 75 bytes a frame of fixed-width fields; nothing was done about it.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1696,3 +1759,4 @@ The ordered plan for the client is in [ROADMAP.md](ROADMAP.md). These are loose 
 50. **M50** (done): frames as bytes: `EncodeView` / `DecodeView` with per-word deltas against a base, view files (`cb_server --record-view`, `ViewFileSource`, `--view=FILE`, `cb_replay view`), measured sizes; `bytes.h` moved to `src/sim`.
 51. **M51** (done): two extensions: the viewer (`cinderbox`: no simulation, no networking) and the peer (`cinderbox_peer`: `CinderboxPeer`, the live and replay sources) with packets between them; `set_source( object )`; `cb_sim_data` and `cb_capture` split out so the viewer cannot link a simulation; mod projects get the viewer only.
 52. **M52** (done): packs are contained: the scene guard (node class list, no scripts, no connections, contained paths, method list for animations and reactions, advance expressions cleared), run wherever a moddable scene is instantiated; `check_guard.gd`.
+53. **M53** (done): smaller frames: compact packets (grid positions and animation values as small deltas, 32-bit rotations, no velocity or inputs), a stride for fewer frames than ticks, entity lists and event rings sent as what changed, `--view-rate` / `--view-compact`, a size breakdown in `cb_replay view`; 32 players from 6.8 to 0.43 Mbit/s.
