@@ -1111,6 +1111,30 @@ back, and get another: unlimited items.
   second bat, never more than one item; with `expire.seconds=2` the thrown bat is gone at the end;
   no desyncs), all suites, reference hashes unchanged.
 
+## Item bodies authored in Godot (M42)
+M39 declared an item's world body in C++ (`BoxItem(...)`), away from the scene it had to match.
+Characters already author their hit zones in Godot and bake them; items now do the same.
+
+- **`CbItemBody`**: a `CollisionShape3D` with a `mass`, in the item's scene (as `CbHitbox` is one
+  with a zone), so Godot's own gizmo shows and edits it. Box or sphere, unrotated; its position is
+  the shape's centre from the grip.
+- **Bake**: `bake_items.gd`, run inside the mod's client project, follows every `CbItemLook` to its
+  scene and writes `items/<kind>.cfg` (shape, half extents, centre, mass). `pack_mod.ps1` runs it
+  before packing, the preset's `include_filter` ships `items/*.cfg`, and the client's pack validator
+  accepts `items/` as data.
+- **Server**: `loadItemShape( mod, kind )` reads the file from the declaring mod's item (hash
+  checked, like animation packs) and replaces the declared or default shape before the schema goes
+  out; clients still get shapes from the schema, so nothing changes for them. Declarations remember
+  which mods declared each kind.
+- **Mods**: the bat and the pistol have a `CbItemBody` and no `BoxItem` line; their baked files are
+  committed. `BoxItem` / `SphereItem` stay for mods without a look.
+- **Verified**: the bake reproduced the old C++ values from the scenes; `item_shapes` (parsing,
+  refusals, the shipped files); the pickup test checks the bat's body is the baked one; the real
+  server logged both bodies read from the published items; the pack validator check; all suites,
+  reference hashes unchanged.
+- **Not done**: a Bake button in the editor (baking happens on publish or by the command);
+  capsules; several shapes per item.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1225,3 +1249,4 @@ back, and get another: unlimited items.
 39. **M39** (done): items in the world: physics bodies of declared shapes, DropItem / PickUpItem / SpawnItem on the floor, spawn into a taken hand drops; melee and pistol follow what is in the hand; the pickup mod (E, G, drop on death, spawn_each) with a data-only proximity prompt (`CbPromptLabel`, `$local@field`, `{key:}`, `{look:}`); protocol 14.
 40. **M40** (done): looks follow what is held: item kind names are conditions in the HUD and in reactions; the pistol's look asks `pistol.gun`, not the loadout slot.
 41. **M41** (done): a loadout slot gives one item per life (dropping no longer duplicates); the `expire` mod removes items that were held and then left lying (`expire.seconds`); `ctx.Items()`.
+42. **M42** (done): item bodies authored in Godot: `CbItemBody` in the item's scene, `bake_items.gd` (run by packing) writes `items/<kind>.cfg`, the server reads it from the mod's item; the bat and pistol converted.

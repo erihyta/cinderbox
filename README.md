@@ -48,6 +48,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M39: items in the world: dropped, thrown and picked up, with physics everyone agrees on; a pickup mod with a proximity prompt made of data (`CbPromptLabel`, `$local@pickup.target`, `{key:pickup}`) | done |
 | M40: looks follow what is held: item kinds are conditions in the HUD and reactions (`pistol.gun`), so picked-up items look and sound right | done |
 | M41: a loadout slot gives one item per life (no duplicating by dropping); an `expire` mod removes items left lying | done |
+| M42: item bodies authored in Godot: a `CbItemBody` in the item's scene, baked into the mod's item, read by the server | done |
 
 ## Building
 
@@ -781,12 +782,24 @@ so it falls, tumbles, gets shot across the floor, and does so identically on eve
 
 | Mod API | Does |
 |---|---|
-| `declare.ItemKind( "melee.bat", BoxItem( half, center, mass ) )` | its body in the world (`SphereItem` too), in the grip's frame: the bat is a 0.83 m box whose centre is 0.31 m in front of the grip |
+| a `CbItemBody` in the item's scene | its body in the world: a box or a sphere with a mass, placed from the grip (the bat: a 0.82 m box whose centre is 0.31 m in front of it). Authored with Godot's shape gizmo, baked to `items/<kind>.cfg` |
+| `declare.ItemKind( "x", BoxItem( half, center, mass ) )` | the same from code, for a mod without a look (`SphereItem` too); a baked body replaces it |
 | `ctx.SpawnWorldItem( kind, grip, rotation, velocity )` | one on the floor |
 | `ctx.DropItem( item, grip, rotation, velocity )` | out of the hand; thrown if it has a velocity |
 | `ctx.PickUpItem( SlotTarget( slot ), item, socket )` | into a free socket (drop what is there first, in the same tick) |
 | `ctx.ItemsNear( point, radius )`, `ctx.Items()`, `ctx.ItemKindOf( id )`, `ctx.ItemHolder( id )` | what lies around, nearest first; every item; what and whose |
 | `ctx.SpawnItem` into a taken socket | drops what was there (it may be one someone picked up) |
+
+The body is **authored in Godot and baked**, like a character's hit zones: put a `CbItemBody` in
+the item's scene, give it a `BoxShape3D` or `SphereShape3D` and a `mass`, and move it to where the
+shape's centre is. Publishing the mod bakes every item its `CbItemLook`s name
+(`tools\publish_mod.ps1`, or by hand below) and ships the files in the item; the server reads them
+from there (`item melee.bat: body from mod melee's item (box, 1.10 kg)`). The baked files are
+committed with the mod, so servers and tests built from source have them.
+
+```sh
+godot --headless --path server_mods/melee/client --script <repo>/godot/addons/cinderbox_maps/bake_items.gd
+```
 
 Who may pick up what, and when, is a mod's. The **pickup** mod is the example:
 
