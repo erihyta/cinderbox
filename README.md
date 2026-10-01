@@ -49,6 +49,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M40: looks follow what is held: item kinds are conditions in the HUD and reactions (`pistol.gun`), so picked-up items look and sound right | done |
 | M41: a loadout slot gives one item per life (no duplicating by dropping); an `expire` mod removes items left lying | done |
 | M42: item bodies authored in Godot: a `CbItemBody` in the item's scene, baked into the mod's item, read by the server | done |
+| M43: hold-to-use prompts: item properties (`pickup.hold_seconds`), `pickup.progress`, and a prompt bar that fills | done |
 
 ## Building
 
@@ -192,6 +193,7 @@ Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod re
 | `deathmatch.fall_penalty` | 1 point lost for falling out of the world |
 | `pistol.zone.<zone>` | damage multiplier for a hit zone of the server's character: `head` 2, anything else 1 |
 | `pickup.spawn_each` | 0; N drops N of every item kind the mods declared around the spawn point at start |
+| `pickup.hold_seconds` | 0 (a tap); how long E must be held to pick up an item whose mod does not say (see item properties) |
 | `expire.seconds` | 60; an item that was held and then left lying is removed after this long (0: never) |
 
 ```bash
@@ -391,8 +393,9 @@ entity a field points at is called (an item's `display_name`: `"Bat"`), and `{ke
 the player has that action bound to now (`"E"`, `"LMB"`: rebinding shows).
 
 `CbPromptLabel` is the same in the world: a `Label3D` with a `text_format`, upright above its parent,
-facing the camera, the same size at any distance, hidden while its text is empty. A reaction puts
-it where it belongs (see [Items in the world](#items-in-the-world)).
+facing the camera, the same size at any distance, hidden while its text is empty; with a
+`progress_field` it draws a bar under the text that fills as the field goes from 0 to 1. A reaction
+puts it where it belongs (see [Items in the world](#items-in-the-world)).
 
 The pistol's HUD (`server_mods/pistol/client/ui/hud_pistol.tscn`) is built from these: a health bar
 (`ProgressBar` from `combat.health` and `combat.max_health`), ammo, reloading, crosshair, kills and
@@ -806,15 +809,26 @@ Who may pick up what, and when, is a mod's. The **pickup** mod is the example:
 - Near an item (1.5 m along the ground, not behind you), its NetId goes on your board as
   `pickup.target`. **E** takes it into the right hand (what was there drops), **G** throws what you
   hold, dying drops it. Items a loadout slot gave are that mod's to take back.
+- **Hold to pick up**: an item's mod may say it takes a moment,
+  `declare.ItemProperty( bat, "pickup.hold_seconds", 0.5f )` (the bat does; the pistol is a tap).
+  While E is held on the item in reach, `pickup.progress` runs from 0 to 1 on your board; letting go
+  or losing the item starts over. `pickup.hold` says how long the item in reach needs.
 - Its look is a proximity prompt, all data: a world reaction while `$local`'s `pickup.target` is set
-  puts `prompt.tscn` (a `CbPromptLabel`: `"[{key:pickup}]  Pick up {look:pickup.target}"`) on the
-  item it names, `$local@pickup.target`, and moves it when that changes.
+  puts a `CbPromptLabel` on the item it names, `$local@pickup.target`, and moves it when that
+  changes: `"[{key:pickup}]  Pick up {look:pickup.target}"` for a tap, `"Hold [...]"` with a bar
+  that fills (`progress_field = "pickup.progress"`) for an item that needs holding.
 
 ```
 PickupReactions            (vfx/reactions_pickup.tscn)
-└── Prompt   CbReaction  while  $local: pickup.target   scene prompt.tscn   under $local@pickup.target
-                                                        -> "[E]  Pick up Bat" above the bat
+├── Prompt      while  $local: pickup.target, pickup.hold == 0   prompt.tscn        "[E]  Pick up Pistol"
+└── PromptHold  while  $local: pickup.target, pickup.hold > 0    prompt_hold.tscn   "Hold [E]  Pick up Bat" + bar
+                both under $local@pickup.target
 ```
+
+**Item properties** are how mods agree on what an item is like without knowing each other: a named
+number on an item kind (`declare.ItemProperty( kind, name, value )`) that any mod reads with
+`ctx.ItemProperty( kind, name, fallback )`. The melee mod says how long its bat takes; the pickup
+mod is the one that cares.
 
 The same pieces make any prompt: a mod puts an entity's NetId in a field, its look shows a
 `CbPromptLabel` on `$local@thatfield`.
