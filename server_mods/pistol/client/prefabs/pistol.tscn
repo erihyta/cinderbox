@@ -1,8 +1,8 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 ; A placeholder pistol: the look of the "pistol.gun" item (vfx/reactions_pistol.tscn), drawn in the
 ; holder's RightHand socket. The socket's frame: the grip at the origin, the barrel along -Z, the
-; sights along +Y.
+; sights along +Y. Body is what it is when it lies in the world, baked to items/pistol.gun.cfg.
 
 [sub_resource type="StandardMaterial3D" id="Metal"]
 albedo_color = Color(0.16, 0.16, 0.18, 1)
@@ -25,7 +25,15 @@ size = Vector3(0.03, 0.1, 0.045)
 material = SubResource("Metal")
 size = Vector3(0.01, 0.012, 0.012)
 
+[sub_resource type="BoxShape3D" id="Body"]
+size = Vector3(0.04, 0.128, 0.2)
+
 [node name="Pistol" type="Node3D"]
+
+[node name="Body" type="CbItemBody" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.07)
+shape = SubResource("Body")
+mass = 0.9
 
 [node name="Slide" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.04, -0.07)

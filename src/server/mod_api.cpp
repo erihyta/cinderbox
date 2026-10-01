@@ -122,6 +122,11 @@ ItemKindHandle Declarations::ItemKind( const std::string& name )
 	int existing = m_schema.FindItemKind( name );
 	if ( existing >= 0 )
 	{
+		std::vector<std::string>& mods = m_itemMods[size_t( existing )];
+		if ( std::find( mods.begin(), mods.end(), m_mod ) == mods.end() )
+		{
+			mods.push_back( m_mod );
+		}
 		return { existing };
 	}
 	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.itemKinds.size() >= 255 )
@@ -131,6 +136,7 @@ ItemKindHandle Declarations::ItemKind( const std::string& name )
 	}
 	m_schema.itemKinds.push_back( name );
 	m_schema.itemShapes.push_back( ItemShape{} );
+	m_itemMods.push_back( { m_mod } );
 	return { int( m_schema.itemKinds.size() - 1 ) };
 }
 

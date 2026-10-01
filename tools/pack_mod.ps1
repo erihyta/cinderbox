@@ -43,6 +43,14 @@ if ((Test-Path $extension) -and (Test-Path $bin)) {
 }
 
 & $Godot --headless --path $Project --import | Out-Null
+
+# Item bodies: every CbItemBody in the mod's item scenes becomes items/<kind>.cfg, which the server
+# reads from the pack (the preset's include_filter ships them).
+$bakeItems = Join-Path $root "godot\addons\cinderbox_maps\bake_items.gd"
+if ((Test-Path (Join-Path $Project "vfx")) -and (Test-Path $bakeItems)) {
+	& $Godot --headless --path $Project --script $bakeItems
+	if ($LASTEXITCODE -ne 0) { throw "an item body could not be baked (see above)" }
+}
 & $Godot --headless --path $Project --export-pack "Mod" $Output
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $Output)) { throw "export failed" }
 

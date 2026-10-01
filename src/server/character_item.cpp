@@ -167,6 +167,131 @@ std::shared_ptr<const CharacterAsset> LoadCharacterFolder( const std::string& di
 	return LoadCharacter( anim::DiskReader( dir ), name, dir + "/", error, warnings );
 }
 
+bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error )
+{
+	ItemShape shape;
+	bool haveShape = false;
+	bool haveHalf = false;
+	std::istringstream lines( text );
+	std::string line;
+	while ( std::getline( lines, line ) )
+	{
+		std::istringstream words( line );
+		std::string key;
+		if ( !( words >> key ) || key[0] == '#' )
+		{
+			continue;
+		}
+		if ( key == "shape" )
+		{
+			std::string kind;
+			words >> kind;
+			if ( kind != "box" && kind != "sphere" )
+			{
+				error = "shape must be box or sphere, not \"" + kind + "\"";
+				return false;
+			}
+			shape.kind = kind == "sphere" ? 1 : 0;
+			haveShape = true;
+		}
+		else if ( key == "half" || key == "center" )
+		{
+			Float3 v;
+			if ( !( words >> v.x >> v.y >> v.z ) )
+			{
+				error = key + " needs three numbers";
+				return false;
+			}
+			( key == "half" ? shape.half : shape.center ) = v;
+			haveHalf |= key == "half";
+		}
+		else if ( key == "mass" )
+		{
+			if ( !( words >> shape.mass ) )
+			{
+				error = "mass needs a number";
+				return false;
+			}
+		}
+	}
+	auto sane = []( float f, float lo, float hi ) { return std::isfinite( f ) && f >= lo && f <= hi; };
+	if ( haveShape == false || haveHalf == false )
+	{
+		error = "needs a shape and its half extents";
+		return false;
+	}
+	for ( float h : { shape.half.x, shape.half.y, shape.half.z } )
+	{
+		if ( sane( h, 0.005f, 4.0f ) == false )
+		{
+			error = "half extents must be between 0.005 and 4 m";
+			return false;
+		}
+	}
+	for ( float c : { shape.center.x, shape.center.y, shape.center.z } )
+	{
+		if ( sane( c, -4.0f, 4.0f ) == false )
+		{
+			error = "the centre must be within 4 m of the grip";
+			return false;
+		}
+	}
+	if ( sane( shape.mass, 0.01f, 1000.0f ) == false )
+	{
+		error = "mass must be between 0.01 and 1000 kg";
+		return false;
+	}
+	out = shape;
+	return true;
+}
+
+bool LoadItemShapeItem( const std::string& zipPath, const ModItem& item, const std::string& kind, ItemShape& out, std::string& error )
+{
+	std::ifstream in( zipPath, std::ios::binary );
+	if ( in.good() == false )
+	{
+		return false;
+	}
+	std::ostringstream all;
+	all << in.rdbuf();
+	const std::string bytes = all.str();
+	if ( Sha256Hex( bytes.data(), bytes.size() ) != item.sha256 )
+	{
+		error = zipPath + " is not the item the manifest names";
+		return false;
+	}
+	mz_zip_archive zip = {};
+	if ( mz_zip_reader_init_mem( &zip, bytes.data(), bytes.size(), 0 ) == MZ_FALSE )
+	{
+		error = zipPath + " is not a zip";
+		return false;
+	}
+	std::string path = "items/" + kind + ".cfg";
+	int index = mz_zip_reader_locate_file( &zip, path.c_str(), nullptr, 0 );
+	size_t size = 0;
+	void* data = index >= 0 ? mz_zip_reader_extract_to_heap( &zip, mz_uint( index ), &size, 0 ) : nullptr;
+	bool ok = false;
+	if ( data != nullptr )
+	{
+		ok = ParseItemShape( std::string( static_cast<const char*>( data ), size ), out, error );
+		mz_free( data );
+	}
+	mz_zip_reader_end( &zip );
+	return ok;
+}
+
+bool LoadItemShapeFolder( const std::string& dir, const std::string& kind, ItemShape& out, std::string& error )
+{
+	std::ifstream in( dir + "/items/" + kind + ".cfg", std::ios::binary );
+	if ( in.good() == false )
+	{
+		return false;
+	}
+	std::ostringstream all;
+	all << in.rdbuf();
+	return ParseItemShape( all.str(), out, error );
+}
+
 std::string DefaultWorkshopDir()
 {
 	// Godot's user:// for the project named "Cinderbox" (godot/project.godot).

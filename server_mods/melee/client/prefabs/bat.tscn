@@ -3,7 +3,8 @@
 ; The look of the "melee.bat" item. The character's swing animation plays "slash" (the flames) through
 ; RightHand/Item/AnimationPlayer; the two CbReaction nodes follow what the melee mod sends: the barrel
 ; glows while the bat is hot, and sparks fly when its holder lands a hit. The barrel's material is
-; local to each bat, so one hot bat does not light them all.
+; local to each bat, so one hot bat does not light them all. Body is what it is when it lies in the
+; world: a box, baked to items/melee.bat.cfg for the server.
 
 [sub_resource type="StandardMaterial3D" id="Tape"]
 albedo_color = Color(0.1, 0.1, 0.12, 1)
@@ -119,6 +120,9 @@ particles_anim_loop = false
 material = SubResource("StandardMaterial3D_lxpvx")
 size = Vector2(0.04, 0.04)
 
+[sub_resource type="BoxShape3D" id="Body"]
+size = Vector3(0.07, 0.07, 0.82)
+
 [node name="Bat" type="Node3D" unique_id=1599722703]
 
 [node name="Handle" type="MeshInstance3D" parent="." unique_id=1253657060]
@@ -129,6 +133,11 @@ mesh = SubResource("Handle")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)
 mesh = SubResource("Barrel")
 surface_material_override/0 = SubResource("StandardMaterial3D_cfl35")
+
+[node name="Body" type="CbItemBody" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.31)
+shape = SubResource("Body")
+mass = 1.1
 
 [node name="Flames" type="GPUParticles3D" parent="." unique_id=1514484346]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)

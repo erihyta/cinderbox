@@ -67,8 +67,9 @@ public:
 		m_loadout = declare.Field( "loadout.slot", BoardType::Int );
 		// The bat is an item of its own in the right hand: the swing animation plays its "slash",
 		// and it has its own state (hot for a while after it hits someone).
-		// Lying in the world: handle and barrel, about 0.83 m from the grip forward.
-		m_bat = declare.ItemKind( "melee.bat", BoxItem( { 0.035f, 0.035f, 0.41f }, { 0.0f, 0.0f, -0.31f }, 1.1f ) );
+		// Its body when it lies in the world is authored in its scene (client/prefabs/bat.tscn, the
+		// CbItemBody) and baked to client/items/melee.bat.cfg.
+		m_bat = declare.ItemKind( "melee.bat" );
 		m_hand = declare.Socket( "RightHand" );
 		m_hot = declare.Field( "melee.hot", BoardType::Bool );
 		m_full = declare.Layer( "full" );
