@@ -149,6 +149,7 @@ void ClientThread::Run( ClientOptions options )
 
 	uint32_t lastTick = UINT32_MAX;
 	uint64_t lastReset = UINT64_MAX;
+	uint64_t lastFailures = 0;
 	while ( m_stop.load() == false )
 	{
 		double now = Now();
@@ -164,7 +165,8 @@ void ClientThread::Run( ClientOptions options )
 
 		uint32_t tick = client.CurrentTick();
 		bool rolledBack = client.GetStats().rolledBackLastFrame;
-		bool changed = tick != lastTick || rolledBack || client.ResetGeneration() != lastReset || client.State() != m_lastState;
+		bool changed = tick != lastTick || rolledBack || client.ResetGeneration() != lastReset || client.State() != m_lastState ||
+					   client.GetStats().connectFailures != lastFailures;
 		if ( changed )
 		{
 			m_building.fingerprint = fingerprint;
@@ -172,6 +174,7 @@ void ClientThread::Run( ClientOptions options )
 			Publish( client, now, rolledBack );
 			lastTick = tick;
 			lastReset = client.ResetGeneration();
+			lastFailures = client.GetStats().connectFailures;
 			m_lastState = client.State();
 		}
 

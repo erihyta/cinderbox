@@ -1181,6 +1181,36 @@ when it is dropped, without each mod writing swap code.
   placeholders from the free pack); packs still cannot add layers a character lacks; movement speed
   is not tied to the item.
 
+## Joining from a menu (M45)
+Until now the client took its server from the command line and showed "Connecting..." forever when
+nobody was there. A stranger needs a place to type an address and an answer when it does not work.
+
+| Piece | How |
+|---|---|
+| Menu | `res://ui/menu.tscn`, a scene with no script (packs cannot carry one), so mods can restyle it. `menu.gd` finds its nodes by unique name and skips missing ones; `game.gd` decides which panel shows |
+| Remembered | `user://player.cfg`: name, settings (sensitivity, volume, fullscreen), the last 6 servers with their map |
+| Why a join failed | `game.gd` watches the attempt: an address that names nothing (`GameClient::Stats::connectFailures`, counted only when `Transport::Resolves` says so), no answer in 10 s, the server's reject reason, a missing or refused workshop item |
+| Leaving | The game scene is reloaded. The client node, its thread, the mirror and every cache start again, so no state of one server can reach the next (schema generations, entity nodes, held kinds) |
+| Other mods next | Resource packs cannot be unloaded. If a server does not use an item this process has loaded, the game restarts itself with `--host` / `--port` (`OS.set_restart_on_exit`) rather than show that item's HUD and reactions |
+| Camera | `present::CameraFreeDistance`: a ray against the frame's static entities (boxes grown by the camera's radius, spheres, capsules), on the main thread with the camera's current angles, so there is no frame of lag. In at once, out at 12 m/s |
+
+- **Why not ask the simulation for the camera ray**: it lives on its own thread and is rolled back and
+  re-simulated; a query from the main thread would need a lock or a frame of delay. The frame already
+  carries every static shape, and the math agrees with `Simulation::CastRay` exactly on the built-in
+  level (30 rays, difference 0).
+- **Verified**:
+  - `camera_collision` unit test (walls, a turned wall, spheres, capsules, props ignored, the level against the simulation's own rays).
+  - `check_menu.gd` against a live server, windowed and headless: 41 checks (bad address, unknown host, dead port, cancel, join, name reaches the server, camera above the floor, Esc menu, settings, leave, recent list, rejoin with the items' HUDs back) and the restart into a server with other mods.
+  - The autoplay smoke test (`--port`, no menu) with bots: no desyncs. A debug export: joins with autoplay, and opens in the menu without errors.
+  - Unit tests and reference hashes unchanged. Network tests: all pass except `loopback_session` and `lossy_session`, whose timing checks failed on this machine that day with a binary built before M45 as well.
+- **Found on the way**: after leaving and rejoining, an item's HUD was missing, because HUDs were only
+  loaded together with new packs. They are now loaded once per scene.
+- **Not done**:
+  - No server browser: there is no master server, and LAN discovery was left out. Addresses are IPv4 or host names (ENet).
+  - The restart into another server was not tried in an exported build, only from the editor binary.
+  - Very close to a wall the camera ends up near the player's head, and the character is not faded out.
+  - No key rebinding in settings (mod actions already are InputMap actions, so a page for it is possible).
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1234,7 +1264,7 @@ when it is dropped, without each mod writing swap code.
 
 ### Possible next steps
 - **Less download at high latency**: skip frames that are probably still in flight and resend them only after a timeout. This trades bandwidth for a slower recovery from loss.
-- **Camera**: add camera collision in the client (it can currently clip into walls).
+- **Camera**: fade the character out when the map pushes the camera up against it (collision itself is in, M45).
 - **Godot**:
   - ozz clips loaded from packs;
   - a real imported character: retargeting is checked against a synthetic humanoid, but no
@@ -1298,3 +1328,4 @@ when it is dropped, without each mod writing swap code.
 42. **M42** (done): item bodies authored in Godot: `CbItemBody` in the item's scene, `bake_items.gd` (run by packing) writes `items/<kind>.cfg`, the server reads it from the mod's item; the bat and pistol converted.
 43. **M43** (done): hold-to-use prompts: item properties (`ItemProperty`), the pickup mod's hold (`pickup.hold_seconds`, `pickup.hold`, `pickup.progress`), `CbPromptLabel.progress_field` and its bar, a second prompt scene.
 44. **M44** (done): held items bring layers: `ItemLayers( kind, pack )`, mods' swaps kept as wishes and resolved with item layers into `SwapLayer` commands (a mod's swap wins); the bat's `melee.carry` pack.
+45. **M45** (done): join menu (address, recent servers), Esc menu and settings in a script-free scene; failed joins come back with the reason; leaving reloads the scene, other mods restart the game; camera collision against the frame's static shapes.

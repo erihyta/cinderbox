@@ -12,6 +12,7 @@
 #include "map.h"
 #include "pose.h"
 #include "pose_tools.h"
+#include "camera.h"
 #include "fields.h"
 #include "hitboxes.h"
 #include "detmath.h"
@@ -1500,6 +1501,96 @@ void TestFields()
 	CHECK( present::FormatFields( schema, "AMMO {pistol.ammo} {{ {round.time} {combat.dead}", &board, globals ) == "AMMO 3 { 12.5 no" );
 	// Nothing published yet (no board) reads as zero too.
 	CHECK( present::CheckCondition( schema, "pistol.ammo == 0", nullptr, globals ) );
+}
+
+// Camera collision: how far a third-person camera can back away before the map is in the way.
+void TestCameraCollision()
+{
+	using present::CameraFreeDistance;
+	present::PresentationFrame frame;
+	auto add = [&frame]( present::VisualKind kind, ShapeKind shape, b3Vec3 at, b3Vec3 half, b3Quat rotation = { { 0.0f, 0.0f, 0.0f }, 1.0f } ) {
+		present::FrameEntity e;
+		e.netId = uint32_t( frame.entities.size() + 1 );
+		e.kind = kind;
+		e.shape = shape;
+		e.halfExtents = half;
+		e.transform = { at, rotation };
+		frame.entities.push_back( e );
+	};
+	const b3Vec3 back = { 0.0f, 0.0f, -1.0f };
+	const b3Vec3 eye = { 0.0f, 1.5f, 0.0f };
+
+	// Nothing there: the full distance.
+	CHECK( CameraFreeDistance( frame, eye, back, 6.0f, 0.2f ) == 6.0f );
+
+	// A wall 3 m behind (its face at z = -3): the camera's ball stops a radius short of it.
+	add( present::VisualKind::Static, ShapeKind::Box, { 0.0f, 2.0f, -3.5f }, { 5.0f, 2.0f, 0.5f } );
+	float d = CameraFreeDistance( frame, eye, back, 6.0f, 0.2f );
+	std::printf( "    wall at 3 m: free %.3f m\n", d );
+	CHECK( std::fabs( d - 2.8f ) < 1e-4f );
+	CHECK( std::fabs( CameraFreeDistance( frame, eye, back, 6.0f, 0.0f ) - 3.0f ) < 1e-4f );
+	// Closer than the wall anyway, or looking the other way: untouched.
+	CHECK( CameraFreeDistance( frame, eye, back, 2.0f, 0.2f ) == 2.0f );
+	CHECK( CameraFreeDistance( frame, eye, { 0.0f, 0.0f, 1.0f }, 6.0f, 0.2f ) == 6.0f );
+	// Already against it: zero, never negative.
+	CHECK( CameraFreeDistance( frame, { 0.0f, 1.5f, -2.9f }, back, 6.0f, 0.2f ) == 0.0f );
+
+	// Props, players and items never block the camera.
+	add( present::VisualKind::Prop, ShapeKind::Box, { 0.0f, 1.5f, -1.0f }, { 0.5f, 0.5f, 0.5f } );
+	add( present::VisualKind::Player, ShapeKind::Capsule, { 0.0f, 1.5f, -1.5f }, { 0.35f, 0.55f, 0.0f } );
+	CHECK( std::fabs( CameraFreeDistance( frame, eye, back, 6.0f, 0.2f ) - 2.8f ) < 1e-4f );
+
+	// A wall turned 45 degrees about Y, 2 m away along the ray.
+	frame.entities.clear();
+	float half = 0.5f * 0.78539816f;
+	add( present::VisualKind::Static, ShapeKind::Box, { 0.0f, 2.0f, -2.0f }, { 5.0f, 2.0f, 0.0f }, { { 0.0f, std::sin( half ), 0.0f }, std::cos( half ) } );
+	d = CameraFreeDistance( frame, eye, back, 6.0f, 0.0f );
+	CHECK( std::fabs( d - 2.0f ) < 1e-3f );
+
+	// Static spheres and capsules (map templates).
+	frame.entities.clear();
+	add( present::VisualKind::Static, ShapeKind::Sphere, { 0.0f, 1.5f, -4.0f }, { 1.0f, 0.0f, 0.0f } );
+	CHECK( std::fabs( CameraFreeDistance( frame, eye, back, 6.0f, 0.25f ) - 2.75f ) < 1e-4f );
+	frame.entities.clear();
+	add( present::VisualKind::Static, ShapeKind::Capsule, { 0.0f, 1.5f, -4.0f }, { 0.5f, 1.0f, 0.0f } );
+	CHECK( std::fabs( CameraFreeDistance( frame, eye, back, 6.0f, 0.0f ) - 3.5f ) < 1e-4f );
+	// Over the top of the capsule's cap: a miss.
+	CHECK( CameraFreeDistance( frame, { 0.0f, 3.6f, 0.0f }, back, 6.0f, 0.0f ) == 6.0f );
+	// Grazing the rounded cap is later than the side.
+	d = CameraFreeDistance( frame, { 0.0f, 2.8f, 0.0f }, back, 6.0f, 0.0f );
+	CHECK( d > 3.5f && d < 4.0f );
+
+	// Against the real level: for rays that the simulation says hit the map, the same distance.
+	SimConfig config;
+	Simulation sim( config );
+	present::PresentationFrame level;
+	present::CaptureFrame( sim, level );
+	int compared = 0;
+	float worst = 0.0f;
+	for ( int i = 0; i < 64; ++i )
+	{
+		float yaw = 0.0981748f * float( i );
+		float pitch = -0.6f + 0.02f * float( i );
+		b3Vec3 dir = { std::cos( pitch ) * std::sin( yaw ), std::sin( pitch ), std::cos( pitch ) * std::cos( yaw ) };
+		b3Vec3 from = { 0.5f, 2.0f, -0.5f };
+		const float reach = 40.0f;
+		RayHit hit;
+		bool any = sim.CastRay( from, b3MulSV( reach, dir ), 0, hit, true );
+		bool isStatic = false;
+		for ( const present::FrameEntity& e : level.entities )
+		{
+			isStatic |= any && e.netId == hit.netId && e.kind == present::VisualKind::Static;
+		}
+		if ( isStatic == false )
+		{
+			continue;
+		}
+		float mine = CameraFreeDistance( level, from, dir, reach, 0.0f );
+		worst = std::max( worst, std::fabs( mine - hit.fraction * reach ) );
+		compared += 1;
+	}
+	std::printf( "    %d rays against the level, worst difference %.5f m\n", compared, worst );
+	CHECK( compared > 20 && worst < 0.01f );
 }
 
 void TestAnimController()
@@ -3024,6 +3115,7 @@ int main( int argc, char** argv )
 		{ "anim_blend2d", TestAnimBlend2D },
 		{ "pose_tools", TestPoseTools },
 		{ "fields", TestFields },
+		{ "camera_collision", TestCameraCollision },
 		{ "hitboxes", TestHitboxes },
 		{ "stances", TestStances },
 		{ "robot_character", TestRobotCharacter },

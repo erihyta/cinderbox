@@ -136,6 +136,8 @@ void GameClient::Update( double now, const InputSampler& sampleInput )
 		}
 		else
 		{
+			// Only an address that names nothing counts: a busy peer is tried again.
+			m_stats.connectFailures += Transport::Resolves( m_options.host ) ? 0 : 1;
 			m_nextConnectAttempt = now + m_options.reconnectIntervalSeconds;
 		}
 	}

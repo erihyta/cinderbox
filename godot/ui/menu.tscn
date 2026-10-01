@@ -1,0 +1,267 @@
+[gd_scene format=3]
+
+; The game's menus: joining a server, the in-game (Esc) menu, settings. No script: menu.gd finds the
+; nodes below by their unique names and drives them, so a mod can restyle or rearrange this scene
+; freely. A node that is missing is simply not used.
+;   panels:   %Main  %Connecting  %Pause  %Settings   (one is shown at a time, over %Dim)
+;   main:     %Message  %Name  %Address  %Join  %Recent (gets one button per server)  %OpenSettings  %Quit
+;   joining:  %ConnectingText  %Cancel
+;   in game:  %PauseText  %Resume  %PauseSettings  %Leave  %PauseQuit
+;   settings: %Sensitivity  %SensitivityValue  %Volume  %VolumeValue  %Fullscreen  %SettingsBack
+
+[node name="Menu" type="CanvasLayer"]
+layer = 50
+
+[node name="Dim" type="ColorRect" parent="."]
+unique_name_in_owner = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.05, 0.06, 0.09, 0.8)
+
+[node name="Center" type="CenterContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Main" type="PanelContainer" parent="Center"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(460, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Main"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="Rows" type="VBoxContainer" parent="Center/Main/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="Center/Main/Margin/Rows"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 34
+text = "CINDERBOX"
+horizontal_alignment = 1
+
+[node name="Message" type="Label" parent="Center/Main/Margin/Rows"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.6, 0.2, 1)
+autowrap_mode = 3
+
+[node name="NameLabel" type="Label" parent="Center/Main/Margin/Rows"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.72, 0.78, 1)
+text = "Your name"
+
+[node name="Name" type="LineEdit" parent="Center/Main/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Player"
+max_length = 24
+
+[node name="AddressLabel" type="Label" parent="Center/Main/Margin/Rows"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.72, 0.78, 1)
+text = "Server address"
+
+[node name="AddressRow" type="HBoxContainer" parent="Center/Main/Margin/Rows"]
+layout_mode = 2
+
+[node name="Address" type="LineEdit" parent="Center/Main/Margin/Rows/AddressRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "host or host:port  (port 7777 if left out)"
+max_length = 120
+
+[node name="Join" type="Button" parent="Center/Main/Margin/Rows/AddressRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+text = "Join"
+
+[node name="RecentLabel" type="Label" parent="Center/Main/Margin/Rows"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.72, 0.78, 1)
+text = "Recent servers"
+
+[node name="Recent" type="VBoxContainer" parent="Center/Main/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Buttons" type="HBoxContainer" parent="Center/Main/Margin/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="OpenSettings" type="Button" parent="Center/Main/Margin/Rows/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Settings"
+
+[node name="Quit" type="Button" parent="Center/Main/Margin/Rows/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Quit"
+
+[node name="Connecting" type="PanelContainer" parent="Center"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(460, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Connecting"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="Rows" type="VBoxContainer" parent="Center/Connecting/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="ConnectingText" type="Label" parent="Center/Connecting/Margin/Rows"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "Connecting..."
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="Cancel" type="Button" parent="Center/Connecting/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Cancel"
+
+[node name="Pause" type="PanelContainer" parent="Center"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(340, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Pause"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="Rows" type="VBoxContainer" parent="Center/Pause/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PauseText" type="Label" parent="Center/Pause/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.72, 0.78, 1)
+horizontal_alignment = 1
+
+[node name="Resume" type="Button" parent="Center/Pause/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Resume"
+
+[node name="PauseSettings" type="Button" parent="Center/Pause/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Settings"
+
+[node name="Leave" type="Button" parent="Center/Pause/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Leave server"
+
+[node name="PauseQuit" type="Button" parent="Center/Pause/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Quit game"
+
+[node name="Settings" type="PanelContainer" parent="Center"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(460, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Settings"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="Rows" type="VBoxContainer" parent="Center/Settings/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="Center/Settings/Margin/Rows"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Settings"
+horizontal_alignment = 1
+
+[node name="SensitivityRow" type="HBoxContainer" parent="Center/Settings/Margin/Rows"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Center/Settings/Margin/Rows/SensitivityRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "Mouse sensitivity"
+
+[node name="Sensitivity" type="HSlider" parent="Center/Settings/Margin/Rows/SensitivityRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+min_value = 0.2
+max_value = 3.0
+step = 0.05
+value = 1.0
+
+[node name="SensitivityValue" type="Label" parent="Center/Settings/Margin/Rows/SensitivityRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(56, 0)
+layout_mode = 2
+text = "1.00"
+horizontal_alignment = 2
+
+[node name="VolumeRow" type="HBoxContainer" parent="Center/Settings/Margin/Rows"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Center/Settings/Margin/Rows/VolumeRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "Volume"
+
+[node name="Volume" type="HSlider" parent="Center/Settings/Margin/Rows/VolumeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+max_value = 100.0
+value = 100.0
+
+[node name="VolumeValue" type="Label" parent="Center/Settings/Margin/Rows/VolumeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(56, 0)
+layout_mode = 2
+text = "100%"
+horizontal_alignment = 2
+
+[node name="Fullscreen" type="CheckButton" parent="Center/Settings/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Fullscreen"
+
+[node name="SettingsBack" type="Button" parent="Center/Settings/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Back"

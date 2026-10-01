@@ -57,6 +57,7 @@ public:
 	struct Stats
 	{
 		uint64_t welcomes = 0;
+		uint64_t connectFailures = 0; // attempts whose address named nothing
 		uint64_t disconnects = 0;
 		uint64_t checksumsVerified = 0;
 		uint64_t desyncs = 0;
