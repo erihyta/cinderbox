@@ -11,6 +11,7 @@
 #include "mod_api.h"
 #include "protocol.h"
 #include "replay.h"
+#include "view_file.h"
 #include "simulation.h"
 #include "transport.h"
 
@@ -39,6 +40,9 @@ struct ServerOptions
 	std::string mapPath;
 	// Write a replay of the whole session (empty = off).
 	std::string recordPath;
+	// Write the session as a view file: what a viewer would be shown, playable without a
+	// simulation (present/view_file.h; empty = off).
+	std::string recordViewPath;
 	// The workshop items clients need for the mods this server runs (announced, never sent).
 	std::vector<ModItem> items;
 	// The character everyone plays as (null: the built-in rig). Its item must be in `items`.
@@ -170,6 +174,10 @@ private:
 	std::unique_ptr<Simulation> m_sim;
 	net::Transport m_transport;
 	net::ReplayWriter m_replay;
+	present::ViewFileWriter m_viewFile;
+	present::ViewFrame m_viewFrame;
+	// The state after the tick just simulated, as a frame of the view file.
+	void RecordView( const InputFrame& frame );
 	std::vector<InputFrame> m_history; // indexed by tick % kFrameHistory
 	Client m_clients[kMaxPlayers];
 	std::vector<PlayerEvent> m_pendingEvents;

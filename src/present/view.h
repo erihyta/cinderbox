@@ -8,8 +8,10 @@
 //   source  <--control---   viewer       named commands with a number ("pause" 1, "seek" 12.5)
 //
 // A source is anything that produces frames: a live connection that predicts and rolls back
-// (client/live_source.h), a recording played back (client/replay_source.h), and whatever comes
-// next (a stream from a server for a client that does not simulate). See ROADMAP.md.
+// (client/live_source.h), a recording re-simulated (client/replay_source.h), a file of frames
+// played back with no simulation at all (view_file.h), and whatever comes next (a stream from a
+// server). Frames travel as bytes wherever a source and its viewer do not share a library
+// (view_codec.h). See ROADMAP.md.
 //
 // A frame is self-contained: a viewer that joins late, or skips frames, needs nothing but the
 // newest one. Events (impacts, mod events) are counters with a ring of the most recent, so a
@@ -33,8 +35,10 @@ double ViewClock();
 // A number or a word about the source, for a debug HUD and for tests ("rtt_ms", "desyncs").
 struct ViewStat
 {
-	const char* name = "";
+	std::string name;
 	std::variant<int64_t, double, bool, std::string> value;
+
+	bool operator==( const ViewStat& ) const = default;
 };
 
 struct ViewFrame

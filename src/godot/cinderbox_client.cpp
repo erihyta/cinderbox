@@ -9,6 +9,7 @@
 #include "live_source.h"
 #include "pose_tools.h"
 #include "replay_source.h"
+#include "view_file.h"
 #include "types.h"
 
 #include <godot_cpp/classes/animation.hpp>
@@ -106,6 +107,7 @@ void CinderboxClient::_bind_methods()
 {
 	ClassDB::bind_method( D_METHOD( "connect_to_server" ), &CinderboxClient::connect_to_server );
 	ClassDB::bind_method( D_METHOD( "open_replay", "path" ), &CinderboxClient::open_replay );
+	ClassDB::bind_method( D_METHOD( "open_view", "path" ), &CinderboxClient::open_view );
 	ClassDB::bind_method( D_METHOD( "stop" ), &CinderboxClient::stop );
 	ClassDB::bind_method( D_METHOD( "is_running" ), &CinderboxClient::is_running );
 	ClassDB::bind_method( D_METHOD( "control", "name", "value" ), &CinderboxClient::control );
@@ -270,6 +272,15 @@ void CinderboxClient::open_replay( const String& path )
 		return;
 	}
 	Open( std::make_unique<ReplaySource>( ToStd( ProjectSettings::get_singleton()->globalize_path( path ) ) ) );
+}
+
+void CinderboxClient::open_view( const String& path )
+{
+	if ( Engine::get_singleton()->is_editor_hint() )
+	{
+		return;
+	}
+	Open( std::make_unique<present::ViewFileSource>( ToStd( ProjectSettings::get_singleton()->globalize_path( path ) ) ) );
 }
 
 void CinderboxClient::stop()
@@ -1963,7 +1974,7 @@ Dictionary CinderboxClient::get_stats() const
 		{
 			value = String::utf8( s->c_str() );
 		}
-		d[String( stat.name )] = value;
+		d[String::utf8( stat.name.c_str() )] = value;
 	}
 	d["state"] = get_source_state();
 	d["entities"] = int64_t( m_frame.frame.entities.size() );

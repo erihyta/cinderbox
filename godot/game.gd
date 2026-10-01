@@ -24,12 +24,13 @@ extends Node3D
 ## Leaving reloads this scene, so nothing of one server is left for the next. Resource packs cannot
 ## be unloaded, though: a server that does not use an item loaded earlier gets a restarted game.
 ##
-## Watching: --replay=FILE plays a recording (cb_server --record) instead of joining. The client
-## draws it like a server: the recording names the same workshop items, and the player it follows
-## is the local one, with its HUD. Nothing is sent anywhere; the keys steer the playback.
+## Watching: --replay=FILE plays a recording (cb_server --record) instead of joining, and
+## --view=FILE a view file (cb_server --record-view: the frames as they were, no simulation). The
+## client draws either like a server: the file names the same workshop items, and the player it
+## follows is the local one, with its HUD. Nothing is sent anywhere; the keys steer the playback.
 ##
 ## Command line (after `--`): --host=H --port=P --name=NAME --rollback=N --animations=DIR
-##                            --replay=FILE
+##                            --replay=FILE --view=FILE
 ##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS
 ##                            --mods=DIR --workshop=DIR --config=FILE
 ## With --screenshot-every, autoplay also saves FILE_1.png, FILE_2.png, ... along the way.
@@ -77,7 +78,8 @@ var menu: Menu
 var _address := "" # the server being joined or played on, as typed
 var _joining_since := -1.0 # seconds; -1: not trying
 var _joined := false # this attempt reached "playing"
-var _replay := "" # the recording being watched ("": playing on a server)
+var _replay := "" # the recording or view file being watched ("": playing on a server)
+var _replay_is_view := false
 var _leaving := false # the scene is being replaced
 
 var _actions: Array = [] # [{ name, bit, key }] from the server's mods
@@ -133,10 +135,10 @@ func _ready() -> void:
 	# The command line's server is joined once (its recording watched once); leaving it lands in
 	# the menu like any other.
 	var direct: bool = not _started and (args.has("host") or args.has("port") or autoplay > 0.0)
-	var watch: bool = not _started and args.has("replay")
+	var watch: bool = not _started and (args.has("replay") or args.has("view"))
 	_started = true
 	if watch:
-		_watch(args["replay"])
+		_watch(args.get("view", args.get("replay", "")), args.has("view"))
 	elif direct:
 		_join(args.get("host", "127.0.0.1"), int(args.get("port", str(Menu.DEFAULT_PORT))))
 	else:
@@ -207,18 +209,23 @@ func _join(host: String, port: int) -> void:
 	client.connect_to_server()
 
 
-## Plays a recording instead of joining a server.
-func _watch(path: String) -> void:
+## Plays a recording (or a view file) instead of joining a server.
+func _watch(path: String, is_view: bool) -> void:
 	_replay = path
+	_replay_is_view = is_view
 	_address = path.get_file()
 	_refused = ""
 	_joined = false
 	_joining_since = Time.get_ticks_msec() / 1000.0
 	menu.close()
-	client.open_replay(path)
+	if is_view:
+		client.open_view(path)
+	else:
+		client.open_replay(path)
 
 
-## The playback's keys. The source knows the commands (src/client/replay_source.h).
+## The playback's keys. The source knows the commands (src/client/replay_source.h and
+## src/present/view_file.h take the same ones).
 func _replay_key(key: Key) -> void:
 	var stats: Dictionary = client.get_stats()
 	match key:
@@ -382,10 +389,10 @@ func _restart_and_join() -> void:
 		restart = restart.slice(0, cut)
 	restart.append("--")
 	for arg in OS.get_cmdline_user_args():
-		if not (arg.begins_with("--host=") or arg.begins_with("--port=") or arg.begins_with("--replay=")):
+		if not (arg.begins_with("--host=") or arg.begins_with("--port=") or arg.begins_with("--replay=") or arg.begins_with("--view=")):
 			restart.append(arg)
 	if _replay != "":
-		restart.append("--replay=%s" % _replay)
+		restart.append("--%s=%s" % ["view" if _replay_is_view else "replay", _replay])
 	else:
 		restart.append("--host=%s" % client.host)
 		restart.append("--port=%d" % client.port)
@@ -601,10 +608,11 @@ func _autoplay_finish() -> void:
 		get_viewport().get_texture().get_image().save_png(screenshot)
 	var stats: Dictionary = client.get_stats()
 	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
-		stats.get("state"), stats.get("checksums_verified"), stats.get("desyncs"), stats.get("fingerprint"), stats.get("fp_environment_ok")])
+		stats.get("state"), stats.get("checksums_verified", 0), stats.get("desyncs", 0), stats.get("fingerprint", "none"), stats.get("fp_environment_ok", "not simulating")])
 	print("mod events seen: ", _event_counts)
 	client.stop()
-	get_tree().quit(0 if stats.get("desyncs", 1) == 0 and stats.get("state") == "playing" else 2)
+	# (A source that cannot desync, a view file, reports none.)
+	get_tree().quit(0 if stats.get("desyncs", 0) == 0 and stats.get("state") == "playing" else 2)
 
 
 func _make_flash_overlay() -> void:

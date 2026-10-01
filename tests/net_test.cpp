@@ -1748,7 +1748,7 @@ T StatOf( const present::ViewFrame& frame, const char* name, T fallback )
 {
 	for ( const present::ViewStat& stat : frame.stats )
 	{
-		if ( std::strcmp( stat.name, name ) == 0 )
+		if ( stat.name == name )
 		{
 			if ( const T* value = std::get_if<T>( &stat.value ) )
 			{

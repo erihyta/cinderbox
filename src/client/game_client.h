@@ -170,7 +170,7 @@ private:
 	void HandleWelcome( net::MsgWelcome& msg, double now );
 	void Advance( double now, const InputSampler& sampleInput );
 	void OnServerTick( uint32_t tickAfter, double now );
-	void HandleFrameBatch( net::ByteReader& r, double now );
+	void HandleFrameBatch( ByteReader& r, double now );
 	void UpdateRollbackWindow( double rttTicks, double frameDt );
 	uint32_t AckTick() const;
 	void SendInputs();
