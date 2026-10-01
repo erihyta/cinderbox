@@ -1285,7 +1285,7 @@ void TestHeadshot()
 	const uint32_t shooterId = h.server.Sim().PlayerNetId( h.bots[0].client->Slot() );
 	// The inventory at a death: what the life started with is taken back (nothing is left lying),
 	// and the next life gets its own.
-	int deadTicks = 0;
+	uint32_t diedAt = 0; // the server tick the death was first seen (0: alive)
 	int carriedWhileDead = 0;
 	int mostLying = 0;
 	bool wasDead = false;
@@ -1305,13 +1305,15 @@ void TestHeadshot()
 		mostLying = std::max( mostLying, lying );
 		if ( body != nullptr && body->dead != 0 )
 		{
-			deadTicks += 1;
+			// The mod sees the death a tick later and its commands run the tick after: by ticks, not
+			// by how often this is called.
+			diedAt = diedAt == 0 ? sim.Tick() : diedAt;
 			wasDead = true;
-			carriedWhileDead = deadTicks > 3 ? std::max( carriedWhileDead, carried ) : carriedWhileDead;
+			carriedWhileDead = sim.Tick() > diedAt + 5 ? std::max( carriedWhileDead, carried ) : carriedWhileDead;
 		}
 		else
 		{
-			deadTicks = 0;
+			diedAt = 0;
 			newLifeHasItems |= wasDead && carried == 2;
 		}
 		const SimGlobals& g = h.server.Sim().Globals();
