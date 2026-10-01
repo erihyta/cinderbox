@@ -1,6 +1,7 @@
 #include "cue_reaction.h"
 
 #include "cue_director.h"
+#include "cue_guard.h"
 
 #include <godot_cpp/classes/animation_player.hpp>
 #include <godot_cpp/classes/audio_stream.hpp>
@@ -188,7 +189,10 @@ PackedStringArray CbReaction::_get_configuration_warnings() const
 	}
 	if ( Refused( m_method, m_property ) )
 	{
-		warnings.push_back( "The game refuses this method or property: it could remove nodes, change scripts or call anything." );
+		warnings.push_back( "The game refuses this method or property. Methods: restart, play, play_backwards, stop, pause, queue, "
+							"seek, advance, show, hide, set_visible, set_emitting, set_text, set_value, set_frame, set_modulate, "
+							"set_volume_db, set_pitch_scale, set_speed_scale (set anything else with `property`). Properties: any but "
+							"script and metadata." );
 	}
 	if ( m_property.is_empty() == false && m_value.get_type() == Variant::NIL )
 	{
@@ -229,19 +233,8 @@ PackedStringArray CbReaction::_get_configuration_warnings() const
 
 bool CbReaction::Refused( const String& method, const String& property )
 {
-	// Anything that removes nodes, changes scripts or calls something else by name.
-	static const char* kMethods[] = { "free", "queue_free", "set_script", "call", "callv", "call_deferred", "propagate_call",
-									  "set", "set_deferred", "set_indexed", "set_meta", "remove_meta", "add_child", "remove_child",
-									  "reparent", "replace_by", "emit_signal", "connect", "disconnect", "notification",
-									  "propagate_notification", "set_owner", "set_script_instance" };
-	for ( const char* m : kMethods )
-	{
-		if ( method == m )
-		{
-			return true;
-		}
-	}
-	return property == "script" || property.begins_with( "script:" ) || property.begins_with( "metadata/" );
+	return ( method.is_empty() == false && cue::MethodAllowed( method ) == false ) ||
+		   ( property.is_empty() == false && cue::PropertyAllowed( property ) == false );
 }
 
 Node* CbReaction::Subject( const cue::Context& context ) const
@@ -651,8 +644,9 @@ void CbReaction::Act( bool on, const cue::Context& context )
 	{
 		if ( on )
 		{
+			// (Checked first: a scene with anything but listed nodes and data is not added.)
 			Ref<PackedScene> packed = ResourceLoader::get_singleton()->load( m_scene, "PackedScene" );
-			Node* spawned = packed.is_valid() && parent != nullptr ? packed->instantiate() : nullptr;
+			Node* spawned = parent != nullptr ? cue::Instantiate( packed ) : nullptr;
 			if ( spawned != nullptr )
 			{
 				parent->add_child( spawned );

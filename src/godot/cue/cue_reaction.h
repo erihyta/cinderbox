@@ -28,8 +28,8 @@
 // Place:   where a scene or sound goes: under its parent, at the cue's point or end, a beam from
 //          place_node (or the point) to the end, at place_node, or following the subject.
 //
-// Presentation only, and contained: paths never leave the director's tree, and free, queue_free
-// and script are refused.
+// Presentation only, and contained: paths never leave the director's tree, only listed methods
+// are called, no script or metadata is set, and a scene it adds is checked first (cue_guard.h).
 
 #include "cue_paths.h"
 
@@ -167,6 +167,7 @@ private:
 	godot::Node* Subject( const cue::Context& context ) const;
 	void Act( bool on, const cue::Context& context );
 	void PlaySound( godot::Node* parent, bool global, const godot::Vector3& where );
+	// A method or property this reaction names that the guard does not allow (cue_guard.h).
 	static bool Refused( const godot::String& method, const godot::String& property );
 	void End(); // a "while" that is on ends where it acted (leaving the tree)
 

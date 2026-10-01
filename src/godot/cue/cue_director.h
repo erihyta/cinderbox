@@ -16,6 +16,7 @@
 #include "cue_paths.h"
 
 #include <godot_cpp/classes/node3d.hpp>
+#include <godot_cpp/classes/packed_scene.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 
 #include <unordered_map>
@@ -44,6 +45,13 @@ public:
 	// What that cue would do, without doing it: { reaction path: "acts" or why not }.
 	godot::Dictionary explain( const godot::String& name, godot::Node* at, godot::Node* other, const godot::Dictionary& args );
 	void update();
+
+	// The guard (cue_guard.h), for scripts that instantiate looks themselves.
+	// Why a scene must not be used ("" when it may): it has a node class that is not listed, a
+	// script, a signal connection, a path that leaves it, an animation that calls an unlisted method.
+	static godot::String check_scene( const godot::Ref<godot::PackedScene>& scene );
+	// An instance of the scene, or null (with a warning) when it is refused.
+	static godot::Node* instantiate( const godot::Ref<godot::PackedScene>& scene );
 
 	void set_auto_update( bool v )
 	{

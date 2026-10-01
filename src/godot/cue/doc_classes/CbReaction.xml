@@ -84,7 +84,7 @@ Looks only: it never changes the game itself, and no path leaves the director. T
 			Fade to [member value] (and back, when a "while" ends) over this many seconds. Numbers, vectors and colours; anything else changes at once.
 		</member>
 		<member name="method" type="String" setter="set_method" getter="get_method" default="&quot;&quot;">
-			A method of [member target] to call: [code]restart[/code], [code]play[/code], [code]set_visible[/code]. Anything that removes nodes, changes scripts or calls something else by name is refused.
+			A method of [member target] to call: [code]restart[/code], [code]play[/code], [code]set_visible[/code]. Only listed methods are called: [code]restart[/code], [code]play[/code], [code]play_backwards[/code], [code]stop[/code], [code]pause[/code], [code]queue[/code], [code]seek[/code], [code]advance[/code], [code]show[/code], [code]hide[/code], [code]set_visible[/code], [code]set_emitting[/code], [code]set_text[/code], [code]set_value[/code], [code]set_frame[/code], [code]set_modulate[/code], [code]set_volume_db[/code], [code]set_pitch_scale[/code], [code]set_speed_scale[/code]. For anything else, set a [member property].
 		</member>
 		<member name="method_args" type="Array" setter="set_method_args" getter="get_method_args" default="[]">
 			[member method]'s arguments: [code]["slash"][/code], [code][false][/code].
