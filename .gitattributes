@@ -3,3 +3,9 @@
 tests/reference_hashes.txt text eol=lf
 *.patch text eol=lf
 *.ozz binary
+# Files Godot writes itself, always with LF: keep them LF in the working copy, or every editor run
+# shows them as modified.
+*.import text eol=lf
+project.godot text eol=lf
+*.uid text eol=lf
+src/godot/**/doc_classes/*.xml text eol=lf

@@ -1,7 +1,7 @@
 # Cinderbox
 
 A deterministic multiplayer third-person physics sandbox, built with flecs, Box3D, ENet and
-ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib debug viewer. See [DESIGN.md](DESIGN.md) for the architecture and decisions.
+ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib debug viewer. See [DESIGN.md](DESIGN.md) for the architecture and decisions, and [ROADMAP.md](ROADMAP.md) for what comes next.
 
 ## Status
 
@@ -55,6 +55,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M46: an inventory (slots, stowed items, optional holsters): switching and picking up no longer drop other items | done |
 | M47: item properties and hold times authored on the `CbItemBody`, a Bake button for it, hold progress drawn from a start tick | done |
 | M48: 32 board fields per scope instead of 16 (all 16 were used); the inventory shows its slots on the HUD | done |
+| M49: the viewer protocol: the Godot client draws frames from a source (a live connection, a recording) and knows neither; recordings are watched in the game, as the player they follow | done |
 
 ## Building
 
@@ -90,6 +91,8 @@ cb_server --port 7777
 godot --path godot
 # or straight into a server
 godot --path godot -- --host=127.0.0.1 --port=7777
+# or watch a recording (cb_server --record FILE)
+godot --path godot -- --replay=FILE
 # or the raylib debug viewer
 cb_client --host 127.0.0.1 --port 7777
 ```
@@ -119,15 +122,34 @@ A join that fails comes back to the menu and says why:
 - Leaving a server reloads the game scene, so nothing of it is left. Resource packs cannot be unloaded, so joining a server that does not use an item loaded earlier restarts the game, straight into that server.
 - The camera stays out of the map: walls, floors and other static geometry pull it in at once and it eases back out. Props and players never block it.
 
+### Watching a recording
+
+`--replay=FILE` plays a server's recording in the game instead of joining. It looks like the session
+did: the recording names the workshop items it needs, and the player it follows is the local one,
+so its HUD, its hit markers and its camera target are what that player had.
+
+| Key | Does |
+|---|---|
+| Space | pause |
+| Left / Right | 5 s back / on |
+| Up / Down | twice / half the speed (0.125x to 16x) |
+| `,` / `.` | one tick back / on, paused |
+| Home | from the start |
+| N | follow the next player |
+
+The recording must come from the same build of the simulation (the stats say `build_matches`), and
+checksums it does not reproduce count as `desyncs`.
+
 Open `godot/` in the Godot editor to edit scenes, then press Play. Godot client options, given after `--`:
 - `--host=H`, `--port=P`: join this server without the menu (leaving it lands in the menu).
+- `--replay=FILE`: watch a recording instead (see above).
 - `--name=NAME`: your name (otherwise the one typed in the menu).
 - `--config=FILE`: where name, settings and recent servers are kept (default `user://player.cfg`).
 - `--workshop=DIR`: where subscribed workshop items are (default `user://workshop`).
 - `--rollback=N`: fixes the prediction window.
 - `--animations=DIR`: a folder of converted clips.
 - `--mods=DIR`: an extra mod folder.
-- `--autoplay=SECONDS`, `--screenshot=FILE`: an unattended smoke test. The exit code is non-zero on a desync.
+- `--autoplay=SECONDS`, `--screenshot=FILE`: an unattended smoke test, on a server or a recording. The exit code is non-zero on a desync.
 
 ### Exporting the Godot client (Windows)
 
@@ -540,9 +562,10 @@ workshop item (see [Characters](#characters)).
 Client controls:
 - WASD moves, Shift sprints and Space jumps: the engine's own controls.
 - Everything else comes from the server's mods, bound to the keys they suggest. With the shipped mods:
-  1 and 2 switch hands and pistol, the left mouse button fires, R reloads, and F spawns a prop.
+  1 to 4 switch slots (hands, pistol, bat), the left mouse button fires or swings, R reloads, E picks
+  up, G throws, C crouches, and F with empty hands spawns a prop.
 - Tab shows the scoreboard, the mouse orbits the camera and the wheel zooms.
-- Esc releases the mouse (and shows the name field; Enter rejoins with the new name), F1 toggles the debug HUD.
+- Esc opens the in-game menu (see [The menu](#the-menu)), F1 toggles the debug HUD.
 
 The HUD shows the predicted and confirmed ticks, round-trip time, clock error, rollbacks, stalls and
 checksum results.
@@ -1105,7 +1128,8 @@ All tools are in `<build dir>/bin`.
 | `cb_server --map FILE.cbmap` | Runs an authored map instead of the built-in sandbox |
 | `cb_server --record FILE` | Records the whole session (input frames plus checksums) |
 | `cb_replay info\|verify FILE` | Summarizes a recording, or re-simulates it and checks every checksum |
-| `cb_client --replay FILE [--replay-start S]` | Watches a recording |
+| `godot --path godot -- --replay=FILE` | Watches a recording in the game, with the mods' looks and the followed player's HUD |
+| `cb_client --replay FILE [--replay-start S]` | Watches a recording in the raylib debug viewer |
 | `cb_netsim --listen P --target HOST:PORT --latency MS --jitter MS --loss % [--duplicate %]` | UDP relay that degrades traffic (latency is added in each direction) |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_mod_validator.gd -- PACK.zip...` | Checks the pack validator: the named packs pass, built-in hostile packs are refused |
 | `cb_bot --port P --count N --full M --duration S [--chaotic] [--shoot] [--melee]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick; `--shoot` makes full bots take out the pistol and fire at the nearest player; `--melee` makes them close in with the bat and swing |
@@ -1191,18 +1215,22 @@ characters/       character items: <name>/client is the item's Godot project, <n
   <mod>/client/     a mod's look as a Godot project, published as a workshop item
   <mod>/client_item.cfg  the published item's SHA-256, which servers announce
 src/tools/        cb_netsim, cb_replay, cb_bot
-src/client/       GameClient core (no rendering, also "lite" mode), bot brain, and the raylib debug viewer
+src/client/       GameClient core (no rendering, also "lite" mode), the view sources, bot brain, and the raylib debug viewer
+  live_source.*     a view source that plays on a server (GameClient on its own thread)
+  replay_source.*   a view source that plays a recording (replay_player.* on its own thread)
+  source_thread.*   what both share: the thread, the float environment, the newest frame
   app/              raylib rendering, camera, HUD over the presentation mirror
   app/anim_viewer.* offline clip preview (--anim-viewer)
   app/replay_viewer.* recording playback (--replay)
 src/present/      engine-independent presentation, shared by Godot and raylib
+  view.h            the viewer protocol: ViewFrame (what a viewer is told), ViewSource (who tells it)
   frame.*           PresentationFrame: a copy of what the simulation shows at one tick
   mirror.*          presentation flecs world: interpolation, error smoothing, visual and mod events
   fields.*          board fields and conditions by name
   pose_tools.*      ragdoll poses, pose blending
   scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
-src/godot/        GDExtension: CinderboxClient (simulation thread, prefabs, signals, items, the adapter
-                  that drives the World director), CinderboxSkeleton, map and entity authoring nodes,
+src/godot/        GDExtension: CinderboxClient (the viewer: draws a view source's frames as prefabs,
+                  signals, items; the adapter that drives the World director), CinderboxSkeleton, map and entity authoring nodes,
                   CbItemLook, HUD labels (cinderbox_hud.*)
   cue/            the reaction addon, godot-cpp only: CbDirector, CbReaction, cue paths and conditions
 godot/            Godot client project: boot (player mods, pack validator), game (input, camera, HUD, VFX,

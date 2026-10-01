@@ -6,7 +6,9 @@
 #include "cinderbox_companion.h"
 #include "cinderbox_skeleton.h"
 #include "detmath.h"
+#include "live_source.h"
 #include "pose_tools.h"
+#include "replay_source.h"
 #include "types.h"
 
 #include <godot_cpp/classes/animation.hpp>
@@ -98,16 +100,16 @@ CinderboxSkeleton* FindSkeleton( Node* node )
 
 CinderboxClient::CinderboxClient() = default;
 
-CinderboxClient::~CinderboxClient()
-{
-	m_thread.Stop();
-}
+CinderboxClient::~CinderboxClient() = default;
 
 void CinderboxClient::_bind_methods()
 {
 	ClassDB::bind_method( D_METHOD( "connect_to_server" ), &CinderboxClient::connect_to_server );
-	ClassDB::bind_method( D_METHOD( "disconnect_from_server" ), &CinderboxClient::disconnect_from_server );
+	ClassDB::bind_method( D_METHOD( "open_replay", "path" ), &CinderboxClient::open_replay );
+	ClassDB::bind_method( D_METHOD( "stop" ), &CinderboxClient::stop );
 	ClassDB::bind_method( D_METHOD( "is_running" ), &CinderboxClient::is_running );
+	ClassDB::bind_method( D_METHOD( "control", "name", "value" ), &CinderboxClient::control );
+	ClassDB::bind_method( D_METHOD( "takes_input" ), &CinderboxClient::takes_input );
 	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "actions" ),
 						  &CinderboxClient::set_input );
 	ClassDB::bind_method( D_METHOD( "get_actions" ), &CinderboxClient::get_actions );
@@ -141,7 +143,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "clear_world_scenes" ), &CinderboxClient::clear_world_scenes );
 	ClassDB::bind_method( D_METHOD( "get_director" ), &CinderboxClient::get_director );
 	ClassDB::bind_method( D_METHOD( "get_stats" ), &CinderboxClient::get_stats );
-	ClassDB::bind_method( D_METHOD( "get_connection_state" ), &CinderboxClient::get_connection_state );
+	ClassDB::bind_method( D_METHOD( "get_source_state" ), &CinderboxClient::get_source_state );
 	ClassDB::bind_method( D_METHOD( "has_local_player" ), &CinderboxClient::has_local_player );
 	ClassDB::bind_method( D_METHOD( "get_local_player_position" ), &CinderboxClient::get_local_player_position );
 	ClassDB::bind_method( D_METHOD( "get_visual_node", "visual_id" ), &CinderboxClient::get_visual_node );
@@ -190,14 +192,14 @@ void CinderboxClient::_bind_methods()
 	ADD_SIGNAL( MethodInfo( "impact", PropertyInfo( Variant::INT, "net_id" ), PropertyInfo( Variant::VECTOR3, "position" ),
 							PropertyInfo( Variant::FLOAT, "strength" ), PropertyInfo( Variant::STRING, "kind" ),
 							PropertyInfo( Variant::STRING, "template_name" ) ) );
-	ADD_SIGNAL( MethodInfo( "connection_state_changed", PropertyInfo( Variant::STRING, "state" ) ) );
+	ADD_SIGNAL( MethodInfo( "source_state_changed", PropertyInfo( Variant::STRING, "state" ) ) );
 	// The server's mods changed (a first join, or a different server): actions and fields to rebind.
 	ADD_SIGNAL( MethodInfo( "schema_changed" ) );
 	// A server mod announced something. a is who it is about, b the other entity (0 if none).
 	ADD_SIGNAL( MethodInfo( "mod_event", PropertyInfo( Variant::STRING, "name" ), PropertyInfo( Variant::INT, "net_id_a" ),
 							PropertyInfo( Variant::INT, "net_id_b" ), PropertyInfo( Variant::INT, "value" ),
 							PropertyInfo( Variant::VECTOR3, "position" ), PropertyInfo( Variant::VECTOR3, "vector" ) ) );
-	// The local player just pressed a mod action; the server has not answered yet.
+	// The local player just pressed a mod action; on a live connection, before the server answered.
 	ADD_SIGNAL( MethodInfo( "action_pressed", PropertyInfo( Variant::STRING, "name" ) ) );
 	// Someone joined, left or was renamed.
 	ADD_SIGNAL( MethodInfo( "names_changed" ) );
@@ -230,18 +232,27 @@ void CinderboxClient::EnsureAnimations()
 	m_animSet = anim::AnimSet::CreateProcedural();
 }
 
+void CinderboxClient::Open( std::unique_ptr<present::ViewSource> source )
+{
+	m_source.reset();
+	EnsureAnimations();
+	if ( !m_mirror )
+	{
+		m_mirror = std::make_unique<present::Mirror>( m_animSet );
+	}
+	m_frame = present::ViewFrame();
+	m_haveFrame = false;
+	m_lastActions = 0;
+	m_sourceCount += 1;
+	m_source = std::move( source );
+}
+
 void CinderboxClient::connect_to_server()
 {
 	if ( Engine::get_singleton()->is_editor_hint() )
 	{
 		return;
 	}
-	EnsureAnimations();
-	if ( !m_mirror )
-	{
-		m_mirror = std::make_unique<present::Mirror>( m_animSet );
-	}
-
 	ClientOptions options;
 	options.host = ToStd( m_host );
 	options.port = uint16_t( std::clamp( m_port, 1, 65535 ) );
@@ -249,22 +260,44 @@ void CinderboxClient::connect_to_server()
 	options.maxRollbackTicks = uint32_t( std::max( m_rollbackMin, m_rollbackMax ) );
 	options.logName = "godot";
 	options.playerName = ToStd( m_playerName );
-	m_thread.Start( options );
+	Open( std::make_unique<LiveSource>( options ) );
 }
 
-void CinderboxClient::disconnect_from_server()
+void CinderboxClient::open_replay( const String& path )
 {
-	m_thread.Stop();
+	if ( Engine::get_singleton()->is_editor_hint() )
+	{
+		return;
+	}
+	Open( std::make_unique<ReplaySource>( ToStd( ProjectSettings::get_singleton()->globalize_path( path ) ) ) );
+}
+
+void CinderboxClient::stop()
+{
+	m_source.reset();
 }
 
 bool CinderboxClient::is_running() const
 {
-	return m_thread.Running();
+	return m_source != nullptr;
+}
+
+void CinderboxClient::control( const String& name, double value )
+{
+	if ( m_source )
+	{
+		m_source->Control( ToStd( name ), value );
+	}
+}
+
+bool CinderboxClient::takes_input() const
+{
+	return m_source != nullptr && m_source->TakesInput();
 }
 
 void CinderboxClient::_exit_tree()
 {
-	m_thread.Stop();
+	m_source.reset();
 }
 
 void CinderboxClient::_enter_tree()
@@ -276,6 +309,10 @@ void CinderboxClient::_enter_tree()
 void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double camera_pitch, bool jump, bool sprint,
 								 int64_t actions )
 {
+	if ( takes_input() == false )
+	{
+		return;
+	}
 	// Godot's camera yaw: 0 looks down -Z. The simulation's: 0 looks down +Z, positive turns left
 	// (toward +X). A Godot camera with rotation.y = r looks along (-sin r, 0, -cos r), which is
 	// the simulation's yaw r + pi.
@@ -288,11 +325,16 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 	double pitchTurns = std::clamp( camera_pitch / ( 2.0 * detmath::kPi ), -0.24, 0.24 );
 	in.cameraPitch = int16_t( std::clamp( int( std::lround( pitchTurns * 65536.0 ) ), -int( kMaxCameraPitch ), int( kMaxCameraPitch ) ) );
 	in.actions = uint16_t( actions );
-	m_thread.SetInput( in );
+	m_source->SetInput( in );
 
 	// Presses are announced here, before the server has seen them, so feedback does not wait.
 	uint16_t pressed = uint16_t( in.actions & ~m_lastActions );
 	m_lastActions = in.actions;
+	AnnouncePresses( pressed );
+}
+
+void CinderboxClient::AnnouncePresses( uint16_t pressed )
+{
 	for ( const ModAction& a : m_frame.schema.actions )
 	{
 		if ( pressed & ( 1u << a.bit ) )
@@ -1590,7 +1632,7 @@ Vector3 CinderboxClient::get_camera_target() const
 double CinderboxClient::get_camera_distance( const Vector3& target, const Vector3& direction, double max_distance, double radius ) const
 {
 	Vector3 d = direction.normalized();
-	if ( m_haveFrame == false || m_frame.hasSimulation == false || d.is_zero_approx() )
+	if ( m_haveFrame == false || m_frame.hasWorld == false || d.is_zero_approx() )
 	{
 		return max_distance;
 	}
@@ -1779,25 +1821,26 @@ String CinderboxClient::get_entity_template_name( int64_t net_id ) const
 
 void CinderboxClient::_process( double delta )
 {
-	if ( Engine::get_singleton()->is_editor_hint() || !m_mirror || m_thread.Running() == false )
+	if ( Engine::get_singleton()->is_editor_hint() || !m_mirror || !m_source )
 	{
 		return;
 	}
 
-	if ( m_thread.TakeFrame( m_frame ) )
+	if ( m_source->Take( m_frame ) )
 	{
 		m_haveFrame = true;
+		m_frame.frame.resetGeneration += m_sourceCount << 32;
 	}
 	if ( m_haveFrame == false )
 	{
 		return;
 	}
 
-	String state = get_connection_state();
+	String state = get_source_state();
 	if ( state != m_lastState )
 	{
 		m_lastState = state;
-		emit_signal( "connection_state_changed", state );
+		emit_signal( "source_state_changed", state );
 	}
 	if ( m_frame.schemaGeneration != m_schemaGeneration )
 	{
@@ -1809,17 +1852,15 @@ void CinderboxClient::_process( double delta )
 		m_namesGeneration = m_frame.namesGeneration;
 		emit_signal( "names_changed" );
 	}
-	if ( m_frame.hasSimulation == false )
+	if ( m_frame.hasWorld == false )
 	{
 		return;
 	}
 
-	// Interpolate from the moment the frame was published.
+	// Interpolate from the moment the frame was published, at the pace the source moves on.
 	float tickSeconds = m_frame.frame.tickSeconds;
-	double since = m_thread.Now() - m_frame.publishedAt;
-	float alpha = m_frame.state == ClientState::Playing
-					  ? std::clamp( float( m_frame.alphaAtPublish + since / tickSeconds ), 0.0f, 1.0f )
-					  : m_frame.alphaAtPublish;
+	double since = present::ViewClock() - m_frame.publishedAt;
+	float alpha = std::clamp( float( m_frame.alphaAtPublish + since * double( m_frame.rate ) / tickSeconds ), 0.0f, 1.0f );
 
 	m_alpha = alpha;
 	m_mirror->Update( m_frame.frame, alpha, float( delta ) );
@@ -1829,6 +1870,9 @@ void CinderboxClient::_process( double delta )
 	UpdateMapVisual();
 	RefreshHeldKinds();
 	HandleEvents();
+	// A source that plays someone else's input says what the local player pressed.
+	AnnouncePresses( m_frame.localPressed );
+	m_frame.localPressed = 0;
 	UpdateNodes();
 	PushStates();
 	Director()->update();
@@ -1900,35 +1944,36 @@ void CinderboxClient::UpdateMapVisual()
 Dictionary CinderboxClient::get_stats() const
 {
 	Dictionary d;
-	const auto& s = m_frame.stats;
-	d["state"] = get_connection_state();
-	d["reject_reason"] = String( m_frame.rejectReason.c_str() );
-	d["tick"] = int64_t( m_frame.currentTick );
-	d["confirmed_tick"] = int64_t( m_frame.confirmedTick );
-	d["rollback_window"] = int64_t( m_frame.rollbackWindow );
-	d["rtt_ms"] = int64_t( s.rttMs );
-	d["clock_error"] = s.tickError;
-	d["rate_scale"] = s.rateScale;
-	d["rollbacks"] = int64_t( m_frame.rollback.rollbacks );
-	d["last_rollback_depth"] = int64_t( m_frame.rollback.lastRollbackDepth );
-	d["resimulated_ticks"] = int64_t( m_frame.rollback.resimulatedTicks );
-	d["stalled_seconds"] = s.stalledSeconds;
-	d["checksums_verified"] = int64_t( s.checksumsVerified );
-	d["desyncs"] = int64_t( s.desyncs );
-	d["welcomes"] = int64_t( s.welcomes );
-	d["connect_failures"] = int64_t( s.connectFailures );
-	d["client_work_ms"] = s.simMsLastFrame;
-	d["kbit_down_total"] = double( s.bytesReceived ) * 8.0 / 1000.0;
+	for ( const present::ViewStat& stat : m_frame.stats )
+	{
+		Variant value;
+		if ( const int64_t* i = std::get_if<int64_t>( &stat.value ) )
+		{
+			value = *i;
+		}
+		else if ( const double* f = std::get_if<double>( &stat.value ) )
+		{
+			value = *f;
+		}
+		else if ( const bool* b = std::get_if<bool>( &stat.value ) )
+		{
+			value = *b;
+		}
+		else if ( const std::string* s = std::get_if<std::string>( &stat.value ) )
+		{
+			value = String::utf8( s->c_str() );
+		}
+		d[String( stat.name )] = value;
+	}
+	d["state"] = get_source_state();
 	d["entities"] = int64_t( m_frame.frame.entities.size() );
-	d["fingerprint"] = String::num_uint64( m_frame.fingerprint, 16 );
-	d["fp_environment_ok"] = m_frame.fpEnvironmentOk;
 	d["animation"] = m_animSet ? String( m_animSet->Description().c_str() ) : String();
 	return d;
 }
 
-String CinderboxClient::get_connection_state() const
+String CinderboxClient::get_source_state() const
 {
-	if ( m_thread.Running() == false )
+	if ( !m_source )
 	{
 		return "stopped";
 	}
@@ -1936,7 +1981,7 @@ String CinderboxClient::get_connection_state() const
 	{
 		return "starting";
 	}
-	return String( ToString( m_frame.state ) );
+	return String( m_frame.state.c_str() );
 }
 
 bool CinderboxClient::has_local_player() const

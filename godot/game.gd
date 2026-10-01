@@ -1,6 +1,6 @@
 extends Node3D
-## Base game presentation: joining and leaving, input, camera, HUD binding, and loading world
-## reactions.
+## Base game presentation: joining and leaving, watching recordings, input, camera, HUD binding,
+## and loading world reactions.
 ##
 ## Everything visual it uses is loaded by path, so mods can replace it:
 ##   res://ui/hud.tscn          HUD layout. Optional unique nodes: %Stats, %Banner, %Help.
@@ -24,7 +24,12 @@ extends Node3D
 ## Leaving reloads this scene, so nothing of one server is left for the next. Resource packs cannot
 ## be unloaded, though: a server that does not use an item loaded earlier gets a restarted game.
 ##
+## Watching: --replay=FILE plays a recording (cb_server --record) instead of joining. The client
+## draws it like a server: the recording names the same workshop items, and the player it follows
+## is the local one, with its HUD. Nothing is sent anywhere; the keys steer the playback.
+##
 ## Command line (after `--`): --host=H --port=P --name=NAME --rollback=N --animations=DIR
+##                            --replay=FILE
 ##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS
 ##                            --mods=DIR --workshop=DIR --config=FILE
 ## With --screenshot-every, autoplay also saves FILE_1.png, FILE_2.png, ... along the way.
@@ -72,6 +77,7 @@ var menu: Menu
 var _address := "" # the server being joined or played on, as typed
 var _joining_since := -1.0 # seconds; -1: not trying
 var _joined := false # this attempt reached "playing"
+var _replay := "" # the recording being watched ("": playing on a server)
 var _leaving := false # the scene is being replaced
 
 var _actions: Array = [] # [{ name, bit, key }] from the server's mods
@@ -105,7 +111,7 @@ func _ready() -> void:
 	client.mod_event.connect(_on_mod_event)
 	client.get_director().screen_effect.connect(_on_screen_effect)
 	client.schema_changed.connect(_on_schema_changed)
-	client.connection_state_changed.connect(func(state): print("connection: ", state))
+	client.source_state_changed.connect(func(state): print("source: ", state))
 
 	_load_reactions()
 	_make_flash_overlay()
@@ -124,10 +130,14 @@ func _ready() -> void:
 	menu.resume_requested.connect(_resume)
 	menu.quit_requested.connect(_quit)
 
-	# The command line's server is joined once; leaving it lands in the menu like any other.
+	# The command line's server is joined once (its recording watched once); leaving it lands in
+	# the menu like any other.
 	var direct: bool = not _started and (args.has("host") or args.has("port") or autoplay > 0.0)
+	var watch: bool = not _started and args.has("replay")
 	_started = true
-	if direct:
+	if watch:
+		_watch(args["replay"])
+	elif direct:
 		_join(args.get("host", "127.0.0.1"), int(args.get("port", str(Menu.DEFAULT_PORT))))
 	else:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -163,6 +173,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_toggle_pause()
 			KEY_F1:
 				show_debug = not show_debug
+			_:
+				if _replay != "" and _joined and not menu.is_open():
+					_replay_key(event.keycode)
 
 
 func _process(delta: float) -> void:
@@ -194,11 +207,46 @@ func _join(host: String, port: int) -> void:
 	client.connect_to_server()
 
 
+## Plays a recording instead of joining a server.
+func _watch(path: String) -> void:
+	_replay = path
+	_address = path.get_file()
+	_refused = ""
+	_joined = false
+	_joining_since = Time.get_ticks_msec() / 1000.0
+	menu.close()
+	client.open_replay(path)
+
+
+## The playback's keys. The source knows the commands (src/client/replay_source.h).
+func _replay_key(key: Key) -> void:
+	var stats: Dictionary = client.get_stats()
+	match key:
+		KEY_SPACE:
+			client.control("pause", 0.0 if stats.get("replay_paused", false) else 1.0)
+		KEY_RIGHT:
+			client.control("skip", 5.0)
+		KEY_LEFT:
+			client.control("skip", -5.0)
+		KEY_UP:
+			client.control("speed", float(stats.get("replay_speed", 1.0)) * 2.0)
+		KEY_DOWN:
+			client.control("speed", float(stats.get("replay_speed", 1.0)) * 0.5)
+		KEY_PERIOD:
+			client.control("step", 1.0)
+		KEY_COMMA:
+			client.control("step", -1.0)
+		KEY_HOME:
+			client.control("seek", 0.0)
+		KEY_N:
+			client.control("follow_next", 1.0)
+
+
 ## Back to the menu, saying why. The scene is loaded again, so nothing of this server stays.
 func _leave(message: String) -> void:
 	if message != "":
 		push_warning(message.replace("\n", " "))
-	client.disconnect_from_server()
+	client.stop()
 	if autoplay > 0.0:
 		# Unattended runs have nobody to read a menu.
 		print("autoplay refused: ", message.replace("\n", " "))
@@ -214,7 +262,7 @@ func _leave(message: String) -> void:
 
 func _quit() -> void:
 	_leaving = true
-	client.disconnect_from_server()
+	client.stop()
 	get_tree().quit()
 
 
@@ -241,6 +289,8 @@ func _watch_connection() -> void:
 	var state: String = stats.get("state", "")
 	if _refused != "":
 		_leave(_refused)
+	elif state == "rejected" and _replay != "":
+		_leave("The recording %s could not be played: %s." % [_address, stats.get("reject_reason", "no reason given")])
 	elif state == "rejected":
 		_leave("%s refused the connection: %s." % [_address, stats.get("reject_reason", "no reason given")])
 	elif _joined:
@@ -248,11 +298,12 @@ func _watch_connection() -> void:
 	elif state == "playing":
 		_joined = true
 		if autoplay <= 0.0:
-			menu.remember_server(client.host, client.port, client.get_map_name())
+			if _replay == "":
+				menu.remember_server(client.host, client.port, client.get_map_name())
 			menu.close()
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	elif autoplay > 0.0:
-		return # unattended runs wait for their server
+	elif autoplay > 0.0 or _replay != "":
+		return # unattended runs wait for their server; a recording has no connection to fail
 	elif int(stats.get("connect_failures", 0)) > 0:
 		_leave("The address \"%s\" could not be found. Check the spelling." % client.host)
 	elif Time.get_ticks_msec() / 1000.0 - _joining_since > JOIN_TIMEOUT:
@@ -323,7 +374,7 @@ func _refuse(reason: String) -> void:
 	_refused = reason
 
 
-## Starts the game again, straight into the server being joined.
+## Starts the game again, straight into the server being joined (or the recording being watched).
 func _restart_and_join() -> void:
 	var restart := OS.get_cmdline_args()
 	var cut := restart.find("--")
@@ -331,12 +382,15 @@ func _restart_and_join() -> void:
 		restart = restart.slice(0, cut)
 	restart.append("--")
 	for arg in OS.get_cmdline_user_args():
-		if not (arg.begins_with("--host=") or arg.begins_with("--port=")):
+		if not (arg.begins_with("--host=") or arg.begins_with("--port=") or arg.begins_with("--replay=")):
 			restart.append(arg)
-	restart.append("--host=%s" % client.host)
-	restart.append("--port=%d" % client.port)
+	if _replay != "":
+		restart.append("--replay=%s" % _replay)
+	else:
+		restart.append("--host=%s" % client.host)
+		restart.append("--port=%d" % client.port)
 	print("restarting to join %s without the previous server's items" % _address)
-	client.disconnect_from_server()
+	client.stop()
 	_joining_since = -1.0
 	_leaving = true
 	OS.set_restart_on_exit(true, restart)
@@ -479,6 +533,9 @@ func _update_help() -> void:
 	var help := hud.get_node_or_null("%Help") as Label
 	if help == null:
 		return
+	if _replay != "":
+		help.text = "Space pause   Left/Right -/+5 s   Up/Down speed   , . step   Home restart   N next player   Tab scores   Mouse orbit   Wheel zoom   Esc menu   F1 stats"
+		return
 	var text := "WASD move   Shift sprint   Space jump"
 	for action in _actions:
 		var key: String = String(action["key"]).replace("Mouse", "Mouse ")
@@ -507,7 +564,17 @@ func _update_hud() -> void:
 	if banner:
 		var state: String = stats.get("state", "")
 		banner.visible = state != "playing" and (_joined or autoplay > 0.0)
-		if _joined:
+		if _replay != "" and state == "playing":
+			# A recording says where it is whenever it is not simply playing on.
+			var follow: int = stats.get("replay_follow", -1)
+			var note := "end of the recording" if stats.get("replay_ended", false) else "paused" if stats.get("replay_paused", false) else ""
+			var speed: float = stats.get("replay_speed", 1.0)
+			if note == "" and not is_equal_approx(speed, 1.0):
+				note = "x%s" % String.num(speed, 3)
+			banner.visible = note != ""
+			banner.text = "REPLAY   %.1f / %.1f s   %s\n%s" % [stats.get("replay_seconds", 0.0), stats.get("replay_length_seconds", 0.0), note,
+				"following %s" % client.get_player_name(client.get_local_net_id()) if follow >= 0 else "nobody to follow"]
+		elif _joined:
 			banner.text = "Connection lost - time is paused, reconnecting...\nEsc: menu"
 		else:
 			banner.text = "Connecting..."
@@ -517,7 +584,7 @@ func _autoplay_finish() -> void:
 	if autoplay <= 0.0:
 		return
 	if playing_since < 0.0:
-		if client.get_connection_state() == "playing":
+		if client.get_source_state() == "playing":
 			playing_since = Time.get_ticks_msec() / 1000.0
 		return
 	var elapsed := Time.get_ticks_msec() / 1000.0 - playing_since
@@ -536,7 +603,7 @@ func _autoplay_finish() -> void:
 	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
 		stats.get("state"), stats.get("checksums_verified"), stats.get("desyncs"), stats.get("fingerprint"), stats.get("fp_environment_ok")])
 	print("mod events seen: ", _event_counts)
-	client.disconnect_from_server()
+	client.stop()
 	get_tree().quit(0 if stats.get("desyncs", 1) == 0 and stats.get("state") == "playing" else 2)
 
 

@@ -37,3 +37,6 @@ Universal Animation Library*/
 /paid/
 # The character built from the paid Source pack (its glb, scene, baked clips): local only.
 godot/characters/ual_mannequin/
+
+# Personal notes vault
+.obsidian/
