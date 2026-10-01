@@ -71,6 +71,10 @@ public:
 	bool is_local_player_dead() const;
 	// The point the camera should orbit: the local player's head, or its ragdoll while dead.
 	godot::Vector3 get_camera_target() const;
+	// How far a camera can back away from `target` along `direction` before the map is in the way
+	// (at most `max_distance`; `radius` keeps it that far off the surface). Props and players never
+	// block it.
+	double get_camera_distance( const godot::Vector3& target, const godot::Vector3& direction, double max_distance, double radius ) const;
 	// Where a joint of an entity's character is ("RightHand"), or its node's position.
 	godot::Vector3 get_bone_position( int64_t net_id, const godot::String& bone ) const;
 	// "player", "prop", "static", "ragdoll", or "" if the entity has no visual.

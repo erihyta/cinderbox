@@ -1,5 +1,6 @@
 #include "cinderbox_client.h"
 
+#include "camera.h"
 #include "cinderbox_animator.h"
 #include "cinderbox_character.h"
 #include "cinderbox_companion.h"
@@ -119,6 +120,8 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_local_net_id" ), &CinderboxClient::get_local_net_id );
 	ClassDB::bind_method( D_METHOD( "is_local_player_dead" ), &CinderboxClient::is_local_player_dead );
 	ClassDB::bind_method( D_METHOD( "get_camera_target" ), &CinderboxClient::get_camera_target );
+	ClassDB::bind_method( D_METHOD( "get_camera_distance", "target", "direction", "max_distance", "radius" ),
+						  &CinderboxClient::get_camera_distance );
 	ClassDB::bind_method( D_METHOD( "get_bone_position", "net_id", "bone" ), &CinderboxClient::get_bone_position );
 	ClassDB::bind_method( D_METHOD( "get_kind", "net_id" ), &CinderboxClient::get_kind );
 	ClassDB::bind_method( D_METHOD( "get_entity_template_name", "net_id" ), &CinderboxClient::get_entity_template_name );
@@ -1564,6 +1567,17 @@ Vector3 CinderboxClient::get_camera_target() const
 	return Vector3( 0, 1, 0 );
 }
 
+double CinderboxClient::get_camera_distance( const Vector3& target, const Vector3& direction, double max_distance, double radius ) const
+{
+	Vector3 d = direction.normalized();
+	if ( m_haveFrame == false || m_frame.hasSimulation == false || d.is_zero_approx() )
+	{
+		return max_distance;
+	}
+	return present::CameraFreeDistance( m_frame.frame, { target.x, target.y, target.z }, { d.x, d.y, d.z }, float( max_distance ),
+										float( radius ) );
+}
+
 Node3D* CinderboxClient::get_entity_node( int64_t net_id ) const
 {
 	if ( !m_mirror )
@@ -1881,6 +1895,7 @@ Dictionary CinderboxClient::get_stats() const
 	d["checksums_verified"] = int64_t( s.checksumsVerified );
 	d["desyncs"] = int64_t( s.desyncs );
 	d["welcomes"] = int64_t( s.welcomes );
+	d["connect_failures"] = int64_t( s.connectFailures );
 	d["client_work_ms"] = s.simMsLastFrame;
 	d["kbit_down_total"] = double( s.bytesReceived ) * 8.0 / 1000.0;
 	d["entities"] = int64_t( m_frame.frame.entities.size() );

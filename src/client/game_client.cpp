@@ -136,6 +136,7 @@ void GameClient::Update( double now, const InputSampler& sampleInput )
 		}
 		else
 		{
+			m_stats.connectFailures += 1;
 			m_nextConnectAttempt = now + m_options.reconnectIntervalSeconds;
 		}
 	}
