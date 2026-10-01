@@ -52,16 +52,23 @@ bool GameServer::Start( const ServerOptions& options )
 	m_schema.items = options.items;
 	m_itemProperties = declarations.ItemProperties();
 	m_itemLayers = declarations.ItemLayersByKind();
-	// Item bodies authored in Godot (baked into the declaring mod's item) replace declared ones.
+	// Item bodies authored in Godot (baked into the declaring mod's item) replace declared ones, and
+	// so do the properties authored with them: what the scene says wins over what the code says.
 	for ( size_t kind = 0; kind < m_schema.itemKinds.size() && options.loadItemShape; ++kind )
 	{
 		for ( const std::string& mod : declarations.ItemMods()[kind] )
 		{
 			ItemShape shape;
 			std::string shapeError;
-			if ( options.loadItemShape( mod, m_schema.itemKinds[kind], shape, shapeError ) )
+			std::map<std::string, float> authored;
+			if ( options.loadItemShape( mod, m_schema.itemKinds[kind], shape, shapeError, authored ) )
 			{
 				m_schema.itemShapes[kind] = shape;
+				for ( const auto& [name, value] : authored )
+				{
+					m_itemProperties[std::make_pair( int( kind ), name )] = value;
+					Log( "item %s: %s = %g", m_schema.itemKinds[kind].c_str(), name.c_str(), double( value ) );
+				}
 				Log( "item %s: body from mod %s's item (%s, %.2f kg)", m_schema.itemKinds[kind].c_str(), mod.c_str(),
 					 shape.kind == 1 ? "sphere" : "box", double( shape.mass ) );
 				break;

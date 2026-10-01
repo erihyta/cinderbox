@@ -66,8 +66,8 @@ public:
 		// The bat brings its own way of standing and walking: while it is held (from the slot or
 		// picked up), the pack's "Base" layer plays instead of the holder's own.
 		declare.ItemLayers( m_bat, declare.AnimPack( "melee.carry" ) );
-		// A bat takes a moment to pick up: the pickup mod reads this (E held for half a second).
-		declare.ItemProperty( m_bat, "pickup.hold_seconds", 0.5f );
+		// (That a bat takes half a second to pick up is authored with its body: the CbItemBody's
+		// properties, "pickup.hold_seconds".)
 		m_hand = declare.Socket( "RightHand" );
 		declare.ItemProperty( m_bat, "inventory.slot", 3.0f );
 		declare.ItemProperty( m_bat, "inventory.start", 1.0f );

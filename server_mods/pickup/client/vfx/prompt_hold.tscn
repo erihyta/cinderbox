@@ -1,8 +1,10 @@
 [gd_scene format=3]
 
-; The prompt for an item that takes holding: the bar under the text fills with "pickup.progress".
+; The prompt for an item that takes holding: the bar under the text fills from the tick the hold
+; began ("pickup.since") over the time it takes ("pickup.hold").
 
 [node name="Prompt" type="CbPromptLabel"]
 text_format = "Hold [{key:pickup}]  Pick up {look:pickup.target}"
 height = 0.35
-progress_field = "pickup.progress"
+since_field = "pickup.since"
+duration_field = "pickup.hold"

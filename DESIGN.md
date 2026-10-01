@@ -1273,6 +1273,32 @@ that slot's pistol and marked the slot spent (M41).
 - A death was seen in one screenshot with the body upright in a T-pose at the instant of the kill;
   not looked into, and nothing here touches ragdolls.
 
+## Authoring loose ends (M47)
+Three leftovers from the item milestones.
+
+| What | Before | Now |
+|---|---|---|
+| Hold progress | `pickup.progress`, a float the server set every tick of a hold | `pickup.since`: the tick the hold began. `CbPromptLabel` (`since_field`, `duration_field`) fills the bar from the client's own clock (`get_tick_time`, `get_tick_rate`) |
+| Hold time | a C++ line in the item's mod | `properties` on the item's `CbItemBody`, baked as `property <name> <number>` lines into `items/<kind>.cfg` |
+| Baking a body | command line, or publishing | also a **Bake item body** button on the node |
+
+- **Why a start tick**: every board change is a command in the authoritative frame that a client
+  could not have predicted, so a field that changes every tick makes every tick a rollback. In the
+  pickup test the field now changes 8 times, and clients roll back 23 and 30 times over the run
+  where M43 measured about 85.
+- **Properties are generic**: the engine class knows no mod. `ParseItemShape` returns them next to
+  the shape, and the server writes them over the declared item properties: what the scene says wins
+  over what the code says. The bat's `pickup.hold_seconds` moved from `melee.cpp` to `bat.tscn`.
+- **The button** finds the kinds by looking for `CbItemLook`s in `res://vfx/reactions*.tscn` whose
+  scene is the edited one, the same rule `bake_items.gd` uses from the other side.
+- **Verified**: `item_shapes` (property lines parsed, bad ones refused, the bat's file carries its
+  hold time), `pickup` (taps still do nothing, progress seen from the two fields, few changes), the
+  button pressed from a script writes the same file as the command line bake and refuses a property
+  name with a space; a rendered client walked to a bat and held E: the bar fills; all suites pass,
+  reference hashes unchanged.
+- **Not done**: the button was pressed from a script, not clicked in the editor. A bake reaches
+  servers only when the mod is published again (the item's hash changes), which the button says.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1392,3 +1418,4 @@ that slot's pistol and marked the slot spent (M41).
 44. **M44** (done): held items bring layers: `ItemLayers( kind, pack )`, mods' swaps kept as wishes and resolved with item layers into `SwapLayer` commands (a mod's swap wins); the bat's `melee.carry` pack.
 45. **M45** (done): join menu (address, recent servers), Esc menu and settings in a script-free scene; failed joins come back with the reason; leaving reloads the scene, other mods restart the game; camera collision against the frame's static shapes.
 46. **M46** (done): stowed items in the engine (`MoveItem`, `HeldItem::stowed`), an `inventory` mod owning slots 1 to 4 in place of `loadout`, item properties for slot / start / holster, holster sockets on the mannequin; fixes items dropping on switch and on pick-up.
+47. **M47** (done): item properties authored on the `CbItemBody` and baked with the body (the bat's hold time), a Bake button on it, and `pickup.since` (a start tick) in place of a progress field set every tick.

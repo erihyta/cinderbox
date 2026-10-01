@@ -77,6 +77,14 @@ void CbPromptLabel::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_bar_color" ), &CbPromptLabel::get_bar_color );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "progress_field", PROPERTY_HINT_PLACEHOLDER_TEXT, "pickup.progress" ),
 				  "set_progress_field", "get_progress_field" );
+	ClassDB::bind_method( D_METHOD( "set_since_field", "value" ), &CbPromptLabel::set_since_field );
+	ClassDB::bind_method( D_METHOD( "get_since_field" ), &CbPromptLabel::get_since_field );
+	ClassDB::bind_method( D_METHOD( "set_duration_field", "value" ), &CbPromptLabel::set_duration_field );
+	ClassDB::bind_method( D_METHOD( "get_duration_field" ), &CbPromptLabel::get_duration_field );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "since_field", PROPERTY_HINT_PLACEHOLDER_TEXT, "pickup.since" ), "set_since_field",
+				  "get_since_field" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "duration_field", PROPERTY_HINT_PLACEHOLDER_TEXT, "pickup.hold" ), "set_duration_field",
+				  "get_duration_field" );
 	ADD_PROPERTY( PropertyInfo( Variant::COLOR, "bar_color" ), "set_bar_color", "get_bar_color" );
 }
 
@@ -156,7 +164,15 @@ void CbPromptLabel::_process( double )
 	String text = client != nullptr && client->has_local_player() ? client->format_local_fields( m_format ).strip_edges() : String();
 	set_visible( text.is_empty() == false );
 	set_text( text );
-	if ( m_progressField.is_empty() == false && client != nullptr )
+	if ( m_sinceField.is_empty() == false && m_durationField.is_empty() == false && client != nullptr )
+	{
+		Variant since = client->get_local_field( m_sinceField );
+		Variant duration = client->get_local_field( m_durationField );
+		double began = since.get_type() == Variant::NIL ? 0.0 : double( since );
+		double ticks = duration.get_type() == Variant::NIL ? 0.0 : double( duration ) * client->get_tick_rate();
+		ShowBar( began > 0.0 && ticks > 0.0 ? float( std::clamp( ( client->get_tick_time() - began ) / ticks, 0.001, 1.0 ) ) : 0.0f );
+	}
+	else if ( m_progressField.is_empty() == false && client != nullptr )
 	{
 		Variant value = client->get_local_field( m_progressField );
 		ShowBar( value.get_type() == Variant::NIL ? 0.0f : float( double( value ) ) );

@@ -1,14 +1,26 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="CbItemBody" inherits="CollisionShape3D" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<brief_description>
-		The body an item has when it lies in the world, authored in the item's scene.
+		What the server knows about an item, authored in the item's scene: its body when it lies in the world, and named numbers.
 	</brief_description>
 	<description>
-		A [BoxShape3D] or a [SphereShape3D], placed where the shape's centre is from the grip (the scene's origin), unrotated. Baking writes it to [code]items/&lt;kind&gt;.cfg[/code] ([code]bake_items.gd[/code]; publishing a mod runs it), which the server reads from the mod's item. In the game the node does nothing: the simulation owns the physics.
+		A [BoxShape3D] or a [SphereShape3D], placed where the shape's centre is from the grip (the scene's origin), unrotated. Baking writes it and [member properties] to [code]items/&lt;kind&gt;.cfg[/code] (the Bake button here, or [code]bake_items.gd[/code]; publishing a mod runs it), which the server reads from the mod's item. In the game the node does nothing: the simulation owns the physics.
 	</description>
 	<tutorials>
 	</tutorials>
 	<methods>
+		<method name="bake_to_project">
+			<return type="void" />
+			<description>
+				What the Bake button does: writes [code]res://items/&lt;kind&gt;.cfg[/code] for every kind whose [CbItemLook] (in [code]res://vfx/reactions*.tscn[/code]) draws this scene. Save the scene first. Servers get it when the mod is published.
+			</description>
+		</method>
+		<method name="get_bake_button">
+			<return type="Callable" />
+			<description>
+				The inspector's Bake button.
+			</description>
+		</method>
 		<method name="bake">
 			<return type="Dictionary" />
 			<description>
@@ -17,6 +29,9 @@
 		</method>
 	</methods>
 	<members>
+		<member name="properties" type="Dictionary" setter="set_properties" getter="get_properties" default="{}">
+			Named numbers about the item that any server mod may read, e.g. [code]pickup.hold_seconds[/code] = 0.5 (hold E that long to pick it up). They replace what the item's mod declared in code for the same names.
+		</member>
 		<member name="mass" type="float" setter="set_mass" getter="get_mass" default="1.0">
 			Its mass in kg.
 		</member>

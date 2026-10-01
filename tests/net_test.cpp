@@ -115,8 +115,9 @@ struct Harness
 		options.reconnectGraceSeconds = 10.0;
 		options.recordPath = recordPath;
 		options.modOptions = modOptions;
-		options.loadItemShape = []( const std::string& mod, const std::string& kind, ItemShape& shape, std::string& error ) {
-			return LoadItemShapeFolder( std::string( CB_SOURCE_DIR ) + "/server_mods/" + mod + "/client", kind, shape, error );
+		options.loadItemShape = []( const std::string& mod, const std::string& kind, ItemShape& shape, std::string& error,
+									std::map<std::string, float>& properties ) {
+			return LoadItemShapeFolder( std::string( CB_SOURCE_DIR ) + "/server_mods/" + mod + "/client", kind, shape, error, &properties );
 		};
 		if ( configure )
 		{
@@ -814,7 +815,7 @@ void TestPickup()
 	uint16_t pickup = schema.ActionMask( "pickup" );
 	uint16_t drop = schema.ActionMask( "drop" );
 	const BoardField* target = schema.FindField( "pickup.target" );
-	const BoardField* progress = schema.FindField( "pickup.progress" );
+	const BoardField* progress = schema.FindField( "pickup.since" );
 	const BoardField* hold = schema.FindField( "pickup.hold" );
 	CHECK( bat != 0 && pickup != 0 && drop != 0 && target != nullptr && progress != nullptr && hold != nullptr &&
 		   schema.itemKinds.size() >= 2 );
@@ -861,6 +862,8 @@ void TestPickup()
 	bool tappedInVain = false;
 	bool halfway = false;
 	bool needsHolding = false;
+	int sinceChanges = 0;
+	int32_t lastSince = 0;
 	h.RunUntil( 8.0, [&]( double ) {
 		uint32_t me = server.PlayerNetId( h.bots[0].client->Slot() );
 		uint32_t inHand = server.HeldItemOf( me, kSocketRightHand );
@@ -871,7 +874,12 @@ void TestPickup()
 		heldAgain |= thrown && inHand != 0 && server.Tick() > 200;
 		// Taps (before tick 320) never take the bat; a held key shows progress on the way.
 		tappedInVain |= server.Tick() > 300 && server.Tick() < 320 && inHand == 0 && server.BoardValue( me, target->slot ) != 0;
-		float fill = BoardToFloat( server.BoardValue( me, progress->slot ) );
+		// What a look draws: from the tick the hold began, over the time it takes.
+		int32_t began = server.BoardValue( me, progress->slot );
+		float takes = BoardToFloat( server.BoardValue( me, hold->slot ) ) * float( server.Config().tickRate );
+		float fill = began > 0 && takes > 0.0f ? float( int32_t( server.Tick() ) - began ) / takes : 0.0f;
+		sinceChanges += began != lastSince ? 1 : 0;
+		lastSince = began;
 		halfway |= fill > 0.2f && fill < 0.9f;
 		needsHolding |= BoardToFloat( server.BoardValue( me, hold->slot ) ) > 0.4f;
 	} );
@@ -886,6 +894,9 @@ void TestPickup()
 	std::printf( "    taps did nothing %d, \"pickup.hold\" said so %d, progress seen on the way %d\n", int( tappedInVain ),
 				 int( needsHolding ), int( halfway ) );
 	CHECK( tappedInVain && needsHolding && halfway );
+	// The board changes when a hold starts and ends, not while it runs.
+	std::printf( "    \"pickup.since\" changed %d times\n", sinceChanges );
+	CHECK( sinceChanges >= 2 && sinceChanges < 40 );
 	for ( Bot& b : h.bots )
 	{
 		CHECK( b.client->GetStats().desyncs == 0 );
@@ -1080,6 +1091,15 @@ void TestItemShapes()
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "melee.bat", shape, error ) && shape.half.z > 0.3f );
 	CHECK( LoadItemShapeFolder( root + "/server_mods/pistol/client", "pistol.gun", shape, error ) && shape.mass < 1.0f );
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "no.such", shape, error ) == false );
+	// Properties authored on the body ride along: the bat's hold time is in its scene, not in its mod.
+	ItemProperties properties;
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nproperty pickup.hold_seconds 0.75\nproperty a.b 2\n", shape, error, &properties ) );
+	CHECK( properties.size() == 2 && properties["pickup.hold_seconds"] == 0.75f && properties["a.b"] == 2.0f );
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nproperty lonely\n", shape, error, &properties ) == false );
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nproperty x nan\n", shape, error, &properties ) == false );
+	properties.clear();
+	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "melee.bat", shape, error, &properties ) );
+	CHECK( properties.count( "pickup.hold_seconds" ) == 1 && properties["pickup.hold_seconds"] == 0.5f );
 }
 
 // A held item brings its layers: with the bat out, the player's "Base" layer plays from the melee

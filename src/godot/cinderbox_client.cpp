@@ -119,6 +119,8 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "format_local_fields", "format" ), &CinderboxClient::format_local_fields );
 	ClassDB::bind_method( D_METHOD( "get_local_net_id" ), &CinderboxClient::get_local_net_id );
 	ClassDB::bind_method( D_METHOD( "is_local_player_dead" ), &CinderboxClient::is_local_player_dead );
+	ClassDB::bind_method( D_METHOD( "get_tick_time" ), &CinderboxClient::get_tick_time );
+	ClassDB::bind_method( D_METHOD( "get_tick_rate" ), &CinderboxClient::get_tick_rate );
 	ClassDB::bind_method( D_METHOD( "get_camera_target" ), &CinderboxClient::get_camera_target );
 	ClassDB::bind_method( D_METHOD( "get_camera_distance", "target", "direction", "max_distance", "radius" ),
 						  &CinderboxClient::get_camera_distance );
@@ -1548,6 +1550,16 @@ bool CinderboxClient::is_local_player_dead() const
 	return ve.is_valid() && ve.get<present::Visual>().dead;
 }
 
+double CinderboxClient::get_tick_time() const
+{
+	return m_haveFrame ? double( m_frame.frame.tick ) + double( m_alpha ) : 0.0;
+}
+
+double CinderboxClient::get_tick_rate() const
+{
+	return m_haveFrame && m_frame.frame.tickSeconds > 0.0f ? 1.0 / double( m_frame.frame.tickSeconds ) : 60.0;
+}
+
 Vector3 CinderboxClient::get_camera_target() const
 {
 	if ( !m_mirror )
@@ -1809,6 +1821,7 @@ void CinderboxClient::_process( double delta )
 					  ? std::clamp( float( m_frame.alphaAtPublish + since / tickSeconds ), 0.0f, 1.0f )
 					  : m_frame.alphaAtPublish;
 
+	m_alpha = alpha;
 	m_mirror->Update( m_frame.frame, alpha, float( delta ) );
 	// A rollback is reported once; later updates of the same frame are ordinary.
 	m_frame.frame.rolledBack = false;

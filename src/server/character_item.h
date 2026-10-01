@@ -12,6 +12,7 @@
 #include "hitboxes.h"
 #include "mod_schema.h"
 
+#include <map>
 #include <memory>
 #include <string>
 
@@ -51,11 +52,16 @@ std::shared_ptr<const anim::AnimSet> LoadAnimPackFolder( const std::string& dir,
 //     half 0.035 0.035 0.41    half extents in metres (a sphere: its radius, three times)
 //     center 0 0 -0.31     the shape's centre in the grip's frame
 //     mass 1.1             kg
-bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error );
+// `properties` also gets the file's "property <name> <number>" lines (what the item's CbItemBody
+// says about it: "pickup.hold_seconds 0.5").
+using ItemProperties = std::map<std::string, float>;
+bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error, ItemProperties* properties = nullptr );
 // From a workshop item (checked against its SHA-256), or from a folder (tests, a mod's client
 // project). False when the item has no such file, or it does not parse (then `error` says why).
-bool LoadItemShapeItem( const std::string& zipPath, const ModItem& item, const std::string& kind, ItemShape& out, std::string& error );
-bool LoadItemShapeFolder( const std::string& dir, const std::string& kind, ItemShape& out, std::string& error );
+bool LoadItemShapeItem( const std::string& zipPath, const ModItem& item, const std::string& kind, ItemShape& out, std::string& error,
+						ItemProperties* properties = nullptr );
+bool LoadItemShapeFolder( const std::string& dir, const std::string& kind, ItemShape& out, std::string& error,
+						  ItemProperties* properties = nullptr );
 
 // Where a player's workshop keeps items (the game's user:// folder), for the default --workshop.
 std::string DefaultWorkshopDir();
