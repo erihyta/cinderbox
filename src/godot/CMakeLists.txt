@@ -12,7 +12,6 @@ add_library(cinderbox_gd SHARED
 	cinderbox_item_look.cpp
 	cinderbox_map_nodes.cpp
 	cinderbox_skeleton.cpp
-	client_thread.cpp
 	register_types.cpp
 )
 

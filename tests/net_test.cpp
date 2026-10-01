@@ -7,6 +7,7 @@
 #include "anim_graph.h"
 #include "character_item.h"
 #include "joint_math.h"
+#include "live_source.h"
 #include "pose.h"
 #include "sha256.h"
 #include "registry.h"
@@ -16,10 +17,12 @@
 #include "map.h"
 #include "netsim.h"
 #include "replay.h"
+#include "replay_source.h"
 #include "simulation.h"
 #include "util.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -1739,6 +1742,166 @@ void TestProtocol()
 	}
 }
 
+// A stat a view source published, or `fallback` when it has none of that name and type.
+template <typename T>
+T StatOf( const present::ViewFrame& frame, const char* name, T fallback )
+{
+	for ( const present::ViewStat& stat : frame.stats )
+	{
+		if ( std::strcmp( stat.name, name ) == 0 )
+		{
+			if ( const T* value = std::get_if<T>( &stat.value ) )
+			{
+				return *value;
+			}
+		}
+	}
+	return fallback;
+}
+
+// Takes frames from a source until `done( frame )` or `seconds` have passed. True when done.
+bool TakeUntil( present::ViewSource& source, present::ViewFrame& frame, double seconds,
+				const std::function<bool( const present::ViewFrame& )>& done, const std::function<void()>& meanwhile = {} )
+{
+	auto start = Clock::now();
+	while ( std::chrono::duration<double>( Clock::now() - start ).count() < seconds )
+	{
+		if ( meanwhile )
+		{
+			meanwhile();
+		}
+		if ( source.Take( frame ) && done( frame ) )
+		{
+			return true;
+		}
+		std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+	}
+	return false;
+}
+
+// The viewer protocol (present/view.h): a viewer is handed the same frames by a live connection
+// and by the recording of that session, and tells neither apart.
+void TestViewSources()
+{
+	std::filesystem::path replayPath = std::filesystem::temp_directory_path() / "cinderbox_view_test.cbr";
+	uint16_t spawn = 0;
+	{
+		Harness h( 17830, replayPath.string() );
+		spawn = h.server.Schema().ActionMask( "spawn_prop" );
+		CHECK( spawn != 0 );
+
+		// The first to join, so the recording's slot 0: it throws a prop now and then.
+		ClientOptions options;
+		options.port = h.clientPort;
+		options.verbose = false;
+		options.logName = "view";
+		options.playerName = "Viewer";
+		LiveSource live( options );
+		CHECK( live.TakesInput() );
+
+		present::ViewFrame frame;
+		auto serve = [&h]() { h.RunUntil( h.Now() + 0.002 ); };
+		CHECK( TakeUntil( live, frame, 10.0, []( const present::ViewFrame& f ) { return f.state == "playing" && f.hasWorld && f.frame.localNetId != 0; }, serve ) );
+		CHECK( frame.rate == 1.0f );
+		CHECK( frame.mapHash != 0 );
+		CHECK( frame.schemaGeneration != 0 );
+		CHECK( frame.schema.ActionMask( "spawn_prop" ) == spawn );
+		CHECK( frame.names[0] == "Viewer" );
+		CHECK( frame.localPressed == 0 ); // a source the viewer feeds reports no presses
+		h.AddBot();
+
+		// It plays on: ticks advance, serials only grow, and its input reaches the world (a prop appears).
+		uint32_t firstTick = frame.frame.tick;
+		uint64_t lastSerial = frame.serial;
+		size_t entitiesBefore = frame.frame.entities.size();
+		bool serialsGrow = true;
+		bool propSeen = false;
+		auto start = Clock::now();
+		while ( std::chrono::duration<double>( Clock::now() - start ).count() < 3.0 )
+		{
+			serve();
+			double t = std::chrono::duration<double>( Clock::now() - start ).count();
+			PlayerInput in;
+			in.moveForward = 100;
+			in.actions = std::fmod( t, 1.0 ) < 0.2 ? spawn : uint16_t( 0 );
+			live.SetInput( in );
+			if ( live.Take( frame ) )
+			{
+				serialsGrow &= frame.serial > lastSerial;
+				lastSerial = frame.serial;
+				propSeen |= frame.frame.entities.size() > entitiesBefore + 1; // the bot, and a prop
+			}
+		}
+		CHECK( serialsGrow );
+		CHECK( propSeen );
+		CHECK( frame.frame.tick > firstTick + 100 );
+		CHECK( frame.frame.hasInputs );
+		CHECK( StatOf<int64_t>( frame, "desyncs", -1 ) == 0 );
+		CHECK( StatOf<int64_t>( frame, "checksums_verified", 0 ) > 0 );
+		CHECK( StatOf<bool>( frame, "fp_environment_ok", false ) );
+		std::printf( "    live: tick %u, %zu entities, rtt %lld ms\n", frame.frame.tick, frame.frame.entities.size(),
+					 (long long)StatOf<int64_t>( frame, "rtt_ms", -1 ) );
+	}
+
+	// A file that is not there: rejected, with a reason.
+	{
+		ReplaySource missing( ( std::filesystem::temp_directory_path() / "cinderbox_no_such_file.cbr" ).string() );
+		present::ViewFrame frame;
+		CHECK( TakeUntil( missing, frame, 5.0, []( const present::ViewFrame& f ) { return f.state == "rejected"; } ) );
+		CHECK( StatOf<std::string>( frame, "reject_reason", "" ).empty() == false );
+		CHECK( frame.hasWorld == false );
+	}
+
+	// The recording of that session, through the same interface.
+	ReplaySource replay( replayPath.string() );
+	CHECK( replay.TakesInput() == false );
+	present::ViewFrame frame;
+	CHECK( TakeUntil( replay, frame, 10.0, []( const present::ViewFrame& f ) { return f.hasWorld && f.frame.localNetId != 0; } ) );
+	CHECK( frame.state == "playing" );
+	CHECK( frame.mapHash != 0 );
+	CHECK( frame.schema.ActionMask( "spawn_prop" ) == spawn );
+	CHECK( StatOf<bool>( frame, "build_matches", false ) );
+	CHECK( StatOf<int64_t>( frame, "replay_follow", -1 ) == 0 ); // the first player there is
+	double length = StatOf<double>( frame, "replay_length_seconds", 0.0 );
+	CHECK( length > 2.0 );
+
+	// To the end at 16x: every recorded checksum holds, and the followed player's presses come along.
+	replay.Control( "speed", 16.0 );
+	uint16_t pressed = 0;
+	CHECK( TakeUntil( replay, frame, 20.0, [&pressed]( const present::ViewFrame& f ) {
+		pressed |= f.localPressed;
+		return StatOf<bool>( f, "replay_ended", false );
+	} ) );
+	CHECK( frame.rate == 0.0f );
+	CHECK( ( pressed & spawn ) != 0 );
+	CHECK( StatOf<int64_t>( frame, "desyncs", -1 ) == 0 );
+	CHECK( StatOf<int64_t>( frame, "checksums_verified", 0 ) > 0 );
+	uint32_t endTick = frame.frame.tick;
+	uint64_t endGeneration = frame.frame.resetGeneration;
+
+	// Back to one second in, paused: the world jumps (a new generation) and stays where it is.
+	replay.Control( "pause", 1.0 );
+	replay.Control( "seek", 1.0 );
+	CHECK( TakeUntil( replay, frame, 10.0, [endGeneration]( const present::ViewFrame& f ) { return f.frame.resetGeneration != endGeneration; } ) );
+	uint32_t soughtTick = frame.frame.tick;
+	CHECK( soughtTick > 0 && soughtTick < endTick );
+	CHECK( StatOf<bool>( frame, "replay_paused", false ) );
+	std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
+	replay.Take( frame );
+	CHECK( frame.frame.tick == soughtTick );
+
+	// One tick on, still paused; then nobody followed: no local player.
+	replay.Control( "step", 1.0 );
+	CHECK( TakeUntil( replay, frame, 5.0, [soughtTick]( const present::ViewFrame& f ) { return f.frame.tick == soughtTick + 1; } ) );
+	replay.Control( "follow", -1.0 );
+	CHECK( TakeUntil( replay, frame, 5.0, []( const present::ViewFrame& f ) { return f.frame.localNetId == 0; } ) );
+	CHECK( StatOf<int64_t>( frame, "replay_follow", 0 ) == -1 );
+	std::printf( "    replay: %.1f s, end tick %u, %lld checksums verified\n", length, endTick,
+				 (long long)StatOf<int64_t>( frame, "checksums_verified", 0 ) );
+	std::error_code ignored;
+	std::filesystem::remove( replayPath, ignored );
+}
+
 } // namespace
 
 int main( int argc, char** argv )
@@ -1772,6 +1935,7 @@ int main( int argc, char** argv )
 		{ "pickup", TestPickup },
 		{ "inventory", TestInventory },
 		{ "item_layers", TestItemLayers },
+		{ "view_sources", TestViewSources },
 	};
 
 	const char* filter = argc > 1 ? argv[1] : nullptr;

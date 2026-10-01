@@ -3,170 +3,16 @@
 #include "fingerprint.h"
 #include "orbit_camera.h"
 #include "presentation.h"
-#include "replay.h"
-#include "simulation.h"
+#include "replay_player.h"
 
 #include "raylib.h"
 #include "rlgl.h"
 
 #include <algorithm>
 #include <cstdio>
-#include <map>
 
 namespace cb::present
 {
-
-namespace
-{
-
-constexpr uint32_t kKeyframeInterval = 300;
-
-class ReplayPlayer
-{
-public:
-	bool Open( const std::string& path, std::string& error )
-	{
-		if ( m_reader.Open( path, error ) == false )
-		{
-			return false;
-		}
-		m_sim = std::make_unique<Simulation>( m_reader.Config(), m_reader.Map() );
-		m_sim->SetAnimGraph( m_reader.Graph() );
-		m_sim->SetAnimPacks( m_reader.Packs() );
-		m_sim->SetItemShapes( m_reader.Schema().itemShapes );
-		CaptureKeyframe();
-		return true;
-	}
-
-	const net::ReplayReader& Reader() const
-	{
-		return m_reader;
-	}
-	Simulation& Sim()
-	{
-		return *m_sim;
-	}
-	uint32_t Tick() const
-	{
-		return m_sim->Tick();
-	}
-	uint32_t Length() const
-	{
-		return uint32_t( m_reader.Frames().size() );
-	}
-	uint64_t Generation() const
-	{
-		return m_generation;
-	}
-	uint64_t ChecksumFailures() const
-	{
-		return m_checksumFailures;
-	}
-	uint64_t ChecksumsVerified() const
-	{
-		return m_checksumsVerified;
-	}
-
-	// Advance playback time; returns the interpolation factor toward the next tick.
-	float Advance( double seconds )
-	{
-		double dt = 1.0 / double( m_reader.Config().tickRate );
-		m_accumulator += seconds;
-		int steps = 0;
-		while ( m_accumulator >= dt && Tick() < Length() && steps < 64 )
-		{
-			StepOne();
-			m_accumulator -= dt;
-			++steps;
-		}
-		if ( Tick() >= Length() )
-		{
-			m_accumulator = 0.0;
-		}
-		m_accumulator = std::min( m_accumulator, dt );
-		return float( m_accumulator / dt );
-	}
-
-	void SeekTo( uint32_t target )
-	{
-		target = std::min( target, Length() );
-		if ( target < Tick() )
-		{
-			auto it = m_keyframes.upper_bound( target );
-			--it; // tick 0 is always there
-			m_sim->Load( it->second );
-		}
-		while ( Tick() < target )
-		{
-			StepOne();
-		}
-		m_accumulator = 0.0;
-		m_generation += 1;
-	}
-
-private:
-	void StepOne()
-	{
-		m_sim->Step( m_reader.Frames()[Tick()] );
-		CaptureKeyframe();
-		VerifyChecksum();
-	}
-
-	void CaptureKeyframe()
-	{
-		uint32_t tick = Tick();
-		if ( tick % kKeyframeInterval == 0 && m_keyframes.count( tick ) == 0 )
-		{
-			m_sim->Save( m_keyframes[tick] );
-		}
-	}
-
-	void VerifyChecksum()
-	{
-		// Checksums are sorted by tick; only check each once (seeking replays ticks).
-		const auto& list = m_reader.Checksums();
-		auto it = std::lower_bound( list.begin(), list.end(), Tick(),
-									[]( const net::MsgChecksum& c, uint32_t t ) { return c.tick < t; } );
-		if ( it != list.end() && it->tick == Tick() && Tick() > m_highestVerified )
-		{
-			m_highestVerified = Tick();
-			if ( m_sim->ComputeHash() == it->hash )
-			{
-				m_checksumsVerified += 1;
-			}
-			else
-			{
-				m_checksumFailures += 1;
-				std::printf( "replay: checksum mismatch at tick %u\n", Tick() );
-			}
-		}
-	}
-
-	net::ReplayReader m_reader;
-	std::unique_ptr<Simulation> m_sim;
-	std::map<uint32_t, Snapshot> m_keyframes;
-	double m_accumulator = 0.0;
-	uint64_t m_generation = 1;
-	uint64_t m_checksumsVerified = 0;
-	uint64_t m_checksumFailures = 0;
-	uint32_t m_highestVerified = 0;
-};
-
-// Next active player slot after `from`, or -1 if there is none.
-int NextActiveSlot( const Simulation& sim, int from )
-{
-	for ( int i = 1; i <= kMaxPlayers; ++i )
-	{
-		int slot = ( from + i + kMaxPlayers ) % kMaxPlayers;
-		if ( sim.IsPlayerActive( PlayerSlot( slot ) ) )
-		{
-			return slot;
-		}
-	}
-	return -1;
-}
-
-} // namespace
 
 int RunReplayViewer( std::shared_ptr<const anim::AnimSet> animSet, const ReplayViewerOptions& options )
 {
@@ -221,7 +67,7 @@ int RunReplayViewer( std::shared_ptr<const anim::AnimSet> animSet, const ReplayV
 			seekTicks = -int( player.Tick() );
 		if ( IsKeyPressed( KEY_TAB ) )
 		{
-			follow = NextActiveSlot( player.Sim(), follow );
+			follow = player.NextActiveSlot( follow );
 			autoFollow = true;
 		}
 		if ( IsKeyPressed( KEY_BACKSPACE ) )
@@ -247,7 +93,7 @@ int RunReplayViewer( std::shared_ptr<const anim::AnimSet> animSet, const ReplayV
 		}
 		if ( follow < 0 && autoFollow )
 		{
-			follow = NextActiveSlot( player.Sim(), -1 );
+			follow = player.NextActiveSlot( -1 );
 		}
 
 		SimView view;

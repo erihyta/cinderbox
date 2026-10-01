@@ -182,7 +182,7 @@ func _run() -> void:
 	await process_frame
 	_check("  opens, with the mouse free", _shown("Pause") and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and _menu().is_paused())
 	_check("  says where you are", (_n("PauseText") as Label).text.contains(str(_port)))
-	_check("  the game goes on behind it", game.client.get_connection_state() == "playing")
+	_check("  the game goes on behind it", game.client.get_source_state() == "playing")
 	await _shot("menu_5_pause")
 	(_n("PauseSettings") as Button).pressed.emit()
 	await process_frame
@@ -229,7 +229,7 @@ func _run() -> void:
 		# The process ends here when it works; the restarted one writes the result.
 		await _wait(15.0)
 		_check("  restarted", false)
-	_game().client.disconnect_from_server()
+	_game().client.stop()
 
 	print("menu check: %s" % ("ok" if _failures == 0 else "%d FAILED" % _failures))
 	quit(0 if _failures == 0 else 1)
@@ -252,7 +252,7 @@ func _after_restart() -> void:
 		var recent: Array = _menu().recent_servers()
 		if recent.size() != 2 or recent[0]["address"] != "127.0.0.1:%d" % _other_port:
 			problems.append("recent servers are %s" % str(recent))
-		_game().client.disconnect_from_server()
+		_game().client.stop()
 	var text := "ok" if problems.is_empty() else ", ".join(problems)
 	print("after the restart: ", text)
 	if _result != "":

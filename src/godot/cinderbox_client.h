@@ -1,10 +1,11 @@
 #pragma once
 
-// The Godot face of the Cinderbox client.
+// The Godot viewer of a Cinderbox world.
 //
-// Owns the client thread (networking, prediction, rollback), mirrors its presentation frames and
-// turns them into Godot nodes: one instance of a prefab scene per simulation entity, moved every
-// frame, with ozz poses applied to players. Everything visual is data the game or mods provide:
+// It draws what a view source hands it (present/view.h): a live connection that predicts and rolls
+// back, or a recording. It never asks which: it mirrors the frames and turns them into Godot
+// nodes, one instance of a prefab scene per simulation entity, moved every frame, with ozz poses
+// applied to players. Everything visual is data the game or mods provide:
 //   <prefab_dir>/static_box.tscn   level geometry        (unit box, scaled to size)
 //   <prefab_dir>/prop_box.tscn      box props             (unit box)
 //   <prefab_dir>/prop_sphere.tscn   sphere props          (unit-diameter sphere)
@@ -22,9 +23,9 @@
 #include "anim_set.h"
 #include "cinderbox_item_look.h"
 #include "cue_director.h"
-#include "client_thread.h"
 #include "fields.h"
 #include "mirror.h"
+#include "view.h"
 
 #include <godot_cpp/classes/animation_library.hpp>
 #include <godot_cpp/classes/node3d.hpp>
@@ -50,9 +51,18 @@ public:
 	void _exit_tree() override;
 
 	// Scripting API
+	// Sources: what this viewer draws. One at a time; starting one stops the one before.
+	// Plays on the server at host:port, as player_name.
 	void connect_to_server();
-	void disconnect_from_server();
+	// Plays a recording (cb_server --record). `path` may be res://, user:// or a file system path.
+	void open_replay( const godot::String& path );
+	void stop();
 	bool is_running() const;
+	// A named command for the source, with a number ("pause" 1, "skip" -5: see the source's
+	// header, e.g. client/replay_source.h). Sources ignore names they do not know.
+	void control( const godot::String& name, double value );
+	// Whether set_input drives the local player (a live connection; not a recording).
+	bool takes_input() const;
 	// camera_yaw / camera_pitch: the Godot camera's rotation (radians). actions: bits of the
 	// server's mod actions (get_actions() says which bit is which).
 	void set_input( const godot::Vector2& move, double camera_yaw, double camera_pitch, bool jump, bool sprint, int64_t actions );
@@ -120,8 +130,12 @@ public:
 	{
 		return m_playerName;
 	}
+	// What the source says about itself ("rtt_ms", "desyncs", ...), plus "state", "entities" and
+	// "animation".
 	godot::Dictionary get_stats() const;
-	godot::String get_connection_state() const;
+	// "stopped", "starting", then the source's state: "connecting", "joining", "playing",
+	// "reconnecting", "rejected".
+	godot::String get_source_state() const;
 	bool has_local_player() const;
 	godot::Vector3 get_local_player_position() const;
 	godot::Node3D* get_visual_node( int64_t visual_id ) const;
@@ -219,8 +233,12 @@ private:
 	godot::String m_characterFolder; // res://characters/<name>/
 	godot::Ref<godot::AnimationLibrary> m_companionLibrary; // the character's companion.tres, if any
 	std::unordered_map<uint64_t, godot::ObjectID> m_companions; // visual id -> CbCompanionPlayer
-	ClientThread m_thread;
-	PublishedFrame m_frame;
+	std::unique_ptr<present::ViewSource> m_source;
+	void Open( std::unique_ptr<present::ViewSource> source );
+	// How many sources this viewer has had: mixed into each frame's reset generation, so the first
+	// frame of a new source replaces the world instead of blending into the old one.
+	uint64_t m_sourceCount = 0;
+	present::ViewFrame m_frame;
 	bool m_haveFrame = false;
 	float m_alpha = 0.0f; // of the frame being drawn
 	godot::String m_lastState;
@@ -242,6 +260,8 @@ private:
 	uint64_t m_worldStateHash = 0;
 	void PushStates();
 	void Cue( const std::string& name, uint32_t a, uint32_t b, const godot::Dictionary& args );
+	// The "action_pressed" signal and the "pressed:<action>" cue for each of these action bits.
+	void AnnouncePresses( uint16_t pressed );
 	godot::String EntityName( const present::Visual& v ) const;
 	// Sockets are moved to their entity's root in the game (so "^^/RightHand/Item" means the same on
 	// every rig); the companion tracks that reached an item through the socket's authored place are
