@@ -507,6 +507,7 @@ void Simulation::PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotatio
 
 	held.holder = 0;
 	held.socket = 0;
+	held.stowed = 0;
 	item.set<HeldItem>( held );
 	item.set<Transform>( { position, rotation } );
 	item.set<Velocity>( { velocity, { 0.0f, 0.0f, 0.0f } } );
@@ -636,13 +637,19 @@ void Simulation::ApplyEvents( const InputFrame& frame )
 		}
 		else if ( ev.type == PlayerEventType::Leave && netId != 0 )
 		{
-			// What it held goes with it.
-			for ( uint32_t socket = 0; socket < 256; ++socket )
+			// What it carried goes with it, in use or stowed.
+			std::vector<flecs::entity> carried;
+			for ( const EntityRef& r : m_entities )
 			{
-				if ( uint32_t item = HeldItemOf( netId, socket ) )
+				flecs::entity e( m_world, r.entity );
+				if ( const HeldItem* item = e.try_get<HeldItem>(); item != nullptr && item->holder == netId )
 				{
-					DestroyEntity( FindEntity( item ) );
+					carried.push_back( e );
 				}
+			}
+			for ( flecs::entity e : carried )
+			{
+				DestroyEntity( e );
 			}
 			flecs::entity e = FindEntity( netId );
 			if ( e.is_valid() )
@@ -686,7 +693,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		for ( const EntityRef& r : m_entities )
 		{
 			flecs::entity e( m_world, r.entity );
-			if ( const HeldItem* item = e.try_get<HeldItem>(); item != nullptr && item->holder != 0 )
+			if ( const HeldItem* item = e.try_get<HeldItem>(); item != nullptr && item->holder != 0 && item->stowed == 0 )
 			{
 				m_heldScratch.push_back( { item->holder, item->kind } );
 			}
@@ -1418,7 +1425,7 @@ uint32_t Simulation::HeldItemOf( uint32_t holder, uint32_t socket ) const
 		flecs::entity e( m_world, r.entity );
 		if ( const HeldItem* item = e.try_get<HeldItem>() )
 		{
-			if ( item->holder == holder && item->socket == socket )
+			if ( item->holder == holder && item->socket == socket && item->stowed == 0 )
 			{
 				return r.netId;
 			}
@@ -1578,6 +1585,13 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			{
 				return;
 			}
+			if ( command.value == 1 )
+			{
+				flecs::entity item = CreateEntity();
+				item.set<HeldItem>( { holder, command.index, command.mode, 1 } );
+				item.set<Transform>( player.get<Transform>() );
+				return;
+			}
 			if ( uint32_t old = HeldItemOf( holder, command.mode ) )
 			{
 				// Dropped, not destroyed: it may be one someone picked up.
@@ -1608,13 +1622,44 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			flecs::entity player = FindEntity( holder );
 			flecs::entity item = FindEntity( ResolveTarget( command.other ) );
 			const HeldItem* held = item.is_valid() ? item.try_get<HeldItem>() : nullptr;
+			bool stowed = command.value == 1;
 			if ( holder == 0 || player.is_valid() == false || player.has<Character>() == false || held == nullptr ||
-				 held->holder != 0 || HeldItemOf( holder, command.mode ) != 0 )
+				 held->holder != 0 || ( stowed == false && HeldItemOf( holder, command.mode ) != 0 ) )
 			{
 				return;
 			}
 			TakeItemFromWorld( item, holder, command.mode );
+			if ( stowed )
+			{
+				HeldItem taken = item.get<HeldItem>();
+				taken.stowed = 1;
+				item.set<HeldItem>( taken );
+			}
 			item.set<Transform>( player.get<Transform>() );
+			return;
+		}
+
+		case CommandType::MoveItem:
+		{
+			flecs::entity item = FindEntity( ResolveTarget( command.target ) );
+			const HeldItem* held = item.is_valid() ? item.try_get<HeldItem>() : nullptr;
+			if ( held == nullptr || held->holder == 0 )
+			{
+				return;
+			}
+			bool stowed = command.value == 1;
+			if ( stowed == false )
+			{
+				uint32_t there = HeldItemOf( held->holder, command.mode );
+				if ( there != 0 && FindEntity( there ) != item )
+				{
+					return;
+				}
+			}
+			HeldItem moved = *held;
+			moved.socket = command.mode;
+			moved.stowed = stowed ? 1 : 0;
+			item.set<HeldItem>( moved );
 			return;
 		}
 

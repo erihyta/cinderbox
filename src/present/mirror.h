@@ -50,6 +50,7 @@ struct Visual
 	uint32_t holder = 0;
 	uint16_t itemKind = 0;
 	uint8_t socket = 0;
+	bool stowed = false;
 };
 
 // Poses at the two most recent ticks, for interpolation.

@@ -54,6 +54,7 @@ struct FrameEntity
 	uint32_t holder = 0;
 	uint16_t itemKind = 0;
 	uint8_t socket = 0;
+	bool stowed = false; // carried but put away: drawn in its socket if the character has it
 };
 
 struct FrameRagdoll

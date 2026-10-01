@@ -31,7 +31,6 @@ constexpr float kDeathPush = 6.0f;
 constexpr float kPropPush = 4.0f;
 constexpr float kRagdollSeconds = 10.0f;
 constexpr uint32_t kRagdollCap = 16;
-constexpr int32_t kPistolSlot = 2; // loadout.slot value while the pistol is out
 
 struct Gunner
 {
@@ -43,10 +42,6 @@ struct Gunner
 	int32_t deaths = 0;
 	uint32_t falls = 0; // Character::fallCount last seen
 	bool aiming = false; // what the last Aim command said
-	bool loadout = false;	  // slot 2 is out
-	bool expectGiven = false; // slot 2 put a gun in the hand this tick; learn its NetId next tick
-	uint32_t given = 0;		  // the gun slot 2 gave
-	bool spent = false;		  // this life's gun left the hand: slot 2 has none to give
 };
 
 struct Dead
@@ -77,7 +72,6 @@ public:
 	{
 		m_fire = declare.Action( "fire", "MouseLeft" );
 		m_reload = declare.Action( "reload", "R" );
-		m_loadout = declare.Field( "loadout.slot", BoardType::Int );
 
 		m_health = declare.Field( "combat.health", BoardType::Int );
 		m_maxHealth = declare.Field( "combat.max_health", BoardType::Int );
@@ -109,6 +103,10 @@ public:
 		// CbItemBody) and baked to client/items/pistol.gun.cfg.
 		m_gun = declare.ItemKind( "pistol.gun" );
 		m_hand = declare.Socket( "RightHand" );
+		// For the inventory mod: slot 2, one for every life, on the hip while it is put away.
+		declare.ItemProperty( m_gun, "inventory.slot", 2.0f );
+		declare.ItemProperty( m_gun, "inventory.start", 1.0f );
+		declare.ItemProperty( m_gun, "inventory.holster", declare.Socket( "Hip" ) );
 	}
 
 	void Start( Context& ctx ) override
@@ -231,44 +229,10 @@ private:
 		uint32_t target = SlotTarget( g.slot );
 		uint32_t tick = ctx.Tick();
 
-		// What is in the right hand decides: a "pistol.gun" there fires, wherever it came from. Slot 2
-		// gives one gun per life: putting it away (or dying) takes it back, but once it leaves the hand
-		// any other way (dropped, thrown, swapped for a pick-up) the slot is empty until the next life.
+		// What is in the right hand decides: a "pistol.gun" there fires, wherever it came from. Who
+		// has one, and when it is out, is the inventory mod's.
 		uint32_t inHand = ctx.HeldItem( g.slot, m_hand );
 		bool gunInHand = inHand != 0 && ctx.ItemKindOf( inHand ).index == m_gun.index;
-		if ( g.expectGiven && gunInHand )
-		{
-			g.given = inHand;
-			g.expectGiven = false;
-		}
-		if ( c->dead != 0 )
-		{
-			g.spent = false;
-		}
-		else if ( g.loadout && g.given != 0 && inHand != g.given )
-		{
-			g.spent = true;
-			g.given = 0;
-		}
-		bool loadout = ctx.Get( netId, m_loadout ) == kPistolSlot && c->dead == 0;
-		if ( loadout != g.loadout )
-		{
-			g.loadout = loadout;
-			if ( loadout && gunInHand == false && g.spent == false )
-			{
-				ctx.SpawnItem( target, m_gun, m_hand );
-				g.expectGiven = true;
-			}
-			else if ( loadout == false && g.given != 0 && inHand == g.given )
-			{
-				ctx.Destroy( g.given ); // this one: another mod may put its item in the hand this tick
-			}
-			if ( loadout == false )
-			{
-				g.given = 0;
-				g.expectGiven = false;
-			}
-		}
 
 		if ( const Dead* dead = e.try_get<Dead>() )
 		{
@@ -449,7 +413,6 @@ private:
 
 	ActionHandle m_fire;
 	ActionHandle m_reload;
-	FieldHandle m_loadout;
 	FieldHandle m_health;
 	FieldHandle m_maxHealth;
 	FieldHandle m_dead;

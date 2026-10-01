@@ -180,6 +180,12 @@ void Declarations::ItemProperty( ItemKindHandle kind, const std::string& name, f
 	m_itemProperties.emplace( std::make_pair( kind.index, name ), value ); // the first one stays
 }
 
+void Declarations::ItemProperty( ItemKindHandle kind, const std::string& name, SocketHandle socket )
+{
+	// Stored as a number: socket + 1, so 0 (and "not declared") reads as none.
+	ItemProperty( kind, name, float( socket.Valid() ? socket.index + 1 : 0 ) );
+}
+
 AnimPackHandle Declarations::AnimPack( const std::string& name )
 {
 	for ( size_t i = 0; i < m_schema.animPacks.size(); ++i )
@@ -427,6 +433,12 @@ float Context::ItemProperty( ItemKindHandle kind, const std::string& name, float
 	return it != m_itemProperties->end() ? it->second : fallback;
 }
 
+SocketHandle Context::ItemSocket( ItemKindHandle kind, const std::string& name ) const
+{
+	int socket = int( ItemProperty( kind, name, 0.0f ) ) - 1;
+	return socket >= 0 && socket < int( m_schema.sockets.size() ) ? SocketHandle{ socket } : SocketHandle{};
+}
+
 double Context::Option( const std::string& name, double fallback ) const
 {
 	if ( m_options == nullptr )
@@ -598,6 +610,65 @@ void Context::SpawnItem( uint32_t holder, ItemKindHandle kind, SocketHandle sock
 	c.index = uint16_t( kind.index );
 	c.mode = uint8_t( socket.index );
 	Add( c );
+}
+
+void Context::GiveItem( uint32_t holder, ItemKindHandle kind, SocketHandle holster )
+{
+	if ( kind.Valid() == false )
+	{
+		return;
+	}
+	SimCommand c;
+	c.type = CommandType::SpawnItem;
+	c.target = holder;
+	c.index = uint16_t( kind.index );
+	c.mode = holster.Valid() ? uint8_t( holster.index ) : kNoSocket;
+	c.value = 1;
+	Add( c );
+}
+
+void Context::StowItem( uint32_t item, SocketHandle holster )
+{
+	SimCommand c;
+	c.type = CommandType::MoveItem;
+	c.target = item;
+	c.mode = holster.Valid() ? uint8_t( holster.index ) : kNoSocket;
+	c.value = 1;
+	Add( c );
+}
+
+void Context::HoldItem( uint32_t item, SocketHandle socket )
+{
+	if ( socket.Valid() == false )
+	{
+		return;
+	}
+	SimCommand c;
+	c.type = CommandType::MoveItem;
+	c.target = item;
+	c.mode = uint8_t( socket.index );
+	c.value = 0;
+	Add( c );
+}
+
+std::vector<CarriedItem> Context::CarriedItems( PlayerSlot slot ) const
+{
+	std::vector<CarriedItem> out;
+	uint32_t holder = m_sim.PlayerNetId( slot );
+	if ( holder == 0 )
+	{
+		return out;
+	}
+	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	{
+		const cb::HeldItem* item = flecs::entity( m_sim.World(), r.entity ).try_get<cb::HeldItem>();
+		if ( item != nullptr && item->holder == holder )
+		{
+			SocketHandle socket = item->socket < m_schema.sockets.size() ? SocketHandle{ int( item->socket ) } : SocketHandle{};
+			out.push_back( { r.netId, ItemKindHandle{ int( item->kind ) }, item->stowed != 0, socket } );
+		}
+	}
+	return out;
 }
 
 int Context::LayerIndex( const std::string& layer ) const
@@ -840,6 +911,17 @@ void Context::PickUpItem( uint32_t holder, uint32_t item, SocketHandle socket )
 	c.target = holder;
 	c.other = item;
 	c.mode = uint8_t( socket.index );
+	Add( c );
+}
+
+void Context::PickUpStowed( uint32_t holder, uint32_t item, SocketHandle holster )
+{
+	SimCommand c;
+	c.type = CommandType::PickUpItem;
+	c.target = holder;
+	c.other = item;
+	c.mode = holster.Valid() ? uint8_t( holster.index ) : kNoSocket;
+	c.value = 1;
 	Add( c );
 }
 

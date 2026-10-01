@@ -209,6 +209,7 @@ public:
 	b3Vec3 SpawnPoint( PlayerSlot slot ) const;
 
 	// The item `holder` (a player's NetId) holds in `socket`, or 0.
+	// The item `holder` has in use in `socket` (stowed items are in nobody's hand), or 0.
 	uint32_t HeldItemOf( uint32_t holder, uint32_t socket ) const;
 
 	// The character's baked state machine (sim/anim_graph.h), compiled against the server's schema,

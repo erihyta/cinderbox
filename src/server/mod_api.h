@@ -137,6 +137,15 @@ inline ItemShape SphereItem( float radius, b3Vec3 center, float mass )
 	return { 1, { radius, radius, radius }, { center.x, center.y, center.z }, mass };
 }
 
+// An item a player carries, as CarriedItems finds it.
+struct CarriedItem
+{
+	uint32_t netId = 0;
+	ItemKindHandle kind;
+	bool stowed = false; // false: in use, in `socket`
+	SocketHandle socket; // invalid: stowed out of sight
+};
+
 // An item lying in the world, as ItemsNear finds it.
 struct WorldItem
 {
@@ -190,6 +199,9 @@ public:
 	// on what an item is like without knowing each other ("pickup.hold_seconds" = 0.5: the pickup
 	// mod makes players hold the key that long for it). The first value declared for a name is kept.
 	void ItemProperty( ItemKindHandle kind, const std::string& name, float value );
+	// The same for a socket ("inventory.holster" = Back: where the inventory mod hangs it while it is
+	// put away). Read with Context::ItemSocket.
+	void ItemProperty( ItemKindHandle kind, const std::string& name, SocketHandle socket );
 	// An animation pack in this mod's client item: its layers can replace a player's own of the same
 	// name (Context::SwapLayer). Name it like the mod's other names ("sneak.crouch").
 	AnimPackHandle AnimPack( const std::string& name );
@@ -395,6 +407,17 @@ public:
 	// the NetId HeldItem() gives, not ItemTarget: ItemTarget is resolved when the command runs, and
 	// another mod may have put its item in that socket in the same tick (a weapon swap).
 	void SpawnItem( uint32_t holder, ItemKindHandle kind, SocketHandle socket );
+	// The same, stowed: the player carries it without holding it (HoldItem takes it out). `holster`
+	// is the socket it is drawn in meanwhile; none: out of sight. Nothing is dropped for it.
+	void GiveItem( uint32_t holder, ItemKindHandle kind, SocketHandle holster = {} );
+	// Puts a held item away (in `holster`, or out of sight), or takes a carried one in use into
+	// `socket`. HoldItem does nothing when that socket has an item in use: stow that one first, in
+	// the same tick. Stowed items are in no hand: HeldItem, item layers and state machines do not see
+	// them; CarriedItems does.
+	void StowItem( uint32_t item, SocketHandle holster = {} );
+	void HoldItem( uint32_t item, SocketHandle socket );
+	// Everything the player in `slot` carries, in use and stowed, in NetId order.
+	std::vector<CarriedItem> CarriedItems( PlayerSlot slot ) const;
 	// Plays `pack`'s layer named `layer` ("Base") instead of the player's own, from its start; the
 	// layer's name is the character's (its AnimationTree's). Does nothing when the character has no
 	// such layer. The pose follows it everywhere, the server's hit tests too.
@@ -413,6 +436,8 @@ public:
 	uint32_t HeldItem( PlayerSlot slot, SocketHandle socket ) const;
 	// A number a mod declared about an item kind (Declarations::ItemProperty), or `fallback`.
 	float ItemProperty( ItemKindHandle kind, const std::string& name, float fallback ) const;
+	// A socket a mod declared about an item kind, or an invalid handle.
+	SocketHandle ItemSocket( ItemKindHandle kind, const std::string& name ) const;
 	void SetItemProperties( const std::map<std::pair<int, std::string>, float>* properties )
 	{
 		m_itemProperties = properties;
@@ -434,6 +459,8 @@ public:
 	// Into `holder`'s (SlotTarget) socket, from the world. Nothing happens when the socket is taken
 	// (drop what is there first, in the same tick) or the item is held already.
 	void PickUpItem( uint32_t holder, uint32_t item, SocketHandle socket );
+	// From the world straight to stowed, whatever the hands hold.
+	void PickUpStowed( uint32_t holder, uint32_t item, SocketHandle holster = {} );
 
 	// Commands emitted so far this tick (tests).
 	const std::vector<SimCommand>& Commands() const

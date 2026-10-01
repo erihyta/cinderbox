@@ -10,7 +10,7 @@ extends SceneTree
 ## the test's name, settings and recent servers out of the player's own file. Exit code 0 when
 ## everything held.
 ##
-## With a second server that runs other mods (cb_server --port 7792 --mods loadout,props) and
+## With a second server that runs other mods (cb_server --port 7792 --mods inventory,props) and
 ## --other-port=7792 --result=<abs file>, it then joins that one from the menu. The first server's
 ## workshop items cannot be unloaded, so the game must start again and join by itself; the restarted
 ## run finds itself here again (by its --host), checks that nothing of the first server is loaded,

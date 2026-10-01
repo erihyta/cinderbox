@@ -2,6 +2,7 @@
 //
 //   cb_net_tests [name]
 
+#include "detmath.h"
 #include "bot_brain.h"
 #include "anim_graph.h"
 #include "character_item.h"
@@ -891,66 +892,168 @@ void TestPickup()
 	}
 }
 
-// A slot gives its item once per life, and what is left lying expires. Slot 0 takes out the bat,
-// throws it, switches to its hands and back to the bat: no second bat. Two seconds later (the
-// expire mod's clock here) the thrown one is gone too.
+// The inventory: a life starts with a pistol (slot 2) and a bat (slot 3), carried but put away.
+// Switching slots moves items between the hand and stowed and never drops or makes one. Picking up
+// a bat that lies in the world while carrying one swaps them (the old one drops), leaves the pistol
+// alone, and brings the new bat into the hand; switching away from it and back keeps it. A thrown
+// bat leaves its slot empty: no second one this life. The number of items never changes.
 void TestInventory()
 {
-	Harness h( 47805, {}, {}, { { "expire.seconds", "2" } } );
+	Harness h( 47805, {}, {}, { { "pickup.spawn_each", "1" } } );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t hands = schema.ActionMask( "slot_1" );
-	uint16_t bat = schema.ActionMask( "slot_3" );
+	uint16_t gunSlot = schema.ActionMask( "slot_2" );
+	uint16_t batSlot = schema.ActionMask( "slot_3" );
+	uint16_t pickup = schema.ActionMask( "pickup" );
 	uint16_t drop = schema.ActionMask( "drop" );
-	CHECK( hands != 0 && bat != 0 && drop != 0 );
-	h.AddBot().script = [=]( uint32_t tick ) {
-		PlayerInput in;
-		if ( ( tick >= 100 && tick < 110 ) || ( tick >= 230 && tick < 240 ) )
+	int gunKind = schema.FindItemKind( "pistol.gun" );
+	int batKind = schema.FindItemKind( "melee.bat" );
+	const BoardField* slotField = schema.FindField( "inventory.slot" );
+	CHECK( gunSlot != 0 && batSlot != 0 && pickup != 0 && drop != 0 && gunKind >= 0 && batKind >= 0 && slotField != nullptr );
+	if ( gunKind < 0 || batKind < 0 || slotField == nullptr )
+	{
+		return;
+	}
+	Simulation& server = h.server.Sim();
+	struct Count
+	{
+		int lying = 0;
+		int carried = 0; // by `holder`
+		int stowed = 0;	 // of those
+		int total = 0;
+	};
+	auto count = [&]( uint32_t holder ) {
+		Count c;
+		for ( const Simulation::EntityRef& r : server.Entities() )
 		{
-			in.actions = bat;
+			const HeldItem* item = flecs::entity( server.World(), r.entity ).try_get<HeldItem>();
+			if ( item == nullptr )
+			{
+				continue;
+			}
+			c.total += 1;
+			c.lying += item->holder == 0 ? 1 : 0;
+			c.carried += holder != 0 && item->holder == holder ? 1 : 0;
+			c.stowed += holder != 0 && item->holder == holder && item->stowed != 0 ? 1 : 0;
 		}
-		else if ( tick >= 170 && tick < 175 )
+		return c;
+	};
+	auto kindOf = [&]( uint32_t netId ) {
+		const HeldItem* item = netId != 0 ? server.FindEntity( netId ).try_get<HeldItem>() : nullptr;
+		return item != nullptr ? int( item->kind ) : -1;
+	};
+	// The bat the pickup mod left lying at the start.
+	uint32_t lyingBat = 0;
+	bool reached = false;
+	h.AddBot().script = [&, gunSlot, batSlot, pickup, drop]( uint32_t tick ) {
+		PlayerInput in;
+		uint32_t me = server.PlayerNetId( h.bots[0].client->Slot() );
+		if ( ( tick >= 100 && tick < 110 ) || ( tick >= 560 && tick < 570 ) || ( tick >= 660 && tick < 670 ) )
+		{
+			in.actions = batSlot;
+		}
+		else if ( ( tick >= 150 && tick < 160 ) || ( tick >= 520 && tick < 530 ) || ( tick >= 630 && tick < 640 ) )
+		{
+			in.actions = gunSlot;
+		}
+		else if ( tick >= 600 && tick < 605 )
 		{
 			in.actions = drop;
 		}
-		else if ( tick >= 200 && tick < 210 )
+		else if ( tick >= 200 && tick < 500 && reached == false && me != 0 && lyingBat != 0 )
 		{
-			in.actions = hands;
+			// Walk to the lying bat, looking at it, pressing E in pulses (a bat takes holding).
+			const Transform* at = server.EntityTransform( me );
+			const Transform* to = server.EntityTransform( lyingBat );
+			if ( at != nullptr && to != nullptr )
+			{
+				float dx = to->position.x - at->position.x;
+				float dz = to->position.z - at->position.z;
+				in.cameraYaw = detmath::RadiansToYaw( std::atan2( dx, dz ) );
+				in.moveForward = dx * dx + dz * dz > 0.8f * 0.8f ? 127 : 0;
+				in.actions = ( tick % 60 ) < 50 ? pickup : 0;
+			}
 		}
 		return in;
 	};
 	h.RunUntil( 1.0 );
 	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; };
 
-	Simulation& server = h.server.Sim();
-	auto items = [&]( bool lying ) {
-		int n = 0;
-		for ( const Simulation::EntityRef& r : server.Entities() )
-		{
-			const HeldItem* item = flecs::entity( server.World(), r.entity ).try_get<HeldItem>();
-			n += item != nullptr && ( item->holder == 0 ) == lying ? 1 : 0;
-		}
-		return n;
-	};
-	bool heldFirst = false;
+	bool startsStowed = false;
+	bool batOut = false;
+	bool gunOut = false;
+	bool droppedBySwitching = false;
+	bool swapped = false;
+	bool gunKept = false;
+	bool awayAndKept = false;
+	bool backInHand = false;
 	bool thrown = false;
-	bool heldSecond = false;
-	int mostItems = 0;
-	h.RunUntil( 8.0, [&]( double ) {
+	bool noSecondBat = false;
+	bool gunAfterThrow = false;
+	uint32_t ownBat = 0;
+	int startTotal = 0;
+	int leastTotal = 1000;
+	int mostTotal = 0;
+	h.RunUntil( 12.5, [&]( double ) {
 		uint32_t tick = server.Tick();
 		uint32_t me = server.PlayerNetId( h.bots[0].client->Slot() );
-		bool inHand = server.HeldItemOf( me, kSocketRightHand ) != 0;
-		heldFirst |= inHand && tick < 170;
-		thrown |= heldFirst && inHand == false && items( true ) == 1 && tick > 175 && tick < 200;
-		heldSecond |= inHand && tick > 245; // slot 3 again, after throwing its bat away
-		mostItems = std::max( mostItems, items( true ) + items( false ) );
+		if ( me == 0 )
+		{
+			return;
+		}
+		uint32_t inHand = server.HeldItemOf( me, kSocketRightHand );
+		Count c = count( me );
+		if ( tick > 80 )
+		{
+			startTotal = startTotal == 0 ? c.total : startTotal;
+			leastTotal = std::min( leastTotal, c.total );
+			mostTotal = std::max( mostTotal, c.total );
+		}
+		if ( lyingBat == 0 )
+		{
+			for ( const Simulation::EntityRef& r : server.Entities() )
+			{
+				const HeldItem* item = flecs::entity( server.World(), r.entity ).try_get<HeldItem>();
+				lyingBat = item != nullptr && item->holder == 0 && int( item->kind ) == batKind ? r.netId : lyingBat;
+			}
+		}
+		startsStowed |= tick > 80 && tick < 100 && inHand == 0 && c.carried == 2 && c.stowed == 2 && c.lying == 2;
+		if ( tick > 130 && tick < 150 && kindOf( inHand ) == batKind )
+		{
+			batOut = c.carried == 2 && c.stowed == 1;
+			ownBat = inHand;
+		}
+		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == 2 && c.stowed == 1;
+		droppedBySwitching |= tick > 100 && tick < 200 && c.lying != 2;
+		// The lying bat is in the hand: the swap happened.
+		if ( inHand == lyingBat && lyingBat != 0 && tick < 520 )
+		{
+			reached = true;
+			const HeldItem* old = ownBat != 0 ? server.FindEntity( ownBat ).try_get<HeldItem>() : nullptr;
+			swapped |= old != nullptr && old->holder == 0 && c.lying == 2;
+			gunKept |= c.carried == 2 && c.stowed == 1;
+		}
+		// Slot 2 and back to 3: the picked-up bat is put away and taken out, never dropped.
+		const HeldItem* mine = lyingBat != 0 ? server.FindEntity( lyingBat ).try_get<HeldItem>() : nullptr;
+		awayAndKept |= tick > 545 && tick < 560 && kindOf( inHand ) == gunKind && mine != nullptr && mine->holder == me && mine->stowed != 0 &&
+					   c.lying == 2;
+		backInHand |= tick > 585 && tick < 600 && inHand == lyingBat && reached;
+		thrown |= tick > 610 && tick < 630 && inHand == 0 && c.carried == 1 && c.lying == 3;
+		gunAfterThrow |= tick > 645 && tick < 660 && kindOf( inHand ) == gunKind;
+		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 1 && server.BoardValue( me, slotField->slot ) == 3;
 	} );
 	h.Report();
-	std::printf( "    held %d, thrown %d, a second bat %d, most items at once %d, left lying at the end %d\n", int( heldFirst ),
-				 int( thrown ), int( heldSecond ), mostItems, items( true ) );
-	CHECK( heldFirst && thrown );
-	CHECK( heldSecond == false ); // one bat per life
-	CHECK( mostItems == 1 );
-	CHECK( items( true ) == 0 ); // the thrown one expired
+	std::printf( "    starts stowed %d, bat out %d, pistol out %d, dropped by switching %d\n", int( startsStowed ), int( batOut ), int( gunOut ),
+				 int( droppedBySwitching ) );
+	std::printf( "    picked up the lying bat %d: old bat dropped %d, pistol kept %d; put away and kept %d, out again %d\n", int( reached ),
+				 int( swapped ), int( gunKept ), int( awayAndKept ), int( backInHand ) );
+	std::printf( "    thrown %d, pistol after %d, no second bat %d; items %d at the start, %d to %d throughout\n", int( thrown ),
+				 int( gunAfterThrow ), int( noSecondBat ), startTotal, leastTotal, mostTotal );
+	CHECK( startsStowed && batOut && gunOut );
+	CHECK( droppedBySwitching == false );
+	CHECK( reached && swapped && gunKept );
+	CHECK( awayAndKept && backInHand );
+	CHECK( thrown && gunAfterThrow && noSecondBat );
+	CHECK( startTotal == 6 && leastTotal == 6 && mostTotal == 6 ); // two lying, two per player; none made, none lost
 	for ( Bot& b : h.bots )
 	{
 		CHECK( b.client->GetStats().desyncs == 0 );
@@ -1168,7 +1271,7 @@ void TestHeadshot()
 		in.cameraYaw = 16384;
 		in.cameraPitch = -1040;
 		in.actions = pistol;
-		if ( tick > 200 && ( tick % 20 ) < 3 ) // once the target has landed
+		if ( tick > 200 && tick < 300 && ( tick % 20 ) < 3 ) // once the target has landed, until it is down
 		{
 			in.actions |= fire;
 		}
@@ -1180,7 +1283,37 @@ void TestHeadshot()
 	std::map<uint32_t, int32_t> damageByTick;
 	// Only the player hits: the pistol also reports a wall or the ground as a hit, with 0 damage.
 	const uint32_t shooterId = h.server.Sim().PlayerNetId( h.bots[0].client->Slot() );
-	h.RunUntil( 5.0, [&]( double ) {
+	// The inventory at a death: what the life started with is taken back (nothing is left lying),
+	// and the next life gets its own.
+	int deadTicks = 0;
+	int carriedWhileDead = 0;
+	int mostLying = 0;
+	bool wasDead = false;
+	bool newLifeHasItems = false;
+	h.RunUntil( 9.0, [&]( double ) {
+		Simulation& sim = h.server.Sim();
+		uint32_t victim = sim.PlayerNetId( h.bots[1].client->Slot() );
+		const Character* body = sim.PlayerCharacter( h.bots[1].client->Slot() );
+		int carried = 0;
+		int lying = 0;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+			carried += item != nullptr && item->holder == victim ? 1 : 0;
+			lying += item != nullptr && item->holder == 0 ? 1 : 0;
+		}
+		mostLying = std::max( mostLying, lying );
+		if ( body != nullptr && body->dead != 0 )
+		{
+			deadTicks += 1;
+			wasDead = true;
+			carriedWhileDead = deadTicks > 3 ? std::max( carriedWhileDead, carried ) : carriedWhileDead;
+		}
+		else
+		{
+			deadTicks = 0;
+			newLifeHasItems |= wasDead && carried == 2;
+		}
 		const SimGlobals& g = h.server.Sim().Globals();
 		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
 		{
@@ -1205,6 +1338,9 @@ void TestHeadshot()
 	Simulation& server = h.server.Sim();
 	uint32_t targetId = server.PlayerNetId( h.bots[1].client->Slot() );
 	CHECK( server.BoardValue( targetId, schema.FindField( "combat.deaths" )->slot ) >= 1 );
+	std::printf( "    died %d: carried while dead %d, most left lying %d, the next life has its items %d\n", int( wasDead ), carriedWhileDead,
+				 mostLying, int( newLifeHasItems ) );
+	CHECK( wasDead && carriedWhileDead == 0 && mostLying == 0 && newLifeHasItems );
 	for ( Bot& b : h.bots )
 	{
 		CHECK( b.client->GetStats().desyncs == 0 );

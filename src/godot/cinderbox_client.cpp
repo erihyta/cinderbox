@@ -867,6 +867,13 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 	Node3D* socket = SocketNode( v.holder, v.socket );
 	if ( socket == nullptr )
 	{
+		// Stowed out of sight (or this character has no such socket): the hand's "Item" is free for
+		// what is taken out next, and the item stays under its holder, so "^^" is still the holder.
+		if ( String( node->get_name() ) == String( "Item" ) )
+		{
+			node->set_name( "Stowed_" + String::num_int64( int64_t( v.netId ) ) );
+			ItemsChanged( v.holder );
+		}
 		node->set_visible( false );
 		return;
 	}
@@ -1458,7 +1465,8 @@ void CinderboxClient::RefreshHeldKinds()
 	}
 	m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
 							const present::RagdollAnim* ) {
-		if ( v.kind == present::VisualKind::Item && v.holder != 0 )
+		// In use only: a holstered pistol does not show its HUD.
+		if ( v.kind == present::VisualKind::Item && v.holder != 0 && v.stowed == false )
 		{
 			m_heldKinds[v.holder].push_back( v.itemKind );
 		}
