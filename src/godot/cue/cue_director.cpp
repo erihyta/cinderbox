@@ -1,5 +1,6 @@
 #include "cue_director.h"
 
+#include "cue_guard.h"
 #include "cue_reaction.h"
 
 #include <godot_cpp/classes/time.hpp>
@@ -26,6 +27,8 @@ void CbDirector::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "explain", "name", "at", "other", "args" ), &CbDirector::explain, DEFVAL( Variant() ),
 						  DEFVAL( Dictionary() ) );
 	ClassDB::bind_method( D_METHOD( "update" ), &CbDirector::update );
+	ClassDB::bind_static_method( "CbDirector", D_METHOD( "check_scene", "scene" ), &CbDirector::check_scene );
+	ClassDB::bind_static_method( "CbDirector", D_METHOD( "instantiate", "scene" ), &CbDirector::instantiate );
 	ClassDB::bind_method( D_METHOD( "set_auto_update", "value" ), &CbDirector::set_auto_update );
 	ClassDB::bind_method( D_METHOD( "get_auto_update" ), &CbDirector::get_auto_update );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "auto_update" ), "set_auto_update", "get_auto_update" );
@@ -33,6 +36,16 @@ void CbDirector::_bind_methods()
 	// A reaction shook the camera or flashed the screen: the viewer's, so the game applies it.
 	ADD_SIGNAL( MethodInfo( "screen_effect", PropertyInfo( Variant::FLOAT, "shake" ), PropertyInfo( Variant::FLOAT, "shake_time" ),
 							PropertyInfo( Variant::COLOR, "flash_color" ), PropertyInfo( Variant::FLOAT, "flash_time" ) ) );
+}
+
+String CbDirector::check_scene( const Ref<PackedScene>& scene )
+{
+	return cue::CheckScene( scene );
+}
+
+Node* CbDirector::instantiate( const Ref<PackedScene>& scene )
+{
+	return cue::Instantiate( scene );
 }
 
 void CbDirector::add_entity( Node* node, const String& kind, const String& template_name, int64_t id )

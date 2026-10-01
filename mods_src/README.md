@@ -21,6 +21,17 @@ The game checks each pack before it loads it, against an allowlist. A pack is re
 - a resource is compressed (its contents could not be checked);
 - a resource names a script type (`GDScript`, `Script`, `GDExtension`, ...) or a script file (`.gd`, `.cs`).
 
+A scene is checked again before the game uses it, and is not used if it has:
+- a node of a class that is not listed (the list is in `src/godot/cue/cue_guard.cpp`: meshes,
+  particles, lights, sounds, skeletons, animation, UI controls and the `Cb*` nodes; not an
+  `HTTPRequest`, a `Window`, a `Camera3D`, a `Timer`, a viewport);
+- a signal connected to a method (Node dock, Signals);
+- a node path that climbs out of the scene, or starts at the root;
+- an animation whose method track calls anything but `restart`, `play`, `stop`, `show`, `hide` and
+  the like, or whose track path contains `..`.
+
+An `AnimationTree`'s advance expressions are cleared in the game: use advance conditions.
+
 The mod projects' own settings and caches (`project.binary`, `uid_cache.bin`) are removed by the pack
 tool, so a mod never replaces the game's project settings.
 

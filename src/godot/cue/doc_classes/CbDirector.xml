@@ -9,6 +9,20 @@
 	<tutorials>
 	</tutorials>
 	<methods>
+		<method name="check_scene" qualifiers="static">
+			<return type="String" />
+			<param index="0" name="scene" type="PackedScene" />
+			<description>
+				Why a scene must not be used, or an empty string when it may: a look is made of listed node classes and data only. It is refused for a node class that is not listed, a script, a signal connection, a node path that leaves the scene, or an animation that calls an unlisted method.
+			</description>
+		</method>
+		<method name="instantiate" qualifiers="static">
+			<return type="Node" />
+			<param index="0" name="scene" type="PackedScene" />
+			<description>
+				An instance of the scene, or [code]null[/code] (with a warning) when [method check_scene] refuses it. Use it for every scene a mod can replace.
+			</description>
+		</method>
 		<method name="add_entity">
 			<return type="void" />
 			<param index="0" name="node" type="Node" />

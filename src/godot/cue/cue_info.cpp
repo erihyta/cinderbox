@@ -62,7 +62,8 @@ const Info kReactionInfo[] = {
 	  "[b]value[/b]: what it becomes. A While puts the old value back when it ends.\n"
 	  "[b]blend_time[/b]: fade to it instead (numbers, vectors, colours).\n"
 	  "[b]method + method_args[/b]: restart · play [\"slash\"] · set_visible [false]\n"
-	  "Refused: anything that removes nodes, changes scripts or calls something else by name." },
+	  "Only listed methods are called (restart, play, stop, show, hide, set_visible, set_emitting, ...): use property for "
+	  "anything else. Never a script or metadata." },
 	{ "Scene", "Add a scene: particles, a decal, a light.",
 	  "[b]scene[/b]: any .tscn.\n"
 	  "[b]scene_parent[/b]: where it goes (default: next to this reaction; see Place).\n"

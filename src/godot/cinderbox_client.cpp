@@ -5,6 +5,7 @@
 #include "cinderbox_character.h"
 #include "cinderbox_companion.h"
 #include "cinderbox_skeleton.h"
+#include "cue_guard.h"
 #include "detmath.h"
 #include "object_source.h"
 #include "pose_tools.h"
@@ -1147,7 +1148,13 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 	Node3D* node = nullptr;
 	if ( prefab.is_valid() )
 	{
-		node = Object::cast_to<Node3D>( prefab->instantiate() );
+		// (A scene the guard refuses is not drawn: an empty node stands in, like a missing prefab.)
+		Node* instance = cue::Instantiate( prefab );
+		node = Object::cast_to<Node3D>( instance );
+		if ( node == nullptr && instance != nullptr )
+		{
+			memdelete( instance );
+		}
 	}
 	if ( node == nullptr )
 	{
@@ -1392,6 +1399,13 @@ String CinderboxClient::use_character( const String& name )
 	if ( folder.is_empty() == false && ResourceLoader::get_singleton()->exists( folder + "companion.tres" ) )
 	{
 		m_companionLibrary = ResourceLoader::get_singleton()->load( folder + "companion.tres", "AnimationLibrary" );
+		// Its method tracks call methods on the character's nodes: only listed ones.
+		String problem = cue::CheckResource( m_companionLibrary );
+		if ( problem.is_empty() == false )
+		{
+			UtilityFunctions::push_warning( "Cinderbox: ", folder, "companion.tres is not played: it has ", problem );
+			m_companionLibrary.unref();
+		}
 	}
 	m_animSet = set;
 	std::string stanceWarnings;
@@ -1912,10 +1926,15 @@ void CinderboxClient::UpdateMapVisual()
 		return;
 	}
 	Ref<PackedScene> scene = ResourceLoader::get_singleton()->load( path );
-	Node3D* node = scene.is_valid() ? Object::cast_to<Node3D>( scene->instantiate() ) : nullptr;
+	Node* instance = cue::Instantiate( scene );
+	Node3D* node = Object::cast_to<Node3D>( instance );
 	if ( node == nullptr )
 	{
-		UtilityFunctions::push_warning( "Cinderbox: cannot instantiate ", path );
+		if ( instance != nullptr )
+		{
+			memdelete( instance );
+		}
+		UtilityFunctions::push_warning( "Cinderbox: cannot use ", path, ", drawing collision boxes" );
 		return;
 	}
 	node->set_name( "Map" );

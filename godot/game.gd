@@ -128,9 +128,10 @@ func _ready() -> void:
 	_load_reactions()
 	_make_flash_overlay()
 
-	var hud_scene: PackedScene = load("res://ui/hud.tscn")
-	if hud_scene:
-		hud = hud_scene.instantiate()
+	# Everything a mod can replace goes through the guard (CbDirector.instantiate): a scene with
+	# anything but listed node classes and data is refused, and null comes back.
+	hud = CbDirector.instantiate(load("res://ui/hud.tscn") as PackedScene)
+	if hud:
 		add_child(hud)
 
 	menu = Menu.new()
@@ -444,8 +445,8 @@ func _reload_presentation() -> void:
 	names.sort()
 	for file in names:
 		var scene := ResourceLoader.load("res://ui/%s" % file, "PackedScene", ResourceLoader.CACHE_MODE_REPLACE) as PackedScene
-		if scene:
-			var node := scene.instantiate()
+		var node := CbDirector.instantiate(scene)
+		if node:
 			add_child(node)
 			_item_huds.append(node)
 	print("item HUDs: ", names)
@@ -673,7 +674,9 @@ func _load_reactions() -> void:
 		if scene == null:
 			push_warning("vfx/%s is not a scene" % file)
 			continue
-		client.add_world_scene(scene.instantiate())
+		var reactions := CbDirector.instantiate(scene)
+		if reactions:
+			client.add_world_scene(reactions)
 	print("world reactions: ", names)
 
 

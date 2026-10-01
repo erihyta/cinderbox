@@ -36,7 +36,11 @@ func _ready() -> void:
 	if packed == null:
 		push_warning("res://ui/menu.tscn is missing: no menus")
 		return
-	_scene = packed.instantiate()
+	# (Through the guard, like every scene a mod can replace.)
+	_scene = CbDirector.instantiate(packed)
+	if _scene == null:
+		push_warning("res://ui/menu.tscn was refused: no menus")
+		return
 	add_child(_scene)
 	_press("Join", _on_join)
 	_press("Quit", func(): quit_requested.emit())
