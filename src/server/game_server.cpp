@@ -51,6 +51,7 @@ bool GameServer::Start( const ServerOptions& options )
 	m_schema = declarations.Schema();
 	m_schema.items = options.items;
 	m_itemProperties = declarations.ItemProperties();
+	m_itemLayers = declarations.ItemLayersByKind();
 	// Item bodies authored in Godot (baked into the declaring mod's item) replace declared ones.
 	for ( size_t kind = 0; kind < m_schema.itemKinds.size() && options.loadItemShape; ++kind )
 	{
@@ -639,11 +640,14 @@ void GameServer::RunMods( InputFrame& frame )
 	mods::Context ctx( *m_sim, m_schema, frame, m_lastInputs, *m_modWorld, m_modRng );
 	ctx.SetOptions( &m_options.modOptions );
 	ctx.SetItemProperties( &m_itemProperties );
+	ctx.SetLayers( &m_layerWishes, &m_itemLayers );
 	ctx.SetHitTester( m_hits.get() );
 	for ( const auto& mod : m_mods )
 	{
 		mod->Tick( ctx );
 	}
+	// Layers: what mods asked for, then what held items bring.
+	ctx.ResolveLayers();
 	// Whatever the mods produced, clients must be able to apply exactly the same list.
 	frame.commands.erase( std::remove_if( frame.commands.begin(), frame.commands.end(),
 										  []( const SimCommand& c ) { return IsSendableCommand( c ) == false; } ),

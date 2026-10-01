@@ -195,6 +195,8 @@ private:
 	std::shared_ptr<const AnimGraph> m_animGraph;
 	AnimGraphPacks m_animPacks;
 	std::map<std::pair<int, std::string>, float> m_itemProperties; // what mods declared about item kinds
+	std::map<int, int> m_itemLayers;							   // item kind -> the animation pack it brings
+	mods::LayerWishes m_layerWishes;
 	uint64_t m_modRng = 0;
 };
 

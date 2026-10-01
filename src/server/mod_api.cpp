@@ -160,6 +160,16 @@ ItemKindHandle Declarations::ItemKind( const std::string& name, const ItemShape&
 	return handle;
 }
 
+void Declarations::ItemLayers( ItemKindHandle kind, AnimPackHandle pack )
+{
+	if ( kind.Valid() == false || pack.Valid() == false )
+	{
+		m_errors.push_back( m_mod + ": item layers need an item kind and an animation pack" );
+		return;
+	}
+	m_itemLayers.emplace( kind.index, pack.index ); // the first one stays
+}
+
 void Declarations::ItemProperty( ItemKindHandle kind, const std::string& name, float value )
 {
 	if ( kind.Valid() == false || name.empty() )
@@ -590,42 +600,128 @@ void Context::SpawnItem( uint32_t holder, ItemKindHandle kind, SocketHandle sock
 	Add( c );
 }
 
-void Context::SwapLayer( uint32_t target, AnimPackHandle pack, const std::string& layer )
-{
-	const AnimGraph* graph = m_sim.Graph();
-	if ( graph == nullptr || pack.Valid() == false )
-	{
-		return;
-	}
-	for ( size_t l = 0; l < graph->layers.size() && l < size_t( kMaxAnimLayers ); ++l )
-	{
-		if ( graph->layers[l].name == layer )
-		{
-			SimCommand c;
-			c.type = CommandType::SwapLayer;
-			c.target = target;
-			c.index = uint16_t( l );
-			c.value = pack.index + 1;
-			Add( c );
-			return;
-		}
-	}
-}
-
-void Context::RestoreLayer( uint32_t target, const std::string& layer )
+int Context::LayerIndex( const std::string& layer ) const
 {
 	const AnimGraph* graph = m_sim.Graph();
 	for ( size_t l = 0; graph != nullptr && l < graph->layers.size() && l < size_t( kMaxAnimLayers ); ++l )
 	{
 		if ( graph->layers[l].name == layer )
 		{
-			SimCommand c;
-			c.type = CommandType::SwapLayer;
-			c.target = target;
-			c.index = uint16_t( l );
-			c.value = 0;
-			Add( c );
-			return;
+			return int( l );
+		}
+	}
+	return -1;
+}
+
+int Context::SlotOfTarget( uint32_t target ) const
+{
+	if ( target & kSlotTargetBit )
+	{
+		uint32_t slot = target & ~kSlotTargetBit;
+		return slot < uint32_t( kMaxPlayers ) ? int( slot ) : -1;
+	}
+	return SlotOf( target );
+}
+
+void Context::SwapLayer( uint32_t target, AnimPackHandle pack, const std::string& layer )
+{
+	int l = LayerIndex( layer );
+	if ( l < 0 || pack.Valid() == false )
+	{
+		return;
+	}
+	int slot = SlotOfTarget( target );
+	if ( m_layerWishes != nullptr && slot >= 0 )
+	{
+		m_layerWishes->mod[slot][l] = uint8_t( pack.index + 1 ); // ResolveLayers sends it
+		return;
+	}
+	SimCommand c;
+	c.type = CommandType::SwapLayer;
+	c.target = target;
+	c.index = uint16_t( l );
+	c.value = pack.index + 1;
+	Add( c );
+}
+
+void Context::RestoreLayer( uint32_t target, const std::string& layer )
+{
+	int l = LayerIndex( layer );
+	if ( l < 0 )
+	{
+		return;
+	}
+	int slot = SlotOfTarget( target );
+	if ( m_layerWishes != nullptr && slot >= 0 )
+	{
+		m_layerWishes->mod[slot][l] = 0;
+		return;
+	}
+	SimCommand c;
+	c.type = CommandType::SwapLayer;
+	c.target = target;
+	c.index = uint16_t( l );
+	c.value = 0;
+	Add( c );
+}
+
+void Context::ResolveLayers()
+{
+	const AnimGraph* graph = m_sim.Graph();
+	if ( m_layerWishes == nullptr || graph == nullptr )
+	{
+		return;
+	}
+	const auto& packs = m_sim.Packs();
+	size_t layers = std::min( graph->layers.size(), size_t( kMaxAnimLayers ) );
+	for ( int slot = 0; slot < kMaxPlayers; ++slot )
+	{
+		if ( Joining( PlayerSlot( slot ) ) || Leaving( PlayerSlot( slot ) ) )
+		{
+			// A new player starts on its own layers.
+			for ( uint8_t& wish : m_layerWishes->mod[slot] )
+			{
+				wish = 0;
+			}
+		}
+		uint32_t netId = m_sim.PlayerNetId( PlayerSlot( slot ) );
+		const AnimState* anim = netId != 0 ? m_sim.EntityAnimState( netId ) : nullptr;
+		if ( anim == nullptr )
+		{
+			continue;
+		}
+		// What its held items bring: the first socket's item that has that layer wins.
+		uint8_t fromItems[kMaxAnimLayers] = {};
+		for ( size_t socket = 0; m_itemLayers != nullptr && socket < m_schema.sockets.size(); ++socket )
+		{
+			uint32_t item = m_sim.HeldItemOf( netId, uint32_t( socket ) );
+			auto brings = item != 0 ? m_itemLayers->find( ItemKindOf( item ).index ) : m_itemLayers->end();
+			if ( brings == m_itemLayers->end() || size_t( brings->second ) >= packs.size() || packs[size_t( brings->second )] == nullptr )
+			{
+				continue;
+			}
+			for ( const AnimGraphLayer& packLayer : packs[size_t( brings->second )]->layers )
+			{
+				int l = LayerIndex( packLayer.name );
+				if ( l >= 0 && fromItems[l] == 0 )
+				{
+					fromItems[l] = uint8_t( brings->second + 1 );
+				}
+			}
+		}
+		// A mod's wish first, then the item's; a command only where what plays would change.
+		for ( size_t l = 0; l < layers; ++l )
+		{
+			uint8_t wanted = m_layerWishes->mod[slot][l] != 0 ? m_layerWishes->mod[slot][l] : fromItems[l];
+			if ( anim->graph[l].source != wanted )
+			{
+				SimCommand c;
+				c.type = CommandType::SwapLayer;
+				c.target = SlotTarget( PlayerSlot( slot ) );
+				c.index = uint16_t( l );
+				c.value = wanted;
+				Add( c );
+			}
 		}
 	}
 }

@@ -146,6 +146,14 @@ struct WorldItem
 	float distance = 0.0f;
 };
 
+// What mods asked each player's layers to play (SwapLayer; 0: nothing asked), kept by the server
+// between ticks. The layer that plays is the mod's wish, else what a held item brings, else the
+// player's own (Context::ResolveLayers).
+struct LayerWishes
+{
+	uint8_t mod[kMaxPlayers][kMaxAnimLayers] = {};
+};
+
 // The item the player in `slot` holds in `socket`, as a command target (SetField, Emit, Destroy).
 inline uint32_t ItemTarget( PlayerSlot slot, SocketHandle socket )
 {
@@ -174,6 +182,10 @@ public:
 	// without a look. A body baked from the item's scene (a CbItemBody, items/<kind>.cfg in the mod's
 	// item) replaces it; with neither it is a small box. The first shape declared for a kind is kept.
 	ItemKindHandle ItemKind( const std::string& name, const ItemShape& shape );
+	// While a player holds an item of `kind`, `pack`'s layers play instead of the player's own of the
+	// same names: a bat that changes how its holder stands and walks, wherever the bat came from.
+	// A mod's own SwapLayer on such a layer wins while it lasts (a crouch over a carry).
+	void ItemLayers( ItemKindHandle kind, AnimPackHandle pack );
 	// A named number about an item kind that any mod may read (Context::ItemProperty): how mods agree
 	// on what an item is like without knowing each other ("pickup.hold_seconds" = 0.5: the pickup
 	// mod makes players hold the key that long for it). The first value declared for a name is kept.
@@ -202,8 +214,13 @@ private:
 	std::vector<bool> m_shapeDeclared; // per item kind: a mod gave it a shape
 	std::vector<std::vector<std::string>> m_itemMods; // per item kind: the mods that declared it
 	std::map<std::pair<int, std::string>, float> m_itemProperties;
+	std::map<int, int> m_itemLayers; // item kind -> animation pack
 
 public:
+	const std::map<int, int>& ItemLayersByKind() const
+	{
+		return m_itemLayers;
+	}
 	const std::map<std::pair<int, std::string>, float>& ItemProperties() const
 	{
 		return m_itemProperties;
@@ -382,8 +399,16 @@ public:
 	// layer's name is the character's (its AnimationTree's). Does nothing when the character has no
 	// such layer. The pose follows it everywhere, the server's hit tests too.
 	void SwapLayer( uint32_t target, AnimPackHandle pack, const std::string& layer );
-	// The player's own layer again.
+	// The player's own layer again (or the one a held item brings).
 	void RestoreLayer( uint32_t target, const std::string& layer );
+	// The server's: where mods' swaps are kept, and which packs items bring. After every mod has
+	// ticked, ResolveLayers turns both into SwapLayer commands for the layers that change.
+	void SetLayers( LayerWishes* wishes, const std::map<int, int>* itemLayers )
+	{
+		m_layerWishes = wishes;
+		m_itemLayers = itemLayers;
+	}
+	void ResolveLayers();
 	// The NetId of what the player in `slot` holds in `socket` (as of the start of this tick), or 0.
 	uint32_t HeldItem( PlayerSlot slot, SocketHandle socket ) const;
 	// A number a mod declared about an item kind (Declarations::ItemProperty), or `fallback`.
@@ -427,6 +452,12 @@ private:
 	uint64_t& m_rng;
 	const std::map<std::string, std::string>* m_options = nullptr;
 	const std::map<std::pair<int, std::string>, float>* m_itemProperties = nullptr;
+	LayerWishes* m_layerWishes = nullptr;
+	const std::map<int, int>* m_itemLayers = nullptr;
+	// Which layer of the character `layer` names, and whose slot `target` is (-1: neither a slot nor
+	// a player).
+	int LayerIndex( const std::string& layer ) const;
+	int SlotOfTarget( uint32_t target ) const;
 	HitTester* m_hits = nullptr;
 };
 
