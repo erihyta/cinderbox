@@ -247,8 +247,8 @@ func _after_restart() -> void:
 			problems.append("items of the first server are loaded")
 		if _menu().is_open():
 			problems.append("the menu is open")
-		if _game().peer.port != _other_port:
-			problems.append("joined port %d" % _game().peer.port)
+		if _game()._link.port != _other_port:
+			problems.append("joined port %d" % _game()._link.port)
 		var recent: Array = _menu().recent_servers()
 		if recent.size() != 2 or recent[0]["address"] != "127.0.0.1:%d" % _other_port:
 			problems.append("recent servers are %s" % str(recent))

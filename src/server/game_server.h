@@ -16,6 +16,7 @@
 #include "transport.h"
 
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <memory>
 #include <functional>
@@ -47,6 +48,8 @@ struct ServerOptions
 	// ones (present/view_codec.h): together, what a stream would carry.
 	uint32_t recordViewRate = 0;
 	bool recordViewCompact = false;
+	// Frames a second sent to clients that do not simulate (streaming clients).
+	uint32_t streamRate = 20;
 	// The workshop items clients need for the mods this server runs (announced, never sent).
 	std::vector<ModItem> items;
 	// The character everyone plays as (null: the built-in rig). Its item must be in `items`.
@@ -107,6 +110,9 @@ public:
 		uint64_t snapshotsSent = 0; // welcomes: joins, reconnects and desync recoveries
 		uint64_t batchesSent = 0;
 		uint64_t framesSent = 0;	 // frames inside batches (resends included)
+		uint64_t viewsSent = 0;		 // frames sent to streaming clients
+		uint64_t viewBytes = 0;		 // their packets, before ENet's headers
+		uint64_t viewsWhole = 0;	 // of them, the ones that stood alone
 		uint64_t ackTooOld = 0;		 // clients that fell out of the frame history and got a snapshot
 		uint64_t resyncRequests = 0;
 		uint64_t joins = 0;
@@ -156,11 +162,27 @@ private:
 			PlayerInput input{};
 		};
 		Slot inputs[kInputBuffer];
+
+		// A streaming client: it does not simulate, it is sent frames to draw.
+		bool stream = false;
+		PlayerInput streamInput{};	 // its newest
+		uint8_t streamButtons = 0;	 // presses since the last tick, so a short one still counts
+		uint16_t streamActions = 0;
+		uint64_t streamAck = 0;		 // the newest frame it says it has
+		uint64_t streamSerial = 0;	 // the last frame sent to it
+		double streamWholeAt = -1e9; // when it was last sent a whole frame
+		std::deque<present::ViewFrame> streamSent; // the frames it may still name as a base
 	};
 
 	void HandleEvent( const net::NetEvent& ev, double now );
 	void HandleHello( net::PeerId peer, const net::MsgHello& hello, double now );
 	void HandleInput( Client& client, const net::MsgInput& msg );
+	// Streaming clients: the frame each is shown (what the mods let it see), as a packet against
+	// the frame it acknowledged.
+	void SendViews( double now );
+	bool Visible( mods::Context& ctx, PlayerSlot viewer, uint32_t netId );
+	present::ViewFrame m_streamFrame; // this tick's, before anyone's view of it
+	std::vector<uint8_t> m_packet;
 	Client* FindByPeer( net::PeerId peer );
 	void Reject( net::PeerId peer, const std::string& reason );
 	void RunTick( double now );

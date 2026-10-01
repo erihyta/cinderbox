@@ -2,7 +2,6 @@
 
 #include "live_source.h"
 #include "replay_source.h"
-#include "view_codec.h"
 
 #include <godot_cpp/core/class_db.hpp>
 
@@ -60,10 +59,7 @@ void CinderboxPeer::_bind_methods()
 void CinderboxPeer::Start( std::unique_ptr<present::ViewSource> source )
 {
 	m_source.reset();
-	m_frames[0] = present::ViewFrame();
-	m_frames[1] = present::ViewFrame();
-	m_current = 0;
-	m_haveBase = false;
+	m_handoff.Reset();
 	m_source = std::move( source );
 }
 
@@ -96,35 +92,7 @@ bool CinderboxPeer::is_running() const
 
 PackedByteArray CinderboxPeer::take( bool whole )
 {
-	PackedByteArray out;
-	if ( !m_source )
-	{
-		return out;
-	}
-	// A source hands a frame over once. A viewer that asks for a whole one (it is new, or it lost
-	// its place) gets the newest frame again, standing alone.
-	present::ViewFrame& next = m_frames[1 - m_current];
-	next.serial = m_frames[m_current].serial;
-	bool fresh = m_source->Take( next );
-	if ( fresh )
-	{
-		const present::ViewFrame* base = m_haveBase && whole == false ? &m_frames[m_current] : nullptr;
-		present::EncodeView( next, base, present::ViewClock() - next.publishedAt, m_bytes );
-		m_current = 1 - m_current;
-		m_haveBase = true;
-	}
-	else if ( whole && m_haveBase )
-	{
-		const present::ViewFrame& again = m_frames[m_current];
-		present::EncodeView( again, nullptr, present::ViewClock() - again.publishedAt, m_bytes );
-	}
-	else
-	{
-		return out;
-	}
-	out.resize( int64_t( m_bytes.size() ) );
-	std::memcpy( out.ptrw(), m_bytes.data(), m_bytes.size() );
-	return out;
+	return m_source ? m_handoff.Take( *m_source, whole ) : PackedByteArray();
 }
 
 bool CinderboxPeer::takes_input() const

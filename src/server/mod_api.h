@@ -500,6 +500,14 @@ public:
 	virtual void Start( Context& ) {}
 	// Every tick, before the simulation steps.
 	virtual void Tick( Context& ctx ) = 0;
+	// Whether the player in `viewer` is shown the entity `netId`, asked for every entity of every
+	// frame streamed to a client that does not simulate (fog of war, or "not near you"). One mod
+	// saying no hides it; a player always sees itself. It only reads: commands it emits go nowhere.
+	// Clients that simulate are never asked about: they have the whole world.
+	virtual bool Sees( Context&, PlayerSlot /*viewer*/, uint32_t /*netId*/ )
+	{
+		return true;
+	}
 };
 
 using ModFactory = std::unique_ptr<ServerMod> ( * )();

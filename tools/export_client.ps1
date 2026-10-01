@@ -22,8 +22,8 @@ if (-not $Godot) { $Godot = Join-Path $tools "Godot_v4.7.2-stable_win64_console.
 if (-not (Test-Path $Godot)) { throw "Godot not found at $Godot; pass -Godot" }
 
 $target = if ($Debug) { "template_debug" } else { "template_release" }
-# Both extensions: the viewer, and the peer that joins servers.
-foreach ($library in @("libcinderbox", "libcinderbox_peer")) {
+# The extensions: the viewer, the peer that joins servers and simulates, the stream that is sent frames.
+foreach ($library in @("libcinderbox", "libcinderbox_peer", "libcinderbox_stream")) {
 	$dll = Join-Path $root "godot\bin\$library.windows.$target.x86_64.dll"
 	if (-not (Test-Path $dll)) {
 		$preset = if ($Debug) { "clang-release" } else { "godot-export" }

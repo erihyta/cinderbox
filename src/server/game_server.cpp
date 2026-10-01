@@ -1,6 +1,8 @@
 #include "game_server.h"
 
 #include "capture.h"
+#include "view_codec.h"
+#include "visibility.h"
 #include "fingerprint.h"
 #include "util.h"
 
@@ -403,6 +405,19 @@ void GameServer::HandleEvent( const NetEvent& ev, double now )
 					HandleInput( *c, msg );
 				}
 			}
+			else if ( *type == MsgType::StreamInput && c != nullptr && c->welcomed && c->stream )
+			{
+				MsgStreamInput msg;
+				if ( Decode( r, msg ) )
+				{
+					c->streamInput = SanitizeInput( msg.input );
+					c->streamButtons |= c->streamInput.buttons;
+					c->streamActions |= c->streamInput.actions;
+					// Acknowledgements only move forward (packets can arrive out of order); 0 asks
+					// for a whole frame.
+					c->streamAck = msg.ackSerial == 0 ? 0 : std::max( c->streamAck, std::min( msg.ackSerial, c->streamSerial ) );
+				}
+			}
 			else if ( *type == MsgType::ResyncRequest && c != nullptr && c->welcomed )
 			{
 				MsgResyncRequest msg;
@@ -428,7 +443,8 @@ void GameServer::HandleHello( PeerId peer, const MsgHello& hello, double now )
 		Reject( peer, "protocol version mismatch" );
 		return;
 	}
-	if ( hello.fingerprint != BuildFingerprint() )
+	// (A streaming client has no simulation to disagree with.)
+	if ( hello.stream == false && hello.fingerprint != BuildFingerprint() )
 	{
 		Reject( peer, "simulation build mismatch (client and server were built differently)" );
 		return;
@@ -482,10 +498,16 @@ void GameServer::HandleHello( PeerId peer, const MsgHello& hello, double now )
 		m_pendingEvents.push_back( { PlayerEventType::Join, slot } );
 		m_stats.joins += 1;
 		target->name = UniqueName( SanitizeName( hello.name, slot ), *target );
-		Log( "peer %u joins as slot %u (%s)", peer, slot, target->name.c_str() );
+		Log( "peer %u joins as slot %u (%s)%s", peer, slot, target->name.c_str(), hello.stream ? ", streaming" : "" );
 		m_namesDirty = true;
 	}
 
+	target->stream = hello.stream;
+	target->streamInput = {};
+	target->streamButtons = 0;
+	target->streamActions = 0;
+	target->streamAck = 0;
+	target->streamSent.clear();
 	target->connected = true;
 	target->peer = peer;
 	target->welcomed = false;
@@ -523,6 +545,18 @@ void GameServer::SendSnapshots()
 	{
 		if ( c.used == false || c.connected == false || c.needsSnapshot == false )
 		{
+			continue;
+		}
+
+		if ( c.stream )
+		{
+			// No state to send: it is shown frames. The first is whole.
+			Encode( MsgStreamWelcome{ c.slot, c.token, m_options.config.tickRate }, m_buffer );
+			m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
+			c.needsSnapshot = false;
+			c.welcomed = true;
+			c.streamAck = 0;
+			c.streamSent.clear();
 			continue;
 		}
 
@@ -570,7 +604,16 @@ void GameServer::RunTick( double now )
 			continue;
 		}
 
-		if ( c.connected && c.welcomed )
+		if ( c.connected && c.welcomed && c.stream )
+		{
+			// Its newest input, with whatever it pressed since the last tick.
+			c.lastInput = c.streamInput;
+			c.lastInput.buttons |= c.streamButtons;
+			c.lastInput.actions |= c.streamActions;
+			c.streamButtons = 0;
+			c.streamActions = 0;
+		}
+		else if ( c.connected && c.welcomed )
 		{
 			m_stats.inputTicks += 1;
 			const Client::Slot& s = c.inputs[tick % kInputBuffer];
@@ -607,6 +650,7 @@ void GameServer::RunTick( double now )
 	m_history[tick % kFrameHistory] = frame;
 	m_lastInputs = frame.inputs;
 	SendFrames( now );
+	SendViews( now );
 	m_replay.AddFrame( frame );
 	RecordView( frame );
 
@@ -643,7 +687,7 @@ void GameServer::RunTick( double now )
 		Encode( MsgChecksum{ stateTick, hash }, m_buffer );
 		for ( const Client& c : m_clients )
 		{
-			if ( c.used && c.connected && c.welcomed )
+			if ( c.used && c.connected && c.welcomed && c.stream == false )
 			{
 				m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
 			}
@@ -715,7 +759,7 @@ void GameServer::SendNames( PeerId only )
 	Encode( msg, m_buffer );
 	for ( const Client& c : m_clients )
 	{
-		if ( c.used && c.connected && c.welcomed && ( only == 0 || c.peer == only ) )
+		if ( c.used && c.connected && c.welcomed && c.stream == false && ( only == 0 || c.peer == only ) )
 		{
 			m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
 		}
@@ -771,6 +815,124 @@ void GameServer::RecordView( const InputFrame& frame )
 	}
 }
 
+bool GameServer::Visible( mods::Context& ctx, PlayerSlot viewer, uint32_t netId )
+{
+	for ( const auto& mod : m_mods )
+	{
+		if ( mod->Sees( ctx, viewer, netId ) == false )
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+void GameServer::SendViews( double now )
+{
+	constexpr size_t kKept = 16; // frames a client may still name as a base
+	uint32_t stride = std::max<uint32_t>( ( m_options.config.tickRate + m_options.streamRate / 2 ) / std::max<uint32_t>( m_options.streamRate, 1 ), 1 );
+	bool anyone = false;
+	for ( const Client& c : m_clients )
+	{
+		anyone |= c.used && c.connected && c.welcomed && c.stream;
+	}
+	if ( anyone == false || m_sim->Tick() % stride != 0 )
+	{
+		return;
+	}
+
+	// The world after this tick, once; then each client's view of it.
+	present::ViewFrame& world = m_streamFrame;
+	world.state = "playing";
+	world.rate = 1.0f;
+	world.stride = stride;
+	if ( world.schemaGeneration == 0 )
+	{
+		world.mapHash = m_mapHash;
+		world.mapName = m_map.name;
+		for ( const EntityTemplate& t : m_map.templates )
+		{
+			world.templateNames.push_back( t.name );
+			world.templateVisuals.push_back( t.visual );
+		}
+		world.schema = m_schema;
+		world.schemaGeneration = 1;
+	}
+	std::array<std::string, kMaxPlayers> names;
+	for ( const Client& c : m_clients )
+	{
+		if ( c.used )
+		{
+			names[c.slot] = c.name;
+		}
+	}
+	if ( world.namesGeneration == 0 || names != world.names )
+	{
+		world.names = names;
+		world.namesGeneration += 1;
+	}
+	present::CaptureFrame( *m_sim, world.frame );
+	world.frame.resetGeneration = 1;
+	world.hasWorld = true;
+	world.stats.clear();
+	world.stats.push_back( { "tick", int64_t( world.frame.tick ) } );
+
+	// The mods are asked who sees what. They only read: the frame they could write to is thrown away.
+	InputFrame scratch;
+	scratch.tick = m_sim->Tick();
+	mods::Context ctx( *m_sim, m_schema, scratch, m_lastInputs, *m_modWorld, m_modRng );
+	ctx.SetOptions( &m_options.modOptions );
+	ctx.SetItemProperties( &m_itemProperties );
+	ctx.SetHitTester( m_hits.get() );
+
+	for ( Client& c : m_clients )
+	{
+		if ( c.used == false || c.connected == false || c.welcomed == false || c.stream == false )
+		{
+			continue;
+		}
+		// Against the frame it acknowledged, if that is still kept; otherwise whole, and reliably:
+		// it has nothing to draw until one arrives. A whole frame is big, so while one is on its way
+		// (its acknowledgement cannot be here yet) no second one is sent.
+		bool haveBase = false;
+		for ( const present::ViewFrame& sent : c.streamSent )
+		{
+			haveBase |= c.streamAck != 0 && sent.serial == c.streamAck;
+		}
+		if ( haveBase == false && now - c.streamWholeAt < 0.25 )
+		{
+			continue;
+		}
+
+		present::ViewFrame view = world;
+		view.serial = ++c.streamSerial;
+		view.frame.localNetId = m_sim->PlayerNetId( c.slot );
+		if ( m_mods.empty() == false )
+		{
+			present::KeepVisible( view.frame, [&]( const present::FrameEntity& e ) { return Visible( ctx, c.slot, e.netId ); } );
+		}
+
+		const present::ViewFrame* base = nullptr;
+		for ( const present::ViewFrame& sent : c.streamSent )
+		{
+			base = c.streamAck != 0 && sent.serial == c.streamAck ? &sent : base;
+		}
+		present::EncodeView( view, base, 0.0, m_packet, present::ViewPrecision::Compact );
+		EncodeViewMessage( m_packet, m_buffer );
+		m_transport.Send( c.peer, base != nullptr ? ChannelInput : ChannelReliable, m_buffer, base == nullptr );
+		m_stats.viewsSent += 1;
+		m_stats.viewsWhole += base == nullptr ? 1 : 0;
+		c.streamWholeAt = base == nullptr ? now : c.streamWholeAt;
+		m_stats.viewBytes += m_packet.size();
+
+		c.streamSent.push_back( std::move( view ) );
+		while ( c.streamSent.size() > kKept )
+		{
+			c.streamSent.pop_front();
+		}
+	}
+}
+
 const InputFrame* GameServer::HistoryFrame( uint32_t tick ) const
 {
 	const InputFrame& f = m_history[tick % kFrameHistory];
@@ -793,7 +955,7 @@ void GameServer::SendFrames( double now )
 
 	for ( Client& c : m_clients )
 	{
-		if ( c.used == false || c.connected == false || c.welcomed == false || c.ackTick > newest )
+		if ( c.used == false || c.connected == false || c.welcomed == false || c.stream || c.ackTick > newest )
 		{
 			continue;
 		}

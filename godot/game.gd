@@ -29,13 +29,16 @@ extends Node3D
 ## client draws either like a server: the file names the same workshop items, and the player it
 ## follows is the local one, with its HUD. Nothing is sent anywhere; the keys steer the playback.
 ##
-## Two extensions: this script's `client` (CinderboxClient, the viewer) draws frames and holds no
-## simulation; `peer` (CinderboxPeer, the peer extension) joins servers and re-simulates
-## recordings, and hands the viewer its frames as bytes. A copy of the game without the peer
-## extension still watches view files.
+## Extensions: this script's `client` (CinderboxClient, the viewer) draws frames and holds no
+## simulation. `peer` (CinderboxPeer, the peer extension) joins servers by simulating them
+## (prediction, rollback) and re-simulates recordings. `stream` (CinderboxStream, the stream
+## extension) joins a server without simulating: the server sends it the frames to draw, nothing is
+## predicted, and it is shown only what the server's mods let it see. --stream picks it; it is
+## also what a copy of the game without the peer extension joins with. With neither, the game still
+## watches view files.
 ##
 ## Command line (after `--`): --host=H --port=P --name=NAME --rollback=N --animations=DIR
-##                            --replay=FILE --view=FILE
+##                            --stream --replay=FILE --view=FILE
 ##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS
 ##                            --mods=DIR --workshop=DIR --config=FILE
 ## With --screenshot-every, autoplay also saves FILE_1.png, FILE_2.png, ... along the way.
@@ -46,6 +49,7 @@ const Boot := preload("res://boot.gd")
 const Workshop := preload("res://workshop.gd")
 const Menu := preload("res://menu.gd")
 const NO_PEER := "This copy of the game has no peer extension, so it cannot %s."
+const NO_LINK := "This copy of the game has neither the peer nor the stream extension, so it cannot join servers."
 ## How long a server may take to answer before the attempt is given up.
 const JOIN_TIMEOUT := 10.0
 ## The camera keeps this far off the map's surfaces.
@@ -57,8 +61,12 @@ static var _menu_message := "" # why the last server was left, for the menu
 static var _loaded_items := {} # sha256 -> true: workshop items loaded into this process
 
 @onready var client: CinderboxClient = $Client
-## The peer extension's CinderboxPeer, or null when this copy of the game has only the viewer.
+## The peer extension's CinderboxPeer and the stream extension's CinderboxStream, or null for an
+## extension this copy of the game does not have.
 var peer: RefCounted
+var stream: RefCounted
+## Whichever of the two the server being joined is played through.
+var _link: RefCounted
 @onready var camera: Camera3D = $Camera
 
 var yaw := PI # facing +Z like the server's spawn orientation
@@ -104,6 +112,8 @@ func _ready() -> void:
 	args = _parse_args()
 	if ClassDB.class_exists("CinderboxPeer"):
 		peer = ClassDB.instantiate("CinderboxPeer")
+	if ClassDB.class_exists("CinderboxStream"):
+		stream = ClassDB.instantiate("CinderboxStream")
 	if args.has("rollback") and peer != null:
 		peer.rollback_min = int(args["rollback"])
 		peer.rollback_max = int(args["rollback"])
@@ -164,6 +174,8 @@ func _parse_args() -> Dictionary:
 		if arg.begins_with("--") and arg.contains("="):
 			var eq := arg.find("=")
 			result[arg.substr(2, eq - 2)] = arg.substr(eq + 1)
+		elif arg.begins_with("--"):
+			result[arg.substr(2)] = "" # a flag: --stream
 	return result
 
 
@@ -206,13 +218,15 @@ func _process(delta: float) -> void:
 
 func _join(host: String, port: int) -> void:
 	_address = Menu.format_address(host, port)
-	if peer == null:
-		_leave(NO_PEER % "join servers")
+	# Simulating the server (prediction, rollback) unless told to be streamed to, or unable to.
+	_link = stream if (args.has("stream") or peer == null) and stream != null else peer
+	if _link == null:
+		_leave(NO_LINK)
 		return
-	peer.host = host
-	peer.port = port
+	_link.host = host
+	_link.port = port
 	# The server learns names when a player joins.
-	peer.player_name = args["name"] if args.has("name") else menu.player_name()
+	_link.player_name = args["name"] if args.has("name") else menu.player_name()
 	_refused = ""
 	_joined = false
 	_joining_since = Time.get_ticks_msec() / 1000.0
@@ -220,8 +234,8 @@ func _join(host: String, port: int) -> void:
 		menu.close()
 	else:
 		menu.show_connecting(_address)
-	peer.connect_to_server()
-	client.set_source(peer)
+	_link.connect_to_server()
+	client.set_source(_link)
 
 
 ## Plays a recording (or a view file) instead of joining a server.
@@ -243,11 +257,13 @@ func _watch(path: String, is_view: bool) -> void:
 		client.set_source(peer)
 
 
-## Nothing is drawn or played any more: the viewer drops its source, the peer ends its threads.
+## Nothing is drawn or played any more: the viewer drops its source, the sources end their threads.
 func _stop() -> void:
 	client.stop()
 	if peer != null:
 		peer.stop()
+	if stream != null:
+		stream.stop()
 
 
 ## The playback's keys. The source knows the commands (src/client/replay_source.h and
@@ -332,13 +348,13 @@ func _watch_connection() -> void:
 		_joined = true
 		if autoplay <= 0.0:
 			if _replay == "":
-				menu.remember_server(peer.host, peer.port, client.get_map_name())
+				menu.remember_server(_link.host, _link.port, client.get_map_name())
 			menu.close()
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif autoplay > 0.0 or _replay != "":
 		return # unattended runs wait for their server; a recording has no connection to fail
 	elif int(stats.get("connect_failures", 0)) > 0:
-		_leave("The address \"%s\" could not be found. Check the spelling." % peer.host)
+		_leave("The address \"%s\" could not be found. Check the spelling." % _link.host)
 	elif Time.get_ticks_msec() / 1000.0 - _joining_since > JOIN_TIMEOUT:
 		_leave("No answer from %s. Check the address and port, that the server is running, and that its port (UDP) is open." % _address)
 
@@ -420,8 +436,8 @@ func _restart_and_join() -> void:
 	if _replay != "":
 		restart.append("--%s=%s" % ["view" if _replay_is_view else "replay", _replay])
 	else:
-		restart.append("--host=%s" % peer.host)
-		restart.append("--port=%d" % peer.port)
+		restart.append("--host=%s" % _link.host)
+		restart.append("--port=%d" % _link.port)
 	print("restarting to join %s without the previous server's items" % _address)
 	_stop()
 	_joining_since = -1.0
@@ -635,6 +651,8 @@ func _autoplay_finish() -> void:
 	var stats: Dictionary = client.get_stats()
 	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
 		stats.get("state"), stats.get("checksums_verified", 0), stats.get("desyncs", 0), stats.get("fingerprint", "none"), stats.get("fp_environment_ok", "not simulating")])
+	if stats.has("kbit_down"):
+		print("streamed: %.0f kbit/s down, %d frames, %d dropped, %d entities shown" % [stats.get("kbit_down"), stats.get("frames", 0), stats.get("frames_dropped", 0), stats.get("entities", 0)])
 	print("mod events seen: ", _event_counts)
 	_stop()
 	# (A source that cannot desync, a view file, reports none.)
