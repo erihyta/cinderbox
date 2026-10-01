@@ -1,5 +1,6 @@
 #include "game_server.h"
 
+#include "capture.h"
 #include "fingerprint.h"
 #include "util.h"
 

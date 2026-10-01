@@ -60,9 +60,9 @@ the Maps section of the README).
 
 ## Authoring Cinderbox resources
 
-Effect bindings (and any other Cinderbox type) need the game's extension present while the mod
+Reactions (and any other Cinderbox type) need the game's viewer extension present while the mod
 project is open and while it is packed. `tools\pack_mod.ps1` copies `cinderbox.gdextension` and
-`godot\bin` into the mod project for you and keeps them out of the pack; to edit them in the
+the viewer library (`godot\bin\libcinderbox.*`, never the peer) into the mod project for you and keeps them out of the pack; to edit them in the
 editor, copy those two by hand into your mod project as well. They are developer files: a pack that
 contained one would be refused.
 

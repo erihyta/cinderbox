@@ -29,6 +29,11 @@ extends Node3D
 ## client draws either like a server: the file names the same workshop items, and the player it
 ## follows is the local one, with its HUD. Nothing is sent anywhere; the keys steer the playback.
 ##
+## Two extensions: this script's `client` (CinderboxClient, the viewer) draws frames and holds no
+## simulation; `peer` (CinderboxPeer, the peer extension) joins servers and re-simulates
+## recordings, and hands the viewer its frames as bytes. A copy of the game without the peer
+## extension still watches view files.
+##
 ## Command line (after `--`): --host=H --port=P --name=NAME --rollback=N --animations=DIR
 ##                            --replay=FILE --view=FILE
 ##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS
@@ -40,6 +45,7 @@ const ACTION_PREFIX := "cb_"
 const Boot := preload("res://boot.gd")
 const Workshop := preload("res://workshop.gd")
 const Menu := preload("res://menu.gd")
+const NO_PEER := "This copy of the game has no peer extension, so it cannot %s."
 ## How long a server may take to answer before the attempt is given up.
 const JOIN_TIMEOUT := 10.0
 ## The camera keeps this far off the map's surfaces.
@@ -51,6 +57,8 @@ static var _menu_message := "" # why the last server was left, for the menu
 static var _loaded_items := {} # sha256 -> true: workshop items loaded into this process
 
 @onready var client: CinderboxClient = $Client
+## The peer extension's CinderboxPeer, or null when this copy of the game has only the viewer.
+var peer: RefCounted
 @onready var camera: Camera3D = $Camera
 
 var yaw := PI # facing +Z like the server's spawn orientation
@@ -94,9 +102,11 @@ var _flash_rect: ColorRect
 
 func _ready() -> void:
 	args = _parse_args()
-	if args.has("rollback"):
-		client.rollback_min = int(args["rollback"])
-		client.rollback_max = int(args["rollback"])
+	if ClassDB.class_exists("CinderboxPeer"):
+		peer = ClassDB.instantiate("CinderboxPeer")
+	if args.has("rollback") and peer != null:
+		peer.rollback_min = int(args["rollback"])
+		peer.rollback_max = int(args["rollback"])
 	if args.has("animations"):
 		client.animation_dir = args["animations"]
 	if not InputMap.has_action("scoreboard"):
@@ -195,10 +205,13 @@ func _process(delta: float) -> void:
 
 func _join(host: String, port: int) -> void:
 	_address = Menu.format_address(host, port)
-	client.host = host
-	client.port = port
+	if peer == null:
+		_leave(NO_PEER % "join servers")
+		return
+	peer.host = host
+	peer.port = port
 	# The server learns names when a player joins.
-	client.player_name = args["name"] if args.has("name") else menu.player_name()
+	peer.player_name = args["name"] if args.has("name") else menu.player_name()
 	_refused = ""
 	_joined = false
 	_joining_since = Time.get_ticks_msec() / 1000.0
@@ -206,11 +219,15 @@ func _join(host: String, port: int) -> void:
 		menu.close()
 	else:
 		menu.show_connecting(_address)
-	client.connect_to_server()
+	peer.connect_to_server()
+	client.set_source(peer)
 
 
 ## Plays a recording (or a view file) instead of joining a server.
 func _watch(path: String, is_view: bool) -> void:
+	if not is_view and peer == null:
+		_leave(NO_PEER % "play recordings (it can watch view files)")
+		return
 	_replay = path
 	_replay_is_view = is_view
 	_address = path.get_file()
@@ -221,7 +238,15 @@ func _watch(path: String, is_view: bool) -> void:
 	if is_view:
 		client.open_view(path)
 	else:
-		client.open_replay(path)
+		peer.open_replay(ProjectSettings.globalize_path(path))
+		client.set_source(peer)
+
+
+## Nothing is drawn or played any more: the viewer drops its source, the peer ends its threads.
+func _stop() -> void:
+	client.stop()
+	if peer != null:
+		peer.stop()
 
 
 ## The playback's keys. The source knows the commands (src/client/replay_source.h and
@@ -253,7 +278,7 @@ func _replay_key(key: Key) -> void:
 func _leave(message: String) -> void:
 	if message != "":
 		push_warning(message.replace("\n", " "))
-	client.stop()
+	_stop()
 	if autoplay > 0.0:
 		# Unattended runs have nobody to read a menu.
 		print("autoplay refused: ", message.replace("\n", " "))
@@ -269,7 +294,7 @@ func _leave(message: String) -> void:
 
 func _quit() -> void:
 	_leaving = true
-	client.stop()
+	_stop()
 	get_tree().quit()
 
 
@@ -306,13 +331,13 @@ func _watch_connection() -> void:
 		_joined = true
 		if autoplay <= 0.0:
 			if _replay == "":
-				menu.remember_server(client.host, client.port, client.get_map_name())
+				menu.remember_server(peer.host, peer.port, client.get_map_name())
 			menu.close()
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif autoplay > 0.0 or _replay != "":
 		return # unattended runs wait for their server; a recording has no connection to fail
 	elif int(stats.get("connect_failures", 0)) > 0:
-		_leave("The address \"%s\" could not be found. Check the spelling." % client.host)
+		_leave("The address \"%s\" could not be found. Check the spelling." % peer.host)
 	elif Time.get_ticks_msec() / 1000.0 - _joining_since > JOIN_TIMEOUT:
 		_leave("No answer from %s. Check the address and port, that the server is running, and that its port (UDP) is open." % _address)
 
@@ -394,10 +419,10 @@ func _restart_and_join() -> void:
 	if _replay != "":
 		restart.append("--%s=%s" % ["view" if _replay_is_view else "replay", _replay])
 	else:
-		restart.append("--host=%s" % client.host)
-		restart.append("--port=%d" % client.port)
+		restart.append("--host=%s" % peer.host)
+		restart.append("--port=%d" % peer.port)
 	print("restarting to join %s without the previous server's items" % _address)
-	client.stop()
+	_stop()
 	_joining_since = -1.0
 	_leaving = true
 	OS.set_restart_on_exit(true, restart)
@@ -610,7 +635,7 @@ func _autoplay_finish() -> void:
 	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
 		stats.get("state"), stats.get("checksums_verified", 0), stats.get("desyncs", 0), stats.get("fingerprint", "none"), stats.get("fp_environment_ok", "not simulating")])
 	print("mod events seen: ", _event_counts)
-	client.stop()
+	_stop()
 	# (A source that cannot desync, a view file, reports none.)
 	get_tree().quit(0 if stats.get("desyncs", 0) == 0 and stats.get("state") == "playing" else 2)
 

@@ -1,20 +1,15 @@
 #pragma once
 
-// A self-contained copy of what presentation needs from one simulation state. The simulation can
-// live on another thread (Godot client) or in the same one (raylib client, replays); renderers
-// only ever see frames.
+// A self-contained copy of what presentation needs from one simulation state. Renderers only ever
+// see frames; where one comes from (a simulation in this process: capture.h; bytes from another
+// library, a file or a server: view_codec.h) is not their business.
 
 #include "components.h"
-#include "simulation.h"
+#include "events.h"
 #include "types.h"
 
 #include <cstdint>
 #include <vector>
-
-namespace cb
-{
-class Simulation;
-}
 
 namespace cb::present
 {
@@ -89,9 +84,5 @@ struct PresentationFrame
 	bool hasInputs = false;
 	std::array<PlayerInput, kMaxPlayers> inputs{};
 };
-
-// Fills everything the simulation knows; resetGeneration, rolledBack, localNetId and inputs are the
-// caller's.
-void CaptureFrame( Simulation& sim, PresentationFrame& out );
 
 } // namespace cb::present

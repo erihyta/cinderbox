@@ -8,10 +8,12 @@
 // three are captured by Save()/Load().
 
 #include "components.h"
+#include "events.h"
 #include "level.h"
 #include "mod_schema.h"
 #include "physics_arena.h"
 #include "types.h"
+#include "world_lifetime.h"
 
 #include "box3d/id.h"
 #include "flecs.h"
@@ -26,13 +28,6 @@ namespace cb
 {
 
 struct AnimGraph;
-
-// flecs (OS API init counter) and Box3D (static world table) are not safe to create or destroy
-// worlds on several threads at once. Everything that creates flecs or Box3D worlds while
-// simulations may run on other threads goes through these.
-std::mutex& WorldLifetimeMutex();
-flecs::world CreateFlecsWorld();
-void ReleaseFlecsWorld( flecs::world& world );
 
 // Surface values Box3D needs when a shape is created. Authored through the Material component.
 struct ShapeMaterial
@@ -49,39 +44,6 @@ struct Snapshot
 	std::vector<uint8_t> ecs;	  // canonical ECS + globals image (also what gets hashed)
 	std::vector<uint8_t> physics; // arena image followed by the b3World struct
 };
-
-// One collision hard enough to be worth showing. Both entities are named so presentation can pick
-// an effect by what was hit; a static is an entity too, so its NetId appears here like any other.
-struct ImpactRecord
-{
-	uint32_t netIdA = 0;
-	uint32_t netIdB = 0;
-	uint32_t tick = 0;
-	float speed = 0.0f; // approach speed along the contact normal, m/s
-	b3Vec3 point = {};
-};
-
-// How many impacts presentation can pick up at once. A renderer that falls far behind drops the
-// rest, which is the right trade for an effect.
-inline constexpr uint32_t kImpactHistory = 16;
-inline constexpr uint32_t kImpactsPerTick = 8;
-
-// Something a server mod announced (an Event command): "pistol fired", "player killed". The type
-// indexes the event names the server sends on join; the simulation only keeps the record, so
-// presentation can play it and a rollback can un-count it.
-struct ModEventRecord
-{
-	uint16_t type = 0;
-	uint16_t reserved = 0;
-	uint32_t netIdA = 0;
-	uint32_t netIdB = 0;
-	uint32_t tick = 0;
-	int32_t value = 0;
-	b3Vec3 point = {};
-	b3Vec3 vector = {};
-};
-
-inline constexpr uint32_t kModEventHistory = 32;
 
 // Singleton sim state that is not a component.
 // Hashed as raw bytes, so it must stay free of padding.
@@ -102,8 +64,6 @@ struct SimGlobals
 	int32_t board[kBoardSlots] = {};
 };
 
-static_assert( sizeof( ImpactRecord ) == 28, "ImpactRecord layout changed: check for padding" );
-static_assert( sizeof( ModEventRecord ) == 44, "ModEventRecord layout changed: check for padding" );
 static_assert( sizeof( SimGlobals ) == 16 + 4 * kMaxPlayers + 8 + kImpactHistory * sizeof( ImpactRecord ) +
 											 kModEventHistory * sizeof( ModEventRecord ) + 4 * kBoardSlots,
 			   "SimGlobals has padding: it is hashed as raw bytes" );

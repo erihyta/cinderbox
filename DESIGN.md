@@ -137,7 +137,7 @@ a view source (its own thread) ──ViewFrame──> Mirror (main thread)
 - **Camera**: yaw uses the simulation convention internally; Godot yaw = simulation yaw − π (Godot cameras look down −Z).
 - **Build**:
   - `CB_BUILD_GODOT` fetches godot-cpp (tag godot-4.5-stable, the newest API tag; Godot 4.7 loads it through `compatibility_minimum`).
-  - It builds `godot/bin/libcinderbox.<platform>.<target>.<arch>`.
+  - It builds `godot/bin/libcinderbox.<platform>.<target>.<arch>` (the viewer) and `libcinderbox_peer.<...>` (the peer): see [Two extensions](#two-extensions-m51).
   - On Windows, everything uses the DLL C runtime. Clang with the GNU driver needs `TYPED_METHOD_BIND`.
 - **Export**:
   - `godot/export_presets.cfg` has a "Windows" preset, and `tools/export_client.ps1` runs it with the 4.7.2 templates.
@@ -1346,8 +1346,8 @@ source  <──control───   viewer        named commands with a number ("p
   Both stand on `ThreadedSource`: the thread, the simulation's floating-point environment, and the
   newest frame handed across (a rollback or presses in a frame the viewer skipped are carried into
   the next).
-- **The viewer knows no source.** `CinderboxClient` holds a `ViewSource`; `connect_to_server()` and
-  `open_replay( path )` are the two places a source is made. `get_stats()` is the source's stats,
+- **The viewer knows no source.** `CinderboxClient` holds a `ViewSource` (since M51 one it is
+  handed: see [Two extensions](#two-extensions-m51)). `get_stats()` is the source's stats,
   whatever they are; `control( name, value )` passes a command through.
 - **A recording is watched as its player.** The followed player is the frame's local player, so
   the HUD, `is_local` reactions and the camera show what that player saw. Its presses arrive in
@@ -1445,6 +1445,75 @@ ROADMAP.md says what a stream needs first.
   change. CI is the judge.
 - Unattended Godot runs sometimes end with "ObjectDB instances were leaked at exit" (seen on
   recordings and view files, roughly every other run); not looked into.
+
+## Two extensions (M51)
+The Godot client is two GDExtensions with bytes between them. The simulation and the networking
+are in one; the other cannot link them.
+
+| Extension | Holds | Class | Who needs it |
+|---|---|---|---|
+| `cinderbox` (`libcinderbox.*`) | the viewer, the cue addon, HUD nodes, authoring and bake nodes, view file playback | `CinderboxClient` and the `Cb*` nodes | the game, and every mod's client project |
+| `cinderbox_peer` (`libcinderbox_peer.*`) | the live and replay sources: `GameClient`, `Simulation`, rollback, ENet | `CinderboxPeer` | the game, to join servers and play recordings |
+
+```
+CinderboxPeer (peer library)                         CinderboxClient (viewer library)
+  LiveSource / ReplaySource on a thread                ObjectSource: decodes, keeps the last frame
+  take( whole ) ──── PackedByteArray: a packet ────>   as the next delta's base
+  set_input( bytes ) <──── a PlayerInput, 10 bytes ──  set_input( move, yaw, pitch, ... )
+  control( name, value ) <───────────────────────────  control( name, value )
+```
+
+- **A source is any object** with `take( whole ) -> PackedByteArray` (and optionally `takes_input`,
+  `set_input`, `control`): `client.set_source( object )`. `CinderboxPeer` is one; a script is
+  another (`check_object_source.gd` reads a view file's packets in 20 lines of GDScript).
+- **Deltas across the wall.** The peer encodes each frame against the one it handed over before;
+  the viewer decodes against the one it decoded before. `whole` asks for a packet that stands
+  alone: the first time, and after bytes that did not decode, so the two cannot stay out of step.
+- **Time across the wall.** Each library has its own clock, so a packet carries the frame's age at
+  hand-over, and the viewer interpolates from there.
+- **Why the viewer cannot simulate**: the libraries it links do not contain a simulation.
+
+  | Library | Was | Now |
+  |---|---|---|
+  | `cb_sim_data` | part of `cb_sim` | components, events, the map format, the schema, the baked state machines: what the data means |
+  | `cb_sim` | everything | `Simulation`, rollback, the physics arena, the fingerprint; links `cb_sim_data` |
+  | `cb_present` | linked `cb_sim` (for `CaptureFrame`) | links `cb_sim_data` and `cb_anim` only |
+  | `cb_capture` | part of `cb_present` | `CaptureFrame`: a simulation's state as a frame. Sources, the server and tests link it |
+
+  The viewer links `cb_present`; the peer links `cb_client_core` (which links `cb_capture`,
+  `cb_net`, `cb_sim`). `ImpactRecord` and `ModEventRecord` moved to `sim/events.h` and the flecs
+  world-creation lock to `sim/world_lifetime.*`, so presentation needs neither `simulation.h`.
+- **What the viewer still does itself**: poses (ozz and the baked state machines run from the
+  animation state where it is drawn) and view files (no simulation involved).
+- **The game** (`game.gd`) makes a `CinderboxPeer` when the class exists, sets `host`, `port`,
+  `player_name` and the rollback window on it (they left `CinderboxClient`), and hands it to the
+  viewer. Without the peer extension the game still watches view files and says why it cannot join.
+- **Mod projects get the viewer only**: `tools/pack_mod.ps1` copies `libcinderbox.*`, never the peer.
+
+**Verified**
+- The viewer library holds neither the simulation's nor the rollback's abort messages; the peer
+  library holds both (a search of the two DLLs). Its link line names no `cb_sim`, `cb_net` or
+  `cb_client_core`.
+- A Godot client through both extensions: 10 s on a server with four bots (no desyncs, exit 0),
+  the recording of that session (checksums reproduced, exit 0), its view file (exit 0).
+- The melee mod's client project, packed with the viewer alone: `CinderboxClient`, `CbReaction`,
+  `CbItemBody`, `CbCharacter` exist, `CinderboxPeer` does not, the bat's scene loads, the pack is made.
+- `check_object_source.gd`: a GDScript source feeds the viewer a view file's packets; state, world,
+  map and mods arrive; after garbage bytes the viewer asks for a whole frame and plays on.
+- With no peer extension registered, joining comes back with "this copy of the game has no peer
+  extension" (seen before the project was re-imported).
+- All unit and network suites but `net_lossy_session`, which fails on this machine today for the
+  M49 build too (see M50); the reference hashes are unchanged.
+
+**Not done**
+- The release extensions build (viewer 3.7 MB, peer 2.5 MB); an exported game was not made and
+  run with them.
+- Linux and macOS builds of the peer extension are untested (CI builds no Godot extension).
+- A project that already had the old single extension needs one `godot --path godot --import` (or
+  opening the editor) so Godot registers `cinderbox_peer.gdextension`.
+- `check_menu.gd` follows the renames but was not run.
+- A frame is copied twice more per drawn frame than before (encode, decode); not measured, and not
+  visible in the frame rate of the runs above.
 
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
@@ -1570,3 +1639,4 @@ The ordered plan for the client is in [ROADMAP.md](ROADMAP.md). These are loose 
 48. **M48** (done): `kBoardSlots` 32 (new reference hashes, protocol 16); the inventory publishes its slots and shows them on a HUD row.
 49. **M49** (done): the viewer protocol: `ViewFrame` / `ViewSource` (`src/present/view.h`), `LiveSource` and `ReplaySource` in `src/client`, `CinderboxClient` as a viewer that knows no source, recordings watched in the Godot client (`--replay=FILE`) as the followed player; ROADMAP.md.
 50. **M50** (done): frames as bytes: `EncodeView` / `DecodeView` with per-word deltas against a base, view files (`cb_server --record-view`, `ViewFileSource`, `--view=FILE`, `cb_replay view`), measured sizes; `bytes.h` moved to `src/sim`.
+51. **M51** (done): two extensions: the viewer (`cinderbox`: no simulation, no networking) and the peer (`cinderbox_peer`: `CinderboxPeer`, the live and replay sources) with packets between them; `set_source( object )`; `cb_sim_data` and `cb_capture` split out so the viewer cannot link a simulation; mod projects get the viewer only.

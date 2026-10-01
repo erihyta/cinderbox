@@ -1,6 +1,6 @@
 #include "presentation.h"
 
-
+#include "capture.h"
 #include "raymath.h"
 #include "rlgl.h"
 

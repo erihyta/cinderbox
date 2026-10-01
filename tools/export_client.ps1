@@ -22,10 +22,13 @@ if (-not $Godot) { $Godot = Join-Path $tools "Godot_v4.7.2-stable_win64_console.
 if (-not (Test-Path $Godot)) { throw "Godot not found at $Godot; pass -Godot" }
 
 $target = if ($Debug) { "template_debug" } else { "template_release" }
-$dll = Join-Path $root "godot\bin\libcinderbox.windows.$target.x86_64.dll"
-if (-not (Test-Path $dll)) {
-	$preset = if ($Debug) { "clang-release" } else { "godot-export" }
-	throw "$dll is missing; build it with: cmake --preset $preset; cmake --build --preset $preset"
+# Both extensions: the viewer, and the peer that joins servers.
+foreach ($library in @("libcinderbox", "libcinderbox_peer")) {
+	$dll = Join-Path $root "godot\bin\$library.windows.$target.x86_64.dll"
+	if (-not (Test-Path $dll)) {
+		$preset = if ($Debug) { "clang-release" } else { "godot-export" }
+		throw "$dll is missing; build it with: cmake --preset $preset; cmake --build --preset $preset"
+	}
 }
 
 $installed = Join-Path $env:APPDATA "Godot\export_templates\4.7.2.stable"

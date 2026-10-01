@@ -6,9 +6,8 @@
 #include "cinderbox_companion.h"
 #include "cinderbox_skeleton.h"
 #include "detmath.h"
-#include "live_source.h"
+#include "object_source.h"
 #include "pose_tools.h"
-#include "replay_source.h"
 #include "view_file.h"
 #include "types.h"
 
@@ -105,8 +104,7 @@ CinderboxClient::~CinderboxClient() = default;
 
 void CinderboxClient::_bind_methods()
 {
-	ClassDB::bind_method( D_METHOD( "connect_to_server" ), &CinderboxClient::connect_to_server );
-	ClassDB::bind_method( D_METHOD( "open_replay", "path" ), &CinderboxClient::open_replay );
+	ClassDB::bind_method( D_METHOD( "set_source", "source" ), &CinderboxClient::set_source );
 	ClassDB::bind_method( D_METHOD( "open_view", "path" ), &CinderboxClient::open_view );
 	ClassDB::bind_method( D_METHOD( "stop" ), &CinderboxClient::stop );
 	ClassDB::bind_method( D_METHOD( "is_running" ), &CinderboxClient::is_running );
@@ -138,9 +136,6 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_required_items" ), &CinderboxClient::get_required_items );
 	ClassDB::bind_method( D_METHOD( "get_character" ), &CinderboxClient::get_character );
 	ClassDB::bind_method( D_METHOD( "use_character", "name" ), &CinderboxClient::use_character );
-	ClassDB::bind_method( D_METHOD( "set_player_name", "name" ), &CinderboxClient::set_player_name );
-	ClassDB::bind_method( D_METHOD( "get_player_name_setting" ), &CinderboxClient::get_player_name_setting );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "player_name" ), "set_player_name", "get_player_name_setting" );
 	ClassDB::bind_method( D_METHOD( "add_world_scene", "scene" ), &CinderboxClient::add_world_scene );
 	ClassDB::bind_method( D_METHOD( "clear_world_scenes" ), &CinderboxClient::clear_world_scenes );
 	ClassDB::bind_method( D_METHOD( "get_director" ), &CinderboxClient::get_director );
@@ -150,14 +145,6 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_local_player_position" ), &CinderboxClient::get_local_player_position );
 	ClassDB::bind_method( D_METHOD( "get_visual_node", "visual_id" ), &CinderboxClient::get_visual_node );
 
-	ClassDB::bind_method( D_METHOD( "set_host", "host" ), &CinderboxClient::set_host );
-	ClassDB::bind_method( D_METHOD( "get_host" ), &CinderboxClient::get_host );
-	ClassDB::bind_method( D_METHOD( "set_port", "port" ), &CinderboxClient::set_port );
-	ClassDB::bind_method( D_METHOD( "get_port" ), &CinderboxClient::get_port );
-	ClassDB::bind_method( D_METHOD( "set_rollback_min", "ticks" ), &CinderboxClient::set_rollback_min );
-	ClassDB::bind_method( D_METHOD( "get_rollback_min" ), &CinderboxClient::get_rollback_min );
-	ClassDB::bind_method( D_METHOD( "set_rollback_max", "ticks" ), &CinderboxClient::set_rollback_max );
-	ClassDB::bind_method( D_METHOD( "get_rollback_max" ), &CinderboxClient::get_rollback_max );
 	ClassDB::bind_method( D_METHOD( "set_map_dir", "dir" ), &CinderboxClient::set_map_dir );
 	ClassDB::bind_method( D_METHOD( "get_map_dir" ), &CinderboxClient::get_map_dir );
 	ClassDB::bind_method( D_METHOD( "get_map_name" ), &CinderboxClient::get_map_name );
@@ -166,10 +153,6 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_animation_dir", "dir" ), &CinderboxClient::set_animation_dir );
 	ClassDB::bind_method( D_METHOD( "get_animation_dir" ), &CinderboxClient::get_animation_dir );
 
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "host" ), "set_host", "get_host" );
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "port", PROPERTY_HINT_RANGE, "1,65535" ), "set_port", "get_port" );
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "rollback_min", PROPERTY_HINT_RANGE, "1,64" ), "set_rollback_min", "get_rollback_min" );
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "rollback_max", PROPERTY_HINT_RANGE, "1,64" ), "set_rollback_max", "get_rollback_max" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "prefab_dir", PROPERTY_HINT_DIR ), "set_prefab_dir", "get_prefab_dir" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "map_dir", PROPERTY_HINT_DIR ), "set_map_dir", "get_map_dir" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "animation_dir", PROPERTY_HINT_GLOBAL_DIR ), "set_animation_dir",
@@ -249,29 +232,18 @@ void CinderboxClient::Open( std::unique_ptr<present::ViewSource> source )
 	m_source = std::move( source );
 }
 
-void CinderboxClient::connect_to_server()
+void CinderboxClient::set_source( const Variant& source )
 {
 	if ( Engine::get_singleton()->is_editor_hint() )
 	{
 		return;
 	}
-	ClientOptions options;
-	options.host = ToStd( m_host );
-	options.port = uint16_t( std::clamp( m_port, 1, 65535 ) );
-	options.minRollbackTicks = uint32_t( std::max( 1, m_rollbackMin ) );
-	options.maxRollbackTicks = uint32_t( std::max( m_rollbackMin, m_rollbackMax ) );
-	options.logName = "godot";
-	options.playerName = ToStd( m_playerName );
-	Open( std::make_unique<LiveSource>( options ) );
-}
-
-void CinderboxClient::open_replay( const String& path )
-{
-	if ( Engine::get_singleton()->is_editor_hint() )
+	if ( source.get_validated_object() == nullptr )
 	{
+		UtilityFunctions::push_warning( "Cinderbox: set_source needs an object (see object_source.h); use stop() to drop one" );
 		return;
 	}
-	Open( std::make_unique<ReplaySource>( ToStd( ProjectSettings::get_singleton()->globalize_path( path ) ) ) );
+	Open( std::make_unique<ObjectSource>( source ) );
 }
 
 void CinderboxClient::open_view( const String& path )

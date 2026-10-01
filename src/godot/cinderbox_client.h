@@ -2,10 +2,12 @@
 
 // The Godot viewer of a Cinderbox world.
 //
-// It draws what a view source hands it (present/view.h): a live connection that predicts and rolls
-// back, or a recording. It never asks which: it mirrors the frames and turns them into Godot
-// nodes, one instance of a prefab scene per simulation entity, moved every frame, with ozz poses
-// applied to players. Everything visual is data the game or mods provide:
+// It draws what a view source hands it (present/view.h) and never asks what the source is: a view
+// file it plays itself, or an object from elsewhere that hands frames over as bytes (the peer
+// extension's CinderboxPeer: a live connection, a recording; or a script). This library holds no
+// simulation and no networking. It mirrors the frames and turns them into Godot nodes, one
+// instance of a prefab scene per simulation entity, moved every frame, with ozz poses applied to
+// players. Everything visual is data the game or mods provide:
 //   <prefab_dir>/static_box.tscn   level geometry        (unit box, scaled to size)
 //   <prefab_dir>/prop_box.tscn      box props             (unit box)
 //   <prefab_dir>/prop_sphere.tscn   sphere props          (unit-diameter sphere)
@@ -51,13 +53,15 @@ public:
 	void _exit_tree() override;
 
 	// Scripting API
-	// Sources: what this viewer draws. One at a time; starting one stops the one before.
-	// Plays on the server at host:port, as player_name.
-	void connect_to_server();
-	// Plays a recording (cb_server --record). `path` may be res://, user:// or a file system path.
-	void open_replay( const godot::String& path );
-	// Plays a view file (cb_server --record-view): frames as they were, with no simulation.
+	// Sources: what this viewer draws. One at a time; setting one drops the one before.
+	// An object that hands frames over as bytes: take( whole ) -> PackedByteArray, and optionally
+	// takes_input(), set_input( bytes ), control( name, value ) (see object_source.h). The viewer
+	// keeps a reference to it; starting and stopping it is its owner's business.
+	void set_source( const godot::Variant& source );
+	// Plays a view file (cb_server --record-view): frames as they were, with no simulation. `path`
+	// may be res://, user:// or a file system path.
 	void open_view( const godot::String& path );
+	// Drops the source (the last frame stays drawn).
 	void stop();
 	bool is_running() const;
 	// A named command for the source, with a number ("pause" 1, "skip" -5: see the source's
@@ -124,14 +128,6 @@ public:
 	// items) fitted to this character.
 	void ServerPacks( const anim::AnimSet& set, AnimGraphPacks& packs, std::vector<std::shared_ptr<const anim::PackClips>>& clips );
 
-	void set_player_name( const godot::String& v )
-	{
-		m_playerName = v;
-	}
-	godot::String get_player_name_setting() const
-	{
-		return m_playerName;
-	}
 	// What the source says about itself ("rtt_ms", "desyncs", ...), plus "state", "entities" and
 	// "animation".
 	godot::Dictionary get_stats() const;
@@ -143,38 +139,6 @@ public:
 	godot::Node3D* get_visual_node( int64_t visual_id ) const;
 
 	// Properties
-	void set_host( const godot::String& v )
-	{
-		m_host = v;
-	}
-	godot::String get_host() const
-	{
-		return m_host;
-	}
-	void set_port( int v )
-	{
-		m_port = v;
-	}
-	int get_port() const
-	{
-		return m_port;
-	}
-	void set_rollback_min( int v )
-	{
-		m_rollbackMin = v;
-	}
-	int get_rollback_min() const
-	{
-		return m_rollbackMin;
-	}
-	void set_rollback_max( int v )
-	{
-		m_rollbackMax = v;
-	}
-	int get_rollback_max() const
-	{
-		return m_rollbackMax;
-	}
 	void set_prefab_dir( const godot::String& v )
 	{
 		m_prefabDir = v;
@@ -221,10 +185,6 @@ private:
 	std::vector<std::string> Conditions( const godot::PackedStringArray& conditions ) const;
 
 	// Properties
-	godot::String m_host = "127.0.0.1";
-	int m_port = 7777;
-	int m_rollbackMin = 8;
-	int m_rollbackMax = 20;
 	godot::String m_prefabDir = "res://prefabs";
 	godot::String m_mapDir = "res://maps";
 	godot::String m_animationDir;
@@ -306,7 +266,6 @@ private:
 	uint16_t m_lastActions = 0;
 	uint64_t m_schemaGeneration = 0;
 	uint64_t m_namesGeneration = 0;
-	godot::String m_playerName;
 	int SlotOfNetId( uint32_t netId ) const;
 	godot::String ResolveNameFields( int64_t net_id, const godot::String& format ) const;
 };
