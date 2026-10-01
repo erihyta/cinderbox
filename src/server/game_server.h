@@ -43,6 +43,10 @@ struct ServerOptions
 	// Write the session as a view file: what a viewer would be shown, playable without a
 	// simulation (present/view_file.h; empty = off).
 	std::string recordViewPath;
+	// Frames a second in the view file (0: one per tick), and compact packets instead of exact
+	// ones (present/view_codec.h): together, what a stream would carry.
+	uint32_t recordViewRate = 0;
+	bool recordViewCompact = false;
 	// The workshop items clients need for the mods this server runs (announced, never sent).
 	std::vector<ModItem> items;
 	// The character everyone plays as (null: the built-in rig). Its item must be in `items`.

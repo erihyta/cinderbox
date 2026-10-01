@@ -117,12 +117,34 @@ int PrintViewInfo( const char* path )
 	size_t deltas = info.frames - info.keys;
 	double perDelta = deltas > 0 ? double( info.deltaBytes ) / double( deltas ) : 0.0;
 	double rate = info.seconds > 0.0 ? double( info.frames ) / info.seconds : 0.0;
-	std::printf( "frames       %zu (%.1f s), %zu of them stand alone\n", info.frames, info.seconds, info.keys );
+	std::printf( "frames       %zu (%.1f s, one every %u ticks), %zu of them stand alone\n", info.frames, info.seconds, info.stride, info.keys );
 	std::printf( "map          %s\n", info.map.c_str() );
 	std::printf( "most         %zu players, %zu entities\n", info.mostPlayers, info.mostEntities );
 	std::printf( "whole frame  %.0f bytes on average\n", info.keys > 0 ? double( info.keyBytes ) / double( info.keys ) : 0.0 );
-	std::printf( "delta frame  %.0f bytes on average, %u at most (%.0f kbit/s at %.0f frames a second)\n", perDelta, info.deltaMost,
-				 perDelta * rate * 8.0 / 1000.0, rate );
+	std::printf( "delta frame  %.0f bytes on average, %u at most (%.0f kbit/s at %.0f frames a second), %s\n", perDelta, info.deltaMost,
+				 perDelta * rate * 8.0 / 1000.0, rate, info.compact ? "compact" : "exact" );
+	if ( deltas > 0 )
+	{
+		// Where an average delta frame's bytes go.
+		const present::ViewCost& c = info.cost;
+		const struct
+		{
+			const char* name;
+			size_t bytes;
+		} parts[] = { { "header", c.header },	  { "stats", c.stats },			{ "session", c.session },	  { "inputs", c.inputs },
+					  { "events", c.events },	  { "lists", c.lists },			{ "rest", c.rest },			  { "positions", c.positions },
+					  { "rotations", c.rotations }, { "animation", c.animation }, { "boards", c.boards },		  { "ragdolls", c.ragdolls },
+					  { "entities", c.exact } };
+		std::printf( "of which    " );
+		for ( const auto& part : parts )
+		{
+			if ( part.bytes > 0 )
+			{
+				std::printf( " %s %.0f", part.name, double( part.bytes ) / double( deltas ) );
+			}
+		}
+		std::printf( "\n" );
+	}
 	return 0;
 }
 

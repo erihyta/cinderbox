@@ -13,7 +13,7 @@ namespace cb::present
 namespace
 {
 constexpr char kMagic[4] = { 'C', 'B', 'V', 'F' };
-constexpr uint32_t kVersion = 1;
+constexpr uint32_t kVersion = 2;
 constexpr uint64_t kKeyInterval = 300;
 constexpr size_t kHeaderSize = 8;
 constexpr size_t kRecordHeaderSize = 5;
@@ -26,9 +26,12 @@ ViewFileWriter::~ViewFileWriter()
 	Close();
 }
 
-bool ViewFileWriter::Open( const std::string& path )
+bool ViewFileWriter::Open( const std::string& path, uint32_t stride, ViewPrecision precision )
 {
 	Close();
+	m_stride = std::max<uint32_t>( stride, 1 );
+	m_precision = precision;
+	m_given = 0;
 	m_file = std::fopen( path.c_str(), "wb" );
 	if ( m_file == nullptr )
 	{
@@ -46,10 +49,17 @@ void ViewFileWriter::Add( const ViewFrame& frame )
 	{
 		return;
 	}
+	// The frames in between are not kept; what happened in them is still in the next one's event
+	// rings and counters.
+	if ( m_given++ % m_stride != 0 )
+	{
+		return;
+	}
 	m_now = frame;
 	m_now.serial = m_count + 1;
+	m_now.stride = m_stride;
 	bool key = m_count % kKeyInterval == 0;
-	EncodeView( m_now, key ? nullptr : &m_last, 0.0, m_bytes );
+	EncodeView( m_now, key ? nullptr : &m_last, 0.0, m_bytes, m_precision );
 	uint32_t size = uint32_t( m_bytes.size() );
 	uint8_t keyByte = key ? 1 : 0;
 	std::fwrite( &size, sizeof( size ), 1, m_file );
@@ -162,9 +172,10 @@ bool ViewFileSource::DecodeTo( size_t target, bool fromKey )
 	return true;
 }
 
-double ViewFileSource::TickSeconds() const
+double ViewFileSource::FrameSeconds() const
 {
-	return m_current.hasWorld && m_current.frame.tickSeconds > 0.0f ? double( m_current.frame.tickSeconds ) : 1.0 / 60.0;
+	double tick = m_current.hasWorld && m_current.frame.tickSeconds > 0.0f ? double( m_current.frame.tickSeconds ) : 1.0 / 60.0;
+	return tick * double( m_current.stride );
 }
 
 uint32_t ViewFileSource::PlayerInSlot( int slot ) const
@@ -242,11 +253,11 @@ void ViewFileSource::Control( const std::string& name, double value )
 	}
 	else if ( name == "seek" )
 	{
-		seekFrames( value / TickSeconds() + 0.5 );
+		seekFrames( value / FrameSeconds() + 0.5 );
 	}
 	else if ( name == "skip" )
 	{
-		seekFrames( m_position + value / TickSeconds() + 0.5 );
+		seekFrames( m_position + value / FrameSeconds() + 0.5 );
 	}
 	else if ( name == "step" )
 	{
@@ -292,7 +303,7 @@ bool ViewFileSource::Take( ViewFrame& out )
 	double last = double( m_records.size() - 1 );
 	if ( m_lastTake >= 0.0 && m_paused == false )
 	{
-		m_position += ( now - m_lastTake ) * m_speed / TickSeconds();
+		m_position += ( now - m_lastTake ) * m_speed / FrameSeconds();
 	}
 	m_lastTake = now;
 	bool ended = m_position >= last + 1.0;
@@ -334,7 +345,7 @@ bool ViewFileSource::Take( ViewFrame& out )
 	out.frame.resetGeneration += m_jumps;
 	out.frame.rolledBack = false;
 
-	double seconds = TickSeconds();
+	double seconds = FrameSeconds();
 	out.stats.clear();
 	out.stats.push_back( { "reject_reason", std::string() } );
 	out.stats.push_back( { "tick", int64_t( m_current.frame.tick ) } );
@@ -364,10 +375,18 @@ bool ReadViewFileInfo( const std::string& path, ViewFileInfo& info, std::string&
 		info.keys += record.key ? 1 : 0;
 		( record.key ? info.keyBytes : info.deltaBytes ) += record.size;
 		info.deltaMost = record.key ? info.deltaMost : std::max( info.deltaMost, record.size );
-		info.seconds += file.TickSeconds();
+		info.seconds += file.FrameSeconds();
 		info.mostEntities = std::max( info.mostEntities, f.entities.size() );
 		info.mostPlayers = std::max( info.mostPlayers, players );
 		info.map = file.m_current.mapName;
+		info.stride = file.m_current.stride;
+		info.compact = ViewPacketCompact( file.m_data.data() + record.offset, record.size );
+		if ( record.key == false )
+		{
+			// The same packet again, this time counting (m_scratch is the frame before).
+			std::vector<uint8_t> again;
+			EncodeView( file.m_current, &file.m_scratch, 0.0, again, info.compact ? ViewPrecision::Compact : ViewPrecision::Exact, &info.cost );
+		}
 	}
 	error = file.m_error;
 	return error.empty();

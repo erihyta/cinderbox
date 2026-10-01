@@ -1591,7 +1591,8 @@ bool CinderboxClient::is_local_player_dead() const
 
 double CinderboxClient::get_tick_time() const
 {
-	return m_haveFrame ? double( m_frame.frame.tick ) + double( m_alpha ) : 0.0;
+	// Drawn `alpha` of the way from the frame before (stride ticks back) to this one.
+	return m_haveFrame ? double( m_frame.frame.tick ) + 1.0 + ( double( m_alpha ) - 1.0 ) * double( m_frame.stride ) : 0.0;
 }
 
 double CinderboxClient::get_tick_rate() const
@@ -1857,7 +1858,9 @@ void CinderboxClient::_process( double delta )
 	// Interpolate from the moment the frame was published, at the pace the source moves on.
 	float tickSeconds = m_frame.frame.tickSeconds;
 	double since = present::ViewClock() - m_frame.publishedAt;
-	float alpha = std::clamp( float( m_frame.alphaAtPublish + since * double( m_frame.rate ) / tickSeconds ), 0.0f, 1.0f );
+	// (A source that sends a frame every few ticks: the way from the frame before takes that long.)
+	double frameSeconds = double( tickSeconds ) * double( std::max<uint32_t>( m_frame.stride, 1 ) );
+	float alpha = std::clamp( float( m_frame.alphaAtPublish + since * double( m_frame.rate ) / frameSeconds ), 0.0f, 1.0f );
 
 	m_alpha = alpha;
 	m_mirror->Update( m_frame.frame, alpha, float( delta ) );

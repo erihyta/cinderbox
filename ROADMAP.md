@@ -42,10 +42,13 @@ Each step is a milestone of its own, and each leaves the game playable.
   sends input up as it does now. No simulation, no prediction, no rollback on that client.
 - **Where it lives**: a third kind of source object next to `CinderboxPeer`, small enough to be its
   own extension (ENet and the codec, no simulation), so a streaming client ships without the peer.
-- **Smaller frames first**: a delta frame is exact floats today, 1.7 KB for 4 players and 21 KB for
-  64 (0.8 and 10 Mbit/s at 60 frames a second: DESIGN.md, M50). A stream needs transforms and
-  animation times quantized, bodies that only fell a little skipped, and fewer frames than ticks
-  (the viewer already interpolates). Aim: under 300 kbit/s for 32 players.
+- **What a frame costs**: compact packets at 20 frames a second are 67 kbit/s for 4 players, 429
+  for 32 and 671 for 64 (DESIGN.md, M53; the aim was 300 for 32). `cb_replay view` says where the
+  bytes go. What is left to take, in the order of what it would save:
+  - each client is sent only what is near it (the same hook that hides things for fog of war);
+  - animation: 24 bytes a player a frame, a third of it the mask of which values changed;
+  - rotations: 4 bytes whenever a body turned at all; a turn since the last frame fits in less;
+  - events: 44 bytes each, most of them zeros.
 - **For**: spectators, weak machines, and servers whose game does not need predicted physics
   (cards, boards, turn-based).
 - **Fog of war**: the server filters each client's frame through a mod hook
