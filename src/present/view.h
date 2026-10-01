@@ -75,6 +75,10 @@ struct ViewFrame
 	double publishedAt = 0.0;
 	float alphaAtPublish = 0.0f;
 	float rate = 0.0f;
+	// How many ticks lie between this source's frames (1: every tick). A source that sends fewer
+	// frames than ticks says so, and the viewer draws from the frame before to this one over that
+	// many ticks.
+	uint32_t stride = 1;
 	// Mod actions the local player pressed since the last frame taken, for a source that plays
 	// someone else's input (a recording). A source fed by the viewer's own input leaves it 0: the
 	// viewer already knows what it pressed.

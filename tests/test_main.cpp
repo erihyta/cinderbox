@@ -3287,6 +3287,82 @@ void TestViewCodec()
 	std::printf( "    a tick in which nothing changed: %zu bytes\n", packet.size() );
 	CHECK( packet.size() < 128 );
 
+	// Compact packets (what a stream carries): the sender keeps exact frames, the receiver only
+	// what it decoded, and the two must still agree on every grid point after 600 deltas in a row.
+	// Agreement is: what came through the chain of deltas is bit for bit what one whole compact
+	// packet of the sender's frame decodes to.
+	auto seenCompact = []( const present::ViewFrame& frame ) {
+		std::vector<uint8_t> bytes;
+		present::EncodeView( frame, nullptr, 0.0, bytes, present::ViewPrecision::Compact );
+		present::ViewFrame seen;
+		present::DecodeView( bytes.data(), bytes.size(), nullptr, seen );
+		return seen;
+	};
+	present::ViewFrame received[2];
+	size_t compactBytes = 0, compactMax = 0, compactWholeBytes = 0;
+	bool compactDecoded = true;
+	bool compactAgrees = true;
+	float worstPosition = 0.0f;
+	float worstTurn = 0.0f;
+	for ( size_t i = 0; i < frames.size(); ++i )
+	{
+		present::EncodeView( frames[i], i == 0 ? nullptr : &frames[i - 1], 0.0, packet, present::ViewPrecision::Compact );
+		present::ViewFrame& out = received[i % 2];
+		compactDecoded &= present::DecodeView( packet.data(), packet.size(), i == 0 ? nullptr : &received[( i + 1 ) % 2], out );
+		compactAgrees &= WholeBytes( out ) == WholeBytes( seenCompact( frames[i] ) );
+		( i == 0 ? compactWholeBytes : compactBytes ) += packet.size();
+		compactMax = i == 0 ? compactMax : std::max( compactMax, packet.size() );
+		// How far the picture is from the truth: half a grid step, a fraction of a degree.
+		for ( size_t e = 0; compactDecoded && e < frames[i].frame.entities.size(); ++e )
+		{
+			const present::FrameEntity& truth = frames[i].frame.entities[e];
+			const present::FrameEntity& seen = out.frame.entities[e];
+			if ( truth.holder != 0 )
+			{
+				continue; // drawn in its holder's hand: it has no place of its own
+			}
+			worstPosition = std::max( worstPosition, b3Length( b3Sub( truth.transform.position, seen.transform.position ) ) );
+			float dot = std::fabs( truth.transform.rotation.v.x * seen.transform.rotation.v.x + truth.transform.rotation.v.y * seen.transform.rotation.v.y +
+								   truth.transform.rotation.v.z * seen.transform.rotation.v.z + truth.transform.rotation.s * seen.transform.rotation.s );
+			worstTurn = std::max( worstTurn, 2.0f * std::acos( std::min( dot, 1.0f ) ) );
+		}
+	}
+	CHECK( compactDecoded );
+	CHECK( compactAgrees );
+	std::printf( "    compact: a whole frame is %zu bytes, a delta %zu on average (%zu at most); off by at most %.2f mm and %.2f degrees\n",
+				 compactWholeBytes, compactBytes / ( frames.size() - 1 ), compactMax, worstPosition * 1000.0f, worstTurn * 57.29578f );
+	CHECK( compactBytes / ( frames.size() - 1 ) < deltaBytes / deltaCount / 2 );
+	CHECK( worstPosition < 0.002f && worstTurn < 0.01f );
+	const present::ViewFrame& compactLast = received[( frames.size() - 1 ) % 2];
+	// (Inputs are not part of a compact packet: nobody draws them.)
+	CHECK( compactLast.stats == frames.back().stats && compactLast.frame.hasInputs == false );
+	CHECK( compactLast.frame.modEventCount == frames.back().frame.modEventCount );
+	// Damaged compact deltas, like damaged exact packets, fail or decode; none crash.
+	{
+		std::vector<uint8_t> delta;
+		present::EncodeView( frames[300], &frames[299], 0.0, delta, present::ViewPrecision::Compact );
+		present::ViewFrame base = seenCompact( frames[299] );
+		base.serial = frames[299].serial;
+		present::ViewFrame scratchFrame;
+		uint64_t state = 7;
+		for ( int i = 0; i < 3000; ++i )
+		{
+			std::vector<uint8_t> damaged = delta;
+			for ( int k = 0, flips = 1 + int( NextRandom( state ) % 4 ); k < flips; ++k )
+			{
+				damaged[size_t( NextRandom( state ) % damaged.size() )] ^= uint8_t( 1u << ( NextRandom( state ) % 8 ) );
+			}
+			present::DecodeView( damaged.data(), damaged.size(), &base, scratchFrame );
+		}
+	}
+
+	// A settled world costs nothing more than an exact one's.
+	present::ViewFrame stillCompact = compactLast;
+	stillCompact.serial += 1;
+	stillCompact.frame.tick += 1;
+	present::EncodeView( stillCompact, &compactLast, 0.0, packet, present::ViewPrecision::Compact );
+	CHECK( packet.size() < 128 );
+
 	// What is not in the world travels too.
 	const present::ViewFrame& last = frames.back();
 	const present::ViewFrame& got = decoded[( frames.size() - 1 ) % 2];
@@ -3461,6 +3537,46 @@ void TestViewFile()
 	CHECK( frameOf( got ) == frames.size() - 1 && got.rate == 0.0f );
 	CHECK( WorldBytes( got ) == WorldBytes( frames.back() ) );
 	CHECK( pressed != 0 );
+
+	// What a stream would carry: every third tick, compact. A third of the frames, each lasting
+	// three ticks; seeking still lands where it is asked; the world is the true one on the grid.
+	std::filesystem::path thin = std::filesystem::temp_directory_path() / "cinderbox_view_test_thin.cbv";
+	{
+		present::ViewFileWriter writer;
+		CHECK( writer.Open( thin.string(), 3, present::ViewPrecision::Compact ) );
+		for ( const present::ViewFrame& f : frames )
+		{
+			writer.Add( f );
+		}
+	}
+	{
+		present::ViewFileSource thinned( thin.string() );
+		CHECK( thinned.Length() == ( frames.size() + 2 ) / 3 );
+		thinned.Control( "pause", 1.0 );
+		CHECK( thinned.Take( got ) );
+		CHECK( got.stride == 3 && frameOf( got ) == 0 );
+		CHECK( std::fabs( std::get<double>( stat( got, "replay_length_seconds" ) ) - double( thinned.Length() ) * 3.0 / 60.0 ) < 1e-3 );
+		thinned.Control( "seek", 6.0 );
+		CHECK( thinned.Take( got ) && frameOf( got ) == 360 );
+		// (The world as one whole compact packet of the true frame decodes; the stride is the file's.)
+		auto seen = []( const present::ViewFrame& truth ) {
+			std::vector<uint8_t> bytes;
+			present::EncodeView( truth, nullptr, 0.0, bytes, present::ViewPrecision::Compact );
+			present::ViewFrame frame;
+			present::DecodeView( bytes.data(), bytes.size(), nullptr, frame );
+			frame.stride = 3;
+			return WorldBytes( frame );
+		};
+		CHECK( WorldBytes( got ) == seen( frames[360] ) );
+		thinned.Control( "step", 1.0 );
+		CHECK( thinned.Take( got ) && frameOf( got ) == 363 && WorldBytes( got ) == seen( frames[363] ) );
+		std::printf( "    every third tick, compact: %zu frames in %llu bytes (%.0f per frame)\n", thinned.Length(),
+					 (unsigned long long)std::filesystem::file_size( thin ), double( std::filesystem::file_size( thin ) ) / double( thinned.Length() ) );
+	}
+	{
+		std::error_code ignored;
+		std::filesystem::remove( thin, ignored );
+	}
 
 	// A file cut short loses only its last frame; a file that is not one is rejected with a reason.
 	std::filesystem::path cut = std::filesystem::temp_directory_path() / "cinderbox_view_test_cut.cbv";

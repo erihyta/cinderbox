@@ -8,8 +8,12 @@
 //   u32 size, u8 key (1: the packet stands alone; otherwise a delta against the record before),
 //   the packet.
 // Every 300th record is a key, for seeking. A truncated last record (a crash) is ignored.
+//
+// A file may hold fewer frames than the session had ticks (a stride: every third tick is 20 frames
+// a second), and its packets may be compact (view_codec.h): together, what a stream would carry.
 
 #include "view.h"
+#include "view_codec.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -27,8 +31,9 @@ public:
 	ViewFileWriter( const ViewFileWriter& ) = delete;
 	ViewFileWriter& operator=( const ViewFileWriter& ) = delete;
 
-	bool Open( const std::string& path );
-	// One frame, in order. Its serial does not matter: the file numbers its own.
+	// `stride`: one frame is kept for every so many given. `precision`: how its packets are made.
+	bool Open( const std::string& path, uint32_t stride = 1, ViewPrecision precision = ViewPrecision::Exact );
+	// One frame per tick, in order. Its serial does not matter: the file numbers its own.
 	void Add( const ViewFrame& frame );
 	void Flush();
 	void Close();
@@ -41,7 +46,10 @@ private:
 	FILE* m_file = nullptr;
 	ViewFrame m_last;
 	ViewFrame m_now;
-	uint64_t m_count = 0;
+	uint64_t m_count = 0; // frames written
+	uint64_t m_given = 0; // frames handed to Add
+	uint32_t m_stride = 1;
+	ViewPrecision m_precision = ViewPrecision::Exact;
 	std::vector<uint8_t> m_bytes;
 };
 
@@ -56,6 +64,9 @@ struct ViewFileInfo
 	uint32_t deltaMost = 0;	 // the biggest of those
 	size_t mostEntities = 0;
 	size_t mostPlayers = 0;
+	uint32_t stride = 1; // ticks between frames
+	bool compact = false;
+	ViewCost cost;		 // where the bytes of all the delta frames went
 	std::string map;
 };
 bool ReadViewFileInfo( const std::string& path, ViewFileInfo& info, std::string& error );
@@ -104,7 +115,8 @@ private:
 	// Decodes up to record `target`: on from where it is, or from the key before it. False when
 	// the file turns out damaged (m_error says where).
 	bool DecodeTo( size_t target, bool fromKey );
-	double TickSeconds() const;
+	// How long one of the file's frames lasts: its stride of ticks.
+	double FrameSeconds() const;
 	int FollowedSlot() const;
 	uint32_t PlayerInSlot( int slot ) const;
 	int NextSlot( int from ) const;

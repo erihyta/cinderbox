@@ -190,12 +190,15 @@ bool GameServer::Start( const ServerOptions& options )
 	}
 	if ( options.recordViewPath.empty() == false )
 	{
-		if ( m_viewFile.Open( options.recordViewPath ) == false )
+		uint32_t stride = options.recordViewRate > 0 ? std::max<uint32_t>( ( options.config.tickRate + options.recordViewRate / 2 ) / options.recordViewRate, 1 ) : 1;
+		present::ViewPrecision precision = options.recordViewCompact ? present::ViewPrecision::Compact : present::ViewPrecision::Exact;
+		if ( m_viewFile.Open( options.recordViewPath, stride, precision ) == false )
 		{
 			Log( "cannot write view file %s", options.recordViewPath.c_str() );
 			return false;
 		}
-		Log( "recording the view to %s", options.recordViewPath.c_str() );
+		Log( "recording the view to %s (%u frames a second, %s)", options.recordViewPath.c_str(), options.config.tickRate / stride,
+			 options.recordViewCompact ? "compact" : "exact" );
 	}
 
 	Log( "listening on port %u, %u Hz, fingerprint %016llx, map %s (%u statics, %u props, hash %016llx)", options.port,
