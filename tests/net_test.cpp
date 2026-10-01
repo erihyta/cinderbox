@@ -1742,6 +1742,88 @@ void TestProtocol()
 	}
 }
 
+// Swinging the bat must not depend on what the legs do: standing, walking or sprinting, a press of
+// fire starts a swing, the swing's animation plays on the upper body, and its strike marker comes.
+void TestSprintSwing()
+{
+	// The mannequin, so the strike comes from the swing animation's marker, and the bat's carry pack.
+	const std::string root = CB_SOURCE_DIR;
+	std::shared_ptr<const CharacterAsset> mannequin;
+	Harness h( 47840, {}, {}, {}, [&]( ServerOptions& options ) {
+		std::string error, warnings;
+		mannequin = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
+		options.character = mannequin;
+		options.loadAnimPack = [root]( const std::string& mod, const std::string& pack, std::string& error, std::string& warnings ) {
+			return LoadAnimPackFolder( root + "/server_mods/" + mod + "/client", pack, error, warnings );
+		};
+	} );
+	CHECK( mannequin != nullptr );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t bat = schema.ActionMask( "slot_3" );
+	int swingEvent = schema.FindEvent( "melee.swing" );
+	int strikeEvent = schema.FindEvent( "melee.strike" );
+	CHECK( fire != 0 && bat != 0 && swingEvent >= 0 && strikeEvent >= 0 );
+
+	// Bat out, then swing once a second: standing (ticks 200..500), walking (500..800), sprinting
+	// (800..1100), in a circle so the walls are never reached.
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraYaw = uint16_t( tick * 40 );
+		if ( tick >= 100 && tick < 110 )
+		{
+			in.actions = bat;
+		}
+		if ( tick >= 500 )
+		{
+			in.moveForward = 127;
+		}
+		if ( tick >= 800 )
+		{
+			in.buttons = BtnSprint;
+		}
+		if ( tick >= 200 && ( tick % 60 ) < 3 )
+		{
+			in.actions = fire;
+		}
+		return in;
+	};
+
+	Simulation& server = h.server.Sim();
+	int swings[3] = {};
+	int strikes[3] = {};
+	uint32_t seen = 0;
+	bool sprinted = false;
+	h.RunUntil( 19.5, [&]( double ) {
+		const SimGlobals& g = server.Globals();
+		if ( const Character* c = server.PlayerCharacter( h.bots[0].client->Slot() ) )
+		{
+			sprinted |= c->sprinting != 0 && b3Length( c->velocity ) > 5.0f;
+		}
+		for ( ; seen < g.modEventCount; ++seen )
+		{
+			if ( g.modEventCount - seen > kModEventHistory )
+			{
+				continue;
+			}
+			const ModEventRecord& e = g.modEvents[seen % kModEventHistory];
+			int phase = e.tick < 500 ? 0 : e.tick < 800 ? 1 : 2;
+			swings[phase] += int( e.type ) == swingEvent ? 1 : 0;
+			strikes[phase] += int( e.type ) == strikeEvent ? 1 : 0;
+		}
+	} );
+	h.Report();
+	std::printf( "    swings / strikes: standing %d / %d, walking %d / %d, sprinting %d / %d\n", swings[0], strikes[0], swings[1], strikes[1],
+				 swings[2], strikes[2] );
+	CHECK( sprinted );
+	for ( int phase = 0; phase < 3; ++phase )
+	{
+		CHECK( swings[phase] >= 4 );
+		CHECK( strikes[phase] >= swings[phase] - 1 ); // the last swing's strike may be still to come
+	}
+	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
+}
+
 // A stat a view source published, or `fallback` when it has none of that name and type.
 template <typename T>
 T StatOf( const present::ViewFrame& frame, const char* name, T fallback )
@@ -1935,6 +2017,7 @@ int main( int argc, char** argv )
 		{ "pickup", TestPickup },
 		{ "inventory", TestInventory },
 		{ "item_layers", TestItemLayers },
+		{ "sprint_swing", TestSprintSwing },
 		{ "view_sources", TestViewSources },
 	};
 
