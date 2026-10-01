@@ -16,13 +16,14 @@ source  <──control───   viewer        named commands with a number ("p
 | Piece | Today | File |
 |---|---|---|
 | The protocol | `ViewFrame`, `ViewSource`; as bytes wherever a library or a file is between the two | `src/present/view.h`, `view_codec.*` |
-| Live source | connection, prediction, rollback on its own thread | `src/client/live_source.*` |
-| Replay source | a recording re-simulated on its own thread | `src/client/replay_source.*` |
-| View file source | a file of frames played back, no simulation | `src/present/view_file.*` |
-| Viewer | `CinderboxClient` (Godot): nodes, poses, reactions, HUD | `src/godot/cinderbox_client.*` |
+| Viewer | the `cinderbox` extension: `CinderboxClient` (nodes, poses, reactions, HUD), authoring nodes. No simulation, no networking | `src/godot/` |
+| Peer | the `cinderbox_peer` extension: `CinderboxPeer`, the sources that simulate | `src/godot/peer/` |
+| Live source | connection, prediction, rollback on its own thread (peer) | `src/client/live_source.*` |
+| Replay source | a recording re-simulated on its own thread (peer) | `src/client/replay_source.*` |
+| View file source | a file of frames played back, no simulation (viewer) | `src/present/view_file.*` |
+| Any object | `take( whole ) -> PackedByteArray`: a script can be a source | `src/godot/object_source.*` |
 
-Everything below adds a source, or moves the wall between the two further apart. The viewer stays
-the same.
+Everything below adds a source or changes what a frame carries. The viewer stays the same.
 
 ## Steps
 
@@ -30,28 +31,17 @@ Each step is a milestone of its own, and each leaves the game playable.
 
 | # | Step | Why | Needs |
 |---|---|---|---|
-| 1 | **Two extensions** | mod projects and thin clients ship no simulation | nothing |
-| 2 | **Stream source** | a client that does not simulate; fog of war | nothing |
-| 3 | **Private fields** | secrets that are not physical (a role, a hand of cards) | nothing |
-| 4 | **Predicted rules as data** | a rule is written once, and your own actions are predicted | nothing |
-| 5 | **One condition language** | reactions and the HUD read the game the same way | nothing |
+| 1 | **Stream source** | a client that does not simulate; fog of war | nothing |
+| 2 | **Private fields** | secrets that are not physical (a role, a hand of cards) | nothing |
+| 3 | **Predicted rules as data** | a rule is written once, and your own actions are predicted | nothing |
+| 4 | **One condition language** | reactions and the HUD read the game the same way | nothing |
 
-### 1. Two extensions
-
-- **What**: `cinderbox_viewer` (the viewer, the cue addon, HUD nodes, authoring and bake nodes) and
-  `cinderbox_peer` (the live and replay sources). Bytes cross between them; nothing else does.
-- **Why bytes**: two libraries cannot hand each other C++ objects safely (each has its own
-  runtime and allocator). With frames as bytes the wall is a `PackedByteArray`.
-- **What the viewer still links**: pose evaluation (ozz, the baked state machines), because poses
-  are computed from the animation state where they are drawn. It links no networking and never
-  steps a simulation.
-- **Done when**: a mod's client project opens with the viewer extension alone; the game runs with
-  both; the viewer library has no symbol from `src/net`, `rollback.*` or `Simulation::Step`.
-
-### 2. Stream source
+### 1. Stream source
 
 - **What**: the server captures a `ViewFrame` per streaming client and sends the bytes; the client
   sends input up as it does now. No simulation, no prediction, no rollback on that client.
+- **Where it lives**: a third kind of source object next to `CinderboxPeer`, small enough to be its
+  own extension (ENet and the codec, no simulation), so a streaming client ships without the peer.
 - **Smaller frames first**: a delta frame is exact floats today, 1.7 KB for 4 players and 21 KB for
   64 (0.8 and 10 Mbit/s at 60 frames a second: DESIGN.md, M50). A stream needs transforms and
   animation times quantized, bodies that only fell a little skipped, and fewer frames than ticks
@@ -66,7 +56,7 @@ Each step is a milestone of its own, and each leaves the game playable.
 - **Done when**: a client joins with `--stream`, plays with the server's mods and looks, and a test
   mod hides an entity from one player and not the other.
 
-### 3. Private fields
+### 2. Private fields
 
 - **What**: `declare.Field( name, type, BoardScope::Private )`. The value is never in the
   simulation, never hashed, never in a recording's frames. The server puts it in the owner's
@@ -75,7 +65,7 @@ Each step is a milestone of its own, and each leaves the game playable.
 - **Done when**: a test mod gives each player a secret number; each HUD shows its own; a bot that
   dumps everything it receives never sees another player's.
 
-### 4. Predicted rules as data
+### 3. Predicted rules as data
 
 - **The problem**: a mod's command is something no client could predict, so every board write is a
   rollback, and feedback that cannot wait (`pressed:fire`) restates the server's rule in the look:
@@ -101,7 +91,7 @@ Each step is a milestone of its own, and each leaves the game playable.
 - **Decide first**: this puts a mod's *predictable* rules on clients as data. If "clients never
   learn the rules" matters more than predicted actions, skip this step.
 
-### 5. One condition language
+### 4. One condition language
 
 - **What**: reactions (`src/godot/cue`) and HUD nodes (`src/present/fields`) parse conditions
   separately today. One parser, with `or`, arithmetic, field-to-field comparisons, and a way to

@@ -57,6 +57,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M48: 32 board fields per scope instead of 16 (all 16 were used); the inventory shows its slots on the HUD | done |
 | M49: the viewer protocol: the Godot client draws frames from a source (a live connection, a recording) and knows neither; recordings are watched in the game, as the player they follow | done |
 | M50: frames as bytes: a viewer's frames encode to packets (whole or as deltas), the server records view files that play with no simulation, and the Godot client watches them | done |
+| M51: two extensions: the viewer (no simulation, no networking; all a mod's project needs) and the peer (joins servers, plays recordings), with frames crossing as bytes; any object, even a script, can be a viewer's source | done |
 
 ## Building
 
@@ -76,9 +77,15 @@ ctest --preset clang-release
 Presets: `clang-debug`, `clang-release`, `gcc-release`, `msvc-release` (run from a VS developer
 prompt), `unix-clang-release`, `unix-gcc-release`, and `godot-export`.
 
-`clang-release` and `unix-clang-release` also build the Godot extension (`CB_BUILD_GODOT`, via
-godot-cpp) into `godot/bin/` as `template_debug`. `godot-export` builds only the `template_release`
-extension used by exported games. The other presets skip Godot, so they never overwrite that DLL.
+`clang-release` and `unix-clang-release` also build the two Godot extensions (`CB_BUILD_GODOT`, via
+godot-cpp) into `godot/bin/` as `template_debug`: `libcinderbox` (the viewer) and
+`libcinderbox_peer` (the simulation and the networking, for joining servers). `godot-export` builds
+only their `template_release` versions, used by exported games. The other presets skip Godot, so
+they never overwrite those DLLs.
+
+Godot learns of an extension when the project is imported: after the first build (or after
+pulling a change that adds one), open `godot/` in the editor once or run
+`godot --headless --path godot --import`.
 
 ## Playing
 
@@ -664,7 +671,7 @@ With `--character none`, players use the procedural placeholder rig, which has d
 ### Making a character
 
 1. Make an item project: `characters/<name>/client/` with `project.godot` and a "Mod" export
-   preset (copy `characters/robot/client`). `tools\pack_mod.ps1` copies the Cinderbox extension into
+   preset (copy `characters/robot/client`). `tools\pack_mod.ps1` copies the Cinderbox viewer extension into
    it; do that once (or copy `godot/cinderbox.gdextension` and `godot/bin`) before opening it in
    the editor.
 2. Import the model with Godot's humanoid retargeting: in the import dialog, Skeleton3D → Retarget
@@ -1142,6 +1149,7 @@ All tools are in `<build dir>/bin`.
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_mod_validator.gd -- PACK.zip...` | Checks the pack validator: the named packs pass, built-in hostile packs are refused |
 | `cb_bot --port P --count N --full M --duration S [--chaotic] [--shoot] [--melee]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick; `--shoot` makes full bots take out the pistol and fire at the nearest player; `--melee` makes them close in with the bat and swing |
 | `godot --path godot --script res://addons/cinderbox_maps/check_menu.gd -- --test-port=P --config=FILE [--shots=DIR]` | Drives the menus against a running server: bad address, unknown host, dead port, join, camera, Esc menu, settings, leave, rejoin from the recent list. With `--other-port=P2 --result=FILE` (a server running other mods) also the restart that joins it |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_object_source.gd -- FILE.cbv` | Checks that the viewer draws from any object that hands it packets: a GDScript source reads a view file, with no peer extension involved |
 | `godot --path godot -- --autoplay=S --screenshot=F.png --screenshot-every=S2` | Unattended client; also saves `F_1.png`, `F_2.png`, ... and prints the mod events it saw |
 | `scripts/stress_test.sh --bots N --full M --latency MS --jitter MS --loss % --rollback T` | Starts a server, the simulator and the bots, and prints a summary |
 
@@ -1200,7 +1208,11 @@ Box3D is fetched with two local patches in `cmake/patches/` (see DESIGN.md, M18)
 ```
 cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, Box3D, ENet, ozz, raylib)
 assets/anim/      your converted animation clips (see its README)
-src/sim/          deterministic simulation shared by server and client
+src/sim/          deterministic simulation shared by server and client, as two libraries: cb_sim_data
+                  (what the data means: no world is stepped) and cb_sim (the simulation itself)
+  events.h          the rings of recent impacts and mod events (part of the state and of every frame)
+  bytes.h           minimal binary reader and writer
+  world_lifetime.*  the lock around creating flecs and Box3D worlds
   types.h           inputs, commands, input frames, config
   mod_schema.*      names of the mods' board fields, events and actions (sent on join)
   ragdoll.h         the ragdoll's bodies and joints
@@ -1234,14 +1246,17 @@ src/present/      engine-independent presentation, shared by Godot and raylib
   view.h            the viewer protocol: ViewFrame (what a viewer is told), ViewSource (who tells it)
   view_codec.*      a ViewFrame as bytes: whole, or a delta against a frame both sides have
   view_file.*       view files: frames recorded as bytes, and the source that plays them
-  frame.*           PresentationFrame: a copy of what the simulation shows at one tick
+  frame.h           PresentationFrame: a copy of what the simulation shows at one tick
+  capture.*         CaptureFrame: a simulation's state as a frame (its own library, cb_capture)
   mirror.*          presentation flecs world: interpolation, error smoothing, visual and mod events
   fields.*          board fields and conditions by name
   pose_tools.*      ragdoll poses, pose blending
   scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
-src/godot/        GDExtension: CinderboxClient (the viewer: draws a view source's frames as prefabs,
+src/godot/        the viewer GDExtension (cinderbox): CinderboxClient (draws a view source's frames as prefabs,
                   signals, items; the adapter that drives the World director), CinderboxSkeleton, map and entity authoring nodes,
-                  CbItemLook, HUD labels (cinderbox_hud.*)
+                  CbItemLook, HUD labels (cinderbox_hud.*). No simulation, no networking
+  object_source.*   a source that is a Godot object handing over packets (the peer, or a script)
+  peer/             the peer GDExtension (cinderbox_peer): CinderboxPeer, the sources that simulate
   cue/            the reaction addon, godot-cpp only: CbDirector, CbReaction, cue paths and conditions
 godot/            Godot client project: boot (player mods, pack validator), game (input, camera, HUD, VFX,
                   joining with workshop items), workshop.gd (where items are), prefabs, vfx, ui
