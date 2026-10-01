@@ -107,9 +107,9 @@ Godot is only the presentation layer. The simulation, prediction, rollback, netw
 evaluation are the same C++ code the raylib client and the server use; none of it runs through Godot.
 
 ```
-server ──ENet──> GameClient + Simulation (sim thread) ──PresentationFrame──> Mirror (main thread)
-                                                                              │ events, poses
-                                                            CinderboxClient ──┴─> prefab nodes, signals ──> game.gd (VFX, HUD)
+a view source (its own thread) ──ViewFrame──> Mirror (main thread)
+  live: server ──ENet──> GameClient + Simulation                 │ events, poses
+  replay: a recording ──> Simulation          CinderboxClient ──┴─> prefab nodes, signals ──> game.gd (VFX, HUD)
 ```
 
 - **Layers**:
@@ -118,7 +118,7 @@ server ──ENet──> GameClient + Simulation (sim thread) ──Presentation
     - the `Mirror` flecs world interpolates between ticks, smooths rollback corrections and evaluates ozz poses;
     - the mirror emits visual events (spawned, destroying, removed, jumped, landed).
   - The raylib viewer and the Godot extension only draw the mirror.
-- **Simulation thread**: `CinderboxClient` runs `GameClient` on its own thread and publishes a frame whenever the tick, the state or a rollback changes.
+- **Simulation thread**: the view source (see [The viewer protocol](#the-viewer-protocol-m49)) simulates on its own thread and publishes a frame whenever the tick, the state or a rollback changes. `CinderboxClient` only draws frames.
   - The main thread takes the newest frame and extrapolates the interpolation alpha from the time it was published.
   - Input is latched: a jump or spawn press is kept until the simulation thread has consumed it.
 - **Floating-point environment**: Godot is free to change the FPU state of its own threads.
@@ -130,7 +130,7 @@ server ──ENet──> GameClient + Simulation (sim thread) ──Presentation
   - Boxes are unit scenes scaled to the entity's size. Players are positioned at the feet.
   - `CinderboxSkeleton` draws bone boxes with one MultiMesh and can drive a `Skeleton3D` by Mixamo bone name.
     This makes an imported character mesh a drop-in replacement; an AnimationTree-to-ozz binding is future work.
-- **Signals**: `visual_spawned`, `visual_destroying`, `visual_removed`, `player_jumped`, `player_landed` and `connection_state_changed`.
+- **Signals**: `visual_spawned`, `visual_destroying`, `visual_removed`, `player_jumped`, `player_landed` and `source_state_changed`.
   - `game.gd` turns them into VFX: `res://vfx/<event>.tscn`, one-shot `GPUParticles3D`.
   - The HUD is `res://ui/hud.tscn`.
 - **Non-deterministic physics**: Jolt is enabled for client-only effects. Simulation entities never get Godot physics bodies.
@@ -1315,6 +1315,73 @@ global). M46 used the last entity name: one more field from any mod and the serv
 - **Not done**: the row shows names only (no icons, no ammo); when a server reaches 32 names the
   same wall is back, with the same one-constant fix.
 
+## The viewer protocol (M49)
+The Godot client was one class that both played (connection, prediction, rollback) and drew. It is
+now a **viewer** that draws frames, and **sources** that produce them. [ROADMAP.md](ROADMAP.md)
+has what this is for.
+
+```
+source  ──ViewFrame──>  viewer        the world at one tick, who is who, how the source is
+source  <──input─────   viewer        the local player's input, for sources that play one
+source  <──control───   viewer        named commands with a number ("pause" 1, "skip" -5)
+```
+
+| Part of a `ViewFrame` (`src/present/view.h`) | What |
+|---|---|
+| `state`, `stats` | how the source is: `"connecting"` .. `"playing"`, `"rejected"`; named numbers and words for a debug HUD and tests |
+| `mapHash`, `mapName`, templates, `schema`, `names` | the session; generations say when they changed |
+| `frame` | the `PresentationFrame`: entities, boards, animation states, ragdolls, event rings, the local player |
+| `publishedAt`, `alphaAtPublish`, `rate` | where between two ticks the source was, and how fast it moves on (0 frozen, 1 playing, 2 a recording at double speed) |
+| `localPressed` | the local player's presses, from a source that plays someone else's input |
+
+- **A frame is self-contained.** A viewer that skips frames needs only the newest. Events are
+  counters with a ring of the most recent, so nothing plays twice and nothing is lost.
+- **Sources** (`src/client`, no rendering, no Godot):
+
+  | Source | Does | Input | Controls |
+  |---|---|---|---|
+  | `LiveSource` | `GameClient` on a thread: joins, predicts, rolls back | the viewer's | none |
+  | `ReplaySource` | `ReplayPlayer` on a thread: re-simulates a `.cbr`, checks its checksums | none | `pause`, `speed`, `seek`, `skip`, `step`, `follow`, `follow_next` |
+
+  Both stand on `ThreadedSource`: the thread, the simulation's floating-point environment, and the
+  newest frame handed across (a rollback or presses in a frame the viewer skipped are carried into
+  the next).
+- **The viewer knows no source.** `CinderboxClient` holds a `ViewSource`; `connect_to_server()` and
+  `open_replay( path )` are the two places a source is made. `get_stats()` is the source's stats,
+  whatever they are; `control( name, value )` passes a command through.
+- **A recording is watched as its player.** The followed player is the frame's local player, so
+  the HUD, `is_local` reactions and the camera show what that player saw. Its presses arrive in
+  `localPressed`, so `pressed:<action>` reactions play as they did live. The recording names the
+  workshop items it needs; the client loads them as for a server.
+- **Stats are generic** (`ViewStat`: a name and an int, float, bool or text) so the viewer does not
+  include the client's types. The live source keeps the names the HUD and the checks already read
+  (`rtt_ms`, `desyncs`, `checksums_verified`); the replay source reports recorded checksums it
+  could not reproduce as `desyncs`, so an unattended run fails the same way.
+- **`ReplayPlayer`** left the raylib viewer (`src/client/replay_player.*`); both viewers use it.
+
+**Verified**
+- `net_view_sources`: a `LiveSource` joins a server, plays for 3 s (ticks advance, serials grow, its
+  input spawns a prop, no desyncs); the `ReplaySource` of that session follows slot 0, reaches the
+  end at 16x with every checksum reproduced and the spawn presses reported; seek, pause, step and
+  follow; a missing file is rejected with a reason.
+- A Godot client on a server with four bots for 10 s: no desyncs, exit code 0. The same session
+  watched from its recording: the six workshop items load, the followed player's HUD and kill feed
+  show, no desyncs, exit code 0. A missing file comes back with the reason.
+- All unit and network suites (Clang); GCC builds; the reference hashes are unchanged (the
+  simulation was not touched). MSVC and the CI compilers have not built this yet.
+- Six tests that existed but were never registered with `ctest` now are: `stowed_items`,
+  `camera_collision`, `net_item_shapes`, `net_pickup`, `net_inventory`, `net_item_layers`.
+
+**Not done**
+- The playback keys in the Godot client (Space, arrows, `,` `.`, Home, N) were not pressed by hand;
+  the controls behind them are what the test drives.
+- Recordings carry no names: a watched player is "Player N".
+- The menu has no "watch a recording" entry; it is `--replay=FILE`.
+- The raylib client still has its own live and replay paths (it shares `ReplayPlayer` only).
+- On the first full `ctest` run after this change `net_loopback_session` and `net_lossy_session`
+  failed; alone, repeated three times each, and in a second full run they passed. They check
+  real-time thresholds, and nothing they run was changed; not looked into further.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1367,6 +1434,7 @@ global). M46 used the last entity name: one more field from any mod and the serv
 - **Rare reconnect**: an occasional client reconnect (about one per several minutes of 64 bots at 2% loss) was seen with the 1–3 s ENet timeout. The timeout is now 2–6 s; no reconnects occurred in the M5 runs.
 
 ### Possible next steps
+The ordered plan for the client is in [ROADMAP.md](ROADMAP.md). These are loose ideas beside it.
 - **Less download at high latency**: skip frames that are probably still in flight and resend them only after a timeout. This trades bandwidth for a slower recovery from loss.
 - **Camera**: fade the character out when the map pushes the camera up against it (collision itself is in, M45).
 - **Godot**:
@@ -1436,3 +1504,4 @@ global). M46 used the last entity name: one more field from any mod and the serv
 46. **M46** (done): stowed items in the engine (`MoveItem`, `HeldItem::stowed`), an `inventory` mod owning slots 1 to 4 in place of `loadout`, item properties for slot / start / holster, holster sockets on the mannequin; fixes items dropping on switch and on pick-up.
 47. **M47** (done): item properties authored on the `CbItemBody` and baked with the body (the bat's hold time), a Bake button on it, and `pickup.since` (a start tick) in place of a progress field set every tick.
 48. **M48** (done): `kBoardSlots` 32 (new reference hashes, protocol 16); the inventory publishes its slots and shows them on a HUD row.
+49. **M49** (done): the viewer protocol: `ViewFrame` / `ViewSource` (`src/present/view.h`), `LiveSource` and `ReplaySource` in `src/client`, `CinderboxClient` as a viewer that knows no source, recordings watched in the Godot client (`--replay=FILE`) as the followed player; ROADMAP.md.
