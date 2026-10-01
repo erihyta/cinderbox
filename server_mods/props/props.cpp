@@ -25,8 +25,8 @@ public:
 	void Declare( Declarations& declare ) override
 	{
 		m_spawn = declare.Action( "spawn_prop", "F" );
-		// Published by the loadout mod when it runs; 0 (never set) counts as empty hands.
-		m_loadout = declare.Field( "loadout.slot", BoardType::Int );
+		// Props are thrown with empty hands.
+		m_hand = declare.Socket( "RightHand" );
 	}
 
 	void Tick( Context& ctx ) override
@@ -41,7 +41,7 @@ public:
 			uint32_t netId = ctx.PlayerNetId( slot );
 			const Character* c = ctx.PlayerCharacter( slot );
 			const Transform* t = ctx.EntityTransform( netId );
-			if ( c == nullptr || t == nullptr || c->dead || c->frozen || ctx.Get( netId, m_loadout ) > 1 )
+			if ( c == nullptr || t == nullptr || c->dead || c->frozen || ctx.HeldItem( slot, m_hand ) != 0 )
 			{
 				continue;
 			}
@@ -66,7 +66,7 @@ public:
 
 private:
 	ActionHandle m_spawn;
-	FieldHandle m_loadout;
+	SocketHandle m_hand;
 };
 
 } // namespace

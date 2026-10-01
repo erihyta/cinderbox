@@ -1691,6 +1691,124 @@ ModSchema TestGraphSchema()
 	schema.fields.push_back( { "test.armed", BoardType::Bool, BoardScope::Entity, 0 } );
 	return schema;
 }
+// Stowed items: carried by a player but in no hand. MoveItem puts a held item away and takes a
+// carried one out; a stowed item is not what "the item in this socket" means, can be given and
+// picked up straight to stowed, drops like any other, and goes when its holder leaves.
+void TestStowedItems()
+{
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetItemShapes( { ItemShape{}, ItemShape{} } );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto command = [&]( CommandType type, uint32_t target ) {
+		SimCommand c;
+		c.type = type;
+		c.target = target;
+		f.commands.push_back( c );
+		return &f.commands.back();
+	};
+	auto items = [&]( uint32_t holder ) {
+		std::vector<uint32_t> out;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+			if ( item != nullptr && item->holder == holder )
+			{
+				out.push_back( r.netId );
+			}
+		}
+		return out;
+	};
+	auto held = [&]( uint32_t netId ) { return sim.FindEntity( netId ).get<HeldItem>(); };
+	const uint8_t hand = 0;
+	const uint8_t back = 1;
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	uint32_t holder = sim.PlayerNetId( 0 );
+
+	// Given stowed: carried, in no hand, and nothing was dropped for it.
+	SimCommand* give = command( CommandType::SpawnItem, SlotTarget( 0 ) );
+	give->index = 0;
+	give->mode = kNoSocket;
+	give->value = 1;
+	SimCommand* inHand = command( CommandType::SpawnItem, SlotTarget( 0 ) );
+	inHand->index = 1;
+	inHand->mode = hand;
+	step( 1 );
+	std::vector<uint32_t> carried = items( holder );
+	CHECK( carried.size() == 2 && items( 0 ).empty() );
+	if ( carried.size() != 2 )
+	{
+		return;
+	}
+	uint32_t a = carried[0]; // stowed
+	uint32_t b = carried[1]; // in the hand
+	CHECK( held( a ).stowed == 1 && held( a ).socket == kNoSocket && held( b ).stowed == 0 );
+	CHECK( sim.HeldItemOf( holder, hand ) == b && sim.HeldItemOf( holder, kNoSocket ) == 0 );
+
+	// Taking the stowed one out while the hand is full does nothing...
+	command( CommandType::MoveItem, a )->mode = hand;
+	step( 1 );
+	CHECK( held( a ).stowed == 1 && sim.HeldItemOf( holder, hand ) == b );
+	// ...stow the other first, in the same frame, and they change places: on the back, in the hand.
+	SimCommand* stow = command( CommandType::MoveItem, b );
+	stow->mode = back;
+	stow->value = 1;
+	command( CommandType::MoveItem, a )->mode = hand;
+	step( 1 );
+	CHECK( sim.HeldItemOf( holder, hand ) == a && held( b ).stowed == 1 && held( b ).socket == back );
+	CHECK( sim.HeldItemOf( holder, back ) == 0 ); // a holster is not a hand
+	CHECK( items( holder ).size() == 2 && items( 0 ).empty() );
+	// A new item into the hand drops what the hand held, never what is stowed.
+	uint64_t before = sim.ComputeHash();
+	Snapshot snap;
+	sim.Save( snap );
+	SimCommand* third = command( CommandType::SpawnItem, SlotTarget( 0 ) );
+	third->index = 1;
+	third->mode = hand;
+	step( 1 );
+	CHECK( items( 0 ).size() == 1 && items( 0 )[0] == a && held( b ).holder == holder );
+	uint64_t after = sim.ComputeHash();
+	sim.Load( snap );
+	CHECK( sim.ComputeHash() == before ); // stowed state is part of the snapshot
+	third = command( CommandType::SpawnItem, SlotTarget( 0 ) );
+	third->index = 1;
+	third->mode = hand;
+	step( 1 );
+	CHECK( sim.ComputeHash() == after );
+
+	// From the world straight to stowed, with the hand full.
+	SimCommand* pick = command( CommandType::PickUpItem, SlotTarget( 0 ) );
+	pick->other = a;
+	pick->mode = kNoSocket;
+	pick->value = 1;
+	step( 1 );
+	CHECK( held( a ).holder == holder && held( a ).stowed == 1 && sim.FindEntity( a ).has<PhysicsBody>() == false );
+	CHECK( items( holder ).size() == 3 && items( 0 ).empty() );
+	// A stowed item drops like any other, and is in use by nobody afterwards.
+	command( CommandType::DropItem, b )->a = { 2.0f, 1.0f, 0.0f };
+	step( 1 );
+	CHECK( held( b ).holder == 0 && held( b ).stowed == 0 && sim.FindEntity( b ).has<PhysicsBody>() );
+	// Moving an item that lies in the world does nothing.
+	command( CommandType::MoveItem, b )->mode = hand;
+	step( 1 );
+	CHECK( held( b ).holder == 0 );
+
+	// Leaving takes everything carried along, stowed too; what lies in the world stays.
+	f.events.push_back( { PlayerEventType::Leave, 0 } );
+	step( 1 );
+	CHECK( sim.FindEntity( a ).is_valid() == false && items( holder ).empty() );
+	CHECK( items( 0 ).size() == 1 && items( 0 )[0] == b );
+}
+
 
 // Directional clips in a 2D blend space, as Godot triangulates it (idle in the middle, four
 // directions around), and the body-frame velocity that drives it.
@@ -3111,6 +3229,7 @@ int main( int argc, char** argv )
 		{ "anim_graph", TestAnimGraph },
 		{ "held_items", TestHeldItems },
 		{ "world_items", TestWorldItems },
+		{ "stowed_items", TestStowedItems },
 		{ "attack_resolve", TestAttackResolve },
 		{ "anim_blend2d", TestAnimBlend2D },
 		{ "pose_tools", TestPoseTools },

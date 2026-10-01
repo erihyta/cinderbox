@@ -2,9 +2,12 @@
 //
 // Near an item (within reach of the chest, and not behind the player), its NetId is on the
 // player's board as "pickup.target"; the mod's look turns that into a prompt above the item
-// ("[E] Pick up Bat"). E takes it into the right hand (whatever was there is dropped in its place);
-// G throws what the right hand holds; dying drops it. Items a loadout gave (the pistol, the bat
-// from slot 3) are that mod's to take back, and go when their slot is put away.
+// ("[E] Pick up Bat"). E takes it; G throws what the right hand holds.
+//
+// Where a taken item goes is the inventory mod's when it runs: this mod only makes the player
+// carry it (stowed), and the inventory puts it in its slot and into the hand. Without an inventory
+// there is only the right hand: E takes the item into it (whatever was there drops in its place),
+// and dying drops it.
 //
 // Some items take a moment: E has to be held for the item's "pickup.hold_seconds" (an item property
 // its mod declares; --mod-option pickup.hold_seconds=N is the default for the rest, 0: a tap). While
@@ -70,6 +73,8 @@ public:
 		m_hold = declare.Field( "pickup.hold", BoardType::Float );
 		m_progress = declare.Field( "pickup.progress", BoardType::Float );
 		m_hand = declare.Socket( "RightHand" );
+		// Published by the inventory mod when it runs (1 or more); 0 (never set): there is none.
+		m_inventory = declare.Field( "inventory.slot", BoardType::Int );
 	}
 
 	void Start( Context& ctx ) override
@@ -102,11 +107,12 @@ public:
 			}
 			uint32_t target = SlotTarget( slot );
 			uint32_t inHand = ctx.HeldItem( slot, m_hand );
+			bool inventory = ctx.Get( netId, m_inventory ) != 0;
 
-			// Dying lets go of what the hand holds (a loadout's own item is taken back by its mod).
+			// Dying lets go of what the hand holds (with an inventory, that decides what a death drops).
 			if ( c->dead != 0 )
 			{
-				if ( p.dead == false && inHand != 0 )
+				if ( p.dead == false && inHand != 0 && inventory == false )
 				{
 					Drop( ctx, slot, inHand, kDropSpeed );
 				}
@@ -156,7 +162,13 @@ public:
 			{
 				continue;
 			}
-			if ( take )
+			if ( take && inventory )
+			{
+				// Carried from now on; the inventory finds its slot and takes it out.
+				ctx.PickUpStowed( target, p.holding );
+				p.holding = 0;
+			}
+			else if ( take )
 			{
 				// Swap: what the hand held drops, then the hand takes the new one (in this order, in
 				// this tick's frame).
@@ -232,6 +244,7 @@ private:
 	FieldHandle m_target;
 	FieldHandle m_hold;
 	FieldHandle m_progress;
+	FieldHandle m_inventory;
 	float m_holdSeconds = 0.0f;
 	SocketHandle m_hand;
 	int m_spawnEach = 0;

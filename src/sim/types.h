@@ -112,6 +112,7 @@ enum class CommandType : uint8_t
 	// target (the player who holds it), index = item kind (schema order), mode = socket (schema
 	// order). A new entity with its own board, drawn in that socket; what that socket held is
 	// dropped at the holder's chest. Destroy removes it; it also goes when its holder leaves.
+	// value = 1: it is given stowed instead (mode: its holster socket, or kNoSocket), and nothing drops.
 	// target 0: the item lies in the world instead, at a (its grip) turned by c (a unit
 	// quaternion's x, y, z; w >= 0 follows), moving at b.
 	SpawnItem = 12,
@@ -123,9 +124,14 @@ enum class CommandType : uint8_t
 	DropItem = 14,
 	// target (a player), other = an item lying in the world, mode = socket: the player holds it.
 	// Nothing happens when that socket is taken, or the item is held already.
+	// value = 1: it is taken stowed (mode: its holster socket, or kNoSocket), whatever the hands hold.
 	PickUpItem = 15,
+	// target (a held item), mode = socket, value = 1 stows it (mode: its holster socket, or
+	// kNoSocket), 0 takes it in use into that socket. Nothing happens when it is not held, or the
+	// socket already has an item in use (stow that one first, in the same frame).
+	MoveItem = 16,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::PickUpItem );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::MoveItem );
 
 enum ImpulseMode : uint8_t
 {

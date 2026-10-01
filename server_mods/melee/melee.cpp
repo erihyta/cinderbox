@@ -1,9 +1,8 @@
-// Melee: a bat, from slot 3 or picked up.
+// Melee: a bat.
 //
-// What is in the right hand decides: a "melee.bat" there is out, wherever it came from. Slot 3
-// gives one bat per life: putting the slot away takes it back and taking the slot out returns it,
-// but once it leaves the hand any other way (dropped, thrown, swapped for something picked up) the
-// slot is empty until the next life. A bat picked up stays in the hand.
+// What is in the right hand decides: a "melee.bat" there is out, wherever it came from. Who has
+// one, and when it is out, is the inventory mod's: this mod only says a bat lives in slot 3, that a
+// life starts with one, and that it hangs on the back while it is put away.
 //
 // Out, it is a full-body stance ("melee": the character's own idle, walk and run with the bat) and
 // the body faces where the camera looks. The left mouse button swings: the full-body layer plays the
@@ -24,7 +23,6 @@ namespace
 using namespace cb;
 using namespace cb::mods;
 
-constexpr int32_t kMeleeSlot = 3; // loadout.slot value while the bat is out
 constexpr int32_t kDamage = 40;
 constexpr float kSwingSeconds = 0.45f;	// the swing stance, then back to the ready stance
 constexpr float kStrikeSeconds = 0.2f;	// when in the swing the hit is tested, unless the animation says
@@ -41,10 +39,6 @@ uint32_t Ticks( const Context& ctx, float seconds )
 
 struct Swinger
 {
-	bool loadout = false;	// slot 3 is out
-	bool expectGiven = false; // slot 3 put a bat in the hand this tick; learn its NetId next tick
-	uint32_t given = 0;		// the bat slot 3 gave
-	bool spent = false;		// this life's bat left the hand: slot 3 has none to give
 	bool out = false;
 	bool swinging = false;
 	bool struck = false;
@@ -64,7 +58,6 @@ public:
 	void Declare( Declarations& declare ) override
 	{
 		m_fire = declare.Action( "fire", "MouseLeft" ); // shared with the pistol: whichever is out
-		m_loadout = declare.Field( "loadout.slot", BoardType::Int );
 		// The bat is an item of its own in the right hand: the swing animation plays its "slash",
 		// and it has its own state (hot for a while after it hits someone).
 		// Its body when it lies in the world is authored in its scene (client/prefabs/bat.tscn, the
@@ -76,6 +69,9 @@ public:
 		// A bat takes a moment to pick up: the pickup mod reads this (E held for half a second).
 		declare.ItemProperty( m_bat, "pickup.hold_seconds", 0.5f );
 		m_hand = declare.Socket( "RightHand" );
+		declare.ItemProperty( m_bat, "inventory.slot", 3.0f );
+		declare.ItemProperty( m_bat, "inventory.start", 1.0f );
+		declare.ItemProperty( m_bat, "inventory.holster", declare.Socket( "Back" ) );
 		m_hot = declare.Field( "melee.hot", BoardType::Bool );
 		m_full = declare.Layer( "full" );
 		m_ready = declare.Stance( "melee" );
@@ -113,41 +109,6 @@ public:
 
 			uint32_t inHand = ctx.HeldItem( slot, m_hand );
 			bool batInHand = inHand != 0 && ctx.ItemKindOf( inHand ).index == m_bat.index;
-			if ( s.expectGiven && batInHand )
-			{
-				s.given = inHand;
-				s.expectGiven = false;
-			}
-			// One bat per life: gone from the hand while the slot is out means dropped, not put away.
-			if ( c->dead != 0 )
-			{
-				s.spent = false;
-			}
-			else if ( s.loadout && s.given != 0 && inHand != s.given )
-			{
-				s.spent = true;
-				s.given = 0;
-			}
-			// Slot 3 gives its bat when the hand has none; putting it away (or dying) takes that one back.
-			bool loadout = ctx.Get( netId, m_loadout ) == kMeleeSlot && c->dead == 0;
-			if ( loadout != s.loadout )
-			{
-				s.loadout = loadout;
-				if ( loadout && batInHand == false && s.spent == false )
-				{
-					ctx.SpawnItem( target, m_bat, m_hand );
-					s.expectGiven = true;
-				}
-				else if ( loadout == false && s.given != 0 && inHand == s.given )
-				{
-					ctx.Destroy( s.given ); // this one: another mod may put its item in the hand this tick
-				}
-				if ( loadout == false )
-				{
-					s.given = 0;
-					s.expectGiven = false;
-				}
-			}
 
 			bool holding = batInHand && c->dead == 0;
 			if ( holding != s.out )
@@ -245,7 +206,6 @@ private:
 
 	std::array<Swinger, kMaxPlayers> m_swingers{};
 	ActionHandle m_fire;
-	FieldHandle m_loadout;
 	ItemKindHandle m_bat;
 	SocketHandle m_hand;
 	FieldHandle m_hot;

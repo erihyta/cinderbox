@@ -71,6 +71,7 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.holder = item->holder;
 			f.itemKind = item->kind;
 			f.socket = item->socket;
+			f.stowed = item->stowed != 0;
 			if ( const Blackboard* b = e.try_get<Blackboard>() )
 			{
 				f.board = *b;

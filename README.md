@@ -52,6 +52,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M43: hold-to-use prompts: item properties (`pickup.hold_seconds`), `pickup.progress`, and a prompt bar that fills | done |
 | M44: held items bring animation layers (the bat changes how its holder stands and walks); a mod's own swap wins over an item's | done |
 | M45: join menu (address, recent servers), Esc menu, settings; failed joins say why; camera collision with the map | done |
+| M46: an inventory (slots, stowed items, optional holsters): switching and picking up no longer drop other items | done |
 
 ## Building
 
@@ -202,14 +203,15 @@ The mods that ship:
 
 | Mod | Declares | Rules |
 |---|---|---|
-| `loadout` | `loadout.slot`; actions `slot_1` (1), `slot_2` (2), `slot_3` (3) | 1 is empty hands (and freelook), 2 the pistol, 3 the bat |
+| `inventory` | `inventory.slot`; actions `slot_1` .. `slot_4` (keys 1 to 4) | what a player carries: slot 1 is empty hands (and freelook), slots 2 to 4 hold one item each; the slot that is out has its item in the right hand, the rest are stowed. See [The inventory](#the-inventory) |
 | `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage` | the bat: a full-body stance while it is out; left mouse swings (0.45 s, every 0.6 s), a fan of 1.8 m rays from the chest at the strike, 40 damage through `combat.damage` |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
 | `pistol` | `combat.*`, `pistol.*` fields; `fire` (left mouse), `reload` (R); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `combat.killed` | hitscan from the camera pivot, 25 damage, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; keeps health, so it also applies other mods' `combat.damage`; death leaves a ragdoll (10 s, at most 16); respawn after 3 s; falling out of the world counts as a death |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
-Mods cooperate through the board: `props` and `pistol` read the `loadout.slot` that `loadout`
-publishes. They also cooperate through events: `deathmatch` scores the pistol's `combat.killed`, and
+Mods cooperate through the board (`pickup` reads the `inventory.slot` that `inventory` publishes, to
+know there is one) and through item properties (`pistol` and `melee` tell `inventory` which slot
+their item lives in). They also cooperate through events: `deathmatch` scores the pistol's `combat.killed`, and
 the pistol refills health and ammo on `game.round_start`.
 
 Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod reads them with
@@ -764,8 +766,7 @@ godot --headless --path godot --script res://addons/cinderbox_maps/make_sneak_pa
 ```
 
 **Items bring layers.** A mod can tie a pack to an item kind,
-`declare.ItemLayers( bat, declare.AnimPack( "melee.carry" ) )`: while a player holds one (from a
-loadout slot or picked up), the pack's layers play instead of the player's own of the same names,
+`declare.ItemLayers( bat, declare.AnimPack( "melee.carry" ) )`: while a player holds one (in use, not stowed), the pack's layers play instead of the player's own of the same names,
 and stop when it is dropped. A mod's own `SwapLayer` on the same layer wins while it lasts, so a
 crouch still crouches with a bat in hand and the carry returns when the player stands up. The bat's
 pack replaces `Base`: standing ready, a measured walk, the usual jog.
@@ -806,18 +807,54 @@ The bat: the melee mod spawns a `melee.bat` when the bat is taken out. The manne
 the bat's `slash` (flames along the barrel) 0.2 s in, and a hit sets `melee.hot` on the bat, which
 one of its reactions turns into a glow; `melee.hit`, which the mod sends to whoever swung, bursts it
 into sparks through another. Any character with a right hand swings any item that has a
-`slash`; an empty socket, or an item without one, is simply quiet. The pistol works the same way:
-the pistol mod spawns a `pistol.gun` while slot 2 is out.
+`slash`; an empty socket, or an item without one, is simply quiet. The pistol works the same way.
 
 A mod taking its item away destroys the NetId `ctx.HeldItem( slot, socket )` gives, not
 `ItemTarget`: another mod may put its item in that socket in the same tick (a weapon swap), and
 `ItemTarget` would find that one. What is in the hand decides: the melee mod swings any `melee.bat`
-in the right hand and the pistol fires any `pistol.gun`, whether a loadout slot gave it or it was
-picked up; a slot takes back only the item it gave, and gives **one per life**: put away and taken
-out again it comes back, but dropped, thrown or swapped for a pick-up it is gone from the slot until
-the next life (so dropping cannot make more of them). Looks follow the same rule: the pistol's HUD
-and its predicted shot ask `pistol.gun` (true while the player holds one), never `loadout.slot == 2`,
-so a picked-up pistol shows its ammo and a bat held with slot 2 out swings without a muzzle flash.
+in the right hand and the pistol fires any `pistol.gun`, wherever it came from. Looks follow the
+same rule: the pistol's HUD and its predicted shot ask `pistol.gun` (true while the player has one
+in use), never which slot is out, so a picked-up pistol shows its ammo and a holstered one does not.
+
+### The inventory
+
+An item a player carries is **in use** (in a hand) or **stowed** (carried, in no hand). Stowing is
+the engine's; who carries what in which slot is the `inventory` mod's.
+
+| Engine verb (`Context`) | What it does |
+|---|---|
+| `GiveItem( holder, kind, holster )` | a new item, stowed |
+| `StowItem( item, holster )` | puts a held item away; `holster` is the socket it is drawn in meanwhile (none: out of sight) |
+| `HoldItem( item, socket )` | takes a carried item in use; does nothing if that socket has one in use (stow that first, same tick) |
+| `PickUpStowed( holder, item, holster )` | from the world straight to stowed |
+| `CarriedItems( slot )` | everything the player carries, in use and stowed |
+
+A stowed item is in no hand: `HeldItem`, item layers, state machine conditions and item-kind
+conditions in looks do not see it. It keeps its entity, its board and its look, and drops like any other.
+
+The `inventory` mod's rules:
+
+| Situation | What happens |
+|---|---|
+| A life starts | Every item kind with `inventory.start` is given, stowed |
+| A slot key (1 to 4) | That slot's item comes into the right hand; what was in the hand is stowed. Nothing is made, destroyed or dropped |
+| An item is picked up (E) | It goes to its kind's slot and comes into the hand. If that slot had an item, the old one drops (one per slot). Other slots are untouched |
+| G | Throws what is in the hand; its slot is empty until something is picked up |
+| Death | What the life started with is taken back; anything else carried drops where the player stood. The next life starts with the slot that was out |
+
+Other mods describe their items with properties and never touch the slots:
+
+```cpp
+m_bat = declare.ItemKind( "melee.bat" );
+declare.ItemProperty( m_bat, "inventory.slot", 3.0f );                       // lives in slot 3 (2..4); without it: the first free slot
+declare.ItemProperty( m_bat, "inventory.start", 1.0f );                      // every life starts with one
+declare.ItemProperty( m_bat, "inventory.holster", declare.Socket( "Back" ) ); // optional: where it hangs while stowed
+```
+
+**Holsters are optional, twice over.** The mod chooses whether its item has one, and the character
+chooses whether it has that socket: a `CbSocket` node named like it (`Back`, `Hip`) under a
+`BoneAttachment3D`, moved in the editor like the hand sockets. Without either, a stowed item is
+simply out of sight. The mannequin has both: the bat hangs across the back, the pistol on the right hip.
 
 ### Items in the world
 
@@ -848,8 +885,9 @@ godot --headless --path server_mods/melee/client --script <repo>/godot/addons/ci
 Who may pick up what, and when, is a mod's. The **pickup** mod is the example:
 
 - Near an item (1.5 m along the ground, not behind you), its NetId goes on your board as
-  `pickup.target`. **E** takes it into the right hand (what was there drops), **G** throws what you
-  hold, dying drops it. Items a loadout slot gave are that mod's to take back.
+  `pickup.target`. **E** takes it, **G** throws what you hold. With the `inventory` mod running, a
+  taken item goes to its slot (see [The inventory](#the-inventory)); without it there is only the
+  right hand: what was there drops, and dying drops it.
 - **Hold to pick up**: an item's mod may say it takes a moment,
   `declare.ItemProperty( bat, "pickup.hold_seconds", 0.5f )` (the bat does; the pistol is a tap).
   While E is held on the item in reach, `pickup.progress` runs from 0 to 1 on your board; letting go
@@ -1128,7 +1166,7 @@ src/sim/          deterministic simulation shared by server and client
 src/anim/         ozz: procedural rig, asset loading (anim_set.*), pose evaluation (pose.*), joint names (profile.*)
 src/net/          wire protocol, ENet wrapper, network simulator (netsim.*), replay files (replay.*)
 src/server/       authoritative GameServer (library), the mod API (mod_api.*) and cb_server
-server_mods/      gameplay mods compiled into cb_server: loadout, props, pistol, deathmatch
+server_mods/      gameplay mods compiled into cb_server: inventory, props, pistol, melee, pickup, deathmatch, ...
 godot/characters/ characters shipped with the game (mannequin: source glb, bone map, scene, baked files)
 characters/       character items: <name>/client is the item's Godot project, <name>/client_item.cfg its hash
   <mod>/client/     a mod's look as a Godot project, published as a workshop item
