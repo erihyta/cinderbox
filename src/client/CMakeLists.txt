@@ -8,7 +8,7 @@ add_library(cb_client_core STATIC
 	source_thread.cpp
 )
 target_include_directories(cb_client_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(cb_client_core PUBLIC cb_net cb_present)
+target_link_libraries(cb_client_core PUBLIC cb_net cb_capture)
 cb_target_warnings(cb_client_core)
 
 if(NOT CB_BUILD_CLIENT)

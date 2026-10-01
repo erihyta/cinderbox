@@ -1,4 +1,4 @@
-#include "frame.h"
+#include "capture.h"
 
 #include "pose_tools.h"
 #include "ragdoll.h"

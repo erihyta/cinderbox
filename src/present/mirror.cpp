@@ -1,7 +1,7 @@
 #include "mirror.h"
 
 #include "scripts/scripts.h"
-#include "simulation.h"
+#include "world_lifetime.h"
 
 #include <algorithm>
 #include <cmath>

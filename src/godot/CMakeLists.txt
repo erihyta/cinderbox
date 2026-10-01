@@ -1,4 +1,7 @@
-# Cinderbox GDExtension: the Godot client (see cinderbox_client.h).
+# The Godot client, as two GDExtensions with bytes between them (present/view_codec.h):
+#   cinderbox       the viewer (cinderbox_client.h), the cue addon, HUD nodes, authoring and bake
+#                   nodes. It links no simulation and no networking; a mod's project needs only it.
+#   cinderbox_peer  the sources that simulate (peer/): a live connection, a recording.
 
 add_subdirectory(cue)
 
@@ -12,6 +15,7 @@ add_library(cinderbox_gd SHARED
 	cinderbox_item_look.cpp
 	cinderbox_map_nodes.cpp
 	cinderbox_skeleton.cpp
+	object_source.cpp
 	register_types.cpp
 )
 
@@ -20,7 +24,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 target_doc_sources(cinderbox_gd
 	"${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbReaction.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbDirector.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItemLook.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbPromptLabel.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItemBody.xml")
 
-target_link_libraries(cinderbox_gd PRIVATE cb_client_core cb_present cb_cue godot::cpp ozz_animation_offline)
+target_link_libraries(cinderbox_gd PRIVATE cb_present cb_cue godot::cpp ozz_animation_offline)
 cb_target_warnings(cinderbox_gd)
 
 get_target_property(CB_GODOTCPP_SUFFIX godot-cpp GODOTCPP_SUFFIX)
@@ -38,4 +42,23 @@ set_target_properties(cinderbox_gd PROPERTIES
 
 if(MINGW)
 	target_link_options(cinderbox_gd PRIVATE -static)
+endif()
+
+# The peer: the client core (simulation, networking, the sources) behind one class.
+add_library(cinderbox_peer_gd SHARED
+	peer/cinderbox_peer.cpp
+	peer/register_types.cpp
+)
+target_link_libraries(cinderbox_peer_gd PRIVATE cb_client_core godot::cpp)
+cb_target_warnings(cinderbox_peer_gd)
+set_target_properties(cinderbox_peer_gd PROPERTIES
+	PREFIX "lib"
+	OUTPUT_NAME "cinderbox_peer${CB_GODOTCPP_SUFFIX}"
+	CXX_VISIBILITY_PRESET hidden
+	RUNTIME_OUTPUT_DIRECTORY "$<1:${CB_GODOT_BIN_DIR}>"
+	LIBRARY_OUTPUT_DIRECTORY "$<1:${CB_GODOT_BIN_DIR}>"
+	PDB_OUTPUT_DIRECTORY "$<1:${CB_GODOT_BIN_DIR}>"
+)
+if(MINGW)
+	target_link_options(cinderbox_peer_gd PRIVATE -static)
 endif()

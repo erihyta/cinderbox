@@ -1,5 +1,6 @@
 #include "live_source.h"
 
+#include "capture.h"
 #include "fingerprint.h"
 #include "simulation.h"
 

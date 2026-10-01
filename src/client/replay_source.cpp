@@ -1,5 +1,6 @@
 #include "replay_source.h"
 
+#include "capture.h"
 #include "fingerprint.h"
 #include "map.h"
 #include "replay_player.h"

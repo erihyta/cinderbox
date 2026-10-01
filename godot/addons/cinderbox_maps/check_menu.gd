@@ -229,7 +229,7 @@ func _run() -> void:
 		# The process ends here when it works; the restarted one writes the result.
 		await _wait(15.0)
 		_check("  restarted", false)
-	_game().client.stop()
+	_game()._stop()
 
 	print("menu check: %s" % ("ok" if _failures == 0 else "%d FAILED" % _failures))
 	quit(0 if _failures == 0 else 1)
@@ -247,12 +247,12 @@ func _after_restart() -> void:
 			problems.append("items of the first server are loaded")
 		if _menu().is_open():
 			problems.append("the menu is open")
-		if _game().client.port != _other_port:
-			problems.append("joined port %d" % _game().client.port)
+		if _game().peer.port != _other_port:
+			problems.append("joined port %d" % _game().peer.port)
 		var recent: Array = _menu().recent_servers()
 		if recent.size() != 2 or recent[0]["address"] != "127.0.0.1:%d" % _other_port:
 			problems.append("recent servers are %s" % str(recent))
-		_game().client.stop()
+		_game()._stop()
 	var text := "ok" if problems.is_empty() else ", ".join(problems)
 	print("after the restart: ", text)
 	if _result != "":

@@ -1,5 +1,5 @@
 add_executable(cb_tests test_main.cpp)
-target_link_libraries(cb_tests PRIVATE cb_sim cb_anim cb_present)
+target_link_libraries(cb_tests PRIVATE cb_sim cb_anim cb_capture)
 target_compile_definitions(cb_tests PRIVATE CB_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 cb_target_warnings(cb_tests)
 

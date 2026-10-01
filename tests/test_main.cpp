@@ -12,6 +12,7 @@
 #include "map.h"
 #include "pose.h"
 #include "pose_tools.h"
+#include "capture.h"
 #include "camera.h"
 #include "fields.h"
 #include "hitboxes.h"
