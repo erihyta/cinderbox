@@ -51,6 +51,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M42: item bodies authored in Godot: a `CbItemBody` in the item's scene, baked into the mod's item, read by the server | done |
 | M43: hold-to-use prompts: item properties (`pickup.hold_seconds`), `pickup.progress`, and a prompt bar that fills | done |
 | M44: held items bring animation layers (the bat changes how its holder stands and walks); a mod's own swap wins over an item's | done |
+| M45: join menu (address, recent servers), Esc menu, settings; failed joins say why; camera collision with the map | done |
 
 ## Building
 
@@ -82,15 +83,43 @@ as a debug viewer; it runs the same simulation and also plays recordings and pre
 ```sh
 # terminal 1
 cb_server --port 7777
-# terminal 2, 3, ...: the Godot client (after building clang-release)
+# terminal 2, 3, ...: the Godot client (after building clang-release); it opens in the menu
+godot --path godot
+# or straight into a server
 godot --path godot -- --host=127.0.0.1 --port=7777
 # or the raylib debug viewer
 cb_client --host 127.0.0.1 --port 7777
 ```
 
+### The menu
+
+The game starts in a menu (`res://ui/menu.tscn`, driven by `menu.gd`):
+
+| Where | What |
+|---|---|
+| Join | Your name, a server address (`host` or `host:port`, port 7777 if left out), and the servers you joined last (one click to join again) |
+| Esc, in game | Resume, Settings, Leave server, Quit. The game goes on behind it; you stop moving |
+| Settings | Mouse sensitivity, volume, fullscreen |
+
+A join that fails comes back to the menu and says why:
+
+| What happened | What it says |
+|---|---|
+| The text is not an address | What an address looks like |
+| The host name does not exist | The address could not be found |
+| Nobody answers within 10 s | No answer: check the address and port, that the server runs, that its UDP port is open |
+| The server refuses (full, another build) | The server's reason |
+| A workshop item is missing or refused | Which one |
+
+- Name, settings and recent servers are saved in `user://player.cfg` (`--config=FILE` for another file).
+- The menu has no script, so a client mod can restyle it: `menu.gd` finds its nodes by unique name (listed at the top of `menu.tscn`).
+- Leaving a server reloads the game scene, so nothing of it is left. Resource packs cannot be unloaded, so joining a server that does not use an item loaded earlier restarts the game, straight into that server.
+- The camera stays out of the map: walls, floors and other static geometry pull it in at once and it eases back out. Props and players never block it.
+
 Open `godot/` in the Godot editor to edit scenes, then press Play. Godot client options, given after `--`:
-- `--host=H`, `--port=P`: the server address.
-- `--name=NAME`: your name (otherwise the one saved from the name field, which Esc shows).
+- `--host=H`, `--port=P`: join this server without the menu (leaving it lands in the menu).
+- `--name=NAME`: your name (otherwise the one typed in the menu).
+- `--config=FILE`: where name, settings and recent servers are kept (default `user://player.cfg`).
 - `--workshop=DIR`: where subscribed workshop items are (default `user://workshop`).
 - `--rollback=N`: fixes the prediction window.
 - `--animations=DIR`: a folder of converted clips.
@@ -1023,6 +1052,7 @@ All tools are in `<build dir>/bin`.
 | `cb_netsim --listen P --target HOST:PORT --latency MS --jitter MS --loss % [--duplicate %]` | UDP relay that degrades traffic (latency is added in each direction) |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_mod_validator.gd -- PACK.zip...` | Checks the pack validator: the named packs pass, built-in hostile packs are refused |
 | `cb_bot --port P --count N --full M --duration S [--chaotic] [--shoot] [--melee]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick; `--shoot` makes full bots take out the pistol and fire at the nearest player; `--melee` makes them close in with the bat and swing |
+| `godot --path godot --script res://addons/cinderbox_maps/check_menu.gd -- --test-port=P --config=FILE [--shots=DIR]` | Drives the menus against a running server: bad address, unknown host, dead port, join, camera, Esc menu, settings, leave, rejoin from the recent list. With `--other-port=P2 --result=FILE` (a server running other mods) also the restart that joins it |
 | `godot --path godot -- --autoplay=S --screenshot=F.png --screenshot-every=S2` | Unattended client; also saves `F_1.png`, `F_2.png`, ... and prints the mod events it saw |
 | `scripts/stress_test.sh --bots N --full M --latency MS --jitter MS --loss % --rollback T` | Starts a server, the simulator and the bots, and prints a summary |
 
