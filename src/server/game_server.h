@@ -194,6 +194,7 @@ private:
 	std::unique_ptr<HitTester> m_hits;
 	std::shared_ptr<const AnimGraph> m_animGraph;
 	AnimGraphPacks m_animPacks;
+	std::map<std::pair<int, std::string>, float> m_itemProperties; // what mods declared about item kinds
 	uint64_t m_modRng = 0;
 };
 

@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+; The prompt for an item that takes holding: the bar under the text fills with "pickup.progress".
+
+[node name="Prompt" type="CbPromptLabel"]
+text_format = "Hold [{key:pickup}]  Pick up {look:pickup.target}"
+height = 0.35
+progress_field = "pickup.progress"

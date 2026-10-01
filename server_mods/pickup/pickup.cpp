@@ -6,6 +6,11 @@
 // G throws what the right hand holds; dying drops it. Items a loadout gave (the pistol, the bat
 // from slot 3) are that mod's to take back, and go when their slot is put away.
 //
+// Some items take a moment: E has to be held for the item's "pickup.hold_seconds" (an item property
+// its mod declares; --mod-option pickup.hold_seconds=N is the default for the rest, 0: a tap). While
+// it is held on the same item, "pickup.progress" runs from 0 to 1 on the player's board, and
+// "pickup.hold" says how long the item in reach needs; letting go, or losing the item, starts over.
+//
 // --mod-option pickup.spawn_each=N drops N of every item kind the server's mods declared around
 // the map's spawn point when the server starts, so there is something to pick up.
 //
@@ -15,6 +20,7 @@
 #include "mod_api.h"
 
 #include <array>
+#include <algorithm>
 #include <cmath>
 
 namespace
@@ -34,6 +40,9 @@ struct Picker
 {
 	uint32_t target = 0; // what "pickup.target" says
 	bool dead = false;
+	uint32_t holding = 0;	// the item E is being held on (0: none)
+	uint32_t holdStart = 0; // the tick that began
+	int32_t progress = 0;	// what "pickup.progress" says (a board float's bits)
 };
 
 // Turned so the item points (its -Z) along `aim`, flattened.
@@ -57,12 +66,16 @@ public:
 		m_drop = declare.Action( "drop", "G" );
 		// The NetId of the item the player can pick up now (0: none): what the prompt shows.
 		m_target = declare.Field( "pickup.target", BoardType::Int );
+		// How long E must be held for it, in seconds (0: a tap), and how far along that is (0..1).
+		m_hold = declare.Field( "pickup.hold", BoardType::Float );
+		m_progress = declare.Field( "pickup.progress", BoardType::Float );
 		m_hand = declare.Socket( "RightHand" );
 	}
 
 	void Start( Context& ctx ) override
 	{
 		m_spawnEach = int( ctx.Option( "pickup.spawn_each", 0.0 ) );
+		m_holdSeconds = float( ctx.Option( "pickup.hold_seconds", 0.0 ) );
 	}
 
 	void Tick( Context& ctx ) override
@@ -99,6 +112,8 @@ public:
 				}
 				p.dead = true;
 				SetTarget( ctx, target, p, 0 );
+				SetProgress( ctx, target, p, 0.0f );
+				p.holding = 0;
 				continue;
 			}
 			p.dead = false;
@@ -123,11 +138,25 @@ public:
 			}
 			SetTarget( ctx, target, p, near );
 
+			// E: a press starts on the item in reach; it counts while E stays down on that same item.
+			float seconds = p.target != 0 ? HoldSeconds( ctx, p.target ) : 0.0f;
+			if ( c->frozen == 0 && ctx.Pressed( slot, m_pickup ) && p.target != 0 )
+			{
+				p.holding = p.target;
+				p.holdStart = ctx.Tick();
+			}
+			if ( p.holding != 0 && ( p.holding != p.target || ctx.Held( slot, m_pickup ) == false || c->frozen != 0 ) )
+			{
+				p.holding = 0; // let go, or it is no longer the one in reach
+			}
+			float elapsed = p.holding != 0 ? float( ctx.Tick() - p.holdStart ) / float( ctx.Config().tickRate ) : 0.0f;
+			bool take = p.holding != 0 && elapsed >= seconds;
+			SetProgress( ctx, target, p, p.holding != 0 && seconds > 0.0f && take == false ? elapsed / seconds : 0.0f );
 			if ( c->frozen != 0 )
 			{
 				continue;
 			}
-			if ( ctx.Pressed( slot, m_pickup ) && p.target != 0 )
+			if ( take )
 			{
 				// Swap: what the hand held drops, then the hand takes the new one (in this order, in
 				// this tick's frame).
@@ -135,7 +164,8 @@ public:
 				{
 					Drop( ctx, slot, inHand, kDropSpeed );
 				}
-				ctx.PickUpItem( target, p.target, m_hand );
+				ctx.PickUpItem( target, p.holding, m_hand );
+				p.holding = 0;
 			}
 			else if ( ctx.Pressed( slot, m_drop ) && inHand != 0 )
 			{
@@ -151,7 +181,24 @@ private:
 		{
 			p.target = item;
 			ctx.Set( target, m_target, int32_t( item ) );
+			ctx.SetFloat( target, m_hold, item != 0 ? HoldSeconds( ctx, item ) : 0.0f );
 		}
+	}
+
+	void SetProgress( Context& ctx, uint32_t target, Picker& p, float progress )
+	{
+		int32_t bits = BoardFromFloat( progress );
+		if ( bits != p.progress )
+		{
+			p.progress = bits;
+			ctx.Set( target, m_progress, bits );
+		}
+	}
+
+	// What its mod says about it, or the server's default.
+	float HoldSeconds( const Context& ctx, uint32_t item ) const
+	{
+		return std::max( 0.0f, ctx.ItemProperty( ctx.ItemKindOf( item ), "pickup.hold_seconds", m_holdSeconds ) );
 	}
 
 	// Out of the hand, a little in front of the chest, pointing where the player looks.
@@ -183,6 +230,9 @@ private:
 	ActionHandle m_pickup;
 	ActionHandle m_drop;
 	FieldHandle m_target;
+	FieldHandle m_hold;
+	FieldHandle m_progress;
+	float m_holdSeconds = 0.0f;
 	SocketHandle m_hand;
 	int m_spawnEach = 0;
 	std::array<Picker, kMaxPlayers> m_pickers;

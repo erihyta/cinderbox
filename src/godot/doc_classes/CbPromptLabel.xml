@@ -15,5 +15,11 @@
 		<member name="height" type="float" setter="set_height" getter="get_height" default="0.35">
 			Metres above its parent, straight up whatever way the parent lies.
 		</member>
+		<member name="progress_field" type="String" setter="set_progress_field" getter="get_progress_field" default="&quot;&quot;">
+			A field of the local player that runs from 0 to 1 ([code]pickup.progress[/code]): while it is above 0, a bar under the text fills with it (hold to use).
+		</member>
+		<member name="bar_color" type="Color" setter="set_bar_color" getter="get_bar_color" default="Color(1, 1, 1, 1)">
+			The bar's colour.
+		</member>
 	</members>
 </class>

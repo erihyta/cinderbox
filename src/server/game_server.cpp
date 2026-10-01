@@ -50,6 +50,7 @@ bool GameServer::Start( const ServerOptions& options )
 	}
 	m_schema = declarations.Schema();
 	m_schema.items = options.items;
+	m_itemProperties = declarations.ItemProperties();
 	// Item bodies authored in Godot (baked into the declaring mod's item) replace declared ones.
 	for ( size_t kind = 0; kind < m_schema.itemKinds.size() && options.loadItemShape; ++kind )
 	{
@@ -202,6 +203,7 @@ bool GameServer::Start( const ServerOptions& options )
 		none.tick = m_sim->Tick();
 		mods::Context ctx( *m_sim, m_schema, none, m_lastInputs, *m_modWorld, m_modRng );
 		ctx.SetOptions( &m_options.modOptions );
+		ctx.SetItemProperties( &m_itemProperties );
 		ctx.SetHitTester( m_hits.get() );
 		for ( const auto& mod : m_mods )
 		{
@@ -636,6 +638,7 @@ void GameServer::RunMods( InputFrame& frame )
 	}
 	mods::Context ctx( *m_sim, m_schema, frame, m_lastInputs, *m_modWorld, m_modRng );
 	ctx.SetOptions( &m_options.modOptions );
+	ctx.SetItemProperties( &m_itemProperties );
 	ctx.SetHitTester( m_hits.get() );
 	for ( const auto& mod : m_mods )
 	{
