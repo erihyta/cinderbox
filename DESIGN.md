@@ -1158,6 +1158,29 @@ mod; progress lives on the player's board so every screen agrees.
   all suites; reference hashes unchanged.
 - **Not done**: a ring instead of a bar; hold times authored in Godot; holding for other verbs.
 
+## Items bring layers (M44)
+Holding a bat should change how its holder stands and walks, wherever the bat came from, and stop
+when it is dropped, without each mod writing swap code.
+
+- **No new simulation state**: a layer's `source` stays a plain byte set by `SwapLayer` commands.
+  The server decides which command to send. Mods' `SwapLayer` / `RestoreLayer` calls are now wishes
+  it keeps per player and layer (`LayerWishes`); after every mod has ticked, `ResolveLayers` takes
+  the mod's wish, else the pack of the first held item that has that layer
+  (`Declarations::ItemLayers`), else none, compares it with the source the simulation shows, and
+  sends a command only where they differ. Clients see ordinary commands, so nothing changed for
+  them or for rollback, and the comparison with the real state heals itself (a respawn, a rejoin).
+- **Order of say**: a mod's swap over an item's layers. The sneak mod's crouch replaces the bat's
+  carry while the key is held and the carry returns after.
+- **The bat's pack** (`melee.carry`, baked by `make_carry_pack.gd` from the CC0 clips: `Sword_Idle`
+  made to loop, `Walk_Formal`, `Jog_Fwd`): a `Base` layer, shipped in the melee item.
+- **Verified**: the `item_layers` network test (carry with the bat out, crouch over it, carry again,
+  the player's own after the throw; never the wrong one; no desyncs); the sneak test, now finding
+  its pack by name among several; the real server loading the pack from the published item; a
+  rendered session with melee bots and no desyncs; all suites; reference hashes unchanged.
+- **Not done**: how the carry looks was not judged by eye beyond "it plays" (the clips are
+  placeholders from the free pack); packs still cannot add layers a character lacks; movement speed
+  is not tied to the item.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1274,3 +1297,4 @@ mod; progress lives on the player's board so every screen agrees.
 41. **M41** (done): a loadout slot gives one item per life (dropping no longer duplicates); the `expire` mod removes items that were held and then left lying (`expire.seconds`); `ctx.Items()`.
 42. **M42** (done): item bodies authored in Godot: `CbItemBody` in the item's scene, `bake_items.gd` (run by packing) writes `items/<kind>.cfg`, the server reads it from the mod's item; the bat and pistol converted.
 43. **M43** (done): hold-to-use prompts: item properties (`ItemProperty`), the pickup mod's hold (`pickup.hold_seconds`, `pickup.hold`, `pickup.progress`), `CbPromptLabel.progress_field` and its bar, a second prompt scene.
+44. **M44** (done): held items bring layers: `ItemLayers( kind, pack )`, mods' swaps kept as wishes and resolved with item layers into `SwapLayer` commands (a mod's swap wins); the bat's `melee.carry` pack.
