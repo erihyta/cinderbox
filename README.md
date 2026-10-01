@@ -50,6 +50,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M41: a loadout slot gives one item per life (no duplicating by dropping); an `expire` mod removes items left lying | done |
 | M42: item bodies authored in Godot: a `CbItemBody` in the item's scene, baked into the mod's item, read by the server | done |
 | M43: hold-to-use prompts: item properties (`pickup.hold_seconds`), `pickup.progress`, and a prompt bar that fills | done |
+| M44: held items bring animation layers (the bat changes how its holder stands and walks); a mod's own swap wins over an item's | done |
 
 ## Building
 
@@ -731,6 +732,17 @@ turn from rest means the same on every skeleton. `sneak` is the example: hold C 
 
 ```sh
 godot --headless --path godot --script res://addons/cinderbox_maps/make_sneak_pack.gd -- --out=<abs>/server_mods/sneak/client/anim/sneak.crouch
+```
+
+**Items bring layers.** A mod can tie a pack to an item kind,
+`declare.ItemLayers( bat, declare.AnimPack( "melee.carry" ) )`: while a player holds one (from a
+loadout slot or picked up), the pack's layers play instead of the player's own of the same names,
+and stop when it is dropped. A mod's own `SwapLayer` on the same layer wins while it lasts, so a
+crouch still crouches with a bat in hand and the carry returns when the player stands up. The bat's
+pack replaces `Base`: standing ready, a measured walk, the usual jog.
+
+```sh
+godot --headless --path godot --script res://addons/cinderbox_maps/make_carry_pack.gd -- --out=<abs>/server_mods/melee/client/anim/melee.carry
 ```
 
 ### Held items and sockets

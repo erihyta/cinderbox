@@ -979,6 +979,88 @@ void TestItemShapes()
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "no.such", shape, error ) == false );
 }
 
+// A held item brings its layers: with the bat out, the player's "Base" layer plays from the melee
+// mod's carry pack; crouching (the sneak mod's own swap) wins while it lasts; standing up gives the
+// carry back; throwing the bat away gives the player's own layer back. Clients agree throughout.
+void TestItemLayers()
+{
+	const std::string root = CB_SOURCE_DIR;
+	std::shared_ptr<const CharacterAsset> mannequin;
+	Harness h( 47806, {}, {}, {}, [&]( ServerOptions& options ) {
+		std::string error, warnings;
+		mannequin = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
+		options.character = mannequin;
+		options.loadAnimPack = [root]( const std::string& mod, const std::string& pack, std::string& error, std::string& warnings ) {
+			return LoadAnimPackFolder( root + "/server_mods/" + mod + "/client", pack, error, warnings );
+		};
+	} );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t bat = schema.ActionMask( "slot_3" );
+	uint16_t crouch = schema.ActionMask( "crouch" );
+	uint16_t drop = schema.ActionMask( "drop" );
+	int carry = -1;
+	int sneak = -1;
+	for ( size_t i = 0; i < schema.animPacks.size(); ++i )
+	{
+		carry = schema.animPacks[i].name == "melee.carry" && schema.animPacks[i].graph.empty() == false ? int( i ) : carry;
+		sneak = schema.animPacks[i].name == "sneak.crouch" && schema.animPacks[i].graph.empty() == false ? int( i ) : sneak;
+	}
+	CHECK( mannequin != nullptr && bat != 0 && crouch != 0 && drop != 0 && carry >= 0 && sneak >= 0 );
+	if ( mannequin == nullptr || carry < 0 || sneak < 0 )
+	{
+		return;
+	}
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		if ( tick >= 100 && tick < 110 )
+		{
+			in.actions = bat;
+		}
+		else if ( tick >= 200 && tick < 260 )
+		{
+			in.actions = crouch;
+		}
+		else if ( tick >= 320 && tick < 325 )
+		{
+			in.actions = drop;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; };
+
+	Simulation& server = h.server.Sim();
+	bool sawCarry = false;
+	bool sawCrouch = false;
+	bool carryAgain = false;
+	bool ownAgain = false;
+	bool wrong = false;
+	h.RunUntil( 7.0, [&]( double ) {
+		uint32_t tick = server.Tick();
+		const AnimState* a = server.EntityAnimState( server.PlayerNetId( h.bots[0].client->Slot() ) );
+		if ( a == nullptr )
+		{
+			return;
+		}
+		uint8_t base = a->graph[0].source; // the mannequin's first layer is "Base"
+		sawCarry |= tick > 130 && tick < 195 && base == uint8_t( carry + 1 );
+		sawCrouch |= tick > 215 && tick < 255 && base == uint8_t( sneak + 1 );
+		carryAgain |= tick > 275 && tick < 315 && base == uint8_t( carry + 1 );
+		ownAgain |= tick > 345 && base == 0;
+		// Never the carry once the bat is gone, never the player's own while it is held and standing.
+		wrong |= ( tick > 345 && base != 0 ) || ( tick > 275 && tick < 315 && base != uint8_t( carry + 1 ) );
+	} );
+	h.Report();
+	std::printf( "    carry with the bat %d, crouch over it %d, carry again %d, its own after the throw %d\n", int( sawCarry ),
+				 int( sawCrouch ), int( carryAgain ), int( ownAgain ) );
+	CHECK( sawCarry && sawCrouch && carryAgain && ownAgain );
+	CHECK( wrong == false );
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 void TestSneak()
 {
 	const std::string root = CB_SOURCE_DIR;
@@ -994,8 +1076,14 @@ void TestSneak()
 	CHECK( mannequin != nullptr );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t crouch = schema.ActionMask( "crouch" );
-	CHECK( crouch != 0 && schema.animPacks.size() == 1 && schema.animPacks[0].graph.empty() == false );
-	if ( mannequin == nullptr || crouch == 0 || schema.animPacks.empty() )
+	// The sneak mod's pack, among whatever packs other mods ship.
+	int sneakPack = -1;
+	for ( size_t i = 0; i < schema.animPacks.size(); ++i )
+	{
+		sneakPack = schema.animPacks[i].name == "sneak.crouch" ? int( i ) : sneakPack;
+	}
+	CHECK( crouch != 0 && sneakPack >= 0 && schema.animPacks[size_t( sneakPack )].graph.empty() == false );
+	if ( mannequin == nullptr || crouch == 0 || sneakPack < 0 )
 	{
 		return;
 	}
@@ -1011,15 +1099,27 @@ void TestSneak()
 	std::string error, warnings;
 	auto graph = CompileAnimGraph( schema.animGraph, schema, error, warnings );
 	AnimGraphPacks packs = CompileAnimPacks( schema, warnings );
-	auto packSet = LoadAnimPackFolder( root + "/server_mods/sneak/client", "sneak.crouch", error, warnings );
-	CHECK( graph != nullptr && packs.size() == 1 && packs[0] != nullptr && packSet != nullptr );
-	if ( graph == nullptr || packs.empty() || packs[0] == nullptr || packSet == nullptr )
+	CHECK( graph != nullptr && packs.size() == schema.animPacks.size() );
+	if ( graph == nullptr || packs.size() != schema.animPacks.size() )
 	{
 		return;
 	}
+	// Every pack's clips, fitted to the mannequin, as a client does.
+	std::vector<std::shared_ptr<const anim::PackClips>> fitted;
+	for ( size_t i = 0; i < packs.size(); ++i )
+	{
+		auto packSet = LoadAnimPackFolder( root + "/server_mods/" + schema.animPacks[i].mod + "/client", schema.animPacks[i].name, error,
+										   warnings );
+		CHECK( packs[i] != nullptr && packSet != nullptr );
+		if ( packs[i] == nullptr || packSet == nullptr )
+		{
+			return;
+		}
+		fitted.push_back( anim::FitPack( packSet, *packs[i], *mannequin->animations, warnings ) );
+	}
 	anim::PoseEvaluator pose( *mannequin->animations );
 	pose.SetGraph( graph, warnings );
-	pose.SetPacks( packs, { anim::FitPack( packSet, *packs[0], *mannequin->animations, warnings ) } );
+	pose.SetPacks( packs, fitted );
 	Simulation& server = h.server.Sim();
 	float standing = 0.0f, sneaking = 10.0f;
 	bool swapped = false, restored = false;
@@ -1033,7 +1133,7 @@ void TestSneak()
 		pose.Evaluate( *a );
 		float v[4];
 		ozz::math::StorePtrU( pose.Models()[size_t( anim::FindJoint( *mannequin->animations, "Head" ) )].cols[3], v );
-		if ( a->graph[0].source == 1 && a->graph[0].stateTime > 0.5f )
+		if ( a->graph[0].source == uint8_t( sneakPack + 1 ) && a->graph[0].stateTime > 0.5f )
 		{
 			swapped = true;
 			sneaking = std::min( sneaking, v[1] );
@@ -1498,6 +1598,7 @@ int main( int argc, char** argv )
 		{ "melee", TestMelee },
 		{ "pickup", TestPickup },
 		{ "inventory", TestInventory },
+		{ "item_layers", TestItemLayers },
 	};
 
 	const char* filter = argc > 1 ? argv[1] : nullptr;
