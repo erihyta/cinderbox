@@ -47,6 +47,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M38: reaction polish: fixes, `method_args`, delay and chance, blended properties, "why didn't it fire" in the preview, and help in the editor (hover texts, info buttons, class reference) | done |
 | M39: items in the world: dropped, thrown and picked up, with physics everyone agrees on; a pickup mod with a proximity prompt made of data (`CbPromptLabel`, `$local@pickup.target`, `{key:pickup}`) | done |
 | M40: looks follow what is held: item kinds are conditions in the HUD and reactions (`pistol.gun`), so picked-up items look and sound right | done |
+| M41: a loadout slot gives one item per life (no duplicating by dropping); an `expire` mod removes items left lying | done |
 
 ## Building
 
@@ -190,6 +191,7 @@ Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod re
 | `deathmatch.fall_penalty` | 1 point lost for falling out of the world |
 | `pistol.zone.<zone>` | damage multiplier for a hit zone of the server's character: `head` 2, anything else 1 |
 | `pickup.spawn_each` | 0; N drops N of every item kind the mods declared around the spawn point at start |
+| `expire.seconds` | 60; an item that was held and then left lying is removed after this long (0: never) |
 
 ```bash
 cb_server --port 7777 --mod-option deathmatch.kills=5 --mod-option deathmatch.round_seconds=120
@@ -766,7 +768,9 @@ A mod taking its item away destroys the NetId `ctx.HeldItem( slot, socket )` giv
 `ItemTarget`: another mod may put its item in that socket in the same tick (a weapon swap), and
 `ItemTarget` would find that one. What is in the hand decides: the melee mod swings any `melee.bat`
 in the right hand and the pistol fires any `pistol.gun`, whether a loadout slot gave it or it was
-picked up; a slot takes back only the item it gave. Looks follow the same rule: the pistol's HUD
+picked up; a slot takes back only the item it gave, and gives **one per life**: put away and taken
+out again it comes back, but dropped, thrown or swapped for a pick-up it is gone from the slot until
+the next life (so dropping cannot make more of them). Looks follow the same rule: the pistol's HUD
 and its predicted shot ask `pistol.gun` (true while the player holds one), never `loadout.slot == 2`,
 so a picked-up pistol shows its ammo and a bat held with slot 2 out swings without a muzzle flash.
 
@@ -781,7 +785,7 @@ so it falls, tumbles, gets shot across the floor, and does so identically on eve
 | `ctx.SpawnWorldItem( kind, grip, rotation, velocity )` | one on the floor |
 | `ctx.DropItem( item, grip, rotation, velocity )` | out of the hand; thrown if it has a velocity |
 | `ctx.PickUpItem( SlotTarget( slot ), item, socket )` | into a free socket (drop what is there first, in the same tick) |
-| `ctx.ItemsNear( point, radius )`, `ctx.ItemKindOf( id )`, `ctx.ItemHolder( id )` | what lies around, nearest first |
+| `ctx.ItemsNear( point, radius )`, `ctx.Items()`, `ctx.ItemKindOf( id )`, `ctx.ItemHolder( id )` | what lies around, nearest first; every item; what and whose |
 | `ctx.SpawnItem` into a taken socket | drops what was there (it may be one someone picked up) |
 
 Who may pick up what, and when, is a mod's. The **pickup** mod is the example:
@@ -801,6 +805,10 @@ PickupReactions            (vfx/reactions_pickup.tscn)
 
 The same pieces make any prompt: a mod puts an entity's NetId in a field, its look shows a
 `CbPromptLabel` on `$local@thatfield`.
+
+The **expire** mod keeps the floor clean: an item someone held and then left lying is removed after
+`expire.seconds`; picking it up stops the clock. Items nobody ever held (a map's own, the seeded
+ones) stay.
 
 ### Reactions
 

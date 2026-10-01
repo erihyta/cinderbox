@@ -1095,6 +1095,22 @@ pistol drew no HUD, and a bat held while slot 2 was out fired the pistol's predi
   during its pistol phase: while it held a bat with slot 2 out, `pistol.gun` read false; all 45
   predicted-shot shakes across three runs happened with a gun in hand. No desyncs.
 
+## One item per life, and expiry (M41)
+M39's rule "a slot gives an item when the hand has none" let a player drop the bat, switch away and
+back, and get another: unlimited items.
+
+- **Inventory rule** (the user's choice, as in Counter-Strike): a slot gives its item once per life.
+  Put away and taken out it returns; once it leaves the hand any other way while the slot is out
+  (dropped, thrown, swapped for a pick-up), the slot is spent until the player dies. In melee and
+  pistol: `spent`, set when the given item is no longer the one in the hand, cleared while dead.
+- **Expiry is a mod of its own** (the user's call): `expire` watches every item each tick
+  (`ctx.Items()`); one that has been held and then lies in the world for `expire.seconds` (60) is
+  destroyed, and picking it up resets the clock. Never-held items are left alone, so seeded and map
+  items stay. A first draft looked only every 15 ticks and could miss an item held between looks.
+- **Verified**: the `inventory` network test (take the bat, throw it, switch to hands and back: no
+  second bat, never more than one item; with `expire.seconds=2` the thrown bat is gone at the end;
+  no desyncs), all suites, reference hashes unchanged.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1208,3 +1224,4 @@ pistol drew no HUD, and a bat held while slot 2 was out fired the pistol's predi
 38. **M38** (done): reaction polish: fixes (a While undoes itself when it leaves the tree, a wider refused list, warnings for leaks and parse errors), `method_args`, `delay` / `chance`, `blend_time`, `explain()` in the Cue Preview, and in-editor help (class reference, info rows, info buttons).
 39. **M39** (done): items in the world: physics bodies of declared shapes, DropItem / PickUpItem / SpawnItem on the floor, spawn into a taken hand drops; melee and pistol follow what is in the hand; the pickup mod (E, G, drop on death, spawn_each) with a data-only proximity prompt (`CbPromptLabel`, `$local@field`, `{key:}`, `{look:}`); protocol 14.
 40. **M40** (done): looks follow what is held: item kind names are conditions in the HUD and in reactions; the pistol's look asks `pistol.gun`, not the loadout slot.
+41. **M41** (done): a loadout slot gives one item per life (dropping no longer duplicates); the `expire` mod removes items that were held and then left lying (`expire.seconds`); `ctx.Items()`.
