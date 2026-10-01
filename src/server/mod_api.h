@@ -371,6 +371,8 @@ public:
 	// Its kind (an invalid handle when it is not an item), and who holds it (0: it lies in the world).
 	ItemKindHandle ItemKindOf( uint32_t netId ) const;
 	uint32_t ItemHolder( uint32_t netId ) const;
+	// Every item, held or lying, in NetId order (ItemHolder says which).
+	std::vector<uint32_t> Items() const;
 	// Items lying in the world within `radius` of `point` (their bodies' centres), nearest first
 	// (ties by NetId).
 	std::vector<WorldItem> ItemsNear( b3Vec3 point, float radius ) const;

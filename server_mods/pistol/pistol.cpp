@@ -46,6 +46,7 @@ struct Gunner
 	bool loadout = false;	  // slot 2 is out
 	bool expectGiven = false; // slot 2 put a gun in the hand this tick; learn its NetId next tick
 	uint32_t given = 0;		  // the gun slot 2 gave
+	bool spent = false;		  // this life's gun left the hand: slot 2 has none to give
 };
 
 struct Dead
@@ -230,7 +231,8 @@ private:
 		uint32_t tick = ctx.Tick();
 
 		// What is in the right hand decides: a "pistol.gun" there fires, wherever it came from. Slot 2
-		// gives one when the hand has none; putting it away (or dying) takes back only that one.
+		// gives one gun per life: putting it away (or dying) takes it back, but once it leaves the hand
+		// any other way (dropped, thrown, swapped for a pick-up) the slot is empty until the next life.
 		uint32_t inHand = ctx.HeldItem( g.slot, m_hand );
 		bool gunInHand = inHand != 0 && ctx.ItemKindOf( inHand ).index == m_gun.index;
 		if ( g.expectGiven && gunInHand )
@@ -238,11 +240,20 @@ private:
 			g.given = inHand;
 			g.expectGiven = false;
 		}
+		if ( c->dead != 0 )
+		{
+			g.spent = false;
+		}
+		else if ( g.loadout && g.given != 0 && inHand != g.given )
+		{
+			g.spent = true;
+			g.given = 0;
+		}
 		bool loadout = ctx.Get( netId, m_loadout ) == kPistolSlot && c->dead == 0;
 		if ( loadout != g.loadout )
 		{
 			g.loadout = loadout;
-			if ( loadout && gunInHand == false )
+			if ( loadout && gunInHand == false && g.spent == false )
 			{
 				ctx.SpawnItem( target, m_gun, m_hand );
 				g.expectGiven = true;
