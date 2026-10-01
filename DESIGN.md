@@ -1135,6 +1135,29 @@ Characters already author their hit zones in Godot and bake them; items now do t
 - **Not done**: a Bake button in the editor (baking happens on publish or by the command);
   capsules; several shapes per item.
 
+## Hold-to-use prompts (M43)
+Decisions (the user's): the hold time is a pickup option with a per-kind override from the item's
+mod; progress lives on the player's board so every screen agrees.
+
+- **Item properties**: a general way for mods to agree about items, like the board is for state. A
+  mod declares a named number on an item kind (`ItemProperty( kind, "pickup.hold_seconds", 0.5 )`)
+  and any mod reads it (`ctx.ItemProperty`). Server-side only: nothing goes to clients.
+- **Pickup**: a press on the item in reach starts a hold; it counts while E stays down on that same
+  item, and takes it after the item's hold time (0: the same tick, a tap as before). `pickup.hold`
+  (seconds the item in reach needs) and `pickup.progress` (0..1) are on the board.
+- **Look**: `CbPromptLabel.progress_field` draws a bar under the text (two quads with the label's
+  billboard, fixed size and no depth test; the fill's mesh grows from the left). The pickup look has
+  two reactions, chosen by `pickup.hold`: a tap prompt and a "Hold" prompt with the bar.
+- **Cost**: progress is a command every tick of a hold, which clients cannot predict: the pickup
+  test's rollbacks per client went from about 20 to about 85 over 8 seconds. Rollbacks are cheap
+  (the stress test replays 8 ticks in a few milliseconds), so it stays simple; a start tick the
+  client animates from would avoid it.
+- **Verified**: the pickup network test (taps never take the bat, `pickup.hold` says it needs
+  holding, progress passes through the middle, a held key takes it; no desyncs); a rendered session
+  with both prompts on screen ("[E]  Pick up Pistol", "Hold [E]  Pick up Bat" with the bar at 47%);
+  all suites; reference hashes unchanged.
+- **Not done**: a ring instead of a bar; hold times authored in Godot; holding for other verbs.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1250,3 +1273,4 @@ Characters already author their hit zones in Godot and bake them; items now do t
 40. **M40** (done): looks follow what is held: item kind names are conditions in the HUD and in reactions; the pistol's look asks `pistol.gun`, not the loadout slot.
 41. **M41** (done): a loadout slot gives one item per life (dropping no longer duplicates); the `expire` mod removes items that were held and then left lying (`expire.seconds`); `ctx.Items()`.
 42. **M42** (done): item bodies authored in Godot: `CbItemBody` in the item's scene, `bake_items.gd` (run by packing) writes `items/<kind>.cfg`, the server reads it from the mod's item; the bat and pistol converted.
+43. **M43** (done): hold-to-use prompts: item properties (`ItemProperty`), the pickup mod's hold (`pickup.hold_seconds`, `pickup.hold`, `pickup.progress`), `CbPromptLabel.progress_field` and its bar, a second prompt scene.

@@ -21,6 +21,8 @@
 #include <godot_cpp/classes/grid_container.hpp>
 #include <godot_cpp/classes/label.hpp>
 #include <godot_cpp/classes/label3d.hpp>
+#include <godot_cpp/classes/mesh_instance3d.hpp>
+#include <godot_cpp/classes/quad_mesh.hpp>
 #include <godot_cpp/classes/label_settings.hpp>
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/v_box_container.hpp>
@@ -61,6 +63,24 @@ public:
 	{
 		return m_height;
 	}
+	// A field that runs from 0 to 1 ("pickup.progress"): while it is above 0, a bar under the text
+	// fills with it (hold to use).
+	void set_progress_field( const godot::String& value )
+	{
+		m_progressField = value;
+	}
+	godot::String get_progress_field() const
+	{
+		return m_progressField;
+	}
+	void set_bar_color( const godot::Color& value )
+	{
+		m_barColor = value;
+	}
+	godot::Color get_bar_color() const
+	{
+		return m_barColor;
+	}
 
 protected:
 	static void _bind_methods();
@@ -68,6 +88,12 @@ protected:
 private:
 	godot::String m_format = "[{key:pickup}]  Pick up {look:pickup.target}";
 	double m_height = 0.35;
+	godot::String m_progressField;
+	godot::Color m_barColor = godot::Color( 1, 1, 1, 1 );
+	godot::MeshInstance3D* m_barBack = nullptr;
+	godot::MeshInstance3D* m_barFill = nullptr;
+	godot::Ref<godot::QuadMesh> m_fillMesh;
+	void ShowBar( float progress );
 	godot::ObjectID m_client;
 };
 

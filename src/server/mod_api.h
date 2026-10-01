@@ -174,6 +174,10 @@ public:
 	// without a look. A body baked from the item's scene (a CbItemBody, items/<kind>.cfg in the mod's
 	// item) replaces it; with neither it is a small box. The first shape declared for a kind is kept.
 	ItemKindHandle ItemKind( const std::string& name, const ItemShape& shape );
+	// A named number about an item kind that any mod may read (Context::ItemProperty): how mods agree
+	// on what an item is like without knowing each other ("pickup.hold_seconds" = 0.5: the pickup
+	// mod makes players hold the key that long for it). The first value declared for a name is kept.
+	void ItemProperty( ItemKindHandle kind, const std::string& name, float value );
 	// An animation pack in this mod's client item: its layers can replace a player's own of the same
 	// name (Context::SwapLayer). Name it like the mod's other names ("sneak.crouch").
 	AnimPackHandle AnimPack( const std::string& name );
@@ -197,8 +201,13 @@ private:
 	std::string m_mod;
 	std::vector<bool> m_shapeDeclared; // per item kind: a mod gave it a shape
 	std::vector<std::vector<std::string>> m_itemMods; // per item kind: the mods that declared it
+	std::map<std::pair<int, std::string>, float> m_itemProperties;
 
 public:
+	const std::map<std::pair<int, std::string>, float>& ItemProperties() const
+	{
+		return m_itemProperties;
+	}
 	// The mods that declared each item kind (schema order): where its baked body may be found.
 	const std::vector<std::vector<std::string>>& ItemMods() const
 	{
@@ -377,6 +386,12 @@ public:
 	void RestoreLayer( uint32_t target, const std::string& layer );
 	// The NetId of what the player in `slot` holds in `socket` (as of the start of this tick), or 0.
 	uint32_t HeldItem( PlayerSlot slot, SocketHandle socket ) const;
+	// A number a mod declared about an item kind (Declarations::ItemProperty), or `fallback`.
+	float ItemProperty( ItemKindHandle kind, const std::string& name, float fallback ) const;
+	void SetItemProperties( const std::map<std::pair<int, std::string>, float>* properties )
+	{
+		m_itemProperties = properties;
+	}
 	// Its kind (an invalid handle when it is not an item), and who holds it (0: it lies in the world).
 	ItemKindHandle ItemKindOf( uint32_t netId ) const;
 	uint32_t ItemHolder( uint32_t netId ) const;
@@ -411,6 +426,7 @@ private:
 	flecs::world& m_world;
 	uint64_t& m_rng;
 	const std::map<std::string, std::string>* m_options = nullptr;
+	const std::map<std::pair<int, std::string>, float>* m_itemProperties = nullptr;
 	HitTester* m_hits = nullptr;
 };
 

@@ -802,7 +802,9 @@ void TestCharacterItem()
 // tests; letting go restores it. Bots follow without desyncs.
 // Items in the world, end to end: the pickup mod drops one of every item kind around the spawn;
 // slot 0 takes out the bat, throws it (G), walks after it and presses E until it holds something
-// again. The thrown bat's physics runs on the server and on both clients, which must agree.
+// again. The bat takes holding (its mod's "pickup.hold_seconds"): a tap does nothing, a held key
+// fills "pickup.progress" and then takes it. The thrown bat's physics runs on the server and on
+// both clients, which must agree.
 void TestPickup()
 {
 	Harness h( 47804, {}, {}, { { "pickup.spawn_each", "1" } } );
@@ -811,8 +813,11 @@ void TestPickup()
 	uint16_t pickup = schema.ActionMask( "pickup" );
 	uint16_t drop = schema.ActionMask( "drop" );
 	const BoardField* target = schema.FindField( "pickup.target" );
-	CHECK( bat != 0 && pickup != 0 && drop != 0 && target != nullptr && schema.itemKinds.size() >= 2 );
-	if ( target == nullptr )
+	const BoardField* progress = schema.FindField( "pickup.progress" );
+	const BoardField* hold = schema.FindField( "pickup.hold" );
+	CHECK( bat != 0 && pickup != 0 && drop != 0 && target != nullptr && progress != nullptr && hold != nullptr &&
+		   schema.itemKinds.size() >= 2 );
+	if ( target == nullptr || progress == nullptr || hold == nullptr )
 	{
 		return;
 	}
@@ -829,7 +834,8 @@ void TestPickup()
 		else if ( tick >= 200 && tick < 420 )
 		{
 			in.moveForward = tick < 260 ? 127 : 0;
-			in.actions = ( tick % 20 ) < 2 ? pickup : 0;
+			// Taps first (too short for a bat), then holds.
+			in.actions = tick < 320 ? ( ( tick % 20 ) < 2 ? pickup : 0 ) : ( ( tick % 60 ) < 50 ? pickup : 0 );
 		}
 		return in;
 	};
@@ -851,6 +857,9 @@ void TestPickup()
 	bool thrown = false;
 	bool targeted = false;
 	bool heldAgain = false;
+	bool tappedInVain = false;
+	bool halfway = false;
+	bool needsHolding = false;
 	h.RunUntil( 8.0, [&]( double ) {
 		uint32_t me = server.PlayerNetId( h.bots[0].client->Slot() );
 		uint32_t inHand = server.HeldItemOf( me, kSocketRightHand );
@@ -859,6 +868,11 @@ void TestPickup()
 		thrown |= heldBat && inHand == 0 && server.Tick() > 175 && server.Tick() < 200;
 		targeted |= server.BoardValue( me, target->slot ) != 0;
 		heldAgain |= thrown && inHand != 0 && server.Tick() > 200;
+		// Taps (before tick 320) never take the bat; a held key shows progress on the way.
+		tappedInVain |= server.Tick() > 300 && server.Tick() < 320 && inHand == 0 && server.BoardValue( me, target->slot ) != 0;
+		float fill = BoardToFloat( server.BoardValue( me, progress->slot ) );
+		halfway |= fill > 0.2f && fill < 0.9f;
+		needsHolding |= BoardToFloat( server.BoardValue( me, hold->slot ) ) > 0.4f;
 	} );
 	h.Report();
 	std::printf( "    most lying %d, bat held %d, thrown %d, targeted %d, held again %d\n", mostLying, int( heldBat ), int( thrown ),
@@ -868,6 +882,9 @@ void TestPickup()
 	int batKind = schema.FindItemKind( "melee.bat" );
 	CHECK( batKind >= 0 && schema.itemShapes[size_t( batKind )].half.z > 0.3f && schema.itemShapes[size_t( batKind )].mass > 1.0f );
 	CHECK( heldBat && thrown && targeted && heldAgain );
+	std::printf( "    taps did nothing %d, \"pickup.hold\" said so %d, progress seen on the way %d\n", int( tappedInVain ),
+				 int( needsHolding ), int( halfway ) );
+	CHECK( tappedInVain && needsHolding && halfway );
 	for ( Bot& b : h.bots )
 	{
 		CHECK( b.client->GetStats().desyncs == 0 );

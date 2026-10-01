@@ -1,14 +1,22 @@
 [gd_scene format=3]
 
 ; The pickup prompt. While the local player has something in reach ("pickup.target" is its NetId),
-; prompt.tscn is added to that item ($local@pickup.target), and moves to the next one when that
-; changes. The key shown is the one "pickup" is bound to now.
+; a prompt is added to that item ($local@pickup.target), and moves to the next one when that
+; changes: prompt.tscn for an item a tap takes, prompt_hold.tscn (with a bar that fills) for one
+; that needs the key held ("pickup.hold" is how long). The key shown is the one "pickup" is bound to.
 
 [node name="PickupReactions" type="Node3D"]
 
 [node name="Prompt" type="CbReaction" parent="."]
 when = 1
 subject = NodePath("$local")
-conditions = PackedStringArray("pickup.target")
+conditions = PackedStringArray("pickup.target", "pickup.hold == 0")
 scene = "res://vfx/prompt.tscn"
+scene_parent = NodePath("$local@pickup.target")
+
+[node name="PromptHold" type="CbReaction" parent="."]
+when = 1
+subject = NodePath("$local")
+conditions = PackedStringArray("pickup.target", "pickup.hold > 0")
+scene = "res://vfx/prompt_hold.tscn"
 scene_parent = NodePath("$local@pickup.target")

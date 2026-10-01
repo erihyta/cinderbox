@@ -70,6 +70,8 @@ public:
 		// Its body when it lies in the world is authored in its scene (client/prefabs/bat.tscn, the
 		// CbItemBody) and baked to client/items/melee.bat.cfg.
 		m_bat = declare.ItemKind( "melee.bat" );
+		// A bat takes a moment to pick up: the pickup mod reads this (E held for half a second).
+		declare.ItemProperty( m_bat, "pickup.hold_seconds", 0.5f );
 		m_hand = declare.Socket( "RightHand" );
 		m_hot = declare.Field( "melee.hot", BoardType::Bool );
 		m_full = declare.Layer( "full" );

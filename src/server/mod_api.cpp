@@ -160,6 +160,16 @@ ItemKindHandle Declarations::ItemKind( const std::string& name, const ItemShape&
 	return handle;
 }
 
+void Declarations::ItemProperty( ItemKindHandle kind, const std::string& name, float value )
+{
+	if ( kind.Valid() == false || name.empty() )
+	{
+		m_errors.push_back( m_mod + ": bad item property \"" + name + "\"" );
+		return;
+	}
+	m_itemProperties.emplace( std::make_pair( kind.index, name ), value ); // the first one stays
+}
+
 AnimPackHandle Declarations::AnimPack( const std::string& name )
 {
 	for ( size_t i = 0; i < m_schema.animPacks.size(); ++i )
@@ -395,6 +405,16 @@ std::vector<ModEventRecord> Context::RecentEvents() const
 		}
 	}
 	return out;
+}
+
+float Context::ItemProperty( ItemKindHandle kind, const std::string& name, float fallback ) const
+{
+	if ( m_itemProperties == nullptr )
+	{
+		return fallback;
+	}
+	auto it = m_itemProperties->find( std::make_pair( kind.index, name ) );
+	return it != m_itemProperties->end() ? it->second : fallback;
 }
 
 double Context::Option( const std::string& name, double fallback ) const

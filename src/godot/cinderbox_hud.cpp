@@ -1,6 +1,7 @@
 #include "cinderbox_hud.h"
 
 #include <godot_cpp/classes/base_material3d.hpp>
+#include <godot_cpp/classes/standard_material3d.hpp>
 
 #include "cinderbox_client.h"
 
@@ -70,6 +71,69 @@ void CbPromptLabel::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_height" ), &CbPromptLabel::get_height );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "text_format", PROPERTY_HINT_MULTILINE_TEXT ), "set_text_format", "get_text_format" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "height", PROPERTY_HINT_RANGE, "0,3,0.01,suffix:m" ), "set_height", "get_height" );
+	ClassDB::bind_method( D_METHOD( "set_progress_field", "value" ), &CbPromptLabel::set_progress_field );
+	ClassDB::bind_method( D_METHOD( "get_progress_field" ), &CbPromptLabel::get_progress_field );
+	ClassDB::bind_method( D_METHOD( "set_bar_color", "value" ), &CbPromptLabel::set_bar_color );
+	ClassDB::bind_method( D_METHOD( "get_bar_color" ), &CbPromptLabel::get_bar_color );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "progress_field", PROPERTY_HINT_PLACEHOLDER_TEXT, "pickup.progress" ),
+				  "set_progress_field", "get_progress_field" );
+	ADD_PROPERTY( PropertyInfo( Variant::COLOR, "bar_color" ), "set_bar_color", "get_bar_color" );
+}
+
+namespace
+{
+
+// The bar is drawn like the text: facing the camera, the same size at any distance, over everything.
+// Sizes are in the label's units (what a metre away looks like).
+constexpr float kBarWidth = 0.11f;
+constexpr float kBarHeight = 0.009f;
+constexpr float kBarDrop = -0.03f; // under the text
+
+Ref<StandardMaterial3D> BarMaterial( const Color& color, int priority )
+{
+	Ref<StandardMaterial3D> material;
+	material.instantiate();
+	material->set_shading_mode( BaseMaterial3D::SHADING_MODE_UNSHADED );
+	material->set_transparency( BaseMaterial3D::TRANSPARENCY_ALPHA );
+	material->set_billboard_mode( BaseMaterial3D::BILLBOARD_ENABLED );
+	material->set_flag( BaseMaterial3D::FLAG_BILLBOARD_KEEP_SCALE, true );
+	material->set_flag( BaseMaterial3D::FLAG_FIXED_SIZE, true );
+	material->set_flag( BaseMaterial3D::FLAG_DISABLE_DEPTH_TEST, true );
+	material->set_albedo( color );
+	material->set_render_priority( priority );
+	return material;
+}
+
+} // namespace
+
+void CbPromptLabel::ShowBar( float progress )
+{
+	if ( m_barBack == nullptr )
+	{
+		Ref<QuadMesh> back;
+		back.instantiate();
+		back->set_size( Vector2( kBarWidth + 0.006f, kBarHeight + 0.006f ) );
+		back->set_center_offset( Vector3( 0, kBarDrop, 0 ) );
+		m_barBack = memnew( MeshInstance3D );
+		m_barBack->set_mesh( back );
+		m_barBack->set_material_override( BarMaterial( Color( 0, 0, 0, 0.55f ), 1 ) );
+		add_child( m_barBack );
+		m_fillMesh.instantiate();
+		m_barFill = memnew( MeshInstance3D );
+		m_barFill->set_mesh( m_fillMesh );
+		m_barFill->set_material_override( BarMaterial( m_barColor, 2 ) );
+		add_child( m_barFill );
+	}
+	bool show = progress > 0.0f;
+	m_barBack->set_visible( show );
+	m_barFill->set_visible( show );
+	if ( show )
+	{
+		// From the left edge: wider, and moved half its width to the right.
+		float width = kBarWidth * std::min( progress, 1.0f );
+		m_fillMesh->set_size( Vector2( width, kBarHeight ) );
+		m_fillMesh->set_center_offset( Vector3( -0.5f * kBarWidth + 0.5f * width, kBarDrop, 0 ) );
+	}
 }
 
 void CbPromptLabel::_ready()
@@ -92,6 +156,11 @@ void CbPromptLabel::_process( double )
 	String text = client != nullptr && client->has_local_player() ? client->format_local_fields( m_format ).strip_edges() : String();
 	set_visible( text.is_empty() == false );
 	set_text( text );
+	if ( m_progressField.is_empty() == false && client != nullptr )
+	{
+		Variant value = client->get_local_field( m_progressField );
+		ShowBar( value.get_type() == Variant::NIL ? 0.0f : float( double( value ) ) );
+	}
 }
 
 // --- CbFieldLabel ----------------------------------------------------------------------------------
