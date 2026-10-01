@@ -1081,6 +1081,20 @@ prompt are a mod, with the engine providing verbs and a few general pieces.
 - **Not done**: shapes authored in Godot; items walking their holder differently (their own
   layers); a hold-to-use duration on prompts; items expiring when nobody picks them up.
 
+## Looks follow what is held (M40)
+After M39 the rules followed the hand but the looks still asked for the loadout slot: a picked-up
+pistol drew no HUD, and a bat held while slot 2 was out fired the pistol's predicted muzzle flash.
+
+- **Item kinds are conditions** everywhere presentation reads state, as they already were in the
+  state machines: `pistol.gun` is true while the player holds one. The client indexes held items per
+  frame; `check_conditions` (the HUD nodes) answers item kind names through the conditions' extra
+  names hook, and every player's reaction state carries a true/false per item kind.
+- **The pistol's look** (HUD ammo, reloading, crosshair; the predicted shot and dry click) asks
+  `pistol.gun` instead of `loadout.slot == 2`. No look reads the loadout slot any more.
+- **Verified**: a rendered session with 80 items on the floor and a scripted player pressing E
+  during its pistol phase: while it held a bat with slot 2 out, `pistol.gun` read false; all 45
+  predicted-shot shakes across three runs happened with a gun in hand. No desyncs.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1193,3 +1207,4 @@ prompt are a mod, with the engine providing verbs and a few general pieces.
 37. **M37** (done): Cue Preview, an editor bottom panel in the cue addon: the edited scene on a stage with stand-in players, cues fired and state set by hand, screen effects shown; verified on the bat, the pistol's world reactions and the mannequin.
 38. **M38** (done): reaction polish: fixes (a While undoes itself when it leaves the tree, a wider refused list, warnings for leaks and parse errors), `method_args`, `delay` / `chance`, `blend_time`, `explain()` in the Cue Preview, and in-editor help (class reference, info rows, info buttons).
 39. **M39** (done): items in the world: physics bodies of declared shapes, DropItem / PickUpItem / SpawnItem on the floor, spawn into a taken hand drops; melee and pistol follow what is in the hand; the pickup mod (E, G, drop on death, spawn_each) with a data-only proximity prompt (`CbPromptLabel`, `$local@field`, `{key:}`, `{look:}`); protocol 14.
+40. **M40** (done): looks follow what is held: item kind names are conditions in the HUD and in reactions; the pistol's look asks `pistol.gun`, not the loadout slot.

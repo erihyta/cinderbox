@@ -60,8 +60,22 @@ FieldValue ReadField( const ModSchema& schema, const std::string& name, const Bl
 	return v;
 }
 
-bool CheckCondition( const ModSchema& schema, const std::string& condition, const Blackboard* board, const int32_t* globals )
+bool CheckCondition( const ModSchema& schema, const std::string& condition, const Blackboard* board, const int32_t* globals,
+					 const ExtraFields* extra )
 {
+	auto known = [&]( const std::string& name, float& value ) { return extra != nullptr && *extra && ( *extra )( name, value ); };
+	auto number = [&]( const std::string& name ) {
+		float value = 0.0f;
+		return known( name, value ) ? value : ReadField( schema, name, board, globals ).AsFloat();
+	};
+	auto truth = [&]( const std::string& name ) {
+		float value = 0.0f;
+		return known( name, value ) ? value != 0.0f : ReadField( schema, name, board, globals ).AsBool();
+	};
+	auto declared = [&]( const std::string& name ) {
+		float value = 0.0f;
+		return known( name, value ) || schema.FindField( name ) != nullptr;
+	};
 	std::string text = Trim( condition );
 	if ( text.empty() )
 	{
@@ -69,15 +83,15 @@ bool CheckCondition( const ModSchema& schema, const std::string& condition, cons
 	}
 	if ( text.rfind( "!?", 0 ) == 0 )
 	{
-		return schema.FindField( Trim( text.substr( 2 ) ) ) == nullptr;
+		return declared( Trim( text.substr( 2 ) ) ) == false;
 	}
 	if ( text[0] == '!' )
 	{
-		return ReadField( schema, Trim( text.substr( 1 ) ), board, globals ).AsBool() == false;
+		return truth( Trim( text.substr( 1 ) ) ) == false;
 	}
 	if ( text[0] == '?' )
 	{
-		return schema.FindField( Trim( text.substr( 1 ) ) ) != nullptr;
+		return declared( Trim( text.substr( 1 ) ) );
 	}
 
 	static const char* kOps[] = { "==", "!=", ">=", "<=", ">", "<" };
@@ -94,7 +108,7 @@ bool CheckCondition( const ModSchema& schema, const std::string& condition, cons
 		{
 			return false;
 		}
-		float lhs = ReadField( schema, name, board, globals ).AsFloat();
+		float lhs = number( name );
 		std::string o = op;
 		if ( o == "==" )
 			return lhs == rhs;
@@ -108,7 +122,7 @@ bool CheckCondition( const ModSchema& schema, const std::string& condition, cons
 			return lhs > rhs;
 		return lhs < rhs;
 	}
-	return ReadField( schema, text, board, globals ).AsBool();
+	return truth( text );
 }
 
 bool CheckConditions( const ModSchema& schema, const std::vector<std::string>& conditions, const Blackboard* board,

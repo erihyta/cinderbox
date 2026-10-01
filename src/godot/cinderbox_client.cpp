@@ -1010,6 +1010,14 @@ void CinderboxClient::PushStates()
 				hash = Mix( hash, uint32_t( v.board.values[field.slot] ) );
 			}
 		}
+		auto held = m_heldKinds.find( v.netId );
+		if ( held != m_heldKinds.end() )
+		{
+			for ( uint16_t kind : held->second )
+			{
+				hash = Mix( hash, 0x10000u + kind );
+			}
+		}
 		auto found = m_stateHashes.find( id );
 		if ( found != m_stateHashes.end() && found->second == hash )
 		{
@@ -1022,6 +1030,14 @@ void CinderboxClient::PushStates()
 			if ( field.scope == BoardScope::Entity )
 			{
 				state[String::utf8( field.name.c_str() )] = FieldVariant( field, v.board.values[field.slot] );
+			}
+		}
+		// What it holds, by item kind, as in the state machines' conditions.
+		if ( v.kind == present::VisualKind::Player )
+		{
+			for ( size_t kind = 0; kind < schema.itemKinds.size(); ++kind )
+			{
+				state[String::utf8( schema.itemKinds[kind].c_str() )] = Holds( v.netId, uint16_t( kind ) );
 			}
 		}
 		director->set_state( node, state );
@@ -1038,6 +1054,10 @@ void CinderboxClient::PushStates()
 		m_worldStateHash = hash;
 		Dictionary world;
 		PackedStringArray known;
+		for ( const std::string& kind : schema.itemKinds )
+		{
+			known.push_back( String::utf8( kind.c_str() ) );
+		}
 		for ( const BoardField& field : schema.fields )
 		{
 			known.push_back( String::utf8( field.name.c_str() ) );
@@ -1426,10 +1446,49 @@ Variant CinderboxClient::get_local_field( const String& name ) const
 	return get_field( get_local_net_id(), name );
 }
 
+void CinderboxClient::RefreshHeldKinds()
+{
+	m_heldKinds.clear();
+	if ( !m_mirror )
+	{
+		return;
+	}
+	m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
+							const present::RagdollAnim* ) {
+		if ( v.kind == present::VisualKind::Item && v.holder != 0 )
+		{
+			m_heldKinds[v.holder].push_back( v.itemKind );
+		}
+	} );
+}
+
+bool CinderboxClient::Holds( uint32_t netId, uint16_t kind ) const
+{
+	auto it = m_heldKinds.find( netId );
+	return it != m_heldKinds.end() && std::find( it->second.begin(), it->second.end(), kind ) != it->second.end();
+}
+
 bool CinderboxClient::check_conditions( int64_t net_id, const PackedStringArray& conditions ) const
 {
 	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
-	return present::CheckConditions( m_frame.schema, Conditions( conditions ), BoardOf( uint32_t( net_id ) ), globals );
+	// Item kinds are names too: "pistol.gun" holds while the player holds one.
+	present::ExtraFields held = [&]( const std::string& name, float& value ) {
+		int kind = m_frame.schema.FindItemKind( name );
+		if ( kind < 0 )
+		{
+			return false;
+		}
+		value = Holds( uint32_t( net_id ), uint16_t( kind ) ) ? 1.0f : 0.0f;
+		return true;
+	};
+	for ( const std::string& condition : Conditions( conditions ) )
+	{
+		if ( present::CheckCondition( m_frame.schema, condition, BoardOf( uint32_t( net_id ) ), globals, &held ) == false )
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 bool CinderboxClient::check_local_conditions( const PackedStringArray& conditions ) const
@@ -1733,6 +1792,7 @@ void CinderboxClient::_process( double delta )
 	m_frame.frame.rolledBack = false;
 
 	UpdateMapVisual();
+	RefreshHeldKinds();
 	HandleEvents();
 	UpdateNodes();
 	PushStates();

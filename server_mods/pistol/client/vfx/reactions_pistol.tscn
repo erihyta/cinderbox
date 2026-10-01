@@ -11,7 +11,7 @@
 [node name="FirePredicted" type="CbReaction" parent="."]
 event = "pressed:fire"
 subject = NodePath("$at")
-conditions = PackedStringArray("loadout.slot == 2", "pistol.ammo > 0", "!pistol.reloading", "!combat.dead", "is_local")
+conditions = PackedStringArray("pistol.gun", "pistol.ammo > 0", "!pistol.reloading", "!combat.dead", "is_local")
 scene = "res://vfx/muzzle_flash.tscn"
 scene_lifetime = 0.3
 place = 4
@@ -26,7 +26,7 @@ cooldown = 0.19
 [node name="DryPredicted" type="CbReaction" parent="."]
 event = "pressed:fire"
 subject = NodePath("$at")
-conditions = PackedStringArray("loadout.slot == 2", "pistol.ammo == 0", "!pistol.reloading", "!combat.dead", "is_local")
+conditions = PackedStringArray("pistol.gun", "pistol.ammo == 0", "!pistol.reloading", "!combat.dead", "is_local")
 place = 4
 place_node = NodePath("$at/RightHand")
 sound = "res://assets/sfx/dry_click.wav"
