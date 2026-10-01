@@ -9,10 +9,12 @@
 // there is only the right hand: E takes the item into it (whatever was there drops in its place),
 // and dying drops it.
 //
-// Some items take a moment: E has to be held for the item's "pickup.hold_seconds" (an item property
-// its mod declares; --mod-option pickup.hold_seconds=N is the default for the rest, 0: a tap). While
-// it is held on the same item, "pickup.progress" runs from 0 to 1 on the player's board, and
-// "pickup.hold" says how long the item in reach needs; letting go, or losing the item, starts over.
+// Some items take a moment: E has to be held for the item's "pickup.hold_seconds" (an item property,
+// authored on the item's CbItemBody or declared by its mod; --mod-option pickup.hold_seconds=N is
+// the default for the rest, 0: a tap). "pickup.hold" says how long the item in reach needs, and
+// while E is held on it "pickup.since" is the tick that began (0: not holding): a look draws the
+// progress from those two, so the board changes when a hold starts and ends, not every tick.
+// Letting go, or losing the item, starts over.
 //
 // --mod-option pickup.spawn_each=N drops N of every item kind the server's mods declared around
 // the map's spawn point when the server starts, so there is something to pick up.
@@ -45,7 +47,7 @@ struct Picker
 	bool dead = false;
 	uint32_t holding = 0;	// the item E is being held on (0: none)
 	uint32_t holdStart = 0; // the tick that began
-	int32_t progress = 0;	// what "pickup.progress" says (a board float's bits)
+	int32_t since = 0;		// what "pickup.since" says
 };
 
 // Turned so the item points (its -Z) along `aim`, flattened.
@@ -69,9 +71,9 @@ public:
 		m_drop = declare.Action( "drop", "G" );
 		// The NetId of the item the player can pick up now (0: none): what the prompt shows.
 		m_target = declare.Field( "pickup.target", BoardType::Int );
-		// How long E must be held for it, in seconds (0: a tap), and how far along that is (0..1).
+		// How long E must be held for it, in seconds (0: a tap), and the tick a hold on it began (0: none).
 		m_hold = declare.Field( "pickup.hold", BoardType::Float );
-		m_progress = declare.Field( "pickup.progress", BoardType::Float );
+		m_since = declare.Field( "pickup.since", BoardType::Int );
 		m_hand = declare.Socket( "RightHand" );
 		// Published by the inventory mod when it runs (1 or more); 0 (never set): there is none.
 		m_inventory = declare.Field( "inventory.slot", BoardType::Int );
@@ -118,7 +120,7 @@ public:
 				}
 				p.dead = true;
 				SetTarget( ctx, target, p, 0 );
-				SetProgress( ctx, target, p, 0.0f );
+				SetSince( ctx, target, p, 0 );
 				p.holding = 0;
 				continue;
 			}
@@ -157,7 +159,7 @@ public:
 			}
 			float elapsed = p.holding != 0 ? float( ctx.Tick() - p.holdStart ) / float( ctx.Config().tickRate ) : 0.0f;
 			bool take = p.holding != 0 && elapsed >= seconds;
-			SetProgress( ctx, target, p, p.holding != 0 && seconds > 0.0f && take == false ? elapsed / seconds : 0.0f );
+			SetSince( ctx, target, p, p.holding != 0 && seconds > 0.0f && take == false ? int32_t( std::max( p.holdStart, 1u ) ) : 0 );
 			if ( c->frozen != 0 )
 			{
 				continue;
@@ -197,13 +199,12 @@ private:
 		}
 	}
 
-	void SetProgress( Context& ctx, uint32_t target, Picker& p, float progress )
+	void SetSince( Context& ctx, uint32_t target, Picker& p, int32_t since )
 	{
-		int32_t bits = BoardFromFloat( progress );
-		if ( bits != p.progress )
+		if ( since != p.since )
 		{
-			p.progress = bits;
-			ctx.Set( target, m_progress, bits );
+			p.since = since;
+			ctx.Set( target, m_since, since );
 		}
 	}
 
@@ -243,7 +244,7 @@ private:
 	ActionHandle m_drop;
 	FieldHandle m_target;
 	FieldHandle m_hold;
-	FieldHandle m_progress;
+	FieldHandle m_since;
 	FieldHandle m_inventory;
 	float m_holdSeconds = 0.0f;
 	SocketHandle m_hand;

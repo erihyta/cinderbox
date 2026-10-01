@@ -167,9 +167,10 @@ std::shared_ptr<const CharacterAsset> LoadCharacterFolder( const std::string& di
 	return LoadCharacter( anim::DiskReader( dir ), name, dir + "/", error, warnings );
 }
 
-bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error )
+bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error, ItemProperties* properties )
 {
 	ItemShape shape;
+	ItemProperties found;
 	bool haveShape = false;
 	bool haveHalf = false;
 	std::istringstream lines( text );
@@ -213,6 +214,17 @@ bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error
 				return false;
 			}
 		}
+		else if ( key == "property" )
+		{
+			std::string name;
+			float value = 0.0f;
+			if ( !( words >> name >> value ) || std::isfinite( value ) == false )
+			{
+				error = "a property needs a name and a number";
+				return false;
+			}
+			found[name] = value;
+		}
 	}
 	auto sane = []( float f, float lo, float hi ) { return std::isfinite( f ) && f >= lo && f <= hi; };
 	if ( haveShape == false || haveHalf == false )
@@ -242,10 +254,15 @@ bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error
 		return false;
 	}
 	out = shape;
+	if ( properties != nullptr )
+	{
+		*properties = found;
+	}
 	return true;
 }
 
-bool LoadItemShapeItem( const std::string& zipPath, const ModItem& item, const std::string& kind, ItemShape& out, std::string& error )
+bool LoadItemShapeItem( const std::string& zipPath, const ModItem& item, const std::string& kind, ItemShape& out, std::string& error,
+						ItemProperties* properties )
 {
 	std::ifstream in( zipPath, std::ios::binary );
 	if ( in.good() == false )
@@ -273,14 +290,14 @@ bool LoadItemShapeItem( const std::string& zipPath, const ModItem& item, const s
 	bool ok = false;
 	if ( data != nullptr )
 	{
-		ok = ParseItemShape( std::string( static_cast<const char*>( data ), size ), out, error );
+		ok = ParseItemShape( std::string( static_cast<const char*>( data ), size ), out, error, properties );
 		mz_free( data );
 	}
 	mz_zip_reader_end( &zip );
 	return ok;
 }
 
-bool LoadItemShapeFolder( const std::string& dir, const std::string& kind, ItemShape& out, std::string& error )
+bool LoadItemShapeFolder( const std::string& dir, const std::string& kind, ItemShape& out, std::string& error, ItemProperties* properties )
 {
 	std::ifstream in( dir + "/items/" + kind + ".cfg", std::ios::binary );
 	if ( in.good() == false )
@@ -289,7 +306,7 @@ bool LoadItemShapeFolder( const std::string& dir, const std::string& kind, ItemS
 	}
 	std::ostringstream all;
 	all << in.rdbuf();
-	return ParseItemShape( all.str(), out, error );
+	return ParseItemShape( all.str(), out, error, properties );
 }
 
 std::string DefaultWorkshopDir()

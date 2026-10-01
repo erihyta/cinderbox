@@ -325,14 +325,14 @@ int main( int argc, char** argv )
 	};
 	// Item bodies too: items/<kind>.cfg, baked from the item's scene.
 	options.loadItemShape = [itemsDir, workshopDir]( const std::string& mod, const std::string& kind, cb::ItemShape& shape,
-													 std::string& error ) {
+													 std::string& error, std::map<std::string, float>& properties ) {
 		cb::ModItem item;
 		if ( ReadItem( itemsDir, mod, item ) == false )
 		{
 			return false;
 		}
 		std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
-		return cb::LoadItemShapeItem( zip, item, kind, shape, error );
+		return cb::LoadItemShapeItem( zip, item, kind, shape, error, &properties );
 	};
 	if ( server.Start( options ) == false )
 	{

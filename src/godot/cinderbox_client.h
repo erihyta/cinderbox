@@ -70,6 +70,10 @@ public:
 	int64_t get_local_net_id() const;
 	bool is_local_player_dead() const;
 	// The point the camera should orbit: the local player's head, or its ragdoll while dead.
+	// The game's clock as drawn: the simulation tick, with the fraction of the one being shown, and
+	// how many ticks make a second. For looks that count from a tick a field holds.
+	double get_tick_time() const;
+	double get_tick_rate() const;
 	godot::Vector3 get_camera_target() const;
 	// How far a camera can back away from `target` along `direction` before the map is in the way
 	// (at most `max_distance`; `radius` keeps it that far off the surface). Props and players never
@@ -218,6 +222,7 @@ private:
 	ClientThread m_thread;
 	PublishedFrame m_frame;
 	bool m_haveFrame = false;
+	float m_alpha = 0.0f; // of the frame being drawn
 	godot::String m_lastState;
 
 	std::unordered_map<uint64_t, godot::ObjectID> m_nodes; // visual id -> node

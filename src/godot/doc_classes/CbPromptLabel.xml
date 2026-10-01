@@ -18,6 +18,12 @@
 		<member name="progress_field" type="String" setter="set_progress_field" getter="get_progress_field" default="&quot;&quot;">
 			A field of the local player that runs from 0 to 1 ([code]pickup.progress[/code]): while it is above 0, a bar under the text fills with it (hold to use).
 		</member>
+		<member name="since_field" type="String" setter="set_since_field" getter="get_since_field" default="&quot;&quot;">
+			With [member duration_field], the other way to fill the bar: a field holding the tick a hold began ([code]pickup.since[/code], 0 while there is none). The bar fills from the game's clock, so the server only says when a hold starts and ends.
+		</member>
+		<member name="duration_field" type="String" setter="set_duration_field" getter="get_duration_field" default="&quot;&quot;">
+			A field holding how many seconds the hold takes ([code]pickup.hold[/code]).
+		</member>
 		<member name="bar_color" type="Color" setter="set_bar_color" getter="get_bar_color" default="Color(1, 1, 1, 1)">
 			The bar's colour.
 		</member>

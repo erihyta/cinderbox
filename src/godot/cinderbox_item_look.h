@@ -7,6 +7,8 @@
 
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/variant/callable.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 
 namespace cb::gd
 {
@@ -52,9 +54,11 @@ private:
 
 // The body an item has when it lies in the world, authored in the item's own scene: a box or a
 // sphere (Godot's shape gizmo shows it), placed where the shape's centre is from the grip, and its
-// mass. Bake writes it to items/<kind>.cfg (addons/cinderbox_maps/bake_items.gd; publishing a mod
-// runs it), which the server reads from the mod's item. In the game the node does nothing: the
-// simulation owns the physics.
+// mass, and what else the server should know about the item (`properties`: named numbers any mod
+// may read, "pickup.hold_seconds" = 0.5). Bake (the button in the inspector, or
+// addons/cinderbox_maps/bake_items.gd, which publishing a mod runs) writes it to items/<kind>.cfg,
+// which the server reads from the mod's item. In the game the node does nothing: the simulation
+// owns the physics.
 class CbItemBody : public godot::CollisionShape3D
 {
 	GDCLASS( CbItemBody, godot::CollisionShape3D )
@@ -68,8 +72,22 @@ public:
 	{
 		return m_mass;
 	}
+	// Named numbers about the item ("pickup.hold_seconds": 0.5), baked with the body. They replace
+	// what the item's mod declared in code for the same names.
+	void set_properties( const godot::Dictionary& v )
+	{
+		m_properties = v;
+	}
+	godot::Dictionary get_properties() const
+	{
+		return m_properties;
+	}
 	// The text of items/<kind>.cfg, or "" (and why in the returned { text, error }).
 	godot::Dictionary bake() const;
+	// The inspector's button: writes res://items/<kind>.cfg for every kind whose CbItemLook (in
+	// res://vfx/reactions*.tscn) draws this scene.
+	void bake_to_project();
+	godot::Callable get_bake_button();
 
 	godot::PackedStringArray _get_configuration_warnings() const override;
 
@@ -78,6 +96,7 @@ protected:
 
 private:
 	double m_mass = 1.0;
+	godot::Dictionary m_properties;
 };
 
 } // namespace cb::gd

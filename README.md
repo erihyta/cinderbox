@@ -53,6 +53,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M44: held items bring animation layers (the bat changes how its holder stands and walks); a mod's own swap wins over an item's | done |
 | M45: join menu (address, recent servers), Esc menu, settings; failed joins say why; camera collision with the map | done |
 | M46: an inventory (slots, stowed items, optional holsters): switching and picking up no longer drop other items | done |
+| M47: item properties and hold times authored on the `CbItemBody`, a Bake button for it, hold progress drawn from a start tick | done |
 
 ## Building
 
@@ -873,10 +874,20 @@ so it falls, tumbles, gets shot across the floor, and does so identically on eve
 
 The body is **authored in Godot and baked**, like a character's hit zones: put a `CbItemBody` in
 the item's scene, give it a `BoxShape3D` or `SphereShape3D` and a `mass`, and move it to where the
-shape's centre is. Publishing the mod bakes every item its `CbItemLook`s name
-(`tools\publish_mod.ps1`, or by hand below) and ships the files in the item; the server reads them
-from there (`item melee.bat: body from mod melee's item (box, 1.10 kg)`). The baked files are
-committed with the mod, so servers and tests built from source have them.
+shape's centre is. The same node carries what else the server should know about the item:
+
+| On the `CbItemBody` | Meaning |
+|---|---|
+| `shape`, its position | the body when it lies in the world |
+| `mass` | kg |
+| `properties` | named numbers any server mod may read, e.g. `pickup.hold_seconds` = 0.5. They replace what the item's mod declared in code for the same name |
+| **Bake item body** (button) | writes `res://items/<kind>.cfg` for every kind whose `CbItemLook` draws this scene. Save the scene first |
+
+Publishing the mod bakes every item too (`tools\publish_mod.ps1`, or by hand below) and ships the
+files in the item; the server reads them from there (`item melee.bat: body from mod melee's item
+(box, 1.10 kg)`, `item melee.bat: pickup.hold_seconds = 0.5`). The baked files are committed with
+the mod, so servers and tests built from source have them. A change reaches servers when the mod is
+published again.
 
 ```sh
 godot --headless --path server_mods/melee/client --script <repo>/godot/addons/cinderbox_maps/bake_items.gd
@@ -888,14 +899,16 @@ Who may pick up what, and when, is a mod's. The **pickup** mod is the example:
   `pickup.target`. **E** takes it, **G** throws what you hold. With the `inventory` mod running, a
   taken item goes to its slot (see [The inventory](#the-inventory)); without it there is only the
   right hand: what was there drops, and dying drops it.
-- **Hold to pick up**: an item's mod may say it takes a moment,
-  `declare.ItemProperty( bat, "pickup.hold_seconds", 0.5f )` (the bat does; the pistol is a tap).
-  While E is held on the item in reach, `pickup.progress` runs from 0 to 1 on your board; letting go
-  or losing the item starts over. `pickup.hold` says how long the item in reach needs.
+- **Hold to pick up**: an item may take a moment: `pickup.hold_seconds` in its `CbItemBody`'s
+  `properties` (the bat: 0.5; the pistol is a tap), or `declare.ItemProperty( kind,
+  "pickup.hold_seconds", 0.5f )` in its mod. `pickup.hold` says how long the item in reach needs,
+  and while E is held on it `pickup.since` is the tick the hold began (0: none). Letting go or
+  losing the item starts over. The board changes when a hold starts and ends, not every tick.
 - Its look is a proximity prompt, all data: a world reaction while `$local`'s `pickup.target` is set
   puts a `CbPromptLabel` on the item it names, `$local@pickup.target`, and moves it when that
   changes: `"[{key:pickup}]  Pick up {look:pickup.target}"` for a tap, `"Hold [...]"` with a bar
-  that fills (`progress_field = "pickup.progress"`) for an item that needs holding.
+  that fills (`since_field = "pickup.since"`, `duration_field = "pickup.hold"`: the label counts from
+  the game's clock) for an item that needs holding.
 
 ```
 PickupReactions            (vfx/reactions_pickup.tscn)

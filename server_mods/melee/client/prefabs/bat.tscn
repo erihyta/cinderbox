@@ -3,8 +3,9 @@
 ; The look of the "melee.bat" item. The character's swing animation plays "slash" (the flames) through
 ; RightHand/Item/AnimationPlayer; the two CbReaction nodes follow what the melee mod sends: the barrel
 ; glows while the bat is hot, and sparks fly when its holder lands a hit. The barrel's material is
-; local to each bat, so one hot bat does not light them all. Body is what it is when it lies in the
-; world: a box, baked to items/melee.bat.cfg for the server.
+; local to each bat, so one hot bat does not light them all. Body is what the server knows about it:
+; the box it is when it lies in the world, and that picking it up takes holding E for half a second.
+; Baked to items/melee.bat.cfg (the Bake button on Body).
 
 [sub_resource type="StandardMaterial3D" id="Tape"]
 albedo_color = Color(0.1, 0.1, 0.12, 1)
@@ -138,6 +139,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_cfl35")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.31)
 shape = SubResource("Body")
 mass = 1.1
+properties = {"pickup.hold_seconds": 0.5}
 
 [node name="Flames" type="GPUParticles3D" parent="." unique_id=1514484346]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)

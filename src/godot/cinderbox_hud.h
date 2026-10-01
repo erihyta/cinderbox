@@ -73,6 +73,24 @@ public:
 	{
 		return m_progressField;
 	}
+	// Or two fields that change only when a hold starts and ends: the tick it began ("pickup.since",
+	// 0: none) and how many seconds it takes ("pickup.hold"). The bar fills from the game's clock.
+	void set_since_field( const godot::String& value )
+	{
+		m_sinceField = value;
+	}
+	godot::String get_since_field() const
+	{
+		return m_sinceField;
+	}
+	void set_duration_field( const godot::String& value )
+	{
+		m_durationField = value;
+	}
+	godot::String get_duration_field() const
+	{
+		return m_durationField;
+	}
 	void set_bar_color( const godot::Color& value )
 	{
 		m_barColor = value;
@@ -89,6 +107,8 @@ private:
 	godot::String m_format = "[{key:pickup}]  Pick up {look:pickup.target}";
 	double m_height = 0.35;
 	godot::String m_progressField;
+	godot::String m_sinceField;
+	godot::String m_durationField;
 	godot::Color m_barColor = godot::Color( 1, 1, 1, 1 );
 	godot::MeshInstance3D* m_barBack = nullptr;
 	godot::MeshInstance3D* m_barFill = nullptr;
