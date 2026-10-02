@@ -66,6 +66,8 @@ Two Box3D bugs found by the cross-platform checks are patched when it is fetched
 | `box3d-snapshot-padding.patch` | the snapshot writer copied struct padding and a heap address: joining clients received scraps of server memory, and no two saves were identical |
 | `box3d-neon-minmax.patch` | ARM64 clamped to a zero of the other sign than x64 (`vmaxq`/`vminq` against SSE's `maxps`/`minps`) |
 
+A third hole was ours: ozz chooses its scalar math with a definition it sets for its own sources only, and its math is mostly inline. Our code that includes its headers (the leg turn, the aim chain, hitboxes, retargeting) compiled the platform's SIMD versions, SSE on x64 and NEON on ARM64, which do not round alike. `ozz_base` now carries the definition to everything that links it. The pose hash found it once it covered the leg turn and the aim (`cb_tests --anim-hash-parts` says which step differs).
+
 ## The simulation
 
 `src/sim`. One class steps the world; everything it knows is plain-data components on entities
@@ -446,4 +448,4 @@ Netcode numbers from when they were taken (M4, M5); frame sizes are in [The view
 60. **M60** (done): the raylib client (`cb_client`, its anim and replay viewers) removed; raylib is no longer a dependency.
 61. **M61** (done): the `combat` mod: health, death, ragdolls and respawning moved out of the pistol; weapons say `combat.damage`, it answers `combat.hurt` / `combat.killed` / `combat.respawned`; `combat.heal`; five server options; its own look (health bar, kill feed, scoreboard, hurt and death flashes); `net_combat`.
 62. **M62** (done): one animation system: the placeholder rig gets a built-in state machine, so every pose comes from one; removed the built-in clip blending and stance clip tables (`EvaluateBuiltIn`, `StanceTable`, the six clip slots), `CinderboxAnimator` and its example mod, the non-tree character bake, the glTF conversion pipeline; `AnimState` loses five fields (protocol 18, replay 5, view packets CBV3); the robot example is an `AnimationTree`.
-63. **M63** (done): this document by subsystem instead of by milestone; reference hashes regenerated for the M62 animation state.
+63. **M63** (done): this document by subsystem instead of by milestone; reference hashes regenerated for the M62 animation state. Found by the new pose hash on macOS: our own code compiled ozz's inline math as platform SIMD; `OZZ_BUILD_SIMD_REF` now reaches every target.

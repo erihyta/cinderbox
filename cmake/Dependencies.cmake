@@ -77,6 +77,12 @@ FetchContent_Declare(miniz
 
 FetchContent_MakeAvailable(flecs box3d enet ozz miniz)
 
+# ozz's scalar math is chosen by a definition that ozz sets for its own sources only. Its math is
+# mostly inline, so whoever includes its headers needs the definition too: without it our own code
+# (the leg turn, the aim chain, hitboxes, retargeting) compiled the platform's SIMD versions, SSE
+# on x64 and NEON on ARM64, which do not round alike. Found by the pose hash on macOS (M62).
+target_compile_definitions(ozz_base PUBLIC OZZ_BUILD_SIMD_REF)
+
 # ozz builds with warnings-as-errors; a newer compiler must not break our build.
 foreach(t ozz_base ozz_animation ozz_animation_offline ozz_options ozz_geometry)
 	if(TARGET ${t})
