@@ -3,7 +3,7 @@
 #include "camera.h"
 #include "cinderbox_animator.h"
 #include "cinderbox_character.h"
-#include "cinderbox_companion.h"
+#include "cinderbox_track_player.h"
 #include "cinderbox_skeleton.h"
 #include "cue_guard.h"
 #include "detmath.h"
@@ -619,23 +619,23 @@ void CinderboxClient::UpdateNodes()
 				{
 					animator->ApplyState( anim->current );
 				}
-				auto companionIt = m_companions.find( id );
-				auto* companion = companionIt != m_companions.end()
-									  ? Object::cast_to<CbCompanionPlayer>( ObjectDB::get_instance( companionIt->second ) )
+				auto playerIt = m_trackPlayers.find( id );
+				auto* tracks = playerIt != m_trackPlayers.end()
+									  ? Object::cast_to<CbTrackPlayer>( ObjectDB::get_instance( playerIt->second ) )
 									  : nullptr;
-				if ( companion != nullptr )
+				if ( tracks != nullptr )
 				{
 					const auto& library = m_mirror->World().get<present::AnimLibrary>();
 					float alpha = m_mirror->World().get<present::FrameTiming>().tickAlpha;
 					AnimState state = anim::InterpolateAnimState( anim->previous, anim->current, alpha );
-					companion->begin_frame();
+					tracks->begin_frame();
 					auto clips = library.graph ? anim::ActiveGraphClips( state, *library.graph, library.packs )
 											   : anim::ActiveClips( state, *library.set, library.stances.get() );
 					for ( const anim::ActiveClip& clip : clips )
 					{
-						companion->play_at( clip.channel, CompanionName( String::utf8( clip.name.c_str() ) ), clip.time, clip.loops );
+						tracks->play_at( clip.channel, TrackClipName( String::utf8( clip.name.c_str() ) ), clip.time, clip.loops );
 					}
-					companion->end_frame();
+					tracks->end_frame();
 				}
 			}
 			PlaceSockets( id, node );
@@ -860,10 +860,10 @@ void CinderboxClient::ItemsChanged( uint32_t holderNetId )
 	{
 		return;
 	}
-	auto it = m_companions.find( holder.id() );
-	if ( auto* companion = it != m_companions.end() ? Object::cast_to<CbCompanionPlayer>( ObjectDB::get_instance( it->second ) ) : nullptr )
+	auto it = m_trackPlayers.find( holder.id() );
+	if ( auto* tracks = it != m_trackPlayers.end() ? Object::cast_to<CbTrackPlayer>( ObjectDB::get_instance( it->second ) ) : nullptr )
 	{
-		companion->clear_caches();
+		tracks->clear_caches();
 	}
 }
 
@@ -1109,21 +1109,21 @@ void CinderboxClient::PushStates()
 	director->set_local( m_frame.frame.localNetId != 0 ? get_entity_node( int64_t( m_frame.frame.localNetId ) ) : nullptr );
 }
 
-void CinderboxClient::RetargetCompanion( Node* entity, Node* root )
+void CinderboxClient::RetargetTracks( Node* entity, Node* root )
 {
-	if ( m_companionLibrary.is_null() || m_socketMoves.empty() ||
-		 ObjectID( m_companionLibrary->get_instance_id() ) == m_retargetedLibrary )
+	if ( m_trackLibrary.is_null() || m_socketMoves.empty() ||
+		 ObjectID( m_trackLibrary->get_instance_id() ) == m_retargetedLibrary )
 	{
 		return;
 	}
-	m_retargetedLibrary = ObjectID( m_companionLibrary->get_instance_id() );
+	m_retargetedLibrary = ObjectID( m_trackLibrary->get_instance_id() );
 	// Track paths are from `root`; the moves are from the entity.
 	String rootFromEntity = String( entity->get_path_to( root ) );
 	String entityFromRoot = String( root->get_path_to( entity ) );
-	TypedArray<StringName> names = m_companionLibrary->get_animation_list();
+	TypedArray<StringName> names = m_trackLibrary->get_animation_list();
 	for ( int64_t i = 0; i < names.size(); ++i )
 	{
-		Ref<Animation> animation = m_companionLibrary->get_animation( names[i] );
+		Ref<Animation> animation = m_trackLibrary->get_animation( names[i] );
 		for ( int32_t t = 0; animation.is_valid() && t < animation->get_track_count(); ++t )
 		{
 			String path = String( animation->track_get_path( t ) );
@@ -1204,22 +1204,41 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 		CollectSockets( visual, node );
 	}
 
-	m_companions.erase( visual );
-	if ( v.kind == present::VisualKind::Player && m_companionLibrary.is_valid() )
+	m_trackPlayers.erase( visual );
+	if ( CbCharacter* character = v.kind == present::VisualKind::Player ? FindInPrefab<CbCharacter>( node ) : nullptr )
 	{
+		if ( m_trackLibraryBuilt == false )
+		{
+			m_trackLibraryBuilt = true;
+			Ref<AnimationLibrary> library = character->build_track_library();
+			if ( library->get_animation_list().is_empty() == false )
+			{
+				// Its method tracks call methods on the character's nodes: only listed ones.
+				String problem = cue::CheckResource( library );
+				if ( problem.is_empty() )
+				{
+					m_trackLibrary = library;
+				}
+				else
+				{
+					UtilityFunctions::push_warning( "Cinderbox: the animations of ", m_characterFolder,
+													" play their bones only: a track has ", problem );
+				}
+			}
+		}
 		// The character's own AnimationPlayer names the root its tracks' paths start from.
-		if ( CbCharacter* character = FindInPrefab<CbCharacter>( node ) )
+		if ( m_trackLibrary.is_valid() )
 		{
 			auto* source = Object::cast_to<AnimationPlayer>( character->get_node_or_null( character->get_animation_player_path() ) );
 			Node* root = source != nullptr ? source->get_node_or_null( source->get_root_node() ) : nullptr;
 			if ( root != nullptr )
 			{
-				auto* companion = memnew( CbCompanionPlayer );
-				companion->set_name( "Companion" );
-				source->get_parent()->add_child( companion );
-				RetargetCompanion( node, root );
-				companion->setup( m_companionLibrary, root );
-				m_companions[visual] = companion->get_instance_id();
+				auto* tracks = memnew( CbTrackPlayer );
+				tracks->set_name( "TrackPlayer" );
+				source->get_parent()->add_child( tracks );
+				RetargetTracks( node, root );
+				tracks->setup( m_trackLibrary, root );
+				m_trackPlayers[visual] = tracks->get_instance_id();
 			}
 		}
 	}
@@ -1394,18 +1413,8 @@ String CinderboxClient::use_character( const String& name )
 							 String::utf8( set->Description().c_str() ), ")" );
 	m_character = name;
 	m_characterFolder = folder;
-	m_companionLibrary.unref();
-	if ( folder.is_empty() == false && ResourceLoader::get_singleton()->exists( folder + "companion.tres" ) )
-	{
-		m_companionLibrary = ResourceLoader::get_singleton()->load( folder + "companion.tres", "AnimationLibrary" );
-		// Its method tracks call methods on the character's nodes: only listed ones.
-		String problem = cue::CheckResource( m_companionLibrary );
-		if ( problem.is_empty() == false )
-		{
-			UtilityFunctions::push_warning( "Cinderbox: ", folder, "companion.tres is not played: it has ", problem );
-			m_companionLibrary.unref();
-		}
-	}
+	m_trackLibrary.unref(); // read from the character's AnimationPlayer when the first one is drawn
+	m_trackLibraryBuilt = false;
 	m_animSet = set;
 	std::string stanceWarnings;
 	auto stances = anim::BuildStanceTable( *set, m_frame.schema.layers, m_frame.schema.stances, stanceWarnings );

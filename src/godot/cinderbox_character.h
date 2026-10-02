@@ -17,6 +17,7 @@
 // Exporting the item ships them in its pack. Nothing is imported or converted when a player joins:
 // the client and the server read these baked files.
 
+#include <godot_cpp/classes/animation_library.hpp>
 #include <godot_cpp/classes/animation_player.hpp>
 #include <godot_cpp/classes/animation_tree.hpp>
 #include <godot_cpp/classes/collision_shape3d.hpp>
@@ -92,8 +93,13 @@ public:
 	// Writes the baked files into `folder` (res://characters/<name>/ when empty). Returns
 	// { ok, error, folder, joints, clips, hitboxes, warnings }.
 	godot::Dictionary bake_to( const godot::String& folder );
-	// The inspector button: bake_to() the default folder and report.
+	// The inspector button, and what saving the scene in the editor does: bake_to() the default
+	// folder and report.
 	void bake();
+	// What its animations do besides moving this skeleton's bones: every other track of every
+	// animation of its AnimationPlayer, under the names the simulation plays clips by. Built when
+	// asked (the game asks once per character): there is no file of it. See cinderbox_track_player.h.
+	godot::Ref<godot::AnimationLibrary> build_track_library();
 	godot::Callable get_bake_button();
 
 	void set_character_name( const godot::String& v )
@@ -297,8 +303,9 @@ private:
 // for "Base"). The same as a character (a model with a humanoid-profile Skeleton3D, an
 // AnimationPlayer, an AnimationTree whose state machines are named like the characters' layers),
 // without hitboxes; Bake writes res://anim/<character_name>/ (graph.cfg, the skeleton the clips were
-// made on, one .ozz per animation, companion.tres) into the mod's client project. The game fits the
-// clips to each character by the profile's bone names.
+// made on, one .ozz per animation) into the mod's client project. The game fits the clips to each
+// character by the profile's bone names. A pack is bones only: its animations' other tracks are
+// not played.
 class CbAnimPack : public CbCharacter
 {
 	GDCLASS( CbAnimPack, CbCharacter )

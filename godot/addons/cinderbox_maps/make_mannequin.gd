@@ -169,8 +169,7 @@ func _bake(character: CbCharacter) -> void:
 		printerr("bake failed: ", result["error"])
 		quit(1)
 		return
-	print("baked %d joints, %d clips, %d hitboxes, %d companion clips into %s" % [result["joints"], result["clips"],
-		result["hitboxes"], result["companion_clips"], OUT_DIR])
+	print("baked %d joints, %d clips, %d hitboxes into %s" % [result["joints"], result["clips"], result["hitboxes"], OUT_DIR])
 	if result["warnings"] != "":
 		print("warnings: ", result["warnings"])
 	quit(0)

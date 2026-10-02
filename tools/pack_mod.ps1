@@ -54,6 +54,13 @@ if ((Test-Path (Join-Path $Project "vfx")) -and (Test-Path $bakeItems)) {
 	& $Godot --headless --path $Project --script $bakeItems
 	if ($LASTEXITCODE -ne 0) { throw "an item body could not be baked (see above)" }
 }
+# Characters: baked again from the scene that ships (saving it in the editor already did; a bake
+# that changes nothing writes nothing).
+$bakeCharacters = Join-Path $root "godot\addons\cinderbox_maps\bake_characters.gd"
+if ((Test-Path (Join-Path $Project "characters")) -and (Test-Path $bakeCharacters)) {
+	& $Godot --headless --path $Project --script $bakeCharacters
+	if ($LASTEXITCODE -ne 0) { throw "a character could not be baked (see above)" }
+}
 & $Godot --headless --path $Project --export-pack "Mod" $Output
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $Output)) { throw "export failed" }
 

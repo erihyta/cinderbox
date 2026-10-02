@@ -2512,7 +2512,7 @@ void TestStances()
 	withMissing.Evaluate( missing );
 	CHECK( b3Distance( at( withMissing, *set, "RightHand" ), at( base, *set, "RightHand" ) ) < 1e-4f );
 
-	// What plays alongside the pose, for companion tracks: the dominant base clip, and each layer's
+	// What plays alongside the pose, for the animations' other tracks: the dominant base clip, and each layer's
 	// own clip (a single loop by its layer clock, or its version of the dominant clip).
 	{
 		AnimState s;

@@ -1,7 +1,8 @@
 #include "cinderbox_animator.h"
 #include "cinderbox_character.h"
 #include "cinderbox_client.h"
-#include "cinderbox_companion.h"
+#include "cinderbox_autobake.h"
+#include "cinderbox_track_player.h"
 #include "cinderbox_entity_nodes.h"
 #include "cinderbox_hud.h"
 #include "cinderbox_map_nodes.h"
@@ -33,6 +34,9 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 		GDREGISTER_INTERNAL_CLASS( cb::gd::CbCuePreviewDock );
 		GDREGISTER_INTERNAL_CLASS( cb::gd::CbCuePreviewPlugin );
 		EditorPlugins::add_by_type<cb::gd::CbCuePreviewPlugin>();
+		// A character is baked when its scene is saved.
+		GDREGISTER_INTERNAL_CLASS( cb::gd::CbAutoBakePlugin );
+		EditorPlugins::add_by_type<cb::gd::CbAutoBakePlugin>();
 		return;
 	}
 	if ( level != MODULE_INITIALIZATION_LEVEL_SCENE )
@@ -51,7 +55,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbDirector );
 	GDREGISTER_CLASS( cb::gd::CbReaction );
 	GDREGISTER_CLASS( cb::gd::CbPrediction );
-	GDREGISTER_CLASS( cb::gd::CbCompanionPlayer );
+	GDREGISTER_CLASS( cb::gd::CbTrackPlayer );
 	// Map authoring: inert marker nodes plus the baker they are baked with.
 	GDREGISTER_CLASS( cb::gd::CbStatic );
 	GDREGISTER_CLASS( cb::gd::CbProp );
