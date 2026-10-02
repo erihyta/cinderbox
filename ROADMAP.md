@@ -35,20 +35,10 @@ Each step is a milestone of its own, and each leaves the game playable.
 
 | # | Step | Why | Needs |
 |---|---|---|---|
-| 1 | **Private fields** | secrets that are not physical (a role, a hand of cards) | nothing |
-| 2 | **One condition language** | reactions and the HUD read the game the same way | nothing |
-| 3 | **A stream that feels local** | only for `--stream` clients: their own character answers a round trip late | nothing |
+| 1 | **One condition language** | reactions and the HUD read the game the same way | nothing |
+| 2 | **A stream that feels local** | only for `--stream` clients: their own character answers a round trip late | nothing |
 
-### 1. Private fields
-
-- **What**: `declare.Field( name, type, BoardScope::Private )`. The value is never in the
-  simulation, never hashed, never in a recording's frames. The server puts it in the owner's
-  `ViewFrame` only (a side list next to the board, same names, same conditions in looks).
-- **For live clients too**: it rides the reliable channel to its owner, outside the frame batches.
-- **Done when**: a test mod gives each player a secret number; each HUD shows its own; a bot that
-  dumps everything it receives never sees another player's.
-
-### 2. One condition language
+### 1. One condition language
 
 - **What**: reactions (`src/godot/cue`) and HUD nodes (`src/present/fields`) parse conditions
   separately today. One parser, with `or`, arithmetic, field-to-field comparisons, and a way to
@@ -56,7 +46,7 @@ Each step is a milestone of its own, and each leaves the game playable.
 - **Done when**: `CbFieldBinding` is a `CbReaction` with a value expression, and one test file
   covers the grammar.
 
-### 3. A stream that feels local
+### 2. A stream that feels local
 
 - **Who it is for**: clients that join with `--stream` and do not simulate. A normal client
   predicts its own movement already.

@@ -71,6 +71,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M63: DESIGN.md by subsystem instead of by milestone | done |
 | M64: predicted state in the viewer: a prediction also says what the server's answer changes, so the ammo count drops and the swing or the recoil starts on the click | done |
 | M65: a hot bat cools by itself wherever it is (put away or dropped while hot, it stayed hot) | done |
+| M66: private fields: a mod tells one player something nobody else is sent (a role, a hand of cards); looks read it like any field, for the viewer's own player | done |
 
 ## Building
 
@@ -282,6 +283,7 @@ The mods that ship:
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
 | `pistol` | `pistol.ammo`, `pistol.reloading`; `fire` (left mouse), `reload` (R), `mark` (right mouse); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `pistol.scan`, `pistol.marked`, `combat.damage` | hitscan from the camera pivot, 25 damage (the head doubles it) through `combat.damage`, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; a new life (`combat.respawned`) comes with a full magazine |
 | `fog` | nothing; option `fog.radius` | streaming clients are sent only what is within the radius of their player (off by default) |
+| `secret` | `secret.number`, a private field; option `secret.numbers` | the example of a private field: off unless `--mod-option secret.numbers=1`; then each player is told a number from 1 to 99 that nobody else is sent |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
 Mods cooperate through the board (`pickup` reads the `inventory.slot` that `inventory` publishes, to
@@ -289,6 +291,35 @@ know there is one) and through item properties (`pistol` and `melee` tell `inven
 their item lives in). They also cooperate through events: `pistol` and `melee` say `combat.damage`,
 `combat` answers with `combat.hurt` and `combat.killed`, `deathmatch` scores the kills, and its
 `game.round_start` gives everyone full health (`combat`) and a full magazine (`pistol`).
+
+### Private fields
+
+Every client that simulates has the whole world: it could not predict otherwise. So what one
+player must not know about another cannot be a board field. A **private field** is told to its
+owner alone:
+
+```cpp
+m_role = declare.Field( "cards.role", BoardType::Int, BoardScope::Private );
+...
+ctx.Set( SlotTarget( slot ), m_role, 3 );     // that player is told; nobody else is
+```
+
+| | An entity field | A private field |
+|---|---|---|
+| Lives in | the simulation's state (hashed, rolled back, recorded) | the server, per player slot |
+| Sent to | every client, as a command in the frame | its owner only: a reliable message, or in a streaming client's frames |
+| A look reads it | for any entity | for the viewer's own player (`{cards.role}`, `cards.role == 3`); for anyone else it reads 0 |
+| Predictions | `changes` apply | `changes` apply |
+| State machines | can read it | cannot (the simulation does not have it; the bake and the server say so) |
+| Recordings, view files | have it | do not: a recording watched later shows 0 |
+
+- Per player, not per entity: the target of `Set` is a player (`SlotTarget`, or its NetId).
+- A slot that is given up is cleared; a reconnecting player gets its values again with the welcome.
+- 32 private names per server, counted apart from entity and global fields.
+- What happens in the world (where someone is, what they hold) is the simulation's and is not
+  secret from a simulating client. Hiding *entities* is `Sees`, for streaming clients only
+  ([Streaming](#streaming)).
+- The `secret` mod is the example, and `net_private_fields` the check.
 
 ### The combat mod
 
