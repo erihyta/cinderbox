@@ -1,0 +1,25 @@
+[gd_scene format=3]
+
+; How being hurt and dying look, whatever did it: world reactions on the combat mod's events.
+; $at is the attacker (or nobody), $other the one who was hurt or died. A weapon's own look
+; (a hit puff, a hit marker for the shooter) stays with the weapon, on the weapon's own events.
+
+[node name="CombatReactions" type="Node3D"]
+
+[node name="Hurt" type="CbReaction" parent="."]
+event = "combat.hurt"
+subject = NodePath("$other")
+conditions = PackedStringArray("is_local")
+place = 1
+shake = 0.06
+shake_time = 0.22
+flash_color = Color(0.8, 0.05, 0.05, 0.24)
+flash_time = 0.3
+
+[node name="Died" type="CbReaction" parent="."]
+event = "combat.killed"
+subject = NodePath("$other")
+conditions = PackedStringArray("is_local")
+place = 1
+flash_color = Color(0.6, 0, 0, 0.55)
+flash_time = 1.2

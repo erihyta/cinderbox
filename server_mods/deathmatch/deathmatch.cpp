@@ -4,9 +4,9 @@
 // everyone stands frozen through a short intermission while the winner is shown, and the next round
 // starts clean: player-spawned props and bodies cleared, everyone respawned, scores back to zero.
 //
-// It scores off "combat.killed", which the pistol mod announces; it does not know what a pistol is,
-// and would score any weapon mod that announces the same event. It announces "game.round_start" in
-// turn, which the pistol uses to refill health and ammo. Mods cooperate through names.
+// It scores off "combat.killed", which the combat mod announces; it does not know what a weapon is.
+// It announces "game.round_start" in turn, which the combat mod answers with full health and the
+// pistol with a full magazine. Mods cooperate through names.
 //
 // Options (cb_server --mod-option NAME=VALUE):
 //   deathmatch.kills          kill limit (10)

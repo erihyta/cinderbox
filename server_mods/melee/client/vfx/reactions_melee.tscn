@@ -32,16 +32,6 @@ volume_db = -2.0
 pitch_jitter = 0.1
 max_distance = 40.0
 
-[node name="Hurt" type="CbReaction" parent="."]
-event = "melee.hit"
-subject = NodePath("$other")
-conditions = PackedStringArray("is_local", "event.value > 0")
-place = 1
-shake = 0.08
-shake_time = 0.25
-flash_color = Color(0.8, 0.05, 0.05, 0.25)
-flash_time = 0.3
-
 [node name="HitProp" type="CbReaction" parent="."]
 event = "melee.hit"
 subject = NodePath("$at")

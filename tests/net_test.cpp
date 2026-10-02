@@ -1388,6 +1388,93 @@ void TestHeadshot()
 	}
 }
 
+// The combat mod on its own terms: a weapon says "combat.damage", and health, death and the next
+// life follow from the server's options. Slot 0 shoots slot 1 in the head (50) with 60 health and a
+// one-second respawn: the first hit takes 50, the second what is left, the kill is credited, and
+// the victim is back a second later with full health.
+void TestCombat()
+{
+	Harness h( 47812, {}, {}, { { "combat.max_health", "60" }, { "combat.respawn_seconds", "1" } } );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t pistol = schema.ActionMask( "slot_2" );
+	int hurtEvent = schema.FindEvent( "combat.hurt" );
+	int killedEvent = schema.FindEvent( "combat.killed" );
+	int respawnedEvent = schema.FindEvent( "combat.respawned" );
+	CHECK( hurtEvent >= 0 && killedEvent >= 0 && respawnedEvent >= 0 && schema.FindEvent( "combat.heal" ) >= 0 );
+
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraYaw = 16384;
+		in.cameraPitch = -1040; // from one spawn point's eye to the next one's head
+		in.actions = pistol;
+		if ( tick > 200 && tick < 260 && ( tick % 20 ) < 3 )
+		{
+			in.actions |= fire;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; }; // stands still
+
+	h.RunUntil( 2.0 ); // both are in: their ids are known
+	Simulation& server = h.server.Sim();
+	const uint32_t shooterId = server.PlayerNetId( h.bots[0].client->Slot() );
+	const uint32_t victimId = server.PlayerNetId( h.bots[1].client->Slot() );
+	CHECK( shooterId != 0 && victimId != 0 && shooterId != victimId );
+	int healthSlot = schema.FindField( "combat.health" )->slot;
+	std::map<uint32_t, int32_t> hurts; // tick -> health lost
+	uint32_t killedAt = 0;
+	uint32_t backAt = 0;
+	int32_t healthWhenDead = -1;
+	h.RunUntil( 8.0, [&]( double ) {
+		const SimGlobals& g = server.Globals();
+		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+		{
+			const ModEventRecord& e = g.modEvents[i];
+			if ( int( e.type ) == hurtEvent && e.netIdA == shooterId && e.netIdB == victimId )
+			{
+				hurts[e.tick] = e.value;
+			}
+			if ( int( e.type ) == killedEvent && e.netIdA == shooterId && e.netIdB == victimId && killedAt == 0 )
+			{
+				killedAt = e.tick;
+			}
+			if ( int( e.type ) == respawnedEvent && e.netIdA == victimId && killedAt != 0 && e.tick > killedAt && backAt == 0 )
+			{
+				backAt = e.tick;
+			}
+		}
+		const Character* body = server.PlayerCharacter( h.bots[1].client->Slot() );
+		if ( body != nullptr && body->dead != 0 )
+		{
+			healthWhenDead = server.BoardValue( victimId, healthSlot );
+		}
+	} );
+	h.Report();
+
+	std::vector<int32_t> lost;
+	for ( const auto& [tick, value] : hurts )
+	{
+		lost.push_back( value );
+	}
+	std::printf( "    hurt %d times (%d, %d), killed at tick %u, back at tick %u, health %d\n", int( lost.size() ),
+				 lost.size() > 0 ? lost[0] : 0, lost.size() > 1 ? lost[1] : 0, killedAt, backAt, server.BoardValue( victimId, healthSlot ) );
+	CHECK( server.BoardValue( victimId, schema.FindField( "combat.max_health" )->slot ) == 60 );
+	CHECK( lost.size() == 2 && lost[0] == 50 && lost[1] == 10 ); // the second hit takes what is left, and no hit lands on the dead
+	CHECK( killedAt != 0 && healthWhenDead == 0 );
+	uint32_t rate = server.Config().tickRate;
+	CHECK( backAt >= killedAt + rate && backAt <= killedAt + rate + 4 );
+	CHECK( server.BoardValue( victimId, healthSlot ) == 60 );
+	CHECK( server.BoardValue( victimId, schema.FindField( "combat.dead" )->slot ) == 0 );
+	CHECK( server.BoardValue( victimId, schema.FindField( "combat.deaths" )->slot ) == 1 );
+	CHECK( server.BoardValue( shooterId, schema.FindField( "combat.kills" )->slot ) == 1 );
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 // The pistol's second action: slot 0 aims at slot 1 and presses "mark". The server answers every
 // accepted press with pistol.scan, and with pistol.marked naming the player the ray found; a mark
 // harms nobody and is accepted once a second.
@@ -1463,7 +1550,7 @@ void TestPistolMark()
 }
 
 // Layers end to end: slot 0 takes out the pistol, then the bat (a full-body stance), and swings at
-// slot 1, which stands still. Swings play the swing stance, hits go out as combat.damage, the pistol mod (which
+// slot 1, which stands still. Swings play the swing stance, hits go out as combat.damage, the combat mod (which
 // keeps health) applies them and credits the kill, and clients agree on every pose-carrying tick.
 void TestMelee()
 {
@@ -2280,6 +2367,7 @@ int main( int argc, char** argv )
 		{ "sneak", TestSneak },
 		{ "headshot", TestHeadshot },
 		{ "pistol_mark", TestPistolMark },
+		{ "combat", TestCombat },
 		{ "melee", TestMelee },
 		{ "pickup", TestPickup },
 		{ "inventory", TestInventory },
