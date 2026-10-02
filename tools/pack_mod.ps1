@@ -27,7 +27,7 @@ if (-not (Test-Path $Godot)) { throw "Godot not found at $Godot; pass -Godot" }
 
 # A mod that uses Cinderbox resources (reactions, map nodes) needs the viewer extension present
 # while Godot imports and packs it, or those files cannot be loaded. Only the viewer: the peer
-# and stream extensions (simulation, networking) are the game's alone. The extension itself is a developer
+# extension (simulation, networking) is the game's alone. The extension itself is a developer
 # file and is never packed: the preset lists the files to ship.
 $extension = Join-Path $root "godot\cinderbox.gdextension"
 $bin = Join-Path $root "godot\bin"
@@ -37,7 +37,6 @@ if ((Test-Path $extension) -and (Test-Path $bin)) {
 	Copy-Item $extension $copiedExtension -Force
 	New-Item -ItemType Directory -Force $copiedBin | Out-Null
 	Remove-Item (Join-Path $copiedBin "libcinderbox_peer.*") -Force -ErrorAction SilentlyContinue
-	Remove-Item (Join-Path $copiedBin "libcinderbox_stream.*") -Force -ErrorAction SilentlyContinue
 	Copy-Item (Join-Path $bin "libcinderbox.*.dll") $copiedBin -Force -ErrorAction SilentlyContinue
 	Copy-Item (Join-Path $bin "libcinderbox.*.so") $copiedBin -Force -ErrorAction SilentlyContinue
 	Copy-Item (Join-Path $bin "libcinderbox.*.dylib") $copiedBin -Force -ErrorAction SilentlyContinue

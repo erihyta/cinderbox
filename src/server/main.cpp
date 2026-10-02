@@ -2,7 +2,7 @@
 //
 //   cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]
 //             [--prop-lifetime SEC] [--props-per-player N] [--props-global N]
-//             [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--stream-rate HZ] [--mods A,B | --mods none] [--list-mods]
+//             [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]
 //             [--items DIR] [--mod-option NAME=VALUE]... [--character NAME [--workshop DIR]] [--quiet]
 //
 // Every gameplay mod compiled in (server_mods/) runs unless --mods names a subset. Mods with a look
@@ -45,7 +45,7 @@ void Usage()
 {
 	std::printf( "usage: cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]\n"
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
-				 "                 [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--stream-rate HZ] [--mods A,B | --mods none] [--list-mods]\n"
+				 "                 [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
 				 "                 [--items DIR] [--mod-option NAME=VALUE]... [--character NAME [--workshop DIR]] [--quiet]\n" );
 }
 
@@ -119,11 +119,6 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 		if ( arg == "--view-rate" && i + 1 < argc )
 		{
 			o.recordViewRate = uint32_t( std::max( 0, std::atoi( argv[++i] ) ) );
-			continue;
-		}
-		if ( arg == "--stream-rate" && i + 1 < argc )
-		{
-			o.streamRate = uint32_t( std::max( 1, std::atoi( argv[++i] ) ) );
 			continue;
 		}
 		if ( arg == "--view-compact" )

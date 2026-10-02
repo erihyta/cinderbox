@@ -2,7 +2,7 @@
 
 // What every source object does for a viewer in another library (object_source.h): take the newest
 // frame from a view source and hand it over as a packet, a delta against the one handed over
-// before. The peer extension and the stream extension both use it.
+// before. The peer extension uses it.
 
 #include "view.h"
 

@@ -256,7 +256,7 @@ std::string ReadString( ByteReader& r )
 }
 
 
-// --- Compact: what a stream sends ------------------------------------------------------------------
+// --- Compact: what a small view file holds ---------------------------------------------------------
 //
 // Positions on a 1/512 m grid and animation values on a 1/1024 grid, sent as how far they moved
 // (one or two bytes for a tick of walking); rotations as 32 bits; no velocity; no transform for an
@@ -449,7 +449,7 @@ enum EntityGroup : uint8_t
 	GroupBoard = 1 << 4,
 };
 
-// An entity as a stream sees it: no velocity, and no place of its own while it is held.
+// An entity as a compact packet holds it: no velocity, and no place of its own while it is held.
 EntityRecord Seen( const EntityRecord& record )
 {
 	EntityRecord seen = record;
@@ -646,8 +646,8 @@ struct CompactEntity
 		}
 	}
 
-	// What an entity that was not in the packet at all is, given the base: the base as a stream
-	// left it (it is already on the grid).
+	// What an entity that was not in the packet at all is, given the base: the base as the
+	// packets left it (it is already on the grid).
 	static void Settle( EntityRecord& record )
 	{
 		record.velocity = {};

@@ -1,7 +1,7 @@
 #pragma once
 
-// What sources with work of their own share (client/live_source.h, client/replay_source.h,
-// stream/stream_source.h): a thread, and the newest frame handed to the viewer's thread.
+// What sources with work of their own share (client/live_source.h, client/replay_source.h):
+// a thread, and the newest frame handed to the viewer's thread.
 //
 // A dedicated thread keeps a source's spikes (a rollback, a seek, a burst of packets) off the
 // render thread. For the sources that simulate it also owns the floating-point environment the

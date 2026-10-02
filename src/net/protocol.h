@@ -7,12 +7,6 @@
 //   client -> server: Input, repeating the last few ticks and acknowledging received frames;
 //   server -> client: FrameBatch, every frame from the client's acknowledgement to the newest.
 // Nothing waits for a retransmission: a lost batch is simply covered by the next one.
-//
-// A streaming client (Hello with `stream`) does not simulate. It is told what to draw:
-//   server -> client: StreamWelcome (reliable), then View: one view packet (present/view_codec.h),
-//                     a delta against the frame the client last acknowledged (unreliable), or a
-//                     whole one when it has none the server still keeps (reliable);
-//   client -> server: StreamInput (unreliable): its newest input and the newest frame it has.
 
 #include "components.h"
 #include "bytes.h"
@@ -27,7 +21,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 19; // 19: private fields; 18: one animation system; 17: streaming clients; 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs; 9: layers and stances; 10: characters shipped with the game; 11: state machines in the schema; 12: held items; 13: animation packs; 14: items in the world; 15: stowed items; 16: 32 board slots
+inline constexpr uint32_t kProtocolVersion = 20; // 20: no streaming clients; 19: private fields; 18: one animation system; 17: streaming clients; 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs; 9: layers and stances; 10: characters shipped with the game; 11: state machines in the schema; 12: held items; 13: animation packs; 14: items in the world; 15: stowed items; 16: 32 board slots
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t
@@ -48,10 +42,7 @@ enum class MsgType : uint8_t
 	Input = 7,
 	FrameBatch = 8,
 	PlayerNames = 9,
-	StreamWelcome = 10,
-	View = 11,
-	StreamInput = 12,
-	PrivateFields = 13,
+	PrivateFields = 10,
 };
 
 inline constexpr size_t kMaxPlayerName = 24;
@@ -65,26 +56,6 @@ struct MsgHello
 	uint64_t fingerprint = 0;
 	uint64_t reconnectToken = 0;
 	std::string name; // what the player wants to be called; the server sanitizes it
-	// The client does not simulate: it wants frames to draw (View), not inputs to step. Its
-	// fingerprint is not looked at: it has no simulation to disagree with.
-	bool stream = false;
-};
-
-// S -> C, to a streaming client on join and reconnect.
-struct MsgStreamWelcome
-{
-	PlayerSlot slot = 0;
-	uint64_t reconnectToken = 0;
-	uint32_t tickRate = 60;
-};
-
-// C -> S, from a streaming client, many times a second. The server plays `input` from the next
-// tick on (a press shorter than the gap between two of these still counts), and sends its next
-// frame as a delta against frame `ackSerial` (0: it has none, send a whole one).
-struct MsgStreamInput
-{
-	PlayerInput input{};
-	uint64_t ackSerial = 0;
 };
 
 // S -> C, whenever the roster changes, and after every Welcome. The names of the players in the
@@ -96,7 +67,7 @@ struct MsgPlayerNames
 
 // S -> C, to one client: its own private fields (BoardScope::Private), after its Welcome and
 // whenever a mod changes one. All of them each time (the ones that are not 0); nobody else's are
-// ever sent to it. A streaming client gets them in its frames instead.
+// ever sent to it.
 struct MsgPrivateFields
 {
 	Blackboard values;
@@ -163,10 +134,6 @@ void Encode( const MsgResyncRequest& m, std::vector<uint8_t>& out );
 void Encode( const MsgInput& m, std::vector<uint8_t>& out );
 void Encode( const MsgPlayerNames& m, std::vector<uint8_t>& out );
 void Encode( const MsgPrivateFields& m, std::vector<uint8_t>& out );
-void Encode( const MsgStreamWelcome& m, std::vector<uint8_t>& out );
-void Encode( const MsgStreamInput& m, std::vector<uint8_t>& out );
-// A View message around a view packet.
-void EncodeViewMessage( const std::vector<uint8_t>& packet, std::vector<uint8_t>& out );
 
 bool Decode( ByteReader& r, MsgHello& m );
 bool Decode( ByteReader& r, MsgWelcome& m );
@@ -176,8 +143,6 @@ bool Decode( ByteReader& r, MsgResyncRequest& m );
 bool Decode( ByteReader& r, MsgInput& m );
 bool Decode( ByteReader& r, MsgPlayerNames& m );
 bool Decode( ByteReader& r, MsgPrivateFields& m );
-bool Decode( ByteReader& r, MsgStreamWelcome& m );
-bool Decode( ByteReader& r, MsgStreamInput& m );
 
 // Returns the message type and leaves the reader positioned at the payload.
 std::optional<MsgType> ReadType( ByteReader& r );

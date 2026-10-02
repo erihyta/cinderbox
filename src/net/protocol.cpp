@@ -210,45 +210,6 @@ void Encode( const MsgHello& m, std::vector<uint8_t>& out )
 	w.Write( m.fingerprint );
 	w.Write( m.reconnectToken );
 	WriteShortString( w, m.name, kMaxPlayerName );
-	w.Write( uint8_t( m.stream ? 1 : 0 ) );
-}
-
-void Encode( const MsgStreamWelcome& m, std::vector<uint8_t>& out )
-{
-	Begin( out, MsgType::StreamWelcome );
-	ByteWriter w( out );
-	w.Write( m.slot );
-	w.Write( m.reconnectToken );
-	w.Write( m.tickRate );
-}
-
-bool Decode( ByteReader& r, MsgStreamWelcome& m )
-{
-	m.slot = r.Read<PlayerSlot>();
-	m.reconnectToken = r.Read<uint64_t>();
-	m.tickRate = r.Read<uint32_t>();
-	return r.Ok() && m.slot < kMaxPlayers && m.tickRate > 0;
-}
-
-void Encode( const MsgStreamInput& m, std::vector<uint8_t>& out )
-{
-	Begin( out, MsgType::StreamInput );
-	ByteWriter w( out );
-	w.Write( m.input );
-	w.Write( m.ackSerial );
-}
-
-bool Decode( ByteReader& r, MsgStreamInput& m )
-{
-	m.input = r.Read<PlayerInput>();
-	m.ackSerial = r.Read<uint64_t>();
-	return r.Ok();
-}
-
-void EncodeViewMessage( const std::vector<uint8_t>& packet, std::vector<uint8_t>& out )
-{
-	Begin( out, MsgType::View );
-	out.insert( out.end(), packet.begin(), packet.end() );
 }
 
 bool Decode( ByteReader& r, MsgHello& m )
@@ -260,12 +221,7 @@ bool Decode( ByteReader& r, MsgHello& m )
 	{
 		return true; // an older client: let the server reject it by version
 	}
-	if ( ReadShortString( r, m.name, kMaxPlayerName ) == false )
-	{
-		return false;
-	}
-	m.stream = r.Read<uint8_t>() != 0;
-	return r.Ok();
+	return ReadShortString( r, m.name, kMaxPlayerName ) && r.Ok();
 }
 
 void Encode( const MsgPlayerNames& m, std::vector<uint8_t>& out )

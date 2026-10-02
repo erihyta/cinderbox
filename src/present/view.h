@@ -9,9 +9,8 @@
 //
 // A source is anything that produces frames: a live connection that predicts and rolls back
 // (client/live_source.h), a recording re-simulated (client/replay_source.h), a file of frames
-// played back with no simulation at all (view_file.h), and whatever comes next (a stream from a
-// server). Frames travel as bytes wherever a source and its viewer do not share a library
-// (view_codec.h). See ROADMAP.md.
+// played back with no simulation at all (view_file.h). Frames travel as bytes wherever a source and its viewer do not share a library
+// (view_codec.h).
 //
 // A frame is self-contained: a viewer that joins late, or skips frames, needs nothing but the
 // newest one. Events (impacts, mod events) are counters with a ring of the most recent, so a
