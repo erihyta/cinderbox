@@ -1729,7 +1729,7 @@ look says the server will answer. No rule runs on the client; nothing about the 
   it failed four checks since then. It uses listed methods now.
 
 **Verified**
-- `check_predictions.gd` (25 checks: press, what waits, the echo, another player's cue, two
+- `check_predictions.gd` (27 checks: press, what waits, the echo, another player's cue, two
   presses, conditions, cooldown, no local player); `check_reactions.gd`, `check_guard.gd`; 54 tests.
 - The real client behind 50 ms each way, driven by input events: 12 shots shown 2 ms after the
   click, the server's event at 210-270 ms; 12 muzzle flashes, 12 gunshots, 12 tracers (none twice);
@@ -1740,6 +1740,14 @@ look says the server will answer. No rule runs on the client; nothing about the 
   swing's body pose starts with the server's stance.
 - A wrong guess is not taken back.
 - The Cue Preview panel has no button for a press.
+
+**After (M57): the bat lights its own flames.** They were a playback key on the mannequin's swing
+(`RightHand/Item/AnimationPlayer` plays `slash`), played as a companion track: a character
+without that key had a bat without flames. Now `FlamesOnSwing` in `prefabs/bat.tscn` plays `slash`
+on its holder's `melee.swing`, and the key is gone from both mannequins (the bones did not change,
+so nothing was baked again). `CbReaction.wait_for_server` keeps it off the predicted press: the
+swing's sound is heard on the click, the flames come with the body's swing. Measured behind 50 ms
+each way: sound at 1 ms, the server's swing at 160 ms, flames on 0.5 s after it and off 0.4 s later.
 
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
@@ -1870,3 +1878,4 @@ The ordered plan for the client is in [ROADMAP.md](ROADMAP.md). These are loose 
 53. **M53** (done): smaller frames: compact packets (grid positions and animation values as small deltas, 32-bit rotations, no velocity or inputs), a stride for fewer frames than ticks, entity lists and event rings sent as what changed, `--view-rate` / `--view-compact`, a size breakdown in `cb_replay view`; 32 players from 6.8 to 0.43 Mbit/s.
 54. **M54** (done): streaming clients: protocol 17 (`Hello.stream`, `StreamWelcome`, `View`, `StreamInput`), frames as acknowledged compact deltas, `ServerMod::Sees` and the `fog` mod, `StreamSource` and the `cinderbox_stream` extension with no simulation, `--stream`.
 56. **M56** (done): the viewer predicts: `CbPrediction` (action, cue, conditions, cooldown) and `CbDirector.press`; the server's cue of the same name is the echo and plays only the reactions that waited for it; `pressed:<action>` cues removed; one reaction per cue in the pistol and melee looks. A streaming client predicts the same way: the viewer takes the press, whatever the source. (M55, mods run on clients that simulate, was tried on a branch and dropped for this.)
+57. **M57** (done): the bat lights its own flames (a reaction on `melee.swing` instead of a playback key in the character's swing); `CbReaction.wait_for_server`.
