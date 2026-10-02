@@ -1,7 +1,5 @@
 [gd_scene format=3 uid="uid://bdlgyugvlsbhm"]
 
-[ext_resource type="AudioStream" uid="uid://2y7i6fcisd6b" path="res://assets/sfx/swing.wav" id="1_tqqgl"]
-
 [sub_resource type="StandardMaterial3D" id="Tape"]
 albedo_color = Color(0.1, 0.1, 0.12, 1)
 roughness = 0.9
@@ -111,21 +109,6 @@ tracks/1/keys = {
 "update": 1,
 "values": [true, false]
 }
-tracks/2/type = "audio"
-tracks/2/imported = false
-tracks/2/enabled = true
-tracks/2/path = NodePath("AudioStreamPlayer3D")
-tracks/2/interp = 1
-tracks/2/loop_wrap = true
-tracks/2/keys = {
-"clips": [{
-"end_offset": 0.0,
-"start_offset": 0.0,
-"stream": ExtResource("1_tqqgl")
-}],
-"times": PackedFloat32Array(0.06666666)
-}
-tracks/2/use_blend = true
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_gysuc"]
 _data = {
