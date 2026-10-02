@@ -48,6 +48,7 @@ void CbReaction::_bind_methods()
 	CB_REACTION_PROP( Variant::FLOAT, delay, PROPERTY_HINT_RANGE, "0,10,0.01,suffix:s" )
 	CB_REACTION_PROP( Variant::FLOAT, chance, PROPERTY_HINT_RANGE, "0,1,0.01" )
 	CB_REACTION_PROP( Variant::FLOAT, cooldown, PROPERTY_HINT_RANGE, "0,10,0.01,suffix:s" )
+	CB_REACTION_PROP( Variant::BOOL, wait_for_server, PROPERTY_HINT_NONE, "" )
 	ADD_GROUP( "Animation", "" );
 	CB_REACTION_PROP( Variant::NODE_PATH, animation_player, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "AnimationPlayer" )
 	CB_REACTION_PROP( Variant::STRING, animation, PROPERTY_HINT_NONE, "" )
@@ -294,7 +295,8 @@ String CbReaction::Refusal( const cue::Context& context, double now, bool rolled
 	}
 	if ( context.predicted && NeedsServer() )
 	{
-		return "it waits for the server's cue: it uses the cue's point, end, value or other entity";
+		return m_waitForServer ? String( "it waits for the server's cue (wait_for_server)" )
+							   : String( "it waits for the server's cue: it uses the cue's point, end, value or other entity" );
 	}
 	Node* subject = Subject( context );
 	if ( subject == nullptr )
@@ -328,7 +330,7 @@ String CbReaction::Refusal( const cue::Context& context, double now, bool rolled
 
 bool CbReaction::NeedsServer() const
 {
-	if ( m_place == PLACE_EVENT_POINT || m_place == PLACE_EVENT_END || m_place == PLACE_BEAM )
+	if ( m_waitForServer || m_place == PLACE_EVENT_POINT || m_place == PLACE_EVENT_END || m_place == PLACE_BEAM )
 	{
 		return true;
 	}

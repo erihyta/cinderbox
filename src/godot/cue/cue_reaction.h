@@ -94,8 +94,9 @@ public:
 	// delay). True when it did.
 	bool Fire( const cue::Context& context, double now );
 	// Whether it uses what only the server's cue carries (its point or end, its value or strength,
-	// its other entity): it cannot act on the viewer's own press (cue_prediction.h), and plays when
-	// the server's cue comes.
+	// its other entity), or was told to wait (wait_for_server: it goes with something the server
+	// starts, like the body's swing): it cannot act on the viewer's own press (cue_prediction.h),
+	// and plays when the server's cue comes.
 	bool NeedsServer() const;
 	// Why this cue would or would not make it act ("acts", "condition melee.hot is false", ...),
 	// without acting. For the Cue Preview.
@@ -127,6 +128,7 @@ public:
 	CB_REACTION_FIELD( double, cooldown, m_cooldown )
 	CB_REACTION_FIELD( double, delay, m_delay )
 	CB_REACTION_FIELD( double, chance, m_chance )
+	CB_REACTION_FIELD( bool, wait_for_server, m_waitForServer )
 	CB_REACTION_FIELD( godot::NodePath, animation_player, m_player )
 	CB_REACTION_FIELD( godot::String, animation, m_animation )
 	CB_REACTION_FIELD( godot::String, animation_off, m_animationOff )
@@ -185,6 +187,7 @@ private:
 	double m_cooldown = 0.0;
 	double m_delay = 0.0;
 	double m_chance = 1.0;
+	bool m_waitForServer = false;
 	godot::NodePath m_player;
 	godot::String m_animation;
 	godot::String m_animationOff;

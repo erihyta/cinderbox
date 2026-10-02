@@ -1,11 +1,4 @@
-[gd_scene format=3]
-
-; The look of the "melee.bat" item. The character's swing animation plays "slash" (the flames) through
-; RightHand/Item/AnimationPlayer; the two CbReaction nodes follow what the melee mod sends: the barrel
-; glows while the bat is hot, and sparks fly when its holder lands a hit. The barrel's material is
-; local to each bat, so one hot bat does not light them all. Body is what the server knows about it:
-; the box it is when it lies in the world, and that picking it up takes holding E for half a second.
-; Baked to items/melee.bat.cfg (the Bake button on Body).
+[gd_scene format=3 uid="uid://bdlgyugvlsbhm"]
 
 [sub_resource type="StandardMaterial3D" id="Tape"]
 albedo_color = Color(0.1, 0.1, 0.12, 1)
@@ -30,6 +23,9 @@ roughness = 0.7
 emission_enabled = true
 emission = Color(1, 0.35, 0.05, 1)
 emission_energy_multiplier = 0.0
+
+[sub_resource type="BoxShape3D" id="Body"]
+size = Vector3(0.07, 0.07, 0.82)
 
 [sub_resource type="Gradient" id="Fade"]
 offsets = PackedFloat32Array(0, 0.35, 1)
@@ -72,8 +68,8 @@ particles_anim_loop = false
 material = SubResource("Glow")
 size = Vector2(0.1, 0.1)
 
-[sub_resource type="Animation" id="Animation_tqqgl"]
-length = 0.5
+[sub_resource type="Animation" id="Animation_cfl35"]
+length = 0.1
 tracks/0/type = "value"
 tracks/0/imported = false
 tracks/0/enabled = true
@@ -81,7 +77,22 @@ tracks/0/path = NodePath("Flames:emitting")
 tracks/0/interp = 1
 tracks/0/loop_wrap = true
 tracks/0/keys = {
-"times": PackedFloat32Array(0, 0.45),
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 1,
+"values": [false]
+}
+
+[sub_resource type="Animation" id="Animation_tqqgl"]
+length = 0.73333335
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Flames:emitting")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0.3, 0.7),
 "transitions": PackedFloat32Array(1, 1),
 "update": 1,
 "values": [true, false]
@@ -89,6 +100,7 @@ tracks/0/keys = {
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_gysuc"]
 _data = {
+&"RESET": SubResource("Animation_cfl35"),
 &"slash": SubResource("Animation_tqqgl")
 }
 
@@ -121,9 +133,6 @@ particles_anim_loop = false
 material = SubResource("StandardMaterial3D_lxpvx")
 size = Vector2(0.04, 0.04)
 
-[sub_resource type="BoxShape3D" id="Body"]
-size = Vector3(0.07, 0.07, 0.82)
-
 [node name="Bat" type="Node3D" unique_id=1599722703]
 
 [node name="Handle" type="MeshInstance3D" parent="." unique_id=1253657060]
@@ -135,11 +144,13 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)
 mesh = SubResource("Barrel")
 surface_material_override/0 = SubResource("StandardMaterial3D_cfl35")
 
-[node name="Body" type="CbItemBody" parent="."]
+[node name="Body" type="CbItemBody" parent="." unique_id=858476657]
+mass = 1.1
+properties = {
+"pickup.hold_seconds": 0.5
+}
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.31)
 shape = SubResource("Body")
-mass = 1.1
-properties = {"pickup.hold_seconds": 0.5}
 
 [node name="Flames" type="GPUParticles3D" parent="." unique_id=1514484346]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)
@@ -162,14 +173,22 @@ explosiveness = 0.9
 process_material = SubResource("ParticleProcessMaterial_at8pt")
 draw_pass_1 = SubResource("QuadMesh_hofwm")
 
-[node name="GlowWhileHot" type="CbReaction" parent="."]
+[node name="GlowWhileHot" type="CbReaction" parent="." unique_id=979966992]
 when = 1
 conditions = PackedStringArray("melee.hot")
 target = NodePath("../Barrel")
 property = "surface_material_override/0:emission_energy_multiplier"
 value = 4.0
 
-[node name="SparksOnHit" type="CbReaction" parent="."]
+[node name="FlamesOnSwing" type="CbReaction" parent="."]
+event = "melee.swing"
+subject = NodePath("^^")
+delay = 0.2
+wait_for_server = true
+animation_player = NodePath("../AnimationPlayer")
+animation = "slash"
+
+[node name="SparksOnHit" type="CbReaction" parent="." unique_id=164242142]
 event = "melee.hit"
 subject = NodePath("^^")
 target = NodePath("../Sparks")
