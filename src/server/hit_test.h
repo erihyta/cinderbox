@@ -23,8 +23,6 @@ public:
 
 	bool CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit );
 
-	// The mods' layers and stances, resolved for the character; warnings for what it lacks.
-	void SetStances( const std::vector<std::string>& layers, const std::vector<std::string>& stances, std::string& warnings );
 	// The character's state machine, the one the simulation runs.
 	void SetGraph( std::shared_ptr<const AnimGraph> graph, std::string& warnings )
 	{

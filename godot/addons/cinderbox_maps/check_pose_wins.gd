@@ -67,7 +67,7 @@ func _initialize() -> void:
 func _process(_delta: float) -> bool:
 	_frames += 1
 	# The simulation's state for this frame (the placeholder set, idle).
-	_driver.apply_anim_state(0, float(_frames) / 60.0, 0.0, 0.0)
+	_driver.preview_pose(0.0, float(_frames) / 120.0)
 	if "--no-modifier" in OS.get_cmdline_user_args():
 		for child in _skeleton.get_children(true):
 			if child is CbPoseModifier:

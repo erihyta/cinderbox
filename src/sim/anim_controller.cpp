@@ -9,23 +9,6 @@ namespace cb
 
 using namespace anim_tuning;
 
-float LocomotionCycleRate( float groundSpeed )
-{
-	const float walkRate = 1.0f / kWalkCycleSeconds;
-	const float runRate = 1.0f / kRunCycleSeconds;
-	if ( groundSpeed <= kWalkSpeed )
-	{
-		// Slower than a walk: same stride length, fewer steps.
-		return walkRate * ( groundSpeed / kWalkSpeed );
-	}
-	if ( groundSpeed >= kRunSpeed )
-	{
-		return runRate * ( groundSpeed / kRunSpeed );
-	}
-	float t = ( groundSpeed - kWalkSpeed ) / ( kRunSpeed - kWalkSpeed );
-	return walkRate + ( runRate - walkRate ) * t;
-}
-
 void UpdateAnimState( AnimState& s, const Character& c, const PlayerInput& input, uint32_t tick, float dt )
 {
 	// Where the camera looks, relative to the body (kept up to date even while not aiming, so an
@@ -73,11 +56,6 @@ void UpdateAnimState( AnimState& s, const Character& c, const PlayerInput& input
 	{
 		s.legsBackward = 0;
 	}
-	for ( float& t : s.layerTime )
-	{
-		t = std::min( t + dt, kMaxModeTime );
-	}
-
 	float legStep = kLegTurnRate * dt;
 	s.legYaw += std::clamp( legTarget - s.legYaw, -legStep, legStep );
 
@@ -122,25 +100,12 @@ void UpdateAnimState( AnimState& s, const Character& c, const PlayerInput& input
 
 	if ( next != s.mode )
 	{
-		s.previousMode = s.mode;
 		s.mode = next;
 		s.modeTime = 0.0f;
 	}
 	else if ( s.modeTime < kMaxModeTime )
 	{
 		s.modeTime += dt;
-	}
-
-	s.locomotionPhase += LocomotionCycleRate( s.groundSpeed ) * dt;
-	while ( s.locomotionPhase >= 1.0f )
-	{
-		s.locomotionPhase -= 1.0f;
-	}
-
-	s.idleTime += dt;
-	if ( s.idleTime >= kTimeWrap )
-	{
-		s.idleTime -= kTimeWrap;
 	}
 }
 

@@ -593,8 +593,7 @@ void CinderboxClient::UpdateNodes()
 					float alpha = m_mirror->World().get<present::FrameTiming>().tickAlpha;
 					AnimState state = anim::InterpolateAnimState( anim->previous, anim->current, alpha );
 					tracks->begin_frame();
-					auto clips = library.graph ? anim::ActiveGraphClips( state, *library.graph, library.packs )
-											   : anim::ActiveClips( state, *library.set, library.stances.get() );
+					auto clips = library.graph ? anim::ActiveClips( state, *library.graph, library.packs ) : std::vector<anim::ActiveClip>{};
 					for ( const anim::ActiveClip& clip : clips )
 					{
 						tracks->play_at( clip.channel, TrackClipName( String::utf8( clip.name.c_str() ) ), clip.time, clip.loops );
@@ -1323,16 +1322,14 @@ String CinderboxClient::use_character( const String& name )
 {
 	if ( name == m_character && m_animSet )
 	{
-		// Same character; the server's layers and stances may still be new.
-		std::string warnings;
-		auto stances = anim::BuildStanceTable( *m_animSet, m_frame.schema.layers, m_frame.schema.stances, warnings );
+		// Same character; the server's state machine and packs may still be new.
 		auto graph = ServerGraph( *m_animSet, name );
 		AnimGraphPacks packs;
 		std::vector<std::shared_ptr<const anim::PackClips>> packClips;
 		ServerPacks( *m_animSet, packs, packClips );
 		if ( m_mirror )
 		{
-			m_mirror->SetAnimSet( m_animSet, stances, graph, packs, packClips );
+			m_mirror->SetAnimSet( m_animSet, graph, packs, packClips );
 		}
 		return String();
 	}
@@ -1380,20 +1377,13 @@ String CinderboxClient::use_character( const String& name )
 	m_trackLibrary.unref(); // read from the character's AnimationPlayer when the first one is drawn
 	m_trackLibraryBuilt = false;
 	m_animSet = set;
-	std::string stanceWarnings;
-	auto stances = anim::BuildStanceTable( *set, m_frame.schema.layers, m_frame.schema.stances, stanceWarnings );
-	if ( stanceWarnings.empty() == false )
-	{
-		UtilityFunctions::push_warning( "Cinderbox character ", name.is_empty() ? String( "built-in" ) : name, ": ",
-										String::utf8( stanceWarnings.c_str() ) );
-	}
 	auto graph = ServerGraph( *set, name );
 	AnimGraphPacks packs;
 	std::vector<std::shared_ptr<const anim::PackClips>> packClips;
 	ServerPacks( *set, packs, packClips );
 	if ( m_mirror )
 	{
-		m_mirror->SetAnimSet( set, stances, graph, packs, packClips );
+		m_mirror->SetAnimSet( set, graph, packs, packClips );
 	}
 	RebuildCharacterNodes();
 	return String();

@@ -262,21 +262,11 @@ void CbCharacter::_bind_methods()
 	CB_PROP( Variant::STRING, character_name, PROPERTY_HINT_PLACEHOLDER_TEXT, "the item's name" )
 	CB_PROP( Variant::NODE_PATH, skeleton_path, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Skeleton3D" )
 	CB_PROP( Variant::NODE_PATH, animation_player_path, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "AnimationPlayer" )
-	ADD_GROUP( "Clips", "clip_" );
-	CB_PROP( Variant::STRING, clip_idle, PROPERTY_HINT_NONE, "" )
-	CB_PROP( Variant::STRING, clip_walk, PROPERTY_HINT_NONE, "" )
-	CB_PROP( Variant::STRING, clip_run, PROPERTY_HINT_NONE, "" )
-	CB_PROP( Variant::STRING, clip_jump_start, PROPERTY_HINT_NONE, "" )
-	CB_PROP( Variant::STRING, clip_fall, PROPERTY_HINT_NONE, "" )
-	CB_PROP( Variant::STRING, clip_land, PROPERTY_HINT_NONE, "" )
 	ADD_GROUP( "Bake", "" );
 	CB_PROP( Variant::FLOAT, sample_rate, PROPERTY_HINT_RANGE, "10,120,1,suffix:Hz" )
 	CB_PROP( Variant::BOOL, lock_root_xz, PROPERTY_HINT_NONE, "" )
 	CB_PROP( Variant::BOOL, turn_legs, PROPERTY_HINT_NONE, "" )
 	CB_PROP( Variant::BOOL, face_forward, PROPERTY_HINT_NONE, "" )
-	ADD_GROUP( "Layers", "" );
-	CB_PROP( Variant::DICTIONARY, stance_clips, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
-	CB_PROP( Variant::DICTIONARY, masks, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
 	ADD_GROUP( "State machine", "" );
 	CB_PROP( Variant::NODE_PATH, animation_tree_path, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "AnimationTree" )
 	CB_PROP( Variant::DICTIONARY, graph_inputs, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
@@ -817,23 +807,13 @@ Ref<AnimationLibrary> CbCharacter::build_track_library()
 		}
 	};
 
-	// A state machine plays animations by their own names; RESET (from whichever library has it) is
-	// what a channel returns to when its clip has nothing to say.
+	// The state machine plays animations by their own names; RESET (from whichever library has it)
+	// is what a channel returns to when its clip has nothing to say.
 	PackedStringArray names = player->get_animation_list();
 	for ( const String& animationName : names )
 	{
 		bool reset = animationName == "RESET" || animationName.ends_with( "/RESET" );
 		add( animationName, reset ? String( "RESET" ) : TrackClipName( animationName ) );
-	}
-	// Without one, the simulation names clips by what they are for ("walk", "stance_melee_swing").
-	for ( int c = 0; c < anim::ClipCount; ++c )
-	{
-		add( m_clips[c].strip_edges(), anim::ClipName( anim::Clip( c ) ) );
-	}
-	Array stanceNames = m_stanceClips.keys();
-	for ( int64_t i = 0; i < stanceNames.size(); ++i )
-	{
-		add( String( m_stanceClips[stanceNames[i]] ).strip_edges(), "stance_" + String( stanceNames[i] ).strip_edges() );
 	}
 	return library;
 }
@@ -1074,13 +1054,14 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	{
 		return fail( "animation_tree_path does not point at an AnimationTree" );
 	}
-	if ( IsPack() && tree == nullptr )
+	if ( tree == nullptr )
 	{
-		return fail( "an animation pack is its AnimationTree: set animation_tree_path" );
+		return fail( IsPack() ? "an animation pack is its AnimationTree: set animation_tree_path"
+							  : "a character is its AnimationTree (a state machine, or state machines layered with Blend2 nodes): "
+								"add one and set animation_tree_path" );
 	}
-	if ( tree != nullptr )
 	{
-		// The character's own state machine replaces the six built-in clips and the stances.
+		// The state machine, and the clips it plays.
 		std::string graph;
 		std::vector<String> animations;
 		String problem = BakeGraph( tree, player, graph, animations, warnings );
@@ -1104,77 +1085,7 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		{
 			return fail( error );
 		}
-		if ( m_stanceClips.is_empty() == false )
-		{
-			warnings += "stance_clips are not used with a state machine (its layers replace them); ";
-		}
 	}
-	else if ( FileAccess::file_exists( folder + "graph.cfg" ) )
-	{
-		DirAccess::remove_absolute( folder + "graph.cfg" ); // from an earlier bake with a tree
-	}
-	for ( int c = 0; c < anim::ClipCount && tree == nullptr; ++c )
-	{
-		const char* clipName = anim::ClipName( anim::Clip( c ) );
-		String animationName = m_clips[c].strip_edges();
-		if ( animationName.is_empty() || player->has_animation( animationName ) == false )
-		{
-			warnings += String( "no animation '" ) + animationName + "' for clip " + clipName + "; ";
-			continue;
-		}
-		String file = String( clipName ) + ".ozz";
-		String problem = bakeClip( animationName, file );
-		if ( problem.is_empty() == false )
-		{
-			return fail( problem );
-		}
-		cfg += std::string( clipName ) + " = " + Std( file ) + "\n";
-		++clips;
-	}
-
-	// Stances: "<stance>" (one loop) or "<stance>_<clip>" -> an animation of the player.
-	int stanceClips = 0;
-	Array stanceNames = tree == nullptr ? m_stanceClips.keys() : Array();
-	for ( int64_t i = 0; i < stanceNames.size(); ++i )
-	{
-		String name = String( stanceNames[i] ).strip_edges();
-		String animationName = String( m_stanceClips[stanceNames[i]] ).strip_edges();
-		if ( name.is_empty() || name.contains( " " ) || name.contains( "/" ) )
-		{
-			warnings += "stance clip name '" + name + "' must be one word; ";
-			continue;
-		}
-		if ( player->has_animation( animationName ) == false )
-		{
-			warnings += "no animation '" + animationName + "' for stance clip " + name + "; ";
-			continue;
-		}
-		String file = "stance_" + name + ".ozz";
-		String problem = bakeClip( animationName, file );
-		if ( problem.is_empty() == false )
-		{
-			return fail( problem );
-		}
-		cfg += "stance." + Std( name ) + " = " + Std( file ) + "\n";
-		++stanceClips;
-	}
-
-	// Layer masks: "<layer>" -> bones whose subtrees it covers ("Spine", "Spine:0.5 RightShoulder").
-	Array layerNames = m_masks.keys();
-	for ( int64_t i = 0; i < layerNames.size(); ++i )
-	{
-		String layer = String( layerNames[i] ).strip_edges();
-		String roots = String( m_masks[layerNames[i]] ).strip_edges();
-		for ( const String& entry : roots.split( " ", false ) )
-		{
-			if ( skeleton->find_bone( entry.get_slice( ":", 0 ) ) < 0 )
-			{
-				warnings += "mask " + layer + ": no bone " + entry.get_slice( ":", 0 ) + "; ";
-			}
-		}
-		cfg += "mask." + Std( layer ) + " = " + Std( roots ) + "\n";
-	}
-	result["stance_clips"] = stanceClips;
 	// Earlier bakes wrote the animations' other tracks to a file; the game reads them from the
 	// character's AnimationPlayer now (build_track_library).
 	if ( FileAccess::file_exists( folder + "companion.tres" ) )

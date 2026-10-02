@@ -265,12 +265,6 @@ node_connections = [&"output", 0, &"UpperBlend", &"UpperBlend", 0, &"Base", &"Up
 character_name = "mannequin"
 skeleton_path = NodePath("Model/Armature/Skeleton3D")
 animation_player_path = NodePath("Model/AnimationPlayer")
-clip_idle = "Idle"
-clip_walk = "Walk"
-clip_run = "Jog_Fwd"
-clip_jump_start = "Jump_Start"
-clip_fall = "Jump"
-clip_land = "Jump_Land"
 animation_tree_path = NodePath("AnimationTree")
 graph_inputs = {
 "Base/Locomotion/blend_position": "forward_speed",

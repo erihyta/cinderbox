@@ -77,7 +77,7 @@ public:
 	{
 		return m_schema;
 	}
-	// The character's state machine, compiled from the schema (null: the built-in locomotion).
+	// The character's state machine, compiled from the schema.
 	// Re-simulating needs it: Simulation::SetAnimGraph.
 	const std::shared_ptr<const AnimGraph>& Graph() const
 	{

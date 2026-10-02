@@ -197,11 +197,12 @@ struct InputFrame
 };
 
 // Must be identical on server and clients; the server sends it on join.
-// Animation layers per player (mods declare them; each is a bone mask the character defines) and
-// stances (named clip sets). A stance index in AnimState is the schema's index + 1; 0 is none.
+// Animation layers per player (a character's state machine has them; mods name the ones they set
+// stances on) and stances (names a state machine's conditions read: "pistol"). A stance index in
+// AnimState is the schema's index + 1; 0 is none.
 inline constexpr int kMaxAnimLayers = 4;
 inline constexpr int kMaxStances = 254;
-// A new stance fades in over this long (and the one it replaces fades out).
+// A layer's weight eases to where its weight expression says over this long.
 inline constexpr float kStanceFadeSeconds = 0.2f;
 
 struct SimConfig

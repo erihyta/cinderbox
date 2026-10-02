@@ -16,7 +16,7 @@
 // from compact packets: both sides then stand on the same grid.
 //
 // Layout (little-endian, like everything else):
-//   "CBV2", u64 serial, u64 base serial (0: none), f32 age, f32 alpha, f32 rate, u16 presses,
+//   "CBV3", u64 serial, u64 base serial (0: none), f32 age, f32 alpha, f32 rate, u16 presses,
 //   u16 stride, u8 flags, string state, [stats], [map], [schema], [names], [world]
 // Decoding never trusts the bytes: counts are bounded and a short packet fails.
 

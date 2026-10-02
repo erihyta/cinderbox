@@ -87,7 +87,6 @@ bool GameServer::Start( const ServerOptions& options )
 	m_hits = std::make_unique<HitTester>( character );
 	{
 		std::string warnings;
-		m_hits->SetStances( m_schema.layers, m_schema.stances, warnings );
 		// The mods' animation packs, from their items: their graphs go to everyone in the schema.
 		std::vector<std::shared_ptr<const anim::AnimSet>> packSets;
 		for ( AnimPackInfo& pack : m_schema.animPacks )

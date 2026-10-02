@@ -589,10 +589,8 @@ void Simulation::PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw )
 	anim.aiming = old.aiming;
 	for ( int l = 0; l < kMaxAnimLayers; ++l )
 	{
-		// The stances stay (the mod still has the weapon out), already faded in.
+		// The stances stay (the mod still has the weapon out).
 		anim.stances[l] = old.stances[l];
-		anim.previousStances[l] = old.stances[l];
-		anim.layerTime[l] = kStanceFadeSeconds;
 	}
 	e.set<AnimState>( anim );
 	e.set<Transform>( t );
@@ -1673,13 +1671,7 @@ void Simulation::ApplyCommand( const SimCommand& command )
 				return;
 			}
 			AnimState a = e.get<AnimState>();
-			uint8_t stance = uint8_t( command.value );
-			if ( a.stances[command.index] != stance )
-			{
-				a.previousStances[command.index] = a.stances[command.index];
-				a.stances[command.index] = stance;
-				a.layerTime[command.index] = 0.0f;
-			}
+			a.stances[command.index] = uint8_t( command.value );
 			e.set<AnimState>( a );
 			return;
 		}

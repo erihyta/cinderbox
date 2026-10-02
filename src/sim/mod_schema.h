@@ -100,12 +100,13 @@ struct ModSchema
 	std::vector<BoardField> fields;
 	std::vector<std::string> events; // index = ModEventRecord::type
 	std::vector<ModAction> actions;
-	// Animation layers (each a bone mask the character defines, "full" = every bone) and stances
-	// (named clip sets a character may ship), declared by mods. AnimState stores their indices.
+	// Animation layers and stances, declared by mods: names. A mod sets a stance on a layer; a
+	// character's state machine reads stances by name ("pistol") in its conditions and weights.
+	// AnimState stores their indices.
 	std::vector<std::string> layers; // at most kMaxAnimLayers
 	std::vector<std::string> stances;
-	// The character's baked state machine (graph.cfg text, sim/anim_graph.h); empty when it plays the
-	// built-in locomotion.
+	// The character's state machine (graph.cfg text, sim/anim_graph.h): the baked one of the
+	// server's character, or the placeholder rig's.
 	std::string animGraph;
 	// Kinds of items mods spawn ("melee.bat"; a look per kind in the mod's client item), their
 	// bodies when they lie in the world (same index), and the sockets they are held in: the hands

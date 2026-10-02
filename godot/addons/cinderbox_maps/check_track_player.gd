@@ -88,12 +88,10 @@ func _initialize() -> void:
 	player.add_animation_library("", library)
 	root.skeleton_path = NodePath("Skeleton3D")
 	root.animation_player_path = NodePath("AnimationPlayer")
-	root.stance_clips = {"melee_swing": "swing"}
 	var tracks: AnimationLibrary = root.build_track_library()
 	_expect(tracks.has_animation("swing") and tracks.get_animation("swing").get_track_count() == 2,
 		"the swing's two other tracks are kept, its bone track is not", "")
 	_expect(is_equal_approx(tracks.get_animation("swing").length, 1.0), "the copy keeps the length", "")
-	_expect(tracks.has_animation("stance_melee_swing"), "a stance clip is found by the name the simulation plays", "")
 	_expect(not tracks.has_animation("walk"), "an animation that is bones only is not in the library", "")
 	_expect(tracks.has_animation("RESET") and tracks.has_animation("loop"), "RESET and the loop are in it", "")
 	_expect(swing.get_track_count() == 3, "the character's own animation is untouched", "")

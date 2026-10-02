@@ -70,8 +70,8 @@ struct ActionHandle
 	}
 };
 
-// An animation layer (a bone mask the character defines: "upper", "full", ...) and a stance (a clip
-// set a character may ship: "pistol", "melee"). A default StanceHandle means "no stance".
+// An animation layer and a stance, by name ("upper", "pistol"): what a mod sets on a player, and a
+// character's state machine reads in its conditions. A default StanceHandle means "no stance".
 struct LayerHandle
 {
 	int index = -1;
@@ -397,9 +397,10 @@ public:
 	// true: the body faces where the camera looks (a shooter's stance; the legs still walk where it
 	// goes). false: it turns toward where it walks (freelook, the default).
 	void FaceCamera( uint32_t target, bool faceCamera );
-	// Plays `stance` on the player's `layer` (a default StanceHandle clears it), fading over
-	// kStanceFadeSeconds. Part of the pose everyone draws and hit tests use. Setting the stance a
-	// layer already has does nothing; setting another restarts the layer's clock (a swing).
+	// Sets `stance` on the player's `layer` (a default StanceHandle clears it). The character's
+	// state machine reads stances by name in its conditions and weights ("pistol", "melee_swing"),
+	// so what a stance looks like is the character's: part of the pose everyone draws and hit
+	// tests use.
 	void SetStance( uint32_t target, LayerHandle layer, StanceHandle stance );
 	// Gives the player `holder` (SlotTarget) an item of `kind` in `socket`, replacing what it held
 	// there. The item is an entity of its own: address it with ItemTarget( slot, socket ) (from this

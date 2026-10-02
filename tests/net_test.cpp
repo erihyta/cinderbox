@@ -519,6 +519,8 @@ void TestLossySession()
 	CHECK( replay.Frames().size() > 500 );
 	CHECK( replay.Checksums().size() > 5 );
 	Simulation sim( replay.Config() );
+	sim.SetAnimGraph( replay.Graph() ); // what the server ran: the character's state machine
+	sim.SetAnimPacks( replay.Packs() );
 	size_t next = 0;
 	size_t verified = 0;
 	for ( const InputFrame& frame : replay.Frames() )

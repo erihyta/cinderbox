@@ -96,9 +96,11 @@ struct Prop
 	uint32_t despawnTick = 0; // 0 = never
 };
 
+// What the body is doing between the ground and the air. The game's "jumped" and "landed" cues are
+// its changes; a character's pose is its own state machine's business.
 enum class AnimMode : uint8_t
 {
-	Locomotion = 0, // idle / walk / run, blended by groundSpeed
+	Locomotion = 0, // on the ground
 	JumpStart = 1,
 	Fall = 2,
 	Land = 3,
@@ -122,37 +124,33 @@ struct AnimGraphLayerState
 	float previousBlendY = 0.0f;
 };
 
-// Deterministic animation controller state. The simulation only decides *what* plays and at which
-// time; poses are sampled from it with ozz (client now, server too once gameplay needs them).
-// Times are in seconds and independent of clip data, so the sim never depends on asset files.
+// A player's animation, as the simulation decides it: what its state machine reads (how it moves,
+// where it looks, the stances mods set) and where each layer of the machine is. Poses are sampled
+// from it with ozz, on clients and on the server's hit tests alike. Times are in seconds and
+// independent of clip data, so the simulation never depends on asset files.
 struct AnimState
 {
 	AnimMode mode = AnimMode::Locomotion;
-	AnimMode previousMode = AnimMode::Locomotion; // faded out over the first moments of `mode`
 	// Set by an Aim command (a mod: "the pistol is out"): the pose turns the character's aim chain
 	// toward aimYaw / aimPitch, on every client and on the server's hit tests alike.
 	uint8_t aiming = 0;
-	// The legs walk backwards (the walk cycle plays in reverse): moving away from where it faces.
+	// The legs walk backwards: moving away from where it faces.
 	uint8_t legsBackward = 0;
-	float modeTime = 0.0f;		  // seconds since `mode` started
-	float locomotionPhase = 0.0f; // [0, 1), shared by walk and run so their feet stay in sync
-	float idleTime = 0.0f;		  // seconds, wraps every kAnimTimeWrap
-	float groundSpeed = 0.0f;	  // smoothed horizontal speed (m/s) that drives the 1D blend
-	float aimYaw = 0.0f;		  // where the player looks, relative to the body's facing (radians, [-pi, pi))
-	float aimPitch = 0.0f;		  // radians, up is positive
+	uint8_t reserved = 0;
+	float modeTime = 0.0f;	  // seconds since `mode` started
+	float groundSpeed = 0.0f; // smoothed horizontal speed (m/s)
+	float aimYaw = 0.0f;	  // where the player looks, relative to the body's facing (radians, [-pi, pi))
+	float aimPitch = 0.0f;	  // radians, up is positive
 	// How far the hips turn from the body's facing toward the direction of travel, in [-pi/2, pi/2]
 	// (the spine turns back, so the upper body keeps facing). Zero when walking straight ahead.
 	float legYaw = 0.0f;
-	// Per layer: the stance a mod set (0 = none), the one it replaced (fading out), and seconds since
-	// it was set (fades, and the playback of a single-clip stance like a swing).
+	// Per layer: the stance a mod set (0 = none). A state machine reads them by name ("pistol").
 	uint8_t stances[kMaxAnimLayers] = {};
-	uint8_t previousStances[kMaxAnimLayers] = {};
-	float layerTime[kMaxAnimLayers] = {};
 	// Smoothed ground velocity in the body's frame (m/s): along its facing, and to its right. Blend
 	// spaces of directional clips (strafing) read them.
 	float moveForward = 0.0f;
 	float moveRight = 0.0f;
-	// The baked state machine's layers; unused for characters without one.
+	// The state machine's layers.
 	AnimGraphLayerState graph[kMaxAnimLayers] = {};
 };
 
@@ -231,7 +229,7 @@ CB_CHECK_COMPONENT( PhysicsBody, 16 );
 CB_CHECK_COMPONENT( Character, 52 );
 CB_CHECK_COMPONENT( Prop, 12 );
 CB_CHECK_COMPONENT( AnimGraphLayerState, 40 );
-CB_CHECK_COMPONENT( AnimState, 64 + 40 * kMaxAnimLayers );
+CB_CHECK_COMPONENT( AnimState, 36 + 40 * kMaxAnimLayers );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( HeldItem, 8 );
 CB_CHECK_COMPONENT( Blackboard, 4 * kBoardSlots );

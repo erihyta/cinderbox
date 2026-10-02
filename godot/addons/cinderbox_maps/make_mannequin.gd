@@ -50,12 +50,6 @@ const OLD_FIRE_PATH := "Armature/Skeleton3D/At_RightHand/HandFire"
 # plays it itself now, from the melee.swing cue).
 const OLD_HELD_ITEM_PLAYER := "Armature/Skeleton3D/At_RightHand/RightHand/Item/AnimationPlayer"
 
-# The six built-in clips, used only if the state machine is removed (animation_tree_path cleared).
-const CLIPS := {
-	"idle": "Idle", "walk": "Walk", "run": "Jog_Fwd",
-	"jump_start": "Jump_Start", "fall": "Jump", "land": "Jump_Land",
-}
-
 # Standard: blend space points at the speeds the clips actually cover (measured from their foot
 # travel), so the feet stay planted: walking backwards plays the same clips in reverse.
 const LOCOMOTION := [
@@ -129,8 +123,6 @@ func _initialize() -> void:
 	var player := model.get_node("AnimationPlayer") as AnimationPlayer
 	_root.skeleton_path = _root.get_path_to(_skeleton)
 	_root.animation_player_path = _root.get_path_to(player)
-	for clip in CLIPS:
-		_root.set("clip_" + clip, CLIPS[clip])
 
 	# The game poses this skeleton from the simulation; it is exactly the baked one, so no retargeting.
 	var driver := CinderboxSkeleton.new()

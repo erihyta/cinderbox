@@ -26,7 +26,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 17; // 17: streaming clients; 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs; 9: layers and stances; 10: characters shipped with the game; 11: state machines in the schema; 12: held items; 13: animation packs; 14: items in the world; 15: stowed items; 16: 32 board slots
+inline constexpr uint32_t kProtocolVersion = 18; // 18: one animation system; 17: streaming clients; 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs; 9: layers and stances; 10: characters shipped with the game; 11: state machines in the schema; 12: held items; 13: animation packs; 14: items in the world; 15: stowed items; 16: 32 board slots
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t
