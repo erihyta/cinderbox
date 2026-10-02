@@ -1388,6 +1388,80 @@ void TestHeadshot()
 	}
 }
 
+// The pistol's second action: slot 0 aims at slot 1 and presses "mark". The server answers every
+// accepted press with pistol.scan, and with pistol.marked naming the player the ray found; a mark
+// harms nobody and is accepted once a second.
+void TestPistolMark()
+{
+	Harness h( 47811 );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t mark = schema.ActionMask( "mark" );
+	uint16_t pistol = schema.ActionMask( "slot_2" );
+	int scanEvent = schema.FindEvent( "pistol.scan" );
+	int markedEvent = schema.FindEvent( "pistol.marked" );
+	CHECK( mark != 0 && scanEvent >= 0 && markedEvent >= 0 );
+
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraYaw = 16384;
+		in.cameraPitch = -1040; // from one spawn point's eye to the next one's head
+		in.actions = pistol;
+		if ( tick > 200 && ( tick % 10 ) < 3 ) // far more often than a mark is accepted
+		{
+			in.actions |= mark;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; }; // stands still
+
+	std::map<uint32_t, uint32_t> scans;	 // tick -> what the ray hit
+	std::map<uint32_t, uint32_t> marks;	 // tick -> who was marked
+	const uint32_t casterId = h.server.Sim().PlayerNetId( h.bots[0].client->Slot() );
+	h.RunUntil( 7.0, [&]( double ) {
+		const SimGlobals& g = h.server.Sim().Globals();
+		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+		{
+			const ModEventRecord& e = g.modEvents[i];
+			if ( int( e.type ) == scanEvent && e.netIdA == casterId )
+			{
+				scans[e.tick] = e.netIdB;
+			}
+			if ( int( e.type ) == markedEvent && e.netIdA == casterId )
+			{
+				marks[e.tick] = e.netIdB;
+			}
+		}
+	} );
+	h.Report();
+
+	Simulation& server = h.server.Sim();
+	uint32_t targetId = server.PlayerNetId( h.bots[1].client->Slot() );
+	int onTarget = 0;
+	for ( const auto& [tick, who] : marks )
+	{
+		onTarget += who == targetId ? 1 : 0;
+		CHECK( scans.count( tick ) == 1 ); // a mark is always a scan that found someone
+	}
+	uint32_t closest = UINT32_MAX;
+	uint32_t last = 0;
+	for ( const auto& [tick, hit] : scans )
+	{
+		closest = last != 0 ? std::min( closest, tick - last ) : closest;
+		last = tick;
+	}
+	std::printf( "    %d scans, %d marks (%d on the target), closest two scans %u ticks apart\n", int( scans.size() ), int( marks.size() ),
+				 onTarget, closest );
+	CHECK( scans.size() >= 3 && scans.size() <= 8 );
+	CHECK( onTarget >= 2 && onTarget == int( marks.size() ) );
+	CHECK( closest >= server.Config().tickRate ); // once a second
+	CHECK( server.BoardValue( targetId, schema.FindField( "combat.health" )->slot ) == 100 );
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 // Layers end to end: slot 0 takes out the pistol, then the bat (a full-body stance), and swings at
 // slot 1, which stands still. Swings play the swing stance, hits go out as combat.damage, the pistol mod (which
 // keeps health) applies them and credits the kill, and clients agree on every pose-carrying tick.
@@ -2205,6 +2279,7 @@ int main( int argc, char** argv )
 		{ "item_shapes", TestItemShapes },
 		{ "sneak", TestSneak },
 		{ "headshot", TestHeadshot },
+		{ "pistol_mark", TestPistolMark },
 		{ "melee", TestMelee },
 		{ "pickup", TestPickup },
 		{ "inventory", TestInventory },

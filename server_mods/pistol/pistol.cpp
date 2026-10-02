@@ -24,6 +24,7 @@ constexpr int32_t kDamage = 25;
 constexpr int32_t kMagazine = 12;
 constexpr float kFireSeconds = 0.2f;
 constexpr float kReloadSeconds = 1.5f;
+constexpr float kMarkSeconds = 1.0f; // between two marks
 constexpr float kRespawnSeconds = 3.0f;
 constexpr float kRange = 80.0f;
 // How hard a hit shoves: a ragdoll at death, and anything loose that is hit.
@@ -38,6 +39,7 @@ struct Gunner
 	int32_t health = kMaxHealth;
 	int32_t ammo = kMagazine;
 	uint32_t nextShotTick = 0;
+	uint32_t nextMarkTick = 0;
 	int32_t kills = 0;
 	int32_t deaths = 0;
 	uint32_t falls = 0; // Character::fallCount last seen
@@ -72,6 +74,9 @@ public:
 	{
 		m_fire = declare.Action( "fire", "MouseLeft" );
 		m_reload = declare.Action( "reload", "R" );
+		// A second use of the pistol, and the example of adding one: a ray that harms nothing and
+		// marks the player it finds (see Mark below, and client/vfx/reactions_pistol.tscn).
+		m_mark = declare.Action( "mark", "MouseRight" );
 
 		m_health = declare.Field( "combat.health", BoardType::Int );
 		m_maxHealth = declare.Field( "combat.max_health", BoardType::Int );
@@ -88,6 +93,11 @@ public:
 		m_hit = declare.Event( "pistol.hit" );
 		m_reloadEvent = declare.Event( "pistol.reload" );
 		m_dry = declare.Event( "pistol.dry" );
+		// A mark was cast: a = who cast it, b = what the ray hit (0: nothing), point = where it came
+		// from, vector = where it ended.
+		m_scan = declare.Event( "pistol.scan" );
+		// ... and it found a living player: a = who cast it, b = the marked player, point = where.
+		m_marked = declare.Event( "pistol.marked" );
 		// a = killer (0: the world, e.g. a fall), b = who died.
 		m_killed = declare.Event( "combat.killed" );
 		// Announced by a game-mode mod when a round begins: everyone gets full health and a full
@@ -307,6 +317,11 @@ private:
 			StartReload( ctx, e, target );
 			return;
 		}
+		if ( ctx.Pressed( g.slot, m_mark ) && reloading == false && tick >= g.nextMarkTick )
+		{
+			g.nextMarkTick = tick + Ticks( ctx, kMarkSeconds );
+			Mark( ctx, g, netId );
+		}
 		if ( ctx.Pressed( g.slot, m_fire ) == false || reloading || tick < g.nextShotTick )
 		{
 			return;
@@ -370,6 +385,27 @@ private:
 		ctx.Emit( m_reloadEvent, target );
 	}
 
+	// The same ray as a shot, with no damage: it says where it went (pistol.scan) and, when it found
+	// a living player, who (pistol.marked). What a mark looks like and how long it shows is the
+	// look's business; the server keeps nothing about it.
+	void Mark( Context& ctx, const Gunner& caster, uint32_t casterNetId )
+	{
+		uint32_t casterTarget = SlotTarget( caster.slot );
+		b3Vec3 eye = ctx.EyePosition( caster.slot );
+		b3Vec3 dir = ctx.AimDirection( caster.slot );
+		RayHit hit;
+		bool found = ctx.CastRay( eye, b3MulSV( kRange, dir ), casterNetId, hit );
+		b3Vec3 end = found ? hit.point : b3MulAdd( eye, kRange, dir );
+		ctx.Emit( m_scan, casterTarget, found ? hit.netId : 0, 0, eye, end );
+
+		int markedSlot = found ? ctx.SlotOf( hit.netId ) : -1;
+		flecs::entity marked = markedSlot >= 0 ? m_bySlot[markedSlot] : flecs::entity();
+		if ( marked.is_valid() && marked.has<Dead>() == false )
+		{
+			ctx.Emit( m_marked, casterTarget, hit.netId, 0, hit.point, hit.normal );
+		}
+	}
+
 	void Fire( Context& ctx, Gunner& shooter, uint32_t shooterNetId )
 	{
 		uint32_t shooterTarget = SlotTarget( shooter.slot );
@@ -413,6 +449,7 @@ private:
 
 	ActionHandle m_fire;
 	ActionHandle m_reload;
+	ActionHandle m_mark;
 	FieldHandle m_health;
 	FieldHandle m_maxHealth;
 	FieldHandle m_dead;
@@ -424,6 +461,8 @@ private:
 	EventHandle m_hit;
 	EventHandle m_reloadEvent;
 	EventHandle m_dry;
+	EventHandle m_scan;
+	EventHandle m_marked;
 	EventHandle m_killed;
 	EventHandle m_roundStart;
 	EventHandle m_damage;
