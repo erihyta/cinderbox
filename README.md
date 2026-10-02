@@ -68,6 +68,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M60: the raylib client is gone: the Godot client is the client | done |
 | M61: a `combat` mod: health, death and respawning in one place, spoken to by events (`combat.damage`, `combat.heal`) with server options; the pistol only keeps the gun | done |
 | M62: one animation system: every character is a state machine (the placeholder rig's is built in); the old clip blending, stance clip tables, `CinderboxAnimator` and the glTF converter are gone | done |
+| M63: DESIGN.md by subsystem instead of by milestone | done |
 
 ## Building
 
@@ -1323,7 +1324,7 @@ Each build job (`scripts/ci_check.sh <preset> <name> <out-dir>`, also usable loc
 - uploads its hash dump, a portable snapshot and `cb_tests` for the cross-load jobs
   (`scripts/ci_cross.sh`), which also check that all dumps and snapshots are byte-identical.
 
-Box3D is fetched with two local patches in `cmake/patches/` (see DESIGN.md, M18):
+Box3D is fetched with two local patches in `cmake/patches/` (see DESIGN.md, Determinism):
 `box3d-snapshot-padding.patch` (snapshots carried uninitialized padding bytes and a heap pointer) and
 `box3d-neon-minmax.patch` (ARM64 clamps returned -0 where x64 returns +0).
 

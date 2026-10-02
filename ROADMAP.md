@@ -42,7 +42,7 @@ Each step is a milestone of its own, and each leaves the game playable.
 
 ### 1. Predicted state in the viewer
 
-- **Today**: a `CbPrediction` plays a cue's effects at once (DESIGN.md, M56). What the server
+- **Today**: a `CbPrediction` plays a cue's effects at once (DESIGN.md, Looks). What the server
   *changes* still waits for its frame:
 
   | You press | Shown at once | Shown a round trip later |
@@ -79,7 +79,7 @@ Each step is a milestone of its own, and each leaves the game playable.
 - **What**: a small mover for the own character only, run by the stream source from the player's
   input and corrected by the server's frames; and a short buffer of frames, so one that is late
   does not stall the picture.
-- **Also**: smaller frames still (DESIGN.md, M53 and M54, say where the bytes go): animation is 24
+- **Also**: smaller frames still (`cb_replay view` says where the bytes go): animation is 24
   bytes a player a frame, a rotation is 4 bytes whenever a body turned at all, an event is 44 bytes
   that are mostly zeros.
 - **Done when**: with 100 ms of latency a streaming player's own movement starts within a frame,
@@ -99,7 +99,6 @@ Independent of the path; each is small.
 
 | What | Note |
 |---|---|
-| DESIGN.md by subsystem, not by milestone | sections from early milestones describe things later ones replaced (effect bindings, the loadout) |
 | A board sized by the schema | `kBoardSlots` is a wall that came back once already |
 | `simulation.cpp` in modules | characters, props, ragdolls, items and animation in one 2,100-line class |
 | Repository | a LICENSE; `.uid` files committed; line endings settled in `.gitattributes`; the old `build/` folder in OneDrive |
