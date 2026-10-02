@@ -19,7 +19,7 @@ echo "== toolchain"
 cmake --version | head -1
 ninja --version
 
-cmake --preset "$preset" -B "$build" -DCB_BUILD_GODOT=OFF -DCB_BUILD_CLIENT=OFF
+cmake --preset "$preset" -B "$build" -DCB_BUILD_GODOT=OFF
 grep -E "CMAKE_(C|CXX)_COMPILER(_ID|_VERSION)?:" "$build/CMakeCache.txt" || true
 cmake --build "$build"
 

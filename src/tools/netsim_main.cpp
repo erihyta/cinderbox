@@ -5,7 +5,7 @@
 //
 // Latency is added in each direction, so the round trip grows by twice the value.
 // Example: cb_server --port 7777, cb_netsim --listen 7778 --target 127.0.0.1:7777 --latency 40,
-// then cb_client --port 7778 plays with ~80 ms extra RTT.
+// then a client joining port 7778 plays with ~80 ms extra RTT.
 
 #include "netsim.h"
 

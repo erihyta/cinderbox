@@ -90,19 +90,6 @@ if(TARGET gltf2ozz)
 	endforeach()
 endif()
 
-# --- raylib 5.5 (client only) ---
-if(CB_BUILD_CLIENT)
-	set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-	set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
-	set(CUSTOMIZE_BUILD OFF CACHE BOOL "" FORCE)
-	FetchContent_Declare(raylib
-		GIT_REPOSITORY https://github.com/raysan5/raylib.git
-		GIT_TAG c1ab645ca298a2801097931d1079b10ff7eb9df8 # 5.5
-		GIT_SHALLOW FALSE
-	)
-	FetchContent_MakeAvailable(raylib)
-endif()
-
 # --- godot-cpp 4.5 (API 4.5, runs in Godot 4.5 and later; the project targets 4.7) ---
 if(CB_BUILD_GODOT)
 	set(GODOTCPP_TARGET "${CB_GODOT_TARGET}" CACHE STRING "" FORCE)
