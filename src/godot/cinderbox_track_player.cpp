@@ -1,4 +1,4 @@
-#include "cinderbox_companion.h"
+#include "cinderbox_track_player.h"
 
 #include <godot_cpp/classes/animation.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -18,23 +18,23 @@ constexpr double kMaxFiringStep = 0.25;
 
 } // namespace
 
-void CbCompanionPlayer::_bind_methods()
+void CbTrackPlayer::_bind_methods()
 {
-	ClassDB::bind_method( D_METHOD( "setup", "library", "root" ), &CbCompanionPlayer::setup );
-	ClassDB::bind_method( D_METHOD( "begin_frame" ), &CbCompanionPlayer::begin_frame );
-	ClassDB::bind_method( D_METHOD( "play_at", "channel", "clip", "time", "loops" ), &CbCompanionPlayer::play_at );
-	ClassDB::bind_method( D_METHOD( "end_frame" ), &CbCompanionPlayer::end_frame );
-	ClassDB::bind_method( D_METHOD( "get_channel_clip", "channel" ), &CbCompanionPlayer::get_channel_clip );
-	ClassDB::bind_method( D_METHOD( "clear_caches" ), &CbCompanionPlayer::clear_caches );
+	ClassDB::bind_method( D_METHOD( "setup", "library", "root" ), &CbTrackPlayer::setup );
+	ClassDB::bind_method( D_METHOD( "begin_frame" ), &CbTrackPlayer::begin_frame );
+	ClassDB::bind_method( D_METHOD( "play_at", "channel", "clip", "time", "loops" ), &CbTrackPlayer::play_at );
+	ClassDB::bind_method( D_METHOD( "end_frame" ), &CbTrackPlayer::end_frame );
+	ClassDB::bind_method( D_METHOD( "get_channel_clip", "channel" ), &CbTrackPlayer::get_channel_clip );
+	ClassDB::bind_method( D_METHOD( "clear_caches" ), &CbTrackPlayer::clear_caches );
 }
 
-void CbCompanionPlayer::setup( const Ref<AnimationLibrary>& library, Node* root )
+void CbTrackPlayer::setup( const Ref<AnimationLibrary>& library, Node* root )
 {
 	m_library = library;
 	m_root = root != nullptr ? uint64_t( root->get_instance_id() ) : 0;
 }
 
-CbCompanionPlayer::Channel& CbCompanionPlayer::ChannelAt( int channel )
+CbTrackPlayer::Channel& CbTrackPlayer::ChannelAt( int channel )
 {
 	if ( channel >= int( m_channels.size() ) )
 	{
@@ -64,7 +64,7 @@ CbCompanionPlayer::Channel& CbCompanionPlayer::ChannelAt( int channel )
 	return c;
 }
 
-void CbCompanionPlayer::Reset( Channel& c )
+void CbTrackPlayer::Reset( Channel& c )
 {
 	if ( c.player == nullptr || c.clip.is_empty() )
 	{
@@ -84,13 +84,13 @@ void CbCompanionPlayer::Reset( Channel& c )
 	m_resetThisFrame = true;
 }
 
-void CbCompanionPlayer::Seek( Channel& c, double time )
+void CbTrackPlayer::Seek( Channel& c, double time )
 {
 	// update_only: apply values, but run no method, audio or animation-playback keys.
 	c.player->seek( time, true, true );
 }
 
-void CbCompanionPlayer::begin_frame()
+void CbTrackPlayer::begin_frame()
 {
 	for ( Channel& c : m_channels )
 	{
@@ -98,7 +98,7 @@ void CbCompanionPlayer::begin_frame()
 	}
 }
 
-void CbCompanionPlayer::play_at( int channel, const String& clip, double time, bool loops )
+void CbTrackPlayer::play_at( int channel, const String& clip, double time, bool loops )
 {
 	if ( channel < 0 || channel > 16 || m_library.is_null() )
 	{
@@ -164,7 +164,7 @@ void CbCompanionPlayer::play_at( int channel, const String& clip, double time, b
 	c.time = time;
 }
 
-void CbCompanionPlayer::end_frame()
+void CbTrackPlayer::end_frame()
 {
 	for ( Channel& c : m_channels )
 	{
@@ -175,7 +175,7 @@ void CbCompanionPlayer::end_frame()
 	}
 	if ( m_resetThisFrame )
 	{
-		// RESET covers every companion track; the channels still playing put their own values back.
+		// RESET covers every track; the channels still playing put their own values back.
 		for ( Channel& c : m_channels )
 		{
 			if ( c.clip.is_empty() == false )
@@ -187,7 +187,7 @@ void CbCompanionPlayer::end_frame()
 	}
 }
 
-void CbCompanionPlayer::clear_caches()
+void CbTrackPlayer::clear_caches()
 {
 	for ( Channel& c : m_channels )
 	{
@@ -198,7 +198,7 @@ void CbCompanionPlayer::clear_caches()
 	}
 }
 
-String CbCompanionPlayer::get_channel_clip( int channel ) const
+String CbTrackPlayer::get_channel_clip( int channel ) const
 {
 	return channel >= 0 && channel < int( m_channels.size() ) ? m_channels[size_t( channel )].clip : String();
 }

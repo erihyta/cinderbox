@@ -1,6 +1,6 @@
 #include "cinderbox_character.h"
 
-#include "cinderbox_companion.h"
+#include "cinderbox_track_player.h"
 #include "cinderbox_skeleton.h"
 #include "pose.h" // CinderboxSkeleton holds a PoseEvaluator
 
@@ -93,6 +93,11 @@ PackedByteArray Archive( const T& object )
 
 bool WriteFile( const String& path, const PackedByteArray& bytes, String& error )
 {
+	// A bake that changes nothing touches nothing: it runs on every save and every publish.
+	if ( FileAccess::file_exists( path ) && FileAccess::get_file_as_bytes( path ) == bytes )
+	{
+		return true;
+	}
 	Ref<FileAccess> file = FileAccess::open( path, FileAccess::WRITE );
 	if ( file.is_null() )
 	{
@@ -246,6 +251,7 @@ void CbCharacter::_bind_methods()
 {
 	ClassDB::bind_method( D_METHOD( "bake_to", "folder" ), &CbCharacter::bake_to );
 	ClassDB::bind_method( D_METHOD( "bake" ), &CbCharacter::bake );
+	ClassDB::bind_method( D_METHOD( "build_track_library" ), &CbCharacter::build_track_library );
 	ClassDB::bind_method( D_METHOD( "get_bake_button" ), &CbCharacter::get_bake_button );
 
 #define CB_PROP( type, name, hint, hintText )                                                                                          \
@@ -764,6 +770,74 @@ void CbCharacter::bake()
 	}
 }
 
+Ref<AnimationLibrary> CbCharacter::build_track_library()
+{
+	Ref<AnimationLibrary> library;
+	library.instantiate();
+	Skeleton3D* skeleton = m_skeleton.is_empty() ? FindFirst<Skeleton3D>( this ) : Object::cast_to<Skeleton3D>( get_node_or_null( m_skeleton ) );
+	AnimationPlayer* player =
+		m_player.is_empty() ? FindFirst<AnimationPlayer>( this ) : Object::cast_to<AnimationPlayer>( get_node_or_null( m_player ) );
+	if ( player == nullptr )
+	{
+		return library;
+	}
+	Node* animationRoot = player->get_node_or_null( player->get_root_node() );
+	// A copy of the animation without its bone tracks (a track is a bone track when it moves a bone
+	// of the skeleton: those are the pose's, baked to ozz). Animations that are bones only add nothing.
+	auto add = [&]( const String& animationName, const String& clipName ) {
+		if ( animationName.is_empty() || player->has_animation( animationName ) == false || library->has_animation( clipName ) )
+		{
+			return;
+		}
+		Ref<Animation> source = player->get_animation( animationName );
+		Ref<Animation> rest;
+		for ( int t = 0; t < source->get_track_count(); ++t )
+		{
+			Animation::TrackType type = source->track_get_type( t );
+			bool transform = type == Animation::TYPE_POSITION_3D || type == Animation::TYPE_ROTATION_3D || type == Animation::TYPE_SCALE_3D;
+			String path = String( source->track_get_path( t ) );
+			int colon = path.find( ":" );
+			Node* target = animationRoot != nullptr && colon >= 0 ? animationRoot->get_node_or_null( NodePath( path.substr( 0, colon ) ) ) : nullptr;
+			if ( transform && target == skeleton && skeleton != nullptr )
+			{
+				continue;
+			}
+			if ( rest.is_null() )
+			{
+				rest.instantiate();
+				rest->set_length( source->get_length() );
+				rest->set_loop_mode( source->get_loop_mode() );
+				rest->set_step( source->get_step() );
+			}
+			source->copy_track( t, rest );
+		}
+		if ( rest.is_valid() )
+		{
+			library->add_animation( clipName, rest );
+		}
+	};
+
+	// A state machine plays animations by their own names; RESET (from whichever library has it) is
+	// what a channel returns to when its clip has nothing to say.
+	PackedStringArray names = player->get_animation_list();
+	for ( const String& animationName : names )
+	{
+		bool reset = animationName == "RESET" || animationName.ends_with( "/RESET" );
+		add( animationName, reset ? String( "RESET" ) : TrackClipName( animationName ) );
+	}
+	// Without one, the simulation names clips by what they are for ("walk", "stance_melee_swing").
+	for ( int c = 0; c < anim::ClipCount; ++c )
+	{
+		add( m_clips[c].strip_edges(), anim::ClipName( anim::Clip( c ) ) );
+	}
+	Array stanceNames = m_stanceClips.keys();
+	for ( int64_t i = 0; i < stanceNames.size(); ++i )
+	{
+		add( String( m_stanceClips[stanceNames[i]] ).strip_edges(), "stance_" + String( stanceNames[i] ).strip_edges() );
+	}
+	return library;
+}
+
 Dictionary CbCharacter::bake_to( const String& requestedFolder )
 {
 	Dictionary result;
@@ -994,31 +1068,6 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		return String();
 	};
 
-	// Companion tracks: everything but the bones, kept as Godot animations with the baked clips' names
-	// (see cinderbox_companion.h). A track is a bone track when it moves a bone of the skeleton.
-	Ref<AnimationLibrary> companion;
-	companion.instantiate();
-	auto addCompanion = [&]( const String& animationName, const String& clipName ) {
-		Ref<Animation> source = player->get_animation( animationName );
-		Ref<Animation> rest = source->duplicate();
-		for ( int t = rest->get_track_count() - 1; t >= 0; --t )
-		{
-			Animation::TrackType type = rest->track_get_type( t );
-			bool transform = type == Animation::TYPE_POSITION_3D || type == Animation::TYPE_ROTATION_3D || type == Animation::TYPE_SCALE_3D;
-			String path = String( rest->track_get_path( t ) );
-			int colon = path.find( ":" );
-			Node* target = animationRoot != nullptr && colon >= 0 ? animationRoot->get_node_or_null( NodePath( path.substr( 0, colon ) ) ) : nullptr;
-			if ( transform && target == skeleton )
-			{
-				rest->remove_track( t );
-			}
-		}
-		if ( rest->get_track_count() > 0 )
-		{
-			companion->add_animation( clipName, rest );
-		}
-	};
-
 	int clips = 0;
 	AnimationTree* tree = m_tree.is_empty() ? nullptr : Object::cast_to<AnimationTree>( get_node_or_null( m_tree ) );
 	if ( m_tree.is_empty() == false && tree == nullptr )
@@ -1049,7 +1098,6 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 				return fail( problem );
 			}
 			cfg += "clip." + Std( animationName ) + " = " + Std( file ) + "\n";
-			addCompanion( animationName, CompanionName( animationName ) );
 			++clips;
 		}
 		if ( WriteText( folder + "graph.cfg", graph, error ) == false )
@@ -1081,7 +1129,6 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 			return fail( problem );
 		}
 		cfg += std::string( clipName ) + " = " + Std( file ) + "\n";
-		addCompanion( animationName, clipName );
 		++clips;
 	}
 
@@ -1109,7 +1156,6 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 			return fail( problem );
 		}
 		cfg += "stance." + Std( name ) + " = " + Std( file ) + "\n";
-		addCompanion( animationName, "stance_" + name );
 		++stanceClips;
 	}
 
@@ -1129,21 +1175,12 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		cfg += "mask." + Std( layer ) + " = " + Std( roots ) + "\n";
 	}
 	result["stance_clips"] = stanceClips;
-	// What a channel returns to when its clip has nothing to say: RESET, from whichever library has it.
-	PackedStringArray animationNames = player->get_animation_list();
-	for ( const String& animationName : animationNames )
+	// Earlier bakes wrote the animations' other tracks to a file; the game reads them from the
+	// character's AnimationPlayer now (build_track_library).
+	if ( FileAccess::file_exists( folder + "companion.tres" ) )
 	{
-		if ( animationName == "RESET" || animationName.ends_with( "/RESET" ) )
-		{
-			addCompanion( animationName, "RESET" );
-			break;
-		}
+		DirAccess::remove_absolute( folder + "companion.tres" );
 	}
-	if ( ResourceSaver::get_singleton()->save( companion, folder + "companion.tres" ) != OK )
-	{
-		return fail( "cannot write " + folder + "companion.tres" );
-	}
-	result["companion_clips"] = int64_t( companion->get_animation_list().size() );
 
 	if ( WriteText( folder + "anim.cfg", cfg, error ) == false )
 	{

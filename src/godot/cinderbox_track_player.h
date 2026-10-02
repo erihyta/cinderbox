@@ -1,13 +1,15 @@
 #pragma once
 
-// Companion tracks: everything a character's animations do besides moving bones (particles, lights,
-// materials, sounds, props, a weapon's own animation), played in step with the simulation's pose.
+// Everything a character's animations do besides moving bones (particles, lights, materials,
+// sounds, props), played in step with the simulation's pose.
 //
-// The bake splits each animation: bone tracks become ozz clips (the pose the server hit-tests),
-// every other track goes into companion.tres, an AnimationLibrary with the same clip names. At
-// runtime a CbCompanionPlayer sits in the character and runs one hidden AnimationPlayer per channel
-// (0: base locomotion, 1 + l: stance layer l), each set every frame to the clip and time the pose is
-// playing, so a flame keyed at 0.13 s into the swing lights exactly then, on every screen.
+// An animation is authored once, in the character's AnimationPlayer. Its tracks on the Skeleton3D's
+// bones are baked to ozz clips (the pose the server hit-tests); every other track stays what it is
+// and is played here. When a character is first drawn, the game copies those tracks out of its
+// AnimationPlayer (CbCharacter::build_track_library: no file, nothing baked), and each character
+// gets a CbTrackPlayer that runs one hidden AnimationPlayer per channel (0: base locomotion,
+// 1 + l: stance layer l), each set every frame to the clip and time the pose is playing, so a flame
+// keyed at 0.13 s into the swing lights exactly then, on every screen.
 //
 // Rollback-safe: moving forward a little fires method and audio keys once; moving back, jumping far
 // or switching clips only applies values (no key fires twice when a correction replays a moment).
@@ -21,16 +23,16 @@
 namespace cb::gd
 {
 
-// A clip's name in companion.tres. Animations from a named library ("mannequin/Swing") keep their
-// name in the state machine, but a library cannot hold a '/' in a name.
-inline godot::String CompanionName( const godot::String& clip )
+// A clip's name in the track library. Animations from a named library ("mannequin/Swing") keep
+// their name in the state machine, but a library cannot hold a '/' in a name.
+inline godot::String TrackClipName( const godot::String& clip )
 {
 	return clip.replace( "/", "." );
 }
 
-class CbCompanionPlayer : public godot::Node
+class CbTrackPlayer : public godot::Node
 {
-	GDCLASS( CbCompanionPlayer, godot::Node )
+	GDCLASS( CbTrackPlayer, godot::Node )
 
 public:
 	// `root` is the node the tracks' paths start from (the character's AnimationPlayer's root node).

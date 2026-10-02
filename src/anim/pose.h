@@ -31,8 +31,8 @@ struct ClipWeights
 // Blend weights and playback ratios for a state. Pure function of the state and clip lengths.
 ClipWeights ComputeClipWeights( const AnimState& state, const AnimSet& set );
 
-// A clip that is playing, for what presentation plays alongside the pose: companion tracks (VFX,
-// sounds, lights, props) authored on the same timeline as the bones. One per channel: 0 is the base
+// A clip that is playing, for what presentation plays alongside the pose: the animation's other
+// tracks (VFX, sounds, lights, props), authored on the same timeline as the bones. One per channel: 0 is the base
 // locomotion, 1 + l is stance layer l. Names are the baked clips': "walk", or "stance_<clip key>"
 // ("stance_pistol", "stance_melee_walk"). Channels with nothing of their own playing are left out.
 struct ActiveClip

@@ -167,7 +167,7 @@ func _initialize() -> void:
 	library.add_animation("bat_idle", _clip(2.0, true, _bat_idle))
 	library.add_animation("bat_walk", _clip(1.0, true, _bat_stride.bind(0.45)))
 	library.add_animation("bat_run", _clip(0.7, true, _bat_stride.bind(0.8)))
-	# The swing's companion tracks: a fire trail from the hand while the bat comes through, and a
+	# The swing's other tracks: a fire trail from the hand while the bat comes through, and a
 	# whoosh. Ordinary tracks next to the bone ones; the bake keeps them as Godot animation and the
 	# game plays them in step with the swing.
 	_add_swing_effects(attachments)

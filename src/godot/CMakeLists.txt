@@ -10,7 +10,8 @@ add_library(cinderbox_gd SHARED
 	cinderbox_animator.cpp
 	cinderbox_character.cpp
 	cinderbox_client.cpp
-	cinderbox_companion.cpp
+	cinderbox_autobake.cpp
+	cinderbox_track_player.cpp
 	cinderbox_entity_nodes.cpp
 	cinderbox_hud.cpp
 	cinderbox_item_look.cpp

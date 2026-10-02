@@ -193,8 +193,11 @@ private:
 	std::unique_ptr<present::Mirror> m_mirror;
 	godot::String m_character;		 // the character in use ("" = built-in)
 	godot::String m_characterFolder; // res://characters/<name>/
-	godot::Ref<godot::AnimationLibrary> m_companionLibrary; // the character's companion.tres, if any
-	std::unordered_map<uint64_t, godot::ObjectID> m_companions; // visual id -> CbCompanionPlayer
+	// What the character's animations do besides moving bones, copied out of its AnimationPlayer
+	// when the first one is drawn (null: nothing, or not looked yet).
+	godot::Ref<godot::AnimationLibrary> m_trackLibrary;
+	bool m_trackLibraryBuilt = false;
+	std::unordered_map<uint64_t, godot::ObjectID> m_trackPlayers; // visual id -> CbTrackPlayer
 	std::unique_ptr<present::ViewSource> m_source;
 	void Open( std::unique_ptr<present::ViewSource> source );
 	// How many sources this viewer has had: mixed into each frame's reset generation, so the first
@@ -227,11 +230,11 @@ private:
 	void AnnouncePresses( uint16_t pressed );
 	godot::String EntityName( const present::Visual& v ) const;
 	// Sockets are moved to their entity's root in the game (so "^^/RightHand/Item" means the same on
-	// every rig); the companion tracks that reached an item through the socket's authored place are
+	// every rig); the animation tracks that reached an item through the socket's authored place are
 	// pointed at the new one, once per library.
 	std::vector<std::pair<godot::String, godot::String>> m_socketMoves; // from the entity: old path, new
 	godot::ObjectID m_retargetedLibrary;
-	void RetargetCompanion( godot::Node* entity, godot::Node* root );
+	void RetargetTracks( godot::Node* entity, godot::Node* root );
 
 	// Held items: their looks by kind, and each character's sockets (placed from the pose every
 	// frame; items are their children).
@@ -260,7 +263,7 @@ private:
 	godot::Node3D* SocketNode( uint32_t holderNetId, uint8_t socket ) const;
 	void UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, godot::Node3D* node );
 	// Puts an item node in a socket as its "Item" (a leaving one steps aside), and tells the holder's
-	// companion tracks to look again.
+	// animation tracks to look again.
 	void PlaceItem( uint32_t holderNetId, godot::Node3D* socket, godot::Node3D* item );
 	void ItemsChanged( uint32_t holderNetId );
 	present::Models m_pose;		// scratch: the pose being built

@@ -4,8 +4,9 @@
 #   powershell -ExecutionPolicy Bypass -File tools\publish_mod.ps1 -Character robot [-Workshop DIR]
 #
 # 1. Packs server_mods\<mod>\client, or characters\<name>\client (a Godot project, see its "Mod"
-#    export preset), with pack_mod.ps1. A character is baked in the editor first (Bake on its
-#    CbCharacter): the pack ships the baked files, nothing is converted on the way.
+#    export preset), with pack_mod.ps1, which bakes what the server reads first: item bodies and
+#    characters, from the scenes that ship. Players get baked files; nothing is converted when
+#    they join.
 # 2. Names the item by the SHA-256 of that pack: the identity servers announce and clients check.
 # 3. Installs it into the local workshop (what subscribing will do once there is a real workshop):
 #    <workshop>\<mod>\<sha256>.zip, by default the game's user folder, user://workshop.
