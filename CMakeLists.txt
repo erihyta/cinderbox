@@ -24,6 +24,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(Determinism)
 include(Dependencies)
 
+add_subdirectory(src/expr)
 add_subdirectory(src/sim)
 add_subdirectory(src/anim)
 add_subdirectory(src/present)

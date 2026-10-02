@@ -19,6 +19,7 @@
 #include "fields.h"
 #include "hitboxes.h"
 #include "detmath.h"
+#include "expr.h"
 #include "ragdoll.h"
 #include "retarget.h"
 #include "ozz/animation/runtime/local_to_model_job.h"
@@ -38,6 +39,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -1505,6 +1507,16 @@ void TestFields()
 	CHECK( present::FormatFields( schema, "AMMO {pistol.ammo} {{ {round.time} {combat.dead}", &board, globals ) == "AMMO 3 { 12.5 no" );
 	// Nothing published yet (no board) reads as zero too.
 	CHECK( present::CheckCondition( schema, "pistol.ammo == 0", nullptr, globals ) );
+	// The one expression language: logic, arithmetic, a field against a field; and values.
+	CHECK( check( "pistol.ammo > 0 and not combat.dead" ) && check( "combat.dead or pistol.ammo == 3" ) );
+	CHECK( check( "pistol.ammo * 4 < round.time" ) && check( "pistol.ammo + 10 < round.time" ) == false );
+	CHECK( check( "pistol.ammo >" ) == false ); // what does not parse is not true
+	{
+		float value = 0.0f;
+		CHECK( present::EvaluateFields( schema, "round.time * 2 - pistol.ammo", &board, globals, value ) && value == 22.0f );
+		CHECK( present::EvaluateFields( schema, "round.time *", &board, globals, value ) == false );
+	}
+	CHECK( present::FormatFields( schema, "{pistol.ammo * 2} / {round.time / 2} / {pistol.ammo > 2}", &board, globals ) == "6 / 6.2 / 1" );
 
 	// A private field: its value for the viewer's own player, zero for anyone else (declared all the
 	// same, so "?name" still says its mod runs).
@@ -1528,6 +1540,100 @@ void TestFields()
 		std::string error, warnings;
 		CHECK( CompileAnimExpr( "cards.role > 0", schema, expr, error, warnings ) );
 		CHECK( warnings.find( "private" ) != std::string::npos );
+	}
+}
+
+// The one expression language: the grammar every reader shares (state machines, HUD nodes, reactions).
+void TestExpr()
+{
+	std::unordered_map<std::string, float> known = { { "a", 3.0f }, { "b", 4.0f }, { "zero", 0.0f }, { "combat.health", 40.0f },
+													   { "combat.max_health", 80.0f }, { "^^:combat.dead", 1.0f }, { "$other/Head:x", 2.0f } };
+	auto read = [&]( const std::string& name, float& value ) {
+		auto found = known.find( name );
+		if ( found == known.end() )
+		{
+			return false;
+		}
+		value = found->second;
+		return true;
+	};
+	auto value = [&]( const char* text ) {
+		expr::Program program;
+		std::string error;
+		// (What does not compile gives a value no check expects.)
+		return expr::Compile( text, program, error ) ? expr::Evaluate( program, read ) : -12345.0f;
+	};
+	auto fails = [&]( const char* text, const char* saying = nullptr ) {
+		expr::Program program;
+		std::string error;
+		return expr::Compile( text, program, error ) == false && ( saying == nullptr || error.find( saying ) != std::string::npos );
+	};
+
+	// Numbers and names.
+	CHECK( value( "3" ) == 3.0f && value( "0.25" ) == 0.25f && value( "1e-3" ) == 0.001f && value( ".5" ) == 0.5f );
+	CHECK( value( "true" ) == 1.0f && value( "false" ) == 0.0f );
+	CHECK( value( "a" ) == 3.0f && value( "combat.health" ) == 40.0f && value( "nope" ) == 0.0f );
+	CHECK( value( "" ) == 1.0f && value( "   " ) == 1.0f ); // nothing asked: true
+	// Arithmetic, with the usual precedence.
+	CHECK( value( "a + b * 2" ) == 11.0f && value( "(a + b) * 2" ) == 14.0f );
+	CHECK( value( "a - b - 1" ) == -2.0f && value( "b / 2 / 2" ) == 1.0f );
+	CHECK( value( "-a + 1" ) == -2.0f && value( "a - -b" ) == 7.0f && value( "-(a + b)" ) == -7.0f );
+	CHECK( value( "combat.health * 100 / combat.max_health" ) == 50.0f );
+	CHECK( value( "a / zero" ) == 0.0f ); // never a NaN
+	// Comparisons give 1 or 0, and bind looser than arithmetic.
+	CHECK( value( "a < b" ) == 1.0f && value( "a >= b" ) == 0.0f && value( "a + 1 == b" ) == 1.0f && value( "a != 3" ) == 0.0f );
+	CHECK( value( "combat.health < combat.max_health / 2" ) == 0.0f && value( "combat.health <= combat.max_health / 2" ) == 1.0f );
+	// Logic: or, then and, then not; both spellings.
+	CHECK( value( "a and b" ) == 1.0f && value( "a && zero" ) == 0.0f && value( "zero or b" ) == 1.0f && value( "zero || zero" ) == 0.0f );
+	CHECK( value( "zero and zero or a" ) == 1.0f && value( "zero and (zero or a)" ) == 0.0f );
+	CHECK( value( "not zero" ) == 1.0f && value( "!a" ) == 0.0f && value( "!!a" ) == 1.0f );
+	CHECK( value( "!a == 3" ) == 0.0f && value( "!a == 4" ) == 1.0f ); // not (a == 3)
+	CHECK( value( "not a and b" ) == 0.0f && value( "not (a and zero)" ) == 1.0f );
+	// "?name": known or not, whatever its value.
+	CHECK( value( "?a" ) == 1.0f && value( "?zero" ) == 1.0f && value( "?nope" ) == 0.0f && value( "!?nope" ) == 1.0f );
+	CHECK( value( "?a and ?nope" ) == 0.0f );
+	// Names with a path keep it, colon and all, for the reader.
+	CHECK( value( "^^:combat.dead" ) == 1.0f && value( "!^^:combat.dead" ) == 0.0f && value( "$other/Head:x + 1" ) == 3.0f );
+	CHECK( value( "?^^:combat.dead" ) == 1.0f && value( "?$world:nope" ) == 0.0f );
+	{
+		expr::Program program;
+		std::string error, path, plain;
+		CHECK( expr::Compile( "a < $other:combat.health and a > 1", program, error ) );
+		CHECK( program.names.size() == 2 ); // a name is listed once
+		expr::SplitName( "$other:combat.health", path, plain );
+		CHECK( path == "$other" && plain == "combat.health" );
+		expr::SplitName( "combat.health", path, plain );
+		CHECK( path.empty() && plain == "combat.health" );
+	}
+	// What is not an expression says why.
+	CHECK( fails( "a >" ) && fails( "(a" ) && fails( "a b" ) && fails( "a +* b" ) && fails( "3 4" ) && fails( "and" ) );
+	CHECK( fails( "^^combat.dead", "colon" ) && fails( "$other:", "colon" ) );
+	CHECK( fails( "((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))))" ) == false );
+	{
+		// Deeper than the fixed stack: refused, not run.
+		std::string deep = "1";
+		for ( int i = 0; i < 40; ++i )
+		{
+			deep = "1 + (" + deep + ")";
+		}
+		CHECK( fails( deep.c_str(), "nested" ) );
+	}
+
+	// The state machine compiles the same text and gets the same answers: one grammar, two readers.
+	{
+		ModSchema schema;
+		const char* same[] = { "3 + 4 * 2", "(3 + 4) * 2", "!3 == 4", "0 and 0 or 3", "not 3 and 4", "8 / 2 / 2", "1 / 0", "-(3 + 4) < -6" };
+		for ( const char* text : same )
+		{
+			AnimExpr compiled;
+			std::string error, warnings;
+			CHECK( CompileAnimExpr( text, schema, compiled, error, warnings ) );
+			AnimGraphInputs inputs;
+			CHECK( EvaluateAnimExpr( compiled, inputs, 0.0f ) == value( text ) );
+		}
+		AnimExpr compiled;
+		std::string error, warnings;
+		CHECK( CompileAnimExpr( "speed >", schema, compiled, error, warnings ) == false );
 	}
 }
 
@@ -3950,6 +4056,7 @@ int main( int argc, char** argv )
 		{ "anim_blend2d", TestAnimBlend2D },
 		{ "pose_tools", TestPoseTools },
 		{ "fields", TestFields },
+		{ "expr", TestExpr },
 		{ "camera_collision", TestCameraCollision },
 		{ "view_codec", TestViewCodec },
 		{ "view_file", TestViewFile },

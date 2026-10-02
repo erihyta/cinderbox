@@ -1,6 +1,7 @@
 #include "anim_graph.h"
 
 #include "events.h"
+#include "expr.h"
 
 #include <algorithm>
 #include <cctype>
@@ -22,19 +23,8 @@ const char* const kBuiltinNames[AnimExpr::BuiltinCount] = {
 };
 
 // --- Expressions ----------------------------------------------------------------------------------
-
-struct Token
-{
-	enum Kind
-	{
-		End,
-		Number,
-		Name,
-		Symbol,
-	} kind = End;
-	std::string text;
-	float value = 0.0f;
-};
+// The language is the shared one (expr/expr.h). The simulation runs its own copy of a program with
+// every name resolved once, against the schema, to where its value lives.
 
 class ExprCompiler
 {
@@ -48,290 +38,80 @@ public:
 	{
 		m_out.steps.clear();
 		m_out.text = m_text;
-		Next();
-		if ( m_token.kind == Token::End )
+		expr::Program program;
+		if ( expr::Compile( m_text, program, error ) == false )
 		{
-			return true; // empty: always true
-		}
-		if ( Or() == false || Expect( Token::End, "" ) == false )
-		{
-			error = "'" + m_text + "': " + m_error;
 			return false;
 		}
-		// Every step pushes at most one value; a depth check keeps evaluation on a fixed stack.
-		int depth = 0, deepest = 0;
-		for ( const AnimExpr::Step& s : m_out.steps )
+		static_assert( expr::kMaxStack <= kMaxExprStack, "the simulation's stack holds any program the parser accepts" );
+		for ( const expr::Step& s : program.steps )
 		{
-			depth += ( s.op == AnimExpr::Op::Const || s.op == AnimExpr::Op::Var ) ? 1
-					 : ( s.op == AnimExpr::Op::Not || s.op == AnimExpr::Op::Negate ) ? 0
-																					 : -1;
-			deepest = std::max( deepest, depth );
-		}
-		if ( deepest > kMaxExprStack )
-		{
-			error = "'" + m_text + "' is too deeply nested";
-			return false;
+			AnimExpr::Step step;
+			switch ( s.op )
+			{
+				case expr::Op::Const:
+					step.op = AnimExpr::Op::Const;
+					step.value = s.value;
+					break;
+				case expr::Op::Name:
+					step.op = AnimExpr::Op::Var;
+					Resolve( program.names[s.name], step );
+					break;
+				case expr::Op::Known:
+				{
+					// Whether a mod declared the name: the schema says, once.
+					AnimExpr::Step probe;
+					std::string quiet;
+					std::swap( quiet, m_warnings );
+					Resolve( program.names[s.name], probe );
+					std::swap( quiet, m_warnings );
+					step.op = AnimExpr::Op::Const;
+					step.value = probe.kind != AnimExpr::VarKind::Zero ? 1.0f : 0.0f;
+					break;
+				}
+				default:
+					step.op = Translate( s.op );
+					break;
+			}
+			m_out.steps.push_back( step );
 		}
 		return true;
 	}
 
 private:
-	void Next()
+	static AnimExpr::Op Translate( expr::Op op )
 	{
-		const std::string& s = m_text;
-		while ( m_pos < s.size() && std::isspace( static_cast<unsigned char>( s[m_pos] ) ) )
+		switch ( op )
 		{
-			++m_pos;
+			case expr::Op::Not:
+				return AnimExpr::Op::Not;
+			case expr::Op::Negate:
+				return AnimExpr::Op::Negate;
+			case expr::Op::Add:
+				return AnimExpr::Op::Add;
+			case expr::Op::Sub:
+				return AnimExpr::Op::Sub;
+			case expr::Op::Mul:
+				return AnimExpr::Op::Mul;
+			case expr::Op::Div:
+				return AnimExpr::Op::Div;
+			case expr::Op::Less:
+				return AnimExpr::Op::Less;
+			case expr::Op::LessEqual:
+				return AnimExpr::Op::LessEqual;
+			case expr::Op::Greater:
+				return AnimExpr::Op::Greater;
+			case expr::Op::GreaterEqual:
+				return AnimExpr::Op::GreaterEqual;
+			case expr::Op::Equal:
+				return AnimExpr::Op::Equal;
+			case expr::Op::NotEqual:
+				return AnimExpr::Op::NotEqual;
+			case expr::Op::And:
+				return AnimExpr::Op::And;
+			default:
+				return AnimExpr::Op::Or;
 		}
-		m_token = Token{};
-		if ( m_pos >= s.size() )
-		{
-			return;
-		}
-		char c = s[m_pos];
-		if ( std::isdigit( static_cast<unsigned char>( c ) ) || ( c == '.' && m_pos + 1 < s.size() && std::isdigit( static_cast<unsigned char>( s[m_pos + 1] ) ) ) )
-		{
-			size_t start = m_pos;
-			while ( m_pos < s.size() && ( std::isdigit( static_cast<unsigned char>( s[m_pos] ) ) || s[m_pos] == '.' ) )
-			{
-				++m_pos;
-			}
-			if ( m_pos < s.size() && ( s[m_pos] == 'e' || s[m_pos] == 'E' ) )
-			{
-				++m_pos;
-				if ( m_pos < s.size() && ( s[m_pos] == '+' || s[m_pos] == '-' ) )
-				{
-					++m_pos;
-				}
-				while ( m_pos < s.size() && std::isdigit( static_cast<unsigned char>( s[m_pos] ) ) )
-				{
-					++m_pos;
-				}
-			}
-			m_token.kind = Token::Number;
-			m_token.text = s.substr( start, m_pos - start );
-			if ( ParseAnimFloat( m_token.text.data(), m_token.text.size(), m_token.value ) == false )
-			{
-				m_token.kind = Token::Symbol; // reported as unexpected
-			}
-			return;
-		}
-		if ( std::isalpha( static_cast<unsigned char>( c ) ) || c == '_' )
-		{
-			size_t start = m_pos;
-			while ( m_pos < s.size() &&
-					( std::isalnum( static_cast<unsigned char>( s[m_pos] ) ) || s[m_pos] == '_' || s[m_pos] == '.' ) )
-			{
-				++m_pos;
-			}
-			m_token.kind = Token::Name;
-			m_token.text = s.substr( start, m_pos - start );
-			return;
-		}
-		static const char* const kTwo[] = { "==", "!=", "<=", ">=", "&&", "||" };
-		for ( const char* two : kTwo )
-		{
-			if ( s.compare( m_pos, 2, two ) == 0 )
-			{
-				m_token.kind = Token::Symbol;
-				m_token.text = two;
-				m_pos += 2;
-				return;
-			}
-		}
-		m_token.kind = Token::Symbol;
-		m_token.text = std::string( 1, c );
-		++m_pos;
-	}
-
-	bool Is( const char* symbolOrWord ) const
-	{
-		return ( m_token.kind == Token::Symbol || m_token.kind == Token::Name ) && m_token.text == symbolOrWord;
-	}
-
-	bool Expect( Token::Kind kind, const char* text )
-	{
-		if ( m_token.kind == kind && ( kind == Token::End || m_token.text == text ) )
-		{
-			Next();
-			return true;
-		}
-		m_error = m_token.kind == Token::End ? std::string( "unexpected end" ) : "unexpected '" + m_token.text + "'";
-		return false;
-	}
-
-	void Emit( AnimExpr::Op op )
-	{
-		AnimExpr::Step step;
-		step.op = op;
-		m_out.steps.push_back( step );
-	}
-
-	bool Or()
-	{
-		if ( And() == false )
-		{
-			return false;
-		}
-		while ( Is( "or" ) || Is( "||" ) )
-		{
-			Next();
-			if ( And() == false )
-			{
-				return false;
-			}
-			Emit( AnimExpr::Op::Or );
-		}
-		return true;
-	}
-
-	bool And()
-	{
-		if ( Not() == false )
-		{
-			return false;
-		}
-		while ( Is( "and" ) || Is( "&&" ) )
-		{
-			Next();
-			if ( Not() == false )
-			{
-				return false;
-			}
-			Emit( AnimExpr::Op::And );
-		}
-		return true;
-	}
-
-	bool Not()
-	{
-		if ( Is( "not" ) || Is( "!" ) )
-		{
-			Next();
-			if ( Not() == false )
-			{
-				return false;
-			}
-			Emit( AnimExpr::Op::Not );
-			return true;
-		}
-		return Compare();
-	}
-
-	bool Compare()
-	{
-		if ( Add() == false )
-		{
-			return false;
-		}
-		static const std::pair<const char*, AnimExpr::Op> kOps[] = {
-			{ "==", AnimExpr::Op::Equal },	 { "!=", AnimExpr::Op::NotEqual },	 { "<=", AnimExpr::Op::LessEqual },
-			{ ">=", AnimExpr::Op::GreaterEqual }, { "<", AnimExpr::Op::Less }, { ">", AnimExpr::Op::Greater },
-		};
-		for ( const auto& [symbol, op] : kOps )
-		{
-			if ( m_token.kind == Token::Symbol && m_token.text == symbol )
-			{
-				Next();
-				if ( Add() == false )
-				{
-					return false;
-				}
-				Emit( op );
-				return true;
-			}
-		}
-		return true;
-	}
-
-	bool Add()
-	{
-		if ( Mul() == false )
-		{
-			return false;
-		}
-		while ( m_token.kind == Token::Symbol && ( m_token.text == "+" || m_token.text == "-" ) )
-		{
-			AnimExpr::Op op = m_token.text == "+" ? AnimExpr::Op::Add : AnimExpr::Op::Sub;
-			Next();
-			if ( Mul() == false )
-			{
-				return false;
-			}
-			Emit( op );
-		}
-		return true;
-	}
-
-	bool Mul()
-	{
-		if ( Unary() == false )
-		{
-			return false;
-		}
-		while ( m_token.kind == Token::Symbol && ( m_token.text == "*" || m_token.text == "/" ) )
-		{
-			AnimExpr::Op op = m_token.text == "*" ? AnimExpr::Op::Mul : AnimExpr::Op::Div;
-			Next();
-			if ( Unary() == false )
-			{
-				return false;
-			}
-			Emit( op );
-		}
-		return true;
-	}
-
-	bool Unary()
-	{
-		if ( m_token.kind == Token::Symbol && m_token.text == "-" )
-		{
-			Next();
-			if ( Unary() == false )
-			{
-				return false;
-			}
-			Emit( AnimExpr::Op::Negate );
-			return true;
-		}
-		return Primary();
-	}
-
-	bool Primary()
-	{
-		if ( m_token.kind == Token::Number )
-		{
-			AnimExpr::Step step;
-			step.op = AnimExpr::Op::Const;
-			step.value = m_token.value;
-			m_out.steps.push_back( step );
-			Next();
-			return true;
-		}
-		if ( m_token.kind == Token::Symbol && m_token.text == "(" )
-		{
-			Next();
-			return Or() && Expect( Token::Symbol, ")" );
-		}
-		if ( m_token.kind == Token::Name && m_token.text != "and" && m_token.text != "or" && m_token.text != "not" )
-		{
-			AnimExpr::Step step;
-			if ( m_token.text == "true" || m_token.text == "false" )
-			{
-				step.op = AnimExpr::Op::Const;
-				step.value = m_token.text == "true" ? 1.0f : 0.0f;
-			}
-			else
-			{
-				step.op = AnimExpr::Op::Var;
-				Resolve( m_token.text, step );
-			}
-			m_out.steps.push_back( step );
-			Next();
-			return true;
-		}
-		m_error = m_token.kind == Token::End ? std::string( "unexpected end" ) : "unexpected '" + m_token.text + "'";
-		return false;
 	}
 
 	void Resolve( const std::string& name, AnimExpr::Step& step )
@@ -395,9 +175,6 @@ private:
 	const ModSchema& m_schema;
 	AnimExpr& m_out;
 	std::string& m_warnings;
-	size_t m_pos = 0;
-	Token m_token;
-	std::string m_error;
 };
 
 float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stateTime )
@@ -749,104 +526,7 @@ void FireMarkers( const AnimGraph& graph, const AnimGraphState& state, float fro
 
 bool ParseAnimFloat( const char* text, size_t length, float& out )
 {
-	size_t i = 0;
-	bool negative = false;
-	if ( i < length && ( text[i] == '-' || text[i] == '+' ) )
-	{
-		negative = text[i] == '-';
-		++i;
-	}
-	uint64_t mantissa = 0;
-	int digits = 0, exponent = 0;
-	bool any = false, dot = false;
-	for ( ; i < length; ++i )
-	{
-		char c = text[i];
-		if ( c == '.' && dot == false )
-		{
-			dot = true;
-			continue;
-		}
-		if ( c < '0' || c > '9' )
-		{
-			break;
-		}
-		any = true;
-		if ( digits < 18 )
-		{
-			if ( mantissa != 0 || c != '0' )
-			{
-				++digits;
-			}
-			mantissa = mantissa * 10 + uint64_t( c - '0' );
-			if ( dot )
-			{
-				--exponent;
-			}
-		}
-		else if ( dot == false )
-		{
-			++exponent; // digits past what fits only scale
-		}
-	}
-	if ( any == false )
-	{
-		return false;
-	}
-	if ( i < length && ( text[i] == 'e' || text[i] == 'E' ) )
-	{
-		++i;
-		bool negativeExponent = false;
-		if ( i < length && ( text[i] == '-' || text[i] == '+' ) )
-		{
-			negativeExponent = text[i] == '-';
-			++i;
-		}
-		int e = 0;
-		bool anyExponent = false;
-		for ( ; i < length && text[i] >= '0' && text[i] <= '9'; ++i )
-		{
-			e = std::min( e * 10 + ( text[i] - '0' ), 1000 );
-			anyExponent = true;
-		}
-		if ( anyExponent == false )
-		{
-			return false;
-		}
-		exponent += negativeExponent ? -e : e;
-	}
-	if ( i != length )
-	{
-		return false;
-	}
-	// Plain IEEE double arithmetic in a fixed order, then one rounding to float: the same bits on
-	// every machine.
-	static const double kPowers[] = { 1e0,	1e1,  1e2,	1e3,  1e4,	1e5,  1e6,	1e7,  1e8,	1e9,  1e10, 1e11,
-									  1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22 };
-	double value = double( mantissa );
-	int e = exponent;
-	while ( e > 0 && value != 0.0 )
-	{
-		int step = std::min( e, 22 );
-		value *= kPowers[step];
-		e -= step;
-		if ( value > 1e300 )
-		{
-			break;
-		}
-	}
-	while ( e < 0 && value != 0.0 )
-	{
-		int step = std::min( -e, 22 );
-		value /= kPowers[step];
-		e += step;
-		if ( value < 1e-300 )
-		{
-			value = 0.0;
-		}
-	}
-	out = float( negative ? -value : value );
-	return true;
+	return expr::ParseFloat( text, length, out );
 }
 
 int AnimGraph::FindClip( const std::string& name ) const

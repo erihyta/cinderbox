@@ -81,6 +81,8 @@ public:
 	godot::Variant get_local_field( const godot::String& name ) const;
 	bool check_conditions( int64_t net_id, const godot::PackedStringArray& conditions ) const;
 	bool check_local_conditions( const godot::PackedStringArray& conditions ) const;
+	godot::Variant evaluate( int64_t net_id, const godot::String& expression ) const;
+	godot::Variant evaluate_local( const godot::String& expression ) const;
 	// "{pistol.ammo} / 12" with the local player's values filled in.
 	godot::String format_local_fields( const godot::String& format ) const;
 	int64_t get_local_net_id() const;

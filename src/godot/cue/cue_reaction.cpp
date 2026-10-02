@@ -60,6 +60,7 @@ void CbReaction::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_value" ), &CbReaction::get_value );
 	ADD_PROPERTY( PropertyInfo( Variant::NIL, "value", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_NIL_IS_VARIANT ),
 				  "set_value", "get_value" );
+	CB_REACTION_PROP( Variant::STRING, value_expression, PROPERTY_HINT_PLACEHOLDER_TEXT, "combat.health / combat.max_health" )
 	CB_REACTION_PROP( Variant::FLOAT, blend_time, PROPERTY_HINT_RANGE, "0,5,0.01,suffix:s" )
 	CB_REACTION_PROP( Variant::STRING, method, PROPERTY_HINT_PLACEHOLDER_TEXT, "restart" )
 	CB_REACTION_PROP( Variant::ARRAY, method_args, PROPERTY_HINT_NONE, "" )
@@ -74,6 +75,7 @@ void CbReaction::_bind_methods()
 	ADD_GROUP( "Sound", "" );
 	CB_REACTION_PROP( Variant::STRING, sound, PROPERTY_HINT_FILE, "*.wav,*.ogg,*.mp3" )
 	CB_REACTION_PROP( Variant::FLOAT, volume_db, PROPERTY_HINT_RANGE, "-60,24,0.1,suffix:dB" )
+	CB_REACTION_PROP( Variant::STRING, volume_expression, PROPERTY_HINT_PLACEHOLDER_TEXT, "event.strength / 4" )
 	CB_REACTION_PROP( Variant::FLOAT, pitch_scale, PROPERTY_HINT_RANGE, "0.01,4,0.01" )
 	CB_REACTION_PROP( Variant::FLOAT, pitch_jitter, PROPERTY_HINT_RANGE, "0,1,0.01" )
 	CB_REACTION_PROP( Variant::STRING, bus, PROPERTY_HINT_NONE, "" )
@@ -165,6 +167,9 @@ bool CbReaction::Parse()
 		m_valid &= cue::ParseCondition( m_conditions[i], condition, nullptr );
 		m_tests.push_back( condition );
 	}
+	// Empty text compiles to an empty program; whether there is an expression is the text's to say.
+	m_valid &= cue::ParseCondition( m_valueExpression, m_valueProgram, nullptr );
+	m_valid &= cue::ParseCondition( m_volumeExpression, m_volumeProgram, nullptr );
 	return m_valid;
 }
 
@@ -195,7 +200,7 @@ PackedStringArray CbReaction::_get_configuration_warnings() const
 							"set_volume_db, set_pitch_scale, set_speed_scale (set anything else with `property`). Properties: any but "
 							"script and metadata." );
 	}
-	if ( m_property.is_empty() == false && m_value.get_type() == Variant::NIL )
+	if ( m_property.is_empty() == false && m_value.get_type() == Variant::NIL && m_valueExpression.strip_edges().is_empty() )
 	{
 		warnings.push_back( "The property is set to <null>: give the value a type and a value." );
 	}
@@ -228,6 +233,24 @@ PackedStringArray CbReaction::_get_configuration_warnings() const
 		{
 			warnings.push_back( "Condition \"" + m_conditions[i] + "\": " + error );
 		}
+	}
+	const char* expressionNames[] = { "Value expression", "Volume expression" };
+	const String expressions[] = { m_valueExpression, m_volumeExpression };
+	for ( int i = 0; i < 2; ++i )
+	{
+		cue::Condition parsed;
+		if ( cue::ParseCondition( expressions[i], parsed, &error ) == false )
+		{
+			warnings.push_back( String( expressionNames[i] ) + " \"" + expressions[i] + "\": " + error );
+		}
+	}
+	if ( m_valueExpression.strip_edges().is_empty() == false && m_property.is_empty() )
+	{
+		warnings.push_back( "value_expression needs a property to set." );
+	}
+	if ( m_volumeExpression.strip_edges().is_empty() == false && m_sound.is_empty() )
+	{
+		warnings.push_back( "volume_expression needs a sound." );
 	}
 	return warnings;
 }
@@ -267,19 +290,13 @@ bool CbReaction::Holds( const cue::Context& context, Node* subject, String* why 
 	}
 	for ( int64_t i = 0; i < int64_t( m_tests.size() ); ++i )
 	{
-		const cue::Condition& c = m_tests[size_t( i )];
-		Node* whose = entity;
-		if ( c.hasPath )
+		String missing;
+		double value = cue::Evaluate( m_tests[size_t( i )], const_cast<CbReaction*>( this ), entity, context, &missing );
+		if ( missing.is_empty() == false )
 		{
-			Node* found = cue::Resolve( c.path, const_cast<CbReaction*>( this ), context );
-			if ( found == nullptr )
-			{
-				return no( "condition \"" + m_conditions[i] + "\": " + String( c.path ) + " finds nothing" );
-			}
-			whose = found == context.director ? nullptr : cue::EntityOf( found, context.director );
+			return no( "condition \"" + m_conditions[i] + "\": " + missing + " finds nothing" );
 		}
-		auto lookup = [&]( const String& name, Variant& out ) { return cue::LookUp( name, whose, context, out ); };
-		if ( cue::Test( c.test, lookup ) == false )
+		if ( value == 0.0 )
 		{
 			return no( "condition \"" + m_conditions[i] + "\" is false" );
 		}
@@ -345,13 +362,42 @@ bool CbReaction::NeedsServer() const
 	for ( int64_t i = 0; i < m_conditions.size(); ++i )
 	{
 		cue::Condition condition;
-		if ( cue::ParseCondition( m_conditions[i], condition, nullptr ) &&
-			 ( condition.test.contains( "event." ) || ( condition.hasPath && fromOther( condition.path ) ) ) )
+		if ( cue::ParseCondition( m_conditions[i], condition, nullptr ) && cue::ReadsTheCue( condition ) )
+		{
+			return true;
+		}
+	}
+	// A value computed from the cue ("event.strength") is not known before the cue comes.
+	for ( const String& expression : { m_valueExpression, m_volumeExpression } )
+	{
+		cue::Condition parsed;
+		if ( cue::ParseCondition( expression, parsed, nullptr ) && cue::ReadsTheCue( parsed ) )
 		{
 			return true;
 		}
 	}
 	return false;
+}
+
+// What `property` becomes: the value, or the value expression's, as the kind of thing the property
+// holds (a bool for a bool, a whole number for an int, else a number).
+Variant CbReaction::Value( const cue::Context& context, const Variant& current ) const
+{
+	if ( m_valueExpression.strip_edges().is_empty() )
+	{
+		return m_value;
+	}
+	Node* entity = cue::EntityOf( Subject( context ), context.director );
+	double value = cue::Evaluate( m_valueProgram, const_cast<CbReaction*>( this ), entity, context );
+	switch ( current.get_type() )
+	{
+		case Variant::BOOL:
+			return value != 0.0;
+		case Variant::INT:
+			return int64_t( Math::round( value ) );
+		default:
+			return value;
+	}
 }
 
 String CbReaction::Explain( const cue::Context& context, double now ) const
@@ -474,6 +520,19 @@ void CbReaction::Update( const cue::Context& context )
 		m_on = on;
 		Act( on, context );
 	}
+	else if ( on && m_haveOriginal && m_valueExpression.strip_edges().is_empty() == false )
+	{
+		// Still on: the property follows its expression (a health bar follows the health).
+		if ( auto* target = Object::cast_to<Node>( ObjectDB::get_instance( m_onTarget ) ) )
+		{
+			Variant value = Value( context, m_original );
+			if ( value != m_lastSet )
+			{
+				m_lastSet = value;
+				SetProperty( target, NodePath( m_property ).get_as_property_path(), value );
+			}
+		}
+	}
 }
 
 void CbReaction::fire()
@@ -497,7 +556,7 @@ void CbReaction::set_on( bool on )
 	Act( on, context );
 }
 
-void CbReaction::PlaySound( Node* parent, bool global, const Vector3& where )
+void CbReaction::PlaySound( Node* parent, bool global, const Vector3& where, double gain )
 {
 	Ref<AudioStream> stream = ResourceLoader::get_singleton()->load( m_sound, "AudioStream" );
 	if ( stream.is_null() || parent == nullptr )
@@ -506,7 +565,7 @@ void CbReaction::PlaySound( Node* parent, bool global, const Vector3& where )
 	}
 	auto* player = memnew( AudioStreamPlayer3D );
 	player->set_stream( stream );
-	player->set_volume_db( float( m_volumeDb ) );
+	player->set_volume_db( float( m_volumeDb + UtilityFunctions::linear_to_db( gain ) ) );
 	player->set_pitch_scale( float( std::max( 0.01, m_pitchScale + UtilityFunctions::randf_range( -m_pitchJitter, m_pitchJitter ) ) ) );
 	if ( m_bus.is_empty() == false )
 	{
@@ -589,7 +648,8 @@ void CbReaction::Act( bool on, const cue::Context& context )
 				m_haveOriginal = true;
 				m_onTarget = ObjectID( target->get_instance_id() );
 			}
-			SetProperty( target, path, m_value );
+			m_lastSet = Value( context, event ? target->get_indexed( path ) : m_original );
+			SetProperty( target, path, m_lastSet );
 		}
 		else if ( m_haveOriginal )
 		{
@@ -730,7 +790,18 @@ void CbReaction::Act( bool on, const cue::Context& context )
 	// Sound: once, where the scene would go.
 	if ( on && m_sound.is_empty() == false )
 	{
-		PlaySound( parent, global, where.origin );
+		// volume_expression is a factor on top of volume_db: 0 is silent (nothing is played), 1 is
+		// as loud as volume_db says, and no louder than four times that.
+		double gain = 1.0;
+		if ( m_volumeExpression.strip_edges().is_empty() == false )
+		{
+			Node* entity = cue::EntityOf( Subject( context ), context.director );
+			gain = Math::clamp( cue::Evaluate( m_volumeProgram, this, entity, context ), 0.0, 4.0 );
+		}
+		if ( gain > 0.0 )
+		{
+			PlaySound( parent, global, where.origin, gain );
+		}
 	}
 }
 

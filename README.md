@@ -72,6 +72,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M64: predicted state in the viewer: a prediction also says what the server's answer changes, so the ammo count drops and the swing or the recoil starts on the click | done |
 | M65: a hot bat cools by itself wherever it is (put away or dropped while hot, it stayed hot) | done |
 | M66: private fields: a mod tells one player something nobody else is sent (a role, a hand of cards); looks read it like any field, for the viewer's own player | done |
+| M67: one expression language: reactions, predictions, HUD nodes and state machines parse the same text (`cb_expr`): `and` / `or`, arithmetic, a field against a field; a reaction's property and volume can be expressions | done |
 
 ## Building
 
@@ -567,7 +568,7 @@ PredictSwing  CbPrediction   action "fire"   cue "melee.swing"   conditions mele
 |---|---|
 | `action` | the action whose press is predicted (one a server mod declares) |
 | `cue` | the cue the server sends for it: the same name, so the same reactions |
-| `conditions` | the look's copy of the server's rule, read on your own player: [names and comparisons](#effects) |
+| `conditions` | the look's copy of the server's rule, read on your own player: [expressions](#effects) |
 | `cooldown` | the server's own rate (seconds between two predictions) |
 | `changes` | what the server's answer will change on your player: `pistol.ammo -= 1`, `x += 2`, `x = 0`. Shown until the server's cue comes (its own value is in the same frame) or the prediction expires |
 | `stance`, `stance_layer` | the stance the server's mod will set, and the layer it sets it on (`melee_swing` on `full`) |
@@ -607,20 +608,33 @@ mark had to *do* something for those 2 seconds (slow the player), that would be 
 server sets and clears, and the zone a **While** reaction on it. Behind 50 ms each way: the click
 at 1 ms, the server's events at about 160 ms, the zone on for 1.97 s.
 
-Conditions read the server mods' **board** by name:
+Conditions and values are written in **one expression language**, the same text wherever it is
+read: a reaction, a prediction, a HUD node, a character's state machine.
 
-| Condition | True when |
+| Write | Means |
 |---|---|
-| `name` | the field is not zero |
-| `!name` | the field is zero |
-| `?name` | the server declared the field (its mod is running) |
+| `name` / `!name` (or `not name`) | the field is not zero / is zero |
+| `?name` | the server declared the field (its mod is running); `!?name`: it did not (hide the pistol's scoreboard when deathmatch shows its own) |
 | `pistol.gun` (an item kind) | the player holds one, in any socket: what a look should ask, not which loadout slot is out |
-| `!?name` | the server did not declare it (e.g. hide the pistol's scoreboard when deathmatch shows its own) |
-| `name == 2`, `!=`, `>`, `>=`, `<`, `<=` | the comparison holds (`true` / `false` count as 1 / 0) |
+| `name == 2`, `!=`, `>`, `>=`, `<`, `<=` | a comparison: 1 or 0 (`true` / `false` are 1 / 0) |
+| `+ - * /`, `-x`, `( )` | arithmetic; dividing by 0 gives 0 |
+| `and` / `&&`, `or` / `\|\|` | both, either |
+| a field against a field | `combat.health <= combat.max_health / 4` |
 
-`is_local`, `event.value` and `event.strength` are not board fields: whether the entity is the
-local player, and what the event carries. A field the server did not declare reads as zero, so
-reactions for a mod that is not running never match.
+- **Precedence**, loosest first: `or`, `and`, `not`, comparisons, `+ -`, `* /`, unary `-`. So
+  `!a == 2` is `not (a == 2)`, and `a or b and c` is `a or (b and c)`.
+- **Truth**: anything that is not 0. A name nobody declared reads as 0, so looks for a mod that is
+  not running never match. Text that does not parse is false, and the editor says why.
+- **Who reads what**:
+
+| Reader | Plain names are | Also |
+|---|---|---|
+| `CbReaction`, `CbPrediction` | the subject's state, then the world's | `is_local`, `event.value`, `event.strength`; a path and a colon reads another entity: `^^:combat.dead`, `$other:combat.health < 20` |
+| HUD nodes | the local player's fields (private ones too), then the world's | item kinds |
+| [State machines](#state-machines) | simulation values, stances, events, fields, item kinds | resolved once at bake; nothing private |
+
+A list of conditions (`conditions`) holds when all of them do: `["pistol.gun", "!combat.dead"]`
+is `pistol.gun and !combat.dead`.
 
 What an entity looks like *while* something holds (a glowing bat) is authored inside its own scene,
 with the same [`CbReaction` nodes](#reactions).
@@ -629,8 +643,8 @@ The HUD reads the board too, through script-free nodes any HUD scene can use:
 
 | Node | Does |
 |---|---|
-| `CbFieldLabel` | a Label with a `text_format` (`"AMMO {pistol.ammo} / 12"`), shown while its `conditions` hold |
-| `CbFieldBinding` | writes a field into any property of its `target` (default: its parent), `value = field * multiply + add`; with conditions it hides the target while they fail. A `ProgressBar`'s `value` and `max_value`, a panel's `visible`, a colour |
+| `CbFieldLabel` | a Label with a `text_format` (`"AMMO {pistol.ammo} / 12"`), shown while its `conditions` hold. `{an expression}` works too: `"{combat.health * 100 / combat.max_health}%"` |
+| `CbFieldBinding` | writes a field, or an expression over fields (`combat.health / combat.max_health`), into any property of its `target` (default: its parent), `value = field * multiply + add`; with conditions it hides the target while they fail. A `ProgressBar`'s `value` and `max_value`, a panel's `visible`, a colour |
 | `CbEventFeed` | a line per mod event, `"{a}  >  {b}"` with player names, fading after `line_seconds` (a kill feed) |
 | `CbScoreboard` | players as rows: `cells` like `"{name}"`, `"{combat.kills}"`, sorted by `sort_field`, shown while Tab is held and its `conditions` hold |
 
@@ -1182,16 +1196,18 @@ World node: a workshop item cannot reach the game's HUD or menus.
 | `subject` | a path (default `^`): whose state plain condition names read |
 | `event_side` | On a cue: **A**, the cue is at the subject (`melee.hit` is at the attacker); **B**, the subject is the other one (the victim); or **Either**. A subject starting with `$at` / `$other` matches every cue of the name |
 | `subject_kind`, `subject_template` | only for a player / prop / static / ragdoll / item, or one map template (for an item: its kind, `melee.bat`) |
-| `conditions` | [names and comparisons](#effects), `is_local`, `event.value`, `event.strength`. Plain names read the subject's state, then the world's; a path and a colon read another's: `!^^:combat.dead`, `$other:combat.health < 20`, `$world:deathmatch.round` |
+| `conditions` | [expressions](#effects), all of which must hold; also `is_local`, `event.value`, `event.strength`. Plain names read the subject's state, then the world's; a path and a colon read another's: `!^^:combat.dead`, `$other:combat.health < 20`, `$world:deathmatch.round` |
 | `delay`, `chance`, `cooldown` | cue reactions: act N seconds later, only sometimes (0-1), and not more often than every N seconds |
 | `wait_for_server` | cue reactions: do not act on a [predicted](#predictions) press, act when the server's cue comes |
 | `animation_player`, `animation` | play this animation from the start; `animation_off` when a While ends (without one, the animation stops) |
 | `target`, `property`, `value` | set a property on a node; a While puts the old value back when it ends. Sub-paths work: `surface_material_override/0:albedo_color` |
+| `value_expression` | instead of `value`: the property becomes an [expression](#effects)'s value (`combat.health / combat.max_health`, `event.strength * 0.1`). A While keeps it up to date while it is on; a bool property gets true / false, an int a whole number. Reading `event.*` waits for the server's cue |
 | `blend_time` | fade the property there (and back) instead of snapping: numbers, vectors, colours |
 | `target`, `method`, `method_args` | call a method: `restart`, `play` `["slash"]`, `set_visible` `[false]` |
 | `scene`, `scene_parent`, `scene_lifetime` | add a scene (under the reaction's parent by default); a cue's goes after `scene_lifetime` s, a While's when it ends |
 | `place`, `place_node`, `offset` | where the scene and sound go: under its parent, at the cue's **point** or **end**, a **beam** from `place_node` (or the point) to the end, **at** `place_node` (`$at/RightHand`), or **following** the subject |
 | `sound`, `volume_db`, `pitch_scale`, `pitch_jitter`, `bus`, `max_distance` | a sound, once per firing |
+| `volume_expression` | how loud this firing is, as a factor on `volume_db`: `event.strength / 4` (0 plays nothing, 1 is `volume_db`, at most 4) |
 | `shake`, `shake_time`, `flash_color`, `flash_time` | camera shake and a full-screen flash (the director's `screen_effect` signal): the viewer's, so pair them with `is_local` |
 
 - **Presentation only**: nothing here changes the simulation. Everything that exists in the game
@@ -1292,8 +1308,8 @@ Conditions and expressions read simulation values, never scripts:
 | a board field's name (`loadout.slot`) | the player's value (or the global one) |
 | an item kind's name (`melee.bat`) | true while the player holds one, in any socket |
 
-Operators: `and or not && || ! == != < <= > >= + - * /` and parentheses. A name no mod declares
-reads as 0 (the server logs it). The bake fails with a reason for anything it cannot run (nested
+The grammar is the [one expression language](#effects) (`and or not`, comparisons, arithmetic,
+`?name`, parentheses). A name no mod declares reads as 0 (the server logs it). The bake fails with a reason for anything it cannot run (nested
 state machines, other blend nodes, a missing animation).
 
 A mod times its effect by the animation with `ctx.AnimationEmits( event )`: the melee mod hits on
@@ -1379,6 +1395,7 @@ Box3D is fetched with two local patches in `cmake/patches/` (see DESIGN.md, Dete
 
 ```
 cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, Box3D, ENet, ozz)
+src/expr/         the one expression language (cb_expr): conditions and values as text, a parser and an evaluator, no dependencies
 src/sim/          deterministic simulation shared by server and client, as two libraries: cb_sim_data
                   (what the data means: no world is stepped) and cb_sim (the simulation itself)
   events.h          the rings of recent impacts and mod events (part of the state and of every frame)
@@ -1420,7 +1437,7 @@ src/present/      engine-independent presentation, what the Godot extensions dra
   frame.h           PresentationFrame: a copy of what the simulation shows at one tick
   capture.*         CaptureFrame: a simulation's state as a frame (its own library, cb_capture)
   mirror.*          presentation flecs world: interpolation, error smoothing, visual and mod events
-  fields.*          board fields and conditions by name
+  fields.*          board fields by name: conditions, values and "{field}" text
   pose_tools.*      ragdoll poses, pose blending
   scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
 src/godot/        the viewer GDExtension (cinderbox): CinderboxClient (draws a view source's frames as prefabs,

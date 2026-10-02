@@ -1,5 +1,10 @@
 #include "fields.h"
 
+#include "expr.h"
+
+#include <cmath>
+#include <unordered_map>
+
 #include <cstdio>
 #include <cstdlib>
 
@@ -18,23 +23,6 @@ std::string Trim( const std::string& s )
 	}
 	size_t b = s.find_last_not_of( " \t" );
 	return s.substr( a, b - a + 1 );
-}
-
-bool ParseNumber( const std::string& text, float& out )
-{
-	if ( text == "true" )
-	{
-		out = 1.0f;
-		return true;
-	}
-	if ( text == "false" )
-	{
-		out = 0.0f;
-		return true;
-	}
-	char* end = nullptr;
-	out = std::strtof( text.c_str(), &end );
-	return end != text.c_str() && *end == '\0';
 }
 
 } // namespace
@@ -65,69 +53,57 @@ FieldValue ReadField( const ModSchema& schema, const std::string& name, const Bl
 	return v;
 }
 
+namespace
+{
+
+// Programs by their text: HUD nodes ask about the same few conditions every frame.
+const expr::Program* Compiled( const std::string& text )
+{
+	static thread_local std::unordered_map<std::string, std::pair<bool, expr::Program>> cache;
+	auto found = cache.find( text );
+	if ( found == cache.end() )
+	{
+		if ( cache.size() > 1024 )
+		{
+			cache.clear();
+		}
+		std::pair<bool, expr::Program> entry;
+		std::string error;
+		entry.first = expr::Compile( text, entry.second, error );
+		found = cache.emplace( text, std::move( entry ) ).first;
+	}
+	return found->second.first ? &found->second.second : nullptr;
+}
+
+} // namespace
+
+bool EvaluateFields( const ModSchema& schema, const std::string& expression, const Blackboard* board, const int32_t* globals, float& out,
+					 const ExtraFields* extra, const Blackboard* privates )
+{
+	const expr::Program* program = Compiled( expression );
+	if ( program == nullptr )
+	{
+		out = 0.0f;
+		return false;
+	}
+	out = expr::Evaluate( *program, [&]( const std::string& name, float& value ) {
+		if ( extra != nullptr && *extra && ( *extra )( name, value ) )
+		{
+			return true;
+		}
+		FieldValue field = ReadField( schema, name, board, globals, privates );
+		value = field.type == BoardType::Bool ? ( field.AsBool() ? 1.0f : 0.0f ) : field.AsFloat();
+		return field.declared;
+	} );
+	return true;
+}
+
 bool CheckCondition( const ModSchema& schema, const std::string& condition, const Blackboard* board, const int32_t* globals,
 					 const ExtraFields* extra, const Blackboard* privates )
 {
-	auto known = [&]( const std::string& name, float& value ) { return extra != nullptr && *extra && ( *extra )( name, value ); };
-	auto number = [&]( const std::string& name ) {
-		float value = 0.0f;
-		return known( name, value ) ? value : ReadField( schema, name, board, globals, privates ).AsFloat();
-	};
-	auto truth = [&]( const std::string& name ) {
-		float value = 0.0f;
-		return known( name, value ) ? value != 0.0f : ReadField( schema, name, board, globals, privates ).AsBool();
-	};
-	auto declared = [&]( const std::string& name ) {
-		float value = 0.0f;
-		return known( name, value ) || schema.FindField( name ) != nullptr;
-	};
-	std::string text = Trim( condition );
-	if ( text.empty() )
-	{
-		return true;
-	}
-	if ( text.rfind( "!?", 0 ) == 0 )
-	{
-		return declared( Trim( text.substr( 2 ) ) ) == false;
-	}
-	if ( text[0] == '!' )
-	{
-		return truth( Trim( text.substr( 1 ) ) ) == false;
-	}
-	if ( text[0] == '?' )
-	{
-		return declared( Trim( text.substr( 1 ) ) );
-	}
-
-	static const char* kOps[] = { "==", "!=", ">=", "<=", ">", "<" };
-	for ( const char* op : kOps )
-	{
-		size_t at = text.find( op );
-		if ( at == std::string::npos )
-		{
-			continue;
-		}
-		std::string name = Trim( text.substr( 0, at ) );
-		float rhs = 0.0f;
-		if ( ParseNumber( Trim( text.substr( at + std::string( op ).size() ) ), rhs ) == false )
-		{
-			return false;
-		}
-		float lhs = number( name );
-		std::string o = op;
-		if ( o == "==" )
-			return lhs == rhs;
-		if ( o == "!=" )
-			return lhs != rhs;
-		if ( o == ">=" )
-			return lhs >= rhs;
-		if ( o == "<=" )
-			return lhs <= rhs;
-		if ( o == ">" )
-			return lhs > rhs;
-		return lhs < rhs;
-	}
-	return truth( text );
+	// What does not parse is not true.
+	float value = 0.0f;
+	return EvaluateFields( schema, condition, board, globals, value, extra, privates ) && value != 0.0f;
 }
 
 bool CheckConditions( const ModSchema& schema, const std::vector<std::string>& conditions, const Blackboard* board,
@@ -167,8 +143,27 @@ std::string FormatFields( const ModSchema& schema, const std::string& format, co
 			out += format.substr( i );
 			break;
 		}
-		FieldValue v = ReadField( schema, Trim( format.substr( i + 1, close - i - 1 ) ), board, globals, privates );
+		std::string inside = Trim( format.substr( i + 1, close - i - 1 ) );
+		FieldValue v = ReadField( schema, inside, board, globals, privates );
 		char buffer[32];
+		float computed = 0.0f;
+		if ( v.declared == false && schema.FindField( inside ) == nullptr &&
+			 EvaluateFields( schema, inside, board, globals, computed, nullptr, privates ) )
+		{
+			// An expression ("{combat.health * 100 / combat.max_health}"): a whole number as one,
+			// anything else with one decimal.
+			if ( computed == std::floor( computed ) && std::fabs( computed ) < 1e9f )
+			{
+				std::snprintf( buffer, sizeof( buffer ), "%d", int( computed ) );
+			}
+			else
+			{
+				std::snprintf( buffer, sizeof( buffer ), "%.1f", double( computed ) );
+			}
+			out += buffer;
+			i = close;
+			continue;
+		}
 		switch ( v.type )
 		{
 			case BoardType::Float:

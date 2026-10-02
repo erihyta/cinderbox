@@ -186,19 +186,13 @@ String CbPrediction::Refusal( const String& action, const cue::Context& context,
 	Node* local = cue::EntityOf( context.local, context.director );
 	for ( size_t i = 0; i < m_tests.size(); ++i )
 	{
-		const cue::Condition& c = m_tests[i];
-		Node* whose = local;
-		if ( c.hasPath )
+		String missing;
+		double value = cue::Evaluate( m_tests[i], const_cast<CbPrediction*>( this ), local, context, &missing );
+		if ( missing.is_empty() == false )
 		{
-			Node* found = cue::Resolve( c.path, const_cast<CbPrediction*>( this ), context );
-			if ( found == nullptr )
-			{
-				return no( "condition \"" + m_conditions[int64_t( i )] + "\": " + String( c.path ) + " finds nothing" );
-			}
-			whose = found == context.director ? nullptr : cue::EntityOf( found, context.director );
+			return no( "condition \"" + m_conditions[int64_t( i )] + "\": " + missing + " finds nothing" );
 		}
-		auto lookup = [&]( const String& name, Variant& out ) { return cue::LookUp( name, whose, context, out ); };
-		if ( cue::Test( c.test, lookup ) == false )
+		if ( value == 0.0 )
 		{
 			return no( "condition \"" + m_conditions[int64_t( i )] + "\" is false" );
 		}

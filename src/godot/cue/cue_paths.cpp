@@ -57,21 +57,6 @@ double AsNumber( const Variant& v )
 	}
 }
 
-bool ParseNumber( const String& text, double& out )
-{
-	if ( text == "true" || text == "false" )
-	{
-		out = text == "true" ? 1.0 : 0.0;
-		return true;
-	}
-	if ( text.is_valid_float() == false )
-	{
-		return false;
-	}
-	out = text.to_float();
-	return true;
-}
-
 } // namespace
 
 bool IsEntity( const Node* node )
@@ -203,122 +188,80 @@ Node* Resolve( const NodePath& path, Node* origin, const Context& context )
 bool ParseCondition( const String& text, Condition& out, String* error )
 {
 	out = Condition();
-	String rest = text.strip_edges();
-	String prefix;
-	for ( const char* p : { "!?", "!", "?" } )
+	std::string problem;
+	if ( expr::Compile( std::string( text.utf8().get_data() ), out.program, problem ) == false )
 	{
-		if ( rest.begins_with( p ) )
+		if ( error != nullptr )
 		{
-			prefix = p;
-			rest = rest.substr( prefix.length() ).strip_edges();
-			break;
+			*error = String::utf8( problem.c_str() );
 		}
+		return false;
 	}
-	// A path ends at the last colon before any comparison.
-	int64_t op = -1;
-	for ( int64_t i = 0; i < rest.length(); ++i )
+	for ( const std::string& name : out.program.names )
 	{
-		char32_t c = rest[i];
-		if ( c == '=' || c == '!' || c == '<' || c == '>' )
+		std::string path, plain;
+		expr::SplitName( name, path, plain );
+		if ( path.empty() == false && CheckPath( NodePath( String::utf8( path.c_str() ) ), error ) == false )
 		{
-			op = i;
-			break;
-		}
-	}
-	String head = op >= 0 ? rest.substr( 0, op ) : rest;
-	int64_t colon = head.rfind( ":" );
-	if ( colon >= 0 )
-	{
-		out.hasPath = true;
-		out.path = NodePath( head.substr( 0, colon ).strip_edges() );
-		if ( out.path.is_empty() || CheckPath( out.path, error ) == false )
-		{
-			if ( error != nullptr && error->is_empty() )
-			{
-				*error = "nothing before the colon";
-			}
 			return false;
 		}
-		rest = rest.substr( colon + 1 ).strip_edges();
 	}
-	if ( rest.is_empty() )
-	{
-		if ( error != nullptr )
-		{
-			*error = "no name to test";
-		}
-		return false;
-	}
-	// "^^combat.health": a path without its colon would test a name nothing has.
-	if ( out.hasPath == false && ( rest.begins_with( "^" ) || rest.begins_with( "$" ) ) )
-	{
-		int64_t split = rest.begins_with( "^" ) ? 0 : rest.find( "/" );
-		while ( split < rest.length() && rest[split] == '^' )
-		{
-			++split;
-		}
-		if ( error != nullptr )
-		{
-			*error = "put a colon between the path and the name, like " +
-					 ( rest.begins_with( "^" ) ? rest.substr( 0, split ) + ":" + rest.substr( split ) : String( "$other:combat.health" ) );
-		}
-		return false;
-	}
-	out.test = prefix + rest;
 	return true;
 }
 
-bool Test( const String& condition, const std::function<bool( const String&, Variant& )>& lookup )
+double Evaluate( const Condition& condition, Node* origin, Node* subject, const Context& context, String* missing )
 {
-	String text = condition.strip_edges();
-	if ( text.is_empty() )
-	{
-		return true;
-	}
-	Variant value;
-	if ( text.begins_with( "!?" ) )
-	{
-		return lookup( text.substr( 2 ).strip_edges(), value ) == false;
-	}
-	if ( text.begins_with( "!" ) && text.begins_with( "!=" ) == false )
-	{
-		lookup( text.substr( 1 ).strip_edges(), value );
-		return AsNumber( value ) == 0.0;
-	}
-	if ( text.begins_with( "?" ) )
-	{
-		return lookup( text.substr( 1 ).strip_edges(), value );
-	}
-	static const char* kOps[] = { "==", "!=", ">=", "<=", ">", "<" };
-	for ( const char* op : kOps )
-	{
-		int64_t at = text.find( op );
-		if ( at < 0 )
+	return double( expr::Evaluate( condition.program, [&]( const std::string& name, float& value ) {
+		std::string path, plain;
+		expr::SplitName( name, path, plain );
+		Node* whose = subject;
+		if ( path.empty() == false )
 		{
-			continue;
+			Node* found = Resolve( NodePath( String::utf8( path.c_str() ) ), origin, context );
+			if ( found == nullptr )
+			{
+				if ( missing != nullptr )
+				{
+					*missing = String::utf8( path.c_str() );
+				}
+				return false;
+			}
+			whose = found == context.director ? nullptr : EntityOf( found, context.director );
 		}
-		double rhs = 0.0;
-		if ( ParseNumber( text.substr( at + String( op ).length() ).strip_edges(), rhs ) == false )
+		Variant found;
+		bool known = LookUp( String::utf8( plain.c_str() ), whose, context, found );
+		value = float( AsNumber( found ) );
+		return known;
+	} ) );
+}
+
+bool ReadsTheCue( const Condition& condition )
+{
+	for ( const std::string& name : condition.program.names )
+	{
+		std::string path, plain;
+		expr::SplitName( name, path, plain );
+		if ( plain.rfind( "event.", 0 ) == 0 || path == "$other" || path.rfind( "$other/", 0 ) == 0 || path.rfind( "$other@", 0 ) == 0 )
 		{
-			return false;
+			return true;
 		}
-		lookup( text.substr( 0, at ).strip_edges(), value );
-		double lhs = AsNumber( value );
-		String o = op;
-		if ( o == "==" )
-			return lhs == rhs;
-		if ( o == "!=" )
-			return lhs != rhs;
-		if ( o == ">=" )
-			return lhs >= rhs;
-		if ( o == "<=" )
-			return lhs <= rhs;
-		if ( o == ">" )
-			return lhs > rhs;
-		return lhs < rhs;
 	}
-	lookup( text, value );
-	return AsNumber( value ) != 0.0;
+	return false;
+}
+
+PackedStringArray StateNames( const Condition& condition )
+{
+	PackedStringArray out;
+	for ( const std::string& name : condition.program.names )
+	{
+		std::string path, plain;
+		expr::SplitName( name, path, plain );
+		if ( plain != "is_local" && plain.rfind( "event.", 0 ) != 0 )
+		{
+			out.push_back( String::utf8( plain.c_str() ) );
+		}
+	}
+	return out;
 }
 
 bool LookUp( const String& name, Node* entity, const Context& context, Variant& out )
