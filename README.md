@@ -64,6 +64,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M56: the viewer predicts: a look says which cue the server will answer a press with (`CbPrediction`), and it plays at once with the same reactions; the server's cue then plays only what had to wait for it | done |
 | M57: the bat lights its own flames: a reaction on the swing's cue in the bat's scene, not a key in the character's animation; `wait_for_server` keeps a reaction off a predicted press | done |
 | M58: an example of a second action: the pistol's right button marks the player its ray finds (a zone around them for 2 seconds), with the server part and the look part side by side | done |
+| M59: no companion files: an animation's non-bone tracks are read from the character's own `AnimationPlayer` when it is first drawn; a character is baked when its scene is saved and again when its item is packed | done |
 
 ## Building
 
@@ -710,7 +711,7 @@ The [Universal Animation Library](https://quaternius.com) mannequin by Quaterniu
   fire is the melee mod's own look).
 - **Hitboxes**: capsules along the spine, arms and legs sized from the bone lengths, a head
   sphere, a hips box.
-- **Edit it** in the editor like any scene and press **Bake character**. The generator that made
+- **Edit it** in the editor like any scene: saving the scene bakes it. The generator that made
   it only re-bakes an existing scene; `-- --force` builds it from scratch (and discards edits):
 
 ```sh
@@ -756,8 +757,8 @@ already holds what the game needs, baked in the editor.
 | In the item, under `characters/<name>/` | Made by | Read by |
 |---|---|---|
 | `character.tscn`: the model, a `CbCharacter` at the root, a `CinderboxSkeleton`, `CbHitbox` zones | the author | clients (the player prefab) |
-| `skeleton.ozz`, `idle.ozz`, `walk.ozz`, `run.ozz`, `jump_start.ozz`, `fall.ozz`, `land.ozz`, `anim.cfg` | the Bake button | clients (poses) and the server (hit tests) |
-| `hitboxes.cfg` | the Bake button | the server |
+| `skeleton.ozz`, `idle.ozz`, `walk.ozz`, `run.ozz`, `jump_start.ozz`, `fall.ozz`, `land.ozz`, `anim.cfg` | the bake (on save, and when the item is packed) | clients (poses) and the server (hit tests) |
+| `hitboxes.cfg` | the bake | the server |
 
 With `--character none`, players use the procedural placeholder rig, which has default zones
 (head, torso, arm, leg).
@@ -786,8 +787,11 @@ With `--character none`, players use the procedural placeholder rig, which has d
      The default, `RightUpperArm:1` to `RightHand`, points the right arm;
    - the stances it supports: `stance_clips` maps stance clip names (`pistol`, `melee_walk`) to
      animations, and `masks` maps layers to bones (`upper` → `Spine`).
-4. Select the `CbCharacter` and press **Bake character** in the inspector. It writes the `.ozz` files,
-   `anim.cfg` and `hitboxes.cfg` next to the scene (clips are sampled at `sample_rate`, 30 Hz).
+4. Save the scene. That bakes it: the `.ozz` files, `anim.cfg` and `hitboxes.cfg` are written next
+   to the scene (clips are sampled at `sample_rate`, 30 Hz). Publishing bakes it again from the
+   scene that ships, so an item is never stale. The **Bake character** button on the
+   `CbCharacter` does the same by hand (for an animation saved to its own file, which a scene save
+   does not see). A bake that changes nothing writes nothing.
 5. List `character.tscn` in the preset's `export_files` and the baked files in its
    `include_filter` (see the robot's preset), then publish:
 
@@ -846,31 +850,39 @@ it was set, which is how a swing is made. Stances are part of the simulation's a
 everyone draws them and the server's hit tests use them. The robot ships the pistol and bat
 stances; the engine's placeholder rig has none (the engine carries no game content).
 
-### Companion tracks
+### An animation's other tracks
 
-A character's animations are ordinary Godot animations: bone tracks next to any other track. The
-bake splits them:
+A character's animations are ordinary Godot animations, authored once in its `AnimationPlayer`:
+bone tracks next to any other track. One rule says where each track goes:
 
 | Tracks | Become | Played by |
 |---|---|---|
-| bone position / rotation / scale | ozz clips | the pose (drawn by clients, hit-tested by the server) |
-| everything else: value (`emitting`, `visible`, `light_energy`, material colours), method, audio, animation | `companion.tres`, same clip names | each client, in step with the pose |
+| position / rotation / scale of the `Skeleton3D`'s bones | ozz clips (the bake) | the pose (drawn by clients, hit-tested by the server) |
+| everything else: value (`emitting`, `visible`, `light_energy`, material colours), method, audio, animation | nothing: they stay in the animation | each client, in step with the pose |
 
 So a flame on the swing is two keys on the swing animation (`Flame:emitting` on at 0.1 s, off at
-0.34 s), and a whoosh is an audio key, all in Godot's animation editor. At runtime a
-`CbCompanionPlayer` plays, per channel (the base locomotion, each stance layer), the clip the pose is
-playing at the time it is at: values land exactly, method and audio keys fire once (a rollback that
-replays a moment does not fire it again, a long jump such as a join fires nothing), and a channel
-whose clip has no companion tracks returns to the `RESET` animation's values. No scripts: tracks call
-built-in methods (`restart`, `play`) or set properties. The robot's bat swing has a fire trail and a
-whoosh made this way.
+0.34 s), and a whoosh is an audio key, all in Godot's animation editor. There is no second file
+and nothing to bake for them: when a character is first drawn, the game copies the non-bone
+tracks out of its `AnimationPlayer` and plays them, per channel (the base locomotion, each stance
+layer), at the clip and time the pose is playing.
+
+- Values land exactly; method and audio keys fire once (a rollback that replays a moment does not
+  fire it again; a long jump such as a join fires nothing).
+- A channel whose clip is bones only returns to the `RESET` animation's values.
+- No scripts: tracks call built-in methods (`restart`, `play`) or set properties.
+- Looks only: the server never sees these tracks.
+- With network delay, a swing the server started is first seen a little way in, and method and
+  audio keys before that point do not fire (values do). Sounds that must not be missed belong to
+  a [reaction](#reactions) on the mod's cue.
+- Animation packs are bones only: their other tracks are not played.
+
+The robot's bat swing has a fire trail and a whoosh made this way. Put the nodes the tracks reach
+(particles, lights, an `AudioStreamPlayer3D`) in the character scene, and list the sounds in the
+item's export preset.
 
 ```sh
-godot --headless --path godot --script res://addons/cinderbox_maps/check_companion.gd
+godot --headless --path godot --script res://addons/cinderbox_maps/check_track_player.gd
 ```
-
-Put the companion's scene nodes (particles, lights, an `AudioStreamPlayer3D`) in the character
-scene, and list `companion.tres` and the sounds in the item's export preset.
 
 ### Animation packs
 
@@ -1152,7 +1164,7 @@ World node: a workshop item cannot reach the game's HUD or menus.
   are typed into a path field through its ⋮ menu, Edit.
 - **Resources are shared** between instances of a scene. A reaction that changes a material changes
   every copy, unless the material is **Local to Scene** (the bat's barrel is).
-- **Rollback**: like companion tracks, a cue reaction that already played is not taken back if a
+- **Rollback**: like an animation's other tracks, a cue reaction that already played is not taken back if a
   prediction turns out wrong.
 - **Anything can drive a director**: `add_entity( node, kind, template )`, `set_state( node, {...} )`,
   `set_world_state`, `set_local`, `cue( name, at, other, { value, strength, point, end } )`,
@@ -1198,7 +1210,7 @@ and rollback replays it exactly; the tree itself never runs in the game.
 | states: `Animation` nodes, `BlendSpace1D`, `BlendSpace2D` (points are animations, play mode forward or backward) | clip states, blend states (phase-synced, so feet stay in step; 2D blends inside Godot's triangles) |
 | transitions: Auto advance, advance condition, advance expression, priority, crossfade, Immediate / At End | the same (Sync switching becomes Immediate; crossfades are linear) |
 | markers on animations | the mod event of the same name, from the player, when the clip passes it |
-| every other track (particles, sounds, lights) | companion tracks, played by clients in step |
+| every other track (particles, sounds, lights) | stays in the animation, played by clients in step ([An animation's other tracks](#an-animations-other-tracks)) |
 
 Set it up on the `CbCharacter`:
 

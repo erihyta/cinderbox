@@ -666,6 +666,9 @@ bat the whole body, and neither mod knows what a character looks like.
   additive blending (layers replace, weighted); a freelook key while camera-facing.
 
 ## Companion tracks (M23)
+(Since M59 there is no `companion.tres` and the player is `CbTrackPlayer`: see
+[No companion files](#no-companion-files-m59). What follows is how it was built.)
+
 Godot animations already carry VFX and sound: value tracks toggle `emitting`, audio tracks play
 streams, method tracks call built-in methods. The bake used to keep only the bone tracks. Now it
 splits each animation: bones to ozz (the shared pose), the rest to `companion.tres`, an
@@ -1749,6 +1752,43 @@ so nothing was baked again). `CbReaction.wait_for_server` keeps it off the predi
 swing's sound is heard on the click, the flames come with the body's swing. Measured behind 50 ms
 each way: sound at 1 ms, the server's swing at 160 ms, flames on 0.5 s after it and off 0.4 s later.
 
+## No companion files (M59)
+An animation is authored once, in the character's `AnimationPlayer`. Its bone tracks go to ozz;
+every other track used to be copied into `companion.tres` by the bake, a second file that was
+stale whenever a key was edited and the bake forgotten. The copy is made by the game now.
+
+| Was | Is |
+|---|---|
+| the bake writes `companion.tres` | `CbCharacter::build_track_library()`: the non-bone tracks of every animation, copied (`Animation::copy_track`) under the names the simulation plays clips by; no file |
+| the client loads `companion.tres` with the character | the client builds the library from the first character it draws, checks it like any look (listed methods only), and keeps it for the others |
+| `CbCompanionPlayer`, `cinderbox_companion.*`, `check_companion.gd` | `CbTrackPlayer`, `cinderbox_track_player.*`, `check_track_player.gd`; the playing itself did not change |
+| the Bake button, pressed by hand | saving the scene bakes it (`CbAutoBakePlugin`, an editor plugin in the extension); packing an item bakes its characters (`bake_characters.gd` from `pack_mod.ps1`); the button stays for animations saved to their own files |
+| a bake rewrites every file | `WriteFile` leaves a file alone when its bytes are the same: a bake that changes nothing touches nothing |
+
+- **The bake is repeatable**: baking the mannequin again gives the same bytes (0.6 s with Godot's
+  start), which is what makes baking on every save and every publish safe.
+- **Packs**: their `companion.tres` was written and never read. It is gone; a pack is bones only.
+- **Found on the way**: the robot's `anim.cfg` in the repository was from an older bake (no
+  `turn_legs`, another order); packing baked it again. The clips did not change.
+
+**Verified**
+- `check_track_player.gd` (14 checks, 6 new: the library from a character, bone tracks left out,
+  stance names, the source untouched); the other headless checks; all suites.
+- A server with `--character robot`, the real client: the swing's flame goes on at 0.10 s and off
+  at 0.34 s, its whoosh plays at 0.08 s, from the scene's own animations with no file. A headless
+  editor opening the robot's scene and saving it bakes it (a deleted `hitboxes.cfg` came back).
+- The robot, melee and sneak items republished without the files.
+
+**Not done**
+- Behind 50 ms each way the swing is first seen about 0.15 s in: the flame shows from there, the
+  whoosh (a key at 0.08 s) does not play. It was so before; a key the clip is already past does
+  not fire. A sound that must not be missed is a reaction on the cue.
+- A pack's non-bone tracks are not played.
+- The character scene ships its animations' bone tracks too (the game plays the ozz clips);
+  nothing strips them from the item.
+- An animation saved to its own file and edited there does not bake on save: the button, or the
+  next publish, does.
+
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
 - **Replay**: `cb_server --record` writes every authoritative input frame plus a checksum every 60 ticks. `cb_replay verify` re-simulates the session headlessly, and `cb_client --replay` plays it with seeking (keyframes every 300 ticks).
@@ -1880,3 +1920,4 @@ The ordered plan for the client is in [ROADMAP.md](ROADMAP.md). These are loose 
 56. **M56** (done): the viewer predicts: `CbPrediction` (action, cue, conditions, cooldown) and `CbDirector.press`; the server's cue of the same name is the echo and plays only the reactions that waited for it; `pressed:<action>` cues removed; one reaction per cue in the pistol and melee looks. A streaming client predicts the same way: the viewer takes the press, whatever the source. (M55, mods run on clients that simulate, was tried on a branch and dropped for this.)
 57. **M57** (done): the bat lights its own flames (a reaction on `melee.swing` instead of a playback key in the character's swing); `CbReaction.wait_for_server`.
 58. **M58** (done): the pistol's `mark` action (right mouse): a ray, `pistol.scan` and `pistol.marked`; in the look a predicted click, a beam and a zone that follows the marked player for 2 seconds (README, "Example: a second action"); `net_pistol_mark`.
+59. **M59** (done): no companion files: `CbCharacter.build_track_library` (the client copies an animation's non-bone tracks out of the character's `AnimationPlayer`), `CbTrackPlayer` (was `CbCompanionPlayer`), baking on scene save and at pack time, writes only when bytes change.
