@@ -849,6 +849,35 @@ std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, cons
 							  []( const AnimGraphTransition& a, const AnimGraphTransition& b ) { return a.priority < b.priority; } );
 		}
 	}
+	// An event that leads into a state starts it over when the layer is already there.
+	for ( AnimGraphLayer& layer : graph->layers )
+	{
+		for ( size_t from = 0; from < layer.states.size(); ++from )
+		{
+			for ( const AnimGraphTransition& t : layer.states[from].transitions )
+			{
+				bool onEvent = false;
+				for ( const AnimExpr::Step& step : t.condition.steps )
+				{
+					onEvent |= step.op == AnimExpr::Op::Var && step.kind == AnimExpr::VarKind::Event;
+				}
+				if ( onEvent == false || t.atEnd || size_t( t.to ) == from )
+				{
+					continue;
+				}
+				std::vector<AnimGraphTransition>& restarts = layer.states[size_t( t.to )].restarts;
+				bool have = false;
+				for ( const AnimGraphTransition& r : restarts )
+				{
+					have |= r.condition.text == t.condition.text;
+				}
+				if ( have == false )
+				{
+					restarts.push_back( t );
+				}
+			}
+		}
+	}
 	for ( const AnimGraphClip& clip : graph->clips )
 	{
 		for ( const AnimGraphClip::Marker& m : clip.markers )
@@ -1039,6 +1068,7 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphP
 		L.stateTime = std::min( L.stateTime + dt, kMaxStateTime );
 		FireMarkers( graph, state, before, L.time, wrapped, entered, markers );
 
+		bool switched = false;
 		for ( const AnimGraphTransition& t : state.transitions )
 		{
 			if ( t.atEnd )
@@ -1069,6 +1099,28 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphP
 			L.fadeLength = t.xfade;
 			L.blend = next.blend ? EvaluateAnimExpr( next.input, in, 0.0f ) : 0.0f;
 			L.blendY = next.planar ? EvaluateAnimExpr( next.inputY, in, 0.0f ) : 0.0f;
+			switched = true;
+			break;
+		}
+		if ( switched )
+		{
+			continue;
+		}
+		// Staying: an event that leads here starts the state over (the next shot's recoil), fading
+		// from where it was.
+		for ( const AnimGraphTransition& t : state.restarts )
+		{
+			if ( EvaluateAnimExpr( t.condition, in, L.stateTime ) == 0.0f )
+			{
+				continue;
+			}
+			L.previous = L.state;
+			L.previousTime = L.time;
+			L.previousBlend = L.blend;
+			L.previousBlendY = L.blendY;
+			L.time = 0.0f;
+			L.stateTime = 0.0f;
+			L.fadeLength = t.xfade;
 			break;
 		}
 	}
