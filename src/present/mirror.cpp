@@ -328,6 +328,10 @@ void Mirror::SyncModEvents( const PresentationFrame& frame, bool reset )
 	for ( uint32_t i = 0; i < replay; ++i )
 	{
 		const ModEventRecord& record = frame.modEvents[( frame.modEventCount - replay + i ) % kModEventHistory];
+		if ( record.type == 0xFFFF )
+		{
+			continue; // blanked: about something this viewer is not shown (visibility.h)
+		}
 		Event event;
 		event.type = EventType::Mod;
 		event.netId = record.netIdA;
@@ -401,6 +405,10 @@ void Mirror::SyncImpacts( const PresentationFrame& frame, bool reset )
 		// Oldest of the ones still worth playing, first.
 		uint32_t index = ( frame.impactCount - replay + i ) % kImpactHistory;
 		const ImpactRecord& record = frame.impacts[index];
+		if ( record.netIdA == 0 && record.netIdB == 0 )
+		{
+			continue; // blanked: about something this viewer is not shown (visibility.h)
+		}
 
 		Event event;
 		event.type = EventType::Impact;

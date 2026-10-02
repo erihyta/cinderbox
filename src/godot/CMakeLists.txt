@@ -1,7 +1,8 @@
-# The Godot client, as two GDExtensions with bytes between them (present/view_codec.h):
-#   cinderbox       the viewer (cinderbox_client.h), the cue addon, HUD nodes, authoring and bake
-#                   nodes. It links no simulation and no networking; a mod's project needs only it.
-#   cinderbox_peer  the sources that simulate (peer/): a live connection, a recording.
+# The Godot client, as GDExtensions with bytes between them (present/view_codec.h):
+#   cinderbox         the viewer (cinderbox_client.h), the cue addon, HUD nodes, authoring and bake
+#                     nodes. It links no simulation and no networking; a mod's project needs only it.
+#   cinderbox_peer    the sources that simulate (peer/): a live connection, a recording.
+#   cinderbox_stream  the source that is sent frames by a server (stream/): networking, no simulation.
 
 add_subdirectory(cue)
 
@@ -46,9 +47,11 @@ endif()
 
 # The peer: the client core (simulation, networking, the sources) behind one class.
 add_library(cinderbox_peer_gd SHARED
+	packet_handoff.cpp
 	peer/cinderbox_peer.cpp
 	peer/register_types.cpp
 )
+target_include_directories(cinderbox_peer_gd PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(cinderbox_peer_gd PRIVATE cb_client_core godot::cpp)
 cb_target_warnings(cinderbox_peer_gd)
 set_target_properties(cinderbox_peer_gd PROPERTIES
@@ -61,4 +64,24 @@ set_target_properties(cinderbox_peer_gd PROPERTIES
 )
 if(MINGW)
 	target_link_options(cinderbox_peer_gd PRIVATE -static)
+endif()
+
+# The stream: networking and the view codec behind one class. No simulation is linked.
+add_library(cinderbox_stream_gd SHARED
+	packet_handoff.cpp
+	stream/cinderbox_stream.cpp
+)
+target_include_directories(cinderbox_stream_gd PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(cinderbox_stream_gd PRIVATE cb_stream godot::cpp)
+cb_target_warnings(cinderbox_stream_gd)
+set_target_properties(cinderbox_stream_gd PROPERTIES
+	PREFIX "lib"
+	OUTPUT_NAME "cinderbox_stream${CB_GODOTCPP_SUFFIX}"
+	CXX_VISIBILITY_PRESET hidden
+	RUNTIME_OUTPUT_DIRECTORY "$<1:${CB_GODOT_BIN_DIR}>"
+	LIBRARY_OUTPUT_DIRECTORY "$<1:${CB_GODOT_BIN_DIR}>"
+	PDB_OUTPUT_DIRECTORY "$<1:${CB_GODOT_BIN_DIR}>"
+)
+if(MINGW)
+	target_link_options(cinderbox_stream_gd PRIVATE -static)
 endif()

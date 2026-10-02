@@ -5,7 +5,6 @@ add_library(cb_client_core STATIC
 	live_source.cpp
 	replay_player.cpp
 	replay_source.cpp
-	source_thread.cpp
 )
 target_include_directories(cb_client_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(cb_client_core PUBLIC cb_net cb_capture)

@@ -21,6 +21,8 @@ source  <──control───   viewer        named commands with a number ("p
 | Live source | connection, prediction, rollback on its own thread (peer) | `src/client/live_source.*` |
 | Replay source | a recording re-simulated on its own thread (peer) | `src/client/replay_source.*` |
 | View file source | a file of frames played back, no simulation (viewer) | `src/present/view_file.*` |
+| Stream source | frames sent by a server, input sent up; nothing predicted, shown only what the mods allow (stream) | `src/stream/stream_source.*` |
+| Stream | the `cinderbox_stream` extension: `CinderboxStream`, a source the server sends frames to. Networking, no simulation | `src/godot/stream/`, `src/stream/` |
 | Any object | `take( whole ) -> PackedByteArray`: a script can be a source | `src/godot/object_source.*` |
 
 Everything below adds a source or changes what a frame carries. The viewer stays the same.
@@ -31,33 +33,32 @@ Each step is a milestone of its own, and each leaves the game playable.
 
 | # | Step | Why | Needs |
 |---|---|---|---|
-| 1 | **Stream source** | a client that does not simulate; fog of war | nothing |
+| 1 | **Predicted mods** | your own actions answer at once, and a mod's command stops being a rollback | nothing |
 | 2 | **Private fields** | secrets that are not physical (a role, a hand of cards) | nothing |
-| 3 | **Predicted rules as data** | a rule is written once, and your own actions are predicted | nothing |
+| 3 | **A stream that feels local** | a streaming client's own character answers a round trip late | nothing |
 | 4 | **One condition language** | reactions and the HUD read the game the same way | nothing |
 
-### 1. Stream source
+### 1. Predicted mods
 
-- **What**: the server captures a `ViewFrame` per streaming client and sends the bytes; the client
-  sends input up as it does now. No simulation, no prediction, no rollback on that client.
-- **Where it lives**: a third kind of source object next to `CinderboxPeer`, small enough to be its
-  own extension (ENet and the codec, no simulation), so a streaming client ships without the peer.
-- **What a frame costs**: compact packets at 20 frames a second are 67 kbit/s for 4 players, 429
-  for 32 and 671 for 64 (DESIGN.md, M53; the aim was 300 for 32). `cb_replay view` says where the
-  bytes go. What is left to take, in the order of what it would save:
-  - each client is sent only what is near it (the same hook that hides things for fog of war);
-  - animation: 24 bytes a player a frame, a third of it the mask of which values changed;
-  - rotations: 4 bytes whenever a body turned at all; a turn since the last frame fits in less;
-  - events: 44 bytes each, most of them zeros.
-- **For**: spectators, weak machines, and servers whose game does not need predicted physics
-  (cards, boards, turn-based).
-- **Fog of war**: the server filters each client's frame through a mod hook
-  (`bool Visible( viewer, entity )`). Only streaming clients can be kept in the dark: a client that
-  simulates the world has the world.
-- **Honest cost**: without prediction, the local player moves a round trip late. A small local
-  mover for the own character is a later step, not part of this one.
-- **Done when**: a client joins with `--stream`, plays with the server's mods and looks, and a test
-  mod hides an entity from one player and not the other.
+- **The problem**: a mod's command is something no client could predict, so every board write is a
+  rollback, and feedback that cannot wait (`pressed:fire`) restates the server's rule in the look:
+  `pistol.ammo > 0`, `!pistol.reloading`, `cooldown = 0.19`. Two copies drift (the server refuses
+  to fire while frozen; the reaction does not know).
+- **What**: the mods also run on a client that simulates (the peer), for the ticks the server has
+  not confirmed, and their commands go into the predicted frame. When the server's frame arrives
+  with the same commands, nothing is re-simulated; when it differs, the server wins, as for a
+  mispredicted input. A client's mods need not be deterministic: being wrong costs a correction.
+- **The rule that makes it work**: a predicted mod keeps its state on the board, where rollback
+  restores it. Today mods keep state in members and a flecs world that is never rolled back (the
+  pistol's ammo and next-shot tick).
+- **What stays the server's**: randomness, and anything another player's press causes (a client
+  only knows others' last inputs). Timers predict fine.
+- **Which mods**: the ones compiled into the game. A server mod the client does not have is not
+  predicted and works as it does today. Shipping other people's rules to clients needs a sandbox
+  (a later step, or the declared-data version: guards and small effects in the schema).
+- **Not for streaming clients**: they have no simulation.
+- **Done when**: the pistol's ammo, fire rate and reload are predicted, `FirePredicted` is a plain
+  reaction on `pistol.fired`, and the pickup test's rollback count drops again.
 
 ### 2. Private fields
 
@@ -68,31 +69,18 @@ Each step is a milestone of its own, and each leaves the game playable.
 - **Done when**: a test mod gives each player a secret number; each HUD shows its own; a bot that
   dumps everything it receives never sees another player's.
 
-### 3. Predicted rules as data
+### 3. A stream that feels local
 
-- **The problem**: a mod's command is something no client could predict, so every board write is a
-  rollback, and feedback that cannot wait (`pressed:fire`) restates the server's rule in the look:
-  `pistol.ammo > 0`, `!pistol.reloading`, `cooldown = 0.19`. Two copies drift (the server refuses
-  to fire while frozen; the reaction does not know).
-- **What**: a mod declares an action's guard and small effects once, and they travel in the schema:
-
-  ```cpp
-  declare.Action( "fire", "MouseLeft" )
-      .When( "pistol.gun and pistol.ammo > 0 and not pistol.reloading and not frozen" )
-      .Every( 0.2f )
-      .Add( m_ammo, -1 )
-      .Emit( m_fired );
-  ```
-
-  Every simulation runs them, so they are predicted and rolled back like movement. The expression
-  evaluator already exists (the baked state machines use it). The server keeps what needs
-  judgement: who was hit, who dies.
-- **Then**: `FirePredicted` becomes a plain reaction on `pistol.fired`, and `pressed:` is only for
-  looks that want the raw key.
-- **Done when**: the pistol's ammo, fire rate and reload are declared, its look has no restated
-  rule, and the pickup test's rollback count drops again.
-- **Decide first**: this puts a mod's *predictable* rules on clients as data. If "clients never
-  learn the rules" matters more than predicted actions, skip this step.
+- **The problem**: a streaming client predicts nothing, so its own character moves a round trip
+  plus a frame late, and a late packet is a visible pause.
+- **What**: a small mover for the own character only, run by the stream source from the player's
+  input and corrected by the server's frames; and a short buffer of frames, so one that is late
+  does not stall the picture.
+- **Also**: smaller frames still (DESIGN.md, M53 and M54, say where the bytes go): animation is 24
+  bytes a player a frame, a rotation is 4 bytes whenever a body turned at all, an event is 44 bytes
+  that are mostly zeros.
+- **Done when**: with 100 ms of latency a streaming player's own movement starts within a frame,
+  and 5% loss shows no pause.
 
 ### 4. One condition language
 
