@@ -1,7 +1,6 @@
 #include "cinderbox_client.h"
 
 #include "camera.h"
-#include "cinderbox_animator.h"
 #include "cinderbox_character.h"
 #include "cinderbox_track_player.h"
 #include "cinderbox_skeleton.h"
@@ -151,13 +150,9 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_map_name" ), &CinderboxClient::get_map_name );
 	ClassDB::bind_method( D_METHOD( "set_prefab_dir", "dir" ), &CinderboxClient::set_prefab_dir );
 	ClassDB::bind_method( D_METHOD( "get_prefab_dir" ), &CinderboxClient::get_prefab_dir );
-	ClassDB::bind_method( D_METHOD( "set_animation_dir", "dir" ), &CinderboxClient::set_animation_dir );
-	ClassDB::bind_method( D_METHOD( "get_animation_dir" ), &CinderboxClient::get_animation_dir );
 
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "prefab_dir", PROPERTY_HINT_DIR ), "set_prefab_dir", "get_prefab_dir" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "map_dir", PROPERTY_HINT_DIR ), "set_map_dir", "get_map_dir" );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "animation_dir", PROPERTY_HINT_GLOBAL_DIR ), "set_animation_dir",
-				  "get_animation_dir" );
 
 	// visual_id is stable for the whole life of a visual (including its destroy effect).
 	ADD_SIGNAL( MethodInfo( "visual_spawned", PropertyInfo( Variant::INT, "visual_id" ), PropertyInfo( Variant::INT, "net_id" ),
@@ -196,24 +191,6 @@ void CinderboxClient::EnsureAnimations()
 	if ( m_animSet )
 	{
 		return;
-	}
-	if ( m_animationDir.is_empty() == false )
-	{
-		// res:// and user:// work when the folder exists on disk (editor runs, user folders).
-		String dir = ProjectSettings::get_singleton()->globalize_path( m_animationDir );
-		std::string error, warnings;
-		auto set = anim::AnimSet::Load( ToStd( dir ), error, warnings );
-		if ( set )
-		{
-			UtilityFunctions::print( "Cinderbox animations: ", String( set->Description().c_str() ) );
-			if ( warnings.empty() == false )
-			{
-				UtilityFunctions::push_warning( String( warnings.c_str() ) );
-			}
-			m_animSet = std::move( set );
-			return;
-		}
-		UtilityFunctions::push_warning( "Cinderbox animations: ", String( error.c_str() ), ", using the placeholder rig" );
 	}
 	m_animSet = anim::AnimSet::CreateProcedural();
 }
@@ -500,14 +477,6 @@ void CinderboxClient::HandleEvents()
 					break;
 				}
 				String name( m_frame.schema.events[e.modType].c_str() );
-				// A character's own animation can react too (a recoil clip on "pistol.fired").
-				if ( Node3D* node = get_entity_node( int64_t( e.netId ) ) )
-				{
-					if ( CinderboxAnimator* animator = FindInPrefab<CinderboxAnimator>( node ) )
-					{
-						animator->on_mod_event( name );
-					}
-				}
 				emit_signal( "mod_event", name, int64_t( e.netId ), int64_t( e.otherNetId ), int64_t( e.value ), position,
 							 ToGodot( e.vector ) );
 				break;
@@ -611,14 +580,9 @@ void CinderboxClient::UpdateNodes()
 					skeleton->ApplyPose( *m_animSet, *models );
 				}
 			}
-			// A prefab poses its character with ozz, with Godot's own animation system, or with
-			// both; whichever it contains is what gets driven.
+			// What the playing animations do besides moving bones.
 			if ( anim != nullptr )
 			{
-				if ( CinderboxAnimator* animator = FindInPrefab<CinderboxAnimator>( node ) )
-				{
-					animator->ApplyState( anim->current );
-				}
 				auto playerIt = m_trackPlayers.find( id );
 				auto* tracks = playerIt != m_trackPlayers.end()
 									  ? Object::cast_to<CbTrackPlayer>( ObjectDB::get_instance( playerIt->second ) )

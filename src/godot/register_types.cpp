@@ -1,4 +1,3 @@
-#include "cinderbox_animator.h"
 #include "cinderbox_character.h"
 #include "cinderbox_client.h"
 #include "cinderbox_autobake.h"
@@ -45,7 +44,6 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	}
 	GDREGISTER_CLASS( cb::gd::CinderboxSkeleton );
 	GDREGISTER_CLASS( cb::gd::CbPoseModifier );
-	GDREGISTER_CLASS( cb::gd::CinderboxAnimator );
 	GDREGISTER_CLASS( cb::gd::CinderboxClient );
 	// Character authoring: hit zones on bones, and the node that bakes a character for the game.
 	GDREGISTER_CLASS( cb::gd::CbHitbox );
