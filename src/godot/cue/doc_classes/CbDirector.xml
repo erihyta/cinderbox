@@ -23,6 +23,20 @@
 				An instance of the scene, or [code]null[/code] (with a warning) when [method check_scene] refuses it. Use it for every scene a mod can replace.
 			</description>
 		</method>
+		<method name="press">
+			<return type="int" />
+			<param index="0" name="action" type="String" />
+			<description>
+				The viewer (the entity given to [method set_local]) pressed an action. Every [CbPrediction] under the director for that action whose conditions hold plays its cue now, at the local entity, for the reactions that need nothing but that. When [method cue] is then called with the same name for the local entity (within a second), it plays only the reactions that waited: the ones that use the cue's point, end, value or other entity. Returns how many cues were predicted.
+			</description>
+		</method>
+		<method name="explain_press" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="action" type="String" />
+			<description>
+				What [method press] would do, without doing it: for each [CbPrediction], [code]"predicts pistol.fired"[/code] or why not.
+			</description>
+		</method>
 		<method name="add_entity">
 			<return type="void" />
 			<param index="0" name="node" type="Node" />

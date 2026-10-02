@@ -41,6 +41,9 @@ struct Context
 	godot::Node* director = nullptr; // $world, and the tree nothing may leave
 	godot::Node* local = nullptr;
 	bool event = false;
+	// The cue is the viewer's own press, shown before the server answered (cue_prediction.h): it
+	// names who it is at and nothing else. No point, no end, no value, no other entity.
+	bool predicted = false;
 	godot::Node* at = nullptr;
 	godot::Node* other = nullptr;
 	godot::Vector3 point;

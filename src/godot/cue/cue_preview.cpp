@@ -215,8 +215,8 @@ void CbCuePreviewDock::Build()
 	m_cueNames->connect( "item_selected", callable_mp( this, &CbCuePreviewDock::OnCuePicked ) );
 	cueRow->add_child( m_cueNames );
 	cueRow->add_child( CbInfoButton::Make( "The cue to send: one the scene listens for, or any name.",
-										   "A mod's event (melee.hit), the game's (footstep, jumped, landed, impact, spawned, "
-										   "destroying) or the viewer's key press (pressed:fire).\n"
+										   "A mod's event (melee.hit) or the game's (footstep, jumped, landed, impact, spawned, "
+										   "destroying).\n"
 										   "After firing, the panel lists what each reaction listening for it did, or why "
 										   "not." ) );
 

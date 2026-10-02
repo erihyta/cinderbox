@@ -9,6 +9,8 @@
 //                                          metadata in the inspector); set_world_state for the world's
 //   set_local( node )                     the viewer's own entity ($local, is_local)
 //   cue( "melee.hit", at, other, { value, strength, point, end } )   something happened
+//   press( "fire" )                       the viewer pressed an action: the CbPrediction nodes under
+//                                         it say which cue that will be, and it plays at once
 //
 // Reactions register themselves when they enter its tree. "While" reactions are checked every frame
 // (update(), called from _process unless auto_update is off); cue reactions when a cue comes.
@@ -19,12 +21,14 @@
 #include <godot_cpp/classes/packed_scene.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 
+#include <deque>
 #include <unordered_map>
 #include <vector>
 
 namespace cb::gd
 {
 
+class CbPrediction;
 class CbReaction;
 
 class CbDirector : public godot::Node3D
@@ -42,6 +46,13 @@ public:
 	void set_local( godot::Node* entity );
 	godot::Node* get_local() const;
 	void cue( const godot::String& name, godot::Node* at, godot::Node* other, const godot::Dictionary& args );
+	// The viewer (the local entity) pressed an action. Every prediction for that action whose
+	// conditions hold plays its cue now, at the local entity, for the reactions that need nothing
+	// but that; the server's cue of the same name, when it comes for the local entity, then plays
+	// only the reactions that waited for it. Returns how many cues were predicted.
+	int press( const godot::String& action );
+	// What that press would do, without doing it: { prediction path: "predicts <cue>" or why not }.
+	godot::Dictionary explain_press( const godot::String& action ) const;
 	// What that cue would do, without doing it: { reaction path: "acts" or why not }.
 	godot::Dictionary explain( const godot::String& name, godot::Node* at, godot::Node* other, const godot::Dictionary& args );
 	void update();
@@ -64,9 +75,11 @@ public:
 
 	void _process( double delta ) override;
 
-	// For reactions.
+	// For reactions and predictions.
 	void Register( CbReaction* reaction );
 	void Unregister( CbReaction* reaction );
+	void Register( CbPrediction* prediction );
+	void Unregister( CbPrediction* prediction );
 	void Reindex()
 	{
 		m_dirty = true;
@@ -93,6 +106,20 @@ private:
 	bool m_dirty = true;
 	std::vector<godot::ObjectID> m_whiles;
 	std::unordered_map<godot::String, std::vector<godot::ObjectID>, StringHash> m_byCue;
+
+	// Plays a cue: every reaction listening for it but the ones in `skip`; the ones that acted are
+	// added to `acted`.
+	void Play( const godot::String& name, const cue::Context& context, const std::vector<godot::ObjectID>* skip,
+			   std::vector<godot::ObjectID>* acted );
+	std::vector<godot::ObjectID> m_predictions;
+	// Cues shown on a press, waiting for the server's: the reactions that already played.
+	struct Shown
+	{
+		godot::String cue;
+		double at = 0.0;
+		std::vector<godot::ObjectID> acted;
+	};
+	std::deque<Shown> m_shown;
 };
 
 } // namespace cb::gd

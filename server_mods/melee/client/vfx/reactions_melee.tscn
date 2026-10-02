@@ -1,9 +1,16 @@
 [gd_scene format=3]
 
 ; How the melee mod sounds, as world reactions; the bat's own glow and sparks are reactions in
-; prefabs/bat.tscn. The Bat node says how the "melee.bat" item looks.
+; prefabs/bat.tscn. The Bat node says how the "melee.bat" item looks. PredictSwing says what the
+; server answers to the viewer's own "fire" press with the bat out, so the swing is heard at once.
 
 [node name="MeleeReactions" type="Node3D"]
+
+[node name="PredictSwing" type="CbPrediction" parent="."]
+action = "fire"
+cue = "melee.swing"
+conditions = PackedStringArray("melee.bat")
+cooldown = 0.58
 
 [node name="Swing" type="CbReaction" parent="."]
 event = "melee.swing"

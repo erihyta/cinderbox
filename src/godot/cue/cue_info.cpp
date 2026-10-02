@@ -37,8 +37,8 @@ const Info kReactionInfo[] = {
 	{ "When", "What it waits for, and whose state it reads.",
 	  "[b]when[/b]: On a cue acts once per cue with this name. While stays on as long as the conditions hold, and "
 	  "undoes what it did when they stop.\n"
-	  "[b]event[/b]: melee.hit (a mod's) · footstep, jumped, landed, impact, spawned, destroying (the game's) · "
-	  "pressed:fire (the viewer's key, before the server answers).\n"
+	  "[b]event[/b]: melee.hit (a mod's) · footstep, jumped, landed, impact, spawned, destroying (the game's). For "
+	  "the viewer's own press to show at once, add a CbPrediction that names the cue the server will send.\n"
 	  "[b]event_side[/b]: A = the cue happened at the subject (melee.hit is at the attacker). B = the subject is the "
 	  "other one (the victim).\n"
 	  "[b]subject[/b]: ^ (default) my entity · ^^ my holder · $at or $other: any cue of this name.\n"

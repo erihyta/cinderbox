@@ -1,6 +1,7 @@
 #include "cue_director.h"
 
 #include "cue_guard.h"
+#include "cue_prediction.h"
 #include "cue_reaction.h"
 
 #include <godot_cpp/classes/time.hpp>
@@ -24,6 +25,8 @@ void CbDirector::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_local" ), &CbDirector::get_local );
 	ClassDB::bind_method( D_METHOD( "cue", "name", "at", "other", "args" ), &CbDirector::cue, DEFVAL( Variant() ),
 						  DEFVAL( Dictionary() ) );
+	ClassDB::bind_method( D_METHOD( "press", "action" ), &CbDirector::press );
+	ClassDB::bind_method( D_METHOD( "explain_press", "action" ), &CbDirector::explain_press );
 	ClassDB::bind_method( D_METHOD( "explain", "name", "at", "other", "args" ), &CbDirector::explain, DEFVAL( Variant() ),
 						  DEFVAL( Dictionary() ) );
 	ClassDB::bind_method( D_METHOD( "update" ), &CbDirector::update );
@@ -33,6 +36,8 @@ void CbDirector::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_auto_update" ), &CbDirector::get_auto_update );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "auto_update" ), "set_auto_update", "get_auto_update" );
 
+	// A press was shown as this cue before the server answered (CbPrediction).
+	ADD_SIGNAL( MethodInfo( "predicted", PropertyInfo( Variant::STRING, "cue" ) ) );
 	// A reaction shook the camera or flashed the screen: the viewer's, so the game applies it.
 	ADD_SIGNAL( MethodInfo( "screen_effect", PropertyInfo( Variant::FLOAT, "shake" ), PropertyInfo( Variant::FLOAT, "shake_time" ),
 							PropertyInfo( Variant::COLOR, "flash_color" ), PropertyInfo( Variant::FLOAT, "flash_time" ) ) );
@@ -115,6 +120,17 @@ void CbDirector::Unregister( CbReaction* reaction )
 	m_dirty = true;
 }
 
+void CbDirector::Register( CbPrediction* prediction )
+{
+	m_predictions.push_back( ObjectID( prediction->get_instance_id() ) );
+}
+
+void CbDirector::Unregister( CbPrediction* prediction )
+{
+	ObjectID id( prediction->get_instance_id() );
+	m_predictions.erase( std::remove( m_predictions.begin(), m_predictions.end(), id ), m_predictions.end() );
+}
+
 void CbDirector::Index()
 {
 	if ( m_dirty == false )
@@ -183,7 +199,13 @@ Dictionary CbDirector::explain( const String& name, Node* at, Node* other, const
 	return result;
 }
 
-void CbDirector::cue( const String& name, Node* at, Node* other, const Dictionary& args )
+namespace
+{
+// How long a press waits for the server's cue. After that the next cue of the name plays in full.
+constexpr double kEchoSeconds = 1.0;
+} // namespace
+
+void CbDirector::Play( const String& name, const cue::Context& context, const std::vector<ObjectID>* skip, std::vector<ObjectID>* acted )
 {
 	Index();
 	auto it = m_byCue.find( name );
@@ -191,18 +213,97 @@ void CbDirector::cue( const String& name, Node* at, Node* other, const Dictionar
 	{
 		return;
 	}
-	cue::Context context = CueContext( at, other, args );
 	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
 	// A copy: a reaction may add scenes with reactions of their own.
 	std::vector<ObjectID> ids = it->second;
 	for ( ObjectID id : ids )
 	{
-		auto* reaction = Object::cast_to<CbReaction>( ObjectDB::get_instance( id ) );
-		if ( reaction != nullptr )
+		if ( skip != nullptr && std::find( skip->begin(), skip->end(), id ) != skip->end() )
 		{
-			reaction->Fire( context, now );
+			continue;
+		}
+		auto* reaction = Object::cast_to<CbReaction>( ObjectDB::get_instance( id ) );
+		if ( reaction != nullptr && reaction->Fire( context, now ) && acted != nullptr )
+		{
+			acted->push_back( id );
 		}
 	}
+}
+
+void CbDirector::cue( const String& name, Node* at, Node* other, const Dictionary& args )
+{
+	// The server's word on something the viewer's press already showed: what played then does not
+	// play again; what had to wait for this (it uses what only the server knows) plays now.
+	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
+	while ( m_shown.empty() == false && now - m_shown.front().at > kEchoSeconds )
+	{
+		m_shown.pop_front();
+	}
+	std::vector<ObjectID> already;
+	bool echo = false;
+	if ( at != nullptr && at == get_local() )
+	{
+		for ( auto it = m_shown.begin(); it != m_shown.end(); ++it )
+		{
+			if ( it->cue == name )
+			{
+				already = std::move( it->acted );
+				m_shown.erase( it );
+				echo = true;
+				break;
+			}
+		}
+	}
+	Play( name, CueContext( at, other, args ), echo ? &already : nullptr, nullptr );
+}
+
+Dictionary CbDirector::explain_press( const String& action ) const
+{
+	Dictionary out;
+	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
+	cue::Context base = BaseContext();
+	for ( ObjectID id : m_predictions )
+	{
+		auto* prediction = Object::cast_to<CbPrediction>( ObjectDB::get_instance( id ) );
+		if ( prediction != nullptr )
+		{
+			String why = prediction->Refusal( action, base, now );
+			out[String( get_path_to( prediction ) )] = why.is_empty() ? "predicts " + prediction->Cue().strip_edges() : why;
+		}
+	}
+	return out;
+}
+
+int CbDirector::press( const String& action )
+{
+	Node* local = get_local();
+	if ( local == nullptr )
+	{
+		return 0;
+	}
+	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
+	cue::Context base = BaseContext();
+	int predicted = 0;
+	std::vector<ObjectID> ids = m_predictions;
+	for ( ObjectID id : ids )
+	{
+		auto* prediction = Object::cast_to<CbPrediction>( ObjectDB::get_instance( id ) );
+		if ( prediction == nullptr || prediction->Accepts( action, base, now ) == false )
+		{
+			continue;
+		}
+		String name = prediction->Cue().strip_edges();
+		cue::Context context = CueContext( local, nullptr, Dictionary() );
+		context.predicted = true;
+		Shown shown;
+		shown.cue = name;
+		shown.at = now;
+		Play( name, context, nullptr, &shown.acted );
+		m_shown.push_back( std::move( shown ) );
+		emit_signal( "predicted", name );
+		predicted += 1;
+	}
+	return predicted;
 }
 
 void CbDirector::update()

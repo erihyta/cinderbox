@@ -16,7 +16,7 @@ source  <──control───   viewer        named commands with a number ("p
 | Piece | Today | File |
 |---|---|---|
 | The protocol | `ViewFrame`, `ViewSource`; as bytes wherever a library or a file is between the two | `src/present/view.h`, `view_codec.*` |
-| Viewer | the `cinderbox` extension: `CinderboxClient` (nodes, poses, reactions, HUD), authoring nodes. No simulation, no networking | `src/godot/` |
+| Viewer | the `cinderbox` extension: `CinderboxClient` (nodes, poses, reactions, predictions, HUD), authoring nodes. No simulation, no networking | `src/godot/` |
 | Peer | the `cinderbox_peer` extension: `CinderboxPeer`, the sources that simulate | `src/godot/peer/` |
 | Live source | connection, prediction, rollback on its own thread (peer) | `src/client/live_source.*` |
 | Replay source | a recording re-simulated on its own thread (peer) | `src/client/replay_source.*` |
@@ -25,7 +25,9 @@ source  <──control───   viewer        named commands with a number ("p
 | Stream | the `cinderbox_stream` extension: `CinderboxStream`, a source the server sends frames to. Networking, no simulation | `src/godot/stream/`, `src/stream/` |
 | Any object | `take( whole ) -> PackedByteArray`: a script can be a source | `src/godot/object_source.*` |
 
-Everything below adds a source or changes what a frame carries. The viewer stays the same.
+The viewer takes two things the same way: what a source says happened, and what its own player
+pressed. A look answers both (`CbReaction`, `CbPrediction`), so your own actions show at once
+with no rule on the client. The long road is a viewer that can show a whole sandbox that way.
 
 ## Steps
 
@@ -33,32 +35,33 @@ Each step is a milestone of its own, and each leaves the game playable.
 
 | # | Step | Why | Needs |
 |---|---|---|---|
-| 1 | **Predicted mods** | your own actions answer at once, and a mod's command stops being a rollback | nothing |
+| 1 | **Predicted state in the viewer** | a press changes what you see beyond effects: the HUD, the body | nothing |
 | 2 | **Private fields** | secrets that are not physical (a role, a hand of cards) | nothing |
 | 3 | **A stream that feels local** | a streaming client's own character answers a round trip late | nothing |
 | 4 | **One condition language** | reactions and the HUD read the game the same way | nothing |
 
-### 1. Predicted mods
+### 1. Predicted state in the viewer
 
-- **The problem**: a mod's command is something no client could predict, so every board write is a
-  rollback, and feedback that cannot wait (`pressed:fire`) restates the server's rule in the look:
-  `pistol.ammo > 0`, `!pistol.reloading`, `cooldown = 0.19`. Two copies drift (the server refuses
-  to fire while frozen; the reaction does not know).
-- **What**: the mods also run on a client that simulates (the peer), for the ticks the server has
-  not confirmed, and their commands go into the predicted frame. When the server's frame arrives
-  with the same commands, nothing is re-simulated; when it differs, the server wins, as for a
-  mispredicted input. A client's mods need not be deterministic: being wrong costs a correction.
-- **The rule that makes it work**: a predicted mod keeps its state on the board, where rollback
-  restores it. Today mods keep state in members and a flecs world that is never rolled back (the
-  pistol's ammo and next-shot tick).
-- **What stays the server's**: randomness, and anything another player's press causes (a client
-  only knows others' last inputs). Timers predict fine.
-- **Which mods**: the ones compiled into the game. A server mod the client does not have is not
-  predicted and works as it does today. Shipping other people's rules to clients needs a sandbox
-  (a later step, or the declared-data version: guards and small effects in the schema).
-- **Not for streaming clients**: they have no simulation.
-- **Done when**: the pistol's ammo, fire rate and reload are predicted, `FirePredicted` is a plain
-  reaction on `pistol.fired`, and the pickup test's rollback count drops again.
+- **Today**: a `CbPrediction` plays a cue's effects at once (DESIGN.md, M56). What the server
+  *changes* still waits for its frame:
+
+  | You press | Shown at once | Shown a round trip later |
+  |---|---|---|
+  | fire, pistol out | flash, gunshot, camera kick | the ammo count, the tracer, the hit |
+  | fire, bat out | the swing's sound | the body's swing pose |
+
+- **What**: a prediction can also say what it changes on the viewer's own player until the server
+  speaks, as data in the look:
+  - a field: `pistol.ammo - 1` (the HUD and conditions read the predicted value);
+  - a stance or an animation state (the swing starts now);
+  - later, movement, for sources that do not simulate (step 3).
+- **How it stays honest**: each change is held against the frame that answers it. When the
+  server's cue comes, the server's value replaces it; when none comes within the wait, it is put
+  back. The viewer never tells a source what it predicted.
+- **Not this**: running a mod's rules on clients. The look says what the server will answer; the
+  server alone decides.
+- **Done when**: the pistol's ammo count and the bat's swing pose follow the click, a refused
+  press puts both back, and the look still has no code.
 
 ### 2. Private fields
 
@@ -71,8 +74,8 @@ Each step is a milestone of its own, and each leaves the game playable.
 
 ### 3. A stream that feels local
 
-- **The problem**: a streaming client predicts nothing, so its own character moves a round trip
-  plus a frame late, and a late packet is a visible pause.
+- **The problem**: a streaming client's presses show at once (predictions), but its own character
+  moves a round trip plus a frame late, and a late packet is a visible pause.
 - **What**: a small mover for the own character only, run by the stream source from the player's
   input and corrected by the server's frames; and a short buffer of frames, so one that is late
   does not stall the picture.

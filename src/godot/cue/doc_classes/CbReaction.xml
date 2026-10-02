@@ -36,7 +36,7 @@ Looks only: it never changes the game itself, and no path leaves the director. T
 			On a cue: acts once per cue named [member event]. While: on as long as [member conditions] hold, and undoes what it did when they stop.
 		</member>
 		<member name="event" type="String" setter="set_event" getter="get_event" default="&quot;&quot;">
-			The cue's name: a mod's event ([code]melee.hit[/code]), the game's ([code]footstep[/code], [code]jumped[/code], [code]landed[/code], [code]impact[/code], [code]spawned[/code], [code]destroying[/code]) or the viewer's key press ([code]pressed:fire[/code]).
+			The cue's name: a mod's event ([code]melee.hit[/code]), the game's ([code]footstep[/code], [code]jumped[/code], [code]landed[/code], [code]impact[/code], [code]spawned[/code], [code]destroying[/code]). For the viewer's own key press to show at once, add a [CbPrediction] that names the cue the server will send.
 		</member>
 		<member name="event_side" type="int" setter="set_event_side" getter="get_event_side" enum="CbReaction.EventSide" default="0">
 			A: the cue happened at the subject ([code]melee.hit[/code] is at the attacker). B: the subject is the other entity the cue names (the victim). Either: both. Ignored when [member subject] starts with [code]$at[/code] or [code]$other[/code].
