@@ -41,6 +41,11 @@ void Mirror::SetAnimSet( std::shared_ptr<const anim::AnimSet> animSet, std::shar
 	} );
 }
 
+void Mirror::SetAnimLead( const AnimLead& lead )
+{
+	m_world.set<AnimLead>( lead );
+}
+
 Mirror::Mirror( std::shared_ptr<const anim::AnimSet> animSet )
 	: m_animSet( std::move( animSet ) )
 	, m_world( CreateFlecsWorld() ) // the simulation may be creating worlds on another thread
@@ -55,6 +60,7 @@ Mirror::Mirror( std::shared_ptr<const anim::AnimSet> animSet )
 	m_world.component<RagdollAnim>();
 	m_world.set<AnimLibrary>( { m_animSet, std::make_shared<RagdollRig>( BuildRagdollRig( *m_animSet ) ) } );
 	m_world.set<FrameTiming>( {} );
+	m_world.set<AnimLead>( {} );
 	m_world.set_ctx( this );
 	scripts::RegisterAll( m_world );
 
@@ -107,7 +113,7 @@ flecs::entity Mirror::CreateVisual( const FrameEntity& f, bool withEffect )
 	e.set<RenderPose>( { f.transform.position, f.transform.rotation, {}, withEffect ? 0.0f : 1.0f } );
 	if ( f.kind == VisualKind::Player && f.hasAnim )
 	{
-		e.set<PlayerAnim>( { f.anim, f.anim, nullptr } );
+		e.set<PlayerAnim>( { f.anim, f.anim, f.anim, nullptr } );
 	}
 	if ( f.kind == VisualKind::Ragdoll )
 	{

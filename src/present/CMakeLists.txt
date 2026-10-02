@@ -1,5 +1,6 @@
 # Presentation: what a viewer does with frames. It links no simulation.
 add_library(cb_present STATIC
+	anim_lead.cpp
 	camera.cpp
 	fields.cpp
 	mirror.cpp

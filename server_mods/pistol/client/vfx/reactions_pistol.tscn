@@ -8,7 +8,9 @@
 ;
 ; The two CbPrediction nodes say what the server answers to the viewer's own "fire" press, so
 ; "pistol.fired" and "pistol.dry" play for the viewer at once, with the reactions everyone else
-; gets. The tracer needs the server's end point: it comes with the server's cue.
+; gets. The tracer needs the server's end point: it comes with the server's cue. A predicted shot
+; also takes a round off the ammo count at once (changes), and the character's recoil starts with
+; it (a state machine that reads "pistol.fired" is run ahead for the viewer's own player).
 ;
 ; The right mouse button ("mark") is the example of a second action. The server casts a ray and
 ; answers "pistol.scan" (always) and "pistol.marked" (it found a player):
@@ -23,6 +25,7 @@ action = "fire"
 cue = "pistol.fired"
 conditions = PackedStringArray("pistol.gun", "pistol.ammo > 0", "!pistol.reloading", "!combat.dead")
 cooldown = 0.19
+changes = PackedStringArray("pistol.ammo -= 1")
 
 [node name="PredictDry" type="CbPrediction" parent="."]
 action = "fire"

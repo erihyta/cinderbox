@@ -19,14 +19,25 @@ void RegisterPlayerAnimation( flecs::world& world )
 		}
 	} );
 
-	// Sample, blend and build model matrices from the state between the last two ticks.
-	world.system<PlayerAnim>( "EvaluatePlayerPose" ).each( []( flecs::iter& it, size_t, PlayerAnim& a ) {
+	// Sample, blend and build model matrices from the state between the last two ticks; the
+	// viewer's own player with its upper layers led by what its looks predicted (anim_lead.h).
+	world.system<PlayerAnim, const Visual>( "EvaluatePlayerPose" ).each( []( flecs::iter& it, size_t, PlayerAnim& a, const Visual& v ) {
 		if ( a.evaluator == nullptr )
 		{
 			return;
 		}
 		float alpha = it.world().get<FrameTiming>().tickAlpha;
-		a.evaluator->Evaluate( anim::InterpolateAnimState( a.previous, a.current, alpha ) );
+		a.shown = anim::InterpolateAnimState( a.previous, a.current, alpha );
+		const AnimLead& lead = it.world().get<AnimLead>();
+		if ( lead.netId != 0 && lead.netId == v.netId )
+		{
+			const AnimLibrary& lib = it.world().get<AnimLibrary>();
+			if ( lib.graph )
+			{
+				a.shown = LeadAnimState( a.shown, *lib.graph, lib.packs, lead );
+			}
+		}
+		a.evaluator->Evaluate( a.shown );
 	} );
 }
 

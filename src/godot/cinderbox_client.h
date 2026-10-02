@@ -216,6 +216,12 @@ private:
 	uint64_t m_worldStateHash = 0;
 	void PushStates();
 	void Cue( const std::string& name, uint32_t a, uint32_t b, const godot::Dictionary& args );
+	// What the looks' predictions say until the server answers (CbPrediction), for the local player:
+	// its upper body shown ahead (present/anim_lead.h), before the mirror updates...
+	void LeadLocalPlayer( float delta );
+	float m_lead = 0.0f; // seconds the local player's upper layers are shown ahead
+	// ... and its fields changed, after this frame's cues were heard.
+	void ApplyPredictedFields();
 	// The "action_pressed" signal for each of these action bits, and the press itself to the
 	// director, whose predictions show what the server will answer.
 	void AnnouncePresses( uint16_t pressed );

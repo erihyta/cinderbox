@@ -10,6 +10,7 @@
 
 #include "anim_controller.h"
 #include "anim_graph.h"
+#include "anim_lead.h"
 #include "map.h"
 #include "pose.h"
 #include "pose_tools.h"
@@ -2829,6 +2830,154 @@ void TestMannequinCharacter()
 	CheckHeldItem( *procedural, placeholder );
 }
 
+// The viewer's own player ahead of the server (present/anim_lead.h), on the mannequin's machine.
+// A press 12 ticks before the server answers: the swing starts on the press, its clock runs on
+// evenly through the moment the server's stance arrives, and the legs are left alone. A predicted
+// event does the same for the pistol's recoil.
+void TestAnimLead()
+{
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
+	std::string error, warnings;
+	auto set = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( set != nullptr );
+	if ( set == nullptr )
+	{
+		return;
+	}
+	ModSchema schema;
+	schema.layers = { "full", "upper" };
+	schema.stances = { "melee", "melee_swing", "pistol" };
+	schema.events = { "pistol.fired", "melee.strike" };
+	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
+	CHECK( graph != nullptr );
+	if ( graph == nullptr )
+	{
+		return;
+	}
+	auto stateOf = [&]( const char* name ) {
+		const auto& states = graph->layers[1].states;
+		for ( size_t i = 0; i < states.size(); ++i )
+		{
+			if ( states[i].name == name )
+			{
+				return int( i );
+			}
+		}
+		return -1;
+	};
+	// What the machine reads above its base layer: the stances and the shot, not the strike marker.
+	CHECK( graph->UpperLayersRead( AnimExpr::VarKind::Stance, 2 ) );
+	CHECK( graph->UpperLayersRead( AnimExpr::VarKind::Event, 0 ) );
+	CHECK( graph->UpperLayersRead( AnimExpr::VarKind::Event, 1 ) == false );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	const float dt = sim.Config().TimeStep();
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto state = [&]() { return sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>(); };
+	auto command = [&]( CommandType type, uint8_t index, int32_t value ) {
+		SimCommand c;
+		c.type = type;
+		c.target = SlotTarget( 0 );
+		c.index = index;
+		c.value = value;
+		f.commands.push_back( c );
+	};
+	present::AnimLead lead;
+	lead.netId = sim.PlayerNetId( 0 );
+	lead.tickSeconds = dt;
+
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	lead.netId = sim.PlayerNetId( 0 );
+	command( CommandType::Stance, 0, 1 ); // full layer: melee, the bat is out
+	step( 60 );
+	CHECK( state().graph[1].state == stateOf( "Ready" ) );
+
+	// No lead: nothing changes.
+	{
+		AnimState now = state();
+		AnimState same = present::LeadAnimState( now, *graph, {}, lead );
+		CHECK( std::memcmp( &same, &now, sizeof( AnimState ) ) == 0 );
+	}
+
+	// The press, 12 ticks before the server's stance.
+	const int latency = 12;
+	float previousTime = -1.0f;
+	float worstStep = 0.0f;
+	int firstSwing = -1;
+	for ( int t = 0; t < 40; ++t )
+	{
+		if ( t == latency )
+		{
+			command( CommandType::Stance, 0, 2 ); // the server's answer: melee_swing
+		}
+		if ( t > 0 )
+		{
+			step( 1 );
+		}
+		lead.inputs.clear();
+		lead.seconds = float( std::min( t, latency ) ) * dt;
+		if ( t <= latency ) // still unanswered (the frame of the answer has both, as in the viewer)
+		{
+			present::AnimLead::Input input;
+			input.age = float( t ) * dt;
+			input.layer = 0;
+			input.stance = 2;
+			lead.inputs.push_back( input );
+		}
+		AnimState shown = state();
+		AnimState led = present::LeadAnimState( shown, *graph, {}, lead );
+		// The legs are the server's.
+		CHECK( std::memcmp( &led.graph[0], &shown.graph[0], sizeof( AnimGraphLayerState ) ) == 0 );
+		if ( t < latency )
+		{
+			CHECK( shown.graph[1].state == stateOf( "Ready" ) ); // the server has not swung yet
+		}
+		if ( led.graph[1].state == stateOf( "Swing" ) )
+		{
+			firstSwing = firstSwing < 0 ? t : firstSwing;
+			if ( previousTime >= 0.0f && led.graph[1].time < 1.4f )
+			{
+				worstStep = std::max( worstStep, std::fabs( ( led.graph[1].time - previousTime ) - dt ) );
+			}
+			previousTime = led.graph[1].time;
+		}
+	}
+	std::printf( "    led swing starts %d tick(s) after the press; its clock is off an even step by at most %.4f s\n", firstSwing, worstStep );
+	CHECK( firstSwing == 0 ); // on the press itself
+	CHECK( worstStep < 0.5f * dt ); // no jump when the server's stance arrives
+	CHECK( previousTime > 35.0f * dt ); // and it ran on from the press, not from the answer
+
+	// A predicted event: the shot's recoil state, before the server says the pistol fired.
+	command( CommandType::Stance, 0, 0 );
+	command( CommandType::Stance, 1, 3 ); // upper layer: pistol
+	step( 60 );
+	CHECK( state().graph[1].state == stateOf( "Pistol" ) );
+	lead.inputs.clear();
+	present::AnimLead::Input shot;
+	shot.age = 4.0f * dt;
+	shot.event = 0; // pistol.fired
+	lead.inputs.push_back( shot );
+	lead.seconds = 4.0f * dt;
+	AnimState recoil = present::LeadAnimState( state(), *graph, {}, lead );
+	CHECK( recoil.graph[1].state == stateOf( "Shoot" ) );
+	CHECK( std::fabs( recoil.graph[1].time - 4.0f * dt ) < 0.5f * dt ); // as old as the press
+	// An expired or refused prediction: no input, so the server's state as it is, only later.
+	lead.inputs.clear();
+	AnimState back = present::LeadAnimState( state(), *graph, {}, lead );
+	CHECK( back.graph[1].state == stateOf( "Pistol" ) );
+}
+
 // The character built from the paid animation pack, where it was built (it is never in the
 // repository, so CI and fresh clones skip this): strafing plays its sideways jog, hips straight.
 void TestUalMannequin()
@@ -3758,6 +3907,7 @@ int main( int argc, char** argv )
 		{ "mannequin_character", TestMannequinCharacter },
 		{ "retarget", TestRetarget },
 		{ "layer_swap", TestLayerSwap },
+		{ "anim_lead", TestAnimLead },
 		{ "ual_mannequin", TestUalMannequin },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "stress", TestStress },
