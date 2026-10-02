@@ -433,6 +433,19 @@ void PoseEvaluator::Finish( const AnimState& state )
 		}
 	}
 
+	if ( state.look != 0 && state.aimPitch != 0.0f )
+	{
+		// The upper body follows the camera's pitch: every joint of the look chain turns, with all
+		// below it, about the body's side-to-side axis by its share. Looking up leans back, looking
+		// down bows. Before the aim, so a held gun then only has the rest of the way to go.
+		float pitch = state.aimPitch * ( float( state.look ) / 255.0f );
+		b3Vec3 side = { 1.0f, 0.0f, 0.0f };
+		for ( const auto& [joint, share] : m_set.LookJoints() )
+		{
+			RotateSubtree( m_set, m_models, joint, b3MakeQuatFromAxisAngle( side, -pitch * share ) );
+		}
+	}
+
 	if ( state.aiming != 0 && m_set.AimJoints().empty() == false )
 	{
 		// Where the player looks, in the body's frame (facing +Z). detmath's sine and cosine are

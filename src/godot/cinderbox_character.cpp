@@ -273,6 +273,7 @@ void CbCharacter::_bind_methods()
 	ADD_GROUP( "Aim", "aim_" );
 	CB_PROP( Variant::STRING, aim_chain, PROPERTY_HINT_PLACEHOLDER_TEXT, "UpperChest:0.3 RightUpperArm:1" )
 	CB_PROP( Variant::STRING, aim_tip, PROPERTY_HINT_NONE, "" )
+	CB_PROP( Variant::STRING, look_chain, PROPERTY_HINT_PLACEHOLDER_TEXT, "Spine:0.2 Chest:0.2 UpperChest:0.2 Neck:0.2 Head:0.2" )
 #undef CB_PROP
 	ADD_PROPERTY( PropertyInfo( Variant::CALLABLE, "bake_button", PROPERTY_HINT_TOOL_BUTTON, "Bake character,Save",
 								PROPERTY_USAGE_EDITOR ),
@@ -916,6 +917,15 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	cfg += std::string( "face_forward = " ) + ( m_faceForward ? "true" : "false" ) + "\n";
 	cfg += "aim = " + Std( m_aimChain.strip_edges() ) + "\n";
 	cfg += "aim_tip = " + Std( m_aimTip.strip_edges() ) + "\n";
+	cfg += "look = " + Std( m_lookChain.strip_edges() ) + "\n";
+	for ( const String& entry : m_lookChain.strip_edges().split( " ", false ) )
+	{
+		String bone = entry.get_slice( ":", 0 );
+		if ( skeleton->find_bone( bone ) < 0 )
+		{
+			warnings += "look chain bone " + bone + " is not in the skeleton; ";
+		}
+	}
 	{
 		PackedStringArray entries = m_aimChain.strip_edges().split( " ", false );
 		for ( const String& entry : entries )

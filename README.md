@@ -74,6 +74,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M66: private fields: a mod tells one player something nobody else is sent (a role, a hand of cards); looks read it like any field, for the viewer's own player | done |
 | M67: one expression language: reactions, predictions, HUD nodes and state machines parse the same text (`cb_expr`): `and` / `or`, arithmetic, a field against a field; a reaction's property and volume can be expressions | done |
 | M68: streaming clients removed: every client simulates; the `cinderbox_stream` extension, `--stream`, the `fog` mod and `ServerMod::Sees` are gone (protocol 20) | done |
+| M69: the upper body follows the camera: while a character faces the camera (a weapon is out), its spine, neck and head bend with the camera's pitch, in the pose everyone draws and hit tests use | done |
 
 ## Building
 
@@ -825,7 +826,8 @@ With `--character none`, players use the procedural placeholder rig, which has d
    - `BoneAttachment3D` nodes with `CbHitbox` children: sphere, capsule or box shapes, each with a
      `zone` ("head", "torso", "arm", "leg", or your own);
    - the aim chain on the `CbCharacter`: `aim_chain` (bones with weights, turned in order, e.g.
-     `UpperChest:0.3 RightUpperArm:1`) and `aim_tip` (the bone that ends up on the line of sight).
+     `UpperChest:0.3 RightUpperArm:1`) and `aim_tip` (the bone that ends up on the line of sight);
+     `look_chain`, the bones that bend with the camera's pitch ([Facing](#facing)).
      The default, `RightUpperArm:1` to `RightHand`, points the right arm.
 4. Save the scene. That bakes it: the `.ozz` files, `anim.cfg`, `graph.cfg` and `hitboxes.cfg` are written next
    to the scene (clips are sampled at `sample_rate`, 30 Hz). Publishing bakes it again from the
@@ -868,8 +870,18 @@ seen. Respawning keeps the aim; only the mod lets it go.
 | Freelook (default) | turns toward where the player walks; the camera looks around freely | nothing |
 | Camera-facing | faces where the camera looks, every tick (a shooter's stance) | `ctx.FaceCamera( player, true )` |
 
-The pistol switches to camera-facing while it is out, together with aiming. In camera-facing the
-legs still walk where the player goes: the hips turn toward the direction of travel (up to 90
+The pistol and the bat switch to camera-facing while they are out. In camera-facing the **upper
+body follows the camera's pitch**: looking down bows the character, looking up leans it back.
+
+| | |
+|---|---|
+| What bends | the character's look chain: `Spine:0.2 Chest:0.2 UpperChest:0.2 Neck:0.2 Head:0.2` by default, each joint turning by its share of the pitch (the chest ends up at 0.6 of it, the head at all of it) |
+| When | only while camera-facing; it comes and goes over 0.2 s, so drawing a weapon while looking at the floor does not snap |
+| Who sees it | everyone, and the server: it is part of the pose, so a bowed head is where a headshot has to go |
+| With a gun | the aim chain runs after it: the chest takes most of the pitch and the arm only the rest |
+| Per character | `look_chain` on the `CbCharacter` (bones with shares; empty turns it off); a rig without some of the default bones bends at the ones it has |
+
+The legs are not part of it: in camera-facing they still walk where the player goes: the hips turn toward the direction of travel (up to 90
 degrees) and the spine turns back, and moving away from the facing plays the walk cycle backwards.
 This works with any character's forward clips, no strafe clips needed.
 

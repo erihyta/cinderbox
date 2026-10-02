@@ -136,7 +136,11 @@ struct AnimState
 	uint8_t aiming = 0;
 	// The legs walk backwards: moving away from where it faces.
 	uint8_t legsBackward = 0;
-	uint8_t reserved = 0;
+	// How much the upper body follows the camera's pitch, 0 to 255: it rises while the character
+	// faces the camera (Character::faceCamera, a mod's FaceCamera) and falls back in freelook, so
+	// drawing a weapon while looking down bows the character over a moment instead of at once. The
+	// pose bends the character's look chain by aimPitch times this.
+	uint8_t look = 0;
 	float modeTime = 0.0f;	  // seconds since `mode` started
 	float groundSpeed = 0.0f; // smoothed horizontal speed (m/s)
 	float aimYaw = 0.0f;	  // where the player looks, relative to the body's facing (radians, [-pi, pi))

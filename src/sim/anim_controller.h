@@ -24,6 +24,8 @@ inline constexpr float kLegTurnRate = 10.0f;
 inline constexpr float kLegMinSpeed = 0.3f;
 inline constexpr float kBackwardAbove = 1.75f; // ~100 degrees
 inline constexpr float kForwardBelow = 1.40f;  // ~80 degrees
+// The upper body starts and stops following the camera's pitch over this long (AnimState::look).
+inline constexpr float kLookBlendSeconds = 0.2f;
 } // namespace anim_tuning
 
 // Advance `state` by one tick. `c` is the character after this tick's movement.
