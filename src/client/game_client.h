@@ -137,6 +137,11 @@ public:
 	{
 		return m_namesGeneration;
 	}
+	// This player's private fields, as the server last sent them (all 0 until it does).
+	const Blackboard& Privates() const
+	{
+		return m_privates;
+	}
 	PlayerSlot Slot() const
 	{
 		return m_slot;
@@ -199,6 +204,7 @@ private:
 	uint64_t m_schemaGeneration = 0;
 	std::array<std::string, kMaxPlayers> m_names;
 	uint64_t m_namesGeneration = 0;
+	Blackboard m_privates;
 
 	ClientState m_state = ClientState::Idle;
 	std::string m_rejectReason;

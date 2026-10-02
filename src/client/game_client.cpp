@@ -215,6 +215,15 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 					}
 					break;
 				}
+				case MsgType::PrivateFields:
+				{
+					MsgPrivateFields msg;
+					if ( Decode( r, msg ) )
+					{
+						m_privates = msg.values;
+					}
+					break;
+				}
 				case MsgType::PlayerNames:
 				{
 					MsgPlayerNames msg;

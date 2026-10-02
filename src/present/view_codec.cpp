@@ -21,6 +21,8 @@ constexpr uint32_t kMaxRagdolls = 1u << 12;
 constexpr uint32_t kMaxStats = 256;
 constexpr uint32_t kMaxTemplates = 1u << 12;
 
+const Blackboard kNoPrivates{};
+
 enum PacketFlag : uint8_t
 {
 	FlagWorld = 1 << 0,
@@ -29,6 +31,7 @@ enum PacketFlag : uint8_t
 	FlagNames = 1 << 3,
 	FlagStats = 1 << 4,
 	FlagCompact = 1 << 5,
+	FlagPrivates = 1 << 6, // the local player's private fields follow (else: the base's)
 };
 
 enum WorldFlag : uint8_t
@@ -1091,8 +1094,11 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	bool schema = base == nullptr || base->schemaGeneration != frame.schemaGeneration;
 	bool names = base == nullptr || base->namesGeneration != frame.namesGeneration;
 	bool stats = base == nullptr || base->stats != frame.stats;
+	bool privates = base == nullptr ? std::memcmp( &frame.privates, &kNoPrivates, sizeof( Blackboard ) ) != 0
+									: std::memcmp( &frame.privates, &base->privates, sizeof( Blackboard ) ) != 0;
 	uint8_t flags = uint8_t( ( frame.hasWorld ? FlagWorld : 0 ) | ( map ? FlagMap : 0 ) | ( schema ? FlagSchema : 0 ) |
-							 ( names ? FlagNames : 0 ) | ( stats ? FlagStats : 0 ) | ( compact ? FlagCompact : 0 ) );
+							 ( names ? FlagNames : 0 ) | ( stats ? FlagStats : 0 ) | ( compact ? FlagCompact : 0 ) |
+							 ( privates ? FlagPrivates : 0 ) );
 
 	w.Write( kMagic );
 	w.Write( frame.serial );
@@ -1158,6 +1164,24 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 		for ( const std::string& name : frame.names )
 		{
 			WriteString( w, name );
+		}
+	}
+	if ( privates )
+	{
+		// The ones that are not 0: a slot and its value each.
+		uint8_t count = 0;
+		for ( int32_t value : frame.privates.values )
+		{
+			count += value != 0 ? 1 : 0;
+		}
+		w.Write( count );
+		for ( int slot = 0; slot < kBoardSlots; ++slot )
+		{
+			if ( frame.privates.values[slot] != 0 )
+			{
+				w.Write( uint8_t( slot ) );
+				w.Write( frame.privates.values[slot] );
+			}
 		}
 	}
 	section( &ViewCost::session );
@@ -1370,6 +1394,25 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	{
 		out.namesGeneration = base->namesGeneration;
 		out.names = base->names;
+	}
+	if ( flags & FlagPrivates )
+	{
+		out.privates = Blackboard{};
+		uint8_t count = r.Read<uint8_t>();
+		for ( uint8_t i = 0; i < count && r.Ok(); ++i )
+		{
+			uint8_t slot = r.Read<uint8_t>();
+			int32_t value = r.Read<int32_t>();
+			if ( slot >= kBoardSlots )
+			{
+				return false;
+			}
+			out.privates.values[slot] = value;
+		}
+	}
+	else
+	{
+		out.privates = base != nullptr ? base->privates : Blackboard{};
 	}
 
 	out.hasWorld = ( flags & FlagWorld ) != 0;

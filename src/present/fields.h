@@ -15,6 +15,8 @@
 //     name <op> number     op is one of == != > >= < <= ; "true" and "false" count as 1 and 0
 // A field the server did not declare reads as zero, so a binding for a mod that is not running
 // simply never matches.
+// A private field (BoardScope::Private) reads as its value for the viewer's own player and as zero
+// for everyone else: nobody else's was sent.
 
 #include "components.h"
 #include "mod_schema.h"
@@ -43,19 +45,23 @@ struct FieldValue
 };
 
 // `board` may be null (the entity has published nothing), `globals` holds kBoardSlots values.
-FieldValue ReadField( const ModSchema& schema, const std::string& name, const Blackboard* board, const int32_t* globals );
+// `privates`: the private fields of the entity when it is the viewer's own player (null for anyone
+// else: a private field of someone else reads as 0, because the viewer was never sent it).
+FieldValue ReadField( const ModSchema& schema, const std::string& name, const Blackboard* board, const int32_t* globals,
+					  const Blackboard* privates = nullptr );
 
 // Names the caller knows that are not board fields ("event.value"): true with the value when known.
 using ExtraFields = std::function<bool( const std::string& name, float& value )>;
 
 bool CheckCondition( const ModSchema& schema, const std::string& condition, const Blackboard* board, const int32_t* globals,
-					 const ExtraFields* extra = nullptr );
+					 const ExtraFields* extra = nullptr, const Blackboard* privates = nullptr );
 // True when every condition holds (and when there are none).
 bool CheckConditions( const ModSchema& schema, const std::vector<std::string>& conditions, const Blackboard* board,
-					  const int32_t* globals );
+					  const int32_t* globals, const Blackboard* privates = nullptr );
 
 // Replaces every {name} in `format` with the field's value: integers as integers, floats with one
 // decimal, booleans as "yes" / "no". "{{" is a literal brace.
-std::string FormatFields( const ModSchema& schema, const std::string& format, const Blackboard* board, const int32_t* globals );
+std::string FormatFields( const ModSchema& schema, const std::string& format, const Blackboard* board, const int32_t* globals,
+						  const Blackboard* privates = nullptr );
 
 } // namespace cb::present

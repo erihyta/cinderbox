@@ -176,7 +176,7 @@ bool ReadInputs( ByteReader& r, InputArray& inputs )
 std::optional<MsgType> ReadType( ByteReader& r )
 {
 	uint8_t t = r.Read<uint8_t>();
-	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::StreamInput ) )
+	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::PrivateFields ) )
 	{
 		return std::nullopt;
 	}
@@ -279,6 +279,47 @@ void Encode( const MsgPlayerNames& m, std::vector<uint8_t>& out )
 		w.Write( m.names[i].first );
 		WriteShortString( w, m.names[i].second, kMaxPlayerName );
 	}
+}
+
+void Encode( const MsgPrivateFields& m, std::vector<uint8_t>& out )
+{
+	Begin( out, MsgType::PrivateFields );
+	ByteWriter w( out );
+	uint8_t n = 0;
+	for ( int32_t value : m.values.values )
+	{
+		n += value != 0 ? 1 : 0;
+	}
+	w.Write( n );
+	for ( int slot = 0; slot < kBoardSlots; ++slot )
+	{
+		if ( m.values.values[slot] != 0 )
+		{
+			w.Write( uint8_t( slot ) );
+			w.Write( m.values.values[slot] );
+		}
+	}
+}
+
+bool Decode( ByteReader& r, MsgPrivateFields& m )
+{
+	m.values = Blackboard{};
+	uint8_t n = r.Read<uint8_t>();
+	if ( r.Ok() == false || n > kBoardSlots )
+	{
+		return false;
+	}
+	for ( uint8_t i = 0; i < n; ++i )
+	{
+		uint8_t slot = r.Read<uint8_t>();
+		int32_t value = r.Read<int32_t>();
+		if ( r.Ok() == false || slot >= kBoardSlots )
+		{
+			return false;
+		}
+		m.values.values[slot] = value;
+	}
+	return r.Ok();
 }
 
 bool Decode( ByteReader& r, MsgPlayerNames& m )

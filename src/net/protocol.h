@@ -2,7 +2,7 @@
 
 // Wire protocol between server and clients.
 //
-// Channel 0 (reliable, ordered): Hello, Welcome, Reject, Checksum, ResyncRequest, PlayerNames.
+// Channel 0 (reliable, ordered): Hello, Welcome, Reject, Checksum, ResyncRequest, PlayerNames, PrivateFields.
 // Channel 1 (unreliable), both directions:
 //   client -> server: Input, repeating the last few ticks and acknowledging received frames;
 //   server -> client: FrameBatch, every frame from the client's acknowledgement to the newest.
@@ -14,6 +14,7 @@
 //                     whole one when it has none the server still keeps (reliable);
 //   client -> server: StreamInput (unreliable): its newest input and the newest frame it has.
 
+#include "components.h"
 #include "bytes.h"
 #include "types.h"
 
@@ -26,7 +27,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 18; // 18: one animation system; 17: streaming clients; 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs; 9: layers and stances; 10: characters shipped with the game; 11: state machines in the schema; 12: held items; 13: animation packs; 14: items in the world; 15: stowed items; 16: 32 board slots
+inline constexpr uint32_t kProtocolVersion = 19; // 19: private fields; 18: one animation system; 17: streaming clients; 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs; 9: layers and stances; 10: characters shipped with the game; 11: state machines in the schema; 12: held items; 13: animation packs; 14: items in the world; 15: stowed items; 16: 32 board slots
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t
@@ -50,6 +51,7 @@ enum class MsgType : uint8_t
 	StreamWelcome = 10,
 	View = 11,
 	StreamInput = 12,
+	PrivateFields = 13,
 };
 
 inline constexpr size_t kMaxPlayerName = 24;
@@ -90,6 +92,14 @@ struct MsgStreamInput
 struct MsgPlayerNames
 {
 	std::vector<std::pair<PlayerSlot, std::string>> names;
+};
+
+// S -> C, to one client: its own private fields (BoardScope::Private), after its Welcome and
+// whenever a mod changes one. All of them each time (the ones that are not 0); nobody else's are
+// ever sent to it. A streaming client gets them in its frames instead.
+struct MsgPrivateFields
+{
+	Blackboard values;
 };
 
 // The name the server keeps: printable characters only, trimmed, at most kMaxPlayerName bytes,
@@ -152,6 +162,7 @@ void Encode( const MsgChecksum& m, std::vector<uint8_t>& out );
 void Encode( const MsgResyncRequest& m, std::vector<uint8_t>& out );
 void Encode( const MsgInput& m, std::vector<uint8_t>& out );
 void Encode( const MsgPlayerNames& m, std::vector<uint8_t>& out );
+void Encode( const MsgPrivateFields& m, std::vector<uint8_t>& out );
 void Encode( const MsgStreamWelcome& m, std::vector<uint8_t>& out );
 void Encode( const MsgStreamInput& m, std::vector<uint8_t>& out );
 // A View message around a view packet.
@@ -164,6 +175,7 @@ bool Decode( ByteReader& r, MsgChecksum& m );
 bool Decode( ByteReader& r, MsgResyncRequest& m );
 bool Decode( ByteReader& r, MsgInput& m );
 bool Decode( ByteReader& r, MsgPlayerNames& m );
+bool Decode( ByteReader& r, MsgPrivateFields& m );
 bool Decode( ByteReader& r, MsgStreamWelcome& m );
 bool Decode( ByteReader& r, MsgStreamInput& m );
 

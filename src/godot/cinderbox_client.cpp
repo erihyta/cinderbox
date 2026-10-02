@@ -1002,12 +1002,18 @@ void CinderboxClient::PushStates()
 		{
 			return;
 		}
+		// (Its private fields too, for the viewer's own player: reactions and predictions read them.)
+		const Blackboard* privates = PrivatesOf( v.netId );
 		uint64_t hash = 1469598103934665603ull;
 		for ( const BoardField& field : schema.fields )
 		{
 			if ( field.scope == BoardScope::Entity )
 			{
 				hash = Mix( hash, uint32_t( v.board.values[field.slot] ) );
+			}
+			else if ( field.scope == BoardScope::Private && privates != nullptr )
+			{
+				hash = Mix( hash, 0x20000u + uint32_t( privates->values[field.slot] ) );
 			}
 		}
 		auto held = m_heldKinds.find( v.netId );
@@ -1030,6 +1036,10 @@ void CinderboxClient::PushStates()
 			if ( field.scope == BoardScope::Entity )
 			{
 				state[String::utf8( field.name.c_str() )] = FieldVariant( field, v.board.values[field.slot] );
+			}
+			else if ( field.scope == BoardScope::Private && privates != nullptr )
+			{
+				state[String::utf8( field.name.c_str() )] = FieldVariant( field, privates->values[field.slot] );
 			}
 		}
 		// What it holds, by item kind, as in the state machines' conditions.
@@ -1437,7 +1447,8 @@ PackedStringArray CinderboxClient::get_mod_names() const
 Variant CinderboxClient::get_field( int64_t net_id, const String& name ) const
 {
 	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
-	present::FieldValue value = present::ReadField( m_frame.schema, ToStd( name ), BoardOf( uint32_t( net_id ) ), globals );
+	present::FieldValue value =
+		present::ReadField( m_frame.schema, ToStd( name ), BoardOf( uint32_t( net_id ) ), globals, PrivatesOf( uint32_t( net_id ) ) );
 	if ( value.declared == false )
 	{
 		return Variant();
@@ -1497,7 +1508,8 @@ bool CinderboxClient::check_conditions( int64_t net_id, const PackedStringArray&
 	};
 	for ( const std::string& condition : Conditions( conditions ) )
 	{
-		if ( present::CheckCondition( m_frame.schema, condition, BoardOf( uint32_t( net_id ) ), globals, &held ) == false )
+		if ( present::CheckCondition( m_frame.schema, condition, BoardOf( uint32_t( net_id ) ), globals, &held, PrivatesOf( uint32_t( net_id ) ) ) ==
+			 false )
 		{
 			return false;
 		}
@@ -1742,7 +1754,8 @@ String CinderboxClient::format_fields( int64_t net_id, const String& format ) co
 	String withName = ResolveNameFields(
 		net_id, ResolveKeysAndLooks( net_id, format ).replace( "{name}", get_player_name( net_id ).replace( "{", "(" ) ) );
 	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
-	std::string text = present::FormatFields( m_frame.schema, ToStd( withName ), BoardOf( uint32_t( net_id ) ), globals );
+	std::string text =
+		present::FormatFields( m_frame.schema, ToStd( withName ), BoardOf( uint32_t( net_id ) ), globals, PrivatesOf( uint32_t( net_id ) ) );
 	return String::utf8( text.c_str() );
 }
 
@@ -1851,6 +1864,7 @@ void CinderboxClient::LeadLocalPlayer( float delta )
 
 void CinderboxClient::ApplyPredictedFields()
 {
+	m_privates = m_frame.privates; // this frame's, before what is predicted
 	uint32_t local = m_frame.frame.localNetId;
 	flecs::entity visual = local != 0 ? m_mirror->VisualOf( local ) : flecs::entity();
 	if ( visual.is_valid() == false )
@@ -1864,13 +1878,14 @@ void CinderboxClient::ApplyPredictedFields()
 		{
 			cue::Change change;
 			const BoardField* field = cue::ParseChange( shown.changes[i], change ) ? schema.FindField( ToStd( change.field ) ) : nullptr;
-			if ( field == nullptr || field->scope != BoardScope::Entity )
+			if ( field == nullptr || field->scope == BoardScope::Global )
 			{
-				continue; // a field no mod on this server declared
+				continue; // a field no mod on this server declared, or not the player's own
 			}
-			// The mirror's copy: written again from the frame on every update, so this never adds up.
+			// Copies that are written again from the frame on every update, so this never adds up:
+			// the mirror's board, or the frame's private fields.
 			present::Visual& v = visual.get_mut<present::Visual>();
-			int32_t& slot = v.board.values[field->slot];
+			int32_t& slot = field->scope == BoardScope::Private ? m_privates.values[field->slot] : v.board.values[field->slot];
 			if ( field->type == BoardType::Float )
 			{
 				float value = BoardToFloat( slot );
