@@ -1635,6 +1635,73 @@ session.
 - View files written before this (packet "CBV1", file version 1) no longer read.
 - The header is 75 bytes a frame of fixed-width fields; nothing was done about it.
 
+## Streaming clients (M54)
+A client that does not simulate. It says so when it joins, the server sends it the frames to draw
+and plays its input, and it is shown only what the server's mods let it see. It is the client the
+viewer protocol was for: the Godot viewer does not know the difference.
+
+```
+streaming client                          server
+  Hello( stream ) ───────────────────────>   a slot, like any player
+  <─────────────────────── StreamWelcome
+  <─ View: a compact packet, 20 a second ─   the world after the tick, as this client may see it,
+                                             a delta against the frame it acknowledged
+  StreamInput: input + newest frame ─────>   played from the next tick on
+```
+
+- **Protocol 17.** `Hello.stream`; `StreamWelcome`, `View`, `StreamInput`. A streaming client's
+  fingerprint is not looked at (it has no simulation to disagree with), and it is sent no
+  checksums, names or input frames: names are in its frames.
+- **Loss costs nothing to recover.** A `View` is unreliable and is a delta against the newest frame
+  the client said it has (`StreamInput.ackSerial`). The server keeps the last 16 frames it sent
+  each client, the client the last 16 it decoded, so any of them can be the base. A frame whose
+  base the client no longer has is dropped and a whole one asked for (ack 0), sent reliably, and
+  not sent twice while the first is on its way.
+- **Input.** The newest input wins, many times a second; presses shorter than the gap are latched
+  on both ends. The server plays it from the next tick: there are no input ticks to be late for.
+- **What each client is sent** is decided by the mods: `ServerMod::Sees( ctx, viewer, netId )`,
+  asked for every entity of every streamed frame. One no hides the entity, what it holds, its
+  ragdoll's parts, and what the event rings say about it (`present/visibility.*`). A player always
+  sees itself. Clients that simulate are never asked about: they have the world.
+- **The `fog` mod** is the example and the "only what is near" switch: `--mod-option fog.radius=12`
+  sends each streaming client the level and whatever is within 12 m of its player.
+- **The client** is `StreamSource` (`src/stream`, library `cb_stream`: ENet and the view codec) and
+  its extension `cinderbox_stream` (`CinderboxStream`, 0.6 MB). No simulation is linked: `cb_net`
+  now links `cb_sim_data` only, and `source_thread.*` moved to `src/present`. `godot -- --stream`
+  joins with it; a copy of the game without the peer extension joins with it by itself.
+- **No movement is predicted.** The player's own character answers a round trip plus a frame
+  late (ROADMAP.md, "A stream that feels local"). Its presses are shown at once by the look's
+  [predictions](#the-viewer-predicts-m56), as for any source.
+
+**Measured** (what a streaming Godot client downloads, ENet's headers included, bots that shoot):
+
+| Players | Everything | `fog.radius=12` |
+|---|---|---|
+| 4 | 74 kbit/s | 45 kbit/s |
+| 32 | 565 kbit/s | 117 kbit/s |
+| 64 | 825 kbit/s | 112 kbit/s |
+
+**Verified**
+- `net_stream`: a streaming client joins a server with every mod, walks 7.9 m and throws props by
+  its input alone, is sent 20 frames a second (79 in 4 s, one of them whole), its picture within
+  1.5 m of the server's world; a simulating bot beside it does not desync.
+- `net_stream_lossy`: 5% loss, 1% duplicates, 95 ms round trip: 95 of 100 frames arrive, none had
+  to be dropped, no whole frame is resent.
+- `net_stream_fog`: three streaming players in a row, 1.5 m apart, `fog.radius` 2: the ends are not
+  sent each other (nor what they carry), the middle is sent both, the level is everyone's.
+- A Godot client streaming on a server with 31 bots: it joins, plays, swings its bat (its own
+  actions arrive through the stream), HUD, kill feed and scoreboard show, exit code 0. The stream
+  extension links no simulation library. The release extensions build.
+
+**Not done**
+- Nobody played it by hand: how the round-trip delay and 20 frames a second feel is not known.
+- A late frame pauses the picture (there is no buffer); nothing was measured about it.
+- The menu has no "streamed" choice: it is `--stream`, or what a game without the peer does.
+- The server keeps 16 frames for each streaming client (a few MB each); 64 of them was not tried.
+- The server captures the world once and copies it for each streaming client; with many, that is
+  the cost to look at first.
+- `check_menu.gd` follows the renames again and was again not run.
+
 ## The viewer predicts (M56)
 The viewer draws what a source hands it, and a source's word on your own press is a round trip
 away. The viewer takes the press itself, the way it takes the server's cues, and shows what the
@@ -1800,5 +1867,6 @@ The ordered plan for the client is in [ROADMAP.md](ROADMAP.md). These are loose 
 50. **M50** (done): frames as bytes: `EncodeView` / `DecodeView` with per-word deltas against a base, view files (`cb_server --record-view`, `ViewFileSource`, `--view=FILE`, `cb_replay view`), measured sizes; `bytes.h` moved to `src/sim`.
 51. **M51** (done): two extensions: the viewer (`cinderbox`: no simulation, no networking) and the peer (`cinderbox_peer`: `CinderboxPeer`, the live and replay sources) with packets between them; `set_source( object )`; `cb_sim_data` and `cb_capture` split out so the viewer cannot link a simulation; mod projects get the viewer only.
 52. **M52** (done): packs are contained: the scene guard (node class list, no scripts, no connections, contained paths, method list for animations and reactions, advance expressions cleared), run wherever a moddable scene is instantiated; `check_guard.gd`.
-56. **M56** (done): the viewer predicts: `CbPrediction` (action, cue, conditions, cooldown) and `CbDirector.press`; the server's cue of the same name is the echo and plays only the reactions that waited for it; `pressed:<action>` cues removed; one reaction per cue in the pistol and melee looks. (M54 and M55 were tried on branches and not merged.)
 53. **M53** (done): smaller frames: compact packets (grid positions and animation values as small deltas, 32-bit rotations, no velocity or inputs), a stride for fewer frames than ticks, entity lists and event rings sent as what changed, `--view-rate` / `--view-compact`, a size breakdown in `cb_replay view`; 32 players from 6.8 to 0.43 Mbit/s.
+54. **M54** (done): streaming clients: protocol 17 (`Hello.stream`, `StreamWelcome`, `View`, `StreamInput`), frames as acknowledged compact deltas, `ServerMod::Sees` and the `fog` mod, `StreamSource` and the `cinderbox_stream` extension with no simulation, `--stream`.
+56. **M56** (done): the viewer predicts: `CbPrediction` (action, cue, conditions, cooldown) and `CbDirector.press`; the server's cue of the same name is the echo and plays only the reactions that waited for it; `pressed:<action>` cues removed; one reaction per cue in the pistol and melee looks. A streaming client predicts the same way: the viewer takes the press, whatever the source. (M55, mods run on clients that simulate, was tried on a branch and dropped for this.)

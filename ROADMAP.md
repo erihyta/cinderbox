@@ -21,6 +21,8 @@ source  <──control───   viewer        named commands with a number ("p
 | Live source | connection, prediction, rollback on its own thread (peer) | `src/client/live_source.*` |
 | Replay source | a recording re-simulated on its own thread (peer) | `src/client/replay_source.*` |
 | View file source | a file of frames played back, no simulation (viewer) | `src/present/view_file.*` |
+| Stream source | frames sent by a server, input sent up; nothing predicted, shown only what the mods allow (stream) | `src/stream/stream_source.*` |
+| Stream | the `cinderbox_stream` extension: `CinderboxStream`, a source the server sends frames to. Networking, no simulation | `src/godot/stream/`, `src/stream/` |
 | Any object | `take( whole ) -> PackedByteArray`: a script can be a source | `src/godot/object_source.*` |
 
 The viewer takes two things the same way: what a source says happened, and what its own player
@@ -33,44 +35,12 @@ Each step is a milestone of its own, and each leaves the game playable.
 
 | # | Step | Why | Needs |
 |---|---|---|---|
-| 1 | **Stream source** | a client that does not simulate; fog of war | nothing |
+| 1 | **Predicted state in the viewer** | a press changes what you see beyond effects: the HUD, the body | nothing |
 | 2 | **Private fields** | secrets that are not physical (a role, a hand of cards) | nothing |
-| 3 | **Predicted state in the viewer** | a press changes what you see beyond effects: the HUD, the body | nothing |
+| 3 | **A stream that feels local** | a streaming client's own character answers a round trip late | nothing |
 | 4 | **One condition language** | reactions and the HUD read the game the same way | nothing |
 
-### 1. Stream source
-
-- **What**: the server captures a `ViewFrame` per streaming client and sends the bytes; the client
-  sends input up as it does now. No simulation, no prediction, no rollback on that client.
-- **Where it lives**: a third kind of source object next to `CinderboxPeer`, small enough to be its
-  own extension (ENet and the codec, no simulation), so a streaming client ships without the peer.
-- **What a frame costs**: compact packets at 20 frames a second are 67 kbit/s for 4 players, 429
-  for 32 and 671 for 64 (DESIGN.md, M53; the aim was 300 for 32). `cb_replay view` says where the
-  bytes go. What is left to take, in the order of what it would save:
-  - each client is sent only what is near it (the same hook that hides things for fog of war);
-  - animation: 24 bytes a player a frame, a third of it the mask of which values changed;
-  - rotations: 4 bytes whenever a body turned at all; a turn since the last frame fits in less;
-  - events: 44 bytes each, most of them zeros.
-- **For**: spectators, weak machines, and servers whose game does not need predicted physics
-  (cards, boards, turn-based).
-- **Fog of war**: the server filters each client's frame through a mod hook
-  (`bool Visible( viewer, entity )`). Only streaming clients can be kept in the dark: a client that
-  simulates the world has the world.
-- **Honest cost**: without prediction, the local player moves a round trip late. A small local
-  mover for the own character is a later step, not part of this one.
-- **Done when**: a client joins with `--stream`, plays with the server's mods and looks, and a test
-  mod hides an entity from one player and not the other.
-
-### 2. Private fields
-
-- **What**: `declare.Field( name, type, BoardScope::Private )`. The value is never in the
-  simulation, never hashed, never in a recording's frames. The server puts it in the owner's
-  `ViewFrame` only (a side list next to the board, same names, same conditions in looks).
-- **For live clients too**: it rides the reliable channel to its owner, outside the frame batches.
-- **Done when**: a test mod gives each player a secret number; each HUD shows its own; a bot that
-  dumps everything it receives never sees another player's.
-
-### 3. Predicted state in the viewer
+### 1. Predicted state in the viewer
 
 - **Today**: a `CbPrediction` plays a cue's effects at once (DESIGN.md, M56). What the server
   *changes* still waits for its frame:
@@ -84,7 +54,7 @@ Each step is a milestone of its own, and each leaves the game playable.
   speaks, as data in the look:
   - a field: `pistol.ammo - 1` (the HUD and conditions read the predicted value);
   - a stance or an animation state (the swing starts now);
-  - later, movement, for sources that do not simulate (a stream).
+  - later, movement, for sources that do not simulate (step 3).
 - **How it stays honest**: each change is held against the frame that answers it. When the
   server's cue comes, the server's value replaces it; when none comes within the wait, it is put
   back. The viewer never tells a source what it predicted.
@@ -92,6 +62,28 @@ Each step is a milestone of its own, and each leaves the game playable.
   server alone decides.
 - **Done when**: the pistol's ammo count and the bat's swing pose follow the click, a refused
   press puts both back, and the look still has no code.
+
+### 2. Private fields
+
+- **What**: `declare.Field( name, type, BoardScope::Private )`. The value is never in the
+  simulation, never hashed, never in a recording's frames. The server puts it in the owner's
+  `ViewFrame` only (a side list next to the board, same names, same conditions in looks).
+- **For live clients too**: it rides the reliable channel to its owner, outside the frame batches.
+- **Done when**: a test mod gives each player a secret number; each HUD shows its own; a bot that
+  dumps everything it receives never sees another player's.
+
+### 3. A stream that feels local
+
+- **The problem**: a streaming client's presses show at once (predictions), but its own character
+  moves a round trip plus a frame late, and a late packet is a visible pause.
+- **What**: a small mover for the own character only, run by the stream source from the player's
+  input and corrected by the server's frames; and a short buffer of frames, so one that is late
+  does not stall the picture.
+- **Also**: smaller frames still (DESIGN.md, M53 and M54, say where the bytes go): animation is 24
+  bytes a player a frame, a rotation is 4 bytes whenever a body turned at all, an event is 44 bytes
+  that are mostly zeros.
+- **Done when**: with 100 ms of latency a streaming player's own movement starts within a frame,
+  and 5% loss shows no pause.
 
 ### 4. One condition language
 

@@ -1,11 +1,12 @@
 #pragma once
 
-// What the sources that simulate share (live_source.h, replay_source.h): a thread of their own and
-// the newest frame, handed to the viewer's thread.
+// What sources with work of their own share (client/live_source.h, client/replay_source.h,
+// stream/stream_source.h): a thread, and the newest frame handed to the viewer's thread.
 //
-// A dedicated thread keeps simulation spikes (a rollback, a seek) off the render thread, and it
-// lets the source own the floating-point environment the simulation runs in: whatever the viewer's
-// engine does to its own threads' FP control register cannot change simulation results.
+// A dedicated thread keeps a source's spikes (a rollback, a seek, a burst of packets) off the
+// render thread. For the sources that simulate it also owns the floating-point environment the
+// simulation runs in: whatever the viewer's engine does to its own threads' FP control register
+// cannot change simulation results.
 
 #include "view.h"
 

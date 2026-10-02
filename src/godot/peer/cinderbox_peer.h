@@ -9,7 +9,7 @@
 //
 // This library holds the simulation and the networking. The viewer library holds neither.
 
-#include "view.h"
+#include "packet_handoff.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
@@ -97,11 +97,7 @@ private:
 	int m_rollbackMax = 20;
 
 	std::unique_ptr<present::ViewSource> m_source;
-	// The frame last handed over (the next delta's base) and the one being taken.
-	present::ViewFrame m_frames[2];
-	int m_current = 0;
-	bool m_haveBase = false;
-	std::vector<uint8_t> m_bytes;
+	PacketHandoff m_handoff;
 };
 
 } // namespace cb::gd
