@@ -101,6 +101,5 @@ Independent of the path; each is small.
 |---|---|
 | DESIGN.md by subsystem, not by milestone | sections from early milestones describe things later ones replaced (effect bindings, the loadout) |
 | A board sized by the schema | `kBoardSlots` is a wall that came back once already |
-| One animation system | the mode controller, stances and `CinderboxAnimator` predate the baked state machines |
 | `simulation.cpp` in modules | characters, props, ragdolls, items and animation in one 2,100-line class |
 | Repository | a LICENSE; `.uid` files committed; line endings settled in `.gitattributes`; the old `build/` folder in OneDrive |
