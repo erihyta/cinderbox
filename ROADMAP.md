@@ -21,8 +21,6 @@ source  <──control───   viewer        named commands with a number ("p
 | Live source | connection, prediction, rollback on its own thread (peer) | `src/client/live_source.*` |
 | Replay source | a recording re-simulated on its own thread (peer) | `src/client/replay_source.*` |
 | View file source | a file of frames played back, no simulation (viewer) | `src/present/view_file.*` |
-| Stream source | frames sent by a server, input sent up; nothing predicted, shown only what the mods allow (stream) | `src/stream/stream_source.*` |
-| Stream | the `cinderbox_stream` extension: `CinderboxStream`, a source the server sends frames to. Networking, no simulation | `src/godot/stream/`, `src/stream/` |
 | Any object | `take( whole ) -> PackedByteArray`: a script can be a source | `src/godot/object_source.*` |
 
 The viewer takes two things the same way: what a source says happened, and what its own player
@@ -31,26 +29,15 @@ with no rule on the client. The long road is a viewer that can show a whole sand
 
 ## Steps
 
-Each step is a milestone of its own, and each leaves the game playable.
+The viewer and source split is done, and the client that simulates is the only kind (streaming
+clients were removed in M68). Nothing is planned in order; these are what is left to make that
+client better, from DESIGN.md's known limits. Each would be a milestone of its own.
 
-| # | Step | Why | Needs |
-|---|---|---|---|
-| 1 | **A stream that feels local** | only for `--stream` clients: their own character answers a round trip late | nothing |
-
-### 1. A stream that feels local
-
-- **Who it is for**: clients that join with `--stream` and do not simulate. A normal client
-  predicts its own movement already.
-- **The problem**: a streaming client's presses, fields and upper body show at once (predictions),
-  but its own character moves a round trip plus a frame late, and a late packet is a visible pause.
-- **What**: a small mover for the own character only, run by the stream source from the player's
-  input and corrected by the server's frames; and a short buffer of frames, so one that is late
-  does not stall the picture.
-- **Also**: smaller frames still (`cb_replay view` says where the bytes go): animation is 24
-  bytes a player a frame, a rotation is 4 bytes whenever a body turned at all, an event is 44 bytes
-  that are mostly zeros.
-- **Done when**: with 100 ms of latency a streaming player's own movement starts within a frame,
-  and 5% loss shows no pause.
+| Candidate | Today | Would be |
+|---|---|---|
+| **A wrong guess is taken back** | a reaction played on a prediction the server never answers stays played | a prediction that expires stops what it started (sounds, scenes) |
+| **A swing seen from its start** | behind latency another player's swing is first seen a little way in, and animation keys before that point do not fire | the keys that were skipped fire on the first frame it is seen |
+| **Checked pack layers** | an animation pack's layer may read what the lead cannot predict | the bake says so |
 
 ## Housekeeping
 

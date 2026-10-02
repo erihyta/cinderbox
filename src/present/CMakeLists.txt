@@ -12,7 +12,6 @@ add_library(cb_present STATIC
 	view.cpp
 	view_codec.cpp
 	view_file.cpp
-	visibility.cpp
 )
 target_include_directories(cb_present PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(cb_present PUBLIC cb_sim_data cb_anim)

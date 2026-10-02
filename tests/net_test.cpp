@@ -19,7 +19,6 @@
 #include "replay.h"
 #include "replay_source.h"
 #include "simulation.h"
-#include "stream_source.h"
 #include "util.h"
 
 #include <chrono>
@@ -2173,33 +2172,9 @@ void TestViewSources()
 	std::filesystem::remove( replayPath, ignored );
 }
 
-// The entity a frame calls the local player, or null.
-const present::FrameEntity* LocalEntity( const present::ViewFrame& frame )
-{
-	for ( const present::FrameEntity& e : frame.frame.entities )
-	{
-		if ( e.netId == frame.frame.localNetId && e.netId != 0 )
-		{
-			return &e;
-		}
-	}
-	return nullptr;
-}
-
-size_t CountKind( const present::ViewFrame& frame, present::VisualKind kind )
-{
-	size_t n = 0;
-	for ( const present::FrameEntity& e : frame.frame.entities )
-	{
-		n += e.kind == kind ? 1 : 0;
-	}
-	return n;
-}
-
 // Private fields: the "secret" mod gives each player a number that only that player is sent. Every
 // client has its own and exactly what the server keeps for it; the simulation has none of it (it
-// is not a board value, and nobody desyncs over it); a streaming client finds its own in its
-// frames; and a slot that is given up starts empty.
+// is not a board value, and nobody desyncs over it); and a slot that is given up starts empty.
 void TestPrivateFields()
 {
 	Harness h( 47813, {}, {}, { { "secret.numbers", "1" } } );
@@ -2240,194 +2215,6 @@ void TestPrivateFields()
 		CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
 	}
 	std::printf( "    four numbers, all different: %d (they are random, 1 to 99)\n", int( allDiffer ) );
-
-	// A streaming client is told its own in its frames.
-	auto serve = [&h]() { h.RunUntil( h.Now() + 0.002 ); };
-	StreamOptions options;
-	options.port = h.clientPort;
-	options.playerName = "Watcher";
-	StreamSource stream( options );
-	present::ViewFrame frame;
-	CHECK( TakeUntil( stream, frame, 10.0, [&]( const present::ViewFrame& f ) {
-		return f.state == "playing" && f.hasWorld && f.privates.values[field->slot] != 0;
-	}, serve ) );
-	int32_t streamed = frame.privates.values[field->slot];
-	std::printf( "    the streaming client was told %d\n", streamed );
-	CHECK( streamed >= 1 && streamed <= 99 );
-	bool found = false;
-	for ( int s = 0; s < kMaxPlayers; ++s )
-	{
-		found |= h.server.Privates( PlayerSlot( s ) ).values[field->slot] == streamed;
-	}
-	CHECK( found );
-}
-
-// A client that does not simulate: the server sends it frames to draw and plays its input.
-void TestStream()
-{
-	Harness h( 47850 );
-	uint16_t spawn = h.server.Schema().ActionMask( "spawn_prop" );
-	CHECK( spawn != 0 );
-	auto serve = [&h]() { h.RunUntil( h.Now() + 0.002 ); };
-
-	StreamOptions options;
-	options.port = h.clientPort;
-	options.playerName = "Watcher";
-	StreamSource stream( options );
-	CHECK( stream.TakesInput() );
-	present::ViewFrame frame;
-	CHECK( TakeUntil( stream, frame, 10.0, []( const present::ViewFrame& f ) { return f.state == "playing" && f.hasWorld && LocalEntity( f ) != nullptr; }, serve ) );
-	CHECK( frame.stride == 3 ); // 20 frames a second of a 60 Hz world
-	CHECK( frame.mapName.empty() == false && frame.schema.ActionMask( "spawn_prop" ) == spawn );
-	CHECK( frame.names[0] == "Watcher" );
-	CHECK( frame.frame.hasInputs == false );
-	// A client that simulates plays beside it, none the wiser.
-	h.AddBot();
-
-	// Four seconds of walking and throwing a prop now and then: its player moves on the server and
-	// in the frames it is sent, props appear, frames come about 20 a second.
-	b3Vec3 startedAt = LocalEntity( frame )->transform.position;
-	size_t propsBefore = CountKind( frame, present::VisualKind::Prop );
-	size_t propsMost = propsBefore;
-	int taken = 0;
-	uint32_t lastTick = frame.frame.tick;
-	bool ticksGrow = true;
-	auto start = Clock::now();
-	while ( std::chrono::duration<double>( Clock::now() - start ).count() < 4.0 )
-	{
-		serve();
-		double t = std::chrono::duration<double>( Clock::now() - start ).count();
-		PlayerInput in;
-		in.moveForward = 127;
-		in.actions = std::fmod( t, 1.0 ) < 0.1 ? spawn : uint16_t( 0 );
-		stream.SetInput( in );
-		if ( stream.Take( frame ) && frame.hasWorld )
-		{
-			taken += 1;
-			ticksGrow &= frame.frame.tick > lastTick;
-			lastTick = frame.frame.tick;
-			propsMost = std::max( propsMost, CountKind( frame, present::VisualKind::Prop ) );
-		}
-	}
-	CHECK( frame.state == "playing" && LocalEntity( frame ) != nullptr );
-	CHECK( ticksGrow );
-	CHECK( taken > 60 && taken < 100 );
-	float walked = b3Length( b3Sub( LocalEntity( frame )->transform.position, startedAt ) );
-	CHECK( walked > 2.0f );
-	CHECK( propsMost > propsBefore );
-	const Character* onServer = h.server.Sim().PlayerCharacter( 0 );
-	const Transform* serverAt = h.server.Sim().EntityTransform( h.server.Sim().PlayerNetId( 0 ) );
-	CHECK( onServer != nullptr && serverAt != nullptr );
-	// What it is shown is the server's world, a frame or two old and on the compact grid.
-	CHECK( b3Length( b3Sub( serverAt->position, LocalEntity( frame )->transform.position ) ) < 1.5f );
-	CHECK( CountKind( frame, present::VisualKind::Player ) == 2 );
-	CHECK( StatOf<int64_t>( frame, "frames_dropped", -1 ) == 0 );
-	const auto& stats = h.server.GetStats();
-	std::printf( "    stream: %d frames in 4 s, walked %.1f m, %llu sent (%llu whole), %.0f bytes a frame, %.0f kbit/s down\n", taken, walked,
-				 (unsigned long long)stats.viewsSent, (unsigned long long)stats.viewsWhole,
-				 double( stats.viewBytes ) / double( std::max<uint64_t>( stats.viewsSent, 1 ) ), StatOf<double>( frame, "kbit_down", 0.0 ) );
-	CHECK( stats.viewsWhole <= 3 );
-	CHECK( h.bots[0].client->State() == ClientState::Playing && h.bots[0].client->GetStats().desyncs == 0 );
-}
-
-// A bad connection: frames are lost and arrive out of order, and the stream goes on, because every
-// frame is a delta against one the client said it has.
-void TestStreamLossy()
-{
-	Harness h( 47852 );
-	net::NetSimConfig bad;
-	bad.latencyMs = 30;
-	bad.jitterMs = 10;
-	bad.lossPercent = 5.0f;
-	bad.duplicatePercent = 1.0f;
-	bad.seed = 11;
-	h.AddNetSim( 47853, bad );
-	auto serve = [&h]() { h.RunUntil( h.Now() + 0.002 ); };
-
-	StreamOptions options;
-	options.port = h.clientPort;
-	StreamSource stream( options );
-	present::ViewFrame frame;
-	CHECK( TakeUntil( stream, frame, 10.0, []( const present::ViewFrame& f ) { return f.state == "playing" && LocalEntity( f ) != nullptr; }, serve ) );
-	h.AddBot();
-	int taken = 0;
-	uint32_t lastTick = frame.frame.tick;
-	bool ticksGrow = true;
-	auto start = Clock::now();
-	while ( std::chrono::duration<double>( Clock::now() - start ).count() < 5.0 )
-	{
-		serve();
-		PlayerInput in;
-		in.moveRight = 100;
-		stream.SetInput( in );
-		if ( stream.Take( frame ) && frame.hasWorld )
-		{
-			taken += frame.frame.tick != lastTick ? 1 : 0;
-			ticksGrow &= frame.frame.tick >= lastTick;
-			lastTick = frame.frame.tick;
-		}
-	}
-	const auto& stats = h.server.GetStats();
-	std::printf( "    lossy stream: %d frames in 5 s (%lld dropped by the client), %llu sent (%llu whole), rtt %lld ms\n", taken,
-				 (long long)StatOf<int64_t>( frame, "frames_dropped", -1 ), (unsigned long long)stats.viewsSent,
-				 (unsigned long long)stats.viewsWhole, (long long)StatOf<int64_t>( frame, "rtt_ms", -1 ) );
-	CHECK( frame.state == "playing" && ticksGrow );
-	CHECK( taken > 70 ); // of 100 sent, with 5% lost
-	CHECK( stats.viewsWhole < stats.viewsSent / 10 );
-	CHECK( StatOf<int64_t>( frame, "rtt_ms", 0 ) >= 40 );
-}
-
-// Fog of war: the server's mods decide what a streaming client is sent. With fog.radius 2, three
-// players 1.5 m apart in a row: the ones at the ends are not sent each other, the one in the middle
-// is sent both.
-void TestStreamFog()
-{
-	Harness h( 47854, {}, {}, { { "fog.radius", "2" } } );
-	auto serve = [&h]() { h.RunUntil( h.Now() + 0.002 ); };
-	StreamOptions options;
-	options.port = h.clientPort;
-	std::vector<std::unique_ptr<StreamSource>> clients;
-	present::ViewFrame frames[3];
-	for ( int i = 0; i < 3; ++i )
-	{
-		clients.push_back( std::make_unique<StreamSource>( options ) );
-		CHECK( TakeUntil( *clients[size_t( i )], frames[i], 10.0, []( const present::ViewFrame& f ) { return LocalEntity( f ) != nullptr; }, serve ) );
-	}
-	// A moment to settle, then everyone's newest frame.
-	auto start = Clock::now();
-	while ( std::chrono::duration<double>( Clock::now() - start ).count() < 2.0 )
-	{
-		serve();
-		for ( int i = 0; i < 3; ++i )
-		{
-			clients[size_t( i )]->Take( frames[i] );
-		}
-	}
-	uint32_t ids[3] = { frames[0].frame.localNetId, frames[1].frame.localNetId, frames[2].frame.localNetId };
-	CHECK( ids[0] != 0 && ids[1] != 0 && ids[2] != 0 && ids[0] != ids[1] && ids[1] != ids[2] );
-	auto shown = []( const present::ViewFrame& frame, uint32_t netId ) {
-		for ( const present::FrameEntity& e : frame.frame.entities )
-		{
-			// The player, or anything it carries.
-			if ( e.netId == netId || e.holder == netId )
-			{
-				return true;
-			}
-		}
-		return false;
-	};
-	float apart = b3Length( b3Sub( LocalEntity( frames[0] )->transform.position, LocalEntity( frames[2] )->transform.position ) );
-	std::printf( "    players in each view: %zu, %zu, %zu (the ends are %.1f m apart)\n", CountKind( frames[0], present::VisualKind::Player ),
-				 CountKind( frames[1], present::VisualKind::Player ), CountKind( frames[2], present::VisualKind::Player ), apart );
-	CHECK( apart > 2.0f );
-	CHECK( shown( frames[0], ids[0] ) && shown( frames[0], ids[1] ) && shown( frames[0], ids[2] ) == false );
-	CHECK( shown( frames[1], ids[0] ) && shown( frames[1], ids[1] ) && shown( frames[1], ids[2] ) );
-	CHECK( shown( frames[2], ids[0] ) == false && shown( frames[2], ids[1] ) && shown( frames[2], ids[2] ) );
-	// The level is everyone's.
-	CHECK( CountKind( frames[0], present::VisualKind::Static ) > 0 );
-	CHECK( CountKind( frames[0], present::VisualKind::Static ) == CountKind( frames[1], present::VisualKind::Static ) );
-	// The server's world has all three; nothing was taken out of it.
-	CHECK( CountPlayers( h.server.Sim() ) == 3 );
 }
 
 } // namespace
@@ -2468,9 +2255,6 @@ int main( int argc, char** argv )
 		{ "item_layers", TestItemLayers },
 		{ "sprint_swing", TestSprintSwing },
 		{ "view_sources", TestViewSources },
-		{ "stream", TestStream },
-		{ "stream_lossy", TestStreamLossy },
-		{ "stream_fog", TestStreamFog },
 	};
 
 	const char* filter = argc > 1 ? argv[1] : nullptr;

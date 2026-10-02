@@ -10,7 +10,7 @@
 // Every 300th record is a key, for seeking. A truncated last record (a crash) is ignored.
 //
 // A file may hold fewer frames than the session had ticks (a stride: every third tick is 20 frames
-// a second), and its packets may be compact (view_codec.h): together, what a stream would carry.
+// a second), and its packets may be compact (view_codec.h): together, a much smaller file.
 
 #include "view.h"
 #include "view_codec.h"

@@ -1,7 +1,7 @@
 #pragma once
 
 // A ViewFrame as bytes (view.h): what crosses between a source and a viewer that do not share a
-// library, what a view file holds, and what a server will stream.
+// library, and what a view file holds.
 //
 // A packet is one frame, whole or as a delta against a frame both sides have (the base). Deltas
 // are per 32-bit word: an entity that did not change costs one bit, a player that moved costs the
@@ -10,7 +10,7 @@
 //
 // Two precisions. Exact: every word that differs travels as it is, so the receiver has the
 // sender's frame bit for bit (between two libraries of one process, in a file to study). Compact:
-// what a stream can afford. Positions on a 1/512 m grid and animation values on a 1/1024 grid,
+// a small file. Positions on a 1/512 m grid and animation values on a 1/1024 grid,
 // sent as how far they moved; rotations in 32 bits; no velocity; no transform for an item in a
 // hand; no inputs (a viewer draws none of them). A compact delta needs a base the receiver decoded
 // from compact packets: both sides then stand on the same grid.
@@ -66,7 +66,7 @@ bool ViewPacketCompact( const uint8_t* data, size_t size );
 uint64_t ViewPacketBase( const uint8_t* data, size_t size );
 
 // False for bytes that are not a packet, or a delta whose base is not `base`. `out` must not be
-// the base; it may be a frame decoded earlier from the same stream (what it already holds of the
+// the base; it may be a frame decoded earlier from the same sender (what it already holds of the
 // session is kept instead of copied). On failure `out` is left in an unspecified but valid state.
 bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFrame& out );
 

@@ -12,7 +12,7 @@ the look does not matter.
 ```
 inputs ──> server: simulation + mods ──> authoritative frames (inputs + mod commands) ──> every simulation
                                                                                               │
-looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <── a source (live, replay, file, stream)
+looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <── a source (live, replay, file)
 ```
 
 | Principle | What it means here |
@@ -34,7 +34,7 @@ looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <─
 | Physics | Box3D (erincatto/box3d), single-threaded, cross-platform determinism mode, two local patches (`cmake/patches/`) |
 | Animation | ozz-animation 0.17.0, scalar (non-SIMD) build; clips and skeletons baked from Godot scenes |
 | Networking | ENet (UDP), dedicated headless server |
-| Client | Godot 4.7 through GDExtensions (godot-cpp 4.5 API): a viewer, a peer, a stream source |
+| Client | Godot 4.7 through GDExtensions (godot-cpp 4.5 API): a viewer and a peer |
 | Game rules | C++ server mods compiled into `cb_server` (`server_mods/`), talking to the world only through commands |
 | Looks | Godot scenes and resource packs with no scripts (reactions, predictions, HUD nodes) |
 | Build directory | `%LOCALAPPDATA%/cinderbox-build/<project folder>/<preset>` (outside OneDrive, one per checkout) |
@@ -46,7 +46,7 @@ looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <─
 | `cb_sim` | the simulation and rollback | `cb_sim_data`, flecs, Box3D |
 | `cb_anim` | skeletons, clips, the pose, hitboxes, retargeting | `cb_sim_data`, ozz |
 | `cb_present`, `cb_capture` | the viewer protocol, the mirror, the frame codec; a simulation's state as a frame | `cb_anim` |
-| `cb_net`, `cb_client_core`, `cb_stream` | protocol and transport; the live and replay sources; the stream source | ENet |
+| `cb_net`, `cb_client_core` | protocol and transport; the live and replay sources | ENet |
 | `cb_server_core`, `cb_server_mods` | the server, the mod API; the mods | everything above |
 
 ## Determinism
@@ -129,8 +129,7 @@ build are fine.
 a simulating client has the whole state, so what one player must not know about another cannot be
 state. A private value is kept by the server per player slot (`GameServer::m_privates`), never
 becomes a command, and is sent to its owner alone: `MsgPrivateFields` on the reliable channel
-after the welcome and whenever a mod changes one, or `ViewFrame::privates` in a streaming client's
-frames. The viewer reads it by name for its own player and 0 for anyone else. It is not hashed,
+after the welcome and whenever a mod changes one. The viewer reads it by name for its own player and 0 for anyone else. It is not hashed,
 not rolled back, not recorded, and a state machine cannot read it.
 
 ## Netcode
@@ -147,7 +146,7 @@ Authoritative server, client rollback (`src/net`, `src/client`).
 
 | Channel | Carries |
 |---|---|
-| 0, reliable | `Hello` (protocol version, build fingerprint, name, token, stream flag), `Welcome` (config, slot, map, schema, a portable snapshot), `Reject`, checksums, names, resync requests |
+| 0, reliable | `Hello` (protocol version, build fingerprint, name, token), `Welcome` (config, slot, map, schema, a portable snapshot), `Reject`, checksums, names, resync requests |
 | 1, unreliable | client: the last 12 ticks of input and the tick it has frames up to. Server: every tick, all frames from that tick on, delta-chained; a lost batch costs nothing because the next repeats it |
 
 - Frames encode a mask of players whose input changed, then only the changed fields; commands carry a field mask.
@@ -171,10 +170,9 @@ source  <──control───   viewer        named commands with a number ("p
 | live (`LiveSource`) | yes: connection, prediction, rollback, on its own thread | peer extension |
 | replay (`ReplaySource`) | yes: a recording re-simulated, followed as its player | peer extension |
 | view file (`ViewFileSource`) | no: recorded frames played back | viewer extension |
-| stream (`StreamSource`) | no: the server sends the frames | stream extension |
 | any object | whatever it likes: `take( whole ) -> PackedByteArray` | a script |
 
-- **Three extensions**: `cinderbox` (the viewer: no simulation, no networking, all a mod's project needs), `cinderbox_peer` (joins servers, plays recordings), `cinderbox_stream` (ENet and the codec). Frames cross between them as bytes.
+- **Two extensions**: `cinderbox` (the viewer: no simulation, no networking, all a mod's project needs) and `cinderbox_peer` (joins servers, plays recordings). Frames cross between them as bytes.
 - **The mirror** (`mirror.*`): a presentation flecs world that interpolates between ticks, fades out rollback corrections, evaluates poses and turns count changes into visual events.
 - **The codec** (`view_codec.*`, packets "CBV3"): whole frames or deltas against a frame both sides have.
 
@@ -184,8 +182,7 @@ source  <──control───   viewer        named commands with a number ("p
 | compact | 1/512 m grid, small deltas | 32 bits (smallest three) | floats on a 1/1024 grid | velocity, inputs, a held item's transform |
 
 - A **stride** sends fewer frames than ticks; lists and event rings are sent as what changed. 32 players went from 6.8 to 0.43 Mbit/s.
-- **Streaming**: the server captures the world after the tick for each streaming client as a compact delta against the frame that client acknowledged (it keeps the last 16 per client), and plays the client's newest input from the next tick. Loss costs nothing to recover.
-- **Visibility**: `ServerMod::Sees( viewer, entity )` filters each streamed frame (the `fog` mod: only what is near). Only streaming clients can be kept in the dark; a client that simulates has the world.
+- **Every client simulates.** Streaming clients (M54: a client that was sent frames instead of inputs, about ten times the download, with fog of war decided by mods) were removed in M68. What is left of them is the compact codec and the stride, which view files use.
 
 ## Server mods
 
@@ -212,7 +209,7 @@ inputs ──> server: mods read the world + this tick's inputs ──> commands
 | `inventory` | what a player carries: slots, stowing, holsters; one owner of the hand |
 | `pickup` | picking up and dropping items, hold-to-use progress on the board |
 | `deathmatch` | rounds: scores `combat.killed`, freezes for the intermission, emits `game.round_start` |
-| `props`, `expire`, `sneak`, `fog` | throwing props; items that lie too long; a crouch layer from an animation pack; what streaming clients are sent |
+| `props`, `expire`, `sneak` | throwing props; items that lie too long; a crouch layer from an animation pack |
 
 ## Workshop items and packs
 
@@ -329,7 +326,7 @@ loads mods; `workshop.gd` is where items are.
 | Kind | Where | Covers |
 |---|---|---|
 | Unit and scenario tests | `tests/test_main.cpp` (`cb_tests`) | map format, commands, events, state machines, poses, hitboxes, items, the frame codec, snapshots, rollback |
-| Network tests | `tests/net_test.cpp` (`cb_net_tests`) | sessions over loopback and a lossy link, mods end to end (combat, pistol, melee, inventory, pickup, deathmatch, sneak), sources, streaming |
+| Network tests | `tests/net_test.cpp` (`cb_net_tests`) | sessions over loopback and a lossy link, mods end to end (combat, pistol, melee, inventory, pickup, deathmatch, sneak), sources |
 | Headless Godot checks | `godot/addons/cinderbox_maps/check_*.gd` | reactions, predictions, the scene guard, the pack validator, the track player, the pose winning over Godot animation, retargeting, the menu |
 | Tools | `cb_bot`, `cb_netsim`, `cb_replay` | bots (full ones run the real client), a UDP relay that degrades traffic, replay verification and view file summaries |
 
@@ -350,12 +347,11 @@ loads mods; `workshop.gd` is where items are.
 | Area | Limit |
 |---|---|
 | Prediction | a reaction played on a wrong guess is not taken back; the led body holds what the state says about movement still over the lead; packs' layers are not checked for what they read; a predicted event's clock is one tick ahead on the frame its answer arrives |
-| Streaming | no movement prediction and no frame buffer: the own character answers a round trip late, a late frame is a pause |
 | Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; packs' non-bone tracks are not played |
 | State machines | no nested machines, OneShot/Add/TimeScale nodes, `travel()`, or crossfade curves |
 | Characters | one character per server; capsule size and speeds are not per character; the scene ships its animations' bone tracks next to the ozz clips |
 | Mods | compiled into the server (no hot-loading); events between mods are a tick late; a board has 32 names per scope |
-| Private fields | per player, not per entity; not in recordings or view files (they read 0 there); hiding entities from a simulating client is not possible (it has the world) |
+| Private fields | per player, not per entity; not in recordings or view files (they read 0 there); entities cannot be hidden from a client: each simulates the whole world, so there is no fog of war |
 | Combat | no teams, no spectators |
 | Items | one body shape per item; two kinds sharing a holster socket overlap |
 | Packs | the checks do not make Godot's or ozz's parsers safe against malformed files |
@@ -459,7 +455,7 @@ Netcode numbers from when they were taken (M4, M5); frame sizes are in [The view
 51. **M51** (done): two extensions: the viewer (`cinderbox`: no simulation, no networking) and the peer (`cinderbox_peer`: `CinderboxPeer`, the live and replay sources) with packets between them; `set_source( object )`; `cb_sim_data` and `cb_capture` split out so the viewer cannot link a simulation; mod projects get the viewer only.
 52. **M52** (done): packs are contained: the scene guard (node class list, no scripts, no connections, contained paths, method list for animations and reactions, advance expressions cleared), run wherever a moddable scene is instantiated; `check_guard.gd`.
 53. **M53** (done): smaller frames: compact packets (grid positions and animation values as small deltas, 32-bit rotations, no velocity or inputs), a stride for fewer frames than ticks, entity lists and event rings sent as what changed, `--view-rate` / `--view-compact`, a size breakdown in `cb_replay view`; 32 players from 6.8 to 0.43 Mbit/s.
-54. **M54** (done): streaming clients: protocol 17 (`Hello.stream`, `StreamWelcome`, `View`, `StreamInput`), frames as acknowledged compact deltas, `ServerMod::Sees` and the `fog` mod, `StreamSource` and the `cinderbox_stream` extension with no simulation, `--stream`.
+54. **M54** (removed in M68): streaming clients: protocol 17 (`Hello.stream`, `StreamWelcome`, `View`, `StreamInput`), frames as acknowledged compact deltas, `ServerMod::Sees` and the `fog` mod, `StreamSource` and the `cinderbox_stream` extension with no simulation, `--stream`.
 56. **M56** (done): the viewer predicts: `CbPrediction` (action, cue, conditions, cooldown) and `CbDirector.press`; the server's cue of the same name is the echo and plays only the reactions that waited for it; `pressed:<action>` cues removed; one reaction per cue in the pistol and melee looks. A streaming client predicts the same way: the viewer takes the press, whatever the source. (M55, mods run on clients that simulate, was tried on a branch and dropped for this.)
 57. **M57** (done): the bat lights its own flames (a reaction on `melee.swing` instead of a playback key in the character's swing); `CbReaction.wait_for_server`.
 58. **M58** (done): the pistol's `mark` action (right mouse): a ray, `pistol.scan` and `pistol.marked`; in the look a predicted click, a beam and a zone that follows the marked player for 2 seconds (README, "Example: a second action"); `net_pistol_mark`.
@@ -470,5 +466,6 @@ Netcode numbers from when they were taken (M4, M5); frame sizes are in [The view
 63. **M63** (done): this document by subsystem instead of by milestone; reference hashes regenerated for the M62 animation state. Found by the new pose hash on macOS: our own code compiled ozz's inline math as platform SIMD; `OZZ_BUILD_SIMD_REF` now reaches every target.
 64. **M64** (done): predicted state in the viewer: `CbPrediction.changes` (fields of the viewer's own player) and `stance` / `stance_layer`; `LeadAnimState` runs the character's upper layers ahead for the local player (`present/anim_lead.*`, `AnimGraph::UpperLayersRead`, `PlayerAnim::shown`); `CbDirector.pending_predictions`; the pistol's ammo and recoil and the bat's swing and flames follow the click; `anim_lead` test.
 65. **M65** (done): a bat's `melee.hot` is cleared by the item's NetId when its time is up, not through the hand: put away or dropped while hot, it stayed hot. `net_melee` puts it away hot.
-66. **M66** (done): private fields: `BoardScope::Private`, kept by the server per player and sent to its owner alone (`MsgPrivateFields`, protocol 19; `ViewFrame::privates` for streams); read by name in looks for the viewer's own player; the `secret` example mod; `net_private_fields`.
+66. **M66** (done): private fields: `BoardScope::Private`, kept by the server per player and sent to its owner alone (`MsgPrivateFields`, protocol 19); read by name in looks for the viewer's own player; the `secret` example mod; `net_private_fields`.
 67. **M67** (done): one expression language (`cb_expr`): the state machine compiler, `present/fields` and the cue addon parse the same grammar (`and` / `or` / `not`, arithmetic, field against field, `?name`, paths with a colon) instead of three parsers; `value_expression` and `volume_expression` on `CbReaction`, expressions in `CbFieldBinding.field` and `CbFieldLabel`'s `{...}`; the state machine's programs and both reference hashes unchanged.
+68. **M68** (done): streaming clients removed: `src/stream`, the `cinderbox_stream` extension, `Hello.stream` / `StreamWelcome` / `View` / `StreamInput` (protocol 20), `--stream` and `--stream-rate`, `ServerMod::Sees`, `present/visibility` and the `fog` mod. Every client simulates; view files keep the compact codec.

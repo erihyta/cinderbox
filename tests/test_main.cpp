@@ -3684,7 +3684,7 @@ void TestViewCodec()
 		CHECK( bytes.size() - unchanged < 16 );
 	}
 
-	// Compact packets (what a stream carries): the sender keeps exact frames, the receiver only
+	// Compact packets (what a small view file holds): the sender keeps exact frames, the receiver only
 	// what it decoded, and the two must still agree on every grid point after 600 deltas in a row.
 	// Agreement is: what came through the chain of deltas is bit for bit what one whole compact
 	// packet of the sender's frame decodes to.
@@ -3935,7 +3935,7 @@ void TestViewFile()
 	CHECK( WorldBytes( got ) == WorldBytes( frames.back() ) );
 	CHECK( pressed != 0 );
 
-	// What a stream would carry: every third tick, compact. A third of the frames, each lasting
+	// A small file: every third tick, compact. A third of the frames, each lasting
 	// three ticks; seeking still lands where it is asked; the world is the true one on the grid.
 	std::filesystem::path thin = std::filesystem::temp_directory_path() / "cinderbox_view_test_thin.cbv";
 	{
