@@ -9,8 +9,8 @@ extends SceneTree
 ## │   │   └── Item           entity (item, test.bat)   {melee.hot}
 ## │   │       ├── Barrel, Timer, HurtTimer, AnimationPlayer
 ## │   │       ├── Glow        while melee.hot            Barrel emission = 4, animations glow / fade
-## │   │       ├── Hit         on melee.hit, subject ^^   Timer.start(), animation flash
-## │   │       ├── Hurt        on melee.hit, subject ^^, side B   HurtTimer.start()
+## │   │       ├── Hit         on melee.hit, subject ^^   Timer.hide(), animation flash
+## │   │       ├── Hurt        on melee.hit, subject ^^, side B   HurtTimer.hide()
 ## │   │       ├── Escape      on melee.hit, a path out of the world
 ## │   │       └── Bad         on melee.hit, queue_free
 ## │   └── Head
@@ -32,16 +32,16 @@ var _p0: Node3D
 var _p1: Node3D
 var _item: Node3D
 var _material: StandardMaterial3D
-var _timer: Timer
-var _hurt_timer: Timer
-var _outside: Timer
+var _timer: Node3D
+var _hurt_timer: Node3D
+var _outside: Node3D
 var _player: AnimationPlayer
 var _effects: Node3D
 var _shakes := 0
 var _blind: CbReaction
-var _later: Timer
-var _never: Timer
-var _args_timer: Timer
+var _later: Node3D
+var _never: Node3D
+var _args_timer: Node3D
 var _barrel: MeshInstance3D
 var _prompt_scene := ""
 
@@ -59,10 +59,10 @@ func _node3d(name: String, parent: Node) -> Node3D:
 	return n
 
 
-func _timer_node(name: String, parent: Node) -> Timer:
-	var t := Timer.new()
+# Something a reaction can act on with a listed method: hide() it, and it shows that it was reached.
+func _timer_node(name: String, parent: Node) -> Node3D:
+	var t := Node3D.new()
 	t.name = name
-	t.wait_time = 10.0
 	parent.add_child(t)
 	return t
 
@@ -138,18 +138,18 @@ func _initialize() -> void:
 	var hit := _reaction("Hit", _item, CbReaction.WHEN_EVENT, "melee.hit")
 	hit.subject = NodePath("^^")
 	hit.target = NodePath("^/Timer")
-	hit.method = "start"
+	hit.method = "hide"
 	hit.animation_player = NodePath("../AnimationPlayer")
 	hit.animation = "flash"
 	var hurt := _reaction("Hurt", _item, CbReaction.WHEN_EVENT, "melee.hit")
 	hurt.subject = NodePath("^^")
 	hurt.event_side = CbReaction.SIDE_B
 	hurt.target = NodePath("../HurtTimer")
-	hurt.method = "start"
+	hurt.method = "hide"
 	var escape := _reaction("Escape", _item, CbReaction.WHEN_EVENT, "melee.hit")
 	escape.subject = NodePath("^^")
 	escape.target = NodePath("../../../../../Outside")
-	escape.method = "start"
+	escape.method = "hide"
 	var bad := _reaction("Bad", _item, CbReaction.WHEN_EVENT, "melee.hit")
 	bad.subject = NodePath("^^")
 	bad.target = NodePath("../Barrel")
@@ -187,18 +187,18 @@ func _initialize() -> void:
 	var later := _reaction("Later", _item, CbReaction.WHEN_EVENT, "test.later")
 	later.subject = NodePath("^^")
 	later.target = NodePath("../LaterTimer")
-	later.method = "start"
+	later.method = "hide"
 	later.delay = 0.15
 	var never := _reaction("Never", _item, CbReaction.WHEN_EVENT, "test.later")
 	never.subject = NodePath("^^")
 	never.target = NodePath("../NeverTimer")
-	never.method = "start"
+	never.method = "hide"
 	never.chance = 0.0
 	var args := _reaction("Args", _item, CbReaction.WHEN_EVENT, "test.args")
 	args.subject = NodePath("^^")
 	args.target = NodePath("../ArgsTimer")
-	args.method = "start"
-	args.method_args = [2.5]
+	args.method = "set_visible"
+	args.method_args = [false]
 	var sneaky := _reaction("Sneaky", _item, CbReaction.WHEN_EVENT, "test.args")
 	sneaky.subject = NodePath("^^")
 	sneaky.target = NodePath("../Barrel")
@@ -264,16 +264,16 @@ func _process(_delta: float) -> bool:
 		# A cue at player_0 (the holder), about player_1.
 		_world.set_state(_p1, {"combat.health": 40})
 		_world.cue("melee.hit", _p0, _p1, {"value": 25, "point": Vector3(1, 2, 3)})
-		_check("cue: subject ^^ is the holder, ^/Timer the item's (method)", not _timer.is_stopped())
+		_check("cue: subject ^^ is the holder, ^/Timer the item's (method)", not _timer.visible)
 		_check("cue: plays its animation", _player.current_animation == "flash")
-		_check("cue: side B does not fire for the attacker's item", _hurt_timer.is_stopped())
+		_check("cue: side B does not fire for the attacker's item", _hurt_timer.visible)
 		_check("cue: a world reaction on $other, with $other:state and event.value", _sparks_at(Vector3(1, 2, 3)))
 		_check("cue: placed at $other/Head", _sparks_at(Vector3(5, 1.7, 0)))
 		_check("cue: is_local and screen_effect", _shakes == 1)
-		_check("never outside the world", _outside.is_stopped())
+		_check("never outside the world", _outside.visible)
 		# The other way round: the item's holder is the one hit.
 		_world.cue("melee.hit", _p1, _p0, {"value": 0, "point": Vector3(7, 7, 7)})
-		_check("cue: side B fires when the holder is the other one", not _hurt_timer.is_stopped())
+		_check("cue: side B fires when the holder is the other one", not _hurt_timer.visible)
 		_check("cue: conditions hold back a world reaction (event.value 0)", not _sparks_at(Vector3(7, 7, 7)))
 		_check("cue: is_local is false for the other player", _shakes == 1)
 
@@ -282,9 +282,9 @@ func _process(_delta: float) -> bool:
 		_check("explain: says the item's holder is not at the cue", String(why.get("player_0/RightHand/Item/Hit", "")).contains("not at"))
 		_check("explain: names the condition that failed", String(why.get("Effects/Burst", "")).contains("event.value > 0"))
 		_world.cue("test.args", _p0, null, {})
-		_check("method_args: start(2.5)", is_equal_approx(_args_timer.time_left, 2.5))
+		_check("method_args: set_visible(false)", not _args_timer.visible)
 		_world.cue("test.later", _p0, null, {})
-		_check("delay: not yet", _later.is_stopped())
+		_check("delay: not yet", _later.visible)
 		_barrel = _item.get_node("Barrel")
 		_world.set_state(_item, {"melee.hot": false, "test.fade": true})
 		_world.update()
@@ -309,8 +309,8 @@ func _process(_delta: float) -> bool:
 				left += 1
 		if (left == 0 and _frames > 40) or _frames == 600:
 			_check("cue scenes go after their lifetime", left == 0)
-			_check("delay: acted later", not _later.is_stopped())
-			_check("chance 0: never", _never.is_stopped())
+			_check("delay: acted later", not _later.visible)
+			_check("chance 0: never", _never.visible)
 			_check("\"call\" is refused (the barrel is still there)", _item.get_node_or_null("Barrel") != null)
 			_check("blend_time: arrives", is_equal_approx(_barrel.position.y, 1.0))
 			_blind.get_parent().remove_child(_blind)

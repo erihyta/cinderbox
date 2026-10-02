@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbPrediction" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		Shows the viewer's own key press at once, as the cue the server will send for it.
+	</brief_description>
+	<description>
+		A mod's rules run on the server, so what a press did comes back a round trip later. A look can say what its own server is going to answer: when the viewer presses [member action] while [member conditions] hold, [member cue] plays for the viewer there and then, with the same [CbReaction] nodes the server's cue plays. No second reaction for the local player.
+		When the server's cue of that name arrives for the viewer, it is the echo: the reactions that already played stay quiet, and the ones that had to wait play now. A reaction waits when it uses what only the server knows: it is placed at the cue's point, end or beam, a path of it starts with [code]$other[/code], or a condition reads [code]event.*[/code].
+		The conditions are the look's guess of the server's rule. A wrong guess is not taken back: the reaction played, and no server cue follows. What the server changes (ammo on the HUD, the swing's body pose) still comes with the server's answer.
+		It goes anywhere under the [CbDirector]: in a world reactions scene, or in an item's scene.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="action" type="String" setter="set_action" getter="get_action" default="&quot;&quot;">
+			The action whose press this predicts: one the server's mod declares ([code]fire[/code]).
+		</member>
+		<member name="cue" type="String" setter="set_cue" getter="get_cue" default="&quot;&quot;">
+			The cue the server sends for that press ([code]pistol.fired[/code]). The same name, so the same reactions play.
+		</member>
+		<member name="conditions" type="PackedStringArray" setter="set_conditions" getter="get_conditions" default="PackedStringArray()">
+			All must hold on the viewer's own entity, written like a [CbReaction]'s: [code]pistol.gun[/code], [code]pistol.ammo &gt; 0[/code], [code]!pistol.reloading[/code].
+		</member>
+		<member name="cooldown" type="float" setter="set_cooldown" getter="get_cooldown" default="0.0">
+			Seconds before the next press predicts again: the server's own rate (the pistol's 0.2 s between shots).
+		</member>
+	</members>
+</class>

@@ -93,6 +93,10 @@ public:
 	// Whether this cue is for this reaction, and its conditions hold: then it acts (now, or after its
 	// delay). True when it did.
 	bool Fire( const cue::Context& context, double now );
+	// Whether it uses what only the server's cue carries (its point or end, its value or strength,
+	// its other entity): it cannot act on the viewer's own press (cue_prediction.h), and plays when
+	// the server's cue comes.
+	bool NeedsServer() const;
 	// Why this cue would or would not make it act ("acts", "condition melee.hot is false", ...),
 	// without acting. For the Cue Preview.
 	godot::String Explain( const cue::Context& context, double now ) const;

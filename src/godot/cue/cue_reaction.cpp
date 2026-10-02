@@ -38,7 +38,7 @@ void CbReaction::_bind_methods()
 
 	ADD_GROUP( "When", "" );
 	CB_REACTION_PROP( Variant::INT, when, PROPERTY_HINT_ENUM, "On a cue,While" )
-	CB_REACTION_PROP( Variant::STRING, event, PROPERTY_HINT_PLACEHOLDER_TEXT, "melee.hit, footstep, pressed:fire" )
+	CB_REACTION_PROP( Variant::STRING, event, PROPERTY_HINT_PLACEHOLDER_TEXT, "melee.hit, footstep, impact" )
 	CB_REACTION_PROP( Variant::INT, event_side, PROPERTY_HINT_ENUM, "The cue is at the subject (A),The subject is the other one (B),Either" )
 	CB_REACTION_PROP( Variant::NODE_PATH, subject, PROPERTY_HINT_NONE, "" )
 	CB_REACTION_PROP( Variant::STRING, subject_kind, PROPERTY_HINT_ENUM_SUGGESTION, "any,player,prop,static,ragdoll,item" )
@@ -172,7 +172,7 @@ PackedStringArray CbReaction::_get_configuration_warnings() const
 	PackedStringArray warnings;
 	if ( m_when == WHEN_EVENT && m_event.strip_edges().is_empty() )
 	{
-		warnings.push_back( "Name the cue this reacts to (a mod's event like melee.hit, or footstep, pressed:fire)." );
+		warnings.push_back( "Name the cue this reacts to (a mod's event like melee.hit, or footstep, impact)." );
 	}
 	if ( m_when == WHEN_WHILE && m_conditions.is_empty() )
 	{
@@ -292,6 +292,10 @@ String CbReaction::Refusal( const cue::Context& context, double now, bool rolled
 	{
 		return "a path or condition does not parse (see the node's warnings)";
 	}
+	if ( context.predicted && NeedsServer() )
+	{
+		return "it waits for the server's cue: it uses the cue's point, end, value or other entity";
+	}
 	Node* subject = Subject( context );
 	if ( subject == nullptr )
 	{
@@ -320,6 +324,32 @@ String CbReaction::Refusal( const cue::Context& context, double now, bool rolled
 		return "the chance roll said no";
 	}
 	return String();
+}
+
+bool CbReaction::NeedsServer() const
+{
+	if ( m_place == PLACE_EVENT_POINT || m_place == PLACE_EVENT_END || m_place == PLACE_BEAM )
+	{
+		return true;
+	}
+	auto fromOther = []( const NodePath& path ) { return path.get_name_count() > 0 && String( path.get_name( 0 ) ) == "$other"; };
+	for ( const NodePath& path : { m_subject, m_player, m_target, m_sceneParent, m_placeNode } )
+	{
+		if ( fromOther( path ) )
+		{
+			return true;
+		}
+	}
+	for ( int64_t i = 0; i < m_conditions.size(); ++i )
+	{
+		cue::Condition condition;
+		if ( cue::ParseCondition( m_conditions[i], condition, nullptr ) &&
+			 ( condition.test.contains( "event." ) || ( condition.hasPath && fromOther( condition.path ) ) ) )
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 String CbReaction::Explain( const cue::Context& context, double now ) const

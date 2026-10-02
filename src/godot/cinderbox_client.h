@@ -222,7 +222,8 @@ private:
 	uint64_t m_worldStateHash = 0;
 	void PushStates();
 	void Cue( const std::string& name, uint32_t a, uint32_t b, const godot::Dictionary& args );
-	// The "action_pressed" signal and the "pressed:<action>" cue for each of these action bits.
+	// The "action_pressed" signal for each of these action bits, and the press itself to the
+	// director, whose predictions show what the server will answer.
 	void AnnouncePresses( uint16_t pressed );
 	godot::String EntityName( const present::Visual& v ) const;
 	// Sockets are moved to their entity's root in the game (so "^^/RightHand/Item" means the same on

@@ -324,11 +324,10 @@ void CinderboxClient::AnnouncePresses( uint16_t pressed )
 		if ( pressed & ( 1u << a.bit ) )
 		{
 			emit_signal( "action_pressed", String( a.name.c_str() ) );
+			// The looks' predictions (CbPrediction) say what the server will answer, and show it now.
 			if ( m_mirror )
 			{
-				Dictionary args;
-				args["point"] = get_camera_target();
-				Cue( "pressed:" + a.name, m_frame.frame.localNetId, 0, args );
+				Director()->press( String( a.name.c_str() ) );
 			}
 		}
 	}

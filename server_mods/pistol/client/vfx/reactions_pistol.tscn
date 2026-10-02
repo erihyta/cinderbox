@@ -1,50 +1,55 @@
 [gd_scene format=3]
 
 ; How the pistol mod looks and sounds, as world reactions. Everything is keyed on names the
-; server's mods declared: the "fire" action (pressed:fire, the local press before the server
-; answers), "pistol.*" and "combat.*" fields and events. $at is who an event is about (the
-; shooter), $other the other entity (what was hit, who died). The Gun node says how the
-; "pistol.gun" item looks.
+; server's mods declared: the "fire" action, "pistol.*" and "combat.*" fields and events. $at is
+; who an event is about (the shooter), $other the other entity (what was hit, who died). The Gun
+; node says how the "pistol.gun" item looks.
+;
+; The two CbPrediction nodes say what the server answers to the viewer's own "fire" press, so
+; "pistol.fired" and "pistol.dry" play for the viewer at once, with the reactions everyone else
+; gets. The tracer needs the server's end point: it comes with the server's cue.
 
 [node name="PistolReactions" type="Node3D"]
 
-[node name="FirePredicted" type="CbReaction" parent="."]
-event = "pressed:fire"
+[node name="PredictFire" type="CbPrediction" parent="."]
+action = "fire"
+cue = "pistol.fired"
+conditions = PackedStringArray("pistol.gun", "pistol.ammo > 0", "!pistol.reloading", "!combat.dead")
+cooldown = 0.19
+
+[node name="PredictDry" type="CbPrediction" parent="."]
+action = "fire"
+cue = "pistol.dry"
+conditions = PackedStringArray("pistol.gun", "pistol.ammo == 0", "!pistol.reloading", "!combat.dead")
+cooldown = 0.19
+
+[node name="Fired" type="CbReaction" parent="."]
+event = "pistol.fired"
 subject = NodePath("$at")
-conditions = PackedStringArray("pistol.gun", "pistol.ammo > 0", "!pistol.reloading", "!combat.dead", "is_local")
 scene = "res://vfx/muzzle_flash.tscn"
 scene_lifetime = 0.3
 place = 4
 place_node = NodePath("$at/RightHand")
 sound = "res://assets/sfx/gunshot.wav"
-volume_db = -6.0
+volume_db = -5.0
 pitch_jitter = 0.06
+max_distance = 70.0
+
+[node name="Kick" type="CbReaction" parent="."]
+event = "pistol.fired"
+subject = NodePath("$at")
+conditions = PackedStringArray("is_local")
 shake = 0.035
 shake_time = 0.12
-cooldown = 0.19
 
-[node name="DryPredicted" type="CbReaction" parent="."]
-event = "pressed:fire"
+[node name="Dry" type="CbReaction" parent="."]
+event = "pistol.dry"
 subject = NodePath("$at")
-conditions = PackedStringArray("pistol.gun", "pistol.ammo == 0", "!pistol.reloading", "!combat.dead", "is_local")
 place = 4
 place_node = NodePath("$at/RightHand")
 sound = "res://assets/sfx/dry_click.wav"
 volume_db = -8.0
-cooldown = 0.2
-
-[node name="FiredRemote" type="CbReaction" parent="."]
-event = "pistol.fired"
-subject = NodePath("$at")
-conditions = PackedStringArray("!is_local")
-scene = "res://vfx/muzzle_flash.tscn"
-scene_lifetime = 0.3
-place = 4
-place_node = NodePath("$at/RightHand")
-sound = "res://assets/sfx/gunshot.wav"
-volume_db = -4.0
-pitch_jitter = 0.06
-max_distance = 70.0
+max_distance = 12.0
 
 [node name="Tracer" type="CbReaction" parent="."]
 event = "pistol.fired"
