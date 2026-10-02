@@ -6,9 +6,14 @@ extends SceneTree
 ## <folder> is characters/robot/client/characters/robot in this repository (an absolute path). The
 ## scene is what an author normally gets by importing a model with Godot's humanoid retargeting (a
 ## Skeleton3D with SkeletonProfileHumanoid bone names and an AnimationPlayer), plus the Cinderbox
-## nodes: a CbCharacter at the root, a CinderboxSkeleton driving the skeleton, and CbHitbox zones.
-## It is generated so a fresh clone can rebuild it; open it in Godot and edit it freely, then press
-## Bake on the CbCharacter.
+## nodes: a CbCharacter at the root, a CinderboxSkeleton driving the skeleton, CbHitbox zones, and
+## an AnimationTree: the character's state machine, which the bake turns into what the simulation
+## runs. It is generated so a fresh clone can rebuild it; open it in Godot and edit it freely
+## (saving the scene bakes it).
+##
+##   UpperBlend (Blend2, filter: the spine and everything above it)
+##     Base:  Locomotion (1D blend space on forward_speed) <-> JumpStart / Fall / Land
+##     Upper: Rest, Pistol (the pistol mod's stance), Ready <-> Swing (the melee mod's stances)
 ##
 ## The robot is rigid boxes on bones and deliberately built differently from the built-in rig:
 ## taller, longer arms, its own clips. That makes it plain in game and in hit tests which one is in use.
@@ -162,11 +167,9 @@ func _initialize() -> void:
 	library.add_animation("jump_start", _clip(0.25, false, _crouch.bind(0.6)))
 	library.add_animation("fall", _clip(1.0, true, _fall))
 	library.add_animation("land", _clip(0.3, false, _crouch.bind(0.8)))
-	# Stances the shipped mods use: the pistol on the upper body, the bat on the whole body.
+	# What the upper body does for the shipped mods' stances: the pistol held, the bat ready.
 	library.add_animation("pistol_hold", _clip(2.0, true, _pistol))
 	library.add_animation("bat_idle", _clip(2.0, true, _bat_idle))
-	library.add_animation("bat_walk", _clip(1.0, true, _bat_stride.bind(0.45)))
-	library.add_animation("bat_run", _clip(0.7, true, _bat_stride.bind(0.8)))
 	# The swing's other tracks: a fire trail from the hand while the bat comes through, and a
 	# whoosh. Ordinary tracks next to the bone ones; the bake keeps them as Godot animation and the
 	# game plays them in step with the swing.
@@ -191,19 +194,12 @@ func _initialize() -> void:
 	reset.value_track_set_update_mode(reset_flame, Animation.UPDATE_DISCRETE)
 	reset.track_insert_key(reset_flame, 0.0, false)
 	library.add_animation("RESET", reset)
-	_root.stance_clips = {
-		"pistol": "pistol_hold",
-		"melee_idle": "bat_idle",
-		"melee_walk": "bat_walk",
-		"melee_run": "bat_run",
-		"melee_swing": "bat_swing",
-	}
-	_root.masks = {"upper": "Spine"}
 	var player := AnimationPlayer.new()
 	player.name = "AnimationPlayer"
 	player.root_node = NodePath("..")
 	player.add_animation_library("", library)
 	_own(model, player)
+	_add_tree(player)
 
 	# The game poses the skeleton from the simulation; the skeleton is exactly the baked one, so no
 	# retargeting.
@@ -238,6 +234,105 @@ func _initialize() -> void:
 	if result["warnings"] != "":
 		print("warnings: ", result["warnings"])
 	quit(0)
+
+
+# --- The state machine -------------------------------------------------------------------------------
+
+func _add_tree(player: AnimationPlayer) -> void:
+	# The legs: idle, walk and run by how fast the body moves along its facing (backwards: the same
+	# clips played in reverse), and the jump.
+	var base := AnimationNodeStateMachine.new()
+	var line := AnimationNodeBlendSpace1D.new()
+	line.min_space = -7.0
+	line.max_space = 7.0
+	for point in [[-6.5, "run", true], [-3.0, "walk", true], [0.0, "idle", false], [3.0, "walk", false], [6.5, "run", false]]:
+		line.add_blend_point(_play(point[1], point[2]), point[0], -1, ("back_" if point[2] else "") + point[1])
+	base.add_node("Locomotion", line, Vector2(300, 100))
+	base.add_node("JumpStart", _play("jump_start"), Vector2(550, 0))
+	base.add_node("Fall", _play("fall"), Vector2(800, 100))
+	base.add_node("Land", _play("land"), Vector2(550, 220))
+	_go(base, "Start", "Locomotion")
+	_go(base, "Locomotion", "JumpStart", "jumped", 0.1)
+	_go(base, "Locomotion", "Fall", "not grounded and airborne_time > 0.12", 0.15)
+	_go(base, "JumpStart", "Land", "grounded and state_time > 0.1", 0.1)
+	_go(base, "JumpStart", "Fall", "state_time > 0.25", 0.15)
+	_go(base, "Fall", "Land", "grounded", 0.1)
+	_go(base, "Land", "JumpStart", "jumped", 0.1)
+	_go(base, "Land", "Locomotion", "state_time > 0.3 or speed > 1.5", 0.15)
+
+	# The upper body follows the mods' stances.
+	var upper := AnimationNodeStateMachine.new()
+	upper.add_node("Rest", _play("idle"), Vector2(300, 100))
+	upper.add_node("Pistol", _play("pistol_hold"), Vector2(550, 0))
+	upper.add_node("Ready", _play("bat_idle"), Vector2(550, 220))
+	upper.add_node("Swing", _play("bat_swing"), Vector2(800, 220))
+	_go(upper, "Start", "Rest")
+	_go(upper, "Rest", "Pistol", "pistol", 0.15)
+	_go(upper, "Rest", "Ready", "melee", 0.15)
+	_go(upper, "Rest", "Swing", "melee_swing", 0.05)
+	_go(upper, "Pistol", "Ready", "melee", 0.15)
+	_go(upper, "Pistol", "Rest", "not pistol", 0.15)
+	_go(upper, "Ready", "Swing", "melee_swing", 0.05)
+	_go(upper, "Ready", "Pistol", "pistol", 0.15)
+	_go(upper, "Ready", "Rest", "not melee and not melee_swing", 0.15)
+	_go(upper, "Swing", "Ready", "not melee_swing and melee", 0.15)
+	_go(upper, "Swing", "Rest", "not melee_swing and not melee", 0.15)
+
+	var blend := AnimationNodeBlend2.new()
+	blend.filter_enabled = true
+	var spine := _skeleton.find_bone("Spine")
+	for bone in range(_skeleton.get_bone_count()):
+		var b := bone
+		while b >= 0 and b != spine:
+			b = _skeleton.get_bone_parent(b)
+		if b == spine:
+			blend.set_filter_path(NodePath("Skeleton3D:" + _skeleton.get_bone_name(bone)), true)
+
+	var root := AnimationNodeBlendTree.new()
+	root.add_node("Base", base, Vector2(0, 0))
+	root.add_node("Upper", upper, Vector2(0, 200))
+	root.add_node("UpperBlend", blend, Vector2(250, 100))
+	root.connect_node("UpperBlend", 0, "Base")
+	root.connect_node("UpperBlend", 1, "Upper")
+	root.connect_node("output", 0, "UpperBlend")
+
+	var tree := AnimationTree.new()
+	tree.name = "AnimationTree"
+	tree.tree_root = root
+	_own(_root, tree)
+	tree.root_node = NodePath("../Model")
+	# Tracks with one-shot properties (a particle's "emitting"): set them when keys pass, not every frame.
+	tree.callback_mode_discrete = AnimationMixer.ANIMATION_CALLBACK_MODE_DISCRETE_DOMINANT
+	tree.anim_player = tree.get_path_to(player)
+	# The game poses the body; in the editor the tree previews it.
+	tree.active = false
+	_root.animation_tree_path = _root.get_path_to(tree)
+	# What drives the tree's numbers, as the simulation computes them.
+	_root.graph_inputs = {
+		"Base/Locomotion/blend_position": "forward_speed",
+		"UpperBlend/blend_amount": "pistol or melee or melee_swing",
+	}
+
+
+func _play(animation: String, backward := false) -> AnimationNodeAnimation:
+	var node := AnimationNodeAnimation.new()
+	node.animation = animation
+	if backward:
+		node.play_mode = AnimationNodeAnimation.PLAY_MODE_BACKWARD
+	return node
+
+
+# A transition taken by itself once its condition holds: a single name is Godot's advance
+# condition, anything longer its advance expression.
+func _go(machine: AnimationNodeStateMachine, from: String, to: String, when := "", xfade := 0.0) -> void:
+	var t := AnimationNodeStateMachineTransition.new()
+	t.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+	if when.contains(" "):
+		t.advance_expression = when
+	elif when != "":
+		t.advance_condition = when
+	t.xfade_time = xfade
+	machine.add_transition(from, to, t)
 
 
 func _own(parent: Node, child: Node) -> void:
@@ -402,12 +497,6 @@ func _bat_idle(phase: float) -> Dictionary:
 	p["LeftLowerLeg"] = Vector3(0.4, 0, 0)
 	p["RightLowerLeg"] = Vector3(0.3, 0, 0)
 	p["hips_y"] = -0.06
-	return p
-
-
-func _bat_stride(phase: float, legs: float) -> Dictionary:
-	var p := _bat_arms(_stride(phase, legs, 0.0, 0.04, 0.12))
-	p["Spine"] = Vector3(0.15, 0.2, 0)
 	return p
 
 
