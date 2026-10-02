@@ -348,7 +348,7 @@ loads mods; `workshop.gd` is where items are.
 | Area | Limit |
 |---|---|
 | Prediction | a reaction played on a wrong guess is not taken back; the led body holds what the state says about movement still over the lead; packs' layers are not checked for what they read; a predicted event's clock is one tick ahead on the frame its answer arrives |
-| Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; packs' non-bone tracks are not played |
+| Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; a state started over by an event (rapid fire) does not fire its keys again; packs' non-bone tracks are not played |
 | State machines | no nested machines, OneShot/Add/TimeScale nodes, `travel()`, or crossfade curves |
 | Characters | one character per server; capsule size and speeds are not per character; the scene ships its animations' bone tracks next to the ozz clips |
 | Mods | compiled into the server (no hot-loading); events between mods are a tick late; a board has 32 names per scope |
@@ -473,3 +473,4 @@ Netcode numbers from when they were taken (M4, M5); frame sizes are in [The view
 68. **M68** (done): streaming clients removed: `src/stream`, the `cinderbox_stream` extension, `Hello.stream` / `StreamWelcome` / `View` / `StreamInput` (protocol 20), `--stream` and `--stream-rate`, `ServerMod::Sees`, `present/visibility` and the `fog` mod. Every client simulates; view files keep the compact codec.
 69. **M69** (done): the upper body follows the camera: `AnimState::look` (a byte that was reserved: 0 to 255, rising over 0.2 s while `Character::faceCamera`), the pose turns the character's look chain (`anim.cfg` `look`, `CbCharacter.look_chain`) about the side axis by `aimPitch` times it, before the aim chain; hitboxes follow; new reference hashes (the state and the pose hash now cover it).
 70. **M70** (done): the bat's strike is pitched with the look (it was a level fan, so looking down hit nothing low); a first-person camera in `game.gd` on the posed head (`CinderboxSkeleton.hidden_bone` shrinks the viewer's own head after the pose is applied; the pose, sockets and hit tests are untouched).
+71. **M71** (done): a mod event restarts the state it leads to (`AnimGraphState::restarts`, derived at compile from the event transitions into it): every shot of rapid fire plays its recoil, on the server, in the pose and in the viewer's lead alike.
