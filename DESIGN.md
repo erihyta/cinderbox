@@ -949,7 +949,8 @@ two ways: "when this happens, do that". Now there is one: `CbReaction`.
   (`add_world_scene`), which keeps it under a `World` node. Its reactions have no self; they name
   their subject from the event. Its `CbItemLook` nodes (now nodes, not resources) say how items look.
 - **Events**: the simulation's own are names now (`spawned`, `destroying`, `jumped`, `landed`,
-  `footstep`, `impact`) next to mod events, plus `pressed:<action>` for the local player's press.
+  `footstep`, `impact`) next to mod events. (The local player's press was a `pressed:<action>`
+  cue until M56; it is a [prediction](#the-viewer-predicts-m56) now.)
   Entity scenes hear them too (a player's scene can react to its own footsteps).
 - **What bindings had, as reaction fields**: kind and template filters, cooldown, placement (event
   point or end, a beam from the point or a bone, a bone, following the subject), sound, camera
@@ -1351,7 +1352,7 @@ source  <──control───   viewer        named commands with a number ("p
   whatever they are; `control( name, value )` passes a command through.
 - **A recording is watched as its player.** The followed player is the frame's local player, so
   the HUD, `is_local` reactions and the camera show what that player saw. Its presses arrive in
-  `localPressed`, so `pressed:<action>` reactions play as they did live. The recording names the
+  `localPressed`, so its predictions play as they did live. The recording names the
   workshop items it needs; the client loads them as for a server.
 - **Stats are generic** (`ViewStat`: a name and an int, float, bool or text) so the viewer does not
   include the client's types. The live source keeps the names the HUD and the checks already read
@@ -1629,9 +1630,49 @@ session.
 
 **Not done**
 - Whether 20 frames a second looks smooth was not judged by eye: a still frame looks right.
-- A compact view file has no inputs, so `pressed:` reactions do not play for the player it follows.
+- A compact view file has no inputs, so nothing is predicted for the player it follows: its cues
+  play when the server's arrive, like everyone else's.
 - View files written before this (packet "CBV1", file version 1) no longer read.
 - The header is 75 bytes a frame of fixed-width fields; nothing was done about it.
+
+## The viewer predicts (M56)
+The viewer draws what a source hands it, and a source's word on your own press is a round trip
+away. The viewer takes the press itself, the way it takes the server's cues, and shows what the
+look says the server will answer. No rule runs on the client; nothing about the game changes.
+
+| Piece | What it does | Where |
+|---|---|---|
+| `CbPrediction` | a node in a look: `action`, `cue`, `conditions`, `cooldown` | `src/godot/cue/cue_prediction.*` |
+| `CbDirector.press( action )` | for each prediction that accepts the press: plays its cue at the local entity, marked predicted; remembers which reactions acted; emits `predicted( cue )` | `cue_director.cpp` |
+| `CbReaction::NeedsServer()` | true when it is placed at the cue's point, end or beam, a path starts with `$other`, or a condition reads `event.*` / `$other:`. Such a reaction refuses a predicted cue | `cue_reaction.cpp` |
+| `CbDirector.cue(...)` | a cue at the local entity whose name was predicted less than a second ago is the echo: the reactions that acted on the press are skipped, the rest play | `cue_director.cpp` |
+| `CinderboxClient` | hands each press edge to the director (live input, and `localPressed` of a recording) | `cinderbox_client.cpp` |
+
+- **One reaction per cue.** `pressed:<action>` cues are gone, and with them the second reaction a
+  look needed for the local player (`FirePredicted` next to `FiredRemote`). The pistol's look is
+  `Fired`, `Kick` (`is_local`), `Dry`, `Tracer` and two predictions; melee's adds one.
+- **Echoes are matched by name and order.** Two presses, two echoes. A prediction the server did
+  not confirm expires after a second; until then the next cue of that name for the viewer would be
+  taken for its echo (what it shows: the tracer without a second gunshot).
+- **Reactions are per entity instance.** The echo skips the instances that acted, so a reaction on
+  either side of a cue (a bat's own) still plays for the other entity.
+- **The rule is restated in the look.** The conditions and the cooldown copy the server's rule;
+  the server knows more (frozen, the exact tick). Both sides are the modder's.
+- **Also fixed**: `check_reactions.gd` called `Timer.start`, which the scene guard (M52) refuses;
+  it failed four checks since then. It uses listed methods now.
+
+**Verified**
+- `check_predictions.gd` (25 checks: press, what waits, the echo, another player's cue, two
+  presses, conditions, cooldown, no local player); `check_reactions.gd`, `check_guard.gd`; 54 tests.
+- The real client behind 50 ms each way, driven by input events: 12 shots shown 2 ms after the
+  click, the server's event at 210-270 ms; 12 muzzle flashes, 12 gunshots, 12 tracers (none twice);
+  a dry click predicted once; 3 swings heard at 1-2 ms, once each.
+
+**Not done**
+- What the server changes is not predicted: the ammo count drops when its frame arrives, and the
+  swing's body pose starts with the server's stance.
+- A wrong guess is not taken back.
+- The Cue Preview panel has no button for a press.
 
 ## Tooling
 - **Determinism test**: replays a scripted input log and compares per-tick hashes, both between repeated runs and between different builds (`scripts/check_determinism.*` locally, CI on every push).
@@ -1741,7 +1782,7 @@ The ordered plan for the client is in [ROADMAP.md](ROADMAP.md). These are loose 
 32. **M32** (done): animation packs: mods ship AnimationTree layers (`CbAnimPack`) and swap a player's layer for them by name (`SwapLayer` / `RestoreLayer`), in the simulation and every pose; clips retargeted by humanoid-profile names; the `sneak` mod's crouch.
 33. **M33** (done): `CbReaction` nodes (on event / while, self / holder; animation, property, method, scene); the implicit item rules and `CbStateBinding` removed; the pistol as a held item; the bat's glow and sparks as reactions; item swaps across mods destroy by NetId.
 34. **M34** (done): entity paths (`self`, `holder`, `item:<socket>`, `event.a`, `event.b`, `local`, `world`) for a reaction's subject, conditions and `act_on`; `event_side`; lookups contained in the scene they resolve in, `free` / `queue_free` / `script` refused.
-35. **M35** (done): world reactions: `vfx/reactions*.tscn` scenes loaded once replace `CbEffect` / `CbEffectTable`; built-in events and `pressed:<action>` by name; filters, cooldown, placement, sound and screen effects on `CbReaction`; `CbItemLook` as a node; all bindings converted.
+35. **M35** (done): world reactions: `vfx/reactions*.tscn` scenes loaded once replace `CbEffect` / `CbEffectTable`; built-in events by name (and `pressed:<action>`, until M56); filters, cooldown, placement, sound and screen effects on `CbReaction`; `CbItemLook` as a node; all bindings converted.
 36. **M36** (done): the scene tree as the address space: a stable World tree (`player_<slot>`, sockets as entity children, companion tracks rewritten), anchors (`^`, `^^`, `$at`, `$other`, `$local`, `$world`) on ordinary NodePaths; `CbDirector` + `CbReaction` as a standalone addon (`cb_cue`) driven by cues and entity state; M34's entity paths replaced.
 37. **M37** (done): Cue Preview, an editor bottom panel in the cue addon: the edited scene on a stage with stand-in players, cues fired and state set by hand, screen effects shown; verified on the bat, the pistol's world reactions and the mannequin.
 38. **M38** (done): reaction polish: fixes (a While undoes itself when it leaves the tree, a wider refused list, warnings for leaks and parse errors), `method_args`, `delay` / `chance`, `blend_time`, `explain()` in the Cue Preview, and in-editor help (class reference, info rows, info buttons).
@@ -1759,4 +1800,5 @@ The ordered plan for the client is in [ROADMAP.md](ROADMAP.md). These are loose 
 50. **M50** (done): frames as bytes: `EncodeView` / `DecodeView` with per-word deltas against a base, view files (`cb_server --record-view`, `ViewFileSource`, `--view=FILE`, `cb_replay view`), measured sizes; `bytes.h` moved to `src/sim`.
 51. **M51** (done): two extensions: the viewer (`cinderbox`: no simulation, no networking) and the peer (`cinderbox_peer`: `CinderboxPeer`, the live and replay sources) with packets between them; `set_source( object )`; `cb_sim_data` and `cb_capture` split out so the viewer cannot link a simulation; mod projects get the viewer only.
 52. **M52** (done): packs are contained: the scene guard (node class list, no scripts, no connections, contained paths, method list for animations and reactions, advance expressions cleared), run wherever a moddable scene is instantiated; `check_guard.gd`.
+56. **M56** (done): the viewer predicts: `CbPrediction` (action, cue, conditions, cooldown) and `CbDirector.press`; the server's cue of the same name is the echo and plays only the reactions that waited for it; `pressed:<action>` cues removed; one reaction per cue in the pistol and melee looks. (M54 and M55 were tried on branches and not merged.)
 53. **M53** (done): smaller frames: compact packets (grid positions and animation values as small deltas, 32-bit rotations, no velocity or inputs), a stride for fewer frames than ticks, entity lists and event rings sent as what changed, `--view-rate` / `--view-compact`, a size breakdown in `cb_replay view`; 32 players from 6.8 to 0.43 Mbit/s.

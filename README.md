@@ -60,6 +60,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M51: two extensions: the viewer (no simulation, no networking; all a mod's project needs) and the peer (joins servers, plays recordings), with frames crossing as bytes; any object, even a script, can be a viewer's source | done |
 | M52: packs are contained: a scene is checked before it is used (listed node classes only, no scripts, no wired signals, no paths out of the scene, animations and reactions call only listed methods) | done |
 | M53: smaller frames: compact packets and fewer frames than ticks, what a stream will carry (32 players: 6.8 Mbit/s down to 0.43); view files can be recorded that way | done |
+| M56: the viewer predicts: a look says which cue the server will answer a press with (`CbPrediction`), and it plays at once with the same reactions; the server's cue then plays only what had to wait for it | done |
 
 ## Building
 
@@ -400,7 +401,9 @@ other, so two mods add effects without fighting over one list; a mod replaces
 
 ```
 PistolReactions                      (vfx/reactions_pistol.tscn)
-├── FiredRemote   on pistol.fired     subject $at      !is_local          muzzle flash + gunshot at $at/RightHand
+├── PredictFire   CbPrediction        fire -> pistol.fired   pistol.gun, pistol.ammo > 0, !pistol.reloading
+├── Fired         on pistol.fired     subject $at                         muzzle flash + gunshot at $at/RightHand
+├── Kick          on pistol.fired     subject $at      is_local           camera shake
 ├── Tracer        on pistol.fired     subject $at                         beam from $at/RightHand to the cue's end
 ├── Hurt          on pistol.hit       subject $other   is_local           camera shake + red flash
 └── Gun           CbItemLook          pistol.gun -> res://prefabs/pistol.tscn
@@ -412,7 +415,6 @@ PistolReactions                      (vfx/reactions_pistol.tscn)
 | `spawned`, `destroying` | the entity; its position (`spawned` only for entities that appear in play, not a world reset) |
 | `jumped`, `landed`, `footstep` | the player; at its feet |
 | `impact` | both bodies; `event.strength` (approach speed, m/s) |
-| `pressed:<action>` (`pressed:fire`) | the local player, the moment it presses, before the server answers |
 
 What a world reaction adds to the [reaction fields](#reactions):
 
@@ -433,9 +435,41 @@ Footsteps and impacts come from the simulation, not from the renderer guessing:
 Both are part of the simulation's state, so they are identical on every machine, survive rollback,
 and a client that skipped frames still sees them.
 
-A `pressed:` reaction is where feedback that cannot wait a round trip goes (a muzzle flash); its
-conditions say whether the server will accept the press (`pistol.ammo > 0`). Other players' shots
-arrive as mod events.
+### Predictions
+
+A mod's rules run on the server, so what your own press did comes back a round trip later. A
+**`CbPrediction`** node in the look says what the server is going to answer, and the viewer shows
+it at once:
+
+```
+PredictFire   CbPrediction   action "fire"   cue "pistol.fired"
+                             conditions pistol.gun, pistol.ammo > 0, !pistol.reloading, !combat.dead
+                             cooldown 0.19
+```
+
+| Step | What happens |
+|---|---|
+| You press `fire` and the conditions hold on your player | `pistol.fired` plays for you now, with the same reactions everyone else's shot plays: one reaction per cue, none written twice |
+| A reaction needs what only the server knows | it waits: placed at the cue's point, end or beam, a path starting with `$other`, or a condition on `event.*` (the tracer, the hit spark) |
+| The server's `pistol.fired` for you arrives (within a second) | it is the echo: what already played stays quiet, what waited plays now |
+| No press was predicted | the server's cue plays in full, as for any other player |
+
+| Field | Meaning |
+|---|---|
+| `action` | the action whose press is predicted (one a server mod declares) |
+| `cue` | the cue the server sends for it: the same name, so the same reactions |
+| `conditions` | the look's copy of the server's rule, read on your own player: [names and comparisons](#effects) |
+| `cooldown` | the server's own rate (seconds between two predictions) |
+
+- **Both halves are the modder's**: the server mod emits the cue, its look predicts it by name.
+- **A wrong guess is not taken back**: the reaction played and no server cue follows. Keep the
+  conditions as close to the server's rule as the board allows.
+- **Looks only**: what the server changes still comes with its answer (ammo on the HUD, the body's
+  swing pose). See [ROADMAP.md](ROADMAP.md).
+- `CbDirector.explain_press( "fire" )` says which predictions a press would make, or why not;
+  `check_predictions.gd` drives one by hand.
+- With 50 ms of delay each way, a click shows its shot 2 ms later; the server's cue (the tracer)
+  follows at about 250 ms.
 
 Conditions read the server mods' **board** by name:
 
@@ -1021,7 +1055,7 @@ World node: a workshop item cannot reach the game's HUD or menus.
 | Field | Meaning |
 |---|---|
 | `when` | **On a cue** (once per cue) or **While** (its conditions hold) |
-| `event` | On a cue: its name (`melee.hit`, `footstep`, `pressed:fire`: see [Effects](#effects)) |
+| `event` | On a cue: its name (`melee.hit`, `footstep`: see [Effects](#effects)). Your own press shows at once through a [prediction](#predictions) |
 | `subject` | a path (default `^`): whose state plain condition names read |
 | `event_side` | On a cue: **A**, the cue is at the subject (`melee.hit` is at the attacker); **B**, the subject is the other one (the victim); or **Either**. A subject starting with `$at` / `$other` matches every cue of the name |
 | `subject_kind`, `subject_template` | only for a player / prop / static / ragdoll / item, or one map template (for an item: its kind, `melee.bat`) |
@@ -1063,7 +1097,8 @@ World node: a workshop item cannot reach the game's HUD or menus.
 - **Rollback**: like companion tracks, a cue reaction that already played is not taken back if a
   prediction turns out wrong.
 - **Anything can drive a director**: `add_entity( node, kind, template )`, `set_state( node, {...} )`,
-  `set_world_state`, `set_local`, `cue( name, at, other, { value, strength, point, end } )`.
+  `set_world_state`, `set_local`, `cue( name, at, other, { value, strength, point, end } )`,
+  `press( action )`.
   `check_reactions.gd` drives one by hand, with no server:
   `godot --headless --path godot --script res://addons/cinderbox_maps/check_reactions.gd`.
 
@@ -1161,6 +1196,7 @@ All tools are in `<build dir>/bin`.
 | `cb_bot --port P --count N --full M --duration S [--chaotic] [--shoot] [--melee]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick; `--shoot` makes full bots take out the pistol and fire at the nearest player; `--melee` makes them close in with the bat and swing |
 | `godot --path godot --script res://addons/cinderbox_maps/check_menu.gd -- --test-port=P --config=FILE [--shots=DIR]` | Drives the menus against a running server: bad address, unknown host, dead port, join, camera, Esc menu, settings, leave, rejoin from the recent list. With `--other-port=P2 --result=FILE` (a server running other mods) also the restart that joins it |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_guard.gd` | Checks the scene guard: the game's own scenes pass, and scenes with an `HTTPRequest`, a script, a wired signal, a climbing path or an animation that calls `queue_free` are refused |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_predictions.gd` | Checks predictions on a bare director: a press plays its cue at once, the server's cue then plays only what waited, another player's cue is never an echo, conditions and cooldown hold a press back |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_object_source.gd -- FILE.cbv` | Checks that the viewer draws from any object that hands it packets: a GDScript source reads a view file, with no peer extension involved |
 | `godot --path godot -- --autoplay=S --screenshot=F.png --screenshot-every=S2` | Unattended client; also saves `F_1.png`, `F_2.png`, ... and prints the mod events it saw |
 | `scripts/stress_test.sh --bots N --full M --latency MS --jitter MS --loss % --rollback T` | Starts a server, the simulator and the bots, and prints a summary |
