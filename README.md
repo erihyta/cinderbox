@@ -77,6 +77,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M69: the upper body follows the camera: while a character faces the camera (a weapon is out), its spine, neck and head bend with the camera's pitch, in the pose everyone draws and hit tests use | done |
 | M70: the bat strikes where you look, up and down too; a first-person camera on the key left of 1 | done |
 | M71: rapid fire plays every shot: a mod event that leads into the state a character is already in starts it over | done |
+| M72: shots go at what is under the crosshair in every view: the camera says what is aimed at, the shot goes there from the head; over-the-shoulder cameras (Q) | done |
 
 ## Building
 
@@ -571,7 +572,7 @@ seconds. The whole feature is one function on the server and four nodes in the l
 | Where | What | Why there |
 |---|---|---|
 | `pistol.cpp`, `Declare` | `declare.Action( "mark", "MouseRight" )`, events `pistol.scan` and `pistol.marked` | names the look can use; the key shows in the controls hint by itself |
-| `pistol.cpp`, `Mark` | on a press (once a second): `ctx.CastRay` from the eye; `Emit( pistol.scan, caster, hit, eye, end )`; if it found a living player, `Emit( pistol.marked, caster, player )` | who is hit is the server's decision |
+| `pistol.cpp`, `Mark` | on a press (once a second): `ctx.CastAim` (at what is under the crosshair, from the eye); `Emit( pistol.scan, caster, hit, eye, end )`; if it found a living player, `Emit( pistol.marked, caster, player )` | who is hit is the server's decision |
 | look: `PredictScan` | `CbPrediction`: `mark` -> `pistol.scan` | your own click is heard at once |
 | look: `Scan` | on `pistol.scan`, subject `$at`: a click at `$at/RightHand` | plays on the press for you, on the server's cue for everyone else |
 | look: `ScanBeam` | on `pistol.scan`: `vfx/scan_beam.tscn` as a **beam** to the cue's end | needs the server's end point, so it waits for the server |
@@ -720,6 +721,9 @@ Client controls:
   out of the posed head, so it bows and leans with the upper body. Your own head is not drawn, the
   rest of your body is. First person looks up to 80 degrees; from behind, 23 (the camera would go
   under the floor).
+- Q moves the third-person camera over the right shoulder, the left, and back behind.
+- **What is under the crosshair is what a shot is aimed at, in every view.** The shot itself always
+  starts at the head: aiming over cover you are hidden behind hits the cover.
 - Esc opens the in-game menu (see [The menu](#the-menu)), F1 toggles the debug HUD.
 
 The HUD shows the predicted and confirmed ticks, round-trip time, clock error, rollbacks, stalls and
@@ -856,6 +860,16 @@ godot --headless --path godot --script res://addons/cinderbox_maps/make_characte
 ```
 
 ### Hit zones
+
+Shooting at the crosshair is `ctx.CastAim( slot, range, hit, origin, direction )`, two rays:
+
+| Step | Ray | Why |
+|---|---|---|
+| What is aimed at | from where the player's line of sight starts (`ViewPosition`), along the camera's direction | the camera's choice: the eye in first person, the pivot above the body behind it, 0.45 m to a side over a shoulder (`PlayerInput::view`) |
+| What is hit | from the eye on the posed head (`HeadPosition`) to that point | the body's: whatever is between the head and the target stops the shot, even where the camera sees past it |
+
+The client sends only which view it uses and where it looks; both origins are computed by the
+server from the simulation, so a shot cannot start anywhere the player is not.
 
 Gameplay mods cast rays with `ctx.CastRay`. Players are hit by their character's hitboxes, posed
 from the simulation's animation state at that tick, and `hit.zone` names the zone. Only the server
