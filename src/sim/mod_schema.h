@@ -32,6 +32,10 @@ enum class BoardScope : uint8_t
 {
 	Entity = 0, // one value per entity (Blackboard component)
 	Global = 1, // one value for the whole game (SimGlobals::board)
+	// One value per player that only that player is sent (a role, a hand of cards). It is never in
+	// the simulation: not in its state, its hash, its frames or a recording. The server keeps it
+	// and gives it to its owner alone, so no other client has it to find.
+	Private = 2,
 };
 
 struct BoardField

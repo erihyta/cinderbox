@@ -216,6 +216,13 @@ private:
 	uint64_t m_worldStateHash = 0;
 	void PushStates();
 	void Cue( const std::string& name, uint32_t a, uint32_t b, const godot::Dictionary& args );
+	// The local player's private fields: this frame's, with what its predictions change. Null for
+	// anyone else (they were never sent).
+	Blackboard m_privates;
+	const Blackboard* PrivatesOf( uint32_t netId ) const
+	{
+		return netId != 0 && netId == m_frame.frame.localNetId ? &m_privates : nullptr;
+	}
 	// What the looks' predictions say until the server answers (CbPrediction), for the local player:
 	// its upper body shown ahead (present/anim_lead.h), before the mirror updates...
 	void LeadLocalPlayer( float delta );

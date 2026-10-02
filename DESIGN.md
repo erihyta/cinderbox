@@ -124,6 +124,14 @@ layer, stance and item kind names, the character's state machine, the items play
 out in the welcome and in replay headers. The schema is not hashed: different mods on the same
 build are fine.
 
+**Private fields** (`BoardScope::Private`) are the exception to "everything is in the simulation":
+a simulating client has the whole state, so what one player must not know about another cannot be
+state. A private value is kept by the server per player slot (`GameServer::m_privates`), never
+becomes a command, and is sent to its owner alone: `MsgPrivateFields` on the reliable channel
+after the welcome and whenever a mod changes one, or `ViewFrame::privates` in a streaming client's
+frames. The viewer reads it by name for its own player and 0 for anyone else. It is not hashed,
+not rolled back, not recorded, and a state machine cannot read it.
+
 ## Netcode
 
 Authoritative server, client rollback (`src/net`, `src/client`).
@@ -144,7 +152,7 @@ Authoritative server, client rollback (`src/net`, `src/client`).
 - Frames encode a mask of players whose input changed, then only the changed fields; commands carry a field mask.
 - ENet's throttle is off (it dropped unreliable packets after large reliable transfers, which stalled clients).
 - **Replays** (`cb_server --record`): every authoritative frame plus checksums; `cb_replay verify` re-simulates headlessly.
-- Protocol 18, replay version 5.
+- Protocol 19, replay version 5.
 
 ## The viewer protocol
 
@@ -338,6 +346,7 @@ loads mods; `workshop.gd` is where items are.
 | State machines | no nested machines, OneShot/Add/TimeScale nodes, `travel()`, or crossfade curves |
 | Characters | one character per server; capsule size and speeds are not per character; the scene ships its animations' bone tracks next to the ozz clips |
 | Mods | compiled into the server (no hot-loading); events between mods are a tick late; a board has 32 names per scope |
+| Private fields | per player, not per entity; not in recordings or view files (they read 0 there); hiding entities from a simulating client is not possible (it has the world) |
 | Combat | no teams, no spectators |
 | Items | one body shape per item; two kinds sharing a holster socket overlap |
 | Packs | the checks do not make Godot's or ozz's parsers safe against malformed files |
@@ -452,3 +461,4 @@ Netcode numbers from when they were taken (M4, M5); frame sizes are in [The view
 63. **M63** (done): this document by subsystem instead of by milestone; reference hashes regenerated for the M62 animation state. Found by the new pose hash on macOS: our own code compiled ozz's inline math as platform SIMD; `OZZ_BUILD_SIMD_REF` now reaches every target.
 64. **M64** (done): predicted state in the viewer: `CbPrediction.changes` (fields of the viewer's own player) and `stance` / `stance_layer`; `LeadAnimState` runs the character's upper layers ahead for the local player (`present/anim_lead.*`, `AnimGraph::UpperLayersRead`, `PlayerAnim::shown`); `CbDirector.pending_predictions`; the pistol's ammo and recoil and the bat's swing and flames follow the click; `anim_lead` test.
 65. **M65** (done): a bat's `melee.hot` is cleared by the item's NetId when its time is up, not through the hand: put away or dropped while hot, it stayed hot. `net_melee` puts it away hot.
+66. **M66** (done): private fields: `BoardScope::Private`, kept by the server per player and sent to its owner alone (`MsgPrivateFields`, protocol 19; `ViewFrame::privates` for streams); read by name in looks for the viewer's own player; the `secret` example mod; `net_private_fields`.

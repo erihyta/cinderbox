@@ -2196,6 +2196,73 @@ size_t CountKind( const present::ViewFrame& frame, present::VisualKind kind )
 	return n;
 }
 
+// Private fields: the "secret" mod gives each player a number that only that player is sent. Every
+// client has its own and exactly what the server keeps for it; the simulation has none of it (it
+// is not a board value, and nobody desyncs over it); a streaming client finds its own in its
+// frames; and a slot that is given up starts empty.
+void TestPrivateFields()
+{
+	Harness h( 47813, {}, {}, { { "secret.numbers", "1" } } );
+	const ModSchema& schema = h.server.Schema();
+	const BoardField* field = schema.FindField( "secret.number" );
+	CHECK( field != nullptr && field->scope == BoardScope::Private );
+	if ( field == nullptr )
+	{
+		return;
+	}
+	for ( int i = 0; i < 4; ++i )
+	{
+		h.AddBot();
+	}
+	h.RunUntil( 3.0 );
+	h.Report();
+
+	Simulation& server = h.server.Sim();
+	bool allDiffer = true;
+	for ( size_t i = 0; i < h.bots.size(); ++i )
+	{
+		GameClient& client = *h.bots[i].client;
+		CHECK( client.State() == ClientState::Playing );
+		int32_t mine = client.Privates().values[field->slot];
+		int32_t kept = h.server.Privates( client.Slot() ).values[field->slot];
+		std::printf( "    slot %u was told %d (the server keeps %d)\n", unsigned( client.Slot() ), mine, kept );
+		CHECK( mine >= 1 && mine <= 99 );
+		CHECK( mine == kept );
+		// Nothing else arrived with it: every other private slot is empty.
+		for ( int s = 0; s < kBoardSlots; ++s )
+		{
+			CHECK( s == field->slot || client.Privates().values[s] == 0 );
+		}
+		for ( size_t j = 0; j < h.bots.size(); ++j )
+		{
+			allDiffer &= j == i || h.bots[j].client->Privates().values[field->slot] != mine;
+		}
+		// It is not in the simulation, so it cannot desync anyone and no other client holds it.
+		CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+	}
+	std::printf( "    four numbers, all different: %d (they are random, 1 to 99)\n", int( allDiffer ) );
+
+	// A streaming client is told its own in its frames.
+	auto serve = [&h]() { h.RunUntil( h.Now() + 0.002 ); };
+	StreamOptions options;
+	options.port = h.clientPort;
+	options.playerName = "Watcher";
+	StreamSource stream( options );
+	present::ViewFrame frame;
+	CHECK( TakeUntil( stream, frame, 10.0, [&]( const present::ViewFrame& f ) {
+		return f.state == "playing" && f.hasWorld && f.privates.values[field->slot] != 0;
+	}, serve ) );
+	int32_t streamed = frame.privates.values[field->slot];
+	std::printf( "    the streaming client was told %d\n", streamed );
+	CHECK( streamed >= 1 && streamed <= 99 );
+	bool found = false;
+	for ( int s = 0; s < kMaxPlayers; ++s )
+	{
+		found |= h.server.Privates( PlayerSlot( s ) ).values[field->slot] == streamed;
+	}
+	CHECK( found );
+}
+
 // A client that does not simulate: the server sends it frames to draw and plays its input.
 void TestStream()
 {
@@ -2395,6 +2462,7 @@ int main( int argc, char** argv )
 		{ "headshot", TestHeadshot },
 		{ "pistol_mark", TestPistolMark },
 		{ "combat", TestCombat },
+		{ "private_fields", TestPrivateFields },
 		{ "melee", TestMelee },
 		{ "pickup", TestPickup },
 		{ "inventory", TestInventory },

@@ -1505,6 +1505,30 @@ void TestFields()
 	CHECK( present::FormatFields( schema, "AMMO {pistol.ammo} {{ {round.time} {combat.dead}", &board, globals ) == "AMMO 3 { 12.5 no" );
 	// Nothing published yet (no board) reads as zero too.
 	CHECK( present::CheckCondition( schema, "pistol.ammo == 0", nullptr, globals ) );
+
+	// A private field: its value for the viewer's own player, zero for anyone else (declared all the
+	// same, so "?name" still says its mod runs).
+	schema.fields.push_back( { "cards.role", BoardType::Int, BoardScope::Private, 2 } );
+	Blackboard privates;
+	privates.values[2] = 7;
+	CHECK( present::ReadField( schema, "cards.role", &board, globals, &privates ).raw == 7 );
+	CHECK( present::ReadField( schema, "cards.role", &board, globals ).raw == 0 );
+	CHECK( present::ReadField( schema, "cards.role", &board, globals ).declared );
+	CHECK( present::CheckCondition( schema, "cards.role == 7", &board, globals, nullptr, &privates ) );
+	CHECK( present::CheckCondition( schema, "cards.role == 7", &board, globals ) == false );
+	CHECK( present::CheckConditions( schema, { "cards.role > 6", "pistol.ammo > 0" }, &board, globals, &privates ) );
+	CHECK( present::FormatFields( schema, "role {cards.role}, ammo {pistol.ammo}", &board, globals, &privates ) == "role 7, ammo 3" );
+	CHECK( present::FormatFields( schema, "role {cards.role}", &board, globals ) == "role 0" );
+	// The board's slot 2 is another field's: a private field never reads the entity's board.
+	board.values[2] = 99;
+	CHECK( present::ReadField( schema, "cards.role", &board, globals ).raw == 0 );
+	// A state machine cannot read one: the simulation does not have it.
+	{
+		AnimExpr expr;
+		std::string error, warnings;
+		CHECK( CompileAnimExpr( "cards.role > 0", schema, expr, error, warnings ) );
+		CHECK( warnings.find( "private" ) != std::string::npos );
+	}
 }
 
 // Camera collision: how far a third-person camera can back away before the map is in the way.
@@ -3525,6 +3549,34 @@ void TestViewCodec()
 	present::EncodeView( still, &frames.back(), 0.0, packet );
 	std::printf( "    a tick in which nothing changed: %zu bytes\n", packet.size() );
 	CHECK( packet.size() < 128 );
+
+	// The local player's private fields: in a whole packet, in a delta when they changed, and
+	// otherwise the base's, at no cost.
+	{
+		present::ViewFrame first = frames.back();
+		first.privates.values[3] = 41;
+		first.privates.values[30] = -5;
+		std::vector<uint8_t> bytes;
+		present::EncodeView( first, nullptr, 0.0, bytes );
+		present::ViewFrame got;
+		CHECK( present::DecodeView( bytes.data(), bytes.size(), nullptr, got ) );
+		CHECK( std::memcmp( &got.privates, &first.privates, sizeof( Blackboard ) ) == 0 );
+		present::ViewFrame second = first;
+		second.serial += 1;
+		present::EncodeView( second, &first, 0.0, bytes );
+		size_t unchanged = bytes.size();
+		present::ViewFrame same = got;
+		CHECK( present::DecodeView( bytes.data(), bytes.size(), &got, same ) );
+		CHECK( same.privates.values[3] == 41 && same.privates.values[30] == -5 );
+		second.privates.values[3] = 0;
+		second.privates.values[7] = 12;
+		present::EncodeView( second, &first, 0.0, bytes );
+		present::ViewFrame changed = got;
+		CHECK( present::DecodeView( bytes.data(), bytes.size(), &got, changed ) );
+		CHECK( changed.privates.values[3] == 0 && changed.privates.values[7] == 12 && changed.privates.values[30] == -5 );
+		std::printf( "    private fields: %zu bytes more when two of them changed\n", bytes.size() - unchanged );
+		CHECK( bytes.size() - unchanged < 16 );
+	}
 
 	// Compact packets (what a stream carries): the sender keeps exact frames, the receiver only
 	// what it decoded, and the two must still agree on every grid point after 600 deltas in a row.

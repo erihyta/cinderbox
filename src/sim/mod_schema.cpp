@@ -322,7 +322,7 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		uint8_t type = r.U8();
 		uint8_t scope = r.U8();
 		f.slot = r.U8();
-		if ( type > uint8_t( BoardType::Bool ) || scope > uint8_t( BoardScope::Global ) || f.slot >= kBoardSlots )
+		if ( type > uint8_t( BoardType::Bool ) || scope > uint8_t( BoardScope::Private ) || f.slot >= kBoardSlots )
 		{
 			return false;
 		}

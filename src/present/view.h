@@ -62,6 +62,9 @@ struct ViewFrame
 	// its state machine; the workshop items a viewer needs. The generation changes with it.
 	ModSchema schema;
 	uint64_t schemaGeneration = 0;
+	// The local player's private fields (BoardScope::Private), by slot: what only it was sent. All 0
+	// for a source that has none (a recording, a view file: they were never written down).
+	Blackboard privates;
 	// Players' names by slot ("" for an empty slot or a source that knows none).
 	std::array<std::string, kMaxPlayers> names;
 	uint64_t namesGeneration = 0;

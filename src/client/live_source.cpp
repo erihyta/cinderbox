@@ -53,6 +53,7 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 		f.schemaGeneration = client.SchemaGeneration();
 		f.schema = client.Schema();
 	}
+	f.privates = client.Privates();
 	if ( f.namesGeneration != client.NamesGeneration() )
 	{
 		f.namesGeneration = client.NamesGeneration();

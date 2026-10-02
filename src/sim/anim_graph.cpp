@@ -345,7 +345,18 @@ private:
 				return;
 			}
 		}
-		if ( const BoardField* field = m_schema.FindField( name ) )
+		const BoardField* field = m_schema.FindField( name );
+		if ( field != nullptr && field->scope == BoardScope::Private )
+		{
+			// The simulation never has a private value, so a state machine cannot read one.
+			step.kind = AnimExpr::VarKind::Zero;
+			if ( m_warnings.find( "'" + name + "'" ) == std::string::npos )
+			{
+				m_warnings += "'" + name + "' is a private field: a state machine cannot read it (it reads as 0); ";
+			}
+			return;
+		}
+		if ( field != nullptr )
 		{
 			step.kind = field->scope == BoardScope::Global ? AnimExpr::VarKind::GlobalField : AnimExpr::VarKind::EntityField;
 			step.index = field->slot;

@@ -54,7 +54,7 @@ FieldHandle Declarations::Field( const std::string& name, BoardType type, BoardS
 		return { existing->slot, existing->scope, existing->type };
 	}
 
-	int& used = scope == BoardScope::Entity ? m_entitySlots : m_globalSlots;
+	int& used = scope == BoardScope::Entity ? m_entitySlots : scope == BoardScope::Global ? m_globalSlots : m_privateSlots;
 	if ( used >= kBoardSlots )
 	{
 		m_errors.push_back( m_mod + ": no board slot left for \"" + name + "\"" );
@@ -338,6 +338,11 @@ int32_t Context::Get( uint32_t netId, FieldHandle field ) const
 	{
 		return m_sim.GlobalBoardValue( field.slot );
 	}
+	if ( field.scope == BoardScope::Private )
+	{
+		int slot = SlotOfTarget( netId );
+		return m_privates != nullptr && slot >= 0 ? ( *m_privates )[size_t( slot )].values[field.slot] : 0;
+	}
 	return m_sim.BoardValue( netId, field.slot );
 }
 
@@ -477,6 +482,17 @@ void Context::Set( uint32_t target, FieldHandle field, int32_t value )
 {
 	if ( field.Valid() == false )
 	{
+		return;
+	}
+	if ( field.scope == BoardScope::Private )
+	{
+		// Not a command: nothing of it reaches the simulation or anyone but its owner.
+		int slot = SlotOfTarget( target );
+		if ( m_privates != nullptr && slot >= 0 && ( *m_privates )[size_t( slot )].values[field.slot] != value )
+		{
+			( *m_privates )[size_t( slot )].values[field.slot] = value;
+			( *m_privatesChanged )[size_t( slot )] = true;
+		}
 		return;
 	}
 	SimCommand c;

@@ -39,7 +39,8 @@ bool ParseNumber( const std::string& text, float& out )
 
 } // namespace
 
-FieldValue ReadField( const ModSchema& schema, const std::string& name, const Blackboard* board, const int32_t* globals )
+FieldValue ReadField( const ModSchema& schema, const std::string& name, const Blackboard* board, const int32_t* globals,
+					  const Blackboard* privates )
 {
 	FieldValue v;
 	const BoardField* field = schema.FindField( name );
@@ -53,6 +54,10 @@ FieldValue ReadField( const ModSchema& schema, const std::string& name, const Bl
 	{
 		v.raw = globals != nullptr ? globals[field->slot] : 0;
 	}
+	else if ( field->scope == BoardScope::Private )
+	{
+		v.raw = privates != nullptr ? privates->values[field->slot] : 0;
+	}
 	else
 	{
 		v.raw = board != nullptr ? board->values[field->slot] : 0;
@@ -61,16 +66,16 @@ FieldValue ReadField( const ModSchema& schema, const std::string& name, const Bl
 }
 
 bool CheckCondition( const ModSchema& schema, const std::string& condition, const Blackboard* board, const int32_t* globals,
-					 const ExtraFields* extra )
+					 const ExtraFields* extra, const Blackboard* privates )
 {
 	auto known = [&]( const std::string& name, float& value ) { return extra != nullptr && *extra && ( *extra )( name, value ); };
 	auto number = [&]( const std::string& name ) {
 		float value = 0.0f;
-		return known( name, value ) ? value : ReadField( schema, name, board, globals ).AsFloat();
+		return known( name, value ) ? value : ReadField( schema, name, board, globals, privates ).AsFloat();
 	};
 	auto truth = [&]( const std::string& name ) {
 		float value = 0.0f;
-		return known( name, value ) ? value != 0.0f : ReadField( schema, name, board, globals ).AsBool();
+		return known( name, value ) ? value != 0.0f : ReadField( schema, name, board, globals, privates ).AsBool();
 	};
 	auto declared = [&]( const std::string& name ) {
 		float value = 0.0f;
@@ -126,11 +131,11 @@ bool CheckCondition( const ModSchema& schema, const std::string& condition, cons
 }
 
 bool CheckConditions( const ModSchema& schema, const std::vector<std::string>& conditions, const Blackboard* board,
-					  const int32_t* globals )
+					  const int32_t* globals, const Blackboard* privates )
 {
 	for ( const std::string& c : conditions )
 	{
-		if ( CheckCondition( schema, c, board, globals ) == false )
+		if ( CheckCondition( schema, c, board, globals, nullptr, privates ) == false )
 		{
 			return false;
 		}
@@ -138,7 +143,8 @@ bool CheckConditions( const ModSchema& schema, const std::vector<std::string>& c
 	return true;
 }
 
-std::string FormatFields( const ModSchema& schema, const std::string& format, const Blackboard* board, const int32_t* globals )
+std::string FormatFields( const ModSchema& schema, const std::string& format, const Blackboard* board, const int32_t* globals,
+						  const Blackboard* privates )
 {
 	std::string out;
 	for ( size_t i = 0; i < format.size(); ++i )
@@ -161,7 +167,7 @@ std::string FormatFields( const ModSchema& schema, const std::string& format, co
 			out += format.substr( i );
 			break;
 		}
-		FieldValue v = ReadField( schema, Trim( format.substr( i + 1, close - i - 1 ) ), board, globals );
+		FieldValue v = ReadField( schema, Trim( format.substr( i + 1, close - i - 1 ) ), board, globals, privates );
 		char buffer[32];
 		switch ( v.type )
 		{

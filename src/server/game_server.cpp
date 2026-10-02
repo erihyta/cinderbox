@@ -318,6 +318,7 @@ void GameServer::Update( double now )
 				m_pendingEvents.push_back( { PlayerEventType::Leave, c.slot } );
 			}
 			Log( "slot %u left (reconnect grace expired)", c.slot );
+			m_privates[c.slot] = Blackboard{}; // the next player in this slot starts with nothing
 			c = Client{};
 			m_namesDirty = true;
 		}
@@ -490,6 +491,7 @@ void GameServer::HandleHello( PeerId peer, const MsgHello& hello, double now )
 
 		PlayerSlot slot = PlayerSlot( target - m_clients );
 		*target = Client{};
+		m_privates[slot] = Blackboard{};
 		target->used = true;
 		target->slot = slot;
 		target->token = NextRandom( m_tokenState ) | 1;
@@ -582,6 +584,7 @@ void GameServer::SendSnapshots()
 		c.needsSnapshot = false;
 		c.welcomed = true;
 		SendNames( c.peer );
+		SendPrivates( c );
 		// The welcome carries the inputs of snapshotTick - 1, so frames start at snapshotTick.
 		c.ackTick = m_sim->Tick();
 		m_stats.snapshotsSent += 1;
@@ -705,11 +708,21 @@ void GameServer::RunMods( InputFrame& frame )
 	ctx.SetOptions( &m_options.modOptions );
 	ctx.SetItemProperties( &m_itemProperties );
 	ctx.SetLayers( &m_layerWishes, &m_itemLayers );
+	ctx.SetPrivates( &m_privates, &m_privatesChanged );
 	ctx.SetHitTester( m_hits.get() );
 	for ( const auto& mod : m_mods )
 	{
 		mod->Tick( ctx );
 	}
+	// What a mod told one player goes to that player, and to nobody else.
+	for ( const Client& c : m_clients )
+	{
+		if ( c.used && m_privatesChanged[c.slot] )
+		{
+			SendPrivates( c );
+		}
+	}
+	m_privatesChanged.fill( false );
 	// Layers: what mods asked for, then what held items bring.
 	ctx.ResolveLayers();
 	// Whatever the mods produced, clients must be able to apply exactly the same list.
@@ -743,6 +756,19 @@ std::string GameServer::UniqueName( const std::string& wanted, const Client& sel
 			return candidate;
 		}
 	}
+}
+
+void GameServer::SendPrivates( const Client& c )
+{
+	// A streaming client has them in its frames.
+	if ( c.connected == false || c.welcomed == false || c.stream )
+	{
+		return;
+	}
+	MsgPrivateFields msg;
+	msg.values = m_privates[c.slot];
+	Encode( msg, m_buffer );
+	m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
 }
 
 void GameServer::SendNames( PeerId only )
@@ -906,6 +932,7 @@ void GameServer::SendViews( double now )
 		present::ViewFrame view = world;
 		view.serial = ++c.streamSerial;
 		view.frame.localNetId = m_sim->PlayerNetId( c.slot );
+		view.privates = m_privates[c.slot];
 		if ( m_mods.empty() == false )
 		{
 			present::KeepVisible( view.frame, [&]( const present::FrameEntity& e ) { return Visible( ctx, c.slot, e.netId ); } );

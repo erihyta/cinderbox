@@ -244,6 +244,7 @@ public:
 	}
 	int m_entitySlots = 0;
 	int m_globalSlots = 0;
+	int m_privateSlots = 0;
 };
 
 // One tick, as a mod sees it.
@@ -439,6 +440,13 @@ public:
 	float ItemProperty( ItemKindHandle kind, const std::string& name, float fallback ) const;
 	// A socket a mod declared about an item kind, or an invalid handle.
 	SocketHandle ItemSocket( ItemKindHandle kind, const std::string& name ) const;
+	// Where private fields live: one board per player slot, kept by the server (not the simulation)
+	// and sent to that player alone. `changed` gets the slots a Set wrote to.
+	void SetPrivates( std::array<Blackboard, kMaxPlayers>* privates, std::array<bool, kMaxPlayers>* changed )
+	{
+		m_privates = privates;
+		m_privatesChanged = changed;
+	}
 	void SetItemProperties( const std::map<std::pair<int, std::string>, float>* properties )
 	{
 		m_itemProperties = properties;
@@ -481,6 +489,8 @@ private:
 	const std::map<std::string, std::string>* m_options = nullptr;
 	const std::map<std::pair<int, std::string>, float>* m_itemProperties = nullptr;
 	LayerWishes* m_layerWishes = nullptr;
+	std::array<Blackboard, kMaxPlayers>* m_privates = nullptr;
+	std::array<bool, kMaxPlayers>* m_privatesChanged = nullptr;
 	const std::map<int, int>* m_itemLayers = nullptr;
 	// Which layer of the character `layer` names, and whose slot `target` is (-1: neither a slot nor
 	// a player).

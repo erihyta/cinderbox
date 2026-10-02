@@ -96,6 +96,11 @@ public:
 	{
 		return *m_sim;
 	}
+	// A player's private fields, as the server keeps them (tests).
+	const Blackboard& Privates( PlayerSlot slot ) const
+	{
+		return m_privates[slot];
+	}
 	uint32_t Tick() const
 	{
 		return m_sim->Tick();
@@ -233,6 +238,11 @@ private:
 	std::map<std::pair<int, std::string>, float> m_itemProperties; // what mods declared about item kinds
 	std::map<int, int> m_itemLayers;							   // item kind -> the animation pack it brings
 	mods::LayerWishes m_layerWishes;
+	// Private fields (BoardScope::Private), by player slot: never in the simulation, sent to their
+	// owner alone (SendPrivates), cleared when the slot is given up.
+	std::array<Blackboard, kMaxPlayers> m_privates{};
+	std::array<bool, kMaxPlayers> m_privatesChanged{};
+	void SendPrivates( const Client& client );
 	uint64_t m_modRng = 0;
 };
 
