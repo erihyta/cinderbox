@@ -62,6 +62,9 @@ Looks only: it never changes the game itself, and no path leaves the director. T
 		<member name="cooldown" type="float" setter="set_cooldown" getter="get_cooldown" default="0.0">
 			At least this many seconds between two firings: twenty props landing at once play one sound.
 		</member>
+		<member name="wait_for_server" type="bool" setter="set_wait_for_server" getter="get_wait_for_server" default="false">
+			When a [CbPrediction] plays this cue on the viewer's own press, do not act then: act when the server's cue comes. For what must stay in step with something the server starts, like flames along a bat and the body's swing.
+		</member>
 		<member name="animation_player" type="NodePath" setter="set_animation_player" getter="get_animation_player" default="NodePath(&quot;&quot;)">
 			The AnimationPlayer that plays [member animation] ([code]../AnimationPlayer[/code]). Looks only: bone tracks on a player's body are overwritten by the game's pose.
 		</member>

@@ -13,7 +13,8 @@ extends SceneTree
 ##     ├── Kick                on test.fired, subject $at, is_local  screen_effect     plays on the press
 ##     ├── Tracer              on test.fired, placed at the cue's end   a scene        waits for the server
 ##     ├── Marker              on test.fired, placed at $other/Head     a scene        waits for the server
-##     └── Counted             on test.fired, event.value > 0   CountedMark.hide()     waits for the server
+##     ├── Counted             on test.fired, event.value > 0   CountedMark.hide()     waits for the server
+##     └── Told                on test.fired, wait_for_server   ToldMark.hide()        waits because it says so
 
 var _failures := 0
 var _frames := 0
@@ -24,6 +25,7 @@ var _effects: Node3D
 var _predict: CbPrediction
 var _sound: Node3D
 var _counted: Node3D
+var _told: Node3D
 var _kicks := 0
 var _signals: Array[String] = []
 const SCENE := "user://check_prediction_mark.tscn"
@@ -109,6 +111,7 @@ func _initialize() -> void:
 
 	_sound = _mark("SoundMark")
 	_counted = _mark("CountedMark")
+	_told = _mark("ToldMark")
 	var sound := _reaction("Sound")
 	sound.target = NodePath("../SoundMark")
 	sound.method = "hide"
@@ -128,6 +131,10 @@ func _initialize() -> void:
 	counted.conditions = PackedStringArray(["event.value > 0"])
 	counted.target = NodePath("../CountedMark")
 	counted.method = "hide"
+	var told := _reaction("Told")
+	told.wait_for_server = true
+	told.target = NodePath("../ToldMark")
+	told.method = "hide"
 
 
 func _process(_delta: float) -> bool:
@@ -145,6 +152,7 @@ func _process(_delta: float) -> bool:
 	_check("press: the local kick plays at once", _kicks == 1)
 	_check("press: what needs the cue's end or other entity waits", _marks() == 0)
 	_check("press: what reads event.value waits", not _played(_counted))
+	_check("press: wait_for_server waits", not _played(_told))
 	var waits: Dictionary = _world.explain("test.fired", _p0, null, {})
 	_check("explain: an ordinary cue is not held back", String(waits.get("Effects/Sound", "")) == "acts")
 
@@ -154,6 +162,7 @@ func _process(_delta: float) -> bool:
 	_check("echo: the kick does not play twice", _kicks == 1)
 	_check("echo: the tracer and the marker play now", _marks() == 2)
 	_check("echo: the reaction on event.value plays now", _played(_counted))
+	_check("echo: wait_for_server plays now", _played(_told))
 
 	# The echo was used up: the next cue of that name is a cue like any other.
 	_world.cue("test.fired", _p0, _p1, server)

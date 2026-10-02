@@ -46,10 +46,9 @@ var SWING: String
 var _pack := "standard"
 # The hand fire earlier versions keyed on the swing (the bat's own look has it now).
 const OLD_FIRE_PATH := "Armature/Skeleton3D/At_RightHand/HandFire"
-# The right hand's socket, and the AnimationPlayer of whatever item is held there, as the
-# character's animations see them (from the model's root).
-const HELD_ITEM_PLAYER := "Armature/Skeleton3D/At_RightHand/RightHand/Item/AnimationPlayer"
-const SLASH_TIME := 0.2 # Sword_Attack: the swing comes forward from here
+# The playback track earlier versions keyed on the swing to play the held item's "slash" (the bat
+# plays it itself now, from the melee.swing cue).
+const OLD_HELD_ITEM_PLAYER := "Armature/Skeleton3D/At_RightHand/RightHand/Item/AnimationPlayer"
 
 # The six built-in clips, used only if the state machine is removed (animation_tree_path cleared).
 const CLIPS := {
@@ -305,13 +304,9 @@ func _mark_swing() -> void:
 	var old := swing.find_track(NodePath(OLD_FIRE_PATH + ":emitting"), Animation.TYPE_VALUE)
 	if old >= 0:
 		swing.remove_track(old)
-	# The held item swings with it: its own "slash" (a bat's trail, a sword's glint), whatever the
-	# mod put in the hand. A Godot Animation Playback track on the socket's item.
-	var held := swing.find_track(NodePath(HELD_ITEM_PLAYER), Animation.TYPE_ANIMATION)
-	if held < 0:
-		held = swing.add_track(Animation.TYPE_ANIMATION)
-		swing.track_set_path(held, NodePath(HELD_ITEM_PLAYER))
-		swing.animation_track_insert_key(held, SLASH_TIME, "slash")
+	var held := swing.find_track(NodePath(OLD_HELD_ITEM_PLAYER), Animation.TYPE_ANIMATION)
+	if held >= 0:
+		swing.remove_track(held)
 	if ResourceSaver.save(swing, SWING) != OK:
 		printerr("cannot save ", SWING)
 

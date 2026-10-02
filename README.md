@@ -62,6 +62,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M53: smaller frames: compact packets and fewer frames than ticks, what a stream will carry (32 players: 6.8 Mbit/s down to 0.43); view files can be recorded that way | done |
 | M54: streaming clients: a client that does not simulate is sent the frames to draw (`--stream`); the server's mods decide what each one sees (fog of war, the `fog` mod); a third, simulation-free extension | done |
 | M56: the viewer predicts: a look says which cue the server will answer a press with (`CbPrediction`), and it plays at once with the same reactions; the server's cue then plays only what had to wait for it | done |
+| M57: the bat lights its own flames: a reaction on the swing's cue in the bat's scene, not a key in the character's animation; `wait_for_server` keeps a reaction off a predicted press | done |
 
 ## Building
 
@@ -480,6 +481,7 @@ PredictFire   CbPrediction   action "fire"   cue "pistol.fired"
 | Step | What happens |
 |---|---|
 | You press `fire` and the conditions hold on your player | `pistol.fired` plays for you now, with the same reactions everyone else's shot plays: one reaction per cue, none written twice |
+| A reaction has `wait_for_server` on | it waits: it goes with something the server starts (the bat's flames with the body's swing) |
 | A reaction needs what only the server knows | it waits: placed at the cue's point, end or beam, a path starting with `$other`, or a condition on `event.*` (the tracer, the hit spark) |
 | The server's `pistol.fired` for you arrives (within a second) | it is the echo: what already played stays quiet, what waited plays now |
 | No press was predicted | the server's cue plays in full, as for any other player |
@@ -896,8 +898,7 @@ looks like is authored in Godot.
 | socket | the character scene: a `CbSocket` under a `BoneAttachment3D` | where items go, in the item's frame (grip at the origin, pointing along -Z); `RightHand` and `LeftHand` exist on every character (made at the hands if the scene has none) |
 | item kind | the mod: `declare.ItemKind( "melee.bat" )` | spawned with `ctx.SpawnItem( SlotTarget( slot ), kind, socket )`, addressed with `ItemTarget( slot, socket )` for `Set`, `Emit`, `Destroy` |
 | look | a `CbItemLook` node (kind -> scene) in the mod's `vfx/reactions_<name>.tscn` | drawn as the socket's child `Item` |
-| item state and events | `CbReaction` nodes in the item scene | glow while `melee.hot`, sparks on its holder's `melee.hit` (see [Reactions](#reactions)) |
-| character -> item | an Animation Playback track in the character's animation | `.../RightHand/Item/AnimationPlayer` plays `slash` at the right frame of the swing |
+| item state and events | `CbReaction` nodes in the item scene | flames on its holder's `melee.swing`, glow while `melee.hot`, sparks on its holder's `melee.hit` (see [Reactions](#reactions)) |
 
 One attack, resolved by what is held, with no client code:
 
@@ -913,11 +914,17 @@ item:      its own CbReaction on "attack" (subject: its holder), if it has one
 The body's choice runs in the simulation, so the server's hit tests follow it; each item decides
 what an attack looks like on it.
 
-The bat: the melee mod spawns a `melee.bat` when the bat is taken out. The mannequin's swing plays
-the bat's `slash` (flames along the barrel) 0.2 s in, and a hit sets `melee.hot` on the bat, which
-one of its reactions turns into a glow; `melee.hit`, which the mod sends to whoever swung, bursts it
-into sparks through another. Any character with a right hand swings any item that has a
-`slash`; an empty socket, or an item without one, is simply quiet. The pistol works the same way.
+The bat: the melee mod spawns a `melee.bat` when the bat is taken out. Its look is its own, three
+reactions in `prefabs/bat.tscn`:
+
+| Reaction | On | Does |
+|---|---|---|
+| `FlamesOnSwing` | its holder's `melee.swing`, 0.2 s later, `wait_for_server` | plays the bat's `slash` animation (flames along the barrel, on and off) |
+| `GlowWhileHot` | while `melee.hot` (set by a hit) | the barrel glows |
+| `SparksOnHit` | its holder's `melee.hit` | a burst of sparks |
+
+Nothing in the character knows about the bat: any character swings any item, and an item with no
+reaction on the swing is simply quiet. The pistol works the same way.
 
 A mod taking its item away destroys the NetId `ctx.HeldItem( slot, socket )` gives, not
 `ItemTarget`: another mod may put its item in that socket in the same tick (a weapon swap), and
@@ -1091,6 +1098,7 @@ World node: a workshop item cannot reach the game's HUD or menus.
 | `subject_kind`, `subject_template` | only for a player / prop / static / ragdoll / item, or one map template (for an item: its kind, `melee.bat`) |
 | `conditions` | [names and comparisons](#effects), `is_local`, `event.value`, `event.strength`. Plain names read the subject's state, then the world's; a path and a colon read another's: `!^^:combat.dead`, `$other:combat.health < 20`, `$world:deathmatch.round` |
 | `delay`, `chance`, `cooldown` | cue reactions: act N seconds later, only sometimes (0-1), and not more often than every N seconds |
+| `wait_for_server` | cue reactions: do not act on a [predicted](#predictions) press, act when the server's cue comes |
 | `animation_player`, `animation` | play this animation from the start; `animation_off` when a While ends (without one, the animation stops) |
 | `target`, `property`, `value` | set a property on a node; a While puts the old value back when it ends. Sub-paths work: `surface_material_override/0:albedo_color` |
 | `blend_time` | fade the property there (and back) instead of snapping: numbers, vectors, colours |

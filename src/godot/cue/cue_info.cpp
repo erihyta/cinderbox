@@ -49,7 +49,9 @@ const Info kReactionInfo[] = {
 	{ "Timing", "Later, sometimes, and not too often (cue reactions).",
 	  "[b]delay[/b]: act this many seconds after the cue.\n"
 	  "[b]chance[/b]: 1 always, 0.3 about a third of the time.\n"
-	  "[b]cooldown[/b]: at least this long between two firings (twenty props landing at once play one sound)." },
+	  "[b]cooldown[/b]: at least this long between two firings (twenty props landing at once play one sound).\n"
+	  "[b]wait_for_server[/b]: when the cue is predicted from the viewer's own press (CbPrediction), do not play on the "
+	  "press: play when the server's cue comes, in step with what the server starts (the body's swing)." },
 	{ "Animation", "Play an animation. Looks only: bodies are posed by the game.",
 	  "[b]animation_player[/b]: a path to an AnimationPlayer (../AnimationPlayer).\n"
 	  "[b]animation[/b]: played from the start.\n"

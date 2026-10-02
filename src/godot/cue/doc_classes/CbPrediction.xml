@@ -5,7 +5,7 @@
 	</brief_description>
 	<description>
 		A mod's rules run on the server, so what a press did comes back a round trip later. A look can say what its own server is going to answer: when the viewer presses [member action] while [member conditions] hold, [member cue] plays for the viewer there and then, with the same [CbReaction] nodes the server's cue plays. No second reaction for the local player.
-		When the server's cue of that name arrives for the viewer, it is the echo: the reactions that already played stay quiet, and the ones that had to wait play now. A reaction waits when it uses what only the server knows: it is placed at the cue's point, end or beam, a path of it starts with [code]$other[/code], or a condition reads [code]event.*[/code].
+		When the server's cue of that name arrives for the viewer, it is the echo: the reactions that already played stay quiet, and the ones that had to wait play now. A reaction waits when it uses what only the server knows (it is placed at the cue's point, end or beam, a path of it starts with [code]$other[/code], or a condition reads [code]event.*[/code]) or when its [member CbReaction.wait_for_server] is on.
 		The conditions are the look's guess of the server's rule. A wrong guess is not taken back: the reaction played, and no server cue follows. What the server changes (ammo on the HUD, the swing's body pose) still comes with the server's answer.
 		It goes anywhere under the [CbDirector]: in a world reactions scene, or in an item's scene.
 	</description>
