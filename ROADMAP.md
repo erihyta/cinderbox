@@ -35,18 +35,9 @@ Each step is a milestone of its own, and each leaves the game playable.
 
 | # | Step | Why | Needs |
 |---|---|---|---|
-| 1 | **One condition language** | reactions and the HUD read the game the same way | nothing |
-| 2 | **A stream that feels local** | only for `--stream` clients: their own character answers a round trip late | nothing |
+| 1 | **A stream that feels local** | only for `--stream` clients: their own character answers a round trip late | nothing |
 
-### 1. One condition language
-
-- **What**: reactions (`src/godot/cue`) and HUD nodes (`src/present/fields`) parse conditions
-  separately today. One parser, with `or`, arithmetic, field-to-field comparisons, and a way to
-  pass a value through (`volume_db = event.strength * 2`, a bar from a field) on `CbReaction`.
-- **Done when**: `CbFieldBinding` is a `CbReaction` with a value expression, and one test file
-  covers the grammar.
-
-### 2. A stream that feels local
+### 1. A stream that feels local
 
 - **Who it is for**: clients that join with `--stream` and do not simulate. A normal client
   predicts its own movement already.
@@ -68,5 +59,7 @@ Independent of the path; each is small.
 | What | Note |
 |---|---|
 | A board sized by the schema | `kBoardSlots` is a wall that came back once already |
+| Expressions in a prediction's `changes` | `pistol.ammo -= 1` takes a number; the right side could be an expression (`-= melee.cost`) |
+| HUD nodes as reactions | `CbFieldBinding` and a While `CbReaction` with a `value_expression` do the same thing in two places; one node would need HUD scenes under a director |
 | `simulation.cpp` in modules | characters, props, ragdolls, items and animation in one 2,100-line class |
 | Repository | a LICENSE; `.uid` files committed; line endings settled in `.gitattributes`; the old `build/` folder in OneDrive |

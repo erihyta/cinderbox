@@ -41,7 +41,8 @@ looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <─
 
 | Library | Holds | Links |
 |---|---|---|
-| `cb_sim_data` | components, events, the map format, the mod schema, the state machine compiler: what the data means | nothing that steps a world |
+| `cb_expr` | the expression language: text to a small stack program, and its evaluator | nothing |
+| `cb_sim_data` | components, events, the map format, the mod schema, the state machine compiler: what the data means | `cb_expr`; nothing that steps a world |
 | `cb_sim` | the simulation and rollback | `cb_sim_data`, flecs, Box3D |
 | `cb_anim` | skeletons, clips, the pose, hitboxes, retargeting | `cb_sim_data`, ozz |
 | `cb_present`, `cb_capture` | the viewer protocol, the mirror, the frame codec; a simulation's state as a frame | `cb_anim` |
@@ -290,7 +291,15 @@ Everything a player sees and hears beyond bodies is data in workshop items: no s
 | `CbFieldLabel`, `CbFieldBinding`, `CbEventFeed`, `CbScoreboard`, `CbPromptLabel` | HUD from fields and events |
 
 - **Paths**: `^` (my entity), `^^` (its holder), `$at` / `$other` (who a cue names), `$local`, `$world`, `@field` (the entity a field names). No path leaves the World node.
-- **Conditions**: names and comparisons over the board, item kinds, `is_local`, `event.value`.
+- **Conditions and values**: one expression language (`src/expr`): names, comparisons, arithmetic, `and` / `or` / `not`, `?name`. Parsed once into a stack program with the names kept as text; each reader says what a name is.
+
+| Reader | Names | Runs |
+|---|---|---|
+| State machine (`sim/anim_graph`) | resolved at bake against the schema to where the value lives | its own copy of the program, with `expr::Apply` for the arithmetic: no name lookups in the simulation |
+| HUD nodes (`present/fields`) | the board, private fields, item kinds | `expr::Evaluate`, programs cached by text |
+| Reactions, predictions (`godot/cue`) | the subject's state metadata, or another entity's through a path and a colon; `is_local`, `event.*` | `expr::Evaluate` |
+
+- **Values**: `CbReaction.value_expression` sets a property to an expression's value (kept up to date while a While is on), `volume_expression` scales a sound; `CbFieldBinding.field` and `{...}` in a `CbFieldLabel` take expressions. HUD nodes stay their own classes: a HUD scene is not under the World node, so a reaction there has no director.
 - **World reactions**: every `res://vfx/reactions*.tscn` is loaded once; files add to each other.
 - **Prediction rule**: on a predicted cue a reaction waits for the server when it uses what only the server knows (the cue's point, end, value or other entity) or has `wait_for_server` on. Echoes are matched by name and order within a second.
 - **Predicted state**: a prediction may also say what the server's answer changes for the viewer's own player. `changes` (`pistol.ammo -= 1`) are applied to the mirror's copy of the board after each frame's cues were heard, so the server's value and the prediction's are never both counted. A `stance` (or the cue itself, as an event) leads the body: see Characters and animation.
@@ -462,3 +471,4 @@ Netcode numbers from when they were taken (M4, M5); frame sizes are in [The view
 64. **M64** (done): predicted state in the viewer: `CbPrediction.changes` (fields of the viewer's own player) and `stance` / `stance_layer`; `LeadAnimState` runs the character's upper layers ahead for the local player (`present/anim_lead.*`, `AnimGraph::UpperLayersRead`, `PlayerAnim::shown`); `CbDirector.pending_predictions`; the pistol's ammo and recoil and the bat's swing and flames follow the click; `anim_lead` test.
 65. **M65** (done): a bat's `melee.hot` is cleared by the item's NetId when its time is up, not through the hand: put away or dropped while hot, it stayed hot. `net_melee` puts it away hot.
 66. **M66** (done): private fields: `BoardScope::Private`, kept by the server per player and sent to its owner alone (`MsgPrivateFields`, protocol 19; `ViewFrame::privates` for streams); read by name in looks for the viewer's own player; the `secret` example mod; `net_private_fields`.
+67. **M67** (done): one expression language (`cb_expr`): the state machine compiler, `present/fields` and the cue addon parse the same grammar (`and` / `or` / `not`, arithmetic, field against field, `?name`, paths with a colon) instead of three parsers; `value_expression` and `volume_expression` on `CbReaction`, expressions in `CbFieldBinding.field` and `CbFieldLabel`'s `{...}`; the state machine's programs and both reference hashes unchanged.
