@@ -1,0 +1,20 @@
+[gd_scene load_steps=3 format=3]
+
+; One metre long along -Z from the origin, like the tracer: the "ScanBeam" reaction stretches it
+; from the hand to where the mark's ray ended.
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.4, 0.85, 1, 0.6)
+
+[sub_resource type="BoxMesh" id="Box"]
+material = SubResource("Mat")
+size = Vector3(0.012, 0.012, 1)
+
+[node name="ScanBeam" type="Node3D"]
+
+[node name="Beam" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.5)
+mesh = SubResource("Box")
+cast_shadow = 0

@@ -63,6 +63,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M54: streaming clients: a client that does not simulate is sent the frames to draw (`--stream`); the server's mods decide what each one sees (fog of war, the `fog` mod); a third, simulation-free extension | done |
 | M56: the viewer predicts: a look says which cue the server will answer a press with (`CbPrediction`), and it plays at once with the same reactions; the server's cue then plays only what had to wait for it | done |
 | M57: the bat lights its own flames: a reaction on the swing's cue in the bat's scene, not a key in the character's animation; `wait_for_server` keeps a reaction off a predicted press | done |
+| M58: an example of a second action: the pistol's right button marks the player its ray finds (a zone around them for 2 seconds), with the server part and the look part side by side | done |
 
 ## Building
 
@@ -276,7 +277,7 @@ The mods that ship:
 | `inventory` | `inventory.slot`, `inventory.item_2` .. `item_4`; actions `slot_1` .. `slot_4` (keys 1 to 4) | what a player carries: slot 1 is empty hands (and freelook), slots 2 to 4 hold one item each; the slot that is out has its item in the right hand, the rest are stowed. See [The inventory](#the-inventory) |
 | `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage` | the bat: a full-body stance while it is out; left mouse swings (0.45 s, every 0.6 s), a fan of 1.8 m rays from the chest at the strike, 40 damage through `combat.damage` |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
-| `pistol` | `combat.*`, `pistol.*` fields; `fire` (left mouse), `reload` (R); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `combat.killed` | hitscan from the camera pivot, 25 damage, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; keeps health, so it also applies other mods' `combat.damage`; death leaves a ragdoll (10 s, at most 16); respawn after 3 s; falling out of the world counts as a death |
+| `pistol` | `combat.*`, `pistol.*` fields; `fire` (left mouse), `reload` (R), `mark` (right mouse); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `pistol.scan`, `pistol.marked`, `combat.killed` | hitscan from the camera pivot, 25 damage, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; keeps health, so it also applies other mods' `combat.damage`; death leaves a ragdoll (10 s, at most 16); respawn after 3 s; falling out of the world counts as a death |
 | `fog` | nothing; option `fog.radius` | streaming clients are sent only what is within the radius of their player (off by default) |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
@@ -502,6 +503,25 @@ PredictFire   CbPrediction   action "fire"   cue "pistol.fired"
   `check_predictions.gd` drives one by hand.
 - With 50 ms of delay each way, a click shows its shot 2 ms later; the server's cue (the tracer)
   follows at about 250 ms.
+
+### Example: a second action
+
+The pistol's right mouse button casts a ray and puts a zone around the player it finds for 2
+seconds. The whole feature is one function on the server and four nodes in the look:
+
+| Where | What | Why there |
+|---|---|---|
+| `pistol.cpp`, `Declare` | `declare.Action( "mark", "MouseRight" )`, events `pistol.scan` and `pistol.marked` | names the look can use; the key shows in the controls hint by itself |
+| `pistol.cpp`, `Mark` | on a press (once a second): `ctx.CastRay` from the eye; `Emit( pistol.scan, caster, hit, eye, end )`; if it found a living player, `Emit( pistol.marked, caster, player )` | who is hit is the server's decision |
+| look: `PredictScan` | `CbPrediction`: `mark` -> `pistol.scan` | your own click is heard at once |
+| look: `Scan` | on `pistol.scan`, subject `$at`: a click at `$at/RightHand` | plays on the press for you, on the server's cue for everyone else |
+| look: `ScanBeam` | on `pistol.scan`: `vfx/scan_beam.tscn` as a **beam** to the cue's end | needs the server's end point, so it waits for the server |
+| look: `Marked` | on `pistol.marked`, subject `$other`: `vfx/mark_zone.tscn`, place **Follow the subject**, `scene_lifetime = 2` | the zone is a child of the marked player for 2 seconds, then freed |
+
+The server keeps nothing about the zone: how it looks and how long it shows is the look's. If the
+mark had to *do* something for those 2 seconds (slow the player), that would be a board field the
+server sets and clears, and the zone a **While** reaction on it. Behind 50 ms each way: the click
+at 1 ms, the server's events at about 160 ms, the zone on for 1.97 s.
 
 Conditions read the server mods' **board** by name:
 
