@@ -19,7 +19,7 @@ echo "== toolchain"
 cmake --version | head -1
 ninja --version
 
-cmake --preset "$preset" -B "$build" -DCB_BUILD_GODOT=OFF -DCB_BUILD_CLIENT=OFF
+cmake --preset "$preset" -B "$build" -DCB_BUILD_GODOT=OFF
 grep -E "CMAKE_(C|CXX)_COMPILER(_ID|_VERSION)?:" "$build/CMakeCache.txt" || true
 cmake --build "$build"
 
@@ -38,6 +38,7 @@ if [[ "$anim" == "$anim_ref" ]]; then
 	echo "== anim pose hash $anim matches reference"
 else
 	echo "== anim pose hash $anim DIFFERS from reference $anim_ref"
+	echo "== in parts: $("$exe" --anim-hash-parts | tr -d '\r')"
 	failed=1
 fi
 

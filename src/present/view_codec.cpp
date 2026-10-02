@@ -13,7 +13,7 @@ namespace cb::present
 namespace
 {
 
-constexpr uint32_t kMagic = 0x32564243; // "CBV2"
+constexpr uint32_t kMagic = 0x33564243; // "CBV3"
 
 // What a decoder accepts at most; real frames are far below.
 constexpr uint32_t kMaxEntities = 1u << 16;
@@ -367,9 +367,8 @@ b3Quat RotationFromCode( uint32_t code )
 
 // Which 32-bit words of an AnimState are floats (the rest are small integers, sent as they are).
 constexpr size_t kAnimWords = sizeof( AnimState ) / 4;
-static_assert( offsetof( AnimState, modeTime ) == 4 && offsetof( AnimState, stances ) == 32 && offsetof( AnimState, layerTime ) == 40 &&
-				   offsetof( AnimState, moveForward ) == 56 && offsetof( AnimState, graph ) == 64 && sizeof( AnimGraphLayerState ) == 40 &&
-				   offsetof( AnimGraphLayerState, time ) == 4,
+static_assert( offsetof( AnimState, modeTime ) == 4 && offsetof( AnimState, stances ) == 24 && offsetof( AnimState, moveForward ) == 28 &&
+				   offsetof( AnimState, graph ) == 36 && sizeof( AnimGraphLayerState ) == 40 && offsetof( AnimGraphLayerState, time ) == 4,
 			   "AnimState layout changed: say which of its words are floats" );
 
 bool AnimWordIsFloat( size_t word )
@@ -377,7 +376,7 @@ bool AnimWordIsFloat( size_t word )
 	size_t byte = word * 4;
 	if ( byte < offsetof( AnimState, graph ) )
 	{
-		return ( byte >= 4 && byte < 32 ) || byte >= 40;
+		return ( byte >= 4 && byte < 24 ) || byte >= 28;
 	}
 	return ( byte - offsetof( AnimState, graph ) ) % sizeof( AnimGraphLayerState ) != 0;
 }

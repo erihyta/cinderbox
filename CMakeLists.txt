@@ -11,7 +11,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 option(CB_BUILD_TESTS "Build tests" ON)
-option(CB_BUILD_CLIENT "Build the raylib client" ON)
 option(CB_BUILD_GODOT "Build the Godot GDExtension client (writes into godot/bin; enable in one preset only)" OFF)
 set(CB_GODOT_TARGET "template_debug" CACHE STRING "godot-cpp target: template_debug (editor and debug exports) or template_release")
 
@@ -34,7 +33,7 @@ add_subdirectory(server_mods)
 target_link_libraries(cb_server PRIVATE cb_server_mods)
 add_dependencies(cb_server cb_server_items)
 add_subdirectory(src/tools)
-add_subdirectory(src/client) # the core is always needed; the raylib app is optional inside
+add_subdirectory(src/client)
 add_subdirectory(src/stream)
 if(CB_BUILD_GODOT)
 	add_subdirectory(src/godot)

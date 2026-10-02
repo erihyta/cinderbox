@@ -1,9 +1,10 @@
 [gd_scene format=3]
 
 ; How the pistol mod looks and sounds, as world reactions. Everything is keyed on names the
-; server's mods declared: the "fire" action, "pistol.*" and "combat.*" fields and events. $at is
-; who an event is about (the shooter), $other the other entity (what was hit, who died). The Gun
-; node says how the "pistol.gun" item looks.
+; server's mods declared: the "fire" action, "pistol.*" fields and events. $at is who an event is
+; about (the shooter), $other the other entity (what was hit). The Gun node says how the
+; "pistol.gun" item looks. Being hurt and dying look the same whatever did it: that is the combat
+; mod's look.
 ;
 ; The two CbPrediction nodes say what the server answers to the viewer's own "fire" press, so
 ; "pistol.fired" and "pistol.dry" play for the viewer at once, with the reactions everyone else
@@ -128,24 +129,6 @@ place = 4
 place_node = NodePath("$at/Head")
 sound = "res://assets/sfx/hit_marker.wav"
 volume_db = -6.0
-
-[node name="Hurt" type="CbReaction" parent="."]
-event = "pistol.hit"
-subject = NodePath("$other")
-conditions = PackedStringArray("is_local", "event.value > 0")
-place = 1
-shake = 0.05
-shake_time = 0.2
-flash_color = Color(0.8, 0.05, 0.05, 0.22)
-flash_time = 0.3
-
-[node name="Died" type="CbReaction" parent="."]
-event = "combat.killed"
-subject = NodePath("$other")
-conditions = PackedStringArray("is_local")
-place = 1
-flash_color = Color(0.6, 0, 0, 0.55)
-flash_time = 1.2
 
 [node name="Reload" type="CbReaction" parent="."]
 event = "pistol.reload"

@@ -1,7 +1,7 @@
 # Cinderbox
 
 A deterministic multiplayer third-person physics sandbox, built with flecs, Box3D, ENet and
-ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib debug viewer. See [DESIGN.md](DESIGN.md) for the architecture and decisions, and [ROADMAP.md](ROADMAP.md) for what comes next.
+ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.md](DESIGN.md) for the architecture and decisions, and [ROADMAP.md](ROADMAP.md) for what comes next.
 
 ## Status
 
@@ -65,6 +65,10 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M57: the bat lights its own flames: a reaction on the swing's cue in the bat's scene, not a key in the character's animation; `wait_for_server` keeps a reaction off a predicted press | done |
 | M58: an example of a second action: the pistol's right button marks the player its ray finds (a zone around them for 2 seconds), with the server part and the look part side by side | done |
 | M59: no companion files: an animation's non-bone tracks are read from the character's own `AnimationPlayer` when it is first drawn; a character is baked when its scene is saved and again when its item is packed | done |
+| M60: the raylib client is gone: the Godot client is the client | done |
+| M61: a `combat` mod: health, death and respawning in one place, spoken to by events (`combat.damage`, `combat.heal`) with server options; the pistol only keeps the gun | done |
+| M62: one animation system: every character is a state machine (the placeholder rig's is built in); the old clip blending, stance clip tables, `CinderboxAnimator` and the glTF converter are gone | done |
+| M63: DESIGN.md by subsystem instead of by milestone | done |
 
 ## Building
 
@@ -97,8 +101,7 @@ pulling a change that adds one), open `godot/` in the editor once or run
 
 ## Playing
 
-The main client is the Godot project in `godot/` (Godot 4.7 or later). The raylib client `cb_client` is kept
-as a debug viewer; it runs the same simulation and also plays recordings and previews animations.
+The client is the Godot project in `godot/` (Godot 4.7 or later).
 
 ```sh
 # terminal 1
@@ -112,8 +115,6 @@ godot --path godot -- --host=127.0.0.1 --port=7777 --stream
 # or watch a recording (cb_server --record FILE), or a view file (cb_server --record-view FILE)
 godot --path godot -- --replay=FILE
 godot --path godot -- --view=FILE
-# or the raylib debug viewer
-cb_client --host 127.0.0.1 --port 7777
 ```
 
 ### The menu
@@ -195,7 +196,6 @@ Open `godot/` in the Godot editor to edit scenes, then press Play. Godot client 
 - `--config=FILE`: where name, settings and recent servers are kept (default `user://player.cfg`).
 - `--workshop=DIR`: where subscribed workshop items are (default `user://workshop`).
 - `--rollback=N`: fixes the prediction window.
-- `--animations=DIR`: a folder of converted clips.
 - `--mods=DIR`: an extra mod folder.
 - `--autoplay=SECONDS`, `--screenshot=FILE`: an unattended smoke test, on a server or a recording. The exit code is non-zero on a desync.
 
@@ -209,10 +209,9 @@ powershell -ExecutionPolicy Bypass -File tools\export_client.ps1     # -> dist\C
 The export needs the Godot 4.7.2 export templates, installed either from the editor or extracted to
 `%LOCALAPPDATA%\cinderbox-build\tools\godot\templates`. Packs in `mods\` are copied to `dist\Cinderbox\mods`.
 
-`cb_server` and `cb_client` are in `<build dir>/bin`. The server options are `--tick-rate`, `--seed`, `--substeps`,
+`cb_server` is in `<build dir>/bin`. Its options are `--tick-rate`, `--seed`, `--substeps`,
 `--prop-lifetime`, `--props-per-player`, `--props-global`, and `--mods A,B` / `--mods none` / `--list-mods`
-(every compiled server mod runs by default, see [Server mods](#server-mods)). The `cb_client` options are `--rollback TICKS` (fixes the prediction window, which is otherwise chosen from latency),
-`--width`, `--height`, and `--autoplay SECONDS [--screenshot FILE]` for an unattended smoke test.
+(every compiled server mod runs by default, see [Server mods](#server-mods)).
 
 ## Server mods
 
@@ -275,17 +274,54 @@ The mods that ship:
 
 | Mod | Declares | Rules |
 |---|---|---|
+| `combat` | `combat.health`, `.max_health`, `.dead`, `.kills`, `.deaths`; hears `combat.damage`, `combat.heal`, `game.round_start`; says `combat.hurt`, `combat.killed`, `combat.respawned` | the one place health lives: applies any mod's damage, credits the kill, leaves a ragdoll, brings the player back. See [The combat mod](#the-combat-mod) |
 | `inventory` | `inventory.slot`, `inventory.item_2` .. `item_4`; actions `slot_1` .. `slot_4` (keys 1 to 4) | what a player carries: slot 1 is empty hands (and freelook), slots 2 to 4 hold one item each; the slot that is out has its item in the right hand, the rest are stowed. See [The inventory](#the-inventory) |
 | `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage` | the bat: a full-body stance while it is out; left mouse swings (0.45 s, every 0.6 s), a fan of 1.8 m rays from the chest at the strike, 40 damage through `combat.damage` |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
-| `pistol` | `combat.*`, `pistol.*` fields; `fire` (left mouse), `reload` (R), `mark` (right mouse); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `pistol.scan`, `pistol.marked`, `combat.killed` | hitscan from the camera pivot, 25 damage, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; keeps health, so it also applies other mods' `combat.damage`; death leaves a ragdoll (10 s, at most 16); respawn after 3 s; falling out of the world counts as a death |
+| `pistol` | `pistol.ammo`, `pistol.reloading`; `fire` (left mouse), `reload` (R), `mark` (right mouse); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `pistol.scan`, `pistol.marked`, `combat.damage` | hitscan from the camera pivot, 25 damage (the head doubles it) through `combat.damage`, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; a new life (`combat.respawned`) comes with a full magazine |
 | `fog` | nothing; option `fog.radius` | streaming clients are sent only what is within the radius of their player (off by default) |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
 Mods cooperate through the board (`pickup` reads the `inventory.slot` that `inventory` publishes, to
 know there is one) and through item properties (`pistol` and `melee` tell `inventory` which slot
-their item lives in). They also cooperate through events: `deathmatch` scores the pistol's `combat.killed`, and
-the pistol refills health and ammo on `game.round_start`.
+their item lives in). They also cooperate through events: `pistol` and `melee` say `combat.damage`,
+`combat` answers with `combat.hurt` and `combat.killed`, `deathmatch` scores the kills, and its
+`game.round_start` gives everyone full health (`combat`) and a full magazine (`pistol`).
+
+### The combat mod
+
+Health, death and the next life, for every mod that hurts. A weapon does not own health and does
+not know the other weapons: it declares the names it uses (the same name is the same event) and
+talks to `combat` through them.
+
+| A mod | Event | Carries |
+|---|---|---|
+| emits | `combat.damage` | a = attacker (0: nobody), b = who is hurt, value = damage, point = where, vector = the push the body gets if it dies |
+| emits | `combat.heal` | b = who, value = health given back |
+| emits | `game.round_start` | everyone alive, full health |
+| hears | `combat.hurt` | a = attacker, b = victim, value = health actually lost, point |
+| hears | `combat.killed` | a = killer (0: the world, a fall), b = who died |
+| hears | `combat.respawned` | a = who is back (after dying, or with a new round) |
+
+```cpp
+// A weapon, in full: declare the name, say what you did.
+m_damage = declare.Event( "combat.damage" );
+...
+ctx.Emit( m_damage, SlotTarget( slot ), hit.netId, 40, hit.point, push );
+```
+
+| Option (`--mod-option`) | Default | Meaning |
+|---|---|---|
+| `combat.max_health` | 100 | health at the start of a life |
+| `combat.respawn_seconds` | 3 | from death to the next life |
+| `combat.ragdoll_seconds`, `combat.ragdoll_cap` | 10, 16 | how long a body lies, and how many at once |
+| `combat.fall_counts` | 1 | falling out of the world is a death (0: it is not) |
+
+- Events are heard a tick after they are sent: damage lands the tick after the hit.
+- Without the mod (`--mods pistol,inventory`) weapons fire and report hits, and nobody dies.
+- Its look is its own workshop item: the health bar, YOU DIED, the kill feed and the scoreboard
+  (`ui/hud_combat.tscn`), and the red flash when you are hurt or die (`vfx/reactions_combat.tscn`),
+  whatever weapon did it. A weapon's look keeps what is the weapon's (the hit puff, the hit marker).
 
 Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod reads them with
 `ctx.Option( "deathmatch.kills", 10 )`.
@@ -566,8 +602,8 @@ The pistol's HUD (`server_mods/pistol/client/ui/hud_pistol.tscn`) is built from 
 deaths, the kill feed and the scoreboard. None of it is script, so a client mod can restyle all of it.
 
 `godot/vfx/reactions.tscn` is the game's own set; the pistol's look (predicted shots, tracers, hits,
-hurt and death feedback, reload, the pistol item's look) is `vfx/reactions_pistol.tscn` in its
-workshop item; `mods_src/example_neon/vfx/reactions_neon.tscn` shows a mod adding three more,
+reload, the pistol item's look) is `vfx/reactions_pistol.tscn` in its workshop item, and being hurt
+or dying looks the same for every weapon (`vfx/reactions_combat.tscn`, the combat mod's item); `mods_src/example_neon/vfx/reactions_neon.tscn` shows a mod adding three more,
 including its own sound. All are edited in the Godot editor, as scenes.
 
 The sounds in `godot/assets/sfx/` are placeholders in the same spirit as the procedural rig: short,
@@ -575,20 +611,21 @@ synthetic, and meant to be replaced. `tools/make_sfx.py` regenerates them.
 
 ## Animations
 
-Players are posed by ozz and drawn as their character (by default the mannequin, see
-[Characters](#characters)). With `--character none`, a procedural placeholder rig is drawn as one box
-per bone, with the bone names of Godot's `SkeletonProfileHumanoid`: `Hips`, `Spine`,
-`Chest`, `UpperChest`, `Neck`, `Head`, `Left/RightShoulder`, `UpperArm`, `LowerArm`, `Hand`,
-`UpperLeg`, `LowerLeg`, `Foot`, `Toes`. That is the profile Godot retargets imported characters
-onto, so a character imported the normal way can be driven with no mapping of our own. Clips whose
-joints still carry Mixamo names are recognised through an alias table.
+One system poses every player: the character's **state machine**, authored as a Godot
+`AnimationTree`, baked, and run by the simulation ([State machines](#state-machines)). Its clips
+are sampled with ozz into the pose every client draws and the server hit-tests. Nothing else poses
+a player.
 
-To add your own clips:
+| Character | Its state machine |
+|---|---|
+| the mannequin, the robot, any workshop character | baked from the `AnimationTree` in its scene |
+| the placeholder rig (`--character none`) | built into the engine: one layer (idle, walk and run by speed, a jump), six procedural clips, no assets |
 
-1. Put `idle`, `walk`, `run`, `jump_start`, `fall` and `land` `.glb` files in a folder.
-2. Run `tools\convert_animations.ps1 -Source <folder>` (or `tools/convert_animations.sh <folder>`).
-3. Preview them with `cb_client --anim-viewer`.
-4. For the Godot client, pass `--animations=<build dir or assets/anim>`. Clips are loaded from disk, not from the Godot pack.
+The placeholder rig is drawn as one box per bone, with the bone names of Godot's
+`SkeletonProfileHumanoid`: `Hips`, `Spine`, `Chest`, `UpperChest`, `Neck`, `Head`,
+`Left/RightShoulder`, `UpperArm`, `LowerArm`, `Hand`, `UpperLeg`, `LowerLeg`, `Foot`, `Toes`. That
+is the profile Godot retargets imported characters onto, so a character imported the normal way
+is driven with no mapping of our own.
 
 ### Godot animation on players: cosmetic only
 
@@ -603,36 +640,14 @@ This is enforced, not just advised. A `CinderboxSkeleton` driving a `Skeleton3D`
 the pose; the character bake warns about them and about an `AnimationTree`, naming the bones that
 have hitboxes.
 
-To drive cosmetic animation from the game, put a `CinderboxAnimator` in a player prefab next to an
-`AnimationTree` and point it at the tree:
-
-| It sets | From |
-|---|---|
-| the state machine's state | the simulation's mode: locomotion, jump, fall, land |
-| the blend position | the smoothed ground speed, in m/s, so the blend points sit at 3.0 and 6.5 |
-| the clip time | the simulation's locomotion phase, resynced when the tree drifts past `sync_threshold` |
-
-The phase is shared by walk and run, so feet line up between the two clips and between clients.
-Transitions use `travel()`, so the transitions authored in the tree are respected.
-
-`mods_src/example_animtree` is a mod that shows the pattern: the body is the ozz pose (bone boxes
-from a `CinderboxSkeleton`), and a state machine over a 1D blend space animates a jetpack whose
-flames follow the same states (idle flicker, walk and run by speed, a burst on jump). It is a mod, so
-it needs no code.
+What a character's animations do besides moving bones (particles, sounds, lights) stays in the
+animations and plays in step with the pose: see
+[An animation's other tracks](#an-animations-other-tracks).
 
 ```sh
-# rebuild the example prefab (it is an ordinary scene; edit it in the editor instead if you prefer)
-godot --headless --path godot --script res://addons/cinderbox_maps/make_animtree_example.gd -- --out=<abs path>/mods_src/example_animtree/prefabs/player.tscn
 # check that the ozz pose wins over Godot animation on a driven skeleton
 godot --headless --path godot --script res://addons/cinderbox_maps/check_pose_wins.gd
-# check that a prefab's tree follows the simulation, without joining a server
-godot --headless --path godot --script res://addons/cinderbox_maps/check_animtree.gd -- mods/example_animtree.zip
 ```
-
-A prefab may contain a `CinderboxSkeleton`, a `CinderboxAnimator`, or both; whichever it has is
-driven. `event_parameters` on the animator maps mod events to tree parameters it fires (set to 1, the
-request of an `AnimationNodeOneShot`), e.g. `"pistol.fired": "parameters/shoot/request"` for a recoil
-clip.
 
 ### Ragdolls
 
@@ -642,9 +657,7 @@ identical on every machine, pushable, shootable, and it piles up with props and 
 
 Clients draw it with the player's own prefab (or `prefabs/ragdoll.tscn` if there is one): every joint
 of the skeleton follows the nearest body part, so any character works, and the pose the player was
-last drawn in is blended into the ragdoll over 0.15 s, so there is no snap. A prefab animated only by
-an AnimationTree needs a `CinderboxSkeleton` for its ragdoll to be posed. The ozz pose is still evaluated for every player even when only the AnimationTree is used,
-which costs a little work no one reads.
+last drawn in is blended into the ragdoll over 0.15 s, so there is no snap.
 
 ### Driving an imported character with ozz
 
@@ -661,11 +674,6 @@ a character built to our proportions.
 # a humanoid with long legs and short arms, posed from the simulation's animation state
 godot --headless --path godot --script res://addons/cinderbox_maps/check_retarget.gd
 ```
-
-[assets/anim/README.md](assets/anim/README.md) has the Mixamo → Blender steps and the `anim.cfg`
-reference. `--assets DIR` selects a different asset folder, and `--procedural-anim` forces the placeholder.
-These folders are for the raylib viewer and for development; in the game, a character comes from its
-workshop item (see [Characters](#characters)).
 
 Client controls:
 - WASD moves, Shift sprints and Space jumps: the engine's own controls.
@@ -757,7 +765,7 @@ already holds what the game needs, baked in the editor.
 | In the item, under `characters/<name>/` | Made by | Read by |
 |---|---|---|
 | `character.tscn`: the model, a `CbCharacter` at the root, a `CinderboxSkeleton`, `CbHitbox` zones | the author | clients (the player prefab) |
-| `skeleton.ozz`, `idle.ozz`, `walk.ozz`, `run.ozz`, `jump_start.ozz`, `fall.ozz`, `land.ozz`, `anim.cfg` | the bake (on save, and when the item is packed) | clients (poses) and the server (hit tests) |
+| `skeleton.ozz`, `clip_<n>.ozz` (one per animation the tree plays), `anim.cfg`, `graph.cfg` | the bake (on save, and when the item is packed) | clients (poses) and the server (the state machine, hit tests) |
 | `hitboxes.cfg` | the bake | the server |
 
 With `--character none`, players use the procedural placeholder rig, which has default zones
@@ -773,9 +781,11 @@ With `--character none`, players use the procedural placeholder rig, which has d
    → Bone Map with `SkeletonProfileHumanoid`, and the rest fixer's Apply Node Transforms and
    Normalize Position Tracks. Bones then have profile names (`Hips`, `Head`, `LeftUpperArm`...).
 3. Make `res://characters/<name>/character.tscn`:
-   - a `CbCharacter` root: `character_name`, the paths to the `Skeleton3D` and the
-     `AnimationPlayer`, and which animation plays each clip (idle, walk, run, jump_start, fall,
-     land);
+   - a `CbCharacter` root: `character_name`, and the paths to the `Skeleton3D`, the
+     `AnimationPlayer` and the `AnimationTree`;
+   - the `AnimationTree`: the character's state machine ([State machines](#state-machines)). Copy
+     the robot's or the mannequin's to start: legs by speed and a jump on a base layer, the mods'
+     stances on an upper-body layer;
    - the imported model under it, with the `Skeleton3D` at the root's origin, unrotated and
      unscaled (the bake checks this);
    - a `CinderboxSkeleton` whose `skeleton_path` points at the `Skeleton3D`, with `retarget` off
@@ -784,10 +794,8 @@ With `--character none`, players use the procedural placeholder rig, which has d
      `zone` ("head", "torso", "arm", "leg", or your own);
    - the aim chain on the `CbCharacter`: `aim_chain` (bones with weights, turned in order, e.g.
      `UpperChest:0.3 RightUpperArm:1`) and `aim_tip` (the bone that ends up on the line of sight).
-     The default, `RightUpperArm:1` to `RightHand`, points the right arm;
-   - the stances it supports: `stance_clips` maps stance clip names (`pistol`, `melee_walk`) to
-     animations, and `masks` maps layers to bones (`upper` → `Spine`).
-4. Save the scene. That bakes it: the `.ozz` files, `anim.cfg` and `hitboxes.cfg` are written next
+     The default, `RightUpperArm:1` to `RightHand`, points the right arm.
+4. Save the scene. That bakes it: the `.ozz` files, `anim.cfg`, `graph.cfg` and `hitboxes.cfg` are written next
    to the scene (clips are sampled at `sample_rate`, 30 Hz). Publishing bakes it again from the
    scene that ships, so an item is never stale. The **Bake character** button on the
    `CbCharacter` does the same by hand (for an animation saved to its own file, which a scene save
@@ -831,24 +839,23 @@ seen. Respawning keeps the aim; only the mod lets it go.
 The pistol switches to camera-facing while it is out, together with aiming. In camera-facing the
 legs still walk where the player goes: the hips turn toward the direction of travel (up to 90
 degrees) and the spine turns back, and moving away from the facing plays the walk cycle backwards.
-This works with any character's six clips, no strafe clips needed.
+This works with any character's forward clips, no strafe clips needed.
 
 ### Layers and stances
 
-Mods choose what a player's body plays, by layer:
+A mod says what a player is doing; the character says what that looks like.
 
-| Mods declare | Characters provide | Example |
+| Who | Does | Example |
 |---|---|---|
-| a **layer** (`d.Layer( "upper" )`), applied in declaration order | its bone mask: `mask.upper = Spine` in `anim.cfg`, set on the `CbCharacter`'s `masks` | `full` is every bone; `upper` defaults to the spine up |
-| a **stance** (`d.Stance( "pistol" )`) | its clips: `<stance>_<clip>` for any of the six (`melee_walk`) or one looping `<stance>` clip, set on the `CbCharacter`'s `stance_clips` | the pistol's `pistol` loop; the bat's `melee_idle`, `melee_walk`, `melee_run` and `melee_swing` |
+| a mod | declares names: `d.Layer( "upper" )`, `d.Stance( "pistol" )`, and sets a stance on a layer: `ctx.SetStance( player, layer, stance )` (a default `StanceHandle` clears it) | the pistol sets `pistol` on `upper` while it is out; the bat sets `melee`, and `melee_swing` for a swing |
+| a character | reads stances by name in its state machine's conditions and layer weights | the mannequin's upper layer: `Rest -> Pistol` when `pistol`, weight `pistol or melee or melee_swing` |
 
-`ctx.SetStance( player, layer, stance )` plays it (a default `StanceHandle` clears it). The pose
-blends each layer's stance over the ones below by the mask's per-joint weights, fading over 0.2 s;
-whatever a stance lacks falls back to the default clips, and a layer the character cannot mask does
-nothing (both are reported when the character is loaded). A single-clip stance plays from the moment
-it was set, which is how a swing is made. Stances are part of the simulation's animation state, so
-everyone draws them and the server's hit tests use them. The robot ships the pistol and bat
-stances; the engine's placeholder rig has none (the engine carries no game content).
+- A stance is a name and nothing more: no clip is tied to it. A character whose machine never
+  reads `pistol` simply does not change when the pistol comes out.
+- Stances are part of the simulation's animation state, so everyone draws what they lead to and
+  the server's hit tests use it.
+- The mannequin and the robot have states for the shipped mods' stances; the placeholder rig has
+  none (the engine carries no game content).
 
 ### An animation's other tracks
 
@@ -1201,8 +1208,9 @@ The mode can be picked by hand, and **Reload** copies the scene again after edit
 ### State machines
 
 A character's animation logic is authored as a Godot `AnimationTree`, the normal way, and baked.
-The simulation runs the baked machine every tick, so the server's hit tests and every screen agree
-and rollback replays it exactly; the tree itself never runs in the game.
+Every character has one: it is the only thing that chooses what a player's body plays. The
+simulation runs the baked machine every tick, so the server's hit tests and every screen agree and
+rollback replays it exactly; the tree itself never runs in the game.
 
 | In the tree | Baked as |
 |---|---|
@@ -1260,7 +1268,6 @@ All tools are in `<build dir>/bin`.
 | `cb_server --record-view FILE [--view-rate HZ] [--view-compact]` | Records the session as a view file: the frames a viewer is shown, playable without a simulation. `--view-rate 20` keeps 20 frames a second instead of one per tick; `--view-compact` writes them the way a stream would (positions and animation on a grid, a few millimetres off at most) |
 | `cb_replay view FILE` | Summarizes a view file: frames, players, bytes per frame and where they go |
 | `godot --path godot -- --replay=FILE` (or `--view=FILE`) | Watches a recording (or a view file) in the game, with the mods' looks and the followed player's HUD |
-| `cb_client --replay FILE [--replay-start S]` | Watches a recording in the raylib debug viewer |
 | `cb_netsim --listen P --target HOST:PORT --latency MS --jitter MS --loss % [--duplicate %]` | UDP relay that degrades traffic (latency is added in each direction) |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_mod_validator.gd -- PACK.zip...` | Checks the pack validator: the named packs pass, built-in hostile packs are refused |
 | `cb_bot --port P --count N --full M --duration S [--chaotic] [--shoot] [--melee]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick; `--shoot` makes full bots take out the pistol and fire at the nearest player; `--melee` makes them close in with the bat and swing |
@@ -1310,22 +1317,21 @@ Every push runs `.github/workflows/determinism.yml` on GitHub Actions:
 
 Each build job (`scripts/ci_check.sh <preset> <name> <out-dir>`, also usable locally):
 
-- builds the simulation, server, mods and tests (no Godot, no raylib);
+- builds the simulation, server, mods and tests (no Godot);
 - runs every test (`ctest`, network sessions included);
 - compares the per-tick hashes with `tests/reference_hashes.txt` and the pose hash with
   `tests/reference_anim_hash.txt`;
 - uploads its hash dump, a portable snapshot and `cb_tests` for the cross-load jobs
   (`scripts/ci_cross.sh`), which also check that all dumps and snapshots are byte-identical.
 
-Box3D is fetched with two local patches in `cmake/patches/` (see DESIGN.md, M18):
+Box3D is fetched with two local patches in `cmake/patches/` (see DESIGN.md, Determinism):
 `box3d-snapshot-padding.patch` (snapshots carried uninitialized padding bytes and a heap pointer) and
 `box3d-neon-minmax.patch` (ARM64 clamps returned -0 where x64 returns +0).
 
 ## Layout
 
 ```
-cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, Box3D, ENet, ozz, raylib)
-assets/anim/      your converted animation clips (see its README)
+cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, Box3D, ENet, ozz)
 src/sim/          deterministic simulation shared by server and client, as two libraries: cb_sim_data
                   (what the data means: no world is stepped) and cb_sim (the simulation itself)
   events.h          the rings of recent impacts and mod events (part of the state and of every frame)
@@ -1343,8 +1349,9 @@ src/sim/          deterministic simulation shared by server and client, as two l
   box3d_shim.c      access to Box3D internals (world struct, portable serializer)
   detmath.h         deterministic trig and the yaw convention
   fingerprint.*     build fingerprint checked when a client connects
-  anim_controller.* deterministic locomotion state machine (AnimState)
-src/anim/         ozz: procedural rig, asset loading (anim_set.*), pose evaluation (pose.*), joint names (profile.*)
+  anim_controller.* what a state machine reads about how a player moves (speed, legs, aim, the air)
+  anim_graph.*      a character's state machine: its text, the compiler and the runner
+src/anim/         ozz: the placeholder rig and baked characters (anim_set.*), the pose from a state machine (pose.*), joint names (profile.*)
 src/net/          wire protocol, ENet wrapper, network simulator (netsim.*), replay files (replay.*)
 src/server/       authoritative GameServer (library), the mod API (mod_api.*) and cb_server
 server_mods/      gameplay mods compiled into cb_server: inventory, props, pistol, melee, pickup, deathmatch, ...
@@ -1353,14 +1360,11 @@ characters/       character items: <name>/client is the item's Godot project, <n
   <mod>/client/     a mod's look as a Godot project, published as a workshop item
   <mod>/client_item.cfg  the published item's SHA-256, which servers announce
 src/tools/        cb_netsim, cb_replay, cb_bot
-src/client/       GameClient core (no rendering, also "lite" mode), the view sources, bot brain, and the raylib debug viewer
+src/client/       GameClient core (no rendering, also "lite" mode), the view sources, the bot brain
   live_source.*     a view source that plays on a server (GameClient on its own thread)
   replay_source.*   a view source that plays a recording (replay_player.* on its own thread)
-  app/              raylib rendering, camera, HUD over the presentation mirror
-  app/anim_viewer.* offline clip preview (--anim-viewer)
-  app/replay_viewer.* recording playback (--replay)
 src/stream/       StreamSource: a view source that is sent frames by a server (networking, no simulation)
-src/present/      engine-independent presentation, shared by Godot and raylib
+src/present/      engine-independent presentation, what the Godot extensions draw from
   visibility.*      a frame with what one viewer must not be shown taken out
   source_thread.*   what sources with a thread share: the thread, the float environment, the newest frame
   view.h            the viewer protocol: ViewFrame (what a viewer is told), ViewSource (who tells it)
@@ -1384,13 +1388,12 @@ godot/            Godot client project: boot (player mods, pack validator), game
                   joining with workshop items), workshop.gd (where items are), prefabs, vfx, ui
   maps/             map scenes and their baked .cbmap files
   assets/sfx/       placeholder sounds (tools/make_sfx.py)
-  addons/cinderbox_maps/  editor and dev tooling: the Bake Map button, the headless baker,
-                    the AnimationTree example generator and its check, the pack validator check
-mods_src/         client mod projects (example_neon, example_animtree)
+  addons/cinderbox_maps/  editor and dev tooling: the Bake Map button, the headless bakers,
+                    the character generators, the headless checks
+mods_src/         client mod projects (example_neon)
 tests/            determinism, rollback, gameplay, animation and loopback network tests
 scripts/          cross-compiler determinism check, stress test
-tools/            animation conversion (convert_animations.*), test glTF generator, pack_mod.ps1, publish_mod.ps1,
-                  export_client.ps1, bake_map.ps1, make_sfx.py (placeholder sounds)
+tools/            pack_mod.ps1, publish_mod.ps1, export_client.ps1, bake_map.ps1, make_sfx.py (placeholder sounds)
 ```
 
 ## Credits

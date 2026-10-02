@@ -53,8 +53,8 @@ FetchContent_Declare(enet
 
 # --- ozz-animation 0.17.0 (scalar math so poses are bit-exact everywhere) ---
 set(ozz_build_simd_ref ON CACHE BOOL "" FORCE)
-set(ozz_build_tools ON CACHE BOOL "" FORCE)
-set(ozz_build_gltf ON CACHE BOOL "" FORCE)
+set(ozz_build_tools OFF CACHE BOOL "" FORCE)
+set(ozz_build_gltf OFF CACHE BOOL "" FORCE)
 set(ozz_build_fbx OFF CACHE BOOL "" FORCE)
 set(ozz_build_data OFF CACHE BOOL "" FORCE)
 set(ozz_build_samples OFF CACHE BOOL "" FORCE)
@@ -77,32 +77,18 @@ FetchContent_Declare(miniz
 
 FetchContent_MakeAvailable(flecs box3d enet ozz miniz)
 
+# ozz's scalar math is chosen by a definition that ozz sets for its own sources only. Its math is
+# mostly inline, so whoever includes its headers needs the definition too: without it our own code
+# (the leg turn, the aim chain, hitboxes, retargeting) compiled the platform's SIMD versions, SSE
+# on x64 and NEON on ARM64, which do not round alike. Found by the pose hash on macOS (M62).
+target_compile_definitions(ozz_base PUBLIC OZZ_BUILD_SIMD_REF)
+
 # ozz builds with warnings-as-errors; a newer compiler must not break our build.
-foreach(t ozz_base ozz_animation ozz_animation_offline ozz_animation_tools ozz_options ozz_geometry gltf2ozz dump2ozz)
+foreach(t ozz_base ozz_animation ozz_animation_offline ozz_options ozz_geometry)
 	if(TARGET ${t})
 		set_target_properties(${t} PROPERTIES COMPILE_WARNING_AS_ERROR OFF)
 	endif()
 endforeach()
-if(TARGET gltf2ozz)
-	# ozz sets per-configuration output directories, which win over the generic property.
-	foreach(cfg "" _DEBUG _RELEASE _RELWITHDEBINFO _MINSIZEREL)
-		set_target_properties(gltf2ozz PROPERTIES RUNTIME_OUTPUT_DIRECTORY${cfg} "${CMAKE_BINARY_DIR}/bin")
-	endforeach()
-endif()
-
-# --- raylib 5.5 (client only) ---
-if(CB_BUILD_CLIENT)
-	set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-	set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
-	set(CUSTOMIZE_BUILD OFF CACHE BOOL "" FORCE)
-	FetchContent_Declare(raylib
-		GIT_REPOSITORY https://github.com/raysan5/raylib.git
-		GIT_TAG c1ab645ca298a2801097931d1079b10ff7eb9df8 # 5.5
-		GIT_SHALLOW FALSE
-	)
-	FetchContent_MakeAvailable(raylib)
-endif()
-
 # --- godot-cpp 4.5 (API 4.5, runs in Godot 4.5 and later; the project targets 4.7) ---
 if(CB_BUILD_GODOT)
 	set(GODOTCPP_TARGET "${CB_GODOT_TARGET}" CACHE STRING "" FORCE)

@@ -7,7 +7,6 @@
 add_subdirectory(cue)
 
 add_library(cinderbox_gd SHARED
-	cinderbox_animator.cpp
 	cinderbox_character.cpp
 	cinderbox_client.cpp
 	cinderbox_autobake.cpp

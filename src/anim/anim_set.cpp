@@ -1,6 +1,5 @@
 #include "anim_set.h"
 
-#include "anim_controller.h"
 #include "joint_math.h"
 #include "detmath.h"
 #include "profile.h"
@@ -33,26 +32,6 @@ using ozz::animation::offline::RawSkeleton;
 using ozz::math::Float3;
 using ozz::math::Quaternion;
 
-const char* ClipName( Clip clip )
-{
-	switch ( clip )
-	{
-		case ClipIdle:
-			return "idle";
-		case ClipWalk:
-			return "walk";
-		case ClipRun:
-			return "run";
-		case ClipJumpStart:
-			return "jump_start";
-		case ClipFall:
-			return "fall";
-		case ClipLand:
-			return "land";
-		default:
-			return "?";
-	}
-}
 
 namespace
 {
@@ -615,16 +594,58 @@ void AnimSet::ComputeAttachFrames()
 	}
 }
 
+namespace
+{
+
+// The placeholder's clips, and the state machine that plays them: the legs by how fast the body
+// moves along its facing (backwards: the same clips in reverse), and a jump. Written the way the
+// character bake writes a graph.cfg (sim/anim_graph.h); the lengths are the clips' below.
+constexpr float kIdleSeconds = 2.0f;
+constexpr float kWalkSeconds = 1.0f;
+constexpr float kRunSeconds = 0.7f;
+constexpr float kJumpStartSeconds = 0.25f;
+constexpr float kFallSeconds = 1.0f;
+constexpr float kLandSeconds = 0.3f;
+const char* const kPlaceholderGraph =
+	"cinderbox_graph\t1\n"
+	"clip\tidle\t2\t1\n"
+	"clip\twalk\t1\t1\n"
+	"clip\trun\t0.7\t1\n"
+	"clip\tjump_start\t0.25\t0\n"
+	"clip\tfall\t1\t1\n"
+	"clip\tland\t0.3\t0\n"
+	"layer\tBase\n"
+	"state\tFall\tclip\tfall\t0\n"
+	"state\tJumpStart\tclip\tjump_start\t0\n"
+	"state\tLand\tclip\tland\t0\n"
+	"state\tLocomotion\tblend\tforward_speed\n"
+	"point\t-6.5\trun\t1\n"
+	"point\t-3\twalk\t1\n"
+	"point\t0\tidle\t0\n"
+	"point\t3\twalk\t0\n"
+	"point\t6.5\trun\t0\n"
+	"transition\tLocomotion\tJumpStart\t1\t0.1\timmediate\t1\tjumped\n"
+	"transition\tLocomotion\tFall\t1\t0.15\timmediate\t1\tnot grounded and airborne_time > 0.12\n"
+	"transition\tJumpStart\tLand\t1\t0.1\timmediate\t1\tgrounded and state_time > 0.1\n"
+	"transition\tJumpStart\tFall\t1\t0.15\timmediate\t1\tstate_time > 0.25\n"
+	"transition\tFall\tLand\t1\t0.1\timmediate\t1\tgrounded\n"
+	"transition\tLand\tJumpStart\t1\t0.1\timmediate\t1\tjumped\n"
+	"transition\tLand\tLocomotion\t1\t0.15\timmediate\t1\tstate_time > 0.3 or speed > 1.5\n"
+	"start\tLocomotion\n";
+
+} // namespace
+
 std::unique_ptr<AnimSet> AnimSet::CreateProcedural()
 {
 	auto set = std::make_unique<AnimSet>();
 	set->m_skeleton = BuildSkeleton();
-	set->m_clips[ClipIdle] = BuildClip( "idle", 2.0f, IdlePose );
-	set->m_clips[ClipWalk] = BuildClip( "walk", anim_tuning::kWalkCycleSeconds, WalkPose );
-	set->m_clips[ClipRun] = BuildClip( "run", anim_tuning::kRunCycleSeconds, RunPose );
-	set->m_clips[ClipJumpStart] = BuildClip( "jump_start", anim_tuning::kJumpStartSeconds, JumpStartPose );
-	set->m_clips[ClipFall] = BuildClip( "fall", 1.0f, FallPose );
-	set->m_clips[ClipLand] = BuildClip( "land", anim_tuning::kLandSeconds, LandPose );
+	set->m_namedClips["idle"] = BuildClip( "idle", kIdleSeconds, IdlePose );
+	set->m_namedClips["walk"] = BuildClip( "walk", kWalkSeconds, WalkPose );
+	set->m_namedClips["run"] = BuildClip( "run", kRunSeconds, RunPose );
+	set->m_namedClips["jump_start"] = BuildClip( "jump_start", kJumpStartSeconds, JumpStartPose );
+	set->m_namedClips["fall"] = BuildClip( "fall", kFallSeconds, FallPose );
+	set->m_namedClips["land"] = BuildClip( "land", kLandSeconds, LandPose );
+	set->m_graphText = kPlaceholderGraph;
 	set->m_description = "procedural placeholder rig";
 	ComputeRestModels( *set, set->m_restModels, set->m_scale );
 	set->ComputeAttachFrames();
@@ -714,51 +735,18 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 		set->m_lockRootXZ = cfg["lock_root_xz"] != "false" && cfg["lock_root_xz"] != "0";
 	}
 
-	// A character with a state machine plays its own clips; the six built-in ones are optional.
 	bool graph = read( "graph.cfg", set->m_graphText ) && set->m_graphText.empty() == false;
-	int loaded = 0;
-	for ( int c = 0; c < ClipCount; ++c )
+	if ( graph == false )
 	{
-		const char* name = ClipName( Clip( c ) );
-		std::string file = cfg.count( name ) ? cfg[name] : std::string( name ) + ".ozz";
-		auto clip = LoadArchive<ozz::animation::Animation>( read, file );
-		if ( clip == nullptr )
-		{
-			if ( graph == false )
-			{
-				warnings += std::string( "missing clip '" ) + name + "' (" + file + "); ";
-			}
-			continue;
-		}
-		if ( clip->num_tracks() != set->m_skeleton->num_joints() )
-		{
-			warnings += std::string( "clip '" ) + name + "' was built for a different skeleton; ";
-			continue;
-		}
-		set->m_clips[c] = std::move( clip );
-		++loaded;
+		warnings += "no graph.cfg: the character has no state machine and stays in its rest pose (bake it from a scene with an "
+					"AnimationTree); ";
 	}
 
 	ComputeRestModels( *set, set->m_restModels, set->m_scale );
 	set->ComputeAttachFrames();
 	for ( const auto& [key, value] : cfg )
 	{
-		if ( key.rfind( "stance.", 0 ) == 0 )
-		{
-			std::string name = key.substr( 7 );
-			auto clip = LoadArchive<ozz::animation::Animation>( read, value );
-			if ( clip == nullptr || clip->num_tracks() != set->m_skeleton->num_joints() )
-			{
-				warnings += "stance clip '" + name + "' (" + value + ") could not be loaded for this skeleton; ";
-				continue;
-			}
-			set->m_stanceClips[name] = std::move( clip );
-		}
-		else if ( key.rfind( "mask.", 0 ) == 0 )
-		{
-			set->m_masks[key.substr( 5 )] = value;
-		}
-		else if ( key.rfind( "clip.", 0 ) == 0 )
+		if ( key.rfind( "clip.", 0 ) == 0 )
 		{
 			std::string name = key.substr( 5 );
 			auto clip = LoadArchive<ozz::animation::Animation>( read, value );
@@ -773,8 +761,7 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 	set->SetAim( cfg.count( "aim" ) ? cfg["aim"] : set->m_aimConfig, cfg.count( "aim_tip" ) ? cfg["aim_tip"] : set->m_aimTipName,
 				 warnings );
 	set->m_description = dir + " (" + std::to_string( set->m_skeleton->num_joints() ) + " joints, " +
-						 ( graph ? "a state machine with " + std::to_string( set->m_namedClips.size() ) + " clips)"
-								 : std::to_string( loaded ) + "/" + std::to_string( int( ClipCount ) ) + " clips)" );
+						 ( graph ? "a state machine with " : "no state machine, " ) + std::to_string( set->m_namedClips.size() ) + " clips)";
 	return set;
 }
 
@@ -825,31 +812,24 @@ bool AnimSet::Save( const std::string& dir ) const
 	cfg << "lock_root_xz = " << ( m_lockRootXZ ? "true" : "false" ) << "\n";
 	cfg << "aim = " << m_aimConfig << "\n";
 	cfg << "aim_tip = " << m_aimTipName << "\n";
-	for ( const auto& [layer, roots] : m_masks )
+	int index = 0;
+	for ( const auto& [name, clip] : m_namedClips )
 	{
-		cfg << "mask." << layer << " = " << roots << "\n";
-	}
-	for ( const auto& [name, clip] : m_stanceClips )
-	{
-		std::string file = "stance_" + name + ".ozz";
+		std::string file = "clip_" + std::to_string( index++ ) + ".ozz";
 		if ( SaveArchive( dir + "/" + file, *clip ) == false )
 		{
 			return false;
 		}
-		cfg << "stance." << name << " = " << file << "\n";
+		cfg << "clip." << name << " = " << file << "\n";
 	}
-	for ( int c = 0; c < ClipCount; ++c )
+	if ( m_graphText.empty() == false )
 	{
-		if ( m_clips[c] == nullptr )
-		{
-			continue;
-		}
-		std::string file = std::string( ClipName( Clip( c ) ) ) + ".ozz";
-		if ( SaveArchive( dir + "/" + file, *m_clips[c] ) == false )
+		std::ofstream graph( dir + "/graph.cfg", std::ios::binary );
+		graph << m_graphText;
+		if ( graph.good() == false )
 		{
 			return false;
 		}
-		cfg << ClipName( Clip( c ) ) << " = " << file << "\n";
 	}
 	return cfg.good();
 }

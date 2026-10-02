@@ -9,8 +9,8 @@
 // "melee_swing" stance, and at the strike a fan of short rays in front of the chest looks for
 // someone to hit. Hits are posed like everything else, so a swing lands where it is drawn.
 //
-// Health is not kept here. A hit goes out as "combat.damage", and whichever mod keeps health (the
-// pistol mod today) applies it and credits the kill: mods cooperate by event, not by call.
+// Health is not kept here. A hit goes out as "combat.damage", and the combat mod applies it and
+// credits the kill: mods cooperate by event, not by call.
 
 #include "mod_api.h"
 

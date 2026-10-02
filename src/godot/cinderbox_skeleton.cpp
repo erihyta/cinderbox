@@ -99,8 +99,7 @@ void CinderboxSkeleton::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_skeleton_path" ), &CinderboxSkeleton::get_skeleton_path );
 	ClassDB::bind_method( D_METHOD( "set_body_color", "color" ), &CinderboxSkeleton::set_body_color );
 	ClassDB::bind_method( D_METHOD( "get_body_color" ), &CinderboxSkeleton::get_body_color );
-	ClassDB::bind_method( D_METHOD( "apply_anim_state", "mode", "mode_time", "locomotion_phase", "ground_speed" ),
-						  &CinderboxSkeleton::apply_anim_state );
+	ClassDB::bind_method( D_METHOD( "preview_pose", "ground_speed", "phase" ), &CinderboxSkeleton::preview_pose );
 	ClassDB::bind_method( D_METHOD( "set_retarget", "value" ), &CinderboxSkeleton::set_retarget );
 	ClassDB::bind_method( D_METHOD( "get_retarget" ), &CinderboxSkeleton::get_retarget );
 	ClassDB::bind_method( D_METHOD( "get_joint_global_transform", "profile_name" ), &CinderboxSkeleton::get_joint_global_transform );
@@ -365,18 +364,28 @@ Quaternion RestPosture( const char* jointName )
 
 } // namespace
 
-void CinderboxSkeleton::apply_anim_state( int mode, float mode_time, float locomotion_phase, float ground_speed )
+void CinderboxSkeleton::preview_pose( float ground_speed, float phase )
 {
 	if ( !m_previewPose )
 	{
 		m_previewSet = anim::AnimSet::CreateProcedural();
 		m_previewPose = std::make_unique<anim::PoseEvaluator>( *m_previewSet );
+		std::string error, warnings;
+		m_previewGraph = CompileAnimGraph( m_previewSet->GraphText(), ModSchema{}, error, warnings );
+		m_previewPose->SetGraph( m_previewGraph, warnings );
 	}
+	// The placeholder's one layer, in its locomotion blend at that speed and phase.
 	AnimState state;
-	state.mode = AnimMode( std::min( std::max( mode, 0 ), int( AnimMode::Land ) ) );
-	state.modeTime = mode_time;
-	state.locomotionPhase = locomotion_phase;
 	state.groundSpeed = ground_speed;
+	if ( m_previewGraph && m_previewGraph->layers.empty() == false )
+	{
+		AnimGraphLayerState& layer = state.graph[0];
+		layer.started = 1;
+		layer.state = layer.previous = uint8_t( m_previewGraph->layers[0].start );
+		layer.weight = 1.0f;
+		layer.blend = ground_speed;
+		layer.time = phase - std::floor( phase );
+	}
 	m_previewPose->Evaluate( state );
 	ApplyPose( *m_previewPose );
 }

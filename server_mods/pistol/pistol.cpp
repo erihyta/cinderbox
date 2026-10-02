@@ -1,11 +1,15 @@
-// Pistol: hitscan shooting, health, death with a ragdoll, and respawning.
+// Pistol: hitscan shooting with a magazine, a reload, and a ray that marks.
 //
-// Every rule lives here, on the server. Clients never learn what a pistol is: they see board fields
-// ("pistol.ammo", "combat.health"), events ("pistol.fired", "combat.killed") and the ragdoll the
-// simulation creates, and their data bindings decide what to draw and play for each.
+// Only the gun lives here. Health and death are the combat mod's: a shot that hits a player goes
+// out as "combat.damage", like any other weapon's, and "combat.respawned" (a new life) refills the
+// magazine. Without the combat mod the pistol still fires and reports its hits; nobody is hurt.
 //
-// State is kept in the mods' shared flecs world: one entity per player with a Gunner, plus Dead and
-// Reloading while those last. Nothing here is rolled back or sent anywhere; what clients need is
+// Every rule is on the server. Clients never learn what a pistol is: they see board fields
+// ("pistol.ammo", "pistol.reloading") and events ("pistol.fired", "pistol.hit"), and the look
+// decides what to draw and play for each.
+//
+// State is kept in the mods' shared flecs world: one entity per player with a Gunner, plus
+// Reloading while that lasts. Nothing here is rolled back or sent anywhere; what clients need is
 // published through the board.
 
 #include "mod_api.h"
@@ -19,37 +23,23 @@ namespace
 using namespace cb;
 using namespace cb::mods;
 
-constexpr int32_t kMaxHealth = 100;
 constexpr int32_t kDamage = 25;
 constexpr int32_t kMagazine = 12;
 constexpr float kFireSeconds = 0.2f;
 constexpr float kReloadSeconds = 1.5f;
 constexpr float kMarkSeconds = 1.0f; // between two marks
-constexpr float kRespawnSeconds = 3.0f;
 constexpr float kRange = 80.0f;
-// How hard a hit shoves: a ragdoll at death, and anything loose that is hit.
+// How hard a hit shoves: the body it kills, and anything loose that is hit.
 constexpr float kDeathPush = 6.0f;
 constexpr float kPropPush = 4.0f;
-constexpr float kRagdollSeconds = 10.0f;
-constexpr uint32_t kRagdollCap = 16;
 
 struct Gunner
 {
 	PlayerSlot slot = 0;
-	int32_t health = kMaxHealth;
 	int32_t ammo = kMagazine;
 	uint32_t nextShotTick = 0;
 	uint32_t nextMarkTick = 0;
-	int32_t kills = 0;
-	int32_t deaths = 0;
-	uint32_t falls = 0; // Character::fallCount last seen
 	bool aiming = false; // what the last Aim command said
-};
-
-struct Dead
-{
-	uint32_t respawnTick = 0;
-	uint32_t diedTick = 0; // the Kill command is applied in this tick's frame
 };
 
 struct Reloading
@@ -78,11 +68,6 @@ public:
 		// marks the player it finds (see Mark below, and client/vfx/reactions_pistol.tscn).
 		m_mark = declare.Action( "mark", "MouseRight" );
 
-		m_health = declare.Field( "combat.health", BoardType::Int );
-		m_maxHealth = declare.Field( "combat.max_health", BoardType::Int );
-		m_dead = declare.Field( "combat.dead", BoardType::Bool );
-		m_kills = declare.Field( "combat.kills", BoardType::Int );
-		m_deaths = declare.Field( "combat.deaths", BoardType::Int );
 		m_ammo = declare.Field( "pistol.ammo", BoardType::Int );
 		m_reloading = declare.Field( "pistol.reloading", BoardType::Bool );
 
@@ -98,14 +83,12 @@ public:
 		m_scan = declare.Event( "pistol.scan" );
 		// ... and it found a living player: a = who cast it, b = the marked player, point = where.
 		m_marked = declare.Event( "pistol.marked" );
-		// a = killer (0: the world, e.g. a fall), b = who died.
-		m_killed = declare.Event( "combat.killed" );
-		// Announced by a game-mode mod when a round begins: everyone gets full health and a full
-		// magazine. The pistol does not know which mod runs rounds, only this name.
-		m_roundStart = declare.Event( "game.round_start" );
-		// Damage from another mod (a melee swing): a = attacker, b = victim, value = damage,
-		// point = where, vector = the push if it kills. Health lives here, so this mod applies it.
+
+		// The combat mod's (see combat.cpp): what a hit on a player is said with, and the news of a
+		// new life, which comes with a full magazine. A game-mode mod's round start does too.
 		m_damage = declare.Event( "combat.damage" );
+		m_respawned = declare.Event( "combat.respawned" );
+		m_roundStart = declare.Event( "game.round_start" );
 
 		m_upper = declare.Layer( "upper" );
 		m_stance = declare.Stance( "pistol" );
@@ -123,7 +106,6 @@ public:
 	{
 		flecs::world& world = ctx.World();
 		world.component<Gunner>();
-		world.component<Dead>();
 		world.component<Reloading>();
 		m_gunners = world.query<Gunner>();
 	}
@@ -149,34 +131,26 @@ public:
 				Gunner g;
 				g.slot = slot;
 				m_bySlot[i] = world.entity().set<Gunner>( g );
-				Publish( ctx, g, false, false );
+				Publish( ctx, g );
 			}
 		}
 
+		// A new life, or a new round for everyone: a full magazine.
 		bool newRound = false;
 		for ( const ModEventRecord& e : ctx.RecentEvents() )
 		{
 			newRound |= int( e.type ) == m_roundStart.index;
-			if ( int( e.type ) == m_damage.index )
+			if ( int( e.type ) == m_respawned.index )
 			{
-				int attackerSlot = ctx.SlotOf( e.netIdA );
-				flecs::entity attacker = attackerSlot >= 0 ? m_bySlot[attackerSlot] : flecs::entity();
-				Gunner a;
-				Gunner* killer = nullptr;
-				if ( attacker.is_valid() )
+				int slot = ctx.SlotOf( e.netIdA );
+				if ( slot >= 0 && m_bySlot[slot].is_valid() )
 				{
-					a = attacker.get<Gunner>();
-					killer = &a;
-				}
-				Hurt( ctx, killer, e.netIdB, e.value, e.point, e.vector );
-				if ( killer != nullptr && attacker.is_alive() )
-				{
-					attacker.set<Gunner>( a );
+					Refill( ctx, m_bySlot[slot] );
 				}
 			}
 		}
 
-		// Collected first: firing changes other players' components (a kill adds Dead).
+		// Collected first: reloading adds and removes a component.
 		m_scratch.clear();
 		m_gunners.each( [&]( flecs::entity e, Gunner& ) { m_scratch.push_back( e ); } );
 		for ( flecs::entity e : m_scratch )
@@ -193,31 +167,24 @@ public:
 	}
 
 private:
-	void Publish( Context& ctx, const Gunner& g, bool dead, bool reloading )
+	void Publish( Context& ctx, const Gunner& g )
 	{
 		uint32_t target = SlotTarget( g.slot );
-		ctx.Set( target, m_health, g.health );
-		ctx.Set( target, m_maxHealth, kMaxHealth );
 		ctx.Set( target, m_ammo, g.ammo );
-		ctx.Set( target, m_kills, g.kills );
-		ctx.Set( target, m_deaths, g.deaths );
-		ctx.Set( target, m_dead, dead ? 1 : 0 );
-		ctx.Set( target, m_reloading, reloading ? 1 : 0 );
+		ctx.Set( target, m_reloading, 0 );
 	}
 
 	void Refill( Context& ctx, flecs::entity e )
 	{
 		Gunner g = e.get<Gunner>();
-		g.health = kMaxHealth;
 		g.ammo = kMagazine;
-		e.remove<Dead>();
 		e.remove<Reloading>();
 		e.set<Gunner>( g );
-		Publish( ctx, g, false, false );
+		Publish( ctx, g );
 	}
 
-	// Works on a copy that is written back at the end: adding or removing Dead and Reloading moves
-	// entities between tables, which would leave a reference into the old one dangling.
+	// Works on a copy that is written back at the end: adding or removing Reloading moves the
+	// entity between tables, which would leave a reference into the old one dangling.
 	void Update( Context& ctx, flecs::entity e )
 	{
 		Gunner g = e.get<Gunner>();
@@ -244,45 +211,15 @@ private:
 		uint32_t inHand = ctx.HeldItem( g.slot, m_hand );
 		bool gunInHand = inHand != 0 && ctx.ItemKindOf( inHand ).index == m_gun.index;
 
-		if ( const Dead* dead = e.try_get<Dead>() )
-		{
-			// Alive in the world after the kill was applied: someone else brought the player back
-			// (a round restart), so stop waiting. In the tick of the kill itself the world has not
-			// applied it yet and still shows the player alive.
-			if ( c->dead == 0 && tick > dead->diedTick )
-			{
-				e.remove<Dead>();
-				g.health = kMaxHealth;
-				g.ammo = kMagazine;
-				Publish( ctx, g, false, false );
-				return;
-			}
-			if ( tick >= dead->respawnTick )
-			{
-				e.remove<Dead>();
-				g.health = kMaxHealth;
-				g.ammo = kMagazine;
-				g.falls = c->fallCount;
-				ctx.Respawn( target );
-				Publish( ctx, g, false, false );
-			}
-			return;
-		}
-
-		// Falling out of the world: the engine already put the player back; here it counts.
-		if ( c->fallCount != g.falls )
-		{
-			g.falls = c->fallCount;
-			g.deaths += 1;
-			g.health = kMaxHealth;
-			ctx.Set( target, m_deaths, g.deaths );
-			ctx.Set( target, m_health, g.health );
-			ctx.Emit( m_killed, 0, target );
-		}
-
 		if ( const Reloading* r = e.try_get<Reloading>() )
 		{
-			if ( tick >= r->doneTick )
+			if ( c->dead != 0 )
+			{
+				// Dying drops the reload; the next life starts with a full magazine anyway.
+				e.remove<Reloading>();
+				ctx.Set( target, m_reloading, 0 );
+			}
+			else if ( tick >= r->doneTick )
 			{
 				e.remove<Reloading>();
 				g.ammo = kMagazine;
@@ -339,50 +276,19 @@ private:
 		Fire( ctx, g, netId );
 	}
 
-	// Damage to a player, from the pistol or from another mod. `killer` (null: nobody, or someone
-	// without a gunner) gets the kill; it is a copy the caller writes back.
-	void Hurt( Context& ctx, Gunner* killer, uint32_t victimNetId, int32_t damage, b3Vec3 point, b3Vec3 push )
-	{
-		int victimSlot = ctx.SlotOf( victimNetId );
-		flecs::entity victim = victimSlot >= 0 ? m_bySlot[victimSlot] : flecs::entity();
-		if ( victim.is_valid() == false || victim.has<Dead>() )
-		{
-			return;
-		}
-		Gunner v = victim.get<Gunner>();
-		v.health -= damage;
-		uint32_t victimTarget = SlotTarget( v.slot );
-		ctx.Set( victimTarget, m_health, std::max( v.health, 0 ) );
-		if ( v.health > 0 )
-		{
-			victim.set<Gunner>( v );
-			return;
-		}
-
-		ctx.Kill( victimTarget, true, point, push, Ticks( ctx, kRagdollSeconds ), kRagdollCap );
-		v.health = 0;
-		v.deaths += 1;
-		victim.set<Gunner>( v );
-		victim.remove<Reloading>();
-		victim.set<Dead>( { ctx.Tick() + Ticks( ctx, kRespawnSeconds ), ctx.Tick() } );
-		ctx.Set( victimTarget, m_dead, 1 );
-		ctx.Set( victimTarget, m_deaths, v.deaths );
-		ctx.Set( victimTarget, m_reloading, 0 );
-		uint32_t killerTarget = 0;
-		if ( killer != nullptr )
-		{
-			killer->kills += 1;
-			killerTarget = SlotTarget( killer->slot );
-			ctx.Set( killerTarget, m_kills, killer->kills );
-		}
-		ctx.Emit( m_killed, killerTarget, victimTarget );
-	}
-
 	void StartReload( Context& ctx, flecs::entity e, uint32_t target )
 	{
 		e.set<Reloading>( { ctx.Tick() + Ticks( ctx, kReloadSeconds ) } );
 		ctx.Set( target, m_reloading, 1 );
 		ctx.Emit( m_reloadEvent, target );
+	}
+
+	// A living player: what a shot hurts and a mark finds.
+	bool IsLivingPlayer( Context& ctx, uint32_t netId ) const
+	{
+		int slot = ctx.SlotOf( netId );
+		const Character* c = slot >= 0 ? ctx.PlayerCharacter( PlayerSlot( slot ) ) : nullptr;
+		return c != nullptr && c->dead == 0;
 	}
 
 	// The same ray as a shot, with no damage: it says where it went (pistol.scan) and, when it found
@@ -397,16 +303,13 @@ private:
 		bool found = ctx.CastRay( eye, b3MulSV( kRange, dir ), casterNetId, hit );
 		b3Vec3 end = found ? hit.point : b3MulAdd( eye, kRange, dir );
 		ctx.Emit( m_scan, casterTarget, found ? hit.netId : 0, 0, eye, end );
-
-		int markedSlot = found ? ctx.SlotOf( hit.netId ) : -1;
-		flecs::entity marked = markedSlot >= 0 ? m_bySlot[markedSlot] : flecs::entity();
-		if ( marked.is_valid() && marked.has<Dead>() == false )
+		if ( found && IsLivingPlayer( ctx, hit.netId ) )
 		{
 			ctx.Emit( m_marked, casterTarget, hit.netId, 0, hit.point, hit.normal );
 		}
 	}
 
-	void Fire( Context& ctx, Gunner& shooter, uint32_t shooterNetId )
+	void Fire( Context& ctx, const Gunner& shooter, uint32_t shooterNetId )
 	{
 		uint32_t shooterTarget = SlotTarget( shooter.slot );
 		b3Vec3 eye = ctx.EyePosition( shooter.slot );
@@ -420,9 +323,7 @@ private:
 			return;
 		}
 
-		int victimSlot = ctx.SlotOf( hit.netId );
-		flecs::entity victim = victimSlot >= 0 ? m_bySlot[victimSlot] : flecs::entity();
-		if ( victim.is_valid() && victim.has<Dead>() == false )
+		if ( IsLivingPlayer( ctx, hit.netId ) )
 		{
 			// Where it hit scales the damage: --mod-option pistol.zone.<zone>=<multiplier>, for any
 			// zone the server's character defines (head x2 unless told otherwise).
@@ -433,9 +334,11 @@ private:
 				double multiplier = ctx.Option( "pistol.zone." + zone, zone == "head" ? 2.0 : 1.0 );
 				damage = std::max( int32_t( double( kDamage ) * multiplier + 0.5 ), 0 );
 			}
+			// What the pistol did (its own look: the puff, the hit marker), and what it means for
+			// the one it hit, which is the combat mod's to decide.
 			ctx.Emit( m_hit, shooterTarget, hit.netId, damage, hit.point, hit.normal );
 			b3Vec3 push = b3Add( b3MulSV( kDeathPush, dir ), b3Vec3{ 0.0f, 1.5f, 0.0f } );
-			Hurt( ctx, &shooter, hit.netId, damage, hit.point, push );
+			ctx.Emit( m_damage, shooterTarget, hit.netId, damage, hit.point, push );
 			return;
 		}
 
@@ -450,11 +353,6 @@ private:
 	ActionHandle m_fire;
 	ActionHandle m_reload;
 	ActionHandle m_mark;
-	FieldHandle m_health;
-	FieldHandle m_maxHealth;
-	FieldHandle m_dead;
-	FieldHandle m_kills;
-	FieldHandle m_deaths;
 	FieldHandle m_ammo;
 	FieldHandle m_reloading;
 	EventHandle m_fired;
@@ -463,9 +361,9 @@ private:
 	EventHandle m_dry;
 	EventHandle m_scan;
 	EventHandle m_marked;
-	EventHandle m_killed;
-	EventHandle m_roundStart;
 	EventHandle m_damage;
+	EventHandle m_respawned;
+	EventHandle m_roundStart;
 	LayerHandle m_upper;
 	StanceHandle m_stance;
 	ItemKindHandle m_gun;

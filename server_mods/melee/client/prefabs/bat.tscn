@@ -1,5 +1,7 @@
 [gd_scene format=3 uid="uid://bdlgyugvlsbhm"]
 
+[ext_resource type="AudioStream" uid="uid://2y7i6fcisd6b" path="res://assets/sfx/swing.wav" id="1_tqqgl"]
+
 [sub_resource type="StandardMaterial3D" id="Tape"]
 albedo_color = Color(0.1, 0.1, 0.12, 1)
 roughness = 0.9
@@ -92,7 +94,7 @@ tracks/0/path = NodePath("Flames:emitting")
 tracks/0/interp = 1
 tracks/0/loop_wrap = true
 tracks/0/keys = {
-"times": PackedFloat32Array(0.1, 0.43333334),
+"times": PackedFloat32Array(0.10833333, 0.33333334),
 "transitions": PackedFloat32Array(1, 1),
 "update": 1,
 "values": [true, false]
@@ -104,11 +106,26 @@ tracks/1/path = NodePath("Sparks:emitting")
 tracks/1/interp = 1
 tracks/1/loop_wrap = true
 tracks/1/keys = {
-"times": PackedFloat32Array(0.13333334, 0.43333334),
+"times": PackedFloat32Array(0.14166667, 0.33333334),
 "transitions": PackedFloat32Array(1, 1),
 "update": 1,
 "values": [true, false]
 }
+tracks/2/type = "audio"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("AudioStreamPlayer3D")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"clips": [{
+"end_offset": 0.0,
+"start_offset": 0.0,
+"stream": ExtResource("1_tqqgl")
+}],
+"times": PackedFloat32Array(0.06666666)
+}
+tracks/2/use_blend = true
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_gysuc"]
 _data = {
@@ -204,3 +221,5 @@ event = "melee.hit"
 subject = NodePath("^^")
 target = NodePath("../Sparks")
 method = "restart"
+
+[node name="AudioStreamPlayer3D" type="AudioStreamPlayer3D" parent="." unique_id=852594584]

@@ -25,6 +25,10 @@
 #include <string>
 #include <vector>
 
+namespace cb
+{
+struct AnimGraph;
+}
 namespace cb::anim
 {
 class AnimSet;
@@ -106,9 +110,10 @@ public:
 	// The same in world space, for scripts: where a hand or the head is right now.
 	godot::Transform3D get_joint_global_transform( const godot::String& profile_name ) const;
 
-	// Poses the rig from a script with the placeholder clips, for previewing a character or
-	// checking a retarget without a server. mode: 0 locomotion, 1 jump, 2 fall, 3 land.
-	void apply_anim_state( int mode, float mode_time, float locomotion_phase, float ground_speed );
+	// Poses the rig from a script with the placeholder rig's walk cycle, for previewing a character
+	// or checking a retarget without a server: `ground_speed` in m/s (0 idle, 3 walk, 6.5 run),
+	// `phase` in [0, 1) through the cycle.
+	void preview_pose( float ground_speed, float phase );
 
 protected:
 	static void _bind_methods();
@@ -147,6 +152,7 @@ private:
 
 	std::shared_ptr<const anim::AnimSet> m_previewSet;
 	std::unique_ptr<anim::PoseEvaluator> m_previewPose;
+	std::shared_ptr<const AnimGraph> m_previewGraph;
 
 	void Bind( godot::Skeleton3D* target, const anim::AnimSet& set );
 	void EnsureModifier( godot::Skeleton3D* target );

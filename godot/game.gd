@@ -37,7 +37,7 @@ extends Node3D
 ## also what a copy of the game without the peer extension joins with. With neither, the game still
 ## watches view files.
 ##
-## Command line (after `--`): --host=H --port=P --name=NAME --rollback=N --animations=DIR
+## Command line (after `--`): --host=H --port=P --name=NAME --rollback=N
 ##                            --stream --replay=FILE --view=FILE
 ##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS
 ##                            --mods=DIR --workshop=DIR --config=FILE
@@ -117,8 +117,6 @@ func _ready() -> void:
 	if args.has("rollback") and peer != null:
 		peer.rollback_min = int(args["rollback"])
 		peer.rollback_max = int(args["rollback"])
-	if args.has("animations"):
-		client.animation_dir = args["animations"]
 	if not InputMap.has_action("scoreboard"):
 		InputMap.add_action("scoreboard")
 		var tab := InputEventKey.new()

@@ -1,6 +1,7 @@
 #pragma once
 
-// A skeleton and the six locomotion clips, either loaded from ozz files or generated in code.
+// A character's skeleton, the clips its state machine plays and the machine itself (as text): baked
+// from a Godot scene and loaded from ozz files, or the placeholder rig, generated in code.
 
 #include "ozz/animation/runtime/animation.h"
 #include "ozz/animation/runtime/skeleton.h"
@@ -19,20 +20,6 @@
 namespace cb::anim
 {
 
-enum Clip : int
-{
-	ClipIdle,
-	ClipWalk,
-	ClipRun,
-	ClipJumpStart,
-	ClipFall,
-	ClipLand,
-	ClipCount,
-};
-
-// Names used in anim.cfg and for the converted file names.
-const char* ClipName( Clip clip );
-
 // Reads a file of a character folder by its name relative to the folder ("anim.cfg", "run.ozz").
 // Returns false when it does not exist. Lets the same loader read a folder on disk, a mounted Godot
 // pack (res://) or a workshop item's zip on the server.
@@ -44,18 +31,21 @@ FileReader DiskReader( const std::string& dir );
 class AnimSet
 {
 public:
-	// Blocky placeholder: Mixamo joint names, procedural clips.
+	// The placeholder rig: what a server without a character plays, with no assets. Humanoid-profile
+	// joint names, six procedural clips (idle, walk, run, jump_start, fall, land) and a state
+	// machine of one layer that plays them.
 	static std::unique_ptr<AnimSet> CreateProcedural();
 
-	// Loads `<dir>/anim.cfg` (see assets/anim/README.md). Returns null and sets `error` on failure.
-	// Missing clips are allowed (that layer falls back to the rest pose) and reported in `warnings`.
+	// Loads `<dir>/anim.cfg` and what it names: the skeleton, the clips ("clip.<name> = file") and
+	// graph.cfg, as the character bake writes them. Returns null and sets `error` on failure. A
+	// clip that does not load is reported in `warnings` (states that play it rest).
 	static std::unique_ptr<AnimSet> Load( const std::string& dir, std::string& error, std::string& warnings );
 
 	// The same, reading through `read`; `label` names the source in the description and messages.
 	static std::unique_ptr<AnimSet> Load( const FileReader& read, const std::string& label, std::string& error,
 										  std::string& warnings );
 
-	// Writes skeleton, clips and anim.cfg to `dir` (used to test the file pipeline).
+	// Writes the skeleton, the clips, anim.cfg and graph.cfg to `dir` (used to test the file pipeline).
 	bool Save( const std::string& dir ) const;
 
 	const ozz::animation::Skeleton& Skeleton() const
@@ -68,16 +58,6 @@ public:
 	{
 		return m_restModels;
 	}
-	// Null if the clip is not available.
-	const ozz::animation::Animation* Get( Clip clip ) const
-	{
-		return m_clips[clip].get();
-	}
-	float Duration( Clip clip ) const
-	{
-		return m_clips[clip] ? m_clips[clip]->duration() : 1.0f;
-	}
-
 	// Per joint, what turns its model-space frame into the frame items attach to (a pistol in the
 	// RightHand): the placeholder rig's frames, whatever axes this skeleton's bones use. The
 	// placeholder rig's arms hang down with identity joints, so a hand's -Y runs along the fingers;
@@ -143,17 +123,6 @@ public:
 	{
 		return m_aimTipName;
 	}
-	// A stance clip by name ("pistol", "melee_walk"), null if the character has none. anim.cfg:
-	//   stance.pistol = pistol.ozz
-	const ozz::animation::Animation* StanceClip( const std::string& name ) const
-	{
-		auto it = m_stanceClips.find( name );
-		return it != m_stanceClips.end() ? it->second.get() : nullptr;
-	}
-	const std::map<std::string, ozz::unique_ptr<ozz::animation::Animation>>& StanceClips() const
-	{
-		return m_stanceClips;
-	}
 	// A clip the character's state machine plays, by its Godot animation's name ("Walk"); null if the
 	// character has none. anim.cfg:
 	//   clip.Walk = clip_Walk.ozz
@@ -162,28 +131,11 @@ public:
 		auto it = m_namedClips.find( name );
 		return it != m_namedClips.end() ? it->second.get() : nullptr;
 	}
-	// The character's baked state machine (graph.cfg, see sim/anim_graph.h) as text; empty when it
-	// has none and plays the built-in locomotion instead. The server puts it in the schema.
+	// The character's state machine (graph.cfg, see sim/anim_graph.h) as text. The server puts it in
+	// the schema; the simulation runs it and the pose follows it. Empty: the character rests.
 	const std::string& GraphText() const
 	{
 		return m_graphText;
-	}
-
-	// A layer's mask ("Spine", "Spine:0.5 RightShoulder"), "" when the character defines none. anim.cfg:
-	//   mask.upper = Spine
-	// "upper" defaults to "Spine"; "full" (every bone) needs no mask.
-	std::string Mask( const std::string& layer ) const
-	{
-		auto it = m_masks.find( layer );
-		if ( it != m_masks.end() )
-		{
-			return it->second;
-		}
-		return layer == "upper" ? "Spine" : "";
-	}
-	const std::map<std::string, std::string>& Masks() const
-	{
-		return m_masks;
 	}
 
 	// The joints the legs turn about (the hips) and the upper body turns back about (the spine),
@@ -207,15 +159,12 @@ private:
 	ozz::unique_ptr<ozz::animation::Skeleton> m_skeleton;
 	ozz::vector<ozz::math::Float4x4> m_restModels;
 	ozz::vector<ozz::math::Float4x4> m_attachFrames;
-	std::array<ozz::unique_ptr<ozz::animation::Animation>, ClipCount> m_clips;
 	float m_scale = 1.0f;
 	bool m_lockRootXZ = true;
 	bool m_turnLegs = true;
 	bool m_faceForward = false;
 	int m_neckJoint = -1;
 	std::string m_description;
-	std::map<std::string, ozz::unique_ptr<ozz::animation::Animation>> m_stanceClips;
-	std::map<std::string, std::string> m_masks;
 	std::map<std::string, ozz::unique_ptr<ozz::animation::Animation>> m_namedClips;
 	std::string m_graphText;
 	std::vector<std::pair<int, float>> m_aimJoints;

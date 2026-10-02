@@ -109,8 +109,7 @@
 				"CMAKE_BUILD_TYPE": "Release",
 				"CB_BUILD_GODOT": "ON",
 				"CB_GODOT_TARGET": "template_release",
-				"CB_BUILD_TESTS": "OFF",
-				"CB_BUILD_CLIENT": "OFF"
+				"CB_BUILD_TESTS": "OFF"
 			}
 		}
 	],

@@ -7,15 +7,14 @@
 // after Godot's SkeletonProfileHumanoid), a CinderboxSkeleton driving that Skeleton3D, and CbHitbox
 // shapes under BoneAttachment3D nodes.
 //
-// The inspector's "Bake" writes, next to the scene, what the game reads at runtime:
-//   skeleton.ozz and one .ozz per clip (idle, walk, run, jump_start, fall, land), anim.cfg,
-//   hitboxes.cfg.
-// With an AnimationTree (animation_tree_path), the character plays its own state machine instead
-// of the six built-in clips: the bake writes graph.cfg (states, transitions, layers; see
-// sim/anim_graph.h) and one .ozz per animation the tree uses. The simulation runs the machine, so
-// every screen and the server's hit tests agree; the tree itself never runs in the game.
-// Exporting the item ships them in its pack. Nothing is imported or converted when a player joins:
-// the client and the server read these baked files.
+// A character is its AnimationTree (animation_tree_path): a state machine, or state machines
+// layered with Blend2 nodes. The bake (saving the scene, the inspector's "Bake", packing the item)
+// writes, next to the scene, what the game reads at runtime:
+//   skeleton.ozz, one .ozz per animation the tree uses, anim.cfg,
+//   graph.cfg (the tree's states, transitions and layers; see sim/anim_graph.h), hitboxes.cfg.
+// The simulation runs the machine, so every screen and the server's hit tests agree; the tree
+// itself never runs in the game. Exporting the item ships the baked files in its pack. Nothing is
+// imported or converted when a player joins: the client and the server read them.
 
 #include <godot_cpp/classes/animation_library.hpp>
 #include <godot_cpp/classes/animation_player.hpp>
@@ -126,54 +125,6 @@ public:
 	{
 		return m_player;
 	}
-	void set_clip_idle( const godot::String& v )
-	{
-		m_clips[0] = v;
-	}
-	godot::String get_clip_idle() const
-	{
-		return m_clips[0];
-	}
-	void set_clip_walk( const godot::String& v )
-	{
-		m_clips[1] = v;
-	}
-	godot::String get_clip_walk() const
-	{
-		return m_clips[1];
-	}
-	void set_clip_run( const godot::String& v )
-	{
-		m_clips[2] = v;
-	}
-	godot::String get_clip_run() const
-	{
-		return m_clips[2];
-	}
-	void set_clip_jump_start( const godot::String& v )
-	{
-		m_clips[3] = v;
-	}
-	godot::String get_clip_jump_start() const
-	{
-		return m_clips[3];
-	}
-	void set_clip_fall( const godot::String& v )
-	{
-		m_clips[4] = v;
-	}
-	godot::String get_clip_fall() const
-	{
-		return m_clips[4];
-	}
-	void set_clip_land( const godot::String& v )
-	{
-		m_clips[5] = v;
-	}
-	godot::String get_clip_land() const
-	{
-		return m_clips[5];
-	}
 	void set_sample_rate( double v )
 	{
 		m_sampleRate = v;
@@ -181,22 +132,6 @@ public:
 	double get_sample_rate() const
 	{
 		return m_sampleRate;
-	}
-	void set_stance_clips( const godot::Dictionary& v )
-	{
-		m_stanceClips = v;
-	}
-	godot::Dictionary get_stance_clips() const
-	{
-		return m_stanceClips;
-	}
-	void set_masks( const godot::Dictionary& v )
-	{
-		m_masks = v;
-	}
-	godot::Dictionary get_masks() const
-	{
-		return m_masks;
 	}
 	void set_aim_chain( const godot::String& v )
 	{
@@ -273,7 +208,6 @@ private:
 	godot::String m_name;
 	godot::NodePath m_skeleton;
 	godot::NodePath m_player;
-	godot::String m_clips[6] = { "idle", "walk", "run", "jump_start", "fall", "land" };
 	double m_sampleRate = 30.0;
 	bool m_lockRootXZ = true;
 	// Turn the hips toward where the body walks (a forward walk going sideways); off when the
@@ -283,11 +217,6 @@ private:
 	bool m_faceForward = false;
 	// What the pose turns toward where the player looks while a mod has it aim: bones (profile
 	// names) with weights, in order, and the bone that ends up on the line of sight.
-	// Stance clips the mods' stances use: "pistol" (one loop) or "melee_walk" (one of the six) ->
-	// the name of an animation of the AnimationPlayer.
-	godot::Dictionary m_stanceClips;
-	// Layer masks: "upper" -> "Spine" (the default), "arms" -> "LeftShoulder RightShoulder", ...
-	godot::Dictionary m_masks;
 	// The state machine: an AnimationTree whose root is a state machine, or a blend tree of state
 	// machines layered with Blend2 nodes (the filter is the layer's mask).
 	godot::NodePath m_tree;

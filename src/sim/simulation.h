@@ -172,9 +172,9 @@ public:
 	// The item `holder` has in use in `socket` (stowed items are in nobody's hand), or 0.
 	uint32_t HeldItemOf( uint32_t holder, uint32_t socket ) const;
 
-	// The character's baked state machine (sim/anim_graph.h), compiled against the server's schema,
-	// or null for the built-in locomotion controller. Like the map it must be the same everywhere,
-	// so it travels in the schema; set it before the first Step.
+	// The character's state machine (sim/anim_graph.h), compiled against the server's schema.
+	// Like the map it must be the same everywhere, so it travels in the schema; set it before the
+	// first Step. Without one, players' animation states carry how they move and nothing plays.
 	void SetAnimGraph( std::shared_ptr<const AnimGraph> graph )
 	{
 		m_animGraph = std::move( graph );

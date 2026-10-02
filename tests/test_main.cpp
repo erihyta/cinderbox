@@ -5,6 +5,7 @@
 //   cb_tests --dump <file>      write per-tick hashes of the reference scenario (cross-build check)
 //   cb_tests --compare <file>   compare against a dump from another build/platform
 //   cb_tests --anim-hash         pose hash of the procedural rig (cross-build check)
+//   cb_tests --anim-hash-parts   the same in parts: the layers alone, with the leg turn, with the aim
 //   cb_tests --save-portable <file> / --load-portable <file>   portable snapshot across builds
 
 #include "anim_controller.h"
@@ -1180,7 +1181,7 @@ void TestCommands()
 	f.inputs[0].cameraYaw = 0;
 	step( 30 );
 
-	// Stances: a layer takes the stance, remembers the one it replaced, and restarts its clock.
+	// Stances: a layer takes the stance a mod sets.
 	{
 		SimCommand* c = command( CommandType::Stance, SlotTarget( 0 ) );
 		c->index = 1;
@@ -1189,8 +1190,7 @@ void TestCommands()
 	step( 5 );
 	{
 		const AnimState* a = sim.EntityAnimState( p0 );
-		CHECK( a->stances[1] == 3 && a->previousStances[1] == 0 );
-		CHECK( a->layerTime[1] > 0.0f && a->layerTime[1] < 0.1f );
+		CHECK( a->stances[1] == 3 && a->stances[0] == 0 );
 	}
 	{
 		SimCommand* c = command( CommandType::Stance, SlotTarget( 0 ) );
@@ -1203,7 +1203,7 @@ void TestCommands()
 		bad->value = 1;
 	}
 	step( 1 );
-	CHECK( sim.EntityAnimState( p0 )->stances[1] == 2 && sim.EntityAnimState( p0 )->previousStances[1] == 3 );
+	CHECK( sim.EntityAnimState( p0 )->stances[1] == 2 );
 
 	// Being placed (a respawn, falling out of the world) keeps the aim a mod asked for.
 	{
@@ -1617,19 +1617,9 @@ void TestAnimController()
 
 	f.inputs[0].moveForward = 127;
 	step( 90 );
-	std::printf( "    walking: groundSpeed %.3f phase %.3f\n", state().groundSpeed, state().locomotionPhase );
-	CHECK( b3AbsFloat( state().groundSpeed - anim_tuning::kWalkSpeed ) < 0.1f );
-
-	// Phase advances at the walk cycle rate.
-	float before = state().locomotionPhase;
-	step( 6 );
-	float advanced = state().locomotionPhase - before;
-	if ( advanced < 0.0f )
-	{
-		advanced += 1.0f;
-	}
-	float expected = 6.0f * sim.Config().TimeStep() / anim_tuning::kWalkCycleSeconds;
-	CHECK( b3AbsFloat( advanced - expected ) < 0.01f );
+	std::printf( "    walking: groundSpeed %.3f\n", state().groundSpeed );
+	CHECK( b3AbsFloat( state().groundSpeed - 3.0f ) < 0.1f );
+	CHECK( b3AbsFloat( state().moveForward - 3.0f ) < 0.1f && b3AbsFloat( state().moveRight ) < 0.1f );
 
 	// Jump: JumpStart -> Fall -> Land -> Locomotion, in that order.
 	f.inputs[0] = {};
@@ -2229,7 +2219,7 @@ void TestAnimGraph()
 	f.inputs[0].moveForward = 127;
 	step( 90 );
 	std::printf( "    walking: blend %.2f phase %.3f\n", layer( 0 ).blend, layer( 0 ).time );
-	CHECK( std::fabs( layer( 0 ).blend - anim_tuning::kWalkSpeed ) < 0.1f );
+	CHECK( std::fabs( layer( 0 ).blend - 3.0f ) < 0.1f );
 
 	// A jump: into Jump on the tick it happens, back to Move once grounded again.
 	f.inputs[0] = {};
@@ -2268,20 +2258,40 @@ void TestAnimGraph()
 }
 
 // Pose hash over a spread of animation states: the same on every compiler/platform.
-uint64_t AnimPoseHash( const anim::AnimSet& set )
+// `legs` and `aim`: whether the states also turn the legs and aim (the whole pose), or leave the
+// pose as the state machine's layers blend it; the parts tell which step differs when a build does.
+uint64_t AnimPoseHash( const anim::AnimSet& set, bool legs = true, bool aim = true )
 {
+	std::string error, warnings;
+	auto graph = CompileAnimGraph( set.GraphText(), ModSchema{}, error, warnings );
 	anim::PoseEvaluator eval( set );
+	eval.SetGraph( graph, warnings );
+	uint64_t states = graph != nullptr && graph->layers.empty() == false ? graph->layers[0].states.size() : 1;
 	uint64_t hash = kHashSeed;
 	uint64_t rng = 99;
 	for ( int i = 0; i < 400; ++i )
 	{
 		AnimState s;
-		s.mode = AnimMode( NextRandom( rng ) % 4 );
-		s.previousMode = AnimMode( NextRandom( rng ) % 4 );
-		s.modeTime = RandomRange( rng, 0.0f, 3.0f );
-		s.locomotionPhase = RandomUnit( rng );
-		s.idleTime = RandomRange( rng, 0.0f, 60.0f );
+		AnimGraphLayerState& layer = s.graph[0];
+		layer.started = 1;
+		layer.state = uint8_t( NextRandom( rng ) % states );
+		layer.previous = uint8_t( NextRandom( rng ) % states );
+		layer.time = RandomUnit( rng );
+		layer.previousTime = RandomUnit( rng );
+		layer.stateTime = RandomRange( rng, 0.0f, 0.4f );
+		layer.fadeLength = 0.2f;
+		layer.weight = 1.0f;
+		layer.blend = RandomRange( rng, -8.0f, 8.0f );
+		layer.previousBlend = RandomRange( rng, -8.0f, 8.0f );
 		s.groundSpeed = RandomRange( rng, 0.0f, 8.0f );
+		float legYaw = RandomRange( rng, -1.5f, 1.5f );
+		uint8_t aiming = uint8_t( NextRandom( rng ) % 2 );
+		float aimYaw = RandomRange( rng, -1.0f, 1.0f );
+		float aimPitch = RandomRange( rng, -1.0f, 1.0f );
+		s.legYaw = legs ? legYaw : 0.0f;
+		s.aiming = aim ? aiming : 0;
+		s.aimYaw = aimYaw;
+		s.aimPitch = aimPitch;
 		eval.Evaluate( s );
 		for ( const auto& m : eval.Models() )
 		{
@@ -2374,9 +2384,10 @@ void TestRobotCharacter()
 	}
 	CHECK( warnings.empty() );
 	CHECK( set->Skeleton().num_joints() == 22 );
-	for ( int c = 0; c < anim::ClipCount; ++c )
+	CHECK( set->GraphText().empty() == false );
+	for ( const char* clip : { "idle", "walk", "run", "jump_start", "fall", "land", "pistol_hold", "bat_idle", "bat_swing" } )
 	{
-		CHECK( set->Get( anim::Clip( c ) ) != nullptr );
+		CHECK( set->NamedClip( clip ) != nullptr );
 	}
 
 	std::string text;
@@ -2403,14 +2414,94 @@ void TestRobotCharacter()
 	CHECK( zoneAt( 1.25f ) == "torso" );
 	CHECK( zoneAt( 2.05f ).empty() );
 
-	// Its stance clips, as the editor baked them: the shipped mods' stances resolve without warnings.
+	// Its state machine, as the editor baked it from its AnimationTree: the shipped mods' stances
+	// are states of its upper layer, which moves the arms and leaves the legs alone.
 	{
-		std::string stanceWarnings;
-		auto stances = anim::BuildStanceTable( *set, { "full", "upper" }, { "melee", "melee_swing", "pistol" }, stanceWarnings );
-		CHECK( stanceWarnings.empty() );
-		CHECK( stances->stances[0].clips[anim::ClipRun] != nullptr );
-		CHECK( stances->stances[1].single != nullptr && stances->stances[2].single != nullptr );
-		CHECK( set->Mask( "upper" ) == "Spine" );
+		ModSchema schema;
+		schema.layers = { "full", "upper" };
+		schema.stances = { "melee", "melee_swing", "pistol" };
+		std::string graphWarnings;
+		auto graph = CompileAnimGraph( set->GraphText(), schema, error, graphWarnings );
+		CHECK( graph != nullptr && graphWarnings.empty() );
+		if ( graph == nullptr )
+		{
+			std::printf( "    %s\n", error.c_str() );
+			return;
+		}
+		CHECK( graph->layers.size() == 2 );
+		anim::PoseEvaluator machine( *set );
+		machine.SetGraph( graph, graphWarnings );
+		CHECK( graphWarnings.empty() );
+		auto stateOf = [&]( int layer, const char* name ) {
+			const auto& states = graph->layers[size_t( layer )].states;
+			for ( size_t i = 0; i < states.size(); ++i )
+			{
+				if ( states[i].name == name )
+				{
+					return int( i );
+				}
+			}
+			return -1;
+		};
+		auto at = [&]( const char* joint ) {
+			float v[4];
+			ozz::math::StorePtrU( machine.Models()[size_t( anim::FindJoint( *set, joint ) )].cols[3], v );
+			return b3Vec3{ v[0], v[1], v[2] };
+		};
+
+		Simulation sim( TestConfig(), FlatMap() );
+		sim.SetAnimGraph( graph );
+		InputFrame f;
+		auto step = [&]( int n ) {
+			for ( int i = 0; i < n; ++i )
+			{
+				f.tick = sim.Tick();
+				sim.Step( f );
+				f.events.clear();
+				f.commands.clear();
+			}
+		};
+		auto state = [&]() { return sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>(); };
+		auto stance = [&]( uint8_t layer, int32_t value ) {
+			SimCommand c;
+			c.type = CommandType::Stance;
+			c.target = SlotTarget( 0 );
+			c.index = layer;
+			c.value = value;
+			f.commands.push_back( c );
+		};
+		f.events.push_back( { PlayerEventType::Join, 0 } );
+		step( 60 );
+		CHECK( state().graph[0].state == stateOf( 0, "Locomotion" ) && state().graph[1].weight == 0.0f );
+		machine.Evaluate( state() );
+		b3Vec3 restHand = at( "RightHand" );
+		b3Vec3 restFoot = at( "LeftFoot" );
+		auto clips = anim::ActiveClips( state(), *graph );
+		CHECK( clips.size() == 1 && clips[0].channel == 0 && clips[0].name == "idle" && clips[0].loops );
+
+		stance( 1, 3 ); // upper layer, pistol
+		step( 30 );
+		CHECK( state().graph[1].state == stateOf( 1, "Pistol" ) && state().graph[1].weight == 1.0f );
+		machine.Evaluate( state() );
+		std::printf( "    pistol: the hand moved %.3f m, the foot %.4f m\n", b3Distance( at( "RightHand" ), restHand ),
+					 b3Distance( at( "LeftFoot" ), restFoot ) );
+		CHECK( b3Distance( at( "RightHand" ), restHand ) > 0.2f );
+		CHECK( b3Distance( at( "LeftFoot" ), restFoot ) < 0.02f );
+		clips = anim::ActiveClips( state(), *graph );
+		CHECK( clips.size() == 2 && clips[1].channel == 1 && clips[1].name == "pistol_hold" );
+
+		stance( 1, 0 );
+		stance( 0, 1 ); // full layer, melee: the machine's upper layer holds the bat ready
+		step( 30 );
+		CHECK( state().graph[1].state == stateOf( 1, "Ready" ) );
+		stance( 0, 2 ); // melee_swing
+		step( 2 );
+		CHECK( state().graph[1].state == stateOf( 1, "Swing" ) );
+		clips = anim::ActiveClips( state(), *graph );
+		CHECK( clips.size() == 2 && clips[1].name == "bat_swing" && clips[1].loops == false );
+		stance( 0, 0 );
+		step( 30 );
+		CHECK( state().graph[1].state == stateOf( 1, "Rest" ) && state().graph[1].weight == 0.0f );
 	}
 
 	// Aiming straight ahead: the robot's own aim chain (the default, its right arm) points the hand
@@ -2431,108 +2522,115 @@ void TestRobotCharacter()
 	CHECK( std::fabs( hand.y - shoulder.y ) < 0.05f );
 }
 
-// Layers and stances: an upper-body stance moves the arms and not the legs, a full-body one moves
-// the legs too, a fresh stance is half faded in half way through its fade, and what a character
-// lacks is reported and ignored.
-void TestStances()
+// The placeholder rig, what a server without a character plays: its six procedural clips and the
+// one-layer state machine built into it. The simulation runs that machine like any character's:
+// standing, walking by speed (backwards in reverse), and a jump through its states. A pose without
+// a machine is the skeleton's rest.
+void TestPlaceholderGraph()
 {
-	// The robot (a workshop character) ships stance clips for the shipped mods; the engine's own
-	// placeholder rig has none.
+	auto set = anim::AnimSet::CreateProcedural();
+	CHECK( set->GraphText().empty() == false );
+	for ( const char* clip : { "idle", "walk", "run", "jump_start", "fall", "land" } )
+	{
+		CHECK( set->NamedClip( clip ) != nullptr );
+	}
 	std::string error, warnings;
-	auto set = anim::AnimSet::Load( std::string( CB_SOURCE_DIR ) + "/characters/robot/client/characters/robot", error, warnings );
-	CHECK( set != nullptr );
-	if ( set == nullptr )
+	auto graph = CompileAnimGraph( set->GraphText(), ModSchema{}, error, warnings );
+	CHECK( graph != nullptr && warnings.empty() );
+	if ( graph == nullptr )
 	{
 		std::printf( "    %s\n", error.c_str() );
 		return;
 	}
-	CHECK( anim::AnimSet::CreateProcedural()->StanceClips().empty() );
-	warnings.clear();
-	auto table = anim::BuildStanceTable( *set, { "upper", "full", "arms" }, { "pistol", "melee", "sword" }, warnings );
-	CHECK( table->masks.size() == 3 && table->stances.size() == 3 );
-	CHECK( table->masks[0].empty() == false && table->masks[1].empty() == false );
-	CHECK( table->masks[2].empty() ); // no "arms" mask on this character
-	CHECK( warnings.find( "'arms'" ) != std::string::npos );
-	CHECK( warnings.find( "'sword'" ) != std::string::npos );
-	CHECK( table->stances[0].single != nullptr );				   // one pistol loop
-	CHECK( table->stances[1].clips[anim::ClipWalk] != nullptr ); // melee has its own walk
-	CHECK( table->stances[1].clips[anim::ClipFall] == nullptr ); // ...and falls like everyone else
-
-	std::string ignored;
-	std::vector<float> upper = anim::MaskWeights( *set, "Spine", ignored );
-	CHECK( upper[size_t( present::FindJoint( *set, "Hips" ) )] == 0.0f );
-	CHECK( upper[size_t( present::FindJoint( *set, "Head" ) )] == 1.0f );
-	CHECK( upper[size_t( present::FindJoint( *set, "LeftUpperLeg" ) )] == 0.0f );
-
-	auto at = []( const anim::PoseEvaluator& pose, const anim::AnimSet& s, const char* joint ) {
+	CHECK( graph->layers.size() == 1 && graph->clips.size() == 6 );
+	for ( const AnimGraphClip& clip : graph->clips )
+	{
+		// The lengths in the machine's text are the clips'.
+		CHECK( std::fabs( clip.length - set->NamedClip( clip.name )->duration() ) < 1e-4f );
+	}
+	anim::PoseEvaluator pose( *set );
+	pose.SetGraph( graph, warnings );
+	CHECK( warnings.empty() );
+	auto stateOf = [&]( const char* name ) {
+		const auto& states = graph->layers[0].states;
+		for ( size_t i = 0; i < states.size(); ++i )
+		{
+			if ( states[i].name == name )
+			{
+				return int( i );
+			}
+		}
+		return -1;
+	};
+	auto at = []( const anim::PoseEvaluator& p, const anim::AnimSet& s, const char* joint ) {
 		float v[4];
-		ozz::math::StorePtrU( pose.Models()[size_t( present::FindJoint( s, joint ) )].cols[3], v );
+		ozz::math::StorePtrU( p.Models()[size_t( present::FindJoint( s, joint ) )].cols[3], v );
 		return b3Vec3{ v[0], v[1], v[2] };
 	};
-	anim::PoseEvaluator base( *set );
-	base.SetStances( table );
-	base.Evaluate( AnimState{} );
 
-	// Pistol on the upper layer, fully faded in.
-	AnimState pistol;
-	pistol.stances[0] = 1;
-	pistol.layerTime[0] = 1.0f;
-	anim::PoseEvaluator withPistol( *set );
-	withPistol.SetStances( table );
-	withPistol.Evaluate( pistol );
-	CHECK( b3Distance( at( withPistol, *set, "RightHand" ), at( base, *set, "RightHand" ) ) > 0.2f );
-	CHECK( b3Distance( at( withPistol, *set, "LeftFoot" ), at( base, *set, "LeftFoot" ) ) < 1e-4f );
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+		}
+	};
+	auto state = [&]() { return sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>(); };
 
-	// Half way through the fade: about half way there.
-	pistol.layerTime[0] = 0.5f * kStanceFadeSeconds;
-	withPistol.Evaluate( pistol );
-	float half = b3Distance( at( withPistol, *set, "RightHand" ), at( base, *set, "RightHand" ) );
-	pistol.layerTime[0] = 1.0f;
-	withPistol.Evaluate( pistol );
-	float full = b3Distance( at( withPistol, *set, "RightHand" ), at( base, *set, "RightHand" ) );
-	std::printf( "    pistol hand moved %.3f m, %.3f half way through the fade\n", full, half );
-	CHECK( half > 0.2f * full && half < 0.8f * full );
+	// Standing.
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	CHECK( state().graph[0].state == stateOf( "Locomotion" ) && std::fabs( state().graph[0].blend ) < 0.1f );
+	auto clips = anim::ActiveClips( state(), *graph );
+	CHECK( clips.size() == 1 && clips[0].name == "idle" && clips[0].loops );
+	pose.Evaluate( state() );
+	b3Vec3 standingFoot = at( pose, *set, "LeftFoot" );
 
-	// Melee on the full layer: the legs change too.
-	AnimState melee;
-	melee.stances[1] = 2;
-	melee.layerTime[1] = 1.0f;
-	anim::PoseEvaluator withMelee( *set );
-	withMelee.SetStances( table );
-	withMelee.Evaluate( melee );
-	CHECK( b3Distance( at( withMelee, *set, "LeftFoot" ), at( base, *set, "LeftFoot" ) ) > 0.02f );
-
-	// A stance the character lacks, or a layer it cannot mask, changes nothing.
-	AnimState missing;
-	missing.stances[0] = 3;
-	missing.stances[2] = 1;
-	missing.layerTime[0] = missing.layerTime[2] = 1.0f;
-	anim::PoseEvaluator withMissing( *set );
-	withMissing.SetStances( table );
-	withMissing.Evaluate( missing );
-	CHECK( b3Distance( at( withMissing, *set, "RightHand" ), at( base, *set, "RightHand" ) ) < 1e-4f );
-
-	// What plays alongside the pose, for the animations' other tracks: the dominant base clip, and each layer's
-	// own clip (a single loop by its layer clock, or its version of the dominant clip).
+	// Walking: the blend follows the speed, the walk clip leads, and the legs move.
+	f.inputs[0].moveForward = 127;
+	step( 60 );
+	CHECK( std::fabs( state().graph[0].blend - 3.0f ) < 0.1f );
+	clips = anim::ActiveClips( state(), *graph );
+	CHECK( clips.size() == 1 && clips[0].name == "walk" );
+	float farthest = 0.0f;
+	for ( int i = 0; i < 30; ++i )
 	{
-		AnimState s;
-		s.stances[0] = 1; // pistol on upper: a single loop
-		s.layerTime[0] = 0.5f;
-		s.stances[1] = 2; // melee on full: its own idle
-		auto clips = anim::ActiveClips( s, *set, table.get() );
-		CHECK( clips.size() == 3 );
-		CHECK( clips[0].channel == 0 && clips[0].name == "idle" && clips[0].loops );
-		CHECK( clips[1].channel == 1 && clips[1].name == "stance_pistol" && std::fabs( clips[1].time - 0.5f ) < 1e-5f );
-		CHECK( clips[2].channel == 2 && clips[2].name == "stance_melee_idle" );
-		s.stances[1] = 3; // "sword": no clips on this character, nothing of its own
-		CHECK( anim::ActiveClips( s, *set, table.get() ).size() == 2 );
-		CHECK( anim::ActiveClips( s, *set, nullptr ).size() == 1 );
+		step( 1 );
+		pose.Evaluate( state() );
+		farthest = std::max( farthest, b3Distance( at( pose, *set, "LeftFoot" ), standingFoot ) );
 	}
+	std::printf( "    walking: blend %.2f, the foot swings %.2f m from where it stood\n", state().graph[0].blend, farthest );
+	CHECK( farthest > 0.1f );
 
-	// Without a table (a renderer that knows no schema) stances are ignored.
+	// A jump: JumpStart, Fall, Land, and back, in that order.
+	f.inputs[0] = {};
+	step( 30 );
+	f.inputs[0].buttons = BtnJump;
+	step( 1 );
+	f.inputs[0].buttons = 0;
+	std::vector<int> states = { int( state().graph[0].state ) };
+	for ( int i = 0; i < 120; ++i )
+	{
+		step( 1 );
+		if ( int( state().graph[0].state ) != states.back() )
+		{
+			states.push_back( int( state().graph[0].state ) );
+		}
+	}
+	CHECK( states.size() == 4 );
+	CHECK( states.size() == 4 && states[0] == stateOf( "JumpStart" ) && states[1] == stateOf( "Fall" ) && states[2] == stateOf( "Land" ) &&
+		   states[3] == stateOf( "Locomotion" ) );
+
+	// Without a machine there is nothing to play: the skeleton's rest, whatever the state says.
 	anim::PoseEvaluator plain( *set );
-	plain.Evaluate( pistol );
-	CHECK( b3Distance( at( plain, *set, "RightHand" ), at( base, *set, "RightHand" ) ) < 1e-4f );
+	plain.Evaluate( AnimState{} );
+	b3Vec3 restFoot = at( plain, *set, "LeftFoot" );
+	plain.Evaluate( state() );
+	CHECK( b3Distance( at( plain, *set, "LeftFoot" ), restFoot ) < 1e-5f );
 }
 
 // The default player character, as the editor baked it from the Universal Animation Library's
@@ -2725,12 +2823,8 @@ void TestMannequinCharacter()
 	// The placeholder rig, for which the bindings were made, holds an item the same way.
 	AnimState aiming;
 	aiming.aiming = 1;
-	aiming.stances[1] = 3; // pistol on the upper layer
-	aiming.layerTime[1] = 1.0f;
-	std::string stanceWarnings;
 	auto procedural = anim::AnimSet::CreateProcedural();
 	anim::PoseEvaluator placeholder( *procedural );
-	placeholder.SetStances( anim::BuildStanceTable( *procedural, { "full", "upper" }, { "melee", "melee_swing", "pistol" }, stanceWarnings ) );
 	placeholder.Evaluate( aiming );
 	CheckHeldItem( *procedural, placeholder );
 }
@@ -2786,7 +2880,7 @@ void TestUalMannequin()
 		f.commands.clear();
 	}
 	AnimState state = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
-	auto clips = anim::ActiveGraphClips( state, *graph );
+	auto clips = anim::ActiveClips( state, *graph );
 	std::printf( "    strafing right: blend (%.2f, %.2f), leg yaw %.2f, playing %s\n", state.graph[0].blend, state.graph[0].blendY,
 				 state.legYaw, clips.empty() ? "nothing" : clips[0].name.c_str() );
 	CHECK( clips.empty() == false && clips[0].name == "Jog_Right" );
@@ -2844,7 +2938,7 @@ void TestUalMannequin()
 			hipsYaw += yawOf( "Hips" ) / 60.0f;
 			chest += yawOf( "UpperChest" ) / 60.0f;
 			head += yawOf( "Head" ) / 60.0f;
-			auto clips = anim::ActiveGraphClips( now, *graph );
+			auto clips = anim::ActiveClips( now, *graph );
 			playing = clips.empty() ? "-" : clips[0].name;
 		}
 		std::printf( "    right %4d forward %4d: %-10s average hips %6.1f chest %6.1f head %6.1f\n", d[0], d[1], playing.c_str(), hipsYaw,
@@ -3007,7 +3101,7 @@ void TestLayerSwap()
 	step( 30 );
 	AnimState a = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
 	CHECK( a.graph[0].source == 1 && a.graph[0].state == 0 );
-	std::vector<anim::ActiveClip> clips = anim::ActiveGraphClips( a, *graph, packs );
+	std::vector<anim::ActiveClip> clips = anim::ActiveClips( a, *graph, packs );
 	CHECK( clips.empty() == false && clips[0].name == "Jump_Land" );
 	float crouched = head();
 
@@ -3026,12 +3120,7 @@ void TestAnimPipeline()
 	auto procedural = anim::AnimSet::CreateProcedural();
 	CHECK( procedural != nullptr );
 	CHECK( procedural->Skeleton().num_joints() > 20 );
-	for ( int c = 0; c < anim::ClipCount; ++c )
-	{
-		CHECK( procedural->Get( anim::Clip( c ) ) != nullptr );
-	}
-
-	// Feet on the ground, head up, in the rest-ish idle pose.
+	// Feet on the ground, head up, in its rest.
 	anim::PoseEvaluator eval( *procedural );
 	eval.Evaluate( AnimState{} );
 	float minY = 1e9f, maxY = -1e9f;
@@ -3057,6 +3146,7 @@ void TestAnimPipeline()
 	}
 	CHECK( loaded != nullptr );
 	CHECK( warnings.empty() );
+	CHECK( loaded != nullptr && loaded->GraphText() == procedural->GraphText() );
 	uint64_t a = AnimPoseHash( *procedural );
 	uint64_t b = AnimPoseHash( *loaded );
 	std::printf( "    pose hash %016" PRIx64 " (procedural) %016" PRIx64 " (from files)\n", a, b );
@@ -3608,6 +3698,13 @@ int main( int argc, char** argv )
 		std::printf( "%016" PRIx64 "\n", AnimPoseHash( *anim::AnimSet::CreateProcedural() ) );
 		return 0;
 	}
+	if ( argc == 2 && std::strcmp( argv[1], "--anim-hash-parts" ) == 0 )
+	{
+		auto set = anim::AnimSet::CreateProcedural();
+		std::printf( "layers %016" PRIx64 "  +legs %016" PRIx64 "  +aim %016" PRIx64 "\n", AnimPoseHash( *set, false, false ),
+					 AnimPoseHash( *set, true, false ), AnimPoseHash( *set, false, true ) );
+		return 0;
+	}
 	if ( argc == 3 && std::strcmp( argv[1], "--save-portable" ) == 0 )
 	{
 		return SavePortableFile( argv[2] );
@@ -3656,7 +3753,7 @@ int main( int argc, char** argv )
 		{ "view_codec", TestViewCodec },
 		{ "view_file", TestViewFile },
 		{ "hitboxes", TestHitboxes },
-		{ "stances", TestStances },
+		{ "placeholder_graph", TestPlaceholderGraph },
 		{ "robot_character", TestRobotCharacter },
 		{ "mannequin_character", TestMannequinCharacter },
 		{ "retarget", TestRetarget },

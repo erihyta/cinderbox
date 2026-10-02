@@ -2,7 +2,6 @@ add_library(cb_anim STATIC
 	anim_set.cpp
 	hitboxes.cpp
 	joint_math.cpp
-	stances.cpp
 	pose.cpp
 	profile.cpp
 	retarget.cpp

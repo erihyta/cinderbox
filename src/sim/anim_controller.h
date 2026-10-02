@@ -1,6 +1,8 @@
 #pragma once
 
-// Deterministic locomotion state machine. Runs inside the simulation tick for every character.
+// What a character's state machine reads about how it moves, computed in the simulation tick for
+// every character: its smoothed speed, which way the legs go, where it looks, and whether it is on
+// the ground, jumping, falling or landing.
 
 #include "components.h"
 #include "types.h"
@@ -10,21 +12,10 @@ namespace cb
 
 namespace anim_tuning
 {
-// 1D blend points: idle at 0, walk clip at kWalkSpeed, run clip at kRunSpeed (m/s).
-inline constexpr float kWalkSpeed = 3.0f;
-inline constexpr float kRunSpeed = 6.5f;
-
-// Duration of one full cycle (two steps) of the walk and run clips. Set these to your clip
-// lengths so feet do not slide; they are simulation constants, so changing them changes hashes.
-inline constexpr float kWalkCycleSeconds = 1.0f;
-inline constexpr float kRunCycleSeconds = 0.7f;
-
-inline constexpr float kModeFadeSeconds = 0.15f;  // crossfade between modes
-inline constexpr float kJumpStartSeconds = 0.25f; // how long the jump-start pose plays
-inline constexpr float kLandSeconds = 0.3f;		  // how long the landing pose plays
+inline constexpr float kJumpStartSeconds = 0.25f; // how long a jump is "starting"
+inline constexpr float kLandSeconds = 0.3f;		  // how long a landing lasts
 inline constexpr float kFallDelaySeconds = 0.12f; // airborne this long (without jumping) => fall
 inline constexpr float kSpeedSmoothing = 12.0f;	  // 1/s
-inline constexpr float kTimeWrap = 60.0f;		  // idle time wraps here to keep float precision
 inline constexpr float kMaxModeTime = 600.0f;
 // Legs: turn toward the direction of travel at this rate (rad/s), from this ground speed (m/s).
 // Past kBackwardAbove from the facing they walk backwards; they walk forwards again below
@@ -37,8 +28,5 @@ inline constexpr float kForwardBelow = 1.40f;  // ~80 degrees
 
 // Advance `state` by one tick. `c` is the character after this tick's movement.
 void UpdateAnimState( AnimState& state, const Character& c, const PlayerInput& input, uint32_t tick, float dt );
-
-// Cycles per second of the synchronized walk/run phase at a given ground speed.
-float LocomotionCycleRate( float groundSpeed );
 
 } // namespace cb

@@ -157,14 +157,6 @@ public:
 	}
 	// Name of the map the server is running, "" until it has been received.
 	godot::String get_map_name() const;
-	void set_animation_dir( const godot::String& v )
-	{
-		m_animationDir = v;
-	}
-	godot::String get_animation_dir() const
-	{
-		return m_animationDir;
-	}
 
 protected:
 	static void _bind_methods();
@@ -187,7 +179,6 @@ private:
 	// Properties
 	godot::String m_prefabDir = "res://prefabs";
 	godot::String m_mapDir = "res://maps";
-	godot::String m_animationDir;
 
 	std::shared_ptr<const anim::AnimSet> m_animSet;
 	std::unique_ptr<present::Mirror> m_mirror;

@@ -89,7 +89,7 @@ func _check(label: String, ok: bool, detail: String) -> void:
 func _process(_delta: float) -> bool:
 	if step == 0:
 		# Standing still.
-		rig.apply_anim_state(0, 1.0, 0.0, 0.0)
+		rig.preview_pose(0.0, 0.5)
 		var shoulder := skeleton.get_bone_global_pose(skeleton.find_bone("LeftShoulder")).origin
 		var hand := skeleton.get_bone_global_pose(skeleton.find_bone("LeftHand")).origin
 		var rest_hand := skeleton.get_bone_global_rest(skeleton.find_bone("LeftHand")).origin
@@ -110,7 +110,7 @@ func _process(_delta: float) -> bool:
 
 	if step == 1:
 		# Mid-stride: the legs must actually swing apart.
-		rig.apply_anim_state(0, 2.0, 0.25, 6.5)
+		rig.preview_pose(6.5, 0.25)
 		var left := skeleton.get_bone_global_pose(skeleton.find_bone("LeftFoot")).origin
 		var right := skeleton.get_bone_global_pose(skeleton.find_bone("RightFoot")).origin
 		_check("running swings the legs apart", abs(left.z - right.z) > 0.2,
