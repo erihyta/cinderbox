@@ -38,6 +38,7 @@ if [[ "$anim" == "$anim_ref" ]]; then
 	echo "== anim pose hash $anim matches reference"
 else
 	echo "== anim pose hash $anim DIFFERS from reference $anim_ref"
+	echo "== in parts: $("$exe" --anim-hash-parts | tr -d '\r')"
 	failed=1
 fi
 

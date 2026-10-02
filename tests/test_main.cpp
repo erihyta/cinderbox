@@ -5,6 +5,7 @@
 //   cb_tests --dump <file>      write per-tick hashes of the reference scenario (cross-build check)
 //   cb_tests --compare <file>   compare against a dump from another build/platform
 //   cb_tests --anim-hash         pose hash of the procedural rig (cross-build check)
+//   cb_tests --anim-hash-parts   the same in parts: the layers alone, with the leg turn, with the aim
 //   cb_tests --save-portable <file> / --load-portable <file>   portable snapshot across builds
 
 #include "anim_controller.h"
@@ -2257,7 +2258,9 @@ void TestAnimGraph()
 }
 
 // Pose hash over a spread of animation states: the same on every compiler/platform.
-uint64_t AnimPoseHash( const anim::AnimSet& set )
+// `legs` and `aim`: whether the states also turn the legs and aim (the whole pose), or leave the
+// pose as the state machine's layers blend it; the parts tell which step differs when a build does.
+uint64_t AnimPoseHash( const anim::AnimSet& set, bool legs = true, bool aim = true )
 {
 	std::string error, warnings;
 	auto graph = CompileAnimGraph( set.GraphText(), ModSchema{}, error, warnings );
@@ -2281,10 +2284,14 @@ uint64_t AnimPoseHash( const anim::AnimSet& set )
 		layer.blend = RandomRange( rng, -8.0f, 8.0f );
 		layer.previousBlend = RandomRange( rng, -8.0f, 8.0f );
 		s.groundSpeed = RandomRange( rng, 0.0f, 8.0f );
-		s.legYaw = RandomRange( rng, -1.5f, 1.5f );
-		s.aiming = uint8_t( NextRandom( rng ) % 2 );
-		s.aimYaw = RandomRange( rng, -1.0f, 1.0f );
-		s.aimPitch = RandomRange( rng, -1.0f, 1.0f );
+		float legYaw = RandomRange( rng, -1.5f, 1.5f );
+		uint8_t aiming = uint8_t( NextRandom( rng ) % 2 );
+		float aimYaw = RandomRange( rng, -1.0f, 1.0f );
+		float aimPitch = RandomRange( rng, -1.0f, 1.0f );
+		s.legYaw = legs ? legYaw : 0.0f;
+		s.aiming = aim ? aiming : 0;
+		s.aimYaw = aimYaw;
+		s.aimPitch = aimPitch;
 		eval.Evaluate( s );
 		for ( const auto& m : eval.Models() )
 		{
@@ -3689,6 +3696,13 @@ int main( int argc, char** argv )
 	if ( argc == 2 && std::strcmp( argv[1], "--anim-hash" ) == 0 )
 	{
 		std::printf( "%016" PRIx64 "\n", AnimPoseHash( *anim::AnimSet::CreateProcedural() ) );
+		return 0;
+	}
+	if ( argc == 2 && std::strcmp( argv[1], "--anim-hash-parts" ) == 0 )
+	{
+		auto set = anim::AnimSet::CreateProcedural();
+		std::printf( "layers %016" PRIx64 "  +legs %016" PRIx64 "  +aim %016" PRIx64 "\n", AnimPoseHash( *set, false, false ),
+					 AnimPoseHash( *set, true, false ), AnimPoseHash( *set, false, true ) );
 		return 0;
 	}
 	if ( argc == 3 && std::strcmp( argv[1], "--save-portable" ) == 0 )
