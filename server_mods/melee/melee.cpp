@@ -196,14 +196,22 @@ private:
 	bool Strike( Context& ctx, PlayerSlot slot, uint32_t netId )
 	{
 		uint32_t target = SlotTarget( slot );
-		// From the chest, level, fanned out across where the player looks.
+		// From the chest, fanned out sideways across where the player looks, and as far up or down
+		// as it looks: the upper body bows with the camera, and the bat goes where the body does.
 		b3Vec3 chest = b3Sub( ctx.EyePosition( slot ), b3Vec3{ 0.0f, 0.45f, 0.0f } );
 		b3Vec3 aim = ctx.AimDirection( slot );
-		b3Vec3 flat = b3Normalize( b3Vec3{ aim.x, 0.0f, aim.z } );
+		float level = b3Length( b3Vec3{ aim.x, 0.0f, aim.z } ); // the cosine of the pitch
+		if ( level < 1e-4f )
+		{
+			return false;
+		}
+		b3Vec3 flat = b3MulSV( 1.0f / level, b3Vec3{ aim.x, 0.0f, aim.z } );
 		for ( float angle : { 0.0f, -kFan, kFan, -0.5f * kFan, 0.5f * kFan } )
 		{
 			b3Quat turn = b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, angle );
-			b3Vec3 dir = b3RotateVector( turn, flat );
+			b3Vec3 side = b3RotateVector( turn, flat );
+			// What it knocks away still goes along the ground (`side`), not into it.
+			b3Vec3 dir = { side.x * level, aim.y, side.z * level };
 			RayHit hit;
 			if ( ctx.CastRay( chest, b3MulSV( kReach, dir ), netId, hit ) == false )
 			{
@@ -211,7 +219,7 @@ private:
 			}
 			if ( ctx.IsPlayer( hit.netId ) )
 			{
-				b3Vec3 push = b3Add( b3MulSV( kPush, dir ), b3Vec3{ 0.0f, 2.0f, 0.0f } );
+				b3Vec3 push = b3Add( b3MulSV( kPush, side ), b3Vec3{ 0.0f, 2.0f, 0.0f } );
 				ctx.Emit( m_hit, target, hit.netId, kDamage, hit.point, hit.normal );
 				ctx.Emit( m_damage, target, hit.netId, kDamage, hit.point, push );
 				return true; // one player per swing
@@ -219,7 +227,7 @@ private:
 			if ( ctx.IsDynamic( hit.netId ) )
 			{
 				ctx.Emit( m_hit, target, hit.netId, 0, hit.point, hit.normal );
-				ctx.Push( hit.netId, hit.point, b3MulSV( kPush, dir ), ImpulseVelocity );
+				ctx.Push( hit.netId, hit.point, b3MulSV( kPush, side ), ImpulseVelocity );
 				return false;
 			}
 		}

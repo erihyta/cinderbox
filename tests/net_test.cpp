@@ -1676,6 +1676,63 @@ void TestMelee()
 	}
 }
 
+// The bat strikes where the player looks, up and down as well: looking over the other player's
+// head misses, looking level or at the legs hits.
+void TestMeleePitch()
+{
+	Harness h( 47803 );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t bat = schema.ActionMask( "slot_3" );
+	int healthSlot = schema.FindField( "combat.health" )->slot;
+	auto pitchOf = std::make_shared<int16_t>( int16_t( 13000 ) ); // 71 degrees up
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraYaw = 16384; // toward slot 1
+		in.cameraPitch = *pitchOf;
+		if ( tick >= 100 && tick < 110 )
+		{
+			in.actions = bat;
+		}
+		else if ( tick >= 160 && ( tick % 45 ) < 3 )
+		{
+			in.actions = fire;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; };
+
+	Simulation& server = h.server.Sim();
+	int swingEvent = schema.FindEvent( "melee.swing" );
+	h.RunUntil( 7.0 );
+	uint32_t victim = server.PlayerNetId( h.bots[1].client->Slot() );
+	uint32_t attacker = server.PlayerNetId( h.bots[0].client->Slot() );
+	bool swung = false;
+	const SimGlobals& g = server.Globals();
+	for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+	{
+		swung |= int( g.modEvents[i].type ) == swingEvent && g.modEvents[i].netIdA == attacker;
+	}
+	int afterHigh = server.BoardValue( victim, healthSlot );
+	std::printf( "    swinging while looking over its head: swung %d, health %d\n", int( swung ), afterHigh );
+	CHECK( swung );
+	CHECK( afterHigh == 100 );
+	// The body follows the look: the attacker's pose is led by the same pitch.
+	CHECK( server.EntityAnimState( attacker )->look == 255 );
+
+	*pitchOf = int16_t( -4000 ); // 22 degrees down: at its legs
+	h.RunUntil( 9.0 );
+	int afterLow = server.BoardValue( victim, healthSlot );
+	std::printf( "    looking at its legs: health %d\n", afterLow );
+	CHECK( afterLow < 100 || server.PlayerCharacter( h.bots[1].client->Slot() )->dead != 0 );
+	h.Report();
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 void TestDeathmatch()
 {
 	Harness h( 47799, {}, {}, { { "deathmatch.kills", "2" }, { "deathmatch.pause_seconds", "2" } } );
@@ -2250,6 +2307,7 @@ int main( int argc, char** argv )
 		{ "combat", TestCombat },
 		{ "private_fields", TestPrivateFields },
 		{ "melee", TestMelee },
+		{ "melee_pitch", TestMeleePitch },
 		{ "pickup", TestPickup },
 		{ "inventory", TestInventory },
 		{ "item_layers", TestItemLayers },
