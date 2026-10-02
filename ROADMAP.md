@@ -35,35 +35,11 @@ Each step is a milestone of its own, and each leaves the game playable.
 
 | # | Step | Why | Needs |
 |---|---|---|---|
-| 1 | **Predicted state in the viewer** | a press changes what you see beyond effects: the HUD, the body | nothing |
-| 2 | **Private fields** | secrets that are not physical (a role, a hand of cards) | nothing |
-| 3 | **A stream that feels local** | a streaming client's own character answers a round trip late | nothing |
-| 4 | **One condition language** | reactions and the HUD read the game the same way | nothing |
+| 1 | **Private fields** | secrets that are not physical (a role, a hand of cards) | nothing |
+| 2 | **One condition language** | reactions and the HUD read the game the same way | nothing |
+| 3 | **A stream that feels local** | only for `--stream` clients: their own character answers a round trip late | nothing |
 
-### 1. Predicted state in the viewer
-
-- **Today**: a `CbPrediction` plays a cue's effects at once (DESIGN.md, Looks). What the server
-  *changes* still waits for its frame:
-
-  | You press | Shown at once | Shown a round trip later |
-  |---|---|---|
-  | fire, pistol out | flash, gunshot, camera kick | the ammo count, the tracer, the hit |
-  | fire, bat out | the swing's sound | the body's swing pose |
-
-- **What**: a prediction can also say what it changes on the viewer's own player until the server
-  speaks, as data in the look:
-  - a field: `pistol.ammo - 1` (the HUD and conditions read the predicted value);
-  - a stance or an animation state (the swing starts now);
-  - later, movement, for sources that do not simulate (step 3).
-- **How it stays honest**: each change is held against the frame that answers it. When the
-  server's cue comes, the server's value replaces it; when none comes within the wait, it is put
-  back. The viewer never tells a source what it predicted.
-- **Not this**: running a mod's rules on clients. The look says what the server will answer; the
-  server alone decides.
-- **Done when**: the pistol's ammo count and the bat's swing pose follow the click, a refused
-  press puts both back, and the look still has no code.
-
-### 2. Private fields
+### 1. Private fields
 
 - **What**: `declare.Field( name, type, BoardScope::Private )`. The value is never in the
   simulation, never hashed, never in a recording's frames. The server puts it in the owner's
@@ -72,10 +48,20 @@ Each step is a milestone of its own, and each leaves the game playable.
 - **Done when**: a test mod gives each player a secret number; each HUD shows its own; a bot that
   dumps everything it receives never sees another player's.
 
+### 2. One condition language
+
+- **What**: reactions (`src/godot/cue`) and HUD nodes (`src/present/fields`) parse conditions
+  separately today. One parser, with `or`, arithmetic, field-to-field comparisons, and a way to
+  pass a value through (`volume_db = event.strength * 2`, a bar from a field) on `CbReaction`.
+- **Done when**: `CbFieldBinding` is a `CbReaction` with a value expression, and one test file
+  covers the grammar.
+
 ### 3. A stream that feels local
 
-- **The problem**: a streaming client's presses show at once (predictions), but its own character
-  moves a round trip plus a frame late, and a late packet is a visible pause.
+- **Who it is for**: clients that join with `--stream` and do not simulate. A normal client
+  predicts its own movement already.
+- **The problem**: a streaming client's presses, fields and upper body show at once (predictions),
+  but its own character moves a round trip plus a frame late, and a late packet is a visible pause.
 - **What**: a small mover for the own character only, run by the stream source from the player's
   input and corrected by the server's frames; and a short buffer of frames, so one that is late
   does not stall the picture.
@@ -84,14 +70,6 @@ Each step is a milestone of its own, and each leaves the game playable.
   that are mostly zeros.
 - **Done when**: with 100 ms of latency a streaming player's own movement starts within a frame,
   and 5% loss shows no pause.
-
-### 4. One condition language
-
-- **What**: reactions (`src/godot/cue`) and HUD nodes (`src/present/fields`) parse conditions
-  separately today. One parser, with `or`, arithmetic, field-to-field comparisons, and a way to
-  pass a value through (`volume_db = event.strength * 2`, a bar from a field) on `CbReaction`.
-- **Done when**: `CbFieldBinding` is a `CbReaction` with a value expression, and one test file
-  covers the grammar.
 
 ## Housekeeping
 

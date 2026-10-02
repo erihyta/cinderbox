@@ -250,6 +250,7 @@ AnimationTree (Godot) ──bake──> graph.cfg + clips (.ozz) ──> the sch
 - **Stances** are names: a mod sets one on a layer (`SetStance`), a character's machine reads it in conditions and layer weights. What a stance looks like is the character's.
 - **Layers** are the tree's state machines stacked with `Blend2` nodes; a filter is the layer's bone mask. At most four.
 - **Animation packs**: a mod's own layers (a crouch, a carry) baked into its item; `SwapLayer` plays a pack's layer instead of the character's of the same name, with clips retargeted to the character by profile bone names (`FitPack`). Items bring layers through wishes the server resolves per player.
+- **The viewer's own player is led** (`present/anim_lead.*`): for unanswered predictions the viewer runs the machine's upper layers forward from the server's state, with the predicted stance or event put in at the press. The lead grows with the time since the press, stays when the answer arrives (so nothing jumps) and is given back at 15% of real time. An input the state does not have yet gets a tick of its own, as a command does in the simulation, which makes the led clock exactly the server's later one. The base layer is never led.
 - **Aiming** is part of the pose: the `Aim` command turns the character's aim chain toward where the player looks, drawn by clients and used by hit tests.
 - **The ozz pose owns the body**: a `CbPoseModifier` re-applies it after any Godot animation; Godot animation only adds what the pose leaves alone.
 - **An animation's other tracks** (particles, sounds, lights) stay in the Godot animation. The client copies them out of the character's `AnimationPlayer` when it is first drawn and a `CbTrackPlayer` plays them at the clip and time the pose is playing: values land exactly, method and audio keys fire once across rollbacks.
@@ -284,7 +285,7 @@ Everything a player sees and hears beyond bodies is data in workshop items: no s
 - **Conditions**: names and comparisons over the board, item kinds, `is_local`, `event.value`.
 - **World reactions**: every `res://vfx/reactions*.tscn` is loaded once; files add to each other.
 - **Prediction rule**: on a predicted cue a reaction waits for the server when it uses what only the server knows (the cue's point, end, value or other entity) or has `wait_for_server` on. Echoes are matched by name and order within a second.
-- **Not predicted**: what the server changes (a field on the HUD, the body's pose).
+- **Predicted state**: a prediction may also say what the server's answer changes for the viewer's own player. `changes` (`pistol.ammo -= 1`) are applied to the mirror's copy of the board after each frame's cues were heard, so the server's value and the prediction's are never both counted. A `stance` (or the cue itself, as an event) leads the body: see Characters and animation.
 - **Cue Preview**: an editor panel that plays a scene's reactions on a small stage with stand-in players.
 
 ## Maps and templates
@@ -331,7 +332,7 @@ loads mods; `workshop.gd` is where items are.
 
 | Area | Limit |
 |---|---|
-| Prediction | what the server changes is not predicted (ammo on the HUD, the swing's pose); a wrong guess is not taken back |
+| Prediction | a reaction played on a wrong guess is not taken back; the led body holds what the state says about movement still over the lead; packs' layers are not checked for what they read; a predicted event's clock is one tick ahead on the frame its answer arrives |
 | Streaming | no movement prediction and no frame buffer: the own character answers a round trip late, a late frame is a pause |
 | Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; packs' non-bone tracks are not played |
 | State machines | no nested machines, OneShot/Add/TimeScale nodes, `travel()`, or crossfade curves |
@@ -449,3 +450,4 @@ Netcode numbers from when they were taken (M4, M5); frame sizes are in [The view
 61. **M61** (done): the `combat` mod: health, death, ragdolls and respawning moved out of the pistol; weapons say `combat.damage`, it answers `combat.hurt` / `combat.killed` / `combat.respawned`; `combat.heal`; five server options; its own look (health bar, kill feed, scoreboard, hurt and death flashes); `net_combat`.
 62. **M62** (done): one animation system: the placeholder rig gets a built-in state machine, so every pose comes from one; removed the built-in clip blending and stance clip tables (`EvaluateBuiltIn`, `StanceTable`, the six clip slots), `CinderboxAnimator` and its example mod, the non-tree character bake, the glTF conversion pipeline; `AnimState` loses five fields (protocol 18, replay 5, view packets CBV3); the robot example is an `AnimationTree`.
 63. **M63** (done): this document by subsystem instead of by milestone; reference hashes regenerated for the M62 animation state. Found by the new pose hash on macOS: our own code compiled ozz's inline math as platform SIMD; `OZZ_BUILD_SIMD_REF` now reaches every target.
+64. **M64** (done): predicted state in the viewer: `CbPrediction.changes` (fields of the viewer's own player) and `stance` / `stance_layer`; `LeadAnimState` runs the character's upper layers ahead for the local player (`present/anim_lead.*`, `AnimGraph::UpperLayersRead`, `PlayerAnim::shown`); `CbDirector.pending_predictions`; the pistol's ammo and recoil and the bat's swing and flames follow the click; `anim_lead` test.

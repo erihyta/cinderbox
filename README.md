@@ -69,6 +69,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M61: a `combat` mod: health, death and respawning in one place, spoken to by events (`combat.damage`, `combat.heal`) with server options; the pistol only keeps the gun | done |
 | M62: one animation system: every character is a state machine (the placeholder rig's is built in); the old clip blending, stance clip tables, `CinderboxAnimator` and the glTF converter are gone | done |
 | M63: DESIGN.md by subsystem instead of by milestone | done |
+| M64: predicted state in the viewer: a prediction also says what the server's answer changes, so the ammo count drops and the swing or the recoil starts on the click | done |
 
 ## Building
 
@@ -514,12 +515,18 @@ it at once:
 PredictFire   CbPrediction   action "fire"   cue "pistol.fired"
                              conditions pistol.gun, pistol.ammo > 0, !pistol.reloading, !combat.dead
                              cooldown 0.19
+                             changes    pistol.ammo -= 1
+
+PredictSwing  CbPrediction   action "fire"   cue "melee.swing"   conditions melee.bat   cooldown 0.58
+                             stance "melee_swing" on stance_layer "full"
 ```
 
 | Step | What happens |
 |---|---|
 | You press `fire` and the conditions hold on your player | `pistol.fired` plays for you now, with the same reactions everyone else's shot plays: one reaction per cue, none written twice |
-| A reaction has `wait_for_server` on | it waits: it goes with something the server starts (the bat's flames with the body's swing) |
+| The prediction has `changes` | your own player's fields read the changed value at once: the ammo count drops on the click |
+| The prediction has a `stance`, or your character's state machine reads the cue | your own upper body is shown ahead of the server: the swing or the recoil starts on the click |
+| A reaction has `wait_for_server` on | it waits for the server's cue anyway |
 | A reaction needs what only the server knows | it waits: placed at the cue's point, end or beam, a path starting with `$other`, or a condition on `event.*` (the tracer, the hit spark) |
 | The server's `pistol.fired` for you arrives (within a second) | it is the echo: what already played stays quiet, what waited plays now |
 | No press was predicted | the server's cue plays in full, as for any other player |
@@ -530,16 +537,24 @@ PredictFire   CbPrediction   action "fire"   cue "pistol.fired"
 | `cue` | the cue the server sends for it: the same name, so the same reactions |
 | `conditions` | the look's copy of the server's rule, read on your own player: [names and comparisons](#effects) |
 | `cooldown` | the server's own rate (seconds between two predictions) |
+| `changes` | what the server's answer will change on your player: `pistol.ammo -= 1`, `x += 2`, `x = 0`. Shown until the server's cue comes (its own value is in the same frame) or the prediction expires |
+| `stance`, `stance_layer` | the stance the server's mod will set, and the layer it sets it on (`melee_swing` on `full`) |
 
 - **Both halves are the modder's**: the server mod emits the cue, its look predicts it by name.
-- **A wrong guess is not taken back**: the reaction played and no server cue follows. Keep the
-  conditions as close to the server's rule as the board allows.
-- **Looks only**: what the server changes still comes with its answer (ammo on the HUD, the body's
-  swing pose). See [ROADMAP.md](ROADMAP.md).
+- **A wrong guess**: a reaction that played is not taken back; changed fields and the led body
+  go back to the server's when the prediction expires (a second). Keep the conditions as close to
+  the server's rule as the board allows.
+- **How the body is led**: the viewer runs your character's state machine forward from the state
+  the server sent, with the predicted stance or event put in at the moment of the press, for the
+  layers above the base (the legs follow movement, which is predicted already). When the server's
+  answer arrives nothing jumps; afterwards the lead is given back slowly (the upper body plays 15%
+  slower until it is level again). At most half a second ahead.
+- **Looks only**: nothing is sent anywhere, and no rule runs on the client.
 - `CbDirector.explain_press( "fire" )` says which predictions a press would make, or why not;
   `check_predictions.gd` drives one by hand.
-- With 50 ms of delay each way, a click shows its shot 2 ms later; the server's cue (the tracer)
-  follows at about 250 ms.
+- With 50 ms of delay each way, a click shows its shot 2 ms later and the ammo count at the next
+  frame; the server's cue (the tracer) follows at about 250 ms. A swing's hand moves 70 ms after
+  the click and the bat's flames light at 110 ms; the server's swing comes at about 220 ms.
 
 ### Example: a second action
 
@@ -958,7 +973,7 @@ reactions in `prefabs/bat.tscn`:
 
 | Reaction | On | Does |
 |---|---|---|
-| `FlamesOnSwing` | its holder's `melee.swing`, 0.2 s later, `wait_for_server` | plays the bat's `slash` animation (flames along the barrel, on and off) |
+| `FlamesOnSwing` | its holder's `melee.swing` (predicted for your own swing) | plays the bat's `slash` animation (flames along the barrel, on and off) |
 | `GlowWhileHot` | while `melee.hot` (set by a hit) | the barrel glows |
 | `SparksOnHit` | its holder's `melee.hit` | a burst of sparks |
 
