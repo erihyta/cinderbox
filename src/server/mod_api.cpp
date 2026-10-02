@@ -313,9 +313,69 @@ b3Vec3 Context::EyePosition( PlayerSlot slot ) const
 	{
 		return {};
 	}
-	// Clients orbit their camera around this point (see game.gd), so the crosshair ray goes
-	// through it along the camera's direction.
-	return b3Add( t->position, b3Vec3{ 0.0f, 0.4f, 0.0f } );
+	// Clients orbit their third-person camera around this point (see game.gd).
+	return b3Add( t->position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+}
+
+b3Vec3 Context::HeadPosition( PlayerSlot slot ) const
+{
+	b3Vec3 head;
+	if ( m_hits == nullptr || m_hits->JointPosition( m_sim, slot, "Head", head ) == false )
+	{
+		return EyePosition( slot );
+	}
+	// A little ahead of the face and above the joint, as the first-person camera sits.
+	b3Vec3 forward = AimDirection( slot );
+	const PlayerInput& in = m_frame.inputs[slot];
+	b3Vec3 flat = detmath::YawForward( detmath::YawToRadians( in.cameraYaw ) );
+	b3CosSin p = detmath::CosSin( float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f ) );
+	b3Vec3 up = { -flat.x * p.sine, p.cosine, -flat.z * p.sine };
+	return b3Add( head, b3Add( b3MulSV( kEyeAhead, forward ), b3MulSV( kEyeUp, up ) ) );
+}
+
+b3Vec3 Context::ViewPosition( PlayerSlot slot ) const
+{
+	const PlayerInput& in = m_frame.inputs[slot];
+	switch ( ViewMode( in.view ) )
+	{
+		case ViewMode::FirstPerson:
+			return HeadPosition( slot );
+		case ViewMode::ShoulderRight:
+		case ViewMode::ShoulderLeft:
+		{
+			b3Vec3 right = detmath::YawRight( detmath::YawToRadians( in.cameraYaw ) );
+			float side = ViewMode( in.view ) == ViewMode::ShoulderRight ? kShoulderOffset : -kShoulderOffset;
+			return b3MulAdd( EyePosition( slot ), side, right );
+		}
+		case ViewMode::ThirdPerson:
+		default:
+			return EyePosition( slot );
+	}
+}
+
+bool Context::CastAim( PlayerSlot slot, float range, RayHit& hit, b3Vec3& origin, b3Vec3& direction ) const
+{
+	uint32_t self = m_sim.PlayerNetId( slot );
+	b3Vec3 look = AimDirection( slot );
+	origin = HeadPosition( slot );
+	direction = look;
+	if ( ViewMode( m_frame.inputs[slot].view ) != ViewMode::FirstPerson )
+	{
+		// What is under the crosshair: the first thing along the camera's line, from where that
+		// line passes the player (nothing between the camera and there is in the way).
+		b3Vec3 view = ViewPosition( slot );
+		RayHit seen;
+		b3Vec3 target = CastRay( view, b3MulSV( range, look ), self, seen ) ? seen.point : b3MulAdd( view, range, look );
+		// From the eye to it. Something right in front of the face gives no sensible direction:
+		// the shot then goes where the player looks.
+		b3Vec3 to = b3Sub( target, origin );
+		float distance = b3Length( to );
+		if ( distance > 0.5f && b3Dot( to, look ) > 0.5f * distance )
+		{
+			direction = b3MulSV( 1.0f / distance, to );
+		}
+	}
+	return CastRay( origin, b3MulSV( range, direction ), self, hit );
 }
 
 b3Vec3 Context::AimDirection( PlayerSlot slot ) const

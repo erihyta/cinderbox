@@ -257,7 +257,7 @@ private:
 		if ( ctx.Pressed( g.slot, m_mark ) && reloading == false && tick >= g.nextMarkTick )
 		{
 			g.nextMarkTick = tick + Ticks( ctx, kMarkSeconds );
-			Mark( ctx, g, netId );
+			Mark( ctx, g );
 		}
 		if ( ctx.Pressed( g.slot, m_fire ) == false || reloading || tick < g.nextShotTick )
 		{
@@ -273,7 +273,7 @@ private:
 		g.ammo -= 1;
 		g.nextShotTick = tick + Ticks( ctx, kFireSeconds );
 		ctx.Set( target, m_ammo, g.ammo );
-		Fire( ctx, g, netId );
+		Fire( ctx, g );
 	}
 
 	void StartReload( Context& ctx, flecs::entity e, uint32_t target )
@@ -294,13 +294,12 @@ private:
 	// The same ray as a shot, with no damage: it says where it went (pistol.scan) and, when it found
 	// a living player, who (pistol.marked). What a mark looks like and how long it shows is the
 	// look's business; the server keeps nothing about it.
-	void Mark( Context& ctx, const Gunner& caster, uint32_t casterNetId )
+	void Mark( Context& ctx, const Gunner& caster )
 	{
 		uint32_t casterTarget = SlotTarget( caster.slot );
-		b3Vec3 eye = ctx.EyePosition( caster.slot );
-		b3Vec3 dir = ctx.AimDirection( caster.slot );
+		b3Vec3 eye, dir;
 		RayHit hit;
-		bool found = ctx.CastRay( eye, b3MulSV( kRange, dir ), casterNetId, hit );
+		bool found = ctx.CastAim( caster.slot, kRange, hit, eye, dir );
 		b3Vec3 end = found ? hit.point : b3MulAdd( eye, kRange, dir );
 		ctx.Emit( m_scan, casterTarget, found ? hit.netId : 0, 0, eye, end );
 		if ( found && IsLivingPlayer( ctx, hit.netId ) )
@@ -309,13 +308,13 @@ private:
 		}
 	}
 
-	void Fire( Context& ctx, const Gunner& shooter, uint32_t shooterNetId )
+	void Fire( Context& ctx, const Gunner& shooter )
 	{
 		uint32_t shooterTarget = SlotTarget( shooter.slot );
-		b3Vec3 eye = ctx.EyePosition( shooter.slot );
-		b3Vec3 dir = ctx.AimDirection( shooter.slot );
+		// At what is under the crosshair, from the eye: whatever camera the player looks through.
+		b3Vec3 eye, dir;
 		RayHit hit;
-		bool found = ctx.CastRay( eye, b3MulSV( kRange, dir ), shooterNetId, hit );
+		bool found = ctx.CastAim( shooter.slot, kRange, hit, eye, dir );
 		b3Vec3 end = found ? hit.point : b3MulAdd( eye, kRange, dir );
 		ctx.Emit( m_fired, shooterTarget, found ? hit.netId : 0, 0, eye, end );
 		if ( found == false )

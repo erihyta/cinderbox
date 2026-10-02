@@ -1,5 +1,6 @@
 #include "hit_test.h"
 
+#include "joint_math.h"
 #include "ragdoll.h"
 
 #include "ozz/base/maths/simd_math.h"
@@ -48,6 +49,25 @@ HitTester::HitTester( std::shared_ptr<const CharacterAsset> character )
 		largest = std::max( { largest, box.radius, box.height, box.halfExtents.x, box.halfExtents.y, box.halfExtents.z } );
 	}
 	m_reach = extent * 1.5f + largest * m_character->animations->Scale() + 0.25f;
+}
+
+bool HitTester::JointPosition( Simulation& sim, PlayerSlot slot, const char* joint, b3Vec3& out )
+{
+	uint32_t netId = sim.PlayerNetId( slot );
+	const Transform* transform = netId != 0 ? sim.EntityTransform( netId ) : nullptr;
+	const AnimState* state = netId != 0 ? sim.EntityAnimState( netId ) : nullptr;
+	int index = anim::FindJoint( *m_character->animations, joint );
+	if ( transform == nullptr || state == nullptr || index < 0 )
+	{
+		return false;
+	}
+	m_pose.Evaluate( *state );
+	float v[4];
+	ozz::math::StorePtrU( m_pose.Models()[size_t( index )].cols[3], v );
+	// Model space has the feet at the origin and faces +Z, like the hitboxes.
+	b3Vec3 feet = b3Sub( transform->position, b3Vec3{ 0.0f, ragdoll::kFeetBelowCenter, 0.0f } );
+	out = b3Add( feet, b3RotateVector( transform->rotation, b3Vec3{ v[0], v[1], v[2] } ) );
+	return true;
 }
 
 bool HitTester::CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit )

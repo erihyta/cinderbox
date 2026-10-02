@@ -71,7 +71,12 @@ public:
 	bool takes_input() const;
 	// camera_yaw / camera_pitch: the Godot camera's rotation (radians). actions: bits of the
 	// server's mod actions (get_actions() says which bit is which).
-	void set_input( const godot::Vector2& move, double camera_yaw, double camera_pitch, bool jump, bool sprint, int64_t actions );
+	void set_input( const godot::Vector2& move, double camera_yaw, double camera_pitch, bool jump, bool sprint, int64_t actions,
+					int64_t view = 0 );
+	// Where the local player's line of sight starts for a view (ViewMode: 0 behind, 1 first person,
+	// 2 / 3 over the right / left shoulder), with the camera turned as `camera` is: the point the
+	// server takes for it too (mods::Context::ViewPosition), so the crosshair is exact.
+	godot::Vector3 get_view_position( int64_t view, const godot::Basis& camera ) const;
 
 	// What the server's mods declared. Each action: { name, bit, key }.
 	godot::Array get_actions() const;

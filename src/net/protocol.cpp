@@ -21,7 +21,7 @@ enum InputField : uint8_t
 	FieldYaw = 1 << 2,		// absolute, u16
 	FieldYawDelta = 1 << 3, // relative, i8
 	FieldButtons = 1 << 4,
-	FieldReserved = 1 << 5,
+	FieldView = 1 << 5,
 	FieldPitch = 1 << 6,
 	FieldActions = 1 << 7,
 	FieldAll = 0xFF,
@@ -505,7 +505,7 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
 				fields |= ( yawDelta >= -128 && yawDelta <= 127 ) ? FieldYawDelta : FieldYaw;
 			}
 			fields |= now.buttons != before.buttons ? FieldButtons : 0;
-			fields |= now.reserved != before.reserved ? FieldReserved : 0;
+			fields |= now.view != before.view ? FieldView : 0;
 			fields |= now.cameraPitch != before.cameraPitch ? FieldPitch : 0;
 			fields |= now.actions != before.actions ? FieldActions : 0;
 
@@ -520,8 +520,8 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
 				w.Write( int8_t( yawDelta ) );
 			if ( fields & FieldButtons )
 				w.Write( now.buttons );
-			if ( fields & FieldReserved )
-				w.Write( now.reserved );
+			if ( fields & FieldView )
+				w.Write( now.view );
 			if ( fields & FieldPitch )
 				w.Write( now.cameraPitch );
 			if ( fields & FieldActions )
@@ -585,8 +585,8 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame )
 			in.cameraYaw = uint16_t( in.cameraYaw + uint16_t( int16_t( r.Read<int8_t>() ) ) );
 		if ( fields & FieldButtons )
 			in.buttons = r.Read<uint8_t>();
-		if ( fields & FieldReserved )
-			in.reserved = r.Read<uint8_t>();
+		if ( fields & FieldView )
+			in.view = r.Read<uint8_t>();
 		if ( fields & FieldPitch )
 			in.cameraPitch = r.Read<int16_t>();
 		if ( fields & FieldActions )

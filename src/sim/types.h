@@ -30,6 +30,24 @@ inline constexpr int kMaxActions = 16;
 // Camera pitch is limited to just short of straight up or down (full turn = 65536).
 inline constexpr int16_t kMaxCameraPitch = 16000;
 
+// Which camera a player looks through. It is the player's choice and it changes nothing in the
+// simulation; the server's mods read it to know where the player's line of sight starts
+// (mods::Context::ViewPosition), so that what is under the crosshair is what is aimed at.
+enum class ViewMode : uint8_t
+{
+	ThirdPerson = 0,   // behind the player, orbiting the point above its body
+	FirstPerson = 1,   // out of the posed head
+	ShoulderRight = 2, // third person, moved sideways by kShoulderOffset
+	ShoulderLeft = 3,
+};
+inline constexpr uint8_t kViewModes = 4;
+inline constexpr float kShoulderOffset = 0.45f; // metres to the side of the pivot
+// The first-person eye, from the head joint: ahead along the look and up across it (metres).
+inline constexpr float kEyeAhead = 0.14f;
+inline constexpr float kEyeUp = 0.09f;
+// The point a third-person camera orbits, above the character's centre (metres).
+inline constexpr float kViewPivotHeight = 0.4f;
+
 // One player's input for one tick. 10 bytes, no padding.
 struct PlayerInput
 {
@@ -39,7 +57,7 @@ struct PlayerInput
 	int16_t cameraPitch = 0; // full turn = 65536, positive looks up, within +/- kMaxCameraPitch
 	uint16_t actions = 0;	 // mod action bits (held state)
 	uint8_t buttons = 0;	 // InputButton bits (held state; the sim detects edges)
-	uint8_t reserved = 0;
+	uint8_t view = 0;		 // ViewMode
 
 	bool operator==( const PlayerInput& ) const = default;
 };

@@ -22,6 +22,9 @@ public:
 	explicit HitTester( std::shared_ptr<const CharacterAsset> character );
 
 	bool CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit );
+	// Where a joint of a player is this tick (humanoid-profile name, "Head"), from the same pose
+	// the hit tests use. False for a player that is not there or a rig without the joint.
+	bool JointPosition( Simulation& sim, PlayerSlot slot, const char* joint, b3Vec3& out );
 
 	// The character's state machine, the one the simulation runs.
 	void SetGraph( std::shared_ptr<const AnimGraph> graph, std::string& warnings )

@@ -111,8 +111,8 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "is_running" ), &CinderboxClient::is_running );
 	ClassDB::bind_method( D_METHOD( "control", "name", "value" ), &CinderboxClient::control );
 	ClassDB::bind_method( D_METHOD( "takes_input" ), &CinderboxClient::takes_input );
-	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "actions" ),
-						  &CinderboxClient::set_input );
+	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "actions", "view" ),
+						  &CinderboxClient::set_input, DEFVAL( 0 ) );
 	ClassDB::bind_method( D_METHOD( "get_actions" ), &CinderboxClient::get_actions );
 	ClassDB::bind_method( D_METHOD( "get_mod_names" ), &CinderboxClient::get_mod_names );
 	ClassDB::bind_method( D_METHOD( "get_field", "net_id", "name" ), &CinderboxClient::get_field );
@@ -127,6 +127,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_tick_time" ), &CinderboxClient::get_tick_time );
 	ClassDB::bind_method( D_METHOD( "get_tick_rate" ), &CinderboxClient::get_tick_rate );
 	ClassDB::bind_method( D_METHOD( "get_camera_target" ), &CinderboxClient::get_camera_target );
+	ClassDB::bind_method( D_METHOD( "get_view_position", "view", "camera" ), &CinderboxClient::get_view_position );
 	ClassDB::bind_method( D_METHOD( "get_camera_distance", "target", "direction", "max_distance", "radius" ),
 						  &CinderboxClient::get_camera_distance );
 	ClassDB::bind_method( D_METHOD( "get_bone_position", "net_id", "bone" ), &CinderboxClient::get_bone_position );
@@ -271,7 +272,7 @@ void CinderboxClient::_enter_tree()
 }
 
 void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double camera_pitch, bool jump, bool sprint,
-								 int64_t actions )
+								 int64_t actions, int64_t view )
 {
 	if ( takes_input() == false )
 	{
@@ -289,6 +290,7 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 	double pitchTurns = std::clamp( camera_pitch / ( 2.0 * detmath::kPi ), -0.24, 0.24 );
 	in.cameraPitch = int16_t( std::clamp( int( std::lround( pitchTurns * 65536.0 ) ), -int( kMaxCameraPitch ), int( kMaxCameraPitch ) ) );
 	in.actions = uint16_t( actions );
+	in.view = view >= 0 && view < int64_t( kViewModes ) ? uint8_t( view ) : uint8_t( 0 );
 	m_source->SetInput( in );
 
 	// Presses are announced here, before the server has seen them, so feedback does not wait.
@@ -1629,10 +1631,33 @@ Vector3 CinderboxClient::get_camera_target() const
 	present::RenderPose pose;
 	if ( m_mirror->LocalPlayer( pose ) )
 	{
-		// The same point the server casts the crosshair ray from (Context::EyePosition).
-		return ToGodot( pose.position ) + Vector3( 0, 0.4f, 0 );
+		// The point the server takes for a third-person camera's pivot (Context::EyePosition).
+		return ToGodot( pose.position ) + Vector3( 0, kViewPivotHeight, 0 );
 	}
 	return Vector3( 0, 1, 0 );
+}
+
+Vector3 CinderboxClient::get_view_position( int64_t view, const Basis& camera ) const
+{
+	Vector3 pivot = get_camera_target();
+	int64_t me = get_local_net_id();
+	switch ( ViewMode( view >= 0 && view < int64_t( kViewModes ) ? view : 0 ) )
+	{
+		case ViewMode::FirstPerson:
+			if ( me != 0 && is_local_player_dead() == false && get_entity_node( me ) != nullptr )
+			{
+				// The eye on the posed head, as Context::HeadPosition places it.
+				return get_bone_position( me, "Head" ) - camera.get_column( 2 ) * kEyeAhead + camera.get_column( 1 ) * kEyeUp;
+			}
+			return pivot;
+		case ViewMode::ShoulderRight:
+			return pivot + camera.get_column( 0 ) * kShoulderOffset;
+		case ViewMode::ShoulderLeft:
+			return pivot - camera.get_column( 0 ) * kShoulderOffset;
+		case ViewMode::ThirdPerson:
+		default:
+			return pivot;
+	}
 }
 
 double CinderboxClient::get_camera_distance( const Vector3& target, const Vector3& direction, double max_distance, double radius ) const

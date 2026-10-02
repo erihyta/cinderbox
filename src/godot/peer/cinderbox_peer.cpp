@@ -109,7 +109,7 @@ void CinderboxPeer::set_input( const PackedByteArray& input )
 		// From another library, so bounded like anything received.
 		in.cameraPitch = std::clamp( in.cameraPitch, int16_t( -kMaxCameraPitch ), kMaxCameraPitch );
 		in.buttons &= kEngineButtons;
-		in.reserved = 0;
+		in.view = in.view < kViewModes ? in.view : uint8_t( 0 );
 		m_source->SetInput( in );
 	}
 }
