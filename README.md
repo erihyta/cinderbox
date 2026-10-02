@@ -1,7 +1,7 @@
 # Cinderbox
 
 A deterministic multiplayer third-person physics sandbox, built with flecs, Box3D, ENet and
-ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib debug viewer. See [DESIGN.md](DESIGN.md) for the architecture and decisions, and [ROADMAP.md](ROADMAP.md) for what comes next.
+ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.md](DESIGN.md) for the architecture and decisions, and [ROADMAP.md](ROADMAP.md) for what comes next.
 
 ## Status
 
@@ -65,6 +65,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods) and a raylib 
 | M57: the bat lights its own flames: a reaction on the swing's cue in the bat's scene, not a key in the character's animation; `wait_for_server` keeps a reaction off a predicted press | done |
 | M58: an example of a second action: the pistol's right button marks the player its ray finds (a zone around them for 2 seconds), with the server part and the look part side by side | done |
 | M59: no companion files: an animation's non-bone tracks are read from the character's own `AnimationPlayer` when it is first drawn; a character is baked when its scene is saved and again when its item is packed | done |
+| M60: the raylib client is gone: the Godot client is the client | done |
 
 ## Building
 
@@ -97,8 +98,7 @@ pulling a change that adds one), open `godot/` in the editor once or run
 
 ## Playing
 
-The main client is the Godot project in `godot/` (Godot 4.7 or later). The raylib client `cb_client` is kept
-as a debug viewer; it runs the same simulation and also plays recordings and previews animations.
+The client is the Godot project in `godot/` (Godot 4.7 or later).
 
 ```sh
 # terminal 1
@@ -112,8 +112,6 @@ godot --path godot -- --host=127.0.0.1 --port=7777 --stream
 # or watch a recording (cb_server --record FILE), or a view file (cb_server --record-view FILE)
 godot --path godot -- --replay=FILE
 godot --path godot -- --view=FILE
-# or the raylib debug viewer
-cb_client --host 127.0.0.1 --port 7777
 ```
 
 ### The menu
@@ -209,10 +207,9 @@ powershell -ExecutionPolicy Bypass -File tools\export_client.ps1     # -> dist\C
 The export needs the Godot 4.7.2 export templates, installed either from the editor or extracted to
 `%LOCALAPPDATA%\cinderbox-build\tools\godot\templates`. Packs in `mods\` are copied to `dist\Cinderbox\mods`.
 
-`cb_server` and `cb_client` are in `<build dir>/bin`. The server options are `--tick-rate`, `--seed`, `--substeps`,
+`cb_server` is in `<build dir>/bin`. Its options are `--tick-rate`, `--seed`, `--substeps`,
 `--prop-lifetime`, `--props-per-player`, `--props-global`, and `--mods A,B` / `--mods none` / `--list-mods`
-(every compiled server mod runs by default, see [Server mods](#server-mods)). The `cb_client` options are `--rollback TICKS` (fixes the prediction window, which is otherwise chosen from latency),
-`--width`, `--height`, and `--autoplay SECONDS [--screenshot FILE]` for an unattended smoke test.
+(every compiled server mod runs by default, see [Server mods](#server-mods)).
 
 ## Server mods
 
@@ -1260,7 +1257,6 @@ All tools are in `<build dir>/bin`.
 | `cb_server --record-view FILE [--view-rate HZ] [--view-compact]` | Records the session as a view file: the frames a viewer is shown, playable without a simulation. `--view-rate 20` keeps 20 frames a second instead of one per tick; `--view-compact` writes them the way a stream would (positions and animation on a grid, a few millimetres off at most) |
 | `cb_replay view FILE` | Summarizes a view file: frames, players, bytes per frame and where they go |
 | `godot --path godot -- --replay=FILE` (or `--view=FILE`) | Watches a recording (or a view file) in the game, with the mods' looks and the followed player's HUD |
-| `cb_client --replay FILE [--replay-start S]` | Watches a recording in the raylib debug viewer |
 | `cb_netsim --listen P --target HOST:PORT --latency MS --jitter MS --loss % [--duplicate %]` | UDP relay that degrades traffic (latency is added in each direction) |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_mod_validator.gd -- PACK.zip...` | Checks the pack validator: the named packs pass, built-in hostile packs are refused |
 | `cb_bot --port P --count N --full M --duration S [--chaotic] [--shoot] [--melee]` | Headless players; the M "full" bots run prediction and rollback and report its cost; `--chaotic` changes every input every tick; `--shoot` makes full bots take out the pistol and fire at the nearest player; `--melee` makes them close in with the bat and swing |
@@ -1310,7 +1306,7 @@ Every push runs `.github/workflows/determinism.yml` on GitHub Actions:
 
 Each build job (`scripts/ci_check.sh <preset> <name> <out-dir>`, also usable locally):
 
-- builds the simulation, server, mods and tests (no Godot, no raylib);
+- builds the simulation, server, mods and tests (no Godot);
 - runs every test (`ctest`, network sessions included);
 - compares the per-tick hashes with `tests/reference_hashes.txt` and the pose hash with
   `tests/reference_anim_hash.txt`;
@@ -1324,7 +1320,7 @@ Box3D is fetched with two local patches in `cmake/patches/` (see DESIGN.md, M18)
 ## Layout
 
 ```
-cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, Box3D, ENet, ozz, raylib)
+cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, Box3D, ENet, ozz)
 assets/anim/      your converted animation clips (see its README)
 src/sim/          deterministic simulation shared by server and client, as two libraries: cb_sim_data
                   (what the data means: no world is stepped) and cb_sim (the simulation itself)
@@ -1353,14 +1349,13 @@ characters/       character items: <name>/client is the item's Godot project, <n
   <mod>/client/     a mod's look as a Godot project, published as a workshop item
   <mod>/client_item.cfg  the published item's SHA-256, which servers announce
 src/tools/        cb_netsim, cb_replay, cb_bot
-src/client/       GameClient core (no rendering, also "lite" mode), the view sources, bot brain, and the raylib debug viewer
+src/client/       GameClient core (no rendering, also "lite" mode), the view sources, the bot brain
   live_source.*     a view source that plays on a server (GameClient on its own thread)
   replay_source.*   a view source that plays a recording (replay_player.* on its own thread)
-  app/              raylib rendering, camera, HUD over the presentation mirror
   app/anim_viewer.* offline clip preview (--anim-viewer)
   app/replay_viewer.* recording playback (--replay)
 src/stream/       StreamSource: a view source that is sent frames by a server (networking, no simulation)
-src/present/      engine-independent presentation, shared by Godot and raylib
+src/present/      engine-independent presentation, what the Godot extensions draw from
   visibility.*      a frame with what one viewer must not be shown taken out
   source_thread.*   what sources with a thread share: the thread, the float environment, the newest frame
   view.h            the viewer protocol: ViewFrame (what a viewer is told), ViewSource (who tells it)

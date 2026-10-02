@@ -1921,3 +1921,4 @@ The ordered plan for the client is in [ROADMAP.md](ROADMAP.md). These are loose 
 57. **M57** (done): the bat lights its own flames (a reaction on `melee.swing` instead of a playback key in the character's swing); `CbReaction.wait_for_server`.
 58. **M58** (done): the pistol's `mark` action (right mouse): a ray, `pistol.scan` and `pistol.marked`; in the look a predicted click, a beam and a zone that follows the marked player for 2 seconds (README, "Example: a second action"); `net_pistol_mark`.
 59. **M59** (done): no companion files: `CbCharacter.build_track_library` (the client copies an animation's non-bone tracks out of the character's `AnimationPlayer`), `CbTrackPlayer` (was `CbCompanionPlayer`), baking on scene save and at pack time, writes only when bytes change.
+60. **M60** (done): the raylib client (`cb_client`, its anim and replay viewers) removed; raylib is no longer a dependency.

@@ -104,5 +104,4 @@ Independent of the path; each is small.
 | A `combat` mod | health, death and respawn live in `pistol.cpp`; melee hurts only because the pistol mod runs |
 | One animation system | the mode controller, stances and `CinderboxAnimator` predate the baked state machines |
 | `simulation.cpp` in modules | characters, props, ragdolls, items and animation in one 2,100-line class |
-| The raylib client | the Godot client now plays recordings; decide whether `cb_client` stays as a debug tool or goes |
 | Repository | a LICENSE; `.uid` files committed; line endings settled in `.gitattributes`; the old `build/` folder in OneDrive |
