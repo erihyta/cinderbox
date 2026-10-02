@@ -141,6 +141,14 @@ public:
 	{
 		return m_aimChain;
 	}
+	void set_look_chain( const godot::String& v )
+	{
+		m_lookChain = v;
+	}
+	godot::String get_look_chain() const
+	{
+		return m_lookChain;
+	}
 	void set_aim_tip( const godot::String& v )
 	{
 		m_aimTip = v;
@@ -226,6 +234,7 @@ private:
 	godot::Dictionary m_graphInputs;
 	godot::String m_aimChain = "RightUpperArm:1";
 	godot::String m_aimTip = "RightHand";
+	godot::String m_lookChain = "Spine:0.2 Chest:0.2 UpperChest:0.2 Neck:0.2 Head:0.2";
 };
 
 // Authoring a mod's animation pack: layers a server mod can swap a player's own for (a crouch walk

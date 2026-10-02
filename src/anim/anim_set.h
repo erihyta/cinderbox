@@ -123,6 +123,20 @@ public:
 	{
 		return m_aimTipName;
 	}
+	// What bends with the camera's pitch while the character faces the camera (AnimState::look):
+	// joints with the share of the pitch each one turns by, about the body's side-to-side axis.
+	// The shares add up along the chain: with the default the chest has turned by 0.6 of the pitch
+	// and the head by all of it, so the head looks exactly where the camera does. anim.cfg:
+	//   look = Spine:0.2 Chest:0.2 UpperChest:0.2 Neck:0.2 Head:0.2
+	// Joints the skeleton lacks are left out; "look =" (nothing) turns it off.
+	const std::vector<std::pair<int, float>>& LookJoints() const
+	{
+		return m_lookJoints;
+	}
+	const std::string& LookConfig() const
+	{
+		return m_lookConfig;
+	}
 	// A clip the character's state machine plays, by its Godot animation's name ("Walk"); null if the
 	// character has none. anim.cfg:
 	//   clip.Walk = clip_Walk.ozz
@@ -154,6 +168,7 @@ public:
 
 	// Resolves the names against the skeleton; unknown joints go to `warnings`.
 	void SetAim( const std::string& chain, const std::string& tip, std::string& warnings );
+	void SetLook( const std::string& chain, std::string& warnings );
 
 private:
 	ozz::unique_ptr<ozz::animation::Skeleton> m_skeleton;
@@ -173,6 +188,8 @@ private:
 	int m_aimTip = -1;
 	std::string m_aimConfig = "RightUpperArm:1";
 	std::string m_aimTipName = "RightHand";
+	std::vector<std::pair<int, float>> m_lookJoints;
+	std::string m_lookConfig = "Spine:0.2 Chest:0.2 UpperChest:0.2 Neck:0.2 Head:0.2";
 };
 
 } // namespace cb::anim

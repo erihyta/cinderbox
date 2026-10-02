@@ -1,6 +1,7 @@
 #include "anim_set.h"
 
 #include "joint_math.h"
+#include "expr.h"
 #include "detmath.h"
 #include "profile.h"
 
@@ -651,6 +652,7 @@ std::unique_ptr<AnimSet> AnimSet::CreateProcedural()
 	set->ComputeAttachFrames();
 	std::string ignored;
 	set->SetAim( set->m_aimConfig, set->m_aimTipName, ignored );
+	set->SetLook( set->m_lookConfig, ignored );
 	return set;
 }
 
@@ -760,6 +762,12 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 	}
 	set->SetAim( cfg.count( "aim" ) ? cfg["aim"] : set->m_aimConfig, cfg.count( "aim_tip" ) ? cfg["aim_tip"] : set->m_aimTipName,
 				 warnings );
+	{
+		// The default chain names every spine joint of the profile; a rig with fewer simply bends
+		// at the ones it has. A chain the character wrote itself is checked.
+		std::string unused;
+		set->SetLook( cfg.count( "look" ) ? cfg["look"] : set->m_lookConfig, cfg.count( "look" ) ? warnings : unused );
+	}
 	set->m_description = dir + " (" + std::to_string( set->m_skeleton->num_joints() ) + " joints, " +
 						 ( graph ? "a state machine with " : "no state machine, " ) + std::to_string( set->m_namedClips.size() ) + " clips)";
 	return set;
@@ -799,6 +807,32 @@ void AnimSet::SetAim( const std::string& chain, const std::string& tip, std::str
 	}
 }
 
+void AnimSet::SetLook( const std::string& chain, std::string& warnings )
+{
+	m_lookConfig = chain;
+	m_lookJoints.clear();
+	std::istringstream in( chain );
+	std::string entry;
+	while ( in >> entry )
+	{
+		size_t colon = entry.find( ':' );
+		std::string name = entry.substr( 0, colon );
+		float weight = 1.0f;
+		if ( colon != std::string::npos && expr::ParseFloat( entry.c_str() + colon + 1, entry.size() - colon - 1, weight ) == false )
+		{
+			warnings += "look joint '" + name + "' has a weight that is not a number; ";
+			continue;
+		}
+		int joint = FindJoint( *this, name.c_str() );
+		if ( joint < 0 )
+		{
+			warnings += "look joint '" + name + "' is not in the skeleton; ";
+			continue;
+		}
+		m_lookJoints.emplace_back( joint, weight );
+	}
+}
+
 bool AnimSet::Save( const std::string& dir ) const
 {
 	if ( SaveArchive( dir + "/skeleton.ozz", *m_skeleton ) == false )
@@ -812,6 +846,7 @@ bool AnimSet::Save( const std::string& dir ) const
 	cfg << "lock_root_xz = " << ( m_lockRootXZ ? "true" : "false" ) << "\n";
 	cfg << "aim = " << m_aimConfig << "\n";
 	cfg << "aim_tip = " << m_aimTipName << "\n";
+	cfg << "look = " << m_lookConfig << "\n";
 	int index = 0;
 	for ( const auto& [name, clip] : m_namedClips )
 	{

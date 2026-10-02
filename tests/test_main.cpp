@@ -5,7 +5,7 @@
 //   cb_tests --dump <file>      write per-tick hashes of the reference scenario (cross-build check)
 //   cb_tests --compare <file>   compare against a dump from another build/platform
 //   cb_tests --anim-hash         pose hash of the procedural rig (cross-build check)
-//   cb_tests --anim-hash-parts   the same in parts: the layers alone, with the leg turn, with the aim
+//   cb_tests --anim-hash-parts   the same in parts: the layers alone, with the leg turn, with the aim and the look
 //   cb_tests --save-portable <file> / --load-portable <file>   portable snapshot across builds
 
 #include "anim_controller.h"
@@ -1163,6 +1163,8 @@ void TestCommands()
 	step( 40 );
 	CHECK( sim.PlayerCharacter( 0 )->faceCamera == 1 );
 	CHECK( std::fabs( detmath::WrapAngle( sim.PlayerCharacter( 0 )->facingYaw - detmath::YawToRadians( 16384 ) ) ) < 1e-4f );
+	// Facing the camera, the upper body follows its pitch (fully, a moment after the switch).
+	CHECK( sim.EntityAnimState( p0 )->look == 255 );
 	const AnimState* legs = sim.EntityAnimState( p0 );
 	std::printf( "    strafing: legYaw %.2f backward %d\n", legs->legYaw, int( legs->legsBackward ) );
 	CHECK( std::fabs( std::fabs( legs->legYaw ) - 0.5f * detmath::kPi ) < 0.2f );
@@ -1178,6 +1180,18 @@ void TestCommands()
 	step( 60 );
 	// Freelook again: it turns around to face the way it walks.
 	CHECK( sim.PlayerCharacter( 0 )->faceCamera == 0 );
+	CHECK( sim.EntityAnimState( p0 )->look == 0 );
+	{
+		// It comes and goes over a fifth of a second, not at once.
+		SimCommand* c = command( CommandType::Facing, SlotTarget( 0 ) );
+		c->mode = 1;
+		step( 3 );
+		int rising = sim.EntityAnimState( p0 )->look;
+		CHECK( rising > 0 && rising < 255 );
+		command( CommandType::Facing, SlotTarget( 0 ) );
+		step( 60 );
+		CHECK( sim.EntityAnimState( p0 )->look == 0 );
+	}
 	CHECK( std::fabs( detmath::WrapAngle( sim.PlayerCharacter( 0 )->facingYaw - detmath::YawToRadians( 16384 ) ) ) > 2.5f );
 	CHECK( sim.EntityAnimState( p0 )->legsBackward == 0 );
 	f.inputs[0].moveForward = 0;
@@ -1404,6 +1418,84 @@ void TestPoseTools()
 	aiming.aiming = 0;
 	aimed.Evaluate( aiming );
 	CHECK( b3Distance( position( aimed.Models()[size_t( hand )] ), position( eval.Models()[size_t( hand )] ) ) < 1e-5f );
+
+	// The upper body follows the camera's pitch while the character faces the camera: looking up
+	// leans it back, looking down bows it, and the hips and legs stay where they were.
+	{
+		int head = present::FindJoint( *set, "Head" );
+		int hips = present::FindJoint( *set, "Hips" );
+		int foot = present::FindJoint( *set, "LeftFoot" );
+		float shares = 0.0f;
+		for ( const auto& [joint, share] : set->LookJoints() )
+		{
+			shares += share;
+		}
+		std::printf( "    look chain: %d joints, shares add up to %.2f\n", int( set->LookJoints().size() ), shares );
+		CHECK( set->LookJoints().size() >= 2 && shares > 0.5f && shares <= 1.001f );
+		b3Vec3 restHead = position( eval.Models()[size_t( head )] );
+		bool lowerStays = true;
+		auto headAt = [&]( float pitch, uint8_t look ) {
+			AnimState s;
+			s.aimPitch = pitch;
+			s.look = look;
+			anim::PoseEvaluator e( *set );
+			e.Evaluate( s );
+			lowerStays &= b3Distance( position( e.Models()[size_t( hips )] ), position( eval.Models()[size_t( hips )] ) ) < 1e-5f;
+			lowerStays &= b3Distance( position( e.Models()[size_t( foot )] ), position( eval.Models()[size_t( foot )] ) ) < 1e-5f;
+			return position( e.Models()[size_t( head )] );
+		};
+		b3Vec3 up = headAt( 0.7f, 255 );
+		b3Vec3 down = headAt( -0.7f, 255 );
+		std::printf( "    head at rest (%.2f %.2f %.2f), looking up (%.2f %.2f %.2f), looking down (%.2f %.2f %.2f)\n", restHead.x, restHead.y,
+					 restHead.z, up.x, up.y, up.z, down.x, down.y, down.z );
+		CHECK( lowerStays );
+		CHECK( up.z < restHead.z - 0.03f );						  // leans back
+		CHECK( down.z > restHead.z + 0.03f && down.y < restHead.y ); // bows forward and down
+		CHECK( std::fabs( up.x - restHead.x ) < 1e-4f && std::fabs( down.x - restHead.x ) < 1e-4f );
+		// Not facing the camera (freelook): the pitch is the camera's alone.
+		CHECK( b3Distance( headAt( 0.7f, 0 ), restHead ) < 1e-5f );
+		// Half way in: about half as far.
+		float half = b3Distance( headAt( -0.7f, 128 ), restHead );
+		float whole = b3Distance( down, restHead );
+		CHECK( half > 0.35f * whole && half < 0.65f * whole );
+		// The head ends up turned by the whole of the shares: its own forward follows the camera.
+		{
+			AnimState s;
+			s.aimPitch = 0.7f;
+			s.look = 255;
+			anim::PoseEvaluator e( *set );
+			e.Evaluate( s );
+			b3Vec3 p;
+			b3Quat was, is;
+			float scale;
+			anim::Decompose( eval.Models()[size_t( head )], p, was, scale );
+			anim::Decompose( e.Models()[size_t( head )], p, is, scale );
+			b3Vec3 forward = b3RotateVector( b3MulQuat( is, b3Quat{ { -was.v.x, -was.v.y, -was.v.z }, was.s } ), { 0.0f, 0.0f, 1.0f } );
+			b3CosSin turned = detmath::CosSin( 0.7f * shares );
+			std::printf( "    head forward after looking up 0.7: (%.3f %.3f %.3f), expected (0 %.3f %.3f)\n", forward.x, forward.y, forward.z, turned.sine, turned.cosine );
+			// (Within the deterministic sine's error: five small turns, each a little off.)
+			CHECK( std::fabs( forward.y - turned.sine ) < 0.02f && std::fabs( forward.z - turned.cosine ) < 0.02f );
+		}
+		// With a gun out the arm still ends up exactly on the line of sight.
+		{
+			AnimState s;
+			s.aiming = 1;
+			s.look = 255;
+			s.aimPitch = -0.6f;
+			anim::PoseEvaluator e( *set );
+			e.Evaluate( s );
+			b3CosSin p = detmath::CosSin( -0.6f );
+			b3Vec3 arm = b3Normalize( b3Sub( position( e.Models()[size_t( hand )] ), position( e.Models()[size_t( shoulder )] ) ) );
+			CHECK( b3Dot( arm, b3Vec3{ 0.0f, p.sine, p.cosine } ) > 0.999f );
+		}
+		// A character says which joints, and how much.
+		std::string warnings;
+		auto stiff = anim::AnimSet::CreateProcedural();
+		stiff->SetLook( "", warnings );
+		CHECK( stiff->LookJoints().empty() && warnings.empty() );
+		stiff->SetLook( "Spine:0.5 Nope:1 Head:x", warnings );
+		CHECK( stiff->LookJoints().size() == 1 && warnings.find( "Nope" ) != std::string::npos && warnings.find( "Head" ) != std::string::npos );
+	}
 
 	// Legs turned toward the direction of travel: the hips and legs turn, the upper body does not.
 	{
@@ -2419,8 +2511,10 @@ uint64_t AnimPoseHash( const anim::AnimSet& set, bool legs = true, bool aim = tr
 		uint8_t aiming = uint8_t( NextRandom( rng ) % 2 );
 		float aimYaw = RandomRange( rng, -1.0f, 1.0f );
 		float aimPitch = RandomRange( rng, -1.0f, 1.0f );
+		uint8_t look = uint8_t( NextRandom( rng ) % 256 ); // how far the upper body follows the pitch
 		s.legYaw = legs ? legYaw : 0.0f;
 		s.aiming = aim ? aiming : 0;
+		s.look = aim ? look : 0;
 		s.aimYaw = aimYaw;
 		s.aimPitch = aimPitch;
 		eval.Evaluate( s );
