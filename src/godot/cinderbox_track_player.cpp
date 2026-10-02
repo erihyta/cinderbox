@@ -22,7 +22,7 @@ void CbTrackPlayer::_bind_methods()
 {
 	ClassDB::bind_method( D_METHOD( "setup", "library", "root" ), &CbTrackPlayer::setup );
 	ClassDB::bind_method( D_METHOD( "begin_frame" ), &CbTrackPlayer::begin_frame );
-	ClassDB::bind_method( D_METHOD( "play_at", "channel", "clip", "time", "loops" ), &CbTrackPlayer::play_at );
+	ClassDB::bind_method( D_METHOD( "play_at", "channel", "clip", "time", "loops", "restarted" ), &CbTrackPlayer::play_at, DEFVAL( false ) );
 	ClassDB::bind_method( D_METHOD( "end_frame" ), &CbTrackPlayer::end_frame );
 	ClassDB::bind_method( D_METHOD( "get_channel_clip", "channel" ), &CbTrackPlayer::get_channel_clip );
 	ClassDB::bind_method( D_METHOD( "clear_caches" ), &CbTrackPlayer::clear_caches );
@@ -98,7 +98,7 @@ void CbTrackPlayer::begin_frame()
 	}
 }
 
-void CbTrackPlayer::play_at( int channel, const String& clip, double time, bool loops )
+void CbTrackPlayer::play_at( int channel, const String& clip, double time, bool loops, bool restarted )
 {
 	if ( channel < 0 || channel > 16 || m_library.is_null() )
 	{
@@ -111,9 +111,10 @@ void CbTrackPlayer::play_at( int channel, const String& clip, double time, bool 
 		Reset( c ); // nothing of its own on this clip
 		return;
 	}
-	if ( clip != c.clip )
+	if ( clip != c.clip || ( restarted && time < c.time ) )
 	{
-		// A new clip: its values at `time`; keys before `time` are history and do not fire.
+		// A new clip, or the same one started over: its values at `time`; keys before `time` are
+		// history and do not fire.
 		c.player->play( clip );
 		Seek( c, time );
 		c.clip = clip;

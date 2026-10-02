@@ -146,6 +146,12 @@ struct AnimGraphState
 	AnimExpr inputY;
 	std::vector<std::array<int, 3>> triangles; // point indices, as Godot triangulated them
 	std::vector<AnimGraphTransition> transitions; // in the order they are tried
+	// The transitions of other states that lead here on a mod event ("pistol.fired"): while the
+	// layer is already in this state, the event starts it over, with that transition's crossfade.
+	// A shot fired during the recoil of the last one plays its recoil again, instead of being
+	// ignored until the clip has ended. (Godot's state machine has no transition from a state to
+	// itself, so this is derived, not authored.)
+	std::vector<AnimGraphTransition> restarts;
 };
 
 struct AnimGraphLayer

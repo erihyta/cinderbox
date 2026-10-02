@@ -3022,6 +3022,39 @@ void TestMannequinCharacter()
 	CHECK( state().graph[1].state == stateOf( 1, "Shoot" ) );
 	step( 60 );
 	CHECK( state().graph[1].state == stateOf( 1, "Pistol" ) );
+	// Rapid fire: a shot during the recoil of the last one starts the recoil over (the pistol fires
+	// every 0.2 s, the clip is 0.63 s long), and the state lasts until the last shot's has played.
+	{
+		const float dt = 1.0f / float( sim.Config().tickRate );
+		command( CommandType::Event, 0, 0, 0 );
+		step( 12 );
+		float before = state().graph[1].stateTime;
+		command( CommandType::Event, 0, 0, 0 );
+		step( 1 );
+		std::printf( "    a second shot %.2f s into the first: the state is %.3f s old again\n", before, state().graph[1].stateTime );
+		CHECK( state().graph[1].state == stateOf( 1, "Shoot" ) && before > 0.15f );
+		CHECK( state().graph[1].stateTime <= 1.5f * dt && state().graph[1].time <= 1.5f * dt );
+		// It fades from where the last recoil was, not from the idle.
+		CHECK( state().graph[1].previous == state().graph[1].state && state().graph[1].previousTime > 0.15f );
+		// The viewer is told, so the keys inside the clip (a sound, a flash) are due again; only
+		// for the moment of the crossfade.
+		auto restarted = [&]() {
+			bool any = false;
+			for ( const anim::ActiveClip& clip : anim::ActiveClips( state(), *graph ) )
+			{
+				any |= clip.channel == 1 && clip.restarted;
+			}
+			return any;
+		};
+		CHECK( restarted() );
+		step( 11 );
+		CHECK( restarted() == false );
+		command( CommandType::Event, 0, 0, 0 );
+		step( 21 ); // 45 ticks after the first shot: one play of the clip would have ended by now
+		CHECK( state().graph[1].state == stateOf( 1, "Shoot" ) );
+		step( 15 );
+		CHECK( state().graph[1].state == stateOf( 1, "Pistol" ) );
+	}
 
 	// The bat: the swing's marker emits melee.strike once, 0.4 s in.
 	command( CommandType::Stance, 1, 0, 0 );

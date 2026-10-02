@@ -141,6 +141,21 @@ func _run(tracks: CbTrackPlayer, light: OmniLight3D, counter: Node) -> void:
 	_frame(tracks, [[0, "swing", 0.9, false]])
 	_expect(counter.hits == 0, "a long jump fires nothing", "%d hits" % counter.hits)
 
+	# Started over while playing (a shot during the last shot's recoil): the key fires again. The
+	# flag stays up for the few frames of the crossfade; only the step back counts.
+	_frame(tracks, [])
+	counter.hits = 0
+	t = 0.0
+	while t <= 0.6:
+		_frame(tracks, [[0, "swing", t, false]])
+		t += 1.0 / 60.0
+	var first_play: int = counter.hits
+	t = 1.0 / 60.0
+	while t <= 0.6:
+		_frame(tracks, [[0, "swing", t, false, t < 0.05]])
+		t += 1.0 / 60.0
+	_expect(first_play == 1 and counter.hits == 2, "a clip started over fires its keys again", "%d then %d hits" % [first_play, counter.hits])
+
 	# A loop fires every cycle: two seconds of a half-second loop.
 	counter.hits = 0
 	t = 0.0
@@ -165,7 +180,7 @@ func _run(tracks: CbTrackPlayer, light: OmniLight3D, counter: Node) -> void:
 func _frame(tracks: CbTrackPlayer, clips: Array) -> void:
 	tracks.begin_frame()
 	for c in clips:
-		tracks.play_at(c[0], c[1], c[2], c[3])
+		tracks.play_at(c[0], c[1], c[2], c[3], c.size() > 4 and c[4])
 	tracks.end_frame()
 
 

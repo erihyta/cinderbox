@@ -598,7 +598,7 @@ void CinderboxClient::UpdateNodes()
 					auto clips = library.graph ? anim::ActiveClips( state, *library.graph, library.packs ) : std::vector<anim::ActiveClip>{};
 					for ( const anim::ActiveClip& clip : clips )
 					{
-						tracks->play_at( clip.channel, TrackClipName( String::utf8( clip.name.c_str() ) ), clip.time, clip.loops );
+						tracks->play_at( clip.channel, TrackClipName( String::utf8( clip.name.c_str() ) ), clip.time, clip.loops, clip.restarted );
 					}
 					tracks->end_frame();
 				}
