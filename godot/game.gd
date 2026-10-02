@@ -66,6 +66,11 @@ var yaw := PI # facing +Z like the server's spawn orientation
 var pitch := -0.35
 var distance := 6.0
 var _camera_distance := 6.0 # after the map got in the way
+## Looking out of the character's head instead of from behind it (the key left of 1 toggles it).
+var first_person := false
+const FIRST_PERSON_AHEAD := 0.14
+const FIRST_PERSON_UP := 0.09
+var _own_skeleton: Node
 var args := {}
 var hud: Node
 var show_debug := true
@@ -171,7 +176,7 @@ func _parse_args() -> Dictionary:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * MOUSE_SENSITIVITY * menu.sensitivity
-		pitch = clamp(pitch - event.relative.y * MOUSE_SENSITIVITY * menu.sensitivity, -1.3, 0.4)
+		pitch = clamp(pitch - event.relative.y * MOUSE_SENSITIVITY * menu.sensitivity, -1.3, _max_pitch())
 	elif event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_WHEEL_UP:
@@ -181,6 +186,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			MOUSE_BUTTON_LEFT:
 				if _joined and not menu.is_open():
 					Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_QUOTELEFT:
+		# The key left of 1, whatever the layout prints on it.
+		first_person = not first_person
+		pitch = minf(pitch, _max_pitch())
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_ESCAPE:
@@ -544,11 +553,55 @@ func _send_input(delta: float) -> void:
 	client.set_input(move, yaw, pitch, jump, sprint, actions)
 
 
+## How far up the camera may look: behind the player it would go under the floor; from its eyes
+## it can look at the sky.
+func _max_pitch() -> float:
+	return 1.4 if first_person else 0.4
+
+
+## First person: from the head of the posed body (so it bows and leans with the upper body), a
+## little ahead of the face. Only your own head is not drawn: looking down shows your chest, arms and legs.
+## False while there is no living body to look out of.
+func _update_first_person() -> bool:
+	var me: int = client.get_local_net_id()
+	if not first_person or me == 0 or client.is_local_player_dead() or client.get_entity_node(me) == null:
+		return false
+	var head: Vector3 = client.get_bone_position(me, "Head")
+	camera.rotation = Vector3(pitch, yaw, 0)
+	var forward: Vector3 = -camera.global_transform.basis.z
+	camera.global_position = head + forward * FIRST_PERSON_AHEAD + camera.global_transform.basis.y * FIRST_PERSON_UP
+	return true
+
+
+## The local player's own head is not drawn while looking out of it.
+func _hide_own_head(hide: bool) -> void:
+	var node: Node = client.get_entity_node(client.get_local_net_id()) if client.get_local_net_id() != 0 else null
+	var skeleton: Node = null
+	if node != null:
+		var found := node.find_children("*", "CinderboxSkeleton", true, false)
+		skeleton = node if node is CinderboxSkeleton else (found[0] if found.size() > 0 else null)
+	if skeleton != _own_skeleton and is_instance_valid(_own_skeleton):
+		_own_skeleton.hidden_bone = ""
+	_own_skeleton = skeleton
+	if skeleton != null:
+		skeleton.hidden_bone = "Head" if hide else ""
+
+
 func _update_camera() -> void:
+	camera.near = 0.03 if first_person else 0.05
+	var inside := _update_first_person()
+	_hide_own_head(inside)
+	if inside:
+		if _shake > 0.0:
+			camera.global_position += Vector3(
+				auto_rng.randf_range(-_shake, _shake),
+				auto_rng.randf_range(-_shake, _shake),
+				auto_rng.randf_range(-_shake, _shake)) * 0.3
+		return
 	# The player's head, or its ragdoll while dead. The server casts the crosshair ray through the
 	# same point, so what is under the crosshair is what gets hit.
 	var target: Vector3 = client.get_camera_target()
-	camera.rotation = Vector3(pitch, yaw, 0)
+	camera.rotation = Vector3(minf(pitch, 0.4), yaw, 0)
 	# The map pulls the camera in at once, and it eases back out when the way is clear.
 	var back: Vector3 = camera.global_transform.basis.z
 	var free: float = client.get_camera_distance(target, back, distance, CAMERA_RADIUS)
@@ -568,13 +621,13 @@ func _update_help() -> void:
 	if help == null:
 		return
 	if _replay != "":
-		help.text = "Space pause   Left/Right -/+5 s   Up/Down speed   , . step   Home restart   N next player   Tab scores   Mouse orbit   Wheel zoom   Esc menu   F1 stats"
+		help.text = "Space pause   Left/Right -/+5 s   Up/Down speed   , . step   Home restart   N next player   Tab scores   Mouse orbit   Wheel zoom   ` first person   Esc menu   F1 stats"
 		return
 	var text := "WASD move   Shift sprint   Space jump"
 	for action in _actions:
 		var key: String = String(action["key"]).replace("Mouse", "Mouse ")
 		text += "   %s %s" % [key, String(action["name"]).replace("_", " ")]
-	help.text = text + "   Tab scores   Mouse orbit   Wheel zoom   Esc menu   F1 stats"
+	help.text = text + "   Tab scores   Mouse orbit   Wheel zoom   ` first person   Esc menu   F1 stats"
 
 
 func _update_hud() -> void:

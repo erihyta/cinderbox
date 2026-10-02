@@ -92,6 +92,18 @@ public:
 		return m_useSlotColor;
 	}
 
+	// A bone that is not drawn (humanoid-profile name, "" for none): shrunk to nothing after the
+	// pose is applied, with everything below it. The pose itself is untouched (joint transforms,
+	// sockets and hit tests do not change): a first-person camera hides its own head this way.
+	void set_hidden_bone( const godot::String& value )
+	{
+		m_hiddenBone = value;
+	}
+	godot::String get_hidden_bone() const
+	{
+		return m_hiddenBone;
+	}
+
 	void set_retarget( bool value );
 	bool get_retarget() const
 	{
@@ -157,6 +169,9 @@ private:
 	void Bind( godot::Skeleton3D* target, const anim::AnimSet& set );
 	void EnsureModifier( godot::Skeleton3D* target );
 	void DriveSkeleton( godot::Skeleton3D* target, const ozz::vector<ozz::math::Float4x4>& models );
+	void HideBone( godot::Skeleton3D* target );
+	godot::String m_hiddenBone;
+	int m_shrunkBone = -1; // the target bone that is shrunk now
 
 	// The last applied pose, for joint lookups.
 	const anim::AnimSet* m_lastSet = nullptr;

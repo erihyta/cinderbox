@@ -100,6 +100,8 @@ void CinderboxSkeleton::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_body_color", "color" ), &CinderboxSkeleton::set_body_color );
 	ClassDB::bind_method( D_METHOD( "get_body_color" ), &CinderboxSkeleton::get_body_color );
 	ClassDB::bind_method( D_METHOD( "preview_pose", "ground_speed", "phase" ), &CinderboxSkeleton::preview_pose );
+	ClassDB::bind_method( D_METHOD( "set_hidden_bone", "value" ), &CinderboxSkeleton::set_hidden_bone );
+	ClassDB::bind_method( D_METHOD( "get_hidden_bone" ), &CinderboxSkeleton::get_hidden_bone );
 	ClassDB::bind_method( D_METHOD( "set_retarget", "value" ), &CinderboxSkeleton::set_retarget );
 	ClassDB::bind_method( D_METHOD( "get_retarget" ), &CinderboxSkeleton::get_retarget );
 	ClassDB::bind_method( D_METHOD( "get_joint_global_transform", "profile_name" ), &CinderboxSkeleton::get_joint_global_transform );
@@ -112,6 +114,8 @@ void CinderboxSkeleton::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::COLOR, "body_color" ), "set_body_color", "get_body_color" );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "use_slot_color" ), "set_use_slot_color", "get_use_slot_color" );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "retarget" ), "set_retarget", "get_retarget" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "hidden_bone", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE ), "set_hidden_bone",
+				  "get_hidden_bone" );
 }
 
 void CinderboxSkeleton::_ready()
@@ -271,6 +275,7 @@ void CinderboxSkeleton::ApplyPose( const anim::AnimSet& set, const ozz::vector<o
 			Bind( target, set );
 		}
 		DriveSkeleton( target, models );
+		HideBone( target );
 		EnsureModifier( target );
 	}
 }
@@ -303,6 +308,7 @@ void CinderboxSkeleton::ReapplyPose( Skeleton3D* target )
 		Bind( target, *m_lastSet );
 	}
 	DriveSkeleton( target, m_lastModels );
+	HideBone( target );
 }
 
 void CbPoseModifier::set_driver( CinderboxSkeleton* driver )
@@ -447,6 +453,35 @@ void CinderboxSkeleton::Bind( Skeleton3D* target, const anim::AnimSet& set )
 			// A taller character's hips have to travel further for the same crouch.
 			m_hipScale = m_sourceHipsRest.y > 0.001f ? float( m_targetHipsRest.y / m_sourceHipsRest.y ) : 1.0f;
 		}
+	}
+}
+
+void CinderboxSkeleton::HideBone( Skeleton3D* target )
+{
+	int bone = -1;
+	if ( m_hiddenBone.is_empty() == false && m_lastSet != nullptr )
+	{
+		CharString name = m_hiddenBone.utf8();
+		auto names = m_lastSet->Skeleton().joint_names();
+		for ( size_t j = 0; j < names.size() && j < m_boneMap.size(); ++j )
+		{
+			const char* profile = anim::ProfileName( names[j] );
+			if ( profile != nullptr && std::strcmp( profile, name.get_data() ) == 0 )
+			{
+				bone = m_boneMap[j];
+				break;
+			}
+		}
+	}
+	// Retargeting drives rotations only, so the bone that was shrunk is given its size back here.
+	if ( m_shrunkBone >= 0 && m_shrunkBone != bone && m_shrunkBone < target->get_bone_count() )
+	{
+		target->set_bone_pose_scale( m_shrunkBone, Vector3( 1, 1, 1 ) );
+	}
+	m_shrunkBone = bone;
+	if ( bone >= 0 && bone < target->get_bone_count() )
+	{
+		target->set_bone_pose_scale( bone, Vector3( 0.0001f, 0.0001f, 0.0001f ) );
 	}
 }
 
