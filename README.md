@@ -1294,7 +1294,7 @@ Conditions and expressions read simulation values, never scripts:
 | `aiming`, `backward`, `state_time` | a mod's Aim; walking backwards; seconds in the current state |
 | a stance's name (`pistol`, `melee`) | true while any layer has it (mods' `SetStance`) |
 | a mod event's name (`pistol.fired`, `attack`) | on the tick it is emitted at this player: its value (1 if the value is 0), so `attack` and `attack == 2` both work: a trigger |
-| ... the same event, while already in the state it leads to | starts that state over, with the transition's crossfade: a shot fired during the last one's recoil plays the recoil again (the pistol fires every 0.2 s, its clip is 0.63 s). Godot has no transition from a state to itself, so the bake derives this from the transition you drew (`Pistol -> Shoot` on `pistol.fired`) |
+| ... the same event, while already in the state it leads to | starts that state over, with the transition's crossfade: a shot fired during the last one's recoil plays the recoil again (the pistol fires every 0.2 s, its clip is 0.63 s). Godot has no transition from a state to itself, so the bake derives this from the transition you drew (`Pistol -> Shoot` on `pistol.fired`). The clip's own keys (a sound, a flash keyed inside it) fire again too, as long as that transition has a crossfade |
 | a board field's name (`loadout.slot`) | the player's value (or the global one) |
 | an item kind's name (`melee.bat`) | true while the player holds one, in any socket |
 

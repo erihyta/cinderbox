@@ -348,7 +348,7 @@ loads mods; `workshop.gd` is where items are.
 | Area | Limit |
 |---|---|
 | Prediction | a reaction played on a wrong guess is not taken back; the led body holds what the state says about movement still over the lead; packs' layers are not checked for what they read; a predicted event's clock is one tick ahead on the frame its answer arrives |
-| Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; a state started over by an event (rapid fire) does not fire its keys again; packs' non-bone tracks are not played |
+| Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; a state started over by an event (rapid fire) fires its keys again only when the transition has a crossfade (that is how the viewer tells a restart from a rollback); packs' non-bone tracks are not played |
 | State machines | no nested machines, OneShot/Add/TimeScale nodes, `travel()`, or crossfade curves |
 | Characters | one character per server; capsule size and speeds are not per character; the scene ships its animations' bone tracks next to the ozz clips |
 | Mods | compiled into the server (no hot-loading); events between mods are a tick late; a board has 32 names per scope |
