@@ -70,6 +70,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M62: one animation system: every character is a state machine (the placeholder rig's is built in); the old clip blending, stance clip tables, `CinderboxAnimator` and the glTF converter are gone | done |
 | M63: DESIGN.md by subsystem instead of by milestone | done |
 | M64: predicted state in the viewer: a prediction also says what the server's answer changes, so the ammo count drops and the swing or the recoil starts on the click | done |
+| M65: a hot bat cools by itself wherever it is (put away or dropped while hot, it stayed hot) | done |
 
 ## Building
 

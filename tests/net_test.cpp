@@ -1561,6 +1561,7 @@ void TestMelee()
 	uint16_t fire = schema.ActionMask( "fire" );
 	uint16_t bat = schema.ActionMask( "slot_3" );
 	uint16_t pistol = schema.ActionMask( "slot_2" );
+	uint16_t hands = schema.ActionMask( "slot_1" );
 	int full = schema.FindLayer( "full" );
 	int ready = schema.FindStance( "melee" );
 	int swing = schema.FindStance( "melee_swing" );
@@ -1575,6 +1576,14 @@ void TestMelee()
 			in.actions = pistol;
 		}
 		else if ( tick >= 160 && tick < 170 )
+		{
+			in.actions = bat;
+		}
+		else if ( tick >= 245 && tick < 255 )
+		{
+			in.actions = hands; // the bat goes on the back, still hot from the first hit
+		}
+		else if ( tick >= 365 && tick < 375 )
 		{
 			in.actions = bat;
 		}
@@ -1602,10 +1611,14 @@ void TestMelee()
 	bool gunAfterBat = false;
 	bool heldBat = false;
 	bool batWasHot = false;
+	// The bat cools by itself, wherever it is: put away while hot, it is cold two seconds after the hit.
+	uint32_t hotBat = 0;
+	bool hotOnTheBack = false;
+	bool coldOnTheBack = false;
 	int killedEvent = schema.FindEvent( "combat.killed" );
 	uint32_t kills = 0;
 	std::map<uint32_t, bool> counted;
-	h.RunUntil( 8.0, [&]( double ) {
+	h.RunUntil( 11.0, [&]( double ) {
 		uint32_t attacker = server.PlayerNetId( h.bots[0].client->Slot() );
 		if ( const AnimState* a = server.EntityAnimState( attacker ) )
 		{
@@ -1619,6 +1632,16 @@ void TestMelee()
 				gunAfterBat |= heldBat && kind == uint16_t( gunKind );
 				heldBat |= kind == uint16_t( batKind );
 				batWasHot |= server.BoardValue( bat, hot->slot ) != 0;
+				if ( hotBat == 0 && kind == uint16_t( batKind ) && server.BoardValue( bat, hot->slot ) != 0 )
+				{
+					hotBat = bat;
+				}
+			}
+			if ( hotBat != 0 && server.HeldItemOf( attacker, uint32_t( hand ) ) != hotBat && server.FindEntity( hotBat ).is_valid() )
+			{
+				bool isHot = server.BoardValue( hotBat, hot->slot ) != 0;
+				hotOnTheBack |= isHot && server.Tick() < 300;
+				coldOnTheBack |= isHot == false && server.Tick() >= 356 && server.Tick() < 364;
 			}
 		}
 		const SimGlobals& g = server.Globals();
@@ -1642,6 +1665,8 @@ void TestMelee()
 	CHECK( gunAfterBat == false );
 	CHECK( heldBat );
 	CHECK( batWasHot );
+	std::printf( "    put away hot: still hot on the back %d, cold there two seconds after the hit %d\n", int( hotOnTheBack ), int( coldOnTheBack ) );
+	CHECK( hotOnTheBack && coldOnTheBack );
 	CHECK( kills >= 1 );
 	uint32_t attackerId = server.PlayerNetId( h.bots[0].client->Slot() );
 	CHECK( server.BoardValue( attackerId, schema.FindField( "combat.kills" )->slot ) >= 1 );
