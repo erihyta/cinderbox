@@ -1733,6 +1733,65 @@ void TestMeleePitch()
 	}
 }
 
+// A shot goes at what is under the crosshair of the camera the player looks through. Turned 17
+// degrees away from the other player, the camera behind the shooter looks past them and so does
+// the shot. Over the right shoulder the same turn puts the crosshair on them (the line of sight
+// starts 0.45 m to the side), and the shot, from the head, goes there. First person looks straight.
+void TestAimViews()
+{
+	Harness h( 47804 );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t pistol = schema.ActionMask( "slot_2" );
+	int healthSlot = schema.FindField( "combat.health" )->slot;
+	// Spawn points are 1.5 m apart: the line from the shoulder turns by asin( 0.45 / 1.5 ) to meet it.
+	const uint16_t straight = 16384;
+	const uint16_t turned = uint16_t( straight + 3178 );
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraPitch = kAimAtChest;
+		in.actions = pistol;
+		in.cameraYaw = turned;
+		in.view = uint8_t( ViewMode::ThirdPerson );
+		if ( tick >= 330 && tick < 390 )
+		{
+			in.view = uint8_t( ViewMode::ShoulderRight );
+		}
+		else if ( tick >= 390 )
+		{
+			in.cameraYaw = straight;
+			in.view = uint8_t( ViewMode::FirstPerson );
+		}
+		bool window = ( tick > 200 && tick < 300 ) || ( tick >= 340 && tick < 345 ) || ( tick >= 400 && tick < 405 );
+		if ( window && ( tick % 20 ) < 3 )
+		{
+			in.actions |= fire;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; };
+
+	Simulation& server = h.server.Sim();
+	auto health = [&]() { return server.BoardValue( server.PlayerNetId( h.bots[1].client->Slot() ), healthSlot ); };
+	h.RunUntil( 5.3 );
+	int beside = health();
+	h.RunUntil( 6.3 );
+	int shoulder = health();
+	h.RunUntil( 7.5 );
+	int firstPerson = health();
+	std::printf( "    health: 5 shots turned away from behind %d, one with the same turn over the shoulder %d, one straight in first person %d\n", beside, shoulder,
+				 firstPerson );
+	CHECK( beside == 100 );
+	CHECK( shoulder < beside );
+	CHECK( firstPerson < shoulder );
+	h.Report();
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 void TestDeathmatch()
 {
 	Harness h( 47799, {}, {}, { { "deathmatch.kills", "2" }, { "deathmatch.pause_seconds", "2" } } );
@@ -2308,6 +2367,7 @@ int main( int argc, char** argv )
 		{ "private_fields", TestPrivateFields },
 		{ "melee", TestMelee },
 		{ "melee_pitch", TestMeleePitch },
+		{ "aim_views", TestAimViews },
 		{ "pickup", TestPickup },
 		{ "inventory", TestInventory },
 		{ "item_layers", TestItemLayers },

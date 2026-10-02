@@ -68,8 +68,8 @@ var distance := 6.0
 var _camera_distance := 6.0 # after the map got in the way
 ## Looking out of the character's head instead of from behind it (the key left of 1 toggles it).
 var first_person := false
-const FIRST_PERSON_AHEAD := 0.14
-const FIRST_PERSON_UP := 0.09
+## Third person: the camera over a shoulder (1 right, -1 left) or straight behind (0). Q cycles.
+var shoulder := 0
 var _own_skeleton: Node
 var args := {}
 var hud: Node
@@ -190,6 +190,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		# The key left of 1, whatever the layout prints on it.
 		first_person = not first_person
 		pitch = minf(pitch, _max_pitch())
+	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_Q and _replay == "":
+		shoulder = 1 if shoulder == 0 else (-1 if shoulder > 0 else 0)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_ESCAPE:
@@ -550,7 +552,16 @@ func _send_input(delta: float) -> void:
 		# Actions only count while the game has the mouse, so the click that captures it is not a shot.
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			actions = _action_bits()
-	client.set_input(move, yaw, pitch, jump, sprint, actions)
+	client.set_input(move, yaw, pitch, jump, sprint, actions, _view())
+
+
+## Which camera the player looks through, as the server is told (ViewMode): 0 behind, 1 first
+## person, 2 / 3 over the right / left shoulder. The server starts the line of sight where this
+## camera's does, so what is under the crosshair is what a shot is aimed at.
+func _view() -> int:
+	if first_person:
+		return 1
+	return 2 if shoulder > 0 else (3 if shoulder < 0 else 0)
 
 
 ## How far up the camera may look: behind the player it would go under the floor; from its eyes
@@ -566,10 +577,8 @@ func _update_first_person() -> bool:
 	var me: int = client.get_local_net_id()
 	if not first_person or me == 0 or client.is_local_player_dead() or client.get_entity_node(me) == null:
 		return false
-	var head: Vector3 = client.get_bone_position(me, "Head")
 	camera.rotation = Vector3(pitch, yaw, 0)
-	var forward: Vector3 = -camera.global_transform.basis.z
-	camera.global_position = head + forward * FIRST_PERSON_AHEAD + camera.global_transform.basis.y * FIRST_PERSON_UP
+	camera.global_position = client.get_view_position(1, camera.global_transform.basis)
 	return true
 
 
@@ -598,10 +607,10 @@ func _update_camera() -> void:
 				auto_rng.randf_range(-_shake, _shake),
 				auto_rng.randf_range(-_shake, _shake)) * 0.3
 		return
-	# The player's head, or its ragdoll while dead. The server casts the crosshair ray through the
-	# same point, so what is under the crosshair is what gets hit.
-	var target: Vector3 = client.get_camera_target()
+	# The point above the player the camera orbits (moved to a shoulder, if it is), or its ragdoll
+	# while dead. The server's line of sight passes through the same point.
 	camera.rotation = Vector3(minf(pitch, 0.4), yaw, 0)
+	var target: Vector3 = client.get_view_position(_view(), camera.global_transform.basis)
 	# The map pulls the camera in at once, and it eases back out when the way is clear.
 	var back: Vector3 = camera.global_transform.basis.z
 	var free: float = client.get_camera_distance(target, back, distance, CAMERA_RADIUS)
@@ -621,13 +630,13 @@ func _update_help() -> void:
 	if help == null:
 		return
 	if _replay != "":
-		help.text = "Space pause   Left/Right -/+5 s   Up/Down speed   , . step   Home restart   N next player   Tab scores   Mouse orbit   Wheel zoom   ` first person   Esc menu   F1 stats"
+		help.text = "Space pause   Left/Right -/+5 s   Up/Down speed   , . step   Home restart   N next player   Tab scores   Mouse orbit   Wheel zoom   ` first person   Q shoulder   Esc menu   F1 stats"
 		return
 	var text := "WASD move   Shift sprint   Space jump"
 	for action in _actions:
 		var key: String = String(action["key"]).replace("Mouse", "Mouse ")
 		text += "   %s %s" % [key, String(action["name"]).replace("_", " ")]
-	help.text = text + "   Tab scores   Mouse orbit   Wheel zoom   ` first person   Esc menu   F1 stats"
+	help.text = text + "   Tab scores   Mouse orbit   Wheel zoom   ` first person   Q shoulder   Esc menu   F1 stats"
 
 
 func _update_hud() -> void:
