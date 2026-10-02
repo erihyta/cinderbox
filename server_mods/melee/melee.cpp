@@ -14,6 +14,7 @@
 
 #include "mod_api.h"
 
+#include <algorithm>
 #include <array>
 #include <vector>
 
@@ -44,7 +45,14 @@ struct Swinger
 	bool struck = false;
 	uint32_t swingStart = 0;
 	uint32_t nextSwing = 0;
-	uint32_t hotUntil = 0; // 0: the bat is cold
+};
+
+// A bat that hit someone, and when it cools. By the item, not by who held it: it cools the same
+// on a back, on the ground or in someone else's hand.
+struct HotBat
+{
+	uint32_t netId = 0;
+	uint32_t until = 0;
 };
 
 class MeleeMod final : public ServerMod
@@ -91,6 +99,18 @@ public:
 		// Characters whose swing carries a strike marker hit on it; the rest on the timer.
 		bool marked = ctx.AnimationEmits( m_strike );
 		std::vector<ModEventRecord> recent = marked ? ctx.RecentEvents() : std::vector<ModEventRecord>();
+		for ( size_t i = 0; i < m_hotBats.size(); )
+		{
+			if ( tick >= m_hotBats[i].until )
+			{
+				ctx.Set( m_hotBats[i].netId, m_hot, 0 ); // nothing happens if the bat is gone
+				m_hotBats.erase( m_hotBats.begin() + std::ptrdiff_t( i ) );
+			}
+			else
+			{
+				++i;
+			}
+		}
 		for ( int i = 0; i < kMaxPlayers; ++i )
 		{
 			PlayerSlot slot = PlayerSlot( i );
@@ -115,7 +135,6 @@ public:
 			{
 				s.out = holding;
 				s.swinging = false;
-				s.hotUntil = 0;
 				ctx.SetStance( target, m_full, holding ? m_ready : StanceHandle{} );
 				if ( holding )
 				{
@@ -126,12 +145,6 @@ public:
 			{
 				continue;
 			}
-			if ( s.hotUntil != 0 && tick >= s.hotUntil )
-			{
-				s.hotUntil = 0;
-				ctx.Set( ItemTarget( slot, m_hand ), m_hot, 0 );
-			}
-
 			if ( s.swinging )
 			{
 				uint32_t elapsed = tick - s.swingStart;
@@ -145,9 +158,18 @@ public:
 					s.struck = true;
 					if ( Strike( ctx, slot, netId ) )
 					{
-						// A hit heats the bat: one field on the bat itself.
-						ctx.Set( ItemTarget( slot, m_hand ), m_hot, 1 );
-						s.hotUntil = tick + Ticks( ctx, kHotSeconds );
+						// A hit heats the bat: one field on the bat itself, until it cools.
+						ctx.Set( inHand, m_hot, 1 );
+						uint32_t until = tick + Ticks( ctx, kHotSeconds );
+						auto hot = std::find_if( m_hotBats.begin(), m_hotBats.end(), [&]( const HotBat& b ) { return b.netId == inHand; } );
+						if ( hot != m_hotBats.end() )
+						{
+							hot->until = until;
+						}
+						else
+						{
+							m_hotBats.push_back( { inHand, until } );
+						}
 					}
 				}
 				if ( elapsed >= Ticks( ctx, kSwingSeconds ) )
@@ -205,6 +227,7 @@ private:
 	}
 
 	std::array<Swinger, kMaxPlayers> m_swingers{};
+	std::vector<HotBat> m_hotBats;
 	ActionHandle m_fire;
 	ItemKindHandle m_bat;
 	SocketHandle m_hand;
