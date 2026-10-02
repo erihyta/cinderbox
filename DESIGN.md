@@ -354,6 +354,7 @@ loads mods; `workshop.gd` is where items are.
 | Mods | compiled into the server (no hot-loading); events between mods are a tick late; a board has 32 names per scope |
 | Private fields | per player, not per entity; not in recordings or view files (they read 0 there); entities cannot be hidden from a client: each simulates the whole world, so there is no fog of war |
 | Combat | no teams, no spectators |
+| First person | the camera sits on the posed head, the crosshair ray starts at the fixed eye point (`EyePosition`): looking steeply down, what is under the crosshair up close is off by up to about 9 cm; the bat's strike is rays in the look direction, not the bat's path through the pose |
 | Items | one body shape per item; two kinds sharing a holster socket overlap |
 | Packs | the checks do not make Godot's or ozz's parsers safe against malformed files |
 | Menu | no server browser; no key rebinding page |
@@ -471,3 +472,4 @@ Netcode numbers from when they were taken (M4, M5); frame sizes are in [The view
 67. **M67** (done): one expression language (`cb_expr`): the state machine compiler, `present/fields` and the cue addon parse the same grammar (`and` / `or` / `not`, arithmetic, field against field, `?name`, paths with a colon) instead of three parsers; `value_expression` and `volume_expression` on `CbReaction`, expressions in `CbFieldBinding.field` and `CbFieldLabel`'s `{...}`; the state machine's programs and both reference hashes unchanged.
 68. **M68** (done): streaming clients removed: `src/stream`, the `cinderbox_stream` extension, `Hello.stream` / `StreamWelcome` / `View` / `StreamInput` (protocol 20), `--stream` and `--stream-rate`, `ServerMod::Sees`, `present/visibility` and the `fog` mod. Every client simulates; view files keep the compact codec.
 69. **M69** (done): the upper body follows the camera: `AnimState::look` (a byte that was reserved: 0 to 255, rising over 0.2 s while `Character::faceCamera`), the pose turns the character's look chain (`anim.cfg` `look`, `CbCharacter.look_chain`) about the side axis by `aimPitch` times it, before the aim chain; hitboxes follow; new reference hashes (the state and the pose hash now cover it).
+70. **M70** (done): the bat's strike is pitched with the look (it was a level fan, so looking down hit nothing low); a first-person camera in `game.gd` on the posed head (`CinderboxSkeleton.hidden_bone` shrinks the viewer's own head after the pose is applied; the pose, sockets and hit tests are untouched).

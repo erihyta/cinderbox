@@ -75,6 +75,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M67: one expression language: reactions, predictions, HUD nodes and state machines parse the same text (`cb_expr`): `and` / `or`, arithmetic, a field against a field; a reaction's property and volume can be expressions | done |
 | M68: streaming clients removed: every client simulates; the `cinderbox_stream` extension, `--stream`, the `fog` mod and `ServerMod::Sees` are gone (protocol 20) | done |
 | M69: the upper body follows the camera: while a character faces the camera (a weapon is out), its spine, neck and head bend with the camera's pitch, in the pose everyone draws and hit tests use | done |
+| M70: the bat strikes where you look, up and down too; a first-person camera on the key left of 1 | done |
 
 ## Building
 
@@ -255,7 +256,7 @@ The mods that ship:
 |---|---|---|
 | `combat` | `combat.health`, `.max_health`, `.dead`, `.kills`, `.deaths`; hears `combat.damage`, `combat.heal`, `game.round_start`; says `combat.hurt`, `combat.killed`, `combat.respawned` | the one place health lives: applies any mod's damage, credits the kill, leaves a ragdoll, brings the player back. See [The combat mod](#the-combat-mod) |
 | `inventory` | `inventory.slot`, `inventory.item_2` .. `item_4`; actions `slot_1` .. `slot_4` (keys 1 to 4) | what a player carries: slot 1 is empty hands (and freelook), slots 2 to 4 hold one item each; the slot that is out has its item in the right hand, the rest are stowed. See [The inventory](#the-inventory) |
-| `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage` | the bat: a full-body stance while it is out; left mouse swings (0.45 s, every 0.6 s), a fan of 1.8 m rays from the chest at the strike, 40 damage through `combat.damage` |
+| `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage` | the bat: a full-body stance while it is out; left mouse swings (0.45 s, every 0.6 s), a fan of 1.8 m rays from the chest at the strike, spread sideways and pitched as far up or down as the player looks (look at the floor to hit what is low), 40 damage through `combat.damage` |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
 | `pistol` | `pistol.ammo`, `pistol.reloading`; `fire` (left mouse), `reload` (R), `mark` (right mouse); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `pistol.scan`, `pistol.marked`, `combat.damage` | hitscan from the camera pivot, 25 damage (the head doubles it) through `combat.damage`, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; a new life (`combat.respawned`) comes with a full magazine |
 | `secret` | `secret.number`, a private field; option `secret.numbers` | the example of a private field: off unless `--mod-option secret.numbers=1`; then each player is told a number from 1 to 99 that nobody else is sent |
@@ -714,6 +715,10 @@ Client controls:
   1 to 4 switch slots (hands, pistol, bat), the left mouse button fires or swings, R reloads, E picks
   up, G throws, C crouches, and F with empty hands spawns a prop.
 - Tab shows the scoreboard, the mouse orbits the camera and the wheel zooms.
+- The key left of 1 (`` ` `` / `~`) switches between the camera behind the player and **first person**:
+  out of the posed head, so it bows and leans with the upper body. Your own head is not drawn, the
+  rest of your body is. First person looks up to 80 degrees; from behind, 23 (the camera would go
+  under the floor).
 - Esc opens the in-game menu (see [The menu](#the-menu)), F1 toggles the debug HUD.
 
 The HUD shows the predicted and confirmed ticks, round-trip time, clock error, rollbacks, stalls and
