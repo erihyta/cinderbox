@@ -41,7 +41,9 @@ public:
 	// Call begin_frame(), then play_at() for each playing clip, then end_frame(): channels not played
 	// this frame go back to the library's RESET values.
 	void begin_frame();
-	void play_at( int channel, const godot::String& clip, double time, bool loops );
+	// restarted: the clip was started over while it was playing (anim::ActiveClip::restarted), so a
+	// time that went back is a new play of it, with its keys due again, not a rollback.
+	void play_at( int channel, const godot::String& clip, double time, bool loops, bool restarted = false );
 	void end_frame();
 
 	// What a channel plays ("" when none), for tests and debugging.

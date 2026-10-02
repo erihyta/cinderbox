@@ -59,7 +59,7 @@ std::vector<ActiveClip> ActiveClips( const AnimState& state, const AnimGraph& ch
 		{
 			time = clip.length - time;
 		}
-		out.push_back( { int( l ), clip.name, time, clip.loops } );
+		out.push_back( { int( l ), clip.name, time, clip.loops, L.previous == L.state && L.stateTime < L.fadeLength } );
 	}
 	return out;
 }

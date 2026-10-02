@@ -3036,7 +3036,19 @@ void TestMannequinCharacter()
 		CHECK( state().graph[1].stateTime <= 1.5f * dt && state().graph[1].time <= 1.5f * dt );
 		// It fades from where the last recoil was, not from the idle.
 		CHECK( state().graph[1].previous == state().graph[1].state && state().graph[1].previousTime > 0.15f );
+		// The viewer is told, so the keys inside the clip (a sound, a flash) are due again; only
+		// for the moment of the crossfade.
+		auto restarted = [&]() {
+			bool any = false;
+			for ( const anim::ActiveClip& clip : anim::ActiveClips( state(), *graph ) )
+			{
+				any |= clip.channel == 1 && clip.restarted;
+			}
+			return any;
+		};
+		CHECK( restarted() );
 		step( 11 );
+		CHECK( restarted() == false );
 		command( CommandType::Event, 0, 0, 0 );
 		step( 21 ); // 45 ticks after the first shot: one play of the clip would have ended by now
 		CHECK( state().graph[1].state == stateOf( 1, "Shoot" ) );

@@ -33,6 +33,9 @@ struct ActiveClip
 	std::string name;
 	float time = 0.0f; // seconds into the clip
 	bool loops = false;
+	// The state was started over by an event while it was playing (a shot during the last shot's
+	// recoil), and is still fading from where it was: its keys are due again.
+	bool restarted = false;
 };
 std::vector<ActiveClip> ActiveClips( const AnimState& state, const AnimGraph& graph, const AnimGraphPacks& packs = {} );
 
