@@ -51,6 +51,10 @@ public:
 	// but that; the server's cue of the same name, when it comes for the local entity, then plays
 	// only the reactions that waited for it. Returns how many cues were predicted.
 	int press( const godot::String& action );
+	// The predictions still waiting for the server's cue, oldest first:
+	// [ { cue, age (seconds), changes, stance, stance_layer } ]. Whoever hosts the director applies
+	// what they say for the local entity until they are answered or expire.
+	godot::Array pending_predictions();
 	// What that press would do, without doing it: { prediction path: "predicts <cue>" or why not }.
 	godot::Dictionary explain_press( const godot::String& action ) const;
 	// What that cue would do, without doing it: { reaction path: "acts" or why not }.
@@ -118,8 +122,15 @@ private:
 		godot::String cue;
 		double at = 0.0;
 		std::vector<godot::ObjectID> acted;
+		godot::PackedStringArray changes;
+		godot::String stance;
+		godot::String stanceLayer;
 	};
 	std::deque<Shown> m_shown;
+
+public:
+	// The same for C++ hosts: expired ones are dropped first.
+	const std::deque<Shown>& Pending();
 };
 
 } // namespace cb::gd

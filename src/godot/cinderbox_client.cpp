@@ -5,6 +5,7 @@
 #include "cinderbox_track_player.h"
 #include "cinderbox_skeleton.h"
 #include "cue_guard.h"
+#include "cue_prediction.h"
 #include "detmath.h"
 #include "object_source.h"
 #include "pose_tools.h"
@@ -590,8 +591,7 @@ void CinderboxClient::UpdateNodes()
 				if ( tracks != nullptr )
 				{
 					const auto& library = m_mirror->World().get<present::AnimLibrary>();
-					float alpha = m_mirror->World().get<present::FrameTiming>().tickAlpha;
-					AnimState state = anim::InterpolateAnimState( anim->previous, anim->current, alpha );
+					const AnimState& state = anim->shown; // what the pose was evaluated from
 					tracks->begin_frame();
 					auto clips = library.graph ? anim::ActiveClips( state, *library.graph, library.packs ) : std::vector<anim::ActiveClip>{};
 					for ( const anim::ActiveClip& clip : clips )
@@ -1779,6 +1779,117 @@ String CinderboxClient::get_entity_template_name( int64_t net_id ) const
 	return ve.is_valid() ? TemplateName( ve.get<present::Visual>().templateIndex ) : String();
 }
 
+namespace
+{
+// The lead is given back at this share of real time once nothing is predicted: the upper layers
+// play that much slower until they are level with the server again.
+constexpr float kLeadReturn = 0.15f;
+// Never further ahead than this, whatever the latency.
+constexpr float kMaxLead = 0.5f;
+} // namespace
+
+void CinderboxClient::LeadLocalPlayer( float delta )
+{
+	present::AnimLead lead;
+	uint32_t local = m_frame.frame.localNetId;
+	const auto& library = m_mirror->World().get<present::AnimLibrary>();
+	if ( local == 0 || !library.graph )
+	{
+		m_lead = 0.0f;
+		m_mirror->SetAnimLead( lead );
+		return;
+	}
+	const ModSchema& schema = m_frame.schema;
+	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
+	float newest = 0.0f;
+	for ( const auto& shown : Director()->Pending() )
+	{
+		// Only what the character's upper layers read: its machine may not care.
+		present::AnimLead::Input input;
+		input.age = float( now - shown.at );
+		int event = schema.FindEvent( ToStd( shown.cue ) );
+		if ( event >= 0 && library.graph->UpperLayersRead( AnimExpr::VarKind::Event, event ) )
+		{
+			input.event = event;
+		}
+		int stance = shown.stance.is_empty() ? -1 : schema.FindStance( ToStd( shown.stance ) );
+		int layer = shown.stanceLayer.is_empty() ? -1 : schema.FindLayer( ToStd( shown.stanceLayer ) );
+		if ( stance >= 0 && layer >= 0 && layer < kMaxAnimLayers && library.graph->UpperLayersRead( AnimExpr::VarKind::Stance, stance + 1 ) )
+		{
+			input.layer = layer;
+			input.stance = uint8_t( stance + 1 );
+		}
+		if ( input.event >= 0 || input.layer >= 0 )
+		{
+			newest = std::max( newest, input.age );
+			lead.inputs.push_back( input );
+		}
+	}
+	// Ahead by the time since the oldest unanswered press; afterwards the lead is given back slowly.
+	m_lead = lead.inputs.empty() ? std::max( 0.0f, m_lead - kLeadReturn * delta ) : std::max( m_lead, newest );
+	m_lead = std::min( m_lead, kMaxLead );
+	if ( m_lead <= 0.0f )
+	{
+		m_mirror->SetAnimLead( lead );
+		return;
+	}
+	lead.netId = local;
+	lead.seconds = m_lead;
+	lead.tickSeconds = m_frame.frame.tickSeconds;
+	if ( const Blackboard* board = BoardOf( local ) )
+	{
+		lead.board = *board;
+	}
+	std::copy( m_mirror->GlobalBoard(), m_mirror->GlobalBoard() + kBoardSlots, lead.globalBoard );
+	auto held = m_heldKinds.find( local );
+	if ( held != m_heldKinds.end() )
+	{
+		lead.heldKinds = held->second;
+	}
+	m_mirror->SetAnimLead( lead );
+}
+
+void CinderboxClient::ApplyPredictedFields()
+{
+	uint32_t local = m_frame.frame.localNetId;
+	flecs::entity visual = local != 0 ? m_mirror->VisualOf( local ) : flecs::entity();
+	if ( visual.is_valid() == false )
+	{
+		return;
+	}
+	const ModSchema& schema = m_frame.schema;
+	for ( const auto& shown : Director()->Pending() )
+	{
+		for ( int64_t i = 0; i < shown.changes.size(); ++i )
+		{
+			cue::Change change;
+			const BoardField* field = cue::ParseChange( shown.changes[i], change ) ? schema.FindField( ToStd( change.field ) ) : nullptr;
+			if ( field == nullptr || field->scope != BoardScope::Entity )
+			{
+				continue; // a field no mod on this server declared
+			}
+			// The mirror's copy: written again from the frame on every update, so this never adds up.
+			present::Visual& v = visual.get_mut<present::Visual>();
+			int32_t& slot = v.board.values[field->slot];
+			if ( field->type == BoardType::Float )
+			{
+				float value = BoardToFloat( slot );
+				value = change.op == '-' ? value - float( change.value ) : change.op == '+' ? value + float( change.value ) : float( change.value );
+				slot = BoardFromFloat( value );
+			}
+			else if ( field->type == BoardType::Bool )
+			{
+				slot = change.value != 0.0 ? 1 : 0;
+			}
+			else
+			{
+				int32_t amount = int32_t( change.value );
+				slot = change.op == '-' ? slot - amount : change.op == '+' ? slot + amount : amount;
+			}
+		}
+	}
+}
+
 void CinderboxClient::_process( double delta )
 {
 	if ( Engine::get_singleton()->is_editor_hint() || !m_mirror || !m_source )
@@ -1825,6 +1936,7 @@ void CinderboxClient::_process( double delta )
 	float alpha = std::clamp( float( m_frame.alphaAtPublish + since * double( m_frame.rate ) / frameSeconds ), 0.0f, 1.0f );
 
 	m_alpha = alpha;
+	LeadLocalPlayer( float( delta ) );
 	m_mirror->Update( m_frame.frame, alpha, float( delta ) );
 	// A rollback is reported once; later updates of the same frame are ordinary.
 	m_frame.frame.rolledBack = false;
@@ -1835,6 +1947,7 @@ void CinderboxClient::_process( double delta )
 	// A source that plays someone else's input says what the local player pressed.
 	AnnouncePresses( m_frame.localPressed );
 	m_frame.localPressed = 0;
+	ApplyPredictedFields();
 	UpdateNodes();
 	PushStates();
 	Director()->update();

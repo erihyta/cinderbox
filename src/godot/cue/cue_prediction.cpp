@@ -6,6 +6,48 @@
 
 using namespace godot;
 
+namespace cb::cue
+{
+
+bool ParseChange( const String& text, Change& out, String* error )
+{
+	auto fail = [&]( const String& why ) {
+		if ( error != nullptr )
+		{
+			*error = why;
+		}
+		return false;
+	};
+	String rest = text.strip_edges();
+	int64_t at = rest.find( "=" );
+	if ( at <= 0 )
+	{
+		return fail( "write it as a field, an operator and a number: pistol.ammo -= 1 (operators: -=, +=, =)" );
+	}
+	out = Change();
+	char32_t before = rest[at - 1];
+	String name = rest.substr( 0, at );
+	if ( before == '-' || before == '+' )
+	{
+		out.op = char( before );
+		name = rest.substr( 0, at - 1 );
+	}
+	out.field = name.strip_edges();
+	String number = rest.substr( at + 1 ).strip_edges();
+	if ( out.field.is_empty() || out.field.contains( " " ) )
+	{
+		return fail( "name one field before the operator" );
+	}
+	if ( number.is_valid_float() == false )
+	{
+		return fail( "\"" + number + "\" is not a number" );
+	}
+	out.value = number.to_float();
+	return true;
+}
+
+} // namespace cb::cue
+
 namespace cb::gd
 {
 
@@ -23,6 +65,17 @@ void CbPrediction::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "cue", PROPERTY_HINT_PLACEHOLDER_TEXT, "pistol.fired" ), "set_cue", "get_cue" );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "conditions" ), "set_conditions", "get_conditions" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "cooldown", PROPERTY_HINT_RANGE, "0,10,0.01,suffix:s" ), "set_cooldown", "get_cooldown" );
+	ClassDB::bind_method( D_METHOD( "set_changes", "changes" ), &CbPrediction::set_changes );
+	ClassDB::bind_method( D_METHOD( "get_changes" ), &CbPrediction::get_changes );
+	ClassDB::bind_method( D_METHOD( "set_stance", "stance" ), &CbPrediction::set_stance );
+	ClassDB::bind_method( D_METHOD( "get_stance" ), &CbPrediction::get_stance );
+	ClassDB::bind_method( D_METHOD( "set_stance_layer", "layer" ), &CbPrediction::set_stance_layer );
+	ClassDB::bind_method( D_METHOD( "get_stance_layer" ), &CbPrediction::get_stance_layer );
+	ADD_GROUP( "Until the server answers", "" );
+	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "changes" ), "set_changes", "get_changes" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "stance", PROPERTY_HINT_PLACEHOLDER_TEXT, "melee_swing" ), "set_stance", "get_stance" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "stance_layer", PROPERTY_HINT_PLACEHOLDER_TEXT, "full" ), "set_stance_layer",
+				  "get_stance_layer" );
 }
 
 void CbPrediction::_notification( int what )
@@ -83,6 +136,19 @@ PackedStringArray CbPrediction::_get_configuration_warnings() const
 		{
 			warnings.push_back( "Condition \"" + m_conditions[i] + "\": " + error );
 		}
+	}
+	for ( int64_t i = 0; i < m_changes.size(); ++i )
+	{
+		cue::Change change;
+		String error;
+		if ( cue::ParseChange( m_changes[i], change, &error ) == false )
+		{
+			warnings.push_back( "Change \"" + m_changes[i] + "\": " + error );
+		}
+	}
+	if ( m_stance.strip_edges().is_empty() != m_stanceLayer.strip_edges().is_empty() )
+	{
+		warnings.push_back( "A predicted stance needs both: the stance and the layer the server's mod sets it on." );
 	}
 	return warnings;
 }

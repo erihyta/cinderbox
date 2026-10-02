@@ -14,10 +14,22 @@
 // that had to wait for it play (the ones that use what only the server knows: the cue's point,
 // end, value or other entity). A cue that was not predicted plays in full, as ever.
 //
+// A prediction can also say what the server's answer will change for the viewer's own player, so
+// that shows at once too, until the server's cue comes or the prediction expires (a second):
+//
+//   changes        "pistol.ammo -= 1"   a field of the viewer's player: the HUD and conditions
+//                                        read the changed value (-=, += and = with a number)
+//   stance         "melee_swing" on stance_layer "full"   what the server's mod will set: the
+//                                        character's state machine starts its swing now
+//
+// The cue itself reaches the state machine as well (a recoil state entered on "pistol.fired").
+// The host of the director applies these (the Cinderbox viewer does; see present/anim_lead.h).
+//
 // Both halves are the modder's: the server mod emits the cue, the look predicts it by the same
 // name. The conditions are the look's guess of the server's rule; where the guess is wrong, a
-// reaction played that should not have (it is not taken back), or the cue simply plays late.
-// Looks only: nothing here changes the game.
+// reaction played that should not have (it is not taken back), or the cue simply plays late;
+// changes and stances are put back when the prediction expires. Looks only: nothing here changes
+// the game.
 
 #include "cue_paths.h"
 
@@ -26,6 +38,20 @@
 #include <godot_cpp/variant/string.hpp>
 
 #include <vector>
+
+namespace cb::cue
+{
+
+// A predicted change of a field: "pistol.ammo -= 1", "pistol.reloading = 1".
+struct Change
+{
+	godot::String field;
+	char op = '='; // '-', '+' or '='
+	double value = 0.0;
+};
+bool ParseChange( const godot::String& text, Change& out, godot::String* error = nullptr );
+
+} // namespace cb::cue
 
 namespace cb::gd
 {
@@ -86,6 +112,31 @@ public:
 	{
 		return m_cooldown;
 	}
+	void set_changes( const godot::PackedStringArray& v )
+	{
+		m_changes = v;
+		update_configuration_warnings();
+	}
+	godot::PackedStringArray get_changes() const
+	{
+		return m_changes;
+	}
+	void set_stance( const godot::String& v )
+	{
+		m_stance = v;
+	}
+	godot::String get_stance() const
+	{
+		return m_stance;
+	}
+	void set_stance_layer( const godot::String& v )
+	{
+		m_stanceLayer = v;
+	}
+	godot::String get_stance_layer() const
+	{
+		return m_stanceLayer;
+	}
 
 	void _notification( int what );
 	godot::PackedStringArray _get_configuration_warnings() const override;
@@ -100,6 +151,9 @@ private:
 	godot::String m_cue;
 	godot::PackedStringArray m_conditions;
 	double m_cooldown = 0.0;
+	godot::PackedStringArray m_changes;
+	godot::String m_stance;
+	godot::String m_stanceLayer;
 
 	CbDirector* m_director = nullptr; // while in its tree
 	mutable bool m_parsed = false;

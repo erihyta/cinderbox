@@ -6,7 +6,8 @@
 	<description>
 		A mod's rules run on the server, so what a press did comes back a round trip later. A look can say what its own server is going to answer: when the viewer presses [member action] while [member conditions] hold, [member cue] plays for the viewer there and then, with the same [CbReaction] nodes the server's cue plays. No second reaction for the local player.
 		When the server's cue of that name arrives for the viewer, it is the echo: the reactions that already played stay quiet, and the ones that had to wait play now. A reaction waits when it uses what only the server knows (it is placed at the cue's point, end or beam, a path of it starts with [code]$other[/code], or a condition reads [code]event.*[/code]) or when its [member CbReaction.wait_for_server] is on.
-		The conditions are the look's guess of the server's rule. A wrong guess is not taken back: the reaction played, and no server cue follows. What the server changes (ammo on the HUD, the swing's body pose) still comes with the server's answer.
+		A prediction can also say what the server's answer will change for the viewer's own player, shown until that answer comes or the prediction expires (a second): fields ([member changes]) and the body ([member stance]).
+		The conditions are the look's guess of the server's rule. On a wrong guess a reaction that played is not taken back; changed fields and the body go back to the server's when the prediction expires.
 		It goes anywhere under the [CbDirector]: in a world reactions scene, or in an item's scene.
 	</description>
 	<tutorials>
@@ -23,6 +24,15 @@
 		</member>
 		<member name="cooldown" type="float" setter="set_cooldown" getter="get_cooldown" default="0.0">
 			Seconds before the next press predicts again: the server's own rate (the pistol's 0.2 s between shots).
+		</member>
+		<member name="changes" type="PackedStringArray" setter="set_changes" getter="get_changes" default="PackedStringArray()">
+			What the server's answer will change on the viewer's player, so the HUD and conditions read it at once: [code]pistol.ammo -= 1[/code], [code]x += 2[/code], [code]x = 0[/code].
+		</member>
+		<member name="stance" type="String" setter="set_stance" getter="get_stance" default="&quot;&quot;">
+			The stance the server's mod will set ([code]melee_swing[/code]): the character's state machine is run ahead with it for the viewer's own player, so the body starts at once. The cue itself reaches the state machine too (a recoil state entered on [code]pistol.fired[/code]) without anything set here.
+		</member>
+		<member name="stance_layer" type="String" setter="set_stance_layer" getter="get_stance_layer" default="&quot;&quot;">
+			The layer the server's mod sets that stance on ([code]full[/code]).
 		</member>
 	</members>
 </class>

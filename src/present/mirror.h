@@ -8,6 +8,7 @@
 // systems in scripts/) animate spawning and destroying and evaluate ozz poses. Renderers (raylib,
 // Godot) read the result through ForEach() and react to Events() for VFX and node lifetime.
 
+#include "anim_lead.h"
 #include "frame.h"
 #include "pose.h"
 #include "pose_tools.h"
@@ -77,6 +78,9 @@ struct PlayerAnim
 {
 	AnimState previous;
 	AnimState current;
+	// What the pose was last evaluated from: between the two, and for the viewer's own player with
+	// its upper layers led (anim_lead.h).
+	AnimState shown;
 	std::shared_ptr<anim::PoseEvaluator> evaluator;
 };
 
@@ -165,6 +169,10 @@ public:
 	// it has welcomed us). Every player gets a new pose evaluator; the ragdoll rig follows.
 	void SetAnimSet( std::shared_ptr<const anim::AnimSet> animSet, std::shared_ptr<const AnimGraph> graph = nullptr,
 					 AnimGraphPacks packs = {}, std::vector<std::shared_ptr<const anim::PackClips>> packClips = {} );
+
+	// The viewer's own player shown ahead of the server (anim_lead.h), from the next Update on;
+	// netId 0: nobody.
+	void SetAnimLead( const AnimLead& lead );
 
 	// `tickAlpha`: how far between frame.tick - 1 and frame.tick to draw.
 	void Update( const PresentationFrame& frame, float tickAlpha, float frameSeconds );

@@ -143,11 +143,21 @@ func _process(_delta: float) -> bool:
 		return false
 	var server := {"value": 1, "point": Vector3(1, 1, 1), "end": Vector3(9, 1, 1)}
 
+	# What a prediction changes until the server answers travels with it.
+	_predict.changes = PackedStringArray(["test.ammo -= 1"])
+	_predict.stance = "test_swing"
+	_predict.stance_layer = "full"
+	_check("nothing is pending before a press", _world.pending_predictions().is_empty())
+
 	# The press plays what needs nothing from the server.
 	var why: Dictionary = _world.explain_press("fire")
 	_check("explain_press: says the cue it would predict", String(why.get("Effects/Predict", "")) == "predicts test.fired")
 	_check("press: predicts one cue", _world.press("fire") == 1)
 	_check("press: the predicted signal names it", _signals == ["test.fired"])
+	var pending: Array = _world.pending_predictions()
+	_check("press: it is pending, with its changes and stance", pending.size() == 1 and pending[0]["cue"] == "test.fired"
+		and pending[0]["changes"] == PackedStringArray(["test.ammo -= 1"]) and pending[0]["stance"] == "test_swing"
+		and pending[0]["stance_layer"] == "full" and float(pending[0]["age"]) < 0.5)
 	_check("press: the sound plays at once", _sounded())
 	_check("press: the local kick plays at once", _kicks == 1)
 	_check("press: what needs the cue's end or other entity waits", _marks() == 0)
@@ -159,6 +169,7 @@ func _process(_delta: float) -> bool:
 	# The server's cue for the viewer is the echo: only what waited plays.
 	_world.cue("test.fired", _p0, _p1, server)
 	_check("echo: the sound does not play twice", not _sounded())
+	_check("echo: nothing is pending any more", _world.pending_predictions().is_empty())
 	_check("echo: the kick does not play twice", _kicks == 1)
 	_check("echo: the tracer and the marker play now", _marks() == 2)
 	_check("echo: the reaction on event.value plays now", _played(_counted))

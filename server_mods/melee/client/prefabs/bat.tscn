@@ -195,7 +195,6 @@ value = 4.0
 [node name="FlamesOnSwing" type="CbReaction" parent="." unique_id=244914519]
 event = "melee.swing"
 subject = NodePath("^^")
-wait_for_server = true
 animation_player = NodePath("../AnimationPlayer")
 animation = "slash"
 

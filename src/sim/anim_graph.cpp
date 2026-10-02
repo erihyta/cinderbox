@@ -1264,6 +1264,42 @@ const AnimGraphLayer& ResolveLayer( const AnimGraph& character, const AnimGraphP
 	return own;
 }
 
+bool AnimGraph::UpperLayersRead( AnimExpr::VarKind kind, int index ) const
+{
+	auto reads = [&]( const AnimExpr& expr ) {
+		for ( const AnimExpr::Step& step : expr.steps )
+		{
+			if ( step.op == AnimExpr::Op::Var && step.kind == kind && int( step.index ) == index )
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	for ( size_t l = 1; l < layers.size(); ++l )
+	{
+		if ( reads( layers[l].weight ) )
+		{
+			return true;
+		}
+		for ( const AnimGraphState& state : layers[l].states )
+		{
+			if ( reads( state.input ) || reads( state.inputY ) )
+			{
+				return true;
+			}
+			for ( const AnimGraphTransition& t : state.transitions )
+			{
+				if ( reads( t.condition ) )
+				{
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
 void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphPacks& packs, AnimGraphInputs& in, float dt,
 					  std::vector<int>& markers )
 {

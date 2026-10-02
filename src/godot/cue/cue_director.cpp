@@ -27,6 +27,7 @@ void CbDirector::_bind_methods()
 						  DEFVAL( Dictionary() ) );
 	ClassDB::bind_method( D_METHOD( "press", "action" ), &CbDirector::press );
 	ClassDB::bind_method( D_METHOD( "explain_press", "action" ), &CbDirector::explain_press );
+	ClassDB::bind_method( D_METHOD( "pending_predictions" ), &CbDirector::pending_predictions );
 	ClassDB::bind_method( D_METHOD( "explain", "name", "at", "other", "args" ), &CbDirector::explain, DEFVAL( Variant() ),
 						  DEFVAL( Dictionary() ) );
 	ClassDB::bind_method( D_METHOD( "update" ), &CbDirector::update );
@@ -234,11 +235,7 @@ void CbDirector::cue( const String& name, Node* at, Node* other, const Dictionar
 {
 	// The server's word on something the viewer's press already showed: what played then does not
 	// play again; what had to wait for this (it uses what only the server knows) plays now.
-	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
-	while ( m_shown.empty() == false && now - m_shown.front().at > kEchoSeconds )
-	{
-		m_shown.pop_front();
-	}
+	Pending();
 	std::vector<ObjectID> already;
 	bool echo = false;
 	if ( at != nullptr && at == get_local() )
@@ -255,6 +252,33 @@ void CbDirector::cue( const String& name, Node* at, Node* other, const Dictionar
 		}
 	}
 	Play( name, CueContext( at, other, args ), echo ? &already : nullptr, nullptr );
+}
+
+const std::deque<CbDirector::Shown>& CbDirector::Pending()
+{
+	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
+	while ( m_shown.empty() == false && now - m_shown.front().at > kEchoSeconds )
+	{
+		m_shown.pop_front();
+	}
+	return m_shown;
+}
+
+Array CbDirector::pending_predictions()
+{
+	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
+	Array out;
+	for ( const Shown& shown : Pending() )
+	{
+		Dictionary entry;
+		entry["cue"] = shown.cue;
+		entry["age"] = now - shown.at;
+		entry["changes"] = shown.changes;
+		entry["stance"] = shown.stance;
+		entry["stance_layer"] = shown.stanceLayer;
+		out.push_back( entry );
+	}
+	return out;
 }
 
 Dictionary CbDirector::explain_press( const String& action ) const
@@ -298,6 +322,9 @@ int CbDirector::press( const String& action )
 		Shown shown;
 		shown.cue = name;
 		shown.at = now;
+		shown.changes = prediction->get_changes();
+		shown.stance = prediction->get_stance().strip_edges();
+		shown.stanceLayer = prediction->get_stance_layer().strip_edges();
 		Play( name, context, nullptr, &shown.acted );
 		m_shown.push_back( std::move( shown ) );
 		emit_signal( "predicted", name );
