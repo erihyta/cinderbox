@@ -66,6 +66,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M58: an example of a second action: the pistol's right button marks the player its ray finds (a zone around them for 2 seconds), with the server part and the look part side by side | done |
 | M59: no companion files: an animation's non-bone tracks are read from the character's own `AnimationPlayer` when it is first drawn; a character is baked when its scene is saved and again when its item is packed | done |
 | M60: the raylib client is gone: the Godot client is the client | done |
+| M61: a `combat` mod: health, death and respawning in one place, spoken to by events (`combat.damage`, `combat.heal`) with server options; the pistol only keeps the gun | done |
 
 ## Building
 
@@ -272,17 +273,54 @@ The mods that ship:
 
 | Mod | Declares | Rules |
 |---|---|---|
+| `combat` | `combat.health`, `.max_health`, `.dead`, `.kills`, `.deaths`; hears `combat.damage`, `combat.heal`, `game.round_start`; says `combat.hurt`, `combat.killed`, `combat.respawned` | the one place health lives: applies any mod's damage, credits the kill, leaves a ragdoll, brings the player back. See [The combat mod](#the-combat-mod) |
 | `inventory` | `inventory.slot`, `inventory.item_2` .. `item_4`; actions `slot_1` .. `slot_4` (keys 1 to 4) | what a player carries: slot 1 is empty hands (and freelook), slots 2 to 4 hold one item each; the slot that is out has its item in the right hand, the rest are stowed. See [The inventory](#the-inventory) |
 | `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage` | the bat: a full-body stance while it is out; left mouse swings (0.45 s, every 0.6 s), a fan of 1.8 m rays from the chest at the strike, 40 damage through `combat.damage` |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
-| `pistol` | `combat.*`, `pistol.*` fields; `fire` (left mouse), `reload` (R), `mark` (right mouse); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `pistol.scan`, `pistol.marked`, `combat.killed` | hitscan from the camera pivot, 25 damage, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; keeps health, so it also applies other mods' `combat.damage`; death leaves a ragdoll (10 s, at most 16); respawn after 3 s; falling out of the world counts as a death |
+| `pistol` | `pistol.ammo`, `pistol.reloading`; `fire` (left mouse), `reload` (R), `mark` (right mouse); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `pistol.scan`, `pistol.marked`, `combat.damage` | hitscan from the camera pivot, 25 damage (the head doubles it) through `combat.damage`, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; a new life (`combat.respawned`) comes with a full magazine |
 | `fog` | nothing; option `fog.radius` | streaming clients are sent only what is within the radius of their player (off by default) |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
 Mods cooperate through the board (`pickup` reads the `inventory.slot` that `inventory` publishes, to
 know there is one) and through item properties (`pistol` and `melee` tell `inventory` which slot
-their item lives in). They also cooperate through events: `deathmatch` scores the pistol's `combat.killed`, and
-the pistol refills health and ammo on `game.round_start`.
+their item lives in). They also cooperate through events: `pistol` and `melee` say `combat.damage`,
+`combat` answers with `combat.hurt` and `combat.killed`, `deathmatch` scores the kills, and its
+`game.round_start` gives everyone full health (`combat`) and a full magazine (`pistol`).
+
+### The combat mod
+
+Health, death and the next life, for every mod that hurts. A weapon does not own health and does
+not know the other weapons: it declares the names it uses (the same name is the same event) and
+talks to `combat` through them.
+
+| A mod | Event | Carries |
+|---|---|---|
+| emits | `combat.damage` | a = attacker (0: nobody), b = who is hurt, value = damage, point = where, vector = the push the body gets if it dies |
+| emits | `combat.heal` | b = who, value = health given back |
+| emits | `game.round_start` | everyone alive, full health |
+| hears | `combat.hurt` | a = attacker, b = victim, value = health actually lost, point |
+| hears | `combat.killed` | a = killer (0: the world, a fall), b = who died |
+| hears | `combat.respawned` | a = who is back (after dying, or with a new round) |
+
+```cpp
+// A weapon, in full: declare the name, say what you did.
+m_damage = declare.Event( "combat.damage" );
+...
+ctx.Emit( m_damage, SlotTarget( slot ), hit.netId, 40, hit.point, push );
+```
+
+| Option (`--mod-option`) | Default | Meaning |
+|---|---|---|
+| `combat.max_health` | 100 | health at the start of a life |
+| `combat.respawn_seconds` | 3 | from death to the next life |
+| `combat.ragdoll_seconds`, `combat.ragdoll_cap` | 10, 16 | how long a body lies, and how many at once |
+| `combat.fall_counts` | 1 | falling out of the world is a death (0: it is not) |
+
+- Events are heard a tick after they are sent: damage lands the tick after the hit.
+- Without the mod (`--mods pistol,inventory`) weapons fire and report hits, and nobody dies.
+- Its look is its own workshop item: the health bar, YOU DIED, the kill feed and the scoreboard
+  (`ui/hud_combat.tscn`), and the red flash when you are hurt or die (`vfx/reactions_combat.tscn`),
+  whatever weapon did it. A weapon's look keeps what is the weapon's (the hit puff, the hit marker).
 
 Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod reads them with
 `ctx.Option( "deathmatch.kills", 10 )`.
@@ -563,8 +601,8 @@ The pistol's HUD (`server_mods/pistol/client/ui/hud_pistol.tscn`) is built from 
 deaths, the kill feed and the scoreboard. None of it is script, so a client mod can restyle all of it.
 
 `godot/vfx/reactions.tscn` is the game's own set; the pistol's look (predicted shots, tracers, hits,
-hurt and death feedback, reload, the pistol item's look) is `vfx/reactions_pistol.tscn` in its
-workshop item; `mods_src/example_neon/vfx/reactions_neon.tscn` shows a mod adding three more,
+reload, the pistol item's look) is `vfx/reactions_pistol.tscn` in its workshop item, and being hurt
+or dying looks the same for every weapon (`vfx/reactions_combat.tscn`, the combat mod's item); `mods_src/example_neon/vfx/reactions_neon.tscn` shows a mod adding three more,
 including its own sound. All are edited in the Godot editor, as scenes.
 
 The sounds in `godot/assets/sfx/` are placeholders in the same spirit as the procedural rig: short,
