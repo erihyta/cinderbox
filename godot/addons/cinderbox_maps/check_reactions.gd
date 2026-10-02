@@ -38,6 +38,8 @@ var _outside: Node3D
 var _player: AnimationPlayer
 var _effects: Node3D
 var _shakes := 0
+var _meter: Node3D
+var _bump: Node3D
 var _blind: CbReaction
 var _later: Node3D
 var _never: Node3D
@@ -211,6 +213,27 @@ func _initialize() -> void:
 	fade.value = 1.0
 	fade.blend_time = 0.2
 
+	# One language: and / or / not, arithmetic, field against field; and values that are expressions.
+	_meter = _node3d("Meter", _p1)
+	_meter.position.x = 5.0
+	var meter := _reaction("MeterFill", _p1, CbReaction.WHEN_WHILE, "")
+	meter.conditions = PackedStringArray(["?combat.health and not combat.dead or false"])
+	meter.target = NodePath("../Meter")
+	meter.property = "position:x"
+	meter.value_expression = "combat.health / combat.max_health * 2"
+	_bump = _node3d("Bump", _effects)
+	var bump := _reaction("BumpIt", _effects, CbReaction.WHEN_EVENT, "test.bump")
+	bump.subject = NodePath("$at")
+	bump.conditions = PackedStringArray(["event.value * 2 >= $at:combat.health - 60 and !($at:combat.health == 0)"])
+	bump.target = NodePath("../Bump")
+	bump.property = "position:y"
+	bump.value_expression = "event.value * 0.5 + 1"
+	var hidden := _reaction("HideIt", _effects, CbReaction.WHEN_EVENT, "test.bump")
+	hidden.subject = NodePath("$at")
+	hidden.target = NodePath("../Bump")
+	hidden.property = "visible"
+	hidden.value_expression = "event.value < 10"
+
 	# A prompt that follows whatever $local's "pickup.target" names.
 	var marker := PackedScene.new()
 	var marker_root := Node3D.new()
@@ -289,6 +312,26 @@ func _process(_delta: float) -> bool:
 		_world.set_state(_item, {"melee.hot": false, "test.fade": true})
 		_world.update()
 		_check("blend_time: fading, not there at once", _barrel.position.y < 0.9)
+
+		# Expressions: a while's property follows its expression; a cue's is computed from the cue.
+		_world.set_state(_p1, {"combat.health": 40, "combat.max_health": 80})
+		_world.update()
+		_check("value_expression: a while sets the property to the expression's value", is_equal_approx(_meter.position.x, 1.0))
+		_world.set_state(_p1, {"combat.health": 20, "combat.max_health": 80})
+		_world.update()
+		_check("value_expression: it follows while on", is_equal_approx(_meter.position.x, 0.5))
+		_world.cue("test.bump", _p1, null, {"value": 4})
+		_check("value_expression: a cue's value from event.value", is_equal_approx(_bump.position.y, 3.0))
+		_check("value_expression: a bool property gets a bool", _bump.visible)
+		_world.cue("test.bump", _p1, null, {"value": 12})
+		_check("value_expression: ... and false", not _bump.visible and is_equal_approx(_bump.position.y, 7.0))
+		_world.set_state(_p1, {"combat.health": 100, "combat.max_health": 100})
+		_world.cue("test.bump", _p1, null, {"value": 1})
+		_check("conditions: arithmetic, and, a path on both sides hold a cue back", is_equal_approx(_bump.position.y, 7.0))
+		_world.set_state(_p1, {"combat.health": 40, "combat.max_health": 0, "combat.dead": true})
+		_world.update()
+		_check("value_expression: the while ending puts the property back", is_equal_approx(_meter.position.x, 5.0))
+		_world.set_state(_p1, {"combat.health": 40})
 
 		# $local@pickup.target: the entity whose id is in the local player's field.
 		_world.set_state(_p0, {"combat.dead": false, "pickup.target": 11})

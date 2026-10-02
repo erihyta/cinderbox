@@ -135,6 +135,7 @@ public:
 	CB_REACTION_FIELD( godot::NodePath, target, m_target )
 	CB_REACTION_FIELD( godot::String, property, m_property )
 	CB_REACTION_FIELD( godot::Variant, value, m_value )
+	CB_REACTION_FIELD( godot::String, value_expression, m_valueExpression )
 	CB_REACTION_FIELD( double, blend_time, m_blendTime )
 	CB_REACTION_FIELD( godot::String, method, m_method )
 	CB_REACTION_FIELD( godot::Array, method_args, m_methodArgs )
@@ -146,6 +147,7 @@ public:
 	CB_REACTION_FIELD( godot::Vector3, offset, m_offset )
 	CB_REACTION_FIELD( godot::String, sound, m_sound )
 	CB_REACTION_FIELD( double, volume_db, m_volumeDb )
+	CB_REACTION_FIELD( godot::String, volume_expression, m_volumeExpression )
 	CB_REACTION_FIELD( double, pitch_scale, m_pitchScale )
 	CB_REACTION_FIELD( double, pitch_jitter, m_pitchJitter )
 	CB_REACTION_FIELD( godot::String, bus, m_bus )
@@ -172,7 +174,8 @@ private:
 	void SetProperty( godot::Node* target, const godot::NodePath& path, const godot::Variant& value );
 	godot::Node* Subject( const cue::Context& context ) const;
 	void Act( bool on, const cue::Context& context );
-	void PlaySound( godot::Node* parent, bool global, const godot::Vector3& where );
+	void PlaySound( godot::Node* parent, bool global, const godot::Vector3& where, double gain );
+	godot::Variant Value( const cue::Context& context, const godot::Variant& current ) const;
 	// A method or property this reaction names that the guard does not allow (cue_guard.h).
 	static bool Refused( const godot::String& method, const godot::String& property );
 	void End(); // a "while" that is on ends where it acted (leaving the tree)
@@ -194,6 +197,7 @@ private:
 	godot::NodePath m_target;
 	godot::String m_property;
 	godot::Variant m_value;
+	godot::String m_valueExpression; // not empty: the property becomes this expression's value
 	double m_blendTime = 0.0;
 	godot::String m_method;
 	godot::Array m_methodArgs;
@@ -205,6 +209,7 @@ private:
 	godot::Vector3 m_offset;
 	godot::String m_sound;
 	double m_volumeDb = 0.0;
+	godot::String m_volumeExpression; // not empty: how loud, as a factor ("event.strength / 4")
 	double m_pitchScale = 1.0;
 	double m_pitchJitter = 0.0;
 	godot::String m_bus;
@@ -218,6 +223,8 @@ private:
 	bool m_parsed = false;
 	bool m_valid = false;
 	std::vector<cue::Condition> m_tests;
+	cue::Condition m_valueProgram;
+	cue::Condition m_volumeProgram;
 	double m_lastFired = -1e9;
 	bool m_warned = false; // said once that a path or condition does not parse
 	godot::Ref<godot::Tween> m_tween;
@@ -225,6 +232,7 @@ private:
 	bool m_on = false;
 	bool m_haveOriginal = false;
 	godot::Variant m_original;	// what the property was before a "while" set it
+	godot::Variant m_lastSet;	// what a "while" with a value_expression set it to last
 	godot::ObjectID m_onTarget; // where a "while" set it
 	godot::ObjectID m_onPlayer; // where a "while" played its animation
 	godot::ObjectID m_spawned;

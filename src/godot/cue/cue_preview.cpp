@@ -64,34 +64,12 @@ bool Contains( Node* node )
 	return false;
 }
 
-// The state name a condition reads: "!^^:combat.dead" -> "combat.dead"; "" for is_local and event.*.
-String NameIn( const String& condition )
+// The state names a condition reads: "!^^:combat.dead and pistol.ammo > 0" -> combat.dead,
+// pistol.ammo (not is_local or event.*).
+PackedStringArray NamesIn( const String& condition )
 {
 	cue::Condition parsed;
-	if ( cue::ParseCondition( condition, parsed, nullptr ) == false )
-	{
-		return String();
-	}
-	String test = parsed.test;
-	for ( const char* prefix : { "!?", "!", "?" } )
-	{
-		if ( test.begins_with( prefix ) )
-		{
-			test = test.substr( String( prefix ).length() );
-			break;
-		}
-	}
-	for ( int64_t i = 0; i < test.length(); ++i )
-	{
-		char32_t c = test[i];
-		if ( c == '=' || c == '!' || c == '<' || c == '>' )
-		{
-			test = test.substr( 0, i );
-			break;
-		}
-	}
-	test = test.strip_edges();
-	return test == "is_local" || test.begins_with( "event." ) ? String() : test;
+	return cue::ParseCondition( condition, parsed, nullptr ) ? cue::StateNames( parsed ) : PackedStringArray();
 }
 
 Label* MakeLabel( const String& text )
@@ -467,7 +445,10 @@ void CbCuePreviewDock::CollectNames()
 		PackedStringArray conditions = reaction->get_conditions();
 		for ( int64_t i = 0; i < conditions.size(); ++i )
 		{
-			add( m_names, NameIn( conditions[i] ) );
+			for ( const String& name : NamesIn( conditions[i] ) )
+			{
+				add( m_names, name );
+			}
 		}
 	}
 	PackedStringArray known;

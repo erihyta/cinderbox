@@ -261,7 +261,12 @@ void CbFieldBinding::_process( double )
 	{
 		return;
 	}
+	// A field's name, or an expression over fields ("combat.health * 100 / combat.max_health").
 	Variant value = client->get_local_field( m_field );
+	if ( value.get_type() == Variant::NIL )
+	{
+		value = client->evaluate_local( m_field );
+	}
 	if ( value.get_type() == Variant::NIL )
 	{
 		return; // the server does not run the mod that declares it

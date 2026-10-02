@@ -11,7 +11,7 @@ add_library(cb_sim_data STATIC
 	world_lifetime.cpp
 )
 target_include_directories(cb_sim_data PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(cb_sim_data PUBLIC box3d flecs::flecs_static)
+target_link_libraries(cb_sim_data PUBLIC box3d flecs::flecs_static cb_expr)
 cb_target_warnings(cb_sim_data)
 
 # The simulation itself: the world, physics, snapshots, rollback.

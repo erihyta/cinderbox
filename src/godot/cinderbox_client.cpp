@@ -119,6 +119,8 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_local_field", "name" ), &CinderboxClient::get_local_field );
 	ClassDB::bind_method( D_METHOD( "check_conditions", "net_id", "conditions" ), &CinderboxClient::check_conditions );
 	ClassDB::bind_method( D_METHOD( "check_local_conditions", "conditions" ), &CinderboxClient::check_local_conditions );
+	ClassDB::bind_method( D_METHOD( "evaluate", "net_id", "expression" ), &CinderboxClient::evaluate );
+	ClassDB::bind_method( D_METHOD( "evaluate_local", "expression" ), &CinderboxClient::evaluate_local );
 	ClassDB::bind_method( D_METHOD( "format_local_fields", "format" ), &CinderboxClient::format_local_fields );
 	ClassDB::bind_method( D_METHOD( "get_local_net_id" ), &CinderboxClient::get_local_net_id );
 	ClassDB::bind_method( D_METHOD( "is_local_player_dead" ), &CinderboxClient::is_local_player_dead );
@@ -1520,6 +1522,38 @@ bool CinderboxClient::check_conditions( int64_t net_id, const PackedStringArray&
 bool CinderboxClient::check_local_conditions( const PackedStringArray& conditions ) const
 {
 	return check_conditions( get_local_net_id(), conditions );
+}
+
+// The value of an expression over an entity's fields ("combat.health * 100 / combat.max_health").
+// Null when it does not parse, or when it reads nothing this server declares (so a HUD node for a
+// mod that is not running leaves its target alone).
+Variant CinderboxClient::evaluate( int64_t net_id, const String& expression ) const
+{
+	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
+	bool known = false;
+	present::ExtraFields names = [&]( const std::string& name, float& value ) {
+		int kind = m_frame.schema.FindItemKind( name );
+		known |= kind >= 0 || m_frame.schema.FindField( name ) != nullptr;
+		if ( kind < 0 )
+		{
+			return false;
+		}
+		value = Holds( uint32_t( net_id ), uint16_t( kind ) ) ? 1.0f : 0.0f;
+		return true;
+	};
+	float value = 0.0f;
+	if ( present::EvaluateFields( m_frame.schema, ToStd( expression ), BoardOf( uint32_t( net_id ) ), globals, value, &names,
+								  PrivatesOf( uint32_t( net_id ) ) ) == false ||
+		 known == false )
+	{
+		return Variant();
+	}
+	return double( value );
+}
+
+Variant CinderboxClient::evaluate_local( const String& expression ) const
+{
+	return evaluate( get_local_net_id(), expression );
 }
 
 String CinderboxClient::format_local_fields( const String& format ) const

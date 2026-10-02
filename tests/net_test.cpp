@@ -2217,7 +2217,6 @@ void TestPrivateFields()
 	h.RunUntil( 3.0 );
 	h.Report();
 
-	Simulation& server = h.server.Sim();
 	bool allDiffer = true;
 	for ( size_t i = 0; i < h.bots.size(); ++i )
 	{

@@ -51,7 +51,7 @@ Looks only: it never changes the game itself, and no path leaves the director. T
 			Only when the subject comes from this template (a map template's name; an item's kind: [code]melee.bat[/code]).
 		</member>
 		<member name="conditions" type="PackedStringArray" setter="set_conditions" getter="get_conditions" default="PackedStringArray()">
-			All must hold. [code]name[/code] / [code]!name[/code] (not zero / zero), [code]?name[/code] (known), comparisons ([code]pistol.ammo &gt; 0[/code]). A path and a colon read another entity: [code]^^:combat.dead[/code], [code]$world:deathmatch.round[/code]. Also [code]is_local[/code], [code]event.value[/code], [code]event.strength[/code].
+			All must hold. Each is an expression: [code]name[/code] / [code]!name[/code] (not zero / zero), [code]?name[/code] (known), comparisons ([code]pistol.ammo &gt; 0[/code]), arithmetic and a field against a field ([code]combat.health &lt; combat.max_health / 4[/code]), [code]and[/code] / [code]or[/code] / [code]not[/code], parentheses. A path and a colon read another entity: [code]^^:combat.dead[/code], [code]$world:deathmatch.round[/code]. Also [code]is_local[/code], [code]event.value[/code], [code]event.strength[/code].
 		</member>
 		<member name="delay" type="float" setter="set_delay" getter="get_delay" default="0.0">
 			Cue reactions: act this many seconds after the cue.
@@ -82,6 +82,9 @@ Looks only: it never changes the game itself, and no path leaves the director. T
 		</member>
 		<member name="value" type="Variant" setter="set_value" getter="get_value" default="null">
 			What [member property] becomes.
+		</member>
+		<member name="value_expression" type="String" setter="set_value_expression" getter="get_value_expression" default="&quot;&quot;">
+			Instead of [member value]: [member property] becomes this expression's value, in the language of [member conditions] ([code]combat.health / combat.max_health[/code], [code]event.strength * 0.1[/code]). A "while" keeps the property up to date while it is on. A bool property gets true or false, an int a whole number. An expression that reads [code]event.*[/code] waits for the server's cue.
 		</member>
 		<member name="blend_time" type="float" setter="set_blend_time" getter="get_blend_time" default="0.0">
 			Fade to [member value] (and back, when a "while" ends) over this many seconds. Numbers, vectors and colours; anything else changes at once.
@@ -115,6 +118,9 @@ Looks only: it never changes the game itself, and no path leaves the director. T
 		</member>
 		<member name="volume_db" type="float" setter="set_volume_db" getter="get_volume_db" default="0.0">
 			The sound's volume.
+		</member>
+		<member name="volume_expression" type="String" setter="set_volume_expression" getter="get_volume_expression" default="&quot;&quot;">
+			How loud this firing is, as a factor on [member volume_db]: [code]event.strength / 4[/code]. 0 plays nothing, 1 is [member volume_db], and it is never more than 4.
 		</member>
 		<member name="pitch_scale" type="float" setter="set_pitch_scale" getter="get_pitch_scale" default="1.0">
 			The sound's pitch.
