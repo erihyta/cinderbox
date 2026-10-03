@@ -260,6 +260,10 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		{
 			PutF32( out, v );
 		}
+		for ( float v : shape.turn )
+		{
+			PutF32( out, v );
+		}
 		PutU8( out, shape.grip );
 		for ( float v : { shape.gripPosition.x, shape.gripPosition.y, shape.gripPosition.z, shape.gripRotation[0], shape.gripRotation[1],
 						  shape.gripRotation[2], shape.gripRotation[3] } )
@@ -410,6 +414,16 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		if ( shape.kind > 1 || sane( v[0], 0.005f, 4.0f ) == false || sane( v[1], 0.005f, 4.0f ) == false ||
 			 sane( v[2], 0.005f, 4.0f ) == false || sane( v[3], -4.0f, 4.0f ) == false || sane( v[4], -4.0f, 4.0f ) == false ||
 			 sane( v[5], -4.0f, 4.0f ) == false || sane( v[6], 0.01f, 1000.0f ) == false )
+		{
+			return false;
+		}
+		float bodyTurn = 0.0f;
+		for ( float& f : shape.turn )
+		{
+			f = r.F32();
+			bodyTurn += f * f;
+		}
+		if ( sane( bodyTurn, 0.9f, 1.1f ) == false )
 		{
 			return false;
 		}

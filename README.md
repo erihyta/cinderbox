@@ -85,6 +85,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M77: a marker for each hand: `CbGrip.hand` says the carrying hand's place too, so an item is held where its marker is, not where its model's origin happens to be | done |
 | M78: the other hand "as animated": a grip that keeps the two hands as the item's animations have them, and together when the carrying arm is aimed | done |
 | M79: an item sits in the hand the same way every time: its scene root's own transform is never used, the carrying marker says how it is held, and holsters draw the scene as it is | done |
+| M80: an item's body may be turned any way: turning the carrying marker no longer needs the body turned with it | done |
 
 ## Building
 
@@ -1122,11 +1123,12 @@ the handle, the pistol's is as its animation has it.
 
 - It is part of the pose: other players see it, and the server's hit tests pose the same arms.
 - Fingers are the animation's: the solve places the wrist and turns the hand, it does not close it.
-- One marker per hand. They need the item to have a `CbItemBody` (that is what bakes them), turned as the carrying marker is.
+- One marker per hand. They need the item to have a `CbItemBody` (that is what bakes them); it may be turned any way, but not scaled.
 - `check_grips.gd` checks what scenes built in code bake to.
-- **To turn an item in the hand, turn its carrying marker** (and its body with it). The scene
-  root's own transform is not used by the game (the editor warns if it is not zero): the root is
-  what the game places.
+- **To turn an item in the hand, turn its carrying marker**, and nothing else: the body stays where
+  the scene has it (the bake writes how it is turned in the carried frame, a `turn` line, and the
+  simulation lays the body down that way). The scene root's own transform is not used by the game
+  (the editor warns if it is not zero): the root is what the game places.
 - **A holster is not a hand**: in any other socket (`Back`, `Hip`) the scene is drawn as it is,
   from its origin, so turning the carrying marker does not turn the item on the back. The bat is
   carried across the fingers (its marker is turned a quarter) and hangs along the back as before.

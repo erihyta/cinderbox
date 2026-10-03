@@ -64,7 +64,10 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			if ( item->holder == 0 )
 			{
 				// In the world the body sits at the shape's centre; presentation draws the item from its grip.
+				// (The body is turned in the item's frame: back to that frame first.)
 				ItemShape shape = sim.ItemShapeOf( item->kind );
+				f.transform.rotation = b3NormalizeQuat(
+					b3MulQuat( f.transform.rotation, b3Quat{ { -shape.turn[0], -shape.turn[1], -shape.turn[2] }, shape.turn[3] } ) );
 				b3Vec3 center = b3RotateVector( f.transform.rotation, b3Vec3{ shape.center.x, shape.center.y, shape.center.z } );
 				f.transform.position = b3Sub( f.transform.position, center );
 			}
