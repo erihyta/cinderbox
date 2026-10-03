@@ -3067,7 +3067,7 @@ void TestMannequinCharacter()
 	ModSchema schema;
 	schema.layers = { "full", "upper" };
 	schema.stances = { "melee", "melee_swing", "pistol" };
-	schema.events = { "pistol.fired", "melee.strike" };
+	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
 	CHECK( graph != nullptr );
 	if ( graph == nullptr )
@@ -3284,7 +3284,7 @@ void TestAnimLead()
 	ModSchema schema;
 	schema.layers = { "full", "upper" };
 	schema.stances = { "melee", "melee_swing", "pistol" };
-	schema.events = { "pistol.fired", "melee.strike" };
+	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
 	CHECK( graph != nullptr );
 	if ( graph == nullptr )
@@ -3436,7 +3436,7 @@ void TestUalMannequin()
 	CHECK( set->TurnLegs() == false );
 	ModSchema schema;
 	schema.stances = { "melee", "melee_swing", "pistol" };
-	schema.events = { "pistol.fired", "melee.strike" };
+	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
 	CHECK( graph != nullptr && warnings.empty() );
 	if ( graph == nullptr )
@@ -3627,7 +3627,7 @@ void TestLayerSwap()
 	}
 	ModSchema schema;
 	schema.stances = { "melee", "melee_swing", "pistol" };
-	schema.events = { "pistol.fired", "melee.strike" };
+	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
 	// The pack's own graph: a crouch (standing in: the landing clip, held) on the Base layer.
 	schema.animPacks.push_back( { "test", "test.crouch",
 								  "cinderbox_graph\t1\n"

@@ -65,6 +65,9 @@ void CbPrediction::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "cue", PROPERTY_HINT_PLACEHOLDER_TEXT, "pistol.fired" ), "set_cue", "get_cue" );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "conditions" ), "set_conditions", "get_conditions" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "cooldown", PROPERTY_HINT_RANGE, "0,10,0.01,suffix:s" ), "set_cooldown", "get_cooldown" );
+	ClassDB::bind_method( D_METHOD( "set_while_held", "enabled" ), &CbPrediction::set_while_held );
+	ClassDB::bind_method( D_METHOD( "get_while_held" ), &CbPrediction::get_while_held );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "while_held" ), "set_while_held", "get_while_held" );
 	ClassDB::bind_method( D_METHOD( "set_changes", "changes" ), &CbPrediction::set_changes );
 	ClassDB::bind_method( D_METHOD( "get_changes" ), &CbPrediction::get_changes );
 	ClassDB::bind_method( D_METHOD( "set_stance", "stance" ), &CbPrediction::set_stance );
@@ -146,6 +149,10 @@ PackedStringArray CbPrediction::_get_configuration_warnings() const
 			warnings.push_back( "Change \"" + m_changes[i] + "\": " + error );
 		}
 	}
+	if ( m_whileHeld && m_cooldown <= 0.0 )
+	{
+		warnings.push_back( "While held needs a cooldown: the time between two of the server's cues (0.1 for ten shots a second)." );
+	}
 	if ( m_stance.strip_edges().is_empty() != m_stanceLayer.strip_edges().is_empty() )
 	{
 		warnings.push_back( "A predicted stance needs both: the stance and the layer the server's mod sets it on." );
@@ -153,19 +160,26 @@ PackedStringArray CbPrediction::_get_configuration_warnings() const
 	return warnings;
 }
 
-bool CbPrediction::Accepts( const String& action, const cue::Context& context, double now )
+bool CbPrediction::Accepts( const String& action, const cue::Context& context, double now, bool held )
 {
-	if ( Refusal( action, context, now ).is_empty() == false )
+	if ( Refusal( action, context, now, held ).is_empty() == false )
 	{
 		return false;
 	}
-	m_lastPredicted = now;
+	// Held, the next one is due a cooldown after the last was (not after the frame that showed it):
+	// the cues keep the server's rate whatever the frame rate is.
+	bool inStep = held && m_cooldown > 0.0 && now - m_lastPredicted < 2.0 * m_cooldown;
+	m_lastPredicted = inStep ? m_lastPredicted + m_cooldown : now;
 	return true;
 }
 
-String CbPrediction::Refusal( const String& action, const cue::Context& context, double now ) const
+String CbPrediction::Refusal( const String& action, const cue::Context& context, double now, bool held ) const
 {
 	auto no = []( const String& reason ) { return reason; };
+	if ( held && ( m_whileHeld == false || m_cooldown <= 0.0 ) )
+	{
+		return no( "it predicts the press only (not while_held)" );
+	}
 	if ( action != m_action.strip_edges() )
 	{
 		return no( "it predicts another action (" + m_action.strip_edges() + ")" );

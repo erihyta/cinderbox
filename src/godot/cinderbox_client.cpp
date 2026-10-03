@@ -303,6 +303,17 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 	uint16_t pressed = uint16_t( in.actions & ~m_lastActions );
 	m_lastActions = in.actions;
 	AnnouncePresses( pressed );
+	// What stays down keeps predicting where a look says so (CbPrediction.while_held: automatic fire).
+	if ( m_mirror )
+	{
+		for ( const ModAction& a : m_frame.schema.actions )
+		{
+			if ( ( in.actions & ~pressed ) & ( 1u << a.bit ) )
+			{
+				Director()->hold( String( a.name.c_str() ) );
+			}
+		}
+	}
 }
 
 void CinderboxClient::AnnouncePresses( uint16_t pressed )

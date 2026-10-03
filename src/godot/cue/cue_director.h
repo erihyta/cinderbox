@@ -51,6 +51,9 @@ public:
 	// but that; the server's cue of the same name, when it comes for the local entity, then plays
 	// only the reactions that waited for it. Returns how many cues were predicted.
 	int press( const godot::String& action );
+	// The action is still down (call it every frame it is): the predictions that are while_held
+	// play their cue again each time their cooldown has passed. Returns how many did.
+	int hold( const godot::String& action );
 	// The predictions still waiting for the server's cue, oldest first:
 	// [ { cue, age (seconds), changes, stance, stance_layer } ]. Whoever hosts the director applies
 	// what they say for the local entity until they are answered or expire.
@@ -82,6 +85,7 @@ public:
 	// For reactions and predictions.
 	void Register( CbReaction* reaction );
 	void Unregister( CbReaction* reaction );
+	int Predict( const godot::String& action, bool held );
 	void Register( CbPrediction* prediction );
 	void Unregister( CbPrediction* prediction );
 	void Reindex()

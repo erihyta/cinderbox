@@ -22,6 +22,12 @@
 //   stance         "melee_swing" on stance_layer "full"   what the server's mod will set: the
 //                                        character's state machine starts its swing now
 //
+// An action that works for as long as it is held (automatic fire) is predicted the same way, again
+// and again:
+//
+//   while_held     with cooldown 0.1: the cue is predicted on the press and then every 0.1 s while
+//                  the action stays down and the conditions hold, the rate the server's mod fires at
+//
 // The cue itself reaches the state machine as well (a recoil state entered on "pistol.fired").
 // The host of the director applies these (the Cinderbox viewer does; see present/anim_lead.h).
 //
@@ -64,9 +70,10 @@ class CbPrediction : public godot::Node
 
 public:
 	// For the director: why a press of `action` now would not predict this cue, or empty when it
-	// would. Accepts() is the press itself: when it would, the cooldown starts.
-	godot::String Refusal( const godot::String& action, const cue::Context& context, double now ) const;
-	bool Accepts( const godot::String& action, const cue::Context& context, double now );
+	// would. Accepts() is the press itself: when it would, the cooldown starts. `held` is the
+	// action still down from an earlier press: only a while_held prediction takes that.
+	godot::String Refusal( const godot::String& action, const cue::Context& context, double now, bool held = false ) const;
+	bool Accepts( const godot::String& action, const cue::Context& context, double now, bool held = false );
 	const godot::String& Cue() const
 	{
 		return m_cue;
@@ -112,6 +119,15 @@ public:
 	{
 		return m_cooldown;
 	}
+	void set_while_held( bool v )
+	{
+		m_whileHeld = v;
+		update_configuration_warnings();
+	}
+	bool get_while_held() const
+	{
+		return m_whileHeld;
+	}
 	void set_changes( const godot::PackedStringArray& v )
 	{
 		m_changes = v;
@@ -151,6 +167,7 @@ private:
 	godot::String m_cue;
 	godot::PackedStringArray m_conditions;
 	double m_cooldown = 0.0;
+	bool m_whileHeld = false;
 	godot::PackedStringArray m_changes;
 	godot::String m_stance;
 	godot::String m_stanceLayer;

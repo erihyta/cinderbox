@@ -1,0 +1,60 @@
+[gd_scene load_steps=2 format=3]
+
+; The rifle mod's HUD, loaded over the game's own HUD when a server runs the rifle mod: the ammo
+; count, the reload and the crosshair, shown while the rifle is out. Health, death and the kill
+; feed are the combat mod's (hud_combat.tscn). No scripts: CbFieldLabel is "{field}" text, shown
+; while its conditions hold. Restyle it freely, or override it from a player mod at
+; res://ui/hud_rifle.tscn.
+
+[sub_resource type="LabelSettings" id="Big"]
+font_size = 26
+outline_size = 5
+outline_color = Color(0, 0, 0, 0.75)
+
+[node name="RifleHud" type="CanvasLayer"]
+
+[node name="Ammo" type="CbFieldLabel" parent="."]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -284.0
+offset_top = -76.0
+offset_right = -24.0
+offset_bottom = -42.0
+label_settings = SubResource("Big")
+horizontal_alignment = 2
+text_format = "AMMO {rifle.ammo} / 30"
+conditions = PackedStringArray("rifle.gun", "!rifle.reloading", "!combat.dead")
+
+[node name="Reloading" type="CbFieldLabel" parent="."]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -284.0
+offset_top = -76.0
+offset_right = -24.0
+offset_bottom = -42.0
+label_settings = SubResource("Big")
+horizontal_alignment = 2
+text = "RELOADING"
+conditions = PackedStringArray("rifle.gun", "rifle.reloading", "!combat.dead")
+
+[node name="Crosshair" type="CbFieldLabel" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+label_settings = SubResource("Big")
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "+"
+conditions = PackedStringArray("rifle.gun", "!combat.dead")

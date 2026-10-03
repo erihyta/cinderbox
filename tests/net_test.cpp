@@ -31,6 +31,7 @@
 #include <functional>
 #include <limits>
 #include <map>
+#include <set>
 #include <memory>
 #include <thread>
 
@@ -1054,10 +1055,10 @@ void TestInventory()
 				lyingBat = item != nullptr && item->holder == 0 && int( item->kind ) == batKind ? r.netId : lyingBat;
 			}
 		}
-		startsStowed |= tick > 80 && tick < 100 && inHand == 0 && c.carried == 2 && c.stowed == 2 && c.lying == 2;
+		startsStowed |= tick > 80 && tick < 100 && inHand == 0 && c.carried == 3 && c.stowed == 3 && c.lying == 3; // a pistol, a bat and a rifle, and one of each lying about
 		if ( tick > 130 && tick < 150 && kindOf( inHand ) == batKind )
 		{
-			batOut = c.carried == 2 && c.stowed == 1;
+			batOut = c.carried == 3 && c.stowed == 2;
 			ownBat = inHand;
 		}
 		// The board names what is in each slot, for the HUD: the life's own, then the picked-up bat, then nothing.
@@ -1066,24 +1067,24 @@ void TestInventory()
 		boardSaysStart |= tick > 130 && tick < 150 && ownBat != 0 && in3 == ownBat && kindOf( in2 ) == gunKind;
 		boardSaysSwap |= reached && tick < 600 && in3 == lyingBat && kindOf( in2 ) == gunKind;
 		boardSaysEmpty |= tick > 700 && in3 == 0 && kindOf( in2 ) == gunKind;
-		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == 2 && c.stowed == 1;
-		droppedBySwitching |= tick > 100 && tick < 200 && c.lying != 2;
+		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == 3 && c.stowed == 2;
+		droppedBySwitching |= tick > 100 && tick < 200 && c.lying != 3;
 		// The lying bat is in the hand: the swap happened.
 		if ( inHand == lyingBat && lyingBat != 0 && tick < 520 )
 		{
 			reached = true;
 			const HeldItem* old = ownBat != 0 ? server.FindEntity( ownBat ).try_get<HeldItem>() : nullptr;
-			swapped |= old != nullptr && old->holder == 0 && c.lying == 2;
-			gunKept |= c.carried == 2 && c.stowed == 1;
+			swapped |= old != nullptr && old->holder == 0 && c.lying == 3;
+			gunKept |= c.carried == 3 && c.stowed == 2;
 		}
 		// Slot 2 and back to 3: the picked-up bat is put away and taken out, never dropped.
 		const HeldItem* mine = lyingBat != 0 ? server.FindEntity( lyingBat ).try_get<HeldItem>() : nullptr;
 		awayAndKept |= tick > 545 && tick < 560 && kindOf( inHand ) == gunKind && mine != nullptr && mine->holder == me && mine->stowed != 0 &&
-					   c.lying == 2;
+					   c.lying == 3;
 		backInHand |= tick > 585 && tick < 600 && inHand == lyingBat && reached;
-		thrown |= tick > 610 && tick < 630 && inHand == 0 && c.carried == 1 && c.lying == 3;
+		thrown |= tick > 610 && tick < 630 && inHand == 0 && c.carried == 2 && c.lying == 4;
 		gunAfterThrow |= tick > 645 && tick < 660 && kindOf( inHand ) == gunKind;
-		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 1 && server.BoardValue( me, slotField->slot ) == 3;
+		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 2 && server.BoardValue( me, slotField->slot ) == 3;
 	} );
 	h.Report();
 	std::printf( "    starts stowed %d, bat out %d, pistol out %d, dropped by switching %d\n", int( startsStowed ), int( batOut ), int( gunOut ),
@@ -1100,7 +1101,7 @@ void TestInventory()
 	std::printf( "    the board's slots: at the start %d, after the swap %d, empty after the throw %d\n", int( boardSaysStart ),
 				 int( boardSaysSwap ), int( boardSaysEmpty ) );
 	CHECK( boardSaysStart && boardSaysSwap && boardSaysEmpty );
-	CHECK( startTotal == 6 && leastTotal == 6 && mostTotal == 6 ); // two lying, two per player; none made, none lost
+	CHECK( startTotal == 9 && leastTotal == 9 && mostTotal == 9 ); // three lying, three per player; none made, none lost
 	for ( Bot& b : h.bots )
 	{
 		CHECK( b.client->GetStats().desyncs == 0 );
@@ -1126,6 +1127,7 @@ void TestItemShapes()
 	const std::string root = CB_SOURCE_DIR;
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "melee.bat", shape, error ) && std::max( shape.half.x, shape.half.z ) > 0.3f ); // long, along how it is carried
 	CHECK( LoadItemShapeFolder( root + "/server_mods/pistol/client", "pistol.gun", shape, error ) && shape.mass < 1.0f );
+	CHECK( LoadItemShapeFolder( root + "/server_mods/rifle/client", "rifle.gun", shape, error ) && shape.mass > 2.0f && shape.grip == 3 );
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "no.such", shape, error ) == false );
 	// Properties authored on the body ride along: the bat's hold time is in its scene, not in its mod.
 	ItemProperties properties;
@@ -1401,7 +1403,7 @@ void TestHeadshot()
 		else
 		{
 			diedAt = 0;
-			newLifeHasItems |= wasDead && carried == 2;
+			newLifeHasItems |= wasDead && carried == 3;
 		}
 		const SimGlobals& g = h.server.Sim().Globals();
 		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
@@ -1591,6 +1593,108 @@ void TestPistolMark()
 	CHECK( onTarget >= 2 && onTarget == int( marks.size() ) );
 	CHECK( closest >= server.Config().tickRate ); // once a second
 	CHECK( server.BoardValue( targetId, schema.FindField( "combat.health" )->slot ) == 100 );
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
+// Automatic fire: slot 0 takes out the rifle and holds "fire"; slot 1 does the same with the pistol.
+// The rifle answers the held trigger with a shot every tenth of a second, the pistol with one shot
+// for the press. Held on to the end of the magazine, the rifle clicks once, reloads, and fires on.
+void TestRifle()
+{
+	Harness h( 47823 );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t rifle = schema.ActionMask( "slot_4" );
+	uint16_t pistol = schema.ActionMask( "slot_2" );
+	int rifleFired = schema.FindEvent( "rifle.fired" );
+	int rifleDry = schema.FindEvent( "rifle.dry" );
+	int rifleReload = schema.FindEvent( "rifle.reload" );
+	int pistolFired = schema.FindEvent( "pistol.fired" );
+	CHECK( fire != 0 && rifle != 0 && rifleFired >= 0 && rifleDry >= 0 && rifleReload >= 0 && pistolFired >= 0 );
+	CHECK( schema.FindItemKind( "rifle.gun" ) >= 0 && schema.FindField( "rifle.ammo" ) != nullptr );
+
+	// Held for two seconds (20 shots), a tap (1), then held for good (9, a reload, and on).
+	auto trigger = []( uint32_t tick ) { return ( tick >= 200 && tick < 320 ) || tick == 400 || tick >= 460; };
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraPitch = 8000; // at the sky: nobody is hurt, no life ends, no magazine is refilled
+		in.actions = tick < 150 ? rifle : uint16_t( trigger( tick ) ? fire : 0 );
+		return in;
+	};
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraPitch = 8000;
+		in.actions = tick < 150 ? pistol : uint16_t( trigger( tick ) ? fire : 0 );
+		return in;
+	};
+
+	std::set<uint32_t> shots, clicks, reloads, pistolShots;
+	int32_t ammoAfterHold = -1;
+	int32_t ammoAfterTap = -1;
+	const BoardField* ammo = schema.FindField( "rifle.ammo" );
+	h.RunUntil( 17.0, [&]( double ) {
+		Simulation& sim = h.server.Sim();
+		const uint32_t rifleman = sim.PlayerNetId( h.bots[0].client->Slot() );
+		const uint32_t gunner = sim.PlayerNetId( h.bots[1].client->Slot() );
+		const SimGlobals& g = sim.Globals();
+		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+		{
+			const ModEventRecord& e = g.modEvents[i];
+			if ( e.netIdA == rifleman && int( e.type ) == rifleFired )
+			{
+				shots.insert( e.tick );
+			}
+			if ( e.netIdA == rifleman && int( e.type ) == rifleDry )
+			{
+				clicks.insert( e.tick );
+			}
+			if ( e.netIdA == rifleman && int( e.type ) == rifleReload )
+			{
+				reloads.insert( e.tick );
+			}
+			if ( e.netIdA == gunner && int( e.type ) == pistolFired )
+			{
+				pistolShots.insert( e.tick );
+			}
+		}
+		if ( rifleman != 0 && sim.Tick() >= 360 && sim.Tick() < 390 )
+		{
+			ammoAfterHold = sim.BoardValue( rifleman, ammo->slot );
+		}
+		if ( rifleman != 0 && sim.Tick() >= 430 && sim.Tick() < 450 )
+		{
+			ammoAfterTap = sim.BoardValue( rifleman, ammo->slot );
+		}
+	} );
+	h.Report();
+
+	// The first hold: every shot six ticks after the last.
+	std::vector<uint32_t> ticks( shots.begin(), shots.end() );
+	int held = 0;
+	bool evenly = true;
+	for ( size_t i = 0; i < ticks.size() && ticks[i] < 390; ++i )
+	{
+		held += 1;
+		evenly &= i == 0 || ticks[i] - ticks[i - 1] == 6;
+	}
+	// The second: the nine left, then nothing for the reload (two seconds), then the next magazine.
+	uint32_t longest = 0;
+	for ( size_t i = size_t( held ) + 2; i < ticks.size(); ++i )
+	{
+		longest = std::max( longest, ticks[i] - ticks[i - 1] );
+	}
+	std::printf( "    rifle: %d shots, %d in the two seconds held (evenly: %d), ammo %d after, %d after a tap; %d clicks, %d reloads, longest pause %u ticks\n",
+				 int( shots.size() ), held, int( evenly ), ammoAfterHold, ammoAfterTap, int( clicks.size() ), int( reloads.size() ), longest );
+	std::printf( "    pistol, held the same way: %d shots\n", int( pistolShots.size() ) );
+	CHECK( held == 20 && evenly );
+	CHECK( ammoAfterHold == 10 && ammoAfterTap == 9 );
+	CHECK( shots.size() > 60 );								   // 21, the 9 left, and more than one magazine after
+	CHECK( clicks.size() == reloads.size() && clicks.size() >= 2 && clicks.size() <= 3 ); // one click for each empty magazine
+	CHECK( longest >= 120 && longest <= 128 );				   // the reload
+	CHECK( pistolShots.size() == 3 );						   // a press each: the pistol is not automatic
 	for ( Bot& b : h.bots )
 	{
 		CHECK( b.client->GetStats().desyncs == 0 );
@@ -2410,6 +2514,7 @@ int main( int argc, char** argv )
 		{ "sneak", TestSneak },
 		{ "headshot", TestHeadshot },
 		{ "pistol_mark", TestPistolMark },
+		{ "rifle", TestRifle },
 		{ "combat", TestCombat },
 		{ "private_fields", TestPrivateFields },
 		{ "melee", TestMelee },
