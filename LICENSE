@@ -1,0 +1,16 @@
+Copyright (c) 2026 erihyta. All rights reserved.
+
+Cinderbox is not open source. This repository is public so that it can be read.
+
+No permission is granted to use, copy, modify, merge, publish, distribute,
+sublicense or sell this software or any part of it (source code, scenes,
+assets and documentation) without prior written permission from the copyright
+holder, beyond what GitHub's Terms of Service allow every user of a public
+repository (viewing it and forking it on GitHub).
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+
+Third-party material keeps its own license and is not covered by this notice:
+the libraries the build downloads (flecs, Box3D, ENet, ozz-animation, miniz,
+godot-cpp), the Godot engine, and the default character and its animations
+(godot/characters/mannequin/source/LICENSE.txt).

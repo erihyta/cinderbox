@@ -1543,6 +1543,13 @@ scripts/          cross-compiler determinism check, stress test
 tools/            pack_mod.ps1, publish_mod.ps1, export_client.ps1, bake_map.ps1, make_sfx.py (placeholder sounds)
 ```
 
+## License
+
+Copyright (c) 2026 erihyta. **All rights reserved.** Cinderbox is not open source: the repository
+is public to be read, and no permission is given to use, copy, modify or redistribute it without
+written permission (see [LICENSE](LICENSE)). Third-party libraries and assets keep their own
+licenses.
+
 ## Credits
 
 - Default character and its animations: [Universal Animation Library](https://quaternius.com) by
