@@ -82,6 +82,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M74: your own body in first person: the arms pinned under the camera and turned with it, the torso and head not drawn, a per-item view offset in the look | done |
 | M75: first person faces the camera: the body turns with the view and the upper body follows its pitch, with or without a weapon | done |
 | M76: two-handed items: a `CbGrip` marker in an item's scene says where the other hand holds it; that arm is solved onto it in the pose everyone draws and hit tests use | done |
+| M77: a marker for each hand: `CbGrip.hand` says the carrying hand's place too, so an item is held where its marker is, not where its model's origin happens to be | done |
 
 ## Building
 
@@ -1098,21 +1099,27 @@ simply out of sight. The mannequin has both: the bat hangs across the back, the 
 
 ### Both hands on an item
 
-An item is carried by one hand: its scene's origin is in that hand's socket, whichever hand it is
-(a mod holds an item in `RightHand` or `LeftHand`; the shipped ones use the right). The **other
-hand** can hold it too:
+Where the hands hold an item is said by markers in its scene, one `CbGrip` per hand:
+
+| `hand` | Means | Without it |
+|---|---|---|
+| **The carrying hand** | the item is carried here: this point is in the hand's socket (whichever hand the item is in: a mod holds it in `RightHand` or `LeftHand`), the marker's -Z along the fingers, +Y up | the item is carried at its scene's origin |
+| **The other hand** | the character's other arm is bent so that its hand is here, wherever the carrying hand and the animation take the item | the item is one-handed |
+
+Move a marker, not the model: a mesh imported with its origin anywhere is held where its carrying
+marker is. The pistol and the bat have both (`Carry`, `OtherHand`).
 
 | Step | What |
 |---|---|
-| Author | put a `CbGrip` (a marker) in the item's scene where the other hand goes (its wrist; with `align_rotation`, its palm: the hand's own socket): on the pistol beside the grip, on the bat further down the handle |
-| `align_rotation` | on: the hand also turns as the marker is turned, as a hand carrying an item placed there would be (the marker's -Z is where that item would point). Off: the hand keeps the turn its animation gives it |
-| Bake | with the item's body, as a `grip` line of `items/<kind>.cfg`; the server puts it in the schema, so every client has it |
+| `align_rotation` (the other hand) | on: the hand's palm is on the marker, turned as the marker is, as a hand carrying an item placed there would be. Off: its wrist goes there and it keeps the turn its animation gives it |
+| Bake | with the item's body, in `items/<kind>.cfg`: the body's centre and the other hand's `grip` are written in the carrying hand's frame, so the server and the pose never see the scene's own origin; the server puts the grip in the schema, so every client has it. The viewer draws the scene moved so that the carrying marker is in the socket (and, lying in the world, where the body is) |
 | Pose | last of all: the item is where the carrying hand ended up (after the aim), and the other arm is bent at the elbow and turned at the shoulder so its wrist is on the grip. The elbow stays on the side the animation had it; out of reach, the arm goes as far as it can |
 | When | while the other hand is empty. Two items, one in each hand, are each carried one-handed |
 
 - It is part of the pose: other players see it, and the server's hit tests pose the same arms.
 - Fingers are the animation's: the solve places the wrist and turns the hand, it does not close it.
-- One grip per item. A grip needs the item to have a `CbItemBody` (that is what is baked).
+- One marker per hand. They need the item to have a `CbItemBody` (that is what bakes them), turned as the carrying marker is.
+- `check_grips.gd` checks what scenes built in code bake to.
 - **Where the palms are is the character's**: its `CbSocket` nodes named `RightHand` and `LeftHand`
   (under the hand bones' `BoneAttachment3D`). They are baked into the character's `anim.cfg`
   (`socket.RightHand = ...`), because the pose needs them: the item's frame is the carrying hand's
@@ -1386,6 +1393,7 @@ All tools are in `<build dir>/bin`.
 | `godot --path godot --script res://addons/cinderbox_maps/check_menu.gd -- --test-port=P --config=FILE [--shots=DIR]` | Drives the menus against a running server: bad address, unknown host, dead port, join, camera, Esc menu, settings, leave, rejoin from the recent list. With `--other-port=P2 --result=FILE` (a server running other mods) also the restart that joins it |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_guard.gd` | Checks the scene guard: the game's own scenes pass, and scenes with an `HTTPRequest`, a script, a wired signal, a climbing path or an animation that calls `queue_free` are refused |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_predictions.gd` | Checks predictions on a bare director: a press plays its cue at once, the server's cue then plays only what waited, another player's cue is never an echo, conditions and cooldown hold a press back |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_grips.gd` | Checks what an item's `CbGrip` markers bake to, on scenes built in code: carried at the origin, at a carrying marker, at a turned one, and what is refused |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_object_source.gd -- FILE.cbv` | Checks that the viewer draws from any object that hands it packets: a GDScript source reads a view file, with no peer extension involved |
 | `godot --path godot -- --autoplay=S --screenshot=F.png --screenshot-every=S2` | Unattended client; also saves `F_1.png`, `F_2.png`, ... and prints the mod events it saw |
 | `scripts/stress_test.sh --bots N --full M --latency MS --jitter MS --loss % --rollback T` | Starts a server, the simulator and the bots, and prints a summary |
