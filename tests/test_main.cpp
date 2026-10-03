@@ -3173,6 +3173,30 @@ void TestMannequinCharacter()
 	CHECK( hand.z - shoulder.z > 0.35f );
 	CHECK( std::fabs( hand.y - shoulder.y ) < 0.1f );
 	CheckHeldItem( *set, pose );
+	{
+		// Where the gun points and where the hands are, as the stance's animation has them and
+		// once the arm is aimed (level: the aim asks for nothing the animation does not do).
+		auto gun = [&]( const anim::PoseEvaluator& from, b3Vec3& ahead, b3Vec3& between ) {
+			b3Vec3 at, otherAt;
+			b3Quat turn, otherTurn;
+			float scale;
+			anim::Decompose( from.Models()[size_t( set->ArmJoints( false ).hand )], at, turn, scale );
+			anim::Decompose( from.Models()[size_t( set->ArmJoints( true ).hand )], otherAt, otherTurn, scale );
+			ahead = b3RotateVector( b3MulQuat( turn, set->HandSocketOf( false ).rotation ), { 0.0f, 0.0f, -1.0f } );
+			between = b3Sub( otherAt, at );
+		};
+		AnimState unaimed = state();
+		unaimed.aiming = 0;
+		anim::PoseEvaluator plain( *set );
+		plain.SetGraph( graph, warnings );
+		plain.Evaluate( unaimed );
+		b3Vec3 asAnimated, asAimed, handsAnimated, handsAimed;
+		gun( plain, asAnimated, handsAnimated );
+		gun( pose, asAimed, handsAimed );
+		std::printf( "    the pistol points (%.2f %.2f %.2f) as animated, (%.2f %.2f %.2f) aimed level; the left hand is (%.2f %.2f %.2f) from the right as animated, (%.2f %.2f %.2f) aimed\n",
+					 asAnimated.x, asAnimated.y, asAnimated.z, asAimed.x, asAimed.y, asAimed.z, handsAnimated.x, handsAnimated.y, handsAnimated.z,
+					 handsAimed.x, handsAimed.y, handsAimed.z );
+	}
 	command( CommandType::Event, 0, 0, 0 ); // pistol.fired, by this player
 	step( 1 );
 	CHECK( state().graph[1].state == stateOf( 1, "Shoot" ) );

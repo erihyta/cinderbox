@@ -535,8 +535,8 @@ void CinderboxClient::HandleEvents()
 }
 
 // The viewer's own body in first person (see set_first_person): from the spine up the pose is put
-// under the camera's eye, which stands still above the feet, upright as the rest pose is, and turned
-// with the camera; the arms are moved by the held item's view offset; and its skeleton draws the
+// under the camera's eye, which stands still above the feet, and turned the rest of the way with
+// the camera; the arms are moved by the held item's view offset; and its skeleton draws the
 // arms and the legs only.
 void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimState* state, present::Models& models )
 {
@@ -573,21 +573,19 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 		return b3MulSV( 0.5f, b3Add( placeOf( from[size_t( arms[0] )] ), placeOf( from[size_t( arms[1] )] ) ) );
 	};
 
-	// The chest goes back to how the rest pose has it: what the walk, the sprint and the bow did to
-	// the torso is taken out, what the arms do themselves stays. About the point between the
-	// shoulders, which is then put where the rest pose has it under the head.
-	b3Vec3 unusedPlace;
-	b3Quat now, rest;
-	float unusedScale;
-	anim::Decompose( models[size_t( chest )], unusedPlace, now, unusedScale );
-	anim::Decompose( restModels[size_t( chest )], unusedPlace, rest, unusedScale );
-	b3Quat undo = b3MulQuat( rest, b3Quat{ { -now.v.x, -now.v.y, -now.v.z }, now.s } );
-	anim::RotateSubtreeAbout( *m_animSet, models, spine, between( models ), undo );
+	// The upper body keeps the turn its pose has (a shooter's turned shoulders, with the arms the
+	// animation made for them, and the aim the pose gave the carrying arm): it is only moved, so
+	// that one point of it is where the rest pose has that point under the head. Aiming, that
+	// point is the joint the arm is aimed from (its shoulder): the arm points where the player looks
+	// from a place that stands still, so the hand and what it holds do. Otherwise it is the point
+	// between the shoulders, and the walk's sway turns the arms about it a little.
 	b3Vec3 restHead = placeOf( restModels[size_t( head )] );
 	// The camera's eye stands over the feet at the rest pose's head height (anim::EyeHeight).
 	b3Vec3 eye = { 0.0f, restHead.y, 0.0f };
-	b3Vec3 want = b3Add( eye, b3Sub( between( restModels ), restHead ) );
-	anim::TranslateSubtree( *m_animSet, models, spine, b3Sub( want, between( models ) ) );
+	int aimedFrom = state->aiming != 0 && m_animSet->AimJoints().empty() == false ? m_animSet->AimJoints().back().first : -1;
+	b3Vec3 pinned = aimedFrom >= 0 ? placeOf( models[size_t( aimedFrom )] ) : between( models );
+	b3Vec3 pinnedAtRest = aimedFrom >= 0 ? placeOf( restModels[size_t( aimedFrom )] ) : between( restModels );
+	anim::TranslateSubtree( *m_animSet, models, spine, b3Sub( b3Add( eye, b3Sub( pinnedAtRest, restHead ) ), pinned ) );
 
 	// The held items' offsets, along where the player looks (in the body's frame: it faces +Z and
 	// its right is -X).
@@ -610,10 +608,22 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	b3Vec3 right = { -yaw.cosine, 0.0f, yaw.sine };
 	b3Vec3 up = { -yaw.sine * pitch.sine, pitch.cosine, -yaw.cosine * pitch.sine };
 
-	// And turns with the camera, about the point the camera turns about, like something it holds.
+	// And turns with the camera all the way, about the point the camera turns about, like something
+	// it holds: the pose has turned the shoulders by only a part of the pitch (the look chain's
+	// shares up to the chest, while the character faces the camera).
+	auto parents = m_animSet->Skeleton().joint_parents();
+	float turned = 0.0f;
+	for ( const auto& [joint, share] : m_animSet->LookJoints() )
+	{
+		for ( int j = arms[0]; j >= 0; j = parents[size_t( j )] )
+		{
+			turned += j == joint ? share : 0.0f;
+		}
+	}
+	float pitchLeft = state->aimPitch * ( 1.0f - turned * float( state->look ) / 255.0f );
 	b3Vec3 pivot = { 0.0f, anim::EyeHeight( *m_animSet ), 0.0f };
 	anim::RotateSubtreeAbout( *m_animSet, models, spine, pivot, b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, state->aimYaw ) );
-	anim::RotateSubtreeAbout( *m_animSet, models, spine, pivot, b3MakeQuatFromAxisAngle( right, state->aimPitch ) );
+	anim::RotateSubtreeAbout( *m_animSet, models, spine, pivot, b3MakeQuatFromAxisAngle( right, pitchLeft ) );
 	// The other hand on the item it holds: where the grip says, or where it is now (the pose solved
 	// it as the animation has the two hands), before the carrying arm is aimed again.
 	anim::HandGrip grip;
