@@ -6,6 +6,7 @@
 // socket's): the grip at the origin, pointing along -Z.
 
 #include <godot_cpp/classes/collision_shape3d.hpp>
+#include <godot_cpp/classes/marker3d.hpp>
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/callable.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -109,6 +110,35 @@ protected:
 private:
 	double m_mass = 1.0;
 	godot::Dictionary m_properties;
+};
+
+// Where the other hand holds an item: a marker in the item's scene. The item is carried at its
+// origin by one hand (whichever socket it is in); with a CbGrip the character's other arm is bent
+// so that its wrist is here, wherever the carrying hand and the animation take the item, while
+// that other hand is empty. It is baked with the item's body (a "grip" line in items/<kind>.cfg),
+// so the server poses the same arms for its hit tests and every player sees them.
+class CbGrip : public godot::Marker3D
+{
+	GDCLASS( CbGrip, godot::Marker3D )
+
+public:
+	// The hand also turns as the marker is turned: as a hand carrying an item placed here would be
+	// (the marker's -Z is where such an item would point). Off: the hand keeps the turn its
+	// animation gives it.
+	void set_align_rotation( bool v )
+	{
+		m_alignRotation = v;
+	}
+	bool get_align_rotation() const
+	{
+		return m_alignRotation;
+	}
+
+protected:
+	static void _bind_methods();
+
+private:
+	bool m_alignRotation = false;
 };
 
 } // namespace cb::gd

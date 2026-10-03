@@ -619,6 +619,12 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 		// The aimed arm ends on the line of sight, as the pose had it.
 		anim::AimChain( *m_animSet, models, m_animSet->AimJoints(), m_animSet->AimTip(), forward );
 	}
+	// And the other hand back on the item it holds.
+	anim::HandGrip grip;
+	if ( m_mirror->GripOf( netId, grip ) )
+	{
+		anim::SolveGrip( *m_animSet, models, grip );
+	}
 	// The held item's place in the view: the arms alone move there.
 	b3Vec3 placed = b3Add( b3MulSV( offset.x, right ), b3Add( b3MulSV( offset.y, up ), b3MulSV( offset.z, forward ) ) );
 	for ( int arm : arms )
@@ -1449,6 +1455,7 @@ String CinderboxClient::use_character( const String& name )
 		if ( m_mirror )
 		{
 			m_mirror->SetAnimSet( m_animSet, graph, packs, packClips );
+			m_mirror->SetItemShapes( m_frame.schema.itemShapes );
 		}
 		return String();
 	}
@@ -1503,6 +1510,7 @@ String CinderboxClient::use_character( const String& name )
 	if ( m_mirror )
 	{
 		m_mirror->SetAnimSet( set, graph, packs, packClips );
+		m_mirror->SetItemShapes( m_frame.schema.itemShapes );
 	}
 	RebuildCharacterNodes();
 	return String();

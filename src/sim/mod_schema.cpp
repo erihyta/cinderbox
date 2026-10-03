@@ -260,6 +260,12 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		{
 			PutF32( out, v );
 		}
+		PutU8( out, shape.grip );
+		for ( float v : { shape.gripPosition.x, shape.gripPosition.y, shape.gripPosition.z, shape.gripRotation[0], shape.gripRotation[1],
+						  shape.gripRotation[2], shape.gripRotation[3] } )
+		{
+			PutF32( out, v );
+		}
 	}
 	PutU8( out, uint8_t( std::min<size_t>( schema.sockets.size(), 255 ) ) );
 	for ( size_t i = 0; i < schema.sockets.size() && i < 255; ++i )
@@ -404,6 +410,25 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		if ( shape.kind > 1 || sane( v[0], 0.005f, 4.0f ) == false || sane( v[1], 0.005f, 4.0f ) == false ||
 			 sane( v[2], 0.005f, 4.0f ) == false || sane( v[3], -4.0f, 4.0f ) == false || sane( v[4], -4.0f, 4.0f ) == false ||
 			 sane( v[5], -4.0f, 4.0f ) == false || sane( v[6], 0.01f, 1000.0f ) == false )
+		{
+			return false;
+		}
+		shape.grip = r.U8();
+		float g[7];
+		for ( float& f : g )
+		{
+			f = r.F32();
+		}
+		shape.gripPosition = { g[0], g[1], g[2] };
+		float turn = 0.0f;
+		for ( int k = 0; k < 4; ++k )
+		{
+			shape.gripRotation[k] = g[3 + k];
+			turn += g[3 + k] * g[3 + k];
+		}
+		// Within arm's reach of the carrying hand, and a rotation that is one.
+		if ( shape.grip > 2 || sane( g[0], -2.0f, 2.0f ) == false || sane( g[1], -2.0f, 2.0f ) == false || sane( g[2], -2.0f, 2.0f ) == false ||
+			 sane( turn, 0.9f, 1.1f ) == false )
 		{
 			return false;
 		}

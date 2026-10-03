@@ -768,6 +768,30 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 		std::string unused;
 		set->SetLook( cfg.count( "look" ) ? cfg["look"] : set->m_lookConfig, cfg.count( "look" ) ? warnings : unused );
 	}
+	for ( int side = 0; side < 2; ++side )
+	{
+		// socket.RightHand = x y z qx qy qz qw
+		const char* key = side == 0 ? "socket.RightHand" : "socket.LeftHand";
+		if ( cfg.count( key ) == 0 )
+		{
+			continue;
+		}
+		std::istringstream words( cfg[key] );
+		std::string word;
+		float v[7];
+		int n = 0;
+		while ( n < 7 && ( words >> word ) && expr::ParseFloat( word.c_str(), word.size(), v[n] ) )
+		{
+			++n;
+		}
+		float turn = n == 7 ? v[3] * v[3] + v[4] * v[4] + v[5] * v[5] + v[6] * v[6] : 0.0f;
+		if ( n != 7 || turn < 0.9f || turn > 1.1f )
+		{
+			warnings += std::string( key ) + " needs a position and a rotation (x y z qx qy qz qw); ";
+			continue;
+		}
+		set->SetHandSocket( side == 1, { { v[0], v[1], v[2] }, { { v[3], v[4], v[5] }, v[6] } } );
+	}
 	set->m_description = dir + " (" + std::to_string( set->m_skeleton->num_joints() ) + " joints, " +
 						 ( graph ? "a state machine with " : "no state machine, " ) + std::to_string( set->m_namedClips.size() ) + " clips)";
 	return set;
@@ -797,6 +821,9 @@ void AnimSet::SetAim( const std::string& chain, const std::string& tip, std::str
 	m_hipsJoint = FindJoint( *this, "Hips" );
 	m_spineJoint = FindJoint( *this, "Spine" );
 	m_neckJoint = FindJoint( *this, "Neck" );
+	m_arms[0] = { FindJoint( *this, "RightUpperArm" ), FindJoint( *this, "RightLowerArm" ), FindJoint( *this, "RightHand" ) };
+	m_arms[1] = { FindJoint( *this, "LeftUpperArm" ), FindJoint( *this, "LeftLowerArm" ), FindJoint( *this, "LeftHand" ) };
+	DefaultHandSockets();
 	if ( m_aimTip < 0 )
 	{
 		if ( m_aimJoints.empty() == false )
@@ -804,6 +831,29 @@ void AnimSet::SetAim( const std::string& chain, const std::string& tip, std::str
 			warnings += "aim tip '" + tip + "' is not in the skeleton; ";
 		}
 		m_aimJoints.clear();
+	}
+}
+
+// The built-in hand frame, for a hand the character gave no socket: the frame items attach to
+// (AttachFrame, the same on every rig), turned so the item points along the fingers, 6 cm into the
+// palm. (The viewer draws a built-in hand's item with the same numbers.)
+void AnimSet::DefaultHandSockets()
+{
+	for ( int side = 0; side < 2; ++side )
+	{
+		int hand = m_arms[side].hand;
+		if ( m_handSocketSet[side] || hand < 0 || size_t( hand ) >= m_attachFrames.size() )
+		{
+			continue;
+		}
+		b3Vec3 unusedPlace;
+		b3Quat attach;
+		float unusedScale;
+		Decompose( m_attachFrames[size_t( hand )], unusedPlace, attach, unusedScale );
+		// Euler (-90, 180, 0) degrees, Y then X.
+		const b3Quat turn = { { 0.0f, 0.70710678f, 0.70710678f }, 0.0f };
+		m_handSockets[side].position = b3RotateVector( attach, b3Vec3{ 0.0f, -0.06f, 0.0f } );
+		m_handSockets[side].rotation = b3MulQuat( attach, turn );
 	}
 }
 

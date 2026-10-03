@@ -1533,6 +1533,88 @@ void TestPoseTools()
 		CHECK( b3Distance( position( models[size_t( foot )] ), position( eval.Models()[size_t( foot )] ) ) < 1e-6f );
 	}
 
+	// An item held with both hands: the item is where the hand that carries it is, and the other
+	// arm bends so that its wrist is on the item's grip.
+	{
+		const anim::AnimSet::Arm& right = set->ArmJoints( false );
+		const anim::AnimSet::Arm& left = set->ArmJoints( true );
+		CHECK( right.upper >= 0 && right.lower >= 0 && right.hand == hand && left.upper >= 0 && left.lower >= 0 && left.hand >= 0 );
+		AnimState aimingState;
+		aimingState.aiming = 1; // the right arm out in front, as with a pistol
+		anim::PoseEvaluator carried( *set );
+		carried.Evaluate( aimingState );
+		// A grip within the other arm's reach: a point in front of its shoulder, said in the item's
+		// frame, which is the carrying hand's socket frame.
+		b3Vec3 at;
+		b3Quat turn;
+		float scale;
+		anim::Decompose( carried.Models()[size_t( right.hand )], at, turn, scale );
+		b3Quat item = b3MulQuat( turn, set->HandSocketOf( false ).rotation );
+		b3Vec3 itemAt = b3Add( at, b3RotateVector( turn, set->HandSocketOf( false ).position ) );
+		b3Vec3 target = b3Add( position( carried.Models()[size_t( left.upper )] ), b3Vec3{ -0.1f, -0.1f, 0.3f } );
+		anim::HandGrip grip;
+		const b3Vec3 within = b3RotateVector( b3Quat{ { -item.v.x, -item.v.y, -item.v.z }, item.s }, b3Sub( target, itemAt ) );
+		grip.position = within;
+		anim::PoseEvaluator both( *set );
+		both.Evaluate( aimingState, &grip );
+		float off = b3Distance( position( both.Models()[size_t( left.hand )] ), target );
+		float before = b3Distance( position( carried.Models()[size_t( left.hand )] ), target );
+		std::printf( "    the other hand: %.3f m from the grip without it, %.4f m with\n", before, off );
+		CHECK( before > 0.2f && off < 0.002f );
+		// The carrying arm and the rest of the body did not move, and the bones kept their lengths.
+		int head = present::FindJoint( *set, "Head" );
+		CHECK( b3Distance( position( both.Models()[size_t( right.hand )] ), position( carried.Models()[size_t( right.hand )] ) ) < 1e-6f );
+		CHECK( b3Distance( position( both.Models()[size_t( head )] ), position( carried.Models()[size_t( head )] ) ) < 1e-6f );
+		CHECK( b3Distance( position( both.Models()[size_t( left.upper )] ), position( carried.Models()[size_t( left.upper )] ) ) < 1e-5f );
+		auto length = [&]( const present::Models& m, int a, int b ) { return b3Distance( position( m[size_t( a )] ), position( m[size_t( b )] ) ); };
+		CHECK( std::fabs( length( both.Models(), left.upper, left.lower ) - length( carried.Models(), left.upper, left.lower ) ) < 1e-4f );
+		CHECK( std::fabs( length( both.Models(), left.lower, left.hand ) - length( carried.Models(), left.lower, left.hand ) ) < 1e-4f );
+		// Out of reach: the arm goes as far as it can toward it, almost straight.
+		grip.position = { 0.0f, 0.0f, -1.5f };
+		both.Evaluate( aimingState, &grip );
+		float arm = length( both.Models(), left.upper, left.lower ) + length( both.Models(), left.lower, left.hand );
+		CHECK( length( both.Models(), left.upper, left.hand ) > 0.99f * arm );
+		// The hand takes the grip's turn when it is asked to: as a hand carrying an item there would.
+		grip.position = within;
+		grip.align = true;
+		both.Evaluate( aimingState, &grip );
+		b3Quat leftTurn;
+		b3Vec3 leftAt;
+		anim::Decompose( both.Models()[size_t( left.hand )], leftAt, leftTurn, scale );
+		b3Vec3 itemAhead = b3RotateVector( item, { 0.0f, 0.0f, -1.0f } );
+		b3Vec3 handAhead = b3RotateVector( b3MulQuat( leftTurn, set->HandSocketOf( true ).rotation ), { 0.0f, 0.0f, -1.0f } );
+		CHECK( b3Dot( itemAhead, handAhead ) > 0.999f );
+		// ... and it is the hand's own socket (its palm) that is on the grip, not its wrist.
+		CHECK( b3Distance( b3Add( leftAt, b3RotateVector( leftTurn, set->HandSocketOf( true ).position ) ), target ) < 0.002f );
+		// A character says where its palms are: the grip follows.
+		{
+			auto palms = anim::AnimSet::CreateProcedural();
+			anim::AnimSet::HandSocket palm = palms->HandSocketOf( false );
+			palm.position = b3Add( palm.position, b3Vec3{ 0.0f, -0.05f, 0.0f } );
+			palms->SetHandSocket( false, palm );
+			anim::PoseEvaluator moved( *palms );
+			grip.align = false;
+			moved.Evaluate( aimingState, &grip );
+			b3Vec3 shifted = b3Add( target, b3RotateVector( turn, b3Vec3{ 0.0f, -0.05f, 0.0f } ) );
+			CHECK( b3Distance( position( moved.Models()[size_t( left.hand )] ), shifted ) < 0.002f );
+			grip.align = true;
+		}
+		// The item in the left hand: the right hand reaches for it.
+		anim::PoseEvaluator resting( *set );
+		resting.Evaluate( AnimState{} );
+		anim::Decompose( resting.Models()[size_t( left.hand )], at, turn, scale );
+		item = b3MulQuat( turn, set->HandSocketOf( true ).rotation );
+		itemAt = b3Add( at, b3RotateVector( turn, set->HandSocketOf( true ).position ) );
+		target = b3Add( position( resting.Models()[size_t( right.upper )] ), b3Vec3{ 0.1f, -0.2f, 0.25f } );
+		grip.leftCarries = true;
+		grip.align = false;
+		grip.position = b3RotateVector( b3Quat{ { -item.v.x, -item.v.y, -item.v.z }, item.s }, b3Sub( target, itemAt ) );
+		anim::PoseEvaluator mirrored( *set );
+		mirrored.Evaluate( AnimState{}, &grip );
+		CHECK( b3Distance( position( mirrored.Models()[size_t( right.hand )] ), target ) < 0.002f );
+		CHECK( b3Distance( position( mirrored.Models()[size_t( left.hand )] ), position( resting.Models()[size_t( left.hand )] ) ) < 1e-6f );
+	}
+
 	// Legs turned toward the direction of travel: the hips and legs turn, the upper body does not.
 	{
 		AnimState strafing;

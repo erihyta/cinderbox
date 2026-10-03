@@ -81,6 +81,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M73: a steady first-person camera (on the mover, not the head bone), the hidden head keeps its shadow, the camera is placed after the frame's world update, no camera shakes in the shipped looks | done |
 | M74: your own body in first person: the arms pinned under the camera and turned with it, the torso and head not drawn, a per-item view offset in the look | done |
 | M75: first person faces the camera: the body turns with the view and the upper body follows its pitch, with or without a weapon | done |
+| M76: two-handed items: a `CbGrip` marker in an item's scene says where the other hand holds it; that arm is solved onto it in the pose everyone draws and hit tests use | done |
 
 ## Building
 
@@ -732,6 +733,7 @@ Client controls:
   | The arms | held under the camera, upright, and turned with it: walking, sprinting and bowing do not swing them across the screen; what the arms do themselves (a shot's recoil, a reload) shows |
   | Where they sit | each item's look can move them: `CbItemLook.view_offset`, metres to the right, up and ahead (the pistol: 5 cm up, 3 cm ahead). Keep it small: far from the body the arms' cut ends come into view |
   | Who sees it | only you. Other players, your shadow's pose source, hit tests and where shots start are the body's real pose |
+  | Both hands | an item with a grip (below) has the other hand on it here too: it is solved again after the arms are pinned |
   | Limits | a stance that holds an item low or behind the body (the bat's) is out of view and an offset cannot bring it in: that takes an animation made for the view. The built-in box rig is drawn whole |
 - Nothing in the shipped looks shakes the camera. (`CbReaction.shake` still does, for a mod that wants it.)
 - Q moves the third-person camera over the right shoulder, the left, and back behind.
@@ -1093,6 +1095,36 @@ declare.ItemProperty( m_bat, "inventory.holster", declare.Socket( "Back" ) ); //
 chooses whether it has that socket: a `CbSocket` node named like it (`Back`, `Hip`) under a
 `BoneAttachment3D`, moved in the editor like the hand sockets. Without either, a stowed item is
 simply out of sight. The mannequin has both: the bat hangs across the back, the pistol on the right hip.
+
+### Both hands on an item
+
+An item is carried by one hand: its scene's origin is in that hand's socket, whichever hand it is
+(a mod holds an item in `RightHand` or `LeftHand`; the shipped ones use the right). The **other
+hand** can hold it too:
+
+| Step | What |
+|---|---|
+| Author | put a `CbGrip` (a marker) in the item's scene where the other hand goes (its wrist; with `align_rotation`, its palm: the hand's own socket): on the pistol beside the grip, on the bat further down the handle |
+| `align_rotation` | on: the hand also turns as the marker is turned, as a hand carrying an item placed there would be (the marker's -Z is where that item would point). Off: the hand keeps the turn its animation gives it |
+| Bake | with the item's body, as a `grip` line of `items/<kind>.cfg`; the server puts it in the schema, so every client has it |
+| Pose | last of all: the item is where the carrying hand ended up (after the aim), and the other arm is bent at the elbow and turned at the shoulder so its wrist is on the grip. The elbow stays on the side the animation had it; out of reach, the arm goes as far as it can |
+| When | while the other hand is empty. Two items, one in each hand, are each carried one-handed |
+
+- It is part of the pose: other players see it, and the server's hit tests pose the same arms.
+- Fingers are the animation's: the solve places the wrist and turns the hand, it does not close it.
+- One grip per item. A grip needs the item to have a `CbItemBody` (that is what is baked).
+- **Where the palms are is the character's**: its `CbSocket` nodes named `RightHand` and `LeftHand`
+  (under the hand bones' `BoneAttachment3D`). They are baked into the character's `anim.cfg`
+  (`socket.RightHand = ...`), because the pose needs them: the item's frame is the carrying hand's
+  socket, and an aligned grip puts the other hand's socket on it. A character without those nodes
+  gets a built-in palm.
+
+| You changed | To see it |
+|---|---|
+| a character's hand sockets (or anything else in its scene) | save the scene: it bakes on save. For a character in the game's own project that is all; restart the server and the game. A character that is a workshop item: `tools\publish_mod.ps1 -Character <name>` |
+| an item's scene (its `CbGrip`, its body) | `tools\publish_mod.ps1 -Mod <mod>` (it bakes and installs the item), then restart the server |
+| which character you are looking at | the server says, and it says it when it starts (`character: ual_mannequin, shipped with the game`) and the game's debug text does too (`animation: res://characters/...`). On a machine that has `ual_mannequin` built that is the default, not `mannequin`: edit that one's scene, or start `cb_server --character mannequin` |
+| (in a checkout) | the server reads the game's own characters from `godot/characters/`, where saving bakes them; a build elsewhere reads the copies next to it (`bin/characters/`, made when it is built) |
 
 ### Items in the world
 

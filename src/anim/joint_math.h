@@ -47,4 +47,20 @@ void TranslateSubtree( const AnimSet& set, Models& models, int joint, b3Vec3 off
 // then points the arm exactly.
 void AimChain( const AnimSet& set, Models& models, const std::vector<std::pair<int, float>>& chain, int tip, b3Vec3 direction );
 
+// An item carried in one hand that the other hand holds too (ItemShape::grip): where, in the
+// item's frame, which is the carrying hand's socket frame (AnimSet::HandSocketOf).
+struct HandGrip
+{
+	bool leftCarries = false; // the item is in the left hand: the right hand reaches for it
+	bool align = false;		  // the reaching hand also takes `rotation`
+	b3Vec3 position = { 0.0f, 0.0f, 0.0f };
+	b3Quat rotation = { { 0.0f, 0.0f, 0.0f }, 1.0f };
+};
+// Bends the other arm at the elbow and turns it at the shoulder so that its wrist is on the grip
+// (as far as the arm reaches), keeping the elbow on the side the pose had it. With `align` it is the
+// hand's own socket (its palm) that is on the grip, turned as the grip is: the hand holds the grip
+// the way it would hold an item placed there. The carrying arm and
+// the item are untouched: the item follows the hand that carries it, the other hand follows the item.
+void SolveGrip( const AnimSet& set, Models& models, const HandGrip& grip );
+
 } // namespace cb::anim

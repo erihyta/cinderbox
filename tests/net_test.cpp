@@ -1117,6 +1117,30 @@ void TestItemShapes()
 	CHECK( properties.size() == 2 && properties["pickup.hold_seconds"] == 0.75f && properties["a.b"] == 2.0f );
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nproperty lonely\n", shape, error, &properties ) == false );
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nproperty x nan\n", shape, error, &properties ) == false );
+	// A grip: where the other hand holds the item, baked from the scene's CbGrip.
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\n", shape, error ) && shape.grip == 0 );
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip -0.05 0.02 0.1 0 0 0 1 0\n", shape, error ) );
+	CHECK( shape.grip == 1 && shape.gripPosition.x == -0.05f && shape.gripPosition.z == 0.1f && shape.gripRotation[3] == 1.0f );
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 0.1 0 0.7071 0 0.7071 1\n", shape, error ) && shape.grip == 2 );
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 0.1\n", shape, error ) == false );			   // no rotation
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 5 0 0 0 1 0\n", shape, error ) == false );   // out of reach
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 0.1 0 0 0 3 0\n", shape, error ) == false ); // not a rotation
+	// It travels in the schema, so every client poses the same arms.
+	{
+		ModSchema schema;
+		schema.itemKinds = { "test.rifle" };
+		ItemShape rifle;
+		CHECK( ParseItemShape( "shape box\nhalf 0.03 0.08 0.4\ngrip 0 -0.02 -0.3 0 0.7071 0 0.7071 1\n", rifle, error ) );
+		schema.itemShapes = { rifle };
+		std::vector<uint8_t> bytes;
+		EncodeSchema( schema, bytes );
+		ModSchema back;
+		CHECK( DecodeSchema( bytes.data(), bytes.size(), back ) );
+		CHECK( back.itemShapes.size() == 1 && back.itemShapes[0] == rifle && back.itemShapes[0].grip == 2 );
+	}
+	// The shipped pistol and bat are held with both hands.
+	CHECK( LoadItemShapeFolder( root + "/server_mods/pistol/client", "pistol.gun", shape, error ) && shape.grip == 2 );
+	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "melee.bat", shape, error ) && shape.grip == 2 && shape.gripPosition.z > 0.05f );
 	properties.clear();
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "melee.bat", shape, error, &properties ) );
 	CHECK( properties.count( "pickup.hold_seconds" ) == 1 && properties["pickup.hold_seconds"] == 0.5f );

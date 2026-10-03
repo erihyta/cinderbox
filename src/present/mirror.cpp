@@ -28,6 +28,23 @@ b3Quat Nlerp( b3Quat a, b3Quat b, float t )
 
 } // namespace
 
+void Mirror::SetItemShapes( std::vector<ItemShape> shapes )
+{
+	m_world.get_mut<HandGrips>().shapes = std::move( shapes );
+}
+
+bool Mirror::GripOf( uint32_t netId, anim::HandGrip& out ) const
+{
+	const HandGrips& grips = m_world.get<HandGrips>();
+	auto it = grips.byHolder.find( netId );
+	if ( it == grips.byHolder.end() )
+	{
+		return false;
+	}
+	out = it->second;
+	return true;
+}
+
 void Mirror::SetAnimSet( std::shared_ptr<const anim::AnimSet> animSet, std::shared_ptr<const AnimGraph> graph, AnimGraphPacks packs,
 						 std::vector<std::shared_ptr<const anim::PackClips>> packClips )
 {
@@ -61,6 +78,7 @@ Mirror::Mirror( std::shared_ptr<const anim::AnimSet> animSet )
 	m_world.set<AnimLibrary>( { m_animSet, std::make_shared<RagdollRig>( BuildRagdollRig( *m_animSet ) ) } );
 	m_world.set<FrameTiming>( {} );
 	m_world.set<AnimLead>( {} );
+	m_world.set<HandGrips>( {} );
 	m_world.set_ctx( this );
 	scripts::RegisterAll( m_world );
 

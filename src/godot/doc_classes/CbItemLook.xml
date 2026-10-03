@@ -18,5 +18,8 @@
 		<member name="scene" type="String" setter="set_scene" getter="get_scene" default="&quot;&quot;">
 			The scene drawn in the socket, named [code]Item[/code].
 		</member>
+		<member name="view_offset" type="Vector3" setter="set_view_offset" getter="get_view_offset" default="Vector3(0, 0, 0)">
+			First person: how far the arms holding this are moved in the viewer's own view, in metres to the right, up and ahead. Keep it small. Only the viewer's own picture changes.
+		</member>
 	</members>
 </class>

@@ -3,6 +3,7 @@
 // A character's skeleton, the clips its state machine plays and the machine itself (as text): baked
 // from a Godot scene and loaded from ozz files, or the placeholder rig, generated in code.
 
+#include "box3d/math_functions.h"
 #include "ozz/animation/runtime/animation.h"
 #include "ozz/animation/runtime/skeleton.h"
 #include "ozz/base/containers/vector.h"
@@ -163,6 +164,38 @@ public:
 		return m_spineJoint;
 	}
 
+	// An arm's joints, shoulder to wrist (upper arm, lower arm, hand), by humanoid-profile name; -1
+	// where the skeleton lacks one.
+	struct Arm
+	{
+		int upper = -1;
+		int lower = -1;
+		int hand = -1;
+	};
+	const Arm& ArmJoints( bool left ) const
+	{
+		return m_arms[left ? 1 : 0];
+	}
+
+	// Where an item sits in a hand: the socket's frame in the hand joint's own frame (position in
+	// metres of model space, and a rotation). From the character's CbSocket named RightHand / LeftHand
+	// (anim.cfg "socket.RightHand = x y z qx qy qz qw", baked from the scene), or the built-in one:
+	// AttachFrame, turned so the item points along the fingers, 6 cm into the palm.
+	struct HandSocket
+	{
+		b3Vec3 position = { 0.0f, 0.0f, 0.0f };
+		b3Quat rotation = { { 0.0f, 0.0f, 0.0f }, 1.0f };
+	};
+	const HandSocket& HandSocketOf( bool left ) const
+	{
+		return m_handSockets[left ? 1 : 0];
+	}
+	void SetHandSocket( bool left, const HandSocket& socket )
+	{
+		m_handSockets[left ? 1 : 0] = socket;
+		m_handSocketSet[left ? 1 : 0] = true;
+	}
+
 	// Fills AttachFrame from the rest; the loaders call it.
 	void ComputeAttachFrames();
 
@@ -184,6 +217,10 @@ private:
 	std::string m_graphText;
 	std::vector<std::pair<int, float>> m_aimJoints;
 	int m_hipsJoint = -1;
+	Arm m_arms[2]; // right, left
+	HandSocket m_handSockets[2];
+	bool m_handSocketSet[2] = { false, false }; // the character said where (else: the built-in frame)
+	void DefaultHandSockets();
 	int m_spineJoint = -1;
 	int m_aimTip = -1;
 	std::string m_aimConfig = "RightUpperArm:1";

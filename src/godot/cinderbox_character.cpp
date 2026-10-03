@@ -918,6 +918,34 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	cfg += "aim = " + Std( m_aimChain.strip_edges() ) + "\n";
 	cfg += "aim_tip = " + Std( m_aimTip.strip_edges() ) + "\n";
 	cfg += "look = " + Std( m_lookChain.strip_edges() ) + "\n";
+	// Where an item sits in each hand: the CbSocket named RightHand / LeftHand under that hand's
+	// bone, in the bone's frame. The pose needs it (the other hand is solved onto a held item's
+	// grip in the item's frame), so it is baked; without the node the built-in frame is used.
+	{
+		TypedArray<Node> sockets = find_children( "*", "CbSocket", true, false );
+		for ( const char* hand : { "RightHand", "LeftHand" } )
+		{
+			for ( int i = 0; i < sockets.size(); ++i )
+			{
+				auto* socket = Object::cast_to<CbSocket>( sockets[i] );
+				auto* attachment = socket != nullptr ? Object::cast_to<BoneAttachment3D>( socket->get_parent() ) : nullptr;
+				if ( socket == nullptr || String( socket->get_name() ) != hand )
+				{
+					continue;
+				}
+				String bone = socket->get_bone().is_empty() && attachment != nullptr ? attachment->get_bone_name() : socket->get_bone();
+				if ( bone != hand )
+				{
+					warnings += String( hand ) + " socket rides on " + bone + ", not on the hand: the other hand cannot be placed on what it holds; ";
+					continue;
+				}
+				Transform3D local = attachment != nullptr ? socket->get_transform().orthonormalized() : Transform3D();
+				Quaternion q = local.basis.get_rotation_quaternion();
+				cfg += Std( vformat( "socket.%s = %.5f %.5f %.5f %.6f %.6f %.6f %.6f\n", hand, local.origin.x, local.origin.y, local.origin.z, q.x, q.y,
+									 q.z, q.w ) );
+			}
+		}
+	}
 	for ( const String& entry : m_lookChain.strip_edges().split( " ", false ) )
 	{
 		String bone = entry.get_slice( ":", 0 );

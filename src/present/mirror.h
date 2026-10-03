@@ -8,6 +8,8 @@
 // systems in scripts/) animate spawning and destroying and evaluate ozz poses. Renderers (raylib,
 // Godot) read the result through ForEach() and react to Events() for VFX and node lifetime.
 
+#include "joint_math.h"
+#include "mod_schema.h"
 #include "anim_lead.h"
 #include "frame.h"
 #include "pose.h"
@@ -108,6 +110,14 @@ struct AnimLibrary
 	std::vector<std::shared_ptr<const anim::PackClips>> packClips; // and their clips fitted to the character
 };
 
+// The items held with both hands this frame, by the NetId of who holds them (joint_math.h
+// HandGrip), from the item kinds' shapes (ModSchema::itemShapes).
+struct HandGrips
+{
+	std::vector<ItemShape> shapes;
+	std::unordered_map<uint32_t, anim::HandGrip> byHolder;
+};
+
 struct FrameTiming
 {
 	float tickAlpha = 0.0f;
@@ -169,6 +179,11 @@ public:
 	// it has welcomed us). Every player gets a new pose evaluator; the ragdoll rig follows.
 	void SetAnimSet( std::shared_ptr<const anim::AnimSet> animSet, std::shared_ptr<const AnimGraph> graph = nullptr,
 					 AnimGraphPacks packs = {}, std::vector<std::shared_ptr<const anim::PackClips>> packClips = {} );
+
+	// The item kinds' shapes (ModSchema::itemShapes): which items the other hand holds too, and where.
+	void SetItemShapes( std::vector<ItemShape> shapes );
+	// The grip of the item `netId` holds with both hands this frame; false: it holds none.
+	bool GripOf( uint32_t netId, anim::HandGrip& out ) const;
 
 	// The viewer's own player shown ahead of the server (anim_lead.h), from the next Update on;
 	// netId 0: nobody.

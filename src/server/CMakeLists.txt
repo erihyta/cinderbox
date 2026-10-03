@@ -4,6 +4,8 @@ target_link_libraries(cb_server_core PUBLIC cb_net cb_anim cb_capture PRIVATE mi
 cb_target_warnings(cb_server_core)
 
 add_executable(cb_server main.cpp)
+# In a checkout the server reads the game's own characters where the editor bakes them.
+target_compile_definitions(cb_server PRIVATE CB_CHARACTERS_SOURCE_DIR="${PROJECT_SOURCE_DIR}/godot/characters")
 target_link_libraries(cb_server PRIVATE cb_server_core)
 if(WIN32)
 	target_link_libraries(cb_server PRIVATE winmm)
