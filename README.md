@@ -83,6 +83,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M75: first person faces the camera: the body turns with the view and the upper body follows its pitch, with or without a weapon | done |
 | M76: two-handed items: a `CbGrip` marker in an item's scene says where the other hand holds it; that arm is solved onto it in the pose everyone draws and hit tests use | done |
 | M77: a marker for each hand: `CbGrip.hand` says the carrying hand's place too, so an item is held where its marker is, not where its model's origin happens to be | done |
+| M78: the other hand "as animated": a grip that keeps the two hands as the item's animations have them, and together when the carrying arm is aimed | done |
 
 ## Building
 
@@ -1107,11 +1108,13 @@ Where the hands hold an item is said by markers in its scene, one `CbGrip` per h
 | **The other hand** | the character's other arm is bent so that its hand is here, wherever the carrying hand and the animation take the item | the item is one-handed |
 
 Move a marker, not the model: a mesh imported with its origin anywhere is held where its carrying
-marker is. The pistol and the bat have both (`Carry`, `OtherHand`).
+marker is. The pistol and the bat have both (`Carry`, `OtherHand`): the bat's other hand has a place on
+the handle, the pistol's is as its animation has it.
 
 | Step | What |
 |---|---|
 | `align_rotation` (the other hand) | on: the hand's palm is on the marker, turned as the marker is, as a hand carrying an item placed there would be. Off: its wrist goes there and it keeps the turn its animation gives it |
+| `as_animated` (the other hand) | the hand stays where the item's animations have it relative to the carrying hand, place and turn; the marker's own place is not used. For animations made with both hands on the item (the pistol's): they are kept exactly as they are, and kept together when the carrying arm is aimed up or down, where an item with no marker for the other hand lets the two drift a few centimetres apart |
 | Bake | with the item's body, in `items/<kind>.cfg`: the body's centre and the other hand's `grip` are written in the carrying hand's frame, so the server and the pose never see the scene's own origin; the server puts the grip in the schema, so every client has it. The viewer draws the scene moved so that the carrying marker is in the socket (and, lying in the world, where the body is) |
 | Pose | last of all: the item is where the carrying hand ended up (after the aim), and the other arm is bent at the elbow and turned at the shoulder so its wrist is on the grip. The elbow stays on the side the animation had it; out of reach, the arm goes as far as it can |
 | When | while the other hand is empty. Two items, one in each hand, are each carried one-handed |
