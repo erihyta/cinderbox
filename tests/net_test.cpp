@@ -1701,6 +1701,47 @@ void TestRifle()
 	}
 }
 
+// The two guns share the shooter's stance. Swapped one for the other, either way, the body keeps
+// it: the one put away does not take the stance from the one taken out.
+void TestGunSwap()
+{
+	Harness h( 47824 );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t rifle = schema.ActionMask( "slot_4" );
+	uint16_t pistol = schema.ActionMask( "slot_2" );
+	int upper = schema.FindLayer( "upper" );
+	int stance = schema.FindStance( "pistol" );
+	CHECK( rifle != 0 && pistol != 0 && upper >= 0 && stance >= 0 );
+	// The rifle, the pistol, the rifle, the pistol: a key every second and a half.
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		uint32_t step = tick / 90;
+		in.actions = tick % 90 < 10 && step >= 1 && step <= 4 ? ( step % 2 == 1 ? rifle : pistol ) : uint16_t( 0 );
+		return in;
+	};
+	int held[5] = {};
+	int total[5] = {};
+	h.RunUntil( 7.6, [&]( double ) {
+		Simulation& sim = h.server.Sim();
+		const AnimState* anim = sim.EntityAnimState( sim.PlayerNetId( h.bots[0].client->Slot() ) );
+		uint32_t step = sim.Tick() / 90;
+		// The last half second of each: long after the swap.
+		if ( anim != nullptr && step >= 1 && step <= 4 && sim.Tick() % 90 >= 60 )
+		{
+			total[step] += 1;
+			held[step] += anim->aiming != 0 && int( anim->stances[upper] ) == stance + 1 ? 1 : 0;
+		}
+	} );
+	h.Report();
+	std::printf( "    in the stance: rifle %d/%d, then pistol %d/%d, then rifle %d/%d, then pistol %d/%d\n", held[1], total[1], held[2], total[2], held[3],
+				 total[3], held[4], total[4] );
+	for ( int step = 1; step <= 4; ++step )
+	{
+		CHECK( total[step] > 0 && held[step] == total[step] );
+	}
+	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
+}
+
 // Layers end to end: slot 0 takes out the pistol, then the bat (a full-body stance), and swings at
 // slot 1, which stands still. Swings play the swing stance, hits go out as combat.damage, the combat mod (which
 // keeps health) applies them and credits the kill, and clients agree on every pose-carrying tick.
@@ -2515,6 +2556,7 @@ int main( int argc, char** argv )
 		{ "headshot", TestHeadshot },
 		{ "pistol_mark", TestPistolMark },
 		{ "rifle", TestRifle },
+		{ "gun_swap", TestGunSwap },
 		{ "combat", TestCombat },
 		{ "private_fields", TestPrivateFields },
 		{ "melee", TestMelee },
