@@ -99,8 +99,7 @@ float EyeHeight( const AnimSet& set )
 
 void RotateSubtree( const AnimSet& set, Models& models, int joint, b3Quat turn )
 {
-	const int joints = int( models.size() );
-	if ( joint < 0 || joint >= joints )
+	if ( joint < 0 || joint >= int( models.size() ) )
 	{
 		return;
 	}
@@ -108,6 +107,16 @@ void RotateSubtree( const AnimSet& set, Models& models, int joint, b3Quat turn )
 	b3Quat unused;
 	float scale;
 	Decompose( models[size_t( joint )], pivot, unused, scale );
+	RotateSubtreeAbout( set, models, joint, pivot, turn );
+}
+
+void RotateSubtreeAbout( const AnimSet& set, Models& models, int joint, b3Vec3 pivot, b3Quat turn )
+{
+	const int joints = int( models.size() );
+	if ( joint < 0 || joint >= joints )
+	{
+		return;
+	}
 	// Everything below the joint turns with it (ozz orders parents first).
 	auto parents = set.Skeleton().joint_parents();
 	std::vector<bool> below( size_t( joints ), false );
@@ -130,6 +139,28 @@ void RotateSubtree( const AnimSet& set, Models& models, int joint, b3Quat turn )
 		p = b3Add( pivot, b3RotateVector( turn, b3Sub( p, pivot ) ) );
 		q = b3MulQuat( turn, q );
 		models[size_t( j )] = Compose( p, q, s );
+	}
+}
+
+void TranslateSubtree( const AnimSet& set, Models& models, int joint, b3Vec3 offset )
+{
+	const int joints = int( models.size() );
+	if ( joint < 0 || joint >= joints )
+	{
+		return;
+	}
+	auto parents = set.Skeleton().joint_parents();
+	std::vector<bool> below( size_t( joints ), false );
+	below[size_t( joint )] = true;
+	ozz::math::SimdFloat4 move = ozz::math::simd_float4::Load( offset.x, offset.y, offset.z, 0.0f );
+	for ( int j = joint; j < joints; ++j )
+	{
+		int parent = parents[size_t( j )];
+		below[size_t( j )] = j == joint || ( parent >= 0 && below[size_t( parent )] );
+		if ( below[size_t( j )] )
+		{
+			models[size_t( j )].cols[3] = models[size_t( j )].cols[3] + move;
+		}
 	}
 }
 

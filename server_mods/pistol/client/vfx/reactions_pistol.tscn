@@ -139,3 +139,4 @@ max_distance = 25.0
 kind = "pistol.gun"
 display_name = "Pistol"
 scene = "res://prefabs/pistol.tscn"
+view_offset = Vector3(0, 0.05, 0.03)

@@ -35,6 +35,12 @@ float EyeHeight( const AnimSet& set );
 // Rotates `joint` and everything below it about the joint's position.
 void RotateSubtree( const AnimSet& set, Models& models, int joint, b3Quat turn );
 
+// Rotates `joint` and everything below it about `pivot` (model space).
+void RotateSubtreeAbout( const AnimSet& set, Models& models, int joint, b3Vec3 pivot, b3Quat turn );
+
+// Moves `joint` and everything below it by `offset` (model space).
+void TranslateSubtree( const AnimSet& set, Models& models, int joint, b3Vec3 offset );
+
 // Turns each joint of `chain` in order, and everything below it about it, so the line from it to
 // `tip` points along `direction` (model space, normalized) by its weight: 0 leaves the pose alone,
 // 1 aims fully. A chain like { UpperChest 0.3, RightUpperArm 1 } leans the chest a little and

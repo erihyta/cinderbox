@@ -28,6 +28,9 @@ void CbItemLook::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_scene", "value" ), &CbItemLook::set_scene );
 	ClassDB::bind_method( D_METHOD( "get_scene" ), &CbItemLook::get_scene );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "scene", PROPERTY_HINT_FILE, "*.tscn,*.scn" ), "set_scene", "get_scene" );
+	ClassDB::bind_method( D_METHOD( "set_view_offset", "value" ), &CbItemLook::set_view_offset );
+	ClassDB::bind_method( D_METHOD( "get_view_offset" ), &CbItemLook::get_view_offset );
+	ADD_PROPERTY( PropertyInfo( Variant::VECTOR3, "view_offset", PROPERTY_HINT_NONE, "suffix:m" ), "set_view_offset", "get_view_offset" );
 }
 
 void CbItemBody::_bind_methods()

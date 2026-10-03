@@ -130,6 +130,10 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_tick_rate" ), &CinderboxClient::get_tick_rate );
 	ClassDB::bind_method( D_METHOD( "get_camera_target" ), &CinderboxClient::get_camera_target );
 	ClassDB::bind_method( D_METHOD( "get_view_position", "view", "camera" ), &CinderboxClient::get_view_position );
+	ClassDB::bind_method( D_METHOD( "set_first_person", "value" ), &CinderboxClient::set_first_person );
+	ClassDB::bind_method( D_METHOD( "get_first_person" ), &CinderboxClient::get_first_person );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "first_person", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE ), "set_first_person",
+				  "get_first_person" );
 	ClassDB::bind_method( D_METHOD( "get_camera_distance", "target", "direction", "max_distance", "radius" ),
 						  &CinderboxClient::get_camera_distance );
 	ClassDB::bind_method( D_METHOD( "get_bone_position", "net_id", "bone" ), &CinderboxClient::get_bone_position );
@@ -530,6 +534,99 @@ void CinderboxClient::HandleEvents()
 	}
 }
 
+// The viewer's own body in first person (see set_first_person): from the spine up the pose is put
+// under the camera's eye, which stands still above the feet, upright as the rest pose is, and turned
+// with the camera; the arms are moved by the held item's view offset; and its skeleton draws the
+// arms and the legs only.
+void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimState* state, present::Models& models )
+{
+	CinderboxSkeleton* skeleton = FindSkeleton( node );
+	bool on = m_firstPerson && state != nullptr && skeleton != nullptr && m_animSet != nullptr;
+	if ( auto* was = Object::cast_to<CinderboxSkeleton>( ObjectDB::get_instance( m_firstPersonSkeleton ) ) )
+	{
+		if ( was != skeleton || on == false )
+		{
+			was->set_first_person_body( false );
+		}
+	}
+	m_firstPersonSkeleton = on ? ObjectID( skeleton->get_instance_id() ) : ObjectID();
+	if ( on == false )
+	{
+		return;
+	}
+	skeleton->set_first_person_body( true );
+	int head = anim::FindJoint( *m_animSet, "Head" );
+	int spine = anim::FindJoint( *m_animSet, "Spine" );
+	int chest = anim::FindJoint( *m_animSet, "UpperChest" );
+	int arms[2] = { anim::FindJoint( *m_animSet, "LeftShoulder" ), anim::FindJoint( *m_animSet, "RightShoulder" ) };
+	if ( head < 0 || spine < 0 || chest < 0 || arms[0] < 0 || arms[1] < 0 || size_t( head ) >= models.size() )
+	{
+		return;
+	}
+	const auto& restModels = m_animSet->RestModels();
+	auto placeOf = []( const ozz::math::Float4x4& m ) {
+		float v[4];
+		ozz::math::StorePtrU( m.cols[3], v );
+		return b3Vec3{ v[0], v[1], v[2] };
+	};
+	auto between = [&]( const present::Models& from ) {
+		return b3MulSV( 0.5f, b3Add( placeOf( from[size_t( arms[0] )] ), placeOf( from[size_t( arms[1] )] ) ) );
+	};
+
+	// The chest goes back to how the rest pose has it: what the walk, the sprint and the bow did to
+	// the torso is taken out, what the arms do themselves stays. About the point between the
+	// shoulders, which is then put where the rest pose has it under the head.
+	b3Vec3 unusedPlace;
+	b3Quat now, rest;
+	float unusedScale;
+	anim::Decompose( models[size_t( chest )], unusedPlace, now, unusedScale );
+	anim::Decompose( restModels[size_t( chest )], unusedPlace, rest, unusedScale );
+	b3Quat undo = b3MulQuat( rest, b3Quat{ { -now.v.x, -now.v.y, -now.v.z }, now.s } );
+	anim::RotateSubtreeAbout( *m_animSet, models, spine, between( models ), undo );
+	b3Vec3 restHead = placeOf( restModels[size_t( head )] );
+	// The camera's eye stands over the feet at the rest pose's head height (anim::EyeHeight).
+	b3Vec3 eye = { 0.0f, restHead.y, 0.0f };
+	b3Vec3 want = b3Add( eye, b3Sub( between( restModels ), restHead ) );
+	anim::TranslateSubtree( *m_animSet, models, spine, b3Sub( want, between( models ) ) );
+
+	// The held items' offsets, along where the player looks (in the body's frame: it faces +Z and
+	// its right is -X).
+	Vector3 offset;
+	auto held = m_heldKinds.find( netId );
+	if ( held != m_heldKinds.end() )
+	{
+		for ( uint16_t kind : held->second )
+		{
+			if ( kind < m_frame.schema.itemKinds.size() )
+			{
+				auto it = m_itemViewOffsets.find( m_frame.schema.itemKinds[kind] );
+				offset += it != m_itemViewOffsets.end() ? it->second : Vector3();
+			}
+		}
+	}
+	b3CosSin yaw = detmath::CosSin( state->aimYaw );
+	b3CosSin pitch = detmath::CosSin( state->aimPitch );
+	b3Vec3 forward = { yaw.sine * pitch.cosine, pitch.sine, yaw.cosine * pitch.cosine };
+	b3Vec3 right = { -yaw.cosine, 0.0f, yaw.sine };
+	b3Vec3 up = { -yaw.sine * pitch.sine, pitch.cosine, -yaw.cosine * pitch.sine };
+
+	// And turns with the camera, about the point the camera turns about, like something it holds.
+	b3Vec3 pivot = { 0.0f, anim::EyeHeight( *m_animSet ), 0.0f };
+	anim::RotateSubtreeAbout( *m_animSet, models, spine, pivot, b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, state->aimYaw ) );
+	anim::RotateSubtreeAbout( *m_animSet, models, spine, pivot, b3MakeQuatFromAxisAngle( right, state->aimPitch ) );
+	if ( state->aiming != 0 && m_animSet->AimJoints().empty() == false )
+	{
+		// The aimed arm ends on the line of sight, as the pose had it.
+		anim::AimChain( *m_animSet, models, m_animSet->AimJoints(), m_animSet->AimTip(), forward );
+	}
+	// The held item's place in the view: the arms alone move there.
+	b3Vec3 placed = b3Add( b3MulSV( offset.x, right ), b3Add( b3MulSV( offset.y, up ), b3MulSV( offset.z, forward ) ) );
+	for ( int arm : arms )
+	{
+		anim::TranslateSubtree( *m_animSet, models, arm, placed );
+	}
+}
+
 void CinderboxClient::UpdateNodes()
 {
 	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose& pose, const present::PlayerAnim* anim,
@@ -582,6 +679,10 @@ void CinderboxClient::UpdateNodes()
 
 			if ( models != nullptr )
 			{
+				if ( v.kind == present::VisualKind::Player && v.netId == m_frame.frame.localNetId )
+				{
+					FirstPersonBody( v.netId, node, anim != nullptr ? &anim->shown : nullptr, *models );
+				}
 				if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
 				{
 					skeleton->ApplyPose( *m_animSet, *models );
@@ -969,6 +1070,7 @@ void CinderboxClient::add_world_scene( Node* scene )
 		{
 			m_itemLooks[ToStd( look->get_kind() )] = look->get_scene();
 			m_itemNames[ToStd( look->get_kind() )] = look->get_display_name();
+			m_itemViewOffsets[ToStd( look->get_kind() )] = look->get_view_offset();
 		}
 	}
 }
@@ -977,6 +1079,7 @@ void CinderboxClient::clear_world_scenes()
 {
 	m_itemLooks.clear();
 	m_itemNames.clear();
+	m_itemViewOffsets.clear();
 	for ( ObjectID id : m_worldScenes )
 	{
 		if ( auto* scene = Object::cast_to<Node>( ObjectDB::get_instance( id ) ) )

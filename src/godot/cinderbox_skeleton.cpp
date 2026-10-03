@@ -102,8 +102,8 @@ void CinderboxSkeleton::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_body_color", "color" ), &CinderboxSkeleton::set_body_color );
 	ClassDB::bind_method( D_METHOD( "get_body_color" ), &CinderboxSkeleton::get_body_color );
 	ClassDB::bind_method( D_METHOD( "preview_pose", "ground_speed", "phase" ), &CinderboxSkeleton::preview_pose );
-	ClassDB::bind_method( D_METHOD( "set_hidden_bone", "value" ), &CinderboxSkeleton::set_hidden_bone );
-	ClassDB::bind_method( D_METHOD( "get_hidden_bone" ), &CinderboxSkeleton::get_hidden_bone );
+	ClassDB::bind_method( D_METHOD( "set_first_person_body", "value" ), &CinderboxSkeleton::set_first_person_body );
+	ClassDB::bind_method( D_METHOD( "get_first_person_body" ), &CinderboxSkeleton::get_first_person_body );
 	ClassDB::bind_method( D_METHOD( "set_retarget", "value" ), &CinderboxSkeleton::set_retarget );
 	ClassDB::bind_method( D_METHOD( "get_retarget" ), &CinderboxSkeleton::get_retarget );
 	ClassDB::bind_method( D_METHOD( "get_joint_global_transform", "profile_name" ), &CinderboxSkeleton::get_joint_global_transform );
@@ -116,8 +116,8 @@ void CinderboxSkeleton::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::COLOR, "body_color" ), "set_body_color", "get_body_color" );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "use_slot_color" ), "set_use_slot_color", "get_use_slot_color" );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "retarget" ), "set_retarget", "get_retarget" );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "hidden_bone", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE ), "set_hidden_bone",
-				  "get_hidden_bone" );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "first_person_body", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE ), "set_first_person_body",
+				  "get_first_person_body" );
 }
 
 void CinderboxSkeleton::_ready()
@@ -277,7 +277,7 @@ void CinderboxSkeleton::ApplyPose( const anim::AnimSet& set, const ozz::vector<o
 			Bind( target, set );
 		}
 		DriveSkeleton( target, models );
-		HideBone( target );
+		CutBody( target );
 		EnsureModifier( target );
 	}
 }
@@ -310,7 +310,7 @@ void CinderboxSkeleton::ReapplyPose( Skeleton3D* target )
 		Bind( target, *m_lastSet );
 	}
 	DriveSkeleton( target, m_lastModels );
-	HideBone( target );
+	CutBody( target );
 }
 
 void CbPoseModifier::set_driver( CinderboxSkeleton* driver )
@@ -458,12 +458,12 @@ void CinderboxSkeleton::Bind( Skeleton3D* target, const anim::AnimSet& set )
 	}
 }
 
-// While a bone is hidden: a whole copy of the body that only casts shadows, posed like the target
-// before the bone is shrunk. Without one: the target's meshes cast their own again.
+// While the body is cut for first person: a whole copy of the body that only casts shadows, posed like the target
+// before it is cut. Without one: the target's meshes cast their own again.
 void CinderboxSkeleton::UpdateShadowBody( Skeleton3D* target )
 {
 	auto* body = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_shadowBody ) );
-	bool want = m_hiddenBone.is_empty() == false && target->get_parent() != nullptr;
+	bool want = m_firstPersonBody && target->get_parent() != nullptr;
 	if ( body != nullptr && ( want == false || m_shadowOf != ObjectID( target->get_instance_id() ) ) )
 	{
 		for ( const auto& [id, setting] : m_shadowSettings )
@@ -527,38 +527,78 @@ void CinderboxSkeleton::UpdateShadowBody( Skeleton3D* target )
 	{
 		body->set_bone_pose_position( bone, target->get_bone_pose_position( bone ) );
 		body->set_bone_pose_rotation( bone, target->get_bone_pose_rotation( bone ) );
-		body->set_bone_pose_scale( bone, bone == m_shrunkBone ? Vector3( 1, 1, 1 ) : target->get_bone_pose_scale( bone ) );
+		body->set_bone_pose_scale( bone, target->get_bone_pose_scale( bone ) );
 	}
 }
 
-void CinderboxSkeleton::HideBone( Skeleton3D* target )
+int CinderboxSkeleton::BoneOf( const char* profileName ) const
 {
-	UpdateShadowBody( target ); // before the bone is shrunk: the copy is whole
-	int bone = -1;
-	if ( m_hiddenBone.is_empty() == false && m_lastSet != nullptr )
+	if ( m_lastSet == nullptr )
 	{
-		CharString name = m_hiddenBone.utf8();
-		auto names = m_lastSet->Skeleton().joint_names();
-		for ( size_t j = 0; j < names.size() && j < m_boneMap.size(); ++j )
+		return -1;
+	}
+	auto names = m_lastSet->Skeleton().joint_names();
+	for ( size_t j = 0; j < names.size() && j < m_boneMap.size(); ++j )
+	{
+		const char* profile = anim::ProfileName( names[j] );
+		if ( profile != nullptr && std::strcmp( profile, profileName ) == 0 )
 		{
-			const char* profile = anim::ProfileName( names[j] );
-			if ( profile != nullptr && std::strcmp( profile, name.get_data() ) == 0 )
-			{
-				bone = m_boneMap[j];
-				break;
-			}
+			return m_boneMap[j];
 		}
 	}
-	// Retargeting drives rotations only, so the bone that was shrunk is given its size back here.
-	if ( m_shrunkBone >= 0 && m_shrunkBone != bone && m_shrunkBone < target->get_bone_count() )
+	return -1;
+}
+
+void CinderboxSkeleton::CutBody( Skeleton3D* target )
+{
+	// What the last cut moved goes back to where the rig has it: driving by rotation leaves
+	// positions and scales alone, and they must not be read as part of this frame's pose.
+	for ( int bone : m_cutBones )
 	{
-		target->set_bone_pose_scale( m_shrunkBone, Vector3( 1, 1, 1 ) );
+		if ( bone >= 0 && bone < target->get_bone_count() )
+		{
+			if ( m_retarget )
+			{
+				target->set_bone_pose_position( bone, target->get_bone_rest( bone ).origin );
+			}
+			target->set_bone_pose_scale( bone, Vector3( 1, 1, 1 ) );
+		}
 	}
-	m_shrunkBone = bone;
-	if ( bone >= 0 && bone < target->get_bone_count() )
+	m_cutBones.clear();
+	UpdateShadowBody( target ); // while the target is whole: the copy casts the whole shadow
+	if ( m_firstPersonBody == false )
 	{
-		target->set_bone_pose_scale( bone, Vector3( 0.0001f, 0.0001f, 0.0001f ) );
+		return;
 	}
+	int spine = BoneOf( "Spine" );
+	int chest = BoneOf( "Chest" );
+	int upper = BoneOf( "UpperChest" );
+	int head = BoneOf( "Head" );
+	int shoulders[2] = { BoneOf( "LeftShoulder" ), BoneOf( "RightShoulder" ) };
+	if ( spine < 0 || upper < 0 || head < 0 || shoulders[0] < 0 || shoulders[1] < 0 )
+	{
+		return; // a rig without them is drawn whole
+	}
+	// The spine collapses to a point at the waist, the chest with the neck and the head to one
+	// between the shoulders, and the shoulders stay where the pose has them: the arms are whole,
+	// and what stretched between them and the torso is a sliver between them, below the eyes'
+	// view.
+	const Vector3 nothing( 0.0001f, 0.0001f, 0.0001f );
+	Transform3D kept[2] = { target->get_bone_global_pose( shoulders[0] ), target->get_bone_global_pose( shoulders[1] ) };
+	Vector3 behind = ( kept[0].origin + kept[1].origin ) * 0.5f;
+	target->set_bone_pose_scale( spine, nothing );
+	for ( int bone : { chest, upper } )
+	{
+		if ( bone >= 0 )
+		{
+			target->set_bone_global_pose( bone, Transform3D( Basis().scaled( nothing ), behind ) );
+		}
+	}
+	for ( int i = 0; i < 2; ++i )
+	{
+		target->set_bone_global_pose( shoulders[i], kept[i] );
+	}
+	m_cutBones = { spine, chest, upper, shoulders[0], shoulders[1] };
 }
 
 void CinderboxSkeleton::DriveSkeleton( Skeleton3D* target, const ozz::vector<ozz::math::Float4x4>& models )

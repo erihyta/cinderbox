@@ -77,6 +77,19 @@ public:
 	// 2 / 3 over the right / left shoulder), with the camera turned as `camera` is: the point the
 	// server takes for it too (mods::Context::ViewPosition), so the crosshair is exact.
 	godot::Vector3 get_view_position( int64_t view, const godot::Basis& camera ) const;
+	// The viewer looks out of its own player's eyes. Its own body is then drawn for that view: the
+	// upper body is held still under the camera (the walk no longer swings the arms across the
+	// screen; what the arms do themselves, a shot's recoil, still shows), moved by the held item's
+	// look (CbItemLook.view_offset), and only the arms and what is below the hips are drawn. Nothing
+	// but this viewer's picture changes.
+	void set_first_person( bool value )
+	{
+		m_firstPerson = value;
+	}
+	bool get_first_person() const
+	{
+		return m_firstPerson;
+	}
 
 	// What the server's mods declared. Each action: { name, bit, key }.
 	godot::Array get_actions() const;
@@ -251,6 +264,10 @@ private:
 	// frame; items are their children).
 	std::map<std::string, godot::String> m_itemLooks;
 	std::map<std::string, godot::String> m_itemNames; // what prompts call a kind ("Bat")
+	std::map<std::string, godot::Vector3> m_itemViewOffsets; // CbItemLook.view_offset by kind
+	bool m_firstPerson = false;
+	godot::ObjectID m_firstPersonSkeleton; // whose body is cut for it now
+	void FirstPersonBody( uint32_t netId, godot::Node* node, const AnimState* state, present::Models& models );
 	std::unordered_map<uint64_t, uint32_t> m_itemHolders; // item visual -> the holder it was last drawn with
 	// What every player holds, by item kind (refreshed every frame): an item kind's name is a
 	// condition, true while the player holds one ("pistol.gun"), as in the state machines.

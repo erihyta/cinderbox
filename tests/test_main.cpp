@@ -1497,6 +1497,29 @@ void TestPoseTools()
 		CHECK( stiff->LookJoints().size() == 1 && warnings.find( "Nope" ) != std::string::npos && warnings.find( "Head" ) != std::string::npos );
 	}
 
+	// Moving and turning a part of the pose (what a first-person view does to the viewer's own
+	// upper body): everything below the joint goes along, nothing else does.
+	{
+		int spine = present::FindJoint( *set, "Spine" );
+		int head = present::FindJoint( *set, "Head" );
+		int foot = present::FindJoint( *set, "LeftFoot" );
+		present::Models models = eval.Models();
+		anim::TranslateSubtree( *set, models, spine, { 0.1f, 0.2f, -0.3f } );
+		b3Vec3 moved = b3Sub( position( models[size_t( head )] ), position( eval.Models()[size_t( head )] ) );
+		CHECK( std::fabs( moved.x - 0.1f ) < 1e-5f && std::fabs( moved.y - 0.2f ) < 1e-5f && std::fabs( moved.z + 0.3f ) < 1e-5f );
+		CHECK( b3Distance( position( models[size_t( hand )] ), position( eval.Models()[size_t( hand )] ) ) > 0.3f );
+		CHECK( b3Distance( position( models[size_t( foot )] ), position( eval.Models()[size_t( foot )] ) ) < 1e-6f );
+		// A quarter turn about a point above the head: every joint below the spine keeps its distance
+		// from that point, and the feet stay.
+		models = eval.Models();
+		b3Vec3 pivot = { 0.0f, 1.7f, 0.0f };
+		float before = b3Distance( position( models[size_t( hand )] ), pivot );
+		anim::RotateSubtreeAbout( *set, models, spine, pivot, b3MakeQuatFromAxisAngle( { 1.0f, 0.0f, 0.0f }, 0.5f * detmath::kPi ) );
+		CHECK( std::fabs( b3Distance( position( models[size_t( hand )] ), pivot ) - before ) < 1e-3f );
+		CHECK( b3Distance( position( models[size_t( hand )] ), position( eval.Models()[size_t( hand )] ) ) > 0.3f );
+		CHECK( b3Distance( position( models[size_t( foot )] ), position( eval.Models()[size_t( foot )] ) ) < 1e-6f );
+	}
+
 	// Legs turned toward the direction of travel: the hips and legs turn, the upper body does not.
 	{
 		AnimState strafing;
