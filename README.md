@@ -86,6 +86,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M78: the other hand "as animated": a grip that keeps the two hands as the item's animations have them, and together when the carrying arm is aimed | done |
 | M79: an item sits in the hand the same way every time: its scene root's own transform is never used, the carrying marker says how it is held, and holsters draw the scene as it is | done |
 | M80: an item's body may be turned any way: turning the carrying marker no longer needs the body turned with it | done |
+| M81: the `rifle` mod: automatic fire while `fire` is held; `CbPrediction.while_held` predicts it at the server's rate; its muzzle flash and tracer live in its scene | done |
 
 ## Building
 
@@ -269,6 +270,7 @@ The mods that ship:
 | `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage` | the bat: a full-body stance while it is out; left mouse swings (0.45 s, every 0.6 s), a fan of 1.8 m rays from the chest at the strike, spread sideways and pitched as far up or down as the player looks (look at the floor to hit what is low), 40 damage through `combat.damage` |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
 | `pistol` | `pistol.ammo`, `pistol.reloading`; `fire` (left mouse), `reload` (R), `mark` (right mouse); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `pistol.scan`, `pistol.marked`, `combat.damage` | hitscan from the camera pivot, 25 damage (the head doubles it) through `combat.damage`, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; a new life (`combat.respawned`) comes with a full magazine |
+| `rifle` | `rifle.ammo`, `rifle.reloading`; `fire` (left mouse, **held**), `reload` (R); events `rifle.fired`, `rifle.hit`, `rifle.reload`, `rifle.dry`, `combat.damage` | the automatic one: a shot every 0.1 s for as long as `fire` is held, 14 damage (the head doubles it), 30 rounds, 2 s reload; slot 4, on the back while put away. Held on an empty magazine it clicks once, reloads and fires on. It is held in the `pistol` stance; the look predicts held fire (`while_held`) and keeps its muzzle flash and tracer in its own scene |
 | `secret` | `secret.number`, a private field; option `secret.numbers` | the example of a private field: off unless `--mod-option secret.numbers=1`; then each player is told a number from 1 to 99 that nobody else is sent |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
@@ -535,6 +537,11 @@ PredictFire   CbPrediction   action "fire"   cue "pistol.fired"
 
 PredictSwing  CbPrediction   action "fire"   cue "melee.swing"   conditions melee.bat   cooldown 0.58
                              stance "melee_swing" on stance_layer "full"
+
+PredictFire   CbPrediction   action "fire"   cue "rifle.fired"         (the rifle: automatic)
+                             conditions rifle.gun, rifle.ammo > 0, !rifle.reloading, !combat.dead
+                             cooldown 0.1   while_held
+                             changes    rifle.ammo -= 1
 ```
 
 | Step | What happens |
@@ -553,10 +560,15 @@ PredictSwing  CbPrediction   action "fire"   cue "melee.swing"   conditions mele
 | `cue` | the cue the server sends for it: the same name, so the same reactions |
 | `conditions` | the look's copy of the server's rule, read on your own player: [expressions](#effects) |
 | `cooldown` | the server's own rate (seconds between two predictions) |
+| `while_held` | the action works for as long as it is held (automatic fire): the cue is predicted on the press and again every `cooldown` while it stays down and the conditions hold. Needs a `cooldown`: the time between two of the server's cues |
 | `changes` | what the server's answer will change on your player: `pistol.ammo -= 1`, `x += 2`, `x = 0`. Shown until the server's cue comes (its own value is in the same frame) or the prediction expires |
 | `stance`, `stance_layer` | the stance the server's mod will set, and the layer it sets it on (`melee_swing` on `full`) |
 
 - **Both halves are the modder's**: the server mod emits the cue, its look predicts it by name.
+- **Held fire is two lines**: the server mod asks `ctx.Held( slot, fire )` where a press-based one
+  asks `ctx.Pressed`, and the look's prediction is `while_held` with the mod's time between shots
+  as its `cooldown`. The predictions are counted from the press, not from the frames, so they keep
+  the server's rate at any frame rate (`rifle.cpp`, `reactions_rifle.tscn`).
 - **A wrong guess**: a reaction that played is not taken back; changed fields and the led body
   go back to the server's when the prediction expires (a second). Keep the conditions as close to
   the server's rule as the board allows.
@@ -1129,6 +1141,10 @@ the handle, the pistol's is as its animation has it.
   the scene has it (the bake writes how it is turned in the carried frame, a `turn` line, and the
   simulation lays the body down that way). The scene root's own transform is not used by the game
   (the editor warns if it is not zero): the root is what the game places.
+- **What an item shows is the item's**: a reaction inside its scene, under a node at the place
+  (the rifle's `Muzzle`), with subject `^^` (whoever holds it). A scene it adds goes under that
+  node (`place` Parent: the flash), a beam starts there (`place_node = ..`: the tracer). Move or
+  turn the item, its marker or that node, and the effect goes with it; nothing reads the hand.
 - **A holster is not a hand**: in any other socket (`Back`, `Hip`) the scene is drawn as it is,
   from its origin, so turning the carrying marker does not turn the item on the back. The bat is
   carried across the fingers (its marker is turned a quarter) and hangs along the back as before.
