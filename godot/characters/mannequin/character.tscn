@@ -464,20 +464,20 @@ shape = SubResource("BoxShape3D_y0lhl")
 transform = Transform3D(-1, 0, 0, 0, 0, 1, 0, 1, 0, -0.19, 0.02, 0.02)
 
 [node name="At_RightHand" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" index="14" unique_id=1786766487]
-transform = Transform3D(-2.6149354e-07, -1, -7.748603e-07, -9.313226e-07, 7.748605e-07, -1, 1, -2.6149283e-07, -9.313227e-07, -0.821, 1.42, -0.065)
+transform = Transform3D(-2.6149354e-07, -1, -7.748603e-07, -9.313226e-07, 7.748605e-07, -1, 1, -2.6149283e-07, -9.313227e-07, -0.73889995, 1.4408002, -0.065400004)
 bone_name = "RightHand"
 bone_idx = 34
 
 [node name="RightHand" type="CbSocket" parent="Model/Armature/Skeleton3D/At_RightHand" unique_id=303200659]
-transform = Transform3D(-0.04282566, 0.99816865, -0.04272413, -0.001456622, -0.042825703, -0.9990815, -0.9990815, -0.042724088, 0.0032880288, 0.0025634503, 0.059944887, -0.00019728183)
+transform = Transform3D(-0.04282566, 0.99816865, -0.04272413, -0.001456622, -0.042825703, -0.9990815, -0.9990815, -0.042724088, 0.0032880288, 0, 0.075, 0.032)
 
 [node name="At_LeftHand" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" index="15" unique_id=362477911]
-transform = Transform3D(-2.0255115e-07, 1, 6.55651e-07, 8.121132e-07, 6.556511e-07, -0.9999999, -0.9999999, -2.0255058e-07, -8.121133e-07, 0.82149464, 1.4197761, -0.065399975)
+transform = Transform3D(-2.0255115e-07, 1, 6.55651e-07, 8.121132e-07, 6.556511e-07, -0.9999999, -0.9999999, -2.0255058e-07, -8.121133e-07, 0.7389, 1.4408002, -0.065399975)
 bone_name = "LeftHand"
 bone_idx = 10
 
 [node name="LeftHand" type="CbSocket" parent="Model/Armature/Skeleton3D/At_LeftHand" unique_id=1824491291]
-transform = Transform3D(-0.042825796, -0.99816865, 0.042724095, 0.0014566146, -0.042825665, -0.9990815, 0.9990815, -0.042724226, 0.0032880288, -0.0025634484, 0.059944887, -0.00019728183)
+transform = Transform3D(-0.042825796, -0.99816865, 0.042724106, 0.0014566146, -0.042825665, -0.9990815, 0.9990815, -0.042724237, 0.0032880288, 0, 0.075, 0.032)
 
 [node name="CinderboxSkeleton" type="CinderboxSkeleton" parent="." unique_id=222350825]
 draw_bone_boxes = false
