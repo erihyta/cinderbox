@@ -25,7 +25,7 @@ emission = Color(1, 0.35, 0.05, 1)
 emission_energy_multiplier = 0.0
 
 [sub_resource type="BoxShape3D" id="Body"]
-size = Vector3(0.07, 0.07, 0.82)
+size = Vector3(0.82, 0.07, 0.07)
 
 [sub_resource type="Gradient" id="Fade"]
 offsets = PackedFloat32Array(0, 0.35, 1)
@@ -161,15 +161,17 @@ mass = 1.1
 properties = {
 "pickup.hold_seconds": 0.5
 }
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.31)
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, -0.31)
 shape = SubResource("Body")
 
-[node name="Carry" type="CbGrip" parent="."]
+[node name="Carry" type="CbGrip" parent="." unique_id=1025936150]
 hand = 1
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, -0.035053983)
 
-[node name="OtherHand" type="CbGrip" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.11)
+[node name="OtherHand" type="CbGrip" parent="." unique_id=840287759]
 align_rotation = true
+as_animated = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.6054174e-09, -1.9064716e-09, 0.066385016)
 
 [node name="Flames" type="GPUParticles3D" parent="." unique_id=1514484346]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)
@@ -210,5 +212,3 @@ event = "melee.hit"
 subject = NodePath("^^")
 target = NodePath("../Sparks")
 method = "restart"
-
-[node name="AudioStreamPlayer3D" type="AudioStreamPlayer3D" parent="." unique_id=852594584]
