@@ -108,6 +108,9 @@ var _flash_rect: ColorRect
 
 func _ready() -> void:
 	args = _parse_args()
+	# The camera is placed after everything has moved this frame (the viewer is a child and updates
+	# the drawn world after this node): a frame late, your own body would run ahead of your eyes.
+	RenderingServer.frame_pre_draw.connect(_update_camera)
 	if ClassDB.class_exists("CinderboxPeer"):
 		peer = ClassDB.instantiate("CinderboxPeer")
 	if args.has("rollback") and peer != null:
@@ -209,7 +212,6 @@ func _process(delta: float) -> void:
 		return
 	_send_input(delta)
 	_update_screen_effects(delta)
-	_update_camera()
 	_update_hud()
 	_autoplay_finish()
 
@@ -570,9 +572,9 @@ func _max_pitch() -> float:
 	return 1.4 if first_person else 0.4
 
 
-## First person: from the head of the posed body (so it bows and leans with the upper body), a
-## little ahead of the face. Only your own head is not drawn: looking down shows your chest, arms and legs.
-## False while there is no living body to look out of.
+## First person: from the character's eye height above its feet, on its mover: steps, landings and
+## the bowing body do not move the camera. Your own head is not drawn (its shadow is): looking down
+## shows your chest, arms and legs. False while there is no living body to look out of.
 func _update_first_person() -> bool:
 	var me: int = client.get_local_net_id()
 	if not first_person or me == 0 or client.is_local_player_dead() or client.get_entity_node(me) == null:
@@ -597,6 +599,8 @@ func _hide_own_head(hide: bool) -> void:
 
 
 func _update_camera() -> void:
+	if _leaving or not is_inside_tree():
+		return
 	camera.near = 0.03 if first_person else 0.05
 	var inside := _update_first_person()
 	_hide_own_head(inside)

@@ -45,13 +45,6 @@ volume_db = -5.0
 pitch_jitter = 0.06
 max_distance = 70.0
 
-[node name="Kick" type="CbReaction" parent="."]
-event = "pistol.fired"
-subject = NodePath("$at")
-conditions = PackedStringArray("is_local")
-shake = 0.035
-shake_time = 0.12
-
 [node name="Dry" type="CbReaction" parent="."]
 event = "pistol.dry"
 subject = NodePath("$at")

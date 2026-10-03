@@ -49,6 +49,7 @@ HitTester::HitTester( std::shared_ptr<const CharacterAsset> character )
 		largest = std::max( { largest, box.radius, box.height, box.halfExtents.x, box.halfExtents.y, box.halfExtents.z } );
 	}
 	m_reach = extent * 1.5f + largest * m_character->animations->Scale() + 0.25f;
+	m_eyeHeight = anim::EyeHeight( *m_character->animations );
 }
 
 bool HitTester::JointPosition( Simulation& sim, PlayerSlot slot, const char* joint, b3Vec3& out )

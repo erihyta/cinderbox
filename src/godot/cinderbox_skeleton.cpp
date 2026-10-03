@@ -4,6 +4,8 @@
 #include "profile.h"
 
 #include <godot_cpp/classes/box_mesh.hpp>
+#include <godot_cpp/classes/geometry_instance3d.hpp>
+#include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/standard_material3d.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -456,8 +458,82 @@ void CinderboxSkeleton::Bind( Skeleton3D* target, const anim::AnimSet& set )
 	}
 }
 
+// While a bone is hidden: a whole copy of the body that only casts shadows, posed like the target
+// before the bone is shrunk. Without one: the target's meshes cast their own again.
+void CinderboxSkeleton::UpdateShadowBody( Skeleton3D* target )
+{
+	auto* body = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_shadowBody ) );
+	bool want = m_hiddenBone.is_empty() == false && target->get_parent() != nullptr;
+	if ( body != nullptr && ( want == false || m_shadowOf != ObjectID( target->get_instance_id() ) ) )
+	{
+		for ( const auto& [id, setting] : m_shadowSettings )
+		{
+			if ( auto* mesh = Object::cast_to<GeometryInstance3D>( ObjectDB::get_instance( id ) ) )
+			{
+				mesh->set_cast_shadows_setting( GeometryInstance3D::ShadowCastingSetting( setting ) );
+			}
+		}
+		m_shadowSettings.clear();
+		body->queue_free();
+		body = nullptr;
+		m_shadowBody = ObjectID();
+	}
+	if ( want == false )
+	{
+		return;
+	}
+	if ( body == nullptr )
+	{
+		// The skeleton and the meshes skinned to it; nothing else that hangs under it.
+		body = Object::cast_to<Skeleton3D>( target->duplicate( 0 ) );
+		if ( body == nullptr )
+		{
+			return;
+		}
+		body->set_name( "ShadowBody" );
+		for ( int i = body->get_child_count( true ) - 1; i >= 0; --i )
+		{
+			Node* child = body->get_child( i, true );
+			auto* mesh = Object::cast_to<MeshInstance3D>( child );
+			if ( mesh == nullptr )
+			{
+				body->remove_child( child );
+				child->queue_free();
+				continue;
+			}
+			mesh->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_SHADOWS_ONLY );
+			for ( int k = mesh->get_child_count( true ) - 1; k >= 0; --k )
+			{
+				Node* below = mesh->get_child( k, true );
+				mesh->remove_child( below );
+				below->queue_free();
+			}
+		}
+		for ( int i = 0; i < target->get_child_count(); ++i )
+		{
+			if ( auto* mesh = Object::cast_to<MeshInstance3D>( target->get_child( i ) ) )
+			{
+				m_shadowSettings.emplace_back( ObjectID( mesh->get_instance_id() ), int( mesh->get_cast_shadows_setting() ) );
+				mesh->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_OFF );
+			}
+		}
+		target->get_parent()->add_child( body );
+		body->set_transform( target->get_transform() );
+		m_shadowBody = ObjectID( body->get_instance_id() );
+		m_shadowOf = ObjectID( target->get_instance_id() );
+	}
+	int bones = std::min( body->get_bone_count(), target->get_bone_count() );
+	for ( int bone = 0; bone < bones; ++bone )
+	{
+		body->set_bone_pose_position( bone, target->get_bone_pose_position( bone ) );
+		body->set_bone_pose_rotation( bone, target->get_bone_pose_rotation( bone ) );
+		body->set_bone_pose_scale( bone, bone == m_shrunkBone ? Vector3( 1, 1, 1 ) : target->get_bone_pose_scale( bone ) );
+	}
+}
+
 void CinderboxSkeleton::HideBone( Skeleton3D* target )
 {
+	UpdateShadowBody( target ); // before the bone is shrunk: the copy is whole
 	int bone = -1;
 	if ( m_hiddenBone.is_empty() == false && m_lastSet != nullptr )
 	{

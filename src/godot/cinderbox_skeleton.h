@@ -95,6 +95,8 @@ public:
 	// A bone that is not drawn (humanoid-profile name, "" for none): shrunk to nothing after the
 	// pose is applied, with everything below it. The pose itself is untouched (joint transforms,
 	// sockets and hit tests do not change): a first-person camera hides its own head this way.
+	// The whole body still casts its shadow: while a bone is hidden the shadows come from a copy of
+	// the skeleton and its meshes that is posed the same, is whole, and draws nothing else.
 	void set_hidden_bone( const godot::String& value )
 	{
 		m_hiddenBone = value;
@@ -172,6 +174,10 @@ private:
 	void HideBone( godot::Skeleton3D* target );
 	godot::String m_hiddenBone;
 	int m_shrunkBone = -1; // the target bone that is shrunk now
+	void UpdateShadowBody( godot::Skeleton3D* target );
+	godot::ObjectID m_shadowBody;	// the copy that casts the shadows
+	godot::ObjectID m_shadowOf;		// the skeleton it copies
+	std::vector<std::pair<godot::ObjectID, int>> m_shadowSettings; // the meshes' own cast_shadow
 
 	// The last applied pose, for joint lookups.
 	const anim::AnimSet* m_lastSet = nullptr;

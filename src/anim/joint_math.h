@@ -28,6 +28,10 @@ b3Quat Arc( b3Vec3 from, b3Vec3 to );
 // Index of a joint by its humanoid-profile name (Mixamo names match too), -1 if absent.
 int FindJoint( const AnimSet& set, const char* profileName );
 
+// How high above the feet a first-person camera sits: the head joint of the rest pose plus
+// kEyeUp. It does not follow the animation, so walking, landing and bowing do not move it.
+float EyeHeight( const AnimSet& set );
+
 // Rotates `joint` and everything below it about the joint's position.
 void RotateSubtree( const AnimSet& set, Models& models, int joint, b3Quat turn );
 

@@ -4,6 +4,7 @@
 
 #include "detmath.h"
 #include "hit_test.h"
+#include "ragdoll.h"
 #include "util.h"
 
 #include "box3d/box3d.h"
@@ -339,7 +340,15 @@ b3Vec3 Context::ViewPosition( PlayerSlot slot ) const
 	switch ( ViewMode( in.view ) )
 	{
 		case ViewMode::FirstPerson:
-			return HeadPosition( slot );
+		{
+			const Transform* t = m_sim.EntityTransform( m_sim.PlayerNetId( slot ) );
+			if ( t == nullptr || m_hits == nullptr )
+			{
+				return EyePosition( slot );
+			}
+			b3Vec3 feet = b3Sub( t->position, b3Vec3{ 0.0f, ragdoll::kFeetBelowCenter, 0.0f } );
+			return b3Add( b3Add( feet, b3Vec3{ 0.0f, m_hits->EyeHeight(), 0.0f } ), b3MulSV( kEyeAhead, AimDirection( slot ) ) );
+		}
 		case ViewMode::ShoulderRight:
 		case ViewMode::ShoulderLeft:
 		{
@@ -359,7 +368,6 @@ bool Context::CastAim( PlayerSlot slot, float range, RayHit& hit, b3Vec3& origin
 	b3Vec3 look = AimDirection( slot );
 	origin = HeadPosition( slot );
 	direction = look;
-	if ( ViewMode( m_frame.inputs[slot].view ) != ViewMode::FirstPerson )
 	{
 		// What is under the crosshair: the first thing along the camera's line, from where that
 		// line passes the player (nothing between the camera and there is in the way).
