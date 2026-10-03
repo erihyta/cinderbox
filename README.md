@@ -80,6 +80,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M72: shots go at what is under the crosshair in every view: the camera says what is aimed at, the shot goes there from the head; over-the-shoulder cameras (Q) | done |
 | M73: a steady first-person camera (on the mover, not the head bone), the hidden head keeps its shadow, the camera is placed after the frame's world update, no camera shakes in the shipped looks | done |
 | M74: your own body in first person: the arms pinned under the camera and turned with it, the torso and head not drawn, a per-item view offset in the look | done |
+| M75: first person faces the camera: the body turns with the view and the upper body follows its pitch, with or without a weapon | done |
 
 ## Building
 
@@ -900,7 +901,7 @@ seen. Respawning keeps the aim; only the mod lets it go.
 | Mode | The body | Set by |
 |---|---|---|
 | Freelook (default) | turns toward where the player walks; the camera looks around freely | nothing |
-| Camera-facing | faces where the camera looks, every tick (a shooter's stance) | `ctx.FaceCamera( player, true )` |
+| Camera-facing | faces where the camera looks, every tick (a shooter's stance) | `ctx.FaceCamera( player, true )`, or the player looking in first person (whatever it holds) |
 
 The pistol and the bat switch to camera-facing while they are out. In camera-facing the **upper
 body follows the camera's pitch**: looking down bows the character, looking up leans it back.

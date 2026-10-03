@@ -28,6 +28,14 @@ inline constexpr float kForwardBelow = 1.40f;  // ~80 degrees
 inline constexpr float kLookBlendSeconds = 0.2f;
 } // namespace anim_tuning
 
+// Whether a character faces where its camera looks this tick: a mod said so (FaceCamera: a weapon
+// is out), or the player looks out of its eyes. A first-person view would otherwise show a body
+// that walks one way while the arms and the view point another.
+inline bool FacesCamera( const Character& c, const PlayerInput& input )
+{
+	return c.faceCamera != 0 || ViewMode( input.view ) == ViewMode::FirstPerson;
+}
+
 // Advance `state` by one tick. `c` is the character after this tick's movement.
 void UpdateAnimState( AnimState& state, const Character& c, const PlayerInput& input, uint32_t tick, float dt );
 

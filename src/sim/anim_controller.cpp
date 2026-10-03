@@ -19,7 +19,7 @@ void UpdateAnimState( AnimState& s, const Character& c, const PlayerInput& input
 	// The upper body follows the pitch while the character faces the camera. Whole steps of a byte:
 	// the same on every machine.
 	int lookStep = std::max( 1, int( 255.0f * dt / kLookBlendSeconds ) );
-	s.look = uint8_t( std::clamp( int( s.look ) + ( c.faceCamera != 0 ? lookStep : -lookStep ), 0, 255 ) );
+	s.look = uint8_t( std::clamp( int( s.look ) + ( FacesCamera( c, input ) ? lookStep : -lookStep ), 0, 255 ) );
 
 	float speed = b3Length( b3Vec3{ c.velocity.x, 0.0f, c.velocity.z } );
 	if ( c.grounded == 0 )
