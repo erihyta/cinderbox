@@ -732,7 +732,7 @@ Client controls:
   | | |
   |---|---|
   | What is drawn | the arms, and everything from the hips down. The torso, the neck and the head are not (the shadow is the whole body's) |
-  | The arms | held under the camera, upright, and turned with it: walking, sprinting and bowing do not swing them across the screen; what the arms do themselves (a shot's recoil, a reload) shows |
+  | The arms | held under the camera and turned the rest of the way with it, as the pose has them: the stance's own turn of the shoulders and the hands' place on the item are the animation's, the same as everyone else sees. Aiming, the shoulder the arm is aimed from stands still, so walking, sprinting and bowing do not swing the hand across the screen; what the arms do themselves (a shot's recoil, a reload) shows |
   | Where they sit | each item's look can move them: `CbItemLook.view_offset`, metres to the right, up and ahead (the pistol: 5 cm up, 3 cm ahead). Keep it small: far from the body the arms' cut ends come into view |
   | Who sees it | only you. Other players, your shadow's pose source, hit tests and where shots start are the body's real pose |
   | Both hands | an item with a grip (below) has the other hand on it here too: it is solved again after the arms are pinned |
