@@ -1,4 +1,6 @@
 #include "cinderbox_client.h"
+#include "ragdoll.h"
+#include "joint_math.h"
 
 #include "camera.h"
 #include "cinderbox_character.h"
@@ -1640,16 +1642,20 @@ Vector3 CinderboxClient::get_camera_target() const
 Vector3 CinderboxClient::get_view_position( int64_t view, const Basis& camera ) const
 {
 	Vector3 pivot = get_camera_target();
-	int64_t me = get_local_net_id();
 	switch ( ViewMode( view >= 0 && view < int64_t( kViewModes ) ? view : 0 ) )
 	{
 		case ViewMode::FirstPerson:
-			if ( me != 0 && is_local_player_dead() == false && get_entity_node( me ) != nullptr )
+		{
+			present::RenderPose pose;
+			if ( m_mirror && m_animSet && is_local_player_dead() == false && m_mirror->LocalPlayer( pose ) )
 			{
-				// The eye on the posed head, as Context::HeadPosition places it.
-				return get_bone_position( me, "Head" ) - camera.get_column( 2 ) * kEyeAhead + camera.get_column( 1 ) * kEyeUp;
+				// The character's eye height above its feet, as Context::ViewPosition places it: on
+				// the mover, so no animation moves the camera.
+				Vector3 feet = ToGodot( pose.position ) - Vector3( 0, ragdoll::kFeetBelowCenter, 0 );
+				return feet + Vector3( 0, anim::EyeHeight( *m_animSet ), 0 ) - camera.get_column( 2 ) * kEyeAhead;
 			}
 			return pivot;
+		}
 		case ViewMode::ShoulderRight:
 			return pivot + camera.get_column( 0 ) * kShoulderOffset;
 		case ViewMode::ShoulderLeft:

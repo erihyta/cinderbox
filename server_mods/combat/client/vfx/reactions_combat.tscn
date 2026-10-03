@@ -11,8 +11,6 @@ event = "combat.hurt"
 subject = NodePath("$other")
 conditions = PackedStringArray("is_local")
 place = 1
-shake = 0.06
-shake_time = 0.22
 flash_color = Color(0.8, 0.05, 0.05, 0.24)
 flash_time = 0.3
 

@@ -1,5 +1,8 @@
 #include "joint_math.h"
 
+#include "ragdoll.h"
+#include "types.h"
+
 #include "profile.h"
 
 #include "ozz/animation/runtime/skeleton.h"
@@ -79,6 +82,19 @@ int FindJoint( const AnimSet& set, const char* profileName )
 		}
 	}
 	return -1;
+}
+
+float EyeHeight( const AnimSet& set )
+{
+	int head = FindJoint( set, "Head" );
+	if ( head < 0 || size_t( head ) >= set.RestModels().size() )
+	{
+		// A rig without a head: where the third-person camera's pivot is.
+		return ragdoll::kFeetBelowCenter + kViewPivotHeight;
+	}
+	float v[4];
+	ozz::math::StorePtrU( set.RestModels()[size_t( head )].cols[3], v );
+	return v[1] + kEyeUp;
 }
 
 void RotateSubtree( const AnimSet& set, Models& models, int joint, b3Quat turn )

@@ -36,13 +36,13 @@ inline constexpr int16_t kMaxCameraPitch = 16000;
 enum class ViewMode : uint8_t
 {
 	ThirdPerson = 0,   // behind the player, orbiting the point above its body
-	FirstPerson = 1,   // out of the posed head
+	FirstPerson = 1,   // from the character's eye height, on its mover (it does not follow the animation)
 	ShoulderRight = 2, // third person, moved sideways by kShoulderOffset
 	ShoulderLeft = 3,
 };
 inline constexpr uint8_t kViewModes = 4;
 inline constexpr float kShoulderOffset = 0.45f; // metres to the side of the pivot
-// The first-person eye, from the head joint: ahead along the look and up across it (metres).
+// The eye, from the head joint: ahead along the look (metres), and above the joint.
 inline constexpr float kEyeAhead = 0.14f;
 inline constexpr float kEyeUp = 0.09f;
 // The point a third-person camera orbits, above the character's centre (metres).

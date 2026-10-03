@@ -301,16 +301,16 @@ public:
 	// camera looks in. (Mods take the chest from it for things done at arm's length.)
 	b3Vec3 EyePosition( PlayerSlot slot ) const;
 	b3Vec3 AimDirection( PlayerSlot slot ) const;
-	// The player's eye: on the head of its pose this tick, so it bows and leans with the body. What
-	// a shot starts from, whatever camera the player looks through.
+	// The head of the player's pose this tick (it bows and leans with the body): what a shot starts
+	// from, whatever camera the player looks through.
 	b3Vec3 HeadPosition( PlayerSlot slot ) const;
 	// Where the player's line of sight starts for the camera it looks through (PlayerInput::view):
-	// the eye in first person, the camera's pivot (moved to the shoulder, if it is) in third.
+	// in first person the character's eye height above its feet (fixed on the mover: the animation
+	// does not move it), in third the camera's pivot (moved to the shoulder, if it is).
 	b3Vec3 ViewPosition( PlayerSlot slot ) const;
 	// What the player hits when it shoots at what is under its crosshair, up to `range` metres:
-	// the line of sight says what is aimed at, and the shot goes from the eye to that point. In
-	// third person the two differ: something between the head and the target stops the shot even
-	// when the camera sees past it. `origin` and `direction` are the shot's. False: it hit nothing.
+	// the line of sight says what is aimed at, and the shot goes from the head to that point.
+	// Something between the head and the target stops the shot even when the camera sees past it. `origin` and `direction` are the shot's. False: it hit nothing.
 	bool CastAim( PlayerSlot slot, float range, RayHit& hit, b3Vec3& origin, b3Vec3& direction ) const;
 
 	const PlayerInput& Input( PlayerSlot slot ) const
