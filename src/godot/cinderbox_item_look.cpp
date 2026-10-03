@@ -43,6 +43,9 @@ void CbGrip::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_hand" ), &CbGrip::get_hand );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "hand", PROPERTY_HINT_ENUM, "The other hand,The carrying hand" ), "set_hand", "get_hand" );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "align_rotation" ), "set_align_rotation", "get_align_rotation" );
+	ClassDB::bind_method( D_METHOD( "set_as_animated", "value" ), &CbGrip::set_as_animated );
+	ClassDB::bind_method( D_METHOD( "get_as_animated" ), &CbGrip::get_as_animated );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "as_animated" ), "set_as_animated", "get_as_animated" );
 	BIND_ENUM_CONSTANT( HAND_OTHER );
 	BIND_ENUM_CONSTANT( HAND_CARRYING );
 }
@@ -234,7 +237,7 @@ Dictionary CbItemBody::bake() const
 		Transform3D t = ( toCarried * InItemFrame( others[0] ) ).orthonormalized();
 		Quaternion q = t.basis.get_rotation_quaternion();
 		text += vformat( "grip %.4f %.4f %.4f %.5f %.5f %.5f %.5f %d\n", t.origin.x, t.origin.y, t.origin.z, q.x, q.y, q.z, q.w,
-						 others[0]->get_align_rotation() ? 1 : 0 );
+						 others[0]->get_as_animated() ? 2 : ( others[0]->get_align_rotation() ? 1 : 0 ) );
 	}
 	out["text"] = text;
 	out["error"] = "";

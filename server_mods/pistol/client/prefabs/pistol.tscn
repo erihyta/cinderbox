@@ -45,3 +45,6 @@ mesh = SubResource("Sight")
 
 [node name="Carry" type="CbGrip" parent="." unique_id=1976802778]
 hand = 1
+
+[node name="OtherHand" type="CbGrip" parent="."]
+as_animated = true

@@ -216,12 +216,13 @@ bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error
 		}
 		else if ( key == "grip" )
 		{
-			// grip <x y z> <qx qy qz qw> <1 when the hand takes the rotation>
+			// grip <x y z> <qx qy qz qw> <0: the wrist goes there; 1: and the hand takes the rotation;
+			// 2: the hand stays where the animation has it, the place is not used>
 			float g[7];
 			int align = 0;
 			if ( !( words >> g[0] >> g[1] >> g[2] >> g[3] >> g[4] >> g[5] >> g[6] >> align ) )
 			{
-				error = "grip needs a position, a rotation (x y z w) and 0 or 1";
+				error = "grip needs a position, a rotation (x y z w) and 0, 1 or 2";
 				return false;
 			}
 			float turn = g[3] * g[3] + g[4] * g[4] + g[5] * g[5] + g[6] * g[6];
@@ -238,7 +239,12 @@ bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error
 				error = "the grip's rotation is not a rotation";
 				return false;
 			}
-			shape.grip = align != 0 ? 2 : 1;
+			if ( align < 0 || align > 2 )
+			{
+				error = "grip ends with 0, 1 or 2";
+				return false;
+			}
+			shape.grip = uint8_t( 1 + align );
 			shape.gripPosition = { g[0], g[1], g[2] };
 			for ( int k = 0; k < 4; ++k )
 			{

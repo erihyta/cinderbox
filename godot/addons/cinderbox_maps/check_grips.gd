@@ -85,6 +85,13 @@ func _initialize() -> void:
 	_check("... the other hand further along it", _near(_line(baked.text, "grip"), [0, 0, -0.4]), str(_line(baked.text, "grip")))
 	made[0].free()
 
+	# As animated: no place, only that the other hand keeps the animation's.
+	made = _item(null, Vector3(0, 0, 0.3))
+	(made[0].get_node("Other") as CbGrip).as_animated = true
+	baked = made[1].bake()
+	_check("as animated: the grip's last number says so", _line(baked.text, "grip").size() == 8 and int(_line(baked.text, "grip")[7]) == 2, str(_line(baked.text, "grip")))
+	made[0].free()
+
 	# What cannot be baked says why.
 	made = _item(Vector3(0.1, 0, 0), null, turn, Basis())
 	baked = made[1].bake()

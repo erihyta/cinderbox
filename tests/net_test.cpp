@@ -1122,6 +1122,8 @@ void TestItemShapes()
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip -0.05 0.02 0.1 0 0 0 1 0\n", shape, error ) );
 	CHECK( shape.grip == 1 && shape.gripPosition.x == -0.05f && shape.gripPosition.z == 0.1f && shape.gripRotation[3] == 1.0f );
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 0.1 0 0.7071 0 0.7071 1\n", shape, error ) && shape.grip == 2 );
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 0 0 0 0 1 2\n", shape, error ) && shape.grip == 3 ); // as animated
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 0 0 0 0 1 3\n", shape, error ) == false );
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 0.1\n", shape, error ) == false );			   // no rotation
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 5 0 0 0 1 0\n", shape, error ) == false );   // out of reach
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 0.1 0 0 0 3 0\n", shape, error ) == false ); // not a rotation
@@ -1139,7 +1141,7 @@ void TestItemShapes()
 		CHECK( back.itemShapes.size() == 1 && back.itemShapes[0] == rifle && back.itemShapes[0].grip == 2 );
 	}
 	// The shipped pistol and bat are held with both hands.
-	CHECK( LoadItemShapeFolder( root + "/server_mods/pistol/client", "pistol.gun", shape, error ) && shape.grip == 2 );
+	CHECK( LoadItemShapeFolder( root + "/server_mods/pistol/client", "pistol.gun", shape, error ) && shape.grip == 3 ); // as its animations have the hands
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "melee.bat", shape, error ) && shape.grip == 2 && shape.gripPosition.z > 0.05f );
 	properties.clear();
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "melee.bat", shape, error, &properties ) );

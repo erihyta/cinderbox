@@ -614,14 +614,20 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	b3Vec3 pivot = { 0.0f, anim::EyeHeight( *m_animSet ), 0.0f };
 	anim::RotateSubtreeAbout( *m_animSet, models, spine, pivot, b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, state->aimYaw ) );
 	anim::RotateSubtreeAbout( *m_animSet, models, spine, pivot, b3MakeQuatFromAxisAngle( right, state->aimPitch ) );
+	// The other hand on the item it holds: where the grip says, or where it is now (the pose solved
+	// it as the animation has the two hands), before the carrying arm is aimed again.
+	anim::HandGrip grip;
+	bool gripped = m_mirror->GripOf( netId, grip );
+	if ( gripped && grip.asAnimated )
+	{
+		grip = anim::AsAnimated( *m_animSet, models, grip.leftCarries );
+	}
 	if ( state->aiming != 0 && m_animSet->AimJoints().empty() == false )
 	{
 		// The aimed arm ends on the line of sight, as the pose had it.
 		anim::AimChain( *m_animSet, models, m_animSet->AimJoints(), m_animSet->AimTip(), forward );
 	}
-	// And the other hand back on the item it holds.
-	anim::HandGrip grip;
-	if ( m_mirror->GripOf( netId, grip ) )
+	if ( gripped )
 	{
 		anim::SolveGrip( *m_animSet, models, grip );
 	}

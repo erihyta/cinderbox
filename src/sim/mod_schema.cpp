@@ -427,7 +427,7 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 			turn += g[3 + k] * g[3 + k];
 		}
 		// Within arm's reach of the carrying hand, and a rotation that is one.
-		if ( shape.grip > 2 || sane( g[0], -2.0f, 2.0f ) == false || sane( g[1], -2.0f, 2.0f ) == false || sane( g[2], -2.0f, 2.0f ) == false ||
+		if ( shape.grip > 3 || sane( g[0], -2.0f, 2.0f ) == false || sane( g[1], -2.0f, 2.0f ) == false || sane( g[2], -2.0f, 2.0f ) == false ||
 			 sane( turn, 0.9f, 1.1f ) == false )
 		{
 			return false;
