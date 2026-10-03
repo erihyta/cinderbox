@@ -10,6 +10,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <cmath>
+#include <vector>
 
 using namespace godot;
 
@@ -37,7 +38,13 @@ void CbGrip::_bind_methods()
 {
 	ClassDB::bind_method( D_METHOD( "set_align_rotation", "value" ), &CbGrip::set_align_rotation );
 	ClassDB::bind_method( D_METHOD( "get_align_rotation" ), &CbGrip::get_align_rotation );
+	ClassDB::bind_static_method( "CbGrip", D_METHOD( "carry_frame_under", "root" ), &CbGrip::carry_frame_under );
+	ClassDB::bind_method( D_METHOD( "set_hand", "value" ), &CbGrip::set_hand );
+	ClassDB::bind_method( D_METHOD( "get_hand" ), &CbGrip::get_hand );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "hand", PROPERTY_HINT_ENUM, "The other hand,The carrying hand" ), "set_hand", "get_hand" );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "align_rotation" ), "set_align_rotation", "get_align_rotation" );
+	BIND_ENUM_CONSTANT( HAND_OTHER );
+	BIND_ENUM_CONSTANT( HAND_CARRYING );
 }
 
 void CbItemBody::_bind_methods()
@@ -64,11 +71,30 @@ Callable CbItemBody::get_bake_button()
 namespace
 {
 
-// Where the body is in the item's frame (the scene's root): through every Node3D above it.
-Transform3D InItemFrame( const Node3D* node )
+// The item's scene that `node` is part of: the scene it was saved in (its owner), or, for a scene
+// built in code, the topmost node above it.
+const Node* SceneRoot( const Node* node )
 {
+	if ( node->get_owner() != nullptr )
+	{
+		return node->get_owner();
+	}
+	while ( node->get_parent() != nullptr )
+	{
+		node = node->get_parent();
+	}
+	return node;
+}
+
+// Where a node is in its scene's frame (the root's): through every Node3D between them.
+Transform3D InSceneFrame( const Node3D* node, const Node* root )
+{
+	if ( node == root )
+	{
+		return Transform3D();
+	}
 	Transform3D t = node->get_transform();
-	for ( Node* parent = node->get_parent(); parent != nullptr && parent->get_parent() != nullptr; parent = parent->get_parent() )
+	for ( Node* parent = node->get_parent(); parent != nullptr && parent != root; parent = parent->get_parent() )
 	{
 		if ( auto* spatial = Object::cast_to<Node3D>( parent ) )
 		{
@@ -76,6 +102,32 @@ Transform3D InItemFrame( const Node3D* node )
 		}
 	}
 	return t;
+}
+
+Transform3D InItemFrame( const Node3D* node )
+{
+	return InSceneFrame( node, SceneRoot( node ) );
+}
+
+// A scene's grips for one hand.
+std::vector<CbGrip*> GripsUnder( const Node* root, int hand )
+{
+	std::vector<CbGrip*> out;
+	TypedArray<Node> found = const_cast<Node*>( root )->find_children( "*", "CbGrip", true, false );
+	for ( int i = 0; i < found.size(); ++i )
+	{
+		auto* grip = Object::cast_to<CbGrip>( found[i] );
+		if ( grip != nullptr && grip->get_hand() == hand )
+		{
+			out.push_back( grip );
+		}
+	}
+	return out;
+}
+
+std::vector<CbGrip*> GripsOf( const Node* in, int hand )
+{
+	return GripsUnder( SceneRoot( in ), hand );
 }
 
 String ShapeProblem( const CbItemBody* body )
@@ -89,15 +141,28 @@ String ShapeProblem( const CbItemBody* body )
 	{
 		return "An item's body is a box or a sphere (" + shape->get_class() + " cannot be baked).";
 	}
-	Transform3D t = InItemFrame( body );
+	// In the frame the item is carried in: the carrying grip's, or the scene's.
+	Transform3D t = CbGrip::CarryFrame( body ).affine_inverse() * InItemFrame( body );
 	if ( t.basis.is_equal_approx( Basis() ) == false )
 	{
-		return "Keep it unrotated and unscaled: the box is aligned with the item (set the shape's size instead).";
+		return "Keep it unscaled and turned as the item is carried (as the carrying CbGrip is, or not at all without one): the box is "
+			   "aligned with the item (set the shape's size instead).";
 	}
 	return String();
 }
 
 } // namespace
+
+Transform3D CbGrip::CarryFrame( const Node* in )
+{
+	return CarryFrameUnder( SceneRoot( in ) );
+}
+
+Transform3D CbGrip::CarryFrameUnder( const Node* root )
+{
+	std::vector<CbGrip*> carrying = GripsUnder( root, HAND_CARRYING );
+	return carrying.empty() ? Transform3D() : InSceneFrame( carrying[0], root ).orthonormalized();
+}
 
 PackedStringArray CbItemBody::_get_configuration_warnings() const
 {
@@ -132,7 +197,15 @@ Dictionary CbItemBody::bake() const
 		half = Vector3( radius, radius, radius );
 		kind = "sphere";
 	}
-	Vector3 center = InItemFrame( this ).origin;
+	if ( GripsOf( this, CbGrip::HAND_CARRYING ).size() > 1 || GripsOf( this, CbGrip::HAND_OTHER ).size() > 1 )
+	{
+		out["text"] = "";
+		out["error"] = "an item has one CbGrip for each hand at most (the carrying hand's, the other hand's)";
+		return out;
+	}
+	// Everything is written in the frame the item is carried in.
+	const Transform3D toCarried = CbGrip::CarryFrame( this ).affine_inverse();
+	Vector3 center = ( toCarried * InItemFrame( this ) ).origin;
 	String text = "# Baked from the item's CbItemBody (bake_items.gd): its body when it lies in the world.\n";
 	text += "shape " + kind + "\n";
 	text += vformat( "half %.4f %.4f %.4f\n", half.x, half.y, half.z );
@@ -154,26 +227,14 @@ Dictionary CbItemBody::bake() const
 		}
 		text += "property " + name + " " + String::num( double( value ), 4 ) + "\n";
 	}
-	// Where the other hand holds it: the scene's CbGrip, in the item's frame.
-	const Node* root = this;
-	while ( root->get_parent() != nullptr )
+	// Where the other hand holds it.
+	std::vector<CbGrip*> others = GripsOf( this, CbGrip::HAND_OTHER );
+	if ( others.empty() == false )
 	{
-		root = root->get_parent();
-	}
-	TypedArray<Node> grips = const_cast<Node*>( root )->find_children( "*", "CbGrip", true, false );
-	if ( grips.size() > 1 )
-	{
-		out["text"] = "";
-		out["error"] = "an item has one CbGrip (the other hand's place), not " + String::num_int64( grips.size() );
-		return out;
-	}
-	if ( grips.size() == 1 )
-	{
-		auto* grip = Object::cast_to<CbGrip>( grips[0] );
-		Transform3D t = InItemFrame( grip ).orthonormalized();
+		Transform3D t = ( toCarried * InItemFrame( others[0] ) ).orthonormalized();
 		Quaternion q = t.basis.get_rotation_quaternion();
 		text += vformat( "grip %.4f %.4f %.4f %.5f %.5f %.5f %.5f %d\n", t.origin.x, t.origin.y, t.origin.z, q.x, q.y, q.z, q.w,
-						 grip->get_align_rotation() ? 1 : 0 );
+						 others[0]->get_align_rotation() ? 1 : 0 );
 	}
 	out["text"] = text;
 	out["error"] = "";

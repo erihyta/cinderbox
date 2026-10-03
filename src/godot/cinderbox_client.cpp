@@ -943,6 +943,23 @@ void CinderboxClient::ItemsChanged( uint32_t holderNetId )
 	}
 }
 
+namespace
+{
+
+// Where an item's scene goes in the frame it is carried in (a hand's socket, or its body's frame
+// in the world): moved so that its carrying CbGrip is at the origin. Looked up once per node.
+Transform3D SceneInCarriedFrame( Node3D* node )
+{
+	static const StringName kKey( "cb_carried" );
+	if ( node->has_meta( kKey ) == false )
+	{
+		node->set_meta( kKey, CbGrip::CarryFrameUnder( node ).affine_inverse() );
+	}
+	return node->get_meta( kKey );
+}
+
+} // namespace
+
 void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, Node3D* node )
 {
 	uint32_t& drawnWith = m_itemHolders[visual];
@@ -962,7 +979,7 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 			drawnWith = 0;
 		}
 		node->set_visible( true );
-		node->set_transform( Transform3D( Basis( ToGodot( pose.rotation ) ), ToGodot( pose.position ) ) );
+		node->set_transform( Transform3D( Basis( ToGodot( pose.rotation ) ), ToGodot( pose.position ) ) * SceneInCarriedFrame( node ) );
 		return;
 	}
 	drawnWith = v.holder;
@@ -983,7 +1000,7 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 	if ( node->get_parent() != socket )
 	{
 		PlaceItem( v.holder, socket, node );
-		node->set_transform( Transform3D() );
+		node->set_transform( SceneInCarriedFrame( node ) );
 	}
 	node->set_visible( true );
 }

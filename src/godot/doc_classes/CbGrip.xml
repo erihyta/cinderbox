@@ -1,16 +1,27 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="CbGrip" inherits="Marker3D" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<brief_description>
-		Where the other hand holds an item: a marker in the item's scene.
+		Where a hand holds an item: a marker in the item's scene, one per hand.
 	</brief_description>
 	<description>
-		An item is carried at its origin by one hand. With a CbGrip in its scene, the character's other arm is bent so that its wrist is on the marker, wherever the carrying hand and the animation take the item, while that other hand is empty. Baked with the item's [CbItemBody] (a [code]grip[/code] line in [code]items/&lt;kind&gt;.cfg[/code]), so the server poses the same arms for its hit tests and every player sees them. One per item.
+		[b]The carrying hand[/b]: the item is carried here. This point is in the hand's socket (whichever hand the item is in), the marker's -Z along the fingers and +Y up. Without one the item is carried at its scene's origin. [b]The other hand[/b]: the character's other arm is bent so that its hand is here, wherever the carrying hand and the animation take the item, while that hand is empty. Both are baked with the item's [CbItemBody] ([code]items/&lt;kind&gt;.cfg[/code]), so the server poses the same arms for its hit tests and every player sees them.
 	</description>
 	<tutorials>
 	</tutorials>
 	<members>
+		<member name="hand" type="int" setter="set_hand" getter="get_hand" enum="CbGrip.Hand" default="0">
+			Which hand this marker is for.
+		</member>
 		<member name="align_rotation" type="bool" setter="set_align_rotation" getter="get_align_rotation" default="false">
 			The hand also turns as the marker is turned: as a hand carrying an item placed here would be (the marker's -Z is where such an item would point). Off: the hand keeps the turn its animation gives it.
 		</member>
 	</members>
+	<constants>
+		<constant name="HAND_OTHER" value="0" enum="Hand">
+			The hand that is not carrying the item reaches here.
+		</constant>
+		<constant name="HAND_CARRYING" value="1" enum="Hand">
+			The item is carried here.
+		</constant>
+	</constants>
 </class>
