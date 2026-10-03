@@ -15,6 +15,9 @@
 		<member name="align_rotation" type="bool" setter="set_align_rotation" getter="get_align_rotation" default="false">
 			The hand also turns as the marker is turned: as a hand carrying an item placed here would be (the marker's -Z is where such an item would point). Off: the hand keeps the turn its animation gives it.
 		</member>
+		<member name="as_animated" type="bool" setter="set_as_animated" getter="get_as_animated" default="false">
+			The other hand: it stays where the item's animations have it relative to the carrying hand (place and turn), and the marker's own place is not used. For animations made with both hands on the item: they are kept as they are, and kept together when the carrying arm is aimed.
+		</member>
 	</members>
 	<constants>
 		<constant name="HAND_OTHER" value="0" enum="Hand">

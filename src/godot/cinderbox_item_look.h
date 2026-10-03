@@ -163,12 +163,24 @@ public:
 	{
 		return m_alignRotation;
 	}
+	// The other hand: it stays where the item's animations have it relative to the carrying hand
+	// (place and turn), and the marker's own place is not used. For animations made with both hands
+	// on the item: they are kept as they are, and kept together when the carrying arm is aimed.
+	void set_as_animated( bool v )
+	{
+		m_asAnimated = v;
+	}
+	bool get_as_animated() const
+	{
+		return m_asAnimated;
+	}
 
 protected:
 	static void _bind_methods();
 
 private:
 	bool m_alignRotation = false;
+	bool m_asAnimated = false;
 	int m_hand = HAND_OTHER;
 };
 

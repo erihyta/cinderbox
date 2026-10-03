@@ -53,6 +53,9 @@ struct HandGrip
 {
 	bool leftCarries = false; // the item is in the left hand: the right hand reaches for it
 	bool align = false;		  // the reaching hand also takes `rotation`
+	// The grip is not a place on the item: the other hand stays where the animation has it
+	// relative to the carrying hand (AsAnimated says where that is, before the carrying arm is aimed).
+	bool asAnimated = false;
 	b3Vec3 position = { 0.0f, 0.0f, 0.0f };
 	b3Quat rotation = { { 0.0f, 0.0f, 0.0f }, 1.0f };
 };
@@ -62,5 +65,8 @@ struct HandGrip
 // the way it would hold an item placed there. The carrying arm and
 // the item are untouched: the item follows the hand that carries it, the other hand follows the item.
 void SolveGrip( const AnimSet& set, Models& models, const HandGrip& grip );
+// The grip that says where the other hand is in this pose: solving it on a pose whose carrying arm
+// has moved since puts the other hand back as the animation had the two (place and turn).
+HandGrip AsAnimated( const AnimSet& set, const Models& models, bool leftCarries );
 
 } // namespace cb::anim

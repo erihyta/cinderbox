@@ -43,9 +43,8 @@ mesh = SubResource("GripMesh")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.067, -0.16)
 mesh = SubResource("Sight")
 
-[node name="Carry" type="CbGrip" parent="."]
+[node name="Carry" type="CbGrip" parent="." unique_id=1976802778]
 hand = 1
 
-[node name="OtherHand" type="CbGrip" parent="." unique_id=1328080136]
-align_rotation = true
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.025, 0.01)
+[node name="OtherHand" type="CbGrip" parent="."]
+as_animated = true

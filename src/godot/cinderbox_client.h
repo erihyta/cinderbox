@@ -268,6 +268,10 @@ private:
 	bool m_firstPerson = false;
 	godot::ObjectID m_firstPersonSkeleton; // whose body is cut for it now
 	void FirstPersonBody( uint32_t netId, godot::Node* node, const AnimState* state, present::Models& models );
+	// The viewer's own pose as its animations have it, before the aim (see FirstPersonBody).
+	std::unique_ptr<anim::PoseEvaluator> m_viewPose;
+	const anim::AnimSet* m_viewPoseSet = nullptr;
+	const AnimGraph* m_viewPoseGraph = nullptr;
 	std::unordered_map<uint64_t, uint32_t> m_itemHolders; // item visual -> the holder it was last drawn with
 	// What every player holds, by item kind (refreshed every frame): an item kind's name is a
 	// condition, true while the player holds one ("pistol.gun"), as in the state machines.

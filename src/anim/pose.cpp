@@ -446,6 +446,15 @@ void PoseEvaluator::Finish( const AnimState& state, const HandGrip* grip )
 		}
 	}
 
+	// An item both hands hold as the animation has them: where the other hand is now, before the
+	// carrying arm is aimed, is where it has to be on the item afterwards.
+	HandGrip animated;
+	if ( grip != nullptr && grip->asAnimated )
+	{
+		animated = AsAnimated( m_set, m_models, grip->leftCarries );
+		grip = &animated;
+	}
+
 	if ( state.aiming != 0 && m_set.AimJoints().empty() == false )
 	{
 		// Where the player looks, in the body's frame (facing +Z). detmath's sine and cosine are

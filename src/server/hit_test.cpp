@@ -48,6 +48,7 @@ bool GripOf( Simulation& sim, uint32_t netId, anim::HandGrip& out )
 		}
 		out.leftCarries = socket == kSocketLeftHand;
 		out.align = shape.grip == 2;
+		out.asAnimated = shape.grip == 3;
 		out.position = { shape.gripPosition.x, shape.gripPosition.y, shape.gripPosition.z };
 		out.rotation = { { shape.gripRotation[0], shape.gripRotation[1], shape.gripRotation[2] }, shape.gripRotation[3] };
 		return true;

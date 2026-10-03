@@ -277,4 +277,33 @@ void SolveGrip( const AnimSet& set, Models& models, const HandGrip& grip )
 	}
 }
 
+HandGrip AsAnimated( const AnimSet& set, const Models& models, bool leftCarries )
+{
+	HandGrip grip;
+	grip.leftCarries = leftCarries;
+	grip.align = true;
+	const AnimSet::Arm& carrying = set.ArmJoints( leftCarries );
+	const AnimSet::Arm& arm = set.ArmJoints( leftCarries == false );
+	const int joints = int( models.size() );
+	if ( carrying.hand < 0 || arm.hand < 0 || carrying.hand >= joints || arm.hand >= joints )
+	{
+		return grip;
+	}
+	// Both hands' sockets, and the other one's in the carrying one's frame (the item's).
+	const AnimSet::HandSocket& socket = set.HandSocketOf( leftCarries );
+	const AnimSet::HandSocket& reaching = set.HandSocketOf( leftCarries == false );
+	b3Vec3 handAt, otherAt;
+	b3Quat handTurn, otherTurn;
+	float unusedScale;
+	Decompose( models[size_t( carrying.hand )], handAt, handTurn, unusedScale );
+	Decompose( models[size_t( arm.hand )], otherAt, otherTurn, unusedScale );
+	b3Quat item = b3MulQuat( handTurn, socket.rotation );
+	b3Quat back = { { -item.v.x, -item.v.y, -item.v.z }, item.s };
+	b3Vec3 itemAt = b3Add( handAt, b3RotateVector( handTurn, socket.position ) );
+	b3Vec3 palm = b3Add( otherAt, b3RotateVector( otherTurn, reaching.position ) );
+	grip.position = b3RotateVector( back, b3Sub( palm, itemAt ) );
+	grip.rotation = b3MulQuat( back, b3MulQuat( otherTurn, reaching.rotation ) );
+	return grip;
+}
+
 } // namespace cb::anim

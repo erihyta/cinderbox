@@ -1599,6 +1599,42 @@ void TestPoseTools()
 			CHECK( b3Distance( position( moved.Models()[size_t( left.hand )] ), shifted ) < 0.002f );
 			grip.align = true;
 		}
+		// As animated: no place is given. The other hand stays where the animation has it relative
+		// to the carrying hand, however far the aim takes that hand.
+		{
+			anim::HandGrip keep;
+			keep.asAnimated = true;
+			AnimState level;
+			anim::PoseEvaluator rest( *set );
+			rest.Evaluate( level ); // not aiming: the two hands as the animation has them
+			anim::HandGrip was = anim::AsAnimated( *set, rest.Models(), false );
+			for ( float pitch : { 0.0f, 0.6f, -0.6f } )
+			{
+				AnimState aimed = aimingState;
+				aimed.aimPitch = pitch;
+				anim::PoseEvaluator alone( *set );
+				alone.Evaluate( aimed );
+				anim::PoseEvaluator together( *set );
+				together.Evaluate( aimed, &keep );
+				anim::HandGrip apart = anim::AsAnimated( *set, alone.Models(), false );
+				anim::HandGrip now = anim::AsAnimated( *set, together.Models(), false );
+				float reach = b3Length( was.position );
+				std::printf( "    as animated, pitch %+.1f: the other hand %.3f m from its place without it, %.4f m with (it is %.2f m from the item)\n",
+							 pitch, b3Distance( apart.position, was.position ), b3Distance( now.position, was.position ), reach );
+				// (The placeholder's arms hang at its sides: its hands are further apart than an arm
+				// is long once one is aimed ahead, so the other reaches as far as it can.)
+				CHECK( b3Distance( now.position, was.position ) < b3Distance( apart.position, was.position ) );
+				// The carrying arm is where the aim put it.
+				CHECK( b3Distance( position( together.Models()[size_t( right.hand )] ), position( alone.Models()[size_t( right.hand )] ) ) < 1e-6f );
+			}
+			// A relation the arm can keep is kept exactly: the hands as a pose has them, and the
+			// same pose again.
+			anim::PoseEvaluator same( *set );
+			same.Evaluate( level, &keep );
+			anim::HandGrip again = anim::AsAnimated( *set, same.Models(), false );
+			CHECK( b3Distance( again.position, was.position ) < 1e-3f ); // (a straight arm is kept a hair short of straight)
+			CHECK( std::fabs( b3DotQuat( again.rotation, was.rotation ) ) > 0.9999f );
+		}
 		// The item in the left hand: the right hand reaches for it.
 		anim::PoseEvaluator resting( *set );
 		resting.Evaluate( AnimState{} );
@@ -3137,6 +3173,30 @@ void TestMannequinCharacter()
 	CHECK( hand.z - shoulder.z > 0.35f );
 	CHECK( std::fabs( hand.y - shoulder.y ) < 0.1f );
 	CheckHeldItem( *set, pose );
+	{
+		// Where the gun points and where the hands are, as the stance's animation has them and
+		// once the arm is aimed (level: the aim asks for nothing the animation does not do).
+		auto gun = [&]( const anim::PoseEvaluator& from, b3Vec3& ahead, b3Vec3& between ) {
+			b3Vec3 at, otherAt;
+			b3Quat turn, otherTurn;
+			float scale;
+			anim::Decompose( from.Models()[size_t( set->ArmJoints( false ).hand )], at, turn, scale );
+			anim::Decompose( from.Models()[size_t( set->ArmJoints( true ).hand )], otherAt, otherTurn, scale );
+			ahead = b3RotateVector( b3MulQuat( turn, set->HandSocketOf( false ).rotation ), { 0.0f, 0.0f, -1.0f } );
+			between = b3Sub( otherAt, at );
+		};
+		AnimState unaimed = state();
+		unaimed.aiming = 0;
+		anim::PoseEvaluator plain( *set );
+		plain.SetGraph( graph, warnings );
+		plain.Evaluate( unaimed );
+		b3Vec3 asAnimated, asAimed, handsAnimated, handsAimed;
+		gun( plain, asAnimated, handsAnimated );
+		gun( pose, asAimed, handsAimed );
+		std::printf( "    the pistol points (%.2f %.2f %.2f) as animated, (%.2f %.2f %.2f) aimed level; the left hand is (%.2f %.2f %.2f) from the right as animated, (%.2f %.2f %.2f) aimed\n",
+					 asAnimated.x, asAnimated.y, asAnimated.z, asAimed.x, asAimed.y, asAimed.z, handsAnimated.x, handsAnimated.y, handsAnimated.z,
+					 handsAimed.x, handsAimed.y, handsAimed.z );
+	}
 	command( CommandType::Event, 0, 0, 0 ); // pistol.fired, by this player
 	step( 1 );
 	CHECK( state().graph[1].state == stateOf( 1, "Shoot" ) );

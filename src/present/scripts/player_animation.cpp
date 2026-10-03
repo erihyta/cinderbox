@@ -42,6 +42,7 @@ void RegisterPlayerAnimation( flecs::world& world )
 			anim::HandGrip grip;
 			grip.leftCarries = v.socket == kSocketLeftHand;
 			grip.align = shape.grip == 2;
+			grip.asAnimated = shape.grip == 3;
 			grip.position = { shape.gripPosition.x, shape.gripPosition.y, shape.gripPosition.z };
 			grip.rotation = { { shape.gripRotation[0], shape.gripRotation[1], shape.gripRotation[2] }, shape.gripRotation[3] };
 			grips.byHolder[v.holder] = grip;
