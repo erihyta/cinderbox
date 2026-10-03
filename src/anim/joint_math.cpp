@@ -203,13 +203,22 @@ void SolveGrip( const AnimSet& set, Models& models, const HandGrip& grip )
 		return;
 	}
 	// The item's frame: the carrying hand's socket.
-	b3Vec3 handAt, unusedPlace;
-	b3Quat handTurn, attach;
+	const AnimSet::HandSocket& socket = set.HandSocketOf( grip.leftCarries );
+	const AnimSet::HandSocket& reaching = set.HandSocketOf( grip.leftCarries == false );
+	b3Vec3 handAt;
+	b3Quat handTurn;
 	float unusedScale;
 	Decompose( models[size_t( carrying.hand )], handAt, handTurn, unusedScale );
-	Decompose( set.AttachFrame( carrying.hand ), unusedPlace, attach, unusedScale );
-	b3Quat item = b3MulQuat( handTurn, attach );
-	b3Vec3 target = b3Add( handAt, b3RotateVector( item, grip.position ) );
+	b3Quat item = b3MulQuat( handTurn, socket.rotation );
+	b3Vec3 target = b3Add( b3Add( handAt, b3RotateVector( handTurn, socket.position ) ), b3RotateVector( item, grip.position ) );
+	// Aligned, the reaching hand's turn is known, and so is where its wrist is when its socket is
+	// on the grip.
+	b3Quat want = b3MulQuat( b3MulQuat( item, grip.rotation ),
+							 b3Quat{ { -reaching.rotation.v.x, -reaching.rotation.v.y, -reaching.rotation.v.z }, reaching.rotation.s } );
+	if ( grip.align )
+	{
+		target = b3Sub( target, b3RotateVector( want, reaching.position ) );
+	}
 
 	auto placeOf = [&]( int joint ) {
 		b3Vec3 p;
@@ -262,10 +271,8 @@ void SolveGrip( const AnimSet& set, Models& models, const HandGrip& grip )
 	{
 		// The hand as one carrying an item placed at the grip would be turned.
 		b3Vec3 at;
-		b3Quat now, otherAttach;
+		b3Quat now;
 		Decompose( models[size_t( arm.hand )], at, now, unusedScale );
-		Decompose( set.AttachFrame( arm.hand ), unusedPlace, otherAttach, unusedScale );
-		b3Quat want = b3MulQuat( b3MulQuat( item, grip.rotation ), b3Quat{ { -otherAttach.v.x, -otherAttach.v.y, -otherAttach.v.z }, otherAttach.s } );
 		RotateSubtreeAbout( set, models, arm.hand, at, b3MulQuat( want, b3Quat{ { -now.v.x, -now.v.y, -now.v.z }, now.s } ) );
 	}
 }
