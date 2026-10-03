@@ -175,6 +175,14 @@ PackedStringArray CbItemBody::_get_configuration_warnings() const
 	{
 		warnings.push_back( problem );
 	}
+	// The scene's root is where the game puts the item: its own transform is not part of it.
+	if ( auto* root = Object::cast_to<Node3D>( SceneRoot( this ) ); root != nullptr && root != this &&
+		 root->get_transform().is_equal_approx( Transform3D() ) == false )
+	{
+		warnings.push_back( "The scene's root (" + String( root->get_name() ) +
+							") is moved or turned: the game does not use that. To turn the item in the hand, turn its carrying CbGrip "
+							"(and this body with it)." );
+	}
 	return warnings;
 }
 

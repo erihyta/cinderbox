@@ -1024,6 +1024,13 @@ Transform3D SceneInCarriedFrame( Node3D* node )
 	return node->get_meta( kKey );
 }
 
+// Where an item's scene goes in a socket: in a hand, by its carrying grip; in any other socket (a
+// holster on the back, on the hip), as the scene is, since a holster does not hold it by the grip.
+Transform3D SceneInSocket( Node3D* node, uint8_t socket )
+{
+	return socket <= kSocketLeftHand ? SceneInCarriedFrame( node ) : Transform3D();
+}
+
 } // namespace
 
 void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, Node3D* node )
@@ -1066,7 +1073,7 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 	if ( node->get_parent() != socket )
 	{
 		PlaceItem( v.holder, socket, node );
-		node->set_transform( SceneInCarriedFrame( node ) );
+		node->set_transform( SceneInSocket( node, v.socket ) );
 	}
 	node->set_visible( true );
 }
@@ -1353,6 +1360,9 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 		if ( socket != nullptr )
 		{
 			PlaceItem( v.holder, socket, node );
+			// Like every later move: the scene root's own transform is not part of the item (it
+			// used to show until the item first changed hands).
+			node->set_transform( SceneInSocket( node, v.socket ) );
 		}
 		else
 		{
