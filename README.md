@@ -78,6 +78,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M70: the bat strikes where you look, up and down too; a first-person camera on the key left of 1 | done |
 | M71: rapid fire plays every shot: a mod event that leads into the state a character is already in starts it over | done |
 | M72: shots go at what is under the crosshair in every view: the camera says what is aimed at, the shot goes there from the head; over-the-shoulder cameras (Q) | done |
+| M73: a steady first-person camera (on the mover, not the head bone), the hidden head keeps its shadow, the camera is placed after the frame's world update, no camera shakes in the shipped looks | done |
 
 ## Building
 
@@ -718,9 +719,10 @@ Client controls:
   up, G throws, C crouches, and F with empty hands spawns a prop.
 - Tab shows the scoreboard, the mouse orbits the camera and the wheel zooms.
 - The key left of 1 (`` ` `` / `~`) switches between the camera behind the player and **first person**:
-  out of the posed head, so it bows and leans with the upper body. Your own head is not drawn, the
-  rest of your body is. First person looks up to 80 degrees; from behind, 23 (the camera would go
-  under the floor).
+  from the character's eye height above its feet, on its mover, so steps, landings and the bowing
+  body do not move it. Your own head is not drawn (its shadow is), the rest of your body is. First
+  person looks up to 80 degrees; from behind, 23 (the camera would go under the floor).
+- Nothing in the shipped looks shakes the camera. (`CbReaction.shake` still does, for a mod that wants it.)
 - Q moves the third-person camera over the right shoulder, the left, and back behind.
 - **What is under the crosshair is what a shot is aimed at, in every view.** The shot itself always
   starts at the head: aiming over cover you are hidden behind hits the cover.
@@ -865,7 +867,7 @@ Shooting at the crosshair is `ctx.CastAim( slot, range, hit, origin, direction )
 
 | Step | Ray | Why |
 |---|---|---|
-| What is aimed at | from where the player's line of sight starts (`ViewPosition`), along the camera's direction | the camera's choice: the eye in first person, the pivot above the body behind it, 0.45 m to a side over a shoulder (`PlayerInput::view`) |
+| What is aimed at | from where the player's line of sight starts (`ViewPosition`), along the camera's direction | the camera's choice: the character's eye height above its feet in first person, the pivot above the body behind it, 0.45 m to a side over a shoulder (`PlayerInput::view`) |
 | What is hit | from the eye on the posed head (`HeadPosition`) to that point | the body's: whatever is between the head and the target stops the shot, even where the camera sees past it |
 
 The client sends only which view it uses and where it looks; both origins are computed by the
