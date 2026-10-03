@@ -112,18 +112,48 @@ private:
 	godot::Dictionary m_properties;
 };
 
-// Where the other hand holds an item: a marker in the item's scene. The item is carried at its
-// origin by one hand (whichever socket it is in); with a CbGrip the character's other arm is bent
-// so that its wrist is here, wherever the carrying hand and the animation take the item, while
-// that other hand is empty. It is baked with the item's body (a "grip" line in items/<kind>.cfg),
-// so the server poses the same arms for its hit tests and every player sees them.
+// Where a hand holds an item: a marker in the item's scene, one per hand.
+//
+//   The carrying hand   the item is carried here: this point is in the hand's socket (whichever hand
+//                       the item is in), the marker's -Z pointing along the fingers and +Y up. Without
+//                       one, the item is carried at its scene's origin.
+//   The other hand      the character's other arm is bent so that its hand is here, wherever the
+//                       carrying hand and the animation take the item, while that hand is empty.
+//
+// Both are baked with the item's body (items/<kind>.cfg): the body and the other hand's grip are
+// written in the carrying hand's frame, so the server poses the same arms for its hit tests and
+// every player sees them. The viewer draws the scene moved so that the carrying grip is in the
+// socket.
 class CbGrip : public godot::Marker3D
 {
 	GDCLASS( CbGrip, godot::Marker3D )
 
 public:
-	// The hand also turns as the marker is turned: as a hand carrying an item placed here would be
-	// (the marker's -Z is where such an item would point). Off: the hand keeps the turn its
+	enum Hand
+	{
+		HAND_OTHER = 0,
+		HAND_CARRYING = 1,
+	};
+	void set_hand( int v )
+	{
+		m_hand = v;
+	}
+	int get_hand() const
+	{
+		return m_hand;
+	}
+	// The scene's carrying grip in the scene's own frame (identity when it has none): where the
+	// item is held. `in` is any node of the item's scene.
+	static godot::Transform3D CarryFrame( const godot::Node* in );
+	// The same for the scene whose root is `root` (an instance of it in the game, wherever it hangs).
+	static godot::Transform3D CarryFrameUnder( const godot::Node* root );
+	static godot::Transform3D carry_frame_under( godot::Node* root )
+	{
+		return root != nullptr ? CarryFrameUnder( root ) : godot::Transform3D();
+	}
+
+	// The other hand: it also turns as the marker is turned, as a hand carrying an item placed here
+	// would be (the marker's -Z is where such an item would point). Off: the hand keeps the turn its
 	// animation gives it.
 	void set_align_rotation( bool v )
 	{
@@ -139,6 +169,9 @@ protected:
 
 private:
 	bool m_alignRotation = false;
+	int m_hand = HAND_OTHER;
 };
 
 } // namespace cb::gd
+
+VARIANT_ENUM_CAST( cb::gd::CbGrip::Hand );

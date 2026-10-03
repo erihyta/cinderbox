@@ -164,6 +164,9 @@ properties = {
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.31)
 shape = SubResource("Body")
 
+[node name="Carry" type="CbGrip" parent="."]
+hand = 1
+
 [node name="OtherHand" type="CbGrip" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.11)
 align_rotation = true
