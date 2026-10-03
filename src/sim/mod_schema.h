@@ -90,6 +90,9 @@ struct ItemShape
 	Float3 half = { 0.05f, 0.05f, 0.15f };
 	Float3 center = { 0.0f, 0.0f, -0.15f };
 	float mass = 1.0f;
+	// How the body is turned in the item's frame (x y z w): the item is carried as its scene's
+	// carrying grip says, and its body lies as the scene has it, whichever way that grip is turned.
+	float turn[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	// Where the other hand holds it, in the item's frame (the hand that carries it is at the origin):
 	// 0 nowhere (a one-handed item); 1 the other hand's wrist goes to `gripPosition`; 2 and its hand
 	// takes `gripRotation` (x y z w), as a hand carrying an item placed there would be turned; 3 the

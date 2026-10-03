@@ -144,12 +144,12 @@ String ShapeProblem( const CbItemBody* body )
 	{
 		return "An item's body is a box or a sphere (" + shape->get_class() + " cannot be baked).";
 	}
-	// In the frame the item is carried in: the carrying grip's, or the scene's.
-	Transform3D t = CbGrip::CarryFrame( body ).affine_inverse() * InItemFrame( body );
-	if ( t.basis.is_equal_approx( Basis() ) == false )
+	// It may be turned any way (the bake writes its turn in the frame the item is carried in), but
+	// not scaled: the shape's size is the body's.
+	Transform3D t = InItemFrame( body );
+	if ( t.basis.get_scale().is_equal_approx( Vector3( 1, 1, 1 ) ) == false || t.basis.determinant() < 0.0f )
 	{
-		return "Keep it unscaled and turned as the item is carried (as the carrying CbGrip is, or not at all without one): the box is "
-			   "aligned with the item (set the shape's size instead).";
+		return "Keep it unscaled (set the shape's size instead).";
 	}
 	return String();
 }
@@ -180,8 +180,7 @@ PackedStringArray CbItemBody::_get_configuration_warnings() const
 		 root->get_transform().is_equal_approx( Transform3D() ) == false )
 	{
 		warnings.push_back( "The scene's root (" + String( root->get_name() ) +
-							") is moved or turned: the game does not use that. To turn the item in the hand, turn its carrying CbGrip "
-							"(and this body with it)." );
+							") is moved or turned: the game does not use that. To turn the item in the hand, turn its carrying CbGrip." );
 	}
 	return warnings;
 }
@@ -216,12 +215,18 @@ Dictionary CbItemBody::bake() const
 	}
 	// Everything is written in the frame the item is carried in.
 	const Transform3D toCarried = CbGrip::CarryFrame( this ).affine_inverse();
-	Vector3 center = ( toCarried * InItemFrame( this ) ).origin;
+	const Transform3D inCarried = ( toCarried * InItemFrame( this ) ).orthonormalized();
+	Vector3 center = inCarried.origin;
+	Quaternion turn = inCarried.basis.get_rotation_quaternion();
 	String text = "# Baked from the item's CbItemBody (bake_items.gd): its body when it lies in the world.\n";
 	text += "shape " + kind + "\n";
 	text += vformat( "half %.4f %.4f %.4f\n", half.x, half.y, half.z );
 	text += vformat( "center %.4f %.4f %.4f\n", center.x, center.y, center.z );
 	text += vformat( "mass %.3f\n", m_mass );
+	if ( turn.is_equal_approx( Quaternion() ) == false )
+	{
+		text += vformat( "turn %.5f %.5f %.5f %.5f\n", turn.x, turn.y, turn.z, turn.w );
+	}
 	// Sorted, so the same scene always bakes the same file (the item's hash depends on it).
 	Array names = m_properties.keys();
 	names.sort();

@@ -214,6 +214,26 @@ bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error
 				return false;
 			}
 		}
+		else if ( key == "turn" )
+		{
+			// turn <qx qy qz qw>: the body in the frame the item is carried in
+			float q[4];
+			if ( !( words >> q[0] >> q[1] >> q[2] >> q[3] ) )
+			{
+				error = "turn needs a rotation (x y z w)";
+				return false;
+			}
+			float length = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
+			if ( std::isfinite( length ) == false || length < 0.9f || length > 1.1f )
+			{
+				error = "the body's turn is not a rotation";
+				return false;
+			}
+			for ( int k = 0; k < 4; ++k )
+			{
+				shape.turn[k] = q[k];
+			}
+		}
 		else if ( key == "grip" )
 		{
 			// grip <x y z> <qx qy qz qw> <0: the wrist goes there; 1: and the hand takes the rotation;

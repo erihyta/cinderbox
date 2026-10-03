@@ -840,7 +840,7 @@ void TestPickup()
 		}
 		else if ( tick >= 200 && tick < 420 )
 		{
-			in.moveForward = tick < 260 ? 127 : 0;
+			in.moveForward = tick < 272 ? 127 : 0; // up to where the thrown bat came to lie
 			// Taps first (too short for a bat), then holds.
 			in.actions = tick < 320 ? ( ( tick % 20 ) < 2 ? pickup : 0 ) : ( ( tick % 60 ) < 50 ? pickup : 0 );
 		}
@@ -889,6 +889,22 @@ void TestPickup()
 		needsHolding |= BoardToFloat( server.BoardValue( me, hold->slot ) ) > 0.4f;
 	} );
 	h.Report();
+	{
+		// Where the thrown bats came to lie from the player (the pickup's reach is 1.5 m along the ground).
+		uint32_t me = server.PlayerNetId( h.bots[0].client->Slot() );
+		const Transform* at = server.EntityTransform( me );
+		for ( const Simulation::EntityRef& r : server.Entities() )
+		{
+			flecs::entity e( server.World(), r.entity );
+			const HeldItem* item = e.try_get<HeldItem>();
+			const Transform* where = e.try_get<Transform>();
+			if ( item != nullptr && item->holder == 0 && where != nullptr && at != nullptr && int( item->kind ) == schema.FindItemKind( "melee.bat" ) )
+			{
+				std::printf( "    a bat lies %.2f m ahead and %.2f m to the side of the player, %.2f m up\n", where->position.z - at->position.z,
+							 where->position.x - at->position.x, where->position.y );
+			}
+		}
+	}
 	std::printf( "    most lying %d, bat held %d, thrown %d, targeted %d, held again %d\n", mostLying, int( heldBat ), int( thrown ),
 				 int( targeted ), int( heldAgain ) );
 	CHECK( mostLying >= int( schema.itemKinds.size() ) );
@@ -1127,18 +1143,23 @@ void TestItemShapes()
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 0.1\n", shape, error ) == false );			   // no rotation
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 5 0 0 0 1 0\n", shape, error ) == false );   // out of reach
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip 0 0 0.1 0 0 0 3 0\n", shape, error ) == false ); // not a rotation
+	// The body's turn in the frame the item is carried in: a carrying grip may be turned any way.
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\n", shape, error ) && shape.turn[3] == 1.0f );
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.4\nturn 0 0.70711 0 0.70711\n", shape, error ) && shape.turn[1] > 0.7f && shape.turn[3] > 0.7f );
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nturn 0 0 0\n", shape, error ) == false );
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nturn 0 0 0 5\n", shape, error ) == false );
 	// It travels in the schema, so every client poses the same arms.
 	{
 		ModSchema schema;
 		schema.itemKinds = { "test.rifle" };
 		ItemShape rifle;
-		CHECK( ParseItemShape( "shape box\nhalf 0.03 0.08 0.4\ngrip 0 -0.02 -0.3 0 0.7071 0 0.7071 1\n", rifle, error ) );
+		CHECK( ParseItemShape( "shape box\nhalf 0.03 0.08 0.4\nturn 0.5 0.5 0.5 0.5\ngrip 0 -0.02 -0.3 0 0.7071 0 0.7071 1\n", rifle, error ) );
 		schema.itemShapes = { rifle };
 		std::vector<uint8_t> bytes;
 		EncodeSchema( schema, bytes );
 		ModSchema back;
 		CHECK( DecodeSchema( bytes.data(), bytes.size(), back ) );
-		CHECK( back.itemShapes.size() == 1 && back.itemShapes[0] == rifle && back.itemShapes[0].grip == 2 );
+		CHECK( back.itemShapes.size() == 1 && back.itemShapes[0] == rifle && back.itemShapes[0].grip == 2 && back.itemShapes[0].turn[0] == 0.5f );
 	}
 	// The shipped pistol and bat are held with both hands.
 	CHECK( LoadItemShapeFolder( root + "/server_mods/pistol/client", "pistol.gun", shape, error ) && shape.grip == 3 ); // as its animations have the hands

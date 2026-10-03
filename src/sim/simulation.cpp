@@ -469,7 +469,8 @@ void Simulation::PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotatio
 {
 	HeldItem held = item.get<HeldItem>();
 	ItemShape look = ItemShapeOf( held.kind );
-	// The body sits at the shape's centre; the item's frame (its grip) is `center` away from it.
+	// The body sits at the shape's centre, turned as the shape says; the item's frame (its grip) is
+	// `center` away from it.
 	Shape shape;
 	shape.kind = look.kind == 1 ? ShapeKind::Sphere : ShapeKind::Box;
 	shape.halfExtents = { look.half.x, look.half.y, look.half.z };
@@ -479,8 +480,10 @@ void Simulation::PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotatio
 
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_dynamicBody;
+	const b3Quat turn = { { look.turn[0], look.turn[1], look.turn[2] }, look.turn[3] };
+	const b3Quat bodyRotation = b3NormalizeQuat( b3MulQuat( rotation, turn ) );
 	bodyDef.position = position;
-	bodyDef.rotation = rotation;
+	bodyDef.rotation = bodyRotation;
 	bodyDef.linearVelocity = velocity;
 	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
 	ShapeMaterial material;
@@ -491,7 +494,7 @@ void Simulation::PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotatio
 	held.socket = 0;
 	held.stowed = 0;
 	item.set<HeldItem>( held );
-	item.set<Transform>( { position, rotation } );
+	item.set<Transform>( { position, bodyRotation } );
 	item.set<Velocity>( { velocity, { 0.0f, 0.0f, 0.0f } } );
 	item.set<Shape>( shape );
 	item.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );

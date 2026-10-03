@@ -93,9 +93,19 @@ func _initialize() -> void:
 	made[0].free()
 
 	# What cannot be baked says why.
+	# The carrying grip alone is turned: the body lies as the scene has it, and says how that is
+	# turned in the frame the item is carried in (a quarter back about Y).
 	made = _item(Vector3(0.1, 0, 0), null, turn, Basis())
 	baked = made[1].bake()
-	_check("a body not turned as the item is carried is refused", baked.text == "" and String(baked.error).contains("carried"), baked.error)
+	_check("a turned carrying grip alone bakes", baked.error == "", baked.error)
+	_check("... the body where the scene has it, from the hand", _near(_line(baked.text, "center"), [0.2, 0, -0.1]), str(_line(baked.text, "center")))
+	var body_turn := _line(baked.text, "turn")
+	_check("... and how it is turned", body_turn.size() == 4 and absf(absf(body_turn[1]) - 0.7071) < 0.001 and absf(absf(body_turn[3]) - 0.7071) < 0.001, str(body_turn))
+	made[0].free()
+	made = _item(null, null)
+	made[1].scale = Vector3(2, 1, 1)
+	baked = made[1].bake()
+	_check("a scaled body is refused", baked.text == "" and String(baked.error).contains("unscaled"), baked.error)
 	made[0].free()
 	made = _item(Vector3(0, 0, 0.1), Vector3(0, 0, 0.3))
 	var extra := CbGrip.new()
