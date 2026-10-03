@@ -1123,7 +1123,8 @@ hand** can hold it too:
 |---|---|
 | a character's hand sockets (or anything else in its scene) | save the scene: it bakes on save. For a character in the game's own project that is all; restart the server and the game. A character that is a workshop item: `tools\publish_mod.ps1 -Character <name>` |
 | an item's scene (its `CbGrip`, its body) | `tools\publish_mod.ps1 -Mod <mod>` (it bakes and installs the item), then restart the server |
-| which character you are looking at | the server says: `cb_server --character <name>` (on a machine that has `ual_mannequin` built, that is the default, not `mannequin`) |
+| which character you are looking at | the server says, and it says it when it starts (`character: ual_mannequin, shipped with the game`) and the game's debug text does too (`animation: res://characters/...`). On a machine that has `ual_mannequin` built that is the default, not `mannequin`: edit that one's scene, or start `cb_server --character mannequin` |
+| (in a checkout) | the server reads the game's own characters from `godot/characters/`, where saving bakes them; a build elsewhere reads the copies next to it (`bin/characters/`, made when it is built) |
 
 ### Items in the world
 

@@ -223,10 +223,20 @@ int main( int argc, char** argv )
 	const std::filesystem::path exeDir = std::filesystem::absolute( argv[0] ).parent_path();
 	// The default character: the first the game ships (ual_mannequin exists only where the paid
 	// animation pack was built locally; it is never in the repository).
+	// Where the game's own characters are: in a checkout, the project's folder itself, where saving
+	// a character's scene bakes it (so a restart is all an edit takes); anywhere else, the copies
+	// next to the executable.
+	std::filesystem::path charactersDir = exeDir / "characters";
+#if defined( CB_CHARACTERS_SOURCE_DIR )
+	if ( std::filesystem::exists( std::filesystem::path( CB_CHARACTERS_SOURCE_DIR ) ) )
+	{
+		charactersDir = CB_CHARACTERS_SOURCE_DIR;
+	}
+#endif
 	std::string characterName = "none";
 	for ( const char* shipped : { "ual_mannequin", "mannequin" } )
 	{
-		if ( std::filesystem::exists( exeDir / "characters" / shipped / "anim.cfg" ) )
+		if ( std::filesystem::exists( charactersDir / shipped / "anim.cfg" ) )
 		{
 			characterName = shipped;
 			break;
@@ -283,7 +293,7 @@ int main( int argc, char** argv )
 						 name.c_str(), itemsDir.c_str() );
 		}
 	}
-	const std::filesystem::path builtIn = exeDir / "characters" / characterName;
+	const std::filesystem::path builtIn = charactersDir / characterName;
 	if ( characterName != "none" && characterName.empty() == false && std::filesystem::exists( builtIn / "anim.cfg" ) &&
 		 std::filesystem::exists( std::filesystem::path( itemsDir ) / ( characterName + ".item" ) ) == false )
 	{
