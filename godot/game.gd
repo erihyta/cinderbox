@@ -70,7 +70,6 @@ var _camera_distance := 6.0 # after the map got in the way
 var first_person := false
 ## Third person: the camera over a shoulder (1 right, -1 left) or straight behind (0). Q cycles.
 var shoulder := 0
-var _own_skeleton: Node
 var args := {}
 var hud: Node
 var show_debug := true
@@ -211,6 +210,8 @@ func _process(delta: float) -> void:
 	if _leaving:
 		return
 	_send_input(delta)
+	# The viewer draws the player's own body for the view it is seen from.
+	client.first_person = first_person and client.get_local_net_id() != 0 and not client.is_local_player_dead()
 	_update_screen_effects(delta)
 	_update_hud()
 	_autoplay_finish()
@@ -573,8 +574,8 @@ func _max_pitch() -> float:
 
 
 ## First person: from the character's eye height above its feet, on its mover: steps, landings and
-## the bowing body do not move the camera. Your own head is not drawn (its shadow is): looking down
-## shows your chest, arms and legs. False while there is no living body to look out of.
+## the bowing body do not move the camera. Of your own body the arms and what is below the hips
+## are drawn (CinderboxClient.first_person). False while there is no living body to look out of.
 func _update_first_person() -> bool:
 	var me: int = client.get_local_net_id()
 	if not first_person or me == 0 or client.is_local_player_dead() or client.get_entity_node(me) == null:
@@ -584,27 +585,11 @@ func _update_first_person() -> bool:
 	return true
 
 
-## The local player's own head is not drawn while looking out of it.
-func _hide_own_head(hide: bool) -> void:
-	var node: Node = client.get_entity_node(client.get_local_net_id()) if client.get_local_net_id() != 0 else null
-	var skeleton: Node = null
-	if node != null:
-		var found := node.find_children("*", "CinderboxSkeleton", true, false)
-		skeleton = node if node is CinderboxSkeleton else (found[0] if found.size() > 0 else null)
-	if skeleton != _own_skeleton and is_instance_valid(_own_skeleton):
-		_own_skeleton.hidden_bone = ""
-	_own_skeleton = skeleton
-	if skeleton != null:
-		skeleton.hidden_bone = "Head" if hide else ""
-
-
 func _update_camera() -> void:
 	if _leaving or not is_inside_tree():
 		return
 	camera.near = 0.03 if first_person else 0.05
-	var inside := _update_first_person()
-	_hide_own_head(inside)
-	if inside:
+	if _update_first_person():
 		if _shake > 0.0:
 			camera.global_position += Vector3(
 				auto_rng.randf_range(-_shake, _shake),

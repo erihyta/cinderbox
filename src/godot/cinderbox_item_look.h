@@ -34,6 +34,17 @@ public:
 	{
 		return m_displayName;
 	}
+	// First person: how far the arms holding this are moved in the viewer's own view, in metres to
+	// the right, up and ahead of where the body's pose has them. Only the viewer's own picture
+	// changes: everyone else, the shadow and the hit tests keep the pose.
+	void set_view_offset( const godot::Vector3& v )
+	{
+		m_viewOffset = v;
+	}
+	godot::Vector3 get_view_offset() const
+	{
+		return m_viewOffset;
+	}
 	void set_scene( const godot::String& v )
 	{
 		m_scene = v;
@@ -50,6 +61,7 @@ private:
 	godot::String m_kind;
 	godot::String m_scene;
 	godot::String m_displayName;
+	godot::Vector3 m_viewOffset;
 };
 
 // The body an item has when it lies in the world, authored in the item's own scene: a box or a

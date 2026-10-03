@@ -79,6 +79,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M71: rapid fire plays every shot: a mod event that leads into the state a character is already in starts it over | done |
 | M72: shots go at what is under the crosshair in every view: the camera says what is aimed at, the shot goes there from the head; over-the-shoulder cameras (Q) | done |
 | M73: a steady first-person camera (on the mover, not the head bone), the hidden head keeps its shadow, the camera is placed after the frame's world update, no camera shakes in the shipped looks | done |
+| M74: your own body in first person: the arms pinned under the camera and turned with it, the torso and head not drawn, a per-item view offset in the look | done |
 
 ## Building
 
@@ -720,8 +721,17 @@ Client controls:
 - Tab shows the scoreboard, the mouse orbits the camera and the wheel zooms.
 - The key left of 1 (`` ` `` / `~`) switches between the camera behind the player and **first person**:
   from the character's eye height above its feet, on its mover, so steps, landings and the bowing
-  body do not move it. Your own head is not drawn (its shadow is), the rest of your body is. First
-  person looks up to 80 degrees; from behind, 23 (the camera would go under the floor).
+  body do not move it. First person looks up to 80 degrees; from behind, 23 (the camera would go
+  under the floor).
+- **Your own body in first person** is the same body with the same animations, drawn for that view:
+
+  | | |
+  |---|---|
+  | What is drawn | the arms, and everything from the hips down. The torso, the neck and the head are not (the shadow is the whole body's) |
+  | The arms | held under the camera, upright, and turned with it: walking, sprinting and bowing do not swing them across the screen; what the arms do themselves (a shot's recoil, a reload) shows |
+  | Where they sit | each item's look can move them: `CbItemLook.view_offset`, metres to the right, up and ahead (the pistol: 5 cm up, 3 cm ahead). Keep it small: far from the body the arms' cut ends come into view |
+  | Who sees it | only you. Other players, your shadow's pose source, hit tests and where shots start are the body's real pose |
+  | Limits | a stance that holds an item low or behind the body (the bat's) is out of view and an offset cannot bring it in: that takes an animation made for the view. The built-in box rig is drawn whole |
 - Nothing in the shipped looks shakes the camera. (`CbReaction.shake` still does, for a mod that wants it.)
 - Q moves the third-person camera over the right shoulder, the left, and back behind.
 - **What is under the crosshair is what a shot is aimed at, in every view.** The shot itself always

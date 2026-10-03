@@ -92,18 +92,19 @@ public:
 		return m_useSlotColor;
 	}
 
-	// A bone that is not drawn (humanoid-profile name, "" for none): shrunk to nothing after the
-	// pose is applied, with everything below it. The pose itself is untouched (joint transforms,
-	// sockets and hit tests do not change): a first-person camera hides its own head this way.
-	// The whole body still casts its shadow: while a bone is hidden the shadows come from a copy of
-	// the skeleton and its meshes that is posed the same, is whole, and draws nothing else.
-	void set_hidden_bone( const godot::String& value )
+	// The viewer's own body in first person: the arms, and everything from the hips down. The torso,
+	// the neck and the head are not drawn (their bones are shrunk to nothing after the pose is
+	// applied, and the shoulders put back where the pose has them). The pose itself is untouched:
+	// joint transforms, sockets and hit tests do not change. The whole body still casts its shadow:
+	// meanwhile the shadows come from a copy of the skeleton and its meshes that is posed the same,
+	// is whole, and draws nothing else.
+	void set_first_person_body( bool value )
 	{
-		m_hiddenBone = value;
+		m_firstPersonBody = value;
 	}
-	godot::String get_hidden_bone() const
+	bool get_first_person_body() const
 	{
-		return m_hiddenBone;
+		return m_firstPersonBody;
 	}
 
 	void set_retarget( bool value );
@@ -171,9 +172,10 @@ private:
 	void Bind( godot::Skeleton3D* target, const anim::AnimSet& set );
 	void EnsureModifier( godot::Skeleton3D* target );
 	void DriveSkeleton( godot::Skeleton3D* target, const ozz::vector<ozz::math::Float4x4>& models );
-	void HideBone( godot::Skeleton3D* target );
-	godot::String m_hiddenBone;
-	int m_shrunkBone = -1; // the target bone that is shrunk now
+	void CutBody( godot::Skeleton3D* target );
+	int BoneOf( const char* profileName ) const; // the target's bone for a profile name, or -1
+	bool m_firstPersonBody = false;
+	std::vector<int> m_cutBones; // the target bones the cut moved or shrank: put back before the next
 	void UpdateShadowBody( godot::Skeleton3D* target );
 	godot::ObjectID m_shadowBody;	// the copy that casts the shadows
 	godot::ObjectID m_shadowOf;		// the skeleton it copies
