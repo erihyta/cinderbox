@@ -1104,7 +1104,7 @@ hand** can hold it too:
 
 | Step | What |
 |---|---|
-| Author | put a `CbGrip` (a marker) in the item's scene where the other hand's wrist goes: on the pistol beside the grip, on the bat further down the handle |
+| Author | put a `CbGrip` (a marker) in the item's scene where the other hand goes (its wrist; with `align_rotation`, its palm: the hand's own socket): on the pistol beside the grip, on the bat further down the handle |
 | `align_rotation` | on: the hand also turns as the marker is turned, as a hand carrying an item placed there would be (the marker's -Z is where that item would point). Off: the hand keeps the turn its animation gives it |
 | Bake | with the item's body, as a `grip` line of `items/<kind>.cfg`; the server puts it in the schema, so every client has it |
 | Pose | last of all: the item is where the carrying hand ended up (after the aim), and the other arm is bent at the elbow and turned at the shoulder so its wrist is on the grip. The elbow stays on the side the animation had it; out of reach, the arm goes as far as it can |
@@ -1113,6 +1113,17 @@ hand** can hold it too:
 - It is part of the pose: other players see it, and the server's hit tests pose the same arms.
 - Fingers are the animation's: the solve places the wrist and turns the hand, it does not close it.
 - One grip per item. A grip needs the item to have a `CbItemBody` (that is what is baked).
+- **Where the palms are is the character's**: its `CbSocket` nodes named `RightHand` and `LeftHand`
+  (under the hand bones' `BoneAttachment3D`). They are baked into the character's `anim.cfg`
+  (`socket.RightHand = ...`), because the pose needs them: the item's frame is the carrying hand's
+  socket, and an aligned grip puts the other hand's socket on it. A character without those nodes
+  gets a built-in palm.
+
+| You changed | To see it |
+|---|---|
+| a character's hand sockets (or anything else in its scene) | save the scene: it bakes on save. For a character in the game's own project that is all; restart the server and the game. A character that is a workshop item: `tools\publish_mod.ps1 -Character <name>` |
+| an item's scene (its `CbGrip`, its body) | `tools\publish_mod.ps1 -Mod <mod>` (it bakes and installs the item), then restart the server |
+| which character you are looking at | the server says: `cb_server --character <name>` (on a machine that has `ual_mannequin` built, that is the default, not `mannequin`) |
 
 ### Items in the world
 
