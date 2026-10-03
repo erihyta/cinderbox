@@ -26,6 +26,7 @@ void CbDirector::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "cue", "name", "at", "other", "args" ), &CbDirector::cue, DEFVAL( Variant() ),
 						  DEFVAL( Dictionary() ) );
 	ClassDB::bind_method( D_METHOD( "press", "action" ), &CbDirector::press );
+	ClassDB::bind_method( D_METHOD( "hold", "action" ), &CbDirector::hold );
 	ClassDB::bind_method( D_METHOD( "explain_press", "action" ), &CbDirector::explain_press );
 	ClassDB::bind_method( D_METHOD( "pending_predictions" ), &CbDirector::pending_predictions );
 	ClassDB::bind_method( D_METHOD( "explain", "name", "at", "other", "args" ), &CbDirector::explain, DEFVAL( Variant() ),
@@ -300,6 +301,16 @@ Dictionary CbDirector::explain_press( const String& action ) const
 
 int CbDirector::press( const String& action )
 {
+	return Predict( action, false );
+}
+
+int CbDirector::hold( const String& action )
+{
+	return Predict( action, true );
+}
+
+int CbDirector::Predict( const String& action, bool held )
+{
 	Node* local = get_local();
 	if ( local == nullptr )
 	{
@@ -312,7 +323,7 @@ int CbDirector::press( const String& action )
 	for ( ObjectID id : ids )
 	{
 		auto* prediction = Object::cast_to<CbPrediction>( ObjectDB::get_instance( id ) );
-		if ( prediction == nullptr || prediction->Accepts( action, base, now ) == false )
+		if ( prediction == nullptr || prediction->Accepts( action, base, now, held ) == false )
 		{
 			continue;
 		}

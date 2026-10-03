@@ -291,6 +291,12 @@ public:
 	{
 		return m_sim.PlayerCharacter( slot );
 	}
+	// What the player's body is posed from: is it aiming, which stance each layer has. A mod that
+	// shares a stance with another reads here whether its own is still set.
+	const AnimState* PlayerAnim( PlayerSlot slot ) const
+	{
+		return m_sim.EntityAnimState( m_sim.PlayerNetId( slot ) );
+	}
 	const Transform* EntityTransform( uint32_t netId ) const
 	{
 		return m_sim.EntityTransform( netId );

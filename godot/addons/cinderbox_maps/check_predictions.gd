@@ -213,6 +213,27 @@ func _process(_delta: float) -> bool:
 	_world.cue("test.fired", _p0, _p1, server)
 	_sounded()
 
+	# Held: only a while_held prediction answers, once for every cooldown that passes.
+	_predict.cooldown = 0.05
+	_check("held: a press-only prediction does not repeat", _world.hold("fire") == 0)
+	OS.delay_msec(60)
+	_check("... and the press still predicts", _world.press("fire") == 1)
+	_predict.while_held = true
+	_check("while_held: nothing before the cooldown has passed", _world.hold("fire") == 0)
+	var held := 0
+	var until := Time.get_ticks_msec() + 520
+	while Time.get_ticks_msec() < until:
+		held += _world.hold("fire")
+		OS.delay_msec(4)
+	_check("while_held: one cue for every cooldown held (10 in half a second)", held >= 9 and held <= 10)
+	_world.set_state(_p0, {"test.gun": true, "test.ammo": 0})
+	OS.delay_msec(60)
+	_check("while_held: the conditions still decide", _world.hold("fire") == 0)
+	_world.set_state(_p0, {"test.gun": true, "test.ammo": 2})
+	_predict.cooldown = 0.0
+	_check("while_held without a cooldown predicts the press only", _world.hold("fire") == 0 and _world.press("fire") == 1)
+	_predict.while_held = false
+
 	# No local player: nothing to predict for.
 	_predict.cooldown = 0.0
 	_world.set_local(null)

@@ -188,7 +188,7 @@ advance_condition = &"melee_swing"
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_k7pk6"]
 xfade_time = 0.05
 advance_mode = 2
-advance_condition = &"pistol.fired"
+advance_expression = "pistol.fired or rifle.fired"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_lo6wb"]
 xfade_time = 0.15

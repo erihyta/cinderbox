@@ -15,7 +15,7 @@ extends SceneTree
 ##
 ##   UpperBlend (Blend2, filter: the spine and everything above it)
 ##     Base:  Locomotion (1D blend space on forward_speed) <-> JumpStart / Fall / Land
-##     Upper: Rest, Pistol <-> Shoot (on pistol.fired), Ready <-> Swing (the melee mod's stances)
+##     Upper: Rest, Pistol <-> Shoot (on pistol.fired or rifle.fired), Ready <-> Swing (the melee mod's stances)
 ##
 ## The swing (Sword_Attack, saved to animations/ by the glb's import settings so it can be edited)
 ## gets a "melee.strike" marker where the hand is fastest, which the melee mod hits on. (The bat's
@@ -211,7 +211,7 @@ func _add_tree(player: AnimationPlayer) -> void:
 	_go(upper, "Rest", "Pistol", "pistol", 0.15)
 	_go(upper, "Rest", "Ready", "melee", 0.15)
 	_go(upper, "Rest", "Swing", "melee_swing", 0.05)
-	_go(upper, "Pistol", "Shoot", "pistol.fired", 0.05)
+	_go(upper, "Pistol", "Shoot", "pistol.fired or rifle.fired", 0.05)
 	_go(upper, "Shoot", "Pistol", "", 0.15, true)
 	_go(upper, "Pistol", "Ready", "melee", 0.15)
 	_go(upper, "Pistol", "Rest", "not pistol", 0.15)

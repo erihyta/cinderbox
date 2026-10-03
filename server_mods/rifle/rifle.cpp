@@ -1,16 +1,19 @@
-// Pistol: hitscan shooting with a magazine, a reload, and a ray that marks.
+// Rifle: automatic hitscan fire. Hold the trigger and it keeps shooting.
 //
-// Only the gun lives here. Health and death are the combat mod's: a shot that hits a player goes
-// out as "combat.damage", like any other weapon's, and "combat.respawned" (a new life) refills the
-// magazine. Without the combat mod the pistol still fires and reports its hits; nobody is hurt.
+// The pistol's sibling (see pistol.cpp), and what differs is the trigger: the pistol fires on a
+// press, the rifle for as long as "fire" is held, one shot every kFireSeconds. Smaller damage, a
+// bigger magazine, a longer reload, carried on the back.
 //
-// Every rule is on the server. Clients never learn what a pistol is: they see board fields
-// ("pistol.ammo", "pistol.reloading") and events ("pistol.fired", "pistol.hit"), and the look
-// decides what to draw and play for each.
+// Health and death are the combat mod's: a shot that hits a player goes out as "combat.damage",
+// and "combat.respawned" (a new life) refills the magazine. Without the combat mod the rifle still
+// fires and reports its hits; nobody is hurt.
 //
-// State is kept in the mods' shared flecs world: one entity per player with a Gunner, plus
-// Reloading while that lasts. Nothing here is rolled back or sent anywhere; what clients need is
-// published through the board.
+// Every rule is on the server. Clients see board fields ("rifle.ammo", "rifle.reloading") and
+// events ("rifle.fired", "rifle.hit"), and the look decides what to draw and play for each. The
+// look predicts held fire too (CbPrediction.while_held, at this file's rate).
+//
+// The body holds it in the "pistol" stance, the shooter's stance every character has; a character
+// whose state machine reads "rifle.fired" kicks at every shot.
 
 #include "mod_api.h"
 
@@ -23,26 +26,25 @@ namespace
 using namespace cb;
 using namespace cb::mods;
 
-constexpr int32_t kDamage = 25;
-constexpr int32_t kMagazine = 12;
-constexpr float kFireSeconds = 0.2f;
-constexpr float kReloadSeconds = 1.5f;
-constexpr float kMarkSeconds = 1.0f; // between two marks
-constexpr float kRange = 80.0f;
+constexpr int32_t kDamage = 14;
+constexpr int32_t kMagazine = 30;
+constexpr float kFireSeconds = 0.1f; // ten shots a second; the look's prediction repeats at the same rate
+constexpr float kReloadSeconds = 2.0f;
+constexpr float kRange = 120.0f;
 // How hard a hit shoves: the body it kills, and anything loose that is hit.
-constexpr float kDeathPush = 6.0f;
-constexpr float kPropPush = 4.0f;
+constexpr float kDeathPush = 5.0f;
+constexpr float kPropPush = 2.5f;
 
-struct Gunner
+struct Rifleman
 {
 	PlayerSlot slot = 0;
 	int32_t ammo = kMagazine;
 	uint32_t nextShotTick = 0;
-	uint32_t nextMarkTick = 0;
-	bool aiming = false; // what the last Aim command said
+	bool aiming = false;  // what the last Aim command said
+	bool wentDry = false; // the trigger is held on an empty magazine: one click, not ten a second
 };
 
-struct Reloading
+struct RifleReload
 {
 	uint32_t doneTick = 0;
 };
@@ -52,62 +54,54 @@ uint32_t Ticks( const Context& ctx, float seconds )
 	return uint32_t( seconds * float( ctx.Config().tickRate ) + 0.5f );
 }
 
-class PistolMod final : public ServerMod
+class RifleMod final : public ServerMod
 {
 public:
 	const char* Name() const override
 	{
-		return "pistol";
+		return "rifle";
 	}
 
 	void Declare( Declarations& declare ) override
 	{
+		// Shared with the pistol and the bat: whichever is out answers.
 		m_fire = declare.Action( "fire", "MouseLeft" );
 		m_reload = declare.Action( "reload", "R" );
-		// A second use of the pistol, and the example of adding one: a ray that harms nothing and
-		// marks the player it finds (see Mark below, and client/vfx/reactions_pistol.tscn).
-		m_mark = declare.Action( "mark", "MouseRight" );
 
-		m_ammo = declare.Field( "pistol.ammo", BoardType::Int );
-		m_reloading = declare.Field( "pistol.reloading", BoardType::Bool );
+		m_ammo = declare.Field( "rifle.ammo", BoardType::Int );
+		m_reloading = declare.Field( "rifle.reloading", BoardType::Bool );
 
 		// a = shooter, b = what the ray hit (0: nothing), point = where the shot came from,
 		// vector = where it ended.
-		m_fired = declare.Event( "pistol.fired" );
+		m_fired = declare.Event( "rifle.fired" );
 		// a = shooter, b = what was hit, value = damage done, point = where, vector = surface normal.
-		m_hit = declare.Event( "pistol.hit" );
-		m_reloadEvent = declare.Event( "pistol.reload" );
-		m_dry = declare.Event( "pistol.dry" );
-		// A mark was cast: a = who cast it, b = what the ray hit (0: nothing), point = where it came
-		// from, vector = where it ended.
-		m_scan = declare.Event( "pistol.scan" );
-		// ... and it found a living player: a = who cast it, b = the marked player, point = where.
-		m_marked = declare.Event( "pistol.marked" );
+		m_hit = declare.Event( "rifle.hit" );
+		m_reloadEvent = declare.Event( "rifle.reload" );
+		m_dry = declare.Event( "rifle.dry" );
 
-		// The combat mod's (see combat.cpp): what a hit on a player is said with, and the news of a
-		// new life, which comes with a full magazine. A game-mode mod's round start does too.
+		// The combat mod's (see combat.cpp), and a game-mode mod's round start.
 		m_damage = declare.Event( "combat.damage" );
 		m_respawned = declare.Event( "combat.respawned" );
 		m_roundStart = declare.Event( "game.round_start" );
 
 		m_upper = declare.Layer( "upper" );
 		m_stance = declare.Stance( "pistol" );
-		// Its body when it lies in the world is authored in its scene (client/prefabs/pistol.tscn, the
-		// CbItemBody) and baked to client/items/pistol.gun.cfg.
-		m_gun = declare.ItemKind( "pistol.gun" );
+		// Its body when it lies in the world is authored in its scene (client/prefabs/rifle.tscn, the
+		// CbItemBody) and baked to client/items/rifle.gun.cfg.
+		m_gun = declare.ItemKind( "rifle.gun" );
 		m_hand = declare.Socket( "RightHand" );
-		// For the inventory mod: slot 2, one for every life, on the hip while it is put away.
-		declare.ItemProperty( m_gun, "inventory.slot", 2.0f );
+		// For the inventory mod: slot 4, one for every life, on the back while it is put away.
+		declare.ItemProperty( m_gun, "inventory.slot", 4.0f );
 		declare.ItemProperty( m_gun, "inventory.start", 1.0f );
-		declare.ItemProperty( m_gun, "inventory.holster", declare.Socket( "Hip" ) );
+		declare.ItemProperty( m_gun, "inventory.holster", declare.Socket( "Back" ) );
 	}
 
 	void Start( Context& ctx ) override
 	{
 		flecs::world& world = ctx.World();
-		world.component<Gunner>();
-		world.component<Reloading>();
-		m_gunners = world.query<Gunner>();
+		world.component<Rifleman>();
+		world.component<RifleReload>();
+		m_riflemen = world.query<Rifleman>();
 	}
 
 	void Tick( Context& ctx ) override
@@ -128,9 +122,9 @@ public:
 				{
 					m_bySlot[i].destruct();
 				}
-				Gunner g;
+				Rifleman g;
 				g.slot = slot;
-				m_bySlot[i] = world.entity().set<Gunner>( g );
+				m_bySlot[i] = world.entity().set<Rifleman>( g );
 				Publish( ctx, g );
 			}
 		}
@@ -152,7 +146,7 @@ public:
 
 		// Collected first: reloading adds and removes a component.
 		m_scratch.clear();
-		m_gunners.each( [&]( flecs::entity e, Gunner& ) { m_scratch.push_back( e ); } );
+		m_riflemen.each( [&]( flecs::entity e, Rifleman& ) { m_scratch.push_back( e ); } );
 		for ( flecs::entity e : m_scratch )
 		{
 			if ( e.is_alive() && newRound )
@@ -167,7 +161,7 @@ public:
 	}
 
 private:
-	void Publish( Context& ctx, const Gunner& g )
+	void Publish( Context& ctx, const Rifleman& g )
 	{
 		uint32_t target = SlotTarget( g.slot );
 		ctx.Set( target, m_ammo, g.ammo );
@@ -176,26 +170,26 @@ private:
 
 	void Refill( Context& ctx, flecs::entity e )
 	{
-		Gunner g = e.get<Gunner>();
+		Rifleman g = e.get<Rifleman>();
 		g.ammo = kMagazine;
-		e.remove<Reloading>();
-		e.set<Gunner>( g );
+		e.remove<RifleReload>();
+		e.set<Rifleman>( g );
 		Publish( ctx, g );
 	}
 
-	// Works on a copy that is written back at the end: adding or removing Reloading moves the
+	// Works on a copy that is written back at the end: adding or removing RifleReload moves the
 	// entity between tables, which would leave a reference into the old one dangling.
 	void Update( Context& ctx, flecs::entity e )
 	{
-		Gunner g = e.get<Gunner>();
-		UpdateGunner( ctx, e, g );
+		Rifleman g = e.get<Rifleman>();
+		UpdateRifleman( ctx, e, g );
 		if ( e.is_alive() )
 		{
-			e.set<Gunner>( g );
+			e.set<Rifleman>( g );
 		}
 	}
 
-	void UpdateGunner( Context& ctx, flecs::entity e, Gunner& g )
+	void UpdateRifleman( Context& ctx, flecs::entity e, Rifleman& g )
 	{
 		uint32_t netId = ctx.PlayerNetId( g.slot );
 		const Character* c = ctx.PlayerCharacter( g.slot );
@@ -206,31 +200,31 @@ private:
 		uint32_t target = SlotTarget( g.slot );
 		uint32_t tick = ctx.Tick();
 
-		// What is in the right hand decides: a "pistol.gun" there fires, wherever it came from. Who
+		// What is in the right hand decides: a "rifle.gun" there fires, wherever it came from. Who
 		// has one, and when it is out, is the inventory mod's.
 		uint32_t inHand = ctx.HeldItem( g.slot, m_hand );
 		bool gunInHand = inHand != 0 && ctx.ItemKindOf( inHand ).index == m_gun.index;
 
-		if ( const Reloading* r = e.try_get<Reloading>() )
+		if ( const RifleReload* r = e.try_get<RifleReload>() )
 		{
 			if ( c->dead != 0 )
 			{
 				// Dying drops the reload; the next life starts with a full magazine anyway.
-				e.remove<Reloading>();
+				e.remove<RifleReload>();
 				ctx.Set( target, m_reloading, 0 );
 			}
 			else if ( tick >= r->doneTick )
 			{
-				e.remove<Reloading>();
+				e.remove<RifleReload>();
 				g.ammo = kMagazine;
 				ctx.Set( target, m_ammo, g.ammo );
 				ctx.Set( target, m_reloading, 0 );
 			}
 		}
 
-		// The pistol out means a shooter's stance: the body faces where the camera looks, the upper
-		// body holds the pistol and the arm points it there, in the pose everyone draws and hit
-		// tests use. Put away, the pistol clears only what is its own (the loadout decides facing).
+		// The rifle out means a shooter's stance: the body faces where the camera looks and the arms
+		// point the rifle there, in the pose everyone draws and hit tests use. Put away, the rifle
+		// clears only what is its own (the loadout decides facing).
 		bool holding = gunInHand && c->dead == 0;
 		// The stance is shared with the other gun: swapped for it in one tick, that one's "put away"
 		// may land after this one's "out". What the body says decides, so it is set again.
@@ -248,34 +242,41 @@ private:
 			}
 		}
 
+		bool trigger = ctx.Held( g.slot, m_fire );
+		if ( trigger == false )
+		{
+			g.wentDry = false;
+		}
 		if ( holding == false || c->frozen )
 		{
 			return;
 		}
-		bool reloading = e.has<Reloading>();
+		bool reloading = e.has<RifleReload>();
 
 		if ( ctx.Pressed( g.slot, m_reload ) && reloading == false && g.ammo < kMagazine )
 		{
 			StartReload( ctx, e, target );
 			return;
 		}
-		if ( ctx.Pressed( g.slot, m_mark ) && reloading == false && tick >= g.nextMarkTick )
-		{
-			g.nextMarkTick = tick + Ticks( ctx, kMarkSeconds );
-			Mark( ctx, g );
-		}
-		if ( ctx.Pressed( g.slot, m_fire ) == false || reloading || tick < g.nextShotTick )
+		// Automatic: the trigger held is a shot whenever the rifle is ready for the next one.
+		if ( trigger == false || reloading || tick < g.nextShotTick )
 		{
 			return;
 		}
 		if ( g.ammo <= 0 )
 		{
-			ctx.Emit( m_dry, target );
-			StartReload( ctx, e, target );
+			// Empty: one click and a reload for each pull of the trigger, however long it is held.
+			if ( g.wentDry == false )
+			{
+				g.wentDry = true;
+				ctx.Emit( m_dry, target );
+				StartReload( ctx, e, target );
+			}
 			return;
 		}
 
 		g.ammo -= 1;
+		g.wentDry = false;
 		g.nextShotTick = tick + Ticks( ctx, kFireSeconds );
 		ctx.Set( target, m_ammo, g.ammo );
 		Fire( ctx, g );
@@ -283,12 +284,11 @@ private:
 
 	void StartReload( Context& ctx, flecs::entity e, uint32_t target )
 	{
-		e.set<Reloading>( { ctx.Tick() + Ticks( ctx, kReloadSeconds ) } );
+		e.set<RifleReload>( { ctx.Tick() + Ticks( ctx, kReloadSeconds ) } );
 		ctx.Set( target, m_reloading, 1 );
 		ctx.Emit( m_reloadEvent, target );
 	}
 
-	// A living player: what a shot hurts and a mark finds.
 	bool IsLivingPlayer( Context& ctx, uint32_t netId ) const
 	{
 		int slot = ctx.SlotOf( netId );
@@ -296,24 +296,7 @@ private:
 		return c != nullptr && c->dead == 0;
 	}
 
-	// The same ray as a shot, with no damage: it says where it went (pistol.scan) and, when it found
-	// a living player, who (pistol.marked). What a mark looks like and how long it shows is the
-	// look's business; the server keeps nothing about it.
-	void Mark( Context& ctx, const Gunner& caster )
-	{
-		uint32_t casterTarget = SlotTarget( caster.slot );
-		b3Vec3 eye, dir;
-		RayHit hit;
-		bool found = ctx.CastAim( caster.slot, kRange, hit, eye, dir );
-		b3Vec3 end = found ? hit.point : b3MulAdd( eye, kRange, dir );
-		ctx.Emit( m_scan, casterTarget, found ? hit.netId : 0, 0, eye, end );
-		if ( found && IsLivingPlayer( ctx, hit.netId ) )
-		{
-			ctx.Emit( m_marked, casterTarget, hit.netId, 0, hit.point, hit.normal );
-		}
-	}
-
-	void Fire( Context& ctx, const Gunner& shooter )
+	void Fire( Context& ctx, const Rifleman& shooter )
 	{
 		uint32_t shooterTarget = SlotTarget( shooter.slot );
 		// At what is under the crosshair, from the eye: whatever camera the player looks through.
@@ -329,19 +312,19 @@ private:
 
 		if ( IsLivingPlayer( ctx, hit.netId ) )
 		{
-			// Where it hit scales the damage: --mod-option pistol.zone.<zone>=<multiplier>, for any
+			// Where it hit scales the damage: --mod-option rifle.zone.<zone>=<multiplier>, for any
 			// zone the server's character defines (head x2 unless told otherwise).
 			int32_t damage = kDamage;
 			if ( hit.zone != nullptr )
 			{
 				std::string zone = hit.zone;
-				double multiplier = ctx.Option( "pistol.zone." + zone, zone == "head" ? 2.0 : 1.0 );
+				double multiplier = ctx.Option( "rifle.zone." + zone, zone == "head" ? 2.0 : 1.0 );
 				damage = std::max( int32_t( double( kDamage ) * multiplier + 0.5 ), 0 );
 			}
-			// What the pistol did (its own look: the puff, the hit marker), and what it means for
-			// the one it hit, which is the combat mod's to decide.
+			// What the rifle did (its own look: the puff, the hit marker), and what it means for the
+			// one it hit, which is the combat mod's to decide.
 			ctx.Emit( m_hit, shooterTarget, hit.netId, damage, hit.point, hit.normal );
-			b3Vec3 push = b3Add( b3MulSV( kDeathPush, dir ), b3Vec3{ 0.0f, 1.5f, 0.0f } );
+			b3Vec3 push = b3Add( b3MulSV( kDeathPush, dir ), b3Vec3{ 0.0f, 1.2f, 0.0f } );
 			ctx.Emit( m_damage, shooterTarget, hit.netId, damage, hit.point, push );
 			return;
 		}
@@ -356,15 +339,12 @@ private:
 
 	ActionHandle m_fire;
 	ActionHandle m_reload;
-	ActionHandle m_mark;
 	FieldHandle m_ammo;
 	FieldHandle m_reloading;
 	EventHandle m_fired;
 	EventHandle m_hit;
 	EventHandle m_reloadEvent;
 	EventHandle m_dry;
-	EventHandle m_scan;
-	EventHandle m_marked;
 	EventHandle m_damage;
 	EventHandle m_respawned;
 	EventHandle m_roundStart;
@@ -373,14 +353,14 @@ private:
 	ItemKindHandle m_gun;
 	SocketHandle m_hand;
 
-	flecs::query<Gunner> m_gunners;
+	flecs::query<Rifleman> m_riflemen;
 	flecs::entity m_bySlot[kMaxPlayers];
 	std::vector<flecs::entity> m_scratch;
 };
 
 } // namespace
 
-std::unique_ptr<cb::mods::ServerMod> CreateMod_pistol()
+std::unique_ptr<cb::mods::ServerMod> CreateMod_rifle()
 {
-	return std::make_unique<PistolMod>();
+	return std::make_unique<RifleMod>();
 }

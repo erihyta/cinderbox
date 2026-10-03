@@ -1,0 +1,20 @@
+[gd_scene load_steps=3 format=3]
+
+; One metre long along -Z from the origin: bindings with beam = true stretch it from where a shot
+; started to where it ended.
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 0.9, 0.55, 0.75)
+
+[sub_resource type="BoxMesh" id="Box"]
+material = SubResource("Mat")
+size = Vector3(0.018, 0.018, 1)
+
+[node name="Tracer" type="Node3D"]
+
+[node name="Beam" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.5)
+mesh = SubResource("Box")
+cast_shadow = 0
