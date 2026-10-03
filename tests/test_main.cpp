@@ -2987,7 +2987,9 @@ void TestMannequinCharacter()
 		}
 		return hit.box->zone;
 	};
-	CHECK( zoneAt( head.y + 0.08f ) == "head" );
+	// (From behind; the head's sphere sits a little above and ahead of the joint, and below it the
+	// upper chest's capsule is in the way first.)
+	CHECK( zoneAt( head.y + 0.15f ) == "head" );
 	CHECK( zoneAt( 1.2f ) == "torso" );
 	CHECK( zoneAt( 2.1f ).empty() );
 
