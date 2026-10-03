@@ -163,6 +163,19 @@ public:
 		return m_spineJoint;
 	}
 
+	// An arm's joints, shoulder to wrist (upper arm, lower arm, hand), by humanoid-profile name; -1
+	// where the skeleton lacks one.
+	struct Arm
+	{
+		int upper = -1;
+		int lower = -1;
+		int hand = -1;
+	};
+	const Arm& ArmJoints( bool left ) const
+	{
+		return m_arms[left ? 1 : 0];
+	}
+
 	// Fills AttachFrame from the rest; the loaders call it.
 	void ComputeAttachFrames();
 
@@ -184,6 +197,7 @@ private:
 	std::string m_graphText;
 	std::vector<std::pair<int, float>> m_aimJoints;
 	int m_hipsJoint = -1;
+	Arm m_arms[2]; // right, left
 	int m_spineJoint = -1;
 	int m_aimTip = -1;
 	std::string m_aimConfig = "RightUpperArm:1";

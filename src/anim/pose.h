@@ -8,6 +8,7 @@
 
 #include "anim_graph.h"
 #include "anim_set.h"
+#include "joint_math.h"
 #include "components.h"
 #include "retarget.h"
 
@@ -62,7 +63,8 @@ public:
 		return m_graph.get();
 	}
 
-	void Evaluate( const AnimState& state );
+	// `grip`: the item this player carries is held by its other hand too (joint_math.h HandGrip).
+	void Evaluate( const AnimState& state, const HandGrip* grip = nullptr );
 
 	// Model-space joint matrices (skeleton space: feet at the origin, facing +Z), scale applied.
 	const ozz::vector<ozz::math::Float4x4>& Models() const
@@ -79,7 +81,7 @@ private:
 	ozz::vector<ozz::math::SoaTransform> m_blended;
 	ozz::vector<ozz::math::Float4x4> m_models;
 
-	void Finish( const AnimState& state );
+	void Finish( const AnimState& state, const HandGrip* grip );
 	// Blends `pose` over m_blended by per-joint `mask` (empty: every joint) times `weight`.
 	void BlendOver( const ozz::vector<ozz::math::SoaTransform>& pose, const ozz::vector<ozz::math::SimdFloat4>* mask, float weight );
 

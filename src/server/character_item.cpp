@@ -214,6 +214,37 @@ bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error
 				return false;
 			}
 		}
+		else if ( key == "grip" )
+		{
+			// grip <x y z> <qx qy qz qw> <1 when the hand takes the rotation>
+			float g[7];
+			int align = 0;
+			if ( !( words >> g[0] >> g[1] >> g[2] >> g[3] >> g[4] >> g[5] >> g[6] >> align ) )
+			{
+				error = "grip needs a position, a rotation (x y z w) and 0 or 1";
+				return false;
+			}
+			float turn = g[3] * g[3] + g[4] * g[4] + g[5] * g[5] + g[6] * g[6];
+			for ( int k = 0; k < 3; ++k )
+			{
+				if ( std::isfinite( g[k] ) == false || g[k] < -2.0f || g[k] > 2.0f )
+				{
+					error = "the grip must be within 2 m of the carrying hand";
+					return false;
+				}
+			}
+			if ( std::isfinite( turn ) == false || turn < 0.9f || turn > 1.1f )
+			{
+				error = "the grip's rotation is not a rotation";
+				return false;
+			}
+			shape.grip = align != 0 ? 2 : 1;
+			shape.gripPosition = { g[0], g[1], g[2] };
+			for ( int k = 0; k < 4; ++k )
+			{
+				shape.gripRotation[k] = g[3 + k];
+			}
+		}
 		else if ( key == "property" )
 		{
 			std::string name;

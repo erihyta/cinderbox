@@ -29,6 +29,32 @@ bool NearRay( b3Vec3 origin, b3Vec3 translation, float maxFraction, b3Vec3 cente
 	return b3Dot( gap, gap ) <= radius * radius;
 }
 
+// The item a player carries in one hand and holds with the other too, if it has one.
+bool GripOf( Simulation& sim, uint32_t netId, anim::HandGrip& out )
+{
+	for ( uint32_t socket : { uint32_t( kSocketRightHand ), uint32_t( kSocketLeftHand ) } )
+	{
+		uint32_t other = socket == kSocketRightHand ? uint32_t( kSocketLeftHand ) : uint32_t( kSocketRightHand );
+		uint32_t item = sim.HeldItemOf( netId, socket );
+		flecs::entity e = item != 0 && sim.HeldItemOf( netId, other ) == 0 ? sim.FindEntity( item ) : flecs::entity();
+		if ( e.is_valid() == false || e.has<HeldItem>() == false )
+		{
+			continue;
+		}
+		ItemShape shape = sim.ItemShapeOf( e.get<HeldItem>().kind );
+		if ( shape.grip == 0 )
+		{
+			continue;
+		}
+		out.leftCarries = socket == kSocketLeftHand;
+		out.align = shape.grip == 2;
+		out.position = { shape.gripPosition.x, shape.gripPosition.y, shape.gripPosition.z };
+		out.rotation = { { shape.gripRotation[0], shape.gripRotation[1], shape.gripRotation[2] }, shape.gripRotation[3] };
+		return true;
+	}
+	return false;
+}
+
 } // namespace
 
 HitTester::HitTester( std::shared_ptr<const CharacterAsset> character )
@@ -62,7 +88,8 @@ bool HitTester::JointPosition( Simulation& sim, PlayerSlot slot, const char* joi
 	{
 		return false;
 	}
-	m_pose.Evaluate( *state );
+	anim::HandGrip grip;
+	m_pose.Evaluate( *state, GripOf( sim, netId, grip ) ? &grip : nullptr );
 	float v[4];
 	ozz::math::StorePtrU( m_pose.Models()[size_t( index )].cols[3], v );
 	// Model space has the feet at the origin and faces +Z, like the hitboxes.
@@ -95,7 +122,8 @@ bool HitTester::CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uin
 		{
 			continue;
 		}
-		m_pose.Evaluate( *state );
+		anim::HandGrip grip;
+		m_pose.Evaluate( *state, GripOf( sim, netId, grip ) ? &grip : nullptr );
 		anim::HitboxHit boxHit;
 		if ( anim::RayHitboxes( m_character->hitboxes, m_pose.Models(), feet, transform->rotation, origin, translation, limit, boxHit ) )
 		{

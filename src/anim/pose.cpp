@@ -345,7 +345,7 @@ void PoseEvaluator::BlendOver( const ozz::vector<ozz::math::SoaTransform>& pose,
 
 PoseEvaluator::~PoseEvaluator() = default;
 
-void PoseEvaluator::Evaluate( const AnimState& state )
+void PoseEvaluator::Evaluate( const AnimState& state, const HandGrip* grip )
 {
 	if ( m_graph )
 	{
@@ -358,10 +358,10 @@ void PoseEvaluator::Evaluate( const AnimState& state )
 		auto rest = m_set.Skeleton().joint_rest_poses();
 		std::copy( rest.begin(), rest.end(), m_blended.begin() );
 	}
-	Finish( state );
+	Finish( state, grip );
 }
 
-void PoseEvaluator::Finish( const AnimState& state )
+void PoseEvaluator::Finish( const AnimState& state, const HandGrip* grip )
 {
 	const auto& skeleton = m_set.Skeleton();
 	if ( m_set.LockRootXZ() && skeleton.num_joints() > 0 )
@@ -454,6 +454,12 @@ void PoseEvaluator::Finish( const AnimState& state )
 		b3CosSin yaw = detmath::CosSin( state.aimYaw );
 		b3Vec3 direction = { yaw.sine * pitch.cosine, pitch.sine, yaw.cosine * pitch.cosine };
 		AimChain( m_set, m_models, m_set.AimJoints(), m_set.AimTip(), direction );
+	}
+
+	// Last: the item is where the hand that carries it ended up, and the other hand goes to it.
+	if ( grip != nullptr )
+	{
+		SolveGrip( m_set, m_models, *grip );
 	}
 }
 

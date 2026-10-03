@@ -8,6 +8,7 @@
 #include "ozz/animation/runtime/skeleton.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace cb::anim
@@ -189,6 +190,83 @@ void AimChain( const AnimSet& set, Models& models, const std::vector<std::pair<i
 		}
 		b3Quat turn = Nlerp( b3Quat_identity, Arc( b3Normalize( current ), direction ), std::clamp( weight, 0.0f, 1.0f ) );
 		RotateSubtree( set, models, joint, turn );
+	}
+}
+
+void SolveGrip( const AnimSet& set, Models& models, const HandGrip& grip )
+{
+	const AnimSet::Arm& carrying = set.ArmJoints( grip.leftCarries );
+	const AnimSet::Arm& arm = set.ArmJoints( grip.leftCarries == false );
+	const int joints = int( models.size() );
+	if ( carrying.hand < 0 || arm.upper < 0 || arm.lower < 0 || arm.hand < 0 || carrying.hand >= joints || arm.hand >= joints )
+	{
+		return;
+	}
+	// The item's frame: the carrying hand's socket.
+	b3Vec3 handAt, unusedPlace;
+	b3Quat handTurn, attach;
+	float unusedScale;
+	Decompose( models[size_t( carrying.hand )], handAt, handTurn, unusedScale );
+	Decompose( set.AttachFrame( carrying.hand ), unusedPlace, attach, unusedScale );
+	b3Quat item = b3MulQuat( handTurn, attach );
+	b3Vec3 target = b3Add( handAt, b3RotateVector( item, grip.position ) );
+
+	auto placeOf = [&]( int joint ) {
+		b3Vec3 p;
+		b3Quat q;
+		float s;
+		Decompose( models[size_t( joint )], p, q, s );
+		return p;
+	};
+	b3Vec3 shoulder = placeOf( arm.upper );
+	b3Vec3 elbow = placeOf( arm.lower );
+	b3Vec3 wrist = placeOf( arm.hand );
+	float upper = b3Distance( shoulder, elbow );
+	float lower = b3Distance( elbow, wrist );
+	if ( upper < 1e-4f || lower < 1e-4f )
+	{
+		return;
+	}
+	// As far as the arm reaches: not quite straight, not folded flat.
+	b3Vec3 to = b3Sub( target, shoulder );
+	float distance = b3Length( to );
+	float reach = std::clamp( distance, std::fabs( upper - lower ) + 0.01f, ( upper + lower ) * 0.999f );
+	if ( distance < 1e-4f )
+	{
+		return;
+	}
+	b3Vec3 along = b3MulSV( 1.0f / distance, to );
+	target = b3MulAdd( shoulder, reach, along );
+
+	// Where the elbow has to be: on the circle both bones allow, on the side it is on now (below
+	// and outside the line to the grip, if the arm is straight along it).
+	float alongShoulder = ( upper * upper - lower * lower + reach * reach ) / ( 2.0f * reach );
+	float out = std::sqrt( std::max( upper * upper - alongShoulder * alongShoulder, 0.0f ) );
+	b3Vec3 side = b3Sub( b3Sub( elbow, shoulder ), b3MulSV( b3Dot( b3Sub( elbow, shoulder ), along ), along ) );
+	if ( b3LengthSquared( side ) < 1e-8f )
+	{
+		b3Vec3 down = { grip.leftCarries ? -0.5f : 0.5f, -1.0f, 0.0f };
+		side = b3Sub( down, b3MulSV( b3Dot( down, along ), along ) );
+		if ( b3LengthSquared( side ) < 1e-8f )
+		{
+			side = { 1.0f, 0.0f, 0.0f };
+		}
+	}
+	side = b3Normalize( side );
+	b3Vec3 bend = b3Add( shoulder, b3Add( b3MulSV( alongShoulder, along ), b3MulSV( out, side ) ) );
+
+	RotateSubtreeAbout( set, models, arm.upper, shoulder, Arc( b3Normalize( b3Sub( elbow, shoulder ) ), b3Normalize( b3Sub( bend, shoulder ) ) ) );
+	b3Vec3 moved = placeOf( arm.hand );
+	RotateSubtreeAbout( set, models, arm.lower, bend, Arc( b3Normalize( b3Sub( moved, bend ) ), b3Normalize( b3Sub( target, bend ) ) ) );
+	if ( grip.align )
+	{
+		// The hand as one carrying an item placed at the grip would be turned.
+		b3Vec3 at;
+		b3Quat now, otherAttach;
+		Decompose( models[size_t( arm.hand )], at, now, unusedScale );
+		Decompose( set.AttachFrame( arm.hand ), unusedPlace, otherAttach, unusedScale );
+		b3Quat want = b3MulQuat( b3MulQuat( item, grip.rotation ), b3Quat{ { -otherAttach.v.x, -otherAttach.v.y, -otherAttach.v.z }, otherAttach.s } );
+		RotateSubtreeAbout( set, models, arm.hand, at, b3MulQuat( want, b3Quat{ { -now.v.x, -now.v.y, -now.v.z }, now.s } ) );
 	}
 }
 

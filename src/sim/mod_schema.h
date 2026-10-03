@@ -90,6 +90,12 @@ struct ItemShape
 	Float3 half = { 0.05f, 0.05f, 0.15f };
 	Float3 center = { 0.0f, 0.0f, -0.15f };
 	float mass = 1.0f;
+	// Where the other hand holds it, in the item's frame (the hand that carries it is at the origin):
+	// 0 nowhere (a one-handed item); 1 the other hand's wrist goes to `gripPosition`; 2 and its hand
+	// takes `gripRotation` (x y z w), as a hand carrying an item placed there would be turned.
+	uint8_t grip = 0;
+	Float3 gripPosition;
+	float gripRotation[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 	bool operator==( const ItemShape& ) const = default;
 };

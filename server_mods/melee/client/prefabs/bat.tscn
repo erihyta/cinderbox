@@ -164,6 +164,10 @@ properties = {
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.31)
 shape = SubResource("Body")
 
+[node name="OtherHand" type="CbGrip" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.11)
+align_rotation = true
+
 [node name="Flames" type="GPUParticles3D" parent="." unique_id=1514484346]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)
 emitting = false

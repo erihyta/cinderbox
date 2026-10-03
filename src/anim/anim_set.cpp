@@ -797,6 +797,8 @@ void AnimSet::SetAim( const std::string& chain, const std::string& tip, std::str
 	m_hipsJoint = FindJoint( *this, "Hips" );
 	m_spineJoint = FindJoint( *this, "Spine" );
 	m_neckJoint = FindJoint( *this, "Neck" );
+	m_arms[0] = { FindJoint( *this, "RightUpperArm" ), FindJoint( *this, "RightLowerArm" ), FindJoint( *this, "RightHand" ) };
+	m_arms[1] = { FindJoint( *this, "LeftUpperArm" ), FindJoint( *this, "LeftLowerArm" ), FindJoint( *this, "LeftHand" ) };
 	if ( m_aimTip < 0 )
 	{
 		if ( m_aimJoints.empty() == false )

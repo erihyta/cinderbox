@@ -33,6 +33,13 @@ void CbItemLook::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::VECTOR3, "view_offset", PROPERTY_HINT_NONE, "suffix:m" ), "set_view_offset", "get_view_offset" );
 }
 
+void CbGrip::_bind_methods()
+{
+	ClassDB::bind_method( D_METHOD( "set_align_rotation", "value" ), &CbGrip::set_align_rotation );
+	ClassDB::bind_method( D_METHOD( "get_align_rotation" ), &CbGrip::get_align_rotation );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "align_rotation" ), "set_align_rotation", "get_align_rotation" );
+}
+
 void CbItemBody::_bind_methods()
 {
 	ClassDB::bind_method( D_METHOD( "set_mass", "value" ), &CbItemBody::set_mass );
@@ -146,6 +153,27 @@ Dictionary CbItemBody::bake() const
 			return out;
 		}
 		text += "property " + name + " " + String::num( double( value ), 4 ) + "\n";
+	}
+	// Where the other hand holds it: the scene's CbGrip, in the item's frame.
+	const Node* root = this;
+	while ( root->get_parent() != nullptr )
+	{
+		root = root->get_parent();
+	}
+	TypedArray<Node> grips = const_cast<Node*>( root )->find_children( "*", "CbGrip", true, false );
+	if ( grips.size() > 1 )
+	{
+		out["text"] = "";
+		out["error"] = "an item has one CbGrip (the other hand's place), not " + String::num_int64( grips.size() );
+		return out;
+	}
+	if ( grips.size() == 1 )
+	{
+		auto* grip = Object::cast_to<CbGrip>( grips[0] );
+		Transform3D t = InItemFrame( grip ).orthonormalized();
+		Quaternion q = t.basis.get_rotation_quaternion();
+		text += vformat( "grip %.4f %.4f %.4f %.5f %.5f %.5f %.5f %d\n", t.origin.x, t.origin.y, t.origin.z, q.x, q.y, q.z, q.w,
+						 grip->get_align_rotation() ? 1 : 0 );
 	}
 	out["text"] = text;
 	out["error"] = "";
