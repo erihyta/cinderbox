@@ -30,9 +30,10 @@ inline constexpr int kMaxActions = 16;
 // Camera pitch is limited to just short of straight up or down (full turn = 65536).
 inline constexpr int16_t kMaxCameraPitch = 16000;
 
-// Which camera a player looks through. It is the player's choice and it changes nothing in the
-// simulation; the server's mods read it to know where the player's line of sight starts
-// (mods::Context::ViewPosition), so that what is under the crosshair is what is aimed at.
+// Which camera a player looks through: the player's choice. The server's mods read it to know
+// where the player's line of sight starts (mods::Context::ViewPosition), so that what is under the
+// crosshair is what is aimed at; and in first person the character faces where the camera looks
+// (anim_controller.h FacesCamera), as it does with a weapon out.
 enum class ViewMode : uint8_t
 {
 	ThirdPerson = 0,   // behind the player, orbiting the point above its body

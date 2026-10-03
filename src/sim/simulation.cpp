@@ -924,7 +924,7 @@ void Simulation::MoveCharacter( Character& c, Transform& t, const PhysicsBody& p
 	// Face where the camera looks (a mod chose it), or turn toward the direction of travel.
 	b3Vec3 moved = b3Sub( t.position, startPosition );
 	float horizontalSq = moved.x * moved.x + moved.z * moved.z;
-	if ( c.faceCamera != 0 )
+	if ( FacesCamera( c, in ) )
 	{
 		c.facingYaw = detmath::WrapAngle( detmath::YawToRadians( in.cameraYaw ) );
 	}

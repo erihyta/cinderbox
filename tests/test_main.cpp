@@ -1194,6 +1194,19 @@ void TestCommands()
 	}
 	CHECK( std::fabs( detmath::WrapAngle( sim.PlayerCharacter( 0 )->facingYaw - detmath::YawToRadians( 16384 ) ) ) > 2.5f );
 	CHECK( sim.EntityAnimState( p0 )->legsBackward == 0 );
+	// First person faces the camera too, with no mod saying so: the body turns with the view at
+	// once and the upper body follows its pitch; back behind the player it is freelook again.
+	f.inputs[0].view = uint8_t( ViewMode::FirstPerson );
+	f.inputs[0].cameraYaw = 40000;
+	step( 30 );
+	CHECK( sim.PlayerCharacter( 0 )->faceCamera == 0 );
+	CHECK( std::fabs( detmath::WrapAngle( sim.PlayerCharacter( 0 )->facingYaw - detmath::YawToRadians( 40000 ) ) ) < 1e-4f );
+	CHECK( sim.EntityAnimState( p0 )->look == 255 );
+	f.inputs[0].view = uint8_t( ViewMode::ThirdPerson );
+	f.inputs[0].cameraYaw = 16384;
+	step( 60 );
+	CHECK( sim.EntityAnimState( p0 )->look == 0 );
+	CHECK( std::fabs( detmath::WrapAngle( sim.PlayerCharacter( 0 )->facingYaw - detmath::YawToRadians( 16384 ) ) ) > 1.0f );
 	f.inputs[0].moveForward = 0;
 	f.inputs[0].cameraYaw = 0;
 	step( 30 );
