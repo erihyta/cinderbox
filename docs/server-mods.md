@@ -72,6 +72,7 @@ The mods that ship:
 | `rifle` | `rifle.ammo`, `rifle.reloading`; `fire` (left mouse, **held**), `reload` (R); events `rifle.fired`, `rifle.hit`, `rifle.reload`, `rifle.dry`, `combat.damage` | the automatic one: a shot every 0.1 s for as long as `fire` is held, 14 damage (the head doubles it), 30 rounds, 2 s reload; slot 4, on the back while put away. Held on an empty magazine it clicks once, reloads and fires on. While it is out the `upper` layer has the `rifle` stance, and the item brings the `rifle.hold` animation pack (`ItemLayers`): its `UpperBody` layer plays instead of the character's. **Its look is not in the repository** (`server_mods/rifle/client` is git-ignored: its animations are licensed): without it a rifle is a plain box, held as a pistol (`pistol or rifle`) |
 | `secret` | `secret.number`, a private field; option `secret.numbers` | the example of a private field: off unless `--mod-option secret.numbers=1`; then each player is told a number from 1 to 99 that nobody else is sent |
 | `dash` | `dash.charges`, `dash.max`; action `dash` (V); events `dash.started`, `dash.double_jump`; the motion set `dash.moves` | the example of [motions](motions.md): a dash along where you walk and a second jump in the air, both run by every simulation from the player's input, so your own are predicted. The mod only keeps the charges: 2, one back every 2 s (`dash.charges`, `dash.recharge_seconds`) |
+| `flight` | `flight.on`, `flight.fuel`; action `fly` (T); events `flight.started`, `flight.stopped`, `flight.thrust`; the motion set `flight.moves` | the example of [motions that hold](motions.md#motions-that-hold-the-flight-mod): T switches flight on and off, Space held in the air is a jetpack with a tank, Shift held while falling glides. All of it is the motion set; the mod only gives the first tank (`flight.fuel`) |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
 Mods cooperate through the board (`pickup` reads the `inventory.slot` that `inventory` publishes, to
@@ -174,6 +175,8 @@ How players move is a set of values, not constants in the engine (`src/sim/move_
 | `gravity`, `jump_speed` | 18 m/s², 6.5 m/s | the fall, and the speed a jump starts with |
 | `turn_rate` | 12 rad/s | how fast the body turns toward where it walks (freelook) |
 | `max_fall` | 0 | the fastest a character falls, in m/s; 0: no limit |
+| `air_friction` | 0 | how fast a character in the air slows down, per second, in every direction; 0: not at all |
+| `move_frame` | 0 | 0: the movement input moves along the ground. 1: along the camera, pitch included (flight) |
 
 | Who sets it | How | Wins over |
 |---|---|---|

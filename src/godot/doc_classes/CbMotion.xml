@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="CbMotion" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<brief_description>
-		Adds to how players move, with no code: on a press, if its conditions hold, it changes the mover. A dash, a double jump.
+		Adds to how players move, with no code: on a press, on a cue, or while its conditions hold, it changes the mover. A dash, a double jump, flight.
 	</brief_description>
 	<description>
 		A [CbReaction] changes the look; a [CbMotion] changes the movement. It lives under a [CbMotionSet], which bakes its motions to a file the server reads from the mod's item and sends to every client. Every simulation then runs them from the players' input: the server's, and each client's own prediction. So your own dash starts on the tick of the press and is rolled back like walking is, and nothing waits for the server.
@@ -11,17 +11,23 @@
 	<tutorials>
 	</tutorials>
 	<members>
+		<member name="when" type="int" setter="set_when" getter="get_when" enum="CbMotion.When" default="0">
+			What it waits for: a press of [member action], its [member conditions] holding, or the mod event [member event].
+		</member>
+		<member name="event" type="String" setter="set_event" getter="get_event" default="&quot;&quot;">
+			With [constant WHEN_EVENT]: the mod event that starts it, recorded at the player this tick. A server mod emits it ([code]ctx.Emit( stunned, player )[/code]), so the start is the server's and reaches a client with the frame; from then on every simulation runs the motion.
+		</member>
 		<member name="action" type="String" setter="set_action" getter="get_action" default="&quot;&quot;">
 			The action whose press this answers: one a server mod declares ([code]dash[/code]), or the engine's own [code]jump[/code] or [code]sprint[/code]. Held, it is one press.
 		</member>
 		<member name="conditions" type="PackedStringArray" setter="set_conditions" getter="get_conditions" default="PackedStringArray()">
-			Expressions that must all hold on the player, as it is before this tick's movement. They read what a character's state machine reads: [code]grounded[/code], [code]airborne_time[/code], [code]speed[/code], [code]vertical_speed[/code], a field ([code]dash.charges &gt; 0[/code]), an item kind the player holds, a stance.
+			Expressions that must all hold on the player, as it is before this tick's movement. They read what a character's state machine reads: [code]grounded[/code], [code]airborne_time[/code], [code]speed[/code], [code]vertical_speed[/code], a field ([code]dash.charges &gt; 0[/code]), an item kind the player holds, a stance, and whether a key is down: [code]held.jump[/code], [code]held.dash[/code]. They read the fields as the tick found them: a motion that changes a field does not start another motion until the next tick.
 		</member>
 		<member name="cooldown" type="float" setter="set_cooldown" getter="get_cooldown" default="0.0">
-			Seconds between two uses.
+			Seconds between two uses. For a [constant WHEN_WHILE]: between its end and its next start.
 		</member>
 		<member name="uses" type="int" setter="set_uses" getter="get_uses" default="0">
-			How many times it can be used before it refills. 0: no limit. A double jump is 1.
+			How many times it can be used before it refills. 0: no limit. A double jump is 1. Not used by a [constant WHEN_WHILE].
 		</member>
 		<member name="refill" type="int" setter="set_refill" getter="get_refill" enum="CbMotion.Refill" default="0">
 			When the uses come back: when the player stands on the ground, or [member refill_seconds] after the last use.
@@ -30,7 +36,7 @@
 			With [constant REFILL_AFTER_SECONDS]: how long after the last use every use is back. 0: never.
 		</member>
 		<member name="impulse" type="float" setter="set_impulse" getter="get_impulse" default="0.0">
-			The change of velocity, in metres per second, along [member impulse_frame].
+			The change of velocity, in metres per second, along [member impulse_frame]. A [constant WHEN_WHILE] adds that much every second it is on: a thrust.
 		</member>
 		<member name="impulse_frame" type="int" setter="set_impulse_frame" getter="get_impulse_frame" enum="CbMotion.Frame" default="1">
 			The direction of the impulse.
@@ -39,22 +45,31 @@
 			With [constant FRAME_WORLD]: the direction, in the world. Its length does not matter.
 		</member>
 		<member name="replace" type="int" setter="set_replace" getter="get_replace" enum="CbMotion.Replace" default="0">
-			What of the player's velocity is cleared before the impulse is added.
+			What of the player's velocity is cleared before the impulse is added. Not used by a [constant WHEN_WHILE].
 		</member>
 		<member name="duration" type="float" setter="set_duration" getter="get_duration" default="0.0">
-			How long the motion stays on after the press, in seconds: its [member parameters] hold that long.
+			How long the motion stays on after the press or the cue, in seconds: its [member parameters] hold that long. A [constant WHEN_WHILE] is on while its conditions hold.
 		</member>
 		<member name="parameters" type="Dictionary" setter="set_parameters" getter="get_parameters" default="{}">
-			Movement parameters by name, with the value they have for this player while the motion is on: [code]friction[/code] = 0 for a dash that slides. They win over the server's, the character's and a mod's own for that long. The names: [code]walk_speed[/code], [code]sprint_speed[/code], [code]accelerate[/code], [code]friction[/code], [code]stop_speed[/code], [code]air_control[/code], [code]gravity[/code], [code]jump_speed[/code], [code]turn_rate[/code], [code]max_fall[/code].
+			Movement parameters by name, with the value they have for this player while the motion is on: [code]friction[/code] = 0 for a dash that slides. They win over the server's, the character's and a mod's own for that long. The names: [code]walk_speed[/code], [code]sprint_speed[/code], [code]accelerate[/code], [code]friction[/code], [code]stop_speed[/code], [code]air_control[/code], [code]gravity[/code], [code]jump_speed[/code], [code]turn_rate[/code], [code]max_fall[/code], [code]air_friction[/code], [code]move_frame[/code] (1: the movement input moves along the camera, pitch included: flight).
 		</member>
 		<member name="changes" type="PackedStringArray" setter="set_changes" getter="get_changes" default="PackedStringArray()">
-			Fields of the player the press changes, written like a [CbPrediction]'s: [code]dash.charges -= 1[/code] (operators [code]-=[/code], [code]+=[/code], [code]=[/code], with a number). The server mod declares the field.
+			Fields of the player the press changes, written like a [CbPrediction]'s: [code]dash.charges -= 1[/code] (operators [code]-=[/code], [code]+=[/code], [code]=[/code], with a number). The server mod declares the field. In a [constant WHEN_WHILE], [code]-=[/code] and [code]+=[/code] are per second and need a Float field ([code]jetpack.fuel -= 20[/code]), and [code]=[/code] is set when it starts.
 		</member>
 		<member name="emits" type="String" setter="set_emits" getter="get_emits" default="&quot;&quot;">
-			A mod event recorded at the player when it happens ([code]dash.started[/code]), with the impulse as its vector. A [CbReaction] on it shows the motion, at once for the viewer's own (no [CbPrediction] is needed: the event is in the viewer's own simulation); a state machine can enter a state on it; server mods hear it a tick later.
+			A mod event recorded at the player when it happens ([code]dash.started[/code]), with the impulse as its vector. A [CbReaction] on it shows the motion, at once for the viewer's own (no [CbPrediction] is needed: the event is in the viewer's own simulation); a state machine can enter a state on it; server mods hear it a tick later. A [constant WHEN_WHILE] emits it when it starts.
 		</member>
 	</members>
 	<constants>
+		<constant name="WHEN_PRESS" value="0" enum="When">
+			Once, when [member action] goes down. A dash.
+		</constant>
+		<constant name="WHEN_WHILE" value="1" enum="When">
+			Every tick its [member conditions] hold. Flight, a glide, a jetpack.
+		</constant>
+		<constant name="WHEN_EVENT" value="2" enum="When">
+			Once, when the mod event [member event] is recorded at the player. A stun a server mod starts.
+		</constant>
 		<constant name="FRAME_LOOK" value="0" enum="Frame">
 			Where the camera looks, pitch included.
 		</constant>

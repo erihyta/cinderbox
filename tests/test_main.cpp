@@ -1742,6 +1742,188 @@ void TestMotions()
 	CHECK( DecodeSchema( bytes.data(), bytes.size(), back ) && back == schema );
 }
 
+// Motions that hold while conditions do (flight, a jetpack, a glide), and ones a mod event starts.
+void TestMotionsWhile()
+{
+	ModSchema schema;
+	schema.fields.push_back( { "flight.on", BoardType::Bool, BoardScope::Entity, 0 } );
+	schema.fields.push_back( { "flight.fuel", BoardType::Float, BoardScope::Entity, 1 } );
+	schema.fields.push_back( { "flight.count", BoardType::Int, BoardScope::Entity, 2 } );
+	schema.events = { "flight.started", "flight.stopped", "flight.thrust", "stun.hit" };
+	schema.actions.push_back( { "fly", 2, "T" } );
+	const std::string text = "cinderbox_motions\t1\n"
+							 "motion\tFlyOn\nwhen\tpress\tfly\nif\tnot flight.on\nchange\tflight.on\t=\t1\nemit\tflight.started\n"
+							 "motion\tFlyOff\nwhen\tpress\tfly\nif\tflight.on\nchange\tflight.on\t=\t0\nemit\tflight.stopped\n"
+							 "motion\tFlying\nwhen\twhile\nif\tflight.on\n"
+							 "param\twalk_speed\t7\nparam\tair_control\t1\nparam\tgravity\t0\nparam\tair_friction\t3\nparam\tmove_frame\t1\n"
+							 "motion\tThrust\nwhen\twhile\nif\theld.jump and not grounded and not flight.on and flight.fuel > 0\n"
+							 "impulse\t32\tup\tnone\nchange\tflight.fuel\t-=\t30\nchange\tflight.count\t=\t7\nemit\tflight.thrust\n"
+							 "motion\tRefuel\nwhen\twhile\nif\tgrounded and flight.fuel < 100\nchange\tflight.fuel\t+=\t40\n"
+							 "motion\tGlide\nwhen\twhile\nif\theld.sprint and not grounded and vertical_speed < 0 and not flight.on\n"
+							 "param\tgravity\t3\nparam\tmax_fall\t2.5\n"
+							 "motion\tStun\nwhen\tevent\tstun.hit\nduration\t0.5\nparam\twalk_speed\t0\nparam\tsprint_speed\t0\n";
+	schema.motionSets.push_back( { "flight", "flight.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 7 );
+	if ( motions == nullptr || motions->list.size() != 7 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	CHECK( motions->list[2].when == Motion::When::While && motions->list[6].when == Motion::When::Event && motions->list[6].trigger == 3 );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	const uint16_t fly = 4;
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	auto height = [&] { return sim.EntityTransform( p0 )->position.y; };
+	auto fuel = [&] { return BoardToFloat( sim.BoardValue( p0, 1 ) ); };
+	auto tap = [&]( uint16_t action ) {
+		f.inputs[0].actions = action;
+		step( 1 );
+		f.inputs[0].actions = 0;
+		step( 1 );
+	};
+	const float floor = height();
+
+	// Standing, the tank fills to full and then the refuel stops.
+	step( 200 );
+	std::printf( "    fuel after standing: %.2f\n", fuel() );
+	CHECK( fuel() >= 100.0f && fuel() < 100.7f );
+
+	// One press is one switch: both toggles read the field as the tick found it.
+	tap( fly );
+	CHECK( sim.BoardValue( p0, 0 ) == 1 && sim.Globals().modEventCount == 1 );
+	CHECK( sim.PlayerMove( 0 )[MoveParam::Gravity] == 18.0f ); // between ticks nothing is on: a while says so each tick
+	// Flying: looking up and walking forward rises, with no gravity pulling back.
+	f.inputs[0].cameraPitch = 8192; // 45 degrees up
+	f.inputs[0].moveForward = 127;
+	step( 120 );
+	float climbed = height() - floor;
+	std::printf( "    flew %.2f m up in 2 s\n", climbed );
+	CHECK( climbed > 6.0f && sim.PlayerCharacter( 0 )->grounded == 0 );
+	// Letting go stops: air friction, and still no fall.
+	f.inputs[0].moveForward = 0;
+	step( 90 );
+	float hover = height();
+	step( 60 );
+	CHECK( b3Length( sim.PlayerCharacter( 0 )->velocity ) < 0.05f && std::fabs( height() - hover ) < 0.05f );
+	// Straight down again, and off: it lands and walks.
+	f.inputs[0].cameraPitch = 0;
+	tap( fly );
+	CHECK( sim.BoardValue( p0, 0 ) == 0 && sim.Globals().modEventCount == 2 );
+	step( 180 );
+	CHECK( sim.PlayerCharacter( 0 )->grounded == 1 && std::fabs( height() - floor ) < 0.05f );
+	step( 200 );
+
+	// The jetpack: Space held in the air thrusts upward and burns 30 fuel a second; one event per
+	// hold; a field set with = is set when it starts.
+	uint32_t eventsBefore = sim.Globals().modEventCount;
+	f.inputs[0].buttons = BtnJump;
+	step( 61 );
+	float used = 100.0f - fuel();
+	std::printf( "    a second of thrust: %.2f m up, %.2f fuel\n", height() - floor, used );
+	CHECK( height() - floor > 4.0f );
+	CHECK( used > 28.0f && used < 31.0f );
+	CHECK( sim.Globals().modEventCount == eventsBefore + 1 && sim.BoardValue( p0, 2 ) == 7 );
+	// With the tank empty it stops, and the player comes down; on the ground the tank fills again.
+	step( 240 );
+	CHECK( fuel() <= 0.0f );
+	f.inputs[0].buttons = 0;
+	step( 1500 ); // it went a long way up
+	CHECK( sim.PlayerCharacter( 0 )->grounded == 1 && fuel() >= 100.0f );
+
+	// A glide: Shift held while falling limits the fall.
+	{
+		SimCommand c;
+		c.type = CommandType::Respawn;
+		c.mode = 1;
+		c.target = SlotTarget( 0 );
+		c.a = { 0.0f, 14.0f, 0.0f };
+		f.commands.push_back( c );
+	}
+	f.inputs[0].buttons = BtnSprint;
+	step( 1 );
+	float fastest = 0.0f;
+	for ( int i = 0; i < 90; ++i )
+	{
+		step( 1 );
+		fastest = std::min( fastest, sim.PlayerCharacter( 0 )->velocity.y );
+	}
+	std::printf( "    gliding: falls at %.2f m/s at most\n", fastest );
+	CHECK( fastest >= -2.5f && fastest < -2.4f );
+	f.inputs[0].buttons = 0;
+	step( 400 );
+
+	// A mod event starts a motion: a stun the server sends holds the player still for half a second.
+	b3Vec3 at = sim.EntityTransform( p0 )->position;
+	{
+		SimCommand c;
+		c.type = CommandType::Event;
+		c.index = 3;
+		c.target = SlotTarget( 0 );
+		f.commands.push_back( c );
+	}
+	f.inputs[0].moveForward = 127;
+	step( 28 );
+	CHECK( b3Distance( sim.EntityTransform( p0 )->position, at ) < 0.02f );
+	step( 60 );
+	CHECK( b3Distance( sim.EntityTransform( p0 )->position, at ) > 1.0f );
+	f.inputs[0].moveForward = 0;
+
+	// It is state: a joining client stays in step through a flight.
+	std::vector<uint8_t> image;
+	sim.SavePortable( image );
+	Simulation client( TestConfig(), FlatMap() );
+	client.SetMotions( motions );
+	CHECK( client.LoadPortable( image ) && client.ComputeHash() == sim.ComputeHash() );
+	f.inputs[0].cameraPitch = 6000;
+	f.inputs[0].moveForward = 100;
+	for ( int i = 0; i < 120; ++i )
+	{
+		f.inputs[0].actions = i == 5 ? fly : uint16_t( 0 );
+		f.inputs[0].buttons = i > 60 ? uint8_t( BtnJump ) : uint8_t( 0 );
+		f.tick = sim.Tick();
+		sim.Step( f );
+		client.Step( f );
+	}
+	CHECK( sim.BoardValue( p0, 0 ) == 1 && client.ComputeHash() == sim.ComputeHash() );
+
+	// Per second, a whole number would never move: said, and skipped. An action nobody declares
+	// reads as not held.
+	std::vector<Motion> out;
+	std::string error, warned;
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t1\nmotion\tA\nwhen\twhile\nif\theld.warp\nchange\tflight.count\t+=\t1\n", schema, out, error,
+							 warned ) );
+	std::printf( "    %s\n", warned.c_str() );
+	CHECK( out.size() == 1 && out[0].changes.empty() );
+	CHECK( warned.find( "per second" ) != std::string::npos && warned.find( "held.warp" ) != std::string::npos );
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t1\nmotion\tA\nwhen\tevent\n", schema, out, error, warned ) == false );
+
+	// A state machine has no input: held.* reads 0 there.
+	AnimExpr held;
+	CHECK( CompileAnimExpr( "held.jump", schema, held, error, warned ) );
+	AnimGraphInputs none;
+	CHECK( EvaluateAnimExpr( held, none, 0.0f ) == 0.0f );
+	PlayerInput down;
+	down.buttons = BtnJump;
+	none.input = &down;
+	CHECK( EvaluateAnimExpr( held, none, 0.0f ) == 1.0f );
+}
+
 void TestRagdoll()
 {
 	Simulation sim( TestConfig(), FlatMap() );
@@ -4260,10 +4442,14 @@ void AppendMotionReference( std::vector<uint64_t>& hashes )
 								   "motion\tHop\nwhen\tpress\tb\nuses\t2\tground\nduration\t0.5\nimpulse\t5\tmove\tvertical\nparam\tair_control\t1\n"
 								   "motion\tBlink\nwhen\tpress\tjump\nif\tnot grounded and vertical_speed < 2\nuses\t1\t0.75\n"
 								   "impulse\t7\tworld\tall\t0.3\t1\t-0.2\n"
-								   "motion\tBurst\nwhen\tpress\tsprint\ncooldown\t1\nimpulse\t-4\tfacing\thorizontal\n" } );
+								   "motion\tBurst\nwhen\tpress\tsprint\ncooldown\t1\nimpulse\t-4\tfacing\thorizontal\n"
+								   "motion\tSoar\nwhen\twhile\nif\theld.b and m.fuel > -40\ncooldown\t0.5\n"
+								   "impulse\t20\tlook\tnone\nparam\tmove_frame\t1\nparam\tair_friction\t2\nparam\tgravity\t3\n"
+								   "change\tm.fuel\t-=\t3\nchange\tm.count\t=\t0\nemit\tm.dashed\n"
+								   "motion\tStun\nwhen\tevent\tm.dashed\nduration\t0.25\nparam\tjump_speed\t9\n" } );
 	std::string warnings;
 	auto motions = CompileMotions( schema, warnings );
-	if ( motions == nullptr || motions->list.size() != 4 || warnings.empty() == false )
+	if ( motions == nullptr || motions->list.size() != 6 || warnings.empty() == false )
 	{
 		std::printf( "the motion reference did not compile: %s\n", warnings.c_str() );
 		std::abort();
@@ -4898,6 +5084,7 @@ int main( int argc, char** argv )
 		{ "commands", TestCommands },
 		{ "move_params", TestMoveParams },
 		{ "motions", TestMotions },
+		{ "motions_while", TestMotionsWhile },
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },

@@ -678,14 +678,12 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		if ( m_motions )
 		{
 			MotionState motion = e.has<MotionState>() ? e.get<MotionState>() : MotionState{};
-			if ( c.frozen )
-			{
-				motion.prevActions = in.actions;
-			}
-			else
 			{
 				const AnimState& before = e.get<AnimState>();
 				Blackboard board = e.has<Blackboard>() ? e.get<Blackboard>() : Blackboard{};
+				// Conditions read the board as the tick found it: a motion that turns a field on does
+				// not start the motion that waits for it until the next tick.
+				const Blackboard boardBefore = board;
 				AnimGraphInputs values;
 				values.builtins[AnimExpr::Speed] = before.groundSpeed;
 				values.builtins[AnimExpr::ForwardSpeed] = before.legsBackward != 0 ? -before.groundSpeed : before.groundSpeed;
@@ -698,7 +696,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				values.builtins[AnimExpr::MoveForward] = before.moveForward;
 				values.builtins[AnimExpr::MoveRight] = before.moveRight;
 				values.state = &before;
-				values.board = board.values;
+				values.board = boardBefore.values;
+				values.input = &in;
 				values.globalBoard = m_globals.board;
 				values.events = m_globals.modEvents;
 				values.eventCount = m_globals.modEventCount;
@@ -710,6 +709,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				MotionInputs motionIn;
 				motionIn.input = &in;
 				motionIn.pressedButtons = pressed;
+				motionIn.canAct = c.frozen == 0;
+				motionIn.netId = netId;
 				motionIn.tick = m_globals.tick;
 				motionIn.tickRate = m_config.tickRate;
 				motionIn.values = &values;

@@ -54,39 +54,45 @@ struct Info
 
 // The motion inspector's texts: one per group, and one about the node ("").
 const Info kMotionInfo[] = {
-	{ "", "Adds to how players move with no code: on a press, if its conditions hold, it changes the mover.",
+	{ "", "Adds to how players move with no code: on a press, on a cue, or while its conditions hold, it changes the mover.",
 	  "[b]Where[/b]: under a CbMotionSet, in a scene of the mod's project (motion_sets/). Saving the scene bakes the set.\n"
 	  "[b]Who runs it[/b]: every simulation, the server's and each client's, from the player's input. So your own "
 	  "dash starts on the tick of the press, and other players see the same dash.\n"
 	  "[b]The server mod[/b] declares the action, the fields and the events named here, and names the set: "
 	  "declare.Motions( \"dash.moves\" ). Who may use a motion is a field its conditions read.\n"
 	  "[b]A reaction[/b] on the event it emits shows it; that needs no CbPrediction." },
-	{ "When", "The press it answers, and what has to hold.",
-	  "[b]action[/b]: an action the server mod declares (dash), or the engine's own: jump, sprint.\n"
+	{ "When", "What it waits for, and what has to hold.",
+	  "[b]when[/b]: On a press happens once, when the action goes down (a dash). While is on every tick its "
+	  "conditions hold (flight, a glide, a jetpack). On a cue happens when a mod event is recorded at the player: "
+	  "a server mod starts it (a stun), not a key.\n"
+	  "[b]action[/b]: On a press: an action the server mod declares (dash), or the engine's own: jump, sprint.\n"
+	  "[b]event[/b]: On a cue: the event (the server mod emits it at the player).\n"
 	  "[b]conditions[/b]: all must hold, on the player, before this tick's movement. They read what a state machine "
 	  "reads: grounded · airborne_time > 0.1 · speed · vertical_speed < 0 · a field (dash.charges > 0) · an item "
-	  "kind (grapple.gun) · a stance.\n"
-	  "[b]cooldown[/b]: seconds between two uses." },
-	{ "Uses", "How many times before it has to refill.",
+	  "kind (grapple.gun) · a stance · a key that is down (held.jump, held.dash).\n"
+	  "[b]cooldown[/b]: seconds between two uses; for a While, between its end and its next start." },
+	{ "Uses", "How many times before it has to refill. Not for a While.",
 	  "[b]uses[/b]: 0 is no limit. A double jump is 1.\n"
 	  "[b]refill[/b]: On the ground gives them back when the player stands. After seconds gives them back that long "
 	  "after the last use." },
 	{ "Impulse", "The change of velocity, and its direction.",
-	  "[b]impulse[/b]: metres per second.\n"
+	  "[b]impulse[/b]: metres per second. A While adds that much every second it is on (a thrust).\n"
 	  "[b]impulse_frame[/b]: Look is where the camera looks, pitch included. Move input is where WASD points (the "
 	  "facing when nothing is held): a dash. Facing is where the body faces. Up is a jump. World direction is "
 	  "impulse_direction as given.\n"
 	  "[b]replace[/b]: what of the velocity is cleared first. Vertical speed makes a jump in the air the same jump "
-	  "whatever the fall was; Horizontal velocity makes a dash the same dash whatever the run was." },
-	{ "While it lasts", "For this long after the press, the player moves by these parameters.",
-	  "[b]duration[/b]: seconds.\n"
+	  "whatever the fall was; Horizontal velocity makes a dash the same dash whatever the run was. Not for a While." },
+	{ "While it lasts", "While it is on, the player moves by these parameters.",
+	  "[b]duration[/b]: seconds it stays on after a press or a cue. A While is on while its conditions hold.\n"
 	  "[b]parameters[/b]: movement parameters by name, with the value they have while the motion is on: friction 0 "
 	  "for a dash that slides, gravity 4 for a float. The names: walk_speed, sprint_speed, accelerate, friction, "
-	  "stop_speed, air_control, gravity, jump_speed, turn_rate, max_fall." },
+	  "stop_speed, air_control, gravity, jump_speed, turn_rate, max_fall, air_friction, move_frame (1: WASD "
+	  "moves along the camera, up and down too: flight)." },
 	{ "When it happens", "What else the press does: fields of the player, and an event.",
-	  "[b]changes[/b]: dash.charges -= 1 (operators -=, +=, =). Fields the server mod declares for the player.\n"
+	  "[b]changes[/b]: dash.charges -= 1 (operators -=, +=, =). Fields the server mod declares for the player. In a "
+	  "While, -= and += are per second (jetpack.fuel -= 20, a Float field) and = is set when it starts.\n"
 	  "[b]emits[/b]: a mod event at the player (dash.started). Reactions play on it, a character's state machine can "
-	  "enter a state on it, and server mods hear it a tick later." },
+	  "enter a state on it, and server mods hear it a tick later. A While emits it when it starts." },
 };
 
 const Info* FindInfo( const String& key )
@@ -119,7 +125,9 @@ void CbMotion::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( type, #name, hint, hintText ), "set_" #name, "get_" #name );
 
 	ADD_GROUP( "When", "" );
+	CB_MOTION_PROP( Variant::INT, when, PROPERTY_HINT_ENUM, "On a press,While,On a cue" )
 	CB_MOTION_PROP( Variant::STRING, action, PROPERTY_HINT_PLACEHOLDER_TEXT, "dash, jump, sprint" )
+	CB_MOTION_PROP( Variant::STRING, event, PROPERTY_HINT_PLACEHOLDER_TEXT, "stun.hit" )
 	CB_MOTION_PROP( Variant::PACKED_STRING_ARRAY, conditions, PROPERTY_HINT_NONE, "" )
 	CB_MOTION_PROP( Variant::FLOAT, cooldown, PROPERTY_HINT_RANGE, "0,60,0.01,or_greater,suffix:s" )
 	ADD_GROUP( "Uses", "" );
@@ -139,6 +147,9 @@ void CbMotion::_bind_methods()
 	CB_MOTION_PROP( Variant::STRING, emits, PROPERTY_HINT_PLACEHOLDER_TEXT, "dash.started" )
 #undef CB_MOTION_PROP
 
+	BIND_ENUM_CONSTANT( WHEN_PRESS );
+	BIND_ENUM_CONSTANT( WHEN_WHILE );
+	BIND_ENUM_CONSTANT( WHEN_EVENT );
 	BIND_ENUM_CONSTANT( FRAME_LOOK );
 	BIND_ENUM_CONSTANT( FRAME_MOVE );
 	BIND_ENUM_CONSTANT( FRAME_FACING );
@@ -164,12 +175,28 @@ std::string CbMotion::Bake( String& error ) const
 	{
 		return fail( "the node's name cannot have a tab or a #" );
 	}
-	if ( action.is_empty() || Plain( action ) == false || action.contains( " " ) )
-	{
-		return fail( "name the action whose press this answers (one the server mod declares, or jump, sprint)" );
-	}
+	String event = m_event.strip_edges();
 	std::string text = "motion\t" + Std( name ) + "\n";
-	text += "when\tpress\t" + Std( action ) + "\n";
+	if ( m_when == WHEN_WHILE )
+	{
+		text += "when\twhile\n";
+	}
+	else if ( m_when == WHEN_EVENT )
+	{
+		if ( event.is_empty() || Plain( event ) == false || event.contains( " " ) )
+		{
+			return fail( "name the event it answers (one the server mod emits at the player)" );
+		}
+		text += "when\tevent\t" + Std( event ) + "\n";
+	}
+	else
+	{
+		if ( action.is_empty() || Plain( action ) == false || action.contains( " " ) )
+		{
+			return fail( "name the action whose press this answers (one the server mod declares, or jump, sprint)" );
+		}
+		text += "when\tpress\t" + Std( action ) + "\n";
+	}
 
 	// All of the conditions: one expression.
 	String all;
@@ -194,12 +221,12 @@ std::string CbMotion::Bake( String& error ) const
 	{
 		text += "cooldown\t" + Num( m_cooldown ) + "\n";
 	}
-	if ( m_uses > 0 )
+	if ( m_uses > 0 && m_when != WHEN_WHILE )
 	{
 		text += "uses\t" + std::to_string( m_uses ) + "\t" + ( m_refill == REFILL_ON_GROUND ? std::string( "ground" ) : Num( m_refillSeconds ) ) +
 				"\n";
 	}
-	if ( m_duration > 0.0 )
+	if ( m_duration > 0.0 && m_when != WHEN_WHILE )
 	{
 		text += "duration\t" + Num( m_duration ) + "\n";
 	}
@@ -209,7 +236,7 @@ std::string CbMotion::Bake( String& error ) const
 		{
 			return fail( "impulse_frame or replace is not one of its choices" );
 		}
-		text += "impulse\t" + Num( m_impulse ) + "\t" + kFrames[m_frame] + "\t" + kReplaces[m_replace];
+		text += "impulse\t" + Num( m_impulse ) + "\t" + kFrames[m_frame] + "\t" + kReplaces[m_when == WHEN_WHILE ? 0 : m_replace];
 		if ( m_frame == FRAME_WORLD )
 		{
 			Vector3 d = m_direction.normalized();
@@ -289,9 +316,25 @@ PackedStringArray CbMotion::_get_configuration_warnings() const
 	{
 		warnings.push_back( "It does nothing yet: give it an impulse, parameters with a duration, changes, or an event to emit." );
 	}
-	if ( m_parameters.is_empty() == false && m_duration <= 0.0 )
+	if ( m_parameters.is_empty() == false && m_duration <= 0.0 && m_when != WHEN_WHILE )
 	{
 		warnings.push_back( "Its parameters hold for its duration, which is 0." );
+	}
+	if ( m_when == WHEN_WHILE )
+	{
+		bool conditions = false;
+		for ( int64_t i = 0; i < m_conditions.size(); ++i )
+		{
+			conditions |= m_conditions[i].strip_edges().is_empty() == false;
+		}
+		if ( conditions == false )
+		{
+			warnings.push_back( "A While without conditions is always on, for every player." );
+		}
+		if ( m_uses > 0 || m_duration > 0.0 || m_replace != REPLACE_NOTHING )
+		{
+			warnings.push_back( "uses, duration and replace are not used by a While: it is on while its conditions hold, and its impulse is per second." );
+		}
 	}
 	return warnings;
 }

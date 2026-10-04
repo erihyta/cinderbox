@@ -10,16 +10,20 @@
 // to every client in the schema, and compiled against it. A press is already in the input a
 // client simulates ahead, so a motion is predicted and rolled back like walking is.
 //
-//   when        an action goes down: one a mod declared ("dash"), or the engine's "jump" / "sprint"
+//   when        press: an action goes down, one a mod declared ("dash") or the engine's "jump" /
+//               "sprint". while: for as long as its condition holds (flight, a glide, a jetpack).
+//               event: a mod event recorded at the player this tick (a server mod's Emit: a stun)
 //   if          a condition, in the expression language, over what a state machine reads: speed,
 //               grounded, airborne_time, vertical_speed, board fields, item kinds, stances, events
 //   cooldown    seconds between two uses
 //   uses        how many before a refill: on the ground, or some seconds after the last use
 //   impulse     a change of velocity along the look, the move input, the facing, up or a fixed
-//               direction, added to the velocity or replacing its vertical / horizontal part / all
+//               direction, added to the velocity or replacing its vertical / horizontal part / all.
+//               While: metres per second, every second it is on (a thrust)
 //   duration    how long it stays on: its movement parameters hold that long (a dash without
-//               friction)
-//   change      board fields of the player: dash.charges -= 1
+//               friction). A while motion is on while its condition holds
+//   change      board fields of the player: dash.charges -= 1. While: += and -= are per second
+//               (jetpack.fuel -= 20), and = is set when it starts
 //   emit        a mod event at the player: looks react to it, state machines enter on it, server
 //               mods hear it
 //
@@ -38,12 +42,14 @@
 namespace cb
 {
 
-// What a motion's press is, besides a mod's action bit (0 to kMaxActions - 1).
-inline constexpr int kMotionActionJump = kMaxActions;
-inline constexpr int kMotionActionSprint = kMaxActions + 1;
-
 struct Motion
 {
+	enum class When : uint8_t
+	{
+		Press = 0, // `action` goes down
+		While = 1, // every tick `condition` holds
+		Event = 2, // the mod event `trigger` was recorded at the player this tick
+	};
 	enum class Frame : uint8_t
 	{
 		Look = 0,	// where the camera looks, pitch included
@@ -78,8 +84,10 @@ struct Motion
 		float value = 0.0f;
 	};
 
-	std::string name;  // "dash.moves/Dash": the set and the node
-	int action = -1;   // -1: no mod declared it, so it never happens
+	std::string name; // "dash.moves/Dash": the set and the node
+	When when = When::Press;
+	int action = -1;  // When::Press. -1: no mod declared it, so it never happens
+	int trigger = -1; // When::Event: the schema event. -1: no mod declared it, so it never happens
 	AnimExpr condition;
 	float cooldown = 0.0f;
 	uint32_t uses = 0;			 // 0: no limit
@@ -118,6 +126,8 @@ struct MotionInputs
 {
 	const PlayerInput* input = nullptr;
 	uint8_t pressedButtons = 0; // engine buttons that went down this tick
+	bool canAct = true;			// false: frozen. Nothing happens, but held keys are remembered
+	uint32_t netId = 0;			// the player's: whose events a When::Event motion answers
 	uint32_t tick = 0;
 	uint32_t tickRate = 60;
 	// What conditions read (the same values a state machine reads, as they are before this tick's

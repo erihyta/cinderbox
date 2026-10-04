@@ -1,0 +1,64 @@
+[gd_scene format=3]
+
+; The flight mod's motions. Every simulation runs them from the player's own input, so all of it
+; is predicted: the toggle, the flying, the thrust, and the fuel the gauge shows.
+;
+;   FlyOn, FlyOff   on "fly" (T): flight.on becomes 1 or 0. Two motions, one for each way: both read
+;                   the field as the tick found it, so one press is one switch
+;   Flying          while flight.on: no gravity, WASD along the camera (up and down too), air
+;                   friction so letting go stops, and its own speeds
+;   Thrust          while Space is down in the air, with fuel, not flying: 26 m/s per second upward (gravity is 18),
+;                   and 30 fuel a second
+;   Refuel          while standing with less than a full tank: 40 fuel a second
+;   Glide           while Shift is down, falling, not flying: a slow fall
+;
+; Saving this scene bakes it into res://motions/flight.moves.cfg.
+
+[node name="Moves" type="CbMotionSet"]
+set_name = "flight.moves"
+
+[node name="FlyOn" type="CbMotion" parent="."]
+action = "fly"
+conditions = PackedStringArray("not flight.on")
+changes = PackedStringArray("flight.on = 1")
+emits = "flight.started"
+
+[node name="FlyOff" type="CbMotion" parent="."]
+action = "fly"
+conditions = PackedStringArray("flight.on")
+changes = PackedStringArray("flight.on = 0")
+emits = "flight.stopped"
+
+[node name="Flying" type="CbMotion" parent="."]
+when = 1
+conditions = PackedStringArray("flight.on")
+parameters = {
+"air_control": 1.0,
+"air_friction": 3.0,
+"gravity": 0.0,
+"move_frame": 1.0,
+"sprint_speed": 12.0,
+"walk_speed": 7.0
+}
+
+[node name="Thrust" type="CbMotion" parent="."]
+when = 1
+conditions = PackedStringArray("held.jump", "not grounded", "not flight.on", "flight.fuel > 0")
+impulse = 26.0
+impulse_frame = 3
+changes = PackedStringArray("flight.fuel -= 30")
+emits = "flight.thrust"
+
+[node name="Refuel" type="CbMotion" parent="."]
+when = 1
+conditions = PackedStringArray("grounded", "flight.fuel < 100")
+changes = PackedStringArray("flight.fuel += 40")
+
+[node name="Glide" type="CbMotion" parent="."]
+when = 1
+conditions = PackedStringArray("held.sprint", "not grounded", "vertical_speed < 0", "not flight.on")
+parameters = {
+"air_control": 0.8,
+"gravity": 3.0,
+"max_fall": 2.5
+}

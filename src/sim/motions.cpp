@@ -98,6 +98,27 @@ bool Pressed( const Motion& m, const MotionInputs& in, uint16_t previousActions 
 	return ( in.input->actions & bit ) != 0 && ( previousActions & bit ) == 0;
 }
 
+// Whether the mod event was recorded at this player this tick (a server mod's Emit: commands run
+// before motions).
+bool HeardEvent( int event, const MotionInputs& in )
+{
+	const AnimGraphInputs& values = *in.values;
+	uint32_t kept = std::min( values.eventCount, kModEventHistory );
+	for ( uint32_t i = 0; values.events != nullptr && i < kept; ++i )
+	{
+		const ModEventRecord& e = values.events[( values.eventCount - 1 - i ) % kModEventHistory];
+		if ( e.tick != in.tick )
+		{
+			break; // newest first: the rest are older
+		}
+		if ( int( e.type ) == event && e.netIdA == in.netId )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 void ApplyChange( const Motion::Change& change, Blackboard& board )
 {
 	int32_t& stored = board.values[change.slot];
@@ -171,10 +192,27 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		Motion& m = motions.back();
 		if ( key == "when" )
 		{
+			if ( w.size() >= 2 && w[1] == "while" )
+			{
+				m.when = Motion::When::While;
+				continue;
+			}
+			if ( w.size() >= 3 && w[1] == "event" && w[2].empty() == false )
+			{
+				m.when = Motion::When::Event;
+				m.trigger = schema.FindEvent( w[2] );
+				if ( m.trigger < 0 || m.trigger > 255 )
+				{
+					m.trigger = -1;
+					warnings += m.name + ": no mod declares the event \"" + w[2] + "\": it never happens; ";
+				}
+				continue;
+			}
 			if ( w.size() < 3 || w[1] != "press" || w[2].empty() )
 			{
-				return fail( "when wants \"press\" and an action" );
+				return fail( "when wants \"press\" and an action, \"while\", or \"event\" and an event" );
 			}
+			m.when = Motion::When::Press;
 			if ( w[2] == "jump" )
 			{
 				m.action = kMotionActionJump;
@@ -316,6 +354,22 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		number = 1;
 		return fail( "not a motions file (it starts with \"cinderbox_motions\t1\")" );
 	}
+	for ( Motion& m : motions )
+	{
+		if ( m.when != Motion::When::While )
+		{
+			continue;
+		}
+		// Per second, a whole number never moves: a tick's share of it rounds to nothing.
+		for ( size_t i = m.changes.size(); i-- > 0; )
+		{
+			if ( m.changes[i].op != Motion::ChangeOp::Set && m.changes[i].type != BoardType::Float )
+			{
+				warnings += m.name + ": a while motion's += and -= are per second and need a Float field: the change is skipped; ";
+				m.changes.erase( m.changes.begin() + std::ptrdiff_t( i ) );
+			}
+		}
+	}
 	out.insert( out.end(), motions.begin(), motions.end() );
 	return true;
 }
@@ -351,11 +405,15 @@ std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::str
 void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& state, Character& c, Blackboard& board, bool& boardChanged,
 				 std::vector<ModEventRecord>& events )
 {
-	uint32_t now = in.tick + 1; // 0 in a slot means "never"
-	for ( size_t i = 0; i < motions.list.size() && i < size_t( kMaxMotions ); ++i )
+	const uint32_t now = in.tick + 1; // 0 in a slot means "never"
+	const float dt = 1.0f / float( in.tickRate );
+	for ( size_t i = 0; in.canAct && i < motions.list.size() && i < size_t( kMaxMotions ); ++i )
 	{
 		const Motion& m = motions.list[i];
 		MotionSlot& slot = state.slots[i];
+		const bool isWhile = m.when == Motion::When::While;
+		// A while motion that was on last tick goes on without asking its cooldown again.
+		const bool wasOn = isWhile && slot.lastTick != 0 && slot.untilTick == in.tick;
 
 		if ( m.uses > 0 && slot.used > 0 )
 		{
@@ -366,15 +424,28 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 			}
 		}
 
-		if ( Pressed( m, in, state.prevActions ) == false )
+		switch ( m.when )
+		{
+			case Motion::When::Press:
+				if ( Pressed( m, in, state.prevActions ) == false )
+				{
+					continue;
+				}
+				break;
+			case Motion::When::Event:
+				if ( m.trigger < 0 || HeardEvent( m.trigger, in ) == false )
+				{
+					continue;
+				}
+				break;
+			case Motion::When::While:
+				break;
+		}
+		if ( wasOn == false && slot.lastTick != 0 && now - slot.lastTick < Ticks( m.cooldown, in.tickRate ) )
 		{
 			continue;
 		}
-		if ( slot.lastTick != 0 && now - slot.lastTick < Ticks( m.cooldown, in.tickRate ) )
-		{
-			continue;
-		}
-		if ( m.uses > 0 && slot.used >= m.uses )
+		if ( isWhile == false && m.uses > 0 && slot.used >= m.uses )
 		{
 			continue;
 		}
@@ -384,20 +455,28 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		}
 
 		b3Vec3 push = b3MulSV( m.impulse, Direction( m, c, *in.input ) );
-		switch ( m.replace )
+		if ( isWhile )
 		{
-			case Motion::Replace::None:
-				break;
-			case Motion::Replace::Vertical:
-				c.velocity.y = 0.0f;
-				break;
-			case Motion::Replace::Horizontal:
-				c.velocity.x = 0.0f;
-				c.velocity.z = 0.0f;
-				break;
-			case Motion::Replace::All:
-				c.velocity = { 0.0f, 0.0f, 0.0f };
-				break;
+			// A thrust: metres per second, every second it is on.
+			push = b3MulSV( dt, push );
+		}
+		else
+		{
+			switch ( m.replace )
+			{
+				case Motion::Replace::None:
+					break;
+				case Motion::Replace::Vertical:
+					c.velocity.y = 0.0f;
+					break;
+				case Motion::Replace::Horizontal:
+					c.velocity.x = 0.0f;
+					c.velocity.z = 0.0f;
+					break;
+				case Motion::Replace::All:
+					c.velocity = { 0.0f, 0.0f, 0.0f };
+					break;
+			}
 		}
 		c.velocity = b3Add( c.velocity, push );
 		if ( push.y > 0.0f )
@@ -409,20 +488,46 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 
 		for ( const Motion::Change& change : m.changes )
 		{
-			ApplyChange( change, board );
+			if ( isWhile == false )
+			{
+				ApplyChange( change, board );
+			}
+			else if ( change.op != Motion::ChangeOp::Set )
+			{
+				// Per second.
+				Motion::Change step = change;
+				step.value = change.value * dt;
+				ApplyChange( step, board );
+			}
+			else if ( wasOn == false )
+			{
+				ApplyChange( change, board );
+			}
+			else
+			{
+				continue;
+			}
 			boardChanged = true;
 		}
-		if ( m.event >= 0 )
+		// When it happens; for a while motion, when it starts.
+		if ( m.event >= 0 && wasOn == false )
 		{
 			ModEventRecord record;
 			record.type = uint16_t( m.event );
-			record.vector = push;
+			record.vector = isWhile ? b3Vec3{ 0.0f, 0.0f, 0.0f } : push;
 			events.push_back( record );
 		}
 
 		slot.lastTick = now;
-		slot.used += 1;
-		slot.untilTick = in.tick + Ticks( m.duration, in.tickRate );
+		if ( isWhile )
+		{
+			slot.untilTick = in.tick + 1; // on this tick; next tick says for itself
+		}
+		else
+		{
+			slot.used += 1;
+			slot.untilTick = in.tick + Ticks( m.duration, in.tickRate );
+		}
 	}
 	state.prevActions = in.input->actions;
 }

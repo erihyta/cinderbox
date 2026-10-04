@@ -37,6 +37,10 @@ namespace cb
 
 struct ModEventRecord;
 
+// What "held.jump" and "held.sprint" are, besides a mod's action bit (0 to kMaxActions - 1).
+inline constexpr int kMotionActionJump = kMaxActions;
+inline constexpr int kMotionActionSprint = kMaxActions + 1;
+
 inline constexpr int kMaxGraphStates = 64;	   // per layer
 inline constexpr int kMaxBlendPoints = 32;	   // per blend space
 
@@ -70,6 +74,9 @@ struct AnimExpr
 		EntityField, // index: board slot
 		GlobalField,
 		HeldKind, // index: schema item kind
+		// "held.dash", "held.jump": the action is down this tick (index: its bit, or kMotionActionJump /
+		// kMotionActionSprint). Motions read it; a state machine has no input and reads 0.
+		HeldAction,
 		Zero,	  // an unknown name: reads as 0 (reported when the graph is compiled)
 	};
 	enum Builtin : uint8_t
@@ -211,6 +218,8 @@ struct AnimGraphInputs
 	uint32_t tick = 0;
 	uint32_t netId = 0;
 	// Kinds of the items the player holds (schema indices).
+	// The player's input this tick, for "held.<action>" (motions; null for a state machine).
+	const PlayerInput* input = nullptr;
 	const uint16_t* heldKinds = nullptr;
 	uint32_t heldCount = 0;
 };

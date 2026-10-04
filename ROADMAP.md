@@ -7,28 +7,28 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 
 | # | Milestone | In one line |
 |---|---|---|
-| 1 | [Motions: while](#1-motions-while) | flight, a glide, a jetpack: motions that hold while conditions do |
-| 2 | [Motions: tethers](#2-motions-tethers) | a grappling hook: the throw and the pull, predicted |
-| 3 | [Motions in the editor](#3-motions-in-the-editor) | a preview, checks at publish, the body follows a motion |
-| 4 | [The client, finished](#4-the-client-finished) | what is left of the client's known limits |
-| 5 | [The SDK knows the server](#5-the-sdk-knows-the-server) | the Godot modding project scaffolds the server half and knows its names |
-| 6 | [Mod testing](#6-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
+| 1 | [Motions: tethers](#1-motions-tethers) | a grappling hook: the throw and the pull, predicted |
+| 2 | [Motions in the editor](#2-motions-in-the-editor) | a preview, checks at publish, the body follows a motion |
+| 3 | [The client, finished](#3-the-client-finished) | what is left of the client's known limits |
+| 4 | [The SDK knows the server](#4-the-sdk-knows-the-server) | the Godot modding project scaffolds the server half and knows its names |
+| 5 | [Mod testing](#5-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
 
-Done before these: movement parameters (M92) and motions on a press (M93: a dash, a double jump;
-[docs/motions.md](docs/motions.md)). Steps 1 to 3 finish that idea. Steps 5 and 6 are last on
-purpose: they wrap the client, so they wait until it stops changing.
+Done before these: movement parameters (M92), motions on a press (M93: a dash, a double jump) and
+motions that hold (M94: flight, a jetpack, a glide; [docs/motions.md](docs/motions.md)). Steps 1
+and 2 finish that idea. Steps 4 and 5 are last on purpose: they wrap the client, so they wait
+until it stops changing.
 
 ## Where motions stand
 
-A `CbMotion` says: *on a press, if conditions hold, do this to the mover.* It is baked, sent in
+A `CbMotion` says: *on a press, on a cue, or while conditions hold, do this to the mover.* It is baked, sent in
 the schema and run by every simulation, so a player's own are predicted and rolled back
 ([docs/motions.md](docs/motions.md)).
 
-| | Today (M93) | Still to come |
+| | Today (M94) | Still to come |
 |---|---|---|
-| When | on a press: a mod's action, `jump`, `sprint` | **While** conditions hold; **On a cue** (a mod event at the player) |
-| Conditions | what a state machine reads | `held:<action>`, `motion.<name>` |
-| Does | an impulse; parameters for a duration; changes of fields; an event | per-second impulses and changes; `move_frame`; a tether |
+| When | on a press, while conditions hold, on a mod event at the player | |
+| Conditions | what a state machine reads, and `held.<action>` | `motion.<name>` |
+| Does | an impulse (per second in a While); parameters while it is on; changes of fields; an event | a tether |
 | Timing | `cooldown`, `uses` with a refill, `duration` | |
 | Editor | the nodes, their help, the bake, warnings | a preview panel; names checked at publish |
 
@@ -36,9 +36,6 @@ the schema and run by every simulation, so a player's own are predicted and roll
 
 | Move | Motion | Server mod |
 |---|---|---|
-| Flight | while `flight.on`; parameters `gravity = 0`, `air_control = 1`, `move_frame = look` | toggles `flight.on` |
-| Glide | while `held:jump and not grounded and vertical_speed < 0`; parameters `gravity = 2`, `max_fall = 3` | none |
-| Jetpack | while `held:jump and jetpack.fuel > 0`; impulse 25 per second **up**; changes `jetpack.fuel -= 20 per second` | refills fuel on the ground |
 | Grappling hook | on a press of `fire`, `grapple.gun`; tether range 40, travel 60 m/s, pull 30; ends when `fire` is let go | owns the item |
 
 ### Open questions
@@ -47,9 +44,8 @@ the schema and run by every simulation, so a player's own are predicted and roll
 |---|---|
 | Other players' presses are guessed by repeating their last input, so their dash is seen late and corrected | accept: it is what a jump does today, and the mirror fades the correction |
 | A field both a motion and a server mod write | allowed today (commands apply first, then motions); the bake could name the fields a set writes, and the server warn when a mod `Set`s one every tick |
-| A motion the server starts (a knockback that locks control) | a `StartMotion` command, after step 1: not predicted, but simulated from then on |
 | A grapple onto a limb | decided: no. The anchor is on the capsule; hitboxes are the server's |
-| A second jump that plays the jump's animation | the character's tree enters its jump state on the motion's event; a starter for it comes with step 3 |
+| A second jump that plays the jump's animation | the character's tree enters its jump state on the motion's event; a starter for it comes with step 2 |
 
 ### Routes not taken
 
@@ -61,20 +57,7 @@ the schema and run by every simulation, so a player's own are predicted and roll
 
 ## The steps
 
-### 1. Motions: while
-
-| Piece | What |
-|---|---|
-| `when` | a choice on the node: **On a press** (today's), **While**, **On a cue** |
-| While motions | on for as long as their conditions hold; their `parameters` hold that long |
-| `held:<action>` | an action's held state as a condition |
-| `move_frame = look` | a new movement parameter: WASD along the camera, pitch included (flight, swimming); today it is always the ground plane |
-| Per-second values | `impulse ... per second`, `changes ... per second` |
-| Examples | flight, a glide, a jetpack with fuel |
-
-- **Done when**: flying into a wall, landing and running out of fuel are all without corrections for the local player.
-
-### 2. Motions: tethers
+### 1. Motions: tethers
 
 | Field | Meaning |
 |---|---|
@@ -82,14 +65,14 @@ the schema and run by every simulation, so a player's own are predicted and roll
 | `tether_travel` | the hook's speed: it holds after distance / speed, and the look draws it flying meanwhile |
 | `tether_length` | the rope: beyond it the outward part of the velocity is taken away (a swing); 0: no rope |
 | `tether_pull`, `tether_reel` | acceleration toward the anchor; metres of rope taken in a second |
-| `tether_ends` | conditions that let it go (`!held:fire`), besides the anchor disappearing |
+| `tether_ends` | conditions that let it go (`!held.fire`), besides the anchor disappearing |
 
 - The simulation gets a ray of its own for it: against the world, props and players' capsules.
 - An anchor on a prop is a point on that body: the pull moves both.
 - The viewer is told the tether (`ViewFrame`), and a reaction can place a beam to it (`place`: **Tether**).
 - **Done when**: a `grapple` mod swings and reels with no corrections for the local player at 100 ms, and two players pulling one crate agree.
 
-### 3. Motions in the editor
+### 2. Motions in the editor
 
 | Piece | What |
 |---|---|
@@ -98,7 +81,7 @@ the schema and run by every simulation, so a player's own are predicted and roll
 | The body follows | `motion.<name>` and a motion's event in state machine conditions; the viewer's lead covers them |
 | Animation packs | a pack's layer can be asked for by a motion while it is on (a flight pose) |
 
-### 4. The client, finished
+### 3. The client, finished
 
 From DESIGN.md's known limits. Each is small; together they are "the client is near done".
 
@@ -110,7 +93,7 @@ From DESIGN.md's known limits. Each is small; together they are "the client is n
 | Key rebinding | actions are bound to the keys mods suggest | a page in the settings |
 | A server list | join by address | recent and favourite servers with their mods and players |
 
-### 5. The SDK knows the server
+### 4. The SDK knows the server
 
 Today the Godot modding project knows nothing of the mod's C++ half: names are typed twice and a
 wrong one is silent. This step joins the two.
@@ -123,7 +106,7 @@ wrong one is silent. This step joins the two.
 | An item in the hand | a preview of the item on the placeholder skeleton, grips solved, a pack playing |
 | A prebuilt SDK | CI builds the extension, so a mod's look needs no compiler |
 
-### 6. Mod testing
+### 5. Mod testing
 
 One step from an edit to playing it: the client starts the server.
 
@@ -134,7 +117,7 @@ One step from an edit to playing it: the client starts the server.
 | Looks reload | a published look is taken up without restarting the server or the game |
 | Bots | `--bots N` on the hosted server, so a mod can be tried alone |
 
-- It waits for step 4: it wraps the menu, joining and pack loading, which should be settled first.
+- It waits for step 3: it wraps the menu, joining and pack loading, which should be settled first.
 
 ## Later, not scheduled
 
@@ -152,6 +135,7 @@ Independent of the path; each is small.
 |---|---|
 | A board sized by the schema | `kBoardSlots` is a wall that came back once already; motions declare more fields |
 | More than 16 motions | `kMaxMotions` is the size of a component every player carries; sized by the schema, like the board |
+| Limits on `changes` | a While's per-second change is not clamped: a tank fills to a little over full. A `min` / `max` on the change, or expressions on its right side |
 | Expressions in `changes` | `pistol.ammo -= 1` takes a number; the right side could be an expression. Shared by `CbPrediction` and `CbMotion` |
 | HUD nodes as reactions | `CbFieldBinding` and a While `CbReaction` with a `value_expression` do the same thing in two places |
 | The rest of `simulation.cpp` in modules | props, ragdolls, items and animation; the mover went first (M92) |

@@ -1,0 +1,58 @@
+[gd_scene load_steps=4 format=3]
+
+; The flight mod's HUD: the fuel gauge, and whether flight is on. No scripts. The gauge moves as
+; you thrust, with no delay: the fuel is a field the motions change in the viewer's own simulation.
+
+[sub_resource type="LabelSettings" id="Small"]
+font_size = 20
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.75)
+
+[sub_resource type="StyleBoxFlat" id="BarBack"]
+bg_color = Color(0, 0, 0, 0.45)
+
+[sub_resource type="StyleBoxFlat" id="BarFill"]
+bg_color = Color(0.35, 0.75, 1, 0.9)
+
+[node name="FlightHud" type="CanvasLayer"]
+
+[node name="Fly" type="CbFieldLabel" parent="."]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -168.0
+offset_right = 324.0
+offset_bottom = -140.0
+label_settings = SubResource("Small")
+text_format = "[{key:fly}]  FLY"
+
+[node name="Flying" type="CbFieldLabel" parent="."]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 120.0
+offset_top = -168.0
+offset_right = 324.0
+offset_bottom = -140.0
+label_settings = SubResource("Small")
+text_format = "ON"
+conditions = PackedStringArray("flight.on")
+
+[node name="Fuel" type="ProgressBar" parent="."]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -138.0
+offset_right = 204.0
+offset_bottom = -124.0
+theme_override_styles/background = SubResource("BarBack")
+theme_override_styles/fill = SubResource("BarFill")
+max_value = 100.0
+value = 100.0
+show_percentage = false
+
+[node name="FuelBinding" type="CbFieldBinding" parent="Fuel"]
+field = "flight.fuel"
+property = "value"
