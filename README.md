@@ -87,6 +87,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M79: an item sits in the hand the same way every time: its scene root's own transform is never used, the carrying marker says how it is held, and holsters draw the scene as it is | done |
 | M80: an item's body may be turned any way: turning the carrying marker no longer needs the body turned with it | done |
 | M81: the `rifle` mod: automatic fire while `fire` is held; `CbPrediction.while_held` predicts it at the server's rate; its muzzle flash and tracer live in its scene | done |
+| M82: one look limit for every view: 86 degrees up and down (third person stopped at 23 up) | done |
 
 ## Building
 
@@ -739,8 +740,8 @@ Client controls:
 - Tab shows the scoreboard, the mouse orbits the camera and the wheel zooms.
 - The key left of 1 (`` ` `` / `~`) switches between the camera behind the player and **first person**:
   from the character's eye height above its feet, on its mover, so steps, landings and the bowing
-  body do not move it. First person looks up to 80 degrees; from behind, 23 (the camera would go
-  under the floor).
+  body do not move it. Both views look 86 degrees up and down; from behind, the map pulls the
+  camera in where it would go under the floor, so looking up ends with the camera at your feet.
 - **Your own body in first person** is the same body with the same animations, drawn for that view:
 
   | | |
