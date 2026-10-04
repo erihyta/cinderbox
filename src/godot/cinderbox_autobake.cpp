@@ -19,11 +19,15 @@ void CbAutoBakePlugin::_bind_methods()
 void CbAutoBakePlugin::_enter_tree()
 {
 	connect( "scene_saved", Callable( this, "on_scene_saved" ) );
+	m_motionInspector.instantiate();
+	add_inspector_plugin( m_motionInspector );
 }
 
 void CbAutoBakePlugin::_exit_tree()
 {
 	disconnect( "scene_saved", Callable( this, "on_scene_saved" ) );
+	remove_inspector_plugin( m_motionInspector );
+	m_motionInspector.unref();
 }
 
 void CbAutoBakePlugin::on_scene_saved( const String& path )
@@ -35,6 +39,11 @@ void CbAutoBakePlugin::on_scene_saved( const String& path )
 		if ( character != nullptr && character->get_scene_file_path() == path )
 		{
 			character->bake();
+		}
+		auto* motions = Object::cast_to<CbMotionSet>( Object::cast_to<Node>( roots[i] ) );
+		if ( motions != nullptr && motions->get_scene_file_path() == path )
+		{
+			motions->bake_to_project();
 		}
 	}
 }

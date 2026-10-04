@@ -123,6 +123,9 @@ struct Harness
 									std::map<std::string, float>& properties ) {
 			return LoadItemShapeFolder( std::string( CB_SOURCE_DIR ) + "/server_mods/" + mod + "/client", kind, shape, error, &properties );
 		};
+		options.loadMotions = []( const std::string& mod, const std::string& set, std::string& text, std::string& error ) {
+			return LoadMotionsFolder( std::string( CB_SOURCE_DIR ) + "/server_mods/" + mod + "/client", set, text, error );
+		};
 		if ( configure )
 		{
 			configure( options );
@@ -521,6 +524,7 @@ void TestLossySession()
 	Simulation sim( replay.Config() );
 	sim.SetAnimGraph( replay.Graph() ); // what the server ran: the character's state machine
 	sim.SetAnimPacks( replay.Packs() );
+	sim.SetMotions( replay.MotionSets() );
 	size_t next = 0;
 	size_t verified = 0;
 	for ( const InputFrame& frame : replay.Frames() )
@@ -2636,6 +2640,153 @@ void TestMoveParams()
 	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
 }
 
+// Motions are predicted: behind 50 ms each way, a player's own dash and double jump happen in its
+// own simulation on the tick of the press, exactly as the server then has them, so nothing is
+// corrected. The dash mod's rules (the charges) run on the server; the dash itself is its motion
+// set, baked from server_mods/dash/client/motion_sets.
+void TestDash()
+{
+	std::filesystem::path replayPath = std::filesystem::temp_directory_path() / "cinderbox_dash_test.cbr";
+	const uint32_t dashAt = 300, secondDashAt = 330, jumpAt = 480, doubleJumpAt = 495;
+	{
+		Harness h( 47851, replayPath.string() );
+		const ModSchema& schema = h.server.Schema();
+		uint16_t dash = schema.ActionMask( "dash" );
+		const BoardField* charges = schema.FindField( "dash.charges" );
+		int started = schema.FindEvent( "dash.started" );
+		int doubleJump = schema.FindEvent( "dash.double_jump" );
+		CHECK( dash != 0 && charges != nullptr && started >= 0 && doubleJump >= 0 );
+		CHECK( schema.motionSets.size() == 1 && schema.motionSets[0].name == "dash.moves" && schema.motionSets[0].text.empty() == false );
+		if ( dash == 0 || charges == nullptr || schema.motionSets.empty() || schema.motionSets[0].text.empty() )
+		{
+			return;
+		}
+		net::NetSimConfig link;
+		link.latencyMs = 50;
+		h.AddNetSim( 47852, link );
+		h.AddBot().script = [=]( uint32_t tick ) {
+			PlayerInput in;
+			in.moveForward = 127;
+			// Each key is held for a few ticks: one press.
+			if ( ( tick >= dashAt && tick < dashAt + 4 ) || ( tick >= secondDashAt && tick < secondDashAt + 4 ) )
+			{
+				in.actions = dash;
+			}
+			if ( ( tick >= jumpAt && tick < jumpAt + 3 ) || ( tick >= doubleJumpAt && tick < doubleJumpAt + 3 ) )
+			{
+				in.buttons = BtnJump;
+			}
+			return in;
+		};
+
+		// What the client predicted for each tick the first time it had simulated it, and what the
+		// server then had for that tick.
+		struct Seen
+		{
+			b3Vec3 position;
+			b3Vec3 velocity;
+			int32_t charges;
+			uint32_t events;
+		};
+		std::map<uint32_t, Seen> predicted, truth;
+		Simulation& server = h.server.Sim();
+		auto look = [&]( const Simulation& sim, PlayerSlot slot, std::map<uint32_t, Seen>& into ) {
+			uint32_t netId = sim.PlayerNetId( slot );
+			const Character* c = sim.PlayerCharacter( slot );
+			if ( netId == 0 || c == nullptr || into.count( sim.Tick() ) != 0 )
+			{
+				return;
+			}
+			into[sim.Tick()] = { sim.EntityTransform( netId )->position, c->velocity, sim.BoardValue( netId, charges->slot ),
+								 sim.Globals().modEventCount };
+		};
+		h.RunUntil( 11.0, [&]( double ) {
+			GameClient& client = *h.bots[0].client;
+			if ( client.Session() != nullptr && client.State() == ClientState::Playing )
+			{
+				look( client.Session()->Sim(), client.Slot(), predicted );
+				look( server, client.Slot(), truth );
+			}
+		} );
+		h.Report();
+		GameClient& client = *h.bots[0].client;
+		CHECK( client.GetStats().rttMs >= 90 );
+		CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+
+		// The server had the dash on the tick of the press (the state after tick `dashAt`).
+		CHECK( truth.count( dashAt ) && truth.count( dashAt + 1 ) && predicted.count( dashAt + 1 ) );
+		if ( truth.count( dashAt + 1 ) == 0 || truth.count( dashAt ) == 0 || predicted.count( dashAt + 1 ) == 0 )
+		{
+			return;
+		}
+		float before = b3Length( truth[dashAt].velocity ), after = b3Length( truth[dashAt + 1].velocity );
+		std::printf( "    server: %.2f m/s before the press, %.2f after; charges %d -> %d\n", before, after, truth[dashAt].charges,
+					 truth[dashAt + 1].charges );
+		CHECK( before < 3.1f && after > 10.5f );
+		CHECK( truth[dashAt].charges == 2 && truth[dashAt + 1].charges == 1 );
+		// The second dash took the other charge, and the mod gave both back in time.
+		CHECK( truth.count( secondDashAt + 1 ) && truth[secondDashAt + 1].charges == 0 );
+		CHECK( truth.rbegin()->second.charges == 2 );
+		// The double jump: a second rise in the air.
+		CHECK( truth.count( doubleJumpAt + 1 ) && truth[doubleJumpAt + 1].velocity.y > 6.0f );
+		CHECK( truth.rbegin()->second.events == 3 );
+
+		// The client had every one of those ticks the same way, the first time it simulated them:
+		// its own dash was never corrected. (From a little before the first press to the end.)
+		int compared = 0, wrong = 0;
+		float worst = 0.0f;
+		for ( const auto& [tick, seen] : predicted )
+		{
+			auto it = truth.find( tick );
+			if ( tick < dashAt - 30 || it == truth.end() )
+			{
+				continue;
+			}
+			compared += 1;
+			float off = b3Distance( seen.position, it->second.position );
+			worst = std::max( worst, off );
+			if ( off != 0.0f || seen.charges != it->second.charges || seen.events != it->second.events )
+			{
+				// The charge coming back is the mod's command: the one thing here that is the server's
+				// to say, a round trip later. It does not move the player.
+				wrong += off != 0.0f || seen.events != it->second.events ? 1 : 0;
+			}
+		}
+		std::printf( "    %d predicted ticks compared with the server's: %d differ, worst %.4f m\n", compared, wrong, worst );
+		CHECK( compared > 200 );
+		CHECK( wrong == 0 && worst == 0.0f );
+		// And it had the dash on the tick of the press: its prediction of that tick, made ahead of the
+		// server, already had the speed, the charge taken and the event.
+		CHECK( b3Length( predicted[dashAt + 1].velocity ) > 10.5f && predicted[dashAt + 1].charges == 1 &&
+			   predicted[dashAt + 1].events == 1 );
+	}
+
+	// The recording replays it: the motions travel in its header's schema.
+	net::ReplayReader replay;
+	std::string error;
+	CHECK( replay.Open( replayPath.string(), error ) );
+	CHECK( replay.MotionSets() != nullptr && replay.MotionSets()->list.size() == 2 );
+	Simulation sim( replay.Config(), replay.Map() );
+	sim.SetAnimGraph( replay.Graph() );
+	sim.SetAnimPacks( replay.Packs() );
+	sim.SetMotions( replay.MotionSets() );
+	sim.SetItemShapes( replay.Schema().itemShapes );
+	size_t next = 0, verified = 0;
+	for ( const InputFrame& frame : replay.Frames() )
+	{
+		while ( next < replay.Checksums().size() && replay.Checksums()[next].tick == sim.Tick() )
+		{
+			CHECK( sim.ComputeHash() == replay.Checksums()[next].hash );
+			++verified;
+			++next;
+		}
+		sim.Step( frame );
+	}
+	std::printf( "    replay: %zu ticks, %zu checksums verified, %u events\n", replay.Frames().size(), verified, sim.Globals().modEventCount );
+	CHECK( verified > 5 && sim.Globals().modEventCount == 3 );
+	std::filesystem::remove( replayPath );
+}
+
 } // namespace
 
 int main( int argc, char** argv )
@@ -2665,6 +2816,7 @@ int main( int argc, char** argv )
 		{ "item_shapes", TestItemShapes },
 		{ "sneak", TestSneak },
 		{ "move_params", TestMoveParams },
+		{ "dash", TestDash },
 		{ "headshot", TestHeadshot },
 		{ "pistol_mark", TestPistolMark },
 		{ "rifle", TestRifle },

@@ -82,6 +82,18 @@ struct AnimPackInfo
 	bool operator==( const AnimPackInfo& ) const = default;
 };
 
+// A set of motions a mod provides (sim/motions.h): what its players can do besides walking and
+// jumping (a dash, a double jump). Baked into the mod's workshop item as motions/<name>.cfg; the
+// text travels here so every simulation runs the server's.
+struct MotionSetInfo
+{
+	std::string mod;
+	std::string name;
+	std::string text; // motions/<name>.cfg; empty: the item did not have it, and the set does nothing
+
+	bool operator==( const MotionSetInfo& ) const = default;
+};
+
 // The body of an item lying in the world. The item's frame is its grip (held in a socket's frame:
 // the grip at the origin, pointing along -Z); `center` is where the shape's centre is in it.
 struct ItemShape
@@ -130,6 +142,7 @@ struct ModSchema
 	std::vector<ItemShape> itemShapes;
 	std::vector<std::string> sockets = { "RightHand", "LeftHand" };
 	std::vector<AnimPackInfo> animPacks;
+	std::vector<MotionSetInfo> motionSets;
 
 	bool operator==( const ModSchema& ) const = default;
 

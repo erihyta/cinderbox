@@ -14,6 +14,7 @@ add_library(cinderbox_gd SHARED
 	cinderbox_hud.cpp
 	cinderbox_item_look.cpp
 	cinderbox_map_nodes.cpp
+	cinderbox_motion.cpp
 	cinderbox_skeleton.cpp
 	object_source.cpp
 	register_types.cpp
@@ -22,7 +23,7 @@ add_library(cinderbox_gd SHARED
 # The class reference shown in the editor (hover texts, F1): compiled into the extension.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 target_doc_sources(cinderbox_gd
-	"${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbReaction.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbDirector.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbPrediction.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItemLook.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbPromptLabel.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItemBody.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbGrip.xml")
+	"${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbReaction.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbDirector.xml;${CMAKE_CURRENT_SOURCE_DIR}/cue/doc_classes/CbPrediction.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItemLook.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbPromptLabel.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbItemBody.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbGrip.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbMotion.xml;${CMAKE_CURRENT_SOURCE_DIR}/doc_classes/CbMotionSet.xml")
 
 target_link_libraries(cinderbox_gd PRIVATE cb_present cb_cue godot::cpp ozz_animation_offline)
 cb_target_warnings(cinderbox_gd)

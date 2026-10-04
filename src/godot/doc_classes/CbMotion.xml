@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbMotion" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		Adds to how players move, with no code: on a press, if its conditions hold, it changes the mover. A dash, a double jump.
+	</brief_description>
+	<description>
+		A [CbReaction] changes the look; a [CbMotion] changes the movement. It lives under a [CbMotionSet], which bakes its motions to a file the server reads from the mod's item and sends to every client. Every simulation then runs them from the players' input: the server's, and each client's own prediction. So your own dash starts on the tick of the press and is rolled back like walking is, and nothing waits for the server.
+		The server mod declares what a motion names (its [member action], the fields in [member conditions] and [member changes], the event in [member emits]) and decides who may use it: a field a condition reads, or an item the player has to hold. A name no mod declares makes that part do nothing; the server says so when it starts.
+		In the game the node does nothing: the baked file is what runs.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="action" type="String" setter="set_action" getter="get_action" default="&quot;&quot;">
+			The action whose press this answers: one a server mod declares ([code]dash[/code]), or the engine's own [code]jump[/code] or [code]sprint[/code]. Held, it is one press.
+		</member>
+		<member name="conditions" type="PackedStringArray" setter="set_conditions" getter="get_conditions" default="PackedStringArray()">
+			Expressions that must all hold on the player, as it is before this tick's movement. They read what a character's state machine reads: [code]grounded[/code], [code]airborne_time[/code], [code]speed[/code], [code]vertical_speed[/code], a field ([code]dash.charges &gt; 0[/code]), an item kind the player holds, a stance.
+		</member>
+		<member name="cooldown" type="float" setter="set_cooldown" getter="get_cooldown" default="0.0">
+			Seconds between two uses.
+		</member>
+		<member name="uses" type="int" setter="set_uses" getter="get_uses" default="0">
+			How many times it can be used before it refills. 0: no limit. A double jump is 1.
+		</member>
+		<member name="refill" type="int" setter="set_refill" getter="get_refill" enum="CbMotion.Refill" default="0">
+			When the uses come back: when the player stands on the ground, or [member refill_seconds] after the last use.
+		</member>
+		<member name="refill_seconds" type="float" setter="set_refill_seconds" getter="get_refill_seconds" default="1.0">
+			With [constant REFILL_AFTER_SECONDS]: how long after the last use every use is back. 0: never.
+		</member>
+		<member name="impulse" type="float" setter="set_impulse" getter="get_impulse" default="0.0">
+			The change of velocity, in metres per second, along [member impulse_frame].
+		</member>
+		<member name="impulse_frame" type="int" setter="set_impulse_frame" getter="get_impulse_frame" enum="CbMotion.Frame" default="1">
+			The direction of the impulse.
+		</member>
+		<member name="impulse_direction" type="Vector3" setter="set_impulse_direction" getter="get_impulse_direction" default="Vector3(0, 1, 0)">
+			With [constant FRAME_WORLD]: the direction, in the world. Its length does not matter.
+		</member>
+		<member name="replace" type="int" setter="set_replace" getter="get_replace" enum="CbMotion.Replace" default="0">
+			What of the player's velocity is cleared before the impulse is added.
+		</member>
+		<member name="duration" type="float" setter="set_duration" getter="get_duration" default="0.0">
+			How long the motion stays on after the press, in seconds: its [member parameters] hold that long.
+		</member>
+		<member name="parameters" type="Dictionary" setter="set_parameters" getter="get_parameters" default="{}">
+			Movement parameters by name, with the value they have for this player while the motion is on: [code]friction[/code] = 0 for a dash that slides. They win over the server's, the character's and a mod's own for that long. The names: [code]walk_speed[/code], [code]sprint_speed[/code], [code]accelerate[/code], [code]friction[/code], [code]stop_speed[/code], [code]air_control[/code], [code]gravity[/code], [code]jump_speed[/code], [code]turn_rate[/code], [code]max_fall[/code].
+		</member>
+		<member name="changes" type="PackedStringArray" setter="set_changes" getter="get_changes" default="PackedStringArray()">
+			Fields of the player the press changes, written like a [CbPrediction]'s: [code]dash.charges -= 1[/code] (operators [code]-=[/code], [code]+=[/code], [code]=[/code], with a number). The server mod declares the field.
+		</member>
+		<member name="emits" type="String" setter="set_emits" getter="get_emits" default="&quot;&quot;">
+			A mod event recorded at the player when it happens ([code]dash.started[/code]), with the impulse as its vector. A [CbReaction] on it shows the motion, at once for the viewer's own (no [CbPrediction] is needed: the event is in the viewer's own simulation); a state machine can enter a state on it; server mods hear it a tick later.
+		</member>
+	</members>
+	<constants>
+		<constant name="FRAME_LOOK" value="0" enum="Frame">
+			Where the camera looks, pitch included.
+		</constant>
+		<constant name="FRAME_MOVE" value="1" enum="Frame">
+			Where the movement input points, relative to the camera; where the body faces when there is none. A dash.
+		</constant>
+		<constant name="FRAME_FACING" value="2" enum="Frame">
+			Where the body faces.
+		</constant>
+		<constant name="FRAME_UP" value="3" enum="Frame">
+			Straight up. A jump.
+		</constant>
+		<constant name="FRAME_WORLD" value="4" enum="Frame">
+			[member impulse_direction], as given.
+		</constant>
+		<constant name="REPLACE_NOTHING" value="0" enum="Replace">
+			The impulse is added to the velocity.
+		</constant>
+		<constant name="REPLACE_VERTICAL" value="1" enum="Replace">
+			The vertical speed is cleared first: a jump in the air is the same jump however fast the fall was.
+		</constant>
+		<constant name="REPLACE_HORIZONTAL" value="2" enum="Replace">
+			The horizontal velocity is cleared first: a dash is the same dash however fast the run was.
+		</constant>
+		<constant name="REPLACE_ALL" value="3" enum="Replace">
+			The whole velocity is cleared first.
+		</constant>
+		<constant name="REFILL_ON_GROUND" value="0" enum="Refill">
+			The uses come back when the player stands on the ground.
+		</constant>
+		<constant name="REFILL_AFTER_SECONDS" value="1" enum="Refill">
+			The uses come back [member refill_seconds] after the last use.
+		</constant>
+	</constants>
+</class>

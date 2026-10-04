@@ -1465,6 +1465,283 @@ void TestMoveParams()
 	CHECK( ValidMoveParams( bad ) == false );
 }
 
+// Motions: what mods add to movement, run by the simulation from the input (sim/motions.h).
+void TestMotions()
+{
+	ModSchema schema;
+	schema.fields.push_back( { "dash.charges", BoardType::Int, BoardScope::Entity, 0 } );
+	schema.fields.push_back( { "dash.fuel", BoardType::Float, BoardScope::Entity, 1 } );
+	schema.fields.push_back( { "round.time", BoardType::Float, BoardScope::Global, 0 } );
+	schema.events = { "dash.started", "dash.double_jump" };
+	schema.actions.push_back( { "dash", 0, "Alt" } );
+	schema.actions.push_back( { "blink", 3, "V" } );
+	const std::string text = "cinderbox_motions\t1\n"
+							 "# a comment\n"
+							 "motion\tDash\n"
+							 "when\tpress\tdash\n"
+							 "if\tdash.charges > 0\n"
+							 "cooldown\t0.5\n"
+							 "duration\t0.25\n"
+							 "impulse\t12\tmove\thorizontal\n"
+							 "param\tfriction\t0\n"
+							 "change\tdash.charges\t-=\t1\n"
+							 "change\tdash.fuel\t+=\t0.5\n"
+							 "emit\tdash.started\n"
+							 "motion\tDoubleJump\n"
+							 "when\tpress\tjump\n"
+							 "if\tnot grounded\n"
+							 "uses\t1\tground\n"
+							 "impulse\t6.5\tup\tvertical\n"
+							 "emit\tdash.double_jump\n"
+							 "motion\tBlink\n"
+							 "when\tpress\tblink\n"
+							 "uses\t2\t1\n"
+							 "impulse\t5\tworld\tall\t0\t0\t1\n";
+	schema.motionSets.push_back( { "dash", "dash.moves", text } );
+
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() );
+	if ( motions == nullptr )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	CHECK( motions->list.size() == 3 && motions->list[0].name == "dash.moves/Dash" );
+	CHECK( motions->list[0].action == 0 && motions->list[1].action == kMotionActionJump && motions->list[2].action == 3 );
+	CHECK( motions->list[0].changes.size() == 2 && motions->list[0].event == 0 && motions->list[1].event == 1 );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto setField = [&]( int slot, int32_t value ) {
+		SimCommand c;
+		c.type = CommandType::SetField;
+		c.target = SlotTarget( 0 );
+		c.index = uint16_t( slot );
+		c.value = value;
+		f.commands.push_back( c );
+	};
+	auto speed = [&] {
+		b3Vec3 v = sim.PlayerCharacter( 0 )->velocity;
+		return b3Length( b3Vec3{ v.x, 0.0f, v.z } );
+	};
+	const uint16_t dash = 1, blink = 8;
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	CHECK( sim.FindEntity( p0 ).has<MotionState>() );
+
+	// No charges: the press does nothing.
+	f.inputs[0].actions = dash;
+	step( 1 );
+	CHECK( speed() == 0.0f && sim.Globals().modEventCount == 0 );
+	f.inputs[0].actions = 0;
+	step( 1 );
+
+	// With charges: on the tick of the press the player moves at the impulse, where it faces (it
+	// stands still), a charge is taken, the float field counts, and the event is recorded.
+	setField( 0, 2 );
+	step( 1 );
+	f.inputs[0].actions = dash;
+	uint32_t pressTick = sim.Tick();
+	b3Vec3 from = sim.EntityTransform( p0 )->position;
+	step( 1 );
+	std::printf( "    dash: %.2f m/s on the tick of the press\n", speed() );
+	CHECK( speed() > 11.9f && speed() <= 12.0f );
+	CHECK( sim.BoardValue( p0, 0 ) == 1 && BoardToFloat( sim.BoardValue( p0, 1 ) ) == 0.5f );
+	CHECK( sim.Globals().modEventCount == 1 );
+	const ModEventRecord& ev = sim.Globals().modEvents[0];
+	CHECK( ev.type == 0 && ev.netIdA == p0 && ev.tick == pressTick && b3Length( ev.vector ) > 11.9f );
+	// While it lasts there is no friction (its parameter), so the speed holds; afterwards it is the
+	// server's again and the player stops.
+	CHECK( sim.PlayerMove( 0 )[MoveParam::Friction] == 0.0f );
+	step( 13 );
+	CHECK( speed() > 11.9f );
+	step( 2 );
+	CHECK( sim.PlayerMove( 0 )[MoveParam::Friction] == 6.0f );
+	// Held, it is not pressed again; pressed again inside the cooldown, nothing; after it, the second.
+	step( 5 );
+	CHECK( sim.BoardValue( p0, 0 ) == 1 );
+	f.inputs[0].actions = 0;
+	step( 1 );
+	f.inputs[0].actions = dash;
+	step( 1 );
+	CHECK( sim.BoardValue( p0, 0 ) == 1 );
+	f.inputs[0].actions = 0;
+	step( 30 );
+	float travelled = b3Distance( sim.EntityTransform( p0 )->position, from );
+	std::printf( "    one dash carried the player %.2f m\n", travelled );
+	CHECK( travelled > 3.0f && travelled < 6.0f );
+	// Along the movement input when there is one: to the right of the camera.
+	f.inputs[0].actions = dash;
+	f.inputs[0].moveRight = 127;
+	step( 1 );
+	b3Vec3 v = sim.PlayerCharacter( 0 )->velocity;
+	b3Vec3 right = detmath::YawRight( detmath::YawToRadians( f.inputs[0].cameraYaw ) );
+	CHECK( sim.BoardValue( p0, 0 ) == 0 && b3Dot( v, right ) > 11.9f );
+	f.inputs[0].actions = 0;
+	f.inputs[0].moveRight = 0;
+	step( 90 );
+
+	// A double jump: once in the air, not twice, and again after landing. A press on the ground is
+	// the engine's jump alone.
+	float floor = sim.EntityTransform( p0 )->position.y;
+	auto press = [&]( uint8_t buttons ) {
+		f.inputs[0].buttons = buttons;
+		step( 1 );
+		f.inputs[0].buttons = 0;
+		step( 1 );
+	};
+	press( BtnJump );
+	CHECK( sim.Globals().modEventCount == 2 ); // the two dashes
+	step( 15 );
+	press( BtnJump );
+	CHECK( sim.Globals().modEventCount == 3 && sim.PlayerCharacter( 0 )->velocity.y > 5.5f );
+	step( 10 );
+	press( BtnJump );
+	CHECK( sim.Globals().modEventCount == 3 );
+	float peak = 0.0f;
+	for ( int i = 0; i < 150; ++i )
+	{
+		step( 1 );
+		peak = std::max( peak, sim.EntityTransform( p0 )->position.y - floor );
+	}
+	std::printf( "    a double jump peaked at %.2f m\n", peak );
+	CHECK( peak > 1.6f && sim.PlayerCharacter( 0 )->grounded == 1 );
+	press( BtnJump );
+	step( 15 );
+	press( BtnJump );
+	CHECK( sim.Globals().modEventCount == 4 );
+	step( 150 );
+
+	// Uses that come back by time: two, then none until a second after the last.
+	auto tap = [&]( uint16_t action ) {
+		f.inputs[0].actions = action;
+		step( 1 );
+		bool moved = sim.PlayerCharacter( 0 )->velocity.z > 4.0f; // friction has had a tick
+		f.inputs[0].actions = 0;
+		step( 9 );
+		return moved;
+	};
+	CHECK( tap( blink ) && tap( blink ) );
+	CHECK( tap( blink ) == false );
+	step( 60 );
+	CHECK( tap( blink ) );
+
+	// A frozen player does none, and a key held through the freeze is not a press when it ends.
+	setField( 0, 5 );
+	{
+		SimCommand c;
+		c.type = CommandType::Freeze;
+		c.mode = 1;
+		c.target = SlotTarget( 0 );
+		f.commands.push_back( c );
+	}
+	step( 60 );
+	f.inputs[0].actions = dash;
+	step( 5 );
+	CHECK( sim.BoardValue( p0, 0 ) == 5 );
+	{
+		SimCommand c;
+		c.type = CommandType::Freeze;
+		c.target = SlotTarget( 0 );
+		f.commands.push_back( c );
+	}
+	step( 5 );
+	CHECK( sim.BoardValue( p0, 0 ) == 5 );
+	f.inputs[0].actions = 0;
+	step( 1 );
+
+	// It is state: a joining client that has the same motions stays in step through a dash, and a
+	// rollback takes a dash back.
+	std::vector<uint8_t> image;
+	sim.SavePortable( image );
+	Simulation client( TestConfig(), FlatMap() );
+	client.SetMotions( motions );
+	CHECK( client.LoadPortable( image ) && client.ComputeHash() == sim.ComputeHash() );
+	Snapshot before;
+	sim.Save( before );
+	uint64_t hashBefore = sim.ComputeHash();
+	f.inputs[0].actions = dash;
+	for ( int i = 0; i < 40; ++i )
+	{
+		f.tick = sim.Tick();
+		sim.Step( f );
+		client.Step( f );
+	}
+	CHECK( sim.BoardValue( p0, 0 ) == 4 && client.ComputeHash() == sim.ComputeHash() );
+	sim.Load( before );
+	CHECK( sim.BoardValue( p0, 0 ) == 5 && sim.ComputeHash() == hashBefore );
+
+	// What a file may not say fails with the line; what no mod declares is said and does nothing.
+	auto compile = [&]( const std::string& body, std::string& error, std::string& warned ) {
+		std::vector<Motion> out;
+		error.clear();
+		warned.clear();
+		return CompileMotionSet( "t", "cinderbox_motions\t1\n" + body, schema, out, error, warned ) ? int( out.size() ) : -1;
+	};
+	std::string error, warned;
+	CHECK( compile( "motion\tA\nwhen\tpress\tdash\n", error, warned ) == 1 && warned.empty() );
+	CHECK( compile( "when\tpress\tdash\n", error, warned ) == -1 && error.find( "line 2" ) != std::string::npos );
+	CHECK( compile( "motion\tA\nimpulse\t5\tsideways\tnone\n", error, warned ) == -1 );
+	CHECK( compile( "motion\tA\nimpulse\t5000\tup\tnone\n", error, warned ) == -1 );
+	CHECK( compile( "motion\tA\nimpulse\t5\tworld\tnone\t0\t0\t0\n", error, warned ) == -1 );
+	CHECK( compile( "motion\tA\nparam\tfly_speed\t3\n", error, warned ) == -1 );
+	CHECK( compile( "motion\tA\nparam\tgravity\t-3\n", error, warned ) == -1 );
+	CHECK( compile( "motion\tA\nif\tgrounded and\n", error, warned ) == -1 );
+	CHECK( compile( "motion\tA\nchange\tdash.charges\t*=\t2\n", error, warned ) == -1 );
+	CHECK( compile( "motion\tA\nteleport\t3\n", error, warned ) == -1 );
+	{
+		std::vector<Motion> out;
+		CHECK( CompileMotionSet( "t", "motion\tA\n", schema, out, error, warned ) == false );
+	}
+	std::vector<Motion> inert;
+	error.clear();
+	warned.clear();
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t1\nmotion\tA\nwhen\tpress\tfly\nchange\tround.time\t=\t1\nchange\tfly.fuel\t-=\t1\nemit\tfly.up\n",
+							 schema, inert, error, warned ) );
+	std::printf( "    %s\n", warned.c_str() );
+	CHECK( inert.size() == 1 && inert[0].action == -1 && inert[0].changes.empty() && inert[0].event == -1 );
+	CHECK( warned.find( "\"fly\"" ) != std::string::npos && warned.find( "round.time" ) != std::string::npos &&
+		   warned.find( "fly.fuel" ) != std::string::npos && warned.find( "fly.up" ) != std::string::npos );
+
+	// More motions than there are slots: the rest are left out, and said.
+	ModSchema many = schema;
+	std::string big = "cinderbox_motions\t1\n";
+	for ( int i = 0; i < kMaxMotions + 3; ++i )
+	{
+		big += "motion\tM" + std::to_string( i ) + "\nwhen\tpress\tdash\n";
+	}
+	many.motionSets = { { "dash", "dash.many", big } };
+	warned.clear();
+	auto capped = CompileMotions( many, warned );
+	CHECK( capped != nullptr && capped->list.size() == size_t( kMaxMotions ) && warned.find( "left out" ) != std::string::npos );
+	// A server without motions has none, and its players carry nothing for them.
+	ModSchema none;
+	CHECK( CompileMotions( none, warned ) == nullptr );
+	Simulation plain( TestConfig(), FlatMap() );
+	InputFrame g;
+	g.events.push_back( { PlayerEventType::Join, 0 } );
+	plain.Step( g );
+	CHECK( plain.FindEntity( plain.PlayerNetId( 0 ) ).has<MotionState>() == false );
+
+	// The schema carries the text.
+	std::vector<uint8_t> bytes;
+	EncodeSchema( schema, bytes );
+	ModSchema back;
+	CHECK( DecodeSchema( bytes.data(), bytes.size(), back ) && back == schema );
+}
+
 void TestRagdoll()
 {
 	Simulation sim( TestConfig(), FlatMap() );
@@ -3963,10 +4240,52 @@ void TestAnimPipeline()
 	std::filesystem::remove_all( dir );
 }
 
+// The cross-build check also runs a scenario with motions (sim/motions.h): the reference scenario
+// has none, and what they compute (directions from the look, parameters while they last, fields)
+// has to be the same on every build too. Its hashes follow the reference scenario's.
+void AppendMotionReference( std::vector<uint64_t>& hashes )
+{
+	ModSchema schema;
+	schema.fields.push_back( { "m.count", BoardType::Int, BoardScope::Entity, 0 } );
+	schema.fields.push_back( { "m.fuel", BoardType::Float, BoardScope::Entity, 1 } );
+	schema.events = { "m.dashed" };
+	// The scenario's players press the first two action bits at random.
+	schema.actions.push_back( { "a", 0, "" } );
+	schema.actions.push_back( { "b", 1, "" } );
+	schema.motionSets.push_back( { "m", "m.moves",
+								   "cinderbox_motions\t1\n"
+								   "motion\tDash\nwhen\tpress\ta\nif\tspeed > 0.5 or not grounded\ncooldown\t0.3\nduration\t0.2\n"
+								   "impulse\t9\tlook\tnone\nparam\tfriction\t0\nparam\tgravity\t6\n"
+								   "change\tm.count\t+=\t1\nchange\tm.fuel\t-=\t0.25\nemit\tm.dashed\n"
+								   "motion\tHop\nwhen\tpress\tb\nuses\t2\tground\nduration\t0.5\nimpulse\t5\tmove\tvertical\nparam\tair_control\t1\n"
+								   "motion\tBlink\nwhen\tpress\tjump\nif\tnot grounded and vertical_speed < 2\nuses\t1\t0.75\n"
+								   "impulse\t7\tworld\tall\t0.3\t1\t-0.2\n"
+								   "motion\tBurst\nwhen\tpress\tsprint\ncooldown\t1\nimpulse\t-4\tfacing\thorizontal\n" } );
+	std::string warnings;
+	auto motions = CompileMotions( schema, warnings );
+	if ( motions == nullptr || motions->list.size() != 4 || warnings.empty() == false )
+	{
+		std::printf( "the motion reference did not compile: %s\n", warnings.c_str() );
+		std::abort();
+	}
+	test::ScenarioOptions options;
+	options.ticks = 600;
+	options.seed = 4321;
+	auto frames = test::MakeScenario( options );
+	Simulation sim( TestConfig() );
+	sim.SetMotions( motions );
+	for ( const InputFrame& frame : frames )
+	{
+		sim.Step( frame );
+		hashes.push_back( sim.ComputeHash() );
+	}
+}
+
 int DumpHashes( const char* path )
 {
 	auto frames = test::MakeScenario( {} );
 	auto hashes = RunReference( frames, TestConfig() );
+	AppendMotionReference( hashes );
 	FILE* f = std::fopen( path, "w" );
 	if ( f == nullptr )
 	{
@@ -3986,6 +4305,7 @@ int CompareHashes( const char* path )
 {
 	auto frames = test::MakeScenario( {} );
 	auto hashes = RunReference( frames, TestConfig() );
+	AppendMotionReference( hashes );
 	FILE* f = std::fopen( path, "r" );
 	if ( f == nullptr )
 	{
@@ -4577,6 +4897,7 @@ int main( int argc, char** argv )
 		{ "gameplay_sanity", TestGameplaySanity },
 		{ "commands", TestCommands },
 		{ "move_params", TestMoveParams },
+		{ "motions", TestMotions },
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },

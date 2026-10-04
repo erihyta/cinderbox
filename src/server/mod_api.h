@@ -125,6 +125,18 @@ struct AnimPackHandle
 	}
 };
 
+// A set of motions the mod ships (sim/motions.h: CbMotion nodes baked into its item as
+// motions/<name>.cfg).
+struct MotionsHandle
+{
+	int index = -1;
+
+	bool Valid() const
+	{
+		return index >= 0;
+	}
+};
+
 // The body an item has when it lies in the world, in its grip's frame (held in a socket, the grip is
 // at the socket and the item points along -Z): a box of half extents, or a sphere, whose centre is
 // `center` from the grip, weighing `mass` kg.
@@ -205,6 +217,11 @@ public:
 	// An animation pack in this mod's client item: its layers can replace a player's own of the same
 	// name (Context::SwapLayer). Name it like the mod's other names ("sneak.crouch").
 	AnimPackHandle AnimPack( const std::string& name );
+	// A set of motions in this mod's client item: what its players can do besides walking and
+	// jumping (a dash, a double jump), run by every simulation, so a player's own are predicted.
+	// Name it like the mod's other names ("dash.moves"). The mod declares the actions, fields and
+	// events the motions name; who may use one is a field its condition reads.
+	MotionsHandle Motions( const std::string& name );
 	SocketHandle Socket( const std::string& name );
 
 	const ModSchema& Schema() const

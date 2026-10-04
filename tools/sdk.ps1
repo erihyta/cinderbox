@@ -109,6 +109,7 @@ if ($New) {
 	if (-not (Get-ChildItem (Join-Path $project "animation_packs") -Filter "*.tscn" -ErrorAction SilentlyContinue)) {
 		Starter "animation_pack.tscn" (Join-Path $project "animation_packs\${New}_animations.tscn") $New
 	}
+	Starter "motion_set.tscn" (Join-Path $project "motion_sets\${New}_moves.tscn") $New
 	New-Item -ItemType Directory -Force (Join-Path $project "assets") | Out-Null
 	Extension $project
 	Placeholder $project

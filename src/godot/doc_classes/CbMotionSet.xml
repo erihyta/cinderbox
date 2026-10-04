@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbMotionSet" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		A mod's motions: the [CbMotion] nodes under it, baked to one file the server reads.
+	</brief_description>
+	<description>
+		The root of a scene in the mod's project ([code]motion_sets/[/code]). Its [CbMotion] children, in the order of the scene tree, are baked to [code]res://motions/&lt;set_name&gt;.cfg[/code] when the scene is saved, by the Bake button, and when the mod is published. The server mod names the set with [code]declare.Motions( "dash.moves" )[/code]; the server reads the file from the mod's item and sends it to every client, and every simulation runs it.
+		A server runs at most 16 motions, all its mods' sets together. The scene itself is not shipped: the baked file is.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="bake" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				The baked text: [code]{ text, error, motions }[/code] ([code]text[/code] is empty when a motion cannot be baked, and [code]error[/code] says which and why).
+			</description>
+		</method>
+		<method name="bake_to_project">
+			<return type="void" />
+			<description>
+				What the Bake button and saving the scene do: writes [code]res://motions/&lt;set_name&gt;.cfg[/code], only when its bytes change.
+			</description>
+		</method>
+		<method name="get_bake_button">
+			<return type="Callable" />
+			<description>
+				The inspector's Bake button.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="set_name" type="String" setter="set_set_name" getter="get_set_name" default="&quot;&quot;">
+			The set's name, like the mod's other names: [code]dash.moves[/code]. The server mod asks for it by this name, and the baked file is named after it.
+		</member>
+	</members>
+</class>

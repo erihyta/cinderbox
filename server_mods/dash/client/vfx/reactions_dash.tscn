@@ -1,0 +1,30 @@
+[gd_scene format=3]
+
+; How the dash mod looks and sounds. Both events come from the mod's motions, which every
+; simulation runs, the viewer's own included: your own dash is heard on the press with no
+; CbPrediction, and a rollback that takes a dash back takes its event back.
+
+[node name="DashReactions" type="Node3D"]
+
+[node name="Dashed" type="CbReaction" parent="."]
+event = "dash.started"
+subject = NodePath("$at")
+scene = "res://vfx/land.tscn"
+scene_lifetime = 2.0
+place = 1
+sound = "res://assets/sfx/prop_spawn.wav"
+volume_db = -10.0
+pitch_scale = 1.6
+pitch_jitter = 0.1
+max_distance = 30.0
+
+[node name="DoubleJumped" type="CbReaction" parent="."]
+event = "dash.double_jump"
+subject = NodePath("$at")
+scene = "res://vfx/jump.tscn"
+scene_lifetime = 2.0
+place = 1
+sound = "res://assets/sfx/jump.wav"
+volume_db = -12.0
+pitch_scale = 1.4
+max_distance = 25.0

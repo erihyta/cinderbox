@@ -60,6 +60,7 @@ int Verify( const net::ReplayReader& replay )
 	Simulation sim( replay.Config(), replay.Map() );
 	sim.SetAnimGraph( replay.Graph() );
 	sim.SetAnimPacks( replay.Packs() );
+	sim.SetMotions( replay.MotionSets() );
 	sim.SetItemShapes( replay.Schema().itemShapes );
 	const auto& checksums = replay.Checksums();
 	size_t nextChecksum = 0;

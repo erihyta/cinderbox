@@ -381,6 +381,17 @@ int main( int argc, char** argv )
 		std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
 		return cb::LoadAnimPackItem( zip, item, pack, error, warnings );
 	};
+	// Motions: motions/<set>.cfg, baked from the mod's CbMotion nodes.
+	options.loadMotions = [itemsDir, workshopDir]( const std::string& mod, const std::string& set, std::string& text, std::string& error ) {
+		cb::ModItem item;
+		if ( ReadItem( itemsDir, mod, item ) == false )
+		{
+			error = "no item manifest for mod " + mod;
+			return false;
+		}
+		std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
+		return cb::LoadMotionsItem( zip, item, set, text, error );
+	};
 	// Item bodies too: items/<kind>.cfg, baked from the item's scene.
 	options.loadItemShape = [itemsDir, workshopDir]( const std::string& mod, const std::string& kind, cb::ItemShape& shape,
 													 std::string& error, std::map<std::string, float>& properties ) {

@@ -14,12 +14,13 @@ extends Node
 ## Player mods are searched in (later packs override earlier ones, alphabetically within a folder):
 ##   <game folder>/mods, user://mods, and every --mods=<dir> on the command line.
 
-const MODDABLE_PREFIXES := ["prefabs/", "vfx/", "ui/", "maps/", "assets/", "characters/", "anim/", "items/"]
+const MODDABLE_PREFIXES := ["prefabs/", "vfx/", "ui/", "maps/", "assets/", "characters/", "anim/", "items/", "motions/"]
 ## Baked animation data: a character item's next to its scene under characters/<name>/, and a mod's
 ## animation packs under anim/<pack>/: ozz skeleton and clips (.ozz) and anim.cfg / graph.cfg /
-## hitboxes.cfg; and a mod's item bodies under items/ (<kind>.cfg, read by the server). Read by the
+## hitboxes.cfg; a mod's item bodies under items/ (<kind>.cfg) and its motions under motions/
+## (<set>.cfg), both read by the server. Read by the
 ## engine as data, never loaded as resources.
-const DATA_PREFIXES := ["characters/", "anim/", "items/"]
+const DATA_PREFIXES := ["characters/", "anim/", "items/", "motions/"]
 const CHARACTER_DATA_EXTENSIONS := ["ozz", "cfg"]
 ## Converted resources Godot writes into exported packs.
 const EXPORTED_PREFIX := ".godot/exported/"

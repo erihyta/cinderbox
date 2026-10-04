@@ -366,6 +366,59 @@ bool LoadItemShapeFolder( const std::string& dir, const std::string& kind, ItemS
 	return ParseItemShape( all.str(), out, error, properties );
 }
 
+bool LoadMotionsItem( const std::string& zipPath, const ModItem& item, const std::string& set, std::string& text, std::string& error )
+{
+	std::ifstream in( zipPath, std::ios::binary );
+	if ( in.good() == false )
+	{
+		error = "no workshop item at " + zipPath;
+		return false;
+	}
+	std::ostringstream all;
+	all << in.rdbuf();
+	const std::string bytes = all.str();
+	if ( Sha256Hex( bytes.data(), bytes.size() ) != item.sha256 )
+	{
+		error = zipPath + " is not the item the manifest names";
+		return false;
+	}
+	mz_zip_archive zip = {};
+	if ( mz_zip_reader_init_mem( &zip, bytes.data(), bytes.size(), 0 ) == MZ_FALSE )
+	{
+		error = zipPath + " is not a zip";
+		return false;
+	}
+	std::string path = "motions/" + set + ".cfg";
+	int index = mz_zip_reader_locate_file( &zip, path.c_str(), nullptr, 0 );
+	size_t size = 0;
+	void* data = index >= 0 ? mz_zip_reader_extract_to_heap( &zip, mz_uint( index ), &size, 0 ) : nullptr;
+	if ( data != nullptr )
+	{
+		text.assign( static_cast<const char*>( data ), size );
+		mz_free( data );
+	}
+	else
+	{
+		error = "the item has no " + path;
+	}
+	mz_zip_reader_end( &zip );
+	return data != nullptr;
+}
+
+bool LoadMotionsFolder( const std::string& dir, const std::string& set, std::string& text, std::string& error )
+{
+	std::ifstream in( dir + "/motions/" + set + ".cfg", std::ios::binary );
+	if ( in.good() == false )
+	{
+		error = "no " + dir + "/motions/" + set + ".cfg";
+		return false;
+	}
+	std::ostringstream all;
+	all << in.rdbuf();
+	text = all.str();
+	return true;
+}
+
 std::string DefaultWorkshopDir()
 {
 	// Godot's user:// for the project named "Cinderbox" (godot/project.godot).

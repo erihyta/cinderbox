@@ -63,6 +63,11 @@ bool LoadItemShapeItem( const std::string& zipPath, const ModItem& item, const s
 bool LoadItemShapeFolder( const std::string& dir, const std::string& kind, ItemShape& out, std::string& error,
 						  ItemProperties* properties = nullptr );
 
+// A mod's motion set as text: motions/<set>.cfg of its workshop item (checked against its SHA-256),
+// or of a folder (tests, a mod's client project). False when it is not there.
+bool LoadMotionsItem( const std::string& zipPath, const ModItem& item, const std::string& set, std::string& text, std::string& error );
+bool LoadMotionsFolder( const std::string& dir, const std::string& set, std::string& text, std::string& error );
+
 // Where a player's workshop keeps items (the game's user:// folder), for the default --workshop.
 std::string DefaultWorkshopDir();
 

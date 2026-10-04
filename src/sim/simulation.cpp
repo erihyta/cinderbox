@@ -5,6 +5,7 @@
 #include "box3d_shim.h"
 #include "detmath.h"
 #include "level.h"
+#include "motions.h"
 #include "mover.h"
 #include "ragdoll.h"
 #include "util.h"
@@ -181,6 +182,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<RagdollPose>();
 	RegisterSnapComponent<HeldItem>();
 	RegisterSnapComponent<MoveOverrides>();
+	RegisterSnapComponent<MotionState>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -619,7 +621,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 {
 	// What everyone holds, for state machines that ask ("attack and melee.bat").
 	m_heldScratch.clear();
-	if ( m_animGraph )
+	if ( m_animGraph || m_motions )
 	{
 		for ( const EntityRef& r : m_entities )
 		{
@@ -647,12 +649,87 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			// Held buttons are still tracked, so a jump held through the respawn is not a press.
 			c.prevButtons = in.buttons;
 			e.set<Character>( c );
+			if ( m_motions )
+			{
+				MotionState motion = e.has<MotionState>() ? e.get<MotionState>() : MotionState{};
+				motion.prevActions = in.actions;
+				e.set<MotionState>( motion );
+			}
 			continue;
 		}
 		Transform t = e.get<Transform>();
 		PhysicsBody pb = e.get<PhysicsBody>();
 
 		uint8_t pressed = uint8_t( in.buttons & ~c.prevButtons );
+
+		// What everything that reads the player's items asks for.
+		uint16_t held[16];
+		uint32_t heldCount = 0;
+		for ( const auto& [holder, kind] : m_heldScratch )
+		{
+			if ( holder == netId && heldCount < 16 )
+			{
+				held[heldCount++] = kind;
+			}
+		}
+
+		// The mods' motions (a dash, a double jump), before the mover: on the world as the last tick
+		// and this tick's commands left it, by this tick's input. A frozen player does none.
+		if ( m_motions )
+		{
+			MotionState motion = e.has<MotionState>() ? e.get<MotionState>() : MotionState{};
+			if ( c.frozen )
+			{
+				motion.prevActions = in.actions;
+			}
+			else
+			{
+				const AnimState& before = e.get<AnimState>();
+				Blackboard board = e.has<Blackboard>() ? e.get<Blackboard>() : Blackboard{};
+				AnimGraphInputs values;
+				values.builtins[AnimExpr::Speed] = before.groundSpeed;
+				values.builtins[AnimExpr::ForwardSpeed] = before.legsBackward != 0 ? -before.groundSpeed : before.groundSpeed;
+				values.builtins[AnimExpr::VerticalSpeed] = c.velocity.y;
+				values.builtins[AnimExpr::Grounded] = c.grounded != 0 ? 1.0f : 0.0f;
+				values.builtins[AnimExpr::AirborneTime] = c.grounded != 0 ? 0.0f : float( c.airTicks ) * m_config.TimeStep();
+				values.builtins[AnimExpr::Jumped] = c.lastJumpTick != 0 && c.lastJumpTick + 1 == m_globals.tick ? 1.0f : 0.0f;
+				values.builtins[AnimExpr::Aiming] = before.aiming != 0 ? 1.0f : 0.0f;
+				values.builtins[AnimExpr::Backward] = before.legsBackward != 0 ? 1.0f : 0.0f;
+				values.builtins[AnimExpr::MoveForward] = before.moveForward;
+				values.builtins[AnimExpr::MoveRight] = before.moveRight;
+				values.state = &before;
+				values.board = board.values;
+				values.globalBoard = m_globals.board;
+				values.events = m_globals.modEvents;
+				values.eventCount = m_globals.modEventCount;
+				values.tick = m_globals.tick;
+				values.netId = netId;
+				values.heldKinds = held;
+				values.heldCount = heldCount;
+
+				MotionInputs motionIn;
+				motionIn.input = &in;
+				motionIn.pressedButtons = pressed;
+				motionIn.tick = m_globals.tick;
+				motionIn.tickRate = m_config.tickRate;
+				motionIn.values = &values;
+				bool boardChanged = false;
+				m_motionEvents.clear();
+				RunMotions( *m_motions, motionIn, motion, c, board, boardChanged, m_motionEvents );
+				if ( boardChanged )
+				{
+					e.set<Blackboard>( board );
+				}
+				for ( ModEventRecord& record : m_motionEvents )
+				{
+					record.netIdA = netId;
+					record.tick = m_globals.tick;
+					record.point = t.position;
+					RecordModEvent( record );
+				}
+			}
+			e.set<MotionState>( motion );
+		}
 
 		// Frozen: the mover still runs (gravity, the ground, being pushed), with no intent.
 		PlayerInput still;
@@ -685,15 +762,6 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			graphIn.eventCount = m_globals.modEventCount;
 			graphIn.tick = m_globals.tick;
 			graphIn.netId = netId;
-			uint16_t held[16];
-			uint32_t heldCount = 0;
-			for ( const auto& [holder, kind] : m_heldScratch )
-			{
-				if ( holder == netId && heldCount < 16 )
-				{
-					held[heldCount++] = kind;
-				}
-			}
 			graphIn.heldKinds = held;
 			graphIn.heldCount = heldCount;
 			m_markerScratch.clear();
@@ -1815,6 +1883,14 @@ MoveParams Simulation::MoveOf( flecs::entity e ) const
 			{
 				params.values[i] = set->values[i];
 			}
+		}
+	}
+	// A motion that is on has the last word, for as long as it lasts.
+	if ( m_motions )
+	{
+		if ( const MotionState* motion = e.try_get<MotionState>() )
+		{
+			ApplyMotionParams( *m_motions, *motion, m_globals.tick, params );
 		}
 	}
 	return params;
