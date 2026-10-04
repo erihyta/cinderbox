@@ -2649,7 +2649,7 @@ void TestDash()
 	std::filesystem::path replayPath = std::filesystem::temp_directory_path() / "cinderbox_dash_test.cbr";
 	const uint32_t dashAt = 300, secondDashAt = 330, jumpAt = 480, doubleJumpAt = 495;
 	{
-		Harness h( 47851, replayPath.string() );
+		Harness h( 47851, replayPath.string(), {}, { { "dash.double_jump", "1" } } );
 		const ModSchema& schema = h.server.Schema();
 		uint16_t dash = schema.ActionMask( "dash" );
 		const BoardField* charges = schema.FindField( "dash.charges" );
@@ -2802,7 +2802,8 @@ void TestFlight()
 	// Ticks: flight on, up and forward into the wall, let go, off and down; then the jetpack until
 	// it is empty, and a glide down.
 	const uint32_t flyOn = 300, level = 345, letGo = 700, flyOff = 760, thrustFrom = 960, thrustTo = 1230, glideTo = 1410;
-	Harness h( 47861 );
+	// The jetpack is off unless the server says so.
+	Harness h( 47861, {}, {}, { { "flight.jetpack", "1" } } );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fly = schema.ActionMask( "fly" );
 	const BoardField* on = schema.FindField( "flight.on" );

@@ -5,6 +5,10 @@
 # and every .cpp in the folder is compiled with it. Adding a mod is adding a folder and
 # re-running CMake; the registry below is generated from what it finds.
 #
+# A mod whose folder has a file named "disabled" is compiled in but does not run unless the server
+# is started with it by name (cb_server --mods a,b,<name>): a way to switch a mod off without
+# deleting it. Tests run every compiled mod.
+#
 # A mod with a look has a client/ Godot project next to its code. tools\publish_mod.ps1 packs it into
 # a workshop item and records the item's SHA-256 in <name>/client_item.cfg; the build copies that
 # to bin/items/<name>.item, which cb_server reads to tell clients which item they need.
@@ -31,7 +35,11 @@ foreach(entry ${CB_MOD_ENTRIES})
 				message(WARNING "server mod '${entry}' has client content but no published item: run tools/publish_mod.ps1 -Mod ${entry}")
 			endif()
 		endif()
-		string(APPEND CB_MOD_TABLE "\t\t{ \"${entry}\", &CreateMod_${entry}, ${has_client} },\n")
+		set(on_by_default true)
+		if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${entry}/disabled")
+			set(on_by_default false)
+		endif()
+		string(APPEND CB_MOD_TABLE "\t\t{ \"${entry}\", &CreateMod_${entry}, ${has_client}, ${on_by_default} },\n")
 	endif()
 endforeach()
 

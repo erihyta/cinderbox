@@ -249,7 +249,11 @@ int main( int argc, char** argv )
 	std::vector<std::string> modNames;
 	for ( const cb::mods::ModInfo& info : cb::mods::CompiledMods() )
 	{
-		modNames.push_back( info.name );
+		// A disabled mod (a "disabled" file in its folder) runs only when --mods names it.
+		if ( info.onByDefault )
+		{
+			modNames.push_back( info.name );
+		}
 	}
 	bool listMods = false;
 	std::string itemsDir = ( std::filesystem::absolute( argv[0] ).parent_path() / "items" ).string();
@@ -285,7 +289,7 @@ int main( int argc, char** argv )
 	{
 		for ( const cb::mods::ModInfo& info : cb::mods::CompiledMods() )
 		{
-			std::printf( "%s\n", info.name );
+			std::printf( "%s%s\n", info.name, info.onByDefault ? "" : "  (disabled: runs only when --mods names it)" );
 		}
 		return 0;
 	}

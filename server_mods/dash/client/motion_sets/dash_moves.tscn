@@ -8,7 +8,8 @@
 ;   Dash         on "dash" (V), while dash.charges > 0: 11 m/s along where you walk, the run's own
 ;                speed replaced; 0.18 s without friction; a charge is taken; emits dash.started
 ;   DoubleJump   on "jump", in the air, once until you stand again: a jump's speed upward,
-;                whatever the fall was; emits dash.double_jump
+;                whatever the fall was; emits dash.double_jump. Only where the server allows it
+;                (dash.double_jump_on: cb_server --mod-option dash.double_jump=1; off by default)
 ;
 ; Saving this scene bakes it into res://motions/dash.moves.cfg.
 
@@ -30,7 +31,7 @@ emits = "dash.started"
 
 [node name="DoubleJump" type="CbMotion" parent="."]
 action = "jump"
-conditions = PackedStringArray("not grounded")
+conditions = PackedStringArray("not grounded", "dash.double_jump_on")
 uses = 1
 impulse = 6.5
 impulse_frame = 3

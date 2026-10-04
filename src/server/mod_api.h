@@ -568,6 +568,9 @@ struct ModInfo
 	ModFactory create;
 	// The mod has a client project (server_mods/<name>/client): players need its workshop item.
 	bool clientContent;
+	// Runs when cb_server is started without --mods. False for a mod whose folder has a "disabled"
+	// file: it is compiled in, and runs only when --mods names it.
+	bool onByDefault;
 };
 
 } // namespace cb::mods

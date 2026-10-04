@@ -10,6 +10,8 @@
 ;   Thrust          while Space is down in the air, with fuel, not flying: 26 m/s per second upward (gravity is 18),
 ;                   and 30 fuel a second
 ;   Refuel          while standing with less than a full tank: 40 fuel a second
+;                   Thrust and Refuel only where the server allows the jetpack (flight.jetpack_on:
+;                   cb_server --mod-option flight.jetpack=1; off by default)
 ;   Glide           while Shift is down, falling, not flying: a slow fall
 ;
 ; Saving this scene bakes it into res://motions/flight.moves.cfg.
@@ -43,7 +45,7 @@ parameters = {
 
 [node name="Thrust" type="CbMotion" parent="."]
 when = 1
-conditions = PackedStringArray("held.jump", "not grounded", "not flight.on", "flight.fuel > 0")
+conditions = PackedStringArray("flight.jetpack_on", "held.jump", "not grounded", "not flight.on", "flight.fuel > 0")
 impulse = 26.0
 impulse_frame = 3
 changes = PackedStringArray("flight.fuel -= 30")
@@ -51,7 +53,7 @@ emits = "flight.thrust"
 
 [node name="Refuel" type="CbMotion" parent="."]
 when = 1
-conditions = PackedStringArray("grounded", "flight.fuel < 100")
+conditions = PackedStringArray("flight.jetpack_on", "grounded", "flight.fuel < 100")
 changes = PackedStringArray("flight.fuel += 40")
 
 [node name="Glide" type="CbMotion" parent="."]

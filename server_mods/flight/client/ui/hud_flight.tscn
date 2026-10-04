@@ -1,6 +1,6 @@
 [gd_scene load_steps=4 format=3]
 
-; The flight mod's HUD: the fuel gauge, and whether flight is on. No scripts. The gauge moves as
+; The flight mod's HUD: whether flight is on, and the fuel gauge where the server allows the jetpack. No scripts. The gauge moves as
 ; you thrust, with no delay: the fuel is a field the motions change in the viewer's own simulation.
 
 [sub_resource type="LabelSettings" id="Small"]
@@ -56,3 +56,4 @@ show_percentage = false
 [node name="FuelBinding" type="CbFieldBinding" parent="Fuel"]
 field = "flight.fuel"
 property = "value"
+conditions = PackedStringArray("flight.jetpack_on")
