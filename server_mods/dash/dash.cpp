@@ -10,7 +10,8 @@
 // motion asks "dash.charges > 0" and takes one; the mod gives them back, one at a time.
 //
 // Server options: dash.charges (how many a player can hold, default 2), dash.recharge_seconds
-// (how long one takes to come back, default 2).
+// (how long one takes to come back, default 2), dash.double_jump (1: the second jump in the air is
+// on; default 0, off: its motion asks dash.double_jump_on, which this mod publishes).
 
 #include "mod_api.h"
 
@@ -37,6 +38,7 @@ public:
 		m_dash = declare.Action( "dash", "V" );
 		m_charges = declare.Field( "dash.charges", BoardType::Int );
 		m_max = declare.Field( "dash.max", BoardType::Int, BoardScope::Global );
+		m_doubleJumpOn = declare.Field( "dash.double_jump_on", BoardType::Bool, BoardScope::Global );
 		m_started = declare.Event( "dash.started" );
 		m_doubleJump = declare.Event( "dash.double_jump" );
 		m_moves = declare.Motions( "dash.moves" );
@@ -47,6 +49,7 @@ public:
 		m_capacity = std::clamp( int( ctx.Option( "dash.charges", 2.0 ) ), 0, 99 );
 		double seconds = std::clamp( ctx.Option( "dash.recharge_seconds", 2.0 ), 0.05, 3600.0 );
 		m_rechargeTicks = std::max<uint32_t>( 1, uint32_t( seconds * double( ctx.Config().tickRate ) + 0.5 ) );
+		m_doubleJumpAllowed = ctx.Option( "dash.double_jump", 0.0 ) != 0.0;
 	}
 
 	void Tick( Context& ctx ) override
@@ -55,6 +58,8 @@ public:
 		{
 			// For the HUD: "DASH 1 / 2".
 			ctx.Set( 0, m_max, m_capacity );
+			// The double jump's motion reads this: the rule (is it allowed here) is the server's.
+			ctx.Set( 0, m_doubleJumpOn, m_doubleJumpAllowed ? 1 : 0 );
 			m_published = true;
 		}
 		for ( int i = 0; i < kMaxPlayers; ++i )
@@ -91,11 +96,13 @@ private:
 	ActionHandle m_dash;
 	FieldHandle m_charges;
 	FieldHandle m_max;
+	FieldHandle m_doubleJumpOn;
 	EventHandle m_started;
 	EventHandle m_doubleJump;
 	MotionsHandle m_moves;
 	int m_capacity = 2;
 	bool m_published = false;
+	bool m_doubleJumpAllowed = false;
 	uint32_t m_rechargeTicks = 120;
 	std::array<uint32_t, kMaxPlayers> m_waited{};
 };

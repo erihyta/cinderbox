@@ -1,0 +1,2 @@
+This mod is switched off: it is compiled into cb_server but does not run by default.
+Start it by name (cb_server --mods <the others>,sneak), or delete this file to switch it on again.

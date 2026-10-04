@@ -75,9 +75,29 @@ Moves        CbMotionSet   set_name "dash.moves"                (motion_sets/das
 - **In the editor**: every group has an info row (click the icon), every property a hover text, F1 opens the class reference. A motion that cannot run is a warning on the node and stops the bake.
 - **Names the editor cannot check**: the action, fields and events are the server mod's. One no mod declares makes that part do nothing (the motion never happens, the change is skipped, nothing is emitted), and the server says so when it starts.
 
+## A motion a server can switch off
+
+A motion has no switch of its own: who may use one is a field its conditions read. For a part
+of a mod that a server should be able to turn off, the mod publishes a server option as a field
+and the motion asks for it:
+
+```cpp
+m_doubleJumpOn = declare.Field( "dash.double_jump_on", BoardType::Bool, BoardScope::Global );
+...
+ctx.Set( 0, m_doubleJumpOn, ctx.Option( "dash.double_jump", 0.0 ) != 0.0 ? 1 : 0 );
+```
+
+```
+DoubleJump  CbMotion   action "jump"   conditions not grounded, dash.double_jump_on
+```
+
+The double jump and the jetpack ship this way, off by default
+([Switched off by default](server-mods.md#switched-off-by-default)).
+
 ## Motions that hold: the flight mod
 
-`server_mods/flight` is all three kinds of holding motion. Its C++ declares the names and gives a
+`server_mods/flight` is all three kinds of holding motion. The mod is
+[switched off by default](server-mods.md#switched-off-by-default): start the server with it by name to try it. Its C++ declares the names and gives a
 player its first tank; everything else is the set.
 
 ```
@@ -96,7 +116,7 @@ Moves     CbMotionSet   set_name "flight.moves"             (motion_sets/flight_
 | Key | What happens |
 |---|---|
 | T | flight on and off. On: no gravity, WASD moves along the camera (look up and walk to rise), letting go stops |
-| Space, held in the air | the jetpack: up, for as long as the tank lasts (a little over 3 s); it fills again on the ground |
+| Space, held in the air | the jetpack: up, for as long as the tank lasts (a little over 3 s); it fills again on the ground. Off unless the server runs with `--mod-option flight.jetpack=1` |
 | Shift, held while falling | a glide: the fall slows to 2.5 m/s |
 
 - **`move_frame`** and **`air_friction`** are [movement parameters](server-mods.md#movement-parameters) made for this: the first turns the movement input toward where the camera looks, the second is what stops a body in the air.
