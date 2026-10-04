@@ -1,5 +1,5 @@
 extends SceneTree
-## Builds the SDK's starter animation pack on its placeholder model (run in the SDK project, after
+## Builds the SDK's starter animation pack on its placeholder skeleton (run in the SDK project, after
 ## tools\sdk.ps1 -Setup):
 ##
 ##   godot --headless --path sdk --script <repo>/godot/addons/cinderbox_maps/make_sdk_starters.gd
@@ -19,9 +19,9 @@ extends SceneTree
 ## mod. Nothing is baked here: a pack bakes when its scene is saved in the editor, and when the mod
 ## is published.
 
-const MODEL := "res://placeholder/mannequin.glb"
-# The placeholder's clips, as files (its import saves them): a pack's AnimationPlayer holds clips by
-# file, so a mod's own are added the same way.
+const SKELETON := "res://placeholder/skeleton.tscn"
+# The placeholder's clips, as files: a pack's AnimationPlayer holds clips by file, so a mod's own
+# are added the same way.
 const CLIPS := "res://placeholder/clips/"
 # Along forward speed (m/s): which clip, played backward or not, and the point's name in the editor.
 const MOVE := [
@@ -39,7 +39,7 @@ const ABOUT := "An animation pack: state machines that replace a character's own
 	+ "Replaces lists the layers this pack ships. It is UpperBody: FullBody is here to see your upper body over a " \
 	+ "walking character, and is not baked. Add FullBody to replace the locomotion too.\n\n" \
 	+ "The clips are in the AnimationPlayer node (Animation panel, Manage Animations): the placeholder's, from placeholder/clips. " \
-	+ "Add your own there, from animation_packs/source. Model is only the body they are shown on: leave it.\n\n" \
+	+ "Add your own there, from animation_packs/source. Skeleton3D is what they play on (there is no model: the editor draws the bones): leave it.\n\n" \
 	+ "UpperBody's Hold plays the placeholder's Idle: put your own clip there. For a use (a shot, a swing), add a state " \
 	+ "and a transition whose condition is the server mod's event (MODNAME.used), and one back with Switch Mode At End.\n\n" \
 	+ "Transitions use the game's names: forward_speed, speed, grounded, jumped, airborne_time, state_time, a stance, an event. " \
@@ -53,13 +53,14 @@ func _initialize() -> void:
 	pack.character_name = "MODNAME.animations"
 	pack.editor_description = ABOUT
 	pack.replaces = PackedStringArray(["UpperBody"])
-	var model: Node3D = (load(MODEL) as PackedScene).instantiate()
-	model.name = "Model"
-	pack.add_child(model)
-	model.owner = pack
-	var skeleton := model.get_node("Armature/Skeleton3D") as Skeleton3D
+	# The skeleton the clips play on: no model, the editor draws its bones. Clips name it
+	# %Skeleton3D (as Godot's retargeting import writes them), so it is unique in this scene.
+	var skeleton := (load(SKELETON) as PackedScene).instantiate(PackedScene.GEN_EDIT_STATE_INSTANCE) as Skeleton3D
+	skeleton.name = "Skeleton3D"
+	pack.add_child(skeleton)
+	skeleton.owner = pack
+	skeleton.unique_name_in_owner = true
 	pack.skeleton_path = pack.get_path_to(skeleton)
-	# The pack's own player: the model is only the body the clips are shown on.
 	var library := AnimationLibrary.new()
 	for file in DirAccess.get_files_at(CLIPS):
 		if file.ends_with(".res"):
@@ -68,13 +69,11 @@ func _initialize() -> void:
 	player.name = "AnimationPlayer"
 	pack.add_child(player)
 	player.owner = pack
-	player.root_node = player.get_path_to(model)
+	player.root_node = player.get_path_to(pack)
 	player.add_animation_library("", library)
 	pack.animation_player_path = pack.get_path_to(player)
 
-	# The upper body: the spine and everything above it, as the clips' tracks name those bones.
-	var track := String(player.get_animation("Idle").track_get_path(0))
-	var to_skeleton := track.substr(0, track.find(":"))
+	# The upper body: the spine and everything above it.
 	var blend := AnimationNodeBlend2.new()
 	blend.filter_enabled = true
 	var spine := skeleton.find_bone("Spine")
@@ -83,7 +82,7 @@ func _initialize() -> void:
 		while b >= 0 and b != spine:
 			b = skeleton.get_bone_parent(b)
 		if b == spine:
-			blend.set_filter_path(NodePath(to_skeleton + ":" + skeleton.get_bone_name(bone)), true)
+			blend.set_filter_path(NodePath("%Skeleton3D:" + skeleton.get_bone_name(bone)), true)
 
 	var root := AnimationNodeBlendTree.new()
 	root.add_node("FullBody", _full_body(), Vector2(0, 0))
@@ -98,7 +97,7 @@ func _initialize() -> void:
 	tree.tree_root = root
 	pack.add_child(tree)
 	tree.owner = pack
-	tree.root_node = NodePath("../Model")
+	tree.root_node = tree.get_path_to(pack)
 	tree.anim_player = tree.get_path_to(player)
 	tree.active = false
 	# In the editor the upper body shows in full; in the game it plays while the pack is swapped in.
