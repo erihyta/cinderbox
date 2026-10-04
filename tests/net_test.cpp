@@ -1170,7 +1170,7 @@ void TestItemShapes()
 	CHECK( properties.count( "pickup.hold_seconds" ) == 1 && properties["pickup.hold_seconds"] == 0.5f );
 }
 
-// A held item brings its layers: with the bat out, the player's "Base" layer plays from the melee
+// A held item brings its layers: with the bat out, the player's "FullBody" layer plays from the melee
 // mod's carry pack; crouching (the sneak mod's own swap) wins while it lasts; standing up gives the
 // carry back; throwing the bat away gives the player's own layer back. Clients agree throughout.
 void TestItemLayers()
@@ -1233,7 +1233,7 @@ void TestItemLayers()
 		{
 			return;
 		}
-		uint8_t base = a->graph[0].source; // the mannequin's first layer is "Base"
+		uint8_t base = a->graph[0].source; // the mannequin's first layer is "FullBody"
 		sawCarry |= tick > 130 && tick < 195 && base == uint8_t( carry + 1 );
 		sawCrouch |= tick > 215 && tick < 255 && base == uint8_t( sneak + 1 );
 		carryAgain |= tick > 275 && tick < 315 && base == uint8_t( carry + 1 );

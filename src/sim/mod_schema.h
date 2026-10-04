@@ -70,7 +70,7 @@ struct ModItem
 	bool operator==( const ModItem& ) const = default;
 };
 
-// An animation pack a mod provides: AnimationTree layers a player's own can be swapped for ("Base"
+// An animation pack a mod provides: AnimationTree layers a player's own can be swapped for ("FullBody"
 // for a crouch walk). Baked into the mod's workshop item under anim/<name>/; the graph travels here
 // so every simulation runs the server's.
 struct AnimPackInfo

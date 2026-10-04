@@ -1,17 +1,23 @@
 extends SceneTree
-## Builds the SDK's two starter animation packs on its placeholder model (run in the SDK project,
-## after tools\sdk.ps1 -Setup):
+## Builds the SDK's starter animation pack on its placeholder model (run in the SDK project, after
+## tools\sdk.ps1 -Setup):
 ##
 ##   godot --headless --path sdk --script <repo>/godot/addons/cinderbox_maps/make_sdk_starters.gd
 ##
-##   starters/animation_pack_locomotion.tscn   replaces a character's "Base" layer: the placeholder's
-##                                             own locomotion (Move by forward speed, JumpStart,
-##                                             InAir, Land), to change into a carry, a limp, a crouch
-##   starters/animation_pack_upper_body.tscn   replaces a character's "Upper" layer: one state, Hold
+## starters/animation_pack.tscn holds the default AnimationTree in full, as a character has it:
 ##
-## They use only the placeholder's clips. tools\sdk.ps1 -New <mod> copies them into the mod's
-## project (animation_packs/), named after the mod. Nothing is baked here: a pack bakes when its
-## scene is saved in the editor, and when the mod is published.
+##   FullBody         the whole body: Move (idle, walk, jog, sprint by forward speed), JumpStart,
+##                    InAir, Land
+##   UpperBody        over it, on the spine, arms and head: Hold
+##   UpperBodyBlend   the Blend2 that lays UpperBody over FullBody, with its bone filter
+##
+## and replaces only "UpperBody" (the root's Replaces list): the full body is there to see the
+## upper body over it in the editor, and is not baked. Add "FullBody" to the list to replace the
+## locomotion as well. It uses only the placeholder's clips.
+##
+## tools\sdk.ps1 -New <mod> copies it into the mod's project (animation_packs/), named after the
+## mod. Nothing is baked here: a pack bakes when its scene is saved in the editor, and when the mod
+## is published.
 
 const MODEL := "res://placeholder/mannequin.glb"
 # Along forward speed (m/s): which clip, played backward or not, and the point's name in the editor.
@@ -23,41 +29,55 @@ const MOVE := [
 	[3.0, "Jog_Fwd", false, "Jog"],
 	[5.0, "Sprint", false, "Sprint"],
 ]
+const ABOUT := "An animation pack: state machines that replace a character's own while the server mod says so " \
+	+ "(ItemLayers: while an item is held; or SwapLayer).\n\n" \
+	+ "The AnimationTree is the default one in full: FullBody (the whole body's locomotion), UpperBody over it " \
+	+ "(spine, arms, head), and UpperBodyBlend, which lays one over the other and has the bone filter.\n\n" \
+	+ "Replaces lists the layers this pack ships. It is UpperBody: FullBody is here to see your upper body over a " \
+	+ "walking character, and is not baked. Add FullBody to replace the locomotion too.\n\n" \
+	+ "UpperBody's Hold plays the placeholder's Idle: put your own clip there. For a use (a shot, a swing), add a state " \
+	+ "and a transition whose condition is the server mod's event (MODNAME.used), and one back with Switch Mode At End.\n\n" \
+	+ "Transitions use the game's names: forward_speed, speed, grounded, jumped, airborne_time, state_time, a stance, an event. " \
+	+ "Move's position comes from Graph Inputs on this node.\n\n" \
+	+ "Saving this scene bakes it into res://anim/MODNAME.animations/."
 
 
 func _initialize() -> void:
-	var locomotion := _pack("LocomotionPack", "MODNAME.locomotion", _locomotion(), {"Move/blend_position": "forward_speed"},
-		"An animation pack for the whole body.\n\n"
-		+ "Its state machine replaces a character's \"Base\" layer while the server mod says so "
-		+ "(ItemLayers: while an item is held; or SwapLayer). The tree's root is the state machine itself: that is what makes it \"Base\".\n\n"
-		+ "Move blends the clips by forward speed (Graph Inputs on this node: Move/blend_position = forward_speed). "
-		+ "Transitions use the game's names: grounded, jumped, airborne_time, state_time, speed.\n\n"
-		+ "Saving this scene bakes it into res://anim/MODNAME.locomotion/.")
-	var upper := _pack("UpperBodyPack", "MODNAME.upper_body", _upper_body(), {},
-		"An animation pack for the upper body.\n\n"
-		+ "Its state machine replaces a character's \"Upper\" layer while the server mod says so "
-		+ "(ItemLayers: while an item is held; or SwapLayer). In the tree, the state machine node is named Upper: that name is what it replaces. "
-		+ "It has no bone filter: it moves the bones the character's own Upper layer moves (spine, arms, head).\n\n"
-		+ "Hold plays the placeholder's Idle: put your own clip there. For a use (a shot, a swing), add a state and a transition "
-		+ "whose condition is the server mod's event (MODNAME.used), and one back with Switch Mode At End.\n\n"
-		+ "Saving this scene bakes it into res://anim/MODNAME.upper_body/.")
-	var failed := not _save(locomotion, "res://starters/animation_pack_locomotion.tscn")
-	failed = not _save(upper, "res://starters/animation_pack_upper_body.tscn") or failed
-	quit(1 if failed else 0)
-
-
-func _pack(node_name: String, pack_name: String, root: AnimationRootNode, inputs: Dictionary, about: String) -> CbAnimPack:
 	var pack := CbAnimPack.new()
-	pack.name = node_name
-	pack.character_name = pack_name
-	pack.editor_description = about
+	pack.name = "AnimationPack"
+	pack.character_name = "MODNAME.animations"
+	pack.editor_description = ABOUT
+	pack.replaces = PackedStringArray(["UpperBody"])
 	var model: Node3D = (load(MODEL) as PackedScene).instantiate()
 	model.name = "Model"
 	pack.add_child(model)
 	model.owner = pack
 	var player := model.get_node("AnimationPlayer") as AnimationPlayer
-	pack.skeleton_path = pack.get_path_to(model.get_node("Armature/Skeleton3D"))
+	var skeleton := model.get_node("Armature/Skeleton3D") as Skeleton3D
+	pack.skeleton_path = pack.get_path_to(skeleton)
 	pack.animation_player_path = pack.get_path_to(player)
+
+	# The upper body: the spine and everything above it, as the clips' tracks name those bones.
+	var track := String(player.get_animation("Idle").track_get_path(0))
+	var to_skeleton := track.substr(0, track.find(":"))
+	var blend := AnimationNodeBlend2.new()
+	blend.filter_enabled = true
+	var spine := skeleton.find_bone("Spine")
+	for bone in range(skeleton.get_bone_count()):
+		var b := bone
+		while b >= 0 and b != spine:
+			b = skeleton.get_bone_parent(b)
+		if b == spine:
+			blend.set_filter_path(NodePath(to_skeleton + ":" + skeleton.get_bone_name(bone)), true)
+
+	var root := AnimationNodeBlendTree.new()
+	root.add_node("FullBody", _full_body(), Vector2(0, 0))
+	root.add_node("UpperBody", _upper_body(), Vector2(0, 200))
+	root.add_node("UpperBodyBlend", blend, Vector2(250, 100))
+	root.connect_node("UpperBodyBlend", 0, "FullBody")
+	root.connect_node("UpperBodyBlend", 1, "UpperBody")
+	root.connect_node("output", 0, "UpperBodyBlend")
+
 	var tree := AnimationTree.new()
 	tree.name = "AnimationTree"
 	tree.tree_root = root
@@ -66,20 +86,19 @@ func _pack(node_name: String, pack_name: String, root: AnimationRootNode, inputs
 	tree.root_node = NodePath("../Model")
 	tree.anim_player = tree.get_path_to(player)
 	tree.active = false
+	# In the editor the upper body shows in full; in the game it plays while the pack is swapped in.
+	tree.set("parameters/UpperBodyBlend/blend_amount", 1.0)
 	pack.animation_tree_path = pack.get_path_to(tree)
-	pack.graph_inputs = inputs
-	return pack
+	pack.graph_inputs = {"FullBody/Move/blend_position": "forward_speed"}
 
-
-func _save(pack: CbAnimPack, path: String) -> bool:
 	var packed := PackedScene.new()
-	var ok := packed.pack(pack) == OK and ResourceSaver.save(packed, path) == OK
-	print("%s: %s" % [path, "saved" if ok else "NOT saved"])
+	var ok := packed.pack(pack) == OK and ResourceSaver.save(packed, "res://starters/animation_pack.tscn") == OK
+	print("res://starters/animation_pack.tscn: %s" % ("saved" if ok else "NOT saved"))
 	pack.free()
-	return ok
+	quit(0 if ok else 1)
 
 
-func _locomotion() -> AnimationRootNode:
+func _full_body() -> AnimationNodeStateMachine:
 	var machine := AnimationNodeStateMachine.new()
 	var move := AnimationNodeBlendSpace1D.new()
 	move.min_space = -4.0
@@ -102,15 +121,11 @@ func _locomotion() -> AnimationRootNode:
 	return machine
 
 
-# A blend tree with the one state machine on its output: the layer is named as that node is.
-func _upper_body() -> AnimationRootNode:
+func _upper_body() -> AnimationNodeStateMachine:
 	var machine := AnimationNodeStateMachine.new()
 	machine.add_node("Hold", _clip("Idle"), Vector2(300, 100))
 	_go(machine, "Start", "Hold")
-	var root := AnimationNodeBlendTree.new()
-	root.add_node("Upper", machine, Vector2(200, 100))
-	root.connect_node("output", 0, "Upper")
-	return root
+	return machine
 
 
 func _clip(animation: String, backward := false) -> AnimationNodeAnimation:

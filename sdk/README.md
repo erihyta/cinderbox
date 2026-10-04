@@ -42,8 +42,7 @@ machines. No game and no server are needed to author. The rules are the mod's C+
 | `prefabs/<mod>.tscn` | model the item: its body (`CbItemBody`), where the hands hold it (`CbGrip`), a `Muzzle` for its effects |
 | `vfx/reactions_<mod>.tscn` | say what the item looks like (`CbItemLook`), predict a press (`CbPrediction`), react to events (`CbReaction`) |
 | `ui/hud_<mod>.tscn` | show fields while the item is out (`CbFieldLabel`) |
-| `animation_packs/<mod>_upper_body.tscn` | an animation pack for the upper body |
-| `animation_packs/<mod>_locomotion.tscn` | an animation pack for the whole body: the placeholder's locomotion, to change |
+| `animation_packs/<mod>_animations.tscn` | an animation pack: the default AnimationTree in full, replacing the upper body |
 
 Files that already exist are kept. Delete the starters a mod does not need.
 
@@ -54,20 +53,34 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 
 | Node | What to do with it |
 |---|---|
-| `CbAnimPack` (root) | `character_name` is the pack's name: the server mod asks for it by that name |
+| `CbAnimPack` (root) | `character_name` is the pack's name: the server mod asks for it by that name. `replaces` lists the layers it ships |
 | `Model` | the skeleton the clips were made on. Characters with other skeletons get the clips fitted by bone name |
 | `AnimationPlayer` | the clips |
-| `AnimationTree` | the state machine: edit it as any Godot state machine |
+| `AnimationTree` | the state machines: edit them as any Godot state machine |
 
-**The starters' state machines**
+**The default tree, as the starter has it**
 
-| Pack | State | Plays | Leaves when |
+| In the tree | What it is |
+|---|---|
+| `FullBody` | a state machine for the whole body: the locomotion |
+| `UpperBody` | a state machine for the spine, arms and head, played over `FullBody` |
+| `UpperBodyBlend` | the Blend2 that lays `UpperBody` over `FullBody`; its filter is which bones the upper body moves |
+
+| Layer | State | Plays | Leaves when |
 |---|---|---|---|
-| locomotion | `Move` | idle, walk, jog, sprint, blended by forward speed | `jumped`; or in the air for 0.12 s |
+| `FullBody` | `Move` | idle, walk, jog, sprint, blended by forward speed | `jumped`; or in the air for 0.12 s |
 | | `JumpStart` | the push off | landed; or after 0.3 s |
 | | `InAir` | the fall loop | `grounded` |
 | | `Land` | the landing | after 0.35 s, or moving faster than 1.5 m/s; or `jumped` |
-| upper body | `Hold` | the placeholder's idle: put your clip here | never (add a state for a use) |
+| `UpperBody` | `Hold` | the placeholder's idle: put your clip here | never (add a state for a use) |
+
+**Which layers a mod replaces** is the root's `replaces` list:
+
+| `replaces` | The mod overrides | The rest of the tree |
+|---|---|---|
+| `UpperBody` (the starter) | only the upper body | is there to see your upper body over a moving character; not baked |
+| `FullBody` | only the locomotion | not baked |
+| both, or empty | both | |
 
 **Rules that are not Godot's**
 
@@ -75,9 +88,9 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 |---|---|
 | Transitions: Advance Mode **Auto**, with a condition or expression | the simulation runs the machine; nothing calls `travel()` |
 | Conditions are the game's names: `forward_speed`, `speed`, `grounded`, `jumped`, `airborne_time`, `state_time`, a stance (`rifle`), a server mod's event (`rifle.fired`) | they are computed on the server and on every client |
-| A blend space's position comes from **Graph Inputs** on the root (`Move/blend_position = forward_speed`) | the same |
-| A tree whose root **is** a state machine replaces the character's `Base` layer (the whole body) | the layer is named by where it sits |
-| A blend tree with one state machine named `Upper` on its output replaces the `Upper` layer; with no bone filter it moves what the character's own `Upper` moves | the same |
+| A blend space's position comes from **Graph Inputs** on the root (`FullBody/Move/blend_position = forward_speed`) | the same |
+| The layer names are fixed: `FullBody`, `UpperBody` | a pack's layer replaces the character's layer of the same name |
+| `UpperBodyBlend`'s amount is yours in the editor (1 to see the upper body); in the game the layer plays in full while the pack is swapped in | the server decides when |
 
 **Your own clips**
 
@@ -88,7 +101,7 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 3. Use the clips in the tree, save. `server_mods/rifle/client/animation_packs/rifle_hold.tscn` is one
    made this way (it is local: the rifle's look is not in the repository).
 
-**The server's half** is two lines: `declare.AnimPack( "<mod>.upper_body" )`, and either
+**The server's half** is two lines: `declare.AnimPack( "<mod>.animations" )`, and either
 `declare.ItemLayers( kind, pack )` (plays while the item is held) or `ctx.SwapLayer`.
 
 ## Try things without a game

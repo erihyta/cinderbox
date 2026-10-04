@@ -230,6 +230,13 @@ PackedStringArray CbSocket::_get_configuration_warnings() const
 
 // --- CbAnimPack -------------------------------------------------------------------------------------
 
+void CbAnimPack::_bind_methods()
+{
+	ClassDB::bind_method( D_METHOD( "set_replaces", "layers" ), &CbAnimPack::set_replaces );
+	ClassDB::bind_method( D_METHOD( "get_replaces" ), &CbAnimPack::get_replaces );
+	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "replaces" ), "set_replaces", "get_replaces" );
+}
+
 PackedStringArray CbAnimPack::_get_configuration_warnings() const
 {
 	PackedStringArray warnings;
@@ -343,7 +350,7 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 
 	if ( Ref<AnimationNodeStateMachine> machine = root; machine.is_valid() )
 	{
-		layers.push_back( { "Base", machine, "", {}, "" } );
+		layers.push_back( { "FullBody", machine, "", {}, "" } );
 	}
 	else if ( Ref<AnimationNodeBlendTree> blendTree = root; blendTree.is_valid() )
 	{
@@ -389,7 +396,7 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 				return "Blend2 " + name + ": its blend input must be a state machine";
 			}
 			Layer layer{ overName, over, overName + "/", {}, input( name + "/blend_amount" ) };
-			if ( layer.weight.is_empty() )
+			if ( layer.weight.is_empty() && IsPack() == false )
 			{
 				warnings += "Blend2 " + name + " has no graph_inputs entry for " + name + "/blend_amount: the layer always plays; ";
 			}
@@ -422,6 +429,38 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 	if ( layers.size() > size_t( kMaxAnimLayers ) )
 	{
 		return "at most " + String::num_int64( kMaxAnimLayers ) + " state machine layers";
+	}
+	// A pack may show a whole tree and replace only some of its layers: the others are there to
+	// see the pack's own over them in the editor, and are not baked.
+	PackedStringArray only = ReplacedLayers();
+	if ( only.is_empty() == false )
+	{
+		for ( int64_t i = 0; i < only.size(); ++i )
+		{
+			bool found = false;
+			for ( const Layer& layer : layers )
+			{
+				found |= layer.name == only[i].strip_edges();
+			}
+			if ( found == false )
+			{
+				return "replaces names the layer '" + only[i] + "', which the AnimationTree does not have";
+			}
+		}
+		std::vector<Layer> kept;
+		for ( const Layer& layer : layers )
+		{
+			bool keep = false;
+			for ( int64_t i = 0; i < only.size(); ++i )
+			{
+				keep |= layer.name == only[i].strip_edges();
+			}
+			if ( keep )
+			{
+				kept.push_back( layer );
+			}
+		}
+		layers = std::move( kept );
 	}
 
 	// Expressions are checked here; the names in them are resolved against the server's mods later.

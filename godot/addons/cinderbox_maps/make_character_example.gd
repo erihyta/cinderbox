@@ -289,12 +289,12 @@ func _add_tree(player: AnimationPlayer) -> void:
 			blend.set_filter_path(NodePath("Skeleton3D:" + _skeleton.get_bone_name(bone)), true)
 
 	var root := AnimationNodeBlendTree.new()
-	root.add_node("Base", base, Vector2(0, 0))
-	root.add_node("Upper", upper, Vector2(0, 200))
-	root.add_node("UpperBlend", blend, Vector2(250, 100))
-	root.connect_node("UpperBlend", 0, "Base")
-	root.connect_node("UpperBlend", 1, "Upper")
-	root.connect_node("output", 0, "UpperBlend")
+	root.add_node("FullBody", base, Vector2(0, 0))
+	root.add_node("UpperBody", upper, Vector2(0, 200))
+	root.add_node("UpperBodyBlend", blend, Vector2(250, 100))
+	root.connect_node("UpperBodyBlend", 0, "FullBody")
+	root.connect_node("UpperBodyBlend", 1, "UpperBody")
+	root.connect_node("output", 0, "UpperBodyBlend")
 
 	var tree := AnimationTree.new()
 	tree.name = "AnimationTree"
@@ -309,8 +309,8 @@ func _add_tree(player: AnimationPlayer) -> void:
 	_root.animation_tree_path = _root.get_path_to(tree)
 	# What drives the tree's numbers, as the simulation computes them.
 	_root.graph_inputs = {
-		"Base/Locomotion/blend_position": "forward_speed",
-		"UpperBlend/blend_amount": "pistol or melee or melee_swing",
+		"FullBody/Locomotion/blend_position": "forward_speed",
+		"UpperBodyBlend/blend_amount": "pistol or melee or melee_swing",
 	}
 
 

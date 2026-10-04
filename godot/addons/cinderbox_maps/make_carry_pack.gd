@@ -3,13 +3,13 @@ extends SceneTree
 ##
 ##   godot --headless --path godot --script res://addons/cinderbox_maps/make_carry_pack.gd -- --out=<abs path>/server_mods/melee/client/anim/melee.carry
 ##
-## The bat brings this pack: while a player holds one, the pack's "Base" layer plays instead of the
+## The bat brings this pack: while a player holds one, the pack's "FullBody" layer plays instead of the
 ## player's own (mod_api.h, Declarations::ItemLayers): standing ready with it, a measured walk, the
 ## usual jog when faster.
 ##
 ## A pack is authored like a character's state machine: a model on a humanoid-profile skeleton (the
 ## mannequin here, CC0), its AnimationPlayer, and an AnimationTree. The tree's root is a state machine,
-## so its one layer is named "Base", the layer it replaces. Characters on other skeletons get
+## so its one layer is named "FullBody", the layer it replaces. Characters on other skeletons get
 ## the clips fitted by the profile's bone names. It uses only the Standard (CC0) animations.
 
 const SOURCE := "res://characters/mannequin/source/UAL1_Standard.glb"

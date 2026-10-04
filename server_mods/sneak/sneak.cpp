@@ -1,4 +1,4 @@
-// Sneaking: while a player holds the crouch key, their character's "Base" layer (its locomotion) is
+// Sneaking: while a player holds the crouch key, their character's "FullBody" layer (its locomotion) is
 // this mod's animation pack instead: a crouch that walks. It is part of the pose, so a crouching
 // player's head is lower for the server's hit tests too.
 //
@@ -55,11 +55,11 @@ public:
 			uint32_t target = SlotTarget( slot );
 			if ( sneaking )
 			{
-				ctx.SwapLayer( target, m_pack, "Base" );
+				ctx.SwapLayer( target, m_pack, "FullBody" );
 			}
 			else
 			{
-				ctx.RestoreLayer( target, "Base" );
+				ctx.RestoreLayer( target, "FullBody" );
 			}
 			ctx.Set( target, m_sneaking, sneaking ? 1 : 0 );
 		}

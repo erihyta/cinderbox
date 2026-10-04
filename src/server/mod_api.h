@@ -437,7 +437,7 @@ public:
 	void HoldItem( uint32_t item, SocketHandle socket );
 	// Everything the player in `slot` carries, in use and stowed, in NetId order.
 	std::vector<CarriedItem> CarriedItems( PlayerSlot slot ) const;
-	// Plays `pack`'s layer named `layer` ("Base") instead of the player's own, from its start; the
+	// Plays `pack`'s layer named `layer` ("FullBody") instead of the player's own, from its start; the
 	// layer's name is the character's (its AnimationTree's). Does nothing when the character has no
 	// such layer. The pose follows it everywhere, the server's hit tests too.
 	void SwapLayer( uint32_t target, AnimPackHandle pack, const std::string& layer );

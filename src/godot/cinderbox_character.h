@@ -206,6 +206,11 @@ protected:
 	{
 		return false;
 	}
+	// The layers of the tree that are baked (empty: all of them). A pack's choice.
+	virtual godot::PackedStringArray ReplacedLayers() const
+	{
+		return godot::PackedStringArray();
+	}
 	static void _bind_methods();
 
 private:
@@ -229,7 +234,7 @@ private:
 	// machines layered with Blend2 nodes (the filter is the layer's mask).
 	godot::NodePath m_tree;
 	// What drives the tree's numeric parameters, by their path under "parameters/":
-	//   "Base/Locomotion/blend_position" -> "speed",  "Upper/blend_amount" -> "pistol or melee"
+	//   "FullBody/Locomotion/blend_position" -> "speed",  "UpperBodyBlend/blend_amount" -> "pistol or melee"
 	// Expressions over simulation values (see sim/anim_graph.h).
 	godot::Dictionary m_graphInputs;
 	godot::String m_aimChain = "RightUpperArm:1";
@@ -238,25 +243,45 @@ private:
 };
 
 // Authoring a mod's animation pack: layers a server mod can swap a player's own for (a crouch walk
-// for "Base"). The same as a character (a model with a humanoid-profile Skeleton3D, an
+// for "FullBody", a way to hold an item for "UpperBody"). The same as a character (a model with a humanoid-profile Skeleton3D, an
 // AnimationPlayer, an AnimationTree whose state machines are named like the characters' layers),
 // without hitboxes; Bake writes res://anim/<character_name>/ (graph.cfg, the skeleton the clips were
 // made on, one .ozz per animation) into the mod's client project. The game fits the clips to each
 // character by the profile's bone names. A pack is bones only: its animations' other tracks are
 // not played.
+//
+// `replaces` names the layers it ships. A pack's scene can hold a whole tree (the full body's
+// locomotion under its own upper body, to see them together in the editor) and replace only
+// "UpperBody": the layers it does not name are not baked. Empty: every layer of the tree.
 class CbAnimPack : public CbCharacter
 {
 	GDCLASS( CbAnimPack, CbCharacter )
 
 public:
 	godot::PackedStringArray _get_configuration_warnings() const override;
+	void set_replaces( const godot::PackedStringArray& layers )
+	{
+		m_replaces = layers;
+		update_configuration_warnings();
+	}
+	godot::PackedStringArray get_replaces() const
+	{
+		return m_replaces;
+	}
 
 protected:
-	static void _bind_methods() {}
+	static void _bind_methods();
 	bool IsPack() const override
 	{
 		return true;
 	}
+	godot::PackedStringArray ReplacedLayers() const override
+	{
+		return m_replaces;
+	}
+
+private:
+	godot::PackedStringArray m_replaces;
 };
 
 } // namespace cb::gd
