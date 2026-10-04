@@ -1,0 +1,215 @@
+# Items
+
+Held items, sockets, the inventory, grips, and items lying in the world. Part of the [manual](../README.md#the-manual).
+
+## Held items and sockets
+
+A weapon, a torch, a shield: a **held item** is a simulation entity of its own (NetId, board,
+events), held by a player in a **socket**. One small command changes its state; everything it
+looks like is authored in Godot.
+
+| Piece | Where | What |
+|---|---|---|
+| socket | the character scene: a `CbSocket` under a `BoneAttachment3D` | where items go, in the item's frame (grip at the origin, pointing along -Z); `RightHand` and `LeftHand` exist on every character (made at the hands if the scene has none) |
+| item kind | the mod: `declare.ItemKind( "melee.bat" )` | spawned with `ctx.SpawnItem( SlotTarget( slot ), kind, socket )`, addressed with `ItemTarget( slot, socket )` for `Set`, `Emit`, `Destroy` |
+| look | a `CbItemLook` node (kind -> scene) in the mod's `vfx/reactions_<name>.tscn` | drawn as the socket's child `Item` |
+| item state and events | `CbReaction` nodes in the item scene | flames on its holder's `melee.swing`, glow while `melee.hot`, sparks on its holder's `melee.hit` (see [Reactions](looks.md#reactions)) |
+
+One attack, resolved by what is held, with no client code:
+
+```
+server:    Emit( attack, SlotTarget( slot ), value )          one small command
+character: Idle -> Heavy      [attack == 2]                    priority 0
+           Idle -> BatSwing   [attack and melee.bat]           priority 1
+           Idle -> SwordSlash [attack and melee.sword]         priority 1
+           Idle -> Punch      [attack]                         priority 2
+item:      its own CbReaction on "attack" (subject: its holder), if it has one
+```
+
+The body's choice runs in the simulation, so the server's hit tests follow it; each item decides
+what an attack looks like on it.
+
+The bat: the melee mod spawns a `melee.bat` when the bat is taken out. Its look is its own, three
+reactions in `prefabs/bat.tscn`:
+
+| Reaction | On | Does |
+|---|---|---|
+| `FlamesOnSwing` | its holder's `melee.swing` (predicted for your own swing) | plays the bat's `slash` animation (flames along the barrel, on and off) |
+| `GlowWhileHot` | while `melee.hot` (set by a hit) | the barrel glows |
+| `SparksOnHit` | its holder's `melee.hit` | a burst of sparks |
+
+Nothing in the character knows about the bat: any character swings any item, and an item with no
+reaction on the swing is simply quiet. The pistol works the same way.
+
+A mod taking its item away destroys the NetId `ctx.HeldItem( slot, socket )` gives, not
+`ItemTarget`: another mod may put its item in that socket in the same tick (a weapon swap), and
+`ItemTarget` would find that one. What is in the hand decides: the melee mod swings any `melee.bat`
+in the right hand and the pistol fires any `pistol.gun`, wherever it came from. Looks follow the
+same rule: the pistol's HUD and its predicted shot ask `pistol.gun` (true while the player has one
+in use), never which slot is out, so a picked-up pistol shows its ammo and a holstered one does not.
+
+## The inventory
+
+An item a player carries is **in use** (in a hand) or **stowed** (carried, in no hand). Stowing is
+the engine's; who carries what in which slot is the `inventory` mod's.
+
+| Engine verb (`Context`) | What it does |
+|---|---|
+| `GiveItem( holder, kind, holster )` | a new item, stowed |
+| `StowItem( item, holster )` | puts a held item away; `holster` is the socket it is drawn in meanwhile (none: out of sight) |
+| `HoldItem( item, socket )` | takes a carried item in use; does nothing if that socket has one in use (stow that first, same tick) |
+| `PickUpStowed( holder, item, holster )` | from the world straight to stowed |
+| `CarriedItems( slot )` | everything the player carries, in use and stowed |
+
+A stowed item is in no hand: `HeldItem`, item layers, state machine conditions and item-kind
+conditions in looks do not see it. It keeps its entity, its board and its look, and drops like any other.
+
+The `inventory` mod's rules:
+
+| Situation | What happens |
+|---|---|
+| A life starts | Every item kind with `inventory.start` is given, stowed |
+| A slot key (1 to 4) | That slot's item comes into the right hand; what was in the hand is stowed. Nothing is made, destroyed or dropped |
+| An item is picked up (E) | It goes to its kind's slot and comes into the hand. If that slot had an item, the old one drops (one per slot). Other slots are untouched |
+| G | Throws what is in the hand; its slot is empty until something is picked up |
+| Death | What the life started with is taken back; anything else carried drops where the player stood. The next life starts with the slot that was out |
+
+The mod's look (`server_mods/inventory/client`, a workshop item like the others) is a row of slots
+along the bottom of the screen, all data: `inventory.item_N` holds the NetId of slot N's item, a
+label shows `{look:inventory.item_N}` (what that item is called), and the slot that is out
+(`inventory.slot == N`) is highlighted.
+
+Other mods describe their items with properties and never touch the slots:
+
+```cpp
+m_bat = declare.ItemKind( "melee.bat" );
+declare.ItemProperty( m_bat, "inventory.slot", 3.0f );                       // lives in slot 3 (2..4); without it: the first free slot
+declare.ItemProperty( m_bat, "inventory.start", 1.0f );                      // every life starts with one
+declare.ItemProperty( m_bat, "inventory.holster", declare.Socket( "Back" ) ); // optional: where it hangs while stowed
+```
+
+**Holsters are optional, twice over.** The mod chooses whether its item has one, and the character
+chooses whether it has that socket: a `CbSocket` node named like it (`Back`, `Hip`) under a
+`BoneAttachment3D`, moved in the editor like the hand sockets. Without either, a stowed item is
+simply out of sight. The mannequin has both: the bat hangs across the back, the pistol on the right hip.
+
+## Both hands on an item
+
+Where the hands hold an item is said by markers in its scene, one `CbGrip` per hand:
+
+| `hand` | Means | Without it |
+|---|---|---|
+| **The carrying hand** | the item is carried here: this point is in the hand's socket (whichever hand the item is in: a mod holds it in `RightHand` or `LeftHand`), the marker's -Z along the fingers, +Y up | the item is carried at its scene's origin |
+| **The other hand** | the character's other arm is bent so that its hand is here, wherever the carrying hand and the animation take the item | the item is one-handed |
+
+Move a marker, not the model: a mesh imported with its origin anywhere is held where its carrying
+marker is. The pistol and the bat have both (`Carry`, `OtherHand`): the bat's other hand has a place on
+the handle, the pistol's is as its animation has it.
+
+| Step | What |
+|---|---|
+| `align_rotation` (the other hand) | on: the hand's palm is on the marker, turned as the marker is, as a hand carrying an item placed there would be. Off: its wrist goes there and it keeps the turn its animation gives it |
+| `as_animated` (the other hand) | the hand stays where the item's animations have it relative to the carrying hand, place and turn; the marker's own place is not used. For animations made with both hands on the item (the pistol's): they are kept exactly as they are, and kept together when the carrying arm is aimed up or down, where an item with no marker for the other hand lets the two drift a few centimetres apart |
+| Bake | with the item's body, in `items/<kind>.cfg`: the body's centre and the other hand's `grip` are written in the carrying hand's frame, so the server and the pose never see the scene's own origin; the server puts the grip in the schema, so every client has it. The viewer draws the scene moved so that the carrying marker is in the socket (and, lying in the world, where the body is) |
+| Pose | last of all: the item is where the carrying hand ended up (after the aim), and the other arm is bent at the elbow and turned at the shoulder so its wrist is on the grip. The elbow stays on the side the animation had it; out of reach, the arm goes as far as it can |
+| When | while the other hand is empty. Two items, one in each hand, are each carried one-handed |
+
+- It is part of the pose: other players see it, and the server's hit tests pose the same arms.
+- Fingers are the animation's: the solve places the wrist and turns the hand, it does not close it.
+- One marker per hand. They need the item to have a `CbItemBody` (that is what bakes them); it may be turned any way, but not scaled.
+- `check_grips.gd` checks what scenes built in code bake to.
+- **To turn an item in the hand, turn its carrying marker**, and nothing else: the body stays where
+  the scene has it (the bake writes how it is turned in the carried frame, a `turn` line, and the
+  simulation lays the body down that way). The scene root's own transform is not used by the game
+  (the editor warns if it is not zero): the root is what the game places.
+- **What an item shows is the item's**: a reaction inside its scene, under a node at the place
+  (the rifle's `Muzzle`), with subject `^^` (whoever holds it). A scene it adds goes under that
+  node (`place` Parent: the flash), a beam starts there (`place_node = ..`: the tracer). Move or
+  turn the item, its marker or that node, and the effect goes with it; nothing reads the hand.
+- **A holster is not a hand**: in any other socket (`Back`, `Hip`) the scene is drawn as it is,
+  from its origin, so turning the carrying marker does not turn the item on the back. The bat is
+  carried across the fingers (its marker is turned a quarter) and hangs along the back as before.
+- **Where the palms are is the character's**: its `CbSocket` nodes named `RightHand` and `LeftHand`
+  (under the hand bones' `BoneAttachment3D`). They are baked into the character's `anim.cfg`
+  (`socket.RightHand = ...`), because the pose needs them: the item's frame is the carrying hand's
+  socket, and an aligned grip puts the other hand's socket on it. A character without those nodes
+  gets a built-in palm.
+
+| You changed | To see it |
+|---|---|
+| a character's hand sockets (or anything else in its scene) | save the scene: it bakes on save. For a character in the game's own project that is all; restart the server and the game. A character that is a workshop item: `tools\publish_mod.ps1 -Character <name>` |
+| an item's scene (its `CbGrip`, its body) | `tools\publish_mod.ps1 -Mod <mod>` (it bakes and installs the item), then restart the server |
+| which character you are looking at | the server says, and it says it when it starts (`character: ual_mannequin, shipped with the game`) and the game's debug text does too (`animation: res://characters/...`). On a machine that has `ual_mannequin` built that is the default, not `mannequin`: edit that one's scene, or start `cb_server --character mannequin` |
+| (in a checkout) | the server reads the game's own characters from `godot/characters/`, where saving bakes them; a build elsewhere reads the copies next to it (`bin/characters/`, made when it is built) |
+
+## Items in the world
+
+An item can also **lie in the world**: the same entity (NetId, board, look) with a physics body,
+so it falls, tumbles, gets shot across the floor, and does so identically on every screen.
+
+| Mod API | Does |
+|---|---|
+| a `CbItemBody` in the item's scene | its body in the world: a box or a sphere with a mass, placed from the grip (the bat: a 0.82 m box whose centre is 0.31 m in front of it). Authored with Godot's shape gizmo, baked to `items/<kind>.cfg` |
+| `declare.ItemKind( "x", BoxItem( half, center, mass ) )` | the same from code, for a mod without a look (`SphereItem` too); a baked body replaces it |
+| `ctx.SpawnWorldItem( kind, grip, rotation, velocity )` | one on the floor |
+| `ctx.DropItem( item, grip, rotation, velocity )` | out of the hand; thrown if it has a velocity |
+| `ctx.PickUpItem( SlotTarget( slot ), item, socket )` | into a free socket (drop what is there first, in the same tick) |
+| `ctx.ItemsNear( point, radius )`, `ctx.Items()`, `ctx.ItemKindOf( id )`, `ctx.ItemHolder( id )` | what lies around, nearest first; every item; what and whose |
+| `ctx.SpawnItem` into a taken socket | drops what was there (it may be one someone picked up) |
+
+The body is **authored in Godot and baked**, like a character's hit zones: put a `CbItemBody` in
+the item's scene, give it a `BoxShape3D` or `SphereShape3D` and a `mass`, and move it to where the
+shape's centre is. The same node carries what else the server should know about the item:
+
+| On the `CbItemBody` | Meaning |
+|---|---|
+| `shape`, its position | the body when it lies in the world |
+| `mass` | kg |
+| `properties` | named numbers any server mod may read, e.g. `pickup.hold_seconds` = 0.5. They replace what the item's mod declared in code for the same name |
+| **Bake item body** (button) | writes `res://items/<kind>.cfg` for every kind whose `CbItemLook` draws this scene. Save the scene first |
+
+Publishing the mod bakes every item too (`tools\publish_mod.ps1`, or by hand below) and ships the
+files in the item; the server reads them from there (`item melee.bat: body from mod melee's item
+(box, 1.10 kg)`, `item melee.bat: pickup.hold_seconds = 0.5`). The baked files are committed with
+the mod, so servers and tests built from source have them. A change reaches servers when the mod is
+published again.
+
+```sh
+godot --headless --path server_mods/melee/client --script <repo>/godot/addons/cinderbox_maps/bake_items.gd
+```
+
+Who may pick up what, and when, is a mod's. The **pickup** mod is the example:
+
+- Near an item (1.5 m along the ground, not behind you), its NetId goes on your board as
+  `pickup.target`. **E** takes it, **G** throws what you hold. With the `inventory` mod running, a
+  taken item goes to its slot (see [The inventory](#the-inventory)); without it there is only the
+  right hand: what was there drops, and dying drops it.
+- **Hold to pick up**: an item may take a moment: `pickup.hold_seconds` in its `CbItemBody`'s
+  `properties` (the bat: 0.5; the pistol is a tap), or `declare.ItemProperty( kind,
+  "pickup.hold_seconds", 0.5f )` in its mod. `pickup.hold` says how long the item in reach needs,
+  and while E is held on it `pickup.since` is the tick the hold began (0: none). Letting go or
+  losing the item starts over. The board changes when a hold starts and ends, not every tick.
+- Its look is a proximity prompt, all data: a world reaction while `$local`'s `pickup.target` is set
+  puts a `CbPromptLabel` on the item it names, `$local@pickup.target`, and moves it when that
+  changes: `"[{key:pickup}]  Pick up {look:pickup.target}"` for a tap, `"Hold [...]"` with a bar
+  that fills (`since_field = "pickup.since"`, `duration_field = "pickup.hold"`: the label counts from
+  the game's clock) for an item that needs holding.
+
+```
+PickupReactions            (vfx/reactions_pickup.tscn)
+├── Prompt      while  $local: pickup.target, pickup.hold == 0   prompt.tscn        "[E]  Pick up Pistol"
+└── PromptHold  while  $local: pickup.target, pickup.hold > 0    prompt_hold.tscn   "Hold [E]  Pick up Bat" + bar
+                both under $local@pickup.target
+```
+
+**Item properties** are how mods agree on what an item is like without knowing each other: a named
+number on an item kind (`declare.ItemProperty( kind, name, value )`) that any mod reads with
+`ctx.ItemProperty( kind, name, fallback )`. The melee mod says how long its bat takes; the pickup
+mod is the one that cares.
+
+The same pieces make any prompt: a mod puts an entity's NetId in a field, its look shows a
+`CbPromptLabel` on `$local@thatfield`.
+
+The **expire** mod keeps the floor clean: an item someone held and then left lying is removed after
+`expire.seconds`; picking it up stops the clock. Items nobody ever held (a map's own, the seeded
+ones) stay.

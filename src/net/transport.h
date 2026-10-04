@@ -1,7 +1,7 @@
 #pragma once
 
-// Thin ENet wrapper. ENet (and windows.h) stay inside transport.cpp so they never collide with
-// raylib in the client.
+// Thin ENet wrapper. ENet (and windows.h) stay inside transport.cpp so they never reach the
+// code that includes this.
 
 #include <cstdint>
 #include <memory>

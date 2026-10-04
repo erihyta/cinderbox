@@ -30,7 +30,7 @@ struct BoneStyle
 	bool body;
 };
 
-// Mixamo naming; anything unknown gets a size from its length (same as the raylib client).
+// Mixamo naming; anything unknown gets a size from its length.
 BoneStyle StyleFor( const std::string& n, float length )
 {
 	auto has = [&]( const char* part ) { return n.find( part ) != std::string::npos; };

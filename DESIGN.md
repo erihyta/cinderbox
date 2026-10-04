@@ -1,8 +1,8 @@
 # Cinderbox — Design
 
-How Cinderbox works today, by subsystem. [README.md](README.md) is the manual (how to build, play
-and make things); [ROADMAP.md](ROADMAP.md) is what comes next. The history is the list of
-milestones at the end and the git log.
+How Cinderbox works today, by subsystem. [README.md](README.md) and [docs/](docs/) are the manual (how to build,
+play and make things); [ROADMAP.md](ROADMAP.md) is what comes next;
+[docs/HISTORY.md](docs/HISTORY.md) is every milestone so far.
 
 ## The shape of it
 
@@ -152,7 +152,7 @@ Authoritative server, client rollback (`src/net`, `src/client`).
 - Frames encode a mask of players whose input changed, then only the changed fields; commands carry a field mask.
 - ENet's throttle is off (it dropped unreliable packets after large reliable transfers, which stalled clients).
 - **Replays** (`cb_server --record`): every authoritative frame plus checksums; `cb_replay verify` re-simulates headlessly.
-- Protocol 19, replay version 5.
+- Protocol 24, replay version 7 (`src/net/protocol.h`, `replay.h`).
 
 ## The viewer protocol
 
@@ -343,6 +343,73 @@ loads mods; `workshop.gd` is where items are.
 - **Cross-load**: the six portable snapshots must be byte-identical, and each OS loads each of them with each of its builds and runs on to the reference's final hash.
 - Not covered: Linux ARM64, the Godot extensions, a Godot client in a session against a server built by another compiler.
 
+## Source layout
+
+```
+cmake/            float flags (Determinism.cmake), pinned dependencies (flecs, Box3D, ENet, ozz)
+src/expr/         the one expression language (cb_expr): conditions and values as text, a parser and an evaluator, no dependencies
+src/sim/          deterministic simulation shared by server and client, as two libraries: cb_sim_data
+                  (what the data means: no world is stepped) and cb_sim (the simulation itself)
+  events.h          the rings of recent impacts and mod events (part of the state and of every frame)
+  bytes.h           minimal binary reader and writer
+  world_lifetime.*  the lock around creating flecs and Box3D worlds
+  types.h           inputs, commands, input frames, config
+  mod_schema.*      names of the mods' board fields, events and actions (sent on join)
+  ragdoll.h         the ragdoll's bodies and joints
+  map.*             baked map format (.cbmap): fixed-point collision, templates and spawn data
+  reflect.*         the authorable component registry the editor and the baker both read
+  components.h      snapshotted ECS components (POD, no padding)
+  simulation.*      the engine: level, character mover, props, commands, ragdolls, snapshots, hashing
+  rollback.*        client prediction + rollback session
+  physics_arena.*   Box3D allocator arena (makes the physics state copyable)
+  box3d_shim.c      access to Box3D internals (world struct, portable serializer)
+  detmath.h         deterministic trig and the yaw convention
+  fingerprint.*     build fingerprint checked when a client connects
+  anim_controller.* what a state machine reads about how a player moves (speed, legs, aim, the air)
+  anim_graph.*      a character's state machine: its text, the compiler and the runner
+src/anim/         ozz: the placeholder rig and baked characters (anim_set.*), the pose from a state machine (pose.*), joint names (profile.*)
+src/net/          wire protocol, ENet wrapper, network simulator (netsim.*), replay files (replay.*)
+src/server/       authoritative GameServer (library), the mod API (mod_api.*) and cb_server
+server_mods/      gameplay mods compiled into cb_server: inventory, props, pistol, melee, pickup, deathmatch, ...
+godot/characters/ characters shipped with the game (mannequin: source glb, bone map, scene, baked files)
+characters/       character items: <name>/client is the item's Godot project, <name>/client_item.cfg its hash
+  <mod>/client/     a mod's look as a Godot project, published as a workshop item
+  <mod>/client_item.cfg  the published item's SHA-256, which servers announce
+src/tools/        cb_netsim, cb_replay, cb_bot
+src/client/       GameClient core (no rendering, also "lite" mode), the view sources, the bot brain
+  live_source.*     a view source that plays on a server (GameClient on its own thread)
+  replay_source.*   a view source that plays a recording (replay_player.* on its own thread)
+src/present/      engine-independent presentation, what the Godot extensions draw from
+  source_thread.*   what sources with a thread share: the thread, the float environment, the newest frame
+  view.h            the viewer protocol: ViewFrame (what a viewer is told), ViewSource (who tells it)
+  view_codec.*      a ViewFrame as bytes: whole, or a delta against a frame both sides have
+  view_file.*       view files: frames recorded as bytes, and the source that plays them
+  frame.h           PresentationFrame: a copy of what the simulation shows at one tick
+  capture.*         CaptureFrame: a simulation's state as a frame (its own library, cb_capture)
+  mirror.*          presentation flecs world: interpolation, error smoothing, visual and mod events
+  fields.*          board fields by name: conditions, values and "{field}" text
+  pose_tools.*      ragdoll poses, pose blending
+  scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
+src/godot/        the viewer GDExtension (cinderbox): CinderboxClient (draws a view source's frames as prefabs,
+                  signals, items; the adapter that drives the World director), CinderboxSkeleton, map and entity authoring nodes,
+                  CbItemLook, HUD labels (cinderbox_hud.*). No simulation, no networking
+  object_source.*   a source that is a Godot object handing over packets (the peer, or a script)
+  peer/             the peer GDExtension (cinderbox_peer): CinderboxPeer, the sources that simulate
+  packet_handoff.*  what both hand a viewer: the newest frame as a packet
+  cue/            the reaction addon, godot-cpp only: CbDirector, CbReaction, cue paths and conditions
+godot/            Godot client project: boot (player mods, pack validator), game (input, camera, HUD, VFX,
+                  joining with workshop items), workshop.gd (where items are), prefabs, vfx, ui
+  maps/             map scenes and their baked .cbmap files
+  assets/sfx/       placeholder sounds (tools/make_sfx.py)
+  addons/cinderbox_maps/  editor and dev tooling: the Bake Map button, the headless bakers,
+                    the character generators, the headless checks
+mods_src/         client mod projects (example_neon)
+tests/            determinism, rollback, gameplay, animation and loopback network tests
+scripts/          cross-compiler determinism check, stress test
+sdk/              the Godot project a mod's look is made from (sdk/README.md)
+tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, export_client.ps1, bake_map.ps1, make_sfx.py (placeholder sounds)
+```
+
 ## Known limits
 
 | Area | Limit |
@@ -403,94 +470,3 @@ Netcode numbers from when they were taken (M4, M5); frame sizes are in [The view
   - A full bot sharing a thread with lite bots made their inputs late; each full bot now runs on its own thread.
   - Debug builds cannot keep real time with a server and four simulating clients on one thread, so the late-input thresholds are only checked in optimized builds.
 - **Rare reconnect**: an occasional client reconnect (about one per several minutes of 64 bots at 2% loss) was seen with the 1–3 s ENet timeout. The timeout is now 2–6 s; no reconnects occurred in the M5 runs.
-
-## Milestones
-1. **M1** (done): build system, deterministic sim core (flecs + Box3D + mover + props), snapshot/restore, rollback session, determinism tests (Clang, GCC and MSVC verified identical).
-2. **M2** (done): ENet server and raylib client, rollback netcode, join/leave/reconnect, loopback integration tests. Verified with an MSVC server and GCC and Clang clients in one session.
-3. **M3** (done): ozz integration, procedural box skeleton, locomotion blend, glTF pipeline (script and docs, tested with generated Blender-style glTF files), animation viewer.
-4. **M4** (done): replay recording, verification and playback, network simulator, bots (full and lite), stress-test script, lossy integration test, 64-player measurements.
-5. **M5** (done): unreliable acknowledged frame batches, per-field input encoding, automatic prediction window, realistic and chaotic bots, re-measured.
-6. **M6** (done): engine-independent presentation layer (`src/present`), Godot GDExtension client on its own simulation thread, prefab/VFX/HUD scenes, mod packs with a no-code validator and an example mod, Windows export. Verified: same fingerprint as native builds (editor and exported release), no desyncs with bots.
-7. **M7** (done): maps authored in the Godot editor (CbStatic / CbProp / CbSpawn), a fixed-point `.cbmap` bake, the map sent to clients on join, map visuals drawn from the authored scene, `cb_server --map`, and maps in replays.
-8. **M8** (done): the authorable component registry, `CbTemplate` / `CbComponent` / `CbEntity` authoring with an inspector generated from the registry, templates and instances in the map format, entities spawned from templates at runtime, and per-template visuals on the client.
-9. **M9** (done): effect bindings as data (`CbEffect` / `CbEffectTable`), additive binding files so mods add effects without replacing the game's, matching by template, kind and local player, effects that follow their entity, and a mod that ships its own bindings.
-10. **M10** (done): sounds, camera shake, screen flash and per-binding cooldowns as further fields of the same effect bindings, placeholder sound effects and a generator for them, and an example mod that ships its own sound.
-11. **M11** (done): impacts from Box3D contact events and footsteps from stride distance, both part of the hashed simulation state and both rollback-safe, exposed to presentation as counters and bound to effects by `min_strength`.
-12. **M12** (done): `CinderboxAnimator`, which drives a Godot AnimationTree from the simulation's animation mode, ground speed and locomotion phase, with drift resync; a generated example prefab shipped as a mod, and a headless check that a prefab's tree follows the simulation.
-13. **M13** (done): the rig renamed to Godot's humanoid profile with Mixamo aliases, and `CinderboxSkeleton` retargeting by rotation onto a character's own rest, bridging the arms-down and T-pose rest postures, verified on a deliberately differently proportioned humanoid.
-14. **M14** (done): server gameplay mods in C++ with commands in the authoritative frame, a board and mod events, the mod schema sent on join, pitch and mod actions in the input, deterministic ragdolls, data-driven presentation of mod state (conditional effects, predicted action feedback, held items, aimed arms, HUD labels), a pistol demo (loadout, props, pistol mods), `cb_bot --shoot`, and ENet's throttle drops disabled. Verified identical across Clang, GCC and MSVC.
-15. **M15** (done): mods' looks as workshop items announced by hash and never sent (publish tool, local workshop, join refusal, load order), the pistol's look moved into its item, an allowlist pack validator with a hostile-pack check, HUD nodes driven by fields and events (health bar, kill feed, scoreboard), player names, and a fast clock catch-up.
-16. **M16** (done): deathmatch rounds as a server mod with its own workshop item, the `Freeze` command, mod options, event and world queries in the mod API, the `!?field` condition, `{name:field}`, scoreboard conditions, and a deathmatch net test. Verified identical across Clang, GCC and MSVC.
-17. **M17** (done): CI on GitHub Actions: Windows (Clang, MinGW GCC, MSVC), Linux (GCC, Clang) and macOS ARM64 (Apple Clang) each run every test and match the reference hashes, and every OS continues every build's portable snapshot. Identical on the first run.
-18. **M18** (done): Box3D snapshots zero padding, stale union bytes and geometry pointers (a patch applied at fetch), so they no longer leak server memory to joining clients; ARM64 min/max match x64 for signed zeros (a second patch); snapshots are byte-identical across all six builds, checked by `portable_bytes` and CI.
-19. **M19** (done): characters as workshop items baked in the editor (`CbCharacter` Bake button: ozz skeleton and clips, `hitboxes.cfg` from `CbHitbox` zones), `cb_server --character` reading the same zip players mount (SHA-256 checked, miniz), the client playing as it from the pack, server-side hit tests against posed hitboxes with zones for mods, the pistol's damage per zone, the robot example item, and tests.
-20. **M20** (done): aiming in the ozz pose (`Aim` command, aim chain per character, hit tests follow it), `CbPoseModifier` so Godot animation on players is cosmetic only, the AnimationTree example turned cosmetic (a jetpack), bake warnings for animation that could move hitbox bones, and the modifier-per-frame bug fixed.
-21. **M21** (done): facing modes chosen by mods (`Facing` command: freelook by default, camera-facing for the pistol), legs that turn toward the direction of travel with the spine turned back and a reversed walk when backing up.
-22. **M22** (done): animation layers (bone masks from the character) and stances (clip sets with fallback) declared by mods and set with a `Stance` command, blended per joint with fades, in the pose the server hit-tests; the pistol's upper-body stance, a melee mod with a full-body stance and swing, `combat.damage` between mods, bake support (`stance_clips`, `masks`), the robot's stance clips, and tests.
-23. **M23** (done): companion tracks: the bake keeps every non-bone track of a character's animations in `companion.tres`, and `CbCompanionPlayer` plays them per channel in step with the ozz pose (values exact, keys once through rollbacks, RESET between clips); the robot's bat swing gets a fire trail and a whoosh as ordinary tracks.
-24. **M24** (done): the default character: the Universal Animation Library's mannequin retargeted onto the humanoid profile, shipped with the game and read by `cb_server` from `bin/characters/` (no item needed), and a hand frame for held items that is the same on every rig.
-25. **M25** (done): state machines authored in Godot: a character's `AnimationTree` (state machines, Blend2 layers, 1D blend spaces, Godot's transitions with conditions and expressions) is baked to `graph.cfg` and run by the simulation, travelling in the schema; markers emit mod events (the melee swing strikes on one); the mannequin's tree with a flaming swing; `cb_bot --melee`.
-26. **M26** (done): strafing with real clips: 2D blend spaces (Godot's triangles), `move_forward` / `move_right`, `turn_legs` per character; `ual_mannequin`, a local-only character built from the paid Source pack with eight-way jogs (the pack and its bakes are git-ignored), preferred by the server where it exists.
-27. **M27** (done): `face_forward`: the chest (and head) face where the body faces while strafe clips turn the hips; on for `ual_mannequin`.
-28. **M28** (done): the bat's fire is the melee mod's look: `melee.swinging` on the board during a swing, `bat_fire.tscn` held like the bat while it holds; the characters' hand fire is gone.
-29. **M29** (done): held items as entities with their own state (`SpawnItem`, `ItemTarget`), sockets (`CbSocket`, built-in hands), item looks (`CbItemLook`), item boards as AnimationTree conditions and events as animations, characters' animations playing the held item's animations; the melee bat converted.
-30. **M30** (done): one event resolved by what the player holds: item kinds and event values in state machine conditions, events at a player played by its held items (the bat's hit sparks); the engine's placeholder rig and HUD lose their game content.
-31. **M31** (done): item swaps clear the holder's companion track caches, so a bat taken out again still slashes; `cb_bot --melee` swaps weapons.
-32. **M32** (done): animation packs: mods ship AnimationTree layers (`CbAnimPack`) and swap a player's layer for them by name (`SwapLayer` / `RestoreLayer`), in the simulation and every pose; clips retargeted by humanoid-profile names; the `sneak` mod's crouch.
-33. **M33** (done): `CbReaction` nodes (on event / while, self / holder; animation, property, method, scene); the implicit item rules and `CbStateBinding` removed; the pistol as a held item; the bat's glow and sparks as reactions; item swaps across mods destroy by NetId.
-34. **M34** (done): entity paths (`self`, `holder`, `item:<socket>`, `event.a`, `event.b`, `local`, `world`) for a reaction's subject, conditions and `act_on`; `event_side`; lookups contained in the scene they resolve in, `free` / `queue_free` / `script` refused.
-35. **M35** (done): world reactions: `vfx/reactions*.tscn` scenes loaded once replace `CbEffect` / `CbEffectTable`; built-in events by name (and `pressed:<action>`, until M56); filters, cooldown, placement, sound and screen effects on `CbReaction`; `CbItemLook` as a node; all bindings converted.
-36. **M36** (done): the scene tree as the address space: a stable World tree (`player_<slot>`, sockets as entity children, companion tracks rewritten), anchors (`^`, `^^`, `$at`, `$other`, `$local`, `$world`) on ordinary NodePaths; `CbDirector` + `CbReaction` as a standalone addon (`cb_cue`) driven by cues and entity state; M34's entity paths replaced.
-37. **M37** (done): Cue Preview, an editor bottom panel in the cue addon: the edited scene on a stage with stand-in players, cues fired and state set by hand, screen effects shown; verified on the bat, the pistol's world reactions and the mannequin.
-38. **M38** (done): reaction polish: fixes (a While undoes itself when it leaves the tree, a wider refused list, warnings for leaks and parse errors), `method_args`, `delay` / `chance`, `blend_time`, `explain()` in the Cue Preview, and in-editor help (class reference, info rows, info buttons).
-39. **M39** (done): items in the world: physics bodies of declared shapes, DropItem / PickUpItem / SpawnItem on the floor, spawn into a taken hand drops; melee and pistol follow what is in the hand; the pickup mod (E, G, drop on death, spawn_each) with a data-only proximity prompt (`CbPromptLabel`, `$local@field`, `{key:}`, `{look:}`); protocol 14.
-40. **M40** (done): looks follow what is held: item kind names are conditions in the HUD and in reactions; the pistol's look asks `pistol.gun`, not the loadout slot.
-41. **M41** (done): a loadout slot gives one item per life (dropping no longer duplicates); the `expire` mod removes items that were held and then left lying (`expire.seconds`); `ctx.Items()`.
-42. **M42** (done): item bodies authored in Godot: `CbItemBody` in the item's scene, `bake_items.gd` (run by packing) writes `items/<kind>.cfg`, the server reads it from the mod's item; the bat and pistol converted.
-43. **M43** (done): hold-to-use prompts: item properties (`ItemProperty`), the pickup mod's hold (`pickup.hold_seconds`, `pickup.hold`, `pickup.progress`), `CbPromptLabel.progress_field` and its bar, a second prompt scene.
-44. **M44** (done): held items bring layers: `ItemLayers( kind, pack )`, mods' swaps kept as wishes and resolved with item layers into `SwapLayer` commands (a mod's swap wins); the bat's `melee.carry` pack.
-45. **M45** (done): join menu (address, recent servers), Esc menu and settings in a script-free scene; failed joins come back with the reason; leaving reloads the scene, other mods restart the game; camera collision against the frame's static shapes.
-46. **M46** (done): stowed items in the engine (`MoveItem`, `HeldItem::stowed`), an `inventory` mod owning slots 1 to 4 in place of `loadout`, item properties for slot / start / holster, holster sockets on the mannequin; fixes items dropping on switch and on pick-up.
-47. **M47** (done): item properties authored on the `CbItemBody` and baked with the body (the bat's hold time), a Bake button on it, and `pickup.since` (a start tick) in place of a progress field set every tick.
-48. **M48** (done): `kBoardSlots` 32 (new reference hashes, protocol 16); the inventory publishes its slots and shows them on a HUD row.
-49. **M49** (done): the viewer protocol: `ViewFrame` / `ViewSource` (`src/present/view.h`), `LiveSource` and `ReplaySource` in `src/client`, `CinderboxClient` as a viewer that knows no source, recordings watched in the Godot client (`--replay=FILE`) as the followed player; ROADMAP.md.
-50. **M50** (done): frames as bytes: `EncodeView` / `DecodeView` with per-word deltas against a base, view files (`cb_server --record-view`, `ViewFileSource`, `--view=FILE`, `cb_replay view`), measured sizes; `bytes.h` moved to `src/sim`.
-51. **M51** (done): two extensions: the viewer (`cinderbox`: no simulation, no networking) and the peer (`cinderbox_peer`: `CinderboxPeer`, the live and replay sources) with packets between them; `set_source( object )`; `cb_sim_data` and `cb_capture` split out so the viewer cannot link a simulation; mod projects get the viewer only.
-52. **M52** (done): packs are contained: the scene guard (node class list, no scripts, no connections, contained paths, method list for animations and reactions, advance expressions cleared), run wherever a moddable scene is instantiated; `check_guard.gd`.
-53. **M53** (done): smaller frames: compact packets (grid positions and animation values as small deltas, 32-bit rotations, no velocity or inputs), a stride for fewer frames than ticks, entity lists and event rings sent as what changed, `--view-rate` / `--view-compact`, a size breakdown in `cb_replay view`; 32 players from 6.8 to 0.43 Mbit/s.
-54. **M54** (removed in M68): streaming clients: protocol 17 (`Hello.stream`, `StreamWelcome`, `View`, `StreamInput`), frames as acknowledged compact deltas, `ServerMod::Sees` and the `fog` mod, `StreamSource` and the `cinderbox_stream` extension with no simulation, `--stream`.
-56. **M56** (done): the viewer predicts: `CbPrediction` (action, cue, conditions, cooldown) and `CbDirector.press`; the server's cue of the same name is the echo and plays only the reactions that waited for it; `pressed:<action>` cues removed; one reaction per cue in the pistol and melee looks. A streaming client predicts the same way: the viewer takes the press, whatever the source. (M55, mods run on clients that simulate, was tried on a branch and dropped for this.)
-57. **M57** (done): the bat lights its own flames (a reaction on `melee.swing` instead of a playback key in the character's swing); `CbReaction.wait_for_server`.
-58. **M58** (done): the pistol's `mark` action (right mouse): a ray, `pistol.scan` and `pistol.marked`; in the look a predicted click, a beam and a zone that follows the marked player for 2 seconds (README, "Example: a second action"); `net_pistol_mark`.
-59. **M59** (done): no companion files: `CbCharacter.build_track_library` (the client copies an animation's non-bone tracks out of the character's `AnimationPlayer`), `CbTrackPlayer` (was `CbCompanionPlayer`), baking on scene save and at pack time, writes only when bytes change.
-60. **M60** (done): the raylib client (`cb_client`, its anim and replay viewers) removed; raylib is no longer a dependency.
-61. **M61** (done): the `combat` mod: health, death, ragdolls and respawning moved out of the pistol; weapons say `combat.damage`, it answers `combat.hurt` / `combat.killed` / `combat.respawned`; `combat.heal`; five server options; its own look (health bar, kill feed, scoreboard, hurt and death flashes); `net_combat`.
-62. **M62** (done): one animation system: the placeholder rig gets a built-in state machine, so every pose comes from one; removed the built-in clip blending and stance clip tables (`EvaluateBuiltIn`, `StanceTable`, the six clip slots), `CinderboxAnimator` and its example mod, the non-tree character bake, the glTF conversion pipeline; `AnimState` loses five fields (protocol 18, replay 5, view packets CBV3); the robot example is an `AnimationTree`.
-63. **M63** (done): this document by subsystem instead of by milestone; reference hashes regenerated for the M62 animation state. Found by the new pose hash on macOS: our own code compiled ozz's inline math as platform SIMD; `OZZ_BUILD_SIMD_REF` now reaches every target.
-64. **M64** (done): predicted state in the viewer: `CbPrediction.changes` (fields of the viewer's own player) and `stance` / `stance_layer`; `LeadAnimState` runs the character's upper layers ahead for the local player (`present/anim_lead.*`, `AnimGraph::UpperLayersRead`, `PlayerAnim::shown`); `CbDirector.pending_predictions`; the pistol's ammo and recoil and the bat's swing and flames follow the click; `anim_lead` test.
-65. **M65** (done): a bat's `melee.hot` is cleared by the item's NetId when its time is up, not through the hand: put away or dropped while hot, it stayed hot. `net_melee` puts it away hot.
-66. **M66** (done): private fields: `BoardScope::Private`, kept by the server per player and sent to its owner alone (`MsgPrivateFields`, protocol 19); read by name in looks for the viewer's own player; the `secret` example mod; `net_private_fields`.
-67. **M67** (done): one expression language (`cb_expr`): the state machine compiler, `present/fields` and the cue addon parse the same grammar (`and` / `or` / `not`, arithmetic, field against field, `?name`, paths with a colon) instead of three parsers; `value_expression` and `volume_expression` on `CbReaction`, expressions in `CbFieldBinding.field` and `CbFieldLabel`'s `{...}`; the state machine's programs and both reference hashes unchanged.
-68. **M68** (done): streaming clients removed: `src/stream`, the `cinderbox_stream` extension, `Hello.stream` / `StreamWelcome` / `View` / `StreamInput` (protocol 20), `--stream` and `--stream-rate`, `ServerMod::Sees`, `present/visibility` and the `fog` mod. Every client simulates; view files keep the compact codec.
-69. **M69** (done): the upper body follows the camera: `AnimState::look` (a byte that was reserved: 0 to 255, rising over 0.2 s while `Character::faceCamera`), the pose turns the character's look chain (`anim.cfg` `look`, `CbCharacter.look_chain`) about the side axis by `aimPitch` times it, before the aim chain; hitboxes follow; new reference hashes (the state and the pose hash now cover it).
-70. **M70** (done): the bat's strike is pitched with the look (it was a level fan, so looking down hit nothing low); a first-person camera in `game.gd` on the posed head (`CinderboxSkeleton.hidden_bone` shrinks the viewer's own head after the pose is applied; the pose, sockets and hit tests are untouched).
-71. **M71** (done): a mod event restarts the state it leads to (`AnimGraphState::restarts`, derived at compile from the event transitions into it): every shot of rapid fire plays its recoil, on the server, in the pose and in the viewer's lead alike.
-72. **M72** (done): aiming by two traces: `PlayerInput::view` (the byte that was reserved; protocol 21) says which camera the player looks through; `Context::ViewPosition` is where that camera's line starts (the pivot, a shoulder, or the eye), `HeadPosition` the eye on the posed head (`HitTester::JointPosition`), and `CastAim` traces the line of sight for the target and then the shot from the eye to it. The pistol uses it; `CinderboxClient.get_view_position` places the camera on the same points.
-73. **M73** (done): the first-person line of sight starts at `anim::EyeHeight` (the rest pose's head height) above the feet instead of on the posed head, on the server (`ViewPosition`) and in the viewer alike; `CastAim` always traces twice; `CinderboxSkeleton` casts the shadows from a whole copy of the skeleton and its meshes while a bone is hidden; `game.gd` places the camera on `RenderingServer.frame_pre_draw` (it was a frame behind the drawn body); the landing, hurt and shot shakes removed from the looks.
-74. **M74** (done): the first-person body, viewer only: `CinderboxClient.first_person` puts the local player's pose from the spine up under the eye (the chest back to its rest orientation about the point between the shoulders, that point to its rest place under the eye, the whole turned by the look about the camera's pivot, the aimed arm put back on the line of sight, the arms moved by `CbItemLook.view_offset`) before it is applied, so sockets and held items follow; `CinderboxSkeleton.first_person_body` collapses the spine at the waist and the chest, neck and head between the shoulders and puts the shoulders back, and casts shadows from a whole copy. `anim::TranslateSubtree`, `RotateSubtreeAbout`.
-75. **M75** (done): first person faces the camera: `FacesCamera( character, input )` (a mod's `FaceCamera`, or `PlayerInput::view` first person) decides the facing in the mover and the look blend in the animation controller, so the simulation reads the view byte; reference hashes unchanged (their inputs are third person).
-76. **M76** (done): grips: `CbGrip` (a marker in the item's scene, baked as a `grip` line of `items/<kind>.cfg`) becomes `ItemShape::grip` in the schema (protocol 22, replay version 6); the pose ends with `anim::SolveGrip`: the item is in the carrying hand's socket frame, the other arm is bent at the elbow and turned at the shoulder so its wrist is on the grip (reach clamped, the elbow kept on its side), and the hand takes the grip's turn if asked. The server's hit tests (`HitTester`), the mirror (`HandGrips`) and the first-person body pass it. The item's frame is the carrying hand's socket, `AnimSet::HandSocketOf`: the character's `CbSocket` named for the hand, baked as `socket.RightHand` / `socket.LeftHand` in `anim.cfg`, or a built-in palm.
-77. **M77** (done): a `CbGrip` for the carrying hand (`hand`): the item's frame is that marker's instead of the scene's origin. Bake only: `CbItemBody::bake` writes the centre and the other hand's grip relative to it; the viewer places an item's scene by the inverse of `CbGrip::CarryFrameUnder` (held, and lying in the world). The simulation, the schema and the pose are unchanged.
-78. **M78** (done): `CbGrip.as_animated` (`ItemShape::grip` 3, protocol 23): no place is given; `anim::AsAnimated` reads where the other hand's socket is in the carrying hand's socket frame just before the aim chain moves the carrying arm, and `SolveGrip` puts it back there afterwards (and again in the first-person body, before the arm is aimed a second time). The first-person body's upper half is a second evaluation of the viewer's own state (`m_viewPose`: the base layer at its start state, no leg turn, not aimed; a placed grip solved, hands as animated left alone): its spine subtree replaces the real pose's, is turned as one piece (aiming: the arc that puts the aim joint's line to the tip on the line of sight; otherwise the yaw and what is left of the pitch) and moved so the aim joint (or the point between the shoulders) is at its rest place carried round the camera's pivot. Squaring the chest to its rest, or re-aiming the arm alone on the swaying real pose, pulled the hands apart or let the gun roll 10 degrees with each step.
-79. **M79** (done): a newly created item node kept its scene root's saved transform until it first changed sockets (then it was placed by the carrying grip): it is now placed the same way at creation. The carrying grip applies in hand sockets and to the body lying in the world; any other socket (a holster) places the scene from its origin. `CbItemBody` warns when the scene root is moved or turned. The bat's carrying marker is turned a quarter (it is held across the fingers), its body with it.
-80. **M80** (done): `ItemShape::turn` (protocol 24, replay version 7): the body's rotation in the frame the item is carried in, baked as a `turn` line. `PutItemInWorld` gives the body `rotation * turn`; the frame capture takes it out again, so presentation still gets the item's (the grip's) frame. The bake no longer asks for the body to be turned as the carrying grip is.
-81. **M81** (done): the `rifle` server mod (a copy of the pistol whose trigger is `ctx.Held`: a shot every 6 ticks, one dry click and reload per empty magazine). `CbPrediction.while_held` and `CbDirector.hold( action )`: the viewer calls it every frame an action stays down, and a held prediction is due a cooldown after the last was due (not after the frame that showed it), so its count matches the server's. The rifle's flash and tracer are reactions in its own scene, under its `Muzzle` node. The characters' recoil state is entered on `pistol.fired or rifle.fired`. Two mods that share a stance: swapped in one tick, the one put away could clear what the one taken out had just set (mods run in name order), so both guns read the body (`Context::PlayerAnim`) and set the stance again when it is not theirs. Not done: a rifle stance (it is held as a pistol, so the other hand is as animated); a replay viewer does not predict held actions (it has no local input).
-82. **M82** (done): `MAX_PITCH` in `game.gd` (1.5 rad) for first and third person; the simulation takes up to `kMaxCameraPitch` (88 degrees). The third-person cap of 0.4 rad is gone: the camera's map probe already keeps it above the floor.
-83. **M83** (done): the rifle mod sets the `rifle` stance on the `upper` layer instead of borrowing `pistol`. A state machine cannot read which item is held, only stances and events, so a stance is how a character tells the two guns apart. The mannequin has no rifle clips: its pistol states are entered on `pistol or rifle`.
-84. **M84** (done): `declare.ItemLayers( rifle, AnimPack( "rifle.hold" ) )`. `PoseEvaluator`: a pack's layer above the base with an empty mask uses the mask (and neck share) of the character's layer of that index, so an upper-body pack is a single state machine and replaces only that layer. `server_mods/rifle/client` and its `client_item.cfg` left the repository (git-ignored): a checkout builds the rifle mod without a look, and its pack is "not available; its swaps do nothing".
-85. **M85** (done): the SDK. `sdk/` is a template Godot project (project file, "Mod" preset that exports all resources except `starters/`, `anim_src/`, `characters/mannequin/`, `addons/`, `bin/`, scripts) with starter scenes that carry a `MODNAME` token. `tools/sdk.ps1` copies the built extension, the addon's plugin and `godot/characters/mannequin` into a project (git-ignored there), and `-New <mod>` makes `server_mods/<mod>/client` from the template, keeping files that exist. `bake_packs.gd`: `pack_mod.ps1` bakes `anim_src/*.tscn` packs before exporting. Godot has no project inheritance, so a mod project is a copy that `-Update` refreshes. The shipped mods' projects were not moved onto it.
-86. **M86** (done): the SDK template holds only what a mod author uses. `sdk/placeholder/mannequin.glb` is the CC0 mannequin with seven locomotion clips, cut from the game's model by `tools/make_sdk_placeholder.py` (the other animations' data is dropped from the file, 7.6 to 1.8 MB), imported with the same humanoid retarget. The copies of `godot/characters/mannequin` (the game's character: pistol and melee states, baked files) and of the map addon are gone. Pack scenes live in `animation_packs/` (sources in `animation_packs/source/`); the starters are `Move` / `JumpStart` / `InAir` / `Land` and `Hold`, and say what they are in the root's editor description.
-87. **M87** (done): the tree layers `Base` / `Upper` / `UpperBlend` are `FullBody` / `UpperBody` / `UpperBodyBlend` everywhere (the bake's name for a root state machine, the characters, the shipped packs, `sneak`'s swap); nothing reads the old names. `CbAnimPack.replaces`: the bake keeps only the named layers of the tree, so a pack scene can be the complete default tree (to preview an upper body over locomotion) and ship one layer, with its Blend2's bone filter. The SDK's single starter pack is that. Items whose baked graphs carry layer names were published again (melee, sneak, robot).
-88. **M88** (done): `sdk/bone_maps/` (Mixamo, and the placeholder's Unreal-style map, moved out of `placeholder/`): a clip imported with the wrong map keeps its rig's bone names, and `FitPack` matches by profile names, so nothing played. `pack_mod.ps1` ends with `check_pack.gd` (`Boot.check_mod`, the game's own validator) and fails the publish with its reason. `sdk.ps1 -Update` also replaces the project's export preset.
-89. **M89** (done): pack scenes no longer instance a mod's own model file. `Model` is `placeholder/mannequin.glb`; the placeholder's clips are saved by its import to `placeholder/clips/*.res`, and a pack has its own `AnimationPlayer` (root: `Model`) whose library holds clips by file, the mod's own next to them. Clips retargeted to the humanoid profile with Overwrite Axis share rest axes, so a Mixamo clip plays on the placeholder as it does on its own rig, and what the editor shows is what `FitPack` fits to a character. Before, the rifle's pack used its idle FBX as the model: replacing that file dropped the node.
-90. **M90** (done): `sdk/placeholder/skeleton.tscn` (a `Skeleton3D` with the mannequin's bones and rests, no mesh, made with the clips by `make_sdk_placeholder.gd` from the game's character) replaces the model; `sdk/bone_maps/` is gone. The bake only ever needed a skeleton. A pack scene instances the skeleton as the scene-unique `%Skeleton3D`, which is how retargeted clips address it, with the AnimationPlayer and AnimationTree rooted at the pack. The rifle's pack bakes to the same files as on the model.

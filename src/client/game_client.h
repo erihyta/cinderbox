@@ -1,7 +1,7 @@
 #pragma once
 
 // Networked client without any rendering: connection, join/reconnect, clock sync, prediction and
-// rollback, input upload and desync detection. The raylib app and headless bots both use it.
+// rollback, input upload and desync detection. The Godot peer and headless bots both use it.
 
 #include "protocol.h"
 #include "map.h"

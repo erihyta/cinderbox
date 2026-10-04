@@ -113,7 +113,7 @@ if ($New) {
 	Extension $project
 	Placeholder $project
 	Import $project
-	Write-Host "made ${project}: open it in Godot. The server's half is server_mods\$New\$New.cpp (see README: Writing a server mod)."
+	Write-Host "made ${project}: open it in Godot. The server's half is server_mods\$New\$New.cpp (see docs\server-mods.md)."
 }
 
 if ($Update) {
