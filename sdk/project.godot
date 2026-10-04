@@ -1,0 +1,17 @@
+; Cinderbox SDK: the Godot project a mod's look is made in.
+;
+; It has the Cinderbox extension (the Cb* nodes, the bakers, the Cue Preview panel), the editor
+; addon, and a placeholder character (the CC0 mannequin, with its locomotion) to author animations
+; and state machines on. tools\sdk.ps1 fills those in and makes a mod's project from this one:
+; see README.md here.
+
+config_version=5
+
+[application]
+
+config/name="Cinderbox SDK"
+config/features=PackedStringArray("4.7", "Forward Plus")
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/cinderbox_maps/plugin.cfg")

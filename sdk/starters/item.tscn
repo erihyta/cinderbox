@@ -1,0 +1,47 @@
+[gd_scene format=3]
+
+; A starter item: what a "MODNAME.item" looks like in the hand, put away and lying in the world.
+;
+;   Body        CbItemBody   its body when it lies in the world (baked to items/MODNAME.item.cfg)
+;   Carry       CbGrip       where the carrying hand holds it. Turn it to turn the item in the hand
+;   OtherHand   CbGrip       the other hand: as the animation has it (as_animated), or untick that
+;                            and put the marker where that hand should hold
+;   Muzzle      Node3D       a place on the item for what it shows (a flash, a beam, sparks):
+;     Used      CbReaction   on "MODNAME.used" of whoever holds it (^^): give it a scene or a sound
+;
+; The root's own transform is not used by the game. -Z is forward.
+
+[sub_resource type="BoxShape3D" id="Body"]
+size = Vector3(0.06, 0.1, 0.3)
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(0.3, 0.33, 0.38, 1)
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="Mesh"]
+material = SubResource("Mat")
+size = Vector3(0.06, 0.1, 0.3)
+
+[node name="Item" type="Node3D"]
+
+[node name="Body" type="CbItemBody" parent="."]
+mass = 1.0
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.08)
+shape = SubResource("Body")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.08)
+mesh = SubResource("Mesh")
+
+[node name="Carry" type="CbGrip" parent="."]
+hand = 1
+
+[node name="OtherHand" type="CbGrip" parent="."]
+as_animated = true
+
+[node name="Muzzle" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.23)
+
+[node name="Used" type="CbReaction" parent="Muzzle"]
+event = "MODNAME.used"
+subject = NodePath("^^")

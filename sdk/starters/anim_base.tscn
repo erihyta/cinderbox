@@ -1,0 +1,123 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://characters/mannequin/source/UAL1_Standard.glb" id="1_5vpxr"]
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_smjem"]
+animation = &"Jump"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_l7w0w"]
+animation = &"Jump_Start"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_smenx"]
+animation = &"Jump_Land"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_q2yk2"]
+animation = &"Jog_Fwd"
+play_mode = 1
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_gmsl6"]
+animation = &"Walk"
+play_mode = 1
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_d5yjl"]
+animation = &"Idle"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_cvkkw"]
+animation = &"Walk"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_kjst7"]
+animation = &"Jog_Fwd"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_ps1k4"]
+animation = &"Sprint"
+
+[sub_resource type="AnimationNodeBlendSpace1D" id="AnimationNodeBlendSpace1D_xduuv"]
+min_space = -4.0
+max_space = 6.0
+blend_point_0/node = SubResource("AnimationNodeAnimation_q2yk2")
+blend_point_0/pos = -3.0
+blend_point_0/name = &"BackJog_Fwd"
+blend_point_1/node = SubResource("AnimationNodeAnimation_gmsl6")
+blend_point_1/pos = -0.9
+blend_point_1/name = &"BackWalk"
+blend_point_2/node = SubResource("AnimationNodeAnimation_d5yjl")
+blend_point_2/pos = 0.0
+blend_point_2/name = &"Idle"
+blend_point_3/node = SubResource("AnimationNodeAnimation_cvkkw")
+blend_point_3/pos = 0.9
+blend_point_3/name = &"Walk"
+blend_point_4/node = SubResource("AnimationNodeAnimation_kjst7")
+blend_point_4/pos = 3.0
+blend_point_4/name = &"Jog_Fwd"
+blend_point_5/node = SubResource("AnimationNodeAnimation_ps1k4")
+blend_point_5/pos = 5.0
+blend_point_5/name = &"Sprint"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_gx1uo"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_duw24"]
+xfade_time = 0.1
+advance_mode = 2
+advance_condition = &"jumped"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_mefdn"]
+xfade_time = 0.2
+advance_mode = 2
+advance_expression = "not grounded and airborne_time > 0.12"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_noo5j"]
+xfade_time = 0.1
+advance_mode = 2
+advance_expression = "grounded and state_time > 0.1"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_p35ug"]
+xfade_time = 0.2
+advance_mode = 2
+advance_expression = "state_time > 0.3"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_0d4an"]
+xfade_time = 0.1
+advance_mode = 2
+advance_condition = &"grounded"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_d2rt4"]
+xfade_time = 0.1
+advance_mode = 2
+advance_condition = &"jumped"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_c2shs"]
+xfade_time = 0.25
+advance_mode = 2
+advance_expression = "state_time > 0.35 or speed > 1.5"
+
+[sub_resource type="AnimationNodeStateMachine" id="AnimationNodeStateMachine_nyhtl"]
+states/Fall/node = SubResource("AnimationNodeAnimation_smjem")
+states/Fall/position = Vector2(800, 100)
+states/JumpStart/node = SubResource("AnimationNodeAnimation_l7w0w")
+states/JumpStart/position = Vector2(550, 0)
+states/Land/node = SubResource("AnimationNodeAnimation_smenx")
+states/Land/position = Vector2(550, 220)
+states/Locomotion/node = SubResource("AnimationNodeBlendSpace1D_xduuv")
+states/Locomotion/position = Vector2(300, 100)
+transitions = ["Start", "Locomotion", SubResource("AnimationNodeStateMachineTransition_gx1uo"), "Locomotion", "JumpStart", SubResource("AnimationNodeStateMachineTransition_duw24"), "Locomotion", "Fall", SubResource("AnimationNodeStateMachineTransition_mefdn"), "JumpStart", "Land", SubResource("AnimationNodeStateMachineTransition_noo5j"), "JumpStart", "Fall", SubResource("AnimationNodeStateMachineTransition_p35ug"), "Fall", "Land", SubResource("AnimationNodeStateMachineTransition_0d4an"), "Land", "JumpStart", SubResource("AnimationNodeStateMachineTransition_d2rt4"), "Land", "Locomotion", SubResource("AnimationNodeStateMachineTransition_c2shs")]
+
+[node name="Pack" type="CbAnimPack" unique_id=1455049488]
+character_name = "MODNAME.walk"
+skeleton_path = NodePath("Model/Armature/Skeleton3D")
+animation_player_path = NodePath("Model/AnimationPlayer")
+animation_tree_path = NodePath("AnimationTree")
+graph_inputs = {
+"Locomotion/blend_position": "forward_speed"
+}
+
+[node name="Model" type="Node3D" parent="." unique_id=1926808273 instance=ExtResource("1_5vpxr")]
+
+[node name="AnimationTree" type="AnimationTree" parent="." unique_id=2067960379]
+active = false
+root_node = NodePath("../Model")
+tree_root = SubResource("AnimationNodeStateMachine_nyhtl")
+anim_player = NodePath("../Model/AnimationPlayer")
+parameters/conditions/grounded = false
+parameters/conditions/jumped = false
+parameters/Locomotion/blend_position = 0.0
