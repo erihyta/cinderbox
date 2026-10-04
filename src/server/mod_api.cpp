@@ -668,6 +668,27 @@ void Context::Freeze( uint32_t target, bool frozen )
 	Add( c );
 }
 
+void Context::SetMove( uint32_t target, MoveParam param, float value )
+{
+	SimCommand c;
+	c.type = CommandType::SetMove;
+	c.mode = 1;
+	c.index = uint16_t( param );
+	c.target = target;
+	c.a = { value, 0.0f, 0.0f };
+	Add( c );
+}
+
+void Context::ResetMove( uint32_t target, MoveParam param )
+{
+	SimCommand c;
+	c.type = CommandType::SetMove;
+	c.mode = 0;
+	c.index = uint16_t( param );
+	c.target = target;
+	Add( c );
+}
+
 void Context::SetStance( uint32_t target, LayerHandle layer, StanceHandle stance )
 {
 	if ( layer.Valid() == false )

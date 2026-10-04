@@ -1285,6 +1285,9 @@ void TestSneak()
 		{
 			in.actions = crouch;
 		}
+		// Sprinting all along: the crouch slows it by itself.
+		in.moveForward = 127;
+		in.buttons = BtnSprint;
 		return in;
 	};
 	std::string error, warnings;
@@ -1320,6 +1323,9 @@ void TestSneak()
 	Simulation& server = h.server.Sim();
 	float standing = 0.0f, sneaking = 10.0f;
 	bool swapped = false, restored = false;
+	// The sneak mod slows its player (SetMove) and gives the speeds back.
+	float sneakSpeed = 0.0f, runSpeed = 0.0f;
+	bool slowed = false, givenBack = false;
 	h.RunUntil( 7.0, [&]( double ) {
 		uint32_t netId = server.PlayerNetId( h.bots[0].client->Slot() );
 		const AnimState* a = server.EntityAnimState( netId );
@@ -1330,14 +1336,21 @@ void TestSneak()
 		pose.Evaluate( *a );
 		float v[4];
 		ozz::math::StorePtrU( pose.Models()[size_t( anim::FindJoint( *mannequin->animations, "Head" ) )].cols[3], v );
+		const Character* body = server.PlayerCharacter( h.bots[0].client->Slot() );
+		float speed = body != nullptr ? b3Length( b3Vec3{ body->velocity.x, 0.0f, body->velocity.z } ) : 0.0f;
+		MoveParams move = server.PlayerMove( h.bots[0].client->Slot() );
 		if ( a->graph[0].source == uint8_t( sneakPack + 1 ) && a->graph[0].stateTime > 0.5f )
 		{
+			slowed |= move[MoveParam::WalkSpeed] == 1.5f && move[MoveParam::SprintSpeed] == 1.5f;
+			sneakSpeed = std::max( sneakSpeed, speed );
 			swapped = true;
 			sneaking = std::min( sneaking, v[1] );
 		}
 		else if ( a->graph[0].source == 0 )
 		{
 			restored |= swapped;
+			givenBack |= swapped && move == MoveParams{};
+			runSpeed = swapped && a->graph[0].stateTime > 1.0f ? std::max( runSpeed, speed ) : runSpeed;
 			if ( swapped == false )
 			{
 				standing = std::max( standing, v[1] );
@@ -1348,6 +1361,10 @@ void TestSneak()
 	std::printf( "    head: standing %.2f, sneaking %.2f; swapped %d, restored %d\n", standing, sneaking, int( swapped ), int( restored ) );
 	CHECK( swapped && restored );
 	CHECK( sneaking < standing - 0.3f );
+	std::printf( "    speed: sneaking %.2f m/s, afterwards %.2f; slowed %d, given back %d\n", sneakSpeed, runSpeed, int( slowed ),
+				 int( givenBack ) );
+	CHECK( slowed && givenBack );
+	CHECK( sneakSpeed > 1.0f && sneakSpeed < 1.6f && runSpeed > 6.0f );
 	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
 }
 
@@ -2086,6 +2103,24 @@ void TestProtocol()
 		// An empty schema (a server without mods) is valid.
 		CHECK( DecodeSchema( nullptr, 0, back ) && back.fields.empty() );
 
+		// The config carries how players move; one outside a parameter's range is refused.
+		{
+			MsgWelcome welcome;
+			welcome.config.move.values[int( MoveParam::WalkSpeed )] = 4.5f;
+			welcome.config.move.values[int( MoveParam::MaxFall )] = 30.0f;
+			std::vector<uint8_t> packet;
+			Encode( welcome, packet );
+			MsgWelcome got;
+			ByteReader r( packet.data(), packet.size() );
+			CHECK( ReadType( r ) == MsgType::Welcome );
+			CHECK( Decode( r, got ) && got.config == welcome.config );
+			welcome.config.move.values[int( MoveParam::Gravity )] = -1.0f;
+			Encode( welcome, packet );
+			ByteReader r2( packet.data(), packet.size() );
+			CHECK( ReadType( r2 ) == MsgType::Welcome );
+			CHECK( Decode( r2, got ) == false );
+		}
+
 		// Non-finite commands never leave the server.
 		SimCommand c;
 		c.type = CommandType::Impulse;
@@ -2531,6 +2566,76 @@ void TestPrivateFields()
 	std::printf( "    four numbers, all different: %d (they are random, 1 to 99)\n", int( allDiffer ) );
 }
 
+// Movement parameters reach every client: the server's options, with its character's own values
+// laid over them, travel in the welcome's config, so a client predicts the same walk and jump.
+void TestMoveParams()
+{
+	// The robot's baked files, with how it moves added to its anim.cfg (what CbCharacter.movement bakes).
+	std::filesystem::path source = std::filesystem::path( CB_SOURCE_DIR ) / "characters/robot/client/characters/robot";
+	std::filesystem::path dir = std::filesystem::temp_directory_path() / "cinderbox_move_test";
+	std::filesystem::remove_all( dir );
+	std::filesystem::create_directories( dir );
+	for ( const auto& entry : std::filesystem::directory_iterator( source ) )
+	{
+		if ( entry.is_regular_file() )
+		{
+			std::filesystem::copy_file( entry.path(), dir / entry.path().filename() );
+		}
+	}
+	{
+		std::ofstream cfg( dir / "anim.cfg", std::ios::app );
+		cfg << "\nmove.jump_speed = 9\nmove.max_fall = 12\n";
+	}
+	std::string error, warnings;
+	auto robot = LoadCharacterFolder( dir.string(), "robot", error, warnings );
+	std::filesystem::remove_all( dir );
+	if ( robot == nullptr )
+	{
+		std::printf( "    the robot did not load: %s\n", error.c_str() );
+	}
+	CHECK( robot != nullptr );
+	if ( robot == nullptr )
+	{
+		return;
+	}
+
+	Harness h( 47841, {}, {}, {}, [&]( ServerOptions& options ) {
+		// As `cb_server --move walk_speed=4.5 --move jump_speed=5` would.
+		options.config.move.values[int( MoveParam::WalkSpeed )] = 4.5f;
+		options.config.move.values[int( MoveParam::JumpSpeed )] = 5.0f;
+		options.character = robot;
+	} );
+	MoveParams expected;
+	expected.values[int( MoveParam::WalkSpeed )] = 4.5f; // the server's option
+	expected.values[int( MoveParam::JumpSpeed )] = 9.0f; // the character's wins over the server's
+	expected.values[int( MoveParam::MaxFall )] = 12.0f;	 // the character's
+	Simulation& server = h.server.Sim();
+	CHECK( server.Config().move == expected );
+
+	h.AddBot().script = []( uint32_t tick ) {
+		PlayerInput in;
+		in.moveForward = 127;
+		in.buttons = tick > 200 && tick < 204 ? uint8_t( BtnJump ) : uint8_t( 0 );
+		return in;
+	};
+	float walk = 0.0f, rise = 0.0f;
+	h.RunUntil( 5.0, [&]( double ) {
+		const Character* c = server.PlayerCharacter( h.bots[0].client->Slot() );
+		if ( c != nullptr )
+		{
+			walk = std::max( walk, b3Length( b3Vec3{ c->velocity.x, 0.0f, c->velocity.z } ) );
+			rise = std::max( rise, c->velocity.y );
+		}
+	} );
+	h.Report();
+	std::printf( "    walked at %.2f m/s, jumped at %.2f m/s\n", walk, rise );
+	CHECK( walk > 4.4f && walk < 4.51f );
+	CHECK( rise > 8.0f && rise <= 9.0f );
+	GameClient& client = *h.bots[0].client;
+	CHECK( client.Session() != nullptr && client.Session()->Sim().Config().move == expected );
+	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+}
+
 } // namespace
 
 int main( int argc, char** argv )
@@ -2559,6 +2664,7 @@ int main( int argc, char** argv )
 		{ "character_item", TestCharacterItem },
 		{ "item_shapes", TestItemShapes },
 		{ "sneak", TestSneak },
+		{ "move_params", TestMoveParams },
 		{ "headshot", TestHeadshot },
 		{ "pistol_mark", TestPistolMark },
 		{ "rifle", TestRifle },

@@ -111,6 +111,19 @@ inline std::vector<InputFrame> MakeScenario( const ScenarioOptions& opt )
 				spawn.c = { size, size, size };
 				f.commands.push_back( spawn );
 			}
+			if ( ( ( c >> 20 ) % 150 ) == 0 )
+			{
+				// A mod changing how one player moves: half to twice the default (a fall limit of
+				// up to 10 m/s), and now and then the server's value given back.
+				SimCommand move;
+				move.type = CommandType::SetMove;
+				move.index = uint16_t( ( c >> 28 ) % kMoveParams );
+				move.mode = ( ( c >> 34 ) & 3 ) != 0 ? 1 : 0;
+				move.target = SlotTarget( PlayerSlot( i ) );
+				float base = MoveParam( move.index ) == MoveParam::MaxFall ? 5.0f : MoveParams{}.values[move.index];
+				move.a = { move.mode == 1 ? base * ScenarioFloat( c >> 36, 0.5f, 1.5f ) : 0.0f, 0.0f, 0.0f };
+				f.commands.push_back( move );
+			}
 			if ( ( ( c >> 48 ) % 400 ) == 0 && deadSince[i] == 0 )
 			{
 				SimCommand kill;

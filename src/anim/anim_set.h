@@ -3,6 +3,8 @@
 // A character's skeleton, the clips its state machine plays and the machine itself (as text): baked
 // from a Godot scene and loaded from ozz files, or the placeholder rig, generated in code.
 
+#include "move_params.h"
+
 #include "box3d/math_functions.h"
 #include "ozz/animation/runtime/animation.h"
 #include "ozz/animation/runtime/skeleton.h"
@@ -88,6 +90,13 @@ public:
 	bool FaceForward() const
 	{
 		return m_faceForward;
+	}
+	// How this character moves, where it says so: movement parameters by index (move_params.h) with
+	// their values, in the file's order. anim.cfg "move.walk_speed = 4" (CbCharacter.movement): its
+	// clips are made for a speed. The server lays them over its own.
+	const std::vector<std::pair<int, float>>& Movement() const
+	{
+		return m_movement;
 	}
 	int NeckJoint() const
 	{
@@ -211,6 +220,7 @@ private:
 	bool m_lockRootXZ = true;
 	bool m_turnLegs = true;
 	bool m_faceForward = false;
+	std::vector<std::pair<int, float>> m_movement;
 	int m_neckJoint = -1;
 	std::string m_description;
 	std::map<std::string, ozz::unique_ptr<ozz::animation::Animation>> m_namedClips;

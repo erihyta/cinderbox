@@ -147,6 +147,9 @@ public:
 	}
 	// Null if the slot is empty.
 	const Character* PlayerCharacter( PlayerSlot slot ) const;
+	// How the player in `slot` moves (move_params.h): the server's parameters, with what mods set for
+	// that player. The server's alone when the slot is empty.
+	MoveParams PlayerMove( PlayerSlot slot ) const;
 	const Transform* EntityTransform( uint32_t netId ) const;
 	// A player's animation state, or null.
 	const AnimState* EntityAnimState( uint32_t netId ) const;
@@ -258,7 +261,8 @@ private:
 	flecs::entity CreateRagdoll( flecs::entity player, uint32_t lifetimeTicks );
 	void EnforceRagdollCap( uint32_t cap );
 	void MoveCharacters( const InputFrame& frame );
-	void MoveCharacter( Character& c, Transform& t, const PhysicsBody& pb, const PlayerInput& in, uint8_t pressed );
+	// The parameters the mover uses for this player: the server's, with what mods set for it.
+	MoveParams MoveOf( flecs::entity e ) const;
 	void ExpireProps();
 	void EnforcePropCaps();
 	void SyncFromPhysics();

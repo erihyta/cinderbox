@@ -83,6 +83,11 @@ bool GameServer::Start( const ServerOptions& options )
 	}
 	std::shared_ptr<const CharacterAsset> character = options.character ? options.character : BuiltInCharacter();
 	m_schema.character = character->name;
+	// How players move: the server's options, then what the character says about itself.
+	for ( const auto& [param, value] : character->animations->Movement() )
+	{
+		m_options.config.move.values[param] = value;
+	}
 	m_hits = std::make_unique<HitTester>( character );
 	{
 		std::string warnings;
@@ -152,7 +157,7 @@ bool GameServer::Start( const ServerOptions& options )
 	}
 	m_mapHash = MapHash( m_mapBytes.data(), m_mapBytes.size() );
 
-	m_sim = std::make_unique<Simulation>( options.config, m_map );
+	m_sim = std::make_unique<Simulation>( m_options.config, m_map );
 	m_sim->SetAnimGraph( m_animGraph );
 	m_sim->SetAnimPacks( m_animPacks );
 	m_sim->SetItemShapes( m_schema.itemShapes );
@@ -180,7 +185,7 @@ bool GameServer::Start( const ServerOptions& options )
 
 	if ( options.recordPath.empty() == false )
 	{
-		if ( m_replay.Open( options.recordPath, BuildFingerprint(), options.config, m_mapBytes, m_schemaBytes ) == false )
+		if ( m_replay.Open( options.recordPath, BuildFingerprint(), m_options.config, m_mapBytes, m_schemaBytes ) == false )
 		{
 			Log( "cannot write replay %s", options.recordPath.c_str() );
 			return false;
@@ -205,6 +210,26 @@ bool GameServer::Start( const ServerOptions& options )
 		 options.config.tickRate, (unsigned long long)BuildFingerprint(),
 		 options.mapPath.empty() ? "built-in sandbox" : options.mapPath.c_str(), unsigned( m_map.statics.size() ),
 		 unsigned( m_map.props.size() ), (unsigned long long)m_mapHash );
+
+	{
+		// Only what differs from the engine's: most servers print nothing here.
+		std::string moves;
+		const MoveParams defaults;
+		for ( int i = 0; i < kMoveParams; ++i )
+		{
+			if ( m_options.config.move.values[i] != defaults.values[i] )
+			{
+				char text[64];
+				std::snprintf( text, sizeof( text ), "%s%s = %g", moves.empty() ? "" : ", ", MoveParamInfoOf( i ).name,
+							   double( m_options.config.move.values[i] ) );
+				moves += text;
+			}
+		}
+		if ( moves.empty() == false )
+		{
+			Log( "movement: %s", moves.c_str() );
+		}
+	}
 
 	if ( m_mods.empty() == false )
 	{

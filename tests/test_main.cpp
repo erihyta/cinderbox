@@ -37,6 +37,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <string>
 #include <unordered_map>
@@ -1263,6 +1264,207 @@ void TestCommands()
 
 // Ragdolls are simulation state: they fall the same way on every machine, respect their joint
 // limits, and go away by lifetime or cap as the mod asked.
+// Movement parameters: the server's (SimConfig::move), and one player's by SetMove commands.
+void TestMoveParams()
+{
+	Simulation sim( TestConfig(), FlatMap() );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto setMove = [&]( uint32_t target, MoveParam param, float value ) {
+		SimCommand c;
+		c.type = CommandType::SetMove;
+		c.mode = 1;
+		c.index = uint16_t( param );
+		c.target = target;
+		c.a = { value, 0.0f, 0.0f };
+		f.commands.push_back( c );
+	};
+	auto resetMove = [&]( uint32_t target, MoveParam param ) {
+		SimCommand c;
+		c.type = CommandType::SetMove;
+		c.index = uint16_t( param );
+		c.target = target;
+		f.commands.push_back( c );
+	};
+	auto ground = [&]( PlayerSlot slot ) {
+		b3Vec3 p = sim.EntityTransform( sim.PlayerNetId( slot ) )->position;
+		return b3Vec3{ p.x, 0.0f, p.z };
+	};
+
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	f.events.push_back( { PlayerEventType::Join, 1 } );
+	step( 60 );
+	const MoveParams defaults;
+	CHECK( sim.PlayerMove( 0 ) == defaults && sim.PlayerMove( 1 ) == defaults );
+	CHECK( sim.FindEntity( sim.PlayerNetId( 0 ) ).has<MoveOverrides>() == false );
+
+	// One player walks twice as fast; the other is untouched.
+	setMove( SlotTarget( 0 ), MoveParam::WalkSpeed, 6.0f );
+	step( 1 );
+	CHECK( sim.PlayerMove( 0 )[MoveParam::WalkSpeed] == 6.0f );
+	CHECK( sim.PlayerMove( 1 )[MoveParam::WalkSpeed] == 3.0f );
+	b3Vec3 from0 = ground( 0 ), from1 = ground( 1 );
+	f.inputs[0].moveForward = 127;
+	f.inputs[1].moveForward = 127;
+	step( 120 );
+	float walked0 = b3Distance( ground( 0 ), from0 );
+	float walked1 = b3Distance( ground( 1 ), from1 );
+	std::printf( "    2 s of walking: %.2f m at walk_speed 6, %.2f m at 3\n", walked0, walked1 );
+	CHECK( walked1 > 5.0f && walked1 < 6.1f );
+	CHECK( walked0 > 1.9f * walked1 && walked0 < 2.1f * walked1 );
+
+	// The same speed as the server's own parameter gives the same walk.
+	{
+		SimConfig fast = TestConfig();
+		fast.move.values[int( MoveParam::WalkSpeed )] = 6.0f;
+		Simulation other( fast, FlatMap() );
+		InputFrame g;
+		g.events.push_back( { PlayerEventType::Join, 0 } );
+		for ( int i = 0; i < 181; ++i )
+		{
+			g.tick = other.Tick();
+			g.inputs[0].moveForward = i >= 61 ? int8_t( 127 ) : int8_t( 0 );
+			other.Step( g );
+			g.events.clear();
+		}
+		b3Vec3 p = other.EntityTransform( other.PlayerNetId( 0 ) )->position;
+		float walked = b3Distance( b3Vec3{ p.x, 0.0f, p.z }, from0 );
+		std::printf( "    the same from the config: %.2f m\n", walked );
+		CHECK( std::fabs( walked - walked0 ) < 0.01f );
+		CHECK( other.FindEntity( other.PlayerNetId( 0 ) ).has<MoveOverrides>() == false );
+	}
+	f.inputs[0].moveForward = 0;
+	f.inputs[1].moveForward = 0;
+	step( 60 );
+
+	// Values are clamped to the parameter's range; what is not a number, not a parameter or not a
+	// player changes nothing.
+	setMove( SlotTarget( 0 ), MoveParam::WalkSpeed, 1.0e6f );
+	step( 1 );
+	CHECK( sim.PlayerMove( 0 )[MoveParam::WalkSpeed] == MoveParamInfoOf( int( MoveParam::WalkSpeed ) ).max );
+	setMove( SlotTarget( 0 ), MoveParam::WalkSpeed, -4.0f );
+	step( 1 );
+	CHECK( sim.PlayerMove( 0 )[MoveParam::WalkSpeed] == 0.0f );
+	setMove( SlotTarget( 0 ), MoveParam::WalkSpeed, 6.0f );
+	step( 1 );
+	setMove( SlotTarget( 0 ), MoveParam::WalkSpeed, std::numeric_limits<float>::quiet_NaN() );
+	setMove( SlotTarget( 0 ), MoveParam( kMoveParams ), 5.0f );
+	setMove( SlotTarget( 7 ), MoveParam::WalkSpeed, 5.0f );
+	uint32_t propId = sim.Globals().nextNetId;
+	{
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.value = -1;
+		c.a = { 6.0f, 2.0f, 6.0f };
+		c.c = { 0.3f, 0.3f, 0.3f };
+		f.commands.push_back( c );
+	}
+	step( 1 );
+	setMove( propId, MoveParam::WalkSpeed, 5.0f );
+	step( 1 );
+	CHECK( sim.PlayerMove( 0 )[MoveParam::WalkSpeed] == 6.0f );
+	CHECK( sim.FindEntity( propId ).is_valid() && sim.FindEntity( propId ).has<MoveOverrides>() == false );
+	MoveParams only = defaults;
+	only.values[int( MoveParam::WalkSpeed )] = 6.0f;
+	CHECK( sim.PlayerMove( 0 ) == only );
+
+	// A jump twice as fast goes higher.
+	setMove( SlotTarget( 0 ), MoveParam::JumpSpeed, 13.0f );
+	step( 1 );
+	float floor0 = sim.EntityTransform( sim.PlayerNetId( 0 ) )->position.y;
+	float floor1 = sim.EntityTransform( sim.PlayerNetId( 1 ) )->position.y;
+	float peak0 = 0.0f, peak1 = 0.0f;
+	f.inputs[0].buttons = BtnJump;
+	f.inputs[1].buttons = BtnJump;
+	for ( int i = 0; i < 120; ++i )
+	{
+		step( 1 );
+		f.inputs[0].buttons = 0;
+		f.inputs[1].buttons = 0;
+		peak0 = std::max( peak0, sim.EntityTransform( sim.PlayerNetId( 0 ) )->position.y - floor0 );
+		peak1 = std::max( peak1, sim.EntityTransform( sim.PlayerNetId( 1 ) )->position.y - floor1 );
+	}
+	std::printf( "    jumps: %.2f m at jump_speed 13, %.2f m at 6.5\n", peak0, peak1 );
+	CHECK( peak1 > 0.8f && peak1 < 1.4f );
+	CHECK( peak0 > 3.0f * peak1 );
+
+	// A fall with a limit never goes faster; one without does.
+	setMove( SlotTarget( 0 ), MoveParam::MaxFall, 2.0f );
+	for ( PlayerSlot slot = 0; slot < 2; ++slot )
+	{
+		SimCommand c;
+		c.type = CommandType::Respawn;
+		c.mode = 1;
+		c.target = SlotTarget( slot );
+		c.a = { 4.0f * float( slot ), 12.0f, -4.0f };
+		f.commands.push_back( c );
+	}
+	step( 1 );
+	// A respawn keeps what a mod set.
+	CHECK( sim.PlayerMove( 0 )[MoveParam::WalkSpeed] == 6.0f && sim.PlayerMove( 0 )[MoveParam::MaxFall] == 2.0f );
+	float fastest0 = 0.0f, fastest1 = 0.0f;
+	for ( int i = 0; i < 60; ++i )
+	{
+		step( 1 );
+		fastest0 = std::min( fastest0, sim.PlayerCharacter( 0 )->velocity.y );
+		fastest1 = std::min( fastest1, sim.PlayerCharacter( 1 )->velocity.y );
+	}
+	std::printf( "    falling: %.2f m/s with max_fall 2, %.2f m/s without\n", fastest0, fastest1 );
+	CHECK( fastest0 >= -2.0f && fastest0 < -1.9f );
+	CHECK( fastest1 < -10.0f );
+
+	// It is state: a joining client gets it and stays in step, and a rollback takes a change back.
+	std::vector<uint8_t> image;
+	sim.SavePortable( image );
+	Simulation client( TestConfig(), FlatMap() );
+	CHECK( client.LoadPortable( image ) );
+	CHECK( client.PlayerMove( 0 ) == sim.PlayerMove( 0 ) && client.ComputeHash() == sim.ComputeHash() );
+	f.inputs[0].moveForward = 127;
+	for ( int i = 0; i < 120; ++i )
+	{
+		f.tick = sim.Tick();
+		sim.Step( f );
+		client.Step( f );
+	}
+	CHECK( client.ComputeHash() == sim.ComputeHash() );
+
+	Snapshot before;
+	sim.Save( before );
+	uint64_t hashBefore = sim.ComputeHash();
+	setMove( SlotTarget( 1 ), MoveParam::Gravity, 4.0f );
+	step( 5 );
+	CHECK( sim.PlayerMove( 1 )[MoveParam::Gravity] == 4.0f && sim.ComputeHash() != hashBefore );
+	sim.Load( before );
+	CHECK( sim.PlayerMove( 1 ) == defaults && sim.ComputeHash() == hashBefore );
+
+	// Given back, the parameter is the server's again; the others a mod set stay.
+	resetMove( SlotTarget( 0 ), MoveParam::WalkSpeed );
+	step( 1 );
+	CHECK( sim.PlayerMove( 0 )[MoveParam::WalkSpeed] == 3.0f );
+	CHECK( sim.PlayerMove( 0 )[MoveParam::JumpSpeed] == 13.0f );
+
+	// Names and ranges, as options and baked files use them.
+	for ( int i = 0; i < kMoveParams; ++i )
+	{
+		const MoveParamInfo& info = MoveParamInfoOf( i );
+		CHECK( info.name[0] != '\0' && MoveParamByName( info.name ) == i );
+		CHECK( defaults.values[i] >= info.min && defaults.values[i] <= info.max );
+	}
+	CHECK( MoveParamByName( "fly_speed" ) == -1 && MoveParamInfoOf( kMoveParams ).name[0] == '\0' );
+	CHECK( ValidMoveParams( defaults ) );
+	MoveParams bad = defaults;
+	bad.values[int( MoveParam::Gravity )] = std::numeric_limits<float>::quiet_NaN();
+	CHECK( ValidMoveParams( bad ) == false );
+}
+
 void TestRagdoll()
 {
 	Simulation sim( TestConfig(), FlatMap() );
@@ -3737,6 +3939,27 @@ void TestAnimPipeline()
 	uint64_t b = AnimPoseHash( *loaded );
 	std::printf( "    pose hash %016" PRIx64 " (procedural) %016" PRIx64 " (from files)\n", a, b );
 	CHECK( a == b );
+	CHECK( loaded != nullptr && loaded->Movement().empty() );
+
+	// How a character moves is in its anim.cfg (CbCharacter.movement bakes it): known names, in
+	// range; the rest is said and left out or clamped.
+	{
+		std::ofstream cfg( dir / "anim.cfg", std::ios::app );
+		cfg << "\nmove.walk_speed = 2.4\nmove.max_fall = 99999\nmove.fly_speed = 3\nmove.gravity = lots\n";
+	}
+	warnings.clear();
+	loaded = anim::AnimSet::Load( dir.string(), error, warnings );
+	CHECK( loaded != nullptr );
+	if ( loaded != nullptr )
+	{
+		const auto& movement = loaded->Movement();
+		std::printf( "    movement: %zu values; %s\n", movement.size(), warnings.c_str() );
+		CHECK( movement.size() == 2 );
+		CHECK( movement.size() == 2 && movement[0].first == int( MoveParam::MaxFall ) && movement[0].second == 1000.0f );
+		CHECK( movement.size() == 2 && movement[1].first == int( MoveParam::WalkSpeed ) && movement[1].second == 2.4f );
+		CHECK( warnings.find( "move.fly_speed" ) != std::string::npos && warnings.find( "move.gravity" ) != std::string::npos &&
+			   warnings.find( "move.max_fall" ) != std::string::npos );
+	}
 	std::filesystem::remove_all( dir );
 }
 
@@ -4353,6 +4576,7 @@ int main( int argc, char** argv )
 		{ "rollback_reset", TestRollbackReset },
 		{ "gameplay_sanity", TestGameplaySanity },
 		{ "commands", TestCommands },
+		{ "move_params", TestMoveParams },
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },
