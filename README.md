@@ -93,6 +93,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M85: the Cinderbox SDK: a Godot project to make a mod's look in (`sdk/`, `tools\sdk.ps1`): the extension, the editor addon, a placeholder character, starter scenes and animation packs; publishing bakes animation packs | done |
 | M86: the SDK cleaned up: a placeholder model with locomotion clips only, no copies of the game's character or addon, animation packs in `animation_packs/` with states named for what they do | done |
 | M87: animation layers are named `FullBody` and `UpperBody`; a pack can hold the whole tree and replace only the layers it names (`replaces`); the SDK ships the default tree in full | done |
+| M88: the SDK has bone maps for other rigs (`bone_maps/mixamo.tres`); publishing runs the game's pack check; `sdk/README.md` explains every non-scene file | done |
 
 ## Building
 

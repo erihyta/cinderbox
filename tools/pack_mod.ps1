@@ -82,3 +82,10 @@ foreach ($entry in @($zip.Entries)) {
 Write-Host "packed ${Output}:"
 $zip.Entries | ForEach-Object { Write-Host "  $($_.FullName)" }
 $zip.Dispose()
+
+# The game's own check of a pack, now rather than when a player joins.
+$checkPack = Join-Path $root "godot\addons\cinderbox_maps\check_pack.gd"
+if (Test-Path $checkPack) {
+	& $Godot --headless --path (Join-Path $root "godot") --script $checkPack -- $Output
+	if ($LASTEXITCODE -ne 0) { throw "the game would refuse this pack (see above)" }
+}

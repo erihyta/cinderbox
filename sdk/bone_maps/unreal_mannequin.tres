@@ -1,5 +1,6 @@
 [gd_resource type="BoneMap" load_steps=2 format=3]
 
+; For the placeholder model only (and other Unreal-style rigs: pelvis, spine_01, ...).
 ; The Universal Animation Library's mannequin (UE-style bone names) mapped onto Godot's standard
 ; SkeletonProfileHumanoid. The glb's import uses it to rename the bones and fix the rest pose, so
 ; the character speaks the profile's names (Hips, Spine, LeftUpperArm, ...) like every character.

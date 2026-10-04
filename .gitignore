@@ -35,10 +35,13 @@ characters/*/client/cinderbox.gdextension.uid
 # The SDK's parts of a project (tools\sdk.ps1 copies them in): the extension, and in a mod's
 # project the placeholder model.
 sdk/.godot/
+sdk/anim/
+sdk/items/
 sdk/bin/
 sdk/cinderbox.gdextension
 sdk/cinderbox.gdextension.uid
 server_mods/*/client/placeholder/
+server_mods/*/client/bone_maps/
 
 # Paid assets: never on GitHub (the repo is public). Keep the purchased packs here, outside git.
 Universal Animation Library*/

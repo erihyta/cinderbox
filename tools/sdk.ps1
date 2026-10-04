@@ -8,6 +8,7 @@
 # An SDK project's own parts (copied in, git-ignored in a mod's project, never packed into the mod):
 #   cinderbox.gdextension, bin\    the Cinderbox viewer extension (build it first: cmake --build --preset godot-export)
 #   placeholder\                   the placeholder model: the CC0 mannequin with its locomotion clips
+#   bone_maps\                     bone maps for importing other rigs (Mixamo; Unreal-style, the placeholder's)
 #
 # -New gives the project its own files, made from sdk\starters with the mod's name in them:
 #   prefabs\<mod>.tscn                             the item's scene (body, grips, a muzzle)
@@ -53,11 +54,16 @@ function Extension([string]$project) {
 	Remove-Item (Join-Path $projectBin "libcinderbox_peer.*") -Force -ErrorAction SilentlyContinue
 }
 
-# The placeholder model, into a mod's project (sdk\ has it already: it is the template's).
+# The placeholder model and the bone maps, into a mod's project (sdk\ has them already: they are
+# the template's).
 function Placeholder([string]$project) {
-	$to = Join-Path $project "placeholder"
-	New-Item -ItemType Directory -Force $to | Out-Null
-	Copy-Item (Join-Path $sdk "placeholder\*") $to -Force
+	foreach ($folder in @("placeholder", "bone_maps")) {
+		$to = Join-Path $project $folder
+		New-Item -ItemType Directory -Force $to | Out-Null
+		Copy-Item (Join-Path $sdk "$folder\*") $to -Force
+	}
+	# Where the placeholder's own map used to be.
+	Remove-Item (Join-Path $project "placeholder\bone_map.tres") -Force -ErrorAction SilentlyContinue
 }
 
 function Import([string]$project) {
@@ -115,6 +121,8 @@ if ($New) {
 if ($Update) {
 	$project = if (Test-Path (Join-Path $Update "project.godot")) { (Resolve-Path $Update).Path } else { Join-Path $root "server_mods\$Update\client" }
 	if (-not (Test-Path (Join-Path $project "project.godot"))) { throw "no project at $project" }
+	# The export preset is the SDK's: what it leaves out of the mod changes with the SDK.
+	Copy-Item (Join-Path $sdk "export_presets.cfg") $project -Force
 	Extension $project
 	Placeholder $project
 	Import $project
