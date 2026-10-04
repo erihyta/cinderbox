@@ -1,6 +1,6 @@
 # Motions
 
-What a mod adds to how players move (a dash, a double jump), predicted like walking is. Part of the [manual](../README.md#the-manual).
+What a mod adds to how players move (a dash, a double jump, flight, a jetpack), predicted like walking is. Part of the [manual](../README.md#the-manual).
 
 ## Why they exist
 
@@ -11,8 +11,8 @@ What a mod adds to how players move (a dash, a double jump), predicted like walk
 | A wrong guess | does not happen: nothing is guessed | rolled back, like a mispredicted step |
 | Good for | what lasts and need not be instant (a crouch's speed, knockback from a hit) | what must answer a key at once (a dash, a second jump) |
 
-A motion is to movement what a [`CbReaction`](looks.md#reactions) is to the look: *on a press, if
-conditions hold, do this to the mover*. It is authored in Godot, baked to text, sent in the schema
+A motion is to movement what a [`CbReaction`](looks.md#reactions) is to the look: *on a press, on a
+cue, or while conditions hold, do this to the mover*. It is authored in Godot, baked to text, sent in the schema
 and run by the simulation, the way a character's [state machine](characters.md#state-machines) is.
 
 ```
@@ -53,24 +53,55 @@ Moves        CbMotionSet   set_name "dash.moves"                (motion_sets/das
 
 | Group | Field | Meaning |
 |---|---|---|
-| When | `action` | the action whose press it answers: one a server mod declares (`dash`), or the engine's `jump` / `sprint`. Held, it is one press |
-| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads: `grounded`, `airborne_time`, `speed`, `vertical_speed`, a field (`dash.charges > 0`), an item kind held, a stance |
-| | `cooldown` | seconds between two uses |
-| Uses | `uses` | how many before a refill; 0: no limit |
+| When | `when` | **On a press**: once, when `action` goes down (a dash). **While**: every tick its `conditions` hold (flight, a glide, a jetpack). **On a cue**: once, when the mod event `event` is recorded at the player (a stun a server mod starts) |
+| | `action` | On a press: one a server mod declares (`dash`), or the engine's `jump` / `sprint`. Held, it is one press |
+| | `event` | On a cue: the event. A server mod emits it at the player, so the start is the server's and comes with the frame; from then on every simulation runs the motion |
+| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held, a stance) and whether a key is down: `held.jump`, `held.dash` |
+| | `cooldown` | seconds between two uses; for a While, between its end and its next start |
+| Uses | `uses` | how many before a refill; 0: no limit. Not for a While |
 | | `refill`, `refill_seconds` | **On the ground**: back when the player stands. **After seconds**: back that long after the last use |
-| Impulse | `impulse` | the change of velocity, m/s |
+| Impulse | `impulse` | the change of velocity, m/s. A While adds that much every second it is on: a thrust |
 | | `impulse_frame` | **Look** (the camera, pitch included), **Move input** (WASD; the facing when none is held), **Facing**, **Up**, **World direction** (`impulse_direction`) |
-| | `replace` | what of the velocity is cleared first: **Nothing**, **Vertical speed**, **Horizontal velocity**, **All** |
-| While it lasts | `duration` | how long the motion stays on after the press |
+| | `replace` | what of the velocity is cleared first: **Nothing**, **Vertical speed**, **Horizontal velocity**, **All**. Not for a While |
+| While it lasts | `duration` | how long the motion stays on after a press or a cue. A While is on while its conditions hold |
 | | `parameters` | [movement parameters](server-mods.md#movement-parameters) the player has while it is on (`friction` = 0). They win over the server's, the character's and a mod's `SetMove` for that long |
-| When it happens | `changes` | fields of the player: `dash.charges -= 1` (`-=`, `+=`, `=` with a number), written like a [prediction's](looks.md#predictions) |
-| | `emits` | a mod event at the player, with the impulse as its vector |
+| When it happens | `changes` | fields of the player: `dash.charges -= 1` (`-=`, `+=`, `=` with a number), written like a [prediction's](looks.md#predictions). In a While, `-=` and `+=` are per second and need a Float field (`flight.fuel -= 30`), and `=` is set when it starts |
+| | `emits` | a mod event at the player, with the impulse as its vector. A While emits it when it starts |
 
 - **Order**: a tick runs the frame's commands, then each player's motions (in the schema's order), then the mover. So a `Set` from the mod and a `change` from a motion in the same tick both count.
+- **Conditions read the fields as the tick found them**: a motion that changes a field does not start another until the next tick. That is what makes a toggle of two motions (`FlyOn` if not `flight.on`, `FlyOff` if `flight.on`) one switch a press.
 - **A frozen or dead player** does none; a key held through a freeze is not a press when it ends.
 - **At most 16 motions** on a server, all its mods' sets together.
 - **In the editor**: every group has an info row (click the icon), every property a hover text, F1 opens the class reference. A motion that cannot run is a warning on the node and stops the bake.
 - **Names the editor cannot check**: the action, fields and events are the server mod's. One no mod declares makes that part do nothing (the motion never happens, the change is skipped, nothing is emitted), and the server says so when it starts.
+
+## Motions that hold: the flight mod
+
+`server_mods/flight` is all three kinds of holding motion. Its C++ declares the names and gives a
+player its first tank; everything else is the set.
+
+```
+Moves     CbMotionSet   set_name "flight.moves"             (motion_sets/flight_moves.tscn)
+├── FlyOn    on "fly" (T)   conditions not flight.on    changes flight.on = 1    emits flight.started
+├── FlyOff   on "fly" (T)   conditions flight.on        changes flight.on = 0    emits flight.stopped
+├── Flying   while   flight.on
+│                    parameters { gravity: 0, move_frame: 1, air_control: 1, air_friction: 3, walk_speed: 7, sprint_speed: 12 }
+├── Thrust   while   held.jump, not grounded, not flight.on, flight.fuel > 0
+│                    impulse 26 m/s per second up     changes flight.fuel -= 30     emits flight.thrust
+├── Refuel   while   grounded, flight.fuel < 100      changes flight.fuel += 40
+└── Glide    while   held.sprint, not grounded, vertical_speed < 0, not flight.on
+                     parameters { gravity: 3, max_fall: 2.5, air_control: 0.8 }
+```
+
+| Key | What happens |
+|---|---|
+| T | flight on and off. On: no gravity, WASD moves along the camera (look up and walk to rise), letting go stops |
+| Space, held in the air | the jetpack: up, for as long as the tank lasts (a little over 3 s); it fills again on the ground |
+| Shift, held while falling | a glide: the fall slows to 2.5 m/s |
+
+- **`move_frame`** and **`air_friction`** are [movement parameters](server-mods.md#movement-parameters) made for this: the first turns the movement input toward where the camera looks, the second is what stops a body in the air.
+- **The gauge is predicted**: the fuel is a field the motions count themselves, so the HUD's bar (`CbFieldBinding` on `flight.fuel`) moves as you thrust.
+- **A While says so every tick**: between two ticks nothing of it is on, so `ctx.Move` in a server mod reads the parameters without it.
 
 ## The look of a motion
 
@@ -125,11 +156,14 @@ emit	dash.started
 | The client | predicted every tick of the two dashes and the double jump exactly as the server then had it: 390 ticks compared, none different |
 | The recording | replays to the same checksums, motions included |
 
+`net_flight` does the same for the flight mod: flight switched on, a flight into the sandbox's wall, off and down, the jetpack
+held until its tank is empty, a glide, the landing and the refuel. 1,710 predicted ticks compared, none different: the
+position, the fuel's exact bits, the events.
+
 ## Not yet
 
 | Missing | Roadmap |
 |---|---|
-| Motions that hold **while** conditions do (flight, a glide, a jetpack), `held:<action>`, per-second values | Motions: while |
 | Tethers (a grappling hook) | Motions: tethers |
 | A preview panel; `motion.<name>` in conditions and state machines; names checked at publish | Motions in the editor |
 | Another player's dash is seen when its input arrives: its press is guessed by repeating its last input, as a jump is | by design |

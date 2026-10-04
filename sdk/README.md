@@ -37,6 +37,13 @@ machines. No game and no server are needed to author. The rules are the mod's C+
   (`vfx/<mod>_flash.tscn`).
 - **No scripts.** A mod's look is scenes and resources; the game refuses a pack with a script.
 
+## Finding the nodes
+
+The editor's **Create New Node** dialog lists the Cinderbox nodes a mod is made of under
+**Favorites**, on its left: `CbReaction`, `CbPrediction`, `CbItemLook`, `CbItemBody`, `CbGrip`,
+`CbMotionSet`, `CbMotion`, the HUD nodes, and the character and map nodes. The extension puts them
+there the first time a project is opened with it. One you take out of the favorites stays out.
+
 ## What `-New <mod>` makes
 
 | File | Start from it to |
