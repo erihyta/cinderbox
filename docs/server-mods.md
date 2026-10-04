@@ -31,6 +31,7 @@ and mods need no determinism of their own.
 | `Aim` | turns the player's aim chain (its character's arm, by default) toward where it looks, or lets it go |
 | `Facing` | the body faces where the camera looks, or turns toward where it walks (freelook, the default) |
 | `Stance` | plays a stance on one of the player's animation layers, or clears it |
+| `SetMove` | sets one of a player's [movement parameters](#movement-parameters) (walk speed, jump, gravity, ...), or gives it back |
 
 ```cpp
 // server_mods/jumper/jumper.cpp: a jump boost on Q, the whole mod.
@@ -158,6 +159,44 @@ Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod re
 ```bash
 cb_server --port 7777 --mod-option deathmatch.kills=5 --mod-option deathmatch.round_seconds=120
 ```
+
+## Movement parameters
+
+How players move is a set of values, not constants in the engine (`src/sim/move_params.h`).
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `walk_speed`, `sprint_speed` | 3, 6.5 m/s | speed on the ground, without and with sprint |
+| `accelerate` | 12 | how fast the speed is reached: per second, times the speed asked for |
+| `friction`, `stop_speed` | 6, 1 | how fast a grounded character slows down; below `stop_speed` it stops |
+| `air_control` | 0.3 | the share of `accelerate` a character has in the air |
+| `gravity`, `jump_speed` | 18 m/s², 6.5 m/s | the fall, and the speed a jump starts with |
+| `turn_rate` | 12 rad/s | how fast the body turns toward where it walks (freelook) |
+| `max_fall` | 0 | the fastest a character falls, in m/s; 0: no limit |
+
+| Who sets it | How | Wins over |
+|---|---|---|
+| The engine | the defaults above | |
+| The server | `cb_server --move walk_speed=4` (repeatable) | the engine |
+| The character | `movement` on its `CbCharacter`, baked into `anim.cfg` ([Making a character](characters.md#making-a-character)) | the server |
+| A mod | `ctx.SetMove( target, MoveParam::WalkSpeed, 1.5f )`, back with `ctx.ResetMove( target, MoveParam::WalkSpeed )` | the character, for that player |
+
+```cpp
+// server_mods/sneak/sneak.cpp: a crouch is slow, and does not run.
+ctx.SetMove( target, MoveParam::WalkSpeed, speed );
+ctx.SetMove( target, MoveParam::SprintSpeed, speed );
+...
+ctx.ResetMove( target, MoveParam::WalkSpeed );
+ctx.ResetMove( target, MoveParam::SprintSpeed );
+```
+
+- **The first three are one set**, the server's (`SimConfig::move`): it goes to every client in the welcome and into recordings, and the server prints what differs from the engine's when it starts (`movement: walk_speed = 4`).
+- **A mod's value is the player's own**: simulation state, hashed and rolled back, so every client moves that player the same way. A respawn keeps it; only the mod gives it back.
+- **Values are clamped** to the parameter's range (`MoveParamInfoOf`); what is not a number is ignored.
+- **Reading**: `ctx.Move( slot, MoveParam::WalkSpeed )` is what the player moves with now.
+- **Not predicted**: `SetMove` is a command, so the change reaches the player's own simulation with the frame. That suits a change that lasts (a crouch, a slow, a heavy item). Movement that must answer a press at once is the roadmap's `CbMotion`.
+- **Not a parameter**: the capsule's size (hitboxes, the camera and the hover all go by it).
+- The `sneak` mod's speed is the server option `sneak.speed` (1.5 m/s; 0 leaves the speeds alone).
 
 ## Hit zones
 

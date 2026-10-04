@@ -109,6 +109,10 @@ With `--character none`, players use the procedural placeholder rig, which has d
      `UpperChest:0.3 RightUpperArm:1`) and `aim_tip` (the bone that ends up on the line of sight);
      `look_chain`, the bones that bend with the camera's pitch ([Facing](#facing)).
      The default, `RightUpperArm:1` to `RightHand`, points the right arm.
+   - `movement`, if the character moves in its own way: [movement parameters](server-mods.md#movement-parameters)
+     by name, `walk_speed` = 2.4 for a walk clip made at that speed. They win over the server's
+     own; what is left out is the server's. A name that is no parameter, or a value outside its
+     range, is a warning on the node and stops the bake.
 4. Save the scene. That bakes it: the `.ozz` files, `anim.cfg`, `graph.cfg` and `hitboxes.cfg` are written next
    to the scene (clips are sampled at `sample_rate`, 30 Hz). Publishing bakes it again from the
    scene that ships, so an item is never stale. The **Bake character** button on the

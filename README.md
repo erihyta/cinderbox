@@ -11,7 +11,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | Looks | Godot scenes with no code (reactions, predictions, HUD nodes), shipped as workshop items |
 | Authoring | maps, characters, state machines and item bodies are made in the Godot editor and baked for the server |
 
-Milestones M1 to M91 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
+Milestones M1 to M92 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
 
 ## The manual
 
@@ -176,7 +176,8 @@ The export needs the Godot 4.7.2 export templates, installed either from the edi
 `%LOCALAPPDATA%\cinderbox-build\tools\godot\templates`. Packs in `mods\` are copied to `dist\Cinderbox\mods`.
 
 `cb_server` is in `<build dir>/bin`. Its options are `--tick-rate`, `--seed`, `--substeps`,
-`--prop-lifetime`, `--props-per-player`, `--props-global`, and `--mods A,B` / `--mods none` / `--list-mods`
+`--prop-lifetime`, `--props-per-player`, `--props-global`, `--move NAME=VALUE`
+([movement parameters](docs/server-mods.md#movement-parameters)), and `--mods A,B` / `--mods none` / `--list-mods`
 (every compiled server mod runs by default, see [docs/server-mods.md](docs/server-mods.md)).
 
 ## License
