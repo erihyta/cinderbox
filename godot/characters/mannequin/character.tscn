@@ -173,7 +173,7 @@ advance_mode = 2
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_0ynns"]
 xfade_time = 0.15
 advance_mode = 2
-advance_condition = &"pistol"
+advance_expression = "pistol or rifle"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_wnmgd"]
 xfade_time = 0.15
@@ -203,12 +203,12 @@ advance_condition = &"melee"
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_nlfyn"]
 xfade_time = 0.15
 advance_mode = 2
-advance_expression = "not pistol"
+advance_expression = "not pistol and not rifle"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_e38ba"]
 xfade_time = 0.15
 advance_mode = 2
-advance_expression = "not pistol"
+advance_expression = "not pistol and not rifle"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_ob45v"]
 xfade_time = 0.05
@@ -218,7 +218,7 @@ advance_condition = &"melee_swing"
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_cfc4f"]
 xfade_time = 0.15
 advance_mode = 2
-advance_condition = &"pistol"
+advance_expression = "pistol or rifle"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_hsr08"]
 xfade_time = 0.15
@@ -268,7 +268,7 @@ animation_player_path = NodePath("Model/AnimationPlayer")
 animation_tree_path = NodePath("AnimationTree")
 graph_inputs = {
 "Base/Locomotion/blend_position": "forward_speed",
-"UpperBlend/blend_amount": "pistol or melee or melee_swing"
+"UpperBlend/blend_amount": "pistol or rifle or melee or melee_swing"
 }
 
 [node name="Model" parent="." unique_id=984932362 instance=ExtResource("1_3txul")]

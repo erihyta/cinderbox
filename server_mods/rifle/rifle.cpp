@@ -12,8 +12,9 @@
 // events ("rifle.fired", "rifle.hit"), and the look decides what to draw and play for each. The
 // look predicts held fire too (CbPrediction.while_held, at this file's rate).
 //
-// The body holds it in the "pistol" stance, the shooter's stance every character has; a character
-// whose state machine reads "rifle.fired" kicks at every shot.
+// While it is out the upper body has the "rifle" stance. What that looks like is the character's:
+// one with rifle animations has states of its own for it (entered on "rifle", kicking on
+// "rifle.fired"); one without holds it as it holds a pistol ("pistol or rifle").
 
 #include "mod_api.h"
 
@@ -85,7 +86,7 @@ public:
 		m_roundStart = declare.Event( "game.round_start" );
 
 		m_upper = declare.Layer( "upper" );
-		m_stance = declare.Stance( "pistol" );
+		m_stance = declare.Stance( "rifle" );
 		// Its body when it lies in the world is authored in its scene (client/prefabs/rifle.tscn, the
 		// CbItemBody) and baked to client/items/rifle.gun.cfg.
 		m_gun = declare.ItemKind( "rifle.gun" );
@@ -226,7 +227,7 @@ private:
 		// point the rifle there, in the pose everyone draws and hit tests use. Put away, the rifle
 		// clears only what is its own (the loadout decides facing).
 		bool holding = gunInHand && c->dead == 0;
-		// The stance is shared with the other gun: swapped for it in one tick, that one's "put away"
+		// The layer is shared with the other gun: swapped for it in one tick, that one's "put away"
 		// may land after this one's "out". What the body says decides, so it is set again.
 		const AnimState* anim = ctx.PlayerAnim( g.slot );
 		bool lost = holding && g.aiming && anim != nullptr && m_upper.Valid() &&

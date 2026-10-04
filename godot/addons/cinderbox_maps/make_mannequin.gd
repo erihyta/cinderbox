@@ -208,16 +208,16 @@ func _add_tree(player: AnimationPlayer) -> void:
 	upper.add_node("Ready", _clip("Sword_Idle"), Vector2(550, 220))
 	upper.add_node("Swing", _clip("Sword_Attack"), Vector2(800, 220))
 	_go(upper, "Start", "Rest")
-	_go(upper, "Rest", "Pistol", "pistol", 0.15)
+	_go(upper, "Rest", "Pistol", "pistol or rifle", 0.15)
 	_go(upper, "Rest", "Ready", "melee", 0.15)
 	_go(upper, "Rest", "Swing", "melee_swing", 0.05)
 	_go(upper, "Pistol", "Shoot", "pistol.fired or rifle.fired", 0.05)
 	_go(upper, "Shoot", "Pistol", "", 0.15, true)
 	_go(upper, "Pistol", "Ready", "melee", 0.15)
-	_go(upper, "Pistol", "Rest", "not pistol", 0.15)
-	_go(upper, "Shoot", "Rest", "not pistol", 0.15)
+	_go(upper, "Pistol", "Rest", "not pistol and not rifle", 0.15)
+	_go(upper, "Shoot", "Rest", "not pistol and not rifle", 0.15)
 	_go(upper, "Ready", "Swing", "melee_swing", 0.05)
-	_go(upper, "Ready", "Pistol", "pistol", 0.15)
+	_go(upper, "Ready", "Pistol", "pistol or rifle", 0.15)
 	_go(upper, "Ready", "Rest", "not melee and not melee_swing", 0.15)
 	_go(upper, "Swing", "Ready", "not melee_swing and melee", 0.25)
 	_go(upper, "Swing", "Rest", "not melee_swing and not melee", 0.25)
@@ -253,7 +253,7 @@ func _add_tree(player: AnimationPlayer) -> void:
 	# What drives the tree's numbers, as the simulation computes them.
 	_root.graph_inputs = {
 		"Base/Locomotion/blend_position": "move_right, move_forward" if _pack == "source" else "forward_speed",
-		"UpperBlend/blend_amount": "pistol or melee or melee_swing",
+		"UpperBlend/blend_amount": "pistol or rifle or melee or melee_swing",
 	}
 
 
