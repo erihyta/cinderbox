@@ -96,7 +96,8 @@ The double jump and the jetpack ship this way, off by default
 
 ## Motions that hold: the flight mod
 
-`server_mods/flight` is all three kinds of holding motion. Its C++ declares the names and gives a
+`server_mods/flight` is all three kinds of holding motion. The mod is
+[switched off by default](server-mods.md#switched-off-by-default): start the server with it by name to try it. Its C++ declares the names and gives a
 player its first tank; everything else is the set.
 
 ```

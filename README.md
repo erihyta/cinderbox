@@ -106,9 +106,9 @@ A join that fails comes back to the menu and says why:
 - WASD moves, Shift sprints and Space jumps: the engine's own controls.
 - Everything else comes from the server's mods, bound to the keys they suggest. With the shipped mods:
   1 to 4 switch slots (hands, pistol, bat), the left mouse button fires or swings, R reloads, E picks
-  up, G throws, V dashes (twice, then they come back), T switches flight on and off, Shift held
-  while falling glides, and F with empty hands spawns a prop. Switched off by default: the crouch
-  (C, the `sneak` mod), the second jump in the air and the jetpack
+  up, G throws, V dashes (twice, then they come back), and F with empty hands spawns a prop.
+  Switched off by default: the crouch (C, the `sneak` mod), the `flight` mod (T flies, Shift
+  glides, and its jetpack), and the second jump in the air
   ([what is off](docs/server-mods.md#switched-off-by-default)).
 - Tab shows the scoreboard, the mouse orbits the camera and the wheel zooms.
 - The key left of 1 (`` ` `` / `~`) switches between the camera behind the player and **first person**:
