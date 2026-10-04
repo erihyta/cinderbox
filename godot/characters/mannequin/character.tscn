@@ -253,13 +253,13 @@ filter_enabled = true
 filters = ["Armature/Skeleton3D:Chest", "Armature/Skeleton3D:Head", "Armature/Skeleton3D:LeftHand", "Armature/Skeleton3D:LeftIndexDistal", "Armature/Skeleton3D:LeftIndexIntermediate", "Armature/Skeleton3D:LeftIndexProximal", "Armature/Skeleton3D:LeftLittleDistal", "Armature/Skeleton3D:LeftLittleIntermediate", "Armature/Skeleton3D:LeftLittleProximal", "Armature/Skeleton3D:LeftLowerArm", "Armature/Skeleton3D:LeftMiddleDistal", "Armature/Skeleton3D:LeftMiddleIntermediate", "Armature/Skeleton3D:LeftMiddleProximal", "Armature/Skeleton3D:LeftRingDistal", "Armature/Skeleton3D:LeftRingIntermediate", "Armature/Skeleton3D:LeftRingProximal", "Armature/Skeleton3D:LeftShoulder", "Armature/Skeleton3D:LeftThumbDistal", "Armature/Skeleton3D:LeftThumbMetacarpal", "Armature/Skeleton3D:LeftThumbProximal", "Armature/Skeleton3D:LeftUpperArm", "Armature/Skeleton3D:Neck", "Armature/Skeleton3D:RightHand", "Armature/Skeleton3D:RightIndexDistal", "Armature/Skeleton3D:RightIndexIntermediate", "Armature/Skeleton3D:RightIndexProximal", "Armature/Skeleton3D:RightLittleDistal", "Armature/Skeleton3D:RightLittleIntermediate", "Armature/Skeleton3D:RightLittleProximal", "Armature/Skeleton3D:RightLowerArm", "Armature/Skeleton3D:RightMiddleDistal", "Armature/Skeleton3D:RightMiddleIntermediate", "Armature/Skeleton3D:RightMiddleProximal", "Armature/Skeleton3D:RightRingDistal", "Armature/Skeleton3D:RightRingIntermediate", "Armature/Skeleton3D:RightRingProximal", "Armature/Skeleton3D:RightShoulder", "Armature/Skeleton3D:RightThumbDistal", "Armature/Skeleton3D:RightThumbMetacarpal", "Armature/Skeleton3D:RightThumbProximal", "Armature/Skeleton3D:RightUpperArm", "Armature/Skeleton3D:Spine", "Armature/Skeleton3D:UpperChest", "Armature/Skeleton3D:index_04_leaf_l", "Armature/Skeleton3D:index_04_leaf_r", "Armature/Skeleton3D:middle_04_leaf_l", "Armature/Skeleton3D:middle_04_leaf_r", "Armature/Skeleton3D:pinky_04_leaf_l", "Armature/Skeleton3D:pinky_04_leaf_r", "Armature/Skeleton3D:ring_04_leaf_l", "Armature/Skeleton3D:ring_04_leaf_r", "Armature/Skeleton3D:thumb_04_leaf_l", "Armature/Skeleton3D:thumb_04_leaf_r"]
 
 [sub_resource type="AnimationNodeBlendTree" id="AnimationNodeBlendTree_km0ko"]
-nodes/Base/node = SubResource("AnimationNodeStateMachine_tdnmo")
-nodes/Base/position = Vector2(0, 0)
-nodes/Upper/node = SubResource("AnimationNodeStateMachine_qr12r")
-nodes/Upper/position = Vector2(0, 200)
-nodes/UpperBlend/node = SubResource("AnimationNodeBlend2_0qnk2")
-nodes/UpperBlend/position = Vector2(250, 100)
-node_connections = [&"output", 0, &"UpperBlend", &"UpperBlend", 0, &"Base", &"UpperBlend", 1, &"Upper"]
+nodes/FullBody/node = SubResource("AnimationNodeStateMachine_tdnmo")
+nodes/FullBody/position = Vector2(0, 0)
+nodes/UpperBody/node = SubResource("AnimationNodeStateMachine_qr12r")
+nodes/UpperBody/position = Vector2(0, 200)
+nodes/UpperBodyBlend/node = SubResource("AnimationNodeBlend2_0qnk2")
+nodes/UpperBodyBlend/position = Vector2(250, 100)
+node_connections = [&"output", 0, &"UpperBodyBlend", &"UpperBodyBlend", 0, &"FullBody", &"UpperBodyBlend", 1, &"UpperBody"]
 
 [node name="Mannequin" type="CbCharacter" unique_id=510387797]
 character_name = "mannequin"
@@ -267,8 +267,8 @@ skeleton_path = NodePath("Model/Armature/Skeleton3D")
 animation_player_path = NodePath("Model/AnimationPlayer")
 animation_tree_path = NodePath("AnimationTree")
 graph_inputs = {
-"Base/Locomotion/blend_position": "forward_speed",
-"UpperBlend/blend_amount": "pistol or rifle or melee or melee_swing"
+"FullBody/Locomotion/blend_position": "forward_speed",
+"UpperBodyBlend/blend_amount": "pistol or rifle or melee or melee_swing"
 }
 
 [node name="Model" parent="." unique_id=984932362 instance=ExtResource("1_3txul")]
@@ -490,13 +490,13 @@ root_node = NodePath("../Model")
 callback_mode_discrete = 0
 tree_root = SubResource("AnimationNodeBlendTree_km0ko")
 anim_player = NodePath("../Model/AnimationPlayer")
-parameters/Base/conditions/grounded = false
-parameters/Base/conditions/jumped = false
-parameters/Base/Locomotion/blend_position = 0.0
-parameters/Upper/conditions/melee = false
-parameters/Upper/conditions/melee_swing = false
-parameters/Upper/conditions/pistol = false
-parameters/Upper/conditions/pistol.fired = false
-parameters/UpperBlend/blend_amount = 0.0
+parameters/FullBody/conditions/grounded = false
+parameters/FullBody/conditions/jumped = false
+parameters/FullBody/Locomotion/blend_position = 0.0
+parameters/UpperBody/conditions/melee = false
+parameters/UpperBody/conditions/melee_swing = false
+parameters/UpperBody/conditions/pistol = false
+parameters/UpperBody/conditions/pistol.fired = false
+parameters/UpperBodyBlend/blend_amount = 0.0
 
 [editable path="Model"]

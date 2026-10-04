@@ -1,0 +1,161 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://placeholder/mannequin.glb" id="1_autnr"]
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_06323"]
+animation = &"Jump"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_3guuj"]
+animation = &"Jump_Start"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_fjlef"]
+animation = &"Jump_Land"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_xgtwq"]
+animation = &"Jog_Fwd"
+play_mode = 1
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_yvbxo"]
+animation = &"Walk"
+play_mode = 1
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_mqnl2"]
+animation = &"Idle"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_8ryhr"]
+animation = &"Walk"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_t3x2l"]
+animation = &"Jog_Fwd"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_miwui"]
+animation = &"Sprint"
+
+[sub_resource type="AnimationNodeBlendSpace1D" id="AnimationNodeBlendSpace1D_fg6l5"]
+min_space = -4.0
+max_space = 6.0
+value_label = "forward speed"
+blend_point_0/node = SubResource("AnimationNodeAnimation_xgtwq")
+blend_point_0/pos = -3.0
+blend_point_0/name = &"Jog backward"
+blend_point_1/node = SubResource("AnimationNodeAnimation_yvbxo")
+blend_point_1/pos = -0.9
+blend_point_1/name = &"Walk backward"
+blend_point_2/node = SubResource("AnimationNodeAnimation_mqnl2")
+blend_point_2/pos = 0.0
+blend_point_2/name = &"Idle"
+blend_point_3/node = SubResource("AnimationNodeAnimation_8ryhr")
+blend_point_3/pos = 0.9
+blend_point_3/name = &"Walk"
+blend_point_4/node = SubResource("AnimationNodeAnimation_t3x2l")
+blend_point_4/pos = 3.0
+blend_point_4/name = &"Jog"
+blend_point_5/node = SubResource("AnimationNodeAnimation_miwui")
+blend_point_5/pos = 5.0
+blend_point_5/name = &"Sprint"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_bqkrh"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_nonpl"]
+xfade_time = 0.1
+advance_mode = 2
+advance_condition = &"jumped"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_if5uk"]
+xfade_time = 0.2
+advance_mode = 2
+advance_expression = "not grounded and airborne_time > 0.12"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_3l5yf"]
+xfade_time = 0.1
+advance_mode = 2
+advance_expression = "grounded and state_time > 0.1"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_ris1f"]
+xfade_time = 0.2
+advance_mode = 2
+advance_expression = "state_time > 0.3"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_dtw05"]
+xfade_time = 0.1
+advance_mode = 2
+advance_condition = &"grounded"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_qapxi"]
+xfade_time = 0.1
+advance_mode = 2
+advance_condition = &"jumped"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_jtfw0"]
+xfade_time = 0.25
+advance_mode = 2
+advance_expression = "state_time > 0.35 or speed > 1.5"
+
+[sub_resource type="AnimationNodeStateMachine" id="AnimationNodeStateMachine_cguwg"]
+states/InAir/node = SubResource("AnimationNodeAnimation_06323")
+states/InAir/position = Vector2(800, 100)
+states/JumpStart/node = SubResource("AnimationNodeAnimation_3guuj")
+states/JumpStart/position = Vector2(550, 0)
+states/Land/node = SubResource("AnimationNodeAnimation_fjlef")
+states/Land/position = Vector2(550, 220)
+states/Move/node = SubResource("AnimationNodeBlendSpace1D_fg6l5")
+states/Move/position = Vector2(300, 100)
+transitions = ["Start", "Move", SubResource("AnimationNodeStateMachineTransition_bqkrh"), "Move", "JumpStart", SubResource("AnimationNodeStateMachineTransition_nonpl"), "Move", "InAir", SubResource("AnimationNodeStateMachineTransition_if5uk"), "JumpStart", "Land", SubResource("AnimationNodeStateMachineTransition_3l5yf"), "JumpStart", "InAir", SubResource("AnimationNodeStateMachineTransition_ris1f"), "InAir", "Land", SubResource("AnimationNodeStateMachineTransition_dtw05"), "Land", "JumpStart", SubResource("AnimationNodeStateMachineTransition_qapxi"), "Land", "Move", SubResource("AnimationNodeStateMachineTransition_jtfw0")]
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_fmpgt"]
+animation = &"Idle"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_14qgd"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachine" id="AnimationNodeStateMachine_fvppe"]
+states/Hold/node = SubResource("AnimationNodeAnimation_fmpgt")
+states/Hold/position = Vector2(300, 100)
+transitions = ["Start", "Hold", SubResource("AnimationNodeStateMachineTransition_14qgd")]
+
+[sub_resource type="AnimationNodeBlend2" id="AnimationNodeBlend2_2bglx"]
+filter_enabled = true
+filters = ["%Skeleton3D:Chest", "%Skeleton3D:Head", "%Skeleton3D:LeftHand", "%Skeleton3D:LeftIndexDistal", "%Skeleton3D:LeftIndexIntermediate", "%Skeleton3D:LeftIndexProximal", "%Skeleton3D:LeftLittleDistal", "%Skeleton3D:LeftLittleIntermediate", "%Skeleton3D:LeftLittleProximal", "%Skeleton3D:LeftLowerArm", "%Skeleton3D:LeftMiddleDistal", "%Skeleton3D:LeftMiddleIntermediate", "%Skeleton3D:LeftMiddleProximal", "%Skeleton3D:LeftRingDistal", "%Skeleton3D:LeftRingIntermediate", "%Skeleton3D:LeftRingProximal", "%Skeleton3D:LeftShoulder", "%Skeleton3D:LeftThumbDistal", "%Skeleton3D:LeftThumbMetacarpal", "%Skeleton3D:LeftThumbProximal", "%Skeleton3D:LeftUpperArm", "%Skeleton3D:Neck", "%Skeleton3D:RightHand", "%Skeleton3D:RightIndexDistal", "%Skeleton3D:RightIndexIntermediate", "%Skeleton3D:RightIndexProximal", "%Skeleton3D:RightLittleDistal", "%Skeleton3D:RightLittleIntermediate", "%Skeleton3D:RightLittleProximal", "%Skeleton3D:RightLowerArm", "%Skeleton3D:RightMiddleDistal", "%Skeleton3D:RightMiddleIntermediate", "%Skeleton3D:RightMiddleProximal", "%Skeleton3D:RightRingDistal", "%Skeleton3D:RightRingIntermediate", "%Skeleton3D:RightRingProximal", "%Skeleton3D:RightShoulder", "%Skeleton3D:RightThumbDistal", "%Skeleton3D:RightThumbMetacarpal", "%Skeleton3D:RightThumbProximal", "%Skeleton3D:RightUpperArm", "%Skeleton3D:Spine", "%Skeleton3D:UpperChest", "%Skeleton3D:index_04_leaf_l", "%Skeleton3D:index_04_leaf_r", "%Skeleton3D:middle_04_leaf_l", "%Skeleton3D:middle_04_leaf_r", "%Skeleton3D:pinky_04_leaf_l", "%Skeleton3D:pinky_04_leaf_r", "%Skeleton3D:ring_04_leaf_l", "%Skeleton3D:ring_04_leaf_r", "%Skeleton3D:thumb_04_leaf_l", "%Skeleton3D:thumb_04_leaf_r"]
+
+[sub_resource type="AnimationNodeBlendTree" id="AnimationNodeBlendTree_jk4kc"]
+nodes/FullBody/node = SubResource("AnimationNodeStateMachine_cguwg")
+nodes/FullBody/position = Vector2(0, 0)
+nodes/UpperBody/node = SubResource("AnimationNodeStateMachine_fvppe")
+nodes/UpperBody/position = Vector2(0, 200)
+nodes/UpperBodyBlend/node = SubResource("AnimationNodeBlend2_2bglx")
+nodes/UpperBodyBlend/position = Vector2(250, 100)
+node_connections = [&"output", 0, &"UpperBodyBlend", &"UpperBodyBlend", 0, &"FullBody", &"UpperBodyBlend", 1, &"UpperBody"]
+
+[node name="AnimationPack" type="CbAnimPack" unique_id=1252277536]
+replaces = PackedStringArray("UpperBody")
+character_name = "MODNAME.animations"
+skeleton_path = NodePath("Model/Armature/Skeleton3D")
+animation_player_path = NodePath("Model/AnimationPlayer")
+animation_tree_path = NodePath("AnimationTree")
+graph_inputs = {
+"FullBody/Move/blend_position": "forward_speed"
+}
+editor_description = "An animation pack: state machines that replace a character's own while the server mod says so (ItemLayers: while an item is held; or SwapLayer).
+
+The AnimationTree is the default one in full: FullBody (the whole body's locomotion), UpperBody over it (spine, arms, head), and UpperBodyBlend, which lays one over the other and has the bone filter.
+
+Replaces lists the layers this pack ships. It is UpperBody: FullBody is here to see your upper body over a walking character, and is not baked. Add FullBody to replace the locomotion too.
+
+UpperBody's Hold plays the placeholder's Idle: put your own clip there. For a use (a shot, a swing), add a state and a transition whose condition is the server mod's event (MODNAME.used), and one back with Switch Mode At End.
+
+Transitions use the game's names: forward_speed, speed, grounded, jumped, airborne_time, state_time, a stance, an event. Move's position comes from Graph Inputs on this node.
+
+Saving this scene bakes it into res://anim/MODNAME.animations/."
+
+[node name="Model" type="Node3D" parent="." unique_id=51749498 instance=ExtResource("1_autnr")]
+
+[node name="AnimationTree" type="AnimationTree" parent="." unique_id=2096954059]
+active = false
+root_node = NodePath("../Model")
+tree_root = SubResource("AnimationNodeBlendTree_jk4kc")
+anim_player = NodePath("../Model/AnimationPlayer")
+parameters/FullBody/conditions/grounded = false
+parameters/FullBody/conditions/jumped = false
+parameters/FullBody/Move/blend_position = 0.0
+parameters/UpperBodyBlend/blend_amount = 1.0

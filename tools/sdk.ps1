@@ -13,8 +13,7 @@
 #   prefabs\<mod>.tscn                             the item's scene (body, grips, a muzzle)
 #   vfx\reactions_<mod>.tscn                       its look (CbItemLook), a prediction, a reaction
 #   ui\hud_<mod>.tscn                              its HUD
-#   animation_packs\<mod>_upper_body.tscn          an animation pack for the upper body
-#   animation_packs\<mod>_locomotion.tscn          an animation pack for the whole body
+#   animation_packs\<mod>_animations.tscn          an animation pack: the default tree in full, replacing the upper body
 # Files that are already there are kept: -New on an existing project only adds what is missing.
 #
 # Then: open the project in Godot, author, and publish with tools\publish_mod.ps1 -Mod <mod>.
@@ -102,10 +101,9 @@ if ($New) {
 	Starter "item.tscn" (Join-Path $project "prefabs\$New.tscn") $New
 	Starter "reactions.tscn" (Join-Path $project "vfx\reactions_$New.tscn") $New
 	Starter "hud.tscn" (Join-Path $project "ui\hud_$New.tscn") $New
-	# The starter packs are for a mod that has none of its own yet.
+	# The starter pack is for a mod that has none of its own yet.
 	if (-not (Get-ChildItem (Join-Path $project "animation_packs") -Filter "*.tscn" -ErrorAction SilentlyContinue)) {
-		Starter "animation_pack_upper_body.tscn" (Join-Path $project "animation_packs\${New}_upper_body.tscn") $New
-		Starter "animation_pack_locomotion.tscn" (Join-Path $project "animation_packs\${New}_locomotion.tscn") $New
+		Starter "animation_pack.tscn" (Join-Path $project "animation_packs\${New}_animations.tscn") $New
 	}
 	New-Item -ItemType Directory -Force (Join-Path $project "assets") | Out-Null
 	Extension $project

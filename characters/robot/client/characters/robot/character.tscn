@@ -1062,13 +1062,13 @@ filter_enabled = true
 filters = ["Skeleton3D:Chest", "Skeleton3D:Head", "Skeleton3D:LeftHand", "Skeleton3D:LeftLowerArm", "Skeleton3D:LeftShoulder", "Skeleton3D:LeftUpperArm", "Skeleton3D:Neck", "Skeleton3D:RightHand", "Skeleton3D:RightLowerArm", "Skeleton3D:RightShoulder", "Skeleton3D:RightUpperArm", "Skeleton3D:Spine", "Skeleton3D:UpperChest"]
 
 [sub_resource type="AnimationNodeBlendTree" id="AnimationNodeBlendTree_kc0se"]
-nodes/Base/node = SubResource("AnimationNodeStateMachine_x61uu")
-nodes/Base/position = Vector2(0, 0)
-nodes/Upper/node = SubResource("AnimationNodeStateMachine_v7eay")
-nodes/Upper/position = Vector2(0, 200)
-nodes/UpperBlend/node = SubResource("AnimationNodeBlend2_3ypbm")
-nodes/UpperBlend/position = Vector2(250, 100)
-node_connections = [&"output", 0, &"UpperBlend", &"UpperBlend", 0, &"Base", &"UpperBlend", 1, &"Upper"]
+nodes/FullBody/node = SubResource("AnimationNodeStateMachine_x61uu")
+nodes/FullBody/position = Vector2(0, 0)
+nodes/UpperBody/node = SubResource("AnimationNodeStateMachine_v7eay")
+nodes/UpperBody/position = Vector2(0, 200)
+nodes/UpperBodyBlend/node = SubResource("AnimationNodeBlend2_3ypbm")
+nodes/UpperBodyBlend/position = Vector2(250, 100)
+node_connections = [&"output", 0, &"UpperBodyBlend", &"UpperBodyBlend", 0, &"FullBody", &"UpperBodyBlend", 1, &"UpperBody"]
 
 [node name="Robot" type="CbCharacter" unique_id=1587313994]
 character_name = "robot"
@@ -1076,8 +1076,8 @@ skeleton_path = NodePath("Model/Skeleton3D")
 animation_player_path = NodePath("Model/AnimationPlayer")
 animation_tree_path = NodePath("AnimationTree")
 graph_inputs = {
-"Base/Locomotion/blend_position": "forward_speed",
-"UpperBlend/blend_amount": "pistol or melee or melee_swing"
+"FullBody/Locomotion/blend_position": "forward_speed",
+"UpperBodyBlend/blend_amount": "pistol or melee or melee_swing"
 }
 
 [node name="Model" type="Node3D" parent="." unique_id=365537980]
@@ -1450,13 +1450,13 @@ root_node = NodePath("../Model")
 callback_mode_discrete = 0
 tree_root = SubResource("AnimationNodeBlendTree_kc0se")
 anim_player = NodePath("../Model/AnimationPlayer")
-parameters/Base/conditions/grounded = false
-parameters/Base/conditions/jumped = false
-parameters/Base/Locomotion/blend_position = 0.0
-parameters/Upper/conditions/melee = false
-parameters/Upper/conditions/melee_swing = false
-parameters/Upper/conditions/pistol = false
-parameters/UpperBlend/blend_amount = 0.0
+parameters/FullBody/conditions/grounded = false
+parameters/FullBody/conditions/jumped = false
+parameters/FullBody/Locomotion/blend_position = 0.0
+parameters/UpperBody/conditions/melee = false
+parameters/UpperBody/conditions/melee_swing = false
+parameters/UpperBody/conditions/pistol = false
+parameters/UpperBodyBlend/blend_amount = 0.0
 
 [node name="CinderboxSkeleton" type="CinderboxSkeleton" parent="." unique_id=217631672]
 draw_bone_boxes = false

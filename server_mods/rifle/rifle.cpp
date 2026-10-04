@@ -95,7 +95,7 @@ public:
 		declare.ItemProperty( m_gun, "inventory.slot", 4.0f );
 		declare.ItemProperty( m_gun, "inventory.start", 1.0f );
 		declare.ItemProperty( m_gun, "inventory.holster", declare.Socket( "Back" ) );
-		// How it is held is the rifle's own: while one is in the hand, the pack's "Upper" layer plays
+		// How it is held is the rifle's own: while one is in the hand, the pack's "UpperBody" layer plays
 		// instead of the character's (the look's anim/rifle.hold, baked from its CbAnimPack scene).
 		// Where the look has no such pack, the character's own "rifle" stance shows.
 		declare.ItemLayers( m_gun, declare.AnimPack( "rifle.hold" ) );

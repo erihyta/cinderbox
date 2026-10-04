@@ -92,6 +92,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M84: the rifle brings its own hold (an animation pack for `Upper`); a pack layer without a bone filter borrows the character's; the rifle's look is local only | done |
 | M85: the Cinderbox SDK: a Godot project to make a mod's look in (`sdk/`, `tools\sdk.ps1`): the extension, the editor addon, a placeholder character, starter scenes and animation packs; publishing bakes animation packs | done |
 | M86: the SDK cleaned up: a placeholder model with locomotion clips only, no copies of the game's character or addon, animation packs in `animation_packs/` with states named for what they do | done |
+| M87: animation layers are named `FullBody` and `UpperBody`; a pack can hold the whole tree and replace only the layers it names (`replaces`); the SDK ships the default tree in full | done |
 
 ## Building
 
@@ -275,7 +276,7 @@ The mods that ship:
 | `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage` | the bat: a full-body stance while it is out; left mouse swings (0.45 s, every 0.6 s), a fan of 1.8 m rays from the chest at the strike, spread sideways and pitched as far up or down as the player looks (look at the floor to hit what is low), 40 damage through `combat.damage` |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
 | `pistol` | `pistol.ammo`, `pistol.reloading`; `fire` (left mouse), `reload` (R), `mark` (right mouse); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `pistol.scan`, `pistol.marked`, `combat.damage` | hitscan from the camera pivot, 25 damage (the head doubles it) through `combat.damage`, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; a new life (`combat.respawned`) comes with a full magazine |
-| `rifle` | `rifle.ammo`, `rifle.reloading`; `fire` (left mouse, **held**), `reload` (R); events `rifle.fired`, `rifle.hit`, `rifle.reload`, `rifle.dry`, `combat.damage` | the automatic one: a shot every 0.1 s for as long as `fire` is held, 14 damage (the head doubles it), 30 rounds, 2 s reload; slot 4, on the back while put away. Held on an empty magazine it clicks once, reloads and fires on. While it is out the `upper` layer has the `rifle` stance, and the item brings the `rifle.hold` animation pack (`ItemLayers`): its `Upper` layer plays instead of the character's. **Its look is not in the repository** (`server_mods/rifle/client` is git-ignored: its animations are licensed): without it a rifle is a plain box, held as a pistol (`pistol or rifle`) |
+| `rifle` | `rifle.ammo`, `rifle.reloading`; `fire` (left mouse, **held**), `reload` (R); events `rifle.fired`, `rifle.hit`, `rifle.reload`, `rifle.dry`, `combat.damage` | the automatic one: a shot every 0.1 s for as long as `fire` is held, 14 damage (the head doubles it), 30 rounds, 2 s reload; slot 4, on the back while put away. Held on an empty magazine it clicks once, reloads and fires on. While it is out the `upper` layer has the `rifle` stance, and the item brings the `rifle.hold` animation pack (`ItemLayers`): its `UpperBody` layer plays instead of the character's. **Its look is not in the repository** (`server_mods/rifle/client` is git-ignored: its animations are licensed): without it a rifle is a plain box, held as a pistol (`pistol or rifle`) |
 | `secret` | `secret.number`, a private field; option `secret.numbers` | the example of a private field: off unless `--mod-option secret.numbers=1`; then each player is told a number from 1 to 99 that nobody else is sent |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
@@ -1005,7 +1006,7 @@ powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New mymod     # server_m
 |---|---|
 | the extension | the `Cb*` nodes, the bakers, the Cue Preview panel |
 | `placeholder/` | a placeholder model (the CC0 mannequin, with its locomotion clips only) to author animations and state machines on |
-| starter scenes named after the mod | an item, its reactions, a HUD, and two animation packs (`animation_packs/`): upper body, and locomotion |
+| starter scenes named after the mod | an item, its reactions, a HUD, and an animation pack (`animation_packs/`): the default tree in full, replacing the upper body |
 | a "Mod" export preset | ships every resource but the SDK's own: nothing to list |
 
 None of the SDK's parts are packed into the mod. [sdk/README.md](sdk/README.md) has the steps, what
@@ -1014,19 +1015,29 @@ is shipped, and what the SDK does not do yet. The rifle's (local) project is one
 ### Animation packs
 
 A mod can ship **layers** of an AnimationTree and swap a player's own layer of the same name for them:
-a crouch walk for `Base`, a swim, a limp. The character keeps its other layers (the pistol still aims
+a crouch walk for `FullBody`, a swim, a limp. The character keeps its other layers (the pistol still aims
 while crouched).
 
 | Step | Where |
 |---|---|
 | author | a `CbAnimPack` scene in the mod's client project: a model on a humanoid-profile skeleton, its AnimationPlayer, an AnimationTree whose state machines are named like the characters' layers; **Bake** writes `anim/<pack>/` |
 | declare | `declare.AnimPack( "sneak.crouch" )` in the server mod |
-| swap | `ctx.SwapLayer( SlotTarget( slot ), pack, "Base" )`, back with `ctx.RestoreLayer( ..., "Base" )` |
+| swap | `ctx.SwapLayer( SlotTarget( slot ), pack, "FullBody" )`, back with `ctx.RestoreLayer( ..., "FullBody" )` |
 | fit | the game rebuilds the pack's clips for each character's skeleton by profile bone names, once (as they are when the skeleton is the same) |
 
-A pack layer over the base (`Upper`) that has no bone filter of its own plays through the filter of
-the character's layer it replaces: build it as a blend tree with one state machine, named as the
-layer, on the output. The rifle's hold is one (two states: the idle, and the shot on `rifle.fired`).
+**Layers.** A character's tree has `FullBody` (the whole body: its locomotion) and `UpperBody` over it
+(spine, arms, head), laid on by a Blend2 with a bone filter (`UpperBodyBlend`). A pack replaces the
+layers of the same names:
+
+| The pack's scene | Replaces |
+|---|---|
+| a tree whose root is a state machine | `FullBody` |
+| the whole tree (`FullBody`, `UpperBody`, the Blend2), `replaces = [UpperBody]` | `UpperBody` only: the full body is there to see the upper body over it in the editor, and is not baked |
+| the whole tree, `replaces` empty or both names | both |
+| a blend tree with one state machine named `UpperBody` on its output | `UpperBody`, through the character's own bone filter |
+
+The SDK's starter pack is the second row. The rifle's hold is the fourth (two states: the idle,
+and the shot on `rifle.fired`).
 
 The swap is simulation state: the server's hit tests and every client pose the swapped layer, and a
 rollback replays it. The server reads the pack from the mod's workshop item; its graph travels in the
@@ -1044,7 +1055,7 @@ godot --headless --path godot --script res://addons/cinderbox_maps/make_sneak_pa
 `declare.ItemLayers( bat, declare.AnimPack( "melee.carry" ) )`: while a player holds one (in use, not stowed), the pack's layers play instead of the player's own of the same names,
 and stop when it is dropped. A mod's own `SwapLayer` on the same layer wins while it lasts, so a
 crouch still crouches with a bat in hand and the carry returns when the player stands up. The bat's
-pack replaces `Base`: standing ready, a measured walk, the usual jog.
+pack replaces `FullBody`: standing ready, a measured walk, the usual jog.
 
 ```sh
 godot --headless --path godot --script res://addons/cinderbox_maps/make_carry_pack.gd -- --out=<abs>/server_mods/melee/client/anim/melee.carry
@@ -1399,7 +1410,7 @@ Set it up on the `CbCharacter`:
 
 - `animation_tree_path`: the tree. Its `root_node` should be the model (tracks' paths start there).
 - `graph_inputs`: what drives the tree's numbers, by parameter path:
-  `"Base/Locomotion/blend_position": "forward_speed"`, `"UpperBlend/blend_amount": "pistol or melee"`.
+  `"FullBody/Locomotion/blend_position": "forward_speed"`, `"UpperBodyBlend/blend_amount": "pistol or melee"`.
   A 2D blend space takes two expressions, x then y: `"move_right, move_forward"`.
 - `turn_legs`: on (the default), the hips turn toward the direction of travel so a forward walk
   goes sideways. Turn it off for a character with its own directional clips (strafes).

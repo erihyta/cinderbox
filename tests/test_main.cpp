@@ -3613,8 +3613,8 @@ void TestRetarget()
 	CHECK( std::fabs( shin - 0.42f ) < 0.01f );
 }
 
-// A mod's animation pack: its "Base" layer swapped in for a player's own, in the simulation and in
-// the pose; its "Upper" (which it does not have) stays the character's; restored on command.
+// A mod's animation pack: its "FullBody" layer swapped in for a player's own, in the simulation and in
+// the pose; its "UpperBody" (which it does not have) stays the character's; restored on command.
 void TestLayerSwap()
 {
 	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
@@ -3628,11 +3628,11 @@ void TestLayerSwap()
 	ModSchema schema;
 	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
 	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
-	// The pack's own graph: a crouch (standing in: the landing clip, held) on the Base layer.
+	// The pack's own graph: a crouch (standing in: the landing clip, held) on the FullBody layer.
 	schema.animPacks.push_back( { "test", "test.crouch",
 								  "cinderbox_graph\t1\n"
 								  "clip\tJump_Land\t1.2666667\t0\n"
-								  "layer\tBase\n"
+								  "layer\tFullBody\n"
 								  "state\tCrouch\tclip\tJump_Land\t0\n"
 								  "start\tCrouch\n" } );
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );

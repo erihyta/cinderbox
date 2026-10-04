@@ -5,7 +5,7 @@ extends SceneTree
 ##
 ## A pack is authored like a character's state machine: a model on a humanoid-profile skeleton (the
 ## mannequin here, CC0), its AnimationPlayer, and an AnimationTree. The tree's root is a state machine,
-## so its one layer is named "Base", the layer the sneak mod swaps. Characters on other skeletons get
+## so its one layer is named "FullBody", the layer the sneak mod swaps. Characters on other skeletons get
 ## the clips fitted by the profile's bone names. It uses only the Standard (CC0) animations.
 
 const SOURCE := "res://characters/mannequin/source/UAL1_Standard.glb"
