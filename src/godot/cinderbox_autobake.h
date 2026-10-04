@@ -11,6 +11,10 @@
 //
 // A scene whose root is a CbMotionSet is baked the same way (cinderbox_motion.h), and the plugin
 // gives the motion nodes their inspector help.
+//
+// It also puts the Cinderbox nodes a mod is made of into the Favorites of the editor's Create New
+// Node dialog, so they are one list on its left instead of a search each: once per project and
+// per node (one taken out of the favorites stays out).
 
 #include "cinderbox_motion.h"
 
@@ -33,6 +37,8 @@ protected:
 	static void _bind_methods();
 
 private:
+	void OfferNodes();
+
 	godot::Ref<CbMotionInspector> m_motionInspector;
 };
 

@@ -3,7 +3,7 @@
 // Authoring a mod's motions: what its players can do besides walking and jumping, with no code.
 //
 // A CbReaction says: on a cue, or while conditions hold, do this to the look. A CbMotion says: on
-// a press, if conditions hold, do this to the mover. Same shape, same expression language. The
+// a press, on a cue, or while conditions hold, do this to the mover. Same shape, same expression language. The
 // difference is where it runs: a reaction runs in the viewer; a motion is baked to text, read by
 // the server from the mod's item, sent to every client, and run by every simulation
 // (sim/motions.h). So a player's own dash starts on the tick of the press, in its own prediction,
@@ -38,6 +38,12 @@ class CbMotion : public godot::Node
 	GDCLASS( CbMotion, godot::Node )
 
 public:
+	enum When
+	{
+		WHEN_PRESS = 0,
+		WHEN_WHILE = 1,
+		WHEN_EVENT = 2,
+	};
 	enum Frame
 	{
 		FRAME_LOOK = 0,
@@ -74,7 +80,9 @@ public:
 	{                                                                                                                            \
 		return member;                                                                                                           \
 	}
+	CB_MOTION_FIELD( int, when, m_when )
 	CB_MOTION_FIELD( godot::String, action, m_action )
+	CB_MOTION_FIELD( godot::String, event, m_event )
 	CB_MOTION_FIELD( godot::PackedStringArray, conditions, m_conditions )
 	CB_MOTION_FIELD( double, cooldown, m_cooldown )
 	CB_MOTION_FIELD( int, uses, m_uses )
@@ -94,7 +102,9 @@ protected:
 	static void _bind_methods();
 
 private:
+	int m_when = WHEN_PRESS;
 	godot::String m_action;
+	godot::String m_event;
 	godot::PackedStringArray m_conditions;
 	double m_cooldown = 0.0;
 	int m_uses = 0;
@@ -159,6 +169,7 @@ protected:
 
 } // namespace cb::gd
 
+VARIANT_ENUM_CAST( cb::gd::CbMotion::When );
 VARIANT_ENUM_CAST( cb::gd::CbMotion::Frame );
 VARIANT_ENUM_CAST( cb::gd::CbMotion::Replace );
 VARIANT_ENUM_CAST( cb::gd::CbMotion::Refill );

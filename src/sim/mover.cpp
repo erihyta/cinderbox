@@ -72,6 +72,12 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	b3Vec3 right = detmath::YawRight( camYaw );
 	float throttleForward = float( std::clamp<int>( in.moveForward, -127, 127 ) ) * kInputScale;
 	float throttleRight = float( std::clamp<int>( in.moveRight, -127, 127 ) ) * kInputScale;
+	// Flight: forward is where the camera looks, up and down too.
+	if ( params[MoveParam::MoveFrame] >= 0.5f )
+	{
+		b3CosSin pitch = detmath::CosSin( float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f ) );
+		forward = { forward.x * pitch.cosine, pitch.sine, forward.z * pitch.cosine };
+	}
 
 	if ( c.grounded )
 	{
@@ -102,6 +108,22 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 		float ratio = newSpeed / speed;
 		v.x *= ratio;
 		v.z *= ratio;
+	}
+
+	// Air friction (every direction): what stops a flight when the keys are let go.
+	if ( float airFriction = params[MoveParam::AirFriction]; airFriction > 0.0f && c.grounded == 0 )
+	{
+		float airSpeed = b3Length( v );
+		if ( airSpeed < kMinSpeed )
+		{
+			v = { 0.0f, 0.0f, 0.0f };
+		}
+		else
+		{
+			float stopSpeed = params[MoveParam::StopSpeed];
+			float control = airSpeed < stopSpeed ? stopSpeed : airSpeed;
+			v = b3MulSV( std::max( 0.0f, airSpeed - control * airFriction * dt ) / airSpeed, v );
+		}
 	}
 
 	float maxSpeed = c.sprinting ? params[MoveParam::SprintSpeed] : params[MoveParam::WalkSpeed];

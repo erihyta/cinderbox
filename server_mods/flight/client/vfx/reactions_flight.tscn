@@ -1,0 +1,38 @@
+[gd_scene format=3]
+
+; How the flight mod sounds. The events come from the mod's motions, which the viewer's own
+; simulation runs: your own are heard on the press, with no CbPrediction.
+
+[node name="FlightReactions" type="Node3D"]
+
+[node name="Started" type="CbReaction" parent="."]
+event = "flight.started"
+subject = NodePath("$at")
+scene = "res://vfx/jump.tscn"
+scene_lifetime = 2.0
+place = 1
+sound = "res://assets/sfx/prop_spawn.wav"
+volume_db = -12.0
+pitch_scale = 0.7
+max_distance = 30.0
+
+[node name="Stopped" type="CbReaction" parent="."]
+event = "flight.stopped"
+subject = NodePath("$at")
+sound = "res://assets/sfx/prop_destroy.wav"
+volume_db = -14.0
+pitch_scale = 0.8
+place = 1
+max_distance = 30.0
+
+[node name="Thrust" type="CbReaction" parent="."]
+event = "flight.thrust"
+subject = NodePath("$at")
+scene = "res://vfx/land.tscn"
+scene_lifetime = 2.0
+place = 1
+sound = "res://assets/sfx/jump.wav"
+volume_db = -12.0
+pitch_scale = 0.6
+max_distance = 30.0
+cooldown = 0.2

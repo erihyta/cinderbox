@@ -125,6 +125,33 @@ private:
 				return;
 			}
 		}
+		if ( name.rfind( "held.", 0 ) == 0 )
+		{
+			std::string action = name.substr( 5 );
+			const ModAction* declared = m_schema.FindAction( action );
+			step.kind = AnimExpr::VarKind::HeldAction;
+			if ( action == "jump" )
+			{
+				step.index = uint8_t( kMotionActionJump );
+			}
+			else if ( action == "sprint" )
+			{
+				step.index = uint8_t( kMotionActionSprint );
+			}
+			else if ( declared != nullptr )
+			{
+				step.index = declared->bit;
+			}
+			else
+			{
+				step.kind = AnimExpr::VarKind::Zero;
+				if ( m_warnings.find( "'" + name + "'" ) == std::string::npos )
+				{
+					m_warnings += "'" + name + "': no mod declares the action (it reads as 0); ";
+				}
+			}
+			return;
+		}
 		const BoardField* field = m_schema.FindField( name );
 		if ( field != nullptr && field->scope == BoardScope::Private )
 		{
@@ -237,6 +264,20 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 				}
 			}
 			return 0.0f;
+		case AnimExpr::VarKind::HeldAction:
+			if ( in.input == nullptr )
+			{
+				return 0.0f;
+			}
+			if ( step.index == kMotionActionJump )
+			{
+				return ( in.input->buttons & BtnJump ) != 0 ? 1.0f : 0.0f;
+			}
+			if ( step.index == kMotionActionSprint )
+			{
+				return ( in.input->buttons & BtnSprint ) != 0 ? 1.0f : 0.0f;
+			}
+			return step.index < kMaxActions && ( in.input->actions & ( 1u << step.index ) ) != 0 ? 1.0f : 0.0f;
 		case AnimExpr::VarKind::Zero:
 			return 0.0f;
 	}

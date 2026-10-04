@@ -87,6 +87,52 @@ func _initialize() -> void:
 	if baked.text != want:
 		print(baked.text)
 
+	# While and On a cue: no press; what a While does not use (uses, duration, replace) is left out.
+	var fly := CbMotion.new()
+	fly.name = "Thrust"
+	fly.when = CbMotion.WHEN_WHILE
+	fly.conditions = PackedStringArray(["held.jump", "flight.fuel > 0"])
+	fly.cooldown = 0.5
+	fly.uses = 3
+	fly.duration = 2.0
+	fly.impulse = 26.0
+	fly.impulse_frame = CbMotion.FRAME_UP
+	fly.replace = CbMotion.REPLACE_ALL
+	fly.parameters = {"move_frame": 1.0, "air_friction": 3.0}
+	fly.changes = PackedStringArray(["flight.fuel -= 30"])
+	fly.emits = "flight.thrust"
+	var stun := CbMotion.new()
+	stun.name = "Stun"
+	stun.when = CbMotion.WHEN_EVENT
+	stun.event = "stun.hit"
+	stun.duration = 0.5
+	stun.parameters = {"walk_speed": 0.0}
+	var held_root := _make([fly, stun])
+	var held: Dictionary = held_root.bake()
+	var held_want := "\n".join([
+		"cinderbox_motions\t1",
+		"# Baked from the CbMotion nodes of a CbMotionSet. Edit the scene and bake again.",
+		"motion\tThrust",
+		"when\twhile",
+		"if\t( held.jump ) and ( flight.fuel > 0 )",
+		"cooldown\t0.5",
+		"impulse\t26\tup\tnone",
+		"param\tair_friction\t3",
+		"param\tmove_frame\t1",
+		"change\tflight.fuel\t-=\t30",
+		"emit\tflight.thrust",
+		"motion\tStun",
+		"when\tevent\tstun.hit",
+		"duration\t0.5",
+		"param\twalk_speed\t0",
+		""])
+	_check("a While and an On a cue bake", held.text == held_want, str(held.get("error", "")))
+	if held.text != held_want:
+		print(held.text)
+	stun.event = ""
+	_check("an On a cue without its event refuses the bake", held_root.bake().text == "" and String(held_root.bake().error).contains("Stun"), held_root.bake().error)
+	held_root.free()
+
 	# What refuses the bake, and says the node.
 	for case in [
 		["no action", func(m: CbMotion): m.action = "", "Dash"],

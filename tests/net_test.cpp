@@ -2656,8 +2656,13 @@ void TestDash()
 		int started = schema.FindEvent( "dash.started" );
 		int doubleJump = schema.FindEvent( "dash.double_jump" );
 		CHECK( dash != 0 && charges != nullptr && started >= 0 && doubleJump >= 0 );
-		CHECK( schema.motionSets.size() == 1 && schema.motionSets[0].name == "dash.moves" && schema.motionSets[0].text.empty() == false );
-		if ( dash == 0 || charges == nullptr || schema.motionSets.empty() || schema.motionSets[0].text.empty() )
+		bool haveSet = false;
+		for ( const MotionSetInfo& set : schema.motionSets )
+		{
+			haveSet |= set.name == "dash.moves" && set.text.empty() == false;
+		}
+		CHECK( haveSet );
+		if ( dash == 0 || charges == nullptr || haveSet == false )
 		{
 			return;
 		}
@@ -2729,7 +2734,8 @@ void TestDash()
 		CHECK( truth.rbegin()->second.charges == 2 );
 		// The double jump: a second rise in the air.
 		CHECK( truth.count( doubleJumpAt + 1 ) && truth[doubleJumpAt + 1].velocity.y > 6.0f );
-		CHECK( truth.rbegin()->second.events == 3 );
+		// (Other mods' motions may add their own: the flight mod's thrust is on Space in the air too.)
+		CHECK( truth.rbegin()->second.events >= 3 );
 
 		// The client had every one of those ticks the same way, the first time it simulated them:
 		// its own dash was never corrected. (From a little before the first press to the end.)
@@ -2758,14 +2764,14 @@ void TestDash()
 		// And it had the dash on the tick of the press: its prediction of that tick, made ahead of the
 		// server, already had the speed, the charge taken and the event.
 		CHECK( b3Length( predicted[dashAt + 1].velocity ) > 10.5f && predicted[dashAt + 1].charges == 1 &&
-			   predicted[dashAt + 1].events == 1 );
+			   predicted[dashAt + 1].events == truth[dashAt + 1].events && truth[dashAt + 1].events == truth[dashAt].events + 1 );
 	}
 
 	// The recording replays it: the motions travel in its header's schema.
 	net::ReplayReader replay;
 	std::string error;
 	CHECK( replay.Open( replayPath.string(), error ) );
-	CHECK( replay.MotionSets() != nullptr && replay.MotionSets()->list.size() == 2 );
+	CHECK( replay.MotionSets() != nullptr && replay.MotionSets()->list.size() >= 2 );
 	Simulation sim( replay.Config(), replay.Map() );
 	sim.SetAnimGraph( replay.Graph() );
 	sim.SetAnimPacks( replay.Packs() );
@@ -2783,8 +2789,145 @@ void TestDash()
 		sim.Step( frame );
 	}
 	std::printf( "    replay: %zu ticks, %zu checksums verified, %u events\n", replay.Frames().size(), verified, sim.Globals().modEventCount );
-	CHECK( verified > 5 && sim.Globals().modEventCount == 3 );
+	CHECK( verified > 5 && sim.Globals().modEventCount >= 3 );
 	std::filesystem::remove( replayPath );
+}
+
+// Motions that hold are predicted too: behind 50 ms each way, flying into a wall, landing, a
+// jetpack run until its tank is empty and a glide down are, tick for tick, what the server then
+// has: the position, the fuel the gauge shows, the events. The flight mod's C++ only gives the fuel
+// a player joins with; the rest is its motion set.
+void TestFlight()
+{
+	// Ticks: flight on, up and forward into the wall, let go, off and down; then the jetpack until
+	// it is empty, and a glide down.
+	const uint32_t flyOn = 300, level = 345, letGo = 700, flyOff = 760, thrustFrom = 960, thrustTo = 1230, glideTo = 1410;
+	Harness h( 47861 );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t fly = schema.ActionMask( "fly" );
+	const BoardField* on = schema.FindField( "flight.on" );
+	const BoardField* fuel = schema.FindField( "flight.fuel" );
+	bool haveSet = false;
+	for ( const MotionSetInfo& set : schema.motionSets )
+	{
+		haveSet |= set.name == "flight.moves" && set.text.empty() == false;
+	}
+	CHECK( fly != 0 && on != nullptr && fuel != nullptr && haveSet );
+	if ( fly == 0 || on == nullptr || fuel == nullptr || haveSet == false )
+	{
+		return;
+	}
+	net::NetSimConfig link;
+	link.latencyMs = 50;
+	h.AddNetSim( 47862, link );
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		if ( ( tick >= flyOn && tick < flyOn + 4 ) || ( tick >= flyOff && tick < flyOff + 4 ) )
+		{
+			in.actions = fly;
+		}
+		if ( tick >= flyOn && tick < letGo )
+		{
+			// Toward the sandbox's wall, climbing.
+			in.moveForward = 127;
+			in.cameraPitch = tick < level ? int16_t( 2500 ) : int16_t( 0 ); // a little way up, below the walls' tops
+		}
+		if ( ( tick >= thrustFrom && tick < thrustTo ) )
+		{
+			in.buttons = BtnJump;
+		}
+		if ( tick >= thrustTo && tick < glideTo )
+		{
+			in.buttons = BtnSprint;
+			in.moveForward = -127;
+		}
+		return in;
+	};
+
+	struct Seen
+	{
+		b3Vec3 position;
+		int32_t on;
+		int32_t fuel; // the float's bits: compared exactly
+		uint32_t events;
+		uint8_t grounded;
+	};
+	std::map<uint32_t, Seen> predicted, truth;
+	Simulation& server = h.server.Sim();
+	auto look = [&]( const Simulation& sim, PlayerSlot slot, std::map<uint32_t, Seen>& into ) {
+		uint32_t netId = sim.PlayerNetId( slot );
+		const Character* c = sim.PlayerCharacter( slot );
+		if ( netId == 0 || c == nullptr || into.count( sim.Tick() ) != 0 )
+		{
+			return;
+		}
+		into[sim.Tick()] = { sim.EntityTransform( netId )->position, sim.BoardValue( netId, on->slot ), sim.BoardValue( netId, fuel->slot ),
+							 sim.Globals().modEventCount, c->grounded };
+	};
+	h.RunUntil( 33.0, [&]( double ) {
+		GameClient& client = *h.bots[0].client;
+		if ( client.Session() != nullptr && client.State() == ClientState::Playing )
+		{
+			look( client.Session()->Sim(), client.Slot(), predicted );
+			look( server, client.Slot(), truth );
+		}
+	} );
+	h.Report();
+	GameClient& client = *h.bots[0].client;
+	CHECK( client.GetStats().rttMs >= 90 );
+	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+
+	// What the server had: flight on by the press, a climb, a stop at the wall, down again; a tank
+	// run empty in the air and filled again on the ground; a slow fall while gliding.
+	auto at = [&]( uint32_t tick ) { return truth.count( tick ) ? truth[tick] : Seen{}; };
+	float start = at( flyOn ).position.y;
+	CHECK( at( flyOn ).on == 0 && at( flyOn + 1 ).on == 1 && at( flyOff + 1 ).on == 0 );
+	float top = at( letGo ).position.y - start;
+	float along = b3Distance( b3Vec3{ at( letGo ).position.x, 0.0f, at( letGo ).position.z },
+							  b3Vec3{ at( flyOn ).position.x, 0.0f, at( flyOn ).position.z } );
+	// It flew until the wall stopped it: the last half second before the keys were let go went nowhere.
+	float lastStretch = b3Distance( at( letGo ).position, at( letGo - 30 ).position );
+	std::printf( "    flew %.2f m up and %.2f m along; the last half second %.3f m (the wall)\n", top, along, lastStretch );
+	CHECK( top > 0.3f && top < 3.0f && along > 3.0f && along < 38.0f && lastStretch < 0.05f );
+	CHECK( at( thrustFrom - 1 ).grounded == 1 && BoardToFloat( at( thrustFrom - 1 ).fuel ) >= 100.0f );
+	float lowest = 100.0f, peak = 0.0f, fastestFall = 0.0f;
+	for ( const auto& [tick, seen] : truth )
+	{
+		if ( tick > thrustFrom && tick <= glideTo )
+		{
+			lowest = std::min( lowest, BoardToFloat( seen.fuel ) );
+			peak = std::max( peak, seen.position.y - start );
+		}
+		if ( tick > thrustTo + 60 && tick <= glideTo && seen.grounded == 0 && truth.count( tick - 1 ) )
+		{
+			fastestFall = std::min( fastestFall, ( seen.position.y - truth[tick - 1].position.y ) * 60.0f );
+		}
+	}
+	std::printf( "    jetpack: fuel down to %.2f, %.2f m up; gliding down at %.2f m/s\n", lowest, peak, fastestFall );
+	CHECK( lowest <= 0.0f && peak > 8.0f );
+	CHECK( fastestFall < -1.0f && fastestFall > -2.6f );
+	CHECK( truth.rbegin()->second.grounded == 1 && BoardToFloat( truth.rbegin()->second.fuel ) >= 100.0f );
+
+	// The client had every one of those ticks the same way the first time it simulated them.
+	int compared = 0, wrong = 0;
+	float worst = 0.0f;
+	for ( const auto& [tick, seen] : predicted )
+	{
+		auto it = truth.find( tick );
+		if ( tick < flyOn - 30 || it == truth.end() )
+		{
+			continue;
+		}
+		compared += 1;
+		float off = b3Distance( seen.position, it->second.position );
+		worst = std::max( worst, off );
+		wrong += off != 0.0f || seen.on != it->second.on || seen.fuel != it->second.fuel || seen.events != it->second.events ? 1 : 0;
+	}
+	std::printf( "    %d predicted ticks compared with the server's: %d differ, worst %.4f m\n", compared, wrong, worst );
+	CHECK( compared > 900 );
+	CHECK( wrong == 0 && worst == 0.0f );
+	// Its own press switched flight on in its own prediction of that tick.
+	CHECK( predicted.count( flyOn + 1 ) && predicted[flyOn + 1].on == 1 );
 }
 
 } // namespace
@@ -2817,6 +2960,7 @@ int main( int argc, char** argv )
 		{ "sneak", TestSneak },
 		{ "move_params", TestMoveParams },
 		{ "dash", TestDash },
+		{ "flight", TestFlight },
 		{ "headshot", TestHeadshot },
 		{ "pistol_mark", TestPistolMark },
 		{ "rifle", TestRifle },
