@@ -21,7 +21,7 @@
 			The action whose press this answers: one a server mod declares ([code]dash[/code]), or the engine's own [code]jump[/code] or [code]sprint[/code]. Held, it is one press.
 		</member>
 		<member name="conditions" type="PackedStringArray" setter="set_conditions" getter="get_conditions" default="PackedStringArray()">
-			Expressions that must all hold on the player, as it is before this tick's movement. They read what a character's state machine reads: [code]grounded[/code], [code]airborne_time[/code], [code]speed[/code], [code]vertical_speed[/code], a field ([code]dash.charges &gt; 0[/code]), an item kind the player holds, a stance, and whether a key is down: [code]held.jump[/code], [code]held.dash[/code]. They read the fields as the tick found them: a motion that changes a field does not start another motion until the next tick.
+			Expressions that must all hold on the player, as it is before this tick's movement. They read what a character's state machine reads: [code]grounded[/code], [code]airborne_time[/code], [code]speed[/code], [code]vertical_speed[/code], a field ([code]dash.charges &gt; 0[/code]), an item kind the player holds, a stance, whether a key is down ([code]held.jump[/code], [code]held.dash[/code]) or went down this tick ([code]pressed.dash[/code]), and [code]tethered[/code]: a tether of the player's is out. They read the fields as the tick found them: a motion that changes a field does not start another motion until the next tick.
 		</member>
 		<member name="cooldown" type="float" setter="set_cooldown" getter="get_cooldown" default="0.0">
 			Seconds between two uses. For a [constant WHEN_WHILE]: between its end and its next start.
@@ -69,7 +69,7 @@
 			With [member tether_rope]: metres of rope taken in a second. The rope is never shorter than a metre.
 		</member>
 		<member name="tether_until" type="PackedStringArray" setter="set_tether_until" getter="get_tether_until" default="PackedStringArray()">
-			Expressions, any of which lets the tether go: [code]not held.grapple[/code]. Without one it holds until what it holds on to is gone, the player dies or is put somewhere else.
+			Expressions, any of which lets the tether go: [code]not held.grapple[/code] for a hook that is held, or [code]pressed.grapple[/code] for one a second press lets go (with [code]not tethered[/code] in [member conditions], so that press does not throw a second line). Without one it holds until what it holds on to is gone, the player dies or is put somewhere else.
 		</member>
 		<member name="changes" type="PackedStringArray" setter="set_changes" getter="get_changes" default="PackedStringArray()">
 			Fields of the player the press changes, written like a [CbPrediction]'s: [code]dash.charges -= 1[/code] (operators [code]-=[/code], [code]+=[/code], [code]=[/code], with a number). The server mod declares the field. In a [constant WHEN_WHILE], [code]-=[/code] and [code]+=[/code] are per second and need a Float field ([code]jetpack.fuel -= 20[/code]), and [code]=[/code] is set when it starts.

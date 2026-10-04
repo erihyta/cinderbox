@@ -2098,6 +2098,48 @@ void TestTethers()
 	sim.Load( before );
 	CHECK( tetherOf()->on == 0 && sim.ComputeHash() == hashBefore );
 
+	// Press to throw, press again to let go: "tethered" keeps a second press from throwing a second
+	// line, and "pressed.<action>" is the press that lets the first one go.
+	{
+		ModSchema toggled = schema;
+		toggled.motionSets = { { "grapple", "grapple.moves",
+								 "cinderbox_motions\t1\nmotion\tHook\nwhen\tpress\tgrapple\nif\tnot tethered\n"
+								 "tether\t40\t0\t10\t0\trope\nuntil\tpressed.grapple\nemit\tgrapple.fired\n" } };
+		std::string toggleWarnings;
+		auto toggle = CompileMotions( toggled, toggleWarnings );
+		CHECK( toggle != nullptr && toggleWarnings.empty() );
+		Simulation other( TestConfig() );
+		other.SetMotions( toggle );
+		InputFrame g;
+		g.events.push_back( { PlayerEventType::Join, 0 } );
+		auto run = [&]( int n, uint16_t actions ) {
+			for ( int i = 0; i < n; ++i )
+			{
+				g.tick = other.Tick();
+				g.inputs[0].cameraPitch = 500;
+				g.inputs[0].actions = actions;
+				other.Step( g );
+				g.events.clear();
+			}
+		};
+		auto out = [&] {
+			const Tether* t = other.FindEntity( other.PlayerNetId( 0 ) ).try_get<Tether>();
+			return t != nullptr && t->on != 0;
+		};
+		run( 60, 0 );
+		run( 4, grapple ); // a press, held a few ticks: thrown, and still out
+		CHECK( out() && other.Globals().modEventCount == 1 );
+		run( 30, 0 );
+		CHECK( out() ); // the key is up: it stays
+		run( 1, grapple ); // the next press lets it go, and throws no second one
+		CHECK( out() == false && other.Globals().modEventCount == 1 );
+		run( 3, grapple );
+		CHECK( out() == false );
+		run( 5, 0 );
+		run( 1, grapple ); // and the one after that throws again
+		CHECK( out() && other.Globals().modEventCount == 2 );
+	}
+
 	// A while motion cannot throw one; a tether line needs all its numbers.
 	std::vector<Motion> out;
 	std::string error, warned;
@@ -4631,8 +4673,8 @@ void AppendMotionReference( std::vector<uint64_t>& hashes )
 								   "change\tm.fuel\t-=\t3\nchange\tm.count\t=\t0\nemit\tm.dashed\n"
 								   "motion\tStun\nwhen\tevent\tm.dashed\nduration\t0.25\nparam\tjump_speed\t9\n"
 								   // A tether: the ray, the rope and the pull on whatever the look finds.
-								   "motion\tHook\nwhen\tpress\ta\nif\tm.fuel < -1\ncooldown\t1.5\ntether\t30\t0\t18\t2\trope\n"
-								   "until\tairborne_time > 1 or m.count > 6\nparam\tfriction\t0\n" } );
+								   "motion\tHook\nwhen\tpress\ta\nif\tm.fuel < -1 and not tethered\ncooldown\t1.5\ntether\t30\t0\t18\t2\trope\n"
+								   "until\tairborne_time > 1 or m.count > 6 or ( pressed.b and pressed.jump )\nparam\tfriction\t0\n" } );
 	std::string warnings;
 	auto motions = CompileMotions( schema, warnings );
 	if ( motions == nullptr || motions->list.size() != 7 || warnings.empty() == false )

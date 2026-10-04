@@ -69,7 +69,8 @@ const Info kMotionInfo[] = {
 	  "[b]event[/b]: On a cue: the event (the server mod emits it at the player).\n"
 	  "[b]conditions[/b]: all must hold, on the player, before this tick's movement. They read what a state machine "
 	  "reads: grounded · airborne_time > 0.1 · speed · vertical_speed < 0 · a field (dash.charges > 0) · an item "
-	  "kind (grapple.gun) · a stance · a key that is down (held.jump, held.dash).\n"
+	  "kind (grapple.gun) · a stance · a key that is down (held.jump, held.dash) or went down this tick (pressed.dash) · tethered (a "
+	  "tether of the player's is out).\n"
 	  "[b]cooldown[/b]: seconds between two uses; for a While, between its end and its next start." },
 	{ "Uses", "How many times before it has to refill. Not for a While.",
 	  "[b]uses[/b]: 0 is no limit. A double jump is 1.\n"
@@ -96,7 +97,9 @@ const Info kMotionInfo[] = {
 	  "so it swings. Off: it only pulls.\n"
 	  "[b]tether_pull[/b]: acceleration toward the point, m/s per second. [b]tether_reel[/b]: metres of rope taken "
 	  "in a second.\n"
-	  "[b]tether_until[/b]: what lets it go: not held.grapple. Without it, only the thing it holds going away does.\n"
+	  "[b]tether_until[/b]: what lets it go. Hold to grapple: not held.grapple. Press to throw, press again to "
+	  "let go: pressed.grapple here, and not tethered in the conditions (so the second press does not throw a "
+	  "second line). Without it, only the thing it holds going away does.\n"
 	  "While the tether is out the motion is on: its parameters hold (friction 0, so the pull is not rubbed off on "
 	  "the ground). A point on a prop pulls the prop toward the player too. A CbTetherLook draws the rope." },
 	{ "When it happens", "What else the press does: fields of the player, and an event.",

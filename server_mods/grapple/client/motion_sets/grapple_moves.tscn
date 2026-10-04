@@ -3,9 +3,10 @@
 ; The grapple mod's motion: a grappling hook. Every simulation runs it from the player's own input,
 ; so the throw, the pull and the swing are predicted.
 ;
-;   Hook   on "grapple" (X): a line along the look at what is under the crosshair, up to 40 m.
+;   Hook   on "grapple" (Q), while no hook is out: a line along the look at what is under the
+;          crosshair, up to 40 m.
 ;          It flies at 60 m/s, takes hold, and pulls at 24 m/s per second on a rope that is reeled in
-;          at 4 m/s (so you swing, and end up at the point). Letting go of X lets it go.
+;          at 4 m/s (so you swing, and end up at the point). Pressing Q again lets it go.
 ;          While it is out: no ground friction (the pull is not rubbed off), more air control.
 ;          It happens only if the line finds something; emits grapple.fired at where it will hold.
 ;
@@ -16,7 +17,7 @@ set_name = "grapple.moves"
 
 [node name="Hook" type="CbMotion" parent="."]
 action = "grapple"
-cooldown = 0.25
+conditions = PackedStringArray("not tethered")
 parameters = {
 "air_control": 0.6,
 "friction": 0.0
@@ -24,5 +25,5 @@ parameters = {
 tether_range = 40.0
 tether_pull = 24.0
 tether_reel = 4.0
-tether_until = PackedStringArray("not held.grapple")
+tether_until = PackedStringArray("pressed.grapple")
 emits = "grapple.fired"

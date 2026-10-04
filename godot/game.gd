@@ -72,7 +72,7 @@ var distance := 6.0
 var _camera_distance := 6.0 # after the map got in the way
 ## Looking out of the character's head instead of from behind it (the key left of 1 toggles it).
 var first_person := false
-## Third person: the camera over a shoulder (1 right, -1 left) or straight behind (0). Q cycles.
+## Third person: the camera over a shoulder (1 right, -1 left) or straight behind (0). Z cycles.
 var shoulder := 0
 var args := {}
 var hud: Node
@@ -195,7 +195,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_QUOTELEFT:
 		# The key left of 1, whatever the layout prints on it.
 		first_person = not first_person
-	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_Q and _replay == "":
+	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_Z and _replay == "":
 		shoulder = 1 if shoulder == 0 else (-1 if shoulder > 0 else 0)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
@@ -536,8 +536,8 @@ func _send_input(delta: float) -> void:
 		jump = auto_rng.randf() < delta * 1.0
 		yaw += delta * 0.6
 		var elapsed := Time.get_ticks_msec() / 1000.0 - playing_since if playing_since >= 0.0 else 0.0
-		# A hook, if the server has one: held for a while, let go, thrown again.
-		if fmod(elapsed, 4.0) < 2.5:
+		# A hook, if the server has one: a press throws it, the next lets it go.
+		if fmod(elapsed, 2.0) < 0.1:
 			actions |= _action_bit("grapple")
 		if elapsed < autoplay * 0.4:
 			if auto_rng.randf() < delta * 2.0:
@@ -619,13 +619,13 @@ func _update_help() -> void:
 	if help == null:
 		return
 	if _replay != "":
-		help.text = "Space pause   Left/Right -/+5 s   Up/Down speed   , . step   Home restart   N next player   Tab scores   Mouse orbit   Wheel zoom   ` first person   Q shoulder   Esc menu   F1 stats"
+		help.text = "Space pause   Left/Right -/+5 s   Up/Down speed   , . step   Home restart   N next player   Tab scores   Mouse orbit   Wheel zoom   ` first person   Z shoulder   Esc menu   F1 stats"
 		return
 	var text := "WASD move   Shift sprint   Space jump"
 	for action in _actions:
 		var key: String = String(action["key"]).replace("Mouse", "Mouse ")
 		text += "   %s %s" % [key, String(action["name"]).replace("_", " ")]
-	help.text = text + "   Tab scores   Mouse orbit   Wheel zoom   ` first person   Q shoulder   Esc menu   F1 stats"
+	help.text = text + "   Tab scores   Mouse orbit   Wheel zoom   ` first person   Z shoulder   Esc menu   F1 stats"
 
 
 func _update_hud() -> void:

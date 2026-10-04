@@ -30,7 +30,8 @@
 //               flies there at a speed, then pulls the player toward the point and, with a rope,
 //               keeps it within the rope's length (a swing), reeling the rope in. The motion
 //               happens only if the line finds something. A point on a prop pulls the prop too
-//   until       what lets the tether go (not held.grapple); its parameters hold while it is out
+//   until       what lets the tether go (not held.grapple, or pressed.grapple for a second press);
+//               its parameters hold while it is out. Conditions can ask "tethered"
 //
 // The rules stay the mod's: it declares the action and the fields, and decides who may (a field
 // the condition reads, an item the player has to hold). The motion is the mechanism it switches on.

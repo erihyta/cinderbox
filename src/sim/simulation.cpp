@@ -711,6 +711,13 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				values.state = &before;
 				values.board = boardBefore.values;
 				values.input = &in;
+				// A frozen player presses nothing.
+				values.pressedActions = c.frozen ? uint16_t( 0 ) : uint16_t( in.actions & ~motion.prevActions );
+				values.pressedButtons = c.frozen ? uint8_t( 0 ) : pressed;
+				if ( const Tether* out = e.try_get<Tether>() )
+				{
+					values.builtins[AnimExpr::Tethered] = out->on != 0 ? 1.0f : 0.0f;
+				}
 				values.globalBoard = m_globals.board;
 				values.events = m_globals.modEvents;
 				values.eventCount = m_globals.modEventCount;
