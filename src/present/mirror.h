@@ -5,8 +5,8 @@
 // The simulation is authoritative and gets rolled back; this world never is. Each Update() diffs a
 // frame against it: new NetIds get visuals, vanished NetIds start a destroy effect, poses are
 // interpolated between the last two ticks and rollback corrections fade out. The "scripts" (flecs
-// systems in scripts/) animate spawning and destroying and evaluate ozz poses. Renderers (raylib,
-// Godot) read the result through ForEach() and react to Events() for VFX and node lifetime.
+// systems in scripts/) animate spawning and destroying and evaluate ozz poses. Renderers (the
+// Godot viewer) read the result through ForEach() and react to Events() for VFX and node lifetime.
 
 #include "joint_math.h"
 #include "mod_schema.h"

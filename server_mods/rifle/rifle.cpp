@@ -229,7 +229,7 @@ private:
 
 		// The rifle out means a shooter's stance: the body faces where the camera looks and the arms
 		// point the rifle there, in the pose everyone draws and hit tests use. Put away, the rifle
-		// clears only what is its own (the loadout decides facing).
+		// clears only what is its own (the inventory decides facing).
 		bool holding = gunInHand && c->dead == 0;
 		// The layer is shared with the other gun: swapped for it in one tick, that one's "put away"
 		// may land after this one's "out". What the body says decides, so it is set again.

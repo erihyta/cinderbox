@@ -1,6 +1,6 @@
 #pragma once
 
-// The viewer protocol: everything a viewer (the Godot client, the raylib debug viewer) is told, and
+// The viewer protocol: everything a viewer (the Godot client) is told, and
 // the little it says back. A viewer draws ViewFrames and never asks where they came from.
 //
 //   source  --ViewFrame-->  viewer       the world at one tick, who is who, and how the source is

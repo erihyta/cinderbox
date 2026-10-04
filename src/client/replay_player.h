@@ -1,8 +1,7 @@
 #pragma once
 
 // A server recording (cb_server --record), re-simulated: play, seek, and check the recorded
-// checksums on the way. No rendering and no clock of its own; replay_source.h and the raylib
-// viewer drive it.
+// checksums on the way. No rendering and no clock of its own; replay_source.h drives it.
 
 #include "replay.h"
 #include "simulation.h"
