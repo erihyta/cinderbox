@@ -26,6 +26,7 @@ machines. No game and no server are needed to author. The rules are the mod's C+
 | `anim/<pack>/` | baked animation packs: written on save and when publishing, never edited | yes |
 | `items/<kind>.cfg` | baked item bodies: written when publishing, never edited | yes |
 | `placeholder/` | the placeholder model: the CC0 mannequin on a humanoid skeleton, with its locomotion clips | no |
+| `bone_maps/` | bone maps for importing other rigs: `mixamo.tres`, `unreal_mannequin.tres` (the placeholder's) | no |
 | `cinderbox.gdextension`, `bin/` | the Cinderbox extension: the `Cb*` nodes, the bakers, the **Cue Preview** panel | no |
 | `starters/` (in `sdk\` only) | what `-New` copies into a mod's project, with the mod's name in it | no |
 
@@ -45,6 +46,27 @@ machines. No game and no server are needed to author. The rules are the mod's C+
 | `animation_packs/<mod>_animations.tscn` | an animation pack: the default AnimationTree in full, replacing the upper body |
 
 Files that already exist are kept. Delete the starters a mod does not need.
+
+## The files that are not scenes
+
+| File | Who writes it | What it is | Edit it? |
+|---|---|---|---|
+| `project.godot` | Godot | the project's settings. Only its name matters: the mod's look does not ship its project settings | in Project Settings |
+| `export_presets.cfg` | the SDK | the "Mod" preset: what is packed into the mod. Every resource, except the folders the SDK owns (`exclude_filter`), plus the baked files (`include_filter`) | no: `-Update` replaces it |
+| `cinderbox.gdextension` | the SDK | tells Godot where the Cinderbox extension's libraries are (`bin/`) for each platform | no |
+| `*.import` (next to every model, sound, texture) | Godot | how that file is imported: for a model, its bone map, skeleton name and each clip's loop mode. This is what the Import dock and Advanced Import Settings edit | in the Import dock |
+| `*.uid` | Godot | the file's id, so moving it does not break references | no |
+| `bone_maps/*.tres` | the SDK | which bone of a rig is which humanoid bone (see Your own clips) | no; add your own for another rig |
+| `items/<kind>.cfg` | publishing | an item's body as the **server** reads it: its box, mass, where the hands hold it. Baked from the item scene's `CbItemBody` and `CbGrip` nodes | no: edit the scene |
+| `anim/<pack>/graph.cfg` | saving a pack, publishing | the pack's state machines as text: clips, layers, states, transitions, conditions. What the simulation runs | no: edit the tree |
+| `anim/<pack>/anim.cfg` | the same | which `.ozz` file is which clip, and the skeleton they were made on | no |
+| `anim/<pack>/*.ozz` | the same | the skeleton and the clips, in the format the game plays | no |
+| `..\client_item.cfg` (beside `client\`) | publishing | the published mod's SHA-256: the exact pack the server tells players they need | no |
+
+- **Baked files are outputs.** They are overwritten on every save and publish; a change made in
+  them is lost.
+- **Publishing checks the pack** the way the game does when it loads it: a script, or a file outside
+  the folders a mod may have, stops the publish with the reason.
 
 ## Animation packs
 
@@ -94,8 +116,13 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 
 **Your own clips**
 
-1. Put the model and clips in `animation_packs/source/`. Import with Godot's humanoid retarget:
-   a Bone Map, Skeleton Name `Skeleton3D`, Overwrite Axis on.
+1. Put the model and clips in `animation_packs/source/`. In Advanced Import Settings, on the
+   `Skeleton3D` node, under Retarget: pick the **Bone Map of the rig the file was made on**
+   (`bone_maps/mixamo.tres` for Mixamo), and set Skeleton Name to `Skeleton3D`. Set the clip's
+   loop mode there too.
+   - The bone map renames the rig's bones to Godot's humanoid names (`Hips`, `Spine`, ...). The game
+     fits a clip to a character by those names: with the wrong map, or none, the clip keeps the
+     rig's names and **nothing plays in the game**, though it plays in the editor.
 2. In the pack scene, make `Model` an instance of your model, add your clips to an
    `AnimationPlayer` (Root Node: `Model`), and point the root's Animation Player and the tree's at it.
 3. Use the clips in the tree, save. `server_mods/rifle/client/animation_packs/rifle_hold.tscn` is one
@@ -117,7 +144,6 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 | The names a server mod declares (fields, events, actions, stances) are not known to the editor: nothing completes or checks them | type them as in the mod's `.cpp`; a wrong name is silent |
 | A preview of the item in a character's hand, with the grips solved and a pack playing | publish and look in the game |
 | A scaffold for the server half (`<mod>.cpp`) | copy `server_mods/rifle/rifle.cpp` |
-| The game's pack check (no scripts, allowed folders and node types) at publish time | the game refuses a bad pack when it loads it |
 | A prebuilt SDK download: the extension has to be built from source | build with the `godot-export` preset |
 | Reloading a published look without restarting the server and the game | restart both |
 | Maps: the Bake Map button is in the game's project (`godot/`), not here | make maps there |

@@ -42,7 +42,7 @@ materials/extract_path=""
 _subresources={
 "nodes": {
 "PATH:Armature/Skeleton3D": {
-"retarget/bone_map": Resource("res://placeholder/bone_map.tres"),
+"retarget/bone_map": Resource("res://bone_maps/unreal_mannequin.tres"),
 "retarget/bone_renamer/rename_bones": true,
 "retarget/bone_renamer/unique_node/make_unique": true,
 "retarget/bone_renamer/unique_node/skeleton_name": "Skeleton3D",
