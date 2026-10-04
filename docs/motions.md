@@ -1,0 +1,135 @@
+# Motions
+
+What a mod adds to how players move (a dash, a double jump), predicted like walking is. Part of the [manual](../README.md#the-manual).
+
+## Why they exist
+
+| | A mod's command (`Push`, `SetMove`) | A motion |
+|---|---|---|
+| Decided by | the server mod's C++, each tick | data every simulation runs: the server's and each client's |
+| Reaches your own screen | a round trip after the press | on the tick of the press |
+| A wrong guess | does not happen: nothing is guessed | rolled back, like a mispredicted step |
+| Good for | what lasts and need not be instant (a crouch's speed, knockback from a hit) | what must answer a key at once (a dash, a second jump) |
+
+A motion is to movement what a [`CbReaction`](looks.md#reactions) is to the look: *on a press, if
+conditions hold, do this to the mover*. It is authored in Godot, baked to text, sent in the schema
+and run by the simulation, the way a character's [state machine](characters.md#state-machines) is.
+
+```
+CbMotion nodes ──bake──> motions/<set>.cfg ──> the server reads it from the mod's item
+                                                     │ the schema (welcome, recordings)
+   your press ──> your simulation runs the motion ───┤
+                  the server runs the same motion  ──┘   same input, same state, same result
+```
+
+## The two halves
+
+| Half | Where | What |
+|---|---|---|
+| The rules | `server_mods/<mod>/<mod>.cpp` | declares the action, the fields and the events the motions name, names the set (`declare.Motions( "dash.moves" )`), and decides who may: a field a condition reads |
+| The motions | `server_mods/<mod>/client/motion_sets/<name>.tscn` | a `CbMotionSet` with `CbMotion` children; saving the scene bakes `motions/<set_name>.cfg` |
+
+```cpp
+// server_mods/dash/dash.cpp: the names, and how many dashes a player has. Not the dash.
+m_dash = declare.Action( "dash", "V" );
+m_charges = declare.Field( "dash.charges", BoardType::Int );
+m_started = declare.Event( "dash.started" );
+m_moves = declare.Motions( "dash.moves" );
+...
+ctx.Set( SlotTarget( slot ), m_charges, charges + 1 );   // one back every 2 s
+```
+
+```
+Moves        CbMotionSet   set_name "dash.moves"                (motion_sets/dash_moves.tscn)
+├── Dash        CbMotion   action "dash"   conditions dash.charges > 0   cooldown 0.4
+│                          impulse 11 m/s along the move input, replacing the horizontal velocity
+│                          duration 0.18 s with parameters { friction: 0 }
+│                          changes dash.charges -= 1      emits dash.started
+└── DoubleJump  CbMotion   action "jump"   conditions not grounded   uses 1, back on the ground
+                           impulse 6.5 m/s up, replacing the vertical speed    emits dash.double_jump
+```
+
+## `CbMotion`
+
+| Group | Field | Meaning |
+|---|---|---|
+| When | `action` | the action whose press it answers: one a server mod declares (`dash`), or the engine's `jump` / `sprint`. Held, it is one press |
+| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads: `grounded`, `airborne_time`, `speed`, `vertical_speed`, a field (`dash.charges > 0`), an item kind held, a stance |
+| | `cooldown` | seconds between two uses |
+| Uses | `uses` | how many before a refill; 0: no limit |
+| | `refill`, `refill_seconds` | **On the ground**: back when the player stands. **After seconds**: back that long after the last use |
+| Impulse | `impulse` | the change of velocity, m/s |
+| | `impulse_frame` | **Look** (the camera, pitch included), **Move input** (WASD; the facing when none is held), **Facing**, **Up**, **World direction** (`impulse_direction`) |
+| | `replace` | what of the velocity is cleared first: **Nothing**, **Vertical speed**, **Horizontal velocity**, **All** |
+| While it lasts | `duration` | how long the motion stays on after the press |
+| | `parameters` | [movement parameters](server-mods.md#movement-parameters) the player has while it is on (`friction` = 0). They win over the server's, the character's and a mod's `SetMove` for that long |
+| When it happens | `changes` | fields of the player: `dash.charges -= 1` (`-=`, `+=`, `=` with a number), written like a [prediction's](looks.md#predictions) |
+| | `emits` | a mod event at the player, with the impulse as its vector |
+
+- **Order**: a tick runs the frame's commands, then each player's motions (in the schema's order), then the mover. So a `Set` from the mod and a `change` from a motion in the same tick both count.
+- **A frozen or dead player** does none; a key held through a freeze is not a press when it ends.
+- **At most 16 motions** on a server, all its mods' sets together.
+- **In the editor**: every group has an info row (click the icon), every property a hover text, F1 opens the class reference. A motion that cannot run is a warning on the node and stops the bake.
+- **Names the editor cannot check**: the action, fields and events are the server mod's. One no mod declares makes that part do nothing (the motion never happens, the change is skipped, nothing is emitted), and the server says so when it starts.
+
+## The look of a motion
+
+The event a motion emits is recorded in the simulation that ran it, the viewer's own included. So:
+
+| | A server mod's event | A motion's event |
+|---|---|---|
+| Your own shows | when a [`CbPrediction`](looks.md#predictions) guesses it | at once, with no prediction node |
+| A wrong guess | the reaction stays played | the rollback un-counts the event |
+
+```
+DashReactions                 (vfx/reactions_dash.tscn)
+├── Dashed        on dash.started       subject $at   a puff at its feet + a whoosh
+└── DoubleJumped  on dash.double_jump   subject $at   the jump's puff + its sound, higher
+```
+
+Fields a motion changes are state the viewer already has: the dash mod's HUD is a `CbFieldLabel`
+with `"[{key:dash}]  DASH {dash.charges} / {dash.max}"`, and the count drops on the press.
+
+## Baked file
+
+`motions/<set_name>.cfg`, tab-separated, written on save and when the mod is published. Never edited.
+
+```
+cinderbox_motions	1
+motion	Dash
+when	press	dash
+if	( dash.charges > 0 )
+cooldown	0.4
+duration	0.18
+impulse	11	move	horizontal
+param	friction	0
+change	dash.charges	-=	1
+emit	dash.started
+```
+
+| Step | Who |
+|---|---|
+| Bake | saving the scene, the **Bake motions** button, `tools\publish_mod.ps1` (`bake_motions.gd`) |
+| Ship | the mod's item: `motions/*.cfg` is packed, `motion_sets/` is not |
+| Read | the server, from the item (its SHA-256 checked); a set it cannot read does nothing |
+| Send | in the schema: the welcome, and a recording's header |
+| Compile | every simulation, against the schema's names (`CompileMotions`) |
+
+## What is measured
+
+`net_dash` runs the dash mod behind 50 ms each way (a 100 ms round trip):
+
+| | |
+|---|---|
+| The server | has the dash on the tick of the press: 3 m/s before, 11 m/s after, a charge taken |
+| The client | predicted every tick of the two dashes and the double jump exactly as the server then had it: 390 ticks compared, none different |
+| The recording | replays to the same checksums, motions included |
+
+## Not yet
+
+| Missing | Roadmap |
+|---|---|
+| Motions that hold **while** conditions do (flight, a glide, a jetpack), `held:<action>`, per-second values | Motions: while |
+| Tethers (a grappling hook) | Motions: tethers |
+| A preview panel; `motion.<name>` in conditions and state machines; names checked at publish | Motions in the editor |
+| Another player's dash is seen when its input arrives: its press is guessed by repeating its last input, as a jump is | by design |

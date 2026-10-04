@@ -24,6 +24,8 @@ machines. No game and no server are needed to author. The rules are the mod's C+
 | `prefabs/`, `vfx/`, `ui/`, `assets/` | the mod's scenes, effects, HUD, sounds and textures | yes |
 | `animation_packs/` | the mod's animation pack scenes; `animation_packs/source/` for their models and clips | no (what they bake to is) |
 | `anim/<pack>/` | baked animation packs: written on save and when publishing, never edited | yes |
+| `motion_sets/` | the mod's motion scenes: `CbMotionSet` roots with `CbMotion` nodes ([docs/motions.md](../docs/motions.md)) | no (what they bake to is) |
+| `motions/<set>.cfg` | baked motions: written on save and when publishing, never edited | yes |
 | `items/<kind>.cfg` | baked item bodies: written when publishing, never edited | yes |
 | `placeholder/` | the placeholder: a humanoid skeleton with no model (`skeleton.tscn`; the editor draws its bones) and its locomotion clips (`clips/`) | no |
 | `cinderbox.gdextension`, `bin/` | the Cinderbox extension: the `Cb*` nodes, the bakers, the **Cue Preview** panel | no |
@@ -43,6 +45,7 @@ machines. No game and no server are needed to author. The rules are the mod's C+
 | `vfx/reactions_<mod>.tscn` | say what the item looks like (`CbItemLook`), predict a press (`CbPrediction`), react to events (`CbReaction`) |
 | `ui/hud_<mod>.tscn` | show fields while the item is out (`CbFieldLabel`) |
 | `animation_packs/<mod>_animations.tscn` | an animation pack: the default AnimationTree in full, replacing the upper body |
+| `motion_sets/<mod>_moves.tscn` | add to how players move, predicted: a push on a press, with a charge and an event (`CbMotion`) |
 
 Files that already exist are kept. Delete the starters a mod does not need.
 
@@ -56,6 +59,7 @@ Files that already exist are kept. Delete the starters a mod does not need.
 | `*.import` (next to every model, sound, texture) | Godot | how that file is imported: for a model, its bone map, skeleton name and each clip's loop mode. This is what the Import dock and Advanced Import Settings edit | in the Import dock |
 | `*.uid` | Godot | the file's id, so moving it does not break references | no |
 | `items/<kind>.cfg` | publishing | an item's body as the **server** reads it: its box, mass, where the hands hold it. Baked from the item scene's `CbItemBody` and `CbGrip` nodes | no: edit the scene |
+| `motions/<set>.cfg` | saving a motion set, publishing | the mod's motions as text: the press, the condition, the impulse, the fields and the event. What every simulation runs | no: edit the scene |
 | `anim/<pack>/graph.cfg` | saving a pack, publishing | the pack's state machines as text: clips, layers, states, transitions, conditions. What the simulation runs | no: edit the tree |
 | `anim/<pack>/anim.cfg` | the same | which `.ozz` file is which clip, and the skeleton they were made on | no |
 | `anim/<pack>/*.ozz` | the same | the skeleton and the clips, in the format the game plays | no |

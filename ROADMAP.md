@@ -7,110 +7,49 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 
 | # | Milestone | In one line |
 |---|---|---|
-| 1 | [Motions: on a press](#1-motions-on-a-press) | `CbMotion`: a dash and a double jump, predicted |
-| 2 | [Motions: while](#2-motions-while) | flight, a glide, a jetpack: parameters that hold while conditions do |
-| 3 | [Motions: tethers](#3-motions-tethers) | a grappling hook: the throw and the pull, predicted |
-| 4 | [Motions in the editor](#4-motions-in-the-editor) | a preview, checks at publish, the body and the looks follow a motion |
-| 5 | [The client, finished](#5-the-client-finished) | what is left of the client's known limits |
-| 6 | [The SDK knows the server](#6-the-sdk-knows-the-server) | the Godot modding project scaffolds the server half and knows its names |
-| 7 | [Mod testing](#7-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
+| 1 | [Motions: while](#1-motions-while) | flight, a glide, a jetpack: motions that hold while conditions do |
+| 2 | [Motions: tethers](#2-motions-tethers) | a grappling hook: the throw and the pull, predicted |
+| 3 | [Motions in the editor](#3-motions-in-the-editor) | a preview, checks at publish, the body follows a motion |
+| 4 | [The client, finished](#4-the-client-finished) | what is left of the client's known limits |
+| 5 | [The SDK knows the server](#5-the-sdk-knows-the-server) | the Godot modding project scaffolds the server half and knows its names |
+| 6 | [Mod testing](#6-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
 
-Movement parameters, the step before these, are done (M92:
-[docs/server-mods.md](docs/server-mods.md#movement-parameters)). Steps 1 to 4 are one idea, below. Steps 6 and 7 are last on purpose: they wrap the client, so they
-wait until it stops changing.
+Done before these: movement parameters (M92) and motions on a press (M93: a dash, a double jump;
+[docs/motions.md](docs/motions.md)). Steps 1 to 3 finish that idea. Steps 5 and 6 are last on
+purpose: they wrap the client, so they wait until it stops changing.
 
-## The problem motions solve
+## Where motions stand
 
-| Today | Why |
-|---|---|
-| WASD, sprint and jump are predicted | they are the simulation's: every client runs them from its own input |
-| Anything a mod adds to movement is not | a mod's `Push` is a command: it exists only in the server's frame, a round trip later |
-| A pull is the worst case | a command every tick: the client is corrected every tick and its own position trails by the lead |
+A `CbMotion` says: *on a press, if conditions hold, do this to the mover.* It is baked, sent in
+the schema and run by every simulation, so a player's own are predicted and rolled back
+([docs/motions.md](docs/motions.md)).
 
-A dash that starts 150 ms after the key, or a grapple that tugs in steps, is not a look problem.
-`CbPrediction` cannot fix it: the viewer has no simulation, so a guessed push cannot collide with a
-wall. Movement is predicted only when **the simulation itself** computes it from input.
-
-## The idea: `CbMotion`, a reaction for the mover
-
-A `CbReaction` says: *on a cue, or while conditions hold, do this to the look.*
-A `CbMotion` says: *on a press, or while conditions hold, do this to the mover.*
-Same shape, same expression language, same editor. The difference is where it runs.
-
-| | `CbReaction` | `CbMotion` |
+| | Today (M93) | Still to come |
 |---|---|---|
-| Answers | what the look does | what the mover does |
-| Authored | a node in the mod's look | a node in `motions/<mod>.tscn`, in the same Godot project |
-| When | **On a cue**, **While** | **On a press**, **On a cue**, **While** |
-| Conditions | expressions over entity state | the same language over simulation values (the state machine's names) |
-| Timing | `cooldown`, `delay`, `chance` | `cooldown`, `uses`, `duration` |
-| Does | animation, property, scene, sound | impulse, parameters, tether; changes fields; emits an event |
-| Runs in | the viewer | every simulation: baked, sent in the schema, like a state machine |
-| Rolled back | no | yes |
+| When | on a press: a mod's action, `jump`, `sprint` | **While** conditions hold; **On a cue** (a mod event at the player) |
+| Conditions | what a state machine reads | `held:<action>`, `motion.<name>` |
+| Does | an impulse; parameters for a duration; changes of fields; an event | per-second impulses and changes; `move_frame`; a tether |
+| Timing | `cooldown`, `uses` with a refill, `duration` | |
+| Editor | the nodes, their help, the bake, warnings | a preview panel; names checked at publish |
 
-```
-CbMotion nodes (Godot) ──bake──> motions/<set>.cfg ──> the server reads it from the mod's item
-                                                              │ the schema
-        your press ──> your simulation runs the motion now <──┤
-                       the server runs the same motion     <──┘   same input, same state, same result
-```
-
-- **Why it is predicted**: a press is already in `PlayerInput`, and the client already simulates
-  its own input ahead of the server. A motion is a function of input and state, so the predicted
-  ticks contain it. No command is involved, so there is nothing to wait for.
-- **Why it is not a rule on the client**: it is the path the `AnimationTree` already takes.
-  Authored in Godot, baked to text, names resolved at bake, run by the simulation as a small
-  program. The server reads its own copy; a client cannot change what it was sent.
-- **Rules stay in the mod**: the server mod declares the action and the fields, and decides who may
-  (`dash.charges`, `flight.on`, an item kind). The motion is the mechanism it switches on.
-
-### The node (proposal)
-
-| Field | Meaning |
-|---|---|
-| `when` | **On a press** (an action goes down), **On a cue** (a mod event at this player), **While** (its conditions hold) |
-| `action` | an action a mod declared (`dash`), or the engine's `jump` / `sprint` |
-| `conditions` | expressions: `grounded`, `airborne_time`, `speed`, `vertical_speed`, board fields, item kinds, stances, `held:<action>`, `motion.<name>` |
-| `cooldown` | seconds between two uses |
-| `uses`, `refill` | how many before a refill: **on the ground** (a double jump: 1) or every N seconds |
-| `duration` | how long a pressed motion stays on (a dash's 0.2 s without friction) |
-| `impulse`, `impulse_frame` | a change of velocity along the **look**, the **move** input (the facing when there is none), **up**, the **world**, or the **tether** |
-| `replace` | which part of the velocity the impulse replaces instead of adding to: none, vertical, all |
-| `parameters` | [movement parameters](docs/server-mods.md#movement-parameters) while it is on: `gravity = 0`, `air_control = 1`, `max_speed = 12`, `move_frame = look` |
-| `tether_*` | range, travel speed, rope length, pull, reel: see [step 3](#3-motions-tethers) |
-| `changes` | board fields, as `CbPrediction.changes` writes them: `dash.charges -= 1`, `jetpack.fuel -= 20 per second` |
-| `emits` | a mod event (`dash.started`): reactions play on it, state machines enter on it, server mods hear it |
-
-### What mods would write
+### What mods would write with the rest
 
 | Move | Motion | Server mod |
 |---|---|---|
-| Dash | on a press of `dash`; `dash.charges > 0 and !combat.dead`; cooldown 1; impulse 12 along **move**; duration 0.2 with `friction = 0`; changes `dash.charges -= 1`; emits `dash.started` | declares `dash` and `dash.charges`, refills charges |
-| Double jump | on a press of `jump`; `!grounded`; uses 1, refill on the ground; impulse 6.5 **up**, replace vertical; emits `jumped` | none, or a field that switches it on |
 | Flight | while `flight.on`; parameters `gravity = 0`, `air_control = 1`, `move_frame = look` | toggles `flight.on` |
-| Glide | while `held:jump and !grounded and vertical_speed < 0`; parameters `gravity = 2`, `max_fall = 3` | none |
+| Glide | while `held:jump and not grounded and vertical_speed < 0`; parameters `gravity = 2`, `max_fall = 3` | none |
 | Jetpack | while `held:jump and jetpack.fuel > 0`; impulse 25 per second **up**; changes `jetpack.fuel -= 20 per second` | refills fuel on the ground |
 | Grappling hook | on a press of `fire`, `grapple.gun`; tether range 40, travel 60 m/s, pull 30; ends when `fire` is let go | owns the item |
-
-### What the simulation gains
-
-| Piece | Note |
-|---|---|
-| Reads action bits | only through baked motions; today it never looks at them |
-| `MotionState` per player | per motion: last use, uses left, on since; one tether (what it holds, where, how long). Fixed size, hashed, rolled back |
-| Field writes from inside | `changes` write the board in the simulation; today only `Set` commands do. Commands still apply first |
-| A ray of its own | for the tether: against the world, props and players' capsules. Not hitboxes: poses are not in the rolled-back state |
-| `motion.<name>` | true while a motion is on: a state machine enters a dash clip on it, a look draws a rope on it |
 
 ### Open questions
 
 | Question | Leaning |
 |---|---|
 | Other players' presses are guessed by repeating their last input, so their dash is seen late and corrected | accept: it is what a jump does today, and the mirror fades the correction |
-| A field both a motion and a server mod write | allow; the bake names the fields a set writes, and the server warns when a mod `Set`s one every tick |
-| A motion the server starts (a knockback that locks control) | a `StartMotion` command, after step 2: not predicted, but simulated from then on |
+| A field both a motion and a server mod write | allowed today (commands apply first, then motions); the bake could name the fields a set writes, and the server warn when a mod `Set`s one every tick |
+| A motion the server starts (a knockback that locks control) | a `StartMotion` command, after step 1: not predicted, but simulated from then on |
 | A grapple onto a limb | decided: no. The anchor is on the capsule; hitboxes are the server's |
-| Reactions on a motion's event | need no `CbPrediction`: the event is in the predicted simulation and a rollback un-counts it |
+| A second jump that plays the jump's animation | the character's tree enters its jump state on the motion's event; a starter for it comes with step 3 |
 
 ### Routes not taken
 
@@ -122,30 +61,20 @@ CbMotion nodes (Godot) ──bake──> motions/<set>.cfg ──> the server re
 
 ## The steps
 
-### 1. Motions: on a press
+### 1. Motions: while
 
 | Piece | What |
 |---|---|
-| `CbMotion` (the viewer extension) | the node, its inspector help, its bake to `motions/<set>.cfg` on save and at publish |
-| `declare.Motions( "dash.moves" )` | the server reads the set from the mod's item and puts it in the schema |
-| The simulation | compiles the set as it does a state machine; runs on-press motions before the mover: `impulse`, `replace`, `cooldown`, `uses`, `duration`, `changes`, `emits` |
-| Examples | a `dash` mod; a double jump in it |
-
-- **Done when**: with 100 ms each way, the local player's dash starts on the tick of the press and the client is not corrected for it (`net_dash`: no rollback on the dasher's own state); recordings replay it.
-
-### 2. Motions: while
-
-| Piece | What |
-|---|---|
-| While motions | on for as long as their conditions hold; `parameters` laid over the player's own (above a mod's `SetMove`, while the motion lasts) |
+| `when` | a choice on the node: **On a press** (today's), **While**, **On a cue** |
+| While motions | on for as long as their conditions hold; their `parameters` hold that long |
 | `held:<action>` | an action's held state as a condition |
-| `move_frame = look` | a new parameter: WASD along the camera, pitch included (flight, swimming); today it is always the ground plane |
+| `move_frame = look` | a new movement parameter: WASD along the camera, pitch included (flight, swimming); today it is always the ground plane |
 | Per-second values | `impulse ... per second`, `changes ... per second` |
 | Examples | flight, a glide, a jetpack with fuel |
 
 - **Done when**: flying into a wall, landing and running out of fuel are all without corrections for the local player.
 
-### 3. Motions: tethers
+### 2. Motions: tethers
 
 | Field | Meaning |
 |---|---|
@@ -155,11 +84,12 @@ CbMotion nodes (Godot) ──bake──> motions/<set>.cfg ──> the server re
 | `tether_pull`, `tether_reel` | acceleration toward the anchor; metres of rope taken in a second |
 | `tether_ends` | conditions that let it go (`!held:fire`), besides the anchor disappearing |
 
+- The simulation gets a ray of its own for it: against the world, props and players' capsules.
 - An anchor on a prop is a point on that body: the pull moves both.
 - The viewer is told the tether (`ViewFrame`), and a reaction can place a beam to it (`place`: **Tether**).
 - **Done when**: a `grapple` mod swings and reels with no corrections for the local player at 100 ms, and two players pulling one crate agree.
 
-### 4. Motions in the editor
+### 3. Motions in the editor
 
 | Piece | What |
 |---|---|
@@ -168,7 +98,7 @@ CbMotion nodes (Godot) ──bake──> motions/<set>.cfg ──> the server re
 | The body follows | `motion.<name>` and a motion's event in state machine conditions; the viewer's lead covers them |
 | Animation packs | a pack's layer can be asked for by a motion while it is on (a flight pose) |
 
-### 5. The client, finished
+### 4. The client, finished
 
 From DESIGN.md's known limits. Each is small; together they are "the client is near done".
 
@@ -180,7 +110,7 @@ From DESIGN.md's known limits. Each is small; together they are "the client is n
 | Key rebinding | actions are bound to the keys mods suggest | a page in the settings |
 | A server list | join by address | recent and favourite servers with their mods and players |
 
-### 6. The SDK knows the server
+### 5. The SDK knows the server
 
 Today the Godot modding project knows nothing of the mod's C++ half: names are typed twice and a
 wrong one is silent. This step joins the two.
@@ -193,7 +123,7 @@ wrong one is silent. This step joins the two.
 | An item in the hand | a preview of the item on the placeholder skeleton, grips solved, a pack playing |
 | A prebuilt SDK | CI builds the extension, so a mod's look needs no compiler |
 
-### 7. Mod testing
+### 6. Mod testing
 
 One step from an edit to playing it: the client starts the server.
 
@@ -204,7 +134,7 @@ One step from an edit to playing it: the client starts the server.
 | Looks reload | a published look is taken up without restarting the server or the game |
 | Bots | `--bots N` on the hosted server, so a mod can be tried alone |
 
-- It waits for step 5: it wraps the menu, joining and pack loading, which should be settled first.
+- It waits for step 4: it wraps the menu, joining and pack loading, which should be settled first.
 
 ## Later, not scheduled
 
@@ -220,7 +150,8 @@ Independent of the path; each is small.
 
 | What | Note |
 |---|---|
-| A board sized by the schema | `kBoardSlots` is a wall that came back once already; motions will declare more fields |
+| A board sized by the schema | `kBoardSlots` is a wall that came back once already; motions declare more fields |
+| More than 16 motions | `kMaxMotions` is the size of a component every player carries; sized by the schema, like the board |
 | Expressions in `changes` | `pistol.ammo -= 1` takes a number; the right side could be an expression. Shared by `CbPrediction` and `CbMotion` |
 | HUD nodes as reactions | `CbFieldBinding` and a While `CbReaction` with a `value_expression` do the same thing in two places |
 | The rest of `simulation.cpp` in modules | props, ragdolls, items and animation; the mover went first (M92) |

@@ -78,6 +78,7 @@ addressed by a stable `NetId`.
 |---|---|
 | World | static boxes, ramps, steps and platforms from a baked map; dynamic boxes, spheres and capsules |
 | Player movement | a kinematic capsule mover (move-and-slide with Box3D's mover casts and plane solver); a pogo spring keeps it hovering, which carries it over steps; it pushes dynamic bodies. In a file of its own (`mover.*`) |
+| Motions | what mods add to movement (a dash, a double jump): `CbMotion` nodes baked to text, sent in the schema, compiled against it and run for every player before the mover (`motions.*`). A press is in the input a client already simulates ahead, so a player's own are predicted and rolled back. `MotionState` (a slot per motion: last use, uses, on until) is on players only where a server has motions |
 | Movement parameters | walk and sprint speed, acceleration, friction, air control, gravity, jump speed, turn rate, a fall limit: values, not constants. The server's set is in `SimConfig::move` (its options, then its character's values); a mod's `SetMove` command gives one player its own (`MoveOverrides`, a component only players a mod touched have) |
 | Controls | WASD relative to the camera, Shift, Space: the engine's. Every other control is an action a mod declares |
 | Facing | freelook (the body turns toward where it walks) or camera-facing (`Facing` command); the legs follow the direction of travel either way (`AnimState::legYaw`, backwards past about 100 degrees) |
@@ -91,7 +92,7 @@ addressed by a stable `NetId`.
 
 1. Join and leave events.
 2. The frame's **commands** (from server mods), in order.
-3. Movement and physics.
+3. Per player: its **motions** (what mods add to movement, by this tick's input), then the mover. Then physics.
 4. The animation state and the state machine, per player.
 5. Events are recorded (impacts, footsteps, mod events, animation markers).
 
@@ -153,7 +154,7 @@ Authoritative server, client rollback (`src/net`, `src/client`).
 - Frames encode a mask of players whose input changed, then only the changed fields; commands carry a field mask.
 - ENet's throttle is off (it dropped unreliable packets after large reliable transfers, which stalled clients).
 - **Replays** (`cb_server --record`): every authoritative frame plus checksums; `cb_replay verify` re-simulates headlessly.
-- Protocol 25, replay version 8 (`src/net/protocol.h`, `replay.cpp`).
+- Protocol 26, replay version 9 (`src/net/protocol.h`, `replay.cpp`).
 
 ## The viewer protocol
 
@@ -210,7 +211,8 @@ inputs ──> server: mods read the world + this tick's inputs ──> commands
 | `inventory` | what a player carries: slots, stowing, holsters; one owner of the hand |
 | `pickup` | picking up and dropping items, hold-to-use progress on the board |
 | `deathmatch` | rounds: scores `combat.killed`, freezes for the intermission, emits `game.round_start` |
-| `props`, `expire`, `sneak` | throwing props; items that lie too long; a crouch layer from an animation pack |
+| `props`, `expire`, `sneak` | throwing props; items that lie too long; a crouch layer from an animation pack, and its speed |
+| `dash` | the charges of a dash; the dash and a double jump themselves are its motion set, run by every simulation |
 
 ## Workshop items and packs
 
@@ -287,6 +289,7 @@ Everything a player sees and hears beyond bodies is data in workshop items: no s
 | `CbReaction` | on a **cue** (a mod event, a game event) or **while** conditions hold: an animation, a property, a listed method, a scene, a sound, a screen shake or flash, placed by the cue or a node |
 | `CbPrediction` | says which cue the server will answer a press with (or a held action, again every `cooldown`: `while_held`); the cue plays at once with the same reactions, and the server's cue then plays only what waited |
 | `CbItemLook` | which scene an item kind is drawn as |
+| `CbMotionSet`, `CbMotion` | not a look: authoring nodes for what a mod adds to movement, baked to `motions/<set>.cfg` for the simulation (docs/motions.md) |
 | `CbFieldLabel`, `CbFieldBinding`, `CbEventFeed`, `CbScoreboard`, `CbPromptLabel` | HUD from fields and events |
 
 - **Paths**: `^` (my entity), `^^` (its holder), `$at` / `$other` (who a cue names), `$local`, `$world`, `@field` (the entity a field names). No path leaves the World node.
@@ -327,9 +330,9 @@ loads mods; `workshop.gd` is where items are.
 
 | Kind | Where | Covers |
 |---|---|---|
-| Unit and scenario tests | `tests/test_main.cpp` (`cb_tests`) | map format, commands, movement parameters, events, state machines, poses, hitboxes, items, the frame codec, snapshots, rollback |
+| Unit and scenario tests | `tests/test_main.cpp` (`cb_tests`) | map format, commands, movement parameters, motions, events, state machines, poses, hitboxes, items, the frame codec, snapshots, rollback |
 | Network tests | `tests/net_test.cpp` (`cb_net_tests`) | sessions over loopback and a lossy link, mods end to end (combat, pistol, melee, inventory, pickup, deathmatch, sneak), sources |
-| Headless Godot checks | `godot/addons/cinderbox_maps/check_*.gd` | reactions, predictions, the scene guard, the pack validator, the track player, the pose winning over Godot animation, retargeting, a character's movement, the menu |
+| Headless Godot checks | `godot/addons/cinderbox_maps/check_*.gd` | reactions, predictions, the scene guard, the pack validator, the track player, the pose winning over Godot animation, retargeting, a character's movement, motion bakes, the menu |
 | Tools | `cb_bot`, `cb_netsim`, `cb_replay` | bots (full ones run the real client), a UDP relay that degrades traffic, replay verification and view file summaries |
 
 **CI** (`.github/workflows/determinism.yml`), on every push:
@@ -340,7 +343,7 @@ loads mods; `workshop.gd` is where items are.
 | linux-gcc, linux-clang | GCC, Clang | x64 |
 | macos-arm64-clang | Apple Clang | ARM64 |
 
-- Each build runs all tests, then compares its per-tick hashes with `tests/reference_hashes.txt` and its pose hash with `tests/reference_anim_hash.txt`.
+- Each build runs all tests, then compares its per-tick hashes (the reference scenario, then a run with motions) with `tests/reference_hashes.txt` and its pose hash with `tests/reference_anim_hash.txt`.
 - **Cross-load**: the six portable snapshots must be byte-identical, and each OS loads each of them with each of its builds and runs on to the reference's final hash.
 - Not covered: Linux ARM64, the Godot extensions, a Godot client in a session against a server built by another compiler.
 
@@ -363,6 +366,7 @@ src/sim/          deterministic simulation shared by server and client, as two l
   simulation.*      the engine: level, props, commands, ragdolls, snapshots, hashing
   mover.*           the character mover: walking, jumping, falling, pushing, by input and parameters
   move_params.*     the movement parameters: names, defaults, ranges
+  motions.*         what mods add to movement: the baked text, its compiler and the runner
   rollback.*        client prediction + rollback session
   physics_arena.*   Box3D allocator arena (makes the physics state copyable)
   box3d_shim.c      access to Box3D internals (world struct, portable serializer)
@@ -395,7 +399,7 @@ src/present/      engine-independent presentation, what the Godot extensions dra
   scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
 src/godot/        the viewer GDExtension (cinderbox): CinderboxClient (draws a view source's frames as prefabs,
                   signals, items; the adapter that drives the World director), CinderboxSkeleton, map and entity authoring nodes,
-                  CbItemLook, HUD labels (cinderbox_hud.*). No simulation, no networking
+                  CbItemLook, HUD labels (cinderbox_hud.*), CbMotion (cinderbox_motion.*). No simulation, no networking
   object_source.*   a source that is a Godot object handing over packets (the peer, or a script)
   peer/             the peer GDExtension (cinderbox_peer): CinderboxPeer, the sources that simulate
   packet_handoff.*  what both hand a viewer: the newest frame as a packet
@@ -421,7 +425,7 @@ tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, export_client.ps1, bak
 | Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; a state started over by an event (rapid fire) fires its keys again only when the transition has a crossfade (that is how the viewer tells a restart from a rollback); packs' non-bone tracks are not played |
 | State machines | no nested machines, OneShot/Add/TimeScale nodes, `travel()`, or crossfade curves |
 | Characters | one character per server; the capsule's size is not per character; the scene ships its animations' bone tracks next to the ozz clips |
-| Movement | a mod's `SetMove` is a command, so it is not predicted: the player's own simulation has it a round trip later (ROADMAP.md: motions) |
+| Movement | a mod's `SetMove` and `Push` are commands, so they are not predicted (a motion is). Motions answer a press only: none that hold while conditions do, no tethers yet (ROADMAP.md). Another player's motion is seen when its input arrives. At most 16 motions per server |
 | Mods | compiled into the server (no hot-loading); events between mods are a tick late; a board has 32 names per scope |
 | Private fields | per player, not per entity; not in recordings or view files (they read 0 there); entities cannot be hidden from a client: each simulates the whole world, so there is no fog of war |
 | Combat | no teams, no spectators |
