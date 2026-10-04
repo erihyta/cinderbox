@@ -1,6 +1,6 @@
 # Motions
 
-What a mod adds to how players move (a dash, a double jump, flight, a jetpack), predicted like walking is. Part of the [manual](../README.md#the-manual).
+What a mod adds to how players move (a dash, a double jump, flight, a jetpack, a grappling hook), predicted like walking is. Part of the [manual](../README.md#the-manual).
 
 ## Why they exist
 
@@ -74,6 +74,59 @@ Moves        CbMotionSet   set_name "dash.moves"                (motion_sets/das
 - **At most 16 motions** on a server, all its mods' sets together.
 - **In the editor**: every group has an info row (click the icon), every property a hover text, F1 opens the class reference. A motion that cannot run is a warning on the node and stops the bake.
 - **Names the editor cannot check**: the action, fields and events are the server mod's. One no mod declares makes that part do nothing (the motion never happens, the change is skipped, nothing is emitted), and the server says so when it starts.
+
+## Tethers: the grapple mod
+
+A tether is a line a motion throws at what the player looks at. It flies there, takes hold, and
+pulls; with a rope it also keeps the player within the rope's length, so the player swings.
+`server_mods/grapple` is one motion and a look. Its C++ declares three names.
+
+```
+Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grapple_moves.tscn)
+└── Hook   on "grapple" (X)   cooldown 0.25
+           tether: range 40 m, flies at 60 m/s, a rope, pull 24, reel 4, until not held.grapple
+           parameters { friction: 0, air_control: 0.6 }       emits grapple.fired
+```
+
+| Field | Meaning |
+|---|---|
+| `tether_range` | how far the line reaches, in metres; 0: the motion throws none. With a tether the motion **happens only if the line finds something** |
+| `tether_travel` | the speed it flies at: it takes hold after distance / speed. 0: at once |
+| `tether_rope` | the distance when it takes hold is a rope's length: the player cannot go further out. Off: it only pulls |
+| `tether_pull` | acceleration toward the point while it holds, m/s per second |
+| `tether_reel` | metres of rope taken in a second (never shorter than a metre) |
+| `tether_until` | expressions, any of which lets it go: `not held.grapple`. Without one it holds until what it holds on to is gone |
+
+| Step | What happens |
+|---|---|
+| The throw | two traces, like a shot: what is under the crosshair (along the camera's line from the point it orbits, or a shoulder), then from the player to that point, so something in between stops it. Nothing within range: nothing happens, not even the cooldown |
+| What it finds | the world: a point. A prop: a point on that body, which moves with it. A player: a point on its capsule (not a limb: hitboxes are the server's) |
+| Flying | until `distance / tether_travel` has passed, nothing pulls; the look draws the line growing |
+| Holding | the pull, the reel and the rope, every tick, before the mover. A prop it holds on to is pulled the other way with the player's weight |
+| While it is out | the motion is on: its `parameters` hold (`friction` = 0, or the ground rubs the pull off) |
+| Letting go | `tether_until`; what it held on to being destroyed; the player dying, or being put somewhere else (a respawn) |
+
+- **One tether per player**: a second throw replaces the first.
+- **The event** a tether motion emits is at the point where it will hold (a puff there), and its vector is the motion's impulse.
+- **It is state** (`Tether`, a component a player has once it threw one): hashed, rolled back, in snapshots.
+
+### The rope: `CbTetherLook`
+
+```
+GrappleReactions            (vfx/reactions_grapple.tscn)
+├── Rope    CbTetherLook    motion "grapple.moves/Hook"   scene vfx/grapple_rope.tscn   from "RightHand"
+├── Fired   CbReaction      on grapple.fired, subject $at: the throw's sound at the hand
+└── Hit     CbReaction      on grapple.fired, subject $at: a puff at the cue's point
+```
+
+| Field | Meaning |
+|---|---|
+| `motion` | whose tethers it draws: the set and the node (`grapple.moves/Hook`). Empty: any tether without a look of its own |
+| `scene` | a scene one metre long along its -Z; the game stretches it from the player to the tether's end, while it flies and while it holds |
+| `from` | the player's socket it starts at (`RightHand`); empty, or a socket the character lacks: its chest |
+
+In conditions (a reaction, a HUD node), `tethered` is true for a player whose tether is out, and
+`tether_holds` once it has taken hold.
 
 ## A motion a server can switch off
 
@@ -180,10 +233,14 @@ emit	dash.started
 held until its tank is empty, a glide, the landing and the refuel. 1,710 predicted ticks compared, none different: the
 position, the fuel's exact bits, the events.
 
+`net_grapple` does it for the hook: two throws at walls, the flight of the line, the pull along the rope and the letting
+go. 501 predicted ticks compared, none different (the position and the line's end). Then two players put their hooks in
+one ball: both hold on to it, it goes 16 m, and both clients have the server's state for every confirmed tick.
+
 ## Not yet
 
 | Missing | Roadmap |
 |---|---|
-| Tethers (a grappling hook) | Motions: tethers |
+| A tether pulls a prop but not another player (the line follows a player it holds on to); in first person the line's start is the same point as in third person, not the eye | later |
 | A preview panel; `motion.<name>` in conditions and state machines; names checked at publish | Motions in the editor |
 | Another player's dash is seen when its input arrives: its press is guessed by repeating its last input, as a jump is | by design |

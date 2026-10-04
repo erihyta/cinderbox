@@ -65,6 +65,49 @@ private:
 	godot::Vector3 m_viewOffset;
 };
 
+// What a tether looks like (sim/motions.h: a line a motion throws, a grappling hook's rope): a scene
+// one metre long along its -Z, which the game stretches from the player to the tether's end for as
+// long as the tether is out, flying or holding. Put it in the mod's vfx/reactions_<name>.tscn, next
+// to the CbItemLook nodes.
+class CbTetherLook : public godot::Node
+{
+	GDCLASS( CbTetherLook, godot::Node )
+
+public:
+	void set_motion( const godot::String& v )
+	{
+		m_motion = v;
+	}
+	godot::String get_motion() const
+	{
+		return m_motion;
+	}
+	void set_scene( const godot::String& v )
+	{
+		m_scene = v;
+	}
+	godot::String get_scene() const
+	{
+		return m_scene;
+	}
+	void set_from( const godot::String& v )
+	{
+		m_from = v;
+	}
+	godot::String get_from() const
+	{
+		return m_from;
+	}
+
+protected:
+	static void _bind_methods();
+
+private:
+	godot::String m_motion; // "grapple.moves/Hook": the set and the node; empty: any tether
+	godot::String m_scene;
+	godot::String m_from = "RightHand"; // the player's socket it starts at; empty: its chest
+};
+
 // The body an item has when it lies in the world, authored in the item's own scene: a box or a
 // sphere (Godot's shape gizmo shows it), placed where the shape's centre is from the grip, and its
 // mass, and what else the server should know about the item (`properties`: named numbers any mod

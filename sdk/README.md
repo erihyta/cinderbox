@@ -40,7 +40,7 @@ machines. No game and no server are needed to author. The rules are the mod's C+
 ## Finding the nodes
 
 The editor's **Create New Node** dialog lists the Cinderbox nodes a mod is made of under
-**Favorites**, on its left: `CbReaction`, `CbPrediction`, `CbItemLook`, `CbItemBody`, `CbGrip`,
+**Favorites**, on its left: `CbReaction`, `CbPrediction`, `CbItemLook`, `CbItemBody`, `CbGrip`, `CbTetherLook`,
 `CbMotionSet`, `CbMotion`, the HUD nodes, and the character and map nodes. The extension puts them
 there the first time a project is opened with it. One you take out of the favorites stays out.
 

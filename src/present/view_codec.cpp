@@ -13,7 +13,7 @@ namespace cb::present
 namespace
 {
 
-constexpr uint32_t kMagic = 0x33564243; // "CBV3"
+constexpr uint32_t kMagic = 0x34564243; // "CBV4"
 
 // What a decoder accepts at most; real frames are far below.
 constexpr uint32_t kMaxEntities = 1u << 16;
@@ -61,7 +61,7 @@ struct EntityRecord
 	uint8_t kind;
 	uint8_t shape;
 	uint8_t slot;
-	uint8_t flags; // 1 hasAnim, 2 dead, 4 hasBoard, 8 stowed
+	uint8_t flags; // 1 hasAnim, 2 dead, 4 hasBoard, 8 stowed, 16 tethered, 32 the tether holds
 	uint32_t templateIndex;
 	uint32_t stepCount;
 	b3Vec3 halfExtents;
@@ -73,9 +73,10 @@ struct EntityRecord
 	uint32_t holder;
 	uint16_t itemKind;
 	uint8_t socket;
-	uint8_t reserved;
+	uint8_t tetherMotion;
+	b3Vec3 tetherEnd;
 };
-static_assert( sizeof( EntityRecord ) == 80 + sizeof( AnimState ) + sizeof( Blackboard ), "EntityRecord has padding" );
+static_assert( sizeof( EntityRecord ) == 92 + sizeof( AnimState ) + sizeof( Blackboard ), "EntityRecord has padding" );
 static_assert( sizeof( EntityRecord ) % 4 == 0 );
 
 struct RagdollRecord
@@ -100,7 +101,8 @@ EntityRecord ToRecord( const FrameEntity& f )
 	r.kind = uint8_t( f.kind );
 	r.shape = uint8_t( f.shape );
 	r.slot = f.slot;
-	r.flags = uint8_t( ( f.hasAnim ? 1 : 0 ) | ( f.dead ? 2 : 0 ) | ( f.hasBoard ? 4 : 0 ) | ( f.stowed ? 8 : 0 ) );
+	r.flags = uint8_t( ( f.hasAnim ? 1 : 0 ) | ( f.dead ? 2 : 0 ) | ( f.hasBoard ? 4 : 0 ) | ( f.stowed ? 8 : 0 ) | ( f.tethered ? 16 : 0 ) |
+					   ( f.tetherHolds ? 32 : 0 ) );
 	r.templateIndex = f.templateIndex;
 	r.stepCount = f.stepCount;
 	r.halfExtents = f.halfExtents;
@@ -112,6 +114,8 @@ EntityRecord ToRecord( const FrameEntity& f )
 	r.holder = f.holder;
 	r.itemKind = f.itemKind;
 	r.socket = f.socket;
+	r.tetherMotion = f.tetherMotion;
+	r.tetherEnd = f.tetherEnd;
 	return r;
 }
 
@@ -126,6 +130,8 @@ FrameEntity FromRecord( const EntityRecord& r )
 	f.dead = ( r.flags & 2 ) != 0;
 	f.hasBoard = ( r.flags & 4 ) != 0;
 	f.stowed = ( r.flags & 8 ) != 0;
+	f.tethered = ( r.flags & 16 ) != 0;
+	f.tetherHolds = ( r.flags & 32 ) != 0;
 	f.templateIndex = r.templateIndex;
 	f.stepCount = r.stepCount;
 	f.halfExtents = r.halfExtents;
@@ -137,6 +143,8 @@ FrameEntity FromRecord( const EntityRecord& r )
 	f.holder = r.holder;
 	f.itemKind = r.itemKind;
 	f.socket = r.socket;
+	f.tetherMotion = r.tetherMotion;
+	f.tetherEnd = r.tetherEnd;
 	return f;
 }
 
@@ -461,7 +469,7 @@ EntityRecord Seen( const EntityRecord& record )
 	return seen;
 }
 
-// The record without the parts that have groups of their own: ten words.
+// The record without the parts that have groups of their own: thirteen words.
 struct RestRecord
 {
 	uint32_t netId;
@@ -476,9 +484,10 @@ struct RestRecord
 	uint32_t holder;
 	uint16_t itemKind;
 	uint8_t socket;
-	uint8_t reserved;
+	uint8_t tetherMotion;
+	b3Vec3 tetherEnd;
 };
-static_assert( sizeof( RestRecord ) == 40, "RestRecord has padding" );
+static_assert( sizeof( RestRecord ) == 52, "RestRecord has padding" );
 
 RestRecord Rest( const EntityRecord& record )
 {
@@ -496,6 +505,8 @@ RestRecord Rest( const EntityRecord& record )
 	rest.holder = record.holder;
 	rest.itemKind = record.itemKind;
 	rest.socket = record.socket;
+	rest.tetherMotion = record.tetherMotion;
+	rest.tetherEnd = record.tetherEnd;
 	return rest;
 }
 
@@ -513,6 +524,8 @@ void SetRest( EntityRecord& record, const RestRecord& rest )
 	record.holder = rest.holder;
 	record.itemKind = rest.itemKind;
 	record.socket = rest.socket;
+	record.tetherMotion = rest.tetherMotion;
+	record.tetherEnd = rest.tetherEnd;
 }
 
 struct CompactEntity

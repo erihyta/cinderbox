@@ -78,7 +78,7 @@ addressed by a stable `NetId`.
 |---|---|
 | World | static boxes, ramps, steps and platforms from a baked map; dynamic boxes, spheres and capsules |
 | Player movement | a kinematic capsule mover (move-and-slide with Box3D's mover casts and plane solver); a pogo spring keeps it hovering, which carries it over steps; it pushes dynamic bodies. In a file of its own (`mover.*`) |
-| Motions | what mods add to movement (a dash, a double jump): `CbMotion` nodes baked to text, sent in the schema, compiled against it and run for every player before the mover (`motions.*`). They happen on a press, on a mod event at the player, or hold while their conditions do (which can read the keys held). The input is what a client already simulates ahead, so a player's own are predicted and rolled back. `MotionState` (a slot per motion: last use, uses, on until) is on players only where a server has motions |
+| Motions | what mods add to movement (a dash, a double jump): `CbMotion` nodes baked to text, sent in the schema, compiled against it and run for every player before the mover (`motions.*`). They happen on a press, on a mod event at the player, or hold while their conditions do (which can read the keys held). A motion can throw a **tether** (`Tether`, a component): a ray along the look finds a point of the world, of a prop or of a player; after its flight it pulls the player there and, as a rope, keeps it within its length; a prop it holds is pulled back. The input is what a client already simulates ahead, so a player's own are predicted and rolled back. `MotionState` (a slot per motion: last use, uses, on until) is on players only where a server has motions |
 | Movement parameters | walk and sprint speed, acceleration, friction, air control, gravity, jump speed, turn rate, a fall limit, air friction, and whether the movement input goes along the ground or the camera: values, not constants. The server's set is in `SimConfig::move` (its options, then its character's values); a mod's `SetMove` command gives one player its own (`MoveOverrides`, a component only players a mod touched have) |
 | Controls | WASD relative to the camera, Shift, Space: the engine's. Every other control is an action a mod declares |
 | Facing | freelook (the body turns toward where it walks) or camera-facing (`Facing` command); the legs follow the direction of travel either way (`AnimState::legYaw`, backwards past about 100 degrees) |
@@ -154,7 +154,7 @@ Authoritative server, client rollback (`src/net`, `src/client`).
 - Frames encode a mask of players whose input changed, then only the changed fields; commands carry a field mask.
 - ENet's throttle is off (it dropped unreliable packets after large reliable transfers, which stalled clients).
 - **Replays** (`cb_server --record`): every authoritative frame plus checksums; `cb_replay verify` re-simulates headlessly.
-- Protocol 27, replay version 10 (`src/net/protocol.h`, `replay.cpp`).
+- Protocol 28, replay version 11 (`src/net/protocol.h`, `replay.cpp`).
 
 ## The viewer protocol
 
@@ -176,7 +176,7 @@ source  <──control───   viewer        named commands with a number ("p
 
 - **Two extensions**: `cinderbox` (the viewer: no simulation, no networking, all a mod's project needs) and `cinderbox_peer` (joins servers, plays recordings). Frames cross between them as bytes.
 - **The mirror** (`mirror.*`): a presentation flecs world that interpolates between ticks, fades out rollback corrections, evaluates poses and turns count changes into visual events.
-- **The codec** (`view_codec.*`, packets "CBV3"): whole frames or deltas against a frame both sides have.
+- **The codec** (`view_codec.*`, packets "CBV4"): whole frames or deltas against a frame both sides have.
 
 | Precision | Positions | Rotations | Animation | Not sent |
 |---|---|---|---|---|
@@ -214,6 +214,7 @@ inputs ──> server: mods read the world + this tick's inputs ──> commands
 | `props`, `expire`, `sneak` | throwing props; items that lie too long; a crouch layer from an animation pack, and its speed |
 | `dash` | the charges of a dash; the dash and a double jump themselves are its motion set, run by every simulation |
 | `flight` | a player's first tank; flight, the jetpack, its fuel and the glide are its motion set |
+| `grapple` | three names; the grappling hook is its motion (a tether), its rope a `CbTetherLook` |
 
 ## Workshop items and packs
 
@@ -291,6 +292,7 @@ Everything a player sees and hears beyond bodies is data in workshop items: no s
 | `CbReaction` | on a **cue** (a mod event, a game event) or **while** conditions hold: an animation, a property, a listed method, a scene, a sound, a screen shake or flash, placed by the cue or a node |
 | `CbPrediction` | says which cue the server will answer a press with (or a held action, again every `cooldown`: `while_held`); the cue plays at once with the same reactions, and the server's cue then plays only what waited |
 | `CbItemLook` | which scene an item kind is drawn as |
+| `CbTetherLook` | which scene a tether is drawn as: stretched by the viewer from the player's socket to the tether's end, which every frame carries (`FrameEntity::tetherEnd`) |
 | `CbMotionSet`, `CbMotion` | not a look: authoring nodes for what a mod adds to movement, baked to `motions/<set>.cfg` for the simulation (docs/motions.md) |
 | `CbFieldLabel`, `CbFieldBinding`, `CbEventFeed`, `CbScoreboard`, `CbPromptLabel` | HUD from fields and events |
 
@@ -427,7 +429,7 @@ tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, export_client.ps1, bak
 | Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; a state started over by an event (rapid fire) fires its keys again only when the transition has a crossfade (that is how the viewer tells a restart from a rollback); packs' non-bone tracks are not played |
 | State machines | no nested machines, OneShot/Add/TimeScale nodes, `travel()`, or crossfade curves |
 | Characters | one character per server; the capsule's size is not per character; the scene ships its animations' bone tracks next to the ozz clips |
-| Movement | a mod's `SetMove` and `Push` are commands, so they are not predicted (a motion is). No tethers yet (ROADMAP.md). A While motion's per-second changes need a Float field and are not clamped (a tank fills to a little over full). Another player's motion is seen when its input arrives. At most 16 motions per server |
+| Movement | a mod's `SetMove` and `Push` are commands, so they are not predicted (a motion is). A tether pulls a prop but not a player it holds on to, and starts at the same point in every view (not at the eye in first person). One tether per player. A While motion's per-second changes need a Float field and are not clamped (a tank fills to a little over full). Another player's motion is seen when its input arrives. At most 16 motions per server |
 | Mods | compiled into the server (no hot-loading); a mod is switched off by a `disabled` file in its folder (compiled in, run only when `--mods` names it), a part of one by a server option its conditions read; events between mods are a tick late; a board has 32 names per scope |
 | Private fields | per player, not per entity; not in recordings or view files (they read 0 there); entities cannot be hidden from a client: each simulates the whole world, so there is no fog of war |
 | Combat | no teams, no spectators |

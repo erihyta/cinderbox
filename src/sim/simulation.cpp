@@ -183,6 +183,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<HeldItem>();
 	RegisterSnapComponent<MoveOverrides>();
 	RegisterSnapComponent<MotionState>();
+	RegisterSnapComponent<Tether>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -548,6 +549,12 @@ void Simulation::PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw )
 	e.set<AnimState>( anim );
 	e.set<Transform>( t );
 	e.set<Velocity>( {} );
+	if ( const Tether* tether = e.try_get<Tether>(); tether != nullptr && tether->on != 0 )
+	{
+		Tether off = *tether;
+		off.on = 0;
+		e.set<Tether>( off );
+	}
 
 	b3BodyId body = BodyOf( e.get<PhysicsBody>() );
 	b3Body_SetTransform( body, t.position, t.rotation );
@@ -654,6 +661,12 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				MotionState motion = e.has<MotionState>() ? e.get<MotionState>() : MotionState{};
 				motion.prevActions = in.actions;
 				e.set<MotionState>( motion );
+				if ( const Tether* tether = e.try_get<Tether>(); tether != nullptr && tether->on != 0 )
+				{
+					Tether off = *tether;
+					off.on = 0;
+					e.set<Tether>( off );
+				}
 			}
 			continue;
 		}
@@ -714,6 +727,18 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				motionIn.tick = m_globals.tick;
 				motionIn.tickRate = m_config.tickRate;
 				motionIn.values = &values;
+				struct Thrower
+				{
+					Simulation* sim;
+					flecs::entity e;
+					const Transform* t;
+					const PlayerInput* in;
+				} thrower{ this, e, &t, &in };
+				motionIn.user = &thrower;
+				motionIn.attach = []( void* user, const Motion& m, size_t index ) {
+					auto* by = static_cast<Thrower*>( user );
+					return by->sim->AttachTether( by->e, *by->t, *by->in, m, index );
+				};
 				bool boardChanged = false;
 				m_motionEvents.clear();
 				RunMotions( *m_motions, motionIn, motion, c, board, boardChanged, m_motionEvents );
@@ -721,13 +746,20 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				{
 					e.set<Blackboard>( board );
 				}
+				// An event of a motion that threw a tether this tick is at where it will hold.
+				b3Vec3 eventPoint = t.position;
+				if ( const Tether* thrown = e.try_get<Tether>(); thrown != nullptr && thrown->on != 0 && thrown->startTick == m_globals.tick )
+				{
+					TetherPoint( *thrown, eventPoint );
+				}
 				for ( ModEventRecord& record : m_motionEvents )
 				{
 					record.netIdA = netId;
 					record.tick = m_globals.tick;
-					record.point = t.position;
+					record.point = eventPoint;
 					RecordModEvent( record );
 				}
+				StepTether( e, c, t, motion, values );
 			}
 			e.set<MotionState>( motion );
 		}
@@ -1895,6 +1927,205 @@ MoveParams Simulation::MoveOf( flecs::entity e ) const
 		}
 	}
 	return params;
+}
+
+// --- Tethers --------------------------------------------------------------------------------------
+
+namespace
+{
+
+// What a tether pulls on a prop with: the player's weight, as far as a prop is concerned.
+constexpr float kTetherPlayerMass = 80.0f;
+// A rope never reels in shorter than this, and nothing nearer than this is worth a throw.
+constexpr float kTetherMinLength = 1.0f;
+// Past the rope's end the player is brought back at this rate (1/s of the excess), up to a speed.
+constexpr float kTetherRopeStiffness = 10.0f;
+constexpr float kTetherRopeMaxSpeed = 20.0f;
+
+} // namespace
+
+bool Simulation::TetherPoint( const Tether& tether, b3Vec3& point ) const
+{
+	if ( tether.anchor == 0 )
+	{
+		point = tether.point;
+		return true;
+	}
+	flecs::entity a = FindEntity( tether.anchor );
+	if ( a.is_valid() == false )
+	{
+		return false;
+	}
+	if ( const Character* other = a.try_get<Character>() )
+	{
+		if ( other->dead != 0 )
+		{
+			return false;
+		}
+		point = b3Add( a.get<Transform>().position, tether.point );
+		return true;
+	}
+	if ( const PhysicsBody* pb = a.try_get<PhysicsBody>() )
+	{
+		point = b3Body_GetWorldPoint( BodyOf( *pb ), tether.point );
+		return true;
+	}
+	return false;
+}
+
+bool Simulation::AttachTether( flecs::entity e, const Transform& t, const PlayerInput& in, const Motion& m, size_t index )
+{
+	uint32_t self = e.get<NetId>().value;
+	float yaw = detmath::YawToRadians( in.cameraYaw );
+	b3CosSin pitch = detmath::CosSin( float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f ) );
+	b3Vec3 forward = detmath::YawForward( yaw );
+	b3Vec3 look = { forward.x * pitch.cosine, pitch.sine, forward.z * pitch.cosine };
+
+	// What is under the crosshair: along the camera's line from where it passes the player (the
+	// point a third-person camera orbits, moved to a shoulder if the camera is). Then the line itself
+	// goes from the player to that point, so something in between stops it.
+	b3Vec3 from = b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+	b3Vec3 view = from;
+	if ( ViewMode( in.view ) == ViewMode::ShoulderRight || ViewMode( in.view ) == ViewMode::ShoulderLeft )
+	{
+		view = b3MulAdd( view, ViewMode( in.view ) == ViewMode::ShoulderRight ? kShoulderOffset : -kShoulderOffset, detmath::YawRight( yaw ) );
+	}
+	RayHit seen;
+	if ( CastRay( view, b3MulSV( m.tetherRange, look ), self, seen ) == false )
+	{
+		return false;
+	}
+	RayHit hit = seen;
+	b3Vec3 to = b3Sub( seen.point, from );
+	RayHit nearer;
+	if ( CastRay( from, b3MulSV( 1.02f, to ), self, nearer ) )
+	{
+		hit = nearer;
+	}
+	float distance = b3Distance( hit.point, from );
+	if ( distance < kTetherMinLength )
+	{
+		return false;
+	}
+
+	Tether tether;
+	tether.point = hit.point;
+	flecs::entity a = FindEntity( hit.netId );
+	if ( a.is_valid() && a.has<Character>() )
+	{
+		tether.anchor = hit.netId;
+		tether.point = b3Sub( hit.point, a.get<Transform>().position );
+	}
+	else if ( a.is_valid() && a.has<PhysicsBody>() && a.has<StaticGeometry>() == false && a.has<RagdollBodies>() == false )
+	{
+		b3BodyId body = BodyOf( a.get<PhysicsBody>() );
+		if ( b3Body_GetType( body ) == b3_dynamicBody )
+		{
+			tether.anchor = hit.netId;
+			tether.point = b3Body_GetLocalPoint( body, hit.point );
+		}
+	}
+	tether.length = m.tetherRope ? distance : 0.0f;
+	tether.startTick = m_globals.tick;
+	tether.holdTick = m_globals.tick + ( m.tetherTravel > 0.0f ? uint32_t( distance / m.tetherTravel * float( m_config.tickRate ) + 0.5f ) : 0u );
+	tether.motion = uint8_t( index );
+	tether.on = 1;
+	e.set<Tether>( tether );
+	return true;
+}
+
+void Simulation::StepTether( flecs::entity e, Character& c, const Transform& t, MotionState& motion, const AnimGraphInputs& values )
+{
+	const Tether* has = e.try_get<Tether>();
+	if ( has == nullptr || has->on == 0 )
+	{
+		return;
+	}
+	Tether tether = *has;
+	const float dt = m_config.TimeStep();
+	b3Vec3 point = {};
+	bool keep = tether.motion < m_motions->list.size() && TetherPoint( tether, point );
+	const Motion* m = keep ? &m_motions->list[tether.motion] : nullptr;
+	// Its condition lets it go only once it holds: a key let go while the hook flies takes it back
+	// too, which is what a player expects of a hold-to-grapple.
+	if ( keep && m->tetherUntil.Empty() == false && tether.startTick != m_globals.tick && EvaluateAnimExpr( m->tetherUntil, values, 0.0f ) != 0.0f )
+	{
+		keep = false;
+	}
+	if ( keep == false )
+	{
+		tether.on = 0;
+		e.set<Tether>( tether );
+		return;
+	}
+	// The motion's parameters hold for as long as its tether is out.
+	motion.slots[tether.motion].untilTick = m_globals.tick + 1;
+	if ( m_globals.tick < tether.holdTick )
+	{
+		return; // still flying
+	}
+
+	b3Vec3 from = b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+	float distance = 0.0f;
+	b3Vec3 toward = b3GetLengthAndNormalize( &distance, b3Sub( point, from ) );
+	if ( distance > 0.001f )
+	{
+		b3Vec3 before = c.velocity;
+		c.velocity = b3MulAdd( c.velocity, m->tetherPull * dt, toward );
+		if ( tether.length > 0.0f )
+		{
+			tether.length = std::max( kTetherMinLength, tether.length - m->tetherReel * dt );
+			if ( distance > tether.length )
+			{
+				// A rope: the player may not go further out, and is brought back to its end.
+				float need = std::min( ( distance - tether.length ) * kTetherRopeStiffness, kTetherRopeMaxSpeed );
+				float approach = b3Dot( c.velocity, toward );
+				if ( approach < need )
+				{
+					c.velocity = b3MulAdd( c.velocity, need - approach, toward );
+				}
+			}
+		}
+		if ( c.velocity.y > 0.0f && c.velocity.y > before.y )
+		{
+			c.grounded = 0; // lifted off, as a jump is
+		}
+		// What it holds on to is pulled the other way, if it can move.
+		if ( tether.anchor != 0 )
+		{
+			flecs::entity a = FindEntity( tether.anchor );
+			const PhysicsBody* pb = a.is_valid() && a.has<Character>() == false ? a.try_get<PhysicsBody>() : nullptr;
+			if ( pb != nullptr )
+			{
+				b3Vec3 change = b3Sub( c.velocity, before );
+				b3Body_ApplyLinearImpulse( BodyOf( *pb ), b3MulSV( -kTetherPlayerMass, change ), point, true );
+			}
+		}
+	}
+	e.set<Tether>( tether );
+}
+
+bool Simulation::EntityTether( uint32_t netId, b3Vec3& end, bool& holds, uint8_t& motion ) const
+{
+	flecs::entity e = FindEntity( netId );
+	const Tether* tether = e.is_valid() ? e.try_get<Tether>() : nullptr;
+	const Transform* t = e.is_valid() ? e.try_get<Transform>() : nullptr;
+	b3Vec3 point = {};
+	if ( tether == nullptr || t == nullptr || tether->on == 0 || TetherPoint( *tether, point ) == false )
+	{
+		return false;
+	}
+	motion = tether->motion;
+	holds = m_globals.tick >= tether->holdTick;
+	end = point;
+	if ( holds == false && tether->holdTick > tether->startTick )
+	{
+		// Flying: from the player toward where it will hold.
+		float along = float( m_globals.tick - tether->startTick ) / float( tether->holdTick - tether->startTick );
+		b3Vec3 from = b3Add( t->position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+		end = b3Add( from, b3MulSV( along, b3Sub( point, from ) ) );
+	}
+	return true;
 }
 
 MoveParams Simulation::PlayerMove( PlayerSlot slot ) const

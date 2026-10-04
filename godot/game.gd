@@ -536,6 +536,9 @@ func _send_input(delta: float) -> void:
 		jump = auto_rng.randf() < delta * 1.0
 		yaw += delta * 0.6
 		var elapsed := Time.get_ticks_msec() / 1000.0 - playing_since if playing_since >= 0.0 else 0.0
+		# A hook, if the server has one: held for a while, let go, thrown again.
+		if fmod(elapsed, 4.0) < 2.5:
+			actions |= _action_bit("grapple")
 		if elapsed < autoplay * 0.4:
 			if auto_rng.randf() < delta * 2.0:
 				actions |= _action_bit("spawn_prop")

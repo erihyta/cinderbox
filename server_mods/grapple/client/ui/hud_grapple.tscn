@@ -1,0 +1,22 @@
+[gd_scene load_steps=2 format=3]
+
+; The grapple mod's HUD: the key, and whether the hook is out. No scripts. "tethered" is true for
+; a player whose tether is out, "tether_holds" once it has taken hold.
+
+[sub_resource type="LabelSettings" id="Small"]
+font_size = 20
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.75)
+
+[node name="GrappleHud" type="CanvasLayer"]
+
+[node name="Key" type="CbFieldLabel" parent="."]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -140.0
+offset_right = 324.0
+offset_bottom = -112.0
+label_settings = SubResource("Small")
+text_format = "[{key:grapple}]  GRAPPLE"

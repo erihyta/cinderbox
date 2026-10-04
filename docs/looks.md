@@ -21,6 +21,8 @@ PistolReactions                      (vfx/reactions_pistol.tscn)
 └── Gun           CbItemLook          pistol.gun -> res://prefabs/pistol.tscn
 ```
 
+A `CbTetherLook` in the same scene says what a [tether](motions.md#the-rope-cbtetherlook) (a grappling hook's rope) is drawn as.
+
 | Events | Carry |
 |---|---|
 | a mod's, by name (`pistol.hit`) | A (who it is about), B (the other one), `event.value`, the point and the end (where a shot ended) |
