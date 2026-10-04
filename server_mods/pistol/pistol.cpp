@@ -232,7 +232,7 @@ private:
 		// body holds the pistol and the arm points it there, in the pose everyone draws and hit
 		// tests use. Put away, the pistol clears only what is its own (the loadout decides facing).
 		bool holding = gunInHand && c->dead == 0;
-		// The stance is shared with the other gun: swapped for it in one tick, that one's "put away"
+		// The layer is shared with the other gun: swapped for it in one tick, that one's "put away"
 		// may land after this one's "out". What the body says decides, so it is set again.
 		const AnimState* anim = ctx.PlayerAnim( g.slot );
 		bool lost = holding && g.aiming && anim != nullptr && m_upper.Valid() &&

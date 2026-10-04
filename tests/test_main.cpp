@@ -2798,7 +2798,7 @@ void TestRobotCharacter()
 	{
 		ModSchema schema;
 		schema.layers = { "full", "upper" };
-		schema.stances = { "melee", "melee_swing", "pistol" };
+		schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
 		std::string graphWarnings;
 		auto graph = CompileAnimGraph( set->GraphText(), schema, error, graphWarnings );
 		CHECK( graph != nullptr && graphWarnings.empty() );
@@ -3066,7 +3066,7 @@ void TestMannequinCharacter()
 	// The shipped mods' names, as a server would send them.
 	ModSchema schema;
 	schema.layers = { "full", "upper" };
-	schema.stances = { "melee", "melee_swing", "pistol" };
+	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
 	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
 	CHECK( graph != nullptr );
@@ -3283,7 +3283,7 @@ void TestAnimLead()
 	}
 	ModSchema schema;
 	schema.layers = { "full", "upper" };
-	schema.stances = { "melee", "melee_swing", "pistol" };
+	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
 	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
 	CHECK( graph != nullptr );
@@ -3435,7 +3435,7 @@ void TestUalMannequin()
 	}
 	CHECK( set->TurnLegs() == false );
 	ModSchema schema;
-	schema.stances = { "melee", "melee_swing", "pistol" };
+	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
 	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
 	CHECK( graph != nullptr && warnings.empty() );
@@ -3626,7 +3626,7 @@ void TestLayerSwap()
 		return;
 	}
 	ModSchema schema;
-	schema.stances = { "melee", "melee_swing", "pistol" };
+	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
 	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
 	// The pack's own graph: a crouch (standing in: the landing clip, held) on the Base layer.
 	schema.animPacks.push_back( { "test", "test.crouch",

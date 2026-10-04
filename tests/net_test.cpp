@@ -1701,8 +1701,8 @@ void TestRifle()
 	}
 }
 
-// The two guns share the shooter's stance. Swapped one for the other, either way, the body keeps
-// it: the one put away does not take the stance from the one taken out.
+// The two guns set their stances on the same layer. Swapped one for the other, either way, the
+// body has the stance of the one that is out: the one put away does not clear it.
 void TestGunSwap()
 {
 	Harness h( 47824 );
@@ -1710,8 +1710,9 @@ void TestGunSwap()
 	uint16_t rifle = schema.ActionMask( "slot_4" );
 	uint16_t pistol = schema.ActionMask( "slot_2" );
 	int upper = schema.FindLayer( "upper" );
-	int stance = schema.FindStance( "pistol" );
-	CHECK( rifle != 0 && pistol != 0 && upper >= 0 && stance >= 0 );
+	int pistolStance = schema.FindStance( "pistol" );
+	int rifleStance = schema.FindStance( "rifle" );
+	CHECK( rifle != 0 && pistol != 0 && upper >= 0 && pistolStance >= 0 && rifleStance >= 0 && rifleStance != pistolStance );
 	// The rifle, the pistol, the rifle, the pistol: a key every second and a half.
 	h.AddBot().script = [=]( uint32_t tick ) {
 		PlayerInput in;
@@ -1729,7 +1730,7 @@ void TestGunSwap()
 		if ( anim != nullptr && step >= 1 && step <= 4 && sim.Tick() % 90 >= 60 )
 		{
 			total[step] += 1;
-			held[step] += anim->aiming != 0 && int( anim->stances[upper] ) == stance + 1 ? 1 : 0;
+			held[step] += anim->aiming != 0 && int( anim->stances[upper] ) == ( step % 2 == 1 ? rifleStance : pistolStance ) + 1 ? 1 : 0;
 		}
 	} );
 	h.Report();
