@@ -53,6 +53,24 @@
 		<member name="parameters" type="Dictionary" setter="set_parameters" getter="get_parameters" default="{}">
 			Movement parameters by name, with the value they have for this player while the motion is on: [code]friction[/code] = 0 for a dash that slides. They win over the server's, the character's and a mod's own for that long. The names: [code]walk_speed[/code], [code]sprint_speed[/code], [code]accelerate[/code], [code]friction[/code], [code]stop_speed[/code], [code]air_control[/code], [code]gravity[/code], [code]jump_speed[/code], [code]turn_rate[/code], [code]max_fall[/code], [code]air_friction[/code], [code]move_frame[/code] (1: the movement input moves along the camera, pitch included: flight).
 		</member>
+		<member name="tether_range" type="float" setter="set_tether_range" getter="get_tether_range" default="0.0">
+			A tether: a line thrown along the look at what is under the crosshair, up to this many metres (0: none). It flies there, takes hold, and pulls the player toward the point: a grappling hook. With a tether the motion happens only if the line finds something (the world, a prop, another player), and while the tether is out the motion is on: its [member parameters] hold. A point on a prop pulls the prop too. A [CbTetherLook] draws the rope.
+		</member>
+		<member name="tether_travel" type="float" setter="set_tether_travel" getter="get_tether_travel" default="60.0">
+			The speed the tether flies at, in metres per second: it takes hold after distance / speed. 0: at once.
+		</member>
+		<member name="tether_rope" type="bool" setter="set_tether_rope" getter="get_tether_rope" default="true">
+			The distance when the tether takes hold is a rope's length: the player cannot go further out, so it swings. Off: the tether only pulls.
+		</member>
+		<member name="tether_pull" type="float" setter="set_tether_pull" getter="get_tether_pull" default="0.0">
+			Acceleration toward the point while the tether holds, in metres per second, per second.
+		</member>
+		<member name="tether_reel" type="float" setter="set_tether_reel" getter="get_tether_reel" default="0.0">
+			With [member tether_rope]: metres of rope taken in a second. The rope is never shorter than a metre.
+		</member>
+		<member name="tether_until" type="PackedStringArray" setter="set_tether_until" getter="get_tether_until" default="PackedStringArray()">
+			Expressions, any of which lets the tether go: [code]not held.grapple[/code]. Without one it holds until what it holds on to is gone, the player dies or is put somewhere else.
+		</member>
 		<member name="changes" type="PackedStringArray" setter="set_changes" getter="get_changes" default="PackedStringArray()">
 			Fields of the player the press changes, written like a [CbPrediction]'s: [code]dash.charges -= 1[/code] (operators [code]-=[/code], [code]+=[/code], [code]=[/code], with a number). The server mod declares the field. In a [constant WHEN_WHILE], [code]-=[/code] and [code]+=[/code] are per second and need a Float field ([code]jetpack.fuel -= 20[/code]), and [code]=[/code] is set when it starts.
 		</member>

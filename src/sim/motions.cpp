@@ -332,6 +332,26 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			change.type = field->type;
 			m.changes.push_back( change );
 		}
+		else if ( key == "tether" )
+		{
+			if ( w.size() < 6 || ( w[5] != "rope" && w[5] != "free" ) || Number( w[1], 1.0f, 500.0f, m.tetherRange ) == false ||
+				 Number( w[2], 0.0f, 1000.0f, m.tetherTravel ) == false || Number( w[3], 0.0f, 500.0f, m.tetherPull ) == false ||
+				 Number( w[4], 0.0f, 100.0f, m.tetherReel ) == false )
+			{
+				return fail( "tether wants its range (1 to 500 m), travel speed (m/s, 0: at once), pull (m/s^2), reel (m/s) and \"rope\" "
+							 "or \"free\"" );
+			}
+			m.tether = true;
+			m.tetherRope = w[5] == "rope";
+		}
+		else if ( key == "until" )
+		{
+			std::string exprError;
+			if ( w.size() < 2 || CompileAnimExpr( w[1], schema, m.tetherUntil, exprError, warnings ) == false )
+			{
+				return fail( "until: " + exprError );
+			}
+		}
 		else if ( key == "emit" )
 		{
 			if ( w.size() < 2 || w[1].empty() )
@@ -356,6 +376,11 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 	}
 	for ( Motion& m : motions )
 	{
+		if ( m.when == Motion::When::While && m.tether )
+		{
+			error = "motions " + set + ": " + m.name + ": a tether is thrown by a press or an event, not by a while motion";
+			return false;
+		}
 		if ( m.when != Motion::When::While )
 		{
 			continue;
@@ -450,6 +475,12 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 			continue;
 		}
 		if ( m.condition.Empty() == false && EvaluateAnimExpr( m.condition, *in.values, 0.0f ) == 0.0f )
+		{
+			continue;
+		}
+
+		// A tether has to find something to hold on to, or the motion does not happen.
+		if ( m.tether && ( in.attach == nullptr || in.attach( in.user, m, i ) == false ) )
 		{
 			continue;
 		}

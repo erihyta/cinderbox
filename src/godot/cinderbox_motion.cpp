@@ -88,6 +88,17 @@ const Info kMotionInfo[] = {
 	  "for a dash that slides, gravity 4 for a float. The names: walk_speed, sprint_speed, accelerate, friction, "
 	  "stop_speed, air_control, gravity, jump_speed, turn_rate, max_fall, air_friction, move_frame (1: WASD "
 	  "moves along the camera, up and down too: flight)." },
+	{ "Tether", "A line thrown at what is under the crosshair: it flies there, holds, and pulls. A grappling hook.",
+	  "[b]tether_range[/b]: how far it reaches, in metres. 0: this motion throws none. With a tether, the motion "
+	  "happens only if the line finds something: the world, a prop, another player.\n"
+	  "[b]tether_travel[/b]: the speed it flies at; it takes hold after distance / speed. 0: at once.\n"
+	  "[b]tether_rope[/b]: the distance when it takes hold is a rope's length: the player cannot go further out, "
+	  "so it swings. Off: it only pulls.\n"
+	  "[b]tether_pull[/b]: acceleration toward the point, m/s per second. [b]tether_reel[/b]: metres of rope taken "
+	  "in a second.\n"
+	  "[b]tether_until[/b]: what lets it go: not held.grapple. Without it, only the thing it holds going away does.\n"
+	  "While the tether is out the motion is on: its parameters hold (friction 0, so the pull is not rubbed off on "
+	  "the ground). A point on a prop pulls the prop toward the player too. A CbTetherLook draws the rope." },
 	{ "When it happens", "What else the press does: fields of the player, and an event.",
 	  "[b]changes[/b]: dash.charges -= 1 (operators -=, +=, =). Fields the server mod declares for the player. In a "
 	  "While, -= and += are per second (jetpack.fuel -= 20, a Float field) and = is set when it starts.\n"
@@ -142,6 +153,13 @@ void CbMotion::_bind_methods()
 	ADD_GROUP( "While it lasts", "" );
 	CB_MOTION_PROP( Variant::FLOAT, duration, PROPERTY_HINT_RANGE, "0,10,0.01,or_greater,suffix:s" )
 	CB_MOTION_PROP( Variant::DICTIONARY, parameters, PROPERTY_HINT_DICTIONARY_TYPE, "String;float" )
+	ADD_GROUP( "Tether", "tether_" );
+	CB_MOTION_PROP( Variant::FLOAT, tether_range, PROPERTY_HINT_RANGE, "0,200,0.5,or_greater,suffix:m" )
+	CB_MOTION_PROP( Variant::FLOAT, tether_travel, PROPERTY_HINT_RANGE, "0,200,1,or_greater,suffix:m/s" )
+	CB_MOTION_PROP( Variant::BOOL, tether_rope, PROPERTY_HINT_NONE, "" )
+	CB_MOTION_PROP( Variant::FLOAT, tether_pull, PROPERTY_HINT_RANGE, "0,100,0.5,or_greater,suffix:m/s²" )
+	CB_MOTION_PROP( Variant::FLOAT, tether_reel, PROPERTY_HINT_RANGE, "0,50,0.1,or_greater,suffix:m/s" )
+	CB_MOTION_PROP( Variant::PACKED_STRING_ARRAY, tether_until, PROPERTY_HINT_NONE, "" )
 	ADD_GROUP( "When it happens", "" );
 	CB_MOTION_PROP( Variant::PACKED_STRING_ARRAY, changes, PROPERTY_HINT_NONE, "" )
 	CB_MOTION_PROP( Variant::STRING, emits, PROPERTY_HINT_PLACEHOLDER_TEXT, "dash.started" )
@@ -263,6 +281,34 @@ std::string CbMotion::Bake( String& error ) const
 			}
 		}
 	}
+	if ( m_tetherRange > 0.0 )
+	{
+		if ( m_when == WHEN_WHILE )
+		{
+			return fail( "a tether is thrown by a press or a cue, not by a While" );
+		}
+		text += "tether\t" + Num( m_tetherRange ) + "\t" + Num( m_tetherTravel ) + "\t" + Num( m_tetherPull ) + "\t" + Num( m_tetherReel ) +
+				( m_tetherRope ? "\trope\n" : "\tfree\n" );
+		String until;
+		for ( int64_t i = 0; i < m_tetherUntil.size(); ++i )
+		{
+			String condition = m_tetherUntil[i].strip_edges();
+			if ( condition.is_empty() )
+			{
+				continue;
+			}
+			if ( Plain( condition ) == false )
+			{
+				return fail( "tether_until \"" + condition + "\" cannot have a tab or a #" );
+			}
+			// Any of them lets it go.
+			until += String( until.is_empty() ? "" : " or " ) + "( " + condition + " )";
+		}
+		if ( until.is_empty() == false )
+		{
+			text += "until\t" + Std( until ) + "\n";
+		}
+	}
 	for ( int64_t i = 0; i < m_changes.size(); ++i )
 	{
 		if ( m_changes[i].strip_edges().is_empty() )
@@ -312,11 +358,15 @@ PackedStringArray CbMotion::_get_configuration_warnings() const
 	{
 		warnings.push_back( "Put it under a CbMotionSet: the set is what is baked and what the server mod names." );
 	}
-	if ( m_impulse == 0.0 && m_parameters.is_empty() && m_changes.is_empty() && m_emits.strip_edges().is_empty() )
+	if ( m_impulse == 0.0 && m_parameters.is_empty() && m_changes.is_empty() && m_emits.strip_edges().is_empty() && m_tetherRange <= 0.0 )
 	{
 		warnings.push_back( "It does nothing yet: give it an impulse, parameters with a duration, changes, or an event to emit." );
 	}
-	if ( m_parameters.is_empty() == false && m_duration <= 0.0 && m_when != WHEN_WHILE )
+	if ( m_tetherRange > 0.0 && m_tetherUntil.is_empty() )
+	{
+		warnings.push_back( "Nothing lets this tether go (tether_until): it holds until what it holds on to is gone, or the player dies." );
+	}
+	if ( m_parameters.is_empty() == false && m_duration <= 0.0 && m_when != WHEN_WHILE && m_tetherRange <= 0.0 )
 	{
 		warnings.push_back( "Its parameters hold for its duration, which is 0." );
 	}

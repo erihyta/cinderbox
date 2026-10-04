@@ -26,6 +26,11 @@
 //               (jetpack.fuel -= 20), and = is set when it starts
 //   emit        a mod event at the player: looks react to it, state machines enter on it, server
 //               mods hear it
+//   tether      a line thrown along the look at what is under the crosshair, up to a range: it
+//               flies there at a speed, then pulls the player toward the point and, with a rope,
+//               keeps it within the rope's length (a swing), reeling the rope in. The motion
+//               happens only if the line finds something. A point on a prop pulls the prop too
+//   until       what lets the tether go (not held.grapple); its parameters hold while it is out
 //
 // The rules stay the mod's: it declares the action and the fields, and decides who may (a field
 // the condition reads, an item the player has to hold). The motion is the mechanism it switches on.
@@ -101,6 +106,14 @@ struct Motion
 	std::vector<Param> params;
 	std::vector<Change> changes;
 	int event = -1; // schema event, -1: none (or no mod declared it)
+	// A tether (When::Press and When::Event): thrown when the motion happens.
+	bool tether = false;
+	float tetherRange = 0.0f;  // metres the line reaches
+	float tetherTravel = 0.0f; // m/s it flies at; 0: it holds at once
+	float tetherPull = 0.0f;   // m/s^2 toward the point while it holds
+	float tetherReel = 0.0f;   // metres of rope taken in a second
+	bool tetherRope = false;   // the distance when it takes hold is a rope's length
+	AnimExpr tetherUntil;	   // lets it go when it holds; empty: only what it holds on to going away does
 };
 
 // Every motion of a server, in the order of its sets and of the nodes in them: at most kMaxMotions
@@ -133,6 +146,10 @@ struct MotionInputs
 	// What conditions read (the same values a state machine reads, as they are before this tick's
 	// movement).
 	const AnimGraphInputs* values = nullptr;
+	// Throws a motion's tether for this player: false when the line finds nothing (the motion then
+	// does not happen). The simulation's: it owns the ray and the component.
+	bool ( *attach )( void* user, const Motion& motion, size_t index ) = nullptr;
+	void* user = nullptr;
 };
 
 // Runs the player's motions for one tick, before the mover: the ones whose press and condition

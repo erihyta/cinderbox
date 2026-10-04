@@ -202,6 +202,10 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 		visual.itemKind = f.itemKind;
 		visual.socket = f.socket;
 		visual.stowed = f.stowed;
+		visual.tethered = f.tethered;
+		visual.tetherHolds = f.tetherHolds;
+		visual.tetherMotion = f.tetherMotion;
+		visual.tetherEnd = f.tetherEnd;
 		if ( visual.isLocalPlayer )
 		{
 			m_localPlayer = ve;

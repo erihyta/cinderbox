@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbTetherLook" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		What a tether looks like: the rope of a grappling hook.
+	</brief_description>
+	<description>
+		A [CbMotion] with a tether throws a line from a player to what it looked at. This node says what that line is drawn as: [member scene], one metre long along its -Z, which the game stretches from the player to the tether's end for as long as the tether is out, while it flies and while it holds. Put it in the mod's [code]vfx/reactions_&lt;name&gt;.tscn[/code], next to its [CbItemLook] and [CbReaction] nodes.
+		Looks only. In conditions (a [CbReaction], a HUD node), [code]tethered[/code] is true for a player whose tether is out and [code]tether_holds[/code] once it has taken hold.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="motion" type="String" setter="set_motion" getter="get_motion" default="&quot;&quot;">
+			The motion whose tethers this draws, by its set and node: [code]grapple.moves/Hook[/code]. Empty: any tether that has no look of its own.
+		</member>
+		<member name="scene" type="String" setter="set_scene" getter="get_scene" default="&quot;&quot;">
+			The rope: a scene one metre long along its -Z (a thin cylinder, a stretched quad). It is scaled along Z to the tether's length.
+		</member>
+		<member name="from" type="String" setter="set_from" getter="get_from" default="&quot;RightHand&quot;">
+			The player's socket the rope starts at ([code]RightHand[/code], [code]LeftHand[/code], [code]Head[/code], or one the character has). Empty, or a socket the character does not have: its chest.
+		</member>
+	</members>
+</class>

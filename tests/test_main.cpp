@@ -1924,6 +1924,189 @@ void TestMotionsWhile()
 	CHECK( EvaluateAnimExpr( held, none, 0.0f ) == 1.0f );
 }
 
+// Tethers: a motion throws a line at what the player looks at; it flies, takes hold, pulls, and
+// with a rope keeps the player within its length (a grappling hook).
+void TestTethers()
+{
+	ModSchema schema;
+	schema.events = { "grapple.fired" };
+	schema.actions.push_back( { "grapple", 0, "X" } );
+	schema.actions.push_back( { "leash", 1, "Z" } );
+	const std::string text = "cinderbox_motions\t1\n"
+							 "motion\tHook\nwhen\tpress\tgrapple\ncooldown\t0.2\ntether\t40\t30\t24\t3\trope\nuntil\tnot held.grapple\n"
+							 "param\tfriction\t0\nparam\tair_control\t0.6\nemit\tgrapple.fired\n"
+							 // No pull, no reel, at once: a rope and nothing else.
+							 "motion\tLeash\nwhen\tpress\tleash\ntether\t40\t0\t0\t0\trope\nuntil\tnot held.leash\n";
+	schema.motionSets.push_back( { "grapple", "grapple.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 && motions->list[0].tether && motions->list[0].tetherRope );
+	if ( motions == nullptr || motions->list.size() != 2 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+
+	// The sandbox: walls 4 m high around the arena; the player looks down +Z at one.
+	Simulation sim( TestConfig() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	const uint16_t grapple = 1, leash = 2;
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	auto tetherOf = [&]() -> const Tether* { return sim.FindEntity( p0 ).try_get<Tether>(); };
+	auto position = [&] { return sim.EntityTransform( p0 )->position; };
+	CHECK( tetherOf() == nullptr );
+
+	// At the sky: the line finds nothing, and nothing happens (no event, no cooldown).
+	f.inputs[0].cameraPitch = 14000;
+	f.inputs[0].actions = grapple;
+	step( 1 );
+	CHECK( ( tetherOf() == nullptr || tetherOf()->on == 0 ) && sim.Globals().modEventCount == 0 );
+	f.inputs[0].actions = 0;
+	step( 1 );
+
+	// At the wall, a little upward: it is thrown, flies (nothing pulls yet), then holds and pulls.
+	f.inputs[0].cameraPitch = 500;
+	f.inputs[0].actions = grapple;
+	b3Vec3 from = position();
+	step( 1 );
+	const Tether* tether = tetherOf();
+	CHECK( tether != nullptr && tether->on == 1 && tether->anchor == 0 && tether->motion == 0 );
+	if ( tether == nullptr || tether->on == 0 )
+	{
+		return;
+	}
+	b3Vec3 anchor = tether->point;
+	float reach = b3Distance( anchor, b3Add( from, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) );
+	uint32_t flight = tether->holdTick - tether->startTick;
+	std::printf( "    thrown %.2f m at the wall: %u ticks of flight at 30 m/s\n", reach, flight );
+	CHECK( reach > 5.0f && reach < 40.0f && anchor.z > from.z + 5.0f );
+	CHECK( flight == uint32_t( reach / 30.0f * 60.0f + 0.5f ) && std::fabs( tether->length - reach ) < 0.001f );
+	// The event is at where it will hold.
+	CHECK( sim.Globals().modEventCount == 1 && b3Distance( sim.Globals().modEvents[0].point, anchor ) < 0.001f );
+	// While it flies its end is on the way, and the player has not moved.
+	b3Vec3 end;
+	bool holds = true;
+	uint8_t which = 9;
+	step( int( flight ) / 2 );
+	CHECK( sim.EntityTether( p0, end, holds, which ) && holds == false && which == 0 );
+	CHECK( end.z > from.z + 1.0f && end.z < anchor.z - 1.0f && b3Distance( position(), from ) < 0.01f );
+	// Its parameters hold while it is out: it says so every tick, for that tick.
+	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick == sim.Tick() );
+	// Holding: the player is pulled along the line, and the rope is reeled in.
+	step( int( flight ) / 2 + 2 );
+	CHECK( sim.EntityTether( p0, end, holds, which ) && holds && b3Distance( end, anchor ) < 0.001f );
+	step( 45 );
+	float closer = b3Distance( anchor, b3Add( position(), b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) );
+	std::printf( "    after 0.75 s of pull: %.2f m from the point (rope %.2f)\n", closer, tetherOf()->length );
+	CHECK( closer < reach - 3.0f && tetherOf()->length < reach - 2.0f && tetherOf()->length > reach - 2.5f );
+	// Letting the key go lets it go, and the parameters are the server's again.
+	f.inputs[0].actions = 0;
+	step( 1 );
+	CHECK( tetherOf()->on == 0 && sim.EntityTether( p0, end, holds, which ) == false );
+	step( 1 );
+	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick < sim.Tick() );
+	step( 180 );
+
+	// A rope alone: the player cannot walk further from the point than the rope is long.
+	f.inputs[0].cameraPitch = 500;
+	f.inputs[0].actions = leash;
+	step( 1 );
+	CHECK( tetherOf()->on == 1 && tetherOf()->motion == 1 && tetherOf()->holdTick == tetherOf()->startTick );
+	b3Vec3 post = tetherOf()->point;
+	float rope = tetherOf()->length;
+	f.inputs[0].moveForward = -127; // away from the wall
+	float furthest = 0.0f;
+	for ( int i = 0; i < 240; ++i )
+	{
+		step( 1 );
+		furthest = std::max( furthest, b3Distance( post, b3Add( position(), b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) ) );
+	}
+	std::printf( "    on a %.2f m rope, walking away for 4 s: never past %.2f m\n", rope, furthest );
+	CHECK( furthest < rope + 0.35f && tetherOf()->length == rope );
+	f.inputs[0].moveForward = 0;
+	f.inputs[0].actions = 0;
+	step( 120 );
+	CHECK( tetherOf()->on == 0 );
+
+	// On a prop: the point is on the body, the prop is pulled toward the player, and when the prop is
+	// gone the tether is.
+	uint32_t crate = sim.Globals().nextNetId;
+	b3Vec3 here = position();
+	{
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.value = -1;
+		c.a = { here.x, here.y + 0.3f, here.z + 6.0f };
+		c.c = { 0.4f, 0.4f, 0.4f };
+		f.commands.push_back( c );
+	}
+	step( 90 );
+	b3Vec3 crateAt = sim.EntityTransform( crate )->position;
+	// Aim at it: it rests on the floor ahead.
+	b3Vec3 eye = b3Add( position(), b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+	float down = std::atan2( crateAt.y - eye.y, crateAt.z - eye.z );
+	f.inputs[0].cameraPitch = int16_t( down * 65536.0f / 6.2831853f );
+	f.inputs[0].actions = grapple;
+	step( 1 );
+	CHECK( tetherOf()->on == 1 && tetherOf()->anchor == crate );
+	step( 60 );
+	float pulled = crateAt.z - sim.EntityTransform( crate )->position.z;
+	std::printf( "    a crate on the hook came %.2f m closer in a second\n", pulled );
+	CHECK( pulled > 0.3f && tetherOf()->on == 1 );
+	{
+		SimCommand c;
+		c.type = CommandType::Destroy;
+		c.target = crate;
+		f.commands.push_back( c );
+	}
+	step( 2 );
+	CHECK( tetherOf()->on == 0 );
+	f.inputs[0].actions = 0;
+	step( 60 );
+
+	// It is state: a joining client stays in step through a throw and a pull, and a rollback takes
+	// a throw back.
+	std::vector<uint8_t> image;
+	sim.SavePortable( image );
+	Simulation client( TestConfig() );
+	client.SetMotions( motions );
+	CHECK( client.LoadPortable( image ) && client.ComputeHash() == sim.ComputeHash() );
+	Snapshot before;
+	sim.Save( before );
+	uint64_t hashBefore = sim.ComputeHash();
+	f.inputs[0].cameraPitch = 500;
+	f.inputs[0].actions = grapple;
+	for ( int i = 0; i < 90; ++i )
+	{
+		f.tick = sim.Tick();
+		sim.Step( f );
+		client.Step( f );
+	}
+	CHECK( tetherOf()->on == 1 && client.ComputeHash() == sim.ComputeHash() );
+	sim.Load( before );
+	CHECK( tetherOf()->on == 0 && sim.ComputeHash() == hashBefore );
+
+	// A while motion cannot throw one; a tether line needs all its numbers.
+	std::vector<Motion> out;
+	std::string error, warned;
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t1\nmotion\tA\nwhen\twhile\ntether\t40\t30\t24\t3\trope\n", schema, out, error, warned ) == false );
+	CHECK( error.find( "while" ) != std::string::npos );
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t1\nmotion\tA\nwhen\tpress\tgrapple\ntether\t40\t30\n", schema, out, error, warned ) == false );
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t1\nmotion\tA\nwhen\tpress\tgrapple\ntether\t40\t30\t24\t3\tchain\n", schema, out, error, warned ) == false );
+}
+
 void TestRagdoll()
 {
 	Simulation sim( TestConfig(), FlatMap() );
@@ -4446,10 +4629,13 @@ void AppendMotionReference( std::vector<uint64_t>& hashes )
 								   "motion\tSoar\nwhen\twhile\nif\theld.b and m.fuel > -40\ncooldown\t0.5\n"
 								   "impulse\t20\tlook\tnone\nparam\tmove_frame\t1\nparam\tair_friction\t2\nparam\tgravity\t3\n"
 								   "change\tm.fuel\t-=\t3\nchange\tm.count\t=\t0\nemit\tm.dashed\n"
-								   "motion\tStun\nwhen\tevent\tm.dashed\nduration\t0.25\nparam\tjump_speed\t9\n" } );
+								   "motion\tStun\nwhen\tevent\tm.dashed\nduration\t0.25\nparam\tjump_speed\t9\n"
+								   // A tether: the ray, the rope and the pull on whatever the look finds.
+								   "motion\tHook\nwhen\tpress\ta\nif\tm.fuel < -1\ncooldown\t1.5\ntether\t30\t0\t18\t2\trope\n"
+								   "until\tairborne_time > 1 or m.count > 6\nparam\tfriction\t0\n" } );
 	std::string warnings;
 	auto motions = CompileMotions( schema, warnings );
-	if ( motions == nullptr || motions->list.size() != 6 || warnings.empty() == false )
+	if ( motions == nullptr || motions->list.size() != 7 || warnings.empty() == false )
 	{
 		std::printf( "the motion reference did not compile: %s\n", warnings.c_str() );
 		std::abort();
@@ -5085,6 +5271,7 @@ int main( int argc, char** argv )
 		{ "move_params", TestMoveParams },
 		{ "motions", TestMotions },
 		{ "motions_while", TestMotionsWhile },
+		{ "tethers", TestTethers },
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },

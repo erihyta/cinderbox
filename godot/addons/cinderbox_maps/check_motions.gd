@@ -133,6 +133,42 @@ func _initialize() -> void:
 	_check("an On a cue without its event refuses the bake", held_root.bake().text == "" and String(held_root.bake().error).contains("Stun"), held_root.bake().error)
 	held_root.free()
 
+	# A tether: its line, and what lets it go (any of the conditions).
+	var hook := _motion("Hook", "grapple")
+	hook.parameters = {"friction": 0.0}
+	hook.tether_range = 40.0
+	hook.tether_pull = 24.0
+	hook.tether_reel = 4.0
+	hook.tether_until = PackedStringArray(["not held.grapple", "combat.dead"])
+	hook.emits = "grapple.fired"
+	var pull := _motion("Pull", "pull")
+	pull.tether_range = 25.5
+	pull.tether_travel = 0.0
+	pull.tether_rope = false
+	pull.tether_pull = 30.0
+	var tether_root := _make([hook, pull])
+	var tethers: Dictionary = tether_root.bake()
+	var tether_want := "\n".join([
+		"cinderbox_motions\t1",
+		"# Baked from the CbMotion nodes of a CbMotionSet. Edit the scene and bake again.",
+		"motion\tHook",
+		"when\tpress\tgrapple",
+		"param\tfriction\t0",
+		"tether\t40\t60\t24\t4\trope",
+		"until\t( not held.grapple ) or ( combat.dead )",
+		"emit\tgrapple.fired",
+		"motion\tPull",
+		"when\tpress\tpull",
+		"tether\t25.5\t0\t30\t0\tfree",
+		""])
+	_check("a tether bakes", tethers.text == tether_want, str(tethers.get("error", "")))
+	if tethers.text != tether_want:
+		print(tethers.text)
+	hook.when = CbMotion.WHEN_WHILE
+	hook.conditions = PackedStringArray(["grounded"])
+	_check("a While with a tether refuses the bake", tether_root.bake().text == "" and String(tether_root.bake().error).contains("Hook"), tether_root.bake().error)
+	tether_root.free()
+
 	# What refuses the bake, and says the node.
 	for case in [
 		["no action", func(m: CbMotion): m.action = "", "Dash"],

@@ -50,6 +50,20 @@ void CbGrip::_bind_methods()
 	BIND_ENUM_CONSTANT( HAND_CARRYING );
 }
 
+void CbTetherLook::_bind_methods()
+{
+	ClassDB::bind_method( D_METHOD( "set_motion", "value" ), &CbTetherLook::set_motion );
+	ClassDB::bind_method( D_METHOD( "get_motion" ), &CbTetherLook::get_motion );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "motion", PROPERTY_HINT_PLACEHOLDER_TEXT, "grapple.moves/Hook (empty: any tether)" ), "set_motion",
+				  "get_motion" );
+	ClassDB::bind_method( D_METHOD( "set_scene", "value" ), &CbTetherLook::set_scene );
+	ClassDB::bind_method( D_METHOD( "get_scene" ), &CbTetherLook::get_scene );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "scene", PROPERTY_HINT_FILE, "*.tscn,*.scn" ), "set_scene", "get_scene" );
+	ClassDB::bind_method( D_METHOD( "set_from", "value" ), &CbTetherLook::set_from );
+	ClassDB::bind_method( D_METHOD( "get_from" ), &CbTetherLook::get_from );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "from", PROPERTY_HINT_PLACEHOLDER_TEXT, "RightHand (empty: the chest)" ), "set_from", "get_from" );
+}
+
 void CbItemBody::_bind_methods()
 {
 	ClassDB::bind_method( D_METHOD( "set_mass", "value" ), &CbItemBody::set_mass );

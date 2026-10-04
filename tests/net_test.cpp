@@ -2931,6 +2931,179 @@ void TestFlight()
 	CHECK( predicted.count( flyOn + 1 ) && predicted[flyOn + 1].on == 1 );
 }
 
+// A grappling hook is predicted: behind 50 ms each way, the throw, the pull along the rope and the
+// letting go are, tick for tick, what the server then has. And two players with their hooks in one
+// ball agree with the server about where everything went. The grapple mod's C++ declares names;
+// the hook is its motion.
+void TestGrapple()
+{
+	const uint32_t throwAt = 300, letGo = 420, again = 480, letGoAgain = 600;
+	{
+		Harness h( 47871 );
+		const ModSchema& schema = h.server.Schema();
+		uint16_t grapple = schema.ActionMask( "grapple" );
+		int fired = schema.FindEvent( "grapple.fired" );
+		CHECK( grapple != 0 && fired >= 0 );
+		if ( grapple == 0 )
+		{
+			return;
+		}
+		net::NetSimConfig link;
+		link.latencyMs = 50;
+		h.AddNetSim( 47872, link );
+		h.AddBot().script = [=]( uint32_t tick ) {
+			PlayerInput in;
+			in.cameraPitch = 500; // at the wall ahead, below its top
+			// The first one ends at that wall: the second is thrown at the wall to the side.
+			in.cameraYaw = tick >= letGo + 20 ? uint16_t( 16384 ) : uint16_t( 0 );
+			if ( ( tick >= throwAt && tick < letGo ) || ( tick >= again && tick < letGoAgain ) )
+			{
+				in.actions = grapple;
+			}
+			// Swinging a little on the second one.
+			in.moveRight = tick >= again && tick < letGoAgain ? int8_t( 127 ) : int8_t( 0 );
+			return in;
+		};
+		struct Seen
+		{
+			b3Vec3 position;
+			b3Vec3 end;
+			bool tethered;
+			bool holds;
+			uint32_t events;
+		};
+		std::map<uint32_t, Seen> predicted, truth;
+		Simulation& server = h.server.Sim();
+		auto look = [&]( const Simulation& sim, PlayerSlot slot, std::map<uint32_t, Seen>& into ) {
+			uint32_t netId = sim.PlayerNetId( slot );
+			if ( netId == 0 || sim.EntityTransform( netId ) == nullptr || into.count( sim.Tick() ) != 0 )
+			{
+				return;
+			}
+			Seen seen{ sim.EntityTransform( netId )->position, {}, false, false, sim.Globals().modEventCount };
+			uint8_t motion = 0;
+			seen.tethered = sim.EntityTether( netId, seen.end, seen.holds, motion );
+			into[sim.Tick()] = seen;
+		};
+		h.RunUntil( 13.0, [&]( double ) {
+			GameClient& client = *h.bots[0].client;
+			if ( client.Session() != nullptr && client.State() == ClientState::Playing )
+			{
+				look( client.Session()->Sim(), client.Slot(), predicted );
+				look( server, client.Slot(), truth );
+			}
+		} );
+		h.Report();
+		GameClient& client = *h.bots[0].client;
+		CHECK( client.GetStats().rttMs >= 90 && client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+
+		// The server: thrown on the press, holding after the flight, pulled a long way toward the
+		// wall, let go with the key.
+		auto at = [&]( uint32_t tick ) { return truth.count( tick ) ? truth[tick] : Seen{}; };
+		CHECK( at( throwAt ).tethered == false && at( throwAt + 1 ).tethered && at( throwAt + 1 ).holds == false );
+		CHECK( at( throwAt + 60 ).holds && at( letGo + 2 ).tethered == false );
+		float pulled = at( letGo ).position.z - at( throwAt ).position.z;
+		std::printf( "    the hook pulled the player %.2f m toward the wall in %.1f s\n", pulled, float( letGo - throwAt ) / 60.0f );
+		CHECK( pulled > 6.0f );
+		CHECK( at( again + 60 ).holds && at( letGoAgain + 2 ).tethered == false );
+
+		// The client had every tick the same way the first time it simulated it.
+		int compared = 0, wrong = 0;
+		float worst = 0.0f;
+		for ( const auto& [tick, seen] : predicted )
+		{
+			auto it = truth.find( tick );
+			if ( tick < throwAt - 30 || it == truth.end() )
+			{
+				continue;
+			}
+			compared += 1;
+			float off = b3Distance( seen.position, it->second.position ) + b3Distance( seen.end, it->second.end );
+			worst = std::max( worst, off );
+			wrong += off != 0.0f || seen.tethered != it->second.tethered || seen.holds != it->second.holds || seen.events != it->second.events ? 1 : 0;
+		}
+		std::printf( "    %d predicted ticks compared with the server's: %d differ, worst %.4f m\n", compared, wrong, worst );
+		CHECK( compared > 300 && wrong == 0 && worst == 0.0f );
+		CHECK( predicted.count( throwAt + 1 ) && predicted[throwAt + 1].tethered );
+	}
+
+	// Two players, one ball: both hooks in it, and everyone agrees where it went.
+	{
+		Harness h( 47873 );
+		uint16_t grapple = h.server.Schema().ActionMask( "grapple" );
+		struct Aim
+		{
+			std::atomic<int> yaw[2] = { 0, 0 };
+			std::atomic<int> pitch[2] = { 0, 0 };
+		};
+		auto aim = std::make_shared<Aim>();
+		for ( int i = 0; i < 2; ++i )
+		{
+			h.AddBot().script = [=]( uint32_t tick ) {
+				PlayerInput in;
+				in.cameraYaw = uint16_t( aim->yaw[i].load() );
+				in.cameraPitch = int16_t( aim->pitch[i].load() );
+				in.actions = tick >= 300 && tick < 420 ? grapple : uint16_t( 0 );
+				return in;
+			};
+		}
+		Simulation& server = h.server.Sim();
+		// The sandbox's first ball.
+		uint32_t ball = 0;
+		b3Vec3 ballAt = {};
+		int bothOn = 0;
+		h.RunUntil( 9.0, [&]( double ) {
+			if ( ball == 0 )
+			{
+				RayHit hit;
+				if ( server.CastRay( { 4.0f, 6.0f, -3.0f }, { 0.0f, -8.0f, 0.0f }, 0, hit ) && hit.netId != 0 )
+				{
+					ball = hit.netId;
+					ballAt = server.EntityTransform( ball )->position;
+				}
+			}
+			if ( ball != 0 && server.Tick() < 290 )
+			{
+				for ( int i = 0; i < 2; ++i )
+				{
+					uint32_t netId = server.PlayerNetId( h.bots[size_t( i )].client->Slot() );
+					const Transform* t = netId != 0 ? server.EntityTransform( netId ) : nullptr;
+					if ( t == nullptr )
+					{
+						continue;
+					}
+					b3Vec3 to = b3Sub( server.EntityTransform( ball )->position, b3Add( t->position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) );
+					float flat = std::sqrt( to.x * to.x + to.z * to.z );
+					aim->yaw[i].store( int( uint16_t( int( std::atan2( to.x, to.z ) * 65536.0f / 6.2831853f ) ) ) );
+					aim->pitch[i].store( int( std::atan2( to.y, flat ) * 65536.0f / 6.2831853f ) );
+				}
+			}
+			if ( ball != 0 && server.Tick() > 330 && server.Tick() < 420 )
+			{
+				int on = 0;
+				for ( int i = 0; i < 2; ++i )
+				{
+					flecs::entity e = server.FindEntity( server.PlayerNetId( h.bots[size_t( i )].client->Slot() ) );
+					const Tether* tether = e.is_valid() ? e.try_get<Tether>() : nullptr;
+					on += tether != nullptr && tether->on != 0 && tether->anchor == ball ? 1 : 0;
+				}
+				bothOn = std::max( bothOn, on );
+			}
+		} );
+		h.Report();
+		CHECK( ball != 0 && bothOn == 2 );
+		float moved = ball != 0 && server.EntityTransform( ball ) != nullptr ? b3Distance( server.EntityTransform( ball )->position, ballAt ) : 0.0f;
+		std::printf( "    two hooks in one ball: it went %.2f m\n", moved );
+		CHECK( moved > 1.0f );
+		for ( Bot& b : h.bots )
+		{
+			int compared = 0;
+			CHECK( b.client->GetStats().desyncs == 0 );
+			CHECK( h.CompareWithServer( b, compared ) == 0 && compared > 100 );
+		}
+	}
+}
+
 } // namespace
 
 int main( int argc, char** argv )
@@ -2962,6 +3135,7 @@ int main( int argc, char** argv )
 		{ "move_params", TestMoveParams },
 		{ "dash", TestDash },
 		{ "flight", TestFlight },
+		{ "grapple", TestGrapple },
 		{ "headshot", TestHeadshot },
 		{ "pistol_mark", TestPistolMark },
 		{ "rifle", TestRifle },

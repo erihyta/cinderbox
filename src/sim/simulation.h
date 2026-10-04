@@ -151,6 +151,9 @@ public:
 	// How the player in `slot` moves (move_params.h): the server's parameters, with what mods set for
 	// that player. The server's alone when the slot is empty.
 	MoveParams PlayerMove( PlayerSlot slot ) const;
+	// The entity's tether, if one is out: where its end is now (flying toward where it will hold, or
+	// holding), and whether it holds. False when it has none.
+	bool EntityTether( uint32_t netId, b3Vec3& end, bool& holds, uint8_t& motion ) const;
 	const Transform* EntityTransform( uint32_t netId ) const;
 	// A player's animation state, or null.
 	const AnimState* EntityAnimState( uint32_t netId ) const;
@@ -270,6 +273,12 @@ private:
 	void MoveCharacters( const InputFrame& frame );
 	// The parameters the mover uses for this player: the server's, with what mods set for it.
 	MoveParams MoveOf( flecs::entity e ) const;
+	// Throws `motion`'s tether for the player `e` along its look: false when it finds nothing.
+	bool AttachTether( flecs::entity e, const Transform& t, const PlayerInput& in, const Motion& motion, size_t index );
+	// Where a tether holds on, in the world; false when what it held on to is gone.
+	bool TetherPoint( const Tether& tether, b3Vec3& point ) const;
+	// One tick of a tether that is out: lets it go, or pulls.
+	void StepTether( flecs::entity e, Character& c, const Transform& t, MotionState& motion, const AnimGraphInputs& values );
 	void ExpireProps();
 	void EnforcePropCaps();
 	void SyncFromPhysics();

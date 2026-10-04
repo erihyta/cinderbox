@@ -219,6 +219,22 @@ struct MotionState
 	MotionSlot slots[kMaxMotions] = {};
 };
 
+// A player's tether (sim/motions.h): a line a motion threw at what the player looked at, which
+// then pulls the player toward it and, with a rope, holds it within the rope's length (a
+// grappling hook). Players have the component once they have thrown one; `on` says whether one is
+// out now.
+struct Tether
+{
+	uint32_t anchor = 0;	// NetId of what it holds on to (a prop, a player); 0: a point of the world
+	b3Vec3 point = {};		// the world point; on an anchor, the point in that body's frame
+	float length = 0.0f;	// the rope, in metres; 0: no rope, it only pulls
+	uint32_t startTick = 0; // when it was thrown
+	uint32_t holdTick = 0;	// when it reaches the point and takes hold (it flies until then)
+	uint8_t motion = 0;		// the motion it belongs to (its pull, its reel, what lets it go)
+	uint8_t on = 0;
+	uint8_t reserved[2] = {};
+};
+
 // Tag: part of the static level.
 struct StaticGeometry
 {
@@ -269,6 +285,7 @@ CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );
 CB_CHECK_COMPONENT( RagdollPose, 40 * kRagdollParts );
 CB_CHECK_COMPONENT( MoveOverrides, 4 + 4 * kMoveParams );
 CB_CHECK_COMPONENT( MotionState, 4 + 12 * kMaxMotions );
+CB_CHECK_COMPONENT( Tether, 32 );
 
 #undef CB_CHECK_COMPONENT
 

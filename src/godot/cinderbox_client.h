@@ -263,6 +263,23 @@ private:
 	// Held items: their looks by kind, and each character's sockets (placed from the pose every
 	// frame; items are their children).
 	std::map<std::string, godot::String> m_itemLooks;
+	// What tethers are drawn as (CbTetherLook): by the motion's name ("": any), the scene and the
+	// socket it starts at. And the ropes that are out now, by the player's visual.
+	struct TetherLook
+	{
+		godot::String scene;
+		godot::String from;
+	};
+	std::map<std::string, TetherLook> m_tetherLooks;
+	std::vector<std::string> m_motionNames; // by the schema's motion index
+	uint64_t m_motionNamesGeneration = ~uint64_t( 0 );
+	struct TetherNode
+	{
+		godot::ObjectID node;
+		uint8_t motion = 0;
+	};
+	std::map<uint64_t, TetherNode> m_tetherNodes;
+	void UpdateTethers();
 	std::map<std::string, godot::String> m_itemNames; // what prompts call a kind ("Bat")
 	std::map<std::string, godot::Vector3> m_itemViewOffsets; // CbItemLook.view_offset by kind
 	bool m_firstPerson = false;

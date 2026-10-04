@@ -14,6 +14,8 @@
 //   │                                   impulse 12 m/s along the move input, replacing the horizontal velocity
 //   │                                   duration 0.2 s with parameters { friction: 0 }
 //   │                                   changes dash.charges -= 1      emits dash.started
+//   ├── Hook              CbMotion      action "grapple"   tether: range 40 m, flies at 60 m/s, a rope,
+//   │                                   pull 24, reel 4, until not held.grapple (a grappling hook)
 //   └── DoubleJump        CbMotion      action "jump"   conditions not grounded
 //                                       uses 1, back on the ground     impulse 6.5 m/s up, replacing the vertical speed
 //
@@ -94,6 +96,12 @@ public:
 	CB_MOTION_FIELD( int, replace, m_replace )
 	CB_MOTION_FIELD( double, duration, m_duration )
 	CB_MOTION_FIELD( godot::Dictionary, parameters, m_parameters )
+	CB_MOTION_FIELD( double, tether_range, m_tetherRange )
+	CB_MOTION_FIELD( double, tether_travel, m_tetherTravel )
+	CB_MOTION_FIELD( bool, tether_rope, m_tetherRope )
+	CB_MOTION_FIELD( double, tether_pull, m_tetherPull )
+	CB_MOTION_FIELD( double, tether_reel, m_tetherReel )
+	CB_MOTION_FIELD( godot::PackedStringArray, tether_until, m_tetherUntil )
 	CB_MOTION_FIELD( godot::PackedStringArray, changes, m_changes )
 	CB_MOTION_FIELD( godot::String, emits, m_emits )
 #undef CB_MOTION_FIELD
@@ -116,6 +124,12 @@ private:
 	int m_replace = REPLACE_NOTHING;
 	double m_duration = 0.0;
 	godot::Dictionary m_parameters;
+	double m_tetherRange = 0.0; // 0: no tether
+	double m_tetherTravel = 60.0;
+	bool m_tetherRope = true;
+	double m_tetherPull = 0.0;
+	double m_tetherReel = 0.0;
+	godot::PackedStringArray m_tetherUntil;
 	godot::PackedStringArray m_changes;
 	godot::String m_emits;
 };

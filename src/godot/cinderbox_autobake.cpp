@@ -18,7 +18,7 @@ namespace
 
 // What a mod's look, motions, characters and maps are made of, in the order a modder meets them.
 const char* const kOfferedNodes[] = {
-	"CbReaction",	"CbPrediction", "CbItemLook",  "CbItemBody",	"CbGrip",	  "CbMotionSet",   "CbMotion",	"CbFieldLabel",
+	"CbReaction",	"CbPrediction", "CbItemLook",  "CbItemBody",	"CbGrip",	  "CbTetherLook", "CbMotionSet",   "CbMotion",	"CbFieldLabel",
 	"CbFieldBinding", "CbEventFeed",	"CbScoreboard", "CbPromptLabel", "CbCharacter", "CbAnimPack",	   "CbHitbox",	"CbSocket",
 	"CbStatic",		"CbProp",		"CbSpawn",	   "CbTemplate",	"CbComponent", "CbEntity",
 };
