@@ -60,9 +60,9 @@ if ((Test-Path (Join-Path $Project "characters")) -and (Test-Path $bakeCharacter
 	& $Godot --headless --path $Project --script $bakeCharacters
 	if ($LASTEXITCODE -ne 0) { throw "a character could not be baked (see above)" }
 }
-# Animation packs: baked again from their scenes (anim_src/*.tscn), like the characters.
+# Animation packs: baked again from their scenes (animation_packs/*.tscn), like the characters.
 $bakePacks = Join-Path $root "godot\addons\cinderbox_maps\bake_packs.gd"
-if ((Test-Path (Join-Path $Project "anim_src")) -and (Test-Path $bakePacks)) {
+if ((Test-Path (Join-Path $Project "animation_packs")) -and (Test-Path $bakePacks)) {
 	& $Godot --headless --path $Project --script $bakePacks
 	if ($LASTEXITCODE -ne 0) { throw "an animation pack could not be baked (see above)" }
 }
