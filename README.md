@@ -90,6 +90,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M82: one look limit for every view: 86 degrees up and down (third person stopped at 23 up) | done |
 | M83: the rifle has a stance of its own (`rifle`), so a character can give it its own animations | done |
 | M84: the rifle brings its own hold (an animation pack for `Upper`); a pack layer without a bone filter borrows the character's; the rifle's look is local only | done |
+| M85: the Cinderbox SDK: a Godot project to make a mod's look in (`sdk/`, `tools\sdk.ps1`): the extension, the editor addon, a placeholder character, starter scenes and animation packs; publishing bakes animation packs | done |
 
 ## Building
 
@@ -988,6 +989,26 @@ item's export preset.
 ```sh
 godot --headless --path godot --script res://addons/cinderbox_maps/check_track_player.gd
 ```
+
+### The SDK
+
+A mod's look is made in a Godot project of its own, made from the **SDK project** (`sdk/`):
+
+```sh
+cmake --build --preset godot-export
+powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -Setup         # fill sdk\ itself
+powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New mymod     # server_mods\mymod\client
+```
+
+| It gives the project | For |
+|---|---|
+| the extension and the editor addon | the `Cb*` nodes, the bakers, the Cue Preview panel |
+| `characters/mannequin` | a placeholder character with its clips and locomotion, to author animations and state machines on |
+| starter scenes named after the mod | an item, its reactions, a HUD, an upper-body and a base-layer animation pack |
+| a "Mod" export preset | ships every resource but the SDK's own: nothing to list |
+
+None of the SDK's parts are packed into the mod. [sdk/README.md](sdk/README.md) has the steps, what
+is shipped, and what the SDK does not do yet. The rifle's (local) project is one.
 
 ### Animation packs
 

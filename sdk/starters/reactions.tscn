@@ -1,0 +1,31 @@
+[gd_scene format=3]
+
+; How the MODNAME mod looks and sounds, as world reactions: everything is keyed on names its server
+; mod declares (actions, fields, events). $at is who an event is about, $other the other entity.
+;
+;   Item        CbItemLook     what a "MODNAME.item" looks like (its scene), its name on the HUD
+;   PredictUse  CbPrediction   your own press shown at once: the cue the server will answer with.
+;                              Its conditions are the look's copy of the server's rule.
+;   Used        CbReaction     what everyone sees and hears on "MODNAME.used"
+;
+; Try them without a game: open this scene, then the Cue Preview panel at the bottom of the editor.
+
+[node name="MODNAMEReactions" type="Node3D"]
+
+[node name="Item" type="CbItemLook" parent="."]
+kind = "MODNAME.item"
+display_name = "MODNAME"
+scene = "res://prefabs/MODNAME.tscn"
+
+[node name="PredictUse" type="CbPrediction" parent="."]
+action = "fire"
+cue = "MODNAME.used"
+conditions = PackedStringArray("MODNAME.item", "!combat.dead")
+cooldown = 0.2
+
+[node name="Used" type="CbReaction" parent="."]
+event = "MODNAME.used"
+subject = NodePath("$at")
+place = 4
+place_node = NodePath("$at/RightHand")
+max_distance = 40.0
