@@ -55,7 +55,8 @@ public:
 std::unique_ptr<cb::mods::ServerMod> CreateMod_jumper() { return std::make_unique<JumperMod>(); }
 ```
 
-Add the folder, re-run CMake, and the mod is in `cb_server --list-mods`. The server sends every client
+Add the folder, re-run CMake, and the mod is in `cb_server --list-mods`. A file named `disabled` in
+the folder keeps the mod compiled in but off ([Switched off by default](#switched-off-by-default)). The server sends every client
 a **schema** on join: field names and types, event names, and action names with suggested keys. The
 Godot client binds those keys (InputMap actions `cb_<name>`), and reactions refer to fields and events
 by name.
@@ -71,8 +72,8 @@ The mods that ship:
 | `pistol` | `pistol.ammo`, `pistol.reloading`; `fire` (left mouse), `reload` (R), `mark` (right mouse); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `pistol.scan`, `pistol.marked`, `combat.damage` | hitscan from the camera pivot, 25 damage (the head doubles it) through `combat.damage`, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; a new life (`combat.respawned`) comes with a full magazine |
 | `rifle` | `rifle.ammo`, `rifle.reloading`; `fire` (left mouse, **held**), `reload` (R); events `rifle.fired`, `rifle.hit`, `rifle.reload`, `rifle.dry`, `combat.damage` | the automatic one: a shot every 0.1 s for as long as `fire` is held, 14 damage (the head doubles it), 30 rounds, 2 s reload; slot 4, on the back while put away. Held on an empty magazine it clicks once, reloads and fires on. While it is out the `upper` layer has the `rifle` stance, and the item brings the `rifle.hold` animation pack (`ItemLayers`): its `UpperBody` layer plays instead of the character's. **Its look is not in the repository** (`server_mods/rifle/client` is git-ignored: its animations are licensed): without it a rifle is a plain box, held as a pistol (`pistol or rifle`) |
 | `secret` | `secret.number`, a private field; option `secret.numbers` | the example of a private field: off unless `--mod-option secret.numbers=1`; then each player is told a number from 1 to 99 that nobody else is sent |
-| `dash` | `dash.charges`, `dash.max`; action `dash` (V); events `dash.started`, `dash.double_jump`; the motion set `dash.moves` | the example of [motions](motions.md): a dash along where you walk and a second jump in the air, both run by every simulation from the player's input, so your own are predicted. The mod only keeps the charges: 2, one back every 2 s (`dash.charges`, `dash.recharge_seconds`) |
-| `flight` | `flight.on`, `flight.fuel`; action `fly` (T); events `flight.started`, `flight.stopped`, `flight.thrust`; the motion set `flight.moves` | the example of [motions that hold](motions.md#motions-that-hold-the-flight-mod): T switches flight on and off, Space held in the air is a jetpack with a tank, Shift held while falling glides. All of it is the motion set; the mod only gives the first tank (`flight.fuel`) |
+| `dash` | `dash.charges`, `dash.max`; action `dash` (V); events `dash.started`, `dash.double_jump`; the motion set `dash.moves` | the example of [motions](motions.md): a dash along where you walk and a second jump in the air, both run by every simulation from the player's input, so your own are predicted. The mod only keeps the charges: 2, one back every 2 s (`dash.charges`, `dash.recharge_seconds`). The second jump is off unless `--mod-option dash.double_jump=1` |
+| `flight` | `flight.on`, `flight.fuel`; action `fly` (T); events `flight.started`, `flight.stopped`, `flight.thrust`; the motion set `flight.moves` | the example of [motions that hold](motions.md#motions-that-hold-the-flight-mod): T switches flight on and off, Space held in the air is a jetpack with a tank, Shift held while falling glides. All of it is the motion set; the mod only gives the first tank (`flight.fuel`). The jetpack is off unless `--mod-option flight.jetpack=1` |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
 Mods cooperate through the board (`pickup` reads the `inventory.slot` that `inventory` publishes, to
@@ -162,6 +163,19 @@ Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod re
 cb_server --port 7777 --mod-option deathmatch.kills=5 --mod-option deathmatch.round_seconds=120
 ```
 
+## Switched off by default
+
+Three things ship but do not run unless a server asks for them. Nothing was deleted.
+
+| What | Switched off by | Switch it on |
+|---|---|---|
+| The `sneak` mod (the crouch, C) | the file `server_mods/sneak/disabled`: the mod is compiled in, and `cb_server` leaves it out of its default mods | name it: `cb_server --mods combat,dash,...,sneak`, or delete the file and re-run CMake |
+| The double jump (a motion of the `dash` mod) | the server option `dash.double_jump`, 0 by default: the motion's condition reads `dash.double_jump_on`, which the mod publishes | `cb_server --mod-option dash.double_jump=1` |
+| The jetpack (motions of the `flight` mod) | the server option `flight.jetpack`, 0 by default: the motions' conditions read `flight.jetpack_on`, and the fuel gauge hides without it | `cb_server --mod-option flight.jetpack=1` |
+
+- **A whole mod**: the `disabled` file. `cb_server --list-mods` marks it, `--mods` can still name it, and the tests run every compiled mod whatever the file says.
+- **A part of a mod**: a server option the mod publishes as a field, and a condition on it. That is the pattern for any motion a server should be able to switch: the rule is the server's, the motion asks.
+
 ## Movement parameters
 
 How players move is a set of values, not constants in the engine (`src/sim/move_params.h`).
@@ -200,7 +214,7 @@ ctx.ResetMove( target, MoveParam::SprintSpeed );
 - **Reading**: `ctx.Move( slot, MoveParam::WalkSpeed )` is what the player moves with now.
 - **Not predicted**: `SetMove` is a command, so the change reaches the player's own simulation with the frame. That suits a change that lasts (a crouch, a slow, a heavy item). Movement that must answer a press at once is a [motion](motions.md), which can also set parameters for as long as it lasts.
 - **Not a parameter**: the capsule's size (hitboxes, the camera and the hover all go by it).
-- The `sneak` mod's speed is the server option `sneak.speed` (1.5 m/s; 0 leaves the speeds alone).
+- The `sneak` mod's speed is the server option `sneak.speed` (1.5 m/s; 0 leaves the speeds alone). The mod is [switched off by default](#switched-off-by-default).
 
 ## Hit zones
 

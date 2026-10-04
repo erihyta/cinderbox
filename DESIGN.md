@@ -428,7 +428,7 @@ tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, export_client.ps1, bak
 | State machines | no nested machines, OneShot/Add/TimeScale nodes, `travel()`, or crossfade curves |
 | Characters | one character per server; the capsule's size is not per character; the scene ships its animations' bone tracks next to the ozz clips |
 | Movement | a mod's `SetMove` and `Push` are commands, so they are not predicted (a motion is). No tethers yet (ROADMAP.md). A While motion's per-second changes need a Float field and are not clamped (a tank fills to a little over full). Another player's motion is seen when its input arrives. At most 16 motions per server |
-| Mods | compiled into the server (no hot-loading); events between mods are a tick late; a board has 32 names per scope |
+| Mods | compiled into the server (no hot-loading); a mod is switched off by a `disabled` file in its folder (compiled in, run only when `--mods` names it), a part of one by a server option its conditions read; events between mods are a tick late; a board has 32 names per scope |
 | Private fields | per player, not per entity; not in recordings or view files (they read 0 there); entities cannot be hidden from a client: each simulates the whole world, so there is no fog of war |
 | Combat | no teams, no spectators |
 | Aiming | no marker when the shot is blocked by something the camera sees past (cover in third person); the first-person camera does not lower when crouching (it follows the mover, and crouching is an animation); the bat's strike is rays in the look direction from the chest, not the bat's path through the pose; bots always use the camera behind |

@@ -12,7 +12,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | Motions | what mods add to movement, authored as nodes, baked and run by every simulation, so a player's own are predicted |
 | Authoring | maps, characters, state machines and item bodies are made in the Godot editor and baked for the server |
 
-Milestones M1 to M94 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
+Milestones M1 to M95 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
 
 ## The manual
 
@@ -106,9 +106,10 @@ A join that fails comes back to the menu and says why:
 - WASD moves, Shift sprints and Space jumps: the engine's own controls.
 - Everything else comes from the server's mods, bound to the keys they suggest. With the shipped mods:
   1 to 4 switch slots (hands, pistol, bat), the left mouse button fires or swings, R reloads, E picks
-  up, G throws, C crouches, V dashes (twice, then they come back), Space in the air jumps once
-  more and, held, is a jetpack; T switches flight on and off, Shift held while falling glides,
-  and F with empty hands spawns a prop.
+  up, G throws, V dashes (twice, then they come back), T switches flight on and off, Shift held
+  while falling glides, and F with empty hands spawns a prop. Switched off by default: the crouch
+  (C, the `sneak` mod), the second jump in the air and the jetpack
+  ([what is off](docs/server-mods.md#switched-off-by-default)).
 - Tab shows the scoreboard, the mouse orbits the camera and the wheel zooms.
 - The key left of 1 (`` ` `` / `~`) switches between the camera behind the player and **first person**:
   from the character's eye height above its feet, on its mover, so steps, landings and the bowing
@@ -182,7 +183,7 @@ The export needs the Godot 4.7.2 export templates, installed either from the edi
 `cb_server` is in `<build dir>/bin`. Its options are `--tick-rate`, `--seed`, `--substeps`,
 `--prop-lifetime`, `--props-per-player`, `--props-global`, `--move NAME=VALUE`
 ([movement parameters](docs/server-mods.md#movement-parameters)), and `--mods A,B` / `--mods none` / `--list-mods`
-(every compiled server mod runs by default, see [docs/server-mods.md](docs/server-mods.md)).
+(every compiled server mod runs by default, except the ones switched off: see [docs/server-mods.md](docs/server-mods.md)).
 
 ## License
 
