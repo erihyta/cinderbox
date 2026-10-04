@@ -2065,12 +2065,12 @@ void Simulation::StepTether( flecs::entity e, Character& c, const Transform& t, 
 		e.set<Tether>( tether );
 		return;
 	}
-	// The motion's parameters hold for as long as its tether is out.
-	motion.slots[tether.motion].untilTick = m_globals.tick + 1;
 	if ( m_globals.tick < tether.holdTick )
 	{
 		return; // still flying
 	}
+	// The motion's parameters hold for as long as its tether holds.
+	motion.slots[tether.motion].untilTick = m_globals.tick + 1;
 
 	b3Vec3 from = b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
 	float distance = 0.0f;

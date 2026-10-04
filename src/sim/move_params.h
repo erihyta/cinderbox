@@ -32,12 +32,13 @@ enum class MoveParam : uint8_t
 	MaxFall = 9,	 // m/s: the fastest a character falls; 0: no limit
 	AirFriction = 10, // how fast a character in the air slows down, per second, in every direction; 0: not at all
 	MoveFrame = 11,	  // 0: the movement input moves along the ground. 1: along the camera, pitch included (flight)
+	Airborne = 12,	  // 1: the character is in the air whatever is under it (on a hook): no ground friction, no jump
 };
-inline constexpr int kMoveParams = 12;
+inline constexpr int kMoveParams = 13;
 
 struct MoveParams
 {
-	float values[kMoveParams] = { 3.0f, 6.5f, 12.0f, 6.0f, 1.0f, 0.3f, 18.0f, 6.5f, 12.0f, 0.0f, 0.0f, 0.0f };
+	float values[kMoveParams] = { 3.0f, 6.5f, 12.0f, 6.0f, 1.0f, 0.3f, 18.0f, 6.5f, 12.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 
 	float operator[]( MoveParam param ) const
 	{

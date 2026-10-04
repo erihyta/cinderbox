@@ -7,7 +7,8 @@
 ;          crosshair, up to 40 m.
 ;          It flies at 60 m/s, takes hold, and pulls at 24 m/s per second on a rope that is reeled in
 ;          at 4 m/s (so you swing, and end up at the point). Pressing Q again lets it go.
-;          While it is out: no ground friction (the pull is not rubbed off), more air control.
+;          While it holds: the player is in the air (airborne) whatever is under it, so nothing
+;          rubs the pull off and it falls back to the ground when the hook lets go; more air control.
 ;          It happens only if the line finds something; emits grapple.fired at where it will hold.
 ;
 ; Saving this scene bakes it into res://motions/grapple.moves.cfg.
@@ -20,7 +21,7 @@ action = "grapple"
 conditions = PackedStringArray("not tethered")
 parameters = {
 "air_control": 0.6,
-"friction": 0.0
+"airborne": 1.0
 }
 tether_range = 40.0
 tether_pull = 24.0

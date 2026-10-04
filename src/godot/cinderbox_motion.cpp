@@ -88,7 +88,7 @@ const Info kMotionInfo[] = {
 	  "[b]parameters[/b]: movement parameters by name, with the value they have while the motion is on: friction 0 "
 	  "for a dash that slides, gravity 4 for a float. The names: walk_speed, sprint_speed, accelerate, friction, "
 	  "stop_speed, air_control, gravity, jump_speed, turn_rate, max_fall, air_friction, move_frame (1: WASD "
-	  "moves along the camera, up and down too: flight)." },
+	  "moves along the camera, up and down too: flight), airborne (1: in the air whatever is under it: a hook)." },
 	{ "Tether", "A line thrown at what is under the crosshair: it flies there, holds, and pulls. A grappling hook.",
 	  "[b]tether_range[/b]: how far it reaches, in metres. 0: this motion throws none. With a tether, the motion "
 	  "happens only if the line finds something: the world, a prop, another player.\n"
@@ -100,8 +100,8 @@ const Info kMotionInfo[] = {
 	  "[b]tether_until[/b]: what lets it go. Hold to grapple: not held.grapple. Press to throw, press again to "
 	  "let go: pressed.grapple here, and not tethered in the conditions (so the second press does not throw a "
 	  "second line). Without it, only the thing it holds going away does.\n"
-	  "While the tether is out the motion is on: its parameters hold (friction 0, so the pull is not rubbed off on "
-	  "the ground). A point on a prop pulls the prop toward the player too. A CbTetherLook draws the rope." },
+	  "While the tether holds the motion is on: its parameters hold (airborne 1: the player is in the air until "
+	  "the hook lets go, so the ground does not rub the pull off). A point on a prop pulls the prop toward the player too. A CbTetherLook draws the rope." },
 	{ "When it happens", "What else the press does: fields of the player, and an event.",
 	  "[b]changes[/b]: dash.charges -= 1 (operators -=, +=, =). Fields the server mod declares for the player. In a "
 	  "While, -= and += are per second (jetpack.fuel -= 20, a Float field) and = is set when it starts.\n"

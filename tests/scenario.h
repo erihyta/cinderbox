@@ -125,6 +125,7 @@ inline std::vector<InputFrame> MakeScenario( const ScenarioOptions& opt )
 				base = MoveParam( move.index ) == MoveParam::MaxFall ? 5.0f : base;
 				base = MoveParam( move.index ) == MoveParam::AirFriction ? 3.0f : base;
 				base = MoveParam( move.index ) == MoveParam::MoveFrame ? 1.0f : base;
+				base = MoveParam( move.index ) == MoveParam::Airborne ? 1.0f : base;
 				move.a = { move.mode == 1 ? base * ScenarioFloat( c >> 36, 0.5f, 1.5f ) : 0.0f, 0.0f, 0.0f };
 				f.commands.push_back( move );
 			}

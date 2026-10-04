@@ -1934,7 +1934,7 @@ void TestTethers()
 	schema.actions.push_back( { "leash", 1, "Z" } );
 	const std::string text = "cinderbox_motions\t1\n"
 							 "motion\tHook\nwhen\tpress\tgrapple\ncooldown\t0.2\ntether\t40\t30\t24\t3\trope\nuntil\tnot held.grapple\n"
-							 "param\tfriction\t0\nparam\tair_control\t0.6\nemit\tgrapple.fired\n"
+							 "param\tair_control\t0.6\nparam\tairborne\t1\nemit\tgrapple.fired\n"
 							 // No pull, no reel, at once: a rope and nothing else.
 							 "motion\tLeash\nwhen\tpress\tleash\ntether\t40\t0\t0\t0\trope\nuntil\tnot held.leash\n";
 	schema.motionSets.push_back( { "grapple", "grapple.moves", text } );
@@ -2002,22 +2002,31 @@ void TestTethers()
 	step( int( flight ) / 2 );
 	CHECK( sim.EntityTether( p0, end, holds, which ) && holds == false && which == 0 );
 	CHECK( end.z > from.z + 1.0f && end.z < anchor.z - 1.0f && b3Distance( position(), from ) < 0.01f );
-	// Its parameters hold while it is out: it says so every tick, for that tick.
-	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick == sim.Tick() );
+	// Its parameters wait for it to hold: in flight the player still stands as it stood.
+	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick < sim.Tick() && sim.PlayerCharacter( 0 )->grounded == 1 );
 	// Holding: the player is pulled along the line, and the rope is reeled in.
 	step( int( flight ) / 2 + 2 );
 	CHECK( sim.EntityTether( p0, end, holds, which ) && holds && b3Distance( end, anchor ) < 0.001f );
+	// Holding, its parameters hold, every tick for that tick: the player is airborne on the hook,
+	// though the floor is right under it.
+	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick == sim.Tick() );
+	CHECK( sim.PlayerCharacter( 0 )->grounded == 0 );
 	step( 45 );
 	float closer = b3Distance( anchor, b3Add( position(), b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) );
 	std::printf( "    after 0.75 s of pull: %.2f m from the point (rope %.2f)\n", closer, tetherOf()->length );
 	CHECK( closer < reach - 3.0f && tetherOf()->length < reach - 2.0f && tetherOf()->length > reach - 2.5f );
+	// Still in the air, and not sunk into the floor it is dragged over.
+	CHECK( sim.PlayerCharacter( 0 )->grounded == 0 && sim.PlayerCharacter( 0 )->airTicks > 30 );
+	CHECK( position().y > from.y - 0.05f );
 	// Letting the key go lets it go, and the parameters are the server's again.
 	f.inputs[0].actions = 0;
 	step( 1 );
 	CHECK( tetherOf()->on == 0 && sim.EntityTether( p0, end, holds, which ) == false );
 	step( 1 );
 	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick < sim.Tick() );
+	// Let go, it comes down and stands again.
 	step( 180 );
+	CHECK( sim.PlayerCharacter( 0 )->grounded == 1 );
 
 	// A rope alone: the player cannot walk further from the point than the rope is long.
 	f.inputs[0].cameraPitch = 500;

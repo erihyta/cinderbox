@@ -179,6 +179,15 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 						 ( 1.0f + 2.0f * kPogoDamping * omegaH + omegaH * omegaH );
 	}
 
+	// Airborne by parameter (on a hook, in flight): the ground still carries the capsule where it is
+	// under it, so it does not sink, but the character is in the air for everything that asks: no
+	// ground friction, no jump, the in-air animation. It lands when the parameter is gone.
+	if ( c.grounded != 0 && params[MoveParam::Airborne] >= 0.5f )
+	{
+		v.y = 0.0f;
+		c.grounded = 0;
+	}
+
 	if ( c.grounded )
 	{
 		c.groundTicks = wasGrounded ? c.groundTicks + 1 : 0;
