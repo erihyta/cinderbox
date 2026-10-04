@@ -1299,6 +1299,12 @@ void TestSneak()
 	std::vector<std::shared_ptr<const anim::PackClips>> fitted;
 	for ( size_t i = 0; i < packs.size(); ++i )
 	{
+		// A pack whose look is not in this checkout (the rifle's) is not available: its swaps do nothing.
+		if ( schema.animPacks[i].graph.empty() )
+		{
+			fitted.push_back( nullptr );
+			continue;
+		}
 		auto packSet = LoadAnimPackFolder( root + "/server_mods/" + schema.animPacks[i].mod + "/client", schema.animPacks[i].name, error,
 										   warnings );
 		CHECK( packs[i] != nullptr && packSet != nullptr );
