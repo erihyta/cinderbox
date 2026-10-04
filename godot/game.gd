@@ -41,6 +41,10 @@ extends Node3D
 ## With --screenshot-every, autoplay also saves FILE_1.png, FILE_2.png, ... along the way.
 
 const MOUSE_SENSITIVITY := 0.003
+## How far up and down the camera looks, in every view: nearly straight up and straight down (86
+## degrees; the simulation takes up to 88). Behind the player the map pulls the camera in where it
+## would go under the floor.
+const MAX_PITCH := 1.5
 const ACTION_PREFIX := "cb_"
 const Boot := preload("res://boot.gd")
 const Workshop := preload("res://workshop.gd")
@@ -178,7 +182,7 @@ func _parse_args() -> Dictionary:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * MOUSE_SENSITIVITY * menu.sensitivity
-		pitch = clamp(pitch - event.relative.y * MOUSE_SENSITIVITY * menu.sensitivity, -1.3, _max_pitch())
+		pitch = clamp(pitch - event.relative.y * MOUSE_SENSITIVITY * menu.sensitivity, -MAX_PITCH, MAX_PITCH)
 	elif event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_WHEEL_UP:
@@ -191,7 +195,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_QUOTELEFT:
 		# The key left of 1, whatever the layout prints on it.
 		first_person = not first_person
-		pitch = minf(pitch, _max_pitch())
 	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_Q and _replay == "":
 		shoulder = 1 if shoulder == 0 else (-1 if shoulder > 0 else 0)
 	elif event is InputEventKey and event.pressed and not event.echo:
@@ -567,12 +570,6 @@ func _view() -> int:
 	return 2 if shoulder > 0 else (3 if shoulder < 0 else 0)
 
 
-## How far up the camera may look: behind the player it would go under the floor; from its eyes
-## it can look at the sky.
-func _max_pitch() -> float:
-	return 1.4 if first_person else 0.4
-
-
 ## First person: from the character's eye height above its feet, on its mover: steps, landings and
 ## the bowing body do not move the camera. Of your own body the arms and what is below the hips
 ## are drawn (CinderboxClient.first_person). False while there is no living body to look out of.
@@ -598,7 +595,7 @@ func _update_camera() -> void:
 		return
 	# The point above the player the camera orbits (moved to a shoulder, if it is), or its ragdoll
 	# while dead. The server's line of sight passes through the same point.
-	camera.rotation = Vector3(minf(pitch, 0.4), yaw, 0)
+	camera.rotation = Vector3(pitch, yaw, 0)
 	var target: Vector3 = client.get_view_position(_view(), camera.global_transform.basis)
 	# The map pulls the camera in at once, and it eases back out when the way is clear.
 	var back: Vector3 = camera.global_transform.basis.z
