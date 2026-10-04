@@ -193,6 +193,7 @@ How players move is a set of values, not constants in the engine (`src/sim/move_
 | `max_fall` | 0 | the fastest a character falls, in m/s; 0: no limit |
 | `air_friction` | 0 | how fast a character in the air slows down, per second, in every direction; 0: not at all |
 | `move_frame` | 0 | 0: the movement input moves along the ground. 1: along the camera, pitch included (flight) |
+| `airborne` | 0 | 1: the character is in the air whatever is under it (on a hook): no ground friction, no jump, the in-air animation. The ground still carries it, so it does not sink; it lands when the parameter is gone |
 
 | Who sets it | How | Wins over |
 |---|---|---|

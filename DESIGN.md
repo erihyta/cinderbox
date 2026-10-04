@@ -79,7 +79,7 @@ addressed by a stable `NetId`.
 | World | static boxes, ramps, steps and platforms from a baked map; dynamic boxes, spheres and capsules |
 | Player movement | a kinematic capsule mover (move-and-slide with Box3D's mover casts and plane solver); a pogo spring keeps it hovering, which carries it over steps; it pushes dynamic bodies. In a file of its own (`mover.*`) |
 | Motions | what mods add to movement (a dash, a double jump): `CbMotion` nodes baked to text, sent in the schema, compiled against it and run for every player before the mover (`motions.*`). They happen on a press, on a mod event at the player, or hold while their conditions do (which can read the keys held). A motion can throw a **tether** (`Tether`, a component): a ray along the look finds a point of the world, of a prop or of a player; after its flight it pulls the player there and, as a rope, keeps it within its length; a prop it holds is pulled back. The input is what a client already simulates ahead, so a player's own are predicted and rolled back. `MotionState` (a slot per motion: last use, uses, on until) is on players only where a server has motions |
-| Movement parameters | walk and sprint speed, acceleration, friction, air control, gravity, jump speed, turn rate, a fall limit, air friction, and whether the movement input goes along the ground or the camera: values, not constants. The server's set is in `SimConfig::move` (its options, then its character's values); a mod's `SetMove` command gives one player its own (`MoveOverrides`, a component only players a mod touched have) |
+| Movement parameters | walk and sprint speed, acceleration, friction, air control, gravity, jump speed, turn rate, a fall limit, air friction, whether the movement input goes along the ground or the camera, and whether the character is in the air whatever is under it: values, not constants. The server's set is in `SimConfig::move` (its options, then its character's values); a mod's `SetMove` command gives one player its own (`MoveOverrides`, a component only players a mod touched have) |
 | Controls | WASD relative to the camera, Shift, Space: the engine's. Every other control is an action a mod declares |
 | Facing | freelook (the body turns toward where it walks) or camera-facing (`Facing` command); the legs follow the direction of travel either way (`AnimState::legYaw`, backwards past about 100 degrees) |
 | Props | a lifetime and caps per player and globally, whoever spawned them |
@@ -154,7 +154,7 @@ Authoritative server, client rollback (`src/net`, `src/client`).
 - Frames encode a mask of players whose input changed, then only the changed fields; commands carry a field mask.
 - ENet's throttle is off (it dropped unreliable packets after large reliable transfers, which stalled clients).
 - **Replays** (`cb_server --record`): every authoritative frame plus checksums; `cb_replay verify` re-simulates headlessly.
-- Protocol 28, replay version 11 (`src/net/protocol.h`, `replay.cpp`).
+- Protocol 29, replay version 12 (`src/net/protocol.h`, `replay.cpp`).
 
 ## The viewer protocol
 

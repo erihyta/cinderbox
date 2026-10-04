@@ -85,7 +85,7 @@ pulls; with a rope it also keeps the player within the rope's length, so the pla
 Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grapple_moves.tscn)
 └── Hook   on "grapple" (Q)   conditions not tethered
            tether: range 40 m, flies at 60 m/s, a rope, pull 24, reel 4, until pressed.grapple
-           parameters { friction: 0, air_control: 0.6 }       emits grapple.fired
+           parameters { airborne: 1, air_control: 0.6 }       emits grapple.fired
 ```
 
 | Field | Meaning |
@@ -103,7 +103,7 @@ Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grappl
 | What it finds | the world: a point. A prop: a point on that body, which moves with it. A player: a point on its capsule (not a limb: hitboxes are the server's) |
 | Flying | until `distance / tether_travel` has passed, nothing pulls; the look draws the line growing |
 | Holding | the pull, the reel and the rope, every tick, before the mover. A prop it holds on to is pulled the other way with the player's weight |
-| While it is out | the motion is on: its `parameters` hold (`friction` = 0, or the ground rubs the pull off) |
+| While it holds | the motion is on: its `parameters` hold. The grapple's `airborne` = 1 puts the player in the air from the moment the hook takes hold until it lets go: nothing rubs the pull off, the in-air animation plays, and the player falls back to the ground afterwards. In flight the parameters do not hold yet |
 | Letting go | `tether_until`; what it held on to being destroyed; the player dying, or being put somewhere else (a respawn) |
 
 - **Hold or toggle** is two lines of the motion:

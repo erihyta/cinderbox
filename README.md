@@ -12,7 +12,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | Motions | what mods add to movement, authored as nodes, baked and run by every simulation, so a player's own are predicted |
 | Authoring | maps, characters, state machines and item bodies are made in the Godot editor and baked for the server |
 
-Milestones M1 to M97 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
+Milestones M1 to M98 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
 
 ## The manual
 
