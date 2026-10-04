@@ -306,9 +306,13 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 		blending.Run();
 		if ( l > 0 )
 		{
-			const auto& mask = source.masks[layerIndex];
+			// A pack's layer without a filter of its own keeps the filter of the layer it replaces: an
+			// item's hold for the arms does not have to list the character's bones again.
+			const GraphSource& own = m_sources[0];
+			bool borrowed = owner != m_graph.get() && source.masks[layerIndex].empty() && l < own.masks.size();
+			const auto& mask = borrowed ? own.masks[l] : source.masks[layerIndex];
 			BlendOver( m_layerPose, mask.empty() ? nullptr : &mask, L.weight );
-			neckKept *= 1.0f - std::min( L.weight, 1.0f ) * source.neck[layerIndex];
+			neckKept *= 1.0f - std::min( L.weight, 1.0f ) * ( borrowed ? own.neck[l] : source.neck[layerIndex] );
 		}
 	}
 	m_neckCover = 1.0f - neckKept;
