@@ -15,6 +15,9 @@
 
 file(GLOB CB_MOD_ENTRIES LIST_DIRECTORIES true RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*")
 list(SORT CB_MOD_ENTRIES)
+# Adding or removing a "disabled" file changes the registry too: the build has to notice it (the
+# glob above only sees the mod folders themselves).
+file(GLOB CB_MOD_DISABLED CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*/disabled")
 
 set(CB_MOD_SOURCES "")
 set(CB_MOD_DECLARATIONS "")
