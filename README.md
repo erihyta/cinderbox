@@ -95,6 +95,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M87: animation layers are named `FullBody` and `UpperBody`; a pack can hold the whole tree and replace only the layers it names (`replaces`); the SDK ships the default tree in full | done |
 | M88: the SDK has bone maps for other rigs (`bone_maps/mixamo.tres`); publishing runs the game's pack check; `sdk/README.md` explains every non-scene file | done |
 | M89: a pack's model is always the SDK's placeholder and its clips are files in its own `AnimationPlayer`: replacing an animation's source file no longer removes the model | done |
+| M90: the SDK ships no model and no bone maps: the placeholder is a bare humanoid skeleton and its clips; imports use Godot's own New BoneMap | done |
 
 ## Building
 
@@ -1007,7 +1008,7 @@ powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New mymod     # server_m
 | It gives the project | For |
 |---|---|
 | the extension | the `Cb*` nodes, the bakers, the Cue Preview panel |
-| `placeholder/` | a placeholder model (the CC0 mannequin, with its locomotion clips only) to author animations and state machines on |
+| `placeholder/` | a placeholder skeleton (no model: the editor draws its bones) and its locomotion clips, to author animations and state machines on |
 | starter scenes named after the mod | an item, its reactions, a HUD, and an animation pack (`animation_packs/`): the default tree in full, replacing the upper body |
 | a "Mod" export preset | ships every resource but the SDK's own: nothing to list |
 
