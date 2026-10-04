@@ -11,6 +11,7 @@
 #include "events.h"
 #include "level.h"
 #include "mod_schema.h"
+#include "motions.h"
 #include "physics_arena.h"
 #include "types.h"
 #include "world_lifetime.h"
@@ -201,6 +202,12 @@ public:
 	{
 		m_animPacks = std::move( packs );
 	}
+	// The motions the server's mods provide (sim/motions.h), compiled from the schema: run for every
+	// player, every tick, before the mover. Null: none.
+	void SetMotions( std::shared_ptr<const Motions> motions )
+	{
+		m_motions = std::move( motions );
+	}
 	const std::vector<std::shared_ptr<const AnimGraph>>& Packs() const
 	{
 		return m_animPacks;
@@ -303,6 +310,8 @@ private:
 	std::shared_ptr<const AnimGraph> m_animGraph;
 	std::vector<std::shared_ptr<const AnimGraph>> m_animPacks;
 	std::vector<ItemShape> m_itemShapes;
+	std::shared_ptr<const Motions> m_motions;
+	std::vector<ModEventRecord> m_motionEvents;
 	// An item leaves the hand and lies in the world at its grip (a body of its kind's shape), or
 	// the other way round.
 	void PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity );

@@ -205,6 +205,24 @@ AnimPackHandle Declarations::AnimPack( const std::string& name )
 	return { int( m_schema.animPacks.size() - 1 ) };
 }
 
+MotionsHandle Declarations::Motions( const std::string& name )
+{
+	for ( size_t i = 0; i < m_schema.motionSets.size(); ++i )
+	{
+		if ( m_schema.motionSets[i].name == name )
+		{
+			return { int( i ) };
+		}
+	}
+	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.motionSets.size() >= 254 )
+	{
+		m_errors.push_back( m_mod + ": bad motion set \"" + name + "\"" );
+		return {};
+	}
+	m_schema.motionSets.push_back( { m_mod, name, "" } );
+	return { int( m_schema.motionSets.size() - 1 ) };
+}
+
 SocketHandle Declarations::Socket( const std::string& name )
 {
 	int existing = m_schema.FindSocket( name );

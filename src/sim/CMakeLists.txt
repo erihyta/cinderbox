@@ -7,6 +7,7 @@ add_library(cb_sim_data STATIC
 	level.cpp
 	map.cpp
 	mod_schema.cpp
+	motions.cpp
 	move_params.cpp
 	reflect.cpp
 	world_lifetime.cpp

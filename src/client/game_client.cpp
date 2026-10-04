@@ -311,6 +311,7 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 		m_session->Sim().SetAnimGraph( graph );
 		std::string packWarnings;
 		m_session->Sim().SetAnimPacks( CompileAnimPacks( schema, packWarnings ) );
+		m_session->Sim().SetMotions( CompileMotions( schema, packWarnings ) );
 		m_session->Sim().SetItemShapes( schema.itemShapes );
 
 		if ( m_session->Sim().LoadPortable( msg.image ) == false )

@@ -1,0 +1,137 @@
+#pragma once
+
+// Motions: what a mod adds to how players move (a dash, a double jump), run by the simulation.
+//
+// A mod's rules run on the server, and what they decide reaches a client a round trip later, as
+// commands. That is too late for movement: a dash has to start on the tick of the press, in the
+// player's own prediction. So a motion is not a rule that runs somewhere: it is data every
+// simulation runs, the way a character's state machine is (anim_graph.h). It is authored in Godot
+// (CbMotion nodes), baked to text (motions/<set>.cfg in the mod's item), read by the server, sent
+// to every client in the schema, and compiled against it. A press is already in the input a
+// client simulates ahead, so a motion is predicted and rolled back like walking is.
+//
+//   when        an action goes down: one a mod declared ("dash"), or the engine's "jump" / "sprint"
+//   if          a condition, in the expression language, over what a state machine reads: speed,
+//               grounded, airborne_time, vertical_speed, board fields, item kinds, stances, events
+//   cooldown    seconds between two uses
+//   uses        how many before a refill: on the ground, or some seconds after the last use
+//   impulse     a change of velocity along the look, the move input, the facing, up or a fixed
+//               direction, added to the velocity or replacing its vertical / horizontal part / all
+//   duration    how long it stays on: its movement parameters hold that long (a dash without
+//               friction)
+//   change      board fields of the player: dash.charges -= 1
+//   emit        a mod event at the player: looks react to it, state machines enter on it, server
+//               mods hear it
+//
+// The rules stay the mod's: it declares the action and the fields, and decides who may (a field
+// the condition reads, an item the player has to hold). The motion is the mechanism it switches on.
+
+#include "anim_graph.h"
+#include "components.h"
+#include "mod_schema.h"
+#include "move_params.h"
+
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace cb
+{
+
+// What a motion's press is, besides a mod's action bit (0 to kMaxActions - 1).
+inline constexpr int kMotionActionJump = kMaxActions;
+inline constexpr int kMotionActionSprint = kMaxActions + 1;
+
+struct Motion
+{
+	enum class Frame : uint8_t
+	{
+		Look = 0,	// where the camera looks, pitch included
+		Move = 1,	// where the movement input points (camera-relative); the facing when there is none
+		Facing = 2, // where the body faces
+		Up = 3,
+		World = 4, // `direction`, as given
+	};
+	enum class Replace : uint8_t
+	{
+		None = 0,		// the impulse is added to the velocity
+		Vertical = 1,	// the vertical speed is cleared first (a jump in the air is the same jump)
+		Horizontal = 2, // the horizontal velocity is cleared first
+		All = 3,
+	};
+	enum class ChangeOp : uint8_t
+	{
+		Set = 0,
+		Add = 1,
+		Sub = 2,
+	};
+	struct Change
+	{
+		uint8_t slot = 0; // board slot of the player's field
+		BoardType type = BoardType::Int;
+		ChangeOp op = ChangeOp::Set;
+		float value = 0.0f;
+	};
+	struct Param
+	{
+		uint8_t param = 0; // MoveParam
+		float value = 0.0f;
+	};
+
+	std::string name;  // "dash.moves/Dash": the set and the node
+	int action = -1;   // -1: no mod declared it, so it never happens
+	AnimExpr condition;
+	float cooldown = 0.0f;
+	uint32_t uses = 0;			 // 0: no limit
+	bool refillOnGround = false; // uses come back when the player stands
+	float refillSeconds = 0.0f;	 // ... or this long after the last use (0: never by time)
+	float duration = 0.0f;
+	float impulse = 0.0f;
+	Frame frame = Frame::Move;
+	Replace replace = Replace::None;
+	b3Vec3 direction = { 0.0f, 1.0f, 0.0f }; // Frame::World
+	std::vector<Param> params;
+	std::vector<Change> changes;
+	int event = -1; // schema event, -1: none (or no mod declared it)
+};
+
+// Every motion of a server, in the order of its sets and of the nodes in them: at most kMaxMotions
+// (components.h MotionState has a slot for each).
+struct Motions
+{
+	std::vector<Motion> list;
+};
+
+// Compiles one set's text against the schema, appending to `out`. An action, a field or an event
+// that no mod declares is listed in `warnings` and does nothing (the motion never happens, the
+// change is skipped, nothing is emitted); a malformed file fails with `error`. The editor's bake
+// calls it with an empty schema to check the text.
+bool CompileMotionSet( const std::string& set, const std::string& text, const ModSchema& schema, std::vector<Motion>& out,
+					   std::string& error, std::string& warnings );
+
+// Every set of a schema. A set that does not compile is left out; motions past kMaxMotions too.
+// Null when there are none.
+std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::string& warnings );
+
+// What one tick of motions needs to know about a player, besides its components.
+struct MotionInputs
+{
+	const PlayerInput* input = nullptr;
+	uint8_t pressedButtons = 0; // engine buttons that went down this tick
+	uint32_t tick = 0;
+	uint32_t tickRate = 60;
+	// What conditions read (the same values a state machine reads, as they are before this tick's
+	// movement).
+	const AnimGraphInputs* values = nullptr;
+};
+
+// Runs the player's motions for one tick, before the mover: the ones whose press and condition
+// hold change `c`'s velocity and `board`, and append the events they emit (`point` and `tick` are
+// the caller's to fill in). `boardChanged` is set when a field was written.
+void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& state, Character& c, Blackboard& board, bool& boardChanged,
+				 std::vector<ModEventRecord>& events );
+
+// Lays the movement parameters of the motions that are on at `tick` over `params`, in order.
+void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32_t tick, MoveParams& params );
+
+} // namespace cb

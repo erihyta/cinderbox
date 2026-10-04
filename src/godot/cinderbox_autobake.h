@@ -1,6 +1,6 @@
 #pragma once
 
-// Bakes a character when its scene is saved in the editor.
+// Bakes a character, or a mod's motions, when its scene is saved in the editor.
 //
 // The simulation poses bodies from baked files (ozz clips, the state machine, hitboxes), so a
 // character edited in Godot has to be baked before the game shows the change. Saving the scene does
@@ -8,6 +8,11 @@
 // changes nothing writes nothing. The Bake button stays for what a scene save does not see (an
 // animation saved to its own file), and packing an item bakes its characters again
 // (tools/pack_mod.ps1), so a published item is never stale.
+//
+// A scene whose root is a CbMotionSet is baked the same way (cinderbox_motion.h), and the plugin
+// gives the motion nodes their inspector help.
+
+#include "cinderbox_motion.h"
 
 #include <godot_cpp/classes/editor_plugin.hpp>
 #include <godot_cpp/variant/string.hpp>
@@ -26,6 +31,9 @@ public:
 
 protected:
 	static void _bind_methods();
+
+private:
+	godot::Ref<CbMotionInspector> m_motionInspector;
 };
 
 } // namespace cb::gd

@@ -20,6 +20,7 @@ All tools are in `<build dir>/bin`.
 | `godot --path godot --script res://addons/cinderbox_maps/check_menu.gd -- --test-port=P --config=FILE [--shots=DIR]` | Drives the menus against a running server: bad address, unknown host, dead port, join, camera, Esc menu, settings, leave, rejoin from the recent list. With `--other-port=P2 --result=FILE` (a server running other mods) also the restart that joins it |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_guard.gd` | Checks the scene guard: the game's own scenes pass, and scenes with an `HTTPRequest`, a script, a wired signal, a climbing path or an animation that calls `queue_free` are refused |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_predictions.gd` | Checks predictions on a bare director: a press plays its cue at once, the server's cue then plays only what waited, another player's cue is never an echo, conditions and cooldown hold a press back |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_motions.gd` | Checks what `CbMotion` nodes bake to, on sets built in code: the file's text, and what refuses the bake (no action, a parameter that is none, a condition that does not parse, more than 16) |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_movement.gd` | Checks what a character's `movement` bakes to, on the mannequin: `move.<name>` lines in the simulation's order, and what is refused |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_grips.gd` | Checks what an item's `CbGrip` markers bake to, on scenes built in code: carried at the origin, at a carrying marker, at a turned one, and what is refused |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_object_source.gd -- FILE.cbv` | Checks that the viewer draws from any object that hands it packets: a GDScript source reads a view file, with no peer extension involved |
@@ -43,7 +44,8 @@ powershell -ExecutionPolicy Bypass -File scripts\check_determinism.ps1 -Referenc
 scripts/check_determinism.sh tests/reference_hashes.txt
 ```
 
-`tests/reference_hashes.txt` holds the per-tick state hashes of the reference scenario. Any change to
+`tests/reference_hashes.txt` holds the per-tick state hashes of the reference scenario, followed by
+those of a second run with [motions](motions.md) (the reference scenario has none). Any change to
 simulation code or tuning legitimately changes them. Regenerate the file with
 `cb_tests --dump tests/reference_hashes.txt` and commit it together with the change.
 

@@ -66,6 +66,12 @@ if ((Test-Path (Join-Path $Project "animation_packs")) -and (Test-Path $bakePack
 	& $Godot --headless --path $Project --script $bakePacks
 	if ($LASTEXITCODE -ne 0) { throw "an animation pack could not be baked (see above)" }
 }
+# Motions: baked again from their scenes (motion_sets/*.tscn) into motions/<set>.cfg.
+$bakeMotions = Join-Path $root "godot\addons\cinderbox_maps\bake_motions.gd"
+if ((Test-Path (Join-Path $Project "motion_sets")) -and (Test-Path $bakeMotions)) {
+	& $Godot --headless --path $Project --script $bakeMotions
+	if ($LASTEXITCODE -ne 0) { throw "a motion set could not be baked (see above)" }
+}
 & $Godot --headless --path $Project --export-pack "Mod" $Output
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $Output)) { throw "export failed" }
 

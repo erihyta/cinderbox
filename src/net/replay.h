@@ -11,6 +11,7 @@
 #include "anim_graph.h"
 #include "map.h"
 #include "mod_schema.h"
+#include "motions.h"
 #include "protocol.h"
 
 #include <cstdio>
@@ -83,6 +84,10 @@ public:
 	{
 		return m_graph;
 	}
+	const std::shared_ptr<const Motions>& MotionSets() const
+	{
+		return m_motions;
+	}
 	const AnimGraphPacks& Packs() const
 	{
 		return m_packs;
@@ -109,6 +114,7 @@ private:
 	ModSchema m_schema;
 	std::shared_ptr<const AnimGraph> m_graph;
 	AnimGraphPacks m_packs;
+	std::shared_ptr<const Motions> m_motions;
 	std::vector<InputFrame> m_frames;
 	std::vector<MsgChecksum> m_checksums;
 	bool m_truncated = false;

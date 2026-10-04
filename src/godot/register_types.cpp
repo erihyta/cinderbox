@@ -6,6 +6,7 @@
 #include "cinderbox_hud.h"
 #include "cinderbox_map_nodes.h"
 #include "cinderbox_item_look.h"
+#include "cinderbox_motion.h"
 #include "cue_director.h"
 #include "cue_prediction.h"
 #include "cue_preview.h"
@@ -34,6 +35,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 		GDREGISTER_INTERNAL_CLASS( cb::gd::CbCuePreviewPlugin );
 		EditorPlugins::add_by_type<cb::gd::CbCuePreviewPlugin>();
 		// A character is baked when its scene is saved.
+		GDREGISTER_INTERNAL_CLASS( cb::gd::CbMotionInspector );
 		GDREGISTER_INTERNAL_CLASS( cb::gd::CbAutoBakePlugin );
 		EditorPlugins::add_by_type<cb::gd::CbAutoBakePlugin>();
 		return;
@@ -66,6 +68,9 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbItemLook );
 	GDREGISTER_CLASS( cb::gd::CbItemBody );
 	GDREGISTER_CLASS( cb::gd::CbGrip );
+	// Motions: what a mod adds to how players move, baked for the simulation.
+	GDREGISTER_CLASS( cb::gd::CbMotion );
+	GDREGISTER_CLASS( cb::gd::CbMotionSet );
 	// HUD nodes that read the mods' board.
 	GDREGISTER_CLASS( cb::gd::CbFieldLabel );
 	GDREGISTER_CLASS( cb::gd::CbFieldBinding );

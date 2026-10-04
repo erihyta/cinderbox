@@ -14,7 +14,8 @@ pack is loaded, the game uses the mod's file instead. New files can go in the sa
 ## Rules
 
 The game checks each pack before it loads it, against an allowlist. A pack is refused if:
-- it contains a file outside `prefabs/`, `vfx/`, `ui/`, `maps/`, `assets/` or Godot's converted
+- it contains a file outside `prefabs/`, `vfx/`, `ui/`, `maps/`, `assets/` (and, for baked data only,
+  `characters/`, `anim/`, `items/`, `motions/`) or Godot's converted
   copies (`.godot/exported`, `.godot/imported`), or a kind of file not on the list (scenes,
   resources, textures, samples, audio, fonts);
 - a `.remap` or `.import` points anywhere but the pack's own converted files;

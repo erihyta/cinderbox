@@ -1,0 +1,23 @@
+[gd_scene load_steps=2 format=3]
+
+; The dash mod's HUD: how many dashes are left, and the key. No scripts: a CbFieldLabel is
+; "{field}" text. The count drops on the press, because the motion that takes the charge runs in
+; the viewer's own simulation.
+
+[sub_resource type="LabelSettings" id="Small"]
+font_size = 20
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.75)
+
+[node name="DashHud" type="CanvasLayer"]
+
+[node name="Charges" type="CbFieldLabel" parent="."]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -112.0
+offset_right = 324.0
+offset_bottom = -84.0
+label_settings = SubResource("Small")
+text_format = "[{key:dash}]  DASH {dash.charges} / {dash.max}"

@@ -81,6 +81,30 @@ bool GameServer::Start( const ServerOptions& options )
 			}
 		}
 	}
+	// The mods' motions, from their items: the text goes to everyone in the schema, and every
+	// simulation compiles it against the same names.
+	for ( MotionSetInfo& set : m_schema.motionSets )
+	{
+		std::string setError;
+		if ( options.loadMotions == nullptr || options.loadMotions( set.mod, set.name, set.text, setError ) == false )
+		{
+			set.text.clear();
+			Log( "motions %s (mod %s) are not available%s%s; they do nothing", set.name.c_str(), set.mod.c_str(),
+				 setError.empty() ? "" : ": ", setError.c_str() );
+		}
+	}
+	{
+		std::string warnings;
+		m_motions = CompileMotions( m_schema, warnings );
+		if ( warnings.empty() == false )
+		{
+			Log( "motions: %s", warnings.c_str() );
+		}
+		if ( m_motions )
+		{
+			Log( "motions: %zu", m_motions->list.size() );
+		}
+	}
 	std::shared_ptr<const CharacterAsset> character = options.character ? options.character : BuiltInCharacter();
 	m_schema.character = character->name;
 	// How players move: the server's options, then what the character says about itself.
@@ -160,6 +184,7 @@ bool GameServer::Start( const ServerOptions& options )
 	m_sim = std::make_unique<Simulation>( m_options.config, m_map );
 	m_sim->SetAnimGraph( m_animGraph );
 	m_sim->SetAnimPacks( m_animPacks );
+	m_sim->SetMotions( m_motions );
 	m_sim->SetItemShapes( m_schema.itemShapes );
 	m_modWorld = std::make_unique<flecs::world>( CreateFlecsWorld() );
 	m_modRng = options.config.seed ^ 0x6D6F6473ull; // "mods"

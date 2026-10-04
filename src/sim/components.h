@@ -201,6 +201,24 @@ struct MoveOverrides
 	float values[kMoveParams] = {};
 };
 
+// Where a player's motions are (sim/motions.h): a slot per motion of the server, in the schema's
+// order. Players have it only on a server whose mods provide motions.
+inline constexpr int kMaxMotions = 16;
+
+struct MotionSlot
+{
+	uint32_t lastTick = 0;	// the tick of its last use, plus one; 0: never
+	uint32_t untilTick = 0; // it is on (its movement parameters hold) while the tick is below this
+	uint32_t used = 0;		// uses since the last refill
+};
+
+struct MotionState
+{
+	uint16_t prevActions = 0; // the mod actions held last tick: a press is one that was not
+	uint16_t reserved = 0;
+	MotionSlot slots[kMaxMotions] = {};
+};
+
 // Tag: part of the static level.
 struct StaticGeometry
 {
@@ -250,6 +268,7 @@ CB_CHECK_COMPONENT( Ragdoll, 20 );
 CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );
 CB_CHECK_COMPONENT( RagdollPose, 40 * kRagdollParts );
 CB_CHECK_COMPONENT( MoveOverrides, 4 + 4 * kMoveParams );
+CB_CHECK_COMPONENT( MotionState, 4 + 12 * kMaxMotions );
 
 #undef CB_CHECK_COMPONENT
 

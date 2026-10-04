@@ -9,9 +9,10 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | Netcode | an authoritative server, client prediction and rollback, recordings that replay |
 | Rules | C++ server mods that change the world only through commands: `inventory`, `combat`, `pistol`, `rifle`, `melee`, `pickup`, `deathmatch`, ... |
 | Looks | Godot scenes with no code (reactions, predictions, HUD nodes), shipped as workshop items |
+| Motions | what mods add to movement, authored as nodes, baked and run by every simulation, so a player's own are predicted |
 | Authoring | maps, characters, state machines and item bodies are made in the Godot editor and baked for the server |
 
-Milestones M1 to M92 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
+Milestones M1 to M93 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
 
 ## The manual
 
@@ -22,6 +23,7 @@ Milestones M1 to M92 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
 | [docs/looks.md](docs/looks.md) | reactions, predictions, the expression language, HUD nodes, the Cue Preview, client mods |
 | [docs/characters.md](docs/characters.md) | characters, state machines, layers and stances, aiming, animation packs |
 | [docs/items.md](docs/items.md) | held items, sockets, the inventory, grips, items in the world |
+| [docs/motions.md](docs/motions.md) | what a mod adds to movement (a dash, a double jump), predicted: `CbMotion` |
 | [docs/maps.md](docs/maps.md) | maps, templates and components |
 | [docs/testing.md](docs/testing.md) | the tools, the determinism checks, CI |
 | [sdk/README.md](sdk/README.md) | the Godot project a mod's look is made in |
@@ -104,7 +106,8 @@ A join that fails comes back to the menu and says why:
 - WASD moves, Shift sprints and Space jumps: the engine's own controls.
 - Everything else comes from the server's mods, bound to the keys they suggest. With the shipped mods:
   1 to 4 switch slots (hands, pistol, bat), the left mouse button fires or swings, R reloads, E picks
-  up, G throws, C crouches, and F with empty hands spawns a prop.
+  up, G throws, C crouches, V dashes (twice, then they come back), Space in the air jumps once
+  more, and F with empty hands spawns a prop.
 - Tab shows the scoreboard, the mouse orbits the camera and the wheel zooms.
 - The key left of 1 (`` ` `` / `~`) switches between the camera behind the player and **first person**:
   from the character's eye height above its feet, on its mover, so steps, landings and the bowing

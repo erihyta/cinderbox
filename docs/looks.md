@@ -102,6 +102,8 @@ PredictFire   CbPrediction   action "fire"   cue "rifle.fired"         (the rifl
   answer arrives nothing jumps; afterwards the lead is given back slowly (the upper body plays 15%
   slower until it is level again). At most half a second ahead.
 - **Looks only**: nothing is sent anywhere, and no rule runs on the client.
+- **Not for movement**: a predicted cue cannot move the player. What a mod adds to movement is a
+  [motion](motions.md), which the viewer's own simulation runs; the events it emits need no prediction.
 - `CbDirector.explain_press( "fire" )` says which predictions a press would make, or why not;
   `check_predictions.gd` drives one by hand.
 - With 50 ms of delay each way, a click shows its shot 2 ms later and the ammo count at the next

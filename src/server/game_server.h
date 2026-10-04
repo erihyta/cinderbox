@@ -56,6 +56,9 @@ struct ServerOptions
 	std::function<std::shared_ptr<const anim::AnimSet>( const std::string& mod, const std::string& pack, std::string& error,
 														std::string& warnings )>
 		loadAnimPack;
+	// Reads a mod's motion set (motions/<set>.cfg in its workshop item) into `text`. Unset or false:
+	// the set does nothing.
+	std::function<bool( const std::string& mod, const std::string& set, std::string& text, std::string& error )> loadMotions;
 	// Reads an item kind's body from a mod's workshop item (items/<kind>.cfg, baked from its scene).
 	// Unset or false: the kind keeps the body its mod declared, or a small box.
 	std::function<bool( const std::string& mod, const std::string& kind, ItemShape& shape, std::string& error,
@@ -213,6 +216,7 @@ private:
 	std::unique_ptr<HitTester> m_hits;
 	std::shared_ptr<const AnimGraph> m_animGraph;
 	AnimGraphPacks m_animPacks;
+	std::shared_ptr<const Motions> m_motions;
 	std::map<std::pair<int, std::string>, float> m_itemProperties; // what mods declared about item kinds
 	std::map<int, int> m_itemLayers;							   // item kind -> the animation pack it brings
 	mods::LayerWishes m_layerWishes;

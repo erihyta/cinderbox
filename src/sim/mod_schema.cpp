@@ -283,6 +283,13 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutString( out, schema.animPacks[i].name );
 		PutText( out, schema.animPacks[i].graph );
 	}
+	PutU8( out, uint8_t( std::min<size_t>( schema.motionSets.size(), 255 ) ) );
+	for ( size_t i = 0; i < schema.motionSets.size() && i < 255; ++i )
+	{
+		PutString( out, schema.motionSets[i].mod );
+		PutString( out, schema.motionSets[i].name );
+		PutText( out, schema.motionSets[i].text );
+	}
 }
 
 bool IsSha256( const std::string& hex )
@@ -462,6 +469,15 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		pack.name = r.String();
 		pack.graph = r.Text();
 		out.animPacks.push_back( std::move( pack ) );
+	}
+	uint8_t motionSets = r.U8();
+	for ( uint8_t i = 0; i < motionSets && r.ok; ++i )
+	{
+		MotionSetInfo set;
+		set.mod = r.String();
+		set.name = r.String();
+		set.text = r.Text();
+		out.motionSets.push_back( std::move( set ) );
 	}
 	return r.ok && r.at == size;
 }
