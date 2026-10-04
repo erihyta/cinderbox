@@ -60,7 +60,7 @@ function Placeholder([string]$project) {
 	foreach ($folder in @("placeholder", "bone_maps")) {
 		$to = Join-Path $project $folder
 		New-Item -ItemType Directory -Force $to | Out-Null
-		Copy-Item (Join-Path $sdk "$folder\*") $to -Force
+		Copy-Item (Join-Path $sdk "$folder\*") $to -Force -Recurse
 	}
 	# Where the placeholder's own map used to be.
 	Remove-Item (Join-Path $project "placeholder\bone_map.tres") -Force -ErrorAction SilentlyContinue

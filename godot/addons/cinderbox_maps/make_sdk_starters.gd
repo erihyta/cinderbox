@@ -20,6 +20,9 @@ extends SceneTree
 ## is published.
 
 const MODEL := "res://placeholder/mannequin.glb"
+# The placeholder's clips, as files (its import saves them): a pack's AnimationPlayer holds clips by
+# file, so a mod's own are added the same way.
+const CLIPS := "res://placeholder/clips/"
 # Along forward speed (m/s): which clip, played backward or not, and the point's name in the editor.
 const MOVE := [
 	[-3.0, "Jog_Fwd", true, "Jog backward"],
@@ -35,6 +38,8 @@ const ABOUT := "An animation pack: state machines that replace a character's own
 	+ "(spine, arms, head), and UpperBodyBlend, which lays one over the other and has the bone filter.\n\n" \
 	+ "Replaces lists the layers this pack ships. It is UpperBody: FullBody is here to see your upper body over a " \
 	+ "walking character, and is not baked. Add FullBody to replace the locomotion too.\n\n" \
+	+ "The clips are in the AnimationPlayer node (Animation panel, Manage Animations): the placeholder's, from placeholder/clips. " \
+	+ "Add your own there, from animation_packs/source. Model is only the body they are shown on: leave it.\n\n" \
 	+ "UpperBody's Hold plays the placeholder's Idle: put your own clip there. For a use (a shot, a swing), add a state " \
 	+ "and a transition whose condition is the server mod's event (MODNAME.used), and one back with Switch Mode At End.\n\n" \
 	+ "Transitions use the game's names: forward_speed, speed, grounded, jumped, airborne_time, state_time, a stance, an event. " \
@@ -52,9 +57,19 @@ func _initialize() -> void:
 	model.name = "Model"
 	pack.add_child(model)
 	model.owner = pack
-	var player := model.get_node("AnimationPlayer") as AnimationPlayer
 	var skeleton := model.get_node("Armature/Skeleton3D") as Skeleton3D
 	pack.skeleton_path = pack.get_path_to(skeleton)
+	# The pack's own player: the model is only the body the clips are shown on.
+	var library := AnimationLibrary.new()
+	for file in DirAccess.get_files_at(CLIPS):
+		if file.ends_with(".res"):
+			library.add_animation(file.get_basename(), load(CLIPS + file))
+	var player := AnimationPlayer.new()
+	player.name = "AnimationPlayer"
+	pack.add_child(player)
+	player.owner = pack
+	player.root_node = player.get_path_to(model)
+	player.add_animation_library("", library)
 	pack.animation_player_path = pack.get_path_to(player)
 
 	# The upper body: the spine and everything above it, as the clips' tracks name those bones.
