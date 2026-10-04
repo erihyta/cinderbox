@@ -56,7 +56,7 @@ Moves        CbMotionSet   set_name "dash.moves"                (motion_sets/das
 | When | `when` | **On a press**: once, when `action` goes down (a dash). **While**: every tick its `conditions` hold (flight, a glide, a jetpack). **On a cue**: once, when the mod event `event` is recorded at the player (a stun a server mod starts) |
 | | `action` | On a press: one a server mod declares (`dash`), or the engine's `jump` / `sprint`. Held, it is one press |
 | | `event` | On a cue: the event. A server mod emits it at the player, so the start is the server's and comes with the frame; from then on every simulation runs the motion |
-| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held, a stance) and whether a key is down: `held.jump`, `held.dash` |
+| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held, a stance), whether a key is down (`held.jump`, `held.dash`) or went down this tick (`pressed.dash`), and `tethered` (a tether of the player's is out) |
 | | `cooldown` | seconds between two uses; for a While, between its end and its next start |
 | Uses | `uses` | how many before a refill; 0: no limit. Not for a While |
 | | `refill`, `refill_seconds` | **On the ground**: back when the player stands. **After seconds**: back that long after the last use |
@@ -83,8 +83,8 @@ pulls; with a rope it also keeps the player within the rope's length, so the pla
 
 ```
 Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grapple_moves.tscn)
-└── Hook   on "grapple" (X)   cooldown 0.25
-           tether: range 40 m, flies at 60 m/s, a rope, pull 24, reel 4, until not held.grapple
+└── Hook   on "grapple" (Q)   conditions not tethered
+           tether: range 40 m, flies at 60 m/s, a rope, pull 24, reel 4, until pressed.grapple
            parameters { friction: 0, air_control: 0.6 }       emits grapple.fired
 ```
 
@@ -95,7 +95,7 @@ Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grappl
 | `tether_rope` | the distance when it takes hold is a rope's length: the player cannot go further out. Off: it only pulls |
 | `tether_pull` | acceleration toward the point while it holds, m/s per second |
 | `tether_reel` | metres of rope taken in a second (never shorter than a metre) |
-| `tether_until` | expressions, any of which lets it go: `not held.grapple`. Without one it holds until what it holds on to is gone |
+| `tether_until` | expressions, any of which lets it go. Without one it holds until what it holds on to is gone |
 
 | Step | What happens |
 |---|---|
@@ -106,6 +106,14 @@ Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grappl
 | While it is out | the motion is on: its `parameters` hold (`friction` = 0, or the ground rubs the pull off) |
 | Letting go | `tether_until`; what it held on to being destroyed; the player dying, or being put somewhere else (a respawn) |
 
+- **Hold or toggle** is two lines of the motion:
+
+  | | `conditions` | `tether_until` |
+  |---|---|---|
+  | Press to throw, press again to let go (the grapple mod) | `not tethered` | `pressed.grapple` |
+  | Hold to grapple | | `not held.grapple` |
+
+  `not tethered` keeps the second press from throwing a second line; `pressed.grapple` is that press letting the first go. A hook that ends by itself (its prop destroyed, a death) leaves nothing behind: the next press throws.
 - **One tether per player**: a second throw replaces the first.
 - **The event** a tether motion emits is at the point where it will hold (a puff there), and its vector is the motion's impulse.
 - **It is state** (`Tether`, a component a player has once it threw one): hashed, rolled back, in snapshots.

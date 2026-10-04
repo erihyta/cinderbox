@@ -26,7 +26,7 @@ the schema and run by every simulation, so a player's own are predicted and roll
 | | Today (M96) | Still to come |
 |---|---|---|
 | When | on a press, while conditions hold, on a mod event at the player | |
-| Conditions | what a state machine reads, and `held.<action>` | `motion.<name>` |
+| Conditions | what a state machine reads, `held.<action>`, `pressed.<action>`, `tethered` | `motion.<name>` |
 | Does | an impulse (per second in a While); parameters while it is on; changes of fields; an event; a tether | a tether that pulls another player |
 | Timing | `cooldown`, `uses` with a refill, `duration` | |
 | Editor | the nodes, their help, the bake, warnings | a preview panel; names checked at publish |
