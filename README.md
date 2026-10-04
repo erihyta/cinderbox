@@ -91,6 +91,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M83: the rifle has a stance of its own (`rifle`), so a character can give it its own animations | done |
 | M84: the rifle brings its own hold (an animation pack for `Upper`); a pack layer without a bone filter borrows the character's; the rifle's look is local only | done |
 | M85: the Cinderbox SDK: a Godot project to make a mod's look in (`sdk/`, `tools\sdk.ps1`): the extension, the editor addon, a placeholder character, starter scenes and animation packs; publishing bakes animation packs | done |
+| M86: the SDK cleaned up: a placeholder model with locomotion clips only, no copies of the game's character or addon, animation packs in `animation_packs/` with states named for what they do | done |
 
 ## Building
 
@@ -1002,9 +1003,9 @@ powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New mymod     # server_m
 
 | It gives the project | For |
 |---|---|
-| the extension and the editor addon | the `Cb*` nodes, the bakers, the Cue Preview panel |
-| `characters/mannequin` | a placeholder character with its clips and locomotion, to author animations and state machines on |
-| starter scenes named after the mod | an item, its reactions, a HUD, an upper-body and a base-layer animation pack |
+| the extension | the `Cb*` nodes, the bakers, the Cue Preview panel |
+| `placeholder/` | a placeholder model (the CC0 mannequin, with its locomotion clips only) to author animations and state machines on |
+| starter scenes named after the mod | an item, its reactions, a HUD, and two animation packs (`animation_packs/`): upper body, and locomotion |
 | a "Mod" export preset | ships every resource but the SDK's own: nothing to list |
 
 None of the SDK's parts are packed into the mod. [sdk/README.md](sdk/README.md) has the steps, what

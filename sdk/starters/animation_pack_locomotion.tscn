@@ -1,0 +1,131 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://placeholder/mannequin.glb" id="1_42oci"]
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_drj1q"]
+animation = &"Jump"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_mpi8w"]
+animation = &"Jump_Start"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_148u5"]
+animation = &"Jump_Land"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_n7keh"]
+animation = &"Jog_Fwd"
+play_mode = 1
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_2h8i2"]
+animation = &"Walk"
+play_mode = 1
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_yfxhu"]
+animation = &"Idle"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_q64md"]
+animation = &"Walk"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_10x6j"]
+animation = &"Jog_Fwd"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_h2656"]
+animation = &"Sprint"
+
+[sub_resource type="AnimationNodeBlendSpace1D" id="AnimationNodeBlendSpace1D_736qi"]
+min_space = -4.0
+max_space = 6.0
+value_label = "forward speed"
+blend_point_0/node = SubResource("AnimationNodeAnimation_n7keh")
+blend_point_0/pos = -3.0
+blend_point_0/name = &"Jog backward"
+blend_point_1/node = SubResource("AnimationNodeAnimation_2h8i2")
+blend_point_1/pos = -0.9
+blend_point_1/name = &"Walk backward"
+blend_point_2/node = SubResource("AnimationNodeAnimation_yfxhu")
+blend_point_2/pos = 0.0
+blend_point_2/name = &"Idle"
+blend_point_3/node = SubResource("AnimationNodeAnimation_q64md")
+blend_point_3/pos = 0.9
+blend_point_3/name = &"Walk"
+blend_point_4/node = SubResource("AnimationNodeAnimation_10x6j")
+blend_point_4/pos = 3.0
+blend_point_4/name = &"Jog"
+blend_point_5/node = SubResource("AnimationNodeAnimation_h2656")
+blend_point_5/pos = 5.0
+blend_point_5/name = &"Sprint"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_yra5s"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_wb75m"]
+xfade_time = 0.1
+advance_mode = 2
+advance_condition = &"jumped"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_ghd3q"]
+xfade_time = 0.2
+advance_mode = 2
+advance_expression = "not grounded and airborne_time > 0.12"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_sltf7"]
+xfade_time = 0.1
+advance_mode = 2
+advance_expression = "grounded and state_time > 0.1"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_24hns"]
+xfade_time = 0.2
+advance_mode = 2
+advance_expression = "state_time > 0.3"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_8j32f"]
+xfade_time = 0.1
+advance_mode = 2
+advance_condition = &"grounded"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_qnui0"]
+xfade_time = 0.1
+advance_mode = 2
+advance_condition = &"jumped"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_soxma"]
+xfade_time = 0.25
+advance_mode = 2
+advance_expression = "state_time > 0.35 or speed > 1.5"
+
+[sub_resource type="AnimationNodeStateMachine" id="AnimationNodeStateMachine_l501a"]
+states/InAir/node = SubResource("AnimationNodeAnimation_drj1q")
+states/InAir/position = Vector2(800, 100)
+states/JumpStart/node = SubResource("AnimationNodeAnimation_mpi8w")
+states/JumpStart/position = Vector2(550, 0)
+states/Land/node = SubResource("AnimationNodeAnimation_148u5")
+states/Land/position = Vector2(550, 220)
+states/Move/node = SubResource("AnimationNodeBlendSpace1D_736qi")
+states/Move/position = Vector2(300, 100)
+transitions = ["Start", "Move", SubResource("AnimationNodeStateMachineTransition_yra5s"), "Move", "JumpStart", SubResource("AnimationNodeStateMachineTransition_wb75m"), "Move", "InAir", SubResource("AnimationNodeStateMachineTransition_ghd3q"), "JumpStart", "Land", SubResource("AnimationNodeStateMachineTransition_sltf7"), "JumpStart", "InAir", SubResource("AnimationNodeStateMachineTransition_24hns"), "InAir", "Land", SubResource("AnimationNodeStateMachineTransition_8j32f"), "Land", "JumpStart", SubResource("AnimationNodeStateMachineTransition_qnui0"), "Land", "Move", SubResource("AnimationNodeStateMachineTransition_soxma")]
+
+[node name="LocomotionPack" type="CbAnimPack" unique_id=896996893]
+character_name = "MODNAME.locomotion"
+skeleton_path = NodePath("Model/Armature/Skeleton3D")
+animation_player_path = NodePath("Model/AnimationPlayer")
+animation_tree_path = NodePath("AnimationTree")
+graph_inputs = {
+"Move/blend_position": "forward_speed"
+}
+editor_description = "An animation pack for the whole body.
+
+Its state machine replaces a character's \"Base\" layer while the server mod says so (ItemLayers: while an item is held; or SwapLayer). The tree's root is the state machine itself: that is what makes it \"Base\".
+
+Move blends the clips by forward speed (Graph Inputs on this node: Move/blend_position = forward_speed). Transitions use the game's names: grounded, jumped, airborne_time, state_time, speed.
+
+Saving this scene bakes it into res://anim/MODNAME.locomotion/."
+
+[node name="Model" type="Node3D" parent="." unique_id=51749498 instance=ExtResource("1_42oci")]
+
+[node name="AnimationTree" type="AnimationTree" parent="." unique_id=1728586840]
+active = false
+root_node = NodePath("../Model")
+tree_root = SubResource("AnimationNodeStateMachine_l501a")
+anim_player = NodePath("../Model/AnimationPlayer")
+parameters/conditions/grounded = false
+parameters/conditions/jumped = false
+parameters/Move/blend_position = 0.0
