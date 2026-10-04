@@ -7,6 +7,7 @@
 #include "anim_graph.h"
 #include "anim_set.h"
 #include "hitboxes.h"
+#include "move_params.h"
 
 #include "ozz/animation/offline/animation_builder.h"
 #include "ozz/animation/offline/raw_animation.h"
@@ -277,6 +278,8 @@ void CbCharacter::_bind_methods()
 	ADD_GROUP( "State machine", "" );
 	CB_PROP( Variant::NODE_PATH, animation_tree_path, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "AnimationTree" )
 	CB_PROP( Variant::DICTIONARY, graph_inputs, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
+	ADD_GROUP( "Movement", "" );
+	CB_PROP( Variant::DICTIONARY, movement, PROPERTY_HINT_DICTIONARY_TYPE, "String;float" )
 	ADD_GROUP( "Aim", "aim_" );
 	CB_PROP( Variant::STRING, aim_chain, PROPERTY_HINT_PLACEHOLDER_TEXT, "UpperChest:0.3 RightUpperArm:1" )
 	CB_PROP( Variant::STRING, aim_tip, PROPERTY_HINT_NONE, "" )
@@ -299,7 +302,39 @@ PackedStringArray CbCharacter::_get_configuration_warnings() const
 	{
 		warnings.push_back( "Name the character: it is the item's name, and the bake writes to res://characters/<name>/." );
 	}
+	String movement = MovementError();
+	if ( movement.is_empty() == false )
+	{
+		warnings.push_back( movement );
+	}
 	return warnings;
+}
+
+String CbCharacter::MovementError() const
+{
+	Array names = m_movement.keys();
+	for ( int i = 0; i < names.size(); ++i )
+	{
+		String name = String( names[i] ).strip_edges();
+		int param = MoveParamByName( name.utf8().get_data() );
+		if ( param < 0 )
+		{
+			String known;
+			for ( int p = 0; p < kMoveParams; ++p )
+			{
+				known += String( p == 0 ? "" : ", " ) + MoveParamInfoOf( p ).name;
+			}
+			return "movement: \"" + name + "\" is not a movement parameter. They are: " + known + ".";
+		}
+		const MoveParamInfo& info = MoveParamInfoOf( param );
+		double value = double( m_movement[names[i]] );
+		if ( ( value >= double( info.min ) && value <= double( info.max ) ) == false )
+		{
+			return vformat( "movement: %s must be from %s to %s. %s", name, String::num( info.min ), String::num( info.max ),
+							info.doc );
+		}
+	}
+	return String();
 }
 
 namespace
@@ -868,6 +903,10 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		return result;
 	};
 
+	if ( String movement = MovementError(); movement.is_empty() == false )
+	{
+		return fail( movement );
+	}
 	String name = m_name.strip_edges();
 	if ( name.is_empty() || name.contains( "/" ) || name.contains( " " ) )
 	{
@@ -957,6 +996,18 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	cfg += "aim = " + Std( m_aimChain.strip_edges() ) + "\n";
 	cfg += "aim_tip = " + Std( m_aimTip.strip_edges() ) + "\n";
 	cfg += "look = " + Std( m_lookChain.strip_edges() ) + "\n";
+	// How it moves, in the simulation's order so that the file does not depend on the dictionary's.
+	for ( int p = 0; p < kMoveParams; ++p )
+	{
+		Array names = m_movement.keys();
+		for ( int i = 0; i < names.size(); ++i )
+		{
+			if ( MoveParamByName( String( names[i] ).strip_edges().utf8().get_data() ) == p )
+			{
+				cfg += std::string( "move." ) + MoveParamInfoOf( p ).name + " = " + Num( double( m_movement[names[i]] ) ) + "\n";
+			}
+		}
+	}
 	// Where an item sits in each hand: the CbSocket named RightHand / LeftHand under that hand's
 	// bone, in the bone's frame. The pose needs it (the other hand is solved onto a held item's
 	// grip in the item's frame), so it is baked; without the node the built-in frame is used.

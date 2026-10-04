@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -731,6 +732,29 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 	if ( cfg.count( "turn_legs" ) )
 	{
 		set->m_turnLegs = cfg["turn_legs"] != "false" && cfg["turn_legs"] != "0";
+	}
+	for ( const auto& [key, value] : cfg )
+	{
+		if ( key.rfind( "move.", 0 ) != 0 )
+		{
+			continue;
+		}
+		int param = MoveParamByName( key.c_str() + 5 );
+		char* end = nullptr;
+		float number = std::strtof( value.c_str(), &end );
+		// NaN fails the comparison with itself.
+		if ( param < 0 || end == value.c_str() || ( number == number ) == false )
+		{
+			warnings += key + " = " + value + " is not a movement parameter and a number; ";
+			continue;
+		}
+		if ( ClampMoveParam( param, number ) != number )
+		{
+			char range[64];
+			std::snprintf( range, sizeof( range ), "%g to %g", double( MoveParamInfoOf( param ).min ), double( MoveParamInfoOf( param ).max ) );
+			warnings += key + " = " + value + " is outside " + range + ", clamped; ";
+		}
+		set->m_movement.push_back( { param, ClampMoveParam( param, number ) } );
 	}
 	if ( cfg.count( "lock_root_xz" ) )
 	{

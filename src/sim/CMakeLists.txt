@@ -7,6 +7,7 @@ add_library(cb_sim_data STATIC
 	level.cpp
 	map.cpp
 	mod_schema.cpp
+	move_params.cpp
 	reflect.cpp
 	world_lifetime.cpp
 )
@@ -18,6 +19,7 @@ cb_target_warnings(cb_sim_data)
 add_library(cb_sim STATIC
 	box3d_shim.c
 	fingerprint.cpp
+	mover.cpp
 	physics_arena.cpp
 	rollback.cpp
 	simulation.cpp

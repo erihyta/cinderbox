@@ -3,6 +3,8 @@
 // Types shared by server, client and tools. Everything that crosses the network or feeds the
 // simulation is integer-quantized so it is identical on every machine.
 
+#include "move_params.h"
+
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -149,8 +151,11 @@ enum class CommandType : uint8_t
 	// kNoSocket), 0 takes it in use into that socket. Nothing happens when it is not held, or the
 	// socket already has an item in use (stow that one first, in the same frame).
 	MoveItem = 16,
+	// target (a player), index = MoveParam, mode = 1: a.x is that player's value for the parameter
+	// (clamped to its range) until mode = 0 gives it back to the server's (SimConfig::move).
+	SetMove = 17,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::MoveItem );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::SetMove );
 
 enum ImpulseMode : uint8_t
 {
@@ -237,6 +242,10 @@ struct SimConfig
 
 	// Memory reserved for Box3D. Only the used part is copied per snapshot.
 	uint32_t physicsArenaMB = 256;
+
+	// How players move, unless a mod says otherwise for one of them (move_params.h): the engine's
+	// defaults, with the server's options and then its character's values laid over them.
+	MoveParams move;
 
 	bool operator==( const SimConfig& ) const = default;
 

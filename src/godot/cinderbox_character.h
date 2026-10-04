@@ -173,6 +173,15 @@ public:
 	{
 		return m_graphInputs;
 	}
+	void set_movement( const godot::Dictionary& v )
+	{
+		m_movement = v;
+		update_configuration_warnings();
+	}
+	godot::Dictionary get_movement() const
+	{
+		return m_movement;
+	}
 	void set_face_forward( bool v )
 	{
 		m_faceForward = v;
@@ -214,6 +223,8 @@ protected:
 	static void _bind_methods();
 
 private:
+	// What is wrong with `movement` (a name that is no parameter, a value outside its range), or "".
+	godot::String MovementError() const;
 	// graph.cfg from the AnimationTree, and the animations it plays; an error, or "".
 	godot::String BakeGraph( godot::AnimationTree* tree, godot::AnimationPlayer* player, std::string& out,
 							 std::vector<godot::String>& animations, godot::String& warnings ) const;
@@ -237,6 +248,10 @@ private:
 	//   "FullBody/Locomotion/blend_position" -> "speed",  "UpperBodyBlend/blend_amount" -> "pistol or melee"
 	// Expressions over simulation values (see sim/anim_graph.h).
 	godot::Dictionary m_graphInputs;
+	// How this character moves, where it differs from the server's: movement parameters by name
+	// (sim/move_params.h) with their values, e.g. "walk_speed" -> 2.4 for clips made at that speed.
+	// Baked as "move.<name>" lines of anim.cfg; the server lays them over its own.
+	godot::Dictionary m_movement;
 	godot::String m_aimChain = "RightUpperArm:1";
 	godot::String m_aimTip = "RightHand";
 	godot::String m_lookChain = "Spine:0.2 Chest:0.2 UpperChest:0.2 Neck:0.2 Head:0.2";

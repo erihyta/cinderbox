@@ -192,6 +192,15 @@ struct RagdollPose
 	b3Vec3 linear[kRagdollParts] = {};
 };
 
+// The movement parameters a mod set for this player (SetMove commands): a bit of `mask` per
+// MoveParam, and its value. The rest are the server's (SimConfig::move). A player nobody set one
+// for has no such component.
+struct MoveOverrides
+{
+	uint32_t mask = 0;
+	float values[kMoveParams] = {};
+};
+
 // Tag: part of the static level.
 struct StaticGeometry
 {
@@ -240,6 +249,7 @@ CB_CHECK_COMPONENT( Blackboard, 4 * kBoardSlots );
 CB_CHECK_COMPONENT( Ragdoll, 20 );
 CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );
 CB_CHECK_COMPONENT( RagdollPose, 40 * kRagdollParts );
+CB_CHECK_COMPONENT( MoveOverrides, 4 + 4 * kMoveParams );
 
 #undef CB_CHECK_COMPONENT
 

@@ -274,6 +274,13 @@ public:
 		return m_schema;
 	}
 
+	// How the player in `slot` moves before this tick: the server's parameters (its options, its
+	// character's values), with what mods set for that player.
+	float Move( PlayerSlot slot, MoveParam param ) const
+	{
+		return m_sim.PlayerMove( slot )[param];
+	}
+
 	// Join and leave events in this tick's frame. A joining player's entity does not exist yet,
 	// but commands addressed to its slot are applied after it is created.
 	bool Joining( PlayerSlot slot ) const;
@@ -409,6 +416,12 @@ public:
 	void RespawnAt( uint32_t target, b3Vec3 position, float yaw );
 	// A frozen player ignores movement and jump (mods decide what else a freeze means for them).
 	void Freeze( uint32_t target, bool frozen );
+	// How one player moves (move_params.h): its walk speed, jump, gravity and the rest. The value
+	// is clamped to the parameter's range and stays until ResetMove gives the server's back (a
+	// respawn keeps it: only the mod lets it go). Not predicted: like every command it reaches the
+	// player's own simulation with the frame.
+	void SetMove( uint32_t target, MoveParam param, float value );
+	void ResetMove( uint32_t target, MoveParam param );
 	// Points the player's aim chain (its character's arm, by default) where it looks, or lets it
 	// go. Part of the pose every client draws and every hit test uses.
 	void Aim( uint32_t target, bool aiming );

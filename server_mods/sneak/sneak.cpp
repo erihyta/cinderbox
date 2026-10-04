@@ -1,6 +1,9 @@
 // Sneaking: while a player holds the crouch key, their character's "FullBody" layer (its locomotion) is
 // this mod's animation pack instead: a crouch that walks. It is part of the pose, so a crouching
-// player's head is lower for the server's hit tests too.
+// player's head is lower for the server's hit tests too. A sneaking player is also slower: the mod
+// sets that player's walk and sprint speeds (movement parameters) and gives them back.
+//
+// Server option: sneak.speed (m/s while sneaking, default 1.5; 0 leaves the speeds alone).
 //
 // The pack is authored in Godot like a character's own state machine (server_mods/sneak/client,
 // anim/sneak.crouch, made by godot/addons/cinderbox_maps/make_sneak_pack.gd) and fitted to whatever
@@ -53,13 +56,22 @@ public:
 			}
 			m_sneaking_[size_t( i )] = sneaking;
 			uint32_t target = SlotTarget( slot );
+			float speed = float( ctx.Option( "sneak.speed", 1.5 ) );
 			if ( sneaking )
 			{
 				ctx.SwapLayer( target, m_pack, "FullBody" );
+				if ( speed > 0.0f )
+				{
+					// Sprint too: a crouch does not run.
+					ctx.SetMove( target, MoveParam::WalkSpeed, speed );
+					ctx.SetMove( target, MoveParam::SprintSpeed, speed );
+				}
 			}
 			else
 			{
 				ctx.RestoreLayer( target, "FullBody" );
+				ctx.ResetMove( target, MoveParam::WalkSpeed );
+				ctx.ResetMove( target, MoveParam::SprintSpeed );
 			}
 			ctx.Set( target, m_sneaking, sneaking ? 1 : 0 );
 		}

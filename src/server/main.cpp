@@ -3,7 +3,12 @@
 //   cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]
 //             [--prop-lifetime SEC] [--props-per-player N] [--props-global N]
 //             [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]
-//             [--items DIR] [--mod-option NAME=VALUE]... [--character NAME [--workshop DIR]] [--quiet]
+//             [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...
+//             [--character NAME [--workshop DIR]] [--quiet]
+//
+// --move NAME=VALUE: how players move (sim/move_params.h): walk_speed, sprint_speed, accelerate,
+// friction, stop_speed, air_control, gravity, jump_speed, turn_rate, max_fall. A character that says
+// how it moves (its anim.cfg, "move.walk_speed") wins over these; a mod's SetMove wins over both.
 //
 // Every gameplay mod compiled in (server_mods/) runs unless --mods names a subset. Mods with a look
 // need their workshop item: its SHA-256 is read from <items dir>/<mod>.item (default: items/ next
@@ -46,7 +51,8 @@ void Usage()
 	std::printf( "usage: cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]\n"
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
 				 "                 [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
-				 "                 [--items DIR] [--mod-option NAME=VALUE]... [--character NAME [--workshop DIR]] [--quiet]\n" );
+				 "                 [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
+				 "                 [--character NAME [--workshop DIR]] [--quiet]\n" );
 }
 
 // <dir>/<mod>.item: "sha256=<64 hex digits>" (written by tools/publish_mod.ps1).
@@ -167,6 +173,33 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 				return false;
 			}
 			o.modOptions[kv.substr( 0, eq )] = kv.substr( eq + 1 );
+			continue;
+		}
+		if ( arg == "--move" && i + 1 < argc )
+		{
+			std::string kv = argv[++i];
+			size_t eq = kv.find( '=' );
+			int param = eq == std::string::npos ? -1 : cb::MoveParamByName( kv.substr( 0, eq ).c_str() );
+			const char* number = eq == std::string::npos ? "" : kv.c_str() + eq + 1;
+			char* end = nullptr;
+			float value = std::strtof( number, &end );
+			if ( param < 0 || end == number || *end != '\0' )
+			{
+				std::printf( "--move wants name=value, got %s. Names:", kv.c_str() );
+				for ( int p = 0; p < cb::kMoveParams; ++p )
+				{
+					std::printf( " %s", cb::MoveParamInfoOf( p ).name );
+				}
+				std::printf( "\n" );
+				return false;
+			}
+			const cb::MoveParamInfo& info = cb::MoveParamInfoOf( param );
+			if ( ( value >= info.min && value <= info.max ) == false )
+			{
+				std::printf( "--move %s must be in [%g, %g]\n", info.name, double( info.min ), double( info.max ) );
+				return false;
+			}
+			o.config.move.values[param] = value;
 			continue;
 		}
 		if ( i + 1 >= argc )

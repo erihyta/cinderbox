@@ -5,6 +5,7 @@
 #include "box3d_shim.h"
 #include "detmath.h"
 #include "level.h"
+#include "mover.h"
 #include "ragdoll.h"
 #include "util.h"
 
@@ -24,24 +25,8 @@ namespace cb
 namespace
 {
 
-// Character tuning. Changing any of these changes simulation results.
-constexpr float kCapsuleRadius = 0.3f;
-constexpr float kCapsuleHalfHeight = 0.5f; // center to sphere center
-constexpr float kWalkSpeed = 3.0f;
-constexpr float kSprintSpeed = 6.5f;
-constexpr float kAccelerate = 12.0f;
-constexpr float kFriction = 6.0f;
-constexpr float kStopSpeed = 1.0f;
-constexpr float kMinSpeed = 0.01f;
-constexpr float kGravity = 18.0f;
-constexpr float kJumpSpeed = 6.5f;
-
-constexpr float kTurnRate = 12.0f; // rad/s
-constexpr float kPogoHertz = 5.0f;
-constexpr float kPogoDamping = 0.7f;
-constexpr float kInputScale = 1.0f / 127.0f;
-constexpr int kMoverIterations = 5;
-constexpr int kMaxPlanes = 8;
+using mover::kCapsuleHalfHeight;
+using mover::kCapsuleRadius;
 
 constexpr b3Vec3 kGravityVector = { 0.0f, -10.0f, 0.0f };
 
@@ -85,44 +70,6 @@ bool IsFinite( float f )
 bool IsFinite( const Float3& f )
 {
 	return IsFinite( f.x ) && IsFinite( f.y ) && IsFinite( f.z );
-}
-
-bool SameShape( b3ShapeId a, b3ShapeId b )
-{
-	return a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation;
-}
-
-struct MoverContext
-{
-	b3ShapeId self;
-	b3Pos origin;
-	int count;
-	b3CollisionPlane planes[kMaxPlanes];
-	b3Pos points[kMaxPlanes];
-	b3ShapeId shapes[kMaxPlanes];
-};
-
-bool MoverFilter( b3ShapeId shapeId, void* context )
-{
-	return SameShape( shapeId, static_cast<MoverContext*>( context )->self ) == false;
-}
-
-bool CollectPlanes( b3ShapeId shapeId, const b3PlaneResult* results, int count, void* context )
-{
-	auto* ctx = static_cast<MoverContext*>( context );
-	if ( SameShape( shapeId, ctx->self ) )
-	{
-		return true;
-	}
-
-	for ( int i = 0; i < count && ctx->count < kMaxPlanes; ++i )
-	{
-		ctx->planes[ctx->count] = { results[i].plane, FLT_MAX, 0.0f, true };
-		ctx->points[ctx->count] = b3OffsetPos( ctx->origin, results[i].point );
-		ctx->shapes[ctx->count] = shapeId;
-		ctx->count += 1;
-	}
-	return true;
 }
 
 b3Quat MakeRotation( float yaw, float pitch )
@@ -233,6 +180,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<RagdollBodies>();
 	RegisterSnapComponent<RagdollPose>();
 	RegisterSnapComponent<HeldItem>();
+	RegisterSnapComponent<MoveOverrides>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -709,7 +657,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		// Frozen: the mover still runs (gravity, the ground, being pushed), with no intent.
 		PlayerInput still;
 		still.cameraYaw = in.cameraYaw;
-		MoveCharacter( c, t, pb, c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed );
+		mover::Move( { m_physicsWorld, BodyOf( pb ), ShapeOf( pb ) }, MoveOf( e ), m_config.TimeStep(), m_globals.tick,
+					 c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed, c, t );
 		c.prevButtons = in.buttons;
 
 		AnimState anim = e.get<AnimState>();
@@ -766,183 +715,6 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		e.set<Transform>( t );
 		e.set<Velocity>( { c.velocity, { 0.0f, 0.0f, 0.0f } } );
 	}
-}
-
-void Simulation::MoveCharacter( Character& c, Transform& t, const PhysicsBody& pb, const PlayerInput& in, uint8_t pressed )
-{
-	const float dt = m_config.TimeStep();
-
-	// Camera-relative wish direction
-	float camYaw = detmath::YawToRadians( in.cameraYaw );
-	b3Vec3 forward = detmath::YawForward( camYaw );
-	b3Vec3 right = detmath::YawRight( camYaw );
-	float throttleForward = float( std::clamp<int>( in.moveForward, -127, 127 ) ) * kInputScale;
-	float throttleRight = float( std::clamp<int>( in.moveRight, -127, 127 ) ) * kInputScale;
-
-	if ( c.grounded )
-	{
-		c.sprinting = ( in.buttons & BtnSprint ) ? 1 : 0;
-	}
-
-	// Jump (edge triggered)
-	if ( ( pressed & BtnJump ) && c.grounded )
-	{
-		c.velocity.y = kJumpSpeed;
-		c.grounded = 0;
-		c.lastJumpTick = m_globals.tick;
-	}
-
-	// Ground friction (horizontal only)
-	b3Vec3 v = c.velocity;
-	float speed = b3Length( b3Vec3{ v.x, 0.0f, v.z } );
-	if ( speed < kMinSpeed )
-	{
-		v.x = 0.0f;
-		v.z = 0.0f;
-	}
-	else if ( c.grounded )
-	{
-		float control = speed < kStopSpeed ? kStopSpeed : speed;
-		float newSpeed = std::max( 0.0f, speed - control * kFriction * dt );
-		float ratio = newSpeed / speed;
-		v.x *= ratio;
-		v.z *= ratio;
-	}
-
-	float maxSpeed = c.sprinting ? kSprintSpeed : kWalkSpeed;
-	b3Vec3 desired = b3Add( b3MulSV( maxSpeed * throttleForward, forward ), b3MulSV( maxSpeed * throttleRight, right ) );
-	float desiredSpeed = 0.0f;
-	b3Vec3 desiredDir = b3GetLengthAndNormalize( &desiredSpeed, desired );
-	if ( desiredSpeed > maxSpeed )
-	{
-		desiredSpeed = maxSpeed;
-	}
-
-	if ( c.grounded )
-	{
-		v.y = 0.0f;
-	}
-
-	float airControl = c.grounded ? 1.0f : 0.3f;
-	float currentSpeed = b3Dot( v, desiredDir );
-	float addSpeed = desiredSpeed - currentSpeed;
-	if ( addSpeed > 0.0f )
-	{
-		float accel = std::min( addSpeed, airControl * kAccelerate * maxSpeed * dt );
-		v = b3MulAdd( v, accel, desiredDir );
-	}
-
-	v.y -= kGravity * dt;
-
-	// Pogo spring keeps the capsule hovering above the ground, which smooths steps and slopes.
-	b3Capsule capsule = { { 0.0f, -kCapsuleHalfHeight, 0.0f }, { 0.0f, kCapsuleHalfHeight, 0.0f }, kCapsuleRadius };
-	float pogoRest = 3.0f * kCapsuleRadius;
-	float rayLength = pogoRest + kCapsuleRadius;
-	b3Pos rayOrigin = b3Add( t.position, capsule.center1 );
-	b3QueryFilter groundFilter = { CatPlayer, CatStatic | CatProp | CatRagdoll, 0, nullptr };
-	b3RayResult ray = b3World_CastRayClosest( m_physicsWorld, rayOrigin, { 0.0f, -rayLength, 0.0f }, groundFilter );
-
-	bool wasGrounded = c.grounded != 0;
-	if ( ray.hit == false || v.y > 0.0f )
-	{
-		c.grounded = 0;
-		c.pogoVelocity = 0.0f;
-	}
-	else
-	{
-		c.grounded = 1;
-		float current = ray.fraction * rayLength;
-		float omega = 2.0f * detmath::kPi * kPogoHertz;
-		float omegaH = omega * dt;
-		c.pogoVelocity = ( c.pogoVelocity - omega * omegaH * ( current - pogoRest ) ) /
-						 ( 1.0f + 2.0f * kPogoDamping * omegaH + omegaH * omegaH );
-	}
-
-	if ( c.grounded )
-	{
-		c.groundTicks = wasGrounded ? c.groundTicks + 1 : 0;
-		c.airTicks = 0;
-	}
-	else
-	{
-		c.airTicks = wasGrounded ? 0 : c.airTicks + 1;
-		c.groundTicks = 0;
-	}
-
-	// Move and slide
-	b3Vec3 startPosition = t.position;
-	b3Vec3 target = b3Add( t.position, b3MulSV( dt, b3Add( v, b3Vec3{ 0.0f, c.pogoVelocity, 0.0f } ) ) );
-	b3QueryFilter moverFilter = { CatPlayer, ~uint64_t( 0 ), 0, nullptr };
-
-	MoverContext ctx;
-	ctx.self = ShapeOf( pb );
-	ctx.count = 0;
-	for ( int iteration = 0; iteration < kMoverIterations; ++iteration )
-	{
-		ctx.count = 0;
-		ctx.origin = t.position;
-		b3World_CollideMover( m_physicsWorld, t.position, &capsule, moverFilter, CollectPlanes, &ctx );
-
-		b3Vec3 targetDelta = b3Sub( target, t.position );
-		b3PlaneSolverResult solved = b3SolvePlanes( targetDelta, ctx.planes, ctx.count );
-		float fraction = b3World_CastMover( m_physicsWorld, t.position, &capsule, solved.delta, moverFilter, MoverFilter, &ctx );
-		b3Vec3 delta = b3MulSV( fraction, solved.delta );
-		t.position = b3Add( t.position, delta );
-
-		if ( b3LengthSquared( delta ) < 0.0001f )
-		{
-			break;
-		}
-	}
-
-	// Push dynamic bodies we are touching
-	for ( int i = 0; i < ctx.count; ++i )
-	{
-		b3BodyId other = b3Shape_GetBody( ctx.shapes[i] );
-		if ( b3Body_GetType( other ) != b3_dynamicBody )
-		{
-			continue;
-		}
-
-		b3Pos point = ctx.points[i];
-		b3Vec3 normal = b3Neg( ctx.planes[i].plane.normal );
-		float invMass = b3Body_GetInverseMass( other );
-		b3Matrix3 invI = b3Body_GetWorldInverseRotationalInertia( other );
-		b3Vec3 r = b3SubPos( point, b3Body_GetWorldCenter( other ) );
-		b3Vec3 rn = b3Cross( r, normal );
-		float k = invMass + b3Dot( rn, b3MulMV( invI, rn ) );
-		float normalMass = k > 0.0f ? 1.0f / k : 0.0f;
-		b3Vec3 vOther = b3Add( b3Body_GetLinearVelocity( other ), b3Cross( b3Body_GetAngularVelocity( other ), r ) );
-		float vn = b3Dot( b3Sub( vOther, v ), normal );
-		float impulse = std::max( -normalMass * vn, 0.0f );
-		if ( impulse > 0.0f )
-		{
-			b3Body_ApplyLinearImpulse( other, b3MulSV( impulse, normal ), point, true );
-		}
-	}
-
-	v = b3ClipVector( v, ctx.planes, ctx.count );
-	c.velocity = v;
-
-	// Face where the camera looks (a mod chose it), or turn toward the direction of travel.
-	b3Vec3 moved = b3Sub( t.position, startPosition );
-	float horizontalSq = moved.x * moved.x + moved.z * moved.z;
-	if ( FacesCamera( c, in ) )
-	{
-		c.facingYaw = detmath::WrapAngle( detmath::YawToRadians( in.cameraYaw ) );
-	}
-	else if ( horizontalSq > ( 0.2f * dt ) * ( 0.2f * dt ) && desiredSpeed > 0.0f )
-	{
-		float targetYaw = detmath::Atan2( moved.x, moved.z );
-		float diff = detmath::WrapAngle( targetYaw - c.facingYaw );
-		float maxTurn = kTurnRate * dt;
-		diff = std::clamp( diff, -maxTurn, maxTurn );
-		c.facingYaw = detmath::WrapAngle( c.facingYaw + diff );
-	}
-	t.rotation = detmath::YawRotation( c.facingYaw );
-
-	// Drive the kinematic body so props feel the motion during the physics step.
-	b3Body_SetTargetTransform( BodyOf( pb ), { t.position, t.rotation }, dt, true );
 }
 
 void Simulation::ExpireProps()
@@ -1646,6 +1418,29 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			return;
 		}
 
+		case CommandType::SetMove:
+		{
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() == false || e.has<Character>() == false || command.index >= kMoveParams )
+			{
+				return;
+			}
+			MoveOverrides set = e.has<MoveOverrides>() ? e.get<MoveOverrides>() : MoveOverrides{};
+			uint32_t bit = uint32_t( 1 ) << command.index;
+			if ( command.mode == 1 )
+			{
+				set.mask |= bit;
+				set.values[command.index] = ClampMoveParam( command.index, command.a.x );
+			}
+			else
+			{
+				set.mask &= ~bit;
+				set.values[command.index] = 0.0f;
+			}
+			e.set<MoveOverrides>( set );
+			return;
+		}
+
 		case CommandType::SwapLayer:
 		{
 			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
@@ -2007,6 +1802,32 @@ const Character* Simulation::PlayerCharacter( PlayerSlot slot ) const
 	}
 	flecs::entity e = FindEntity( m_globals.playerNetIds[slot] );
 	return e.is_valid() ? e.try_get<Character>() : nullptr;
+}
+
+MoveParams Simulation::MoveOf( flecs::entity e ) const
+{
+	MoveParams params = m_config.move;
+	if ( const MoveOverrides* set = e.try_get<MoveOverrides>() )
+	{
+		for ( int i = 0; i < kMoveParams; ++i )
+		{
+			if ( set->mask & ( uint32_t( 1 ) << i ) )
+			{
+				params.values[i] = set->values[i];
+			}
+		}
+	}
+	return params;
+}
+
+MoveParams Simulation::PlayerMove( PlayerSlot slot ) const
+{
+	if ( slot >= kMaxPlayers || m_globals.playerNetIds[slot] == 0 )
+	{
+		return m_config.move;
+	}
+	flecs::entity e = FindEntity( m_globals.playerNetIds[slot] );
+	return e.is_valid() ? MoveOf( e ) : m_config.move;
 }
 
 const Transform* Simulation::EntityTransform( uint32_t netId ) const

@@ -123,6 +123,10 @@ void WriteConfig( ByteWriter& w, const SimConfig& c )
 	w.Write( c.propsGlobal );
 	w.Write( c.killY );
 	w.Write( c.physicsArenaMB );
+	for ( float value : c.move.values )
+	{
+		w.Write( value );
+	}
 }
 
 bool ReadConfig( ByteReader& r, SimConfig& c )
@@ -135,7 +139,11 @@ bool ReadConfig( ByteReader& r, SimConfig& c )
 	c.propsGlobal = r.Read<uint32_t>();
 	c.killY = r.Read<float>();
 	c.physicsArenaMB = r.Read<uint32_t>();
-	return r.Ok() && c.tickRate >= 10 && c.tickRate <= 240 && c.subSteps >= 1 && c.subSteps <= 16 && c.physicsArenaMB >= 8 &&
+	for ( float& value : c.move.values )
+	{
+		value = r.Read<float>();
+	}
+	return r.Ok() && ValidMoveParams( c.move ) && c.tickRate >= 10 && c.tickRate <= 240 && c.subSteps >= 1 && c.subSteps <= 16 && c.physicsArenaMB >= 8 &&
 		   c.physicsArenaMB <= 4096;
 }
 
