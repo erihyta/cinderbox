@@ -25,7 +25,7 @@ machines. No game and no server are needed to author. The rules are the mod's C+
 | `animation_packs/` | the mod's animation pack scenes; `animation_packs/source/` for their models and clips | no (what they bake to is) |
 | `anim/<pack>/` | baked animation packs: written on save and when publishing, never edited | yes |
 | `items/<kind>.cfg` | baked item bodies: written when publishing, never edited | yes |
-| `placeholder/` | the placeholder model: the CC0 mannequin on a humanoid skeleton, with its locomotion clips | no |
+| `placeholder/` | the placeholder model: the CC0 mannequin on a humanoid skeleton; `placeholder/clips/` are its locomotion clips | no |
 | `bone_maps/` | bone maps for importing other rigs: `mixamo.tres`, `unreal_mannequin.tres` (the placeholder's) | no |
 | `cinderbox.gdextension`, `bin/` | the Cinderbox extension: the `Cb*` nodes, the bakers, the **Cue Preview** panel | no |
 | `starters/` (in `sdk\` only) | what `-New` copies into a mod's project, with the mod's name in it | no |
@@ -76,8 +76,8 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 | Node | What to do with it |
 |---|---|
 | `CbAnimPack` (root) | `character_name` is the pack's name: the server mod asks for it by that name. `replaces` lists the layers it ships |
-| `Model` | the skeleton the clips were made on. Characters with other skeletons get the clips fitted by bone name |
-| `AnimationPlayer` | the clips |
+| `Model` | the placeholder: the body the clips are shown on. Characters with other skeletons get the clips fitted from it by bone name. Leave it |
+| `AnimationPlayer` | the clips, by file: the placeholder's (`placeholder/clips/`) and yours |
 | `AnimationTree` | the state machines: edit them as any Godot state machine |
 
 **The default tree, as the starter has it**
@@ -116,17 +116,22 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 
 **Your own clips**
 
-1. Put the model and clips in `animation_packs/source/`. In Advanced Import Settings, on the
-   `Skeleton3D` node, under Retarget: pick the **Bone Map of the rig the file was made on**
-   (`bone_maps/mixamo.tres` for Mixamo), and set Skeleton Name to `Skeleton3D`. Set the clip's
-   loop mode there too.
-   - The bone map renames the rig's bones to Godot's humanoid names (`Hips`, `Spine`, ...). The game
-     fits a clip to a character by those names: with the wrong map, or none, the clip keeps the
-     rig's names and **nothing plays in the game**, though it plays in the editor.
-2. In the pack scene, make `Model` an instance of your model, add your clips to an
-   `AnimationPlayer` (Root Node: `Model`), and point the root's Animation Player and the tree's at it.
-3. Use the clips in the tree, save. `server_mods/rifle/client/animation_packs/rifle_hold.tscn` is one
-   made this way (it is local: the rifle's look is not in the repository).
+1. Put the file (an FBX or glb with the animation) in `animation_packs/source/`.
+2. Select it, open **Advanced Import Settings**:
+   - on the `Skeleton3D` node, under Retarget: pick the **Bone Map of the rig the file was made on**
+     (`bone_maps/mixamo.tres` for Mixamo) and set Skeleton Name to `Skeleton3D`;
+   - on the animation: its loop mode, and **Save to File** (a `.res` next to it, named as the clip
+     should be called).
+3. In the pack scene, select `AnimationPlayer`, and in the Animation panel: Animation, Manage
+   Animations, the folder icon on the library: load the `.res`.
+4. Use the clip in the tree, save the scene.
+
+| If | Then |
+|---|---|
+| the wrong bone map, or none | the clip keeps its rig's bone names and **does nothing** on the model, in the editor and in the game |
+| it plays on `Model` in the editor | it plays the same way in the game: characters get it fitted from this skeleton |
+| you replace or delete a source file | the pack keeps working with the `.res` it has; `Model` is the SDK's placeholder, never one of your files |
+| you edit a clip in the AnimationPlayer | the `.res` is changed, and the next import of its source file overwrites it |
 
 **The server's half** is two lines: `declare.AnimPack( "<mod>.animations" )`, and either
 `declare.ItemLayers( kind, pack )` (plays while the item is held) or `ctx.SwapLayer`.

@@ -94,6 +94,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods). See [DESIGN.
 | M86: the SDK cleaned up: a placeholder model with locomotion clips only, no copies of the game's character or addon, animation packs in `animation_packs/` with states named for what they do | done |
 | M87: animation layers are named `FullBody` and `UpperBody`; a pack can hold the whole tree and replace only the layers it names (`replaces`); the SDK ships the default tree in full | done |
 | M88: the SDK has bone maps for other rigs (`bone_maps/mixamo.tres`); publishing runs the game's pack check; `sdk/README.md` explains every non-scene file | done |
+| M89: a pack's model is always the SDK's placeholder and its clips are files in its own `AnimationPlayer`: replacing an animation's source file no longer removes the model | done |
 
 ## Building
 
