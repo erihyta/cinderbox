@@ -7,8 +7,7 @@
 #
 # An SDK project's own parts (copied in, git-ignored in a mod's project, never packed into the mod):
 #   cinderbox.gdextension, bin\    the Cinderbox viewer extension (build it first: cmake --build --preset godot-export)
-#   placeholder\                   the placeholder model: the CC0 mannequin with its locomotion clips
-#   bone_maps\                     bone maps for importing other rigs (Mixamo; Unreal-style, the placeholder's)
+#   placeholder\                   the placeholder: a humanoid skeleton (no model) and its locomotion clips
 #
 # -New gives the project its own files, made from sdk\starters with the mod's name in them:
 #   prefabs\<mod>.tscn                             the item's scene (body, grips, a muzzle)
@@ -54,16 +53,15 @@ function Extension([string]$project) {
 	Remove-Item (Join-Path $projectBin "libcinderbox_peer.*") -Force -ErrorAction SilentlyContinue
 }
 
-# The placeholder model and the bone maps, into a mod's project (sdk\ has them already: they are
-# the template's).
+# The placeholder (a skeleton and its clips), into a mod's project (sdk\ has it already: it is the
+# template's). What earlier SDKs put there goes.
 function Placeholder([string]$project) {
-	foreach ($folder in @("placeholder", "bone_maps")) {
-		$to = Join-Path $project $folder
-		New-Item -ItemType Directory -Force $to | Out-Null
-		Copy-Item (Join-Path $sdk "$folder\*") $to -Force -Recurse
+	$to = Join-Path $project "placeholder"
+	New-Item -ItemType Directory -Force $to | Out-Null
+	Copy-Item (Join-Path $sdk "placeholder\*") $to -Force -Recurse
+	foreach ($old in @("placeholder\mannequin.glb", "placeholder\mannequin.glb.import", "placeholder\bone_map.tres", "bone_maps")) {
+		Remove-Item (Join-Path $project $old) -Recurse -Force -ErrorAction SilentlyContinue
 	}
-	# Where the placeholder's own map used to be.
-	Remove-Item (Join-Path $project "placeholder\bone_map.tres") -Force -ErrorAction SilentlyContinue
 }
 
 function Import([string]$project) {

@@ -1,6 +1,6 @@
 [gd_scene format=3]
 
-[ext_resource type="PackedScene" path="res://placeholder/mannequin.glb" id="1_8ryhr"]
+[ext_resource type="PackedScene" path="res://placeholder/skeleton.tscn" id="1_8ryhr"]
 [ext_resource type="Animation" path="res://placeholder/clips/Idle.res" id="2_t3x2l"]
 [ext_resource type="Animation" path="res://placeholder/clips/Jog_Fwd.res" id="3_miwui"]
 [ext_resource type="Animation" path="res://placeholder/clips/Jump.res" id="4_fg6l5"]
@@ -145,10 +145,10 @@ nodes/UpperBodyBlend/node = SubResource("AnimationNodeBlend2_e083n")
 nodes/UpperBodyBlend/position = Vector2(250, 100)
 node_connections = [&"output", 0, &"UpperBodyBlend", &"UpperBodyBlend", 0, &"FullBody", &"UpperBodyBlend", 1, &"UpperBody"]
 
-[node name="AnimationPack" type="CbAnimPack" unique_id=1266814539]
+[node name="AnimationPack" type="CbAnimPack" unique_id=971384603]
 replaces = PackedStringArray("UpperBody")
 character_name = "MODNAME.animations"
-skeleton_path = NodePath("Model/Armature/Skeleton3D")
+skeleton_path = NodePath("Skeleton3D")
 animation_player_path = NodePath("AnimationPlayer")
 animation_tree_path = NodePath("AnimationTree")
 graph_inputs = {
@@ -160,7 +160,7 @@ The AnimationTree is the default one in full: FullBody (the whole body's locomot
 
 Replaces lists the layers this pack ships. It is UpperBody: FullBody is here to see your upper body over a walking character, and is not baked. Add FullBody to replace the locomotion too.
 
-The clips are in the AnimationPlayer node (Animation panel, Manage Animations): the placeholder's, from placeholder/clips. Add your own there, from animation_packs/source. Model is only the body they are shown on: leave it.
+The clips are in the AnimationPlayer node (Animation panel, Manage Animations): the placeholder's, from placeholder/clips. Add your own there, from animation_packs/source. Skeleton3D is what they play on (there is no model: the editor draws the bones): leave it.
 
 UpperBody's Hold plays the placeholder's Idle: put your own clip there. For a use (a shot, a swing), add a state and a transition whose condition is the server mod's event (MODNAME.used), and one back with Switch Mode At End.
 
@@ -168,15 +168,14 @@ Transitions use the game's names: forward_speed, speed, grounded, jumped, airbor
 
 Saving this scene bakes it into res://anim/MODNAME.animations/."
 
-[node name="Model" type="Node3D" parent="." unique_id=60384132 instance=ExtResource("1_8ryhr")]
+[node name="Skeleton3D" parent="." unique_id=170629037 instance=ExtResource("1_8ryhr")]
+unique_name_in_owner = true
 
-[node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=234659]
-root_node = NodePath("../Model")
+[node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=1688906790]
 libraries/ = SubResource("AnimationLibrary_ris1f")
 
-[node name="AnimationTree" type="AnimationTree" parent="." unique_id=1135012316]
+[node name="AnimationTree" type="AnimationTree" parent="." unique_id=1805358068]
 active = false
-root_node = NodePath("../Model")
 tree_root = SubResource("AnimationNodeBlendTree_4f2e2")
 anim_player = NodePath("../AnimationPlayer")
 parameters/FullBody/conditions/grounded = false

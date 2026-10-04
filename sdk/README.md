@@ -25,8 +25,7 @@ machines. No game and no server are needed to author. The rules are the mod's C+
 | `animation_packs/` | the mod's animation pack scenes; `animation_packs/source/` for their models and clips | no (what they bake to is) |
 | `anim/<pack>/` | baked animation packs: written on save and when publishing, never edited | yes |
 | `items/<kind>.cfg` | baked item bodies: written when publishing, never edited | yes |
-| `placeholder/` | the placeholder model: the CC0 mannequin on a humanoid skeleton; `placeholder/clips/` are its locomotion clips | no |
-| `bone_maps/` | bone maps for importing other rigs: `mixamo.tres`, `unreal_mannequin.tres` (the placeholder's) | no |
+| `placeholder/` | the placeholder: a humanoid skeleton with no model (`skeleton.tscn`; the editor draws its bones) and its locomotion clips (`clips/`) | no |
 | `cinderbox.gdextension`, `bin/` | the Cinderbox extension: the `Cb*` nodes, the bakers, the **Cue Preview** panel | no |
 | `starters/` (in `sdk\` only) | what `-New` copies into a mod's project, with the mod's name in it | no |
 
@@ -56,7 +55,6 @@ Files that already exist are kept. Delete the starters a mod does not need.
 | `cinderbox.gdextension` | the SDK | tells Godot where the Cinderbox extension's libraries are (`bin/`) for each platform | no |
 | `*.import` (next to every model, sound, texture) | Godot | how that file is imported: for a model, its bone map, skeleton name and each clip's loop mode. This is what the Import dock and Advanced Import Settings edit | in the Import dock |
 | `*.uid` | Godot | the file's id, so moving it does not break references | no |
-| `bone_maps/*.tres` | the SDK | which bone of a rig is which humanoid bone (see Your own clips) | no; add your own for another rig |
 | `items/<kind>.cfg` | publishing | an item's body as the **server** reads it: its box, mass, where the hands hold it. Baked from the item scene's `CbItemBody` and `CbGrip` nodes | no: edit the scene |
 | `anim/<pack>/graph.cfg` | saving a pack, publishing | the pack's state machines as text: clips, layers, states, transitions, conditions. What the simulation runs | no: edit the tree |
 | `anim/<pack>/anim.cfg` | the same | which `.ozz` file is which clip, and the skeleton they were made on | no |
@@ -76,7 +74,7 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 | Node | What to do with it |
 |---|---|
 | `CbAnimPack` (root) | `character_name` is the pack's name: the server mod asks for it by that name. `replaces` lists the layers it ships |
-| `Model` | the placeholder: the body the clips are shown on. Characters with other skeletons get the clips fitted from it by bone name. Leave it |
+| `Skeleton3D` | the placeholder skeleton: what the clips play on. Characters get the clips fitted from it by bone name. Leave it |
 | `AnimationPlayer` | the clips, by file: the placeholder's (`placeholder/clips/`) and yours |
 | `AnimationTree` | the state machines: edit them as any Godot state machine |
 
@@ -118,8 +116,9 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 
 1. Put the file (an FBX or glb with the animation) in `animation_packs/source/`.
 2. Select it, open **Advanced Import Settings**:
-   - on the `Skeleton3D` node, under Retarget: pick the **Bone Map of the rig the file was made on**
-     (`bone_maps/mixamo.tres` for Mixamo) and set Skeleton Name to `Skeleton3D`;
+   - on the `Skeleton3D` node, under Retarget: Bone Map, **New BoneMap**, and in it Profile, **New
+     SkeletonProfileHumanoid**. Godot fills the map by the rig's bone names; check that the bones
+     in the picture are green. Set Skeleton Name to `Skeleton3D`;
    - on the animation: its loop mode, and **Save to File** (a `.res` next to it, named as the clip
      should be called).
 3. In the pack scene, select `AnimationPlayer`, and in the Animation panel: Animation, Manage
@@ -128,10 +127,16 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 
 | If | Then |
 |---|---|
-| the wrong bone map, or none | the clip keeps its rig's bone names and **does nothing** on the model, in the editor and in the game |
-| it plays on `Model` in the editor | it plays the same way in the game: characters get it fitted from this skeleton |
-| you replace or delete a source file | the pack keeps working with the `.res` it has; `Model` is the SDK's placeholder, never one of your files |
+| no bone map, or one made for another rig | the clip keeps its rig's bone names and **does nothing** on the skeleton, in the editor and in the game |
+| it plays on `Skeleton3D` in the editor | it plays the same way in the game: characters get it fitted from this skeleton |
+| you replace or delete a source file | the pack keeps working with the `.res` it has; the skeleton is the SDK's, never one of your files |
 | you edit a clip in the AnimationPlayer | the `.res` is changed, and the next import of its source file overwrites it |
+
+- **What the retarget does**: it renames the rig's bones to Godot's humanoid names (`Hips`, `Spine`,
+  ...), turns every bone's rest to the profile's (Overwrite Axis) and rewrites the tracks to match,
+  and drops what does not carry over (unmapped bones, positions other than the hips'). After it,
+  one rotation means one movement on every humanoid skeleton, which is why a clip made on another
+  rig plays on this one.
 
 **The server's half** is two lines: `declare.AnimPack( "<mod>.animations" )`, and either
 `declare.ItemLayers( kind, pack )` (plays while the item is held) or `ctx.SwapLayer`.
