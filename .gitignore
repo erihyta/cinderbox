@@ -35,6 +35,11 @@ characters/*/client/cinderbox.gdextension.uid
 # Paid assets: never on GitHub (the repo is public). Keep the purchased packs here, outside git.
 Universal Animation Library*/
 /paid/
+# The rifle mod's look (its scene, effects and its animation pack, made from licensed animations):
+# local only. The server mod is in the repository; without the look a rifle is a plain box that
+# is held in the character's own "rifle" stance.
+server_mods/rifle/client/
+server_mods/rifle/client_item.cfg
 # The character built from the paid Source pack (its glb, scene, baked clips): local only.
 godot/characters/ual_mannequin/
 
