@@ -12,7 +12,7 @@ What a mod adds to how players move (a dash, a double jump, flight, a jetpack, a
 | Good for | what lasts and need not be instant (a crouch's speed, knockback from a hit) | what must answer a key at once (a dash, a second jump) |
 
 A motion is to movement what a [`CbReaction`](looks.md#reactions) is to the look: *on a press, on a
-cue, or while conditions hold, do this to the mover*. It is authored in Godot, baked to text, sent in the schema
+cue, or while conditions hold, do this to the player (and to what it reaches)*. It is authored in Godot, baked to text, sent in the schema
 and run by the simulation, the way a character's [state machine](characters.md#state-machines) is.
 
 ```
@@ -27,7 +27,7 @@ CbMotion nodes ──bake──> motions/<set>.cfg ──> the server reads it f
 | Half | Where | What |
 |---|---|---|
 | The rules | `server_mods/<mod>/<mod>.cpp` | declares the action, the fields and the events the motions name, names the set (`declare.Motions( "dash.moves" )`), and decides who may: a field a condition reads |
-| The motions | `server_mods/<mod>/client/motion_sets/<name>.tscn` | a `CbMotionSet` with `CbMotion` children; saving the scene bakes `motions/<set_name>.cfg` |
+| The motions | `server_mods/<mod>/client/motion_sets/<name>.tscn` | a `CbMotionSet` with `CbMotion` children, each with its parts under it; saving the scene bakes `motions/<set_name>.cfg` |
 
 ```cpp
 // server_mods/dash/dash.cpp: the names, and how many dashes a player has. Not the dash.
@@ -42,99 +42,190 @@ ctx.Set( SlotTarget( slot ), m_charges, charges + 1 );   // one back every 2 s
 ```
 Moves        CbMotionSet   set_name "dash.moves"                (motion_sets/dash_moves.tscn)
 ├── Dash        CbMotion   action "dash"   conditions dash.charges > 0   cooldown 0.4
-│                          impulse 11 m/s along the move input, replacing the horizontal velocity
-│                          duration 0.18 s with parameters { friction: 0 }
-│                          changes dash.charges -= 1      emits dash.started
+│   │                      duration 0.18 s with parameters { friction: 0 }
+│   │                      changes dash.charges -= 1      emits dash.started
+│   └── Push    CbImpulse  11 m/s along the move input, replacing the horizontal velocity
 └── DoubleJump  CbMotion   action "jump"   conditions not grounded   uses 1, back on the ground
-                           impulse 6.5 m/s up, replacing the vertical speed    emits dash.double_jump
+    │                      emits dash.double_jump
+    └── Up      CbImpulse  6.5 m/s up, replacing the vertical speed
 ```
 
-## `CbMotion`
+## The nodes
+
+A motion is a trigger with parts under it. The trigger says *when* and *for how long*; the parts say
+*what happens to whom*.
+
+```
+CbMotionPart            what they share: each bakes to lines, and warns in the tree when it cannot
+├── CbMotionSet         the root: a mod's motions, one baked file
+├── CbMotion            the trigger: when, how long, parameters, changes, the event
+├── CbProbe             a line along the look that has to find something
+└── CbMotionEffect      what it does to a body: on whom (target), in which direction (frame)
+    ├── CbImpulse       a change of velocity, once
+    ├── CbForce         a push for as long as the motion is on
+    └── CbLink          a rope to the target
+```
+
+| To make | Under the `CbMotion` |
+|---|---|
+| A dash, a double jump, a shove | a `CbImpulse` |
+| A jetpack, a wind, a conveyor, a brake | a `CbForce` (the motion a While, or with a `duration`) |
+| A grappling hook | a `CbProbe`, a `CbForce` toward what it found, a `CbLink` |
+| A tractor beam on a prop | a `CbProbe`, a `CbForce` whose target is what it found |
+| Two players bound together | a `CbLink` whose target is a field the server mod writes the partner into |
+| Flight, a glide, a slide | nothing: `parameters` on the motion are enough |
+
+## `CbMotion`: the trigger
 
 | Group | Field | Meaning |
 |---|---|---|
 | When | `when` | **On a press**: once, when `action` goes down (a dash). **While**: every tick its `conditions` hold (flight, a glide, a jetpack). **On a cue**: once, when the mod event `event` is recorded at the player (a stun a server mod starts) |
 | | `action` | On a press: one a server mod declares (`dash`), or the engine's `jump` / `sprint`. Held, it is one press |
 | | `event` | On a cue: the event. A server mod emits it at the player, so the start is the server's and comes with the frame; from then on every simulation runs the motion |
-| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held, a stance), whether a key is down (`held.jump`, `held.dash`) or went down this tick (`pressed.dash`), and `tethered` (a tether of the player's is out) |
+| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held, a stance), whether a key is down (`held.jump`, `held.dash`) or went down this tick (`pressed.dash`), and `linked` (a probe of the player's is out) |
 | | `cooldown` | seconds between two uses; for a While, between its end and its next start |
 | Uses | `uses` | how many before a refill; 0: no limit. Not for a While |
 | | `refill`, `refill_seconds` | **On the ground**: back when the player stands. **After seconds**: back that long after the last use |
-| Impulse | `impulse` | the change of velocity, m/s. A While adds that much every second it is on: a thrust |
-| | `impulse_frame` | **Look** (the camera, pitch included), **Move input** (WASD; the facing when none is held), **Facing**, **Up**, **World direction** (`impulse_direction`) |
-| | `replace` | what of the velocity is cleared first: **Nothing**, **Vertical speed**, **Horizontal velocity**, **All**. Not for a While |
-| While it lasts | `duration` | how long the motion stays on after a press or a cue. A While is on while its conditions hold |
+| While it lasts | `duration` | how long the motion is on after it starts (with a probe: after the probe takes hold). A While is on while its conditions hold |
+| | `until` | expressions, any of which ends it (`pressed.grapple`, `not held.grapple`). With one, or with a probe, and no `duration`, the motion is on until something ends it. Not for a While |
 | | `parameters` | [movement parameters](server-mods.md#movement-parameters) the player has while it is on (`friction` = 0). They win over the server's, the character's and a mod's `SetMove` for that long |
 | When it happens | `changes` | fields of the player: `dash.charges -= 1` (`-=`, `+=`, `=` with a number), written like a [prediction's](looks.md#predictions). In a While, `-=` and `+=` are per second and need a Float field (`flight.fuel -= 30`), and `=` is set when it starts |
-| | `emits` | a mod event at the player, with the impulse as its vector. A While emits it when it starts |
+| | `emits` | a mod event at the player; with a probe, at the point it will hold. A While emits it when it starts |
 
 - **Order**: a tick runs the frame's commands, then each player's motions (in the schema's order), then the mover. So a `Set` from the mod and a `change` from a motion in the same tick both count.
 - **Conditions read the fields as the tick found them**: a motion that changes a field does not start another until the next tick. That is what makes a toggle of two motions (`FlyOn` if not `flight.on`, `FlyOff` if `flight.on`) one switch a press.
 - **A frozen or dead player** does none; a key held through a freeze is not a press when it ends.
 - **At most 16 motions** on a server, all its mods' sets together.
-- **In the editor**: every group has an info row (click the icon), every property a hover text, F1 opens the class reference. A motion that cannot run is a warning on the node and stops the bake.
+- **In the editor**: every group has an info row (click the icon), every property a hover text, F1 opens the class reference. A part that cannot run is a warning on its node, on its motion and on the set, and stops the bake.
 - **Names the editor cannot check**: the action, fields and events are the server mod's. One no mod declares makes that part do nothing (the motion never happens, the change is skipped, nothing is emitted), and the server says so when it starts.
 
-## Tethers: the grapple mod
+## Effects: on whom, in which direction
 
-A tether is a line a motion throws at what the player looks at. It flies there, takes hold, and
-pulls; with a rope it also keeps the player within the rope's length, so the player swings.
-`server_mods/grapple` is one motion and a look. Its C++ declares three names.
+Every `CbImpulse`, `CbForce` and `CbLink` has the same two questions (`CbMotionEffect`).
 
-```
-Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grapple_moves.tscn)
-└── Hook   on "grapple" (Q)   conditions not tethered
-           tether: range 40 m, flies at 60 m/s, a rope, pull 24, reel 4, until pressed.grapple
-           parameters { airborne: 1, air_control: 0.6 }       emits grapple.fired
-```
+| `target` | Acts on |
+|---|---|
+| **The player** | whose motion it is |
+| **What the probe found** | a prop or a player, at the point the probe holds. The world takes nothing |
+| **The entity a field names** | `target_field`: a field of the player holding an entity's id (`bind.partner`), which the server mod writes. Names nothing: the effect does nothing |
+
+| `frame` | The direction |
+|---|---|
+| **Look** | where the camera looks, pitch included |
+| **Move input** | WASD, relative to the camera; the facing when none is held |
+| **Facing**, **Up** | where the body faces; straight up |
+| **World direction** | `direction`, as given |
+| **Toward the target** | from the player to the target; for an effect on the player itself, to what its probe found. A pull |
+
+The direction is always the acting player's own: "look" on another player pushes it where *you* look.
+
+### `CbImpulse`
+
+Once, on the tick the motion starts (with a probe: when it takes hold).
 
 | Field | Meaning |
 |---|---|
-| `tether_range` | how far the line reaches, in metres; 0: the motion throws none. With a tether the motion **happens only if the line finds something** |
-| `tether_travel` | the speed it flies at: it takes hold after distance / speed. 0: at once |
-| `tether_rope` | the distance when it takes hold is a rope's length: the player cannot go further out. Off: it only pulls |
-| `tether_pull` | acceleration toward the point while it holds, m/s per second |
-| `tether_reel` | metres of rope taken in a second (never shorter than a metre) |
-| `tether_until` | expressions, any of which lets it go. Without one it holds until what it holds on to is gone |
+| `speed` | the change of velocity, m/s (up to 200), whatever the target weighs |
+| `replace` | what of the target's velocity is cleared first: **Nothing**, **Vertical speed**, **Horizontal velocity**, **All** |
+
+### `CbForce`
+
+Every tick the motion is on.
+
+| Field | Meaning |
+|---|---|
+| `kind` | **Acceleration**: `strength` in m/s², the same for everything (a jetpack). **Force**: newtons, divided by what the target weighs (a hook's pull). **Velocity**: brings the target's speed along the direction to `speed`, by at most `strength` m/s per second (a conveyor, a brake) |
+| `strength` | how hard |
+| `speed` | Acceleration and Force: a top speed along the direction, past which it pushes no more (0: none). Velocity: the speed it goes to |
+| `ramp_in` | seconds over which it rises from nothing to its strength |
+| `react` | the other end takes the same momentum the other way: the player, when the force is on something else; what the probe found, when it is on the player |
+
+- **A ramp hides latency.** Other players see your press a moment late; a force that takes 0.15 s to arrive is still weak when they catch up, so little has to be corrected. It is also what makes a pull feel heavy.
+- **`react` is what makes weight count**: hooked to a crate, the crate comes to you; hooked to something ten times your weight, you go to it.
+
+### `CbLink`
+
+A rope between the player and the target, every tick the motion is on. Slack, it does nothing. Taut,
+the two come back to its length, and what that takes is shared by what they weigh: the world gives
+nothing (you swing), a light crate trails behind you, of two players the lighter is dragged more.
+
+| Field | Meaning |
+|---|---|
+| `target` | what the probe found (the default), or the entity a field names. Not the player itself |
+| `length` | metres. 0: as long as the two are apart when the probe takes hold (a motion without a probe has to give one) |
+| `reel` | with a length of 0: metres of rope taken in a second (never shorter than a metre) |
+
+## Weight
+
+Players weigh something: `mass` is a [movement parameter](server-mods.md#movement-parameters) (80 kg).
+
+| Where it counts | How |
+|---|---|
+| Walking into a prop | the player and the prop trade momentum by their masses: a 4 kg crate is kicked away, a 2 t block stops you |
+| A `CbForce` of kind Force | newtons divided by the mass |
+| A `react`, a `CbLink` | shared by the two masses |
+| A ragdoll | weighs what its player did |
+
+- **Who sets it**: like any parameter. The server (`--move mass=120`), the character, a mod (`ctx.SetMove( target, MoveParam::Mass, 300.0f )` for a suit of armour), a motion's `parameters` (heavy while it is on).
+- **The controller stays kinematic**: a player is still moved by the mover, not by the solver; the mass decides what its contacts and effects exchange. A player is not knocked over by a prop.
+- **Props** weigh their shape's density times its volume (40 kg/m³ unless the map says otherwise: a 1 m crate is 40 kg).
+
+## Probes, forces and links: the grapple mod
+
+A probe is a line a motion throws at what the player looks at. `server_mods/grapple` is one motion
+with three parts, and a look. Its C++ declares three names.
+
+```
+Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grapple_moves.tscn)
+└── Hook      CbMotion   on "grapple" (Q)   conditions not linked   until pressed.grapple
+    │                    parameters { airborne: 1, air_control: 0.6 }       emits grapple.fired
+    ├── Line  CbProbe    range 40 m, flies at 60 m/s
+    ├── Pull  CbForce    on the player, toward the target: 1920 N, ramp 0.15 s, react
+    └── Rope  CbLink     to what the probe found: its length when it takes hold, reel 4 m/s
+```
+
+| `CbProbe` | Meaning |
+|---|---|
+| `range` | how far the line reaches, in metres. The motion **happens only if the line finds something** |
+| `travel` | the speed it flies at: it takes hold after distance / speed. 0: at once |
 
 | Step | What happens |
 |---|---|
 | The throw | two traces, like a shot: what is under the crosshair (along the camera's line from the point it orbits, or a shoulder), then from the player to that point, so something in between stops it. Nothing within range: nothing happens, not even the cooldown |
 | What it finds | the world: a point. A prop: a point on that body, which moves with it. A player: a point on its capsule (not a limb: hitboxes are the server's) |
-| Flying | until `distance / tether_travel` has passed, nothing pulls; the look draws the line growing |
-| Holding | the pull, the reel and the rope, every tick, before the mover. A prop it holds on to is pulled the other way with the player's weight |
-| While it holds | the motion is on: its `parameters` hold. The grapple's `airborne` = 1 puts the player in the air from the moment the hook takes hold until it lets go: nothing rubs the pull off, the in-air animation plays, and the player falls back to the ground afterwards. In flight the parameters do not hold yet |
-| Letting go | `tether_until`; what it held on to being destroyed; the player dying, or being put somewhere else (a respawn) |
+| Flying | until `distance / travel` has passed, the motion is not on yet: no parameters, no effects; the look draws the line growing |
+| Holding | the motion is on. Its effects run every tick, before the mover: here the pull (1920 N is 24 m/s² on an 80 kg player) and the rope. `react` pulls what it holds back with the same force, so a crate flies to the player and a heavy one hardly moves |
+| While it holds | its `parameters` hold. The grapple's `airborne` = 1 puts the player in the air from the moment the hook takes hold until it lets go: nothing rubs the pull off, the in-air animation plays, and the player falls back to the ground afterwards |
+| Letting go | `until`; a `duration`; what it held on to being destroyed; the player dying, or being put somewhere else (a respawn) |
 
 - **Hold or toggle** is two lines of the motion:
 
-  | | `conditions` | `tether_until` |
+  | | `conditions` | `until` |
   |---|---|---|
-  | Press to throw, press again to let go (the grapple mod) | `not tethered` | `pressed.grapple` |
+  | Press to throw, press again to let go (the grapple mod) | `not linked` | `pressed.grapple` |
   | Hold to grapple | | `not held.grapple` |
 
-  `not tethered` keeps the second press from throwing a second line; `pressed.grapple` is that press letting the first go. A hook that ends by itself (its prop destroyed, a death) leaves nothing behind: the next press throws.
-- **One tether per player**: a second throw replaces the first.
-- **The event** a tether motion emits is at the point where it will hold (a puff there), and its vector is the motion's impulse.
-- **It is state** (`Tether`, a component a player has once it threw one): hashed, rolled back, in snapshots.
+  `not linked` keeps the second press from throwing a second line; `pressed.grapple` is that press letting the first go. A hook that ends by itself (its prop destroyed, a death) leaves nothing behind: the next press throws.
+- **One probe per player**: a second throw replaces the first.
+- **It is state** (`MotionHold`, a component a player has once it threw one): hashed, rolled back, in snapshots.
 
-### The rope: `CbTetherLook`
+### The rope: `CbLinkLook`
 
 ```
 GrappleReactions            (vfx/reactions_grapple.tscn)
-├── Rope    CbTetherLook    motion "grapple.moves/Hook"   scene vfx/grapple_rope.tscn   from "RightHand"
+├── Rope    CbLinkLook      motion "grapple.moves/Hook"   scene vfx/grapple_rope.tscn   from "RightHand"
 ├── Fired   CbReaction      on grapple.fired, subject $at: the throw's sound at the hand
 └── Hit     CbReaction      on grapple.fired, subject $at: a puff at the cue's point
 ```
 
 | Field | Meaning |
 |---|---|
-| `motion` | whose tethers it draws: the set and the node (`grapple.moves/Hook`). Empty: any tether without a look of its own |
-| `scene` | a scene one metre long along its -Z; the game stretches it from the player to the tether's end, while it flies and while it holds |
+| `motion` | whose line it draws: the set and the node (`grapple.moves/Hook`). Empty: any line without a look of its own |
+| `scene` | a scene one metre long along its -Z; the game stretches it from the player to the line's end, while it flies and while it holds |
 | `from` | the player's socket it starts at (`RightHand`); empty, or a socket the character lacks: its chest |
 
-In conditions (a reaction, a HUD node), `tethered` is true for a player whose tether is out, and
-`tether_holds` once it has taken hold.
+In conditions (a reaction, a HUD node), `linked` is true for a player whose line is out, and
+`link_holds` once it has taken hold.
 
 ## A motion a server can switch off
 
@@ -167,8 +258,9 @@ Moves     CbMotionSet   set_name "flight.moves"             (motion_sets/flight_
 ├── FlyOff   on "fly" (T)   conditions flight.on        changes flight.on = 0    emits flight.stopped
 ├── Flying   while   flight.on
 │                    parameters { gravity: 0, move_frame: 1, air_control: 1, air_friction: 3, walk_speed: 7, sprint_speed: 12 }
-├── Thrust   while   held.jump, not grounded, not flight.on, flight.fuel > 0
-│                    impulse 26 m/s per second up     changes flight.fuel -= 30     emits flight.thrust
+├── Thrust   while   flight.jetpack_on, held.jump, not grounded, not flight.on, flight.fuel > 0
+│   │                changes flight.fuel -= 30     emits flight.thrust
+│   └── Lift   CbForce   acceleration 26 m/s² up (gravity is 18)
 ├── Refuel   while   grounded, flight.fuel < 100      changes flight.fuel += 40
 └── Glide    while   held.sprint, not grounded, vertical_speed < 0, not flight.on
                      parameters { gravity: 3, max_fall: 2.5, air_control: 0.8 }
@@ -207,17 +299,26 @@ with `"[{key:dash}]  DASH {dash.charges} / {dash.max}"`, and the count drops on 
 `motions/<set_name>.cfg`, tab-separated, written on save and when the mod is published. Never edited.
 
 ```
-cinderbox_motions	1
+cinderbox_motions	2
 motion	Dash
 when	press	dash
 if	( dash.charges > 0 )
 cooldown	0.4
 duration	0.18
-impulse	11	move	horizontal
 param	friction	0
+impulse	self	11	move	horizontal
 change	dash.charges	-=	1
 emit	dash.started
 ```
+
+| Line | Fields |
+|---|---|
+| `probe` | range, travel |
+| `impulse` | target, speed, frame, replace, and x y z for a world direction |
+| `force` | target, frame, kind (`accel`, `force`, `velocity`), strength, speed, ramp, react (0 or 1), and x y z |
+| `link` | target, length, reel |
+
+A target is `self`, `hit` or `@field`.
 
 | Step | Who |
 |---|---|
@@ -234,21 +335,22 @@ emit	dash.started
 | | |
 |---|---|
 | The server | has the dash on the tick of the press: 3 m/s before, 11 m/s after, a charge taken |
-| The client | predicted every tick of the two dashes and the double jump exactly as the server then had it: 390 ticks compared, none different |
+| The client | predicted every tick of the two dashes and the double jump exactly as the server then had it: 384 ticks compared, none different |
 | The recording | replays to the same checksums, motions included |
 
 `net_flight` does the same for the flight mod: flight switched on, a flight into the sandbox's wall, off and down, the jetpack
-held until its tank is empty, a glide, the landing and the refuel. 1,710 predicted ticks compared, none different: the
+held until its tank is empty, a glide, the landing and the refuel. 1,664 predicted ticks compared, none different: the
 position, the fuel's exact bits, the events.
 
 `net_grapple` does it for the hook: two throws at walls, the flight of the line, the pull along the rope and the letting
-go. 501 predicted ticks compared, none different (the position and the line's end). Then two players put their hooks in
-one ball: both hold on to it, it goes 16 m, and both clients have the server's state for every confirmed tick.
+go. 505 predicted ticks compared, none different (the position and the line's end). Then two players put their hooks in
+one ball: both hold on to it, it goes 8 m, and both clients have the server's state for every confirmed tick.
 
 ## Not yet
 
 | Missing | Roadmap |
 |---|---|
-| A tether pulls a prop but not another player (the line follows a player it holds on to); in first person the line's start is the same point as in third person, not the eye | later |
+| An effect on another player is felt by it on its next tick when it has a lower slot (it has moved already), and no test hooks one player to another yet. In first person a line starts at the same point as in third person, not the eye | later |
+| A lasting force as a server mod's command (C++), a knocked-down ragdoll a heavy hit puts a player in, carrying a player, structures that break | later |
 | A preview panel; `motion.<name>` in conditions and state machines; names checked at publish | Motions in the editor |
 | Another player's dash is seen when its input arrives: its press is guessed by repeating its last input, as a jump is | by design |

@@ -23,7 +23,7 @@ Milestones M1 to M98 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
 | [docs/looks.md](docs/looks.md) | reactions, predictions, the expression language, HUD nodes, the Cue Preview, client mods |
 | [docs/characters.md](docs/characters.md) | characters, state machines, layers and stances, aiming, animation packs |
 | [docs/items.md](docs/items.md) | held items, sockets, the inventory, grips, items in the world |
-| [docs/motions.md](docs/motions.md) | what a mod adds to movement (a dash, a double jump, flight, a jetpack, a grappling hook), predicted: `CbMotion` |
+| [docs/motions.md](docs/motions.md) | what a mod adds to movement (a dash, a double jump, flight, a jetpack, a grappling hook), predicted: `CbMotion` and its parts (impulses, forces, probes, links); what players weigh |
 | [docs/maps.md](docs/maps.md) | maps, templates and components |
 | [docs/testing.md](docs/testing.md) | the tools, the determinism checks, CI |
 | [sdk/README.md](sdk/README.md) | the Godot project a mod's look is made in |
