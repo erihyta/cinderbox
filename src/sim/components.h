@@ -210,6 +210,7 @@ struct MotionSlot
 	uint32_t lastTick = 0;	// the tick of its last use, plus one; 0: never
 	uint32_t untilTick = 0; // it is on (its movement parameters hold) while the tick is below this
 	uint32_t used = 0;		// uses since the last refill
+	uint32_t sinceTick = 0; // the tick it took effect (a probe: when it took hold): forces ramp from it
 };
 
 struct MotionState
@@ -219,18 +220,17 @@ struct MotionState
 	MotionSlot slots[kMaxMotions] = {};
 };
 
-// A player's tether (sim/motions.h): a line a motion threw at what the player looked at, which
-// then pulls the player toward it and, with a rope, holds it within the rope's length (a
-// grappling hook). Players have the component once they have thrown one; `on` says whether one is
-// out now.
-struct Tether
+// What a motion's probe holds on to (sim/motions.h): a line the motion threw at what the player
+// looked at. Its effects act on it ("hit"), and a link is a rope to it (a grappling hook). Players
+// have the component once they have thrown one; `on` says whether one is out now.
+struct MotionHold
 {
 	uint32_t anchor = 0;	// NetId of what it holds on to (a prop, a player); 0: a point of the world
 	b3Vec3 point = {};		// the world point; on an anchor, the point in that body's frame
-	float length = 0.0f;	// the rope, in metres; 0: no rope, it only pulls
+	float length = 0.0f;	// a link's rope, in metres; 0: not measured yet (or no link)
 	uint32_t startTick = 0; // when it was thrown
 	uint32_t holdTick = 0;	// when it reaches the point and takes hold (it flies until then)
-	uint8_t motion = 0;		// the motion it belongs to (its pull, its reel, what lets it go)
+	uint8_t motion = 0;		// the motion it belongs to
 	uint8_t on = 0;
 	uint8_t reserved[2] = {};
 };
@@ -284,8 +284,8 @@ CB_CHECK_COMPONENT( Ragdoll, 20 );
 CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );
 CB_CHECK_COMPONENT( RagdollPose, 40 * kRagdollParts );
 CB_CHECK_COMPONENT( MoveOverrides, 4 + 4 * kMoveParams );
-CB_CHECK_COMPONENT( MotionState, 4 + 12 * kMaxMotions );
-CB_CHECK_COMPONENT( Tether, 32 );
+CB_CHECK_COMPONENT( MotionState, 4 + 16 * kMaxMotions );
+CB_CHECK_COMPONENT( MotionHold, 32 );
 
 #undef CB_CHECK_COMPONENT
 

@@ -17,7 +17,7 @@
 //
 // Conditions read simulation values only, so every machine gets the same answer:
 //   speed, forward_speed, move_forward, move_right, vertical_speed, grounded, airborne_time, jumped,
-//   aiming, backward, state_time; (for motions: tethered, held.<action>, pressed.<action>;) a stance's name (true while any layer has it); a mod event's name (on the tick it
+//   aiming, backward, state_time; (for motions: linked, held.<action>, pressed.<action>;) a stance's name (true while any layer has it); a mod event's name (on the tick it
 //   is emitted at this player: its value, or 1 when that is 0, so "attack" and "attack == 2" both
 //   read); a board field's name (the player's value, or the global one); an item kind's name (true
 //   while the player holds one, in any socket: "attack and melee.bat").
@@ -94,8 +94,9 @@ struct AnimExpr
 		StateTime,
 		MoveForward,
 		MoveRight,
-		// A tether of the player's is out (sim/motions.h). Motions read it; a state machine reads 0.
-		Tethered,
+		// A probe of the player's motions holds on to something (sim/motions.h). Motions read it; a
+		// state machine reads 0.
+		Linked,
 		BuiltinCount,
 	};
 	struct Step

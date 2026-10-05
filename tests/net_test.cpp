@@ -2986,7 +2986,7 @@ void TestGrapple()
 			}
 			Seen seen{ sim.EntityTransform( netId )->position, {}, false, false, sim.Globals().modEventCount };
 			uint8_t motion = 0;
-			seen.tethered = sim.EntityTether( netId, seen.end, seen.holds, motion );
+			seen.tethered = sim.EntityHold( netId, seen.end, seen.holds, motion );
 			into[sim.Tick()] = seen;
 		};
 		h.RunUntil( 13.0, [&]( double ) {
@@ -3088,7 +3088,7 @@ void TestGrapple()
 				for ( int i = 0; i < 2; ++i )
 				{
 					flecs::entity e = server.FindEntity( server.PlayerNetId( h.bots[size_t( i )].client->Slot() ) );
-					const Tether* tether = e.is_valid() ? e.try_get<Tether>() : nullptr;
+					const MotionHold* tether = e.is_valid() ? e.try_get<MotionHold>() : nullptr;
 					on += tether != nullptr && tether->on != 0 && tether->anchor == ball ? 1 : 0;
 				}
 				bothOn = std::max( bothOn, on );

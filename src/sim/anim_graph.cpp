@@ -19,7 +19,7 @@ constexpr float kMinClipLength = 1.0f / 1024.0f;
 
 const char* const kBuiltinNames[AnimExpr::BuiltinCount] = {
 	"speed",	  "forward_speed", "vertical_speed", "grounded",	"airborne_time", "jumped",
-	"aiming",	  "backward",	   "state_time",	 "move_forward", "move_right",	"tethered",
+	"aiming",	  "backward",	   "state_time",	 "move_forward", "move_right",	"linked",
 };
 
 // --- Expressions ----------------------------------------------------------------------------------

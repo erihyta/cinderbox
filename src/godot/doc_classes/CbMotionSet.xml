@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="CbMotionSet" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<class name="CbMotionSet" inherits="CbMotionPart" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<brief_description>
 		A mod's motions: the [CbMotion] nodes under it, baked to one file the server reads.
 	</brief_description>

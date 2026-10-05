@@ -33,7 +33,7 @@ struct AnimGraph;
 // Surface values Box3D needs when a shape is created. Authored through the Material component.
 struct ShapeMaterial
 {
-	float density = 1.0f;
+	float density = 40.0f; // kg/m^3: a crate 0.8 m across is 20 kg
 	float friction = 0.6f;
 	float restitution = 0.0f;
 };
@@ -151,9 +151,10 @@ public:
 	// How the player in `slot` moves (move_params.h): the server's parameters, with what mods set for
 	// that player. The server's alone when the slot is empty.
 	MoveParams PlayerMove( PlayerSlot slot ) const;
-	// The entity's tether, if one is out: where its end is now (flying toward where it will hold, or
-	// holding), and whether it holds. False when it has none.
-	bool EntityTether( uint32_t netId, b3Vec3& end, bool& holds, uint8_t& motion ) const;
+	// What a probe of the entity's motions holds on to, if one is out: where the line's end is now
+	// (flying toward where it will hold, or holding), whether it holds, and the motion that threw
+	// it. False when it has none.
+	bool EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint8_t& motion ) const;
 	const Transform* EntityTransform( uint32_t netId ) const;
 	// A player's animation state, or null.
 	const AnimState* EntityAnimState( uint32_t netId ) const;
@@ -273,12 +274,19 @@ private:
 	void MoveCharacters( const InputFrame& frame );
 	// The parameters the mover uses for this player: the server's, with what mods set for it.
 	MoveParams MoveOf( flecs::entity e ) const;
-	// Throws `motion`'s tether for the player `e` along its look: false when it finds nothing.
-	bool AttachTether( flecs::entity e, const Transform& t, const PlayerInput& in, const Motion& motion, size_t index );
-	// Where a tether holds on, in the world; false when what it held on to is gone.
-	bool TetherPoint( const Tether& tether, b3Vec3& point ) const;
-	// One tick of a tether that is out: lets it go, or pulls.
-	void StepTether( flecs::entity e, Character& c, const Transform& t, MotionState& motion, const AnimGraphInputs& values );
+	// Throws `motion`'s probe for the player `e` along its look: false when it finds nothing.
+	bool AttachHold( flecs::entity e, const Transform& t, const PlayerInput& in, const Motion& motion, size_t index, uint32_t& holdTick );
+	// Where a hold is, in the world; false when what it held on to is gone.
+	bool HoldPoint( const MotionHold& hold, b3Vec3& point ) const;
+	// The effects of the motions that are on for the player `e` this tick: impulses, forces and
+	// links, on the player (`c`, not yet stored) and on their targets.
+	struct MotionEnd;
+	MotionEnd ResolveEnd( flecs::entity self, const Transform& t, const MotionTarget& target, const MotionHold* hold,
+						  const Blackboard& board ) const;
+	b3Vec3 EndVelocity( const MotionEnd& end, const Character& c ) const;
+	void PushEnd( const MotionEnd& end, Character& c, b3Vec3 change );
+	void ApplyMotionEffects( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const MotionState& state,
+							 const Blackboard& board, const std::vector<MotionActive>& active );
 	void ExpireProps();
 	void EnforcePropCaps();
 	void SyncFromPhysics();
@@ -321,6 +329,7 @@ private:
 	std::vector<ItemShape> m_itemShapes;
 	std::shared_ptr<const Motions> m_motions;
 	std::vector<ModEventRecord> m_motionEvents;
+	std::vector<MotionActive> m_motionActive;
 	// An item leaves the hand and lies in the world at its grip (a body of its kind's shape), or
 	// the other way round.
 	void PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity );

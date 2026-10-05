@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbMotionEffect" inherits="CbMotionPart" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		What a motion does to a body: the base of [CbImpulse], [CbForce] and [CbLink]. On whom, and in which direction.
+	</brief_description>
+	<description>
+		Not a node to add: add a [CbImpulse], a [CbForce] or a [CbLink] under a [CbMotion]. A motion can have several, and they run in the order of the tree.
+		Every effect has a [member target] (who it acts on) and a direction ([member frame]). The direction is always the acting player's own, whoever the effect acts on: "look" on another player pushes it where [i]you[/i] look.
+		Bodies have weight. A player weighs its [code]mass[/code] movement parameter (80 kg unless a server, a character or a mod says otherwise); a prop, its shape's density. The world cannot be pushed.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="target" type="int" setter="set_target" getter="get_target" enum="CbMotionEffect.Target" default="0">
+			Who the effect acts on.
+		</member>
+		<member name="target_field" type="String" setter="set_target_field" getter="get_target_field" default="&quot;&quot;">
+			With [constant TARGET_FIELD]: a field of the player that holds an entity's id ([code]bind.partner[/code]). The server mod declares it and writes into it; while it names nothing that exists, the effect does nothing.
+		</member>
+		<member name="frame" type="int" setter="set_frame" getter="get_frame" enum="CbMotionEffect.Frame" default="1">
+			The direction of the effect.
+		</member>
+		<member name="direction" type="Vector3" setter="set_direction" getter="get_direction" default="Vector3(0, 1, 0)">
+			With [constant FRAME_WORLD]: the direction, in the world. Its length does not matter.
+		</member>
+	</members>
+	<constants>
+		<constant name="TARGET_SELF" value="0" enum="Target">
+			The player whose motion it is.
+		</constant>
+		<constant name="TARGET_HIT" value="1" enum="Target">
+			What the motion's [CbProbe] found: a prop or a player, at the point it holds. The world takes nothing.
+		</constant>
+		<constant name="TARGET_FIELD" value="2" enum="Target">
+			The entity [member target_field] names: another player, a prop.
+		</constant>
+		<constant name="FRAME_LOOK" value="0" enum="Frame">
+			Where the camera looks, pitch included.
+		</constant>
+		<constant name="FRAME_MOVE" value="1" enum="Frame">
+			Where the movement input points, relative to the camera; where the body faces when there is none. A dash.
+		</constant>
+		<constant name="FRAME_FACING" value="2" enum="Frame">
+			Where the body faces.
+		</constant>
+		<constant name="FRAME_UP" value="3" enum="Frame">
+			Straight up. A jump.
+		</constant>
+		<constant name="FRAME_WORLD" value="4" enum="Frame">
+			[member direction], as given.
+		</constant>
+		<constant name="FRAME_TO" value="5" enum="Frame">
+			From the player toward the target; for an effect on the player itself, toward what its [CbProbe] found. A pull.
+		</constant>
+	</constants>
+</class>

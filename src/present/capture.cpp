@@ -116,7 +116,7 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 		{
 			f.stepCount = ch->stepCount;
 			f.dead = ch->dead != 0;
-			f.tethered = sim.EntityTether( f.netId, f.tetherEnd, f.tetherHolds, f.tetherMotion );
+			f.linked = sim.EntityHold( f.netId, f.linkEnd, f.linkHolds, f.linkMotion );
 		}
 		if ( const Blackboard* b = e.try_get<Blackboard>() )
 		{

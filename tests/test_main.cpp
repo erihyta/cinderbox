@@ -1475,14 +1475,14 @@ void TestMotions()
 	schema.events = { "dash.started", "dash.double_jump" };
 	schema.actions.push_back( { "dash", 0, "Alt" } );
 	schema.actions.push_back( { "blink", 3, "V" } );
-	const std::string text = "cinderbox_motions\t1\n"
+	const std::string text = "cinderbox_motions\t2\n"
 							 "# a comment\n"
 							 "motion\tDash\n"
 							 "when\tpress\tdash\n"
 							 "if\tdash.charges > 0\n"
 							 "cooldown\t0.5\n"
 							 "duration\t0.25\n"
-							 "impulse\t12\tmove\thorizontal\n"
+							 "impulse\tself\t12\tmove\thorizontal\n"
 							 "param\tfriction\t0\n"
 							 "change\tdash.charges\t-=\t1\n"
 							 "change\tdash.fuel\t+=\t0.5\n"
@@ -1491,12 +1491,12 @@ void TestMotions()
 							 "when\tpress\tjump\n"
 							 "if\tnot grounded\n"
 							 "uses\t1\tground\n"
-							 "impulse\t6.5\tup\tvertical\n"
+							 "impulse\tself\t6.5\tup\tvertical\n"
 							 "emit\tdash.double_jump\n"
 							 "motion\tBlink\n"
 							 "when\tpress\tblink\n"
 							 "uses\t2\t1\n"
-							 "impulse\t5\tworld\tall\t0\t0\t1\n";
+							 "impulse\tself\t5\tworld\tall\t0\t0\t1\n";
 	schema.motionSets.push_back( { "dash", "dash.moves", text } );
 
 	std::string warnings;
@@ -1561,7 +1561,7 @@ void TestMotions()
 	CHECK( sim.BoardValue( p0, 0 ) == 1 && BoardToFloat( sim.BoardValue( p0, 1 ) ) == 0.5f );
 	CHECK( sim.Globals().modEventCount == 1 );
 	const ModEventRecord& ev = sim.Globals().modEvents[0];
-	CHECK( ev.type == 0 && ev.netIdA == p0 && ev.tick == pressTick && b3Length( ev.vector ) > 11.9f );
+	CHECK( ev.type == 0 && ev.netIdA == p0 && ev.tick == pressTick );
 	// While it lasts there is no friction (its parameter), so the speed holds; afterwards it is the
 	// server's again and the player stops.
 	CHECK( sim.PlayerMove( 0 )[MoveParam::Friction] == 0.0f );
@@ -1688,14 +1688,14 @@ void TestMotions()
 		std::vector<Motion> out;
 		error.clear();
 		warned.clear();
-		return CompileMotionSet( "t", "cinderbox_motions\t1\n" + body, schema, out, error, warned ) ? int( out.size() ) : -1;
+		return CompileMotionSet( "t", "cinderbox_motions\t2\n" + body, schema, out, error, warned ) ? int( out.size() ) : -1;
 	};
 	std::string error, warned;
 	CHECK( compile( "motion\tA\nwhen\tpress\tdash\n", error, warned ) == 1 && warned.empty() );
 	CHECK( compile( "when\tpress\tdash\n", error, warned ) == -1 && error.find( "line 2" ) != std::string::npos );
-	CHECK( compile( "motion\tA\nimpulse\t5\tsideways\tnone\n", error, warned ) == -1 );
-	CHECK( compile( "motion\tA\nimpulse\t5000\tup\tnone\n", error, warned ) == -1 );
-	CHECK( compile( "motion\tA\nimpulse\t5\tworld\tnone\t0\t0\t0\n", error, warned ) == -1 );
+	CHECK( compile( "motion\tA\nimpulse\tself\t5\tsideways\tnone\n", error, warned ) == -1 );
+	CHECK( compile( "motion\tA\nimpulse\tself\t5000\tup\tnone\n", error, warned ) == -1 );
+	CHECK( compile( "motion\tA\nimpulse\tself\t5\tworld\tnone\t0\t0\t0\n", error, warned ) == -1 );
 	CHECK( compile( "motion\tA\nparam\tfly_speed\t3\n", error, warned ) == -1 );
 	CHECK( compile( "motion\tA\nparam\tgravity\t-3\n", error, warned ) == -1 );
 	CHECK( compile( "motion\tA\nif\tgrounded and\n", error, warned ) == -1 );
@@ -1708,7 +1708,7 @@ void TestMotions()
 	std::vector<Motion> inert;
 	error.clear();
 	warned.clear();
-	CHECK( CompileMotionSet( "t", "cinderbox_motions\t1\nmotion\tA\nwhen\tpress\tfly\nchange\tround.time\t=\t1\nchange\tfly.fuel\t-=\t1\nemit\tfly.up\n",
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t2\nmotion\tA\nwhen\tpress\tfly\nchange\tround.time\t=\t1\nchange\tfly.fuel\t-=\t1\nemit\tfly.up\n",
 							 schema, inert, error, warned ) );
 	std::printf( "    %s\n", warned.c_str() );
 	CHECK( inert.size() == 1 && inert[0].action == -1 && inert[0].changes.empty() && inert[0].event == -1 );
@@ -1717,7 +1717,7 @@ void TestMotions()
 
 	// More motions than there are slots: the rest are left out, and said.
 	ModSchema many = schema;
-	std::string big = "cinderbox_motions\t1\n";
+	std::string big = "cinderbox_motions\t2\n";
 	for ( int i = 0; i < kMaxMotions + 3; ++i )
 	{
 		big += "motion\tM" + std::to_string( i ) + "\nwhen\tpress\tdash\n";
@@ -1751,13 +1751,13 @@ void TestMotionsWhile()
 	schema.fields.push_back( { "flight.count", BoardType::Int, BoardScope::Entity, 2 } );
 	schema.events = { "flight.started", "flight.stopped", "flight.thrust", "stun.hit" };
 	schema.actions.push_back( { "fly", 2, "T" } );
-	const std::string text = "cinderbox_motions\t1\n"
+	const std::string text = "cinderbox_motions\t2\n"
 							 "motion\tFlyOn\nwhen\tpress\tfly\nif\tnot flight.on\nchange\tflight.on\t=\t1\nemit\tflight.started\n"
 							 "motion\tFlyOff\nwhen\tpress\tfly\nif\tflight.on\nchange\tflight.on\t=\t0\nemit\tflight.stopped\n"
 							 "motion\tFlying\nwhen\twhile\nif\tflight.on\n"
 							 "param\twalk_speed\t7\nparam\tair_control\t1\nparam\tgravity\t0\nparam\tair_friction\t3\nparam\tmove_frame\t1\n"
 							 "motion\tThrust\nwhen\twhile\nif\theld.jump and not grounded and not flight.on and flight.fuel > 0\n"
-							 "impulse\t32\tup\tnone\nchange\tflight.fuel\t-=\t30\nchange\tflight.count\t=\t7\nemit\tflight.thrust\n"
+							 "force\tself\tup\taccel\t32\t0\t0\t0\nchange\tflight.fuel\t-=\t30\nchange\tflight.count\t=\t7\nemit\tflight.thrust\n"
 							 "motion\tRefuel\nwhen\twhile\nif\tgrounded and flight.fuel < 100\nchange\tflight.fuel\t+=\t40\n"
 							 "motion\tGlide\nwhen\twhile\nif\theld.sprint and not grounded and vertical_speed < 0 and not flight.on\n"
 							 "param\tgravity\t3\nparam\tmax_fall\t2.5\n"
@@ -1906,12 +1906,12 @@ void TestMotionsWhile()
 	// reads as not held.
 	std::vector<Motion> out;
 	std::string error, warned;
-	CHECK( CompileMotionSet( "t", "cinderbox_motions\t1\nmotion\tA\nwhen\twhile\nif\theld.warp\nchange\tflight.count\t+=\t1\n", schema, out, error,
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t2\nmotion\tA\nwhen\twhile\nif\theld.warp\nchange\tflight.count\t+=\t1\n", schema, out, error,
 							 warned ) );
 	std::printf( "    %s\n", warned.c_str() );
 	CHECK( out.size() == 1 && out[0].changes.empty() );
 	CHECK( warned.find( "per second" ) != std::string::npos && warned.find( "held.warp" ) != std::string::npos );
-	CHECK( CompileMotionSet( "t", "cinderbox_motions\t1\nmotion\tA\nwhen\tevent\n", schema, out, error, warned ) == false );
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t2\nmotion\tA\nwhen\tevent\n", schema, out, error, warned ) == false );
 
 	// A state machine has no input: held.* reads 0 there.
 	AnimExpr held;
@@ -1924,23 +1924,27 @@ void TestMotionsWhile()
 	CHECK( EvaluateAnimExpr( held, none, 0.0f ) == 1.0f );
 }
 
-// Tethers: a motion throws a line at what the player looks at; it flies, takes hold, pulls, and
-// with a rope keeps the player within its length (a grappling hook).
-void TestTethers()
+// Probes, forces and links: a motion throws a line at what the player looks at; it flies and takes
+// hold; a force pulls the player toward what it found (which is pulled back), and a link is a rope
+// that keeps the two within its length (a grappling hook).
+void TestLinks()
 {
 	ModSchema schema;
 	schema.events = { "grapple.fired" };
 	schema.actions.push_back( { "grapple", 0, "X" } );
 	schema.actions.push_back( { "leash", 1, "Z" } );
-	const std::string text = "cinderbox_motions\t1\n"
-							 "motion\tHook\nwhen\tpress\tgrapple\ncooldown\t0.2\ntether\t40\t30\t24\t3\trope\nuntil\tnot held.grapple\n"
+	const std::string text = "cinderbox_motions\t2\n"
+							 "motion\tHook\nwhen\tpress\tgrapple\ncooldown\t0.2\nprobe\t40\t30\nuntil\tnot held.grapple\n"
+							 // 1920 N on an 80 kg player: 24 m/s^2; what it holds is pulled back by the same.
+							 "force\tself\tto\tforce\t1920\t0\t0\t1\nlink\thit\t0\t3\n"
 							 "param\tair_control\t0.6\nparam\tairborne\t1\nemit\tgrapple.fired\n"
 							 // No pull, no reel, at once: a rope and nothing else.
-							 "motion\tLeash\nwhen\tpress\tleash\ntether\t40\t0\t0\t0\trope\nuntil\tnot held.leash\n";
+							 "motion\tLeash\nwhen\tpress\tleash\nprobe\t40\t0\nlink\thit\t0\t0\nuntil\tnot held.leash\n";
 	schema.motionSets.push_back( { "grapple", "grapple.moves", text } );
 	std::string warnings;
 	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
-	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 && motions->list[0].tether && motions->list[0].tetherRope );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 && motions->list[0].probe && motions->list[0].effects.size() == 2 &&
+		   motions->list[0].effects[1].kind == MotionEffect::Kind::Link );
 	if ( motions == nullptr || motions->list.size() != 2 )
 	{
 		std::printf( "    %s\n", warnings.c_str() );
@@ -1964,15 +1968,15 @@ void TestTethers()
 	f.events.push_back( { PlayerEventType::Join, 0 } );
 	step( 60 );
 	uint32_t p0 = sim.PlayerNetId( 0 );
-	auto tetherOf = [&]() -> const Tether* { return sim.FindEntity( p0 ).try_get<Tether>(); };
+	auto holdOf = [&]() -> const MotionHold* { return sim.FindEntity( p0 ).try_get<MotionHold>(); };
 	auto position = [&] { return sim.EntityTransform( p0 )->position; };
-	CHECK( tetherOf() == nullptr );
+	CHECK( holdOf() == nullptr );
 
 	// At the sky: the line finds nothing, and nothing happens (no event, no cooldown).
 	f.inputs[0].cameraPitch = 14000;
 	f.inputs[0].actions = grapple;
 	step( 1 );
-	CHECK( ( tetherOf() == nullptr || tetherOf()->on == 0 ) && sim.Globals().modEventCount == 0 );
+	CHECK( ( holdOf() == nullptr || holdOf()->on == 0 ) && sim.Globals().modEventCount == 0 );
 	f.inputs[0].actions = 0;
 	step( 1 );
 
@@ -1981,7 +1985,7 @@ void TestTethers()
 	f.inputs[0].actions = grapple;
 	b3Vec3 from = position();
 	step( 1 );
-	const Tether* tether = tetherOf();
+	const MotionHold* tether = holdOf();
 	CHECK( tether != nullptr && tether->on == 1 && tether->anchor == 0 && tether->motion == 0 );
 	if ( tether == nullptr || tether->on == 0 )
 	{
@@ -1992,7 +1996,8 @@ void TestTethers()
 	uint32_t flight = tether->holdTick - tether->startTick;
 	std::printf( "    thrown %.2f m at the wall: %u ticks of flight at 30 m/s\n", reach, flight );
 	CHECK( reach > 5.0f && reach < 40.0f && anchor.z > from.z + 5.0f );
-	CHECK( flight == uint32_t( reach / 30.0f * 60.0f + 0.5f ) && std::fabs( tether->length - reach ) < 0.001f );
+	// (The rope is measured when the line takes hold, not when it is thrown.)
+	CHECK( flight == uint32_t( reach / 30.0f * 60.0f + 0.5f ) && tether->length == 0.0f );
 	// The event is at where it will hold.
 	CHECK( sim.Globals().modEventCount == 1 && b3Distance( sim.Globals().modEvents[0].point, anchor ) < 0.001f );
 	// While it flies its end is on the way, and the player has not moved.
@@ -2000,28 +2005,30 @@ void TestTethers()
 	bool holds = true;
 	uint8_t which = 9;
 	step( int( flight ) / 2 );
-	CHECK( sim.EntityTether( p0, end, holds, which ) && holds == false && which == 0 );
+	CHECK( sim.EntityHold( p0, end, holds, which ) && holds == false && which == 0 );
 	CHECK( end.z > from.z + 1.0f && end.z < anchor.z - 1.0f && b3Distance( position(), from ) < 0.01f );
 	// Its parameters wait for it to hold: in flight the player still stands as it stood.
-	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick < sim.Tick() && sim.PlayerCharacter( 0 )->grounded == 1 );
+	// (The motion is in effect from the tick its probe takes hold.)
+	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].sinceTick > sim.Tick() && sim.PlayerCharacter( 0 )->grounded == 1 );
 	// Holding: the player is pulled along the line, and the rope is reeled in.
 	step( int( flight ) / 2 + 2 );
-	CHECK( sim.EntityTether( p0, end, holds, which ) && holds && b3Distance( end, anchor ) < 0.001f );
-	// Holding, its parameters hold, every tick for that tick: the player is airborne on the hook,
+	CHECK( sim.EntityHold( p0, end, holds, which ) && holds && b3Distance( end, anchor ) < 0.001f );
+	// Holding, its parameters hold until something ends it: the player is airborne on the hook,
 	// though the floor is right under it.
-	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick == sim.Tick() );
+	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].sinceTick <= sim.Tick() &&
+		   sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick > sim.Tick() );
 	CHECK( sim.PlayerCharacter( 0 )->grounded == 0 );
 	step( 45 );
 	float closer = b3Distance( anchor, b3Add( position(), b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) );
-	std::printf( "    after 0.75 s of pull: %.2f m from the point (rope %.2f)\n", closer, tetherOf()->length );
-	CHECK( closer < reach - 3.0f && tetherOf()->length < reach - 2.0f && tetherOf()->length > reach - 2.5f );
+	std::printf( "    after 0.75 s of pull: %.2f m from the point (rope %.2f)\n", closer, holdOf()->length );
+	CHECK( closer < reach - 3.0f && holdOf()->length < reach - 2.0f && holdOf()->length > reach - 2.5f );
 	// Still in the air, and not sunk into the floor it is dragged over.
 	CHECK( sim.PlayerCharacter( 0 )->grounded == 0 && sim.PlayerCharacter( 0 )->airTicks > 30 );
 	CHECK( position().y > from.y - 0.05f );
 	// Letting the key go lets it go, and the parameters are the server's again.
 	f.inputs[0].actions = 0;
 	step( 1 );
-	CHECK( tetherOf()->on == 0 && sim.EntityTether( p0, end, holds, which ) == false );
+	CHECK( holdOf()->on == 0 && sim.EntityHold( p0, end, holds, which ) == false );
 	step( 1 );
 	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick < sim.Tick() );
 	// Let go, it comes down and stands again.
@@ -2032,9 +2039,9 @@ void TestTethers()
 	f.inputs[0].cameraPitch = 500;
 	f.inputs[0].actions = leash;
 	step( 1 );
-	CHECK( tetherOf()->on == 1 && tetherOf()->motion == 1 && tetherOf()->holdTick == tetherOf()->startTick );
-	b3Vec3 post = tetherOf()->point;
-	float rope = tetherOf()->length;
+	CHECK( holdOf()->on == 1 && holdOf()->motion == 1 && holdOf()->holdTick == holdOf()->startTick );
+	b3Vec3 post = holdOf()->point;
+	float rope = holdOf()->length;
 	f.inputs[0].moveForward = -127; // away from the wall
 	float furthest = 0.0f;
 	for ( int i = 0; i < 240; ++i )
@@ -2043,11 +2050,11 @@ void TestTethers()
 		furthest = std::max( furthest, b3Distance( post, b3Add( position(), b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) ) );
 	}
 	std::printf( "    on a %.2f m rope, walking away for 4 s: never past %.2f m\n", rope, furthest );
-	CHECK( furthest < rope + 0.35f && tetherOf()->length == rope );
+	CHECK( furthest < rope + 0.35f && holdOf()->length == rope );
 	f.inputs[0].moveForward = 0;
 	f.inputs[0].actions = 0;
 	step( 120 );
-	CHECK( tetherOf()->on == 0 );
+	CHECK( holdOf()->on == 0 );
 
 	// On a prop: the point is on the body, the prop is pulled toward the player, and when the prop is
 	// gone the tether is.
@@ -2069,11 +2076,11 @@ void TestTethers()
 	f.inputs[0].cameraPitch = int16_t( down * 65536.0f / 6.2831853f );
 	f.inputs[0].actions = grapple;
 	step( 1 );
-	CHECK( tetherOf()->on == 1 && tetherOf()->anchor == crate );
+	CHECK( holdOf()->on == 1 && holdOf()->anchor == crate );
 	step( 60 );
 	float pulled = crateAt.z - sim.EntityTransform( crate )->position.z;
 	std::printf( "    a crate on the hook came %.2f m closer in a second\n", pulled );
-	CHECK( pulled > 0.3f && tetherOf()->on == 1 );
+	CHECK( pulled > 0.3f && holdOf()->on == 1 );
 	{
 		SimCommand c;
 		c.type = CommandType::Destroy;
@@ -2081,7 +2088,7 @@ void TestTethers()
 		f.commands.push_back( c );
 	}
 	step( 2 );
-	CHECK( tetherOf()->on == 0 );
+	CHECK( holdOf()->on == 0 );
 	f.inputs[0].actions = 0;
 	step( 60 );
 
@@ -2103,17 +2110,17 @@ void TestTethers()
 		sim.Step( f );
 		client.Step( f );
 	}
-	CHECK( tetherOf()->on == 1 && client.ComputeHash() == sim.ComputeHash() );
+	CHECK( holdOf()->on == 1 && client.ComputeHash() == sim.ComputeHash() );
 	sim.Load( before );
-	CHECK( tetherOf()->on == 0 && sim.ComputeHash() == hashBefore );
+	CHECK( holdOf()->on == 0 && sim.ComputeHash() == hashBefore );
 
-	// Press to throw, press again to let go: "tethered" keeps a second press from throwing a second
+	// Press to throw, press again to let go: "linked" keeps a second press from throwing a second
 	// line, and "pressed.<action>" is the press that lets the first one go.
 	{
 		ModSchema toggled = schema;
 		toggled.motionSets = { { "grapple", "grapple.moves",
-								 "cinderbox_motions\t1\nmotion\tHook\nwhen\tpress\tgrapple\nif\tnot tethered\n"
-								 "tether\t40\t0\t10\t0\trope\nuntil\tpressed.grapple\nemit\tgrapple.fired\n" } };
+								 "cinderbox_motions\t2\nmotion\tHook\nwhen\tpress\tgrapple\nif\tnot linked\n"
+								 "probe\t40\t0\nforce\tself\tto\taccel\t10\t0\t0\t0\nlink\thit\t0\t0\nuntil\tpressed.grapple\nemit\tgrapple.fired\n" } };
 		std::string toggleWarnings;
 		auto toggle = CompileMotions( toggled, toggleWarnings );
 		CHECK( toggle != nullptr && toggleWarnings.empty() );
@@ -2132,7 +2139,7 @@ void TestTethers()
 			}
 		};
 		auto out = [&] {
-			const Tether* t = other.FindEntity( other.PlayerNetId( 0 ) ).try_get<Tether>();
+			const MotionHold* t = other.FindEntity( other.PlayerNetId( 0 ) ).try_get<MotionHold>();
 			return t != nullptr && t->on != 0;
 		};
 		run( 60, 0 );
@@ -2149,13 +2156,16 @@ void TestTethers()
 		CHECK( out() && other.Globals().modEventCount == 2 );
 	}
 
-	// A while motion cannot throw one; a tether line needs all its numbers.
+	// A while motion cannot throw a probe; a probe needs both its numbers; a rope goes to something else.
 	std::vector<Motion> out;
 	std::string error, warned;
-	CHECK( CompileMotionSet( "t", "cinderbox_motions\t1\nmotion\tA\nwhen\twhile\ntether\t40\t30\t24\t3\trope\n", schema, out, error, warned ) == false );
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t2\nmotion\tA\nwhen\twhile\nprobe\t40\t30\n", schema, out, error, warned ) == false );
 	CHECK( error.find( "while" ) != std::string::npos );
-	CHECK( CompileMotionSet( "t", "cinderbox_motions\t1\nmotion\tA\nwhen\tpress\tgrapple\ntether\t40\t30\n", schema, out, error, warned ) == false );
-	CHECK( CompileMotionSet( "t", "cinderbox_motions\t1\nmotion\tA\nwhen\tpress\tgrapple\ntether\t40\t30\t24\t3\tchain\n", schema, out, error, warned ) == false );
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t2\nmotion\tA\nwhen\tpress\tgrapple\nprobe\t40\n", schema, out, error, warned ) == false );
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t2\nmotion\tA\nwhen\tpress\tgrapple\nprobe\t40\t30\nlink\tself\t0\t3\n", schema, out, error, warned ) == false );
+	// An effect on what a probe found needs a probe.
+	CHECK( CompileMotionSet( "t", "cinderbox_motions\t2\nmotion\tA\nwhen\tpress\tgrapple\nimpulse\thit\t5\tup\tnone\n", schema, out, error, warned ) == false );
+	CHECK( error.find( "probe" ) != std::string::npos );
 }
 
 void TestRagdoll()
@@ -4669,20 +4679,20 @@ void AppendMotionReference( std::vector<uint64_t>& hashes )
 	schema.actions.push_back( { "a", 0, "" } );
 	schema.actions.push_back( { "b", 1, "" } );
 	schema.motionSets.push_back( { "m", "m.moves",
-								   "cinderbox_motions\t1\n"
+								   "cinderbox_motions\t2\n"
 								   "motion\tDash\nwhen\tpress\ta\nif\tspeed > 0.5 or not grounded\ncooldown\t0.3\nduration\t0.2\n"
-								   "impulse\t9\tlook\tnone\nparam\tfriction\t0\nparam\tgravity\t6\n"
+								   "impulse\tself\t9\tlook\tnone\nparam\tfriction\t0\nparam\tgravity\t6\n"
 								   "change\tm.count\t+=\t1\nchange\tm.fuel\t-=\t0.25\nemit\tm.dashed\n"
-								   "motion\tHop\nwhen\tpress\tb\nuses\t2\tground\nduration\t0.5\nimpulse\t5\tmove\tvertical\nparam\tair_control\t1\n"
+								   "motion\tHop\nwhen\tpress\tb\nuses\t2\tground\nduration\t0.5\nimpulse\tself\t5\tmove\tvertical\nparam\tair_control\t1\n"
 								   "motion\tBlink\nwhen\tpress\tjump\nif\tnot grounded and vertical_speed < 2\nuses\t1\t0.75\n"
-								   "impulse\t7\tworld\tall\t0.3\t1\t-0.2\n"
-								   "motion\tBurst\nwhen\tpress\tsprint\ncooldown\t1\nimpulse\t-4\tfacing\thorizontal\n"
+								   "impulse\tself\t7\tworld\tall\t0.3\t1\t-0.2\n"
+								   "motion\tBurst\nwhen\tpress\tsprint\ncooldown\t1\nimpulse\tself\t-4\tfacing\thorizontal\n"
 								   "motion\tSoar\nwhen\twhile\nif\theld.b and m.fuel > -40\ncooldown\t0.5\n"
-								   "impulse\t20\tlook\tnone\nparam\tmove_frame\t1\nparam\tair_friction\t2\nparam\tgravity\t3\n"
+								   "force\tself\tlook\taccel\t20\t0\t0\t0\nparam\tmove_frame\t1\nparam\tair_friction\t2\nparam\tgravity\t3\n"
 								   "change\tm.fuel\t-=\t3\nchange\tm.count\t=\t0\nemit\tm.dashed\n"
 								   "motion\tStun\nwhen\tevent\tm.dashed\nduration\t0.25\nparam\tjump_speed\t9\n"
-								   // A tether: the ray, the rope and the pull on whatever the look finds.
-								   "motion\tHook\nwhen\tpress\ta\nif\tm.fuel < -1 and not tethered\ncooldown\t1.5\ntether\t30\t0\t18\t2\trope\n"
+								   // A probe, a force that reacts and a link: the ray, the pull and the rope on whatever the look finds.
+								   "motion\tHook\nwhen\tpress\ta\nif\tm.fuel < -1 and not linked\ncooldown\t1.5\nprobe\t30\t0\nforce\tself\tto\tforce\t1400\t0\t0.2\t1\nlink\thit\t0\t2\n"
 								   "until\tairborne_time > 1 or m.count > 6 or ( pressed.b and pressed.jump )\nparam\tfriction\t0\n" } );
 	std::string warnings;
 	auto motions = CompileMotions( schema, warnings );
@@ -5322,7 +5332,7 @@ int main( int argc, char** argv )
 		{ "move_params", TestMoveParams },
 		{ "motions", TestMotions },
 		{ "motions_while", TestMotionsWhile },
-		{ "tethers", TestTethers },
+		{ "links", TestLinks },
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },

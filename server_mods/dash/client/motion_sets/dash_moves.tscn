@@ -5,11 +5,13 @@
 ; starts on the tick of the press. The server mod (server_mods/dash/dash.cpp) declares the names
 ; used here and gives the charges back.
 ;
-;   Dash         on "dash" (V), while dash.charges > 0: 11 m/s along where you walk, the run's own
-;                speed replaced; 0.18 s without friction; a charge is taken; emits dash.started
-;   DoubleJump   on "jump", in the air, once until you stand again: a jump's speed upward,
-;                whatever the fall was; emits dash.double_jump. Only where the server allows it
-;                (dash.double_jump_on: cb_server --mod-option dash.double_jump=1; off by default)
+;   Dash         on "dash" (V), while dash.charges > 0: 0.18 s without friction; a charge is
+;                taken; emits dash.started
+;     Push       CbImpulse: 11 m/s along where you walk, the run's own speed replaced
+;   DoubleJump   on "jump", in the air, once until you stand again; emits dash.double_jump.
+;                Only where the server allows it (dash.double_jump_on:
+;                cb_server --mod-option dash.double_jump=1; off by default)
+;     Up         CbImpulse: a jump's speed upward, whatever the fall was
 ;
 ; Saving this scene bakes it into res://motions/dash.moves.cfg.
 
@@ -20,8 +22,6 @@ set_name = "dash.moves"
 action = "dash"
 conditions = PackedStringArray("dash.charges > 0")
 cooldown = 0.4
-impulse = 11.0
-replace = 2
 duration = 0.18
 parameters = {
 "friction": 0.0
@@ -29,11 +29,17 @@ parameters = {
 changes = PackedStringArray("dash.charges -= 1")
 emits = "dash.started"
 
+[node name="Push" type="CbImpulse" parent="Dash"]
+speed = 11.0
+replace = 2
+
 [node name="DoubleJump" type="CbMotion" parent="."]
 action = "jump"
 conditions = PackedStringArray("not grounded", "dash.double_jump_on")
 uses = 1
-impulse = 6.5
-impulse_frame = 3
-replace = 1
 emits = "dash.double_jump"
+
+[node name="Up" type="CbImpulse" parent="DoubleJump"]
+frame = 3
+speed = 6.5
+replace = 1

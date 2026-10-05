@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbMotionPart" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		What the motion nodes share: each bakes to lines of a motions file, and says in the scene tree when it cannot.
+	</brief_description>
+	<description>
+		The base of [CbMotionSet], [CbMotion], [CbProbe] and the effects ([CbMotionEffect]: [CbImpulse], [CbForce], [CbLink]). Not a node to add: add those.
+		A set has motions; a motion has a probe and effects. Every one of them is data only: saving the scene bakes the tree to one file, and a node that cannot be baked shows a warning in the scene tree and refuses the bake, naming itself and why.
+	</description>
+	<tutorials>
+	</tutorials>
+</class>

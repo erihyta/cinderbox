@@ -7,8 +7,8 @@
 ;                   the field as the tick found it, so one press is one switch
 ;   Flying          while flight.on: no gravity, WASD along the camera (up and down too), air
 ;                   friction so letting go stops, and its own speeds
-;   Thrust          while Space is down in the air, with fuel, not flying: 26 m/s per second upward (gravity is 18),
-;                   and 30 fuel a second
+;   Thrust          while Space is down in the air, with fuel, not flying: 30 fuel a second
+;     Lift          CbForce: 26 m/s per second upward (gravity is 18), whatever the player weighs
 ;   Refuel          while standing with less than a full tank: 40 fuel a second
 ;                   Thrust and Refuel only where the server allows the jetpack (flight.jetpack_on:
 ;                   cb_server --mod-option flight.jetpack=1; off by default)
@@ -46,10 +46,12 @@ parameters = {
 [node name="Thrust" type="CbMotion" parent="."]
 when = 1
 conditions = PackedStringArray("flight.jetpack_on", "held.jump", "not grounded", "not flight.on", "flight.fuel > 0")
-impulse = 26.0
-impulse_frame = 3
 changes = PackedStringArray("flight.fuel -= 30")
 emits = "flight.thrust"
+
+[node name="Lift" type="CbForce" parent="Thrust"]
+frame = 3
+strength = 26.0
 
 [node name="Refuel" type="CbMotion" parent="."]
 when = 1

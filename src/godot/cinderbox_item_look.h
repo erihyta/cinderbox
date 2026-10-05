@@ -65,13 +65,13 @@ private:
 	godot::Vector3 m_viewOffset;
 };
 
-// What a tether looks like (sim/motions.h: a line a motion throws, a grappling hook's rope): a scene
-// one metre long along its -Z, which the game stretches from the player to the tether's end for as
-// long as the tether is out, flying or holding. Put it in the mod's vfx/reactions_<name>.tscn, next
+// What a link looks like (sim/motions.h: a line a motion throws, a grappling hook's rope): a scene
+// one metre long along its -Z, which the game stretches from the player to the link's end for as
+// long as the link is out, flying or holding. Put it in the mod's vfx/reactions_<name>.tscn, next
 // to the CbItemLook nodes.
-class CbTetherLook : public godot::Node
+class CbLinkLook : public godot::Node
 {
-	GDCLASS( CbTetherLook, godot::Node )
+	GDCLASS( CbLinkLook, godot::Node )
 
 public:
 	void set_motion( const godot::String& v )
@@ -103,7 +103,7 @@ protected:
 	static void _bind_methods();
 
 private:
-	godot::String m_motion; // "grapple.moves/Hook": the set and the node; empty: any tether
+	godot::String m_motion; // "grapple.moves/Hook": the set and the node; empty: any link
 	godot::String m_scene;
 	godot::String m_from = "RightHand"; // the player's socket it starts at; empty: its chest
 };

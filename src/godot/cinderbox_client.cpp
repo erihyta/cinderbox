@@ -1183,17 +1183,17 @@ void CinderboxClient::add_world_scene( Node* scene )
 			m_itemViewOffsets[ToStd( look->get_kind() )] = look->get_view_offset();
 		}
 	}
-	TypedArray<Node> tetherLooks = scene->find_children( "*", "CbTetherLook", true, false );
-	if ( auto* self = Object::cast_to<CbTetherLook>( scene ) )
+	TypedArray<Node> linkLooks = scene->find_children( "*", "CbLinkLook", true, false );
+	if ( auto* self = Object::cast_to<CbLinkLook>( scene ) )
 	{
-		tetherLooks.push_back( self );
+		linkLooks.push_back( self );
 	}
-	for ( int64_t i = 0; i < tetherLooks.size(); ++i )
+	for ( int64_t i = 0; i < linkLooks.size(); ++i )
 	{
-		auto* look = Object::cast_to<CbTetherLook>( Object::cast_to<Node>( tetherLooks[i] ) );
+		auto* look = Object::cast_to<CbLinkLook>( Object::cast_to<Node>( linkLooks[i] ) );
 		if ( look != nullptr && look->get_scene().is_empty() == false )
 		{
-			m_tetherLooks[ToStd( look->get_motion().strip_edges() )] = { look->get_scene(), look->get_from().strip_edges() };
+			m_linkLooks[ToStd( look->get_motion().strip_edges() )] = { look->get_scene(), look->get_from().strip_edges() };
 		}
 	}
 }
@@ -1203,7 +1203,7 @@ void CinderboxClient::clear_world_scenes()
 	m_itemLooks.clear();
 	m_itemNames.clear();
 	m_itemViewOffsets.clear();
-	m_tetherLooks.clear();
+	m_linkLooks.clear();
 	for ( ObjectID id : m_worldScenes )
 	{
 		if ( auto* scene = Object::cast_to<Node>( ObjectDB::get_instance( id ) ) )
@@ -1249,7 +1249,7 @@ void CinderboxClient::PushStates()
 				hash = Mix( hash, 0x20000u + uint32_t( privates->values[field.slot] ) );
 			}
 		}
-		hash = Mix( hash, 0x30000u + ( v.tethered ? 1u : 0u ) + ( v.tetherHolds ? 2u : 0u ) );
+		hash = Mix( hash, 0x30000u + ( v.linked ? 1u : 0u ) + ( v.linkHolds ? 2u : 0u ) );
 		auto held = m_heldKinds.find( v.netId );
 		if ( held != m_heldKinds.end() )
 		{
@@ -1279,9 +1279,9 @@ void CinderboxClient::PushStates()
 		// What it holds, by item kind, as in the state machines' conditions.
 		if ( v.kind == present::VisualKind::Player )
 		{
-			// "tethered": a tether of its is out; "tether_holds": and it has taken hold.
-			state["tethered"] = v.tethered;
-			state["tether_holds"] = v.tethered && v.tetherHolds;
+			// "linked": a link of its is out; "link_holds": and it has taken hold.
+			state["linked"] = v.linked;
+			state["link_holds"] = v.linked && v.linkHolds;
 			for ( size_t kind = 0; kind < schema.itemKinds.size(); ++kind )
 			{
 				state[String::utf8( schema.itemKinds[kind].c_str() )] = Holds( v.netId, uint16_t( kind ) );
@@ -2265,18 +2265,18 @@ void CinderboxClient::_process( double delta )
 	m_frame.localPressed = 0;
 	ApplyPredictedFields();
 	UpdateNodes();
-	UpdateTethers();
+	UpdateLinks();
 	PushStates();
 	Director()->update();
 }
 
-// Tethers: for each player that has one out, the scene its CbTetherLook names, stretched from the
-// player (a socket, or its chest) to the tether's end. One metre of scene along -Z per metre of rope.
-void CinderboxClient::UpdateTethers()
+// Links: for each player that has one out, the scene its CbLinkLook names, stretched from the
+// player (a socket, or its chest) to the link's end. One metre of scene along -Z per metre of rope.
+void CinderboxClient::UpdateLinks()
 {
 	if ( m_motionNamesGeneration != m_frame.schemaGeneration )
 	{
-		// The motions' names, in the schema's order: a tether says which motion threw it by index.
+		// The motions' names, in the schema's order: a link says which motion threw it by index.
 		m_motionNamesGeneration = m_frame.schemaGeneration;
 		m_motionNames.clear();
 		std::string ignored;
@@ -2291,22 +2291,22 @@ void CinderboxClient::UpdateTethers()
 	std::map<uint64_t, bool> seen;
 	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose& pose, const present::PlayerAnim*,
 							const present::RagdollAnim* ) {
-		if ( v.kind != present::VisualKind::Player || v.tethered == false || v.dead || m_tetherLooks.empty() )
+		if ( v.kind != present::VisualKind::Player || v.linked == false || v.dead || m_linkLooks.empty() )
 		{
 			return;
 		}
-		auto look = m_tetherLooks.find( v.tetherMotion < m_motionNames.size() ? m_motionNames[v.tetherMotion] : std::string() );
-		if ( look == m_tetherLooks.end() )
+		auto look = m_linkLooks.find( v.linkMotion < m_motionNames.size() ? m_motionNames[v.linkMotion] : std::string() );
+		if ( look == m_linkLooks.end() )
 		{
-			look = m_tetherLooks.find( std::string() );
+			look = m_linkLooks.find( std::string() );
 		}
-		if ( look == m_tetherLooks.end() )
+		if ( look == m_linkLooks.end() )
 		{
 			return;
 		}
-		auto existing = m_tetherNodes.find( id );
-		auto* rope = existing != m_tetherNodes.end() ? Object::cast_to<Node3D>( ObjectDB::get_instance( existing->second.node ) ) : nullptr;
-		if ( rope != nullptr && existing->second.motion != v.tetherMotion )
+		auto existing = m_linkNodes.find( id );
+		auto* rope = existing != m_linkNodes.end() ? Object::cast_to<Node3D>( ObjectDB::get_instance( existing->second.node ) ) : nullptr;
+		if ( rope != nullptr && existing->second.motion != v.linkMotion )
 		{
 			rope->queue_free();
 			rope = nullptr;
@@ -2321,7 +2321,7 @@ void CinderboxClient::UpdateTethers()
 				return;
 			}
 			Director()->add_child( rope );
-			m_tetherNodes[id] = { ObjectID( rope->get_instance_id() ), v.tetherMotion };
+			m_linkNodes[id] = { ObjectID( rope->get_instance_id() ), v.linkMotion };
 		}
 		seen[id] = true;
 
@@ -2336,7 +2336,7 @@ void CinderboxClient::UpdateTethers()
 				from = socket->get_global_position();
 			}
 		}
-		Vector3 along = Vector3( v.tetherEnd.x, v.tetherEnd.y, v.tetherEnd.z ) - from;
+		Vector3 along = Vector3( v.linkEnd.x, v.linkEnd.y, v.linkEnd.z ) - from;
 		real_t length = along.length();
 		Transform3D where;
 		if ( length > 0.01f )
@@ -2347,7 +2347,7 @@ void CinderboxClient::UpdateTethers()
 		where.origin = from;
 		rope->set_global_transform( where );
 	} );
-	for ( auto it = m_tetherNodes.begin(); it != m_tetherNodes.end(); )
+	for ( auto it = m_linkNodes.begin(); it != m_linkNodes.end(); )
 	{
 		if ( seen.count( it->first ) == 0 )
 		{
@@ -2355,7 +2355,7 @@ void CinderboxClient::UpdateTethers()
 			{
 				rope->queue_free();
 			}
-			it = m_tetherNodes.erase( it );
+			it = m_linkNodes.erase( it );
 		}
 		else
 		{

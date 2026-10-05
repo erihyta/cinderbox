@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbProbe" inherits="CbMotionPart" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		A line a motion throws along the look. The motion happens only if it finds something, and its effects can act on what it found.
+	</brief_description>
+	<description>
+		A child of a [CbMotion] (one per motion; not for a While). When the motion would start, a line goes from the player's view along the look, up to [member range]. If it finds nothing, nothing happens: no cooldown, no use, no event. If it finds something (the world, a prop, another player), it flies there at [member travel], takes hold of that point, and from then the motion is on: its parameters hold and its [CbForce] and [CbLink] children act. An effect whose target is "what the probe found" acts on that body at that point; a direction "toward the target" points at it.
+		The point stays on what it found: on a prop or a player it moves with them. When that is gone the motion ends.
+		In conditions, [code]linked[/code] is true for a player whose probe is out. A [CbLinkLook] draws the line.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="range" type="float" setter="set_range" getter="get_range" default="40.0">
+			How far the line reaches, in metres.
+		</member>
+		<member name="travel" type="float" setter="set_travel" getter="get_travel" default="60.0">
+			The speed it flies at, in metres per second: it takes hold after distance / speed. 0: at once.
+		</member>
+	</members>
+</class>

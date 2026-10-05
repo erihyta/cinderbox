@@ -1,7 +1,7 @@
 [gd_scene load_steps=2 format=3]
 
-; The grapple mod's HUD: the key, and whether the hook is out. No scripts. "tethered" is true for
-; a player whose tether is out, "tether_holds" once it has taken hold.
+; The grapple mod's HUD: the key, and whether the hook is out. No scripts. "linked" is true for
+; a player whose line is out, "link_holds" once it has taken hold.
 
 [sub_resource type="LabelSettings" id="Small"]
 font_size = 20

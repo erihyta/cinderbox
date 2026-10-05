@@ -4,8 +4,11 @@
 ; Every simulation runs them from the player's own input (the server's, and each client's own
 ; prediction), so a move starts on the tick of the press. Nothing here waits for the server.
 ;
-;   Use   CbMotion   on "MODNAME_use", while MODNAME.charges > 0: a push along where you walk,
-;                    a moment without friction, a charge taken, and the event "MODNAME.moved"
+;   Use     CbMotion    on "MODNAME_use", while MODNAME.charges > 0: a moment without friction,
+;                       a charge taken, and the event "MODNAME.moved"
+;     Push  CbImpulse   what it does: a push along where you walk. Other children a motion can
+;                       have: CbForce (a push that lasts), CbProbe (a line that has to find
+;                       something) and CbLink (a rope to what it found)
 ;
 ; The server mod declares the names used here (the action, the field, the event) and names the
 ; set: declare.Motions( "MODNAME.moves" ). Who may use a motion is a field its conditions read.
@@ -19,11 +22,13 @@ set_name = "MODNAME.moves"
 action = "MODNAME_use"
 conditions = PackedStringArray("MODNAME.charges > 0")
 cooldown = 0.5
-impulse = 10.0
-replace = 2
 duration = 0.2
 parameters = {
 "friction": 0.0
 }
 changes = PackedStringArray("MODNAME.charges -= 1")
 emits = "MODNAME.moved"
+
+[node name="Push" type="CbImpulse" parent="Use"]
+speed = 10.0
+replace = 2
