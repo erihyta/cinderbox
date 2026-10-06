@@ -6,7 +6,7 @@
 	<description>
 		One scene is one item. Its root is a [CbItem]; everything under it is the item:
 		- a [CollisionShape3D] with a [BoxShape3D] or a [SphereShape3D]: its body when it lies in the world, placed where the shape's centre is. It may be turned any way, but not scaled.
-		- [CbGrip] markers: where the hands hold it.
+		- two markers ([Marker3D]) that [member carry_grip] and [member other_grip] name: where the hands hold it.
 		- meshes, lights, particles: how it looks in the hand, put away and on the floor.
 		- [CbReaction] nodes: what it shows when its holder does something (a muzzle flash).
 		The scene is the item's frame: the grip at the origin, pointing along -Z. The root's own transform is not used.
@@ -48,8 +48,31 @@
 		<member name="properties" type="Dictionary" setter="set_properties" getter="get_properties" default="{}">
 			Named numbers any server mod may read: [code]pickup.hold_seconds[/code] = 0.5, [code]inventory.slot[/code] = 3. They replace what the item's mod declared in code for the same names.
 		</member>
+		<member name="carry_grip" type="NodePath" setter="set_carry_grip" getter="get_carry_grip" default="NodePath(&quot;&quot;)">
+			The marker the item is carried at: this point is in the hand's socket (whichever hand the item is in), its -Z along the fingers and +Y up. Move or turn the marker, not the model: a mesh imported with its origin anywhere is held where this is. Empty: the item is carried at its scene's origin.
+		</member>
+		<member name="other_hand" type="int" setter="set_other_hand" getter="get_other_hand" enum="CbItem.OtherHand" default="0">
+			What the character's other hand does while it is empty.
+		</member>
+		<member name="other_grip" type="NodePath" setter="set_other_grip" getter="get_other_grip" default="NodePath(&quot;&quot;)">
+			The marker the other hand is held at, for [constant OTHER_AT_MARKER] and [constant OTHER_AT_MARKER_TURNED].
+		</member>
 		<member name="view_offset" type="Vector3" setter="set_view_offset" getter="get_view_offset" default="Vector3(0, 0, 0)">
 			First person: how far the arms holding this are moved in the viewer's own view, in metres to the right, up and ahead of where the pose has them. Only the viewer's own picture changes. Keep it small: far from the body the arms' cut ends come into view.
 		</member>
 	</members>
+	<constants>
+		<constant name="OTHER_FREE" value="0" enum="OtherHand">
+			The animation's: nothing keeps it on the item. A one-handed item.
+		</constant>
+		<constant name="OTHER_AT_MARKER" value="1" enum="OtherHand">
+			The other arm is bent so that its wrist is at [member other_grip], wherever the carrying hand and the animation take the item. The hand keeps the turn its animation gives it.
+		</constant>
+		<constant name="OTHER_AT_MARKER_TURNED" value="2" enum="OtherHand">
+			The same, and the hand is turned as the marker is: as a hand carrying an item placed there would be.
+		</constant>
+		<constant name="OTHER_AS_ANIMATED" value="3" enum="OtherHand">
+			The hand stays where the item's animations have it relative to the carrying hand, place and turn; no marker. For animations made with both hands on the item: they are kept as they are, and kept together when the carrying arm is aimed up or down.
+		</constant>
+	</constants>
 </class>

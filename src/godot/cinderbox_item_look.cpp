@@ -40,27 +40,31 @@ void CbItem::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "mass", PROPERTY_HINT_RANGE, "0.01,1000,0.01,suffix:kg" ), "set_mass", "get_mass" );
 	ADD_PROPERTY( PropertyInfo( Variant::DICTIONARY, "properties", PROPERTY_HINT_DICTIONARY_TYPE, "String;float" ), "set_properties",
 				  "get_properties" );
+	ClassDB::bind_method( D_METHOD( "set_carry_grip", "value" ), &CbItem::set_carry_grip );
+	ClassDB::bind_method( D_METHOD( "get_carry_grip" ), &CbItem::get_carry_grip );
+	ClassDB::bind_method( D_METHOD( "set_other_hand", "value" ), &CbItem::set_other_hand );
+	ClassDB::bind_method( D_METHOD( "get_other_hand" ), &CbItem::get_other_hand );
+	ClassDB::bind_method( D_METHOD( "set_other_grip", "value" ), &CbItem::set_other_grip );
+	ClassDB::bind_method( D_METHOD( "get_other_grip" ), &CbItem::get_other_grip );
+	ClassDB::bind_static_method( "CbItem", D_METHOD( "carry_frame_under", "root" ), &CbItem::carry_frame_under );
+	ADD_GROUP( "Hands", "" );
+	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "carry_grip", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D" ), "set_carry_grip",
+				  "get_carry_grip" );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "other_hand", PROPERTY_HINT_ENUM,
+								"Free,At the marker,At the marker and turned with it,As the animations have it" ),
+				  "set_other_hand", "get_other_hand" );
+	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "other_grip", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D" ), "set_other_grip",
+				  "get_other_grip" );
 	ADD_GROUP( "First person", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::VECTOR3, "view_offset", PROPERTY_HINT_NONE, "suffix:m" ), "set_view_offset", "get_view_offset" );
 	ADD_GROUP( "", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::CALLABLE, "bake_button", PROPERTY_HINT_TOOL_BUTTON, "Bake item,Save", PROPERTY_USAGE_EDITOR ), "",
 				  "get_bake_button" );
-}
 
-void CbGrip::_bind_methods()
-{
-	ClassDB::bind_method( D_METHOD( "set_align_rotation", "value" ), &CbGrip::set_align_rotation );
-	ClassDB::bind_method( D_METHOD( "get_align_rotation" ), &CbGrip::get_align_rotation );
-	ClassDB::bind_static_method( "CbGrip", D_METHOD( "carry_frame_under", "root" ), &CbGrip::carry_frame_under );
-	ClassDB::bind_method( D_METHOD( "set_hand", "value" ), &CbGrip::set_hand );
-	ClassDB::bind_method( D_METHOD( "get_hand" ), &CbGrip::get_hand );
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "hand", PROPERTY_HINT_ENUM, "The other hand,The carrying hand" ), "set_hand", "get_hand" );
-	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "align_rotation" ), "set_align_rotation", "get_align_rotation" );
-	ClassDB::bind_method( D_METHOD( "set_as_animated", "value" ), &CbGrip::set_as_animated );
-	ClassDB::bind_method( D_METHOD( "get_as_animated" ), &CbGrip::get_as_animated );
-	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "as_animated" ), "set_as_animated", "get_as_animated" );
-	BIND_ENUM_CONSTANT( HAND_OTHER );
-	BIND_ENUM_CONSTANT( HAND_CARRYING );
+	BIND_ENUM_CONSTANT( OTHER_FREE );
+	BIND_ENUM_CONSTANT( OTHER_AT_MARKER );
+	BIND_ENUM_CONSTANT( OTHER_AT_MARKER_TURNED );
+	BIND_ENUM_CONSTANT( OTHER_AS_ANIMATED );
 }
 
 void CbLinkLook::_bind_methods()
@@ -118,22 +122,6 @@ Transform3D InSceneFrame( const Node3D* node, const Node* root )
 	return t;
 }
 
-// A scene's grips for one hand.
-std::vector<CbGrip*> GripsUnder( const Node* root, int hand )
-{
-	std::vector<CbGrip*> out;
-	TypedArray<Node> found = const_cast<Node*>( root )->find_children( "*", "CbGrip", true, false );
-	for ( int i = 0; i < found.size(); ++i )
-	{
-		auto* grip = Object::cast_to<CbGrip>( found[i] );
-		if ( grip != nullptr && grip->get_hand() == hand )
-		{
-			out.push_back( grip );
-		}
-	}
-	return out;
-}
-
 // The item's body: the first CollisionShape3D in its scene.
 const CollisionShape3D* BodyOf( const Node* item )
 {
@@ -168,15 +156,12 @@ String ShapeProblem( const CollisionShape3D* body )
 
 } // namespace
 
-Transform3D CbGrip::CarryFrame( const Node* in )
+Transform3D CbItem::CarryFrameUnder( const Node* root )
 {
-	return CarryFrameUnder( SceneRoot( in ) );
-}
-
-Transform3D CbGrip::CarryFrameUnder( const Node* root )
-{
-	std::vector<CbGrip*> carrying = GripsUnder( root, HAND_CARRYING );
-	return carrying.empty() ? Transform3D() : InSceneFrame( carrying[0], root ).orthonormalized();
+	auto* item = Object::cast_to<CbItem>( root );
+	auto* grip = item != nullptr && item->m_carryGrip.is_empty() == false ? Object::cast_to<Node3D>( item->get_node_or_null( item->m_carryGrip ) )
+																	  : nullptr;
+	return grip != nullptr && grip != root ? InSceneFrame( grip, root ).orthonormalized() : Transform3D();
 }
 
 PackedStringArray CbItem::_get_configuration_warnings() const
@@ -199,7 +184,16 @@ PackedStringArray CbItem::_get_configuration_warnings() const
 	// The root is where the game puts the item: its own transform is not part of it.
 	if ( get_transform().is_equal_approx( Transform3D() ) == false )
 	{
-		warnings.push_back( "The item's own transform is not used by the game. To turn the item in the hand, turn its carrying CbGrip." );
+		warnings.push_back( "The item's own transform is not used by the game. To turn the item in the hand, turn its carrying grip." );
+	}
+	if ( m_carryGrip.is_empty() == false && Object::cast_to<Node3D>( get_node_or_null( m_carryGrip ) ) == nullptr )
+	{
+		warnings.push_back( "carry_grip names no Node3D of this scene." );
+	}
+	bool atMarker = m_otherHand == OTHER_AT_MARKER || m_otherHand == OTHER_AT_MARKER_TURNED;
+	if ( atMarker && Object::cast_to<Node3D>( get_node_or_null( m_otherGrip ) ) == nullptr )
+	{
+		warnings.push_back( "The other hand is held at a marker: name it (other_grip), a Node3D of this scene." );
 	}
 	return warnings;
 }
@@ -235,12 +229,18 @@ Dictionary CbItem::bake() const
 		half = Vector3( radius, radius, radius );
 		shapeName = "sphere";
 	}
-	if ( GripsUnder( this, CbGrip::HAND_CARRYING ).size() > 1 || GripsUnder( this, CbGrip::HAND_OTHER ).size() > 1 )
+	if ( m_carryGrip.is_empty() == false && Object::cast_to<Node3D>( get_node_or_null( m_carryGrip ) ) == nullptr )
 	{
-		return fail( "an item has one CbGrip for each hand at most (the carrying hand's, the other hand's)" );
+		return fail( "carry_grip names no Node3D of this scene" );
+	}
+	const bool atMarker = m_otherHand == OTHER_AT_MARKER || m_otherHand == OTHER_AT_MARKER_TURNED;
+	auto* other = Object::cast_to<Node3D>( get_node_or_null( m_otherGrip ) );
+	if ( atMarker && other == nullptr )
+	{
+		return fail( "the other hand is held at a marker: name it (other_grip), a Node3D of this scene" );
 	}
 	// Everything is written in the frame the item is carried in.
-	const Transform3D toCarried = CbGrip::CarryFrameUnder( this ).affine_inverse();
+	const Transform3D toCarried = CarryFrameUnder( this ).affine_inverse();
 	const Transform3D inCarried = ( toCarried * InSceneFrame( body, this ) ).orthonormalized();
 	Vector3 center = inCarried.origin;
 	Quaternion turn = inCarried.basis.get_rotation_quaternion();
@@ -267,14 +267,14 @@ Dictionary CbItem::bake() const
 		}
 		text += "property " + name + " " + String::num( double( value ), 4 ) + "\n";
 	}
-	// Where the other hand holds it.
-	std::vector<CbGrip*> others = GripsUnder( this, CbGrip::HAND_OTHER );
-	if ( others.empty() == false )
+	// What the other hand does: at the marker (0), turned with it (1), or as the animations have it
+	// (2; no place of its own).
+	if ( m_otherHand != OTHER_FREE )
 	{
-		Transform3D t = ( toCarried * InSceneFrame( others[0], this ) ).orthonormalized();
+		Transform3D t = atMarker ? ( toCarried * InSceneFrame( other, this ) ).orthonormalized() : Transform3D();
 		Quaternion q = t.basis.get_rotation_quaternion();
 		text += vformat( "grip %.4f %.4f %.4f %.5f %.5f %.5f %.5f %d\n", t.origin.x, t.origin.y, t.origin.z, q.x, q.y, q.z, q.w,
-						 others[0]->get_as_animated() ? 2 : ( others[0]->get_align_rotation() ? 1 : 0 ) );
+						 m_otherHand == OTHER_AS_ANIMATED ? 2 : ( m_otherHand == OTHER_AT_MARKER_TURNED ? 1 : 0 ) );
 	}
 	// What the game reads (the server skips these): which scene the kind is drawn as, what it is
 	// called, and how its holder's arms sit in first person.

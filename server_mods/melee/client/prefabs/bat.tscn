@@ -148,6 +148,8 @@ size = Vector2(0.04, 0.04)
 [node name="Bat" type="CbItem" unique_id=1599722703]
 kind = "melee.bat"
 display_name = "Bat"
+carry_grip = NodePath("Carry")
+other_hand = 3
 mass = 1.1
 properties = {
 "pickup.hold_seconds": 0.5
@@ -166,13 +168,10 @@ surface_material_override/0 = SubResource("StandardMaterial3D_cfl35")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.31)
 shape = SubResource("Body")
 
-[node name="Carry" type="CbGrip" parent="." unique_id=1025936150]
-hand = 1
+[node name="Carry" type="Marker3D" parent="." unique_id=1025936150]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, -0.035053983)
 
-[node name="OtherHand" type="CbGrip" parent="." unique_id=840287759]
-align_rotation = true
-as_animated = true
+[node name="OtherHand" type="Marker3D" parent="." unique_id=840287759]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.6054174e-09, -1.9064716e-09, 0.066385016)
 
 [node name="Flames" type="GPUParticles3D" parent="." unique_id=1514484346]

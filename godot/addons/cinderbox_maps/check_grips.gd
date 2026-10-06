@@ -1,5 +1,6 @@
 extends SceneTree
-## Checks what an item (a CbItem, its body and its CbGrip markers) bakes to, on scenes built here:
+## Checks what an item (a CbItem, its body and the two markers it names as grips) bakes to, on scenes
+## built here:
 ##
 ##   godot --headless --path godot --script res://addons/cinderbox_maps/check_grips.gd
 ##
@@ -29,14 +30,18 @@ func _item(carry: Variant, other: Variant, carry_turn := Basis(), body_turn := B
 	body.transform = Transform3D(body_turn, Vector3(0, 0, -0.2))
 	root.add_child(body)
 	body.owner = root
-	for spec in [[carry, CbGrip.HAND_CARRYING, "Carry", carry_turn], [other, CbGrip.HAND_OTHER, "Other", Basis()]]:
+	for spec in [[carry, "Carry", carry_turn], [other, "Other", Basis()]]:
 		if spec[0] != null:
-			var grip := CbGrip.new()
-			grip.name = spec[2]
-			grip.hand = spec[1]
-			grip.transform = Transform3D(spec[3], spec[0])
+			var grip := Marker3D.new()
+			grip.name = spec[1]
+			grip.transform = Transform3D(spec[2], spec[0])
 			root.add_child(grip)
 			grip.owner = root
+	if carry != null:
+		root.carry_grip = NodePath("Carry")
+	if other != null:
+		root.other_hand = CbItem.OTHER_AT_MARKER
+		root.other_grip = NodePath("Other")
 	return [root, body]
 
 
@@ -64,7 +69,7 @@ func _initialize() -> void:
 	var baked: Dictionary = made[0].bake()
 	_check("no carrying grip: the body is where the scene has it", _near(_line(baked.text, "center"), [0, 0, -0.2]), str(_line(baked.text, "center")))
 	_check("no carrying grip: the other hand's grip too", _near(_line(baked.text, "grip"), [0, 0, 0.3, 0, 0, 0, 1, 0]), str(_line(baked.text, "grip")))
-	_check("no carrying grip: the scene is drawn as it is", CbGrip.carry_frame_under(made[0]).is_equal_approx(Transform3D()))
+	_check("no carrying grip: the scene is drawn as it is", CbItem.carry_frame_under(made[0]).is_equal_approx(Transform3D()))
 	made[0].free()
 
 	# Carried 0.1 m behind the origin: everything is written from there.
@@ -73,7 +78,7 @@ func _initialize() -> void:
 	_check("a carrying grip: the body is written from it", _near(_line(baked.text, "center"), [0, 0, -0.3]), str(_line(baked.text, "center")))
 	_check("a carrying grip: the other hand's grip is written from it", _near(_line(baked.text, "grip"), [0, 0, 0.2]), str(_line(baked.text, "grip")))
 	_check("a carrying grip: the scene is moved so it is in the socket",
-		CbGrip.carry_frame_under(made[0]).origin.is_equal_approx(Vector3(0, 0, 0.1)))
+		CbItem.carry_frame_under(made[0]).origin.is_equal_approx(Vector3(0, 0, 0.1)))
 	made[0].free()
 
 	# A model that points along +X: the carrying grip is turned to say so, and the body with it.
@@ -87,8 +92,8 @@ func _initialize() -> void:
 	made[0].free()
 
 	# As animated: no place, only that the other hand keeps the animation's.
-	made = _item(null, Vector3(0, 0, 0.3))
-	(made[0].get_node("Other") as CbGrip).as_animated = true
+	made = _item(null, null)
+	made[0].other_hand = CbItem.OTHER_AS_ANIMATED
 	baked = made[0].bake()
 	_check("as animated: the grip's last number says so", _line(baked.text, "grip").size() == 8 and int(_line(baked.text, "grip")[7]) == 2, str(_line(baked.text, "grip")))
 	made[0].free()
@@ -108,13 +113,19 @@ func _initialize() -> void:
 	baked = made[0].bake()
 	_check("a scaled body is refused", baked.text == "" and String(baked.error).contains("unscaled"), baked.error)
 	made[0].free()
-	made = _item(Vector3(0, 0, 0.1), Vector3(0, 0, 0.3))
-	var extra := CbGrip.new()
-	extra.hand = CbGrip.HAND_CARRYING
-	made[0].add_child(extra)
-	extra.owner = made[0]
+	# The other hand: free (no grip line), turned with its marker (1), at a marker nobody named.
+	made = _item(null, Vector3(0, 0, 0.3))
+	made[0].other_hand = CbItem.OTHER_FREE
+	_check("a free other hand bakes no grip", _line(made[0].bake().text, "grip").is_empty(), made[0].bake().text)
+	made[0].other_hand = CbItem.OTHER_AT_MARKER_TURNED
+	_check("turned with its marker: the grip's last number says so", int(_line(made[0].bake().text, "grip")[7]) == 1, str(_line(made[0].bake().text, "grip")))
+	made[0].other_grip = NodePath("Nowhere")
 	baked = made[0].bake()
-	_check("two grips for one hand are refused", baked.text == "" and String(baked.error).contains("one CbGrip"), baked.error)
+	_check("an other hand at a marker that is not there is refused", baked.text == "" and String(baked.error).contains("other_grip"), baked.error)
+	made[0].other_grip = NodePath("Other")
+	made[0].carry_grip = NodePath("Nowhere")
+	baked = made[0].bake()
+	_check("a carrying grip that is not there is refused", baked.text == "" and String(baked.error).contains("carry_grip"), baked.error)
 	made[0].free()
 
 	# The item itself: what the game reads, and what an item cannot do without.

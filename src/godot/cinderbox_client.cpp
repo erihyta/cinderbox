@@ -1030,13 +1030,13 @@ namespace
 {
 
 // Where an item's scene goes in the frame it is carried in (a hand's socket, or its body's frame
-// in the world): moved so that its carrying CbGrip is at the origin. Looked up once per node.
+// in the world): moved so that its carrying grip (CbItem::carry_grip) is at the origin. Looked up once per node.
 Transform3D SceneInCarriedFrame( Node3D* node )
 {
 	static const StringName kKey( "cb_carried" );
 	if ( node->has_meta( kKey ) == false )
 	{
-		node->set_meta( kKey, CbGrip::CarryFrameUnder( node ).affine_inverse() );
+		node->set_meta( kKey, CbItem::CarryFrameUnder( node ).affine_inverse() );
 	}
 	return node->get_meta( kKey );
 }

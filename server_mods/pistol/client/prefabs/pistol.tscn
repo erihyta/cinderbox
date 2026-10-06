@@ -27,6 +27,8 @@ size = Vector3(0.01, 0.012, 0.012)
 [node name="Pistol" type="CbItem" unique_id=1499270042]
 kind = "pistol.gun"
 display_name = "Pistol"
+carry_grip = NodePath("Carry")
+other_hand = 3
 mass = 0.9
 view_offset = Vector3(0, 0.05, 0.03)
 
@@ -46,10 +48,8 @@ mesh = SubResource("GripMesh")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.067, -0.16)
 mesh = SubResource("Sight")
 
-[node name="Carry" type="CbGrip" parent="." unique_id=1976802778]
-hand = 1
+[node name="Carry" type="Marker3D" parent="." unique_id=1976802778]
 transform = Transform3D(-7.590404e-09, 4.3047308e-08, -1, 0.9848076, 0.17364821, 0, 0.17364821, -0.9848076, -4.371139e-08, 0, -0.014388949, 0.0062951446)
 
-[node name="OtherHand" type="CbGrip" parent="." unique_id=1225211331]
-as_animated = true
+[node name="OtherHand" type="Marker3D" parent="." unique_id=1225211331]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.014388949, 0.0062951446)
