@@ -25,6 +25,17 @@ namespace
 using namespace cb;
 using namespace cb::mods;
 
+// deathmatch.ending. The look has a line for each (hud_deathmatch.tscn, Remark): add one here, add
+// its line there.
+enum Ending : int32_t
+{
+	NoEnding = 0,
+	TimeRanOut = 1, // nobody scored
+	Flawless = 2, // nobody else scored
+	SinglePoint = 3, // a lead of one
+	ClearWin = 4,
+};
+
 enum Phase : int32_t
 {
 	Playing = 0,
@@ -47,6 +58,8 @@ public:
 		m_winner = declare.Field( "deathmatch.winner", BoardType::Int, BoardScope::Global );
 		m_round = declare.Field( "deathmatch.round", BoardType::Int, BoardScope::Global );
 		m_limit = declare.Field( "deathmatch.kill_limit", BoardType::Int, BoardScope::Global );
+		// How the last round ended (Ending). A number: the words for it are the look's.
+		m_ending = declare.Field( "deathmatch.ending", BoardType::Int, BoardScope::Global );
 
 		m_killed = declare.Event( "combat.killed" );
 		// a = the winner (0: nobody scored), value = the winning score.
@@ -154,6 +167,17 @@ private:
 		}
 		uint32_t winner = best >= 0 && m_scores[best] > 0 ? ctx.PlayerNetId( PlayerSlot( best ) ) : 0;
 		ctx.Set( 0, m_winner, int32_t( winner ) );
+		// How it was won: by how far the winner led whoever came second.
+		int32_t second = 0;
+		for ( int i = 0; i < kMaxPlayers; ++i )
+		{
+			if ( i != best && ctx.InWorld( PlayerSlot( i ) ) )
+			{
+				second = std::max( second, m_scores[i] );
+			}
+		}
+		int32_t lead = best >= 0 ? m_scores[best] - second : 0;
+		ctx.Set( 0, m_ending, winner == 0 ? TimeRanOut : second == 0 ? Flawless : lead <= 1 ? SinglePoint : ClearWin );
 		ctx.Set( 0, m_phase, Intermission );
 		ctx.Emit( m_roundEnd, winner, 0, best >= 0 ? m_scores[best] : 0 );
 		for ( int i = 0; i < kMaxPlayers; ++i )
@@ -192,6 +216,7 @@ private:
 		m_roundNumber += 1;
 		ctx.Set( 0, m_round, m_roundNumber );
 		ctx.Set( 0, m_winner, 0 );
+		ctx.Set( 0, m_ending, NoEnding );
 		ctx.Set( 0, m_phase, Playing );
 		ctx.Emit( m_roundStart, 0 );
 		m_state = Playing;
@@ -204,6 +229,7 @@ private:
 	FieldHandle m_winner;
 	FieldHandle m_round;
 	FieldHandle m_limit;
+	FieldHandle m_ending;
 	EventHandle m_killed;
 	EventHandle m_roundEnd;
 	EventHandle m_roundStart;

@@ -225,6 +225,14 @@ void CbFieldLabel::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_conditions" ), &CbFieldLabel::get_conditions );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "text_format", PROPERTY_HINT_MULTILINE_TEXT ), "set_text_format", "get_text_format" );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "conditions" ), "set_conditions", "get_conditions" );
+	ClassDB::bind_method( D_METHOD( "set_choice_field", "value" ), &CbFieldLabel::set_choice_field );
+	ClassDB::bind_method( D_METHOD( "get_choice_field" ), &CbFieldLabel::get_choice_field );
+	ClassDB::bind_method( D_METHOD( "set_choices", "value" ), &CbFieldLabel::set_choices );
+	ClassDB::bind_method( D_METHOD( "get_choices" ), &CbFieldLabel::get_choices );
+	ADD_GROUP( "Choices", "" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "choice_field", PROPERTY_HINT_PLACEHOLDER_TEXT, "deathmatch.ending" ), "set_choice_field",
+				  "get_choice_field" );
+	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "choices" ), "set_choices", "get_choices" );
 }
 
 void CbFieldLabel::_ready()
@@ -238,10 +246,25 @@ void CbFieldLabel::_process( double )
 	int rank = 0;
 	int64_t subject = SubjectOf( this, client, &rank );
 	bool show = client != nullptr && client->has_local_player() && client->check_conditions( subject, m_conditions );
-	set_visible( show );
-	if ( show && m_format.is_empty() == false )
+	String format = m_format;
+	if ( show && m_choiceField.is_empty() == false )
 	{
-		set_text( client->format_fields( subject, m_format.replace( "{rank}", String::num_int64( rank ) ) ) );
+		// The line the server's number picks; none (a mod that is not running, an empty line, a
+		// number past the last) and there is nothing to say.
+		Variant picked = client->get_field( subject, m_choiceField );
+		if ( picked.get_type() == Variant::NIL )
+		{
+			picked = client->evaluate( subject, m_choiceField );
+		}
+		int64_t line = picked.get_type() == Variant::NIL ? -1 : int64_t( double( picked ) );
+		String choice = line >= 0 && line < m_choices.size() ? m_choices[line] : String();
+		show = choice.is_empty() == false;
+		format = m_format.is_empty() ? choice : m_format.replace( "{choice}", choice );
+	}
+	set_visible( show );
+	if ( show && format.is_empty() == false )
+	{
+		set_text( client->format_fields( subject, format.replace( "{rank}", String::num_int64( rank ) ) ) );
 	}
 }
 

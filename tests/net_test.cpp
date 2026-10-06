@@ -2038,6 +2038,10 @@ void TestDeathmatch()
 	const BoardField* phase = schema.FindField( "deathmatch.phase" );
 	const BoardField* round = schema.FindField( "deathmatch.round" );
 	const BoardField* winner = schema.FindField( "deathmatch.winner" );
+	// How the round ended is a number; the words for it are the look's.
+	const BoardField* ending = schema.FindField( "deathmatch.ending" );
+	CHECK( ending != nullptr );
+	int32_t endingSeen = 0;
 	bool sawIntermission = false;
 	bool frozenInIntermission = true;
 	uint32_t winnerSeen = 0;
@@ -2046,6 +2050,7 @@ void TestDeathmatch()
 		{
 			sawIntermission = true;
 			winnerSeen = uint32_t( server.GlobalBoardValue( winner->slot ) );
+			endingSeen = server.GlobalBoardValue( ending->slot );
 			for ( int s = 0; s < 2; ++s )
 			{
 				const Character* c = server.PlayerCharacter( PlayerSlot( s ) );
@@ -2059,6 +2064,7 @@ void TestDeathmatch()
 	CHECK( sawIntermission );
 	CHECK( frozenInIntermission );
 	CHECK( winnerSeen == server.PlayerNetId( 0 ) );
+	CHECK( endingSeen == 2 ); // flawless: the other one never scored
 	CHECK( server.GlobalBoardValue( round->slot ) >= 2 );
 	for ( Bot& b : h.bots )
 	{

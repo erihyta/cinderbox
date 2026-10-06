@@ -2,7 +2,11 @@
 
 ; The round HUD, laid over the game's when a server runs deathmatch. Fields and events only:
 ;   deathmatch.phase (0 playing, 1 between rounds), .seconds, .round, .kill_limit, .winner (a player),
-;   deathmatch.score per player.
+;   deathmatch.score per player; deathmatch.ending, how the last round ended (0 none, 1 time ran
+;   out, 2 flawless, 3 by a single point, 4 a clear win).
+;   Remark          the words for deathmatch.ending are here, not on the server: a CbFieldLabel
+;                   whose choices are one line per number (line 0 empty: nothing to say). Reword
+;                   or translate them freely.
 ;   Scores          the scoreboard, made of ordinary nodes: a CbShowKey shows it while "scores" (Tab) is
 ;                   held; Header is plain Labels; Rows is a CbList of players whose child Row is one
 ;                   row as designed. In the game the list copies Row for every player, sorted, and
@@ -101,6 +105,20 @@ label_settings = SubResource("Small")
 horizontal_alignment = 1
 text_format = "next round in {deathmatch.seconds}"
 conditions = PackedStringArray("deathmatch.phase == 1")
+
+[node name="Remark" type="CbFieldLabel" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -420.0
+offset_top = 206.0
+offset_right = 420.0
+offset_bottom = 236.0
+label_settings = SubResource("Small")
+horizontal_alignment = 1
+conditions = PackedStringArray("deathmatch.phase == 1")
+choice_field = "deathmatch.ending"
+choices = PackedStringArray("", "Time ran out", "A flawless round", "By a single point", "A clear win")
 
 [node name="Scores" type="VBoxContainer" parent="."]
 anchors_preset = 8
