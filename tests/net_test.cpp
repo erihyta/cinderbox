@@ -179,9 +179,36 @@ struct Harness
 			{
 				proxy->Update( now );
 			}
-			for ( Bot& b : bots )
+			// Each client on a thread of its own for this step, as each is on a machine of its own in
+			// a real session: a client resimulates its whole rollback window for every frame, and
+			// several of them one after another take longer than a tick, which makes every input
+			// late and says nothing about the netcode. They share nothing but the sockets, and all
+			// are done before the server runs again or the test looks at them. Only once all of them
+			// play: while one is still joining they go one after another, so they join in the order
+			// they were added and tests can tell which slot is whose.
+			bool allPlaying = bots.size() > 1;
+			for ( const Bot& b : bots )
 			{
-				b.client->Update( now, [&b]( uint32_t tick ) { return b.Sample( tick ); } );
+				allPlaying = allPlaying && b.client->State() == ClientState::Playing;
+			}
+			if ( allPlaying )
+			{
+				std::vector<std::thread> stepping;
+				for ( Bot& b : bots )
+				{
+					stepping.emplace_back( [&b, now] { b.client->Update( now, [&b]( uint32_t tick ) { return b.Sample( tick ); } ); } );
+				}
+				for ( std::thread& t : stepping )
+				{
+					t.join();
+				}
+			}
+			else
+			{
+				for ( Bot& b : bots )
+				{
+					b.client->Update( now, [&b]( uint32_t tick ) { return b.Sample( tick ); } );
+				}
 			}
 			if ( onStep )
 			{
