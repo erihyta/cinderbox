@@ -144,6 +144,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_entity_template_name", "net_id" ), &CinderboxClient::get_entity_template_name );
 	ClassDB::bind_method( D_METHOD( "get_entity_node", "net_id" ), &CinderboxClient::get_entity_node );
 	ClassDB::bind_method( D_METHOD( "get_players" ), &CinderboxClient::get_players );
+	ClassDB::bind_method( D_METHOD( "add_item", "kind", "config" ), &CinderboxClient::add_item );
 	ClassDB::bind_method( D_METHOD( "get_items", "kind", "holder" ), &CinderboxClient::get_items );
 	ClassDB::bind_method( D_METHOD( "get_entity_name", "net_id" ), &CinderboxClient::get_entity_name );
 	ClassDB::bind_method( D_METHOD( "get_player_name", "net_id" ), &CinderboxClient::get_player_name );
@@ -1099,18 +1100,6 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 namespace
 {
 
-void CollectItemLooks( Node* node, std::vector<CbItemLook*>& out )
-{
-	if ( auto* look = Object::cast_to<CbItemLook>( node ) )
-	{
-		out.push_back( look );
-	}
-	for ( int i = 0; i < node->get_child_count(); ++i )
-	{
-		CollectItemLooks( node->get_child( i ), out );
-	}
-}
-
 uint64_t Mix( uint64_t hash, uint64_t value )
 {
 	return ( hash ^ value ) * 1099511628211ull;
@@ -1174,17 +1163,6 @@ void CinderboxClient::add_world_scene( Node* scene )
 	}
 	Director()->add_child( scene );
 	m_worldScenes.push_back( ObjectID( scene->get_instance_id() ) );
-	std::vector<CbItemLook*> looks;
-	CollectItemLooks( scene, looks );
-	for ( CbItemLook* look : looks )
-	{
-		if ( look->get_kind().is_empty() == false )
-		{
-			m_itemLooks[ToStd( look->get_kind() )] = look->get_scene();
-			m_itemNames[ToStd( look->get_kind() )] = look->get_display_name();
-			m_itemViewOffsets[ToStd( look->get_kind() )] = look->get_view_offset();
-		}
-	}
 	TypedArray<Node> linkLooks = scene->find_children( "*", "CbLinkLook", true, false );
 	if ( auto* self = Object::cast_to<CbLinkLook>( scene ) )
 	{
@@ -1196,6 +1174,37 @@ void CinderboxClient::add_world_scene( Node* scene )
 		if ( look != nullptr && look->get_scene().is_empty() == false )
 		{
 			m_linkLooks[ToStd( look->get_motion().strip_edges() )] = { look->get_scene(), look->get_from().strip_edges() };
+		}
+	}
+}
+
+void CinderboxClient::add_item( const String& kind, const String& config )
+{
+	std::string key = ToStd( kind.strip_edges() );
+	if ( key.empty() )
+	{
+		return;
+	}
+	// The lines the game reads; the rest is the server's (the body, the grip, the properties).
+	PackedStringArray lines = config.split( "\n" );
+	for ( const String& raw : lines )
+	{
+		String line = raw.strip_edges();
+		if ( line.begins_with( "scene " ) )
+		{
+			m_itemLooks[key] = line.substr( 6 ).strip_edges();
+		}
+		else if ( line.begins_with( "name " ) )
+		{
+			m_itemNames[key] = line.substr( 5 ).strip_edges();
+		}
+		else if ( line.begins_with( "view " ) )
+		{
+			PackedFloat64Array v = line.substr( 5 ).split_floats( " ", false );
+			if ( v.size() == 3 )
+			{
+				m_itemViewOffsets[key] = Vector3( float( v[0] ), float( v[1] ), float( v[2] ) );
+			}
 		}
 	}
 }

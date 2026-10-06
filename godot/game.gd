@@ -7,7 +7,7 @@ extends Node3D
 ##   res://ui/menu.tscn         the menus (join, in-game, settings), driven by menu.gd.
 ##   res://ui/hud_*.tscn        HUDs that come with workshop items, laid over the game's.
 ##   res://vfx/reactions*.tscn  world reactions (CbReaction nodes: scenes, sounds and screen effects
-##                              on events) and item looks (CbItemLook nodes), run by the client.
+##                              on events), run by the client. Items are res://items/*.cfg, baked from CbItem scenes.
 ##   res://prefabs/*.tscn       entity visuals (loaded by CinderboxClient).
 ##
 ## The game rules live in the server's mods. This script only knows the engine's own controls
@@ -726,6 +726,21 @@ func _load_reactions() -> void:
 		if reactions:
 			client.add_world_scene(reactions)
 	print("world reactions: ", names)
+	_load_item_kinds()
+
+
+## Items: every res://items/<kind>.cfg (baked from a scene whose root is a CbItem) says which scene
+## that kind is drawn as, what it is called and how it sits in first person.
+func _load_item_kinds() -> void:
+	var kinds := []
+	if DirAccess.dir_exists_absolute("res://items"):
+		for file in DirAccess.get_files_at("res://items"):
+			if file.ends_with(".cfg"):
+				var kind: String = file.trim_suffix(".cfg")
+				client.add_item(kind, FileAccess.get_file_as_string("res://items/%s" % file))
+				kinds.append(kind)
+	kinds.sort()
+	print("items: ", kinds)
 
 
 func _on_mod_event(name: String, _a: int, _b: int, _value: int, _position: Vector3, _vector: Vector3) -> void:

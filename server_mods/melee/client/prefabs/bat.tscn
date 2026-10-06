@@ -145,7 +145,13 @@ particles_anim_loop = false
 material = SubResource("StandardMaterial3D_lxpvx")
 size = Vector2(0.04, 0.04)
 
-[node name="Bat" type="Node3D" unique_id=1599722703]
+[node name="Bat" type="CbItem" unique_id=1599722703]
+kind = "melee.bat"
+display_name = "Bat"
+mass = 1.1
+properties = {
+"pickup.hold_seconds": 0.5
+}
 
 [node name="Handle" type="MeshInstance3D" parent="." unique_id=1253657060]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.05)
@@ -156,11 +162,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)
 mesh = SubResource("Barrel")
 surface_material_override/0 = SubResource("StandardMaterial3D_cfl35")
 
-[node name="Body" type="CbItemBody" parent="." unique_id=858476657]
-mass = 1.1
-properties = {
-"pickup.hold_seconds": 0.5
-}
+[node name="Body" type="CollisionShape3D" parent="." unique_id=858476657]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.31)
 shape = SubResource("Body")
 

@@ -46,13 +46,13 @@ std::shared_ptr<const anim::AnimSet> LoadAnimPackItem( const std::string& zipPat
 std::shared_ptr<const anim::AnimSet> LoadAnimPackFolder( const std::string& dir, const std::string& pack, std::string& error,
 														 std::string& warnings );
 
-// An item kind's body when it lies in the world, baked from its scene's CbItemBody into
+// An item kind's body when it lies in the world, baked from its scene's CbItem into
 // items/<kind>.cfg of the mod's item:
 //     shape box            or sphere
 //     half 0.035 0.035 0.41    half extents in metres (a sphere: its radius, three times)
 //     center 0 0 -0.31     the shape's centre in the grip's frame
 //     mass 1.1             kg
-// `properties` also gets the file's "property <name> <number>" lines (what the item's CbItemBody
+// `properties` also gets the file's "property <name> <number>" lines (what the item's CbItem
 // says about it: "pickup.hold_seconds 0.5").
 using ItemProperties = std::map<std::string, float>;
 bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error, ItemProperties* properties = nullptr );

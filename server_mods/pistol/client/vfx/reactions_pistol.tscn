@@ -134,9 +134,3 @@ place_node = NodePath("$at/RightHand")
 sound = "res://assets/sfx/reload.wav"
 volume_db = -10.0
 max_distance = 25.0
-
-[node name="Gun" type="CbItemLook" parent="."]
-kind = "pistol.gun"
-display_name = "Pistol"
-scene = "res://prefabs/pistol.tscn"
-view_offset = Vector3(0, 0.05, 0.03)

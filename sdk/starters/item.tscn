@@ -1,8 +1,12 @@
 [gd_scene format=3]
 
-; A starter item: what a "MODNAME.item" looks like in the hand, put away and lying in the world.
+; A starter item. This scene is the item: its root says which kind it is, and everything under it
+; is how it looks in the hand, put away and lying in the world. Saving it bakes
+; items/MODNAME.item.cfg, which the server reads and the game finds this scene by.
 ;
-;   Body        CbItemBody   its body when it lies in the world (baked to items/MODNAME.item.cfg)
+;   Item        CbItem             the kind (the one the server mod declares), its name on the HUD,
+;                                  its mass, its first-person view, numbers for mods (properties)
+;   Body        CollisionShape3D   its body when it lies in the world: a box or a sphere
 ;   Carry       CbGrip       where the carrying hand holds it. Turn it to turn the item in the hand
 ;   OtherHand   CbGrip       the other hand: as the animation has it (as_animated), or untick that
 ;                            and put the marker where that hand should hold
@@ -22,10 +26,12 @@ roughness = 0.6
 material = SubResource("Mat")
 size = Vector3(0.06, 0.1, 0.3)
 
-[node name="Item" type="Node3D"]
-
-[node name="Body" type="CbItemBody" parent="."]
+[node name="Item" type="CbItem"]
+kind = "MODNAME.item"
+display_name = "MODNAME"
 mass = 1.0
+
+[node name="Body" type="CollisionShape3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.08)
 shape = SubResource("Body")
 

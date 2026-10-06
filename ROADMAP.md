@@ -8,6 +8,7 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 | # | Milestone | In one line |
 |---|---|---|
 | 1 | [Anything can be shown](#1-anything-can-be-shown) | what the server knows reaches the screen through scenes, with no client code |
+| 1a | [Items and the inventory, in the engine](#1a-items-and-the-inventory-in-the-engine) | one node makes an item; slots are the simulation's, predicted; the rules stay a mod's |
 | 1b | [Motions in the editor](#1b-motions-in-the-editor) | a preview, checks at publish, the body follows a motion |
 | 2 | [The client, finished](#2-the-client-finished) | what is left of the client's known limits |
 | 3 | [The SDK knows the server](#3-the-sdk-knows-the-server) | the Godot modding project scaffolds the server half and knows its names |
@@ -63,8 +64,24 @@ says how it looks. No client code, and nothing in the engine that knows what a s
 | Saying things | **done (M102)**: the words are the look's; a label's `choices` are picked by a number the server sets, a `CbReaction` shows a scene on an event | choices on other nodes (a prompt, a texture or a scene picked by a number) |
 | Text nobody authored | player names only | what a player or a host types (chat, a team name, a message of the day): the parked `m101-text` branch has the mechanism (a text field, `ctx.SetText`) |
 | Lists on one entity | a field holds one value | array fields, or a `CbList` over the values of a field family |
-| One body description | `CbProp`, `CbTemplate` + `CbComponent` and `CbItemBody` each describe a dynamic body their own way; none exposes density, friction or bounce | one shared body (shape, mass or density, friction, restitution) for props, items and templates; `CbItemBody` keeps the grip offset, `properties` move off it |
+| One body description | `CbProp`, `CbTemplate` + `CbComponent` and `CbItem` each describe a dynamic body their own way; none exposes density, friction or bounce | one shared body (shape, mass or density, friction, restitution) for props, items and templates; the item keeps the grip offset |
 | HUD keys | `CbShowKey` adds an action of the viewer's own | they appear in key rebinding with the server's actions |
+
+### 1a. Items and the inventory, in the engine
+
+The engine has the mechanism (what an item is, where it is carried, how it moves between slots),
+predicted like walking; mods keep the rules (how many slots, what may go where, what a life
+starts with). The Roblox way: a tool is one object that has everything of its own.
+
+| Piece | Today | Would be |
+|---|---|---|
+| One node makes an item | **done (M104)**: `CbItem`, the root of the item's scene | an icon; a stack size |
+| How an item is used | each item mod reads the `fire` action while its item is out | a choice on the `CbItem`: **select, then the use button** (a tool: the slot key takes it out) or **the slot key uses it** (a consumable, an ability); one `used` signal for both, predicted |
+| Containers in the simulation | the `inventory` mod: four slots, in C++, switched by a command a round trip later | slots on a player (or any entity) as state: select, move, swap, drop, predicted; the mod sets the size and the rules |
+| An intent with a value | an action is one bit | "move slot 3 to slot 7" in the input |
+| The inventory screen | a row of slots drawn from fields | clicks, a cursor while a screen is open, client-only fields (`ui.picked_slot`); a click-to-move grid as the example |
+| An item's own reactions and predictions | in the mod's reactions scene, with conditions on the kind | under the `CbItem`, in force while that item is in use: an item scene that has everything of its own |
+| The rules API | C++ in each mod | what a mod decides about containers, named |
 
 ### 1b. Motions in the editor
 

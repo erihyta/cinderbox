@@ -278,9 +278,9 @@ AnimationTree (Godot) ──bake──> graph.cfg + clips (.ozz) ──> the sch
 | Held | an entity in a socket of its holder (`SpawnItem`, `HoldItem`); it has its own board and receives events |
 | Sockets | `CbSocket` nodes in the character scene, in the item's frame; the client places them from the pose and parents the item as `Item` |
 | Stowed | carried without being held, drawn in a holster socket |
-| In the world | a body baked from its scene's `CbItemBody` (shape, mass, properties) into `items/<kind>.cfg`; dropped, picked up, expiring |
+| In the world | a body baked from its scene's `CbItem` (the shape under it, mass, properties) into `items/<kind>.cfg`; dropped, picked up, expiring |
 | Properties | named numbers on a kind (`inventory.slot`, `pickup.hold_seconds`): how mods agree about items |
-| Look | a `CbItemLook` (kind -> scene) in the mod's reactions scene; the item's own reactions do the rest |
+| Look | the item's own scene, whose root is its `CbItem`: the baked `items/<kind>.cfg` names the scene, and the game reads every one it finds; the scene's own reactions do the rest |
 
 ## Looks
 
@@ -291,7 +291,7 @@ Everything a player sees and hears beyond bodies is data in workshop items: no s
 | `CbDirector` | the World node: entities with kind, template and state as metadata; runs the reactions under it. Plain Godot: anything can drive it |
 | `CbReaction` | on a **cue** (a mod event, a game event) or **while** conditions hold: an animation, a property, a listed method, a scene, a sound, a screen shake or flash, placed by the cue or a node |
 | `CbPrediction` | says which cue the server will answer a press with (or a held action, again every `cooldown`: `while_held`); the cue plays at once with the same reactions, and the server's cue then plays only what waited |
-| `CbItemLook` | which scene an item kind is drawn as |
+| `CbItem` | the root of an item's scene: kind, name, mass, properties, first-person view; with the `CollisionShape3D` and `CbGrip` nodes under it, baked to `items/<kind>.cfg` for the server (body, grip, properties) and the game (scene, name, view) |
 | `CbLinkLook` | which scene the line of a motion's probe is drawn as: stretched by the viewer from the player's socket to the line's end, which every frame carries (`FrameEntity::linkEnd`) |
 | `CbMotionSet`, `CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink` | not looks: authoring nodes for what a mod adds to movement, one family (`CbMotionPart`; the effects share `CbMotionEffect`), baked to `motions/<set>.cfg` for the simulation (docs/motions.md) |
 | `CbFieldLabel`, `CbFieldBinding`, `CbEventFeed`, `CbPromptLabel` | HUD from fields and events, for their subject: the local player, or the entity of the list row they are in |
@@ -404,7 +404,7 @@ src/present/      engine-independent presentation, what the Godot extensions dra
   scripts/          spawn/destroy effects, player pose evaluation, ragdoll poses
 src/godot/        the viewer GDExtension (cinderbox): CinderboxClient (draws a view source's frames as prefabs,
                   signals, items; the adapter that drives the World director), CinderboxSkeleton, map and entity authoring nodes,
-                  CbItemLook, HUD labels (cinderbox_hud.*), CbMotion (cinderbox_motion.*). No simulation, no networking
+                  CbItem, HUD labels (cinderbox_hud.*), CbMotion (cinderbox_motion.*). No simulation, no networking
   object_source.*   a source that is a Godot object handing over packets (the peer, or a script)
   peer/             the peer GDExtension (cinderbox_peer): CinderboxPeer, the sources that simulate
   packet_handoff.*  what both hand a viewer: the newest frame as a packet

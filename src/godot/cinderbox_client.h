@@ -80,7 +80,7 @@ public:
 	// The viewer looks out of its own player's eyes. Its own body is then drawn for that view: the
 	// upper body is held still under the camera (the walk no longer swings the arms across the
 	// screen; what the arms do themselves, a shot's recoil, still shows), moved by the held item's
-	// look (CbItemLook.view_offset), and only the arms and what is below the hips are drawn. Nothing
+	// look (CbItem.view_offset), and only the arms and what is below the hips are drawn. Nothing
 	// but this viewer's picture changes.
 	void set_first_person( bool value )
 	{
@@ -122,8 +122,11 @@ public:
 	godot::String get_entity_template_name( int64_t net_id ) const;
 	godot::Node3D* get_entity_node( int64_t net_id ) const;
 	// A world reactions scene (res://vfx/reactions*.tscn): kept under this node, its CbReaction
-	// nodes react to every event, its CbItemLook nodes say how held items look.
+	// nodes react to every event, its CbLinkLook nodes say how a probe's line looks.
 	void add_world_scene( godot::Node* scene );
+	// An item kind as its scene's CbItem baked it (res://items/<kind>.cfg): which scene it is drawn
+	// as, what it is called, its first-person view. The game hands over every one it finds.
+	void add_item( const godot::String& kind, const godot::String& config );
 	void clear_world_scenes();
 	// The World node (creates it on first use).
 	CbDirector* get_director();
@@ -287,7 +290,7 @@ private:
 	std::map<uint64_t, LinkNode> m_linkNodes;
 	void UpdateLinks();
 	std::map<std::string, godot::String> m_itemNames; // what prompts call a kind ("Bat")
-	std::map<std::string, godot::Vector3> m_itemViewOffsets; // CbItemLook.view_offset by kind
+	std::map<std::string, godot::Vector3> m_itemViewOffsets; // CbItem.view_offset by kind
 	bool m_firstPerson = false;
 	godot::ObjectID m_firstPersonSkeleton; // whose body is cut for it now
 	void FirstPersonBody( uint32_t netId, godot::Node* node, const AnimState* state, present::Models& models );

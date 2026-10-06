@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbItem" inherits="Node3D" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		Makes a scene an item: the root of the item's own scene says which kind it is, what it is called and what it weighs.
+	</brief_description>
+	<description>
+		One scene is one item. Its root is a [CbItem]; everything under it is the item:
+		- a [CollisionShape3D] with a [BoxShape3D] or a [SphereShape3D]: its body when it lies in the world, placed where the shape's centre is. It may be turned any way, but not scaled.
+		- [CbGrip] markers: where the hands hold it.
+		- meshes, lights, particles: how it looks in the hand, put away and on the floor.
+		- [CbReaction] nodes: what it shows when its holder does something (a muzzle flash).
+		The scene is the item's frame: the grip at the origin, pointing along -Z. The root's own transform is not used.
+		Saving the scene bakes [code]res://items/&lt;kind&gt;.cfg[/code] (the Bake button and publishing the mod do too). The server reads the body, the grip and the [member properties] from that file in the mod's workshop item; the game finds the scene, the [member display_name] and the [member view_offset] by it. A server mod declares the kind ([code]declare.ItemKind( "melee.bat" )[/code]) and says what it does.
+		In the game the node does nothing: the simulation owns the item.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="bake" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				The text of [code]items/&lt;kind&gt;.cfg[/code]: [code]{ text, error }[/code] ([code]text[/code] is empty when the item cannot be baked, and [code]error[/code] says why).
+			</description>
+		</method>
+		<method name="bake_to_project">
+			<return type="void" />
+			<description>
+				What the Bake button and saving the scene do: writes [code]res://items/&lt;kind&gt;.cfg[/code], only when its bytes change. Servers get it when the mod is published.
+			</description>
+		</method>
+		<method name="get_bake_button">
+			<return type="Callable" />
+			<description>
+				The inspector's Bake button.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="kind" type="String" setter="set_kind" getter="get_kind" default="&quot;&quot;">
+			The kind this scene is, in one word: the name a server mod declares ([code]melee.bat[/code]). The baked file is named after it, and a project has one scene per kind.
+		</member>
+		<member name="display_name" type="String" setter="set_display_name" getter="get_display_name" default="&quot;&quot;">
+			What prompts and lists call it ([code]Bat[/code]): [code]{look:field}[/code] and an item's [code]{name}[/code] in a format. Empty: its kind.
+		</member>
+		<member name="mass" type="float" setter="set_mass" getter="get_mass" default="1.0">
+			What it weighs when it lies in the world, in kilograms.
+		</member>
+		<member name="properties" type="Dictionary" setter="set_properties" getter="get_properties" default="{}">
+			Named numbers any server mod may read: [code]pickup.hold_seconds[/code] = 0.5, [code]inventory.slot[/code] = 3. They replace what the item's mod declared in code for the same names.
+		</member>
+		<member name="view_offset" type="Vector3" setter="set_view_offset" getter="get_view_offset" default="Vector3(0, 0, 0)">
+			First person: how far the arms holding this are moved in the viewer's own view, in metres to the right, up and ahead of where the pose has them. Only the viewer's own picture changes. Keep it small: far from the body the arms' cut ends come into view.
+		</member>
+	</members>
+</class>

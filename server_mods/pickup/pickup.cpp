@@ -10,7 +10,7 @@
 // and dying drops it.
 //
 // Some items take a moment: E has to be held for the item's "pickup.hold_seconds" (an item property,
-// authored on the item's CbItemBody or declared by its mod; --mod-option pickup.hold_seconds=N is
+// authored on the item's CbItem or declared by its mod; --mod-option pickup.hold_seconds=N is
 // the default for the rest, 0: a tap). "pickup.hold" says how long the item in reach needs, and
 // while E is held on it "pickup.since" is the tick that began (0: not holding): a look draws the
 // progress from those two, so the board changes when a hold starts and ends, not every tick.

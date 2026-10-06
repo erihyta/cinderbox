@@ -4,7 +4,7 @@
 		What the line of a motion's probe looks like: the rope of a grappling hook.
 	</brief_description>
 	<description>
-		A [CbMotion] with a [CbProbe] throws a line from a player to what it looked at. This node says what that line is drawn as: [member scene], one metre long along its -Z, which the game stretches from the player to the line's end for as long as it is out, while it flies and while it holds. Put it in the mod's [code]vfx/reactions_&lt;name&gt;.tscn[/code], next to its [CbItemLook] and [CbReaction] nodes.
+		A [CbMotion] with a [CbProbe] throws a line from a player to what it looked at. This node says what that line is drawn as: [member scene], one metre long along its -Z, which the game stretches from the player to the line's end for as long as it is out, while it flies and while it holds. Put it in the mod's [code]vfx/reactions_&lt;name&gt;.tscn[/code], next to its [CbItem] and [CbReaction] nodes.
 		Looks only. In conditions (a [CbReaction], a HUD node), [code]linked[/code] is true for a player whose line is out and [code]link_holds[/code] once it has taken hold.
 	</description>
 	<tutorials>
