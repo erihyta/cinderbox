@@ -66,7 +66,7 @@ The mods that ship:
 | Mod | Declares | Rules |
 |---|---|---|
 | `combat` | `combat.health`, `.max_health`, `.dead`, `.kills`, `.deaths`; hears `combat.damage`, `combat.heal`, `game.round_start`; says `combat.hurt`, `combat.killed`, `combat.respawned` | the one place health lives: applies any mod's damage, credits the kill, leaves a ragdoll, brings the player back. See [The combat mod](#the-combat-mod) |
-| `inventory` | `inventory.slot`, `inventory.item_2` .. `item_4`; actions `slot_1` .. `slot_4` (keys 1 to 4) | what a player carries: slot 1 is empty hands (and freelook), slots 2 to 4 hold one item each; the slot that is out has its item in the right hand, the rest are stowed. See [The inventory](items.md#the-inventory) |
+| `inventory` | `inventory.slot`, `inventory.item_1` .. `item_3`; `declare.Slots( 3 )` | the rules of [the inventory](items.md#the-inventory): three slots (the slots themselves, and selecting, moving and dropping, are the engine's, predicted); a life starts with every kind that says `inventory.start`; dying takes those back and drops the rest; empty hands are freelook |
 | `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage` | the bat: a full-body stance while it is out; left mouse swings (0.45 s, every 0.6 s), a fan of 1.8 m rays from the chest at the strike, spread sideways and pitched as far up or down as the player looks (look at the floor to hit what is low), 40 damage through `combat.damage` |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
 | `pistol` | `pistol.ammo`, `pistol.reloading`; `fire` (left mouse), `reload` (R), `mark` (right mouse); events `pistol.fired`, `pistol.hit`, `pistol.reload`, `pistol.dry`, `pistol.scan`, `pistol.marked`, `combat.damage` | hitscan from the camera pivot, 25 damage (the head doubles it) through `combat.damage`, 12 rounds, 1.5 s reload; the `pistol` stance on the `upper` layer while it is out; a new life (`combat.respawned`) comes with a full magazine |
@@ -77,8 +77,7 @@ The mods that ship:
 | `grapple` | action `grapple` (Q); event `grapple.fired`; the motion set `grapple.moves` | the example of a [probe, a force and a link](motions.md#probes-forces-and-links-the-grapple-mod): press Q to throw a hook at what is under the crosshair; it flies there, holds, and pulls you in on a rope you swing on; press Q again to let go; a prop it holds comes to you. All of it is the motion; the mod's C++ declares the three names |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; `deathmatch.ending`, how the last round ended, a number the look has [the words](looks.md#saying-things) for; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
-Mods cooperate through the board (`pickup` reads the `inventory.slot` that `inventory` publishes, to
-know there is one) and through item properties (`pistol` and `melee` tell `inventory` which slot
+Mods cooperate through the board and through item properties (`pistol` and `melee` tell `inventory` which slot
 their item lives in). They also cooperate through events: `pistol` and `melee` say `combat.damage`,
 `combat` answers with `combat.hurt` and `combat.killed`, `deathmatch` scores the kills, and its
 `game.round_start` gives everyone full health (`combat`) and a full magazine (`pistol`).

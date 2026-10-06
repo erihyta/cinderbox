@@ -77,9 +77,9 @@ starts with). The Roblox way: a tool is one object that has everything of its ow
 |---|---|---|
 | One node makes an item | **done (M104)**: `CbItem`, the root of the item's scene | an icon; a stack size |
 | How an item is used | each item mod reads the `fire` action while its item is out | a choice on the `CbItem`: **select, then the use button** (a tool: the slot key takes it out) or **the slot key uses it** (a consumable, an ability); one `used` signal for both, predicted |
-| Containers in the simulation | the `inventory` mod: four slots, in C++, switched by a command a round trip later | slots on a player (or any entity) as state: select, move, swap, drop, predicted; the mod sets the size and the rules |
-| An intent with a value | an action is one bit | "move slot 3 to slot 7" in the input |
-| The inventory screen | a row of slots drawn from fields | clicks, a cursor while a screen is open, client-only fields (`ui.picked_slot`); a click-to-move grid as the example |
+| Slots in the simulation | **done (M106)**: an item's slot and a player's selected slot are state; select, move and drop are intents in the input, predicted; the `inventory` mod is rules only | slots on entities that are not players (a chest); a count per slot (stacks); resizing one player's; slots in the cross-compiler reference scenario |
+| An intent with a value | **done (M106)** for slots: a kind, two slot numbers and a count in the input | intents a mod declares ("buy item 3") |
+| The inventory screen | a row of slots drawn from fields the mod publishes a tick late; keys 1 to 9 select | the look reads the slots themselves (in the frame); a `CbList` of slots; clicks, a cursor while a screen is open, client-only fields (`ui.picked_slot`); a click-to-move grid as the example |
 | An item's own reactions and predictions | in the mod's reactions scene, with conditions on the kind | under the `CbItem`, in force while that item is in use: an item scene that has everything of its own |
 | The rules API | C++ in each mod | what a mod decides about containers, named |
 

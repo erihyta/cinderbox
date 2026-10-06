@@ -50,43 +50,70 @@ in use), never which slot is out, so a picked-up pistol shows its ammo and a hol
 
 ## The inventory
 
-An item a player carries is **in use** (in a hand) or **stowed** (carried, in no hand). Stowing is
-the engine's; who carries what in which slot is the `inventory` mod's.
+What a player carries is in numbered **slots**. The slots are the engine's: they are simulation
+state, and what a player does with them is in its own input, so every simulation carries it out
+and the player's own screen does not wait for the server. What a life is given and loses is a mod's.
 
-| Engine verb (`Context`) | What it does |
+| | The engine (mechanism) | A mod (rules) |
+|---|---|---|
+| How many slots | up to 36 a player | `declare.Slots( 3 )` |
+| Select, move, drop | from the player's input, predicted | |
+| In the hand | the selected slot's item; the others are stowed in their holsters | |
+| Where a kind goes | its own slot, or the first free one | the item's `slot` and `holster` properties |
+| What a life starts with, what a death drops | | the `inventory` mod |
+
+| The player | What happens, on that tick |
 |---|---|
-| `GiveItem( holder, kind, holster )` | a new item, stowed |
-| `StowItem( item, holster )` | puts a held item away; `holster` is the socket it is drawn in meanwhile (none: out of sight) |
-| `HoldItem( item, socket )` | takes a carried item in use; does nothing if that socket has one in use (stow that first, same tick) |
-| `PickUpStowed( holder, item, holster )` | from the world straight to stowed |
-| `CarriedItems( slot )` | everything the player carries, in use and stowed |
+| A number key (1 to 9) | that slot is selected: its item comes into the right hand, the one that was there goes to its holster. Nothing is made, destroyed or dropped |
+| The selected slot's key again | empty hands |
+| Moves one slot onto another | the two trade what they hold (either may be empty). The selected slot stays selected, so the hand follows |
+| Drops a slot | its item is thrown out in front; the slot is empty |
 
-A stowed item is in no hand: `HeldItem`, item layers, state machine conditions and item-kind
-conditions in looks do not see it. It keeps its entity, its board and its look, and drops like any other.
+| The server | What happens |
+|---|---|
+| Gives an item (`ctx.GiveItem`) | into its kind's own slot, or the first free one; with none free it lies on the floor |
+| A player picks one up (`ctx.PickUpItem`) | the same, and it is selected: it comes out. With no slot for it, it stays where it lies |
+| A kind's own slot is taken | what is there moves to a free slot, or drops |
+
+- **It is state**: an item knows its slot (`HeldItem::slot`), a player which slot is selected (`Slots`). Hashed, rolled back, in snapshots and recordings.
+- **An intent is carried out once.** The input carries the intent and a count; a repeated or guessed input has the same count and does nothing again.
+- **A dead player's** intents are ignored.
+- **Without a mod that asks for slots** there are none, and a mod holds items in sockets itself (`ctx.HoldItem`, `ctx.StowItem`).
+
+An item is **in use** (in a hand) or **stowed** (carried, in no hand). A stowed item is in no hand:
+`HeldItem`, item layers, state machine conditions and item-kind conditions in looks do not see it.
+It keeps its entity, its board and its look, and drops like any other.
+
+Mods describe their items with properties and never touch the slots:
+
+```cpp
+m_bat = declare.ItemKind( "melee.bat" );
+declare.ItemProperty( m_bat, "slot", 2.0f );                        // the engine's: its own slot (from 1); without it: the first free one
+declare.ItemProperty( m_bat, "holster", declare.Socket( "Back" ) ); // the engine's, optional: where it hangs while another slot is selected
+declare.ItemProperty( m_bat, "inventory.start", 1.0f );             // the inventory mod's: every life starts with one
+```
+
+| For a mod (`Context`) | |
+|---|---|
+| `SlotCount()` | how many slots players have (0: none) |
+| `SelectedSlot( player )` | which one is selected (-1: empty hands) |
+| `SlotItem( player, slot )` | the item in one (0: empty) |
+| `CarriedItems( player )` | everything carried, each with its `slot` |
 
 The `inventory` mod's rules:
 
 | Situation | What happens |
 |---|---|
-| A life starts | Every item kind with `inventory.start` is given, stowed |
-| A slot key (1 to 4) | That slot's item comes into the right hand; what was in the hand is stowed. Nothing is made, destroyed or dropped |
-| An item is picked up (E) | It goes to its kind's slot and comes into the hand. If that slot had an item, the old one drops (one per slot). Other slots are untouched |
-| G | Throws what is in the hand; its slot is empty until something is picked up |
-| Death | What the life started with is taken back; anything else carried drops where the player stood. The next life starts with the slot that was out |
+| A life starts | every item kind with `inventory.start` is given |
+| Death | what the life started with is taken back; anything else carried drops where the player stood. The next life starts with the slot that was selected |
+| Empty hands | freelook again (a weapon turns camera-facing on when it comes out) |
 
 The mod's look (`server_mods/inventory/client`, a workshop item like the others) is a row of slots
 along the bottom of the screen, all data: `inventory.item_N` holds the NetId of slot N's item, a
-label shows `{look:inventory.item_N}` (what that item is called), and the slot that is out
-(`inventory.slot == N`) is highlighted.
-
-Other mods describe their items with properties and never touch the slots:
-
-```cpp
-m_bat = declare.ItemKind( "melee.bat" );
-declare.ItemProperty( m_bat, "inventory.slot", 3.0f );                       // lives in slot 3 (2..4); without it: the first free slot
-declare.ItemProperty( m_bat, "inventory.start", 1.0f );                      // every life starts with one
-declare.ItemProperty( m_bat, "inventory.holster", declare.Socket( "Back" ) ); // optional: where it hangs while stowed
-```
+label shows `{look:inventory.item_N}` (what that item is called), and the selected slot
+(`inventory.slot == N`; 0: empty hands) is highlighted. The mod publishes those fields from the
+engine's state, so the row follows the hands a moment later; a look that reads the slots themselves
+is the next step ([roadmap](../ROADMAP.md#1a-items-and-the-inventory-in-the-engine)).
 
 **Holsters are optional, twice over.** The mod chooses whether its item has one, and the character
 chooses whether it has that socket: a `CbSocket` node named like it (`Back`, `Hip`) under a
