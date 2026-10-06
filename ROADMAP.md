@@ -60,7 +60,8 @@ says how it looks. No client code, and nothing in the engine that knows what a s
 | Piece | Today | Would be |
 |---|---|---|
 | Lists | **done (M100)**: `CbList`, a row per player or item, designed as a scene; `CbShowKey` | a headless check that drives one; a grid whose columns size themselves |
-| Text from the server | fields are Int, Float or Bool: a server cannot say "Defend the east gate" or name a team | a text a field points at: strings in the mod's pack by index first (translatable, nothing new on the wire), then free strings the server sends |
+| Saying things | **done (M102)**: the words are the look's; a label's `choices` are picked by a number the server sets, a `CbReaction` shows a scene on an event | choices on other nodes (a prompt, a texture or a scene picked by a number) |
+| Text nobody authored | player names only | what a player or a host types (chat, a team name, a message of the day): the parked `m101-text` branch has the mechanism (a text field, `ctx.SetText`) |
 | Lists on one entity | a field holds one value | array fields, or a `CbList` over the values of a field family |
 | One body description | `CbProp`, `CbTemplate` + `CbComponent` and `CbItemBody` each describe a dynamic body their own way; none exposes density, friction or bounce | one shared body (shape, mass or density, friction, restitution) for props, items and templates; `CbItemBody` keeps the grip offset, `properties` move off it |
 | HUD keys | `CbShowKey` adds an action of the viewer's own | they appear in key rebinding with the server's actions |

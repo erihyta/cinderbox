@@ -170,7 +170,7 @@ The HUD reads the board too, through script-free nodes any HUD scene can use:
 
 | Node | Does |
 |---|---|
-| `CbFieldLabel` | a Label with a `text_format` (`"AMMO {pistol.ammo} / 12"`), shown while its `conditions` hold. `{an expression}` works too: `"{combat.health * 100 / combat.max_health}%"` |
+| `CbFieldLabel` | a Label with a `text_format` (`"AMMO {pistol.ammo} / 12"`), shown while its `conditions` hold. `{an expression}` works too: `"{combat.health * 100 / combat.max_health}%"`. With `choice_field` and `choices` it shows the line a number picks ([Saying things](#saying-things)) |
 | `CbFieldBinding` | writes a field, or an expression over fields (`combat.health / combat.max_health`), into any property of its `target` (default: its parent), `value = field * multiply + add`; with conditions it hides the target while they fail. A `ProgressBar`'s `value` and `max_value`, a panel's `visible`, a colour |
 | `CbEventFeed` | a line per mod event, `"{a}  >  {b}"` with player names, fading after `line_seconds` (a kill feed) |
 | `CbList` | a row per player or item: its first child is the row as you designed it, copied for every entry; `where` filters, `sort_by` orders, `max_rows` cuts ([Lists](#lists)) |
@@ -182,6 +182,35 @@ In formats, `{field}` is the subject's field, `{name}` what it is called (a play
 name of the player a field points at (`"{name:deathmatch.winner} WINS"`), `{look:field}` what the
 entity a field points at is called (an item's `display_name`: `"Bat"`), and `{key:action}` the key
 the player has that action bound to now (`"E"`, `"LMB"`: rebinding shows).
+
+### Saying things
+
+The words are the look's. The server says what is true, as a number or an event; the scene has the
+words for it, with their font, place, sound and language. So a message can be reworded, restyled or
+translated by a client mod, and the server never sends a string.
+
+| The server says | The scene | Good for |
+|---|---|---|
+| a field is in a state (`deathmatch.phase == 1`) | a label or a whole panel with `conditions` | what holds for a while: a banner, a warning, a mode |
+| one of several (`deathmatch.ending = 2`) | one `CbFieldLabel` with `choice_field` and a line per number in `choices` | a message picked from a list |
+| something happened (`deathmatch.round_end`) | a `CbReaction` on the event: a scene for a few seconds, an animation, a sound | a moment: a kill, a capture, a round ending |
+
+```
+Remark   CbFieldLabel   conditions: deathmatch.phase == 1          (server_mods/deathmatch/client/ui/hud_deathmatch.tscn)
+                        choice_field: deathmatch.ending
+                        choices: "", "Time ran out", "A flawless round", "By a single point", "A clear win"
+```
+
+```cpp
+// server_mods/deathmatch/deathmatch.cpp: which one, not what it says.
+ctx.Set( 0, m_ending, second == 0 ? Flawless : lead <= 1 ? SinglePoint : ClearWin );
+```
+
+- **Line 0 is "nothing"**: fields start at 0, so leave the first line empty. An empty line, or a number past the last, hides the label.
+- **A line is a format**: `"{name:deathmatch.winner} takes it"` works in a choice.
+- **`choice_field` can be an expression**: `combat.health < 25` picks line 1 when it holds, line 0 when not.
+- **`{choice}`** in `text_format` is the picked line, when there is more around it: `"-- {choice} --"`.
+- **Text nobody could write beforehand** (what a player types, a host's message of the day) is not covered: nothing in the game makes such text yet. Player names are the one case, and have their own path.
 
 ### Lists
 
