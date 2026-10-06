@@ -25,6 +25,23 @@ enum InputButton : uint8_t
 };
 inline constexpr uint8_t kEngineButtons = BtnJump | BtnSprint;
 
+// Slots: what a player carries, in numbered places (0 .. SimConfig::slots - 1). The slot that is
+// selected has its item in the hand; the others' items are stowed. Which item is in which slot is
+// on the item (HeldItem::slot); which slot is selected is on the player (Slots).
+inline constexpr int kMaxSlots = 36;
+inline constexpr uint8_t kNoSlot = 255;
+
+// What a player asks of its slots, in its input: so every simulation runs it, the player's own
+// prediction included. An intent is carried out once, on the tick PlayerInput::intentSeq changes.
+enum class SlotIntent : uint8_t
+{
+	None = 0,
+	Select = 1, // intentA: the slot. The selected slot again, or kNoSlot: its item is put away, empty hands
+	Move = 2,	// intentA to intentB: the two slots trade what they hold (either may be empty)
+	Drop = 3,	// intentA: the slot, or kNoSlot for the selected one. Its item is thrown out
+};
+inline constexpr uint8_t kLastSlotIntent = uint8_t( SlotIntent::Drop );
+
 // Mod actions per player. The server tells clients which bit is which (and the default key for
 // it) when they join; the simulation never looks at them.
 inline constexpr int kMaxActions = 16;
@@ -61,10 +78,14 @@ struct PlayerInput
 	uint16_t actions = 0;	 // mod action bits (held state)
 	uint8_t buttons = 0;	 // InputButton bits (held state; the sim detects edges)
 	uint8_t view = 0;		 // ViewMode
+	uint8_t intent = 0;		 // SlotIntent, carried out when intentSeq changes
+	uint8_t intentA = 0;
+	uint8_t intentB = 0;
+	uint8_t intentSeq = 0;	 // counts the player's intents (it wraps)
 
 	bool operator==( const PlayerInput& ) const = default;
 };
-static_assert( sizeof( PlayerInput ) == 10, "PlayerInput has padding" );
+static_assert( sizeof( PlayerInput ) == 14, "PlayerInput has padding" );
 
 enum class PlayerEventType : uint8_t
 {
@@ -246,6 +267,11 @@ struct SimConfig
 	// How players move, unless a mod says otherwise for one of them (move_params.h): the engine's
 	// defaults, with the server's options and then its character's values laid over them.
 	MoveParams move;
+
+	// How many slots a player has (0: none; a mod then holds items in sockets itself), and the
+	// socket (schema order) the selected slot's item is held in.
+	uint8_t slots = 0;
+	uint8_t slotHand = 0;
 
 	bool operator==( const SimConfig& ) const = default;
 

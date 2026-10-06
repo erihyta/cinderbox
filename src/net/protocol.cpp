@@ -14,7 +14,7 @@ constexpr size_t kMaxReasonLength = 256;
 constexpr uint8_t kMaxInputsPerPacket = 32;
 
 // Per-player field mask inside a frame.
-enum InputField : uint8_t
+enum InputField : uint16_t
 {
 	FieldMoveRight = 1 << 0,
 	FieldMoveForward = 1 << 1,
@@ -24,7 +24,8 @@ enum InputField : uint8_t
 	FieldView = 1 << 5,
 	FieldPitch = 1 << 6,
 	FieldActions = 1 << 7,
-	FieldAll = 0xFF,
+	FieldIntent = 1 << 8, // intent, intentA, intentB, intentSeq
+	FieldAll = 0x1FF,
 };
 
 // Which members of a command follow its type byte. Anything left out is zero, so most commands
@@ -127,6 +128,8 @@ void WriteConfig( ByteWriter& w, const SimConfig& c )
 	{
 		w.Write( value );
 	}
+	w.Write( c.slots );
+	w.Write( c.slotHand );
 }
 
 bool ReadConfig( ByteReader& r, SimConfig& c )
@@ -143,7 +146,9 @@ bool ReadConfig( ByteReader& r, SimConfig& c )
 	{
 		value = r.Read<float>();
 	}
-	return r.Ok() && ValidMoveParams( c.move ) && c.tickRate >= 10 && c.tickRate <= 240 && c.subSteps >= 1 && c.subSteps <= 16 && c.physicsArenaMB >= 8 &&
+	c.slots = r.Read<uint8_t>();
+	c.slotHand = r.Read<uint8_t>();
+	return r.Ok() && c.slots <= kMaxSlots && ValidMoveParams( c.move ) && c.tickRate >= 10 && c.tickRate <= 240 && c.subSteps >= 1 && c.subSteps <= 16 && c.physicsArenaMB >= 8 &&
 		   c.physicsArenaMB <= 4096;
 }
 
@@ -505,7 +510,7 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
 			const PlayerInput& now = frame.inputs[i];
 			const PlayerInput& before = m_previous[i];
 			int yawDelta = int16_t( uint16_t( now.cameraYaw - before.cameraYaw ) );
-			uint8_t fields = 0;
+			uint16_t fields = 0;
 			fields |= now.moveRight != before.moveRight ? FieldMoveRight : 0;
 			fields |= now.moveForward != before.moveForward ? FieldMoveForward : 0;
 			if ( now.cameraYaw != before.cameraYaw )
@@ -516,6 +521,10 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
 			fields |= now.view != before.view ? FieldView : 0;
 			fields |= now.cameraPitch != before.cameraPitch ? FieldPitch : 0;
 			fields |= now.actions != before.actions ? FieldActions : 0;
+			fields |= now.intent != before.intent || now.intentA != before.intentA || now.intentB != before.intentB ||
+							  now.intentSeq != before.intentSeq
+						  ? FieldIntent
+						  : 0;
 
 			w.Write( fields );
 			if ( fields & FieldMoveRight )
@@ -534,6 +543,13 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
 				w.Write( now.cameraPitch );
 			if ( fields & FieldActions )
 				w.Write( now.actions );
+			if ( fields & FieldIntent )
+			{
+				w.Write( now.intent );
+				w.Write( now.intentA );
+				w.Write( now.intentB );
+				w.Write( now.intentSeq );
+			}
 		}
 	}
 	m_previous = frame.inputs;
@@ -578,7 +594,7 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame )
 			continue;
 		}
 		PlayerInput& in = frame.inputs[i];
-		uint8_t fields = r.Read<uint8_t>();
+		uint16_t fields = r.Read<uint16_t>();
 		if ( fields == 0 || ( fields & ~FieldAll ) != 0 || ( ( fields & FieldYaw ) && ( fields & FieldYawDelta ) ) )
 		{
 			return false;
@@ -599,6 +615,17 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame )
 			in.cameraPitch = r.Read<int16_t>();
 		if ( fields & FieldActions )
 			in.actions = r.Read<uint16_t>();
+		if ( fields & FieldIntent )
+		{
+			in.intent = r.Read<uint8_t>();
+			in.intentA = r.Read<uint8_t>();
+			in.intentB = r.Read<uint8_t>();
+			in.intentSeq = r.Read<uint8_t>();
+			if ( in.intent > kLastSlotIntent )
+			{
+				return false;
+			}
+		}
 	}
 	if ( r.Ok() == false )
 	{

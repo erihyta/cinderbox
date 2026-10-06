@@ -77,9 +77,9 @@ public:
 		// (That a bat takes half a second to pick up is authored with the item: the CbItem's
 		// properties, "pickup.hold_seconds".)
 		m_hand = declare.Socket( "RightHand" );
-		declare.ItemProperty( m_bat, "inventory.slot", 3.0f );
+		declare.ItemProperty( m_bat, "slot", 2.0f );
 		declare.ItemProperty( m_bat, "inventory.start", 1.0f );
-		declare.ItemProperty( m_bat, "inventory.holster", declare.Socket( "Back" ) );
+		declare.ItemProperty( m_bat, "holster", declare.Socket( "Back" ) );
 		m_hot = declare.Field( "melee.hot", BoardType::Bool );
 		m_full = declare.Layer( "full" );
 		m_ready = declare.Stance( "melee" );

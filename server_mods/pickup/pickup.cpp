@@ -75,8 +75,6 @@ public:
 		m_hold = declare.Field( "pickup.hold", BoardType::Float );
 		m_since = declare.Field( "pickup.since", BoardType::Int );
 		m_hand = declare.Socket( "RightHand" );
-		// Published by the inventory mod when it runs (1 or more); 0 (never set): there is none.
-		m_inventory = declare.Field( "inventory.slot", BoardType::Int );
 	}
 
 	void Start( Context& ctx ) override
@@ -109,7 +107,8 @@ public:
 			}
 			uint32_t target = SlotTarget( slot );
 			uint32_t inHand = ctx.HeldItem( slot, m_hand );
-			bool inventory = ctx.Get( netId, m_inventory ) != 0;
+			// With slots (an inventory), what is picked up goes into one, and that decides what a death drops.
+			bool inventory = ctx.SlotCount() > 0;
 
 			// Dying lets go of what the hand holds (with an inventory, that decides what a death drops).
 			if ( c->dead != 0 )
@@ -166,7 +165,7 @@ public:
 			}
 			if ( take && inventory )
 			{
-				// Carried from now on; the inventory finds its slot and takes it out.
+				// Carried from now on: the engine finds its slot and takes it out.
 				ctx.PickUpStowed( target, p.holding );
 				p.holding = 0;
 			}
@@ -245,7 +244,6 @@ private:
 	FieldHandle m_target;
 	FieldHandle m_hold;
 	FieldHandle m_since;
-	FieldHandle m_inventory;
 	float m_holdSeconds = 0.0f;
 	SocketHandle m_hand;
 	int m_spawnEach = 0;

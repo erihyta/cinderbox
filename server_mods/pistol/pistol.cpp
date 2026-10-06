@@ -97,9 +97,9 @@ public:
 		m_gun = declare.ItemKind( "pistol.gun" );
 		m_hand = declare.Socket( "RightHand" );
 		// For the inventory mod: slot 2, one for every life, on the hip while it is put away.
-		declare.ItemProperty( m_gun, "inventory.slot", 2.0f );
+		declare.ItemProperty( m_gun, "slot", 1.0f );
 		declare.ItemProperty( m_gun, "inventory.start", 1.0f );
-		declare.ItemProperty( m_gun, "inventory.holster", declare.Socket( "Hip" ) );
+		declare.ItemProperty( m_gun, "holster", declare.Socket( "Hip" ) );
 	}
 
 	void Start( Context& ctx ) override

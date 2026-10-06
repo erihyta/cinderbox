@@ -71,6 +71,14 @@ constexpr bool kTimingChecks = false;
 
 using Clock = std::chrono::steady_clock;
 
+// What a test script calls the number keys: bits no mod's action has (the harness checks), which
+// Bot::Sample turns into slot intents.
+constexpr uint16_t kKeySlot1 = 1 << 12;
+constexpr uint16_t kKeySlot2 = 1 << 13;
+constexpr uint16_t kKeySlot3 = 1 << 14;
+constexpr uint16_t kKeyHands = 1 << 15;
+constexpr uint16_t kSlotKeys = kKeySlot1 | kKeySlot2 | kKeySlot3 | kKeyHands;
+
 struct Bot
 {
 	std::unique_ptr<GameClient> client;
@@ -78,11 +86,36 @@ struct Bot
 	// Replaces the brain when set.
 	std::function<PlayerInput( uint32_t )> script;
 
+	// The slot key the bot pressed last (kKeySlot1 ..): its intent stays in its input, as a player's
+	// does, so it is carried out once.
+	uint16_t slotKey = 0;
+	uint16_t slotKeyDown = 0;
+	uint8_t slotPresses = 0;
+
 	PlayerInput Sample( uint32_t tick )
 	{
 		if ( script )
 		{
-			return script( tick );
+			PlayerInput in = script( tick );
+			// Slots are the engine's now: a script still says "the pistol's key" as a bit, and this
+			// turns it into the intent a number key sends.
+			uint16_t key = uint16_t( in.actions & kSlotKeys );
+			if ( key != 0 && key != slotKeyDown )
+			{
+				// A press: one more intent. (Held, it is one press, as a key is.)
+				slotKey = key;
+				slotPresses = uint8_t( slotPresses + 1 );
+			}
+			slotKeyDown = key;
+			in.actions = uint16_t( in.actions & ~kSlotKeys );
+			if ( slotKey != 0 )
+			{
+				uint8_t slot = slotKey & kKeySlot1 ? 0 : slotKey & kKeySlot2 ? 1 : slotKey & kKeySlot3 ? 2 : kNoSlot;
+				in.intent = uint8_t( SlotIntent::Select );
+				in.intentA = slot;
+				in.intentSeq = slotPresses;
+			}
+			return in;
 		}
 		// The spawn button is a mod action; its bit comes from the server's schema.
 		brain.spawnAction = client->Schema().ActionMask( "spawn_prop" );
@@ -552,6 +585,7 @@ void TestLossySession()
 	sim.SetAnimGraph( replay.Graph() ); // what the server ran: the character's state machine
 	sim.SetAnimPacks( replay.Packs() );
 	sim.SetMotions( replay.MotionSets() );
+	sim.SetItemShapes( replay.Schema().itemShapes ); // where each kind is stowed
 	size_t next = 0;
 	size_t verified = 0;
 	for ( const InputFrame& frame : replay.Frames() )
@@ -583,7 +617,7 @@ void TestModsSession()
 	CHECK( schema.FindEvent( "pistol.fired" ) >= 0 );
 	CHECK( schema.ActionMask( "fire" ) != 0 );
 	uint16_t fire = schema.ActionMask( "fire" );
-	uint16_t pistol = schema.ActionMask( "slot_2" );
+	uint16_t pistol = kKeySlot1;
 	uint16_t spawn = schema.ActionMask( "spawn_prop" );
 
 	// Slot 0 stands at x = -5.25 and slot 1 at x = -3.75 (the sandbox spawn grid): slot 0 looks
@@ -848,7 +882,7 @@ void TestPickup()
 {
 	Harness h( 47804, {}, {}, { { "pickup.spawn_each", "1" } } );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t bat = schema.ActionMask( "slot_3" );
+	uint16_t bat = kKeySlot2;
 	uint16_t pickup = schema.ActionMask( "pickup" );
 	uint16_t drop = schema.ActionMask( "drop" );
 	const BoardField* target = schema.FindField( "pickup.target" );
@@ -956,7 +990,7 @@ void TestPickup()
 	}
 }
 
-// The inventory: a life starts with a pistol (slot 2) and a bat (slot 3), carried but put away.
+// The inventory: a life starts with a pistol (slot 1) and a bat (slot 2), carried but put away.
 // Switching slots moves items between the hand and stowed and never drops or makes one. Picking up
 // a bat that lies in the world while carrying one swaps them (the old one drops), leaves the pistol
 // alone, and brings the new bat into the hand; switching away from it and back keeps it. A thrown
@@ -965,15 +999,15 @@ void TestInventory()
 {
 	Harness h( 47805, {}, {}, { { "pickup.spawn_each", "1" } } );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t gunSlot = schema.ActionMask( "slot_2" );
-	uint16_t batSlot = schema.ActionMask( "slot_3" );
+	uint16_t gunSlot = kKeySlot1;
+	uint16_t batSlot = kKeySlot2;
 	uint16_t pickup = schema.ActionMask( "pickup" );
 	uint16_t drop = schema.ActionMask( "drop" );
 	int gunKind = schema.FindItemKind( "pistol.gun" );
 	int batKind = schema.FindItemKind( "melee.bat" );
 	const BoardField* slotField = schema.FindField( "inventory.slot" );
-	const BoardField* slot2 = schema.FindField( "inventory.item_2" );
-	const BoardField* slot3 = schema.FindField( "inventory.item_3" );
+	const BoardField* slot2 = schema.FindField( "inventory.item_1" ); // the pistol's
+	const BoardField* slot3 = schema.FindField( "inventory.item_2" ); // the bat's
 	CHECK( gunSlot != 0 && batSlot != 0 && pickup != 0 && drop != 0 && gunKind >= 0 && batKind >= 0 && slotField != nullptr );
 	CHECK( slot2 != nullptr && slot3 != nullptr );
 	if ( gunKind < 0 || batKind < 0 || slotField == nullptr || slot2 == nullptr || slot3 == nullptr )
@@ -1108,14 +1142,14 @@ void TestInventory()
 			swapped |= old != nullptr && old->holder == 0 && c.lying == 3;
 			gunKept |= c.carried == 3 && c.stowed == 2;
 		}
-		// Slot 2 and back to 3: the picked-up bat is put away and taken out, never dropped.
+		// The pistol's slot and back to the bat's: the picked-up bat is put away and taken out, never dropped.
 		const HeldItem* mine = lyingBat != 0 ? server.FindEntity( lyingBat ).try_get<HeldItem>() : nullptr;
 		awayAndKept |= tick > 545 && tick < 560 && kindOf( inHand ) == gunKind && mine != nullptr && mine->holder == me && mine->stowed != 0 &&
 					   c.lying == 3;
 		backInHand |= tick > 585 && tick < 600 && inHand == lyingBat && reached;
 		thrown |= tick > 610 && tick < 630 && inHand == 0 && c.carried == 2 && c.lying == 4;
 		gunAfterThrow |= tick > 645 && tick < 660 && kindOf( inHand ) == gunKind;
-		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 2 && server.BoardValue( me, slotField->slot ) == 3;
+		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 2 && server.BoardValue( me, slotField->slot ) == 2; // the bat's slot is selected, and empty
 	} );
 	h.Report();
 	std::printf( "    starts stowed %d, bat out %d, pistol out %d, dropped by switching %d\n", int( startsStowed ), int( batOut ), int( gunOut ),
@@ -1217,7 +1251,7 @@ void TestItemLayers()
 		};
 	} );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t bat = schema.ActionMask( "slot_3" );
+	uint16_t bat = kKeySlot2;
 	uint16_t crouch = schema.ActionMask( "crouch" );
 	uint16_t drop = schema.ActionMask( "drop" );
 	int carry = -1;
@@ -1404,7 +1438,7 @@ void TestHeadshot()
 	Harness h( 47801 );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fire = schema.ActionMask( "fire" );
-	uint16_t pistol = schema.ActionMask( "slot_2" );
+	uint16_t pistol = kKeySlot1;
 	int hitEvent = schema.FindEvent( "pistol.hit" );
 
 	// From one spawn point's eye to the next one's head: 0.15 m down over 1.5 m, about 5.7 degrees.
@@ -1500,7 +1534,7 @@ void TestCombat()
 	Harness h( 47812, {}, {}, { { "combat.max_health", "60" }, { "combat.respawn_seconds", "1" } } );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fire = schema.ActionMask( "fire" );
-	uint16_t pistol = schema.ActionMask( "slot_2" );
+	uint16_t pistol = kKeySlot1;
 	int hurtEvent = schema.FindEvent( "combat.hurt" );
 	int killedEvent = schema.FindEvent( "combat.killed" );
 	int respawnedEvent = schema.FindEvent( "combat.respawned" );
@@ -1586,7 +1620,7 @@ void TestPistolMark()
 	Harness h( 47811 );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t mark = schema.ActionMask( "mark" );
-	uint16_t pistol = schema.ActionMask( "slot_2" );
+	uint16_t pistol = kKeySlot1;
 	int scanEvent = schema.FindEvent( "pistol.scan" );
 	int markedEvent = schema.FindEvent( "pistol.marked" );
 	CHECK( mark != 0 && scanEvent >= 0 && markedEvent >= 0 );
@@ -1660,8 +1694,8 @@ void TestRifle()
 	Harness h( 47823 );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fire = schema.ActionMask( "fire" );
-	uint16_t rifle = schema.ActionMask( "slot_4" );
-	uint16_t pistol = schema.ActionMask( "slot_2" );
+	uint16_t rifle = kKeySlot3;
+	uint16_t pistol = kKeySlot1;
 	int rifleFired = schema.FindEvent( "rifle.fired" );
 	int rifleDry = schema.FindEvent( "rifle.dry" );
 	int rifleReload = schema.FindEvent( "rifle.reload" );
@@ -1760,8 +1794,8 @@ void TestGunSwap()
 {
 	Harness h( 47824 );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t rifle = schema.ActionMask( "slot_4" );
-	uint16_t pistol = schema.ActionMask( "slot_2" );
+	uint16_t rifle = kKeySlot3;
+	uint16_t pistol = kKeySlot1;
 	int upper = schema.FindLayer( "upper" );
 	int pistolStance = schema.FindStance( "pistol" );
 	int rifleStance = schema.FindStance( "rifle" );
@@ -1804,9 +1838,9 @@ void TestMelee()
 	Harness h( 47802 );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fire = schema.ActionMask( "fire" );
-	uint16_t bat = schema.ActionMask( "slot_3" );
-	uint16_t pistol = schema.ActionMask( "slot_2" );
-	uint16_t hands = schema.ActionMask( "slot_1" );
+	uint16_t bat = kKeySlot2;
+	uint16_t pistol = kKeySlot1;
+	uint16_t hands = kKeyHands;
 	int full = schema.FindLayer( "full" );
 	int ready = schema.FindStance( "melee" );
 	int swing = schema.FindStance( "melee_swing" );
@@ -1929,7 +1963,7 @@ void TestMeleePitch()
 	Harness h( 47803 );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fire = schema.ActionMask( "fire" );
-	uint16_t bat = schema.ActionMask( "slot_3" );
+	uint16_t bat = kKeySlot2;
 	int healthSlot = schema.FindField( "combat.health" )->slot;
 	auto pitchOf = std::make_shared<int16_t>( int16_t( 13000 ) ); // 71 degrees up
 	h.AddBot().script = [=]( uint32_t tick ) {
@@ -1988,7 +2022,7 @@ void TestAimViews()
 	Harness h( 47804 );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fire = schema.ActionMask( "fire" );
-	uint16_t pistol = schema.ActionMask( "slot_2" );
+	uint16_t pistol = kKeySlot1;
 	int healthSlot = schema.FindField( "combat.health" )->slot;
 	// Spawn points are 1.5 m apart: the line from the shoulder turns by asin( 0.45 / 1.5 ) to meet it.
 	const uint16_t straight = 16384;
@@ -2044,7 +2078,7 @@ void TestDeathmatch()
 	const ModSchema& schema = h.server.Schema();
 	CHECK( schema.FindField( "deathmatch.score" ) != nullptr );
 	uint16_t fire = schema.ActionMask( "fire" );
-	uint16_t pistol = schema.ActionMask( "slot_2" );
+	uint16_t pistol = kKeySlot1;
 
 	// The same duel as mods_session: slot 0 shoots slot 1, which stands still.
 	h.AddBot().script = [=]( uint32_t tick ) {
@@ -2334,7 +2368,7 @@ void TestSprintSwing()
 	CHECK( mannequin != nullptr );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fire = schema.ActionMask( "fire" );
-	uint16_t bat = schema.ActionMask( "slot_3" );
+	uint16_t bat = kKeySlot2;
 	int swingEvent = schema.FindEvent( "melee.swing" );
 	int strikeEvent = schema.FindEvent( "melee.strike" );
 	CHECK( fire != 0 && bat != 0 && swingEvent >= 0 && strikeEvent >= 0 );

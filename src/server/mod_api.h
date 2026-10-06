@@ -156,6 +156,7 @@ struct CarriedItem
 	ItemKindHandle kind;
 	bool stowed = false; // false: in use, in `socket`
 	SocketHandle socket; // invalid: stowed out of sight
+	int slot = -1;		 // which of the player's slots it is in (-1: none)
 };
 
 // An item lying in the world, as ItemsNear finds it.
@@ -195,6 +196,17 @@ public:
 	// need the character to define the mask.
 	LayerHandle Layer( const std::string& name );
 	StanceHandle Stance( const std::string& name );
+	// Slots (sim/types.h): how many each player has. The engine carries out selecting, moving and
+	// dropping from the players' own input; the mod that asks for slots says the rules (what a
+	// life is given, what a death drops). The largest count asked for wins; at most kMaxSlots.
+	// What a kind is like in a slot is two item properties the engine reads: "slot" (the slot it
+	// goes to, from 1; without it the first free one) and "holster" (the socket it hangs in while
+	// another slot is selected).
+	void Slots( int count );
+	int SlotCount() const
+	{
+		return m_slots;
+	}
 	// Held items: a kind (its look is the mod's client item's, by this name) and a socket.
 	// "RightHand" and "LeftHand" exist on every character; another socket is drawn only on
 	// characters that define it.
@@ -244,6 +256,7 @@ private:
 	std::vector<std::vector<std::string>> m_itemMods; // per item kind: the mods that declared it
 	std::map<std::pair<int, std::string>, float> m_itemProperties;
 	std::map<int, int> m_itemLayers; // item kind -> animation pack
+	int m_slots = 0;
 
 public:
 	const std::map<int, int>& ItemLayersByKind() const
@@ -458,6 +471,7 @@ public:
 	void SpawnItem( uint32_t holder, ItemKindHandle kind, SocketHandle socket );
 	// The same, stowed: the player carries it without holding it (HoldItem takes it out). `holster`
 	// is the socket it is drawn in meanwhile; none: out of sight. Nothing is dropped for it.
+	// (On a server with slots the item goes into a slot, and its kind's "holster" is where it hangs.)
 	void GiveItem( uint32_t holder, ItemKindHandle kind, SocketHandle holster = {} );
 	// Puts a held item away (in `holster`, or out of sight), or takes a carried one in use into
 	// `socket`. HoldItem does nothing when that socket has an item in use: stow that one first, in
@@ -465,6 +479,11 @@ public:
 	// them; CarriedItems does.
 	void StowItem( uint32_t item, SocketHandle holster = {} );
 	void HoldItem( uint32_t item, SocketHandle socket );
+	// Slots: how many players have (0: this server has none), which one a player has selected
+	// (-1: empty hands), and the item in one (0: empty).
+	int SlotCount() const;
+	int SelectedSlot( PlayerSlot player ) const;
+	uint32_t SlotItem( PlayerSlot player, int slot ) const;
 	// Everything the player in `slot` carries, in use and stowed, in NetId order.
 	std::vector<CarriedItem> CarriedItems( PlayerSlot slot ) const;
 	// Plays `pack`'s layer named `layer` ("FullBody") instead of the player's own, from its start; the

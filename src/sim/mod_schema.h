@@ -112,6 +112,11 @@ struct ItemShape
 	uint8_t grip = 0;
 	Float3 gripPosition;
 	float gripRotation[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	// Slots: the slot this kind goes to when a player comes to carry one (1 is the first; what is
+	// there is pushed out), or 0 for the first free one; and the socket it hangs in while it is
+	// not the selected one (255: out of sight).
+	uint8_t slot = 0;
+	uint8_t holster = 255;
 
 	bool operator==( const ItemShape& ) const = default;
 };

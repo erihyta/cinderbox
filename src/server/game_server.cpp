@@ -163,6 +163,31 @@ bool GameServer::Start( const ServerOptions& options )
 			Log( "character %s: %s", character->name.empty() ? "built-in" : character->name.c_str(), warnings.c_str() );
 		}
 	}
+	// Slots: how many the mods asked for, the hand the selected one's item is held in, and what
+	// each kind says about itself (item properties, authored or declared).
+	m_options.config.slots = uint8_t( declarations.SlotCount() );
+	if ( m_options.config.slots > 0 )
+	{
+		auto hand = std::find( m_schema.sockets.begin(), m_schema.sockets.end(), "RightHand" );
+		if ( hand == m_schema.sockets.end() )
+		{
+			m_schema.sockets.push_back( "RightHand" );
+			hand = m_schema.sockets.end() - 1;
+		}
+		m_options.config.slotHand = uint8_t( hand - m_schema.sockets.begin() );
+		for ( size_t kind = 0; kind < m_schema.itemShapes.size(); ++kind )
+		{
+			auto property = [&]( const char* name ) {
+				auto found = m_itemProperties.find( std::make_pair( int( kind ), std::string( name ) ) );
+				return found != m_itemProperties.end() ? int( found->second ) : 0;
+			};
+			int slot = property( "slot" );
+			int holster = property( "holster" ); // a socket's place + 1 (Declarations::ItemProperty)
+			m_schema.itemShapes[kind].slot = slot >= 1 && slot <= int( m_options.config.slots ) ? uint8_t( slot ) : uint8_t( 0 );
+			m_schema.itemShapes[kind].holster = holster >= 1 && holster <= int( m_schema.sockets.size() ) ? uint8_t( holster - 1 ) : kNoSocket;
+		}
+		Log( "slots: %d a player, the selected one's item in %s", int( m_options.config.slots ), hand->c_str() );
+	}
 	EncodeSchema( m_schema, m_schemaBytes );
 
 	m_map = GetLevelLayout();

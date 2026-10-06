@@ -110,6 +110,7 @@ void CinderboxPeer::set_input( const PackedByteArray& input )
 		in.cameraPitch = std::clamp( in.cameraPitch, int16_t( -kMaxCameraPitch ), kMaxCameraPitch );
 		in.buttons &= kEngineButtons;
 		in.view = in.view < kViewModes ? in.view : uint8_t( 0 );
+		in.intent = in.intent <= kLastSlotIntent ? in.intent : uint8_t( 0 );
 		m_source->SetInput( in );
 	}
 }

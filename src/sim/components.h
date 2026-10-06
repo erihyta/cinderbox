@@ -255,6 +255,18 @@ struct HeldItem
 	uint16_t kind = 0;	 // schema item kind
 	uint8_t socket = 0;	 // schema socket (kNoSocket: stowed out of sight)
 	uint8_t stowed = 0;	 // 1: carried, not in use
+	uint8_t slot = kNoSlot; // which of its holder's slots it is in (kNoSlot: none: a mod holds it)
+	uint8_t reserved[3] = {};
+};
+
+// A player's slots (types.h): how many, which one is selected (kNoSlot: empty hands), and the
+// last intent carried out. Only on players of a server that has slots (SimConfig::slots).
+struct Slots
+{
+	uint8_t count = 0;
+	uint8_t selected = kNoSlot;
+	uint8_t seq = 0;
+	uint8_t reserved = 0;
 };
 
 // The map template this entity was created from (see reflect.h). The simulation only carries it so
@@ -278,7 +290,8 @@ CB_CHECK_COMPONENT( Prop, 12 );
 CB_CHECK_COMPONENT( AnimGraphLayerState, 40 );
 CB_CHECK_COMPONENT( AnimState, 36 + 40 * kMaxAnimLayers );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
-CB_CHECK_COMPONENT( HeldItem, 8 );
+CB_CHECK_COMPONENT( HeldItem, 12 );
+CB_CHECK_COMPONENT( Slots, 4 );
 CB_CHECK_COMPONENT( Blackboard, 4 * kBoardSlots );
 CB_CHECK_COMPONENT( Ragdoll, 20 );
 CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );

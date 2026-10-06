@@ -3188,6 +3188,236 @@ void TestWorldItems()
 	}
 }
 
+// Slots: what a player carries, in numbered places. Which slot is selected, and moving and dropping,
+// are in the player's input, so every simulation carries them out: here one simulation, its
+// snapshot, and a second run of the same inputs.
+void TestSlots()
+{
+	SimConfig config = TestConfig();
+	config.slots = 3;
+	config.slotHand = 0; // the hand's socket
+	ItemShape gun, bat, rock;
+	gun.slot = 1; // its own slot, the first
+	gun.holster = 2;
+	bat.slot = 2;
+	bat.holster = 1;
+	// The rock has no slot of its own: the first free one. And no holster: out of sight.
+
+	auto run = [&]( std::vector<uint64_t>* hashes, const std::function<void( Simulation&, InputFrame&, const std::function<void( int )>& )>& body ) {
+		Simulation sim( config );
+		sim.SetItemShapes( { gun, bat, rock } );
+		InputFrame f;
+		auto step = [&]( int n ) {
+			for ( int i = 0; i < n; ++i )
+			{
+				f.tick = sim.Tick();
+				sim.Step( f );
+				f.events.clear();
+				f.commands.clear();
+				if ( hashes != nullptr )
+				{
+					hashes->push_back( sim.ComputeHash() );
+				}
+			}
+		};
+		body( sim, f, step );
+	};
+
+	std::vector<uint64_t> first, second;
+	for ( std::vector<uint64_t>* hashes : { &first, &second } )
+	{
+		run( hashes, [&]( Simulation& sim, InputFrame& f, const std::function<void( int )>& step ) {
+			const bool checking = hashes == &first;
+			auto give = [&]( uint16_t kind ) {
+				SimCommand c;
+				c.type = CommandType::SpawnItem;
+				c.target = SlotTarget( 0 );
+				c.index = kind;
+				c.mode = kNoSocket;
+				c.value = 1;
+				f.commands.push_back( c );
+			};
+			auto intent = [&]( SlotIntent what, uint8_t a, uint8_t b = 0 ) {
+				f.inputs[0].intent = uint8_t( what );
+				f.inputs[0].intentA = a;
+				f.inputs[0].intentB = b;
+				f.inputs[0].intentSeq = uint8_t( f.inputs[0].intentSeq + 1 );
+			};
+			auto held = [&]( uint32_t netId ) { return sim.FindEntity( netId ).get<HeldItem>(); };
+			auto kindIn = [&]( uint8_t slot ) {
+				uint32_t item = sim.SlotItem( sim.PlayerNetId( 0 ), slot );
+				return item != 0 ? int( held( item ).kind ) : -1;
+			};
+			auto lying = [&] {
+				int n = 0;
+				for ( const Simulation::EntityRef& r : sim.Entities() )
+				{
+					const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+					n += item != nullptr && item->holder == 0 ? 1 : 0;
+				}
+				return n;
+			};
+			f.events.push_back( { PlayerEventType::Join, 0 } );
+			step( 30 );
+			uint32_t p0 = sim.PlayerNetId( 0 );
+			if ( checking )
+			{
+				// A player has its slots from its first tick, nothing selected.
+				CHECK( sim.FindEntity( p0 ).has<Slots>() && sim.FindEntity( p0 ).get<Slots>().count == 3 && sim.SelectedSlot( p0 ) == kNoSlot );
+			}
+
+			// Given in any order, each kind goes to its own slot; the rock takes the free one.
+			give( 2 );
+			give( 1 );
+			give( 0 );
+			step( 1 );
+			if ( checking )
+			{
+				CHECK( kindIn( 0 ) == 0 && kindIn( 1 ) == 1 && kindIn( 2 ) == 2 );
+				// All put away, each in its holster; nothing is in the hand.
+				CHECK( held( sim.SlotItem( p0, 0 ) ).stowed == 1 && held( sim.SlotItem( p0, 0 ) ).socket == 2 );
+				CHECK( held( sim.SlotItem( p0, 2 ) ).stowed == 1 && held( sim.SlotItem( p0, 2 ) ).socket == kNoSocket );
+				CHECK( sim.HeldItemOf( p0, 0 ) == 0 && lying() == 0 );
+			}
+
+			// Selecting: the slot's item is in the hand on that tick.
+			intent( SlotIntent::Select, 1 );
+			step( 1 );
+			uint32_t batItem = sim.SlotItem( p0, 1 );
+			if ( checking )
+			{
+				CHECK( sim.SelectedSlot( p0 ) == 1 && sim.HeldItemOf( p0, 0 ) == batItem && held( batItem ).stowed == 0 );
+			}
+			// The same input again (a late packet, a guess for someone else) is the same intent: nothing.
+			step( 5 );
+			if ( checking )
+			{
+				CHECK( sim.SelectedSlot( p0 ) == 1 );
+			}
+			// Another slot: the bat goes to its holster, the gun comes out. Nothing is made or lost.
+			intent( SlotIntent::Select, 0 );
+			step( 1 );
+			if ( checking )
+			{
+				CHECK( sim.HeldItemOf( p0, 0 ) == sim.SlotItem( p0, 0 ) && held( batItem ).stowed == 1 && held( batItem ).socket == 1 && lying() == 0 );
+			}
+			// The selected slot again: empty hands.
+			intent( SlotIntent::Select, 0 );
+			step( 1 );
+			if ( checking )
+			{
+				CHECK( sim.SelectedSlot( p0 ) == kNoSlot && sim.HeldItemOf( p0, 0 ) == 0 );
+			}
+			// A slot that is not there: nothing.
+			intent( SlotIntent::Select, 7 );
+			step( 1 );
+			if ( checking )
+			{
+				CHECK( sim.SelectedSlot( p0 ) == kNoSlot );
+			}
+
+			// Moving: two slots trade what they hold; the selected slot stays the selected one, so what
+			// is in the hand changes with it.
+			intent( SlotIntent::Select, 2 );
+			step( 1 );
+			intent( SlotIntent::Move, 2, 0 );
+			step( 1 );
+			if ( checking )
+			{
+				CHECK( kindIn( 0 ) == 2 && kindIn( 2 ) == 0 && kindIn( 1 ) == 1 );
+				CHECK( sim.SelectedSlot( p0 ) == 2 && held( sim.HeldItemOf( p0, 0 ) ).kind == 0 );
+			}
+
+			// Dropping the selected one: it lies in the world, in no slot; the slot is empty and stays selected.
+			uint32_t gunItem = sim.SlotItem( p0, 2 );
+			intent( SlotIntent::Drop, kNoSlot );
+			step( 1 );
+			if ( checking )
+			{
+				CHECK( held( gunItem ).holder == 0 && held( gunItem ).slot == kNoSlot && sim.FindEntity( gunItem ).has<PhysicsBody>() );
+				CHECK( lying() == 1 && sim.SlotItem( p0, 2 ) == 0 && sim.SelectedSlot( p0 ) == 2 && sim.HeldItemOf( p0, 0 ) == 0 );
+			}
+			// Dropping a slot by number, not the selected one.
+			intent( SlotIntent::Drop, 1 );
+			step( 1 );
+			if ( checking )
+			{
+				CHECK( lying() == 2 && sim.SlotItem( p0, 1 ) == 0 && kindIn( 0 ) == 2 );
+			}
+
+			// Picked up again: into its own slot (the gun's is the first: the rock there makes room and
+			// drops), and out into the hand.
+			SimCommand take;
+			take.type = CommandType::PickUpItem;
+			take.target = SlotTarget( 0 );
+			take.other = gunItem;
+			take.mode = 0;
+			f.commands.push_back( take );
+			step( 1 );
+			if ( checking )
+			{
+				CHECK( sim.SlotItem( p0, 0 ) == gunItem && sim.SelectedSlot( p0 ) == 0 && sim.HeldItemOf( p0, 0 ) == gunItem );
+				// The rock that was there made room: into a free slot, not onto the floor.
+				CHECK( kindIn( 1 ) == 2 && lying() == 1 );
+			}
+
+			// Full: a fourth item has nowhere to go and lies on the floor.
+			give( 2 );
+			give( 2 );
+			step( 1 );
+			give( 2 );
+			step( 1 );
+			if ( checking )
+			{
+				CHECK( kindIn( 1 ) == 2 && kindIn( 2 ) == 2 && lying() == 3 );
+			}
+
+			// A snapshot has all of it: restored, the same inputs go on to the same state.
+			Snapshot image;
+			sim.Save( image );
+			uint64_t before = sim.ComputeHash();
+			intent( SlotIntent::Select, 1 );
+			step( 3 );
+			uint64_t after = sim.ComputeHash();
+			sim.Load( image );
+			if ( checking )
+			{
+				CHECK( sim.ComputeHash() == before && sim.SelectedSlot( p0 ) == 0 );
+			}
+			f.tick = sim.Tick();
+			step( 3 );
+			if ( checking )
+			{
+				CHECK( sim.ComputeHash() == after && sim.SelectedSlot( p0 ) == 1 );
+			}
+
+			// A dead player's intents wait: nothing changes hands.
+			SimCommand kill;
+			kill.type = CommandType::Kill;
+			kill.target = SlotTarget( 0 );
+			f.commands.push_back( kill );
+			step( 1 );
+			intent( SlotIntent::Select, 0 );
+			step( 2 );
+			if ( checking )
+			{
+				CHECK( sim.SelectedSlot( p0 ) == 1 );
+			}
+		} );
+	}
+	// The same inputs, the same states, tick for tick.
+	for ( size_t i = 0; i < first.size() && i < second.size(); ++i )
+	{
+		if ( first[i] != second[i] )
+		{
+			std::printf( "    runs differ from step %zu of %zu\n", i, first.size() );
+			break;
+		}
+	}
+	std::printf( "    %zu and %zu states\n", first.size(), second.size() );
+	CHECK( first.size() > 50 && first == second );
+}
+
 void TestHeldItems()
 {
 	Simulation sim( TestConfig(), FlatMap() );
@@ -5337,6 +5567,7 @@ int main( int argc, char** argv )
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },
 		{ "held_items", TestHeldItems },
+		{ "slots", TestSlots },
 		{ "world_items", TestWorldItems },
 		{ "stowed_items", TestStowedItems },
 		{ "attack_resolve", TestAttackResolve },
