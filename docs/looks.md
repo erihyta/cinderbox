@@ -173,12 +173,47 @@ The HUD reads the board too, through script-free nodes any HUD scene can use:
 | `CbFieldLabel` | a Label with a `text_format` (`"AMMO {pistol.ammo} / 12"`), shown while its `conditions` hold. `{an expression}` works too: `"{combat.health * 100 / combat.max_health}%"` |
 | `CbFieldBinding` | writes a field, or an expression over fields (`combat.health / combat.max_health`), into any property of its `target` (default: its parent), `value = field * multiply + add`; with conditions it hides the target while they fail. A `ProgressBar`'s `value` and `max_value`, a panel's `visible`, a colour |
 | `CbEventFeed` | a line per mod event, `"{a}  >  {b}"` with player names, fading after `line_seconds` (a kill feed) |
-| `CbScoreboard` | players as rows: `cells` like `"{name}"`, `"{combat.kills}"`, sorted by `sort_field`, shown while Tab is held and its `conditions` hold |
+| `CbList` | a row per player or item: its first child is the row as you designed it, copied for every entry; `where` filters, `sort_by` orders, `max_rows` cuts ([Lists](#lists)) |
+| `CbShowKey` | shows its parent while a key is held, or switches it with each press: `action` `scores`, `key` `Tab`. The key is the viewer's own, not one of the server's actions |
 
-In formats, `{field}` is the local player's field, `{name}` a player's name, `{name:field}` the
+Whose fields a HUD node reads is its **subject**: the local player, or inside a `CbList` row, that row's entity.
+
+In formats, `{field}` is the subject's field, `{name}` what it is called (a player's name, an item's display name), `{rank}` its row's place in its list, `{name:field}` the
 name of the player a field points at (`"{name:deathmatch.winner} WINS"`), `{look:field}` what the
 entity a field points at is called (an item's `display_name`: `"Bat"`), and `{key:action}` the key
 the player has that action bound to now (`"E"`, `"LMB"`: rebinding shows).
+
+### Lists
+
+The server knows who is in the world and what its mods say about each of them; a `CbList` shows
+that as rows, with no code. The scoreboard is one:
+
+```
+Scores        VBoxContainer                               (server_mods/deathmatch/client/ui/hud_deathmatch.tscn)
+├── Key       CbShowKey      action "scores"  key "Tab"   shows Scores while it is held
+├── Header    HBoxContainer  plain Labels: Player, Score, Kills, Deaths
+└── Rows      CbList         of Players   sort_by deathmatch.score
+    └── Row   HBoxContainer  one row, as designed: copied for every player
+        ├── Name       CbFieldLabel  "{name}"               conditions: not is_local
+        ├── NameLocal  CbFieldLabel  "{name}" in gold       conditions: is_local
+        ├── Score      CbFieldLabel  "{deathmatch.score}"
+        └── ...
+```
+
+| Field | Meaning |
+|---|---|
+| `of` | **Players**; **Items** (every item in the world); **Items its subject holds** (the local player's, or under a player's row, that player's) |
+| `item_kind` | for items: only this kind (`pistol.gun`) |
+| `where` | conditions on an entry: `team.id == 1`, `not combat.dead`, `not is_local` |
+| `sort_by`, `descending` | an expression over an entry's fields; ties keep their order |
+| `max_rows` | the first so many, after sorting (a top three) |
+| `conditions` | on the list's own subject: whether it is shown at all |
+| `vertical` | Godot's own: rows down, or across (a strip of icons) |
+
+- **A row is any Control**: labels, a bar with a `CbFieldBinding`, an icon. Every HUD node in it reads that row's entity.
+- **`is_local`** in a row's conditions is true on the viewer's own row.
+- **A list in a row** lists for that row's entity: each player's row can show what that player carries.
+- **What it cannot do yet**: text the server made up (fields are numbers), a row per value of a list on one entity, a grid whose columns size to their content (give cells a `custom_minimum_size`).
 
 `CbPromptLabel` is the same in the world: a `Label3D` with a `text_format`, upright above its parent,
 facing the camera, the same size at any distance, hidden while its text is empty; with a
