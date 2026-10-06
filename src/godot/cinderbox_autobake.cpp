@@ -1,6 +1,7 @@
 #include "cinderbox_autobake.h"
 
 #include "cinderbox_character.h"
+#include "cinderbox_item_look.h"
 
 #include <godot_cpp/classes/editor_interface.hpp>
 #include <godot_cpp/classes/editor_paths.hpp>
@@ -18,7 +19,7 @@ namespace
 
 // What a mod's look, motions, characters and maps are made of, in the order a modder meets them.
 const char* const kOfferedNodes[] = {
-	"CbReaction",	"CbPrediction", "CbItemLook",  "CbItemBody",	"CbGrip",	  "CbLinkLook", "CbMotionSet",   "CbMotion",	"CbProbe", "CbImpulse", "CbForce", "CbLink",	"CbFieldLabel",
+	"CbReaction",	"CbPrediction", "CbItem",	"CbGrip",	  "CbLinkLook", "CbMotionSet",   "CbMotion",	"CbProbe", "CbImpulse", "CbForce", "CbLink",	"CbFieldLabel",
 	"CbFieldBinding", "CbEventFeed",	"CbList", "CbShowKey", "CbPromptLabel", "CbCharacter", "CbAnimPack",	   "CbHitbox",	"CbSocket",
 	"CbStatic",		"CbProp",		"CbSpawn",	   "CbTemplate",	"CbComponent", "CbEntity",
 };
@@ -122,6 +123,11 @@ void CbAutoBakePlugin::on_scene_saved( const String& path )
 		if ( character != nullptr && character->get_scene_file_path() == path )
 		{
 			character->bake();
+		}
+		auto* item = Object::cast_to<CbItem>( Object::cast_to<Node>( roots[i] ) );
+		if ( item != nullptr && item->get_scene_file_path() == path )
+		{
+			item->bake_to_project();
 		}
 		auto* motions = Object::cast_to<CbMotionSet>( Object::cast_to<Node>( roots[i] ) );
 		if ( motions != nullptr && motions->get_scene_file_path() == path )

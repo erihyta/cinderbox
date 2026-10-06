@@ -1,27 +1,34 @@
 #pragma once
 
-// How a kind of item looks, as a node in a world reactions scene (res://vfx/reactions*.tscn): the
-// scene drawn in its holder's socket, or where it lies in the world ("melee.bat" ->
-// res://prefabs/bat.tscn), and what prompts call it ("Bat"). The scene is the item's frame (the
-// socket's): the grip at the origin, pointing along -Z.
+// What makes a scene an item, and what a link looks like.
+//
+//   CbItem      the root of an item's own scene: its kind, its name, its weight, its first-person
+//               view, and what else the server should know. Its body is the CollisionShape3D under
+//               it, its hands are the CbGrip markers under it, its look is everything else in the
+//               scene. Baked to items/<kind>.cfg, which the server reads and the game finds the
+//               scene by.
+//   CbGrip      where a hand holds the item
+//   CbLinkLook  what the line of a motion's probe is drawn as
 
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/marker3d.hpp>
 #include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/variant/callable.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 
 namespace cb::gd
 {
 
-class CbItemLook : public godot::Node
+class CbItem : public godot::Node3D
 {
-	GDCLASS( CbItemLook, godot::Node )
+	GDCLASS( CbItem, godot::Node3D )
 
 public:
 	void set_kind( const godot::String& v )
 	{
 		m_kind = v;
+		update_configuration_warnings();
 	}
 	godot::String get_kind() const
 	{
@@ -35,6 +42,14 @@ public:
 	{
 		return m_displayName;
 	}
+	void set_mass( double v )
+	{
+		m_mass = v;
+	}
+	double get_mass() const
+	{
+		return m_mass;
+	}
 	// First person: how far the arms holding this are moved in the viewer's own view, in metres to
 	// the right, up and ahead of where the body's pose has them. Only the viewer's own picture
 	// changes: everyone else, the shadow and the hit tests keep the pose.
@@ -46,29 +61,40 @@ public:
 	{
 		return m_viewOffset;
 	}
-	void set_scene( const godot::String& v )
+	// Named numbers about the item ("pickup.hold_seconds": 0.5), baked with it. They replace what
+	// the item's mod declared in code for the same names.
+	void set_properties( const godot::Dictionary& v )
 	{
-		m_scene = v;
+		m_properties = v;
 	}
-	godot::String get_scene() const
+	godot::Dictionary get_properties() const
 	{
-		return m_scene;
+		return m_properties;
 	}
+
+	// The text of items/<kind>.cfg, or "" (and why in the returned { text, error }).
+	godot::Dictionary bake() const;
+	// The inspector's button, and what saving the scene does: writes res://items/<kind>.cfg.
+	void bake_to_project();
+	godot::Callable get_bake_button();
+
+	godot::PackedStringArray _get_configuration_warnings() const override;
 
 protected:
 	static void _bind_methods();
 
 private:
-	godot::String m_kind;
-	godot::String m_scene;
-	godot::String m_displayName;
+	godot::String m_kind; // "melee.bat": the kind a server mod declares
+	godot::String m_displayName; // what prompts and lists call it ("Bat")
+	double m_mass = 1.0;
 	godot::Vector3 m_viewOffset;
+	godot::Dictionary m_properties;
 };
 
 // What a link looks like (sim/motions.h: a line a motion throws, a grappling hook's rope): a scene
 // one metre long along its -Z, which the game stretches from the player to the link's end for as
 // long as the link is out, flying or holding. Put it in the mod's vfx/reactions_<name>.tscn, next
-// to the CbItemLook nodes.
+// to its CbReaction nodes.
 class CbLinkLook : public godot::Node
 {
 	GDCLASS( CbLinkLook, godot::Node )
@@ -108,53 +134,6 @@ private:
 	godot::String m_from = "RightHand"; // the player's socket it starts at; empty: its chest
 };
 
-// The body an item has when it lies in the world, authored in the item's own scene: a box or a
-// sphere (Godot's shape gizmo shows it), placed where the shape's centre is from the grip, and its
-// mass, and what else the server should know about the item (`properties`: named numbers any mod
-// may read, "pickup.hold_seconds" = 0.5). Bake (the button in the inspector, or
-// addons/cinderbox_maps/bake_items.gd, which publishing a mod runs) writes it to items/<kind>.cfg,
-// which the server reads from the mod's item. In the game the node does nothing: the simulation
-// owns the physics.
-class CbItemBody : public godot::CollisionShape3D
-{
-	GDCLASS( CbItemBody, godot::CollisionShape3D )
-
-public:
-	void set_mass( double v )
-	{
-		m_mass = v;
-	}
-	double get_mass() const
-	{
-		return m_mass;
-	}
-	// Named numbers about the item ("pickup.hold_seconds": 0.5), baked with the body. They replace
-	// what the item's mod declared in code for the same names.
-	void set_properties( const godot::Dictionary& v )
-	{
-		m_properties = v;
-	}
-	godot::Dictionary get_properties() const
-	{
-		return m_properties;
-	}
-	// The text of items/<kind>.cfg, or "" (and why in the returned { text, error }).
-	godot::Dictionary bake() const;
-	// The inspector's button: writes res://items/<kind>.cfg for every kind whose CbItemLook (in
-	// res://vfx/reactions*.tscn) draws this scene.
-	void bake_to_project();
-	godot::Callable get_bake_button();
-
-	godot::PackedStringArray _get_configuration_warnings() const override;
-
-protected:
-	static void _bind_methods();
-
-private:
-	double m_mass = 1.0;
-	godot::Dictionary m_properties;
-};
-
 // Where a hand holds an item: a marker in the item's scene, one per hand.
 //
 //   The carrying hand   the item is carried here: this point is in the hand's socket (whichever hand
@@ -163,7 +142,7 @@ private:
 //   The other hand      the character's other arm is bent so that its hand is here, wherever the
 //                       carrying hand and the animation take the item, while that hand is empty.
 //
-// Both are baked with the item's body (items/<kind>.cfg): the body and the other hand's grip are
+// Both are baked with the item (items/<kind>.cfg): the body and the other hand's grip are
 // written in the carrying hand's frame, so the server poses the same arms for its hit tests and
 // every player sees them. The viewer draws the scene moved so that the carrying grip is in the
 // socket.

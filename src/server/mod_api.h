@@ -200,7 +200,7 @@ public:
 	// characters that define it.
 	ItemKindHandle ItemKind( const std::string& name );
 	// The same, with the body it has when it lies in the world (BoxItem, SphereItem), for a mod
-	// without a look. A body baked from the item's scene (a CbItemBody, items/<kind>.cfg in the mod's
+	// without a look. A body baked from the item's scene (a CbItem, items/<kind>.cfg in the mod's
 	// item) replaces it; with neither it is a small box. The first shape declared for a kind is kept.
 	ItemKindHandle ItemKind( const std::string& name, const ItemShape& shape );
 	// While a player holds an item of `kind`, `pack`'s layers play instead of the player's own of the

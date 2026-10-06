@@ -24,10 +24,13 @@ size = Vector3(0.03, 0.1, 0.045)
 material = SubResource("Metal")
 size = Vector3(0.01, 0.012, 0.012)
 
-[node name="Pistol" type="Node3D" unique_id=1499270042]
-
-[node name="Body" type="CbItemBody" parent="." unique_id=1346467814]
+[node name="Pistol" type="CbItem" unique_id=1499270042]
+kind = "pistol.gun"
+display_name = "Pistol"
 mass = 0.9
+view_offset = Vector3(0, 0.05, 0.03)
+
+[node name="Body" type="CollisionShape3D" parent="." unique_id=1346467814]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.07)
 shape = SubResource("Body")
 

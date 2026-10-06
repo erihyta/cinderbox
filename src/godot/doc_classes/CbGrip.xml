@@ -4,7 +4,7 @@
 		Where a hand holds an item: a marker in the item's scene, one per hand.
 	</brief_description>
 	<description>
-		[b]The carrying hand[/b]: the item is carried here. This point is in the hand's socket (whichever hand the item is in), the marker's -Z along the fingers and +Y up. Without one the item is carried at its scene's origin. [b]The other hand[/b]: the character's other arm is bent so that its hand is here, wherever the carrying hand and the animation take the item, while that hand is empty. Both are baked with the item's [CbItemBody] ([code]items/&lt;kind&gt;.cfg[/code]), so the server poses the same arms for its hit tests and every player sees them.
+		[b]The carrying hand[/b]: the item is carried here. This point is in the hand's socket (whichever hand the item is in), the marker's -Z along the fingers and +Y up. Without one the item is carried at its scene's origin. [b]The other hand[/b]: the character's other arm is bent so that its hand is here, wherever the carrying hand and the animation take the item, while that hand is empty. Both are baked with the item's [CbItem] ([code]items/&lt;kind&gt;.cfg[/code]), so the server poses the same arms for its hit tests and every player sees them.
 	</description>
 	<tutorials>
 	</tutorials>

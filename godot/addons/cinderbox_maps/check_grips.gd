@@ -1,5 +1,5 @@
 extends SceneTree
-## Checks what an item's CbGrip markers bake to, on scenes built here:
+## Checks what an item (a CbItem, its body and its CbGrip markers) bakes to, on scenes built here:
 ##
 ##   godot --headless --path godot --script res://addons/cinderbox_maps/check_grips.gd
 ##
@@ -18,9 +18,10 @@ func _check(what: String, ok: bool, detail: String = "") -> void:
 
 ## An item: a body 0.2 m ahead of the origin, and the grips asked for.
 func _item(carry: Variant, other: Variant, carry_turn := Basis(), body_turn := Basis()) -> Array:
-	var root := Node3D.new()
+	var root := CbItem.new()
 	root.name = "Item"
-	var body := CbItemBody.new()
+	root.kind = "test.item"
+	var body := CollisionShape3D.new()
 	body.name = "Body"
 	var box := BoxShape3D.new()
 	box.size = Vector3(0.04, 0.1, 0.3)
@@ -60,7 +61,7 @@ func _near(values: PackedFloat64Array, want: Array) -> bool:
 func _initialize() -> void:
 	# Carried at the origin: as before.
 	var made := _item(null, Vector3(0, 0, 0.3))
-	var baked: Dictionary = made[1].bake()
+	var baked: Dictionary = made[0].bake()
 	_check("no carrying grip: the body is where the scene has it", _near(_line(baked.text, "center"), [0, 0, -0.2]), str(_line(baked.text, "center")))
 	_check("no carrying grip: the other hand's grip too", _near(_line(baked.text, "grip"), [0, 0, 0.3, 0, 0, 0, 1, 0]), str(_line(baked.text, "grip")))
 	_check("no carrying grip: the scene is drawn as it is", CbGrip.carry_frame_under(made[0]).is_equal_approx(Transform3D()))
@@ -68,7 +69,7 @@ func _initialize() -> void:
 
 	# Carried 0.1 m behind the origin: everything is written from there.
 	made = _item(Vector3(0, 0, 0.1), Vector3(0, 0, 0.3))
-	baked = made[1].bake()
+	baked = made[0].bake()
 	_check("a carrying grip: the body is written from it", _near(_line(baked.text, "center"), [0, 0, -0.3]), str(_line(baked.text, "center")))
 	_check("a carrying grip: the other hand's grip is written from it", _near(_line(baked.text, "grip"), [0, 0, 0.2]), str(_line(baked.text, "grip")))
 	_check("a carrying grip: the scene is moved so it is in the socket",
@@ -79,7 +80,7 @@ func _initialize() -> void:
 	var turn := Basis(Vector3.UP, PI / 2.0) # its -Z is the scene's -X ... the item points along -X
 	made = _item(Vector3(0.1, 0, 0), Vector3(-0.3, 0, 0), turn, turn)
 	made[1].position = Vector3(-0.2, 0, 0)
-	baked = made[1].bake()
+	baked = made[0].bake()
 	_check("a turned carrying grip bakes (the body turned with it)", baked.error == "", baked.error)
 	_check("... the body is ahead of the hand, along the item", _near(_line(baked.text, "center"), [0, 0, -0.3]), str(_line(baked.text, "center")))
 	_check("... the other hand further along it", _near(_line(baked.text, "grip"), [0, 0, -0.4]), str(_line(baked.text, "grip")))
@@ -88,7 +89,7 @@ func _initialize() -> void:
 	# As animated: no place, only that the other hand keeps the animation's.
 	made = _item(null, Vector3(0, 0, 0.3))
 	(made[0].get_node("Other") as CbGrip).as_animated = true
-	baked = made[1].bake()
+	baked = made[0].bake()
 	_check("as animated: the grip's last number says so", _line(baked.text, "grip").size() == 8 and int(_line(baked.text, "grip")[7]) == 2, str(_line(baked.text, "grip")))
 	made[0].free()
 
@@ -96,7 +97,7 @@ func _initialize() -> void:
 	# The carrying grip alone is turned: the body lies as the scene has it, and says how that is
 	# turned in the frame the item is carried in (a quarter back about Y).
 	made = _item(Vector3(0.1, 0, 0), null, turn, Basis())
-	baked = made[1].bake()
+	baked = made[0].bake()
 	_check("a turned carrying grip alone bakes", baked.error == "", baked.error)
 	_check("... the body where the scene has it, from the hand", _near(_line(baked.text, "center"), [0.2, 0, -0.1]), str(_line(baked.text, "center")))
 	var body_turn := _line(baked.text, "turn")
@@ -104,7 +105,7 @@ func _initialize() -> void:
 	made[0].free()
 	made = _item(null, null)
 	made[1].scale = Vector3(2, 1, 1)
-	baked = made[1].bake()
+	baked = made[0].bake()
 	_check("a scaled body is refused", baked.text == "" and String(baked.error).contains("unscaled"), baked.error)
 	made[0].free()
 	made = _item(Vector3(0, 0, 0.1), Vector3(0, 0, 0.3))
@@ -112,8 +113,26 @@ func _initialize() -> void:
 	extra.hand = CbGrip.HAND_CARRYING
 	made[0].add_child(extra)
 	extra.owner = made[0]
-	baked = made[1].bake()
+	baked = made[0].bake()
 	_check("two grips for one hand are refused", baked.text == "" and String(baked.error).contains("one CbGrip"), baked.error)
+	made[0].free()
+
+	# The item itself: what the game reads, and what an item cannot do without.
+	made = _item(null, null)
+	made[0].display_name = "Test Item"
+	made[0].mass = 2.5
+	made[0].view_offset = Vector3(0, 0.05, 0.03)
+	made[0].properties = {"pickup.hold_seconds": 0.5}
+	made[0].scene_file_path = "res://prefabs/test_item.tscn"
+	baked = made[0].bake()
+	_check("an item bakes its mass and properties", _near(_line(baked.text, "mass"), [2.5]) and baked.text.contains("property pickup.hold_seconds 0.5"), baked.text)
+	_check("... its scene, its name and its first-person view",
+		baked.text.contains("scene res://prefabs/test_item.tscn\n") and baked.text.contains("name Test Item\n") and _near(_line(baked.text, "view"), [0, 0.05, 0.03]), baked.text)
+	made[0].kind = "two words"
+	_check("a kind of two words is refused", made[0].bake().text == "" and String(made[0].bake().error).contains("kind"), made[0].bake().error)
+	made[0].kind = "test.item"
+	made[1].free()
+	_check("an item without a body is refused", made[0].bake().text == "" and String(made[0].bake().error).contains("CollisionShape3D"), made[0].bake().error)
 	made[0].free()
 
 	print("grips: %s" % ("ok" if _failures == 0 else "%d FAILED" % _failures))

@@ -69,12 +69,12 @@ public:
 		// The bat is an item of its own in the right hand: the swing animation plays its "slash",
 		// and it has its own state (hot for a while after it hits someone).
 		// Its body when it lies in the world is authored in its scene (client/prefabs/bat.tscn, the
-		// CbItemBody) and baked to client/items/melee.bat.cfg.
+		// CbItem) and baked to client/items/melee.bat.cfg.
 		m_bat = declare.ItemKind( "melee.bat" );
 		// The bat brings its own way of standing and walking: while it is held (from the slot or
 		// picked up), the pack's "FullBody" layer plays instead of the holder's own.
 		declare.ItemLayers( m_bat, declare.AnimPack( "melee.carry" ) );
-		// (That a bat takes half a second to pick up is authored with its body: the CbItemBody's
+		// (That a bat takes half a second to pick up is authored with the item: the CbItem's
 		// properties, "pickup.hold_seconds".)
 		m_hand = declare.Socket( "RightHand" );
 		declare.ItemProperty( m_bat, "inventory.slot", 3.0f );

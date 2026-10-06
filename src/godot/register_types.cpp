@@ -65,8 +65,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbEntity );
 	GDREGISTER_CLASS( cb::gd::CinderboxMapBaker );
 	// Effect bindings: data a mod ships to say what plays when.
-	GDREGISTER_CLASS( cb::gd::CbItemLook );
-	GDREGISTER_CLASS( cb::gd::CbItemBody );
+	GDREGISTER_CLASS( cb::gd::CbItem );
 	GDREGISTER_CLASS( cb::gd::CbLinkLook );
 	GDREGISTER_CLASS( cb::gd::CbGrip );
 	// Motions: what a mod adds to how players move, baked for the simulation.

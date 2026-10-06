@@ -10,8 +10,8 @@
 #   placeholder\                   the placeholder: a humanoid skeleton (no model) and its locomotion clips
 #
 # -New gives the project its own files, made from sdk\starters with the mod's name in them:
-#   prefabs\<mod>.tscn                             the item's scene (body, grips, a muzzle)
-#   vfx\reactions_<mod>.tscn                       its look (CbItemLook), a prediction, a reaction
+#   prefabs\<mod>.tscn                             the item: a CbItem with its body, grips and a muzzle
+#   vfx\reactions_<mod>.tscn                       a prediction, a reaction
 #   ui\hud_<mod>.tscn                              its HUD
 #   animation_packs\<mod>_animations.tscn          an animation pack: the default tree in full, replacing the upper body
 # Files that are already there are kept: -New on an existing project only adds what is missing.

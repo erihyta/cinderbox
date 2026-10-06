@@ -44,8 +44,3 @@ sound = "res://assets/sfx/bat_hit.wav"
 volume_db = -10.0
 pitch_jitter = 0.2
 max_distance = 25.0
-
-[node name="Bat" type="CbItemLook" parent="."]
-kind = "melee.bat"
-display_name = "Bat"
-scene = "res://prefabs/bat.tscn"

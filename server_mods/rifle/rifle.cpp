@@ -88,7 +88,7 @@ public:
 		m_upper = declare.Layer( "upper" );
 		m_stance = declare.Stance( "rifle" );
 		// Its body when it lies in the world is authored in its scene (client/prefabs/rifle.tscn, the
-		// CbItemBody) and baked to client/items/rifle.gun.cfg.
+		// CbItem) and baked to client/items/rifle.gun.cfg.
 		m_gun = declare.ItemKind( "rifle.gun" );
 		m_hand = declare.Socket( "RightHand" );
 		// For the inventory mod: slot 4, one for every life, on the back while it is put away.

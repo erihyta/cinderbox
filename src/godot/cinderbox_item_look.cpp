@@ -1,6 +1,7 @@
 #include "cinderbox_item_look.h"
 
 #include <godot_cpp/classes/box_shape3d.hpp>
+#include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/packed_scene.hpp>
@@ -17,21 +18,33 @@ using namespace godot;
 namespace cb::gd
 {
 
-void CbItemLook::_bind_methods()
+void CbItem::_bind_methods()
 {
-	ClassDB::bind_method( D_METHOD( "set_kind", "value" ), &CbItemLook::set_kind );
-	ClassDB::bind_method( D_METHOD( "get_kind" ), &CbItemLook::get_kind );
+	ClassDB::bind_method( D_METHOD( "set_kind", "value" ), &CbItem::set_kind );
+	ClassDB::bind_method( D_METHOD( "get_kind" ), &CbItem::get_kind );
+	ClassDB::bind_method( D_METHOD( "set_display_name", "value" ), &CbItem::set_display_name );
+	ClassDB::bind_method( D_METHOD( "get_display_name" ), &CbItem::get_display_name );
+	ClassDB::bind_method( D_METHOD( "set_mass", "value" ), &CbItem::set_mass );
+	ClassDB::bind_method( D_METHOD( "get_mass" ), &CbItem::get_mass );
+	ClassDB::bind_method( D_METHOD( "set_view_offset", "value" ), &CbItem::set_view_offset );
+	ClassDB::bind_method( D_METHOD( "get_view_offset" ), &CbItem::get_view_offset );
+	ClassDB::bind_method( D_METHOD( "set_properties", "value" ), &CbItem::set_properties );
+	ClassDB::bind_method( D_METHOD( "get_properties" ), &CbItem::get_properties );
+	ClassDB::bind_method( D_METHOD( "bake" ), &CbItem::bake );
+	ClassDB::bind_method( D_METHOD( "bake_to_project" ), &CbItem::bake_to_project );
+	ClassDB::bind_method( D_METHOD( "get_bake_button" ), &CbItem::get_bake_button );
+	ADD_GROUP( "Item", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "kind", PROPERTY_HINT_PLACEHOLDER_TEXT, "melee.bat" ), "set_kind", "get_kind" );
-	ClassDB::bind_method( D_METHOD( "set_display_name", "value" ), &CbItemLook::set_display_name );
-	ClassDB::bind_method( D_METHOD( "get_display_name" ), &CbItemLook::get_display_name );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "display_name", PROPERTY_HINT_PLACEHOLDER_TEXT, "Bat" ), "set_display_name",
 				  "get_display_name" );
-	ClassDB::bind_method( D_METHOD( "set_scene", "value" ), &CbItemLook::set_scene );
-	ClassDB::bind_method( D_METHOD( "get_scene" ), &CbItemLook::get_scene );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "scene", PROPERTY_HINT_FILE, "*.tscn,*.scn" ), "set_scene", "get_scene" );
-	ClassDB::bind_method( D_METHOD( "set_view_offset", "value" ), &CbItemLook::set_view_offset );
-	ClassDB::bind_method( D_METHOD( "get_view_offset" ), &CbItemLook::get_view_offset );
+	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "mass", PROPERTY_HINT_RANGE, "0.01,1000,0.01,suffix:kg" ), "set_mass", "get_mass" );
+	ADD_PROPERTY( PropertyInfo( Variant::DICTIONARY, "properties", PROPERTY_HINT_DICTIONARY_TYPE, "String;float" ), "set_properties",
+				  "get_properties" );
+	ADD_GROUP( "First person", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::VECTOR3, "view_offset", PROPERTY_HINT_NONE, "suffix:m" ), "set_view_offset", "get_view_offset" );
+	ADD_GROUP( "", "" );
+	ADD_PROPERTY( PropertyInfo( Variant::CALLABLE, "bake_button", PROPERTY_HINT_TOOL_BUTTON, "Bake item,Save", PROPERTY_USAGE_EDITOR ), "",
+				  "get_bake_button" );
 }
 
 void CbGrip::_bind_methods()
@@ -64,23 +77,7 @@ void CbLinkLook::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "from", PROPERTY_HINT_PLACEHOLDER_TEXT, "RightHand (empty: the chest)" ), "set_from", "get_from" );
 }
 
-void CbItemBody::_bind_methods()
-{
-	ClassDB::bind_method( D_METHOD( "set_mass", "value" ), &CbItemBody::set_mass );
-	ClassDB::bind_method( D_METHOD( "get_mass" ), &CbItemBody::get_mass );
-	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "mass", PROPERTY_HINT_RANGE, "0.01,1000,0.01,suffix:kg" ), "set_mass", "get_mass" );
-	ClassDB::bind_method( D_METHOD( "set_properties", "value" ), &CbItemBody::set_properties );
-	ClassDB::bind_method( D_METHOD( "get_properties" ), &CbItemBody::get_properties );
-	ADD_PROPERTY( PropertyInfo( Variant::DICTIONARY, "properties", PROPERTY_HINT_DICTIONARY_TYPE, "String;float" ), "set_properties",
-				  "get_properties" );
-	ClassDB::bind_method( D_METHOD( "bake" ), &CbItemBody::bake );
-	ClassDB::bind_method( D_METHOD( "bake_to_project" ), &CbItemBody::bake_to_project );
-	ClassDB::bind_method( D_METHOD( "get_bake_button" ), &CbItemBody::get_bake_button );
-	ADD_PROPERTY( PropertyInfo( Variant::CALLABLE, "bake_button", PROPERTY_HINT_TOOL_BUTTON, "Bake item body,Save", PROPERTY_USAGE_EDITOR ), "",
-				  "get_bake_button" );
-}
-
-Callable CbItemBody::get_bake_button()
+Callable CbItem::get_bake_button()
 {
 	return Callable( this, "bake_to_project" );
 }
@@ -121,11 +118,6 @@ Transform3D InSceneFrame( const Node3D* node, const Node* root )
 	return t;
 }
 
-Transform3D InItemFrame( const Node3D* node )
-{
-	return InSceneFrame( node, SceneRoot( node ) );
-}
-
 // A scene's grips for one hand.
 std::vector<CbGrip*> GripsUnder( const Node* root, int hand )
 {
@@ -142,17 +134,23 @@ std::vector<CbGrip*> GripsUnder( const Node* root, int hand )
 	return out;
 }
 
-std::vector<CbGrip*> GripsOf( const Node* in, int hand )
+// The item's body: the first CollisionShape3D in its scene.
+const CollisionShape3D* BodyOf( const Node* item )
 {
-	return GripsUnder( SceneRoot( in ), hand );
+	TypedArray<Node> found = const_cast<Node*>( item )->find_children( "*", "CollisionShape3D", true, false );
+	return found.size() > 0 ? Object::cast_to<CollisionShape3D>( found[0] ) : nullptr;
 }
 
-String ShapeProblem( const CbItemBody* body )
+String ShapeProblem( const CollisionShape3D* body )
 {
+	if ( body == nullptr )
+	{
+		return "Give it a CollisionShape3D child with a BoxShape3D or a SphereShape3D: its body when it lies in the world.";
+	}
 	Ref<Shape3D> shape = body->get_shape();
 	if ( shape.is_null() )
 	{
-		return "Give it a BoxShape3D or a SphereShape3D.";
+		return "Give its CollisionShape3D a BoxShape3D or a SphereShape3D.";
 	}
 	if ( Object::cast_to<BoxShape3D>( shape.ptr() ) == nullptr && Object::cast_to<SphereShape3D>( shape.ptr() ) == nullptr )
 	{
@@ -160,10 +158,10 @@ String ShapeProblem( const CbItemBody* body )
 	}
 	// It may be turned any way (the bake writes its turn in the frame the item is carried in), but
 	// not scaled: the shape's size is the body's.
-	Transform3D t = InItemFrame( body );
+	Transform3D t = InSceneFrame( body, SceneRoot( body ) );
 	if ( t.basis.get_scale().is_equal_approx( Vector3( 1, 1, 1 ) ) == false || t.basis.determinant() < 0.0f )
 	{
-		return "Keep it unscaled (set the shape's size instead).";
+		return "Keep its CollisionShape3D unscaled (set the shape's size instead).";
 	}
 	return String();
 }
@@ -181,59 +179,73 @@ Transform3D CbGrip::CarryFrameUnder( const Node* root )
 	return carrying.empty() ? Transform3D() : InSceneFrame( carrying[0], root ).orthonormalized();
 }
 
-PackedStringArray CbItemBody::_get_configuration_warnings() const
+PackedStringArray CbItem::_get_configuration_warnings() const
 {
 	PackedStringArray warnings;
-	String problem = ShapeProblem( this );
+	if ( get_owner() != nullptr )
+	{
+		warnings.push_back( "A CbItem is the root of an item's own scene: that scene is the item." );
+	}
+	String kind = m_kind.strip_edges();
+	if ( kind.is_empty() || kind.contains( " " ) || kind.contains( "/" ) || kind.contains( "\\" ) )
+	{
+		warnings.push_back( "Name its kind in one word (melee.bat): the kind a server mod declares. The baked file is named after it." );
+	}
+	String problem = ShapeProblem( BodyOf( this ) );
 	if ( problem.is_empty() == false )
 	{
 		warnings.push_back( problem );
 	}
-	// The scene's root is where the game puts the item: its own transform is not part of it.
-	if ( auto* root = Object::cast_to<Node3D>( SceneRoot( this ) ); root != nullptr && root != this &&
-		 root->get_transform().is_equal_approx( Transform3D() ) == false )
+	// The root is where the game puts the item: its own transform is not part of it.
+	if ( get_transform().is_equal_approx( Transform3D() ) == false )
 	{
-		warnings.push_back( "The scene's root (" + String( root->get_name() ) +
-							") is moved or turned: the game does not use that. To turn the item in the hand, turn its carrying CbGrip." );
+		warnings.push_back( "The item's own transform is not used by the game. To turn the item in the hand, turn its carrying CbGrip." );
 	}
 	return warnings;
 }
 
-Dictionary CbItemBody::bake() const
+Dictionary CbItem::bake() const
 {
 	Dictionary out;
-	String problem = ShapeProblem( this );
+	auto fail = [&]( const String& why ) {
+		out["text"] = "";
+		out["error"] = why;
+		return out;
+	};
+	String kind = m_kind.strip_edges();
+	if ( kind.is_empty() || kind.contains( " " ) || kind.contains( "/" ) || kind.contains( "\\" ) || kind.contains( "\t" ) )
+	{
+		return fail( "name its kind in one word (melee.bat)" );
+	}
+	const CollisionShape3D* body = BodyOf( this );
+	String problem = ShapeProblem( body );
 	if ( problem.is_empty() == false )
 	{
-		out["text"] = "";
-		out["error"] = problem;
-		return out;
+		return fail( problem );
 	}
 	Vector3 half;
-	String kind = "box";
-	if ( auto* box = Object::cast_to<BoxShape3D>( get_shape().ptr() ) )
+	String shapeName = "box";
+	if ( auto* box = Object::cast_to<BoxShape3D>( body->get_shape().ptr() ) )
 	{
 		half = box->get_size() * 0.5f;
 	}
 	else
 	{
-		float radius = Object::cast_to<SphereShape3D>( get_shape().ptr() )->get_radius();
+		float radius = Object::cast_to<SphereShape3D>( body->get_shape().ptr() )->get_radius();
 		half = Vector3( radius, radius, radius );
-		kind = "sphere";
+		shapeName = "sphere";
 	}
-	if ( GripsOf( this, CbGrip::HAND_CARRYING ).size() > 1 || GripsOf( this, CbGrip::HAND_OTHER ).size() > 1 )
+	if ( GripsUnder( this, CbGrip::HAND_CARRYING ).size() > 1 || GripsUnder( this, CbGrip::HAND_OTHER ).size() > 1 )
 	{
-		out["text"] = "";
-		out["error"] = "an item has one CbGrip for each hand at most (the carrying hand's, the other hand's)";
-		return out;
+		return fail( "an item has one CbGrip for each hand at most (the carrying hand's, the other hand's)" );
 	}
 	// Everything is written in the frame the item is carried in.
-	const Transform3D toCarried = CbGrip::CarryFrame( this ).affine_inverse();
-	const Transform3D inCarried = ( toCarried * InItemFrame( this ) ).orthonormalized();
+	const Transform3D toCarried = CbGrip::CarryFrameUnder( this ).affine_inverse();
+	const Transform3D inCarried = ( toCarried * InSceneFrame( body, this ) ).orthonormalized();
 	Vector3 center = inCarried.origin;
 	Quaternion turn = inCarried.basis.get_rotation_quaternion();
-	String text = "# Baked from the item's CbItemBody (bake_items.gd): its body when it lies in the world.\n";
-	text += "shape " + kind + "\n";
+	String text = "# Baked from the item's CbItem (its scene's root). Edit the scene and bake again.\n";
+	text += "shape " + shapeName + "\n";
 	text += vformat( "half %.4f %.4f %.4f\n", half.x, half.y, half.z );
 	text += vformat( "center %.4f %.4f %.4f\n", center.x, center.y, center.z );
 	text += vformat( "mass %.3f\n", m_mass );
@@ -251,48 +263,43 @@ Dictionary CbItemBody::bake() const
 		bool number = value.get_type() == Variant::FLOAT || value.get_type() == Variant::INT;
 		if ( name.is_empty() || name.contains( " " ) || name.contains( "\t" ) || number == false || std::isfinite( double( value ) ) == false )
 		{
-			out["text"] = "";
-			out["error"] = "property \"" + name + "\" needs a name without spaces and a number";
-			return out;
+			return fail( "property \"" + name + "\" needs a name without spaces and a number" );
 		}
 		text += "property " + name + " " + String::num( double( value ), 4 ) + "\n";
 	}
 	// Where the other hand holds it.
-	std::vector<CbGrip*> others = GripsOf( this, CbGrip::HAND_OTHER );
+	std::vector<CbGrip*> others = GripsUnder( this, CbGrip::HAND_OTHER );
 	if ( others.empty() == false )
 	{
-		Transform3D t = ( toCarried * InItemFrame( others[0] ) ).orthonormalized();
+		Transform3D t = ( toCarried * InSceneFrame( others[0], this ) ).orthonormalized();
 		Quaternion q = t.basis.get_rotation_quaternion();
 		text += vformat( "grip %.4f %.4f %.4f %.5f %.5f %.5f %.5f %d\n", t.origin.x, t.origin.y, t.origin.z, q.x, q.y, q.z, q.w,
 						 others[0]->get_as_animated() ? 2 : ( others[0]->get_align_rotation() ? 1 : 0 ) );
+	}
+	// What the game reads (the server skips these): which scene the kind is drawn as, what it is
+	// called, and how its holder's arms sit in first person.
+	String scene = get_scene_file_path();
+	if ( scene.is_empty() == false )
+	{
+		text += "scene " + scene + "\n";
+	}
+	String shown = m_displayName.strip_edges().replace( "\n", " " );
+	if ( shown.is_empty() == false )
+	{
+		text += "name " + shown + "\n";
+	}
+	if ( m_viewOffset.is_zero_approx() == false )
+	{
+		text += vformat( "view %.4f %.4f %.4f\n", m_viewOffset.x, m_viewOffset.y, m_viewOffset.z );
 	}
 	out["text"] = text;
 	out["error"] = "";
 	return out;
 }
 
-namespace
+void CbItem::bake_to_project()
 {
-
-void CollectLooks( Node* node, std::vector<CbItemLook*>& out )
-{
-	if ( auto* look = Object::cast_to<CbItemLook>( node ) )
-	{
-		out.push_back( look );
-	}
-	for ( int i = 0; i < node->get_child_count(); ++i )
-	{
-		CollectLooks( node->get_child( i ), out );
-	}
-}
-
-} // namespace
-
-void CbItemBody::bake_to_project()
-{
-	Node* owner = get_owner() != nullptr ? get_owner() : this;
-	String scene = owner->get_scene_file_path();
-	if ( scene.is_empty() )
+	if ( get_scene_file_path().is_empty() )
 	{
 		UtilityFunctions::push_error( "Item bake: save the item's scene first." );
 		return;
@@ -300,56 +307,25 @@ void CbItemBody::bake_to_project()
 	Dictionary baked = bake();
 	if ( String( baked["text"] ).is_empty() )
 	{
-		UtilityFunctions::push_error( "Item bake failed: ", baked["error"] );
-		return;
-	}
-	// Which kinds are drawn with this scene: the CbItemLook nodes in the project's world reactions.
-	PackedStringArray kinds;
-	Ref<DirAccess> dir = DirAccess::open( "res://vfx" );
-	PackedStringArray files = dir.is_valid() ? dir->get_files() : PackedStringArray();
-	for ( const String& file : files )
-	{
-		if ( file.begins_with( "reactions" ) == false || file.ends_with( ".tscn" ) == false )
-		{
-			continue;
-		}
-		Ref<PackedScene> packed = ResourceLoader::get_singleton()->load( "res://vfx/" + file );
-		Node* root = packed.is_valid() ? packed->instantiate() : nullptr;
-		if ( root == nullptr )
-		{
-			continue;
-		}
-		std::vector<CbItemLook*> looks;
-		CollectLooks( root, looks );
-		for ( CbItemLook* look : looks )
-		{
-			if ( look->get_scene() == scene && look->get_kind().is_empty() == false && kinds.has( look->get_kind() ) == false )
-			{
-				kinds.push_back( look->get_kind() );
-			}
-		}
-		memdelete( root );
-	}
-	if ( kinds.is_empty() )
-	{
-		UtilityFunctions::push_error( "Item bake: no CbItemLook in res://vfx/reactions*.tscn draws ", scene,
-									  ". Add one (its kind names the file) and bake again." );
+		UtilityFunctions::push_error( "Item bake failed (", get_scene_file_path(), "): ", baked["error"] );
 		return;
 	}
 	DirAccess::make_dir_recursive_absolute( "res://items" );
-	for ( const String& kind : kinds )
+	String path = "res://items/" + m_kind.strip_edges() + ".cfg";
+	PackedByteArray bytes = String( baked["text"] ).to_utf8_buffer();
+	// A bake that changes nothing touches nothing: it runs on every save and every publish.
+	if ( FileAccess::file_exists( path ) && FileAccess::get_file_as_bytes( path ) == bytes )
 	{
-		String path = "res://items/" + kind + ".cfg";
-		Ref<FileAccess> out = FileAccess::open( path, FileAccess::WRITE );
-		if ( out.is_null() )
-		{
-			UtilityFunctions::push_error( "Item bake: cannot write ", path );
-			continue;
-		}
-		out->store_string( baked["text"] );
-		out->close();
-		UtilityFunctions::print( "Baked item body ", kind, " into ", path, ". Publish the mod for servers to get it." );
+		return;
 	}
+	Ref<FileAccess> file = FileAccess::open( path, FileAccess::WRITE );
+	if ( file.is_null() )
+	{
+		UtilityFunctions::push_error( "Item bake: cannot write ", path );
+		return;
+	}
+	file->store_buffer( bytes );
+	UtilityFunctions::print( "Baked item ", m_kind, " into ", path, ". Publish the mod for servers to get it." );
 }
 
 } // namespace cb::gd
