@@ -7,14 +7,15 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 
 | # | Milestone | In one line |
 |---|---|---|
-| 1 | [Motions in the editor](#1-motions-in-the-editor) | a preview, checks at publish, the body follows a motion |
+| 1 | [Anything can be shown](#1-anything-can-be-shown) | what the server knows reaches the screen through scenes, with no client code |
+| 1b | [Motions in the editor](#1b-motions-in-the-editor) | a preview, checks at publish, the body follows a motion |
 | 2 | [The client, finished](#2-the-client-finished) | what is left of the client's known limits |
 | 3 | [The SDK knows the server](#3-the-sdk-knows-the-server) | the Godot modding project scaffolds the server half and knows its names |
 | 4 | [Mod testing](#4-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
 
 Done before these: movement parameters (M92), motions on a press (M93: a dash, a double jump) and
 motions that hold (M94: flight, a jetpack, a glide), and weight with probes, forces and links (M99: a grappling hook;
-[docs/motions.md](docs/motions.md)). Step 1 finishes that idea. Steps 3 and 4 are last on
+[docs/motions.md](docs/motions.md)). Step 1b finishes that idea. Steps 3 and 4 are last on
 purpose: they wrap the client, so they wait until it stops changing.
 
 ## Where motions stand
@@ -39,7 +40,7 @@ the schema and run by every simulation, so a player's own are predicted and roll
 |---|---|
 | Other players' presses are guessed by repeating their last input, so their dash is seen late and corrected | accept: it is what a jump does today, and the mirror fades the correction |
 | A field both a motion and a server mod write | allowed today (commands apply first, then motions); the bake could name the fields a set writes, and the server warn when a mod `Set`s one every tick |
-| A second jump that plays the jump's animation | the character's tree enters its jump state on the motion's event; a starter for it comes with step 1 |
+| A second jump that plays the jump's animation | the character's tree enters its jump state on the motion's event; a starter for it comes with step 1b |
 
 ### Routes not taken
 
@@ -51,7 +52,20 @@ the schema and run by every simulation, so a player's own are predicted and roll
 
 ## The steps
 
-### 1. Motions in the editor
+### 1. Anything can be shown
+
+The presentation sandbox: the server says what is true (fields, events), a scene in a mod's pack
+says how it looks. No client code, and nothing in the engine that knows what a score is.
+
+| Piece | Today | Would be |
+|---|---|---|
+| Lists | **done (M100)**: `CbList`, a row per player or item, designed as a scene; `CbShowKey` | a headless check that drives one; a grid whose columns size themselves |
+| Text from the server | fields are Int, Float or Bool: a server cannot say "Defend the east gate" or name a team | a text a field points at: strings in the mod's pack by index first (translatable, nothing new on the wire), then free strings the server sends |
+| Lists on one entity | a field holds one value | array fields, or a `CbList` over the values of a field family |
+| One body description | `CbProp`, `CbTemplate` + `CbComponent` and `CbItemBody` each describe a dynamic body their own way; none exposes density, friction or bounce | one shared body (shape, mass or density, friction, restitution) for props, items and templates; `CbItemBody` keeps the grip offset, `properties` move off it |
+| HUD keys | `CbShowKey` adds an action of the viewer's own | they appear in key rebinding with the server's actions |
+
+### 1b. Motions in the editor
 
 | Piece | What |
 |---|---|

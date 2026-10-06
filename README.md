@@ -111,7 +111,7 @@ A join that fails comes back to the menu and says why:
   Switched off by default: the crouch (C, the `sneak` mod), the `flight` mod (T flies, Shift
   glides, and its jetpack), and the second jump in the air
   ([what is off](docs/server-mods.md#switched-off-by-default)).
-- Tab shows the scoreboard, the mouse orbits the camera and the wheel zooms.
+- The mouse orbits the camera and the wheel zooms. Tab shows the scoreboard where a mod brings one (combat, deathmatch).
 - The key left of 1 (`` ` `` / `~`) switches between the camera behind the player and **first person**:
   from the character's eye height above its feet, on its mover, so steps, landings and the bowing
   body do not move it. Both views look 86 degrees up and down; from behind, the map pulls the

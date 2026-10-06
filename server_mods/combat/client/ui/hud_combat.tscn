@@ -5,7 +5,12 @@
 ; events: no scripts. Restyle it freely, or override it from a player mod at res://ui/hud_combat.tscn.
 ;   CbFieldBinding  field -> a property of its target (default: its parent)
 ;   CbFieldLabel    "{field}" text, shown while its conditions hold
-;   CbEventFeed     a line per mod event; CbScoreboard a table shown while Tab is held
+;   CbEventFeed     a line per mod event
+;   Scores          the scoreboard, made of ordinary nodes: a CbShowKey shows it while "scores" (Tab) is
+;                   held; Header is plain Labels; Rows is a CbList of players whose child Row is one
+;                   row as designed. In the game the list copies Row for every player, sorted, and
+;                   the CbFieldLabels in a row read that player (is_local: the viewer's own row)
+;                   (it steps aside when a game mode brings its own: !?deathmatch.score)
 
 [sub_resource type="StyleBoxFlat" id="BarBack"]
 bg_color = Color(0.08, 0.08, 0.1, 0.65)
@@ -143,7 +148,7 @@ event = "combat.killed"
 text_format = "{a}  >  {b}"
 label_settings = SubResource("Feed")
 
-[node name="Scoreboard" type="CbScoreboard" parent="."]
+[node name="Scores" type="VBoxContainer" parent="."]
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
@@ -153,11 +158,50 @@ offset_left = -260.0
 offset_top = -200.0
 offset_right = 260.0
 offset_bottom = 200.0
-theme_override_constants/h_separation = 48
-columns = 3
-headers = PackedStringArray("Player", "Kills", "Deaths")
-cells = PackedStringArray("{name}", "{combat.kills}", "{combat.deaths}")
-sort_field = "combat.kills"
+
+[node name="Key" type="CbShowKey" parent="Scores"]
 conditions = PackedStringArray("!?deathmatch.score")
+
+[node name="Header" type="HBoxContainer" parent="Scores"]
+
+[node name="Player" type="Label" parent="Scores/Header"]
+custom_minimum_size = Vector2(260, 0)
+text = "Player"
 label_settings = SubResource("Row")
-local_settings = SubResource("RowLocal")
+
+[node name="Kills" type="Label" parent="Scores/Header"]
+custom_minimum_size = Vector2(110, 0)
+text = "Kills"
+label_settings = SubResource("Row")
+
+[node name="Deaths" type="Label" parent="Scores/Header"]
+custom_minimum_size = Vector2(110, 0)
+text = "Deaths"
+label_settings = SubResource("Row")
+
+[node name="Rows" type="CbList" parent="Scores"]
+sort_by = "combat.kills"
+
+[node name="Row" type="HBoxContainer" parent="Scores/Rows"]
+
+[node name="Name" type="CbFieldLabel" parent="Scores/Rows/Row"]
+custom_minimum_size = Vector2(260, 0)
+label_settings = SubResource("Row")
+text_format = "{name}"
+conditions = PackedStringArray("not is_local")
+
+[node name="NameLocal" type="CbFieldLabel" parent="Scores/Rows/Row"]
+custom_minimum_size = Vector2(260, 0)
+label_settings = SubResource("RowLocal")
+text_format = "{name}"
+conditions = PackedStringArray("is_local")
+
+[node name="Kills" type="CbFieldLabel" parent="Scores/Rows/Row"]
+custom_minimum_size = Vector2(110, 0)
+label_settings = SubResource("Row")
+text_format = "{combat.kills}"
+
+[node name="Deaths" type="CbFieldLabel" parent="Scores/Rows/Row"]
+custom_minimum_size = Vector2(110, 0)
+label_settings = SubResource("Row")
+text_format = "{combat.deaths}"

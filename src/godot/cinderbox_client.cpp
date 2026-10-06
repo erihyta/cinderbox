@@ -144,6 +144,8 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_entity_template_name", "net_id" ), &CinderboxClient::get_entity_template_name );
 	ClassDB::bind_method( D_METHOD( "get_entity_node", "net_id" ), &CinderboxClient::get_entity_node );
 	ClassDB::bind_method( D_METHOD( "get_players" ), &CinderboxClient::get_players );
+	ClassDB::bind_method( D_METHOD( "get_items", "kind", "holder" ), &CinderboxClient::get_items );
+	ClassDB::bind_method( D_METHOD( "get_entity_name", "net_id" ), &CinderboxClient::get_entity_name );
 	ClassDB::bind_method( D_METHOD( "get_player_name", "net_id" ), &CinderboxClient::get_player_name );
 	ClassDB::bind_method( D_METHOD( "format_fields", "net_id", "format" ), &CinderboxClient::format_fields );
 	ClassDB::bind_method( D_METHOD( "get_required_items" ), &CinderboxClient::get_required_items );
@@ -1740,6 +1742,12 @@ bool CinderboxClient::check_conditions( int64_t net_id, const PackedStringArray&
 	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
 	// Item kinds are names too: "pistol.gun" holds while the player holds one.
 	present::ExtraFields held = [&]( const std::string& name, float& value ) {
+		// Whose it is: a row of a CbList asks whether it is the viewer's own.
+		if ( name == "is_local" )
+		{
+			value = net_id != 0 && net_id == get_local_net_id() ? 1.0f : 0.0f;
+			return true;
+		}
 		int kind = m_frame.schema.FindItemKind( name );
 		if ( kind < 0 )
 		{
@@ -1772,6 +1780,12 @@ Variant CinderboxClient::evaluate( int64_t net_id, const String& expression ) co
 	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
 	bool known = false;
 	present::ExtraFields names = [&]( const std::string& name, float& value ) {
+		if ( name == "is_local" )
+		{
+			known = true;
+			value = net_id != 0 && net_id == get_local_net_id() ? 1.0f : 0.0f;
+			return true;
+		}
 		int kind = m_frame.schema.FindItemKind( name );
 		known |= kind >= 0 || m_frame.schema.FindField( name ) != nullptr;
 		if ( kind < 0 )
@@ -1985,6 +1999,41 @@ String CinderboxClient::get_player_name( int64_t net_id ) const
 	return name.empty() ? String( "Player " ) + String::num_int64( slot + 1 ) : String::utf8( name.c_str() );
 }
 
+PackedInt64Array CinderboxClient::get_items( const String& kind, int64_t holder ) const
+{
+	PackedInt64Array out;
+	int wanted = kind.is_empty() ? -1 : m_frame.schema.FindItemKind( ToStd( kind ) );
+	if ( !m_mirror || ( kind.is_empty() == false && wanted < 0 ) )
+	{
+		return out;
+	}
+	m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
+							const present::RagdollAnim* ) {
+		if ( v.kind == present::VisualKind::Item && ( wanted < 0 || int( v.itemKind ) == wanted ) &&
+			 ( holder == 0 || int64_t( v.holder ) == holder ) )
+		{
+			out.push_back( int64_t( v.netId ) );
+		}
+	} );
+	return out;
+}
+
+String CinderboxClient::get_entity_name( int64_t net_id ) const
+{
+	flecs::entity ve = m_mirror ? m_mirror->VisualOf( uint32_t( net_id ) ) : flecs::entity();
+	if ( ve.is_valid() )
+	{
+		const present::Visual& v = ve.get<present::Visual>();
+		if ( v.kind == present::VisualKind::Item && v.itemKind < m_frame.schema.itemKinds.size() )
+		{
+			const std::string& kind = m_frame.schema.itemKinds[v.itemKind];
+			auto found = m_itemNames.find( kind );
+			return found != m_itemNames.end() && found->second.is_empty() == false ? found->second : String::utf8( kind.c_str() );
+		}
+	}
+	return get_player_name( net_id );
+}
+
 String CinderboxClient::ResolveKeysAndLooks( int64_t net_id, const String& format ) const
 {
 	String out = format;
@@ -2053,7 +2102,7 @@ String CinderboxClient::ResolveKeysAndLooks( int64_t net_id, const String& forma
 String CinderboxClient::format_fields( int64_t net_id, const String& format ) const
 {
 	String withName = ResolveNameFields(
-		net_id, ResolveKeysAndLooks( net_id, format ).replace( "{name}", get_player_name( net_id ).replace( "{", "(" ) ) );
+		net_id, ResolveKeysAndLooks( net_id, format ).replace( "{name}", get_entity_name( net_id ).replace( "{", "(" ) ) );
 	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
 	std::string text =
 		present::FormatFields( m_frame.schema, ToStd( withName ), BoardOf( uint32_t( net_id ) ), globals, PrivatesOf( uint32_t( net_id ) ) );

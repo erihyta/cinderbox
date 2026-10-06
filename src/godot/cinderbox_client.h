@@ -131,7 +131,13 @@ public:
 	// Players: net ids of everyone in the world, and their names.
 	godot::PackedInt64Array get_players() const;
 	godot::String get_player_name( int64_t net_id ) const;
-	// "{name}: {combat.kills}" for one entity: {name} is its player's name, the rest board fields.
+	// Items in the world, lying or carried: of one kind ("pistol.gun"; empty: any), and of one
+	// holder (0: whoever, or nobody).
+	godot::PackedInt64Array get_items( const godot::String& kind, int64_t holder ) const;
+	// What an entity is called: a player's name, an item's display name ("Bat").
+	godot::String get_entity_name( int64_t net_id ) const;
+	// "{name}: {combat.kills}" for one entity: {name} is what it is called (get_entity_name), the
+	// rest board fields.
 	godot::String format_fields( int64_t net_id, const godot::String& format ) const;
 	// The workshop items this server's mods need: [{ mod, sha256 }].
 	godot::Array get_required_items() const;

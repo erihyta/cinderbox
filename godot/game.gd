@@ -119,11 +119,6 @@ func _ready() -> void:
 	if args.has("rollback") and peer != null:
 		peer.rollback_min = int(args["rollback"])
 		peer.rollback_max = int(args["rollback"])
-	if not InputMap.has_action("scoreboard"):
-		InputMap.add_action("scoreboard")
-		var tab := InputEventKey.new()
-		tab.physical_keycode = KEY_TAB
-		InputMap.action_add_event("scoreboard", tab)
 	autoplay = float(args.get("autoplay", "0"))
 	screenshot = args.get("screenshot", "")
 	screenshot_every = float(args.get("screenshot-every", "0"))
@@ -476,9 +471,10 @@ func _reload_presentation() -> void:
 # named cb_<action>, so the usual Godot input remapping works on them too.
 
 func _bind_actions() -> void:
-	for action in InputMap.get_actions():
-		if String(action).begins_with(ACTION_PREFIX):
-			InputMap.erase_action(action)
+	# Only the last server's: a HUD's own keys (CbShowKey) have the prefix too, and stay.
+	for action in _actions:
+		if InputMap.has_action(ACTION_PREFIX + String(action["name"])):
+			InputMap.erase_action(ACTION_PREFIX + String(action["name"]))
 	_actions = client.get_actions()
 	for action in _actions:
 		var name: String = ACTION_PREFIX + String(action["name"])
@@ -550,9 +546,9 @@ func _send_input(delta: float) -> void:
 			actions |= _action_bit("slot_3")
 			if auto_rng.randf() < delta * 2.0:
 				actions |= _action_bit("fire")
-		# Hold Tab at the end, so screenshots show the scoreboard too.
-		if elapsed > autoplay * 0.8 and not Input.is_action_pressed("scoreboard"):
-			Input.action_press("scoreboard")
+		# Hold the scores key at the end (a mod's CbShowKey names it), so screenshots show them too.
+		if elapsed > autoplay * 0.8 and InputMap.has_action("cb_scores") and not Input.is_action_pressed("cb_scores"):
+			Input.action_press("cb_scores")
 	elif get_window().has_focus() and not menu.is_open():
 		move.x = float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A))
 		move.y = float(Input.is_physical_key_pressed(KEY_W)) - float(Input.is_physical_key_pressed(KEY_S))
@@ -619,13 +615,13 @@ func _update_help() -> void:
 	if help == null:
 		return
 	if _replay != "":
-		help.text = "Space pause   Left/Right -/+5 s   Up/Down speed   , . step   Home restart   N next player   Tab scores   Mouse orbit   Wheel zoom   ` first person   Z shoulder   Esc menu   F1 stats"
+		help.text = "Space pause   Left/Right -/+5 s   Up/Down speed   , . step   Home restart   N next player   Mouse orbit   Wheel zoom   ` first person   Z shoulder   Esc menu   F1 stats"
 		return
 	var text := "WASD move   Shift sprint   Space jump"
 	for action in _actions:
 		var key: String = String(action["key"]).replace("Mouse", "Mouse ")
 		text += "   %s %s" % [key, String(action["name"]).replace("_", " ")]
-	help.text = text + "   Tab scores   Mouse orbit   Wheel zoom   ` first person   Z shoulder   Esc menu   F1 stats"
+	help.text = text + "   Mouse orbit   Wheel zoom   ` first person   Z shoulder   Esc menu   F1 stats"
 
 
 func _update_hud() -> void:

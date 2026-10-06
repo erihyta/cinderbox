@@ -294,7 +294,8 @@ Everything a player sees and hears beyond bodies is data in workshop items: no s
 | `CbItemLook` | which scene an item kind is drawn as |
 | `CbLinkLook` | which scene the line of a motion's probe is drawn as: stretched by the viewer from the player's socket to the line's end, which every frame carries (`FrameEntity::linkEnd`) |
 | `CbMotionSet`, `CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink` | not looks: authoring nodes for what a mod adds to movement, one family (`CbMotionPart`; the effects share `CbMotionEffect`), baked to `motions/<set>.cfg` for the simulation (docs/motions.md) |
-| `CbFieldLabel`, `CbFieldBinding`, `CbEventFeed`, `CbScoreboard`, `CbPromptLabel` | HUD from fields and events |
+| `CbFieldLabel`, `CbFieldBinding`, `CbEventFeed`, `CbPromptLabel` | HUD from fields and events, for their subject: the local player, or the entity of the list row they are in |
+| `CbList`, `CbShowKey` | a row per player or item, copied from the row designed as its child, filtered and sorted by expressions (a scoreboard is a scene, not a node); a node shown while a key of the viewer's own is held |
 
 - **Paths**: `^` (my entity), `^^` (its holder), `$at` / `$other` (who a cue names), `$local`, `$world`, `@field` (the entity a field names). No path leaves the World node.
 - **Conditions and values**: one expression language (`src/expr`): names, comparisons, arithmetic, `and` / `or` / `not`, `?name`. Parsed once into a stack program with the names kept as text; each reader says what a name is.

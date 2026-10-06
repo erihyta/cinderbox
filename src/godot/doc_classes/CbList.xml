@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbList" inherits="BoxContainer" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		A row per player or item, with no code: its first child is the row, copied for every entry. A scoreboard, a team list, what a player carries.
+	</brief_description>
+	<description>
+		Design one row as this node's child: any Control (an [HBoxContainer] of labels, a panel with an icon and a bar), built from ordinary nodes and the HUD nodes. In the game that child is hidden and a copy of it is shown for every entry of the list, in order, laid out as a [BoxContainer] does (down, or across with [member BoxContainer.vertical] off).
+		The HUD nodes inside a row read [b]that row's entity[/b] instead of the local player: a [CbFieldLabel] with [code]{name}[/code] and [code]{combat.kills}[/code] shows that player's name and kills, a [CbFieldBinding] fills a bar with that player's health. In a row's conditions, [code]is_local[/code] is true on the viewer's own row, and [code]{rank}[/code] in a format is the row's place in the list, from 1.
+		What is listed is the server's: who is in the world, and the fields its mods set on them. The list only decides which of them to show ([member where]), in which order ([member sort_by]) and how many ([member max_rows]).
+		A list inside a row lists for that row's entity: [constant OF_HELD_ITEMS] under a player's row is what that player carries.
+		Headers are not part of it: put plain labels above it. To show it only while a key is held, put a [CbShowKey] next to it.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_entries" qualifiers="const">
+			<return type="PackedInt64Array" />
+			<description>
+				The entities it lists now, in order.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="of" type="int" setter="set_of" getter="get_of" enum="CbList.Of" default="0">
+			What it lists.
+		</member>
+		<member name="item_kind" type="String" setter="set_item_kind" getter="get_item_kind" default="&quot;&quot;">
+			For items: only this kind ([code]pistol.gun[/code]). Empty: any.
+		</member>
+		<member name="where" type="PackedStringArray" setter="set_where" getter="get_where" default="PackedStringArray()">
+			Expressions on an entry, all of which must hold for it to be listed: [code]team.id == 1[/code], [code]not combat.dead[/code], [code]not is_local[/code].
+		</member>
+		<member name="sort_by" type="String" setter="set_sort_by" getter="get_sort_by" default="&quot;&quot;">
+			An expression over an entry's fields that orders the rows: [code]deathmatch.score[/code], [code]combat.kills - combat.deaths[/code]. Empty: the world's order. Entries that tie keep their order.
+		</member>
+		<member name="descending" type="bool" setter="set_descending" getter="get_descending" default="true">
+			The highest [member sort_by] first.
+		</member>
+		<member name="max_rows" type="int" setter="set_max_rows" getter="get_max_rows" default="0">
+			At most this many rows (the first ones, after sorting). 0: all. A top three is 3.
+		</member>
+		<member name="conditions" type="PackedStringArray" setter="set_conditions" getter="get_conditions" default="PackedStringArray()">
+			Expressions on the list's own subject (the local player, or the row the list is in) that must hold for the list to be shown at all.
+		</member>
+	</members>
+	<constants>
+		<constant name="OF_PLAYERS" value="0" enum="Of">
+			Every player in the world.
+		</constant>
+		<constant name="OF_ITEMS" value="1" enum="Of">
+			Every item in the world, lying or carried. [code]{name}[/code] is its display name.
+		</constant>
+		<constant name="OF_HELD_ITEMS" value="2" enum="Of">
+			The items its subject carries: the local player's, or those of the player whose row the list is in.
+		</constant>
+	</constants>
+</class>
