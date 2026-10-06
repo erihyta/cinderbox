@@ -12,7 +12,7 @@ looks like is authored in Godot.
 |---|---|---|
 | socket | the character scene: a `CbSocket` under a `BoneAttachment3D` | where items go, in the item's frame (grip at the origin, pointing along -Z); `RightHand` and `LeftHand` exist on every character (made at the hands if the scene has none) |
 | item kind | the mod: `declare.ItemKind( "melee.bat" )` | spawned with `ctx.SpawnItem( SlotTarget( slot ), kind, socket )`, addressed with `ItemTarget( slot, socket )` for `Set`, `Emit`, `Destroy` |
-| look | a `CbItemLook` node (kind -> scene) in the mod's `vfx/reactions_<name>.tscn` | drawn as the socket's child `Item` |
+| the item | a scene whose root is a `CbItem` (`prefabs/bat.tscn`): the kind, the name, the body, the grips, the look ([Making an item](#making-an-item)) | drawn as the socket's child `Item` |
 | item state and events | `CbReaction` nodes in the item scene | flames on its holder's `melee.swing`, glow while `melee.hot`, sparks on its holder's `melee.hit` (see [Reactions](looks.md#reactions)) |
 
 One attack, resolved by what is held, with no client code:
@@ -116,7 +116,7 @@ the handle, the pistol's is as its animation has it.
 
 - It is part of the pose: other players see it, and the server's hit tests pose the same arms.
 - Fingers are the animation's: the solve places the wrist and turns the hand, it does not close it.
-- One marker per hand. They need the item to have a `CbItemBody` (that is what bakes them); it may be turned any way, but not scaled.
+- One marker per hand. They are baked with the item (its `CbItem`); the body may be turned any way, but not scaled.
 - `check_grips.gd` checks what scenes built in code bake to.
 - **To turn an item in the hand, turn its carrying marker**, and nothing else: the body stays where
   the scene has it (the bake writes how it is turned in the carried frame, a `turn` line, and the
@@ -149,7 +149,7 @@ so it falls, tumbles, gets shot across the floor, and does so identically on eve
 
 | Mod API | Does |
 |---|---|
-| a `CbItemBody` in the item's scene | its body in the world: a box or a sphere with a mass, placed from the grip (the bat: a 0.82 m box whose centre is 0.31 m in front of it). Authored with Godot's shape gizmo, baked to `items/<kind>.cfg` |
+| the `CollisionShape3D` under the item's `CbItem` | its body in the world: a box or a sphere, placed from the grip (the bat: a 0.82 m box whose centre is 0.31 m in front of it), with the item's `mass`. Authored with Godot's shape gizmo, baked to `items/<kind>.cfg` |
 | `declare.ItemKind( "x", BoxItem( half, center, mass ) )` | the same from code, for a mod without a look (`SphereItem` too); a baked body replaces it |
 | `ctx.SpawnWorldItem( kind, grip, rotation, velocity )` | one on the floor |
 | `ctx.DropItem( item, grip, rotation, velocity )` | out of the hand; thrown if it has a velocity |
@@ -157,16 +157,39 @@ so it falls, tumbles, gets shot across the floor, and does so identically on eve
 | `ctx.ItemsNear( point, radius )`, `ctx.Items()`, `ctx.ItemKindOf( id )`, `ctx.ItemHolder( id )` | what lies around, nearest first; every item; what and whose |
 | `ctx.SpawnItem` into a taken socket | drops what was there (it may be one someone picked up) |
 
-The body is **authored in Godot and baked**, like a character's hit zones: put a `CbItemBody` in
-the item's scene, give it a `BoxShape3D` or `SphereShape3D` and a `mass`, and move it to where the
-shape's centre is. The same node carries what else the server should know about the item:
+### Making an item
 
-| On the `CbItemBody` | Meaning |
+One scene is one item, and its root says so:
+
+```
+Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1        (prefabs/bat.tscn)
+│                               properties { pickup.hold_seconds: 0.5 }
+├── Body     CollisionShape3D   a BoxShape3D: its body when it lies in the world
+├── Carry    CbGrip             where the carrying hand holds it
+├── Other    CbGrip             the other hand
+├── Handle…  MeshInstance3D     how it looks
+└── Tip      Node3D             a place on it, with the CbReaction nodes of what it shows
+```
+
+| On the `CbItem` | Meaning |
 |---|---|
-| `shape`, its position | the body when it lies in the world |
-| `mass` | kg |
+| `kind` | the kind a server mod declares (`declare.ItemKind( "melee.bat" )`). One scene per kind; the baked file is named after it |
+| `display_name` | what prompts and lists call it (`{look:field}`, an item's `{name}`) |
+| `mass` | kg, when it lies in the world |
 | `properties` | named numbers any server mod may read, e.g. `pickup.hold_seconds` = 0.5. They replace what the item's mod declared in code for the same name |
-| **Bake item body** (button) | writes `res://items/<kind>.cfg` for every kind whose `CbItemLook` draws this scene. Save the scene first |
+| `view_offset` | first person: how far the arms holding it are moved in the viewer's own view |
+| **Bake item** (button), saving the scene | writes `res://items/<kind>.cfg` |
+
+| Under it | Meaning |
+|---|---|
+| a `CollisionShape3D` | the body: a `BoxShape3D` or `SphereShape3D`, moved to where the shape's centre is. Not scaled |
+| `CbGrip` markers | [where the hands hold it](#both-hands-on-an-item) |
+| anything else | its look: meshes, lights, particles, and `CbReaction` nodes for what it shows |
+
+The baked file has two readers. The **server** takes the body, the grip and the properties from
+it; the **game** takes the scene, the name and the first-person view. Nothing else says what an
+item looks like: there is no entry for it in a reactions scene.
+
 
 Publishing the mod bakes every item too (`tools\publish_mod.ps1`, or by hand below) and ships the
 files in the item; the server reads them from there (`item melee.bat: body from mod melee's item
@@ -184,7 +207,7 @@ Who may pick up what, and when, is a mod's. The **pickup** mod is the example:
   `pickup.target`. **E** takes it, **G** throws what you hold. With the `inventory` mod running, a
   taken item goes to its slot (see [The inventory](#the-inventory)); without it there is only the
   right hand: what was there drops, and dying drops it.
-- **Hold to pick up**: an item may take a moment: `pickup.hold_seconds` in its `CbItemBody`'s
+- **Hold to pick up**: an item may take a moment: `pickup.hold_seconds` in its `CbItem`'s
   `properties` (the bat: 0.5; the pistol is a tap), or `declare.ItemProperty( kind,
   "pickup.hold_seconds", 0.5f )` in its mod. `pickup.hold` says how long the item in reach needs,
   and while E is held on it `pickup.since` is the tick the hold began (0: none). Letting go or

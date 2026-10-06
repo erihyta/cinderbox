@@ -40,7 +40,7 @@ machines. No game and no server are needed to author. The rules are the mod's C+
 ## Finding the nodes
 
 The editor's **Create New Node** dialog lists the Cinderbox nodes a mod is made of under
-**Favorites**, on its left: `CbReaction`, `CbPrediction`, `CbItemLook`, `CbItemBody`, `CbGrip`, `CbLinkLook`,
+**Favorites**, on its left: `CbReaction`, `CbPrediction`, `CbItem`, `CbGrip`, `CbLinkLook`,
 `CbMotionSet`, `CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, the HUD nodes (`CbList` and `CbShowKey` among them), and the character and map nodes. The extension puts them
 there the first time a project is opened with it. One you take out of the favorites stays out.
 
@@ -48,8 +48,8 @@ there the first time a project is opened with it. One you take out of the favori
 
 | File | Start from it to |
 |---|---|
-| `prefabs/<mod>.tscn` | model the item: its body (`CbItemBody`), where the hands hold it (`CbGrip`), a `Muzzle` for its effects |
-| `vfx/reactions_<mod>.tscn` | say what the item looks like (`CbItemLook`), predict a press (`CbPrediction`), react to events (`CbReaction`) |
+| `prefabs/<mod>.tscn` | make the item: a `CbItem` (its kind, name, mass), its body (a `CollisionShape3D`), where the hands hold it (`CbGrip`), a `Muzzle` for its effects |
+| `vfx/reactions_<mod>.tscn` | predict a press (`CbPrediction`), react to events (`CbReaction`) |
 | `ui/hud_<mod>.tscn` | show fields while the item is out (`CbFieldLabel`) |
 | `animation_packs/<mod>_animations.tscn` | an animation pack: the default AnimationTree in full, replacing the upper body |
 | `motion_sets/<mod>_moves.tscn` | add to how players move, predicted: a push on a press, with a charge and an event (a `CbMotion` with a `CbImpulse`) |
@@ -65,7 +65,7 @@ Files that already exist are kept. Delete the starters a mod does not need.
 | `cinderbox.gdextension` | the SDK | tells Godot where the Cinderbox extension's libraries are (`bin/`) for each platform | no |
 | `*.import` (next to every model, sound, texture) | Godot | how that file is imported: for a model, its bone map, skeleton name and each clip's loop mode. This is what the Import dock and Advanced Import Settings edit | in the Import dock |
 | `*.uid` | Godot | the file's id, so moving it does not break references | no |
-| `items/<kind>.cfg` | publishing | an item's body as the **server** reads it: its box, mass, where the hands hold it. Baked from the item scene's `CbItemBody` and `CbGrip` nodes | no: edit the scene |
+| `items/<kind>.cfg` | publishing | an item as the **server** reads it (its box, mass, where the hands hold it, its properties) and as the game finds it (its scene, name, first-person view). Baked from the item scene's `CbItem`, on save and when publishing | no: edit the scene |
 | `motions/<set>.cfg` | saving a motion set, publishing | the mod's motions as text: the press, the condition, the effects, the fields and the event. What every simulation runs | no: edit the scene |
 | `anim/<pack>/graph.cfg` | saving a pack, publishing | the pack's state machines as text: clips, layers, states, transitions, conditions. What the simulation runs | no: edit the tree |
 | `anim/<pack>/anim.cfg` | the same | which `.ozz` file is which clip, and the skeleton they were made on | no |

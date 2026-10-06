@@ -17,11 +17,10 @@ PistolReactions                      (vfx/reactions_pistol.tscn)
 ├── Fired         on pistol.fired     subject $at                         muzzle flash + gunshot at $at/RightHand
 ├── Kick          on pistol.fired     subject $at      is_local           camera shake
 ├── Tracer        on pistol.fired     subject $at                         beam from $at/RightHand to the cue's end
-├── Hurt          on pistol.hit       subject $other   is_local           camera shake + red flash
-└── Gun           CbItemLook          pistol.gun -> res://prefabs/pistol.tscn
+└── Hurt          on pistol.hit       subject $other   is_local           camera shake + red flash
 ```
 
-A `CbLinkLook` in the same scene says what the line of a [motion's probe](motions.md#the-rope-cblinklook) (a grappling hook's rope) is drawn as.
+What the pistol itself looks like is its own scene, whose root is a [`CbItem`](items.md#making-an-item). A `CbLinkLook` in a reactions scene says what the line of a [motion's probe](motions.md#the-rope-cblinklook) (a grappling hook's rope) is drawn as.
 
 | Events | Carry |
 |---|---|
