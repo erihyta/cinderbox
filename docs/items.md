@@ -95,28 +95,35 @@ simply out of sight. The mannequin has both: the bat hangs across the back, the 
 
 ## Both hands on an item
 
-Where the hands hold an item is said by markers in its scene, one `CbGrip` per hand:
+Where the hands hold an item is said by the item: its `CbItem` names two markers of its scene
+(ordinary `Marker3D` nodes).
 
-| `hand` | Means | Without it |
+| On the `CbItem` | Means | Without it |
 |---|---|---|
-| **The carrying hand** | the item is carried here: this point is in the hand's socket (whichever hand the item is in: a mod holds it in `RightHand` or `LeftHand`), the marker's -Z along the fingers, +Y up | the item is carried at its scene's origin |
-| **The other hand** | the character's other arm is bent so that its hand is here, wherever the carrying hand and the animation take the item | the item is one-handed |
+| `carry_grip` | the item is carried at this marker: the point is in the hand's socket (whichever hand the item is in: a mod holds it in `RightHand` or `LeftHand`), the marker's -Z along the fingers, +Y up | the item is carried at its scene's origin |
+| `other_hand` | what the other hand does while it is empty (below) | **Free**: the item is one-handed |
+| `other_grip` | the marker the other hand is held at | |
+
+| `other_hand` | The other hand |
+|---|---|
+| **Free** | does what the animation does |
+| **At the marker** | its arm is bent so that the wrist is at `other_grip`, wherever the carrying hand and the animation take the item; it keeps the turn its animation gives it (the rifle) |
+| **At the marker and turned with it** | and the palm is turned as the marker is, as a hand carrying an item placed there would be |
+| **As the animations have it** | stays where the item's animations have it relative to the carrying hand, place and turn; no marker. For animations made with both hands on the item (the pistol's, the bat's): they are kept exactly as they are, and kept together when the carrying arm is aimed up or down, where a free hand lets the two drift a few centimetres apart |
 
 Move a marker, not the model: a mesh imported with its origin anywhere is held where its carrying
-marker is. The pistol and the bat have both (`Carry`, `OtherHand`): the bat's other hand has a place on
-the handle, the pistol's is as its animation has it.
+marker is.
 
 | Step | What |
 |---|---|
-| `align_rotation` (the other hand) | on: the hand's palm is on the marker, turned as the marker is, as a hand carrying an item placed there would be. Off: its wrist goes there and it keeps the turn its animation gives it |
-| `as_animated` (the other hand) | the hand stays where the item's animations have it relative to the carrying hand, place and turn; the marker's own place is not used. For animations made with both hands on the item (the pistol's): they are kept exactly as they are, and kept together when the carrying arm is aimed up or down, where an item with no marker for the other hand lets the two drift a few centimetres apart |
 | Bake | with the item's body, in `items/<kind>.cfg`: the body's centre and the other hand's `grip` are written in the carrying hand's frame, so the server and the pose never see the scene's own origin; the server puts the grip in the schema, so every client has it. The viewer draws the scene moved so that the carrying marker is in the socket (and, lying in the world, where the body is) |
 | Pose | last of all: the item is where the carrying hand ended up (after the aim), and the other arm is bent at the elbow and turned at the shoulder so its wrist is on the grip. The elbow stays on the side the animation had it; out of reach, the arm goes as far as it can |
 | When | while the other hand is empty. Two items, one in each hand, are each carried one-handed |
 
 - It is part of the pose: other players see it, and the server's hit tests pose the same arms.
 - Fingers are the animation's: the solve places the wrist and turns the hand, it does not close it.
-- One marker per hand. They are baked with the item (its `CbItem`); the body may be turned any way, but not scaled.
+- The markers are baked with the item (its `CbItem`); the body may be turned any way, but not scaled.
+- `CbGrip`, the node that used to mark a hand, is kept but unused: it is for hand placements to come (a ledge, a wheel).
 - `check_grips.gd` checks what scenes built in code bake to.
 - **To turn an item in the hand, turn its carrying marker**, and nothing else: the body stays where
   the scene has it (the bake writes how it is turned in the carried frame, a `turn` line, and the
@@ -138,7 +145,7 @@ the handle, the pistol's is as its animation has it.
 | You changed | To see it |
 |---|---|
 | a character's hand sockets (or anything else in its scene) | save the scene: it bakes on save. For a character in the game's own project that is all; restart the server and the game. A character that is a workshop item: `tools\publish_mod.ps1 -Character <name>` |
-| an item's scene (its `CbGrip`, its body) | `tools\publish_mod.ps1 -Mod <mod>` (it bakes and installs the item), then restart the server |
+| an item's scene (its grips, its body) | `tools\publish_mod.ps1 -Mod <mod>` (it bakes and installs the item), then restart the server |
 | which character you are looking at | the server says, and it says it when it starts (`character: ual_mannequin, shipped with the game`) and the game's debug text does too (`animation: res://characters/...`). On a machine that has `ual_mannequin` built that is the default, not `mannequin`: edit that one's scene, or start `cb_server --character mannequin` |
 | (in a checkout) | the server reads the game's own characters from `godot/characters/`, where saving bakes them; a build elsewhere reads the copies next to it (`bin/characters/`, made when it is built) |
 
@@ -165,8 +172,8 @@ One scene is one item, and its root says so:
 Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1        (prefabs/bat.tscn)
 │                               properties { pickup.hold_seconds: 0.5 }
 ├── Body     CollisionShape3D   a BoxShape3D: its body when it lies in the world
-├── Carry    CbGrip             where the carrying hand holds it
-├── Other    CbGrip             the other hand
+├── Carry    Marker3D           where the carrying hand holds it: the item's carry_grip
+├── Other    Marker3D           for the other hand: the item's other_grip
 ├── Handle…  MeshInstance3D     how it looks
 └── Tip      Node3D             a place on it, with the CbReaction nodes of what it shows
 ```
@@ -177,13 +184,14 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 | `display_name` | what prompts and lists call it (`{look:field}`, an item's `{name}`) |
 | `mass` | kg, when it lies in the world |
 | `properties` | named numbers any server mod may read, e.g. `pickup.hold_seconds` = 0.5. They replace what the item's mod declared in code for the same name |
+| `carry_grip`, `other_hand`, `other_grip` | [where the hands hold it](#both-hands-on-an-item) |
 | `view_offset` | first person: how far the arms holding it are moved in the viewer's own view |
 | **Bake item** (button), saving the scene | writes `res://items/<kind>.cfg` |
 
 | Under it | Meaning |
 |---|---|
 | a `CollisionShape3D` | the body: a `BoxShape3D` or `SphereShape3D`, moved to where the shape's centre is. Not scaled |
-| `CbGrip` markers | [where the hands hold it](#both-hands-on-an-item) |
+| two `Marker3D`s | [where the hands hold it](#both-hands-on-an-item): the item's `carry_grip` and `other_grip` name them |
 | anything else | its look: meshes, lights, particles, and `CbReaction` nodes for what it shows |
 
 The baked file has two readers. The **server** takes the body, the grip and the properties from

@@ -1165,7 +1165,7 @@ void TestItemShapes()
 	CHECK( properties.size() == 2 && properties["pickup.hold_seconds"] == 0.75f && properties["a.b"] == 2.0f );
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nproperty lonely\n", shape, error, &properties ) == false );
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nproperty x nan\n", shape, error, &properties ) == false );
-	// A grip: where the other hand holds the item, baked from the scene's CbGrip.
+	// A grip: where the other hand holds the item, baked from the marker its CbItem names.
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\n", shape, error ) && shape.grip == 0 );
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\ngrip -0.05 0.02 0.1 0 0 0 1 0\n", shape, error ) );
 	CHECK( shape.grip == 1 && shape.gripPosition.x == -0.05f && shape.gripPosition.z == 0.1f && shape.gripRotation[3] == 1.0f );

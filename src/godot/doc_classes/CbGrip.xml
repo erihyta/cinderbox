@@ -1,30 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="CbGrip" inherits="Marker3D" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<brief_description>
-		Where a hand holds an item: a marker in the item's scene, one per hand.
+		A marker for a hand. Not used yet: kept for hand placements to come.
 	</brief_description>
 	<description>
-		[b]The carrying hand[/b]: the item is carried here. This point is in the hand's socket (whichever hand the item is in), the marker's -Z along the fingers and +Y up. Without one the item is carried at its scene's origin. [b]The other hand[/b]: the character's other arm is bent so that its hand is here, wherever the carrying hand and the animation take the item, while that hand is empty. Both are baked with the item's [CbItem] ([code]items/&lt;kind&gt;.cfg[/code]), so the server poses the same arms for its hit tests and every player sees them.
+		Items do not use this node. Where the hands hold an item is said by the item itself: [member CbItem.carry_grip] and [member CbItem.other_grip] name two ordinary markers ([Marker3D]) in its scene.
+		The node is kept for placing hands on things that are not carried: a ledge, a wheel, another player. It does nothing today.
 	</description>
 	<tutorials>
 	</tutorials>
-	<members>
-		<member name="hand" type="int" setter="set_hand" getter="get_hand" enum="CbGrip.Hand" default="0">
-			Which hand this marker is for.
-		</member>
-		<member name="align_rotation" type="bool" setter="set_align_rotation" getter="get_align_rotation" default="false">
-			The hand also turns as the marker is turned: as a hand carrying an item placed here would be (the marker's -Z is where such an item would point). Off: the hand keeps the turn its animation gives it.
-		</member>
-		<member name="as_animated" type="bool" setter="set_as_animated" getter="get_as_animated" default="false">
-			The other hand: it stays where the item's animations have it relative to the carrying hand (place and turn), and the marker's own place is not used. For animations made with both hands on the item: they are kept as they are, and kept together when the carrying arm is aimed.
-		</member>
-	</members>
-	<constants>
-		<constant name="HAND_OTHER" value="0" enum="Hand">
-			The hand that is not carrying the item reaches here.
-		</constant>
-		<constant name="HAND_CARRYING" value="1" enum="Hand">
-			The item is carried here.
-		</constant>
-	</constants>
 </class>

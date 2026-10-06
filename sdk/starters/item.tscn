@@ -7,9 +7,11 @@
 ;   Item        CbItem             the kind (the one the server mod declares), its name on the HUD,
 ;                                  its mass, its first-person view, numbers for mods (properties)
 ;   Body        CollisionShape3D   its body when it lies in the world: a box or a sphere
-;   Carry       CbGrip       where the carrying hand holds it. Turn it to turn the item in the hand
-;   OtherHand   CbGrip       the other hand: as the animation has it (as_animated), or untick that
-;                            and put the marker where that hand should hold
+;   Carry       Marker3D           where the carrying hand holds it (the item's carry_grip). Turn it
+;                                  to turn the item in the hand
+;   OtherHand   Marker3D           for the other hand: the item's other_hand says "as the animations
+;                                  have it"; choose "at the marker" and name this one (other_grip)
+;                                  to hold it here instead
 ;   Muzzle      Node3D       a place on the item for what it shows (a flash, a beam, sparks):
 ;     Used      CbReaction   on "MODNAME.used" of whoever holds it (^^): give it a scene or a sound
 ;
@@ -29,6 +31,8 @@ size = Vector3(0.06, 0.1, 0.3)
 [node name="Item" type="CbItem"]
 kind = "MODNAME.item"
 display_name = "MODNAME"
+carry_grip = NodePath("Carry")
+other_hand = 3
 mass = 1.0
 
 [node name="Body" type="CollisionShape3D" parent="."]
@@ -39,11 +43,9 @@ shape = SubResource("Body")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.08)
 mesh = SubResource("Mesh")
 
-[node name="Carry" type="CbGrip" parent="."]
-hand = 1
+[node name="Carry" type="Marker3D" parent="."]
 
-[node name="OtherHand" type="CbGrip" parent="."]
-as_animated = true
+[node name="OtherHand" type="Marker3D" parent="."]
 
 [node name="Muzzle" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, -0.23)
