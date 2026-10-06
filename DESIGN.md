@@ -460,7 +460,7 @@ Netcode numbers from when they were taken (M4, M5); frame sizes are in [The view
 | loopback | chaotic | 8 | 0.81 ms | 1.18 / 10.7 ms | 0% | 0% | 196 / 45 kbit/s | 12.5 Mbit/s |
 
 - **Bandwidth**: download grows with round trip, because each batch repeats the frames still in flight (about RTT × rate + 1 of them).
-- **Integration test** (3% loss and 1% duplication each way, RTT about 74 ms): 0% late inputs once settled, with windows of 10–11. Before M5 it was about 80%.
+- **Integration test** (3% loss and 1% duplication each way, RTT about 74 ms): 0% late inputs once settled, with windows of 13–16. Before M5 it was about 80%. (The test steps its four clients on a thread each: one after another they take longer than a tick, since each resimulates its window for every frame, at about 0.6 ms a tick with every mod running.)
 - **Mixed build**: MSVC server, GCC network simulator and bots, and a Clang client over a lossy link. No desyncs, and the GCC build verified the MSVC server's recording.
 
 ### M4 (reliable ordered frames, fixed window, chaotic bots) for comparison
