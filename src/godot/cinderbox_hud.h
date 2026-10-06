@@ -6,7 +6,8 @@
 // "combat.killed"), never against what a pistol is, and carries no code: a client mod or a mod's
 // workshop item can build a whole HUD out of ordinary Godot controls and these.
 //
-//   CbFieldLabel    a Label: "AMMO {pistol.ammo}", shown while its conditions hold
+//   CbFieldLabel    a Label: "AMMO {pistol.ammo}", shown while its conditions hold; or one of the
+//                   texts written on it (choices), picked by a number the server sets
 //   CbFieldBinding  writes a field into any property of any node (a bar's value, a panel's
 //                   visibility, a colour's alpha), so any 2D asset can show mod state
 //   CbEventFeed     a line per mod event ("{a} > {b}" for combat.killed), fading after a while
@@ -150,6 +151,22 @@ public:
 	{
 		return m_conditions;
 	}
+	void set_choice_field( const godot::String& value )
+	{
+		m_choiceField = value;
+	}
+	godot::String get_choice_field() const
+	{
+		return m_choiceField;
+	}
+	void set_choices( const godot::PackedStringArray& value )
+	{
+		m_choices = value;
+	}
+	godot::PackedStringArray get_choices() const
+	{
+		return m_choices;
+	}
 
 protected:
 	static void _bind_methods();
@@ -158,6 +175,13 @@ private:
 	// "{name}" is replaced by the field's value; empty leaves the label's own text alone.
 	godot::String m_format;
 	godot::PackedStringArray m_conditions;
+	// The words are the look's: the server says a number ("deathmatch.ending" = 2, or any
+	// expression), the label shows that line of `choices` (0 is the first). A line is a format
+	// like any other. An empty line, or a number past the last, hides the label: leave line 0
+	// empty for "nothing to say". "{choice}" in text_format is the line, when there is more
+	// around it.
+	godot::String m_choiceField;
+	godot::PackedStringArray m_choices;
 	godot::ObjectID m_client;
 };
 
