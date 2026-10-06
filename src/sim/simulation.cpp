@@ -183,7 +183,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<HeldItem>();
 	RegisterSnapComponent<MoveOverrides>();
 	RegisterSnapComponent<MotionState>();
-	RegisterSnapComponent<Tether>();
+	RegisterSnapComponent<MotionHold>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -549,11 +549,11 @@ void Simulation::PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw )
 	e.set<AnimState>( anim );
 	e.set<Transform>( t );
 	e.set<Velocity>( {} );
-	if ( const Tether* tether = e.try_get<Tether>(); tether != nullptr && tether->on != 0 )
+	if ( const MotionHold* hold = e.try_get<MotionHold>(); hold != nullptr && hold->on != 0 )
 	{
-		Tether off = *tether;
+		MotionHold off = *hold;
 		off.on = 0;
-		e.set<Tether>( off );
+		e.set<MotionHold>( off );
 	}
 
 	b3BodyId body = BodyOf( e.get<PhysicsBody>() );
@@ -661,11 +661,11 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				MotionState motion = e.has<MotionState>() ? e.get<MotionState>() : MotionState{};
 				motion.prevActions = in.actions;
 				e.set<MotionState>( motion );
-				if ( const Tether* tether = e.try_get<Tether>(); tether != nullptr && tether->on != 0 )
+				if ( const MotionHold* hold = e.try_get<MotionHold>(); hold != nullptr && hold->on != 0 )
 				{
-					Tether off = *tether;
+					MotionHold off = *hold;
 					off.on = 0;
-					e.set<Tether>( off );
+					e.set<MotionHold>( off );
 				}
 			}
 			continue;
@@ -711,6 +711,19 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				values.state = &before;
 				values.board = boardBefore.values;
 				values.input = &in;
+				// A frozen player presses nothing.
+				values.pressedActions = c.frozen ? uint16_t( 0 ) : uint16_t( in.actions & ~motion.prevActions );
+				values.pressedButtons = c.frozen ? uint8_t( 0 ) : pressed;
+				// What a probe of its holds on to, if one is out, and whether that is still there.
+				int heldMotion = -1;
+				bool holdAlive = false;
+				if ( const MotionHold* out = e.try_get<MotionHold>(); out != nullptr && out->on != 0 )
+				{
+					b3Vec3 where = {};
+					heldMotion = out->motion;
+					holdAlive = HoldPoint( *out, where );
+				}
+				values.builtins[AnimExpr::Linked] = heldMotion >= 0 ? 1.0f : 0.0f;
 				values.globalBoard = m_globals.board;
 				values.events = m_globals.modEvents;
 				values.eventCount = m_globals.modEventCount;
@@ -735,22 +748,36 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 					const PlayerInput* in;
 				} thrower{ this, e, &t, &in };
 				motionIn.user = &thrower;
-				motionIn.attach = []( void* user, const Motion& m, size_t index ) {
+				motionIn.held = heldMotion;
+				motionIn.holdAlive = holdAlive;
+				motionIn.attach = []( void* user, const Motion& m, size_t index, uint32_t& holdTick ) {
 					auto* by = static_cast<Thrower*>( user );
-					return by->sim->AttachTether( by->e, *by->t, *by->in, m, index );
+					return by->sim->AttachHold( by->e, *by->t, *by->in, m, index, holdTick );
 				};
 				bool boardChanged = false;
 				m_motionEvents.clear();
-				RunMotions( *m_motions, motionIn, motion, c, board, boardChanged, m_motionEvents );
+				m_motionActive.clear();
+				RunMotions( *m_motions, motionIn, motion, c, board, boardChanged, m_motionEvents, m_motionActive );
 				if ( boardChanged )
 				{
 					e.set<Blackboard>( board );
 				}
-				// An event of a motion that threw a tether this tick is at where it will hold.
-				b3Vec3 eventPoint = t.position;
-				if ( const Tether* thrown = e.try_get<Tether>(); thrown != nullptr && thrown->on != 0 && thrown->startTick == m_globals.tick )
+				// A hold whose motion ended (its condition, a new throw) is let go.
+				if ( const MotionHold* out = e.try_get<MotionHold>(); out != nullptr && out->on != 0 )
 				{
-					TetherPoint( *thrown, eventPoint );
+					const MotionSlot& slot = motion.slots[out->motion];
+					if ( slot.lastTick == 0 || slot.untilTick <= m_globals.tick )
+					{
+						MotionHold off = *out;
+						off.on = 0;
+						e.set<MotionHold>( off );
+					}
+				}
+				// An event of a motion that threw a probe this tick is at where it will hold.
+				b3Vec3 eventPoint = t.position;
+				if ( const MotionHold* thrown = e.try_get<MotionHold>(); thrown != nullptr && thrown->on != 0 && thrown->startTick == m_globals.tick )
+				{
+					HoldPoint( *thrown, eventPoint );
 				}
 				for ( ModEventRecord& record : m_motionEvents )
 				{
@@ -759,9 +786,10 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 					record.point = eventPoint;
 					RecordModEvent( record );
 				}
-				StepTether( e, c, t, motion, values );
+				// The effects read the state the motions just decided (the parameters that hold).
+				e.set<MotionState>( motion );
+				ApplyMotionEffects( e, c, t, in, motion, boardBefore, m_motionActive );
 			}
-			e.set<MotionState>( motion );
 		}
 
 		// Frozen: the mover still runs (gravity, the ground, being pushed), with no intent.
@@ -1740,6 +1768,27 @@ flecs::entity Simulation::CreateRagdoll( flecs::entity player, uint32_t lifetime
 	b3Quat facing = detmath::YawRotation( c.facingYaw );
 	b3Vec3 feet = b3Sub( t.position, b3Vec3{ 0.0f, kFeetBelowCenter, 0.0f } );
 
+	// The body weighs what the player did (its mass, a movement parameter): the parts share it by
+	// their volume.
+	float volume = 0.0f;
+	for ( int i = 0; i < PartCount; ++i )
+	{
+		const b3Vec3 s = kParts[i].size;
+		switch ( kParts[i].shape )
+		{
+			case ShapeKind::Box:
+				volume += 8.0f * s.x * s.y * s.z;
+				break;
+			case ShapeKind::Sphere:
+				volume += ( 4.0f / 3.0f ) * detmath::kPi * s.x * s.x * s.x;
+				break;
+			case ShapeKind::Capsule:
+				volume += detmath::kPi * s.x * s.x * ( 2.0f * s.y + ( 4.0f / 3.0f ) * s.x );
+				break;
+		}
+	}
+	const float density = MoveOf( player )[MoveParam::Mass] / volume;
+
 	RagdollBodies bodies;
 	b3BodyId live[PartCount];
 	for ( int i = 0; i < PartCount; ++i )
@@ -1755,7 +1804,7 @@ flecs::entity Simulation::CreateRagdoll( flecs::entity player, uint32_t lifetime
 		live[i] = b3CreateBody( m_physicsWorld, &def );
 
 		Shape shape{ part.shape, {}, part.size };
-		ShapeMaterial material{ kDensity, ragdoll::kFriction, 0.0f };
+		ShapeMaterial material{ density, ragdoll::kFriction, 0.0f };
 		b3ShapeId shapeId = CreateShape( live[i], shape, CatRagdoll, material );
 
 		PhysicsBody stored = MakePhysicsBody( live[i], shapeId );
@@ -1929,29 +1978,27 @@ MoveParams Simulation::MoveOf( flecs::entity e ) const
 	return params;
 }
 
-// --- Tethers --------------------------------------------------------------------------------------
+// --- Motions: holds and effects ---------------------------------------------------------------------
 
 namespace
 {
 
-// What a tether pulls on a prop with: the player's weight, as far as a prop is concerned.
-constexpr float kTetherPlayerMass = 80.0f;
 // A rope never reels in shorter than this, and nothing nearer than this is worth a throw.
-constexpr float kTetherMinLength = 1.0f;
-// Past the rope's end the player is brought back at this rate (1/s of the excess), up to a speed.
-constexpr float kTetherRopeStiffness = 10.0f;
-constexpr float kTetherRopeMaxSpeed = 20.0f;
+constexpr float kHoldMinLength = 1.0f;
+// Past a rope's end the two are brought back together at this rate (1/s of the excess), up to a speed.
+constexpr float kRopeStiffness = 10.0f;
+constexpr float kRopeMaxSpeed = 20.0f;
 
 } // namespace
 
-bool Simulation::TetherPoint( const Tether& tether, b3Vec3& point ) const
+bool Simulation::HoldPoint( const MotionHold& hold, b3Vec3& point ) const
 {
-	if ( tether.anchor == 0 )
+	if ( hold.anchor == 0 )
 	{
-		point = tether.point;
+		point = hold.point;
 		return true;
 	}
-	flecs::entity a = FindEntity( tether.anchor );
+	flecs::entity a = FindEntity( hold.anchor );
 	if ( a.is_valid() == false )
 	{
 		return false;
@@ -1962,18 +2009,18 @@ bool Simulation::TetherPoint( const Tether& tether, b3Vec3& point ) const
 		{
 			return false;
 		}
-		point = b3Add( a.get<Transform>().position, tether.point );
+		point = b3Add( a.get<Transform>().position, hold.point );
 		return true;
 	}
 	if ( const PhysicsBody* pb = a.try_get<PhysicsBody>() )
 	{
-		point = b3Body_GetWorldPoint( BodyOf( *pb ), tether.point );
+		point = b3Body_GetWorldPoint( BodyOf( *pb ), hold.point );
 		return true;
 	}
 	return false;
 }
 
-bool Simulation::AttachTether( flecs::entity e, const Transform& t, const PlayerInput& in, const Motion& m, size_t index )
+bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerInput& in, const Motion& m, size_t index, uint32_t& holdTick )
 {
 	uint32_t self = e.get<NetId>().value;
 	float yaw = detmath::YawToRadians( in.cameraYaw );
@@ -1991,7 +2038,7 @@ bool Simulation::AttachTether( flecs::entity e, const Transform& t, const Player
 		view = b3MulAdd( view, ViewMode( in.view ) == ViewMode::ShoulderRight ? kShoulderOffset : -kShoulderOffset, detmath::YawRight( yaw ) );
 	}
 	RayHit seen;
-	if ( CastRay( view, b3MulSV( m.tetherRange, look ), self, seen ) == false )
+	if ( CastRay( view, b3MulSV( m.probeRange, look ), self, seen ) == false )
 	{
 		return false;
 	}
@@ -2003,125 +2050,354 @@ bool Simulation::AttachTether( flecs::entity e, const Transform& t, const Player
 		hit = nearer;
 	}
 	float distance = b3Distance( hit.point, from );
-	if ( distance < kTetherMinLength )
+	if ( distance < kHoldMinLength )
 	{
 		return false;
 	}
 
-	Tether tether;
-	tether.point = hit.point;
+	MotionHold hold;
+	hold.point = hit.point;
 	flecs::entity a = FindEntity( hit.netId );
 	if ( a.is_valid() && a.has<Character>() )
 	{
-		tether.anchor = hit.netId;
-		tether.point = b3Sub( hit.point, a.get<Transform>().position );
+		hold.anchor = hit.netId;
+		hold.point = b3Sub( hit.point, a.get<Transform>().position );
 	}
 	else if ( a.is_valid() && a.has<PhysicsBody>() && a.has<StaticGeometry>() == false && a.has<RagdollBodies>() == false )
 	{
 		b3BodyId body = BodyOf( a.get<PhysicsBody>() );
 		if ( b3Body_GetType( body ) == b3_dynamicBody )
 		{
-			tether.anchor = hit.netId;
-			tether.point = b3Body_GetLocalPoint( body, hit.point );
+			hold.anchor = hit.netId;
+			hold.point = b3Body_GetLocalPoint( body, hit.point );
 		}
 	}
-	tether.length = m.tetherRope ? distance : 0.0f;
-	tether.startTick = m_globals.tick;
-	tether.holdTick = m_globals.tick + ( m.tetherTravel > 0.0f ? uint32_t( distance / m.tetherTravel * float( m_config.tickRate ) + 0.5f ) : 0u );
-	tether.motion = uint8_t( index );
-	tether.on = 1;
-	e.set<Tether>( tether );
+	hold.length = 0.0f; // a link measures its rope when the probe takes hold
+	hold.startTick = m_globals.tick;
+	hold.holdTick = m_globals.tick + ( m.probeTravel > 0.0f ? uint32_t( distance / m.probeTravel * float( m_config.tickRate ) + 0.5f ) : 0u );
+	hold.motion = uint8_t( index );
+	hold.on = 1;
+	e.set<MotionHold>( hold );
+	holdTick = hold.holdTick;
 	return true;
 }
 
-void Simulation::StepTether( flecs::entity e, Character& c, const Transform& t, MotionState& motion, const AnimGraphInputs& values )
+// One end of an effect: who it acts on, and how to move it.
+struct Simulation::MotionEnd
 {
-	const Tether* has = e.try_get<Tether>();
-	if ( has == nullptr || has->on == 0 )
+	enum class Kind
 	{
-		return;
-	}
-	Tether tether = *has;
-	const float dt = m_config.TimeStep();
-	b3Vec3 point = {};
-	bool keep = tether.motion < m_motions->list.size() && TetherPoint( tether, point );
-	const Motion* m = keep ? &m_motions->list[tether.motion] : nullptr;
-	// Its condition lets it go only once it holds: a key let go while the hook flies takes it back
-	// too, which is what a player expects of a hold-to-grapple.
-	if ( keep && m->tetherUntil.Empty() == false && tether.startTick != m_globals.tick && EvaluateAnimExpr( m->tetherUntil, values, 0.0f ) != 0.0f )
-	{
-		keep = false;
-	}
-	if ( keep == false )
-	{
-		tether.on = 0;
-		e.set<Tether>( tether );
-		return;
-	}
-	// The motion's parameters hold for as long as its tether is out.
-	motion.slots[tether.motion].untilTick = m_globals.tick + 1;
-	if ( m_globals.tick < tether.holdTick )
-	{
-		return; // still flying
-	}
+		None,	// nobody (a field that names nothing, a probe that found the world)
+		World,	// a point that does not move
+		Self,	// the player the motion runs for: `c`, not yet stored
+		Player, // another player
+		Body,	// a dynamic body
+	};
+	Kind kind = Kind::None;
+	flecs::entity entity;
+	b3BodyId body = {};
+	b3Vec3 point = {}; // where it is (a player's chest, the point on a body)
+	float mass = 0.0f; // 0: it does not move
+};
 
-	b3Vec3 from = b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
-	float distance = 0.0f;
-	b3Vec3 toward = b3GetLengthAndNormalize( &distance, b3Sub( point, from ) );
-	if ( distance > 0.001f )
-	{
-		b3Vec3 before = c.velocity;
-		c.velocity = b3MulAdd( c.velocity, m->tetherPull * dt, toward );
-		if ( tether.length > 0.0f )
+Simulation::MotionEnd Simulation::ResolveEnd( flecs::entity self, const Transform& t, const MotionTarget& target, const MotionHold* hold,
+											   const Blackboard& board ) const
+{
+	MotionEnd end;
+	auto player = [&]( flecs::entity who, MotionEnd::Kind kind ) {
+		end.kind = kind;
+		end.entity = who;
+		end.point = b3Add( kind == MotionEnd::Kind::Self ? t.position : who.get<Transform>().position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+		end.mass = MoveOf( who )[MoveParam::Mass];
+	};
+	auto entity = [&]( flecs::entity who, const b3Vec3* at ) {
+		if ( who.is_valid() == false )
 		{
-			tether.length = std::max( kTetherMinLength, tether.length - m->tetherReel * dt );
-			if ( distance > tether.length )
+			return;
+		}
+		if ( who == self )
+		{
+			player( who, MotionEnd::Kind::Self );
+		}
+		else if ( const Character* other = who.try_get<Character>() )
+		{
+			if ( other->dead == 0 )
 			{
-				// A rope: the player may not go further out, and is brought back to its end.
-				float need = std::min( ( distance - tether.length ) * kTetherRopeStiffness, kTetherRopeMaxSpeed );
-				float approach = b3Dot( c.velocity, toward );
-				if ( approach < need )
+				player( who, MotionEnd::Kind::Player );
+				end.point = at != nullptr ? *at : end.point;
+			}
+		}
+		else if ( const PhysicsBody* pb = who.try_get<PhysicsBody>(); pb != nullptr && who.has<RagdollBodies>() == false )
+		{
+			b3BodyId body = BodyOf( *pb );
+			if ( b3Body_GetType( body ) == b3_dynamicBody )
+			{
+				end.kind = MotionEnd::Kind::Body;
+				end.entity = who;
+				end.body = body;
+				end.point = at != nullptr ? *at : b3Body_GetWorldCenter( body );
+				end.mass = b3Body_GetMass( body );
+			}
+		}
+	};
+	switch ( target.kind )
+	{
+		case MotionTarget::Kind::Self:
+			player( self, MotionEnd::Kind::Self );
+			break;
+		case MotionTarget::Kind::Hit:
+		{
+			b3Vec3 at = {};
+			if ( hold == nullptr || HoldPoint( *hold, at ) == false )
+			{
+				break;
+			}
+			if ( hold->anchor == 0 )
+			{
+				end.kind = MotionEnd::Kind::World;
+				end.point = at;
+				break;
+			}
+			entity( FindEntity( hold->anchor ), &at );
+			break;
+		}
+		case MotionTarget::Kind::Field:
+			if ( target.known )
+			{
+				entity( FindEntity( uint32_t( board.values[target.slot] ) ), nullptr );
+			}
+			break;
+	}
+	return end;
+}
+
+b3Vec3 Simulation::EndVelocity( const MotionEnd& end, const Character& c ) const
+{
+	switch ( end.kind )
+	{
+		case MotionEnd::Kind::Self:
+			return c.velocity;
+		case MotionEnd::Kind::Player:
+			return end.entity.get<Character>().velocity;
+		case MotionEnd::Kind::Body:
+			return b3Body_GetWorldPointVelocity( end.body, end.point );
+		default:
+			return { 0.0f, 0.0f, 0.0f };
+	}
+}
+
+void Simulation::PushEnd( const MotionEnd& end, Character& c, b3Vec3 change )
+{
+	auto pushed = []( Character& who, b3Vec3 by ) {
+		who.velocity = b3Add( who.velocity, by );
+		if ( by.y > 0.0f && who.velocity.y > 0.0f )
+		{
+			who.grounded = 0; // lifted off, as a jump is
+		}
+	};
+	switch ( end.kind )
+	{
+		case MotionEnd::Kind::Self:
+			pushed( c, change );
+			break;
+		case MotionEnd::Kind::Player:
+		{
+			// A player with a lower slot has moved already this tick: it feels this on its next.
+			Character other = end.entity.get<Character>();
+			pushed( other, change );
+			end.entity.set<Character>( other );
+			break;
+		}
+		case MotionEnd::Kind::Body:
+			b3Body_ApplyLinearImpulse( end.body, b3MulSV( end.mass, change ), end.point, true );
+			break;
+		default:
+			break;
+	}
+}
+
+void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const MotionState& state,
+									 const Blackboard& board, const std::vector<MotionActive>& active )
+{
+	const float dt = m_config.TimeStep();
+	for ( const MotionActive& on : active )
+	{
+		const Motion& m = m_motions->list[on.index];
+		const MotionSlot& slot = state.slots[on.index];
+		// What the motion's probe holds on to: its effects wait for it to take hold.
+		const MotionHold* found = e.try_get<MotionHold>();
+		MotionHold hold = found != nullptr ? *found : MotionHold{};
+		const bool holds = hold.on != 0 && hold.motion == on.index;
+		if ( m.probe && ( holds == false || m_globals.tick < hold.holdTick ) )
+		{
+			continue;
+		}
+		bool holdChanged = false;
+		const MotionEnd self = ResolveEnd( e, t, MotionTarget{}, nullptr, board );
+		const MotionTarget hitTarget{ MotionTarget::Kind::Hit, 0, true };
+		const MotionEnd hit = m.probe ? ResolveEnd( e, t, hitTarget, &hold, board ) : MotionEnd{};
+
+		for ( const MotionEffect& effect : m.effects )
+		{
+			const MotionEnd target = ResolveEnd( e, t, effect.target, holds ? &hold : nullptr, board );
+			if ( target.kind == MotionEnd::Kind::None )
+			{
+				continue;
+			}
+			// The direction is the player's own, whoever the effect acts on; "to" is toward the target,
+			// or for an effect on the player itself, toward what its probe found.
+			b3Vec3 direction = {};
+			if ( effect.frame == MotionFrame::To )
+			{
+				const MotionEnd& toward = target.kind == MotionEnd::Kind::Self ? hit : target;
+				float distance = 0.0f;
+				direction = b3GetLengthAndNormalize( &distance, b3Sub( toward.point, self.point ) );
+				if ( toward.kind == MotionEnd::Kind::None || distance < 0.001f )
 				{
-					c.velocity = b3MulAdd( c.velocity, need - approach, toward );
+					continue;
+				}
+			}
+			else
+			{
+				direction = MotionDirection( effect.frame, effect.direction, c, in );
+			}
+
+			if ( effect.kind == MotionEffect::Kind::Impulse )
+			{
+				if ( on.started == false || target.kind == MotionEnd::Kind::World )
+				{
+					continue;
+				}
+				// What it replaces is taken away first: a jump in the air is the same jump.
+				b3Vec3 had = EndVelocity( target, c );
+				b3Vec3 keep = had;
+				switch ( effect.replace )
+				{
+					case MotionEffect::Replace::None:
+						break;
+					case MotionEffect::Replace::Vertical:
+						keep.y = 0.0f;
+						break;
+					case MotionEffect::Replace::Horizontal:
+						keep.x = 0.0f;
+						keep.z = 0.0f;
+						break;
+					case MotionEffect::Replace::All:
+						keep = { 0.0f, 0.0f, 0.0f };
+						break;
+				}
+				PushEnd( target, c, b3Add( b3Sub( keep, had ), b3MulSV( effect.strength, direction ) ) );
+			}
+			else if ( effect.kind == MotionEffect::Kind::Force )
+			{
+				if ( target.kind == MotionEnd::Kind::World || target.mass <= 0.0f )
+				{
+					continue;
+				}
+				const float ramp = MotionRamp( effect, m_globals.tick - slot.sinceTick, m_config.tickRate );
+				const float along = b3Dot( EndVelocity( target, c ), direction );
+				float change = 0.0f;
+				switch ( effect.push )
+				{
+					case MotionEffect::Push::Acceleration:
+						change = effect.strength * ramp * dt;
+						break;
+					case MotionEffect::Push::Force:
+						change = effect.strength * ramp / target.mass * dt;
+						break;
+					case MotionEffect::Push::Velocity:
+					{
+						// Toward the speed, no faster than its rate lets it.
+						float rate = std::fabs( effect.strength ) * ramp * dt;
+						change = std::clamp( effect.speed - along, -rate, rate );
+						break;
+					}
+				}
+				if ( effect.push != MotionEffect::Push::Velocity && effect.speed > 0.0f )
+				{
+					// A top speed along the push: past it, it pushes no more.
+					float room = change >= 0.0f ? effect.speed - along : effect.speed + along;
+					change = room <= 0.0f ? 0.0f : ( change >= 0.0f ? std::min( change, room ) : std::max( change, -room ) );
+				}
+				if ( change == 0.0f )
+				{
+					continue;
+				}
+				PushEnd( target, c, b3MulSV( change, direction ) );
+				if ( effect.react )
+				{
+					// The other end takes the same momentum the other way: the player, when the force
+					// is on something else; what the probe found, when it is on the player.
+					const MotionEnd& other = target.kind == MotionEnd::Kind::Self ? hit : self;
+					if ( other.mass > 0.0f && other.kind != MotionEnd::Kind::None && other.kind != MotionEnd::Kind::World )
+					{
+						PushEnd( other, c, b3MulSV( -change * target.mass / other.mass, direction ) );
+					}
+				}
+			}
+			else if ( effect.kind == MotionEffect::Kind::Link )
+			{
+				// A rope between the player and the target. Its length is the effect's, or the distance
+				// when the probe took hold; reeling shortens it.
+				float distance = 0.0f;
+				b3Vec3 toward = b3GetLengthAndNormalize( &distance, b3Sub( target.point, self.point ) );
+				float length = effect.length;
+				if ( length <= 0.0f )
+				{
+					if ( hold.length <= 0.0f )
+					{
+						hold.length = std::max( distance, kHoldMinLength );
+					}
+					hold.length = std::max( kHoldMinLength, hold.length - effect.reel * dt );
+					holdChanged = true;
+					length = hold.length;
+				}
+				if ( distance <= length || distance < 0.001f )
+				{
+					continue;
+				}
+				// Taut: the two may not part, and come back to the rope's length. What that takes is
+				// shared by what they weigh: the world gives nothing, a light crate comes to the player.
+				float need = std::min( ( distance - length ) * kRopeStiffness, kRopeMaxSpeed );
+				float approach = b3Dot( b3Sub( EndVelocity( self, c ), EndVelocity( target, c ) ), toward );
+				if ( approach >= need )
+				{
+					continue;
+				}
+				float mine = 1.0f / self.mass;
+				float theirs = target.mass > 0.0f ? 1.0f / target.mass : 0.0f;
+				float impulse = ( need - approach ) / ( mine + theirs );
+				PushEnd( self, c, b3MulSV( impulse * mine, toward ) );
+				if ( theirs > 0.0f )
+				{
+					PushEnd( target, c, b3MulSV( -impulse * theirs, toward ) );
 				}
 			}
 		}
-		if ( c.velocity.y > 0.0f && c.velocity.y > before.y )
+		if ( holdChanged )
 		{
-			c.grounded = 0; // lifted off, as a jump is
-		}
-		// What it holds on to is pulled the other way, if it can move.
-		if ( tether.anchor != 0 )
-		{
-			flecs::entity a = FindEntity( tether.anchor );
-			const PhysicsBody* pb = a.is_valid() && a.has<Character>() == false ? a.try_get<PhysicsBody>() : nullptr;
-			if ( pb != nullptr )
-			{
-				b3Vec3 change = b3Sub( c.velocity, before );
-				b3Body_ApplyLinearImpulse( BodyOf( *pb ), b3MulSV( -kTetherPlayerMass, change ), point, true );
-			}
+			e.set<MotionHold>( hold );
 		}
 	}
-	e.set<Tether>( tether );
 }
 
-bool Simulation::EntityTether( uint32_t netId, b3Vec3& end, bool& holds, uint8_t& motion ) const
+bool Simulation::EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint8_t& motion ) const
 {
 	flecs::entity e = FindEntity( netId );
-	const Tether* tether = e.is_valid() ? e.try_get<Tether>() : nullptr;
+	const MotionHold* hold = e.is_valid() ? e.try_get<MotionHold>() : nullptr;
 	const Transform* t = e.is_valid() ? e.try_get<Transform>() : nullptr;
 	b3Vec3 point = {};
-	if ( tether == nullptr || t == nullptr || tether->on == 0 || TetherPoint( *tether, point ) == false )
+	if ( hold == nullptr || t == nullptr || hold->on == 0 || HoldPoint( *hold, point ) == false )
 	{
 		return false;
 	}
-	motion = tether->motion;
-	holds = m_globals.tick >= tether->holdTick;
+	motion = hold->motion;
+	holds = m_globals.tick >= hold->holdTick;
 	end = point;
-	if ( holds == false && tether->holdTick > tether->startTick )
+	if ( holds == false && hold->holdTick > hold->startTick )
 	{
 		// Flying: from the player toward where it will hold.
-		float along = float( m_globals.tick - tether->startTick ) / float( tether->holdTick - tether->startTick );
+		float along = float( m_globals.tick - hold->startTick ) / float( hold->holdTick - hold->startTick );
 		b3Vec3 from = b3Add( t->position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
 		end = b3Add( from, b3MulSV( along, b3Sub( point, from ) ) );
 	}

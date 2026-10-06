@@ -2931,8 +2931,8 @@ void TestFlight()
 	CHECK( predicted.count( flyOn + 1 ) && predicted[flyOn + 1].on == 1 );
 }
 
-// A grappling hook is predicted: behind 50 ms each way, the throw, the pull along the rope and the
-// letting go are, tick for tick, what the server then has. And two players with their hooks in one
+// A grappling hook is predicted: behind 50 ms each way, the throw (a press), the pull along the rope
+// and the letting go (the next press) are, tick for tick, what the server then has. And two players with their hooks in one
 // ball agree with the server about where everything went. The grapple mod's C++ declares names;
 // the hook is its motion.
 void TestGrapple()
@@ -2956,9 +2956,13 @@ void TestGrapple()
 			in.cameraPitch = 500; // at the wall ahead, below its top
 			// The first one ends at that wall: the second is thrown at the wall to the side.
 			in.cameraYaw = tick >= letGo + 20 ? uint16_t( 16384 ) : uint16_t( 0 );
-			if ( ( tick >= throwAt && tick < letGo ) || ( tick >= again && tick < letGoAgain ) )
+			// One press throws it, the next lets it go: each key press is a few ticks long.
+			for ( uint32_t press : { throwAt, letGo, again, letGoAgain } )
 			{
-				in.actions = grapple;
+				if ( tick >= press && tick < press + 4 )
+				{
+					in.actions = grapple;
+				}
 			}
 			// Swinging a little on the second one.
 			in.moveRight = tick >= again && tick < letGoAgain ? int8_t( 127 ) : int8_t( 0 );
@@ -2982,7 +2986,7 @@ void TestGrapple()
 			}
 			Seen seen{ sim.EntityTransform( netId )->position, {}, false, false, sim.Globals().modEventCount };
 			uint8_t motion = 0;
-			seen.tethered = sim.EntityTether( netId, seen.end, seen.holds, motion );
+			seen.tethered = sim.EntityHold( netId, seen.end, seen.holds, motion );
 			into[sim.Tick()] = seen;
 		};
 		h.RunUntil( 13.0, [&]( double ) {
@@ -3043,7 +3047,7 @@ void TestGrapple()
 				PlayerInput in;
 				in.cameraYaw = uint16_t( aim->yaw[i].load() );
 				in.cameraPitch = int16_t( aim->pitch[i].load() );
-				in.actions = tick >= 300 && tick < 420 ? grapple : uint16_t( 0 );
+				in.actions = tick >= 300 && tick < 304 ? grapple : uint16_t( 0 ); // one press: it stays out
 				return in;
 			};
 		}
@@ -3084,7 +3088,7 @@ void TestGrapple()
 				for ( int i = 0; i < 2; ++i )
 				{
 					flecs::entity e = server.FindEntity( server.PlayerNetId( h.bots[size_t( i )].client->Slot() ) );
-					const Tether* tether = e.is_valid() ? e.try_get<Tether>() : nullptr;
+					const MotionHold* tether = e.is_valid() ? e.try_get<MotionHold>() : nullptr;
 					on += tether != nullptr && tether->on != 0 && tether->anchor == ball ? 1 : 0;
 				}
 				bothOn = std::max( bothOn, on );

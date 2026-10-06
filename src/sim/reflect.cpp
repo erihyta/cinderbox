@@ -40,7 +40,7 @@ std::vector<ComponentDef> BuildRegistry()
 	material.name = "Material";
 	material.doc = "Surface properties of the collision shape.";
 	material.fields = {
-		{ "density", FieldType::Float, { 1.0f, 0.0f, 0.0f }, 0.001f, 1000.0f, nullptr, "kg/m^3" },
+		{ "density", FieldType::Float, { 40.0f, 0.0f, 0.0f }, 0.001f, 1000.0f, nullptr, "kg/m^3" },
 		{ "friction", FieldType::Float, { 0.6f, 0.0f, 0.0f }, 0.0f, 10.0f, nullptr, "" },
 		{ "restitution", FieldType::Float, { 0.0f, 0.0f, 0.0f }, 0.0f, 1.0f, nullptr, "Bounciness" },
 	};

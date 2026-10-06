@@ -13,22 +13,24 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 | 4 | [Mod testing](#4-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
 
 Done before these: movement parameters (M92), motions on a press (M93: a dash, a double jump) and
-motions that hold (M94: flight, a jetpack, a glide) and tethers (M96: a grappling hook;
+motions that hold (M94: flight, a jetpack, a glide), and weight with probes, forces and links (M99: a grappling hook;
 [docs/motions.md](docs/motions.md)). Step 1 finishes that idea. Steps 3 and 4 are last on
 purpose: they wrap the client, so they wait until it stops changing.
 
 ## Where motions stand
 
-A `CbMotion` says: *on a press, on a cue, or while conditions hold, do this to the mover.* It is baked, sent in
+A `CbMotion` says: *on a press, on a cue, or while conditions hold, do this to the player and to what it reaches.* It is baked, sent in
 the schema and run by every simulation, so a player's own are predicted and rolled back
 ([docs/motions.md](docs/motions.md)).
 
-| | Today (M96) | Still to come |
+| | Today (M99) | Still to come |
 |---|---|---|
 | When | on a press, while conditions hold, on a mod event at the player | |
-| Conditions | what a state machine reads, and `held.<action>` | `motion.<name>` |
-| Does | an impulse (per second in a While); parameters while it is on; changes of fields; an event; a tether | a tether that pulls another player |
-| Timing | `cooldown`, `uses` with a refill, `duration` | |
+| Conditions | what a state machine reads, `held.<action>`, `pressed.<action>`, `linked` | `motion.<name>` |
+| Does | parameters while it is on; changes of fields; an event; and its parts: a probe, impulses, forces (acceleration, newtons, toward a speed; ramped; reacting), links | a lasting force as a C++ command; a test of one player hooked to another |
+| On whom | the player, what the probe found, the entity a field names | |
+| Weight | `mass`, a movement parameter: contacts, forces and ropes share by it | a knocked-down ragdoll state; carrying a player; structures that break |
+| Timing | `cooldown`, `uses` with a refill, `duration`, `until` | |
 | Editor | the nodes, their help, the bake, warnings | a preview panel; names checked at publish |
 
 ### Open questions

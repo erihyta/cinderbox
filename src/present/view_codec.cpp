@@ -61,7 +61,7 @@ struct EntityRecord
 	uint8_t kind;
 	uint8_t shape;
 	uint8_t slot;
-	uint8_t flags; // 1 hasAnim, 2 dead, 4 hasBoard, 8 stowed, 16 tethered, 32 the tether holds
+	uint8_t flags; // 1 hasAnim, 2 dead, 4 hasBoard, 8 stowed, 16 linked, 32 the link holds
 	uint32_t templateIndex;
 	uint32_t stepCount;
 	b3Vec3 halfExtents;
@@ -73,8 +73,8 @@ struct EntityRecord
 	uint32_t holder;
 	uint16_t itemKind;
 	uint8_t socket;
-	uint8_t tetherMotion;
-	b3Vec3 tetherEnd;
+	uint8_t linkMotion;
+	b3Vec3 linkEnd;
 };
 static_assert( sizeof( EntityRecord ) == 92 + sizeof( AnimState ) + sizeof( Blackboard ), "EntityRecord has padding" );
 static_assert( sizeof( EntityRecord ) % 4 == 0 );
@@ -101,8 +101,8 @@ EntityRecord ToRecord( const FrameEntity& f )
 	r.kind = uint8_t( f.kind );
 	r.shape = uint8_t( f.shape );
 	r.slot = f.slot;
-	r.flags = uint8_t( ( f.hasAnim ? 1 : 0 ) | ( f.dead ? 2 : 0 ) | ( f.hasBoard ? 4 : 0 ) | ( f.stowed ? 8 : 0 ) | ( f.tethered ? 16 : 0 ) |
-					   ( f.tetherHolds ? 32 : 0 ) );
+	r.flags = uint8_t( ( f.hasAnim ? 1 : 0 ) | ( f.dead ? 2 : 0 ) | ( f.hasBoard ? 4 : 0 ) | ( f.stowed ? 8 : 0 ) | ( f.linked ? 16 : 0 ) |
+					   ( f.linkHolds ? 32 : 0 ) );
 	r.templateIndex = f.templateIndex;
 	r.stepCount = f.stepCount;
 	r.halfExtents = f.halfExtents;
@@ -114,8 +114,8 @@ EntityRecord ToRecord( const FrameEntity& f )
 	r.holder = f.holder;
 	r.itemKind = f.itemKind;
 	r.socket = f.socket;
-	r.tetherMotion = f.tetherMotion;
-	r.tetherEnd = f.tetherEnd;
+	r.linkMotion = f.linkMotion;
+	r.linkEnd = f.linkEnd;
 	return r;
 }
 
@@ -130,8 +130,8 @@ FrameEntity FromRecord( const EntityRecord& r )
 	f.dead = ( r.flags & 2 ) != 0;
 	f.hasBoard = ( r.flags & 4 ) != 0;
 	f.stowed = ( r.flags & 8 ) != 0;
-	f.tethered = ( r.flags & 16 ) != 0;
-	f.tetherHolds = ( r.flags & 32 ) != 0;
+	f.linked = ( r.flags & 16 ) != 0;
+	f.linkHolds = ( r.flags & 32 ) != 0;
 	f.templateIndex = r.templateIndex;
 	f.stepCount = r.stepCount;
 	f.halfExtents = r.halfExtents;
@@ -143,8 +143,8 @@ FrameEntity FromRecord( const EntityRecord& r )
 	f.holder = r.holder;
 	f.itemKind = r.itemKind;
 	f.socket = r.socket;
-	f.tetherMotion = r.tetherMotion;
-	f.tetherEnd = r.tetherEnd;
+	f.linkMotion = r.linkMotion;
+	f.linkEnd = r.linkEnd;
 	return f;
 }
 
@@ -484,8 +484,8 @@ struct RestRecord
 	uint32_t holder;
 	uint16_t itemKind;
 	uint8_t socket;
-	uint8_t tetherMotion;
-	b3Vec3 tetherEnd;
+	uint8_t linkMotion;
+	b3Vec3 linkEnd;
 };
 static_assert( sizeof( RestRecord ) == 52, "RestRecord has padding" );
 
@@ -505,8 +505,8 @@ RestRecord Rest( const EntityRecord& record )
 	rest.holder = record.holder;
 	rest.itemKind = record.itemKind;
 	rest.socket = record.socket;
-	rest.tetherMotion = record.tetherMotion;
-	rest.tetherEnd = record.tetherEnd;
+	rest.linkMotion = record.linkMotion;
+	rest.linkEnd = record.linkEnd;
 	return rest;
 }
 
@@ -524,8 +524,8 @@ void SetRest( EntityRecord& record, const RestRecord& rest )
 	record.holder = rest.holder;
 	record.itemKind = rest.itemKind;
 	record.socket = rest.socket;
-	record.tetherMotion = rest.tetherMotion;
-	record.tetherEnd = rest.tetherEnd;
+	record.linkMotion = rest.linkMotion;
+	record.linkEnd = rest.linkEnd;
 }
 
 struct CompactEntity

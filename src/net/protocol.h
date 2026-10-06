@@ -21,7 +21,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 28; // 28: tethers (a component, a line of a motion set); 27: two more movement parameters (air_friction, move_frame); 26: motion sets in the schema; 25: movement parameters (the config, SetMove); 24: an item body's turn; 23: grips as animated; 22: grips in the schema; 21: the view mode in the input; 20: no streaming clients; 19: private fields; 18: one animation system; 17: streaming clients; 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs; 9: layers and stances; 10: characters shipped with the game; 11: state machines in the schema; 12: held items; 13: animation packs; 14: items in the world; 15: stowed items; 16: 32 board slots
+inline constexpr uint32_t kProtocolVersion = 30; // 30: mass; motions as triggers and effects (probes, forces, links, targets); 29: one more movement parameter (airborne); 28: tethers (a component, a line of a motion set); 27: two more movement parameters (air_friction, move_frame); 26: motion sets in the schema; 25: movement parameters (the config, SetMove); 24: an item body's turn; 23: grips as animated; 22: grips in the schema; 21: the view mode in the input; 20: no streaming clients; 19: private fields; 18: one animation system; 17: streaming clients; 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs; 9: layers and stances; 10: characters shipped with the game; 11: state machines in the schema; 12: held items; 13: animation packs; 14: items in the world; 15: stowed items; 16: 32 board slots
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t

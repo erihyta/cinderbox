@@ -21,7 +21,7 @@ PistolReactions                      (vfx/reactions_pistol.tscn)
 └── Gun           CbItemLook          pistol.gun -> res://prefabs/pistol.tscn
 ```
 
-A `CbTetherLook` in the same scene says what a [tether](motions.md#the-rope-cbtetherlook) (a grappling hook's rope) is drawn as.
+A `CbLinkLook` in the same scene says what the line of a [motion's probe](motions.md#the-rope-cblinklook) (a grappling hook's rope) is drawn as.
 
 | Events | Carry |
 |---|---|

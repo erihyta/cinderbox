@@ -21,6 +21,8 @@ const MoveParamInfo kInfo[kMoveParams] = {
 	{ "max_fall", 0.0f, 1000.0f, "The fastest a character falls, in m/s. 0: no limit." },
 	{ "air_friction", 0.0f, 100.0f, "How fast a character in the air slows down, per second, in every direction. 0: not at all." },
 	{ "move_frame", 0.0f, 1.0f, "0: the movement input moves along the ground. 1: along the camera, pitch included (flight)." },
+	{ "airborne", 0.0f, 1.0f, "1: the character is in the air whatever is under it: no ground friction, no jump, the in-air animation." },
+	{ "mass", 1.0f, 10000.0f, "What the character weighs, in kg: how much it gives and takes when it pushes props, and how forces move it." },
 };
 
 const MoveParamInfo kNone = { "", 0.0f, 0.0f, "" };

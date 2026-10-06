@@ -67,11 +67,17 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	// Effect bindings: data a mod ships to say what plays when.
 	GDREGISTER_CLASS( cb::gd::CbItemLook );
 	GDREGISTER_CLASS( cb::gd::CbItemBody );
-	GDREGISTER_CLASS( cb::gd::CbTetherLook );
+	GDREGISTER_CLASS( cb::gd::CbLinkLook );
 	GDREGISTER_CLASS( cb::gd::CbGrip );
 	// Motions: what a mod adds to how players move, baked for the simulation.
-	GDREGISTER_CLASS( cb::gd::CbMotion );
+	GDREGISTER_ABSTRACT_CLASS( cb::gd::CbMotionPart );
 	GDREGISTER_CLASS( cb::gd::CbMotionSet );
+	GDREGISTER_CLASS( cb::gd::CbMotion );
+	GDREGISTER_CLASS( cb::gd::CbProbe );
+	GDREGISTER_ABSTRACT_CLASS( cb::gd::CbMotionEffect );
+	GDREGISTER_CLASS( cb::gd::CbImpulse );
+	GDREGISTER_CLASS( cb::gd::CbForce );
+	GDREGISTER_CLASS( cb::gd::CbLink );
 	// HUD nodes that read the mods' board.
 	GDREGISTER_CLASS( cb::gd::CbFieldLabel );
 	GDREGISTER_CLASS( cb::gd::CbFieldBinding );

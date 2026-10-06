@@ -2,7 +2,7 @@
 
 ; How the grapple mod looks and sounds.
 ;
-;   Rope    CbTetherLook   the rope: grapple_rope.tscn stretched from the right hand to the hook's
+;   Rope    CbLinkLook     the rope: grapple_rope.tscn stretched from the right hand to the hook's
 ;                          end, while it flies and while it holds
 ;   Fired   CbReaction     the throw's sound, at the player. The event comes from the motion, which
 ;                          the viewer's own simulation runs: yours is heard on the press
@@ -10,7 +10,7 @@
 
 [node name="GrappleReactions" type="Node3D"]
 
-[node name="Rope" type="CbTetherLook" parent="."]
+[node name="Rope" type="CbLinkLook" parent="."]
 motion = "grapple.moves/Hook"
 scene = "res://vfx/grapple_rope.tscn"
 

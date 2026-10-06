@@ -54,11 +54,11 @@ struct Visual
 	uint16_t itemKind = 0;
 	uint8_t socket = 0;
 	bool stowed = false;
-	// Players: a tether that is out, as of the newest frame (present/frame.h).
-	bool tethered = false;
-	bool tetherHolds = false;
-	uint8_t tetherMotion = 0;
-	b3Vec3 tetherEnd = {};
+	// Players: a link that is out, as of the newest frame (present/frame.h).
+	bool linked = false;
+	bool linkHolds = false;
+	uint8_t linkMotion = 0;
+	b3Vec3 linkEnd = {};
 };
 
 // Poses at the two most recent ticks, for interpolation.

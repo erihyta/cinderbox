@@ -77,9 +77,9 @@ addressed by a stable `NetId`.
 | Part | How |
 |---|---|
 | World | static boxes, ramps, steps and platforms from a baked map; dynamic boxes, spheres and capsules |
-| Player movement | a kinematic capsule mover (move-and-slide with Box3D's mover casts and plane solver); a pogo spring keeps it hovering, which carries it over steps; it pushes dynamic bodies. In a file of its own (`mover.*`) |
-| Motions | what mods add to movement (a dash, a double jump): `CbMotion` nodes baked to text, sent in the schema, compiled against it and run for every player before the mover (`motions.*`). They happen on a press, on a mod event at the player, or hold while their conditions do (which can read the keys held). A motion can throw a **tether** (`Tether`, a component): a ray along the look finds a point of the world, of a prop or of a player; after its flight it pulls the player there and, as a rope, keeps it within its length; a prop it holds is pulled back. The input is what a client already simulates ahead, so a player's own are predicted and rolled back. `MotionState` (a slot per motion: last use, uses, on until) is on players only where a server has motions |
-| Movement parameters | walk and sprint speed, acceleration, friction, air control, gravity, jump speed, turn rate, a fall limit, air friction, and whether the movement input goes along the ground or the camera: values, not constants. The server's set is in `SimConfig::move` (its options, then its character's values); a mod's `SetMove` command gives one player its own (`MoveOverrides`, a component only players a mod touched have) |
+| Player movement | a kinematic capsule mover (move-and-slide with Box3D's mover casts and plane solver); a pogo spring keeps it hovering, which carries it over steps. It has a mass (a movement parameter): where it meets a dynamic body the two trade momentum by what they weigh, so a crate is kicked away and a heavy block stops it. In a file of its own (`mover.*`) |
+| Motions | what mods add to movement (a dash, a double jump): `CbMotion` nodes baked to text, sent in the schema, compiled against it and run for every player before the mover (`motions.*`). They happen on a press, on a mod event at the player, or hold while their conditions do (which can read the keys held). A motion is a trigger with parts: a **probe** (a ray along the look that has to find a point of the world, of a prop or of a player, and holds on to it after its flight: `MotionHold`, a component), and **effects** on a target (the player, what the probe found, or the entity a field names): an impulse once, a force while it is on (an acceleration, newtons, or toward a speed; ramped in; reacting on the other end), a link (a rope whose tension the two share by weight). The input is what a client already simulates ahead, so a player's own are predicted and rolled back. `MotionState` (a slot per motion: last use, uses, on until) is on players only where a server has motions |
+| Movement parameters | walk and sprint speed, acceleration, friction, air control, gravity, jump speed, turn rate, a fall limit, air friction, whether the movement input goes along the ground or the camera, whether the character is in the air whatever is under it, and what it weighs: values, not constants. The server's set is in `SimConfig::move` (its options, then its character's values); a mod's `SetMove` command gives one player its own (`MoveOverrides`, a component only players a mod touched have) |
 | Controls | WASD relative to the camera, Shift, Space: the engine's. Every other control is an action a mod declares |
 | Facing | freelook (the body turns toward where it walks) or camera-facing (`Facing` command); the legs follow the direction of travel either way (`AnimState::legYaw`, backwards past about 100 degrees) |
 | Props | a lifetime and caps per player and globally, whoever spawned them |
@@ -154,7 +154,7 @@ Authoritative server, client rollback (`src/net`, `src/client`).
 - Frames encode a mask of players whose input changed, then only the changed fields; commands carry a field mask.
 - ENet's throttle is off (it dropped unreliable packets after large reliable transfers, which stalled clients).
 - **Replays** (`cb_server --record`): every authoritative frame plus checksums; `cb_replay verify` re-simulates headlessly.
-- Protocol 28, replay version 11 (`src/net/protocol.h`, `replay.cpp`).
+- Protocol 29, replay version 12 (`src/net/protocol.h`, `replay.cpp`).
 
 ## The viewer protocol
 
@@ -214,7 +214,7 @@ inputs ──> server: mods read the world + this tick's inputs ──> commands
 | `props`, `expire`, `sneak` | throwing props; items that lie too long; a crouch layer from an animation pack, and its speed |
 | `dash` | the charges of a dash; the dash and a double jump themselves are its motion set, run by every simulation |
 | `flight` | a player's first tank; flight, the jetpack, its fuel and the glide are its motion set |
-| `grapple` | three names; the grappling hook is its motion (a tether), its rope a `CbTetherLook` |
+| `grapple` | three names; the grappling hook is its motion (a probe, a force and a link), its rope a `CbLinkLook` |
 
 ## Workshop items and packs
 
@@ -292,8 +292,8 @@ Everything a player sees and hears beyond bodies is data in workshop items: no s
 | `CbReaction` | on a **cue** (a mod event, a game event) or **while** conditions hold: an animation, a property, a listed method, a scene, a sound, a screen shake or flash, placed by the cue or a node |
 | `CbPrediction` | says which cue the server will answer a press with (or a held action, again every `cooldown`: `while_held`); the cue plays at once with the same reactions, and the server's cue then plays only what waited |
 | `CbItemLook` | which scene an item kind is drawn as |
-| `CbTetherLook` | which scene a tether is drawn as: stretched by the viewer from the player's socket to the tether's end, which every frame carries (`FrameEntity::tetherEnd`) |
-| `CbMotionSet`, `CbMotion` | not a look: authoring nodes for what a mod adds to movement, baked to `motions/<set>.cfg` for the simulation (docs/motions.md) |
+| `CbLinkLook` | which scene the line of a motion's probe is drawn as: stretched by the viewer from the player's socket to the line's end, which every frame carries (`FrameEntity::linkEnd`) |
+| `CbMotionSet`, `CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink` | not looks: authoring nodes for what a mod adds to movement, one family (`CbMotionPart`; the effects share `CbMotionEffect`), baked to `motions/<set>.cfg` for the simulation (docs/motions.md) |
 | `CbFieldLabel`, `CbFieldBinding`, `CbEventFeed`, `CbScoreboard`, `CbPromptLabel` | HUD from fields and events |
 
 - **Paths**: `^` (my entity), `^^` (its holder), `$at` / `$other` (who a cue names), `$local`, `$world`, `@field` (the entity a field names). No path leaves the World node.
@@ -429,7 +429,7 @@ tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, export_client.ps1, bak
 | Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; a state started over by an event (rapid fire) fires its keys again only when the transition has a crossfade (that is how the viewer tells a restart from a rollback); packs' non-bone tracks are not played |
 | State machines | no nested machines, OneShot/Add/TimeScale nodes, `travel()`, or crossfade curves |
 | Characters | one character per server; the capsule's size is not per character; the scene ships its animations' bone tracks next to the ozz clips |
-| Movement | a mod's `SetMove` and `Push` are commands, so they are not predicted (a motion is). A tether pulls a prop but not a player it holds on to, and starts at the same point in every view (not at the eye in first person). One tether per player. A While motion's per-second changes need a Float field and are not clamped (a tank fills to a little over full). Another player's motion is seen when its input arrives. At most 16 motions per server |
+| Movement | a mod's `SetMove` and `Push` are commands, so they are not predicted (a motion is). The controller is kinematic: its mass decides what contacts, forces and ropes exchange, but a player is not knocked over. An effect on a player with a lower slot is felt on its next tick. A probe's line starts at the same point in every view (not at the eye in first person). One probe per player. A While motion's per-second changes need a Float field and are not clamped (a tank fills to a little over full). Another player's motion is seen when its input arrives. At most 16 motions per server |
 | Mods | compiled into the server (no hot-loading); a mod is switched off by a `disabled` file in its folder (compiled in, run only when `--mods` names it), a part of one by a server option its conditions read; events between mods are a tick late; a board has 32 names per scope |
 | Private fields | per player, not per entity; not in recordings or view files (they read 0 there); entities cannot be hidden from a client: each simulates the whole world, so there is no fog of war |
 | Combat | no teams, no spectators |

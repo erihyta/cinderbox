@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbImpulse" inherits="CbMotionEffect" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		A change of velocity, once, when its motion starts. A dash, a double jump, a shove.
+	</brief_description>
+	<description>
+		A child of a [CbMotion]. On the tick the motion starts (with a [CbProbe]: the tick the probe takes hold), the target's velocity changes by [member speed] along the effect's direction, whatever it weighs. On a prop it is applied at the point the probe holds, so it spins.
+		It happens once. For a push that lasts, use a [CbForce].
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="speed" type="float" setter="set_speed" getter="get_speed" default="0.0">
+			The change of velocity, in metres per second. Up to 200.
+		</member>
+		<member name="replace" type="int" setter="set_replace" getter="get_replace" enum="CbImpulse.Replace" default="0">
+			What of the target's velocity is cleared before the impulse is added.
+		</member>
+	</members>
+	<constants>
+		<constant name="REPLACE_NOTHING" value="0" enum="Replace">
+			The impulse is added to the velocity.
+		</constant>
+		<constant name="REPLACE_VERTICAL" value="1" enum="Replace">
+			The vertical speed is cleared first: a jump in the air is the same jump however fast the fall was.
+		</constant>
+		<constant name="REPLACE_HORIZONTAL" value="2" enum="Replace">
+			The horizontal velocity is cleared first: a dash is the same dash however fast the run was.
+		</constant>
+		<constant name="REPLACE_ALL" value="3" enum="Replace">
+			The whole velocity is cleared first.
+		</constant>
+	</constants>
+</class>

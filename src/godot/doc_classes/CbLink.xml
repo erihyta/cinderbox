@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbLink" inherits="CbMotionEffect" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		A rope between the player and something else, for as long as its motion is on. A grappling hook's rope, two players bound together.
+	</brief_description>
+	<description>
+		A child of a [CbMotion]. While the motion is on, the player and the target cannot be further apart than the rope is long: slack, it does nothing; taut, it pulls the two back together. What that takes is shared by what they weigh: the world gives nothing (you swing), a light crate comes along behind you, and of two players the lighter one is dragged more.
+		The target is what the motion's [CbProbe] found (the default), or the entity a field names: [member CbMotionEffect.target] cannot be the player itself. A rope has no direction of its own.
+		A [CbLinkLook] draws the rope of a probe.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="length" type="float" setter="set_length" getter="get_length" default="0.0">
+			The rope's length, in metres. 0: as long as the two are apart when the probe takes hold (so a motion without a [CbProbe] has to give a length).
+		</member>
+		<member name="reel" type="float" setter="set_reel" getter="get_reel" default="0.0">
+			With a length of 0: metres of rope taken in a second, so the two end up together. The rope is never shorter than a metre.
+		</member>
+	</members>
+</class>

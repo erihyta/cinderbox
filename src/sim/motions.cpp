@@ -14,7 +14,10 @@ namespace
 
 constexpr float kMaxMotionSeconds = 3600.0f;
 constexpr float kMaxMotionImpulse = 200.0f; // m/s
+constexpr float kMaxMotionAccel = 1000.0f;	// m/s^2
+constexpr float kMaxMotionForce = 1.0e6f;	// N
 constexpr uint32_t kMaxMotionUses = 1000;
+constexpr uint32_t kForever = 0xFFFFFFFFu;
 
 std::vector<std::string> Words( const std::string& line )
 {
@@ -47,37 +50,6 @@ bool Number( const std::string& text, float lo, float hi, float& out )
 uint32_t Ticks( float seconds, uint32_t tickRate )
 {
 	return uint32_t( seconds * float( tickRate ) + 0.5f );
-}
-
-b3Vec3 Direction( const Motion& m, const Character& c, const PlayerInput& in )
-{
-	float yaw = detmath::YawToRadians( in.cameraYaw );
-	switch ( m.frame )
-	{
-		case Motion::Frame::Look:
-		{
-			b3CosSin pitch = detmath::CosSin( float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f ) );
-			b3Vec3 forward = detmath::YawForward( yaw );
-			return { forward.x * pitch.cosine, pitch.sine, forward.z * pitch.cosine };
-		}
-		case Motion::Frame::Move:
-		{
-			// The mover's own wish direction; standing still, a dash goes where the body faces.
-			float forward = float( std::clamp<int>( in.moveForward, -127, 127 ) );
-			float right = float( std::clamp<int>( in.moveRight, -127, 127 ) );
-			b3Vec3 wish = b3Add( b3MulSV( forward, detmath::YawForward( yaw ) ), b3MulSV( right, detmath::YawRight( yaw ) ) );
-			float length = 0.0f;
-			b3Vec3 direction = b3GetLengthAndNormalize( &length, wish );
-			return length > 0.0f ? direction : detmath::YawForward( c.facingYaw );
-		}
-		case Motion::Frame::Facing:
-			return detmath::YawForward( c.facingYaw );
-		case Motion::Frame::Up:
-			return { 0.0f, 1.0f, 0.0f };
-		case Motion::Frame::World:
-			return m.direction;
-	}
-	return { 0.0f, 1.0f, 0.0f };
 }
 
 bool Pressed( const Motion& m, const MotionInputs& in, uint16_t previousActions )
@@ -138,7 +110,110 @@ void ApplyChange( const Motion::Change& change, Blackboard& board )
 	stored = change.type == BoardType::Bool ? ( value != 0 ? 1 : 0 ) : int32_t( value );
 }
 
+// "self", "hit", or "@field.name".
+bool ParseTarget( const std::string& word, const ModSchema& schema, const std::string& motion, MotionTarget& out, std::string& warnings )
+{
+	if ( word == "self" )
+	{
+		out.kind = MotionTarget::Kind::Self;
+		return true;
+	}
+	if ( word == "hit" )
+	{
+		out.kind = MotionTarget::Kind::Hit;
+		return true;
+	}
+	if ( word.size() > 1 && word[0] == '@' )
+	{
+		out.kind = MotionTarget::Kind::Field;
+		const BoardField* field = schema.FindField( word.substr( 1 ) );
+		if ( field == nullptr || field->scope != BoardScope::Entity )
+		{
+			out.known = false;
+			warnings += motion + ": \"" + word.substr( 1 ) + "\" is not a field of the player a mod declares: an effect on " + word +
+						" does nothing; ";
+			return true;
+		}
+		out.slot = field->slot;
+		return true;
+	}
+	return false;
+}
+
+bool ParseFrame( const std::string& word, MotionFrame& out )
+{
+	static const char* const kFrames[] = { "look", "move", "facing", "up", "world", "to" };
+	for ( int i = 0; i < 6; ++i )
+	{
+		if ( word == kFrames[i] )
+		{
+			out = MotionFrame( i );
+			return true;
+		}
+	}
+	return false;
+}
+
+// The "x y z" a world frame ends its line with, from word `at`.
+bool ParseWorld( const std::vector<std::string>& w, size_t at, b3Vec3& out )
+{
+	b3Vec3 d = {};
+	if ( w.size() < at + 3 || Number( w[at], -1.0f, 1.0f, d.x ) == false || Number( w[at + 1], -1.0f, 1.0f, d.y ) == false ||
+		 Number( w[at + 2], -1.0f, 1.0f, d.z ) == false )
+	{
+		return false;
+	}
+	float length = 0.0f;
+	d = b3GetLengthAndNormalize( &length, d );
+	if ( length < 0.001f )
+	{
+		return false;
+	}
+	out = d;
+	return true;
+}
+
 } // namespace
+
+b3Vec3 MotionDirection( MotionFrame frame, b3Vec3 world, const Character& c, const PlayerInput& in )
+{
+	float yaw = detmath::YawToRadians( in.cameraYaw );
+	switch ( frame )
+	{
+		case MotionFrame::Look:
+		{
+			b3CosSin pitch = detmath::CosSin( float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f ) );
+			b3Vec3 forward = detmath::YawForward( yaw );
+			return { forward.x * pitch.cosine, pitch.sine, forward.z * pitch.cosine };
+		}
+		case MotionFrame::Move:
+		{
+			// The mover's own wish direction; standing still, a dash goes where the body faces.
+			float forward = float( std::clamp<int>( in.moveForward, -127, 127 ) );
+			float right = float( std::clamp<int>( in.moveRight, -127, 127 ) );
+			b3Vec3 wish = b3Add( b3MulSV( forward, detmath::YawForward( yaw ) ), b3MulSV( right, detmath::YawRight( yaw ) ) );
+			float length = 0.0f;
+			b3Vec3 direction = b3GetLengthAndNormalize( &length, wish );
+			return length > 0.0f ? direction : detmath::YawForward( c.facingYaw );
+		}
+		case MotionFrame::Facing:
+			return detmath::YawForward( c.facingYaw );
+		case MotionFrame::Up:
+			return { 0.0f, 1.0f, 0.0f };
+		case MotionFrame::World:
+			return world;
+		case MotionFrame::To:
+			break;
+	}
+	return { 0.0f, 1.0f, 0.0f };
+}
+
+float MotionRamp( const MotionEffect& effect, uint32_t ticksOn, uint32_t tickRate )
+{
+	uint32_t ramp = Ticks( effect.ramp, tickRate );
+	// The first tick already pushes a little: a ramp of n ticks is full on its nth.
+	return ramp == 0 || ticksOn + 1 >= ramp ? 1.0f : float( ticksOn + 1 ) / float( ramp );
+}
 
 bool CompileMotionSet( const std::string& set, const std::string& text, const ModSchema& schema, std::vector<Motion>& out,
 					   std::string& error, std::string& warnings )
@@ -167,9 +242,9 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		const std::string& key = w[0];
 		if ( header == false )
 		{
-			if ( key != "cinderbox_motions" || w.size() < 2 || w[1] != "1" )
+			if ( key != "cinderbox_motions" || w.size() < 2 || w[1] != "2" )
 			{
-				return fail( "not a motions file (it starts with \"cinderbox_motions\t1\")" );
+				return fail( "not a motions file (it starts with \"cinderbox_motions\t2\")" );
 			}
 			header = true;
 			continue;
@@ -230,12 +305,12 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				warnings += m.name + ": no mod declares the action \"" + w[2] + "\": it never happens; ";
 			}
 		}
-		else if ( key == "if" )
+		else if ( key == "if" || key == "until" )
 		{
 			std::string exprError;
-			if ( w.size() < 2 || CompileAnimExpr( w[1], schema, m.condition, exprError, warnings ) == false )
+			if ( w.size() < 2 || CompileAnimExpr( w[1], schema, key == "if" ? m.condition : m.until, exprError, warnings ) == false )
 			{
-				return fail( "condition: " + exprError );
+				return fail( ( key == "if" ? "condition: " : "until: " ) + exprError );
 			}
 		}
 		else if ( key == "cooldown" )
@@ -266,42 +341,72 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				return fail( "uses wants a count and its refill: \"ground\" or seconds" );
 			}
 		}
+		else if ( key == "probe" )
+		{
+			if ( w.size() < 3 || Number( w[1], 1.0f, 500.0f, m.probeRange ) == false || Number( w[2], 0.0f, 1000.0f, m.probeTravel ) == false )
+			{
+				return fail( "probe wants its range (1 to 500 m) and its travel speed (m/s, 0: at once)" );
+			}
+			m.probe = true;
+		}
 		else if ( key == "impulse" )
 		{
-			static const char* const kFrames[] = { "look", "move", "facing", "up", "world" };
+			// impulse <target> <speed> <frame> <replace> [x y z]
 			static const char* const kReplaces[] = { "none", "vertical", "horizontal", "all" };
-			int frame = -1, replace = -1;
-			for ( int i = 0; w.size() >= 4 && i < 5; ++i )
+			MotionEffect e;
+			e.kind = MotionEffect::Kind::Impulse;
+			int replace = -1;
+			for ( int i = 0; w.size() >= 5 && i < 4; ++i )
 			{
-				frame = w[2] == kFrames[i] ? i : frame;
+				replace = w[4] == kReplaces[i] ? i : replace;
 			}
-			for ( int i = 0; w.size() >= 4 && i < 4; ++i )
+			if ( w.size() < 5 || ParseTarget( w[1], schema, m.name, e.target, warnings ) == false ||
+				 Number( w[2], -kMaxMotionImpulse, kMaxMotionImpulse, e.strength ) == false || ParseFrame( w[3], e.frame ) == false || replace < 0 )
 			{
-				replace = w[3] == kReplaces[i] ? i : replace;
+				return fail( "impulse wants a target (self, hit, @field), a speed (m/s), a frame (look, move, facing, up, world, to) and what "
+							 "it replaces (none, vertical, horizontal, all)" );
 			}
-			if ( frame < 0 || replace < 0 || Number( w[1], -kMaxMotionImpulse, kMaxMotionImpulse, m.impulse ) == false )
+			e.replace = MotionEffect::Replace( replace );
+			if ( e.frame == MotionFrame::World && ParseWorld( w, 5, e.direction ) == false )
 			{
-				return fail( "impulse wants a speed (m/s), a frame (look, move, facing, up, world) and what it replaces (none, vertical, "
-							 "horizontal, all)" );
+				return fail( "a world frame wants its direction: x y z, each -1 to 1, not all zero" );
 			}
-			m.frame = Motion::Frame( frame );
-			m.replace = Motion::Replace( replace );
-			if ( m.frame == Motion::Frame::World )
+			m.effects.push_back( e );
+		}
+		else if ( key == "force" )
+		{
+			// force <target> <frame> <accel|force|velocity> <strength> <speed> <ramp> <react 0|1> [x y z]
+			MotionEffect e;
+			e.kind = MotionEffect::Kind::Force;
+			int push = w.size() >= 8 ? ( w[3] == "accel" ? 0 : ( w[3] == "force" ? 1 : ( w[3] == "velocity" ? 2 : -1 ) ) ) : -1;
+			float limit = push == 1 ? kMaxMotionForce : kMaxMotionAccel;
+			if ( push < 0 || ParseTarget( w[1], schema, m.name, e.target, warnings ) == false || ParseFrame( w[2], e.frame ) == false ||
+				 Number( w[4], -limit, limit, e.strength ) == false || Number( w[5], -kMaxMotionImpulse, kMaxMotionImpulse, e.speed ) == false ||
+				 Number( w[6], 0.0f, 60.0f, e.ramp ) == false || ( w[7] != "0" && w[7] != "1" ) )
 			{
-				b3Vec3 d = {};
-				if ( w.size() < 7 || Number( w[4], -1.0f, 1.0f, d.x ) == false || Number( w[5], -1.0f, 1.0f, d.y ) == false ||
-					 Number( w[6], -1.0f, 1.0f, d.z ) == false )
-				{
-					return fail( "a world impulse wants its direction: x y z, each -1 to 1" );
-				}
-				float length = 0.0f;
-				d = b3GetLengthAndNormalize( &length, d );
-				if ( length < 0.001f )
-				{
-					return fail( "a world impulse wants a direction that is not zero" );
-				}
-				m.direction = d;
+				return fail( "force wants a target (self, hit, @field), a frame, a kind (accel, force, velocity), a strength, a speed, a "
+							 "ramp (seconds) and whether it reacts (0 or 1)" );
 			}
+			e.push = MotionEffect::Push( push );
+			e.react = w[7] == "1";
+			if ( e.frame == MotionFrame::World && ParseWorld( w, 8, e.direction ) == false )
+			{
+				return fail( "a world frame wants its direction: x y z, each -1 to 1, not all zero" );
+			}
+			m.effects.push_back( e );
+		}
+		else if ( key == "link" )
+		{
+			// link <target> <length> <reel>
+			MotionEffect e;
+			e.kind = MotionEffect::Kind::Link;
+			if ( w.size() < 4 || ParseTarget( w[1], schema, m.name, e.target, warnings ) == false || e.target.kind == MotionTarget::Kind::Self ||
+				 Number( w[2], 0.0f, 500.0f, e.length ) == false || Number( w[3], 0.0f, 100.0f, e.reel ) == false )
+			{
+				return fail( "link wants a target that is not the player itself (hit, @field), a length (m; 0: the distance when the probe "
+							 "takes hold) and a reel (m/s)" );
+			}
+			m.effects.push_back( e );
 		}
 		else if ( key == "param" )
 		{
@@ -332,26 +437,6 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			change.type = field->type;
 			m.changes.push_back( change );
 		}
-		else if ( key == "tether" )
-		{
-			if ( w.size() < 6 || ( w[5] != "rope" && w[5] != "free" ) || Number( w[1], 1.0f, 500.0f, m.tetherRange ) == false ||
-				 Number( w[2], 0.0f, 1000.0f, m.tetherTravel ) == false || Number( w[3], 0.0f, 500.0f, m.tetherPull ) == false ||
-				 Number( w[4], 0.0f, 100.0f, m.tetherReel ) == false )
-			{
-				return fail( "tether wants its range (1 to 500 m), travel speed (m/s, 0: at once), pull (m/s^2), reel (m/s) and \"rope\" "
-							 "or \"free\"" );
-			}
-			m.tether = true;
-			m.tetherRope = w[5] == "rope";
-		}
-		else if ( key == "until" )
-		{
-			std::string exprError;
-			if ( w.size() < 2 || CompileAnimExpr( w[1], schema, m.tetherUntil, exprError, warnings ) == false )
-			{
-				return fail( "until: " + exprError );
-			}
-		}
 		else if ( key == "emit" )
 		{
 			if ( w.size() < 2 || w[1].empty() )
@@ -372,14 +457,29 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 	if ( header == false )
 	{
 		number = 1;
-		return fail( "not a motions file (it starts with \"cinderbox_motions\t1\")" );
+		return fail( "not a motions file (it starts with \"cinderbox_motions\t2\")" );
 	}
 	for ( Motion& m : motions )
 	{
-		if ( m.when == Motion::When::While && m.tether )
-		{
-			error = "motions " + set + ": " + m.name + ": a tether is thrown by a press or an event, not by a while motion";
+		auto wrong = [&]( const std::string& what ) {
+			error = "motions " + set + ": " + m.name + ": " + what;
 			return false;
+		};
+		if ( m.when == Motion::When::While && m.probe )
+		{
+			return wrong( "a probe is thrown by a press or an event, not by a while motion" );
+		}
+		for ( const MotionEffect& e : m.effects )
+		{
+			bool needsHit = e.target.kind == MotionTarget::Kind::Hit || ( e.frame == MotionFrame::To && e.target.kind != MotionTarget::Kind::Field );
+			if ( needsHit && m.probe == false )
+			{
+				return wrong( "an effect on \"hit\", or along \"to\", needs the motion to have a probe (or a target that is a field)" );
+			}
+			if ( e.kind == MotionEffect::Kind::Link && e.length <= 0.0f && m.probe == false )
+			{
+				return wrong( "a link without a probe needs a length" );
+			}
 		}
 		if ( m.when != Motion::When::While )
 		{
@@ -427,18 +527,32 @@ std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::str
 	return motions;
 }
 
-void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& state, Character& c, Blackboard& board, bool& boardChanged,
-				 std::vector<ModEventRecord>& events )
+void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& state, const Character& c, Blackboard& board,
+				 bool& boardChanged, std::vector<ModEventRecord>& events, std::vector<MotionActive>& active )
 {
 	const uint32_t now = in.tick + 1; // 0 in a slot means "never"
 	const float dt = 1.0f / float( in.tickRate );
-	for ( size_t i = 0; in.canAct && i < motions.list.size() && i < size_t( kMaxMotions ); ++i )
+	for ( size_t i = 0; i < motions.list.size() && i < size_t( kMaxMotions ); ++i )
 	{
 		const Motion& m = motions.list[i];
 		MotionSlot& slot = state.slots[i];
 		const bool isWhile = m.when == Motion::When::While;
 		// A while motion that was on last tick goes on without asking its cooldown again.
 		const bool wasOn = isWhile && slot.lastTick != 0 && slot.untilTick == in.tick;
+		bool on = slot.lastTick != 0 && in.tick < slot.untilTick && isWhile == false;
+
+		// One that is held ends by its condition (not on the tick it started), or when what its
+		// probe holds on to is gone.
+		if ( on && m.Held() )
+		{
+			bool lost = m.probe && ( in.held != int( i ) || in.holdAlive == false );
+			bool done = m.until.Empty() == false && slot.lastTick != now && EvaluateAnimExpr( m.until, *in.values, 0.0f ) != 0.0f;
+			if ( lost || done )
+			{
+				slot.untilTick = in.tick;
+				on = false;
+			}
+		}
 
 		if ( m.uses > 0 && slot.used > 0 )
 		{
@@ -449,115 +563,86 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 			}
 		}
 
-		switch ( m.when )
+		bool starts = in.canAct;
+		if ( starts && m.when == Motion::When::Press )
 		{
-			case Motion::When::Press:
-				if ( Pressed( m, in, state.prevActions ) == false )
+			starts = Pressed( m, in, state.prevActions );
+		}
+		else if ( starts && m.when == Motion::When::Event )
+		{
+			starts = m.trigger >= 0 && HeardEvent( m.trigger, in );
+		}
+		// One that is held does not start again while it is on.
+		starts = starts && ( on == false || m.Held() == false );
+		starts = starts && ( wasOn || slot.lastTick == 0 || now - slot.lastTick >= Ticks( m.cooldown, in.tickRate ) );
+		starts = starts && ( isWhile || m.uses == 0 || slot.used < m.uses );
+		starts = starts && ( m.condition.Empty() || EvaluateAnimExpr( m.condition, *in.values, 0.0f ) != 0.0f );
+		// A probe has to find something to hold on to, or the motion does not happen.
+		uint32_t effectTick = in.tick;
+		if ( starts && m.probe && ( in.attach == nullptr || in.attach( in.user, m, i, effectTick ) == false ) )
+		{
+			starts = false;
+		}
+
+		if ( starts )
+		{
+			for ( const Motion::Change& change : m.changes )
+			{
+				if ( isWhile == false )
+				{
+					ApplyChange( change, board );
+				}
+				else if ( change.op != Motion::ChangeOp::Set )
+				{
+					// Per second.
+					Motion::Change step = change;
+					step.value = change.value * dt;
+					ApplyChange( step, board );
+				}
+				else if ( wasOn == false )
+				{
+					ApplyChange( change, board );
+				}
+				else
 				{
 					continue;
 				}
-				break;
-			case Motion::When::Event:
-				if ( m.trigger < 0 || HeardEvent( m.trigger, in ) == false )
+				boardChanged = true;
+			}
+			// When it happens; for a while motion, when it starts.
+			if ( m.event >= 0 && wasOn == false )
+			{
+				ModEventRecord record;
+				record.type = uint16_t( m.event );
+				events.push_back( record );
+			}
+
+			slot.lastTick = now;
+			if ( isWhile )
+			{
+				if ( wasOn == false )
 				{
-					continue;
+					slot.sinceTick = in.tick;
 				}
-				break;
-			case Motion::When::While:
-				break;
-		}
-		if ( wasOn == false && slot.lastTick != 0 && now - slot.lastTick < Ticks( m.cooldown, in.tickRate ) )
-		{
-			continue;
-		}
-		if ( isWhile == false && m.uses > 0 && slot.used >= m.uses )
-		{
-			continue;
-		}
-		if ( m.condition.Empty() == false && EvaluateAnimExpr( m.condition, *in.values, 0.0f ) == 0.0f )
-		{
-			continue;
-		}
-
-		// A tether has to find something to hold on to, or the motion does not happen.
-		if ( m.tether && ( in.attach == nullptr || in.attach( in.user, m, i ) == false ) )
-		{
-			continue;
-		}
-
-		b3Vec3 push = b3MulSV( m.impulse, Direction( m, c, *in.input ) );
-		if ( isWhile )
-		{
-			// A thrust: metres per second, every second it is on.
-			push = b3MulSV( dt, push );
-		}
-		else
-		{
-			switch ( m.replace )
-			{
-				case Motion::Replace::None:
-					break;
-				case Motion::Replace::Vertical:
-					c.velocity.y = 0.0f;
-					break;
-				case Motion::Replace::Horizontal:
-					c.velocity.x = 0.0f;
-					c.velocity.z = 0.0f;
-					break;
-				case Motion::Replace::All:
-					c.velocity = { 0.0f, 0.0f, 0.0f };
-					break;
-			}
-		}
-		c.velocity = b3Add( c.velocity, push );
-		if ( push.y > 0.0f )
-		{
-			// A grounded character has its vertical speed cleared by the mover; a push upward has
-			// to leave the ground to count, the same way a jump does.
-			c.grounded = 0;
-		}
-
-		for ( const Motion::Change& change : m.changes )
-		{
-			if ( isWhile == false )
-			{
-				ApplyChange( change, board );
-			}
-			else if ( change.op != Motion::ChangeOp::Set )
-			{
-				// Per second.
-				Motion::Change step = change;
-				step.value = change.value * dt;
-				ApplyChange( step, board );
-			}
-			else if ( wasOn == false )
-			{
-				ApplyChange( change, board );
+				slot.untilTick = in.tick + 1; // on this tick; next tick says for itself
 			}
 			else
 			{
-				continue;
+				slot.used += 1;
+				// In effect from now, or from when its probe takes hold, for its duration; one that
+				// is held, until something ends it.
+				slot.sinceTick = effectTick;
+				uint32_t length = Ticks( m.duration, in.tickRate );
+				slot.untilTick = m.Held() && length == 0 ? kForever : effectTick + length;
 			}
-			boardChanged = true;
-		}
-		// When it happens; for a while motion, when it starts.
-		if ( m.event >= 0 && wasOn == false )
-		{
-			ModEventRecord record;
-			record.type = uint16_t( m.event );
-			record.vector = isWhile ? b3Vec3{ 0.0f, 0.0f, 0.0f } : push;
-			events.push_back( record );
 		}
 
-		slot.lastTick = now;
-		if ( isWhile )
+		// Its effects apply on every tick it is in effect, and on the tick it starts.
+		bool inEffect = slot.lastTick != 0 && slot.sinceTick <= in.tick && in.tick < slot.untilTick;
+		bool startsNow = slot.lastTick != 0 && slot.sinceTick == in.tick && ( starts || isWhile == false );
+		if ( inEffect || ( starts && slot.sinceTick == in.tick ) )
 		{
-			slot.untilTick = in.tick + 1; // on this tick; next tick says for itself
-		}
-		else
-		{
-			slot.used += 1;
-			slot.untilTick = in.tick + Ticks( m.duration, in.tickRate );
+			active.push_back( { uint8_t( i ), startsNow } );
 		}
 	}
 	state.prevActions = in.input->actions;
@@ -567,7 +652,8 @@ void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32
 {
 	for ( size_t i = 0; i < motions.list.size() && i < size_t( kMaxMotions ); ++i )
 	{
-		if ( tick < state.slots[i].untilTick )
+		const MotionSlot& slot = state.slots[i];
+		if ( slot.lastTick != 0 && slot.sinceTick <= tick && tick < slot.untilTick )
 		{
 			for ( const Motion::Param& p : motions.list[i].params )
 			{

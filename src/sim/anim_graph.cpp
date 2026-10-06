@@ -19,7 +19,7 @@ constexpr float kMinClipLength = 1.0f / 1024.0f;
 
 const char* const kBuiltinNames[AnimExpr::BuiltinCount] = {
 	"speed",	  "forward_speed", "vertical_speed", "grounded",	"airborne_time", "jumped",
-	"aiming",	  "backward",	   "state_time",	 "move_forward", "move_right",
+	"aiming",	  "backward",	   "state_time",	 "move_forward", "move_right",	"linked",
 };
 
 // --- Expressions ----------------------------------------------------------------------------------
@@ -125,11 +125,12 @@ private:
 				return;
 			}
 		}
-		if ( name.rfind( "held.", 0 ) == 0 )
+		if ( name.rfind( "held.", 0 ) == 0 || name.rfind( "pressed.", 0 ) == 0 )
 		{
-			std::string action = name.substr( 5 );
+			const bool pressed = name[0] == 'p';
+			std::string action = name.substr( pressed ? 8 : 5 );
 			const ModAction* declared = m_schema.FindAction( action );
-			step.kind = AnimExpr::VarKind::HeldAction;
+			step.kind = pressed ? AnimExpr::VarKind::PressedAction : AnimExpr::VarKind::HeldAction;
 			if ( action == "jump" )
 			{
 				step.index = uint8_t( kMotionActionJump );
@@ -278,6 +279,16 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 				return ( in.input->buttons & BtnSprint ) != 0 ? 1.0f : 0.0f;
 			}
 			return step.index < kMaxActions && ( in.input->actions & ( 1u << step.index ) ) != 0 ? 1.0f : 0.0f;
+		case AnimExpr::VarKind::PressedAction:
+			if ( step.index == kMotionActionJump )
+			{
+				return ( in.pressedButtons & BtnJump ) != 0 ? 1.0f : 0.0f;
+			}
+			if ( step.index == kMotionActionSprint )
+			{
+				return ( in.pressedButtons & BtnSprint ) != 0 ? 1.0f : 0.0f;
+			}
+			return step.index < kMaxActions && ( in.pressedActions & ( 1u << step.index ) ) != 0 ? 1.0f : 0.0f;
 		case AnimExpr::VarKind::Zero:
 			return 0.0f;
 	}

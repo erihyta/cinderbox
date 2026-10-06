@@ -179,6 +179,15 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 						 ( 1.0f + 2.0f * kPogoDamping * omegaH + omegaH * omegaH );
 	}
 
+	// Airborne by parameter (on a hook, in flight): the ground still carries the capsule where it is
+	// under it, so it does not sink, but the character is in the air for everything that asks: no
+	// ground friction, no jump, the in-air animation. It lands when the parameter is gone.
+	if ( c.grounded != 0 && params[MoveParam::Airborne] >= 0.5f )
+	{
+		v.y = 0.0f;
+		c.grounded = 0;
+	}
+
 	if ( c.grounded )
 	{
 		c.groundTicks = wasGrounded ? c.groundTicks + 1 : 0;
@@ -216,12 +225,19 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 		}
 	}
 
-	// Push dynamic bodies we are touching
+	// Dynamic bodies we are touching: the two trade momentum by what they weigh. A light crate is
+	// sent off and barely slows the character; a heavy one hardly moves, and the character loses its
+	// speed into it. (Not a bounce: after it, neither moves into the other.)
+	const float inverseMass = 1.0f / params[MoveParam::Mass];
+	b3CollisionPlane solid[kMaxPlanes];
+	int solidCount = 0;
 	for ( int i = 0; i < ctx.count; ++i )
 	{
 		b3BodyId other = b3Shape_GetBody( ctx.shapes[i] );
 		if ( b3Body_GetType( other ) != b3_dynamicBody )
 		{
+			// What does not move stops the character outright.
+			solid[solidCount++] = ctx.planes[i];
 			continue;
 		}
 
@@ -231,7 +247,7 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 		b3Matrix3 invI = b3Body_GetWorldInverseRotationalInertia( other );
 		b3Vec3 r = b3SubPos( point, b3Body_GetWorldCenter( other ) );
 		b3Vec3 rn = b3Cross( r, normal );
-		float k = invMass + b3Dot( rn, b3MulMV( invI, rn ) );
+		float k = inverseMass + invMass + b3Dot( rn, b3MulMV( invI, rn ) );
 		float normalMass = k > 0.0f ? 1.0f / k : 0.0f;
 		b3Vec3 vOther = b3Add( b3Body_GetLinearVelocity( other ), b3Cross( b3Body_GetAngularVelocity( other ), r ) );
 		float vn = b3Dot( b3Sub( vOther, v ), normal );
@@ -239,10 +255,11 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 		if ( impulse > 0.0f )
 		{
 			b3Body_ApplyLinearImpulse( other, b3MulSV( impulse, normal ), point, true );
+			v = b3MulSub( v, impulse * inverseMass, normal );
 		}
 	}
 
-	v = b3ClipVector( v, ctx.planes, ctx.count );
+	v = b3ClipVector( v, solid, solidCount );
 	c.velocity = v;
 
 	// Face where the camera looks (a mod chose it), or turn toward the direction of travel.

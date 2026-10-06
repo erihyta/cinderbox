@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbForce" inherits="CbMotionEffect" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		A push for as long as its motion is on: an acceleration, a force, or a pull toward a speed. A thrust, a hook's pull, a current.
+	</brief_description>
+	<description>
+		A child of a [CbMotion]. Every tick the motion is on, the target is pushed along the effect's direction. Three kinds ([member kind]): an acceleration moves everything alike, a force moves the heavy less, a velocity brings the target to a speed.
+		A force that rises ([member ramp_in]) is what makes a pull feel heavy, and it also hides latency: other players see your hook a moment late, and by the time the pull is strong they have it.
+		With [member react] the other end takes the same momentum the other way, so weight decides who moves: hooked to a crate, the crate comes to you; hooked to something ten times your weight, you go to it.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="kind" type="int" setter="set_kind" getter="get_kind" enum="CbForce.Kind" default="0">
+			What [member strength] is.
+		</member>
+		<member name="strength" type="float" setter="set_strength" getter="get_strength" default="0.0">
+			How hard it pushes: metres per second, per second ([constant KIND_ACCELERATION]); newtons ([constant KIND_FORCE]: 800 N on an 80 kg player is 10 m/s per second); or the most the velocity may change in a second ([constant KIND_VELOCITY]).
+		</member>
+		<member name="speed" type="float" setter="set_speed" getter="get_speed" default="0.0">
+			A speed along the direction, in metres per second. For an acceleration or a force: the top speed, past which it pushes no more (0: none). For [constant KIND_VELOCITY]: the speed it brings the target to (0: it stops it along the direction).
+		</member>
+		<member name="ramp_in" type="float" setter="set_ramp_in" getter="get_ramp_in" default="0.0">
+			Seconds over which the push rises from nothing to its strength after the motion starts. 0: full at once.
+		</member>
+		<member name="react" type="bool" setter="set_react" getter="get_react" default="false">
+			The other end is pushed back with the same momentum: the player, when the force is on something else; what the motion's [CbProbe] found, when it is on the player. The world takes it without moving.
+		</member>
+	</members>
+	<constants>
+		<constant name="KIND_ACCELERATION" value="0" enum="Kind">
+			[member strength] in m/s per second, whatever the target weighs. A jetpack, a wind.
+		</constant>
+		<constant name="KIND_FORCE" value="1" enum="Kind">
+			[member strength] in newtons: divided by what the target weighs. A hook's pull, a magnet.
+		</constant>
+		<constant name="KIND_VELOCITY" value="2" enum="Kind">
+			The target's speed along the direction goes toward [member speed], by at most [member strength] m/s per second. A conveyor, a tractor beam, a brake.
+		</constant>
+	</constants>
+</class>

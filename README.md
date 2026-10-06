@@ -12,7 +12,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | Motions | what mods add to movement, authored as nodes, baked and run by every simulation, so a player's own are predicted |
 | Authoring | maps, characters, state machines and item bodies are made in the Godot editor and baked for the server |
 
-Milestones M1 to M96 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
+Milestones M1 to M98 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
 
 ## The manual
 
@@ -23,7 +23,7 @@ Milestones M1 to M96 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
 | [docs/looks.md](docs/looks.md) | reactions, predictions, the expression language, HUD nodes, the Cue Preview, client mods |
 | [docs/characters.md](docs/characters.md) | characters, state machines, layers and stances, aiming, animation packs |
 | [docs/items.md](docs/items.md) | held items, sockets, the inventory, grips, items in the world |
-| [docs/motions.md](docs/motions.md) | what a mod adds to movement (a dash, a double jump, flight, a jetpack, a grappling hook), predicted: `CbMotion` |
+| [docs/motions.md](docs/motions.md) | what a mod adds to movement (a dash, a double jump, flight, a jetpack, a grappling hook), predicted: `CbMotion` and its parts (impulses, forces, probes, links); what players weigh |
 | [docs/maps.md](docs/maps.md) | maps, templates and components |
 | [docs/testing.md](docs/testing.md) | the tools, the determinism checks, CI |
 | [sdk/README.md](sdk/README.md) | the Godot project a mod's look is made in |
@@ -106,8 +106,8 @@ A join that fails comes back to the menu and says why:
 - WASD moves, Shift sprints and Space jumps: the engine's own controls.
 - Everything else comes from the server's mods, bound to the keys they suggest. With the shipped mods:
   1 to 4 switch slots (hands, pistol, bat), the left mouse button fires or swings, R reloads, E picks
-  up, G throws, V dashes (twice, then they come back), X held throws a grappling hook at what is
-  under the crosshair and pulls you there, and F with empty hands spawns a prop.
+  up, G throws, V dashes (twice, then they come back), Q throws a grappling hook at what is
+  under the crosshair and pulls you there (Q again lets go), and F with empty hands spawns a prop.
   Switched off by default: the crouch (C, the `sneak` mod), the `flight` mod (T flies, Shift
   glides, and its jetpack), and the second jump in the air
   ([what is off](docs/server-mods.md#switched-off-by-default)).
@@ -127,7 +127,7 @@ A join that fails comes back to the menu and says why:
   | Both hands | an item with a grip ([Both hands on an item](docs/items.md#both-hands-on-an-item)) has the other hand on it here too: it is solved again after the arms are pinned |
   | Limits | a stance that holds an item low or behind the body (the bat's) is out of view and an offset cannot bring it in: that takes an animation made for the view. The built-in box rig is drawn whole |
 - Nothing in the shipped looks shakes the camera. (`CbReaction.shake` still does, for a mod that wants it.)
-- Q moves the third-person camera over the right shoulder, the left, and back behind.
+- Z moves the third-person camera over the right shoulder, the left, and back behind.
 - **What is under the crosshair is what a shot is aimed at, in every view.** The shot itself always
   starts at the head: aiming over cover you are hidden behind hits the cover.
 - Esc opens the in-game menu (see [The menu](#the-menu)), F1 toggles the debug HUD.
