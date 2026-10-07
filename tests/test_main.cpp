@@ -16,6 +16,7 @@
 #include "pose_tools.h"
 #include "capture.h"
 #include "camera.h"
+#include "event_news.h"
 #include "fields.h"
 #include "hitboxes.h"
 #include "detmath.h"
@@ -3188,6 +3189,201 @@ void TestWorldItems()
 	}
 }
 
+// Which mod events are news to a viewer that predicts: told by what an event is, not by where it is
+// in the ring, because the server's events of a tick arrive after the viewer's own and before it.
+void TestEventNews()
+{
+	auto record = []( uint32_t tick, uint16_t type, uint32_t a, uint32_t b = 0 ) {
+		ModEventRecord r;
+		r.tick = tick;
+		r.type = type;
+		r.netIdA = a;
+		r.netIdB = b;
+		return r;
+	};
+	const uint16_t used = 1, fired = 2, hit = 3;
+	ModEventRecord ring[kModEventHistory] = {};
+	uint32_t count = 0;
+	auto put = [&]( std::initializer_list<ModEventRecord> events ) {
+		for ( const ModEventRecord& e : events )
+		{
+			ring[count % kModEventHistory] = e;
+			count += 1;
+		}
+	};
+	auto types = [&]( const std::vector<uint32_t>& places ) {
+		std::vector<uint16_t> out;
+		for ( uint32_t at : places )
+		{
+			out.push_back( ring[at].type );
+		}
+		return out;
+	};
+	present::ModEventNews news;
+	// A new world: what is in the ring already is not news.
+	put( { record( 5, hit, 9 ) } );
+	CHECK( news.Sync( ring, count, 10, true ).empty() );
+	CHECK( news.Sync( ring, count, 10, false ).empty() );
+
+	// The viewer clicks: its own simulation has the click's event at once, alone.
+	put( { record( 20, used, 7, 70 ) } );
+	CHECK( types( news.Sync( ring, count, 20, false ) ) == std::vector<uint16_t>{ used } );
+	CHECK( news.Sync( ring, count, 21, false ).empty() );
+
+	// The server's frame for that tick arrives: the tick is simulated again, and now the commands'
+	// events come first. What the click answers with is news; the click is not, though it moved.
+	count -= 1;
+	put( { record( 20, fired, 7 ), record( 20, hit, 7, 8 ), record( 20, used, 7, 70 ) } );
+	CHECK( types( news.Sync( ring, count, 24, false ) ) == ( std::vector<uint16_t>{ fired, hit } ) );
+	CHECK( news.Sync( ring, count, 25, false ).empty() );
+
+	// A rollback that takes an event out of the ring for a moment and brings it back does not show
+	// it twice...
+	count -= 1;
+	CHECK( news.Sync( ring, count, 25, false ).empty() );
+	put( { record( 20, used, 7, 70 ) } );
+	CHECK( news.Sync( ring, count, 26, false ).empty() );
+	// ...and two that are the same on one tick (two pellets on one target) are two.
+	put( { record( 30, hit, 7, 8 ), record( 30, hit, 7, 8 ) } );
+	CHECK( news.Sync( ring, count, 30, false ).size() == 2 );
+	put( { record( 30, hit, 7, 8 ) } );
+	CHECK( news.Sync( ring, count, 30, false ).size() == 1 );
+
+	// More than the ring holds since the last look: what is still there is shown, once.
+	for ( uint32_t i = 0; i < kModEventHistory + 5; ++i )
+	{
+		put( { record( 40 + i, fired, 100 + i ) } );
+	}
+	CHECK( news.Sync( ring, count, 90, false ).size() == kModEventHistory );
+	CHECK( news.Sync( ring, count, 91, false ).empty() );
+}
+
+// Using an item: a tool is selected and then used with the use button; a consumable is used by its
+// slot's key, where it is. Either way the simulation records the kind's own event on that tick.
+void TestItemUse()
+{
+	SimConfig config = TestConfig();
+	config.slots = 3;
+	config.slotHand = 0;
+	ItemShape gun, potion, rock;
+	gun.slot = 1;
+	gun.usedEvent = 4; // "gun.used" in a schema
+	potion.slot = 2;
+	potion.use = 1; // its slot's key uses it
+	potion.usedEvent = 5;
+	rock.slot = 3; // used like a tool, and nobody asked to hear of it
+
+	Simulation sim( config );
+	sim.SetItemShapes( { gun, potion, rock } );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto intent = [&]( SlotIntent what, uint8_t a ) {
+		f.inputs[0].intent = uint8_t( what );
+		f.inputs[0].intentA = a;
+		f.inputs[0].intentSeq = uint8_t( f.inputs[0].intentSeq + 1 );
+	};
+	// The events of the tick just simulated.
+	auto events = [&]( uint16_t type ) {
+		int n = 0;
+		for ( uint32_t i = 0; i < sim.Globals().modEventCount; ++i )
+		{
+			const ModEventRecord& e = sim.Globals().modEvents[i];
+			n += e.type == type && e.tick + 1 == sim.Tick() ? 1 : 0;
+		}
+		return n;
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	for ( uint16_t kind : { uint16_t( 0 ), uint16_t( 1 ), uint16_t( 2 ) } )
+	{
+		SimCommand c;
+		c.type = CommandType::SpawnItem;
+		c.target = SlotTarget( 0 );
+		c.index = kind;
+		c.mode = kNoSocket;
+		c.value = 1;
+		f.commands.push_back( c );
+	}
+	step( 1 );
+	uint32_t gunItem = sim.SlotItem( p0, 0 );
+	uint32_t potionItem = sim.SlotItem( p0, 1 );
+	CHECK( gunItem != 0 && potionItem != 0 && sim.SlotItem( p0, 2 ) != 0 );
+
+	// The use button with empty hands: nothing.
+	f.inputs[0].buttons = BtnUse;
+	step( 1 );
+	CHECK( events( 4 ) == 0 && events( 5 ) == 0 );
+	f.inputs[0].buttons = 0;
+	step( 1 );
+
+	// The tool: its key takes it out (that is not a use), then the button uses it, once a press.
+	intent( SlotIntent::Select, 0 );
+	step( 1 );
+	CHECK( sim.SelectedSlot( p0 ) == 0 && events( 4 ) == 0 );
+	f.inputs[0].buttons = BtnUse;
+	step( 1 );
+	CHECK( events( 4 ) == 1 );
+	for ( uint32_t i = 0; i < sim.Globals().modEventCount; ++i )
+	{
+		const ModEventRecord& e = sim.Globals().modEvents[i];
+		if ( e.type == 4 && e.tick + 1 == sim.Tick() )
+		{
+			// At the player, with the item as the other entity.
+			CHECK( e.netIdA == p0 && e.netIdB == gunItem );
+		}
+	}
+	step( 5 ); // held: still one use
+	CHECK( events( 4 ) == 0 );
+	f.inputs[0].buttons = 0;
+	step( 1 );
+
+	// The consumable: its slot's key uses it where it is. The gun stays in the hand.
+	intent( SlotIntent::Select, 1 );
+	step( 1 );
+	CHECK( events( 5 ) == 1 && sim.SelectedSlot( p0 ) == 0 && sim.HeldItemOf( p0, 0 ) == gunItem );
+	CHECK( sim.FindEntity( potionItem ).get<HeldItem>().stowed == 1 );
+	// The same input again is the same intent: not used twice.
+	step( 3 );
+	CHECK( events( 5 ) == 0 );
+	// And the use button never uses it: it is the gun that is in the hand.
+	f.inputs[0].buttons = BtnUse;
+	step( 1 );
+	CHECK( events( 5 ) == 0 && events( 4 ) == 1 );
+	f.inputs[0].buttons = 0;
+	step( 1 );
+
+	// A kind nobody listens for is used all the same (its mod is told), and records nothing.
+	intent( SlotIntent::Select, 2 );
+	step( 1 );
+	uint32_t before = sim.Globals().modEventCount;
+	f.inputs[0].buttons = BtnUse;
+	step( 1 );
+	CHECK( sim.SelectedSlot( p0 ) == 2 && sim.Globals().modEventCount <= before + 0u + ( events( 4 ) + events( 5 ) == 0 ? 0u : 1u ) && events( 4 ) == 0 &&
+		   events( 5 ) == 0 );
+	f.inputs[0].buttons = 0;
+	step( 1 );
+
+	// A frozen player uses nothing.
+	SimCommand freeze;
+	freeze.type = CommandType::Freeze;
+	freeze.target = SlotTarget( 0 );
+	freeze.mode = 1;
+	f.commands.push_back( freeze );
+	step( 1 );
+	intent( SlotIntent::Select, 1 );
+	step( 1 );
+	CHECK( events( 5 ) == 0 );
+}
+
 // Slots: what a player carries, in numbered places. Which slot is selected, and moving and dropping,
 // are in the player's input, so every simulation carries them out: here one simulation, its
 // snapshot, and a second run of the same inputs.
@@ -5568,6 +5764,8 @@ int main( int argc, char** argv )
 		{ "anim_graph", TestAnimGraph },
 		{ "held_items", TestHeldItems },
 		{ "slots", TestSlots },
+		{ "item_use", TestItemUse },
+		{ "event_news", TestEventNews },
 		{ "world_items", TestWorldItems },
 		{ "stowed_items", TestStowedItems },
 		{ "attack_resolve", TestAttackResolve },

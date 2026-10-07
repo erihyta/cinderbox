@@ -73,6 +73,8 @@ using Clock = std::chrono::steady_clock;
 
 // What a test script calls the number keys: bits no mod's action has (the harness checks), which
 // Bot::Sample turns into slot intents.
+// And the use button (the left mouse button), which is the engine's too.
+constexpr uint16_t kKeyUse = 1 << 11;
 constexpr uint16_t kKeySlot1 = 1 << 12;
 constexpr uint16_t kKeySlot2 = 1 << 13;
 constexpr uint16_t kKeySlot3 = 1 << 14;
@@ -107,7 +109,11 @@ struct Bot
 				slotPresses = uint8_t( slotPresses + 1 );
 			}
 			slotKeyDown = key;
-			in.actions = uint16_t( in.actions & ~kSlotKeys );
+			if ( in.actions & kKeyUse )
+			{
+				in.buttons |= BtnUse;
+			}
+			in.actions = uint16_t( in.actions & ~( kSlotKeys | kKeyUse ) );
 			if ( slotKey != 0 )
 			{
 				uint8_t slot = slotKey & kKeySlot1 ? 0 : slotKey & kKeySlot2 ? 1 : slotKey & kKeySlot3 ? 2 : kNoSlot;
@@ -615,8 +621,8 @@ void TestModsSession()
 	const ModSchema& schema = h.server.Schema();
 	CHECK( schema.FindField( "combat.health" ) != nullptr );
 	CHECK( schema.FindEvent( "pistol.fired" ) >= 0 );
-	CHECK( schema.ActionMask( "fire" ) != 0 );
-	uint16_t fire = schema.ActionMask( "fire" );
+	CHECK( kKeyUse != 0 );
+	uint16_t fire = kKeyUse;
 	uint16_t pistol = kKeySlot1;
 	uint16_t spawn = schema.ActionMask( "spawn_prop" );
 
@@ -1437,7 +1443,7 @@ void TestHeadshot()
 {
 	Harness h( 47801 );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t fire = kKeyUse;
 	uint16_t pistol = kKeySlot1;
 	int hitEvent = schema.FindEvent( "pistol.hit" );
 
@@ -1533,7 +1539,7 @@ void TestCombat()
 {
 	Harness h( 47812, {}, {}, { { "combat.max_health", "60" }, { "combat.respawn_seconds", "1" } } );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t fire = kKeyUse;
 	uint16_t pistol = kKeySlot1;
 	int hurtEvent = schema.FindEvent( "combat.hurt" );
 	int killedEvent = schema.FindEvent( "combat.killed" );
@@ -1693,7 +1699,7 @@ void TestRifle()
 {
 	Harness h( 47823 );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t fire = kKeyUse;
 	uint16_t rifle = kKeySlot3;
 	uint16_t pistol = kKeySlot1;
 	int rifleFired = schema.FindEvent( "rifle.fired" );
@@ -1837,7 +1843,7 @@ void TestMelee()
 {
 	Harness h( 47802 );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t fire = kKeyUse;
 	uint16_t bat = kKeySlot2;
 	uint16_t pistol = kKeySlot1;
 	uint16_t hands = kKeyHands;
@@ -1962,7 +1968,7 @@ void TestMeleePitch()
 {
 	Harness h( 47803 );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t fire = kKeyUse;
 	uint16_t bat = kKeySlot2;
 	int healthSlot = schema.FindField( "combat.health" )->slot;
 	auto pitchOf = std::make_shared<int16_t>( int16_t( 13000 ) ); // 71 degrees up
@@ -2021,7 +2027,7 @@ void TestAimViews()
 {
 	Harness h( 47804 );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t fire = kKeyUse;
 	uint16_t pistol = kKeySlot1;
 	int healthSlot = schema.FindField( "combat.health" )->slot;
 	// Spawn points are 1.5 m apart: the line from the shoulder turns by asin( 0.45 / 1.5 ) to meet it.
@@ -2077,7 +2083,7 @@ void TestDeathmatch()
 	Harness h( 47799, {}, {}, { { "deathmatch.kills", "2" }, { "deathmatch.pause_seconds", "2" } } );
 	const ModSchema& schema = h.server.Schema();
 	CHECK( schema.FindField( "deathmatch.score" ) != nullptr );
-	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t fire = kKeyUse;
 	uint16_t pistol = kKeySlot1;
 
 	// The same duel as mods_session: slot 0 shoots slot 1, which stands still.
@@ -2367,7 +2373,7 @@ void TestSprintSwing()
 	} );
 	CHECK( mannequin != nullptr );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t fire = schema.ActionMask( "fire" );
+	uint16_t fire = kKeyUse;
 	uint16_t bat = kKeySlot2;
 	int swingEvent = schema.FindEvent( "melee.swing" );
 	int strikeEvent = schema.FindEvent( "melee.strike" );

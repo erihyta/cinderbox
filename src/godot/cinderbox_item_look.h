@@ -72,6 +72,34 @@ public:
 		return m_properties;
 	}
 
+	// In a player's slots (sim/types.h). How it is used:
+	//   USE_SELECTED   its slot's key takes it out; then the use button uses it. A tool, a weapon.
+	//   USE_SLOT_KEY   its slot's key uses it where it is, and nothing changes hands. A
+	//                  consumable, an ability.
+	// And the slot it goes to when a player comes to carry one (1 is the first; what is there
+	// makes room), or 0 for the first free one.
+	enum Use
+	{
+		USE_SELECTED = 0,
+		USE_SLOT_KEY = 1,
+	};
+	void set_use( int v )
+	{
+		m_use = v;
+	}
+	int get_use() const
+	{
+		return m_use;
+	}
+	void set_slot( int v )
+	{
+		m_slot = v;
+	}
+	int get_slot() const
+	{
+		return m_slot;
+	}
+
 	// Where the hands hold it: two markers in the scene (any Node3D; a Marker3D shows as a cross).
 	//
 	//   The carrying hand   the item is carried here: this point is in the hand's socket (whichever
@@ -144,6 +172,8 @@ private:
 	double m_mass = 1.0;
 	godot::Vector3 m_viewOffset;
 	godot::Dictionary m_properties;
+	int m_use = USE_SELECTED;
+	int m_slot = 0;
 	godot::NodePath m_carryGrip;
 	int m_otherHand = OTHER_FREE;
 	godot::NodePath m_otherGrip;
@@ -207,3 +237,4 @@ protected:
 } // namespace cb::gd
 
 VARIANT_ENUM_CAST( cb::gd::CbItem::OtherHand );
+VARIANT_ENUM_CAST( cb::gd::CbItem::Use );

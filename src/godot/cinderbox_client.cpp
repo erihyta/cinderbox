@@ -117,7 +117,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "control", "name", "value" ), &CinderboxClient::control );
 	ClassDB::bind_method( D_METHOD( "takes_input" ), &CinderboxClient::takes_input );
 	ClassDB::bind_method( D_METHOD( "send_intent", "kind", "a", "b" ), &CinderboxClient::send_intent );
-	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "actions", "view" ),
+	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "use", "actions", "view" ),
 						  &CinderboxClient::set_input, DEFVAL( 0 ) );
 	ClassDB::bind_method( D_METHOD( "get_actions" ), &CinderboxClient::get_actions );
 	ClassDB::bind_method( D_METHOD( "get_mod_names" ), &CinderboxClient::get_mod_names );
@@ -293,7 +293,7 @@ void CinderboxClient::send_intent( int64_t kind, int64_t a, int64_t b )
 }
 
 void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double camera_pitch, bool jump, bool sprint,
-								 int64_t actions, int64_t view )
+								 bool use, int64_t actions, int64_t view )
 {
 	if ( takes_input() == false )
 	{
@@ -306,7 +306,7 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 	in.moveRight = int8_t( std::clamp( int( std::lround( move.x * 127.0 ) ), -127, 127 ) );
 	in.moveForward = int8_t( std::clamp( int( std::lround( move.y * 127.0 ) ), -127, 127 ) );
 	in.cameraYaw = detmath::RadiansToYaw( float( camera_yaw ) + detmath::kPi );
-	in.buttons = uint8_t( ( jump ? BtnJump : 0 ) | ( sprint ? BtnSprint : 0 ) );
+	in.buttons = uint8_t( ( jump ? BtnJump : 0 ) | ( sprint ? BtnSprint : 0 ) | ( use ? BtnUse : 0 ) );
 	// Pitch: a positive Godot rotation.x looks up, which is the simulation's convention too.
 	double pitchTurns = std::clamp( camera_pitch / ( 2.0 * detmath::kPi ), -0.24, 0.24 );
 	in.cameraPitch = int16_t( std::clamp( int( std::lround( pitchTurns * 65536.0 ) ), -int( kMaxCameraPitch ), int( kMaxCameraPitch ) ) );
@@ -340,6 +340,20 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 	uint16_t pressed = uint16_t( in.actions & ~m_lastActions );
 	m_lastActions = in.actions;
 	AnnouncePresses( pressed );
+	// The use button is the engine's, and a look predicts it like an action: by the name "use".
+	if ( use && m_lastUse == false )
+	{
+		emit_signal( "action_pressed", String( "use" ) );
+		if ( m_mirror )
+		{
+			Director()->press( String( "use" ) );
+		}
+	}
+	else if ( use && m_mirror )
+	{
+		Director()->hold( String( "use" ) );
+	}
+	m_lastUse = use;
 	// What stays down keeps predicting where a look says so (CbPrediction.while_held: automatic fire).
 	if ( m_mirror )
 	{

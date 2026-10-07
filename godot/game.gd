@@ -539,6 +539,7 @@ func _send_input(delta: float) -> void:
 	var jump := false
 	var sprint := false
 	var actions := 0
+	var use := false
 	if autoplay > 0.0:
 		# Scripted player for unattended runs: props first, then the pistol, then the bat (if the
 		# server runs the melee mod).
@@ -557,12 +558,10 @@ func _send_input(delta: float) -> void:
 				actions |= _action_bit("spawn_prop")
 		elif elapsed < autoplay * 0.7:
 			_auto_select(0)
-			if auto_rng.randf() < delta * 3.0:
-				actions |= _action_bit("fire")
+			use = auto_rng.randf() < delta * 3.0
 		else:
 			_auto_select(1)
-			if auto_rng.randf() < delta * 2.0:
-				actions |= _action_bit("fire")
+			use = auto_rng.randf() < delta * 2.0
 		# Hold the scores key at the end (a mod's CbShowKey names it), so screenshots show them too.
 		if elapsed > autoplay * 0.8 and InputMap.has_action("cb_scores") and not Input.is_action_pressed("cb_scores"):
 			Input.action_press("cb_scores")
@@ -574,7 +573,9 @@ func _send_input(delta: float) -> void:
 		# Actions only count while the game has the mouse, so the click that captures it is not a shot.
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			actions = _action_bits()
-	client.set_input(move, yaw, pitch, jump, sprint, actions, _view())
+			# The use button is the engine's: what is in the hand is used (what that does is its mod's).
+			use = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	client.set_input(move, yaw, pitch, jump, sprint, use, actions, _view())
 
 
 ## Which camera the player looks through, as the server is told (ViewMode): 0 behind, 1 first

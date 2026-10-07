@@ -66,7 +66,6 @@ public:
 	void Declare( Declarations& declare ) override
 	{
 		// Shared with the pistol and the bat: whichever is out answers.
-		m_fire = declare.Action( "fire", "MouseLeft" );
 		m_reload = declare.Action( "reload", "R" );
 
 		m_ammo = declare.Field( "rifle.ammo", BoardType::Int );
@@ -247,7 +246,7 @@ private:
 			}
 		}
 
-		bool trigger = ctx.Held( g.slot, m_fire );
+		bool trigger = ctx.Using( g.slot, m_gun );
 		if ( trigger == false )
 		{
 			g.wentDry = false;
@@ -342,7 +341,6 @@ private:
 		ctx.Emit( m_hit, shooterTarget, hit.netId, 0, hit.point, hit.normal );
 	}
 
-	ActionHandle m_fire;
 	ActionHandle m_reload;
 	FieldHandle m_ammo;
 	FieldHandle m_reloading;

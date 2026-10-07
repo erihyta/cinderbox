@@ -27,6 +27,7 @@ size = Vector3(0.01, 0.012, 0.012)
 [node name="Pistol" type="CbItem" unique_id=1499270042]
 kind = "pistol.gun"
 display_name = "Pistol"
+slot = 1
 carry_grip = NodePath("Carry")
 other_hand = 3
 mass = 0.9

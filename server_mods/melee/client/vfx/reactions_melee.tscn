@@ -8,7 +8,7 @@
 [node name="MeleeReactions" type="Node3D"]
 
 [node name="PredictSwing" type="CbPrediction" parent="."]
-action = "fire"
+action = "use"
 cue = "melee.swing"
 conditions = PackedStringArray("melee.bat")
 cooldown = 0.58

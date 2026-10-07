@@ -148,6 +148,7 @@ size = Vector2(0.04, 0.04)
 [node name="Bat" type="CbItem" unique_id=1599722703]
 kind = "melee.bat"
 display_name = "Bat"
+slot = 2
 carry_grip = NodePath("Carry")
 other_hand = 3
 mass = 1.1

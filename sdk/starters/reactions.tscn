@@ -12,7 +12,7 @@
 [node name="MODNAMEReactions" type="Node3D"]
 
 [node name="PredictUse" type="CbPrediction" parent="."]
-action = "fire"
+action = "use"
 cue = "MODNAME.used"
 conditions = PackedStringArray("MODNAME.item", "!combat.dead")
 cooldown = 0.2

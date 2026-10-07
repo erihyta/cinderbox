@@ -4,10 +4,10 @@
 //          [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC] [--chaotic] [--shoot]
 //          [--melee] [--sneak]
 //
-// --shoot makes full bots take out the pistol (the server's "slot_2" action) and fire at the
+// --shoot makes full bots take out the pistol (their first slot) and use it on the
 // nearest other player a couple of times a second, aiming from their own predicted world. It
 // exercises the pistol mod, deaths and ragdolls under load; lite bots cannot aim and keep moving.
-// --melee does the same with the bat ("slot_3"), swinging once the nearest player is in reach, and
+// --melee does the same with the bat (the second slot), swinging once the nearest player is in reach, and
 // swaps to the pistol for a second every five (so the bat item comes and goes).
 // --sneak makes full bots hold the "crouch" action two seconds in every seven (the sneak mod's
 // animation pack swapped in and out).
@@ -77,6 +77,9 @@ struct Bot
 	bool sneak = false;
 	uint32_t shotTick = 0;
 
+	// The slot it has asked for, and how many times it has asked (PlayerInput::intentSeq).
+	uint8_t slot = kNoSlot;
+	uint8_t intents = 0;
 	// Per-report accumulators (owned by the bot's thread).
 	double simMsSum = 0.0;
 	uint64_t frames = 0;
@@ -85,12 +88,20 @@ struct Bot
 // Take out the pistol and fire at the nearest living player, aiming in our own predicted world.
 PlayerInput Aim( Bot& bot, PlayerInput in, uint32_t tick )
 {
-	const ModSchema& schema = bot.client->Schema();
-	in.actions = schema.ActionMask( bot.melee ? "slot_3" : "slot_2" );
-	if ( bot.melee && ( ( tick + bot.shotTick * 40 ) / 60 ) % 5 == 4 )
+	// The slot it wants out: the pistol's (0) or the bat's (1); every five seconds, a second with the
+	// pistol, so the bat is put away and taken out again. One intent each time the wish changes.
+	const bool other = bot.melee && ( ( tick + bot.shotTick * 40 ) / 60 ) % 5 == 4;
+	const uint8_t wanted = bot.melee && other == false ? 1 : 0;
+	if ( wanted != bot.slot )
 	{
-		// Every five seconds, a second with the pistol: the bat is put away and taken out again.
-		in.actions = schema.ActionMask( "slot_2" );
+		bot.slot = wanted;
+		bot.intents = uint8_t( bot.intents + 1 );
+	}
+	in.intent = uint8_t( SlotIntent::Select );
+	in.intentA = bot.slot;
+	in.intentSeq = bot.intents;
+	if ( other )
+	{
 		return in;
 	}
 	RollbackSession* session = bot.client->Session();
@@ -141,7 +152,7 @@ PlayerInput Aim( Bot& bot, PlayerInput in, uint32_t tick )
 	// Held for a few ticks like a real click, twice a second (the bat only once in reach).
 	if ( ( tick + bot.shotTick ) % 30 < 3 && ( bot.melee == false || best < 2.0f ) )
 	{
-		in.actions |= schema.ActionMask( "fire" );
+		in.buttons |= BtnUse;
 	}
 	return in;
 }

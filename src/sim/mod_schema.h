@@ -117,6 +117,12 @@ struct ItemShape
 	// not the selected one (255: out of sight).
 	uint8_t slot = 0;
 	uint8_t holster = 255;
+	// How it is used: 0 it is selected (its slot's key takes it out), then the use button uses it:
+	// a tool. 1 its slot's key uses it where it is, and the slot is not selected: a consumable, an
+	// ability. Either way the simulation records `usedEvent` (a mod event, schema order; 0xFFFF:
+	// none) at the player, with the item as the other entity.
+	uint8_t use = 0;
+	uint16_t usedEvent = 0xFFFF;
 
 	bool operator==( const ItemShape& ) const = default;
 };

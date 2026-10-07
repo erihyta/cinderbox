@@ -47,6 +47,14 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_other_grip", "value" ), &CbItem::set_other_grip );
 	ClassDB::bind_method( D_METHOD( "get_other_grip" ), &CbItem::get_other_grip );
 	ClassDB::bind_static_method( "CbItem", D_METHOD( "carry_frame_under", "root" ), &CbItem::carry_frame_under );
+	ClassDB::bind_method( D_METHOD( "set_use", "value" ), &CbItem::set_use );
+	ClassDB::bind_method( D_METHOD( "get_use" ), &CbItem::get_use );
+	ClassDB::bind_method( D_METHOD( "set_slot", "value" ), &CbItem::set_slot );
+	ClassDB::bind_method( D_METHOD( "get_slot" ), &CbItem::get_slot );
+	ADD_GROUP( "Slots", "" );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "use", PROPERTY_HINT_ENUM, "Select it then the use button,Its slot key uses it" ), "set_use",
+				  "get_use" );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "slot", PROPERTY_HINT_RANGE, "0,36,1" ), "set_slot", "get_slot" );
 	ADD_GROUP( "Hands", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "carry_grip", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D" ), "set_carry_grip",
 				  "get_carry_grip" );
@@ -61,6 +69,8 @@ void CbItem::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::CALLABLE, "bake_button", PROPERTY_HINT_TOOL_BUTTON, "Bake item,Save", PROPERTY_USAGE_EDITOR ), "",
 				  "get_bake_button" );
 
+	BIND_ENUM_CONSTANT( USE_SELECTED );
+	BIND_ENUM_CONSTANT( USE_SLOT_KEY );
 	BIND_ENUM_CONSTANT( OTHER_FREE );
 	BIND_ENUM_CONSTANT( OTHER_AT_MARKER );
 	BIND_ENUM_CONSTANT( OTHER_AT_MARKER_TURNED );
@@ -253,13 +263,23 @@ Dictionary CbItem::bake() const
 	{
 		text += vformat( "turn %.5f %.5f %.5f %.5f\n", turn.x, turn.y, turn.z, turn.w );
 	}
-	// Sorted, so the same scene always bakes the same file (the item's hash depends on it).
-	Array names = m_properties.keys();
+	// Sorted, so the same scene always bakes the same file (the item's hash depends on it). How it
+	// is used and where it goes are properties the engine reads; said here, they are the item's.
+	Dictionary all = m_properties.duplicate();
+	if ( m_use == USE_SLOT_KEY )
+	{
+		all["use"] = 1;
+	}
+	if ( m_slot > 0 )
+	{
+		all["slot"] = m_slot;
+	}
+	Array names = all.keys();
 	names.sort();
 	for ( int i = 0; i < names.size(); ++i )
 	{
 		String name = String( names[i] ).strip_edges();
-		Variant value = m_properties[names[i]];
+		Variant value = all[names[i]];
 		bool number = value.get_type() == Variant::FLOAT || value.get_type() == Variant::INT;
 		if ( name.is_empty() || name.contains( " " ) || name.contains( "\t" ) || number == false || std::isfinite( double( value ) ) == false )
 		{

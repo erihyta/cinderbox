@@ -336,24 +336,16 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 	SyncModEvents( frame, reset );
 }
 
-// The same shape as impacts: a ring and a count that only grows.
+// What is news is told by what an event is, not by its place in the ring (event_news.h).
 void Mirror::SyncModEvents( const PresentationFrame& frame, bool reset )
 {
-	if ( reset || frame.modEventCount < m_modEventCount )
-	{
-		m_modEventCount = frame.modEventCount;
-		return;
-	}
 	if ( frame.modEvents.size() < kModEventHistory )
 	{
 		return;
 	}
-
-	uint32_t missed = frame.modEventCount - m_modEventCount;
-	uint32_t replay = std::min( missed, kModEventHistory );
-	for ( uint32_t i = 0; i < replay; ++i )
+	for ( uint32_t at : m_modEventNews.Sync( frame.modEvents.data(), frame.modEventCount, frame.tick, reset ) )
 	{
-		const ModEventRecord& record = frame.modEvents[( frame.modEventCount - replay + i ) % kModEventHistory];
+		const ModEventRecord& record = frame.modEvents[at];
 		Event event;
 		event.type = EventType::Mod;
 		event.netId = record.netIdA;
@@ -370,7 +362,6 @@ void Mirror::SyncModEvents( const PresentationFrame& frame, bool reset )
 		}
 		m_events.push_back( event );
 	}
-	m_modEventCount = frame.modEventCount;
 }
 
 flecs::entity Mirror::VisualOf( uint32_t netId ) const
