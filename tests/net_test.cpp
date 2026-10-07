@@ -1012,12 +1012,8 @@ void TestInventory()
 	uint16_t drop = schema.ActionMask( "drop" );
 	int gunKind = schema.FindItemKind( "pistol.gun" );
 	int batKind = schema.FindItemKind( "melee.bat" );
-	const BoardField* slotField = schema.FindField( "inventory.slot" );
-	const BoardField* slot2 = schema.FindField( "inventory.item_1" ); // the pistol's
-	const BoardField* slot3 = schema.FindField( "inventory.item_2" ); // the bat's
-	CHECK( gunSlot != 0 && batSlot != 0 && pickup != 0 && drop != 0 && gunKind >= 0 && batKind >= 0 && slotField != nullptr );
-	CHECK( slot2 != nullptr && slot3 != nullptr );
-	if ( gunKind < 0 || batKind < 0 || slotField == nullptr || slot2 == nullptr || slot3 == nullptr )
+	CHECK( gunSlot != 0 && batSlot != 0 && pickup != 0 && drop != 0 && gunKind >= 0 && batKind >= 0 );
+	if ( gunKind < 0 || batKind < 0 )
 	{
 		return;
 	}
@@ -1133,9 +1129,10 @@ void TestInventory()
 			batOut = c.carried == 4 && c.stowed == 3;
 			ownBat = inHand;
 		}
-		// The board names what is in each slot, for the HUD: the life's own, then the picked-up bat, then nothing.
-		uint32_t in2 = uint32_t( server.BoardValue( me, slot2->slot ) );
-		uint32_t in3 = uint32_t( server.BoardValue( me, slot3->slot ) );
+		// What is in each slot is the simulation's to say (the look reads it from there): the life's
+		// own, then the picked-up bat, then nothing.
+		uint32_t in2 = server.SlotItem( me, 0 ); // the pistol's slot
+		uint32_t in3 = server.SlotItem( me, 1 ); // the bat's
 		boardSaysStart |= tick > 130 && tick < 150 && ownBat != 0 && in3 == ownBat && kindOf( in2 ) == gunKind;
 		boardSaysSwap |= reached && tick < 600 && in3 == lyingBat && kindOf( in2 ) == gunKind;
 		boardSaysEmpty |= tick > 700 && in3 == 0 && kindOf( in2 ) == gunKind;
@@ -1156,7 +1153,7 @@ void TestInventory()
 		backInHand |= tick > 585 && tick < 600 && inHand == lyingBat && reached;
 		thrown |= tick > 610 && tick < 630 && inHand == 0 && c.carried == 3 && c.lying == 5;
 		gunAfterThrow |= tick > 645 && tick < 660 && kindOf( inHand ) == gunKind;
-		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 3 && server.BoardValue( me, slotField->slot ) == 2; // the bat's slot is selected, and empty
+		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 3 && server.SelectedSlot( me ) == 1; // the bat's slot is selected, and empty
 	} );
 	h.Report();
 	std::printf( "    starts stowed %d, bat out %d, pistol out %d, dropped by switching %d\n", int( startsStowed ), int( batOut ), int( gunOut ),
@@ -1170,7 +1167,7 @@ void TestInventory()
 	CHECK( reached && swapped && gunKept );
 	CHECK( awayAndKept && backInHand );
 	CHECK( thrown && gunAfterThrow && noSecondBat );
-	std::printf( "    the board's slots: at the start %d, after the swap %d, empty after the throw %d\n", int( boardSaysStart ),
+	std::printf( "    the slots: at the start %d, after the swap %d, empty after the throw %d\n", int( boardSaysStart ),
 				 int( boardSaysSwap ), int( boardSaysEmpty ) );
 	CHECK( boardSaysStart && boardSaysSwap && boardSaysEmpty );
 	CHECK( startTotal == 12 && leastTotal == 12 && mostTotal == 12 ); // four lying, four per player; none made, none lost

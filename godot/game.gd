@@ -187,7 +187,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			MOUSE_BUTTON_WHEEL_DOWN:
 				distance = min(distance + 0.5, 20.0)
 			MOUSE_BUTTON_LEFT:
-				if _joined and not menu.is_open():
+				if _joined and not menu.is_open() and not client.wants_cursor():
 					Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_QUOTELEFT:
 		# The key left of 1, whatever the layout prints on it.
@@ -195,7 +195,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_Z and _replay == "":
 		shoulder = 1 if shoulder == 0 else (-1 if shoulder > 0 else 0)
 	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode >= KEY_1 and event.physical_keycode <= KEY_9 \
-			and _replay == "" and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			and _replay == "" and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or _ui_cursor):
 		# The slots are the engine's: a number key selects one (again: empty hands). It goes out with
 		# the input, and the player's own simulation carries it out at once.
 		client.send_intent(INTENT_SELECT, event.physical_keycode - KEY_1, 0)
@@ -509,8 +509,49 @@ func _event_for_key(key: String) -> InputEvent:
 	return ev
 
 
+## The unattended player's visit to the inventory screen: what it has done of it so far.
+var _auto_bag_step := 0
+
+
+func _auto_bag(since: float) -> void:
+	if not InputMap.has_action("cb_inventory"):
+		return
+	var due := [0.0, 0.6, 1.2, 2.6]
+	if _auto_bag_step >= due.size() or since < due[_auto_bag_step]:
+		return
+	match _auto_bag_step:
+		0, 3:
+			# The key itself, as a keyboard sends it (down, then up): it switches the screen.
+			for bound in InputMap.action_get_events("cb_inventory"):
+				for pressed in [true, false]:
+					var key := (bound as InputEvent).duplicate() as InputEventKey
+					if key != null:
+						key.pressed = pressed
+						Input.parse_input_event(key)
+			print("autoplay: pressed the inventory key")
+		1, 2:
+			var cells := []
+			for click in get_tree().root.find_children("*", "CbClick", true, false):
+				var cell := click.get_parent() as Control
+				if cell != null and cell.is_visible_in_tree() and not cells.has(cell):
+					cells.append(cell)
+			var index := 0 if _auto_bag_step == 1 else 2
+			if index < cells.size():
+				for pressed in [true, false]:
+					var event := InputEventMouseButton.new()
+					event.button_index = MOUSE_BUTTON_LEFT
+					event.pressed = pressed
+					event.position = (cells[index] as Control).get_global_rect().get_center()
+					event.global_position = event.position
+					Input.parse_input_event(event)
+			print("autoplay: clicked slot ", index + 1, " of ", cells.size(), " in the inventory screen")
+	_auto_bag_step += 1
+
+
 ## The unattended player takes a slot's item out, once.
 var _auto_slot := -1
+## A screen of a mod's (an inventory) has the mouse: the cursor is free and the game does not use it.
+var _ui_cursor := false
 var _auto_hooks := 0
 
 
@@ -539,6 +580,12 @@ func _send_input(delta: float) -> void:
 	var move := Vector2.ZERO
 	var jump := false
 	var sprint := false
+	# A mod's screen that needs the mouse (a CbShowKey with cursor) takes it, and gives it back.
+	var wants: bool = client.wants_cursor()
+	if wants != _ui_cursor:
+		_ui_cursor = wants
+		if _joined and not menu.is_open():
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if wants else Input.MOUSE_MODE_CAPTURED
 	var actions := 0
 	var use := false
 	if autoplay > 0.0:
@@ -565,6 +612,9 @@ func _send_input(delta: float) -> void:
 		else:
 			_auto_select(1)
 			use = auto_rng.randf() < delta * 2.0
+		# The inventory screen, if a mod brings one (a CbShowKey named "inventory"): opened in the
+		# middle of the run, its first slot clicked and then its third (they trade places), closed.
+		_auto_bag(elapsed - autoplay * 0.45)
 		# Hold the scores key at the end (a mod's CbShowKey names it), so screenshots show them too.
 		if elapsed > autoplay * 0.8 and InputMap.has_action("cb_scores") and not Input.is_action_pressed("cb_scores"):
 			Input.action_press("cb_scores")

@@ -8,6 +8,7 @@
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/input.hpp>
 #include <godot_cpp/classes/input_event_key.hpp>
+#include <godot_cpp/classes/input_event_mouse_button.hpp>
 #include <godot_cpp/classes/input_map.hpp>
 #include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/scene_tree.hpp>
@@ -48,6 +49,12 @@ const StringName& RankMeta()
 	return name;
 }
 
+const StringName& NamesMeta()
+{
+	static const StringName name = "cb_names";
+	return name;
+}
+
 } // namespace
 
 CinderboxClient* FindClient( Node* from, ObjectID& cache )
@@ -83,6 +90,18 @@ int64_t SubjectOf( const Node* node, const CinderboxClient* client, int* rank )
 		*rank = 0;
 	}
 	return client != nullptr ? client->get_local_net_id() : 0;
+}
+
+Dictionary RowNames( const Node* node )
+{
+	for ( const Node* at = node; at != nullptr; at = at->get_parent() )
+	{
+		if ( at->has_meta( SubjectMeta() ) )
+		{
+			return at->get_meta( NamesMeta(), Dictionary() );
+		}
+	}
+	return Dictionary();
 }
 
 // --- CbPromptLabel ---------------------------------------------------------------------------------
@@ -245,7 +264,8 @@ void CbFieldLabel::_process( double )
 	CinderboxClient* client = FindClient( this, m_client );
 	int rank = 0;
 	int64_t subject = SubjectOf( this, client, &rank );
-	bool show = client != nullptr && client->has_local_player() && client->check_conditions( subject, m_conditions );
+	const Dictionary names = RowNames( this );
+	bool show = client != nullptr && client->has_local_player() && client->CheckWith( subject, m_conditions, names );
 	String format = m_format;
 	if ( show && m_choiceField.is_empty() == false )
 	{
@@ -254,7 +274,7 @@ void CbFieldLabel::_process( double )
 		Variant picked = client->get_field( subject, m_choiceField );
 		if ( picked.get_type() == Variant::NIL )
 		{
-			picked = client->evaluate( subject, m_choiceField );
+			picked = client->EvaluateWith( subject, m_choiceField, names );
 		}
 		int64_t line = picked.get_type() == Variant::NIL ? -1 : int64_t( double( picked ) );
 		String choice = line >= 0 && line < m_choices.size() ? m_choices[line] : String();
@@ -264,7 +284,7 @@ void CbFieldLabel::_process( double )
 	set_visible( show );
 	if ( show && format.is_empty() == false )
 	{
-		set_text( client->format_fields( subject, format.replace( "{rank}", String::num_int64( rank ) ) ) );
+		set_text( client->FormatWith( subject, format.replace( "{rank}", String::num_int64( rank ) ), names ) );
 	}
 }
 
@@ -308,7 +328,7 @@ void CbFieldBinding::_process( double )
 	int64_t subject = SubjectOf( this, client );
 	if ( m_conditions.is_empty() == false )
 	{
-		bool holds = client->has_local_player() && client->check_conditions( subject, m_conditions );
+		bool holds = client->has_local_player() && client->CheckWith( subject, m_conditions, RowNames( this ) );
 		Variant visible = target->get( "visible" );
 		if ( visible.get_type() == Variant::BOOL && bool( visible ) != holds )
 		{
@@ -327,7 +347,7 @@ void CbFieldBinding::_process( double )
 	Variant value = client->get_field( subject, m_field );
 	if ( value.get_type() == Variant::NIL )
 	{
-		value = client->evaluate( subject, m_field );
+		value = client->EvaluateWith( subject, m_field, RowNames( this ) );
 	}
 	if ( value.get_type() == Variant::NIL )
 	{
@@ -459,7 +479,7 @@ void CbList::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_conditions" ), &CbList::get_conditions );
 	ClassDB::bind_method( D_METHOD( "get_entries" ), &CbList::get_entries );
 	ADD_GROUP( "Rows", "" );
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "of", PROPERTY_HINT_ENUM, "Players,Items,Items its subject holds" ), "set_of", "get_of" );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "of", PROPERTY_HINT_ENUM, "Players,Items,Items its subject holds,Slots of its subject" ), "set_of", "get_of" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "item_kind", PROPERTY_HINT_PLACEHOLDER_TEXT, "pistol.gun (empty: any)" ), "set_item_kind",
 				  "get_item_kind" );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "where" ), "set_where", "get_where" );
@@ -473,6 +493,7 @@ void CbList::_bind_methods()
 	BIND_ENUM_CONSTANT( OF_PLAYERS );
 	BIND_ENUM_CONSTANT( OF_ITEMS );
 	BIND_ENUM_CONSTANT( OF_HELD_ITEMS );
+	BIND_ENUM_CONSTANT( OF_SLOTS );
 }
 
 Control* CbList::Template() const
@@ -527,7 +548,8 @@ void CbList::_process( double )
 	CinderboxClient* client = FindClient( this, m_client );
 	Control* pattern = Template();
 	int64_t subject = SubjectOf( get_parent(), client );
-	bool show = client != nullptr && pattern != nullptr && client->has_local_player() && client->check_conditions( subject, m_conditions );
+	bool show = client != nullptr && pattern != nullptr && client->has_local_player() &&
+				client->CheckWith( subject, m_conditions, RowNames( get_parent() ) );
 	set_visible( show );
 	m_entries.clear();
 	if ( show == false )
@@ -553,14 +575,36 @@ void CbList::_process( double )
 	{
 		int64_t id;
 		double key;
+		Dictionary names;
 	};
 	std::vector<Entry> order;
+	std::vector<Dictionary> rowNames( size_t( found.size() ) );
+	if ( m_of == OF_SLOTS )
+	{
+		// A row per slot of the subject's, empty ones too, in the slots' order. What a row is for is
+		// the item in the slot (nothing, for an empty one); the slot itself is in the row's names.
+		const int64_t count = client->get_slot_count( subject );
+		const int64_t selected = client->get_selected_slot( subject );
+		found.clear();
+		rowNames.clear();
+		for ( int64_t s = 0; s < count; ++s )
+		{
+			int64_t item = client->get_slot_item( subject, s );
+			Dictionary names;
+			names["slot.number"] = s + 1;
+			names["slot.selected"] = s == selected ? 1 : 0;
+			names["slot.empty"] = item == 0 ? 1 : 0;
+			found.push_back( item );
+			rowNames.push_back( names );
+		}
+	}
 	for ( int64_t i = 0; i < found.size(); ++i )
 	{
-		if ( m_where.is_empty() || client->check_conditions( found[i], m_where ) )
+		const Dictionary& names = rowNames[size_t( i )];
+		if ( m_where.is_empty() || client->CheckWith( found[i], m_where, names ) )
 		{
-			Variant key = m_sortBy.is_empty() ? Variant() : client->evaluate( found[i], m_sortBy );
-			order.push_back( { found[i], key.get_type() == Variant::NIL ? 0.0 : double( key ) } );
+			Variant key = m_sortBy.is_empty() ? Variant() : client->EvaluateWith( found[i], m_sortBy, names );
+			order.push_back( { found[i], key.get_type() == Variant::NIL ? 0.0 : double( key ), names } );
 		}
 	}
 	if ( m_sortBy.is_empty() == false )
@@ -601,6 +645,7 @@ void CbList::_process( double )
 		}
 		row->set_meta( SubjectMeta(), order[i].id );
 		row->set_meta( RankMeta(), int( i ) + 1 );
+		row->set_meta( NamesMeta(), order[i].names );
 		row->set_visible( true );
 		m_entries.push_back( order[i].id );
 	}
@@ -629,6 +674,9 @@ void CbShowKey::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "key", PROPERTY_HINT_PLACEHOLDER_TEXT, "Tab" ), "set_key", "get_key" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "mode", PROPERTY_HINT_ENUM, "While held,Each press switches it" ), "set_mode", "get_mode" );
 	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "target" ), "set_target", "get_target" );
+	ClassDB::bind_method( D_METHOD( "set_cursor", "value" ), &CbShowKey::set_cursor );
+	ClassDB::bind_method( D_METHOD( "get_cursor" ), &CbShowKey::get_cursor );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "cursor" ), "set_cursor", "get_cursor" );
 	ClassDB::bind_method( D_METHOD( "set_conditions", "value" ), &CbShowKey::set_conditions );
 	ClassDB::bind_method( D_METHOD( "get_conditions" ), &CbShowKey::get_conditions );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "conditions" ), "set_conditions", "get_conditions" );
@@ -701,12 +749,166 @@ void CbShowKey::_process( double )
 	if ( show && m_conditions.is_empty() == false )
 	{
 		CinderboxClient* client = FindClient( this, m_client );
-		show = client != nullptr && client->check_conditions( SubjectOf( this, client ), m_conditions );
+		show = client != nullptr && client->CheckWith( SubjectOf( this, client ), m_conditions, RowNames( this ) );
+	}
+	if ( m_cursor )
+	{
+		if ( CinderboxClient* client = FindClient( this, m_client ) )
+		{
+			client->want_cursor( int64_t( get_instance_id() ), show );
+		}
 	}
 	Variant visible = target->get( "visible" );
 	if ( visible.get_type() == Variant::BOOL && bool( visible ) != show )
 	{
 		target->set( "visible", show );
+	}
+}
+
+void CbShowKey::_exit_tree()
+{
+	if ( CinderboxClient* client = InGame() ? FindClient( this, m_client ) : nullptr )
+	{
+		client->want_cursor( int64_t( get_instance_id() ), false );
+	}
+}
+
+// --- CbClick ---------------------------------------------------------------------------------------
+
+void CbClick::_bind_methods()
+{
+	ClassDB::bind_method( D_METHOD( "set_conditions", "value" ), &CbClick::set_conditions );
+	ClassDB::bind_method( D_METHOD( "get_conditions" ), &CbClick::get_conditions );
+	ClassDB::bind_method( D_METHOD( "set_sets", "value" ), &CbClick::set_sets );
+	ClassDB::bind_method( D_METHOD( "get_sets" ), &CbClick::get_sets );
+	ClassDB::bind_method( D_METHOD( "set_intent", "value" ), &CbClick::set_intent );
+	ClassDB::bind_method( D_METHOD( "get_intent" ), &CbClick::get_intent );
+	ClassDB::bind_method( D_METHOD( "set_from", "value" ), &CbClick::set_from );
+	ClassDB::bind_method( D_METHOD( "get_from" ), &CbClick::get_from );
+	ClassDB::bind_method( D_METHOD( "on_gui_input", "event" ), &CbClick::on_gui_input );
+	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "conditions" ), "set_conditions", "get_conditions" );
+	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "sets" ), "set_sets", "get_sets" );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "intent", PROPERTY_HINT_ENUM, "Nothing,Select this slot,Move a slot here,Drop this slot" ),
+				  "set_intent", "get_intent" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "from", PROPERTY_HINT_PLACEHOLDER_TEXT, "ui.picked" ), "set_from", "get_from" );
+
+	BIND_ENUM_CONSTANT( INTENT_NONE );
+	BIND_ENUM_CONSTANT( INTENT_SELECT );
+	BIND_ENUM_CONSTANT( INTENT_MOVE_HERE );
+	BIND_ENUM_CONSTANT( INTENT_DROP );
+}
+
+namespace
+{
+
+// "ui.picked = slot.number": the name, and what it becomes.
+bool SplitSet( const String& text, String& name, String& expression )
+{
+	int64_t at = text.find( "=" );
+	if ( at <= 0 )
+	{
+		return false;
+	}
+	name = text.substr( 0, at ).strip_edges();
+	expression = text.substr( at + 1 ).strip_edges();
+	return name.begins_with( "ui." ) && name.length() > 3 && name.contains( " " ) == false && expression.is_empty() == false &&
+		   expression.begins_with( "=" ) == false;
+}
+
+} // namespace
+
+PackedStringArray CbClick::_get_configuration_warnings() const
+{
+	PackedStringArray warnings;
+	if ( Object::cast_to<Control>( get_parent() ) == nullptr )
+	{
+		warnings.push_back( "Put it under a Control: that is what is clicked." );
+	}
+	for ( const String& set : m_sets )
+	{
+		String name, expression;
+		if ( SplitSet( set, name, expression ) == false )
+		{
+			warnings.push_back( "\"" + set + "\": write it as a name of the viewer's own, = and a value: ui.picked = slot.number" );
+		}
+	}
+	return warnings;
+}
+
+void CbClick::_ready()
+{
+	if ( InGame() == false )
+	{
+		return;
+	}
+	if ( auto* control = Object::cast_to<Control>( get_parent() ) )
+	{
+		// A panel or a label lets the mouse through by default: this one is to be clicked.
+		control->set_mouse_filter( Control::MOUSE_FILTER_STOP );
+		control->connect( "gui_input", Callable( this, "on_gui_input" ) );
+	}
+}
+
+void CbClick::on_gui_input( const Ref<InputEvent>& event )
+{
+	Ref<InputEventMouseButton> click = event;
+	if ( click.is_null() || click->is_pressed() == false || click->get_button_index() != MOUSE_BUTTON_LEFT )
+	{
+		return;
+	}
+	// Several under one Control: the first whose conditions hold takes the click, so one that sets a
+	// value does not make the next one's condition true in the same click.
+	static uint64_t takenEvent = 0;
+	if ( takenEvent == event->get_instance_id() )
+	{
+		return;
+	}
+	CinderboxClient* client = FindClient( this, m_client );
+	if ( client == nullptr || client->has_local_player() == false )
+	{
+		return;
+	}
+	const int64_t subject = SubjectOf( this, client );
+	const Dictionary names = RowNames( this );
+	if ( client->CheckWith( subject, m_conditions, names ) == false )
+	{
+		return;
+	}
+	takenEvent = event->get_instance_id();
+
+	// What it asks of the slots first (it reads the values as they are), then what it sets.
+	const int64_t here = names.has( "slot.number" ) ? int64_t( double( names["slot.number"] ) ) - 1 : -1;
+	if ( m_intent == INTENT_SELECT && here >= 0 )
+	{
+		client->send_intent( int64_t( SlotIntent::Select ), here, 0 );
+	}
+	else if ( m_intent == INTENT_DROP && here >= 0 )
+	{
+		client->send_intent( int64_t( SlotIntent::Drop ), here, 0 );
+	}
+	else if ( m_intent == INTENT_MOVE_HERE && here >= 0 )
+	{
+		Variant from = client->EvaluateWith( subject, m_from, names );
+		int64_t slot = from.get_type() == Variant::NIL ? -1 : int64_t( double( from ) ) - 1;
+		if ( slot >= 0 && slot != here )
+		{
+			client->send_intent( int64_t( SlotIntent::Move ), slot, here );
+		}
+	}
+	for ( const String& set : m_sets )
+	{
+		String name, expression;
+		if ( SplitSet( set, name, expression ) == false )
+		{
+			continue;
+		}
+		if ( expression.is_valid_float() )
+		{
+			client->set_local_value( name, expression.to_float() );
+			continue;
+		}
+		Variant value = client->EvaluateWith( subject, expression, names );
+		client->set_local_value( name, value.get_type() == Variant::NIL ? 0.0 : double( value ) );
 	}
 }
 

@@ -66,7 +66,7 @@ and the player's own screen does not wait for the server. What a life is given a
 |---|---|
 | A number key (1 to 9) | that slot is selected: its item comes into the right hand, the one that was there goes to its holster. Nothing is made, destroyed or dropped |
 | The selected slot's key again | empty hands |
-| Moves one slot onto another | the two trade what they hold (either may be empty). The selected slot stays selected, so the hand follows |
+| Moves one slot onto another (the inventory screen: click, then click) | the two trade what they hold (either may be empty). The selected slot stays selected, so the hand follows |
 | Drops a slot | its item is thrown out in front; the slot is empty |
 
 | The server | What happens |
@@ -131,12 +131,15 @@ The `inventory` mod's rules:
 | Death | what the life started with is taken back; anything else carried drops where the player stood. The next life starts with the slot that was selected |
 | Empty hands | freelook again (a weapon turns camera-facing on when it comes out) |
 
-The mod's look (`server_mods/inventory/client`, a workshop item like the others) is a row of slots
-along the bottom of the screen, all data: `inventory.item_N` holds the NetId of slot N's item, a
-label shows `{look:inventory.item_N}` (what that item is called), and the selected slot
-(`inventory.slot == N`; 0: empty hands) is highlighted. The mod publishes those fields from the
-engine's state, so the row follows the hands a moment later; a look that reads the slots themselves
-is the next step ([roadmap](../ROADMAP.md#1a-items-and-the-inventory-in-the-engine)).
+The mod's look (`server_mods/inventory/client`, a workshop item like the others) is all data, and
+reads the engine's slots themselves, so it follows the hands on the tick of the key:
+
+| Part | What |
+|---|---|
+| The hotbar | a `CbList` of Slots across the bottom: `"{slot.number}   {name}"`, highlighted while `slot.selected` |
+| The inventory screen (I) | the same list as a grid, with a free cursor: click an item, then a slot, and the two trade places ([Screens](looks.md#screens)) |
+
+The mod publishes no fields for it.
 
 **Holsters are optional, twice over.** The mod chooses whether its item has one, and the character
 chooses whether it has that socket: a `CbSocket` node named like it (`Back`, `Hip`) under a

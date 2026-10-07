@@ -13,7 +13,7 @@ namespace cb::present
 namespace
 {
 constexpr char kMagic[4] = { 'C', 'B', 'V', 'F' };
-constexpr uint32_t kVersion = 4; // 4: links in an entity's record
+constexpr uint32_t kVersion = 5; // 5: slots in an entity's record; 4: links in an entity's record
 constexpr uint64_t kKeyInterval = 300;
 constexpr size_t kHeaderSize = 8;
 constexpr size_t kRecordHeaderSize = 5;

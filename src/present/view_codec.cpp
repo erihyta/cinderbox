@@ -13,7 +13,7 @@ namespace cb::present
 namespace
 {
 
-constexpr uint32_t kMagic = 0x34564243; // "CBV4"
+constexpr uint32_t kMagic = 0x35564243; // "CBV5"
 
 // What a decoder accepts at most; real frames are far below.
 constexpr uint32_t kMaxEntities = 1u << 16;
@@ -75,8 +75,11 @@ struct EntityRecord
 	uint8_t socket;
 	uint8_t linkMotion;
 	b3Vec3 linkEnd;
+	uint8_t slotIndex;
+	uint8_t slotCount;
+	uint8_t slotPad[2];
 };
-static_assert( sizeof( EntityRecord ) == 92 + sizeof( AnimState ) + sizeof( Blackboard ), "EntityRecord has padding" );
+static_assert( sizeof( EntityRecord ) == 96 + sizeof( AnimState ) + sizeof( Blackboard ), "EntityRecord has padding" );
 static_assert( sizeof( EntityRecord ) % 4 == 0 );
 
 struct RagdollRecord
@@ -116,6 +119,10 @@ EntityRecord ToRecord( const FrameEntity& f )
 	r.socket = f.socket;
 	r.linkMotion = f.linkMotion;
 	r.linkEnd = f.linkEnd;
+	r.slotIndex = f.slotIndex;
+	r.slotCount = f.slotCount;
+	r.slotPad[0] = 0;
+	r.slotPad[1] = 0;
 	return r;
 }
 
@@ -145,6 +152,8 @@ FrameEntity FromRecord( const EntityRecord& r )
 	f.socket = r.socket;
 	f.linkMotion = r.linkMotion;
 	f.linkEnd = r.linkEnd;
+	f.slotIndex = r.slotIndex;
+	f.slotCount = r.slotCount;
 	return f;
 }
 
@@ -486,8 +495,11 @@ struct RestRecord
 	uint8_t socket;
 	uint8_t linkMotion;
 	b3Vec3 linkEnd;
+	uint8_t slotIndex;
+	uint8_t slotCount;
+	uint8_t slotPad[2];
 };
-static_assert( sizeof( RestRecord ) == 52, "RestRecord has padding" );
+static_assert( sizeof( RestRecord ) == 56, "RestRecord has padding" );
 
 RestRecord Rest( const EntityRecord& record )
 {
@@ -507,6 +519,8 @@ RestRecord Rest( const EntityRecord& record )
 	rest.socket = record.socket;
 	rest.linkMotion = record.linkMotion;
 	rest.linkEnd = record.linkEnd;
+	rest.slotIndex = record.slotIndex;
+	rest.slotCount = record.slotCount;
 	return rest;
 }
 
@@ -526,6 +540,8 @@ void SetRest( EntityRecord& record, const RestRecord& rest )
 	record.socket = rest.socket;
 	record.linkMotion = rest.linkMotion;
 	record.linkEnd = rest.linkEnd;
+	record.slotIndex = rest.slotIndex;
+	record.slotCount = rest.slotCount;
 }
 
 struct CompactEntity

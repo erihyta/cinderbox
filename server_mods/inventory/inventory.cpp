@@ -17,10 +17,8 @@
 //   "holster"   the socket it hangs in while another slot is selected ("Back", "Hip"). Without it,
 //               or on a character without that socket, it is out of sight
 //
-// It publishes "inventory.slot" (the selected slot, from 1; 0: empty hands) and "inventory.item_1"
-// .. "inventory.item_4" (the NetId of each slot's item, 0: empty) on the player's board, for its
-// look (client/ui): a row of slots at the bottom of the screen. Those follow the simulation a tick
-// behind; the hands do not.
+// It publishes nothing: its look (client/ui: the row of slots at the bottom of the screen, and the
+// inventory screen on I) reads the engine's slots themselves, so it follows the hands at once.
 
 #include "mod_api.h"
 
@@ -40,8 +38,6 @@ constexpr int kSlots = 4;
 
 struct Bag
 {
-	std::array<int32_t, kSlots> published{}; // what the board says is in each slot
-	int32_t selected = -1;					 // what the board says is selected (+1), -1: nothing said yet
 	bool dead = false;
 	bool gave = false;				// this life's starting items were given
 	bool full = false;				// the hand has an item
@@ -60,11 +56,6 @@ public:
 	void Declare( Declarations& declare ) override
 	{
 		declare.Slots( kSlots );
-		m_slot = declare.Field( "inventory.slot", BoardType::Int );
-		for ( int s = 0; s < kSlots; ++s )
-		{
-			m_items[size_t( s )] = declare.Field( "inventory.item_" + std::to_string( s + 1 ), BoardType::Int );
-		}
 	}
 
 	void Tick( Context& ctx ) override
@@ -138,7 +129,6 @@ public:
 					ctx.FaceCamera( target, false );
 				}
 			}
-			Publish( ctx, slot, bag );
 		}
 	}
 
@@ -162,35 +152,11 @@ private:
 		}
 		// The slot that was selected stays selected: the next life's item for it comes out.
 		Bag next;
-		next.published = bag.published;
-		next.selected = bag.selected;
 		next.dead = true;
 		bag = next;
 		ctx.FaceCamera( SlotTarget( slot ), false );
 	}
 
-	void Publish( Context& ctx, PlayerSlot slot, Bag& bag )
-	{
-		uint32_t target = SlotTarget( slot );
-		int32_t selected = ctx.SelectedSlot( slot ) + 1;
-		if ( selected != bag.selected )
-		{
-			bag.selected = selected;
-			ctx.Set( target, m_slot, selected );
-		}
-		for ( int s = 0; s < kSlots; ++s )
-		{
-			int32_t value = int32_t( ctx.SlotItem( slot, s ) );
-			if ( value != bag.published[size_t( s )] )
-			{
-				bag.published[size_t( s )] = value;
-				ctx.Set( target, m_items[size_t( s )], value );
-			}
-		}
-	}
-
-	FieldHandle m_slot;
-	std::array<FieldHandle, kSlots> m_items;
 	std::array<Bag, kMaxPlayers> m_bags;
 };
 

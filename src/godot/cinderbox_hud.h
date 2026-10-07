@@ -14,7 +14,10 @@
 //   CbList          a row per player or item: its first child is the row, copied for each, sorted
 //                   and filtered; the HUD nodes in a row read that row's entity (a scoreboard, a
 //                   team list, the items a player carries)
-//   CbShowKey       shows a node while a key is held, or switches it with a press (Tab)
+//   CbShowKey       shows a node while a key is held, or switches it with a press (Tab); it can
+//                   free the cursor while the node is shown (an inventory screen)
+//   CbClick         what a click on its parent does: sets values of the viewer's own ("ui."
+//                   names), asks something of the player's slots (select, move, drop)
 //   CbPromptLabel   a label in the world, upright above its parent: "[{key:pickup}] Pick up
 //                   {look:pickup.target}" (a proximity prompt, placed by a CbReaction)
 //
@@ -26,6 +29,7 @@
 // item's display name), {key:action} the key the action is bound to now.
 
 #include <godot_cpp/classes/box_container.hpp>
+#include <godot_cpp/classes/input_event.hpp>
 #include <godot_cpp/classes/label.hpp>
 #include <godot_cpp/classes/label3d.hpp>
 #include <godot_cpp/classes/mesh_instance3d.hpp>
@@ -47,6 +51,9 @@ CinderboxClient* FindClient( godot::Node* from, godot::ObjectID& cache );
 // Whose fields a HUD node reads: the entity of the CbList row it is in (the nearest one), or the
 // local player. `rank`, when given: its place in that list, from 1 (0 outside a list).
 int64_t SubjectOf( const godot::Node* node, const CinderboxClient* client, int* rank = nullptr );
+// Names of the row a HUD node is in, for its conditions and formats (a slot row's "slot.number",
+// "slot.selected", "slot.empty"): name -> number. Empty outside such a row.
+godot::Dictionary RowNames( const godot::Node* node );
 
 class CbPromptLabel : public godot::Label3D
 {
@@ -348,6 +355,7 @@ public:
 		OF_PLAYERS = 0,
 		OF_ITEMS = 1,
 		OF_HELD_ITEMS = 2,
+		OF_SLOTS = 3,
 	};
 
 	CbList();
@@ -489,6 +497,15 @@ public:
 	{
 		return m_target;
 	}
+	void set_cursor( bool v )
+	{
+		m_cursor = v;
+	}
+	bool get_cursor() const
+	{
+		return m_cursor;
+	}
+	void _exit_tree() override;
 	void set_conditions( const godot::PackedStringArray& v )
 	{
 		m_conditions = v;
@@ -511,9 +528,85 @@ private:
 	int m_mode = MODE_HOLD;
 	godot::NodePath m_target = godot::NodePath( ".." );
 	bool m_on = false;
+	// While the target is shown the cursor is free, and the mouse is the screen's, not the game's.
+	bool m_cursor = false;
+};
+
+// What a click on its parent (any Control) does. No scripts and no wired signals: the node listens
+// itself. Several under one Control are asked in order, and the first whose conditions hold acts.
+//
+//   sets     values of the viewer's own: "ui.picked = slot.number", "ui.tab = 2", "ui.picked = 0".
+//            The right side is an expression, read as the node's conditions are.
+//   intent   what it asks of the player's slots, through the player's input, so it is predicted:
+//            select this row's slot, move the slot `from` names onto this row's slot, or drop it.
+//
+// A click-to-move inventory is two of them in a slot's row: one that picks the slot up (while
+// nothing is picked and the slot is not empty), one that puts the picked slot down here.
+class CbClick : public godot::Node
+{
+	GDCLASS( CbClick, godot::Node )
+
+public:
+	enum Intent
+	{
+		INTENT_NONE = 0,
+		INTENT_SELECT = 1,
+		INTENT_MOVE_HERE = 2,
+		INTENT_DROP = 3,
+	};
+
+	void _ready() override;
+	godot::PackedStringArray _get_configuration_warnings() const override;
+	void on_gui_input( const godot::Ref<godot::InputEvent>& event );
+
+	void set_conditions( const godot::PackedStringArray& v )
+	{
+		m_conditions = v;
+	}
+	godot::PackedStringArray get_conditions() const
+	{
+		return m_conditions;
+	}
+	void set_sets( const godot::PackedStringArray& v )
+	{
+		m_sets = v;
+		update_configuration_warnings();
+	}
+	godot::PackedStringArray get_sets() const
+	{
+		return m_sets;
+	}
+	void set_intent( int v )
+	{
+		m_intent = v;
+	}
+	int get_intent() const
+	{
+		return m_intent;
+	}
+	void set_from( const godot::String& v )
+	{
+		m_from = v;
+	}
+	godot::String get_from() const
+	{
+		return m_from;
+	}
+
+protected:
+	static void _bind_methods();
+
+private:
+	godot::PackedStringArray m_conditions;
+	godot::PackedStringArray m_sets;
+	int m_intent = INTENT_NONE;
+	// INTENT_MOVE_HERE: the slot that moves, as a number from 1 ("ui.picked").
+	godot::String m_from = "ui.picked";
+	godot::ObjectID m_client;
 };
 
 } // namespace cb::gd
 
+VARIANT_ENUM_CAST( cb::gd::CbClick::Intent );
 VARIANT_ENUM_CAST( cb::gd::CbList::Of );
 VARIANT_ENUM_CAST( cb::gd::CbShowKey::Mode );

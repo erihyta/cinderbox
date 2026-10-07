@@ -102,6 +102,27 @@ public:
 	godot::Variant get_field( int64_t net_id, const godot::String& name ) const;
 	godot::Variant get_local_field( const godot::String& name ) const;
 	bool check_conditions( int64_t net_id, const godot::PackedStringArray& conditions ) const;
+	// The same with names of the asker's own (a list row's "slot.number", "slot.selected"): a
+	// Dictionary of name -> number, read before anything else. The viewer's own values ("ui."
+	// names, set_local_value) are always known.
+	bool OwnName( const std::string& name, const godot::Dictionary& extra, float& value ) const;
+	bool CheckWith( int64_t net_id, const godot::PackedStringArray& conditions, const godot::Dictionary& extra ) const;
+	godot::Variant EvaluateWith( int64_t net_id, const godot::String& expression, const godot::Dictionary& extra ) const;
+	godot::String FormatWith( int64_t net_id, const godot::String& format, const godot::Dictionary& extra ) const;
+	// Values of the viewer's own, that no simulation and no server knows: which slot is picked up
+	// in an inventory screen, which tab is open. Their names start with "ui."; conditions,
+	// formats and bindings read them like fields (0 until set).
+	void set_local_value( const godot::String& name, double value );
+	double get_local_value( const godot::String& name ) const;
+	// A screen that needs the mouse (an inventory): while any asks, wants_cursor is true and the
+	// game frees the cursor and keeps the mouse from the camera and the use button.
+	void want_cursor( int64_t who, bool wanted );
+	bool wants_cursor() const;
+	// Slots (the simulation's): how many a player has, which one is selected (-1: empty hands),
+	// and the item in one (0: empty).
+	int64_t get_slot_count( int64_t player ) const;
+	int64_t get_selected_slot( int64_t player ) const;
+	int64_t get_slot_item( int64_t player, int64_t slot ) const;
 	bool check_local_conditions( const godot::PackedStringArray& conditions ) const;
 	godot::Variant evaluate( int64_t net_id, const godot::String& expression ) const;
 	godot::Variant evaluate_local( const godot::String& expression ) const;
@@ -330,6 +351,8 @@ private:
 	void ItemsChanged( uint32_t holderNetId );
 	present::Models m_pose;		// scratch: the pose being built
 	uint16_t m_lastActions = 0;
+	std::map<std::string, double> m_localValues; // "ui." names
+	std::vector<int64_t> m_cursorWanters;
 	bool m_lastUse = false;
 	// Intents not sent yet, the one the input carries now, and when it went out.
 	std::vector<std::array<uint8_t, 3>> m_intents;

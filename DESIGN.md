@@ -297,7 +297,8 @@ Everything a player sees and hears beyond bodies is data in workshop items: no s
 | `CbLinkLook` | which scene the line of a motion's probe is drawn as: stretched by the viewer from the player's socket to the line's end, which every frame carries (`FrameEntity::linkEnd`) |
 | `CbMotionSet`, `CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink` | not looks: authoring nodes for what a mod adds to movement, one family (`CbMotionPart`; the effects share `CbMotionEffect`), baked to `motions/<set>.cfg` for the simulation (docs/motions.md) |
 | `CbFieldLabel`, `CbFieldBinding`, `CbEventFeed`, `CbPromptLabel` | HUD from fields and events, for their subject: the local player, or the entity of the list row they are in |
-| `CbList`, `CbShowKey` | a row per player or item, copied from the row designed as its child, filtered and sorted by expressions (a scoreboard is a scene, not a node); a node shown while a key of the viewer's own is held |
+| `CbList`, `CbShowKey` | a row per player, item or slot, copied from the row designed as its child, filtered and sorted by expressions (a scoreboard is a scene, not a node); a node shown while a key of the viewer's own is held, with the cursor free if it says so |
+| `CbClick` | what a click on a control does: sets `ui.` values (the viewer's own, known to no simulation) and asks an intent of the player's slots. With slots in the frame (`FrameEntity::slotIndex`, `slotCount`), a list of slots and a free cursor, an inventory screen is a scene |
 
 - **Paths**: `^` (my entity), `^^` (its holder), `$at` / `$other` (who a cue names), `$local`, `$world`, `@field` (the entity a field names). No path leaves the World node.
 - **Conditions and values**: one expression language (`src/expr`): names, comparisons, arithmetic, `and` / `or` / `not`, `?name`. Parsed once into a stack program with the names kept as text; each reader says what a name is.

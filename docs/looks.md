@@ -181,7 +181,8 @@ The HUD reads the board too, through script-free nodes any HUD scene can use:
 | `CbFieldBinding` | writes a field, or an expression over fields (`combat.health / combat.max_health`), into any property of its `target` (default: its parent), `value = field * multiply + add`; with conditions it hides the target while they fail. A `ProgressBar`'s `value` and `max_value`, a panel's `visible`, a colour |
 | `CbEventFeed` | a line per mod event, `"{a}  >  {b}"` with player names, fading after `line_seconds` (a kill feed) |
 | `CbList` | a row per player or item: its first child is the row as you designed it, copied for every entry; `where` filters, `sort_by` orders, `max_rows` cuts ([Lists](#lists)) |
-| `CbShowKey` | shows its parent while a key is held, or switches it with each press: `action` `scores`, `key` `Tab`. The key is the viewer's own, not one of the server's actions |
+| `CbShowKey` | shows its parent while a key is held, or switches it with each press: `action` `scores`, `key` `Tab`. The key is the viewer's own, not one of the server's actions. With `cursor`, the mouse is the screen's while it is shown |
+| `CbClick` | what a click on its parent does: sets values of the viewer's own (`ui.picked = slot.number`), asks something of the player's slots (select, move, drop) ([Screens](#screens)) |
 
 Whose fields a HUD node reads is its **subject**: the local player, or inside a `CbList` row, that row's entity.
 
@@ -238,7 +239,7 @@ Scores        VBoxContainer                               (server_mods/deathmatc
 
 | Field | Meaning |
 |---|---|
-| `of` | **Players**; **Items** (every item in the world); **Items its subject holds** (the local player's, or under a player's row, that player's) |
+| `of` | **Players**; **Items** (every item in the world); **Items its subject holds** (the local player's, or under a player's row, that player's); **Slots of its subject** (a row per slot, empty ones too: `slot.number`, `slot.selected`, `slot.empty` are the row's) |
 | `item_kind` | for items: only this kind (`pistol.gun`) |
 | `where` | conditions on an entry: `team.id == 1`, `not combat.dead`, `not is_local` |
 | `sort_by`, `descending` | an expression over an entry's fields; ties keep their order |
@@ -250,6 +251,34 @@ Scores        VBoxContainer                               (server_mods/deathmatc
 - **`is_local`** in a row's conditions is true on the viewer's own row.
 - **A list in a row** lists for that row's entity: each player's row can show what that player carries.
 - **What it cannot do yet**: text the server made up (fields are numbers), a row per value of a list on one entity, a grid whose columns size to their content (give cells a `custom_minimum_size`).
+
+### Screens
+
+A screen the player clicks on (an inventory, a shop, a team picker) is a scene too. Three things
+make it one, and none is a script:
+
+| Piece | What |
+|---|---|
+| A free cursor | a `CbShowKey` with `cursor`: while its screen is shown the mouse is the screen's, and the camera, the use button and the mods' actions do not hear it |
+| Values of the viewer's own | names that start with `ui.` (`ui.picked`, `ui.tab`): no server and no simulation knows them. Conditions, formats (`{ui.picked}`) and bindings read them like fields; 0 until set. They are what a screen remembers |
+| Clicks | a `CbClick` under any control: `conditions` (when it takes the click), `sets` (`ui.` values it changes), `intent` (what it asks of the player's slots) |
+
+The inventory screen (`server_mods/inventory/client/ui/hud_inventory.tscn`), on I:
+
+```
+Bag          PanelContainer
+├── Key      CbShowKey   action "inventory"  key "I"  each press switches it  cursor
+└── Grid     CbList      of Slots
+    └── Cell PanelContainer            one slot, as designed: copied for every slot
+        ├── PickUp   CbClick   conditions ui.picked == 0, not slot.empty    sets ui.picked = slot.number
+        ├── PutDown  CbClick   conditions ui.picked > 0    intent Move a slot here (from ui.picked)    sets ui.picked = 0
+        ├── Name     CbFieldLabel   "{slot.number} {name}"                conditions ui.picked != slot.number
+        └── Picked   CbFieldLabel   the same, highlighted                  conditions ui.picked == slot.number
+```
+
+- **The first `CbClick` whose conditions hold takes the click**, in the order of the tree: picking up does not also put down.
+- **An intent is the player's own input**: the move is carried out by every simulation, the player's own at once ([The inventory](items.md#the-inventory)).
+- **What a click cannot do yet**: an intent a mod declares ("buy item 3"); a drag; something that follows the cursor; right clicks.
 
 `CbPromptLabel` is the same in the world: a `Label3D` with a `text_format`, upright above its parent,
 facing the camera, the same size at any distance, hidden while its text is empty; with a

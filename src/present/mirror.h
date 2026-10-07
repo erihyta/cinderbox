@@ -55,6 +55,9 @@ struct Visual
 	uint16_t itemKind = 0;
 	uint8_t socket = 0;
 	bool stowed = false;
+	// Slots: an item's place among its holder's; a player's selected slot and how many it has.
+	uint8_t slotIndex = kNoSlot;
+	uint8_t slotCount = 0;
 	// Players: a link that is out, as of the newest frame (present/frame.h).
 	bool linked = false;
 	bool linkHolds = false;
