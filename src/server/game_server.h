@@ -96,6 +96,13 @@ public:
 	{
 		return *m_sim;
 	}
+
+	// Called after every tick the server runs (an update can run several): for tests and tools that
+	// must see the state of each one.
+	void SetTickObserver( std::function<void()> observer )
+	{
+		m_tickObserver = std::move( observer );
+	}
 	// A player's private fields, as the server keeps them (tests).
 	const Blackboard& Privates( PlayerSlot slot ) const
 	{
@@ -193,6 +200,7 @@ private:
 	std::vector<InputFrame> m_history; // indexed by tick % kFrameHistory
 	Client m_clients[kMaxPlayers];
 	std::vector<PlayerEvent> m_pendingEvents;
+	std::function<void()> m_tickObserver;
 	net::InputArray m_lastInputs{};
 
 	double m_nextTickTime = -1.0;

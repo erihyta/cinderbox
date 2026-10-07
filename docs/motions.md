@@ -82,7 +82,7 @@ CbMotionPart            what they share: each bakes to lines, and warns in the t
 | When | `when` | **On a press**: once, when `action` goes down (a dash). **While**: every tick its `conditions` hold (flight, a glide, a jetpack). **On a cue**: once, when the mod event `event` is recorded at the player (a stun a server mod starts) |
 | | `action` | On a press: one a server mod declares (`dash`), or the engine's `jump` / `sprint`. Held, it is one press |
 | | `event` | On a cue: the event. A server mod emits it at the player, so the start is the server's and comes with the frame; from then on every simulation runs the motion |
-| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held, a stance), whether a key is down (`held.jump`, `held.dash`) or went down this tick (`pressed.dash`), and `linked` (a probe of the player's is out) |
+| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held, a stance), whether a key is down (`held.jump`, `held.dash`) or went down this tick (`pressed.dash`), `linked` (a probe of the player's is out) and `link_distance` (metres from the player's chest to the point its probe holds; 0 with none) |
 | | `cooldown` | seconds between two uses; for a While, between its end and its next start |
 | Uses | `uses` | how many before a refill; 0: no limit. Not for a While |
 | | `refill`, `refill_seconds` | **On the ground**: back when the player stands. **After seconds**: back that long after the last use |
@@ -138,10 +138,11 @@ Every tick the motion is on.
 | `strength` | how hard |
 | `speed` | Acceleration and Force: a top speed along the direction, past which it pushes no more (0: none). Velocity: the speed it goes to |
 | `ramp_in` | seconds over which it rises from nothing to its strength |
-| `react` | the other end takes the same momentum the other way: the player, when the force is on something else; what the probe found, when it is on the player |
+| `react` | the other end takes the same momentum the other way: the player, when the force is on something else; what the probe found, when it is on the player. With Velocity, `speed` is then how fast the two close on each other, and each takes its share by weight |
 
 - **A ramp hides latency.** Other players see your press a moment late; a force that takes 0.15 s to arrive is still weak when they catch up, so little has to be corrected. It is also what makes a pull feel heavy.
 - **A pull upward wants the Velocity kind.** A force toward a point that is above and far off has only its upward part against all of gravity: 24 m/s² at 18 degrees is 7.5 m/s² up, gravity is 18, and the player is dragged along the floor until the line is steep (0.97 s for a hook 2.5 m up and 8 m away). Velocity brings the speed along the line to its target whatever gravity takes meanwhile: the same hook lifts after 0.25 s. Its `strength` has to be well above gravity over the sine of the shallowest angle (120 here). Gravity still acts across the line, so the player still swings.
+- **A zip line turns gravity off.** With gravity on, the pull keeps the speed *along* the line and gravity keeps dragging the player *off* it: the line swings steeper before the climb is felt (a hook 6 m up and 8 m away: 0.5 m of rise after 0.68 s). `gravity` 0 in the motion's `parameters` makes the path the straight line to the point: the same hook lifts 0.5 m in 0.33 s, and the speed is the same at any angle. Gravity is back the tick the motion ends.
 - **`react` is what makes weight count**: hooked to a crate, the crate comes to you; hooked to something ten times your weight, you go to it.
 
 ### `CbLink`
@@ -184,10 +185,10 @@ starts on that event, and ends on the same event, so the throw is predicted like
 ```
 Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grapple_moves.tscn)
 └── Hook      CbMotion   on the cue grapple.hook.used (the hook's slot key)   conditions not linked
-    │                    until grapple.hook.used
-    │                    parameters { airborne: 1, air_control: 0.6 }       emits grapple.fired
-    ├── Line  CbProbe    range 40 m, flies at 60 m/s
-    ├── Pull  CbForce    on the player, toward the target: to 14 m/s (by up to 120 m/s²), ramp 0.1 s, react
+    │                    until grapple.hook.used, pressed.jump      duration 2 s
+    │                    parameters { airborne: 1, air_control: 0.6, gravity: 0 }   emits grapple.fired
+    ├── Line  CbProbe    range 40 m, flies at 80 m/s
+    ├── Pull  CbForce    on the player, toward the target: 160 m/s² up to 15 m/s, ramp 0.1 s, react
     └── Rope  CbLink     to what the probe found: its length when it takes hold, reel 4 m/s
 ```
 
@@ -201,9 +202,10 @@ Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grappl
 | The throw | two traces, like a shot: what is under the crosshair (along the camera's line from the point it orbits, or a shoulder), then from the player to that point, so something in between stops it. Nothing within range: nothing happens, not even the cooldown |
 | What it finds | the world: a point. A prop: a point on that body, which moves with it. A player: a point on its capsule (not a limb: hitboxes are the server's) |
 | Flying | until `distance / travel` has passed, the motion is not on yet: no parameters, no effects; the look draws the line growing |
-| Holding | the motion is on. Its effects run every tick, before the mover: here the pull (to 14 m/s along the line) and the rope. `react` pushes what it holds back the same, so a crate flies to the player |
-| While it holds | its `parameters` hold. The grapple's `airborne` = 1 puts the player in the air from the moment the hook takes hold until it lets go: nothing rubs the pull off, the in-air animation plays, and the player falls back to the ground afterwards |
-| Letting go | `until`; a `duration`; what it held on to being destroyed; the player dying, or being put somewhere else (a respawn) |
+| Holding | the motion is on. Its effects run every tick, before the mover: here the pull (up to 15 m/s along the line) and the rope. `react` shares the closing speed with what it holds, so a crate flies to the player |
+| While it holds | its `parameters` hold. The grapple's `airborne` = 1 puts the player in the air from the moment the hook takes hold until it lets go: nothing rubs the pull off, the in-air animation plays, and the player falls back to the ground afterwards. `gravity` = 0 makes it a zip line: straight to the point at one speed |
+| Its time | `duration` 2: it lets go by itself two seconds after it took hold, and the player keeps its speed; gravity is back on that tick. (`link_distance < 1.8` in `until` would let go on arrival instead) |
+| Letting go | `until` (the key again, or a jump: `pressed.jump`); the `duration`; what it held on to being destroyed; the player dying, or being put somewhere else (a respawn) |
 
 - **Hold or toggle** is two lines of the motion:
 

@@ -2157,6 +2157,65 @@ void TestLinks()
 		CHECK( out() && other.Globals().modEventCount == 2 );
 	}
 
+	// A zip line: no gravity while it holds, a steady speed straight to the point, and it lets go by
+	// itself on arrival ("link_distance"), with the speed kept.
+	{
+		ModSchema zipSchema;
+		zipSchema.actions.push_back( { "zip", 0, "X" } );
+		zipSchema.motionSets.push_back( { "zip", "zip.moves",
+										  "cinderbox_motions\t2\nmotion\tZip\nwhen\tpress\tzip\nif\tnot linked\nuntil\tlink_distance < 1.8\n"
+										  "param\tgravity\t0\nparam\tairborne\t1\nprobe\t40\t0\nforce\tself\tto\tvelocity\t160\t20\t0\t1\n" } );
+		std::string zipWarnings;
+		std::shared_ptr<const Motions> zip = CompileMotions( zipSchema, zipWarnings );
+		CHECK( zip != nullptr && zipWarnings.empty() );
+		if ( zip != nullptr )
+		{
+			Simulation zipSim( TestConfig() );
+			zipSim.SetMotions( zip );
+			InputFrame zf;
+			auto zstep = [&]( int n ) {
+				for ( int i = 0; i < n; ++i )
+				{
+					zf.tick = zipSim.Tick();
+					zipSim.Step( zf );
+					zf.events.clear();
+					zf.commands.clear();
+				}
+			};
+			zf.events.push_back( { PlayerEventType::Join, 0 } );
+			zstep( 60 );
+			uint32_t zp = zipSim.PlayerNetId( 0 );
+			b3Vec3 start = zipSim.EntityTransform( zp )->position;
+			zf.inputs[0].cameraPitch = 500;
+			zf.inputs[0].actions = 1;
+			zstep( 1 );
+			const MotionHold* zhold = zipSim.FindEntity( zp ).try_get<MotionHold>();
+			CHECK( zhold != nullptr && zhold->on == 1 );
+			b3Vec3 point = zhold != nullptr ? zhold->point : b3Vec3{};
+			float reach = b3Distance( point, b3Add( start, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) );
+			// Half a second in: at its speed, along the line, and rising with it from the first tick
+			// (the line climbs: gravity would have kept the player on the floor).
+			zstep( 30 );
+			const Character* zc = zipSim.PlayerCharacter( 0 );
+			b3Vec3 line = b3Normalize( b3Sub( point, b3Add( start, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) ) );
+			float alongLine = b3Dot( zc->velocity, line );
+			float rise = zipSim.EntityTransform( zp )->position.y - start.y;
+			std::printf( "    a zip line of %.1f m: %.1f m/s along it after half a second, %.2f m higher\n", reach, alongLine, rise );
+			CHECK( alongLine > 19.5f && alongLine < 20.5f && b3Length( zc->velocity ) < 20.6f );
+			CHECK( line.y > 0.02f && rise > 0.7f * 9.5f * line.y && zipSim.FindEntity( zp ).get<MotionHold>().on == 1 );
+			// It lets go by itself when it has arrived, and the player keeps its speed.
+			int ticks = 0;
+			while ( zipSim.FindEntity( zp ).get<MotionHold>().on != 0 && ticks < 300 )
+			{
+				zstep( 1 );
+				++ticks;
+			}
+			float left = b3Distance( point, b3Add( zipSim.EntityTransform( zp )->position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) );
+			std::printf( "    let go by itself %.2f m from the point, at %.1f m/s\n", left, b3Length( zipSim.PlayerCharacter( 0 )->velocity ) );
+			CHECK( ticks < 300 && left < 1.8f && left > 1.0f && b3Length( zipSim.PlayerCharacter( 0 )->velocity ) > 15.0f );
+		}
+	}
+
 	// A while motion cannot throw a probe; a probe needs both its numbers; a rope goes to something else.
 	std::vector<Motion> out;
 	std::string error, warned;
