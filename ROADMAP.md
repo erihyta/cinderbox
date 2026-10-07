@@ -65,7 +65,7 @@ says how it looks. No client code, and nothing in the engine that knows what a s
 | Text nobody authored | player names only | what a player or a host types (chat, a team name, a message of the day): the parked `m101-text` branch has the mechanism (a text field, `ctx.SetText`) |
 | Lists on one entity | a field holds one value | array fields, or a `CbList` over the values of a field family |
 | One body description | `CbProp`, `CbTemplate` + `CbComponent` and `CbItem` each describe a dynamic body their own way; none exposes density, friction or bounce | one shared body (shape, mass or density, friction, restitution) for props, items and templates; the item keeps the grip offset |
-| HUD keys | `CbShowKey` adds an action of the viewer's own | they appear in key rebinding with the server's actions |
+| HUD keys | `CbShowKey` adds an action of the viewer's own (scores, inventory) | they appear in key rebinding with the server's actions; the game's help line lists them and the engine's keys |
 
 ### 1a. Items and the inventory, in the engine
 
@@ -79,7 +79,7 @@ starts with). The Roblox way: a tool is one object that has everything of its ow
 | How an item is used | **done (M107)**: `CbItem.use`: select it then the use button, or its slot key uses it; `ctx.Used` / `Using` for its mod; `<kind>.used` recorded by every simulation | the grapple is the slot-key example (M108); the holster on the `CbItem` too |
 | Slots in the simulation | **done (M106)**: an item's slot and a player's selected slot are state; select, move and drop are intents in the input, predicted; the `inventory` mod is rules only | slots on entities that are not players (a chest); a count per slot (stacks); resizing one player's; slots in the cross-compiler reference scenario |
 | An intent with a value | **done (M106)** for slots: a kind, two slot numbers and a count in the input | intents a mod declares ("buy item 3") |
-| The inventory screen | a row of slots drawn from fields the mod publishes a tick late; keys 1 to 9 select | the look reads the slots themselves (in the frame); a `CbList` of slots; clicks, a cursor while a screen is open, client-only fields (`ui.picked_slot`); a click-to-move grid as the example |
+| The inventory screen | **done (M110)**: the look reads the slots; a `CbList` of slots; `CbClick`, `ui.` values and a free cursor; click an item, then a slot | a drag and an icon that follows the cursor; right click to drop; icons for items; an item's HUD in its own scene |
 | An item's own reactions and predictions | **done (M109)**: a `CbPrediction` under the `CbItem` speaks for the copy in the viewer's hand; reactions there already follow the holder | the item's HUD in its scene too; a prediction in an item used by its slot key (it is never in a hand) |
 | The rules API | C++ in each mod | what a mod decides about containers, named |
 
