@@ -172,12 +172,18 @@ Players weigh something: `mass` is a [movement parameter](server-mods.md#movemen
 
 ## Probes, forces and links: the grapple mod
 
-A probe is a line a motion throws at what the player looks at. `server_mods/grapple` is one motion
-with three parts, and a look. Its C++ declares three names.
+A probe is a line a motion throws at what the player looks at. `server_mods/grapple` is an item, one
+motion with three parts, and a look. Its C++ declares the names and gives every life a hook.
+
+The hook is an [item used by its slot's key](items.md#using-an-item) (`prefabs/hook.tscn`, a `CbItem`
+with `use` "Its slot key uses it" and `slot` 4): the key uses it where it is, nothing comes into
+the hand, and the engine records `grapple.hook.used` on that tick in every simulation. The motion
+starts on that event, and ends on the same event, so the throw is predicted like any press.
 
 ```
 Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grapple_moves.tscn)
-└── Hook      CbMotion   on "grapple" (Q)   conditions not linked   until pressed.grapple
+└── Hook      CbMotion   on the cue grapple.hook.used (the hook's slot key)   conditions not linked
+    │                    until grapple.hook.used
     │                    parameters { airborne: 1, air_control: 0.6 }       emits grapple.fired
     ├── Line  CbProbe    range 40 m, flies at 60 m/s
     ├── Pull  CbForce    on the player, toward the target: 1920 N, ramp 0.15 s, react
@@ -202,10 +208,11 @@ Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grappl
 
   | | `conditions` | `until` |
   |---|---|---|
-  | Press to throw, press again to let go (the grapple mod) | `not linked` | `pressed.grapple` |
-  | Hold to grapple | | `not held.grapple` |
+  | Use to throw, use again to let go (the grapple mod: an item) | `not linked` | `grapple.hook.used` |
+  | A key of its own: press to throw, press again to let go | `not linked` | `pressed.grapple` |
+  | A key of its own: hold to grapple | | `not held.grapple` |
 
-  `not linked` keeps the second press from throwing a second line; `pressed.grapple` is that press letting the first go. A hook that ends by itself (its prop destroyed, a death) leaves nothing behind: the next press throws.
+  `not linked` keeps the second use from throwing a second line; the event (or `pressed.grapple`) is that use letting the first go. A hook that ends by itself (its prop destroyed, a death) leaves nothing behind: the next press throws.
 - **One probe per player**: a second throw replaces the first.
 - **It is state** (`MotionHold`, a component a player has once it threw one): hashed, rolled back, in snapshots.
 

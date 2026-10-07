@@ -56,7 +56,7 @@ and the player's own screen does not wait for the server. What a life is given a
 
 | | The engine (mechanism) | A mod (rules) |
 |---|---|---|
-| How many slots | up to 36 a player | `declare.Slots( 3 )` |
+| How many slots | up to 36 a player | `declare.Slots( 4 )` (the most any mod asks for) |
 | Select, move, drop | from the player's input, predicted | |
 | In the hand | the selected slot's item; the others are stowed in their holsters | |
 | Where a kind goes | its own slot, or the first free one | the item's `slot` and `holster` properties |
@@ -88,7 +88,7 @@ How a kind is used is its look's to say: `use` on its `CbItem`.
 | `use` | The player | For |
 |---|---|---|
 | **Select it, then the use button** | its slot's key takes it out; the left mouse button uses it | a tool, a weapon |
-| **Its slot key uses it** | its slot's key uses it where it is; nothing changes hands | a consumable, an ability |
+| **Its slot key uses it** | its slot's key uses it where it is; nothing changes hands | a consumable, an ability (the grappling hook) |
 
 Either way the item's mod is told the same thing, on the tick it happens:
 
