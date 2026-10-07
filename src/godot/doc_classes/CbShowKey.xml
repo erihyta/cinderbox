@@ -23,6 +23,9 @@
 		<member name="target" type="NodePath" setter="set_target" getter="get_target" default="NodePath(&quot;..&quot;)">
 			The node whose [code]visible[/code] it sets.
 		</member>
+		<member name="cursor" type="bool" setter="set_cursor" getter="get_cursor" default="false">
+			While the target is shown the cursor is free and the mouse is the screen's: the camera, the use button and the mods' actions do not hear it. For a screen with something to click ([CbClick]): an inventory, a shop.
+		</member>
 		<member name="conditions" type="PackedStringArray" setter="set_conditions" getter="get_conditions" default="PackedStringArray()">
 			Expressions that must hold too ([code]!?deathmatch.score[/code]: step aside when a game mode brings its own scoreboard).
 		</member>

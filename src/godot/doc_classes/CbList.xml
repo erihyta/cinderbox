@@ -53,5 +53,8 @@
 		<constant name="OF_HELD_ITEMS" value="2" enum="Of">
 			The items its subject carries: the local player's, or those of the player whose row the list is in.
 		</constant>
+		<constant name="OF_SLOTS" value="3" enum="Of">
+			The slots of its subject (a player), in their order, empty ones too. A row is for the item in its slot ([code]{name}[/code] is what that is called; nothing, for an empty slot), and the slot itself is in the row's own names: [code]slot.number[/code] (from 1), [code]slot.selected[/code], [code]slot.empty[/code], in conditions and as [code]{slot.number}[/code] in a format. They are read from the simulation's slots, so a row follows the player's hands on the tick of the key.
+		</constant>
 	</constants>
 </class>

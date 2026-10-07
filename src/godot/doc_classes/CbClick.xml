@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbClick" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		What a click on its parent does, with no code: sets values of the viewer's own, or asks something of the player's slots.
+	</brief_description>
+	<description>
+		Put it under any [Control]: a click on that control (the left mouse button) is this node's. No script and no wired signal: the node listens itself.
+		It can do two things, either or both:
+		- [member sets]: change values of the viewer's own, whose names start with [code]ui.[/code] ([code]ui.picked = slot.number[/code], [code]ui.tab = 2[/code]). No server and no simulation knows them; conditions, formats and bindings read them like fields, 0 until set. They are what a screen remembers: which slot is picked up, which tab is open.
+		- [member intent]: ask something of the player's slots (select, move, drop). It goes out in the player's own input, so every simulation carries it out and the player's own screen does not wait for the server.
+		Several under one control are asked in the order of the tree, and the first whose [member conditions] hold takes the click. So one that sets a value does not make the next one's condition true in the same click: a click-to-move inventory is two of them in a slot's row, one that picks the slot up and one that puts the picked slot down.
+		Inside a row of a [CbList] of slots, [code]slot.number[/code], [code]slot.selected[/code] and [code]slot.empty[/code] are that row's.
+		The cursor has to be free for a click: a [CbShowKey] with [member CbShowKey.cursor] frees it while its screen is shown.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="conditions" type="PackedStringArray" setter="set_conditions" getter="get_conditions" default="PackedStringArray()">
+			Expressions that must all hold for this node to take the click: [code]ui.picked == 0[/code], [code]not slot.empty[/code].
+		</member>
+		<member name="sets" type="PackedStringArray" setter="set_sets" getter="get_sets" default="PackedStringArray()">
+			Values of the viewer's own to change, each a name starting with [code]ui.[/code], [code]=[/code] and an expression: [code]ui.picked = slot.number[/code], [code]ui.picked = 0[/code]. They are set after the [member intent] was asked, so the intent reads them as they were.
+		</member>
+		<member name="intent" type="int" setter="set_intent" getter="get_intent" enum="CbClick.Intent" default="0">
+			What it asks of the player's slots.
+		</member>
+		<member name="from" type="String" setter="set_from" getter="get_from" default="&quot;ui.picked&quot;">
+			With [constant INTENT_MOVE_HERE]: an expression that gives the slot that moves, as a number from 1.
+		</member>
+	</members>
+	<constants>
+		<constant name="INTENT_NONE" value="0" enum="Intent">
+			Nothing: it only sets values.
+		</constant>
+		<constant name="INTENT_SELECT" value="1" enum="Intent">
+			Selects this row's slot: its item comes into the hand (the selected slot again: empty hands).
+		</constant>
+		<constant name="INTENT_MOVE_HERE" value="2" enum="Intent">
+			The slot [member from] names and this row's slot trade what they hold. Either may be empty.
+		</constant>
+		<constant name="INTENT_DROP" value="3" enum="Intent">
+			Throws this row's slot's item out in front of the player.
+		</constant>
+	</constants>
+</class>

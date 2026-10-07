@@ -117,6 +117,13 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "control", "name", "value" ), &CinderboxClient::control );
 	ClassDB::bind_method( D_METHOD( "takes_input" ), &CinderboxClient::takes_input );
 	ClassDB::bind_method( D_METHOD( "send_intent", "kind", "a", "b" ), &CinderboxClient::send_intent );
+	ClassDB::bind_method( D_METHOD( "set_local_value", "name", "value" ), &CinderboxClient::set_local_value );
+	ClassDB::bind_method( D_METHOD( "get_local_value", "name" ), &CinderboxClient::get_local_value );
+	ClassDB::bind_method( D_METHOD( "want_cursor", "who", "wanted" ), &CinderboxClient::want_cursor );
+	ClassDB::bind_method( D_METHOD( "wants_cursor" ), &CinderboxClient::wants_cursor );
+	ClassDB::bind_method( D_METHOD( "get_slot_count", "player" ), &CinderboxClient::get_slot_count );
+	ClassDB::bind_method( D_METHOD( "get_selected_slot", "player" ), &CinderboxClient::get_selected_slot );
+	ClassDB::bind_method( D_METHOD( "get_slot_item", "player", "slot" ), &CinderboxClient::get_slot_item );
 	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "use", "actions", "view" ),
 						  &CinderboxClient::set_input, DEFVAL( 0 ) );
 	ClassDB::bind_method( D_METHOD( "get_actions" ), &CinderboxClient::get_actions );
@@ -282,6 +289,77 @@ void CinderboxClient::_enter_tree()
 {
 	// HUD nodes (CbFieldLabel) find the client through this group.
 	add_to_group( "cinderbox_client" );
+}
+
+void CinderboxClient::set_local_value( const String& name, double value )
+{
+	std::string key = ToStd( name.strip_edges() );
+	if ( key.rfind( "ui.", 0 ) == 0 && key.size() > 3 && key.size() <= 64 && ( m_localValues.count( key ) != 0 || m_localValues.size() < 256 ) )
+	{
+		m_localValues[key] = value;
+	}
+}
+
+double CinderboxClient::get_local_value( const String& name ) const
+{
+	auto found = m_localValues.find( ToStd( name.strip_edges() ) );
+	return found != m_localValues.end() ? found->second : 0.0;
+}
+
+void CinderboxClient::want_cursor( int64_t who, bool wanted )
+{
+	auto found = std::find( m_cursorWanters.begin(), m_cursorWanters.end(), who );
+	if ( wanted && found == m_cursorWanters.end() )
+	{
+		m_cursorWanters.push_back( who );
+	}
+	else if ( wanted == false && found != m_cursorWanters.end() )
+	{
+		m_cursorWanters.erase( found );
+	}
+}
+
+bool CinderboxClient::wants_cursor() const
+{
+	// (A screen that was freed without saying so no longer asks.)
+	for ( int64_t who : m_cursorWanters )
+	{
+		if ( ObjectDB::get_instance( ObjectID( uint64_t( who ) ) ) != nullptr )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+int64_t CinderboxClient::get_slot_count( int64_t player ) const
+{
+	flecs::entity ve = m_mirror ? m_mirror->VisualOf( uint32_t( player ) ) : flecs::entity();
+	return ve.is_valid() ? int64_t( ve.get<present::Visual>().slotCount ) : 0;
+}
+
+int64_t CinderboxClient::get_selected_slot( int64_t player ) const
+{
+	flecs::entity ve = m_mirror ? m_mirror->VisualOf( uint32_t( player ) ) : flecs::entity();
+	uint8_t selected = ve.is_valid() ? ve.get<present::Visual>().slotIndex : kNoSlot;
+	return ve.is_valid() && selected < ve.get<present::Visual>().slotCount ? int64_t( selected ) : -1;
+}
+
+int64_t CinderboxClient::get_slot_item( int64_t player, int64_t slot ) const
+{
+	int64_t found = 0;
+	if ( !m_mirror || player == 0 || slot < 0 || slot >= kMaxSlots )
+	{
+		return 0;
+	}
+	m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
+							const present::RagdollAnim* ) {
+		if ( v.kind == present::VisualKind::Item && int64_t( v.holder ) == player && int64_t( v.slotIndex ) == slot )
+		{
+			found = int64_t( v.netId );
+		}
+	} );
+	return found;
 }
 
 void CinderboxClient::send_intent( int64_t kind, int64_t a, int64_t b )
@@ -1800,9 +1878,36 @@ bool CinderboxClient::Holds( uint32_t netId, uint16_t kind ) const
 
 bool CinderboxClient::check_conditions( int64_t net_id, const PackedStringArray& conditions ) const
 {
+	return CheckWith( net_id, conditions, Dictionary() );
+}
+
+// A name of the asker's own, or one of the viewer's own ("ui."): true with its value.
+bool CinderboxClient::OwnName( const std::string& name, const Dictionary& extra, float& value ) const
+{
+	String key = String::utf8( name.c_str() );
+	if ( extra.has( key ) )
+	{
+		value = float( double( extra[key] ) );
+		return true;
+	}
+	if ( name.rfind( "ui.", 0 ) == 0 )
+	{
+		auto found = m_localValues.find( name );
+		value = found != m_localValues.end() ? float( found->second ) : 0.0f;
+		return true;
+	}
+	return false;
+}
+
+bool CinderboxClient::CheckWith( int64_t net_id, const PackedStringArray& conditions, const Dictionary& extra ) const
+{
 	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
 	// Item kinds are names too: "pistol.gun" holds while the player holds one.
 	present::ExtraFields held = [&]( const std::string& name, float& value ) {
+		if ( OwnName( name, extra, value ) )
+		{
+			return true;
+		}
 		// Whose it is: a row of a CbList asks whether it is the viewer's own.
 		if ( name == "is_local" )
 		{
@@ -1838,9 +1943,19 @@ bool CinderboxClient::check_local_conditions( const PackedStringArray& condition
 // mod that is not running leaves its target alone).
 Variant CinderboxClient::evaluate( int64_t net_id, const String& expression ) const
 {
+	return EvaluateWith( net_id, expression, Dictionary() );
+}
+
+Variant CinderboxClient::EvaluateWith( int64_t net_id, const String& expression, const Dictionary& extra ) const
+{
 	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
 	bool known = false;
 	present::ExtraFields names = [&]( const std::string& name, float& value ) {
+		if ( OwnName( name, extra, value ) )
+		{
+			known = true;
+			return true;
+		}
 		if ( name == "is_local" )
 		{
 			known = true;
@@ -2162,8 +2277,25 @@ String CinderboxClient::ResolveKeysAndLooks( int64_t net_id, const String& forma
 
 String CinderboxClient::format_fields( int64_t net_id, const String& format ) const
 {
+	return FormatWith( net_id, format, Dictionary() );
+}
+
+String CinderboxClient::FormatWith( int64_t net_id, const String& format, const Dictionary& extra ) const
+{
+	// The asker's own names and the viewer's own values, first: "{slot.number}", "{ui.picked}".
+	String own = format;
+	Array keys = extra.keys();
+	for ( int64_t i = 0; i < keys.size(); ++i )
+	{
+		double v = double( extra[keys[i]] );
+		own = own.replace( "{" + String( keys[i] ) + "}", v == std::floor( v ) ? String::num_int64( int64_t( v ) ) : String::num( v, 1 ) );
+	}
+	for ( const auto& [name, v] : m_localValues )
+	{
+		own = own.replace( "{" + String::utf8( name.c_str() ) + "}", v == std::floor( v ) ? String::num_int64( int64_t( v ) ) : String::num( v, 1 ) );
+	}
 	String withName = ResolveNameFields(
-		net_id, ResolveKeysAndLooks( net_id, format ).replace( "{name}", get_entity_name( net_id ).replace( "{", "(" ) ) );
+		net_id, ResolveKeysAndLooks( net_id, own ).replace( "{name}", get_entity_name( net_id ).replace( "{", "(" ) ) );
 	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
 	std::string text =
 		present::FormatFields( m_frame.schema, ToStd( withName ), BoardOf( uint32_t( net_id ) ), globals, PrivatesOf( uint32_t( net_id ) ) );

@@ -75,6 +75,7 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.itemKind = item->kind;
 			f.socket = item->socket;
 			f.stowed = item->stowed != 0;
+			f.slotIndex = item->slot;
 			if ( const Blackboard* b = e.try_get<Blackboard>() )
 			{
 				f.board = *b;
@@ -117,6 +118,11 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.stepCount = ch->stepCount;
 			f.dead = ch->dead != 0;
 			f.linked = sim.EntityHold( f.netId, f.linkEnd, f.linkHolds, f.linkMotion );
+			if ( const Slots* slots = e.try_get<Slots>() )
+			{
+				f.slotIndex = slots->selected;
+				f.slotCount = slots->count;
+			}
 		}
 		if ( const Blackboard* b = e.try_get<Blackboard>() )
 		{
