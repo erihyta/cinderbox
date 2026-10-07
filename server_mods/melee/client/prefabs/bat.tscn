@@ -214,3 +214,10 @@ event = "melee.hit"
 subject = NodePath("^^")
 target = NodePath("../Sparks")
 method = "restart"
+
+[node name="PredictSwing" type="CbPrediction" parent="."]
+action = "use"
+cue = "melee.swing"
+cooldown = 0.58
+stance = "melee_swing"
+stance_layer = "full"

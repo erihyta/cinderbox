@@ -198,6 +198,22 @@ String CbPrediction::Refusal( const String& action, const cue::Context& context,
 	}
 	// Conditions read the viewer's own entity (and the world), like a reaction whose subject it is.
 	Node* local = cue::EntityOf( context.local, context.director );
+	// A prediction inside an entity's own scene (an item's) is that entity's: it speaks only for the
+	// one the viewer holds, and only while that one is in use. So an item's scene can carry what
+	// its own use looks like, however many of them there are in the world.
+	Node* own = cue::EntityOf( const_cast<CbPrediction*>( this ), context.director );
+	if ( own != nullptr && own != local )
+	{
+		if ( own->get_parent() == nullptr || cue::EntityOf( own->get_parent(), context.director ) != local )
+		{
+			return no( "it is in an item the viewer does not hold" );
+		}
+		Dictionary state = own->get_meta( cue::kStateMeta, Dictionary() );
+		if ( state.has( "in_use" ) && bool( state["in_use"] ) == false )
+		{
+			return no( "the item it is in is put away" );
+		}
+	}
 	for ( size_t i = 0; i < m_tests.size(); ++i )
 	{
 		String missing;

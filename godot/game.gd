@@ -705,6 +705,8 @@ func _autoplay_finish() -> void:
 	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
 		stats.get("state"), stats.get("checksums_verified", 0), stats.get("desyncs", 0), stats.get("fingerprint", "none"), stats.get("fp_environment_ok", "not simulating")])
 	print("mod events seen: ", _event_counts)
+	# What a press of the use button would predict now, and why not (each CbPrediction, by its path).
+	print("use would predict: ", client.get_director().explain_press("use"))
 	_stop()
 	# (A source that cannot desync, a view file, reports none.)
 	get_tree().quit(0 if stats.get("desyncs", 0) == 0 and stats.get("state") == "playing" else 2)

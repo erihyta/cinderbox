@@ -54,3 +54,22 @@ transform = Transform3D(-7.590404e-09, 4.3047308e-08, -1, 0.9848076, 0.17364821,
 
 [node name="OtherHand" type="Marker3D" parent="." unique_id=1225211331]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.014388949, 0.0062951446)
+
+[node name="PredictFire" type="CbPrediction" parent="."]
+action = "use"
+cue = "pistol.fired"
+conditions = PackedStringArray("pistol.ammo > 0", "!pistol.reloading", "!combat.dead")
+cooldown = 0.19
+changes = PackedStringArray("pistol.ammo -= 1")
+
+[node name="PredictDry" type="CbPrediction" parent="."]
+action = "use"
+cue = "pistol.dry"
+conditions = PackedStringArray("pistol.ammo == 0", "!pistol.reloading", "!combat.dead")
+cooldown = 0.19
+
+[node name="PredictScan" type="CbPrediction" parent="."]
+action = "mark"
+cue = "pistol.scan"
+conditions = PackedStringArray("!pistol.reloading", "!combat.dead")
+cooldown = 0.95

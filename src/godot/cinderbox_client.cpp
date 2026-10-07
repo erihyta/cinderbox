@@ -1287,7 +1287,8 @@ void CinderboxClient::PushStates()
 							const present::RagdollAnim* ) {
 		auto it = m_nodes.find( id );
 		auto* node = it != m_nodes.end() ? Object::cast_to<Node>( ObjectDB::get_instance( it->second ) ) : nullptr;
-		if ( node == nullptr || v.hasBoard == false )
+		// (An item has a state whether a mod wrote on its board or not: whether it is in use.)
+		if ( node == nullptr || ( v.hasBoard == false && v.kind != present::VisualKind::Item ) )
 		{
 			return;
 		}
@@ -1306,6 +1307,7 @@ void CinderboxClient::PushStates()
 			}
 		}
 		hash = Mix( hash, 0x30000u + ( v.linked ? 1u : 0u ) + ( v.linkHolds ? 2u : 0u ) );
+		hash = Mix( hash, 0x40000u + ( v.kind == present::VisualKind::Item && v.holder != 0 && v.stowed == false ? 1u : 0u ) );
 		auto held = m_heldKinds.find( v.netId );
 		if ( held != m_heldKinds.end() )
 		{
@@ -1342,6 +1344,11 @@ void CinderboxClient::PushStates()
 			{
 				state[String::utf8( schema.itemKinds[kind].c_str() )] = Holds( v.netId, uint16_t( kind ) );
 			}
+		}
+		// An item: whether it is in a hand (not lying, not put away). What is inside its scene asks.
+		if ( v.kind == present::VisualKind::Item )
+		{
+			state["in_use"] = v.holder != 0 && v.stowed == false;
 		}
 		director->set_state( node, state );
 	} );

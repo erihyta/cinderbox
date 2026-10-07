@@ -31,6 +31,12 @@
 // The cue itself reaches the state machine as well (a recoil state entered on "pistol.fired").
 // The host of the director applies these (the Cinderbox viewer does; see present/anim_lead.h).
 //
+// Where it sits says whose it is. Under the World (a mod's reactions scene) it speaks for the
+// viewer whatever it holds, and its conditions say when ("pistol.gun"). Inside an item's own
+// scene it speaks only for the copy of that item the viewer holds, while it is in use (the
+// item's state "in_use"): no condition has to name the item, and a hundred pistols in the
+// world are one prediction.
+//
 // Both halves are the modder's: the server mod emits the cue, the look predicts it by the same
 // name. The conditions are the look's guess of the server's rule; where the guess is wrong, a
 // reaction played that should not have (it is not taken back), or the cue simply plays late;
