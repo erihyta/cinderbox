@@ -521,9 +521,14 @@ func _auto_bag(since: float) -> void:
 		return
 	match _auto_bag_step:
 		0, 3:
-			# The key, for one frame: it switches the screen.
-			Input.action_press("cb_inventory")
-			Input.action_release.call_deferred("cb_inventory")
+			# The key itself, as a keyboard sends it (down, then up): it switches the screen.
+			for bound in InputMap.action_get_events("cb_inventory"):
+				for pressed in [true, false]:
+					var key := (bound as InputEvent).duplicate() as InputEventKey
+					if key != null:
+						key.pressed = pressed
+						Input.parse_input_event(key)
+			print("autoplay: pressed the inventory key")
 		1, 2:
 			var cells := []
 			for click in get_tree().root.find_children("*", "CbClick", true, false):
