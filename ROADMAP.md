@@ -94,8 +94,8 @@ The extension has about 35 node classes. Several do the same thing in two places
 | Conditions, five times | each HUD node declares and evaluates its own | one base: subject, conditions, format |
 | Three body descriptions | `CbProp`, `CbTemplate` + `CbComponent`, `CbItem` | one shared body (shape, mass or density, friction, bounce); the item keeps what is an item's |
 
-- **Kept as it is**: `CbGrip` (a bare marker today; hand placement will want it), the motion nodes,
-  the character nodes.
+- **Kept as they are**: the motion nodes, the character nodes. (`CbGrip` is gone: an item's grips
+  are two markers its `CbItem` names.)
 - **After it**: the HUD is four nodes (label, list, click, key) and a reaction.
 - **Also here**: `cinderbox_client.cpp` (2,700 lines) in parts: the frame source, the HUD's values,
   items.
