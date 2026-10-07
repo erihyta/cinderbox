@@ -7,7 +7,7 @@
 // hot on the back).
 //
 // This mod says how many slots there are and what a life is given and loses:
-//   declare.Slots( 3 )   three slots; keys 1 to 3 select them, and a second press empties the hands
+//   declare.Slots( 4 )   four slots; keys 1 to 4 select them, and a second press empties the hands
 //   "inventory.start"    an item property: 1 gives every player one when a life starts
 //   dying                takes back what the life started with and drops the rest
 //
@@ -18,7 +18,7 @@
 //               or on a character without that socket, it is out of sight
 //
 // It publishes "inventory.slot" (the selected slot, from 1; 0: empty hands) and "inventory.item_1"
-// .. "inventory.item_3" (the NetId of each slot's item, 0: empty) on the player's board, for its
+// .. "inventory.item_4" (the NetId of each slot's item, 0: empty) on the player's board, for its
 // look (client/ui): a row of slots at the bottom of the screen. Those follow the simulation a tick
 // behind; the hands do not.
 
@@ -36,7 +36,7 @@ namespace
 using namespace cb;
 using namespace cb::mods;
 
-constexpr int kSlots = 3;
+constexpr int kSlots = 4;
 
 struct Bag
 {

@@ -511,6 +511,7 @@ func _event_for_key(key: String) -> InputEvent:
 
 ## The unattended player takes a slot's item out, once.
 var _auto_slot := -1
+var _auto_hooks := 0
 
 
 func _auto_select(slot: int) -> void:
@@ -551,8 +552,10 @@ func _send_input(delta: float) -> void:
 		yaw += delta * 0.6
 		var elapsed := Time.get_ticks_msec() / 1000.0 - playing_since if playing_since >= 0.0 else 0.0
 		# A hook, if the server has one: a press throws it, the next lets it go.
-		if fmod(elapsed, 2.0) < 0.1:
-			actions |= _action_bit("grapple")
+		# (The hook is an item used by its slot's key, the fourth: one intent every two seconds.)
+		if int(elapsed / 2.0) != _auto_hooks and client.get_mod_names().has("grapple"):
+			_auto_hooks = int(elapsed / 2.0)
+			client.send_intent(INTENT_SELECT, 3, 0)
 		if elapsed < autoplay * 0.4:
 			if auto_rng.randf() < delta * 2.0:
 				actions |= _action_bit("spawn_prop")

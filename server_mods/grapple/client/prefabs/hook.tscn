@@ -1,0 +1,40 @@
+[gd_scene format=3]
+
+; The grappling hook as an item. This scene is the item (its root is a CbItem):
+;
+;   Hook   CbItem   kind "grapple.hook". It is used by its slot's key (use), where it is: it never
+;                   comes into the hand, and it has no holster, so it is out of sight. Its slot is
+;                   the fourth.
+;   Body   CollisionShape3D   its body, should it ever lie in the world
+;   Mesh   MeshInstance3D     what it looks like then
+;
+; Pressing its slot's key records "grapple.hook.used" in every simulation on that tick, and the
+; mod's motion (motion_sets/grapple_moves.tscn) starts on that: so the throw is predicted, as it was
+; when it had a key of its own. Saving this scene bakes items/grapple.hook.cfg.
+
+[sub_resource type="BoxShape3D" id="Body"]
+size = Vector3(0.1, 0.1, 0.22)
+
+[sub_resource type="StandardMaterial3D" id="Metal"]
+albedo_color = Color(0.85, 0.72, 0.3, 1)
+metallic = 0.5
+roughness = 0.4
+
+[sub_resource type="BoxMesh" id="Mesh"]
+material = SubResource("Metal")
+size = Vector3(0.1, 0.1, 0.22)
+
+[node name="Hook" type="CbItem"]
+kind = "grapple.hook"
+display_name = "Grapple"
+mass = 0.8
+use = 1
+slot = 4
+
+[node name="Body" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.11)
+shape = SubResource("Body")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.11)
+mesh = SubResource("Mesh")

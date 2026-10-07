@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-; The grapple mod's HUD: the key, and whether the hook is out. No scripts. "linked" is true for
+; The grapple mod's HUD: whether the hook is out (its key is its slot's, in the inventory's row). No scripts. "linked" is true for
 ; a player whose line is out, "link_holds" once it has taken hold.
 
 [sub_resource type="LabelSettings" id="Small"]
@@ -19,4 +19,5 @@ offset_top = -140.0
 offset_right = 324.0
 offset_bottom = -112.0
 label_settings = SubResource("Small")
-text_format = "[{key:grapple}]  GRAPPLE"
+text_format = "HOOK OUT"
+conditions = PackedStringArray("linked")

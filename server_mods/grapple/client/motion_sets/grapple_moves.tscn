@@ -3,7 +3,8 @@
 ; The grapple mod's motion: a grappling hook. Every simulation runs it from the player's own input,
 ; so the throw, the pull and the swing are predicted.
 ;
-;   Hook   CbMotion   on "grapple" (Q), while no hook is out; pressing Q again lets it go.
+;   Hook   CbMotion   on "grapple.hook.used" (the hook's slot key: the engine records it when the
+;                     item is used), while no hook is out; the same event again lets it go.
 ;                     While it holds: the player is in the air (airborne) whatever is under it,
 ;                     so nothing rubs the pull off and it falls back to the ground when the hook
 ;                     lets go; more air control. Emits grapple.fired at where it will hold.
@@ -22,9 +23,10 @@
 set_name = "grapple.moves"
 
 [node name="Hook" type="CbMotion" parent="."]
-action = "grapple"
+when = 2
+event = "grapple.hook.used"
 conditions = PackedStringArray("not linked")
-until = PackedStringArray("pressed.grapple")
+until = PackedStringArray("grapple.hook.used")
 parameters = {
 "air_control": 0.6,
 "airborne": 1.0

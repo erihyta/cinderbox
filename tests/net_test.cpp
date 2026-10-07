@@ -75,11 +75,12 @@ using Clock = std::chrono::steady_clock;
 // Bot::Sample turns into slot intents.
 // And the use button (the left mouse button), which is the engine's too.
 constexpr uint16_t kKeyUse = 1 << 11;
+constexpr uint16_t kKeySlot4 = 1 << 10;
 constexpr uint16_t kKeySlot1 = 1 << 12;
 constexpr uint16_t kKeySlot2 = 1 << 13;
 constexpr uint16_t kKeySlot3 = 1 << 14;
 constexpr uint16_t kKeyHands = 1 << 15;
-constexpr uint16_t kSlotKeys = kKeySlot1 | kKeySlot2 | kKeySlot3 | kKeyHands;
+constexpr uint16_t kSlotKeys = kKeySlot1 | kKeySlot2 | kKeySlot3 | kKeySlot4 | kKeyHands;
 
 struct Bot
 {
@@ -116,7 +117,7 @@ struct Bot
 			in.actions = uint16_t( in.actions & ~( kSlotKeys | kKeyUse ) );
 			if ( slotKey != 0 )
 			{
-				uint8_t slot = slotKey & kKeySlot1 ? 0 : slotKey & kKeySlot2 ? 1 : slotKey & kKeySlot3 ? 2 : kNoSlot;
+				uint8_t slot = slotKey & kKeySlot1 ? 0 : slotKey & kKeySlot2 ? 1 : slotKey & kKeySlot3 ? 2 : slotKey & kKeySlot4 ? 3 : kNoSlot;
 				in.intent = uint8_t( SlotIntent::Select );
 				in.intentA = slot;
 				in.intentSeq = slotPresses;
@@ -1126,10 +1127,10 @@ void TestInventory()
 				lyingBat = item != nullptr && item->holder == 0 && int( item->kind ) == batKind ? r.netId : lyingBat;
 			}
 		}
-		startsStowed |= tick > 80 && tick < 100 && inHand == 0 && c.carried == 3 && c.stowed == 3 && c.lying == 3; // a pistol, a bat and a rifle, and one of each lying about
+		startsStowed |= tick > 80 && tick < 100 && inHand == 0 && c.carried == 4 && c.stowed == 4 && c.lying == 4; // a pistol, a bat, a rifle and a hook, and one of each lying about
 		if ( tick > 130 && tick < 150 && kindOf( inHand ) == batKind )
 		{
-			batOut = c.carried == 3 && c.stowed == 2;
+			batOut = c.carried == 4 && c.stowed == 3;
 			ownBat = inHand;
 		}
 		// The board names what is in each slot, for the HUD: the life's own, then the picked-up bat, then nothing.
@@ -1138,24 +1139,24 @@ void TestInventory()
 		boardSaysStart |= tick > 130 && tick < 150 && ownBat != 0 && in3 == ownBat && kindOf( in2 ) == gunKind;
 		boardSaysSwap |= reached && tick < 600 && in3 == lyingBat && kindOf( in2 ) == gunKind;
 		boardSaysEmpty |= tick > 700 && in3 == 0 && kindOf( in2 ) == gunKind;
-		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == 3 && c.stowed == 2;
-		droppedBySwitching |= tick > 100 && tick < 200 && c.lying != 3;
+		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == 4 && c.stowed == 3;
+		droppedBySwitching |= tick > 100 && tick < 200 && c.lying != 4;
 		// The lying bat is in the hand: the swap happened.
 		if ( inHand == lyingBat && lyingBat != 0 && tick < 520 )
 		{
 			reached = true;
 			const HeldItem* old = ownBat != 0 ? server.FindEntity( ownBat ).try_get<HeldItem>() : nullptr;
-			swapped |= old != nullptr && old->holder == 0 && c.lying == 3;
-			gunKept |= c.carried == 3 && c.stowed == 2;
+			swapped |= old != nullptr && old->holder == 0 && c.lying == 4;
+			gunKept |= c.carried == 4 && c.stowed == 3;
 		}
 		// The pistol's slot and back to the bat's: the picked-up bat is put away and taken out, never dropped.
 		const HeldItem* mine = lyingBat != 0 ? server.FindEntity( lyingBat ).try_get<HeldItem>() : nullptr;
 		awayAndKept |= tick > 545 && tick < 560 && kindOf( inHand ) == gunKind && mine != nullptr && mine->holder == me && mine->stowed != 0 &&
-					   c.lying == 3;
+					   c.lying == 4;
 		backInHand |= tick > 585 && tick < 600 && inHand == lyingBat && reached;
-		thrown |= tick > 610 && tick < 630 && inHand == 0 && c.carried == 2 && c.lying == 4;
+		thrown |= tick > 610 && tick < 630 && inHand == 0 && c.carried == 3 && c.lying == 5;
 		gunAfterThrow |= tick > 645 && tick < 660 && kindOf( inHand ) == gunKind;
-		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 2 && server.BoardValue( me, slotField->slot ) == 2; // the bat's slot is selected, and empty
+		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 3 && server.BoardValue( me, slotField->slot ) == 2; // the bat's slot is selected, and empty
 	} );
 	h.Report();
 	std::printf( "    starts stowed %d, bat out %d, pistol out %d, dropped by switching %d\n", int( startsStowed ), int( batOut ), int( gunOut ),
@@ -1172,7 +1173,7 @@ void TestInventory()
 	std::printf( "    the board's slots: at the start %d, after the swap %d, empty after the throw %d\n", int( boardSaysStart ),
 				 int( boardSaysSwap ), int( boardSaysEmpty ) );
 	CHECK( boardSaysStart && boardSaysSwap && boardSaysEmpty );
-	CHECK( startTotal == 9 && leastTotal == 9 && mostTotal == 9 ); // three lying, three per player; none made, none lost
+	CHECK( startTotal == 12 && leastTotal == 12 && mostTotal == 12 ); // four lying, four per player; none made, none lost
 	for ( Bot& b : h.bots )
 	{
 		CHECK( b.client->GetStats().desyncs == 0 );
@@ -1496,7 +1497,7 @@ void TestHeadshot()
 		else
 		{
 			diedAt = 0;
-			newLifeHasItems |= wasDead && carried == 3;
+			newLifeHasItems |= wasDead && carried == 4; // a pistol, a bat, a rifle and a hook
 		}
 		const SimGlobals& g = h.server.Sim().Globals();
 		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
@@ -3014,7 +3015,7 @@ void TestGrapple()
 	{
 		Harness h( 47871 );
 		const ModSchema& schema = h.server.Schema();
-		uint16_t grapple = schema.ActionMask( "grapple" );
+		uint16_t grapple = kKeySlot4;
 		int fired = schema.FindEvent( "grapple.fired" );
 		CHECK( grapple != 0 && fired >= 0 );
 		if ( grapple == 0 )
@@ -3107,7 +3108,7 @@ void TestGrapple()
 	// Two players, one ball: both hooks in it, and everyone agrees where it went.
 	{
 		Harness h( 47873 );
-		uint16_t grapple = h.server.Schema().ActionMask( "grapple" );
+		uint16_t grapple = kKeySlot4;
 		struct Aim
 		{
 			std::atomic<int> yaw[2] = { 0, 0 };
