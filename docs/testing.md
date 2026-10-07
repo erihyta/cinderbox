@@ -25,6 +25,7 @@ All tools are in `<build dir>/bin`.
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_grips.gd` | Checks what an item (its `CbItem`, body and grip markers) bakes to, on scenes built in code: carried at the origin, at a carrying marker, at a turned one, and what is refused |
 | `godot --headless --path godot --script res://addons/cinderbox_maps/check_object_source.gd -- FILE.cbv` | Checks that the viewer draws from any object that hands it packets: a GDScript source reads a view file, with no peer extension involved |
 | `godot --path godot -- --autoplay=S --screenshot=F.png --screenshot-every=S2` | Unattended client; also saves `F_1.png`, `F_2.png`, ... and prints the mod events it saw |
+| `godot --path godot --max-fps 60 -- --autoplay=22 --view-probe=N [--probe-frames=DIR]` | The first-person view, measured: the unattended player goes into first person with slot N out (0: empty hands) and stands, walks, sprints, strafes and turns by a plan; the run prints how far its hand moved against the camera in each part (it should not), and with `--probe-frames` keeps 48 drawn frames of each part to compare outside the game (what is drawn can differ from what the nodes say) |
 | `scripts/stress_test.sh --bots N --full M --latency MS --jitter MS --loss % --rollback T` | Starts a server, the simulator and the bots, and prints a summary |
 
 ```sh

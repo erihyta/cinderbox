@@ -81,6 +81,14 @@ var hud: Node
 var show_debug := true
 
 var autoplay := 0.0
+var view_probe := false
+var _probe_slot := 0
+var _probe_frames_dir := ""
+var _probe_body := {}
+var _probe_frames := {} # part -> [Image]
+var _probe_part_since := {} # part -> when it began
+## view_probe: per part of the plan, the hand's place in the camera's frame: [least, most] of each axis.
+var _probe := {}
 var screenshot := ""
 var playing_since := -1.0
 var auto_rng := RandomNumberGenerator.new()
@@ -122,6 +130,15 @@ func _ready() -> void:
 		peer.rollback_min = int(args["rollback"])
 		peer.rollback_max = int(args["rollback"])
 	autoplay = float(args.get("autoplay", "0"))
+	# --view-probe: the unattended player goes into first person and walks and turns by a plan, and
+	# the run reports how far its hand moved on the screen in each part (it should stand still).
+	view_probe = args.has("view-probe")
+	_probe_slot = int(args.get("view-probe", "0")) if view_probe else 0
+	# --probe-frames=DIR: the probe also keeps what was drawn, a run of frames from each part of
+	# its plan, so what is on the screen can be measured (tools outside the game compare them).
+	_probe_frames_dir = args.get("probe-frames", "")
+	if view_probe and _probe_frames_dir != "":
+		RenderingServer.frame_post_draw.connect(_probe_capture)
 	screenshot = args.get("screenshot", "")
 	screenshot_every = float(args.get("screenshot-every", "0"))
 	auto_rng.seed = Time.get_ticks_usec()
@@ -597,13 +614,28 @@ func _send_input(delta: float) -> void:
 		sprint = true
 		jump = auto_rng.randf() < delta * 1.0
 		yaw += delta * 0.6
+		if view_probe:
+			var plan := _probe_plan(Time.get_ticks_msec() / 1000.0 - playing_since if playing_since >= 0.0 else 0.0)
+			yaw += delta * (float(plan[2]) - 0.6)
+			move = plan[1]
+			sprint = bool(plan[3])
+			jump = false
+			first_person = true
+			if plan[0] == "looking up and down":
+				pitch = 0.9 * sin((Time.get_ticks_msec() / 1000.0) * 3.0)
 		var elapsed := Time.get_ticks_msec() / 1000.0 - playing_since if playing_since >= 0.0 else 0.0
 		# A hook, if the server has one: a press throws it, the next lets it go.
 		# (The hook is an item used by its slot's key, the fourth: one intent every two seconds.)
-		if int(elapsed / 2.0) != _auto_hooks and client.get_mod_names().has("grapple"):
+		if view_probe:
+			# The probe's player only walks and turns; with "--view-probe=N" it has slot N out.
+			if _probe_slot > 0:
+				_auto_select(_probe_slot - 1)
+		elif int(elapsed / 2.0) != _auto_hooks and client.get_mod_names().has("grapple"):
 			_auto_hooks = int(elapsed / 2.0)
 			client.send_intent(INTENT_SELECT, 3, 0)
-		if elapsed < autoplay * 0.4:
+		if view_probe:
+			pass
+		elif elapsed < autoplay * 0.4:
 			if auto_rng.randf() < delta * 2.0:
 				actions |= _action_bit("spawn_prop")
 		elif elapsed < autoplay * 0.7:
@@ -614,7 +646,8 @@ func _send_input(delta: float) -> void:
 			use = auto_rng.randf() < delta * 2.0
 		# The inventory screen, if a mod brings one (a CbShowKey named "inventory"): opened in the
 		# middle of the run, its first slot clicked and then its third (they trade places), closed.
-		_auto_bag(elapsed - autoplay * 0.45)
+		if not view_probe:
+			_auto_bag(elapsed - autoplay * 0.45)
 		# Hold the scores key at the end (a mod's CbShowKey names it), so screenshots show them too.
 		if elapsed > autoplay * 0.8 and InputMap.has_action("cb_scores") and not Input.is_action_pressed("cb_scores"):
 			Input.action_press("cb_scores")
@@ -652,16 +685,80 @@ func _update_first_person() -> bool:
 	return true
 
 
+## view_probe: what the unattended player does `at` seconds into the run: [name, move, turn rate, sprint].
+func _probe_plan(at: float) -> Array:
+	if at < 3.0:
+		return ["settle", Vector2.ZERO, 0.0, false]
+	if at < 6.0:
+		return ["standing still", Vector2.ZERO, 0.0, false]
+	if at < 9.0:
+		return ["walking ahead", Vector2(0, 1), 0.0, false]
+	if at < 12.0:
+		return ["sprinting ahead", Vector2(0, 1), 0.0, true]
+	if at < 15.0:
+		return ["strafing left and right", Vector2(1 if fmod(at, 1.0) < 0.5 else -1, 0), 0.0, false]
+	if at < 18.0:
+		return ["standing, turning", Vector2.ZERO, 2.5, false]
+	if at < 21.0:
+		return ["walking and turning", Vector2(0, 1), 2.5, false]
+	return ["looking up and down", Vector2.ZERO, 0.0, false]
+
+
+## view_probe with --probe-frames: the frame just drawn, half size, 48 in a row from one second
+## into each part of the plan.
+func _probe_capture() -> void:
+	if playing_since < 0.0 or not client.first_person:
+		return
+	var now := Time.get_ticks_msec() / 1000.0 - playing_since
+	var part: String = _probe_plan(now)[0]
+	if part == "settle":
+		return
+	if not _probe_part_since.has(part):
+		_probe_part_since[part] = now
+		_probe_frames[part] = []
+	if now - float(_probe_part_since[part]) < 1.0 or (_probe_frames[part] as Array).size() >= 48:
+		return
+	var image := get_viewport().get_texture().get_image()
+	image.resize(image.get_width() / 2, image.get_height() / 2, Image.INTERPOLATE_BILINEAR)
+	(_probe_frames[part] as Array).append(image)
+
+
+## view_probe: where the right hand is in the camera's own frame, this drawn frame.
+func _probe_sample() -> void:
+	if not view_probe or playing_since < 0.0 or not client.first_person:
+		return
+	var part: String = _probe_plan(Time.get_ticks_msec() / 1000.0 - playing_since)[0]
+	if part == "settle":
+		return
+	var hand: Vector3 = camera.global_transform.affine_inverse() * client.get_bone_position(client.get_local_net_id(), "RightHand")
+	# The body's own place and facing against the camera's, to tell what moves when the hand does.
+	var body: Node3D = client.get_entity_node(client.get_local_net_id())
+	var origin: Vector3 = camera.global_transform.affine_inverse() * body.global_position
+	var turn: float = wrapf(body.global_rotation.y - camera.global_rotation.y, -PI, PI)
+	if not _probe_body.has(part):
+		_probe_body[part] = [origin, origin, turn, turn]
+	var was: Array = _probe_body[part]
+	_probe_body[part] = [Vector3(minf(was[0].x, origin.x), minf(was[0].y, origin.y), minf(was[0].z, origin.z)),
+		Vector3(maxf(was[1].x, origin.x), maxf(was[1].y, origin.y), maxf(was[1].z, origin.z)), minf(was[2], turn), maxf(was[3], turn)]
+	if not _probe.has(part):
+		_probe[part] = [hand, hand, 0]
+	var seen: Array = _probe[part]
+	_probe[part] = [Vector3(minf(seen[0].x, hand.x), minf(seen[0].y, hand.y), minf(seen[0].z, hand.z)),
+		Vector3(maxf(seen[1].x, hand.x), maxf(seen[1].y, hand.y), maxf(seen[1].z, hand.z)), seen[2] + 1]
+
+
 func _update_camera() -> void:
 	if _leaving or not is_inside_tree():
 		return
 	camera.near = 0.03 if first_person else 0.05
 	if _update_first_person():
+		_probe_sample()
 		if _shake > 0.0:
 			camera.global_position += Vector3(
 				auto_rng.randf_range(-_shake, _shake),
 				auto_rng.randf_range(-_shake, _shake),
 				auto_rng.randf_range(-_shake, _shake)) * 0.3
+		_camera_moved()
 		return
 	# The point above the player the camera orbits (moved to a shoulder, if it is), or its ragdoll
 	# while dead. The server's line of sight passes through the same point.
@@ -677,6 +774,16 @@ func _update_camera() -> void:
 			auto_rng.randf_range(-_shake, _shake),
 			auto_rng.randf_range(-_shake, _shake),
 			auto_rng.randf_range(-_shake, _shake))
+	_camera_moved()
+
+
+## The camera is placed just before the frame is drawn (so it has this frame's newest pose), which
+## is after Godot has passed this frame's moved nodes on to the renderer: left at that, the frame
+## would be drawn from where the camera was a frame ago, while the player's body is drawn where it
+## is now. In first person that makes the arms shake against the view with every step, by the
+## distance walked in a frame. So the camera's move is passed on at once.
+func _camera_moved() -> void:
+	camera.force_update_transform()
 
 
 func _update_help() -> void:
@@ -755,6 +862,18 @@ func _autoplay_finish() -> void:
 	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
 		stats.get("state"), stats.get("checksums_verified", 0), stats.get("desyncs", 0), stats.get("fingerprint", "none"), stats.get("fp_environment_ok", "not simulating")])
 	print("mod events seen: ", _event_counts)
+	for part in _probe_frames:
+		DirAccess.make_dir_recursive_absolute(_probe_frames_dir)
+		var frames: Array = _probe_frames[part]
+		for i in frames.size():
+			(frames[i] as Image).save_png("%s/%s_%02d.png" % [_probe_frames_dir, String(part).replace(" ", "_").replace(",", ""), i])
+	for part in _probe:
+		var moved: Vector3 = (_probe[part][1] - _probe[part][0]) * 100.0
+		print("view probe, %-24s the hand moved %.2f mm across, %.2f mm up and down, %.2f mm in depth on the screen (%d frames)" % [
+			part + ":", moved.x * 10.0, moved.y * 10.0, moved.z * 10.0, _probe[part][2]])
+		var body_moved: Vector3 = (_probe_body[part][1] - _probe_body[part][0]) * 1000.0
+		print("            %-24s the body's origin moved %.2f / %.2f / %.2f mm against the camera, its facing %.3f degrees" % [
+			"", body_moved.x, body_moved.y, body_moved.z, rad_to_deg(_probe_body[part][3] - _probe_body[part][2])])
 	# What a press of the use button would predict now, and why not (each CbPrediction, by its path).
 	print("use would predict: ", client.get_director().explain_press("use"))
 	_stop()
