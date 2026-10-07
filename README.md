@@ -105,7 +105,7 @@ A join that fails comes back to the menu and says why:
 
 - WASD moves, Shift sprints and Space jumps: the engine's own controls.
 - Everything else comes from the server's mods, bound to the keys they suggest. With the shipped mods:
-  1 to 4 switch slots (hands, pistol, bat), the left mouse button fires or swings, R reloads, E picks
+  1 to 3 select a slot (pistol, bat, rifle; the same key again empties the hands), the left mouse button uses what is in the hand, R reloads, E picks
   up, G throws, V dashes (twice, then they come back), Q throws a grappling hook at what is
   under the crosshair and pulls you there (Q again lets go), and F with empty hands spawns a prop.
   Switched off by default: the crouch (C, the `sneak` mod), the `flight` mod (T flies, Shift

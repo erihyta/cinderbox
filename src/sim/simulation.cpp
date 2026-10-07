@@ -592,20 +592,57 @@ void Simulation::StepSlots( const InputFrame& frame )
 		}
 		flecs::entity e = FindEntity( netId );
 		const PlayerInput& in = frame.inputs[slot];
+		const Character& c = e.get<Character>();
 		const bool had = e.has<Slots>();
 		Slots slots = had ? e.get<Slots>() : Slots{ m_config.slots, kNoSlot, in.intentSeq, 0 };
+		const bool act = had && c.dead == 0;
+		// Using an item is recorded where every simulation can see it (the player's own at once): the
+		// kind's event, at the player, with the item.
+		auto used = [&]( uint32_t item ) {
+			const ItemShape rule = ItemShapeOf( FindEntity( item ).get<HeldItem>().kind );
+			if ( rule.usedEvent != 0xFFFF )
+			{
+				ModEventRecord record;
+				record.type = rule.usedEvent;
+				record.netIdA = netId;
+				record.netIdB = item;
+				record.tick = m_globals.tick;
+				record.point = e.get<Transform>().position;
+				RecordModEvent( record );
+			}
+		};
+		// The use button, on the tick it goes down: the item in the hand, if it is one that is used so.
+		if ( act && c.frozen == 0 && ( in.buttons & BtnUse ) != 0 && ( c.prevButtons & BtnUse ) == 0 )
+		{
+			uint32_t item = SlotItemOf( netId, slots.selected );
+			if ( item != 0 && ItemShapeOf( FindEntity( item ).get<HeldItem>().kind ).use == 0 )
+			{
+				used( item );
+			}
+		}
 		if ( had && in.intentSeq == slots.seq )
 		{
 			continue;
 		}
 		// Once per intent: an input repeated while a packet is late, or guessed for someone else,
 		// has the same count and does nothing again.
-		const bool act = had && e.get<Character>().dead == 0;
 		slots.seq = in.intentSeq;
 		if ( act && in.intent == uint8_t( SlotIntent::Select ) && ( in.intentA < slots.count || in.intentA == kNoSlot ) )
 		{
-			// A slot's key again, or no slot at all: empty hands.
-			slots.selected = slots.selected == in.intentA ? kNoSlot : in.intentA;
+			uint32_t item = in.intentA == kNoSlot ? 0 : SlotItemOf( netId, in.intentA );
+			if ( item != 0 && ItemShapeOf( FindEntity( item ).get<HeldItem>().kind ).use == 1 )
+			{
+				// Its slot's key uses it where it is: nothing changes hands.
+				if ( c.frozen == 0 )
+				{
+					used( item );
+				}
+			}
+			else
+			{
+				// A slot's key again, or no slot at all: empty hands.
+				slots.selected = slots.selected == in.intentA ? kNoSlot : in.intentA;
+			}
 		}
 		else if ( act && in.intent == uint8_t( SlotIntent::Move ) && in.intentA < slots.count && in.intentB < slots.count &&
 				  in.intentA != in.intentB )

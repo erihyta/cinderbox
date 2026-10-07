@@ -76,11 +76,11 @@ starts with). The Roblox way: a tool is one object that has everything of its ow
 | Piece | Today | Would be |
 |---|---|---|
 | One node makes an item | **done (M104)**: `CbItem`, the root of the item's scene | an icon; a stack size |
-| How an item is used | each item mod reads the `fire` action while its item is out | a choice on the `CbItem`: **select, then the use button** (a tool: the slot key takes it out) or **the slot key uses it** (a consumable, an ability); one `used` signal for both, predicted |
+| How an item is used | **done (M107)**: `CbItem.use`: select it then the use button, or its slot key uses it; `ctx.Used` / `Using` for its mod; `<kind>.used` recorded by every simulation | the grapple is the slot-key example (M108); the holster on the `CbItem` too |
 | Slots in the simulation | **done (M106)**: an item's slot and a player's selected slot are state; select, move and drop are intents in the input, predicted; the `inventory` mod is rules only | slots on entities that are not players (a chest); a count per slot (stacks); resizing one player's; slots in the cross-compiler reference scenario |
 | An intent with a value | **done (M106)** for slots: a kind, two slot numbers and a count in the input | intents a mod declares ("buy item 3") |
 | The inventory screen | a row of slots drawn from fields the mod publishes a tick late; keys 1 to 9 select | the look reads the slots themselves (in the frame); a `CbList` of slots; clicks, a cursor while a screen is open, client-only fields (`ui.picked_slot`); a click-to-move grid as the example |
-| An item's own reactions and predictions | in the mod's reactions scene, with conditions on the kind | under the `CbItem`, in force while that item is in use: an item scene that has everything of its own |
+| An item's own reactions and predictions | **done (M109)**: a `CbPrediction` under the `CbItem` speaks for the copy in the viewer's hand; reactions there already follow the holder | the item's HUD in its scene too; a prediction in an item used by its slot key (it is never in a hand) |
 | The rules API | C++ in each mod | what a mod decides about containers, named |
 
 ### 1b. Motions in the editor

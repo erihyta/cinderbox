@@ -3,15 +3,18 @@
 ; The grapple mod's motion: a grappling hook. Every simulation runs it from the player's own input,
 ; so the throw, the pull and the swing are predicted.
 ;
-;   Hook   CbMotion   on "grapple" (Q), while no hook is out; pressing Q again lets it go.
+;   Hook   CbMotion   on "grapple.hook.used" (the hook's slot key: the engine records it when the
+;                     item is used), while no hook is out; the same event again lets it go.
 ;                     While it holds: the player is in the air (airborne) whatever is under it,
 ;                     so nothing rubs the pull off and it falls back to the ground when the hook
 ;                     lets go; more air control. Emits grapple.fired at where it will hold.
 ;     Line   CbProbe  a line along the look at what is under the crosshair, up to 40 m, flying
 ;                     at 60 m/s. The motion happens only if it finds something.
-;     Pull   CbForce  1920 N toward what the line holds (24 m/s per second on an 80 kg player),
-;                     rising over 0.15 s, and the same force back on what it holds: a wall
-;                     does not care, a crate comes to you, a heavier player hardly moves.
+;     Pull   CbForce  toward what the line holds, as a speed: the player is brought to 14 m/s
+;                     along the line (by up to 120 m/s per second, rising over 0.1 s), whatever
+;                     gravity does meanwhile. So a hook thrown upward lifts at once: a force would
+;                     first have to beat gravity with only its upward part. What it holds is pushed
+;                     back the same: a wall does not care, a crate comes to you.
 ;     Rope   CbLink   a rope to what the line holds, as long as the two are apart when it takes
 ;                     hold, reeled in at 4 m/s (so you swing, and end up at the point). Its
 ;                     tension is shared by weight.
@@ -22,9 +25,10 @@
 set_name = "grapple.moves"
 
 [node name="Hook" type="CbMotion" parent="."]
-action = "grapple"
+when = 2
+event = "grapple.hook.used"
 conditions = PackedStringArray("not linked")
-until = PackedStringArray("pressed.grapple")
+until = PackedStringArray("grapple.hook.used")
 parameters = {
 "air_control": 0.6,
 "airborne": 1.0
@@ -37,9 +41,10 @@ travel = 60.0
 
 [node name="Pull" type="CbForce" parent="Hook"]
 frame = 5
-kind = 1
-strength = 1920.0
-ramp_in = 0.15
+kind = 2
+strength = 120.0
+speed = 14.0
+ramp_in = 0.1
 react = true
 
 [node name="Rope" type="CbLink" parent="Hook"]

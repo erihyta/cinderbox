@@ -364,6 +364,15 @@ public:
 	{
 		return ( m_frame.inputs[slot].actions & action.mask ) != 0;
 	}
+	// Using items (on a server with slots). An item kind is used in one of two ways, which its
+	// look says (the item property "use"): selected and then the use button (a tool), or by its
+	// slot's key, where it is (a consumable, an ability).
+	//   Used    the player used one of that kind on this tick, whichever way that kind is used
+	//   Using   the use button is down with one of that kind in the hand (automatic fire)
+	// The simulation records "<kind>.used" for the same tick, when a mod declared that event: a
+	// look reacts to it at once on the player's own screen.
+	bool Used( PlayerSlot slot, ItemKindHandle kind ) const;
+	bool Using( PlayerSlot slot, ItemKindHandle kind ) const;
 	// Went down this tick.
 	bool Pressed( PlayerSlot slot, ActionHandle action ) const
 	{

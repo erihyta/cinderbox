@@ -48,6 +48,12 @@
 		<member name="properties" type="Dictionary" setter="set_properties" getter="get_properties" default="{}">
 			Named numbers any server mod may read: [code]pickup.hold_seconds[/code] = 0.5, [code]inventory.slot[/code] = 3. They replace what the item's mod declared in code for the same names.
 		</member>
+		<member name="use" type="int" setter="set_use" getter="get_use" enum="CbItem.Use" default="0">
+			How a player uses it, on a server with slots. Either way its server mod is told the same thing ([code]ctx.Used( player, kind )[/code]), and the simulation records the event [code]&lt;kind&gt;.used[/code] on that tick where a mod declared it, so a [CbReaction] on it plays at once on the player's own screen.
+		</member>
+		<member name="slot" type="int" setter="set_slot" getter="get_slot" default="0">
+			The slot it goes to when a player comes to carry one: 1 is the first. What is there makes room (to a free slot, or onto the floor). 0: the first free slot.
+		</member>
 		<member name="carry_grip" type="NodePath" setter="set_carry_grip" getter="get_carry_grip" default="NodePath(&quot;&quot;)">
 			The marker the item is carried at: this point is in the hand's socket (whichever hand the item is in), its -Z along the fingers and +Y up. Move or turn the marker, not the model: a mesh imported with its origin anywhere is held where this is. Empty: the item is carried at its scene's origin.
 		</member>
@@ -62,6 +68,12 @@
 		</member>
 	</members>
 	<constants>
+		<constant name="USE_SELECTED" value="0" enum="Use">
+			Its slot's key takes it out into the hand; then the use button (the left mouse button) uses it. A tool, a weapon.
+		</constant>
+		<constant name="USE_SLOT_KEY" value="1" enum="Use">
+			Its slot's key uses it where it is: nothing changes hands, and what was in the hand stays there. A consumable, an ability.
+		</constant>
 		<constant name="OTHER_FREE" value="0" enum="OtherHand">
 			The animation's: nothing keeps it on the item. A one-handed item.
 		</constant>

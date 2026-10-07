@@ -3,7 +3,7 @@
 ; The inventory's HUD: one box per slot along the bottom, laid over the game's when a server runs the
 ; inventory mod. Fields only, no scripts:
 ;   inventory.slot              the selected slot, from 1 (0: empty hands; press a slot's key again)
-;   inventory.item_1 .. item_3  the NetId of each slot's item (0: empty); {look:...} is what it is called
+;   inventory.item_1 .. item_4  the NetId of each slot's item (0: empty); {look:...} is what it is called
 ; Each slot has two labels with the same text: Out is shown while the slot is out, Away otherwise.
 ; Restyle it freely, or override it from a player mod at res://ui/hud_inventory.tscn.
 
@@ -105,3 +105,24 @@ horizontal_alignment = 1
 vertical_alignment = 1
 text_format = "3   {look:inventory.item_3}"
 conditions = PackedStringArray("inventory.slot == 3", "!combat.dead")
+
+[node name="Slot4" type="PanelContainer" parent="Slots"]
+custom_minimum_size = Vector2(138, 36)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Box")
+
+[node name="Away" type="CbFieldLabel" parent="Slots/Slot4"]
+layout_mode = 2
+label_settings = SubResource("Away")
+horizontal_alignment = 1
+vertical_alignment = 1
+text_format = "4   {look:inventory.item_4}"
+conditions = PackedStringArray("inventory.slot != 4", "!combat.dead")
+
+[node name="Out" type="CbFieldLabel" parent="Slots/Slot4"]
+layout_mode = 2
+label_settings = SubResource("Out")
+horizontal_alignment = 1
+vertical_alignment = 1
+text_format = "4   {look:inventory.item_4}"
+conditions = PackedStringArray("inventory.slot == 4", "!combat.dead")

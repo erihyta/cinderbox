@@ -784,6 +784,32 @@ void Context::HoldItem( uint32_t item, SocketHandle socket )
 	Add( c );
 }
 
+bool Context::Using( PlayerSlot slot, ItemKindHandle kind ) const
+{
+	uint32_t player = m_sim.PlayerNetId( slot );
+	uint32_t item = m_sim.SlotItem( player, m_sim.SelectedSlot( player ) );
+	const cb::HeldItem* held = item != 0 ? m_sim.FindEntity( item ).try_get<cb::HeldItem>() : nullptr;
+	return kind.Valid() && held != nullptr && int( held->kind ) == kind.index && ( m_frame.inputs[slot].buttons & BtnUse ) != 0;
+}
+
+bool Context::Used( PlayerSlot slot, ItemKindHandle kind ) const
+{
+	if ( kind.Valid() == false )
+	{
+		return false;
+	}
+	const PlayerInput& in = m_frame.inputs[slot];
+	if ( m_sim.ItemShapeOf( uint16_t( kind.index ) ).use == 1 )
+	{
+		// Its slot's key, on the tick the intent arrives.
+		uint32_t player = m_sim.PlayerNetId( slot );
+		uint32_t item = in.intent == uint8_t( SlotIntent::Select ) && in.intentSeq != m_previous[slot].intentSeq ? m_sim.SlotItem( player, in.intentA ) : 0;
+		const cb::HeldItem* held = item != 0 ? m_sim.FindEntity( item ).try_get<cb::HeldItem>() : nullptr;
+		return held != nullptr && int( held->kind ) == kind.index;
+	}
+	return Using( slot, kind ) && ( m_previous[slot].buttons & BtnUse ) == 0;
+}
+
 int Context::SlotCount() const
 {
 	return int( m_sim.Config().slots );

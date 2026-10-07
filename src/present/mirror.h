@@ -11,6 +11,7 @@
 #include "joint_math.h"
 #include "mod_schema.h"
 #include "anim_lead.h"
+#include "event_news.h"
 #include "frame.h"
 #include "pose.h"
 #include "pose_tools.h"
@@ -260,7 +261,8 @@ private:
 	uint64_t m_resetGeneration = UINT64_MAX;
 	// Impacts already played, so a rollback or a skipped frame neither replays nor drops one.
 	uint32_t m_impactCount = 0;
-	uint32_t m_modEventCount = 0;
+	// Which mod events were shown already (event_news.h).
+	ModEventNews m_modEventNews;
 	int32_t m_board[kBoardSlots] = {};
 	uint32_t m_lastTick = 0;
 	flecs::entity m_localPlayer;

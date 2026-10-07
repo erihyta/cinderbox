@@ -65,7 +65,6 @@ public:
 
 	void Declare( Declarations& declare ) override
 	{
-		m_fire = declare.Action( "fire", "MouseLeft" ); // shared with the pistol: whichever is out
 		// The bat is an item of its own in the right hand: the swing animation plays its "slash",
 		// and it has its own state (hot for a while after it hits someone).
 		// Its body when it lies in the world is authored in its scene (client/prefabs/bat.tscn, the
@@ -77,7 +76,6 @@ public:
 		// (That a bat takes half a second to pick up is authored with the item: the CbItem's
 		// properties, "pickup.hold_seconds".)
 		m_hand = declare.Socket( "RightHand" );
-		declare.ItemProperty( m_bat, "slot", 2.0f );
 		declare.ItemProperty( m_bat, "inventory.start", 1.0f );
 		declare.ItemProperty( m_bat, "holster", declare.Socket( "Back" ) );
 		m_hot = declare.Field( "melee.hot", BoardType::Bool );
@@ -179,7 +177,7 @@ public:
 				}
 				continue;
 			}
-			if ( ctx.Pressed( slot, m_fire ) && c->frozen == 0 && tick >= s.nextSwing )
+			if ( ctx.Used( slot, m_bat ) && c->frozen == 0 && tick >= s.nextSwing )
 			{
 				s.swinging = true;
 				s.struck = false;
@@ -236,7 +234,6 @@ private:
 
 	std::array<Swinger, kMaxPlayers> m_swingers{};
 	std::vector<HotBat> m_hotBats;
-	ActionHandle m_fire;
 	ItemKindHandle m_bat;
 	SocketHandle m_hand;
 	FieldHandle m_hot;

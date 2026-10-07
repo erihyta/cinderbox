@@ -1,37 +1,25 @@
 [gd_scene format=3]
 
 ; How the pistol mod looks and sounds, as world reactions. Everything is keyed on names the
-; server's mods declared: the "fire" action, "pistol.*" fields and events. $at is who an event is
+; server's mods declared: "pistol.*" fields and events. $at is who an event is
 ; about (the shooter), $other the other entity (what was hit). The Gun node says how the
 ; "pistol.gun" item looks. Being hurt and dying look the same whatever did it: that is the combat
 ; mod's look.
 ;
-; The two CbPrediction nodes say what the server answers to the viewer's own "fire" press, so
-; "pistol.fired" and "pistol.dry" play for the viewer at once, with the reactions everyone else
+; What the server answers to the viewer's own press is predicted by the CbPrediction nodes in the
+; pistol's own scene (prefabs/pistol.tscn): they speak for the pistol the viewer has in the hand.
+; So "pistol.fired" and "pistol.dry" play for the viewer at once, with the reactions everyone else
 ; gets. The tracer needs the server's end point: it comes with the server's cue. A predicted shot
 ; also takes a round off the ammo count at once (changes), and the character's recoil starts with
 ; it (a state machine that reads "pistol.fired" is run ahead for the viewer's own player).
 ;
 ; The right mouse button ("mark") is the example of a second action. The server casts a ray and
 ; answers "pistol.scan" (always) and "pistol.marked" (it found a player):
-;   PredictScan   the click is heard at once (Scan), before the server answers
+;   PredictScan   (in the pistol's scene) the click is heard at once (Scan), before the server answers
 ;   ScanBeam      a beam to where the ray ended: the server's end point, so it waits for the server
 ;   Marked        a zone around the marked player ($other) for 2 seconds, following them
 
 [node name="PistolReactions" type="Node3D"]
-
-[node name="PredictFire" type="CbPrediction" parent="."]
-action = "fire"
-cue = "pistol.fired"
-conditions = PackedStringArray("pistol.gun", "pistol.ammo > 0", "!pistol.reloading", "!combat.dead")
-cooldown = 0.19
-changes = PackedStringArray("pistol.ammo -= 1")
-
-[node name="PredictDry" type="CbPrediction" parent="."]
-action = "fire"
-cue = "pistol.dry"
-conditions = PackedStringArray("pistol.gun", "pistol.ammo == 0", "!pistol.reloading", "!combat.dead")
-cooldown = 0.19
 
 [node name="Fired" type="CbReaction" parent="."]
 event = "pistol.fired"
@@ -53,12 +41,6 @@ place_node = NodePath("$at/RightHand")
 sound = "res://assets/sfx/dry_click.wav"
 volume_db = -8.0
 max_distance = 12.0
-
-[node name="PredictScan" type="CbPrediction" parent="."]
-action = "mark"
-cue = "pistol.scan"
-conditions = PackedStringArray("pistol.gun", "!pistol.reloading", "!combat.dead")
-cooldown = 0.95
 
 [node name="Scan" type="CbReaction" parent="."]
 event = "pistol.scan"

@@ -16,14 +16,16 @@ namespace cb
 inline constexpr int kMaxPlayers = 64;
 using PlayerSlot = uint8_t;
 
-// Buttons the engine itself understands. Everything a game adds (fire, reload, spawn a prop) is a
-// mod action instead: a bit in PlayerInput::actions whose meaning only the server's mods know.
+// Buttons the engine itself understands. "Use" uses the item in the hand (what using it does is
+// its mod's). Everything else a game adds (reload, spawn a prop) is a mod action instead: a bit in
+// PlayerInput::actions whose meaning only the server's mods know.
 enum InputButton : uint8_t
 {
 	BtnJump = 1 << 0,
 	BtnSprint = 1 << 1,
+	BtnUse = 1 << 2,
 };
-inline constexpr uint8_t kEngineButtons = BtnJump | BtnSprint;
+inline constexpr uint8_t kEngineButtons = BtnJump | BtnSprint | BtnUse;
 
 // Slots: what a player carries, in numbered places (0 .. SimConfig::slots - 1). The slot that is
 // selected has its item in the hand; the others' items are stowed. Which item is in which slot is

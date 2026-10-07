@@ -234,6 +234,37 @@ func _process(_delta: float) -> bool:
 	_check("while_held without a cooldown predicts the press only", _world.hold("fire") == 0 and _world.press("fire") == 1)
 	_predict.while_held = false
 
+	# A prediction inside an item's own scene is that item's: it speaks for the copy the viewer
+	# holds, while it is in use, and no condition names the item.
+	OS.delay_msec(60)
+	_world.cue("test.fired", _p0, _p1, server)
+	_sounded()
+	var items := []
+	for spec in [["mine", _p0, 20], ["theirs", _p1, 21], ["lying", _world, 22]]:
+		var item := _node3d("item_%s" % spec[0], spec[1])
+		_world.add_entity(item, "item", "", spec[2])
+		_world.set_state(item, {"in_use": spec[1] != _world})
+		var inside := CbPrediction.new()
+		inside.name = "Predict"
+		inside.action = "swing"
+		inside.cue = "test.fired"
+		item.add_child(inside)
+		items.append(item)
+	_check("in an item: three copies in the world are one prediction, the viewer's", _world.press("swing") == 1)
+	why = _world.explain_press("swing")
+	_check("... the one someone else holds says so", String(why.get("player_1/item_theirs/Predict", "")).contains("does not hold"))
+	_check("... and the one lying in the world", String(why.get("item_lying/Predict", "")).contains("does not hold"))
+	_world.cue("test.fired", _p0, _p1, server)
+	_world.set_state(items[0], {"in_use": false})
+	_check("in an item that is put away: no prediction", _world.press("swing") == 0
+		and String(_world.explain_press("swing").get("player_0/item_mine/Predict", "")).contains("put away"))
+	_world.set_state(items[0], {"in_use": true})
+	_check("... taken out again, it predicts", _world.press("swing") == 1)
+	_world.cue("test.fired", _p0, _p1, server)
+	_sounded()
+	for item in items:
+		item.free()
+
 	# No local player: nothing to predict for.
 	_predict.cooldown = 0.0
 	_world.set_local(null)

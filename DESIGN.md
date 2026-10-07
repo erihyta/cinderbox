@@ -280,7 +280,8 @@ AnimationTree (Godot) ──bake──> graph.cfg + clips (.ozz) ──> the sch
 | Stowed | carried without being held, drawn in a holster socket |
 | In the world | a body baked from its scene's `CbItem` (the shape under it, mass, properties) into `items/<kind>.cfg`; dropped, picked up, expiring |
 | Slots | what a player carries, in numbered places: an item's slot (`HeldItem::slot`), a player's selected one (`Slots`), `SimConfig::slots`. Select, move and drop are intents in `PlayerInput` (kind, two slots, a count), carried out by `Simulation::StepSlots` before anything asks what is held, once per count: predicted and rolled back like movement |
-| Properties | named numbers on a kind (`slot`, `holster`, `pickup.hold_seconds`): how mods agree about items; the engine reads the first two |
+| Using | the use button (`BtnUse`, the engine's, like jump) uses the selected slot's item; a kind whose `use` says so is used by its slot's key instead, where it is. `StepSlots` records the kind's `<kind>.used` event on that tick where a mod declared it; the item's mod asks `Context::Used` / `Using` on the same tick |
+| Properties | named numbers on a kind (`slot`, `holster`, `use`, `pickup.hold_seconds`): how mods agree about items; the engine reads the first three |
 | Look | the item's own scene, whose root is its `CbItem`: the baked `items/<kind>.cfg` names the scene, and the game reads every one it finds; the scene's own reactions do the rest |
 
 ## Looks

@@ -511,6 +511,7 @@ func _event_for_key(key: String) -> InputEvent:
 
 ## The unattended player takes a slot's item out, once.
 var _auto_slot := -1
+var _auto_hooks := 0
 
 
 func _auto_select(slot: int) -> void:
@@ -539,6 +540,7 @@ func _send_input(delta: float) -> void:
 	var jump := false
 	var sprint := false
 	var actions := 0
+	var use := false
 	if autoplay > 0.0:
 		# Scripted player for unattended runs: props first, then the pistol, then the bat (if the
 		# server runs the melee mod).
@@ -550,19 +552,19 @@ func _send_input(delta: float) -> void:
 		yaw += delta * 0.6
 		var elapsed := Time.get_ticks_msec() / 1000.0 - playing_since if playing_since >= 0.0 else 0.0
 		# A hook, if the server has one: a press throws it, the next lets it go.
-		if fmod(elapsed, 2.0) < 0.1:
-			actions |= _action_bit("grapple")
+		# (The hook is an item used by its slot's key, the fourth: one intent every two seconds.)
+		if int(elapsed / 2.0) != _auto_hooks and client.get_mod_names().has("grapple"):
+			_auto_hooks = int(elapsed / 2.0)
+			client.send_intent(INTENT_SELECT, 3, 0)
 		if elapsed < autoplay * 0.4:
 			if auto_rng.randf() < delta * 2.0:
 				actions |= _action_bit("spawn_prop")
 		elif elapsed < autoplay * 0.7:
 			_auto_select(0)
-			if auto_rng.randf() < delta * 3.0:
-				actions |= _action_bit("fire")
+			use = auto_rng.randf() < delta * 3.0
 		else:
 			_auto_select(1)
-			if auto_rng.randf() < delta * 2.0:
-				actions |= _action_bit("fire")
+			use = auto_rng.randf() < delta * 2.0
 		# Hold the scores key at the end (a mod's CbShowKey names it), so screenshots show them too.
 		if elapsed > autoplay * 0.8 and InputMap.has_action("cb_scores") and not Input.is_action_pressed("cb_scores"):
 			Input.action_press("cb_scores")
@@ -574,7 +576,9 @@ func _send_input(delta: float) -> void:
 		# Actions only count while the game has the mouse, so the click that captures it is not a shot.
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			actions = _action_bits()
-	client.set_input(move, yaw, pitch, jump, sprint, actions, _view())
+			# The use button is the engine's: what is in the hand is used (what that does is its mod's).
+			use = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	client.set_input(move, yaw, pitch, jump, sprint, use, actions, _view())
 
 
 ## Which camera the player looks through, as the server is told (ViewMode): 0 behind, 1 first
@@ -701,6 +705,8 @@ func _autoplay_finish() -> void:
 	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
 		stats.get("state"), stats.get("checksums_verified", 0), stats.get("desyncs", 0), stats.get("fingerprint", "none"), stats.get("fp_environment_ok", "not simulating")])
 	print("mod events seen: ", _event_counts)
+	# What a press of the use button would predict now, and why not (each CbPrediction, by its path).
+	print("use would predict: ", client.get_director().explain_press("use"))
 	_stop()
 	# (A source that cannot desync, a view file, reports none.)
 	get_tree().quit(0 if stats.get("desyncs", 0) == 0 and stats.get("state") == "playing" else 2)

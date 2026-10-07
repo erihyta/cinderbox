@@ -62,7 +62,6 @@ public:
 
 	void Declare( Declarations& declare ) override
 	{
-		m_fire = declare.Action( "fire", "MouseLeft" );
 		m_reload = declare.Action( "reload", "R" );
 		// A second use of the pistol, and the example of adding one: a ray that harms nothing and
 		// marks the player it finds (see Mark below, and client/vfx/reactions_pistol.tscn).
@@ -74,6 +73,9 @@ public:
 		// a = shooter, b = what the ray hit (0: nothing), point = where the shot came from,
 		// vector = where it ended.
 		m_fired = declare.Event( "pistol.fired" );
+		// The engine records this when a player uses the pistol ("<kind>.used"): every simulation has
+		// it on the tick of the click, the player's own included. A look can react to it at once.
+		declare.Event( "pistol.gun.used" );
 		// a = shooter, b = what was hit, value = damage done, point = where, vector = surface normal.
 		m_hit = declare.Event( "pistol.hit" );
 		m_reloadEvent = declare.Event( "pistol.reload" );
@@ -97,7 +99,6 @@ public:
 		m_gun = declare.ItemKind( "pistol.gun" );
 		m_hand = declare.Socket( "RightHand" );
 		// For the inventory mod: slot 2, one for every life, on the hip while it is put away.
-		declare.ItemProperty( m_gun, "slot", 1.0f );
 		declare.ItemProperty( m_gun, "inventory.start", 1.0f );
 		declare.ItemProperty( m_gun, "holster", declare.Socket( "Hip" ) );
 	}
@@ -264,7 +265,7 @@ private:
 			g.nextMarkTick = tick + Ticks( ctx, kMarkSeconds );
 			Mark( ctx, g );
 		}
-		if ( ctx.Pressed( g.slot, m_fire ) == false || reloading || tick < g.nextShotTick )
+		if ( ctx.Used( g.slot, m_gun ) == false || reloading || tick < g.nextShotTick )
 		{
 			return;
 		}
@@ -354,7 +355,6 @@ private:
 		ctx.Emit( m_hit, shooterTarget, hit.netId, 0, hit.point, hit.normal );
 	}
 
-	ActionHandle m_fire;
 	ActionHandle m_reload;
 	ActionHandle m_mark;
 	FieldHandle m_ammo;
