@@ -75,10 +75,32 @@ and the player's own screen does not wait for the server. What a life is given a
 | A player picks one up (`ctx.PickUpItem`) | the same, and it is selected: it comes out. With no slot for it, it stays where it lies |
 | A kind's own slot is taken | what is there moves to a free slot, or drops |
 
+- **Using an item** is the engine's too: see [Using an item](#using-an-item).
 - **It is state**: an item knows its slot (`HeldItem::slot`), a player which slot is selected (`Slots`). Hashed, rolled back, in snapshots and recordings.
 - **An intent is carried out once.** The input carries the intent and a count; a repeated or guessed input has the same count and does nothing again.
 - **A dead player's** intents are ignored.
 - **Without a mod that asks for slots** there are none, and a mod holds items in sockets itself (`ctx.HoldItem`, `ctx.StowItem`).
+
+### Using an item
+
+How a kind is used is its look's to say: `use` on its `CbItem`.
+
+| `use` | The player | For |
+|---|---|---|
+| **Select it, then the use button** | its slot's key takes it out; the left mouse button uses it | a tool, a weapon |
+| **Its slot key uses it** | its slot's key uses it where it is; nothing changes hands | a consumable, an ability |
+
+Either way the item's mod is told the same thing, on the tick it happens:
+
+```cpp
+if ( ctx.Used( slot, m_gun ) ) { ... }      // used this tick, whichever way the kind is used
+bool trigger = ctx.Using( slot, m_gun );     // the use button is down with one in the hand (automatic fire)
+```
+
+- **The use button is the engine's**, like jump and sprint: no mod declares a `fire` action any more.
+- **`<kind>.used`**: where a mod declares that event (`declare.Event( "pistol.gun.used" )`), every simulation records it on the tick of the use, at the player, with the item as the other entity. The player's own simulation has it at once, so a `CbReaction` on it plays on the click with no `CbPrediction`.
+- **What using it does** is the mod's: the pistol fires (`pistol.fired`), and that answer still comes from the server, so its look predicts it (`CbPrediction`, action `use`).
+- A dead or frozen player uses nothing; a held button is one use.
 
 An item is **in use** (in a hand) or **stowed** (carried, in no hand). A stowed item is in no hand:
 `HeldItem`, item layers, state machine conditions and item-kind conditions in looks do not see it.
@@ -88,7 +110,8 @@ Mods describe their items with properties and never touch the slots:
 
 ```cpp
 m_bat = declare.ItemKind( "melee.bat" );
-declare.ItemProperty( m_bat, "slot", 2.0f );                        // the engine's: its own slot (from 1); without it: the first free one
+declare.ItemProperty( m_bat, "slot", 2.0f );                        // the engine's: its own slot (from 1); without it: the first free one.
+                                                                    // Better said on the item: CbItem.slot (and CbItem.use)
 declare.ItemProperty( m_bat, "holster", declare.Socket( "Back" ) ); // the engine's, optional: where it hangs while another slot is selected
 declare.ItemProperty( m_bat, "inventory.start", 1.0f );             // the inventory mod's: every life starts with one
 ```
@@ -212,6 +235,7 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 | `mass` | kg, when it lies in the world |
 | `properties` | named numbers any server mod may read, e.g. `pickup.hold_seconds` = 0.5. They replace what the item's mod declared in code for the same name |
 | `carry_grip`, `other_hand`, `other_grip` | [where the hands hold it](#both-hands-on-an-item) |
+| `use`, `slot` | [how it is used](#using-an-item), and the slot it goes to (1 is the first; 0: the first free one) |
 | `view_offset` | first person: how far the arms holding it are moved in the viewer's own view |
 | **Bake item** (button), saving the scene | writes `res://items/<kind>.cfg` |
 
