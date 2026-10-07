@@ -13,7 +13,6 @@ other, so two mods add effects without fighting over one list; a mod replaces
 
 ```
 PistolReactions                      (vfx/reactions_pistol.tscn)
-├── PredictFire   CbPrediction        use -> pistol.fired    pistol.gun, pistol.ammo > 0, !pistol.reloading
 ├── Fired         on pistol.fired     subject $at                         muzzle flash + gunshot at $at/RightHand
 ├── Kick          on pistol.fired     subject $at      is_local           camera shake
 ├── Tracer        on pistol.fired     subject $at                         beam from $at/RightHand to the cue's end
@@ -55,16 +54,16 @@ A mod's rules run on the server, so what your own press did comes back a round t
 it at once:
 
 ```
-PredictFire   CbPrediction   action "use"    cue "pistol.fired"
-                             conditions pistol.gun, pistol.ammo > 0, !pistol.reloading, !combat.dead
+PredictFire   CbPrediction   action "use"    cue "pistol.fired"                (in prefabs/pistol.tscn, under its CbItem)
+                             conditions pistol.ammo > 0, !pistol.reloading, !combat.dead
                              cooldown 0.19
                              changes    pistol.ammo -= 1
 
-PredictSwing  CbPrediction   action "use"    cue "melee.swing"   conditions melee.bat   cooldown 0.58
+PredictSwing  CbPrediction   action "use"    cue "melee.swing"   cooldown 0.58       (in prefabs/bat.tscn)
                              stance "melee_swing" on stance_layer "full"
 
 PredictFire   CbPrediction   action "use"    cue "rifle.fired"         (the rifle: automatic)
-                             conditions rifle.gun, rifle.ammo > 0, !rifle.reloading, !combat.dead
+                             conditions rifle.ammo > 0, !rifle.reloading, !combat.dead
                              cooldown 0.1   while_held
                              changes    rifle.ammo -= 1
 ```
@@ -90,6 +89,14 @@ PredictFire   CbPrediction   action "use"    cue "rifle.fired"         (the rifl
 | `stance`, `stance_layer` | the stance the server's mod will set, and the layer it sets it on (`melee_swing` on `full`) |
 
 - **Both halves are the modder's**: the server mod emits the cue, its look predicts it by name.
+- **Where a prediction sits says whose it is.**
+
+  | It sits | It speaks for | Its conditions |
+  |---|---|---|
+  | in the item's own scene, under its `CbItem` (the pistol's, the bat's) | the copy of that item the viewer has in the hand; not one that is put away, lying, or someone else's | need not name the item: `pistol.ammo > 0`, not `pistol.gun, pistol.ammo > 0` |
+  | in a reactions scene, under the World | the viewer, whatever it holds | say when: `dash.charges > 0` |
+
+  So an item's scene carries what using it looks like, and a hundred pistols in the world are one prediction. Reactions already work this way inside an item (`subject` `^^`: whoever holds it).
 - **`use` is the engine's button** (the left mouse button): a prediction names it like an action a mod declared.
 - **Held fire is two lines**: the server mod asks `ctx.Using( slot, kind )` where a press-based one
   asks `ctx.Used`, and the look's prediction is `while_held` with the mod's time between shots

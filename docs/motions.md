@@ -141,6 +141,7 @@ Every tick the motion is on.
 | `react` | the other end takes the same momentum the other way: the player, when the force is on something else; what the probe found, when it is on the player |
 
 - **A ramp hides latency.** Other players see your press a moment late; a force that takes 0.15 s to arrive is still weak when they catch up, so little has to be corrected. It is also what makes a pull feel heavy.
+- **A pull upward wants the Velocity kind.** A force toward a point that is above and far off has only its upward part against all of gravity: 24 m/s² at 18 degrees is 7.5 m/s² up, gravity is 18, and the player is dragged along the floor until the line is steep (0.97 s for a hook 2.5 m up and 8 m away). Velocity brings the speed along the line to its target whatever gravity takes meanwhile: the same hook lifts after 0.25 s. Its `strength` has to be well above gravity over the sine of the shallowest angle (120 here). Gravity still acts across the line, so the player still swings.
 - **`react` is what makes weight count**: hooked to a crate, the crate comes to you; hooked to something ten times your weight, you go to it.
 
 ### `CbLink`
@@ -186,7 +187,7 @@ Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grappl
     │                    until grapple.hook.used
     │                    parameters { airborne: 1, air_control: 0.6 }       emits grapple.fired
     ├── Line  CbProbe    range 40 m, flies at 60 m/s
-    ├── Pull  CbForce    on the player, toward the target: 1920 N, ramp 0.15 s, react
+    ├── Pull  CbForce    on the player, toward the target: to 14 m/s (by up to 120 m/s²), ramp 0.1 s, react
     └── Rope  CbLink     to what the probe found: its length when it takes hold, reel 4 m/s
 ```
 
@@ -200,7 +201,7 @@ Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grappl
 | The throw | two traces, like a shot: what is under the crosshair (along the camera's line from the point it orbits, or a shoulder), then from the player to that point, so something in between stops it. Nothing within range: nothing happens, not even the cooldown |
 | What it finds | the world: a point. A prop: a point on that body, which moves with it. A player: a point on its capsule (not a limb: hitboxes are the server's) |
 | Flying | until `distance / travel` has passed, the motion is not on yet: no parameters, no effects; the look draws the line growing |
-| Holding | the motion is on. Its effects run every tick, before the mover: here the pull (1920 N is 24 m/s² on an 80 kg player) and the rope. `react` pulls what it holds back with the same force, so a crate flies to the player and a heavy one hardly moves |
+| Holding | the motion is on. Its effects run every tick, before the mover: here the pull (to 14 m/s along the line) and the rope. `react` pushes what it holds back the same, so a crate flies to the player |
 | While it holds | its `parameters` hold. The grapple's `airborne` = 1 puts the player in the air from the moment the hook takes hold until it lets go: nothing rubs the pull off, the in-air animation plays, and the player falls back to the ground afterwards |
 | Letting go | `until`; a `duration`; what it held on to being destroyed; the player dying, or being put somewhere else (a respawn) |
 

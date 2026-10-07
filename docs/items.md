@@ -99,7 +99,7 @@ bool trigger = ctx.Using( slot, m_gun );     // the use button is down with one 
 
 - **The use button is the engine's**, like jump and sprint: no mod declares a `fire` action any more.
 - **`<kind>.used`**: where a mod declares that event (`declare.Event( "pistol.gun.used" )`), every simulation records it on the tick of the use, at the player, with the item as the other entity. The player's own simulation has it at once, so a `CbReaction` on it plays on the click with no `CbPrediction`.
-- **What using it does** is the mod's: the pistol fires (`pistol.fired`), and that answer still comes from the server, so its look predicts it (`CbPrediction`, action `use`).
+- **What using it does** is the mod's: the pistol fires (`pistol.fired`), and that answer still comes from the server, so its look predicts it: a `CbPrediction` (action `use`) in the item's own scene.
 - A dead or frozen player uses nothing; a held button is one use.
 
 An item is **in use** (in a hand) or **stowed** (carried, in no hand). A stowed item is in no hand:
@@ -243,7 +243,7 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 |---|---|
 | a `CollisionShape3D` | the body: a `BoxShape3D` or `SphereShape3D`, moved to where the shape's centre is. Not scaled |
 | two `Marker3D`s | [where the hands hold it](#both-hands-on-an-item): the item's `carry_grip` and `other_grip` name them |
-| anything else | its look: meshes, lights, particles, and `CbReaction` nodes for what it shows |
+| anything else | its look: meshes, lights, particles; `CbReaction` nodes for what it shows (`subject` `^^`: whoever holds it); `CbPrediction` nodes for what its own use looks like on the click, which speak only for the copy in the viewer's hand ([Predictions](looks.md#predictions)) |
 
 The baked file has two readers. The **server** takes the body, the grip and the properties from
 it; the **game** takes the scene, the name and the first-person view. Nothing else says what an
