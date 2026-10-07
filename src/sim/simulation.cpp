@@ -925,13 +925,16 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				// What a probe of its holds on to, if one is out, and whether that is still there.
 				int heldMotion = -1;
 				bool holdAlive = false;
+				b3Vec3 where = {};
 				if ( const MotionHold* out = e.try_get<MotionHold>(); out != nullptr && out->on != 0 )
 				{
-					b3Vec3 where = {};
 					heldMotion = out->motion;
 					holdAlive = HoldPoint( *out, where );
 				}
 				values.builtins[AnimExpr::Linked] = heldMotion >= 0 ? 1.0f : 0.0f;
+				// (From where the line leaves the player: the point its camera orbits.)
+				values.builtins[AnimExpr::LinkDistance] =
+					holdAlive ? b3Distance( where, b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) ) : 0.0f;
 				values.globalBoard = m_globals.board;
 				values.events = m_globals.modEvents;
 				values.eventCount = m_globals.modEventCount;
@@ -2547,6 +2550,17 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 						// Toward the speed, no faster than its rate lets it.
 						float rate = std::fabs( effect.strength ) * ramp * dt;
 						change = std::clamp( effect.speed - along, -rate, rate );
+						// With a reaction on something that can move, the speed is the two's toward
+						// each other, and each takes its share of the change by the other's weight:
+						// the light one does the moving, and the two never close faster than the
+						// speed. (Its own speed alone, mirrored, would hand a light body a heavy
+						// one's whole momentum again and again.)
+						const MotionEnd& other = target.kind == MotionEnd::Kind::Self ? hit : self;
+						if ( effect.react && other.mass > 0.0f && other.kind != MotionEnd::Kind::None && other.kind != MotionEnd::Kind::World )
+						{
+							float closing = along - b3Dot( EndVelocity( other, c ), direction );
+							change = std::clamp( effect.speed - closing, -rate, rate ) * other.mass / ( target.mass + other.mass );
+						}
 						break;
 					}
 				}

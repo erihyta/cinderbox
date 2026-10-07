@@ -2740,20 +2740,7 @@ void TestDash()
 		net::NetSimConfig link;
 		link.latencyMs = 50;
 		h.AddNetSim( 47852, link );
-		h.AddBot().script = [=]( uint32_t tick ) {
-			PlayerInput in;
-			in.moveForward = 127;
-			// Each key is held for a few ticks: one press.
-			if ( ( tick >= dashAt && tick < dashAt + 4 ) || ( tick >= secondDashAt && tick < secondDashAt + 4 ) )
-			{
-				in.actions = dash;
-			}
-			if ( ( tick >= jumpAt && tick < jumpAt + 3 ) || ( tick >= doubleJumpAt && tick < doubleJumpAt + 3 ) )
-			{
-				in.buttons = BtnJump;
-			}
-			return in;
-		};
+		Bot& bot = h.AddBot();
 
 		// What the client predicted for each tick the first time it had simulated it, and what the
 		// server then had for that tick.
@@ -2776,14 +2763,36 @@ void TestDash()
 			into[sim.Tick()] = { sim.EntityTransform( netId )->position, c->velocity, sim.BoardValue( netId, charges->slot ),
 								 sim.Globals().modEventCount };
 		};
-		h.RunUntil( 11.0, [&]( double ) {
-			GameClient& client = *h.bots[0].client;
+		// Every tick is looked at, of both: the server after each one it runs, the client as it asks
+		// for the input of the next (an update of either can run several, on a busy machine).
+		bot.script = [&]( uint32_t tick ) {
+			GameClient& client = *bot.client;
 			if ( client.Session() != nullptr && client.State() == ClientState::Playing )
 			{
 				look( client.Session()->Sim(), client.Slot(), predicted );
+			}
+			PlayerInput in;
+			in.moveForward = 127;
+			// Each key is held for a few ticks: one press.
+			if ( ( tick >= dashAt && tick < dashAt + 4 ) || ( tick >= secondDashAt && tick < secondDashAt + 4 ) )
+			{
+				in.actions = dash;
+			}
+			if ( ( tick >= jumpAt && tick < jumpAt + 3 ) || ( tick >= doubleJumpAt && tick < doubleJumpAt + 3 ) )
+			{
+				in.buttons = BtnJump;
+			}
+			return in;
+		};
+		h.server.SetTickObserver( [&] {
+			GameClient& client = *bot.client;
+			if ( client.State() == ClientState::Playing )
+			{
 				look( server, client.Slot(), truth );
 			}
 		} );
+		h.RunUntil( 11.0 );
+		h.server.SetTickObserver( {} );
 		h.Report();
 		GameClient& client = *h.bots[0].client;
 		CHECK( client.GetStats().rttMs >= 90 );
@@ -3153,7 +3162,8 @@ void TestGrapple()
 					aim->pitch[i].store( int( std::atan2( to.y, flat ) * 65536.0f / 6.2831853f ) );
 				}
 			}
-			if ( ball != 0 && server.Tick() > 330 && server.Tick() < 420 )
+			// (From the throw on: a hook lets go by itself when its player and the ball have met.)
+			if ( ball != 0 && server.Tick() > 300 && server.Tick() < 420 )
 			{
 				int on = 0;
 				for ( int i = 0; i < 2; ++i )

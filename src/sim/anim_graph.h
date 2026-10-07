@@ -97,6 +97,9 @@ struct AnimExpr
 		// A probe of the player's motions holds on to something (sim/motions.h). Motions read it; a
 		// state machine reads 0.
 		Linked,
+		// How far the player is from what that probe holds on to, in metres (0: none is out). So a
+		// motion can let go when it has arrived: "link_distance < 1.5".
+		LinkDistance,
 		BuiltinCount,
 	};
 	struct Step

@@ -3,21 +3,24 @@
 ; The grapple mod's motion: a grappling hook. Every simulation runs it from the player's own input,
 ; so the throw, the pull and the swing are predicted.
 ;
+; The feel aimed at is a zip line you are shot along: no gravity while it holds, a steady speed
+; straight to the point, let go by itself on arrival, and the speed kept when it lets go.
+;
 ;   Hook   CbMotion   on "grapple.hook.used" (the hook's slot key: the engine records it when the
-;                     item is used), while no hook is out; the same event again lets it go.
-;                     While it holds: the player is in the air (airborne) whatever is under it,
-;                     so nothing rubs the pull off and it falls back to the ground when the hook
-;                     lets go; more air control. Emits grapple.fired at where it will hold.
+;                     item is used), while no hook is out. It ends on the same event again (the
+;                     key), or by itself once the player is within 1.8 m of the point
+;                     (link_distance). While it holds there is no gravity (so the pull is a
+;                     straight line from the first tick, upward too) and the player is in the air
+;                     (airborne), so the floor does not rub the pull off; when it lets go the
+;                     player keeps its speed and gravity is back: a fling. Emits grapple.fired at
+;                     where it will hold.
 ;     Line   CbProbe  a line along the look at what is under the crosshair, up to 40 m, flying
-;                     at 60 m/s. The motion happens only if it finds something.
-;     Pull   CbForce  toward what the line holds, as a speed: the player is brought to 14 m/s
-;                     along the line (by up to 120 m/s per second, rising over 0.1 s), whatever
-;                     gravity does meanwhile. So a hook thrown upward lifts at once: a force would
-;                     first have to beat gravity with only its upward part. What it holds is pushed
-;                     back the same: a wall does not care, a crate comes to you.
+;                     at 80 m/s. The motion happens only if it finds something.
+;     Pull   CbForce  toward what the line holds, as a speed: the player is brought to 20 m/s
+;                     along the line (by up to 160 m/s per second, rising over 0.08 s). What it
+;                     holds is pushed back the same: a wall does not care, a crate comes to you.
 ;     Rope   CbLink   a rope to what the line holds, as long as the two are apart when it takes
-;                     hold, reeled in at 4 m/s (so you swing, and end up at the point). Its
-;                     tension is shared by weight.
+;                     hold, reeled in at 4 m/s: the player cannot be knocked further out.
 ;
 ; Saving this scene bakes it into res://motions/grapple.moves.cfg.
 
@@ -28,23 +31,24 @@ set_name = "grapple.moves"
 when = 2
 event = "grapple.hook.used"
 conditions = PackedStringArray("not linked")
-until = PackedStringArray("grapple.hook.used")
+until = PackedStringArray("grapple.hook.used", "link_distance < 1.8")
 parameters = {
 "air_control": 0.6,
-"airborne": 1.0
+"airborne": 1.0,
+"gravity": 0.0
 }
 emits = "grapple.fired"
 
 [node name="Line" type="CbProbe" parent="Hook"]
 range = 40.0
-travel = 60.0
+travel = 80.0
 
 [node name="Pull" type="CbForce" parent="Hook"]
 frame = 5
 kind = 2
-strength = 120.0
-speed = 14.0
-ramp_in = 0.1
+strength = 160.0
+speed = 20.0
+ramp_in = 0.08
 react = true
 
 [node name="Rope" type="CbLink" parent="Hook"]

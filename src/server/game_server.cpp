@@ -731,6 +731,11 @@ void GameServer::RunTick( double now )
 			}
 		}
 	}
+
+	if ( m_tickObserver )
+	{
+		m_tickObserver();
+	}
 }
 
 // The mods see this tick's inputs and the world before it, and add their commands to the frame.
