@@ -1,28 +1,26 @@
-// Inventory: what a player carries, and which of it is in the hand.
+// Inventory: the rules of what a player carries. The slots themselves are the engine's.
 //
-// A player has slots: 1 is empty hands, 2 to 4 hold one item each. The slot that is out has its
-// item in the right hand; the others' items are stowed: still carried, in no hand (the engine's
-// StowItem / HoldItem). Keys 1 to 4 switch. Nothing is created or destroyed by switching, so an
-// item keeps its own state (a hot bat stays hot on the back) and nothing falls out of a hand
-// because another slot came out.
+// The engine has the mechanism (sim/types.h, Slots): a player has numbered slots, the selected one
+// has its item in the hand and the others' items are stowed, and selecting, moving and dropping are
+// in the player's own input, so every simulation runs them and the player's own screen does not
+// wait. Nothing is created or destroyed by switching: an item keeps its own state (a hot bat stays
+// hot on the back).
 //
-// Other mods say what their items are like with item properties, and never touch the slots:
-//   "inventory.slot"    which slot the kind lives in (2..4). Without it: the first free slot.
-//   "inventory.start"   1: every player gets one when a life starts.
-//   "inventory.holster" a socket the item hangs in while it is stowed (ItemProperty with a socket:
-//                       "Back", "Hip"). Without it, or on a character without that socket, a stowed
-//                       item is out of sight.
+// This mod says how many slots there are and what a life is given and loses:
+//   declare.Slots( 3 )   three slots; keys 1 to 3 select them, and a second press empties the hands
+//   "inventory.start"    an item property: 1 gives every player one when a life starts
+//   dying                takes back what the life started with and drops the rest
 //
-// Anything the player comes to carry is put into its slot (this is how the pickup mod's items
-// arrive: it only makes the player carry them). If that slot already has an item, the old one
-// drops: one item per slot. A new arrival comes out into the hand, except the ones a life starts
-// with. An item that leaves (thrown, taken away, expired) simply empties its slot.
+// What an item is like in a slot is said by its own mod, as item properties the engine reads:
+//   "slot"      the slot the kind goes to (1 is the first), pushing out what is there. Without it:
+//               the first free slot
+//   "holster"   the socket it hangs in while another slot is selected ("Back", "Hip"). Without it,
+//               or on a character without that socket, it is out of sight
 //
-// Dying takes back what the life started with and drops the rest where the player stood.
-//
-// It publishes "inventory.slot" (which slot is out) and "inventory.item_2" .. "inventory.item_4"
-// (the NetId of each slot's item, 0: empty) on the player's board. Its look (client/ui) is a row of
-// slots at the bottom of the screen, built from those.
+// It publishes "inventory.slot" (the selected slot, from 1; 0: empty hands) and "inventory.item_1"
+// .. "inventory.item_3" (the NetId of each slot's item, 0: empty) on the player's board, for its
+// look (client/ui): a row of slots at the bottom of the screen. Those follow the simulation a tick
+// behind; the hands do not.
 
 #include "mod_api.h"
 
@@ -38,19 +36,17 @@ namespace
 using namespace cb;
 using namespace cb::mods;
 
-constexpr int kSlots = 4;			// slot 1 is empty hands
-constexpr float kDropSpeed = 1.0f;	// m/s, when an item is pushed out of its slot
+constexpr int kSlots = 3;
 
 struct Bag
 {
-	std::array<uint32_t, kSlots + 1> item{};	  // slot -> NetId (0: empty); [0] and [1] stay 0
-	std::array<int32_t, kSlots + 1> published{}; // what the board says about them
-	int current = 1;
-	bool full = false;				// the hand has (or is getting) an item
+	std::array<int32_t, kSlots> published{}; // what the board says is in each slot
+	int32_t selected = -1;					 // what the board says is selected (+1), -1: nothing said yet
 	bool dead = false;
 	bool gave = false;				// this life's starting items were given
-	std::vector<uint32_t> starting; // the ones still carried
+	bool full = false;				// the hand has an item
 	std::vector<int> expected;		// kinds given and not seen yet
+	std::vector<uint32_t> starting; // the ones still carried
 };
 
 class InventoryMod final : public ServerMod
@@ -63,16 +59,12 @@ public:
 
 	void Declare( Declarations& declare ) override
 	{
+		declare.Slots( kSlots );
 		m_slot = declare.Field( "inventory.slot", BoardType::Int );
-		for ( int s = 1; s <= kSlots; ++s )
+		for ( int s = 0; s < kSlots; ++s )
 		{
-			m_keys[size_t( s )] = declare.Action( "slot_" + std::to_string( s ), std::to_string( s ) );
-			if ( s >= 2 )
-			{
-				m_items[size_t( s )] = declare.Field( "inventory.item_" + std::to_string( s ), BoardType::Int );
-			}
+			m_items[size_t( s )] = declare.Field( "inventory.item_" + std::to_string( s + 1 ), BoardType::Int );
 		}
-		m_hand = declare.Socket( "RightHand" );
 	}
 
 	void Tick( Context& ctx ) override
@@ -84,11 +76,6 @@ public:
 			if ( ctx.Joining( slot ) || ctx.Leaving( slot ) )
 			{
 				bag = Bag{};
-			}
-			if ( ctx.Joining( slot ) )
-			{
-				ctx.Set( SlotTarget( slot ), m_slot, 1 );
-				continue;
 			}
 			const Character* c = ctx.PlayerCharacter( slot );
 			if ( ctx.InWorld( slot ) == false || c == nullptr )
@@ -117,93 +104,32 @@ public:
 					ItemKindHandle handle{ kind };
 					if ( ctx.ItemProperty( handle, "inventory.start", 0.0f ) != 0.0f )
 					{
-						ctx.GiveItem( target, handle, ctx.ItemSocket( handle, "inventory.holster" ) );
+						ctx.GiveItem( target, handle );
 						bag.expected.push_back( kind );
 					}
 				}
 			}
 
-			// What left: thrown, taken away, expired.
+			// Which of what is carried this life started with: taken back when it ends.
 			auto carries = [&carried]( uint32_t netId ) {
 				return std::any_of( carried.begin(), carried.end(), [netId]( const CarriedItem& it ) { return it.netId == netId; } );
 			};
-			for ( int s = 2; s <= kSlots; ++s )
-			{
-				if ( bag.item[size_t( s )] != 0 && carries( bag.item[size_t( s )] ) == false )
-				{
-					bag.item[size_t( s )] = 0;
-				}
-			}
 			bag.starting.erase( std::remove_if( bag.starting.begin(), bag.starting.end(), [&]( uint32_t id ) { return carries( id ) == false; } ),
 								bag.starting.end() );
-
-			// What arrived: into its slot, pushing out what was there.
-			int wanted = bag.current;
-			std::vector<CarriedItem> arrivals;
 			for ( const CarriedItem& it : carried )
 			{
-				if ( std::find( bag.item.begin(), bag.item.end(), it.netId ) == bag.item.end() )
-				{
-					arrivals.push_back( it );
-				}
-			}
-			std::vector<uint32_t> leaving;
-			for ( const CarriedItem& it : arrivals )
-			{
 				auto expected = std::find( bag.expected.begin(), bag.expected.end(), it.kind.index );
-				bool start = expected != bag.expected.end();
-				if ( start )
+				if ( expected != bag.expected.end() && std::find( bag.starting.begin(), bag.starting.end(), it.netId ) == bag.starting.end() )
 				{
 					bag.expected.erase( expected );
 					bag.starting.push_back( it.netId );
 				}
-				int s = SlotFor( ctx, bag, it.kind );
-				if ( uint32_t old = bag.item[size_t( s )] )
-				{
-					Drop( ctx, slot, old );
-					leaving.push_back( old );
-					bag.starting.erase( std::remove( bag.starting.begin(), bag.starting.end(), old ), bag.starting.end() );
-				}
-				bag.item[size_t( s )] = it.netId;
-				if ( start == false )
-				{
-					wanted = s; // what was just picked up comes out
-				}
 			}
 
-			for ( int s = 1; s <= kSlots; ++s )
-			{
-				if ( ctx.Pressed( slot, m_keys[size_t( s )] ) )
-				{
-					wanted = s;
-				}
-			}
-
-			// The slot that is out has its item in the hand; everything else in use is put away.
-			uint32_t desired = bag.item[size_t( wanted )];
-			bool inHand = false;
-			for ( const CarriedItem& it : carried )
-			{
-				if ( it.stowed || std::find( leaving.begin(), leaving.end(), it.netId ) != leaving.end() )
-				{
-					continue;
-				}
-				if ( it.netId == desired )
-				{
-					inHand = true;
-				}
-				else
-				{
-					ctx.StowItem( it.netId, ctx.ItemSocket( it.kind, "inventory.holster" ) );
-				}
-			}
-			if ( desired != 0 && inHand == false )
-			{
-				ctx.HoldItem( desired, m_hand );
-			}
 			// Empty hands mean freelook: a weapon turns camera-facing on when it comes out, and only
 			// this turns it off, so going from one weapon to another never races two mods.
-			bool full = desired != 0;
+			int selected = ctx.SelectedSlot( slot );
+			bool full = selected >= 0 && ctx.SlotItem( slot, selected ) != 0;
 			if ( full != bag.full )
 			{
 				bag.full = full;
@@ -212,46 +138,17 @@ public:
 					ctx.FaceCamera( target, false );
 				}
 			}
-			if ( wanted != bag.current )
-			{
-				bag.current = wanted;
-				ctx.Set( target, m_slot, wanted );
-			}
-			Publish( ctx, target, bag );
+			Publish( ctx, slot, bag );
 		}
 	}
 
 private:
-	// The kind's own slot, else the first free one, else the one that is out (or the last).
-	int SlotFor( const Context& ctx, const Bag& bag, ItemKindHandle kind ) const
-	{
-		int own = int( ctx.ItemProperty( kind, "inventory.slot", 0.0f ) );
-		if ( own >= 2 && own <= kSlots )
-		{
-			return own;
-		}
-		for ( int s = 2; s <= kSlots; ++s )
-		{
-			if ( bag.item[size_t( s )] == 0 )
-			{
-				return s;
-			}
-		}
-		return bag.current >= 2 ? bag.current : kSlots;
-	}
-
-	// Out of the bag, a little in front of the chest.
-	void Drop( Context& ctx, PlayerSlot slot, uint32_t item )
+	void Die( Context& ctx, PlayerSlot slot, Bag& bag, const std::vector<CarriedItem>& carried )
 	{
 		b3Vec3 aim = ctx.AimDirection( slot );
 		b3Vec3 flat = b3Normalize( b3Vec3{ aim.x, 0.0f, aim.z } );
 		b3Vec3 chest = b3Sub( ctx.EyePosition( slot ), b3Vec3{ 0.0f, 0.35f, 0.0f } );
 		b3Quat facing = b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, std::atan2( -aim.x, -aim.z ) );
-		ctx.DropItem( item, b3Add( chest, b3MulSV( 0.45f, flat ) ), facing, b3Add( b3MulSV( kDropSpeed, flat ), b3Vec3{ 0.0f, 1.5f, 0.0f } ) );
-	}
-
-	void Die( Context& ctx, PlayerSlot slot, Bag& bag, const std::vector<CarriedItem>& carried )
-	{
 		for ( const CarriedItem& it : carried )
 		{
 			if ( std::find( bag.starting.begin(), bag.starting.end(), it.netId ) != bag.starting.end() )
@@ -260,24 +157,30 @@ private:
 			}
 			else
 			{
-				Drop( ctx, slot, it.netId );
+				ctx.DropItem( it.netId, b3Add( chest, b3MulSV( 0.45f, flat ) ), facing, b3Add( flat, b3Vec3{ 0.0f, 1.5f, 0.0f } ) );
 			}
 		}
-		// The slot that was out stays the one that is out: the next life's item for it comes out.
+		// The slot that was selected stays selected: the next life's item for it comes out.
 		Bag next;
-		next.current = bag.current;
 		next.published = bag.published;
+		next.selected = bag.selected;
 		next.dead = true;
 		bag = next;
 		ctx.FaceCamera( SlotTarget( slot ), false );
-		Publish( ctx, SlotTarget( slot ), bag );
 	}
 
-	void Publish( Context& ctx, uint32_t target, Bag& bag )
+	void Publish( Context& ctx, PlayerSlot slot, Bag& bag )
 	{
-		for ( int s = 2; s <= kSlots; ++s )
+		uint32_t target = SlotTarget( slot );
+		int32_t selected = ctx.SelectedSlot( slot ) + 1;
+		if ( selected != bag.selected )
 		{
-			int32_t value = int32_t( bag.item[size_t( s )] );
+			bag.selected = selected;
+			ctx.Set( target, m_slot, selected );
+		}
+		for ( int s = 0; s < kSlots; ++s )
+		{
+			int32_t value = int32_t( ctx.SlotItem( slot, s ) );
 			if ( value != bag.published[size_t( s )] )
 			{
 				bag.published[size_t( s )] = value;
@@ -287,9 +190,7 @@ private:
 	}
 
 	FieldHandle m_slot;
-	std::array<FieldHandle, kSlots + 1> m_items;
-	std::array<ActionHandle, kSlots + 1> m_keys;
-	SocketHandle m_hand;
+	std::array<FieldHandle, kSlots> m_items;
 	std::array<Bag, kMaxPlayers> m_bags;
 };
 

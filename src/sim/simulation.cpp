@@ -184,6 +184,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<MoveOverrides>();
 	RegisterSnapComponent<MotionState>();
 	RegisterSnapComponent<MotionHold>();
+	RegisterSnapComponent<Slots>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -444,6 +445,7 @@ void Simulation::PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotatio
 	held.holder = 0;
 	held.socket = 0;
 	held.stowed = 0;
+	held.slot = kNoSlot;
 	item.set<HeldItem>( held );
 	item.set<Transform>( { position, bodyRotation } );
 	item.set<Velocity>( { velocity, { 0.0f, 0.0f, 0.0f } } );
@@ -464,6 +466,173 @@ void Simulation::TakeItemFromWorld( flecs::entity item, uint32_t holder, uint8_t
 	held.holder = holder;
 	held.socket = socket;
 	item.set<HeldItem>( held );
+}
+
+// --- Slots ------------------------------------------------------------------------------------------
+
+uint8_t Simulation::SelectedSlot( uint32_t player ) const
+{
+	flecs::entity e = FindEntity( player );
+	const Slots* slots = e.is_valid() ? e.try_get<Slots>() : nullptr;
+	return slots != nullptr ? slots->selected : kNoSlot;
+}
+
+uint32_t Simulation::SlotItemOf( uint32_t holder, uint8_t slot ) const
+{
+	if ( holder == 0 || slot == kNoSlot )
+	{
+		return 0;
+	}
+	for ( const EntityRef& r : m_entities )
+	{
+		const HeldItem* item = flecs::entity( m_world, r.entity ).try_get<HeldItem>();
+		if ( item != nullptr && item->holder == holder && item->slot == slot )
+		{
+			return r.netId;
+		}
+	}
+	return 0;
+}
+
+void Simulation::SettleSlots( uint32_t holder, uint8_t selected )
+{
+	for ( const EntityRef& r : m_entities )
+	{
+		flecs::entity e( m_world, r.entity );
+		const HeldItem* item = e.try_get<HeldItem>();
+		if ( item == nullptr || item->holder != holder || item->slot == kNoSlot )
+		{
+			continue;
+		}
+		HeldItem want = *item;
+		want.stowed = item->slot == selected ? 0 : 1;
+		want.socket = want.stowed != 0 ? ItemShapeOf( item->kind ).holster : m_config.slotHand;
+		if ( want.stowed != item->stowed || want.socket != item->socket )
+		{
+			e.set<HeldItem>( want );
+		}
+	}
+}
+
+void Simulation::ThrowOut( flecs::entity item, const Transform& from, uint16_t cameraYaw )
+{
+	float yaw = detmath::YawToRadians( cameraYaw );
+	b3Vec3 ahead = detmath::YawForward( yaw );
+	b3Vec3 grip = b3Add( b3Add( from.position, b3Vec3{ 0.0f, 0.05f, 0.0f } ), b3MulSV( 0.45f, ahead ) );
+	PutItemInWorld( item, grip, detmath::YawRotation( yaw ), b3Add( b3MulSV( 1.0f, ahead ), b3Vec3{ 0.0f, 1.5f, 0.0f } ) );
+}
+
+bool Simulation::GiveSlot( flecs::entity player, flecs::entity item, bool select )
+{
+	uint32_t holder = player.get<NetId>().value;
+	Slots slots = player.has<Slots>() ? player.get<Slots>() : Slots{ m_config.slots, kNoSlot, 0, 0 };
+	HeldItem held = item.get<HeldItem>();
+	const ItemShape rule = ItemShapeOf( held.kind );
+	int slot = -1;
+	if ( rule.slot >= 1 && rule.slot <= slots.count )
+	{
+		// The kind's own slot: what is there makes room.
+		slot = rule.slot - 1;
+		if ( uint32_t old = SlotItemOf( holder, uint8_t( slot ) ); old != 0 && FindEntity( old ) != item )
+		{
+			// To a free slot if there is one, else onto the floor.
+			int room = -1;
+			for ( int s = 0; s < int( slots.count ) && room < 0; ++s )
+			{
+				room = s != slot && SlotItemOf( holder, uint8_t( s ) ) == 0 ? s : -1;
+			}
+			flecs::entity moved = FindEntity( old );
+			if ( room >= 0 )
+			{
+				HeldItem other = moved.get<HeldItem>();
+				other.slot = uint8_t( room );
+				moved.set<HeldItem>( other );
+			}
+			else
+			{
+				ThrowOut( moved, player.get<Transform>(), 0 );
+			}
+		}
+	}
+	else
+	{
+		for ( int s = 0; s < int( slots.count ) && slot < 0; ++s )
+		{
+			slot = SlotItemOf( holder, uint8_t( s ) ) == 0 ? s : -1;
+		}
+	}
+	if ( slot < 0 )
+	{
+		return false;
+	}
+	held.holder = holder;
+	held.slot = uint8_t( slot );
+	item.set<HeldItem>( held );
+	if ( select )
+	{
+		slots.selected = uint8_t( slot );
+	}
+	player.set<Slots>( slots );
+	SettleSlots( holder, slots.selected );
+	return true;
+}
+
+void Simulation::StepSlots( const InputFrame& frame )
+{
+	if ( m_config.slots == 0 )
+	{
+		return;
+	}
+	for ( int slot = 0; slot < kMaxPlayers; ++slot )
+	{
+		uint32_t netId = m_globals.playerNetIds[slot];
+		if ( netId == 0 )
+		{
+			continue;
+		}
+		flecs::entity e = FindEntity( netId );
+		const PlayerInput& in = frame.inputs[slot];
+		const bool had = e.has<Slots>();
+		Slots slots = had ? e.get<Slots>() : Slots{ m_config.slots, kNoSlot, in.intentSeq, 0 };
+		if ( had && in.intentSeq == slots.seq )
+		{
+			continue;
+		}
+		// Once per intent: an input repeated while a packet is late, or guessed for someone else,
+		// has the same count and does nothing again.
+		const bool act = had && e.get<Character>().dead == 0;
+		slots.seq = in.intentSeq;
+		if ( act && in.intent == uint8_t( SlotIntent::Select ) && ( in.intentA < slots.count || in.intentA == kNoSlot ) )
+		{
+			// A slot's key again, or no slot at all: empty hands.
+			slots.selected = slots.selected == in.intentA ? kNoSlot : in.intentA;
+		}
+		else if ( act && in.intent == uint8_t( SlotIntent::Move ) && in.intentA < slots.count && in.intentB < slots.count &&
+				  in.intentA != in.intentB )
+		{
+			flecs::entity a = FindEntity( SlotItemOf( netId, in.intentA ) );
+			flecs::entity b = FindEntity( SlotItemOf( netId, in.intentB ) );
+			for ( const auto& [item, to] : { std::pair{ a, in.intentB }, std::pair{ b, in.intentA } } )
+			{
+				if ( item.is_valid() )
+				{
+					HeldItem moved = item.get<HeldItem>();
+					moved.slot = to;
+					item.set<HeldItem>( moved );
+				}
+			}
+		}
+		else if ( act && in.intent == uint8_t( SlotIntent::Drop ) )
+		{
+			uint8_t which = in.intentA == kNoSlot ? slots.selected : in.intentA;
+			if ( flecs::entity item = FindEntity( SlotItemOf( netId, which ) ); which < slots.count && item.is_valid() )
+			{
+				ThrowOut( item, e.get<Transform>(), in.cameraYaw );
+			}
+		}
+		e.set<Slots>( slots );
+		SettleSlots( netId, slots.selected );
+	}
 }
 
 PhysicsBody Simulation::MakePhysicsBody( b3BodyId body, b3ShapeId shape )
@@ -626,6 +795,8 @@ void Simulation::RecordModEvent( const ModEventRecord& record )
 
 void Simulation::MoveCharacters( const InputFrame& frame )
 {
+	// What the players ask of their slots, first: everything below asks what is in the hand.
+	StepSlots( frame );
 	// What everyone holds, for state machines that ask ("attack and melee.bat").
 	m_heldScratch.clear();
 	if ( m_animGraph || m_motions )
@@ -1469,6 +1640,18 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			{
 				return;
 			}
+			if ( m_config.slots > 0 )
+			{
+				// Into a slot (its kind's own, or the first free one); with none, onto the floor.
+				flecs::entity item = CreateEntity();
+				item.set<HeldItem>( { 0, command.index, kNoSocket, 1 } );
+				item.set<Transform>( player.get<Transform>() );
+				if ( GiveSlot( player, item, false ) == false )
+				{
+					ThrowOut( item, player.get<Transform>(), 0 );
+				}
+				return;
+			}
 			if ( command.value == 1 )
 			{
 				flecs::entity item = CreateEntity();
@@ -1507,6 +1690,23 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			flecs::entity item = FindEntity( ResolveTarget( command.other ) );
 			const HeldItem* held = item.is_valid() ? item.try_get<HeldItem>() : nullptr;
 			bool stowed = command.value == 1;
+			if ( holder != 0 && player.is_valid() && player.has<Character>() && held != nullptr && held->holder == 0 && m_config.slots > 0 )
+			{
+				// Into a slot, and out into the hand; with no slot for it, it stays where it lies.
+				const ItemShape rule = ItemShapeOf( held->kind );
+				bool room = rule.slot >= 1 && rule.slot <= m_config.slots;
+				for ( uint8_t s = 0; s < m_config.slots && room == false; ++s )
+				{
+					room = SlotItemOf( holder, s ) == 0;
+				}
+				if ( room )
+				{
+					TakeItemFromWorld( item, holder, kNoSocket );
+					item.set<Transform>( player.get<Transform>() );
+					GiveSlot( player, item, true );
+				}
+				return;
+			}
 			if ( holder == 0 || player.is_valid() == false || player.has<Character>() == false || held == nullptr ||
 				 held->holder != 0 || ( stowed == false && HeldItemOf( holder, command.mode ) != 0 ) )
 			{

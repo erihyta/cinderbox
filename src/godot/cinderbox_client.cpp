@@ -116,6 +116,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "is_running" ), &CinderboxClient::is_running );
 	ClassDB::bind_method( D_METHOD( "control", "name", "value" ), &CinderboxClient::control );
 	ClassDB::bind_method( D_METHOD( "takes_input" ), &CinderboxClient::takes_input );
+	ClassDB::bind_method( D_METHOD( "send_intent", "kind", "a", "b" ), &CinderboxClient::send_intent );
 	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "actions", "view" ),
 						  &CinderboxClient::set_input, DEFVAL( 0 ) );
 	ClassDB::bind_method( D_METHOD( "get_actions" ), &CinderboxClient::get_actions );
@@ -283,6 +284,14 @@ void CinderboxClient::_enter_tree()
 	add_to_group( "cinderbox_client" );
 }
 
+void CinderboxClient::send_intent( int64_t kind, int64_t a, int64_t b )
+{
+	if ( kind >= 1 && kind <= int64_t( kLastSlotIntent ) && a >= 0 && a <= 255 && b >= 0 && b <= 255 && m_intents.size() < 16 )
+	{
+		m_intents.push_back( { uint8_t( kind ), uint8_t( a ), uint8_t( b ) } );
+	}
+}
+
 void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double camera_pitch, bool jump, bool sprint,
 								 int64_t actions, int64_t view )
 {
@@ -303,6 +312,28 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 	in.cameraPitch = int16_t( std::clamp( int( std::lround( pitchTurns * 65536.0 ) ), -int( kMaxCameraPitch ), int( kMaxCameraPitch ) ) );
 	in.actions = uint16_t( actions );
 	in.view = view >= 0 && view < int64_t( kViewModes ) ? uint8_t( view ) : uint8_t( 0 );
+	// The next intent, once the last one has had a tick to itself: the simulation carries one out
+	// when the count changes, so two in one tick would be one.
+	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
+	if ( m_intentSeqSet == false )
+	{
+		// Not from 0: a player who comes back into its slot must not repeat a count it left there.
+		m_intentSeqSet = true;
+		m_intentSeq = uint8_t( Time::get_singleton()->get_ticks_usec() >> 8 );
+	}
+	if ( m_intents.empty() == false && now - m_intentAt >= 2.0 / std::max( get_tick_rate(), 10.0 ) )
+	{
+		m_intent[0] = m_intents.front()[0];
+		m_intent[1] = m_intents.front()[1];
+		m_intent[2] = m_intents.front()[2];
+		m_intents.erase( m_intents.begin() );
+		m_intentSeq = uint8_t( m_intentSeq + 1 );
+		m_intentAt = now;
+	}
+	in.intent = m_intent[0];
+	in.intentA = m_intent[1];
+	in.intentB = m_intent[2];
+	in.intentSeq = m_intentSeq;
 	m_source->SetInput( in );
 
 	// Presses are announced here, before the server has seen them, so feedback does not wait.

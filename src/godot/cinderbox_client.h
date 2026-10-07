@@ -71,6 +71,10 @@ public:
 	bool takes_input() const;
 	// camera_yaw / camera_pitch: the Godot camera's rotation (radians). actions: bits of the
 	// server's mod actions (get_actions() says which bit is which).
+	// What the player asks of its slots (sim/types.h SlotIntent: 1 select `a`, 2 move `a` to `b`,
+	// 3 drop `a`, or the selected one with a = 255). It goes out with the input, one a tick, and
+	// the player's own simulation carries it out at once.
+	void send_intent( int64_t kind, int64_t a, int64_t b );
 	void set_input( const godot::Vector2& move, double camera_yaw, double camera_pitch, bool jump, bool sprint, int64_t actions,
 					int64_t view = 0 );
 	// Where the local player's line of sight starts for a view (ViewMode: 0 behind, 1 first person,
@@ -326,6 +330,12 @@ private:
 	void ItemsChanged( uint32_t holderNetId );
 	present::Models m_pose;		// scratch: the pose being built
 	uint16_t m_lastActions = 0;
+	// Intents not sent yet, the one the input carries now, and when it went out.
+	std::vector<std::array<uint8_t, 3>> m_intents;
+	uint8_t m_intent[3] = {};
+	uint8_t m_intentSeq = 0;
+	bool m_intentSeqSet = false;
+	double m_intentAt = 0.0;
 	uint64_t m_schemaGeneration = 0;
 	uint64_t m_namesGeneration = 0;
 	int SlotOfNetId( uint32_t netId ) const;

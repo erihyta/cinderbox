@@ -198,6 +198,12 @@ public:
 	{
 		m_itemShapes = std::move( shapes );
 	}
+	// Slots: which one a player has selected (kNoSlot: none, or no slots), what is in one.
+	uint8_t SelectedSlot( uint32_t player ) const;
+	uint32_t SlotItem( uint32_t player, uint8_t slot ) const
+	{
+		return SlotItemOf( player, slot );
+	}
 	ItemShape ItemShapeOf( uint16_t kind ) const
 	{
 		return kind < m_itemShapes.size() ? m_itemShapes[kind] : ItemShape{};
@@ -272,6 +278,17 @@ private:
 	flecs::entity CreateRagdoll( flecs::entity player, uint32_t lifetimeTicks );
 	void EnforceRagdollCap( uint32_t cap );
 	void MoveCharacters( const InputFrame& frame );
+	// Slots (types.h): each player's intent of this tick, before anything asks what it holds.
+	void StepSlots( const InputFrame& frame );
+	// The item a player has in a slot (0: none).
+	uint32_t SlotItemOf( uint32_t holder, uint8_t slot ) const;
+	// A new arrival finds its slot (its kind's own, pushing out what is there; else the first free
+	// one). False when there is none: the player cannot carry it.
+	bool GiveSlot( flecs::entity player, flecs::entity item, bool select );
+	// The selected slot's item is in the hand; every other slotted item is stowed in its holster.
+	void SettleSlots( uint32_t holder, uint8_t selected );
+	// Out of the bag: thrown a little, from the chest, the way the player looks.
+	void ThrowOut( flecs::entity item, const Transform& from, uint16_t cameraYaw );
 	// The parameters the mover uses for this player: the server's, with what mods set for it.
 	MoveParams MoveOf( flecs::entity e ) const;
 	// Throws `motion`'s probe for the player `e` along its look: false when it finds nothing.

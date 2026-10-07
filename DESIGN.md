@@ -208,7 +208,7 @@ inputs ──> server: mods read the world + this tick's inputs ──> commands
 | `combat` | health, death, ragdolls, respawning, kills and deaths; hears `combat.damage`, `combat.heal`, `game.round_start`; says `combat.hurt`, `combat.killed`, `combat.respawned` |
 | `pistol` | the gun: ammo, reload, hitscan with hit zones, the `mark` ray; a hit on a player is `combat.damage` |
 | `melee` | the bat: a swing timed by the character's `melee.strike` marker, damage through `combat.damage` |
-| `inventory` | what a player carries: slots, stowing, holsters; one owner of the hand |
+| `inventory` | the rules of what a player carries: how many slots, what a life starts with, what a death drops (the slots are the engine's) |
 | `pickup` | picking up and dropping items, hold-to-use progress on the board |
 | `deathmatch` | rounds: scores `combat.killed`, freezes for the intermission, emits `game.round_start` |
 | `props`, `expire`, `sneak` | throwing props; items that lie too long; a crouch layer from an animation pack, and its speed |
@@ -279,7 +279,8 @@ AnimationTree (Godot) ──bake──> graph.cfg + clips (.ozz) ──> the sch
 | Sockets | `CbSocket` nodes in the character scene, in the item's frame; the client places them from the pose and parents the item as `Item` |
 | Stowed | carried without being held, drawn in a holster socket |
 | In the world | a body baked from its scene's `CbItem` (the shape under it, mass, properties) into `items/<kind>.cfg`; dropped, picked up, expiring |
-| Properties | named numbers on a kind (`inventory.slot`, `pickup.hold_seconds`): how mods agree about items |
+| Slots | what a player carries, in numbered places: an item's slot (`HeldItem::slot`), a player's selected one (`Slots`), `SimConfig::slots`. Select, move and drop are intents in `PlayerInput` (kind, two slots, a count), carried out by `Simulation::StepSlots` before anything asks what is held, once per count: predicted and rolled back like movement |
+| Properties | named numbers on a kind (`slot`, `holster`, `pickup.hold_seconds`): how mods agree about items; the engine reads the first two |
 | Look | the item's own scene, whose root is its `CbItem`: the baked `items/<kind>.cfg` names the scene, and the game reads every one it finds; the scene's own reactions do the rest |
 
 ## Looks

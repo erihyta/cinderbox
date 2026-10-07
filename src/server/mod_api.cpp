@@ -171,6 +171,16 @@ void Declarations::ItemLayers( ItemKindHandle kind, AnimPackHandle pack )
 	m_itemLayers.emplace( kind.index, pack.index ); // the first one stays
 }
 
+void Declarations::Slots( int count )
+{
+	if ( count < 0 || count > kMaxSlots )
+	{
+		m_errors.push_back( m_mod + ": " + std::to_string( count ) + " slots (a player has at most " + std::to_string( kMaxSlots ) + ")" );
+		return;
+	}
+	m_slots = std::max( m_slots, count );
+}
+
 void Declarations::ItemProperty( ItemKindHandle kind, const std::string& name, float value )
 {
 	if ( kind.Valid() == false || name.empty() )
@@ -774,6 +784,22 @@ void Context::HoldItem( uint32_t item, SocketHandle socket )
 	Add( c );
 }
 
+int Context::SlotCount() const
+{
+	return int( m_sim.Config().slots );
+}
+
+int Context::SelectedSlot( PlayerSlot player ) const
+{
+	uint8_t selected = m_sim.SelectedSlot( m_sim.PlayerNetId( player ) );
+	return selected == kNoSlot ? -1 : int( selected );
+}
+
+uint32_t Context::SlotItem( PlayerSlot player, int slot ) const
+{
+	return slot >= 0 && slot < kMaxSlots ? m_sim.SlotItem( m_sim.PlayerNetId( player ), uint8_t( slot ) ) : 0;
+}
+
 std::vector<CarriedItem> Context::CarriedItems( PlayerSlot slot ) const
 {
 	std::vector<CarriedItem> out;
@@ -788,7 +814,7 @@ std::vector<CarriedItem> Context::CarriedItems( PlayerSlot slot ) const
 		if ( item != nullptr && item->holder == holder )
 		{
 			SocketHandle socket = item->socket < m_schema.sockets.size() ? SocketHandle{ int( item->socket ) } : SocketHandle{};
-			out.push_back( { r.netId, ItemKindHandle{ int( item->kind ) }, item->stowed != 0, socket } );
+			out.push_back( { r.netId, ItemKindHandle{ int( item->kind ) }, item->stowed != 0, socket, item->slot == kNoSlot ? -1 : int( item->slot ) } );
 		}
 	}
 	return out;

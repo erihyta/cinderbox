@@ -270,6 +270,8 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		{
 			PutF32( out, v );
 		}
+		PutU8( out, shape.slot );
+		PutU8( out, shape.holster );
 	}
 	PutU8( out, uint8_t( std::min<size_t>( schema.sockets.size(), 255 ) ) );
 	for ( size_t i = 0; i < schema.sockets.size() && i < 255; ++i )
@@ -450,6 +452,12 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		// Within arm's reach of the carrying hand, and a rotation that is one.
 		if ( shape.grip > 3 || sane( g[0], -2.0f, 2.0f ) == false || sane( g[1], -2.0f, 2.0f ) == false || sane( g[2], -2.0f, 2.0f ) == false ||
 			 sane( turn, 0.9f, 1.1f ) == false )
+		{
+			return false;
+		}
+		shape.slot = r.U8();
+		shape.holster = r.U8();
+		if ( shape.slot > kMaxSlots )
 		{
 			return false;
 		}

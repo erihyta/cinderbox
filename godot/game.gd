@@ -46,6 +46,8 @@ const MOUSE_SENSITIVITY := 0.003
 ## would go under the floor.
 const MAX_PITCH := 1.5
 const ACTION_PREFIX := "cb_"
+## What a player asks of its slots (the simulation's SlotIntent).
+const INTENT_SELECT := 1
 const Boot := preload("res://boot.gd")
 const Workshop := preload("res://workshop.gd")
 const Menu := preload("res://menu.gd")
@@ -192,6 +194,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		first_person = not first_person
 	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_Z and _replay == "":
 		shoulder = 1 if shoulder == 0 else (-1 if shoulder > 0 else 0)
+	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode >= KEY_1 and event.physical_keycode <= KEY_9 \
+			and _replay == "" and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		# The slots are the engine's: a number key selects one (again: empty hands). It goes out with
+		# the input, and the player's own simulation carries it out at once.
+		client.send_intent(INTENT_SELECT, event.physical_keycode - KEY_1, 0)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_ESCAPE:
@@ -502,6 +509,16 @@ func _event_for_key(key: String) -> InputEvent:
 	return ev
 
 
+## The unattended player takes a slot's item out, once.
+var _auto_slot := -1
+
+
+func _auto_select(slot: int) -> void:
+	if slot != _auto_slot:
+		_auto_slot = slot
+		client.send_intent(INTENT_SELECT, slot, 0)
+
+
 func _action_bits() -> int:
 	var bits := 0
 	for action in _actions:
@@ -538,12 +555,12 @@ func _send_input(delta: float) -> void:
 		if elapsed < autoplay * 0.4:
 			if auto_rng.randf() < delta * 2.0:
 				actions |= _action_bit("spawn_prop")
-		elif elapsed < autoplay * 0.7 or _action_bit("slot_3") == 0:
-			actions |= _action_bit("slot_2")
+		elif elapsed < autoplay * 0.7:
+			_auto_select(0)
 			if auto_rng.randf() < delta * 3.0:
 				actions |= _action_bit("fire")
 		else:
-			actions |= _action_bit("slot_3")
+			_auto_select(1)
 			if auto_rng.randf() < delta * 2.0:
 				actions |= _action_bit("fire")
 		# Hold the scores key at the end (a mod's CbShowKey names it), so screenshots show them too.
