@@ -234,7 +234,7 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 |---|---|
 | `kind` | the kind a server mod declares (`declare.ItemKind( "melee.bat" )`). One scene per kind; the baked file is named after it |
 | `display_name` | what prompts and lists call it (`{look:field}`, an item's `{name}`) |
-| `mass` | kg, when it lies in the world |
+| `mass`, `density`, `friction`, `bounce` | its [body](maps.md#a-body) when it lies in the world, as any body says it: what it weighs (1 kg unless it says otherwise), how it grips, how it bounces |
 | `properties` | named numbers any server mod may read, e.g. `pickup.hold_seconds` = 0.5. They replace what the item's mod declared in code for the same name |
 | `carry_grip`, `other_hand`, `other_grip` | [where the hands hold it](#both-hands-on-an-item) |
 | `use`, `slot` | [how it is used](#using-an-item), and the slot it goes to (1 is the first; 0: the first free one) |

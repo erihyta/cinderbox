@@ -10,7 +10,7 @@ The markers carry the collision the simulation needs; everything else in the sce
 | Node | What it becomes |
 |---|---|
 | `CbStatic` | A solid box: floor, wall, ramp, step, platform. `size` is the full size in metres. |
-| `CbProp` | A dynamic box or sphere the level starts with. |
+| `CbProp` | A dynamic box or sphere the level starts with. A [body](#a-body) like any other: `mass`, `density`, `friction`, `bounce` |
 | `CbSpawn` | Where players appear. One per map. |
 | `CbTemplate` | A named entity built from components (see Entities below). |
 | `CbComponent` | One component on a template, with the fields the simulation defines. |
@@ -30,6 +30,23 @@ Baked values, including authored component fields, are rounded to fixed-point (1
 1/4096 rad) so a map is identical on every platform, and the order of the nodes in the scene is
 the order entities are created in, which is part of the map's identity. See `src/sim/map.h` for
 the format and `src/sim/reflect.h` for the component registry.
+
+## A body
+
+What a body is is said one way wherever a scene describes one (`CbBody`, the base of `CbProp` and
+`CbItem`; a `CbTemplate` says the same three in its Material component):
+
+| What | Meaning |
+|---|---|
+| `mass` | kilograms. 0: its volume times `density` (an item starts at 1) |
+| `density` | kilograms per cubic metre, used when no mass is given: at 40, a crate 1 m across is 40 kg |
+| `friction` | how it grips what it touches: 0 is ice, 0.6 the usual |
+| `bounce` | how much of a hit it gives back: 0 none, 1 all of it |
+
+- Every simulation builds the same body from them: weight decides what a player's push, a hook's
+  pull and a rope share with it; friction and bounce are the physics engine's.
+- A prop's are baked into the `.cbmap` (in thousandths), an item's into its `items/<kind>.cfg`
+  (`mass`, and `friction` / `bounce` when they are not the usual).
 
 ## Entities and components
 

@@ -68,7 +68,7 @@ The extension has about 35 node classes. Several do the same thing in two places
 | Two labels | `CbFieldLabel` (2D), `CbPromptLabel` (in the world, upright above its parent, with a bar) | a binding that writes text (`text_format` on `CbFieldBinding`), so a prompt is a `Label3D` and two bindings; what keeps it upright above an item lying on its side is the reaction that places it |
 | Two ways to drive a property | `CbFieldBinding` (HUD: reads a list row's entity), a While `CbReaction` with `value_expression` (the world) | one of them in both places. Leaning: reactions learn a row's subject, then the binding goes |
 | Conditions, five times | each HUD node declares and evaluates its own | one base: subject, conditions, format |
-| Three body descriptions | `CbProp`, `CbTemplate` + `CbComponent`, `CbItem` | one shared body (shape, mass or density, friction, bounce); the item keeps what is an item's |
+| Three body descriptions | **done (M115)** for what a body *is*: `CbBody` (mass, density, friction, bounce) is the base of `CbProp` and `CbItem`, the names a template's Material has | the shape said one way too: a prop has `shape` / `size` of its own, an item a `CollisionShape3D` child, a template a Shape component |
 
 - **Kept as they are**: the motion nodes, the character nodes. (`CbGrip` is gone: an item's grips
   are two markers its `CbItem` names.)
