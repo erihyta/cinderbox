@@ -74,8 +74,8 @@ The extension has about 35 node classes. Several do the same thing in two places
   are two markers its `CbItem` names.)
 - **Where the HUD ended**: six nodes (label, binding, list, key, click, prompt), from seven; the
   list and the key do more than the two nodes they replaced.
-- **Also here**: `cinderbox_client.cpp` (2,700 lines) in parts: the frame source, the HUD's values,
-  items.
+- **Done with it (M117)**: `cinderbox_client.cpp` is in parts (the frame and the nodes, items, the
+  world's director, what looks ask).
 
 ### 2. Things that fly
 
