@@ -5,9 +5,9 @@
 ; events: no scripts. Restyle it freely, or override it from a player mod at res://ui/hud_combat.tscn.
 ;   CbFieldBinding  field -> a property of its target (default: its parent)
 ;   CbFieldLabel    "{field}" text, shown while its conditions hold
-;   CbEventFeed     a line per mod event
-;   Scores          the scoreboard, made of ordinary nodes: a CbShowKey shows it while "scores" (Tab) is
-;                   held; Header is plain Labels; Rows is a CbList of players whose child Row is one
+;   KillFeed        a CbList of events (combat.killed): its child Line is one line as designed
+;   Scores          the scoreboard, made of ordinary nodes: Key (a CbKey) keeps "ui.scores" at 1 while
+;                   Tab is held and Shown (a CbFieldBinding) shows it while that holds; Header is plain Labels; Rows is a CbList of players whose child Row is one
 ;                   row as designed. In the game the list copies Row for every player, sorted, and
 ;                   the CbFieldLabels in a row read that player (is_local: the viewer's own row)
 ;                   (it steps aside when a game mode brings its own: !?deathmatch.score)
@@ -136,7 +136,7 @@ horizontal_alignment = 2
 text_format = "Kills {combat.kills}   Deaths {combat.deaths}"
 conditions = PackedStringArray("?combat.kills")
 
-[node name="KillFeed" type="CbEventFeed" parent="."]
+[node name="KillFeed" type="CbList" parent="."]
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
@@ -144,9 +144,15 @@ offset_left = -424.0
 offset_top = 44.0
 offset_right = -24.0
 offset_bottom = 200.0
+of = 4
+max_rows = 5
 event = "combat.killed"
-text_format = "{a}  >  {b}"
+
+[node name="Line" type="CbFieldLabel" parent="KillFeed"]
+layout_mode = 2
+horizontal_alignment = 2
 label_settings = SubResource("Feed")
+text_format = "{a}  >  {b}"
 
 [node name="Scores" type="VBoxContainer" parent="."]
 anchors_preset = 8
@@ -159,8 +165,10 @@ offset_top = -200.0
 offset_right = 260.0
 offset_bottom = 200.0
 
-[node name="Key" type="CbShowKey" parent="Scores"]
-conditions = PackedStringArray("!?deathmatch.score")
+[node name="Key" type="CbKey" parent="Scores"]
+
+[node name="Shown" type="CbFieldBinding" parent="Scores"]
+conditions = PackedStringArray("ui.scores", "!?deathmatch.score")
 
 [node name="Header" type="HBoxContainer" parent="Scores"]
 

@@ -179,9 +179,8 @@ The HUD reads the board too, through script-free nodes any HUD scene can use:
 |---|---|
 | `CbFieldLabel` | a Label with a `text_format` (`"AMMO {pistol.ammo} / 12"`), shown while its `conditions` hold. `{an expression}` works too: `"{combat.health * 100 / combat.max_health}%"`. With `choice_field` and `choices` it shows the line a number picks ([Saying things](#saying-things)) |
 | `CbFieldBinding` | writes a field, or an expression over fields (`combat.health / combat.max_health`), into any property of its `target` (default: its parent), `value = field * multiply + add`; with conditions it hides the target while they fail. A `ProgressBar`'s `value` and `max_value`, a panel's `visible`, a colour |
-| `CbEventFeed` | a line per mod event, `"{a}  >  {b}"` with player names, fading after `line_seconds` (a kill feed) |
-| `CbList` | a row per player or item: its first child is the row as you designed it, copied for every entry; `where` filters, `sort_by` orders, `max_rows` cuts ([Lists](#lists)) |
-| `CbShowKey` | shows its parent while a key is held, or switches it with each press: `action` `scores`, `key` `Tab`. The key is the viewer's own, not one of the server's actions. With `cursor`, the mouse is the screen's while it is shown |
+| `CbList` | a row per player, item, slot, or event that happened: its first child is the row as you designed it, copied for every entry; `where` filters, `sort_by` orders, `max_rows` cuts ([Lists](#lists)). Of **Events** (`event` `combat.killed`, each row for `seconds`) it is a kill feed: `{a}` and `{b}` in a row are what the event's two entities are called |
+| `CbKey` | a key of the viewer's own, not one of the server's actions: `action` `scores`, `key` `Tab`. While it is held (or switched by each press) a value of the viewer's is 1: `ui.scores`. What that shows is whoever reads it: a `CbFieldBinding` with the condition `ui.scores` shows its target. With `cursor`, the mouse is the screen's meanwhile |
 | `CbClick` | what a click on its parent does: sets values of the viewer's own (`ui.picked = slot.number`), asks something of the player's slots (select, move, drop) ([Screens](#screens)) |
 
 Whose fields a HUD node reads is its **subject**: the local player, or inside a `CbList` row, that row's entity.
@@ -227,7 +226,8 @@ that as rows, with no code. The scoreboard is one:
 
 ```
 Scores        VBoxContainer                               (server_mods/deathmatch/client/ui/hud_deathmatch.tscn)
-├── Key       CbShowKey      action "scores"  key "Tab"   shows Scores while it is held
+├── Key       CbKey          action "scores"  key "Tab"   ui.scores is 1 while it is held
+├── Shown     CbFieldBinding conditions ui.scores          shows Scores while that holds
 ├── Header    HBoxContainer  plain Labels: Player, Score, Kills, Deaths
 └── Rows      CbList         of Players   sort_by deathmatch.score
     └── Row   HBoxContainer  one row, as designed: copied for every player
@@ -259,7 +259,7 @@ make it one, and none is a script:
 
 | Piece | What |
 |---|---|
-| A free cursor | a `CbShowKey` with `cursor`: while its screen is shown the mouse is the screen's, and the camera, the use button and the mods' actions do not hear it |
+| A free cursor | a `CbKey` with `cursor`: while its value is 1 the mouse is the screen's, and the camera, the use button and the mods' actions do not hear it |
 | Values of the viewer's own | names that start with `ui.` (`ui.picked`, `ui.tab`): no server and no simulation knows them. Conditions, formats (`{ui.picked}`) and bindings read them like fields; 0 until set. They are what a screen remembers |
 | Clicks | a `CbClick` under any control: `conditions` (when it takes the click), `sets` (`ui.` values it changes), `intent` (what it asks of the player's slots) |
 
@@ -267,7 +267,8 @@ The inventory screen (`server_mods/inventory/client/ui/hud_inventory.tscn`), on 
 
 ```
 Bag          PanelContainer
-├── Key      CbShowKey   action "inventory"  key "I"  each press switches it  cursor
+├── Key      CbKey       action "inventory"  key "I"  each press switches it  cursor   (ui.inventory)
+├── Shown    CbFieldBinding   conditions ui.inventory: shows Bag
 └── Grid     CbList      of Slots
     └── Cell PanelContainer            one slot, as designed: copied for every slot
         ├── PickUp   CbClick   conditions ui.picked == 0, not slot.empty    sets ui.picked = slot.number

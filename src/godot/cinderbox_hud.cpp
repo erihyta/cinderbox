@@ -368,92 +368,6 @@ void CbFieldBinding::_process( double )
 	}
 }
 
-// --- CbEventFeed -----------------------------------------------------------------------------------
-
-void CbEventFeed::_bind_methods()
-{
-	ClassDB::bind_method( D_METHOD( "set_event", "value" ), &CbEventFeed::set_event );
-	ClassDB::bind_method( D_METHOD( "get_event" ), &CbEventFeed::get_event );
-	ClassDB::bind_method( D_METHOD( "set_text_format", "value" ), &CbEventFeed::set_text_format );
-	ClassDB::bind_method( D_METHOD( "get_text_format" ), &CbEventFeed::get_text_format );
-	ClassDB::bind_method( D_METHOD( "set_nobody_text", "value" ), &CbEventFeed::set_nobody_text );
-	ClassDB::bind_method( D_METHOD( "get_nobody_text" ), &CbEventFeed::get_nobody_text );
-	ClassDB::bind_method( D_METHOD( "set_max_lines", "value" ), &CbEventFeed::set_max_lines );
-	ClassDB::bind_method( D_METHOD( "get_max_lines" ), &CbEventFeed::get_max_lines );
-	ClassDB::bind_method( D_METHOD( "set_line_seconds", "value" ), &CbEventFeed::set_line_seconds );
-	ClassDB::bind_method( D_METHOD( "get_line_seconds" ), &CbEventFeed::get_line_seconds );
-	ClassDB::bind_method( D_METHOD( "set_label_settings", "value" ), &CbEventFeed::set_label_settings );
-	ClassDB::bind_method( D_METHOD( "get_label_settings" ), &CbEventFeed::get_label_settings );
-	ClassDB::bind_method( D_METHOD( "on_mod_event", "name", "a", "b", "value", "position", "vector" ), &CbEventFeed::on_mod_event );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "event" ), "set_event", "get_event" );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "text_format" ), "set_text_format", "get_text_format" );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "nobody_text" ), "set_nobody_text", "get_nobody_text" );
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "max_lines", PROPERTY_HINT_RANGE, "1,20" ), "set_max_lines", "get_max_lines" );
-	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "line_seconds", PROPERTY_HINT_RANGE, "0.5,30,0.1" ), "set_line_seconds",
-				  "get_line_seconds" );
-	ADD_PROPERTY( PropertyInfo( Variant::OBJECT, "label_settings", PROPERTY_HINT_RESOURCE_TYPE, "LabelSettings" ),
-				  "set_label_settings", "get_label_settings" );
-}
-
-void CbEventFeed::_ready()
-{
-	set_process( InGame() );
-}
-
-void CbEventFeed::_process( double )
-{
-	if ( m_connected == false )
-	{
-		if ( CinderboxClient* client = FindClient( this, m_client ) )
-		{
-			client->connect( "mod_event", Callable( this, "on_mod_event" ) );
-			m_connected = true;
-		}
-	}
-	// Lines leave oldest first once their time is up.
-	double now = Now();
-	while ( m_expires.empty() == false && m_expires.front() <= now && get_child_count() > 0 )
-	{
-		m_expires.erase( m_expires.begin() );
-		Node* oldest = get_child( 0 );
-		remove_child( oldest );
-		oldest->queue_free();
-	}
-}
-
-void CbEventFeed::on_mod_event( const String& name, int64_t a, int64_t b, int64_t value, const Vector3&, const Vector3& )
-{
-	if ( name != m_event )
-	{
-		return;
-	}
-	CinderboxClient* client = FindClient( this, m_client );
-	if ( client == nullptr )
-	{
-		return;
-	}
-	auto who = [&]( int64_t id ) {
-		String n = id != 0 ? client->get_player_name( id ) : String();
-		return n.is_empty() ? m_nobody : n;
-	};
-	Label* line = memnew( Label );
-	line->set_text( m_format.replace( "{a}", who( a ) ).replace( "{b}", who( b ) ).replace( "{value}", String::num_int64( value ) ) );
-	if ( m_labelSettings.is_valid() )
-	{
-		line->set_label_settings( m_labelSettings );
-	}
-	line->set_horizontal_alignment( HORIZONTAL_ALIGNMENT_RIGHT );
-	add_child( line );
-	m_expires.push_back( Now() + double( m_lineSeconds ) );
-	while ( get_child_count() > m_maxLines )
-	{
-		Node* oldest = get_child( 0 );
-		remove_child( oldest );
-		oldest->queue_free();
-		m_expires.erase( m_expires.begin() );
-	}
-}
-
 // --- CbList ----------------------------------------------------------------------------------------
 
 CbList::CbList()
@@ -478,8 +392,15 @@ void CbList::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_conditions", "value" ), &CbList::set_conditions );
 	ClassDB::bind_method( D_METHOD( "get_conditions" ), &CbList::get_conditions );
 	ClassDB::bind_method( D_METHOD( "get_entries" ), &CbList::get_entries );
+	ClassDB::bind_method( D_METHOD( "set_event", "value" ), &CbList::set_event );
+	ClassDB::bind_method( D_METHOD( "get_event" ), &CbList::get_event );
+	ClassDB::bind_method( D_METHOD( "set_seconds", "value" ), &CbList::set_seconds );
+	ClassDB::bind_method( D_METHOD( "get_seconds" ), &CbList::get_seconds );
+	ClassDB::bind_method( D_METHOD( "set_nobody_text", "value" ), &CbList::set_nobody_text );
+	ClassDB::bind_method( D_METHOD( "get_nobody_text" ), &CbList::get_nobody_text );
+	ClassDB::bind_method( D_METHOD( "on_mod_event", "name", "a", "b", "value", "position", "vector" ), &CbList::on_mod_event );
 	ADD_GROUP( "Rows", "" );
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "of", PROPERTY_HINT_ENUM, "Players,Items,Items its subject holds,Slots of its subject" ), "set_of", "get_of" );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "of", PROPERTY_HINT_ENUM, "Players,Items,Items its subject holds,Slots of its subject,Events that happened" ), "set_of", "get_of" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "item_kind", PROPERTY_HINT_PLACEHOLDER_TEXT, "pistol.gun (empty: any)" ), "set_item_kind",
 				  "get_item_kind" );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "where" ), "set_where", "get_where" );
@@ -487,6 +408,10 @@ void CbList::_bind_methods()
 				  "get_sort_by" );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "descending" ), "set_descending", "get_descending" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "max_rows", PROPERTY_HINT_RANGE, "0,64,1,or_greater" ), "set_max_rows", "get_max_rows" );
+	ADD_GROUP( "Events", "" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "event", PROPERTY_HINT_PLACEHOLDER_TEXT, "combat.killed" ), "set_event", "get_event" );
+	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "seconds", PROPERTY_HINT_RANGE, "0.5,30,0.1,or_greater" ), "set_seconds", "get_seconds" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "nobody_text" ), "set_nobody_text", "get_nobody_text" );
 	ADD_GROUP( "Shown", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "conditions" ), "set_conditions", "get_conditions" );
 
@@ -494,6 +419,7 @@ void CbList::_bind_methods()
 	BIND_ENUM_CONSTANT( OF_ITEMS );
 	BIND_ENUM_CONSTANT( OF_HELD_ITEMS );
 	BIND_ENUM_CONSTANT( OF_SLOTS );
+	BIND_ENUM_CONSTANT( OF_EVENTS );
 }
 
 Control* CbList::Template() const
@@ -515,6 +441,10 @@ PackedStringArray CbList::_get_configuration_warnings() const
 	{
 		warnings.push_back( "Give it a child (any Control): that is one row. In the game it is copied for every entry, and the "
 							"CbFieldLabel and CbFieldBinding nodes in it read that entry's fields." );
+	}
+	if ( m_of == OF_EVENTS && m_event.strip_edges().is_empty() )
+	{
+		warnings.push_back( "Name the event it lists (combat.killed): a row is shown for each one that happens, for a while." );
 	}
 	return warnings;
 }
@@ -543,9 +473,34 @@ PackedInt64Array CbList::get_entries() const
 	return out;
 }
 
+// An event of the kind it lists: one more row, for a while.
+void CbList::on_mod_event( const String& name, int64_t a, int64_t b, int64_t value, const Vector3&, const Vector3& )
+{
+	CinderboxClient* client = FindClient( this, m_client );
+	if ( m_of != OF_EVENTS || name != m_event || client == nullptr )
+	{
+		return;
+	}
+	auto who = [&]( int64_t id ) {
+		String n = id != 0 ? client->get_entity_name( id ) : String();
+		return n.is_empty() ? m_nobody : n;
+	};
+	m_happened.push_back( { a, b, value, who( a ), who( b ), Now() + double( m_seconds ) } );
+	// (The newest are kept when there are more than fit.)
+	while ( m_maxRows > 0 && int( m_happened.size() ) > m_maxRows )
+	{
+		m_happened.erase( m_happened.begin() );
+	}
+}
+
 void CbList::_process( double )
 {
 	CinderboxClient* client = FindClient( this, m_client );
+	if ( m_of == OF_EVENTS && m_connected == false && client != nullptr )
+	{
+		client->connect( "mod_event", Callable( this, "on_mod_event" ) );
+		m_connected = true;
+	}
 	Control* pattern = Template();
 	int64_t subject = SubjectOf( get_parent(), client );
 	bool show = client != nullptr && pattern != nullptr && client->has_local_player() &&
@@ -566,6 +521,9 @@ void CbList::_process( double )
 		case OF_HELD_ITEMS:
 			found = subject != 0 ? client->get_items( m_itemKind, subject ) : PackedInt64Array();
 			break;
+		case OF_EVENTS:
+		case OF_SLOTS:
+			break; // below
 		case OF_PLAYERS:
 		default:
 			found = client->get_players();
@@ -595,6 +553,29 @@ void CbList::_process( double )
 			names["slot.selected"] = s == selected ? 1 : 0;
 			names["slot.empty"] = item == 0 ? 1 : 0;
 			found.push_back( item );
+			rowNames.push_back( names );
+		}
+	}
+	if ( m_of == OF_EVENTS )
+	{
+		// A row per event that has not had its time yet, oldest first. What a row is about is the
+		// event's first entity (the second, when there is no first); the rest is in its names.
+		double now = Now();
+		while ( m_happened.empty() == false && m_happened.front().expires <= now )
+		{
+			m_happened.erase( m_happened.begin() );
+		}
+		found.clear();
+		rowNames.clear();
+		for ( const Happened& h : m_happened )
+		{
+			Dictionary names;
+			names["a"] = h.aName;
+			names["b"] = h.bName;
+			names["event.a"] = h.a;
+			names["event.b"] = h.b;
+			names["event.value"] = h.value;
+			found.push_back( h.a != 0 ? h.a : h.b );
 			rowNames.push_back( names );
 		}
 	}
@@ -658,34 +639,40 @@ void CbList::_process( double )
 	}
 }
 
-// --- CbShowKey -------------------------------------------------------------------------------------
+// --- CbKey -----------------------------------------------------------------------------------------
 
-void CbShowKey::_bind_methods()
+void CbKey::_bind_methods()
 {
-	ClassDB::bind_method( D_METHOD( "set_action", "value" ), &CbShowKey::set_action );
-	ClassDB::bind_method( D_METHOD( "get_action" ), &CbShowKey::get_action );
-	ClassDB::bind_method( D_METHOD( "set_key", "value" ), &CbShowKey::set_key );
-	ClassDB::bind_method( D_METHOD( "get_key" ), &CbShowKey::get_key );
-	ClassDB::bind_method( D_METHOD( "set_mode", "value" ), &CbShowKey::set_mode );
-	ClassDB::bind_method( D_METHOD( "get_mode" ), &CbShowKey::get_mode );
-	ClassDB::bind_method( D_METHOD( "set_target", "value" ), &CbShowKey::set_target );
-	ClassDB::bind_method( D_METHOD( "get_target" ), &CbShowKey::get_target );
+	ClassDB::bind_method( D_METHOD( "set_action", "value" ), &CbKey::set_action );
+	ClassDB::bind_method( D_METHOD( "get_action" ), &CbKey::get_action );
+	ClassDB::bind_method( D_METHOD( "set_key", "value" ), &CbKey::set_key );
+	ClassDB::bind_method( D_METHOD( "get_key" ), &CbKey::get_key );
+	ClassDB::bind_method( D_METHOD( "set_mode", "value" ), &CbKey::set_mode );
+	ClassDB::bind_method( D_METHOD( "get_mode" ), &CbKey::get_mode );
+	ClassDB::bind_method( D_METHOD( "set_value", "value" ), &CbKey::set_value );
+	ClassDB::bind_method( D_METHOD( "get_value" ), &CbKey::get_value );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "action", PROPERTY_HINT_PLACEHOLDER_TEXT, "scores" ), "set_action", "get_action" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "key", PROPERTY_HINT_PLACEHOLDER_TEXT, "Tab" ), "set_key", "get_key" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "mode", PROPERTY_HINT_ENUM, "While held,Each press switches it" ), "set_mode", "get_mode" );
-	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "target" ), "set_target", "get_target" );
-	ClassDB::bind_method( D_METHOD( "set_cursor", "value" ), &CbShowKey::set_cursor );
-	ClassDB::bind_method( D_METHOD( "get_cursor" ), &CbShowKey::get_cursor );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "value", PROPERTY_HINT_PLACEHOLDER_TEXT, "ui. and the action (ui.scores)" ), "set_value", "get_value" );
+	ClassDB::bind_method( D_METHOD( "set_cursor", "value" ), &CbKey::set_cursor );
+	ClassDB::bind_method( D_METHOD( "get_cursor" ), &CbKey::get_cursor );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "cursor" ), "set_cursor", "get_cursor" );
-	ClassDB::bind_method( D_METHOD( "set_conditions", "value" ), &CbShowKey::set_conditions );
-	ClassDB::bind_method( D_METHOD( "get_conditions" ), &CbShowKey::get_conditions );
+	ClassDB::bind_method( D_METHOD( "set_conditions", "value" ), &CbKey::set_conditions );
+	ClassDB::bind_method( D_METHOD( "get_conditions" ), &CbKey::get_conditions );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "conditions" ), "set_conditions", "get_conditions" );
 
 	BIND_ENUM_CONSTANT( MODE_HOLD );
 	BIND_ENUM_CONSTANT( MODE_TOGGLE );
 }
 
-PackedStringArray CbShowKey::_get_configuration_warnings() const
+String CbKey::ValueName() const
+{
+	String value = m_value.strip_edges();
+	return value.is_empty() ? "ui." + m_action.strip_edges() : value;
+}
+
+PackedStringArray CbKey::_get_configuration_warnings() const
 {
 	PackedStringArray warnings;
 	String action = m_action.strip_edges();
@@ -697,28 +684,25 @@ PackedStringArray CbShowKey::_get_configuration_warnings() const
 	{
 		warnings.push_back( "\"" + m_key + "\" is not a key's name. Write it as Godot does: Tab, M, F1, Space." );
 	}
+	if ( ValueName().begins_with( "ui." ) == false || ValueName().length() < 4 )
+	{
+		warnings.push_back( "The value it keeps is one of the viewer's own: its name starts with \"ui.\" (ui.bag)." );
+	}
 	return warnings;
 }
 
-void CbShowKey::_ready()
+void CbKey::_ready()
 {
 	set_process( InGame() );
-	if ( InGame() == false )
-	{
-		return;
-	}
-	if ( Node* target = get_node_or_null( m_target ) )
-	{
-		target->set( "visible", false );
-	}
 }
 
-void CbShowKey::_process( double )
+void CbKey::_process( double )
 {
-	Node* target = get_node_or_null( m_target );
 	StringName action = "cb_" + m_action.strip_edges();
 	InputMap* map = InputMap::get_singleton();
-	if ( target == nullptr || m_action.strip_edges().is_empty() )
+	CinderboxClient* client = FindClient( this, m_client );
+	String value = ValueName();
+	if ( client == nullptr || m_action.strip_edges().is_empty() || value.begins_with( "ui." ) == false )
 	{
 		return;
 	}
@@ -745,31 +729,31 @@ void CbShowKey::_process( double )
 	{
 		m_on = input->is_action_pressed( action );
 	}
-	bool show = m_on;
-	if ( show && m_conditions.is_empty() == false )
+	bool on = m_on;
+	if ( on && m_conditions.is_empty() == false )
 	{
-		CinderboxClient* client = FindClient( this, m_client );
-		show = client != nullptr && client->CheckWith( SubjectOf( this, client ), m_conditions, RowNames( this ) );
+		on = client->CheckWith( SubjectOf( this, client ), m_conditions, RowNames( this ) );
 	}
 	if ( m_cursor )
 	{
-		if ( CinderboxClient* client = FindClient( this, m_client ) )
-		{
-			client->want_cursor( int64_t( get_instance_id() ), show );
-		}
+		client->want_cursor( int64_t( get_instance_id() ), on );
 	}
-	Variant visible = target->get( "visible" );
-	if ( visible.get_type() == Variant::BOOL && bool( visible ) != show )
+	if ( m_said != int( on ) )
 	{
-		target->set( "visible", show );
+		m_said = int( on );
+		client->set_local_value( value, on ? 1.0 : 0.0 );
 	}
 }
 
-void CbShowKey::_exit_tree()
+void CbKey::_exit_tree()
 {
 	if ( CinderboxClient* client = InGame() ? FindClient( this, m_client ) : nullptr )
 	{
 		client->want_cursor( int64_t( get_instance_id() ), false );
+		if ( m_said == 1 )
+		{
+			client->set_local_value( ValueName(), 0.0 );
+		}
 	}
 }
 

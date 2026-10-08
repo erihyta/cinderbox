@@ -495,7 +495,7 @@ func _reload_presentation() -> void:
 # named cb_<action>, so the usual Godot input remapping works on them too.
 
 func _bind_actions() -> void:
-	# Only the last server's: a HUD's own keys (CbShowKey) have the prefix too, and stay.
+	# Only the last server's: a HUD's own keys (CbKey) have the prefix too, and stay.
 	for action in _actions:
 		if InputMap.has_action(ACTION_PREFIX + String(action["name"])):
 			InputMap.erase_action(ACTION_PREFIX + String(action["name"]))
@@ -597,7 +597,7 @@ func _send_input(delta: float) -> void:
 	var move := Vector2.ZERO
 	var jump := false
 	var sprint := false
-	# A mod's screen that needs the mouse (a CbShowKey with cursor) takes it, and gives it back.
+	# A mod's screen that needs the mouse (a CbKey with cursor) takes it, and gives it back.
 	var wants: bool = client.wants_cursor()
 	if wants != _ui_cursor:
 		_ui_cursor = wants
@@ -644,11 +644,11 @@ func _send_input(delta: float) -> void:
 		else:
 			_auto_select(1)
 			use = auto_rng.randf() < delta * 2.0
-		# The inventory screen, if a mod brings one (a CbShowKey named "inventory"): opened in the
+		# The inventory screen, if a mod brings one (a CbKey named "inventory"): opened in the
 		# middle of the run, its first slot clicked and then its third (they trade places), closed.
 		if not view_probe:
 			_auto_bag(elapsed - autoplay * 0.45)
-		# Hold the scores key at the end (a mod's CbShowKey names it), so screenshots show them too.
+		# Hold the scores key at the end (a mod's CbKey names it), so screenshots show them too.
 		if elapsed > autoplay * 0.8 and InputMap.has_action("cb_scores") and not Input.is_action_pressed("cb_scores"):
 			Input.action_press("cb_scores")
 	elif get_window().has_focus() and not menu.is_open():
