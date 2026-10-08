@@ -95,7 +95,7 @@ CbMotionPart            what they share: each bakes to lines, and warns in the t
 - **Order**: a tick runs the frame's commands, then each player's motions (in the schema's order), then the mover. So a `Set` from the mod and a `change` from a motion in the same tick both count.
 - **Conditions read the fields as the tick found them**: a motion that changes a field does not start another until the next tick. That is what makes a toggle of two motions (`FlyOn` if not `flight.on`, `FlyOff` if `flight.on`) one switch a press.
 - **A frozen or dead player** does none; a key held through a freeze is not a press when it ends.
-- **At most 16 motions** on a server, all its mods' sets together.
+- **As many motions as the mods' sets have**, all together: a player carries 16 bytes for each.
 - **In the editor**: every group has an info row (click the icon), every property a hover text, F1 opens the class reference. A part that cannot run is a warning on its node, on its motion and on the set, and stops the bake.
 - **Names the editor cannot check**: the action, fields and events are the server mod's. One no mod declares makes that part do nothing (the motion never happens, the change is skipped, nothing is emitted), and the server says so when it starts.
 

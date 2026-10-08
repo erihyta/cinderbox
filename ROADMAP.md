@@ -7,21 +7,21 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 
 | # | Milestone | In one line |
 |---|---|---|
-| 1 | [The walls come down](#1-the-walls-come-down) | how many fields, motions, layers and actions a server has is its mods' business, not a constant's |
-| 2 | [Fewer nodes](#2-fewer-nodes) | one label, one list, one way to drive a property, one body description |
-| 3 | [Things that fly](#3-things-that-fly) | `CbLaunch`: a predicted projectile, as a part of a motion |
-| 4 | [The inventory, finished](#4-the-inventory-finished) | drag, icons, stacks, chests, and intents a mod declares |
-| 5 | [Motions and the body](#5-motions-and-the-body) | the body follows a motion; a preview; checks at publish |
-| 6 | [The client, finished](#6-the-client-finished) | what is left of the client's known limits, typed text, the game script in parts |
-| 7 | [The SDK knows the server](#7-the-sdk-knows-the-server) | the Godot modding project scaffolds the server half and knows its names |
-| 8 | [Mod testing](#8-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
+| 1 | [Fewer nodes](#1-fewer-nodes) | one label, one list, one way to drive a property, one body description |
+| 2 | [Things that fly](#2-things-that-fly) | `CbLaunch`: a predicted projectile, as a part of a motion |
+| 3 | [The inventory, finished](#3-the-inventory-finished) | drag, icons, stacks, chests, and intents a mod declares |
+| 4 | [Motions and the body](#4-motions-and-the-body) | the body follows a motion; a preview; checks at publish |
+| 5 | [The client, finished](#5-the-client-finished) | what is left of the client's known limits, typed text, the game script in parts |
+| 6 | [The SDK knows the server](#6-the-sdk-knows-the-server) | the Godot modding project scaffolds the server half and knows its names |
+| 7 | [Mod testing](#7-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
 
-- **Why this order**: 1 and 2 break file formats and scenes, so they go while breaking is allowed (the
-  redesign: example mods and the SDK template may break or go). 3 to 5 are what a game needs next.
-  7 and 8 wrap the client, so they wait until it stops changing.
+- **Why this order**: 1 breaks scenes, so it goes while breaking is allowed (the redesign: example
+  mods and the SDK template may break or go). 2 to 4 are what a game needs next. 6 and 7 wrap
+  the client, so they wait until it stops changing.
 - **Done before these**: movement parameters (M92), motions (M93, M94, M99), lists and keys in the
   HUD (M100, M102), items and slots in the engine with an inventory screen (M104 to M110), the
-  grapple as a zip line (M112). [docs/HISTORY.md](docs/HISTORY.md).
+  grapple as a zip line (M112), state sized by the mods (M113: no 32 fields, 16 motions, 4
+  layers). [docs/HISTORY.md](docs/HISTORY.md).
 
 ## Where motions stand
 
@@ -45,7 +45,7 @@ the schema and run by every simulation, so a player's own are predicted and roll
 |---|---|
 | Other players' presses are guessed by repeating their last input, so their dash is seen late and corrected | accept: it is what a jump does today, and the mirror fades the correction |
 | A field both a motion and a server mod write | allowed today (commands apply first, then motions); the bake could name the fields a set writes, and the server warn when a mod `Set`s one every tick |
-| A second jump that plays the jump's animation | the character's tree enters its jump state on the motion's event; a starter for it comes with step 5 |
+| A second jump that plays the jump's animation | the character's tree enters its jump state on the motion's event; a starter for it comes with step 4 |
 
 ### Routes not taken
 
@@ -57,31 +57,7 @@ the schema and run by every simulation, so a player's own are predicted and roll
 
 ## The steps
 
-### 1. The walls come down
-
-A server mod's own code may do as much work as the host's machine allows: it runs on the server
-only, and nothing measures it. What is capped is the state every client carries, hashes and rolls
-back. Some of those caps are costs; others are only the size somebody gave an array.
-
-| Limit | Today | Why it is there | Would be |
-|---|---|---|---|
-| Fields per scope | 32 (`kBoardSlots`) | a block of that size on every entity | sized by what the mods declare |
-| Motions | 16 (`kMaxMotions`) | a block of that size on every player | sized by the schema |
-| Animation layers | 4 (`kMaxAnimLayers`) | 40 bytes a layer on every player, and a state machine sampled and blended per player per tick | sized by the schema; the cost is the blending, and the host's to spend |
-| Mod actions | 16 | a bit each, in the input of every tick | 32 |
-| Commands a tick | 1,024 | they travel in the frame everyone gets | stays: a guard |
-| Slots a player | 36 | the input's format | stays |
-| Item kinds, stances, sockets, packs | about 255 | ids of one byte | stays |
-| Props | `--props-per-player`, `--props-global` | already the host's choice | stays |
-
-- **Animations were never limited**: a pack ships as many clips and states as it likes. A *layer*
-  is one more state machine running on every player at once (it moves the hitboxes, so every
-  simulation runs it). Four is a wall of the first kind.
-- **What it costs**: the protocol, replay and view file versions; new reference hashes.
-- **What stays true afterwards**: more state on entities is more for every client to hash and
-  resimulate. The server says how much at start (bytes per player, per entity), so a host sees it.
-
-### 2. Fewer nodes
+### 1. Fewer nodes
 
 The extension has about 35 node classes. Several do the same thing in two places.
 
@@ -100,7 +76,7 @@ The extension has about 35 node classes. Several do the same thing in two places
 - **Also here**: `cinderbox_client.cpp` (2,700 lines) in parts: the frame source, the HUD's values,
   items.
 
-### 3. Things that fly
+### 2. Things that fly
 
 A probe is a line: it has no body, nobody sees it coming, nothing can step out of its way.
 
@@ -113,7 +89,7 @@ A probe is a line: it has no body, nobody sees it coming, nothing can step out o
 | The look | the body's own scene, with its reactions (a trail, a blast on the event) |
 | Examples | a grenade for the pistol mod; a thrown bat; the grapple's hook as a thing that flies |
 
-### 4. The inventory, finished
+### 3. The inventory, finished
 
 | Piece | Today | Would be |
 |---|---|---|
@@ -126,7 +102,7 @@ A probe is a line: it has no body, nobody sees it coming, nothing can step out o
 | The rules API | C++ in each mod | what a mod decides about containers, named |
 | Checked across compilers | not yet | slots in the reference scenario |
 
-### 5. Motions and the body
+### 4. Motions and the body
 
 | Piece | What |
 |---|---|
@@ -136,7 +112,7 @@ A probe is a line: it has no body, nobody sees it coming, nothing can step out o
 | Publish checks | a motion that reads a name nobody declares, or writes a field it may not, stops the publish |
 | Changes | a `min` / `max` on a change (a tank fills to a little over full today); an expression on its right side |
 
-### 6. The client, finished
+### 5. The client, finished
 
 | Candidate | Today | Would be |
 |---|---|---|
@@ -151,7 +127,7 @@ A probe is a line: it has no body, nobody sees it coming, nothing can step out o
 - **The camera stays Godot's**: a `Camera3D` the game's script places, not the extension's. That
   keeps the next thing open: [cameras a mod places](#later-not-scheduled).
 
-### 7. The SDK knows the server
+### 6. The SDK knows the server
 
 Today the Godot modding project knows nothing of the mod's C++ half: names are typed twice and a
 wrong one is silent. This step joins the two.
@@ -165,7 +141,7 @@ wrong one is silent. This step joins the two.
 | A prebuilt SDK | CI builds the extension, so a mod's look needs no compiler |
 | A new template | the old one is from before the redesign |
 
-### 8. Mod testing
+### 7. Mod testing
 
 One step from an edit to playing it: the client starts the server.
 
