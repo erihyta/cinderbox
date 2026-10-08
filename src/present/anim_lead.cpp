@@ -52,8 +52,8 @@ AnimState LeadAnimState( const AnimState& shown, const AnimGraph& graph, const A
 	in.builtins[AnimExpr::Backward] = shown.legsBackward != 0 ? 1.0f : 0.0f;
 	in.builtins[AnimExpr::MoveForward] = shown.moveForward;
 	in.builtins[AnimExpr::MoveRight] = shown.moveRight;
-	in.board = lead.board.values;
-	in.globalBoard = lead.globalBoard;
+	in.board = &lead.board.values;
+	in.globalBoard = &lead.globalBoard;
 	in.netId = lead.netId;
 	in.heldKinds = lead.heldKinds.data();
 	in.heldCount = uint32_t( lead.heldKinds.size() );

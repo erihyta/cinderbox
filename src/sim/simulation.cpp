@@ -128,6 +128,7 @@ Simulation::Simulation( const SimConfig& config, const LevelLayout& map )
 {
 	m_arena = std::make_unique<PhysicsArena>( size_t( config.physicsArenaMB ) * 1024 * 1024 );
 	m_globals.rngState = config.seed;
+	m_globalBoard.resize( config.globalFields );
 
 	RegisterComponents();
 
@@ -163,6 +164,51 @@ void Simulation::RegisterSnapComponent()
 	m_snapComponents.push_back( { c.id(), size } );
 }
 
+flecs::entity_t Simulation::RegisterSizedComponent( const char* name, uint32_t size )
+{
+	ecs_world_t* world = m_world.c_ptr();
+	ecs_entity_desc_t entity = {};
+	entity.name = name;
+	flecs::entity_t id = ecs_entity_init( world, &entity );
+	if ( size > 0 )
+	{
+		ecs_component_desc_t component = {};
+		component.entity = id;
+		component.type.size = ecs_size_t( size );
+		component.type.alignment = 4;
+		id = ecs_component_init( world, &component );
+	}
+	m_snapComponents.push_back( { id, size } );
+	return id;
+}
+
+bool Simulation::HasBoard( flecs::entity e ) const
+{
+	return m_config.fields > 0 && ecs_has_id( m_world.c_ptr(), e.id(), m_boardId );
+}
+
+Blackboard Simulation::GetBoard( flecs::entity e ) const
+{
+	Blackboard board;
+	if ( HasBoard( e ) )
+	{
+		board.values.assign( static_cast<const int32_t*>( ecs_get_id( m_world.c_ptr(), e.id(), m_boardId ) ), m_config.fields );
+	}
+	return board;
+}
+
+// (What is past the fields the config has is dropped: nothing declared it.)
+void Simulation::SetBoard( flecs::entity e, const Blackboard& board )
+{
+	if ( m_config.fields == 0 )
+	{
+		return;
+	}
+	m_sizedScratch.resize( size_t( m_config.fields ) * 4 );
+	board.values.copy_to( reinterpret_cast<int32_t*>( m_sizedScratch.data() ), m_config.fields );
+	ecs_set_id( m_world.c_ptr(), e.id(), m_boardId, m_sizedScratch.size(), m_sizedScratch.data() );
+}
+
 void Simulation::RegisterComponents()
 {
 	// Order is part of the snapshot format. Append only.
@@ -176,7 +222,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<StaticGeometry>();
 	RegisterSnapComponent<AnimState>();
 	RegisterSnapComponent<TemplateRef>();
-	RegisterSnapComponent<Blackboard>();
+	m_boardId = RegisterSizedComponent( "Blackboard", uint32_t( m_config.fields ) * 4 );
 	RegisterSnapComponent<Ragdoll>();
 	RegisterSnapComponent<RagdollBodies>();
 	RegisterSnapComponent<RagdollPose>();
@@ -901,7 +947,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			MotionState motion = e.has<MotionState>() ? e.get<MotionState>() : MotionState{};
 			{
 				const AnimState& before = e.get<AnimState>();
-				Blackboard board = e.has<Blackboard>() ? e.get<Blackboard>() : Blackboard{};
+				Blackboard board = GetBoard( e );
 				// Conditions read the board as the tick found it: a motion that turns a field on does
 				// not start the motion that waits for it until the next tick.
 				const Blackboard boardBefore = board;
@@ -917,7 +963,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				values.builtins[AnimExpr::MoveForward] = before.moveForward;
 				values.builtins[AnimExpr::MoveRight] = before.moveRight;
 				values.state = &before;
-				values.board = boardBefore.values;
+				values.board = &boardBefore.values;
 				values.input = &in;
 				// A frozen player presses nothing.
 				values.pressedActions = c.frozen ? uint16_t( 0 ) : uint16_t( in.actions & ~motion.prevActions );
@@ -935,7 +981,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				// (From where the line leaves the player: the point its camera orbits.)
 				values.builtins[AnimExpr::LinkDistance] =
 					holdAlive ? b3Distance( where, b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) ) : 0.0f;
-				values.globalBoard = m_globals.board;
+				values.globalBoard = &m_globalBoard;
 				values.events = m_globals.modEvents;
 				values.eventCount = m_globals.modEventCount;
 				values.tick = m_globals.tick;
@@ -971,7 +1017,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				RunMotions( *m_motions, motionIn, motion, c, board, boardChanged, m_motionEvents, m_motionActive );
 				if ( boardChanged )
 				{
-					e.set<Blackboard>( board );
+					SetBoard( e, board );
 				}
 				// A hold whose motion ended (its condition, a new throw) is let go.
 				if ( const MotionHold* out = e.try_get<MotionHold>(); out != nullptr && out->on != 0 )
@@ -1015,7 +1061,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		if ( m_animGraph )
 		{
 			// The character's own state machine, on what this tick's movement and commands left.
-			Blackboard board = e.has<Blackboard>() ? e.get<Blackboard>() : Blackboard{};
+			Blackboard board = GetBoard( e );
 			AnimGraphInputs graphIn;
 			float speed = anim.groundSpeed;
 			graphIn.builtins[AnimExpr::Speed] = speed;
@@ -1028,8 +1074,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			graphIn.builtins[AnimExpr::Backward] = anim.legsBackward != 0 ? 1.0f : 0.0f;
 			graphIn.builtins[AnimExpr::MoveForward] = anim.moveForward;
 			graphIn.builtins[AnimExpr::MoveRight] = anim.moveRight;
-			graphIn.board = board.values;
-			graphIn.globalBoard = m_globals.board;
+			graphIn.board = &board.values;
+			graphIn.globalBoard = &m_globalBoard;
 			graphIn.events = m_globals.modEvents;
 			graphIn.eventCount = m_globals.modEventCount;
 			graphIn.tick = m_globals.tick;
@@ -1318,6 +1364,7 @@ void Simulation::SerializeEcs( std::vector<uint8_t>& out ) const
 	out.clear();
 	AppendValue( out, kSnapMagic );
 	AppendValue( out, m_globals );
+	AppendBytes( out, m_globalBoard.data(), m_globalBoard.size() * 4 );
 	AppendValue( out, uint32_t( m_entities.size() ) );
 
 	ecs_world_t* world = m_world.c_ptr();
@@ -1354,6 +1401,7 @@ void Simulation::DeserializeEcs( const std::vector<uint8_t>& in )
 		std::abort();
 	}
 	m_globals = rd.Read<SimGlobals>();
+	m_globalBoard.assign( reinterpret_cast<const int32_t*>( rd.Take( size_t( m_config.globalFields ) * 4 ) ), m_config.globalFields );
 	uint32_t count = rd.Read<uint32_t>();
 
 	ecs_world_t* world = m_world.c_ptr();
@@ -1549,13 +1597,16 @@ void Simulation::ApplyCommand( const SimCommand& command )
 	{
 		case CommandType::SetField:
 		{
-			if ( command.index >= kBoardSlots )
-			{
-				return;
-			}
 			if ( command.target == 0 )
 			{
-				m_globals.board[command.index] = command.value;
+				if ( command.index < m_config.globalFields )
+				{
+					m_globalBoard[command.index] = command.value;
+				}
+				return;
+			}
+			if ( command.index >= m_config.fields )
+			{
 				return;
 			}
 			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
@@ -1563,9 +1614,9 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			{
 				return;
 			}
-			Blackboard board = e.has<Blackboard>() ? e.get<Blackboard>() : Blackboard{};
+			Blackboard board = GetBoard( e );
 			board.values[command.index] = command.value;
-			e.set<Blackboard>( board );
+			SetBoard( e, board );
 			return;
 		}
 
@@ -2679,13 +2730,12 @@ const AnimState* Simulation::EntityAnimState( uint32_t netId ) const
 
 int32_t Simulation::BoardValue( uint32_t netId, int slot ) const
 {
-	if ( slot < 0 || slot >= kBoardSlots )
+	flecs::entity e = FindEntity( netId );
+	if ( slot < 0 || slot >= int( m_config.fields ) || e.is_valid() == false || HasBoard( e ) == false )
 	{
 		return 0;
 	}
-	flecs::entity e = FindEntity( netId );
-	const Blackboard* board = e.is_valid() ? e.try_get<Blackboard>() : nullptr;
-	return board != nullptr ? board->values[slot] : 0;
+	return static_cast<const int32_t*>( ecs_get_id( m_world.c_ptr(), e.id(), m_boardId ) )[slot];
 }
 
 namespace

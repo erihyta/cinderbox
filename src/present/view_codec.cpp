@@ -13,7 +13,7 @@ namespace cb::present
 namespace
 {
 
-constexpr uint32_t kMagic = 0x35564243; // "CBV5"
+constexpr uint32_t kMagic = 0x36564243; // "CBV6"
 
 // What a decoder accepts at most; real frames are far below.
 constexpr uint32_t kMaxEntities = 1u << 16;
@@ -55,7 +55,8 @@ void Count( size_t ViewCost::*part, size_t bytes )
 
 // --- Records: an entity and a ragdoll as blocks of 32-bit words, with no padding ----------------
 
-struct EntityRecord
+// The part of an entity that is the same size on every server: words, compared and sent as words.
+struct EntityFixed
 {
 	uint32_t netId;
 	uint8_t kind;
@@ -68,7 +69,6 @@ struct EntityRecord
 	Transform transform;
 	b3Vec3 velocity;
 	AnimState anim;
-	Blackboard board;
 	uint32_t ragdoll;
 	uint32_t holder;
 	uint16_t itemKind;
@@ -79,8 +79,27 @@ struct EntityRecord
 	uint8_t slotCount;
 	uint8_t slotPad[2];
 };
-static_assert( sizeof( EntityRecord ) == 96 + sizeof( AnimState ) + sizeof( Blackboard ), "EntityRecord has padding" );
-static_assert( sizeof( EntityRecord ) % 4 == 0 );
+static_assert( sizeof( EntityFixed ) == 96 + sizeof( AnimState ), "EntityFixed has padding" );
+static_assert( sizeof( EntityFixed ) % 4 == 0 );
+
+// And what is as long as the server's mods made it: its fields.
+struct EntityRecord : EntityFixed
+{
+	Blackboard board;
+};
+
+// A record of nothing: what a new entity is a delta against.
+template <typename Record>
+void Zero( Record& r )
+{
+	std::memset( &r, 0, sizeof( r ) );
+}
+
+void Zero( EntityRecord& r )
+{
+	std::memset( static_cast<EntityFixed*>( &r ), 0, sizeof( EntityFixed ) );
+	r.board.values.clear();
+}
 
 struct RagdollRecord
 {
@@ -99,7 +118,7 @@ static_assert( ( sizeof( PlayerInput ) * kMaxPlayers ) % 4 == 0 );
 EntityRecord ToRecord( const FrameEntity& f )
 {
 	EntityRecord r;
-	std::memset( &r, 0, sizeof( r ) );
+	Zero( r );
 	r.netId = f.netId;
 	r.kind = uint8_t( f.kind );
 	r.shape = uint8_t( f.shape );
@@ -255,6 +274,54 @@ void ReadBlock( ByteReader& r, void* inOut, size_t bytes )
 	if ( r.Read<uint8_t>() != 0 )
 	{
 		ReadDelta( r, inOut, bytes );
+	}
+}
+
+// A board: as many values as either side has (16 bits say how many), then their word delta.
+bool SameBoard( const BoardValues& now, const BoardValues& was )
+{
+	return now == was;
+}
+
+void WriteBoardDelta( ByteWriter& w, const BoardValues& now, const BoardValues& was )
+{
+	size_t count = std::min( std::max( now.size(), was.size() ), size_t( kFieldLimit ) );
+	std::vector<int32_t> a( count ), b( count );
+	now.copy_to( a.data(), count );
+	was.copy_to( b.data(), count );
+	w.Write( uint16_t( count ) );
+	WriteDelta( w, a.data(), b.data(), count * 4 );
+}
+
+// `inOut` holds the base and becomes the new value.
+void ReadBoardDelta( ByteReader& r, BoardValues& inOut )
+{
+	size_t count = r.Read<uint16_t>();
+	if ( r.Ok() == false )
+	{
+		return;
+	}
+	std::vector<int32_t> values( count );
+	inOut.copy_to( values.data(), count );
+	ReadDelta( r, values.data(), count * 4 );
+	inOut.assign( values.data(), count );
+}
+
+void WriteBoardBlock( ByteWriter& w, const BoardValues& now, const BoardValues& was )
+{
+	bool changed = SameBoard( now, was ) == false;
+	w.Write( uint8_t( changed ? 1 : 0 ) );
+	if ( changed )
+	{
+		WriteBoardDelta( w, now, was );
+	}
+}
+
+void ReadBoardBlock( ByteReader& r, BoardValues& inOut )
+{
+	if ( r.Read<uint8_t>() != 0 )
+	{
+		ReadBoardDelta( r, inOut );
 	}
 }
 
@@ -550,7 +617,7 @@ struct CompactEntity
 	static bool Write( ByteWriter& w, const EntityRecord& nowExact, const EntityRecord* wasExact )
 	{
 		EntityRecord zero;
-		std::memset( &zero, 0, sizeof( zero ) );
+		Zero( zero );
 		EntityRecord now = Seen( nowExact );
 		EntityRecord was = wasExact != nullptr ? Seen( *wasExact ) : zero;
 
@@ -612,10 +679,10 @@ struct CompactEntity
 		}
 		Count( &ViewCost::animation, body.size() - mark );
 		mark = body.size();
-		if ( std::memcmp( &now.board, &was.board, sizeof( Blackboard ) ) != 0 )
+		if ( SameBoard( now.board.values, was.board.values ) == false )
 		{
 			groups |= GroupBoard;
-			WriteDelta( bw, &now.board, &was.board, sizeof( Blackboard ) );
+			WriteBoardDelta( bw, now.board.values, was.board.values );
 		}
 		Count( &ViewCost::boards, body.size() - mark );
 		if ( groups == 0 )
@@ -671,7 +738,7 @@ struct CompactEntity
 		}
 		if ( groups & GroupBoard )
 		{
-			ReadDelta( r, &record.board, sizeof( Blackboard ) );
+			ReadBoardDelta( r, record.board.values );
 		}
 	}
 
@@ -785,6 +852,34 @@ struct Exact
 		ReadDelta( r, &record, sizeof( Record ) );
 	}
 	static void Settle( Record& )
+	{
+	}
+};
+
+// An entity, exact: its words, then its fields.
+struct ExactEntity
+{
+	static bool Write( ByteWriter& w, const EntityRecord& now, const EntityRecord* was )
+	{
+		EntityRecord zero;
+		Zero( zero );
+		const EntityRecord& before = was != nullptr ? *was : zero;
+		const EntityFixed& a = now;
+		const EntityFixed& b = before;
+		if ( std::memcmp( &a, &b, sizeof( EntityFixed ) ) == 0 && SameBoard( now.board.values, before.board.values ) )
+		{
+			return false;
+		}
+		WriteDelta( w, &a, &b, sizeof( EntityFixed ) );
+		WriteBoardBlock( w, now.board.values, before.board.values );
+		return true;
+	}
+	static void Read( ByteReader& r, EntityRecord& record )
+	{
+		ReadDelta( r, static_cast<EntityFixed*>( &record ), sizeof( EntityFixed ) );
+		ReadBoardBlock( r, record.board.values );
+	}
+	static void Settle( EntityRecord& )
 	{
 	}
 };
@@ -1077,7 +1172,7 @@ void ReadList( ByteReader& r, std::vector<Item>& items, const std::vector<Item>*
 	std::vector<uint8_t> changed( changedBits, changedBits + ( size_t( count ) + 7 ) / 8 );
 	items.resize( count );
 	Record zero;
-	std::memset( &zero, 0, sizeof( zero ) );
+	Zero( zero );
 	for ( uint32_t i = 0; i < count; ++i )
 	{
 		const Item* before = FindBase( base, sameIds, i, ids[i] );
@@ -1123,8 +1218,7 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	bool schema = base == nullptr || base->schemaGeneration != frame.schemaGeneration;
 	bool names = base == nullptr || base->namesGeneration != frame.namesGeneration;
 	bool stats = base == nullptr || base->stats != frame.stats;
-	bool privates = base == nullptr ? std::memcmp( &frame.privates, &kNoPrivates, sizeof( Blackboard ) ) != 0
-									: std::memcmp( &frame.privates, &base->privates, sizeof( Blackboard ) ) != 0;
+	bool privates = base == nullptr ? frame.privates != kNoPrivates : frame.privates != base->privates;
 	uint8_t flags = uint8_t( ( frame.hasWorld ? FlagWorld : 0 ) | ( map ? FlagMap : 0 ) | ( schema ? FlagSchema : 0 ) |
 							 ( names ? FlagNames : 0 ) | ( stats ? FlagStats : 0 ) | ( compact ? FlagCompact : 0 ) |
 							 ( privates ? FlagPrivates : 0 ) );
@@ -1198,18 +1292,20 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	if ( privates )
 	{
 		// The ones that are not 0: a slot and its value each.
-		uint8_t count = 0;
-		for ( int32_t value : frame.privates.values )
+		const BoardValues& values = frame.privates.values;
+		size_t slots = std::min( values.size(), size_t( kFieldLimit ) );
+		uint16_t count = 0;
+		for ( size_t slot = 0; slot < slots; ++slot )
 		{
-			count += value != 0 ? 1 : 0;
+			count += values[slot] != 0 ? 1 : 0;
 		}
 		w.Write( count );
-		for ( int slot = 0; slot < kBoardSlots; ++slot )
+		for ( size_t slot = 0; slot < slots; ++slot )
 		{
-			if ( frame.privates.values[slot] != 0 )
+			if ( values[slot] != 0 )
 			{
-				w.Write( uint8_t( slot ) );
-				w.Write( frame.privates.values[slot] );
+				w.Write( uint16_t( slot ) );
+				w.Write( values[slot] );
 			}
 		}
 	}
@@ -1244,7 +1340,7 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 		WriteBlock( w, f.inputs.data(), was.inputs.data(), sizeof( PlayerInput ) * kMaxPlayers );
 	}
 	section( &ViewCost::inputs );
-	WriteBlock( w, f.board, was.board, sizeof( f.board ) );
+	WriteBoardBlock( w, f.board, was.board );
 
 	// The event rings, as the fixed blocks they are in the simulation (a frame without them: zeros).
 	ImpactRecord impacts[kImpactHistory] = {};
@@ -1273,7 +1369,7 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	}
 	else
 	{
-		WriteList<FrameEntity, EntityRecord, Exact<EntityRecord>>( w, f.entities, b != nullptr ? &b->entities : nullptr, sameEntities );
+		WriteList<FrameEntity, EntityRecord, ExactEntity>( w, f.entities, b != nullptr ? &b->entities : nullptr, sameEntities );
 		WriteList<FrameRagdoll, RagdollRecord, Exact<RagdollRecord>>( w, f.ragdolls, b != nullptr ? &b->ragdolls : nullptr, sameRagdolls );
 		section( &ViewCost::exact );
 	}
@@ -1427,12 +1523,12 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	if ( flags & FlagPrivates )
 	{
 		out.privates = Blackboard{};
-		uint8_t count = r.Read<uint8_t>();
-		for ( uint8_t i = 0; i < count && r.Ok(); ++i )
+		uint16_t count = r.Read<uint16_t>();
+		for ( uint16_t i = 0; i < count && r.Ok(); ++i )
 		{
-			uint8_t slot = r.Read<uint8_t>();
+			uint16_t slot = r.Read<uint16_t>();
 			int32_t value = r.Read<int32_t>();
-			if ( slot >= kBoardSlots )
+			if ( r.Ok() == false || slot >= kFieldLimit )
 			{
 				return false;
 			}
@@ -1471,12 +1567,12 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 
 	if ( b != nullptr )
 	{
-		std::copy( b->board, b->board + kBoardSlots, f.board );
+		f.board = b->board;
 		f.inputs = b->inputs;
 	}
 	else
 	{
-		std::fill( f.board, f.board + kBoardSlots, 0 );
+		f.board.clear();
 		f.inputs = {};
 	}
 	if ( compact )
@@ -1487,7 +1583,7 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	{
 		ReadBlock( r, f.inputs.data(), sizeof( PlayerInput ) * kMaxPlayers );
 	}
-	ReadBlock( r, f.board, sizeof( f.board ) );
+	ReadBoardBlock( r, f.board );
 
 	ImpactRecord impacts[kImpactHistory] = {};
 	ModEventRecord events[kModEventHistory] = {};
@@ -1508,7 +1604,7 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	}
 	else
 	{
-		ReadList<FrameEntity, EntityRecord, Exact<EntityRecord>>( r, f.entities, b != nullptr ? &b->entities : nullptr, sameEntities, kMaxEntities );
+		ReadList<FrameEntity, EntityRecord, ExactEntity>( r, f.entities, b != nullptr ? &b->entities : nullptr, sameEntities, kMaxEntities );
 		ReadList<FrameRagdoll, RagdollRecord, Exact<RagdollRecord>>( r, f.ragdolls, b != nullptr ? &b->ragdolls : nullptr, sameRagdolls, kMaxRagdolls );
 	}
 	// An entity names its ragdoll by index: never past the list.

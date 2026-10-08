@@ -130,6 +130,8 @@ void WriteConfig( ByteWriter& w, const SimConfig& c )
 	}
 	w.Write( c.slots );
 	w.Write( c.slotHand );
+	w.Write( c.fields );
+	w.Write( c.globalFields );
 }
 
 bool ReadConfig( ByteReader& r, SimConfig& c )
@@ -148,6 +150,8 @@ bool ReadConfig( ByteReader& r, SimConfig& c )
 	}
 	c.slots = r.Read<uint8_t>();
 	c.slotHand = r.Read<uint8_t>();
+	c.fields = r.Read<uint16_t>();
+	c.globalFields = r.Read<uint16_t>();
 	return r.Ok() && c.slots <= kMaxSlots && ValidMoveParams( c.move ) && c.tickRate >= 10 && c.tickRate <= 240 && c.subSteps >= 1 && c.subSteps <= 16 && c.physicsArenaMB >= 8 &&
 		   c.physicsArenaMB <= 4096;
 }
@@ -254,18 +258,20 @@ void Encode( const MsgPrivateFields& m, std::vector<uint8_t>& out )
 {
 	Begin( out, MsgType::PrivateFields );
 	ByteWriter w( out );
-	uint8_t n = 0;
-	for ( int32_t value : m.values.values )
+	const BoardValues& values = m.values.values;
+	size_t count = std::min( values.size(), size_t( kFieldLimit ) );
+	uint16_t n = 0;
+	for ( size_t slot = 0; slot < count; ++slot )
 	{
-		n += value != 0 ? 1 : 0;
+		n += values[slot] != 0 ? 1 : 0;
 	}
 	w.Write( n );
-	for ( int slot = 0; slot < kBoardSlots; ++slot )
+	for ( size_t slot = 0; slot < count; ++slot )
 	{
-		if ( m.values.values[slot] != 0 )
+		if ( values[slot] != 0 )
 		{
-			w.Write( uint8_t( slot ) );
-			w.Write( m.values.values[slot] );
+			w.Write( uint16_t( slot ) );
+			w.Write( values[slot] );
 		}
 	}
 }
@@ -273,16 +279,16 @@ void Encode( const MsgPrivateFields& m, std::vector<uint8_t>& out )
 bool Decode( ByteReader& r, MsgPrivateFields& m )
 {
 	m.values = Blackboard{};
-	uint8_t n = r.Read<uint8_t>();
-	if ( r.Ok() == false || n > kBoardSlots )
+	uint16_t n = r.Read<uint16_t>();
+	if ( r.Ok() == false )
 	{
 		return false;
 	}
-	for ( uint8_t i = 0; i < n; ++i )
+	for ( uint16_t i = 0; i < n; ++i )
 	{
-		uint8_t slot = r.Read<uint8_t>();
+		uint16_t slot = r.Read<uint16_t>();
 		int32_t value = r.Read<int32_t>();
-		if ( r.Ok() == false || slot >= kBoardSlots )
+		if ( r.Ok() == false || slot >= kFieldLimit )
 		{
 			return false;
 		}

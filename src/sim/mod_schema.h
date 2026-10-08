@@ -43,7 +43,7 @@ struct BoardField
 	std::string name; // "pistol.ammo": mod name, a dot, then the field
 	BoardType type = BoardType::Int;
 	BoardScope scope = BoardScope::Entity;
-	uint8_t slot = 0;
+	uint16_t slot = 0;
 
 	bool operator==( const BoardField& ) const = default;
 };
@@ -158,6 +158,8 @@ struct ModSchema
 	bool operator==( const ModSchema& ) const = default;
 
 	const BoardField* FindField( const std::string& name ) const;
+	// How many fields a scope has: one past the highest slot declared in it.
+	int FieldCount( BoardScope scope ) const;
 	// -1 when not declared.
 	int FindEvent( const std::string& name ) const;
 	const ModAction* FindAction( const std::string& name ) const;

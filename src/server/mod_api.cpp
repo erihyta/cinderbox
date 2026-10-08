@@ -56,16 +56,16 @@ FieldHandle Declarations::Field( const std::string& name, BoardType type, BoardS
 	}
 
 	int& used = scope == BoardScope::Entity ? m_entitySlots : scope == BoardScope::Global ? m_globalSlots : m_privateSlots;
-	if ( used >= kBoardSlots )
+	if ( used >= kFieldLimit )
 	{
-		m_errors.push_back( m_mod + ": no board slot left for \"" + name + "\"" );
+		m_errors.push_back( m_mod + ": no field number left for \"" + name + "\"" );
 		return {};
 	}
 	BoardField field;
 	field.name = name;
 	field.type = type;
 	field.scope = scope;
-	field.slot = uint8_t( used++ );
+	field.slot = uint16_t( used++ );
 	m_schema.fields.push_back( field );
 	return { field.slot, scope, type };
 }

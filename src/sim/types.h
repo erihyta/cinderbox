@@ -204,10 +204,10 @@ inline constexpr uint32_t ItemTarget( PlayerSlot slot, uint32_t socket )
 inline constexpr uint32_t kSocketRightHand = 0;
 inline constexpr uint32_t kSocketLeftHand = 1;
 
-// Per-entity and global board sizes (see Blackboard in components.h): how many field names all the
-// mods of a server can declare per scope. Part of the snapshot layout: changing it changes every
-// state hash (tests/reference_hashes.txt) and the protocol version.
-inline constexpr int kBoardSlots = 32;
+// How many fields a scope has (an entity's board, the game's, a player's private one) is what the
+// server's mods declared: SimConfig::fields and globalFields. This is only what a field's number
+// can say in a command and in the schema (16 bits).
+inline constexpr int kFieldLimit = 65535;
 // Most commands one frame can carry.
 inline constexpr size_t kMaxCommandsPerFrame = 1024;
 
@@ -274,6 +274,12 @@ struct SimConfig
 	// socket (schema order) the selected slot's item is held in.
 	uint8_t slots = 0;
 	uint8_t slotHand = 0;
+
+	// How much state the server's mods asked for: the fields an entity's board has and the game's
+	// (the schema's, per scope). Every simulation of a session sizes its state by these, so they
+	// are part of what a snapshot and a state hash are.
+	uint16_t fields = 0;
+	uint16_t globalFields = 0;
 
 	bool operator==( const SimConfig& ) const = default;
 

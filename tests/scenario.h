@@ -10,6 +10,10 @@
 namespace cb::test
 {
 
+// How many fields the scenario's simulations have, per scope (what a server's mods would have
+// declared): its commands write them.
+inline constexpr int kScenarioFields = 32;
+
 struct ScenarioOptions
 {
 	uint32_t ticks = 1200;
@@ -164,7 +168,7 @@ inline std::vector<InputFrame> MakeScenario( const ScenarioOptions& opt )
 				SimCommand field;
 				field.type = CommandType::SetField;
 				field.target = ( c >> 30 ) & 1 ? SlotTarget( PlayerSlot( i ) ) : 0;
-				field.index = uint16_t( ( c >> 32 ) % kBoardSlots );
+				field.index = uint16_t( ( c >> 32 ) % kScenarioFields );
 				field.value = int32_t( c >> 36 );
 				f.commands.push_back( field );
 			}

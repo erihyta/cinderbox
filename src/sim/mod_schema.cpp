@@ -19,6 +19,12 @@ void PutU8( std::vector<uint8_t>& out, uint8_t v )
 	out.push_back( v );
 }
 
+void PutU16( std::vector<uint8_t>& out, uint16_t v )
+{
+	out.push_back( uint8_t( v ) );
+	out.push_back( uint8_t( v >> 8 ) );
+}
+
 void PutF32( std::vector<uint8_t>& out, float v )
 {
 	uint32_t bits;
@@ -75,6 +81,12 @@ struct Reader
 		return v;
 	}
 
+	uint16_t U16()
+	{
+		uint16_t low = U8();
+		return uint16_t( low | ( uint16_t( U8() ) << 8 ) );
+	}
+
 	std::string String()
 	{
 		uint8_t n = U8();
@@ -107,6 +119,19 @@ struct Reader
 };
 
 } // namespace
+
+int ModSchema::FieldCount( BoardScope scope ) const
+{
+	int count = 0;
+	for ( const BoardField& f : fields )
+	{
+		if ( f.scope == scope )
+		{
+			count = std::max( count, int( f.slot ) + 1 );
+		}
+	}
+	return count;
+}
 
 const BoardField* ModSchema::FindField( const std::string& name ) const
 {
@@ -210,17 +235,17 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 	{
 		PutString( out, schema.mods[i] );
 	}
-	PutU8( out, uint8_t( std::min<size_t>( schema.fields.size(), 255 ) ) );
-	for ( size_t i = 0; i < schema.fields.size() && i < 255; ++i )
+	PutU16( out, uint16_t( std::min<size_t>( schema.fields.size(), 65535 ) ) );
+	for ( size_t i = 0; i < schema.fields.size() && i < 65535; ++i )
 	{
 		const BoardField& f = schema.fields[i];
 		PutString( out, f.name );
 		PutU8( out, uint8_t( f.type ) );
 		PutU8( out, uint8_t( f.scope ) );
-		PutU8( out, f.slot );
+		PutU16( out, f.slot );
 	}
-	PutU8( out, uint8_t( std::min<size_t>( schema.events.size(), 255 ) ) );
-	for ( size_t i = 0; i < schema.events.size() && i < 255; ++i )
+	PutU16( out, uint16_t( std::min<size_t>( schema.events.size(), 65535 ) ) );
+	for ( size_t i = 0; i < schema.events.size() && i < 65535; ++i )
 	{
 		PutString( out, schema.events[i] );
 	}
@@ -336,15 +361,15 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 	{
 		out.mods.push_back( r.String() );
 	}
-	uint8_t fields = r.U8();
-	for ( uint8_t i = 0; i < fields && r.ok; ++i )
+	uint16_t fields = r.U16();
+	for ( uint16_t i = 0; i < fields && r.ok; ++i )
 	{
 		BoardField f;
 		f.name = r.String();
 		uint8_t type = r.U8();
 		uint8_t scope = r.U8();
-		f.slot = r.U8();
-		if ( type > uint8_t( BoardType::Bool ) || scope > uint8_t( BoardScope::Private ) || f.slot >= kBoardSlots )
+		f.slot = r.U16();
+		if ( type > uint8_t( BoardType::Bool ) || scope > uint8_t( BoardScope::Private ) || f.slot >= kFieldLimit )
 		{
 			return false;
 		}
@@ -352,8 +377,8 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		f.scope = BoardScope( scope );
 		out.fields.push_back( std::move( f ) );
 	}
-	uint8_t events = r.U8();
-	for ( uint8_t i = 0; i < events && r.ok; ++i )
+	uint16_t events = r.U16();
+	for ( uint16_t i = 0; i < events && r.ok; ++i )
 	{
 		out.events.push_back( r.String() );
 	}

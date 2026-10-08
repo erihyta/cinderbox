@@ -243,8 +243,8 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 		case AnimExpr::VarKind::EntityField:
 		case AnimExpr::VarKind::GlobalField:
 		{
-			const int32_t* board = step.kind == AnimExpr::VarKind::EntityField ? in.board : in.globalBoard;
-			int32_t value = board != nullptr && step.index < kBoardSlots ? board[step.index] : 0;
+			const BoardValues* board = step.kind == AnimExpr::VarKind::EntityField ? in.board : in.globalBoard;
+			int32_t value = board != nullptr ? ( *board )[size_t( step.index )] : 0;
 			switch ( step.type )
 			{
 				case BoardType::Float:

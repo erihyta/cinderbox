@@ -42,7 +42,7 @@ struct AnimLead
 	std::vector<Input> inputs;
 	// What the machine's conditions may read besides the state itself.
 	Blackboard board;
-	int32_t globalBoard[kBoardSlots] = {};
+	BoardValues globalBoard;
 	std::vector<uint16_t> heldKinds;
 };
 

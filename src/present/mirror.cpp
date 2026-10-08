@@ -170,7 +170,7 @@ void Mirror::Update( const PresentationFrame& frame, float tickAlpha, float fram
 void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSeconds )
 {
 	m_pendingRagdolls = frame.ragdolls;
-	std::copy( frame.board, frame.board + kBoardSlots, m_board );
+	m_board = frame.board;
 	bool reset = frame.resetGeneration != m_resetGeneration;
 	m_resetGeneration = frame.resetGeneration;
 	bool advanced = frame.tick != m_lastTick;

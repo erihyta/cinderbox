@@ -88,7 +88,7 @@ struct PresentationFrame
 	std::vector<ModEventRecord> modEvents;
 	std::vector<FrameRagdoll> ragdolls;
 	// The global board.
-	int32_t board[kBoardSlots] = {};
+	BoardValues board;
 	// Inputs of the last simulated tick (predicted for other players), when the caller has them:
 	// presentation aims arms from them.
 	bool hasInputs = false;

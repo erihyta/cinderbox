@@ -2163,7 +2163,7 @@ void TestProtocol()
 		CHECK( back.FindEvent( "combat.killed" ) == 1 );
 
 		ModSchema bad = schema;
-		bad.fields[0].slot = kBoardSlots;
+		bad.fields[0].slot = uint16_t( kFieldLimit );
 		EncodeSchema( bad, bytes );
 		CHECK( DecodeSchema( bytes.data(), bytes.size(), back ) == false );
 		bytes.resize( bytes.size() - 1 );
@@ -2627,7 +2627,7 @@ void TestPrivateFields()
 		CHECK( mine >= 1 && mine <= 99 );
 		CHECK( mine == kept );
 		// Nothing else arrived with it: every other private slot is empty.
-		for ( int s = 0; s < kBoardSlots; ++s )
+		for ( size_t s = 0; s < client.Privates().values.size(); ++s )
 		{
 			CHECK( s == field->slot || client.Privates().values[s] == 0 );
 		}

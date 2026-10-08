@@ -217,7 +217,7 @@ public:
 	}
 
 	// The global board, as of the newest frame.
-	const int32_t* GlobalBoard() const
+	const BoardValues& GlobalBoard() const
 	{
 		return m_board;
 	}
@@ -266,7 +266,7 @@ private:
 	uint32_t m_impactCount = 0;
 	// Which mod events were shown already (event_news.h).
 	ModEventNews m_modEventNews;
-	int32_t m_board[kBoardSlots] = {};
+	BoardValues m_board;
 	uint32_t m_lastTick = 0;
 	flecs::entity m_localPlayer;
 	uint64_t m_syncStamp = 0;

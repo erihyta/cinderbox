@@ -219,8 +219,8 @@ struct AnimGraphInputs
 {
 	float builtins[AnimExpr::BuiltinCount] = {};
 	const AnimState* state = nullptr;
-	const int32_t* board = nullptr;		  // the player's (null: all 0)
-	const int32_t* globalBoard = nullptr; // SimGlobals::board
+	const BoardValues* board = nullptr;		  // the player's (null: all 0)
+	const BoardValues* globalBoard = nullptr; // the game's
 	const ModEventRecord* events = nullptr;
 	uint32_t eventCount = 0; // SimGlobals::modEventCount
 	uint32_t tick = 0;

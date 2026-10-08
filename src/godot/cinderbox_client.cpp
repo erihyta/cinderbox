@@ -1431,11 +1431,11 @@ void CinderboxClient::PushStates()
 		director->set_state( node, state );
 	} );
 	// The global board as the world's state; every declared name is known (?name).
-	const int32_t* globals = m_mirror->GlobalBoard();
+	const BoardValues* globals = &m_mirror->GlobalBoard();
 	uint64_t hash = Mix( 1469598103934665603ull, schema.fields.size() );
 	for ( const BoardField& field : schema.fields )
 	{
-		hash = Mix( hash, field.scope == BoardScope::Global && globals != nullptr ? uint32_t( globals[field.slot] ) : field.slot );
+		hash = Mix( hash, field.scope == BoardScope::Global && globals != nullptr ? uint32_t( ( *globals )[field.slot] ) : field.slot );
 	}
 	if ( hash != m_worldStateHash )
 	{
@@ -1451,7 +1451,7 @@ void CinderboxClient::PushStates()
 			known.push_back( String::utf8( field.name.c_str() ) );
 			if ( field.scope == BoardScope::Global )
 			{
-				world[String::utf8( field.name.c_str() )] = FieldVariant( field, globals != nullptr ? globals[field.slot] : 0 );
+				world[String::utf8( field.name.c_str() )] = FieldVariant( field, globals != nullptr ? ( *globals )[field.slot] : 0 );
 			}
 		}
 		director->set_world_state( world );
@@ -1829,7 +1829,7 @@ PackedStringArray CinderboxClient::get_mod_names() const
 
 Variant CinderboxClient::get_field( int64_t net_id, const String& name ) const
 {
-	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
+	const BoardValues* globals = m_mirror ? &m_mirror->GlobalBoard() : nullptr;
 	present::FieldValue value =
 		present::ReadField( m_frame.schema, ToStd( name ), BoardOf( uint32_t( net_id ) ), globals, PrivatesOf( uint32_t( net_id ) ) );
 	if ( value.declared == false )
@@ -1901,7 +1901,7 @@ bool CinderboxClient::OwnName( const std::string& name, const Dictionary& extra,
 
 bool CinderboxClient::CheckWith( int64_t net_id, const PackedStringArray& conditions, const Dictionary& extra ) const
 {
-	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
+	const BoardValues* globals = m_mirror ? &m_mirror->GlobalBoard() : nullptr;
 	// Item kinds are names too: "pistol.gun" holds while the player holds one.
 	present::ExtraFields held = [&]( const std::string& name, float& value ) {
 		if ( OwnName( name, extra, value ) )
@@ -1948,7 +1948,7 @@ Variant CinderboxClient::evaluate( int64_t net_id, const String& expression ) co
 
 Variant CinderboxClient::EvaluateWith( int64_t net_id, const String& expression, const Dictionary& extra ) const
 {
-	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
+	const BoardValues* globals = m_mirror ? &m_mirror->GlobalBoard() : nullptr;
 	bool known = false;
 	present::ExtraFields names = [&]( const std::string& name, float& value ) {
 		if ( OwnName( name, extra, value ) )
@@ -2296,7 +2296,7 @@ String CinderboxClient::FormatWith( int64_t net_id, const String& format, const 
 	}
 	String withName = ResolveNameFields(
 		net_id, ResolveKeysAndLooks( net_id, own ).replace( "{name}", get_entity_name( net_id ).replace( "{", "(" ) ) );
-	const int32_t* globals = m_mirror ? m_mirror->GlobalBoard() : nullptr;
+	const BoardValues* globals = m_mirror ? &m_mirror->GlobalBoard() : nullptr;
 	std::string text =
 		present::FormatFields( m_frame.schema, ToStd( withName ), BoardOf( uint32_t( net_id ) ), globals, PrivatesOf( uint32_t( net_id ) ) );
 	return String::utf8( text.c_str() );
@@ -2396,7 +2396,7 @@ void CinderboxClient::LeadLocalPlayer( float delta )
 	{
 		lead.board = *board;
 	}
-	std::copy( m_mirror->GlobalBoard(), m_mirror->GlobalBoard() + kBoardSlots, lead.globalBoard );
+	lead.globalBoard = m_mirror->GlobalBoard();
 	auto held = m_heldKinds.find( local );
 	if ( held != m_heldKinds.end() )
 	{

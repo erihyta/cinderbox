@@ -5,6 +5,7 @@
 // - no implicit padding (padding bytes are not guaranteed to be copied, which would corrupt the hash).
 // Every component must be registered in Simulation::RegisterComponents().
 
+#include "small_list.h"
 #include "types.h"
 
 #include "box3d/id.h"
@@ -161,9 +162,17 @@ struct AnimState
 // Values a server mod published about an entity, for presentation to read by name. The schema
 // (which slot is which field, and its type) travels to clients when they join; the simulation only
 // stores what SetField commands write. Floats are stored as their bits.
+//
+// As many values as the server's mods declared fields (SimConfig::fields): in a simulation an
+// entity's board is a block of that size (Simulation::GetBoard / SetBoard), and this is the value
+// everything else passes around. A slot nobody wrote reads 0.
+using BoardValues = SmallList<int32_t, 32>;
+
 struct Blackboard
 {
-	int32_t values[kBoardSlots] = {};
+	BoardValues values;
+
+	bool operator==( const Blackboard& ) const = default;
 };
 
 // A ragdoll left behind by a Kill command. One entity holds every body part: the bodies live in
@@ -292,7 +301,6 @@ CB_CHECK_COMPONENT( AnimState, 36 + 40 * kMaxAnimLayers );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( HeldItem, 12 );
 CB_CHECK_COMPONENT( Slots, 4 );
-CB_CHECK_COMPONENT( Blackboard, 4 * kBoardSlots );
 CB_CHECK_COMPONENT( Ragdoll, 20 );
 CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );
 CB_CHECK_COMPONENT( RagdollPose, 40 * kRagdollParts );

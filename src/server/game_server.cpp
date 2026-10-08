@@ -163,6 +163,9 @@ bool GameServer::Start( const ServerOptions& options )
 			Log( "character %s: %s", character->name.empty() ? "built-in" : character->name.c_str(), warnings.c_str() );
 		}
 	}
+	// How much state the mods asked for: every simulation of the session is sized by it.
+	m_options.config.fields = uint16_t( m_schema.FieldCount( BoardScope::Entity ) );
+	m_options.config.globalFields = uint16_t( m_schema.FieldCount( BoardScope::Global ) );
 	// Slots: how many the mods asked for, the hand the selected one's item is held in, and what
 	// each kind says about itself (item properties, authored or declared).
 	m_options.config.slots = uint8_t( declarations.SlotCount() );

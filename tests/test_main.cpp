@@ -75,6 +75,9 @@ SimConfig TestConfig()
 {
 	SimConfig config;
 	config.physicsArenaMB = 64;
+	// What a server's mods would have declared: the scenario writes fields.
+	config.fields = test::kScenarioFields;
+	config.globalFields = test::kScenarioFields;
 	return config;
 }
 
@@ -1030,13 +1033,76 @@ void TestCommands()
 		c->index = 2;
 		c->value = 99;
 	}
-	command( CommandType::SetField, SlotTarget( 0 ) )->index = kBoardSlots;
+	command( CommandType::SetField, SlotTarget( 0 ) )->index = test::kScenarioFields;
 	command( CommandType::SetField, 123456 )->value = 1;
 	command( CommandType::SetField, SlotTarget( 9 ) )->value = 1;
 	step( 1 );
 	CHECK( sim.BoardValue( p0, 0 ) == 42 );
 	CHECK( sim.BoardValue( p1, 5 ) == -7 );
 	CHECK( sim.GlobalBoardValue( 2 ) == 99 );
+
+	// How many fields there are is the config's (what the server's mods declared), not a constant:
+	// three hundred of them, written, read, and through a snapshot; one past the last does nothing.
+	{
+		SimConfig wide = TestConfig();
+		wide.fields = 300;
+		wide.globalFields = 70;
+		Simulation big( wide );
+		InputFrame bf;
+		auto bstep = [&]( int n ) {
+			for ( int i = 0; i < n; ++i )
+			{
+				bf.tick = big.Tick();
+				big.Step( bf );
+				bf.events.clear();
+				bf.commands.clear();
+			}
+		};
+		auto set = [&]( uint32_t target, uint16_t index, int32_t value ) {
+			SimCommand c;
+			c.type = CommandType::SetField;
+			c.target = target;
+			c.index = index;
+			c.value = value;
+			bf.commands.push_back( c );
+		};
+		bf.events.push_back( { PlayerEventType::Join, 0 } );
+		bstep( 30 );
+		uint32_t who = big.PlayerNetId( 0 );
+		set( SlotTarget( 0 ), 299, 7 );
+		set( SlotTarget( 0 ), 300, 8 );
+		set( 0, 69, 9 );
+		set( 0, 70, 10 );
+		bstep( 1 );
+		CHECK( big.BoardValue( who, 299 ) == 7 && big.BoardValue( who, 300 ) == 0 );
+		CHECK( big.GlobalBoardValue( 69 ) == 9 && big.GlobalBoardValue( 70 ) == 0 );
+		CHECK( big.GetBoard( big.FindEntity( who ) ).values.size() == 300 );
+		Snapshot kept;
+		big.Save( kept );
+		uint64_t hashThen = big.ComputeHash();
+		set( SlotTarget( 0 ), 299, 1 );
+		set( 0, 69, 1 );
+		bstep( 5 );
+		CHECK( big.BoardValue( who, 299 ) == 1 && big.ComputeHash() != hashThen );
+		big.Load( kept );
+		CHECK( big.BoardValue( who, 299 ) == 7 && big.GlobalBoardValue( 69 ) == 9 && big.ComputeHash() == hashThen );
+		// A simulation whose mods declared none: a field command does nothing, and nothing is kept.
+		SimConfig none = TestConfig();
+		none.fields = 0;
+		none.globalFields = 0;
+		Simulation bare( none );
+		bf = {};
+		bf.events.push_back( { PlayerEventType::Join, 0 } );
+		bf.tick = bare.Tick();
+		bare.Step( bf );
+		bf.events.clear();
+		set( SlotTarget( 0 ), 0, 5 );
+		set( 0, 0, 5 );
+		bf.tick = bare.Tick();
+		bare.Step( bf );
+		CHECK( bare.BoardValue( bare.PlayerNetId( 0 ), 0 ) == 0 && bare.GlobalBoardValue( 0 ) == 0 );
+		CHECK( bare.HasBoard( bare.FindEntity( bare.PlayerNetId( 0 ) ) ) == false );
+	}
 
 	// Events land in the ring with their targets resolved to NetIds.
 	uint32_t eventsBefore = sim.Globals().modEventCount;
@@ -2699,8 +2765,9 @@ void TestFields()
 	Blackboard board;
 	board.values[0] = 3;
 	board.values[1] = 0;
-	int32_t globals[kBoardSlots] = {};
-	globals[0] = BoardFromFloat( 12.5f );
+	BoardValues globalValues;
+	globalValues[0] = BoardFromFloat( 12.5f );
+	const BoardValues* globals = &globalValues;
 	auto check = [&]( const char* condition ) { return present::CheckCondition( schema, condition, &board, globals ); };
 
 	CHECK( check( "pistol.ammo" ) );
