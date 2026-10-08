@@ -123,7 +123,8 @@ bool SameLayout( const LevelLayout& a, const LevelLayout& b )
 	{
 		const LevelProp& x = a.props[i];
 		const LevelProp& y = b.props[i];
-		if ( x.kind != y.kind || sameVec( x.position, y.position ) == false || sameVec( x.halfExtents, y.halfExtents ) == false )
+		if ( x.kind != y.kind || sameVec( x.position, y.position ) == false || sameVec( x.halfExtents, y.halfExtents ) == false ||
+			 x.mass != y.mass || x.density != y.density || x.friction != y.friction || x.restitution != y.restitution )
 		{
 			return false;
 		}
@@ -159,12 +160,66 @@ void TestMapFormat()
 	authored.spawnRadius = 2.5f;
 	authored.statics.push_back( { { 0.1234f, -0.5f, 9.87654f }, { 3.3333f, 0.25f, 1.7f }, 0.4567f, -1.2345f } );
 	authored.props.push_back( { ShapeKind::Sphere, { -4.4444f, 1.1111f, 0.0f }, { 0.5f, 0.0f, 0.0f } } );
+	// (And a body that is not the usual one: a weight of its own, slippery, bouncy.)
+	authored.props.push_back( { ShapeKind::Box, { 2.0f, 1.0f, 0.0f }, { 0.5f, 0.5f, 0.5f }, 12.3456f, 77.7777f, 0.1234f, 0.8765f } );
 	QuantizeLayout( authored );
 	std::vector<uint8_t> authoredBytes;
 	SerializeMap( authored, authoredBytes );
 	LevelLayout authoredBack;
 	CHECK( DeserializeMap( authoredBytes.data(), authoredBytes.size(), authoredBack, error ) );
 	CHECK( SameLayout( authored, authoredBack ) );
+	CHECK( authoredBack.props.size() == 2 && authoredBack.props[1].mass > 12.3f && authoredBack.props[1].restitution > 0.87f &&
+		   authoredBack.props[0].mass == 0.0f && authoredBack.props[0].density == 40.0f );
+	{
+		// A body's numbers are checked like the rest: a bounce above 1 would make energy.
+		LevelLayout bad = authored;
+		bad.props[1].restitution = 1.5f;
+		std::vector<uint8_t> badBytes;
+		SerializeMap( bad, badBytes );
+		LevelLayout refused;
+		CHECK( DeserializeMap( badBytes.data(), badBytes.size(), refused, error ) == false );
+	}
+
+	// What a prop's body says is what the simulation builds: of two balls dropped from 5 m, the one
+	// with bounce comes back up and the other stays down.
+	{
+		LevelLayout drop;
+		drop.name = "bounce";
+		drop.spawnCenter = { 0.0f, 1.5f, 8.0f };
+		drop.spawnRadius = 2.0f;
+		drop.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+		drop.props.push_back( { ShapeKind::Sphere, { -3.0f, 5.0f, 0.0f }, { 0.4f, 0.0f, 0.0f } } );
+		drop.props.push_back( { ShapeKind::Sphere, { 3.0f, 5.0f, 0.0f }, { 0.4f, 0.0f, 0.0f }, 0.0f, 40.0f, 0.6f, 0.8f } );
+		QuantizeLayout( drop );
+		Simulation fall( TestConfig(), drop );
+		uint32_t plain = 0, bouncy = 0;
+		for ( const Simulation::EntityRef& r : fall.Entities() )
+		{
+			const Transform* at = fall.EntityTransform( r.netId );
+			if ( at != nullptr && at->position.y > 4.0f )
+			{
+				( at->position.x < 0.0f ? plain : bouncy ) = r.netId;
+			}
+		}
+		CHECK( plain != 0 && bouncy != 0 );
+		InputFrame ff;
+		bool landed[2] = { false, false };
+		float rose[2] = { 0.0f, 0.0f };
+		for ( uint32_t tick = 0; tick < 240 && plain != 0 && bouncy != 0; ++tick )
+		{
+			ff.tick = tick;
+			fall.Step( ff );
+			const uint32_t ids[2] = { plain, bouncy };
+			for ( int i = 0; i < 2; ++i )
+			{
+				float y = fall.EntityTransform( ids[i] )->position.y;
+				landed[i] |= y < 0.45f;
+				rose[i] = landed[i] ? std::max( rose[i], y ) : rose[i];
+			}
+		}
+		std::printf( "    dropped from 5 m: a ball without bounce comes back to %.2f m, one with 0.8 to %.2f m\n", rose[0], rose[1] );
+		CHECK( landed[0] && landed[1] && rose[0] < 0.6f && rose[1] > 2.0f );
+	}
 
 	// Bad input is refused, never trusted.
 	LevelLayout ignored;

@@ -24,8 +24,6 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_kind" ), &CbItem::get_kind );
 	ClassDB::bind_method( D_METHOD( "set_display_name", "value" ), &CbItem::set_display_name );
 	ClassDB::bind_method( D_METHOD( "get_display_name" ), &CbItem::get_display_name );
-	ClassDB::bind_method( D_METHOD( "set_mass", "value" ), &CbItem::set_mass );
-	ClassDB::bind_method( D_METHOD( "get_mass" ), &CbItem::get_mass );
 	ClassDB::bind_method( D_METHOD( "set_view_offset", "value" ), &CbItem::set_view_offset );
 	ClassDB::bind_method( D_METHOD( "get_view_offset" ), &CbItem::get_view_offset );
 	ClassDB::bind_method( D_METHOD( "set_properties", "value" ), &CbItem::set_properties );
@@ -37,7 +35,6 @@ void CbItem::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "kind", PROPERTY_HINT_PLACEHOLDER_TEXT, "melee.bat" ), "set_kind", "get_kind" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "display_name", PROPERTY_HINT_PLACEHOLDER_TEXT, "Bat" ), "set_display_name",
 				  "get_display_name" );
-	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "mass", PROPERTY_HINT_RANGE, "0.01,1000,0.01,suffix:kg" ), "set_mass", "get_mass" );
 	ADD_PROPERTY( PropertyInfo( Variant::DICTIONARY, "properties", PROPERTY_HINT_DICTIONARY_TYPE, "String;float" ), "set_properties",
 				  "get_properties" );
 	ClassDB::bind_method( D_METHOD( "set_carry_grip", "value" ), &CbItem::set_carry_grip );
@@ -258,7 +255,18 @@ Dictionary CbItem::bake() const
 	text += "shape " + shapeName + "\n";
 	text += vformat( "half %.4f %.4f %.4f\n", half.x, half.y, half.z );
 	text += vformat( "center %.4f %.4f %.4f\n", center.x, center.y, center.z );
-	text += vformat( "mass %.3f\n", m_mass );
+	// Its body, as any body says it: a weight (its own, or its density's worth), and how it grips
+	// and bounces when they are not the usual.
+	double volume = shapeName == "sphere" ? 4.18879 * half.x * half.x * half.x : 8.0 * half.x * half.y * half.z;
+	text += vformat( "mass %.3f\n", MassFor( volume ) );
+	if ( m_friction != 0.6 )
+	{
+		text += vformat( "friction %.3f\n", m_friction );
+	}
+	if ( m_bounce != 0.0 )
+	{
+		text += vformat( "bounce %.3f\n", m_bounce );
+	}
 	if ( turn.is_equal_approx( Quaternion() ) == false )
 	{
 		text += vformat( "turn %.5f %.5f %.5f %.5f\n", turn.x, turn.y, turn.z, turn.w );

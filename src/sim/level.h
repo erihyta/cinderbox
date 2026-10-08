@@ -24,6 +24,12 @@ struct LevelProp
 	ShapeKind kind;
 	b3Vec3 position;
 	b3Vec3 halfExtents;
+	// Its body, as every body is described (a template's Material, an item's): what it weighs
+	// (kg; 0: its volume times `density`, kg/m^3), how it grips, how it bounces.
+	float mass = 0.0f;
+	float density = 40.0f;
+	float friction = 0.6f;
+	float restitution = 0.0f;
 };
 
 // One placement of a template in the level.

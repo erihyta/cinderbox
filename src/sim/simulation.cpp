@@ -408,7 +408,15 @@ void Simulation::BuildLevel()
 
 	for ( const LevelProp& prop : layout.props )
 	{
-		CreateProp( prop.kind, prop.position, b3Quat{ { 0.0f, 0.0f, 0.0f }, 1.0f }, prop.halfExtents, { 0.0f, 0.0f, 0.0f }, 0, 0 );
+		// Its body as the map says: a weight it was given is a density for its size.
+		ShapeMaterial material{ prop.density, prop.friction, prop.restitution };
+		if ( prop.mass > 0.0f )
+		{
+			const b3Vec3 h = prop.halfExtents;
+			float volume = prop.kind == ShapeKind::Sphere ? 4.18879f * h.x * h.x * h.x : 8.0f * h.x * h.y * h.z;
+			material.density = prop.mass / std::max( volume, 1e-6f );
+		}
+		CreateProp( prop.kind, prop.position, b3Quat{ { 0.0f, 0.0f, 0.0f }, 1.0f }, prop.halfExtents, { 0.0f, 0.0f, 0.0f }, 0, 0, material );
 	}
 
 	// Template instances come last, in the order the map lists them.
@@ -420,7 +428,7 @@ void Simulation::BuildLevel()
 }
 
 flecs::entity Simulation::CreateProp( ShapeKind kind, b3Vec3 position, b3Quat rotation, b3Vec3 halfExtents, b3Vec3 velocity,
-									  uint32_t owner, uint32_t lifetimeTicks )
+									  uint32_t owner, uint32_t lifetimeTicks, const ShapeMaterial& material )
 {
 	flecs::entity e = CreateEntity();
 	Shape shape{ kind, {}, halfExtents };
@@ -431,7 +439,7 @@ flecs::entity Simulation::CreateProp( ShapeKind kind, b3Vec3 position, b3Quat ro
 	bodyDef.rotation = rotation;
 	bodyDef.linearVelocity = velocity;
 	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
-	b3ShapeId shapeId = CreateShape( body, shape, CatProp );
+	b3ShapeId shapeId = CreateShape( body, shape, CatProp, material );
 
 	uint32_t despawn = lifetimeTicks > 0 ? m_globals.tick + lifetimeTicks : 0;
 	e.set<Transform>( { position, rotation } );
@@ -551,6 +559,8 @@ void Simulation::PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotatio
 	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
 	ShapeMaterial material;
 	material.density = look.mass / std::max( volume, 1e-6f );
+	material.friction = look.friction;
+	material.restitution = look.restitution;
 	b3ShapeId shapeId = CreateShape( body, shape, CatProp, material );
 
 	held.holder = 0;

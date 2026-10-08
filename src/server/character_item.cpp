@@ -214,6 +214,14 @@ bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error
 				return false;
 			}
 		}
+		else if ( key == "friction" || key == "bounce" )
+		{
+			if ( !( words >> ( key == "friction" ? shape.friction : shape.restitution ) ) )
+			{
+				error = key + " needs a number";
+				return false;
+			}
+		}
 		else if ( key == "turn" )
 		{
 			// turn <qx qy qz qw>: the body in the frame the item is carried in
@@ -308,6 +316,11 @@ bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error
 	if ( sane( shape.mass, 0.01f, 1000.0f ) == false )
 	{
 		error = "mass must be between 0.01 and 1000 kg";
+		return false;
+	}
+	if ( sane( shape.friction, 0.0f, 10.0f ) == false || sane( shape.restitution, 0.0f, 1.0f ) == false )
+	{
+		error = "friction must be between 0 and 10, bounce between 0 and 1";
 		return false;
 	}
 	out = shape;

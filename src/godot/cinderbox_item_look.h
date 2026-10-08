@@ -11,6 +11,8 @@
 
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/marker3d.hpp>
+#include "cinderbox_body.h"
+
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/variant/callable.hpp>
@@ -19,11 +21,16 @@
 namespace cb::gd
 {
 
-class CbItem : public godot::Node3D
+class CbItem : public CbBody
 {
-	GDCLASS( CbItem, godot::Node3D )
+	GDCLASS( CbItem, CbBody )
 
 public:
+	// (An item weighs what it says: a kilogram unless it says otherwise.)
+	CbItem()
+	{
+		m_mass = 1.0;
+	}
 	void set_kind( const godot::String& v )
 	{
 		m_kind = v;
@@ -40,14 +47,6 @@ public:
 	godot::String get_display_name() const
 	{
 		return m_displayName;
-	}
-	void set_mass( double v )
-	{
-		m_mass = v;
-	}
-	double get_mass() const
-	{
-		return m_mass;
 	}
 	// First person: how far the arms holding this are moved in the viewer's own view, in metres to
 	// the right, up and ahead of where the body's pose has them. Only the viewer's own picture
@@ -168,7 +167,6 @@ protected:
 private:
 	godot::String m_kind; // "melee.bat": the kind a server mod declares
 	godot::String m_displayName; // what prompts and lists call it ("Bat")
-	double m_mass = 1.0;
 	godot::Vector3 m_viewOffset;
 	godot::Dictionary m_properties;
 	int m_use = USE_SELECTED;

@@ -306,7 +306,7 @@ private:
 	void DestroyEntity( flecs::entity e );
 
 	flecs::entity CreateProp( ShapeKind kind, b3Vec3 position, b3Quat rotation, b3Vec3 halfExtents, b3Vec3 velocity,
-							  uint32_t owner, uint32_t lifetimeTicks );
+							  uint32_t owner, uint32_t lifetimeTicks, const ShapeMaterial& material = {} );
 	// Builds an entity from a map template: shape, body, material and initial velocity all come
 	// from the authored values, with the engine's defaults for anything the author left alone.
 	flecs::entity CreateFromTemplate( uint32_t templateIndex, b3Vec3 position, b3Quat rotation, b3Vec3 extraVelocity,

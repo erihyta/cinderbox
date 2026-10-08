@@ -43,11 +43,13 @@
 namespace cb
 {
 
-inline constexpr uint32_t kMapVersion = 2;
+inline constexpr uint32_t kMapVersion = 3; // 3: a prop's body (mass, density, friction, bounce)
 
 // Fixed-point grids. Powers of two, see above.
 inline constexpr float kMapPositionScale = 1024.0f;
 inline constexpr float kMapAngleScale = 4096.0f;
+// A body's numbers (kilograms, friction, bounce), in thousandths.
+inline constexpr float kMapBodyScale = 1000.0f;
 
 inline constexpr uint32_t kMapNameLimit = 64;
 

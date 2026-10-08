@@ -16,6 +16,8 @@
 //   the baker reports it.
 // - `size` is the full size in metres, multiplied by the node's global scale.
 
+#include "cinderbox_body.h"
+
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
@@ -48,10 +50,11 @@ private:
 	godot::MeshInstance3D* m_preview = nullptr;
 };
 
-// A dynamic prop the level starts with. Players can push these around.
-class CbProp : public godot::Node3D
+// A dynamic prop the level starts with. Players can push these around. A body like any other
+// (CbBody): what it weighs, how it grips, how it bounces.
+class CbProp : public CbBody
 {
-	GDCLASS( CbProp, godot::Node3D )
+	GDCLASS( CbProp, CbBody )
 
 public:
 	enum PropShape
