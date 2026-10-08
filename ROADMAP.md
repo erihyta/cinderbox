@@ -63,16 +63,17 @@ The extension has about 35 node classes. Several do the same thing in two places
 
 | Overlap | Today | Would be |
 |---|---|---|
-| Two labels | `CbFieldLabel`, `CbPromptLabel` | `CbFieldLabel`: `{key:pickup}` in its format, a subject path, a progress it can show |
-| Two lists | `CbList`, `CbEventFeed` | `CbList` of **Events**: a kill feed is a designed row like any other |
-| Two ways to drive a property | `CbFieldBinding`, a While `CbReaction` with `value_expression` | the `CbReaction`; `CbFieldBinding` goes |
-| A key that shows one thing | `CbShowKey` | a key that sets a `ui.` value (hold or toggle); showing is a condition on it, so one key can drive anything |
+| Two lists | **done (M114)**: `CbList` of **Events**; `CbEventFeed` is gone | |
+| A key that shows one thing | **done (M114)**: `CbKey` keeps a `ui.` value; showing is a condition on it | |
+| Two labels | `CbFieldLabel` (2D), `CbPromptLabel` (in the world, upright above its parent, with a bar) | a binding that writes text (`text_format` on `CbFieldBinding`), so a prompt is a `Label3D` and two bindings; what keeps it upright above an item lying on its side is the reaction that places it |
+| Two ways to drive a property | `CbFieldBinding` (HUD: reads a list row's entity), a While `CbReaction` with `value_expression` (the world) | one of them in both places. Leaning: reactions learn a row's subject, then the binding goes |
 | Conditions, five times | each HUD node declares and evaluates its own | one base: subject, conditions, format |
 | Three body descriptions | `CbProp`, `CbTemplate` + `CbComponent`, `CbItem` | one shared body (shape, mass or density, friction, bounce); the item keeps what is an item's |
 
 - **Kept as they are**: the motion nodes, the character nodes. (`CbGrip` is gone: an item's grips
   are two markers its `CbItem` names.)
-- **After it**: the HUD is four nodes (label, list, click, key) and a reaction.
+- **After it**: the HUD is four nodes (label, list, click, key) and a reaction. Today it is six
+  (those, `CbFieldBinding` and `CbPromptLabel`); it was seven.
 - **Also here**: `cinderbox_client.cpp` (2,700 lines) in parts: the frame source, the HUD's values,
   items.
 
