@@ -13,6 +13,8 @@ namespace cb::test
 // How many fields the scenario's simulations have, per scope (what a server's mods would have
 // declared): its commands write them.
 inline constexpr int kScenarioFields = 32;
+// And how many motions a player of them has a slot for.
+inline constexpr int kScenarioMotions = 16;
 
 struct ScenarioOptions
 {

@@ -78,6 +78,7 @@ SimConfig TestConfig()
 	// What a server's mods would have declared: the scenario writes fields.
 	config.fields = test::kScenarioFields;
 	config.globalFields = test::kScenarioFields;
+	config.motions = test::kScenarioMotions;
 	return config;
 }
 
@@ -1606,7 +1607,7 @@ void TestMotions()
 	f.events.push_back( { PlayerEventType::Join, 0 } );
 	step( 60 );
 	uint32_t p0 = sim.PlayerNetId( 0 );
-	CHECK( sim.FindEntity( p0 ).has<MotionState>() );
+	CHECK( sim.HasMotionState( sim.FindEntity( p0 ) ) );
 
 	// No charges: the press does nothing.
 	f.inputs[0].actions = dash;
@@ -1782,17 +1783,54 @@ void TestMotions()
 	CHECK( warned.find( "\"fly\"" ) != std::string::npos && warned.find( "round.time" ) != std::string::npos &&
 		   warned.find( "fly.fuel" ) != std::string::npos && warned.find( "fly.up" ) != std::string::npos );
 
-	// More motions than there are slots: the rest are left out, and said.
-	ModSchema many = schema;
-	std::string big = "cinderbox_motions\t2\n";
-	for ( int i = 0; i < kMaxMotions + 3; ++i )
+	// How many motions a server has is its mods' business: a hundred of them compile, a player of a
+	// simulation told so has a slot for each, and the last one works like the first.
 	{
-		big += "motion\tM" + std::to_string( i ) + "\nwhen\tpress\tdash\n";
+		ModSchema many = schema;
+		std::string big = "cinderbox_motions\t2\n";
+		for ( int i = 0; i < 100; ++i )
+		{
+			// (Only the hundredth can happen: the others wait for a fall nobody has.)
+			big += "motion\tM" + std::to_string( i ) + "\nwhen\tpress\tdash\n" + ( i == 99 ? "" : "if\tairborne_time > 100\n" );
+		}
+		many.motionSets = { { "dash", "dash.many", big } };
+		warned.clear();
+		auto all = CompileMotions( many, warned );
+		CHECK( all != nullptr && all->list.size() == 100 );
+		if ( all != nullptr && all->list.size() == 100 )
+		{
+			SimConfig wide = TestConfig();
+			wide.motions = 100;
+			Simulation hundred( wide );
+			hundred.SetMotions( all );
+			InputFrame hf;
+			hf.events.push_back( { PlayerEventType::Join, 0 } );
+			for ( int i = 0; i < 60; ++i )
+			{
+				hf.tick = hundred.Tick();
+				hundred.Step( hf );
+				hf.events.clear();
+			}
+			hf.inputs[0].actions = dash;
+			hf.tick = hundred.Tick();
+			hundred.Step( hf );
+			MotionState state = hundred.GetMotionState( hundred.FindEntity( hundred.PlayerNetId( 0 ) ) );
+			std::printf( "    a hundred motions: a player's state has %zu slots, the last one used at tick %u\n", state.slots.size(),
+						 unsigned( state.slots[99].lastTick ) );
+			CHECK( state.slots.size() == 100 && state.slots[99].lastTick != 0 && state.slots[98].lastTick == 0 );
+			Snapshot kept;
+			hundred.Save( kept );
+			uint64_t hashThen = hundred.ComputeHash();
+			hf.inputs[0].actions = 0;
+			for ( int i = 0; i < 5; ++i )
+			{
+				hf.tick = hundred.Tick();
+				hundred.Step( hf );
+			}
+			hundred.Load( kept );
+			CHECK( hundred.ComputeHash() == hashThen );
+		}
 	}
-	many.motionSets = { { "dash", "dash.many", big } };
-	warned.clear();
-	auto capped = CompileMotions( many, warned );
-	CHECK( capped != nullptr && capped->list.size() == size_t( kMaxMotions ) && warned.find( "left out" ) != std::string::npos );
 	// A server without motions has none, and its players carry nothing for them.
 	ModSchema none;
 	CHECK( CompileMotions( none, warned ) == nullptr );
@@ -1800,7 +1838,7 @@ void TestMotions()
 	InputFrame g;
 	g.events.push_back( { PlayerEventType::Join, 0 } );
 	plain.Step( g );
-	CHECK( plain.FindEntity( plain.PlayerNetId( 0 ) ).has<MotionState>() == false );
+	CHECK( plain.HasMotionState( plain.FindEntity( plain.PlayerNetId( 0 ) ) ) == false );
 
 	// The schema carries the text.
 	std::vector<uint8_t> bytes;
@@ -2076,14 +2114,14 @@ void TestLinks()
 	CHECK( end.z > from.z + 1.0f && end.z < anchor.z - 1.0f && b3Distance( position(), from ) < 0.01f );
 	// Its parameters wait for it to hold: in flight the player still stands as it stood.
 	// (The motion is in effect from the tick its probe takes hold.)
-	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].sinceTick > sim.Tick() && sim.PlayerCharacter( 0 )->grounded == 1 );
+	CHECK( sim.GetMotionState( sim.FindEntity( p0 ) ).slots[0].sinceTick > sim.Tick() && sim.PlayerCharacter( 0 )->grounded == 1 );
 	// Holding: the player is pulled along the line, and the rope is reeled in.
 	step( int( flight ) / 2 + 2 );
 	CHECK( sim.EntityHold( p0, end, holds, which ) && holds && b3Distance( end, anchor ) < 0.001f );
 	// Holding, its parameters hold until something ends it: the player is airborne on the hook,
 	// though the floor is right under it.
-	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].sinceTick <= sim.Tick() &&
-		   sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick > sim.Tick() );
+	CHECK( sim.GetMotionState( sim.FindEntity( p0 ) ).slots[0].sinceTick <= sim.Tick() &&
+		   sim.GetMotionState( sim.FindEntity( p0 ) ).slots[0].untilTick > sim.Tick() );
 	CHECK( sim.PlayerCharacter( 0 )->grounded == 0 );
 	step( 45 );
 	float closer = b3Distance( anchor, b3Add( position(), b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) );
@@ -2097,7 +2135,7 @@ void TestLinks()
 	step( 1 );
 	CHECK( holdOf()->on == 0 && sim.EntityHold( p0, end, holds, which ) == false );
 	step( 1 );
-	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick < sim.Tick() );
+	CHECK( sim.GetMotionState( sim.FindEntity( p0 ) ).slots[0].untilTick < sim.Tick() );
 	// Let go, it comes down and stands again.
 	step( 180 );
 	CHECK( sim.PlayerCharacter( 0 )->grounded == 1 );

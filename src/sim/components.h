@@ -211,8 +211,9 @@ struct MoveOverrides
 };
 
 // Where a player's motions are (sim/motions.h): a slot per motion of the server, in the schema's
-// order. Players have it only on a server whose mods provide motions.
-inline constexpr int kMaxMotions = 16;
+// order. Players have it only on a server whose mods provide motions. As many slots as the
+// server has motions (SimConfig::motions): in a simulation it is a block of that size
+// (Simulation::GetMotionState / SetMotionState), and this is the value that is passed around.
 
 struct MotionSlot
 {
@@ -226,7 +227,7 @@ struct MotionState
 {
 	uint16_t prevActions = 0; // the mod actions held last tick: a press is one that was not
 	uint16_t reserved = 0;
-	MotionSlot slots[kMaxMotions] = {};
+	SmallList<MotionSlot, 16> slots;
 };
 
 // What a motion's probe holds on to (sim/motions.h): a line the motion threw at what the player
@@ -305,7 +306,7 @@ CB_CHECK_COMPONENT( Ragdoll, 20 );
 CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );
 CB_CHECK_COMPONENT( RagdollPose, 40 * kRagdollParts );
 CB_CHECK_COMPONENT( MoveOverrides, 4 + 4 * kMoveParams );
-CB_CHECK_COMPONENT( MotionState, 4 + 16 * kMaxMotions );
+CB_CHECK_COMPONENT( MotionSlot, 16 );
 CB_CHECK_COMPONENT( MotionHold, 32 );
 
 #undef CB_CHECK_COMPONENT

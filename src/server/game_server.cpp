@@ -166,6 +166,7 @@ bool GameServer::Start( const ServerOptions& options )
 	// How much state the mods asked for: every simulation of the session is sized by it.
 	m_options.config.fields = uint16_t( m_schema.FieldCount( BoardScope::Entity ) );
 	m_options.config.globalFields = uint16_t( m_schema.FieldCount( BoardScope::Global ) );
+	m_options.config.motions = uint16_t( m_motions ? m_motions->list.size() : 0 );
 	// Slots: how many the mods asked for, the hand the selected one's item is held in, and what
 	// each kind says about itself (item properties, authored or declared).
 	m_options.config.slots = uint8_t( declarations.SlotCount() );

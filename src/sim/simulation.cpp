@@ -209,6 +209,39 @@ void Simulation::SetBoard( flecs::entity e, const Blackboard& board )
 	ecs_set_id( m_world.c_ptr(), e.id(), m_boardId, m_sizedScratch.size(), m_sizedScratch.data() );
 }
 
+bool Simulation::HasMotionState( flecs::entity e ) const
+{
+	return m_config.motions > 0 && ecs_has_id( m_world.c_ptr(), e.id(), m_motionId );
+}
+
+// The block: the actions held last tick (four bytes), then a slot per motion.
+MotionState Simulation::GetMotionState( flecs::entity e ) const
+{
+	MotionState state;
+	if ( HasMotionState( e ) )
+	{
+		const uint8_t* bytes = static_cast<const uint8_t*>( ecs_get_id( m_world.c_ptr(), e.id(), m_motionId ) );
+		std::memcpy( &state.prevActions, bytes, 2 );
+		std::memcpy( &state.reserved, bytes + 2, 2 );
+		state.slots.resize( m_config.motions );
+		std::memcpy( static_cast<void*>( state.slots.data() ), bytes + 4, size_t( m_config.motions ) * sizeof( MotionSlot ) );
+	}
+	return state;
+}
+
+void Simulation::SetMotionState( flecs::entity e, const MotionState& state )
+{
+	if ( m_config.motions == 0 )
+	{
+		return;
+	}
+	m_sizedScratch.resize( 4 + size_t( m_config.motions ) * sizeof( MotionSlot ) );
+	std::memcpy( m_sizedScratch.data(), &state.prevActions, 2 );
+	std::memcpy( m_sizedScratch.data() + 2, &state.reserved, 2 );
+	state.slots.copy_to( reinterpret_cast<MotionSlot*>( m_sizedScratch.data() + 4 ), m_config.motions );
+	ecs_set_id( m_world.c_ptr(), e.id(), m_motionId, m_sizedScratch.size(), m_sizedScratch.data() );
+}
+
 void Simulation::RegisterComponents()
 {
 	// Order is part of the snapshot format. Append only.
@@ -228,7 +261,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<RagdollPose>();
 	RegisterSnapComponent<HeldItem>();
 	RegisterSnapComponent<MoveOverrides>();
-	RegisterSnapComponent<MotionState>();
+	m_motionId = RegisterSizedComponent( "MotionState", m_config.motions > 0 ? 4 + uint32_t( m_config.motions ) * uint32_t( sizeof( MotionSlot ) ) : 0 );
 	RegisterSnapComponent<MotionHold>();
 	RegisterSnapComponent<Slots>();
 
@@ -912,9 +945,9 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			e.set<Character>( c );
 			if ( m_motions )
 			{
-				MotionState motion = e.has<MotionState>() ? e.get<MotionState>() : MotionState{};
+				MotionState motion = GetMotionState( e );
 				motion.prevActions = in.actions;
-				e.set<MotionState>( motion );
+				SetMotionState( e, motion );
 				if ( const MotionHold* hold = e.try_get<MotionHold>(); hold != nullptr && hold->on != 0 )
 				{
 					MotionHold off = *hold;
@@ -944,7 +977,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		// and this tick's commands left it, by this tick's input. A frozen player does none.
 		if ( m_motions )
 		{
-			MotionState motion = e.has<MotionState>() ? e.get<MotionState>() : MotionState{};
+			MotionState motion = GetMotionState( e );
 			{
 				const AnimState& before = e.get<AnimState>();
 				Blackboard board = GetBoard( e );
@@ -1022,7 +1055,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				// A hold whose motion ended (its condition, a new throw) is let go.
 				if ( const MotionHold* out = e.try_get<MotionHold>(); out != nullptr && out->on != 0 )
 				{
-					const MotionSlot& slot = motion.slots[out->motion];
+					const MotionSlot slot = motion.slots[out->motion];
 					if ( slot.lastTick == 0 || slot.untilTick <= m_globals.tick )
 					{
 						MotionHold off = *out;
@@ -1044,7 +1077,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 					RecordModEvent( record );
 				}
 				// The effects read the state the motions just decided (the parameters that hold).
-				e.set<MotionState>( motion );
+				SetMotionState( e, motion );
 				ApplyMotionEffects( e, c, t, in, motion, boardBefore, m_motionActive );
 			}
 		}
@@ -2261,9 +2294,9 @@ MoveParams Simulation::MoveOf( flecs::entity e ) const
 	// A motion that is on has the last word, for as long as it lasts.
 	if ( m_motions )
 	{
-		if ( const MotionState* motion = e.try_get<MotionState>() )
+		if ( HasMotionState( e ) )
 		{
-			ApplyMotionParams( *m_motions, *motion, m_globals.tick, params );
+			ApplyMotionParams( *m_motions, GetMotionState( e ), m_globals.tick, params );
 		}
 	}
 	return params;
@@ -2514,7 +2547,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 	for ( const MotionActive& on : active )
 	{
 		const Motion& m = m_motions->list[on.index];
-		const MotionSlot& slot = state.slots[on.index];
+		const MotionSlot slot = state.slots[on.index];
 		// What the motion's probe holds on to: its effects wait for it to take hold.
 		const MotionHold* found = e.try_get<MotionHold>();
 		MotionHold hold = found != nullptr ? *found : MotionHold{};

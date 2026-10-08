@@ -208,6 +208,8 @@ inline constexpr uint32_t kSocketLeftHand = 1;
 // server's mods declared: SimConfig::fields and globalFields. This is only what a field's number
 // can say in a command and in the schema (16 bits).
 inline constexpr int kFieldLimit = 65535;
+// Likewise for motions (SimConfig::motions): what a motion's number can say where it is kept.
+inline constexpr int kMotionLimit = 255;
 // Most commands one frame can carry.
 inline constexpr size_t kMaxCommandsPerFrame = 1024;
 
@@ -280,6 +282,8 @@ struct SimConfig
 	// are part of what a snapshot and a state hash are.
 	uint16_t fields = 0;
 	uint16_t globalFields = 0;
+	// And how many motions its mods' sets have, all together: a player has a slot for each.
+	uint16_t motions = 0;
 
 	bool operator==( const SimConfig& ) const = default;
 

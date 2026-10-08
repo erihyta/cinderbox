@@ -171,6 +171,9 @@ public:
 	// An entity's board: all 0 when it has none.
 	bool HasBoard( flecs::entity e ) const;
 	Blackboard GetBoard( flecs::entity e ) const;
+	// A player's motions: where each is (all never used when it has none).
+	bool HasMotionState( flecs::entity e ) const;
+	MotionState GetMotionState( flecs::entity e ) const;
 	// The closest thing a ray from `origin` along `translation` hits, skipping entity `ignoreNetId`
 	// and disabled bodies (and every player's capsule with `skipPlayers`). Returns false when it hits
 	// nothing.
@@ -336,6 +339,8 @@ private:
 	flecs::entity_t RegisterSizedComponent( const char* name, uint32_t size );
 	void SetBoard( flecs::entity e, const Blackboard& board );
 	flecs::entity_t m_boardId = 0;
+	void SetMotionState( flecs::entity e, const MotionState& state );
+	flecs::entity_t m_motionId = 0;
 	BoardValues m_globalBoard;
 	std::vector<EntityRef> m_entities; // sorted by netId
 
