@@ -173,7 +173,7 @@ struct WorldItem
 // player's own (Context::ResolveLayers).
 struct LayerWishes
 {
-	uint8_t mod[kMaxPlayers][kMaxAnimLayers] = {};
+	SmallList<uint8_t, 4> mod[kMaxPlayers];
 };
 
 // The item the player in `slot` holds in `socket`, as a command target (SetField, Emit, Destroy).
@@ -192,7 +192,7 @@ public:
 	// `key` is the suggested binding, as Godot names keys ("F", "R", "1") or "MouseLeft".
 	ActionHandle Action( const std::string& name, const std::string& key );
 	// Layers apply in declaration order (a later one wins where masks overlap). At most
-	// kMaxAnimLayers. "full" (every bone) and "upper" (the spine up) work on any character; others
+	// kLayerLimit. "full" (every bone) and "upper" (the spine up) work on any character; others
 	// need the character to define the mask.
 	LayerHandle Layer( const std::string& name );
 	StanceHandle Stance( const std::string& name );
@@ -330,7 +330,7 @@ public:
 	}
 	// What the player's body is posed from: is it aiming, which stance each layer has. A mod that
 	// shares a stance with another reads here whether its own is still set.
-	const AnimState* PlayerAnim( PlayerSlot slot ) const
+	AnimStateCopy PlayerAnim( PlayerSlot slot ) const
 	{
 		return m_sim.EntityAnimState( m_sim.PlayerNetId( slot ) );
 	}

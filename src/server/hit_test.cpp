@@ -83,7 +83,7 @@ bool HitTester::JointPosition( Simulation& sim, PlayerSlot slot, const char* joi
 {
 	uint32_t netId = sim.PlayerNetId( slot );
 	const Transform* transform = netId != 0 ? sim.EntityTransform( netId ) : nullptr;
-	const AnimState* state = netId != 0 ? sim.EntityAnimState( netId ) : nullptr;
+	AnimStateCopy state = netId != 0 ? sim.EntityAnimState( netId ) : AnimStateCopy();
 	int index = anim::FindJoint( *m_character->animations, joint );
 	if ( transform == nullptr || state == nullptr || index < 0 )
 	{
@@ -113,7 +113,7 @@ bool HitTester::CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uin
 		}
 		const Character* character = sim.PlayerCharacter( slot );
 		const Transform* transform = sim.EntityTransform( netId );
-		const AnimState* state = sim.EntityAnimState( netId );
+		AnimStateCopy state = sim.EntityAnimState( netId );
 		if ( character == nullptr || character->dead || transform == nullptr || state == nullptr )
 		{
 			continue;

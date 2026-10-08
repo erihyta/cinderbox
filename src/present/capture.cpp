@@ -133,9 +133,9 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 		{
 			f.velocity = v->linear;
 		}
-		if ( const AnimState* a = e.try_get<AnimState>() )
+		if ( sim.HasAnimState( e ) )
 		{
-			f.anim = *a;
+			f.anim = sim.GetAnimState( e );
 			f.hasAnim = true;
 		}
 		out.entities.push_back( f );

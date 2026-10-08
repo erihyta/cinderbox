@@ -167,6 +167,8 @@ bool GameServer::Start( const ServerOptions& options )
 	m_options.config.fields = uint16_t( m_schema.FieldCount( BoardScope::Entity ) );
 	m_options.config.globalFields = uint16_t( m_schema.FieldCount( BoardScope::Global ) );
 	m_options.config.motions = uint16_t( m_motions ? m_motions->list.size() : 0 );
+	m_options.config.layers =
+		uint8_t( std::min( std::max( m_animGraph ? m_animGraph->layers.size() : size_t( 0 ), m_schema.layers.size() ), size_t( kLayerLimit ) ) );
 	// Slots: how many the mods asked for, the hand the selected one's item is held in, and what
 	// each kind says about itself (item properties, authored or declared).
 	m_options.config.slots = uint8_t( declarations.SlotCount() );

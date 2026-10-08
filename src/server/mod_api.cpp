@@ -93,7 +93,7 @@ LayerHandle Declarations::Layer( const std::string& name )
 	{
 		return { existing };
 	}
-	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.layers.size() >= size_t( kMaxAnimLayers ) )
+	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.layers.size() >= size_t( kLayerLimit ) )
 	{
 		m_errors.push_back( m_mod + ": bad or one too many animation layers (\"" + name + "\")" );
 		return {};
@@ -849,7 +849,7 @@ std::vector<CarriedItem> Context::CarriedItems( PlayerSlot slot ) const
 int Context::LayerIndex( const std::string& layer ) const
 {
 	const AnimGraph* graph = m_sim.Graph();
-	for ( size_t l = 0; graph != nullptr && l < graph->layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	for ( size_t l = 0; graph != nullptr && l < graph->layers.size(); ++l )
 	{
 		if ( graph->layers[l].name == layer )
 		{
@@ -919,7 +919,7 @@ void Context::ResolveLayers()
 		return;
 	}
 	const auto& packs = m_sim.Packs();
-	size_t layers = std::min( graph->layers.size(), size_t( kMaxAnimLayers ) );
+	size_t layers = graph->layers.size();
 	for ( int slot = 0; slot < kMaxPlayers; ++slot )
 	{
 		if ( Joining( PlayerSlot( slot ) ) || Leaving( PlayerSlot( slot ) ) )
@@ -931,13 +931,13 @@ void Context::ResolveLayers()
 			}
 		}
 		uint32_t netId = m_sim.PlayerNetId( PlayerSlot( slot ) );
-		const AnimState* anim = netId != 0 ? m_sim.EntityAnimState( netId ) : nullptr;
+		AnimStateCopy anim = netId != 0 ? m_sim.EntityAnimState( netId ) : AnimStateCopy();
 		if ( anim == nullptr )
 		{
 			continue;
 		}
 		// What its held items bring: the first socket's item that has that layer wins.
-		uint8_t fromItems[kMaxAnimLayers] = {};
+		std::vector<uint8_t> fromItems( layers );
 		for ( size_t socket = 0; m_itemLayers != nullptr && socket < m_schema.sockets.size(); ++socket )
 		{
 			uint32_t item = m_sim.HeldItemOf( netId, uint32_t( socket ) );

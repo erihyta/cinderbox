@@ -242,6 +242,40 @@ void Simulation::SetMotionState( flecs::entity e, const MotionState& state )
 	ecs_set_id( m_world.c_ptr(), e.id(), m_motionId, m_sizedScratch.size(), m_sizedScratch.data() );
 }
 
+void Simulation::SetMotions( std::shared_ptr<const Motions> motions )
+{
+	if ( motions != nullptr && motions->list.size() > size_t( m_config.motions ) )
+	{
+		std::fprintf( stderr, "Simulation: %zu motions, but its config has slots for %u: they are not run\n", motions->list.size(),
+					  unsigned( m_config.motions ) );
+		motions = nullptr;
+	}
+	m_motions = std::move( motions );
+}
+
+bool Simulation::HasAnimState( flecs::entity e ) const
+{
+	return ecs_has_id( m_world.c_ptr(), e.id(), m_animId );
+}
+
+AnimState Simulation::GetAnimState( flecs::entity e ) const
+{
+	AnimState state;
+	if ( HasAnimState( e ) )
+	{
+		UnpackAnimState( static_cast<const uint8_t*>( ecs_get_id( m_world.c_ptr(), e.id(), m_animId ) ), m_config.layers, state );
+	}
+	return state;
+}
+
+// (Layers past the ones the config has are dropped: no state machine of this server has them.)
+void Simulation::SetAnimState( flecs::entity e, const AnimState& state )
+{
+	m_sizedScratch.resize( AnimStateBytes( m_config.layers ) );
+	PackAnimState( state, m_config.layers, m_sizedScratch.data() );
+	ecs_set_id( m_world.c_ptr(), e.id(), m_animId, m_sizedScratch.size(), m_sizedScratch.data() );
+}
+
 void Simulation::RegisterComponents()
 {
 	// Order is part of the snapshot format. Append only.
@@ -253,7 +287,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<Character>();
 	RegisterSnapComponent<Prop>();
 	RegisterSnapComponent<StaticGeometry>();
-	RegisterSnapComponent<AnimState>();
+	m_animId = RegisterSizedComponent( "AnimState", uint32_t( AnimStateBytes( m_config.layers ) ) );
 	RegisterSnapComponent<TemplateRef>();
 	m_boardId = RegisterSizedComponent( "Blackboard", uint32_t( m_config.fields ) * 4 );
 	RegisterSnapComponent<Ragdoll>();
@@ -803,7 +837,7 @@ flecs::entity Simulation::CreatePlayer( PlayerSlot slot )
 	e.set<Shape>( shape );
 	e.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );
 	e.set<Character>( c );
-	e.set<AnimState>( {} );
+	SetAnimState( e, AnimState{} );
 
 	m_globals.playerNetIds[slot] = netId;
 	return e;
@@ -823,15 +857,12 @@ void Simulation::PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw )
 	e.set<Character>( c );
 	// A fresh start for the animation, but aiming is a mod's decision (the pistol is still out), so
 	// placing the character does not undo it.
-	const AnimState& old = e.get<AnimState>();
+	const AnimState old = GetAnimState( e );
 	AnimState anim;
 	anim.aiming = old.aiming;
-	for ( int l = 0; l < kMaxAnimLayers; ++l )
-	{
-		// The stances stay (the mod still has the weapon out).
-		anim.stances[l] = old.stances[l];
-	}
-	e.set<AnimState>( anim );
+	// The stances stay (the mod still has the weapon out).
+	anim.stances = old.stances;
+	SetAnimState( e, anim );
 	e.set<Transform>( t );
 	e.set<Velocity>( {} );
 	if ( const MotionHold* hold = e.try_get<MotionHold>(); hold != nullptr && hold->on != 0 )
@@ -979,7 +1010,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		{
 			MotionState motion = GetMotionState( e );
 			{
-				const AnimState& before = e.get<AnimState>();
+				const AnimState before = GetAnimState( e );
 				Blackboard board = GetBoard( e );
 				// Conditions read the board as the tick found it: a motion that turns a field on does
 				// not start the motion that waits for it until the next tick.
@@ -1089,7 +1120,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 					 c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed, c, t );
 		c.prevButtons = in.buttons;
 
-		AnimState anim = e.get<AnimState>();
+		AnimState anim = GetAnimState( e );
 		UpdateAnimState( anim, c, in, m_globals.tick, m_config.TimeStep() );
 		if ( m_animGraph )
 		{
@@ -1128,7 +1159,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				RecordModEvent( record );
 			}
 		}
-		e.set<AnimState>( anim );
+		SetAnimState( e, anim );
 
 		e.set<Character>( c );
 		e.set<Transform>( t );
@@ -1897,33 +1928,33 @@ void Simulation::ApplyCommand( const SimCommand& command )
 		case CommandType::SwapLayer:
 		{
 			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
-			if ( e.is_valid() == false || e.has<AnimState>() == false || command.index >= kMaxAnimLayers || command.value < 0 ||
+			if ( e.is_valid() == false || HasAnimState( e ) == false || command.index >= m_config.layers || command.value < 0 ||
 				 command.value > 255 )
 			{
 				return;
 			}
-			AnimState a = e.get<AnimState>();
+			AnimState a = GetAnimState( e );
 			AnimGraphLayerState& layer = a.graph[command.index];
 			if ( layer.source != uint8_t( command.value ) )
 			{
 				layer.source = uint8_t( command.value );
 				layer.started = 0; // starts over in the new layer's start state
 			}
-			e.set<AnimState>( a );
+			SetAnimState( e, a );
 			return;
 		}
 
 		case CommandType::Stance:
 		{
 			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
-			if ( e.is_valid() == false || e.has<AnimState>() == false || command.index >= kMaxAnimLayers ||
+			if ( e.is_valid() == false || HasAnimState( e ) == false || command.index >= m_config.layers ||
 				 command.value < 0 || command.value > kMaxStances )
 			{
 				return;
 			}
-			AnimState a = e.get<AnimState>();
+			AnimState a = GetAnimState( e );
 			a.stances[command.index] = uint8_t( command.value );
-			e.set<AnimState>( a );
+			SetAnimState( e, a );
 			return;
 		}
 
@@ -1942,11 +1973,11 @@ void Simulation::ApplyCommand( const SimCommand& command )
 		case CommandType::Aim:
 		{
 			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
-			if ( e.is_valid() && e.has<AnimState>() )
+			if ( e.is_valid() && HasAnimState( e ) )
 			{
-				AnimState a = e.get<AnimState>();
+				AnimState a = GetAnimState( e );
 				a.aiming = command.mode != 0 ? 1 : 0;
-				e.set<AnimState>( a );
+				SetAnimState( e, a );
 			}
 			return;
 		}
@@ -2755,10 +2786,10 @@ const Transform* Simulation::EntityTransform( uint32_t netId ) const
 	return e.is_valid() ? e.try_get<Transform>() : nullptr;
 }
 
-const AnimState* Simulation::EntityAnimState( uint32_t netId ) const
+AnimStateCopy Simulation::EntityAnimState( uint32_t netId ) const
 {
 	flecs::entity e = FindEntity( netId );
-	return e.is_valid() ? e.try_get<AnimState>() : nullptr;
+	return e.is_valid() && HasAnimState( e ) ? AnimStateCopy( GetAnimState( e ) ) : AnimStateCopy();
 }
 
 int32_t Simulation::BoardValue( uint32_t netId, int slot ) const

@@ -68,7 +68,6 @@ struct EntityFixed
 	b3Vec3 halfExtents;
 	Transform transform;
 	b3Vec3 velocity;
-	AnimState anim;
 	uint32_t ragdoll;
 	uint32_t holder;
 	uint16_t itemKind;
@@ -79,12 +78,13 @@ struct EntityFixed
 	uint8_t slotCount;
 	uint8_t slotPad[2];
 };
-static_assert( sizeof( EntityFixed ) == 96 + sizeof( AnimState ), "EntityFixed has padding" );
+static_assert( sizeof( EntityFixed ) == 96, "EntityFixed has padding" );
 static_assert( sizeof( EntityFixed ) % 4 == 0 );
 
-// And what is as long as the server's mods made it: its fields.
+// And what is as long as the server made it: its animation's layers, its fields.
 struct EntityRecord : EntityFixed
 {
+	AnimState anim;
 	Blackboard board;
 };
 
@@ -98,6 +98,7 @@ void Zero( Record& r )
 void Zero( EntityRecord& r )
 {
 	std::memset( static_cast<EntityFixed*>( &r ), 0, sizeof( EntityFixed ) );
+	r.anim = AnimState{};
 	r.board.values.clear();
 }
 
@@ -452,28 +453,49 @@ b3Quat RotationFromCode( uint32_t code )
 	return { { c[0], c[1], c[2] }, c[3] };
 }
 
-// Which 32-bit words of an AnimState are floats (the rest are small integers, sent as they are).
-constexpr size_t kAnimWords = sizeof( AnimState ) / 4;
-static_assert( offsetof( AnimState, modeTime ) == 4 && offsetof( AnimState, stances ) == 24 && offsetof( AnimState, moveForward ) == 28 &&
-				   offsetof( AnimState, graph ) == 36 && sizeof( AnimGraphLayerState ) == 40 && offsetof( AnimGraphLayerState, time ) == 4,
-			   "AnimState layout changed: say which of its words are floats" );
+// An AnimState as the words it is sent as: the block a simulation keeps (PackAnimState), for as
+// many layers as it has. Which of those words are floats (the rest are small integers, sent as they
+// are): everything but the first word, the stances and the first word of each layer.
+static_assert( sizeof( AnimGraphLayerState ) == 40 && offsetof( AnimGraphLayerState, time ) == 4,
+			   "AnimGraphLayerState layout changed: say which of its words are floats" );
 
-bool AnimWordIsFloat( size_t word )
+size_t AnimWords( size_t layers )
 {
-	size_t byte = word * 4;
-	if ( byte < offsetof( AnimState, graph ) )
-	{
-		return ( byte >= 4 && byte < 24 ) || byte >= 28;
-	}
-	return ( byte - offsetof( AnimState, graph ) ) % sizeof( AnimGraphLayerState ) != 0;
+	return AnimStateBytes( layers ) / 4;
 }
 
-void AnimToGrid( const AnimState& anim, int32_t* words )
+bool AnimWordIsFloat( size_t word, size_t layers )
 {
-	std::memcpy( words, &anim, sizeof( AnimState ) );
-	for ( size_t i = 0; i < kAnimWords; ++i )
+	size_t byte = word * 4;
+	size_t speeds = kAnimStateHead + AnimStanceBytes( layers );
+	if ( byte < speeds )
 	{
-		if ( AnimWordIsFloat( i ) )
+		return byte >= 4 && byte < kAnimStateHead;
+	}
+	if ( byte < speeds + 8 )
+	{
+		return true;
+	}
+	return ( byte - speeds - 8 ) % sizeof( AnimGraphLayerState ) != 0;
+}
+
+void AnimToWords( const AnimState& anim, size_t layers, std::vector<int32_t>& words )
+{
+	words.resize( AnimWords( layers ) );
+	PackAnimState( anim, layers, reinterpret_cast<uint8_t*>( words.data() ) );
+}
+
+void AnimFromWords( const std::vector<int32_t>& words, size_t layers, AnimState& anim )
+{
+	UnpackAnimState( reinterpret_cast<const uint8_t*>( words.data() ), layers, anim );
+}
+
+void AnimToGrid( const AnimState& anim, size_t layers, std::vector<int32_t>& words )
+{
+	AnimToWords( anim, layers, words );
+	for ( size_t i = 0; i < words.size(); ++i )
+	{
+		if ( AnimWordIsFloat( i, layers ) )
 		{
 			float value;
 			std::memcpy( &value, &words[i], 4 );
@@ -482,19 +504,51 @@ void AnimToGrid( const AnimState& anim, int32_t* words )
 	}
 }
 
-void AnimFromGrid( const int32_t* words, AnimState& anim )
+void AnimFromGrid( const std::vector<int32_t>& words, size_t layers, AnimState& anim )
 {
-	int32_t raw[kAnimWords];
-	for ( size_t i = 0; i < kAnimWords; ++i )
+	std::vector<int32_t> raw( words );
+	for ( size_t i = 0; i < raw.size(); ++i )
 	{
-		raw[i] = words[i];
-		if ( AnimWordIsFloat( i ) )
+		if ( AnimWordIsFloat( i, layers ) )
 		{
 			float value = float( words[i] ) / kAnimGrid;
 			std::memcpy( &raw[i], &value, 4 );
 		}
 	}
-	std::memcpy( &anim, raw, sizeof( AnimState ) );
+	AnimFromWords( raw, layers, anim );
+}
+
+// An AnimState, exact: a byte says whether it changed, then how many layers and the word delta.
+void WriteAnimBlock( ByteWriter& w, const AnimState& now, const AnimState& was )
+{
+	size_t layers = std::min( std::max( now.Layers(), was.Layers() ), size_t( kLayerLimit ) );
+	std::vector<int32_t> a, b;
+	AnimToWords( now, layers, a );
+	AnimToWords( was, layers, b );
+	bool changed = a != b;
+	w.Write( uint8_t( changed ? 1 : 0 ) );
+	if ( changed )
+	{
+		w.Write( uint8_t( layers ) );
+		WriteDelta( w, a.data(), b.data(), a.size() * 4 );
+	}
+}
+
+void ReadAnimBlock( ByteReader& r, AnimState& inOut )
+{
+	if ( r.Read<uint8_t>() == 0 )
+	{
+		return;
+	}
+	size_t layers = r.Read<uint8_t>();
+	if ( r.Ok() == false )
+	{
+		return;
+	}
+	std::vector<int32_t> words;
+	AnimToWords( inOut, layers, words );
+	ReadDelta( r, words.data(), words.size() * 4 );
+	AnimFromWords( words, layers, inOut );
 }
 
 // A position that moved on the grid: three small numbers. True when it did.
@@ -648,26 +702,28 @@ struct CompactEntity
 		}
 		Count( &ViewCost::rotations, body.size() - mark );
 		mark = body.size();
-		int32_t animNow[kAnimWords];
-		int32_t animWas[kAnimWords];
-		AnimToGrid( now.anim, animNow );
-		AnimToGrid( was.anim, animWas );
-		if ( std::memcmp( animNow, animWas, sizeof( animNow ) ) != 0 )
+		size_t layers = std::min( std::max( now.anim.Layers(), was.anim.Layers() ), size_t( kLayerLimit ) );
+		std::vector<int32_t> animNow, animWas;
+		AnimToGrid( now.anim, layers, animNow );
+		AnimToGrid( was.anim, layers, animWas );
+		if ( animNow != animWas )
 		{
 			groups |= GroupAnim;
-			uint8_t mask[( kAnimWords + 7 ) / 8] = {};
-			for ( size_t i = 0; i < kAnimWords; ++i )
+			// How many layers, a bit per word that changed, then those words.
+			bw.Write( uint8_t( layers ) );
+			std::vector<uint8_t> mask( ( animNow.size() + 7 ) / 8 );
+			for ( size_t i = 0; i < animNow.size(); ++i )
 			{
 				mask[i / 8] |= animNow[i] != animWas[i] ? uint8_t( 1u << ( i % 8 ) ) : uint8_t( 0 );
 			}
-			bw.WriteBytes( mask, sizeof( mask ) );
-			for ( size_t i = 0; i < kAnimWords; ++i )
+			bw.WriteBytes( mask.data(), mask.size() );
+			for ( size_t i = 0; i < animNow.size(); ++i )
 			{
 				if ( animNow[i] == animWas[i] )
 				{
 					continue;
 				}
-				if ( AnimWordIsFloat( i ) )
+				if ( AnimWordIsFloat( i, layers ) )
 				{
 					WriteVarint( bw, int32_t( uint32_t( animNow[i] ) - uint32_t( animWas[i] ) ) );
 				}
@@ -715,16 +771,17 @@ struct CompactEntity
 		}
 		if ( groups & GroupAnim )
 		{
-			int32_t anim[kAnimWords];
-			AnimToGrid( record.anim, anim );
-			const uint8_t* mask = r.Take( ( kAnimWords + 7 ) / 8 );
-			for ( size_t i = 0; mask != nullptr && i < kAnimWords; ++i )
+			size_t layers = r.Read<uint8_t>();
+			std::vector<int32_t> anim;
+			AnimToGrid( record.anim, layers, anim );
+			const uint8_t* mask = r.Ok() ? r.Take( ( anim.size() + 7 ) / 8 ) : nullptr;
+			for ( size_t i = 0; mask != nullptr && i < anim.size(); ++i )
 			{
 				if ( ( mask[i / 8] & ( 1u << ( i % 8 ) ) ) == 0 )
 				{
 					continue;
 				}
-				if ( AnimWordIsFloat( i ) )
+				if ( AnimWordIsFloat( i, layers ) )
 				{
 					uint32_t moved = uint32_t( anim[i] ) + uint32_t( ReadVarint( r ) );
 					anim[i] = std::clamp( int32_t( moved ), -kGridMost, kGridMost );
@@ -734,7 +791,10 @@ struct CompactEntity
 					anim[i] = r.Read<int32_t>();
 				}
 			}
-			AnimFromGrid( anim, record.anim );
+			if ( mask != nullptr )
+			{
+				AnimFromGrid( anim, layers, record.anim );
+			}
 		}
 		if ( groups & GroupBoard )
 		{
@@ -866,17 +926,19 @@ struct ExactEntity
 		const EntityRecord& before = was != nullptr ? *was : zero;
 		const EntityFixed& a = now;
 		const EntityFixed& b = before;
-		if ( std::memcmp( &a, &b, sizeof( EntityFixed ) ) == 0 && SameBoard( now.board.values, before.board.values ) )
+		if ( std::memcmp( &a, &b, sizeof( EntityFixed ) ) == 0 && now.anim == before.anim && SameBoard( now.board.values, before.board.values ) )
 		{
 			return false;
 		}
 		WriteDelta( w, &a, &b, sizeof( EntityFixed ) );
+		WriteAnimBlock( w, now.anim, before.anim );
 		WriteBoardBlock( w, now.board.values, before.board.values );
 		return true;
 	}
 	static void Read( ByteReader& r, EntityRecord& record )
 	{
 		ReadDelta( r, static_cast<EntityFixed*>( &record ), sizeof( EntityFixed ) );
+		ReadAnimBlock( r, record.anim );
 		ReadBoardBlock( r, record.board.values );
 	}
 	static void Settle( EntityRecord& )

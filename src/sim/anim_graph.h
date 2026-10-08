@@ -181,7 +181,7 @@ struct AnimGraphLayer
 struct AnimGraph
 {
 	std::vector<AnimGraphClip> clips;
-	std::vector<AnimGraphLayer> layers; // at most kMaxAnimLayers
+	std::vector<AnimGraphLayer> layers;
 	std::string text;					// what it was compiled from
 
 	int FindClip( const std::string& name ) const;

@@ -47,6 +47,43 @@ struct Snapshot
 };
 
 // Singleton sim state that is not a component.
+// A player's animation state, copied out of a simulation (where it is a packed block): used like
+// a pointer that may be null.
+class AnimStateCopy
+{
+public:
+	AnimStateCopy() = default;
+	explicit AnimStateCopy( const AnimState& state )
+		: m_has( true )
+		, m_state( state )
+	{
+	}
+	const AnimState* operator->() const
+	{
+		return &m_state;
+	}
+	const AnimState& operator*() const
+	{
+		return m_state;
+	}
+	explicit operator bool() const
+	{
+		return m_has;
+	}
+	bool operator==( std::nullptr_t ) const
+	{
+		return m_has == false;
+	}
+	const AnimState* get() const
+	{
+		return m_has ? &m_state : nullptr;
+	}
+
+private:
+	bool m_has = false;
+	AnimState m_state;
+};
+
 // Hashed as raw bytes, so it must stay free of padding.
 struct SimGlobals
 {
@@ -155,7 +192,9 @@ public:
 	bool EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint8_t& motion ) const;
 	const Transform* EntityTransform( uint32_t netId ) const;
 	// A player's animation state, or null.
-	const AnimState* EntityAnimState( uint32_t netId ) const;
+	AnimStateCopy EntityAnimState( uint32_t netId ) const;
+	bool HasAnimState( flecs::entity e ) const;
+	AnimState GetAnimState( flecs::entity e ) const;
 	// The entity's board value, or 0 when it has none.
 	int32_t BoardValue( uint32_t netId, int slot ) const;
 	int32_t GlobalBoardValue( int slot ) const
@@ -224,10 +263,9 @@ public:
 	}
 	// The motions the server's mods provide (sim/motions.h), compiled from the schema: run for every
 	// player, every tick, before the mover. Null: none.
-	void SetMotions( std::shared_ptr<const Motions> motions )
-	{
-		m_motions = std::move( motions );
-	}
+	// (More of them than the config has slots for are not run at all: the config was not made for
+	// this schema.)
+	void SetMotions( std::shared_ptr<const Motions> motions );
 	const std::vector<std::shared_ptr<const AnimGraph>>& Packs() const
 	{
 		return m_animPacks;
@@ -341,6 +379,8 @@ private:
 	flecs::entity_t m_boardId = 0;
 	void SetMotionState( flecs::entity e, const MotionState& state );
 	flecs::entity_t m_motionId = 0;
+	void SetAnimState( flecs::entity e, const AnimState& state );
+	flecs::entity_t m_animId = 0;
 	BoardValues m_globalBoard;
 	std::vector<EntityRef> m_entities; // sorted by netId
 

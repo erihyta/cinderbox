@@ -264,8 +264,8 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutString( out, schema.items[i].sha256 );
 	}
 	PutString( out, schema.character );
-	PutU8( out, uint8_t( std::min<size_t>( schema.layers.size(), size_t( kMaxAnimLayers ) ) ) );
-	for ( size_t i = 0; i < schema.layers.size() && i < size_t( kMaxAnimLayers ); ++i )
+	PutU8( out, uint8_t( std::min<size_t>( schema.layers.size(), size_t( kLayerLimit ) ) ) );
+	for ( size_t i = 0; i < schema.layers.size() && i < size_t( kLayerLimit ); ++i )
 	{
 		PutString( out, schema.layers[i] );
 	}
@@ -414,10 +414,6 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 	// A workshop character is also one of the items; one that ships with the game is not.
 	out.character = r.String();
 	uint8_t layers = r.U8();
-	if ( layers > kMaxAnimLayers )
-	{
-		return false;
-	}
 	for ( uint8_t i = 0; i < layers && r.ok; ++i )
 	{
 		out.layers.push_back( r.String() );

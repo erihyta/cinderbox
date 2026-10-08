@@ -15,6 +15,8 @@ namespace cb::test
 inline constexpr int kScenarioFields = 32;
 // And how many motions a player of them has a slot for.
 inline constexpr int kScenarioMotions = 16;
+// And how many animation layers.
+inline constexpr int kScenarioLayers = 4;
 
 struct ScenarioOptions
 {
@@ -202,7 +204,7 @@ inline std::vector<InputFrame> MakeScenario( const ScenarioOptions& opt )
 			{
 				SimCommand stance;
 				stance.type = CommandType::Stance;
-				stance.index = uint16_t( ( c >> 15 ) % kMaxAnimLayers );
+				stance.index = uint16_t( ( c >> 15 ) % kScenarioLayers );
 				stance.value = int32_t( ( c >> 18 ) % 4 );
 				stance.target = SlotTarget( PlayerSlot( i ) );
 				f.commands.push_back( stance );

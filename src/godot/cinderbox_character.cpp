@@ -461,9 +461,9 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 	{
 		return "the AnimationTree's root is a " + root->get_class() + "; use a state machine, or a blend tree of state machines";
 	}
-	if ( layers.size() > size_t( kMaxAnimLayers ) )
+	if ( layers.size() > size_t( kLayerLimit ) )
 	{
-		return "at most " + String::num_int64( kMaxAnimLayers ) + " state machine layers";
+		return "at most " + String::num_int64( kLayerLimit ) + " state machine layers";
 	}
 	// A pack may show a whole tree and replace only some of its layers: the others are there to
 	// see the pack's own over them in the editor, and are not baked.

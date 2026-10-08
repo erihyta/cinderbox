@@ -1297,7 +1297,7 @@ void TestItemLayers()
 	bool wrong = false;
 	h.RunUntil( 7.0, [&]( double ) {
 		uint32_t tick = server.Tick();
-		const AnimState* a = server.EntityAnimState( server.PlayerNetId( h.bots[0].client->Slot() ) );
+		AnimStateCopy a = server.EntityAnimState( server.PlayerNetId( h.bots[0].client->Slot() ) );
 		if ( a == nullptr )
 		{
 			return;
@@ -1397,7 +1397,7 @@ void TestSneak()
 	bool slowed = false, givenBack = false;
 	h.RunUntil( 7.0, [&]( double ) {
 		uint32_t netId = server.PlayerNetId( h.bots[0].client->Slot() );
-		const AnimState* a = server.EntityAnimState( netId );
+		AnimStateCopy a = server.EntityAnimState( netId );
 		if ( a == nullptr || a->graph[0].started == 0 )
 		{
 			return;
@@ -1815,7 +1815,7 @@ void TestGunSwap()
 	int total[5] = {};
 	h.RunUntil( 7.6, [&]( double ) {
 		Simulation& sim = h.server.Sim();
-		const AnimState* anim = sim.EntityAnimState( sim.PlayerNetId( h.bots[0].client->Slot() ) );
+		AnimStateCopy anim = sim.EntityAnimState( sim.PlayerNetId( h.bots[0].client->Slot() ) );
 		uint32_t step = sim.Tick() / 90;
 		// The last half second of each: long after the swap.
 		if ( anim != nullptr && step >= 1 && step <= 4 && sim.Tick() % 90 >= 60 )
@@ -1903,7 +1903,7 @@ void TestMelee()
 	std::map<uint32_t, bool> counted;
 	h.RunUntil( 11.0, [&]( double ) {
 		uint32_t attacker = server.PlayerNetId( h.bots[0].client->Slot() );
-		if ( const AnimState* a = server.EntityAnimState( attacker ) )
+		if ( AnimStateCopy a = server.EntityAnimState( attacker ) )
 		{
 			sawReady |= a->stances[full] == ready + 1;
 			sawSwing |= a->stances[full] == swing + 1;

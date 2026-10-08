@@ -12,6 +12,7 @@
 #include "box3d/math_functions.h"
 
 #include <cstdint>
+#include <cstring>
 #include <type_traits>
 
 namespace cb
@@ -150,14 +151,81 @@ struct AnimState
 	// (the spine turns back, so the upper body keeps facing). Zero when walking straight ahead.
 	float legYaw = 0.0f;
 	// Per layer: the stance a mod set (0 = none). A state machine reads them by name ("pistol").
-	uint8_t stances[kMaxAnimLayers] = {};
+	SmallList<uint8_t, 4> stances;
 	// Smoothed ground velocity in the body's frame (m/s): along its facing, and to its right. Blend
 	// spaces of directional clips (strafing) read them.
 	float moveForward = 0.0f;
 	float moveRight = 0.0f;
 	// The state machine's layers.
-	AnimGraphLayerState graph[kMaxAnimLayers] = {};
+	SmallList<AnimGraphLayerState, 4> graph;
+
+	bool operator==( const AnimState& ) const = default;
+
+	size_t Layers() const
+	{
+		return stances.size() > graph.size() ? stances.size() : graph.size();
+	}
 };
+
+// A player has as many layers as the server says (SimConfig::layers), so in a simulation, and
+// wherever it is sent or compared as words, an AnimState is a block of bytes for that many: what
+// comes before the stances, a stance per layer (up to a whole word), the two speeds, then the
+// layers. A whole number of 32-bit words.
+inline constexpr size_t kAnimStateHead = 24;
+
+inline size_t AnimStanceBytes( size_t layers )
+{
+	return ( layers + 3 ) & ~size_t( 3 );
+}
+
+inline size_t AnimStateBytes( size_t layers )
+{
+	return kAnimStateHead + AnimStanceBytes( layers ) + 8 + layers * sizeof( AnimGraphLayerState );
+}
+
+inline void PackAnimState( const AnimState& s, size_t layers, uint8_t* out )
+{
+	std::memset( out, 0, AnimStateBytes( layers ) );
+	out[0] = uint8_t( s.mode );
+	out[1] = s.aiming;
+	out[2] = s.legsBackward;
+	out[3] = s.look;
+	const float head[5] = { s.modeTime, s.groundSpeed, s.aimYaw, s.aimPitch, s.legYaw };
+	std::memcpy( out + 4, head, 20 );
+	s.stances.copy_to( out + kAnimStateHead, layers );
+	uint8_t* rest = out + kAnimStateHead + AnimStanceBytes( layers );
+	std::memcpy( rest, &s.moveForward, 4 );
+	std::memcpy( rest + 4, &s.moveRight, 4 );
+	for ( size_t l = 0; l < layers; ++l )
+	{
+		const AnimGraphLayerState layer = s.graph[l];
+		std::memcpy( rest + 8 + l * sizeof( AnimGraphLayerState ), &layer, sizeof( AnimGraphLayerState ) );
+	}
+}
+
+inline void UnpackAnimState( const uint8_t* in, size_t layers, AnimState& s )
+{
+	s.mode = AnimMode( in[0] );
+	s.aiming = in[1];
+	s.legsBackward = in[2];
+	s.look = in[3];
+	float head[5];
+	std::memcpy( head, in + 4, 20 );
+	s.modeTime = head[0];
+	s.groundSpeed = head[1];
+	s.aimYaw = head[2];
+	s.aimPitch = head[3];
+	s.legYaw = head[4];
+	s.stances.assign( in + kAnimStateHead, layers );
+	const uint8_t* rest = in + kAnimStateHead + AnimStanceBytes( layers );
+	std::memcpy( &s.moveForward, rest, 4 );
+	std::memcpy( &s.moveRight, rest + 4, 4 );
+	s.graph.resize( layers );
+	if ( layers > 0 )
+	{
+		std::memcpy( static_cast<void*>( s.graph.data() ), rest + 8, layers * sizeof( AnimGraphLayerState ) );
+	}
+}
 
 // Values a server mod published about an entity, for presentation to read by name. The schema
 // (which slot is which field, and its type) travels to clients when they join; the simulation only
@@ -298,7 +366,6 @@ CB_CHECK_COMPONENT( PhysicsBody, 16 );
 CB_CHECK_COMPONENT( Character, 52 );
 CB_CHECK_COMPONENT( Prop, 12 );
 CB_CHECK_COMPONENT( AnimGraphLayerState, 40 );
-CB_CHECK_COMPONENT( AnimState, 36 + 40 * kMaxAnimLayers );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( HeldItem, 12 );
 CB_CHECK_COMPONENT( Slots, 4 );

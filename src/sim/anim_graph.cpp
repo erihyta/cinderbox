@@ -710,9 +710,9 @@ std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, cons
 		}
 		else if ( kind == "layer" )
 		{
-			if ( f.size() < 2 || graph->layers.size() >= size_t( kMaxAnimLayers ) )
+			if ( f.size() < 2 || graph->layers.size() >= size_t( kLayerLimit ) )
 			{
-				return fail( "a layer needs a name, and there are at most " + std::to_string( kMaxAnimLayers ) );
+				return fail( "a layer needs a name, and there are at most " + std::to_string( kLayerLimit ) );
 			}
 			AnimGraphLayer layer;
 			layer.name = f[1];
@@ -1076,7 +1076,12 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphP
 					  std::vector<int>& markers )
 {
 	in.state = &s;
-	for ( size_t l = 0; l < character.layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	// (All the layers at once: a layer is held by reference below, and the list must not move.)
+	if ( s.graph.size() < character.layers.size() )
+	{
+		s.graph.resize( character.layers.size() );
+	}
+	for ( size_t l = 0; l < character.layers.size(); ++l )
 	{
 		AnimGraphLayerState& L = s.graph[l];
 		const AnimGraph* owner = nullptr;

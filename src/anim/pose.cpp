@@ -32,7 +32,7 @@ float OnceRatio( float time, float duration )
 std::vector<ActiveClip> ActiveClips( const AnimState& state, const AnimGraph& character, const AnimGraphPacks& packs )
 {
 	std::vector<ActiveClip> out;
-	for ( size_t l = 0; l < character.layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	for ( size_t l = 0; l < character.layers.size(); ++l )
 	{
 		const AnimGraphLayerState& L = state.graph[l];
 		const AnimGraph* owner = nullptr;
@@ -81,11 +81,11 @@ AnimState InterpolateAnimState( const AnimState& from, const AnimState& to, floa
 	s.aimYaw = detmath::WrapAngle( from.aimYaw + detmath::WrapAngle( to.aimYaw - from.aimYaw ) * t );
 	s.aimPitch = from.aimPitch + ( to.aimPitch - from.aimPitch ) * t;
 	s.legYaw = from.legYaw + ( to.legYaw - from.legYaw ) * t;
-	for ( int l = 0; l < kMaxAnimLayers; ++l )
+	for ( size_t l = 0; l < s.graph.size(); ++l )
 	{
 		// A state machine layer: its clocks move on within a state; a switch shows the new state.
-		const AnimGraphLayerState& a = from.graph[l];
-		const AnimGraphLayerState& b = to.graph[l];
+		const AnimGraphLayerState a = from.graph[l];
+		const AnimGraphLayerState b = to.graph[l];
 		AnimGraphLayerState& o = s.graph[l];
 		o.weight = a.weight + ( b.weight - a.weight ) * t;
 		if ( a.started == 0 || a.state != b.state || b.stateTime < a.stateTime )
@@ -235,7 +235,7 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 	const auto& skeleton = m_set.Skeleton();
 	std::vector<ozz::animation::BlendingJob::Layer> layers;
 	float neckKept = 1.0f;
-	for ( size_t l = 0; l < m_graph->layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	for ( size_t l = 0; l < m_graph->layers.size(); ++l )
 	{
 		AnimGraphLayerState L = state.graph[l];
 		// The layer as the simulation plays it: the character's own, or a pack's it was swapped to.

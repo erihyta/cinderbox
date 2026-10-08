@@ -2370,7 +2370,7 @@ void CinderboxClient::LeadLocalPlayer( float delta )
 		}
 		int stance = shown.stance.is_empty() ? -1 : schema.FindStance( ToStd( shown.stance ) );
 		int layer = shown.stanceLayer.is_empty() ? -1 : schema.FindLayer( ToStd( shown.stanceLayer ) );
-		if ( stance >= 0 && layer >= 0 && layer < kMaxAnimLayers && library.graph->UpperLayersRead( AnimExpr::VarKind::Stance, stance + 1 ) )
+		if ( stance >= 0 && layer >= 0 && layer < kLayerLimit && library.graph->UpperLayersRead( AnimExpr::VarKind::Stance, stance + 1 ) )
 		{
 			input.layer = layer;
 			input.stance = uint8_t( stance + 1 );

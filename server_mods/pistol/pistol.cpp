@@ -235,7 +235,7 @@ private:
 		bool holding = gunInHand && c->dead == 0;
 		// The layer is shared with the other gun: swapped for it in one tick, that one's "put away"
 		// may land after this one's "out". What the body says decides, so it is set again.
-		const AnimState* anim = ctx.PlayerAnim( g.slot );
+		const AnimStateCopy anim = ctx.PlayerAnim( g.slot );
 		bool lost = holding && g.aiming && anim != nullptr && m_upper.Valid() &&
 					( anim->aiming == 0 || int( anim->stances[m_upper.index] ) != m_stance.index + 1 );
 		if ( holding != g.aiming || lost )

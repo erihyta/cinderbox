@@ -140,7 +140,7 @@ struct ModSchema
 	// Animation layers and stances, declared by mods: names. A mod sets a stance on a layer; a
 	// character's state machine reads stances by name ("pistol") in its conditions and weights.
 	// AnimState stores their indices.
-	std::vector<std::string> layers; // at most kMaxAnimLayers
+	std::vector<std::string> layers;
 	std::vector<std::string> stances;
 	// The character's state machine (graph.cfg text, sim/anim_graph.h): the baked one of the
 	// server's character, or the placeholder rig's.

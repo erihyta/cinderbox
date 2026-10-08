@@ -249,7 +249,9 @@ struct InputFrame
 // Animation layers per player (a character's state machine has them; mods name the ones they set
 // stances on) and stances (names a state machine's conditions read: "pistol"). A stance index in
 // AnimState is the schema's index + 1; 0 is none.
-inline constexpr int kMaxAnimLayers = 4;
+// How many layers there are is the server's (SimConfig::layers: its character's and its mods');
+// this is only what a layer's number can say in the schema (a byte).
+inline constexpr int kLayerLimit = 255;
 inline constexpr int kMaxStances = 254;
 // A layer's weight eases to where its weight expression says over this long.
 inline constexpr float kStanceFadeSeconds = 0.2f;
@@ -284,6 +286,10 @@ struct SimConfig
 	uint16_t globalFields = 0;
 	// And how many motions its mods' sets have, all together: a player has a slot for each.
 	uint16_t motions = 0;
+	// And how many animation layers a player has: the most its character's state machine or the
+	// mods name.
+	uint8_t layers = 0;
+	uint8_t reserved = 0;
 
 	bool operator==( const SimConfig& ) const = default;
 
