@@ -8,6 +8,9 @@ add_subdirectory(cue)
 add_library(cinderbox_gd SHARED
 	cinderbox_character.cpp
 	cinderbox_client.cpp
+	cinderbox_client_items.cpp
+	cinderbox_client_values.cpp
+	cinderbox_client_world.cpp
 	cinderbox_autobake.cpp
 	cinderbox_track_player.cpp
 	cinderbox_entity_nodes.cpp

@@ -442,7 +442,7 @@ tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, export_client.ps1, bak
 | Items | one body shape per item; two kinds sharing a holster socket overlap |
 | Packs | the checks do not make Godot's or ozz's parsers safe against malformed files |
 | Menu | no server browser; no key rebinding page |
-| Large files | `simulation.cpp` and `cinderbox_client.cpp` are about 2,000 lines each (the mover left the first in M92) |
+| Large files | `simulation.cpp` is about 2,900 lines (the mover left it in M92); `cinderbox_client.cpp` is in four parts since M117, the largest 1,250 |
 
 ## Measurements (Clang Release, 32-thread desktop, everything on one machine)
 
