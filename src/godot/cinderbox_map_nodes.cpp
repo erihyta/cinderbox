@@ -287,6 +287,10 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 			out.kind = ShapeKind::Box;
 			out.halfExtents = ToSim( prop->get_size() * scale * 0.5f );
 		}
+		out.mass = float( prop->get_mass() );
+		out.density = float( prop->get_density() );
+		out.friction = float( prop->get_friction() );
+		out.restitution = float( prop->get_bounce() );
 		ctx.layout.props.push_back( out );
 	}
 	else if ( auto* entity = Object::cast_to<CbEntity>( node ) )

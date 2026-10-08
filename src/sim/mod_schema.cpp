@@ -285,6 +285,8 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		{
 			PutF32( out, v );
 		}
+		PutF32( out, shape.friction );
+		PutF32( out, shape.restitution );
 		for ( float v : shape.turn )
 		{
 			PutF32( out, v );
@@ -442,11 +444,14 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		shape.half = { v[0], v[1], v[2] };
 		shape.center = { v[3], v[4], v[5] };
 		shape.mass = v[6];
+		shape.friction = r.F32();
+		shape.restitution = r.F32();
 		// A body the physics can build: finite, not tiny, not huge.
 		auto sane = []( float f, float lo, float hi ) { return std::isfinite( f ) && f >= lo && f <= hi; };
 		if ( shape.kind > 1 || sane( v[0], 0.005f, 4.0f ) == false || sane( v[1], 0.005f, 4.0f ) == false ||
 			 sane( v[2], 0.005f, 4.0f ) == false || sane( v[3], -4.0f, 4.0f ) == false || sane( v[4], -4.0f, 4.0f ) == false ||
-			 sane( v[5], -4.0f, 4.0f ) == false || sane( v[6], 0.01f, 1000.0f ) == false )
+			 sane( v[5], -4.0f, 4.0f ) == false || sane( v[6], 0.01f, 1000.0f ) == false || sane( shape.friction, 0.0f, 10.0f ) == false ||
+			 sane( shape.restitution, 0.0f, 1.0f ) == false )
 		{
 			return false;
 		}

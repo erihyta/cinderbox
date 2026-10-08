@@ -168,6 +168,10 @@ void QuantizeLayout( LevelLayout& layout )
 	{
 		SnapVec( prop.position, kMapPositionScale );
 		SnapVec( prop.halfExtents, kMapPositionScale );
+		Snap( prop.mass, kMapBodyScale );
+		Snap( prop.density, kMapBodyScale );
+		Snap( prop.friction, kMapBodyScale );
+		Snap( prop.restitution, kMapBodyScale );
 	}
 	SnapVec( layout.spawnCenter, kMapPositionScale );
 	Snap( layout.spawnRadius, kMapPositionScale );
@@ -205,6 +209,10 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 		out.push_back( 0 );
 		AppendPos( out, prop.position );
 		AppendPos( out, prop.halfExtents );
+		for ( float value : { prop.mass, prop.density, prop.friction, prop.restitution } )
+		{
+			AppendI32( out, MapQuantize( value, kMapBodyScale ) );
+		}
 	}
 
 	AppendU32( out, uint32_t( layout.templates.size() ) );
@@ -307,6 +315,16 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 		prop.kind = ShapeKind( kind );
 		prop.position = rd.Pos();
 		prop.halfExtents = rd.Pos();
+		prop.mass = MapDequantize( rd.I32(), kMapBodyScale );
+		prop.density = MapDequantize( rd.I32(), kMapBodyScale );
+		prop.friction = MapDequantize( rd.I32(), kMapBodyScale );
+		prop.restitution = MapDequantize( rd.I32(), kMapBodyScale );
+		if ( prop.mass < 0.0f || prop.mass > 100000.0f || prop.density < 0.001f || prop.density > 100000.0f || prop.friction < 0.0f ||
+			 prop.friction > 10.0f || prop.restitution < 0.0f || prop.restitution > 1.0f )
+		{
+			error = "a prop's body is out of range";
+			return false;
+		}
 		layout.props.push_back( prop );
 	}
 

@@ -102,6 +102,9 @@ struct ItemShape
 	Float3 half = { 0.05f, 0.05f, 0.15f };
 	Float3 center = { 0.0f, 0.0f, -0.15f };
 	float mass = 1.0f;
+	// How it grips and how it bounces while it lies in the world, as for any body.
+	float friction = 0.6f;
+	float restitution = 0.0f;
 	// How the body is turned in the item's frame (x y z w): the item is carried as its scene's
 	// carrying grip says, and its body lies as the scene has it, whichever way that grip is turned.
 	float turn[4] = { 0.0f, 0.0f, 0.0f, 1.0f };

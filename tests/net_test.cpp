@@ -1186,6 +1186,11 @@ void TestItemShapes()
 	CHECK( ParseItemShape( "# baked\nshape box\nhalf 0.035 0.035 0.41\ncenter 0 0 -0.31\nmass 1.1\n", shape, error ) );
 	CHECK( shape.kind == 0 && shape.half.z == 0.41f && shape.center.z == -0.31f && shape.mass == 1.1f );
 	CHECK( ParseItemShape( "shape sphere\r\nhalf 0.2 0.2 0.2\r\n", shape, error ) && shape.kind == 1 && shape.mass == 1.0f );
+	CHECK( shape.friction == 0.6f && shape.restitution == 0.0f ); // the usual, when the file does not say
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nfriction 0.05\nbounce 0.7\n", shape, error ) && shape.friction == 0.05f &&
+		   shape.restitution == 0.7f );
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nbounce 1.5\n", shape, error ) == false );
+	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nfriction -1\n", shape, error ) == false );
 	CHECK( ParseItemShape( "shape capsule\nhalf 0.1 0.1 0.1\n", shape, error ) == false && error.empty() == false );
 	CHECK( ParseItemShape( "shape box\n", shape, error ) == false );				   // no size
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1\n", shape, error ) == false );	   // two numbers
