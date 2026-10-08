@@ -1,5 +1,7 @@
 #include "anim_lead.h"
 
+#include <utility>
+
 #include "events.h"
 
 #include <algorithm>
@@ -31,7 +33,7 @@ AnimState LeadAnimState( const AnimState& shown, const AnimGraph& graph, const A
 	for ( const AnimLead::Input& input : lead.inputs )
 	{
 		ownTick |= input.event >= 0;
-		ownTick |= input.layer >= 0 && input.layer < kMaxAnimLayers && shown.stances[input.layer] != input.stance;
+		ownTick |= input.layer >= 0 && input.layer < kLayerLimit && shown.stances[input.layer] != input.stance;
 	}
 	ticks += ownTick ? 1 : 0;
 	if ( ticks == 0 )
@@ -52,8 +54,8 @@ AnimState LeadAnimState( const AnimState& shown, const AnimGraph& graph, const A
 	in.builtins[AnimExpr::Backward] = shown.legsBackward != 0 ? 1.0f : 0.0f;
 	in.builtins[AnimExpr::MoveForward] = shown.moveForward;
 	in.builtins[AnimExpr::MoveRight] = shown.moveRight;
-	in.board = lead.board.values;
-	in.globalBoard = lead.globalBoard;
+	in.board = &lead.board.values;
+	in.globalBoard = &lead.globalBoard;
 	in.netId = lead.netId;
 	in.heldKinds = lead.heldKinds.data();
 	in.heldCount = uint32_t( lead.heldKinds.size() );
@@ -66,10 +68,7 @@ AnimState LeadAnimState( const AnimState& shown, const AnimGraph& graph, const A
 		// This tick is `ago` seconds before now; a press is in it, or before it, or still to come.
 		float ago = float( ticks - i ) * dt;
 		uint32_t eventCount = 0;
-		for ( int l = 0; l < kMaxAnimLayers; ++l )
-		{
-			s.stances[l] = shown.stances[l];
-		}
+		s.stances = shown.stances;
 		for ( const AnimLead::Input& input : lead.inputs )
 		{
 			// A press older than the lead counts from the first tick.
@@ -78,7 +77,7 @@ AnimState LeadAnimState( const AnimState& shown, const AnimGraph& graph, const A
 			{
 				continue; // not pressed yet at this tick
 			}
-			if ( input.layer >= 0 && input.layer < kMaxAnimLayers )
+			if ( input.layer >= 0 && input.layer < kLayerLimit )
 			{
 				s.stances[input.layer] = input.stance;
 			}
@@ -100,9 +99,9 @@ AnimState LeadAnimState( const AnimState& shown, const AnimGraph& graph, const A
 	}
 
 	AnimState out = shown;
-	for ( size_t l = 1; l < graph.layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	for ( size_t l = 1; l < graph.layers.size(); ++l )
 	{
-		out.graph[l] = s.graph[l];
+		out.graph[l] = std::as_const( s ).graph[l];
 	}
 	return out;
 }

@@ -47,6 +47,43 @@ struct Snapshot
 };
 
 // Singleton sim state that is not a component.
+// A player's animation state, copied out of a simulation (where it is a packed block): used like
+// a pointer that may be null.
+class AnimStateCopy
+{
+public:
+	AnimStateCopy() = default;
+	explicit AnimStateCopy( const AnimState& state )
+		: m_has( true )
+		, m_state( state )
+	{
+	}
+	const AnimState* operator->() const
+	{
+		return &m_state;
+	}
+	const AnimState& operator*() const
+	{
+		return m_state;
+	}
+	explicit operator bool() const
+	{
+		return m_has;
+	}
+	bool operator==( std::nullptr_t ) const
+	{
+		return m_has == false;
+	}
+	const AnimState* get() const
+	{
+		return m_has ? &m_state : nullptr;
+	}
+
+private:
+	bool m_has = false;
+	AnimState m_state;
+};
+
 // Hashed as raw bytes, so it must stay free of padding.
 struct SimGlobals
 {
@@ -61,12 +98,10 @@ struct SimGlobals
 	uint32_t modEventCount = 0;
 	ImpactRecord impacts[kImpactHistory] = {};
 	ModEventRecord modEvents[kModEventHistory] = {};
-	// The global blackboard: values a mod publishes about the whole game (a round timer, a score).
-	int32_t board[kBoardSlots] = {};
 };
 
 static_assert( sizeof( SimGlobals ) == 16 + 4 * kMaxPlayers + 8 + kImpactHistory * sizeof( ImpactRecord ) +
-											 kModEventHistory * sizeof( ModEventRecord ) + 4 * kBoardSlots,
+											 kModEventHistory * sizeof( ModEventRecord ),
 			   "SimGlobals has padding: it is hashed as raw bytes" );
 
 // What a ray hit, for server mods (hitscan weapons, line of sight).
@@ -154,16 +189,30 @@ public:
 	// What a probe of the entity's motions holds on to, if one is out: where the line's end is now
 	// (flying toward where it will hold, or holding), whether it holds, and the motion that threw
 	// it. False when it has none.
-	bool EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint8_t& motion ) const;
+	bool EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint16_t& motion ) const;
 	const Transform* EntityTransform( uint32_t netId ) const;
 	// A player's animation state, or null.
-	const AnimState* EntityAnimState( uint32_t netId ) const;
+	AnimStateCopy EntityAnimState( uint32_t netId ) const;
+	bool HasAnimState( flecs::entity e ) const;
+	AnimState GetAnimState( flecs::entity e ) const;
 	// The entity's board value, or 0 when it has none.
 	int32_t BoardValue( uint32_t netId, int slot ) const;
 	int32_t GlobalBoardValue( int slot ) const
 	{
-		return slot >= 0 && slot < kBoardSlots ? m_globals.board[slot] : 0;
+		return slot >= 0 ? m_globalBoard[size_t( slot )] : 0;
 	}
+	// The global board: values a mod publishes about the whole game (a round timer, a score). As
+	// many as the config says (SimConfig::globalFields).
+	const BoardValues& GlobalBoard() const
+	{
+		return m_globalBoard;
+	}
+	// An entity's board: all 0 when it has none.
+	bool HasBoard( flecs::entity e ) const;
+	Blackboard GetBoard( flecs::entity e ) const;
+	// A player's motions: where each is (all never used when it has none).
+	bool HasMotionState( flecs::entity e ) const;
+	MotionState GetMotionState( flecs::entity e ) const;
 	// The closest thing a ray from `origin` along `translation` hits, skipping entity `ignoreNetId`
 	// and disabled bodies (and every player's capsule with `skipPlayers`). Returns false when it hits
 	// nothing.
@@ -214,10 +263,9 @@ public:
 	}
 	// The motions the server's mods provide (sim/motions.h), compiled from the schema: run for every
 	// player, every tick, before the mover. Null: none.
-	void SetMotions( std::shared_ptr<const Motions> motions )
-	{
-		m_motions = std::move( motions );
-	}
+	// (More of them than the config has slots for are not run at all: the config was not made for
+	// this schema.)
+	void SetMotions( std::shared_ptr<const Motions> motions );
 	const std::vector<std::shared_ptr<const AnimGraph>>& Packs() const
 	{
 		return m_animPacks;
@@ -324,6 +372,16 @@ private:
 	b3WorldId m_physicsWorld = {};
 
 	std::vector<SnapComponent> m_snapComponents;
+	// State whose size the server's mods decide is kept in components that get their size when
+	// the world is made (a block of bytes each; 0 bytes: no entity ever has it).
+	flecs::entity_t RegisterSizedComponent( const char* name, uint32_t size );
+	void SetBoard( flecs::entity e, const Blackboard& board );
+	flecs::entity_t m_boardId = 0;
+	void SetMotionState( flecs::entity e, const MotionState& state );
+	flecs::entity_t m_motionId = 0;
+	void SetAnimState( flecs::entity e, const AnimState& state );
+	flecs::entity_t m_animId = 0;
+	BoardValues m_globalBoard;
 	std::vector<EntityRef> m_entities; // sorted by netId
 
 	// Rebuilds m_shapeLookup (shape index -> NetId) for every shape in the world.
@@ -335,6 +393,7 @@ private:
 	// Per-step scratch, never part of the state.
 	std::vector<EntityRef> m_scratch;
 	std::vector<uint8_t> m_hashScratch;
+	std::vector<uint8_t> m_sizedScratch;
 	// Shape index -> NetId, rebuilt only when a shape has to be named (impacts, ray casts).
 	std::vector<std::pair<uint32_t, uint32_t>> m_shapeLookup;
 	std::vector<ImpactRecord> m_impactScratch;

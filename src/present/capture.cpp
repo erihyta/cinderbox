@@ -21,7 +21,7 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 	out.impacts.assign( globals.impacts, globals.impacts + kImpactHistory );
 	out.modEventCount = globals.modEventCount;
 	out.modEvents.assign( globals.modEvents, globals.modEvents + kModEventHistory );
-	std::copy( globals.board, globals.board + kBoardSlots, out.board );
+	out.board = sim.GlobalBoard();
 	out.entities.clear();
 	out.entities.reserve( sim.Entities().size() );
 	out.ragdolls.clear();
@@ -46,9 +46,9 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.transform = RagdollFrame( pose.part[ragdoll::Pelvis], r->yaw );
 			f.velocity = pose.linear[ragdoll::Pelvis];
 			f.ragdoll = uint32_t( out.ragdolls.size() );
-			if ( const Blackboard* b = e.try_get<Blackboard>() )
+			if ( sim.HasBoard( e ) )
 			{
-				f.board = *b;
+				f.board = sim.GetBoard( e );
 				f.hasBoard = true;
 			}
 			out.ragdolls.push_back( fr );
@@ -76,9 +76,9 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.socket = item->socket;
 			f.stowed = item->stowed != 0;
 			f.slotIndex = item->slot;
-			if ( const Blackboard* b = e.try_get<Blackboard>() )
+			if ( sim.HasBoard( e ) )
 			{
-				f.board = *b;
+				f.board = sim.GetBoard( e );
 				f.hasBoard = true;
 			}
 			out.entities.push_back( f );
@@ -124,18 +124,18 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 				f.slotCount = slots->count;
 			}
 		}
-		if ( const Blackboard* b = e.try_get<Blackboard>() )
+		if ( sim.HasBoard( e ) )
 		{
-			f.board = *b;
+			f.board = sim.GetBoard( e );
 			f.hasBoard = true;
 		}
 		if ( const Velocity* v = e.try_get<Velocity>() )
 		{
 			f.velocity = v->linear;
 		}
-		if ( const AnimState* a = e.try_get<AnimState>() )
+		if ( sim.HasAnimState( e ) )
 		{
-			f.anim = *a;
+			f.anim = sim.GetAnimState( e );
 			f.hasAnim = true;
 		}
 		out.entities.push_back( f );

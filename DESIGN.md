@@ -121,7 +121,7 @@ event per occurrence and a rollback un-counts what did not happen.
 
 ### The board
 
-Mods publish values by name. A `Blackboard` (32 int slots per entity) and a global board are
+Mods publish values by name. A `Blackboard` (an int per field the mods declared, per entity) and a global board are
 hashed state written by `Set` commands; the **schema** (field names and types, event, action,
 layer, stance and item kind names, the character's state machine, the items players need) goes
 out in the welcome and in replay headers. The schema is not hashed: different mods on the same
@@ -154,7 +154,7 @@ Authoritative server, client rollback (`src/net`, `src/client`).
 - Frames encode a mask of players whose input changed, then only the changed fields; commands carry a field mask.
 - ENet's throttle is off (it dropped unreliable packets after large reliable transfers, which stalled clients).
 - **Replays** (`cb_server --record`): every authoritative frame plus checksums; `cb_replay verify` re-simulates headlessly.
-- Protocol 29, replay version 12 (`src/net/protocol.h`, `replay.cpp`).
+- Protocol 34, replay version 17 (`src/net/protocol.h`, `replay.cpp`).
 
 ## The viewer protocol
 

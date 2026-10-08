@@ -9,7 +9,7 @@ namespace cb::net
 namespace
 {
 constexpr uint32_t kMagic = 0x50524243u; // "CBRP"
-constexpr uint32_t kVersion = 16; // 16: how an item kind is used, 15: slots (the input's intent, an item's slot), 14: (unused), 13: mass, motion effects, 12: one more movement parameter, 11: tethers, 10: two more movement parameters, 9: motion sets in the schema, 8: movement parameters in the config, 7: an item body's turn, 6: grips in the schema, 2: per-field input encoding, 3: baked map, 4: commands and mod schema, 5: one animation system
+constexpr uint32_t kVersion = 17; // 17: state sized by the mods (the config says how many fields), 16: how an item kind is used, 15: slots (the input's intent, an item's slot), 14: (unused), 13: mass, motion effects, 12: one more movement parameter, 11: tethers, 10: two more movement parameters, 9: motion sets in the schema, 8: movement parameters in the config, 7: an item body's turn, 6: grips in the schema, 2: per-field input encoding, 3: baked map, 4: commands and mod schema, 5: one animation system
 constexpr uint8_t kRecordFrame = 1;
 constexpr uint8_t kRecordChecksum = 2;
 } // namespace

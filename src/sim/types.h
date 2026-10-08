@@ -44,9 +44,24 @@ enum class SlotIntent : uint8_t
 };
 inline constexpr uint8_t kLastSlotIntent = uint8_t( SlotIntent::Drop );
 
-// Mod actions per player. The server tells clients which bit is which (and the default key for
-// it) when they join; the simulation never looks at them.
-inline constexpr int kMaxActions = 16;
+// Mod actions per player: a bit each in the input, held or not. The server tells clients which
+// bit is which (and the default key for it) when they join. An input is a record of one size,
+// copied for every player every tick, so the bits are a word of 64; what is sent is only the
+// bytes of it that are in use (ActionByteCount).
+using ActionBits = uint64_t;
+inline constexpr int kMaxActions = 64;
+
+// How many of an action word's bytes are not zero at the top: what a packet carries of it.
+inline int ActionByteCount( ActionBits actions )
+{
+	int bytes = 0;
+	while ( actions != 0 )
+	{
+		++bytes;
+		actions >>= 8;
+	}
+	return bytes;
+}
 
 // Camera pitch is limited to just short of straight up or down (full turn = 65536).
 inline constexpr int16_t kMaxCameraPitch = 16000;
@@ -77,17 +92,18 @@ struct PlayerInput
 	int8_t moveForward = 0;	 // [-127, 127]
 	uint16_t cameraYaw = 0;	 // full turn = 65536, 0 looks down +Z
 	int16_t cameraPitch = 0; // full turn = 65536, positive looks up, within +/- kMaxCameraPitch
-	uint16_t actions = 0;	 // mod action bits (held state)
 	uint8_t buttons = 0;	 // InputButton bits (held state; the sim detects edges)
 	uint8_t view = 0;		 // ViewMode
+	ActionBits actions = 0;	 // mod action bits (held state)
 	uint8_t intent = 0;		 // SlotIntent, carried out when intentSeq changes
 	uint8_t intentA = 0;
 	uint8_t intentB = 0;
 	uint8_t intentSeq = 0;	 // counts the player's intents (it wraps)
+	uint8_t reserved[4] = {};
 
 	bool operator==( const PlayerInput& ) const = default;
 };
-static_assert( sizeof( PlayerInput ) == 14, "PlayerInput has padding" );
+static_assert( sizeof( PlayerInput ) == 24, "PlayerInput has padding" );
 
 enum class PlayerEventType : uint8_t
 {
@@ -204,10 +220,12 @@ inline constexpr uint32_t ItemTarget( PlayerSlot slot, uint32_t socket )
 inline constexpr uint32_t kSocketRightHand = 0;
 inline constexpr uint32_t kSocketLeftHand = 1;
 
-// Per-entity and global board sizes (see Blackboard in components.h): how many field names all the
-// mods of a server can declare per scope. Part of the snapshot layout: changing it changes every
-// state hash (tests/reference_hashes.txt) and the protocol version.
-inline constexpr int kBoardSlots = 32;
+// How many fields a scope has (an entity's board, the game's, a player's private one) is what the
+// server's mods declared: SimConfig::fields and globalFields. This is only what a field's number
+// can say in a command and in the schema (16 bits).
+inline constexpr int kFieldLimit = 65535;
+// Likewise for motions (SimConfig::motions): what a motion's number can say where it is kept.
+inline constexpr int kMotionLimit = 65535;
 // Most commands one frame can carry.
 inline constexpr size_t kMaxCommandsPerFrame = 1024;
 
@@ -247,7 +265,9 @@ struct InputFrame
 // Animation layers per player (a character's state machine has them; mods name the ones they set
 // stances on) and stances (names a state machine's conditions read: "pistol"). A stance index in
 // AnimState is the schema's index + 1; 0 is none.
-inline constexpr int kMaxAnimLayers = 4;
+// How many layers there are is the server's (SimConfig::layers: its character's and its mods');
+// this is only what a layer's number can say in the schema (a byte).
+inline constexpr int kLayerLimit = 255;
 inline constexpr int kMaxStances = 254;
 // A layer's weight eases to where its weight expression says over this long.
 inline constexpr float kStanceFadeSeconds = 0.2f;
@@ -274,6 +294,18 @@ struct SimConfig
 	// socket (schema order) the selected slot's item is held in.
 	uint8_t slots = 0;
 	uint8_t slotHand = 0;
+
+	// How much state the server's mods asked for: the fields an entity's board has and the game's
+	// (the schema's, per scope). Every simulation of a session sizes its state by these, so they
+	// are part of what a snapshot and a state hash are.
+	uint16_t fields = 0;
+	uint16_t globalFields = 0;
+	// And how many motions its mods' sets have, all together: a player has a slot for each.
+	uint16_t motions = 0;
+	// And how many animation layers a player has: the most its character's state machine or the
+	// mods name.
+	uint8_t layers = 0;
+	uint8_t reserved = 0;
 
 	bool operator==( const SimConfig& ) const = default;
 

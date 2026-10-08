@@ -42,29 +42,29 @@ struct FieldValue
 	}
 };
 
-// `board` may be null (the entity has published nothing), `globals` holds kBoardSlots values.
+// `board` may be null (the entity has published nothing), and `globals` (the game's board) too.
 // `privates`: the private fields of the entity when it is the viewer's own player (null for anyone
 // else: a private field of someone else reads as 0, because the viewer was never sent it).
-FieldValue ReadField( const ModSchema& schema, const std::string& name, const Blackboard* board, const int32_t* globals,
+FieldValue ReadField( const ModSchema& schema, const std::string& name, const Blackboard* board, const BoardValues* globals,
 					  const Blackboard* privates = nullptr );
 
 // Names the caller knows that are not board fields ("event.value"): true with the value when known.
 using ExtraFields = std::function<bool( const std::string& name, float& value )>;
 
-bool CheckCondition( const ModSchema& schema, const std::string& condition, const Blackboard* board, const int32_t* globals,
+bool CheckCondition( const ModSchema& schema, const std::string& condition, const Blackboard* board, const BoardValues* globals,
 					 const ExtraFields* extra = nullptr, const Blackboard* privates = nullptr );
 // The value of an expression over the same names ("combat.health * 100 / combat.max_health");
 // false when it does not parse.
-bool EvaluateFields( const ModSchema& schema, const std::string& expression, const Blackboard* board, const int32_t* globals, float& out,
+bool EvaluateFields( const ModSchema& schema, const std::string& expression, const Blackboard* board, const BoardValues* globals, float& out,
 					 const ExtraFields* extra = nullptr, const Blackboard* privates = nullptr );
 // True when every condition holds (and when there are none).
 bool CheckConditions( const ModSchema& schema, const std::vector<std::string>& conditions, const Blackboard* board,
-					  const int32_t* globals, const Blackboard* privates = nullptr );
+					  const BoardValues* globals, const Blackboard* privates = nullptr );
 
 // Replaces every {name} in `format` with the field's value: integers as integers, floats with one
 // decimal, booleans as "yes" / "no". {an expression} is replaced with its value. "{{" is a literal
 // brace.
-std::string FormatFields( const ModSchema& schema, const std::string& format, const Blackboard* board, const int32_t* globals,
+std::string FormatFields( const ModSchema& schema, const std::string& format, const Blackboard* board, const BoardValues* globals,
 						  const Blackboard* privates = nullptr );
 
 } // namespace cb::present

@@ -13,7 +13,7 @@ namespace cb::present
 namespace
 {
 constexpr char kMagic[4] = { 'C', 'B', 'V', 'F' };
-constexpr uint32_t kVersion = 5; // 5: slots in an entity's record; 4: links in an entity's record
+constexpr uint32_t kVersion = 6; // 6: boards as long as the server's fields; 5: slots in an entity's record; 4: links in an entity's record
 constexpr uint64_t kKeyInterval = 300;
 constexpr size_t kHeaderSize = 8;
 constexpr size_t kRecordHeaderSize = 5;
@@ -166,7 +166,7 @@ bool ViewFileSource::DecodeTo( size_t target, bool fromKey )
 		int slot = FollowedSlot();
 		if ( fromKey == false && slot >= 0 && m_current.frame.hasInputs && m_scratch.frame.hasInputs )
 		{
-			m_pressed |= uint16_t( m_current.frame.inputs[slot].actions & ~m_scratch.frame.inputs[slot].actions );
+			m_pressed |= m_current.frame.inputs[slot].actions & ~m_scratch.frame.inputs[slot].actions;
 		}
 	}
 	return true;

@@ -5,12 +5,14 @@
 // - no implicit padding (padding bytes are not guaranteed to be copied, which would corrupt the hash).
 // Every component must be registered in Simulation::RegisterComponents().
 
+#include "small_list.h"
 #include "types.h"
 
 #include "box3d/id.h"
 #include "box3d/math_functions.h"
 
 #include <cstdint>
+#include <cstring>
 #include <type_traits>
 
 namespace cb
@@ -149,21 +151,96 @@ struct AnimState
 	// (the spine turns back, so the upper body keeps facing). Zero when walking straight ahead.
 	float legYaw = 0.0f;
 	// Per layer: the stance a mod set (0 = none). A state machine reads them by name ("pistol").
-	uint8_t stances[kMaxAnimLayers] = {};
+	SmallList<uint8_t, 4> stances;
 	// Smoothed ground velocity in the body's frame (m/s): along its facing, and to its right. Blend
 	// spaces of directional clips (strafing) read them.
 	float moveForward = 0.0f;
 	float moveRight = 0.0f;
 	// The state machine's layers.
-	AnimGraphLayerState graph[kMaxAnimLayers] = {};
+	SmallList<AnimGraphLayerState, 4> graph;
+
+	bool operator==( const AnimState& ) const = default;
+
+	size_t Layers() const
+	{
+		return stances.size() > graph.size() ? stances.size() : graph.size();
+	}
 };
+
+// A player has as many layers as the server says (SimConfig::layers), so in a simulation, and
+// wherever it is sent or compared as words, an AnimState is a block of bytes for that many: what
+// comes before the stances, a stance per layer (up to a whole word), the two speeds, then the
+// layers. A whole number of 32-bit words.
+inline constexpr size_t kAnimStateHead = 24;
+
+inline size_t AnimStanceBytes( size_t layers )
+{
+	return ( layers + 3 ) & ~size_t( 3 );
+}
+
+inline size_t AnimStateBytes( size_t layers )
+{
+	return kAnimStateHead + AnimStanceBytes( layers ) + 8 + layers * sizeof( AnimGraphLayerState );
+}
+
+inline void PackAnimState( const AnimState& s, size_t layers, uint8_t* out )
+{
+	std::memset( out, 0, AnimStateBytes( layers ) );
+	out[0] = uint8_t( s.mode );
+	out[1] = s.aiming;
+	out[2] = s.legsBackward;
+	out[3] = s.look;
+	const float head[5] = { s.modeTime, s.groundSpeed, s.aimYaw, s.aimPitch, s.legYaw };
+	std::memcpy( out + 4, head, 20 );
+	s.stances.copy_to( out + kAnimStateHead, layers );
+	uint8_t* rest = out + kAnimStateHead + AnimStanceBytes( layers );
+	std::memcpy( rest, &s.moveForward, 4 );
+	std::memcpy( rest + 4, &s.moveRight, 4 );
+	for ( size_t l = 0; l < layers; ++l )
+	{
+		const AnimGraphLayerState layer = s.graph[l];
+		std::memcpy( rest + 8 + l * sizeof( AnimGraphLayerState ), &layer, sizeof( AnimGraphLayerState ) );
+	}
+}
+
+inline void UnpackAnimState( const uint8_t* in, size_t layers, AnimState& s )
+{
+	s.mode = AnimMode( in[0] );
+	s.aiming = in[1];
+	s.legsBackward = in[2];
+	s.look = in[3];
+	float head[5];
+	std::memcpy( head, in + 4, 20 );
+	s.modeTime = head[0];
+	s.groundSpeed = head[1];
+	s.aimYaw = head[2];
+	s.aimPitch = head[3];
+	s.legYaw = head[4];
+	s.stances.assign( in + kAnimStateHead, layers );
+	const uint8_t* rest = in + kAnimStateHead + AnimStanceBytes( layers );
+	std::memcpy( &s.moveForward, rest, 4 );
+	std::memcpy( &s.moveRight, rest + 4, 4 );
+	s.graph.resize( layers );
+	if ( layers > 0 )
+	{
+		std::memcpy( static_cast<void*>( s.graph.data() ), rest + 8, layers * sizeof( AnimGraphLayerState ) );
+	}
+}
 
 // Values a server mod published about an entity, for presentation to read by name. The schema
 // (which slot is which field, and its type) travels to clients when they join; the simulation only
 // stores what SetField commands write. Floats are stored as their bits.
+//
+// As many values as the server's mods declared fields (SimConfig::fields): in a simulation an
+// entity's board is a block of that size (Simulation::GetBoard / SetBoard), and this is the value
+// everything else passes around. A slot nobody wrote reads 0.
+using BoardValues = SmallList<int32_t, 32>;
+
 struct Blackboard
 {
-	int32_t values[kBoardSlots] = {};
+	BoardValues values;
+
+	bool operator==( const Blackboard& ) const = default;
 };
 
 // A ragdoll left behind by a Kill command. One entity holds every body part: the bodies live in
@@ -202,8 +279,9 @@ struct MoveOverrides
 };
 
 // Where a player's motions are (sim/motions.h): a slot per motion of the server, in the schema's
-// order. Players have it only on a server whose mods provide motions.
-inline constexpr int kMaxMotions = 16;
+// order. Players have it only on a server whose mods provide motions. As many slots as the
+// server has motions (SimConfig::motions): in a simulation it is a block of that size
+// (Simulation::GetMotionState / SetMotionState), and this is the value that is passed around.
 
 struct MotionSlot
 {
@@ -215,9 +293,8 @@ struct MotionSlot
 
 struct MotionState
 {
-	uint16_t prevActions = 0; // the mod actions held last tick: a press is one that was not
-	uint16_t reserved = 0;
-	MotionSlot slots[kMaxMotions] = {};
+	ActionBits prevActions = 0; // the mod actions held last tick: a press is one that was not
+	SmallList<MotionSlot, 16> slots;
 };
 
 // What a motion's probe holds on to (sim/motions.h): a line the motion threw at what the player
@@ -230,9 +307,9 @@ struct MotionHold
 	float length = 0.0f;	// a link's rope, in metres; 0: not measured yet (or no link)
 	uint32_t startTick = 0; // when it was thrown
 	uint32_t holdTick = 0;	// when it reaches the point and takes hold (it flies until then)
-	uint8_t motion = 0;		// the motion it belongs to
+	uint16_t motion = 0;	// the motion it belongs to
 	uint8_t on = 0;
-	uint8_t reserved[2] = {};
+	uint8_t reserved = 0;
 };
 
 // Tag: part of the static level.
@@ -288,16 +365,14 @@ CB_CHECK_COMPONENT( PhysicsBody, 16 );
 CB_CHECK_COMPONENT( Character, 52 );
 CB_CHECK_COMPONENT( Prop, 12 );
 CB_CHECK_COMPONENT( AnimGraphLayerState, 40 );
-CB_CHECK_COMPONENT( AnimState, 36 + 40 * kMaxAnimLayers );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( HeldItem, 12 );
 CB_CHECK_COMPONENT( Slots, 4 );
-CB_CHECK_COMPONENT( Blackboard, 4 * kBoardSlots );
 CB_CHECK_COMPONENT( Ragdoll, 20 );
 CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );
 CB_CHECK_COMPONENT( RagdollPose, 40 * kRagdollParts );
 CB_CHECK_COMPONENT( MoveOverrides, 4 + 4 * kMoveParams );
-CB_CHECK_COMPONENT( MotionState, 4 + 16 * kMaxMotions );
+CB_CHECK_COMPONENT( MotionSlot, 16 );
 CB_CHECK_COMPONENT( MotionHold, 32 );
 
 #undef CB_CHECK_COMPONENT

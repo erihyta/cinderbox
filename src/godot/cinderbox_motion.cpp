@@ -712,9 +712,9 @@ std::string CbMotionSet::Bake( String& error ) const
 		text += lines;
 		count += 1;
 	}
-	if ( count > kMaxMotions )
+	if ( count > kMotionLimit )
 	{
-		error = vformat( "%d motions: a server runs at most %d, all its mods' sets together", count, kMaxMotions );
+		error = vformat( "%d motions: a server runs at most %d, all its mods' sets together", count, kMotionLimit );
 		return std::string();
 	}
 	return text;

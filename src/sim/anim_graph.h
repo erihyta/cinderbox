@@ -107,7 +107,7 @@ struct AnimExpr
 		Op op = Op::Const;
 		VarKind kind = VarKind::Zero;
 		BoardType type = BoardType::Int;
-		uint8_t index = 0;
+		uint16_t index = 0;
 		float value = 0.0f;
 	};
 	std::vector<Step> steps; // empty: always true (conditions) or 0 (inputs)
@@ -181,7 +181,7 @@ struct AnimGraphLayer
 struct AnimGraph
 {
 	std::vector<AnimGraphClip> clips;
-	std::vector<AnimGraphLayer> layers; // at most kMaxAnimLayers
+	std::vector<AnimGraphLayer> layers;
 	std::string text;					// what it was compiled from
 
 	int FindClip( const std::string& name ) const;
@@ -219,8 +219,8 @@ struct AnimGraphInputs
 {
 	float builtins[AnimExpr::BuiltinCount] = {};
 	const AnimState* state = nullptr;
-	const int32_t* board = nullptr;		  // the player's (null: all 0)
-	const int32_t* globalBoard = nullptr; // SimGlobals::board
+	const BoardValues* board = nullptr;		  // the player's (null: all 0)
+	const BoardValues* globalBoard = nullptr; // the game's
 	const ModEventRecord* events = nullptr;
 	uint32_t eventCount = 0; // SimGlobals::modEventCount
 	uint32_t tick = 0;
@@ -229,7 +229,7 @@ struct AnimGraphInputs
 	// The player's input this tick, for "held.<action>" (motions; null for a state machine).
 	const PlayerInput* input = nullptr;
 	// What went down this tick, for "pressed.<action>": mod action bits, and the engine's buttons.
-	uint16_t pressedActions = 0;
+	ActionBits pressedActions = 0;
 	uint8_t pressedButtons = 0;
 	const uint16_t* heldKinds = nullptr;
 	uint32_t heldCount = 0;

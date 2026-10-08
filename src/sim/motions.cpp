@@ -52,7 +52,7 @@ uint32_t Ticks( float seconds, uint32_t tickRate )
 	return uint32_t( seconds * float( tickRate ) + 0.5f );
 }
 
-bool Pressed( const Motion& m, const MotionInputs& in, uint16_t previousActions )
+bool Pressed( const Motion& m, const MotionInputs& in, ActionBits previousActions )
 {
 	if ( m.action == kMotionActionJump )
 	{
@@ -66,7 +66,7 @@ bool Pressed( const Motion& m, const MotionInputs& in, uint16_t previousActions 
 	{
 		return false;
 	}
-	uint16_t bit = uint16_t( 1u << m.action );
+	ActionBits bit = ActionBits( 1 ) << m.action;
 	return ( in.input->actions & bit ) != 0 && ( previousActions & bit ) == 0;
 }
 
@@ -514,11 +514,11 @@ std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::str
 			warnings += error + "; ";
 		}
 	}
-	if ( motions->list.size() > size_t( kMaxMotions ) )
+	if ( motions->list.size() > size_t( kMotionLimit ) )
 	{
-		warnings += "more than " + std::to_string( kMaxMotions ) + " motions: " + motions->list[size_t( kMaxMotions )].name +
+		warnings += "more than " + std::to_string( kMotionLimit ) + " motions: " + motions->list[size_t( kMotionLimit )].name +
 					" and the ones after it are left out; ";
-		motions->list.resize( size_t( kMaxMotions ) );
+		motions->list.resize( size_t( kMotionLimit ) );
 	}
 	if ( motions->list.empty() )
 	{
@@ -532,7 +532,7 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 {
 	const uint32_t now = in.tick + 1; // 0 in a slot means "never"
 	const float dt = 1.0f / float( in.tickRate );
-	for ( size_t i = 0; i < motions.list.size() && i < size_t( kMaxMotions ); ++i )
+	for ( size_t i = 0; i < motions.list.size(); ++i )
 	{
 		const Motion& m = motions.list[i];
 		MotionSlot& slot = state.slots[i];
@@ -650,9 +650,9 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 
 void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32_t tick, MoveParams& params )
 {
-	for ( size_t i = 0; i < motions.list.size() && i < size_t( kMaxMotions ); ++i )
+	for ( size_t i = 0; i < motions.list.size(); ++i )
 	{
-		const MotionSlot& slot = state.slots[i];
+		const MotionSlot slot = state.slots[i];
 		if ( slot.lastTick != 0 && slot.sinceTick <= tick && tick < slot.untilTick )
 		{
 			for ( const Motion::Param& p : motions.list[i].params )

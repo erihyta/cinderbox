@@ -58,7 +58,7 @@ struct FrameEntity
 	// toward where it will hold, or holding), whether it holds, and the motion that threw it.
 	bool linked = false;
 	bool linkHolds = false;
-	uint8_t linkMotion = 0;
+	uint16_t linkMotion = 0;
 	b3Vec3 linkEnd = {};
 };
 
@@ -88,7 +88,7 @@ struct PresentationFrame
 	std::vector<ModEventRecord> modEvents;
 	std::vector<FrameRagdoll> ragdolls;
 	// The global board.
-	int32_t board[kBoardSlots] = {};
+	BoardValues board;
 	// Inputs of the last simulated tick (predicted for other players), when the caller has them:
 	// presentation aims arms from them.
 	bool hasInputs = false;

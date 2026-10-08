@@ -75,6 +75,11 @@ SimConfig TestConfig()
 {
 	SimConfig config;
 	config.physicsArenaMB = 64;
+	// What a server's mods would have declared: the scenario writes fields.
+	config.fields = test::kScenarioFields;
+	config.globalFields = test::kScenarioFields;
+	config.motions = test::kScenarioMotions;
+	config.layers = test::kScenarioLayers;
 	return config;
 }
 
@@ -1030,13 +1035,76 @@ void TestCommands()
 		c->index = 2;
 		c->value = 99;
 	}
-	command( CommandType::SetField, SlotTarget( 0 ) )->index = kBoardSlots;
+	command( CommandType::SetField, SlotTarget( 0 ) )->index = test::kScenarioFields;
 	command( CommandType::SetField, 123456 )->value = 1;
 	command( CommandType::SetField, SlotTarget( 9 ) )->value = 1;
 	step( 1 );
 	CHECK( sim.BoardValue( p0, 0 ) == 42 );
 	CHECK( sim.BoardValue( p1, 5 ) == -7 );
 	CHECK( sim.GlobalBoardValue( 2 ) == 99 );
+
+	// How many fields there are is the config's (what the server's mods declared), not a constant:
+	// three hundred of them, written, read, and through a snapshot; one past the last does nothing.
+	{
+		SimConfig wide = TestConfig();
+		wide.fields = 300;
+		wide.globalFields = 70;
+		Simulation big( wide );
+		InputFrame bf;
+		auto bstep = [&]( int n ) {
+			for ( int i = 0; i < n; ++i )
+			{
+				bf.tick = big.Tick();
+				big.Step( bf );
+				bf.events.clear();
+				bf.commands.clear();
+			}
+		};
+		auto set = [&]( uint32_t target, uint16_t index, int32_t value ) {
+			SimCommand c;
+			c.type = CommandType::SetField;
+			c.target = target;
+			c.index = index;
+			c.value = value;
+			bf.commands.push_back( c );
+		};
+		bf.events.push_back( { PlayerEventType::Join, 0 } );
+		bstep( 30 );
+		uint32_t who = big.PlayerNetId( 0 );
+		set( SlotTarget( 0 ), 299, 7 );
+		set( SlotTarget( 0 ), 300, 8 );
+		set( 0, 69, 9 );
+		set( 0, 70, 10 );
+		bstep( 1 );
+		CHECK( big.BoardValue( who, 299 ) == 7 && big.BoardValue( who, 300 ) == 0 );
+		CHECK( big.GlobalBoardValue( 69 ) == 9 && big.GlobalBoardValue( 70 ) == 0 );
+		CHECK( big.GetBoard( big.FindEntity( who ) ).values.size() == 300 );
+		Snapshot kept;
+		big.Save( kept );
+		uint64_t hashThen = big.ComputeHash();
+		set( SlotTarget( 0 ), 299, 1 );
+		set( 0, 69, 1 );
+		bstep( 5 );
+		CHECK( big.BoardValue( who, 299 ) == 1 && big.ComputeHash() != hashThen );
+		big.Load( kept );
+		CHECK( big.BoardValue( who, 299 ) == 7 && big.GlobalBoardValue( 69 ) == 9 && big.ComputeHash() == hashThen );
+		// A simulation whose mods declared none: a field command does nothing, and nothing is kept.
+		SimConfig none = TestConfig();
+		none.fields = 0;
+		none.globalFields = 0;
+		Simulation bare( none );
+		bf = {};
+		bf.events.push_back( { PlayerEventType::Join, 0 } );
+		bf.tick = bare.Tick();
+		bare.Step( bf );
+		bf.events.clear();
+		set( SlotTarget( 0 ), 0, 5 );
+		set( 0, 0, 5 );
+		bf.tick = bare.Tick();
+		bare.Step( bf );
+		CHECK( bare.BoardValue( bare.PlayerNetId( 0 ), 0 ) == 0 && bare.GlobalBoardValue( 0 ) == 0 );
+		CHECK( bare.HasBoard( bare.FindEntity( bare.PlayerNetId( 0 ) ) ) == false );
+	}
 
 	// Events land in the ring with their targets resolved to NetIds.
 	uint32_t eventsBefore = sim.Globals().modEventCount;
@@ -1149,7 +1217,7 @@ void TestCommands()
 	}
 	f.inputs[0].cameraPitch = 4096; // 22.5 degrees up
 	step( 1 );
-	const AnimState* look = sim.EntityAnimState( p0 );
+	AnimStateCopy look = sim.EntityAnimState( p0 );
 	CHECK( look != nullptr && look->aiming == 1 );
 	CHECK( std::fabs( look->aimPitch - 0.25f * detmath::kPi / 2.0f ) < 1e-4f );
 	float facing = sim.PlayerCharacter( 0 )->facingYaw;
@@ -1167,7 +1235,7 @@ void TestCommands()
 	CHECK( std::fabs( detmath::WrapAngle( sim.PlayerCharacter( 0 )->facingYaw - detmath::YawToRadians( 16384 ) ) ) < 1e-4f );
 	// Facing the camera, the upper body follows its pitch (fully, a moment after the switch).
 	CHECK( sim.EntityAnimState( p0 )->look == 255 );
-	const AnimState* legs = sim.EntityAnimState( p0 );
+	AnimStateCopy legs = sim.EntityAnimState( p0 );
 	std::printf( "    strafing: legYaw %.2f backward %d\n", legs->legYaw, int( legs->legsBackward ) );
 	CHECK( std::fabs( std::fabs( legs->legYaw ) - 0.5f * detmath::kPi ) < 0.2f );
 	f.inputs[0].moveRight = 0;
@@ -1221,7 +1289,7 @@ void TestCommands()
 	}
 	step( 5 );
 	{
-		const AnimState* a = sim.EntityAnimState( p0 );
+		AnimStateCopy a = sim.EntityAnimState( p0 );
 		CHECK( a->stances[1] == 3 && a->stances[0] == 0 );
 	}
 	{
@@ -1231,11 +1299,83 @@ void TestCommands()
 	}
 	{
 		SimCommand* bad = command( CommandType::Stance, SlotTarget( 0 ) );
-		bad->index = kMaxAnimLayers; // out of range: ignored
+		bad->index = test::kScenarioLayers; // out of range: ignored
 		bad->value = 1;
 	}
 	step( 1 );
 	CHECK( sim.EntityAnimState( p0 )->stances[1] == 2 );
+
+	// How many layers a player has is the config's (the server's character and mods), not a
+	// constant: nine of them, the ninth set, kept through a snapshot; a tenth does nothing. And a
+	// player of a simulation with none still has the rest of its animation.
+	{
+		SimConfig tall = TestConfig();
+		tall.layers = 9;
+		Simulation nine( tall );
+		InputFrame nf;
+		auto nstep = [&]( int n ) {
+			for ( int i = 0; i < n; ++i )
+			{
+				nf.tick = nine.Tick();
+				nine.Step( nf );
+				nf.events.clear();
+				nf.commands.clear();
+			}
+		};
+		auto stance = [&]( uint16_t layer, int32_t value ) {
+			SimCommand c;
+			c.type = CommandType::Stance;
+			c.target = SlotTarget( 0 );
+			c.index = layer;
+			c.value = value;
+			nf.commands.push_back( c );
+		};
+		nf.events.push_back( { PlayerEventType::Join, 0 } );
+		nstep( 30 );
+		uint32_t who = nine.PlayerNetId( 0 );
+		stance( 8, 5 );
+		stance( 9, 6 );
+		nstep( 1 );
+		AnimStateCopy a = nine.EntityAnimState( who );
+		CHECK( a != nullptr && a->stances.size() == 9 && a->graph.size() == 9 && a->stances[8] == 5 && a->stances[9] == 0 );
+		Snapshot kept;
+		nine.Save( kept );
+		uint64_t hashThen = nine.ComputeHash();
+		stance( 8, 1 );
+		nstep( 3 );
+		CHECK( nine.EntityAnimState( who )->stances[8] == 1 && nine.ComputeHash() != hashThen );
+		nine.Load( kept );
+		CHECK( nine.EntityAnimState( who )->stances[8] == 5 && nine.ComputeHash() == hashThen );
+		// As words and back, for any number of layers.
+		for ( size_t layers : { size_t( 0 ), size_t( 1 ), size_t( 4 ), size_t( 9 ) } )
+		{
+			AnimState in = *a;
+			in.groundSpeed = 3.5f;
+			in.moveRight = -1.25f;
+			in.graph[2].time = 0.75f;
+			std::vector<uint8_t> bytes( AnimStateBytes( layers ) );
+			PackAnimState( in, layers, bytes.data() );
+			AnimState out;
+			UnpackAnimState( bytes.data(), layers, out );
+			CHECK( bytes.size() % 4 == 0 && out.groundSpeed == 3.5f && out.moveRight == -1.25f && out.Layers() == layers );
+			CHECK( layers < 9 || out == in );
+			CHECK( layers < 3 || out.graph[2].time == 0.75f );
+		}
+		SimConfig flat = TestConfig();
+		flat.layers = 0;
+		Simulation bare( flat );
+		nf = {};
+		nf.events.push_back( { PlayerEventType::Join, 0 } );
+		for ( int i = 0; i < 30; ++i )
+		{
+			nf.tick = bare.Tick();
+			nf.inputs[0].moveForward = 127;
+			bare.Step( nf );
+			nf.events.clear();
+		}
+		AnimStateCopy none = bare.EntityAnimState( bare.PlayerNetId( 0 ) );
+		CHECK( none != nullptr && none->Layers() == 0 && none->groundSpeed > 1.0f );
+	}
 
 	// Being placed (a respawn, falling out of the world) keeps the aim a mod asked for.
 	{
@@ -1540,7 +1680,7 @@ void TestMotions()
 	f.events.push_back( { PlayerEventType::Join, 0 } );
 	step( 60 );
 	uint32_t p0 = sim.PlayerNetId( 0 );
-	CHECK( sim.FindEntity( p0 ).has<MotionState>() );
+	CHECK( sim.HasMotionState( sim.FindEntity( p0 ) ) );
 
 	// No charges: the press does nothing.
 	f.inputs[0].actions = dash;
@@ -1716,17 +1856,61 @@ void TestMotions()
 	CHECK( warned.find( "\"fly\"" ) != std::string::npos && warned.find( "round.time" ) != std::string::npos &&
 		   warned.find( "fly.fuel" ) != std::string::npos && warned.find( "fly.up" ) != std::string::npos );
 
-	// More motions than there are slots: the rest are left out, and said.
-	ModSchema many = schema;
-	std::string big = "cinderbox_motions\t2\n";
-	for ( int i = 0; i < kMaxMotions + 3; ++i )
+	// How many motions a server has is its mods' business: a hundred of them compile, a player of a
+	// simulation told so has a slot for each, and the last one works like the first.
 	{
-		big += "motion\tM" + std::to_string( i ) + "\nwhen\tpress\tdash\n";
+		ModSchema many = schema;
+		// (And an action far up the word: the forty-first bit.)
+		many.actions.push_back( { "far", 40, "X" } );
+		std::string big = "cinderbox_motions\t2\n";
+		for ( int i = 0; i < 100; ++i )
+		{
+			// (Only the hundredth can happen: the others wait for a fall nobody has.)
+			big += "motion\tM" + std::to_string( i ) + "\nwhen\tpress\t" + ( i == 99 ? "far\n" : "dash\nif\tairborne_time > 100\n" );
+		}
+		many.motionSets = { { "dash", "dash.many", big } };
+		warned.clear();
+		auto all = CompileMotions( many, warned );
+		CHECK( all != nullptr && all->list.size() == 100 );
+		if ( all != nullptr && all->list.size() == 100 )
+		{
+			SimConfig wide = TestConfig();
+			wide.motions = 100;
+			Simulation hundred( wide );
+			hundred.SetMotions( all );
+			InputFrame hf;
+			hf.events.push_back( { PlayerEventType::Join, 0 } );
+			for ( int i = 0; i < 60; ++i )
+			{
+				hf.tick = hundred.Tick();
+				hundred.Step( hf );
+				hf.events.clear();
+			}
+			CHECK( many.ActionMask( "far" ) == ActionBits( 1 ) << 40 );
+			hf.inputs[0].actions = dash;
+			hf.tick = hundred.Tick();
+			hundred.Step( hf );
+			CHECK( hundred.GetMotionState( hundred.FindEntity( hundred.PlayerNetId( 0 ) ) ).slots[99].lastTick == 0 );
+			hf.inputs[0].actions = many.ActionMask( "far" );
+			hf.tick = hundred.Tick();
+			hundred.Step( hf );
+			MotionState state = hundred.GetMotionState( hundred.FindEntity( hundred.PlayerNetId( 0 ) ) );
+			std::printf( "    a hundred motions: a player's state has %zu slots, the last one used at tick %u\n", state.slots.size(),
+						 unsigned( state.slots[99].lastTick ) );
+			CHECK( state.slots.size() == 100 && state.slots[99].lastTick != 0 && state.slots[98].lastTick == 0 );
+			Snapshot kept;
+			hundred.Save( kept );
+			uint64_t hashThen = hundred.ComputeHash();
+			hf.inputs[0].actions = 0;
+			for ( int i = 0; i < 5; ++i )
+			{
+				hf.tick = hundred.Tick();
+				hundred.Step( hf );
+			}
+			hundred.Load( kept );
+			CHECK( hundred.ComputeHash() == hashThen );
+		}
 	}
-	many.motionSets = { { "dash", "dash.many", big } };
-	warned.clear();
-	auto capped = CompileMotions( many, warned );
-	CHECK( capped != nullptr && capped->list.size() == size_t( kMaxMotions ) && warned.find( "left out" ) != std::string::npos );
 	// A server without motions has none, and its players carry nothing for them.
 	ModSchema none;
 	CHECK( CompileMotions( none, warned ) == nullptr );
@@ -1734,7 +1918,7 @@ void TestMotions()
 	InputFrame g;
 	g.events.push_back( { PlayerEventType::Join, 0 } );
 	plain.Step( g );
-	CHECK( plain.FindEntity( plain.PlayerNetId( 0 ) ).has<MotionState>() == false );
+	CHECK( plain.HasMotionState( plain.FindEntity( plain.PlayerNetId( 0 ) ) ) == false );
 
 	// The schema carries the text.
 	std::vector<uint8_t> bytes;
@@ -2004,20 +2188,20 @@ void TestLinks()
 	// While it flies its end is on the way, and the player has not moved.
 	b3Vec3 end;
 	bool holds = true;
-	uint8_t which = 9;
+	uint16_t which = 9;
 	step( int( flight ) / 2 );
 	CHECK( sim.EntityHold( p0, end, holds, which ) && holds == false && which == 0 );
 	CHECK( end.z > from.z + 1.0f && end.z < anchor.z - 1.0f && b3Distance( position(), from ) < 0.01f );
 	// Its parameters wait for it to hold: in flight the player still stands as it stood.
 	// (The motion is in effect from the tick its probe takes hold.)
-	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].sinceTick > sim.Tick() && sim.PlayerCharacter( 0 )->grounded == 1 );
+	CHECK( sim.GetMotionState( sim.FindEntity( p0 ) ).slots[0].sinceTick > sim.Tick() && sim.PlayerCharacter( 0 )->grounded == 1 );
 	// Holding: the player is pulled along the line, and the rope is reeled in.
 	step( int( flight ) / 2 + 2 );
 	CHECK( sim.EntityHold( p0, end, holds, which ) && holds && b3Distance( end, anchor ) < 0.001f );
 	// Holding, its parameters hold until something ends it: the player is airborne on the hook,
 	// though the floor is right under it.
-	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].sinceTick <= sim.Tick() &&
-		   sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick > sim.Tick() );
+	CHECK( sim.GetMotionState( sim.FindEntity( p0 ) ).slots[0].sinceTick <= sim.Tick() &&
+		   sim.GetMotionState( sim.FindEntity( p0 ) ).slots[0].untilTick > sim.Tick() );
 	CHECK( sim.PlayerCharacter( 0 )->grounded == 0 );
 	step( 45 );
 	float closer = b3Distance( anchor, b3Add( position(), b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) );
@@ -2031,7 +2215,7 @@ void TestLinks()
 	step( 1 );
 	CHECK( holdOf()->on == 0 && sim.EntityHold( p0, end, holds, which ) == false );
 	step( 1 );
-	CHECK( sim.FindEntity( p0 ).get<MotionState>().slots[0].untilTick < sim.Tick() );
+	CHECK( sim.GetMotionState( sim.FindEntity( p0 ) ).slots[0].untilTick < sim.Tick() );
 	// Let go, it comes down and stands again.
 	step( 180 );
 	CHECK( sim.PlayerCharacter( 0 )->grounded == 1 );
@@ -2699,8 +2883,9 @@ void TestFields()
 	Blackboard board;
 	board.values[0] = 3;
 	board.values[1] = 0;
-	int32_t globals[kBoardSlots] = {};
-	globals[0] = BoardFromFloat( 12.5f );
+	BoardValues globalValues;
+	globalValues[0] = BoardFromFloat( 12.5f );
+	const BoardValues* globals = &globalValues;
 	auto check = [&]( const char* condition ) { return present::CheckCondition( schema, condition, &board, globals ); };
 
 	CHECK( check( "pistol.ammo" ) );
@@ -2950,7 +3135,7 @@ void TestAnimController()
 			f.events.clear();
 		}
 	};
-	auto state = [&]() { return sim.FindEntity( sim.Globals().playerNetIds[0] ).get<AnimState>(); };
+	auto state = [&]() { return sim.GetAnimState( sim.FindEntity( sim.Globals().playerNetIds[0] ) ); };
 
 	f.events.push_back( { PlayerEventType::Join, 0 } );
 	step( 90 );
@@ -3813,7 +3998,7 @@ void TestAttackResolve()
 		f.commands.push_back( c );
 		step( 1 );
 		const auto& states = graph->layers[0].states;
-		std::string now = states[sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>().graph[0].state].name;
+		std::string now = states[sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) ).graph[0].state].name;
 		step( 60 ); // the attack plays out
 		return now;
 	};
@@ -3895,7 +4080,7 @@ void TestAnimBlend2D()
 		f.events.clear();
 		f.commands.clear();
 	}
-	AnimState a = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
+	AnimState a = sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) );
 	std::printf( "    strafing right: move_right %.2f move_forward %.2f, blend (%.2f, %.2f)\n", a.moveRight, a.moveForward, a.graph[0].blend,
 				 a.graph[0].blendY );
 	CHECK( a.moveRight > 2.5f && std::fabs( a.moveForward ) < 0.3f );
@@ -3966,7 +4151,7 @@ void TestAnimGraph()
 			f.commands.clear();
 		}
 	};
-	auto layer = [&]( int l ) { return sim.FindEntity( sim.Globals().playerNetIds[0] ).get<AnimState>().graph[l]; };
+	auto layer = [&]( int l ) { return sim.GetAnimState( sim.FindEntity( sim.Globals().playerNetIds[0] ) ).graph[l]; };
 	auto impacts = [&]() {
 		int count = 0;
 		const SimGlobals& g = sim.Globals();
@@ -4230,7 +4415,7 @@ void TestRobotCharacter()
 				f.commands.clear();
 			}
 		};
-		auto state = [&]() { return sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>(); };
+		auto state = [&]() { return sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) ); };
 		auto stance = [&]( uint8_t layer, int32_t value ) {
 			SimCommand c;
 			c.type = CommandType::Stance;
@@ -4348,7 +4533,7 @@ void TestPlaceholderGraph()
 			f.events.clear();
 		}
 	};
-	auto state = [&]() { return sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>(); };
+	auto state = [&]() { return sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) ); };
 
 	// Standing.
 	f.events.push_back( { PlayerEventType::Join, 0 } );
@@ -4495,7 +4680,7 @@ void TestMannequinCharacter()
 			f.commands.clear();
 		}
 	};
-	auto state = [&]() { return sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>(); };
+	auto state = [&]() { return sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) ); };
 	auto command = [&]( CommandType type, uint8_t index, int32_t value, uint8_t mode ) {
 		SimCommand c;
 		c.type = type;
@@ -4710,7 +4895,7 @@ void TestAnimLead()
 			f.commands.clear();
 		}
 	};
-	auto state = [&]() { return sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>(); };
+	auto state = [&]() { return sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) ); };
 	auto command = [&]( CommandType type, uint8_t index, int32_t value ) {
 		SimCommand c;
 		c.type = type;
@@ -4734,7 +4919,7 @@ void TestAnimLead()
 	{
 		AnimState now = state();
 		AnimState same = present::LeadAnimState( now, *graph, {}, lead );
-		CHECK( std::memcmp( &same, &now, sizeof( AnimState ) ) == 0 );
+		CHECK( same == now );
 	}
 
 	// The press, 12 ticks before the server's stance.
@@ -4855,7 +5040,7 @@ void TestUalMannequin()
 		f.events.clear();
 		f.commands.clear();
 	}
-	AnimState state = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
+	AnimState state = sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) );
 	auto clips = anim::ActiveClips( state, *graph );
 	std::printf( "    strafing right: blend (%.2f, %.2f), leg yaw %.2f, playing %s\n", state.graph[0].blend, state.graph[0].blendY,
 				 state.legYaw, clips.empty() ? "nothing" : clips[0].name.c_str() );
@@ -4909,7 +5094,7 @@ void TestUalMannequin()
 			{
 				continue;
 			}
-			AnimState now = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
+			AnimState now = sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) );
 			pose.Evaluate( now );
 			hipsYaw += yawOf( "Hips" ) / 60.0f;
 			chest += yawOf( "UpperChest" ) / 60.0f;
@@ -5063,7 +5248,7 @@ void TestLayerSwap()
 		f.commands.push_back( c );
 	};
 	auto head = [&]() {
-		pose.Evaluate( sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>() );
+		pose.Evaluate( sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) ) );
 		float v[4];
 		ozz::math::StorePtrU( pose.Models()[size_t( anim::FindJoint( *set, "Head" ) )].cols[3], v );
 		return v[1];
@@ -5075,7 +5260,7 @@ void TestLayerSwap()
 	swap( 0, 1 );
 	swap( 1, 1 ); // the pack has no Upper: that layer stays the character's
 	step( 30 );
-	AnimState a = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
+	AnimState a = sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) );
 	CHECK( a.graph[0].source == 1 && a.graph[0].state == 0 );
 	std::vector<anim::ActiveClip> clips = anim::ActiveClips( a, *graph, packs );
 	CHECK( clips.empty() == false && clips[0].name == "Jump_Land" );
@@ -5083,7 +5268,7 @@ void TestLayerSwap()
 
 	swap( 0, 0 );
 	step( 30 );
-	a = sim.FindEntity( sim.PlayerNetId( 0 ) ).get<AnimState>();
+	a = sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) );
 	CHECK( a.graph[0].source == 0 );
 	float again = head();
 	std::printf( "    head: standing %.2f, the pack's crouch %.2f, restored %.2f\n", standing, crouched, again );

@@ -208,7 +208,7 @@ rollback replays it exactly; the tree itself never runs in the game.
 
 | In the tree | Baked as |
 |---|---|
-| root: a state machine, or a blend tree of state machines stacked with `Blend2` nodes | layers (at most 4); a `Blend2`'s filter is the layer's bone mask |
+| root: a state machine, or a blend tree of state machines stacked with `Blend2` nodes | layers (as many as the tree stacks); a `Blend2`'s filter is the layer's bone mask |
 | states: `Animation` nodes, `BlendSpace1D`, `BlendSpace2D` (points are animations, play mode forward or backward) | clip states, blend states (phase-synced, so feet stay in step; 2D blends inside Godot's triangles) |
 | transitions: Auto advance, advance condition, advance expression, priority, crossfade, Immediate / At End | the same (Sync switching becomes Immediate; crossfades are linear) |
 | markers on animations | the mod event of the same name, from the player, when the clip passes it |

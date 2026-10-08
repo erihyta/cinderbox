@@ -105,7 +105,7 @@ ctx.Set( SlotTarget( slot ), m_role, 3 );     // that player is told; nobody els
 
 - Per player, not per entity: the target of `Set` is a player (`SlotTarget`, or its NetId).
 - A slot that is given up is cleared; a reconnecting player gets its values again with the welcome.
-- 32 private names per server, counted apart from entity and global fields.
+- As many private names as the mods declare, counted apart from entity and global fields.
 - What happens in the world (where someone is, what they hold) is the simulation's and is not
   secret: every client simulates the whole world, so entities cannot be hidden from one.
 - The `secret` mod is the example, and `net_private_fields` the check.
@@ -162,6 +162,27 @@ Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod re
 ```bash
 cb_server --port 7777 --mod-option deathmatch.kills=5 --mod-option deathmatch.round_seconds=120
 ```
+
+## How much a server may have
+
+A mod's own code may do as much work as the host's machine allows: it runs on the server only,
+and nothing measures it. What its mods *declare* is state that every client keeps, hashes and
+rolls back, so that is what has a size, and the size is the mods' to choose.
+
+| What | How many | What one costs |
+|---|---|---|
+| Fields (an entity's, the game's, a player's private ones) | as many as the mods declare, per scope | 4 bytes on every entity that has any field set; the game's and private ones, 4 bytes once |
+| Motions | as many as the mods' sets have | 16 bytes on every player |
+| Animation layers | as many as the character's state machine and the mods name | 40 bytes on every player, and a state machine sampled and blended per player per tick |
+| Actions (keys of the mods' own) | 64 | a bit in every input; a packet carries only the bytes in use |
+| Events | 65,535 names | nothing until one happens |
+| Commands a tick | 1,024 | they travel in the frame everyone gets |
+| Slots a player | 36 | |
+| Item kinds, stances, sockets, animation packs, motion sets | about 255 each | an id of one byte |
+
+- The server says what its mods asked for when it starts: `state the mods asked for: 41 fields an entity (164 bytes for one that has any), ...`.
+- The numbers are part of what a session is (`SimConfig::fields`, `globalFields`, `motions`, `layers`): they go out in the welcome and in a replay's header, and every simulation sizes its state by them.
+- What is left with a number is what a packet or a file writes it in (a field's number is 16 bits, an item kind's 8), and actions: an input is a record of one size, copied for every player every tick.
 
 ## Switched off by default
 

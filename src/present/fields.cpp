@@ -27,7 +27,7 @@ std::string Trim( const std::string& s )
 
 } // namespace
 
-FieldValue ReadField( const ModSchema& schema, const std::string& name, const Blackboard* board, const int32_t* globals,
+FieldValue ReadField( const ModSchema& schema, const std::string& name, const Blackboard* board, const BoardValues* globals,
 					  const Blackboard* privates )
 {
 	FieldValue v;
@@ -40,7 +40,7 @@ FieldValue ReadField( const ModSchema& schema, const std::string& name, const Bl
 	v.declared = true;
 	if ( field->scope == BoardScope::Global )
 	{
-		v.raw = globals != nullptr ? globals[field->slot] : 0;
+		v.raw = globals != nullptr ? ( *globals )[field->slot] : 0;
 	}
 	else if ( field->scope == BoardScope::Private )
 	{
@@ -77,7 +77,7 @@ const expr::Program* Compiled( const std::string& text )
 
 } // namespace
 
-bool EvaluateFields( const ModSchema& schema, const std::string& expression, const Blackboard* board, const int32_t* globals, float& out,
+bool EvaluateFields( const ModSchema& schema, const std::string& expression, const Blackboard* board, const BoardValues* globals, float& out,
 					 const ExtraFields* extra, const Blackboard* privates )
 {
 	const expr::Program* program = Compiled( expression );
@@ -98,7 +98,7 @@ bool EvaluateFields( const ModSchema& schema, const std::string& expression, con
 	return true;
 }
 
-bool CheckCondition( const ModSchema& schema, const std::string& condition, const Blackboard* board, const int32_t* globals,
+bool CheckCondition( const ModSchema& schema, const std::string& condition, const Blackboard* board, const BoardValues* globals,
 					 const ExtraFields* extra, const Blackboard* privates )
 {
 	// What does not parse is not true.
@@ -107,7 +107,7 @@ bool CheckCondition( const ModSchema& schema, const std::string& condition, cons
 }
 
 bool CheckConditions( const ModSchema& schema, const std::vector<std::string>& conditions, const Blackboard* board,
-					  const int32_t* globals, const Blackboard* privates )
+					  const BoardValues* globals, const Blackboard* privates )
 {
 	for ( const std::string& c : conditions )
 	{
@@ -119,7 +119,7 @@ bool CheckConditions( const ModSchema& schema, const std::vector<std::string>& c
 	return true;
 }
 
-std::string FormatFields( const ModSchema& schema, const std::string& format, const Blackboard* board, const int32_t* globals,
+std::string FormatFields( const ModSchema& schema, const std::string& format, const Blackboard* board, const BoardValues* globals,
 						  const Blackboard* privates )
 {
 	std::string out;

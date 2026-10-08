@@ -163,6 +163,19 @@ bool GameServer::Start( const ServerOptions& options )
 			Log( "character %s: %s", character->name.empty() ? "built-in" : character->name.c_str(), warnings.c_str() );
 		}
 	}
+	// How much state the mods asked for: every simulation of the session is sized by it.
+	m_options.config.fields = uint16_t( m_schema.FieldCount( BoardScope::Entity ) );
+	m_options.config.globalFields = uint16_t( m_schema.FieldCount( BoardScope::Global ) );
+	m_options.config.motions = uint16_t( m_motions ? m_motions->list.size() : 0 );
+	m_options.config.layers =
+		uint8_t( std::min( std::max( m_animGraph ? m_animGraph->layers.size() : size_t( 0 ), m_schema.layers.size() ), size_t( kLayerLimit ) ) );
+	{
+		// What that costs: every client keeps, hashes and rolls back as much.
+		const SimConfig& c = m_options.config;
+		Log( "state the mods asked for: %d fields an entity (%d bytes for one that has any), %d for the game, %d motions and %d layers (%zu bytes a player)",
+			 int( c.fields ), int( c.fields ) * 4, int( c.globalFields ), int( c.motions ), int( c.layers ),
+			 AnimStateBytes( c.layers ) + ( c.motions > 0 ? 8 + size_t( c.motions ) * sizeof( MotionSlot ) : 0 ) );
+	}
 	// Slots: how many the mods asked for, the hand the selected one's item is held in, and what
 	// each kind says about itself (item properties, authored or declared).
 	m_options.config.slots = uint8_t( declarations.SlotCount() );

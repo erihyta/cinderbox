@@ -38,7 +38,7 @@ private:
 	std::mutex m_inputMutex;
 	PlayerInput m_input{};
 	uint8_t m_latchedButtons = 0; // presses shorter than a tick still reach the simulation
-	uint16_t m_latchedActions = 0;
+	ActionBits m_latchedActions = 0;
 };
 
 } // namespace cb

@@ -56,16 +56,16 @@ FieldHandle Declarations::Field( const std::string& name, BoardType type, BoardS
 	}
 
 	int& used = scope == BoardScope::Entity ? m_entitySlots : scope == BoardScope::Global ? m_globalSlots : m_privateSlots;
-	if ( used >= kBoardSlots )
+	if ( used >= kFieldLimit )
 	{
-		m_errors.push_back( m_mod + ": no board slot left for \"" + name + "\"" );
+		m_errors.push_back( m_mod + ": no field number left for \"" + name + "\"" );
 		return {};
 	}
 	BoardField field;
 	field.name = name;
 	field.type = type;
 	field.scope = scope;
-	field.slot = uint8_t( used++ );
+	field.slot = uint16_t( used++ );
 	m_schema.fields.push_back( field );
 	return { field.slot, scope, type };
 }
@@ -93,7 +93,7 @@ LayerHandle Declarations::Layer( const std::string& name )
 	{
 		return { existing };
 	}
-	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.layers.size() >= size_t( kMaxAnimLayers ) )
+	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.layers.size() >= size_t( kLayerLimit ) )
 	{
 		m_errors.push_back( m_mod + ": bad or one too many animation layers (\"" + name + "\")" );
 		return {};
@@ -253,7 +253,7 @@ ActionHandle Declarations::Action( const std::string& name, const std::string& k
 {
 	if ( const ModAction* existing = m_schema.FindAction( name ) )
 	{
-		return { uint16_t( 1u << existing->bit ) };
+		return { ActionBits( 1 ) << existing->bit };
 	}
 	if ( name.empty() || name.size() > kMaxSchemaName || key.size() > kMaxSchemaName )
 	{
@@ -270,7 +270,7 @@ ActionHandle Declarations::Action( const std::string& name, const std::string& k
 	action.bit = uint8_t( m_schema.actions.size() );
 	action.key = key;
 	m_schema.actions.push_back( action );
-	return { uint16_t( 1u << action.bit ) };
+	return { ActionBits( 1 ) << action.bit };
 }
 
 // --- Context ---------------------------------------------------------------------------------------
@@ -849,7 +849,7 @@ std::vector<CarriedItem> Context::CarriedItems( PlayerSlot slot ) const
 int Context::LayerIndex( const std::string& layer ) const
 {
 	const AnimGraph* graph = m_sim.Graph();
-	for ( size_t l = 0; graph != nullptr && l < graph->layers.size() && l < size_t( kMaxAnimLayers ); ++l )
+	for ( size_t l = 0; graph != nullptr && l < graph->layers.size(); ++l )
 	{
 		if ( graph->layers[l].name == layer )
 		{
@@ -919,7 +919,7 @@ void Context::ResolveLayers()
 		return;
 	}
 	const auto& packs = m_sim.Packs();
-	size_t layers = std::min( graph->layers.size(), size_t( kMaxAnimLayers ) );
+	size_t layers = graph->layers.size();
 	for ( int slot = 0; slot < kMaxPlayers; ++slot )
 	{
 		if ( Joining( PlayerSlot( slot ) ) || Leaving( PlayerSlot( slot ) ) )
@@ -931,13 +931,13 @@ void Context::ResolveLayers()
 			}
 		}
 		uint32_t netId = m_sim.PlayerNetId( PlayerSlot( slot ) );
-		const AnimState* anim = netId != 0 ? m_sim.EntityAnimState( netId ) : nullptr;
+		AnimStateCopy anim = netId != 0 ? m_sim.EntityAnimState( netId ) : AnimStateCopy();
 		if ( anim == nullptr )
 		{
 			continue;
 		}
 		// What its held items bring: the first socket's item that has that layer wins.
-		uint8_t fromItems[kMaxAnimLayers] = {};
+		std::vector<uint8_t> fromItems( layers );
 		for ( size_t socket = 0; m_itemLayers != nullptr && socket < m_schema.sockets.size(); ++socket )
 		{
 			uint32_t item = m_sim.HeldItemOf( netId, uint32_t( socket ) );

@@ -43,7 +43,7 @@ struct BoardField
 	std::string name; // "pistol.ammo": mod name, a dot, then the field
 	BoardType type = BoardType::Int;
 	BoardScope scope = BoardScope::Entity;
-	uint8_t slot = 0;
+	uint16_t slot = 0;
 
 	bool operator==( const BoardField& ) const = default;
 };
@@ -140,7 +140,7 @@ struct ModSchema
 	// Animation layers and stances, declared by mods: names. A mod sets a stance on a layer; a
 	// character's state machine reads stances by name ("pistol") in its conditions and weights.
 	// AnimState stores their indices.
-	std::vector<std::string> layers; // at most kMaxAnimLayers
+	std::vector<std::string> layers;
 	std::vector<std::string> stances;
 	// The character's state machine (graph.cfg text, sim/anim_graph.h): the baked one of the
 	// server's character, or the placeholder rig's.
@@ -158,11 +158,13 @@ struct ModSchema
 	bool operator==( const ModSchema& ) const = default;
 
 	const BoardField* FindField( const std::string& name ) const;
+	// How many fields a scope has: one past the highest slot declared in it.
+	int FieldCount( BoardScope scope ) const;
 	// -1 when not declared.
 	int FindEvent( const std::string& name ) const;
 	const ModAction* FindAction( const std::string& name ) const;
 	// Bit mask of the named action, 0 when not declared.
-	uint16_t ActionMask( const std::string& name ) const;
+	ActionBits ActionMask( const std::string& name ) const;
 	// -1 when not declared.
 	int FindLayer( const std::string& name ) const;
 	int FindStance( const std::string& name ) const;

@@ -5,7 +5,7 @@
 	</brief_description>
 	<description>
 		The root of a scene in the mod's project ([code]motion_sets/[/code]). Its [CbMotion] children, in the order of the scene tree, are baked to [code]res://motions/&lt;set_name&gt;.cfg[/code] when the scene is saved, by the Bake button, and when the mod is published. The server mod names the set with [code]declare.Motions( "dash.moves" )[/code]; the server reads the file from the mod's item and sends it to every client, and every simulation runs it.
-		A server runs at most 16 motions, all its mods' sets together. The scene itself is not shipped: the baked file is.
+		A server runs as many motions as its mods' sets have, all together; a player carries 16 bytes for each. The scene itself is not shipped: the baked file is.
 	</description>
 	<tutorials>
 	</tutorials>

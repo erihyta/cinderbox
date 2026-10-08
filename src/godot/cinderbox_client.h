@@ -285,7 +285,7 @@ private:
 	void ApplyPredictedFields();
 	// The "action_pressed" signal for each of these action bits, and the press itself to the
 	// director, whose predictions show what the server will answer.
-	void AnnouncePresses( uint16_t pressed );
+	void AnnouncePresses( ActionBits pressed );
 	godot::String EntityName( const present::Visual& v ) const;
 	// Sockets are moved to their entity's root in the game (so "^^/RightHand/Item" means the same on
 	// every rig); the animation tracks that reached an item through the socket's authored place are
@@ -310,7 +310,7 @@ private:
 	struct LinkNode
 	{
 		godot::ObjectID node;
-		uint8_t motion = 0;
+		uint16_t motion = 0;
 	};
 	std::map<uint64_t, LinkNode> m_linkNodes;
 	void UpdateLinks();
@@ -350,7 +350,7 @@ private:
 	void PlaceItem( uint32_t holderNetId, godot::Node3D* socket, godot::Node3D* item );
 	void ItemsChanged( uint32_t holderNetId );
 	present::Models m_pose;		// scratch: the pose being built
-	uint16_t m_lastActions = 0;
+	ActionBits m_lastActions = 0;
 	std::map<std::string, double> m_localValues; // "ui." names
 	std::vector<int64_t> m_cursorWanters;
 	bool m_lastUse = false;

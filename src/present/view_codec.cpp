@@ -13,7 +13,7 @@ namespace cb::present
 namespace
 {
 
-constexpr uint32_t kMagic = 0x35564243; // "CBV5"
+constexpr uint32_t kMagic = 0x36564243; // "CBV6"
 
 // What a decoder accepts at most; real frames are far below.
 constexpr uint32_t kMaxEntities = 1u << 16;
@@ -55,7 +55,8 @@ void Count( size_t ViewCost::*part, size_t bytes )
 
 // --- Records: an entity and a ragdoll as blocks of 32-bit words, with no padding ----------------
 
-struct EntityRecord
+// The part of an entity that is the same size on every server: words, compared and sent as words.
+struct EntityFixed
 {
 	uint32_t netId;
 	uint8_t kind;
@@ -67,20 +68,39 @@ struct EntityRecord
 	b3Vec3 halfExtents;
 	Transform transform;
 	b3Vec3 velocity;
-	AnimState anim;
-	Blackboard board;
 	uint32_t ragdoll;
 	uint32_t holder;
 	uint16_t itemKind;
 	uint8_t socket;
-	uint8_t linkMotion;
+	uint8_t socketPad;
 	b3Vec3 linkEnd;
 	uint8_t slotIndex;
 	uint8_t slotCount;
-	uint8_t slotPad[2];
+	uint16_t linkMotion;
 };
-static_assert( sizeof( EntityRecord ) == 96 + sizeof( AnimState ) + sizeof( Blackboard ), "EntityRecord has padding" );
-static_assert( sizeof( EntityRecord ) % 4 == 0 );
+static_assert( sizeof( EntityFixed ) == 96, "EntityFixed has padding" );
+static_assert( sizeof( EntityFixed ) % 4 == 0 );
+
+// And what is as long as the server made it: its animation's layers, its fields.
+struct EntityRecord : EntityFixed
+{
+	AnimState anim;
+	Blackboard board;
+};
+
+// A record of nothing: what a new entity is a delta against.
+template <typename Record>
+void Zero( Record& r )
+{
+	std::memset( &r, 0, sizeof( r ) );
+}
+
+void Zero( EntityRecord& r )
+{
+	std::memset( static_cast<EntityFixed*>( &r ), 0, sizeof( EntityFixed ) );
+	r.anim = AnimState{};
+	r.board.values.clear();
+}
 
 struct RagdollRecord
 {
@@ -99,7 +119,7 @@ static_assert( ( sizeof( PlayerInput ) * kMaxPlayers ) % 4 == 0 );
 EntityRecord ToRecord( const FrameEntity& f )
 {
 	EntityRecord r;
-	std::memset( &r, 0, sizeof( r ) );
+	Zero( r );
 	r.netId = f.netId;
 	r.kind = uint8_t( f.kind );
 	r.shape = uint8_t( f.shape );
@@ -121,8 +141,7 @@ EntityRecord ToRecord( const FrameEntity& f )
 	r.linkEnd = f.linkEnd;
 	r.slotIndex = f.slotIndex;
 	r.slotCount = f.slotCount;
-	r.slotPad[0] = 0;
-	r.slotPad[1] = 0;
+	r.socketPad = 0;
 	return r;
 }
 
@@ -258,6 +277,54 @@ void ReadBlock( ByteReader& r, void* inOut, size_t bytes )
 	}
 }
 
+// A board: as many values as either side has (16 bits say how many), then their word delta.
+bool SameBoard( const BoardValues& now, const BoardValues& was )
+{
+	return now == was;
+}
+
+void WriteBoardDelta( ByteWriter& w, const BoardValues& now, const BoardValues& was )
+{
+	size_t count = std::min( std::max( now.size(), was.size() ), size_t( kFieldLimit ) );
+	std::vector<int32_t> a( count ), b( count );
+	now.copy_to( a.data(), count );
+	was.copy_to( b.data(), count );
+	w.Write( uint16_t( count ) );
+	WriteDelta( w, a.data(), b.data(), count * 4 );
+}
+
+// `inOut` holds the base and becomes the new value.
+void ReadBoardDelta( ByteReader& r, BoardValues& inOut )
+{
+	size_t count = r.Read<uint16_t>();
+	if ( r.Ok() == false )
+	{
+		return;
+	}
+	std::vector<int32_t> values( count );
+	inOut.copy_to( values.data(), count );
+	ReadDelta( r, values.data(), count * 4 );
+	inOut.assign( values.data(), count );
+}
+
+void WriteBoardBlock( ByteWriter& w, const BoardValues& now, const BoardValues& was )
+{
+	bool changed = SameBoard( now, was ) == false;
+	w.Write( uint8_t( changed ? 1 : 0 ) );
+	if ( changed )
+	{
+		WriteBoardDelta( w, now, was );
+	}
+}
+
+void ReadBoardBlock( ByteReader& r, BoardValues& inOut )
+{
+	if ( r.Read<uint8_t>() != 0 )
+	{
+		ReadBoardDelta( r, inOut );
+	}
+}
+
 void WriteString( ByteWriter& w, const std::string& s )
 {
 	uint16_t size = uint16_t( std::min<size_t>( s.size(), 0xFFFF ) );
@@ -385,28 +452,49 @@ b3Quat RotationFromCode( uint32_t code )
 	return { { c[0], c[1], c[2] }, c[3] };
 }
 
-// Which 32-bit words of an AnimState are floats (the rest are small integers, sent as they are).
-constexpr size_t kAnimWords = sizeof( AnimState ) / 4;
-static_assert( offsetof( AnimState, modeTime ) == 4 && offsetof( AnimState, stances ) == 24 && offsetof( AnimState, moveForward ) == 28 &&
-				   offsetof( AnimState, graph ) == 36 && sizeof( AnimGraphLayerState ) == 40 && offsetof( AnimGraphLayerState, time ) == 4,
-			   "AnimState layout changed: say which of its words are floats" );
+// An AnimState as the words it is sent as: the block a simulation keeps (PackAnimState), for as
+// many layers as it has. Which of those words are floats (the rest are small integers, sent as they
+// are): everything but the first word, the stances and the first word of each layer.
+static_assert( sizeof( AnimGraphLayerState ) == 40 && offsetof( AnimGraphLayerState, time ) == 4,
+			   "AnimGraphLayerState layout changed: say which of its words are floats" );
 
-bool AnimWordIsFloat( size_t word )
+size_t AnimWords( size_t layers )
 {
-	size_t byte = word * 4;
-	if ( byte < offsetof( AnimState, graph ) )
-	{
-		return ( byte >= 4 && byte < 24 ) || byte >= 28;
-	}
-	return ( byte - offsetof( AnimState, graph ) ) % sizeof( AnimGraphLayerState ) != 0;
+	return AnimStateBytes( layers ) / 4;
 }
 
-void AnimToGrid( const AnimState& anim, int32_t* words )
+bool AnimWordIsFloat( size_t word, size_t layers )
 {
-	std::memcpy( words, &anim, sizeof( AnimState ) );
-	for ( size_t i = 0; i < kAnimWords; ++i )
+	size_t byte = word * 4;
+	size_t speeds = kAnimStateHead + AnimStanceBytes( layers );
+	if ( byte < speeds )
 	{
-		if ( AnimWordIsFloat( i ) )
+		return byte >= 4 && byte < kAnimStateHead;
+	}
+	if ( byte < speeds + 8 )
+	{
+		return true;
+	}
+	return ( byte - speeds - 8 ) % sizeof( AnimGraphLayerState ) != 0;
+}
+
+void AnimToWords( const AnimState& anim, size_t layers, std::vector<int32_t>& words )
+{
+	words.resize( AnimWords( layers ) );
+	PackAnimState( anim, layers, reinterpret_cast<uint8_t*>( words.data() ) );
+}
+
+void AnimFromWords( const std::vector<int32_t>& words, size_t layers, AnimState& anim )
+{
+	UnpackAnimState( reinterpret_cast<const uint8_t*>( words.data() ), layers, anim );
+}
+
+void AnimToGrid( const AnimState& anim, size_t layers, std::vector<int32_t>& words )
+{
+	AnimToWords( anim, layers, words );
+	for ( size_t i = 0; i < words.size(); ++i )
+	{
+		if ( AnimWordIsFloat( i, layers ) )
 		{
 			float value;
 			std::memcpy( &value, &words[i], 4 );
@@ -415,19 +503,51 @@ void AnimToGrid( const AnimState& anim, int32_t* words )
 	}
 }
 
-void AnimFromGrid( const int32_t* words, AnimState& anim )
+void AnimFromGrid( const std::vector<int32_t>& words, size_t layers, AnimState& anim )
 {
-	int32_t raw[kAnimWords];
-	for ( size_t i = 0; i < kAnimWords; ++i )
+	std::vector<int32_t> raw( words );
+	for ( size_t i = 0; i < raw.size(); ++i )
 	{
-		raw[i] = words[i];
-		if ( AnimWordIsFloat( i ) )
+		if ( AnimWordIsFloat( i, layers ) )
 		{
 			float value = float( words[i] ) / kAnimGrid;
 			std::memcpy( &raw[i], &value, 4 );
 		}
 	}
-	std::memcpy( &anim, raw, sizeof( AnimState ) );
+	AnimFromWords( raw, layers, anim );
+}
+
+// An AnimState, exact: a byte says whether it changed, then how many layers and the word delta.
+void WriteAnimBlock( ByteWriter& w, const AnimState& now, const AnimState& was )
+{
+	size_t layers = std::min( std::max( now.Layers(), was.Layers() ), size_t( kLayerLimit ) );
+	std::vector<int32_t> a, b;
+	AnimToWords( now, layers, a );
+	AnimToWords( was, layers, b );
+	bool changed = a != b;
+	w.Write( uint8_t( changed ? 1 : 0 ) );
+	if ( changed )
+	{
+		w.Write( uint8_t( layers ) );
+		WriteDelta( w, a.data(), b.data(), a.size() * 4 );
+	}
+}
+
+void ReadAnimBlock( ByteReader& r, AnimState& inOut )
+{
+	if ( r.Read<uint8_t>() == 0 )
+	{
+		return;
+	}
+	size_t layers = r.Read<uint8_t>();
+	if ( r.Ok() == false )
+	{
+		return;
+	}
+	std::vector<int32_t> words;
+	AnimToWords( inOut, layers, words );
+	ReadDelta( r, words.data(), words.size() * 4 );
+	AnimFromWords( words, layers, inOut );
 }
 
 // A position that moved on the grid: three small numbers. True when it did.
@@ -493,11 +613,11 @@ struct RestRecord
 	uint32_t holder;
 	uint16_t itemKind;
 	uint8_t socket;
-	uint8_t linkMotion;
+	uint8_t socketPad;
 	b3Vec3 linkEnd;
 	uint8_t slotIndex;
 	uint8_t slotCount;
-	uint8_t slotPad[2];
+	uint16_t linkMotion;
 };
 static_assert( sizeof( RestRecord ) == 56, "RestRecord has padding" );
 
@@ -550,7 +670,7 @@ struct CompactEntity
 	static bool Write( ByteWriter& w, const EntityRecord& nowExact, const EntityRecord* wasExact )
 	{
 		EntityRecord zero;
-		std::memset( &zero, 0, sizeof( zero ) );
+		Zero( zero );
 		EntityRecord now = Seen( nowExact );
 		EntityRecord was = wasExact != nullptr ? Seen( *wasExact ) : zero;
 
@@ -581,26 +701,28 @@ struct CompactEntity
 		}
 		Count( &ViewCost::rotations, body.size() - mark );
 		mark = body.size();
-		int32_t animNow[kAnimWords];
-		int32_t animWas[kAnimWords];
-		AnimToGrid( now.anim, animNow );
-		AnimToGrid( was.anim, animWas );
-		if ( std::memcmp( animNow, animWas, sizeof( animNow ) ) != 0 )
+		size_t layers = std::min( std::max( now.anim.Layers(), was.anim.Layers() ), size_t( kLayerLimit ) );
+		std::vector<int32_t> animNow, animWas;
+		AnimToGrid( now.anim, layers, animNow );
+		AnimToGrid( was.anim, layers, animWas );
+		if ( animNow != animWas )
 		{
 			groups |= GroupAnim;
-			uint8_t mask[( kAnimWords + 7 ) / 8] = {};
-			for ( size_t i = 0; i < kAnimWords; ++i )
+			// How many layers, a bit per word that changed, then those words.
+			bw.Write( uint8_t( layers ) );
+			std::vector<uint8_t> mask( ( animNow.size() + 7 ) / 8 );
+			for ( size_t i = 0; i < animNow.size(); ++i )
 			{
 				mask[i / 8] |= animNow[i] != animWas[i] ? uint8_t( 1u << ( i % 8 ) ) : uint8_t( 0 );
 			}
-			bw.WriteBytes( mask, sizeof( mask ) );
-			for ( size_t i = 0; i < kAnimWords; ++i )
+			bw.WriteBytes( mask.data(), mask.size() );
+			for ( size_t i = 0; i < animNow.size(); ++i )
 			{
 				if ( animNow[i] == animWas[i] )
 				{
 					continue;
 				}
-				if ( AnimWordIsFloat( i ) )
+				if ( AnimWordIsFloat( i, layers ) )
 				{
 					WriteVarint( bw, int32_t( uint32_t( animNow[i] ) - uint32_t( animWas[i] ) ) );
 				}
@@ -612,10 +734,10 @@ struct CompactEntity
 		}
 		Count( &ViewCost::animation, body.size() - mark );
 		mark = body.size();
-		if ( std::memcmp( &now.board, &was.board, sizeof( Blackboard ) ) != 0 )
+		if ( SameBoard( now.board.values, was.board.values ) == false )
 		{
 			groups |= GroupBoard;
-			WriteDelta( bw, &now.board, &was.board, sizeof( Blackboard ) );
+			WriteBoardDelta( bw, now.board.values, was.board.values );
 		}
 		Count( &ViewCost::boards, body.size() - mark );
 		if ( groups == 0 )
@@ -648,16 +770,17 @@ struct CompactEntity
 		}
 		if ( groups & GroupAnim )
 		{
-			int32_t anim[kAnimWords];
-			AnimToGrid( record.anim, anim );
-			const uint8_t* mask = r.Take( ( kAnimWords + 7 ) / 8 );
-			for ( size_t i = 0; mask != nullptr && i < kAnimWords; ++i )
+			size_t layers = r.Read<uint8_t>();
+			std::vector<int32_t> anim;
+			AnimToGrid( record.anim, layers, anim );
+			const uint8_t* mask = r.Ok() ? r.Take( ( anim.size() + 7 ) / 8 ) : nullptr;
+			for ( size_t i = 0; mask != nullptr && i < anim.size(); ++i )
 			{
 				if ( ( mask[i / 8] & ( 1u << ( i % 8 ) ) ) == 0 )
 				{
 					continue;
 				}
-				if ( AnimWordIsFloat( i ) )
+				if ( AnimWordIsFloat( i, layers ) )
 				{
 					uint32_t moved = uint32_t( anim[i] ) + uint32_t( ReadVarint( r ) );
 					anim[i] = std::clamp( int32_t( moved ), -kGridMost, kGridMost );
@@ -667,11 +790,14 @@ struct CompactEntity
 					anim[i] = r.Read<int32_t>();
 				}
 			}
-			AnimFromGrid( anim, record.anim );
+			if ( mask != nullptr )
+			{
+				AnimFromGrid( anim, layers, record.anim );
+			}
 		}
 		if ( groups & GroupBoard )
 		{
-			ReadDelta( r, &record.board, sizeof( Blackboard ) );
+			ReadBoardDelta( r, record.board.values );
 		}
 	}
 
@@ -785,6 +911,36 @@ struct Exact
 		ReadDelta( r, &record, sizeof( Record ) );
 	}
 	static void Settle( Record& )
+	{
+	}
+};
+
+// An entity, exact: its words, then its fields.
+struct ExactEntity
+{
+	static bool Write( ByteWriter& w, const EntityRecord& now, const EntityRecord* was )
+	{
+		EntityRecord zero;
+		Zero( zero );
+		const EntityRecord& before = was != nullptr ? *was : zero;
+		const EntityFixed& a = now;
+		const EntityFixed& b = before;
+		if ( std::memcmp( &a, &b, sizeof( EntityFixed ) ) == 0 && now.anim == before.anim && SameBoard( now.board.values, before.board.values ) )
+		{
+			return false;
+		}
+		WriteDelta( w, &a, &b, sizeof( EntityFixed ) );
+		WriteAnimBlock( w, now.anim, before.anim );
+		WriteBoardBlock( w, now.board.values, before.board.values );
+		return true;
+	}
+	static void Read( ByteReader& r, EntityRecord& record )
+	{
+		ReadDelta( r, static_cast<EntityFixed*>( &record ), sizeof( EntityFixed ) );
+		ReadAnimBlock( r, record.anim );
+		ReadBoardBlock( r, record.board.values );
+	}
+	static void Settle( EntityRecord& )
 	{
 	}
 };
@@ -1077,7 +1233,7 @@ void ReadList( ByteReader& r, std::vector<Item>& items, const std::vector<Item>*
 	std::vector<uint8_t> changed( changedBits, changedBits + ( size_t( count ) + 7 ) / 8 );
 	items.resize( count );
 	Record zero;
-	std::memset( &zero, 0, sizeof( zero ) );
+	Zero( zero );
 	for ( uint32_t i = 0; i < count; ++i )
 	{
 		const Item* before = FindBase( base, sameIds, i, ids[i] );
@@ -1123,8 +1279,7 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	bool schema = base == nullptr || base->schemaGeneration != frame.schemaGeneration;
 	bool names = base == nullptr || base->namesGeneration != frame.namesGeneration;
 	bool stats = base == nullptr || base->stats != frame.stats;
-	bool privates = base == nullptr ? std::memcmp( &frame.privates, &kNoPrivates, sizeof( Blackboard ) ) != 0
-									: std::memcmp( &frame.privates, &base->privates, sizeof( Blackboard ) ) != 0;
+	bool privates = base == nullptr ? frame.privates != kNoPrivates : frame.privates != base->privates;
 	uint8_t flags = uint8_t( ( frame.hasWorld ? FlagWorld : 0 ) | ( map ? FlagMap : 0 ) | ( schema ? FlagSchema : 0 ) |
 							 ( names ? FlagNames : 0 ) | ( stats ? FlagStats : 0 ) | ( compact ? FlagCompact : 0 ) |
 							 ( privates ? FlagPrivates : 0 ) );
@@ -1135,7 +1290,7 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	w.Write( float( ageSeconds ) );
 	w.Write( frame.alphaAtPublish );
 	w.Write( frame.rate );
-	w.Write( frame.localPressed );
+	w.Write( uint64_t( frame.localPressed ) );
 	w.Write( uint16_t( std::clamp<uint32_t>( frame.stride, 1, 0xFFFF ) ) );
 	w.Write( flags );
 	WriteString( w, frame.state );
@@ -1198,18 +1353,20 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	if ( privates )
 	{
 		// The ones that are not 0: a slot and its value each.
-		uint8_t count = 0;
-		for ( int32_t value : frame.privates.values )
+		const BoardValues& values = frame.privates.values;
+		size_t slots = std::min( values.size(), size_t( kFieldLimit ) );
+		uint16_t count = 0;
+		for ( size_t slot = 0; slot < slots; ++slot )
 		{
-			count += value != 0 ? 1 : 0;
+			count += values[slot] != 0 ? 1 : 0;
 		}
 		w.Write( count );
-		for ( int slot = 0; slot < kBoardSlots; ++slot )
+		for ( size_t slot = 0; slot < slots; ++slot )
 		{
-			if ( frame.privates.values[slot] != 0 )
+			if ( values[slot] != 0 )
 			{
-				w.Write( uint8_t( slot ) );
-				w.Write( frame.privates.values[slot] );
+				w.Write( uint16_t( slot ) );
+				w.Write( values[slot] );
 			}
 		}
 	}
@@ -1244,7 +1401,7 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 		WriteBlock( w, f.inputs.data(), was.inputs.data(), sizeof( PlayerInput ) * kMaxPlayers );
 	}
 	section( &ViewCost::inputs );
-	WriteBlock( w, f.board, was.board, sizeof( f.board ) );
+	WriteBoardBlock( w, f.board, was.board );
 
 	// The event rings, as the fixed blocks they are in the simulation (a frame without them: zeros).
 	ImpactRecord impacts[kImpactHistory] = {};
@@ -1273,7 +1430,7 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	}
 	else
 	{
-		WriteList<FrameEntity, EntityRecord, Exact<EntityRecord>>( w, f.entities, b != nullptr ? &b->entities : nullptr, sameEntities );
+		WriteList<FrameEntity, EntityRecord, ExactEntity>( w, f.entities, b != nullptr ? &b->entities : nullptr, sameEntities );
 		WriteList<FrameRagdoll, RagdollRecord, Exact<RagdollRecord>>( w, f.ragdolls, b != nullptr ? &b->ragdolls : nullptr, sameRagdolls );
 		section( &ViewCost::exact );
 	}
@@ -1323,7 +1480,7 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	out.publishedAt = ViewClock() - double( r.Read<float>() );
 	out.alphaAtPublish = r.Read<float>();
 	out.rate = r.Read<float>();
-	out.localPressed = r.Read<uint16_t>();
+	out.localPressed = r.Read<uint64_t>();
 	out.stride = std::max<uint32_t>( r.Read<uint16_t>(), 1 );
 	uint8_t flags = r.Read<uint8_t>();
 	bool compact = ( flags & FlagCompact ) != 0;
@@ -1427,12 +1584,12 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	if ( flags & FlagPrivates )
 	{
 		out.privates = Blackboard{};
-		uint8_t count = r.Read<uint8_t>();
-		for ( uint8_t i = 0; i < count && r.Ok(); ++i )
+		uint16_t count = r.Read<uint16_t>();
+		for ( uint16_t i = 0; i < count && r.Ok(); ++i )
 		{
-			uint8_t slot = r.Read<uint8_t>();
+			uint16_t slot = r.Read<uint16_t>();
 			int32_t value = r.Read<int32_t>();
-			if ( slot >= kBoardSlots )
+			if ( r.Ok() == false || slot >= kFieldLimit )
 			{
 				return false;
 			}
@@ -1471,12 +1628,12 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 
 	if ( b != nullptr )
 	{
-		std::copy( b->board, b->board + kBoardSlots, f.board );
+		f.board = b->board;
 		f.inputs = b->inputs;
 	}
 	else
 	{
-		std::fill( f.board, f.board + kBoardSlots, 0 );
+		f.board.clear();
 		f.inputs = {};
 	}
 	if ( compact )
@@ -1487,7 +1644,7 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	{
 		ReadBlock( r, f.inputs.data(), sizeof( PlayerInput ) * kMaxPlayers );
 	}
-	ReadBlock( r, f.board, sizeof( f.board ) );
+	ReadBoardBlock( r, f.board );
 
 	ImpactRecord impacts[kImpactHistory] = {};
 	ModEventRecord events[kModEventHistory] = {};
@@ -1508,7 +1665,7 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	}
 	else
 	{
-		ReadList<FrameEntity, EntityRecord, Exact<EntityRecord>>( r, f.entities, b != nullptr ? &b->entities : nullptr, sameEntities, kMaxEntities );
+		ReadList<FrameEntity, EntityRecord, ExactEntity>( r, f.entities, b != nullptr ? &b->entities : nullptr, sameEntities, kMaxEntities );
 		ReadList<FrameRagdoll, RagdollRecord, Exact<RagdollRecord>>( r, f.ragdolls, b != nullptr ? &b->ragdolls : nullptr, sameRagdolls, kMaxRagdolls );
 	}
 	// An entity names its ragdoll by index: never past the list.

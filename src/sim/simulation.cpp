@@ -128,6 +128,7 @@ Simulation::Simulation( const SimConfig& config, const LevelLayout& map )
 {
 	m_arena = std::make_unique<PhysicsArena>( size_t( config.physicsArenaMB ) * 1024 * 1024 );
 	m_globals.rngState = config.seed;
+	m_globalBoard.resize( config.globalFields );
 
 	RegisterComponents();
 
@@ -163,6 +164,116 @@ void Simulation::RegisterSnapComponent()
 	m_snapComponents.push_back( { c.id(), size } );
 }
 
+flecs::entity_t Simulation::RegisterSizedComponent( const char* name, uint32_t size )
+{
+	ecs_world_t* world = m_world.c_ptr();
+	ecs_entity_desc_t entity = {};
+	entity.name = name;
+	flecs::entity_t id = ecs_entity_init( world, &entity );
+	if ( size > 0 )
+	{
+		ecs_component_desc_t component = {};
+		component.entity = id;
+		component.type.size = ecs_size_t( size );
+		component.type.alignment = 4;
+		id = ecs_component_init( world, &component );
+	}
+	m_snapComponents.push_back( { id, size } );
+	return id;
+}
+
+bool Simulation::HasBoard( flecs::entity e ) const
+{
+	return m_config.fields > 0 && ecs_has_id( m_world.c_ptr(), e.id(), m_boardId );
+}
+
+Blackboard Simulation::GetBoard( flecs::entity e ) const
+{
+	Blackboard board;
+	if ( HasBoard( e ) )
+	{
+		board.values.assign( static_cast<const int32_t*>( ecs_get_id( m_world.c_ptr(), e.id(), m_boardId ) ), m_config.fields );
+	}
+	return board;
+}
+
+// (What is past the fields the config has is dropped: nothing declared it.)
+void Simulation::SetBoard( flecs::entity e, const Blackboard& board )
+{
+	if ( m_config.fields == 0 )
+	{
+		return;
+	}
+	m_sizedScratch.resize( size_t( m_config.fields ) * 4 );
+	board.values.copy_to( reinterpret_cast<int32_t*>( m_sizedScratch.data() ), m_config.fields );
+	ecs_set_id( m_world.c_ptr(), e.id(), m_boardId, m_sizedScratch.size(), m_sizedScratch.data() );
+}
+
+bool Simulation::HasMotionState( flecs::entity e ) const
+{
+	return m_config.motions > 0 && ecs_has_id( m_world.c_ptr(), e.id(), m_motionId );
+}
+
+// The block: the actions held last tick (a word of 64), then a slot per motion.
+MotionState Simulation::GetMotionState( flecs::entity e ) const
+{
+	MotionState state;
+	if ( HasMotionState( e ) )
+	{
+		const uint8_t* bytes = static_cast<const uint8_t*>( ecs_get_id( m_world.c_ptr(), e.id(), m_motionId ) );
+		std::memcpy( &state.prevActions, bytes, 8 );
+		state.slots.resize( m_config.motions );
+		std::memcpy( static_cast<void*>( state.slots.data() ), bytes + 8, size_t( m_config.motions ) * sizeof( MotionSlot ) );
+	}
+	return state;
+}
+
+void Simulation::SetMotionState( flecs::entity e, const MotionState& state )
+{
+	if ( m_config.motions == 0 )
+	{
+		return;
+	}
+	m_sizedScratch.resize( 8 + size_t( m_config.motions ) * sizeof( MotionSlot ) );
+	std::memcpy( m_sizedScratch.data(), &state.prevActions, 8 );
+	state.slots.copy_to( reinterpret_cast<MotionSlot*>( m_sizedScratch.data() + 8 ), m_config.motions );
+	ecs_set_id( m_world.c_ptr(), e.id(), m_motionId, m_sizedScratch.size(), m_sizedScratch.data() );
+}
+
+void Simulation::SetMotions( std::shared_ptr<const Motions> motions )
+{
+	if ( motions != nullptr && motions->list.size() > size_t( m_config.motions ) )
+	{
+		std::fprintf( stderr, "Simulation: %zu motions, but its config has slots for %u: they are not run\n", motions->list.size(),
+					  unsigned( m_config.motions ) );
+		motions = nullptr;
+	}
+	m_motions = std::move( motions );
+}
+
+bool Simulation::HasAnimState( flecs::entity e ) const
+{
+	return ecs_has_id( m_world.c_ptr(), e.id(), m_animId );
+}
+
+AnimState Simulation::GetAnimState( flecs::entity e ) const
+{
+	AnimState state;
+	if ( HasAnimState( e ) )
+	{
+		UnpackAnimState( static_cast<const uint8_t*>( ecs_get_id( m_world.c_ptr(), e.id(), m_animId ) ), m_config.layers, state );
+	}
+	return state;
+}
+
+// (Layers past the ones the config has are dropped: no state machine of this server has them.)
+void Simulation::SetAnimState( flecs::entity e, const AnimState& state )
+{
+	m_sizedScratch.resize( AnimStateBytes( m_config.layers ) );
+	PackAnimState( state, m_config.layers, m_sizedScratch.data() );
+	ecs_set_id( m_world.c_ptr(), e.id(), m_animId, m_sizedScratch.size(), m_sizedScratch.data() );
+}
+
 void Simulation::RegisterComponents()
 {
 	// Order is part of the snapshot format. Append only.
@@ -174,15 +285,15 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<Character>();
 	RegisterSnapComponent<Prop>();
 	RegisterSnapComponent<StaticGeometry>();
-	RegisterSnapComponent<AnimState>();
+	m_animId = RegisterSizedComponent( "AnimState", uint32_t( AnimStateBytes( m_config.layers ) ) );
 	RegisterSnapComponent<TemplateRef>();
-	RegisterSnapComponent<Blackboard>();
+	m_boardId = RegisterSizedComponent( "Blackboard", uint32_t( m_config.fields ) * 4 );
 	RegisterSnapComponent<Ragdoll>();
 	RegisterSnapComponent<RagdollBodies>();
 	RegisterSnapComponent<RagdollPose>();
 	RegisterSnapComponent<HeldItem>();
 	RegisterSnapComponent<MoveOverrides>();
-	RegisterSnapComponent<MotionState>();
+	m_motionId = RegisterSizedComponent( "MotionState", m_config.motions > 0 ? 8 + uint32_t( m_config.motions ) * uint32_t( sizeof( MotionSlot ) ) : 0 );
 	RegisterSnapComponent<MotionHold>();
 	RegisterSnapComponent<Slots>();
 
@@ -724,7 +835,7 @@ flecs::entity Simulation::CreatePlayer( PlayerSlot slot )
 	e.set<Shape>( shape );
 	e.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );
 	e.set<Character>( c );
-	e.set<AnimState>( {} );
+	SetAnimState( e, AnimState{} );
 
 	m_globals.playerNetIds[slot] = netId;
 	return e;
@@ -744,15 +855,12 @@ void Simulation::PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw )
 	e.set<Character>( c );
 	// A fresh start for the animation, but aiming is a mod's decision (the pistol is still out), so
 	// placing the character does not undo it.
-	const AnimState& old = e.get<AnimState>();
+	const AnimState old = GetAnimState( e );
 	AnimState anim;
 	anim.aiming = old.aiming;
-	for ( int l = 0; l < kMaxAnimLayers; ++l )
-	{
-		// The stances stay (the mod still has the weapon out).
-		anim.stances[l] = old.stances[l];
-	}
-	e.set<AnimState>( anim );
+	// The stances stay (the mod still has the weapon out).
+	anim.stances = old.stances;
+	SetAnimState( e, anim );
 	e.set<Transform>( t );
 	e.set<Velocity>( {} );
 	if ( const MotionHold* hold = e.try_get<MotionHold>(); hold != nullptr && hold->on != 0 )
@@ -866,9 +974,9 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			e.set<Character>( c );
 			if ( m_motions )
 			{
-				MotionState motion = e.has<MotionState>() ? e.get<MotionState>() : MotionState{};
+				MotionState motion = GetMotionState( e );
 				motion.prevActions = in.actions;
-				e.set<MotionState>( motion );
+				SetMotionState( e, motion );
 				if ( const MotionHold* hold = e.try_get<MotionHold>(); hold != nullptr && hold->on != 0 )
 				{
 					MotionHold off = *hold;
@@ -898,10 +1006,10 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		// and this tick's commands left it, by this tick's input. A frozen player does none.
 		if ( m_motions )
 		{
-			MotionState motion = e.has<MotionState>() ? e.get<MotionState>() : MotionState{};
+			MotionState motion = GetMotionState( e );
 			{
-				const AnimState& before = e.get<AnimState>();
-				Blackboard board = e.has<Blackboard>() ? e.get<Blackboard>() : Blackboard{};
+				const AnimState before = GetAnimState( e );
+				Blackboard board = GetBoard( e );
 				// Conditions read the board as the tick found it: a motion that turns a field on does
 				// not start the motion that waits for it until the next tick.
 				const Blackboard boardBefore = board;
@@ -917,10 +1025,10 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				values.builtins[AnimExpr::MoveForward] = before.moveForward;
 				values.builtins[AnimExpr::MoveRight] = before.moveRight;
 				values.state = &before;
-				values.board = boardBefore.values;
+				values.board = &boardBefore.values;
 				values.input = &in;
 				// A frozen player presses nothing.
-				values.pressedActions = c.frozen ? uint16_t( 0 ) : uint16_t( in.actions & ~motion.prevActions );
+				values.pressedActions = c.frozen ? ActionBits( 0 ) : ActionBits( in.actions & ~motion.prevActions );
 				values.pressedButtons = c.frozen ? uint8_t( 0 ) : pressed;
 				// What a probe of its holds on to, if one is out, and whether that is still there.
 				int heldMotion = -1;
@@ -935,7 +1043,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				// (From where the line leaves the player: the point its camera orbits.)
 				values.builtins[AnimExpr::LinkDistance] =
 					holdAlive ? b3Distance( where, b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) ) : 0.0f;
-				values.globalBoard = m_globals.board;
+				values.globalBoard = &m_globalBoard;
 				values.events = m_globals.modEvents;
 				values.eventCount = m_globals.modEventCount;
 				values.tick = m_globals.tick;
@@ -971,12 +1079,12 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				RunMotions( *m_motions, motionIn, motion, c, board, boardChanged, m_motionEvents, m_motionActive );
 				if ( boardChanged )
 				{
-					e.set<Blackboard>( board );
+					SetBoard( e, board );
 				}
 				// A hold whose motion ended (its condition, a new throw) is let go.
 				if ( const MotionHold* out = e.try_get<MotionHold>(); out != nullptr && out->on != 0 )
 				{
-					const MotionSlot& slot = motion.slots[out->motion];
+					const MotionSlot slot = motion.slots[out->motion];
 					if ( slot.lastTick == 0 || slot.untilTick <= m_globals.tick )
 					{
 						MotionHold off = *out;
@@ -998,7 +1106,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 					RecordModEvent( record );
 				}
 				// The effects read the state the motions just decided (the parameters that hold).
-				e.set<MotionState>( motion );
+				SetMotionState( e, motion );
 				ApplyMotionEffects( e, c, t, in, motion, boardBefore, m_motionActive );
 			}
 		}
@@ -1010,12 +1118,12 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 					 c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed, c, t );
 		c.prevButtons = in.buttons;
 
-		AnimState anim = e.get<AnimState>();
+		AnimState anim = GetAnimState( e );
 		UpdateAnimState( anim, c, in, m_globals.tick, m_config.TimeStep() );
 		if ( m_animGraph )
 		{
 			// The character's own state machine, on what this tick's movement and commands left.
-			Blackboard board = e.has<Blackboard>() ? e.get<Blackboard>() : Blackboard{};
+			Blackboard board = GetBoard( e );
 			AnimGraphInputs graphIn;
 			float speed = anim.groundSpeed;
 			graphIn.builtins[AnimExpr::Speed] = speed;
@@ -1028,8 +1136,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			graphIn.builtins[AnimExpr::Backward] = anim.legsBackward != 0 ? 1.0f : 0.0f;
 			graphIn.builtins[AnimExpr::MoveForward] = anim.moveForward;
 			graphIn.builtins[AnimExpr::MoveRight] = anim.moveRight;
-			graphIn.board = board.values;
-			graphIn.globalBoard = m_globals.board;
+			graphIn.board = &board.values;
+			graphIn.globalBoard = &m_globalBoard;
 			graphIn.events = m_globals.modEvents;
 			graphIn.eventCount = m_globals.modEventCount;
 			graphIn.tick = m_globals.tick;
@@ -1049,7 +1157,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				RecordModEvent( record );
 			}
 		}
-		e.set<AnimState>( anim );
+		SetAnimState( e, anim );
 
 		e.set<Character>( c );
 		e.set<Transform>( t );
@@ -1318,6 +1426,7 @@ void Simulation::SerializeEcs( std::vector<uint8_t>& out ) const
 	out.clear();
 	AppendValue( out, kSnapMagic );
 	AppendValue( out, m_globals );
+	AppendBytes( out, m_globalBoard.data(), m_globalBoard.size() * 4 );
 	AppendValue( out, uint32_t( m_entities.size() ) );
 
 	ecs_world_t* world = m_world.c_ptr();
@@ -1354,6 +1463,7 @@ void Simulation::DeserializeEcs( const std::vector<uint8_t>& in )
 		std::abort();
 	}
 	m_globals = rd.Read<SimGlobals>();
+	m_globalBoard.assign( reinterpret_cast<const int32_t*>( rd.Take( size_t( m_config.globalFields ) * 4 ) ), m_config.globalFields );
 	uint32_t count = rd.Read<uint32_t>();
 
 	ecs_world_t* world = m_world.c_ptr();
@@ -1549,13 +1659,16 @@ void Simulation::ApplyCommand( const SimCommand& command )
 	{
 		case CommandType::SetField:
 		{
-			if ( command.index >= kBoardSlots )
-			{
-				return;
-			}
 			if ( command.target == 0 )
 			{
-				m_globals.board[command.index] = command.value;
+				if ( command.index < m_config.globalFields )
+				{
+					m_globalBoard[command.index] = command.value;
+				}
+				return;
+			}
+			if ( command.index >= m_config.fields )
+			{
 				return;
 			}
 			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
@@ -1563,9 +1676,9 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			{
 				return;
 			}
-			Blackboard board = e.has<Blackboard>() ? e.get<Blackboard>() : Blackboard{};
+			Blackboard board = GetBoard( e );
 			board.values[command.index] = command.value;
-			e.set<Blackboard>( board );
+			SetBoard( e, board );
 			return;
 		}
 
@@ -1813,33 +1926,33 @@ void Simulation::ApplyCommand( const SimCommand& command )
 		case CommandType::SwapLayer:
 		{
 			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
-			if ( e.is_valid() == false || e.has<AnimState>() == false || command.index >= kMaxAnimLayers || command.value < 0 ||
+			if ( e.is_valid() == false || HasAnimState( e ) == false || command.index >= m_config.layers || command.value < 0 ||
 				 command.value > 255 )
 			{
 				return;
 			}
-			AnimState a = e.get<AnimState>();
+			AnimState a = GetAnimState( e );
 			AnimGraphLayerState& layer = a.graph[command.index];
 			if ( layer.source != uint8_t( command.value ) )
 			{
 				layer.source = uint8_t( command.value );
 				layer.started = 0; // starts over in the new layer's start state
 			}
-			e.set<AnimState>( a );
+			SetAnimState( e, a );
 			return;
 		}
 
 		case CommandType::Stance:
 		{
 			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
-			if ( e.is_valid() == false || e.has<AnimState>() == false || command.index >= kMaxAnimLayers ||
+			if ( e.is_valid() == false || HasAnimState( e ) == false || command.index >= m_config.layers ||
 				 command.value < 0 || command.value > kMaxStances )
 			{
 				return;
 			}
-			AnimState a = e.get<AnimState>();
+			AnimState a = GetAnimState( e );
 			a.stances[command.index] = uint8_t( command.value );
-			e.set<AnimState>( a );
+			SetAnimState( e, a );
 			return;
 		}
 
@@ -1858,11 +1971,11 @@ void Simulation::ApplyCommand( const SimCommand& command )
 		case CommandType::Aim:
 		{
 			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
-			if ( e.is_valid() && e.has<AnimState>() )
+			if ( e.is_valid() && HasAnimState( e ) )
 			{
-				AnimState a = e.get<AnimState>();
+				AnimState a = GetAnimState( e );
 				a.aiming = command.mode != 0 ? 1 : 0;
-				e.set<AnimState>( a );
+				SetAnimState( e, a );
 			}
 			return;
 		}
@@ -2210,9 +2323,9 @@ MoveParams Simulation::MoveOf( flecs::entity e ) const
 	// A motion that is on has the last word, for as long as it lasts.
 	if ( m_motions )
 	{
-		if ( const MotionState* motion = e.try_get<MotionState>() )
+		if ( HasMotionState( e ) )
 		{
-			ApplyMotionParams( *m_motions, *motion, m_globals.tick, params );
+			ApplyMotionParams( *m_motions, GetMotionState( e ), m_globals.tick, params );
 		}
 	}
 	return params;
@@ -2315,7 +2428,7 @@ bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerIn
 	hold.length = 0.0f; // a link measures its rope when the probe takes hold
 	hold.startTick = m_globals.tick;
 	hold.holdTick = m_globals.tick + ( m.probeTravel > 0.0f ? uint32_t( distance / m.probeTravel * float( m_config.tickRate ) + 0.5f ) : 0u );
-	hold.motion = uint8_t( index );
+	hold.motion = uint16_t( index );
 	hold.on = 1;
 	e.set<MotionHold>( hold );
 	holdTick = hold.holdTick;
@@ -2463,7 +2576,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 	for ( const MotionActive& on : active )
 	{
 		const Motion& m = m_motions->list[on.index];
-		const MotionSlot& slot = state.slots[on.index];
+		const MotionSlot slot = state.slots[on.index];
 		// What the motion's probe holds on to: its effects wait for it to take hold.
 		const MotionHold* found = e.try_get<MotionHold>();
 		MotionHold hold = found != nullptr ? *found : MotionHold{};
@@ -2632,7 +2745,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 	}
 }
 
-bool Simulation::EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint8_t& motion ) const
+bool Simulation::EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint16_t& motion ) const
 {
 	flecs::entity e = FindEntity( netId );
 	const MotionHold* hold = e.is_valid() ? e.try_get<MotionHold>() : nullptr;
@@ -2671,21 +2784,20 @@ const Transform* Simulation::EntityTransform( uint32_t netId ) const
 	return e.is_valid() ? e.try_get<Transform>() : nullptr;
 }
 
-const AnimState* Simulation::EntityAnimState( uint32_t netId ) const
+AnimStateCopy Simulation::EntityAnimState( uint32_t netId ) const
 {
 	flecs::entity e = FindEntity( netId );
-	return e.is_valid() ? e.try_get<AnimState>() : nullptr;
+	return e.is_valid() && HasAnimState( e ) ? AnimStateCopy( GetAnimState( e ) ) : AnimStateCopy();
 }
 
 int32_t Simulation::BoardValue( uint32_t netId, int slot ) const
 {
-	if ( slot < 0 || slot >= kBoardSlots )
+	flecs::entity e = FindEntity( netId );
+	if ( slot < 0 || slot >= int( m_config.fields ) || e.is_valid() == false || HasBoard( e ) == false )
 	{
 		return 0;
 	}
-	flecs::entity e = FindEntity( netId );
-	const Blackboard* board = e.is_valid() ? e.try_get<Blackboard>() : nullptr;
-	return board != nullptr ? board->values[slot] : 0;
+	return static_cast<const int32_t*>( ecs_get_id( m_world.c_ptr(), e.id(), m_boardId ) )[slot];
 }
 
 namespace

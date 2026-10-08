@@ -7,7 +7,6 @@
 //               the CollisionShape3D under it, its grips are two markers it names, its look is
 //               everything else in the scene. Baked to items/<kind>.cfg, which the server reads and the game finds the
 //               scene by.
-//   CbGrip      a marker for a hand, kept for hand placements to come; items do not use it
 //   CbLinkLook  what the line of a motion's probe is drawn as
 
 #include <godot_cpp/classes/collision_shape3d.hpp>
@@ -220,18 +219,6 @@ private:
 	godot::String m_motion; // "grapple.moves/Hook": the set and the node; empty: any link
 	godot::String m_scene;
 	godot::String m_from = "RightHand"; // the player's socket it starts at; empty: its chest
-};
-
-// A marker for a hand. Items name their grips themselves (CbItem::carry_grip, other_grip) and do
-// not use it; it is kept for hand placements to come (a ledge, a wheel, another player).
-class CbGrip : public godot::Marker3D
-{
-	GDCLASS( CbGrip, godot::Marker3D )
-
-protected:
-	static void _bind_methods()
-	{
-	}
 };
 
 } // namespace cb::gd

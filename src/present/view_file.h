@@ -142,7 +142,7 @@ private:
 
 	int m_follow = -1; // slot
 	bool m_autoFollow = true;
-	uint16_t m_pressed = 0;
+	ActionBits m_pressed = 0;
 };
 
 } // namespace cb::present

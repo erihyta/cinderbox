@@ -176,7 +176,6 @@ marker is.
 - It is part of the pose: other players see it, and the server's hit tests pose the same arms.
 - Fingers are the animation's: the solve places the wrist and turns the hand, it does not close it.
 - The markers are baked with the item (its `CbItem`); the body may be turned any way, but not scaled.
-- `CbGrip`, the node that used to mark a hand, is kept but unused: it is for hand placements to come (a ledge, a wheel).
 - `check_grips.gd` checks what scenes built in code bake to.
 - **To turn an item in the hand, turn its carrying marker**, and nothing else: the body stays where
   the scene has it (the bake writes how it is turned in the carried frame, a `turn` line, and the
