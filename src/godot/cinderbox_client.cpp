@@ -2287,6 +2287,13 @@ String CinderboxClient::FormatWith( int64_t net_id, const String& format, const 
 	Array keys = extra.keys();
 	for ( int64_t i = 0; i < keys.size(); ++i )
 	{
+		if ( extra[keys[i]].get_type() == Variant::STRING )
+		{
+			// Words of the asker's own (a name in a row of events): as they are, and never read again
+			// as a field's name.
+			own = own.replace( "{" + String( keys[i] ) + "}", String( extra[keys[i]] ).replace( "{", "(" ) );
+			continue;
+		}
 		double v = double( extra[keys[i]] );
 		own = own.replace( "{" + String( keys[i] ) + "}", v == std::floor( v ) ? String::num_int64( int64_t( v ) ) : String::num( v, 1 ) );
 	}

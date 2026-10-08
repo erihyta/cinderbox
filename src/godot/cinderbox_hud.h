@@ -10,12 +10,13 @@
 //                   texts written on it (choices), picked by a number the server sets
 //   CbFieldBinding  writes a field into any property of any node (a bar's value, a panel's
 //                   visibility, a colour's alpha), so any 2D asset can show mod state
-//   CbEventFeed     a line per mod event ("{a} > {b}" for combat.killed), fading after a while
-//   CbList          a row per player or item: its first child is the row, copied for each, sorted
-//                   and filtered; the HUD nodes in a row read that row's entity (a scoreboard, a
-//                   team list, the items a player carries)
-//   CbShowKey       shows a node while a key is held, or switches it with a press (Tab); it can
-//                   free the cursor while the node is shown (an inventory screen)
+//   CbList          a row per player, item, slot or event that happened: its first child is the
+//                   row, copied for each, sorted and filtered; the HUD nodes in a row read that
+//                   row's entity (a scoreboard, a team list, the items a player carries, a kill
+//                   feed)
+//   CbKey           a key of the viewer's own (Tab): a value of the viewer's ("ui.scores") is 1
+//                   while it is held, or switched by each press; whoever reads the value shows
+//                   something. It can free the cursor meanwhile (an inventory screen)
 //   CbClick         what a click on its parent does: sets values of the viewer's own ("ui."
 //                   names), asks something of the player's slots (select, move, drop)
 //   CbPromptLabel   a label in the world, upright above its parent: "[{key:pickup}] Pick up
@@ -265,86 +266,13 @@ private:
 	godot::ObjectID m_client;
 };
 
-class CbEventFeed : public godot::VBoxContainer
-{
-	GDCLASS( CbEventFeed, godot::VBoxContainer )
-
-public:
-	void _ready() override;
-	void _process( double delta ) override;
-
-	void set_event( const godot::String& v )
-	{
-		m_event = v;
-	}
-	godot::String get_event() const
-	{
-		return m_event;
-	}
-	void set_text_format( const godot::String& v )
-	{
-		m_format = v;
-	}
-	godot::String get_text_format() const
-	{
-		return m_format;
-	}
-	void set_nobody_text( const godot::String& v )
-	{
-		m_nobody = v;
-	}
-	godot::String get_nobody_text() const
-	{
-		return m_nobody;
-	}
-	void set_max_lines( int v )
-	{
-		m_maxLines = v;
-	}
-	int get_max_lines() const
-	{
-		return m_maxLines;
-	}
-	void set_line_seconds( float v )
-	{
-		m_lineSeconds = v;
-	}
-	float get_line_seconds() const
-	{
-		return m_lineSeconds;
-	}
-	void set_label_settings( const godot::Ref<godot::LabelSettings>& v )
-	{
-		m_labelSettings = v;
-	}
-	godot::Ref<godot::LabelSettings> get_label_settings() const
-	{
-		return m_labelSettings;
-	}
-
-	// Connected to the client's mod_event signal.
-	void on_mod_event( const godot::String& name, int64_t a, int64_t b, int64_t value, const godot::Vector3& position,
-					   const godot::Vector3& vector );
-
-protected:
-	static void _bind_methods();
-
-private:
-	godot::String m_event; // the mod event it lists (a mod names it; "combat.killed")
-	// {a} and {b}: the two entities' player names ({nobody} when there is none), {value}: the value.
-	godot::String m_format = "{a}  >  {b}";
-	godot::String m_nobody = "the world";
-	int m_maxLines = 5;
-	float m_lineSeconds = 5.0f;
-	godot::Ref<godot::LabelSettings> m_labelSettings;
-	godot::ObjectID m_client;
-	bool m_connected = false;
-	std::vector<double> m_expires; // one per line, oldest first
-};
-
 // A row per entity. Its first child (any Control) is the row as the modder designed it; in the game
 // that one is hidden and a copy of it is shown for each entry, in order. The HUD nodes inside a row
 // read that row's entity.
+//
+// Or a row per mod event that happened (a kill feed): the newest last, each for `seconds`. A row is
+// about the event's first entity, and its names are {a} and {b} (what the two are called),
+// {event.value}, and event.a / event.b (their ids, for conditions).
 class CbList : public godot::BoxContainer
 {
 	GDCLASS( CbList, godot::BoxContainer )
@@ -356,6 +284,7 @@ public:
 		OF_ITEMS = 1,
 		OF_HELD_ITEMS = 2,
 		OF_SLOTS = 3,
+		OF_EVENTS = 4,
 	};
 
 	CbList();
@@ -420,6 +349,33 @@ public:
 		return m_conditions;
 	}
 
+	void set_event( const godot::String& v )
+	{
+		m_event = v;
+	}
+	godot::String get_event() const
+	{
+		return m_event;
+	}
+	void set_seconds( float v )
+	{
+		m_seconds = v;
+	}
+	float get_seconds() const
+	{
+		return m_seconds;
+	}
+	void set_nobody_text( const godot::String& v )
+	{
+		m_nobody = v;
+	}
+	godot::String get_nobody_text() const
+	{
+		return m_nobody;
+	}
+	void on_mod_event( const godot::String& name, int64_t a, int64_t b, int64_t value, const godot::Vector3& position,
+					   const godot::Vector3& vector );
+
 	// The entities it lists now, in order (for tools and checks).
 	godot::PackedInt64Array get_entries() const;
 
@@ -440,17 +396,36 @@ private:
 	int m_maxRows = 0; // 0: all
 	// Conditions on the list's own subject for showing it at all.
 	godot::PackedStringArray m_conditions;
+	// OF_EVENTS: the mod event it lists ("combat.killed"), how long a row stays, and what an event's
+	// entity is called when there is none (a fall: nobody did it).
+	godot::String m_event;
+	float m_seconds = 5.0f;
+	godot::String m_nobody = "the world";
+	struct Happened
+	{
+		int64_t a = 0;
+		int64_t b = 0;
+		int64_t value = 0;
+		godot::String aName;
+		godot::String bName;
+		double expires = 0.0;
+	};
+	std::vector<Happened> m_happened; // oldest first
+	bool m_connected = false;
 	std::vector<godot::ObjectID> m_rows;
 	std::vector<int64_t> m_entries;
 	godot::ObjectID m_client;
 };
 
-// Shows its target while a key is held, or switches it with each press. The key is an input action
-// of its own (not one of the server's: the simulation never hears of it), added to the game's with
-// a default key when no one has it yet, so "{key:scores}" names it and rebinding moves it.
-class CbShowKey : public godot::Node
+// A key of the viewer's own: while it is held, or switched by each press, a value of the viewer's is
+// 1 ("ui.scores"), and 0 otherwise. What that shows is up to whoever reads the value: a
+// CbFieldBinding with the condition "ui.scores" shows its target, a label says something else, a
+// CbClick asks for it. The key is an input action of its own (not one of the server's: the
+// simulation never hears of it), added to the game's with a default key when no one has it yet,
+// so "{key:scores}" names it and rebinding moves it.
+class CbKey : public godot::Node
 {
-	GDCLASS( CbShowKey, godot::Node )
+	GDCLASS( CbKey, godot::Node )
 
 public:
 	enum Mode
@@ -489,13 +464,14 @@ public:
 	{
 		return m_mode;
 	}
-	void set_target( const godot::NodePath& v )
+	void set_value( const godot::String& v )
 	{
-		m_target = v;
+		m_value = v;
+		update_configuration_warnings();
 	}
-	godot::NodePath get_target() const
+	godot::String get_value() const
 	{
-		return m_target;
+		return m_value;
 	}
 	void set_cursor( bool v )
 	{
@@ -519,16 +495,18 @@ protected:
 	static void _bind_methods();
 
 private:
-	// Conditions on its subject that must hold too ("!?deathmatch.score": step aside when a game
-	// mode brings its own).
+	// Conditions on its subject that must hold too, or the value is 0 ("!combat.dead").
 	godot::PackedStringArray m_conditions;
 	godot::ObjectID m_client;
 	godot::String m_action = "scores";
 	godot::String m_key = "Tab"; // a key's name, as Godot writes it: "Tab", "M", "F1"
 	int m_mode = MODE_HOLD;
-	godot::NodePath m_target = godot::NodePath( ".." );
+	// The viewer's value it keeps ("ui.bag"); empty: "ui." and the action's name.
+	godot::String m_value;
+	godot::String ValueName() const;
 	bool m_on = false;
-	// While the target is shown the cursor is free, and the mouse is the screen's, not the game's.
+	int m_said = -1; // what the value was last set to
+	// While the value is 1 the cursor is free, and the mouse is the screen's, not the game's.
 	bool m_cursor = false;
 };
 
@@ -609,4 +587,4 @@ private:
 
 VARIANT_ENUM_CAST( cb::gd::CbClick::Intent );
 VARIANT_ENUM_CAST( cb::gd::CbList::Of );
-VARIANT_ENUM_CAST( cb::gd::CbShowKey::Mode );
+VARIANT_ENUM_CAST( cb::gd::CbKey::Mode );

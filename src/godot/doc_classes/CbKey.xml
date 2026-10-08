@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbKey" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		A key of the viewer's own: a value is 1 while it is held, or switched by each press. A scoreboard on Tab, an inventory on I.
+	</brief_description>
+	<description>
+		It keeps one value of the viewer's own ([member value], [code]ui.scores[/code]): 1 while the key is on, 0 otherwise. What that shows is up to whoever reads it: a [CbFieldBinding] with the condition [code]ui.scores[/code] shows its target, a [CbFieldLabel] with it says something, a [CbList] with it lists. One key can drive any number of them, anywhere in the HUD.
+		The key is an action of the viewer's own: the server and the simulation never hear of it, so it costs none of a server's actions. The first node that names an [member action] gives it its default [member key]; from then on it is one of the game's keys, [code]{key:scores}[/code] in a format shows what it is bound to, and rebinding moves it.
+		Looks only. A key that [i]does[/i] something in the game is an action a server mod declares.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="action" type="String" setter="set_action" getter="get_action" default="&quot;scores&quot;">
+			The key's name, one word. Two nodes with the same action share the key.
+		</member>
+		<member name="key" type="String" setter="set_key" getter="get_key" default="&quot;Tab&quot;">
+			The key it has until the player binds another, as Godot writes keys: [code]Tab[/code], [code]M[/code], [code]F1[/code], [code]Space[/code].
+		</member>
+		<member name="mode" type="int" setter="set_mode" getter="get_mode" enum="CbKey.Mode" default="0">
+			On while the key is down, or switched by each press.
+		</member>
+		<member name="value" type="String" setter="set_value" getter="get_value" default="&quot;&quot;">
+			The value it keeps, a name that starts with [code]ui.[/code]. Empty: [code]ui.[/code] and the action's name ([code]ui.scores[/code]).
+		</member>
+		<member name="cursor" type="bool" setter="set_cursor" getter="get_cursor" default="false">
+			While the value is 1 the cursor is free and the mouse is the screen's: the camera, the use button and the mods' actions do not hear it. For a screen with something to click ([CbClick]): an inventory, a shop.
+		</member>
+		<member name="conditions" type="PackedStringArray" setter="set_conditions" getter="get_conditions" default="PackedStringArray()">
+			Expressions that must hold too, or the value is 0 ([code]!combat.dead[/code]: no inventory for the dead).
+		</member>
+	</members>
+	<constants>
+		<constant name="MODE_HOLD" value="0" enum="Mode">
+			On while the key is held.
+		</constant>
+		<constant name="MODE_TOGGLE" value="1" enum="Mode">
+			Each press switches it.
+		</constant>
+	</constants>
+</class>

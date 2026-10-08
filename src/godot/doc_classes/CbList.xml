@@ -8,7 +8,7 @@
 		The HUD nodes inside a row read [b]that row's entity[/b] instead of the local player: a [CbFieldLabel] with [code]{name}[/code] and [code]{combat.kills}[/code] shows that player's name and kills, a [CbFieldBinding] fills a bar with that player's health. In a row's conditions, [code]is_local[/code] is true on the viewer's own row, and [code]{rank}[/code] in a format is the row's place in the list, from 1.
 		What is listed is the server's: who is in the world, and the fields its mods set on them. The list only decides which of them to show ([member where]), in which order ([member sort_by]) and how many ([member max_rows]).
 		A list inside a row lists for that row's entity: [constant OF_HELD_ITEMS] under a player's row is what that player carries.
-		Headers are not part of it: put plain labels above it. To show it only while a key is held, put a [CbShowKey] next to it.
+		Headers are not part of it: put plain labels above it. To show it only while a key is held, put a [CbKey] next to it.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -42,6 +42,15 @@
 		<member name="conditions" type="PackedStringArray" setter="set_conditions" getter="get_conditions" default="PackedStringArray()">
 			Expressions on the list's own subject (the local player, or the row the list is in) that must hold for the list to be shown at all.
 		</member>
+		<member name="event" type="String" setter="set_event" getter="get_event" default="&quot;&quot;">
+			For a list of events: the mod event it lists ([code]combat.killed[/code]).
+		</member>
+		<member name="seconds" type="float" setter="set_seconds" getter="get_seconds" default="5.0">
+			For a list of events: how long an event's row stays.
+		</member>
+		<member name="nobody_text" type="String" setter="set_nobody_text" getter="get_nobody_text" default="&quot;the world&quot;">
+			For a list of events: what [code]{a}[/code] or [code]{b}[/code] says when the event has no such entity (a fall: nobody did it).
+		</member>
 	</members>
 	<constants>
 		<constant name="OF_PLAYERS" value="0" enum="Of">
@@ -55,6 +64,9 @@
 		</constant>
 		<constant name="OF_SLOTS" value="3" enum="Of">
 			The slots of its subject (a player), in their order, empty ones too. A row is for the item in its slot ([code]{name}[/code] is what that is called; nothing, for an empty slot), and the slot itself is in the row's own names: [code]slot.number[/code] (from 1), [code]slot.selected[/code], [code]slot.empty[/code], in conditions and as [code]{slot.number}[/code] in a format. They are read from the simulation's slots, so a row follows the player's hands on the tick of the key.
+		</constant>
+		<constant name="OF_EVENTS" value="4" enum="Of">
+			A row per [member event] that happened, the newest last, each for [member seconds]; with [member max_rows], the newest that fit. A row is about the event's first entity. Its names: [code]{a}[/code] and [code]{b}[/code] are what the event's two entities are called, [code]{event.value}[/code] its number, and [code]event.a[/code] / [code]event.b[/code] their ids, for conditions. A kill feed is this with one [CbFieldLabel] as its row: [code]{a}  >  {b}[/code].
 		</constant>
 	</constants>
 </class>

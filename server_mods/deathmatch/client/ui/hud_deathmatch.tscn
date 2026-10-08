@@ -7,8 +7,8 @@
 ;   Remark          the words for deathmatch.ending are here, not on the server: a CbFieldLabel
 ;                   whose choices are one line per number (line 0 empty: nothing to say). Reword
 ;                   or translate them freely.
-;   Scores          the scoreboard, made of ordinary nodes: a CbShowKey shows it while "scores" (Tab) is
-;                   held; Header is plain Labels; Rows is a CbList of players whose child Row is one
+;   Scores          the scoreboard, made of ordinary nodes: Key (a CbKey) keeps "ui.scores" at 1 while
+;                   Tab is held and Shown (a CbFieldBinding) shows it while that holds; Header is plain Labels; Rows is a CbList of players whose child Row is one
 ;                   row as designed. In the game the list copies Row for every player, sorted, and
 ;                   the CbFieldLabels in a row read that player (is_local: the viewer's own row)
 
@@ -131,7 +131,10 @@ offset_top = -200.0
 offset_right = 300.0
 offset_bottom = 200.0
 
-[node name="Key" type="CbShowKey" parent="Scores"]
+[node name="Key" type="CbKey" parent="Scores"]
+
+[node name="Shown" type="CbFieldBinding" parent="Scores"]
+conditions = PackedStringArray("ui.scores")
 
 [node name="Header" type="HBoxContainer" parent="Scores"]
 

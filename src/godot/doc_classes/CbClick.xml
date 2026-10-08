@@ -10,7 +10,7 @@
 		- [member intent]: ask something of the player's slots (select, move, drop). It goes out in the player's own input, so every simulation carries it out and the player's own screen does not wait for the server.
 		Several under one control are asked in the order of the tree, and the first whose [member conditions] hold takes the click. So one that sets a value does not make the next one's condition true in the same click: a click-to-move inventory is two of them in a slot's row, one that picks the slot up and one that puts the picked slot down.
 		Inside a row of a [CbList] of slots, [code]slot.number[/code], [code]slot.selected[/code] and [code]slot.empty[/code] are that row's.
-		The cursor has to be free for a click: a [CbShowKey] with [member CbShowKey.cursor] frees it while its screen is shown.
+		The cursor has to be free for a click: a [CbKey] with [member CbKey.cursor] frees it while its screen is shown.
 	</description>
 	<tutorials>
 	</tutorials>
