@@ -388,7 +388,7 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 	// Pitch: a positive Godot rotation.x looks up, which is the simulation's convention too.
 	double pitchTurns = std::clamp( camera_pitch / ( 2.0 * detmath::kPi ), -0.24, 0.24 );
 	in.cameraPitch = int16_t( std::clamp( int( std::lround( pitchTurns * 65536.0 ) ), -int( kMaxCameraPitch ), int( kMaxCameraPitch ) ) );
-	in.actions = uint16_t( actions );
+	in.actions = ActionBits( actions );
 	in.view = view >= 0 && view < int64_t( kViewModes ) ? uint8_t( view ) : uint8_t( 0 );
 	// The next intent, once the last one has had a tick to itself: the simulation carries one out
 	// when the count changes, so two in one tick would be one.
@@ -415,7 +415,7 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 	m_source->SetInput( in );
 
 	// Presses are announced here, before the server has seen them, so feedback does not wait.
-	uint16_t pressed = uint16_t( in.actions & ~m_lastActions );
+	ActionBits pressed = in.actions & ~m_lastActions;
 	m_lastActions = in.actions;
 	AnnouncePresses( pressed );
 	// The use button is the engine's, and a look predicts it like an action: by the name "use".
@@ -437,7 +437,7 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 	{
 		for ( const ModAction& a : m_frame.schema.actions )
 		{
-			if ( ( in.actions & ~pressed ) & ( 1u << a.bit ) )
+			if ( ( in.actions & ~pressed ) & ( ActionBits( 1 ) << a.bit ) )
 			{
 				Director()->hold( String( a.name.c_str() ) );
 			}
@@ -445,11 +445,11 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 	}
 }
 
-void CinderboxClient::AnnouncePresses( uint16_t pressed )
+void CinderboxClient::AnnouncePresses( ActionBits pressed )
 {
 	for ( const ModAction& a : m_frame.schema.actions )
 	{
-		if ( pressed & ( 1u << a.bit ) )
+		if ( pressed & ( ActionBits( 1 ) << a.bit ) )
 		{
 			emit_signal( "action_pressed", String( a.name.c_str() ) );
 			// The looks' predictions (CbPrediction) say what the server will answer, and show it now.

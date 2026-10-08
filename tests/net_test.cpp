@@ -2252,6 +2252,35 @@ void TestProtocol()
 		CHECK( r.AtEnd() );
 	}
 
+	// A client's inputs: each as few bytes as it needs, whichever of its 64 actions are held.
+	{
+		MsgInput sent;
+		sent.newestTick = 90;
+		sent.ackTick = 80;
+		for ( int i = 0; i < 6; ++i )
+		{
+			PlayerInput in;
+			in.moveForward = int8_t( 20 * i );
+			in.cameraYaw = uint16_t( 1000 * i );
+			in.cameraPitch = int16_t( -300 * i );
+			in.buttons = uint8_t( i & 3 );
+			in.intent = uint8_t( i % 3 );
+			in.intentSeq = uint8_t( i );
+			in.actions = i == 0 ? 0 : i == 1 ? 1 : i == 2 ? ActionBits( 1 ) << 9 : i == 3 ? ActionBits( 1 ) << 40 : i == 4 ? ~ActionBits( 0 ) : 3;
+			sent.inputs.push_back( in );
+		}
+		std::vector<uint8_t> bytes;
+		Encode( sent, bytes );
+		ByteReader r( bytes.data(), bytes.size() );
+		CHECK( ReadType( r ) == MsgType::Input );
+		MsgInput got;
+		CHECK( Decode( r, got ) && r.AtEnd() );
+		CHECK( got.inputs == sent.inputs && got.newestTick == 90 && got.ackTick == 80 );
+		std::printf( "    six inputs, their actions from none to all 64: %zu bytes\n", bytes.size() );
+		// 9 of header, 13 an input, and 0 + 1 + 2 + 6 + 8 + 1 bytes of actions.
+		CHECK( bytes.size() == 1 + 9 + 6 * 13 + 18 );
+	}
+
 	// Frame batches: a chain from any starting tick decodes back to the same frames.
 	{
 		std::vector<InputFrame> history( 40 );
@@ -2260,6 +2289,8 @@ void TestProtocol()
 		{
 			history[t].tick = t;
 			running[t % 8].moveForward = int8_t( t );
+			// Actions anywhere in the word: the first bit, the forty-first, the last.
+			running[t % 5].actions = t % 3 == 0 ? ActionBits( 1 ) : t % 3 == 1 ? ( ActionBits( 1 ) << 40 ) | 2 : ActionBits( 1 ) << 63;
 			running[( t * 3 ) % 64].cameraYaw = uint16_t( t * 977 );
 			history[t].inputs = running;
 			if ( t % 7 == 0 )
@@ -3065,7 +3096,7 @@ void TestGrapple()
 				return;
 			}
 			Seen seen{ sim.EntityTransform( netId )->position, {}, false, false, sim.Globals().modEventCount };
-			uint8_t motion = 0;
+			uint16_t motion = 0;
 			seen.tethered = sim.EntityHold( netId, seen.end, seen.holds, motion );
 			into[sim.Tick()] = seen;
 		};

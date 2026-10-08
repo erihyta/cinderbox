@@ -72,7 +72,7 @@ struct MotionTarget
 		Field = 2, // the entity whose NetId is in a field of the player (0, or gone: nobody)
 	};
 	Kind kind = Kind::Self;
-	uint8_t slot = 0; // Kind::Field: the board slot
+	uint16_t slot = 0; // Kind::Field: the board slot
 	bool known = true; // false: the field is not one a mod declares, so the effect does nothing
 };
 
@@ -143,7 +143,7 @@ struct Motion
 	};
 	struct Change
 	{
-		uint8_t slot = 0; // board slot of the player's field
+		uint16_t slot = 0; // board slot of the player's field
 		BoardType type = BoardType::Int;
 		ChangeOp op = ChangeOp::Set;
 		float value = 0.0f;
@@ -224,7 +224,7 @@ struct MotionInputs
 // A motion that is on this tick, for the simulation to apply its effects.
 struct MotionActive
 {
-	uint8_t index = 0;
+	uint16_t index = 0;
 	bool started = false; // this is the tick it took effect: impulses happen now
 };
 

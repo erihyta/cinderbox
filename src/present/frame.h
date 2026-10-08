@@ -58,7 +58,7 @@ struct FrameEntity
 	// toward where it will hold, or holding), whether it holds, and the motion that threw it.
 	bool linked = false;
 	bool linkHolds = false;
-	uint8_t linkMotion = 0;
+	uint16_t linkMotion = 0;
 	b3Vec3 linkEnd = {};
 };
 

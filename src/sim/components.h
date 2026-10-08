@@ -293,8 +293,7 @@ struct MotionSlot
 
 struct MotionState
 {
-	uint16_t prevActions = 0; // the mod actions held last tick: a press is one that was not
-	uint16_t reserved = 0;
+	ActionBits prevActions = 0; // the mod actions held last tick: a press is one that was not
 	SmallList<MotionSlot, 16> slots;
 };
 
@@ -308,9 +307,9 @@ struct MotionHold
 	float length = 0.0f;	// a link's rope, in metres; 0: not measured yet (or no link)
 	uint32_t startTick = 0; // when it was thrown
 	uint32_t holdTick = 0;	// when it reaches the point and takes hold (it flies until then)
-	uint8_t motion = 0;		// the motion it belongs to
+	uint16_t motion = 0;	// the motion it belongs to
 	uint8_t on = 0;
-	uint8_t reserved[2] = {};
+	uint8_t reserved = 0;
 };
 
 // Tag: part of the static level.

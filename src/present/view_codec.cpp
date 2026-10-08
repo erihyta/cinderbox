@@ -72,11 +72,11 @@ struct EntityFixed
 	uint32_t holder;
 	uint16_t itemKind;
 	uint8_t socket;
-	uint8_t linkMotion;
+	uint8_t socketPad;
 	b3Vec3 linkEnd;
 	uint8_t slotIndex;
 	uint8_t slotCount;
-	uint8_t slotPad[2];
+	uint16_t linkMotion;
 };
 static_assert( sizeof( EntityFixed ) == 96, "EntityFixed has padding" );
 static_assert( sizeof( EntityFixed ) % 4 == 0 );
@@ -141,8 +141,7 @@ EntityRecord ToRecord( const FrameEntity& f )
 	r.linkEnd = f.linkEnd;
 	r.slotIndex = f.slotIndex;
 	r.slotCount = f.slotCount;
-	r.slotPad[0] = 0;
-	r.slotPad[1] = 0;
+	r.socketPad = 0;
 	return r;
 }
 
@@ -614,11 +613,11 @@ struct RestRecord
 	uint32_t holder;
 	uint16_t itemKind;
 	uint8_t socket;
-	uint8_t linkMotion;
+	uint8_t socketPad;
 	b3Vec3 linkEnd;
 	uint8_t slotIndex;
 	uint8_t slotCount;
-	uint8_t slotPad[2];
+	uint16_t linkMotion;
 };
 static_assert( sizeof( RestRecord ) == 56, "RestRecord has padding" );
 
@@ -1291,7 +1290,7 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	w.Write( float( ageSeconds ) );
 	w.Write( frame.alphaAtPublish );
 	w.Write( frame.rate );
-	w.Write( frame.localPressed );
+	w.Write( uint64_t( frame.localPressed ) );
 	w.Write( uint16_t( std::clamp<uint32_t>( frame.stride, 1, 0xFFFF ) ) );
 	w.Write( flags );
 	WriteString( w, frame.state );
@@ -1481,7 +1480,7 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	out.publishedAt = ViewClock() - double( r.Read<float>() );
 	out.alphaAtPublish = r.Read<float>();
 	out.rate = r.Read<float>();
-	out.localPressed = r.Read<uint16_t>();
+	out.localPressed = r.Read<uint64_t>();
 	out.stride = std::max<uint32_t>( r.Read<uint16_t>(), 1 );
 	uint8_t flags = r.Read<uint8_t>();
 	bool compact = ( flags & FlagCompact ) != 0;

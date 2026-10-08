@@ -47,7 +47,7 @@ protected:
 		return m_building;
 	}
 	// Hands Building() to the viewer. A rollback and presses the viewer has not taken yet are kept.
-	void Publish( bool rolledBack, uint16_t localPressed = 0 );
+	void Publish( bool rolledBack, ActionBits localPressed = 0 );
 	// Whether the thread got the floating-point environment the simulation needs.
 	bool FpEnvironmentOk() const
 	{

@@ -62,7 +62,7 @@ struct EventHandle
 
 struct ActionHandle
 {
-	uint16_t mask = 0;
+	ActionBits mask = 0;
 
 	bool Valid() const
 	{

@@ -189,7 +189,7 @@ public:
 	// What a probe of the entity's motions holds on to, if one is out: where the line's end is now
 	// (flying toward where it will hold, or holding), whether it holds, and the motion that threw
 	// it. False when it has none.
-	bool EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint8_t& motion ) const;
+	bool EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint16_t& motion ) const;
 	const Transform* EntityTransform( uint32_t netId ) const;
 	// A player's animation state, or null.
 	AnimStateCopy EntityAnimState( uint32_t netId ) const;

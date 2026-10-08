@@ -107,7 +107,7 @@ struct AnimExpr
 		Op op = Op::Const;
 		VarKind kind = VarKind::Zero;
 		BoardType type = BoardType::Int;
-		uint8_t index = 0;
+		uint16_t index = 0;
 		float value = 0.0f;
 	};
 	std::vector<Step> steps; // empty: always true (conditions) or 0 (inputs)
@@ -229,7 +229,7 @@ struct AnimGraphInputs
 	// The player's input this tick, for "held.<action>" (motions; null for a state machine).
 	const PlayerInput* input = nullptr;
 	// What went down this tick, for "pressed.<action>": mod action bits, and the engine's buttons.
-	uint16_t pressedActions = 0;
+	ActionBits pressedActions = 0;
 	uint8_t pressedButtons = 0;
 	const uint16_t* heldKinds = nullptr;
 	uint32_t heldCount = 0;

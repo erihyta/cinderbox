@@ -214,17 +214,16 @@ bool Simulation::HasMotionState( flecs::entity e ) const
 	return m_config.motions > 0 && ecs_has_id( m_world.c_ptr(), e.id(), m_motionId );
 }
 
-// The block: the actions held last tick (four bytes), then a slot per motion.
+// The block: the actions held last tick (a word of 64), then a slot per motion.
 MotionState Simulation::GetMotionState( flecs::entity e ) const
 {
 	MotionState state;
 	if ( HasMotionState( e ) )
 	{
 		const uint8_t* bytes = static_cast<const uint8_t*>( ecs_get_id( m_world.c_ptr(), e.id(), m_motionId ) );
-		std::memcpy( &state.prevActions, bytes, 2 );
-		std::memcpy( &state.reserved, bytes + 2, 2 );
+		std::memcpy( &state.prevActions, bytes, 8 );
 		state.slots.resize( m_config.motions );
-		std::memcpy( static_cast<void*>( state.slots.data() ), bytes + 4, size_t( m_config.motions ) * sizeof( MotionSlot ) );
+		std::memcpy( static_cast<void*>( state.slots.data() ), bytes + 8, size_t( m_config.motions ) * sizeof( MotionSlot ) );
 	}
 	return state;
 }
@@ -235,10 +234,9 @@ void Simulation::SetMotionState( flecs::entity e, const MotionState& state )
 	{
 		return;
 	}
-	m_sizedScratch.resize( 4 + size_t( m_config.motions ) * sizeof( MotionSlot ) );
-	std::memcpy( m_sizedScratch.data(), &state.prevActions, 2 );
-	std::memcpy( m_sizedScratch.data() + 2, &state.reserved, 2 );
-	state.slots.copy_to( reinterpret_cast<MotionSlot*>( m_sizedScratch.data() + 4 ), m_config.motions );
+	m_sizedScratch.resize( 8 + size_t( m_config.motions ) * sizeof( MotionSlot ) );
+	std::memcpy( m_sizedScratch.data(), &state.prevActions, 8 );
+	state.slots.copy_to( reinterpret_cast<MotionSlot*>( m_sizedScratch.data() + 8 ), m_config.motions );
 	ecs_set_id( m_world.c_ptr(), e.id(), m_motionId, m_sizedScratch.size(), m_sizedScratch.data() );
 }
 
@@ -295,7 +293,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<RagdollPose>();
 	RegisterSnapComponent<HeldItem>();
 	RegisterSnapComponent<MoveOverrides>();
-	m_motionId = RegisterSizedComponent( "MotionState", m_config.motions > 0 ? 4 + uint32_t( m_config.motions ) * uint32_t( sizeof( MotionSlot ) ) : 0 );
+	m_motionId = RegisterSizedComponent( "MotionState", m_config.motions > 0 ? 8 + uint32_t( m_config.motions ) * uint32_t( sizeof( MotionSlot ) ) : 0 );
 	RegisterSnapComponent<MotionHold>();
 	RegisterSnapComponent<Slots>();
 
@@ -1030,7 +1028,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				values.board = &boardBefore.values;
 				values.input = &in;
 				// A frozen player presses nothing.
-				values.pressedActions = c.frozen ? uint16_t( 0 ) : uint16_t( in.actions & ~motion.prevActions );
+				values.pressedActions = c.frozen ? ActionBits( 0 ) : ActionBits( in.actions & ~motion.prevActions );
 				values.pressedButtons = c.frozen ? uint8_t( 0 ) : pressed;
 				// What a probe of its holds on to, if one is out, and whether that is still there.
 				int heldMotion = -1;
@@ -2430,7 +2428,7 @@ bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerIn
 	hold.length = 0.0f; // a link measures its rope when the probe takes hold
 	hold.startTick = m_globals.tick;
 	hold.holdTick = m_globals.tick + ( m.probeTravel > 0.0f ? uint32_t( distance / m.probeTravel * float( m_config.tickRate ) + 0.5f ) : 0u );
-	hold.motion = uint8_t( index );
+	hold.motion = uint16_t( index );
 	hold.on = 1;
 	e.set<MotionHold>( hold );
 	holdTick = hold.holdTick;
@@ -2747,7 +2745,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 	}
 }
 
-bool Simulation::EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint8_t& motion ) const
+bool Simulation::EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint16_t& motion ) const
 {
 	flecs::entity e = FindEntity( netId );
 	const MotionHold* hold = e.is_valid() ? e.try_get<MotionHold>() : nullptr;

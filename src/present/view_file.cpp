@@ -166,7 +166,7 @@ bool ViewFileSource::DecodeTo( size_t target, bool fromKey )
 		int slot = FollowedSlot();
 		if ( fromKey == false && slot >= 0 && m_current.frame.hasInputs && m_scratch.frame.hasInputs )
 		{
-			m_pressed |= uint16_t( m_current.frame.inputs[slot].actions & ~m_scratch.frame.inputs[slot].actions );
+			m_pressed |= m_current.frame.inputs[slot].actions & ~m_scratch.frame.inputs[slot].actions;
 		}
 	}
 	return true;

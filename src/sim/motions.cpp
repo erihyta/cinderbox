@@ -52,7 +52,7 @@ uint32_t Ticks( float seconds, uint32_t tickRate )
 	return uint32_t( seconds * float( tickRate ) + 0.5f );
 }
 
-bool Pressed( const Motion& m, const MotionInputs& in, uint16_t previousActions )
+bool Pressed( const Motion& m, const MotionInputs& in, ActionBits previousActions )
 {
 	if ( m.action == kMotionActionJump )
 	{
@@ -66,7 +66,7 @@ bool Pressed( const Motion& m, const MotionInputs& in, uint16_t previousActions 
 	{
 		return false;
 	}
-	uint16_t bit = uint16_t( 1u << m.action );
+	ActionBits bit = ActionBits( 1 ) << m.action;
 	return ( in.input->actions & bit ) != 0 && ( previousActions & bit ) == 0;
 }
 

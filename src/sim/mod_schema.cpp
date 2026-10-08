@@ -217,10 +217,10 @@ const ModAction* ModSchema::FindAction( const std::string& name ) const
 	return nullptr;
 }
 
-uint16_t ModSchema::ActionMask( const std::string& name ) const
+ActionBits ModSchema::ActionMask( const std::string& name ) const
 {
 	const ModAction* a = FindAction( name );
-	return a != nullptr ? uint16_t( 1u << a->bit ) : 0;
+	return a != nullptr && a->bit < kMaxActions ? ActionBits( 1 ) << a->bit : 0;
 }
 
 void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )

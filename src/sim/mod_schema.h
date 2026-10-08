@@ -164,7 +164,7 @@ struct ModSchema
 	int FindEvent( const std::string& name ) const;
 	const ModAction* FindAction( const std::string& name ) const;
 	// Bit mask of the named action, 0 when not declared.
-	uint16_t ActionMask( const std::string& name ) const;
+	ActionBits ActionMask( const std::string& name ) const;
 	// -1 when not declared.
 	int FindLayer( const std::string& name ) const;
 	int FindStance( const std::string& name ) const;

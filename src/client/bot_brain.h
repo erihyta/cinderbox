@@ -18,7 +18,7 @@ struct BotBrain
 	uint32_t spawnOneIn = 40;  // chance per tick to press "spawn prop" (0 = never)
 	uint32_t jumpOneIn = 50;
 	// The server's "spawn_prop" action bit (from the mod schema); 0 when the server has none.
-	uint16_t spawnAction = 0;
+	ActionBits spawnAction = 0;
 	bool chaotic = false; // worst case: every input field changes every tick
 
 	explicit BotBrain( uint64_t seed = 1 )

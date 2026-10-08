@@ -75,7 +75,7 @@ bool ThreadedSource::Take( present::ViewFrame& out )
 	return true;
 }
 
-void ThreadedSource::Publish( bool rolledBack, uint16_t localPressed )
+void ThreadedSource::Publish( bool rolledBack, ActionBits localPressed )
 {
 	present::ViewFrame& f = m_building;
 	f.publishedAt = present::ViewClock();
@@ -84,7 +84,7 @@ void ThreadedSource::Publish( bool rolledBack, uint16_t localPressed )
 	// Neither must get lost if the viewer skipped the previous frame.
 	bool skipped = m_latestTaken == false;
 	f.frame.rolledBack = rolledBack || ( skipped && m_latest.frame.rolledBack );
-	f.localPressed = uint16_t( localPressed | ( skipped ? m_latest.localPressed : 0 ) );
+	f.localPressed = localPressed | ( skipped ? m_latest.localPressed : 0 );
 	f.serial = m_latest.serial + 1;
 	std::swap( m_latest, f );
 	m_latestTaken = false;

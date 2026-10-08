@@ -253,7 +253,7 @@ ActionHandle Declarations::Action( const std::string& name, const std::string& k
 {
 	if ( const ModAction* existing = m_schema.FindAction( name ) )
 	{
-		return { uint16_t( 1u << existing->bit ) };
+		return { ActionBits( 1 ) << existing->bit };
 	}
 	if ( name.empty() || name.size() > kMaxSchemaName || key.size() > kMaxSchemaName )
 	{
@@ -270,7 +270,7 @@ ActionHandle Declarations::Action( const std::string& name, const std::string& k
 	action.bit = uint8_t( m_schema.actions.size() );
 	action.key = key;
 	m_schema.actions.push_back( action );
-	return { uint16_t( 1u << action.bit ) };
+	return { ActionBits( 1 ) << action.bit };
 }
 
 // --- Context ---------------------------------------------------------------------------------------

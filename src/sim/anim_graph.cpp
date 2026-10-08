@@ -172,10 +172,10 @@ private:
 			return;
 		}
 		int event = m_schema.FindEvent( name );
-		if ( event >= 0 && event < 256 )
+		if ( event >= 0 && event < 65536 )
 		{
 			step.kind = AnimExpr::VarKind::Event;
-			step.index = uint8_t( event );
+			step.index = uint16_t( event );
 			return;
 		}
 		int stance = m_schema.FindStance( name );
@@ -278,7 +278,7 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 			{
 				return ( in.input->buttons & BtnSprint ) != 0 ? 1.0f : 0.0f;
 			}
-			return step.index < kMaxActions && ( in.input->actions & ( 1u << step.index ) ) != 0 ? 1.0f : 0.0f;
+			return step.index < kMaxActions && ( in.input->actions & ( ActionBits( 1 ) << step.index ) ) != 0 ? 1.0f : 0.0f;
 		case AnimExpr::VarKind::PressedAction:
 			if ( step.index == kMotionActionJump )
 			{
@@ -288,7 +288,7 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 			{
 				return ( in.pressedButtons & BtnSprint ) != 0 ? 1.0f : 0.0f;
 			}
-			return step.index < kMaxActions && ( in.pressedActions & ( 1u << step.index ) ) != 0 ? 1.0f : 0.0f;
+			return step.index < kMaxActions && ( in.pressedActions & ( ActionBits( 1 ) << step.index ) ) != 0 ? 1.0f : 0.0f;
 		case AnimExpr::VarKind::Zero:
 			return 0.0f;
 	}

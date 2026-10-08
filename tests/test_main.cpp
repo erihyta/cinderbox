@@ -1860,11 +1860,13 @@ void TestMotions()
 	// simulation told so has a slot for each, and the last one works like the first.
 	{
 		ModSchema many = schema;
+		// (And an action far up the word: the forty-first bit.)
+		many.actions.push_back( { "far", 40, "X" } );
 		std::string big = "cinderbox_motions\t2\n";
 		for ( int i = 0; i < 100; ++i )
 		{
 			// (Only the hundredth can happen: the others wait for a fall nobody has.)
-			big += "motion\tM" + std::to_string( i ) + "\nwhen\tpress\tdash\n" + ( i == 99 ? "" : "if\tairborne_time > 100\n" );
+			big += "motion\tM" + std::to_string( i ) + "\nwhen\tpress\t" + ( i == 99 ? "far\n" : "dash\nif\tairborne_time > 100\n" );
 		}
 		many.motionSets = { { "dash", "dash.many", big } };
 		warned.clear();
@@ -1884,7 +1886,12 @@ void TestMotions()
 				hundred.Step( hf );
 				hf.events.clear();
 			}
+			CHECK( many.ActionMask( "far" ) == ActionBits( 1 ) << 40 );
 			hf.inputs[0].actions = dash;
+			hf.tick = hundred.Tick();
+			hundred.Step( hf );
+			CHECK( hundred.GetMotionState( hundred.FindEntity( hundred.PlayerNetId( 0 ) ) ).slots[99].lastTick == 0 );
+			hf.inputs[0].actions = many.ActionMask( "far" );
 			hf.tick = hundred.Tick();
 			hundred.Step( hf );
 			MotionState state = hundred.GetMotionState( hundred.FindEntity( hundred.PlayerNetId( 0 ) ) );
@@ -2181,7 +2188,7 @@ void TestLinks()
 	// While it flies its end is on the way, and the player has not moved.
 	b3Vec3 end;
 	bool holds = true;
-	uint8_t which = 9;
+	uint16_t which = 9;
 	step( int( flight ) / 2 );
 	CHECK( sim.EntityHold( p0, end, holds, which ) && holds == false && which == 0 );
 	CHECK( end.z > from.z + 1.0f && end.z < anchor.z - 1.0f && b3Distance( position(), from ) < 0.01f );

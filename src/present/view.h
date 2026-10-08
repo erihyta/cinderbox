@@ -84,7 +84,7 @@ struct ViewFrame
 	// Mod actions the local player pressed since the last frame taken, for a source that plays
 	// someone else's input (a recording). A source fed by the viewer's own input leaves it 0: the
 	// viewer already knows what it pressed.
-	uint16_t localPressed = 0;
+	ActionBits localPressed = 0;
 };
 
 class ViewSource

@@ -44,9 +44,24 @@ enum class SlotIntent : uint8_t
 };
 inline constexpr uint8_t kLastSlotIntent = uint8_t( SlotIntent::Drop );
 
-// Mod actions per player. The server tells clients which bit is which (and the default key for
-// it) when they join; the simulation never looks at them.
-inline constexpr int kMaxActions = 16;
+// Mod actions per player: a bit each in the input, held or not. The server tells clients which
+// bit is which (and the default key for it) when they join. An input is a record of one size,
+// copied for every player every tick, so the bits are a word of 64; what is sent is only the
+// bytes of it that are in use (ActionByteCount).
+using ActionBits = uint64_t;
+inline constexpr int kMaxActions = 64;
+
+// How many of an action word's bytes are not zero at the top: what a packet carries of it.
+inline int ActionByteCount( ActionBits actions )
+{
+	int bytes = 0;
+	while ( actions != 0 )
+	{
+		++bytes;
+		actions >>= 8;
+	}
+	return bytes;
+}
 
 // Camera pitch is limited to just short of straight up or down (full turn = 65536).
 inline constexpr int16_t kMaxCameraPitch = 16000;
@@ -77,17 +92,18 @@ struct PlayerInput
 	int8_t moveForward = 0;	 // [-127, 127]
 	uint16_t cameraYaw = 0;	 // full turn = 65536, 0 looks down +Z
 	int16_t cameraPitch = 0; // full turn = 65536, positive looks up, within +/- kMaxCameraPitch
-	uint16_t actions = 0;	 // mod action bits (held state)
 	uint8_t buttons = 0;	 // InputButton bits (held state; the sim detects edges)
 	uint8_t view = 0;		 // ViewMode
+	ActionBits actions = 0;	 // mod action bits (held state)
 	uint8_t intent = 0;		 // SlotIntent, carried out when intentSeq changes
 	uint8_t intentA = 0;
 	uint8_t intentB = 0;
 	uint8_t intentSeq = 0;	 // counts the player's intents (it wraps)
+	uint8_t reserved[4] = {};
 
 	bool operator==( const PlayerInput& ) const = default;
 };
-static_assert( sizeof( PlayerInput ) == 14, "PlayerInput has padding" );
+static_assert( sizeof( PlayerInput ) == 24, "PlayerInput has padding" );
 
 enum class PlayerEventType : uint8_t
 {
@@ -209,7 +225,7 @@ inline constexpr uint32_t kSocketLeftHand = 1;
 // can say in a command and in the schema (16 bits).
 inline constexpr int kFieldLimit = 65535;
 // Likewise for motions (SimConfig::motions): what a motion's number can say where it is kept.
-inline constexpr int kMotionLimit = 255;
+inline constexpr int kMotionLimit = 65535;
 // Most commands one frame can carry.
 inline constexpr size_t kMaxCommandsPerFrame = 1024;
 

@@ -442,6 +442,51 @@ bool Decode( ByteReader& r, MsgResyncRequest& m )
 	return r.Ok();
 }
 
+namespace
+{
+// An input as a packet carries it: what is always there, then as many bytes of its actions as
+// are in use (most have none, or a byte).
+void WriteInput( ByteWriter& w, const PlayerInput& in )
+{
+	w.Write( in.moveRight );
+	w.Write( in.moveForward );
+	w.Write( in.cameraYaw );
+	w.Write( in.cameraPitch );
+	w.Write( in.buttons );
+	w.Write( in.view );
+	w.Write( in.intent );
+	w.Write( in.intentA );
+	w.Write( in.intentB );
+	w.Write( in.intentSeq );
+	int bytes = ActionByteCount( in.actions );
+	w.Write( uint8_t( bytes ) );
+	w.WriteBytes( reinterpret_cast<const uint8_t*>( &in.actions ), size_t( bytes ) );
+}
+
+bool ReadInput( ByteReader& r, PlayerInput& in )
+{
+	in = PlayerInput{};
+	in.moveRight = r.Read<int8_t>();
+	in.moveForward = r.Read<int8_t>();
+	in.cameraYaw = r.Read<uint16_t>();
+	in.cameraPitch = r.Read<int16_t>();
+	in.buttons = r.Read<uint8_t>();
+	in.view = r.Read<uint8_t>();
+	in.intent = r.Read<uint8_t>();
+	in.intentA = r.Read<uint8_t>();
+	in.intentB = r.Read<uint8_t>();
+	in.intentSeq = r.Read<uint8_t>();
+	uint8_t bytes = r.Read<uint8_t>();
+	const uint8_t* taken = r.Ok() && bytes <= sizeof( ActionBits ) ? r.Take( bytes ) : nullptr;
+	if ( taken == nullptr )
+	{
+		return false;
+	}
+	std::memcpy( &in.actions, taken, bytes );
+	return true;
+}
+} // namespace
+
 void Encode( const MsgInput& m, std::vector<uint8_t>& out )
 {
 	Begin( out, MsgType::Input );
@@ -450,7 +495,10 @@ void Encode( const MsgInput& m, std::vector<uint8_t>& out )
 	w.Write( m.newestTick );
 	w.Write( m.ackTick );
 	w.Write( uint8_t( n ) );
-	w.WriteBytes( m.inputs.data() + ( m.inputs.size() - n ), n * sizeof( PlayerInput ) );
+	for ( size_t i = m.inputs.size() - n; i < m.inputs.size(); ++i )
+	{
+		WriteInput( w, m.inputs[i] );
+	}
 }
 
 bool Decode( ByteReader& r, MsgInput& m )
@@ -462,13 +510,14 @@ bool Decode( ByteReader& r, MsgInput& m )
 	{
 		return false;
 	}
-	const uint8_t* p = r.Take( n * sizeof( PlayerInput ) );
-	if ( p == nullptr )
-	{
-		return false;
-	}
 	m.inputs.resize( n );
-	std::memcpy( m.inputs.data(), p, n * sizeof( PlayerInput ) );
+	for ( PlayerInput& in : m.inputs )
+	{
+		if ( ReadInput( r, in ) == false )
+		{
+			return false;
+		}
+	}
 	return true;
 }
 
@@ -552,7 +601,12 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
 			if ( fields & FieldPitch )
 				w.Write( now.cameraPitch );
 			if ( fields & FieldActions )
-				w.Write( now.actions );
+			{
+				// As many bytes as are in use, and how many.
+				int bytes = ActionByteCount( now.actions );
+				w.Write( uint8_t( bytes ) );
+				w.WriteBytes( reinterpret_cast<const uint8_t*>( &now.actions ), size_t( bytes ) );
+			}
 			if ( fields & FieldIntent )
 			{
 				w.Write( now.intent );
@@ -624,7 +678,16 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame )
 		if ( fields & FieldPitch )
 			in.cameraPitch = r.Read<int16_t>();
 		if ( fields & FieldActions )
-			in.actions = r.Read<uint16_t>();
+		{
+			uint8_t bytes = r.Read<uint8_t>();
+			const uint8_t* taken = r.Ok() && bytes <= sizeof( ActionBits ) ? r.Take( bytes ) : nullptr;
+			if ( taken == nullptr )
+			{
+				return false;
+			}
+			in.actions = 0;
+			std::memcpy( &in.actions, taken, bytes );
+		}
 		if ( fields & FieldIntent )
 		{
 			in.intent = r.Read<uint8_t>();

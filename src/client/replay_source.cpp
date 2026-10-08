@@ -160,12 +160,12 @@ void ReplaySource::Run()
 
 		// The followed player's presses on the way, for the viewer's "pressed" feedback.
 		double now = present::ViewClock();
-		uint16_t pressed = 0;
+		ActionBits pressed = 0;
 		float alpha = player.Advance( m_paused ? 0.0 : ( now - last ) * m_speed, [&]( const InputFrame& frame ) {
 			if ( m_follow >= 0 )
 			{
-				uint16_t before = frame.tick > 0 ? frames[frame.tick - 1].inputs[m_follow].actions : uint16_t( 0 );
-				pressed |= uint16_t( frame.inputs[m_follow].actions & ~before );
+				ActionBits before = frame.tick > 0 ? frames[frame.tick - 1].inputs[m_follow].actions : ActionBits( 0 );
+				pressed |= frame.inputs[m_follow].actions & ~before;
 			}
 		} );
 		last = now;
