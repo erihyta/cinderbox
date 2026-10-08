@@ -9,7 +9,8 @@
 //   CbFieldLabel    a Label: "AMMO {pistol.ammo}", shown while its conditions hold; or one of the
 //                   texts written on it (choices), picked by a number the server sets
 //   CbFieldBinding  writes a field into any property of any node (a bar's value, a panel's
-//                   visibility, a colour's alpha), so any 2D asset can show mod state
+//                   visibility, a colour's alpha, a part of one: "scale:x"), or formatted
+//                   words into its text, so any asset can show mod state
 //   CbList          a row per player, item, slot or event that happened: its first child is the
 //                   row, copied for each, sorted and filtered; the HUD nodes in a row read that
 //                   row's entity (a scoreboard, a team list, the items a player carries, a kill
@@ -193,9 +194,13 @@ private:
 	godot::ObjectID m_client;
 };
 
-// field -> target.property, every frame, for the local player (or the global board, if the field
-// is global): value = field * multiply + add. Bool properties get "not zero". With conditions, the
+// field -> target.property, every frame, for its subject (or the global board, if the field is
+// global): value = field * multiply + add. Bool properties get "not zero". With conditions, the
 // target is hidden while they do not hold (when it has a "visible" property).
+//
+// The property may be a part of one ("scale:x", "modulate:a", "position:y"). With a text_format
+// the property gets words instead of a number ("[{key:pickup}]  Pick up {look:pickup.target}"
+// into a Label3D's text), so anything that shows text can show the game's.
 class CbFieldBinding : public godot::Node
 {
 	GDCLASS( CbFieldBinding, godot::Node )
@@ -227,6 +232,14 @@ public:
 	godot::String get_property() const
 	{
 		return m_property;
+	}
+	void set_text_format( const godot::String& v )
+	{
+		m_textFormat = v;
+	}
+	godot::String get_text_format() const
+	{
+		return m_textFormat;
 	}
 	void set_multiply( float v )
 	{
@@ -260,6 +273,7 @@ private:
 	godot::String m_field;
 	godot::NodePath m_target = godot::NodePath( ".." );
 	godot::String m_property = "value";
+	godot::String m_textFormat;
 	float m_multiply = 1.0f;
 	float m_add = 0.0f;
 	godot::PackedStringArray m_conditions;

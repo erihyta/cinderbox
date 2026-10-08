@@ -306,7 +306,11 @@ void CbFieldBinding::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_conditions" ), &CbFieldBinding::get_conditions );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "field" ), "set_field", "get_field" );
 	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "target" ), "set_target", "get_target" );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "property" ), "set_property", "get_property" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "property", PROPERTY_HINT_PLACEHOLDER_TEXT, "value, visible, scale:x, modulate:a" ), "set_property",
+				  "get_property" );
+	ClassDB::bind_method( D_METHOD( "set_text_format", "value" ), &CbFieldBinding::set_text_format );
+	ClassDB::bind_method( D_METHOD( "get_text_format" ), &CbFieldBinding::get_text_format );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "text_format", PROPERTY_HINT_MULTILINE_TEXT ), "set_text_format", "get_text_format" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "multiply" ), "set_multiply", "get_multiply" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "add" ), "set_add", "get_add" );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "conditions" ), "set_conditions", "get_conditions" );
@@ -339,6 +343,32 @@ void CbFieldBinding::_process( double )
 			return;
 		}
 	}
+	// (A part of a property, "scale:x", is reached by its path.)
+	const bool part = m_property.contains( ":" );
+	auto read = [&]( const String& property ) { return part ? target->get_indexed( NodePath( property ) ) : target->get( StringName( property ) ); };
+	auto write = [&]( const String& property, const Variant& value ) {
+		if ( part )
+		{
+			target->set_indexed( NodePath( property ), value );
+		}
+		else
+		{
+			target->set( StringName( property ), value );
+		}
+	};
+	if ( m_textFormat.is_empty() == false )
+	{
+		// Words: into "text" unless another property is named.
+		int rank = 0;
+		SubjectOf( this, client, &rank );
+		String property = m_property.is_empty() || m_property == "value" ? String( "text" ) : m_property;
+		String text = client->FormatWith( subject, m_textFormat.replace( "{rank}", String::num_int64( rank ) ), RowNames( this ) );
+		if ( String( read( property ) ) != text )
+		{
+			write( property, text );
+		}
+		return;
+	}
 	if ( m_field.is_empty() || m_property.is_empty() )
 	{
 		return;
@@ -353,18 +383,18 @@ void CbFieldBinding::_process( double )
 	{
 		return; // the server does not run the mod that declares it
 	}
-	Variant current = target->get( m_property );
+	Variant current = read( m_property );
 	if ( current.get_type() == Variant::BOOL )
 	{
-		target->set( m_property, double( value ) * m_multiply + m_add != 0.0 );
+		write( m_property, double( value ) * m_multiply + m_add != 0.0 );
 	}
 	else if ( current.get_type() == Variant::INT )
 	{
-		target->set( m_property, int64_t( double( value ) * m_multiply + m_add ) );
+		write( m_property, int64_t( double( value ) * m_multiply + m_add ) );
 	}
 	else
 	{
-		target->set( m_property, double( value ) * m_multiply + m_add );
+		write( m_property, double( value ) * m_multiply + m_add );
 	}
 }
 

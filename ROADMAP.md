@@ -65,15 +65,15 @@ The extension has about 35 node classes. Several do the same thing in two places
 |---|---|---|
 | Two lists | **done (M114)**: `CbList` of **Events**; `CbEventFeed` is gone | |
 | A key that shows one thing | **done (M114)**: `CbKey` keeps a `ui.` value; showing is a condition on it | |
-| Two labels | `CbFieldLabel` (2D), `CbPromptLabel` (in the world, upright above its parent, with a bar) | a binding that writes text (`text_format` on `CbFieldBinding`), so a prompt is a `Label3D` and two bindings; what keeps it upright above an item lying on its side is the reaction that places it |
-| Two ways to drive a property | `CbFieldBinding` (HUD: reads a list row's entity), a While `CbReaction` with `value_expression` (the world) | one of them in both places. Leaning: reactions learn a row's subject, then the binding goes |
-| Conditions, five times | each HUD node declares and evaluates its own | one base: subject, conditions, format |
+| Two labels | **settled (M116)**: `CbFieldBinding` writes text (`text_format`) and parts of properties (`scale:x`), so a prompt can be built from a `Label3D` and bindings. `CbPromptLabel` stays as the one-node proximity prompt: built from parts it is seven nodes, and it is the thing nearly every game wants | |
+| Two ways to drive a property | **settled (M116)**: both stay, for different places. `CbFieldBinding` is the HUD's (six properties, reads its list row's entity); `CbReaction` is the world's (cues, scenes, sounds, some forty properties). Folding the binding into the reaction would make a health bar harder to author, not easier | |
+| Conditions, five times | not a duplicate after all: the nodes share one evaluation already (`FindClient`, `SubjectOf`, `RowNames`, the client's `CheckWith`); each only declares its own `conditions` property | |
 | Three body descriptions | **done (M115)** for what a body *is*: `CbBody` (mass, density, friction, bounce) is the base of `CbProp` and `CbItem`, the names a template's Material has | the shape said one way too: a prop has `shape` / `size` of its own, an item a `CollisionShape3D` child, a template a Shape component |
 
 - **Kept as they are**: the motion nodes, the character nodes. (`CbGrip` is gone: an item's grips
   are two markers its `CbItem` names.)
-- **After it**: the HUD is four nodes (label, list, click, key) and a reaction. Today it is six
-  (those, `CbFieldBinding` and `CbPromptLabel`); it was seven.
+- **Where the HUD ended**: six nodes (label, binding, list, key, click, prompt), from seven; the
+  list and the key do more than the two nodes they replaced.
 - **Also here**: `cinderbox_client.cpp` (2,700 lines) in parts: the frame source, the HUD's values,
   items.
 
