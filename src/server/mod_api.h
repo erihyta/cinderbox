@@ -529,6 +529,20 @@ public:
 	// Its kind (an invalid handle when it is not an item), and who holds it (0: it lies in the world).
 	ItemKindHandle ItemKindOf( uint32_t netId ) const;
 	uint32_t ItemHolder( uint32_t netId ) const;
+	// Who threw it, for an item a motion launched (a CbLaunch): the player's NetId, or 0 (nobody
+	// did, or it was picked up since).
+	uint32_t ThrownBy( uint32_t item ) const;
+	// What items of a kind ran into on the tick before this one: each with the item, what it hit
+	// (a player, a prop, a piece of the map), how fast they met and where. The simulation keeps
+	// the hardest few impacts of a tick, so a soft touch in a busy scene may not be among them.
+	struct ItemHit
+	{
+		uint32_t item = 0;
+		uint32_t other = 0;
+		float speed = 0.0f;
+		b3Vec3 point = {};
+	};
+	std::vector<ItemHit> Hits( ItemKindHandle kind ) const;
 	// Every item, held or lying, in NetId order (ItemHolder says which).
 	std::vector<uint32_t> Items() const;
 	// Items lying in the world within `radius` of `point` (their bodies' centres), nearest first

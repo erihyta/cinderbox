@@ -148,6 +148,45 @@ private:
 	double m_travel = 60.0;
 };
 
+// Once, when the motion starts: an item of a kind is thrown into the world, in every simulation
+// alike, so the thrower sees it leave on the tick of the press. A grenade, a ball, a rocket.
+class CbLaunch : public CbMotionPart
+{
+	GDCLASS( CbLaunch, CbMotionPart )
+
+public:
+	enum Frame
+	{
+		FRAME_LOOK = 0,
+		FRAME_MOVE = 1,
+		FRAME_FACING = 2,
+		FRAME_UP = 3,
+		FRAME_WORLD = 4,
+	};
+
+	std::string Bake( godot::String& error ) const override;
+
+	CB_MOTION_FIELD( godot::String, item_kind, m_itemKind )
+	CB_MOTION_FIELD( double, speed, m_speed )
+	CB_MOTION_FIELD( double, lift, m_lift )
+	CB_MOTION_FIELD( int, frame, m_frame )
+	CB_MOTION_FIELD( godot::Vector3, direction, m_direction )
+	CB_MOTION_FIELD( double, ahead, m_ahead )
+	CB_MOTION_FIELD( double, seconds, m_seconds )
+
+protected:
+	static void _bind_methods();
+
+private:
+	godot::String m_itemKind;
+	double m_speed = 15.0;
+	double m_lift = 0.0;
+	int m_frame = FRAME_LOOK;
+	godot::Vector3 m_direction = godot::Vector3( 0, 1, 0 );
+	double m_ahead = 0.7;
+	double m_seconds = 5.0;
+};
+
 // What a motion does to something: who it acts on, and along what. The base of the effects.
 class CbMotionEffect : public CbMotionPart
 {
@@ -327,6 +366,7 @@ protected:
 
 VARIANT_ENUM_CAST( cb::gd::CbMotion::When );
 VARIANT_ENUM_CAST( cb::gd::CbMotion::Refill );
+VARIANT_ENUM_CAST( cb::gd::CbLaunch::Frame );
 VARIANT_ENUM_CAST( cb::gd::CbMotionEffect::Target );
 VARIANT_ENUM_CAST( cb::gd::CbMotionEffect::Frame );
 VARIANT_ENUM_CAST( cb::gd::CbImpulse::Replace );

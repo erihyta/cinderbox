@@ -85,7 +85,7 @@ const char* const kTargetDetail =
 
 // One per group of each node, and one about the node ("").
 const Info kMotionInfo[] = {
-	{ "", "A motion: when it happens and for how long. Its children are what it does (CbProbe, CbImpulse, CbForce, CbLink).",
+	{ "", "A motion: when it happens and for how long. Its children are what it does (CbProbe, CbImpulse, CbForce, CbLink, CbLaunch).",
 	  "[b]Where[/b]: under a CbMotionSet, in a scene of the mod's project (motion_sets/). Saving the scene bakes the set.\n"
 	  "[b]Who runs it[/b]: every simulation, the server's and each client's, from the player's input. So your own "
 	  "dash starts on the tick of the press, and other players see the same dash.\n"
@@ -122,6 +122,20 @@ const Info kMotionInfo[] = {
 	  "While, -= and += are per second (flight.fuel -= 30, a Float field) and = is set when it starts.\n"
 	  "[b]emits[/b]: a mod event at the player (dash.started). Reactions play on it, a character's state machine can "
 	  "enter a state on it, and server mods hear it a tick later. A While emits it when it starts." },
+};
+
+const Info kLaunchInfo[] = {
+	{ "", "Throws an item of a kind into the world when its motion starts.",
+	  "[b]item_kind[/b]: what is thrown, an item kind a server mod declares and a CbItem bakes (its body, its weight, "
+	  "how it bounces, its look).\n"
+	  "[b]speed[/b] along the [b]frame[/b] (where the camera looks, usually), with [b]lift[/b] m/s upward added for an "
+	  "arc, and the thrower's own velocity.\n"
+	  "[b]ahead[/b]: how far in front of the thrower it starts, so it does not start inside the thrower.\n"
+	  "[b]seconds[/b]: when it is removed again. 0: it stays, like anything dropped.\n"
+	  "Every simulation makes it from the thrower's own input, so it leaves on the tick of the press on the thrower's "
+	  "screen. It is an item like any other: it can be picked up, its scene's reactions play, and it counts against "
+	  "the server's caps on what a player may leave in the world. What a hit means (damage, a blast) is the server "
+	  "mod's: it sees what the item ran into and who threw it. Give the motion a cooldown or uses." },
 };
 
 const Info kProbeInfo[] = {
@@ -202,6 +216,10 @@ const Info* InfoFor( Object* object, const String& group )
 	if ( Object::cast_to<CbProbe>( object ) != nullptr )
 	{
 		return FindInfo( kProbeInfo, group );
+	}
+	if ( Object::cast_to<CbLaunch>( object ) != nullptr )
+	{
+		return FindInfo( kLaunchInfo, group );
 	}
 	if ( Object::cast_to<CbImpulse>( object ) != nullptr )
 	{
@@ -387,7 +405,7 @@ std::string CbMotion::Bake( String& error ) const
 			}
 			if ( Object::cast_to<CbMotion>( part ) != nullptr || Object::cast_to<CbMotionSet>( part ) != nullptr )
 			{
-				return fail( "a motion's children are a CbProbe and effects (CbImpulse, CbForce, CbLink), not another motion" );
+				return fail( "a motion's children are a CbProbe, a CbLaunch and effects (CbImpulse, CbForce, CbLink), not another motion" );
 			}
 			probes += isProbe ? 1 : 0;
 			if ( probes > 1 )
@@ -459,7 +477,7 @@ void CbMotion::Advice( PackedStringArray& advice ) const
 	bool probe = false;
 	for ( int i = 0; i < get_child_count(); ++i )
 	{
-		effects |= Object::cast_to<CbMotionEffect>( get_child( i ) ) != nullptr;
+		effects |= Object::cast_to<CbMotionEffect>( get_child( i ) ) != nullptr || Object::cast_to<CbLaunch>( get_child( i ) ) != nullptr;
 		probe |= Object::cast_to<CbProbe>( get_child( i ) ) != nullptr;
 	}
 	bool until = false;
@@ -469,7 +487,7 @@ void CbMotion::Advice( PackedStringArray& advice ) const
 	}
 	if ( effects == false && m_parameters.is_empty() && m_changes.is_empty() && m_emits.strip_edges().is_empty() )
 	{
-		advice.push_back( "It does nothing yet: add a CbImpulse, a CbForce or a CbLink under it, or give it parameters, changes or an event." );
+		advice.push_back( "It does nothing yet: add a CbImpulse, a CbForce, a CbLink or a CbLaunch under it, or give it parameters, changes or an event." );
 	}
 	if ( m_parameters.is_empty() == false && m_duration <= 0.0 && m_when != WHEN_WHILE && until == false && probe == false )
 	{
@@ -513,6 +531,48 @@ std::string CbProbe::Bake( String& error ) const
 		return std::string();
 	}
 	return "probe\t" + Num( m_range ) + "\t" + Num( m_travel ) + "\n";
+}
+
+// --- CbLaunch ---------------------------------------------------------------------------------------
+
+void CbLaunch::_bind_methods()
+{
+	CB_MOTION_PROP( CbLaunch, Variant::STRING, item_kind, PROPERTY_HINT_PLACEHOLDER_TEXT, "grenade.shell" )
+	CB_MOTION_PROP( CbLaunch, Variant::FLOAT, speed, PROPERTY_HINT_RANGE, "0,100,0.1,or_greater,suffix:m/s" )
+	CB_MOTION_PROP( CbLaunch, Variant::FLOAT, lift, PROPERTY_HINT_RANGE, "-20,20,0.1,or_greater,or_less,suffix:m/s" )
+	CB_MOTION_PROP( CbLaunch, Variant::INT, frame, PROPERTY_HINT_ENUM, "Look,Move input,Facing,Up,World direction" )
+	CB_MOTION_PROP( CbLaunch, Variant::VECTOR3, direction, PROPERTY_HINT_NONE, "" )
+	CB_MOTION_PROP( CbLaunch, Variant::FLOAT, ahead, PROPERTY_HINT_RANGE, "0,5,0.05,suffix:m" )
+	CB_MOTION_PROP( CbLaunch, Variant::FLOAT, seconds, PROPERTY_HINT_RANGE, "0,60,0.1,or_greater,suffix:s" )
+
+	BIND_ENUM_CONSTANT( FRAME_LOOK );
+	BIND_ENUM_CONSTANT( FRAME_MOVE );
+	BIND_ENUM_CONSTANT( FRAME_FACING );
+	BIND_ENUM_CONSTANT( FRAME_UP );
+	BIND_ENUM_CONSTANT( FRAME_WORLD );
+}
+
+std::string CbLaunch::Bake( String& error ) const
+{
+	if ( Object::cast_to<CbMotion>( get_parent() ) == nullptr )
+	{
+		Fail( error, "put it under a CbMotion: it is what that motion throws" );
+		return std::string();
+	}
+	String kind = m_itemKind.strip_edges();
+	if ( kind.is_empty() || Plain( kind ) == false || kind.contains( " " ) )
+	{
+		Fail( error, "name the item kind it throws (item_kind: one a server mod declares, and a CbItem bakes: grenade.shell)" );
+		return std::string();
+	}
+	std::string line = "launch\t" + Std( kind ) + "\t" + Num( m_speed ) + "\t" + kFrames[m_frame >= 0 && m_frame <= FRAME_WORLD ? m_frame : FRAME_LOOK] +
+					   "\t" + Num( m_lift ) + "\t" + Num( m_ahead ) + "\t" + Num( m_seconds );
+	if ( m_frame == FRAME_WORLD )
+	{
+		Vector3 d = m_direction.normalized();
+		line += "\t" + Num( d.x ) + "\t" + Num( d.y ) + "\t" + Num( d.z );
+	}
+	return line + "\n";
 }
 
 // --- CbMotionEffect ---------------------------------------------------------------------------------

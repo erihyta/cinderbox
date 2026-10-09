@@ -190,6 +190,9 @@ public:
 	// (flying toward where it will hold, or holding), whether it holds, and the motion that threw
 	// it. False when it has none.
 	bool EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint16_t& motion ) const;
+	// Who threw it, for an item a motion launched (the player's NetId; 0: nobody, or it was
+	// picked up since).
+	uint32_t LaunchedBy( uint32_t netId ) const;
 	const Transform* EntityTransform( uint32_t netId ) const;
 	// A player's animation state, or null.
 	AnimStateCopy EntityAnimState( uint32_t netId ) const;
@@ -406,6 +409,19 @@ private:
 	std::shared_ptr<const Motions> m_motions;
 	std::vector<ModEventRecord> m_motionEvents;
 	std::vector<MotionActive> m_motionActive;
+	// What this tick's motions throw (a Launch effect), made once every player has moved: an item
+	// of a kind, where, how fast, whose, and for how long.
+	struct Launched
+	{
+		uint16_t kind;
+		b3Vec3 position;
+		b3Quat rotation;
+		b3Vec3 velocity;
+		uint32_t owner;
+		uint32_t lifetimeTicks;
+	};
+	std::vector<Launched> m_launched;
+	void CreateLaunched();
 	// An item leaves the hand and lies in the world at its grip (a body of its kind's shape), or
 	// the other way round.
 	void PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity );

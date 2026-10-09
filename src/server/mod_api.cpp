@@ -1013,6 +1013,42 @@ uint32_t Context::ItemHolder( uint32_t netId ) const
 	return item != nullptr ? item->holder : 0;
 }
 
+uint32_t Context::ThrownBy( uint32_t item ) const
+{
+	return m_sim.LaunchedBy( item );
+}
+
+std::vector<Context::ItemHit> Context::Hits( ItemKindHandle kind ) const
+{
+	std::vector<ItemHit> out;
+	const SimGlobals& globals = m_sim.Globals();
+	if ( kind.Valid() == false || m_sim.Tick() == 0 )
+	{
+		return out;
+	}
+	// The ring's newest, as far back as the tick that just ran.
+	uint32_t kept = std::min( globals.impactCount, kImpactHistory );
+	for ( uint32_t back = 0; back < kept; ++back )
+	{
+		const ImpactRecord& impact = globals.impacts[( globals.impactCount - 1 - back ) % kImpactHistory];
+		if ( impact.tick + 1 != m_sim.Tick() )
+		{
+			break;
+		}
+		for ( int side = 0; side < 2; ++side )
+		{
+			uint32_t item = side == 0 ? impact.netIdA : impact.netIdB;
+			uint32_t other = side == 0 ? impact.netIdB : impact.netIdA;
+			if ( ItemKindOf( item ).index == kind.index && ItemHolder( item ) == 0 )
+			{
+				out.push_back( { item, other, impact.speed, impact.point } );
+			}
+		}
+	}
+	std::reverse( out.begin(), out.end() );
+	return out;
+}
+
 std::vector<uint32_t> Context::Items() const
 {
 	std::vector<uint32_t> out;

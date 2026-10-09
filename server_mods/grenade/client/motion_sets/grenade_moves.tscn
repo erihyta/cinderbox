@@ -1,0 +1,27 @@
+[gd_scene format=3]
+
+; The grenade mod's motion: a throw. Every simulation runs it from the player's own input, so the
+; grenade leaves on the tick of the press on the thrower's own screen.
+;
+;   Throw   CbMotion   on the press of "throw" (H), at most once every 1.2 s. Emits grenade.thrown.
+;     Shell CbLaunch   throws an item of the kind grenade.shell (prefabs/shell.tscn: its body, its
+;                      weight, how it bounces, its look) where the camera looks at 17 m/s, with
+;                      3 m/s of lift for an arc and the thrower's own velocity, from 0.8 m ahead.
+;                      It is removed after 4 s if nothing set it off (the server mod's rule).
+;
+; Saving this scene bakes it into res://motions/grenade.moves.cfg.
+
+[node name="Moves" type="CbMotionSet"]
+set_name = "grenade.moves"
+
+[node name="Throw" type="CbMotion" parent="."]
+action = "throw"
+cooldown = 1.2
+emits = "grenade.thrown"
+
+[node name="Shell" type="CbLaunch" parent="Throw"]
+item_kind = "grenade.shell"
+speed = 17.0
+lift = 3.0
+ahead = 0.8
+seconds = 4.0

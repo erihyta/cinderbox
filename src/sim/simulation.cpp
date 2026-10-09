@@ -583,6 +583,8 @@ void Simulation::TakeItemFromWorld( flecs::entity item, uint32_t holder, uint8_t
 	item.remove<PhysicsBody>();
 	item.remove<Shape>();
 	item.remove<Velocity>();
+	// (One a motion threw is nobody's throw once it is taken up, and does not expire in the hand.)
+	item.remove<Prop>();
 	HeldItem held = item.get<HeldItem>();
 	held.holder = holder;
 	held.socket = socket;
@@ -1173,6 +1175,30 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		e.set<Transform>( t );
 		e.set<Velocity>( { c.velocity, { 0.0f, 0.0f, 0.0f } } );
 	}
+	CreateLaunched();
+}
+
+// What the motions threw this tick, in the order the players moved: an item in the world, like
+// one dropped, that knows who threw it and when it goes (a Prop: the caps on props count it, and
+// ExpireProps removes it). Every simulation makes the same ones from the same inputs, so a
+// player's own throw is there on the tick of the press.
+void Simulation::CreateLaunched()
+{
+	for ( const Launched& l : m_launched )
+	{
+		flecs::entity item = CreateEntity();
+		item.set<HeldItem>( { 0, l.kind, 0, 0 } );
+		PutItemInWorld( item, l.position, l.rotation, l.velocity );
+		item.set<Prop>( { l.owner, m_globals.tick, l.lifetimeTicks > 0 ? m_globals.tick + l.lifetimeTicks : 0u } );
+	}
+	m_launched.clear();
+}
+
+uint32_t Simulation::LaunchedBy( uint32_t netId ) const
+{
+	flecs::entity e = FindEntity( netId );
+	const Prop* prop = e.is_valid() && e.has<HeldItem>() ? e.try_get<Prop>() : nullptr;
+	return prop != nullptr ? prop->owner : 0;
 }
 
 void Simulation::ExpireProps()
@@ -2625,6 +2651,22 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				direction = MotionDirection( effect.frame, effect.direction, c, in );
 			}
 
+			if ( effect.kind == MotionEffect::Kind::Launch )
+			{
+				if ( on.started == false || effect.known == false )
+				{
+					continue;
+				}
+				// From where the player's look starts, a little ahead (clear of its own capsule), turned
+				// as the camera is; with the player's own velocity, so a throw on the run goes further.
+				float yaw = detmath::YawToRadians( in.cameraYaw );
+				b3Vec3 from = b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+				b3Vec3 velocity = b3Add( b3Add( b3MulSV( effect.strength, direction ), b3Vec3{ 0.0f, effect.lift, 0.0f } ), c.velocity );
+				uint32_t lifetime = effect.seconds > 0.0f ? std::max<uint32_t>( 1, uint32_t( effect.seconds * float( m_config.tickRate ) + 0.5f ) ) : 0u;
+				m_launched.push_back( { effect.itemKind, b3Add( from, b3MulSV( effect.ahead, direction ) ), detmath::YawRotation( yaw ), velocity,
+										e.get<NetId>().value, lifetime } );
+				continue;
+			}
 			if ( effect.kind == MotionEffect::Kind::Impulse )
 			{
 				if ( on.started == false || target.kind == MotionEnd::Kind::World )

@@ -94,6 +94,7 @@ struct MotionEffect
 		Impulse = 0, // once, when the motion starts
 		Force = 1,	 // every tick it is on
 		Link = 2,	 // every tick it is on
+		Launch = 3,	 // once, when the motion starts: an item of a kind is thrown into the world
 	};
 	enum class Replace : uint8_t
 	{
@@ -125,6 +126,15 @@ struct MotionEffect
 	// Link. The rope's length in metres; 0: the distance when the motion's probe takes hold.
 	float length = 0.0f;
 	float reel = 0.0f; // metres of rope taken in a second
+	// Launch. The item kind thrown (schema index; `known` false: no mod declares it, nothing is
+	// thrown), at `strength` m/s along the frame with `lift` m/s upward added and the player's own
+	// velocity, from `ahead` metres in front of where its look starts. It is removed after
+	// `seconds` (0: it stays, like anything dropped).
+	uint16_t itemKind = 0;
+	bool known = true;
+	float lift = 0.0f;
+	float ahead = 0.7f;
+	float seconds = 0.0f;
 };
 
 struct Motion
