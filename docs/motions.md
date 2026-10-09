@@ -60,6 +60,7 @@ CbMotionPart            what they share: each bakes to lines, and warns in the t
 ├── CbMotionSet         the root: a mod's motions, one baked file
 ├── CbMotion            the trigger: when, how long, parameters, changes, the event
 ├── CbProbe             a line along the look that has to find something
+├── CbLaunch            an item of a kind thrown into the world, once
 └── CbMotionEffect      what it does to a body: on whom (target), in which direction (frame)
     ├── CbImpulse       a change of velocity, once
     ├── CbForce         a push for as long as the motion is on
@@ -71,6 +72,7 @@ CbMotionPart            what they share: each bakes to lines, and warns in the t
 | A dash, a double jump, a shove | a `CbImpulse` |
 | A jetpack, a wind, a conveyor, a brake | a `CbForce` (the motion a While, or with a `duration`) |
 | A grappling hook | a `CbProbe`, a `CbForce` toward what it found, a `CbLink` |
+| A grenade, a thrown ball, a rocket | a `CbLaunch` ([Things that fly](#things-that-fly-the-grenade-mod)) |
 | A tractor beam on a prop | a `CbProbe`, a `CbForce` whose target is what it found |
 | Two players bound together | a `CbLink` whose target is a field the server mod writes the partner into |
 | Flight, a glide, a slide | nothing: `parameters` on the motion are enough |
@@ -237,6 +239,42 @@ GrappleReactions            (vfx/reactions_grapple.tscn)
 In conditions (a reaction, a HUD node), `linked` is true for a player whose line is out, and
 `link_holds` once it has taken hold.
 
+## Things that fly: the grenade mod
+
+A probe is a line: it has no body, nobody sees it coming, nothing can step out of its way. A
+`CbLaunch` throws a *thing*. `server_mods/grenade` is one motion, one item and thirty lines of rules.
+
+```
+Moves   CbMotionSet   set_name "grenade.moves"               (motion_sets/grenade_moves.tscn)
+└── Throw     CbMotion   on the press of throw (H)   cooldown 1.2 s   emits grenade.thrown
+    └── Shell CbLaunch   item_kind grenade.shell   speed 17 m/s   lift 3 m/s   ahead 0.8 m   seconds 4
+
+Shell   CbItem   kind "grenade.shell"   mass 0.4   friction 0.8   bounce 0.35    (prefabs/shell.tscn)
+├── Body  CollisionShape3D   a sphere, 9 cm
+└── Ball, Band  MeshInstance3D
+```
+
+| `CbLaunch` | Meaning |
+|---|---|
+| `item_kind` | what is thrown: an item kind a server mod declares and a [`CbItem`](items.md) bakes. Its [body](maps.md#a-body), its weight, how it bounces and its look are the item's |
+| `speed`, `frame`, `direction` | how fast and where to: along the look (the default), the move input, the facing, up, or a world direction |
+| `lift` | metres per second upward added: an arc |
+| `ahead` | how far in front of where the look starts it begins (0.7 m): clear of the thrower's own body |
+| `seconds` | when it is removed again. 0: it stays, like anything dropped |
+
+| Step | What happens |
+|---|---|
+| The press | every simulation makes the item on that tick, from the thrower's own input: the thrower sees it leave at once, with no round trip. It also has the thrower's own velocity: a throw on the run goes further |
+| Flying | it is an item lying in the world, moving: the physics is the simulation's, the same everywhere. `net_grenade`: behind 100 ms, 111 predicted ticks of its flight are exactly the server's |
+| Who threw it | the item knows (`ctx.ThrownBy( item )`), until someone picks it up |
+| What it hits | the server mod's to decide: `ctx.Hits( kind )` is what items of the kind ran into on the tick before (what, how fast, where). The grenade goes off on the first hard hit: `combat.damage` to everyone within 4 m, less with distance, a push, and `ctx.Destroy( item )` |
+| Its look | its own scene, wherever it is; what going off looks like is a reaction on the mod's event (`grenade.blast`: a burst, a bang, a shake) |
+| How many | a launched item counts against the server's caps on what a player may leave in the world (`--props-per-player`, `--props-global`: the oldest go first), and the motion's `cooldown` or `uses` say how often |
+
+- **It is an item like any other**: it can be picked up and carried, unless its kind says no (the grenade's `pickup.never` property, which the pickup mod asks).
+- **Other players' throws** are seen when their press arrives, like their dash: a moment into the flight, at the place the simulation has it by then.
+- **Not for a While**: a launch happens when a motion starts.
+
 ## A motion a server can switch off
 
 A motion has no switch of its own: who may use one is a field its conditions read. For a part
@@ -327,6 +365,7 @@ emit	dash.started
 | `impulse` | target, speed, frame, replace, and x y z for a world direction |
 | `force` | target, frame, kind (`accel`, `force`, `velocity`), strength, speed, ramp, react (0 or 1), and x y z |
 | `link` | target, length, reel |
+| `launch` | item kind, speed, frame, lift, ahead, seconds, and x y z for a world direction |
 
 A target is `self`, `hit` or `@field`.
 

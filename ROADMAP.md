@@ -7,21 +7,27 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 
 | # | Milestone | In one line |
 |---|---|---|
-| 1 | [Fewer nodes](#1-fewer-nodes) | one label, one list, one way to drive a property, one body description |
-| 2 | [Things that fly](#2-things-that-fly) | `CbLaunch`: a predicted projectile, as a part of a motion |
-| 3 | [The inventory, finished](#3-the-inventory-finished) | drag, icons, stacks, chests, and intents a mod declares |
-| 4 | [Motions and the body](#4-motions-and-the-body) | the body follows a motion; a preview; checks at publish |
+| 1 | [The SDK knows the server](#1-the-sdk-knows-the-server) | the editor knows the server's names: completed while typing, checked at publish |
+| 2 | [Mod testing](#2-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
+| 3 | [Motions and the body](#3-motions-and-the-body) | the body follows a motion; a preview; what is left of launches |
+| 4 | [The inventory, finished](#4-the-inventory-finished) | drag, icons, stacks, chests, and intents a mod declares |
 | 5 | [The client, finished](#5-the-client-finished) | what is left of the client's known limits, typed text, the game script in parts |
-| 6 | [The SDK knows the server](#6-the-sdk-knows-the-server) | the Godot modding project scaffolds the server half and knows its names |
-| 7 | [Mod testing](#7-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
+| 6 | [Rules without a relink](#6-rules-without-a-relink) | a server mod's rules as a script the server loads, not C++ compiled into it |
 
-- **Why this order**: 1 breaks scenes, so it goes while breaking is allowed (the redesign: example
-  mods and the SDK template may break or go). 2 to 4 are what a game needs next. 6 and 7 wrap
-  the client, so they wait until it stops changing.
+- **Why this order** (rethought after M118). The pieces a game is made of are there now: movement
+  (motions), things that fly (launches), items and slots, a HUD and a world that read the server's
+  state. What is slow is *making* something with them: a name typed wrong is silent, and trying an
+  edit means publishing, restarting a server and joining it by hand. So the next two steps are the
+  loop itself; every step after them is authored faster for it.
+- **Why they are not last any more**: they wrap the client and the scenes, so they waited until
+  those stopped changing. The redesign that broke scenes (M104 to M117: items, slots, the HUD's
+  nodes, bodies, sizes) is over.
+- **Why rules get a step**: C++ compiled into the server is the highest wall a modder meets, and
+  only the server runs rules, so they need no determinism: any language would do.
 - **Done before these**: movement parameters (M92), motions (M93, M94, M99), lists and keys in the
-  HUD (M100, M102), items and slots in the engine with an inventory screen (M104 to M110), the
-  grapple as a zip line (M112), state sized by the mods (M113: no 32 fields, 16 motions, 4
-  layers). [docs/HISTORY.md](docs/HISTORY.md).
+  HUD (M100, M102, M114, M116), items and slots in the engine with an inventory screen (M104 to
+  M110), the grapple as a zip line (M112), state sized by the mods (M113), one body description
+  (M115), launches (M118). [docs/HISTORY.md](docs/HISTORY.md).
 
 ## Where motions stand
 
@@ -29,11 +35,11 @@ A `CbMotion` says: *on a press, on a cue, or while conditions hold, do this to t
 the schema and run by every simulation, so a player's own are predicted and rolled back
 ([docs/motions.md](docs/motions.md)).
 
-| | Today (M112) | Still to come |
+| | Today (M118) | Still to come |
 |---|---|---|
 | When | on a press, while conditions hold, on a mod event at the player | |
 | Conditions | what a state machine reads, `held.<action>`, `pressed.<action>`, `linked`, `link_distance` | `motion.<name>` |
-| Does | parameters while it is on; changes of fields; an event; and its parts: a probe, impulses, forces (acceleration, newtons, toward a speed; ramped; reacting), links | a lasting force as a C++ command; a test of one player hooked to another |
+| Does | parameters while it is on; changes of fields; an event; and its parts: a probe, impulses, forces (acceleration, newtons, toward a speed; ramped; reacting), links, a launch (an item of a kind thrown into the world: a grenade) | a lasting force as a C++ command; a test of one player hooked to another; [what is left of launches](#3-motions-and-the-body) |
 | On whom | the player, what the probe found, the entity a field names | |
 | Weight | `mass`, a movement parameter: contacts, forces and ropes share by it | a knocked-down ragdoll state; carrying a player; structures that break |
 | Timing | `cooldown`, `uses` with a refill, `duration`, `until` | |
@@ -45,7 +51,7 @@ the schema and run by every simulation, so a player's own are predicted and roll
 |---|---|
 | Other players' presses are guessed by repeating their last input, so their dash is seen late and corrected | accept: it is what a jump does today, and the mirror fades the correction |
 | A field both a motion and a server mod write | allowed today (commands apply first, then motions); the bake could name the fields a set writes, and the server warn when a mod `Set`s one every tick |
-| A second jump that plays the jump's animation | the character's tree enters its jump state on the motion's event; a starter for it comes with step 4 |
+| A second jump that plays the jump's animation | the character's tree enters its jump state on the motion's event; a starter for it comes with step 3 |
 
 ### Routes not taken
 
@@ -57,40 +63,47 @@ the schema and run by every simulation, so a player's own are predicted and roll
 
 ## The steps
 
-### 1. Fewer nodes
+### 1. The SDK knows the server
 
-The extension has about 35 node classes. Several do the same thing in two places.
-
-| Overlap | Today | Would be |
-|---|---|---|
-| Two lists | **done (M114)**: `CbList` of **Events**; `CbEventFeed` is gone | |
-| A key that shows one thing | **done (M114)**: `CbKey` keeps a `ui.` value; showing is a condition on it | |
-| Two labels | **settled (M116)**: `CbFieldBinding` writes text (`text_format`) and parts of properties (`scale:x`), so a prompt can be built from a `Label3D` and bindings. `CbPromptLabel` stays as the one-node proximity prompt: built from parts it is seven nodes, and it is the thing nearly every game wants | |
-| Two ways to drive a property | **settled (M116)**: both stay, for different places. `CbFieldBinding` is the HUD's (six properties, reads its list row's entity); `CbReaction` is the world's (cues, scenes, sounds, some forty properties). Folding the binding into the reaction would make a health bar harder to author, not easier | |
-| Conditions, five times | not a duplicate after all: the nodes share one evaluation already (`FindClient`, `SubjectOf`, `RowNames`, the client's `CheckWith`); each only declares its own `conditions` property | |
-| Three body descriptions | **done (M115)** for what a body *is*: `CbBody` (mass, density, friction, bounce) is the base of `CbProp` and `CbItem`, the names a template's Material has | the shape said one way too: a prop has `shape` / `size` of its own, an item a `CollisionShape3D` child, a template a Shape component |
-
-- **Kept as they are**: the motion nodes, the character nodes. (`CbGrip` is gone: an item's grips
-  are two markers its `CbItem` names.)
-- **Where the HUD ended**: six nodes (label, binding, list, key, click, prompt), from seven; the
-  list and the key do more than the two nodes they replaced.
-- **Done with it (M117)**: `cinderbox_client.cpp` is in parts (the frame and the nodes, items, the
-  world's director, what looks ask).
-
-### 2. Things that fly
-
-A probe is a line: it has no body, nobody sees it coming, nothing can step out of its way.
+Today the Godot modding project knows nothing of the mod's C++ half: names are typed twice and a
+wrong one is silent. This step joins the two.
 
 | Piece | What |
 |---|---|
-| `CbLaunch` | a part of a motion, next to `CbProbe`: throws a body (a scene's, an item kind's) from a socket, at a speed, with gravity or without |
-| Predicted | every simulation launches it on the tick of the press, like a dash: the thrower sees it leave at once |
-| What it hits | an event at the point, with what was hit and how fast; the mod decides what that means (damage, a blast, a sticky hook) |
-| Its life | seconds, bounces, or until it hits; then it is removed, or left as a prop or an item |
-| The look | the body's own scene, with its reactions (a trail, a blast on the event) |
-| Examples | a grenade for the pistol mod; a thrown bat; the grapple's hook as a thing that flies |
+| The schema reaches the editor | `cb_server --dump-schema` writes the fields, events, actions, stances and item kinds; the extension completes them in conditions and warns on unknown ones |
+| The server half is scaffolded | `sdk.ps1 -New <mod>` also writes `server_mods/<mod>/<mod>.cpp`: declarations that match the starter scenes |
+| Publishing checks names | a look that names what its mod does not declare stops the publish |
+| An item in the hand | a preview of the item on the placeholder skeleton, grips solved, a pack playing |
+| A prebuilt SDK | CI builds the extension, so a mod's look needs no compiler |
+| A new template | the old one is from before the redesign |
 
-### 3. The inventory, finished
+### 2. Mod testing
+
+One step from an edit to playing it: the client starts the server.
+
+| Piece | What |
+|---|---|
+| The client hosts | "Test" in the menu and `--host-local`: the game starts `cb_server` with the chosen mods, joins it, and stops it when it leaves |
+| From the SDK | a **Test mod** button: publish the look, build the server if the `.cpp` changed, start the game hosting |
+| Looks reload | a published look is taken up without restarting the server or the game |
+| Bots | `--bots N` on the hosted server, so a mod can be tried alone |
+
+### 3. Motions and the body
+
+| Piece | What |
+|---|---|
+| The body follows | `motion.<name>` and a motion's event in state machine conditions; the viewer's lead covers them. The grapple and the dash get a pose |
+| Animation packs | a pack's layer can be asked for by a motion while it is on (a flight pose) |
+| Motion Preview | a panel like Cue Preview: a capsule on a small stage, press an action, set a field, watch the path |
+| Publish checks | a motion that reads a name nobody declares, or writes a field it may not, stops the publish |
+| Changes | a `min` / `max` on a change (a tank fills to a little over full today); an expression on its right side |
+| Launches: from the hand | a launch starts ahead of where the look starts; from a socket (`RightHand`), with a throw's pose, it leaves the hand |
+| Launches: a fuse | a mod sees what a thrown item ran into (`ctx.Hits`), not that its time is up: an event when a launched item expires, so a grenade can go off on a timer |
+| Launches: every hit | the simulation keeps the hardest 8 impacts of a tick; a soft touch in a busy scene may be missed. A launched item's own contacts, always |
+| Launches: fast and small | an item's body is an ordinary one: at rocket speeds a thin wall can be passed through. Continuous collision for launched kinds that ask |
+| Launches: ammunition | a motion's `uses` refill by time; throwing *the item in the hand* (a count that goes down) is a rule a mod writes with a field today |
+
+### 4. The inventory, finished
 
 | Piece | Today | Would be |
 |---|---|---|
@@ -102,16 +115,6 @@ A probe is a line: it has no body, nobody sees it coming, nothing can step out o
 | An item's HUD | a scene of its mod's | in the item's own scene, shown while it is selected |
 | The rules API | C++ in each mod | what a mod decides about containers, named |
 | Checked across compilers | not yet | slots in the reference scenario |
-
-### 4. Motions and the body
-
-| Piece | What |
-|---|---|
-| The body follows | `motion.<name>` and a motion's event in state machine conditions; the viewer's lead covers them. The grapple and the dash get a pose |
-| Animation packs | a pack's layer can be asked for by a motion while it is on (a flight pose) |
-| Motion Preview | a panel like Cue Preview: a capsule on a small stage, press an action, set a field, watch the path |
-| Publish checks | a motion that reads a name nobody declares, or writes a field it may not, stops the publish |
-| Changes | a `min` / `max` on a change (a tank fills to a little over full today); an expression on its right side |
 
 ### 5. The client, finished
 
@@ -128,30 +131,18 @@ A probe is a line: it has no body, nobody sees it coming, nothing can step out o
 - **The camera stays Godot's**: a `Camera3D` the game's script places, not the extension's. That
   keeps the next thing open: [cameras a mod places](#later-not-scheduled).
 
-### 6. The SDK knows the server
+### 6. Rules without a relink
 
-Today the Godot modding project knows nothing of the mod's C++ half: names are typed twice and a
-wrong one is silent. This step joins the two.
-
-| Piece | What |
-|---|---|
-| The schema reaches the editor | `cb_server --dump-schema` writes the fields, events, actions, stances and item kinds; the extension completes them in conditions and warns on unknown ones |
-| The server half is scaffolded | `sdk.ps1 -New <mod>` also writes `server_mods/<mod>/<mod>.cpp`: declarations that match the starter scenes |
-| Publishing checks names | a look that names what its mod does not declare stops the publish |
-| An item in the hand | a preview of the item on the placeholder skeleton, grips solved, a pack playing |
-| A prebuilt SDK | CI builds the extension, so a mod's look needs no compiler |
-| A new template | the old one is from before the redesign |
-
-### 7. Mod testing
-
-One step from an edit to playing it: the client starts the server.
+Today a server mod is C++ compiled into `cb_server`: a compiler, a relink and a restart for every
+change of a rule. Rules run on the server only, so nothing about them has to be deterministic or
+shared with clients.
 
 | Piece | What |
 |---|---|
-| The client hosts | "Test" in the menu and `--host-local`: the game starts `cb_server` with the chosen mods, joins it, and stops it when it leaves |
-| From the SDK | a **Test mod** button: publish the look, build the server if the `.cpp` changed, start the game hosting |
-| Looks reload | a published look is taken up without restarting the server or the game |
-| Bots | `--bots N` on the hosted server, so a mod can be tried alone |
+| A script the server loads | a mod's rules in a sandboxed script (the same `Declare` / `Start` / `Tick` and the same `Context` verbs), loaded from the mod's folder at start |
+| Reloaded while it runs | a changed rule is taken up without restarting the server: with step 2, an edit to a rule is seconds from being played |
+| C++ stays | for what a script is too slow for; both are mods to everything else |
+| The SDK writes it | step 1's scaffold writes the script, not a `.cpp` |
 
 ## Later, not scheduled
 
@@ -160,7 +151,6 @@ One step from an edit to playing it: the client starts the server.
 | Cameras a mod places | a camera or a path in a mod's scene that a reaction makes the view for a while (a round's end, a kill cam, a scenic shot), with the game's own camera taking over again afterwards |
 | Vehicles | joints in the component registry and templates of several bodies; a seat (the mover off, the player carried); input routed to motors, as a motion routes it to the mover |
 | A script for looks | a sandboxed one, for what fields, intents and clicks cannot say; not visual scripting |
-| Server mods without a relink | mods as libraries or scripts: they need no determinism, so any language works |
 | Teams, spectators | mods, once private fields and the board cover them |
 | Lists on one entity | array fields, or a `CbList` over the values of a field family |
 
