@@ -1,0 +1,51 @@
+[gd_scene format=3]
+
+; The grenade itself: an item (CbItem), so it has a body in the world that every simulation agrees
+; on. A sphere 18 cm across: big enough to see coming. 0.4 kg, with some bounce, for a throw that
+; lands softly and skips (the server mod sets it off on the first hard hit).
+;
+; Saving this scene bakes it into res://items/grenade.shell.cfg.
+
+[sub_resource type="SphereShape3D" id="Body"]
+radius = 0.09
+
+[sub_resource type="StandardMaterial3D" id="Shell"]
+albedo_color = Color(0.2, 0.32, 0.18, 1)
+metallic = 0.3
+roughness = 0.5
+
+[sub_resource type="SphereMesh" id="Ball"]
+material = SubResource("Shell")
+radius = 0.09
+height = 0.18
+radial_segments = 16
+rings = 8
+
+[sub_resource type="StandardMaterial3D" id="Band"]
+albedo_color = Color(0.9, 0.25, 0.1, 1)
+emission_enabled = true
+emission = Color(1, 0.3, 0.1, 1)
+emission_energy_multiplier = 1.5
+
+[sub_resource type="CylinderMesh" id="BandMesh"]
+material = SubResource("Band")
+top_radius = 0.092
+bottom_radius = 0.092
+height = 0.025
+radial_segments = 16
+
+[node name="Shell" type="CbItem"]
+kind = "grenade.shell"
+display_name = "Grenade"
+mass = 0.4
+friction = 0.8
+bounce = 0.35
+
+[node name="Body" type="CollisionShape3D" parent="."]
+shape = SubResource("Body")
+
+[node name="Ball" type="MeshInstance3D" parent="."]
+mesh = SubResource("Ball")
+
+[node name="Band" type="MeshInstance3D" parent="."]
+mesh = SubResource("BandMesh")

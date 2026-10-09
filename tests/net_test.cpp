@@ -2909,6 +2909,136 @@ void TestDash()
 	std::filesystem::remove( replayPath );
 }
 
+// A launch across the wire, behind 100 ms: the grenade mod's throw (a CbLaunch in its motion set) is
+// made by the client's own simulation on the tick of the press, where and as the server then has
+// it, and flies the same way in both: nothing about it is corrected. What it does when it lands is
+// the mod's C++ on the server: it goes off (grenade.blast) and is gone.
+void TestGrenade()
+{
+	const uint32_t throwAt = 300;
+	Harness h( 47881 );
+	const ModSchema& schema = h.server.Schema();
+	ActionBits throwKey = schema.ActionMask( "throw" );
+	int shell = schema.FindItemKind( "grenade.shell" );
+	int blast = schema.FindEvent( "grenade.blast" );
+	CHECK( throwKey != 0 && shell >= 0 && blast >= 0 );
+	if ( throwKey == 0 || shell < 0 || blast < 0 )
+	{
+		return;
+	}
+	net::NetSimConfig link;
+	link.latencyMs = 50;
+	h.AddNetSim( 47882, link );
+	Bot& bot = h.AddBot();
+
+	// Where the grenade is at each tick: as the client first had it, and as the server had it.
+	struct Seen
+	{
+		int count = 0;
+		uint32_t netId = 0;
+		b3Vec3 position = {};
+	};
+	std::map<uint32_t, Seen> predicted, truth;
+	Simulation& server = h.server.Sim();
+	auto look = [&]( const Simulation& sim, std::map<uint32_t, Seen>& into ) {
+		if ( into.count( sim.Tick() ) != 0 )
+		{
+			return;
+		}
+		Seen seen;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const HeldItem* item = sim.FindEntity( r.netId ).try_get<HeldItem>();
+			if ( item != nullptr && item->kind == uint16_t( shell ) && item->holder == 0 )
+			{
+				seen.count += 1;
+				seen.netId = r.netId;
+				seen.position = sim.EntityTransform( r.netId )->position;
+			}
+		}
+		into[sim.Tick()] = seen;
+	};
+	bot.script = [&]( uint32_t tick ) {
+		GameClient& client = *bot.client;
+		if ( client.Session() != nullptr && client.State() == ClientState::Playing )
+		{
+			look( client.Session()->Sim(), predicted );
+		}
+		PlayerInput in;
+		in.cameraPitch = 1500; // a little upward: a throw that lands some metres off
+		if ( tick >= throwAt && tick < throwAt + 4 )
+		{
+			in.actions = throwKey;
+		}
+		return in;
+	};
+	uint32_t blasts = 0, seenEvents = 0;
+	b3Vec3 blastAt = {};
+	h.server.SetTickObserver( [&] {
+		if ( bot.client->State() != ClientState::Playing )
+		{
+			return;
+		}
+		look( server, truth );
+		const SimGlobals& g = server.Globals();
+		for ( ; seenEvents < g.modEventCount; ++seenEvents )
+		{
+			const ModEventRecord& e = g.modEvents[seenEvents % kModEventHistory];
+			if ( int( e.type ) == blast )
+			{
+				blasts += 1;
+				blastAt = e.point;
+			}
+		}
+	} );
+	h.RunUntil( 9.0 );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	GameClient& client = *bot.client;
+	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+
+	// The server made one on the tick of the press (the state after tick `throwAt`), and it was
+	// the thrower's.
+	CHECK( truth.count( throwAt ) && truth.count( throwAt + 1 ) );
+	if ( truth.count( throwAt ) == 0 || truth.count( throwAt + 1 ) == 0 )
+	{
+		return;
+	}
+	CHECK( truth[throwAt].count == 0 && truth[throwAt + 1].count == 1 );
+	// It flew, went off once, and was gone.
+	uint32_t goneAt = 0;
+	float furthest = 0.0f;
+	b3Vec3 start = truth[throwAt + 1].position;
+	for ( const auto& [tick, seen] : truth )
+	{
+		if ( tick > throwAt && seen.count == 1 )
+		{
+			furthest = std::max( furthest, b3Distance( seen.position, start ) );
+		}
+		goneAt = goneAt == 0 && tick > throwAt + 1 && seen.count == 0 ? tick : goneAt;
+	}
+	std::printf( "    thrown at tick %u, flew %.1f m, went off %.2f s later (%u blast) at (%.1f, %.1f, %.1f)\n", throwAt, furthest,
+				 goneAt > throwAt ? float( goneAt - throwAt ) / 60.0f : -1.0f, blasts, blastAt.x, blastAt.y, blastAt.z );
+	CHECK( blasts == 1 && goneAt > throwAt + 10 && furthest > 4.0f );
+
+	// The client had the grenade on the same ticks, at the same places, the first time it simulated
+	// them: its own throw was never corrected while it flew. (Its going off is the server's to say.)
+	int compared = 0, wrong = 0;
+	for ( const auto& [tick, seen] : predicted )
+	{
+		auto it = truth.find( tick );
+		if ( tick < throwAt - 30 || it == truth.end() || ( goneAt != 0 && tick >= goneAt ) )
+		{
+			continue;
+		}
+		compared += 1;
+		wrong += seen.count != it->second.count || seen.netId != it->second.netId || b3Distance( seen.position, it->second.position ) != 0.0f ? 1 : 0;
+	}
+	std::printf( "    %d predicted ticks compared with the server's: %d differ\n", compared, wrong );
+	CHECK( compared > 40 && wrong == 0 );
+	CHECK( predicted.count( throwAt + 1 ) && predicted[throwAt + 1].count == 1 );
+}
+
 // Motions that hold are predicted too: behind 50 ms each way, flying into a wall, landing, a
 // jetpack run until its tank is empty and a glide down are, tick for tick, what the server then
 // has: the position, the fuel the gauge shows, the events. The flight mod's C++ only gives the fuel
@@ -3255,6 +3385,7 @@ int main( int argc, char** argv )
 		{ "sneak", TestSneak },
 		{ "move_params", TestMoveParams },
 		{ "dash", TestDash },
+		{ "grenade", TestGrenade },
 		{ "flight", TestFlight },
 		{ "grapple", TestGrapple },
 		{ "headshot", TestHeadshot },

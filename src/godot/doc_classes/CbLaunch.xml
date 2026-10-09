@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbLaunch" inherits="CbMotionPart" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		Throws an item of a kind into the world when its motion starts: a grenade, a ball, a rocket.
+	</brief_description>
+	<description>
+		A child of a [CbMotion] (not for a While). On the tick the motion starts, every simulation makes an item of [member item_kind] in front of the player, moving at [member speed] along [member frame] with [member lift] upward and the player's own velocity. Because the thrower's own simulation makes it from the thrower's own input, it leaves on the tick of the press, with no round trip; it then flies and bounces as its body says ([CbItem], [CbBody]), the same in every simulation.
+		It is an item like any other: its scene is drawn wherever it is, its reactions play, it can be picked up (unless its kind says no), and it counts against the server's caps on what a player may leave in the world. What a hit means is the server mod's: it sees what the item ran into, how fast and where, and who threw it.
+		Give the motion a [code]cooldown[/code] or [code]uses[/code], or the key throws as fast as it can be pressed.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="item_kind" type="String" setter="set_item_kind" getter="get_item_kind" default="&quot;&quot;">
+			The item kind thrown ([code]grenade.shell[/code]): one a server mod declares and a [CbItem] bakes. One no mod declares: nothing is thrown, and the server says so when it starts.
+		</member>
+		<member name="speed" type="float" setter="set_speed" getter="get_speed" default="15.0">
+			Metres per second along [member frame].
+		</member>
+		<member name="lift" type="float" setter="set_lift" getter="get_lift" default="0.0">
+			Metres per second upward, added: an arc.
+		</member>
+		<member name="frame" type="int" setter="set_frame" getter="get_frame" enum="CbLaunch.Frame" default="0">
+			Where to.
+		</member>
+		<member name="direction" type="Vector3" setter="set_direction" getter="get_direction" default="Vector3(0, 1, 0)">
+			For [constant FRAME_WORLD]: the direction, as given.
+		</member>
+		<member name="ahead" type="float" setter="set_ahead" getter="get_ahead" default="0.7">
+			How far in front of where the player's look starts it begins, in metres: clear of the thrower's own body.
+		</member>
+		<member name="seconds" type="float" setter="set_seconds" getter="get_seconds" default="5.0">
+			When it is removed again. 0: it stays, like anything dropped.
+		</member>
+	</members>
+	<constants>
+		<constant name="FRAME_LOOK" value="0" enum="Frame">
+			Where the camera looks, pitch included.
+		</constant>
+		<constant name="FRAME_MOVE" value="1" enum="Frame">
+			Where the move keys point, relative to the camera; the facing when none is held.
+		</constant>
+		<constant name="FRAME_FACING" value="2" enum="Frame">
+			Where the body faces.
+		</constant>
+		<constant name="FRAME_UP" value="3" enum="Frame">
+			Straight up.
+		</constant>
+		<constant name="FRAME_WORLD" value="4" enum="Frame">
+			[member direction], as given.
+		</constant>
+	</constants>
+</class>

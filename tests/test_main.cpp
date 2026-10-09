@@ -2455,6 +2455,120 @@ void TestLinks()
 		}
 	}
 
+	// A launch: a motion throws an item of a kind into the world on the tick of the press, in every
+	// simulation alike. It knows who threw it, flies as its body says, and goes when its time is up.
+	{
+		ModSchema throwSchema;
+		throwSchema.actions.push_back( { "throw", 0, "T" } );
+		throwSchema.itemKinds = { "ball" };
+		ItemShape ball;
+		ball.kind = 1;
+		ball.half = { 0.12f, 0.12f, 0.12f };
+		ball.center = { 0.0f, 0.0f, 0.0f };
+		ball.mass = 0.5f;
+		ball.restitution = 0.5f;
+		throwSchema.itemShapes = { ball };
+		throwSchema.motionSets.push_back( { "throw", "throw.moves",
+											"cinderbox_motions\t2\nmotion\tThrow\nwhen\tpress\tthrow\ncooldown\t0.5\n"
+											"launch\tball\t15\tlook\t2\t0.7\t1.5\n" } );
+		std::string throwWarnings;
+		std::shared_ptr<const Motions> throwing = CompileMotions( throwSchema, throwWarnings );
+		CHECK( throwing != nullptr && throwWarnings.empty() );
+		if ( throwing != nullptr )
+		{
+			auto make = [&]() {
+				auto made = std::make_unique<Simulation>( TestConfig() );
+				made->SetMotions( throwing );
+				made->SetItemShapes( throwSchema.itemShapes );
+				return made;
+			};
+			auto server = make();
+			auto client = make();
+			InputFrame tf;
+			auto tstep = [&]( int n ) {
+				for ( int i = 0; i < n; ++i )
+				{
+					tf.tick = server->Tick();
+					server->Step( tf );
+					client->Step( tf );
+					tf.events.clear();
+				}
+			};
+			auto items = [&]( const Simulation& in ) {
+				std::vector<uint32_t> found;
+				for ( const Simulation::EntityRef& r : in.Entities() )
+				{
+					if ( in.FindEntity( r.netId ).has<HeldItem>() )
+					{
+						found.push_back( r.netId );
+					}
+				}
+				return found;
+			};
+			tf.events.push_back( { PlayerEventType::Join, 0 } );
+			tstep( 60 );
+			uint32_t thrower = server->PlayerNetId( 0 );
+			CHECK( items( *server ).empty() );
+			Snapshot before;
+			server->Save( before );
+			uint64_t hashBefore = server->ComputeHash();
+			tf.inputs[0].actions = 1;
+			tf.inputs[0].cameraPitch = 2000; // a little upward
+			tstep( 1 );
+			std::vector<uint32_t> thrown = items( *server );
+			CHECK( thrown.size() == 1 && items( *client ) == thrown && client->ComputeHash() == server->ComputeHash() );
+			if ( thrown.size() == 1 )
+			{
+				uint32_t it = thrown[0];
+				b3Vec3 at = server->EntityTransform( it )->position;
+				b3Vec3 from = server->EntityTransform( thrower )->position;
+				const Velocity velocity = server->FindEntity( it ).get<Velocity>();
+				std::printf( "    a ball launched at 15 m/s with 2 m/s of lift: %.2f m from the player, going %.1f m/s (%.1f up)\n",
+							 b3Distance( at, from ), b3Length( velocity.linear ), velocity.linear.y );
+				CHECK( server->LaunchedBy( it ) == thrower && server->LaunchedBy( thrower ) == 0 );
+				CHECK( b3Length( velocity.linear ) > 14.0f && b3Length( velocity.linear ) < 17.0f && velocity.linear.y > 2.0f );
+				// Held, the key throws nothing more; it flies, and both simulations agree where.
+				tstep( 20 );
+				CHECK( items( *server ).size() == 1 && client->ComputeHash() == server->ComputeHash() );
+				CHECK( b3Distance( server->EntityTransform( it )->position, from ) > 3.0f );
+				// A second press after the cooldown: a second ball. Then each goes when its time is up.
+				tf.inputs[0].actions = 0;
+				tstep( 20 );
+				tf.inputs[0].actions = 1;
+				tstep( 1 );
+				tf.inputs[0].actions = 0;
+				CHECK( items( *server ).size() == 2 );
+				tstep( 60 );
+				CHECK( items( *server ).size() == 1 && server->EntityTransform( it ) == nullptr );
+				tstep( 60 );
+				CHECK( items( *server ).empty() && client->ComputeHash() == server->ComputeHash() );
+				// Rolled back to before the first press, there was never a ball.
+				server->Load( before );
+				CHECK( items( *server ).empty() && server->ComputeHash() == hashBefore );
+			}
+		}
+		// What no mod declares is said, and nothing is thrown.
+		ModSchema none = throwSchema;
+		none.itemKinds.clear();
+		none.itemShapes.clear();
+		std::string said;
+		auto inert = CompileMotions( none, said );
+		CHECK( inert != nullptr && said.find( "ball" ) != std::string::npos );
+		auto bad = []( const char* line ) {
+			ModSchema s;
+			s.actions.push_back( { "throw", 0, "T" } );
+			s.itemKinds = { "ball" };
+			s.motionSets.push_back( { "throw", "throw.moves", std::string( "cinderbox_motions\t2\nmotion\tThrow\nwhen\tpress\tthrow\n" ) + line } );
+			std::string w;
+			auto compiled = CompileMotions( s, w );
+			return compiled == nullptr || compiled->list.empty();
+		};
+		CHECK( bad( "launch\tball\t15\n" ) );
+		CHECK( bad( "launch\tball\t15\tto\t0\t0.7\t0\n" ) );   // there is nothing to throw it "to"
+		CHECK( bad( "launch\tball\t15\tlook\t0\t9\t0\n" ) );   // nine metres ahead
+		CHECK( bad( "launch\tball\t15\tlook\t0\t0.7\t0\n" ) == false );
+	}
+
 	// A while motion cannot throw a probe; a probe needs both its numbers; a rope goes to something else.
 	std::vector<Motion> out;
 	std::string error, warned;

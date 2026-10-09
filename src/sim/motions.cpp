@@ -408,6 +408,31 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			m.effects.push_back( e );
 		}
+		else if ( key == "launch" )
+		{
+			// launch <item kind> <speed> <frame> <lift> <ahead> <seconds> [x y z]
+			MotionEffect e;
+			e.kind = MotionEffect::Kind::Launch;
+			if ( w.size() < 7 || w[1].empty() || Number( w[2], 0.0f, kMaxMotionImpulse, e.strength ) == false || ParseFrame( w[3], e.frame ) == false ||
+				 e.frame == MotionFrame::To || Number( w[4], -kMaxMotionImpulse, kMaxMotionImpulse, e.lift ) == false ||
+				 Number( w[5], 0.0f, 5.0f, e.ahead ) == false || Number( w[6], 0.0f, 600.0f, e.seconds ) == false )
+			{
+				return fail( "launch wants an item kind, a speed (m/s), a frame (look, move, facing, up, world), a lift (m/s upward), how far "
+							 "ahead it starts (0 to 5 m) and its seconds (0: it stays)" );
+			}
+			if ( e.frame == MotionFrame::World && ParseWorld( w, 7, e.direction ) == false )
+			{
+				return fail( "a world frame wants its direction: x y z, each -1 to 1, not all zero" );
+			}
+			int kind = schema.FindItemKind( w[1] );
+			e.known = kind >= 0;
+			e.itemKind = uint16_t( kind >= 0 ? kind : 0 );
+			if ( e.known == false )
+			{
+				warnings += m.name + ": no mod declares the item kind \"" + w[1] + "\": nothing is launched; ";
+			}
+			m.effects.push_back( e );
+		}
 		else if ( key == "param" )
 		{
 			int param = w.size() >= 3 ? MoveParamByName( w[1].c_str() ) : -1;

@@ -137,7 +137,9 @@ public:
 				to.y = 0.0f;
 				float length = b3Length( to );
 				bool facing = length < 0.5f || b3Dot( b3MulSV( 1.0f / length, to ), flatAim ) >= kBehind;
-				if ( rise >= -kBelow && rise <= kAbove && length <= nearest && facing )
+				// (A kind may say it is not for picking up: a thrown grenade, "pickup.never".)
+				if ( rise >= -kBelow && rise <= kAbove && length <= nearest && facing &&
+					 ctx.ItemProperty( ctx.ItemKindOf( item.netId ), "pickup.never", 0.0f ) == 0.0f )
 				{
 					nearest = length;
 					near = item.netId;

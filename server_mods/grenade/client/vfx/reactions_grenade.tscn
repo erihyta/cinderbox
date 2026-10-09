@@ -1,0 +1,34 @@
+[gd_scene format=3]
+
+; How a grenade looks and sounds. The grenade itself needs nothing here: it is an item, drawn from
+; its own scene (prefabs/shell.tscn) wherever the simulation has it.
+;
+;   Thrown  on grenade.thrown, at the thrower: the throw's sound
+;   Blast   on grenade.blast, at the point it went off: the burst, the bang, and a shake of the
+;           screen
+
+[node name="GrenadeReactions" type="Node3D"]
+
+[node name="Thrown" type="CbReaction" parent="."]
+event = "grenade.thrown"
+subject = NodePath("$at")
+place = 1
+sound = "res://assets/sfx/jump.wav"
+volume_db = -10.0
+pitch_scale = 0.7
+pitch_jitter = 0.1
+max_distance = 25.0
+
+[node name="Blast" type="CbReaction" parent="."]
+event = "grenade.blast"
+subject = NodePath("$at")
+scene = "res://vfx/blast.tscn"
+scene_lifetime = 2.0
+place = 1
+sound = "res://assets/sfx/prop_destroy.wav"
+volume_db = 2.0
+pitch_scale = 0.55
+pitch_jitter = 0.08
+max_distance = 80.0
+shake = 0.25
+shake_time = 0.35

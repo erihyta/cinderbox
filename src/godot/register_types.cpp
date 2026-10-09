@@ -74,6 +74,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbMotionSet );
 	GDREGISTER_CLASS( cb::gd::CbMotion );
 	GDREGISTER_CLASS( cb::gd::CbProbe );
+	GDREGISTER_CLASS( cb::gd::CbLaunch );
 	GDREGISTER_ABSTRACT_CLASS( cb::gd::CbMotionEffect );
 	GDREGISTER_CLASS( cb::gd::CbImpulse );
 	GDREGISTER_CLASS( cb::gd::CbForce );
