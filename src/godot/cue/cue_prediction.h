@@ -162,6 +162,7 @@ public:
 
 	void _notification( int what );
 	godot::PackedStringArray _get_configuration_warnings() const override;
+	void _validate_property( godot::PropertyInfo& property ) const;
 
 protected:
 	static void _bind_methods();

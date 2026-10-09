@@ -1,5 +1,7 @@
 #include "cinderbox_hud.h"
 
+#include "cue_names.h"
+
 #include <godot_cpp/classes/base_material3d.hpp>
 #include <godot_cpp/classes/standard_material3d.hpp>
 
@@ -199,6 +201,11 @@ void CbPromptLabel::ShowBar( float progress )
 	}
 }
 
+PackedStringArray CbPromptLabel::_get_configuration_warnings() const
+{
+	return names::Problems( this );
+}
+
 void CbPromptLabel::_ready()
 {
 	set_process( InGame() );
@@ -252,6 +259,11 @@ void CbFieldLabel::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "choice_field", PROPERTY_HINT_PLACEHOLDER_TEXT, "deathmatch.ending" ), "set_choice_field",
 				  "get_choice_field" );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "choices" ), "set_choices", "get_choices" );
+}
+
+PackedStringArray CbFieldLabel::_get_configuration_warnings() const
+{
+	return names::Problems( this );
 }
 
 void CbFieldLabel::_ready()
@@ -314,6 +326,11 @@ void CbFieldBinding::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "multiply" ), "set_multiply", "get_multiply" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "add" ), "set_add", "get_add" );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "conditions" ), "set_conditions", "get_conditions" );
+}
+
+PackedStringArray CbFieldBinding::_get_configuration_warnings() const
+{
+	return names::Problems( this );
 }
 
 void CbFieldBinding::_ready()
@@ -464,6 +481,11 @@ Control* CbList::Template() const
 	return nullptr;
 }
 
+void CbList::_validate_property( PropertyInfo& property ) const
+{
+	names::Hint( this, property );
+}
+
 PackedStringArray CbList::_get_configuration_warnings() const
 {
 	PackedStringArray warnings;
@@ -476,6 +498,7 @@ PackedStringArray CbList::_get_configuration_warnings() const
 	{
 		warnings.push_back( "Name the event it lists (combat.killed): a row is shown for each one that happens, for a while." );
 	}
+	warnings.append_array( names::Problems( this ) );
 	return warnings;
 }
 
@@ -718,6 +741,7 @@ PackedStringArray CbKey::_get_configuration_warnings() const
 	{
 		warnings.push_back( "The value it keeps is one of the viewer's own: its name starts with \"ui.\" (ui.bag)." );
 	}
+	warnings.append_array( names::Problems( this ) );
 	return warnings;
 }
 
@@ -846,6 +870,7 @@ PackedStringArray CbClick::_get_configuration_warnings() const
 			warnings.push_back( "\"" + set + "\": write it as a name of the viewer's own, = and a value: ui.picked = slot.number" );
 		}
 	}
+	warnings.append_array( names::Problems( this ) );
 	return warnings;
 }
 

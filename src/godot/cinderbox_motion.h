@@ -48,6 +48,9 @@ public:
 	// This node's lines (its children's included), or "" with `error` when it cannot be baked.
 	virtual std::string Bake( godot::String& error ) const;
 	godot::PackedStringArray _get_configuration_warnings() const override;
+	// A property that holds one name (an action, an event, an item kind) offers the names there
+	// are (cue_names.h).
+	void _validate_property( godot::PropertyInfo& property ) const;
 
 protected:
 	static void _bind_methods()

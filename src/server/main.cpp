@@ -3,7 +3,7 @@
 //   cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]
 //             [--prop-lifetime SEC] [--props-per-player N] [--props-global N]
 //             [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]
-//             [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...
+//             [--dump-names FILE] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...
 //             [--character NAME [--workshop DIR]] [--quiet]
 //
 // --move NAME=VALUE: how players move (sim/move_params.h): walk_speed, sprint_speed, accelerate,
@@ -13,6 +13,11 @@
 // Every gameplay mod compiled in (server_mods/) runs unless --mods names a subset. Mods with a look
 // need their workshop item: its SHA-256 is read from <items dir>/<mod>.item (default: items/ next
 // to this executable) and announced to clients, who must have that exact item to join.
+//
+// --dump-names FILE: writes what every mod compiled into this server declares (its fields, events,
+// actions, item kinds, stances, layers, sockets, animation packs and motion sets) and exits. The
+// editor reads the file (res://cinderbox_names.cfg in a mod's project): names are completed
+// while typing and one nobody declares is said, and publishing a look checks against it.
 //
 // --character NAME: everyone plays as NAME (default: ual_mannequin if this build has it, else
 // mannequin, the game's own character).
@@ -51,7 +56,7 @@ void Usage()
 	std::printf( "usage: cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]\n"
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
 				 "                 [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
-				 "                 [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
+				 "                 [--dump-names FILE] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
 				 "                 [--character NAME [--workshop DIR]] [--quiet]\n" );
 }
 
@@ -95,6 +100,86 @@ std::vector<std::string> SplitList( const std::string& list )
 		start = comma + 1;
 	}
 	return out;
+}
+
+// The names every compiled mod declares, one a line, for the editor and for publishing a look:
+//
+//   cinderbox_names	1
+//   mod	dash
+//   field	dash.charges	int	entity
+//   event	dash.started
+//   action	dash	V
+//   item	pistol.gun
+//   stance / layer / socket / pack / motions	<name>
+//
+// Every mod, the ones switched off by default too: a look may be written for any of them.
+bool DumpNames( const char* path )
+{
+	cb::mods::Declarations declarations;
+	std::string text = "cinderbox_names\t1\n";
+	for ( const cb::mods::ModInfo& info : cb::mods::CompiledMods() )
+	{
+		std::unique_ptr<cb::mods::ServerMod> mod = cb::mods::CreateMod( info.name );
+		if ( mod != nullptr )
+		{
+			declarations.BeginMod( mod->Name() );
+			mod->Declare( declarations );
+			text += std::string( "mod\t" ) + info.name + "\n";
+		}
+	}
+	// (Two mods that cannot run together may disagree here: what each declared is still a name.)
+	const cb::ModSchema& schema = declarations.Schema();
+	static const char* const kTypes[] = { "int", "float", "bool" };
+	static const char* const kScopes[] = { "entity", "global", "private" };
+	for ( const cb::BoardField& f : schema.fields )
+	{
+		text += "field\t" + f.name + "\t" + kTypes[int( f.type ) % 3] + "\t" + kScopes[int( f.scope ) % 3] + "\n";
+	}
+	for ( const std::string& name : schema.events )
+	{
+		text += "event\t" + name + "\n";
+	}
+	for ( const cb::ModAction& a : schema.actions )
+	{
+		text += "action\t" + a.name + "\t" + a.key + "\n";
+	}
+	auto list = [&]( const char* what, const std::vector<std::string>& names ) {
+		for ( const std::string& name : names )
+		{
+			text += std::string( what ) + "\t" + name + "\n";
+		}
+	};
+	list( "item", schema.itemKinds );
+	list( "stance", schema.stances );
+	list( "layer", schema.layers );
+	list( "socket", schema.sockets );
+	for ( const cb::AnimPackInfo& pack : schema.animPacks )
+	{
+		text += "pack\t" + pack.name + "\n";
+	}
+	for ( const cb::MotionSetInfo& set : schema.motionSets )
+	{
+		text += "motions\t" + set.name + "\n";
+	}
+	// Written only when it changed, so nothing that watches the file is woken for nothing.
+	{
+		std::ifstream in( path, std::ios::binary );
+		std::string had( ( std::istreambuf_iterator<char>( in ) ), std::istreambuf_iterator<char>() );
+		if ( in && had == text )
+		{
+			return true;
+		}
+	}
+	std::ofstream out( path, std::ios::binary | std::ios::trunc );
+	out << text;
+	if ( !out )
+	{
+		std::printf( "cannot write %s\n", path );
+		return false;
+	}
+	std::printf( "wrote %s: %zu fields, %zu events, %zu actions, %zu item kinds\n", path, schema.fields.size(), schema.events.size(),
+				 schema.actions.size(), schema.itemKinds.size() );
+	return true;
 }
 
 bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::string>& mods, bool& listMods,
@@ -146,6 +231,11 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 		if ( arg == "--list-mods" )
 		{
 			listMods = true;
+			continue;
+		}
+		if ( arg == "--dump-names" && i + 1 < argc )
+		{
+			++i; // (handled before anything starts)
 			continue;
 		}
 		if ( arg == "--items" && i + 1 < argc )
@@ -284,6 +374,13 @@ int main( int argc, char** argv )
 	{
 		Usage();
 		return 1;
+	}
+	for ( int i = 1; i + 1 < argc; ++i )
+	{
+		if ( std::string( argv[i] ) == "--dump-names" )
+		{
+			return DumpNames( argv[i + 1] ) ? 0 : 1;
+		}
 	}
 	if ( listMods )
 	{

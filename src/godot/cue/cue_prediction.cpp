@@ -1,5 +1,7 @@
 #include "cue_prediction.h"
 
+#include "cue_names.h"
+
 #include "cue_director.h"
 
 #include <godot_cpp/core/class_db.hpp>
@@ -120,6 +122,11 @@ bool CbPrediction::Parse() const
 	return m_valid;
 }
 
+void CbPrediction::_validate_property( PropertyInfo& property ) const
+{
+	names::Hint( this, property );
+}
+
 PackedStringArray CbPrediction::_get_configuration_warnings() const
 {
 	PackedStringArray warnings;
@@ -157,6 +164,7 @@ PackedStringArray CbPrediction::_get_configuration_warnings() const
 	{
 		warnings.push_back( "A predicted stance needs both: the stance and the layer the server's mod sets it on." );
 	}
+	warnings.append_array( names::Problems( this ) );
 	return warnings;
 }
 
