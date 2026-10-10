@@ -175,9 +175,11 @@ is the body's own (`EntityTransform`, or a `NearBody`'s `position`), and the mod
 | Move it without turning it | its centre |
 | Make it tumble away from a blast | its centre, moved a share of its size (`NearBody::radius`) toward the blast and down |
 | Spin it where a shot hit | the hit point (the pistol does) |
+| Throw a fallen body, all of it | any point, with the mode `ImpulseThrow`: every part of the ragdoll gets the change of speed. (The other modes hit the part nearest the point, as a shot does: the rest only follows by its joints) |
 
 - A small share for small things: the same offset turns a light, small body much faster.
 - Players are not bodies the solver turns: a push on a living player only changes its velocity.
+- **A body that a hit kills does not exist yet when the hit is dealt**: the combat mod hears of the damage on the next tick, and the ragdoll is made then. A mod that wants to throw it remembers the blast for a few ticks and throws the bodies that fall inside it (`NearBody::ragdollSince`), as the grenade does.
 
 ## How much a server may have
 
