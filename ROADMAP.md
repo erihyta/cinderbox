@@ -86,7 +86,7 @@ One step from an edit to playing it: the client starts the server.
 | Piece | What |
 |---|---|
 | The client hosts | **done (M123)**: **Test locally** in the menu and `--host-local[=MODS]`: the game starts `cb_server`, joins it, and stops it when it leaves; the server also stops by itself when empty |
-| From the SDK | a **Test mod** button in the editor: publish the look, build the server if the `.cpp` changed, start the game hosting. Today that is three commands |
+| From the SDK | **done (M125)**: a **Test mod** button in the editor's toolbar (in a mod's client project) and `tools\test_mod.ps1 -Mod <mod>`: save, build, publish, start the game hosting |
 | Looks reload | a published look is taken up without restarting the server or the game |
 | Bots | **done (M123)**: `--bots=N` starts `cb_bot` players on the hosted server | a count in the menu; bots that use what the mod under test adds |
 

@@ -171,9 +171,8 @@ powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New mymod
 
 | Then | Why |
 |---|---|
-| build the server (`cmake --build --preset clang-release`) | it finds the new mod, and writes its names for the editor |
-| `tools\publish_mod.ps1 -Mod mymod` | bakes and packs the look; a name nobody declares stops it |
-| build once more, start the game and press **Test locally** | the server learns the item's id; the game starts a server, joins it, and stops it when you leave. The mod is in the game: slot 5, and Q |
+| open `server_mods/mymod/client` in Godot and press **Test mod** (in the toolbar) | it saves the scenes, builds the server (which finds the new mod and writes its names for the editor), publishes the look (a name nobody declares stops it), and starts the game on a server of its own. The mod is in the game: slot 5, and Q. Closing the game stops the server |
+| or, in a terminal: `tools\test_mod.ps1 -Mod mymod` | the same thing; `-Bots 4` adds bot players, `-Only` runs just this mod beside `combat` and `inventory`, `-NoBuild` skips the build when only the look changed |
 
 - **The names are known to the editor** after the first build ([Names](../docs/looks.md#names)): properties that hold one name offer them, and a node warns about one nobody declares.
 - Files that are already there are kept: `-New` on an existing mod only adds what is missing.
