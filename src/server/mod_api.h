@@ -168,6 +168,14 @@ struct WorldItem
 	float distance = 0.0f;
 };
 
+// A loose body near a point, as BodiesNear finds it: a prop, an item lying in the world, a ragdoll.
+struct NearBody
+{
+	uint32_t netId = 0;
+	b3Vec3 position = {}; // its centre
+	float distance = 0.0f;
+};
+
 // What mods asked each player's layers to play (SwapLayer; 0: nothing asked), kept by the server
 // between ticks. The layer that plays is the mod's wish, else what a held item brings, else the
 // player's own (Context::ResolveLayers).
@@ -396,6 +404,9 @@ public:
 		return SlotOf( netId ) >= 0;
 	}
 	bool IsDynamic( uint32_t netId ) const;
+	// Everything loose within `radius` of `point`, nearest first: props, items lying in the world,
+	// ragdolls (what Push moves). Not players, and not the map. For a blast, a magnet, a wind.
+	std::vector<NearBody> BodiesNear( b3Vec3 point, float radius ) const;
 
 	// Entities of a kind, in NetId order (creation order).
 	std::vector<uint32_t> Props() const;

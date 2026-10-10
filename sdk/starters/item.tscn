@@ -34,6 +34,7 @@ size = Vector3(0.06, 0.1, 0.3)
 [node name="Item" type="CbItem"]
 kind = "MODNAME.item"
 display_name = "MODNAME"
+slot = 5
 carry_grip = NodePath("Carry")
 other_hand = 3
 mass = 1.0

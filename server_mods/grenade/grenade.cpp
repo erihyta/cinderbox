@@ -9,11 +9,12 @@
 //
 // This file is the rules: what a grenade does when it hits something. It goes off: everyone near
 // is hurt (the combat mod's "combat.damage", like any other weapon's: less with distance) and
-// thrown back, and the grenade is gone. One that hits nothing hard enough is removed when its time
+// thrown back, everything loose near it is thrown too (props, items, ragdolls), and the grenade is gone. One that hits nothing hard enough is removed when its time
 // is up (the launch's seconds).
 //
 // Server options: grenade.damage (at the centre, default 80), grenade.radius (metres, default 4),
-// grenade.arm_speed (how hard it must hit to go off, m/s, default 3).
+// grenade.arm_speed (how hard it must hit to go off, m/s, default 3), grenade.push (how fast what is
+// loose is thrown at the centre, m/s, default 12).
 
 #include "mod_api.h"
 
@@ -53,6 +54,7 @@ public:
 		m_centreDamage = float( std::clamp( ctx.Option( "grenade.damage", 80.0 ), 0.0, 10000.0 ) );
 		m_radius = float( std::clamp( ctx.Option( "grenade.radius", 4.0 ), 0.5, 50.0 ) );
 		m_armSpeed = float( std::clamp( ctx.Option( "grenade.arm_speed", 3.0 ), 0.0, 100.0 ) );
+		m_push = float( std::clamp( ctx.Option( "grenade.push", 12.0 ), 0.0, 100.0 ) );
 	}
 
 	void Tick( Context& ctx ) override
@@ -107,6 +109,19 @@ private:
 			// Thrown back, hurt or not (the thrower too: a grenade at your feet is a jump).
 			ctx.Push( ctx.PlayerNetId( slot ), at->position, push, ImpulseVelocity );
 		}
+		// Everything loose is thrown too: crates, balls, what lies on the floor, the fallen. The
+		// same change of speed whatever it weighs (a blast is not a shove), more the nearer it is.
+		for ( const NearBody& body : ctx.BodiesNear( point, m_radius ) )
+		{
+			if ( body.netId == item )
+			{
+				continue;
+			}
+			b3Vec3 to = b3Sub( body.position, point );
+			float share = 1.0f - body.distance / m_radius;
+			b3Vec3 away = body.distance > 0.01f ? b3MulSV( 1.0f / body.distance, to ) : b3Vec3{ 0.0f, 1.0f, 0.0f };
+			ctx.Push( body.netId, body.position, b3Add( b3MulSV( m_push * share, away ), b3Vec3{ 0.0f, 0.35f * m_push * share, 0.0f } ), ImpulseVelocity );
+		}
 		ctx.Destroy( item );
 	}
 
@@ -119,6 +134,7 @@ private:
 	float m_centreDamage = 80.0f;
 	float m_radius = 4.0f;
 	float m_armSpeed = 3.0f;
+	float m_push = 12.0f;
 	std::vector<uint32_t> m_gone;
 };
 
