@@ -6,6 +6,8 @@
 #include <godot_cpp/classes/editor_interface.hpp>
 #include <godot_cpp/classes/editor_paths.hpp>
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/os.hpp>
+#include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
 
@@ -94,9 +96,63 @@ void CbAutoBakePlugin::OfferNodes()
 	}
 }
 
+void CbAutoBakePlugin::OfferTest()
+{
+	// Only where it can work: this project is <checkout>/server_mods/<mod>/client, and the checkout
+	// has the script (PowerShell: Windows).
+	if ( OS::get_singleton()->get_name() != "Windows" )
+	{
+		return;
+	}
+	String project = ProjectSettings::get_singleton()->globalize_path( "res://" ).replace( "\\", "/" ).trim_suffix( "/" );
+	PackedStringArray parts = project.split( "/" );
+	int64_t n = parts.size();
+	if ( n < 4 || parts[n - 1] != "client" || parts[n - 3] != "server_mods" )
+	{
+		return;
+	}
+	String root = String( "/" ).join( parts.slice( 0, n - 3 ) );
+	String script = root.path_join( "tools/test_mod.ps1" );
+	if ( FileAccess::file_exists( script ) == false )
+	{
+		return;
+	}
+	m_testScript = script;
+	m_testMod = parts[n - 2];
+	m_testButton = memnew( Button );
+	m_testButton->set_text( "Test mod" );
+	m_testButton->set_tooltip_text( "Saves the open scenes, then: builds the server, publishes this mod's look (" + m_testMod +
+									"), and starts the game on a server of its own with it. Closing the game stops the server.\n"
+									"(tools\\test_mod.ps1 -Mod " + m_testMod + ", in a window of its own.)" );
+	m_testButton->connect( "pressed", Callable( this, "on_test_mod" ) );
+	add_control_to_container( CONTAINER_TOOLBAR, m_testButton );
+}
+
+void CbAutoBakePlugin::on_test_mod()
+{
+	if ( m_testScript.is_empty() )
+	{
+		return;
+	}
+	// What is tried is what is on the screen.
+	EditorInterface::get_singleton()->save_all_scenes();
+	// In a console of its own, which stays open when a step fails (a name nobody declares, a build
+	// error), so what it said can be read.
+	String command = "& '" + m_testScript.replace( "/", "\\" ) + "' -Mod " + m_testMod +
+					 "; if ( $LASTEXITCODE -ne 0 ) { Write-Host ''; Read-Host 'It stopped (see above). Press Enter to close' }";
+	PackedStringArray args;
+	args.push_back( "-NoProfile" );
+	args.push_back( "-ExecutionPolicy" );
+	args.push_back( "Bypass" );
+	args.push_back( "-Command" );
+	args.push_back( command );
+	OS::get_singleton()->create_process( "powershell.exe", args, true );
+}
+
 void CbAutoBakePlugin::_bind_methods()
 {
 	ClassDB::bind_method( D_METHOD( "on_scene_saved", "path" ), &CbAutoBakePlugin::on_scene_saved );
+	ClassDB::bind_method( D_METHOD( "on_test_mod" ), &CbAutoBakePlugin::on_test_mod );
 }
 
 void CbAutoBakePlugin::_enter_tree()
@@ -105,6 +161,7 @@ void CbAutoBakePlugin::_enter_tree()
 	m_motionInspector.instantiate();
 	add_inspector_plugin( m_motionInspector );
 	OfferNodes();
+	OfferTest();
 }
 
 void CbAutoBakePlugin::_exit_tree()
@@ -112,6 +169,12 @@ void CbAutoBakePlugin::_exit_tree()
 	disconnect( "scene_saved", Callable( this, "on_scene_saved" ) );
 	remove_inspector_plugin( m_motionInspector );
 	m_motionInspector.unref();
+	if ( m_testButton != nullptr )
+	{
+		remove_control_from_container( CONTAINER_TOOLBAR, m_testButton );
+		m_testButton->queue_free();
+		m_testButton = nullptr;
+	}
 }
 
 void CbAutoBakePlugin::on_scene_saved( const String& path )

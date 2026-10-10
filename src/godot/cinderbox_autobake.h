@@ -18,6 +18,7 @@
 
 #include "cinderbox_motion.h"
 
+#include <godot_cpp/classes/button.hpp>
 #include <godot_cpp/classes/editor_plugin.hpp>
 #include <godot_cpp/variant/string.hpp>
 
@@ -32,12 +33,20 @@ public:
 	void _enter_tree() override;
 	void _exit_tree() override;
 	void on_scene_saved( const godot::String& path );
+	void on_test_mod();
 
 protected:
 	static void _bind_methods();
 
 private:
 	void OfferNodes();
+	// In a mod's client project (server_mods/<mod>/client of a checkout): a "Test mod" button in
+	// the toolbar, which saves the scenes and runs tools/test_mod.ps1 for this mod (build, publish,
+	// start the game hosting a server of its own).
+	void OfferTest();
+	godot::Button* m_testButton = nullptr;
+	godot::String m_testScript;
+	godot::String m_testMod;
 
 	godot::Ref<CbMotionInspector> m_motionInspector;
 };
