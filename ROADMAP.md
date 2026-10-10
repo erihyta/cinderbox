@@ -71,13 +71,13 @@ wrong one is silent. This step joins the two.
 | Piece | What |
 |---|---|
 | The schema reaches the editor | **done (M119)**: the server's build writes every mod's names (`cb_server --dump-names`); a property that holds one name offers them, and a node warns about one nobody declares, with the closest there is |
-| The server half is scaffolded | `sdk.ps1 -New <mod>` also writes `server_mods/<mod>/<mod>.cpp`: declarations that match the starter scenes |
+| The server half is scaffolded | **done (M121)**: `sdk.ps1 -New <mod>` also writes `server_mods/<mod>/<mod>.cpp`, declaring exactly the names the starter scenes use; built, published and run as it is made |
 | Publishing checks names | **done (M119)**: `check_names.gd` runs over every scene before a look is packed |
 | Names inside expressions | completion is for properties that hold one name; inside a condition or a format a name is checked but not offered while typing: an editor for expressions |
 | Names of other servers | the file is what *this* checkout's server compiles; a look for a mod built elsewhere needs that server's file |
 | An item in the hand | a preview of the item on the placeholder skeleton, grips solved, a pack playing |
 | A prebuilt SDK | CI builds the extension, so a mod's look needs no compiler |
-| A new template | the old one is from before the redesign |
+| A new template | the starters are the redesign's already (a `CbItem`, a motion, a HUD); what is old is the prose in `sdk/README.md` around them |
 
 ### 2. Mod testing
 
