@@ -85,10 +85,10 @@ One step from an edit to playing it: the client starts the server.
 
 | Piece | What |
 |---|---|
-| The client hosts | "Test" in the menu and `--host-local`: the game starts `cb_server` with the chosen mods, joins it, and stops it when it leaves |
-| From the SDK | a **Test mod** button: publish the look, build the server if the `.cpp` changed, start the game hosting |
+| The client hosts | **done (M123)**: **Test locally** in the menu and `--host-local[=MODS]`: the game starts `cb_server`, joins it, and stops it when it leaves; the server also stops by itself when empty |
+| From the SDK | a **Test mod** button in the editor: publish the look, build the server if the `.cpp` changed, start the game hosting. Today that is three commands |
 | Looks reload | a published look is taken up without restarting the server or the game |
-| Bots | `--bots N` on the hosted server, so a mod can be tried alone |
+| Bots | **done (M123)**: `--bots=N` starts `cb_bot` players on the hosted server | a count in the menu; bots that use what the mod under test adds |
 
 ### 3. Motions and the body
 

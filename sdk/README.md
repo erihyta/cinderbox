@@ -173,7 +173,7 @@ powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New mymod
 |---|---|
 | build the server (`cmake --build --preset clang-release`) | it finds the new mod, and writes its names for the editor |
 | `tools\publish_mod.ps1 -Mod mymod` | bakes and packs the look; a name nobody declares stops it |
-| build once more, run `cb_server` and the game | the server learns the item's id; the mod is in the game: slot 5, and Q |
+| build once more, start the game and press **Test locally** | the server learns the item's id; the game starts a server, joins it, and stops it when you leave. The mod is in the game: slot 5, and Q |
 
 - **The names are known to the editor** after the first build ([Names](../docs/looks.md#names)): properties that hold one name offer them, and a node warns about one nobody declares.
 - Files that are already there are kept: `-New` on an existing mod only adds what is missing.
