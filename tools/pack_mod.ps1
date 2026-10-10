@@ -72,6 +72,14 @@ if ((Test-Path (Join-Path $Project "motion_sets")) -and (Test-Path $bakeMotions)
 	& $Godot --headless --path $Project --script $bakeMotions
 	if ($LASTEXITCODE -ne 0) { throw "a motion set could not be baked (see above)" }
 }
+# Names: what the project's scenes name (an event, a field in a condition, an action, an item kind)
+# against what the server's mods declare (cinderbox_names.cfg, written by the server's build). A name
+# nobody declares stops the pack: in the game it would read as 0 and say nothing.
+$checkNames = Join-Path $root "godot\addons\cinderbox_maps\check_names.gd"
+if (Test-Path $checkNames) {
+	& $Godot --headless --path $Project --script $checkNames
+	if ($LASTEXITCODE -ne 0) { throw "a scene names something no mod declares (see above)" }
+}
 & $Godot --headless --path $Project --export-pack "Mod" $Output
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $Output)) { throw "export failed" }
 

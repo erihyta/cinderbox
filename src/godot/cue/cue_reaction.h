@@ -160,6 +160,8 @@ public:
 
 	void _notification( int what );
 	godot::PackedStringArray _get_configuration_warnings() const override;
+	// Its event is one of the names there are (cue_names.h).
+	void _validate_property( godot::PropertyInfo& property ) const;
 
 protected:
 	static void _bind_methods();

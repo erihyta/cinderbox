@@ -9,6 +9,7 @@
 #include "cinderbox_item_look.h"
 #include "cinderbox_motion.h"
 #include "cue_director.h"
+#include "cue_names.h"
 #include "cue_prediction.h"
 #include "cue_preview.h"
 #include "cue_reaction.h"
@@ -56,6 +57,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbDirector );
 	GDREGISTER_CLASS( cb::gd::CbReaction );
 	GDREGISTER_CLASS( cb::gd::CbPrediction );
+	GDREGISTER_CLASS( cb::gd::CbNames );
 	GDREGISTER_CLASS( cb::gd::CbTrackPlayer );
 	// Map authoring: inert marker nodes plus the baker they are baked with.
 	GDREGISTER_ABSTRACT_CLASS( cb::gd::CbBody );

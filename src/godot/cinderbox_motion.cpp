@@ -1,5 +1,7 @@
 #include "cinderbox_motion.h"
 
+#include "cue_names.h"
+
 #include "cue/cue_info.h"
 #include "cue/cue_prediction.h" // ParseChange: a motion's changes are written as a prediction's are
 
@@ -269,7 +271,13 @@ PackedStringArray CbMotionPart::_get_configuration_warnings() const
 		warnings.push_back( error );
 	}
 	Advice( warnings );
+	warnings.append_array( names::Problems( this ) );
 	return warnings;
+}
+
+void CbMotionPart::_validate_property( PropertyInfo& property ) const
+{
+	names::Hint( this, property );
 }
 
 // --- CbMotion ---------------------------------------------------------------------------------------

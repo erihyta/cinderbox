@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbNames" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		The names the server's mods declare, for tools: which there are, and what a scene names that nobody declares.
+	</brief_description>
+	<description>
+		A look is written against names a server mod declares ([code]combat.health[/code], [code]melee.hit[/code], [code]dash[/code]). The server's build writes them to [code]res://cinderbox_names.cfg[/code]; the editor offers them where a property holds one name and warns, in the scene tree, about one nobody declares. This class is the same check for scripts: publishing a look runs it over every scene of the project.
+		Without the file there is nothing to check against: [method is_known] is false and [method check_scene] finds nothing.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="is_known" qualifiers="const">
+			<return type="bool" />
+			<description>
+				True when the project has a names file.
+			</description>
+		</method>
+		<method name="get_names" qualifiers="const">
+			<return type="PackedStringArray" />
+			<param index="0" name="kind" type="String" />
+			<description>
+				Every name of a kind: [code]field[/code], [code]event[/code], [code]action[/code], [code]item[/code], [code]stance[/code], [code]layer[/code], [code]socket[/code], [code]pack[/code], [code]motions[/code], [code]mod[/code].
+			</description>
+		</method>
+		<method name="check_scene" qualifiers="const">
+			<return type="PackedStringArray" />
+			<param index="0" name="root" type="Node" />
+			<description>
+				What [param root] and the nodes under it name that nobody declares, a line each: the node's path, the property, the name, and the closest name there is.
+			</description>
+		</method>
+	</methods>
+</class>

@@ -55,3 +55,6 @@ godot/characters/ual_mannequin/
 
 # Personal notes vault
 .obsidian/
+
+# What the mods declare, written by the server's build for the editor
+cinderbox_names.cfg

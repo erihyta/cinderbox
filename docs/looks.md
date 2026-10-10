@@ -171,6 +171,23 @@ is `pistol.gun and !combat.dead`.
 What an entity looks like *while* something holds (a glowing bat) is authored inside its own scene,
 with the same [`CbReaction` nodes](#reactions).
 
+## Names
+
+A look is written against names a server mod declares: `combat.health`, `melee.hit`, `dash`. They
+are typed by hand, and one typed wrong used to read as 0 and say nothing. The editor knows them now.
+
+| What | How |
+|---|---|
+| Where the names come from | every build of the server writes what every mod compiled into it declares to `cinderbox_names.cfg` in each project that authors a look (the game, the SDK, every mod's `client/`). By hand: `cb_server --dump-names FILE` |
+| Choosing a name | a property that holds one name offers the ones there are: a reaction's `event`, a motion's `action` / `event` / `emits`, a launch's `item_kind`, a list's `event` / `item_kind`, a prediction's `action` / `cue`. Anything else can still be typed |
+| A name nobody declares | the node says so in the scene tree (the yellow warning), with the closest name there is: `conditions: no mod declares "combat.ded" (did you mean combat.dead?)`. Checked: names, expressions, formats (`{...}`), `changes`, a click's `sets` |
+| Publishing | `tools\publish_mod.ps1` checks every scene of the project the same way, and a name nobody declares stops it. By hand: `godot --headless --path <project> --script <repo>/godot/addons/cinderbox_maps/check_names.gd` |
+
+- **What is not a mod's to declare is left alone**: the reader's own names (`speed`, `grounded`, `is_local`, `{name}`, `{rank}`), `ui.` values, `event.` and `slot.` names, the engine's cues (`footstep`, `impact`, `jumped`, ...), `held.jump`, and `{key:...}` (it may be a `CbKey` of the look's own).
+- **Every compiled mod counts**, the ones a server would not run by default too: a look may be written for any of them.
+- **Without the file nothing is offered and nothing is said**: a look can be written with no server at hand. The file is not shipped in a pack and not in the repository.
+- For tools: `CbNames` (`is_known()`, `get_names( kind )`, `check_scene( root )`).
+
 ## HUD nodes
 
 The HUD reads the board too, through script-free nodes any HUD scene can use:

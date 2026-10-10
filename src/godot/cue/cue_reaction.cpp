@@ -1,5 +1,7 @@
 #include "cue_reaction.h"
 
+#include "cue_names.h"
+
 #include "cue_director.h"
 #include "cue_guard.h"
 
@@ -173,6 +175,11 @@ bool CbReaction::Parse()
 	return m_valid;
 }
 
+void CbReaction::_validate_property( PropertyInfo& property ) const
+{
+	names::Hint( this, property );
+}
+
 PackedStringArray CbReaction::_get_configuration_warnings() const
 {
 	PackedStringArray warnings;
@@ -252,6 +259,7 @@ PackedStringArray CbReaction::_get_configuration_warnings() const
 	{
 		warnings.push_back( "volume_expression needs a sound." );
 	}
+	warnings.append_array( names::Problems( this ) );
 	return warnings;
 }
 

@@ -64,6 +64,8 @@ class CbPromptLabel : public godot::Label3D
 public:
 	CbPromptLabel();
 	void _ready() override;
+	// What it names that nobody declares (cue_names.h).
+	godot::PackedStringArray _get_configuration_warnings() const override;
 	void _process( double delta ) override;
 
 	void set_text_format( const godot::String& value )
@@ -142,6 +144,8 @@ class CbFieldLabel : public godot::Label
 
 public:
 	void _ready() override;
+	// What it names that nobody declares (cue_names.h).
+	godot::PackedStringArray _get_configuration_warnings() const override;
 	void _process( double delta ) override;
 
 	void set_text_format( const godot::String& value )
@@ -207,11 +211,14 @@ class CbFieldBinding : public godot::Node
 
 public:
 	void _ready() override;
+	// What it names that nobody declares (cue_names.h).
+	godot::PackedStringArray _get_configuration_warnings() const override;
 	void _process( double delta ) override;
 
 	void set_field( const godot::String& v )
 	{
 		m_field = v;
+		update_configuration_warnings();
 	}
 	godot::String get_field() const
 	{
@@ -220,6 +227,7 @@ public:
 	void set_target( const godot::NodePath& v )
 	{
 		m_target = v;
+		update_configuration_warnings();
 	}
 	godot::NodePath get_target() const
 	{
@@ -228,6 +236,7 @@ public:
 	void set_property( const godot::String& v )
 	{
 		m_property = v;
+		update_configuration_warnings();
 	}
 	godot::String get_property() const
 	{
@@ -236,6 +245,7 @@ public:
 	void set_text_format( const godot::String& v )
 	{
 		m_textFormat = v;
+		update_configuration_warnings();
 	}
 	godot::String get_text_format() const
 	{
@@ -244,6 +254,7 @@ public:
 	void set_multiply( float v )
 	{
 		m_multiply = v;
+		update_configuration_warnings();
 	}
 	float get_multiply() const
 	{
@@ -252,6 +263,7 @@ public:
 	void set_add( float v )
 	{
 		m_add = v;
+		update_configuration_warnings();
 	}
 	float get_add() const
 	{
@@ -260,6 +272,7 @@ public:
 	void set_conditions( const godot::PackedStringArray& v )
 	{
 		m_conditions = v;
+		update_configuration_warnings();
 	}
 	godot::PackedStringArray get_conditions() const
 	{
@@ -305,10 +318,12 @@ public:
 	void _ready() override;
 	void _process( double delta ) override;
 	godot::PackedStringArray _get_configuration_warnings() const override;
+	void _validate_property( godot::PropertyInfo& property ) const;
 
 	void set_of( int v )
 	{
 		m_of = v;
+		update_configuration_warnings();
 	}
 	int get_of() const
 	{
@@ -317,6 +332,7 @@ public:
 	void set_item_kind( const godot::String& v )
 	{
 		m_itemKind = v;
+		update_configuration_warnings();
 	}
 	godot::String get_item_kind() const
 	{
@@ -325,6 +341,7 @@ public:
 	void set_where( const godot::PackedStringArray& v )
 	{
 		m_where = v;
+		update_configuration_warnings();
 	}
 	godot::PackedStringArray get_where() const
 	{
@@ -333,6 +350,7 @@ public:
 	void set_sort_by( const godot::String& v )
 	{
 		m_sortBy = v;
+		update_configuration_warnings();
 	}
 	godot::String get_sort_by() const
 	{
@@ -341,6 +359,7 @@ public:
 	void set_descending( bool v )
 	{
 		m_descending = v;
+		update_configuration_warnings();
 	}
 	bool get_descending() const
 	{
@@ -349,6 +368,7 @@ public:
 	void set_max_rows( int v )
 	{
 		m_maxRows = v;
+		update_configuration_warnings();
 	}
 	int get_max_rows() const
 	{
@@ -357,6 +377,7 @@ public:
 	void set_conditions( const godot::PackedStringArray& v )
 	{
 		m_conditions = v;
+		update_configuration_warnings();
 	}
 	godot::PackedStringArray get_conditions() const
 	{
@@ -366,6 +387,7 @@ public:
 	void set_event( const godot::String& v )
 	{
 		m_event = v;
+		update_configuration_warnings();
 	}
 	godot::String get_event() const
 	{
@@ -374,6 +396,7 @@ public:
 	void set_seconds( float v )
 	{
 		m_seconds = v;
+		update_configuration_warnings();
 	}
 	float get_seconds() const
 	{
@@ -382,6 +405,7 @@ public:
 	void set_nobody_text( const godot::String& v )
 	{
 		m_nobody = v;
+		update_configuration_warnings();
 	}
 	godot::String get_nobody_text() const
 	{
@@ -473,6 +497,7 @@ public:
 	void set_mode( int v )
 	{
 		m_mode = v;
+		update_configuration_warnings();
 	}
 	int get_mode() const
 	{
@@ -490,6 +515,7 @@ public:
 	void set_cursor( bool v )
 	{
 		m_cursor = v;
+		update_configuration_warnings();
 	}
 	bool get_cursor() const
 	{
@@ -499,6 +525,7 @@ public:
 	void set_conditions( const godot::PackedStringArray& v )
 	{
 		m_conditions = v;
+		update_configuration_warnings();
 	}
 	godot::PackedStringArray get_conditions() const
 	{
@@ -554,6 +581,7 @@ public:
 	void set_conditions( const godot::PackedStringArray& v )
 	{
 		m_conditions = v;
+		update_configuration_warnings();
 	}
 	godot::PackedStringArray get_conditions() const
 	{
@@ -571,6 +599,7 @@ public:
 	void set_intent( int v )
 	{
 		m_intent = v;
+		update_configuration_warnings();
 	}
 	int get_intent() const
 	{
@@ -579,6 +608,7 @@ public:
 	void set_from( const godot::String& v )
 	{
 		m_from = v;
+		update_configuration_warnings();
 	}
 	godot::String get_from() const
 	{
