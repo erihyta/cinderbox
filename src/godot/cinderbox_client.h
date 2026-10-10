@@ -98,6 +98,12 @@ public:
 	// that floats in the view (an item with a CbItem.view_camera) is put in front of it, a little
 	// behind its turning and moving with the steps.
 	void place_view_items( const godot::Transform3D& camera, double delta );
+	// The view model: what floats in the view and the arms that hold it are on a layer of their
+	// own (get_view_layer: a bit mask), for a camera of the game's that draws them over the world,
+	// so they never pass into a wall. get_view_fov: the field of view the item asks for (its
+	// CbViewCamera's), or 0 when nothing floats.
+	int64_t get_view_layer() const;
+	double get_view_fov() const;
 
 	// What the server's mods declared. Each action: { name, bit, key }.
 	godot::Array get_actions() const;
@@ -332,6 +338,9 @@ private:
 	float m_viewSpeed = 0.0f; // the viewer's ground speed, m/s
 	float m_viewBob = 0.0f; // how much of the step shows, 0..1
 	std::vector<godot::ObjectID> m_viewItems; // what floats now
+	std::map<std::string, float> m_itemViewFovs; // the CbViewCamera's field of view by kind
+	float m_viewFov = 0.0f; // of what floats now
+	void ViewLayers( godot::Node* node, bool on ); // an item's visuals onto the view model's layer, or back
 	bool m_firstPerson = false;
 	godot::ObjectID m_firstPersonSkeleton; // whose body is cut for it now
 	void FirstPersonBody( uint32_t netId, godot::Node* node, const AnimState* state, present::Models& models );

@@ -114,6 +114,13 @@ var _leaving := false # the scene is being replaced
 
 var _actions: Array = [] # [{ name, bit, key }] from the server's mods
 
+## The view model: what the player holds that floats in the first-person view, and the arms on it,
+## are drawn by a camera of their own over the world (the viewer puts them on a layer only this
+## camera sees). It stands where the game's camera does, with the field of view the held item asks
+## for, and has its own depth: what is held never passes into a wall.
+var _view_model: SubViewport
+var _view_model_camera: Camera3D
+var _view_model_rect: TextureRect
 var _shake := 0.0
 var _shake_decay := 1.0
 var _flash := 0.0
@@ -127,6 +134,7 @@ func _ready() -> void:
 	# The camera is placed after everything has moved this frame (the viewer is a child and updates
 	# the drawn world after this node): a frame late, your own body would run ahead of your eyes.
 	RenderingServer.frame_pre_draw.connect(_update_camera)
+	_make_view_model()
 	if ClassDB.class_exists("CinderboxPeer"):
 		peer = ClassDB.instantiate("CinderboxPeer")
 	if args.has("rollback") and peer != null:
@@ -795,7 +803,9 @@ func _update_camera() -> void:
 		_camera_moved()
 		# What is held and floats in the view (an item with a view camera) goes in front of it.
 		client.place_view_items(camera.global_transform, get_process_delta_time())
+		_show_view_model(client.get_view_fov())
 		return
+	_show_view_model(0.0)
 	# The point above the player the camera orbits (moved to a shoulder, if it is), or its ragdoll
 	# while dead. The server's line of sight passes through the same point.
 	camera.rotation = Vector3(pitch, yaw, 0)
@@ -811,6 +821,58 @@ func _update_camera() -> void:
 			auto_rng.randf_range(-_shake, _shake),
 			auto_rng.randf_range(-_shake, _shake))
 	_camera_moved()
+
+
+func _make_view_model() -> void:
+	var layer: int = client.get_view_layer()
+	camera.cull_mask &= ~layer
+	_view_model = SubViewport.new()
+	_view_model.name = "ViewModel"
+	_view_model.transparent_bg = true
+	_view_model.msaa_3d = get_viewport().msaa_3d
+	_view_model.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_view_model_camera = Camera3D.new()
+	_view_model_camera.cull_mask = layer
+	_view_model_camera.near = 0.01
+	_view_model_camera.far = 20.0
+	# The world's light without the world's picture: the sky lights what is held and is not drawn.
+	var world := ($WorldEnvironment as WorldEnvironment).environment
+	var env := Environment.new()
+	env.background_mode = Environment.BG_CLEAR_COLOR
+	env.sky = world.sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	env.tonemap_mode = world.tonemap_mode
+	_view_model_camera.environment = env
+	_view_model.add_child(_view_model_camera)
+	add_child(_view_model)
+	# Under every HUD: over the world and nothing else.
+	var canvas := CanvasLayer.new()
+	canvas.layer = -1
+	_view_model_rect = TextureRect.new()
+	_view_model_rect.texture = _view_model.get_texture()
+	_view_model_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_view_model_rect.stretch_mode = TextureRect.STRETCH_SCALE
+	_view_model_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_view_model_rect.visible = false
+	canvas.add_child(_view_model_rect)
+	add_child(canvas)
+
+
+## `fov` 0: nothing floats in the view, and nothing is drawn for it.
+func _show_view_model(fov: float) -> void:
+	var on := fov > 0.0
+	if _view_model_rect.visible != on:
+		_view_model_rect.visible = on
+		_view_model.render_target_update_mode = SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED
+	if not on:
+		return
+	var size: Vector2i = get_viewport().get_visible_rect().size
+	if _view_model.size != size:
+		_view_model.size = size
+	_view_model_camera.fov = fov
+	_view_model_camera.global_transform = camera.global_transform
+	_view_model_camera.force_update_transform()
 
 
 ## The camera is placed just before the frame is drawn (so it has this frame's newest pose), which

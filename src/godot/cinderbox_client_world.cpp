@@ -114,6 +114,10 @@ void CinderboxClient::add_item( const String& kind, const String& config )
 				m_itemViewOffsets[key] = Vector3( float( v[0] ), float( v[1] ), float( v[2] ) );
 			}
 		}
+		else if ( line.begins_with( "viewfov " ) )
+		{
+			m_itemViewFovs[key] = float( line.substr( 8 ).to_float() );
+		}
 		else if ( line.begins_with( "viewfrom " ) )
 		{
 			PackedFloat64Array v = line.substr( 9 ).split_floats( " ", false );
@@ -132,6 +136,7 @@ void CinderboxClient::clear_world_scenes()
 	m_itemNames.clear();
 	m_itemViewOffsets.clear();
 	m_itemViewFrames.clear();
+	m_itemViewFovs.clear();
 	m_linkLooks.clear();
 	for ( ObjectID id : m_worldScenes )
 	{

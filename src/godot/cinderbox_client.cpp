@@ -44,6 +44,8 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_first_person", "value" ), &CinderboxClient::set_first_person );
 	ClassDB::bind_method( D_METHOD( "get_first_person" ), &CinderboxClient::get_first_person );
 	ClassDB::bind_method( D_METHOD( "place_view_items", "camera", "delta" ), &CinderboxClient::place_view_items );
+	ClassDB::bind_method( D_METHOD( "get_view_layer" ), &CinderboxClient::get_view_layer );
+	ClassDB::bind_method( D_METHOD( "get_view_fov" ), &CinderboxClient::get_view_fov );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "first_person", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE ), "set_first_person",
 				  "get_first_person" );
 	ClassDB::bind_method( D_METHOD( "get_camera_distance", "target", "direction", "max_distance", "radius" ),
@@ -589,6 +591,7 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 		{
 			was->set_first_person_body( false );
 			was->set_first_person_arms( true );
+			was->set_view_arms( false );
 		}
 	}
 	m_firstPersonSkeleton = on ? ObjectID( skeleton->get_instance_id() ) : ObjectID();
@@ -607,7 +610,9 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 			floats |= ViewFrameOf( kind, ignored );
 		}
 	}
+	// ... the body's own, that is: the view has arms of its own on the item (PlaceViewArms).
 	skeleton->set_first_person_arms( floats == false );
+	skeleton->set_view_arms( floats );
 	m_viewSpeed = state->groundSpeed;
 	int head = anim::FindJoint( *m_animSet, "Head" );
 	int spine = anim::FindJoint( *m_animSet, "Spine" );
@@ -798,15 +803,71 @@ void CinderboxClient::place_view_items( const Transform3D& camera, double delta 
 	m_viewCamera = camera;
 	m_viewCameraKnown = true;
 	static const StringName kFloating( "cb_floating" );
+	auto* skeleton = Object::cast_to<CinderboxSkeleton>( ObjectDB::get_instance( m_firstPersonSkeleton ) );
+	bool armed = false;
 	for ( ObjectID id : m_viewItems )
 	{
 		auto* item = Object::cast_to<Node3D>( ObjectDB::get_instance( id ) );
-		if ( item != nullptr && item->is_inside_tree() && item->has_meta( kFloating ) )
+		if ( item == nullptr || item->is_inside_tree() == false || item->has_meta( kFloating ) == false )
 		{
-			item->set_global_transform( ViewItemTransform( item->get_meta( kFloating ) ) );
-			// (The camera is placed after Godot passed this frame's moves on to the renderer.)
-			item->force_update_transform();
+			continue;
 		}
+		item->set_global_transform( ViewItemTransform( item->get_meta( kFloating ) ) );
+		// (The camera is placed after Godot passed this frame's moves on to the renderer.)
+		item->force_update_transform();
+		ViewLayers( item, true ); // what a reaction added under it since, too
+		auto* socket = Object::cast_to<Node3D>( item->get_parent() );
+		if ( skeleton == nullptr || socket == nullptr || armed )
+		{
+			continue;
+		}
+		// The arms: the carrying hand is on the item's grip as it is in the socket, wherever the
+		// item's own animation has moved the grip since (a swing made in the item's scene carries
+		// the hand), and the other hand is where the pose has it against the carrying one (on its
+		// marker, or as the animations have it).
+		armed = true;
+		int side = socket == SocketNode( m_frame.frame.localNetId, uint8_t( kSocketLeftHand ) ) ? 0 : 1;
+		Transform3D carrying = skeleton->ViewHand( side );
+		Transform3D inSocket = socket->get_global_transform() * SceneInCarriedFrame( item );
+		Transform3D gripNow = CbItem::CarryFrameUnder( item ) * SceneInCarriedFrame( item ); // identity while nothing moves it
+		Transform3D hand = item->get_global_transform() * gripNow * inSocket.affine_inverse() * carrying;
+		Transform3D other = hand * carrying.affine_inverse() * skeleton->ViewHand( 1 - side );
+		anim::HandGrip grip;
+		bool both = m_mirror->GripOf( m_frame.frame.localNetId, grip );
+		skeleton->PlaceViewArms( camera, side == 0 ? hand : other, side == 0 ? other : hand, side == 0 || both, side == 1 || both );
+	}
+}
+
+int64_t CinderboxClient::get_view_layer() const
+{
+	return int64_t( CinderboxSkeleton::kViewLayer );
+}
+
+double CinderboxClient::get_view_fov() const
+{
+	// (An eye that is not a camera asks for none: the game's own, 60.)
+	return m_viewItems.empty() ? 0.0 : double( m_viewFov > 1.0f ? m_viewFov : 60.0f );
+}
+
+void CinderboxClient::ViewLayers( Node* node, bool on )
+{
+	static const StringName kLayers( "cb_layers" );
+	if ( auto* visual = Object::cast_to<VisualInstance3D>( node ) )
+	{
+		if ( on && visual->has_meta( kLayers ) == false )
+		{
+			visual->set_meta( kLayers, int64_t( visual->get_layer_mask() ) );
+			visual->set_layer_mask( CinderboxSkeleton::kViewLayer );
+		}
+		else if ( on == false && visual->has_meta( kLayers ) )
+		{
+			visual->set_layer_mask( uint32_t( int64_t( visual->get_meta( kLayers ) ) ) );
+			visual->remove_meta( kLayers );
+		}
+	}
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		ViewLayers( node->get_child( i ), on );
 	}
 }
 

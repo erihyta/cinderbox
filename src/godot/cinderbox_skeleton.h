@@ -116,6 +116,29 @@ public:
 	{
 		return m_firstPersonArms;
 	}
+	// The view's own arms (first person, an item that floats in the view): a copy of this body of
+	// which only the arms are drawn, on the view model's layer (kViewLayer: a camera of its own
+	// draws it over the world), held under the camera and bent so that the hands are on the item.
+	// The body's own pose is not touched. Only with first_person_body.
+	static constexpr uint32_t kViewLayer = 1u << 19; // Godot's layer 20
+	void set_view_arms( bool value )
+	{
+		m_viewArms = value;
+	}
+	bool get_view_arms() const
+	{
+		return m_viewArms;
+	}
+	// The body's own hand as this frame's pose has it, in the world, before the body was cut
+	// (0 left, 1 right): what the item in it is held by.
+	godot::Transform3D ViewHand( int side ) const
+	{
+		return m_viewHands[side != 0 ? 1 : 0];
+	}
+	// Puts the view's arms under `camera` (the eye, in the world) with the hands at `right` and
+	// `left` (the world). An arm that holds nothing is not drawn.
+	void PlaceViewArms( const godot::Transform3D& camera, const godot::Transform3D& left, const godot::Transform3D& right, bool holdsLeft,
+						bool holdsRight );
 
 	void set_retarget( bool value );
 	bool get_retarget() const
@@ -191,6 +214,11 @@ private:
 	godot::ObjectID m_shadowBody;	// the copy that casts the shadows
 	godot::ObjectID m_shadowOf;		// the skeleton it copies
 	std::vector<std::pair<godot::ObjectID, int>> m_shadowSettings; // the meshes' own cast_shadow
+	bool m_viewArms = false;
+	void UpdateViewArms( godot::Skeleton3D* target );
+	godot::ObjectID m_viewRig; // the copy whose arms the view draws
+	godot::ObjectID m_viewRigOf;
+	godot::Transform3D m_viewHands[2];
 
 	// The last applied pose, for joint lookups.
 	const anim::AnimSet* m_lastSet = nullptr;

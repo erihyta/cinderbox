@@ -170,7 +170,7 @@ tracks/0/enabled = true
 tracks/0/path = NodePath("Model")
 tracks/0/interp = 2
 tracks/0/loop_wrap = true
-tracks/0/keys = PackedFloat32Array(0, 1, 0, 0, 0, 0.22, 1, 0.072857, 0.15333, -0.0089888, 0.36, 1, -0.087318, 0.10082, -0.13383, 0.4, 1, -0.27692, 0.032295, -0.19176, 0.47, 1, -0.5726, -0.014515, -0.093883, 0.6, 1, 0, 0, 0)
+tracks/0/keys = PackedFloat32Array(0, 1, 0, 0, 0, 0.22, 1, 0.10264, 0.084345, 0.023471, 0.36, 1, -0.057535, 0.03183, -0.10137, 0.4, 1, -0.24714, -0.036693, -0.1593, 0.47, 1, -0.54282, -0.083503, -0.061423, 0.6, 1, 0, 0, 0)
 tracks/1/type = "rotation_3d"
 tracks/1/imported = false
 tracks/1/enabled = true
@@ -192,8 +192,7 @@ properties = {
 "pickup.hold_seconds": 0.5
 }
 slot = 2
-carry_grip = NodePath("Carry")
-other_hand = 3
+carry_grip = NodePath("Model/Carry")
 view_camera = NodePath("View")
 mass = 1.1
 
@@ -212,10 +211,10 @@ surface_material_override/0 = SubResource("StandardMaterial3D_cfl35")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.31)
 shape = SubResource("Body")
 
-[node name="Carry" type="Marker3D" parent="." unique_id=1025936150]
+[node name="Carry" type="Marker3D" parent="Model" unique_id=1025936150]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, -0.035053983)
 
-[node name="OtherHand" type="Marker3D" parent="." unique_id=840287759]
+[node name="OtherHand" type="Marker3D" parent="Model" unique_id=840287759]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.6054174e-09, -1.9064716e-09, 0.066385016)
 
 [node name="Flames" type="GPUParticles3D" parent="Model" unique_id=1514484346]
@@ -266,7 +265,7 @@ stance = "melee_swing"
 stance_layer = "full"
 
 [node name="View" type="CbViewCamera" parent="."]
-transform = Transform3D(0.98679, 0.061642, -0.14981, 0.061642, 0.71234, 0.69913, 0.14981, -0.69913, 0.69913, -0.41545, 0.61877, 0.078901)
+transform = Transform3D(0.98679, 0.061642, -0.14981, 0.061642, 0.71234, 0.69913, 0.14981, -0.69913, 0.69913, -0.38567, 0.54978, 0.11136)
 fov = 60.0
 near = 0.03
 editor_description = "Where the viewer's eye is while the bat is held, in first person (the root's View Camera). The arms are not drawn then: the bat floats in the view.

@@ -346,6 +346,11 @@ Dictionary CbItem::bake() const
 		Transform3D t = InSceneFrame( eye, this ).orthonormalized();
 		Quaternion q = t.basis.get_rotation_quaternion();
 		text += vformat( "viewfrom %.4f %.4f %.4f %.5f %.5f %.5f %.5f\n", t.origin.x, t.origin.y, t.origin.z, q.x, q.y, q.z, q.w );
+		// A camera's field of view is the view model's: what its Preview shows is what is drawn.
+		if ( auto* camera = Object::cast_to<Camera3D>( eye ) )
+		{
+			text += vformat( "viewfov %.2f\n", camera->get_fov() );
+		}
 	}
 	out["text"] = text;
 	out["error"] = "";

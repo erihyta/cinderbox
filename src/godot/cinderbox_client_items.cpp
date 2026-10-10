@@ -215,6 +215,7 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 	{
 		node->remove_meta( kFloating );
 		node->set_as_top_level( false );
+		ViewLayers( node, false );
 	}
 	uint32_t& drawnWith = m_itemHolders[visual];
 	if ( v.holder == 0 )
@@ -269,6 +270,8 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 		node->set_meta( kFloating, eye );
 		node->set_global_transform( ViewItemTransform( eye ) );
 		m_viewItems.push_back( ObjectID( node->get_instance_id() ) );
+		auto fov = v.itemKind < m_frame.schema.itemKinds.size() ? m_itemViewFovs.find( m_frame.schema.itemKinds[v.itemKind] ) : m_itemViewFovs.end();
+		m_viewFov = fov != m_itemViewFovs.end() ? fov->second : 0.0f;
 	}
 	node->set_visible( true );
 }
