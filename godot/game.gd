@@ -36,6 +36,7 @@ extends Node3D
 ##
 ## Command line (after `--`): --host=H --port=P --name=NAME --rollback=N
 ##                            --replay=FILE --view=FILE
+##                            --host-local[=MODS] --bots=N   start a server here, join it, stop it on leaving (host.gd)
 ##                            --autoplay=SECONDS --screenshot=FILE --screenshot-every=SECONDS
 ##                            --mods=DIR --workshop=DIR --config=FILE
 ## With --screenshot-every, autoplay also saves FILE_1.png, FILE_2.png, ... along the way.
@@ -51,6 +52,7 @@ const INTENT_SELECT := 1
 const Boot := preload("res://boot.gd")
 const Workshop := preload("res://workshop.gd")
 const Menu := preload("res://menu.gd")
+const Host := preload("res://host.gd")
 const NO_PEER := "This copy of the game has no peer extension, so it cannot %s."
 const NO_LINK := "This copy of the game does not have the peer extension, so it cannot join servers."
 ## How long a server may take to answer before the attempt is given up.
@@ -162,6 +164,7 @@ func _ready() -> void:
 	menu.name = "MenuDriver"
 	add_child(menu)
 	menu.join_requested.connect(_join)
+	menu.host_requested.connect(_host)
 	menu.cancel_requested.connect(_leave.bind(""))
 	menu.leave_requested.connect(_leave.bind(""))
 	menu.resume_requested.connect(_resume)
@@ -169,11 +172,14 @@ func _ready() -> void:
 
 	# The command line's server is joined once (its recording watched once); leaving it lands in
 	# the menu like any other.
-	var direct: bool = not _started and (args.has("host") or args.has("port") or autoplay > 0.0)
+	var local: bool = not _started and args.has("host-local")
+	var direct: bool = not _started and not local and (args.has("host") or args.has("port") or autoplay > 0.0)
 	var watch: bool = not _started and (args.has("replay") or args.has("view"))
 	_started = true
 	if watch:
 		_watch(args.get("view", args.get("replay", "")), args.has("view"))
+	elif local:
+		_host()
 	elif direct:
 		_join(args.get("host", "127.0.0.1"), int(args.get("port", str(Menu.DEFAULT_PORT))))
 	else:
@@ -240,6 +246,19 @@ func _process(delta: float) -> void:
 
 
 # --- Joining and leaving --------------------------------------------------------------------------
+
+## A server of the player's own: started, joined, and stopped when it is left (host.gd).
+func _host() -> void:
+	var started: Dictionary = Host.start(args)
+	if started.has("error"):
+		if autoplay > 0.0:
+			print("autoplay refused: ", started["error"])
+			get_tree().quit(3)
+			return
+		menu.show_main(started["error"])
+		return
+	_join("127.0.0.1", int(started["port"]))
+
 
 func _join(host: String, port: int) -> void:
 	_address = Menu.format_address(host, port)
@@ -317,6 +336,7 @@ func _leave(message: String) -> void:
 	if message != "":
 		push_warning(message.replace("\n", " "))
 	_stop()
+	Host.stop()
 	if autoplay > 0.0:
 		# Unattended runs have nobody to read a menu.
 		print("autoplay refused: ", message.replace("\n", " "))
@@ -330,9 +350,16 @@ func _leave(message: String) -> void:
 	get_tree().reload_current_scene()
 
 
+## The window's close button: a server this game started goes with it.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		Host.stop()
+
+
 func _quit() -> void:
 	_leaving = true
 	_stop()
+	Host.stop()
 	get_tree().quit()
 
 
@@ -881,6 +908,7 @@ func _autoplay_finish() -> void:
 	print("use would predict: ", client.get_director().explain_press("use"))
 	_stop()
 	# (A source that cannot desync, a view file, reports none.)
+	Host.stop()
 	get_tree().quit(0 if stats.get("desyncs", 0) == 0 and stats.get("state") == "playing" else 2)
 
 

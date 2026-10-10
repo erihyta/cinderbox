@@ -105,6 +105,13 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Settings"
 
+[node name="Host" type="Button" parent="Center/Main/Margin/Rows/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Starts a server on this machine with the mods it runs by default, joins it, and stops it when you leave."
+text = "Test locally"
+
 [node name="Quit" type="Button" parent="Center/Main/Margin/Rows/Buttons"]
 unique_name_in_owner = true
 layout_mode = 2
