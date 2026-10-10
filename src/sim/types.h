@@ -200,6 +200,9 @@ enum ImpulseMode : uint8_t
 {
 	ImpulseLinear = 0,	// b is an impulse in N*s
 	ImpulseVelocity = 1, // b is a change of velocity in m/s (mass independent)
+	// The same change of velocity for the whole of it: every part of a ragdoll, where the two above
+	// hit the part nearest the point (a shot). A blast, a wind.
+	ImpulseThrow = 2,
 };
 
 inline constexpr uint32_t kSlotTargetBit = 0x80000000u;

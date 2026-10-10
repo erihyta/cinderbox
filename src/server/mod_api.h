@@ -177,6 +177,9 @@ struct NearBody
 	// About how big it is: from its centre to its furthest corner (a ragdoll: its pelvis). A push
 	// at a point off its centre by some share of this turns it as well as moving it.
 	float radius = 0.0f;
+	// A ragdoll: the tick it fell at (0: it is not one). A push on one hits the part nearest its
+	// point; ImpulseThrow throws the whole body.
+	uint32_t ragdollSince = 0;
 };
 
 // What mods asked each player's layers to play (SwapLayer; 0: nothing asked), kept by the server

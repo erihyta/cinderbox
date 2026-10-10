@@ -2039,7 +2039,7 @@ void PushBody( b3BodyId body, b3Vec3 point, b3Vec3 vector, uint8_t mode )
 	{
 		return;
 	}
-	b3Vec3 impulse = mode == ImpulseVelocity ? b3MulSV( b3Body_GetMass( body ), vector ) : vector;
+	b3Vec3 impulse = mode == ImpulseLinear ? vector : b3MulSV( b3Body_GetMass( body ), vector );
 	b3Body_ApplyLinearImpulse( body, impulse, point, true );
 }
 
@@ -2071,6 +2071,17 @@ void Simulation::ApplyImpulse( flecs::entity e, const SimCommand& command )
 
 	if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
 	{
+		if ( command.mode == ImpulseThrow )
+		{
+			// The whole body is thrown: every part the same, each through its own centre.
+			for ( int i = 0; i < kRagdollParts; ++i )
+			{
+				b3BodyId part = rb->body[i];
+				part.world0 = uint16_t( m_physicsWorld.index1 - 1 );
+				PushBody( part, b3Body_GetWorldCenter( part ), vector, ImpulseVelocity );
+			}
+			return;
+		}
 		// The part nearest the point takes the hit; the joints pass it on.
 		int nearest = 0;
 		float best = FLT_MAX;

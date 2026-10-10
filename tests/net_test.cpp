@@ -2919,7 +2919,11 @@ void TestGrenade()
 	// Then a crate is put down in front of the player (the props mod's key) and a second grenade
 	// thrown at the floor beside it.
 	const uint32_t crateAt = 480, secondAt = 600;
-	Harness h( 47881 );
+	// Then at its own feet: that one kills it, and the body is thrown.
+	const uint32_t thirdAt = 720, fourthAt = 840;
+	// (A grenade that kills at its centre and a metre or two around: the last one is thrown at the
+	// thrower's own feet.)
+	Harness h( 47881, {}, {}, { { "grenade.damage", "300" } } );
 	const ModSchema& schema = h.server.Schema();
 	ActionBits throwKey = schema.ActionMask( "throw" );
 	int shell = schema.FindItemKind( "grenade.shell" );
@@ -2983,6 +2987,11 @@ void TestGrenade()
 			in.cameraPitch = -7000; // down at the floor a few metres ahead
 			in.actions = tick >= secondAt && tick < secondAt + 4 ? throwKey : ActionBits( 0 );
 		}
+		if ( tick >= thirdAt - 30 )
+		{
+			in.cameraPitch = -15000; // straight down
+			in.actions = ( tick >= thirdAt && tick < thirdAt + 4 ) || ( tick >= fourthAt && tick < fourthAt + 4 ) ? throwKey : ActionBits( 0 );
+		}
 		return in;
 	};
 	uint32_t blasts = 0, seenEvents = 0, secondBlastTick = 0;
@@ -2991,6 +3000,12 @@ void TestGrenade()
 	float crateBefore = -1.0f, crateAfter = 0.0f, crateFrom = 0.0f, crateSpin = 0.0f;
 	// And the thrower, who stands in the blast: hurt, not thrown.
 	float throwerMoved = 0.0f;
+	// And its body, once its own grenade has killed it.
+	float bodyFlew = 0.0f, bodySpeed = 0.0f;
+	uint32_t lateBlasts = 0;
+	bool died = false;
+	b3Vec3 bodyFrom = {};
+	bool bodySeen = false;
 	h.server.SetTickObserver( [&] {
 		if ( bot.client->State() != ClientState::Playing )
 		{
@@ -3010,7 +3025,8 @@ void TestGrenade()
 				}
 				else
 				{
-					secondBlastTick = e.tick;
+					secondBlastTick = secondBlastTick == 0 ? e.tick : secondBlastTick;
+					lateBlasts += 1;
 				}
 			}
 		}
@@ -3031,12 +3047,30 @@ void TestGrenade()
 			crateAfter = secondBlastTick != 0 ? std::max( crateAfter, speed ) : crateAfter;
 			crateSpin = secondBlastTick != 0 ? std::max( crateSpin, b3Length( e.get<Velocity>().angular ) ) : crateSpin;
 		}
-		if ( const Character* c = server.PlayerCharacter( bot.client->Slot() ); c != nullptr && secondBlastTick != 0 && c->dead == 0 )
+		if ( const Character* c = server.PlayerCharacter( bot.client->Slot() );
+			 c != nullptr && secondBlastTick != 0 && c->dead == 0 && server.Tick() < thirdAt )
 		{
 			throwerMoved = std::max( throwerMoved, b3Length( c->velocity ) );
 		}
+		if ( const Character* c = server.PlayerCharacter( bot.client->Slot() ) )
+		{
+			died |= c->dead != 0;
+		}
+		for ( const Simulation::EntityRef& r : server.Entities() )
+		{
+			flecs::entity e = server.FindEntity( r.netId );
+			if ( e.has<Ragdoll>() == false )
+			{
+				continue;
+			}
+			b3Vec3 at = e.get<Transform>().position;
+			bodyFrom = bodySeen ? bodyFrom : at;
+			bodySeen = true;
+			bodyFlew = std::max( bodyFlew, b3Distance( at, bodyFrom ) );
+			bodySpeed = std::max( bodySpeed, b3Length( e.get<RagdollPose>().linear[0] ) );
+		}
 	} );
-	h.RunUntil( 13.0 );
+	h.RunUntil( 16.5 );
 	h.server.SetTickObserver( {} );
 	h.Report();
 	GameClient& client = *bot.client;
@@ -3090,6 +3124,11 @@ void TestGrenade()
 	// It tumbles (the push is off its centre), and the thrower, alive in the same blast, stands.
 	std::printf( "    the crate turns at up to %.1f rad/s; the thrower, alive, moves at %.2f m/s\n", crateSpin, throwerMoved );
 	CHECK( crateSpin > 1.0f && throwerMoved < 0.5f );
+	// Killed by its own (the fourth, at its feet), the body is thrown: it does not drop where it stood.
+	std::printf( "    %u grenades went off after the first, and the thrower %s; its body goes %.1f m (up to %.1f m/s)\n", lateBlasts,
+				 died ? "died" : "lived", bodyFlew, bodySpeed );
+	CHECK( lateBlasts >= 2 && died );
+	CHECK( bodySeen && bodyFlew > 2.0f );
 }
 
 // Motions that hold are predicted too: behind 50 ms each way, flying into a wall, landing, a

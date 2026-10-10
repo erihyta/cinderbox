@@ -1078,7 +1078,8 @@ std::vector<NearBody> Context::BodiesNear( b3Vec3 point, float radius ) const
 			flecs::entity e( m_sim.World(), r.entity );
 			const Shape* shape = e.try_get<Shape>();
 			float size = shape == nullptr ? 0.25f : shape->kind == ShapeKind::Sphere ? shape->halfExtents.x : b3Length( shape->halfExtents );
-			out.push_back( { r.netId, at->position, distance, size } );
+			const Ragdoll* ragdoll = e.try_get<Ragdoll>();
+			out.push_back( { r.netId, at->position, distance, size, ragdoll != nullptr ? std::max<uint32_t>( ragdoll->spawnTick, 1 ) : 0u } );
 		}
 	}
 	std::stable_sort( out.begin(), out.end(), []( const NearBody& a, const NearBody& b ) { return a.distance < b.distance; } );
