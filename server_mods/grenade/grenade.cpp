@@ -8,8 +8,9 @@
 // CbItem), and this mod never sees the key.
 //
 // This file is the rules: what a grenade does when it hits something. It goes off: everyone near
-// is hurt (the combat mod's "combat.damage", like any other weapon's: less with distance) and
-// thrown back, everything loose near it is thrown too (props, items, ragdolls), and the grenade is gone. One that hits nothing hard enough is removed when its time
+// is hurt (the combat mod's "combat.damage", like any other weapon's: less with distance),
+// everything loose near it is thrown and sent tumbling (props, items, ragdolls: so those it kills
+// fly, and those it only hurts keep their feet), and the grenade is gone. One that hits nothing hard enough is removed when its time
 // is up (the launch's seconds).
 //
 // Server options: grenade.damage (at the centre, default 80), grenade.radius (metres, default 4),
@@ -106,8 +107,8 @@ private:
 			{
 				ctx.Emit( m_damage, throwerTarget, ctx.PlayerNetId( slot ), damage, point, push );
 			}
-			// Thrown back, hurt or not (the thrower too: a grenade at your feet is a jump).
-			ctx.Push( ctx.PlayerNetId( slot ), at->position, push, ImpulseVelocity );
+			// (The living keep their feet: `push` is what the combat mod throws the body with if this
+			// kills. The fallen are loose, and are thrown below with everything else.)
 		}
 		// Everything loose is thrown too: crates, balls, what lies on the floor, the fallen. The
 		// same change of speed whatever it weighs (a blast is not a shove), more the nearer it is.
@@ -120,7 +121,11 @@ private:
 			b3Vec3 to = b3Sub( body.position, point );
 			float share = 1.0f - body.distance / m_radius;
 			b3Vec3 away = body.distance > 0.01f ? b3MulSV( 1.0f / body.distance, to ) : b3Vec3{ 0.0f, 1.0f, 0.0f };
-			ctx.Push( body.netId, body.position, b3Add( b3MulSV( m_push * share, away ), b3Vec3{ 0.0f, 0.35f * m_push * share, 0.0f } ), ImpulseVelocity );
+			// Hit on the side that faces the blast, low: off its centre, so it tumbles as it goes. How
+			// far off is a share of its size, less for small things (which would spin like tops).
+			float off = 0.3f * body.radius * std::clamp( body.radius / 0.5f, 0.15f, 1.0f );
+			b3Vec3 where = b3Sub( body.position, b3Add( b3MulSV( off, away ), b3Vec3{ 0.0f, 0.6f * off, 0.0f } ) );
+			ctx.Push( body.netId, where, b3Add( b3MulSV( m_push * share, away ), b3Vec3{ 0.0f, 0.35f * m_push * share, 0.0f } ), ImpulseVelocity );
 		}
 		ctx.Destroy( item );
 	}

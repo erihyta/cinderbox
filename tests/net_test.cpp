@@ -2988,7 +2988,9 @@ void TestGrenade()
 	uint32_t blasts = 0, seenEvents = 0, secondBlastTick = 0;
 	b3Vec3 blastAt = {};
 	// The crate: how fast it moves just before the second grenade, and the most after it went off.
-	float crateBefore = -1.0f, crateAfter = 0.0f, crateFrom = 0.0f;
+	float crateBefore = -1.0f, crateAfter = 0.0f, crateFrom = 0.0f, crateSpin = 0.0f;
+	// And the thrower, who stands in the blast: hurt, not thrown.
+	float throwerMoved = 0.0f;
 	h.server.SetTickObserver( [&] {
 		if ( bot.client->State() != ClientState::Playing )
 		{
@@ -3027,6 +3029,11 @@ void TestGrenade()
 				crateFrom = b3Distance( e.get<Transform>().position, server.EntityTransform( server.PlayerNetId( bot.client->Slot() ) )->position );
 			}
 			crateAfter = secondBlastTick != 0 ? std::max( crateAfter, speed ) : crateAfter;
+			crateSpin = secondBlastTick != 0 ? std::max( crateSpin, b3Length( e.get<Velocity>().angular ) ) : crateSpin;
+		}
+		if ( const Character* c = server.PlayerCharacter( bot.client->Slot() ); c != nullptr && secondBlastTick != 0 && c->dead == 0 )
+		{
+			throwerMoved = std::max( throwerMoved, b3Length( c->velocity ) );
 		}
 	} );
 	h.RunUntil( 13.0 );
@@ -3080,6 +3087,9 @@ void TestGrenade()
 	std::printf( "    a crate %.1f m away, at %.2f m/s before the second grenade: up to %.1f m/s after it went off\n", crateFrom, crateBefore,
 				 crateAfter );
 	CHECK( secondBlastTick > secondAt && crateBefore >= 0.0f && crateBefore < 0.5f && crateAfter > 3.0f );
+	// It tumbles (the push is off its centre), and the thrower, alive in the same blast, stands.
+	std::printf( "    the crate turns at up to %.1f rad/s; the thrower, alive, moves at %.2f m/s\n", crateSpin, throwerMoved );
+	CHECK( crateSpin > 1.0f && throwerMoved < 0.5f );
 }
 
 // Motions that hold are predicted too: behind 50 ms each way, flying into a wall, landing, a

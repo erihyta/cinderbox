@@ -164,6 +164,21 @@ Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod re
 cb_server --port 7777 --mod-option deathmatch.kills=5 --mod-option deathmatch.round_seconds=120
 ```
 
+## A push that turns
+
+`ctx.Push( target, point, vector, mode )` acts at `point`. Through a body's centre it only moves it;
+off the centre it turns it too, as a real hit would. No marker in the body is needed: the centre
+is the body's own (`EntityTransform`, or a `NearBody`'s `position`), and the mod picks the point.
+
+| To | Give as `point` |
+|---|---|
+| Move it without turning it | its centre |
+| Make it tumble away from a blast | its centre, moved a share of its size (`NearBody::radius`) toward the blast and down |
+| Spin it where a shot hit | the hit point (the pistol does) |
+
+- A small share for small things: the same offset turns a light, small body much faster.
+- Players are not bodies the solver turns: a push on a living player only changes its velocity.
+
 ## How much a server may have
 
 A mod's own code may do as much work as the host's machine allows: it runs on the server only,

@@ -174,6 +174,9 @@ struct NearBody
 	uint32_t netId = 0;
 	b3Vec3 position = {}; // its centre
 	float distance = 0.0f;
+	// About how big it is: from its centre to its furthest corner (a ragdoll: its pelvis). A push
+	// at a point off its centre by some share of this turns it as well as moving it.
+	float radius = 0.0f;
 };
 
 // What mods asked each player's layers to play (SwapLayer; 0: nothing asked), kept by the server
