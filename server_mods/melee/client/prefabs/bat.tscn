@@ -148,13 +148,15 @@ size = Vector2(0.04, 0.04)
 [node name="Bat" type="CbItem" unique_id=1599722703]
 kind = "melee.bat"
 display_name = "Bat"
-slot = 2
-carry_grip = NodePath("Carry")
-other_hand = 3
-mass = 1.1
 properties = {
 "pickup.hold_seconds": 0.5
 }
+slot = 2
+carry_grip = NodePath("Carry")
+other_hand = 3
+view_offset = Vector3(-0.3, 0, 0.5)
+mass = 1.1
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0)
 
 [node name="Handle" type="MeshInstance3D" parent="." unique_id=1253657060]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.05)
@@ -215,7 +217,7 @@ subject = NodePath("^^")
 target = NodePath("../Sparks")
 method = "restart"
 
-[node name="PredictSwing" type="CbPrediction" parent="."]
+[node name="PredictSwing" type="CbPrediction" parent="." unique_id=2143443249]
 action = "use"
 cue = "melee.swing"
 cooldown = 0.58
