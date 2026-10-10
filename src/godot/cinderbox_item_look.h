@@ -9,6 +9,7 @@
 //               scene by.
 //   CbLinkLook  what the line of a motion's probe is drawn as
 
+#include <godot_cpp/classes/camera3d.hpp>
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/marker3d.hpp>
 #include "cinderbox_body.h"
@@ -58,6 +59,20 @@ public:
 	godot::Vector3 get_view_offset() const
 	{
 		return m_viewOffset;
+	}
+	// First person, the other way: a node in the scene that stands where the viewer's eye is while
+	// this is held (any Node3D; a CbViewCamera shows the view in the editor: its Preview is the
+	// picture). With one, the viewer's own arms are not drawn and the item floats in the view, held
+	// by the camera: where the body's pose has the hand no longer matters. Only the viewer's own
+	// picture changes.
+	void set_view_camera( const godot::NodePath& v )
+	{
+		m_viewCamera = v;
+		update_configuration_warnings();
+	}
+	godot::NodePath get_view_camera() const
+	{
+		return m_viewCamera;
 	}
 	// Named numbers about the item ("pickup.hold_seconds": 0.5), baked with it. They replace what
 	// the item's mod declared in code for the same names.
@@ -168,12 +183,30 @@ private:
 	godot::String m_kind; // "melee.bat": the kind a server mod declares
 	godot::String m_displayName; // what prompts and lists call it ("Bat")
 	godot::Vector3 m_viewOffset;
+	godot::NodePath m_viewCamera;
 	godot::Dictionary m_properties;
 	int m_use = USE_SELECTED;
 	int m_slot = 0;
 	godot::NodePath m_carryGrip;
 	int m_otherHand = OTHER_FREE;
 	godot::NodePath m_otherGrip;
+};
+
+// The eye of an item's first-person view (CbItem::view_camera), as a camera: in the editor its
+// Preview shows what the holder will see, so the item is placed by looking. In the game it is a
+// place only, and that place is baked: the node takes itself out of the scene the moment it
+// enters one, so nothing a look does can make the game look through it.
+class CbViewCamera : public godot::Camera3D
+{
+	GDCLASS( CbViewCamera, godot::Camera3D )
+
+public:
+	void _notification( int what );
+
+protected:
+	static void _bind_methods()
+	{
+	}
 };
 
 // What a link looks like (sim/motions.h: a line a motion throws, a grappling hook's rope): a scene

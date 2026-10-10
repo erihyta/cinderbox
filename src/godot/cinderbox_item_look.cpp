@@ -3,6 +3,7 @@
 #include <godot_cpp/classes/box_shape3d.hpp>
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/dir_access.hpp>
+#include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/packed_scene.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
@@ -26,6 +27,8 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_display_name" ), &CbItem::get_display_name );
 	ClassDB::bind_method( D_METHOD( "set_view_offset", "value" ), &CbItem::set_view_offset );
 	ClassDB::bind_method( D_METHOD( "get_view_offset" ), &CbItem::get_view_offset );
+	ClassDB::bind_method( D_METHOD( "set_view_camera", "value" ), &CbItem::set_view_camera );
+	ClassDB::bind_method( D_METHOD( "get_view_camera" ), &CbItem::get_view_camera );
 	ClassDB::bind_method( D_METHOD( "set_properties", "value" ), &CbItem::set_properties );
 	ClassDB::bind_method( D_METHOD( "get_properties" ), &CbItem::get_properties );
 	ClassDB::bind_method( D_METHOD( "bake" ), &CbItem::bake );
@@ -62,6 +65,8 @@ void CbItem::_bind_methods()
 				  "get_other_grip" );
 	ADD_GROUP( "First person", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::VECTOR3, "view_offset", PROPERTY_HINT_NONE, "suffix:m" ), "set_view_offset", "get_view_offset" );
+	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "view_camera", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D" ), "set_view_camera",
+				  "get_view_camera" );
 	ADD_GROUP( "", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::CALLABLE, "bake_button", PROPERTY_HINT_TOOL_BUTTON, "Bake item,Save", PROPERTY_USAGE_EDITOR ), "",
 				  "get_bake_button" );
@@ -72,6 +77,15 @@ void CbItem::_bind_methods()
 	BIND_ENUM_CONSTANT( OTHER_AT_MARKER );
 	BIND_ENUM_CONSTANT( OTHER_AT_MARKER_TURNED );
 	BIND_ENUM_CONSTANT( OTHER_AS_ANIMATED );
+}
+
+void CbViewCamera::_notification( int what )
+{
+	if ( what == NOTIFICATION_ENTER_TREE && Engine::get_singleton()->is_editor_hint() == false )
+	{
+		clear_current( true );
+		queue_free();
+	}
 }
 
 void CbLinkLook::_bind_methods()
@@ -319,6 +333,19 @@ Dictionary CbItem::bake() const
 	if ( m_viewOffset.is_zero_approx() == false )
 	{
 		text += vformat( "view %.4f %.4f %.4f\n", m_viewOffset.x, m_viewOffset.y, m_viewOffset.z );
+	}
+	// Where the viewer's eye is against the item while it floats in the first-person view (the
+	// scene's frame: the game moves the scene's root).
+	if ( m_viewCamera.is_empty() == false )
+	{
+		auto* eye = Object::cast_to<Node3D>( get_node_or_null( m_viewCamera ) );
+		if ( eye == nullptr || eye == this )
+		{
+			return fail( "view_camera is not a Node3D in the item's scene" );
+		}
+		Transform3D t = InSceneFrame( eye, this ).orthonormalized();
+		Quaternion q = t.basis.get_rotation_quaternion();
+		text += vformat( "viewfrom %.4f %.4f %.4f %.5f %.5f %.5f %.5f\n", t.origin.x, t.origin.y, t.origin.z, q.x, q.y, q.z, q.w );
 	}
 	out["text"] = text;
 	out["error"] = "";

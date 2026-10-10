@@ -1244,9 +1244,11 @@ void TestItemShapes()
 	CHECK( properties.count( "pickup.hold_seconds" ) == 1 && properties["pickup.hold_seconds"] == 0.5f );
 }
 
-// A held item brings its layers: with the bat out, the player's "FullBody" layer plays from the melee
-// mod's carry pack; crouching (the sneak mod's own swap) wins while it lasts; standing up gives the
-// carry back; throwing the bat away gives the player's own layer back. Clients agree throughout.
+// A held item brings its layers: with the bat out, the player's "UpperBody" layer plays from the
+// melee mod's pack (how it is held and swung), and the legs stay the player's own; crouching (the
+// sneak mod's swap of "FullBody") plays under it, the bat still held its way; standing up gives the
+// player's own legs back; throwing the bat away gives its own upper body back. Clients agree
+// throughout.
 void TestItemLayers()
 {
 	const std::string root = CB_SOURCE_DIR;
@@ -1267,7 +1269,7 @@ void TestItemLayers()
 	int sneak = -1;
 	for ( size_t i = 0; i < schema.animPacks.size(); ++i )
 	{
-		carry = schema.animPacks[i].name == "melee.carry" && schema.animPacks[i].graph.empty() == false ? int( i ) : carry;
+		carry = schema.animPacks[i].name == "melee.hold" && schema.animPacks[i].graph.empty() == false ? int( i ) : carry;
 		sneak = schema.animPacks[i].name == "sneak.crouch" && schema.animPacks[i].graph.empty() == false ? int( i ) : sneak;
 	}
 	CHECK( mannequin != nullptr && bat != 0 && crouch != 0 && drop != 0 && carry >= 0 && sneak >= 0 );
@@ -1307,16 +1309,22 @@ void TestItemLayers()
 		{
 			return;
 		}
-		uint8_t base = a->graph[0].source; // the mannequin's first layer is "FullBody"
-		sawCarry |= tick > 130 && tick < 195 && base == uint8_t( carry + 1 );
-		sawCrouch |= tick > 215 && tick < 255 && base == uint8_t( sneak + 1 );
-		carryAgain |= tick > 275 && tick < 315 && base == uint8_t( carry + 1 );
-		ownAgain |= tick > 345 && base == 0;
-		// Never the carry once the bat is gone, never the player's own while it is held and standing.
-		wrong |= ( tick > 345 && base != 0 ) || ( tick > 275 && tick < 315 && base != uint8_t( carry + 1 ) );
+		if ( a->graph.size() < 2 )
+		{
+			return;
+		}
+		// The mannequin's layers: "FullBody", then "UpperBody".
+		uint8_t legs = a->graph[0].source;
+		uint8_t upper = a->graph[1].source;
+		sawCarry |= tick > 130 && tick < 195 && upper == uint8_t( carry + 1 ) && legs == 0;
+		sawCrouch |= tick > 215 && tick < 255 && legs == uint8_t( sneak + 1 ) && upper == uint8_t( carry + 1 );
+		carryAgain |= tick > 275 && tick < 315 && upper == uint8_t( carry + 1 ) && legs == 0;
+		ownAgain |= tick > 345 && upper == 0 && legs == 0;
+		// Never the bat's layer once the bat is gone, never the player's own upper body while it is held.
+		wrong |= ( tick > 345 && upper != 0 ) || ( tick > 275 && tick < 315 && upper != uint8_t( carry + 1 ) );
 	} );
 	h.Report();
-	std::printf( "    carry with the bat %d, crouch over it %d, carry again %d, its own after the throw %d\n", int( sawCarry ),
+	std::printf( "    the bat's upper body %d, a crouch under it %d, standing again %d, its own after the throw %d\n", int( sawCarry ),
 				 int( sawCrouch ), int( carryAgain ), int( ownAgain ) );
 	CHECK( sawCarry && sawCrouch && carryAgain && ownAgain );
 	CHECK( wrong == false );

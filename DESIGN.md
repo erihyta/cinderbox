@@ -438,7 +438,7 @@ tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, export_client.ps1, bak
 | Private fields | per player, not per entity; not in recordings or view files (they read 0 there); entities cannot be hidden from a client: each simulates the whole world, so there is no fog of war |
 | Combat | no teams, no spectators |
 | Aiming | no marker when the shot is blocked by something the camera sees past (cover in third person); the first-person camera does not lower when crouching (it follows the mover, and crouching is an animation); the bat's strike is rays in the look direction from the chest, not the bat's path through the pose; bots always use the camera behind |
-| First-person body | the same mesh with the torso's bones collapsed, not a separate arms model: a large `view_offset` shows the arms' cut ends; the bat's stance is out of view; the shadow in first person is of the pinned pose |
+| First-person body | the same mesh with the torso's bones collapsed, not a separate arms model: a large `view_offset` shows the arms' cut ends; the shadow in first person is of the pinned pose. An item with a `view_camera` floats with no arms at all: it is drawn in the world like everything else, with the game's field of view, so it can pass into a wall it is held against; its own animation there is the item's, not the body's |
 | Items | one body shape per item; two kinds sharing a holster socket overlap |
 | Packs | the checks do not make Godot's or ozz's parsers safe against malformed files |
 | Menu | no server browser; no key rebinding page |

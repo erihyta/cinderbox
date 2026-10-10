@@ -114,6 +114,15 @@ void CinderboxClient::add_item( const String& kind, const String& config )
 				m_itemViewOffsets[key] = Vector3( float( v[0] ), float( v[1] ), float( v[2] ) );
 			}
 		}
+		else if ( line.begins_with( "viewfrom " ) )
+		{
+			PackedFloat64Array v = line.substr( 9 ).split_floats( " ", false );
+			if ( v.size() == 7 )
+			{
+				Quaternion turn{ float( v[3] ), float( v[4] ), float( v[5] ), float( v[6] ) };
+				m_itemViewFrames[key] = Transform3D( Basis( turn.normalized() ), Vector3( float( v[0] ), float( v[1] ), float( v[2] ) ) );
+			}
+		}
 	}
 }
 
@@ -122,6 +131,7 @@ void CinderboxClient::clear_world_scenes()
 	m_itemLooks.clear();
 	m_itemNames.clear();
 	m_itemViewOffsets.clear();
+	m_itemViewFrames.clear();
 	m_linkLooks.clear();
 	for ( ObjectID id : m_worldScenes )
 	{
@@ -171,6 +181,8 @@ void CinderboxClient::PushStates()
 		}
 		hash = Mix( hash, 0x30000u + ( v.linked ? 1u : 0u ) + ( v.linkHolds ? 2u : 0u ) );
 		hash = Mix( hash, 0x40000u + ( v.kind == present::VisualKind::Item && v.holder != 0 && v.stowed == false ? 1u : 0u ) );
+		bool firstPerson = m_firstPerson && v.kind == present::VisualKind::Player && v.netId == m_frame.frame.localNetId;
+		hash = Mix( hash, 0x50000u + ( firstPerson ? 1u : 0u ) );
 		auto held = m_heldKinds.find( v.netId );
 		if ( held != m_heldKinds.end() )
 		{
@@ -201,6 +213,9 @@ void CinderboxClient::PushStates()
 		if ( v.kind == present::VisualKind::Player )
 		{
 			// "linked": a link of its is out; "link_holds": and it has taken hold.
+			// "first_person": the viewer looks out of this player's eyes (its own). For what only the
+			// first-person view shows: a held item's swing in front of the camera.
+			state["first_person"] = firstPerson;
 			state["linked"] = v.linked;
 			state["link_holds"] = v.linked && v.linkHolds;
 			for ( size_t kind = 0; kind < schema.itemKinds.size(); ++kind )

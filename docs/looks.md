@@ -161,7 +161,7 @@ read: a reaction, a prediction, a HUD node, a character's state machine.
 
 | Reader | Plain names are | Also |
 |---|---|---|
-| `CbReaction`, `CbPrediction` | the subject's state, then the world's | `is_local`, `event.value`, `event.strength`; a path and a colon reads another entity: `^^:combat.dead`, `$other:combat.health < 20` |
+| `CbReaction`, `CbPrediction` | the subject's state, then the world's | `is_local`, `first_person` (the viewer's own player, while it looks out of its eyes), `event.value`, `event.strength`; a path and a colon reads another entity: `^^:combat.dead`, `$other:combat.health < 20` |
 | HUD nodes | the local player's fields (private ones too), then the world's | item kinds |
 | [State machines](characters.md#state-machines) | simulation values, stances, events, fields, item kinds | resolved once at bake; nothing private |
 

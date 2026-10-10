@@ -1,0 +1,72 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://placeholder/skeleton.tscn" id="1_skeleton"]
+[ext_resource type="Animation" path="res://animation_packs/source/Pistol_Idle.res" id="2_idle"]
+[ext_resource type="Animation" path="res://animation_packs/source/Pistol_Shoot.res" id="3_shoot"]
+
+[sub_resource type="AnimationLibrary" id="Clips"]
+_data = {
+&"Pistol_Idle": ExtResource("2_idle"),
+&"Pistol_Shoot": ExtResource("3_shoot")
+}
+
+[sub_resource type="AnimationNodeAnimation" id="HoldClip"]
+animation = &"Pistol_Idle"
+
+[sub_resource type="AnimationNodeAnimation" id="ShootClip"]
+animation = &"Pistol_Shoot"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="StartToHold"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="HoldToShoot"]
+xfade_time = 0.05
+advance_mode = 2
+advance_condition = &"pistol.fired"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="ShootToHold"]
+xfade_time = 0.15
+switch_mode = 2
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachine" id="UpperBody"]
+states/Hold/node = SubResource("HoldClip")
+states/Hold/position = Vector2(300, 100)
+states/Shoot/node = SubResource("ShootClip")
+states/Shoot/position = Vector2(550, 100)
+transitions = ["Start", "Hold", SubResource("StartToHold"), "Hold", "Shoot", SubResource("HoldToShoot"), "Shoot", "Hold", SubResource("ShootToHold")]
+
+[sub_resource type="AnimationNodeBlendTree" id="Tree"]
+nodes/output/position = Vector2(608, 160)
+nodes/UpperBody/node = SubResource("UpperBody")
+nodes/UpperBody/position = Vector2(200, 100)
+node_connections = [&"output", 0, &"UpperBody"]
+
+[node name="PistolHoldPack" type="CbAnimPack"]
+character_name = "pistol.hold"
+skeleton_path = NodePath("Skeleton3D")
+animation_player_path = NodePath("AnimationPlayer")
+animation_tree_path = NodePath("AnimationTree")
+editor_description = "How the pistol is held: an animation pack for the upper body.
+
+Its state machine replaces a character's \"UpperBody\" layer while a pistol is in the hand (pistol.cpp: ItemLayers).
+
+Hold is the idle; Shoot plays on the server's \"pistol.fired\" and returns when it ends.
+
+In the tree, the state machine node is named UpperBody: that name is the layer it replaces. It has no bone filter: it moves the bones the character's own UpperBody layer moves (spine, arms, head), and the legs keep the character's own walk.
+
+The clips are in the AnimationPlayer node, by file (animation_packs/source/*.res; the mannequin's, CC0). Skeleton3D is the SDK's placeholder skeleton, what they play on: leave it. Saving this scene bakes it into res://anim/pistol.hold/."
+
+[node name="Skeleton3D" parent="." instance=ExtResource("1_skeleton")]
+unique_name_in_owner = true
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+root_node = NodePath("..")
+libraries/ = SubResource("Clips")
+
+[node name="AnimationTree" type="AnimationTree" parent="."]
+active = false
+root_node = NodePath("..")
+tree_root = SubResource("Tree")
+anim_player = NodePath("../AnimationPlayer")
+parameters/UpperBody/conditions/pistol.fired = false

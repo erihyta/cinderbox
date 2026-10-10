@@ -101,6 +101,10 @@ public:
 		// For the inventory mod: slot 2, one for every life, on the hip while it is put away.
 		declare.ItemProperty( m_gun, "inventory.start", 1.0f );
 		declare.ItemProperty( m_gun, "holster", declare.Socket( "Hip" ) );
+		// How it is held is the pistol's own: while one is in the hand, the pack's "UpperBody" layer
+		// plays instead of the character's (the look's anim/pistol.hold, baked from its CbAnimPack
+		// scene: the idle, and the shot on "pistol.fired").
+		declare.ItemLayers( m_gun, declare.AnimPack( "pistol.hold" ) );
 	}
 
 	void Start( Context& ctx ) override

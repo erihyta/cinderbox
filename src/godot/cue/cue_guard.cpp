@@ -31,6 +31,9 @@ namespace
 const char* const kNodeClasses[] = {
 	// Structure
 	"Node", "Node3D", "Marker3D", "Node2D", "Marker2D", "CanvasLayer", "CanvasGroup",
+	// An item's eye in first person: a camera in the editor only (it leaves the scene in the game).
+	// No other camera: a look does not take the player's view.
+	"CbViewCamera",
 	// 3D looks
 	"MeshInstance3D", "MultiMeshInstance3D", "Sprite3D", "AnimatedSprite3D", "Label3D", "Decal",
 	"GPUParticles3D", "CPUParticles3D", "GPUParticlesAttractorBox3D", "GPUParticlesAttractorSphere3D",

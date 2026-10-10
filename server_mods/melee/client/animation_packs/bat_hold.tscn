@@ -1,0 +1,72 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://placeholder/skeleton.tscn" id="1_skeleton"]
+[ext_resource type="Animation" path="res://animation_packs/source/Sword_Idle.res" id="2_idle"]
+[ext_resource type="Animation" path="res://animation_packs/source/Sword_Attack.res" id="3_attack"]
+
+[sub_resource type="AnimationLibrary" id="Clips"]
+_data = {
+&"Sword_Attack": ExtResource("3_attack"),
+&"Sword_Idle": ExtResource("2_idle")
+}
+
+[sub_resource type="AnimationNodeAnimation" id="ReadyClip"]
+animation = &"Sword_Idle"
+
+[sub_resource type="AnimationNodeAnimation" id="SwingClip"]
+animation = &"Sword_Attack"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="StartToReady"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="ReadyToSwing"]
+xfade_time = 0.05
+advance_mode = 2
+advance_condition = &"melee_swing"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="SwingToReady"]
+xfade_time = 0.25
+advance_mode = 2
+advance_expression = "not melee_swing"
+
+[sub_resource type="AnimationNodeStateMachine" id="UpperBody"]
+states/Ready/node = SubResource("ReadyClip")
+states/Ready/position = Vector2(300, 100)
+states/Swing/node = SubResource("SwingClip")
+states/Swing/position = Vector2(550, 100)
+transitions = ["Start", "Ready", SubResource("StartToReady"), "Ready", "Swing", SubResource("ReadyToSwing"), "Swing", "Ready", SubResource("SwingToReady")]
+
+[sub_resource type="AnimationNodeBlendTree" id="Tree"]
+nodes/output/position = Vector2(608, 160)
+nodes/UpperBody/node = SubResource("UpperBody")
+nodes/UpperBody/position = Vector2(200, 100)
+node_connections = [&"output", 0, &"UpperBody"]
+
+[node name="BatHoldPack" type="CbAnimPack"]
+character_name = "melee.hold"
+skeleton_path = NodePath("Skeleton3D")
+animation_player_path = NodePath("AnimationPlayer")
+animation_tree_path = NodePath("AnimationTree")
+editor_description = "How the bat is held and swung: an animation pack for the upper body.
+
+Its state machine replaces a character's \"UpperBody\" layer while a bat is in the hand (melee.cpp: ItemLayers).
+
+Ready is the idle. Swing plays while the mod's \"melee_swing\" stance is set (a stance, not an event: the look predicts it, so the player's own swing starts at the click). Sword_Attack has a marker, melee.strike: the moment the mod tests the hit. Move it in the Animation panel.
+
+In the tree, the state machine node is named UpperBody: that name is the layer it replaces. It has no bone filter: it moves the bones the character's own UpperBody layer moves (spine, arms, head), and the legs keep the character's own walk.
+
+The clips are in the AnimationPlayer node, by file (animation_packs/source/*.res; the mannequin's, CC0). Skeleton3D is the SDK's placeholder skeleton, what they play on: leave it. Saving this scene bakes it into res://anim/melee.hold/."
+
+[node name="Skeleton3D" parent="." instance=ExtResource("1_skeleton")]
+unique_name_in_owner = true
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+root_node = NodePath("..")
+libraries/ = SubResource("Clips")
+
+[node name="AnimationTree" type="AnimationTree" parent="."]
+active = false
+root_node = NodePath("..")
+tree_root = SubResource("Tree")
+anim_player = NodePath("../AnimationPlayer")
+parameters/UpperBody/conditions/melee_swing = false

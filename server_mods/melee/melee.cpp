@@ -4,10 +4,14 @@
 // one, and when it is out, is the inventory mod's: this mod only says a bat lives in slot 3, that a
 // life starts with one, and that it hangs on the back while it is put away.
 //
-// Out, it is a full-body stance ("melee": the character's own idle, walk and run with the bat) and
-// the body faces where the camera looks. The left mouse button swings: the full-body layer plays the
-// "melee_swing" stance, and at the strike a fan of short rays in front of the chest looks for
-// someone to hit. Hits are posed like everything else, so a swing lands where it is drawn.
+// How it is held and swung is the bat's own: its look brings an animation pack for the upper body
+// (client/animation_packs/bat_hold.tscn, "melee.hold"), which plays instead of the holder's own
+// upper body while a bat is in the hand. The legs keep the character's walk.
+//
+// Out, the "melee" stance is set and the body faces where the camera looks. The left mouse button
+// swings: the "melee_swing" stance for kSwingSeconds, which the pack's Swing state plays on, and at
+// the strike a fan of short rays in front of the chest looks for someone to hit. Hits are posed
+// like everything else, so a swing lands where it is drawn.
 //
 // Health is not kept here. A hit goes out as "combat.damage", and the combat mod applies it and
 // credits the kill: mods cooperate by event, not by call.
@@ -70,9 +74,9 @@ public:
 		// Its body when it lies in the world is authored in its scene (client/prefabs/bat.tscn, the
 		// CbItem) and baked to client/items/melee.bat.cfg.
 		m_bat = declare.ItemKind( "melee.bat" );
-		// The bat brings its own way of standing and walking: while it is held (from the slot or
-		// picked up), the pack's "FullBody" layer plays instead of the holder's own.
-		declare.ItemLayers( m_bat, declare.AnimPack( "melee.carry" ) );
+		// The bat brings its own upper body: while it is held (from the slot or picked up), the
+		// pack's "UpperBody" layer plays instead of the holder's own: ready, and the swing.
+		declare.ItemLayers( m_bat, declare.AnimPack( "melee.hold" ) );
 		// (That a bat takes half a second to pick up is authored with the item: the CbItem's
 		// properties, "pickup.hold_seconds".)
 		m_hand = declare.Socket( "RightHand" );
@@ -94,7 +98,8 @@ public:
 	void Tick( Context& ctx ) override
 	{
 		uint32_t tick = ctx.Tick();
-		// Characters whose swing carries a strike marker hit on it; the rest on the timer.
+		// A swing that carries a strike marker (the pack's, or a character's own) hits on it; one
+		// without, on the timer.
 		bool marked = ctx.AnimationEmits( m_strike );
 		std::vector<ModEventRecord> recent = marked ? ctx.RecentEvents() : std::vector<ModEventRecord>();
 		for ( size_t i = 0; i < m_hotBats.size(); )

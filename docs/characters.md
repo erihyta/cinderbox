@@ -370,11 +370,23 @@ godot --headless --path godot --script res://addons/cinderbox_maps/make_sneak_pa
 ```
 
 **Items bring layers.** A mod can tie a pack to an item kind,
-`declare.ItemLayers( bat, declare.AnimPack( "melee.carry" ) )`: while a player holds one (in use, not stowed), the pack's layers play instead of the player's own of the same names,
-and stop when it is dropped. A mod's own `SwapLayer` on the same layer wins while it lasts, so a
-crouch still crouches with a bat in hand and the carry returns when the player stands up. The bat's
-pack replaces `FullBody`: standing ready, a measured walk, the usual jog.
+`declare.ItemLayers( bat, declare.AnimPack( "melee.hold" ) )`: while a player holds one (in use, not stowed), the pack's layers play instead of the player's own of the same names,
+and stop when it is dropped. A mod's own `SwapLayer` on the same layer wins while it lasts.
+
+| Item | Pack | Layer | States |
+|---|---|---|---|
+| pistol | `pistol.hold` (`server_mods/pistol/client/animation_packs/pistol_hold.tscn`) | `UpperBody` | `Hold`; `Shoot` on `pistol.fired`, back at its end |
+| bat | `melee.hold` (`server_mods/melee/client/animation_packs/bat_hold.tscn`) | `UpperBody` | `Ready`; `Swing` while the `melee_swing` stance is set (a stance, so the look predicts it). `Sword_Attack` carries the `melee.strike` marker |
+| rifle | `rifle.hold` (its look is not in the repository) | `UpperBody` | `Hold`; `Fire` on `rifle.fired` |
+
+All three are upper-body packs: the legs keep the character's own walk, so a crouch (`sneak` swaps
+`FullBody`) plays under a held bat. Their clips are files in the mod (`animation_packs/source/*.res`).
+The pistol's and the bat's come from the mannequin (CC0):
 
 ```sh
-godot --headless --path godot --script res://addons/cinderbox_maps/make_carry_pack.gd -- --out=<abs>/server_mods/melee/client/anim/melee.carry
+godot --headless --path godot --script res://addons/cinderbox_maps/make_weapon_clips.gd
 ```
+
+A marker in a pack's clip emits its event like a character's (`ctx.AnimationEmits` counts packs).
+The default characters still have pistol and bat states of their own: they play only on a server
+whose look has no such pack.

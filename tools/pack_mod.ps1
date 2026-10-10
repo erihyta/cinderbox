@@ -44,6 +44,14 @@ if ((Test-Path $extension) -and (Test-Path $bin)) {
 	Write-Warning "godot\bin is empty; a mod using Cinderbox resources will not pack correctly"
 }
 
+# A project with animation packs plays them on the SDK's placeholder skeleton, which is not in the
+# repository with the mod (tools\sdk.ps1 copies it in): a fresh checkout gets it here.
+$placeholder = Join-Path $root "sdk\placeholder"
+if ((Test-Path (Join-Path $Project "animation_packs")) -and -not (Test-Path (Join-Path $Project "placeholder\skeleton.tscn")) -and (Test-Path $placeholder)) {
+	New-Item -ItemType Directory -Force (Join-Path $Project "placeholder") | Out-Null
+	Copy-Item (Join-Path $placeholder "*") (Join-Path $Project "placeholder") -Force -Recurse
+}
+
 & $Godot --headless --path $Project --import | Out-Null
 
 # Items: every scene whose root is a CbItem becomes items/<kind>.cfg, which the server reads from

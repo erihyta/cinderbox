@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbViewCamera" inherits="Camera3D" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		Where the viewer's eye is while an item is held in first person: a camera to look through in the editor.
+	</brief_description>
+	<description>
+		Put one in an item's scene and name it in the [CbItem]'s [member CbItem.view_camera]. Select it and tick Preview (top left of the 3D view): that is what the holder sees, with the game's field of view when [member Camera3D.fov] is the game's (60). Move and turn it until the item sits right; an item usually comes out of a lower corner and points at the middle of the picture.
+		In the game it is a place only. The place is baked with the item, and the node takes itself out of the scene: no look can make the game look through it.
+	</description>
+	<tutorials>
+	</tutorials>
+</class>
