@@ -94,6 +94,10 @@ public:
 	{
 		return m_firstPerson;
 	}
+	// First person: where the camera is this frame, once it has been placed. What the viewer holds
+	// that floats in the view (an item with a CbItem.view_camera) is put in front of it, a little
+	// behind its turning and moving with the steps.
+	void place_view_items( const godot::Transform3D& camera, double delta );
 
 	// What the server's mods declared. Each action: { name, bit, key }.
 	godot::Array get_actions() const;
@@ -316,6 +320,18 @@ private:
 	void UpdateLinks();
 	std::map<std::string, godot::String> m_itemNames; // what prompts call a kind ("Bat")
 	std::map<std::string, godot::Vector3> m_itemViewOffsets; // CbItem.view_offset by kind
+	// CbItem.view_camera by kind: where the eye is in the item's scene. An item that has one floats
+	// in its holder's own first-person view, and the arms are not drawn.
+	std::map<std::string, godot::Transform3D> m_itemViewFrames;
+	bool ViewFrameOf( uint16_t kind, godot::Transform3D& frame ) const;
+	godot::Transform3D ViewItemTransform( const godot::Transform3D& frame ) const;
+	godot::Transform3D m_viewCamera; // the last one place_view_items was told
+	bool m_viewCameraKnown = false;
+	godot::Vector2 m_viewLag; // how far what floats is behind the camera's turn (yaw, pitch), radians
+	float m_viewStep = 0.0f; // where in a step the viewer is, radians
+	float m_viewSpeed = 0.0f; // the viewer's ground speed, m/s
+	float m_viewBob = 0.0f; // how much of the step shows, 0..1
+	std::vector<godot::ObjectID> m_viewItems; // what floats now
 	bool m_firstPerson = false;
 	godot::ObjectID m_firstPersonSkeleton; // whose body is cut for it now
 	void FirstPersonBody( uint32_t netId, godot::Node* node, const AnimState* state, present::Models& models );

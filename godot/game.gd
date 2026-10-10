@@ -86,6 +86,7 @@ var autoplay := 0.0
 var view_probe := false
 var _probe_slot := 0
 var _probe_frames_dir := ""
+var _probe_use := false
 var _probe_body := {}
 var _probe_frames := {} # part -> [Image]
 var _probe_part_since := {} # part -> when it began
@@ -139,6 +140,7 @@ func _ready() -> void:
 	# --probe-frames=DIR: the probe also keeps what was drawn, a run of frames from each part of
 	# its plan, so what is on the screen can be measured (tools outside the game compare them).
 	_probe_frames_dir = args.get("probe-frames", "")
+	_probe_use = args.has("probe-use")
 	if view_probe and _probe_frames_dir != "":
 		RenderingServer.frame_post_draw.connect(_probe_capture)
 	screenshot = args.get("screenshot", "")
@@ -661,7 +663,9 @@ func _send_input(delta: float) -> void:
 			_auto_hooks = int(elapsed / 2.0)
 			client.send_intent(INTENT_SELECT, 3, 0)
 		if view_probe:
-			pass
+			# With --probe-use it uses what it has out once, a second into standing still: the
+			# frames kept of that part are the use, from the press on.
+			use = _probe_use and elapsed >= 4.0 and elapsed < 4.1
 		elif elapsed < autoplay * 0.4:
 			if auto_rng.randf() < delta * 2.0:
 				actions |= _action_bit("spawn_prop")
@@ -789,6 +793,8 @@ func _update_camera() -> void:
 				auto_rng.randf_range(-_shake, _shake),
 				auto_rng.randf_range(-_shake, _shake)) * 0.3
 		_camera_moved()
+		# What is held and floats in the view (an item with a view camera) goes in front of it.
+		client.place_view_items(camera.global_transform, get_process_delta_time())
 		return
 	# The point above the player the camera orbits (moved to a shoulder, if it is), or its ragdoll
 	# while dead. The server's line of sight passes through the same point.

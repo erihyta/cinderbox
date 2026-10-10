@@ -10,7 +10,7 @@
 		- meshes, lights, particles: how it looks in the hand, put away and on the floor.
 		- [CbReaction] nodes: what it shows when its holder does something (a muzzle flash).
 		The scene is the item's frame: the grip at the origin, pointing along -Z. The root's own transform is not used.
-		Saving the scene bakes [code]res://items/&lt;kind&gt;.cfg[/code] (the Bake button and publishing the mod do too). The server reads the body, the grip and the [member properties] from that file in the mod's workshop item; the game finds the scene, the [member display_name] and the [member view_offset] by it. A server mod declares the kind ([code]declare.ItemKind( "melee.bat" )[/code]) and says what it does.
+		Saving the scene bakes [code]res://items/&lt;kind&gt;.cfg[/code] (the Bake button and publishing the mod do too). The server reads the body, the grip and the [member properties] from that file in the mod's workshop item; the game finds the scene, the [member display_name] and the first-person settings ([member view_offset], [member view_camera]) by it. A server mod declares the kind ([code]declare.ItemKind( "melee.bat" )[/code]) and says what it does.
 		In the game the node does nothing: the simulation owns the item.
 	</description>
 	<tutorials>
@@ -62,6 +62,10 @@
 		</member>
 		<member name="other_grip" type="NodePath" setter="set_other_grip" getter="get_other_grip" default="NodePath(&quot;&quot;)">
 			The marker the other hand is held at, for [constant OTHER_AT_MARKER] and [constant OTHER_AT_MARKER_TURNED].
+		</member>
+		<member name="view_camera" type="NodePath" setter="set_view_camera" getter="get_view_camera" default="NodePath(&quot;&quot;)">
+			First person, floating: a node in the scene that stands where the viewer's eye is while this is held. Use a [CbViewCamera]: select it and tick Preview in the 3D view to see the picture the holder gets, and move it until the item sits right. With one, the holder's own arms are not drawn in its view and the item is held by the camera (it follows a turn a moment late and moves with the steps), wherever the body's pose has the hand. Everyone else still sees it in the hand. Empty: the arms hold it ([member view_offset]).
+			What is under the item moves with it, so an [AnimationPlayer] that moves the meshes (put them under one [Node3D]) is the item's first-person animation: play it from a [CbReaction] with the condition [code]first_person[/code].
 		</member>
 		<member name="view_offset" type="Vector3" setter="set_view_offset" getter="get_view_offset" default="Vector3(0, 0, 0)">
 			First person: how far the arms holding this are moved in the viewer's own view, in metres to the right, up and ahead of where the pose has them. Only the viewer's own picture changes. Keep it small: far from the body the arms' cut ends come into view.

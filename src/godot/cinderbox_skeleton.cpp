@@ -596,7 +596,8 @@ void CinderboxSkeleton::CutBody( Skeleton3D* target )
 	}
 	for ( int i = 0; i < 2; ++i )
 	{
-		target->set_bone_global_pose( shoulders[i], kept[i] );
+		// (Without the arms: they go where the chest went.)
+		target->set_bone_global_pose( shoulders[i], m_firstPersonArms ? kept[i] : Transform3D( Basis().scaled( nothing ), behind ) );
 	}
 	m_cutBones = { spine, chest, upper, shoulders[0], shoulders[1] };
 }

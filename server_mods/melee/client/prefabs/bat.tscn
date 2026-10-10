@@ -73,7 +73,7 @@ length = 0.1
 tracks/0/type = "value"
 tracks/0/imported = false
 tracks/0/enabled = true
-tracks/0/path = NodePath("Flames:emitting")
+tracks/0/path = NodePath("Model/Flames:emitting")
 tracks/0/interp = 1
 tracks/0/loop_wrap = true
 tracks/0/keys = {
@@ -88,7 +88,7 @@ length = 0.5
 tracks/0/type = "value"
 tracks/0/imported = false
 tracks/0/enabled = true
-tracks/0/path = NodePath("Flames:emitting")
+tracks/0/path = NodePath("Model/Flames:emitting")
 tracks/0/interp = 1
 tracks/0/loop_wrap = true
 tracks/0/keys = {
@@ -100,7 +100,7 @@ tracks/0/keys = {
 tracks/1/type = "value"
 tracks/1/imported = false
 tracks/1/enabled = true
-tracks/1/path = NodePath("Sparks:emitting")
+tracks/1/path = NodePath("Model/Sparks:emitting")
 tracks/1/interp = 1
 tracks/1/loop_wrap = true
 tracks/1/keys = {
@@ -145,6 +145,46 @@ particles_anim_loop = false
 material = SubResource("StandardMaterial3D_lxpvx")
 size = Vector2(0.04, 0.04)
 
+[sub_resource type="Animation" id="ViewRest"]
+length = 0.1
+tracks/0/type = "position_3d"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Model")
+tracks/0/interp = 2
+tracks/0/loop_wrap = true
+tracks/0/keys = PackedFloat32Array(0, 1, 0, 0, 0)
+tracks/1/type = "rotation_3d"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Model")
+tracks/1/interp = 2
+tracks/1/loop_wrap = true
+tracks/1/keys = PackedFloat32Array(0, 1, 0, 0, 0, 1)
+
+[sub_resource type="Animation" id="ViewSwing"]
+length = 0.6
+tracks/0/type = "position_3d"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Model")
+tracks/0/interp = 2
+tracks/0/loop_wrap = true
+tracks/0/keys = PackedFloat32Array(0, 1, 0, 0, 0, 0.22, 1, 0.072857, 0.15333, -0.0089888, 0.36, 1, -0.087318, 0.10082, -0.13383, 0.4, 1, -0.27692, 0.032295, -0.19176, 0.47, 1, -0.5726, -0.014515, -0.093883, 0.6, 1, 0, 0, 0)
+tracks/1/type = "rotation_3d"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Model")
+tracks/1/interp = 2
+tracks/1/loop_wrap = true
+tracks/1/keys = PackedFloat32Array(0, 1, 0, 0, 0, 1, 0.22, 1, 0.20087, -0.35527, 0, 0.91292, 0.36, 1, -0.17507, -0.13368, 0, 0.97544, 0.4, 1, -0.30697, 0.16432, 0, 0.93743, 0.47, 1, -0.24186, 0.53938, 0, 0.80658, 0.6, 1, 0, 0, 0, 1)
+
+[sub_resource type="AnimationLibrary" id="ViewLibrary"]
+_data = {
+&"RESET": SubResource("ViewRest"),
+&"view_swing": SubResource("ViewSwing")
+}
+
 [node name="Bat" type="CbItem" unique_id=1599722703]
 kind = "melee.bat"
 display_name = "Bat"
@@ -154,15 +194,16 @@ properties = {
 slot = 2
 carry_grip = NodePath("Carry")
 other_hand = 3
-view_offset = Vector3(-0.3, 0, 0.5)
+view_camera = NodePath("View")
 mass = 1.1
-transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0)
 
-[node name="Handle" type="MeshInstance3D" parent="." unique_id=1253657060]
+[node name="Model" type="Node3D" parent="."]
+
+[node name="Handle" type="MeshInstance3D" parent="Model" unique_id=1253657060]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.05)
 mesh = SubResource("Handle")
 
-[node name="Barrel" type="MeshInstance3D" parent="." unique_id=1281057368]
+[node name="Barrel" type="MeshInstance3D" parent="Model" unique_id=1281057368]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)
 mesh = SubResource("Barrel")
 surface_material_override/0 = SubResource("StandardMaterial3D_cfl35")
@@ -177,7 +218,7 @@ transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, -0.035053983)
 [node name="OtherHand" type="Marker3D" parent="." unique_id=840287759]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.6054174e-09, -1.9064716e-09, 0.066385016)
 
-[node name="Flames" type="GPUParticles3D" parent="." unique_id=1514484346]
+[node name="Flames" type="GPUParticles3D" parent="Model" unique_id=1514484346]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)
 emitting = false
 amount = 96
@@ -188,7 +229,7 @@ draw_pass_1 = SubResource("Flake")
 [node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=311034086]
 libraries/ = SubResource("AnimationLibrary_gysuc")
 
-[node name="Sparks" type="GPUParticles3D" parent="." unique_id=829386494]
+[node name="Sparks" type="GPUParticles3D" parent="Model" unique_id=829386494]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.7)
 emitting = false
 amount = 48
@@ -201,7 +242,7 @@ draw_pass_1 = SubResource("QuadMesh_hofwm")
 [node name="GlowWhileHot" type="CbReaction" parent="." unique_id=979966992]
 when = 1
 conditions = PackedStringArray("melee.hot")
-target = NodePath("../Barrel")
+target = NodePath("../Model/Barrel")
 property = "surface_material_override/0:emission_energy_multiplier"
 value = 4.0
 
@@ -214,7 +255,7 @@ animation = "slash"
 [node name="SparksOnHit" type="CbReaction" parent="." unique_id=164242142]
 event = "melee.hit"
 subject = NodePath("^^")
-target = NodePath("../Sparks")
+target = NodePath("../Model/Sparks")
 method = "restart"
 
 [node name="PredictSwing" type="CbPrediction" parent="." unique_id=2143443249]
@@ -223,3 +264,24 @@ cue = "melee.swing"
 cooldown = 0.58
 stance = "melee_swing"
 stance_layer = "full"
+
+[node name="View" type="CbViewCamera" parent="."]
+transform = Transform3D(0.98679, 0.061642, -0.14981, 0.061642, 0.71234, 0.69913, 0.14981, -0.69913, 0.69913, -0.41545, 0.61877, 0.078901)
+fov = 60.0
+near = 0.03
+editor_description = "Where the viewer's eye is while the bat is held, in first person (the root's View Camera). The arms are not drawn then: the bat floats in the view.
+
+Tick Preview (top left of the 3D view, with this node selected) to see the picture. Move and turn this node to change where the bat sits. In the game it is a place only: nothing looks through it."
+
+[node name="ViewPlayer" type="AnimationPlayer" parent="."]
+libraries/ = SubResource("ViewLibrary")
+editor_description = "The swing as the holder sees it in first person: view_swing moves Model (the meshes) in front of the View camera. 0.6 s; the bat connects at 0.4 s, when the mod tests the hit.
+
+Select View, tick Preview, and play it here to edit it."
+
+[node name="SwingInView" type="CbReaction" parent="."]
+event = "melee.swing"
+subject = NodePath("^^")
+conditions = PackedStringArray("first_person")
+animation_player = NodePath("../ViewPlayer")
+animation = "view_swing"

@@ -204,6 +204,18 @@ Transform3D SceneInSocket( Node3D* node, uint8_t socket )
 
 void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, Node3D* node )
 {
+	// Floating in the viewer's own first-person view (CbItem.view_camera): out of its socket's
+	// frame while it does, and back in it the moment it does not (dropped, put away, another view).
+	static const StringName kFloating( "cb_floating" );
+	Transform3D eye;
+	bool floats = m_firstPerson && v.holder != 0 && v.holder == m_frame.frame.localNetId && v.stowed == false && v.socket <= kSocketLeftHand &&
+				  ViewFrameOf( v.itemKind, eye );
+	bool floated = node->has_meta( kFloating );
+	if ( floated && floats == false )
+	{
+		node->remove_meta( kFloating );
+		node->set_as_top_level( false );
+	}
 	uint32_t& drawnWith = m_itemHolders[visual];
 	if ( v.holder == 0 )
 	{
@@ -243,6 +255,20 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 	{
 		PlaceItem( v.holder, socket, node );
 		node->set_transform( SceneInSocket( node, v.socket ) );
+	}
+	else if ( floated && floats == false )
+	{
+		node->set_transform( SceneInSocket( node, v.socket ) );
+	}
+	if ( floats )
+	{
+		if ( floated == false )
+		{
+			node->set_as_top_level( true );
+		}
+		node->set_meta( kFloating, eye );
+		node->set_global_transform( ViewItemTransform( eye ) );
+		m_viewItems.push_back( ObjectID( node->get_instance_id() ) );
 	}
 	node->set_visible( true );
 }

@@ -43,6 +43,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_view_position", "view", "camera" ), &CinderboxClient::get_view_position );
 	ClassDB::bind_method( D_METHOD( "set_first_person", "value" ), &CinderboxClient::set_first_person );
 	ClassDB::bind_method( D_METHOD( "get_first_person" ), &CinderboxClient::get_first_person );
+	ClassDB::bind_method( D_METHOD( "place_view_items", "camera", "delta" ), &CinderboxClient::place_view_items );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "first_person", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE ), "set_first_person",
 				  "get_first_person" );
 	ClassDB::bind_method( D_METHOD( "get_camera_distance", "target", "direction", "max_distance", "radius" ),
@@ -587,6 +588,7 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 		if ( was != skeleton || on == false )
 		{
 			was->set_first_person_body( false );
+			was->set_first_person_arms( true );
 		}
 	}
 	m_firstPersonSkeleton = on ? ObjectID( skeleton->get_instance_id() ) : ObjectID();
@@ -595,6 +597,18 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 		return;
 	}
 	skeleton->set_first_person_body( true );
+	// What is held floats in the view (CbItem.view_camera): no arms are drawn to hold it.
+	bool floats = false;
+	if ( auto holding = m_heldKinds.find( netId ); holding != m_heldKinds.end() )
+	{
+		Transform3D ignored;
+		for ( uint16_t kind : holding->second )
+		{
+			floats |= ViewFrameOf( kind, ignored );
+		}
+	}
+	skeleton->set_first_person_arms( floats == false );
+	m_viewSpeed = state->groundSpeed;
 	int head = anim::FindJoint( *m_animSet, "Head" );
 	int spine = anim::FindJoint( *m_animSet, "Spine" );
 	int chest = anim::FindJoint( *m_animSet, "UpperChest" );
@@ -739,8 +753,66 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	}
 }
 
+bool CinderboxClient::ViewFrameOf( uint16_t kind, Transform3D& frame ) const
+{
+	if ( kind >= m_frame.schema.itemKinds.size() )
+	{
+		return false;
+	}
+	auto it = m_itemViewFrames.find( m_frame.schema.itemKinds[kind] );
+	if ( it == m_itemViewFrames.end() )
+	{
+		return false;
+	}
+	frame = it->second;
+	return true;
+}
+
+// Where an item's scene goes in the world while it floats in the view: its eye (`frame`, in the
+// scene) on the camera, turned back by the lag and moved by the step.
+Transform3D CinderboxClient::ViewItemTransform( const Transform3D& frame ) const
+{
+	// A step: side to side once, down and up twice.
+	Vector3 step( std::sin( m_viewStep ) * 0.006f, -std::abs( std::sin( m_viewStep ) ) * 0.008f, 0.0f );
+	Transform3D held( Basis::from_euler( Vector3( m_viewLag.y, m_viewLag.x, 0.0f ) ), step * m_viewBob );
+	return m_viewCamera * held * frame.affine_inverse();
+}
+
+void CinderboxClient::place_view_items( const Transform3D& camera, double delta )
+{
+	float dt = std::clamp( float( delta ), 0.0001f, 0.1f );
+	Vector2 wanted;
+	if ( m_viewCameraKnown )
+	{
+		// How fast the camera turns, in its own frame; what it holds follows a moment later.
+		Vector3 turned = ( m_viewCamera.basis.inverse() * camera.basis ).orthonormalized().get_euler();
+		const float kBehind = 0.02f; // seconds
+		const float kMost = 0.07f; // radians
+		wanted = Vector2( std::clamp( -turned.y / dt * kBehind, -kMost, kMost ), std::clamp( -turned.x / dt * kBehind, -kMost, kMost ) );
+	}
+	m_viewLag = m_viewLag.lerp( wanted, 1.0f - std::exp( -dt * 14.0f ) );
+	// One step in about a metre and a half, showing as far as the viewer is moving.
+	m_viewStep = std::fmod( m_viewStep + dt * m_viewSpeed * 2.1f, 6.2831853f );
+	float moving = std::clamp( m_viewSpeed / 4.0f, 0.0f, 1.0f );
+	m_viewBob += ( moving - m_viewBob ) * ( 1.0f - std::exp( -dt * 8.0f ) );
+	m_viewCamera = camera;
+	m_viewCameraKnown = true;
+	static const StringName kFloating( "cb_floating" );
+	for ( ObjectID id : m_viewItems )
+	{
+		auto* item = Object::cast_to<Node3D>( ObjectDB::get_instance( id ) );
+		if ( item != nullptr && item->is_inside_tree() && item->has_meta( kFloating ) )
+		{
+			item->set_global_transform( ViewItemTransform( item->get_meta( kFloating ) ) );
+			// (The camera is placed after Godot passed this frame's moves on to the renderer.)
+			item->force_update_transform();
+		}
+	}
+}
+
 void CinderboxClient::UpdateNodes()
 {
+	m_viewItems.clear();
 	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose& pose, const present::PlayerAnim* anim,
 							const present::RagdollAnim* ragdoll ) {
 		auto it = m_nodes.find( id );

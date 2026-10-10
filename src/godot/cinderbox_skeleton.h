@@ -106,6 +106,16 @@ public:
 	{
 		return m_firstPersonBody;
 	}
+	// And whether the arms are drawn with it. False: only what is below the hips is (what is held
+	// floats in the view: CbItem.view_camera).
+	void set_first_person_arms( bool value )
+	{
+		m_firstPersonArms = value;
+	}
+	bool get_first_person_arms() const
+	{
+		return m_firstPersonArms;
+	}
 
 	void set_retarget( bool value );
 	bool get_retarget() const
@@ -175,6 +185,7 @@ private:
 	void CutBody( godot::Skeleton3D* target );
 	int BoneOf( const char* profileName ) const; // the target's bone for a profile name, or -1
 	bool m_firstPersonBody = false;
+	bool m_firstPersonArms = true;
 	std::vector<int> m_cutBones; // the target bones the cut moved or shrank: put back before the next
 	void UpdateShadowBody( godot::Skeleton3D* target );
 	godot::ObjectID m_shadowBody;	// the copy that casts the shadows

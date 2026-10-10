@@ -505,7 +505,23 @@ std::vector<uint32_t> Context::Ragdolls() const
 
 bool Context::AnimationEmits( EventHandle event ) const
 {
-	return event.Valid() && m_sim.Graph() != nullptr && m_sim.Graph()->EmitsEvent( event.index );
+	if ( event.Valid() == false )
+	{
+		return false;
+	}
+	if ( m_sim.Graph() != nullptr && m_sim.Graph()->EmitsEvent( event.index ) )
+	{
+		return true;
+	}
+	// A pack's clips too: an item that brings its own swing brings the swing's marker.
+	for ( const auto& pack : m_sim.Packs() )
+	{
+		if ( pack != nullptr && pack->EmitsEvent( event.index ) )
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 std::vector<ModEventRecord> Context::RecentEvents() const
