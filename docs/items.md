@@ -239,7 +239,7 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 | `carry_grip`, `other_hand`, `other_grip` | [where the hands hold it](#both-hands-on-an-item) |
 | `use`, `slot` | [how it is used](#using-an-item), and the slot it goes to (1 is the first; 0: the first free one) |
 | `view_offset` | first person, held by the arms: how far the arms holding it are moved in the viewer's own view |
-| `view_camera` | first person, [floating](#first-person): a `CbViewCamera` in the scene, where the viewer's eye is. The arms are not drawn |
+| `view_camera` | first person, as a [view model](#first-person): a `CbViewCamera` in the scene, where the viewer's eye is. The item is held by the camera, with the arms bent onto it |
 | **Bake item** (button), saving the scene | writes `res://items/<kind>.cfg` |
 
 | Under it | Meaning |
@@ -254,27 +254,36 @@ What the holder sees of its own item, in its own view. Everyone else sees the it
 
 | Way | Set | What is drawn | For |
 |---|---|---|---|
-| held by the arms (the default) | `view_offset`, or nothing | the character's own arms, as the animations pose them, steadied under the camera | what the third-person animations already hold well from the eye: a pistol, a rifle |
-| floating | `view_camera` | the item alone, held by the camera; no arms | what the animations hold out of view or awkwardly: a bat, a tool |
+| the body's arms (the default) | `view_offset`, or nothing | the character's own arms, as the third-person animations pose them, steadied under the camera | what those animations already hold well from the eye |
+| a view model | `view_camera` | the item, held by the camera, and arms bent onto its grips; drawn over the world by a camera of its own | everything else: the item is placed by looking, and needs no arm animations |
 
-**Floating, step by step**
+**A view model, step by step**
 
 1. Add a `CbViewCamera` under the item (the bat's is named `View`) and name it in the root's **View Camera**.
-2. Select it and tick **Preview** in the 3D view: that is the holder's picture (fov 60, the game's).
+2. Select it and tick **Preview** in the 3D view: that is the holder's picture, with the camera's own `fov` (60 is the game's; a smaller one makes the item flatter and smaller, as shooters do).
 3. Move and turn the camera until the item sits right. An item usually comes out of a lower corner and points toward the middle; keep its tip off the crosshair.
-4. Save (the bake writes `viewfrom` into `items/<kind>.cfg`).
+4. Save (the bake writes `viewfrom` and `viewfov` into `items/<kind>.cfg`).
 
 | The game does | How |
 |---|---|
-| holds it in front of the camera | the item's scene is placed so the camera stands where the `CbViewCamera` does |
+| holds the item in front of the camera | its scene is placed so the camera stands where the `CbViewCamera` does |
+| puts the arms on it | a copy of the character's arms under the camera: the carrying hand on `carry_grip`, the other on `other_grip` (or where the animations have it against the carrying hand); an arm that holds nothing (`other_hand` Free) is not drawn. The fingers are the hold animation's |
+| draws it over the world | the item and the arms are on a layer only a second camera sees, with its own depth: they never pass into a wall, and the item's `fov` does not change the world's |
 | lets it trail a turn | it follows the camera's turning about 0.02 s late, at most 4 degrees |
 | moves it with the steps | a few millimetres side to side and down, by ground speed |
 | never looks through the node | in the game a `CbViewCamera` leaves the scene as it enters; only its baked place is used |
 
-**Its own animation in the view.** Put the meshes under one `Node3D` (the bat's `Model`) and move that
-node with an `AnimationPlayer` in the scene (the bat's `ViewPlayer`, animation `view_swing`). Play it
-from a `CbReaction` on the mod's event with the condition `first_person`, which is true for the
-viewer's own player while it looks out of its eyes. Edit it with the camera's Preview on.
+**Its own animation in the view.** Put the meshes **and the grip markers** under one `Node3D` (the bat's
+`Model`) and move that node with an `AnimationPlayer` in the scene (the bat's `ViewPlayer`, animation
+`view_swing`). The hands follow the grips, so the animation of the item is the animation of the
+arms. Play it from a `CbReaction` on the mod's event with the condition `first_person`, which is true
+for the viewer's own player while it looks out of its eyes. Edit it with the camera's Preview on.
+
+| Not there | |
+|---|---|
+| arms in the editor's Preview | the Preview shows the item alone |
+| hand motion the grips do not give | a reload that lets go of the item needs arm clips of its own (not made) |
+| effects a reaction puts in the world | a muzzle flash "at" a node is in the world's picture: with an `fov` other than 60 it is not where the view model's muzzle is. Put it under the item |
 
 The baked file has two readers. The **server** takes the body, the grip and the properties from
 it; the **game** takes the scene, the name and the first-person view. Nothing else says what an
