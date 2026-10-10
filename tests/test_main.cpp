@@ -2455,6 +2455,96 @@ void TestLinks()
 		}
 	}
 
+	// What is loose gives way before a player does, by what the two weigh: a ball of a tenth of a
+	// kilogram thrown at a standing player at 17 m/s does not move it; a crate of 40 kg does.
+	{
+		auto hitBy = [&]( b3Vec3 half, ShapeKind kind ) {
+			Simulation sim( TestConfig() );
+			InputFrame f;
+			f.events.push_back( { PlayerEventType::Join, 0 } );
+			for ( int i = 0; i < 60; ++i )
+			{
+				f.tick = sim.Tick();
+				sim.Step( f );
+				f.events.clear();
+			}
+			b3Vec3 stood = sim.EntityTransform( sim.PlayerNetId( 0 ) )->position;
+			SimCommand spawn;
+			spawn.type = CommandType::SpawnProp;
+			spawn.mode = uint8_t( kind );
+			spawn.value = -1;
+			spawn.a = { stood.x, stood.y + 0.1f, stood.z + 2.5f };
+			spawn.b = { 0.0f, 0.0f, -17.0f };
+			spawn.c = { half.x, half.y, half.z };
+			f.commands.push_back( spawn );
+			float moved = 0.0f;
+			for ( int i = 0; i < 40; ++i )
+			{
+				f.tick = sim.Tick();
+				sim.Step( f );
+				f.commands.clear();
+				moved = std::max( moved, b3Distance( sim.EntityTransform( sim.PlayerNetId( 0 ) )->position, stood ) );
+			}
+			return moved;
+		};
+		// (A small fast body is inside the player's capsule before the solver stops it, and the
+		// mover used to step the player out of it by the whole overlap: 0.14 m here.)
+		float byBall = hitBy( { 0.09f, 0.0f, 0.0f }, ShapeKind::Sphere );
+		std::printf( "    hit by a ball of 0.12 kg at 17 m/s, a standing player is moved %.3f m\n", byBall );
+		CHECK( byBall < 0.03f );
+	}
+
+	// A throw (ImpulseThrow) moves the whole of a fallen body; a hit moves the part it lands on.
+	{
+		auto fallen = [&]( uint8_t mode ) {
+			Simulation sim( TestConfig() );
+			InputFrame f;
+			f.events.push_back( { PlayerEventType::Join, 0 } );
+			for ( int i = 0; i < 60; ++i )
+			{
+				f.tick = sim.Tick();
+				sim.Step( f );
+				f.events.clear();
+			}
+			b3Vec3 stood = sim.EntityTransform( sim.PlayerNetId( 0 ) )->position;
+			SimCommand kill;
+			kill.type = CommandType::Kill;
+			kill.target = SlotTarget( 0 );
+			kill.mode = 1;
+			kill.a = { stood.x, stood.y, stood.z };
+			f.commands.push_back( kill );
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.commands.clear();
+			uint32_t body = 0;
+			for ( const Simulation::EntityRef& r : sim.Entities() )
+			{
+				body = sim.FindEntity( r.netId ).has<Ragdoll>() ? r.netId : body;
+			}
+			SimCommand push;
+			push.type = CommandType::Impulse;
+			push.target = body;
+			push.mode = mode;
+			push.a = { stood.x, stood.y - 0.9f, stood.z - 1.0f }; // a blast on the floor, a metre off
+			push.b = { 0.0f, 6.0f, 8.0f };
+			f.commands.push_back( push );
+			b3Vec3 from = sim.EntityTransform( body )->position;
+			float far = 0.0f;
+			for ( int i = 0; i < 45; ++i )
+			{
+				f.tick = sim.Tick();
+				sim.Step( f );
+				f.commands.clear();
+				far = std::max( far, b3Distance( sim.EntityTransform( body )->position, from ) );
+			}
+			return body != 0 ? far : -1.0f;
+		};
+		float hit = fallen( ImpulseVelocity );
+		float thrown = fallen( ImpulseThrow );
+		std::printf( "    a fallen body given 10 m/s: as a hit (one part) it goes %.2f m in 0.75 s, as a throw (all of it) %.2f m\n", hit, thrown );
+		CHECK( hit >= 0.0f && thrown > 3.0f && thrown > 2.0f * hit );
+	}
+
 	// A launch: a motion throws an item of a kind into the world on the tick of the press, in every
 	// simulation alike. It knows who threw it, flies as its body says, and goes when its time is up.
 	{

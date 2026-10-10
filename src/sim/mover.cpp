@@ -28,9 +28,14 @@ bool SameShape( b3ShapeId a, b3ShapeId b )
 	return a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation;
 }
 
+// The most a loose body may push the character out of itself in one solve, in metres, before its
+// share of the two weights is taken (see CollectPlanes).
+constexpr float kLoosePush = 0.5f;
+
 struct MoverContext
 {
 	b3ShapeId self;
+	float mass; // the character's, kg
 	b3Pos origin;
 	int count;
 	b3CollisionPlane planes[kMaxPlanes];
@@ -51,9 +56,22 @@ bool CollectPlanes( b3ShapeId shapeId, const b3PlaneResult* results, int count, 
 		return true;
 	}
 
+	// How far a shape may push the character out of itself. The world, and what is much heavier
+	// than the character: all the way. Something loose: by its share of the two weights, so a
+	// thrown grenade (0.4 kg against 80) does not shove the player it lands on, while a crate of
+	// the player's own weight still does by half. (What the two do to each other's speed is the
+	// exchange of momentum below; this is only about where the character stands.)
+	float pushLimit = FLT_MAX;
+	b3BodyId other = b3Shape_GetBody( shapeId );
+	if ( b3Body_GetType( other ) == b3_dynamicBody )
+	{
+		float weight = b3Body_GetMass( other );
+		float share = weight / ( weight + ctx->mass );
+		pushLimit = share >= 0.9f ? FLT_MAX : kLoosePush * share;
+	}
 	for ( int i = 0; i < count && ctx->count < kMaxPlanes; ++i )
 	{
-		ctx->planes[ctx->count] = { results[i].plane, FLT_MAX, 0.0f, true };
+		ctx->planes[ctx->count] = { results[i].plane, pushLimit, 0.0f, true };
 		ctx->points[ctx->count] = b3OffsetPos( ctx->origin, results[i].point );
 		ctx->shapes[ctx->count] = shapeId;
 		ctx->count += 1;
@@ -206,6 +224,7 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 
 	MoverContext ctx;
 	ctx.self = body.shape;
+	ctx.mass = params[MoveParam::Mass];
 	ctx.count = 0;
 	for ( int iteration = 0; iteration < kMoverIterations; ++iteration )
 	{

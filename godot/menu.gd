@@ -11,6 +11,8 @@ extends Node
 ##   [servers]  recent: the servers joined last, newest first
 
 signal join_requested(host: String, port: int)
+## A server of the player's own: start one, join it (host.gd).
+signal host_requested
 signal cancel_requested
 signal resume_requested
 signal leave_requested
@@ -43,6 +45,7 @@ func _ready() -> void:
 		return
 	add_child(_scene)
 	_press("Join", _on_join)
+	_press("Host", _on_host)
 	_press("Quit", func(): quit_requested.emit())
 	_press("PauseQuit", func(): quit_requested.emit())
 	_press("Cancel", func(): cancel_requested.emit())
@@ -136,6 +139,13 @@ static func parse_address(text: String) -> Dictionary:
 
 static func format_address(host: String, port: int) -> String:
 	return host if port == DEFAULT_PORT else "%s:%d" % [host, port]
+
+
+func _on_host() -> void:
+	var name_edit := _node("Name") as LineEdit
+	if name_edit:
+		set_player_name(name_edit.text)
+	host_requested.emit()
 
 
 func _on_join() -> void:

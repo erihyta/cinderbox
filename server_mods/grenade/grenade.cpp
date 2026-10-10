@@ -8,8 +8,9 @@
 // CbItem), and this mod never sees the key.
 //
 // This file is the rules: what a grenade does when it hits something. It goes off: everyone near
-// is hurt (the combat mod's "combat.damage", like any other weapon's: less with distance) and
-// thrown back, everything loose near it is thrown too (props, items, ragdolls), and the grenade is gone. One that hits nothing hard enough is removed when its time
+// is hurt (the combat mod's "combat.damage", like any other weapon's: less with distance),
+// everything loose near it is thrown and sent tumbling (props, items, ragdolls: so those it kills
+// fly, and those it only hurts keep their feet), and the grenade is gone. One that hits nothing hard enough is removed when its time
 // is up (the launch's seconds).
 //
 // Server options: grenade.damage (at the centre, default 80), grenade.radius (metres, default 4),
@@ -59,6 +60,21 @@ public:
 
 	void Tick( Context& ctx ) override
 	{
+		// The blasts of the last few ticks throw those they killed, now that they have fallen.
+		for ( size_t i = 0; i < m_recent.size(); )
+		{
+			if ( ctx.Tick() > m_recent[i].tick + kFallTicks )
+			{
+				m_recent.erase( m_recent.begin() + std::ptrdiff_t( i ) );
+				continue;
+			}
+			Throw( ctx, m_recent[i].point, 0, m_recent[i].tick );
+			++i;
+		}
+		if ( m_recent.empty() )
+		{
+			m_flung.clear();
+		}
 		// What the grenades in the world ran into on the tick before this one.
 		m_gone.clear();
 		for ( const Context::ItemHit& hit : ctx.Hits( m_shell ) )
@@ -106,23 +122,46 @@ private:
 			{
 				ctx.Emit( m_damage, throwerTarget, ctx.PlayerNetId( slot ), damage, point, push );
 			}
-			// Thrown back, hurt or not (the thrower too: a grenade at your feet is a jump).
-			ctx.Push( ctx.PlayerNetId( slot ), at->position, push, ImpulseVelocity );
+			// (The living keep their feet: `push` is what the combat mod throws the body with if this
+			// kills. The fallen are loose, and are thrown below with everything else.)
 		}
 		// Everything loose is thrown too: crates, balls, what lies on the floor, the fallen. The
 		// same change of speed whatever it weighs (a blast is not a shove), more the nearer it is.
+		Throw( ctx, point, item, 0 );
+		// Those it kills fall a tick or two from now (the combat mod hears of the damage, then the
+		// body is made): the blast is remembered that long, and throws them as they fall.
+		m_recent.push_back( { point, ctx.Tick() } );
+		ctx.Destroy( item );
+	}
+
+	// Everything loose within the blast is thrown; with `fallenSince`, only the bodies that fell
+	// at or after that tick (the ones this blast killed).
+	void Throw( Context& ctx, b3Vec3 point, uint32_t item, uint32_t fallenSince )
+	{
 		for ( const NearBody& body : ctx.BodiesNear( point, m_radius ) )
 		{
-			if ( body.netId == item )
+			if ( body.netId == item || ( fallenSince != 0 && body.ragdollSince < fallenSince ) ||
+				 std::find( m_flung.begin(), m_flung.end(), body.netId ) != m_flung.end() )
 			{
 				continue;
 			}
 			b3Vec3 to = b3Sub( body.position, point );
 			float share = 1.0f - body.distance / m_radius;
 			b3Vec3 away = body.distance > 0.01f ? b3MulSV( 1.0f / body.distance, to ) : b3Vec3{ 0.0f, 1.0f, 0.0f };
-			ctx.Push( body.netId, body.position, b3Add( b3MulSV( m_push * share, away ), b3Vec3{ 0.0f, 0.35f * m_push * share, 0.0f } ), ImpulseVelocity );
+			if ( body.ragdollSince != 0 )
+			{
+				// A body: the whole of it, up and away. Once per blast.
+				m_flung.push_back( body.netId );
+				ctx.Push( body.netId, body.position, b3Add( b3MulSV( m_push * ( 0.3f + 0.5f * share ), away ), b3Vec3{ 0.0f, 0.45f * m_push * ( 0.3f + 0.5f * share ), 0.0f } ),
+						  ImpulseThrow );
+				continue;
+			}
+			// Hit on the side that faces the blast, low: off its centre, so it tumbles as it goes. How
+			// far off is a share of its size, less for small things (which would spin like tops).
+			float off = 0.3f * body.radius * std::clamp( body.radius / 0.5f, 0.15f, 1.0f );
+			b3Vec3 where = b3Sub( body.position, b3Add( b3MulSV( off, away ), b3Vec3{ 0.0f, 0.6f * off, 0.0f } ) );
+			ctx.Push( body.netId, where, b3Add( b3MulSV( m_push * share, away ), b3Vec3{ 0.0f, 0.35f * m_push * share, 0.0f } ), ImpulseVelocity );
 		}
-		ctx.Destroy( item );
 	}
 
 	ActionHandle m_throw;
@@ -136,6 +175,15 @@ private:
 	float m_armSpeed = 3.0f;
 	float m_push = 12.0f;
 	std::vector<uint32_t> m_gone;
+	// How long after a blast a body it killed may still fall, in ticks.
+	static constexpr uint32_t kFallTicks = 6;
+	struct Blast
+	{
+		b3Vec3 point;
+		uint32_t tick;
+	};
+	std::vector<Blast> m_recent;
+	std::vector<uint32_t> m_flung; // the bodies the recent blasts threw already
 };
 
 } // namespace

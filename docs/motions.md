@@ -265,9 +265,10 @@ Shell   CbItem   kind "grenade.shell"   mass 0.4   friction 0.8   bounce 0.35   
 | Step | What happens |
 |---|---|
 | The press | every simulation makes the item on that tick, from the thrower's own input: the thrower sees it leave at once, with no round trip. It also has the thrower's own velocity: a throw on the run goes further |
+| Hitting a player | it does not shove them: what is loose gives way before a player does, by what the two weigh (0.4 kg against 80) |
 | Flying | it is an item lying in the world, moving: the physics is the simulation's, the same everywhere. `net_grenade`: behind 100 ms, 111 predicted ticks of its flight are exactly the server's |
 | Who threw it | the item knows (`ctx.ThrownBy( item )`), until someone picks it up |
-| What it hits | the server mod's to decide: `ctx.Hits( kind )` is what items of the kind ran into on the tick before (what, how fast, where). The grenade goes off on the first hard hit: `combat.damage` to everyone within 4 m, less with distance; a push on them and on everything loose near it (`ctx.BodiesNear( point, radius )`: props, items, ragdolls); and `ctx.Destroy( item )` |
+| What it hits | the server mod's to decide: `ctx.Hits( kind )` is what items of the kind ran into on the tick before (what, how fast, where). The grenade goes off on the first hard hit: `combat.damage` to everyone within 4 m, less with distance; a push on everything loose near it (`ctx.BodiesNear( point, radius )`: props, items, ragdolls), given off each body's centre so it tumbles; and `ctx.Destroy( item )`. The living keep their feet; one it kills is thrown, as a ragdoll, all of it (the blast is remembered for a few ticks, until the body has fallen) |
 | Its look | its own scene, wherever it is; what going off looks like is a reaction on the mod's event (`grenade.blast`: a burst, a bang, a shake) |
 | How many | a launched item counts against the server's caps on what a player may leave in the world (`--props-per-player`, `--props-global`: the oldest go first), and the motion's `cooldown` or `uses` say how often |
 

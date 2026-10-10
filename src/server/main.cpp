@@ -3,7 +3,7 @@
 //   cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]
 //             [--prop-lifetime SEC] [--props-per-player N] [--props-global N]
 //             [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]
-//             [--dump-names FILE] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...
+//             [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...
 //             [--character NAME [--workshop DIR]] [--quiet]
 //
 // --move NAME=VALUE: how players move (sim/move_params.h): walk_speed, sprint_speed, accelerate,
@@ -18,6 +18,10 @@
 // actions, item kinds, stances, layers, sockets, animation packs and motion sets) and exits. The
 // editor reads the file (res://cinderbox_names.cfg in a mod's project): names are completed
 // while typing and one nobody declares is said, and publishing a look checks against it.
+//
+// --exit-when-empty SEC: the server stops by itself once nobody has been connected for SEC seconds
+// (from its start too: one nobody joins does not stay). For a server a game starts to try
+// something (godot/host.gd): it cannot be left running by accident.
 //
 // --character NAME: everyone plays as NAME (default: ual_mannequin if this build has it, else
 // mannequin, the game's own character).
@@ -56,7 +60,7 @@ void Usage()
 	std::printf( "usage: cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]\n"
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
 				 "                 [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
-				 "                 [--dump-names FILE] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
+				 "                 [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
 				 "                 [--character NAME [--workshop DIR]] [--quiet]\n" );
 }
 
@@ -236,6 +240,11 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 		if ( arg == "--dump-names" && i + 1 < argc )
 		{
 			++i; // (handled before anything starts)
+			continue;
+		}
+		if ( arg == "--exit-when-empty" && i + 1 < argc )
+		{
+			++i; // (read by main)
 			continue;
 		}
 		if ( arg == "--items" && i + 1 < argc )
@@ -518,10 +527,29 @@ int main( int argc, char** argv )
 	uint64_t lastBytesSent = 0;
 	uint64_t lastLate = 0;
 	uint64_t lastInputTicks = 0;
+	// --exit-when-empty: how long nobody may be connected before it stops (0: it never does).
+	double emptySeconds = 0.0;
+	for ( int i = 1; i + 1 < argc; ++i )
+	{
+		if ( std::string( argv[i] ) == "--exit-when-empty" )
+		{
+			emptySeconds = std::max( 1.0, std::atof( argv[i + 1] ) );
+		}
+	}
+	double emptySince = 0.0;
 	for ( ;; )
 	{
 		double now = seconds();
 		server.Update( now );
+		if ( emptySeconds > 0.0 )
+		{
+			emptySince = server.ConnectedClients() > 0 ? now : emptySince;
+			if ( now - emptySince >= emptySeconds )
+			{
+				std::printf( "nobody connected for %.0f s: stopping\n", emptySeconds );
+				return 0;
+			}
+		}
 
 		if ( now >= nextStatus )
 		{
