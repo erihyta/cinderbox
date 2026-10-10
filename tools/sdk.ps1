@@ -14,6 +14,9 @@
 #   vfx\reactions_<mod>.tscn                       a prediction, a reaction
 #   ui\hud_<mod>.tscn                              its HUD
 #   animation_packs\<mod>_animations.tscn          an animation pack: the default tree in full, replacing the upper body
+#   motion_sets\<mod>_moves.tscn                  a motion: a key that moves the player
+# and the server's half, which declares exactly the names those scenes use:
+#   server_mods\<mod>\<mod>.cpp                   the rules (C++, compiled into the server)
 # Files that are already there are kept: -New on an existing project only adds what is missing.
 #
 # Then: open the project in Godot, author, and publish with tools\publish_mod.ps1 -Mod <mod>.
@@ -110,11 +113,24 @@ if ($New) {
 		Starter "animation_pack.tscn" (Join-Path $project "animation_packs\${New}_animations.tscn") $New
 	}
 	Starter "motion_set.tscn" (Join-Path $project "motion_sets\${New}_moves.tscn") $New
+	# The server's half: the rules, declaring exactly the names the starter scenes use. Kept if the mod
+	# has one already.
+	$code = Join-Path $root "server_mods\$New\$New.cpp"
+	if (Test-Path $code) {
+		Write-Host "  kept $code"
+	} else {
+		$class = -join (($New -split "_") | Where-Object { $_ } | ForEach-Object { $_.Substring(0, 1).ToUpper() + $_.Substring(1) })
+		$text = [System.IO.File]::ReadAllText((Join-Path $sdk "starters\server_mod.cpp")).Replace("MODCLASS", $class).Replace("MODNAME", $New)
+		[System.IO.File]::WriteAllText($code, $text)
+		Write-Host "  made $code"
+	}
 	New-Item -ItemType Directory -Force (Join-Path $project "assets") | Out-Null
 	Extension $project
 	Placeholder $project
 	Import $project
-	Write-Host "made ${project}: open it in Godot. The server's half is server_mods\$New\$New.cpp (see docs\server-mods.md)."
+	Write-Host "made ${project} and server_mods\$New\$New.cpp."
+	Write-Host "next: build the server (cmake --build --preset clang-release: it finds the new mod, and the editor then knows its names),"
+	Write-Host "      publish the look (tools\publish_mod.ps1 -Mod $New), build once more (the server learns the item), and run."
 }
 
 if ($Update) {

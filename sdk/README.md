@@ -158,13 +158,31 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
   by name, set any state name, pick the local player.
 - **AnimationTree**: set a pack's tree Active in the editor to watch its states on the model.
 
+## A new mod, both halves
+
+```
+powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New mymod
+```
+
+| It makes | What |
+|---|---|
+| `server_mods/mymod/client/` | the look's project: an item (`prefabs/mymod.tscn`), reactions, a HUD, an animation pack, a motion |
+| `server_mods/mymod/mymod.cpp` | the rules, in C++: it declares exactly the names those scenes use (`mymod.item`, `mymod.used`, `mymod_use`, `mymod.charges`, `mymod.moved`, `mymod.moves`, `mymod.animations`), gives every life the item in a fifth slot, and gives the motion's charges back |
+
+| Then | Why |
+|---|---|
+| build the server (`cmake --build --preset clang-release`) | it finds the new mod, and writes its names for the editor |
+| `tools\publish_mod.ps1 -Mod mymod` | bakes and packs the look; a name nobody declares stops it |
+| build once more, run `cb_server` and the game | the server learns the item's id; the mod is in the game: slot 5, and Q |
+
+- **The names are known to the editor** after the first build ([Names](../docs/looks.md#names)): properties that hold one name offer them, and a node warns about one nobody declares.
+- Files that are already there are kept: `-New` on an existing mod only adds what is missing.
+
 ## Not here yet
 
 | Missing | Until then |
 |---|---|
-| The names a server mod declares (fields, events, actions, stances) are not known to the editor: nothing completes or checks them | type them as in the mod's `.cpp`; a wrong name is silent |
 | A preview of the item in a character's hand, with the grips solved and a pack playing | publish and look in the game |
-| A scaffold for the server half (`<mod>.cpp`) | copy `server_mods/rifle/rifle.cpp` |
 | A prebuilt SDK download: the extension has to be built from source | build with the `godot-export` preset |
 | Reloading a published look without restarting the server and the game | restart both |
 | Maps: the Bake Map button is in the game's project (`godot/`), not here | make maps there |
