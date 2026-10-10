@@ -2916,12 +2916,16 @@ void TestDash()
 void TestGrenade()
 {
 	const uint32_t throwAt = 300;
+	// Then a crate is put down in front of the player (the props mod's key) and a second grenade
+	// thrown at the floor beside it.
+	const uint32_t crateAt = 480, secondAt = 600;
 	Harness h( 47881 );
 	const ModSchema& schema = h.server.Schema();
 	ActionBits throwKey = schema.ActionMask( "throw" );
 	int shell = schema.FindItemKind( "grenade.shell" );
 	int blast = schema.FindEvent( "grenade.blast" );
-	CHECK( throwKey != 0 && shell >= 0 && blast >= 0 );
+	ActionBits spawnKey = schema.ActionMask( "spawn_prop" );
+	CHECK( throwKey != 0 && shell >= 0 && blast >= 0 && spawnKey != 0 );
 	if ( throwKey == 0 || shell < 0 || blast < 0 )
 	{
 		return;
@@ -2970,10 +2974,21 @@ void TestGrenade()
 		{
 			in.actions = throwKey;
 		}
+		if ( tick >= crateAt && tick < crateAt + 4 )
+		{
+			in.actions = spawnKey;
+		}
+		if ( tick >= secondAt - 30 )
+		{
+			in.cameraPitch = -7000; // down at the floor a few metres ahead
+			in.actions = tick >= secondAt && tick < secondAt + 4 ? throwKey : ActionBits( 0 );
+		}
 		return in;
 	};
-	uint32_t blasts = 0, seenEvents = 0;
+	uint32_t blasts = 0, seenEvents = 0, secondBlastTick = 0;
 	b3Vec3 blastAt = {};
+	// The crate: how fast it moves just before the second grenade, and the most after it went off.
+	float crateBefore = -1.0f, crateAfter = 0.0f, crateFrom = 0.0f;
 	h.server.SetTickObserver( [&] {
 		if ( bot.client->State() != ClientState::Playing )
 		{
@@ -2986,12 +3001,35 @@ void TestGrenade()
 			const ModEventRecord& e = g.modEvents[seenEvents % kModEventHistory];
 			if ( int( e.type ) == blast )
 			{
-				blasts += 1;
-				blastAt = e.point;
+				if ( e.tick < secondAt )
+				{
+					blasts += 1;
+					blastAt = e.point;
+				}
+				else
+				{
+					secondBlastTick = e.tick;
+				}
 			}
 		}
+		for ( const Simulation::EntityRef& r : server.Entities() )
+		{
+			flecs::entity e = server.FindEntity( r.netId );
+			const Prop* prop = e.try_get<Prop>();
+			if ( prop == nullptr || prop->owner == 0 || e.has<HeldItem>() || e.has<Velocity>() == false )
+			{
+				continue;
+			}
+			float speed = b3Length( e.get<Velocity>().linear );
+			if ( server.Tick() == secondAt )
+			{
+				crateBefore = speed;
+				crateFrom = b3Distance( e.get<Transform>().position, server.EntityTransform( server.PlayerNetId( bot.client->Slot() ) )->position );
+			}
+			crateAfter = secondBlastTick != 0 ? std::max( crateAfter, speed ) : crateAfter;
+		}
 	} );
-	h.RunUntil( 9.0 );
+	h.RunUntil( 13.0 );
 	h.server.SetTickObserver( {} );
 	h.Report();
 	GameClient& client = *bot.client;
@@ -3037,6 +3075,11 @@ void TestGrenade()
 	std::printf( "    %d predicted ticks compared with the server's: %d differ\n", compared, wrong );
 	CHECK( compared > 40 && wrong == 0 );
 	CHECK( predicted.count( throwAt + 1 ) && predicted[throwAt + 1].count == 1 );
+
+	// A blast throws what is loose near it: the crate that lay still in front of the player moves.
+	std::printf( "    a crate %.1f m away, at %.2f m/s before the second grenade: up to %.1f m/s after it went off\n", crateFrom, crateBefore,
+				 crateAfter );
+	CHECK( secondBlastTick > secondAt && crateBefore >= 0.0f && crateBefore < 0.5f && crateAfter > 3.0f );
 }
 
 // Motions that hold are predicted too: behind 50 ms each way, flying into a wall, landing, a

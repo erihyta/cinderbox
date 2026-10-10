@@ -1062,6 +1062,26 @@ std::vector<uint32_t> Context::Items() const
 	return out;
 }
 
+std::vector<NearBody> Context::BodiesNear( b3Vec3 point, float radius ) const
+{
+	std::vector<NearBody> out;
+	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	{
+		const Transform* at = m_sim.EntityTransform( r.netId );
+		if ( at == nullptr || IsDynamic( r.netId ) == false )
+		{
+			continue;
+		}
+		float distance = b3Length( b3Sub( at->position, point ) );
+		if ( distance <= radius )
+		{
+			out.push_back( { r.netId, at->position, distance } );
+		}
+	}
+	std::stable_sort( out.begin(), out.end(), []( const NearBody& a, const NearBody& b ) { return a.distance < b.distance; } );
+	return out;
+}
+
 std::vector<WorldItem> Context::ItemsNear( b3Vec3 point, float radius ) const
 {
 	std::vector<WorldItem> out;
