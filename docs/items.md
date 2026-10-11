@@ -255,9 +255,12 @@ first person: the same clips at the same moment, drawn again for the eye.
 
 | | What it is |
 |---|---|
-| The body | keeps the pose everyone sees. In its holder's own view only what is below the hips is drawn, and it casts the whole pose's shadow, what it holds in the hand and on the back included |
+| The rule | the world is always the third-person one: the body, what it holds and carries, their shadows, the lights and effects are what everyone sees. First person changes nothing in it; it only does not draw the viewer's own body, and shows copies made for the eye |
+| The body | keeps the pose everyone sees and casts that pose's shadow, with what is in its hand and on its back. In its holder's own view it is not drawn |
+| The legs | a copy of the body's lower half in the body's pose, for the holder alone, casting nothing. It slides back, level, as the holder looks down, just far enough for the waist to stay under the bottom of the picture: legs and feet are seen, never above the waist |
 | The view model | the arms and what they hold, drawn a second time for the holder alone: by a camera of its own over the world, so they never pass into a wall, with a field of view of their own |
 | The pose of the view model | the same animations, steadied: the upper body as it is standing still, held under the camera and turned with it. A swing or a shot's recoil shows; the walk does not swing the arms across the screen |
+| Where the view model is | stitched to the camera: its pose is made from the simulation's aim (a moment behind the camera), and just before the frame is drawn the arms, the hands and what they hold are moved as one piece to where the camera is now. Against the camera they stand still whatever the player does: turning, looking up and down, walking. A sway or a lag would be an effect added on purpose (there is none) |
 
 **The item's settings** (the `CbItem`, group First person). They change only the holder's own picture.
 

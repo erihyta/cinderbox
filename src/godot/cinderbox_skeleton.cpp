@@ -468,77 +468,144 @@ void CinderboxSkeleton::Bind( Skeleton3D* target, const anim::AnimSet& set )
 	}
 }
 
-// While the body is cut for first person: a whole copy of the body that only casts shadows, posed like the target
-// before it is cut. Without one: the target's meshes cast their own again.
-void CinderboxSkeleton::UpdateShadowBody( Skeleton3D* target )
+namespace
 {
-	auto* body = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_shadowBody ) );
-	bool want = m_firstPersonBody && target->get_parent() != nullptr;
-	if ( body != nullptr && ( want == false || m_shadowOf != ObjectID( target->get_instance_id() ) ) )
+void PassOn( Node* node );
+}
+
+// The viewer's own body, while the viewer looks out of it: its meshes cast their shadows and are
+// not drawn. Otherwise as they were.
+void CinderboxSkeleton::HideBody( Skeleton3D* target )
+{
+	ObjectID want = m_firstPersonBody ? ObjectID( target->get_instance_id() ) : ObjectID();
+	if ( want == m_hiddenBody )
 	{
-		for ( const auto& [id, setting] : m_shadowSettings )
+		return;
+	}
+	for ( const auto& [id, cast] : m_hiddenCasts )
+	{
+		if ( auto* mesh = Object::cast_to<GeometryInstance3D>( ObjectDB::get_instance( id ) ) )
 		{
-			if ( auto* mesh = Object::cast_to<GeometryInstance3D>( ObjectDB::get_instance( id ) ) )
-			{
-				mesh->set_cast_shadows_setting( GeometryInstance3D::ShadowCastingSetting( setting ) );
-			}
+			mesh->set_cast_shadows_setting( GeometryInstance3D::ShadowCastingSetting( cast ) );
 		}
-		m_shadowSettings.clear();
-		body->queue_free();
-		body = nullptr;
-		m_shadowBody = ObjectID();
+	}
+	m_hiddenCasts.clear();
+	m_hiddenBody = want;
+	if ( m_firstPersonBody == false )
+	{
+		return;
+	}
+	for ( int i = 0; i < target->get_child_count(); ++i )
+	{
+		if ( auto* mesh = Object::cast_to<MeshInstance3D>( target->get_child( i ) ) )
+		{
+			m_hiddenCasts.emplace_back( ObjectID( mesh->get_instance_id() ), int( mesh->get_cast_shadows_setting() ) );
+			mesh->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_SHADOWS_ONLY );
+		}
+	}
+}
+
+namespace
+{
+
+// A copy of a skeleton with the meshes skinned to it and nothing else, for the viewer's eye alone:
+// it casts no shadow (the body's own is the shadow), and is drawn on `layers`.
+Skeleton3D* CopyForView( Skeleton3D* target, const char* name, uint32_t layers )
+{
+	auto* copy = Object::cast_to<Skeleton3D>( target->duplicate( 0 ) );
+	if ( copy == nullptr )
+	{
+		return nullptr;
+	}
+	copy->set_name( name );
+	for ( int i = copy->get_child_count( true ) - 1; i >= 0; --i )
+	{
+		Node* child = copy->get_child( i, true );
+		auto* mesh = Object::cast_to<MeshInstance3D>( child );
+		if ( mesh == nullptr )
+		{
+			copy->remove_child( child );
+			child->queue_free();
+			continue;
+		}
+		mesh->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_OFF );
+		mesh->set_layer_mask( layers );
+		// (Its bounds are the whole body's; what is left of it is moved from where they are.)
+		mesh->set_extra_cull_margin( 4.0f );
+		for ( int k = mesh->get_child_count( true ) - 1; k >= 0; --k )
+		{
+			Node* below = mesh->get_child( k, true );
+			mesh->remove_child( below );
+			below->queue_free();
+		}
+	}
+	target->get_parent()->add_child( copy );
+	copy->set_as_top_level( true );
+	copy->set_global_transform( target->get_global_transform() );
+	return copy;
+}
+
+} // namespace
+
+// The legs the viewer sees: a copy of the body in the body's own pose, everything above the waist
+// shrunk to a point at it. PlaceViewLegs moves it once the camera is placed.
+void CinderboxSkeleton::UpdateViewLegs( Skeleton3D* target )
+{
+	auto* legs = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_viewLegs ) );
+	bool want = m_firstPersonBody && target->get_parent() != nullptr && m_lastModels.empty() == false;
+	if ( legs != nullptr && ( want == false || m_viewLegsOf != ObjectID( target->get_instance_id() ) ) )
+	{
+		legs->queue_free();
+		legs = nullptr;
+		m_viewLegs = ObjectID();
 	}
 	if ( want == false )
 	{
 		return;
 	}
-	if ( body == nullptr )
+	int spine = BoneOf( "Spine" );
+	if ( spine < 0 )
 	{
-		// The skeleton and the meshes skinned to it; nothing else that hangs under it.
-		body = Object::cast_to<Skeleton3D>( target->duplicate( 0 ) );
-		if ( body == nullptr )
-		{
-			return;
-		}
-		body->set_name( "ShadowBody" );
-		for ( int i = body->get_child_count( true ) - 1; i >= 0; --i )
-		{
-			Node* child = body->get_child( i, true );
-			auto* mesh = Object::cast_to<MeshInstance3D>( child );
-			if ( mesh == nullptr )
-			{
-				body->remove_child( child );
-				child->queue_free();
-				continue;
-			}
-			mesh->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_SHADOWS_ONLY );
-			for ( int k = mesh->get_child_count( true ) - 1; k >= 0; --k )
-			{
-				Node* below = mesh->get_child( k, true );
-				mesh->remove_child( below );
-				below->queue_free();
-			}
-		}
+		return; // a rig without one shows no legs
+	}
+	if ( legs == nullptr )
+	{
+		// (In the world's picture, among the world's things.)
+		uint32_t layers = 1u;
 		for ( int i = 0; i < target->get_child_count(); ++i )
 		{
 			if ( auto* mesh = Object::cast_to<MeshInstance3D>( target->get_child( i ) ) )
 			{
-				m_shadowSettings.emplace_back( ObjectID( mesh->get_instance_id() ), int( mesh->get_cast_shadows_setting() ) );
-				mesh->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_OFF );
+				layers = mesh->get_layer_mask();
+				break;
 			}
 		}
-		target->get_parent()->add_child( body );
-		body->set_transform( target->get_transform() );
-		m_shadowBody = ObjectID( body->get_instance_id() );
-		m_shadowOf = ObjectID( target->get_instance_id() );
+		legs = CopyForView( target, "ViewLegs", layers );
+		if ( legs == nullptr )
+		{
+			return;
+		}
+		m_viewLegs = ObjectID( legs->get_instance_id() );
+		m_viewLegsOf = ObjectID( target->get_instance_id() );
 	}
-	int bones = std::min( body->get_bone_count(), target->get_bone_count() );
-	for ( int bone = 0; bone < bones; ++bone )
+	legs->reset_bone_poses();
+	DriveSkeleton( legs, m_lastModels );
+	legs->set_bone_pose_scale( spine, Vector3( 0.0001f, 0.0001f, 0.0001f ) );
+	legs->set_global_transform( target->get_global_transform() );
+}
+
+void CinderboxSkeleton::PlaceViewLegs( const Vector3& shift )
+{
+	auto* legs = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_viewLegs ) );
+	auto* target = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_viewLegsOf ) );
+	if ( legs == nullptr || target == nullptr )
 	{
-		body->set_bone_pose_position( bone, target->get_bone_pose_position( bone ) );
-		body->set_bone_pose_rotation( bone, target->get_bone_pose_rotation( bone ) );
-		body->set_bone_pose_scale( bone, target->get_bone_pose_scale( bone ) );
+		return;
 	}
+	Transform3D at = target->get_global_transform();
+	at.origin += shift;
+	legs->set_global_transform( at );
+	PassOn( legs );
 }
 
 namespace
@@ -566,35 +633,11 @@ void CinderboxSkeleton::UpdateViewArms( Skeleton3D* target )
 	}
 	if ( rig == nullptr )
 	{
-		rig = Object::cast_to<Skeleton3D>( target->duplicate( 0 ) );
+		rig = CopyForView( target, "ViewArms", kViewLayer );
 		if ( rig == nullptr )
 		{
 			return;
 		}
-		rig->set_name( "ViewArms" );
-		for ( int i = rig->get_child_count( true ) - 1; i >= 0; --i )
-		{
-			Node* child = rig->get_child( i, true );
-			auto* mesh = Object::cast_to<MeshInstance3D>( child );
-			if ( mesh == nullptr )
-			{
-				rig->remove_child( child );
-				child->queue_free();
-				continue;
-			}
-			// (The shadow is the body's, of the pose everyone sees.)
-			mesh->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_OFF );
-			mesh->set_layer_mask( kViewLayer );
-			// (Its bounds are the whole body's, far from where the arms are put.)
-			mesh->set_extra_cull_margin( 4.0f );
-			for ( int k = mesh->get_child_count( true ) - 1; k >= 0; --k )
-			{
-				Node* below = mesh->get_child( k, true );
-				mesh->remove_child( below );
-				below->queue_free();
-			}
-		}
-		target->get_parent()->add_child( rig );
 		m_viewRig = ObjectID( rig->get_instance_id() );
 		m_viewRigOf = ObjectID( target->get_instance_id() );
 	}
@@ -638,11 +681,12 @@ void CinderboxSkeleton::UpdateViewArms( Skeleton3D* target )
 		}
 		return;
 	}
-	if ( rig->is_set_as_top_level() )
+	// (In the world's frame, not under the body: PlaceViewRig moves it to the camera.)
+	if ( rig->is_set_as_top_level() == false )
 	{
-		rig->set_as_top_level( false );
+		rig->set_as_top_level( true );
 	}
-	rig->set_transform( target->get_transform() );
+	rig->set_global_transform( target->get_global_transform() );
 	KeepArms( rig, m_viewHandShown[0], m_viewHandShown[1] );
 	rig->set_visible( m_viewHandShown[0] || m_viewHandShown[1] );
 }
@@ -675,6 +719,36 @@ void CinderboxSkeleton::KeepArms( Skeleton3D* rig, bool left, bool right )
 		bool shown = side == 0 ? left : right;
 		rig->set_bone_global_pose( shoulders[side], shown ? kept[side] : Transform3D( Basis().scaled( nothing ), between ) );
 	}
+}
+
+namespace
+{
+
+// A move made after the frame's moves were passed on to the renderer is passed on at once.
+void PassOn( Node* node )
+{
+	if ( auto* spatial = Object::cast_to<Node3D>( node ) )
+	{
+		spatial->force_update_transform();
+	}
+	for ( int i = 0; i < node->get_child_count( true ); ++i )
+	{
+		PassOn( node->get_child( i, true ) );
+	}
+}
+
+} // namespace
+
+void CinderboxSkeleton::PlaceViewRig( const Transform3D& stitch )
+{
+	auto* rig = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_viewRig ) );
+	auto* target = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_viewRigOf ) );
+	if ( rig == nullptr || target == nullptr || m_viewArms )
+	{
+		return;
+	}
+	rig->set_global_transform( stitch * target->get_global_transform() );
+	PassOn( rig );
 }
 
 namespace
@@ -816,57 +890,10 @@ int CinderboxSkeleton::BoneOf( const char* profileName ) const
 
 void CinderboxSkeleton::CutBody( Skeleton3D* target )
 {
-	// What the last cut moved goes back to where the rig has it: driving by rotation leaves
-	// positions and scales alone, and they must not be read as part of this frame's pose.
-	for ( int bone : m_cutBones )
-	{
-		if ( bone >= 0 && bone < target->get_bone_count() )
-		{
-			if ( m_retarget )
-			{
-				target->set_bone_pose_position( bone, target->get_bone_rest( bone ).origin );
-			}
-			target->set_bone_pose_scale( bone, Vector3( 1, 1, 1 ) );
-		}
-	}
-	m_cutBones.clear();
-	UpdateShadowBody( target ); // while the target is whole: the copy casts the whole shadow
+	// (Nothing of the body is cut: in first person it is not drawn, and copies are. See the header.)
+	HideBody( target );
+	UpdateViewLegs( target );
 	UpdateViewArms( target );
-	if ( m_firstPersonBody == false )
-	{
-		return;
-	}
-	int spine = BoneOf( "Spine" );
-	int chest = BoneOf( "Chest" );
-	int upper = BoneOf( "UpperChest" );
-	int head = BoneOf( "Head" );
-	int shoulders[2] = { BoneOf( "LeftShoulder" ), BoneOf( "RightShoulder" ) };
-	if ( spine < 0 || upper < 0 || head < 0 || shoulders[0] < 0 || shoulders[1] < 0 )
-	{
-		return; // a rig without them is drawn whole
-	}
-	// The spine collapses to a point at the waist, the chest with the neck and the head to one
-	// between the shoulders, and the shoulders stay where the pose has them: the arms are whole,
-	// and what stretched between them and the torso is a sliver between them, below the eyes'
-	// view.
-	const Vector3 nothing( 0.0001f, 0.0001f, 0.0001f );
-	Transform3D kept[2] = { target->get_bone_global_pose( shoulders[0] ), target->get_bone_global_pose( shoulders[1] ) };
-	// (Without the arms, all of it goes to the waist: nothing is left to stretch up to the shoulders.)
-	Vector3 behind = m_firstPersonArms ? ( kept[0].origin + kept[1].origin ) * 0.5f : target->get_bone_global_pose( spine ).origin;
-	target->set_bone_pose_scale( spine, nothing );
-	for ( int bone : { chest, upper } )
-	{
-		if ( bone >= 0 )
-		{
-			target->set_bone_global_pose( bone, Transform3D( Basis().scaled( nothing ), behind ) );
-		}
-	}
-	for ( int i = 0; i < 2; ++i )
-	{
-		// (Without the arms: they go where the chest went.)
-		target->set_bone_global_pose( shoulders[i], m_firstPersonArms ? kept[i] : Transform3D( Basis().scaled( nothing ), behind ) );
-	}
-	m_cutBones = { spine, chest, upper, shoulders[0], shoulders[1] };
 }
 
 void CinderboxSkeleton::DriveSkeleton( Skeleton3D* target, const ozz::vector<ozz::math::Float4x4>& models )

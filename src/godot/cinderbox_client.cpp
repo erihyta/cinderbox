@@ -591,7 +591,6 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 		if ( was != skeleton || on == false )
 		{
 			was->set_first_person_body( false );
-			was->set_first_person_arms( true );
 			was->set_view_arms( false );
 			was->set_view_hands( true, true );
 		}
@@ -602,6 +601,7 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 		return;
 	}
 	skeleton->set_first_person_body( true );
+	m_viewAimKnown = false;
 	// The body draws no arms of its own: the view's are a copy (CinderboxSkeleton::SetViewPose),
 	// drawn as what is held says: which hands, with what field of view, and bent onto it when it
 	// floats in the view (CbItem.view_camera) and not as the pose has them.
@@ -629,7 +629,6 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 			}
 		}
 	}
-	skeleton->set_first_person_arms( false );
 	skeleton->SetViewMove( Transform3D() );
 	skeleton->set_view_arms( floats );
 	skeleton->set_view_hands( hands[0], hands[1] );
@@ -738,6 +737,11 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	b3Vec3 forward = { yaw.sine * pitch.cosine, pitch.sine, yaw.cosine * pitch.cosine };
 	b3Vec3 right = { -yaw.cosine, 0.0f, yaw.sine };
 	b3Vec3 up = { -yaw.sine * pitch.sine, pitch.cosine, -yaw.cosine * pitch.sine };
+	// Where a camera with this aim is, as the game places its own (get_view_position): what the
+	// pose below is made for.
+	m_viewAimCamera = Transform3D( Basis( Vector3( right.x, right.y, right.z ), Vector3( up.x, up.y, up.z ), Vector3( -forward.x, -forward.y, -forward.z ) ),
+								   Vector3( 0.0f, anim::EyeHeight( *m_animSet ), 0.0f ) + Vector3( forward.x, forward.y, forward.z ) * kEyeAhead );
+	m_viewAimKnown = true;
 
 	if ( aimedFrom >= 0 && m_animSet->AimTip() >= 0 )
 	{
@@ -788,6 +792,24 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	}
 }
 
+namespace
+{
+
+// A move made after the frame's moves were passed on to the renderer is passed on at once.
+void PassOn( Node* node )
+{
+	if ( auto* spatial = Object::cast_to<Node3D>( node ) )
+	{
+		spatial->force_update_transform();
+	}
+	for ( int i = 0; i < node->get_child_count( true ); ++i )
+	{
+		PassOn( node->get_child( i, true ) );
+	}
+}
+
+} // namespace
+
 bool CinderboxClient::ViewFrameOf( uint16_t kind, Transform3D& frame ) const
 {
 	if ( kind >= m_frame.schema.itemKinds.size() )
@@ -834,6 +856,60 @@ void CinderboxClient::place_view_items( const Transform3D& camera, double delta 
 	m_viewCameraKnown = true;
 	static const StringName kFloating( "cb_floating" );
 	auto* skeleton = Object::cast_to<CinderboxSkeleton>( ObjectDB::get_instance( m_firstPersonSkeleton ) );
+	// The view model goes to the camera, as one piece: the arms, and the hands' sockets with what
+	// is in them. (What floats in the view is placed from the camera already, below.)
+	m_viewStitch = Transform3D();
+	if ( skeleton != nullptr && m_viewAimKnown && skeleton->get_view_arms() == false )
+	{
+		Transform3D body = skeleton->get_global_transform();
+		m_viewStitch = camera * m_viewAimCamera.affine_inverse() * body.affine_inverse();
+		skeleton->PlaceViewRig( m_viewStitch );
+		flecs::entity local = m_mirror ? m_mirror->VisualOf( m_frame.frame.localNetId ) : flecs::entity();
+		auto places = local.is_valid() ? m_sockets.find( local.id() ) : m_sockets.end();
+		if ( places != m_sockets.end() )
+		{
+			for ( const SocketPlace& place : places->second )
+			{
+				auto* socket = Object::cast_to<Node3D>( ObjectDB::get_instance( place.node ) );
+				Transform3D joint;
+				bool hand = place.name == String( "RightHand" ) || place.name == String( "LeftHand" );
+				if ( socket != nullptr && hand && skeleton->JointTransform( place.bone, joint, place.itemFrame, true ) )
+				{
+					socket->set_global_transform( m_viewStitch * body * joint * place.local );
+					PassOn( socket );
+				}
+			}
+		}
+	}
+	// The legs: slid back, level, as far as it takes for the waist to stay under the bottom of the
+	// picture. The camera looks `down` below level and sees half its field of view below that; the
+	// waist is `drop` under it and reaches kWaist ahead of the hips.
+	if ( skeleton != nullptr )
+	{
+		Vector3 look = -camera.basis.get_column( 2 );
+		Vector3 level( look.x, 0.0f, look.z );
+		level = level.length() > 1e-4f ? level.normalized() : Vector3( camera.basis.get_column( 1 ).x, 0.0f, camera.basis.get_column( 1 ).z ).normalized();
+		Vector3 shift;
+		Transform3D hips, spine;
+		Camera3D* eye = get_viewport() != nullptr ? get_viewport()->get_camera_3d() : nullptr;
+		if ( eye != nullptr && skeleton->JointTransform( "Hips", hips ) && skeleton->JointTransform( "Spine", spine ) )
+		{
+			const float kWaist = 0.24f; // metres from the hips to the front of the waist, and a margin
+			Transform3D body = skeleton->get_global_transform();
+			Vector3 waist = body.xform( spine.origin );
+			float drop = float( camera.origin.y - waist.y );
+			float ahead = float( ( camera.origin - body.xform( hips.origin ) ).dot( level ) );
+			float edge = std::asin( std::clamp( float( -look.y ), -1.0f, 1.0f ) ) + float( eye->get_fov() ) * 0.5f * float( Math_PI / 180.0 );
+			if ( edge > 0.05f && drop > 0.0f )
+			{
+				// Where the bottom of the picture meets the waist's height, ahead of the camera
+				// (behind it, past straight down).
+				float seen = ahead + drop * std::cos( edge ) / std::sin( edge );
+				shift = -level * std::clamp( kWaist - seen, 0.0f, 0.8f );
+			}
+		}
+		skeleton->PlaceViewLegs( shift );
+	}
 	bool armed = false;
 	for ( ObjectID id : m_viewItems )
 	{
@@ -883,6 +959,44 @@ double CinderboxClient::get_view_fov() const
 	return double( m_viewFov > 1.0f ? m_viewFov : 60.0f );
 }
 
+void CinderboxClient::ShadowsOnly( Node* node, bool on )
+{
+	static const StringName kCast( "cb_cast_was" );
+	static const StringName kShown( "cb_shown_was" );
+	// (Not its lights: they light the world whoever looks.)
+	if ( auto* part = Object::cast_to<GeometryInstance3D>( node ) )
+	{
+		if ( on && part->has_meta( kCast ) == false )
+		{
+			part->set_meta( kCast, int64_t( part->get_cast_shadows_setting() ) );
+			// What casts none (a glow, particles) has nothing to show without being drawn.
+			if ( part->get_cast_shadows_setting() == GeometryInstance3D::SHADOW_CASTING_SETTING_OFF )
+			{
+				part->set_meta( kShown, part->is_visible() );
+				part->set_visible( false );
+			}
+			else
+			{
+				part->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_SHADOWS_ONLY );
+			}
+		}
+		else if ( on == false && part->has_meta( kCast ) )
+		{
+			part->set_cast_shadows_setting( GeometryInstance3D::ShadowCastingSetting( int64_t( part->get_meta( kCast ) ) ) );
+			part->remove_meta( kCast );
+			if ( part->has_meta( kShown ) )
+			{
+				part->set_visible( bool( part->get_meta( kShown ) ) );
+				part->remove_meta( kShown );
+			}
+		}
+	}
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		ShadowsOnly( node->get_child( i ), on );
+	}
+}
+
 void CinderboxClient::ViewLayers( Node* node, bool on )
 {
 	static const StringName kLayers( "cb_layers" );
@@ -894,7 +1008,10 @@ void CinderboxClient::ViewLayers( Node* node, bool on )
 		if ( on && visual->has_meta( kLayers ) == false )
 		{
 			visual->set_meta( kLayers, int64_t( visual->get_layer_mask() ) );
-			visual->set_layer_mask( CinderboxSkeleton::kViewLayer );
+			// A light stays in the world's picture too: a muzzle flash lights the room, and the
+			// arms that hold it.
+			bool light = Object::cast_to<Light3D>( node ) != nullptr;
+			visual->set_layer_mask( light ? visual->get_layer_mask() | CinderboxSkeleton::kViewLayer : CinderboxSkeleton::kViewLayer );
 			if ( geometry != nullptr )
 			{
 				geometry->set_meta( kCast, int64_t( geometry->get_cast_shadows_setting() ) );

@@ -230,45 +230,20 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 		ViewLayers( node, false );
 		ItemShadow( node, nullptr );
 	}
-	// What the viewer has put away hangs on a body that is not drawn: its shadow only.
-	static const StringName kShadowOnly( "cb_shadow_only" );
-	bool shadowOnly = m_firstPerson && v.holder != 0 && v.holder == m_frame.frame.localNetId && inView == false;
-	if ( shadowOnly != node->has_meta( kShadowOnly ) )
+	// What the viewer has put away hangs on its body, and is as its body is: in the world, casting
+	// its shadow, and not drawn.
+	static const StringName kOnBody( "cb_on_body" );
+	bool onBody = m_firstPerson && v.holder != 0 && v.holder == m_frame.frame.localNetId && inView == false;
+	if ( onBody != node->has_meta( kOnBody ) )
 	{
-		static const StringName kWas( "cb_cast_was" );
-		TypedArray<Node> parts = node->find_children( "*", "GeometryInstance3D", true, false );
-		for ( int i = 0; i < parts.size(); ++i )
+		ShadowsOnly( node, onBody );
+		if ( onBody )
 		{
-			auto* part = Object::cast_to<GeometryInstance3D>( parts[i] );
-			if ( part != nullptr && shadowOnly )
-			{
-				part->set_meta( kWas, int64_t( part->get_cast_shadows_setting() ) );
-				bool casts = part->get_cast_shadows_setting() != GeometryInstance3D::SHADOW_CASTING_SETTING_OFF && Object::cast_to<MeshInstance3D>( part ) != nullptr;
-				part->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_SHADOWS_ONLY );
-				if ( casts == false )
-				{
-					part->set_meta( "cb_shown_was", part->is_visible() );
-					part->set_visible( false );
-				}
-			}
-			else if ( part != nullptr && part->has_meta( kWas ) )
-			{
-				part->set_cast_shadows_setting( GeometryInstance3D::ShadowCastingSetting( int64_t( part->get_meta( kWas ) ) ) );
-				part->remove_meta( kWas );
-				if ( part->has_meta( "cb_shown_was" ) )
-				{
-					part->set_visible( bool( part->get_meta( "cb_shown_was" ) ) );
-					part->remove_meta( "cb_shown_was" );
-				}
-			}
-		}
-		if ( shadowOnly )
-		{
-			node->set_meta( kShadowOnly, true );
+			node->set_meta( kOnBody, true );
 		}
 		else
 		{
-			node->remove_meta( kShadowOnly );
+			node->remove_meta( kOnBody );
 		}
 	}
 	bool floats = inView && ViewFrameOf( v.itemKind, eye );

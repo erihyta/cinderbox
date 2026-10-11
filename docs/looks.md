@@ -37,6 +37,7 @@ What a world reaction adds to the [reaction fields](#reactions):
 | `place`, `place_node`, `offset` | where its scene and sound go: under its parent, at the cue's **point** or **end**, a **beam** from `place_node` (or the point) to the end, **at** `place_node` (a socket: `$at/RightHand`, `$at/Head`), or **following** the subject |
 | `sound`, `volume_db`, `pitch_scale`, `pitch_jitter`, `bus`, `max_distance` | a sound, once per firing |
 | `shake`, `shake_time`, `flash_color`, `flash_time` | camera shake and a full-screen flash: the viewer's, so pair them with `is_local` or subject `local` |
+| a `scene` a reaction adds | is an effect: nothing in it casts a shadow, whatever its scene says. Its lights light the world as usual |
 
 Footsteps and impacts come from the simulation, not from the renderer guessing:
 - A **footstep** is a stride, counted by distance walked, so the rate follows the speed on its own.

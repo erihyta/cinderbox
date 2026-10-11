@@ -5,6 +5,7 @@
 #include "cue_director.h"
 #include "cue_guard.h"
 
+#include <godot_cpp/classes/geometry_instance3d.hpp>
 #include <godot_cpp/classes/animation_player.hpp>
 #include <godot_cpp/classes/audio_stream.hpp>
 #include <godot_cpp/classes/audio_stream_player3d.hpp>
@@ -749,6 +750,17 @@ void CbReaction::Act( bool on, const cue::Context& context )
 			Node* spawned = parent != nullptr ? cue::Instantiate( packed ) : nullptr;
 			if ( spawned != nullptr )
 			{
+				// What a reaction adds is an effect: a flash, a tracer, a puff. It casts no shadow,
+				// whatever its scene says.
+				TypedArray<Node> parts = spawned->find_children( "*", "GeometryInstance3D", true, false );
+				parts.push_back( spawned );
+				for ( int i = 0; i < parts.size(); ++i )
+				{
+					if ( auto* part = Object::cast_to<GeometryInstance3D>( parts[i] ) )
+					{
+						part->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_OFF );
+					}
+				}
 				parent->add_child( spawned );
 				if ( auto* spatial = Object::cast_to<Node3D>( spawned ) )
 				{
