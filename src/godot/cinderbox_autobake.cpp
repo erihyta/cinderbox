@@ -2,8 +2,16 @@
 
 #include "cinderbox_character.h"
 #include "cinderbox_item_look.h"
+#include "pose.h" // CinderboxSkeleton holds a PoseEvaluator
+#include "cinderbox_skeleton.h"
 
+#include <godot_cpp/classes/directional_light3d.hpp>
 #include <godot_cpp/classes/editor_interface.hpp>
+#include <godot_cpp/classes/environment.hpp>
+#include <godot_cpp/classes/label.hpp>
+#include <godot_cpp/classes/sub_viewport_container.hpp>
+#include <godot_cpp/classes/v_box_container.hpp>
+#include <godot_cpp/classes/world3d.hpp>
 #include <godot_cpp/classes/editor_paths.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/os.hpp>
@@ -149,6 +157,70 @@ void CbAutoBakePlugin::on_test_mod()
 	OS::get_singleton()->create_process( "powershell.exe", args, true );
 }
 
+void CbAutoBakePlugin::MakeViewPanel()
+{
+	auto* box = memnew( VBoxContainer );
+	box->set_custom_minimum_size( Vector2( 420, 0 ) );
+	auto* title = memnew( Label );
+	title->set_text( "First person: what the holder sees (Preview > Hold)" );
+	title->set_tooltip_text( "The arms and the item as the game draws them for the holder's own view: the same pose, the item's view_offset, "
+							 "view_rotation, view_fov and hands. Change them in the inspector and watch. The pose is the pack's starting state." );
+	box->add_child( title );
+	auto* frame = memnew( SubViewportContainer );
+	frame->set_stretch( true );
+	frame->set_custom_minimum_size( Vector2( 420, 236 ) ); // 16 : 9
+	box->add_child( frame );
+	m_viewPort = memnew( SubViewport );
+	m_viewPort->set_use_own_world_3d( true );
+	m_viewPort->set_update_mode( SubViewport::UPDATE_WHEN_VISIBLE );
+	frame->add_child( m_viewPort );
+	m_viewCamera = memnew( Camera3D );
+	m_viewCamera->set_near( 0.01 );
+	Ref<Environment> env;
+	env.instantiate();
+	env->set_background( Environment::BG_COLOR );
+	env->set_bg_color( Color( 0.55f, 0.62f, 0.72f ) );
+	env->set_ambient_source( Environment::AMBIENT_SOURCE_COLOR );
+	env->set_ambient_light_color( Color( 0.8f, 0.8f, 0.85f ) );
+	env->set_ambient_light_energy( 0.6f );
+	m_viewCamera->set_environment( env );
+	m_viewPort->add_child( m_viewCamera );
+	auto* sun = memnew( DirectionalLight3D );
+	sun->set_rotation_degrees( Vector3( -50, 30, 0 ) );
+	m_viewPort->add_child( sun );
+	auto* arms = memnew( CinderboxSkeleton );
+	arms->set_use_slot_color( false );
+	arms->set_body_color( Color( 0.75f, 0.78f, 0.82f ) );
+	m_viewArms = arms;
+	m_viewPort->add_child( arms );
+	m_viewHeld = memnew( Node3D );
+	m_viewPort->add_child( m_viewHeld );
+	m_viewPanel = box;
+	m_viewPanel->set_visible( false );
+	add_control_to_container( CONTAINER_SPATIAL_EDITOR_SIDE_RIGHT, m_viewPanel );
+}
+
+void CbAutoBakePlugin::_process( double )
+{
+	if ( m_viewPanel == nullptr )
+	{
+		return;
+	}
+	// The item being edited, with its Hold preview on: its holder's view.
+	auto* item = Object::cast_to<CbItem>( EditorInterface::get_singleton()->get_edited_scene_root() );
+	Dictionary seen = item != nullptr && item->get_preview_hold() ? item->preview_view( m_viewArms, m_viewHeld ) : Dictionary();
+	bool on = seen.has( "eye" );
+	if ( m_viewPanel->is_visible() != on )
+	{
+		m_viewPanel->set_visible( on );
+	}
+	if ( on )
+	{
+		m_viewCamera->set_transform( seen["eye"] );
+		m_viewCamera->set_fov( float( double( seen["fov"] ) ) );
+	}
+}
+
 void CbAutoBakePlugin::_bind_methods()
 {
 	ClassDB::bind_method( D_METHOD( "on_scene_saved", "path" ), &CbAutoBakePlugin::on_scene_saved );
@@ -162,6 +234,8 @@ void CbAutoBakePlugin::_enter_tree()
 	add_inspector_plugin( m_motionInspector );
 	OfferNodes();
 	OfferTest();
+	MakeViewPanel();
+	set_process( true );
 }
 
 void CbAutoBakePlugin::_exit_tree()
@@ -169,6 +243,12 @@ void CbAutoBakePlugin::_exit_tree()
 	disconnect( "scene_saved", Callable( this, "on_scene_saved" ) );
 	remove_inspector_plugin( m_motionInspector );
 	m_motionInspector.unref();
+	if ( m_viewPanel != nullptr )
+	{
+		remove_control_from_container( CONTAINER_SPATIAL_EDITOR_SIDE_RIGHT, m_viewPanel );
+		m_viewPanel->queue_free();
+		m_viewPanel = nullptr;
+	}
 	if ( m_testButton != nullptr )
 	{
 		remove_control_from_container( CONTAINER_TOOLBAR, m_testButton );

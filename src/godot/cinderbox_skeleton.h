@@ -69,6 +69,13 @@ public:
 	void _ready() override;
 
 	void set_draw_bone_boxes( bool value );
+	// Of the bone boxes, only the arms (each one or not): what a first-person view shows of a body.
+	void set_boxes_arms_only( bool only, bool left = true, bool right = true )
+	{
+		m_boxesArmsOnly = only;
+		m_boxesArm[0] = left;
+		m_boxesArm[1] = right;
+	}
 	bool get_draw_bone_boxes() const
 	{
 		return m_drawBoneBoxes;
@@ -191,6 +198,8 @@ private:
 	void EnsureMultiMesh( int instances );
 
 	bool m_drawBoneBoxes = true;
+	bool m_boxesArmsOnly = false;
+	bool m_boxesArm[2] = { true, true };
 	bool m_useSlotColor = true;
 	godot::NodePath m_skeletonPath;
 	godot::Color m_bodyColor = godot::Color( 0.9f, 0.35f, 0.3f );

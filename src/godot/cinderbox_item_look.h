@@ -35,6 +35,8 @@ class PoseEvaluator;
 namespace cb::gd
 {
 
+class CinderboxSkeleton;
+
 class CbItem : public CbBody
 {
 	GDCLASS( CbItem, CbBody )
@@ -249,6 +251,13 @@ public:
 		return m_previewAim;
 	}
 	void _process( double delta ) override;
+	// What the holder sees in first person, for a picture of it (the editor's panel): `arms` is
+	// posed as the game poses the view's arms for this item on the figure of the Hold preview
+	// (the same pose, steadied under the eye; the item's view_offset and view_rotation; the arms
+	// it shows), and a copy of the item's meshes is put under `held`, in the hand. Both are in
+	// one frame, which is theirs to put anywhere. Returns { "eye": where the camera is in that
+	// frame, "fov": its field of view }, or an empty one while the Hold preview is not running.
+	godot::Dictionary preview_view( godot::Node* arms, godot::Node* held );
 
 	// The text of items/<kind>.cfg, or "" (and why in the returned { text, error }).
 	godot::Dictionary bake() const;
@@ -285,6 +294,11 @@ private:
 	std::shared_ptr<const AnimGraph> m_previewGraph;
 	std::shared_ptr<anim::PoseEvaluator> m_previewPose;
 	void EndPreview();
+	// The preview's pose now (the pack's starting state at the preview's time, the other hand
+	// solved), aimed or not: left in m_previewPose.
+	void PreviewEvaluate( bool aiming );
+	// A copy of the item's meshes under a new node, as they are in the item's scene.
+	godot::Node3D* CopyMeshes( const godot::Node* skip, const godot::Node* skipToo );
 	bool m_viewRightHand = true;
 	godot::Dictionary m_properties;
 	int m_use = USE_SELECTED;

@@ -5,6 +5,7 @@
 #include "cinderbox_skeleton.h"
 #include "joint_math.h"
 #include "pose.h"
+#include "types.h"
 
 #include <godot_cpp/classes/box_shape3d.hpp>
 #include <godot_cpp/classes/collision_shape3d.hpp>
@@ -96,6 +97,7 @@ void CbItem::_bind_methods()
 	// (Shown in the editor, kept nowhere: PROPERTY_USAGE_EDITOR.)
 	ADD_GROUP( "Preview", "preview_" );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "preview_hold", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR ), "set_preview_hold", "get_preview_hold" );
+	ClassDB::bind_method( D_METHOD( "preview_view", "arms", "held" ), &CbItem::preview_view );
 	ClassDB::bind_method( D_METHOD( "set_preview_aim", "value" ), &CbItem::set_preview_aim );
 	ClassDB::bind_method( D_METHOD( "get_preview_aim" ), &CbItem::get_preview_aim );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "preview_aim", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR ), "set_preview_aim", "get_preview_aim" );
@@ -356,11 +358,46 @@ void CbItem::_process( double delta )
 		m_previewFigure = ObjectID( figure->get_instance_id() );
 	}
 
-	// The pack's first layer in the state it starts in, playing.
 	const AnimGraphLayer& layer = m_previewGraph->layers[0];
 	const AnimGraphState& start = layer.states[size_t( layer.start )];
 	float length = start.points.empty() ? 1.0f : m_previewGraph->clips[size_t( start.points[0].clip )].length;
 	m_previewTime = std::fmod( m_previewTime + delta, double( std::max( length, 0.05f ) ) );
+	const Transform3D carry = CarryFrameUnder( this );
+	PreviewEvaluate( m_previewAim );
+	figure->ApplyPose( *m_previewSet, m_previewPose->Models() );
+
+	// The figure stands upright beside the item, facing where the item points (-Z), its feet a
+	// metre under the item's origin; a copy of the item's meshes is in its right hand, by the
+	// carrying grip.
+	figure->set_transform( Transform3D( Basis( Vector3( 0, 1, 0 ), float( Math_PI ) ), Vector3( 1.0f, -1.0f, 0.0f ) ) );
+	auto* copy = Object::cast_to<Node3D>( ObjectDB::get_instance( m_previewCopy ) );
+	if ( copy == nullptr || ++m_previewCopied >= 30 )
+	{
+		// (Made again twice a second: the scene is being edited.)
+		Node* old = copy;
+		if ( old != nullptr )
+		{
+			old->queue_free();
+		}
+		m_previewCopied = 0;
+		copy = CopyMeshes( old, figure );
+		copy->set_name( "HeldCopy" );
+		add_child( copy, false, INTERNAL_MODE_BACK );
+		m_previewCopy = ObjectID( copy->get_instance_id() );
+	}
+	Transform3D hand;
+	if ( figure->JointTransform( "RightHand", hand ) )
+	{
+		copy->set_transform( figure->get_transform() * hand * m_previewSocket * carry.affine_inverse() );
+	}
+}
+
+void CbItem::PreviewEvaluate( bool aiming )
+{
+	// The pack's first layer in the state it starts in, playing.
+	const AnimGraphLayer& layer = m_previewGraph->layers[0];
+	const AnimGraphState& start = layer.states[size_t( layer.start )];
+	float length = start.points.empty() ? 1.0f : m_previewGraph->clips[size_t( start.points[0].clip )].length;
 	AnimState state;
 	state.graph.resize( 1 );
 	AnimGraphLayerState& playing = state.graph[0];
@@ -384,62 +421,197 @@ void CbItem::_process( double delta )
 		grip.rotation = { { float( turn.x ), float( turn.y ), float( turn.z ) }, float( turn.w ) };
 		held = grip.asAnimated || other != nullptr;
 	}
-	state.aiming = m_previewAim ? 1 : 0;
+	state.aiming = aiming ? 1 : 0;
 	m_previewPose->Evaluate( state, held ? &grip : nullptr );
-	figure->ApplyPose( *m_previewSet, m_previewPose->Models() );
+}
 
-	// The figure stands upright beside the item, facing where the item points (-Z), its feet a
-	// metre under the item's origin; a copy of the item's meshes is in its right hand, by the
-	// carrying grip.
-	figure->set_transform( Transform3D( Basis( Vector3( 0, 1, 0 ), float( Math_PI ) ), Vector3( 1.0f, -1.0f, 0.0f ) ) );
-	auto* copy = Object::cast_to<Node3D>( ObjectDB::get_instance( m_previewCopy ) );
-	if ( copy == nullptr || ++m_previewCopied >= 30 )
+Node3D* CbItem::CopyMeshes( const Node* skip, const Node* skipToo )
+{
+	Node3D* copy = memnew( Node3D );
+	TypedArray<Node> meshes = find_children( "*", "MeshInstance3D", true, false );
+	for ( int i = 0; i < meshes.size(); ++i )
 	{
-		// (Made again twice a second: the scene is being edited.)
-		Node* old = copy;
-		if ( old != nullptr )
+		auto* mesh = Object::cast_to<MeshInstance3D>( meshes[i] );
+		if ( mesh == nullptr || mesh->get_mesh().is_null() || mesh->is_visible_in_tree() == false )
 		{
-			old->queue_free();
+			continue;
 		}
-		m_previewCopied = 0;
-		copy = memnew( Node3D );
-		copy->set_name( "HeldCopy" );
-		TypedArray<Node> meshes = find_children( "*", "MeshInstance3D", true, false );
-		for ( int i = 0; i < meshes.size(); ++i )
+		// (Not the preview's own: the last copy is still here until the frame ends, and a copy
+		// of a copy would be one more item in the hand every time.)
+		bool own = false;
+		for ( Node* above = mesh->get_parent(); above != nullptr && above != this; above = above->get_parent() )
 		{
-			auto* mesh = Object::cast_to<MeshInstance3D>( meshes[i] );
-			if ( mesh == nullptr || mesh->get_mesh().is_null() || mesh->is_visible_in_tree() == false )
-			{
-				continue;
-			}
-			// (Not the preview's own: the last copy is still here until the frame ends, and a copy
-			// of a copy would be one more item in the hand every time.)
-			bool own = false;
-			for ( Node* above = mesh->get_parent(); above != nullptr && above != this; above = above->get_parent() )
-			{
-				own |= above == old || above == figure;
-			}
-			if ( own )
-			{
-				continue;
-			}
-			MeshInstance3D* part = memnew( MeshInstance3D );
-			part->set_mesh( mesh->get_mesh() );
-			for ( int surface = 0; surface < mesh->get_surface_override_material_count(); ++surface )
-			{
-				part->set_surface_override_material( surface, mesh->get_surface_override_material( surface ) );
-			}
-			part->set_transform( InSceneFrame( mesh, this ) );
-			copy->add_child( part );
+			own |= above == skip || above == skipToo || above == ObjectDB::get_instance( m_previewCopy ) || above == ObjectDB::get_instance( m_previewFigure );
 		}
-		add_child( copy, false, INTERNAL_MODE_BACK );
-		m_previewCopy = ObjectID( copy->get_instance_id() );
+		if ( own )
+		{
+			continue;
+		}
+		MeshInstance3D* part = memnew( MeshInstance3D );
+		part->set_mesh( mesh->get_mesh() );
+		for ( int surface = 0; surface < mesh->get_surface_override_material_count(); ++surface )
+		{
+			part->set_surface_override_material( surface, mesh->get_surface_override_material( surface ) );
+		}
+		part->set_transform( InSceneFrame( mesh, this ) );
+		copy->add_child( part );
 	}
+	return copy;
+}
+
+namespace
+{
+
+b3Vec3 PlaceOf( const ozz::math::Float4x4& m )
+{
+	float v[4];
+	ozz::math::StorePtrU( m.cols[3], v );
+	return b3Vec3{ v[0], v[1], v[2] };
+}
+
+b3Quat TurnOf( const ozz::math::Float4x4& m )
+{
+	float x[4], y[4], z[4];
+	ozz::math::StorePtrU( m.cols[0], x );
+	ozz::math::StorePtrU( m.cols[1], y );
+	ozz::math::StorePtrU( m.cols[2], z );
+	Quaternion q = Basis( Vector3( x[0], x[1], x[2] ), Vector3( y[0], y[1], y[2] ), Vector3( z[0], z[1], z[2] ) ).orthonormalized().get_rotation_quaternion();
+	return b3Quat{ { float( q.x ), float( q.y ), float( q.z ) }, float( q.w ) };
+}
+
+// Bends an arm of a pose so that its hand is at `to` and turned as `turn`, the elbow to the side
+// it was: what the game does to the view's arms for an item's offset (CinderboxSkeleton BendArm),
+// on the pose itself.
+void ReachTo( const anim::AnimSet& set, anim::Models& models, const anim::AnimSet::Arm& arm, b3Vec3 to, b3Quat turn )
+{
+	if ( arm.upper < 0 || arm.lower < 0 || arm.hand < 0 )
+	{
+		return;
+	}
+	b3Vec3 shoulder = PlaceOf( models[size_t( arm.upper )] );
+	b3Vec3 elbow = PlaceOf( models[size_t( arm.lower )] );
+	b3Vec3 wrist = PlaceOf( models[size_t( arm.hand )] );
+	float first = b3Distance( shoulder, elbow );
+	float second = b3Distance( elbow, wrist );
+	b3Vec3 reach = b3Sub( to, shoulder );
+	float far = b3Length( reach );
+	if ( first < 1e-4f || second < 1e-4f || far < 1e-4f )
+	{
+		return;
+	}
+	float d = std::clamp( far, std::abs( first - second ) + 1e-4f, ( first + second ) * 0.999f );
+	b3Vec3 along = b3MulSV( 1.0f / far, reach );
+	float ahead = ( first * first - second * second + d * d ) / ( 2.0f * d );
+	float out = std::sqrt( std::max( 0.0f, first * first - ahead * ahead ) );
+	b3Vec3 pole = b3Sub( elbow, shoulder );
+	b3Vec3 side = b3Sub( pole, b3MulSV( b3Dot( pole, along ), along ) );
+	side = b3Length( side ) > 1e-4f ? b3Normalize( side ) : b3Vec3{ 0.0f, -1.0f, 0.0f };
+	b3Vec3 bent = b3Add( shoulder, b3Add( b3MulSV( ahead, along ), b3MulSV( out, side ) ) );
+	anim::RotateSubtreeAbout( set, models, arm.upper, shoulder, anim::Arc( b3Normalize( b3Sub( elbow, shoulder ) ), b3Normalize( b3Sub( bent, shoulder ) ) ) );
+	b3Vec3 held = b3Add( shoulder, b3MulSV( d, along ) );
+	wrist = PlaceOf( models[size_t( arm.hand )] );
+	anim::RotateSubtreeAbout( set, models, arm.lower, bent, anim::Arc( b3Normalize( b3Sub( wrist, bent ) ), b3Normalize( b3Sub( held, bent ) ) ) );
+	wrist = PlaceOf( models[size_t( arm.hand )] );
+	b3Quat now = TurnOf( models[size_t( arm.hand )] );
+	b3Quat fix = b3MulQuat( turn, b3Quat{ { -now.v.x, -now.v.y, -now.v.z }, now.s } );
+	anim::RotateSubtreeAbout( set, models, arm.hand, wrist, fix );
+}
+
+} // namespace
+
+Dictionary CbItem::preview_view( Node* armsNode, Node* heldNode )
+{
+	Dictionary out;
+	auto* arms = Object::cast_to<CinderboxSkeleton>( armsNode );
+	auto* held = Object::cast_to<Node3D>( heldNode );
+	if ( m_previewHold == false || m_previewPose == nullptr || m_previewSet == nullptr || arms == nullptr || held == nullptr )
+	{
+		return out;
+	}
+	const anim::AnimSet& set = *m_previewSet;
+	// The pose as its animations have it, not yet aimed (CinderboxClient::FirstPersonBody, for a
+	// viewer that looks level and straight ahead: the body's frame faces +Z, its right is -X).
+	PreviewEvaluate( false );
+	anim::Models models = m_previewPose->Models();
+	int head = anim::FindJoint( set, "Head" );
+	int spine = anim::FindJoint( set, "Spine" );
+	int shoulders[2] = { anim::FindJoint( set, "LeftShoulder" ), anim::FindJoint( set, "RightShoulder" ) };
+	if ( head < 0 || spine < 0 || shoulders[0] < 0 || shoulders[1] < 0 )
+	{
+		return out;
+	}
+	const auto& rest = set.RestModels();
+	const b3Vec3 forward = { 0.0f, 0.0f, 1.0f }, right = { -1.0f, 0.0f, 0.0f }, up = { 0.0f, 1.0f, 0.0f };
+	int aimedFrom = m_previewAim && set.AimJoints().empty() == false ? set.AimJoints().back().first : -1;
+	auto between = [&]( const anim::Models& from ) {
+		return b3MulSV( 0.5f, b3Add( PlaceOf( from[size_t( shoulders[0] )] ), PlaceOf( from[size_t( shoulders[1] )] ) ) );
+	};
+	auto pinned = [&]() { return aimedFrom >= 0 ? PlaceOf( models[size_t( aimedFrom )] ) : between( models ); };
+	b3Vec3 pinnedAtRest = aimedFrom >= 0 ? PlaceOf( rest[size_t( aimedFrom )] ) : between( rest );
+	if ( aimedFrom >= 0 && set.AimTip() >= 0 )
+	{
+		// Aiming: the whole piece is turned so that the aimed arm is on the line of sight.
+		b3Vec3 line = b3Sub( PlaceOf( models[size_t( set.AimTip() )] ), pinned() );
+		if ( b3LengthSquared( line ) > 1e-8f )
+		{
+			anim::RotateSubtreeAbout( set, models, spine, pinned(), anim::Arc( b3Normalize( line ), forward ) );
+		}
+	}
+	// Its held point is where the rest pose has it under the head.
+	b3Vec3 restHead = PlaceOf( rest[size_t( head )] );
+	b3Vec3 eye = { 0.0f, restHead.y, 0.0f };
+	anim::TranslateSubtree( set, models, spine, b3Sub( b3Add( eye, b3Sub( pinnedAtRest, restHead ) ), pinned() ) );
+
+	// The item's place in the view: the hands turned about the carrying one and moved, the arms
+	// reaching from shoulders that stay.
+	if ( m_viewOffset.is_zero_approx() == false || m_viewRotation.is_zero_approx() == false )
+	{
+		b3Vec3 placed = b3Add( b3MulSV( float( m_viewOffset.x ), right ), b3Add( b3MulSV( float( m_viewOffset.y ), up ), b3MulSV( float( m_viewOffset.z ), forward ) ) );
+		Basis axes( Vector3( right.x, right.y, right.z ), Vector3( up.x, up.y, up.z ), Vector3( -forward.x, -forward.y, -forward.z ) );
+		Quaternion turned = ( axes * Basis::from_euler( m_viewRotation * float( Math_PI / 180.0 ) ) * axes.inverse() ).orthonormalized().get_rotation_quaternion();
+		b3Quat turn = { { float( turned.x ), float( turned.y ), float( turned.z ) }, float( turned.w ) };
+		const anim::AnimSet::Arm& carrying = set.ArmJoints( false );
+		if ( carrying.hand >= 0 )
+		{
+			b3Vec3 about = PlaceOf( models[size_t( carrying.hand )] );
+			for ( bool left : { false, true } )
+			{
+				const anim::AnimSet::Arm& arm = set.ArmJoints( left );
+				if ( arm.hand < 0 )
+				{
+					continue;
+				}
+				b3Vec3 at = PlaceOf( models[size_t( arm.hand )] );
+				b3Vec3 to = b3Add( b3Add( about, b3RotateVector( turn, b3Sub( at, about ) ) ), placed );
+				ReachTo( set, models, arm, to, b3MulQuat( turn, TurnOf( models[size_t( arm.hand )] ) ) );
+			}
+		}
+	}
+
+	arms->set_draw_bone_boxes( true );
+	arms->set_boxes_arms_only( true, m_viewLeftHand, m_viewRightHand );
+	arms->ApplyPose( set, models );
+	// A copy of the item in the hand (made again twice a second: the scene is being edited).
+	if ( held->get_child_count() == 0 || int( held->get_meta( "cb_copied", 0 ) ) >= 30 )
+	{
+		for ( int i = held->get_child_count() - 1; i >= 0; --i )
+		{
+			held->get_child( i )->queue_free();
+		}
+		held->add_child( CopyMeshes( held, arms ) );
+		held->set_meta( "cb_copied", 0 );
+	}
+	held->set_meta( "cb_copied", int( held->get_meta( "cb_copied", 0 ) ) + 1 );
 	Transform3D hand;
-	if ( figure->JointTransform( "RightHand", hand ) )
+	if ( arms->JointTransform( "RightHand", hand ) )
 	{
-		copy->set_transform( figure->get_transform() * hand * m_previewSocket * carry.affine_inverse() );
+		held->set_transform( arms->get_transform() * hand * m_previewSocket * CarryFrameUnder( this ).affine_inverse() );
 	}
+	// The eye: where the game's camera is for a look level and ahead (get_view_position).
+	Transform3D camera( Basis( Vector3( 0, 1, 0 ), float( Math_PI ) ), Vector3( 0.0f, anim::EyeHeight( set ), kEyeAhead ) );
+	out["eye"] = arms->get_transform() * camera;
+	out["fov"] = m_viewFov > 1.0 ? m_viewFov : 60.0;
+	return out;
 }
 
 Transform3D CbItem::CarryFrameUnder( const Node* root )

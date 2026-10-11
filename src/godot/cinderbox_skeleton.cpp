@@ -1,5 +1,6 @@
 #include "cinderbox_skeleton.h"
 
+#include "joint_math.h"
 #include "pose.h"
 #include "profile.h"
 
@@ -249,10 +250,18 @@ void CinderboxSkeleton::ApplyPose( const anim::AnimSet& set, const ozz::vector<o
 		Color body = m_bodyColor;
 		Color limbs = m_bodyColor.darkened( 0.25f );
 		int instance = 0;
+		const int shoulders[2] = { m_boxesArmsOnly ? anim::FindJoint( set, "LeftShoulder" ) : -1,
+								   m_boxesArmsOnly ? anim::FindJoint( set, "RightShoulder" ) : -1 };
 		for ( int j = 0; j < joints; ++j )
 		{
 			int p = parents[j];
-			if ( p < 0 )
+			// (The arms alone: what hangs below a shoulder that is shown.)
+			bool shown = m_boxesArmsOnly == false;
+			for ( int above = p; above >= 0 && shown == false; above = parents[above] )
+			{
+				shown = ( above == shoulders[0] && m_boxesArm[0] ) || ( above == shoulders[1] && m_boxesArm[1] );
+			}
+			if ( p < 0 || shown == false )
 			{
 				m_multimesh->set_instance_transform( instance, Transform3D( Basis().scaled( Vector3() ), Vector3() ) );
 				++instance;

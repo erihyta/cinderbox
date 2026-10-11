@@ -261,7 +261,18 @@ as boxes) stands a metre beside the item, holding a copy of it.
 | The hand's socket | the one of the character this checkout's server plays (`godot/characters/<name>/anim.cfg`); without a checkout, the built-in one |
 | How true it is | it is posed by the code that poses players in the game. It is one state of one pack on the placeholder's proportions: not a swing, not another character |
 
-Nothing of it is saved with the scene. `check_item_preview.gd` draws it outside the editor
+**First person, beside the 3D view.** While Hold is on, a panel to the right of the 3D view shows
+what the holder sees: the arms and the item as the game draws them for the holder's own view, with
+the item's `view_offset`, `view_rotation`, `view_fov` and hands. Change a number in the inspector
+and the picture follows, so the settings are found by looking instead of by playing.
+
+| It shows | It does not |
+|---|---|
+| the pose of the pack's starting state, steadied under the eye as in the game | a use (a swing, a shot): only that one state |
+| the arms as bone boxes on the placeholder's proportions | your character's mesh |
+| a look level and straight ahead | the floating mode's picture (`view_camera`: use that camera's own Preview) |
+
+Nothing of either is saved with the scene. `check_item_preview.gd` draws both outside the editor
 ([testing](testing.md)).
 
 ### First person
@@ -290,8 +301,9 @@ first person: the same clips at the same moment, drawn again for the eye.
 - **Why an offset is usually needed.** A third-person hold is made to be seen from outside: the
   bat's rests at the hip, 60 cm below the eye and behind it. The offset and the rotation bring it
   into the picture; the animation still plays through them.
-- **To find the numbers**: `--view-probe=N` prints where the hand is from the camera
-  ([testing](testing.md)).
+- **To find the numbers**: tick Preview > Hold on the item and watch the First person panel
+  ([above](#seeing-it-in-a-hand-in-the-editor)); in the game, `--view-probe=N` prints where the hand is
+  from the camera ([testing](testing.md)).
 - **A hand out of reach** stays at the arm's length, and the item stays in it.
 
 | Item | Settings |
