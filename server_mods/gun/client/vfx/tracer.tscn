@@ -1,7 +1,4 @@
-[gd_scene load_steps=3 format=3]
-
-; One metre long along -Z from the origin: bindings with beam = true stretch it from where a shot
-; started to where it ended.
+[gd_scene format=3 uid="uid://cvmrq4hwdqlbd"]
 
 [sub_resource type="StandardMaterial3D" id="Mat"]
 transparency = 1
@@ -12,9 +9,9 @@ albedo_color = Color(1, 0.9, 0.55, 0.75)
 material = SubResource("Mat")
 size = Vector3(0.018, 0.018, 1)
 
-[node name="Tracer" type="Node3D"]
+[node name="Tracer" type="Node3D" unique_id=758685851]
 
-[node name="Beam" type="MeshInstance3D" parent="."]
+[node name="Beam" type="MeshInstance3D" parent="." unique_id=1277051809]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.5)
-mesh = SubResource("Box")
 cast_shadow = 0
+mesh = SubResource("Box")
