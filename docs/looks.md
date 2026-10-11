@@ -183,6 +183,9 @@ are typed by hand, and one typed wrong used to read as 0 and say nothing. The ed
 | A name nobody declares | the node says so in the scene tree (the yellow warning), with the closest name there is: `conditions: no mod declares "combat.ded" (did you mean combat.dead?)`. Checked: names, expressions, formats (`{...}`), `changes`, a click's `sets` |
 | Publishing | `tools\publish_mod.ps1` checks every scene of the project the same way, and a name nobody declares stops it. By hand: `godot --headless --path <project> --script <repo>/godot/addons/cinderbox_maps/check_names.gd` |
 
+- **Effects cast no shadows unless they say so**: a particle node's Cast Shadow is on by default in Godot, and a muzzle flash then throws square shadows on the ground. The shipped effects have it off (`cast_shadow = 0`); set it on your own.
+- **A one-shot particle node is started with `restart`** (a `CbReaction` with `method = restart`, `delay` for the moment in the move). Switching `emitting` on from an animation does nothing while the last burst is still out, so quick repeats show none.
+- **What a shot shows comes from the item**: a `Node3D` at the muzzle in the item's scene, with the flash and tracer reactions under it (`subject` `^^`, the tracer's `place_node` `..`). In first person it is then at the muzzle of the view model too.
 - **What is not a mod's to declare is left alone**: the reader's own names (`speed`, `grounded`, `is_local`, `{name}`, `{rank}`), `ui.` values, `event.` and `slot.` names, the engine's cues (`footstep`, `impact`, `jumped`, ...), `held.jump`, and `{key:...}` (it may be a `CbKey` of the look's own).
 - **Every compiled mod counts**, the ones a server would not run by default too: a look may be written for any of them.
 - **Without the file nothing is offered and nothing is said**: a look can be written with no server at hand. The file is not shipped in a pack and not in the repository.

@@ -660,10 +660,20 @@ void CinderboxSkeleton::KeepArms( Skeleton3D* rig, bool left, bool right )
 	const Vector3 nothing( 0.0001f, 0.0001f, 0.0001f );
 	Transform3D kept[2] = { rig->get_bone_global_pose( shoulders[0] ), rig->get_bone_global_pose( shoulders[1] ) };
 	rig->set_bone_pose_scale( hips, nothing );
+	// The chest shrinks between the shoulders, not at the hips: what is skinned to both it and a
+	// shoulder would otherwise be drawn out from the arm all the way down (seen looking down).
+	Vector3 between = ( kept[0].origin + kept[1].origin ) * 0.5f;
+	for ( const char* name : { "Chest", "UpperChest" } )
+	{
+		if ( int bone = BoneOf( name ); bone >= 0 )
+		{
+			rig->set_bone_global_pose( bone, Transform3D( Basis().scaled( nothing ), between ) );
+		}
+	}
 	for ( int side = 0; side < 2; ++side )
 	{
 		bool shown = side == 0 ? left : right;
-		rig->set_bone_global_pose( shoulders[side], shown ? kept[side] : Transform3D( Basis().scaled( nothing ), kept[side].origin ) );
+		rig->set_bone_global_pose( shoulders[side], shown ? kept[side] : Transform3D( Basis().scaled( nothing ), between ) );
 	}
 }
 
@@ -841,7 +851,8 @@ void CinderboxSkeleton::CutBody( Skeleton3D* target )
 	// view.
 	const Vector3 nothing( 0.0001f, 0.0001f, 0.0001f );
 	Transform3D kept[2] = { target->get_bone_global_pose( shoulders[0] ), target->get_bone_global_pose( shoulders[1] ) };
-	Vector3 behind = ( kept[0].origin + kept[1].origin ) * 0.5f;
+	// (Without the arms, all of it goes to the waist: nothing is left to stretch up to the shoulders.)
+	Vector3 behind = m_firstPersonArms ? ( kept[0].origin + kept[1].origin ) * 0.5f : target->get_bone_global_pose( spine ).origin;
 	target->set_bone_pose_scale( spine, nothing );
 	for ( int bone : { chest, upper } )
 	{
