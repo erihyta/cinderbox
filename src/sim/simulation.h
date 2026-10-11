@@ -138,7 +138,22 @@ public:
 		uint64_t charactersNs = 0; // the characters' movement, motions and animation
 		uint64_t physicsNs = 0;	   // the physics step
 		uint64_t afterNs = 0;	   // what is read back from the physics, and the rest
+		// The physics step's own parts, in milliseconds (the physics library's figures).
+		double pairsMs = 0.0;	   // finding new pairs of shapes that may touch
+		double collideMs = 0.0;	   // working out the contacts
+		double solveMs = 0.0;	   // the solver, all of it: the four below are inside it
+		double constraintsMs = 0.0; // contacts and joints solved
+		double transformsMs = 0.0; // bodies moved, their boxes kept
+		double refitMs = 0.0;	   // the tree of boxes kept
+		double sleepMs = 0.0;	   // islands put to sleep
+		double sensorsMs = 0.0;
 	};
+	// What the physics world holds now.
+	struct PhysicsCounts
+	{
+		int bodies = 0, awakeBodies = 0, shapes = 0, contacts = 0, awakeContacts = 0, joints = 0, islands = 0;
+	};
+	PhysicsCounts CountPhysics() const;
 	const StepProfile& Profile() const
 	{
 		return m_profile;

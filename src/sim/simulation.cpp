@@ -1431,6 +1431,21 @@ void Simulation::HandleOutOfBounds()
 	}
 }
 
+Simulation::PhysicsCounts Simulation::CountPhysics() const
+{
+	PhysicsArena::Scope scope( *m_arena );
+	b3Counters c = b3World_GetCounters( m_physicsWorld );
+	PhysicsCounts out;
+	out.bodies = c.bodyCount;
+	out.awakeBodies = b3World_GetAwakeBodyCount( m_physicsWorld );
+	out.shapes = c.shapeCount;
+	out.contacts = c.contactCount;
+	out.awakeContacts = c.awakeContactCount;
+	out.joints = c.jointCount;
+	out.islands = c.islandCount;
+	return out;
+}
+
 void Simulation::Step( const InputFrame& frame )
 {
 	if ( frame.tick != m_globals.tick )
@@ -1459,6 +1474,17 @@ void Simulation::Step( const InputFrame& frame )
 
 	b3World_Step( m_physicsWorld, m_config.TimeStep(), int( m_config.subSteps ) );
 	spent( m_profile.physicsNs );
+	{
+		b3Profile parts = b3World_GetProfile( m_physicsWorld );
+		m_profile.pairsMs += parts.pairs;
+		m_profile.collideMs += parts.collide;
+		m_profile.solveMs += parts.solve;
+		m_profile.constraintsMs += parts.constraints;
+		m_profile.transformsMs += parts.transforms;
+		m_profile.refitMs += parts.refit;
+		m_profile.sleepMs += parts.sleepIslands;
+		m_profile.sensorsMs += parts.sensors;
+	}
 
 	CollectImpacts();
 	SyncFromPhysics();
