@@ -141,6 +141,36 @@ ItemKindHandle Declarations::ItemKind( const std::string& name )
 	return { int( m_schema.itemKinds.size() - 1 ) };
 }
 
+std::vector<Declarations::OwnItem> Declarations::ItemsOfLook()
+{
+	std::vector<OwnItem> out;
+	if ( !m_lookItems )
+	{
+		return out;
+	}
+	for ( LookItem& look : m_lookItems( m_mod ) )
+	{
+		OwnItem own;
+		own.kind = ItemKind( look.kind );
+		if ( own.kind.Valid() == false )
+		{
+			continue;
+		}
+		if ( look.pack.empty() == false )
+		{
+			ItemLayers( own.kind, AnimPack( look.pack ) );
+		}
+		if ( look.holster.empty() == false )
+		{
+			ItemProperty( own.kind, "holster", Socket( look.holster ) );
+		}
+		// (Its numbers reach every mod as the kind's properties when its body is read.)
+		own.look = std::move( look );
+		out.push_back( std::move( own ) );
+	}
+	return out;
+}
+
 ItemKindHandle Declarations::ItemKind( const std::string& name, const ItemShape& shape )
 {
 	ItemKindHandle handle = ItemKind( name );

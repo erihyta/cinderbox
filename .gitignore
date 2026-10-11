@@ -45,6 +45,19 @@ server_mods/*/client/placeholder/
 # Paid assets: never on GitHub (the repo is public). Keep the purchased packs here, outside git.
 Universal Animation Library*/
 /paid/
+# The rifle (a gun of the gun mod's look, made with licensed animations): its scene, pack, effects
+# and sounds are local only. The gun mod is in the repository with the pistol; a checkout without
+# these has no rifle. The gun mod's published item names what is in it, so it is local too.
+server_mods/gun/client/prefabs/rifle.tscn
+server_mods/gun/client/animation_packs/rifle_hold.tscn
+server_mods/gun/client/animation_packs/source/*ifle*
+server_mods/gun/client/animation_packs/source/idle.fbx*
+server_mods/gun/client/vfx/rifle_*
+server_mods/gun/client/assets/sfx/rifle_*
+server_mods/gun/client/anim/gun.rifle_hold/
+server_mods/gun/client/items/gun.rifle.cfg
+server_mods/gun/client_item.cfg
+# (Where the rifle's look was before the gun mod: kept on disk, never in git.)
 # The rifle mod's look (its scene, effects and its animation pack, made from licensed animations):
 # local only. The server mod is in the repository; without the look a rifle is a plain box that
 # is held in the character's own "rifle" stance.

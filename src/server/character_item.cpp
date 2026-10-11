@@ -5,6 +5,7 @@
 #include "miniz.h"
 
 #include <cstdlib>
+#include <filesystem>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -431,6 +432,121 @@ bool LoadMotionsFolder( const std::string& dir, const std::string& set, std::str
 	all << in.rdbuf();
 	text = all.str();
 	return true;
+}
+
+namespace
+{
+
+// One items/<kind>.cfg as a LookItem (its body is read where the body is needed: ParseItemShape).
+LookItem ParseLookItem( const std::string& kind, const std::string& text )
+{
+	LookItem item;
+	item.kind = kind;
+	std::istringstream lines( text );
+	std::string line;
+	while ( std::getline( lines, line ) )
+	{
+		std::istringstream words( line );
+		std::string key, name;
+		if ( !( words >> key ) || key[0] == '#' )
+		{
+			continue;
+		}
+		if ( key == "property" )
+		{
+			float value = 0.0f;
+			if ( words >> name >> value )
+			{
+				item.properties[name] = value;
+			}
+		}
+		else if ( key == "pack" )
+		{
+			words >> item.pack;
+		}
+		else if ( key == "holster" )
+		{
+			words >> item.holster;
+		}
+	}
+	return item;
+}
+
+} // namespace
+
+bool ListLookItemsItem( const std::string& zipPath, const ModItem& item, std::vector<LookItem>& out, std::string& error )
+{
+	std::ifstream in( zipPath, std::ios::binary );
+	if ( in.good() == false )
+	{
+		error = "no workshop item at " + zipPath;
+		return false;
+	}
+	std::ostringstream all;
+	all << in.rdbuf();
+	const std::string bytes = all.str();
+	if ( Sha256Hex( bytes.data(), bytes.size() ) != item.sha256 )
+	{
+		error = zipPath + " is not the item the manifest names";
+		return false;
+	}
+	mz_zip_archive zip = {};
+	if ( mz_zip_reader_init_mem( &zip, bytes.data(), bytes.size(), 0 ) == MZ_FALSE )
+	{
+		error = zipPath + " is not a zip";
+		return false;
+	}
+	std::map<std::string, LookItem> found;
+	for ( mz_uint i = 0; i < mz_zip_reader_get_num_files( &zip ); ++i )
+	{
+		char name[512] = {};
+		mz_zip_reader_get_filename( &zip, i, name, sizeof( name ) );
+		std::string path = name;
+		if ( path.rfind( "items/", 0 ) != 0 || path.size() < 11 || path.compare( path.size() - 4, 4, ".cfg" ) != 0 )
+		{
+			continue;
+		}
+		size_t size = 0;
+		void* data = mz_zip_reader_extract_to_heap( &zip, i, &size, 0 );
+		if ( data == nullptr )
+		{
+			continue;
+		}
+		std::string kind = path.substr( 6, path.size() - 10 );
+		found[kind] = ParseLookItem( kind, std::string( static_cast<const char*>( data ), size ) );
+		mz_free( data );
+	}
+	mz_zip_reader_end( &zip );
+	out.clear();
+	for ( auto& [kind, look] : found )
+	{
+		out.push_back( std::move( look ) );
+	}
+	return true;
+}
+
+bool ListLookItemsFolder( const std::string& dir, std::vector<LookItem>& out )
+{
+	out.clear();
+	std::error_code ignored;
+	std::map<std::string, LookItem> found;
+	for ( const auto& entry : std::filesystem::directory_iterator( std::filesystem::path( dir ) / "items", ignored ) )
+	{
+		if ( entry.path().extension() != ".cfg" )
+		{
+			continue;
+		}
+		std::ifstream in( entry.path(), std::ios::binary );
+		std::ostringstream all;
+		all << in.rdbuf();
+		std::string kind = entry.path().stem().string();
+		found[kind] = ParseLookItem( kind, all.str() );
+	}
+	for ( auto& [kind, look] : found )
+	{
+		out.push_back( std::move( look ) );
+	}
+	return ignored ? false : true;
 }
 
 bool ItemServerParts( const std::string& zipPath, const ModItem& item, std::map<std::string, std::string>& parts, std::string& error )

@@ -81,6 +81,8 @@ public:
 		// properties, "pickup.hold_seconds".)
 		m_hand = declare.Socket( "RightHand" );
 		declare.ItemProperty( m_bat, "inventory.start", 1.0f );
+		// (This mod says when a bat is used: the item mod's own cue on the press is not wanted.)
+		declare.ItemProperty( m_bat, "item.ruled", 1.0f );
 		declare.ItemProperty( m_bat, "holster", declare.Socket( "Back" ) );
 		m_hot = declare.Field( "melee.hot", BoardType::Bool );
 		m_full = declare.Layer( "full" );

@@ -37,6 +37,7 @@ bool GameServer::Start( const ServerOptions& options )
 	m_options = options;
 
 	mods::Declarations declarations;
+	declarations.SetLookItems( options.lookItems );
 	for ( const auto& mod : m_mods )
 	{
 		declarations.BeginMod( mod->Name() );

@@ -75,6 +75,13 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_use" ), &CbItem::get_use );
 	ClassDB::bind_method( D_METHOD( "set_slot", "value" ), &CbItem::set_slot );
 	ClassDB::bind_method( D_METHOD( "get_slot" ), &CbItem::get_slot );
+	ClassDB::bind_method( D_METHOD( "set_animation_pack", "value" ), &CbItem::set_animation_pack );
+	ClassDB::bind_method( D_METHOD( "get_animation_pack" ), &CbItem::get_animation_pack );
+	ClassDB::bind_method( D_METHOD( "set_holster", "value" ), &CbItem::set_holster );
+	ClassDB::bind_method( D_METHOD( "get_holster" ), &CbItem::get_holster );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "animation_pack", PROPERTY_HINT_PLACEHOLDER_TEXT, "none: the character's own" ), "set_animation_pack",
+				  "get_animation_pack" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "holster", PROPERTY_HINT_PLACEHOLDER_TEXT, "none: out of sight (Hip, Back)" ), "set_holster", "get_holster" );
 	ADD_GROUP( "Slots", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "use", PROPERTY_HINT_ENUM, "Select it then the use button,Its slot key uses it" ), "set_use",
 				  "get_use" );
@@ -526,8 +533,8 @@ void CbItem::_process( double delta )
 	{
 		return;
 	}
-	// The pack: the one named, or the first the project has baked.
-	String pack = m_previewPack;
+	// The pack: the one named, or the item's own (its Animation Pack), or the first the project has baked.
+	String pack = m_previewPack.is_empty() ? m_animationPack : m_previewPack;
 	if ( pack.is_empty() )
 	{
 		PackedStringArray packs = DirAccess::get_directories_at( "res://anim" );
@@ -977,6 +984,15 @@ Dictionary CbItem::bake() const
 		Quaternion q = t.basis.get_rotation_quaternion();
 		text += vformat( "grip %.4f %.4f %.4f %.5f %.5f %.5f %.5f %d\n", t.origin.x, t.origin.y, t.origin.z, q.x, q.y, q.z, q.w,
 						 m_otherHand == OTHER_AS_ANIMATED ? 2 : ( m_otherHand == OTHER_AT_MARKER_TURNED ? 1 : 0 ) );
+	}
+	// What a mod that takes its items from its look reads besides: the pack, and the holster.
+	if ( m_animationPack.is_empty() == false && m_animationPack.contains( " " ) == false )
+	{
+		text += "pack " + m_animationPack + "\n";
+	}
+	if ( m_holster.is_empty() == false && m_holster.contains( " " ) == false )
+	{
+		text += "holster " + m_holster + "\n";
 	}
 	// What the game reads (the server skips these): which scene the kind is drawn as, what it is
 	// called, and how its holder's arms sit in first person.

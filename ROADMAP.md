@@ -113,7 +113,7 @@ One step from an edit to playing it: the client starts the server.
 | Stacks | one item a slot | a stack size on the `CbItem`, a count per slot |
 | Containers | players only | slots on any entity: a chest, a shop, a corpse |
 | Intents a mod declares | select, move and drop | "buy item 3", "vote 2": a `CbClick` sends it, the mod answers; no client code |
-| The holster | declared in C++ | on the `CbItem` |
+| The holster | **done (M137)**: on the `CbItem`, with the item's animation pack, for a mod that takes its items from its look | |
 | An item's HUD | a scene of its mod's | in the item's own scene, shown while it is selected |
 | The rules API | C++ in each mod | what a mod decides about containers, named |
 | Checked across compilers | not yet | slots in the reference scenario |

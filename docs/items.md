@@ -44,8 +44,8 @@ reaction on the swing is simply quiet. The pistol works the same way.
 A mod taking its item away destroys the NetId `ctx.HeldItem( slot, socket )` gives, not
 `ItemTarget`: another mod may put its item in that socket in the same tick (a weapon swap), and
 `ItemTarget` would find that one. What is in the hand decides: the melee mod swings any `melee.bat`
-in the right hand and the pistol fires any `pistol.gun`, wherever it came from. Looks follow the
-same rule: the pistol's HUD and its predicted shot ask `pistol.gun` (true while the player has one
+in the right hand and the pistol fires any `gun.pistol`, wherever it came from. Looks follow the
+same rule: the pistol's HUD and its predicted shot ask `gun.pistol` (true while the player has one
 in use), never which slot is out, so a picked-up pistol shows its ammo and a holstered one does not.
 
 ## The inventory
@@ -98,8 +98,8 @@ bool trigger = ctx.Using( slot, m_gun );     // the use button is down with one 
 ```
 
 - **The use button is the engine's**, like jump and sprint: no mod declares a `fire` action any more.
-- **`<kind>.used`**: where a mod declares that event (`declare.Event( "pistol.gun.used" )`), every simulation records it on the tick of the use, at the player, with the item as the other entity. The player's own simulation has it at once, so a `CbReaction` on it plays on the click with no `CbPrediction`.
-- **What using it does** is the mod's: the pistol fires (`pistol.fired`), and that answer still comes from the server, so its look predicts it: a `CbPrediction` (action `use`) in the item's own scene.
+- **`<kind>.used`**: where a mod declares that event (`declare.Event( "gun.pistol.used" )`), every simulation records it on the tick of the use, at the player, with the item as the other entity. The player's own simulation has it at once, so a `CbReaction` on it plays on the click with no `CbPrediction`.
+- **What using it does** is the mod's: the pistol fires (`item.use`), and that answer still comes from the server, so its look predicts it: a `CbPrediction` (action `use`) in the item's own scene.
 - A dead or frozen player uses nothing; a held button is one use.
 
 An item is **in use** (in a hand) or **stowed** (carried, in no hand). A stowed item is in no hand:
@@ -248,6 +248,44 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 | two `Marker3D`s | [where the hands hold it](#both-hands-on-an-item): the item's `carry_grip` and `other_grip` name them |
 | anything else | its look: meshes, lights, particles; `CbReaction` nodes for what it shows (`subject` `^^`: whoever holds it); `CbPrediction` nodes for what its own use looks like on the click, which speak only for the copy in the viewer's hand ([Predictions](looks.md#predictions)) |
 
+### An item with no code
+
+A mod can take its items from its look: `declare.ItemsOfLook()` in its `Declare`, and every scene of
+its client project whose root is a `CbItem` is an item kind of the mod. What the scene says is all
+there is to say:
+
+| On the `CbItem` | The server reads it as |
+|---|---|
+| `kind` | the item kind (`gun.pistol`): the scene is the declaration |
+| the body, `mass`, the grips | as for any item |
+| `properties` | numbers any mod may read: the rules that apply to it (`gun.damage` makes it a gun), its `slot`, `inventory.start` |
+| `animation_pack` | the pack it brings while it is held (`gun.pistol_hold`): a `CbAnimPack` scene of the same project |
+| `holster` | the socket it hangs in while it is put away (`Hip`, `Back`) |
+
+What it looks and sounds like when it is used is in the scene too, on cues that do not name the
+item (the `item` mod's):
+
+| Cue | Means | Who says it |
+|---|---|---|
+| `item.use` | it did what it does: a shot, a swing | the mod that rules the item (`gun`); for an item nobody rules, the `item` mod on the press |
+| `item.use_failed` | it was tried and could not: an empty magazine | the mod that rules it |
+| `item.use2` | its second use (right mouse) | a mod that gives it one (`mark`), or the `item` mod |
+| `item.hit` | the use landed: `event.value` is what it did, the point is where | the mod that rules it |
+| `item.reload` | it is being made ready again | the mod that rules it |
+
+**One cue, three listeners.** They are separate things, and each is authored in its own place:
+
+| Listener | Where | Does | Seen by |
+|---|---|---|---|
+| a `CbReaction` in the item's scene (subject `^^`, the holder) | `prefabs/<item>.tscn` | the item's own looks and sounds: a flash at its `Muzzle`, a tracer, a sound, sparks where it hit. Only the item in the hand answers; one put away is silent | everyone |
+| a transition of the item's animation pack | `animation_packs/<pack>.tscn`, the AnimationTree: a condition named like the cue | the **body's** animation: the recoil, the swing. It runs in the simulation, so hit tests see it | everyone, the server too |
+| a `CbPrediction` in the item's scene | `prefabs/<item>.tscn` | says the cue at once for the player who presses, before the server answers | that player |
+
+A reaction does not move the body, and a state machine plays no sound: a shot is both, on one cue.
+
+So a second gun is a copy of `prefabs/pistol.tscn` with other numbers, another model and its own
+reaction nodes: published, it is in the game.
+
 ### Seeing it in a hand, in the editor
 
 Select the item's root and tick **Preview > Hold**. A stand-in figure (the SDK skeleton's bones,
@@ -272,12 +310,12 @@ and the picture follows, so the settings are found by looking instead of by play
 | the arms as bone boxes on the placeholder's proportions | your character's mesh |
 | a look level and straight ahead | the floating mode's picture (`view_camera`: use that camera's own Preview) |
 
-**A cue, in both.** Name an event in **Preview > Cue** (`melee.swing`, `pistol.fired`) and press
+**A cue, in both.** Name an event in **Preview > Cue** (`melee.swing`, `item.use`) and press
 **Fire the cue**. On the figure and in the First person panel alike:
 
 | What plays | From |
 |---|---|
-| the animation | the pack's state machine, which runs for real: a state entered on the event (`Shoot` on `pistol.fired`), or on a stance a `CbPrediction` of the item sets with that cue (`melee_swing`), held for the prediction's cooldown |
+| the animation | the pack's state machine, which runs for real: a state entered on the event (`Shoot` on `item.use`), or on a stance a `CbPrediction` of the item sets with that cue (`melee_swing`), held for the prediction's cooldown |
 | the item's effects | the item in the hand is a whole copy of the scene under a director of its own, so its `CbReaction` nodes play: flames, sparks, a muzzle flash with its light, a tracer |
 | the mod's world reactions | the project's `vfx/reactions*.tscn` are under the figure's director too: a swing's sound |
 

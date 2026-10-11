@@ -4,6 +4,7 @@
 // streams the input frames it actually used. It never rolls back: a late input is replaced by the
 // player's previous input.
 
+#include "look_item.h"
 #include "anim_graph.h"
 #include "character_item.h"
 #include "hit_test.h"
@@ -59,6 +60,9 @@ struct ServerOptions
 	// Reads a mod's motion set (motions/<set>.cfg in its workshop item) into `text`. Unset or false:
 	// the set does nothing.
 	std::function<bool( const std::string& mod, const std::string& set, std::string& text, std::string& error )> loadMotions;
+	// Every item of a mod's look (items/*.cfg of its workshop item): for a mod that takes its
+	// items from its scenes (Declarations::ItemsOfLook). Without it such a mod has none.
+	std::function<std::vector<LookItem>( const std::string& mod )> lookItems;
 	// Reads an item kind's body from a mod's workshop item (items/<kind>.cfg, baked from its scene).
 	// Unset or false: the kind keeps the body its mod declared, or a small box.
 	std::function<bool( const std::string& mod, const std::string& kind, ItemShape& shape, std::string& error,

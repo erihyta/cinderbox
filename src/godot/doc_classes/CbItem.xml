@@ -36,6 +36,9 @@
 		</method>
 	</methods>
 	<members>
+		<member name="holster" type="String" setter="set_holster" getter="get_holster" default="&quot;&quot;">
+			The socket the item hangs in while it is put away ([code]Hip[/code], [code]Back[/code]); empty: out of sight. Read by a server mod that takes its items from its look.
+		</member>
 		<member name="kind" type="String" setter="set_kind" getter="get_kind" default="&quot;&quot;">
 			The kind this scene is, in one word: the name a server mod declares ([code]melee.bat[/code]). The baked file is named after it, and a project has one scene per kind.
 		</member>
@@ -61,10 +64,13 @@
 			With [member preview_hold]: the carrying arm is aimed level, as it is for an item whose mod makes the holder face the camera (a gun).
 		</member>
 		<member name="preview_pack" type="String" setter="set_preview_pack" getter="get_preview_pack" default="&quot;&quot;">
-			The pack [member preview_hold] plays (a folder of [code]res://anim[/code], such as [code]melee.hold[/code]); empty: the first there is. The pack is shown in the state it starts in.
+			The pack [member preview_hold] plays (a folder of [code]res://anim[/code], such as [code]melee.hold[/code]); empty: the item's own [member animation_pack], or the first there is.
 		</member>
 		<member name="slot" type="int" setter="set_slot" getter="get_slot" default="0">
 			The slot it goes to when a player comes to carry one: 1 is the first. What is there makes room (to a free slot, or onto the floor). 0: the first free slot.
+		</member>
+		<member name="animation_pack" type="String" setter="set_animation_pack" getter="get_animation_pack" default="&quot;&quot;">
+			The animation pack the item brings ([code]gun.pistol_hold[/code]: a [CbAnimPack] scene of this project, by its name): while one is held, the pack's layers play instead of the holder's own. Empty: the character's own animations. Read by a server mod that takes its items from its look ([code]declare.ItemsOfLook()[/code]).
 		</member>
 		<member name="carry_grip" type="NodePath" setter="set_carry_grip" getter="get_carry_grip" default="NodePath(&quot;&quot;)">
 			The marker the item is carried at: this point is in the hand's socket (whichever hand the item is in), its -Z along the fingers and +Y up. Move or turn the marker, not the model: a mesh imported with its origin anywhere is held where this is. Empty: the item is carried at its scene's origin.

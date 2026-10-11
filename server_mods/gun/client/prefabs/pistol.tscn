@@ -25,8 +25,23 @@ material = SubResource("Metal")
 size = Vector3(0.01, 0.012, 0.012)
 
 [node name="Pistol" type="CbItem" unique_id=1499270042]
-kind = "pistol.gun"
+kind = "gun.pistol"
 display_name = "Pistol"
+properties = {
+"gun.automatic": 0.0,
+"gun.damage": 25.0,
+"gun.fire_seconds": 0.2,
+"gun.kill_push": 6.0,
+"gun.magazine": 12.0,
+"gun.prop_push": 4.0,
+"gun.range": 80.0,
+"gun.reload_seconds": 1.5,
+"inventory.start": 1.0,
+"mark.range": 80.0,
+"mark.seconds": 1.0
+}
+animation_pack = "gun.pistol_hold"
+holster = "Hip"
 slot = 1
 carry_grip = NodePath("Carry")
 other_hand = 3
@@ -59,13 +74,13 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.014388949, 0.0062951446
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.04, -0.175)
 
 [node name="Flash" type="CbReaction" parent="Muzzle" unique_id=1276072186]
-event = "pistol.fired"
+event = "item.use"
 subject = NodePath("^^")
 scene = "res://vfx/muzzle_flash.tscn"
 scene_lifetime = 0.3
 
 [node name="Tracer" type="CbReaction" parent="Muzzle" unique_id=56869105]
-event = "pistol.fired"
+event = "item.use"
 subject = NodePath("^^")
 scene = "res://vfx/tracer.tscn"
 scene_lifetime = 0.06
@@ -73,7 +88,7 @@ place = 3
 place_node = NodePath("..")
 
 [node name="ScanBeam" type="CbReaction" parent="Muzzle" unique_id=1889618647]
-event = "pistol.scan"
+event = "item.use2"
 subject = NodePath("^^")
 scene = "res://vfx/scan_beam.tscn"
 scene_lifetime = 0.15
@@ -82,19 +97,90 @@ place_node = NodePath("..")
 
 [node name="PredictFire" type="CbPrediction" parent="." unique_id=971389919]
 action = "use"
-cue = "pistol.fired"
-conditions = PackedStringArray("pistol.ammo > 0", "!pistol.reloading", "!combat.dead")
+cue = "item.use"
+conditions = PackedStringArray("gun.ammo > 0", "!gun.reloading", "!combat.dead")
 cooldown = 0.19
-changes = PackedStringArray("pistol.ammo -= 1")
+changes = PackedStringArray("gun.ammo -= 1")
 
 [node name="PredictDry" type="CbPrediction" parent="." unique_id=441374804]
 action = "use"
-cue = "pistol.dry"
-conditions = PackedStringArray("pistol.ammo == 0", "!pistol.reloading", "!combat.dead")
+cue = "item.use_failed"
+conditions = PackedStringArray("gun.ammo == 0", "!gun.reloading", "!combat.dead")
 cooldown = 0.19
 
 [node name="PredictScan" type="CbPrediction" parent="." unique_id=790448448]
-action = "mark"
-cue = "pistol.scan"
-conditions = PackedStringArray("!pistol.reloading", "!combat.dead")
+action = "use2"
+cue = "item.use2"
+conditions = PackedStringArray("!gun.reloading", "!combat.dead")
 cooldown = 0.95
+
+[node name="ShotSound" type="CbReaction" parent="."]
+event = "item.use"
+subject = NodePath("^^")
+place = 4
+place_node = NodePath("../Muzzle")
+sound = "res://assets/sfx/gunshot.wav"
+volume_db = -5.0
+pitch_jitter = 0.06
+max_distance = 70.0
+
+[node name="DrySound" type="CbReaction" parent="."]
+event = "item.use_failed"
+subject = NodePath("^^")
+place = 4
+place_node = NodePath("../Muzzle")
+sound = "res://assets/sfx/dry_click.wav"
+volume_db = -8.0
+max_distance = 12.0
+
+[node name="ReloadSound" type="CbReaction" parent="."]
+event = "item.reload"
+subject = NodePath("^^")
+place = 4
+place_node = NodePath("../Muzzle")
+sound = "res://assets/sfx/reload.wav"
+volume_db = -10.0
+max_distance = 25.0
+
+[node name="HitSurface" type="CbReaction" parent="."]
+event = "item.hit"
+subject = NodePath("^^")
+conditions = PackedStringArray("event.value == 0")
+scene = "res://vfx/bullet_spark.tscn"
+scene_lifetime = 1.0
+place = 1
+sound = "res://assets/sfx/ricochet.wav"
+volume_db = -16.0
+pitch_jitter = 0.3
+max_distance = 30.0
+
+[node name="HitPlayer" type="CbReaction" parent="."]
+event = "item.hit"
+subject = NodePath("^^")
+conditions = PackedStringArray("event.value > 0")
+scene = "res://vfx/hit_puff.tscn"
+scene_lifetime = 1.0
+place = 1
+sound = "res://assets/sfx/body_hit.wav"
+volume_db = -8.0
+pitch_jitter = 0.15
+max_distance = 40.0
+
+[node name="HitMarker" type="CbReaction" parent="."]
+event = "item.hit"
+subject = NodePath("^^")
+conditions = PackedStringArray("is_local", "event.value > 0")
+place = 4
+place_node = NodePath("^^/Head")
+sound = "res://assets/sfx/hit_marker.wav"
+volume_db = -6.0
+
+[node name="MarkSound" type="CbReaction" parent="."]
+event = "item.use2"
+subject = NodePath("^^")
+place = 4
+place_node = NodePath("../Muzzle")
+sound = "res://assets/sfx/dry_click.wav"
+volume_db = -4.0
+pitch_scale = 1.8
+max_distance = 25.0
