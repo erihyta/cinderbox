@@ -75,7 +75,7 @@ wrong one is silent. This step joins the two.
 | Publishing checks names | **done (M119)**: `check_names.gd` runs over every scene before a look is packed |
 | Names inside expressions | completion is for properties that hold one name; inside a condition or a format a name is checked but not offered while typing: an editor for expressions |
 | Names of other servers | the file is what *this* checkout's server compiles; a look for a mod built elsewhere needs that server's file |
-| An item in the hand | **done (M133)**: `CbItem` Preview > Hold: a stand-in figure beside the item holds a copy of it, posed by the game's own code from a baked pack, grips solved | what the holder sees in first person (the view's settings are still found by playing); a use (a swing, a shot); the pack chosen from a list |
+| An item in the hand | **done (M133, M134)**: `CbItem` Preview > Hold: a stand-in figure beside the item holds a copy of it, posed by the game's own code from a baked pack, grips solved; and a First person panel beside the 3D view shows what the holder sees, with the item's view settings live | a use (a swing, a shot); the pack chosen from a list; the character's own mesh |
 | A prebuilt SDK | CI builds the extension, so a mod's look needs no compiler |
 | A new template | the starters are the redesign's already (a `CbItem`, a motion, a HUD); what is old is the prose in `sdk/README.md` around them |
 
