@@ -142,8 +142,8 @@ properties = {
 slot = 2
 carry_grip = NodePath("Model/Carry")
 other_hand = 3
-view_offset = Vector3(-0.11, 0.28, 0.96)
-view_rotation = Vector3(5, 30, 0)
+view_offset = Vector3(-0.16, 0.31, 0.77)
+view_rotation = Vector3(40, 30, 0)
 view_left_hand = false
 mass = 1.1
 
