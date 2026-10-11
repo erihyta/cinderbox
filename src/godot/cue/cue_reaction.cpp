@@ -338,6 +338,19 @@ String CbReaction::Refusal( const cue::Context& context, double now, bool rolled
 		String side = m_eventSide == SIDE_A ? "at ($at)" : m_eventSide == SIDE_B ? "the other one ($other)" : "either one";
 		return "the subject (" + String( subject->get_name() ) + ") is not " + side + " in this cue";
 	}
+	// A reaction inside an item's own scene that listens at whoever holds the item is the item's
+	// answer to what its holder does: it hears only while the item is in use. Put away (on the hip,
+	// on the back) it is silent, so every item can answer the same cue ("item.use") and only the
+	// one in the hand does. (As a CbPrediction in an item's scene already is.)
+	Node* own = cue::EntityOf( const_cast<CbReaction*>( this ), context.director );
+	if ( own != nullptr && own != subject && own->get_parent() != nullptr && cue::EntityOf( own->get_parent(), context.director ) == subject )
+	{
+		Dictionary state = own->get_meta( cue::kStateMeta, Dictionary() );
+		if ( state.has( "in_use" ) && bool( state["in_use"] ) == false )
+		{
+			return "the item it is in is put away";
+		}
+	}
 	String why;
 	if ( Holds( context, subject, &why ) == false )
 	{
