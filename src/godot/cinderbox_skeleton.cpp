@@ -851,9 +851,25 @@ void CinderboxSkeleton::CutBody( Skeleton3D* target )
 	// view.
 	const Vector3 nothing( 0.0001f, 0.0001f, 0.0001f );
 	Transform3D kept[2] = { target->get_bone_global_pose( shoulders[0] ), target->get_bone_global_pose( shoulders[1] ) };
-	// (Without the arms, all of it goes to the waist: nothing is left to stretch up to the shoulders.)
-	Vector3 behind = m_firstPersonArms ? ( kept[0].origin + kept[1].origin ) * 0.5f : target->get_bone_global_pose( spine ).origin;
-	target->set_bone_pose_scale( spine, nothing );
+	Vector3 behind = ( kept[0].origin + kept[1].origin ) * 0.5f;
+	if ( m_firstPersonArms )
+	{
+		target->set_bone_pose_scale( spine, nothing );
+	}
+	else
+	{
+		// Without the arms the belly stays whole and the chest closes it: a point at the chest's
+		// height above the hips and a little behind them, so the body leans away from the eye
+		// (which is ahead of it) and its top is not seen looking down, running or standing.
+		// Shrunk at the waist instead, the body ended in an open ring there, in plain view.
+		int hips = BoneOf( "Hips" );
+		Transform3D low = target->get_bone_global_pose( hips >= 0 ? hips : spine );
+		Vector3 ahead = ( low.basis.orthonormalized() * target->get_bone_global_rest( hips >= 0 ? hips : spine ).basis.orthonormalized().inverse() ).xform( Vector3( 0, 0, 1 ) );
+		ahead.y = 0.0f;
+		ahead = ahead.length() > 1e-4f ? ahead.normalized() : Vector3( 0, 0, 1 );
+		float tall = float( target->get_bone_global_pose( upper ).origin.y - low.origin.y );
+		behind = Vector3( low.origin.x, low.origin.y + tall, low.origin.z ) - ahead * tall * 0.9f;
+	}
 	for ( int bone : { chest, upper } )
 	{
 		if ( bone >= 0 )

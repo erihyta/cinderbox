@@ -82,6 +82,10 @@ inline constexpr float kShoulderOffset = 0.45f; // metres to the side of the piv
 // The eye, from the head joint: ahead along the look (metres), and above the joint.
 inline constexpr float kEyeAhead = 0.14f;
 inline constexpr float kEyeUp = 0.09f;
+// The first-person camera, from the point at eye height above the feet: this far ahead, level,
+// toward where the player looks, whatever the pitch (metres). Looking down, it is ahead of the
+// body and not above the hips. (Inside the mover's capsule: it never reaches a wall.)
+inline constexpr float kFirstPersonAhead = 0.22f;
 // The point a third-person camera orbits, above the character's centre (metres).
 inline constexpr float kViewPivotHeight = 0.4f;
 

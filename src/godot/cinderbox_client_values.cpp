@@ -327,7 +327,11 @@ Vector3 CinderboxClient::get_view_position( int64_t view, const Basis& camera ) 
 				// The character's eye height above its feet, as Context::ViewPosition places it: on
 				// the mover, so no animation moves the camera.
 				Vector3 feet = ToGodot( pose.position ) - Vector3( 0, ragdoll::kFeetBelowCenter, 0 );
-				return feet + Vector3( 0, anim::EyeHeight( *m_animSet ), 0 ) - camera.get_column( 2 ) * kEyeAhead;
+				// (Ahead of the body, level, whatever the pitch: see kFirstPersonAhead.)
+				Vector3 level = -camera.get_column( 2 );
+				level.y = 0.0f;
+				level = level.length() > 1e-4f ? level.normalized() : Vector3( camera.get_column( 1 ).x, 0.0f, camera.get_column( 1 ).z ).normalized();
+				return feet + Vector3( 0, anim::EyeHeight( *m_animSet ), 0 ) + level * kFirstPersonAhead;
 			}
 			return pivot;
 		}
