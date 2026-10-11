@@ -51,6 +51,9 @@
 		<member name="use" type="int" setter="set_use" getter="get_use" enum="CbItem.Use" default="0">
 			How a player uses it, on a server with slots. Either way its server mod is told the same thing ([code]ctx.Used( player, kind )[/code]), and the simulation records the event [code]&lt;kind&gt;.used[/code] on that tick where a mod declared it, so a [CbReaction] on it plays at once on the player's own screen.
 		</member>
+		<member name="preview_cue" type="String" setter="set_preview_cue" getter="get_preview_cue" default="&quot;&quot;">
+			With [member preview_hold]: the event the Fire the cue button fires ([code]melee.swing[/code]). It plays on the figure and in the First person panel: the pack's state machine hears it (a state entered on it, or on a stance a [CbPrediction] of this scene sets with it), and the item in the hand, a whole copy of this scene, plays its [CbReaction] nodes. The mod's [code]vfx/reactions*.tscn[/code] play beside the figure too.
+		</member>
 		<member name="preview_hold" type="bool" setter="set_preview_hold" getter="get_preview_hold" default="false">
 			In the editor: shows the item in a hand. A stand-in figure (the SDK skeleton's bones, as boxes) stands a metre beside the item and holds a copy of it by [member carry_grip], in the pose of a baked animation pack of this project, with its other hand where [member other_hand] and [member other_grip] put it. It is posed by the code that poses players in the game. Move a grip marker and the copy in the hand follows (within half a second). While it is on, a First person panel beside the 3D view shows what the holder sees, with [member view_offset], [member view_rotation], [member view_fov] and the hands applied as the game applies them. Not saved.
 		</member>

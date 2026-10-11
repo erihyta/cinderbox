@@ -4,6 +4,11 @@
 #include "anim_set.h"
 #include "cinderbox_skeleton.h"
 #include "joint_math.h"
+#include "cue_director.h"
+#include "cue_names.h"
+#include "cue_prediction.h"
+#include "events.h"
+#include "mod_schema.h"
 #include "pose.h"
 #include "types.h"
 
@@ -98,11 +103,20 @@ void CbItem::_bind_methods()
 	ADD_GROUP( "Preview", "preview_" );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "preview_hold", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR ), "set_preview_hold", "get_preview_hold" );
 	ClassDB::bind_method( D_METHOD( "preview_view", "arms", "held" ), &CbItem::preview_view );
+	ClassDB::bind_method( D_METHOD( "set_preview_cue", "value" ), &CbItem::set_preview_cue );
+	ClassDB::bind_method( D_METHOD( "get_preview_cue" ), &CbItem::get_preview_cue );
+	ClassDB::bind_method( D_METHOD( "fire_preview_cue", "name" ), &CbItem::fire_preview_cue );
+	ClassDB::bind_method( D_METHOD( "fire_preview" ), &CbItem::fire_preview );
+	ClassDB::bind_method( D_METHOD( "get_preview_fire_button" ), &CbItem::get_preview_fire_button );
 	ClassDB::bind_method( D_METHOD( "set_preview_aim", "value" ), &CbItem::set_preview_aim );
 	ClassDB::bind_method( D_METHOD( "get_preview_aim" ), &CbItem::get_preview_aim );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "preview_aim", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR ), "set_preview_aim", "get_preview_aim" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "preview_pack", PROPERTY_HINT_PLACEHOLDER_TEXT, "the first in res://anim", PROPERTY_USAGE_EDITOR ),
 				  "set_preview_pack", "get_preview_pack" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "preview_cue", PROPERTY_HINT_PLACEHOLDER_TEXT, "melee.swing", PROPERTY_USAGE_EDITOR ), "set_preview_cue",
+				  "get_preview_cue" );
+	ADD_PROPERTY( PropertyInfo( Variant::CALLABLE, "preview_fire_button", PROPERTY_HINT_TOOL_BUTTON, "Fire the cue,Play", PROPERTY_USAGE_EDITOR ), "",
+				  "get_preview_fire_button" );
 	ADD_GROUP( "", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::CALLABLE, "bake_button", PROPERTY_HINT_TOOL_BUTTON, "Bake item,Save", PROPERTY_USAGE_EDITOR ), "",
 				  "get_bake_button" );
@@ -213,6 +227,250 @@ String ShapeProblem( const CollisionShape3D* body )
 
 } // namespace
 
+// What the preview runs with.
+struct CbItem::PreviewRun
+{
+	ModSchema schema; // the names this checkout's mods declare (cinderbox_names.cfg): events, stances, layers
+	AnimState anim;	  // where the pack's state machine is
+	ModEventRecord events[kModEventHistory];
+	uint32_t eventCount = 0;
+	uint32_t tick = 0;
+	double pending = 0.0; // time not yet stepped
+	double seconds = 0.0;
+	double stanceUntil[4] = { 0.0, 0.0, 0.0, 0.0 }; // per layer: when a fired cue's stance ends
+	double firedAt = -100.0;
+	ObjectID viewStage; // the first-person picture's (the third-person one is m_previewCopy)
+};
+
+void CbItem::_validate_property( PropertyInfo& property ) const
+{
+	names::Hint( this, property );
+}
+
+Callable CbItem::get_preview_fire_button()
+{
+	return Callable( this, "fire_preview" );
+}
+
+void CbItem::fire_preview()
+{
+	if ( m_previewHold == false )
+	{
+		UtilityFunctions::push_warning( "Item preview: tick Hold first: a cue plays on the figure." );
+		return;
+	}
+	if ( m_previewCue.is_empty() )
+	{
+		UtilityFunctions::push_warning( "Item preview: name the cue to fire (Preview > Cue): an event of the item's mod, such as melee.swing." );
+		return;
+	}
+	fire_preview_cue( m_previewCue );
+}
+
+void CbItem::fire_preview_cue( const String& cue )
+{
+	if ( m_previewRun == nullptr || m_previewGraph == nullptr )
+	{
+		return;
+	}
+	PreviewRun& run = *m_previewRun;
+	std::string name = std::string( cue.strip_edges().utf8().get_data() );
+	run.firedAt = run.seconds;
+	// To the state machine: the event, at the next tick (a state entered on it starts).
+	int event = run.schema.FindEvent( name );
+	if ( event >= 0 )
+	{
+		ModEventRecord& e = run.events[run.eventCount % kModEventHistory];
+		e = ModEventRecord{};
+		e.type = uint16_t( event );
+		e.netIdA = 1;
+		e.tick = run.tick + 1;
+		run.eventCount += 1;
+	}
+	else
+	{
+		UtilityFunctions::push_warning( "Item preview: no mod declares the event \"", cue, "\" (cinderbox_names.cfg): the state machine does not hear it." );
+	}
+	// And what the item's own predictions set with it: a stance, for as long as the prediction
+	// keeps it (the server's mod sets it for as long as its rule says; this is the look's guess).
+	TypedArray<Node> predictions = find_children( "*", "CbPrediction", true, false );
+	for ( int i = 0; i < predictions.size(); ++i )
+	{
+		auto* prediction = Object::cast_to<CbPrediction>( predictions[i] );
+		// (The item's own: not those of its copy in the preview's hand.)
+		auto* stage = Object::cast_to<Node>( ObjectDB::get_instance( m_previewCopy ) );
+		if ( prediction == nullptr || ( stage != nullptr && stage->is_ancestor_of( prediction ) ) ||
+			 prediction->get_cue().strip_edges() != cue.strip_edges() || prediction->get_stance().strip_edges().is_empty() )
+		{
+			continue;
+		}
+		int stance = run.schema.FindStance( std::string( prediction->get_stance().strip_edges().utf8().get_data() ) );
+		int layer = run.schema.FindLayer( std::string( prediction->get_stance_layer().strip_edges().utf8().get_data() ) );
+		if ( stance < 0 || layer < 0 || layer >= 4 )
+		{
+			continue;
+		}
+		if ( run.anim.stances.size() <= size_t( layer ) )
+		{
+			run.anim.stances.resize( size_t( layer ) + 1 );
+		}
+		run.anim.stances[size_t( layer )] = uint8_t( stance + 1 );
+		run.stanceUntil[layer] = run.seconds + std::clamp( prediction->get_cooldown(), 0.2, 1.0 );
+	}
+	// To the item in each hand: its reactions.
+	for ( ObjectID id : { m_previewCopy, run.viewStage } )
+	{
+		auto* stage = Object::cast_to<CbDirector>( ObjectDB::get_instance( id ) );
+		auto* player = stage != nullptr ? stage->get_node_or_null( "player_0" ) : nullptr;
+		auto* hand = player != nullptr ? Object::cast_to<Node3D>( player->get_node_or_null( "RightHand" ) ) : nullptr;
+		if ( hand == nullptr )
+		{
+			continue;
+		}
+		Dictionary args;
+		args["value"] = 0;
+		args["strength"] = 1.0;
+		args["point"] = hand->get_global_position();
+		args["end"] = hand->get_global_position() + hand->get_global_basis().get_column( 2 ) * -5.0f;
+		stage->cue( cue.strip_edges(), player, nullptr, args );
+	}
+}
+
+void CbItem::PreviewAdvance( double delta )
+{
+	PreviewRun& run = *m_previewRun;
+	const float dt = 1.0f / 60.0f;
+	// (At least once before anything is posed: the state machine has to have started.)
+	run.pending = std::min( run.pending + delta, 0.25 );
+	if ( run.tick == 0 )
+	{
+		run.pending = std::max( run.pending, double( dt ) );
+	}
+	const AnimGraphPacks none;
+	while ( run.pending >= double( dt ) )
+	{
+		run.pending -= double( dt );
+		run.tick += 1;
+		run.seconds += double( dt );
+		for ( size_t layer = 0; layer < 4 && layer < run.anim.stances.size(); ++layer )
+		{
+			if ( run.stanceUntil[layer] > 0.0 && run.seconds >= run.stanceUntil[layer] )
+			{
+				run.anim.stances[layer] = 0;
+				run.stanceUntil[layer] = 0.0;
+			}
+		}
+		AnimGraphInputs in;
+		in.builtins[AnimExpr::Grounded] = 1.0f;
+		in.events = run.events;
+		in.eventCount = run.eventCount;
+		in.tick = run.tick;
+		in.netId = 1;
+		std::vector<int> markers;
+		UpdateAnimGraph( run.anim, *m_previewGraph, none, in, dt, markers );
+	}
+}
+
+void CbItem::PreviewStage( Node3D* under, const Transform3D& handAt, bool firstPerson, bool internal )
+{
+	static const StringName kAge( "cb_age" );
+	CbDirector* stage = nullptr;
+	for ( int i = 0; i < under->get_child_count( true ); ++i )
+	{
+		auto* found = Object::cast_to<CbDirector>( under->get_child( i, true ) );
+		if ( found != nullptr && found->is_queued_for_deletion() == false )
+		{
+			stage = found;
+		}
+	}
+	// Made again twice a second, for the scene is being edited; not while a cue's effects play.
+	PreviewRun& run = *m_previewRun;
+	if ( stage != nullptr && int( stage->get_meta( kAge, 0 ) ) >= 30 && run.seconds - run.firedAt > 3.0 )
+	{
+		stage->set_name( "Leaving" );
+		stage->queue_free();
+		stage = nullptr;
+	}
+	if ( stage == nullptr )
+	{
+		stage = memnew( CbDirector );
+		stage->set_name( "PreviewStage" );
+		auto* player = memnew( Node3D );
+		player->set_name( "player_0" );
+		auto* hand = memnew( Node3D );
+		hand->set_name( "RightHand" );
+		player->add_child( hand );
+		// The scene as it is now, unsaved edits too; without what the preview itself put in it.
+		Node* copy = duplicate();
+		std::vector<Node*> own;
+		for ( int i = 0; i < copy->get_child_count( true ); ++i )
+		{
+			own.push_back( copy->get_child( i, true ) );
+		}
+		for ( int i = 0; i < copy->get_child_count( false ); ++i )
+		{
+			own.erase( std::remove( own.begin(), own.end(), copy->get_child( i, false ) ), own.end() );
+		}
+		for ( Node* extra : own )
+		{
+			copy->remove_child( extra );
+			extra->queue_free();
+		}
+		copy->set_name( "Item" );
+		if ( auto* spatial = Object::cast_to<Node3D>( copy ) )
+		{
+			spatial->set_transform( Transform3D() );
+		}
+		hand->add_child( copy );
+		stage->add_child( player );
+		under->add_child( stage, false, internal ? INTERNAL_MODE_BACK : INTERNAL_MODE_DISABLED );
+		stage->add_entity( player, "player", "" );
+		stage->add_entity( copy, "item", m_kind.strip_edges() );
+		stage->set_local( player );
+		Dictionary holder;
+		holder["first_person"] = firstPerson;
+		holder[m_kind.strip_edges()] = true;
+		stage->set_state( player, holder );
+		Dictionary held;
+		held["in_use"] = true;
+		stage->set_state( copy, held );
+		stage->set_meta( kAge, 0 );
+		// The mod's world reactions too (res://vfx/reactions*.tscn: a swing's sound, a hit's puff),
+		// as the game has them under its director. Once: beside the figure, not in the picture
+		// of the view as well (a sound would play twice).
+		if ( firstPerson == false && DirAccess::dir_exists_absolute( "res://vfx" ) )
+		{
+			PackedStringArray files = DirAccess::get_files_at( "res://vfx" );
+			for ( const String& file : files )
+			{
+				if ( file.begins_with( "reactions" ) == false || file.ends_with( ".tscn" ) == false )
+				{
+					continue;
+				}
+				Ref<PackedScene> world = ResourceLoader::get_singleton()->load( String( "res://vfx/" ) + file, "PackedScene" );
+				if ( Node* reactions = world.is_valid() ? world->instantiate() : nullptr )
+				{
+					stage->add_child( reactions );
+				}
+			}
+		}
+		if ( firstPerson )
+		{
+			run.viewStage = ObjectID( stage->get_instance_id() );
+		}
+		else
+		{
+			m_previewCopy = ObjectID( stage->get_instance_id() );
+		}
+	}
+	stage->set_meta( kAge, int( stage->get_meta( kAge, 0 ) ) + 1 );
+	if ( auto* hand = Object::cast_to<Node3D>( stage->get_node_or_null( "player_0/RightHand" ) ) )
+	{
+		hand->set_transform( handAt );
+	}
+	stage->update();
+}
+
 Transform3D CbItem::HandSocketFrame()
 {
 	Basis turn = Basis::from_euler( Vector3( Math::deg_to_rad( -90.0 ), Math::deg_to_rad( 180.0 ), 0.0 ) );
@@ -248,6 +506,14 @@ void CbItem::EndPreview()
 		copy->queue_free();
 	}
 	m_previewCopy = ObjectID();
+	if ( m_previewRun != nullptr )
+	{
+		if ( auto* stage = Object::cast_to<Node>( ObjectDB::get_instance( m_previewRun->viewStage ) ) )
+		{
+			stage->queue_free();
+		}
+	}
+	m_previewRun.reset();
 	m_previewPose.reset();
 	m_previewGraph.reset();
 	m_previewSet.reset();
@@ -295,7 +561,32 @@ void CbItem::_process( double delta )
 		}
 		// (Its conditions name the mod's events and stances, which nothing declares here: the
 		// preview stays in the state the pack starts in.)
-		auto graph = CompileAnimGraph( set->GraphText(), ModSchema{}, error, warnings );
+		// The names its conditions read are this checkout's mods' (the file the server's build writes
+		// into the project): a state entered on "pistol.fired", a stance "melee_swing".
+		auto run = std::make_shared<PreviewRun>();
+		PackedStringArray declared = FileAccess::get_file_as_string( "res://cinderbox_names.cfg" ).split( "\n" );
+		for ( const String& line : declared )
+		{
+			PackedStringArray parts = line.strip_edges().split( "\t" );
+			if ( parts.size() < 2 )
+			{
+				continue;
+			}
+			std::string name = std::string( parts[1].utf8().get_data() );
+			if ( parts[0] == String( "event" ) )
+			{
+				run->schema.events.push_back( name );
+			}
+			else if ( parts[0] == String( "stance" ) )
+			{
+				run->schema.stances.push_back( name );
+			}
+			else if ( parts[0] == String( "layer" ) )
+			{
+				run->schema.layers.push_back( name );
+			}
+		}
+		auto graph = CompileAnimGraph( set->GraphText(), run->schema, error, warnings );
 		if ( graph == nullptr || graph->layers.empty() )
 		{
 			UtilityFunctions::push_warning( "Item preview: the state machine of ", base, " does not load: ", String::utf8( error.c_str() ) );
@@ -339,6 +630,7 @@ void CbItem::_process( double delta )
 									   Vector3( holding.position.x, holding.position.y, holding.position.z ) );
 		m_previewSet = std::move( set );
 		m_previewGraph = graph;
+		m_previewRun = run;
 		m_previewPose = std::make_shared<anim::PoseEvaluator>( *m_previewSet );
 		m_previewPose->SetGraph( m_previewGraph, warnings );
 	}
@@ -358,10 +650,8 @@ void CbItem::_process( double delta )
 		m_previewFigure = ObjectID( figure->get_instance_id() );
 	}
 
-	const AnimGraphLayer& layer = m_previewGraph->layers[0];
-	const AnimGraphState& start = layer.states[size_t( layer.start )];
-	float length = start.points.empty() ? 1.0f : m_previewGraph->clips[size_t( start.points[0].clip )].length;
-	m_previewTime = std::fmod( m_previewTime + delta, double( std::max( length, 0.05f ) ) );
+	// The pack's state machine runs: the state it starts in plays, and a cue moves it on.
+	PreviewAdvance( delta );
 	const Transform3D carry = CarryFrameUnder( this );
 	PreviewEvaluate( m_previewAim );
 	figure->ApplyPose( *m_previewSet, m_previewPose->Models() );
@@ -370,41 +660,18 @@ void CbItem::_process( double delta )
 	// metre under the item's origin; a copy of the item's meshes is in its right hand, by the
 	// carrying grip.
 	figure->set_transform( Transform3D( Basis( Vector3( 0, 1, 0 ), float( Math_PI ) ), Vector3( 1.0f, -1.0f, 0.0f ) ) );
-	auto* copy = Object::cast_to<Node3D>( ObjectDB::get_instance( m_previewCopy ) );
-	if ( copy == nullptr || ++m_previewCopied >= 30 )
-	{
-		// (Made again twice a second: the scene is being edited.)
-		Node* old = copy;
-		if ( old != nullptr )
-		{
-			old->queue_free();
-		}
-		m_previewCopied = 0;
-		copy = CopyMeshes( old, figure );
-		copy->set_name( "HeldCopy" );
-		add_child( copy, false, INTERNAL_MODE_BACK );
-		m_previewCopy = ObjectID( copy->get_instance_id() );
-	}
+	// The item in its hand: a whole copy of the scene, by the carrying grip.
 	Transform3D hand;
 	if ( figure->JointTransform( "RightHand", hand ) )
 	{
-		copy->set_transform( figure->get_transform() * hand * m_previewSocket * carry.affine_inverse() );
+		PreviewStage( this, figure->get_transform() * hand * m_previewSocket * carry.affine_inverse(), false, true );
 	}
 }
 
 void CbItem::PreviewEvaluate( bool aiming )
 {
-	// The pack's first layer in the state it starts in, playing.
-	const AnimGraphLayer& layer = m_previewGraph->layers[0];
-	const AnimGraphState& start = layer.states[size_t( layer.start )];
-	float length = start.points.empty() ? 1.0f : m_previewGraph->clips[size_t( start.points[0].clip )].length;
-	AnimState state;
-	state.graph.resize( 1 );
-	AnimGraphLayerState& playing = state.graph[0];
-	playing.started = 1;
-	playing.state = playing.previous = uint8_t( layer.start );
-	playing.weight = 1.0f;
-	playing.time = start.blend ? float( m_previewTime / std::max( length, 0.05f ) ) : float( m_previewTime );
+	// Where the pack's state machine is now.
+	AnimState state = m_previewRun->anim;
 
 	// The other hand, as the bake says it and the game solves it.
 	const Transform3D carry = CarryFrameUnder( this );
@@ -423,40 +690,6 @@ void CbItem::PreviewEvaluate( bool aiming )
 	}
 	state.aiming = aiming ? 1 : 0;
 	m_previewPose->Evaluate( state, held ? &grip : nullptr );
-}
-
-Node3D* CbItem::CopyMeshes( const Node* skip, const Node* skipToo )
-{
-	Node3D* copy = memnew( Node3D );
-	TypedArray<Node> meshes = find_children( "*", "MeshInstance3D", true, false );
-	for ( int i = 0; i < meshes.size(); ++i )
-	{
-		auto* mesh = Object::cast_to<MeshInstance3D>( meshes[i] );
-		if ( mesh == nullptr || mesh->get_mesh().is_null() || mesh->is_visible_in_tree() == false )
-		{
-			continue;
-		}
-		// (Not the preview's own: the last copy is still here until the frame ends, and a copy
-		// of a copy would be one more item in the hand every time.)
-		bool own = false;
-		for ( Node* above = mesh->get_parent(); above != nullptr && above != this; above = above->get_parent() )
-		{
-			own |= above == skip || above == skipToo || above == ObjectDB::get_instance( m_previewCopy ) || above == ObjectDB::get_instance( m_previewFigure );
-		}
-		if ( own )
-		{
-			continue;
-		}
-		MeshInstance3D* part = memnew( MeshInstance3D );
-		part->set_mesh( mesh->get_mesh() );
-		for ( int surface = 0; surface < mesh->get_surface_override_material_count(); ++surface )
-		{
-			part->set_surface_override_material( surface, mesh->get_surface_override_material( surface ) );
-		}
-		part->set_transform( InSceneFrame( mesh, this ) );
-		copy->add_child( part );
-	}
-	return copy;
 }
 
 namespace
@@ -524,7 +757,7 @@ Dictionary CbItem::preview_view( Node* armsNode, Node* heldNode )
 	Dictionary out;
 	auto* arms = Object::cast_to<CinderboxSkeleton>( armsNode );
 	auto* held = Object::cast_to<Node3D>( heldNode );
-	if ( m_previewHold == false || m_previewPose == nullptr || m_previewSet == nullptr || arms == nullptr || held == nullptr )
+	if ( m_previewHold == false || m_previewPose == nullptr || m_previewSet == nullptr || m_previewRun == nullptr || arms == nullptr || held == nullptr )
 	{
 		return out;
 	}
@@ -591,21 +824,11 @@ Dictionary CbItem::preview_view( Node* armsNode, Node* heldNode )
 	arms->set_draw_bone_boxes( true );
 	arms->set_boxes_arms_only( true, m_viewLeftHand, m_viewRightHand );
 	arms->ApplyPose( set, models );
-	// A copy of the item in the hand (made again twice a second: the scene is being edited).
-	if ( held->get_child_count() == 0 || int( held->get_meta( "cb_copied", 0 ) ) >= 30 )
-	{
-		for ( int i = held->get_child_count() - 1; i >= 0; --i )
-		{
-			held->get_child( i )->queue_free();
-		}
-		held->add_child( CopyMeshes( held, arms ) );
-		held->set_meta( "cb_copied", 0 );
-	}
-	held->set_meta( "cb_copied", int( held->get_meta( "cb_copied", 0 ) ) + 1 );
+	// The item in the hand: a whole copy of the scene, as in the figure's.
 	Transform3D hand;
 	if ( arms->JointTransform( "RightHand", hand ) )
 	{
-		held->set_transform( arms->get_transform() * hand * m_previewSocket * CarryFrameUnder( this ).affine_inverse() );
+		PreviewStage( held, arms->get_transform() * hand * m_previewSocket * CarryFrameUnder( this ).affine_inverse(), true, false );
 	}
 	// The eye: where the game's camera is for a look level and ahead (get_view_position).
 	Transform3D camera( Basis( Vector3( 0, 1, 0 ), float( Math_PI ) ), Vector3( 0.0f, anim::EyeHeight( set ), kEyeAhead ) );
