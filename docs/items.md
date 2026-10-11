@@ -255,7 +255,7 @@ first person: the same clips at the same moment, drawn again for the eye.
 
 | | What it is |
 |---|---|
-| The body | keeps the pose everyone sees. In its holder's own view it is drawn up to the belly, closed above it (no arms, chest or head): looking down shows a body and legs. The eye is 22 cm ahead of the body, level, so it looks down past it and not into it, and it casts the whole pose's shadow, what it holds in the hand and on the back included |
+| The body | keeps the pose everyone sees. In its holder's own view only what is below the hips is drawn, and it casts the whole pose's shadow, what it holds in the hand and on the back included |
 | The view model | the arms and what they hold, drawn a second time for the holder alone: by a camera of its own over the world, so they never pass into a wall, with a field of view of their own |
 | The pose of the view model | the same animations, steadied: the upper body as it is standing still, held under the camera and turned with it. A swing or a shot's recoil shows; the walk does not swing the arms across the screen |
 
