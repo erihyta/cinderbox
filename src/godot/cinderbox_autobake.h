@@ -18,6 +18,10 @@
 
 #include "cinderbox_motion.h"
 
+#include <godot_cpp/classes/camera3d.hpp>
+#include <godot_cpp/classes/control.hpp>
+#include <godot_cpp/classes/node3d.hpp>
+#include <godot_cpp/classes/sub_viewport.hpp>
 #include <godot_cpp/classes/button.hpp>
 #include <godot_cpp/classes/editor_plugin.hpp>
 #include <godot_cpp/variant/string.hpp>
@@ -34,6 +38,7 @@ public:
 	void _exit_tree() override;
 	void on_scene_saved( const godot::String& path );
 	void on_test_mod();
+	void _process( double delta ) override;
 
 protected:
 	static void _bind_methods();
@@ -49,6 +54,16 @@ private:
 	godot::String m_testMod;
 
 	godot::Ref<CbMotionInspector> m_motionInspector;
+
+	// "First person": a picture beside the 3D view of what the holder of the item being edited
+	// sees, while the item's Hold preview is on (CbItem::preview_view). It has a world of its own:
+	// the arms, a copy of the item, a light and the eye, and nothing of the scene.
+	void MakeViewPanel();
+	godot::Control* m_viewPanel = nullptr;
+	godot::SubViewport* m_viewPort = nullptr;
+	godot::Camera3D* m_viewCamera = nullptr;
+	godot::Node3D* m_viewArms = nullptr;
+	godot::Node3D* m_viewHeld = nullptr;
 };
 
 } // namespace cb::gd

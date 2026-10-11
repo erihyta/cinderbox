@@ -1,7 +1,7 @@
 extends SceneTree
 ## Draws an item's in-hand preview (CbItem.preview_hold) outside the editor and saves the picture:
 ##
-##   godot --path server_mods/<mod>/client --script <repo>/godot/addons/cinderbox_maps/check_item_preview.gd -- --scene=res://prefabs/bat.tscn --out=<file.png> [--aim]
+##   godot --path server_mods/<mod>/client --script <repo>/godot/addons/cinderbox_maps/check_item_preview.gd -- --scene=res://prefabs/bat.tscn --out=<file.png> [--aim] [--view]
 ##
 ## The stand-in figure should hold the item by its carrying grip. Exit code 1 when there is no figure,
 ## or when what is in its hand is not exactly one copy of the item.
@@ -9,6 +9,11 @@ extends SceneTree
 var _item: Node3D
 var _out := ""
 var _frames := 0
+# --view: the picture is what the holder sees in first person (CbItem.preview_view), not the figure.
+var _view := false
+var _arms: Node3D
+var _held: Node3D
+var _camera: Camera3D
 
 
 func _initialize() -> void:
@@ -28,11 +33,34 @@ func _initialize() -> void:
 	root.add_child(light)
 	var camera := Camera3D.new()
 	root.add_child(camera)
+	_camera = camera
+	_view = OS.get_cmdline_user_args().has("--view")
+	if _view:
+		# Away from the item and its figure, so the picture has nothing else in it.
+		var place := Node3D.new()
+		place.position = Vector3(50, 0, 0)
+		root.add_child(place)
+		_arms = ClassDB.instantiate("CinderboxSkeleton")
+		_arms.set("use_slot_color", false)
+		_arms.set("body_color", Color(0.75, 0.78, 0.82))
+		place.add_child(_arms)
+		_held = Node3D.new()
+		place.add_child(_held)
 	camera.look_at_from_position(Vector3(-0.6, 0.5, -2.4), Vector3(0.6, -0.1, 0))
 
 
 func _process(_delta: float) -> bool:
 	_frames += 1
+	if _view:
+		var seen: Dictionary = _item.call("preview_view", _arms, _held)
+		if seen.has("eye"):
+			_camera.global_transform = (_arms.get_parent() as Node3D).global_transform * (seen["eye"] as Transform3D)
+			_camera.fov = seen["fov"]
+			_camera.near = 0.01
+		elif _frames > 60:
+			printerr("no first-person view: preview_view said nothing")
+			quit(1)
+			return true
 	# (Long enough for the copy in the hand to have been made again a few times.)
 	if _frames < 100:
 		return false
