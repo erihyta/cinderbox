@@ -432,20 +432,31 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 	return node;
 }
 
-void CinderboxClient::RebuildCharacterNodes()
+void CinderboxClient::rebuild_nodes()
+{
+	RebuildCharacterNodes( true );
+}
+
+void CinderboxClient::RebuildCharacterNodes( bool itemsToo )
 {
 	if ( !m_mirror )
 	{
 		return;
 	}
-	std::vector<std::pair<uint64_t, present::Visual>> rebuild;
+	// (The characters first: an item goes into its holder's new socket.)
+	std::vector<std::pair<uint64_t, present::Visual>> rebuild, items;
 	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
 							const present::RagdollAnim* ) {
 		if ( ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll ) && m_nodes.count( id ) )
 		{
 			rebuild.emplace_back( id, v );
 		}
+		else if ( itemsToo && v.kind == present::VisualKind::Item && m_nodes.count( id ) )
+		{
+			items.emplace_back( id, v );
+		}
 	} );
+	rebuild.insert( rebuild.end(), items.begin(), items.end() );
 	for ( const auto& [id, v] : rebuild )
 	{
 		if ( auto* old = Object::cast_to<Node>( ObjectDB::get_instance( m_nodes[id] ) ) )

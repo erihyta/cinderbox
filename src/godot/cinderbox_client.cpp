@@ -63,6 +63,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_required_items" ), &CinderboxClient::get_required_items );
 	ClassDB::bind_method( D_METHOD( "get_character" ), &CinderboxClient::get_character );
 	ClassDB::bind_method( D_METHOD( "use_character", "name" ), &CinderboxClient::use_character );
+	ClassDB::bind_method( D_METHOD( "rebuild_nodes" ), &CinderboxClient::rebuild_nodes );
 	ClassDB::bind_method( D_METHOD( "add_world_scene", "scene" ), &CinderboxClient::add_world_scene );
 	ClassDB::bind_method( D_METHOD( "clear_world_scenes" ), &CinderboxClient::clear_world_scenes );
 	ClassDB::bind_method( D_METHOD( "get_director" ), &CinderboxClient::get_director );

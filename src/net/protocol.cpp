@@ -197,7 +197,7 @@ bool ReadInputs( ByteReader& r, InputArray& inputs )
 std::optional<MsgType> ReadType( ByteReader& r )
 {
 	uint8_t t = r.Read<uint8_t>();
-	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::PrivateFields ) )
+	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::Items ) )
 	{
 		return std::nullopt;
 	}
@@ -256,6 +256,39 @@ void Encode( const MsgPlayerNames& m, std::vector<uint8_t>& out )
 		w.Write( m.names[i].first );
 		WriteShortString( w, m.names[i].second, kMaxPlayerName );
 	}
+}
+
+void Encode( const MsgItems& m, std::vector<uint8_t>& out )
+{
+	Begin( out, MsgType::Items );
+	ByteWriter w( out );
+	size_t n = std::min<size_t>( m.items.size(), kMaxItems );
+	w.Write( uint8_t( n ) );
+	for ( size_t i = 0; i < n; ++i )
+	{
+		WriteShortString( w, m.items[i].mod, 64 );
+		WriteShortString( w, m.items[i].sha256, 64 );
+	}
+}
+
+bool Decode( ByteReader& r, MsgItems& m )
+{
+	uint8_t n = r.Read<uint8_t>();
+	if ( r.Ok() == false || n > kMaxItems )
+	{
+		return false;
+	}
+	m.items.clear();
+	for ( uint8_t i = 0; i < n; ++i )
+	{
+		ModItem item;
+		if ( ReadShortString( r, item.mod, 64 ) == false || ReadShortString( r, item.sha256, 64 ) == false || IsSha256( item.sha256 ) == false )
+		{
+			return false;
+		}
+		m.items.push_back( item );
+	}
+	return r.Ok();
 }
 
 void Encode( const MsgPrivateFields& m, std::vector<uint8_t>& out )

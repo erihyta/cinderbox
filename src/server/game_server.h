@@ -81,6 +81,10 @@ public:
 	bool Start( const ServerOptions& options );
 
 	// What the mods declared (sent to clients on join).
+	// A mod's look was published again and changes nothing the simulation reads: the item players
+	// need for it from now on. Everyone connected is told (they load it over the old one), and
+	// whoever joins later is told in the schema. False: no item of that mod is announced.
+	bool ReplaceItem( const ModItem& item );
 	const ModSchema& Schema() const
 	{
 		return m_schema;
@@ -179,6 +183,7 @@ private:
 	Client* FindByPeer( net::PeerId peer );
 	void Reject( net::PeerId peer, const std::string& reason );
 	void RunTick( double now );
+	std::vector<uint8_t> m_itemsBuffer;
 	// Everyone's names, to every welcomed client (or only to `only`).
 	void SendNames( net::PeerId only = 0 );
 	std::string UniqueName( const std::string& wanted, const Client& self ) const;

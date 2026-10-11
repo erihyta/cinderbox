@@ -537,10 +537,58 @@ int main( int argc, char** argv )
 		}
 	}
 	double emptySince = 0.0;
+	// A look published again while the server runs (tools/publish_mod.ps1 writes its manifest
+	// here): taken up at once when it changes nothing the simulation reads; otherwise the server
+	// says what has to be done, once, and keeps the item it started with.
+	double nextItems = 1.0;
+	std::map<std::string, std::string> refused; // mod -> the item that was not taken
 	for ( ;; )
 	{
 		double now = seconds();
 		server.Update( now );
+		if ( now >= nextItems )
+		{
+			nextItems = now + 1.0;
+			for ( const cb::ModItem& have : std::vector<cb::ModItem>( server.Schema().items ) )
+			{
+				cb::ModItem published;
+				if ( ReadItem( itemsDir, have.mod, published ) == false || published.sha256 == have.sha256 || refused[have.mod] == published.sha256 )
+				{
+					continue;
+				}
+				auto zipOf = [&]( const cb::ModItem& item ) {
+					return ( std::filesystem::path( workshopDir ) / item.mod / ( item.sha256 + ".zip" ) ).string();
+				};
+				std::map<std::string, std::string> was, is;
+				std::string error;
+				if ( cb::ItemServerParts( zipOf( have ), have, was, error ) == false || cb::ItemServerParts( zipOf( published ), published, is, error ) == false )
+				{
+					std::printf( "%s was published again, but not taken: %s\n", have.mod.c_str(), error.c_str() );
+					refused[have.mod] = published.sha256;
+					continue;
+				}
+				if ( was != is )
+				{
+					std::string what;
+					for ( const auto& [name, content] : is )
+					{
+						auto old = was.find( name );
+						what += old == was.end() || old->second != content ? ( what.empty() ? "" : ", " ) + name : "";
+					}
+					for ( const auto& [name, content] : was )
+					{
+						what += is.count( name ) == 0 ? ( what.empty() ? "" : ", " ) + name + " (gone)" : "";
+					}
+					std::printf( "%s was published again with changes the simulation reads (%s): restart the server to take it. Players keep the look it started with.\n",
+								 have.mod.c_str(), what.c_str() );
+					refused[have.mod] = published.sha256;
+					continue;
+				}
+				server.ReplaceItem( published );
+				std::printf( "%s was published again: its look is %s now, for everyone here and whoever joins\n", have.mod.c_str(),
+							 published.sha256.substr( 0, 12 ).c_str() );
+			}
+		}
 		if ( emptySeconds > 0.0 )
 		{
 			emptySince = server.ConnectedClients() > 0 ? now : emptySince;
