@@ -285,7 +285,7 @@ void CbItem::_process( double delta )
 			return data.is_empty() == false;
 		};
 		std::string error, warnings;
-		std::shared_ptr<const anim::AnimSet> set = anim::AnimSet::Load( read, folder, error, warnings );
+		std::unique_ptr<anim::AnimSet> set = anim::AnimSet::Load( read, folder, error, warnings );
 		if ( set == nullptr )
 		{
 			UtilityFunctions::push_warning( "Item preview: ", base, " does not load: ", String::utf8( error.c_str() ) );
@@ -299,12 +299,12 @@ void CbItem::_process( double delta )
 			UtilityFunctions::push_warning( "Item preview: the state machine of ", base, " does not load: ", String::utf8( error.c_str() ) );
 			return;
 		}
-		m_previewSet = set;
-		m_previewGraph = graph;
-		// The hand's socket is the character's: the one this checkout's server plays by default
-		// (the project is <checkout>/server_mods/<mod>/client), if it is there to read.
-		m_previewSocket = HandSocketFrame();
-		m_previewSocketOfBone = false;
+		// The hands' sockets are the character's: the one this checkout's server plays by default
+		// (the project is <checkout>/server_mods/<mod>/client), if it is there to read. They are
+		// given to the pack's own set, so the item's place in the hand and the place the other
+		// hand reaches for are worked out from the same socket, as in the game. (A pack has none
+		// of its own: with the built-in one for the reach and the character's for the item, the
+		// other hand held the air beside it.)
 		String checkout = ProjectSettings::get_singleton()->globalize_path( "res://" ).path_join( "../../.." ).simplify_path();
 		for ( const char* character : { "ual_mannequin", "mannequin" } )
 		{
@@ -316,20 +316,27 @@ void CbItem::_process( double delta )
 			PackedStringArray lines = FileAccess::get_file_as_string( cfg ).split( "\n" );
 			for ( const String& line : lines )
 			{
-				if ( line.begins_with( "socket.RightHand" ) == false || line.contains( "=" ) == false )
+				bool right = line.begins_with( "socket.RightHand" );
+				if ( ( right == false && line.begins_with( "socket.LeftHand" ) == false ) || line.contains( "=" ) == false )
 				{
 					continue;
 				}
 				PackedFloat64Array v = line.get_slice( "=", 1 ).strip_edges().split_floats( " ", false );
 				if ( v.size() == 7 )
 				{
-					Quaternion turn{ float( v[3] ), float( v[4] ), float( v[5] ), float( v[6] ) };
-					m_previewSocket = Transform3D( Basis( turn.normalized() ), Vector3( float( v[0] ), float( v[1] ), float( v[2] ) ) );
-					m_previewSocketOfBone = true;
+					anim::AnimSet::HandSocket socket;
+					socket.position = { float( v[0] ), float( v[1] ), float( v[2] ) };
+					socket.rotation = b3NormalizeQuat( b3Quat{ { float( v[3] ), float( v[4] ), float( v[5] ) }, float( v[6] ) } );
+					set->SetHandSocket( right == false, socket );
 				}
 			}
 			break;
 		}
+		const anim::AnimSet::HandSocket& holding = set->HandSocketOf( false );
+		m_previewSocket = Transform3D( Basis( Quaternion( holding.rotation.v.x, holding.rotation.v.y, holding.rotation.v.z, holding.rotation.s ) ),
+									   Vector3( holding.position.x, holding.position.y, holding.position.z ) );
+		m_previewSet = std::move( set );
+		m_previewGraph = graph;
 		m_previewPose = std::make_shared<anim::PoseEvaluator>( *m_previewSet );
 		m_previewPose->SetGraph( m_previewGraph, warnings );
 	}
@@ -429,7 +436,7 @@ void CbItem::_process( double delta )
 		m_previewCopy = ObjectID( copy->get_instance_id() );
 	}
 	Transform3D hand;
-	if ( figure->JointTransform( "RightHand", hand, m_previewSocketOfBone == false ) )
+	if ( figure->JointTransform( "RightHand", hand ) )
 	{
 		copy->set_transform( figure->get_transform() * hand * m_previewSocket * carry.affine_inverse() );
 	}

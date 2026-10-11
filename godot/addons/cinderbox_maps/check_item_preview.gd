@@ -60,6 +60,21 @@ func _process(_delta: float) -> bool:
 		printerr("the copy in the hand is not one copy of the item")
 		quit(1)
 		return true
+	# An item whose other hand is at a marker: that hand is at the marker of the copy in the hand
+	# (within a few centimetres: the wrist is at the marker, or the palm when it is turned with it).
+	var other := _item.get_node_or_null(_item.get("other_grip")) as Node3D if int(_item.get("other_hand")) in [1, 2] else null
+	if other != null:
+		var copy: Node3D = null
+		for child in _item.get_children(true):
+			if not kept.has(child) and child != figure and not child.is_queued_for_deletion():
+				copy = child
+		var marker: Vector3 = copy.global_transform * (_item.global_transform.affine_inverse() * other.global_position)
+		var hand: Vector3 = figure.call("get_joint_global_transform", "LeftHand").origin
+		print("the other hand is %.0f mm from its marker" % (hand.distance_to(marker) * 1000.0))
+		if hand.distance_to(marker) > 0.12:
+			printerr("the other hand is not at its marker")
+			quit(1)
+			return true
 	if _out != "":
 		root.get_texture().get_image().save_png(_out)
 	quit(0)

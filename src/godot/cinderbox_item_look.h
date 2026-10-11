@@ -275,10 +275,10 @@ private:
 	bool m_previewAim = false;
 	godot::ObjectID m_previewCopy; // the copy of the item's meshes in the figure's hand
 	int m_previewCopied = 0; // frames since the copy was made
-	// Where the figure's right hand holds: the hand socket of the character this checkout's server
-	// plays (godot/characters/<name>/anim.cfg, in the bone's frame), or the built-in one.
+	// Where the figure's right hand holds, in the hand joint's frame: the hand socket of the
+	// character this checkout's server plays (godot/characters/<name>/anim.cfg), or the built-in
+	// one. The preview's animation set has the same, for the other hand's reach.
 	godot::Transform3D m_previewSocket;
-	bool m_previewSocketOfBone = false;
 	godot::ObjectID m_previewFigure;
 	std::string m_previewLoaded; // the folder the preview's animations came from
 	std::shared_ptr<const anim::AnimSet> m_previewSet;
