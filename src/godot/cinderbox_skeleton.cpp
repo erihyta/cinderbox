@@ -703,11 +703,13 @@ void CinderboxSkeleton::KeepArms( Skeleton3D* rig, bool left, bool right )
 	}
 	const Vector3 nothing( 0.0001f, 0.0001f, 0.0001f );
 	Transform3D kept[2] = { rig->get_bone_global_pose( shoulders[0] ), rig->get_bone_global_pose( shoulders[1] ) };
-	rig->set_bone_pose_scale( hips, nothing );
-	// The chest shrinks between the shoulders, not at the hips: what is skinned to both it and a
-	// shoulder would otherwise be drawn out from the arm all the way down (seen looking down).
+	// All of it shrinks to one point, between the shoulders. Not at the hips: what is skinned to
+	// both the chest and a shoulder would be drawn out from the arm all the way down. And not the
+	// hips in one place and the chest in another: what is skinned to both would be a thin line
+	// from the one to the other (seen looking down).
 	Vector3 between = ( kept[0].origin + kept[1].origin ) * 0.5f;
-	for ( const char* name : { "Chest", "UpperChest" } )
+	rig->set_bone_global_pose( hips, Transform3D( Basis().scaled( nothing ), between ) );
+	for ( const char* name : { "Spine", "Chest", "UpperChest" } )
 	{
 		if ( int bone = BoneOf( name ); bone >= 0 )
 		{

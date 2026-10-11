@@ -8,12 +8,9 @@ namespace cb::gd
 namespace
 {
 
-// Where a built-in hand socket sits in the items' hand frame (AnimSet::AttachFrame): the grip a
-// little along the fingers, the item pointing where the hand points.
 Transform3D HandSocketFrame()
 {
-	Basis turn = Basis::from_euler( Vector3( Math::deg_to_rad( -90.0 ), Math::deg_to_rad( 180.0 ), 0.0 ) );
-	return Transform3D( turn, Vector3( 0, -0.06, 0 ) );
+	return CbItem::HandSocketFrame();
 }
 
 void CollectSocketNodes( Node* node, std::vector<CbSocket*>& out )

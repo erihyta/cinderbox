@@ -3,6 +3,7 @@
 #   powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -Setup             put the extension into sdk\, to open it in Godot
 #   powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New <mod>         make server_mods\<mod>\client from it
 #   powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -Update <mod>      refresh an existing project's SDK parts
+#   powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -Extensions        copy the built extension into every mod's, character's and the SDK's project
 #   powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -Starters          rebuild sdk\starters' animation packs
 #
 # An SDK project's own parts (copied in, git-ignored in a mod's project, never packed into the mod):
@@ -26,6 +27,7 @@ param(
 	[string]$New = "",
 	[string]$Update = "",
 	[switch]$Starters,
+	[switch]$Extensions,
 	[string]$Godot = ""
 )
 
@@ -144,6 +146,20 @@ if ($Update) {
 	Write-Host "updated $project"
 }
 
-if (-not ($Setup -or $Starters -or $New -or $Update)) {
-	Write-Host "pass -Setup, -New <mod>, -Update <mod> or -Starters (see the top of this file)"
+# The extension alone, into every project that has a copy of it (each mod's and character's look,
+# and the SDK): after the extension was built again, so their editors know the nodes as they are now.
+if ($Extensions) {
+	$projects = @($sdk)
+	foreach ($parent in @("server_mods", "characters")) {
+		$projects += Get-ChildItem (Join-Path $root $parent) -Directory -ErrorAction SilentlyContinue |
+			ForEach-Object { Join-Path $_.FullName "client" } | Where-Object { Test-Path (Join-Path $_ "project.godot") }
+	}
+	foreach ($project in $projects) {
+		Extension $project
+		Write-Host "extension -> $project"
+	}
+}
+
+if (-not ($Setup -or $Starters -or $New -or $Update -or $Extensions)) {
+	Write-Host "pass -Setup, -New <mod>, -Update <mod>, -Extensions or -Starters (see the top of this file)"
 }

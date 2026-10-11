@@ -30,8 +30,8 @@ display_name = "Pistol"
 slot = 1
 carry_grip = NodePath("Carry")
 other_hand = 3
-mass = 0.9
 view_offset = Vector3(0, 0.05, 0.03)
+mass = 0.9
 
 [node name="Body" type="CollisionShape3D" parent="." unique_id=1346467814]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.07)
@@ -50,21 +50,21 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.067, -0.16)
 mesh = SubResource("Sight")
 
 [node name="Carry" type="Marker3D" parent="." unique_id=1976802778]
-transform = Transform3D(-7.590404e-09, 4.3047308e-08, -1, 0.9848076, 0.17364821, 0, 0.17364821, -0.9848076, -4.371139e-08, 0, -0.014388949, 0.0062951446)
+transform = Transform3D(-7.590404e-09, 4.3047308e-08, -1, 0.9848076, 0.17364821, 0, 0.17364821, -0.9848076, -4.371139e-08, 0, -0.03272143, 0.0062951446)
 
 [node name="OtherHand" type="Marker3D" parent="." unique_id=1225211331]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.014388949, 0.0062951446)
 
-[node name="Muzzle" type="Node3D" parent="."]
+[node name="Muzzle" type="Node3D" parent="." unique_id=478220168]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.04, -0.175)
 
-[node name="Flash" type="CbReaction" parent="Muzzle"]
+[node name="Flash" type="CbReaction" parent="Muzzle" unique_id=1276072186]
 event = "pistol.fired"
 subject = NodePath("^^")
 scene = "res://vfx/muzzle_flash.tscn"
 scene_lifetime = 0.3
 
-[node name="Tracer" type="CbReaction" parent="Muzzle"]
+[node name="Tracer" type="CbReaction" parent="Muzzle" unique_id=56869105]
 event = "pistol.fired"
 subject = NodePath("^^")
 scene = "res://vfx/tracer.tscn"
@@ -72,7 +72,7 @@ scene_lifetime = 0.06
 place = 3
 place_node = NodePath("..")
 
-[node name="ScanBeam" type="CbReaction" parent="Muzzle"]
+[node name="ScanBeam" type="CbReaction" parent="Muzzle" unique_id=1889618647]
 event = "pistol.scan"
 subject = NodePath("^^")
 scene = "res://vfx/scan_beam.tscn"
@@ -80,20 +80,20 @@ scene_lifetime = 0.15
 place = 3
 place_node = NodePath("..")
 
-[node name="PredictFire" type="CbPrediction" parent="."]
+[node name="PredictFire" type="CbPrediction" parent="." unique_id=971389919]
 action = "use"
 cue = "pistol.fired"
 conditions = PackedStringArray("pistol.ammo > 0", "!pistol.reloading", "!combat.dead")
 cooldown = 0.19
 changes = PackedStringArray("pistol.ammo -= 1")
 
-[node name="PredictDry" type="CbPrediction" parent="."]
+[node name="PredictDry" type="CbPrediction" parent="." unique_id=441374804]
 action = "use"
 cue = "pistol.dry"
 conditions = PackedStringArray("pistol.ammo == 0", "!pistol.reloading", "!combat.dead")
 cooldown = 0.19
 
-[node name="PredictScan" type="CbPrediction" parent="."]
+[node name="PredictScan" type="CbPrediction" parent="." unique_id=790448448]
 action = "mark"
 cue = "pistol.scan"
 conditions = PackedStringArray("!pistol.reloading", "!combat.dead")

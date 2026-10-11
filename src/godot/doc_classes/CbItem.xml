@@ -51,6 +51,15 @@
 		<member name="use" type="int" setter="set_use" getter="get_use" enum="CbItem.Use" default="0">
 			How a player uses it, on a server with slots. Either way its server mod is told the same thing ([code]ctx.Used( player, kind )[/code]), and the simulation records the event [code]&lt;kind&gt;.used[/code] on that tick where a mod declared it, so a [CbReaction] on it plays at once on the player's own screen.
 		</member>
+		<member name="preview_hold" type="bool" setter="set_preview_hold" getter="get_preview_hold" default="false">
+			In the editor: shows the item in a hand. A stand-in figure (the SDK skeleton's bones, as boxes) stands a metre beside the item and holds a copy of it by [member carry_grip], in the pose of a baked animation pack of this project, with its other hand where [member other_hand] and [member other_grip] put it. It is posed by the code that poses players in the game. Move a grip marker and the copy in the hand follows (within half a second). Not saved.
+		</member>
+		<member name="preview_aim" type="bool" setter="set_preview_aim" getter="get_preview_aim" default="false">
+			With [member preview_hold]: the carrying arm is aimed level, as it is for an item whose mod makes the holder face the camera (a gun).
+		</member>
+		<member name="preview_pack" type="String" setter="set_preview_pack" getter="get_preview_pack" default="&quot;&quot;">
+			The pack [member preview_hold] plays (a folder of [code]res://anim[/code], such as [code]melee.hold[/code]); empty: the first there is. The pack is shown in the state it starts in.
+		</member>
 		<member name="slot" type="int" setter="set_slot" getter="get_slot" default="0">
 			The slot it goes to when a player comes to carry one: 1 is the first. What is there makes room (to a free slot, or onto the floor). 0: the first free slot.
 		</member>

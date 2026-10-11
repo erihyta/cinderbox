@@ -1,16 +1,26 @@
 #include "cinderbox_item_look.h"
 
+#include "anim_graph.h"
+#include "anim_set.h"
+#include "cinderbox_skeleton.h"
+#include "joint_math.h"
+#include "pose.h"
+
 #include <godot_cpp/classes/box_shape3d.hpp>
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/material.hpp>
+#include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/packed_scene.hpp>
+#include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
 #include <godot_cpp/classes/sphere_shape3d.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -79,6 +89,18 @@ void CbItem::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "view_right_hand" ), "set_view_right_hand", "get_view_right_hand" );
 	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "view_camera", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D" ), "set_view_camera",
 				  "get_view_camera" );
+	ClassDB::bind_method( D_METHOD( "set_preview_hold", "value" ), &CbItem::set_preview_hold );
+	ClassDB::bind_method( D_METHOD( "get_preview_hold" ), &CbItem::get_preview_hold );
+	ClassDB::bind_method( D_METHOD( "set_preview_pack", "value" ), &CbItem::set_preview_pack );
+	ClassDB::bind_method( D_METHOD( "get_preview_pack" ), &CbItem::get_preview_pack );
+	// (Shown in the editor, kept nowhere: PROPERTY_USAGE_EDITOR.)
+	ADD_GROUP( "Preview", "preview_" );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "preview_hold", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR ), "set_preview_hold", "get_preview_hold" );
+	ClassDB::bind_method( D_METHOD( "set_preview_aim", "value" ), &CbItem::set_preview_aim );
+	ClassDB::bind_method( D_METHOD( "get_preview_aim" ), &CbItem::get_preview_aim );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "preview_aim", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR ), "set_preview_aim", "get_preview_aim" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "preview_pack", PROPERTY_HINT_PLACEHOLDER_TEXT, "the first in res://anim", PROPERTY_USAGE_EDITOR ),
+				  "set_preview_pack", "get_preview_pack" );
 	ADD_GROUP( "", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::CALLABLE, "bake_button", PROPERTY_HINT_TOOL_BUTTON, "Bake item,Save", PROPERTY_USAGE_EDITOR ), "",
 				  "get_bake_button" );
@@ -188,6 +210,237 @@ String ShapeProblem( const CollisionShape3D* body )
 }
 
 } // namespace
+
+Transform3D CbItem::HandSocketFrame()
+{
+	Basis turn = Basis::from_euler( Vector3( Math::deg_to_rad( -90.0 ), Math::deg_to_rad( 180.0 ), 0.0 ) );
+	return Transform3D( turn, Vector3( 0, -0.06, 0 ) );
+}
+
+void CbItem::set_preview_hold( bool v )
+{
+	// (The editor's; a check outside it asks with the meta "cb_preview".)
+	m_previewHold = v && ( Engine::get_singleton()->is_editor_hint() || has_meta( "cb_preview" ) );
+	set_process( m_previewHold );
+	if ( m_previewHold == false )
+	{
+		EndPreview();
+	}
+}
+
+void CbItem::set_preview_pack( const String& v )
+{
+	m_previewPack = v.strip_edges();
+	m_previewLoaded.clear(); // looked for again
+}
+
+void CbItem::EndPreview()
+{
+	if ( auto* figure = Object::cast_to<Node>( ObjectDB::get_instance( m_previewFigure ) ) )
+	{
+		figure->queue_free();
+	}
+	m_previewFigure = ObjectID();
+	if ( auto* copy = Object::cast_to<Node>( ObjectDB::get_instance( m_previewCopy ) ) )
+	{
+		copy->queue_free();
+	}
+	m_previewCopy = ObjectID();
+	m_previewPose.reset();
+	m_previewGraph.reset();
+	m_previewSet.reset();
+	m_previewLoaded.clear();
+}
+
+void CbItem::_process( double delta )
+{
+	if ( m_previewHold == false || is_inside_tree() == false )
+	{
+		return;
+	}
+	// The pack: the one named, or the first the project has baked.
+	String pack = m_previewPack;
+	if ( pack.is_empty() )
+	{
+		PackedStringArray packs = DirAccess::get_directories_at( "res://anim" );
+		packs.sort();
+		pack = packs.is_empty() ? String() : packs[0];
+	}
+	std::string folder = std::string( ( String( "res://anim/" ) + pack ).utf8().get_data() );
+	if ( folder != m_previewLoaded )
+	{
+		m_previewLoaded = folder;
+		m_previewPose.reset();
+		m_previewSet.reset();
+		m_previewGraph.reset();
+		if ( pack.is_empty() )
+		{
+			UtilityFunctions::push_warning( "Item preview: this project has no baked animation pack (res://anim/<pack>/). Save a CbAnimPack scene first." );
+			return;
+		}
+		String base = String( "res://anim/" ) + pack;
+		anim::FileReader read = [base]( const std::string& file, std::string& bytes ) {
+			PackedByteArray data = FileAccess::get_file_as_bytes( base.path_join( String::utf8( file.c_str() ) ) );
+			bytes.assign( reinterpret_cast<const char*>( data.ptr() ), size_t( data.size() ) );
+			return data.is_empty() == false;
+		};
+		std::string error, warnings;
+		std::unique_ptr<anim::AnimSet> set = anim::AnimSet::Load( read, folder, error, warnings );
+		if ( set == nullptr )
+		{
+			UtilityFunctions::push_warning( "Item preview: ", base, " does not load: ", String::utf8( error.c_str() ) );
+			return;
+		}
+		// (Its conditions name the mod's events and stances, which nothing declares here: the
+		// preview stays in the state the pack starts in.)
+		auto graph = CompileAnimGraph( set->GraphText(), ModSchema{}, error, warnings );
+		if ( graph == nullptr || graph->layers.empty() )
+		{
+			UtilityFunctions::push_warning( "Item preview: the state machine of ", base, " does not load: ", String::utf8( error.c_str() ) );
+			return;
+		}
+		// The hands' sockets are the character's: the one this checkout's server plays by default
+		// (the project is <checkout>/server_mods/<mod>/client), if it is there to read. They are
+		// given to the pack's own set, so the item's place in the hand and the place the other
+		// hand reaches for are worked out from the same socket, as in the game. (A pack has none
+		// of its own: with the built-in one for the reach and the character's for the item, the
+		// other hand held the air beside it.)
+		String checkout = ProjectSettings::get_singleton()->globalize_path( "res://" ).path_join( "../../.." ).simplify_path();
+		for ( const char* character : { "ual_mannequin", "mannequin" } )
+		{
+			String cfg = checkout.path_join( "godot/characters" ).path_join( character ).path_join( "anim.cfg" );
+			if ( FileAccess::file_exists( cfg ) == false )
+			{
+				continue;
+			}
+			PackedStringArray lines = FileAccess::get_file_as_string( cfg ).split( "\n" );
+			for ( const String& line : lines )
+			{
+				bool right = line.begins_with( "socket.RightHand" );
+				if ( ( right == false && line.begins_with( "socket.LeftHand" ) == false ) || line.contains( "=" ) == false )
+				{
+					continue;
+				}
+				PackedFloat64Array v = line.get_slice( "=", 1 ).strip_edges().split_floats( " ", false );
+				if ( v.size() == 7 )
+				{
+					anim::AnimSet::HandSocket socket;
+					socket.position = { float( v[0] ), float( v[1] ), float( v[2] ) };
+					socket.rotation = b3NormalizeQuat( b3Quat{ { float( v[3] ), float( v[4] ), float( v[5] ) }, float( v[6] ) } );
+					set->SetHandSocket( right == false, socket );
+				}
+			}
+			break;
+		}
+		const anim::AnimSet::HandSocket& holding = set->HandSocketOf( false );
+		m_previewSocket = Transform3D( Basis( Quaternion( holding.rotation.v.x, holding.rotation.v.y, holding.rotation.v.z, holding.rotation.s ) ),
+									   Vector3( holding.position.x, holding.position.y, holding.position.z ) );
+		m_previewSet = std::move( set );
+		m_previewGraph = graph;
+		m_previewPose = std::make_shared<anim::PoseEvaluator>( *m_previewSet );
+		m_previewPose->SetGraph( m_previewGraph, warnings );
+	}
+	if ( m_previewPose == nullptr )
+	{
+		return;
+	}
+	auto* figure = Object::cast_to<CinderboxSkeleton>( ObjectDB::get_instance( m_previewFigure ) );
+	if ( figure == nullptr )
+	{
+		figure = memnew( CinderboxSkeleton );
+		figure->set_name( "HoldPreview" );
+		figure->set_draw_bone_boxes( true );
+		figure->set_use_slot_color( false );
+		figure->set_body_color( Color( 0.75f, 0.78f, 0.82f ) );
+		add_child( figure, false, INTERNAL_MODE_BACK );
+		m_previewFigure = ObjectID( figure->get_instance_id() );
+	}
+
+	// The pack's first layer in the state it starts in, playing.
+	const AnimGraphLayer& layer = m_previewGraph->layers[0];
+	const AnimGraphState& start = layer.states[size_t( layer.start )];
+	float length = start.points.empty() ? 1.0f : m_previewGraph->clips[size_t( start.points[0].clip )].length;
+	m_previewTime = std::fmod( m_previewTime + delta, double( std::max( length, 0.05f ) ) );
+	AnimState state;
+	state.graph.resize( 1 );
+	AnimGraphLayerState& playing = state.graph[0];
+	playing.started = 1;
+	playing.state = playing.previous = uint8_t( layer.start );
+	playing.weight = 1.0f;
+	playing.time = start.blend ? float( m_previewTime / std::max( length, 0.05f ) ) : float( m_previewTime );
+
+	// The other hand, as the bake says it and the game solves it.
+	const Transform3D carry = CarryFrameUnder( this );
+	anim::HandGrip grip;
+	bool held = m_otherHand != OTHER_FREE;
+	if ( held )
+	{
+		auto* other = m_otherGrip.is_empty() ? nullptr : Object::cast_to<Node3D>( get_node_or_null( m_otherGrip ) );
+		Transform3D at = other != nullptr ? ( carry.affine_inverse() * InSceneFrame( other, this ) ).orthonormalized() : Transform3D();
+		Quaternion turn = at.basis.get_rotation_quaternion();
+		grip.align = m_otherHand == OTHER_AT_MARKER_TURNED;
+		grip.asAnimated = m_otherHand == OTHER_AS_ANIMATED;
+		grip.position = { float( at.origin.x ), float( at.origin.y ), float( at.origin.z ) };
+		grip.rotation = { { float( turn.x ), float( turn.y ), float( turn.z ) }, float( turn.w ) };
+		held = grip.asAnimated || other != nullptr;
+	}
+	state.aiming = m_previewAim ? 1 : 0;
+	m_previewPose->Evaluate( state, held ? &grip : nullptr );
+	figure->ApplyPose( *m_previewSet, m_previewPose->Models() );
+
+	// The figure stands upright beside the item, facing where the item points (-Z), its feet a
+	// metre under the item's origin; a copy of the item's meshes is in its right hand, by the
+	// carrying grip.
+	figure->set_transform( Transform3D( Basis( Vector3( 0, 1, 0 ), float( Math_PI ) ), Vector3( 1.0f, -1.0f, 0.0f ) ) );
+	auto* copy = Object::cast_to<Node3D>( ObjectDB::get_instance( m_previewCopy ) );
+	if ( copy == nullptr || ++m_previewCopied >= 30 )
+	{
+		// (Made again twice a second: the scene is being edited.)
+		Node* old = copy;
+		if ( old != nullptr )
+		{
+			old->queue_free();
+		}
+		m_previewCopied = 0;
+		copy = memnew( Node3D );
+		copy->set_name( "HeldCopy" );
+		TypedArray<Node> meshes = find_children( "*", "MeshInstance3D", true, false );
+		for ( int i = 0; i < meshes.size(); ++i )
+		{
+			auto* mesh = Object::cast_to<MeshInstance3D>( meshes[i] );
+			if ( mesh == nullptr || mesh->get_mesh().is_null() || mesh->is_visible_in_tree() == false )
+			{
+				continue;
+			}
+			// (Not the preview's own: the last copy is still here until the frame ends, and a copy
+			// of a copy would be one more item in the hand every time.)
+			bool own = false;
+			for ( Node* above = mesh->get_parent(); above != nullptr && above != this; above = above->get_parent() )
+			{
+				own |= above == old || above == figure;
+			}
+			if ( own )
+			{
+				continue;
+			}
+			MeshInstance3D* part = memnew( MeshInstance3D );
+			part->set_mesh( mesh->get_mesh() );
+			for ( int surface = 0; surface < mesh->get_surface_override_material_count(); ++surface )
+			{
+				part->set_surface_override_material( surface, mesh->get_surface_override_material( surface ) );
+			}
+			part->set_transform( InSceneFrame( mesh, this ) );
+			copy->add_child( part );
+		}
+		add_child( copy, false, INTERNAL_MODE_BACK );
+		m_previewCopy = ObjectID( copy->get_instance_id() );
+	}
+	Transform3D hand;
+	if ( figure->JointTransform( "RightHand", hand ) )
+	{
+		copy->set_transform( figure->get_transform() * hand * m_previewSocket * carry.affine_inverse() );
+	}
+}
 
 Transform3D CbItem::CarryFrameUnder( const Node* root )
 {

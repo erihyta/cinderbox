@@ -69,3 +69,14 @@ set_target_properties(cinderbox_peer_gd PROPERTIES
 if(MINGW)
 	target_link_options(cinderbox_peer_gd PRIVATE -static)
 endif()
+
+# Every mod's, character's and the SDK's project has a copy of the extension (its editor loads it):
+# they get this build's, so a node's new properties are there the next time a project is opened.
+# (A copy an open editor has loaded is left as it is, with a warning.)
+if(WIN32)
+	add_custom_command(TARGET cinderbox_gd POST_BUILD
+		COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_SOURCE_DIR}/tools/sdk.ps1" -Extensions
+		COMMENT "Copying the extension into the mods' projects"
+		VERBATIM
+	)
+endif()
