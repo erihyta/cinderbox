@@ -38,6 +38,7 @@ What a world reaction adds to the [reaction fields](#reactions):
 | `sound`, `volume_db`, `pitch_scale`, `pitch_jitter`, `bus`, `max_distance` | a sound, once per firing |
 | `shake`, `shake_time`, `flash_color`, `flash_time` | camera shake and a full-screen flash: the viewer's, so pair them with `is_local` or subject `local` |
 | a `scene` a reaction adds | is an effect: nothing in it casts a shadow, whatever its scene says. Its lights light the world as usual |
+| a reaction inside an item's scene whose subject is the holder (`^^`) | hears only while the item is in use. Put away (on the hip, on the back), it is silent: every item can answer the same cue (`item.use`) and only the one in the hand does. A reaction about the item itself (subject `^`, the default) is heard wherever the item is |
 
 Footsteps and impacts come from the simulation, not from the renderer guessing:
 - A **footstep** is a stride, counted by distance walked, so the rate follows the speed on its own.
