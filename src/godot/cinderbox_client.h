@@ -81,9 +81,10 @@ public:
 	// 2 / 3 over the right / left shoulder), with the camera turned as `camera` is: the point the
 	// server takes for it too (mods::Context::ViewPosition), so the crosshair is exact.
 	godot::Vector3 get_view_position( int64_t view, const godot::Basis& camera ) const;
-	// The viewer looks out of its own player's eyes. Its body keeps the pose everyone sees and casts
-	// that pose's shadow, what it holds too; of the body itself only what is below the hips is
-	// drawn. The arms and what they hold are drawn again for the view (the view model: on a layer
+	// The viewer looks out of its own player's eyes. The world stays the third-person one: its body
+	// keeps the pose everyone sees and casts that pose's shadow, what it holds too, and is only not
+	// drawn. What the viewer sees of itself are copies for the eye: its legs (slid back as it looks
+	// down, so the waist is never seen), and the arms and what they hold (the view model: on a layer
 	// of their own, by a camera of the game's, over the world): the same animations, held still
 	// under the camera (the walk does not swing the arms across the screen; what the arms do
 	// themselves, a swing, a shot's recoil, shows), with the held item's settings (CbItem:
@@ -360,6 +361,7 @@ private:
 	std::unordered_map<uint64_t, godot::ObjectID> m_itemShadows; // item node -> its shadow
 	void ItemShadow( godot::Node3D* item, const godot::Transform3D* at );
 	void ViewLayers( godot::Node* node, bool on ); // an item's visuals onto the view model's layer, or back
+	void ShadowsOnly( godot::Node* node, bool on ); // an item's visuals cast their shadows and are not drawn, or as they were
 	bool m_firstPerson = false;
 	godot::ObjectID m_firstPersonSkeleton; // whose body is cut for it now
 	void FirstPersonBody( uint32_t netId, godot::Node* node, const AnimState* state, present::Models& models );

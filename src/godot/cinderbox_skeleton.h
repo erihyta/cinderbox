@@ -92,12 +92,12 @@ public:
 		return m_useSlotColor;
 	}
 
-	// The viewer's own body in first person: the arms, and everything from the hips down. The torso,
-	// the neck and the head are not drawn (their bones are shrunk to nothing after the pose is
-	// applied, and the shoulders put back where the pose has them). The pose itself is untouched:
-	// joint transforms, sockets and hit tests do not change. The whole body still casts its shadow:
-	// meanwhile the shadows come from a copy of the skeleton and its meshes that is posed the same,
-	// is whole, and draws nothing else.
+	// The viewer's own body in first person. The body itself is not touched: it keeps the pose
+	// everyone sees and casts that pose's shadow. Its meshes are only set to cast their shadow
+	// without being drawn. What the viewer sees of itself are copies, made for the eye alone and
+	// casting nothing: the arms (below), and the legs: a copy of the body in the same pose of
+	// which only what is below the waist is left, which PlaceViewLegs slides back as the viewer
+	// looks down, so the waist is never in the picture.
 	void set_first_person_body( bool value )
 	{
 		m_firstPersonBody = value;
@@ -106,20 +106,11 @@ public:
 	{
 		return m_firstPersonBody;
 	}
-	// And whether the arms are drawn with it. False: only what is below the hips is (what is held
-	// floats in the view: CbItem.view_camera).
-	void set_first_person_arms( bool value )
-	{
-		m_firstPersonArms = value;
-	}
-	bool get_first_person_arms() const
-	{
-		return m_firstPersonArms;
-	}
+	// `shift` (the world): how far the legs' copy is moved from where the body is.
+	void PlaceViewLegs( const godot::Vector3& shift );
 	// The view's arms (first person): a copy of this body of which only the arms are drawn, on the
 	// view model's layer (kViewLayer: a camera of the game's draws it over the world, with a field of
-	// view of its own). The body itself keeps the pose everyone sees, casts the shadow of it, and
-	// draws only what is below the hips.
+	// view of its own). The body itself keeps the pose everyone sees and casts the shadow of it.
 	//
 	// SetViewPose gives the pose the arms are drawn in (the same animations, steadied under the
 	// camera: CinderboxClient::FirstPersonBody); none: no arms. set_view_hands: which of them is
@@ -238,12 +229,12 @@ private:
 	void CutBody( godot::Skeleton3D* target );
 	int BoneOf( const char* profileName ) const; // the target's bone for a profile name, or -1
 	bool m_firstPersonBody = false;
-	bool m_firstPersonArms = true;
-	std::vector<int> m_cutBones; // the target bones the cut moved or shrank: put back before the next
-	void UpdateShadowBody( godot::Skeleton3D* target );
-	godot::ObjectID m_shadowBody;	// the copy that casts the shadows
-	godot::ObjectID m_shadowOf;		// the skeleton it copies
-	std::vector<std::pair<godot::ObjectID, int>> m_shadowSettings; // the meshes' own cast_shadow
+	void HideBody( godot::Skeleton3D* target );
+	godot::ObjectID m_hiddenBody; // the skeleton whose meshes only cast shadows now
+	std::vector<std::pair<godot::ObjectID, int>> m_hiddenCasts; // those meshes' own cast_shadow
+	void UpdateViewLegs( godot::Skeleton3D* target );
+	godot::ObjectID m_viewLegs; // the copy whose legs the viewer sees
+	godot::ObjectID m_viewLegsOf;
 	bool m_viewArms = false;
 	void UpdateViewArms( godot::Skeleton3D* target );
 	godot::ObjectID m_viewRig; // the copy whose arms the view draws
