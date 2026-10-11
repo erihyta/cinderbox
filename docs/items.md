@@ -248,6 +248,22 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 | two `Marker3D`s | [where the hands hold it](#both-hands-on-an-item): the item's `carry_grip` and `other_grip` name them |
 | anything else | its look: meshes, lights, particles; `CbReaction` nodes for what it shows (`subject` `^^`: whoever holds it); `CbPrediction` nodes for what its own use looks like on the click, which speak only for the copy in the viewer's hand ([Predictions](looks.md#predictions)) |
 
+### Seeing it in a hand, in the editor
+
+Select the item's root and tick **Preview > Hold**. A stand-in figure (the SDK skeleton's bones,
+as boxes) stands a metre beside the item, holding a copy of it.
+
+| | |
+|---|---|
+| The pose | the state a baked animation pack of the project starts in, playing (`preview_pack`: a folder of `res://anim`; empty: the first). Save the pack's scene first: the preview reads what is baked |
+| The hands | the carrying hand on `carry_grip`; the other where `other_hand` and `other_grip` put it. Move a marker and the copy follows within half a second |
+| `preview_aim` | the carrying arm aimed level, as a gun's mod has it (it makes the holder face the camera) |
+| The hand's socket | the one of the character this checkout's server plays (`godot/characters/<name>/anim.cfg`); without a checkout, the built-in one |
+| How true it is | it is posed by the code that poses players in the game. It is one state of one pack on the placeholder's proportions: not a swing, not another character |
+
+Nothing of it is saved with the scene. `check_item_preview.gd` draws it outside the editor
+([testing](testing.md)).
+
 ### First person
 
 There is one animation. What a player's body does in third person is what its holder sees in

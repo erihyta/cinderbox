@@ -155,6 +155,7 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 ## Try things without a game
 
 - **Cue Preview** (bottom panel): plays the open scene's reactions on stand-in players. Fire a cue
+- **An item in a hand**: select an item's root and tick Preview > Hold: a figure beside it holds a copy, in the pose of the project's animation pack. Move a grip marker and watch the hand.
   by name, set any state name, pick the local player.
 - **AnimationTree**: set a pack's tree Active in the editor to watch its states on the model.
 
