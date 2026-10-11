@@ -25,7 +25,8 @@ enum InputField : uint16_t
 	FieldPitch = 1 << 6,
 	FieldActions = 1 << 7,
 	FieldIntent = 1 << 8, // intent, intentA, intentB, intentSeq
-	FieldAll = 0x1FF,
+	FieldPitchDelta = 1 << 9, // relative, i8 (a mouse moves both angles a little every tick)
+	FieldAll = 0x3FF,
 };
 
 // Which members of a command follow its type byte. Anything left out is zero, so most commands
@@ -479,6 +480,115 @@ namespace
 {
 // An input as a packet carries it: what is always there, then as many bytes of its actions as
 // are in use (most have none, or a byte).
+// One input against the one before it: a mask of the fields that changed (0: none), then those
+// fields; small camera turns as one-byte differences. What frames carry for each player, and what
+// an input packet carries for each tick after its first.
+void WriteInputDelta( ByteWriter& w, const PlayerInput& now, const PlayerInput& before )
+{
+	int yawDelta = int16_t( uint16_t( now.cameraYaw - before.cameraYaw ) );
+	int pitchDelta = int( now.cameraPitch ) - int( before.cameraPitch );
+	uint16_t fields = 0;
+	fields |= now.moveRight != before.moveRight ? FieldMoveRight : 0;
+	fields |= now.moveForward != before.moveForward ? FieldMoveForward : 0;
+	if ( now.cameraYaw != before.cameraYaw )
+	{
+		fields |= ( yawDelta >= -128 && yawDelta <= 127 ) ? FieldYawDelta : FieldYaw;
+	}
+	fields |= now.buttons != before.buttons ? FieldButtons : 0;
+	fields |= now.view != before.view ? FieldView : 0;
+	if ( now.cameraPitch != before.cameraPitch )
+	{
+		fields |= ( pitchDelta >= -128 && pitchDelta <= 127 ) ? FieldPitchDelta : FieldPitch;
+	}
+	fields |= now.actions != before.actions ? FieldActions : 0;
+	fields |= now.intent != before.intent || now.intentA != before.intentA || now.intentB != before.intentB || now.intentSeq != before.intentSeq
+				  ? FieldIntent
+				  : 0;
+
+	w.Write( fields );
+	if ( fields & FieldMoveRight )
+		w.Write( now.moveRight );
+	if ( fields & FieldMoveForward )
+		w.Write( now.moveForward );
+	if ( fields & FieldYaw )
+		w.Write( now.cameraYaw );
+	if ( fields & FieldYawDelta )
+		w.Write( int8_t( yawDelta ) );
+	if ( fields & FieldButtons )
+		w.Write( now.buttons );
+	if ( fields & FieldView )
+		w.Write( now.view );
+	if ( fields & FieldPitch )
+		w.Write( now.cameraPitch );
+	if ( fields & FieldPitchDelta )
+		w.Write( int8_t( pitchDelta ) );
+	if ( fields & FieldActions )
+	{
+		// As many bytes as are in use, and how many.
+		int bytes = ActionByteCount( now.actions );
+		w.Write( uint8_t( bytes ) );
+		w.WriteBytes( reinterpret_cast<const uint8_t*>( &now.actions ), size_t( bytes ) );
+	}
+	if ( fields & FieldIntent )
+	{
+		w.Write( now.intent );
+		w.Write( now.intentA );
+		w.Write( now.intentB );
+		w.Write( now.intentSeq );
+	}
+}
+
+// `in` holds the input before, and becomes the one read. `some`: an empty mask is not allowed (a
+// frame names only the players that changed).
+bool ReadInputDelta( ByteReader& r, PlayerInput& in, bool some )
+{
+	uint16_t fields = r.Read<uint16_t>();
+	if ( ( some && fields == 0 ) || ( fields & ~FieldAll ) != 0 || ( ( fields & FieldYaw ) && ( fields & FieldYawDelta ) ) ||
+		 ( ( fields & FieldPitch ) && ( fields & FieldPitchDelta ) ) )
+	{
+		return false;
+	}
+	if ( fields & FieldMoveRight )
+		in.moveRight = r.Read<int8_t>();
+	if ( fields & FieldMoveForward )
+		in.moveForward = r.Read<int8_t>();
+	if ( fields & FieldYaw )
+		in.cameraYaw = r.Read<uint16_t>();
+	if ( fields & FieldYawDelta )
+		in.cameraYaw = uint16_t( in.cameraYaw + uint16_t( int16_t( r.Read<int8_t>() ) ) );
+	if ( fields & FieldButtons )
+		in.buttons = r.Read<uint8_t>();
+	if ( fields & FieldView )
+		in.view = r.Read<uint8_t>();
+	if ( fields & FieldPitch )
+		in.cameraPitch = r.Read<int16_t>();
+	if ( fields & FieldPitchDelta )
+		in.cameraPitch = int16_t( int( in.cameraPitch ) + int( r.Read<int8_t>() ) );
+	if ( fields & FieldActions )
+	{
+		uint8_t bytes = r.Read<uint8_t>();
+		const uint8_t* taken = r.Ok() && bytes <= sizeof( ActionBits ) ? r.Take( bytes ) : nullptr;
+		if ( taken == nullptr )
+		{
+			return false;
+		}
+		in.actions = 0;
+		std::memcpy( &in.actions, taken, bytes );
+	}
+	if ( fields & FieldIntent )
+	{
+		in.intent = r.Read<uint8_t>();
+		in.intentA = r.Read<uint8_t>();
+		in.intentB = r.Read<uint8_t>();
+		in.intentSeq = r.Read<uint8_t>();
+		if ( in.intent > kLastSlotIntent )
+		{
+			return false;
+		}
+	}
+	return r.Ok();
+}
+
 void WriteInput( ByteWriter& w, const PlayerInput& in )
 {
 	w.Write( in.moveRight );
@@ -528,9 +638,18 @@ void Encode( const MsgInput& m, std::vector<uint8_t>& out )
 	w.Write( m.newestTick );
 	w.Write( m.ackTick );
 	w.Write( uint8_t( n ) );
+	// The oldest in full, each later one as what changed since the tick before it: a packet repeats
+	// a dozen ticks so that a lost one costs nothing, and most of them are alike.
 	for ( size_t i = m.inputs.size() - n; i < m.inputs.size(); ++i )
 	{
-		WriteInput( w, m.inputs[i] );
+		if ( i == m.inputs.size() - n )
+		{
+			WriteInput( w, m.inputs[i] );
+		}
+		else
+		{
+			WriteInputDelta( w, m.inputs[i], m.inputs[i - 1] );
+		}
 	}
 }
 
@@ -544,9 +663,13 @@ bool Decode( ByteReader& r, MsgInput& m )
 		return false;
 	}
 	m.inputs.resize( n );
-	for ( PlayerInput& in : m.inputs )
+	for ( size_t i = 0; i < m.inputs.size(); ++i )
 	{
-		if ( ReadInput( r, in ) == false )
+		if ( i > 0 )
+		{
+			m.inputs[i] = m.inputs[i - 1];
+		}
+		if ( ( i == 0 ? ReadInput( r, m.inputs[i] ) : ReadInputDelta( r, m.inputs[i], false ) ) == false )
 		{
 			return false;
 		}
@@ -598,55 +721,7 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
 	{
 		if ( changed & ( uint64_t( 1 ) << i ) )
 		{
-			// Only the fields that changed; small camera turns as a one-byte delta.
-			const PlayerInput& now = frame.inputs[i];
-			const PlayerInput& before = m_previous[i];
-			int yawDelta = int16_t( uint16_t( now.cameraYaw - before.cameraYaw ) );
-			uint16_t fields = 0;
-			fields |= now.moveRight != before.moveRight ? FieldMoveRight : 0;
-			fields |= now.moveForward != before.moveForward ? FieldMoveForward : 0;
-			if ( now.cameraYaw != before.cameraYaw )
-			{
-				fields |= ( yawDelta >= -128 && yawDelta <= 127 ) ? FieldYawDelta : FieldYaw;
-			}
-			fields |= now.buttons != before.buttons ? FieldButtons : 0;
-			fields |= now.view != before.view ? FieldView : 0;
-			fields |= now.cameraPitch != before.cameraPitch ? FieldPitch : 0;
-			fields |= now.actions != before.actions ? FieldActions : 0;
-			fields |= now.intent != before.intent || now.intentA != before.intentA || now.intentB != before.intentB ||
-							  now.intentSeq != before.intentSeq
-						  ? FieldIntent
-						  : 0;
-
-			w.Write( fields );
-			if ( fields & FieldMoveRight )
-				w.Write( now.moveRight );
-			if ( fields & FieldMoveForward )
-				w.Write( now.moveForward );
-			if ( fields & FieldYaw )
-				w.Write( now.cameraYaw );
-			if ( fields & FieldYawDelta )
-				w.Write( int8_t( yawDelta ) );
-			if ( fields & FieldButtons )
-				w.Write( now.buttons );
-			if ( fields & FieldView )
-				w.Write( now.view );
-			if ( fields & FieldPitch )
-				w.Write( now.cameraPitch );
-			if ( fields & FieldActions )
-			{
-				// As many bytes as are in use, and how many.
-				int bytes = ActionByteCount( now.actions );
-				w.Write( uint8_t( bytes ) );
-				w.WriteBytes( reinterpret_cast<const uint8_t*>( &now.actions ), size_t( bytes ) );
-			}
-			if ( fields & FieldIntent )
-			{
-				w.Write( now.intent );
-				w.Write( now.intentA );
-				w.Write( now.intentB );
-				w.Write( now.intentSeq );
-			}
+			WriteInputDelta( w, frame.inputs[i], m_previous[i] );
 		}
 	}
 	m_previous = frame.inputs;
@@ -690,47 +765,9 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame )
 		{
 			continue;
 		}
-		PlayerInput& in = frame.inputs[i];
-		uint16_t fields = r.Read<uint16_t>();
-		if ( fields == 0 || ( fields & ~FieldAll ) != 0 || ( ( fields & FieldYaw ) && ( fields & FieldYawDelta ) ) )
+		if ( ReadInputDelta( r, frame.inputs[i], true ) == false )
 		{
 			return false;
-		}
-		if ( fields & FieldMoveRight )
-			in.moveRight = r.Read<int8_t>();
-		if ( fields & FieldMoveForward )
-			in.moveForward = r.Read<int8_t>();
-		if ( fields & FieldYaw )
-			in.cameraYaw = r.Read<uint16_t>();
-		if ( fields & FieldYawDelta )
-			in.cameraYaw = uint16_t( in.cameraYaw + uint16_t( int16_t( r.Read<int8_t>() ) ) );
-		if ( fields & FieldButtons )
-			in.buttons = r.Read<uint8_t>();
-		if ( fields & FieldView )
-			in.view = r.Read<uint8_t>();
-		if ( fields & FieldPitch )
-			in.cameraPitch = r.Read<int16_t>();
-		if ( fields & FieldActions )
-		{
-			uint8_t bytes = r.Read<uint8_t>();
-			const uint8_t* taken = r.Ok() && bytes <= sizeof( ActionBits ) ? r.Take( bytes ) : nullptr;
-			if ( taken == nullptr )
-			{
-				return false;
-			}
-			in.actions = 0;
-			std::memcpy( &in.actions, taken, bytes );
-		}
-		if ( fields & FieldIntent )
-		{
-			in.intent = r.Read<uint8_t>();
-			in.intentA = r.Read<uint8_t>();
-			in.intentB = r.Read<uint8_t>();
-			in.intentSeq = r.Read<uint8_t>();
-			if ( in.intent > kLastSlotIntent )
-			{
-				return false;
-			}
 		}
 	}
 	if ( r.Ok() == false )

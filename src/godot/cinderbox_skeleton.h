@@ -244,6 +244,10 @@ private:
 	void UpdateViewLegs( godot::Skeleton3D* target );
 	godot::ObjectID m_viewLegs; // the copy whose legs the viewer sees
 	godot::ObjectID m_viewLegsOf;
+	// A copy is drawn from the second time it is posed: the frame it is made in, its skin has not
+	// taken the pose yet, and it would be drawn whole, as the model's rest (seen from inside).
+	int m_viewLegsPosed = 0;
+	int m_viewRigPosed = 0;
 	bool m_viewArms = false;
 	void UpdateViewArms( godot::Skeleton3D* target );
 	godot::ObjectID m_viewRig; // the copy whose arms the view draws

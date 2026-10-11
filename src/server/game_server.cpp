@@ -494,7 +494,7 @@ void GameServer::HandleEvent( const NetEvent& ev, double now )
 				MsgInput msg;
 				if ( Decode( r, msg ) )
 				{
-					HandleInput( *c, msg );
+					HandleInput( *c, msg, now );
 				}
 			}
 			else if ( *type == MsgType::ResyncRequest && c != nullptr && c->welcomed )
@@ -593,11 +593,21 @@ void GameServer::HandleHello( PeerId peer, const MsgHello& hello, double now )
 	}
 }
 
-void GameServer::HandleInput( Client& client, const MsgInput& msg )
+void GameServer::HandleInput( Client& client, const MsgInput& msg, double now )
 {
 	uint32_t current = m_sim->Tick();
 	// Acknowledgements only move forward (input packets can arrive out of order).
-	client.ackTick = std::max( client.ackTick, std::min( msg.ackTick, current ) );
+	uint32_t acked = std::max( client.ackTick, std::min( msg.ackTick, current ) );
+	if ( acked > client.ackTick && acked - 1 < client.sentThrough )
+	{
+		// How long an answer takes: from sending the newest frame it now has to hearing so.
+		double took = now - client.frameSentAt[( acked - 1 ) % 256];
+		if ( took >= 0.0 && took < 5.0 )
+		{
+			client.roundTrip += ( took - client.roundTrip ) * 0.1;
+		}
+	}
+	client.ackTick = acked;
 	uint32_t count = uint32_t( msg.inputs.size() );
 	uint32_t first = msg.newestTick + 1 - count;
 	for ( uint32_t i = 0; i < count; ++i )
@@ -647,6 +657,7 @@ void GameServer::SendSnapshots()
 		SendPrivates( c );
 		// The welcome carries the inputs of snapshotTick - 1, so frames start at snapshotTick.
 		c.ackTick = m_sim->Tick();
+		c.sentThrough = c.ackTick;
 		m_stats.snapshotsSent += 1;
 	}
 }
@@ -964,10 +975,35 @@ void GameServer::SendFrames( double now )
 			continue;
 		}
 
+		// Where this packet starts. Usually a few frames back from the newest (kFrameRepeats: each
+		// frame is in that many packets). From the oldest unacknowledged one when that has been out
+		// for longer than an answer takes: it, or what followed it, was lost.
+		const uint32_t kFrameRepeats = 3;
+		uint32_t first = c.ackTick;
+		bool waited = c.ackTick < c.sentThrough && now - c.frameSentAt[c.ackTick % 256] > std::max( 0.06, c.roundTrip * 1.5 + 0.03 );
+		if ( waited == false && c.sentThrough > c.ackTick )
+		{
+			uint32_t tail = newest + 1 >= kFrameRepeats ? newest + 1 - kFrameRepeats : 0;
+			first = std::max( c.ackTick, std::min( tail, c.sentThrough ) );
+		}
+		if ( waited )
+		{
+			m_stats.framesResent += newest + 1 - first;
+		}
+		for ( uint32_t t = first; t <= newest; ++t )
+		{
+			// (When it went out: the first time, or again from the start after a wait.)
+			if ( t >= c.sentThrough || waited )
+			{
+				c.frameSentAt[t % 256] = now;
+			}
+		}
+		c.sentThrough = std::max( c.sentThrough, newest + 1 );
+
 		Encoded* hit = nullptr;
 		for ( Encoded& e : cache )
 		{
-			if ( e.ack == c.ackTick )
+			if ( e.ack == first )
 			{
 				hit = &e;
 				break;
@@ -976,16 +1012,16 @@ void GameServer::SendFrames( double now )
 		if ( hit == nullptr )
 		{
 			frames.clear();
-			for ( uint32_t t = c.ackTick; t <= newest && frames.size() < kMaxBatchFrames; ++t )
+			for ( uint32_t t = first; t <= newest && frames.size() < kMaxBatchFrames; ++t )
 			{
 				frames.push_back( HistoryFrame( t ) );
 			}
 			InputArray base{};
-			if ( c.ackTick > 0 )
+			if ( first > 0 )
 			{
-				base = HistoryFrame( c.ackTick - 1 ) ? HistoryFrame( c.ackTick - 1 )->inputs : m_lastInputs;
+				base = HistoryFrame( first - 1 ) ? HistoryFrame( first - 1 )->inputs : m_lastInputs;
 			}
-			cache.push_back( { c.ackTick, frames.size(), {} } );
+			cache.push_back( { first, frames.size(), {} } );
 			hit = &cache.back();
 			EncodeFrameBatch( base, frames.data(), frames.size(), hit->bytes );
 		}

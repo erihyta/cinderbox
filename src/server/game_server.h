@@ -130,6 +130,7 @@ public:
 		uint64_t snapshotsSent = 0; // welcomes: joins, reconnects and desync recoveries
 		uint64_t batchesSent = 0;
 		uint64_t framesSent = 0;	 // frames inside batches (resends included)
+		uint64_t framesResent = 0;	 // frames sent again from the oldest unacknowledged one, after a wait
 		uint64_t ackTooOld = 0;		 // clients that fell out of the frame history and got a snapshot
 		uint64_t resyncRequests = 0;
 		uint64_t joins = 0;
@@ -172,6 +173,12 @@ private:
 		bool welcomed = false;		// has received a Welcome for the current connection
 		bool inWorld = false;		// Join event has been issued
 		uint32_t ackTick = 0;		// the client has every frame with tick < ackTick
+		// Frames go out as they are made, each repeated in the next kFrameRepeats packets (a lost
+		// packet or two costs nothing). Only when the oldest one the client has not acknowledged
+		// has been out for longer than an answer takes is everything from it sent again.
+		uint32_t sentThrough = 0;	// frames with tick < sentThrough have been sent at least once
+		double roundTrip = 0.1;		// seconds from sending a frame to hearing it acknowledged
+		double frameSentAt[256] = {}; // by tick % 256: when it last went out in full
 		PlayerInput lastInput{};
 		struct Slot
 		{
@@ -183,7 +190,7 @@ private:
 
 	void HandleEvent( const net::NetEvent& ev, double now );
 	void HandleHello( net::PeerId peer, const net::MsgHello& hello, double now );
-	void HandleInput( Client& client, const net::MsgInput& msg );
+	void HandleInput( Client& client, const net::MsgInput& msg, double now );
 	Client* FindByPeer( net::PeerId peer );
 	void Reject( net::PeerId peer, const std::string& reason );
 	void RunTick( double now );
