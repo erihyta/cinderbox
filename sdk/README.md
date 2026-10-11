@@ -173,6 +173,7 @@ powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New mymod
 |---|---|
 | open `server_mods/mymod/client` in Godot and press **Test mod** (in the toolbar) | it saves the scenes, builds the server (which finds the new mod and writes its names for the editor), publishes the look (a name nobody declares stops it), and starts the game on a server of its own. The mod is in the game: slot 5, and Q. Closing the game stops the server |
 | or, in a terminal: `tools\test_mod.ps1 -Mod mymod` | the same thing; `-Bots 4` adds bot players, `-Only` runs just this mod beside `combat` and `inventory`, `-NoBuild` skips the build when only the look changed |
+| while it runs: `tools\publish_mod.ps1 -Mod mymod` | the look is published again and the running game shows it within a second or two: scenes, effects, HUD, sounds, first-person settings. No restart. A change the server reads (an item's body or properties, an animation pack, a motion) is not taken this way: the server says so, and it is taken when the server is started again |
 
 - **The names are known to the editor** after the first build ([Names](../docs/looks.md#names)): properties that hold one name offer them, and a node warns about one nobody declares.
 - Files that are already there are kept: `-New` on an existing mod only adds what is missing.
