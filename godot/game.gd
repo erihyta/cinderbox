@@ -660,9 +660,6 @@ func _send_input(delta: float) -> void:
 			first_person = true
 			if plan[0] == "looking up and down":
 				pitch = 0.9 * sin((Time.get_ticks_msec() / 1000.0) * 3.0)
-			# --probe-pitch=DEGREES: it looks that far up (down: negative) all the while.
-			if args.has("probe-pitch"):
-				pitch = deg_to_rad(float(args["probe-pitch"]))
 		var elapsed := Time.get_ticks_msec() / 1000.0 - playing_since if playing_since >= 0.0 else 0.0
 		# A hook, if the server has one: a press throws it, the next lets it go.
 		# (The hook is an item used by its slot's key, the fourth: one intent every two seconds.)

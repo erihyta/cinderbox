@@ -362,8 +362,7 @@ public:
 	// from, whatever camera the player looks through.
 	b3Vec3 HeadPosition( PlayerSlot slot ) const;
 	// Where the player's line of sight starts for the camera it looks through (PlayerInput::view):
-	// in first person the character's eye height above its feet and kFirstPersonAhead ahead of them,
-	// level (fixed on the mover: the animation
+	// in first person the character's eye height above its feet (fixed on the mover: the animation
 	// does not move it), in third the camera's pivot (moved to the shoulder, if it is).
 	b3Vec3 ViewPosition( PlayerSlot slot ) const;
 	// What the player hits when it shoots at what is under its crosshair, up to `range` metres:

@@ -375,8 +375,7 @@ b3Vec3 Context::ViewPosition( PlayerSlot slot ) const
 				return EyePosition( slot );
 			}
 			b3Vec3 feet = b3Sub( t->position, b3Vec3{ 0.0f, ragdoll::kFeetBelowCenter, 0.0f } );
-			b3Vec3 level = detmath::YawForward( detmath::YawToRadians( in.cameraYaw ) );
-			return b3Add( b3Add( feet, b3Vec3{ 0.0f, m_hits->EyeHeight(), 0.0f } ), b3MulSV( kFirstPersonAhead, level ) );
+			return b3Add( b3Add( feet, b3Vec3{ 0.0f, m_hits->EyeHeight(), 0.0f } ), b3MulSV( kEyeAhead, AimDirection( slot ) ) );
 		}
 		case ViewMode::ShoulderRight:
 		case ViewMode::ShoulderLeft:
