@@ -375,20 +375,12 @@ and stop when it is dropped. A mod's own `SwapLayer` on the same layer wins whil
 
 | Item | Pack | Layer | States |
 |---|---|---|---|
-| pistol | `pistol.hold` (`server_mods/pistol/client/animation_packs/pistol_hold.tscn`) | `UpperBody`, the arms alone | `Hold`; `Shoot` on `pistol.fired`, back at its end |
-| bat | `melee.hold` (`server_mods/melee/client/animation_packs/bat_hold.tscn`) | `UpperBody`, the arms alone | `Ready`; `Swing` while the `melee_swing` stance is set (a stance, so the look predicts it). `Sword_Attack` carries the `melee.strike` marker |
+| pistol | `pistol.hold` (`server_mods/pistol/client/animation_packs/pistol_hold.tscn`) | `UpperBody` | `Hold`; `Shoot` on `pistol.fired`, back at its end |
+| bat | `melee.hold` (`server_mods/melee/client/animation_packs/bat_hold.tscn`) | `UpperBody` | `Ready`; `Swing` while the `melee_swing` stance is set (a stance, so the look predicts it). `Sword_Attack` carries the `melee.strike` marker |
 | rifle | `rifle.hold` (its look is not in the repository) | `UpperBody` | `Hold`; `Fire` on `rifle.fired` |
 
 All three are upper-body packs: the legs keep the character's own walk, so a crouch (`sneak` swaps
-`FullBody`) plays under a held bat.
-
-**One body, the item's arms.** The pistol's and the bat's packs are the SDK's starter tree with
-`UpperBodyBlend`'s filter cut down to the arms (shoulders to fingers). The spine, the neck and the
-head stay the character's own locomotion, and the look chain bends that one spine by the camera's
-pitch, so a body looks up and down the same way whatever it holds. A hold clip's own spine and head
-(a sword stance leans and turns, a pistol stance stands square) is what made them differ. The cost:
-a swing no longer turns the torso. Add `Spine`, `Chest` and `UpperChest` to a pack's filter (the
-Blend2's Edit Filters) to give an item its torso back. Their clips are files in the mod (`animation_packs/source/*.res`).
+`FullBody`) plays under a held bat. Their clips are files in the mod (`animation_packs/source/*.res`).
 The pistol's and the bat's come from the mannequin (CC0):
 
 ```sh

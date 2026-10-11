@@ -277,7 +277,7 @@ first person: the same clips at the same moment, drawn again for the eye.
 
 | Item | Settings |
 |---|---|
-| bat | offset (-0.11, 0.28, 0.96), rotation (5, 30, 0), the left arm not drawn (the clips are one-handed) |
+| bat | offset (-0.16, 0.31, 0.77), rotation (40, 30, 0), the left arm not drawn (the clips are one-handed) |
 | pistol | offset (0, 0.05, 0.03) |
 
 #### Floating
