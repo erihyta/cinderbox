@@ -251,6 +251,24 @@ public:
 		return m_previewAim;
 	}
 	void _process( double delta ) override;
+	// A cue, in the preview: what happens when the server's mod says so (a swing, a shot), on the
+	// figure and in the first-person picture. The pack's state machine runs for real here, so a
+	// state entered on the cue plays; a CbPrediction of the item's scene with that cue sets its
+	// stance for a moment, as it does for the player who presses; and the item in the hand is a
+	// whole copy of the scene under a director of its own, so its CbReaction nodes play (flames,
+	// a muzzle flash). preview_cue is the name the inspector's button fires.
+	void set_preview_cue( const godot::String& v )
+	{
+		m_previewCue = v.strip_edges();
+	}
+	godot::String get_preview_cue() const
+	{
+		return m_previewCue;
+	}
+	void fire_preview_cue( const godot::String& name );
+	void fire_preview();
+	godot::Callable get_preview_fire_button();
+	void _validate_property( godot::PropertyInfo& property ) const;
 	// What the holder sees in first person, for a picture of it (the editor's panel): `arms` is
 	// posed as the game poses the view's arms for this item on the figure of the Hold preview
 	// (the same pose, steadied under the eye; the item's view_offset and view_rotation; the arms
@@ -297,8 +315,17 @@ private:
 	// The preview's pose now (the pack's starting state at the preview's time, the other hand
 	// solved), aimed or not: left in m_previewPose.
 	void PreviewEvaluate( bool aiming );
-	// A copy of the item's meshes under a new node, as they are in the item's scene.
-	godot::Node3D* CopyMeshes( const godot::Node* skip, const godot::Node* skipToo );
+	godot::String m_previewCue;
+	// What the preview runs with (its names, the state machine's state, the cues fired): in the
+	// .cpp, so this header needs none of it.
+	struct PreviewRun;
+	std::shared_ptr<PreviewRun> m_previewRun;
+	void PreviewAdvance( double delta );
+	// The item in a hand of the preview: a whole copy of this scene under a director of its own
+	// (PreviewStage / player_0 / RightHand / Item), a child of `under`, with the hand at `hand`
+	// (in `under`'s frame). Made again twice a second while no cue is playing (the scene is being
+	// edited); its reactions run.
+	void PreviewStage( godot::Node3D* under, const godot::Transform3D& hand, bool firstPerson, bool internal );
 	bool m_viewRightHand = true;
 	godot::Dictionary m_properties;
 	int m_use = USE_SELECTED;

@@ -268,12 +268,25 @@ and the picture follows, so the settings are found by looking instead of by play
 
 | It shows | It does not |
 |---|---|
-| the pose of the pack's starting state, steadied under the eye as in the game | a use (a swing, a shot): only that one state |
+| the pack's state machine, running: the state it starts in, and what a fired cue moves it to | what only the server decides: how long a stance lasts is the look's guess (the prediction's) |
 | the arms as bone boxes on the placeholder's proportions | your character's mesh |
 | a look level and straight ahead | the floating mode's picture (`view_camera`: use that camera's own Preview) |
 
-Nothing of either is saved with the scene. `check_item_preview.gd` draws both outside the editor
-([testing](testing.md)).
+**A cue, in both.** Name an event in **Preview > Cue** (`melee.swing`, `pistol.fired`) and press
+**Fire the cue**. On the figure and in the First person panel alike:
+
+| What plays | From |
+|---|---|
+| the animation | the pack's state machine, which runs for real: a state entered on the event (`Shoot` on `pistol.fired`), or on a stance a `CbPrediction` of the item sets with that cue (`melee_swing`), held for the prediction's cooldown |
+| the item's effects | the item in the hand is a whole copy of the scene under a director of its own, so its `CbReaction` nodes play: flames, sparks, a muzzle flash with its light, a tracer |
+| the mod's world reactions | the project's `vfx/reactions*.tscn` are under the figure's director too: a swing's sound |
+
+The copy in the hand is made again twice a second so it follows the edits, except for three seconds
+after a cue (its effects are playing). Cues that need someone else (a hit: `$other`) have nobody to
+name here: the Cue Preview panel has two stand-in players for those.
+
+Nothing of either is saved with the scene. `check_item_preview.gd` draws both outside the editor,
+with a cue if asked ([testing](testing.md)).
 
 ### First person
 

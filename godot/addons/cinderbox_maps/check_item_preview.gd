@@ -14,6 +14,12 @@ var _view := false
 var _arms: Node3D
 var _held: Node3D
 var _camera: Camera3D
+# --cue=NAME: fired a second in (CbItem.fire_preview_cue); --after=SECONDS: the picture is taken that
+# much later (0.2).
+var _cue := ""
+var _after := 0.2
+var _seconds := 0.0
+var _fired := false
 
 
 func _initialize() -> void:
@@ -23,6 +29,10 @@ func _initialize() -> void:
 			scene = arg.substr(8)
 		elif arg.begins_with("--out="):
 			_out = arg.substr(6)
+		elif arg.begins_with("--cue="):
+			_cue = arg.substr(6)
+		elif arg.begins_with("--after="):
+			_after = float(arg.substr(8))
 	_item = (load(scene) as PackedScene).instantiate()
 	_item.set_meta("cb_preview", true)
 	root.add_child(_item)
@@ -49,8 +59,9 @@ func _initialize() -> void:
 	camera.look_at_from_position(Vector3(-0.6, 0.5, -2.4), Vector3(0.6, -0.1, 0))
 
 
-func _process(_delta: float) -> bool:
+func _process(delta: float) -> bool:
 	_frames += 1
+	_seconds += delta
 	if _view:
 		var seen: Dictionary = _item.call("preview_view", _arms, _held)
 		if seen.has("eye"):
@@ -61,8 +72,11 @@ func _process(_delta: float) -> bool:
 			printerr("no first-person view: preview_view said nothing")
 			quit(1)
 			return true
+	if _cue != "" and not _fired and _seconds >= 1.0:
+		_fired = true
+		_item.call("fire_preview_cue", _cue)
 	# (Long enough for the copy in the hand to have been made again a few times.)
-	if _frames < 100:
+	if _frames < 100 or (_cue != "" and _seconds < 1.0 + _after):
 		return false
 	var figure: Node = null
 	for child in _item.get_children(true):
@@ -73,18 +87,24 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	print("figure at ", (figure as Node3D).position)
-	# One copy of the item in the hand, with as many meshes as the item has: no more.
+	# One copy of the item in the hand (a whole copy of the scene, under the preview's own
+	# director), with as many meshes as the item has: no more.
 	var own := _item.find_children("*", "MeshInstance3D", true, true).size()
+	var kept := _item.get_children(false)
 	var copies := 0
 	var parts := 0
-	var kept := _item.get_children(false)
+	var copy: Node3D = null
 	for child in _item.get_children(true):
-		# (The preview's own children are internal ones; the copy is the one that is not the figure.)
 		if not kept.has(child) and child != figure and not child.is_queued_for_deletion():
 			copies += 1
-			parts += child.get_child_count()
+			copy = child.get_node_or_null("player_0/RightHand/Item")
+			if copy != null:
+				for mesh in copy.find_children("*", "MeshInstance3D", true, false):
+					# (What a reaction added since, a flash, is not the item's.)
+					if mesh.owner == copy or mesh.owner == null and mesh.get_parent() == copy or copy.is_ancestor_of(mesh) and mesh.scene_file_path == "" and not mesh.has_meta("cb_added"):
+						parts += 1
 	print("copies in the hand: %d, with %d meshes (the item has %d)" % [copies, parts, own])
-	if copies != 1 or parts != own:
+	if copies != 1 or copy == null or (_cue == "" and parts != own):
 		printerr("the copy in the hand is not one copy of the item")
 		quit(1)
 		return true
@@ -92,10 +112,6 @@ func _process(_delta: float) -> bool:
 	# (within a few centimetres: the wrist is at the marker, or the palm when it is turned with it).
 	var other := _item.get_node_or_null(_item.get("other_grip")) as Node3D if int(_item.get("other_hand")) in [1, 2] else null
 	if other != null:
-		var copy: Node3D = null
-		for child in _item.get_children(true):
-			if not kept.has(child) and child != figure and not child.is_queued_for_deletion():
-				copy = child
 		var marker: Vector3 = copy.global_transform * (_item.global_transform.affine_inverse() * other.global_position)
 		var hand: Vector3 = figure.call("get_joint_global_transform", "LeftHand").origin
 		print("the other hand is %.0f mm from its marker" % (hand.distance_to(marker) * 1000.0))

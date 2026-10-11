@@ -278,6 +278,7 @@ struct Entry
 // Which properties of which nodes hold names. By class name, so this library needs none of them.
 const Entry kTable[] = {
 	{ "CbReaction", "event", Holds::Event },
+	{ "CbItem", "preview_cue", Holds::Event },
 	{ "CbReaction", "conditions", Holds::Expressions },
 	{ "CbReaction", "value_expression", Holds::Expression },
 	{ "CbReaction", "volume_expression", Holds::Expression },
