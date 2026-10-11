@@ -781,7 +781,11 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	int carrying = anim::FindJoint( *m_animSet, "RightHand" );
 	b3Vec3 about = carrying >= 0 && size_t( carrying ) < models.size() ? placeOf( models[size_t( carrying )] ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
 	Vector3 hand( about.x, about.y, about.z );
-	skeleton->SetViewMove( Transform3D( turned, hand + Vector3( placed.x, placed.y, placed.z ) - turned.xform( hand ) ) );
+	// (Not what floats in the view: its view camera says where it is.)
+	if ( floats == false )
+	{
+		skeleton->SetViewMove( Transform3D( turned, hand + Vector3( placed.x, placed.y, placed.z ) - turned.xform( hand ) ) );
+	}
 }
 
 bool CinderboxClient::ViewFrameOf( uint16_t kind, Transform3D& frame ) const

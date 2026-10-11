@@ -10,7 +10,7 @@
 		- meshes, lights, particles: how it looks in the hand, put away and on the floor.
 		- [CbReaction] nodes: what it shows when its holder does something (a muzzle flash).
 		The scene is the item's frame: the grip at the origin, pointing along -Z. The root's own transform is not used.
-		Saving the scene bakes [code]res://items/&lt;kind&gt;.cfg[/code] (the Bake button and publishing the mod do too). The server reads the body, the grip and the [member properties] from that file in the mod's workshop item; the game finds the scene, the [member display_name] and the first-person settings ([member view_offset], [member view_camera]) by it. A server mod declares the kind ([code]declare.ItemKind( "melee.bat" )[/code]) and says what it does.
+		Saving the scene bakes [code]res://items/&lt;kind&gt;.cfg[/code] (the Bake button and publishing the mod do too). The server reads the body, the grip and the [member properties] from that file in the mod's workshop item; the game finds the scene, the [member display_name] and the first-person settings (the [code]view_[/code] members) by it. A server mod declares the kind ([code]declare.ItemKind( "melee.bat" )[/code]) and says what it does.
 		In the game the node does nothing: the simulation owns the item.
 	</description>
 	<tutorials>
@@ -64,11 +64,22 @@
 			The marker the other hand is held at, for [constant OTHER_AT_MARKER] and [constant OTHER_AT_MARKER_TURNED].
 		</member>
 		<member name="view_camera" type="NodePath" setter="set_view_camera" getter="get_view_camera" default="NodePath(&quot;&quot;)">
-			First person, as a view model: a node in the scene that stands where the viewer's eye is while this is held. Use a [CbViewCamera]: select it and tick Preview in the 3D view to see the picture the holder gets, and move it until the item sits right. With one, the item is held by the camera (it follows a turn a moment late and moves with the steps), the holder's arms are bent onto its grips ([member carry_grip], [member other_grip]; an arm that holds nothing is not drawn), and both are drawn over the world, so they never pass into a wall. Everyone else still sees the item in the hand. Empty: the body's own arms hold it ([member view_offset]).
-			What is under the item moves with it, so an [AnimationPlayer] that moves the meshes and the grip markers (put them under one [Node3D]) is the item's first-person animation, and the hands follow it. Play it from a [CbReaction] with the condition [code]first_person[/code].
+			First person, the other way: a node in the scene that stands where the viewer's eye is while this is held (a [CbViewCamera]: tick its Preview to place the item by looking). With one, the item does not follow the body's animation in its holder's view: the camera holds it, the arms are bent onto its grips, and its animation there is its own (an [AnimationPlayer] moving the meshes and the grip markers, played by a [CbReaction] with the condition [code]first_person[/code]). [member view_offset] and [member view_rotation] are not used then. Empty (the usual): the view shows the body's own animation.
+		</member>
+		<member name="view_fov" type="float" setter="set_view_fov" getter="get_view_fov" default="0.0">
+			First person: the field of view the arms and the item are drawn with, in degrees. They are drawn apart from the world, over it, so this does not change the world's picture. Less than 60 makes them flatter and smaller. 0: the game's own (60).
+		</member>
+		<member name="view_left_hand" type="bool" setter="set_view_left_hand" getter="get_view_left_hand" default="true">
+			First person: whether the left arm is drawn while this is held.
 		</member>
 		<member name="view_offset" type="Vector3" setter="set_view_offset" getter="get_view_offset" default="Vector3(0, 0, 0)">
-			First person: how far the arms holding this are moved in the viewer's own view, in metres to the right, up and ahead of where the pose has them. Only the viewer's own picture changes. Keep it small: far from the body the arms' cut ends come into view.
+			First person: how far the hands and the item are moved in the holder's own view from where the animation has them, in metres to the right, up and ahead. The arms reach from shoulders that stay; a hand out of reach stays at the arm's length. The animation itself is the one everyone sees: a hold made for third person is usually low and out of the picture, and this brings it in.
+		</member>
+		<member name="view_right_hand" type="bool" setter="set_view_right_hand" getter="get_view_right_hand" default="true">
+			First person: whether the right arm is drawn while this is held.
+		</member>
+		<member name="view_rotation" type="Vector3" setter="set_view_rotation" getter="get_view_rotation" default="Vector3(0, 0, 0)">
+			First person: how the item is turned in the holder's own view, about the carrying hand, in degrees: x tips it up, y turns it to the left, z rolls it. The hands turn with it.
 		</member>
 	</members>
 	<constants>
