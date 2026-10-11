@@ -346,6 +346,14 @@ private:
 	std::map<std::string, std::pair<bool, bool>> m_itemViewHands; // CbItem.view_left_hand, view_right_hand by kind
 	float m_viewFov = 0.0f; // of what is held now
 	present::Models m_viewModels; // the pose the view's arms are drawn in, this frame
+	// The view model is stitched to the camera. Its pose is made from the simulation's aim, a
+	// moment behind the camera; m_viewAimCamera is where a camera with that aim would be (the
+	// body's frame), and once the real one is placed, everything of the view (the arms, the hands'
+	// sockets and what they hold) is moved as one piece from the one to the other: m_viewStitch
+	// (the world). The view model then stands still against the camera whatever the player does.
+	godot::Transform3D m_viewAimCamera;
+	bool m_viewAimKnown = false;
+	godot::Transform3D m_viewStitch;
 	// What the viewer holds in first person is drawn in the view; its shadow is cast from where the
 	// body's own pose has the hand, by a copy of its meshes that draws nothing else.
 	std::unordered_map<uint64_t, godot::Transform3D> m_trueSockets; // socket node -> where the body's pose has it

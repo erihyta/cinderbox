@@ -376,7 +376,8 @@ Vector3 CinderboxClient::get_bone_position( int64_t net_id, const String& bone )
 		bool view = m_firstPersonSkeleton == ObjectID( skeleton->get_instance_id() );
 		if ( bone.is_empty() == false && skeleton->JointTransform( bone, joint, false, view ) )
 		{
-			return ( skeleton->get_global_transform() * joint ).origin;
+			// (... which is at the camera: the view model is stitched to it.)
+			return ( ( view ? m_viewStitch : Transform3D() ) * skeleton->get_global_transform() * joint ).origin;
 		}
 	}
 	return node->get_global_position();

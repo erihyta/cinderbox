@@ -602,6 +602,7 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 		return;
 	}
 	skeleton->set_first_person_body( true );
+	m_viewAimKnown = false;
 	// The body draws no arms of its own: the view's are a copy (CinderboxSkeleton::SetViewPose),
 	// drawn as what is held says: which hands, with what field of view, and bent onto it when it
 	// floats in the view (CbItem.view_camera) and not as the pose has them.
@@ -738,6 +739,11 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	b3Vec3 forward = { yaw.sine * pitch.cosine, pitch.sine, yaw.cosine * pitch.cosine };
 	b3Vec3 right = { -yaw.cosine, 0.0f, yaw.sine };
 	b3Vec3 up = { -yaw.sine * pitch.sine, pitch.cosine, -yaw.cosine * pitch.sine };
+	// Where a camera with this aim is, as the game places its own (get_view_position): what the
+	// pose below is made for.
+	m_viewAimCamera = Transform3D( Basis( Vector3( right.x, right.y, right.z ), Vector3( up.x, up.y, up.z ), Vector3( -forward.x, -forward.y, -forward.z ) ),
+								   Vector3( 0.0f, anim::EyeHeight( *m_animSet ), 0.0f ) + Vector3( forward.x, forward.y, forward.z ) * kEyeAhead );
+	m_viewAimKnown = true;
 
 	if ( aimedFrom >= 0 && m_animSet->AimTip() >= 0 )
 	{
@@ -788,6 +794,24 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	}
 }
 
+namespace
+{
+
+// A move made after the frame's moves were passed on to the renderer is passed on at once.
+void PassOn( Node* node )
+{
+	if ( auto* spatial = Object::cast_to<Node3D>( node ) )
+	{
+		spatial->force_update_transform();
+	}
+	for ( int i = 0; i < node->get_child_count( true ); ++i )
+	{
+		PassOn( node->get_child( i, true ) );
+	}
+}
+
+} // namespace
+
 bool CinderboxClient::ViewFrameOf( uint16_t kind, Transform3D& frame ) const
 {
 	if ( kind >= m_frame.schema.itemKinds.size() )
@@ -834,6 +858,31 @@ void CinderboxClient::place_view_items( const Transform3D& camera, double delta 
 	m_viewCameraKnown = true;
 	static const StringName kFloating( "cb_floating" );
 	auto* skeleton = Object::cast_to<CinderboxSkeleton>( ObjectDB::get_instance( m_firstPersonSkeleton ) );
+	// The view model goes to the camera, as one piece: the arms, and the hands' sockets with what
+	// is in them. (What floats in the view is placed from the camera already, below.)
+	m_viewStitch = Transform3D();
+	if ( skeleton != nullptr && m_viewAimKnown && skeleton->get_view_arms() == false )
+	{
+		Transform3D body = skeleton->get_global_transform();
+		m_viewStitch = camera * m_viewAimCamera.affine_inverse() * body.affine_inverse();
+		skeleton->PlaceViewRig( m_viewStitch );
+		flecs::entity local = m_mirror ? m_mirror->VisualOf( m_frame.frame.localNetId ) : flecs::entity();
+		auto places = local.is_valid() ? m_sockets.find( local.id() ) : m_sockets.end();
+		if ( places != m_sockets.end() )
+		{
+			for ( const SocketPlace& place : places->second )
+			{
+				auto* socket = Object::cast_to<Node3D>( ObjectDB::get_instance( place.node ) );
+				Transform3D joint;
+				bool hand = place.name == String( "RightHand" ) || place.name == String( "LeftHand" );
+				if ( socket != nullptr && hand && skeleton->JointTransform( place.bone, joint, place.itemFrame, true ) )
+				{
+					socket->set_global_transform( m_viewStitch * body * joint * place.local );
+					PassOn( socket );
+				}
+			}
+		}
+	}
 	bool armed = false;
 	for ( ObjectID id : m_viewItems )
 	{

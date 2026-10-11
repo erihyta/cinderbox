@@ -794,15 +794,16 @@ func _update_camera() -> void:
 		return
 	camera.near = 0.03 if first_person else 0.05
 	if _update_first_person():
-		_probe_sample()
 		if _shake > 0.0:
 			camera.global_position += Vector3(
 				auto_rng.randf_range(-_shake, _shake),
 				auto_rng.randf_range(-_shake, _shake),
 				auto_rng.randf_range(-_shake, _shake)) * 0.3
 		_camera_moved()
-		# What is held and floats in the view (an item with a view camera) goes in front of it.
+		# The view model (the arms, and what they hold) goes to the camera where it is now: it is
+		# stitched to it. What floats in the view (an item with a view camera) goes in front of it.
 		client.place_view_items(camera.global_transform, get_process_delta_time())
+		_probe_sample()
 		_show_view_model(client.get_view_fov())
 		return
 	_show_view_model(0.0)

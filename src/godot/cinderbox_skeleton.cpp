@@ -638,11 +638,12 @@ void CinderboxSkeleton::UpdateViewArms( Skeleton3D* target )
 		}
 		return;
 	}
-	if ( rig->is_set_as_top_level() )
+	// (In the world's frame, not under the body: PlaceViewRig moves it to the camera.)
+	if ( rig->is_set_as_top_level() == false )
 	{
-		rig->set_as_top_level( false );
+		rig->set_as_top_level( true );
 	}
-	rig->set_transform( target->get_transform() );
+	rig->set_global_transform( target->get_global_transform() );
 	KeepArms( rig, m_viewHandShown[0], m_viewHandShown[1] );
 	rig->set_visible( m_viewHandShown[0] || m_viewHandShown[1] );
 }
@@ -675,6 +676,36 @@ void CinderboxSkeleton::KeepArms( Skeleton3D* rig, bool left, bool right )
 		bool shown = side == 0 ? left : right;
 		rig->set_bone_global_pose( shoulders[side], shown ? kept[side] : Transform3D( Basis().scaled( nothing ), between ) );
 	}
+}
+
+namespace
+{
+
+// A move made after the frame's moves were passed on to the renderer is passed on at once.
+void PassOn( Node* node )
+{
+	if ( auto* spatial = Object::cast_to<Node3D>( node ) )
+	{
+		spatial->force_update_transform();
+	}
+	for ( int i = 0; i < node->get_child_count( true ); ++i )
+	{
+		PassOn( node->get_child( i, true ) );
+	}
+}
+
+} // namespace
+
+void CinderboxSkeleton::PlaceViewRig( const Transform3D& stitch )
+{
+	auto* rig = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_viewRig ) );
+	auto* target = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_viewRigOf ) );
+	if ( rig == nullptr || target == nullptr || m_viewArms )
+	{
+		return;
+	}
+	rig->set_global_transform( stitch * target->get_global_transform() );
+	PassOn( rig );
 }
 
 namespace

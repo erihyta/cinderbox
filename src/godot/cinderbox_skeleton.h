@@ -156,6 +156,9 @@ public:
 	{
 		return m_viewArms;
 	}
+	// The view's arms, as posed, are moved as one piece by `stitch` (the world): from where the
+	// simulation's aim has them to where the camera is this frame, once it has been placed.
+	void PlaceViewRig( const godot::Transform3D& stitch );
 	// A hand of the view's pose, in the world (0 left, 1 right): what the item in it is held by.
 	godot::Transform3D ViewHand( int side ) const
 	{
