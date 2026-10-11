@@ -389,9 +389,10 @@ void CbItem::_process( double delta )
 	if ( copy == nullptr || ++m_previewCopied >= 30 )
 	{
 		// (Made again twice a second: the scene is being edited.)
-		if ( copy != nullptr )
+		Node* old = copy;
+		if ( old != nullptr )
 		{
-			copy->queue_free();
+			old->queue_free();
 		}
 		m_previewCopied = 0;
 		copy = memnew( Node3D );
@@ -401,6 +402,17 @@ void CbItem::_process( double delta )
 		{
 			auto* mesh = Object::cast_to<MeshInstance3D>( meshes[i] );
 			if ( mesh == nullptr || mesh->get_mesh().is_null() || mesh->is_visible_in_tree() == false )
+			{
+				continue;
+			}
+			// (Not the preview's own: the last copy is still here until the frame ends, and a copy
+			// of a copy would be one more item in the hand every time.)
+			bool own = false;
+			for ( Node* above = mesh->get_parent(); above != nullptr && above != this; above = above->get_parent() )
+			{
+				own |= above == old || above == figure;
+			}
+			if ( own )
 			{
 				continue;
 			}

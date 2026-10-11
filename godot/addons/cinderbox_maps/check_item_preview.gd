@@ -3,7 +3,8 @@ extends SceneTree
 ##
 ##   godot --path server_mods/<mod>/client --script <repo>/godot/addons/cinderbox_maps/check_item_preview.gd -- --scene=res://prefabs/bat.tscn --out=<file.png> [--aim]
 ##
-## The stand-in figure should hold the item by its carrying grip. Exit code 1 when there is no figure.
+## The stand-in figure should hold the item by its carrying grip. Exit code 1 when there is no figure,
+## or when what is in its hand is not exactly one copy of the item.
 
 var _item: Node3D
 var _out := ""
@@ -32,7 +33,8 @@ func _initialize() -> void:
 
 func _process(_delta: float) -> bool:
 	_frames += 1
-	if _frames < 20:
+	# (Long enough for the copy in the hand to have been made again a few times.)
+	if _frames < 100:
 		return false
 	var figure: Node = null
 	for child in _item.get_children(true):
@@ -43,6 +45,21 @@ func _process(_delta: float) -> bool:
 		quit(1)
 		return true
 	print("figure at ", (figure as Node3D).position)
+	# One copy of the item in the hand, with as many meshes as the item has: no more.
+	var own := _item.find_children("*", "MeshInstance3D", true, true).size()
+	var copies := 0
+	var parts := 0
+	var kept := _item.get_children(false)
+	for child in _item.get_children(true):
+		# (The preview's own children are internal ones; the copy is the one that is not the figure.)
+		if not kept.has(child) and child != figure and not child.is_queued_for_deletion():
+			copies += 1
+			parts += child.get_child_count()
+	print("copies in the hand: %d, with %d meshes (the item has %d)" % [copies, parts, own])
+	if copies != 1 or parts != own:
+		printerr("the copy in the hand is not one copy of the item")
+		quit(1)
+		return true
 	if _out != "":
 		root.get_texture().get_image().save_png(_out)
 	quit(0)
