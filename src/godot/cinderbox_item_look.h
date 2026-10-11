@@ -14,10 +14,23 @@
 #include <godot_cpp/classes/marker3d.hpp>
 #include "cinderbox_body.h"
 
+#include <memory>
+#include <string>
+
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/variant/callable.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+
+namespace cb
+{
+struct AnimGraph;
+namespace anim
+{
+class AnimSet;
+class PoseEvaluator;
+} // namespace anim
+} // namespace cb
 
 namespace cb::gd
 {
@@ -206,6 +219,37 @@ public:
 		return root != nullptr ? CarryFrameUnder( root ) : godot::Transform3D();
 	}
 
+	// Where a built-in hand socket sits in the items' hand frame (AnimSet::AttachFrame): the grip a
+	// little along the fingers, the item pointing where the hand points.
+	static godot::Transform3D HandSocketFrame();
+
+	// In the editor: the item in a hand. A stand-in figure (the bones of the SDK's skeleton, as
+	// boxes) stands beside the item and holds a copy of it by its carrying grip, in the pose of one
+	// of the project's baked animation packs (res://anim/<pack>/: the first there is, or the one
+	// named), its other hand where the item's settings put it. It is posed by what poses players in
+	// the game, so what is seen is what the game will do with this item on the placeholder
+	// character. preview_aim: with the carrying arm aimed level, as a mod that makes its holder
+	// face the camera has it. Nothing of it is saved.
+	void set_preview_hold( bool v );
+	bool get_preview_hold() const
+	{
+		return m_previewHold;
+	}
+	void set_preview_pack( const godot::String& v );
+	godot::String get_preview_pack() const
+	{
+		return m_previewPack;
+	}
+	void set_preview_aim( bool v )
+	{
+		m_previewAim = v;
+	}
+	bool get_preview_aim() const
+	{
+		return m_previewAim;
+	}
+	void _process( double delta ) override;
+
 	// The text of items/<kind>.cfg, or "" (and why in the returned { text, error }).
 	godot::Dictionary bake() const;
 	// The inspector's button, and what saving the scene does: writes res://items/<kind>.cfg.
@@ -225,6 +269,22 @@ private:
 	godot::Vector3 m_viewRotation;
 	double m_viewFov = 0.0;
 	bool m_viewLeftHand = true;
+	bool m_previewHold = false;
+	godot::String m_previewPack;
+	double m_previewTime = 0.0;
+	bool m_previewAim = false;
+	godot::ObjectID m_previewCopy; // the copy of the item's meshes in the figure's hand
+	int m_previewCopied = 0; // frames since the copy was made
+	// Where the figure's right hand holds: the hand socket of the character this checkout's server
+	// plays (godot/characters/<name>/anim.cfg, in the bone's frame), or the built-in one.
+	godot::Transform3D m_previewSocket;
+	bool m_previewSocketOfBone = false;
+	godot::ObjectID m_previewFigure;
+	std::string m_previewLoaded; // the folder the preview's animations came from
+	std::shared_ptr<const anim::AnimSet> m_previewSet;
+	std::shared_ptr<const AnimGraph> m_previewGraph;
+	std::shared_ptr<anim::PoseEvaluator> m_previewPose;
+	void EndPreview();
 	bool m_viewRightHand = true;
 	godot::Dictionary m_properties;
 	int m_use = USE_SELECTED;
