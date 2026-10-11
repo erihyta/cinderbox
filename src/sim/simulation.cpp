@@ -14,6 +14,7 @@
 #include "box3d/collision.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cfloat>
 #include <cstdio>
@@ -1440,19 +1441,32 @@ void Simulation::Step( const InputFrame& frame )
 
 	PhysicsArena::Scope scope( *m_arena );
 
+	// (The profile: the time between two of these goes to the part named.)
+	auto last = std::chrono::steady_clock::now();
+	auto spent = [&last]( uint64_t& part ) {
+		auto now = std::chrono::steady_clock::now();
+		part += uint64_t( std::chrono::duration_cast<std::chrono::nanoseconds>( now - last ).count() );
+		last = now;
+	};
+
 	ApplyEvents( frame );
 	ApplyCommands( frame );
+	spent( m_profile.commandsNs );
 	MoveCharacters( frame );
 	ExpireProps();
 	EnforcePropCaps();
+	spent( m_profile.charactersNs );
 
 	b3World_Step( m_physicsWorld, m_config.TimeStep(), int( m_config.subSteps ) );
+	spent( m_profile.physicsNs );
 
 	CollectImpacts();
 	SyncFromPhysics();
 	FollowHolders();
 	UpdateFootsteps();
 	HandleOutOfBounds();
+	spent( m_profile.afterNs );
+	m_profile.steps += 1;
 
 	m_globals.tick += 1;
 }

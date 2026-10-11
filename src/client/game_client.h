@@ -26,6 +26,9 @@ struct ClientOptions
 	uint32_t maxRollbackTicks = 20;
 	uint32_t inputRedundancy = 12; // each input packet repeats this many recent ticks
 	uint32_t leadMarginTicks = 2;  // extra lead over the server beyond the measured latency
+	// A misprediction is fixed at once (1), or every this many ticks: less re-simulation, and what
+	// other players do is seen that much later (RollbackSession::SetReconcileEvery).
+	uint32_t reconcileEveryTicks = 1;
 	double reconnectIntervalSeconds = 1.0;
 	bool verbose = true;
 	std::string logName = "client";

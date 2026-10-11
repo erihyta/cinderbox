@@ -129,6 +129,21 @@ public:
 	// Advance one tick. frame.tick must equal Tick().
 	void Step( const InputFrame& frame );
 
+	// Where the steps' time went, in nanoseconds, since the simulation was made (a tool's figures:
+	// nothing in the simulation reads them).
+	struct StepProfile
+	{
+		uint64_t steps = 0;
+		uint64_t commandsNs = 0;   // events and commands
+		uint64_t charactersNs = 0; // the characters' movement, motions and animation
+		uint64_t physicsNs = 0;	   // the physics step
+		uint64_t afterNs = 0;	   // what is read back from the physics, and the rest
+	};
+	const StepProfile& Profile() const
+	{
+		return m_profile;
+	}
+
 	// The tick that the next Step() will simulate.
 	uint32_t Tick() const
 	{
@@ -370,6 +385,7 @@ private:
 	SimConfig m_config;
 	LevelLayout m_map;
 	SimGlobals m_globals;
+	StepProfile m_profile;
 	flecs::world m_world;
 	std::unique_ptr<PhysicsArena> m_arena;
 	b3WorldId m_physicsWorld = {};
