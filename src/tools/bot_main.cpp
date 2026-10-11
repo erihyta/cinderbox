@@ -2,6 +2,11 @@
 //
 //   cb_bot [--host H] [--port P] [--count N] [--full M] [--threads T (for lite bots)] [--duration SEC]
 //          [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC] [--chaotic] [--shoot]
+//          [--reconcile-every TICKS] [--spin]
+//
+// --spin: a full bot's thread never sleeps, as a game that draws all the time does not. A thread
+// that sleeps a millisecond between frames is run slowly by a processor saving power, and every
+// time measured in it is several times what a game would see.
 //          [--melee] [--sneak]
 //
 // --shoot makes full bots take out the pistol (their first slot) and use it on the
@@ -60,6 +65,7 @@ struct Options
 	bool shoot = false;
 	bool melee = false;
 	bool sneak = false;
+	bool spin = false;
 };
 
 struct Bot;
@@ -169,6 +175,8 @@ struct Summary
 	uint64_t checksums = 0;
 	uint64_t rollbacks = 0;
 	uint64_t resimulated = 0;
+	RollbackSession::Stats parts; // only its counters of time
+	Simulation::StepProfile profile;
 	double stalledSeconds = 0.0;
 	double playingSeconds = 0.0;
 	uint32_t windowSum = 0;
@@ -193,6 +201,19 @@ struct Summary
 		checksums += o.checksums;
 		rollbacks += o.rollbacks;
 		resimulated += o.resimulated;
+		parts.steps += o.parts.steps;
+		parts.stepNs += o.parts.stepNs;
+		parts.saves += o.parts.saves;
+		parts.saveNs += o.parts.saveNs;
+		parts.loads += o.parts.loads;
+		parts.loadNs += o.parts.loadNs;
+		parts.hashes += o.parts.hashes;
+		parts.hashNs += o.parts.hashNs;
+		profile.steps += o.profile.steps;
+		profile.commandsNs += o.profile.commandsNs;
+		profile.charactersNs += o.profile.charactersNs;
+		profile.physicsNs += o.profile.physicsNs;
+		profile.afterNs += o.profile.afterNs;
 		stalledSeconds += o.stalledSeconds;
 		playingSeconds += o.playingSeconds;
 		windowSum += o.windowSum;
@@ -210,6 +231,7 @@ struct Summary
 
 struct Worker
 {
+	bool spin = false;
 	std::vector<Bot> bots;
 	std::mutex mutex;
 	Summary published;
@@ -306,6 +328,21 @@ void RunWorker( Worker& w, Clock::time_point start, const std::atomic<bool>& sto
 					{
 						s.rollbacks += session->GetStats().rollbacks;
 						s.resimulated += session->GetStats().resimulatedTicks;
+						const RollbackSession::Stats& rs = session->GetStats();
+						s.parts.steps += rs.steps;
+						s.parts.stepNs += rs.stepNs;
+						s.parts.saves += rs.saves;
+						s.parts.saveNs += rs.saveNs;
+						s.parts.loads += rs.loads;
+						s.parts.loadNs += rs.loadNs;
+						s.parts.hashes += rs.hashes;
+						s.parts.hashNs += rs.hashNs;
+						const Simulation::StepProfile& sp = session->Sim().Profile();
+						s.profile.steps += sp.steps;
+						s.profile.commandsNs += sp.commandsNs;
+						s.profile.charactersNs += sp.charactersNs;
+						s.profile.physicsNs += sp.physicsNs;
+						s.profile.afterNs += sp.afterNs;
 					}
 					b.simMsSum = 0.0;
 					b.frames = 0;
@@ -320,7 +357,14 @@ void RunWorker( Worker& w, Clock::time_point start, const std::atomic<bool>& sto
 			nextPublish = now + 0.5;
 		}
 
-		std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+		if ( w.spin )
+		{
+			std::this_thread::yield();
+		}
+		else
+		{
+			std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+		}
 	}
 }
 
@@ -337,6 +381,11 @@ bool Parse( int argc, char** argv, Options& o )
 		if ( arg == "--shoot" )
 		{
 			o.shoot = true;
+			continue;
+		}
+		if ( arg == "--spin" )
+		{
+			o.spin = true;
 			continue;
 		}
 		if ( arg == "--melee" )
@@ -373,6 +422,8 @@ bool Parse( int argc, char** argv, Options& o )
 			o.spawnOneIn = uint32_t( std::atoi( v.c_str() ) );
 		else if ( arg == "--rollback" )
 			o.client.minRollbackTicks = o.client.maxRollbackTicks = uint32_t( std::atoi( v.c_str() ) );
+		else if ( arg == "--reconcile-every" )
+			o.client.reconcileEveryTicks = uint32_t( std::atoi( v.c_str() ) );
 		else if ( arg == "--report" )
 			o.reportSeconds = std::atof( v.c_str() );
 		else
@@ -389,7 +440,7 @@ int main( int argc, char** argv )
 	if ( Parse( argc, argv, o ) == false )
 	{
 		std::printf( "usage: cb_bot [--host H] [--port P] [--count N] [--full M] [--threads T] [--duration SEC]\n"
-					 "              [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC]\n"
+					 "              [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC] [--reconcile-every TICKS]\n"
 					 "              [--chaotic] [--shoot] [--melee] [--sneak]\n" );
 		return 1;
 	}
@@ -408,6 +459,7 @@ int main( int argc, char** argv )
 	for ( int t = 0; t < threads; ++t )
 	{
 		workers.push_back( std::make_unique<Worker>() );
+		workers.back()->spin = o.spin && t < o.full;
 	}
 
 	for ( int i = 0; i < o.count; ++i )
@@ -478,6 +530,26 @@ int main( int argc, char** argv )
 						 "ticks/s per bot | window %.1f avg %u max | stalled %.1f%% | checksums ok %llu | DESYNCS %llu\n",
 						 s.frames ? s.simMsSum / double( s.frames ) : 0.0, s.simMsMax, rollbacksPerSec, resimPerSec,
 						 double( s.windowSum ) / double( s.fullBots ), s.windowMax, stalledPercent, (unsigned long long)s.checksums, (unsigned long long)s.desyncs );
+			// Where a full bot's time went since the last report: each part as a share of real time, and what one costs.
+			auto part = [&]( const char* name, uint64_t count, uint64_t ns, uint64_t countBefore, uint64_t nsBefore ) {
+				uint64_t n = count - countBefore;
+				double ms = double( ns - nsBefore ) / 1e6;
+				std::printf( " %s %.1f%% (%.0f/s, %.3f ms each)", name, 100.0 * ms / 1000.0 / dt / s.fullBots, double( n ) / dt / s.fullBots,
+							 n ? ms / double( n ) : 0.0 );
+			};
+			std::printf( "          of a second:" );
+			part( "step", s.parts.steps, s.parts.stepNs, previous.parts.steps, previous.parts.stepNs );
+			part( "| save", s.parts.saves, s.parts.saveNs, previous.parts.saves, previous.parts.saveNs );
+			part( "| load", s.parts.loads, s.parts.loadNs, previous.parts.loads, previous.parts.loadNs );
+			part( "| hash", s.parts.hashes, s.parts.hashNs, previous.parts.hashes, previous.parts.hashNs );
+			std::printf( "\n" );
+			if ( uint64_t n = s.profile.steps - previous.profile.steps )
+			{
+				auto each = [n]( uint64_t now, uint64_t before ) { return double( now - before ) / 1e6 / double( n ); };
+				std::printf( "          of a step: commands %.3f ms | characters %.3f | physics %.3f | after %.3f\n",
+							 each( s.profile.commandsNs, previous.profile.commandsNs ), each( s.profile.charactersNs, previous.profile.charactersNs ),
+							 each( s.profile.physicsNs, previous.profile.physicsNs ), each( s.profile.afterNs, previous.profile.afterNs ) );
+			}
 		}
 		std::fflush( stdout );
 		previous = s;

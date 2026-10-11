@@ -750,7 +750,8 @@ void TestPortableBytes()
 // Deliver authoritative frames late and out of step with the client, and have the client
 // sometimes sample a local input that the server did not use. Every confirmed state must still
 // equal the server's.
-void RunRollbackScenario( uint32_t maxDelay, uint32_t window, uint64_t seed )
+// `every`: mispredictions are fixed only every so many ticks (RollbackSession::SetReconcileEvery).
+void RunRollbackScenario( uint32_t maxDelay, uint32_t window, uint64_t seed, uint32_t every = 1 )
 {
 	test::ScenarioOptions opt;
 	opt.seed = seed;
@@ -760,6 +761,7 @@ void RunRollbackScenario( uint32_t maxDelay, uint32_t window, uint64_t seed )
 
 	const PlayerSlot local = 0;
 	RollbackSession session( config, local, window );
+	session.SetReconcileEvery( every );
 	uint64_t rng = seed * 31 + 7;
 
 	uint32_t delivered = 0;
@@ -803,7 +805,11 @@ void RunRollbackScenario( uint32_t maxDelay, uint32_t window, uint64_t seed )
 			uint64_t h;
 			if ( session.GetConfirmedHash( nextCheck, h ) == false )
 			{
-				break;
+				if ( nextCheck > session.FinalizedTick() )
+				{
+					break;
+				}
+				continue; // final, and not hashed: predicted in a re-simulation and confirmed as it was
 			}
 			if ( h != reference[nextCheck] )
 			{
@@ -814,14 +820,15 @@ void RunRollbackScenario( uint32_t maxDelay, uint32_t window, uint64_t seed )
 		}
 	}
 
+	session.SetReconcileEvery( 1 );
 	session.Reconcile();
 	CHECK( session.CurrentTick() == total );
 	CHECK( session.Sim().ComputeHash() == reference[total] );
 
 	const auto& stats = session.GetStats();
-	std::printf( "    delay<=%u window=%u: %u states verified, %" PRIu64 " rollbacks, %" PRIu64 " resimulated ticks, %" PRIu64
-				 " stalls\n",
-				 maxDelay, window, checked, stats.rollbacks, stats.resimulatedTicks, stats.stalls );
+	std::printf( "    delay<=%u window=%u every=%u: %u states verified, %" PRIu64 " rollbacks, %" PRIu64 " resimulated ticks, %" PRIu64
+				 " snapshots, %" PRIu64 " stalls\n",
+				 maxDelay, window, every, checked, stats.rollbacks, stats.resimulatedTicks, stats.saves, stats.stalls );
 	CHECK( checked > total / 2 );
 	CHECK( stats.rollbacks > 0 );
 }
@@ -831,6 +838,8 @@ void TestRollback()
 	RunRollbackScenario( 4, 8, 11 );
 	RunRollbackScenario( 12, 8, 22 ); // delays beyond the window force stalls
 	RunRollbackScenario( 2, 2, 33 );
+	RunRollbackScenario( 6, 8, 44, 3 ); // fixed every third tick
+	RunRollbackScenario( 12, 8, 55, 8 );
 }
 
 void TestRollbackReset()

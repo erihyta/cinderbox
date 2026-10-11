@@ -83,6 +83,14 @@ public:
 	{
 		return m_rollbackMax;
 	}
+	void set_reconcile_every( int v )
+	{
+		m_reconcileEvery = v;
+	}
+	int get_reconcile_every() const
+	{
+		return m_reconcileEvery;
+	}
 
 protected:
 	static void _bind_methods();
@@ -95,6 +103,7 @@ private:
 	godot::String m_playerName;
 	int m_rollbackMin = 8;
 	int m_rollbackMax = 20;
+	int m_reconcileEvery = 1;
 
 	std::unique_ptr<present::ViewSource> m_source;
 	PacketHandoff m_handoff;

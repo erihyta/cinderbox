@@ -3,7 +3,7 @@
 #
 #   scripts/stress_test.sh [--preset NAME] [--bots N] [--full M] [--duration SEC] [--latency MS]
 #                          [--jitter MS] [--loss PERCENT] [--rollback TICKS] [--port N] [--record FILE]
-#                          [--chaotic 1]
+#                          [--chaotic 1] [--reconcile-every TICKS] [--spin 1]
 #
 # Works in Git Bash on Windows and on Linux/macOS. Exit code is cb_bot's (0 = everyone playing,
 # no desyncs) or 3 if the recorded replay does not verify.
@@ -21,6 +21,8 @@ rollback=""   # empty: the client picks the window from its latency
 port=17950
 record=""
 chaotic=""
+reconcile=""
+spin=""
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -35,6 +37,8 @@ while [[ $# -gt 0 ]]; do
 		--port) port="$2" ;;
 		--record) record="$2" ;;
 		--chaotic) chaotic="$2" ;;
+		--reconcile-every) reconcile="$2" ;;
+		--spin) spin="$2" ;;
 		*) echo "unknown option $1"; exit 1 ;;
 	esac
 	shift 2
@@ -77,6 +81,8 @@ sleep 1
 bot_args=(--port "$bot_port" --count "$bots" --full "$full" --duration "$duration" --report 10 --stagger 20)
 [[ -n "$rollback" ]] && bot_args+=(--rollback "$rollback")
 [[ -n "$chaotic" ]] && bot_args+=(--chaotic)
+[[ -n "$reconcile" ]] && bot_args+=(--reconcile-every "$reconcile")
+[[ -n "$spin" ]] && bot_args+=(--spin)
 echo "== $bots bots ($full full), ${latency}+${jitter} ms each way, ${loss}% loss, rollback window ${rollback:-auto}, ${duration}s"
 "$bin/cb_bot$ext" "${bot_args[@]}"
 code=$?

@@ -49,11 +49,14 @@ void CinderboxPeer::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_rollback_min" ), &CinderboxPeer::get_rollback_min );
 	ClassDB::bind_method( D_METHOD( "set_rollback_max", "ticks" ), &CinderboxPeer::set_rollback_max );
 	ClassDB::bind_method( D_METHOD( "get_rollback_max" ), &CinderboxPeer::get_rollback_max );
+	ClassDB::bind_method( D_METHOD( "set_reconcile_every", "ticks" ), &CinderboxPeer::set_reconcile_every );
+	ClassDB::bind_method( D_METHOD( "get_reconcile_every" ), &CinderboxPeer::get_reconcile_every );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "host" ), "set_host", "get_host" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "port", PROPERTY_HINT_RANGE, "1,65535" ), "set_port", "get_port" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "player_name" ), "set_player_name", "get_player_name" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "rollback_min", PROPERTY_HINT_RANGE, "1,64" ), "set_rollback_min", "get_rollback_min" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "rollback_max", PROPERTY_HINT_RANGE, "1,64" ), "set_rollback_max", "get_rollback_max" );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "reconcile_every", PROPERTY_HINT_RANGE, "1,8" ), "set_reconcile_every", "get_reconcile_every" );
 }
 
 void CinderboxPeer::Start( std::unique_ptr<present::ViewSource> source )
@@ -70,6 +73,7 @@ void CinderboxPeer::connect_to_server()
 	options.port = uint16_t( std::clamp( m_port, 1, 65535 ) );
 	options.minRollbackTicks = uint32_t( std::max( 1, m_rollbackMin ) );
 	options.maxRollbackTicks = uint32_t( std::max( m_rollbackMin, m_rollbackMax ) );
+	options.reconcileEveryTicks = uint32_t( std::max( 1, m_reconcileEvery ) );
 	options.logName = "godot";
 	options.playerName = ToStd( m_playerName );
 	Start( std::make_unique<LiveSource>( options ) );
