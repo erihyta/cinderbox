@@ -222,7 +222,7 @@ A server mod has two halves: its **rules** (C++ in `cb_server`) and its **look**
 players subscribe to). Characters are items too.
 
 ```
-server_mods/pistol/client/  ──publish_mod.ps1──>  workshop: pistol/<sha256>.zip   (players have it)
+server_mods/gun/client/  ──publish_mod.ps1──>  workshop: pistol/<sha256>.zip   (players have it)
                                      └──> client_item.cfg (sha256) ──build──> bin/items/pistol.item
 cb_server announces "pistol <sha256>" in the schema; a client without that exact item leaves and says what is missing
 ```
@@ -312,7 +312,7 @@ Everything a player sees and hears beyond bodies is data in workshop items: no s
 - **Values**: `CbReaction.value_expression` sets a property to an expression's value (kept up to date while a While is on), `volume_expression` scales a sound; `CbFieldBinding.field` and `{...}` in a `CbFieldLabel` take expressions. HUD nodes stay their own classes: a HUD scene is not under the World node, so a reaction there has no director.
 - **World reactions**: every `res://vfx/reactions*.tscn` is loaded once; files add to each other.
 - **Prediction rule**: on a predicted cue a reaction waits for the server when it uses what only the server knows (the cue's point, end, value or other entity) or has `wait_for_server` on. Echoes are matched by name and order within a second.
-- **Predicted state**: a prediction may also say what the server's answer changes for the viewer's own player. `changes` (`pistol.ammo -= 1`) are applied to the mirror's copy of the board after each frame's cues were heard, so the server's value and the prediction's are never both counted. A `stance` (or the cue itself, as an event) leads the body: see Characters and animation.
+- **Predicted state**: a prediction may also say what the server's answer changes for the viewer's own player. `changes` (`gun.ammo -= 1`) are applied to the mirror's copy of the board after each frame's cues were heard, so the server's value and the prediction's are never both counted. A `stance` (or the cue itself, as an event) leads the body: see Characters and animation.
 - **Cue Preview**: an editor panel that plays a scene's reactions on a small stage with stand-in players.
 
 ## Maps and templates

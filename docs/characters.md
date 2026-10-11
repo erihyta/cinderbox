@@ -28,7 +28,7 @@ The [Universal Animation Library](https://quaternius.com) mannequin by Quaterniu
   `source/bone_map.tres`.
 - **State machine**: an ordinary `AnimationTree` in `character.tscn` (see
   [State machines](#state-machines)): locomotion, jumps, and an upper-body layer for the pistol
-  (with a shot on `pistol.fired`) and the bat (with a swing that strikes on a marker; the bat's
+  (with a shot on `item.use`) and the bat (with a swing that strikes on a marker; the bat's
   fire is the melee mod's own look).
 - **Hitboxes**: capsules along the spine, arms and legs sized from the bone lengths, a head
   sphere, a hips box.
@@ -235,8 +235,8 @@ Conditions and expressions read simulation values, never scripts:
 | `vertical_speed`, `grounded`, `airborne_time`, `jumped` | the body's movement (`jumped`: on the tick of a jump) |
 | `aiming`, `backward`, `state_time` | a mod's Aim; walking backwards; seconds in the current state |
 | a stance's name (`pistol`, `melee`) | true while any layer has it (mods' `SetStance`) |
-| a mod event's name (`pistol.fired`, `attack`) | on the tick it is emitted at this player: its value (1 if the value is 0), so `attack` and `attack == 2` both work: a trigger |
-| ... the same event, while already in the state it leads to | starts that state over, with the transition's crossfade: a shot fired during the last one's recoil plays the recoil again (the pistol fires every 0.2 s, its clip is 0.63 s). Godot has no transition from a state to itself, so the bake derives this from the transition you drew (`Pistol -> Shoot` on `pistol.fired`). The clip's own keys (a sound, a flash keyed inside it) fire again too, as long as that transition has a crossfade |
+| a mod event's name (`item.use`, `attack`) | on the tick it is emitted at this player: its value (1 if the value is 0), so `attack` and `attack == 2` both work: a trigger |
+| ... the same event, while already in the state it leads to | starts that state over, with the transition's crossfade: a shot fired during the last one's recoil plays the recoil again (the pistol fires every 0.2 s, its clip is 0.63 s). Godot has no transition from a state to itself, so the bake derives this from the transition you drew (`Pistol -> Shoot` on `item.use`). The clip's own keys (a sound, a flash keyed inside it) fire again too, as long as that transition has a crossfade |
 | a board field's name (`inventory.slot`) | the player's value (or the global one) |
 | an item kind's name (`melee.bat`) | true while the player holds one, in any socket |
 
@@ -355,7 +355,7 @@ layers of the same names:
 | a blend tree with one state machine named `UpperBody` on its output | `UpperBody`, through the character's own bone filter |
 
 The SDK's starter pack is the second row. The rifle's hold is the fourth (two states: the idle,
-and the shot on `rifle.fired`).
+and the shot on `item.use`).
 
 The swap is simulation state: the server's hit tests and every client pose the swapped layer, and a
 rollback replays it. The server reads the pack from the mod's workshop item; its graph travels in the
@@ -375,9 +375,9 @@ and stop when it is dropped. A mod's own `SwapLayer` on the same layer wins whil
 
 | Item | Pack | Layer | States |
 |---|---|---|---|
-| pistol | `pistol.hold` (`server_mods/pistol/client/animation_packs/pistol_hold.tscn`) | `UpperBody` | `Hold`; `Shoot` on `pistol.fired`, back at its end |
+| pistol | `gun.pistol_hold` (`server_mods/gun/client/animation_packs/pistol_hold.tscn`) | `UpperBody` | `Hold`; `Shoot` on `item.use`, back at its end |
 | bat | `melee.hold` (`server_mods/melee/client/animation_packs/bat_hold.tscn`) | `UpperBody` | `Ready`; `Swing` while the `melee_swing` stance is set (a stance, so the look predicts it). `Sword_Attack` carries the `melee.strike` marker |
-| rifle | `rifle.hold` (its look is not in the repository) | `UpperBody` | `Hold`; `Fire` on `rifle.fired` |
+| rifle | `gun.rifle_hold` (its look is not in the repository) | `UpperBody` | `Hold`; `Fire` on `item.use` |
 
 All three are upper-body packs: the legs keep the character's own walk, so a crouch (`sneak` swaps
 `FullBody`) plays under a held bat. Their clips are files in the mod (`animation_packs/source/*.res`).

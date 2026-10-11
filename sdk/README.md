@@ -118,7 +118,7 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 | Rule | Why |
 |---|---|
 | Transitions: Advance Mode **Auto**, with a condition or expression | the simulation runs the machine; nothing calls `travel()` |
-| Conditions are the game's names: `forward_speed`, `speed`, `grounded`, `jumped`, `airborne_time`, `state_time`, a stance (`rifle`), a server mod's event (`rifle.fired`) | they are computed on the server and on every client |
+| Conditions are the game's names: `forward_speed`, `speed`, `grounded`, `jumped`, `airborne_time`, `state_time`, a stance (`rifle`), a server mod's event (`item.use`) | they are computed on the server and on every client |
 | A blend space's position comes from **Graph Inputs** on the root (`FullBody/Move/blend_position = forward_speed`) | the same |
 | The layer names are fixed: `FullBody`, `UpperBody` | a pack's layer replaces the character's layer of the same name |
 | `UpperBodyBlend`'s amount is yours in the editor (1 to see the upper body); in the game the layer plays in full while the pack is swapped in | the server decides when |

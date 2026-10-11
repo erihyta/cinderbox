@@ -12,18 +12,18 @@ other, so two mods add effects without fighting over one list; a mod replaces
 `vfx/reactions.tscn` to change the game's own.
 
 ```
-PistolReactions                      (vfx/reactions_pistol.tscn)
-├── Fired         on pistol.fired     subject $at                         muzzle flash + gunshot at $at/RightHand
-├── Kick          on pistol.fired     subject $at      is_local           camera shake
-├── Tracer        on pistol.fired     subject $at                         beam from $at/RightHand to the cue's end
-└── Hurt          on pistol.hit       subject $other   is_local           camera shake + red flash
+PistolReactions                      (prefabs/pistol.tscn)
+├── Fired         on item.use     subject $at                         muzzle flash + gunshot at $at/RightHand
+├── Kick          on item.use     subject $at      is_local           camera shake
+├── Tracer        on item.use     subject $at                         beam from $at/RightHand to the cue's end
+└── Hurt          on item.hit       subject $other   is_local           camera shake + red flash
 ```
 
 What the pistol itself looks like is its own scene, whose root is a [`CbItem`](items.md#making-an-item). A `CbLinkLook` in a reactions scene says what the line of a [motion's probe](motions.md#the-rope-cblinklook) (a grappling hook's rope) is drawn as.
 
 | Events | Carry |
 |---|---|
-| a mod's, by name (`pistol.hit`) | A (who it is about), B (the other one), `event.value`, the point and the end (where a shot ended) |
+| a mod's, by name (`item.hit`) | A (who it is about), B (the other one), `event.value`, the point and the end (where a shot ended) |
 | `spawned`, `destroying` | the entity; its position (`spawned` only for entities that appear in play, not a world reset) |
 | `jumped`, `landed`, `footstep` | the player; at its feet |
 | `impact` | both bodies; `event.strength` (approach speed, m/s) |
@@ -56,28 +56,28 @@ A mod's rules run on the server, so what your own press did comes back a round t
 it at once:
 
 ```
-PredictFire   CbPrediction   action "use"    cue "pistol.fired"                (in prefabs/pistol.tscn, under its CbItem)
-                             conditions pistol.ammo > 0, !pistol.reloading, !combat.dead
+PredictFire   CbPrediction   action "use"    cue "item.use"                (in prefabs/pistol.tscn, under its CbItem)
+                             conditions gun.ammo > 0, !gun.reloading, !combat.dead
                              cooldown 0.19
-                             changes    pistol.ammo -= 1
+                             changes    gun.ammo -= 1
 
 PredictSwing  CbPrediction   action "use"    cue "melee.swing"   cooldown 0.58       (in prefabs/bat.tscn)
                              stance "melee_swing" on stance_layer "full"
 
-PredictFire   CbPrediction   action "use"    cue "rifle.fired"         (the rifle: automatic)
-                             conditions rifle.ammo > 0, !rifle.reloading, !combat.dead
+PredictFire   CbPrediction   action "use"    cue "item.use"         (the rifle: automatic)
+                             conditions gun.ammo > 0, !gun.reloading, !combat.dead
                              cooldown 0.1   while_held
-                             changes    rifle.ammo -= 1
+                             changes    gun.ammo -= 1
 ```
 
 | Step | What happens |
 |---|---|
-| You press the use button (`use`) and the conditions hold on your player | `pistol.fired` plays for you now, with the same reactions everyone else's shot plays: one reaction per cue, none written twice |
+| You press the use button (`use`) and the conditions hold on your player | `item.use` plays for you now, with the same reactions everyone else's shot plays: one reaction per cue, none written twice |
 | The prediction has `changes` | your own player's fields read the changed value at once: the ammo count drops on the click |
 | The prediction has a `stance`, or your character's state machine reads the cue | your own upper body is shown ahead of the server: the swing or the recoil starts on the click |
 | A reaction has `wait_for_server` on | it waits for the server's cue anyway |
 | A reaction needs what only the server knows | it waits: placed at the cue's point, end or beam, a path starting with `$other`, or a condition on `event.*` (the tracer, the hit spark) |
-| The server's `pistol.fired` for you arrives (within a second) | it is the echo: what already played stays quiet, what waited plays now |
+| The server's `item.use` for you arrives (within a second) | it is the echo: what already played stays quiet, what waited plays now |
 | No press was predicted | the server's cue plays in full, as for any other player |
 
 | Field | Meaning |
@@ -87,7 +87,7 @@ PredictFire   CbPrediction   action "use"    cue "rifle.fired"         (the rifl
 | `conditions` | the look's copy of the server's rule, read on your own player: [expressions](#expressions) |
 | `cooldown` | the server's own rate (seconds between two predictions) |
 | `while_held` | the action works for as long as it is held (automatic fire): the cue is predicted on the press and again every `cooldown` while it stays down and the conditions hold. Needs a `cooldown`: the time between two of the server's cues |
-| `changes` | what the server's answer will change on your player: `pistol.ammo -= 1`, `x += 2`, `x = 0`. Shown until the server's cue comes (its own value is in the same frame) or the prediction expires |
+| `changes` | what the server's answer will change on your player: `gun.ammo -= 1`, `x += 2`, `x = 0`. Shown until the server's cue comes (its own value is in the same frame) or the prediction expires |
 | `stance`, `stance_layer` | the stance the server's mod will set, and the layer it sets it on (`melee_swing` on `full`) |
 
 - **Both halves are the modder's**: the server mod emits the cue, its look predicts it by name.
@@ -95,7 +95,7 @@ PredictFire   CbPrediction   action "use"    cue "rifle.fired"         (the rifl
 
   | It sits | It speaks for | Its conditions |
   |---|---|---|
-  | in the item's own scene, under its `CbItem` (the pistol's, the bat's) | the copy of that item the viewer has in the hand; not one that is put away, lying, or someone else's | need not name the item: `pistol.ammo > 0`, not `pistol.gun, pistol.ammo > 0` |
+  | in the item's own scene, under its `CbItem` (the pistol's, the bat's) | the copy of that item the viewer has in the hand; not one that is put away, lying, or someone else's | need not name the item: `gun.ammo > 0`, not `gun.pistol, gun.ammo > 0` |
   | in a reactions scene, under the World | the viewer, whatever it holds | say when: `dash.charges > 0` |
 
   So an item's scene carries what using it looks like, and a hundred pistols in the world are one prediction. Reactions already work this way inside an item (`subject` `^^`: whoever holds it).
@@ -103,7 +103,7 @@ PredictFire   CbPrediction   action "use"    cue "rifle.fired"         (the rifl
 - **Held fire is two lines**: the server mod asks `ctx.Using( slot, kind )` where a press-based one
   asks `ctx.Used`, and the look's prediction is `while_held` with the mod's time between shots
   as its `cooldown`. The predictions are counted from the press, not from the frames, so they keep
-  the server's rate at any frame rate (`rifle.cpp`, `reactions_rifle.tscn`).
+  the server's rate at any frame rate (`gun.cpp`, `prefabs/rifle.tscn`).
 - **A wrong guess**: a reaction that played is not taken back; changed fields and the led body
   go back to the server's when the prediction expires (a second). Keep the conditions as close to
   the server's rule as the board allows.
@@ -128,12 +128,12 @@ seconds. The whole feature is one function on the server and four nodes in the l
 
 | Where | What | Why there |
 |---|---|---|
-| `pistol.cpp`, `Declare` | `declare.Action( "mark", "MouseRight" )`, events `pistol.scan` and `pistol.marked` | names the look can use; the key shows in the controls hint by itself |
-| `pistol.cpp`, `Mark` | on a press (once a second): `ctx.CastAim` (at what is under the crosshair, from the eye); `Emit( pistol.scan, caster, hit, eye, end )`; if it found a living player, `Emit( pistol.marked, caster, player )` | who is hit is the server's decision |
-| look: `PredictScan` | `CbPrediction`: `mark` -> `pistol.scan` | your own click is heard at once |
-| look: `Scan` | on `pistol.scan`, subject `$at`: a click at `$at/RightHand` | plays on the press for you, on the server's cue for everyone else |
-| look: `ScanBeam` | on `pistol.scan`: `vfx/scan_beam.tscn` as a **beam** to the cue's end | needs the server's end point, so it waits for the server |
-| look: `Marked` | on `pistol.marked`, subject `$other`: `vfx/mark_zone.tscn`, place **Follow the subject**, `scene_lifetime = 2` | the zone is a child of the marked player for 2 seconds, then freed |
+| `mark.cpp`, `Declare` | `declare.Action( "use2", "MouseRight" )`, events `item.use2` and `mark.found` | names the look can use; the key shows in the controls hint by itself |
+| `mark.cpp` | on a press (once a second): `ctx.CastAim` (at what is under the crosshair, from the eye); `Emit( item.use2, caster, hit, eye, end )`; if it found a living player, `Emit( mark.found, caster, player )` | who is hit is the server's decision |
+| look: `PredictScan` | `CbPrediction`: `use2` -> `item.use2` | your own click is heard at once |
+| look: `Scan` | on `item.use2`, subject `$at`: a click at `$at/RightHand` | plays on the press for you, on the server's cue for everyone else |
+| look: `ScanBeam` | on `item.use2`: `vfx/scan_beam.tscn` as a **beam** to the cue's end | needs the server's end point, so it waits for the server |
+| look: `Marked` | on `mark.found`, subject `$other`: `vfx/mark_zone.tscn`, place **Follow the subject**, `scene_lifetime = 2` | the zone is a child of the marked player for 2 seconds, then freed |
 
 The server keeps nothing about the zone: how it looks and how long it shows is the look's. If the
 mark had to *do* something for those 2 seconds (slow the player), that would be a board field the
@@ -149,7 +149,7 @@ read: a reaction, a prediction, a HUD node, a character's state machine.
 |---|---|
 | `name` / `!name` (or `not name`) | the field is not zero / is zero |
 | `?name` | the server declared the field (its mod is running); `!?name`: it did not (hide the pistol's scoreboard when deathmatch shows its own) |
-| `pistol.gun` (an item kind) | the player holds one, in any socket: what a look should ask, not which loadout slot is out |
+| `gun.pistol` (an item kind) | the player holds one, in any socket: what a look should ask, not which loadout slot is out |
 | `name == 2`, `!=`, `>`, `>=`, `<`, `<=` | a comparison: 1 or 0 (`true` / `false` are 1 / 0) |
 | `+ - * /`, `-x`, `( )` | arithmetic; dividing by 0 gives 0 |
 | `and` / `&&`, `or` / `\|\|` | both, either |
@@ -167,8 +167,8 @@ read: a reaction, a prediction, a HUD node, a character's state machine.
 | HUD nodes | the local player's fields (private ones too), then the world's | item kinds |
 | [State machines](characters.md#state-machines) | simulation values, stances, events, fields, item kinds | resolved once at bake; nothing private |
 
-A list of conditions (`conditions`) holds when all of them do: `["pistol.gun", "!combat.dead"]`
-is `pistol.gun and !combat.dead`.
+A list of conditions (`conditions`) holds when all of them do: `["gun.pistol", "!combat.dead"]`
+is `gun.pistol and !combat.dead`.
 
 What an entity looks like *while* something holds (a glowing bat) is authored inside its own scene,
 with the same [`CbReaction` nodes](#reactions).
@@ -199,7 +199,7 @@ The HUD reads the board too, through script-free nodes any HUD scene can use:
 
 | Node | Does |
 |---|---|
-| `CbFieldLabel` | a Label with a `text_format` (`"AMMO {pistol.ammo} / 12"`), shown while its `conditions` hold. `{an expression}` works too: `"{combat.health * 100 / combat.max_health}%"`. With `choice_field` and `choices` it shows the line a number picks ([Saying things](#saying-things)) |
+| `CbFieldLabel` | a Label with a `text_format` (`"AMMO {gun.ammo} / {gun.magazine}"`), shown while its `conditions` hold. `{an expression}` works too: `"{combat.health * 100 / combat.max_health}%"`. With `choice_field` and `choices` it shows the line a number picks ([Saying things](#saying-things)) |
 | `CbFieldBinding` | writes a field, or an expression over fields (`combat.health / combat.max_health`), into any property of its `target` (default: its parent), `value = field * multiply + add`; with conditions it hides the target while they fail. A `ProgressBar`'s `value` and `max_value`, a panel's `visible`, a colour. The property may be a part of one (`scale:x`, `modulate:a`). With a `text_format` it writes words instead (into `text`, or the property named): any node that shows text, a `Label3D` in the world too, can show the game's |
 | `CbList` | a row per player, item, slot, or event that happened: its first child is the row as you designed it, copied for every entry; `where` filters, `sort_by` orders, `max_rows` cuts ([Lists](#lists)). Of **Events** (`event` `combat.killed`, each row for `seconds`) it is a kill feed: `{a}` and `{b}` in a row are what the event's two entities are called |
 | `CbKey` | a key of the viewer's own, not one of the server's actions: `action` `scores`, `key` `Tab`. While it is held (or switched by each press) a value of the viewer's is 1: `ui.scores`. What that shows is whoever reads it: a `CbFieldBinding` with the condition `ui.scores` shows its target. With `cursor`, the mouse is the screen's meanwhile |
@@ -262,7 +262,7 @@ Scores        VBoxContainer                               (server_mods/deathmatc
 | Field | Meaning |
 |---|---|
 | `of` | **Players**; **Items** (every item in the world); **Items its subject holds** (the local player's, or under a player's row, that player's); **Slots of its subject** (a row per slot, empty ones too: `slot.number`, `slot.selected`, `slot.empty` are the row's) |
-| `item_kind` | for items: only this kind (`pistol.gun`) |
+| `item_kind` | for items: only this kind (`gun.pistol`) |
 | `where` | conditions on an entry: `team.id == 1`, `not combat.dead`, `not is_local` |
 | `sort_by`, `descending` | an expression over an entry's fields; ties keep their order |
 | `max_rows` | the first so many, after sorting (a top three) |
@@ -308,12 +308,12 @@ facing the camera, the same size at any distance, hidden while its text is empty
 `progress_field` it draws a bar under the text that fills as the field goes from 0 to 1. A reaction
 puts it where it belongs (see [Items in the world](items.md#items-in-the-world)).
 
-The pistol's HUD (`server_mods/pistol/client/ui/hud_pistol.tscn`) is built from these: a health bar
+The pistol's HUD (`server_mods/gun/client/ui/hud_pistol.tscn`) is built from these: a health bar
 (`ProgressBar` from `combat.health` and `combat.max_health`), ammo, reloading, crosshair, kills and
 deaths, the kill feed and the scoreboard. None of it is script, so a client mod can restyle all of it.
 
 `godot/vfx/reactions.tscn` is the game's own set; the pistol's look (predicted shots, tracers, hits,
-reload, the pistol item's look) is `vfx/reactions_pistol.tscn` in its workshop item, and being hurt
+reload, the pistol item's look) is `prefabs/pistol.tscn` in its workshop item, and being hurt
 or dying looks the same for every weapon (`vfx/reactions_combat.tscn`, the combat mod's item); `mods_src/example_neon/vfx/reactions_neon.tscn` shows a mod adding three more,
 including its own sound. All are edited in the Godot editor, as scenes.
 
