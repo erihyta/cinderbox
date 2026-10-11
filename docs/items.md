@@ -238,8 +238,8 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 | `properties` | named numbers any server mod may read, e.g. `pickup.hold_seconds` = 0.5. They replace what the item's mod declared in code for the same name |
 | `carry_grip`, `other_hand`, `other_grip` | [where the hands hold it](#both-hands-on-an-item) |
 | `use`, `slot` | [how it is used](#using-an-item), and the slot it goes to (1 is the first; 0: the first free one) |
-| `view_offset` | first person, held by the arms: how far the arms holding it are moved in the viewer's own view |
-| `view_camera` | first person, [floating](#first-person): a `CbViewCamera` in the scene, where the viewer's eye is. The arms are not drawn |
+| `view_offset`, `view_rotation`, `view_fov`, `view_left_hand`, `view_right_hand` | [first person](#first-person): where the hands and the item are in the holder's own view, the field of view they are drawn with, and which arms are drawn |
+| `view_camera` | first person, the other way: the item [floats](#floating) in front of the camera instead of being where the animation has it |
 | **Bake item** (button), saving the scene | writes `res://items/<kind>.cfg` |
 
 | Under it | Meaning |
@@ -250,31 +250,45 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 
 ### First person
 
-What the holder sees of its own item, in its own view. Everyone else sees the item in the hand.
+There is one animation. What a player's body does in third person is what its holder sees in
+first person: the same clips at the same moment, drawn again for the eye.
 
-| Way | Set | What is drawn | For |
-|---|---|---|---|
-| held by the arms (the default) | `view_offset`, or nothing | the character's own arms, as the animations pose them, steadied under the camera | what the third-person animations already hold well from the eye: a pistol, a rifle |
-| floating | `view_camera` | the item alone, held by the camera; no arms | what the animations hold out of view or awkwardly: a bat, a tool |
-
-**Floating, step by step**
-
-1. Add a `CbViewCamera` under the item (the bat's is named `View`) and name it in the root's **View Camera**.
-2. Select it and tick **Preview** in the 3D view: that is the holder's picture (fov 60, the game's).
-3. Move and turn the camera until the item sits right. An item usually comes out of a lower corner and points toward the middle; keep its tip off the crosshair.
-4. Save (the bake writes `viewfrom` into `items/<kind>.cfg`).
-
-| The game does | How |
+| | What it is |
 |---|---|
-| holds it in front of the camera | the item's scene is placed so the camera stands where the `CbViewCamera` does |
-| lets it trail a turn | it follows the camera's turning about 0.02 s late, at most 4 degrees |
-| moves it with the steps | a few millimetres side to side and down, by ground speed |
-| never looks through the node | in the game a `CbViewCamera` leaves the scene as it enters; only its baked place is used |
+| The body | keeps the pose everyone sees. In its holder's own view only what is below the hips is drawn, and it casts the whole pose's shadow, what it holds in the hand and on the back included |
+| The view model | the arms and what they hold, drawn a second time for the holder alone: by a camera of its own over the world, so they never pass into a wall, with a field of view of their own |
+| The pose of the view model | the same animations, steadied: the upper body as it is standing still, held under the camera and turned with it. A swing or a shot's recoil shows; the walk does not swing the arms across the screen |
 
-**Its own animation in the view.** Put the meshes under one `Node3D` (the bat's `Model`) and move that
-node with an `AnimationPlayer` in the scene (the bat's `ViewPlayer`, animation `view_swing`). Play it
-from a `CbReaction` on the mod's event with the condition `first_person`, which is true for the
-viewer's own player while it looks out of its eyes. Edit it with the camera's Preview on.
+**The item's settings** (the `CbItem`, group First person). They change only the holder's own picture.
+
+| Setting | Does | Leave it |
+|---|---|---|
+| `view_offset` | moves the hands and the item: metres to the right, up, ahead. The arms reach from shoulders that stay | 0: where the animation has them |
+| `view_rotation` | turns the item about the carrying hand, in degrees: x tips it up, y turns it left, z rolls it. The hands turn with it | 0 |
+| `view_fov` | the field of view the arms and the item are drawn with. Less than 60 makes them flatter and smaller, as shooters do | 0: the game's own, 60 |
+| `view_left_hand`, `view_right_hand` | whether each arm is drawn | on |
+
+- **Why an offset is usually needed.** A third-person hold is made to be seen from outside: the
+  bat's rests at the hip, 60 cm below the eye and behind it. The offset and the rotation bring it
+  into the picture; the animation still plays through them.
+- **To find the numbers**: `--view-probe=N` prints where the hand is from the camera
+  ([testing](testing.md)).
+- **A hand out of reach** stays at the arm's length, and the item stays in it.
+
+| Item | Settings |
+|---|---|
+| bat | offset (-0.16, 0.31, 0.77), rotation (40, 30, 0), the left arm not drawn (the clips are one-handed) |
+| pistol | offset (0, 0.05, 0.03) |
+
+#### Floating
+
+The other way, for an item that should not follow the body's animation in the view at all: name a
+`CbViewCamera` in **View Camera**. The item is then held by the camera where that node stands
+(select it and tick Preview in the 3D view to place it by looking), follows a turn a moment late,
+moves with the steps, and the arms are bent onto its grips. Its animation in the view is its own:
+an `AnimationPlayer` in the scene that moves the meshes and the grip markers under one `Node3D`,
+played by a `CbReaction` with the condition `first_person`. `view_offset` and `view_rotation` are
+not used; `view_fov` and the hands are. No shipped item uses it. The shadow is still the body's.
 
 The baked file has two readers. The **server** takes the body, the grip and the properties from
 it; the **game** takes the scene, the name and the first-person view. Nothing else says what an

@@ -107,7 +107,10 @@ void CinderboxClient::PlaceSockets( uint64_t visual, Node3D* node )
 	{
 		return;
 	}
-	// From the pose itself, so what a socket holds is where the server's pose has the bone.
+	// From the pose itself, so what a socket holds is where the server's pose has the bone. The
+	// viewer's own hands in first person are where the view draws them (the view's pose), and
+	// where the body's pose has them is kept for the shadow of what they hold.
+	bool view = m_firstPersonSkeleton == ObjectID( skeleton->get_instance_id() );
 	for ( const SocketPlace& place : it->second )
 	{
 		auto* socket = Object::cast_to<Node3D>( ObjectDB::get_instance( place.node ) );
@@ -116,7 +119,16 @@ void CinderboxClient::PlaceSockets( uint64_t visual, Node3D* node )
 		{
 			continue;
 		}
-		socket->set_global_transform( skeleton->get_global_transform() * joint * place.local );
+		Transform3D body = skeleton->get_global_transform() * joint * place.local;
+		bool hand = place.name == String( "RightHand" ) || place.name == String( "LeftHand" );
+		if ( view && hand && skeleton->JointTransform( place.bone, joint, place.itemFrame, true ) )
+		{
+			m_trueSockets[socket->get_instance_id()] = body;
+			socket->set_global_transform( skeleton->get_global_transform() * joint * place.local );
+			continue;
+		}
+		m_trueSockets.erase( socket->get_instance_id() );
+		socket->set_global_transform( body );
 	}
 }
 
@@ -208,8 +220,58 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 	// frame while it does, and back in it the moment it does not (dropped, put away, another view).
 	static const StringName kFloating( "cb_floating" );
 	Transform3D eye;
-	bool floats = m_firstPerson && v.holder != 0 && v.holder == m_frame.frame.localNetId && v.stowed == false && v.socket <= kSocketLeftHand &&
-				  ViewFrameOf( v.itemKind, eye );
+	// In the viewer's own hand in first person: drawn in the view (the view model's layer), and its
+	// shadow cast from where the body's pose has the hand.
+	static const StringName kInView( "cb_in_view" );
+	bool inView = m_firstPerson && v.holder != 0 && v.holder == m_frame.frame.localNetId && v.stowed == false && v.socket <= kSocketLeftHand;
+	if ( node->has_meta( kInView ) && inView == false )
+	{
+		node->remove_meta( kInView );
+		ViewLayers( node, false );
+		ItemShadow( node, nullptr );
+	}
+	// What the viewer has put away hangs on a body that is not drawn: its shadow only.
+	static const StringName kShadowOnly( "cb_shadow_only" );
+	bool shadowOnly = m_firstPerson && v.holder != 0 && v.holder == m_frame.frame.localNetId && inView == false;
+	if ( shadowOnly != node->has_meta( kShadowOnly ) )
+	{
+		static const StringName kWas( "cb_cast_was" );
+		TypedArray<Node> parts = node->find_children( "*", "GeometryInstance3D", true, false );
+		for ( int i = 0; i < parts.size(); ++i )
+		{
+			auto* part = Object::cast_to<GeometryInstance3D>( parts[i] );
+			if ( part != nullptr && shadowOnly )
+			{
+				part->set_meta( kWas, int64_t( part->get_cast_shadows_setting() ) );
+				bool casts = part->get_cast_shadows_setting() != GeometryInstance3D::SHADOW_CASTING_SETTING_OFF && Object::cast_to<MeshInstance3D>( part ) != nullptr;
+				part->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_SHADOWS_ONLY );
+				if ( casts == false )
+				{
+					part->set_meta( "cb_shown_was", part->is_visible() );
+					part->set_visible( false );
+				}
+			}
+			else if ( part != nullptr && part->has_meta( kWas ) )
+			{
+				part->set_cast_shadows_setting( GeometryInstance3D::ShadowCastingSetting( int64_t( part->get_meta( kWas ) ) ) );
+				part->remove_meta( kWas );
+				if ( part->has_meta( "cb_shown_was" ) )
+				{
+					part->set_visible( bool( part->get_meta( "cb_shown_was" ) ) );
+					part->remove_meta( "cb_shown_was" );
+				}
+			}
+		}
+		if ( shadowOnly )
+		{
+			node->set_meta( kShadowOnly, true );
+		}
+		else
+		{
+			node->remove_meta( kShadowOnly );
+		}
+	}
+	bool floats = inView && ViewFrameOf( v.itemKind, eye );
 	bool floated = node->has_meta( kFloating );
 	if ( floated && floats == false )
 	{
@@ -271,6 +333,65 @@ void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, con
 		m_viewItems.push_back( ObjectID( node->get_instance_id() ) );
 	}
 	node->set_visible( true );
+	if ( inView )
+	{
+		node->set_meta( kInView, true );
+		ViewLayers( node, true ); // what a reaction added under it since, too
+		auto body = m_trueSockets.find( socket->get_instance_id() );
+		if ( body != m_trueSockets.end() )
+		{
+			Transform3D at = body->second * SceneInSocket( node, v.socket );
+			ItemShadow( node, &at );
+		}
+	}
+}
+
+// The shadow of an item that is drawn in the view: a copy of its meshes that only casts shadows,
+// `at` where the item's scene would be in the body's own hand. Null: no more of it.
+void CinderboxClient::ItemShadow( Node3D* item, const Transform3D* at )
+{
+	uint64_t key = item->get_instance_id();
+	auto found = m_itemShadows.find( key );
+	auto* shadow = found != m_itemShadows.end() ? Object::cast_to<Node3D>( ObjectDB::get_instance( found->second ) ) : nullptr;
+	if ( at == nullptr )
+	{
+		if ( shadow != nullptr )
+		{
+			shadow->queue_free();
+		}
+		if ( found != m_itemShadows.end() )
+		{
+			m_itemShadows.erase( found );
+		}
+		return;
+	}
+	if ( shadow == nullptr )
+	{
+		static const StringName kCast( "cb_cast" );
+		shadow = memnew( Node3D );
+		shadow->set_name( "ItemShadow" );
+		Transform3D toItem = item->get_global_transform().affine_inverse();
+		TypedArray<Node> meshes = item->find_children( "*", "MeshInstance3D", true, false );
+		for ( int i = 0; i < meshes.size(); ++i )
+		{
+			auto* mesh = Object::cast_to<MeshInstance3D>( meshes[i] );
+			// (What cast none before it came into the view casts none now.)
+			int64_t cast = mesh != nullptr && mesh->has_meta( kCast ) ? int64_t( mesh->get_meta( kCast ) ) : int64_t( GeometryInstance3D::SHADOW_CASTING_SETTING_ON );
+			if ( mesh == nullptr || mesh->get_mesh().is_null() || cast == int64_t( GeometryInstance3D::SHADOW_CASTING_SETTING_OFF ) )
+			{
+				continue;
+			}
+			MeshInstance3D* copy = memnew( MeshInstance3D );
+			copy->set_mesh( mesh->get_mesh() );
+			copy->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_SHADOWS_ONLY );
+			copy->set_transform( toItem * mesh->get_global_transform() );
+			shadow->add_child( copy );
+		}
+		Director()->add_child( shadow );
+		shadow->set_as_top_level( true );
+		m_itemShadows[key] = ObjectID( shadow->get_instance_id() );
+	}
+	shadow->set_global_transform( *at );
 }
 
 } // namespace cb::gd

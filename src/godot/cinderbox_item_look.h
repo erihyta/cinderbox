@@ -74,6 +74,44 @@ public:
 	{
 		return m_viewCamera;
 	}
+	// First person: how what is held is turned in the viewer's own view, about the carrying hand, in
+	// degrees: x tips it up, y turns it to the left, z rolls it (the camera's axes). The hands turn
+	// with it and the arms reach.
+	void set_view_rotation( const godot::Vector3& v )
+	{
+		m_viewRotation = v;
+	}
+	godot::Vector3 get_view_rotation() const
+	{
+		return m_viewRotation;
+	}
+	// First person: the field of view the item and the arms are drawn with (they are drawn apart
+	// from the world, over it). 0: the game's own (or the view camera's, if there is one).
+	void set_view_fov( double v )
+	{
+		m_viewFov = v;
+	}
+	double get_view_fov() const
+	{
+		return m_viewFov;
+	}
+	// First person: whether each arm is drawn while this is held.
+	void set_view_left_hand( bool v )
+	{
+		m_viewLeftHand = v;
+	}
+	bool get_view_left_hand() const
+	{
+		return m_viewLeftHand;
+	}
+	void set_view_right_hand( bool v )
+	{
+		m_viewRightHand = v;
+	}
+	bool get_view_right_hand() const
+	{
+		return m_viewRightHand;
+	}
 	// Named numbers about the item ("pickup.hold_seconds": 0.5), baked with it. They replace what
 	// the item's mod declared in code for the same names.
 	void set_properties( const godot::Dictionary& v )
@@ -184,6 +222,10 @@ private:
 	godot::String m_displayName; // what prompts and lists call it ("Bat")
 	godot::Vector3 m_viewOffset;
 	godot::NodePath m_viewCamera;
+	godot::Vector3 m_viewRotation;
+	double m_viewFov = 0.0;
+	bool m_viewLeftHand = true;
+	bool m_viewRightHand = true;
 	godot::Dictionary m_properties;
 	int m_use = USE_SELECTED;
 	int m_slot = 0;

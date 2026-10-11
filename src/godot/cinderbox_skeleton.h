@@ -116,6 +116,55 @@ public:
 	{
 		return m_firstPersonArms;
 	}
+	// The view's arms (first person): a copy of this body of which only the arms are drawn, on the
+	// view model's layer (kViewLayer: a camera of the game's draws it over the world, with a field of
+	// view of its own). The body itself keeps the pose everyone sees, casts the shadow of it, and
+	// draws only what is below the hips.
+	//
+	// SetViewPose gives the pose the arms are drawn in (the same animations, steadied under the
+	// camera: CinderboxClient::FirstPersonBody); none: no arms. set_view_hands: which of them is
+	// drawn. set_view_arms( true ): they are not drawn as posed but bent onto an item that floats
+	// in the view (PlaceViewArms).
+	static constexpr uint32_t kViewLayer = 1u << 19; // Godot's layer 20
+	void SetViewPose( const ozz::vector<ozz::math::Float4x4>* models )
+	{
+		if ( models != nullptr )
+		{
+			m_viewModels = *models;
+		}
+		else
+		{
+			m_viewModels.clear();
+		}
+	}
+	// How the view's hands, and what they hold, are moved and turned from where its pose has them
+	// (this node's frame): the arms are bent again to reach, from shoulders that stay.
+	void SetViewMove( const godot::Transform3D& move )
+	{
+		m_viewMove = move;
+	}
+	void set_view_hands( bool left, bool right )
+	{
+		m_viewHandShown[0] = left;
+		m_viewHandShown[1] = right;
+	}
+	void set_view_arms( bool value )
+	{
+		m_viewArms = value;
+	}
+	bool get_view_arms() const
+	{
+		return m_viewArms;
+	}
+	// A hand of the view's pose, in the world (0 left, 1 right): what the item in it is held by.
+	godot::Transform3D ViewHand( int side ) const
+	{
+		return m_viewHands[side != 0 ? 1 : 0];
+	}
+	// Puts the view's arms under `camera` (the eye, in the world) with the hands at `right` and
+	// `left` (the world). An arm that holds nothing, or is not shown, is not drawn.
+	void PlaceViewArms( const godot::Transform3D& camera, const godot::Transform3D& left, const godot::Transform3D& right, bool holdsLeft,
+						bool holdsRight );
 
 	void set_retarget( bool value );
 	bool get_retarget() const
@@ -131,7 +180,8 @@ public:
 	// Where a joint of the last applied pose is, relative to this node. False when the rig has no
 	// joint by that humanoid-profile name. forItems: in the frame items attach to (AnimSet::AttachFrame),
 	// the same on every rig, rather than the bone's own axes.
-	bool JointTransform( const godot::String& profileName, godot::Transform3D& out, bool forItems = false ) const;
+	// `view`: of the view's pose (SetViewPose) when there is one, not of the body's.
+	bool JointTransform( const godot::String& profileName, godot::Transform3D& out, bool forItems = false, bool view = false ) const;
 	// The same in world space, for scripts: where a hand or the head is right now.
 	godot::Transform3D get_joint_global_transform( const godot::String& profile_name ) const;
 
@@ -191,6 +241,16 @@ private:
 	godot::ObjectID m_shadowBody;	// the copy that casts the shadows
 	godot::ObjectID m_shadowOf;		// the skeleton it copies
 	std::vector<std::pair<godot::ObjectID, int>> m_shadowSettings; // the meshes' own cast_shadow
+	bool m_viewArms = false;
+	void UpdateViewArms( godot::Skeleton3D* target );
+	godot::ObjectID m_viewRig; // the copy whose arms the view draws
+	godot::ObjectID m_viewRigOf;
+	godot::Transform3D m_viewHands[2];
+	ozz::vector<ozz::math::Float4x4> m_viewModels;
+	bool m_viewHandShown[2] = { true, true };
+	godot::Transform3D m_viewMove;
+	godot::Vector3 m_viewShort[2]; // how far short of where it was moved to each arm's reach left its hand (this node's frame)
+	void KeepArms( godot::Skeleton3D* rig, bool left, bool right );
 
 	// The last applied pose, for joint lookups.
 	const anim::AnimSet* m_lastSet = nullptr;

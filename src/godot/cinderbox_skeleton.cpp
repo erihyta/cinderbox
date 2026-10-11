@@ -188,23 +188,33 @@ void CinderboxSkeleton::ApplyPose( const anim::PoseEvaluator& pose )
 	ApplyPose( pose.Set(), pose.Models() );
 }
 
-bool CinderboxSkeleton::JointTransform( const String& profileName, Transform3D& out, bool forItems ) const
+bool CinderboxSkeleton::JointTransform( const String& profileName, Transform3D& out, bool forItems, bool view ) const
 {
 	if ( m_lastSet == nullptr )
 	{
 		return false;
 	}
+	const auto& models = view && m_viewModels.size() == m_lastModels.size() ? m_viewModels : m_lastModels;
 	CharString name = profileName.utf8();
 	auto names = m_lastSet->Skeleton().joint_names();
-	for ( size_t j = 0; j < names.size() && j < m_lastModels.size(); ++j )
+	for ( size_t j = 0; j < names.size() && j < models.size(); ++j )
 	{
 		const char* profile = anim::ProfileName( names[j] );
 		if ( profile != nullptr && std::strcmp( profile, name.get_data() ) == 0 )
 		{
-			out = ToTransform( m_lastModels[j] );
+			out = ToTransform( models[j] );
 			if ( forItems )
 			{
 				out = out * ToTransform( m_lastSet->AttachFrame( int( j ) ) );
+			}
+			// (The view's hands are moved by its offset; the fingers go with them.)
+			if ( &models == &m_viewModels && std::strstr( profile, "Arm" ) == nullptr && std::strstr( profile, "Shoulder" ) == nullptr &&
+				 ( std::strncmp( profile, "Left", 4 ) == 0 || std::strncmp( profile, "Right", 5 ) == 0 ) &&
+				 std::strstr( profile, "Leg" ) == nullptr && std::strstr( profile, "Foot" ) == nullptr && std::strstr( profile, "Toes" ) == nullptr &&
+				 std::strstr( profile, "Eye" ) == nullptr )
+			{
+				out = m_viewMove * out;
+				out.origin += m_viewShort[std::strncmp( profile, "Left", 4 ) == 0 ? 0 : 1];
 			}
 			out = out.orthonormalized();
 			return true;
@@ -531,6 +541,251 @@ void CinderboxSkeleton::UpdateShadowBody( Skeleton3D* target )
 	}
 }
 
+namespace
+{
+void BendArm( Skeleton3D* rig, int upper, int lower, int end, const Transform3D& hand, const Vector3& pole );
+}
+
+// The view's arms: a copy of the skeleton and its meshes on the view model's layer, in the view's
+// pose, of which only the arms are left. Bent onto an item instead (set_view_arms), it is posed
+// here and placed by PlaceViewArms once the camera is.
+void CinderboxSkeleton::UpdateViewArms( Skeleton3D* target )
+{
+	auto* rig = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_viewRig ) );
+	bool want = m_firstPersonBody && m_viewModels.empty() == false && m_viewModels.size() == m_lastModels.size() &&
+				target->get_parent() != nullptr;
+	if ( rig != nullptr && ( want == false || m_viewRigOf != ObjectID( target->get_instance_id() ) ) )
+	{
+		rig->queue_free();
+		rig = nullptr;
+		m_viewRig = ObjectID();
+	}
+	if ( want == false )
+	{
+		return;
+	}
+	if ( rig == nullptr )
+	{
+		rig = Object::cast_to<Skeleton3D>( target->duplicate( 0 ) );
+		if ( rig == nullptr )
+		{
+			return;
+		}
+		rig->set_name( "ViewArms" );
+		for ( int i = rig->get_child_count( true ) - 1; i >= 0; --i )
+		{
+			Node* child = rig->get_child( i, true );
+			auto* mesh = Object::cast_to<MeshInstance3D>( child );
+			if ( mesh == nullptr )
+			{
+				rig->remove_child( child );
+				child->queue_free();
+				continue;
+			}
+			// (The shadow is the body's, of the pose everyone sees.)
+			mesh->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_OFF );
+			mesh->set_layer_mask( kViewLayer );
+			// (Its bounds are the whole body's, far from where the arms are put.)
+			mesh->set_extra_cull_margin( 4.0f );
+			for ( int k = mesh->get_child_count( true ) - 1; k >= 0; --k )
+			{
+				Node* below = mesh->get_child( k, true );
+				mesh->remove_child( below );
+				below->queue_free();
+			}
+		}
+		target->get_parent()->add_child( rig );
+		m_viewRig = ObjectID( rig->get_instance_id() );
+		m_viewRigOf = ObjectID( target->get_instance_id() );
+	}
+	// (What the last frame shrank or bent is not part of this one's pose.)
+	rig->reset_bone_poses();
+	DriveSkeleton( rig, m_viewModels );
+	const char* hands[2] = { "LeftHand", "RightHand" };
+	m_viewShort[0] = m_viewShort[1] = Vector3();
+	if ( m_viewMove.is_equal_approx( Transform3D() ) == false && m_viewArms == false )
+	{
+		// The hands where the item's settings put them: each arm bent again from its shoulder, its
+		// elbow to the side the animation has it.
+		Transform3D toRig = target->get_global_transform().affine_inverse() * get_global_transform();
+		Transform3D move = toRig * m_viewMove * toRig.affine_inverse();
+		const char* uppers[2] = { "LeftUpperArm", "RightUpperArm" };
+		const char* lowers[2] = { "LeftLowerArm", "RightLowerArm" };
+		for ( int side = 0; side < 2; ++side )
+		{
+			int upper = BoneOf( uppers[side] ), lower = BoneOf( lowers[side] ), hand = BoneOf( hands[side] );
+			if ( upper < 0 || lower < 0 || hand < 0 )
+			{
+				continue;
+			}
+			Transform3D to = move * rig->get_bone_global_pose( hand );
+			BendArm( rig, upper, lower, hand, to, rig->get_bone_global_pose( lower ).origin - rig->get_bone_global_pose( upper ).origin );
+			// (What the hand holds stays in it where the arm is too short.)
+			m_viewShort[side] = toRig.affine_inverse().basis.xform( rig->get_bone_global_pose( hand ).origin - to.origin );
+		}
+	}
+	for ( int side = 0; side < 2; ++side )
+	{
+		int bone = BoneOf( hands[side] );
+		m_viewHands[side] = bone >= 0 ? target->get_global_transform() * rig->get_bone_global_pose( bone ) : target->get_global_transform();
+	}
+	if ( m_viewArms )
+	{
+		if ( rig->is_set_as_top_level() == false )
+		{
+			rig->set_as_top_level( true );
+			rig->set_visible( false ); // until PlaceViewArms has placed it
+		}
+		return;
+	}
+	if ( rig->is_set_as_top_level() )
+	{
+		rig->set_as_top_level( false );
+	}
+	rig->set_transform( target->get_transform() );
+	KeepArms( rig, m_viewHandShown[0], m_viewHandShown[1] );
+	rig->set_visible( m_viewHandShown[0] || m_viewHandShown[1] );
+}
+
+// Only the arms of `rig` are left to draw: everything else shrinks to a point, and the shoulders
+// of the arms that are kept stay as the pose has them.
+void CinderboxSkeleton::KeepArms( Skeleton3D* rig, bool left, bool right )
+{
+	int hips = BoneOf( "Hips" );
+	int shoulders[2] = { BoneOf( "LeftShoulder" ), BoneOf( "RightShoulder" ) };
+	if ( hips < 0 || shoulders[0] < 0 || shoulders[1] < 0 )
+	{
+		return;
+	}
+	const Vector3 nothing( 0.0001f, 0.0001f, 0.0001f );
+	Transform3D kept[2] = { rig->get_bone_global_pose( shoulders[0] ), rig->get_bone_global_pose( shoulders[1] ) };
+	rig->set_bone_pose_scale( hips, nothing );
+	for ( int side = 0; side < 2; ++side )
+	{
+		bool shown = side == 0 ? left : right;
+		rig->set_bone_global_pose( shoulders[side], shown ? kept[side] : Transform3D( Basis().scaled( nothing ), kept[side].origin ) );
+	}
+}
+
+namespace
+{
+
+// Bends an arm of `rig` so that its hand is at `hand` (the skeleton's frame), the elbow toward
+// `pole`: the upper arm and the forearm keep their lengths, and a hand out of reach is reached for.
+void BendArm( Skeleton3D* rig, int upper, int lower, int end, const Transform3D& hand, const Vector3& pole )
+{
+	Transform3D u = rig->get_bone_global_pose( upper );
+	Vector3 from = u.origin;
+	float first = ( rig->get_bone_global_pose( lower ).origin - from ).length();
+	float second = ( rig->get_bone_global_pose( end ).origin - rig->get_bone_global_pose( lower ).origin ).length();
+	Vector3 to = hand.origin - from;
+	if ( first < 1e-5f || second < 1e-5f || to.length() < 1e-5f )
+	{
+		return;
+	}
+	float reach = std::clamp( float( to.length() ), std::abs( first - second ) + 1e-4f, ( first + second ) * 0.999f );
+	Vector3 along = to.normalized();
+	float ahead = ( first * first - second * second + reach * reach ) / ( 2.0f * reach );
+	float out = std::sqrt( std::max( 0.0f, first * first - ahead * ahead ) );
+	Vector3 side = pole - along * pole.dot( along );
+	side = side.length() > 1e-4f ? side.normalized() : Vector3( 0, -1, 0 );
+	Vector3 elbow = from + along * ahead + side * out;
+
+	Vector3 was = ( rig->get_bone_global_pose( lower ).origin - from ).normalized();
+	u.basis = Basis( Quaternion( was, ( elbow - from ).normalized() ) ) * u.basis;
+	rig->set_bone_global_pose( upper, u );
+	Transform3D l = rig->get_bone_global_pose( lower );
+	was = ( rig->get_bone_global_pose( end ).origin - l.origin ).normalized();
+	l.basis = Basis( Quaternion( was, ( from + along * reach - l.origin ).normalized() ) ) * l.basis;
+	rig->set_bone_global_pose( lower, l );
+	Transform3D h = rig->get_bone_global_pose( end );
+	h.basis = hand.basis.orthonormalized();
+	rig->set_bone_global_pose( end, h );
+}
+
+} // namespace
+
+void CinderboxSkeleton::PlaceViewArms( const Transform3D& camera, const Transform3D& left, const Transform3D& right, bool holdsLeft,
+									   bool holdsRight )
+{
+	auto* rig = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_viewRig ) );
+	auto* target = Object::cast_to<Skeleton3D>( ObjectDB::get_instance( m_viewRigOf ) );
+	if ( rig == nullptr || target == nullptr )
+	{
+		return;
+	}
+	int hips = BoneOf( "Hips" );
+	int chest = BoneOf( "UpperChest" );
+	int head = BoneOf( "Head" );
+	int shoulders[2] = { BoneOf( "LeftShoulder" ), BoneOf( "RightShoulder" ) };
+	int uppers[2] = { BoneOf( "LeftUpperArm" ), BoneOf( "RightUpperArm" ) };
+	int lowers[2] = { BoneOf( "LeftLowerArm" ), BoneOf( "RightLowerArm" ) };
+	int hands[2] = { BoneOf( "LeftHand" ), BoneOf( "RightHand" ) };
+	if ( hips < 0 || chest < 0 || head < 0 || shoulders[0] < 0 || shoulders[1] < 0 || uppers[0] < 0 || uppers[1] < 0 || lowers[0] < 0 ||
+		 lowers[1] < 0 || hands[0] < 0 || hands[1] < 0 )
+	{
+		rig->set_visible( false );
+		return;
+	}
+	// (An arm that holds nothing is not in the view, nor one the item does not show.)
+	holdsLeft = holdsLeft && m_viewHandShown[0];
+	holdsRight = holdsRight && m_viewHandShown[1];
+	Transform3D kept[2] = { rig->get_bone_global_pose( shoulders[0] ), rig->get_bone_global_pose( shoulders[1] ) };
+	Basis chestTurn = rig->get_bone_global_pose( chest ).basis.orthonormalized() * rig->get_bone_global_rest( chest ).basis.orthonormalized().inverse();
+	KeepArms( rig, holdsLeft, holdsRight );
+
+	// The chest (the point between the shoulders, turned as the pose turned it from its rest) goes
+	// where the rest pose has it under the head, facing where the camera looks: the rest pose faces
+	// +Z, the camera looks along -Z.
+	Vector3 scale = target->get_global_transform().basis.get_scale();
+	Transform3D piece( chestTurn, ( kept[0].origin + kept[1].origin ) * 0.5f );
+	Vector3 atRest = ( rig->get_bone_global_rest( shoulders[0] ).origin + rig->get_bone_global_rest( shoulders[1] ).origin ) * 0.5f -
+					 Vector3( 0.0f, rig->get_bone_global_rest( head ).origin.y, 0.0f );
+	atRest *= scale;
+	Transform3D under( Basis( Vector3( 0, 1, 0 ), float( Math_PI ) ), Vector3( -atRest.x, atRest.y, -atRest.z ) );
+	Transform3D world = camera * under * Transform3D( Basis().scaled( scale ), Vector3() ) * piece.affine_inverse();
+
+	// A hand the carrying arm cannot reach: the shoulders go after it (they are out of view).
+	const Transform3D* wanted[2] = { &left, &right };
+	bool holds[2] = { holdsLeft, holdsRight };
+	for ( int side = 1; side >= 0; --side )
+	{
+		if ( holds[side] == false )
+		{
+			continue;
+		}
+		Vector3 from = world.xform( rig->get_bone_global_pose( uppers[side] ).origin );
+		float reach = float( ( ( rig->get_bone_global_pose( lowers[side] ).origin - rig->get_bone_global_pose( uppers[side] ).origin ).length() +
+							   ( rig->get_bone_global_pose( hands[side] ).origin - rig->get_bone_global_pose( lowers[side] ).origin ).length() ) *
+							 scale.y * 0.97f );
+		Vector3 to = wanted[side]->origin - from;
+		if ( to.length() > reach )
+		{
+			world.origin += to - to.normalized() * reach;
+		}
+		break; // by the carrying hand alone; the other reaches as far as it can
+	}
+	rig->set_global_transform( world );
+
+	Transform3D toRig = world.affine_inverse();
+	for ( int side = 0; side < 2; ++side )
+	{
+		if ( holds[side] == false )
+		{
+			continue;
+		}
+		Transform3D hand = toRig * *wanted[side];
+		// The elbows down and out to their sides.
+		Vector3 pole = toRig.basis.xform( camera.basis.xform( Vector3( side == 1 ? 0.55f : -0.55f, -0.8f, 0.15f ) ) ).normalized();
+		BendArm( rig, uppers[side], lowers[side], hands[side], hand, pole );
+	}
+	rig->set_visible( true );
+	rig->force_update_transform();
+	// This is after the frame's deferred skeleton updates (the camera is placed just before the
+	// draw): the skin takes these bones now, not a frame late with the next pose over them.
+	rig->notification( Skeleton3D::NOTIFICATION_UPDATE_SKELETON );
+}
+
 int CinderboxSkeleton::BoneOf( const char* profileName ) const
 {
 	if ( m_lastSet == nullptr )
@@ -566,6 +821,7 @@ void CinderboxSkeleton::CutBody( Skeleton3D* target )
 	}
 	m_cutBones.clear();
 	UpdateShadowBody( target ); // while the target is whole: the copy casts the whole shadow
+	UpdateViewArms( target );
 	if ( m_firstPersonBody == false )
 	{
 		return;

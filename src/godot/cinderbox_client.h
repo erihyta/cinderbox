@@ -81,11 +81,14 @@ public:
 	// 2 / 3 over the right / left shoulder), with the camera turned as `camera` is: the point the
 	// server takes for it too (mods::Context::ViewPosition), so the crosshair is exact.
 	godot::Vector3 get_view_position( int64_t view, const godot::Basis& camera ) const;
-	// The viewer looks out of its own player's eyes. Its own body is then drawn for that view: the
-	// upper body is held still under the camera (the walk no longer swings the arms across the
-	// screen; what the arms do themselves, a shot's recoil, still shows), moved by the held item's
-	// look (CbItem.view_offset), and only the arms and what is below the hips are drawn. Nothing
-	// but this viewer's picture changes.
+	// The viewer looks out of its own player's eyes. Its body keeps the pose everyone sees and casts
+	// that pose's shadow, what it holds too; of the body itself only what is below the hips is
+	// drawn. The arms and what they hold are drawn again for the view (the view model: on a layer
+	// of their own, by a camera of the game's, over the world): the same animations, held still
+	// under the camera (the walk does not swing the arms across the screen; what the arms do
+	// themselves, a swing, a shot's recoil, shows), with the held item's settings (CbItem:
+	// view_offset, view_fov, view_left_hand, view_right_hand). Nothing but this viewer's picture
+	// changes.
 	void set_first_person( bool value )
 	{
 		m_firstPerson = value;
@@ -98,6 +101,12 @@ public:
 	// that floats in the view (an item with a CbItem.view_camera) is put in front of it, a little
 	// behind its turning and moving with the steps.
 	void place_view_items( const godot::Transform3D& camera, double delta );
+	// The view model: what floats in the view and the arms that hold it are on a layer of their
+	// own (get_view_layer: a bit mask), for a camera of the game's that draws them over the world,
+	// so they never pass into a wall. get_view_fov: the field of view to draw them with (the held
+	// item's, or the game's own 60), or 0 while the view is not first person.
+	int64_t get_view_layer() const;
+	double get_view_fov() const;
 
 	// What the server's mods declared. Each action: { name, bit, key }.
 	godot::Array get_actions() const;
@@ -320,6 +329,7 @@ private:
 	void UpdateLinks();
 	std::map<std::string, godot::String> m_itemNames; // what prompts call a kind ("Bat")
 	std::map<std::string, godot::Vector3> m_itemViewOffsets; // CbItem.view_offset by kind
+	std::map<std::string, godot::Vector3> m_itemViewTurns; // CbItem.view_rotation by kind, degrees
 	// CbItem.view_camera by kind: where the eye is in the item's scene. An item that has one floats
 	// in its holder's own first-person view, and the arms are not drawn.
 	std::map<std::string, godot::Transform3D> m_itemViewFrames;
@@ -332,6 +342,16 @@ private:
 	float m_viewSpeed = 0.0f; // the viewer's ground speed, m/s
 	float m_viewBob = 0.0f; // how much of the step shows, 0..1
 	std::vector<godot::ObjectID> m_viewItems; // what floats now
+	std::map<std::string, float> m_itemViewFovs; // CbItem.view_fov (or its view camera's) by kind
+	std::map<std::string, std::pair<bool, bool>> m_itemViewHands; // CbItem.view_left_hand, view_right_hand by kind
+	float m_viewFov = 0.0f; // of what is held now
+	present::Models m_viewModels; // the pose the view's arms are drawn in, this frame
+	// What the viewer holds in first person is drawn in the view; its shadow is cast from where the
+	// body's own pose has the hand, by a copy of its meshes that draws nothing else.
+	std::unordered_map<uint64_t, godot::Transform3D> m_trueSockets; // socket node -> where the body's pose has it
+	std::unordered_map<uint64_t, godot::ObjectID> m_itemShadows; // item node -> its shadow
+	void ItemShadow( godot::Node3D* item, const godot::Transform3D* at );
+	void ViewLayers( godot::Node* node, bool on ); // an item's visuals onto the view model's layer, or back
 	bool m_firstPerson = false;
 	godot::ObjectID m_firstPersonSkeleton; // whose body is cut for it now
 	void FirstPersonBody( uint32_t netId, godot::Node* node, const AnimState* state, present::Models& models );
