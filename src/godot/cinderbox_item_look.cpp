@@ -533,8 +533,8 @@ void CbItem::_process( double delta )
 	{
 		return;
 	}
-	// The pack: the one named, or the first the project has baked.
-	String pack = m_previewPack;
+	// The pack: the one named, or the item's own (its Animation Pack), or the first the project has baked.
+	String pack = m_previewPack.is_empty() ? m_animationPack : m_previewPack;
 	if ( pack.is_empty() )
 	{
 		PackedStringArray packs = DirAccess::get_directories_at( "res://anim" );

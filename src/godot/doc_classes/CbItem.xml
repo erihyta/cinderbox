@@ -64,7 +64,7 @@
 			With [member preview_hold]: the carrying arm is aimed level, as it is for an item whose mod makes the holder face the camera (a gun).
 		</member>
 		<member name="preview_pack" type="String" setter="set_preview_pack" getter="get_preview_pack" default="&quot;&quot;">
-			The pack [member preview_hold] plays (a folder of [code]res://anim[/code], such as [code]melee.hold[/code]); empty: the first there is. The pack is shown in the state it starts in.
+			The pack [member preview_hold] plays (a folder of [code]res://anim[/code], such as [code]melee.hold[/code]); empty: the item's own [member animation_pack], or the first there is.
 		</member>
 		<member name="slot" type="int" setter="set_slot" getter="get_slot" default="0">
 			The slot it goes to when a player comes to carry one: 1 is the first. What is there makes room (to a free slot, or onto the floor). 0: the first free slot.
