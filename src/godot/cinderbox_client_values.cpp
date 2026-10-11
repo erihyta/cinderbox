@@ -372,7 +372,9 @@ Vector3 CinderboxClient::get_bone_position( int64_t net_id, const String& bone )
 	if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
 	{
 		Transform3D joint;
-		if ( bone.is_empty() == false && skeleton->JointTransform( bone, joint ) )
+		// (Of the viewer's own player in first person: where the view draws it.)
+		bool view = m_firstPersonSkeleton == ObjectID( skeleton->get_instance_id() );
+		if ( bone.is_empty() == false && skeleton->JointTransform( bone, joint, false, view ) )
 		{
 			return ( skeleton->get_global_transform() * joint ).origin;
 		}

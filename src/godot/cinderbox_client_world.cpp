@@ -114,6 +114,22 @@ void CinderboxClient::add_item( const String& kind, const String& config )
 				m_itemViewOffsets[key] = Vector3( float( v[0] ), float( v[1] ), float( v[2] ) );
 			}
 		}
+		else if ( line.begins_with( "viewturn " ) )
+		{
+			PackedFloat64Array v = line.substr( 9 ).split_floats( " ", false );
+			if ( v.size() == 3 )
+			{
+				m_itemViewTurns[key] = Vector3( float( v[0] ), float( v[1] ), float( v[2] ) );
+			}
+		}
+		else if ( line.begins_with( "viewhands " ) )
+		{
+			PackedFloat64Array v = line.substr( 10 ).split_floats( " ", false );
+			if ( v.size() == 2 )
+			{
+				m_itemViewHands[key] = { v[0] != 0.0, v[1] != 0.0 };
+			}
+		}
 		else if ( line.begins_with( "viewfov " ) )
 		{
 			m_itemViewFovs[key] = float( line.substr( 8 ).to_float() );
@@ -137,6 +153,8 @@ void CinderboxClient::clear_world_scenes()
 	m_itemViewOffsets.clear();
 	m_itemViewFrames.clear();
 	m_itemViewFovs.clear();
+	m_itemViewHands.clear();
+	m_itemViewTurns.clear();
 	m_linkLooks.clear();
 	for ( ObjectID id : m_worldScenes )
 	{

@@ -577,10 +577,11 @@ void CinderboxClient::HandleEvents()
 	}
 }
 
-// The viewer's own body in first person (see set_first_person): from the spine up it is a steady
-// pose of the same animations, put as one piece under the camera's eye, which stands still above
-// the feet, and turned so that it follows the camera; the arms are moved by the held item's view offset; and its skeleton draws the
-// arms and the legs only.
+// The pose the view's arms are drawn in, in first person (see set_first_person): `models` is a copy
+// of the viewer's own pose, and from the spine up it becomes a steady pose of the same animations,
+// put as one piece under the camera's eye, which stands still above the feet, and turned so that it
+// follows the camera; the arms are moved by the held item's view offset. The body's own pose is not
+// touched.
 void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimState* state, present::Models& models )
 {
 	CinderboxSkeleton* skeleton = FindSkeleton( node );
@@ -592,6 +593,7 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 			was->set_first_person_body( false );
 			was->set_first_person_arms( true );
 			was->set_view_arms( false );
+			was->set_view_hands( true, true );
 		}
 	}
 	m_firstPersonSkeleton = on ? ObjectID( skeleton->get_instance_id() ) : ObjectID();
@@ -600,19 +602,37 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 		return;
 	}
 	skeleton->set_first_person_body( true );
-	// What is held floats in the view (CbItem.view_camera): no arms are drawn to hold it.
+	// The body draws no arms of its own: the view's are a copy (CinderboxSkeleton::SetViewPose),
+	// drawn as what is held says: which hands, with what field of view, and bent onto it when it
+	// floats in the view (CbItem.view_camera) and not as the pose has them.
 	bool floats = false;
+	bool hands[2] = { true, true };
+	m_viewFov = 0.0f;
 	if ( auto holding = m_heldKinds.find( netId ); holding != m_heldKinds.end() )
 	{
 		Transform3D ignored;
 		for ( uint16_t kind : holding->second )
 		{
 			floats |= ViewFrameOf( kind, ignored );
+			if ( kind < m_frame.schema.itemKinds.size() )
+			{
+				const std::string& name = m_frame.schema.itemKinds[kind];
+				if ( auto shown = m_itemViewHands.find( name ); shown != m_itemViewHands.end() )
+				{
+					hands[0] = hands[0] && shown->second.first;
+					hands[1] = hands[1] && shown->second.second;
+				}
+				if ( auto fov = m_itemViewFovs.find( name ); fov != m_itemViewFovs.end() )
+				{
+					m_viewFov = fov->second;
+				}
+			}
 		}
 	}
-	// ... the body's own, that is: the view has arms of its own on the item (PlaceViewArms).
-	skeleton->set_first_person_arms( floats == false );
+	skeleton->set_first_person_arms( false );
+	skeleton->SetViewMove( Transform3D() );
 	skeleton->set_view_arms( floats );
+	skeleton->set_view_hands( hands[0], hands[1] );
 	m_viewSpeed = state->groundSpeed;
 	int head = anim::FindJoint( *m_animSet, "Head" );
 	int spine = anim::FindJoint( *m_animSet, "Spine" );
@@ -698,6 +718,7 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	// The held items' offsets, along where the player looks (in the body's frame: it faces +Z and
 	// its right is -X).
 	Vector3 offset;
+	Vector3 turn;
 	auto held = m_heldKinds.find( netId );
 	if ( held != m_heldKinds.end() )
 	{
@@ -707,6 +728,8 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 			{
 				auto it = m_itemViewOffsets.find( m_frame.schema.itemKinds[kind] );
 				offset += it != m_itemViewOffsets.end() ? it->second : Vector3();
+				auto turned = m_itemViewTurns.find( m_frame.schema.itemKinds[kind] );
+				turn += turned != m_itemViewTurns.end() ? turned->second : Vector3();
 			}
 		}
 	}
@@ -750,12 +773,15 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	fromPivot = b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, state->aimYaw ), fromPivot );
 	fromPivot = b3RotateVector( b3MakeQuatFromAxisAngle( right, state->aimPitch ), fromPivot );
 	anim::TranslateSubtree( *m_animSet, models, spine, b3Sub( b3Add( pivot, fromPivot ), pinned() ) );
-	// The held item's place in the view: the arms alone move there.
+	// The held item's place in the view: the hands are turned about the carrying one and moved
+	// there, and the arms reach for it. (The camera's axes in this frame: right, up, and back.)
 	b3Vec3 placed = b3Add( b3MulSV( offset.x, right ), b3Add( b3MulSV( offset.y, up ), b3MulSV( offset.z, forward ) ) );
-	for ( int arm : arms )
-	{
-		anim::TranslateSubtree( *m_animSet, models, arm, placed );
-	}
+	Basis axes( Vector3( right.x, right.y, right.z ), Vector3( up.x, up.y, up.z ), Vector3( -forward.x, -forward.y, -forward.z ) );
+	Basis turned = axes * Basis::from_euler( turn * float( Math_PI / 180.0 ) ) * axes.inverse();
+	int carrying = anim::FindJoint( *m_animSet, "RightHand" );
+	b3Vec3 about = carrying >= 0 && size_t( carrying ) < models.size() ? placeOf( models[size_t( carrying )] ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
+	Vector3 hand( about.x, about.y, about.z );
+	skeleton->SetViewMove( Transform3D( turned, hand + Vector3( placed.x, placed.y, placed.z ) - turned.xform( hand ) ) );
 }
 
 bool CinderboxClient::ViewFrameOf( uint16_t kind, Transform3D& frame ) const
@@ -845,24 +871,41 @@ int64_t CinderboxClient::get_view_layer() const
 
 double CinderboxClient::get_view_fov() const
 {
-	// (An eye that is not a camera asks for none: the game's own, 60.)
-	return m_viewItems.empty() ? 0.0 : double( m_viewFov > 1.0f ? m_viewFov : 60.0f );
+	if ( m_firstPerson == false || ObjectDB::get_instance( m_firstPersonSkeleton ) == nullptr )
+	{
+		return 0.0;
+	}
+	// (What is held asks for none: the game's own, 60.)
+	return double( m_viewFov > 1.0f ? m_viewFov : 60.0f );
 }
 
 void CinderboxClient::ViewLayers( Node* node, bool on )
 {
 	static const StringName kLayers( "cb_layers" );
+	static const StringName kCast( "cb_cast" );
 	if ( auto* visual = Object::cast_to<VisualInstance3D>( node ) )
 	{
+		// (In the view it casts no shadow: its shadow is cast from the body's hand, ItemShadow.)
+		auto* geometry = Object::cast_to<GeometryInstance3D>( node );
 		if ( on && visual->has_meta( kLayers ) == false )
 		{
 			visual->set_meta( kLayers, int64_t( visual->get_layer_mask() ) );
 			visual->set_layer_mask( CinderboxSkeleton::kViewLayer );
+			if ( geometry != nullptr )
+			{
+				geometry->set_meta( kCast, int64_t( geometry->get_cast_shadows_setting() ) );
+				geometry->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_OFF );
+			}
 		}
 		else if ( on == false && visual->has_meta( kLayers ) )
 		{
 			visual->set_layer_mask( uint32_t( int64_t( visual->get_meta( kLayers ) ) ) );
 			visual->remove_meta( kLayers );
+			if ( geometry != nullptr && geometry->has_meta( kCast ) )
+			{
+				geometry->set_cast_shadows_setting( GeometryInstance3D::ShadowCastingSetting( int64_t( geometry->get_meta( kCast ) ) ) );
+				geometry->remove_meta( kCast );
+			}
 		}
 	}
 	for ( int i = 0; i < node->get_child_count(); ++i )
@@ -926,7 +969,13 @@ void CinderboxClient::UpdateNodes()
 			{
 				if ( v.kind == present::VisualKind::Player && v.netId == m_frame.frame.localNetId )
 				{
-					FirstPersonBody( v.netId, node, anim != nullptr ? &anim->shown : nullptr, *models );
+					// The view's arms have a pose of their own; the body keeps this one.
+					m_viewModels = *models;
+					FirstPersonBody( v.netId, node, anim != nullptr ? &anim->shown : nullptr, m_viewModels );
+					if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
+					{
+						skeleton->SetViewPose( m_firstPersonSkeleton == ObjectID( skeleton->get_instance_id() ) ? &m_viewModels : nullptr );
+					}
 				}
 				if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
 				{

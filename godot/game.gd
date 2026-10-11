@@ -969,6 +969,8 @@ func _autoplay_finish() -> void:
 		var moved: Vector3 = (_probe[part][1] - _probe[part][0]) * 100.0
 		print("view probe, %-24s the hand moved %.2f mm across, %.2f mm up and down, %.2f mm in depth on the screen (%d frames)" % [
 			part + ":", moved.x * 10.0, moved.y * 10.0, moved.z * 10.0, _probe[part][2]])
+		var middle: Vector3 = (_probe[part][0] + _probe[part][1]) * 0.5
+		print("            %-24s the hand is %.0f mm to the right, %.0f mm up, %.0f mm ahead of the camera" % ["", middle.x * 1000.0, middle.y * 1000.0, -middle.z * 1000.0])
 		var body_moved: Vector3 = (_probe_body[part][1] - _probe_body[part][0]) * 1000.0
 		print("            %-24s the body's origin moved %.2f / %.2f / %.2f mm against the camera, its facing %.3f degrees" % [
 			"", body_moved.x, body_moved.y, body_moved.z, rad_to_deg(_probe_body[part][3] - _probe_body[part][2])])

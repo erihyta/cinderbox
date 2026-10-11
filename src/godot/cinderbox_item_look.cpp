@@ -29,6 +29,14 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_view_offset" ), &CbItem::get_view_offset );
 	ClassDB::bind_method( D_METHOD( "set_view_camera", "value" ), &CbItem::set_view_camera );
 	ClassDB::bind_method( D_METHOD( "get_view_camera" ), &CbItem::get_view_camera );
+	ClassDB::bind_method( D_METHOD( "set_view_rotation", "value" ), &CbItem::set_view_rotation );
+	ClassDB::bind_method( D_METHOD( "get_view_rotation" ), &CbItem::get_view_rotation );
+	ClassDB::bind_method( D_METHOD( "set_view_fov", "value" ), &CbItem::set_view_fov );
+	ClassDB::bind_method( D_METHOD( "get_view_fov" ), &CbItem::get_view_fov );
+	ClassDB::bind_method( D_METHOD( "set_view_left_hand", "value" ), &CbItem::set_view_left_hand );
+	ClassDB::bind_method( D_METHOD( "get_view_left_hand" ), &CbItem::get_view_left_hand );
+	ClassDB::bind_method( D_METHOD( "set_view_right_hand", "value" ), &CbItem::set_view_right_hand );
+	ClassDB::bind_method( D_METHOD( "get_view_right_hand" ), &CbItem::get_view_right_hand );
 	ClassDB::bind_method( D_METHOD( "set_properties", "value" ), &CbItem::set_properties );
 	ClassDB::bind_method( D_METHOD( "get_properties" ), &CbItem::get_properties );
 	ClassDB::bind_method( D_METHOD( "bake" ), &CbItem::bake );
@@ -65,6 +73,10 @@ void CbItem::_bind_methods()
 				  "get_other_grip" );
 	ADD_GROUP( "First person", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::VECTOR3, "view_offset", PROPERTY_HINT_NONE, "suffix:m" ), "set_view_offset", "get_view_offset" );
+	ADD_PROPERTY( PropertyInfo( Variant::VECTOR3, "view_rotation", PROPERTY_HINT_NONE, "suffix:deg" ), "set_view_rotation", "get_view_rotation" );
+	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "view_fov", PROPERTY_HINT_RANGE, "0,120,0.5,suffix:deg" ), "set_view_fov", "get_view_fov" );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "view_left_hand" ), "set_view_left_hand", "get_view_left_hand" );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "view_right_hand" ), "set_view_right_hand", "get_view_right_hand" );
 	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "view_camera", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D" ), "set_view_camera",
 				  "get_view_camera" );
 	ADD_GROUP( "", "" );
@@ -334,6 +346,15 @@ Dictionary CbItem::bake() const
 	{
 		text += vformat( "view %.4f %.4f %.4f\n", m_viewOffset.x, m_viewOffset.y, m_viewOffset.z );
 	}
+	if ( m_viewRotation.is_zero_approx() == false )
+	{
+		text += vformat( "viewturn %.2f %.2f %.2f\n", m_viewRotation.x, m_viewRotation.y, m_viewRotation.z );
+	}
+	double fov = m_viewFov;
+	if ( m_viewLeftHand == false || m_viewRightHand == false )
+	{
+		text += vformat( "viewhands %d %d\n", m_viewLeftHand ? 1 : 0, m_viewRightHand ? 1 : 0 );
+	}
 	// Where the viewer's eye is against the item while it floats in the first-person view (the
 	// scene's frame: the game moves the scene's root).
 	if ( m_viewCamera.is_empty() == false )
@@ -346,11 +367,16 @@ Dictionary CbItem::bake() const
 		Transform3D t = InSceneFrame( eye, this ).orthonormalized();
 		Quaternion q = t.basis.get_rotation_quaternion();
 		text += vformat( "viewfrom %.4f %.4f %.4f %.5f %.5f %.5f %.5f\n", t.origin.x, t.origin.y, t.origin.z, q.x, q.y, q.z, q.w );
-		// A camera's field of view is the view model's: what its Preview shows is what is drawn.
-		if ( auto* camera = Object::cast_to<Camera3D>( eye ) )
+		// A camera's field of view is the view model's (what its Preview shows is what is drawn),
+		// unless the item says its own.
+		if ( auto* camera = Object::cast_to<Camera3D>( eye ); camera != nullptr && fov <= 0.0 )
 		{
-			text += vformat( "viewfov %.2f\n", camera->get_fov() );
+			fov = camera->get_fov();
 		}
+	}
+	if ( fov > 0.0 )
+	{
+		text += vformat( "viewfov %.2f\n", fov );
 	}
 	out["text"] = text;
 	out["error"] = "";
