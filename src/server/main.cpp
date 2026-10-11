@@ -502,6 +502,21 @@ int main( int argc, char** argv )
 		std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
 		return cb::LoadMotionsItem( zip, item, set, text, error );
 	};
+	// And the items themselves, for a mod that takes them from its look.
+	options.lookItems = [itemsDir, workshopDir]( const std::string& mod ) {
+		std::vector<cb::LookItem> items;
+		cb::ModItem item;
+		std::string error;
+		if ( ReadItem( itemsDir, mod, item ) )
+		{
+			std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
+			if ( cb::ListLookItemsItem( zip, item, items, error ) == false )
+			{
+				std::printf( "mod %s: its look's items could not be read: %s\n", mod.c_str(), error.c_str() );
+			}
+		}
+		return items;
+	};
 	// Item bodies too: items/<kind>.cfg, baked from the item's scene.
 	options.loadItemShape = [itemsDir, workshopDir]( const std::string& mod, const std::string& kind, cb::ItemShape& shape,
 													 std::string& error, std::map<std::string, float>& properties ) {

@@ -10,11 +10,13 @@
 
 #include "anim_set.h"
 #include "hitboxes.h"
+#include "look_item.h"
 #include "mod_schema.h"
 
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace cb
 {
@@ -67,6 +69,12 @@ bool LoadItemShapeFolder( const std::string& dir, const std::string& kind, ItemS
 // or of a folder (tests, a mod's client project). False when it is not there.
 bool LoadMotionsItem( const std::string& zipPath, const ModItem& item, const std::string& set, std::string& text, std::string& error );
 bool LoadMotionsFolder( const std::string& dir, const std::string& set, std::string& text, std::string& error );
+
+// Every item of a mod's look: each items/<kind>.cfg of its workshop item (checked against its
+// SHA-256), or of a folder (tests, a mod's client project), with its properties and its "pack" and
+// "holster" lines. In the order of their names. False when the item cannot be read.
+bool ListLookItemsItem( const std::string& zipPath, const ModItem& item, std::vector<LookItem>& out, std::string& error );
+bool ListLookItemsFolder( const std::string& dir, std::vector<LookItem>& out );
 
 // What of a workshop item the server reads, by file: items/*.cfg without the lines only the game
 // reads (the scene, the name, the first-person view), and everything under anim/, motions/ and

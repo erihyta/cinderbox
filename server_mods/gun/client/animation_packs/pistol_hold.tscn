@@ -22,7 +22,7 @@ advance_mode = 2
 [sub_resource type="AnimationNodeStateMachineTransition" id="HoldToShoot"]
 xfade_time = 0.05
 advance_mode = 2
-advance_condition = &"pistol.fired"
+advance_condition = &"item.use"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="ShootToHold"]
 xfade_time = 0.15
@@ -43,19 +43,19 @@ nodes/UpperBody/position = Vector2(200, 100)
 node_connections = [&"output", 0, &"UpperBody"]
 
 [node name="PistolHoldPack" type="CbAnimPack"]
-character_name = "pistol.hold"
+character_name = "gun.pistol_hold"
 skeleton_path = NodePath("Skeleton3D")
 animation_player_path = NodePath("AnimationPlayer")
 animation_tree_path = NodePath("AnimationTree")
 editor_description = "How the pistol is held: an animation pack for the upper body.
 
-Its state machine replaces a character's \"UpperBody\" layer while a pistol is in the hand (pistol.cpp: ItemLayers).
+Its state machine replaces a character's \"UpperBody\" layer while a pistol is in the hand (the item's Animation Pack).
 
-Hold is the idle; Shoot plays on the server's \"pistol.fired\" and returns when it ends.
+Hold is the idle; Shoot plays on the item mod's \"item.use\" (a shot) and returns when it ends.
 
 In the tree, the state machine node is named UpperBody: that name is the layer it replaces. It has no bone filter: it moves the bones the character's own UpperBody layer moves (spine, arms, head), and the legs keep the character's own walk.
 
-The clips are in the AnimationPlayer node, by file (animation_packs/source/*.res; the mannequin's, CC0). Skeleton3D is the SDK's placeholder skeleton, what they play on: leave it. Saving this scene bakes it into res://anim/pistol.hold/."
+The clips are in the AnimationPlayer node, by file (animation_packs/source/*.res; the mannequin's, CC0). Skeleton3D is the SDK's placeholder skeleton, what they play on: leave it. Saving this scene bakes it into res://anim/gun.pistol_hold/."
 
 [node name="Skeleton3D" parent="." instance=ExtResource("1_skeleton")]
 unique_name_in_owner = true
@@ -69,4 +69,4 @@ active = false
 root_node = NodePath("..")
 tree_root = SubResource("Tree")
 anim_player = NodePath("../AnimationPlayer")
-parameters/UpperBody/conditions/pistol.fired = false
+parameters/UpperBody/conditions/item.use = false

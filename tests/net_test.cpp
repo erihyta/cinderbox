@@ -159,6 +159,11 @@ struct Harness
 		options.reconnectGraceSeconds = 10.0;
 		options.recordPath = recordPath;
 		options.modOptions = modOptions;
+		options.lookItems = []( const std::string& mod ) {
+			std::vector<LookItem> items;
+			ListLookItemsFolder( std::string( CB_SOURCE_DIR ) + "/server_mods/" + mod + "/client", items );
+			return items;
+		};
 		options.loadItemShape = []( const std::string& mod, const std::string& kind, ItemShape& shape, std::string& error,
 									std::map<std::string, float>& properties ) {
 			return LoadItemShapeFolder( std::string( CB_SOURCE_DIR ) + "/server_mods/" + mod + "/client", kind, shape, error, &properties );
@@ -172,7 +177,9 @@ struct Harness
 		}
 		if ( server.Start( options ) == false )
 		{
-			std::printf( "    server failed to start on port %u\n", port );
+			std::printf( "    server failed to start on port %u (is another test on it?)\n", port );
+			std::fflush( stdout );
+			std::exit( 1 );
 		}
 	}
 
@@ -621,7 +628,7 @@ void TestModsSession()
 	Harness h( 47790 );
 	const ModSchema& schema = h.server.Schema();
 	CHECK( schema.FindField( "combat.health" ) != nullptr );
-	CHECK( schema.FindEvent( "pistol.fired" ) >= 0 );
+	CHECK( schema.FindEvent( "item.use" ) >= 0 );
 	CHECK( kKeyUse != 0 );
 	uint16_t fire = kKeyUse;
 	uint16_t pistol = kKeySlot1;
@@ -814,7 +821,7 @@ void TestItemsReplaced()
 		ByteReader r( bytes.data(), bytes.size() );
 		CHECK( ReadType( r ) == MsgType::Items && Decode( r, back ) && back.items == msg.items );
 	}
-	Harness h( 47862, {}, {}, {}, [&]( ServerOptions& options ) { options.items = { { "melee", first }, { "pistol", first } }; } );
+	Harness h( 47891, {}, {}, {}, [&]( ServerOptions& options ) { options.items = { { "melee", first }, { "pistol", first } }; } );
 	h.AddBot();
 	h.RunUntil( 1.5 );
 	uint64_t before = h.bots[0].client->SchemaGeneration();
@@ -1045,7 +1052,7 @@ void TestInventory()
 	uint16_t batSlot = kKeySlot2;
 	uint16_t pickup = schema.ActionMask( "pickup" );
 	uint16_t drop = schema.ActionMask( "drop" );
-	int gunKind = schema.FindItemKind( "pistol.gun" );
+	int gunKind = schema.FindItemKind( "gun.pistol" );
 	int batKind = schema.FindItemKind( "melee.bat" );
 	CHECK( gunSlot != 0 && batSlot != 0 && pickup != 0 && drop != 0 && gunKind >= 0 && batKind >= 0 );
 	if ( gunKind < 0 || batKind < 0 )
@@ -1235,7 +1242,7 @@ void TestItemShapes()
 	// The ones the mods ship.
 	const std::string root = CB_SOURCE_DIR;
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "melee.bat", shape, error ) && std::max( shape.half.x, shape.half.z ) > 0.3f ); // long, along how it is carried
-	CHECK( LoadItemShapeFolder( root + "/server_mods/pistol/client", "pistol.gun", shape, error ) && shape.mass < 1.0f );
+	CHECK( LoadItemShapeFolder( root + "/server_mods/gun/client", "gun.pistol", shape, error ) && shape.mass < 1.0f );
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "no.such", shape, error ) == false );
 	// Properties authored on the body ride along: the bat's hold time is in its scene, not in its mod.
 	ItemProperties properties;
@@ -1272,7 +1279,7 @@ void TestItemShapes()
 		CHECK( back.itemShapes.size() == 1 && back.itemShapes[0] == rifle && back.itemShapes[0].grip == 2 && back.itemShapes[0].turn[0] == 0.5f );
 	}
 	// The shipped pistol and bat are held with both hands.
-	CHECK( LoadItemShapeFolder( root + "/server_mods/pistol/client", "pistol.gun", shape, error ) && shape.grip == 3 ); // as its animations have the hands
+	CHECK( LoadItemShapeFolder( root + "/server_mods/gun/client", "gun.pistol", shape, error ) && shape.grip == 3 ); // as its animations have the hands
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "melee.bat", shape, error ) && shape.grip != 0 );
 	properties.clear();
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "melee.bat", shape, error, &properties ) );
@@ -1491,7 +1498,7 @@ void TestHeadshot()
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fire = kKeyUse;
 	uint16_t pistol = kKeySlot1;
-	int hitEvent = schema.FindEvent( "pistol.hit" );
+	int hitEvent = schema.FindEvent( "item.hit" );
 
 	// From one spawn point's eye to the next one's head: 0.15 m down over 1.5 m, about 5.7 degrees.
 	h.AddBot().script = [=]( uint32_t tick ) {
@@ -1671,10 +1678,10 @@ void TestPistolMark()
 {
 	Harness h( 47811 );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t mark = schema.ActionMask( "mark" );
+	uint16_t mark = schema.ActionMask( "use2" );
 	uint16_t pistol = kKeySlot1;
-	int scanEvent = schema.FindEvent( "pistol.scan" );
-	int markedEvent = schema.FindEvent( "pistol.marked" );
+	int scanEvent = schema.FindEvent( "item.use2" );
+	int markedEvent = schema.FindEvent( "mark.found" );
 	CHECK( mark != 0 && scanEvent >= 0 && markedEvent >= 0 );
 
 	h.AddBot().script = [=]( uint32_t tick ) {
@@ -1744,16 +1751,22 @@ void TestPistolMark()
 void TestRifle()
 {
 	Harness h( 47823 );
+	// (The second gun's look is licensed and local: a checkout without it has one gun.)
+	if ( h.server.Schema().FindItemKind( "gun.rifle" ) < 0 )
+	{
+		std::printf( "    skipped: this checkout has no rifle (server_mods/gun/client/prefabs/rifle.tscn is local)\n" );
+		return;
+	}
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fire = kKeyUse;
 	uint16_t rifle = kKeySlot3;
 	uint16_t pistol = kKeySlot1;
-	int rifleFired = schema.FindEvent( "rifle.fired" );
-	int rifleDry = schema.FindEvent( "rifle.dry" );
-	int rifleReload = schema.FindEvent( "rifle.reload" );
-	int pistolFired = schema.FindEvent( "pistol.fired" );
+	int rifleFired = schema.FindEvent( "item.use" );
+	int rifleDry = schema.FindEvent( "item.use_failed" );
+	int rifleReload = schema.FindEvent( "item.reload" );
+	int pistolFired = schema.FindEvent( "item.use" );
 	CHECK( fire != 0 && rifle != 0 && rifleFired >= 0 && rifleDry >= 0 && rifleReload >= 0 && pistolFired >= 0 );
-	CHECK( schema.FindItemKind( "rifle.gun" ) >= 0 && schema.FindField( "rifle.ammo" ) != nullptr );
+	CHECK( schema.FindItemKind( "gun.rifle" ) >= 0 && schema.FindField( "gun.ammo" ) != nullptr );
 
 	// Held for two seconds (20 shots), a tap (1), then held for good (9, a reload, and on).
 	auto trigger = []( uint32_t tick ) { return ( tick >= 200 && tick < 320 ) || tick == 400 || tick >= 460; };
@@ -1773,7 +1786,7 @@ void TestRifle()
 	std::set<uint32_t> shots, clicks, reloads, pistolShots;
 	int32_t ammoAfterHold = -1;
 	int32_t ammoAfterTap = -1;
-	const BoardField* ammo = schema.FindField( "rifle.ammo" );
+	const BoardField* ammo = schema.FindField( "gun.ammo" );
 	h.RunUntil( 17.0, [&]( double ) {
 		Simulation& sim = h.server.Sim();
 		const uint32_t rifleman = sim.PlayerNetId( h.bots[0].client->Slot() );
@@ -1845,13 +1858,20 @@ void TestRifle()
 void TestGunSwap()
 {
 	Harness h( 47824 );
+	// (The second gun's look is licensed and local: a checkout without it has one gun.)
+	if ( h.server.Schema().FindItemKind( "gun.rifle" ) < 0 )
+	{
+		std::printf( "    skipped: this checkout has no rifle (server_mods/gun/client/prefabs/rifle.tscn is local)\n" );
+		return;
+	}
 	const ModSchema& schema = h.server.Schema();
 	uint16_t rifle = kKeySlot3;
 	uint16_t pistol = kKeySlot1;
 	int upper = schema.FindLayer( "upper" );
-	int pistolStance = schema.FindStance( "pistol" );
-	int rifleStance = schema.FindStance( "rifle" );
-	CHECK( rifle != 0 && pistol != 0 && upper >= 0 && pistolStance >= 0 && rifleStance >= 0 && rifleStance != pistolStance );
+	int pistolStance = schema.FindStance( "gun" );
+	int rifleStance = schema.FindStance( "gun" );
+	// (One stance for every gun: what differs between them is their own animation pack.)
+	CHECK( rifle != 0 && pistol != 0 && upper >= 0 && pistolStance >= 0 && rifleStance == pistolStance );
 	// The rifle, the pistol, the rifle, the pistol: a key every second and a half.
 	h.AddBot().script = [=]( uint32_t tick ) {
 		PlayerInput in;
@@ -1933,7 +1953,7 @@ void TestMelee()
 	// The pistol and then the bat are items in the attacker's right hand (the swap is one tick: the
 	// pistol mod takes its gun away as the melee mod puts the bat there). The bat has its own state:
 	// hot after a hit.
-	int gunKind = schema.FindItemKind( "pistol.gun" );
+	int gunKind = schema.FindItemKind( "gun.pistol" );
 	int batKind = schema.FindItemKind( "melee.bat" );
 	int hand = schema.FindSocket( "RightHand" );
 	const BoardField* hot = schema.FindField( "melee.hot" );
@@ -2012,7 +2032,7 @@ void TestMelee()
 // head misses, looking level or at the legs hits.
 void TestMeleePitch()
 {
-	Harness h( 47803 );
+	Harness h( 47893 );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fire = kKeyUse;
 	uint16_t bat = kKeySlot2;
@@ -2071,7 +2091,7 @@ void TestMeleePitch()
 // starts 0.45 m to the side), and the shot, from the head, goes there. First person looks straight.
 void TestAimViews()
 {
-	Harness h( 47804 );
+	Harness h( 47894 );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fire = kKeyUse;
 	uint16_t pistol = kKeySlot1;
@@ -2196,9 +2216,9 @@ void TestProtocol()
 	{
 		ModSchema schema;
 		schema.mods = { "pistol" };
-		schema.fields.push_back( { "pistol.ammo", BoardType::Int, BoardScope::Entity, 3 } );
+		schema.fields.push_back( { "gun.ammo", BoardType::Int, BoardScope::Entity, 3 } );
 		schema.fields.push_back( { "round.time", BoardType::Float, BoardScope::Global, 0 } );
-		schema.events = { "pistol.fired", "combat.killed" };
+		schema.events = { "item.use", "combat.killed" };
 		schema.actions.push_back( { "fire", 0, "MouseLeft" } );
 		schema.items.push_back( { "pistol", std::string( 64, 'a' ) } );
 		schema.animGraph = std::string( 70000, 'g' ); // longer than any name: its own length prefix

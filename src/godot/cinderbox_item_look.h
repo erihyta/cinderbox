@@ -64,6 +64,27 @@ public:
 	{
 		return m_displayName;
 	}
+	// The animation pack the item brings: while one is held, the pack's layers play instead of the
+	// holder's own (a CbAnimPack scene of this project, by its name: "gun.pistol_hold"). None: the
+	// character's own animations. And the socket it hangs in while it is put away ("Hip", "Back");
+	// none: out of sight. Both are the server's to read, from the baked file: a mod that takes its
+	// items from its look (Declarations::ItemsOfLook) needs no code for either.
+	void set_animation_pack( const godot::String& v )
+	{
+		m_animationPack = v.strip_edges();
+	}
+	godot::String get_animation_pack() const
+	{
+		return m_animationPack;
+	}
+	void set_holster( const godot::String& v )
+	{
+		m_holster = v.strip_edges();
+	}
+	godot::String get_holster() const
+	{
+		return m_holster;
+	}
 	// First person: how far the arms holding this are moved in the viewer's own view, in metres to
 	// the right, up and ahead of where the body's pose has them. Only the viewer's own picture
 	// changes: everyone else, the shadow and the hit tests keep the pose.
@@ -291,6 +312,8 @@ protected:
 private:
 	godot::String m_kind; // "melee.bat": the kind a server mod declares
 	godot::String m_displayName; // what prompts and lists call it ("Bat")
+	godot::String m_animationPack;
+	godot::String m_holster;
 	godot::Vector3 m_viewOffset;
 	godot::NodePath m_viewCamera;
 	godot::Vector3 m_viewRotation;

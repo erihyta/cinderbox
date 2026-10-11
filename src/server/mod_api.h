@@ -19,11 +19,13 @@
 // What it cannot do is see the future or the client's prediction: it reads the confirmed state, and
 // its commands reach clients with the frame, where rollback fixes up whatever they predicted.
 
+#include "look_item.h"
 #include "mod_schema.h"
 #include "simulation.h"
 
 #include "flecs.h"
 
+#include <functional>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -233,6 +235,18 @@ public:
 	// same names: a bat that changes how its holder stands and walks, wherever the bat came from.
 	// A mod's own SwapLayer on such a layer wins while it lasts (a crouch over a carry).
 	void ItemLayers( ItemKindHandle kind, AnimPackHandle pack );
+	// The items of this mod's look: every scene of its client project whose root is a CbItem
+	// (baked to items/<kind>.cfg). Each becomes an item kind of this mod, with what its scene says:
+	// its body and properties (as for any kind), the animation pack it brings while it is held,
+	// and the socket it hangs in while it is put away ("holster", for the inventory mod). So a
+	// mod's rules can be about "whatever my look has that says gun.damage", and a new item is a
+	// new scene: nothing is compiled.
+	struct OwnItem
+	{
+		ItemKindHandle kind;
+		LookItem look;
+	};
+	std::vector<OwnItem> ItemsOfLook();
 	// A named number about an item kind that any mod may read (Context::ItemProperty): how mods agree
 	// on what an item is like without knowing each other ("pickup.hold_seconds" = 0.5: the pickup
 	// mod makes players hold the key that long for it). The first value declared for a name is kept.
@@ -261,11 +275,16 @@ public:
 	}
 
 	void BeginMod( const std::string& name );
+	void SetLookItems( std::function<std::vector<LookItem>( const std::string& mod )> read )
+	{
+		m_lookItems = std::move( read );
+	}
 
 private:
 	ModSchema m_schema;
 	std::vector<std::string> m_errors;
 	std::string m_mod;
+	std::function<std::vector<LookItem>( const std::string& mod )> m_lookItems;
 	std::vector<bool> m_shapeDeclared; // per item kind: a mod gave it a shape
 	std::vector<std::vector<std::string>> m_itemMods; // per item kind: the mods that declared it
 	std::map<std::pair<int, std::string>, float> m_itemProperties;

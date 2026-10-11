@@ -11,7 +11,7 @@ font_size = 26
 outline_size = 5
 outline_color = Color(0, 0, 0, 0.75)
 
-[node name="PistolHud" type="CanvasLayer"]
+[node name="GunHud" type="CanvasLayer"]
 
 [node name="Ammo" type="CbFieldLabel" parent="."]
 anchors_preset = 3
@@ -25,8 +25,8 @@ offset_right = -24.0
 offset_bottom = -42.0
 label_settings = SubResource("Big")
 horizontal_alignment = 2
-text_format = "AMMO {pistol.ammo} / 12"
-conditions = PackedStringArray("pistol.gun", "!pistol.reloading", "!combat.dead")
+text_format = "AMMO {gun.ammo} / {gun.magazine}"
+conditions = PackedStringArray("gun.magazine > 0", "!gun.reloading", "!combat.dead")
 
 [node name="Reloading" type="CbFieldLabel" parent="."]
 anchors_preset = 3
@@ -41,7 +41,7 @@ offset_bottom = -42.0
 label_settings = SubResource("Big")
 horizontal_alignment = 2
 text = "RELOADING"
-conditions = PackedStringArray("pistol.gun", "pistol.reloading", "!combat.dead")
+conditions = PackedStringArray("gun.magazine > 0", "gun.reloading", "!combat.dead")
 
 [node name="Crosshair" type="CbFieldLabel" parent="."]
 anchors_preset = 8
@@ -57,4 +57,4 @@ label_settings = SubResource("Big")
 horizontal_alignment = 1
 vertical_alignment = 1
 text = "+"
-conditions = PackedStringArray("pistol.gun", "!combat.dead")
+conditions = PackedStringArray("gun.magazine > 0", "!combat.dead")
