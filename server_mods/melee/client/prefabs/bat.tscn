@@ -126,18 +126,6 @@ tracks/0/keys = {
 "update": 1,
 "values": [true, false]
 }
-tracks/1/type = "value"
-tracks/1/imported = false
-tracks/1/enabled = true
-tracks/1/path = NodePath("Model/Sparks:emitting")
-tracks/1/interp = 1
-tracks/1/loop_wrap = true
-tracks/1/keys = {
-"times": PackedFloat32Array(0.14166667, 0.33333334),
-"transitions": PackedFloat32Array(1, 1),
-"update": 1,
-"values": [true, false]
-}
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_gysuc"]
 _data = {
@@ -154,8 +142,8 @@ properties = {
 slot = 2
 carry_grip = NodePath("Model/Carry")
 other_hand = 3
-view_offset = Vector3(-0.16, 0.31, 0.77)
-view_rotation = Vector3(40, 30, 0)
+view_offset = Vector3(-0.11, 0.28, 0.96)
+view_rotation = Vector3(5, 30, 0)
 view_left_hand = false
 mass = 1.1
 
@@ -177,6 +165,7 @@ transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, -0.035053983)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.6054174e-09, -1.9064716e-09, 0.066385016)
 
 [node name="Flames" type="GPUParticles3D" parent="Model" unique_id=1514484346]
+cast_shadow = 0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.45)
 emitting = false
 amount = 96
@@ -185,6 +174,7 @@ process_material = SubResource("Flames")
 draw_pass_1 = SubResource("Flake")
 
 [node name="Sparks" type="GPUParticles3D" parent="Model" unique_id=829386494]
+cast_shadow = 0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.7)
 emitting = false
 amount = 48
@@ -226,3 +216,11 @@ cue = "melee.swing"
 cooldown = 0.58
 stance = "melee_swing"
 stance_layer = "full"
+
+[node name="SparksOnSwing" type="CbReaction" parent="."]
+event = "melee.swing"
+subject = NodePath("^^")
+delay = 0.14
+target = NodePath("../Model/Sparks")
+method = "restart"
+editor_description = "The sparks of a swing, started again at every swing. (A one-shot particle node that an animation only switches on does not start again while its last burst is still out: swings in a row had no sparks.)"

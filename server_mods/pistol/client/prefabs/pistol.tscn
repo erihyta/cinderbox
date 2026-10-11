@@ -55,6 +55,31 @@ transform = Transform3D(-7.590404e-09, 4.3047308e-08, -1, 0.9848076, 0.17364821,
 [node name="OtherHand" type="Marker3D" parent="." unique_id=1225211331]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.014388949, 0.0062951446)
 
+[node name="Muzzle" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.04, -0.175)
+
+[node name="Flash" type="CbReaction" parent="Muzzle"]
+event = "pistol.fired"
+subject = NodePath("^^")
+scene = "res://vfx/muzzle_flash.tscn"
+scene_lifetime = 0.3
+
+[node name="Tracer" type="CbReaction" parent="Muzzle"]
+event = "pistol.fired"
+subject = NodePath("^^")
+scene = "res://vfx/tracer.tscn"
+scene_lifetime = 0.06
+place = 3
+place_node = NodePath("..")
+
+[node name="ScanBeam" type="CbReaction" parent="Muzzle"]
+event = "pistol.scan"
+subject = NodePath("^^")
+scene = "res://vfx/scan_beam.tscn"
+scene_lifetime = 0.15
+place = 3
+place_node = NodePath("..")
+
 [node name="PredictFire" type="CbPrediction" parent="."]
 action = "use"
 cue = "pistol.fired"

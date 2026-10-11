@@ -24,8 +24,6 @@
 [node name="Fired" type="CbReaction" parent="."]
 event = "pistol.fired"
 subject = NodePath("$at")
-scene = "res://vfx/muzzle_flash.tscn"
-scene_lifetime = 0.3
 place = 4
 place_node = NodePath("$at/RightHand")
 sound = "res://assets/sfx/gunshot.wav"
@@ -52,28 +50,12 @@ volume_db = -4.0
 pitch_scale = 1.8
 max_distance = 25.0
 
-[node name="ScanBeam" type="CbReaction" parent="."]
-event = "pistol.scan"
-subject = NodePath("$at")
-scene = "res://vfx/scan_beam.tscn"
-scene_lifetime = 0.15
-place = 3
-place_node = NodePath("$at/RightHand")
-
 [node name="Marked" type="CbReaction" parent="."]
 event = "pistol.marked"
 subject = NodePath("$other")
 scene = "res://vfx/mark_zone.tscn"
 scene_lifetime = 2.0
 place = 5
-
-[node name="Tracer" type="CbReaction" parent="."]
-event = "pistol.fired"
-subject = NodePath("$at")
-scene = "res://vfx/tracer.tscn"
-scene_lifetime = 0.06
-place = 3
-place_node = NodePath("$at/RightHand")
 
 [node name="HitSurface" type="CbReaction" parent="."]
 event = "pistol.hit"

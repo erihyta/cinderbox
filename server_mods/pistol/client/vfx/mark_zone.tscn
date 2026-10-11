@@ -52,6 +52,7 @@ mesh = SubResource("Ring")
 cast_shadow = 0
 
 [node name="Sparks" type="GPUParticles3D" parent="."]
+cast_shadow = 0
 amount = 64
 lifetime = 1.2
 process_material = SubResource("Rise")

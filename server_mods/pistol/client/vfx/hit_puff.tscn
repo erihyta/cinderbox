@@ -26,6 +26,7 @@ material = SubResource("Mat")
 size = Vector2(0.08, 0.08)
 
 [node name="HitPuff" type="GPUParticles3D"]
+cast_shadow = 0
 amount = 20
 lifetime = 0.5
 one_shot = true

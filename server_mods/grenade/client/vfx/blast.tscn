@@ -26,6 +26,7 @@ material = SubResource("Mat")
 size = Vector2(0.22, 0.22)
 
 [node name="Blast" type="GPUParticles3D"]
+cast_shadow = 0
 amount = 90
 lifetime = 0.6
 one_shot = true
