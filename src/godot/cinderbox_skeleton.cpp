@@ -595,12 +595,18 @@ void CinderboxSkeleton::UpdateViewLegs( Skeleton3D* target )
 			return;
 		}
 		m_viewLegs = ObjectID( legs->get_instance_id() );
+		m_viewLegsPosed = 0;
+		legs->set_visible( false );
 		m_viewLegsOf = ObjectID( target->get_instance_id() );
 	}
 	legs->reset_bone_poses();
 	DriveSkeleton( legs, m_lastModels );
 	legs->set_bone_pose_scale( spine, Vector3( 0.0001f, 0.0001f, 0.0001f ) );
 	legs->set_global_transform( target->get_global_transform() );
+	if ( m_viewLegsPosed < 2 && ++m_viewLegsPosed == 2 )
+	{
+		legs->set_visible( true );
+	}
 }
 
 void CinderboxSkeleton::PlaceViewLegs( const Vector3& shift )
@@ -648,6 +654,8 @@ void CinderboxSkeleton::UpdateViewArms( Skeleton3D* target )
 			return;
 		}
 		m_viewRig = ObjectID( rig->get_instance_id() );
+		m_viewRigPosed = 0;
+		rig->set_visible( false );
 		m_viewRigOf = ObjectID( target->get_instance_id() );
 	}
 	// (What the last frame shrank or bent is not part of this one's pose.)
@@ -697,7 +705,8 @@ void CinderboxSkeleton::UpdateViewArms( Skeleton3D* target )
 	}
 	rig->set_global_transform( target->get_global_transform() );
 	KeepArms( rig, m_viewHandShown[0], m_viewHandShown[1] );
-	rig->set_visible( m_viewHandShown[0] || m_viewHandShown[1] );
+	m_viewRigPosed = std::min( m_viewRigPosed + 1, 2 );
+	rig->set_visible( m_viewRigPosed >= 2 && ( m_viewHandShown[0] || m_viewHandShown[1] ) );
 }
 
 // Only the arms of `rig` are left to draw: everything else shrinks to a point, and the shoulders
