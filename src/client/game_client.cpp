@@ -224,6 +224,17 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 					}
 					break;
 				}
+				case MsgType::Items:
+				{
+					// A look published again: the items to have now. Nothing of the simulation.
+					MsgItems msg;
+					if ( Decode( r, msg ) && m_schemaGeneration != 0 && !( msg.items == m_schema.items ) )
+					{
+						m_schema.items = msg.items;
+						m_schemaGeneration += 1;
+					}
+					break;
+				}
 				case MsgType::PlayerNames:
 				{
 					MsgPlayerNames msg;

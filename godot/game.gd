@@ -63,7 +63,7 @@ const CAMERA_RADIUS := 0.25
 ## These outlive the scene, which is reloaded when a server is left.
 static var _started := false # the command line's --host has been used
 static var _menu_message := "" # why the last server was left, for the menu
-static var _loaded_items := {} # sha256 -> true: workshop items loaded into this process
+static var _loaded_items := {} # sha256 -> the mod it is of: workshop items loaded into this process
 
 @onready var client: CinderboxClient = $Client
 ## The peer extension's CinderboxPeer, or null when this copy of the game does not have it.
@@ -437,17 +437,22 @@ func _load_items() -> bool:
 		return false
 	# Packs cannot be unloaded: an item from an earlier server that this one does not use would
 	# keep its HUD and reactions. A fresh process joins instead.
+	# (A mod's look published again is not that: the new item is loaded over the old, below.)
 	var wanted := {}
+	var wanted_mods := {}
 	for path in paths:
 		wanted[path.get_file().get_basename()] = true
+		wanted_mods[path.get_base_dir().get_file()] = true
 	for sha in _loaded_items:
-		if not wanted.has(sha):
+		if not wanted.has(sha) and not wanted_mods.has(_loaded_items[sha]):
 			_restart_and_join()
 			return false
 
 	var added := false
+	var replaced := false
 	for path in paths:
 		var sha := path.get_file().get_basename()
+		var mod := path.get_base_dir().get_file()
 		if _loaded_items.has(sha):
 			continue
 		var problem: String = Boot.check_mod(path)
@@ -457,9 +462,16 @@ func _load_items() -> bool:
 		if not ProjectSettings.load_resource_pack(path, true):
 			_refuse("Workshop item %s could not be loaded" % path.get_base_dir().get_file())
 			return false
-		_loaded_items[sha] = true
+		# The same mod's item from before: this one took its files' places. What was already
+		# loaded from them is loaded again.
+		for old in _loaded_items.keys():
+			if _loaded_items[old] == mod:
+				_loaded_items.erase(old)
+				replaced = true
+				_refresh_loaded(path)
+		_loaded_items[sha] = mod
 		added = true
-		print("workshop item loaded: %s/%s" % [path.get_base_dir().get_file(), path.get_file()])
+		print("workshop item loaded: %s/%s" % [mod, path.get_file()])
 	if added:
 		# The player's own mods come last, so they can restyle what an item ships.
 		for mod in Boot.player_mods:
@@ -467,6 +479,10 @@ func _load_items() -> bool:
 	# Also when the items were loaded by an earlier visit: this scene has not shown them yet.
 	if added or (not _presented and not paths.is_empty()):
 		_reload_presentation()
+	if replaced:
+		# What is in the world is drawn from the scenes as they are now.
+		client.rebuild_nodes()
+		print("a look was published again: shown as it is now")
 	_presented = true
 	# The server's character (one of the items just loaded), or the built-in rig.
 	var character_problem: String = client.use_character(client.get_character())
@@ -474,6 +490,19 @@ func _load_items() -> bool:
 		_refuse("This server's character could not be used: %s" % character_problem)
 		return false
 	return true
+
+
+## A pack was loaded over an older one of the same mod: Godot keeps what it loaded from the old
+## files, so every resource of the pack that is in its cache is loaded again in place.
+func _refresh_loaded(pack: String) -> void:
+	var zip := ZIPReader.new()
+	if zip.open(pack) != OK:
+		return
+	for file in zip.get_files():
+		var path := "res://" + String(file).trim_suffix(".remap").trim_suffix(".import")
+		if ResourceLoader.has_cached(path):
+			ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_REPLACE_DEEP)
+	zip.close()
 
 
 ## The connection watcher leaves with this reason.

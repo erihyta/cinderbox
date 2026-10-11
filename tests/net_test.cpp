@@ -799,6 +799,41 @@ void TestNames()
 	CHECK( h.bots[0].client->Names()[1].empty() );
 }
 
+// A look published again while the server runs: the item players need changes for everyone
+// connected (their schema says the new one, and says it changed) and for whoever joins later; the
+// simulation does not notice. An item of a mod the server does not announce is not taken.
+void TestItemsReplaced()
+{
+	using namespace net;
+	const std::string first( 64, 'a' ), second( 64, 'b' );
+	{
+		MsgItems msg, back;
+		msg.items = { { "melee", first }, { "pistol", second } };
+		std::vector<uint8_t> bytes;
+		Encode( msg, bytes );
+		ByteReader r( bytes.data(), bytes.size() );
+		CHECK( ReadType( r ) == MsgType::Items && Decode( r, back ) && back.items == msg.items );
+	}
+	Harness h( 47862, {}, {}, {}, [&]( ServerOptions& options ) { options.items = { { "melee", first }, { "pistol", first } }; } );
+	h.AddBot();
+	h.RunUntil( 1.5 );
+	uint64_t before = h.bots[0].client->SchemaGeneration();
+	CHECK( h.bots[0].client->Schema().items.size() == 2 && h.bots[0].client->Schema().items[0].sha256 == first );
+	CHECK( h.server.ReplaceItem( { "nothing", second } ) == false );
+	CHECK( h.server.ReplaceItem( { "melee", second } ) );
+	h.RunUntil( h.Now() + 1.0 );
+	CHECK( h.bots[0].client->SchemaGeneration() == before + 1 );
+	CHECK( h.bots[0].client->Schema().items[0].sha256 == second && h.bots[0].client->Schema().items[1].sha256 == first );
+	h.AddBot();
+	h.RunUntil( h.Now() + 1.5 );
+	CHECK( h.bots[1].client->Schema().items[0].sha256 == second );
+	h.Report();
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->GetStats().desyncs == 0 );
+	}
+}
+
 // Deathmatch rounds end to end: kills score, the limit ends the round, everyone is frozen through
 // the intermission, and the next round starts clean. Clients agree with the server throughout.
 // SHA-256 test vectors, and a character item read the way the server reads one: from the zip
@@ -3479,6 +3514,7 @@ int main( int argc, char** argv )
 		{ "mods_session", TestModsSession },
 		{ "stall_recovery", TestStallRecovery },
 		{ "names", TestNames },
+		{ "items_replaced", TestItemsReplaced },
 		{ "deathmatch", TestDeathmatch },
 		{ "character_item", TestCharacterItem },
 		{ "item_shapes", TestItemShapes },

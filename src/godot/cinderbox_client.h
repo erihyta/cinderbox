@@ -190,6 +190,9 @@ public:
 	// built-in rig. Returns an error message, or "" when it worked. Nothing is imported here: the
 	// files were baked in the editor and shipped in the item.
 	godot::String use_character( const godot::String& name );
+	// Every node the viewer made for what is in the world is made again from its scene as it is
+	// now: after a look was loaded again over itself.
+	void rebuild_nodes();
 	// The schema's state machine for this character, compiled; warns when it will not fit.
 	std::shared_ptr<const AnimGraph> ServerGraph( const anim::AnimSet& set, const godot::String& name );
 	// The server's animation packs, compiled, and their clips (res://anim/<pack>/, from the mods'
@@ -240,7 +243,7 @@ private:
 	godot::Ref<godot::PackedScene> LoadScene( const godot::String& path );
 	godot::Node3D* CreateNode( uint64_t visual, const present::Visual& v );
 	// Players and ragdolls again with the current prefab (after the character changed).
-	void RebuildCharacterNodes();
+	void RebuildCharacterNodes( bool itemsToo = false );
 	const Blackboard* BoardOf( uint32_t netId ) const;
 	std::vector<std::string> Conditions( const godot::PackedStringArray& conditions ) const;
 

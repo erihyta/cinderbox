@@ -68,6 +68,13 @@ bool LoadItemShapeFolder( const std::string& dir, const std::string& kind, ItemS
 bool LoadMotionsItem( const std::string& zipPath, const ModItem& item, const std::string& set, std::string& text, std::string& error );
 bool LoadMotionsFolder( const std::string& dir, const std::string& set, std::string& text, std::string& error );
 
+// What of a workshop item the server reads, by file: items/*.cfg without the lines only the game
+// reads (the scene, the name, the first-person view), and everything under anim/, motions/ and
+// characters/ that is baked (.cfg, .ozz). Two items of a mod with the same parts differ in their
+// look alone: one can take the other's place while the server runs. False (and `error`) when the
+// file is not the item the manifest names.
+bool ItemServerParts( const std::string& zipPath, const ModItem& item, std::map<std::string, std::string>& parts, std::string& error );
+
 // Where a player's workshop keeps items (the game's user:// folder), for the default --workshop.
 std::string DefaultWorkshopDir();
 

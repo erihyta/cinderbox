@@ -824,6 +824,36 @@ void GameServer::SendPrivates( const Client& c )
 	m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
 }
 
+bool GameServer::ReplaceItem( const ModItem& item )
+{
+	bool known = false;
+	for ( ModItem& mine : m_schema.items )
+	{
+		if ( mine.mod == item.mod )
+		{
+			mine.sha256 = item.sha256;
+			known = true;
+		}
+	}
+	if ( known == false )
+	{
+		return false;
+	}
+	// (Whoever joins from now on gets it in the welcome's schema.)
+	EncodeSchema( m_schema, m_schemaBytes );
+	MsgItems msg;
+	msg.items = m_schema.items;
+	Encode( msg, m_itemsBuffer );
+	for ( const Client& c : m_clients )
+	{
+		if ( c.used && c.connected && c.welcomed )
+		{
+			m_transport.Send( c.peer, ChannelReliable, m_itemsBuffer, true );
+		}
+	}
+	return true;
+}
+
 void GameServer::SendNames( PeerId only )
 {
 	MsgPlayerNames msg;

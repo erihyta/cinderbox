@@ -5,6 +5,7 @@
 #include "miniz.h"
 
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 
@@ -429,6 +430,75 @@ bool LoadMotionsFolder( const std::string& dir, const std::string& set, std::str
 	std::ostringstream all;
 	all << in.rdbuf();
 	text = all.str();
+	return true;
+}
+
+bool ItemServerParts( const std::string& zipPath, const ModItem& item, std::map<std::string, std::string>& parts, std::string& error )
+{
+	std::ifstream in( zipPath, std::ios::binary );
+	if ( in.good() == false )
+	{
+		error = "no workshop item at " + zipPath;
+		return false;
+	}
+	std::ostringstream all;
+	all << in.rdbuf();
+	const std::string bytes = all.str();
+	if ( Sha256Hex( bytes.data(), bytes.size() ) != item.sha256 )
+	{
+		error = zipPath + " is not the item the manifest names";
+		return false;
+	}
+	mz_zip_archive zip = {};
+	if ( mz_zip_reader_init_mem( &zip, bytes.data(), bytes.size(), 0 ) == MZ_FALSE )
+	{
+		error = zipPath + " is not a zip";
+		return false;
+	}
+	auto ends = []( const std::string& s, const char* tail ) {
+		size_t n = std::strlen( tail );
+		return s.size() >= n && s.compare( s.size() - n, n, tail ) == 0;
+	};
+	parts.clear();
+	for ( mz_uint i = 0; i < mz_zip_reader_get_num_files( &zip ); ++i )
+	{
+		char name[512] = {};
+		mz_zip_reader_get_filename( &zip, i, name, sizeof( name ) );
+		std::string path = name;
+		bool item_ = path.rfind( "items/", 0 ) == 0 && ends( path, ".cfg" );
+		bool baked = ( path.rfind( "anim/", 0 ) == 0 || path.rfind( "motions/", 0 ) == 0 || path.rfind( "characters/", 0 ) == 0 ) &&
+					 ( ends( path, ".cfg" ) || ends( path, ".ozz" ) );
+		if ( item_ == false && baked == false )
+		{
+			continue;
+		}
+		size_t size = 0;
+		void* data = mz_zip_reader_extract_to_heap( &zip, i, &size, 0 );
+		if ( data == nullptr )
+		{
+			continue;
+		}
+		std::string content( static_cast<const char*>( data ), size );
+		mz_free( data );
+		if ( item_ )
+		{
+			// Without what only the game reads.
+			std::string kept;
+			std::istringstream lines( content );
+			std::string line;
+			while ( std::getline( lines, line ) )
+			{
+				if ( line.rfind( "scene ", 0 ) == 0 || line.rfind( "name ", 0 ) == 0 || line.rfind( "view", 0 ) == 0 )
+				{
+					continue;
+				}
+				kept += line + "\n";
+			}
+			content = kept;
+		}
+		parts[path] = content;
+	}
+	mz_zip_reader_end( &zip );
 	return true;
 }
 

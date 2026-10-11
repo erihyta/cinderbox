@@ -87,7 +87,7 @@ One step from an edit to playing it: the client starts the server.
 |---|---|
 | The client hosts | **done (M123)**: **Test locally** in the menu and `--host-local[=MODS]`: the game starts `cb_server`, joins it, and stops it when it leaves; the server also stops by itself when empty |
 | From the SDK | **done (M125)**: a **Test mod** button in the editor's toolbar (in a mod's client project) and `tools\test_mod.ps1 -Mod <mod>`: save, build, publish, start the game hosting |
-| Looks reload | a published look is taken up without restarting the server or the game |
+| Looks reload | **done (M132)**: publish a look while the server runs and everyone playing sees it, with no restart, when it changes nothing the simulation reads | a change the simulation reads (an item's body, a pack's state machine, a motion) still needs the server restarted: the hosted test could do that by itself; files a new look no longer has stay loaded until the game restarts |
 | Bots | **done (M123)**: `--bots=N` starts `cb_bot` players on the hosted server | a count in the menu; bots that use what the mod under test adds |
 
 ### 3. Motions and the body
