@@ -31,7 +31,7 @@ looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <─
 | Language / build | C++20, CMake + Ninja, Clang primary (MSVC and GCC also supported) |
 | Dependencies | CMake FetchContent, pinned to exact commits, built inside each build directory (never shared between compilers) |
 | ECS | flecs 4.x |
-| Physics | Box3D (erincatto/box3d), single-threaded, cross-platform determinism mode, two local patches (`cmake/patches/`) |
+| Physics | Box3D (erincatto/box3d), its step on several threads (see below), cross-platform determinism mode, two local patches (`cmake/patches/`) |
 | Animation | ozz-animation 0.17.0, scalar (non-SIMD) build; clips and skeletons baked from Godot scenes |
 | Networking | ENet (UDP), dedicated headless server |
 | Client | Godot 4.7 through GDExtensions (godot-cpp 4.5 API): a viewer and a peer |
@@ -139,6 +139,12 @@ not rolled back, not recorded, and a state machine cannot read it.
 Authoritative server, client rollback (`src/net`, `src/client`).
 
 - **Client**: sends its inputs each tick and simulates the whole world at once, predicting remote players by repeating their last input. When the server's frame for tick N differs from the prediction, it restores the nearest snapshot at or before N and re-simulates, at most once per rendered frame.
+- **Physics threads** (`src/sim/physics_threads.h`): every world is made with 4 workers (`kPhysicsWorkers`); how many threads run them is each machine's own choice and changes nothing that is simulated.
+  - Default: a quarter of the machine's threads, at most 3 besides the stepping one; none on a small machine. `cb_server --physics-threads N`, `CinderboxPeer.physics_threads`, `--physics-threads=N` for the game. Tests and bots use none unless told.
+  - One pool for the process. A step wakes it when it begins, and its threads look for work for a millisecond after the last task: threads that slept between a step's bursts made the physics twice as slow as none.
+  - A task runs inside its world's arena; the arena locks to allocate. Where things lie in the arena is not the same from run to run, and nothing reads that (a snapshot copies it, the hash is of the ECS, a join image holds no addresses).
+  - Box3D's sameness across worker counts is its author's aim, not a promise: `physics_threads` (unit test) compares every tick's hash for 1, 2, 4 and 8 workers on 1 to 8 threads, with snapshots restored in between.
+  - Cost: 4 workers' own memory is in every snapshot (2.7 MB to 3.5 MB at 64 players). Gain: collisions scale, the solver hardly does at this size; 43% off the physics in a tight loop, 10 to 20% in a game.
 - **Snapshots are few**: one before each tick predicted for the first time, and one in each re-simulation, where the confirmed frames end (the next misprediction is almost always there). The re-simulated ticks after it take none.
 - **`reconcile_every`** (`CinderboxPeer`, `--reconcile-every=N`, default 1): a misprediction is fixed only every N ticks. The same ticks are re-simulated less often; what other players do is seen up to N ticks later.
 - **Server**: never rolls back. It waits briefly for each input, reuses the last one when late, and broadcasts what it used.
