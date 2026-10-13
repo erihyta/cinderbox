@@ -13,6 +13,7 @@
 #include "mod_schema.h"
 #include "motions.h"
 #include "physics_arena.h"
+#include "physics_threads.h"
 #include "types.h"
 #include "world_lifetime.h"
 
@@ -323,6 +324,16 @@ public:
 		return m_arena->UsedBytes();
 	}
 
+	// The physics step's tasks go to the process's physics threads (PhysicsThreads::Start), or run
+	// on the stepping thread (the default). What is simulated is the same either way.
+	void SetPhysicsThreaded( bool threaded )
+	{
+		m_tasks->threaded = threaded;
+	}
+	// For tests: the number of workers simulations made from now on have (kPhysicsWorkers; what is
+	// simulated must not depend on it).
+	static void SetWorkersForNewSimulations( uint32_t workers );
+
 private:
 	struct SnapComponent
 	{
@@ -403,6 +414,7 @@ private:
 	StepProfile m_profile;
 	flecs::world m_world;
 	std::unique_ptr<PhysicsArena> m_arena;
+	std::unique_ptr<PhysicsTasks> m_tasks;
 	b3WorldId m_physicsWorld = {};
 
 	std::vector<SnapComponent> m_snapComponents;

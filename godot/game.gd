@@ -144,6 +144,9 @@ func _ready() -> void:
 	# work with many players and latency, and what others do is seen up to N ticks later.
 	if args.has("reconcile-every") and peer != null:
 		peer.reconcile_every = int(args["reconcile-every"])
+	# --physics-threads=N: the physics runs on N more threads (what is simulated stays the same).
+	if args.has("physics-threads") and peer != null:
+		peer.physics_threads = int(args["physics-threads"])
 	autoplay = float(args.get("autoplay", "0"))
 	# --view-probe: the unattended player goes into first person and walks and turns by a plan, and
 	# the run reports how far its hand moved on the screen in each part (it should stand still).

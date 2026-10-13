@@ -874,6 +874,67 @@ void TestRollbackReset()
 	CHECK( session.Sim().ComputeHash() == reference.back() );
 }
 
+// The physics on several threads: what is simulated must not depend on how many workers a world has
+// or on how many threads run them, and a snapshot taken between threaded steps must restore.
+void TestPhysicsThreads()
+{
+	test::ScenarioOptions opt;
+	opt.initialPlayers = 24;
+	opt.maxPlayers = 32;
+	opt.ticks = 900;
+	auto frames = test::MakeScenario( opt );
+	SimConfig config = TestConfig();
+
+	auto run = [&]( uint32_t workers, int threads ) {
+		Simulation::SetWorkersForNewSimulations( workers );
+		PhysicsThreads::Start( threads );
+		Simulation sim( config );
+		sim.SetPhysicsThreaded( threads > 0 );
+		std::vector<uint64_t> hashes;
+		Snapshot snap;
+		for ( const InputFrame& f : frames )
+		{
+			// Every so often: a few ticks on, back, and the same ticks again.
+			if ( f.tick % 97 == 50 && f.tick + 5 < frames.size() )
+			{
+				sim.Save( snap );
+				for ( uint32_t k = 0; k < 5; ++k )
+				{
+					sim.Step( frames[f.tick + k] );
+				}
+				sim.Load( snap );
+			}
+			sim.Step( f );
+			hashes.push_back( sim.ComputeHash() );
+		}
+		return hashes;
+	};
+
+	auto reference = run( 1, 0 );
+	struct Case
+	{
+		uint32_t workers;
+		int threads;
+	};
+	for ( Case c : { Case{ kPhysicsWorkers, 0 }, Case{ kPhysicsWorkers, 3 }, Case{ 2, 1 }, Case{ 8, 3 }, Case{ 8, 7 }, Case{ kPhysicsWorkers, 3 } } )
+	{
+		auto hashes = run( c.workers, c.threads );
+		size_t first = 0;
+		while ( first < hashes.size() && hashes[first] == reference[first] )
+		{
+			++first;
+		}
+		std::printf( "    %u workers on %d threads: %s\n", c.workers, c.threads + 1, first == hashes.size() ? "the same" : "DIFFERENT" );
+		if ( first != hashes.size() )
+		{
+			std::printf( "    first difference at tick %zu\n", first );
+		}
+		CHECK( first == hashes.size() );
+	}
+	Simulation::SetWorkersForNewSimulations( kPhysicsWorkers );
+	PhysicsThreads::Start( 0 );
+}
+
 void TestStress()
 {
 	// 64 players, lots of props: timing report for the rollback budget.
@@ -919,6 +980,23 @@ void TestStress()
 				 stepMs / n, maxStepMs, saveMs / n, loadMs / 20.0, ( snap.ecs.size() + snap.physics.size() ) / 1024 );
 	std::printf( "    worst-case 8-tick rollback ~ %.2f ms\n", 8.0 * ( stepMs / n + saveMs / n ) + loadMs / 20.0 );
 	CHECK( props > 0 );
+
+	// The same steps with the physics on four threads: the physics part of a step, side by side.
+	for ( int threads : { 0, 3 } )
+	{
+		PhysicsThreads::Start( threads );
+		Simulation other( config );
+		other.SetPhysicsThreaded( threads > 0 );
+		for ( const InputFrame& f : frames )
+		{
+			other.Step( f );
+		}
+		const Simulation::StepProfile& sp = other.Profile();
+		std::printf( "    physics on %d threads: %.3f ms a step (collide %.3f, solve %.3f)%s\n", threads + 1,
+					 double( sp.physicsNs ) / 1e6 / n, sp.collideMs / n, sp.solveMs / n, other.ComputeHash() == sim.ComputeHash() ? "" : " DIFFERENT" );
+		CHECK( other.ComputeHash() == sim.ComputeHash() );
+	}
+	PhysicsThreads::Start( 0 );
 }
 
 void TestGameplaySanity()
@@ -6297,6 +6375,7 @@ int main( int argc, char** argv )
 		{ "anim_lead", TestAnimLead },
 		{ "ual_mannequin", TestUalMannequin },
 		{ "anim_pipeline", TestAnimPipeline },
+		{ "physics_threads", TestPhysicsThreads },
 		{ "stress", TestStress },
 	};
 

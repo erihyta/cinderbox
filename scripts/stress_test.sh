@@ -4,6 +4,7 @@
 #   scripts/stress_test.sh [--preset NAME] [--bots N] [--full M] [--duration SEC] [--latency MS]
 #                          [--jitter MS] [--loss PERCENT] [--rollback TICKS] [--port N] [--record FILE]
 #                          [--chaotic 1] [--reconcile-every TICKS] [--spin 1]
+#                          [--physics-threads N] [--server-physics-threads N]
 #
 # Works in Git Bash on Windows and on Linux/macOS. Exit code is cb_bot's (0 = everyone playing,
 # no desyncs) or 3 if the recorded replay does not verify.
@@ -23,6 +24,8 @@ record=""
 chaotic=""
 reconcile=""
 spin=""
+threads=""
+server_threads=""
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -39,6 +42,8 @@ while [[ $# -gt 0 ]]; do
 		--chaotic) chaotic="$2" ;;
 		--reconcile-every) reconcile="$2" ;;
 		--spin) spin="$2" ;;
+		--physics-threads) threads="$2" ;;
+		--server-physics-threads) server_threads="$2" ;;
 		*) echo "unknown option $1"; exit 1 ;;
 	esac
 	shift 2
@@ -58,6 +63,7 @@ server_log="$work/server.log"
 
 server_args=(--port "$port")
 [[ -n "$record" ]] && server_args+=(--record "$record")
+[[ -n "$server_threads" ]] && server_args+=(--physics-threads "$server_threads")
 "$bin/cb_server$ext" "${server_args[@]}" > "$server_log" 2>&1 &
 server_pid=$!
 
@@ -83,6 +89,7 @@ bot_args=(--port "$bot_port" --count "$bots" --full "$full" --duration "$duratio
 [[ -n "$chaotic" ]] && bot_args+=(--chaotic)
 [[ -n "$reconcile" ]] && bot_args+=(--reconcile-every "$reconcile")
 [[ -n "$spin" ]] && bot_args+=(--spin)
+[[ -n "$threads" ]] && bot_args+=(--physics-threads "$threads")
 echo "== $bots bots ($full full), ${latency}+${jitter} ms each way, ${loss}% loss, rollback window ${rollback:-auto}, ${duration}s"
 "$bin/cb_bot$ext" "${bot_args[@]}"
 code=$?

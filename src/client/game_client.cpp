@@ -319,6 +319,7 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 			m_session = std::make_unique<RollbackSession>( msg.config, msg.slot, m_options.minRollbackTicks,
 														   m_options.maxRollbackTicks, map );
 			m_session->SetReconcileEvery( m_options.reconcileEveryTicks );
+			m_session->Sim().SetPhysicsThreaded( m_options.physicsThreaded );
 		}
 		m_session->Sim().SetAnimGraph( graph );
 		std::string packWarnings;

@@ -8,8 +8,10 @@
 // Rules:
 // - Wrap every Box3D call in a PhysicsArena::Scope for the owning world.
 // - The arena never moves, so pointers inside it stay valid across restores.
-// - Physics must be single-threaded (worker count 1).
+// - A step's tasks may run on other threads (physics_threads.h), each inside a Scope for its world;
+//   they allocate, so Allocate and Free lock. Everything else is the stepping thread's alone.
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -63,6 +65,7 @@ private:
 	uint8_t* m_base = nullptr;
 	size_t m_capacity = 0;
 	size_t m_committed = 0;
+	std::atomic_flag m_lock = ATOMIC_FLAG_INIT; // held for an allocation or a free: a few instructions
 };
 
 } // namespace cb

@@ -225,6 +225,7 @@ bool GameServer::Start( const ServerOptions& options )
 	m_mapHash = MapHash( m_mapBytes.data(), m_mapBytes.size() );
 
 	m_sim = std::make_unique<Simulation>( m_options.config, m_map );
+	m_sim->SetPhysicsThreaded( m_options.physicsThreaded );
 	m_sim->SetAnimGraph( m_animGraph );
 	m_sim->SetAnimPacks( m_animPacks );
 	m_sim->SetMotions( m_motions );

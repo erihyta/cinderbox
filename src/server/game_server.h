@@ -32,6 +32,8 @@ struct ServerOptions
 	SimConfig config;
 	uint32_t maxClients = kMaxPlayers;
 	uint32_t checksumInterval = 30; // ticks
+	// The physics step's tasks go to the process's physics threads (PhysicsThreads::Start).
+	bool physicsThreaded = false;
 	double reconnectGraceSeconds = 10.0;
 	double resyncCooldownSeconds = 2.0;
 	bool verbose = true;

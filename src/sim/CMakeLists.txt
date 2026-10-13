@@ -22,6 +22,7 @@ add_library(cb_sim STATIC
 	fingerprint.cpp
 	mover.cpp
 	physics_arena.cpp
+	physics_threads.cpp
 	rollback.cpp
 	simulation.cpp
 )
