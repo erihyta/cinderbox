@@ -112,7 +112,7 @@ Boots         CbItem     kind "dash.boots"   properties { inventory.start: 1 }  
 | When | `when` | **On a press**: once, when `action` goes down (a dash). **While**: every tick its `conditions` hold (flight, a glide, a jetpack). **On a cue**: once, when the mod event `event` is recorded at the player (a stun a server mod starts) |
 | | `action` | On a press: one a server mod declares (`dash`), or the engine's `jump` / `sprint`. Held, it is one press |
 | | `event` | On a cue: the event. A server mod emits it at the player, so the start is the server's and comes with the frame; from then on every simulation runs the motion |
-| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held or `carried.<kind>`, a stance), whether a key is down (`held.jump`, `held.dash`) or went down this tick (`pressed.dash`), `linked` (a probe of the player's is out) and `link_distance` (metres from the player's chest to the point its probe holds; 0 with none) |
+| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held or `carried.<kind>`, a stance, another motion being on: `motion.<name>`), whether a key is down (`held.jump`, `held.dash`) or went down this tick (`pressed.dash`), `linked` (a probe of the player's is out) and `link_distance` (metres from the player's chest to the point its probe holds; 0 with none) |
 | | `cooldown` | seconds between two uses; for a While, between its end and its next start |
 | Uses | `uses` | how many before a refill; 0: no limit. Not for a While |
 | | `refill`, `refill_seconds` | **On the ground**: back when the player stands. **After seconds**: back that long after the last use |
@@ -352,6 +352,23 @@ Moves     CbMotionSet   set_name "flight.moves"             (motion_sets/flight_
 - **`move_frame`** and **`air_friction`** are [movement parameters](server-mods.md#movement-parameters) made for this: the first turns the movement input toward where the camera looks, the second is what stops a body in the air.
 - **The gauge is predicted**: the fuel is a field the motions count themselves, so the HUD's bar (`CbFieldBinding` on `flight.fuel`) moves as you thrust.
 - **A While says so every tick**: between two ticks nothing of it is on, so `ctx.Move` in a server mod reads the parameters without it.
+
+## The body of a motion
+
+Two things a state machine (the character's own, or an item's pack) can take a transition on:
+
+| | What | For |
+|---|---|---|
+| The motion's event (`emits`) | one moment: the tick it starts | a pose that ends by itself (a dash: a state with a timed way out) |
+| `motion.<name>` | true for as long as the motion is on | a pose that lasts as long as it does (hanging on a line, flying): in, on `motion.Hook`; out, on `not motion.Hook` |
+
+- **The name**: the node's alone (`motion.Hook`) when no other motion of the server has it, else the
+  set's and the node's (`motion.grapple.moves.Hook`; an item's set is named like its kind:
+  `motion.dash.boots.Dash`). One that is not found reads as 0 and is said when the server starts.
+- **A state machine reads it as this tick's motions left it**, so the pose starts on the tick the
+  motion does. **A motion's own condition reads it as the tick found it**, like the fields.
+- **Looks read it too** (a reaction's or a HUD node's condition), of the player they are about.
+- **The first 64 motions** of a server can be asked for.
 
 ## The look of a motion
 

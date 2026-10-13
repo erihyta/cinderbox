@@ -38,7 +38,7 @@ the schema and run by every simulation, so a player's own are predicted and roll
 | | Today (M118) | Still to come |
 |---|---|---|
 | When | on a press, while conditions hold, on a mod event at the player (one a server mod's command or another motion recorded this tick) | on a clip's marker: its event is recorded after the tick's motions ran, and none hears it |
-| Conditions | what a state machine reads (an item kind in the hand, or `carried.<kind>`), `held.<action>`, `pressed.<action>`, `linked`, `link_distance` | `motion.<name>` |
+| Conditions | what a state machine reads (an item kind in the hand, or `carried.<kind>`; `motion.<name>`), `held.<action>`, `pressed.<action>`, `linked`, `link_distance` | |
 | Does | parameters while it is on; changes of fields; an event; and its parts: a probe, impulses, forces (acceleration, newtons, toward a speed; ramped; reacting), links, a launch (an item of a kind thrown into the world: a grenade) | a lasting force as a C++ command; a test of one player hooked to another; [what is left of launches](#3-motions-and-the-body) |
 | On whom | the player, what the probe found, the entity a field names | |
 | Weight | `mass`, a movement parameter: contacts, forces and ropes share by it | a knocked-down ragdoll state; carrying a player; structures that break |
@@ -110,7 +110,7 @@ What a weapon does today, and a motion would do the same way:
 | # | Piece | What | Why this way |
 |---|---|---|---|
 | 1 | A motion in an item's scene | **done (M142)**: a `CbMotion` under a `CbItem` is baked with the item and runs for who has it, in the hand or carried (`carried.<kind>`); a mod that takes its items from its look gets them. The dash is the boots' motion | |
-| 2 | `motion.<name>` | in state machine conditions and in other motions': a pose for as long as a motion is on (hanging on a line, flying) | an event is one moment; a motion cannot change a field back when it ends |
+| 2 | `motion.<name>` | **done (M143)**: in state machine conditions, in other motions' and in looks': true while that motion of the player's is on | |
 | 3 | Keys from the scene | an action a `CbMotion` names and no mod declares is declared by the look, with the key it suggests; a page in the settings rebinds every action (moved here from step 5) | an item with no code needs a key of its own, and players choose their keys |
 | 4 | The dash and the grapple, as items | both converted, with poses in their packs: the proof of 1 to 3 | |
 | 5 | Thrown from the hand | a launch can throw *the item in the hand*, from its socket, on a marker of the pack's throw clip (so a motion hears a marker's event) | replaces three rows: from the hand, the throw's pose, ammunition (what is thrown is what was held; a count is step 4's stacks) |

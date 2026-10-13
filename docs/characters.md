@@ -240,6 +240,7 @@ Conditions and expressions read simulation values, never scripts:
 | a board field's name (`inventory.slot`) | the player's value (or the global one) |
 | an item kind's name (`melee.bat`) | true while the player holds one, in any socket |
 | `carried.` and an item kind (`carried.dash.boots`) | true while the player has one, in the hand or put away |
+| `motion.` and a motion's name (`motion.Hook`, `motion.grapple.moves.Hook`) | true while that [motion](motions.md) of the player's is on: a pose for as long as a line holds, a flight lasts. The node's name alone when no other motion has it, else the set's and the node's. A server's first 64 motions can be asked for |
 
 The grammar is the [one expression language](looks.md#expressions) (`and or not`, comparisons, arithmetic,
 `?name`, parentheses). A name no mod declares reads as 0 (the server logs it). The bake fails with a reason for anything it cannot run (nested
