@@ -9,7 +9,7 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 |---|---|---|
 | 1 | [The SDK knows the server](#1-the-sdk-knows-the-server) | the editor knows the server's names: completed while typing, checked at publish |
 | 2 | [Mod testing](#2-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
-| 3 | [Motions and the body](#3-motions-and-the-body) | the body follows a motion; a preview; what is left of launches |
+| 3 | [Motions and the body](#3-motions-and-the-body) | an item brings its motions, its keys and its poses: the dash and the grapple as items; what is left of launches |
 | 4 | [The inventory, finished](#4-the-inventory-finished) | drag, icons, stacks, chests, and intents a mod declares |
 | 5 | [The client, finished](#5-the-client-finished) | what is left of the client's known limits, typed text, the game script in parts |
 | 6 | [Rules without a relink](#6-rules-without-a-relink) | a server mod's rules as a script the server loads, not C++ compiled into it |
@@ -37,8 +37,8 @@ the schema and run by every simulation, so a player's own are predicted and roll
 
 | | Today (M118) | Still to come |
 |---|---|---|
-| When | on a press, while conditions hold, on a mod event at the player | |
-| Conditions | what a state machine reads, `held.<action>`, `pressed.<action>`, `linked`, `link_distance` | `motion.<name>` |
+| When | on a press, while conditions hold, on a mod event at the player (one a server mod's command or another motion recorded this tick) | on a clip's marker: its event is recorded after the tick's motions ran, and none hears it |
+| Conditions | what a state machine reads (an item kind **in the hand** among it), `held.<action>`, `pressed.<action>`, `linked`, `link_distance` | `motion.<name>`; an item kind *carried*, in the hand or not |
 | Does | parameters while it is on; changes of fields; an event; and its parts: a probe, impulses, forces (acceleration, newtons, toward a speed; ramped; reacting), links, a launch (an item of a kind thrown into the world: a grenade) | a lasting force as a C++ command; a test of one player hooked to another; [what is left of launches](#3-motions-and-the-body) |
 | On whom | the player, what the probe found, the entity a field names | |
 | Weight | `mass`, a movement parameter: contacts, forces and ropes share by it | a knocked-down ragdoll state; carrying a player; structures that break |
@@ -51,7 +51,7 @@ the schema and run by every simulation, so a player's own are predicted and roll
 |---|---|
 | Other players' presses are guessed by repeating their last input, so their dash is seen late and corrected | accept: it is what a jump does today, and the mirror fades the correction |
 | A field both a motion and a server mod write | allowed today (commands apply first, then motions); the bake could name the fields a set writes, and the server warn when a mod `Set`s one every tick |
-| A second jump that plays the jump's animation | the character's tree enters its jump state on the motion's event; a starter for it comes with step 3 |
+| A second jump that plays the jump's animation | works today: a motion's event is in the tick's events before the player's state machine runs, so a transition named like it is taken (as `item.use` is). The starter for it comes with step 3 |
 
 ### Routes not taken
 
@@ -92,18 +92,45 @@ One step from an edit to playing it: the client starts the server.
 
 ### 3. Motions and the body
 
-| Piece | What |
-|---|---|
-| The body follows | `motion.<name>` and a motion's event in state machine conditions; the viewer's lead covers them. The grapple and the dash get a pose |
-| Animation packs | a pack's layer can be asked for by a motion while it is on (a flight pose) |
-| Motion Preview | a panel like Cue Preview: a capsule on a small stage, press an action, set a field, watch the path |
-| Publish checks | a motion that reads a name nobody declares, or writes a field it may not, stops the publish |
-| Changes | a `min` / `max` on a change (a tank fills to a little over full today); an expression on its right side |
-| Launches: from the hand | a launch starts ahead of where the look starts; from a socket (`RightHand`), with a throw's pose, it leaves the hand |
-| Launches: a fuse | a mod sees what a thrown item ran into (`ctx.Hits`), not that its time is up: an event when a launched item expires, so a grenade can go off on a timer |
-| Launches: every hit | the simulation keeps the hardest 8 impacts of a tick; a soft touch in a busy scene may be missed. A launched item's own contacts, always |
-| Launches: fast and small | an item's body is an ordinary one: at rocket speeds a thin wall can be passed through. Continuous collision for launched kinds that ask |
-| Launches: ammunition | a motion's `uses` refill by time; throwing *the item in the hand* (a count that goes down) is a rule a mod writes with a field today |
+**The idea** (rethought after M141): the item is the unit. Its scene already holds its body, its
+animation pack, its reactions and its numbers (M136, M137); it gets its motions and its keys too.
+A dash or a grapple is then an item made in the editor, like a gun: carried, dropped, given by a
+server's rules, with its own poses.
+
+What a weapon does today, and a motion would do the same way:
+
+| | A weapon (today) | A dash or a grapple as an item |
+|---|---|---|
+| The animation comes from | the item's pack | the item's pack |
+| The cue is said by | the `gun` mod, on a shot | the `CbMotion`'s `emits` (works today) |
+| The body follows | a transition in the pack named like the cue | the same; a lasting pose on `motion.<name>` |
+| Effects and sound | `CbReaction` nodes in the item's scene | the same |
+| Only for who has it | reactions hear only the item in use (M136) | its motions run only for who has it |
+
+| # | Piece | What | Why this way |
+|---|---|---|---|
+| 1 | A motion in an item's scene | a `CbMotion` under a `CbItem` is baked with the item and runs only for a player who has it: in the hand, or carried (a property). A mod that takes its items from its look gets them too | today a motion set is named in C++ and is everyone's; "only with the item" is a condition typed by hand, and only for the hand |
+| 2 | `motion.<name>` | in state machine conditions and in other motions': a pose for as long as a motion is on (hanging on a line, flying) | an event is one moment; a motion cannot change a field back when it ends |
+| 3 | Keys from the scene | an action a `CbMotion` names and no mod declares is declared by the look, with the key it suggests; a page in the settings rebinds every action (moved here from step 5) | an item with no code needs a key of its own, and players choose their keys |
+| 4 | The dash and the grapple, as items | both converted, with poses in their packs: the proof of 1 to 3 | |
+| 5 | Thrown from the hand | a launch can throw *the item in the hand*, from its socket, on a marker of the pack's throw clip (so a motion hears a marker's event) | replaces three rows: from the hand, the throw's pose, ammunition (what is thrown is what was held; a count is step 4's stacks) |
+| 6 | An item's time is up | an event when an item with a lifetime ends, launched or not: a grenade goes off on a timer | a mod sees what a thrown item ran into (`ctx.Hits`), not that its time is up |
+| 7 | Changes | a `min` / `max` on a change (a tank fills to a little over full today); an expression on its right side | |
+| 8 | Publish checks | a motion that reads a name nobody declares, or writes a field it may not, stops the publish | |
+| 9 | Launches: every hit | the simulation keeps the hardest 8 impacts of a tick; a soft touch in a busy scene may be missed. A launched item's own contacts, always | |
+| 10 | Launches: fast and small | at rocket speeds a thin wall can be passed through. Continuous collision for launched kinds that ask | |
+| 11 | Motion Preview | a panel like the item preview: a capsule on a small stage, press an action, watch the path | last: **Test mod** (M125) is one button from an edit to playing it |
+
+- **Dropped: a pack asked for by a motion.** A motion that needs animations of its own is an item, and
+  an item brings its pack. For the case that is left (a motion with no item on a character that knows
+  nothing of it) a mod's `SwapLayer` does it today.
+- **Not a route: reactions that give out cues.** A `CbReaction` runs in the game only; the body's
+  animation is simulation state the server poses for hit tests. The node that gives out a cue the
+  simulation hears is the `CbMotion`.
+- **Motions with no item stay**: flight, a double jump, a crouch are a mod's set for everyone, and
+  the character's own state machine reads `motion.<name>`.
+- **Poses need clips**: the dash's and the grapple's are authored in Godot; licensed ones stay out of
+  the repository, as the rifle's do.
 
 ### 4. The inventory, finished
 
@@ -125,7 +152,6 @@ One step from an edit to playing it: the client starts the server.
 | A wrong guess is taken back | a reaction played on a prediction the server never answers stays played | a prediction that expires stops what it started |
 | A swing seen from its start | behind latency another player's swing is first seen a little way in, and keys before that point do not fire | the skipped keys fire on the first frame it is seen |
 | Text nobody authored | player names only | chat, a team name, a message of the day (the parked `m101-text` branch has the mechanism) |
-| Key rebinding | keys are the ones mods suggest | a page in the settings: the server's actions, the HUD's keys, the engine's own |
 | A server list | join by address | recent and favourite servers with their mods and players |
 | Checked pack layers | a pack's layer may read what the lead cannot predict | the bake says so |
 | The game script | `game.gd` is nearly 1,000 lines: input, the camera, the unattended run, the view probe | scripts of their own, all still in Godot |
@@ -166,3 +192,7 @@ Independent of the path; each is small.
 | Tools on every platform | the publish, pack and SDK scripts are PowerShell |
 | A motion's field and a mod's | both may write one (commands first, then motions); the server could warn when a mod sets every tick a field a motion writes |
 | The old `build/` folder in the checkout | builds go outside the source tree now; the folder is ignored and can be deleted |
+| `reconcile_every` 2 as the default | halves a client's rollback work with many players and latency (M139); others are seen up to 2 ticks later: to be looked at in play first |
+| The characters' part of a step | as much as the physics at 64 players (0.4 ms, M140) and not yet looked into |
+| Physics threads beside drawing | on by default (M141), not yet watched in the game: `--physics-threads=0` if frames suffer |
+| Timing checks in the network tests | `net_lossy_session` and `net_flight` fail now and then when every test runs side by side on a slow machine (M141) |
