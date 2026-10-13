@@ -231,6 +231,21 @@ void Transport::Send( PeerId peer, uint8_t channel, const std::vector<uint8_t>& 
 	}
 }
 
+void Transport::SendUnordered( PeerId peer, uint8_t channel, const std::vector<uint8_t>& data )
+{
+	ENetPeer* p = m_impl->Find( peer );
+	if ( p == nullptr || p->state != ENET_PEER_STATE_CONNECTED )
+	{
+		return;
+	}
+	// (A packet too large for one datagram goes as in-order fragments: the flag is for whole ones.)
+	ENetPacket* packet = enet_packet_create( data.data(), data.size(), ENET_PACKET_FLAG_UNSEQUENCED | ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT );
+	if ( enet_peer_send( p, channel, packet ) != 0 )
+	{
+		enet_packet_destroy( packet );
+	}
+}
+
 void Transport::Flush()
 {
 	if ( m_impl->host != nullptr )

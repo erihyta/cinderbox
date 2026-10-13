@@ -568,7 +568,13 @@ void TestLossySession()
 		{
 			std::printf( " %u", b.client->GetStats().rollbackWindow );
 		}
-		std::printf( "\n" );
+		std::printf( "; stalled" );
+		for ( Bot& b : h.bots )
+		{
+			std::printf( " %.2fs (%llu of %llu batches no use)", b.client->GetStats().stalledSeconds,
+						 (unsigned long long)b.client->GetStats().batchesIgnored, (unsigned long long)b.client->GetStats().batchesReceived );
+		}
+		std::printf( "; frames sent again %llu\n", (unsigned long long)h.server.GetStats().framesResent );
 		CHECK( kTimingChecks == false || late * 50 < expected ); // under 2%
 
 		auto ps = h.proxy->GetStats();

@@ -181,6 +181,7 @@ private:
 	void Advance( double now, const InputSampler& sampleInput );
 	void OnServerTick( uint32_t tickAfter, double now );
 	void HandleFrameBatch( ByteReader& r, double now );
+	bool UseFrameBatch( uint32_t firstTick, uint32_t count, const uint8_t* body, size_t size );
 	void UpdateRollbackWindow( double rttTicks, double frameDt );
 	uint32_t AckTick() const;
 	void SendInputs();
@@ -198,6 +199,15 @@ private:
 	};
 	std::vector<KnownInputs> m_knownInputs;
 	std::vector<InputFrame> m_batchScratch;
+	// Batches that begin after the frames we have: packets overtake one another, and since a batch
+	// no longer starts at our acknowledgement, the one that fills the hole may be the next to come.
+	struct WaitingBatch
+	{
+		uint32_t firstTick = 0;
+		uint32_t count = 0;
+		std::vector<uint8_t> body;
+	};
+	std::vector<WaitingBatch> m_waitingBatches;
 	uint32_t m_liteConfirmed = 0;
 	double m_windowShrinkTimer = 0.0;
 	std::unique_ptr<RollbackSession> m_session;

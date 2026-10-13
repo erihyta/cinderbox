@@ -435,6 +435,12 @@ void GameServer::Update( double now )
 		m_nextTickTime += dt;
 		++ran;
 	}
+	if ( ran > 0 )
+	{
+		// Once for all the ticks of this update, not once a tick: packets sent in one go leave in
+		// one datagram, and are lost together. A frame's three packets have to be three datagrams.
+		SendFrames( now );
+	}
 	if ( now - m_nextTickTime > 0.25 )
 	{
 		Log( "running %.0f ms behind, skipping ahead", ( now - m_nextTickTime ) * 1000.0 );
@@ -714,7 +720,6 @@ void GameServer::RunTick( double now )
 
 	m_history[tick % kFrameHistory] = frame;
 	m_lastInputs = frame.inputs;
-	SendFrames( now );
 	m_replay.AddFrame( frame );
 	RecordView( frame );
 
@@ -976,17 +981,21 @@ void GameServer::SendFrames( double now )
 			continue;
 		}
 
-		// Where this packet starts. Usually a few frames back from the newest (kFrameRepeats: each
-		// frame is in that many packets). From the oldest unacknowledged one when that has been out
-		// for longer than an answer takes: it, or what followed it, was lost.
-		const uint32_t kFrameRepeats = 3;
+		// Where this packet starts. Usually where the packet two before it began its new frames:
+		// each frame is in three packets, so two lost in a row cost nothing. Counted in packets,
+		// and one packet an update: a server that steps several ticks in one update (a hitch) sends
+		// them in one packet. (M138 counted ticks and sent a packet a tick: those packets left in
+		// one datagram and were lost together, and a client waited for the resend below far more
+		// often than three losses in a row would have it.) From the oldest unacknowledged frame when
+		// that has been out for longer than an answer takes: it, or what followed it, was lost.
 		uint32_t first = c.ackTick;
 		bool waited = c.ackTick < c.sentThrough && now - c.frameSentAt[c.ackTick % 256] > std::max( 0.06, c.roundTrip * 1.5 + 0.03 );
 		if ( waited == false && c.sentThrough > c.ackTick )
 		{
-			uint32_t tail = newest + 1 >= kFrameRepeats ? newest + 1 - kFrameRepeats : 0;
-			first = std::max( c.ackTick, std::min( tail, c.sentThrough ) );
+			first = std::max( c.ackTick, std::min( c.sentBefore[1], c.sentThrough ) );
 		}
+		c.sentBefore[1] = c.sentBefore[0];
+		c.sentBefore[0] = c.sentThrough;
 		if ( waited )
 		{
 			m_stats.framesResent += newest + 1 - first;
@@ -1026,7 +1035,9 @@ void GameServer::SendFrames( double now )
 			hit = &cache.back();
 			EncodeFrameBatch( base, frames.data(), frames.size(), hit->bytes );
 		}
-		m_transport.Send( c.peer, ChannelInput, hit->bytes, false );
+		// Out of order is fine, dropped for being overtaken is not: a packet holds frames the next
+		// one may not (it starts later), and the client keeps one it cannot use yet.
+		m_transport.SendUnordered( c.peer, ChannelInput, hit->bytes );
 		m_stats.batchesSent += 1;
 		m_stats.framesSent += hit->frames;
 	}

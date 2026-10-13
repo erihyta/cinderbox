@@ -57,6 +57,9 @@ public:
 	void Poll( std::vector<NetEvent>& events );
 
 	void Send( PeerId peer, uint8_t channel, const std::vector<uint8_t>& data, bool reliable );
+	// Unreliable, and delivered even when a packet sent after it arrived first (Send drops such a
+	// one: an unreliable channel is in order). For packets that each carry something of their own.
+	void SendUnordered( PeerId peer, uint8_t channel, const std::vector<uint8_t>& data );
 	void Flush();
 
 	// Graceful disconnect (the peer gets a Disconnected event).
