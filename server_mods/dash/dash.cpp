@@ -1,10 +1,14 @@
 // Dashing, and a second jump in the air: the example of motions (sim/motions.h).
 //
 // What a dash is (a burst of speed along where you walk, a moment without friction) and what a
-// double jump is are not in this file: they are CbMotion nodes in the mod's client project
-// (server_mods/dash/client/motion_sets/dash_moves.tscn), baked to motions/dash.moves.cfg and run by
+// double jump is are not in this file: they are CbMotion nodes in the mod's client project, run by
 // every simulation from the player's own input. So a dash starts on the tick of the press on the
 // player's own screen, with no round trip, and this mod never sees the key.
+//   - The dash is an item's: the boots (client/prefabs/boots.tscn, kind dash.boots) carry the
+//     motion, and only who has them dashes. The item is taken from the scene (ItemsOfLook); the
+//     inventory mod gives every life a pair ("inventory.start" on the scene).
+//   - The double jump is everyone's: client/motion_sets/dash_moves.tscn, baked to
+//     motions/dash.moves.cfg.
 //
 // This file is the rules: the names the motions use, and how many dashes a player has. The dash
 // motion asks "dash.charges > 0" and takes one; the mod gives them back, one at a time.
@@ -42,6 +46,8 @@ public:
 		m_started = declare.Event( "dash.started" );
 		m_doubleJump = declare.Event( "dash.double_jump" );
 		m_moves = declare.Motions( "dash.moves" );
+		// The boots, and the dash they bring: all of it is their scene's.
+		declare.ItemsOfLook();
 	}
 
 	void Start( Context& ctx ) override

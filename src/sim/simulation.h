@@ -445,6 +445,7 @@ private:
 	std::vector<ImpactRecord> m_impactScratch;
 	std::vector<int> m_markerScratch;
 	std::vector<std::pair<uint32_t, uint16_t>> m_heldScratch; // holder NetId, item kind
+	std::vector<std::pair<uint32_t, uint16_t>> m_carriedScratch; // the same, with what is put away
 
 	std::shared_ptr<const AnimGraph> m_animGraph;
 	std::vector<std::shared_ptr<const AnimGraph>> m_animPacks;

@@ -94,13 +94,24 @@ public:
 		REFILL_ON_GROUND = 0,
 		REFILL_AFTER_SECONDS = 1,
 	};
+	// Under a CbItem: who the motion is for.
+	enum With
+	{
+		WITH_IN_HAND = 0, // whoever has the item out
+		WITH_CARRIED = 1, // whoever has it, in the hand or put away
+	};
 
 	std::string Bake( godot::String& error ) const override;
+	// The same with one more condition (an item's motion: only for who has the item).
+	std::string BakeWith( godot::String& error, const godot::String& alsoIf ) const;
+	// For an item's motion: the condition that says who has the item of `kind`.
+	godot::String ItemCondition( const godot::String& kind ) const;
 
 	CB_MOTION_FIELD( int, when, m_when )
 	CB_MOTION_FIELD( godot::String, action, m_action )
 	CB_MOTION_FIELD( godot::String, event, m_event )
 	CB_MOTION_FIELD( godot::PackedStringArray, conditions, m_conditions )
+	CB_MOTION_FIELD( int, with_item, m_withItem )
 	CB_MOTION_FIELD( double, cooldown, m_cooldown )
 	CB_MOTION_FIELD( int, uses, m_uses )
 	CB_MOTION_FIELD( int, refill, m_refill )
@@ -120,6 +131,7 @@ private:
 	godot::String m_action;
 	godot::String m_event;
 	godot::PackedStringArray m_conditions;
+	int m_withItem = WITH_IN_HAND;
 	double m_cooldown = 0.0;
 	int m_uses = 0;
 	int m_refill = REFILL_ON_GROUND;

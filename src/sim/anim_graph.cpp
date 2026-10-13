@@ -125,6 +125,17 @@ private:
 				return;
 			}
 		}
+		if ( name.rfind( "carried.", 0 ) == 0 )
+		{
+			int kind = m_schema.FindItemKind( name.substr( 8 ) );
+			step.kind = kind >= 0 && kind < 256 ? AnimExpr::VarKind::CarriedKind : AnimExpr::VarKind::Zero;
+			step.index = uint8_t( kind >= 0 && kind < 256 ? kind : 0 );
+			if ( step.kind == AnimExpr::VarKind::Zero && m_warnings.find( "'" + name + "'" ) == std::string::npos )
+			{
+				m_warnings += "'" + name + "': no mod declares the item kind (it reads as 0); ";
+			}
+			return;
+		}
 		if ( name.rfind( "held.", 0 ) == 0 || name.rfind( "pressed.", 0 ) == 0 )
 		{
 			const bool pressed = name[0] == 'p';
@@ -260,6 +271,15 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 			for ( uint32_t i = 0; in.heldKinds != nullptr && i < in.heldCount; ++i )
 			{
 				if ( in.heldKinds[i] == step.index )
+				{
+					return 1.0f;
+				}
+			}
+			return 0.0f;
+		case AnimExpr::VarKind::CarriedKind:
+			for ( uint32_t i = 0; in.carriedKinds != nullptr && i < in.carriedCount; ++i )
+			{
+				if ( in.carriedKinds[i] == step.index )
 				{
 					return 1.0f;
 				}

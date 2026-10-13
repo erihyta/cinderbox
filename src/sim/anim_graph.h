@@ -80,6 +80,9 @@ struct AnimExpr
 		// "pressed.dash", "pressed.jump": the action went down this tick. The same index; motions only.
 		PressedAction,
 		Zero,	  // an unknown name: reads as 0 (reported when the graph is compiled)
+		// "carried.gun.pistol": the player has an item of the kind, in the hand or put away (index:
+		// schema item kind). The kind's bare name asks for the hand alone.
+		CarriedKind,
 	};
 	enum Builtin : uint8_t
 	{
@@ -233,6 +236,9 @@ struct AnimGraphInputs
 	uint8_t pressedButtons = 0;
 	const uint16_t* heldKinds = nullptr;
 	uint32_t heldCount = 0;
+	// Kinds of everything the player has, the hand's among them ("carried.<kind>").
+	const uint16_t* carriedKinds = nullptr;
+	uint32_t carriedCount = 0;
 };
 
 float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& inputs, float stateTime );

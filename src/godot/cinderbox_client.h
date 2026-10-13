@@ -376,6 +376,7 @@ private:
 	// What every player holds, by item kind (refreshed every frame): an item kind's name is a
 	// condition, true while the player holds one ("pistol.gun"), as in the state machines.
 	std::unordered_map<uint32_t, std::vector<uint16_t>> m_heldKinds;
+	std::unordered_map<uint32_t, std::vector<uint16_t>> m_carriedKinds; // with what is put away
 	void RefreshHeldKinds();
 	bool Holds( uint32_t netId, uint16_t kind ) const;
 	// "{key:pickup}" -> the binding of the server's action; "{look:pickup.target}" -> what the entity

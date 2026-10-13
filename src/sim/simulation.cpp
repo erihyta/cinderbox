@@ -973,14 +973,19 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	StepSlots( frame );
 	// What everyone holds, for state machines that ask ("attack and melee.bat").
 	m_heldScratch.clear();
+	m_carriedScratch.clear();
 	if ( m_animGraph || m_motions )
 	{
 		for ( const EntityRef& r : m_entities )
 		{
 			flecs::entity e( m_world, r.entity );
-			if ( const HeldItem* item = e.try_get<HeldItem>(); item != nullptr && item->holder != 0 && item->stowed == 0 )
+			if ( const HeldItem* item = e.try_get<HeldItem>(); item != nullptr && item->holder != 0 )
 			{
-				m_heldScratch.push_back( { item->holder, item->kind } );
+				m_carriedScratch.push_back( { item->holder, item->kind } );
+				if ( item->stowed == 0 )
+				{
+					m_heldScratch.push_back( { item->holder, item->kind } );
+				}
 			}
 		}
 	}
@@ -1028,6 +1033,15 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			if ( holder == netId && heldCount < 16 )
 			{
 				held[heldCount++] = kind;
+			}
+		}
+		uint16_t carried[32];
+		uint32_t carriedCount = 0;
+		for ( const auto& [holder, kind] : m_carriedScratch )
+		{
+			if ( holder == netId && carriedCount < 32 )
+			{
+				carried[carriedCount++] = kind;
 			}
 		}
 
@@ -1079,6 +1093,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				values.netId = netId;
 				values.heldKinds = held;
 				values.heldCount = heldCount;
+				values.carriedKinds = carried;
+				values.carriedCount = carriedCount;
 
 				MotionInputs motionIn;
 				motionIn.input = &in;
@@ -1173,6 +1189,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			graphIn.netId = netId;
 			graphIn.heldKinds = held;
 			graphIn.heldCount = heldCount;
+			graphIn.carriedKinds = carried;
+			graphIn.carriedCount = carriedCount;
 			m_markerScratch.clear();
 			UpdateAnimGraph( anim, *m_animGraph, m_animPacks, graphIn, m_config.TimeStep(), m_markerScratch );
 			for ( int event : m_markerScratch )

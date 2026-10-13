@@ -244,6 +244,10 @@ void CinderboxClient::PushStates()
 			for ( size_t kind = 0; kind < schema.itemKinds.size(); ++kind )
 			{
 				state[String::utf8( schema.itemKinds[kind].c_str() )] = Holds( v.netId, uint16_t( kind ) );
+				// "carried.<kind>": it has one, in the hand or put away.
+				auto carried = m_carriedKinds.find( v.netId );
+				state[String::utf8( ( "carried." + schema.itemKinds[kind] ).c_str() )] =
+					carried != m_carriedKinds.end() && std::find( carried->second.begin(), carried->second.end(), uint16_t( kind ) ) != carried->second.end();
 			}
 		}
 		// An item: whether it is in a hand (not lying, not put away). What is inside its scene asks.

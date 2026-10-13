@@ -1165,10 +1165,10 @@ void TestInventory()
 				lyingBat = item != nullptr && item->holder == 0 && int( item->kind ) == batKind ? r.netId : lyingBat;
 			}
 		}
-		startsStowed |= tick > 80 && tick < 100 && inHand == 0 && c.carried == 4 && c.stowed == 4 && c.lying == 4; // a pistol, a bat, a rifle and a hook, and one of each lying about
+		startsStowed |= tick > 80 && tick < 100 && inHand == 0 && c.carried == 5 && c.stowed == 5 && c.lying == 5; // a pistol, a bat, a rifle, a hook and the dash boots, and one of each lying about
 		if ( tick > 130 && tick < 150 && kindOf( inHand ) == batKind )
 		{
-			batOut = c.carried == 4 && c.stowed == 3;
+			batOut = c.carried == 5 && c.stowed == 4;
 			ownBat = inHand;
 		}
 		// What is in each slot is the simulation's to say (the look reads it from there): the life's
@@ -1178,24 +1178,24 @@ void TestInventory()
 		boardSaysStart |= tick > 130 && tick < 150 && ownBat != 0 && in3 == ownBat && kindOf( in2 ) == gunKind;
 		boardSaysSwap |= reached && tick < 600 && in3 == lyingBat && kindOf( in2 ) == gunKind;
 		boardSaysEmpty |= tick > 700 && in3 == 0 && kindOf( in2 ) == gunKind;
-		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == 4 && c.stowed == 3;
-		droppedBySwitching |= tick > 100 && tick < 200 && c.lying != 4;
+		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == 5 && c.stowed == 4;
+		droppedBySwitching |= tick > 100 && tick < 200 && c.lying != 5;
 		// The lying bat is in the hand: the swap happened.
 		if ( inHand == lyingBat && lyingBat != 0 && tick < 520 )
 		{
 			reached = true;
 			const HeldItem* old = ownBat != 0 ? server.FindEntity( ownBat ).try_get<HeldItem>() : nullptr;
-			swapped |= old != nullptr && old->holder == 0 && c.lying == 4;
-			gunKept |= c.carried == 4 && c.stowed == 3;
+			swapped |= old != nullptr && old->holder == 0 && c.lying == 5;
+			gunKept |= c.carried == 5 && c.stowed == 4;
 		}
 		// The pistol's slot and back to the bat's: the picked-up bat is put away and taken out, never dropped.
 		const HeldItem* mine = lyingBat != 0 ? server.FindEntity( lyingBat ).try_get<HeldItem>() : nullptr;
 		awayAndKept |= tick > 545 && tick < 560 && kindOf( inHand ) == gunKind && mine != nullptr && mine->holder == me && mine->stowed != 0 &&
-					   c.lying == 4;
+					   c.lying == 5;
 		backInHand |= tick > 585 && tick < 600 && inHand == lyingBat && reached;
-		thrown |= tick > 610 && tick < 630 && inHand == 0 && c.carried == 3 && c.lying == 5;
+		thrown |= tick > 610 && tick < 630 && inHand == 0 && c.carried == 4 && c.lying == 6;
 		gunAfterThrow |= tick > 645 && tick < 660 && kindOf( inHand ) == gunKind;
-		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 3 && server.SelectedSlot( me ) == 1; // the bat's slot is selected, and empty
+		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 4 && server.SelectedSlot( me ) == 1; // the bat's slot is selected, and empty
 	} );
 	h.Report();
 	std::printf( "    starts stowed %d, bat out %d, pistol out %d, dropped by switching %d\n", int( startsStowed ), int( batOut ), int( gunOut ),
@@ -1212,7 +1212,7 @@ void TestInventory()
 	std::printf( "    the slots: at the start %d, after the swap %d, empty after the throw %d\n", int( boardSaysStart ),
 				 int( boardSaysSwap ), int( boardSaysEmpty ) );
 	CHECK( boardSaysStart && boardSaysSwap && boardSaysEmpty );
-	CHECK( startTotal == 12 && leastTotal == 12 && mostTotal == 12 ); // four lying, four per player; none made, none lost
+	CHECK( startTotal == 15 && leastTotal == 15 && mostTotal == 15 ); // four lying, four per player; none made, none lost
 	for ( Bot& b : h.bots )
 	{
 		CHECK( b.client->GetStats().desyncs == 0 );
@@ -1549,7 +1549,7 @@ void TestHeadshot()
 		else
 		{
 			diedAt = 0;
-			newLifeHasItems |= wasDead && carried == 4; // a pistol, a bat, a rifle and a hook
+			newLifeHasItems |= wasDead && carried == 5; // a pistol, a bat, a rifle, a hook and the dash boots
 		}
 		const SimGlobals& g = h.server.Sim().Globals();
 		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )

@@ -105,6 +105,7 @@ Variant CinderboxClient::get_local_field( const String& name ) const
 void CinderboxClient::RefreshHeldKinds()
 {
 	m_heldKinds.clear();
+	m_carriedKinds.clear();
 	if ( !m_mirror )
 	{
 		return;
@@ -115,6 +116,10 @@ void CinderboxClient::RefreshHeldKinds()
 		if ( v.kind == present::VisualKind::Item && v.holder != 0 && v.stowed == false )
 		{
 			m_heldKinds[v.holder].push_back( v.itemKind );
+		}
+		if ( v.kind == present::VisualKind::Item && v.holder != 0 )
+		{
+			m_carriedKinds[v.holder].push_back( v.itemKind );
 		}
 	} );
 }
