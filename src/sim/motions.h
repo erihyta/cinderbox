@@ -205,6 +205,17 @@ struct Motions
 bool CompileMotionSet( const std::string& set, const std::string& text, const ModSchema& schema, std::vector<Motion>& out,
 					   std::string& error, std::string& warnings );
 
+// The names of a schema's motions, in the order CompileMotions gives them ("dash.moves/Dash"): what
+// "motion.<name>" in a condition is looked up in.
+std::vector<std::string> MotionNames( const ModSchema& schema );
+// The place of the motion a condition names ("dash.moves.Dash", or "Dash" when one motion has that
+// node name). -1: none; -2: several have the node name.
+int FindMotionByName( const ModSchema& schema, const std::string& name );
+// True while MotionNames is at work (a condition compiled then is not to look a motion up).
+bool ListingMotionNames();
+// The motions of a player that are in effect at `tick`, a bit each (the first 64).
+uint64_t MotionsOnAt( const MotionState& state, uint32_t tick );
+
 // Every set of a schema. A set that does not compile is left out; motions past kMaxMotions too.
 // Null when there are none.
 std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::string& warnings );

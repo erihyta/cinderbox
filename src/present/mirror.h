@@ -61,6 +61,7 @@ struct Visual
 	// Players: a link that is out, as of the newest frame (present/frame.h).
 	bool linked = false;
 	bool linkHolds = false;
+	uint64_t motionsOn = 0; // the player's motions that are on, a bit each
 	uint16_t linkMotion = 0;
 	b3Vec3 linkEnd = {};
 };

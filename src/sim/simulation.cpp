@@ -1095,6 +1095,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				values.heldCount = heldCount;
 				values.carriedKinds = carried;
 				values.carriedCount = carriedCount;
+				// (As the tick found them: what was on when the last tick ended.)
+				values.motionsOn = m_globals.tick > 0 ? MotionsOnAt( motion, m_globals.tick - 1 ) : 0;
 
 				MotionInputs motionIn;
 				motionIn.input = &in;
@@ -1191,6 +1193,10 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			graphIn.heldCount = heldCount;
 			graphIn.carriedKinds = carried;
 			graphIn.carriedCount = carriedCount;
+			if ( m_motions && HasMotionState( e ) )
+			{
+				graphIn.motionsOn = MotionsOnAt( GetMotionState( e ), m_globals.tick );
+			}
 			m_markerScratch.clear();
 			UpdateAnimGraph( anim, *m_animGraph, m_animPacks, graphIn, m_config.TimeStep(), m_markerScratch );
 			for ( int event : m_markerScratch )
@@ -2923,6 +2929,13 @@ const Transform* Simulation::EntityTransform( uint32_t netId ) const
 {
 	flecs::entity e = FindEntity( netId );
 	return e.is_valid() ? e.try_get<Transform>() : nullptr;
+}
+
+uint64_t Simulation::EntityMotionsOn( uint32_t netId ) const
+{
+	flecs::entity e = FindEntity( netId );
+	// (The last tick simulated: the state is the one after it.)
+	return e.is_valid() && m_motions && HasMotionState( e ) && m_globals.tick > 0 ? MotionsOnAt( GetMotionState( e ), m_globals.tick - 1 ) : 0;
 }
 
 AnimStateCopy Simulation::EntityAnimState( uint32_t netId ) const

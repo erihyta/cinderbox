@@ -524,6 +524,77 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 	return true;
 }
 
+namespace
+{
+// Set while the motions are compiled only to list their names: a condition that asks for a motion
+// then reads nothing (the list is what it would be looked up in).
+thread_local bool t_listingMotions = false;
+} // namespace
+
+std::vector<std::string> MotionNames( const ModSchema& schema )
+{
+	std::vector<std::string> names;
+	if ( t_listingMotions )
+	{
+		return names;
+	}
+	t_listingMotions = true;
+	std::string ignored;
+	if ( std::shared_ptr<const Motions> motions = CompileMotions( schema, ignored ) )
+	{
+		for ( const Motion& m : motions->list )
+		{
+			names.push_back( m.name );
+		}
+	}
+	t_listingMotions = false;
+	return names;
+}
+
+int FindMotionByName( const ModSchema& schema, const std::string& name )
+{
+	if ( t_listingMotions )
+	{
+		return -1;
+	}
+	std::vector<std::string> names = MotionNames( schema );
+	int byNode = -1;
+	for ( size_t i = 0; i < names.size(); ++i )
+	{
+		size_t slash = names[i].find( '/' );
+		std::string set = names[i].substr( 0, slash );
+		std::string node = slash == std::string::npos ? std::string() : names[i].substr( slash + 1 );
+		if ( name == set + "." + node )
+		{
+			return int( i );
+		}
+		if ( name == node )
+		{
+			byNode = byNode == -1 ? int( i ) : -2;
+		}
+	}
+	return byNode;
+}
+
+bool ListingMotionNames()
+{
+	return t_listingMotions;
+}
+
+uint64_t MotionsOnAt( const MotionState& state, uint32_t tick )
+{
+	uint64_t on = 0;
+	for ( size_t i = 0; i < state.slots.size() && i < 64; ++i )
+	{
+		const MotionSlot& slot = state.slots[i];
+		if ( slot.lastTick != 0 && slot.sinceTick <= tick && tick < slot.untilTick )
+		{
+			on |= uint64_t( 1 ) << i;
+		}
+	}
+	return on;
+}
+
 std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::string& warnings )
 {
 	auto motions = std::make_shared<Motions>();

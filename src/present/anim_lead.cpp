@@ -61,6 +61,7 @@ AnimState LeadAnimState( const AnimState& shown, const AnimGraph& graph, const A
 	in.heldCount = uint32_t( lead.heldKinds.size() );
 	in.carriedKinds = lead.carriedKinds.data();
 	in.carriedCount = uint32_t( lead.carriedKinds.size() );
+	in.motionsOn = lead.motionsOn;
 
 	AnimState s = shown;
 	ModEventRecord events[kModEventHistory];

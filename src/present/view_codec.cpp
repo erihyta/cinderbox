@@ -77,8 +77,10 @@ struct EntityFixed
 	uint8_t slotIndex;
 	uint8_t slotCount;
 	uint16_t linkMotion;
+	uint32_t motionsOnLow; // the motions that are on, a bit each
+	uint32_t motionsOnHigh;
 };
-static_assert( sizeof( EntityFixed ) == 96, "EntityFixed has padding" );
+static_assert( sizeof( EntityFixed ) == 104, "EntityFixed has padding" );
 static_assert( sizeof( EntityFixed ) % 4 == 0 );
 
 // And what is as long as the server made it: its animation's layers, its fields.
@@ -139,6 +141,8 @@ EntityRecord ToRecord( const FrameEntity& f )
 	r.socket = f.socket;
 	r.linkMotion = f.linkMotion;
 	r.linkEnd = f.linkEnd;
+	r.motionsOnLow = uint32_t( f.motionsOn );
+	r.motionsOnHigh = uint32_t( f.motionsOn >> 32 );
 	r.slotIndex = f.slotIndex;
 	r.slotCount = f.slotCount;
 	r.socketPad = 0;
@@ -171,6 +175,7 @@ FrameEntity FromRecord( const EntityRecord& r )
 	f.socket = r.socket;
 	f.linkMotion = r.linkMotion;
 	f.linkEnd = r.linkEnd;
+	f.motionsOn = uint64_t( r.motionsOnLow ) | ( uint64_t( r.motionsOnHigh ) << 32 );
 	f.slotIndex = r.slotIndex;
 	f.slotCount = r.slotCount;
 	return f;

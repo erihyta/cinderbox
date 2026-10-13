@@ -2,6 +2,7 @@
 
 #include "events.h"
 #include "expr.h"
+#include "motions.h"
 
 #include <algorithm>
 #include <cctype>
@@ -124,6 +125,29 @@ private:
 				step.index = uint8_t( b );
 				return;
 			}
+		}
+		if ( name.rfind( "motion.", 0 ) == 0 )
+		{
+			step.kind = AnimExpr::VarKind::Zero;
+			if ( ListingMotionNames() )
+			{
+				return;
+			}
+			int motion = FindMotionByName( m_schema, name.substr( 7 ) );
+			if ( motion >= 0 && motion < 64 )
+			{
+				step.kind = AnimExpr::VarKind::MotionOn;
+				step.index = uint16_t( motion );
+			}
+			else if ( m_warnings.find( "'" + name + "'" ) == std::string::npos )
+			{
+				m_warnings += "'" + name + "': " +
+							  ( motion == -2	 ? "several motions have that node name: say the set too (motion.<set>.<node>)"
+								: motion >= 64 ? "only a server's first 64 motions can be asked for"
+											   : "no motion of that name" ) +
+							  " (it reads as 0); ";
+			}
+			return;
 		}
 		if ( name.rfind( "carried.", 0 ) == 0 )
 		{
@@ -276,6 +300,8 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 				}
 			}
 			return 0.0f;
+		case AnimExpr::VarKind::MotionOn:
+			return ( in.motionsOn >> step.index ) & 1 ? 1.0f : 0.0f;
 		case AnimExpr::VarKind::CarriedKind:
 			for ( uint32_t i = 0; in.carriedKinds != nullptr && i < in.carriedCount; ++i )
 			{

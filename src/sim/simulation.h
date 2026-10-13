@@ -227,6 +227,8 @@ public:
 	const Transform* EntityTransform( uint32_t netId ) const;
 	// A player's animation state, or null.
 	AnimStateCopy EntityAnimState( uint32_t netId ) const;
+	// A player's motions that are on, a bit each (the first 64 of the server's).
+	uint64_t EntityMotionsOn( uint32_t netId ) const;
 	bool HasAnimState( flecs::entity e ) const;
 	AnimState GetAnimState( flecs::entity e ) const;
 	// The entity's board value, or 0 when it has none.
