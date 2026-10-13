@@ -177,6 +177,7 @@ struct Summary
 	uint64_t resimulated = 0;
 	RollbackSession::Stats parts; // only its counters of time
 	Simulation::StepProfile profile;
+	Simulation::PhysicsCounts counts; // the last full bot's
 	double stalledSeconds = 0.0;
 	double playingSeconds = 0.0;
 	uint32_t windowSum = 0;
@@ -214,6 +215,18 @@ struct Summary
 		profile.charactersNs += o.profile.charactersNs;
 		profile.physicsNs += o.profile.physicsNs;
 		profile.afterNs += o.profile.afterNs;
+		profile.pairsMs += o.profile.pairsMs;
+		profile.collideMs += o.profile.collideMs;
+		profile.solveMs += o.profile.solveMs;
+		profile.constraintsMs += o.profile.constraintsMs;
+		profile.transformsMs += o.profile.transformsMs;
+		profile.refitMs += o.profile.refitMs;
+		profile.sleepMs += o.profile.sleepMs;
+		profile.sensorsMs += o.profile.sensorsMs;
+		if ( o.counts.bodies > 0 )
+		{
+			counts = o.counts;
+		}
 		stalledSeconds += o.stalledSeconds;
 		playingSeconds += o.playingSeconds;
 		windowSum += o.windowSum;
@@ -343,6 +356,15 @@ void RunWorker( Worker& w, Clock::time_point start, const std::atomic<bool>& sto
 						s.profile.charactersNs += sp.charactersNs;
 						s.profile.physicsNs += sp.physicsNs;
 						s.profile.afterNs += sp.afterNs;
+						s.profile.pairsMs += sp.pairsMs;
+						s.profile.collideMs += sp.collideMs;
+						s.profile.solveMs += sp.solveMs;
+						s.profile.constraintsMs += sp.constraintsMs;
+						s.profile.transformsMs += sp.transformsMs;
+						s.profile.refitMs += sp.refitMs;
+						s.profile.sleepMs += sp.sleepMs;
+						s.profile.sensorsMs += sp.sensorsMs;
+						s.counts = session->Sim().CountPhysics();
 					}
 					b.simMsSum = 0.0;
 					b.frames = 0;
@@ -549,6 +571,14 @@ int main( int argc, char** argv )
 				std::printf( "          of a step: commands %.3f ms | characters %.3f | physics %.3f | after %.3f\n",
 							 each( s.profile.commandsNs, previous.profile.commandsNs ), each( s.profile.charactersNs, previous.profile.charactersNs ),
 							 each( s.profile.physicsNs, previous.profile.physicsNs ), each( s.profile.afterNs, previous.profile.afterNs ) );
+				auto ms = [n]( double now, double before ) { return ( now - before ) / double( n ); };
+				std::printf( "          of the physics: pairs %.3f ms | collide %.3f | solve %.3f (constraints %.3f, transforms %.3f) | refit %.3f | sleep %.3f | sensors %.3f\n",
+							 ms( s.profile.pairsMs, previous.profile.pairsMs ), ms( s.profile.collideMs, previous.profile.collideMs ),
+							 ms( s.profile.solveMs, previous.profile.solveMs ), ms( s.profile.constraintsMs, previous.profile.constraintsMs ),
+							 ms( s.profile.transformsMs, previous.profile.transformsMs ), ms( s.profile.refitMs, previous.profile.refitMs ),
+							 ms( s.profile.sleepMs, previous.profile.sleepMs ), ms( s.profile.sensorsMs, previous.profile.sensorsMs ) );
+				std::printf( "          in the physics: %d bodies (%d awake), %d shapes, %d contacts (%d awake), %d joints, %d islands\n", s.counts.bodies,
+							 s.counts.awakeBodies, s.counts.shapes, s.counts.contacts, s.counts.awakeContacts, s.counts.joints, s.counts.islands );
 			}
 		}
 		std::fflush( stdout );
