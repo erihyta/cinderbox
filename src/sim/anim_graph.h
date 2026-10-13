@@ -83,6 +83,10 @@ struct AnimExpr
 		// "carried.gun.pistol": the player has an item of the kind, in the hand or put away (index:
 		// schema item kind). The kind's bare name asks for the hand alone.
 		CarriedKind,
+		// "motion.dash.boots.Dash", "motion.Dash": that motion of the player's is on (index: its
+		// place among the server's motions; the first 64 can be asked). The set's name and the
+		// node's, or the node's alone when no other motion has it.
+		MotionOn,
 	};
 	enum Builtin : uint8_t
 	{
@@ -236,6 +240,9 @@ struct AnimGraphInputs
 	uint8_t pressedButtons = 0;
 	const uint16_t* heldKinds = nullptr;
 	uint32_t heldCount = 0;
+	// The player's motions that are on, a bit each ("motion.<name>"): for a state machine as this
+	// tick's motions left them, for a motion's own conditions as the tick found them.
+	uint64_t motionsOn = 0;
 	// Kinds of everything the player has, the hand's among them ("carried.<kind>").
 	const uint16_t* carriedKinds = nullptr;
 	uint32_t carriedCount = 0;

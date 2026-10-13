@@ -106,6 +106,7 @@ void CinderboxClient::RefreshHeldKinds()
 {
 	m_heldKinds.clear();
 	m_carriedKinds.clear();
+	m_motionsOn.clear();
 	if ( !m_mirror )
 	{
 		return;
@@ -121,7 +122,39 @@ void CinderboxClient::RefreshHeldKinds()
 		{
 			m_carriedKinds[v.holder].push_back( v.itemKind );
 		}
+		if ( v.kind == present::VisualKind::Player && v.motionsOn != 0 )
+		{
+			m_motionsOn[v.netId] = v.motionsOn;
+		}
 	} );
+}
+
+const std::vector<std::pair<String, int>>& CinderboxClient::MotionKeys()
+{
+	const ModSchema& schema = m_frame.schema;
+	size_t signature = schema.motionSets.size() + 1;
+	for ( const MotionSetInfo& set : schema.motionSets )
+	{
+		signature = signature * 1000003u + std::hash<std::string>{}( set.name ) + set.text.size();
+	}
+	if ( signature != m_motionKeysFor )
+	{
+		m_motionKeysFor = signature;
+		m_motionKeys.clear();
+		std::vector<std::string> names = MotionNames( schema );
+		for ( size_t i = 0; i < names.size() && i < 64; ++i )
+		{
+			size_t slash = names[i].find( '/' );
+			std::string set = names[i].substr( 0, slash );
+			std::string node = slash == std::string::npos ? std::string() : names[i].substr( slash + 1 );
+			m_motionKeys.push_back( { String::utf8( ( "motion." + set + "." + node ).c_str() ), int( i ) } );
+			if ( FindMotionByName( schema, node ) == int( i ) )
+			{
+				m_motionKeys.push_back( { String::utf8( ( "motion." + node ).c_str() ), int( i ) } );
+			}
+		}
+	}
+	return m_motionKeys;
 }
 
 bool CinderboxClient::Holds( uint32_t netId, uint16_t kind ) const

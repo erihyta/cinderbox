@@ -241,6 +241,11 @@ void CinderboxClient::PushStates()
 			state["first_person"] = firstPerson;
 			state["linked"] = v.linked;
 			state["link_holds"] = v.linked && v.linkHolds;
+			// "motion.<name>": that motion of its is on.
+			for ( const auto& [key, bit] : MotionKeys() )
+			{
+				state[key] = ( ( v.motionsOn >> bit ) & 1 ) != 0;
+			}
 			for ( size_t kind = 0; kind < schema.itemKinds.size(); ++kind )
 			{
 				state[String::utf8( schema.itemKinds[kind].c_str() )] = Holds( v.netId, uint16_t( kind ) );

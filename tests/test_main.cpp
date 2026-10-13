@@ -2139,6 +2139,78 @@ void TestItemMotions()
 	CHECK( carried() > carriedThen );
 }
 
+// "motion.<name>" in a condition: that motion of the player's is on. A motion's own conditions read
+// it as the tick found it; the name is the set's and the node's, or the node's alone when it is
+// the only one.
+void TestMotionConditions()
+{
+	ModSchema schema;
+	schema.fields.push_back( { "t.short", BoardType::Float, BoardScope::Entity, 0 } );
+	schema.fields.push_back( { "t.full", BoardType::Float, BoardScope::Entity, 1 } );
+	schema.fields.push_back( { "t.never", BoardType::Float, BoardScope::Entity, 2 } );
+	schema.actions.push_back( { "go", 2, "V" } );
+	const std::string text = "cinderbox_motions\t2\n"
+							 "motion\tHold\nwhen\tpress\tgo\nduration\t0.5\nparam\tfriction\t0\n"
+							 "motion\tShort\nwhen\twhile\nif\tmotion.Hold\nchange\tt.short\t+=\t60\n"
+							 "motion\tFull\nwhen\twhile\nif\tmotion.a.moves.Hold and not motion.Twin\nchange\tt.full\t+=\t60\n"
+							 "motion\tTwin\nwhen\twhile\nif\tmotion.Nobody\nchange\tt.never\t+=\t60\n";
+	schema.motionSets.push_back( { "a", "a.moves", text } );
+	schema.motionSets.push_back( { "b", "b.moves", "cinderbox_motions\t2\nmotion\tTwin\nwhen\twhile\nif\tmotion.b.moves.Twin\n" } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && motions->list.size() == 5 );
+	// The names it could not find are said: a node name two sets have, and one nobody has.
+	std::printf( "    %s\n", warnings.c_str() );
+	CHECK( warnings.find( "'motion.Twin'" ) != std::string::npos && warnings.find( "several" ) != std::string::npos );
+	CHECK( warnings.find( "'motion.Nobody'" ) != std::string::npos );
+	CHECK( FindMotionByName( schema, "Hold" ) == 0 && FindMotionByName( schema, "a.moves.Hold" ) == 0 );
+	CHECK( FindMotionByName( schema, "Twin" ) == -2 && FindMotionByName( schema, "b.moves.Twin" ) == 4 && FindMotionByName( schema, "Nobody" ) == -1 );
+
+	// The same name in a state machine's condition.
+	AnimExpr expr;
+	std::string error, exprWarnings;
+	CHECK( CompileAnimExpr( "motion.Hold and not motion.b.moves.Twin", schema, expr, error, exprWarnings ) && exprWarnings.empty() );
+	AnimGraphInputs in;
+	CHECK( EvaluateAnimExpr( expr, in, 0.0f ) == 0.0f );
+	in.motionsOn = 1;
+	CHECK( EvaluateAnimExpr( expr, in, 0.0f ) != 0.0f );
+	in.motionsOn = 1 | ( uint64_t( 1 ) << 4 );
+	CHECK( EvaluateAnimExpr( expr, in, 0.0f ) == 0.0f );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	auto value = [&]( int slot ) { return BoardToFloat( sim.BoardValue( p0, slot ) ); };
+	CHECK( value( 0 ) == 0.0f && value( 1 ) == 0.0f && sim.EntityMotionsOn( p0 ) == 0 );
+
+	// A press: Hold is on for half a second, and the two that ask for it run that long (a tick
+	// behind it: they read it as the tick found it).
+	f.inputs[0].actions = 4;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	CHECK( ( sim.EntityMotionsOn( p0 ) & 1 ) != 0 );
+	step( 10 );
+	CHECK( ( sim.EntityMotionsOn( p0 ) & 1 ) != 0 && value( 0 ) > 5.0f && value( 1 ) == value( 0 ) );
+	step( 60 );
+	float after = value( 0 );
+	step( 30 );
+	std::printf( "    while Hold was on: %.1f and %.1f; a motion nobody has: %.1f\n", value( 0 ), value( 1 ), value( 2 ) );
+	CHECK( ( sim.EntityMotionsOn( p0 ) & 1 ) == 0 && value( 0 ) == after && after > 25.0f && after < 35.0f );
+	CHECK( value( 2 ) == 0.0f );
+}
+
 void TestMotionsWhile()
 {
 	ModSchema schema;
@@ -6418,6 +6490,7 @@ int main( int argc, char** argv )
 		{ "motions", TestMotions },
 		{ "motions_while", TestMotionsWhile },
 		{ "item_motions", TestItemMotions },
+		{ "motion_conditions", TestMotionConditions },
 		{ "links", TestLinks },
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },

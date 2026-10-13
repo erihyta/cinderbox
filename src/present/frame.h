@@ -60,6 +60,8 @@ struct FrameEntity
 	bool linkHolds = false;
 	uint16_t linkMotion = 0;
 	b3Vec3 linkEnd = {};
+	// Players: the motions that are on, a bit each (the first 64 of the server's): "motion.<name>".
+	uint64_t motionsOn = 0;
 };
 
 struct FrameRagdoll

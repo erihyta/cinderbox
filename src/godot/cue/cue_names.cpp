@@ -184,6 +184,12 @@ void CheckRead( const Book& book, const std::string& written, const String& prop
 			return;
 		}
 	}
+	if ( name.rfind( "carried.", 0 ) == 0 )
+	{
+		// "carried.gun.pistol": the kind is what is declared.
+		CheckName( book, "item", Gd( name.substr( 8 ) ), property, out );
+		return;
+	}
 	size_t dot = name.find( '.' );
 	if ( dot == std::string::npos || book.declared.count( name ) != 0 )
 	{
