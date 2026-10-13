@@ -2070,6 +2070,75 @@ void TestMotions()
 }
 
 // Motions that hold while conditions do (flight, a jetpack, a glide), and ones a mod event starts.
+// An item's own motions: the bake writes each with the condition that its player has the item, in
+// the hand (the kind's name) or anywhere (carried.<kind>).
+void TestItemMotions()
+{
+	ModSchema schema;
+	schema.fields.push_back( { "t.hand", BoardType::Float, BoardScope::Entity, 0 } );
+	schema.fields.push_back( { "t.carried", BoardType::Float, BoardScope::Entity, 1 } );
+	schema.itemKinds = { "dash.boots", "gun.pistol" };
+	const std::string text = "cinderbox_motions\t2\n"
+							 "motion\tInHand\nwhen\twhile\nif\tdash.boots\nchange\tt.hand\t+=\t60\n"
+							 "motion\tCarried\nwhen\twhile\nif\tcarried.dash.boots and ( grounded )\nchange\tt.carried\t+=\t60\n";
+	schema.motionSets.push_back( { "dash", "dash.boots", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 );
+	if ( motions == nullptr || warnings.empty() == false )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetItemShapes( { ItemShape{}, ItemShape{} } );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto give = [&]( uint16_t kind, bool stowed ) {
+		SimCommand c;
+		c.type = CommandType::SpawnItem;
+		c.target = SlotTarget( 0 );
+		c.index = kind;
+		c.mode = stowed ? kNoSocket : uint8_t( 0 );
+		c.value = stowed ? 1 : 0;
+		f.commands.push_back( c );
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	auto hand = [&] { return BoardToFloat( sim.BoardValue( p0, 0 ) ); };
+	auto carried = [&] { return BoardToFloat( sim.BoardValue( p0, 1 ) ); };
+
+	// Without the item, neither runs; another kind in the hand changes nothing.
+	give( 1, false );
+	step( 30 );
+	CHECK( hand() == 0.0f && carried() == 0.0f );
+
+	// Put away: the carried one runs, the hand's does not.
+	give( 0, true );
+	step( 31 );
+	float carriedThen = carried();
+	std::printf( "    boots put away: hand %.1f, carried %.1f\n", hand(), carriedThen );
+	CHECK( hand() == 0.0f && carriedThen > 20.0f );
+
+	// Another player's item is not this one's: a second player with nothing has neither.
+	f.events.push_back( { PlayerEventType::Join, 1 } );
+	step( 30 );
+	uint32_t p1 = sim.PlayerNetId( 1 );
+	CHECK( BoardToFloat( sim.BoardValue( p1, 0 ) ) == 0.0f && BoardToFloat( sim.BoardValue( p1, 1 ) ) == 0.0f );
+	CHECK( carried() > carriedThen );
+}
+
 void TestMotionsWhile()
 {
 	ModSchema schema;
@@ -6348,6 +6417,7 @@ int main( int argc, char** argv )
 		{ "move_params", TestMoveParams },
 		{ "motions", TestMotions },
 		{ "motions_while", TestMotionsWhile },
+		{ "item_motions", TestItemMotions },
 		{ "links", TestLinks },
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },

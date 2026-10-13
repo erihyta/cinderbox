@@ -1214,6 +1214,10 @@ void CinderboxClient::LeadLocalPlayer( float delta )
 	{
 		lead.heldKinds = held->second;
 	}
+	if ( auto carried = m_carriedKinds.find( local ); carried != m_carriedKinds.end() )
+	{
+		lead.carriedKinds = carried->second;
+	}
 	m_mirror->SetAnimLead( lead );
 }
 

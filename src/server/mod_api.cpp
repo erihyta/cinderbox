@@ -164,6 +164,11 @@ std::vector<Declarations::OwnItem> Declarations::ItemsOfLook()
 		{
 			ItemProperty( own.kind, "holster", Socket( look.holster ) );
 		}
+		if ( look.motions )
+		{
+			// Its own motions: each asks that its player has the item (the bake wrote that).
+			Motions( look.kind );
+		}
 		// (Its numbers reach every mod as the kind's properties when its body is read.)
 		own.look = std::move( look );
 		out.push_back( std::move( own ) );

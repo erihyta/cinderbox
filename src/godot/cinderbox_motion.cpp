@@ -294,6 +294,7 @@ void CbMotion::_bind_methods()
 	CB_MOTION_PROP( CbMotion, Variant::STRING, action, PROPERTY_HINT_PLACEHOLDER_TEXT, "dash, jump, sprint" )
 	CB_MOTION_PROP( CbMotion, Variant::STRING, event, PROPERTY_HINT_PLACEHOLDER_TEXT, "stun.hit" )
 	CB_MOTION_PROP( CbMotion, Variant::PACKED_STRING_ARRAY, conditions, PROPERTY_HINT_NONE, "" )
+	CB_MOTION_PROP( CbMotion, Variant::INT, with_item, PROPERTY_HINT_ENUM, "In the hand,Carried" )
 	CB_MOTION_PROP( CbMotion, Variant::FLOAT, cooldown, PROPERTY_HINT_RANGE, "0,60,0.01,or_greater,suffix:s" )
 	ADD_GROUP( "Uses", "" );
 	CB_MOTION_PROP( CbMotion, Variant::INT, uses, PROPERTY_HINT_RANGE, "0,100,1,or_greater" )
@@ -315,6 +316,16 @@ void CbMotion::_bind_methods()
 }
 
 std::string CbMotion::Bake( String& error ) const
+{
+	return BakeWith( error, String() );
+}
+
+String CbMotion::ItemCondition( const String& kind ) const
+{
+	return m_withItem == WITH_CARRIED ? String( "carried." ) + kind : kind;
+}
+
+std::string CbMotion::BakeWith( String& error, const String& alsoIf ) const
 {
 	auto fail = [&]( const String& why ) {
 		Fail( error, why );
@@ -357,6 +368,10 @@ std::string CbMotion::Bake( String& error ) const
 	if ( Joined( m_until, " or ", any, bad ) == false )
 	{
 		return fail( "until \"" + bad + "\" cannot have a tab or a #" );
+	}
+	if ( alsoIf.is_empty() == false )
+	{
+		all = all.is_empty() ? alsoIf : alsoIf + String( " and ( " ) + all + String( " )" );
 	}
 	if ( all.is_empty() == false )
 	{
@@ -477,9 +492,9 @@ std::string CbMotion::Bake( String& error ) const
 
 void CbMotion::Advice( PackedStringArray& advice ) const
 {
-	if ( Object::cast_to<CbMotionSet>( get_parent() ) == nullptr )
+	if ( Object::cast_to<CbMotionSet>( get_parent() ) == nullptr && ( get_parent() == nullptr || get_parent()->is_class( "CbItem" ) == false ) )
 	{
-		advice.push_back( "Put it under a CbMotionSet: the set is what is baked and what the server mod names." );
+		advice.push_back( "Put it under a CbMotionSet (a motion every player has: the server mod names the set) or under a CbItem (a motion of who has the item)." );
 	}
 	bool effects = false;
 	bool probe = false;

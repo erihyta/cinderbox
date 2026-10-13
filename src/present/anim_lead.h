@@ -44,6 +44,7 @@ struct AnimLead
 	Blackboard board;
 	BoardValues globalBoard;
 	std::vector<uint16_t> heldKinds;
+	std::vector<uint16_t> carriedKinds; // with what is put away ("carried.<kind>")
 };
 
 // `shown` with the layers above the base run `lead.seconds` forward.

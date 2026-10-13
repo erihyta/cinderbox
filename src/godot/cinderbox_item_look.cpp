@@ -2,6 +2,7 @@
 
 #include "anim_graph.h"
 #include "anim_set.h"
+#include "cinderbox_motion.h"
 #include "cinderbox_skeleton.h"
 #include "joint_math.h"
 #include "cue_director.h"
@@ -994,6 +995,18 @@ Dictionary CbItem::bake() const
 	{
 		text += "holster " + m_holster + "\n";
 	}
+	// Its own motions (CbMotion nodes under it): a set named like the kind, baked beside the item.
+	{
+		String motionError;
+		if ( BakeMotions( motionError ).empty() == false )
+		{
+			text += "motions 1\n";
+		}
+		else if ( motionError.is_empty() == false )
+		{
+			return fail( motionError );
+		}
+	}
 	// What the game reads (the server skips these): which scene the kind is drawn as, what it is
 	// called, and how its holder's arms sit in first person.
 	String scene = get_scene_file_path();
@@ -1047,6 +1060,30 @@ Dictionary CbItem::bake() const
 	return out;
 }
 
+std::string CbItem::BakeMotions( String& error ) const
+{
+	String kind = m_kind.strip_edges();
+	std::string text = "cinderbox_motions\t2\n# Baked from the CbMotion nodes of the CbItem " + std::string( kind.utf8().get_data() ) +
+					   ". Edit the item's scene and bake again.\n";
+	int count = 0;
+	for ( int i = 0; i < get_child_count(); ++i )
+	{
+		auto* motion = Object::cast_to<CbMotion>( get_child( i ) );
+		if ( motion == nullptr )
+		{
+			continue;
+		}
+		std::string lines = motion->BakeWith( error, motion->ItemCondition( kind ) );
+		if ( lines.empty() )
+		{
+			return std::string();
+		}
+		text += lines;
+		count += 1;
+	}
+	return count > 0 ? text : std::string();
+}
+
 void CbItem::bake_to_project()
 {
 	if ( get_scene_file_path().is_empty() )
@@ -1063,6 +1100,7 @@ void CbItem::bake_to_project()
 	DirAccess::make_dir_recursive_absolute( "res://items" );
 	String path = "res://items/" + m_kind.strip_edges() + ".cfg";
 	PackedByteArray bytes = String( baked["text"] ).to_utf8_buffer();
+	BakeMotionsToProject();
 	// A bake that changes nothing touches nothing: it runs on every save and every publish.
 	if ( FileAccess::file_exists( path ) && FileAccess::get_file_as_bytes( path ) == bytes )
 	{
@@ -1076,6 +1114,37 @@ void CbItem::bake_to_project()
 	}
 	file->store_buffer( bytes );
 	UtilityFunctions::print( "Baked item ", m_kind, " into ", path, ". Publish the mod for servers to get it." );
+}
+
+void CbItem::BakeMotionsToProject() const
+{
+	// (After the item itself: a failed bake of the item wrote nothing, and its motions failed with it.)
+	String error;
+	std::string text = BakeMotions( error );
+	String path = "res://motions/" + m_kind.strip_edges() + ".cfg";
+	if ( text.empty() )
+	{
+		// None any more: the file an earlier bake of this item left goes (never a CbMotionSet's).
+		if ( error.is_empty() && FileAccess::file_exists( path ) && FileAccess::get_file_as_string( path ).contains( "of the CbItem " ) )
+		{
+			DirAccess::remove_absolute( path );
+		}
+		return;
+	}
+	DirAccess::make_dir_recursive_absolute( "res://motions" );
+	PackedByteArray bytes = String::utf8( text.c_str() ).to_utf8_buffer();
+	if ( FileAccess::file_exists( path ) && FileAccess::get_file_as_bytes( path ) == bytes )
+	{
+		return;
+	}
+	Ref<FileAccess> file = FileAccess::open( path, FileAccess::WRITE );
+	if ( file.is_null() )
+	{
+		UtilityFunctions::push_error( "Item bake: cannot write ", path );
+		return;
+	}
+	file->store_buffer( bytes );
+	UtilityFunctions::print( "Baked item ", m_kind, "'s motions into ", path );
 }
 
 } // namespace cb::gd

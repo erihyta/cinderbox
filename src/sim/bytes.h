@@ -97,6 +97,15 @@ public:
 	{
 		return m_cursor == m_size;
 	}
+	// What has not been read yet.
+	const uint8_t* Here() const
+	{
+		return m_data + m_cursor;
+	}
+	size_t Remaining() const
+	{
+		return m_ok ? m_size - m_cursor : 0;
+	}
 
 private:
 	const uint8_t* m_data;

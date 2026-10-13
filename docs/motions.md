@@ -77,6 +77,34 @@ CbMotionPart            what they share: each bakes to lines, and warns in the t
 | Two players bound together | a `CbLink` whose target is a field the server mod writes the partner into |
 | Flight, a glide, a slide | nothing: `parameters` on the motion are enough |
 
+## A motion of an item
+
+A `CbMotion` under a `CbItem` (in the item's own scene) is the item's: it is baked with the item
+and runs only for a player who has it. Nothing is named in C++: a mod that takes its items from its
+look (`declare.ItemsOfLook()`) gets their motions with them.
+
+```
+Boots         CbItem     kind "dash.boots"   properties { inventory.start: 1 }   (prefabs/boots.tscn)
+├── Body, Foot, Shaft, Carry
+└── Dash      CbMotion   on "dash", while dash.charges > 0   with_item: Carried
+    └── Push  CbImpulse  11 m/s along where you walk
+```
+
+| | A motion in a `CbMotionSet` | A motion under a `CbItem` |
+|---|---|---|
+| Whose | every player's | who has the item |
+| For whom | its conditions | `with_item`: **In the hand** (the item is out) or **Carried** (in the hand or put away), and its conditions |
+| Baked to | `motions/<set_name>.cfg`, on saving the set's scene | `motions/<kind>.cfg`, on saving the item's scene (the item's file says `motions 1`) |
+| The server mod | `declare.Motions( "dash.moves" )` | `declare.ItemsOfLook()` |
+
+- **How**: the bake writes the motion with one more condition: the kind's name (in the hand), or
+  `carried.<kind>`. Both can be typed by hand in any condition, a state machine's and a look's too.
+- **Its name** for a `CbLinkLook` is `<kind>/<node>` (`dash.boots/Dash`).
+- **An item nobody has does nothing**: dropped, its motion stops for the one who dropped it and
+  starts for whoever picks it up.
+- **The shipped example** is the dash: the boots carry it, every life starts with a pair (the
+  inventory mod, slot 5), and the double jump stays a set's motion for everyone.
+
 ## `CbMotion`: the trigger
 
 | Group | Field | Meaning |
@@ -84,7 +112,7 @@ CbMotionPart            what they share: each bakes to lines, and warns in the t
 | When | `when` | **On a press**: once, when `action` goes down (a dash). **While**: every tick its `conditions` hold (flight, a glide, a jetpack). **On a cue**: once, when the mod event `event` is recorded at the player (a stun a server mod starts) |
 | | `action` | On a press: one a server mod declares (`dash`), or the engine's `jump` / `sprint`. Held, it is one press |
 | | `event` | On a cue: the event. A server mod emits it at the player, so the start is the server's and comes with the frame; from then on every simulation runs the motion |
-| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held, a stance), whether a key is down (`held.jump`, `held.dash`) or went down this tick (`pressed.dash`), `linked` (a probe of the player's is out) and `link_distance` (metres from the player's chest to the point its probe holds; 0 with none) |
+| | `conditions` | [expressions](looks.md#expressions) that must all hold on the player before this tick's movement. They read what a state machine reads (`grounded`, `airborne_time`, `speed`, `vertical_speed`, a field, an item kind held or `carried.<kind>`, a stance), whether a key is down (`held.jump`, `held.dash`) or went down this tick (`pressed.dash`), `linked` (a probe of the player's is out) and `link_distance` (metres from the player's chest to the point its probe holds; 0 with none) |
 | | `cooldown` | seconds between two uses; for a While, between its end and its next start |
 | Uses | `uses` | how many before a refill; 0: no limit. Not for a While |
 | | `refill`, `refill_seconds` | **On the ground**: back when the player stands. **After seconds**: back that long after the last use |

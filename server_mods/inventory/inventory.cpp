@@ -7,7 +7,7 @@
 // hot on the back).
 //
 // This mod says how many slots there are and what a life is given and loses:
-//   declare.Slots( 4 )   four slots; keys 1 to 4 select them, and a second press empties the hands
+//   declare.Slots( 5 )   five slots; keys 1 to 5 select them, and a second press empties the hands
 //   "inventory.start"    an item property: 1 gives every player one when a life starts
 //   dying                takes back what the life started with and drops the rest
 //
@@ -34,7 +34,7 @@ namespace
 using namespace cb;
 using namespace cb::mods;
 
-constexpr int kSlots = 4;
+constexpr int kSlots = 5;
 
 struct Bag
 {

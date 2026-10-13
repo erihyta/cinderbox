@@ -239,6 +239,7 @@ Conditions and expressions read simulation values, never scripts:
 | ... the same event, while already in the state it leads to | starts that state over, with the transition's crossfade: a shot fired during the last one's recoil plays the recoil again (the pistol fires every 0.2 s, its clip is 0.63 s). Godot has no transition from a state to itself, so the bake derives this from the transition you drew (`Pistol -> Shoot` on `item.use`). The clip's own keys (a sound, a flash keyed inside it) fire again too, as long as that transition has a crossfade |
 | a board field's name (`inventory.slot`) | the player's value (or the global one) |
 | an item kind's name (`melee.bat`) | true while the player holds one, in any socket |
+| `carried.` and an item kind (`carried.dash.boots`) | true while the player has one, in the hand or put away |
 
 The grammar is the [one expression language](looks.md#expressions) (`and or not`, comparisons, arithmetic,
 `?name`, parentheses). A name no mod declares reads as 0 (the server logs it). The bake fails with a reason for anything it cannot run (nested

@@ -350,6 +350,7 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 	m_slot = msg.slot;
 	m_liteTick = msg.snapshotTick;
 	m_liteConfirmed = msg.snapshotTick;
+	m_waitingBatches.clear();
 	for ( KnownInputs& k : m_knownInputs )
 	{
 		k.tick = UINT32_MAX;
@@ -384,8 +385,9 @@ uint32_t GameClient::AckTick() const
 	return m_session ? m_session->ConfirmedTick() : m_liteConfirmed;
 }
 
-// A batch holds every frame from our last acknowledgement to the server's newest. Old or
-// duplicate batches are harmless: frames we already have are skipped.
+// A batch holds the server's newest frames, each for the third time at most (or everything from
+// our last acknowledgement, when the server has waited for one). Old or duplicate batches are
+// harmless: frames we already have are skipped. One that begins after what we have waits.
 void GameClient::HandleFrameBatch( ByteReader& r, double now )
 {
 	uint32_t firstTick, count;
@@ -398,19 +400,70 @@ void GameClient::HandleFrameBatch( ByteReader& r, double now )
 	uint32_t lastTick = firstTick + count - 1;
 	OnServerTick( lastTick + 1, now );
 
-	if ( firstTick > confirmed || lastTick < confirmed )
+	if ( lastTick < confirmed )
 	{
-		// A gap before this batch (cannot happen with in-order acks) or nothing new.
-		m_stats.batchesIgnored += firstTick > confirmed ? 1 : 0;
-		return;
+		return; // nothing new
 	}
-
 	if ( m_session == nullptr )
 	{
-		m_liteConfirmed = lastTick + 1;
+		if ( firstTick <= confirmed )
+		{
+			m_liteConfirmed = lastTick + 1;
+		}
+		return;
+	}
+	if ( firstTick > confirmed )
+	{
+		// A hole before it: kept until what fills the hole arrives (a few, the newest).
+		const size_t kWaiting = 16;
+		bool have = false;
+		for ( const WaitingBatch& w : m_waitingBatches )
+		{
+			have |= w.firstTick == firstTick && w.count == count;
+		}
+		if ( have == false )
+		{
+			if ( m_waitingBatches.size() >= kWaiting )
+			{
+				m_waitingBatches.erase( m_waitingBatches.begin() );
+				m_stats.batchesIgnored += 1;
+			}
+			m_waitingBatches.push_back( { firstTick, count, std::vector<uint8_t>( r.Here(), r.Here() + r.Remaining() ) } );
+		}
 		return;
 	}
 
+	if ( UseFrameBatch( firstTick, count, r.Here(), r.Remaining() ) == false )
+	{
+		return;
+	}
+	// What waited for these frames, and what waited for those.
+	for ( bool used = true; used && m_waitingBatches.empty() == false; )
+	{
+		used = false;
+		for ( size_t i = 0; i < m_waitingBatches.size(); )
+		{
+			WaitingBatch& w = m_waitingBatches[i];
+			uint32_t have = m_session->ConfirmedTick();
+			if ( w.firstTick + w.count - 1 < have )
+			{
+				m_waitingBatches.erase( m_waitingBatches.begin() + ptrdiff_t( i ) );
+				continue;
+			}
+			if ( w.firstTick <= have )
+			{
+				used |= UseFrameBatch( w.firstTick, w.count, w.body.data(), w.body.size() );
+				m_waitingBatches.erase( m_waitingBatches.begin() + ptrdiff_t( i ) );
+				continue;
+			}
+			++i;
+		}
+	}
+}
+
+// The frames of a batch that begins at or before the next one we need. False: none could be read.
+bool GameClient::UseFrameBatch( uint32_t firstTick, uint32_t count, const uint8_t* body, size_t size )
+{
 	InputArray base{};
 	if ( firstTick > 0 )
 	{
@@ -418,16 +471,17 @@ void GameClient::HandleFrameBatch( ByteReader& r, double now )
 		if ( k.tick != firstTick - 1 )
 		{
 			m_stats.batchesIgnored += 1;
-			return;
+			return false;
 		}
 		base = k.inputs;
 	}
 
+	ByteReader r( body, size );
 	if ( ReadFrameBatchBody( r, base, firstTick, count, m_batchScratch ) == false )
 	{
 		Log( "corrupt frame batch at tick %u", firstTick );
 		m_stats.batchesIgnored += 1;
-		return;
+		return false;
 	}
 
 	for ( const InputFrame& frame : m_batchScratch )
@@ -439,6 +493,7 @@ void GameClient::HandleFrameBatch( ByteReader& r, double now )
 		m_session->AddAuthoritativeFrame( frame );
 		m_knownInputs[frame.tick % kKnownInputHistory] = { frame.tick, frame.inputs };
 	}
+	return true;
 }
 
 // Prediction must reach about RTT + jitter + the lead margin ahead of confirmed frames. Grow the

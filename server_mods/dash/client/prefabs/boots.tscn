@@ -1,0 +1,67 @@
+[gd_scene format=3]
+
+; The dash, as an item: whoever carries the boots can dash. The motion is the item's own (the
+; CbMotion under it), so it is baked with the item (items/dash.boots.cfg and motions/dash.boots.cfg)
+; and runs only for a player who has them, in the hand or put away (with_item: Carried).
+;
+;   Dash         on "dash" (V), while dash.charges > 0: 0.18 s without friction; a charge is
+;                taken; emits dash.started
+;     Push       CbImpulse: 11 m/s along where you walk, the run's own speed replaced
+;
+; The server mod (server_mods/dash/dash.cpp) takes the item from here (declare.ItemsOfLook()),
+; declares the names the motion uses and gives the charges back.
+
+[sub_resource type="BoxShape3D" id="Body"]
+size = Vector3(0.12, 0.14, 0.28)
+
+[sub_resource type="StandardMaterial3D" id="Leather"]
+albedo_color = Color(0.2, 0.42, 0.75, 1)
+roughness = 0.7
+
+[sub_resource type="BoxMesh" id="Foot"]
+material = SubResource("Leather")
+size = Vector3(0.11, 0.06, 0.28)
+
+[sub_resource type="BoxMesh" id="Shaft"]
+material = SubResource("Leather")
+size = Vector3(0.1, 0.12, 0.11)
+
+[node name="Boots" type="CbItem"]
+kind = "dash.boots"
+display_name = "Dash boots"
+properties = {
+"inventory.start": 1.0
+}
+slot = 5
+carry_grip = NodePath("Carry")
+mass = 0.6
+
+[node name="Body" type="CollisionShape3D" parent="."]
+shape = SubResource("Body")
+
+[node name="Foot" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.04, 0)
+mesh = SubResource("Foot")
+
+[node name="Shaft" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, 0.08)
+mesh = SubResource("Shaft")
+
+[node name="Carry" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.09, 0.08)
+
+[node name="Dash" type="CbMotion" parent="."]
+action = "dash"
+conditions = PackedStringArray("dash.charges > 0")
+with_item = 1
+cooldown = 0.4
+duration = 0.18
+parameters = {
+"friction": 0.0
+}
+changes = PackedStringArray("dash.charges -= 1")
+emits = "dash.started"
+
+[node name="Push" type="CbImpulse" parent="Dash"]
+speed = 11.0
+replace = 2

@@ -179,6 +179,9 @@ private:
 		// packet or two costs nothing). Only when the oldest one the client has not acknowledged
 		// has been out for longer than an answer takes is everything from it sent again.
 		uint32_t sentThrough = 0;	// frames with tick < sentThrough have been sent at least once
+		// What sentThrough was before each of the last two packets: where the packet after them
+		// starts, so that a frame is in three packets however many ticks one packet brought.
+		uint32_t sentBefore[2] = {};
 		double roundTrip = 0.1;		// seconds from sending a frame to hearing it acknowledged
 		double frameSentAt[256] = {}; // by tick % 256: when it last went out in full
 		PlayerInput lastInput{};

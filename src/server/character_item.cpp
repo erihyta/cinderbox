@@ -468,6 +468,10 @@ LookItem ParseLookItem( const std::string& kind, const std::string& text )
 		{
 			words >> item.holster;
 		}
+		else if ( key == "motions" )
+		{
+			item.motions = true;
+		}
 	}
 	return item;
 }
