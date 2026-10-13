@@ -1001,6 +1001,28 @@ Dictionary CbItem::bake() const
 		if ( BakeMotions( motionError ).empty() == false )
 		{
 			text += "motions 1\n";
+			// The keys its motions suggest: actions the item declares when no mod has (each once).
+			PackedStringArray said;
+			for ( int i = 0; i < get_child_count(); ++i )
+			{
+				auto* motion = Object::cast_to<CbMotion>( get_child( i ) );
+				if ( motion == nullptr || motion->get_when() != CbMotion::WHEN_PRESS )
+				{
+					continue;
+				}
+				String action = motion->get_action().strip_edges();
+				String key = motion->get_key().strip_edges();
+				if ( action.is_empty() || key.is_empty() || said.has( action ) )
+				{
+					continue;
+				}
+				if ( key.contains( " " ) || action.contains( " " ) )
+				{
+					return fail( String( motion->get_name() ) + ": the action and its key are one word each (dash, V)" );
+				}
+				said.push_back( action );
+				text += "action " + action + " " + key + "\n";
+			}
 		}
 		else if ( motionError.is_empty() == false )
 		{

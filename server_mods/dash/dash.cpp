@@ -39,7 +39,7 @@ public:
 	void Declare( Declarations& declare ) override
 	{
 		// The motions read and write these by name.
-		m_dash = declare.Action( "dash", "V" );
+		// (The "dash" action and its key are the boots': their motion names them.)
 		m_charges = declare.Field( "dash.charges", BoardType::Int );
 		m_max = declare.Field( "dash.max", BoardType::Int, BoardScope::Global );
 		m_doubleJumpOn = declare.Field( "dash.double_jump_on", BoardType::Bool, BoardScope::Global );
@@ -99,7 +99,6 @@ public:
 	}
 
 private:
-	ActionHandle m_dash;
 	FieldHandle m_charges;
 	FieldHandle m_max;
 	FieldHandle m_doubleJumpOn;

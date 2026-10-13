@@ -164,6 +164,11 @@ std::vector<Declarations::OwnItem> Declarations::ItemsOfLook()
 		{
 			ItemProperty( own.kind, "holster", Socket( look.holster ) );
 		}
+		for ( const auto& [action, key] : look.actions )
+		{
+			// (One a mod declared before keeps that mod's key.)
+			Action( action, key );
+		}
 		if ( look.motions )
 		{
 			// Its own motions: each asks that its player has the item (the bake wrote that).

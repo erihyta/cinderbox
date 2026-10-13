@@ -28,7 +28,7 @@ foreach(project ${CB_NAMES_PROJECTS})
 	endif()
 endforeach()
 add_custom_command(TARGET cb_server POST_BUILD
-	COMMAND cb_server --dump-names "${CMAKE_BINARY_DIR}/bin/cinderbox_names.cfg"
+	COMMAND cb_server --dump-names "${CMAKE_BINARY_DIR}/bin/cinderbox_names.cfg" --look-source "${CMAKE_SOURCE_DIR}/server_mods"
 	${CB_NAMES_COMMANDS}
 	COMMENT "Writing the mods' names for the editor"
 	VERBATIM

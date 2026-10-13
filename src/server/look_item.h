@@ -6,6 +6,8 @@
 
 #include <map>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace cb
 {
@@ -17,6 +19,8 @@ struct LookItem
 	std::string pack;						 // the animation pack it brings while it is held ("gun.pistol_hold"), or none
 	std::string holster;					 // the socket it hangs in while it is put away ("Hip"), or none
 	bool motions = false;					 // CbMotion nodes under it: a set named like the kind (motions/<kind>.cfg)
+	// Actions its motions answer, with the key each suggests: declared with the item when no mod has.
+	std::vector<std::pair<std::string, std::string>> actions;
 };
 
 } // namespace cb

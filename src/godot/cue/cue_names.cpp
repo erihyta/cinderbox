@@ -388,7 +388,10 @@ PackedStringArray Problems( const Node* node )
 			case Holds::Action:
 			{
 				String action = String( value ).strip_edges();
-				if ( action != "jump" && action != "sprint" && action != "use" )
+				// An item's motion that says a key declares the action itself.
+				bool own = node->is_class( "CbMotion" ) && node->get_parent() != nullptr && node->get_parent()->is_class( "CbItem" ) &&
+						   String( node->get( "key" ) ).strip_edges().is_empty() == false;
+				if ( action != "jump" && action != "sprint" && action != "use" && own == false )
 				{
 					CheckName( book, "action", action, property, out );
 				}
