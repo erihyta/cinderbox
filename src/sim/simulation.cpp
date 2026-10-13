@@ -14,6 +14,7 @@
 #include "box3d/collision.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cfloat>
@@ -122,6 +123,11 @@ struct Reader
 
 } // namespace
 
+namespace
+{
+std::atomic<uint32_t> s_newWorkers{ kPhysicsWorkers };
+}
+
 Simulation::Simulation( const SimConfig& config, const LevelLayout& map )
 	: m_config( config )
 	, m_map( map )
@@ -138,13 +144,23 @@ Simulation::Simulation( const SimConfig& config, const LevelLayout& map )
 	b3WorldDef def = b3DefaultWorldDef();
 	def.gravity = kGravityVector;
 	def.hitEventThreshold = kImpactThreshold;
-	def.workerCount = 1;
-	def.enqueueTask = nullptr;
-	def.finishTask = nullptr;
+	// Workers: what a step's work is divided by, the same everywhere; which threads do it is the
+	// process's choice (physics_threads.h).
+	m_tasks = std::make_unique<PhysicsTasks>();
+	m_tasks->arena = m_arena.get();
+	def.workerCount = s_newWorkers.load();
+	def.enqueueTask = &PhysicsThreads::Enqueue;
+	def.finishTask = &PhysicsThreads::Finish;
+	def.userTaskContext = m_tasks.get();
 	m_physicsWorld = b3CreateWorld( &def );
 	lock.unlock();
 
 	BuildLevel();
+}
+
+void Simulation::SetWorkersForNewSimulations( uint32_t workers )
+{
+	s_newWorkers.store( workers );
 }
 
 Simulation::~Simulation()
@@ -1455,6 +1471,10 @@ void Simulation::Step( const InputFrame& frame )
 	}
 
 	PhysicsArena::Scope scope( *m_arena );
+	if ( m_tasks->threaded )
+	{
+		PhysicsThreads::Wake();
+	}
 
 	// (The profile: the time between two of these goes to the part named.)
 	auto last = std::chrono::steady_clock::now();

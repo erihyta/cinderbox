@@ -2,7 +2,9 @@
 //
 //   cb_bot [--host H] [--port P] [--count N] [--full M] [--threads T (for lite bots)] [--duration SEC]
 //          [--stagger MS] [--spawn-one-in N] [--rollback TICKS] [--report SEC] [--chaotic] [--shoot]
-//          [--reconcile-every TICKS] [--spin]
+//          [--reconcile-every TICKS] [--spin] [--physics-threads N]
+//
+// --physics-threads N: the full bots' physics steps share N threads besides their own.
 //
 // --spin: a full bot's thread never sleeps, as a game that draws all the time does not. A thread
 // that sleeps a millisecond between frames is run slowly by a processor saving power, and every
@@ -446,6 +448,11 @@ bool Parse( int argc, char** argv, Options& o )
 			o.client.minRollbackTicks = o.client.maxRollbackTicks = uint32_t( std::atoi( v.c_str() ) );
 		else if ( arg == "--reconcile-every" )
 			o.client.reconcileEveryTicks = uint32_t( std::atoi( v.c_str() ) );
+		else if ( arg == "--physics-threads" )
+		{
+			PhysicsThreads::Start( std::atoi( v.c_str() ) );
+			o.client.physicsThreaded = PhysicsThreads::Count() > 0;
+		}
 		else if ( arg == "--report" )
 			o.reportSeconds = std::atof( v.c_str() );
 		else

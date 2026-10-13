@@ -45,6 +45,22 @@ thread_local PhysicsArena* t_current = nullptr;
 
 constexpr size_t kCommitChunk = 16u * 1024u * 1024u;
 
+struct Locked
+{
+	explicit Locked( std::atomic_flag& flag )
+		: m_flag( flag )
+	{
+		while ( m_flag.test_and_set( std::memory_order_acquire ) )
+		{
+		}
+	}
+	~Locked()
+	{
+		m_flag.clear( std::memory_order_release );
+	}
+	std::atomic_flag& m_flag;
+};
+
 // Page-aligned address space from the OS. Memory is committed in chunks as the arena grows
 // (CommitPages), so many simulations can each reserve a large arena cheaply. Fresh pages are zero.
 void* ReservePages( size_t size )
@@ -177,6 +193,7 @@ void* PhysicsArena::Allocate( size_t size, size_t alignment )
 	}
 	size_t blockSize = size_t( 1 ) << sizeClass;
 
+	Locked locked( m_lock );
 	uint64_t blockOffset = h->freeHeads[sizeClass];
 	if ( blockOffset != 0 )
 	{
@@ -224,6 +241,7 @@ void PhysicsArena::Free( void* ptr )
 
 	Header* h = GetHeader();
 	uint64_t blockOffset = uint64_t( payload - m_base ) - bh.payloadOffset;
+	Locked locked( m_lock );
 
 	// Clear the magic so a double free is caught, then link the block.
 	bh.magic = 0;

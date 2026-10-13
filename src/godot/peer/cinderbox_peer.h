@@ -91,6 +91,16 @@ public:
 	{
 		return m_reconcileEvery;
 	}
+	// Threads the physics step runs on besides the game's own (0: none; -1: as many as suit the
+	// machine, PhysicsThreads::Suggested). Set before connecting.
+	void set_physics_threads( int v )
+	{
+		m_physicsThreads = v;
+	}
+	int get_physics_threads() const
+	{
+		return m_physicsThreads;
+	}
 
 protected:
 	static void _bind_methods();
@@ -104,6 +114,7 @@ private:
 	int m_rollbackMin = 8;
 	int m_rollbackMax = 20;
 	int m_reconcileEvery = 1;
+	int m_physicsThreads = -1;
 
 	std::unique_ptr<present::ViewSource> m_source;
 	PacketHandoff m_handoff;

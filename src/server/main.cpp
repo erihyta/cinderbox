@@ -19,6 +19,9 @@
 // editor reads the file (res://cinderbox_names.cfg in a mod's project): names are completed
 // while typing and one nobody declares is said, and publishing a look checks against it.
 //
+// --physics-threads N: the physics step runs on N more threads than the server's own (default: a
+//   quarter of the machine's threads, at most 3; 0: none).
+//   What is simulated is the same with any number.
 // --exit-when-empty SEC: the server stops by itself once nobody has been connected for SEC seconds
 // (from its start too: one nobody joins does not stay). For a server a game starts to try
 // something (godot/host.gd): it cannot be left running by accident.
@@ -61,6 +64,7 @@ void Usage()
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
 				 "                 [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
 				 "                 [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
+				 "                 [--physics-threads N]\n"
 				 "                 [--character NAME [--workshop DIR]] [--quiet]\n" );
 }
 
@@ -186,6 +190,8 @@ bool DumpNames( const char* path )
 	return true;
 }
 
+int g_physicsThreads = -1; // --physics-threads (-1: not given)
+
 bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::string>& mods, bool& listMods,
 				std::string& itemsDir, std::string& character, std::string& workshopDir )
 {
@@ -245,6 +251,12 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 		if ( arg == "--exit-when-empty" && i + 1 < argc )
 		{
 			++i; // (read by main)
+			continue;
+		}
+		if ( arg == "--physics-threads" && i + 1 < argc )
+		{
+			// Threads for the physics step besides the server's own (0: none).
+			g_physicsThreads = std::atoi( argv[++i] );
 			continue;
 		}
 		if ( arg == "--items" && i + 1 < argc )
@@ -384,6 +396,8 @@ int main( int argc, char** argv )
 		Usage();
 		return 1;
 	}
+	cb::PhysicsThreads::Start( g_physicsThreads >= 0 ? g_physicsThreads : cb::PhysicsThreads::Suggested() );
+	options.physicsThreaded = cb::PhysicsThreads::Count() > 0;
 	for ( int i = 1; i + 1 < argc; ++i )
 	{
 		if ( std::string( argv[i] ) == "--dump-names" )

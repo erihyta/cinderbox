@@ -29,6 +29,8 @@ struct ClientOptions
 	// A misprediction is fixed at once (1), or every this many ticks: less re-simulation, and what
 	// other players do is seen that much later (RollbackSession::SetReconcileEvery).
 	uint32_t reconcileEveryTicks = 1;
+	// The physics step's tasks go to the process's physics threads (PhysicsThreads::Start).
+	bool physicsThreaded = false;
 	double reconnectIntervalSeconds = 1.0;
 	bool verbose = true;
 	std::string logName = "client";
