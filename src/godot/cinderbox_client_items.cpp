@@ -211,8 +211,105 @@ Transform3D SceneInSocket( Node3D* node, uint8_t socket )
 	return socket <= kSocketLeftHand ? SceneInCarriedFrame( node ) : Transform3D();
 }
 
+namespace
+{
+// (A function, not a global: a StringName cannot be made before Godot is up.)
+const StringName& Lean()
+{
+	static const StringName name( "cb_lean" );
+	return name;
+}
+
+// What only a holder makes sense of: a reaction about the one who holds it, a prediction (the
+// holder's press), the motion nodes (baked for the simulation; nothing in the game).
+bool AboutHolder( Node* node )
+{
+	if ( node->is_class( "CbPrediction" ) || node->is_class( "CbMotionPart" ) )
+	{
+		return true;
+	}
+	return node->is_class( "CbReaction" ) && String( NodePath( node->get( "subject" ) ) ).begins_with( "^^" );
+}
+
+// The topmost such nodes under `root` (not the ones inside them), in tree order.
+void CollectAboutHolder( Node* node, std::vector<Node*>& out )
+{
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		Node* child = node->get_child( i );
+		if ( AboutHolder( child ) )
+		{
+			out.push_back( child );
+		}
+		else
+		{
+			CollectAboutHolder( child, out );
+		}
+	}
+}
+} // namespace
+
+void CinderboxClient::LeanItem( Node3D* node )
+{
+	if ( node == nullptr || node->has_meta( Lean() ) )
+	{
+		return;
+	}
+	std::vector<Node*> found;
+	CollectAboutHolder( node, found );
+	for ( Node* n : found )
+	{
+		n->get_parent()->remove_child( n );
+		n->queue_free();
+	}
+	node->set_meta( Lean(), int64_t( found.size() ) );
+}
+
+void CinderboxClient::FullItem( Node3D* node, const present::Visual& v )
+{
+	if ( node == nullptr || node->has_meta( Lean() ) == false )
+	{
+		return;
+	}
+	node->remove_meta( Lean() );
+	Ref<PackedScene> prefab = Prefab( v );
+	Node* fresh = prefab.is_valid() ? cue::Instantiate( prefab ) : nullptr;
+	if ( fresh == nullptr )
+	{
+		return;
+	}
+	// Each one back under the same parent, at the same place among its siblings.
+	std::vector<Node*> found;
+	CollectAboutHolder( fresh, found );
+	for ( Node* n : found )
+	{
+		Node* from = n->get_parent();
+		NodePath where = fresh->get_path_to( from );
+		int index = n->get_index();
+		Node* into = String( where ) == String( "." ) ? static_cast<Node*>( node ) : node->get_node_or_null( where );
+		from->remove_child( n );
+		if ( into == nullptr )
+		{
+			memdelete( n );
+			continue;
+		}
+		into->add_child( n );
+		into->move_child( n, std::min( index, into->get_child_count() - 1 ) );
+	}
+	memdelete( fresh );
+}
+
 void CinderboxClient::UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, Node3D* node )
 {
+	// Nobody has it: only its look, body and own reactions. Somebody does: all of it.
+	if ( v.holder == 0 )
+	{
+		LeanItem( node );
+	}
+	else
+	{
+		FullItem( node, v );
+	}
 	// Floating in the viewer's own first-person view (CbItem.view_camera): out of its socket's
 	// frame while it does, and back in it the moment it does not (dropped, put away, another view).
 	static const StringName kFloating( "cb_floating" );

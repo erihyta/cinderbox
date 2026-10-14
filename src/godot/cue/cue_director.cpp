@@ -16,6 +16,7 @@ namespace cb::gd
 
 void CbDirector::_bind_methods()
 {
+	ClassDB::bind_method( D_METHOD( "get_listener_count" ), &CbDirector::get_listener_count );
 	ClassDB::bind_method( D_METHOD( "add_entity", "node", "kind", "template_name", "id" ), &CbDirector::add_entity, DEFVAL( 0 ) );
 	ClassDB::bind_method( D_METHOD( "set_state", "entity", "state" ), &CbDirector::set_state );
 	ClassDB::bind_method( D_METHOD( "get_state", "entity" ), &CbDirector::get_state );

@@ -407,6 +407,11 @@ private:
 	void PlaceSockets( uint64_t visual, godot::Node3D* node );
 	godot::Node3D* SocketNode( uint32_t holderNetId, uint8_t socket ) const;
 	void UpdateItem( uint64_t visual, const present::Visual& v, const present::RenderPose& pose, godot::Node3D* node );
+	// A copy lying in the world is its look, its body and its own reactions: what is about a holder
+	// (a reaction whose subject is "^^", a prediction, the motion nodes) is taken out while nobody
+	// has it, and put back from its scene when somebody does.
+	void LeanItem( godot::Node3D* node );
+	void FullItem( godot::Node3D* node, const present::Visual& v );
 	// Puts an item node in a socket as its "Item" (a leaving one steps aside), and tells the holder's
 	// animation tracks to look again.
 	void PlaceItem( uint32_t holderNetId, godot::Node3D* socket, godot::Node3D* item );

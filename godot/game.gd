@@ -1024,6 +1024,11 @@ func _autoplay_finish() -> void:
 	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
 		stats.get("state"), stats.get("checksums_verified", 0), stats.get("desyncs", 0), stats.get("fingerprint", "none"), stats.get("fp_environment_ok", "not simulating")])
 	print("mod events seen: ", _event_counts)
+	# What the scene costs: the reactions and predictions listening (a copy lying in the world has
+	# only its own).
+	for node in get_tree().root.find_children("*", "CbDirector", true, false):
+		print("listening: %d reactions and predictions" % node.get_listener_count())
+		break
 	for part in _probe_frames:
 		DirAccess.make_dir_recursive_absolute(_probe_frames_dir)
 		var frames: Array = _probe_frames[part]
