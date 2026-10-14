@@ -225,7 +225,7 @@ starts on that event, and ends on the same event, so the throw is predicted like
 ```
 Hook          CbItem     kind "grapple.hook", use: its slot's key (a press), slot 4   (prefabs/hook.tscn)
 │                        use_emits grapple.fired
-│                        animation_pack grapple.hook_hang: hanging, while motion.grapple.hook.Use
+│                        animation_pack grapple.hook_arm: the left arm thrown out, while motion.grapple.hook.Use
 └── Throw     CbProbe    range 40 m, flies at 80 m/s; release: using it again, a jump; holds 2 s at most
     └── Rope  CbLink     to what the probe found: its length when it takes hold, reel 4 m/s
         ├── Pull      CbForce   on the player, toward the target: 160 m/s² up to 15 m/s, ramp 0.1 s, react
