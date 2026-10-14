@@ -22,8 +22,10 @@
 //   item.reload       a reload began
 //
 // A magazine is the gun's own: put away half empty, it is half empty when it comes out, in whose
-// hand ever. What the holder's HUD and the look's predictions read is on the player: the gun in
-// the hand's "gun.ammo", "gun.magazine" and "gun.reloading" (all 0 with no gun out).
+// hand ever. Its rounds are the gun's own field, "gun.rounds", which the gun's scene declares with
+// the full count (CbItem.fields): simulation state, in every copy, read by looks as
+// "hand.gun.rounds". What the holder's HUD and the look's predictions read is also on the player:
+// the gun in the hand's "gun.ammo", "gun.magazine" and "gun.reloading" (all 0 with no gun out).
 //
 // Health and death are the combat mod's: a hit on a player goes out as "combat.damage", and a new
 // life or a new round fills every gun the player carries.
@@ -51,6 +53,7 @@ struct GunKind
 	float range = 80.0f;
 	float killPush = 6.0f;
 	float propPush = 4.0f;
+	bool roundsInScene = false; // its scene declares "gun.rounds" (a new copy starts full)
 };
 
 // One gun in the world.
@@ -102,6 +105,9 @@ public:
 		m_upper = declare.Layer( "upper" );
 		m_stance = declare.Stance( "gun" );
 		m_hand = declare.Socket( "RightHand" );
+		// A gun's rounds: its own field (its scene declares it with the full count, below; this is
+		// the same field, for a scene that does not).
+
 		// Every item of the look that says gun.damage is a gun. (Its pack and its holster are
 		// taken from its scene with it; its slot and "inventory.start" are properties like these.)
 		for ( const Declarations::OwnItem& own : declare.ItemsOfLook() )
@@ -123,10 +129,17 @@ public:
 			kind.range = number( "gun.range", 80.0f );
 			kind.killPush = number( "gun.kill_push", 6.0f );
 			kind.propPush = number( "gun.prop_push", 4.0f );
+			for ( const LookItem::Field& field : own.look.fields )
+			{
+				kind.roundsInScene |= field.name == "gun.rounds";
+			}
 			m_kinds[own.kind.index] = kind;
 			// (The item mod leaves its cues to this mod.)
 			declare.ItemProperty( own.kind, "item.ruled", 1.0f );
 		}
+		// A gun's rounds: its own field. Its scene declares it, with the full count a new copy
+		// starts with; this is the same field, for a gun whose scene does not.
+		m_rounds = declare.Field( "gun.rounds", BoardType::Int );
 	}
 
 	void Tick( Context& ctx ) override
@@ -172,17 +185,29 @@ private:
 		return found != m_kinds.end() ? &found->second : nullptr;
 	}
 
-	// The gun's own state, made full the first time it is seen.
-	Gun& GunOf( uint32_t item, const GunKind& kind )
+	// The gun's own state. Its rounds are the gun's field: read each time (the simulation's), made full
+	// the first time it is seen if its scene does not start it so.
+	Gun& GunOf( Context& ctx, uint32_t item, const GunKind& kind )
 	{
 		auto found = m_guns.find( item );
 		if ( found == m_guns.end() )
 		{
-			Gun gun;
-			gun.ammo = kind.magazine;
-			found = m_guns.emplace( item, gun ).first;
+			found = m_guns.emplace( item, Gun{} ).first;
+			if ( kind.roundsInScene == false )
+			{
+				SetRounds( ctx, item, found->second, kind.magazine );
+				return found->second;
+			}
 		}
+		found->second.ammo = ctx.Get( item, m_rounds );
 		return found->second;
+	}
+
+	// Its rounds, now and in the gun's field (which the simulation has from the next tick).
+	void SetRounds( Context& ctx, uint32_t item, Gun& gun, int32_t rounds )
+	{
+		gun.ammo = rounds;
+		ctx.Set( item, m_rounds, rounds );
 	}
 
 	void Refill( Context& ctx, PlayerSlot slot )
@@ -191,8 +216,8 @@ private:
 		{
 			if ( const GunKind* kind = KindOf( ctx, carried.netId ) )
 			{
-				Gun& gun = GunOf( carried.netId, *kind );
-				gun.ammo = kind->magazine;
+				Gun& gun = GunOf( ctx, carried.netId, *kind );
+				SetRounds( ctx, carried.netId, gun, kind->magazine );
 				gun.reloadDoneTick = 0;
 			}
 		}
@@ -258,11 +283,11 @@ private:
 			Publish( ctx, slot, 0, 0, false );
 			return;
 		}
-		Gun& gun = GunOf( inHand, *kind );
+		Gun& gun = GunOf( ctx, inHand, *kind );
 		if ( gun.reloadDoneTick != 0 && tick >= gun.reloadDoneTick )
 		{
 			gun.reloadDoneTick = 0;
-			gun.ammo = kind->magazine;
+			SetRounds( ctx, inHand, gun, kind->magazine );
 		}
 		bool reloading = gun.reloadDoneTick != 0;
 		Publish( ctx, slot, gun.ammo, kind->magazine, reloading );
@@ -297,7 +322,7 @@ private:
 			}
 			return;
 		}
-		gun.ammo -= 1;
+		SetRounds( ctx, inHand, gun, gun.ammo - 1 );
 		gun.wentDry = false; // (it fires again: the next empty magazine clicks again)
 		gun.nextShotTick = tick + Ticks( ctx, kind->fireSeconds );
 		Publish( ctx, slot, gun.ammo, kind->magazine, false );
@@ -364,6 +389,7 @@ private:
 	FieldHandle m_ammo;
 	FieldHandle m_magazine;
 	FieldHandle m_reloading;
+	FieldHandle m_rounds;
 	EventHandle m_use;
 	EventHandle m_useFailed;
 	EventHandle m_hit;

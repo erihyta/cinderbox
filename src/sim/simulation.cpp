@@ -1277,6 +1277,7 @@ void Simulation::CreateLaunched()
 	{
 		flecs::entity item = CreateEntity();
 		item.set<HeldItem>( { 0, l.kind, 0, 0 } );
+		StartItemFields( item, l.kind );
 		PutItemInWorld( item, l.position, l.rotation, l.velocity );
 		item.set<Prop>( { l.owner, m_globals.tick, l.lifetimeTicks > 0 ? m_globals.tick + l.lifetimeTicks : 0u } );
 	}
@@ -1800,6 +1801,25 @@ std::vector<uint32_t> Simulation::CarriedItemsOf( uint32_t holder ) const
 	return out;
 }
 
+void Simulation::StartItemFields( flecs::entity item, uint16_t kind )
+{
+	const ItemShape& shape = ItemShapeOf( kind );
+	if ( shape.fieldDefaults.empty() || m_config.fields == 0 )
+	{
+		return;
+	}
+	Blackboard board = GetBoard( item );
+	board.values.resize( m_config.fields );
+	for ( const ItemShape::FieldDefault& field : shape.fieldDefaults )
+	{
+		if ( field.slot < m_config.fields )
+		{
+			board.values[field.slot] = field.raw;
+		}
+	}
+	SetBoard( item, board );
+}
+
 uint32_t Simulation::HeldItemOf( uint32_t holder, uint32_t socket ) const
 {
 	if ( holder == 0 )
@@ -1967,6 +1987,7 @@ void Simulation::ApplyCommand( const SimCommand& command )
 				// Straight into the world.
 				flecs::entity item = CreateEntity();
 				item.set<HeldItem>( { 0, command.index, 0, 0 } );
+				StartItemFields( item, command.index );
 				PutItemInWorld( item, ToVec( command.a ), CommandRotation( command.c ), ToVec( command.b ) );
 				return;
 			}
@@ -1980,6 +2001,7 @@ void Simulation::ApplyCommand( const SimCommand& command )
 				// Into a slot (its kind's own, or the first free one); with none, onto the floor.
 				flecs::entity item = CreateEntity();
 				item.set<HeldItem>( { 0, command.index, kNoSocket, 1 } );
+				StartItemFields( item, command.index );
 				item.set<Transform>( player.get<Transform>() );
 				if ( GiveSlot( player, item, false ) == false )
 				{
@@ -1991,6 +2013,7 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			{
 				flecs::entity item = CreateEntity();
 				item.set<HeldItem>( { holder, command.index, command.mode, 1 } );
+				StartItemFields( item, command.index );
 				item.set<Transform>( player.get<Transform>() );
 				return;
 			}
@@ -2002,6 +2025,7 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			}
 			flecs::entity item = CreateEntity();
 			item.set<HeldItem>( { holder, command.index, command.mode, 0 } );
+			StartItemFields( item, command.index );
 			item.set<Transform>( player.get<Transform>() );
 			return;
 		}

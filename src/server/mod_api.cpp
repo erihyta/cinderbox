@@ -171,6 +171,20 @@ std::vector<Declarations::OwnItem> Declarations::ItemsOfLook()
 			// Used by its slot's key: what the simulation records then, for its motions and looks.
 			Event( look.kind + ".used" );
 		}
+		// Its own fields: each copy has them, starting as the scene says.
+		for ( const LookItem::Field& field : look.fields )
+		{
+			BoardType type = field.type == "float" ? BoardType::Float : field.type == "bool" ? BoardType::Bool : BoardType::Int;
+			FieldHandle handle = Field( field.name, type, BoardScope::Entity );
+			if ( handle.Valid() == false )
+			{
+				continue;
+			}
+			int32_t raw = type == BoardType::Float	 ? BoardFromFloat( field.value )
+						  : type == BoardType::Bool ? ( field.value != 0.0f ? 1 : 0 )
+													 : int32_t( std::lround( field.value ) );
+			m_itemFieldDefaults[own.kind.index].push_back( { uint16_t( handle.slot ), raw } );
+		}
 		auto slot = look.properties.find( "slot" );
 		if ( look.slotKey.empty() == false && slot != look.properties.end() && slot->second >= 1.0f )
 		{

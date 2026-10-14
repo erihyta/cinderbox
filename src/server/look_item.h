@@ -20,6 +20,14 @@ struct LookItem
 	std::string holster;					 // the socket it hangs in while it is put away ("Hip"), or none
 	bool motions = false;					 // CbMotion nodes under it: a set named like the kind (motions/<kind>.cfg)
 	std::string slotKey; // the key it suggests for its slot ("V"), or none
+	// Its own fields (CbItem.fields): a field of each copy, with what a new copy starts with.
+	struct Field
+	{
+		std::string name;
+		std::string type; // "int", "float", "bool"
+		float value = 0.0f;
+	};
+	std::vector<Field> fields;
 };
 
 } // namespace cb

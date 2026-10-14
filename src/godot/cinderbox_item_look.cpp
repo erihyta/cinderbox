@@ -63,6 +63,9 @@ void CbItem::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "kind", PROPERTY_HINT_PLACEHOLDER_TEXT, "melee.bat" ), "set_kind", "get_kind" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "display_name", PROPERTY_HINT_PLACEHOLDER_TEXT, "Bat" ), "set_display_name",
 				  "get_display_name" );
+	ClassDB::bind_method( D_METHOD( "set_fields", "value" ), &CbItem::set_fields );
+	ClassDB::bind_method( D_METHOD( "get_fields" ), &CbItem::get_fields );
+	ADD_PROPERTY( PropertyInfo( Variant::DICTIONARY, "fields", PROPERTY_HINT_DICTIONARY_TYPE, "String;Variant" ), "set_fields", "get_fields" );
 	ADD_PROPERTY( PropertyInfo( Variant::DICTIONARY, "properties", PROPERTY_HINT_DICTIONARY_TYPE, "String;float" ), "set_properties",
 				  "get_properties" );
 	ClassDB::bind_method( D_METHOD( "set_carry_grip", "value" ), &CbItem::set_carry_grip );
@@ -996,6 +999,20 @@ Dictionary CbItem::bake() const
 			return fail( "property \"" + name + "\" needs a name without spaces and a number" );
 		}
 		text += "property " + name + " " + String::num( double( value ), 4 ) + "\n";
+	}
+	// Its own fields, sorted: "field gun.rounds int 30".
+	Array fieldNames = m_fields.keys();
+	fieldNames.sort();
+	for ( int i = 0; i < fieldNames.size(); ++i )
+	{
+		String name = String( fieldNames[i] ).strip_edges();
+		Variant value = m_fields[fieldNames[i]];
+		const char* type = value.get_type() == Variant::BOOL ? "bool" : value.get_type() == Variant::INT ? "int" : value.get_type() == Variant::FLOAT ? "float" : nullptr;
+		if ( name.is_empty() || name.contains( " " ) || name.contains( "\t" ) || type == nullptr || std::isfinite( double( value ) ) == false )
+		{
+			return fail( "field \"" + name + "\" needs a name without spaces and a value: a whole number, a decimal, or true / false" );
+		}
+		text += "field " + name + " " + String( type ) + " " + String::num( double( value ), 4 ) + "\n";
 	}
 	// What the other hand does: at the marker (0), turned with it (1), or as the animations have it
 	// (2; no place of its own).

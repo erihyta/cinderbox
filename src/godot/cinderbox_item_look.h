@@ -77,6 +77,18 @@ public:
 	{
 		return m_animationPack;
 	}
+	// Its own fields: each copy of the item has them, starting with these values, and keeps its own
+	// ({"gun.rounds": 30}). The value's type is the field's: a whole number an Int, a decimal a
+	// Float, true / false a Bool. Server mods read and write them; looks read the one in a player's
+	// hand as "hand.<field>".
+	void set_fields( const godot::Dictionary& v )
+	{
+		m_fields = v;
+	}
+	godot::Dictionary get_fields() const
+	{
+		return m_fields;
+	}
 	// When used: what must hold for a use to do anything ("dash.charges > 0"), what a use changes
 	// ("dash.charges -= 1"), the seconds between two, and the event a use says. For the helper nodes
 	// under the item (its probe, effects, moves): what using it does.
@@ -406,6 +418,7 @@ private:
 	void PreviewStage( godot::Node3D* under, const godot::Transform3D& hand, bool firstPerson, bool internal );
 	bool m_viewRightHand = true;
 	godot::Dictionary m_properties;
+	godot::Dictionary m_fields;
 	int m_use = USE_SELECTED;
 	int m_slot = 0;
 	godot::NodePath m_carryGrip;

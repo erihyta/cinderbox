@@ -4212,6 +4212,72 @@ void TestSlotKeys()
 	CHECK( dashes() == 3 && flying() > flown );
 }
 
+// An item's own fields (ItemShape::fieldDefaults, declared by its CbItem): every new copy starts with
+// its kind's values, however it is made, and keeps its own from then on.
+void TestItemFields()
+{
+	SimConfig config = TestConfig();
+	config.fields = 3;
+	ItemShape gun, rock;
+	gun.fieldDefaults = { { 1, 12 }, { 2, BoardFromFloat( 0.5f ) } };
+	Simulation sim( config, FlatMap() );
+	sim.SetItemShapes( { gun, rock } );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 10 );
+	auto spawn = [&]( uint16_t kind, uint32_t target, uint8_t mode, int32_t value ) {
+		SimCommand c;
+		c.type = CommandType::SpawnItem;
+		c.target = target;
+		c.index = kind;
+		c.mode = mode;
+		c.value = value;
+		c.a = { 0.0f, 2.0f, 0.0f };
+		f.commands.push_back( c );
+	};
+	spawn( 0, SlotTarget( 0 ), 0, 0 ); // in the hand
+	spawn( 0, 0, 0, 0 );				// lying in the world
+	spawn( 1, SlotTarget( 0 ), kNoSocket, 1 );
+	step( 2 );
+	std::vector<uint32_t> guns, rocks;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		if ( const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>() )
+		{
+			( item->kind == 0 ? guns : rocks ).push_back( r.netId );
+		}
+	}
+	CHECK( guns.size() == 2 && rocks.size() == 1 );
+	if ( guns.size() != 2 || rocks.size() != 1 )
+	{
+		return;
+	}
+	for ( uint32_t g : guns )
+	{
+		CHECK( sim.BoardValue( g, 1 ) == 12 && BoardToFloat( sim.BoardValue( g, 2 ) ) == 0.5f && sim.BoardValue( g, 0 ) == 0 );
+	}
+	CHECK( sim.BoardValue( rocks[0], 1 ) == 0 );
+	// One copy's change is its own.
+	SimCommand set;
+	set.type = CommandType::SetField;
+	set.target = guns[0];
+	set.index = 1;
+	set.value = 7;
+	f.commands.push_back( set );
+	step( 1 );
+	std::printf( "    two copies: %d and %d rounds\n", int( sim.BoardValue( guns[0], 1 ) ), int( sim.BoardValue( guns[1], 1 ) ) );
+	CHECK( sim.BoardValue( guns[0], 1 ) == 7 && sim.BoardValue( guns[1], 1 ) == 12 );
+}
+
 void TestSlots()
 {
 	SimConfig config = TestConfig();
@@ -6592,6 +6658,7 @@ int main( int argc, char** argv )
 		{ "held_items", TestHeldItems },
 		{ "slots", TestSlots },
 		{ "slot_keys", TestSlotKeys },
+		{ "item_fields", TestItemFields },
 		{ "item_use", TestItemUse },
 		{ "event_news", TestEventNews },
 		{ "world_items", TestWorldItems },

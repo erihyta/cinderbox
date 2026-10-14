@@ -208,6 +208,14 @@ bool GameServer::Start( const ServerOptions& options )
 		}
 		Log( "slots: %d a player, the selected one's item in %s", int( m_options.config.slots ), hand->c_str() );
 	}
+	// What a new copy of each kind starts with in its own fields (declared by its scene).
+	for ( const auto& [kind, defaults] : declarations.ItemFieldDefaults() )
+	{
+		if ( kind >= 0 && size_t( kind ) < m_schema.itemShapes.size() )
+		{
+			m_schema.itemShapes[size_t( kind )].fieldDefaults = defaults;
+		}
+	}
 	EncodeSchema( m_schema, m_schemaBytes );
 
 	m_map = GetLevelLayout();

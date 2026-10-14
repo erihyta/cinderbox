@@ -1969,6 +1969,24 @@ void TestRifle()
 	CHECK( clicks.size() == reloads.size() && clicks.size() >= 2 && clicks.size() <= 3 ); // one click for each empty magazine
 	CHECK( longest >= 120 && longest <= 128 );				   // the reload
 	CHECK( pistolShots.size() == 3 );						   // a press each: the pistol is not automatic
+	// The rounds are the pistol's own field (its scene starts a copy at 12): three shots left nine.
+	{
+		Simulation& sim = h.server.Sim();
+		const BoardField* rounds = schema.FindField( "gun.rounds" );
+		int pistolKind = schema.FindItemKind( "gun.pistol" );
+		uint32_t shooter = sim.PlayerNetId( h.bots[1].client->Slot() );
+		int32_t left = -1;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+			if ( rounds != nullptr && item != nullptr && item->holder == shooter && int( item->kind ) == pistolKind )
+			{
+				left = sim.BoardValue( r.netId, rounds->slot );
+			}
+		}
+		std::printf( "    the pistol's own rounds after three shots: %d\n", int( left ) );
+		CHECK( left == 9 );
+	}
 	for ( Bot& b : h.bots )
 	{
 		CHECK( b.client->GetStats().desyncs == 0 );

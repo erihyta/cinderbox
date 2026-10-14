@@ -40,6 +40,9 @@ properties = {
 "mark.range": 80.0,
 "mark.seconds": 1.0
 }
+fields = {
+"gun.rounds": 12
+}
 animation_pack = "gun.pistol_hold"
 holster = "Hip"
 slot = 1

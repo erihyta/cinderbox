@@ -48,6 +48,9 @@
 		<member name="mass" type="float" setter="set_mass" getter="get_mass" default="1.0">
 			What it weighs when it lies in the world, in kilograms.
 		</member>
+		<member name="fields" type="Dictionary" setter="set_fields" getter="get_fields" default="{}">
+			Its own state: a field of every copy of the item ([code]{"gun.rounds": 12}[/code]). The scene declares it; a new copy starts with the value and keeps its own from then on, as simulation state (predicted, rolled back, in a joining player's snapshot). The value's type is the field's: a whole number an Int, a decimal a Float, [code]true[/code] / [code]false[/code] a Bool. Server mods read and write it ([code]ctx.Get[/code] / [code]ctx.Set[/code] on the item's NetId); looks read the one in a player's hand as [code]hand.&lt;field&gt;[/code] ([code]{hand.gun.rounds}[/code]).
+		</member>
 		<member name="properties" type="Dictionary" setter="set_properties" getter="get_properties" default="{}">
 			Named numbers any server mod may read: [code]pickup.hold_seconds[/code] = 0.5, [code]inventory.slot[/code] = 3. They replace what the item's mod declared in code for the same names.
 		</member>
