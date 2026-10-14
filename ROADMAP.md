@@ -9,7 +9,7 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 |---|---|---|
 | 1 | [The SDK knows the server](#1-the-sdk-knows-the-server) | the editor knows the server's names: completed while typing, checked at publish |
 | 2 | [Mod testing](#2-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
-| 3 | [Motions and the body](#3-motions-and-the-body) | an item brings its motions, its keys and its poses: the dash and the grapple as items; what is left of launches |
+| 3 | [Items that do things](#3-items-that-do-things) | an item is used by its slot's key; what it does is helper nodes under it; its state is its own; one tree per kind in the game |
 | 4 | [The inventory, finished](#4-the-inventory-finished) | drag, icons, stacks, chests, and intents a mod declares |
 | 5 | [The client, finished](#5-the-client-finished) | what is left of the client's known limits, typed text, the game script in parts |
 | 6 | [Rules without a relink](#6-rules-without-a-relink) | a server mod's rules as a script the server loads, not C++ compiled into it |
@@ -90,47 +90,38 @@ One step from an edit to playing it: the client starts the server.
 | Looks reload | **done (M132)**: publish a look while the server runs and everyone playing sees it, with no restart, when it changes nothing the simulation reads | a change the simulation reads (an item's body, a pack's state machine, a motion) still needs the server restarted: the hosted test could do that by itself; files a new look no longer has stay loaded until the game restarts |
 | Bots | **done (M123)**: `--bots=N` starts `cb_bot` players on the hosted server | a count in the menu; bots that use what the mod under test adds |
 
-### 3. Motions and the body
+### 3. Items that do things
 
-**The idea** (rethought after M141): the item is the unit. Its scene already holds its body, its
-animation pack, its reactions and its numbers (M136, M137); it gets its motions and its keys too.
-A dash or a grapple is then an item made in the editor, like a gun: carried, dropped, given by a
-server's rules, with its own poses.
+**The idea** (rethought after M145): an item is authored in one scene and is everything about
+itself: its body and look, how its key works, what it does, its state, its pose. The engine sorts
+what is per copy (the body, meshes, markers), what is once per kind (reactions, predictions) and
+what is baked for the simulation (what moves bodies, fields). A grappling hook should read the way
+it is thought: an item in the left hand; on use, a line is thrown; where it hits, a rope binds the
+player to the point; the player is pulled.
 
-What a weapon does today, and a motion would do the same way:
-
-| | A weapon (today) | A dash or a grapple as an item |
-|---|---|---|
-| The animation comes from | the item's pack | the item's pack |
-| The cue is said by | the `gun` mod, on a shot | the `CbMotion`'s `emits` (works today) |
-| The body follows | a transition in the pack named like the cue | the same; a lasting pose on `motion.<name>` |
-| Effects and sound | `CbReaction` nodes in the item's scene | the same |
-| Only for who has it | reactions hear only the item in use (M136) | its motions run only for who has it |
+**Done on the way** (M142 to M145): an item's motions (`CbMotion` under a `CbItem`, `carried.<kind>`),
+`motion.<name>` in conditions, the Keys page, and **overlays**: a pack's layer the character does not
+have, laid over the whole body by its own weight while the item is carried (the boots' dash pose,
+the hook's hang).
 
 | # | Piece | What | Why this way |
 |---|---|---|---|
-| 1 | A motion in an item's scene | **done (M142)**: a `CbMotion` under a `CbItem` is baked with the item and runs for who has it, in the hand or carried (`carried.<kind>`); a mod that takes its items from its look gets them. The dash is the boots' motion | |
-| 2 | `motion.<name>` | **done (M143)**: in state machine conditions, in other motions' and in looks': true while that motion of the player's is on | |
-| 3 | Keys from the scene | **done (M144)**: an item's motion says its action's `key`, and the item declares the action when no mod has; the settings have a Keys page for the game's own keys, the server's actions and the screens' keys, remembered by action | a `CbMotionSet`'s motion still needs its action declared in C++; the page marks two actions on one key and does not forbid it |
-| 4 | The dash and the grapple, as items | **done (M145)**: both are items whose scenes hold their motion, key and pose; a pose is a pack's overlay (a layer the character does not have, laid over the whole body by its own weight while the item is carried) | the poses are the placeholder's clips (Sprint, Jump): better ones belong in the two pack scenes |
-| 5 | Thrown from the hand | a launch can throw *the item in the hand*, from its socket, on a marker of the pack's throw clip (so a motion hears a marker's event) | replaces three rows: from the hand, the throw's pose, ammunition (what is thrown is what was held; a count is step 4's stacks) |
-| 6 | An item's time is up | an event when an item with a lifetime ends, launched or not: a grenade goes off on a timer | a mod sees what a thrown item ran into (`ctx.Hits`), not that its time is up |
-| 7 | Changes | a `min` / `max` on a change (a tank fills to a little over full today); an expression on its right side | |
-| 8 | Publish checks | a motion that reads a name nobody declares, or writes a field it may not, stops the publish | |
-| 9 | Launches: every hit | the simulation keeps the hardest 8 impacts of a tick; a soft touch in a busy scene may be missed. A launched item's own contacts, always | |
-| 10 | Launches: fast and small | at rocket speeds a thin wall can be passed through. Continuous collision for launched kinds that ask | |
-| 11 | Motion Preview | a panel like the item preview: a capsule on a small stage, press an action, watch the path | last: **Test mod** (M125) is one button from an edit to playing it |
+| 1 | Slot keys and use modes | every item is in a slot, and the slot's key is the item's key. `CbItem.use`: **In the hand** (the key selects it; the mouse uses it), **Press** (the key uses it where it is, once), **Hold** (while the key is down). Slot keys are rebindable on the Keys page; a mod or an item's scene suggests a slot's key. `using.<kind>` in conditions | one key per item, chosen by the player; an item with no code needs no action of its own. Replaces the item part of M144 (`CbMotion.key`, an item's declared actions) |
+| 2 | What an item does, as helpers | under a `CbItem`, nodes that read as what happens, their lifetime said by nesting (a child lives while its parent holds): on use a `CbProbe` is thrown; on its hit a `CbLink` binds; under it a `CbForce` pulls and the movement while it holds is set. Baked to the motion data the simulation has now | `CbMotion` grew its own triggers, ends and conditions for movement with no item; in an item, the item is the trigger. `CbMotion` stays for what has no item (a double jump, flight) |
+| 3 | An item's state | fields declared on the `CbItem` (name, type, default: the rifle's ammo), kept per copy in the simulation; the mods that rule the item read and write them | the scene is what the server adapts to; today the gun mod declares `gun.ammo` in C++ |
+| 4 | One tree per kind | in the game, a copy of an item is its body and look; its reactions, predictions and the rest are instanced once per kind, like the world reactions, and act on the copy in use (its markers) | many copies lying about cost their meshes only; the item scene stays one scene to edit |
+| 5 | The left hand | an item that stays in the left hand while the right holds another; its pose an overlay filtered to the left arm | the hook as it is thought of |
+| 6 | Thrown from the hand | a launch can throw *the item in the hand*, from its socket, on a marker of the pack's throw clip | what is thrown is what was held; a count is step 4's stacks |
+| 7 | An item's time is up | an event when an item with a lifetime ends, launched or not: a grenade goes off on a timer | a mod sees what a thrown item ran into (`ctx.Hits`), not that its time is up |
+| 8 | Launches: every hit, fast and small | a launched item's own contacts always; continuous collision for kinds that ask | the hardest 8 impacts a tick are kept now; a rocket can pass a thin wall |
+| 9 | Publish checks, changes | a name nobody declares stops the publish; a `min` / `max` on a change | |
+| 10 | Item Preview, used | press the item's key in the editor's preview and watch what it does | last: **Test mod** (M125) is one button from an edit to playing it |
 
-- **Dropped: a pack asked for by a motion.** A motion that needs animations of its own is an item, and
-  an item brings its pack. For the case that is left (a motion with no item on a character that knows
-  nothing of it) a mod's `SwapLayer` does it today.
 - **Not a route: reactions that give out cues.** A `CbReaction` runs in the game only; the body's
-  animation is simulation state the server poses for hit tests. The node that gives out a cue the
-  simulation hears is the `CbMotion`.
-- **Motions with no item stay**: flight, a double jump, a crouch are a mod's set for everyone, and
-  the character's own state machine reads `motion.<name>`.
-- **Poses need clips**: the dash's and the grapple's are authored in Godot; licensed ones stay out of
-  the repository, as the rifle's do.
+  animation is simulation state the server poses for hit tests.
+- **What changes physics is baked**: the helpers are authoring; the simulation runs the data they
+  bake to. Reactions and sounds are live nodes in the game. Both sit in one item scene.
+- **Poses need clips**: the dash's and the hook's are placeholders (Sprint, Jump).
 
 ### 4. The inventory, finished
 
