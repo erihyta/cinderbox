@@ -102,7 +102,7 @@ AnimState LeadAnimState( const AnimState& shown, const AnimGraph& graph, const A
 	}
 
 	AnimState out = shown;
-	for ( size_t l = 1; l < graph.layers.size(); ++l )
+	for ( size_t l = 1; l < LayerSlots( graph ) && l < out.graph.size() && l < s.graph.size(); ++l )
 	{
 		out.graph[l] = std::as_const( s ).graph[l];
 	}

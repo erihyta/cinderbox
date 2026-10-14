@@ -32,7 +32,7 @@ float OnceRatio( float time, float duration )
 std::vector<ActiveClip> ActiveClips( const AnimState& state, const AnimGraph& character, const AnimGraphPacks& packs )
 {
 	std::vector<ActiveClip> out;
-	for ( size_t l = 0; l < character.layers.size(); ++l )
+	for ( size_t l = 0; l < LayerSlots( character ) && l < state.graph.size(); ++l )
 	{
 		const AnimGraphLayerState& L = state.graph[l];
 		const AnimGraph* owner = nullptr;
@@ -235,13 +235,17 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 	const auto& skeleton = m_set.Skeleton();
 	std::vector<ozz::animation::BlendingJob::Layer> layers;
 	float neckKept = 1.0f;
-	for ( size_t l = 0; l < m_graph->layers.size(); ++l )
+	for ( size_t l = 0; l < LayerSlots( *m_graph ) && l < state.graph.size(); ++l )
 	{
 		AnimGraphLayerState L = state.graph[l];
 		// The layer as the simulation plays it: the character's own, or a pack's it was swapped to.
 		const AnimGraph* owner = nullptr;
 		const AnimGraphLayer& layer = ResolveLayer( *m_graph, m_packs, l, L.source, owner );
 		const AnimGraph& graph = *owner;
+		if ( layer.states.empty() )
+		{
+			continue; // an overlay slot no pack fills
+		}
 		size_t sourceIndex = owner == m_graph.get() ? 0 : size_t( L.source );
 		if ( sourceIndex >= m_sources.size() || m_sources[sourceIndex].graph != owner )
 		{

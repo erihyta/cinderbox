@@ -975,7 +975,8 @@ void Context::ResolveLayers()
 		return;
 	}
 	const auto& packs = m_sim.Packs();
-	size_t layers = graph->layers.size();
+	// The character's layers and the overlays after them, as far as a player's state has room.
+	const size_t allLayers = LayerSlots( *graph );
 	for ( int slot = 0; slot < kMaxPlayers; ++slot )
 	{
 		if ( Joining( PlayerSlot( slot ) ) || Leaving( PlayerSlot( slot ) ) )
@@ -992,8 +993,10 @@ void Context::ResolveLayers()
 		{
 			continue;
 		}
+		const size_t layers = std::min( allLayers, anim->graph.size() );
 		// What its held items bring: the first socket's item that has that layer wins.
-		std::vector<uint8_t> fromItems( layers );
+		const size_t ownLayers = graph->layers.size();
+		std::vector<uint8_t> fromItems( std::max( layers, ownLayers ) );
 		for ( size_t socket = 0; m_itemLayers != nullptr && socket < m_schema.sockets.size(); ++socket )
 		{
 			uint32_t item = m_sim.HeldItemOf( netId, uint32_t( socket ) );
@@ -1011,10 +1014,33 @@ void Context::ResolveLayers()
 				}
 			}
 		}
+		// Overlays: every item it carries, in the hand or put away, whose pack has a layer the
+		// character does not have (a dash, hanging on a line), one a slot, in NetId order.
+		size_t overlay = ownLayers;
+		for ( uint32_t item : m_sim.CarriedItemsOf( netId ) )
+		{
+			auto brings = m_itemLayers != nullptr ? m_itemLayers->find( ItemKindOf( item ).index ) : m_itemLayers->end();
+			if ( m_itemLayers == nullptr || brings == m_itemLayers->end() || size_t( brings->second ) >= packs.size() ||
+				 packs[size_t( brings->second )] == nullptr || OverlayLayerOf( *graph, *packs[size_t( brings->second )] ) < 0 )
+			{
+				continue;
+			}
+			uint8_t source = uint8_t( brings->second + 1 );
+			bool already = false;
+			for ( size_t l = ownLayers; l < overlay; ++l )
+			{
+				already |= fromItems[l] == source;
+			}
+			if ( already == false && overlay < layers )
+			{
+				fromItems[overlay++] = source;
+			}
+		}
 		// A mod's wish first, then the item's; a command only where what plays would change.
 		for ( size_t l = 0; l < layers; ++l )
 		{
-			uint8_t wanted = m_layerWishes->mod[slot][l] != 0 ? m_layerWishes->mod[slot][l] : fromItems[l];
+			uint8_t wish = l < m_layerWishes->mod[slot].size() ? m_layerWishes->mod[slot][l] : 0;
+			uint8_t wanted = wish != 0 ? wish : fromItems[l];
 			if ( anim->graph[l].source != wanted )
 			{
 				SimCommand c;

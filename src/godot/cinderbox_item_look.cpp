@@ -150,7 +150,7 @@ void CbLinkLook::_bind_methods()
 {
 	ClassDB::bind_method( D_METHOD( "set_motion", "value" ), &CbLinkLook::set_motion );
 	ClassDB::bind_method( D_METHOD( "get_motion" ), &CbLinkLook::get_motion );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "motion", PROPERTY_HINT_PLACEHOLDER_TEXT, "grapple.moves/Hook (empty: any link)" ), "set_motion",
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "motion", PROPERTY_HINT_PLACEHOLDER_TEXT, "grapple.hook/Hook (empty: any link)" ), "set_motion",
 				  "get_motion" );
 	ClassDB::bind_method( D_METHOD( "set_scene", "value" ), &CbLinkLook::set_scene );
 	ClassDB::bind_method( D_METHOD( "get_scene" ), &CbLinkLook::get_scene );

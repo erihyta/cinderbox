@@ -1292,6 +1292,121 @@ void TestItemShapes()
 	CHECK( properties.count( "pickup.hold_seconds" ) == 1 && properties["pickup.hold_seconds"] == 0.5f );
 }
 
+// An item's pose: a pack's layer the character does not have is an overlay, laid over the whole
+// body while its weight says so. The boots and the hook are carried (never in the hand): their
+// packs take the first two overlay slots for as long as the player has them. The boots' dash
+// pose shows while the Dash motion is on, on the client the tick the server has it (predicted),
+// and is gone after; the hook's stays at nothing while it is not thrown.
+void TestItemPoses()
+{
+	const std::string root = CB_SOURCE_DIR;
+	std::shared_ptr<const CharacterAsset> mannequin;
+	Harness h( 47895, {}, {}, {}, [&]( ServerOptions& options ) {
+		std::string error, warnings;
+		mannequin = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
+		options.character = mannequin;
+		options.loadAnimPack = [root]( const std::string& mod, const std::string& pack, std::string& error, std::string& warnings ) {
+			return LoadAnimPackFolder( root + "/server_mods/" + mod + "/client", pack, error, warnings );
+		};
+	} );
+	const ModSchema& schema = h.server.Schema();
+	uint16_t dash = schema.ActionMask( "dash" );
+	int boots = -1, hook = -1;
+	for ( size_t i = 0; i < schema.animPacks.size(); ++i )
+	{
+		boots = schema.animPacks[i].name == "dash.boots_dash" && schema.animPacks[i].graph.empty() == false ? int( i ) : boots;
+		hook = schema.animPacks[i].name == "grapple.hook_hang" && schema.animPacks[i].graph.empty() == false ? int( i ) : hook;
+	}
+	CHECK( mannequin != nullptr && dash != 0 && boots >= 0 && hook >= 0 );
+	if ( mannequin == nullptr || dash == 0 || boots < 0 || hook < 0 )
+	{
+		return;
+	}
+	const uint32_t dashAt = 240;
+	Bot& bot = h.AddBot();
+	bot.script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.moveForward = 127;
+		if ( tick >= dashAt && tick < dashAt + 4 )
+		{
+			in.actions = dash;
+		}
+		return in;
+	};
+
+	// The overlay slots of the player, after the character's own layers: which pack, how much.
+	struct Seen
+	{
+		uint8_t source[kOverlaySlots] = {};
+		float weight[kOverlaySlots] = {};
+	};
+	std::map<uint32_t, Seen> truth, predicted;
+	auto look = [&]( const Simulation& sim, PlayerSlot slot, std::map<uint32_t, Seen>& into ) {
+		uint32_t netId = sim.PlayerNetId( slot );
+		AnimStateCopy anim = netId != 0 ? sim.EntityAnimState( netId ) : AnimStateCopy();
+		size_t own = sim.Graph() != nullptr ? sim.Graph()->layers.size() : 0;
+		if ( anim == nullptr || own == 0 || into.count( sim.Tick() ) != 0 )
+		{
+			return;
+		}
+		Seen seen;
+		for ( size_t i = 0; i < kOverlaySlots && own + i < anim->graph.size(); ++i )
+		{
+			seen.source[i] = anim->graph[own + i].source;
+			seen.weight[i] = anim->graph[own + i].weight;
+		}
+		into[sim.Tick()] = seen;
+	};
+	Simulation& server = h.server.Sim();
+	h.server.SetTickObserver( [&] {
+		if ( bot.client->State() == ClientState::Playing )
+		{
+			look( server, bot.client->Slot(), truth );
+		}
+	} );
+	auto script = bot.script;
+	bot.script = [&, script]( uint32_t tick ) {
+		if ( bot.client->Session() != nullptr && bot.client->State() == ClientState::Playing )
+		{
+			look( bot.client->Session()->Sim(), bot.client->Slot(), predicted );
+		}
+		return script( tick );
+	};
+	h.RunUntil( 6.0 );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	CHECK( bot.client->GetStats().desyncs == 0 );
+
+	const uint32_t before = dashAt - 10, during = dashAt + 6, after = dashAt + 40;
+	bool have = truth.count( before ) && truth.count( during ) && truth.count( after ) && predicted.count( during );
+	CHECK( have );
+	if ( have == false )
+	{
+		return;
+	}
+	// Which slot is whose: both packs are in, one each, whichever order.
+	int bootsSlot = -1, hookSlot = -1;
+	for ( size_t i = 0; i < kOverlaySlots; ++i )
+	{
+		bootsSlot = truth[before].source[i] == uint8_t( boots + 1 ) ? int( i ) : bootsSlot;
+		hookSlot = truth[before].source[i] == uint8_t( hook + 1 ) ? int( i ) : hookSlot;
+	}
+	std::printf( "    overlays: the boots' pack in slot %d, the hook's in slot %d\n", bootsSlot, hookSlot );
+	CHECK( bootsSlot >= 0 && hookSlot >= 0 && bootsSlot != hookSlot );
+	if ( bootsSlot < 0 || hookSlot < 0 )
+	{
+		return;
+	}
+	std::printf( "    the dash pose: %.2f before, %.2f during (predicted %.2f), %.2f after; hanging: %.2f\n", truth[before].weight[bootsSlot],
+				 truth[during].weight[bootsSlot], predicted[during].weight[bootsSlot], truth[after].weight[bootsSlot], truth[during].weight[hookSlot] );
+	CHECK( truth[before].weight[bootsSlot] == 0.0f );
+	CHECK( truth[during].weight[bootsSlot] > 0.2f && predicted[during].weight[bootsSlot] == truth[during].weight[bootsSlot] );
+	CHECK( truth[after].weight[bootsSlot] == 0.0f );
+	CHECK( truth[during].weight[hookSlot] == 0.0f );
+	int compared = 0;
+	CHECK( h.CompareWithServer( bot, compared ) == 0 );
+}
+
 // A held item brings its layers: with the bat out, the player's "UpperBody" layer plays from the
 // melee mod's pack (how it is held and swung), and the legs stay the player's own; crouching (the
 // sneak mod's swap of "FullBody") plays under it, the bat still held its way; standing up gives the
@@ -3562,6 +3677,7 @@ int main( int argc, char** argv )
 		{ "pickup", TestPickup },
 		{ "inventory", TestInventory },
 		{ "item_layers", TestItemLayers },
+		{ "item_poses", TestItemPoses },
 		{ "sprint_swing", TestSprintSwing },
 		{ "view_sources", TestViewSources },
 	};

@@ -1,0 +1,76 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://placeholder/skeleton.tscn" id="1_skeleton"]
+[ext_resource type="Animation" path="res://placeholder/clips/Idle.res" id="2_idle"]
+[ext_resource type="Animation" path="res://placeholder/clips/Jump.res" id="3_hang"]
+
+[sub_resource type="AnimationLibrary" id="Clips"]
+_data = {
+&"Idle": ExtResource("2_idle"),
+&"Jump": ExtResource("3_hang")
+}
+
+[sub_resource type="AnimationNodeAnimation" id="IdleClip"]
+animation = &"Idle"
+
+[sub_resource type="AnimationNodeAnimation" id="HangClip"]
+animation = &"Jump"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="StartToIdle"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="StartToHang"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachine" id="FullBody"]
+states/Idle/node = SubResource("IdleClip")
+states/Idle/position = Vector2(300, 100)
+transitions = ["Start", "Idle", SubResource("StartToIdle")]
+
+[sub_resource type="AnimationNodeStateMachine" id="Hang"]
+states/Hang/node = SubResource("HangClip")
+states/Hang/position = Vector2(300, 100)
+transitions = ["Start", "Hang", SubResource("StartToHang")]
+
+[sub_resource type="AnimationNodeBlend2" id="HangBlend"]
+
+[sub_resource type="AnimationNodeBlendTree" id="Tree"]
+nodes/output/position = Vector2(700, 160)
+nodes/FullBody/node = SubResource("FullBody")
+nodes/FullBody/position = Vector2(100, 60)
+nodes/Hang/node = SubResource("Hang")
+nodes/Hang/position = Vector2(100, 260)
+nodes/HangBlend/node = SubResource("HangBlend")
+nodes/HangBlend/position = Vector2(420, 160)
+node_connections = [&"HangBlend", 0, &"FullBody", &"HangBlend", 1, &"Hang", &"output", 0, &"HangBlend"]
+
+[node name="HookHangPack" type="CbAnimPack"]
+character_name = "grapple.hook_hang"
+skeleton_path = NodePath("Skeleton3D")
+animation_player_path = NodePath("AnimationPlayer")
+animation_tree_path = NodePath("AnimationTree")
+replaces = PackedStringArray("Hang")
+graph_inputs = {
+"HangBlend/blend_amount": "motion.grapple.hook.Hook"
+}
+editor_description = "Hanging on the line: the hook's animation pack (the hook's Animation Pack, prefabs/hook.tscn).
+
+Hang is a layer no character has, so it is laid over the whole body, for as long as its weight says: the HangBlend's graph input, \"motion.grapple.hook.Hook\", is 1 while the hook's motion is on (from the throw until the line is let go). An item's pack plays such a layer while the item is carried, in the hand or not.
+
+FullBody is here only to see the pose over a standing body in the editor: Replaces names Hang alone, so it is not baked.
+
+The clip is the SDK placeholder's Jump (CC0): put another in the AnimationPlayer and in the Hang state to change the pose. Saving this scene bakes anim/grapple.hook_hang/."
+
+[node name="Skeleton3D" parent="." instance=ExtResource("1_skeleton")]
+unique_name_in_owner = true
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+root_node = NodePath("..")
+libraries/ = SubResource("Clips")
+
+[node name="AnimationTree" type="AnimationTree" parent="."]
+active = false
+root_node = NodePath("..")
+tree_root = SubResource("Tree")
+anim_player = NodePath("../AnimationPlayer")
+parameters/HangBlend/blend_amount = 1.0

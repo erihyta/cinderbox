@@ -1738,6 +1738,20 @@ uint32_t Simulation::ResolveTarget( uint32_t target ) const
 	return target;
 }
 
+std::vector<uint32_t> Simulation::CarriedItemsOf( uint32_t holder ) const
+{
+	std::vector<uint32_t> out;
+	for ( const EntityRef& r : m_entities )
+	{
+		flecs::entity e( m_world, r.entity );
+		if ( const HeldItem* item = e.try_get<HeldItem>(); item != nullptr && holder != 0 && item->holder == holder )
+		{
+			out.push_back( r.netId );
+		}
+	}
+	return out;
+}
+
 uint32_t Simulation::HeldItemOf( uint32_t holder, uint32_t socket ) const
 {
 	if ( holder == 0 )

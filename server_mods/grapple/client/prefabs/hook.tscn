@@ -8,9 +8,12 @@
 ;   Body   CollisionShape3D   its body, should it ever lie in the world
 ;   Mesh   MeshInstance3D     what it looks like then
 ;
-; Pressing its slot's key records "grapple.hook.used" in every simulation on that tick, and the
-; mod's motion (motion_sets/grapple_moves.tscn) starts on that: so the throw is predicted, as it was
-; when it had a key of its own. Saving this scene bakes items/grapple.hook.cfg.
+; Pressing its slot's key records "grapple.hook.used" in every simulation on that tick, and its
+; motion starts on that: so the throw is predicted, as it was when it had a key of its own.
+;   Hook   CbMotion (under the item, with_item Carried): on "grapple.hook.used", while not linked;
+;          a line (CbProbe), a pull (CbForce), a rope (CbLink); let go on the same key or a jump.
+; Its pose while it is on is its pack's (animation_packs/hook_hang.tscn, grapple.hook_hang).
+; Saving this scene bakes items/grapple.hook.cfg and motions/grapple.hook.cfg.
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.22)
@@ -27,8 +30,12 @@ size = Vector3(0.1, 0.1, 0.22)
 [node name="Hook" type="CbItem"]
 kind = "grapple.hook"
 display_name = "Grapple"
+properties = {
+"inventory.start": 1.0
+}
 mass = 0.8
 use = 1
+animation_pack = "grapple.hook_hang"
 slot = 4
 
 [node name="Body" type="CollisionShape3D" parent="."]
@@ -38,3 +45,30 @@ shape = SubResource("Body")
 [node name="Mesh" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.11)
 mesh = SubResource("Mesh")
+
+[node name="Hook" type="CbMotion" parent="."]
+when = 2
+event = "grapple.hook.used"
+conditions = PackedStringArray("not linked")
+with_item = 1
+until = PackedStringArray("grapple.hook.used", "pressed.jump")
+duration = 2.0
+parameters = {
+"air_control": 0.6,
+"airborne": 1.0,
+"gravity": 0.0
+}
+emits = "grapple.fired"
+
+[node name="Line" type="CbProbe" parent="Hook"]
+travel = 80.0
+
+[node name="Pull" type="CbForce" parent="Hook"]
+strength = 160.0
+speed = 15.0
+ramp_in = 0.1
+react = true
+frame = 5
+
+[node name="Rope" type="CbLink" parent="Hook"]
+reel = 4.0
