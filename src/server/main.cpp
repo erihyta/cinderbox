@@ -14,6 +14,8 @@
 // need their workshop item: its SHA-256 is read from <items dir>/<mod>.item (default: items/ next
 // to this executable) and announced to clients, who must have that exact item to join.
 //
+// --look-source DIR: with --dump-names, the folder of the mods' client projects (server_mods): the
+//   names a mod takes from its look are written too.
 // --dump-names FILE: writes what every mod compiled into this server declares (its fields, events,
 // actions, item kinds, stances, layers, sockets, animation packs and motion sets) and exits. The
 // editor reads the file (res://cinderbox_names.cfg in a mod's project): names are completed
@@ -121,9 +123,20 @@ std::vector<std::string> SplitList( const std::string& list )
 //   stance / layer / socket / pack / motions	<name>
 //
 // Every mod, the ones switched off by default too: a look may be written for any of them.
-bool DumpNames( const char* path )
+// `lookSource`: the folder the mods' client projects are in (server_mods): what a mod takes from its
+// look (its items, the actions their motions bring) is read from the scenes' baked files there, so
+// the editor knows those names too. Empty: only what the code declares.
+bool DumpNames( const char* path, const std::string& lookSource )
 {
 	cb::mods::Declarations declarations;
+	if ( lookSource.empty() == false )
+	{
+		declarations.SetLookItems( [lookSource]( const std::string& mod ) {
+			std::vector<cb::LookItem> items;
+			cb::ListLookItemsFolder( ( std::filesystem::path( lookSource ) / mod / "client" ).string(), items );
+			return items;
+		} );
+	}
 	std::string text = "cinderbox_names\t1\n";
 	for ( const cb::mods::ModInfo& info : cb::mods::CompiledMods() )
 	{
@@ -243,7 +256,7 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 			listMods = true;
 			continue;
 		}
-		if ( arg == "--dump-names" && i + 1 < argc )
+		if ( ( arg == "--dump-names" || arg == "--look-source" ) && i + 1 < argc )
 		{
 			++i; // (handled before anything starts)
 			continue;
@@ -402,7 +415,12 @@ int main( int argc, char** argv )
 	{
 		if ( std::string( argv[i] ) == "--dump-names" )
 		{
-			return DumpNames( argv[i + 1] ) ? 0 : 1;
+			std::string lookSource;
+			for ( int k = 1; k + 1 < argc; ++k )
+			{
+				lookSource = std::string( argv[k] ) == "--look-source" ? argv[k + 1] : lookSource;
+			}
+			return DumpNames( argv[i + 1], lookSource ) ? 0 : 1;
 		}
 	}
 	if ( listMods )

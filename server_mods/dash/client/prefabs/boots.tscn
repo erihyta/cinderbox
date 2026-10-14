@@ -9,7 +9,8 @@
 ;     Push       CbImpulse: 11 m/s along where you walk, the run's own speed replaced
 ;
 ; The server mod (server_mods/dash/dash.cpp) takes the item from here (declare.ItemsOfLook()),
-; declares the names the motion uses and gives the charges back.
+; declares the fields and events the motion uses and gives the charges back. The action and its key
+; are said here (action, key): no code declares them.
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.12, 0.14, 0.28)
@@ -52,6 +53,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.09, 0.08)
 
 [node name="Dash" type="CbMotion" parent="."]
 action = "dash"
+key = "V"
 conditions = PackedStringArray("dash.charges > 0")
 with_item = 1
 cooldown = 0.4

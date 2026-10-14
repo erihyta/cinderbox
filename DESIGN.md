@@ -451,7 +451,7 @@ tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, export_client.ps1, bak
 | First-person body | the world is the third-person one and first person only shows copies: the body is set to cast its shadow without being drawn, a legs copy and an arms copy are made for the eye (three poses of one skeleton for the viewer's own player), and the arms and the held item are drawn by a second camera over the world (the sun's shadow map is drawn once more for it). The legs are slid back when looking down, so the feet are not exactly where the body's are; the view's pose is the upper body standing still; third-person holds are not framed for the eye, so most items need a `view_offset` and `view_rotation`; fingers are the clip's; a held item's shadow is of its meshes at rest; what is stowed on the body is not drawn in first person |
 | Items | one body shape per item; two kinds sharing a holster socket overlap |
 | Packs | the checks do not make Godot's or ozz's parsers safe against malformed files |
-| Menu | no server browser; no key rebinding page |
+| Menu | no server browser |
 | Large files | `simulation.cpp` is about 2,900 lines (the mover left it in M92); `cinderbox_client.cpp` is in four parts since M117, the largest 1,250 |
 
 ## Measurements (Clang Release, 32-thread desktop, everything on one machine)

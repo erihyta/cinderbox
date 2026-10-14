@@ -186,6 +186,7 @@ func _ready() -> void:
 	menu.leave_requested.connect(_leave.bind(""))
 	menu.resume_requested.connect(_resume)
 	menu.quit_requested.connect(_quit)
+	_bind_game_keys()
 
 	# The command line's server is joined once (its recording watched once); leaving it lands in
 	# the menu like any other.
@@ -229,10 +230,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			MOUSE_BUTTON_LEFT:
 				if _joined and not menu.is_open() and not client.wants_cursor():
 					Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_QUOTELEFT:
-		# The key left of 1, whatever the layout prints on it.
+	elif event.is_action_pressed("game_first_person"):
+		# (By default the key left of 1, whatever the layout prints on it.)
 		first_person = not first_person
-	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_Z and _replay == "":
+	elif event.is_action_pressed("game_shoulder") and _replay == "":
 		shoulder = 1 if shoulder == 0 else (-1 if shoulder > 0 else 0)
 	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode >= KEY_1 and event.physical_keycode <= KEY_9 \
 			and _replay == "" and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or _ui_cursor):
@@ -567,36 +568,28 @@ func _reload_presentation() -> void:
 # The server's mods declare their actions and suggest a key for each. They become InputMap actions
 # named cb_<action>, so the usual Godot input remapping works on them too.
 
+## The game's own keys: InputMap actions like the mods' (game_*), so the Keys page rebinds them too.
+const GAME_KEYS := [
+	["game_forward", "W", "Forward"], ["game_back", "S", "Back"], ["game_left", "A", "Left"], ["game_right", "D", "Right"],
+	["game_jump", "Space", "Jump"], ["game_sprint", "Shift", "Sprint"], ["game_use", "MouseLeft", "Use what is in the hand"],
+	["game_first_person", "QuoteLeft", "First person"], ["game_shoulder", "Z", "Switch shoulder"],
+]
+
+
+func _bind_game_keys() -> void:
+	for key in GAME_KEYS:
+		menu.bind_key(key[0], key[1], key[2], "Game")
+
+
 func _bind_actions() -> void:
-	# Only the last server's: a HUD's own keys (CbKey) have the prefix too, and stay.
-	for action in _actions:
-		if InputMap.has_action(ACTION_PREFIX + String(action["name"])):
-			InputMap.erase_action(ACTION_PREFIX + String(action["name"]))
+	# Only the last server's: a HUD's own keys (CbKey) have the prefix too, and stay. The key is
+	# the one the mod suggests, or the player's own (the Keys page of the settings).
+	menu.forget_keys("This server")
 	_actions = client.get_actions()
 	for action in _actions:
-		var name: String = ACTION_PREFIX + String(action["name"])
-		InputMap.add_action(name)
-		var event := _event_for_key(String(action["key"]))
-		if event != null:
-			InputMap.action_add_event(name, event)
-	print("mod actions: ", ", ".join(_actions.map(func(a): return "%s (%s)" % [a["name"], a["key"]])))
+		menu.bind_key(ACTION_PREFIX + String(action["name"]), String(action["key"]), String(action["name"]).replace("_", " ").capitalize(), "This server")
+	print("mod actions: ", ", ".join(_actions.map(func(a): return "%s (%s)" % [a["name"], menu.key_text(ACTION_PREFIX + String(a["name"]))])))
 	_update_help()
-
-
-func _event_for_key(key: String) -> InputEvent:
-	match key:
-		"MouseLeft", "MouseRight", "MouseMiddle":
-			var mouse := InputEventMouseButton.new()
-			mouse.button_index = {"MouseLeft": MOUSE_BUTTON_LEFT, "MouseRight": MOUSE_BUTTON_RIGHT,
-				"MouseMiddle": MOUSE_BUTTON_MIDDLE}[key]
-			return mouse
-	var code := OS.find_keycode_from_string(key)
-	if code == KEY_NONE:
-		push_warning("mod action key \"%s\" is not a key Godot knows" % key)
-		return null
-	var ev := InputEventKey.new()
-	ev.physical_keycode = code
-	return ev
 
 
 ## The unattended player's visit to the inventory screen: what it has done of it so far.
@@ -733,15 +726,15 @@ func _send_input(delta: float) -> void:
 		if elapsed > autoplay * 0.8 and InputMap.has_action("cb_scores") and not Input.is_action_pressed("cb_scores"):
 			Input.action_press("cb_scores")
 	elif get_window().has_focus() and not menu.is_open():
-		move.x = float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A))
-		move.y = float(Input.is_physical_key_pressed(KEY_W)) - float(Input.is_physical_key_pressed(KEY_S))
-		jump = Input.is_physical_key_pressed(KEY_SPACE)
-		sprint = Input.is_physical_key_pressed(KEY_SHIFT)
+		move.x = float(Input.is_action_pressed("game_right")) - float(Input.is_action_pressed("game_left"))
+		move.y = float(Input.is_action_pressed("game_forward")) - float(Input.is_action_pressed("game_back"))
+		jump = Input.is_action_pressed("game_jump")
+		sprint = Input.is_action_pressed("game_sprint")
 		# Actions only count while the game has the mouse, so the click that captures it is not a shot.
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			actions = _action_bits()
 			# The use button is the engine's: what is in the hand is used (what that does is its mod's).
-			use = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+			use = Input.is_action_pressed("game_use")
 	client.set_input(move, yaw, pitch, jump, sprint, use, actions, _view())
 
 
@@ -933,11 +926,13 @@ func _update_help() -> void:
 	if _replay != "":
 		help.text = "Space pause   Left/Right -/+5 s   Up/Down speed   , . step   Home restart   N next player   Mouse orbit   Wheel zoom   ` first person   Z shoulder   Esc menu   F1 stats"
 		return
-	var text := "WASD move   Shift sprint   Space jump"
+	# (The keys as they are bound now: the player's own, where one was chosen.)
+	var text := "%s%s%s%s move   %s sprint   %s jump" % [menu.key_text("game_forward"), menu.key_text("game_left"), menu.key_text("game_back"),
+		menu.key_text("game_right"), menu.key_text("game_sprint"), menu.key_text("game_jump")]
 	for action in _actions:
-		var key: String = String(action["key"]).replace("Mouse", "Mouse ")
-		text += "   %s %s" % [key, String(action["name"]).replace("_", " ")]
-	help.text = text + "   Mouse orbit   Wheel zoom   ` first person   Z shoulder   Esc menu   F1 stats"
+		text += "   %s %s" % [menu.key_text(ACTION_PREFIX + String(action["name"])), String(action["name"]).replace("_", " ")]
+	help.text = text + "   Mouse orbit   Wheel zoom   %s first person   %s shoulder   Esc menu   F1 stats" % [menu.key_text("game_first_person"),
+		menu.key_text("game_shoulder")]
 
 
 func _update_hud() -> void:

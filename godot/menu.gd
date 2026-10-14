@@ -8,6 +8,7 @@ extends Node
 ## What it remembers lives in user://player.cfg (or --config=FILE):
 ##   [player]   name
 ##   [settings] sensitivity (0.2-3), volume (0-100), fullscreen
+##   [keys]     an action's name = the key the player chose for it ("cb_dash" = "MouseRight")
 ##   [servers]  recent: the servers joined last, newest first
 
 signal join_requested(host: String, port: int)
@@ -20,7 +21,7 @@ signal quit_requested
 
 const DEFAULT_PORT := 7777
 const RECENT_LIMIT := 6
-const PANELS := ["Main", "Connecting", "Pause", "Settings"]
+const PANELS := ["Main", "Connecting", "Pause", "Settings", "Keys"]
 
 ## Mouse sensitivity as a multiplier; game.gd reads it.
 var sensitivity := 1.0
@@ -28,6 +29,15 @@ var sensitivity := 1.0
 var _scene: Node
 var _config_path := "user://player.cfg"
 var _settings_from := "" # the panel Back returns to
+
+## Keys. Every action the player can rebind is an InputMap action that somebody gave a key: the
+## game its own (game_*), the server's mods theirs (cb_<action>: game.gd binds them on joining), a
+## HUD's CbKey its own (cb_<name>, when its screen first runs). `_keys` is what the player chose
+## instead, by the action's name; it is kept for actions that are not there now (another server's).
+var _keys := {}		   # action -> key ("V", "MouseRight")
+var _key_info := {}	   # action -> { "key": the default, "label": String, "group": String }
+var _capturing := ""   # the action whose next key press is its new key
+var _apply_in := 0.0
 
 
 func _ready() -> void:
@@ -54,6 +64,11 @@ func _ready() -> void:
 	_press("OpenSettings", func(): _open_settings("Main"))
 	_press("PauseSettings", func(): _open_settings("Pause"))
 	_press("SettingsBack", func(): _show(_settings_from))
+	_press("OpenKeys", _open_keys)
+	_press("KeysBack", func(): _capturing = ""; _show("Settings"))
+	_press("KeysReset", _reset_keys)
+	var saved: Variant = _config().get_value("keys", "bound", {})
+	_keys = saved if saved is Dictionary else {}
 	var address := _node("Address") as LineEdit
 	if address:
 		address.text_submitted.connect(func(_text): _on_join())
@@ -109,7 +124,7 @@ func is_open() -> bool:
 
 ## True while the in-game menu (or its settings) is up, as opposed to the join panels.
 func is_paused() -> bool:
-	return is_open() and (_visible("Pause") or (_visible("Settings") and _settings_from == "Pause"))
+	return is_open() and (_visible("Pause") or ((_visible("Settings") or _visible("Keys")) and _settings_from == "Pause"))
 
 
 # --- Addresses ------------------------------------------------------------------------------------
@@ -289,6 +304,192 @@ func _apply_fullscreen(on: bool) -> void:
 func _open_settings(from: String) -> void:
 	_settings_from = from
 	_show("Settings")
+
+
+# --- Keys -----------------------------------------------------------------------------------------
+
+## Gives `action` (an InputMap action's whole name) its key: the player's own if one was chosen,
+## else `default_key` ("W", "Shift", "MouseLeft"). `group` is the heading it is listed under.
+func bind_key(action: String, default_key: String, label: String, group: String) -> void:
+	_key_info[action] = {"key": default_key, "label": label, "group": group}
+	_set_action_key(action, String(_keys.get(action, default_key)))
+
+
+## Forgets a group's actions (the last server's, when another is joined). What the player chose
+## for them is kept.
+func forget_keys(group: String) -> void:
+	for action in _key_info.keys():
+		if _key_info[action]["group"] == group:
+			if InputMap.has_action(action):
+				InputMap.erase_action(action)
+			_key_info.erase(action)
+
+
+## What `action` is bound to now, as a key cap says it ("V", "Mouse Right"); "" when unbound.
+func key_text(action: String) -> String:
+	if not InputMap.has_action(action):
+		return ""
+	for event in InputMap.action_get_events(action):
+		return key_of_event(event).replace("Mouse", "Mouse ").replace("QuoteLeft", "`")
+	return ""
+
+
+func is_capturing() -> bool:
+	return _capturing != ""
+
+
+static func event_for_key(key: String) -> InputEvent:
+	var buttons := {"MouseLeft": MOUSE_BUTTON_LEFT, "MouseRight": MOUSE_BUTTON_RIGHT, "MouseMiddle": MOUSE_BUTTON_MIDDLE,
+		"MouseBack": MOUSE_BUTTON_XBUTTON1, "MouseForward": MOUSE_BUTTON_XBUTTON2}
+	if buttons.has(key):
+		var mouse := InputEventMouseButton.new()
+		mouse.button_index = buttons[key]
+		return mouse
+	var code := OS.find_keycode_from_string(key)
+	if code == KEY_NONE:
+		return null
+	var ev := InputEventKey.new()
+	ev.physical_keycode = code
+	return ev
+
+
+## The name a key or a mouse button is saved and suggested by; "" for what cannot be bound.
+static func key_of_event(event: InputEvent) -> String:
+	if event is InputEventMouseButton:
+		return String({MOUSE_BUTTON_LEFT: "MouseLeft", MOUSE_BUTTON_RIGHT: "MouseRight", MOUSE_BUTTON_MIDDLE: "MouseMiddle",
+			MOUSE_BUTTON_XBUTTON1: "MouseBack", MOUSE_BUTTON_XBUTTON2: "MouseForward"}.get(event.button_index, ""))
+	if event is InputEventKey:
+		var code: int = event.physical_keycode if event.physical_keycode != KEY_NONE else event.keycode
+		return OS.get_keycode_string(code)
+	return ""
+
+
+func _set_action_key(action: String, key: String) -> void:
+	var event := event_for_key(key)
+	if event == null:
+		push_warning("\"%s\" is not a key Godot knows (the key of %s)" % [key, action])
+	if not InputMap.has_action(action):
+		InputMap.add_action(action)
+	InputMap.action_erase_events(action)
+	if event != null:
+		InputMap.action_add_event(action, event)
+
+
+## Actions that appeared by themselves (a HUD's CbKey gives its own a key when its screen first
+## runs) are listed too, and get the player's key if one was chosen for them.
+func _adopt_keys() -> void:
+	for name in InputMap.get_actions():
+		var action := String(name)
+		if not action.begins_with("cb_") or _key_info.has(action):
+			continue
+		var events := InputMap.action_get_events(action)
+		var key := key_of_event(events[0]) if events.size() > 0 else ""
+		_key_info[action] = {"key": key, "label": action.substr(3).replace("_", " ").capitalize(), "group": "Screens"}
+		if _keys.has(action):
+			_set_action_key(action, String(_keys[action]))
+
+
+func _process(delta: float) -> void:
+	# (A screen's key exists from the first frame its node runs: looked for now and then.)
+	_apply_in -= delta
+	if _apply_in <= 0.0:
+		_apply_in = 0.5
+		_adopt_keys()
+
+
+func _open_keys() -> void:
+	_adopt_keys()
+	_fill_keys()
+	_show("Keys")
+
+
+func _fill_keys() -> void:
+	var rows := _node("KeyRows")
+	if rows == null:
+		return
+	for child in rows.get_children():
+		rows.remove_child(child)
+		child.queue_free()
+	var groups := []
+	for action in _key_info:
+		if not groups.has(_key_info[action]["group"]):
+			groups.append(_key_info[action]["group"])
+	for group in groups:
+		var heading := Label.new()
+		heading.text = group
+		heading.add_theme_color_override("font_color", Color(0.75, 0.78, 0.82))
+		rows.add_child(heading)
+		for action in _key_info:
+			if _key_info[action]["group"] != group:
+				continue
+			var row := HBoxContainer.new()
+			var label := Label.new()
+			label.text = String(_key_info[action]["label"])
+			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(label)
+			var button := Button.new()
+			button.custom_minimum_size = Vector2(170, 0)
+			button.name = "Key_" + action
+			button.text = "press a key..." if _capturing == action else key_text(action)
+			if _keys.has(action) and String(_keys[action]) != String(_key_info[action]["key"]):
+				button.tooltip_text = "Yours. The default is %s." % String(_key_info[action]["key"])
+			# Two actions on one key both happen: said, not forbidden (a mod may mean it).
+			var shared := []
+			for other in _key_info:
+				if other != action and key_text(other) != "" and key_text(other) == key_text(action):
+					shared.append(String(_key_info[other]["label"]))
+			if not shared.is_empty() and _capturing != action:
+				button.text += "  *"
+				button.tooltip_text = (button.tooltip_text + " " if button.tooltip_text != "" else "") + "Also the key of: %s." % ", ".join(shared)
+			button.pressed.connect(func(): _capturing = action; _fill_keys())
+			row.add_child(button)
+			rows.add_child(row)
+	if groups.is_empty():
+		var none := Label.new()
+		none.text = "Nothing to bind yet."
+		rows.add_child(none)
+
+
+## While a key is being chosen, the next key or mouse button is it.
+func _input(event: InputEvent) -> void:
+	if _capturing == "" or not _visible("Keys"):
+		return
+	var pressed: bool = (event is InputEventKey and event.pressed and not event.echo) or (event is InputEventMouseButton and event.pressed)
+	if not pressed:
+		return
+	get_viewport().set_input_as_handled()
+	if event is InputEventKey and event.physical_keycode == KEY_ESCAPE:
+		_capturing = ""
+		_fill_keys()
+		return
+	var key := key_of_event(event)
+	if key == "":
+		return # a wheel: not a key
+	var action := _capturing
+	_capturing = ""
+	if _key_info.has(action) and key == String(_key_info[action]["key"]):
+		_keys.erase(action)
+	else:
+		_keys[action] = key
+	_set_action_key(action, key)
+	_save_keys()
+	_fill_keys()
+
+
+func _reset_keys() -> void:
+	_capturing = ""
+	for action in _key_info:
+		if _keys.has(action):
+			_keys.erase(action)
+			_set_action_key(action, String(_key_info[action]["key"]))
+	_save_keys()
+	_fill_keys()
+
+
+func _save_keys() -> void:
+	var config := _config()
+	config.set_value("keys", "bound", _keys)
+	config.save(_config_path)
 
 
 # --- Nodes ----------------------------------------------------------------------------------------

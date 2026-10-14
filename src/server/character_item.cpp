@@ -472,6 +472,14 @@ LookItem ParseLookItem( const std::string& kind, const std::string& text )
 		{
 			item.motions = true;
 		}
+		else if ( key == "action" )
+		{
+			std::string action, suggested;
+			if ( words >> action >> suggested )
+			{
+				item.actions.push_back( { action, suggested } );
+			}
+		}
 	}
 	return item;
 }

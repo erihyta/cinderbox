@@ -86,7 +86,7 @@ look (`declare.ItemsOfLook()`) gets their motions with them.
 ```
 Boots         CbItem     kind "dash.boots"   properties { inventory.start: 1 }   (prefabs/boots.tscn)
 ├── Body, Foot, Shaft, Carry
-└── Dash      CbMotion   on "dash", while dash.charges > 0   with_item: Carried
+└── Dash      CbMotion   on "dash" (key V), while dash.charges > 0   with_item: Carried
     └── Push  CbImpulse  11 m/s along where you walk
 ```
 
@@ -99,6 +99,9 @@ Boots         CbItem     kind "dash.boots"   properties { inventory.start: 1 }  
 
 - **How**: the bake writes the motion with one more condition: the kind's name (in the hand), or
   `carried.<kind>`. Both can be typed by hand in any condition, a state machine's and a look's too.
+- **Its key**: a motion on a press names an action. With a `key` beside it (`V`, `MouseRight`), the
+  item declares the action when no mod has, with that key as the suggestion: no line of C++. A
+  player changes it on the Keys page of the settings.
 - **Its name** for a `CbLinkLook` is `<kind>/<node>` (`dash.boots/Dash`).
 - **An item nobody has does nothing**: dropped, its motion stops for the one who dropped it and
   starts for whoever picks it up.
