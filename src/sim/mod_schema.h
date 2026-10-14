@@ -96,6 +96,11 @@ struct MotionSetInfo
 
 // The body of an item lying in the world. The item's frame is its grip (held in a socket's frame:
 // the grip at the origin, pointing along -Z); `center` is where the shape's centre is in it.
+// How an item kind is used (ItemShape::use, the item property "use").
+inline constexpr uint8_t kItemUseInHand = 0; // its slot's key selects it; the use button uses it
+inline constexpr uint8_t kItemUsePress = 1;	 // its slot's key uses it where it is, once a press
+inline constexpr uint8_t kItemUseHold = 2;	 // the same, and it is in use while the key is held
+
 struct ItemShape
 {
 	uint8_t kind = 0; // ShapeKind: 0 box (half extents), 1 sphere (radius = half.x)
@@ -120,10 +125,11 @@ struct ItemShape
 	// not the selected one (255: out of sight).
 	uint8_t slot = 0;
 	uint8_t holster = 255;
-	// How it is used: 0 it is selected (its slot's key takes it out), then the use button uses it:
-	// a tool. 1 its slot's key uses it where it is, and the slot is not selected: a consumable, an
-	// ability. Either way the simulation records `usedEvent` (a mod event, schema order; 0xFFFF:
-	// none) at the player, with the item as the other entity.
+	// How it is used (kItemUse*): 0 it is selected (its slot's key takes it out), then the use
+	// button uses it: a tool. 1 its slot's key uses it where it is, once a press, and the slot is not
+	// selected: a consumable, an ability (a dash, a hook's throw). 2 the same, and it is in use for as
+	// long as the key is held (a jetpack). The simulation records `usedEvent` (a mod event, schema
+	// order; 0xFFFF: none) at the player, with the item as the other entity, on the press.
 	uint8_t use = 0;
 	uint16_t usedEvent = 0xFFFF;
 
@@ -155,6 +161,9 @@ struct ModSchema
 	std::vector<std::string> itemKinds;
 	std::vector<ItemShape> itemShapes;
 	std::vector<std::string> sockets = { "RightHand", "LeftHand" };
+	// The key suggested for each slot (index 0: slot 1; empty: the game's own, the slot's number). A
+	// player's own choice wins (the Keys page of the settings).
+	std::vector<std::string> slotKeys;
 	std::vector<AnimPackInfo> animPacks;
 	std::vector<MotionSetInfo> motionSets;
 

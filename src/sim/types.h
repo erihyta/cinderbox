@@ -99,7 +99,8 @@ struct PlayerInput
 	uint8_t intentA = 0;
 	uint8_t intentB = 0;
 	uint8_t intentSeq = 0;	 // counts the player's intents (it wraps)
-	uint8_t reserved[4] = {};
+	uint16_t slotKeys = 0;	 // the slots' keys held, a bit each (slot 1: bit 0); the sim detects edges
+	uint8_t reserved[2] = {};
 
 	bool operator==( const PlayerInput& ) const = default;
 };

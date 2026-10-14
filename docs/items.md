@@ -83,19 +83,33 @@ and the player's own screen does not wait for the server. What a life is given a
 
 ### Using an item
 
-How a kind is used is its look's to say: `use` on its `CbItem`.
+Every item is in a slot, and **the slot's key is the item's key**. What that key does is the
+item's to say: `use` on its `CbItem`.
 
-| `use` | The player | For |
+| `use` | Its slot's key | For |
 |---|---|---|
-| **Select it, then the use button** | its slot's key takes it out; the left mouse button uses it | a tool, a weapon |
-| **Its slot key uses it** | its slot's key uses it where it is; nothing changes hands | a consumable, an ability (the grappling hook) |
+| **Select it, then the use button** | takes it out (again: empty hands); the left mouse button uses it | a tool, a weapon |
+| **Its slot key uses it (a press)** | uses it where it is, once a press; nothing changes hands | an ability, a consumable: the dash boots, the grappling hook |
+| **Its slot key uses it while held** | the same, and it is in use for as long as the key is down | a jetpack, a shield |
 
-Either way the item's mod is told the same thing, on the tick it happens:
+**The keys**: slot 1's is 1, slot 2's is 2 ... (0 for the tenth), unless the server suggests
+another: a mod with `declare.SlotKey( 5, "V" )`, or the item that goes to that slot with
+`slot_key` on its `CbItem` (the boots: V). The player's own choice wins: the Keys page of the
+settings lists the slots. Slot keys are sent held, with the input, so a press is the
+simulation's to see on every machine; the dash and the hook's throw are predicted from them.
+
+Whichever way, the item's mod is told the same thing, on the tick it happens:
 
 ```cpp
 if ( ctx.Used( slot, m_gun ) ) { ... }      // used this tick, whichever way the kind is used
-bool trigger = ctx.Using( slot, m_gun );     // the use button is down with one in the hand (automatic fire)
+bool trigger = ctx.Using( slot, m_gun );     // in use: the button down with one in the hand, or its key held
 ```
+
+- **`using.<kind>`** in a condition (a motion's, a state machine's, a look's) is the same as
+  `ctx.Using`: the hand's item while the button is down, a press item on the tick of the press,
+  a held one while its key is down.
+- **`<kind>.used`** is declared for an item of a mod that takes its items from its look and is used
+  by its slot's key, so its motions can start on it (`when` On a cue) with no line of C++.
 
 - **The use button is the engine's**, like jump and sprint: no mod declares a `fire` action any more.
 - **`<kind>.used`**: where a mod declares that event (`declare.Event( "gun.pistol.used" )`), every simulation records it on the tick of the use, at the player, with the item as the other entity. The player's own simulation has it at once, so a `CbReaction` on it plays on the click with no `CbPrediction`.
@@ -261,7 +275,8 @@ there is to say:
 | `properties` | numbers any mod may read: the rules that apply to it (`gun.damage` makes it a gun), its `slot`, `inventory.start` |
 | `animation_pack` | the pack it brings: its layers the character has while it is held (`gun.pistol_hold`), and its [overlay](characters.md#animation-packs) while it is carried at all (the boots' dash pose): a `CbAnimPack` scene of the same project |
 | `holster` | the socket it hangs in while it is put away (`Hip`, `Back`) |
-| `CbMotion` nodes under it | [motions of who has it](motions.md#a-motion-of-an-item): the dash that boots bring. One with a `key` declares its action, with that key |
+| `CbMotion` nodes under it | [motions of who has it](motions.md#a-motion-of-an-item): the dash that boots bring, started by the slot's key (`<kind>.used`) |
+| `slot_key` | the key it suggests for its slot (`V`); the player's own wins |
 
 What it looks and sounds like when it is used is in the scene too, on cues that do not name the
 item (the `item` mod's):

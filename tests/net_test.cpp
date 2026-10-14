@@ -1310,7 +1310,8 @@ void TestItemPoses()
 		};
 	} );
 	const ModSchema& schema = h.server.Schema();
-	uint16_t dash = schema.ActionMask( "dash" );
+	// The boots' slot's key (the fifth): they are used by it, where they are.
+	uint16_t dash = uint16_t( 1u << 4 );
 	int boots = -1, hook = -1;
 	for ( size_t i = 0; i < schema.animPacks.size(); ++i )
 	{
@@ -1329,7 +1330,7 @@ void TestItemPoses()
 		in.moveForward = 127;
 		if ( tick >= dashAt && tick < dashAt + 4 )
 		{
-			in.actions = dash;
+			in.slotKeys = dash;
 		}
 		return in;
 	};
@@ -2466,8 +2467,9 @@ void TestProtocol()
 		CHECK( Decode( r, got ) && r.AtEnd() );
 		CHECK( got.inputs == sent.inputs && got.newestTick == 90 && got.ackTick == 80 );
 		std::printf( "    six inputs, their actions from none to all 64: %zu bytes\n", bytes.size() );
-		// 9 of header, 13 an input, and 0 + 1 + 2 + 6 + 8 + 1 bytes of actions.
-		CHECK( bytes.size() == 1 + 9 + 6 * 13 + 18 );
+		// 9 of header, 13 an input, and 0 + 1 + 2 + 6 + 8 + 1 bytes of actions; 2 of slot keys in the
+		// first (the later ones say only what changed, and the slot keys did not).
+		CHECK( bytes.size() == 1 + 9 + 6 * 13 + 18 + 2 );
 	}
 
 	// Frame batches: a chain from any starting tick decodes back to the same frames.
@@ -2942,7 +2944,8 @@ void TestDash()
 	{
 		Harness h( 47851, replayPath.string(), {}, { { "dash.double_jump", "1" } } );
 		const ModSchema& schema = h.server.Schema();
-		uint16_t dash = schema.ActionMask( "dash" );
+		// The boots' slot's key (the fifth): they are used by it, where they are.
+		uint16_t dash = uint16_t( 1u << 4 );
 		const BoardField* charges = schema.FindField( "dash.charges" );
 		int started = schema.FindEvent( "dash.started" );
 		int doubleJump = schema.FindEvent( "dash.double_jump" );
@@ -2996,7 +2999,7 @@ void TestDash()
 			// Each key is held for a few ticks: one press.
 			if ( ( tick >= dashAt && tick < dashAt + 4 ) || ( tick >= secondDashAt && tick < secondDashAt + 4 ) )
 			{
-				in.actions = dash;
+				in.slotKeys = dash;
 			}
 			if ( ( tick >= jumpAt && tick < jumpAt + 3 ) || ( tick >= doubleJumpAt && tick < doubleJumpAt + 3 ) )
 			{
@@ -3062,9 +3065,10 @@ void TestDash()
 		CHECK( compared > 200 );
 		CHECK( wrong == 0 && worst == 0.0f );
 		// And it had the dash on the tick of the press: its prediction of that tick, made ahead of the
-		// server, already had the speed, the charge taken and the event.
+		// server, already had the speed, the charge taken and the events (the slot key's
+		// "dash.boots.used", which starts the motion, and the motion's "dash.started").
 		CHECK( b3Length( predicted[dashAt + 1].velocity ) > 10.5f && predicted[dashAt + 1].charges == 1 &&
-			   predicted[dashAt + 1].events == truth[dashAt + 1].events && truth[dashAt + 1].events == truth[dashAt].events + 1 );
+			   predicted[dashAt + 1].events == truth[dashAt + 1].events && truth[dashAt + 1].events == truth[dashAt].events + 2 );
 	}
 
 	// The recording replays it: the motions travel in its header's schema.

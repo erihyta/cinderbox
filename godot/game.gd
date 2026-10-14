@@ -113,6 +113,8 @@ var _replay_is_view := false
 var _leaving := false # the scene is being replaced
 
 var _actions: Array = [] # [{ name, bit, key }] from the server's mods
+## The local player's slots, as their keys are bound (game_slot_1 ...): how many.
+var _slot_keys := 0
 
 ## The view model: what the player holds that floats in the first-person view, and the arms on it,
 ## are drawn by a camera of their own over the world (the viewer puts them on a layer only this
@@ -235,11 +237,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		first_person = not first_person
 	elif event.is_action_pressed("game_shoulder") and _replay == "":
 		shoulder = 1 if shoulder == 0 else (-1 if shoulder > 0 else 0)
-	elif event is InputEventKey and event.pressed and not event.echo and event.physical_keycode >= KEY_1 and event.physical_keycode <= KEY_9 \
-			and _replay == "" and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or _ui_cursor):
-		# The slots are the engine's: a number key selects one (again: empty hands). It goes out with
-		# the input, and the player's own simulation carries it out at once.
-		client.send_intent(INTENT_SELECT, event.physical_keycode - KEY_1, 0)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_ESCAPE:
@@ -585,6 +582,7 @@ func _bind_actions() -> void:
 	# Only the last server's: a HUD's own keys (CbKey) have the prefix too, and stay. The key is
 	# the one the mod suggests, or the player's own (the Keys page of the settings).
 	menu.forget_keys("This server")
+	_slot_keys = 0 # (the slots' keys are bound again once the player has slots)
 	_actions = client.get_actions()
 	for action in _actions:
 		menu.bind_key(ACTION_PREFIX + String(action["name"]), String(action["key"]), String(action["name"]).replace("_", " ").capitalize(), "This server")
@@ -671,6 +669,8 @@ func _send_input(delta: float) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if wants else Input.MOUSE_MODE_CAPTURED
 	var actions := 0
 	var use := false
+	var slot_keys := 0
+	_bind_slot_keys()
 	if autoplay > 0.0:
 		# Scripted player for unattended runs: props first, then the pistol, then the bat (if the
 		# server runs the melee mod).
@@ -735,7 +735,36 @@ func _send_input(delta: float) -> void:
 			actions = _action_bits()
 			# The use button is the engine's: what is in the hand is used (what that does is its mod's).
 			use = Input.is_action_pressed("game_use")
-	client.set_input(move, yaw, pitch, jump, sprint, use, actions, _view())
+		# The slots' keys: what one does is its item's (take it out, or use it where it is). They
+		# go out held, like the buttons; the simulation sees the presses. Also while a screen has
+		# the mouse (the inventory), not in a recording.
+		if _replay == "" and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or _ui_cursor):
+			for i in mini(_slot_keys, 16):
+				if Input.is_action_pressed("game_slot_%d" % (i + 1)):
+					slot_keys |= 1 << i
+	client.set_input(move, yaw, pitch, jump, sprint, use, actions, _view(), slot_keys)
+
+
+## The slots' keys, once the player has slots (and again when their number changes): each one is
+## the server's suggestion (a mod's, or the item's that goes there), else the slot's number, and
+## the player's own on the Keys page wins.
+func _bind_slot_keys() -> void:
+	var count: int = client.get_slot_count(client.get_local_net_id()) if _joined else 0
+	if count == _slot_keys or count <= 0:
+		return
+	menu.forget_keys("Slots")
+	var suggested: PackedStringArray = client.get_slot_keys()
+	for i in count:
+		var key := String(suggested[i]) if i < suggested.size() else ""
+		if key == "":
+			key = str(i + 1) if i < 9 else ("0" if i == 9 else "")
+		menu.bind_key("game_slot_%d" % (i + 1), key, "Slot %d" % (i + 1), "Slots")
+	_slot_keys = count
+	var bound := []
+	for i in count:
+		bound.append(menu.key_text("game_slot_%d" % (i + 1)))
+	print("slot keys: ", " ".join(bound))
+	_update_help()
 
 
 ## Which camera the player looks through, as the server is told (ViewMode): 0 behind, 1 first

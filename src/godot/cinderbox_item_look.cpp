@@ -84,9 +84,14 @@ void CbItem::_bind_methods()
 				  "get_animation_pack" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "holster", PROPERTY_HINT_PLACEHOLDER_TEXT, "none: out of sight (Hip, Back)" ), "set_holster", "get_holster" );
 	ADD_GROUP( "Slots", "" );
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "use", PROPERTY_HINT_ENUM, "Select it then the use button,Its slot key uses it" ), "set_use",
-				  "get_use" );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "use", PROPERTY_HINT_ENUM,
+							  "Select it then the use button,Its slot key uses it (a press),Its slot key uses it while held" ),
+				  "set_use", "get_use" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "slot", PROPERTY_HINT_RANGE, "0,36,1" ), "set_slot", "get_slot" );
+	ClassDB::bind_method( D_METHOD( "set_slot_key", "value" ), &CbItem::set_slot_key );
+	ClassDB::bind_method( D_METHOD( "get_slot_key" ), &CbItem::get_slot_key );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "slot_key", PROPERTY_HINT_PLACEHOLDER_TEXT, "V: the key it suggests for its slot (empty: the slot's number)" ),
+				  "set_slot_key", "get_slot_key" );
 	ADD_GROUP( "Hands", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "carry_grip", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D" ), "set_carry_grip",
 				  "get_carry_grip" );
@@ -131,6 +136,7 @@ void CbItem::_bind_methods()
 
 	BIND_ENUM_CONSTANT( USE_SELECTED );
 	BIND_ENUM_CONSTANT( USE_SLOT_KEY );
+	BIND_ENUM_CONSTANT( USE_HOLD );
 	BIND_ENUM_CONSTANT( OTHER_FREE );
 	BIND_ENUM_CONSTANT( OTHER_AT_MARKER );
 	BIND_ENUM_CONSTANT( OTHER_AT_MARKER_TURNED );
@@ -956,9 +962,9 @@ Dictionary CbItem::bake() const
 	// Sorted, so the same scene always bakes the same file (the item's hash depends on it). How it
 	// is used and where it goes are properties the engine reads; said here, they are the item's.
 	Dictionary all = m_properties.duplicate();
-	if ( m_use == USE_SLOT_KEY )
+	if ( m_use == USE_SLOT_KEY || m_use == USE_HOLD )
 	{
-		all["use"] = 1;
+		all["use"] = m_use;
 	}
 	if ( m_slot > 0 )
 	{
@@ -995,34 +1001,20 @@ Dictionary CbItem::bake() const
 	{
 		text += "holster " + m_holster + "\n";
 	}
+	if ( m_slotKey.is_empty() == false )
+	{
+		if ( m_slotKey.contains( " " ) || m_slot <= 0 )
+		{
+			return fail( "slot_key is one key (V), and needs the item's slot" );
+		}
+		text += "slotkey " + m_slotKey + "\n";
+	}
 	// Its own motions (CbMotion nodes under it): a set named like the kind, baked beside the item.
 	{
 		String motionError;
 		if ( BakeMotions( motionError ).empty() == false )
 		{
 			text += "motions 1\n";
-			// The keys its motions suggest: actions the item declares when no mod has (each once).
-			PackedStringArray said;
-			for ( int i = 0; i < get_child_count(); ++i )
-			{
-				auto* motion = Object::cast_to<CbMotion>( get_child( i ) );
-				if ( motion == nullptr || motion->get_when() != CbMotion::WHEN_PRESS )
-				{
-					continue;
-				}
-				String action = motion->get_action().strip_edges();
-				String key = motion->get_key().strip_edges();
-				if ( action.is_empty() || key.is_empty() || said.has( action ) )
-				{
-					continue;
-				}
-				if ( key.contains( " " ) || action.contains( " " ) )
-				{
-					return fail( String( motion->get_name() ) + ": the action and its key are one word each (dash, V)" );
-				}
-				said.push_back( action );
-				text += "action " + action + " " + key + "\n";
-			}
 		}
 		else if ( motionError.is_empty() == false )
 		{

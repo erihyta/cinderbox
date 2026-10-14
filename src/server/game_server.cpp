@@ -201,7 +201,8 @@ bool GameServer::Start( const ServerOptions& options )
 			m_schema.itemShapes[kind].slot = slot >= 1 && slot <= int( m_options.config.slots ) ? uint8_t( slot ) : uint8_t( 0 );
 			m_schema.itemShapes[kind].holster = holster >= 1 && holster <= int( m_schema.sockets.size() ) ? uint8_t( holster - 1 ) : kNoSocket;
 			// How it is used, and the event that says so: "<kind>.used", where a mod declared one.
-			m_schema.itemShapes[kind].use = property( "use" ) == 1 ? 1 : 0;
+			int use = property( "use" );
+			m_schema.itemShapes[kind].use = use == kItemUsePress || use == kItemUseHold ? uint8_t( use ) : kItemUseInHand;
 			int usedEvent = m_schema.FindEvent( m_schema.itemKinds[kind] + ".used" );
 			m_schema.itemShapes[kind].usedEvent = usedEvent >= 0 ? uint16_t( usedEvent ) : uint16_t( 0xFFFF );
 		}

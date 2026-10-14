@@ -4118,6 +4118,100 @@ void TestItemUse()
 // Slots: what a player carries, in numbered places. Which slot is selected, and moving and dropping,
 // are in the player's input, so every simulation carries them out: here one simulation, its
 // snapshot, and a second run of the same inputs.
+// The slots' keys (PlayerInput::slotKeys, held; the simulation sees the presses). What a key does is
+// its item's: a tool in the hand is selected (again: empty hands), one used by its key where it
+// is records its ".used" once a press and changes no hands, one used while held is in use for as
+// long as the key is down ("using.<kind>").
+void TestSlotKeys()
+{
+	ModSchema schema;
+	schema.itemKinds = { "t.tool", "t.dash", "t.jet" };
+	schema.events = { "t.dash.used", "t.jet.used" };
+	schema.fields.push_back( { "t.dashes", BoardType::Int, BoardScope::Entity, 0 } );
+	schema.fields.push_back( { "t.flying", BoardType::Float, BoardScope::Entity, 1 } );
+	const std::string text = "cinderbox_motions\t2\n"
+							 "motion\tDash\nwhen\tevent\tt.dash.used\nchange\tt.dashes\t+=\t1\n"
+							 "motion\tJet\nwhen\twhile\nif\tusing.t.jet\nchange\tt.flying\t+=\t60\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() );
+	if ( motions == nullptr )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+
+	SimConfig config = TestConfig();
+	config.slots = 3;
+	config.slotHand = 0;
+	ItemShape tool, dash, jet;
+	tool.slot = 1;
+	dash.slot = 2;
+	dash.use = kItemUsePress;
+	dash.usedEvent = 0;
+	jet.slot = 3;
+	jet.use = kItemUseHold;
+	jet.usedEvent = 1;
+	Simulation sim( config, FlatMap() );
+	sim.SetItemShapes( { tool, dash, jet } );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	for ( uint16_t kind : { 0, 1, 2 } )
+	{
+		SimCommand c;
+		c.type = CommandType::SpawnItem;
+		c.target = SlotTarget( 0 );
+		c.index = kind;
+		c.mode = kNoSocket;
+		c.value = 1;
+		f.commands.push_back( c );
+	}
+	step( 5 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	auto press = [&]( uint16_t keys, int ticks ) {
+		f.inputs[0].slotKeys = keys;
+		step( ticks );
+		f.inputs[0].slotKeys = 0;
+		step( 2 );
+	};
+	auto dashes = [&] { return sim.BoardValue( p0, 0 ); };
+	auto flying = [&] { return BoardToFloat( sim.BoardValue( p0, 1 ) ); };
+
+	CHECK( sim.SelectedSlot( p0 ) == kNoSlot );
+	// The tool's key takes it out, and again puts it away. Held, it does it once.
+	press( 1, 10 );
+	CHECK( sim.SelectedSlot( p0 ) == 0 );
+	press( 1, 1 );
+	CHECK( sim.SelectedSlot( p0 ) == kNoSlot );
+	press( 1, 1 );
+	// The dash's key: one dash a press, however long it is held; the tool stays in the hand.
+	press( 2, 20 );
+	press( 2, 1 );
+	std::printf( "    two presses of the dash's key: %d dashes; the hand still has slot %d\n", int( dashes() ), int( sim.SelectedSlot( p0 ) ) );
+	CHECK( dashes() == 2 && sim.SelectedSlot( p0 ) == 0 );
+	// The jet's key: in use while it is held (half a second), and not after.
+	press( 4, 30 );
+	float flown = flying();
+	step( 30 );
+	std::printf( "    the jet held half a second: %.1f (and %.1f after)\n", flown, flying() );
+	CHECK( flown > 25.0f && flown < 35.0f && flying() == flown && sim.SelectedSlot( p0 ) == 0 );
+	// Two keys at once: both, in the same tick.
+	press( 2 | 4, 1 );
+	CHECK( dashes() == 3 && flying() > flown );
+}
+
 void TestSlots()
 {
 	SimConfig config = TestConfig();
@@ -6497,6 +6591,7 @@ int main( int argc, char** argv )
 		{ "anim_graph", TestAnimGraph },
 		{ "held_items", TestHeldItems },
 		{ "slots", TestSlots },
+		{ "slot_keys", TestSlotKeys },
 		{ "item_use", TestItemUse },
 		{ "event_news", TestEventNews },
 		{ "world_items", TestWorldItems },

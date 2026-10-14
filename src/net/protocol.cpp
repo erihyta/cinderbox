@@ -26,7 +26,8 @@ enum InputField : uint16_t
 	FieldActions = 1 << 7,
 	FieldIntent = 1 << 8, // intent, intentA, intentB, intentSeq
 	FieldPitchDelta = 1 << 9, // relative, i8 (a mouse moves both angles a little every tick)
-	FieldAll = 0x3FF,
+	FieldSlotKeys = 1 << 10,  // u16
+	FieldAll = 0x7FF,
 };
 
 // Which members of a command follow its type byte. Anything left out is zero, so most commands
@@ -501,6 +502,7 @@ void WriteInputDelta( ByteWriter& w, const PlayerInput& now, const PlayerInput& 
 		fields |= ( pitchDelta >= -128 && pitchDelta <= 127 ) ? FieldPitchDelta : FieldPitch;
 	}
 	fields |= now.actions != before.actions ? FieldActions : 0;
+	fields |= now.slotKeys != before.slotKeys ? FieldSlotKeys : 0;
 	fields |= now.intent != before.intent || now.intentA != before.intentA || now.intentB != before.intentB || now.intentSeq != before.intentSeq
 				  ? FieldIntent
 				  : 0;
@@ -536,6 +538,8 @@ void WriteInputDelta( ByteWriter& w, const PlayerInput& now, const PlayerInput& 
 		w.Write( now.intentB );
 		w.Write( now.intentSeq );
 	}
+	if ( fields & FieldSlotKeys )
+		w.Write( now.slotKeys );
 }
 
 // `in` holds the input before, and becomes the one read. `some`: an empty mask is not allowed (a
@@ -586,6 +590,8 @@ bool ReadInputDelta( ByteReader& r, PlayerInput& in, bool some )
 			return false;
 		}
 	}
+	if ( fields & FieldSlotKeys )
+		in.slotKeys = r.Read<uint16_t>();
 	return r.Ok();
 }
 
@@ -601,6 +607,7 @@ void WriteInput( ByteWriter& w, const PlayerInput& in )
 	w.Write( in.intentA );
 	w.Write( in.intentB );
 	w.Write( in.intentSeq );
+	w.Write( in.slotKeys );
 	int bytes = ActionByteCount( in.actions );
 	w.Write( uint8_t( bytes ) );
 	w.WriteBytes( reinterpret_cast<const uint8_t*>( &in.actions ), size_t( bytes ) );
@@ -619,6 +626,7 @@ bool ReadInput( ByteReader& r, PlayerInput& in )
 	in.intentA = r.Read<uint8_t>();
 	in.intentB = r.Read<uint8_t>();
 	in.intentSeq = r.Read<uint8_t>();
+	in.slotKeys = r.Read<uint16_t>();
 	uint8_t bytes = r.Read<uint8_t>();
 	const uint8_t* taken = r.Ok() && bytes <= sizeof( ActionBits ) ? r.Take( bytes ) : nullptr;
 	if ( taken == nullptr )

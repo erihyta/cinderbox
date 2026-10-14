@@ -109,7 +109,6 @@ public:
 
 	CB_MOTION_FIELD( int, when, m_when )
 	CB_MOTION_FIELD( godot::String, action, m_action )
-	CB_MOTION_FIELD( godot::String, key, m_key )
 	CB_MOTION_FIELD( godot::String, event, m_event )
 	CB_MOTION_FIELD( godot::PackedStringArray, conditions, m_conditions )
 	CB_MOTION_FIELD( int, with_item, m_withItem )
@@ -130,7 +129,6 @@ protected:
 private:
 	int m_when = WHEN_PRESS;
 	godot::String m_action;
-	godot::String m_key; // the key suggested for the action, when it is the item's own to declare
 	godot::String m_event;
 	godot::PackedStringArray m_conditions;
 	int m_withItem = WITH_IN_HAND;

@@ -262,6 +262,10 @@ public:
 	// Name it like the mod's other names ("dash.moves"). The mod declares the actions, fields and
 	// events the motions name; who may use one is a field its condition reads.
 	MotionsHandle Motions( const std::string& name );
+	// The key suggested for a slot (1 is the first): "V" for the slot of a dash. The player's own
+	// choice wins; the first suggestion for a slot stays. An item's scene can say it too
+	// (CbItem.slot_key).
+	void SlotKey( int slot, const std::string& key );
 	SocketHandle Socket( const std::string& name );
 
 	const ModSchema& Schema() const
