@@ -92,6 +92,21 @@ item's to say: `use` on its `CbItem`.
 | **Its slot key uses it (a press)** | uses it where it is, once a press; nothing changes hands | an ability, a consumable: the dash boots, the grappling hook |
 | **Its slot key uses it while held** | the same, and it is in use for as long as the key is down | a jetpack, a shield |
 
+### Stacks
+
+`stack` on its `CbItem`: how many of it one slot holds (the frag grenade: 3). A stack is one item
+with a count, and one set of fields.
+
+| When | What happens |
+|---|---|
+| one is given or picked up | it goes onto a stack of its kind with room (the lowest slot's first), as many as fit; the rest is an item of its own in another slot |
+| one is thrown (a `CbLaunch` of the one carried) | one is split off the stack, with the stack's fields; the rest stays in the slot |
+| it is dropped, or its holder dies | the whole stack goes |
+
+- **The HUD** reads it as `slot.count` (the inventory's hotbar and screen show `x3` above one);
+  **server mods** as `CarriedItem::count`.
+- **The count is the simulation's**: predicted, rolled back, in a joiner's snapshot.
+
 ### The left hand
 
 `hand` on its `CbItem`: **The left hand while carried** keeps it in the left hand for as long as the
@@ -276,6 +291,7 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 | `carry_grip`, `other_hand`, `other_grip` | [where the hands hold it](#both-hands-on-an-item) |
 | `use`, `slot` | [how it is used](#using-an-item), and the slot it goes to (1 is the first; 0: the first free one) |
 | `hand` | [the left hand](#the-left-hand) while it is carried, or the slots' hand while it is selected |
+| `stack` | [how many one slot holds](#stacks): a stack, one item with a count |
 | `bullet` | thrown fast and small (a dart, a rocket): in the world it is moved with continuous collision against what moves too, so it does not pass a thin crate or door between two steps ([Things that fly](motions.md#things-that-fly-the-grenades)) |
 | `view_offset`, `view_rotation`, `view_fov`, `view_left_hand`, `view_right_hand` | [first person](#first-person): where the hands and the item are in the holder's own view, the field of view they are drawn with, and which arms are drawn |
 | `view_camera` | first person, the other way: the item [floats](#floating) in front of the camera instead of being where the animation has it |
