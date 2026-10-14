@@ -292,7 +292,6 @@ void CbMotion::_bind_methods()
 	ADD_GROUP( "When", "" );
 	CB_MOTION_PROP( CbMotion, Variant::INT, when, PROPERTY_HINT_ENUM, "On a press,While,On a cue" )
 	CB_MOTION_PROP( CbMotion, Variant::STRING, action, PROPERTY_HINT_PLACEHOLDER_TEXT, "dash, jump, sprint" )
-	CB_MOTION_PROP( CbMotion, Variant::STRING, key, PROPERTY_HINT_PLACEHOLDER_TEXT, "V, MouseRight: for an action no mod declares (an item's motion)" )
 	CB_MOTION_PROP( CbMotion, Variant::STRING, event, PROPERTY_HINT_PLACEHOLDER_TEXT, "stun.hit" )
 	CB_MOTION_PROP( CbMotion, Variant::PACKED_STRING_ARRAY, conditions, PROPERTY_HINT_NONE, "" )
 	CB_MOTION_PROP( CbMotion, Variant::INT, with_item, PROPERTY_HINT_ENUM, "In the hand,Carried" )

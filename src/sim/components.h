@@ -344,6 +344,8 @@ struct Slots
 	uint8_t selected = kNoSlot;
 	uint8_t seq = 0;
 	uint8_t reserved = 0;
+	uint16_t prevKeys = 0; // the slot keys held last tick: a press is one that was not
+	uint16_t reserved2 = 0;
 };
 
 // The map template this entity was created from (see reflect.h). The simulation only carries it so
@@ -367,7 +369,7 @@ CB_CHECK_COMPONENT( Prop, 12 );
 CB_CHECK_COMPONENT( AnimGraphLayerState, 40 );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( HeldItem, 12 );
-CB_CHECK_COMPONENT( Slots, 4 );
+CB_CHECK_COMPONENT( Slots, 8 );
 CB_CHECK_COMPONENT( Ragdoll, 20 );
 CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );
 CB_CHECK_COMPONENT( RagdollPose, 40 * kRagdollParts );

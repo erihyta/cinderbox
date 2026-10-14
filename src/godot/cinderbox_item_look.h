@@ -77,6 +77,15 @@ public:
 	{
 		return m_animationPack;
 	}
+	// The key it suggests for its slot ("V"); empty: the server's, or the slot's number.
+	void set_slot_key( const godot::String& v )
+	{
+		m_slotKey = v.strip_edges();
+	}
+	godot::String get_slot_key() const
+	{
+		return m_slotKey;
+	}
 	void set_holster( const godot::String& v )
 	{
 		m_holster = v.strip_edges();
@@ -161,14 +170,16 @@ public:
 
 	// In a player's slots (sim/types.h). How it is used:
 	//   USE_SELECTED   its slot's key takes it out; then the use button uses it. A tool, a weapon.
-	//   USE_SLOT_KEY   its slot's key uses it where it is, and nothing changes hands. A
-	//                  consumable, an ability.
+	//   USE_SLOT_KEY   its slot's key uses it where it is, once a press, and nothing changes
+	//                  hands. A consumable, an ability (a dash, a hook's throw).
+	//   USE_HOLD       the same, and it is in use for as long as the key is held (a jetpack).
 	// And the slot it goes to when a player comes to carry one (1 is the first; what is there
 	// makes room), or 0 for the first free one.
 	enum Use
 	{
 		USE_SELECTED = 0,
 		USE_SLOT_KEY = 1,
+		USE_HOLD = 2,
 	};
 	void set_use( int v )
 	{
@@ -318,6 +329,7 @@ private:
 	godot::String m_displayName; // what prompts and lists call it ("Bat")
 	godot::String m_animationPack;
 	godot::String m_holster;
+	godot::String m_slotKey;
 	godot::Vector3 m_viewOffset;
 	godot::NodePath m_viewCamera;
 	godot::Vector3 m_viewRotation;

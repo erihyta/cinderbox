@@ -1,19 +1,21 @@
 [gd_scene format=3]
 
-; The dash, as an item: whoever carries the boots can dash. The motion is the item's own (the
-; CbMotion under it), so it is baked with the item (items/dash.boots.cfg and motions/dash.boots.cfg)
-; and runs only for a player who has them, in the hand or put away (with_item: Carried).
+; The dash, as an item: whoever carries the boots can dash. They are used by their slot's key
+; (use: a press), where they are: nothing changes hands. The key is the slot's (the fifth), and the
+; boots suggest V for it (slot_key); players choose their own on the Keys page.
+; The motion is the item's own (the CbMotion under it), so it is baked with the item
+; (items/dash.boots.cfg and motions/dash.boots.cfg) and runs only for a player who has them.
 ;
-;   Dash         on "dash" (V), while dash.charges > 0: 0.18 s without friction; a charge is
-;                taken; emits dash.started
+;   Dash         on the cue dash.boots.used (the slot's key), while dash.charges > 0: 0.18 s
+;                without friction; a charge is taken; emits dash.started
 ;     Push       CbImpulse: 11 m/s along where you walk, the run's own speed replaced
 ;
 ; Its pose is its pack's (animation_packs/boots_dash.tscn, dash.boots_dash): a layer laid over the
 ; whole body while the Dash motion is on.
 ;
 ; The server mod (server_mods/dash/dash.cpp) takes the item from here (declare.ItemsOfLook()),
-; declares the fields and events the motion uses and gives the charges back. The action and its key
-; are said here (action, key): no code declares them.
+; declares the fields and events the motion uses and gives the charges back. The key is the slot's:
+; no code declares it.
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.12, 0.14, 0.28)
@@ -36,8 +38,10 @@ display_name = "Dash boots"
 properties = {
 "inventory.start": 1.0
 }
+use = 1
 animation_pack = "dash.boots_dash"
 slot = 5
+slot_key = "V"
 carry_grip = NodePath("Carry")
 mass = 0.6
 
@@ -56,8 +60,8 @@ mesh = SubResource("Shaft")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.09, 0.08)
 
 [node name="Dash" type="CbMotion" parent="."]
-action = "dash"
-key = "V"
+when = 2
+event = "dash.boots.used"
 conditions = PackedStringArray("dash.charges > 0")
 with_item = 1
 cooldown = 0.4

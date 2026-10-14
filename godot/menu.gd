@@ -366,7 +366,7 @@ static func key_of_event(event: InputEvent) -> String:
 
 func _set_action_key(action: String, key: String) -> void:
 	var event := event_for_key(key)
-	if event == null:
+	if event == null and key != "":
 		push_warning("\"%s\" is not a key Godot knows (the key of %s)" % [key, action])
 	if not InputMap.has_action(action):
 		InputMap.add_action(action)

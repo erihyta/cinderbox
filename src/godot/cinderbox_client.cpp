@@ -24,8 +24,9 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_slot_count", "player" ), &CinderboxClient::get_slot_count );
 	ClassDB::bind_method( D_METHOD( "get_selected_slot", "player" ), &CinderboxClient::get_selected_slot );
 	ClassDB::bind_method( D_METHOD( "get_slot_item", "player", "slot" ), &CinderboxClient::get_slot_item );
-	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "use", "actions", "view" ),
-						  &CinderboxClient::set_input, DEFVAL( 0 ) );
+	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "use", "actions", "view", "slot_keys" ),
+						  &CinderboxClient::set_input, DEFVAL( 0 ), DEFVAL( 0 ) );
+	ClassDB::bind_method( D_METHOD( "get_slot_keys" ), &CinderboxClient::get_slot_keys );
 	ClassDB::bind_method( D_METHOD( "get_actions" ), &CinderboxClient::get_actions );
 	ClassDB::bind_method( D_METHOD( "get_mod_names" ), &CinderboxClient::get_mod_names );
 	ClassDB::bind_method( D_METHOD( "get_field", "net_id", "name" ), &CinderboxClient::get_field );
@@ -275,7 +276,7 @@ void CinderboxClient::send_intent( int64_t kind, int64_t a, int64_t b )
 }
 
 void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double camera_pitch, bool jump, bool sprint,
-								 bool use, int64_t actions, int64_t view )
+								 bool use, int64_t actions, int64_t view, int64_t slot_keys )
 {
 	if ( takes_input() == false )
 	{
@@ -293,6 +294,7 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 	double pitchTurns = std::clamp( camera_pitch / ( 2.0 * detmath::kPi ), -0.24, 0.24 );
 	in.cameraPitch = int16_t( std::clamp( int( std::lround( pitchTurns * 65536.0 ) ), -int( kMaxCameraPitch ), int( kMaxCameraPitch ) ) );
 	in.actions = ActionBits( actions );
+	in.slotKeys = uint16_t( slot_keys & 0xFFFF );
 	in.view = view >= 0 && view < int64_t( kViewModes ) ? uint8_t( view ) : uint8_t( 0 );
 	// The next intent, once the last one has had a tick to itself: the simulation carries one out
 	// when the count changes, so two in one tick would be one.

@@ -87,6 +87,9 @@ struct AnimExpr
 		// place among the server's motions; the first 64 can be asked). The set's name and the
 		// node's, or the node's alone when no other motion has it.
 		MotionOn,
+		// "using.gun.pistol": the player uses an item of the kind this tick: in the hand with the use
+		// button down, or by its slot's key (the press; while held, for one used while held).
+		UsingKind,
 	};
 	enum Builtin : uint8_t
 	{
@@ -259,6 +262,9 @@ struct AnimGraphInputs
 	// Kinds of everything the player has, the hand's among them ("carried.<kind>").
 	const uint16_t* carriedKinds = nullptr;
 	uint32_t carriedCount = 0;
+	// Kinds it is using this tick ("using.<kind>").
+	const uint16_t* usingKinds = nullptr;
+	uint32_t usingCount = 0;
 };
 
 float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& inputs, float stateTime );

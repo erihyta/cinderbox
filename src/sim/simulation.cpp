@@ -719,6 +719,7 @@ bool Simulation::GiveSlot( flecs::entity player, flecs::entity item, bool select
 
 void Simulation::StepSlots( const InputFrame& frame )
 {
+	m_usingScratch.clear();
 	if ( m_config.slots == 0 )
 	{
 		return;
@@ -751,28 +752,29 @@ void Simulation::StepSlots( const InputFrame& frame )
 				RecordModEvent( record );
 			}
 		};
+		// What it is using this tick, for conditions ("using.<kind>"): the item in the hand while the
+		// use button is down, one used by its key on the press, one held by its key while it is down.
+		auto using_ = [&]( uint32_t item ) { m_usingScratch.push_back( { netId, FindEntity( item ).get<HeldItem>().kind } ); };
 		// The use button, on the tick it goes down: the item in the hand, if it is one that is used so.
-		if ( act && c.frozen == 0 && ( in.buttons & BtnUse ) != 0 && ( c.prevButtons & BtnUse ) == 0 )
+		if ( act && c.frozen == 0 && ( in.buttons & BtnUse ) != 0 )
 		{
 			uint32_t item = SlotItemOf( netId, slots.selected );
-			if ( item != 0 && ItemShapeOf( FindEntity( item ).get<HeldItem>().kind ).use == 0 )
+			if ( item != 0 && ItemShapeOf( FindEntity( item ).get<HeldItem>().kind ).use == kItemUseInHand )
 			{
-				used( item );
+				using_( item );
+				if ( ( c.prevButtons & BtnUse ) == 0 )
+				{
+					used( item );
+				}
 			}
 		}
-		if ( had && in.intentSeq == slots.seq )
-		{
-			continue;
-		}
-		// Once per intent: an input repeated while a packet is late, or guessed for someone else,
-		// has the same count and does nothing again.
-		slots.seq = in.intentSeq;
-		if ( act && in.intent == uint8_t( SlotIntent::Select ) && ( in.intentA < slots.count || in.intentA == kNoSlot ) )
-		{
-			uint32_t item = in.intentA == kNoSlot ? 0 : SlotItemOf( netId, in.intentA );
-			if ( item != 0 && ItemShapeOf( FindEntity( item ).get<HeldItem>().kind ).use == 1 )
+		// A slot's key: what it does is the item's. In the hand: selects it (again: empty hands).
+		// Press: used where it is, nothing changes hands. Hold: the same, and in use while held.
+		auto slotKey = [&]( uint8_t index ) {
+			uint32_t item = index == kNoSlot ? 0 : SlotItemOf( netId, index );
+			uint8_t use = item != 0 ? ItemShapeOf( FindEntity( item ).get<HeldItem>().kind ).use : kItemUseInHand;
+			if ( use != kItemUseInHand )
 			{
-				// Its slot's key uses it where it is: nothing changes hands.
 				if ( c.frozen == 0 )
 				{
 					used( item );
@@ -780,9 +782,42 @@ void Simulation::StepSlots( const InputFrame& frame )
 			}
 			else
 			{
-				// A slot's key again, or no slot at all: empty hands.
-				slots.selected = slots.selected == in.intentA ? kNoSlot : in.intentA;
+				slots.selected = slots.selected == index ? kNoSlot : index;
 			}
+		};
+		const uint16_t keys = in.slotKeys;
+		const uint16_t pressedKeys = uint16_t( keys & ~slots.prevKeys );
+		slots.prevKeys = keys;
+		for ( uint8_t index = 0; act && index < slots.count && index < 16; ++index )
+		{
+			uint16_t bit = uint16_t( 1u << index );
+			if ( pressedKeys & bit )
+			{
+				slotKey( index );
+			}
+			if ( ( keys & bit ) && c.frozen == 0 )
+			{
+				uint32_t item = SlotItemOf( netId, index );
+				uint8_t use = item != 0 ? ItemShapeOf( FindEntity( item ).get<HeldItem>().kind ).use : kItemUseInHand;
+				if ( use == kItemUseHold || ( use == kItemUsePress && ( pressedKeys & bit ) ) )
+				{
+					using_( item );
+				}
+			}
+		}
+		if ( had && in.intentSeq == slots.seq )
+		{
+			e.set<Slots>( slots );
+			SettleSlots( netId, slots.selected );
+			continue;
+		}
+		// Once per intent: an input repeated while a packet is late, or guessed for someone else,
+		// has the same count and does nothing again.
+		slots.seq = in.intentSeq;
+		if ( act && in.intent == uint8_t( SlotIntent::Select ) && ( in.intentA < slots.count || in.intentA == kNoSlot ) )
+		{
+			// The same as its key (a screen's click, a bot), or no slot at all: empty hands.
+			slotKey( in.intentA );
 		}
 		else if ( act && in.intent == uint8_t( SlotIntent::Move ) && in.intentA < slots.count && in.intentB < slots.count &&
 				  in.intentA != in.intentB )
@@ -1044,6 +1079,15 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				carried[carriedCount++] = kind;
 			}
 		}
+		uint16_t usingKinds[16];
+		uint32_t usingCount = 0;
+		for ( const auto& [holder, kind] : m_usingScratch )
+		{
+			if ( holder == netId && usingCount < 16 )
+			{
+				usingKinds[usingCount++] = kind;
+			}
+		}
 
 		// The mods' motions (a dash, a double jump), before the mover: on the world as the last tick
 		// and this tick's commands left it, by this tick's input. A frozen player does none.
@@ -1095,6 +1139,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				values.heldCount = heldCount;
 				values.carriedKinds = carried;
 				values.carriedCount = carriedCount;
+				values.usingKinds = usingKinds;
+				values.usingCount = usingCount;
 				// (As the tick found them: what was on when the last tick ended.)
 				values.motionsOn = m_globals.tick > 0 ? MotionsOnAt( motion, m_globals.tick - 1 ) : 0;
 
@@ -1193,6 +1239,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			graphIn.heldCount = heldCount;
 			graphIn.carriedKinds = carried;
 			graphIn.carriedCount = carriedCount;
+			graphIn.usingKinds = usingKinds;
+			graphIn.usingCount = usingCount;
 			if ( m_motions && HasMotionState( e ) )
 			{
 				graphIn.motionsOn = MotionsOnAt( GetMotionState( e ), m_globals.tick );

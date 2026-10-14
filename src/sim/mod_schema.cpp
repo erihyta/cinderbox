@@ -10,9 +10,9 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x3842434Du; // 'MCB8': 2 workshop items, 3 the character, 4 layers and stances, 5 the
+constexpr uint32_t kSchemaMagic = 0x3942434Du; // 'MCB9': 2 workshop items, 3 the character, 4 layers and stances, 5 the
 												// character's state machine, 6 item kinds and sockets, 7 animation packs,
-												// 8 item shapes
+												// 8 item shapes, 9 slots' keys
 
 void PutU8( std::vector<uint8_t>& out, uint8_t v )
 {
@@ -322,6 +322,11 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutString( out, schema.motionSets[i].name );
 		PutText( out, schema.motionSets[i].text );
 	}
+	PutU8( out, uint8_t( std::min<size_t>( schema.slotKeys.size(), size_t( kMaxSlots ) ) ) );
+	for ( size_t i = 0; i < schema.slotKeys.size() && i < size_t( kMaxSlots ); ++i )
+	{
+		PutString( out, schema.slotKeys[i] );
+	}
 }
 
 bool IsSha256( const std::string& hex )
@@ -518,6 +523,12 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		set.name = r.String();
 		set.text = r.Text();
 		out.motionSets.push_back( std::move( set ) );
+	}
+	uint8_t slotKeys = r.U8();
+	out.slotKeys.clear();
+	for ( uint8_t i = 0; i < slotKeys && i < uint8_t( kMaxSlots ) && r.ok; ++i )
+	{
+		out.slotKeys.push_back( r.String() );
 	}
 	return r.ok && r.at == size;
 }
