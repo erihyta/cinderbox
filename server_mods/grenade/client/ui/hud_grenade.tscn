@@ -1,6 +1,7 @@
 [gd_scene load_steps=2 format=3]
 
-; The grenade mod's HUD: the key. No scripts: a CbFieldLabel is "{field}" text.
+; The grenade mod's HUD: the key, while there is a grenade to throw. No scripts: a CbFieldLabel is
+; "{field}" text, shown while its conditions hold.
 
 [sub_resource type="LabelSettings" id="Small"]
 font_size = 20
@@ -18,4 +19,5 @@ offset_top = -142.0
 offset_right = 324.0
 offset_bottom = -114.0
 label_settings = SubResource("Small")
-text_format = "[{key:throw}]  GRENADE"
+text_format = "[{key:slot6}]  GRENADE"
+conditions = PackedStringArray("carried.grenade.shell")

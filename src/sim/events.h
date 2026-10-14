@@ -34,7 +34,9 @@ inline constexpr uint32_t kImpactsPerTick = 8;
 struct ModEventRecord
 {
 	uint16_t type = 0;
-	uint16_t reserved = 0;
+	// 1: said after its player's motions ran that tick (a motion's emit, a clip's marker): those
+	// motions hear it the next tick (a throw released on the throw clip's marker)
+	uint16_t late = 0;
 	uint32_t netIdA = 0;
 	uint32_t netIdB = 0;
 	uint32_t tick = 0;

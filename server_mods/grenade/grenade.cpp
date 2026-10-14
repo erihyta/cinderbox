@@ -1,13 +1,16 @@
-// A grenade: the example of a launch (a CbLaunch, sim/motions.h).
+// A grenade: the example of an item thrown from the hand (a CbLaunch of the one carried,
+// sim/motions.h).
 //
-// What throwing is (a key, how hard, how often, what leaves the hand) is not in this file: it is a
-// CbMotion with a CbLaunch in the mod's client project
-// (server_mods/grenade/client/motion_sets/grenade_moves.tscn), baked to motions/grenade.moves.cfg
-// and run by every simulation from the player's own input. So the grenade leaves on the tick of
-// the press on the thrower's own screen, flies and bounces as its body says (prefabs/shell.tscn: a
-// CbItem), and this mod never sees the key.
+// What throwing is (a key, how hard, what leaves the hand, when) is not in this file: the grenade
+// is an item (prefabs/shell.tscn, a CbItem) carried in slot 6, whose slot's key (H) plays its
+// throw on the left arm (its animation pack); the throw clip's marker, grenade.release, lets go of
+// the grenade the player carries (a CbLaunch under its Release motion). Every simulation runs that
+// from the player's own input, so the grenade leaves on the same tick on the thrower's own screen,
+// flies and bounces as its body says, and this mod never sees the key.
 //
-// This file is the rules: what a grenade does when it hits something. It goes off: everyone near
+// This file is the rules: a new grenade a little after a player has none (grenade.refill_seconds),
+// and what a grenade does when it hits something.
+// When it hits something it goes off: everyone near
 // is hurt (the combat mod's "combat.damage", like any other weapon's: less with distance),
 // everything loose near it is thrown and sent tumbling (props, items, ragdolls: so those it kills
 // fly, and those it only hurts keep their feet), and the grenade is gone. One that hits nothing hard enough is removed when its time
@@ -15,7 +18,8 @@
 //
 // Server options: grenade.damage (at the centre, default 80), grenade.radius (metres, default 4),
 // grenade.arm_speed (how hard it must hit to go off, m/s, default 3), grenade.push (how fast what is
-// loose is thrown at the centre, m/s, default 12).
+// loose is thrown at the centre, m/s, default 12), grenade.refill_seconds (how long a player is
+// without one before the next, default 1.2; 0: never: one a life).
 
 #include "mod_api.h"
 
@@ -38,12 +42,14 @@ public:
 
 	void Declare( Declarations& declare ) override
 	{
-		// The motion reads these by name.
-		m_throw = declare.Action( "throw", "H" );
+		// The grenade, its throw and its pose: its scene's. Its slot is the sixth.
+		declare.Slots( 6 );
+		declare.ItemsOfLook();
 		m_shell = declare.ItemKind( "grenade.shell" );
+		// Said by the grenade's throw: its clip's marker (the hand lets go), and the throw.
+		m_release = declare.Event( "grenade.release" );
 		m_thrown = declare.Event( "grenade.thrown" );
 		m_blast = declare.Event( "grenade.blast" );
-		m_moves = declare.Motions( "grenade.moves" );
 		// The combat mod's (see combat.cpp): what a hit on a player is said with.
 		m_damage = declare.Event( "combat.damage" );
 		// Not for picking up, and not for a slot: it is on its way.
@@ -56,10 +62,12 @@ public:
 		m_radius = float( std::clamp( ctx.Option( "grenade.radius", 4.0 ), 0.5, 50.0 ) );
 		m_armSpeed = float( std::clamp( ctx.Option( "grenade.arm_speed", 3.0 ), 0.0, 100.0 ) );
 		m_push = float( std::clamp( ctx.Option( "grenade.push", 12.0 ), 0.0, 100.0 ) );
+		m_refillTicks = uint32_t( std::clamp( ctx.Option( "grenade.refill_seconds", 1.2 ), 0.0, 600.0 ) * double( ctx.Config().tickRate ) + 0.5 );
 	}
 
 	void Tick( Context& ctx ) override
 	{
+		Refill( ctx );
 		// The blasts of the last few ticks throw those they killed, now that they have fallen.
 		for ( size_t i = 0; i < m_recent.size(); )
 		{
@@ -90,6 +98,35 @@ public:
 	}
 
 private:
+	// A player in the world without a grenade gets one, a while after it had none (it threw it).
+	void Refill( Context& ctx )
+	{
+		for ( int i = 0; i < kMaxPlayers; ++i )
+		{
+			PlayerSlot slot = PlayerSlot( i );
+			const Character* c = ctx.InWorld( slot ) ? ctx.PlayerCharacter( slot ) : nullptr;
+			uint32_t& since = m_without[i];
+			if ( m_refillTicks == 0 || c == nullptr || c->dead != 0 )
+			{
+				since = 0;
+				continue;
+			}
+			std::vector<CarriedItem> carried = ctx.CarriedItems( slot );
+			bool has = std::any_of( carried.begin(), carried.end(), [&]( const CarriedItem& it ) { return it.kind.index == m_shell.index; } );
+			if ( has )
+			{
+				since = 0;
+				continue;
+			}
+			since = since == 0 ? ctx.Tick() : since;
+			if ( ctx.Tick() >= since + m_refillTicks )
+			{
+				ctx.GiveItem( SlotTarget( slot ), m_shell );
+				since = ctx.Tick() + 2; // (not again before it has it)
+			}
+		}
+	}
+
 	void GoOff( Context& ctx, uint32_t item, b3Vec3 point )
 	{
 		// Whose it is (for the kill): the thrower, as long as it is still here.
@@ -164,12 +201,13 @@ private:
 		}
 	}
 
-	ActionHandle m_throw;
 	ItemKindHandle m_shell;
+	EventHandle m_release;
 	EventHandle m_thrown;
 	EventHandle m_blast;
 	EventHandle m_damage;
-	MotionsHandle m_moves;
+	uint32_t m_refillTicks = 72;
+	uint32_t m_without[kMaxPlayers] = {}; // the tick from which a player has had none (0: it has one)
 	float m_centreDamage = 80.0f;
 	float m_radius = 4.0f;
 	float m_armSpeed = 3.0f;

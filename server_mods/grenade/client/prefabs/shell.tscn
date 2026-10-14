@@ -4,6 +4,15 @@
 ; on. A sphere 18 cm across: big enough to see coming. 0.4 kg, with some bounce, for a throw that
 ; lands softly and skips (the server mod sets it off on the first hard hit).
 ;
+; It is carried in slot 6, out of sight, and its slot's key (H) throws it (use: a press): what is
+; thrown is the one carried. The mod gives a new one a little after (grenade.cpp).
+;   Throwing   CbMotion   on the press (grenade.shell.used), 0.7 s: the left arm's throw, its pack's
+;                         (animation_packs/throw_arm.tscn); its clip says grenade.release at 0.27 s
+;   Release    CbMotion   on grenade.release (the clip's marker): emits grenade.thrown
+;     Shell    CbLaunch   the one carried (what: the one the player carries), where the camera
+;                         looks at 17 m/s, 3 m/s of lift and the thrower's own velocity, from 0.8 m
+;                         ahead; removed after 4 s if nothing set it off
+;
 ; Saving this scene bakes it into res://items/grenade.shell.cfg.
 
 [sub_resource type="SphereShape3D" id="Body"]
@@ -37,6 +46,13 @@ radial_segments = 16
 [node name="Shell" type="CbItem"]
 kind = "grenade.shell"
 display_name = "Grenade"
+properties = {
+"inventory.start": 1.0
+}
+animation_pack = "grenade.throw_arm"
+use = 1
+slot = 6
+slot_key = "H"
 mass = 0.4
 friction = 0.8
 bounce = 0.35
@@ -49,3 +65,23 @@ mesh = SubResource("Ball")
 
 [node name="Band" type="MeshInstance3D" parent="."]
 mesh = SubResource("BandMesh")
+
+[node name="Throwing" type="CbMotion" parent="."]
+when = 2
+event = "grenade.shell.used"
+with_item = 1
+cooldown = 0.7
+duration = 0.7
+
+[node name="Release" type="CbMotion" parent="."]
+when = 2
+event = "grenade.release"
+with_item = 1
+emits = "grenade.thrown"
+
+[node name="Shell" type="CbLaunch" parent="Release"]
+what = 1
+speed = 17.0
+lift = 3.0
+ahead = 0.8
+seconds = 4.0

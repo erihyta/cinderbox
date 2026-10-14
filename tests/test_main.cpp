@@ -4267,6 +4267,16 @@ void TestSlotKeys()
 	// Two keys at once: both, in the same tick.
 	press( 2 | 4, 1 );
 	CHECK( dashes() == 3 && flying() > flown );
+	// The dash gone (a grenade thrown, waiting for the next): its slot's key does nothing, and the
+	// tool stays in the hand.
+	SimCommand gone;
+	gone.type = CommandType::Destroy;
+	gone.target = sim.SlotItem( p0, 1 );
+	f.commands.push_back( gone );
+	step( 2 );
+	press( 2, 1 );
+	std::printf( "    the dash's slot empty, its key: the hand still has slot %d\n", int( sim.SelectedSlot( p0 ) ) );
+	CHECK( sim.SlotItem( p0, 1 ) == 0 && sim.SelectedSlot( p0 ) == 0 && dashes() == 3 );
 }
 
 // The left hand (ItemShape::hand): a hook is there while it is carried, beside a pistol in the
@@ -4344,6 +4354,103 @@ void TestLeftHand()
 	press( 8 );
 	report( "the shield's slot" );
 	CHECK( kindIn( kSocketRightHand ) == -1 && kindIn( kSocketLeftHand ) == 3 );
+}
+
+// Thrown from the hand (launch_carried): what is thrown is the copy the player carries, out of its
+// slot, the same entity with its own fields; with none carried, nothing is. And the release is on
+// an event said after the motions ran (a motion's emit, as a throw clip's marker is): the motion
+// that waits for it hears it the next tick.
+void TestThrownFromHand()
+{
+	ModSchema schema;
+	schema.itemKinds = { "t.ball" };
+	schema.events = { "t.release" };
+	schema.actions.push_back( { "throw", 0, "X" } );
+	schema.fields.push_back( { "t.marks", BoardType::Int, BoardScope::Entity, 0 } );
+	const std::string text = "cinderbox_motions\t2\n"
+							 "motion\tWindUp\nwhen\tpress\tthrow\nemit\tt.release\n"
+							 "motion\tRelease\nwhen\tevent\tt.release\nlaunch_carried\tt.ball\t10\tlook\t2\t0.8\t0\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 && motions->list[1].effects.size() == 1 &&
+		   motions->list[1].effects[0].carried );
+	if ( motions == nullptr || motions->list.size() != 2 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	SimConfig config = TestConfig();
+	config.slots = 2;
+	config.fields = 1;
+	ItemShape ball;
+	ball.kind = 1;
+	ball.half = { 0.1f, 0.1f, 0.1f };
+	ball.center = { 0.0f, 0.0f, 0.0f };
+	ball.fieldDefaults = { { 0, 7 } };
+	Simulation sim( config, FlatMap() );
+	sim.SetItemShapes( { ball } );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	SimCommand give;
+	give.type = CommandType::SpawnItem;
+	give.target = SlotTarget( 0 );
+	give.index = 0;
+	give.mode = kNoSocket;
+	give.value = 1;
+	f.commands.push_back( give );
+	step( 2 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	uint32_t carried = sim.SlotItem( p0, 0 );
+	CHECK( carried != 0 );
+	// Its own field changed while it is carried: the thrown one keeps it.
+	SimCommand mark;
+	mark.type = CommandType::SetField;
+	mark.target = carried;
+	mark.index = 0;
+	mark.value = 42;
+	f.commands.push_back( mark );
+	step( 1 );
+	auto ballsInWorld = [&]() {
+		int n = 0;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+			n += item != nullptr && item->holder == 0 ? 1 : 0;
+		}
+		return n;
+	};
+	// The press: the wind-up says its event after the motions ran; nothing is thrown that tick.
+	f.inputs[0].actions = 1;
+	step( 1 );
+	const HeldItem* before = sim.FindEntity( carried ).try_get<HeldItem>();
+	CHECK( before != nullptr && before->holder == p0 && ballsInWorld() == 0 );
+	// The next tick the release hears it: the ball it carried is thrown.
+	step( 1 );
+	const HeldItem* after = sim.FindEntity( carried ).try_get<HeldItem>();
+	const Velocity* v = sim.FindEntity( carried ).try_get<Velocity>();
+	float speed = v != nullptr ? b3Length( v->linear ) : 0.0f;
+	std::printf( "    the carried ball thrown the tick after the press: in the world %d, the same one %d, at %.1f m/s, its mark %d; its slot now %u\n",
+				 ballsInWorld(), int( after != nullptr && after->holder == 0 ), speed, int( sim.BoardValue( carried, 0 ) ), sim.SlotItem( p0, 0 ) );
+	CHECK( after != nullptr && after->holder == 0 && after->slot == kNoSlot && ballsInWorld() == 1 && speed > 8.0f );
+	CHECK( sim.BoardValue( carried, 0 ) == 42 && sim.SlotItem( p0, 0 ) == 0 && sim.LaunchedBy( carried ) == p0 );
+	// Again, with nothing carried: nothing is thrown, and nothing is made.
+	f.inputs[0].actions = 0;
+	step( 2 );
+	f.inputs[0].actions = 1;
+	step( 3 );
+	CHECK( ballsInWorld() == 1 );
 }
 
 // An item's own fields (ItemShape::fieldDefaults, declared by its CbItem): every new copy starts with
@@ -6881,6 +6988,7 @@ int main( int argc, char** argv )
 		{ "slot_keys", TestSlotKeys },
 		{ "item_fields", TestItemFields },
 		{ "left_hand", TestLeftHand },
+		{ "thrown_from_hand", TestThrownFromHand },
 		{ "item_use", TestItemUse },
 		{ "event_news", TestEventNews },
 		{ "world_items", TestWorldItems },

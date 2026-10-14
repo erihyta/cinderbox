@@ -218,9 +218,18 @@ public:
 		FRAME_UP = 3,
 		FRAME_WORLD = 4,
 	};
+	// What it throws: a new one of item_kind, or the one the player carries (the copy itself, its
+	// fields and all: what was held is what is thrown). Under a CbItem, item_kind may be left empty
+	// for that item's own kind.
+	enum What
+	{
+		WHAT_NEW = 0,
+		WHAT_CARRIED = 1,
+	};
 
 	std::string Bake( godot::String& error ) const override;
 
+	CB_MOTION_FIELD( int, what, m_what )
 	CB_MOTION_FIELD( godot::String, item_kind, m_itemKind )
 	CB_MOTION_FIELD( double, speed, m_speed )
 	CB_MOTION_FIELD( double, lift, m_lift )
@@ -233,6 +242,7 @@ protected:
 	static void _bind_methods();
 
 private:
+	int m_what = WHAT_NEW;
 	godot::String m_itemKind;
 	double m_speed = 15.0;
 	double m_lift = 0.0;
@@ -443,6 +453,7 @@ protected:
 VARIANT_ENUM_CAST( cb::gd::CbMotion::When );
 VARIANT_ENUM_CAST( cb::gd::CbMotion::Refill );
 VARIANT_ENUM_CAST( cb::gd::CbLaunch::Frame );
+VARIANT_ENUM_CAST( cb::gd::CbLaunch::What );
 VARIANT_ENUM_CAST( cb::gd::CbMotionEffect::Target );
 VARIANT_ENUM_CAST( cb::gd::CbMotionEffect::Frame );
 VARIANT_ENUM_CAST( cb::gd::CbImpulse::Replace );

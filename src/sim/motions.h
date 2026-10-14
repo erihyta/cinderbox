@@ -132,6 +132,9 @@ struct MotionEffect
 	// `seconds` (0: it stays, like anything dropped).
 	uint16_t itemKind = 0;
 	bool known = true;
+	// Not a new one: the copy of that kind the player carries (the one in a hand first, else the
+	// lowest slot's), its fields and all; none carried, nothing is thrown.
+	bool carried = false;
 	float lift = 0.0f;
 	float ahead = 0.7f;
 	float seconds = 0.0f;

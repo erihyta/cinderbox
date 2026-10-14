@@ -475,9 +475,13 @@ private:
 		b3Vec3 velocity;
 		uint32_t owner;
 		uint32_t lifetimeTicks;
+		uint32_t item = 0; // the carried copy thrown; 0: a new one of `kind`
 	};
 	std::vector<Launched> m_launched;
 	void CreateLaunched();
+	// The copy of `kind` the player `holder` carries that a launch throws (in a hand first, then the
+	// lowest slot's), not one already thrown this tick; 0: none.
+	uint32_t CarriedCopyOf( uint32_t holder, uint16_t kind ) const;
 	// An item leaves the hand and lies in the world at its grip (a body of its kind's shape), or
 	// the other way round.
 	void PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity );

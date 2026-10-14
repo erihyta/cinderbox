@@ -842,6 +842,7 @@ std::string BakeItemUse( const Node* item, const String& kind, int use, const Pa
 
 void CbLaunch::_bind_methods()
 {
+	CB_MOTION_PROP( CbLaunch, Variant::INT, what, PROPERTY_HINT_ENUM, "A new one of its item kind,The one the player carries" )
 	CB_MOTION_PROP( CbLaunch, Variant::STRING, item_kind, PROPERTY_HINT_PLACEHOLDER_TEXT, "grenade.shell" )
 	CB_MOTION_PROP( CbLaunch, Variant::FLOAT, speed, PROPERTY_HINT_RANGE, "0,100,0.1,or_greater,suffix:m/s" )
 	CB_MOTION_PROP( CbLaunch, Variant::FLOAT, lift, PROPERTY_HINT_RANGE, "-20,20,0.1,or_greater,or_less,suffix:m/s" )
@@ -855,6 +856,8 @@ void CbLaunch::_bind_methods()
 	BIND_ENUM_CONSTANT( FRAME_FACING );
 	BIND_ENUM_CONSTANT( FRAME_UP );
 	BIND_ENUM_CONSTANT( FRAME_WORLD );
+	BIND_ENUM_CONSTANT( WHAT_NEW );
+	BIND_ENUM_CONSTANT( WHAT_CARRIED );
 }
 
 std::string CbLaunch::Bake( String& error ) const
@@ -865,12 +868,21 @@ std::string CbLaunch::Bake( String& error ) const
 		return std::string();
 	}
 	String kind = m_itemKind.strip_edges();
+	if ( kind.is_empty() && m_what == WHAT_CARRIED )
+	{
+		// Under a CbItem: the item's own kind.
+		for ( const Node* up = get_parent(); up != nullptr && kind.is_empty(); up = up->get_parent() )
+		{
+			kind = up->is_class( "CbItem" ) ? String( up->get( "kind" ) ).strip_edges() : kind;
+		}
+	}
 	if ( kind.is_empty() || Plain( kind ) == false || kind.contains( " " ) )
 	{
-		Fail( error, "name the item kind it throws (item_kind: one a server mod declares, and a CbItem bakes: grenade.shell)" );
+		Fail( error, "name the item kind it throws (item_kind: one a server mod declares, and a CbItem bakes: grenade.shell; "
+					 "the one the player carries, under a CbItem, may leave it empty for that item's)" );
 		return std::string();
 	}
-	std::string line = "launch\t" + Std( kind ) + "\t" + Num( m_speed ) + "\t" + kFrames[m_frame >= 0 && m_frame <= FRAME_WORLD ? m_frame : FRAME_LOOK] +
+	std::string line = std::string( m_what == WHAT_CARRIED ? "launch_carried\t" : "launch\t" ) + Std( kind ) + "\t" + Num( m_speed ) + "\t" + kFrames[m_frame >= 0 && m_frame <= FRAME_WORLD ? m_frame : FRAME_LOOK] +
 					   "\t" + Num( m_lift ) + "\t" + Num( m_ahead ) + "\t" + Num( m_seconds );
 	if ( m_frame == FRAME_WORLD )
 	{
