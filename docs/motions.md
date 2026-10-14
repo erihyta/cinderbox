@@ -54,7 +54,7 @@ A motion is a trigger with parts under it. The trigger says *when* and *for how 
 CbMotionPart            what they share: each bakes to lines, and warns in the tree when it cannot
 ├── CbMotionSet         the root: a mod's motions, one baked file
 ├── CbMotion            the trigger: when, how long, parameters, changes, the event
-├── CbProbe             a line along the look that has to find something
+├── CbProbe             a line along the look (one that flies is thrown even at nothing)
 ├── CbLaunch            an item of a kind thrown into the world, once
 └── CbMotionEffect      what it does to a body: on whom (target), in which direction (frame)
     ├── CbImpulse       a change of velocity, once
@@ -241,7 +241,7 @@ Hook          CbItem     kind "grapple.hook", use: its slot's key (a press), slo
 
 | Step | What happens |
 |---|---|
-| The throw | two traces, like a shot: what is under the crosshair (along the camera's line from the point it orbits, or a shoulder), then from the player to that point, so something in between stops it. Nothing within range: nothing happens, not even the cooldown |
+| The throw | two traces, like a shot: what is under the crosshair (along the camera's line from the point it orbits, or a shoulder), then from the player to that point, so something in between stops it. Nothing within range: a line that flies (`travel`) is thrown all the same, out its whole range, holds nothing, moves nobody, and is gone when it gets there (its event and cooldown happen; looks see `link_missed`); one that does not fly: nothing happens, not even the cooldown |
 | What it finds | the world: a point. A prop: a point on that body, which moves with it. A player: a point on its capsule (not a limb: hitboxes are the server's) |
 | Flying | until `distance / travel` has passed, the motion is not on yet: no parameters, no effects; the look draws the line growing |
 | Holding | the motion is on. Its effects run every tick, before the mover: here the pull (up to 15 m/s along the line) and the rope. `react` shares the closing speed with what it holds, so a crate flies to the player |
@@ -276,8 +276,14 @@ GrappleReactions            (vfx/reactions_grapple.tscn)
 | `scene` | a scene one metre long along its -Z; the game stretches it from the player to the line's end, while it flies and while it holds |
 | `from` | the player's socket it starts at (`RightHand`); empty, or a socket the character lacks: its chest |
 
-In conditions (a reaction, a HUD node), `linked` is true for a player whose line is out, and
-`link_holds` once it has taken hold.
+In conditions (a reaction, a HUD node), `linked` is true for a player whose line is out,
+`link_holds` once it has taken hold, and `link_missed` for one that found nothing and flies out its
+range all the same (the grapple's hit puff waits for `not link_missed`).
+
+**Why a probe, and not "the server says where it hit"**: every machine runs the simulation, so the
+throwing player's own game finds the same point the same tick, and the pull starts at once. A
+round trip to the server would make every grapple wait one ping before it pulls. The server's run
+is still the truth: a client that guessed wrong is corrected by rollback, like any move.
 
 ## Things that fly: the grenade mod
 

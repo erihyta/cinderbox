@@ -1146,15 +1146,19 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				int heldMotion = -1;
 				bool holdAlive = false;
 				b3Vec3 where = {};
+				bool missed = false;
 				if ( const MotionHold* out = e.try_get<MotionHold>(); out != nullptr && out->on != 0 )
 				{
 					heldMotion = out->motion;
-					holdAlive = HoldPoint( *out, where );
+					// A line that found nothing is gone when it has flown its range.
+					missed = out->missed != 0;
+					holdAlive = HoldPoint( *out, where ) && ( missed == false || m_globals.tick < out->holdTick );
 				}
-				values.builtins[AnimExpr::Linked] = heldMotion >= 0 ? 1.0f : 0.0f;
+				// ("linked": it holds on to something, or flies to: not a line that found nothing.)
+				values.builtins[AnimExpr::Linked] = heldMotion >= 0 && missed == false ? 1.0f : 0.0f;
 				// (From where the line leaves the player: the point its camera orbits.)
 				values.builtins[AnimExpr::LinkDistance] =
-					holdAlive ? b3Distance( where, b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) ) : 0.0f;
+					holdAlive && missed == false ? b3Distance( where, b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) ) : 0.0f;
 				values.globalBoard = &m_globalBoard;
 				values.events = m_globals.modEvents;
 				values.eventCount = m_globals.modEventCount;
@@ -2633,9 +2637,23 @@ bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerIn
 		view = b3MulAdd( view, ViewMode( in.view ) == ViewMode::ShoulderRight ? kShoulderOffset : -kShoulderOffset, detmath::YawRight( yaw ) );
 	}
 	RayHit seen;
-	if ( CastRay( view, b3MulSV( m.probeRange, look ), self, seen ) == false )
+	if ( CastRay( view, b3MulSV( m.probeRange, look ), self, seen ) == false && CastRay( from, b3MulSV( m.probeRange, look ), self, seen ) == false )
 	{
-		return false;
+		// Nothing there: a line that flies is thrown all the same, out its range, and holds nothing.
+		if ( m.probeTravel <= 0.0f )
+		{
+			return false;
+		}
+		MotionHold miss;
+		miss.point = b3MulAdd( from, m.probeRange, look );
+		miss.startTick = m_globals.tick;
+		miss.holdTick = m_globals.tick + std::max( 1u, uint32_t( m.probeRange / m.probeTravel * float( m_config.tickRate ) + 0.5f ) );
+		miss.motion = uint16_t( index );
+		miss.on = 1;
+		miss.missed = 1;
+		e.set<MotionHold>( miss );
+		holdTick = miss.holdTick;
+		return true;
 	}
 	RayHit hit = seen;
 	b3Vec3 to = b3Sub( seen.point, from );
@@ -2822,7 +2840,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 		// What the motion's probe holds on to: its effects wait for it to take hold.
 		const MotionHold* found = e.try_get<MotionHold>();
 		MotionHold hold = found != nullptr ? *found : MotionHold{};
-		const bool holds = hold.on != 0 && hold.motion == on.index;
+		const bool holds = hold.on != 0 && hold.motion == on.index && hold.missed == 0;
 		if ( m.probe && ( holds == false || m_globals.tick < hold.holdTick ) )
 		{
 			continue;
@@ -3003,7 +3021,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 	}
 }
 
-bool Simulation::EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint16_t& motion ) const
+bool Simulation::EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint16_t& motion, bool* missed ) const
 {
 	flecs::entity e = FindEntity( netId );
 	const MotionHold* hold = e.is_valid() ? e.try_get<MotionHold>() : nullptr;
@@ -3014,12 +3032,16 @@ bool Simulation::EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint16_t&
 		return false;
 	}
 	motion = hold->motion;
-	holds = m_globals.tick >= hold->holdTick;
+	holds = m_globals.tick >= hold->holdTick && hold->missed == 0;
+	if ( missed != nullptr )
+	{
+		*missed = hold->missed != 0;
+	}
 	end = point;
 	if ( holds == false && hold->holdTick > hold->startTick )
 	{
-		// Flying: from the player toward where it will hold.
-		float along = float( m_globals.tick - hold->startTick ) / float( hold->holdTick - hold->startTick );
+		// Flying: from the player toward where it will hold (or, found nothing, as far as it goes).
+		float along = std::min( float( m_globals.tick - hold->startTick ) / float( hold->holdTick - hold->startTick ), 1.0f );
 		b3Vec3 from = b3Add( t->position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
 		end = b3Add( from, b3MulSV( along, b3Sub( point, from ) ) );
 	}

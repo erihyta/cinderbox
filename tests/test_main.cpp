@@ -2440,13 +2440,27 @@ void TestLinks()
 	auto position = [&] { return sim.EntityTransform( p0 )->position; };
 	CHECK( holdOf() == nullptr );
 
-	// At the sky: the line finds nothing, and nothing happens (no event, no cooldown).
+	// At the sky: the line finds nothing, and is thrown all the same (its event says so). It flies
+	// out its range (40 m at 30 m/s: 80 ticks), holds nothing, moves nobody, and is gone when it
+	// gets there.
+	b3Vec3 end;
+	bool holds = true;
+	uint16_t which = 9;
 	f.inputs[0].cameraPitch = 14000;
 	f.inputs[0].actions = grapple;
+	b3Vec3 stood = position();
 	step( 1 );
-	CHECK( ( holdOf() == nullptr || holdOf()->on == 0 ) && sim.Globals().modEventCount == 0 );
+	const MotionHold* miss = holdOf();
+	CHECK( miss != nullptr && miss->on == 1 && miss->missed == 1 && miss->holdTick - miss->startTick == 80 && sim.Globals().modEventCount == 1 );
+	step( 40 );
+	CHECK( sim.EntityHold( p0, end, holds, which ) && holds == false && end.y > stood.y + 10.0f );
+	CHECK( b3Distance( position(), stood ) < 0.01f && sim.PlayerCharacter( 0 )->grounded == 1 );
+	step( 41 );
+	std::printf( "    at the sky: flew out %.1f m, and was gone after %u ticks\n", b3Distance( miss->point, b3Add( stood, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) ),
+				 miss->holdTick - miss->startTick );
+	CHECK( holdOf()->on == 0 && sim.EntityHold( p0, end, holds, which ) == false && b3Distance( position(), stood ) < 0.01f );
 	f.inputs[0].actions = 0;
-	step( 1 );
+	step( 15 ); // (its cooldown)
 
 	// At the wall, a little upward: it is thrown, flies (nothing pulls yet), then holds and pulls.
 	f.inputs[0].cameraPitch = 500;
@@ -2467,11 +2481,8 @@ void TestLinks()
 	// (The rope is measured when the line takes hold, not when it is thrown.)
 	CHECK( flight == uint32_t( reach / 30.0f * 60.0f + 0.5f ) && tether->length == 0.0f );
 	// The event is at where it will hold.
-	CHECK( sim.Globals().modEventCount == 1 && b3Distance( sim.Globals().modEvents[0].point, anchor ) < 0.001f );
+	CHECK( sim.Globals().modEventCount == 2 && b3Distance( sim.Globals().modEvents[1].point, anchor ) < 0.001f );
 	// While it flies its end is on the way, and the player has not moved.
-	b3Vec3 end;
-	bool holds = true;
-	uint16_t which = 9;
 	step( int( flight ) / 2 );
 	CHECK( sim.EntityHold( p0, end, holds, which ) && holds == false && which == 0 );
 	CHECK( end.z > from.z + 1.0f && end.z < anchor.z - 1.0f && b3Distance( position(), from ) < 0.01f );

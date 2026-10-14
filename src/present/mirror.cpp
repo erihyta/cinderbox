@@ -208,6 +208,7 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 		visual.slotCount = f.slotCount;
 		visual.linked = f.linked;
 		visual.linkHolds = f.linkHolds;
+		visual.linkMissed = f.linkMissed;
 		visual.motionsOn = f.motionsOn;
 		visual.linkMotion = f.linkMotion;
 		visual.linkEnd = f.linkEnd;
