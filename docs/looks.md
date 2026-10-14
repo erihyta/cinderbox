@@ -152,7 +152,7 @@ read: a reaction, a prediction, a HUD node, a character's state machine.
 | `gun.pistol` (an item kind) | the player holds one, in any socket: what a look should ask, not which loadout slot is out |
 | `carried.gun.pistol` | the player has one, in the hand or put away |
 | `using.gun.pistol` | the player uses one this tick (the button down with it in the hand, or its slot's key) |
-| `motion.Hook`, `motion.grapple.hook.Hook` | that motion of the player's is on (the node's name alone when it is the only one of that name) |
+| `motion.Hook`, `motion.grapple.hook.Use` | that motion of the player's is on (the node's name alone when it is the only one of that name) |
 | `name == 2`, `!=`, `>`, `>=`, `<`, `<=` | a comparison: 1 or 0 (`true` / `false` are 1 / 0) |
 | `+ - * /`, `-x`, `( )` | arithmetic; dividing by 0 gives 0 |
 | `and` / `&&`, `or` / `\|\|` | both, either |

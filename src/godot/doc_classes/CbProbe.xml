@@ -17,5 +17,11 @@
 		<member name="travel" type="float" setter="set_travel" getter="get_travel" default="60.0">
 			The speed it flies at, in metres per second: it takes hold after distance / speed. 0: at once.
 		</member>
+		<member name="hold_seconds" type="float" setter="set_hold_seconds" getter="get_hold_seconds" default="0.0">
+			Under an item: the longest the line holds once it has taken hold (0: until it is let go). Under a [CbMotion], its [code]duration[/code] says it.
+		</member>
+		<member name="release" type="int" setter="set_release" getter="get_release" default="3">
+			Under an item: what lets the line go, either of: using the item again, a jump. Under a [CbMotion], its [code]until[/code] says it.
+		</member>
 	</members>
 </class>
