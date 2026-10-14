@@ -139,6 +139,8 @@ public:
 	int64_t get_slot_count( int64_t player ) const;
 	int64_t get_selected_slot( int64_t player ) const;
 	int64_t get_slot_item( int64_t player, int64_t slot ) const;
+	// How many an item is (a stack); 0 for none.
+	int64_t get_item_count( int64_t item ) const;
 	bool check_local_conditions( const godot::PackedStringArray& conditions ) const;
 	godot::Variant evaluate( int64_t net_id, const godot::String& expression ) const;
 	godot::Variant evaluate_local( const godot::String& expression ) const;

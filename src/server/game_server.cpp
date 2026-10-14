@@ -215,6 +215,9 @@ bool GameServer::Start( const ServerOptions& options )
 	{
 		auto found = m_itemProperties.find( std::make_pair( int( kind ), std::string( "bullet" ) ) );
 		m_schema.itemShapes[kind].bullet = found != m_itemProperties.end() && found->second != 0.0f ? 1 : 0;
+		// How many a slot holds (the item property "stack": its CbItem's).
+		auto stack = m_itemProperties.find( std::make_pair( int( kind ), std::string( "stack" ) ) );
+		m_schema.itemShapes[kind].stack = stack != m_itemProperties.end() ? uint8_t( std::clamp( stack->second, 0.0f, 255.0f ) ) : 0;
 	}
 	// What says that a copy's time is up: "<kind>.expired", where a mod declares it (with or without
 	// slots).

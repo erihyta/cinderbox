@@ -102,6 +102,9 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_hand" ), &CbItem::get_hand );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "hand", PROPERTY_HINT_ENUM, "The slots' hand while selected,The left hand while carried" ), "set_hand",
 				  "get_hand" );
+	ClassDB::bind_method( D_METHOD( "set_stack", "value" ), &CbItem::set_stack );
+	ClassDB::bind_method( D_METHOD( "get_stack" ), &CbItem::get_stack );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "stack", PROPERTY_HINT_RANGE, "1,99,1" ), "set_stack", "get_stack" );
 	ADD_GROUP( "When used", "use_" );
 	ClassDB::bind_method( D_METHOD( "set_use_conditions", "value" ), &CbItem::set_use_conditions );
 	ClassDB::bind_method( D_METHOD( "get_use_conditions" ), &CbItem::get_use_conditions );
@@ -1003,6 +1006,10 @@ Dictionary CbItem::bake() const
 	if ( m_bullet )
 	{
 		all["bullet"] = 1;
+	}
+	if ( m_stack > 1 )
+	{
+		all["stack"] = m_stack;
 	}
 	Array names = all.keys();
 	names.sort();

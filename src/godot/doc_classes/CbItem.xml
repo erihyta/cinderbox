@@ -84,6 +84,9 @@
 		<member name="slot_key" type="String" setter="set_slot_key" getter="get_slot_key" default="&quot;&quot;">
 			The key it suggests for its [member slot] ([code]V[/code], [code]MouseRight[/code]). A mod's suggestion ([code]declare.SlotKey[/code]) or an earlier item's for the same slot comes first; the player's own choice (the Keys page of the settings) wins over all. Empty: the slot's number.
 		</member>
+		<member name="stack" type="int" setter="set_stack" getter="get_stack" default="1">
+			How many of it one slot holds: a stack (1: one). An item given to a player who has a stack of its kind with room goes onto it (as many as fit; the rest goes on as an item of its own); a [CbLaunch] of the one carried throws one off the stack, with the stack's fields, and the rest stays. The HUD reads the count as [code]slot.count[/code]; server mods as [code]CarriedItem::count[/code].
+		</member>
 		<member name="bullet" type="bool" setter="set_bullet" getter="get_bullet" default="false">
 			Thrown fast and small (a dart, a rocket): in the world it is moved with continuous collision against what moves too (a crate, a door), so it does not pass a thin one between two steps. The level's walls stop anything without it. It costs a little more each step.
 		</member>

@@ -258,6 +258,16 @@ public:
 	// Thrown fast and small (a dart, a rocket): moved with continuous collision against what moves
 	// too, so it does not pass a thin crate or door between two steps. The level's walls stop
 	// anything; this costs a little more a step.
+	// How many of it one slot holds: a stack (1: one). One given to a player who has a stack of it
+	// with room goes onto it; a throw of the one carried takes one off.
+	void set_stack( int v )
+	{
+		m_stack = v;
+	}
+	int get_stack() const
+	{
+		return m_stack;
+	}
 	void set_bullet( bool v )
 	{
 		m_bullet = v;
@@ -452,6 +462,7 @@ private:
 	int m_use = USE_SELECTED;
 	int m_hand = HAND_SELECTED;
 	bool m_bullet = false;
+	int m_stack = 1;
 	int m_slot = 0;
 	godot::NodePath m_carryGrip;
 	int m_otherHand = OTHER_FREE;

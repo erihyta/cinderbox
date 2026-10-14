@@ -9,15 +9,16 @@
 // "frag.grenade.expired" where it is, with whoever threw it, and removes it: on every machine, on
 // the same tick.
 //
-// This file is the rules: a new grenade a little after a player has none (frag.refill_seconds),
-// and what going off is. Everyone near is hurt (the combat mod's "combat.damage", like any other
+// This file is the rules: grenades come one at a time, a little apart (frag.refill_seconds), until a
+// player carries frag.carry of them (a stack in slot 6: the scene's stack), and what going off is. Everyone near is hurt (the combat mod's "combat.damage", like any other
 // weapon's: less with distance), everything loose near it is thrown and sent tumbling (props,
 // items, ragdolls: so those it kills fly, and those it only hurts keep their feet). It does not go
 // off when it hits something: that was the impact grenade (the grenade mod, switched off).
 //
 // Server options: frag.damage (at the centre, default 90), frag.radius (metres, default 5),
 // frag.push (how fast what is loose is thrown at the centre, m/s, default 12), frag.refill_seconds
-// (how long a player is without one before the next, default 1.2; 0: never: one a life).
+// (how long a player waits for the next while it has fewer than it carries, default 1.2; 0: never:
+// one a life), frag.carry (how many, default 3: the scene's stack holds that many).
 
 #include "mod_api.h"
 
@@ -62,6 +63,7 @@ public:
 		m_radius = float( std::clamp( ctx.Option( "frag.radius", 5.0 ), 0.5, 50.0 ) );
 		m_push = float( std::clamp( ctx.Option( "frag.push", 12.0 ), 0.0, 100.0 ) );
 		m_refillTicks = uint32_t( std::clamp( ctx.Option( "frag.refill_seconds", 1.2 ), 0.0, 600.0 ) * double( ctx.Config().tickRate ) + 0.5 );
+		m_carry = int( std::clamp( ctx.Option( "frag.carry", 3.0 ), 1.0, 99.0 ) );
 	}
 
 	void Tick( Context& ctx ) override
@@ -93,7 +95,8 @@ public:
 	}
 
 private:
-	// A player in the world without a grenade gets one, a while after it had none (it threw it).
+	// A player in the world with fewer grenades than it carries gets one, a while after it had fewer
+	// (it threw one); then the next, as long as it is short.
 	void Refill( Context& ctx )
 	{
 		for ( int i = 0; i < kMaxPlayers; ++i )
@@ -107,8 +110,12 @@ private:
 				continue;
 			}
 			std::vector<CarriedItem> carried = ctx.CarriedItems( slot );
-			bool has = std::any_of( carried.begin(), carried.end(), [&]( const CarriedItem& it ) { return it.kind.index == m_grenade.index; } );
-			if ( has )
+			int has = 0;
+			for ( const CarriedItem& it : carried )
+			{
+				has += it.kind.index == m_grenade.index ? it.count : 0;
+			}
+			if ( has >= m_carry )
 			{
 				since = 0;
 				continue;
@@ -117,7 +124,7 @@ private:
 			if ( ctx.Tick() >= since + m_refillTicks )
 			{
 				ctx.GiveItem( SlotTarget( slot ), m_grenade );
-				since = ctx.Tick() + 2; // (not again before it has it)
+				since = ctx.Tick(); // (the next one as long after; it is on the stack by then)
 			}
 		}
 	}
@@ -199,7 +206,8 @@ private:
 	float m_radius = 5.0f;
 	float m_push = 12.0f;
 	uint32_t m_refillTicks = 72;
-	uint32_t m_without[kMaxPlayers] = {}; // the tick from which a player has had none (0: it has one)
+	int m_carry = 3;
+	uint32_t m_without[kMaxPlayers] = {}; // the tick from which a player has been short (0: it has them all)
 	// How long after a blast a body it killed may still fall, in ticks.
 	static constexpr uint32_t kFallTicks = 6;
 	struct Blast

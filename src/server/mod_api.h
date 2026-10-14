@@ -159,6 +159,7 @@ struct CarriedItem
 	bool stowed = false; // false: in use, in `socket`
 	SocketHandle socket; // invalid: stowed out of sight
 	int slot = -1;		 // which of the player's slots it is in (-1: none)
+	int count = 1;		 // how many it is: a stack of its kind
 };
 
 // An item lying in the world, as ItemsNear finds it.

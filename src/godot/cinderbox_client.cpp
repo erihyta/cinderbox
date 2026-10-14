@@ -24,6 +24,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_slot_count", "player" ), &CinderboxClient::get_slot_count );
 	ClassDB::bind_method( D_METHOD( "get_selected_slot", "player" ), &CinderboxClient::get_selected_slot );
 	ClassDB::bind_method( D_METHOD( "get_slot_item", "player", "slot" ), &CinderboxClient::get_slot_item );
+	ClassDB::bind_method( D_METHOD( "get_item_count", "item" ), &CinderboxClient::get_item_count );
 	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "use", "actions", "view", "slot_keys" ),
 						  &CinderboxClient::set_input, DEFVAL( 0 ), DEFVAL( 0 ) );
 	ClassDB::bind_method( D_METHOD( "get_slot_keys" ), &CinderboxClient::get_slot_keys );
@@ -265,6 +266,12 @@ int64_t CinderboxClient::get_slot_item( int64_t player, int64_t slot ) const
 		}
 	} );
 	return found;
+}
+
+int64_t CinderboxClient::get_item_count( int64_t item ) const
+{
+	flecs::entity ve = m_mirror && item != 0 ? m_mirror->VisualOf( uint32_t( item ) ) : flecs::entity();
+	return ve.is_valid() ? std::max<int64_t>( 1, int64_t( ve.get<present::Visual>().slotCount ) ) : 0;
 }
 
 void CinderboxClient::send_intent( int64_t kind, int64_t a, int64_t b )

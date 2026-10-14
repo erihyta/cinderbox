@@ -147,6 +147,9 @@ struct ItemShape
 	// (a crate, a door), not only against the level, so a small fast throw does not pass a thin one
 	// between two steps. Costs a little more a step; for kinds that are thrown fast.
 	uint8_t bullet = 0;
+	// How many of it a slot holds, one stack (0, 1: one). An item given to a player who has a stack
+	// of its kind with room goes onto it; one thrown from a stack is split off it.
+	uint8_t stack = 0;
 	// Its own fields (declared by its CbItem: the rifle's "gun.rounds"): what a new copy starts with,
 	// as board slots of entity fields and their raw values. A copy keeps its own from then on.
 	struct FieldDefault
