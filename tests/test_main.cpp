@@ -5912,6 +5912,93 @@ void TestRetarget()
 	CHECK( std::fabs( shin - 0.42f ) < 0.01f );
 }
 
+// An overlay that moves the other hand takes it off a two-handed item (the grapple's arm while a
+// rifle is out): with the overlay in, the grip changes nothing; without it, the hand goes to the grip.
+void TestOverlayGrip()
+{
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
+	std::string error, warnings;
+	std::shared_ptr<const anim::AnimSet> set = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( set != nullptr );
+	if ( set == nullptr )
+	{
+		return;
+	}
+	ModSchema schema;
+	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
+	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
+	// A layer the character does not have, for the left arm alone, always in.
+	schema.animPacks.push_back( { "test", "test.arm",
+								  "cinderbox_graph\t1\n"
+								  "clip\tJump_Land\t1.2666667\t0\n"
+								  "layer\tArm\n"
+								  "mask\tLeftShoulder\tLeftUpperArm\tLeftLowerArm\tLeftHand\n"
+								  "state\tUp\tclip\tJump_Land\t0\n"
+								  "start\tUp\n" } );
+	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
+	AnimGraphPacks packs = CompileAnimPacks( schema, warnings );
+	CHECK( graph != nullptr && packs.size() == 1 && packs[0] != nullptr );
+	if ( graph == nullptr || packs.empty() || packs[0] == nullptr )
+	{
+		std::printf( "    %s %s\n", error.c_str(), warnings.c_str() );
+		return;
+	}
+	auto fitted = anim::FitPack( set, *packs[0], *set, warnings );
+	SimConfig config = TestConfig();
+	config.layers = uint8_t( LayerSlots( *graph ) );
+	Simulation sim( config, FlatMap() );
+	sim.SetAnimGraph( graph );
+	sim.SetAnimPacks( packs );
+	anim::PoseEvaluator pose( *set );
+	pose.SetGraph( graph, warnings );
+	pose.SetPacks( packs, { fitted } );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto overlay = [&]( int source ) {
+		SimCommand c;
+		c.type = CommandType::SwapLayer;
+		c.target = SlotTarget( 0 );
+		c.index = uint16_t( graph->layers.size() );
+		c.value = source;
+		f.commands.push_back( c );
+	};
+	// The left hand with the grip, and how far that is from where it is without one.
+	const int left = set->ArmJoints( true ).hand;
+	anim::HandGrip grip;
+	grip.position = { 0.15f, 0.0f, -0.35f };
+	auto moved = [&]() {
+		AnimState s = sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) );
+		pose.Evaluate( s );
+		float a[4], b[4];
+		ozz::math::StorePtrU( pose.Models()[size_t( left )].cols[3], a );
+		pose.Evaluate( s, &grip );
+		ozz::math::StorePtrU( pose.Models()[size_t( left )].cols[3], b );
+		return b3Distance( { a[0], a[1], a[2] }, { b[0], b[1], b[2] } );
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	float without = moved();
+	overlay( 1 );
+	step( 30 );
+	AnimState a = sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) );
+	size_t slot = graph->layers.size();
+	CHECK( a.graph.size() > slot && a.graph[slot].source == 1 && a.graph[slot].weight > 0.99f );
+	float with = moved();
+	overlay( 0 );
+	step( 30 );
+	float after = moved();
+	std::printf( "    the grip moves the left hand %.3f m; with the arm's overlay in %.4f m; after %.3f m\n", without, with, after );
+	CHECK( without > 0.05f && with < 1e-5f && after > 0.05f );
+}
+
 // A mod's animation pack: its "FullBody" layer swapped in for a player's own, in the simulation and in
 // the pose; its "UpperBody" (which it does not have) stays the character's; restored on command.
 void TestLayerSwap()
@@ -6755,6 +6842,7 @@ int main( int argc, char** argv )
 		{ "mannequin_character", TestMannequinCharacter },
 		{ "retarget", TestRetarget },
 		{ "layer_swap", TestLayerSwap },
+		{ "overlay_grip", TestOverlayGrip },
 		{ "anim_lead", TestAnimLead },
 		{ "ual_mannequin", TestUalMannequin },
 		{ "anim_pipeline", TestAnimPipeline },

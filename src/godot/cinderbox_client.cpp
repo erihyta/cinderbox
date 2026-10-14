@@ -609,7 +609,7 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	// drawn as what is held says: which hands, with what field of view, and bent onto it when it
 	// floats in the view (CbItem.view_camera) and not as the pose has them.
 	bool floats = false;
-	// (A hand is drawn when any of what is held asks for it: the bat hides the left, the hook in
+	// (A hand is drawn when any of what is held asks for it: the bat hides the left, a torch in
 	// the left hand beside it shows it again.)
 	bool hands[2] = { true, true };
 	bool asked[2] = { false, false };

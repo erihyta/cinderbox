@@ -2,7 +2,7 @@
 
 ; How the grapple mod looks and sounds.
 ;
-;   Rope    CbLinkLook     the rope: grapple_rope.tscn stretched from the left hand (the hook's) to its
+;   Rope    CbLinkLook     the rope: grapple_rope.tscn stretched from the left hand (the launcher's) to its
 ;                          end, while it flies and while it holds
 ;   Fired   CbReaction     the throw's sound, at the player. The event comes from the motion, which
 ;                          the viewer's own simulation runs: yours is heard on the press

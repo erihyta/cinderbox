@@ -246,7 +246,7 @@ public:
 	}
 	// Which hand it is in:
 	//   HAND_SELECTED  the slots' hand (the right), while its slot is the selected one.
-	//   HAND_LEFT      the left hand, for as long as it is carried: a grappling hook beside a gun.
+	//   HAND_LEFT      the left hand, for as long as it is carried: a torch beside a gun.
 	//                  Put away while what is selected has its other hand at a marker (a rifle's
 	//                  barrel), or while another such item of a lower slot is there. What has its
 	//                  other hand as the animation has it (a pistol) is held with one hand then.
