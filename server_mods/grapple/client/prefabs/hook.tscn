@@ -1,5 +1,16 @@
 [gd_scene format=3 uid="uid://bj564ax5hngs6"]
 
+; The grappling hook. Its slot's key (the fourth) uses it where it is (use: a press), and what a
+; use does is the nodes under it:
+;   Hook          CbItem    when used: says grapple.fired
+;   Throw         CbProbe   a line along the look, flying at 80 m/s; let go by using the hook again
+;                           or a jump, or after 2 s of holding
+;     Rope        CbLink    to what the line found, reeled in at 4 m/s
+;       Pull      CbForce   on the player, toward it: 160 m/s2 up to 15 m/s, ramped in, reacting
+;       Hanging   CbMove    while it holds: gravity 0, air control 0.6, airborne
+; They bake with the item into one motion, "Use". Its pose while that is on is its pack's
+; (animation_packs/hook_hang.tscn: motion.grapple.hook.Use).
+
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.22)
 
@@ -21,6 +32,7 @@ properties = {
 animation_pack = "grapple.hook_hang"
 use = 1
 slot = 4
+use_emits = "grapple.fired"
 mass = 0.8
 
 [node name="Body" type="CollisionShape3D" parent="." unique_id=1748304673]
@@ -31,29 +43,23 @@ shape = SubResource("Body")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.11)
 mesh = SubResource("Mesh")
 
-[node name="Hook" type="CbMotion" parent="." unique_id=1472067873]
-when = 2
-event = "grapple.hook.used"
-conditions = PackedStringArray("not linked")
-with_item = 1
-duration = 2.0
-until = PackedStringArray("grapple.hook.used", "pressed.jump")
-parameters = {
-"air_control": 0.6,
-"airborne": 1.0,
-"gravity": 0.0
-}
-emits = "grapple.fired"
-
-[node name="Line" type="CbProbe" parent="Hook" unique_id=88572767]
+[node name="Throw" type="CbProbe" parent="."]
 travel = 80.0
+hold_seconds = 2.0
 
-[node name="Pull" type="CbForce" parent="Hook" unique_id=2015268765]
+[node name="Rope" type="CbLink" parent="Throw"]
+reel = 4.0
+
+[node name="Pull" type="CbForce" parent="Throw/Rope"]
 strength = 160.0
 speed = 15.0
 ramp_in = 0.1
 react = true
 frame = 5
 
-[node name="Rope" type="CbLink" parent="Hook" unique_id=1427128878]
-reel = 4.0
+[node name="Hanging" type="CbMove" parent="Throw/Rope"]
+parameters = {
+"air_control": 0.6,
+"airborne": 1.0,
+"gravity": 0.0
+}
