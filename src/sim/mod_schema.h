@@ -132,6 +132,15 @@ struct ItemShape
 	// order; 0xFFFF: none) at the player, with the item as the other entity, on the press.
 	uint8_t use = 0;
 	uint16_t usedEvent = 0xFFFF;
+	// Its own fields (declared by its CbItem: the rifle's "gun.rounds"): what a new copy starts with,
+	// as board slots of entity fields and their raw values. A copy keeps its own from then on.
+	struct FieldDefault
+	{
+		uint16_t slot = 0;
+		int32_t raw = 0;
+		bool operator==( const FieldDefault& ) const = default;
+	};
+	std::vector<FieldDefault> fieldDefaults;
 
 	bool operator==( const ItemShape& ) const = default;
 };

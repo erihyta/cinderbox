@@ -10,7 +10,7 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x3942434Du; // 'MCB9': 2 workshop items, 3 the character, 4 layers and stances, 5 the
+constexpr uint32_t kSchemaMagic = 0x4142434Du; // 'MCBA': 10 an item's own fields' defaults; 2 workshop items, 3 the character, 4 layers and stances, 5 the
 												// character's state machine, 6 item kinds and sockets, 7 animation packs,
 												// 8 item shapes, 9 slots' keys
 
@@ -302,6 +302,17 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutU8( out, shape.use );
 		PutU8( out, uint8_t( shape.usedEvent & 0xFF ) );
 		PutU8( out, uint8_t( shape.usedEvent >> 8 ) );
+		PutU8( out, uint8_t( std::min<size_t>( shape.fieldDefaults.size(), 64 ) ) );
+		for ( size_t f = 0; f < shape.fieldDefaults.size() && f < 64; ++f )
+		{
+			PutU8( out, uint8_t( shape.fieldDefaults[f].slot & 0xFF ) );
+			PutU8( out, uint8_t( shape.fieldDefaults[f].slot >> 8 ) );
+			uint32_t raw = uint32_t( shape.fieldDefaults[f].raw );
+			for ( int b = 0; b < 4; ++b )
+			{
+				PutU8( out, uint8_t( raw >> ( 8 * b ) ) );
+			}
+		}
 	}
 	PutU8( out, uint8_t( std::min<size_t>( schema.sockets.size(), 255 ) ) );
 	for ( size_t i = 0; i < schema.sockets.size() && i < 255; ++i )
@@ -494,6 +505,20 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		shape.use = r.U8();
 		shape.usedEvent = r.U8();
 		shape.usedEvent = uint16_t( shape.usedEvent | ( uint16_t( r.U8() ) << 8 ) );
+		uint8_t defaults = r.U8();
+		for ( uint8_t f = 0; f < defaults && f < 64 && r.ok; ++f )
+		{
+			ItemShape::FieldDefault field;
+			field.slot = r.U8();
+			field.slot = uint16_t( field.slot | ( uint16_t( r.U8() ) << 8 ) );
+			uint32_t raw = 0;
+			for ( int b = 0; b < 4; ++b )
+			{
+				raw |= uint32_t( r.U8() ) << ( 8 * b );
+			}
+			field.raw = int32_t( raw );
+			shape.fieldDefaults.push_back( field );
+		}
 		if ( shape.slot > kMaxSlots || shape.use > 1 )
 		{
 			return false;

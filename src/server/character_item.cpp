@@ -476,6 +476,14 @@ LookItem ParseLookItem( const std::string& kind, const std::string& text )
 		{
 			words >> item.slotKey;
 		}
+		else if ( key == "field" )
+		{
+			LookItem::Field field;
+			if ( words >> field.name >> field.type >> field.value )
+			{
+				item.fields.push_back( field );
+			}
+		}
 	}
 	return item;
 }

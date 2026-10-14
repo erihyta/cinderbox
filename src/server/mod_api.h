@@ -289,6 +289,7 @@ private:
 	std::vector<std::string> m_errors;
 	std::string m_mod;
 	std::function<std::vector<LookItem>( const std::string& mod )> m_lookItems;
+	std::map<int, std::vector<ItemShape::FieldDefault>> m_itemFieldDefaults;
 	std::vector<bool> m_shapeDeclared; // per item kind: a mod gave it a shape
 	std::vector<std::vector<std::string>> m_itemMods; // per item kind: the mods that declared it
 	std::map<std::pair<int, std::string>, float> m_itemProperties;
@@ -299,6 +300,11 @@ public:
 	const std::map<int, int>& ItemLayersByKind() const
 	{
 		return m_itemLayers;
+	}
+	// What a new copy of each kind starts with in its own fields (declared by its CbItem).
+	const std::map<int, std::vector<ItemShape::FieldDefault>>& ItemFieldDefaults() const
+	{
+		return m_itemFieldDefaults;
 	}
 	const std::map<std::pair<int, std::string>, float>& ItemProperties() const
 	{

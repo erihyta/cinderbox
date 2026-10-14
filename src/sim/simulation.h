@@ -231,6 +231,8 @@ public:
 	uint64_t EntityMotionsOn( uint32_t netId ) const;
 	// Every item a player carries, in the hand or put away, in NetId order.
 	std::vector<uint32_t> CarriedItemsOf( uint32_t holder ) const;
+	// A new copy of an item kind: its own fields as its kind says they start (ItemShape::fieldDefaults).
+	void StartItemFields( flecs::entity item, uint16_t kind );
 	bool HasAnimState( flecs::entity e ) const;
 	AnimState GetAnimState( flecs::entity e ) const;
 	// The entity's board value, or 0 when it has none.

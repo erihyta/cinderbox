@@ -89,6 +89,11 @@ PackedStringArray CinderboxClient::get_mod_names() const
 
 Variant CinderboxClient::get_field( int64_t net_id, const String& name ) const
 {
+	float hand = 0.0f;
+	if ( HandField( uint32_t( net_id ), ToStd( name ), hand ) )
+	{
+		return hand == std::floor( hand ) ? Variant( int64_t( hand ) ) : Variant( double( hand ) );
+	}
 	const BoardValues* globals = m_mirror ? &m_mirror->GlobalBoard() : nullptr;
 	present::FieldValue value =
 		present::ReadField( m_frame.schema, ToStd( name ), BoardOf( uint32_t( net_id ) ), globals, PrivatesOf( uint32_t( net_id ) ) );
@@ -118,6 +123,7 @@ void CinderboxClient::RefreshHeldKinds()
 	m_heldKinds.clear();
 	m_carriedKinds.clear();
 	m_motionsOn.clear();
+	m_handItems.clear();
 	if ( !m_mirror )
 	{
 		return;
@@ -128,6 +134,7 @@ void CinderboxClient::RefreshHeldKinds()
 		if ( v.kind == present::VisualKind::Item && v.holder != 0 && v.stowed == false )
 		{
 			m_heldKinds[v.holder].push_back( v.itemKind );
+			m_handItems.emplace( v.holder, v.netId );
 		}
 		if ( v.kind == present::VisualKind::Item && v.holder != 0 )
 		{
@@ -166,6 +173,27 @@ const std::vector<std::pair<String, int>>& CinderboxClient::MotionKeys()
 		}
 	}
 	return m_motionKeys;
+}
+
+bool CinderboxClient::HandField( uint32_t holder, const std::string& name, float& value ) const
+{
+	if ( name.rfind( "hand.", 0 ) != 0 )
+	{
+		return false;
+	}
+	value = 0.0f;
+	auto item = m_handItems.find( holder );
+	if ( item == m_handItems.end() )
+	{
+		return true;
+	}
+	const BoardValues* globals = m_mirror ? &m_mirror->GlobalBoard() : nullptr;
+	present::FieldValue field = present::ReadField( m_frame.schema, name.substr( 5 ), BoardOf( item->second ), globals, nullptr );
+	if ( field.declared )
+	{
+		value = field.type == BoardType::Float ? field.AsFloat() : field.type == BoardType::Bool ? ( field.AsBool() ? 1.0f : 0.0f ) : float( field.raw );
+	}
+	return true;
 }
 
 bool CinderboxClient::Holds( uint32_t netId, uint16_t kind ) const
@@ -210,6 +238,10 @@ bool CinderboxClient::CheckWith( int64_t net_id, const PackedStringArray& condit
 		if ( name == "is_local" )
 		{
 			value = net_id != 0 && net_id == get_local_net_id() ? 1.0f : 0.0f;
+			return true;
+		}
+		if ( HandField( uint32_t( net_id ), name, value ) )
+		{
 			return true;
 		}
 		int kind = m_frame.schema.FindItemKind( name );
@@ -258,6 +290,11 @@ Variant CinderboxClient::EvaluateWith( int64_t net_id, const String& expression,
 		{
 			known = true;
 			value = net_id != 0 && net_id == get_local_net_id() ? 1.0f : 0.0f;
+			return true;
+		}
+		if ( HandField( uint32_t( net_id ), name, value ) )
+		{
+			known |= m_frame.schema.FindField( name.substr( 5 ) ) != nullptr;
 			return true;
 		}
 		int kind = m_frame.schema.FindItemKind( name );
@@ -601,6 +638,18 @@ String CinderboxClient::FormatWith( int64_t net_id, const String& format, const 
 	for ( const auto& [name, v] : m_localValues )
 	{
 		own = own.replace( "{" + String::utf8( name.c_str() ) + "}", v == std::floor( v ) ? String::num_int64( int64_t( v ) ) : String::num( v, 1 ) );
+	}
+	// "{hand.<field>}": the field of the item in the player's hand.
+	for ( int64_t at = own.find( "{hand." ); at >= 0; at = own.find( "{hand.", at + 1 ) )
+	{
+		int64_t close = own.find( "}", at );
+		if ( close < 0 )
+		{
+			break;
+		}
+		float v = 0.0f;
+		HandField( uint32_t( net_id ), ToStd( own.substr( at + 1, close - at - 1 ) ), v );
+		own = own.substr( 0, at ) + ( v == std::floor( v ) ? String::num_int64( int64_t( v ) ) : String::num( v, 1 ) ) + own.substr( close + 1 );
 	}
 	String withName = ResolveNameFields(
 		net_id, ResolveKeysAndLooks( net_id, own ).replace( "{name}", get_entity_name( net_id ).replace( "{", "(" ) ) );
