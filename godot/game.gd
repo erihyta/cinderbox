@@ -709,9 +709,10 @@ func _send_input(delta: float) -> void:
 		elif elapsed < autoplay * 0.4:
 			if auto_rng.randf() < delta * 2.0:
 				actions |= _action_bit("spawn_prop")
-			# A grenade now and then, if the server has them (a mod's CbLaunch).
-			if auto_rng.randf() < delta * 1.0:
-				actions |= _action_bit("throw")
+			# A grenade now and then, if the server has them: the sixth slot's key throws the one
+			# carried (the grenade mod's item).
+			if _slot_keys >= 6 and auto_rng.randf() < delta * 1.0:
+				slot_keys |= 1 << 5
 		elif elapsed < autoplay * 0.7:
 			_auto_select(0)
 			use = auto_rng.randf() < delta * 3.0

@@ -798,6 +798,15 @@ void Simulation::StepSlots( const InputFrame& frame )
 		auto slotKey = [&]( uint8_t index ) {
 			uint32_t item = index == kNoSlot ? 0 : SlotItemOf( netId, index );
 			uint8_t use = item != 0 ? ItemShapeOf( FindEntity( item ).get<HeldItem>().kind ).use : kItemUseInHand;
+			// Empty, the slot of a kind used by its key (a grenade thrown, waiting for the next): its
+			// key does nothing, rather than empty the hands.
+			for ( size_t k = 0; item == 0 && index != kNoSlot && k < m_itemShapes.size(); ++k )
+			{
+				if ( m_itemShapes[k].slot == index + 1 && m_itemShapes[k].use != kItemUseInHand )
+				{
+					return;
+				}
+			}
 			if ( use != kItemUseInHand )
 			{
 				if ( c.frozen == 0 )
@@ -1226,6 +1235,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 					record.netIdA = netId;
 					record.tick = m_globals.tick;
 					record.point = eventPoint;
+					record.late = 1; // (the motions have run: they hear it next tick)
 					RecordModEvent( record );
 				}
 				// The effects read the state the motions just decided (the parameters that hold).
@@ -1280,11 +1290,13 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			for ( int event : m_markerScratch )
 			{
 				// A marker the playing clip crossed: the mod event of its name, from this player.
+				// (After its motions: they hear it next tick, a throw released on its marker.)
 				ModEventRecord record;
 				record.type = uint16_t( event );
 				record.netIdA = netId;
 				record.tick = m_globals.tick;
 				record.point = t.position;
+				record.late = 1;
 				RecordModEvent( record );
 			}
 		}
@@ -1305,13 +1317,50 @@ void Simulation::CreateLaunched()
 {
 	for ( const Launched& l : m_launched )
 	{
-		flecs::entity item = CreateEntity();
-		item.set<HeldItem>( { 0, l.kind, 0, 0 } );
-		StartItemFields( item, l.kind );
+		flecs::entity item;
+		if ( l.item != 0 )
+		{
+			// The copy it carried leaves its slot, as it is (its fields too).
+			item = FindEntity( l.item );
+			const HeldItem* held = item.is_valid() ? item.try_get<HeldItem>() : nullptr;
+			if ( held == nullptr || held->holder != l.owner )
+			{
+				continue;
+			}
+		}
+		else
+		{
+			item = CreateEntity();
+			item.set<HeldItem>( { 0, l.kind, 0, 0 } );
+			StartItemFields( item, l.kind );
+		}
 		PutItemInWorld( item, l.position, l.rotation, l.velocity );
 		item.set<Prop>( { l.owner, m_globals.tick, l.lifetimeTicks > 0 ? m_globals.tick + l.lifetimeTicks : 0u } );
 	}
 	m_launched.clear();
+}
+
+uint32_t Simulation::CarriedCopyOf( uint32_t holder, uint16_t kind ) const
+{
+	uint32_t best = 0;
+	int bestRank = 1 << 30;
+	for ( const EntityRef& r : m_entities )
+	{
+		const HeldItem* item = flecs::entity( m_world, r.entity ).try_get<HeldItem>();
+		if ( item == nullptr || item->holder != holder || item->kind != kind )
+		{
+			continue;
+		}
+		bool taken = std::any_of( m_launched.begin(), m_launched.end(), [&]( const Launched& l ) { return l.item == r.netId; } );
+		// In a hand first, then the lowest slot, then the oldest.
+		int rank = ( item->stowed == 0 ? 0 : 1 << 20 ) + int( item->slot ) * 4096;
+		if ( taken == false && rank < bestRank )
+		{
+			best = r.netId;
+			bestRank = rank;
+		}
+	}
+	return best;
 }
 
 uint32_t Simulation::LaunchedBy( uint32_t netId ) const
@@ -2957,8 +3006,17 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				b3Vec3 from = b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
 				b3Vec3 velocity = b3Add( b3Add( b3MulSV( effect.strength, direction ), b3Vec3{ 0.0f, effect.lift, 0.0f } ), c.velocity );
 				uint32_t lifetime = effect.seconds > 0.0f ? std::max<uint32_t>( 1, uint32_t( effect.seconds * float( m_config.tickRate ) + 0.5f ) ) : 0u;
+				uint32_t copy = 0;
+				if ( effect.carried )
+				{
+					copy = CarriedCopyOf( e.get<NetId>().value, effect.itemKind );
+					if ( copy == 0 )
+					{
+						continue; // none left to throw
+					}
+				}
 				m_launched.push_back( { effect.itemKind, b3Add( from, b3MulSV( effect.ahead, direction ) ), detmath::YawRotation( yaw ), velocity,
-										e.get<NetId>().value, lifetime } );
+										e.get<NetId>().value, lifetime, copy } );
 				continue;
 			}
 			if ( effect.kind == MotionEffect::Kind::Impulse )

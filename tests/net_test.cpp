@@ -1171,10 +1171,10 @@ void TestInventory()
 				lyingBat = item != nullptr && item->holder == 0 && int( item->kind ) == batKind ? r.netId : lyingBat;
 			}
 		}
-		startsStowed |= tick > 80 && tick < 100 && inHand == 0 && c.carried == 5 && c.stowed == 5 && c.lying == 5; // a pistol, a bat, a rifle, a hook and the dash boots, and one of each lying about
+		startsStowed |= tick > 80 && tick < 100 && inHand == 0 && c.carried == 6 && c.stowed == 6 && c.lying == 5; // a pistol, a bat, a rifle, a hook, the dash boots and a grenade, and one of each lying about (not grenades)
 		if ( tick > 130 && tick < 150 && kindOf( inHand ) == batKind )
 		{
-			batOut = c.carried == 5 && c.stowed == 4;
+			batOut = c.carried == 6 && c.stowed == 5;
 			ownBat = inHand;
 		}
 		// What is in each slot is the simulation's to say (the look reads it from there): the life's
@@ -1184,7 +1184,7 @@ void TestInventory()
 		boardSaysStart |= tick > 130 && tick < 150 && ownBat != 0 && in3 == ownBat && kindOf( in2 ) == gunKind;
 		boardSaysSwap |= reached && tick < 600 && in3 == lyingBat && kindOf( in2 ) == gunKind;
 		boardSaysEmpty |= tick > 700 && in3 == 0 && kindOf( in2 ) == gunKind;
-		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == 5 && c.stowed == 4;
+		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == 6 && c.stowed == 5;
 		droppedBySwitching |= tick > 100 && tick < 200 && c.lying != 5;
 		// The lying bat is in the hand: the swap happened.
 		if ( inHand == lyingBat && lyingBat != 0 && tick < 520 )
@@ -1192,16 +1192,16 @@ void TestInventory()
 			reached = true;
 			const HeldItem* old = ownBat != 0 ? server.FindEntity( ownBat ).try_get<HeldItem>() : nullptr;
 			swapped |= old != nullptr && old->holder == 0 && c.lying == 5;
-			gunKept |= c.carried == 5 && c.stowed == 4;
+			gunKept |= c.carried == 6 && c.stowed == 5;
 		}
 		// The pistol's slot and back to the bat's: the picked-up bat is put away and taken out, never dropped.
 		const HeldItem* mine = lyingBat != 0 ? server.FindEntity( lyingBat ).try_get<HeldItem>() : nullptr;
 		awayAndKept |= tick > 545 && tick < 560 && kindOf( inHand ) == gunKind && mine != nullptr && mine->holder == me && mine->stowed != 0 &&
 					   c.lying == 5;
 		backInHand |= tick > 585 && tick < 600 && inHand == lyingBat && reached;
-		thrown |= tick > 610 && tick < 630 && inHand == 0 && c.carried == 4 && c.lying == 6;
+		thrown |= tick > 610 && tick < 630 && inHand == 0 && c.carried == 5 && c.lying == 6;
 		gunAfterThrow |= tick > 645 && tick < 660 && kindOf( inHand ) == gunKind;
-		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 4 && server.SelectedSlot( me ) == 1; // the bat's slot is selected, and empty
+		noSecondBat |= tick > 700 && inHand == 0 && c.carried == 5 && server.SelectedSlot( me ) == 1; // the bat's slot is selected, and empty
 	} );
 	h.Report();
 	std::printf( "    starts stowed %d, bat out %d, pistol out %d, dropped by switching %d\n", int( startsStowed ), int( batOut ), int( gunOut ),
@@ -1218,7 +1218,7 @@ void TestInventory()
 	std::printf( "    the slots: at the start %d, after the swap %d, empty after the throw %d\n", int( boardSaysStart ),
 				 int( boardSaysSwap ), int( boardSaysEmpty ) );
 	CHECK( boardSaysStart && boardSaysSwap && boardSaysEmpty );
-	CHECK( startTotal == 15 && leastTotal == 15 && mostTotal == 15 ); // four lying, four per player; none made, none lost
+	CHECK( startTotal == 17 && leastTotal == 17 && mostTotal == 17 ); // five lying, six per player (a grenade too); none made, none lost
 	for ( Bot& b : h.bots )
 	{
 		CHECK( b.client->GetStats().desyncs == 0 );
@@ -1684,7 +1684,7 @@ void TestHeadshot()
 		else
 		{
 			diedAt = 0;
-			newLifeHasItems |= wasDead && carried == 5; // a pistol, a bat, a rifle, a hook and the dash boots
+			newLifeHasItems |= wasDead && carried == 6; // a pistol, a bat, a rifle, a hook, the dash boots and a grenade
 		}
 		const SimGlobals& g = h.server.Sim().Globals();
 		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
@@ -3128,10 +3128,12 @@ void TestDash()
 	std::filesystem::remove( replayPath );
 }
 
-// A launch across the wire, behind 100 ms: the grenade mod's throw (a CbLaunch in its motion set) is
-// made by the client's own simulation on the tick of the press, where and as the server then has
-// it, and flies the same way in both: nothing about it is corrected. What it does when it lands is
-// the mod's C++ on the server: it goes off (grenade.blast) and is gone.
+// Thrown from the hand across the wire, behind 100 ms: the grenade is an item the player carries
+// (slot 6); its key plays the throw on the left arm, and the clip's marker lets go of the one
+// carried (a CbLaunch of the one carried). The client's own simulation throws it on the tick the
+// server does, where and as the server has it, and it flies the same way in both: nothing about it
+// is corrected. What it does when it lands is the mod's C++ on the server: it goes off
+// (grenade.blast) and is gone; and the mod gives a new one a little after.
 void TestGrenade()
 {
 	const uint32_t throwAt = 300;
@@ -3142,14 +3144,22 @@ void TestGrenade()
 	const uint32_t thirdAt = 720, fourthAt = 840;
 	// (A grenade that kills at its centre and a metre or two around: the last one is thrown at the
 	// thrower's own feet.)
-	Harness h( 47881, {}, {}, { { "grenade.damage", "300" } } );
+	// (The throw is the character's to play: a character, and the grenade's pack.)
+	const std::string root = CB_SOURCE_DIR;
+	Harness h( 47881, {}, {}, { { "grenade.damage", "300" } }, [&]( ServerOptions& options ) {
+		std::string error, warnings;
+		options.character = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
+		options.loadAnimPack = [root]( const std::string& mod, const std::string& pack, std::string& error, std::string& warnings ) {
+			return LoadAnimPackFolder( root + "/server_mods/" + mod + "/client", pack, error, warnings );
+		};
+	} );
 	const ModSchema& schema = h.server.Schema();
-	ActionBits throwKey = schema.ActionMask( "throw" );
+	const uint16_t throwKey = uint16_t( 1u << 5 ); // the grenade's slot's key (the sixth)
 	int shell = schema.FindItemKind( "grenade.shell" );
 	int blast = schema.FindEvent( "grenade.blast" );
 	ActionBits spawnKey = schema.ActionMask( "spawn_prop" );
-	CHECK( throwKey != 0 && shell >= 0 && blast >= 0 && spawnKey != 0 );
-	if ( throwKey == 0 || shell < 0 || blast < 0 )
+	CHECK( schema.FindEvent( "grenade.release" ) >= 0 && shell >= 0 && blast >= 0 && spawnKey != 0 );
+	if ( shell < 0 || blast < 0 )
 	{
 		return;
 	}
@@ -3195,7 +3205,7 @@ void TestGrenade()
 		in.cameraPitch = 1500; // a little upward: a throw that lands some metres off
 		if ( tick >= throwAt && tick < throwAt + 4 )
 		{
-			in.actions = throwKey;
+			in.slotKeys = throwKey;
 		}
 		if ( tick >= crateAt && tick < crateAt + 4 )
 		{
@@ -3204,12 +3214,12 @@ void TestGrenade()
 		if ( tick >= secondAt - 30 )
 		{
 			in.cameraPitch = -7000; // down at the floor a few metres ahead
-			in.actions = tick >= secondAt && tick < secondAt + 4 ? throwKey : ActionBits( 0 );
+			in.slotKeys = tick >= secondAt && tick < secondAt + 4 ? throwKey : uint16_t( 0 );
 		}
 		if ( tick >= thirdAt - 30 )
 		{
 			in.cameraPitch = -15000; // straight down
-			in.actions = ( tick >= thirdAt && tick < thirdAt + 4 ) || ( tick >= fourthAt && tick < fourthAt + 4 ) ? throwKey : ActionBits( 0 );
+			in.slotKeys = ( tick >= thirdAt && tick < thirdAt + 4 ) || ( tick >= fourthAt && tick < fourthAt + 4 ) ? throwKey : uint16_t( 0 );
 		}
 		return in;
 	};
@@ -3295,29 +3305,35 @@ void TestGrenade()
 	GameClient& client = *bot.client;
 	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
 
-	// The server made one on the tick of the press (the state after tick `throwAt`), and it was
-	// the thrower's.
-	CHECK( truth.count( throwAt ) && truth.count( throwAt + 1 ) );
-	if ( truth.count( throwAt ) == 0 || truth.count( throwAt + 1 ) == 0 )
+	// The press plays the throw; the clip's marker lets go of the grenade it carried a quarter of a
+	// second in (0.27 s: 16 ticks, and its motion hears it the tick after).
+	uint32_t leftAt = 0;
+	for ( const auto& [tick, seen] : truth )
+	{
+		leftAt = leftAt == 0 && tick >= throwAt && seen.count == 1 ? tick : leftAt;
+	}
+	std::printf( "    pressed at tick %u: it left the hand %u ticks later\n", throwAt, leftAt - throwAt );
+	CHECK( leftAt > throwAt + 10 && leftAt < throwAt + 25 );
+	if ( leftAt == 0 || truth.count( leftAt - 1 ) == 0 )
 	{
 		return;
 	}
-	CHECK( truth[throwAt].count == 0 && truth[throwAt + 1].count == 1 );
+	CHECK( truth[leftAt - 1].count == 0 );
 	// It flew, went off once, and was gone.
 	uint32_t goneAt = 0;
 	float furthest = 0.0f;
-	b3Vec3 start = truth[throwAt + 1].position;
+	b3Vec3 start = truth[leftAt].position;
 	for ( const auto& [tick, seen] : truth )
 	{
-		if ( tick > throwAt && seen.count == 1 )
+		if ( tick >= leftAt && seen.count == 1 )
 		{
 			furthest = std::max( furthest, b3Distance( seen.position, start ) );
 		}
-		goneAt = goneAt == 0 && tick > throwAt + 1 && seen.count == 0 ? tick : goneAt;
+		goneAt = goneAt == 0 && tick > leftAt && seen.count == 0 ? tick : goneAt;
 	}
-	std::printf( "    thrown at tick %u, flew %.1f m, went off %.2f s later (%u blast) at (%.1f, %.1f, %.1f)\n", throwAt, furthest,
-				 goneAt > throwAt ? float( goneAt - throwAt ) / 60.0f : -1.0f, blasts, blastAt.x, blastAt.y, blastAt.z );
-	CHECK( blasts == 1 && goneAt > throwAt + 10 && furthest > 4.0f );
+	std::printf( "    flew %.1f m, went off %.2f s after it left (%u blast) at (%.1f, %.1f, %.1f)\n", furthest,
+				 goneAt > leftAt ? float( goneAt - leftAt ) / 60.0f : -1.0f, blasts, blastAt.x, blastAt.y, blastAt.z );
+	CHECK( blasts == 1 && goneAt > leftAt + 10 && furthest > 4.0f );
 
 	// The client had the grenade on the same ticks, at the same places, the first time it simulated
 	// them: its own throw was never corrected while it flew. (Its going off is the server's to say.)
@@ -3334,7 +3350,7 @@ void TestGrenade()
 	}
 	std::printf( "    %d predicted ticks compared with the server's: %d differ\n", compared, wrong );
 	CHECK( compared > 40 && wrong == 0 );
-	CHECK( predicted.count( throwAt + 1 ) && predicted[throwAt + 1].count == 1 );
+	CHECK( predicted.count( leftAt ) && predicted[leftAt].count == 1 && predicted[leftAt].netId == truth[leftAt].netId );
 
 	// A blast throws what is loose near it: the crate that lay still in front of the player moves.
 	std::printf( "    a crate %.1f m away, at %.2f m/s before the second grenade: up to %.1f m/s after it went off\n", crateFrom, crateBefore,

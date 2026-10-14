@@ -78,11 +78,13 @@ bool HeardEvent( int event, const MotionInputs& in )
 	for ( uint32_t i = 0; values.events != nullptr && i < kept; ++i )
 	{
 		const ModEventRecord& e = values.events[( values.eventCount - 1 - i ) % kModEventHistory];
-		if ( e.tick != in.tick )
+		if ( e.tick + 1 < in.tick )
 		{
 			break; // newest first: the rest are older
 		}
-		if ( int( e.type ) == event && e.netIdA == in.netId )
+		// This tick's, and last tick's that came after the motions had run (they did not hear it).
+		bool heard = e.tick == in.tick || e.late != 0;
+		if ( heard && int( e.type ) == event && e.netIdA == in.netId )
 		{
 			return true;
 		}
@@ -407,11 +409,13 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			m.effects.push_back( e );
 		}
-		else if ( key == "launch" )
+		else if ( key == "launch" || key == "launch_carried" )
 		{
-			// launch <item kind> <speed> <frame> <lift> <ahead> <seconds> [x y z]
+			// launch <item kind> <speed> <frame> <lift> <ahead> <seconds> [x y z]: a new one;
+			// launch_carried, the same: the one of that kind the player carries
 			MotionEffect e;
 			e.kind = MotionEffect::Kind::Launch;
+			e.carried = key == "launch_carried";
 			if ( w.size() < 7 || w[1].empty() || Number( w[2], 0.0f, kMaxMotionImpulse, e.strength ) == false || ParseFrame( w[3], e.frame ) == false ||
 				 e.frame == MotionFrame::To || Number( w[4], -kMaxMotionImpulse, kMaxMotionImpulse, e.lift ) == false ||
 				 Number( w[5], 0.0f, 5.0f, e.ahead ) == false || Number( w[6], 0.0f, 600.0f, e.seconds ) == false )

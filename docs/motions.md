@@ -55,7 +55,7 @@ CbMotionPart            what they share: each bakes to lines, and warns in the t
 ├── CbMotionSet         the root: a mod's motions, one baked file
 ├── CbMotion            the trigger: when, how long, parameters, changes, the event
 ├── CbProbe             a line along the look (one that flies is thrown even at nothing)
-├── CbLaunch            an item of a kind thrown into the world, once
+├── CbLaunch            an item thrown into the world, once: a new one, or the one carried
 └── CbMotionEffect      what it does to a body: on whom (target), in which direction (frame)
     ├── CbImpulse       a change of velocity, once
     ├── CbForce         a push for as long as the motion is on
@@ -290,21 +290,34 @@ is still the truth: a client that guessed wrong is corrected by rollback, like a
 ## Things that fly: the grenade mod
 
 A probe is a line: it has no body, nobody sees it coming, nothing can step out of its way. A
-`CbLaunch` throws a *thing*. `server_mods/grenade` is one motion, one item and thirty lines of rules.
+`CbLaunch` throws a *thing*. `server_mods/grenade` is one item scene and a page of rules.
+
+**Thrown from the hand**: the grenade is an item the player carries (slot 6, out of sight). Its
+slot's key plays the throw on the left arm; the throw clip's marker lets go; what leaves is the
+grenade that was carried, not a new one.
 
 ```
-Moves   CbMotionSet   set_name "grenade.moves"               (motion_sets/grenade_moves.tscn)
-└── Throw     CbMotion   on the press of throw (H)   cooldown 1.2 s   emits grenade.thrown
-    └── Shell CbLaunch   item_kind grenade.shell   speed 17 m/s   lift 3 m/s   ahead 0.8 m   seconds 4
-
-Shell   CbItem   kind "grenade.shell"   mass 0.4   friction 0.8   bounce 0.35    (prefabs/shell.tscn)
+Shell   CbItem   kind "grenade.shell"   use: its slot key (a press)   slot 6   slot_key H   (prefabs/shell.tscn)
+│                animation_pack grenade.throw_arm   properties { inventory.start: 1 }
+│                mass 0.4   friction 0.8   bounce 0.35
 ├── Body  CollisionShape3D   a sphere, 9 cm
-└── Ball, Band  MeshInstance3D
+├── Ball, Band  MeshInstance3D
+├── Throwing    CbMotion   on grenade.shell.used (the key)   0.7 s   cooldown 0.7 s: the arm's throw
+└── Release     CbMotion   on grenade.release (the clip's marker)   emits grenade.thrown
+    └── Shell   CbLaunch   what: the one carried   speed 17 m/s   lift 3 m/s   ahead 0.8 m   seconds 4
 ```
+
+The pack (`animation_packs/throw_arm.tscn`) is an overlay on the left arm while `Throwing` is on;
+its clip (`source/Throw.res`) carries the marker `grenade.release` at 0.27 s. Every simulation
+plays the clip, so the release is on the same tick everywhere (`net_grenade`: 18 ticks after the
+press; the client's throw is the server's). The mod gives a new grenade 1.2 s after a player has
+none (`grenade.refill_seconds`; 0: one a life). Its slot's key does nothing while the slot is
+empty.
 
 | `CbLaunch` | Meaning |
 |---|---|
-| `item_kind` | what is thrown: an item kind a server mod declares and a [`CbItem`](items.md) bakes. Its [body](maps.md#a-body), its weight, how it bounces and its look are the item's |
+| `what` | **A new one** of `item_kind`, or **the one the player carries** (`launch_carried`): that copy, its own fields and all, out of its slot; in a hand first, else the lowest slot's. None carried: nothing is thrown |
+| `item_kind` | what is thrown: an item kind a server mod declares and a [`CbItem`](items.md) bakes. Its [body](maps.md#a-body), its weight, how it bounces and its look are the item's. Under a `CbItem`, the one carried may leave it empty: that item's kind |
 | `speed`, `frame`, `direction` | how fast and where to: along the look (the default), the move input, the facing, up, or a world direction |
 | `lift` | metres per second upward added: an arc |
 | `ahead` | how far in front of where the look starts it begins (0.7 m): clear of the thrower's own body |
@@ -312,7 +325,7 @@ Shell   CbItem   kind "grenade.shell"   mass 0.4   friction 0.8   bounce 0.35   
 
 | Step | What happens |
 |---|---|
-| The press | every simulation makes the item on that tick, from the thrower's own input: the thrower sees it leave at once, with no round trip. It also has the thrower's own velocity: a throw on the run goes further |
+| The press | every simulation throws it on the same tick, from the thrower's own input: the thrower sees it leave with no round trip (the grenade: at its clip's marker). It also has the thrower's own velocity: a throw on the run goes further |
 | Hitting a player | it does not shove them: what is loose gives way before a player does, by what the two weigh (0.4 kg against 80) |
 | Flying | it is an item lying in the world, moving: the physics is the simulation's, the same everywhere. `net_grenade`: behind 100 ms, 111 predicted ticks of its flight are exactly the server's |
 | Who threw it | the item knows (`ctx.ThrownBy( item )`), until someone picks it up |
@@ -323,6 +336,10 @@ Shell   CbItem   kind "grenade.shell"   mass 0.4   friction 0.8   bounce 0.35   
 - **It is an item like any other**: it can be picked up and carried, unless its kind says no (the grenade's `pickup.never` property, which the pickup mod asks).
 - **Other players' throws** are seen when their press arrives, like their dash: a moment into the flight, at the place the simulation has it by then.
 - **Not for a While**: a launch happens when a motion starts.
+- **On a marker**: a motion waiting for an event hears one said after the motions ran (a clip's
+  marker, another motion's `emits`) the tick after: the release is a tick after the marker.
+- **From the hand, not the hand's place**: the simulation has no pose (that is the look's), so a
+  thrown item starts `ahead` of where the look starts, as any launch.
 
 ## A motion a server can switch off
 

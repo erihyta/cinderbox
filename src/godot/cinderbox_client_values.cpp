@@ -559,7 +559,8 @@ String CinderboxClient::get_entity_name( int64_t net_id ) const
 String CinderboxClient::ResolveKeysAndLooks( int64_t net_id, const String& format ) const
 {
 	String out = format;
-	// {key:action}: what the player pressed to do it, as bound now (rebinding shows).
+	// {key:action}: what the player pressed to do it, as bound now (rebinding shows). {key:slot6}: a
+	// slot's key (game.gd binds them as game_slot_6).
 	for ( int64_t at = out.find( "{key:" ); at >= 0; at = out.find( "{key:", at + 1 ) )
 	{
 		int64_t close = out.find( "}", at );
@@ -567,7 +568,8 @@ String CinderboxClient::ResolveKeysAndLooks( int64_t net_id, const String& forma
 		{
 			break;
 		}
-		String action = "cb_" + out.substr( at + 5, close - at - 5 );
+		String name = out.substr( at + 5, close - at - 5 );
+		String action = name.begins_with( "slot" ) && name.substr( 4 ).is_valid_int() ? "game_slot_" + name.substr( 4 ) : "cb_" + name;
 		String key = "?";
 		InputMap* map = InputMap::get_singleton();
 		if ( map->has_action( action ) )

@@ -11,6 +11,9 @@
 	<tutorials>
 	</tutorials>
 	<members>
+		<member name="what" type="int" setter="set_what" getter="get_what" enum="CbLaunch.What" default="0">
+			What it throws: [constant WHAT_NEW], a new one of [member item_kind]; [constant WHAT_CARRIED], the one the player carries, that copy itself, its own fields and all, out of its slot (in a hand first, else the lowest slot's; none carried: nothing). What was held is what is thrown: the grenade.
+		</member>
 		<member name="item_kind" type="String" setter="set_item_kind" getter="get_item_kind" default="&quot;&quot;">
 			The item kind thrown ([code]grenade.shell[/code]): one a server mod declares and a [CbItem] bakes. One no mod declares: nothing is thrown, and the server says so when it starts.
 		</member>
@@ -34,6 +37,12 @@
 		</member>
 	</members>
 	<constants>
+		<constant name="WHAT_NEW" value="0" enum="What">
+			A new one of [member item_kind], made where it is thrown.
+		</constant>
+		<constant name="WHAT_CARRIED" value="1" enum="What">
+			The one of [member item_kind] the player carries (under a [CbItem], [member item_kind] may be left empty: that item's kind).
+		</constant>
 		<constant name="FRAME_LOOK" value="0" enum="Frame">
 			Where the camera looks, pitch included.
 		</constant>
