@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://bj564ax5hngs6"]
 
-; The grappling hook. Its slot's key (the fourth) uses it where it is (use: a press), and what a
+; The grappling hook. It is in the left hand while it is carried (hand), unless a gun held with both
+; hands needs that hand. Its slot's key (the fourth) uses it where it is (use: a press), and what a
 ; use does is the nodes under it:
 ;   Hook          CbItem    when used: says grapple.fired
 ;   Throw         CbProbe   a line along the look, flying at 80 m/s; let go by using the hook again
@@ -8,8 +9,8 @@
 ;     Rope        CbLink    to what the line found, reeled in at 4 m/s
 ;       Pull      CbForce   on the player, toward it: 160 m/s2 up to 15 m/s, ramped in, reacting
 ;       Hanging   CbMove    while it holds: gravity 0, air control 0.6, airborne
-; They bake with the item into one motion, "Use". Its pose while that is on is its pack's
-; (animation_packs/hook_hang.tscn: motion.grapple.hook.Use).
+; They bake with the item into one motion, "Use". Its poses are its pack's
+; (animation_packs/hook_hang.tscn): the left arm holding it (grapple.hook), hanging while the motion is on.
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.22)
@@ -32,6 +33,7 @@ properties = {
 animation_pack = "grapple.hook_hang"
 use = 1
 slot = 4
+hand = 1
 use_emits = "grapple.fired"
 mass = 0.8
 

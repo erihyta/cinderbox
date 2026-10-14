@@ -95,6 +95,10 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_slot_key" ), &CbItem::get_slot_key );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "slot_key", PROPERTY_HINT_PLACEHOLDER_TEXT, "V: the key it suggests for its slot (empty: the slot's number)" ),
 				  "set_slot_key", "get_slot_key" );
+	ClassDB::bind_method( D_METHOD( "set_hand", "value" ), &CbItem::set_hand );
+	ClassDB::bind_method( D_METHOD( "get_hand" ), &CbItem::get_hand );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "hand", PROPERTY_HINT_ENUM, "The slots' hand while selected,The left hand while carried" ), "set_hand",
+				  "get_hand" );
 	ADD_GROUP( "When used", "use_" );
 	ClassDB::bind_method( D_METHOD( "set_use_conditions", "value" ), &CbItem::set_use_conditions );
 	ClassDB::bind_method( D_METHOD( "get_use_conditions" ), &CbItem::get_use_conditions );
@@ -154,6 +158,8 @@ void CbItem::_bind_methods()
 	BIND_ENUM_CONSTANT( USE_SELECTED );
 	BIND_ENUM_CONSTANT( USE_SLOT_KEY );
 	BIND_ENUM_CONSTANT( USE_HOLD );
+	BIND_ENUM_CONSTANT( HAND_SELECTED );
+	BIND_ENUM_CONSTANT( HAND_LEFT );
 	BIND_ENUM_CONSTANT( OTHER_FREE );
 	BIND_ENUM_CONSTANT( OTHER_AT_MARKER );
 	BIND_ENUM_CONSTANT( OTHER_AT_MARKER_TURNED );
@@ -986,6 +992,10 @@ Dictionary CbItem::bake() const
 	if ( m_slot > 0 )
 	{
 		all["slot"] = m_slot;
+	}
+	if ( m_hand == HAND_LEFT )
+	{
+		all["hand"] = m_hand;
 	}
 	Array names = all.keys();
 	names.sort();

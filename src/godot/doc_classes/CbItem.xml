@@ -84,6 +84,9 @@
 		<member name="slot_key" type="String" setter="set_slot_key" getter="get_slot_key" default="&quot;&quot;">
 			The key it suggests for its [member slot] ([code]V[/code], [code]MouseRight[/code]). A mod's suggestion ([code]declare.SlotKey[/code]) or an earlier item's for the same slot comes first; the player's own choice (the Keys page of the settings) wins over all. Empty: the slot's number.
 		</member>
+		<member name="hand" type="int" setter="set_hand" getter="get_hand" enum="CbItem.Hand" default="0">
+			Which hand it is in. [constant HAND_SELECTED]: the slots' hand, while its slot is the selected one. [constant HAND_LEFT]: the left hand for as long as it is carried, beside what the slots' hand holds (a grappling hook beside a gun). It is put away while what is selected has its other hand at a marker (a rifle's barrel), or while another such item of a lower slot is there; what has its other hand as the animation has it (a pistol, a bat) is held with one hand beside it.
+		</member>
 		<member name="slot" type="int" setter="set_slot" getter="get_slot" default="0">
 			The slot it goes to when a player comes to carry one: 1 is the first. What is there makes room (to a free slot, or onto the floor). 0: the first free slot.
 		</member>
@@ -119,6 +122,12 @@
 		</member>
 	</members>
 	<constants>
+		<constant name="HAND_SELECTED" value="0" enum="Hand">
+			In the slots' hand, while its slot is the selected one.
+		</constant>
+		<constant name="HAND_LEFT" value="1" enum="Hand">
+			In the left hand for as long as it is carried, when that hand is free.
+		</constant>
 		<constant name="USE_SELECTED" value="0" enum="Use">
 			Its slot's key takes it out into the hand; then the use button (the left mouse button) uses it. A tool, a weapon.
 		</constant>

@@ -134,7 +134,15 @@ void CinderboxClient::RefreshHeldKinds()
 		if ( v.kind == present::VisualKind::Item && v.holder != 0 && v.stowed == false )
 		{
 			m_heldKinds[v.holder].push_back( v.itemKind );
-			m_handItems.emplace( v.holder, v.netId );
+			// ("hand." is the slots' hand: what is in the left one beside it is not.)
+			if ( v.socket != kSocketLeftHand )
+			{
+				m_handItems[v.holder] = v.netId;
+			}
+			else
+			{
+				m_handItems.emplace( v.holder, v.netId );
+			}
 		}
 		if ( v.kind == present::VisualKind::Item && v.holder != 0 )
 		{

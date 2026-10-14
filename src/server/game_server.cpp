@@ -203,6 +203,7 @@ bool GameServer::Start( const ServerOptions& options )
 			// How it is used, and the event that says so: "<kind>.used", where a mod declared one.
 			int use = property( "use" );
 			m_schema.itemShapes[kind].use = use == kItemUsePress || use == kItemUseHold ? uint8_t( use ) : kItemUseInHand;
+			m_schema.itemShapes[kind].hand = property( "hand" ) == kItemHandLeft ? kItemHandLeft : kItemHandSelected;
 			int usedEvent = m_schema.FindEvent( m_schema.itemKinds[kind] + ".used" );
 			m_schema.itemShapes[kind].usedEvent = usedEvent >= 0 ? uint16_t( usedEvent ) : uint16_t( 0xFFFF );
 		}

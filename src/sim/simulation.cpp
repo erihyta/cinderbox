@@ -636,6 +636,29 @@ uint32_t Simulation::SlotItemOf( uint32_t holder, uint8_t slot ) const
 
 void Simulation::SettleSlots( uint32_t holder, uint8_t selected )
 {
+	// The left hand: for the item of the lowest slot that goes there (ItemShape::hand), unless what
+	// is selected takes it: its other hand on a marker (a rifle's barrel), or it is in that hand
+	// itself. One whose other hand is only as the animation has it (a pistol, a bat) gives it up,
+	// and is held with one hand while it is there.
+	uint8_t leftSlot = kNoSlot;
+	bool leftFree = true;
+	for ( const EntityRef& r : m_entities )
+	{
+		const HeldItem* item = flecs::entity( m_world, r.entity ).try_get<HeldItem>();
+		if ( item == nullptr || item->holder != holder || item->slot == kNoSlot )
+		{
+			continue;
+		}
+		const ItemShape& shape = ItemShapeOf( item->kind );
+		if ( item->slot == selected )
+		{
+			leftFree = ( shape.grip == 0 || shape.grip == 3 ) && shape.hand != kItemHandLeft;
+		}
+		else if ( shape.hand == kItemHandLeft && item->slot < leftSlot )
+		{
+			leftSlot = item->slot;
+		}
+	}
 	for ( const EntityRef& r : m_entities )
 	{
 		flecs::entity e( m_world, r.entity );
@@ -644,9 +667,11 @@ void Simulation::SettleSlots( uint32_t holder, uint8_t selected )
 		{
 			continue;
 		}
+		const ItemShape& shape = ItemShapeOf( item->kind );
+		bool left = shape.hand == kItemHandLeft;
 		HeldItem want = *item;
-		want.stowed = item->slot == selected ? 0 : 1;
-		want.socket = want.stowed != 0 ? ItemShapeOf( item->kind ).holster : m_config.slotHand;
+		want.stowed = item->slot == selected || ( leftFree && item->slot == leftSlot ) ? 0 : 1;
+		want.socket = want.stowed != 0 ? shape.holster : left ? uint8_t( kSocketLeftHand ) : m_config.slotHand;
 		if ( want.stowed != item->stowed || want.socket != item->socket )
 		{
 			e.set<HeldItem>( want );

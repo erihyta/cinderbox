@@ -36,7 +36,7 @@ std::vector<ActiveClip> ActiveClips( const AnimState& state, const AnimGraph& ch
 	{
 		const AnimGraphLayerState& L = state.graph[l];
 		const AnimGraph* owner = nullptr;
-		const AnimGraphLayer& layer = ResolveLayer( character, packs, l, L.source, owner );
+		const AnimGraphLayer& layer = ResolveLayer( character, packs, l, L.source, owner, OverlayNth( character, state.graph, l ) );
 		const AnimGraph& graph = *owner;
 		if ( L.state >= layer.states.size() || ( l > 0 && L.weight <= 0.0f ) )
 		{
@@ -240,7 +240,7 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 		AnimGraphLayerState L = state.graph[l];
 		// The layer as the simulation plays it: the character's own, or a pack's it was swapped to.
 		const AnimGraph* owner = nullptr;
-		const AnimGraphLayer& layer = ResolveLayer( *m_graph, m_packs, l, L.source, owner );
+		const AnimGraphLayer& layer = ResolveLayer( *m_graph, m_packs, l, L.source, owner, OverlayNth( *m_graph, state.graph, l ) );
 		const AnimGraph& graph = *owner;
 		if ( layer.states.empty() )
 		{

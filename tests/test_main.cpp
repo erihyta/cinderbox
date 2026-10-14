@@ -4212,6 +4212,83 @@ void TestSlotKeys()
 	CHECK( dashes() == 3 && flying() > flown );
 }
 
+// The left hand (ItemShape::hand): a hook is there while it is carried, beside a pistol in the
+// slots' hand (whose other hand is only as animated); a rifle with its other hand at a marker puts
+// it away, and putting the rifle away gives it back.
+// Of two such items the lower slot's is out. Using it by its key changes nothing in the hands.
+void TestLeftHand()
+{
+	SimConfig config = TestConfig();
+	config.slots = 4;
+	config.slotHand = 0;
+	ItemShape pistol, rifle, hook, shield;
+	pistol.slot = 1;
+	pistol.grip = 3; // both hands as the animation has them
+	rifle.slot = 2;
+	rifle.grip = 1; // its other hand on the barrel
+	hook.slot = 3;
+	hook.use = kItemUsePress;
+	hook.hand = kItemHandLeft;
+	shield.slot = 4;
+	shield.hand = kItemHandLeft;
+	Simulation sim( config, FlatMap() );
+	sim.SetItemShapes( { pistol, rifle, hook, shield } );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 10 );
+	for ( uint16_t kind : { 0, 1, 2, 3 } )
+	{
+		SimCommand c;
+		c.type = CommandType::SpawnItem;
+		c.target = SlotTarget( 0 );
+		c.index = kind;
+		c.mode = kNoSocket;
+		c.value = 1;
+		f.commands.push_back( c );
+	}
+	step( 3 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	auto press = [&]( uint16_t keys ) {
+		f.inputs[0].slotKeys = keys;
+		step( 2 );
+		f.inputs[0].slotKeys = 0;
+		step( 2 );
+	};
+	auto kindIn = [&]( uint32_t socket ) {
+		uint32_t item = sim.HeldItemOf( p0, socket );
+		return item != 0 ? int( sim.FindEntity( item ).get<HeldItem>().kind ) : -1;
+	};
+	auto report = [&]( const char* when ) {
+		std::printf( "    %s: right hand %d, left hand %d\n", when, kindIn( kSocketRightHand ), kindIn( kSocketLeftHand ) );
+	};
+	report( "nothing selected" );
+	CHECK( kindIn( kSocketRightHand ) == -1 && kindIn( kSocketLeftHand ) == 2 );
+	press( 1 );
+	report( "the pistol" );
+	CHECK( kindIn( kSocketRightHand ) == 0 && kindIn( kSocketLeftHand ) == 2 );
+	press( 4 ); // the hook's key: used where it is
+	CHECK( sim.SelectedSlot( p0 ) == 0 && kindIn( kSocketRightHand ) == 0 && kindIn( kSocketLeftHand ) == 2 );
+	press( 2 );
+	report( "the rifle" );
+	CHECK( kindIn( kSocketRightHand ) == 1 && kindIn( kSocketLeftHand ) == -1 );
+	press( 2 );
+	report( "the rifle put away" );
+	CHECK( kindIn( kSocketRightHand ) == -1 && kindIn( kSocketLeftHand ) == 2 );
+	// The shield's slot selected: it is in the left hand itself, the hook put away.
+	press( 8 );
+	report( "the shield's slot" );
+	CHECK( kindIn( kSocketRightHand ) == -1 && kindIn( kSocketLeftHand ) == 3 );
+}
+
 // An item's own fields (ItemShape::fieldDefaults, declared by its CbItem): every new copy starts with
 // its kind's values, however it is made, and keeps its own from then on.
 void TestItemFields()
@@ -6659,6 +6736,7 @@ int main( int argc, char** argv )
 		{ "slots", TestSlots },
 		{ "slot_keys", TestSlotKeys },
 		{ "item_fields", TestItemFields },
+		{ "left_hand", TestLeftHand },
 		{ "item_use", TestItemUse },
 		{ "event_news", TestEventNews },
 		{ "world_items", TestWorldItems },

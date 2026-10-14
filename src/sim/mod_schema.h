@@ -100,6 +100,9 @@ struct MotionSetInfo
 inline constexpr uint8_t kItemUseInHand = 0; // its slot's key selects it; the use button uses it
 inline constexpr uint8_t kItemUsePress = 1;	 // its slot's key uses it where it is, once a press
 inline constexpr uint8_t kItemUseHold = 2;	 // the same, and it is in use while the key is held
+// Which hand a carried item is in (ItemShape::hand, the item property "hand").
+inline constexpr uint8_t kItemHandSelected = 0; // the slots' hand, while its slot is the selected one
+inline constexpr uint8_t kItemHandLeft = 1;		// the left hand while it is carried, when that hand is free
 
 struct ItemShape
 {
@@ -132,6 +135,10 @@ struct ItemShape
 	// order; 0xFFFF: none) at the player, with the item as the other entity, on the press.
 	uint8_t use = 0;
 	uint16_t usedEvent = 0xFFFF;
+	// Which hand it is in (kItemHand*): the slots' hand while its slot is selected, or the left hand
+	// for as long as it is carried (a grappling hook): out unless what is selected has its other
+	// hand on a marker (grip 1, 2), or another such item of a lower slot is there first.
+	uint8_t hand = kItemHandSelected;
 	// Its own fields (declared by its CbItem: the rifle's "gun.rounds"): what a new copy starts with,
 	// as board slots of entity fields and their raw values. A copy keeps its own from then on.
 	struct FieldDefault

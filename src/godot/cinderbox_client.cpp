@@ -609,7 +609,10 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	// drawn as what is held says: which hands, with what field of view, and bent onto it when it
 	// floats in the view (CbItem.view_camera) and not as the pose has them.
 	bool floats = false;
+	// (A hand is drawn when any of what is held asks for it: the bat hides the left, the hook in
+	// the left hand beside it shows it again.)
 	bool hands[2] = { true, true };
+	bool asked[2] = { false, false };
 	m_viewFov = 0.0f;
 	if ( auto holding = m_heldKinds.find( netId ); holding != m_heldKinds.end() )
 	{
@@ -620,11 +623,11 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 			if ( kind < m_frame.schema.itemKinds.size() )
 			{
 				const std::string& name = m_frame.schema.itemKinds[kind];
-				if ( auto shown = m_itemViewHands.find( name ); shown != m_itemViewHands.end() )
-				{
-					hands[0] = hands[0] && shown->second.first;
-					hands[1] = hands[1] && shown->second.second;
-				}
+				auto shown = m_itemViewHands.find( name );
+				asked[0] = asked[0] || shown == m_itemViewHands.end() || shown->second.first;
+				asked[1] = asked[1] || shown == m_itemViewHands.end() || shown->second.second;
+				hands[0] = asked[0];
+				hands[1] = asked[1];
 				if ( auto fov = m_itemViewFovs.find( name ); fov != m_itemViewFovs.end() )
 				{
 					m_viewFov = fov->second;
