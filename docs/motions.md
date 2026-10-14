@@ -67,7 +67,7 @@ CbMotionPart            what they share: each bakes to lines, and warns in the t
 | A dash, a double jump, a shove | a `CbImpulse` |
 | A jetpack, a wind, a conveyor, a brake | a `CbForce` (the motion a While, or with a `duration`) |
 | A grappling hook | a `CbProbe`, a `CbForce` toward what it found, a `CbLink` |
-| A grenade, a thrown ball, a rocket | a `CbLaunch` ([Things that fly](#things-that-fly-the-grenade-mod)) |
+| A grenade, a thrown ball, a rocket | a `CbLaunch` ([Things that fly](#things-that-fly-the-grenades)) |
 | A tractor beam on a prop | a `CbProbe`, a `CbForce` whose target is what it found |
 | Two players bound together | a `CbLink` whose target is a field the server mod writes the partner into |
 | Flight, a glide, a slide | nothing: `parameters` on the motion are enough |
@@ -287,32 +287,43 @@ pull starts at once. A
 round trip to the server would make every grapple wait one ping before it pulls. The server's run
 is still the truth: a client that guessed wrong is corrected by rollback, like any move.
 
-## Things that fly: the grenade mod
+## Things that fly: the grenades
 
 A probe is a line: it has no body, nobody sees it coming, nothing can step out of its way. A
-`CbLaunch` throws a *thing*. `server_mods/grenade` is one item scene and a page of rules.
+`CbLaunch` throws a *thing*. Two grenade mods show it, each one item scene and a page of rules:
 
-**Thrown from the hand**: the grenade is an item the player carries (slot 6, out of sight). Its
-slot's key plays the throw on the left arm; the throw clip's marker lets go; what leaves is the
-grenade that was carried, not a new one.
+| Mod | The grenade | Goes off | Slot, key | |
+|---|---|---|---|---|
+| `frag` | `frag.grenade` (`prefabs/frag.tscn`) | when its fuse is out: 2.5 s after it left the hand, wherever it rolled | 6, H | on |
+| `grenade` | `grenade.shell` (`prefabs/shell.tscn`) | on its first hard hit (`ctx.Hits`) | 7 | off (`disabled`): start it by name |
+
+**Thrown from the hand**: the grenade is an item the player carries (out of sight). Its slot's key
+plays the throw on the left arm; the throw clip's marker lets go; what leaves is the grenade that
+was carried, not a new one.
 
 ```
-Shell   CbItem   kind "grenade.shell"   use: its slot key (a press)   slot 6   slot_key H   (prefabs/shell.tscn)
-│                animation_pack grenade.throw_arm   properties { inventory.start: 1 }
-│                mass 0.4   friction 0.8   bounce 0.35
+Frag    CbItem   kind "frag.grenade"   use: its slot key (a press)   slot 6   slot_key H   (prefabs/frag.tscn)
+│                animation_pack frag.throw_arm   properties { inventory.start: 1 }
+│                mass 0.4   friction 0.8   bounce 0.45
 ├── Body  CollisionShape3D   a sphere, 9 cm
 ├── Ball, Band  MeshInstance3D
-├── Throwing    CbMotion   on grenade.shell.used (the key)   0.7 s   cooldown 0.7 s: the arm's throw
-└── Release     CbMotion   on grenade.release (the clip's marker)   emits grenade.thrown
-    └── Shell   CbLaunch   what: the one carried   speed 17 m/s   lift 3 m/s   ahead 0.8 m   seconds 4
+├── Throwing    CbMotion   on frag.grenade.used (the key)   0.7 s   cooldown 0.7 s: the arm's throw
+└── Release     CbMotion   on frag.release (the clip's marker)   emits frag.thrown
+    └── Frag    CbLaunch   what: the one carried   speed 15 m/s   lift 3 m/s   ahead 0.8 m   seconds 2.5 (the fuse)
 ```
 
 The pack (`animation_packs/throw_arm.tscn`) is an overlay on the left arm while `Throwing` is on;
-its clip (`source/Throw.res`) carries the marker `grenade.release` at 0.27 s. Every simulation
-plays the clip, so the release is on the same tick everywhere (`net_grenade`: 18 ticks after the
-press; the client's throw is the server's). The mod gives a new grenade 1.2 s after a player has
-none (`grenade.refill_seconds`; 0: one a life). Its slot's key does nothing while the slot is
-empty.
+its clip (`source/Throw.res`) carries the marker `frag.release` at 0.27 s. Every simulation plays
+the clip, so the release is on the same tick everywhere (`net_frag`: 18 ticks after the press;
+the client's throw is the server's). The mod gives a new grenade 1.2 s after a player has none
+(`frag.refill_seconds`; 0: one a life). Its slot's key does nothing while the slot is empty.
+
+**An item's time is up**: a launch's `seconds` are how long the item lives. When they are out the
+simulation removes it, and first says `<kind>.expired` (where a mod declares that event: the frag
+mod declares `frag.grenade.expired`) at where it is, with the item as the first entity and who
+threw it as the second. It is the simulation's, so the thrower's own game has it on the same tick
+(`net_frag`: 240 ticks of flight, bounces and the fuse, the server's exactly). The frag mod hears
+it (`ctx.RecentEvents()`) and sets the grenade off there.
 
 | `CbLaunch` | Meaning |
 |---|---|
@@ -329,8 +340,8 @@ empty.
 | Hitting a player | it does not shove them: what is loose gives way before a player does, by what the two weigh (0.4 kg against 80) |
 | Flying | it is an item lying in the world, moving: the physics is the simulation's, the same everywhere. `net_grenade`: behind 100 ms, 111 predicted ticks of its flight are exactly the server's |
 | Who threw it | the item knows (`ctx.ThrownBy( item )`), until someone picks it up |
-| What it hits | the server mod's to decide: `ctx.Hits( kind )` is what items of the kind ran into on the tick before (what, how fast, where). The grenade goes off on the first hard hit: `combat.damage` to everyone within 4 m, less with distance; a push on everything loose near it (`ctx.BodiesNear( point, radius )`: props, items, ragdolls), given off each body's centre so it tumbles; and `ctx.Destroy( item )`. The living keep their feet; one it kills is thrown, as a ragdoll, all of it (the blast is remembered for a few ticks, until the body has fallen) |
-| Its look | its own scene, wherever it is; what going off looks like is a reaction on the mod's event (`grenade.blast`: a burst, a bang, a shake) |
+| What it hits | the server mod's to decide: `ctx.Hits( kind )` is what items of the kind ran into on the tick before (what, how fast, where). The impact grenade goes off on the first hard hit (the frag when its time is up): `combat.damage` to everyone within 4 m, less with distance; a push on everything loose near it (`ctx.BodiesNear( point, radius )`: props, items, ragdolls), given off each body's centre so it tumbles; and `ctx.Destroy( item )`. The living keep their feet; one it kills is thrown, as a ragdoll, all of it (the blast is remembered for a few ticks, until the body has fallen) |
+| Its look | its own scene, wherever it is; what going off looks like is a reaction on the mod's event (`frag.blast`, `grenade.blast`: a burst, a bang, a shake) |
 | How many | a launched item counts against the server's caps on what a player may leave in the world (`--props-per-player`, `--props-global`: the oldest go first), and the motion's `cooldown` or `uses` say how often |
 
 - **It is an item like any other**: it can be picked up and carried, unless its kind says no (the grenade's `pickup.never` property, which the pickup mod asks).
