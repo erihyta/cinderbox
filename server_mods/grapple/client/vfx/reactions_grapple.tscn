@@ -7,8 +7,8 @@
 ;                          end, while it flies and while it holds
 ;   Fired   CbReaction     the throw's sound, at the player. The event comes from the motion, which
 ;                          the viewer's own simulation runs: yours is heard on the press
-;   Hit     CbReaction     a puff where the hook will hold (the event's point); not for a line
-;                          that found nothing (it flies out all the same: the rope shows it)
+;   Hit     CbReaction     a puff where the hook takes hold, when it does (grapple.hooked, said
+;                          by the hook's line at that point)
 
 [node name="GrappleReactions" type="Node3D"]
 
@@ -29,9 +29,8 @@ pitch_jitter = 0.1
 max_distance = 30.0
 
 [node name="Hit" type="CbReaction" parent="."]
-event = "grapple.fired"
+event = "grapple.hooked"
 subject = NodePath("$at")
-conditions = PackedStringArray("not link_missed")
 scene = "res://vfx/land.tscn"
 scene_lifetime = 2.0
 place = 1

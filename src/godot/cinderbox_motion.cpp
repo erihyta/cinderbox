@@ -574,6 +574,8 @@ void CbProbe::_bind_methods()
 	ADD_GROUP( "Under an item", "" );
 	CB_MOTION_PROP( CbProbe, Variant::INT, release, PROPERTY_HINT_FLAGS, "Using the item again,A jump" )
 	CB_MOTION_PROP( CbProbe, Variant::FLOAT, hold_seconds, PROPERTY_HINT_RANGE, "0,60,0.05,or_greater,suffix:s" )
+	ADD_GROUP( "", "" );
+	CB_MOTION_PROP( CbProbe, Variant::STRING, hold_emits, PROPERTY_HINT_PLACEHOLDER_TEXT, "grapple.hooked" )
 }
 
 std::string CbProbe::Bake( String& error ) const
@@ -583,7 +585,18 @@ std::string CbProbe::Bake( String& error ) const
 		Fail( error, "put it under a CbMotion, or under a CbItem (what using the item does): it is the line thrown" );
 		return std::string();
 	}
-	return "probe\t" + Num( m_range ) + "\t" + Num( m_travel ) + "\n";
+	std::string out = "probe\t" + Num( m_range ) + "\t" + Num( m_travel ) + "\n";
+	String emits = m_holdEmits.strip_edges();
+	if ( emits.is_empty() == false )
+	{
+		if ( emits.contains( " " ) || emits.contains( "\t" ) )
+		{
+			Fail( error, "hold_emits names one event" );
+			return std::string();
+		}
+		out += "hold_emit\t" + std::string( emits.utf8().get_data() ) + "\n";
+	}
+	return out;
 }
 
 // --- CbMove -----------------------------------------------------------------------------------------

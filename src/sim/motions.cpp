@@ -17,7 +17,6 @@ constexpr float kMaxMotionImpulse = 200.0f; // m/s
 constexpr float kMaxMotionAccel = 1000.0f;	// m/s^2
 constexpr float kMaxMotionForce = 1.0e6f;	// N
 constexpr uint32_t kMaxMotionUses = 1000;
-constexpr uint32_t kForever = 0xFFFFFFFFu;
 
 std::vector<std::string> Words( const std::string& line )
 {
@@ -461,6 +460,18 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			change.slot = field->slot;
 			change.type = field->type;
 			m.changes.push_back( change );
+		}
+		else if ( key == "hold_emit" )
+		{
+			if ( w.size() < 2 || w[1].empty() )
+			{
+				return fail( "hold_emit wants an event" );
+			}
+			m.holdEvent = schema.FindEvent( w[1] );
+			if ( m.holdEvent < 0 )
+			{
+				warnings += m.name + ": no mod declares the event \"" + w[1] + "\": nothing is emitted when its line takes hold; ";
+			}
 		}
 		else if ( key == "emit" )
 		{

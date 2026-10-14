@@ -4,7 +4,7 @@
 		A line a motion throws along the look. The motion happens only if it finds something, and its effects can act on what it found.
 	</brief_description>
 	<description>
-		A child of a [CbMotion] (one per motion; not for a While). When the motion would start, a line goes from the player's view along the look, up to [member range]. If it finds nothing and it flies ([member travel] above 0), it is thrown all the same: it flies out its whole range, takes hold of nothing, moves nobody, and is gone when it gets there (the motion's use, cooldown and event happen; looks see [code]link_missed[/code]). If it finds nothing and does not fly, nothing happens: no cooldown, no use, no event. If it finds something (the world, a prop, another player), it flies there at [member travel], takes hold of that point, and from then the motion is on: its parameters hold and its [CbForce] and [CbLink] children act. An effect whose target is "what the probe found" acts on that body at that point; a direction "toward the target" points at it.
+		A child of a [CbMotion] (one per motion; not for a While). When the motion would start, a line goes from the player's view along the look, up to [member range]. One that flies ([member travel] above 0) is a projectile: aimed at what is under the crosshair, it is traced tick by tick along its way, and takes hold of what it meets first (someone who steps into it, a door that closes in front of it); at nothing, it flies out its whole range, takes hold of nothing, moves nobody, and is gone when it gets there (the motion's use, cooldown and event happen; looks see [code]link_missed[/code]). One that does not fly holds at once on what is there; if it finds nothing, nothing happens: no cooldown, no use, no event. If it finds something (the world, a prop, another player), it flies there at [member travel], takes hold of that point, and from then the motion is on: its parameters hold and its [CbForce] and [CbLink] children act. An effect whose target is "what the probe found" acts on that body at that point; a direction "toward the target" points at it.
 		The point stays on what it found: on a prop or a player it moves with them. When that is gone the motion ends.
 		In conditions, [code]linked[/code] is true for a player whose probe is out. A [CbLinkLook] draws the line.
 	</description>
@@ -22,6 +22,9 @@
 		</member>
 		<member name="release" type="int" setter="set_release" getter="get_release" default="3">
 			Under an item: what lets the line go, either of: using the item again, a jump. Under a [CbMotion], its [code]until[/code] says it.
+		</member>
+		<member name="hold_emits" type="String" setter="set_hold_emits" getter="get_hold_emits" default="&quot;&quot;">
+			The event said where and when the line takes hold, at the player, with what it holds as the other one ([code]grapple.hooked[/code]: a puff where the hook lands). A mod declares it.
 		</member>
 	</members>
 </class>

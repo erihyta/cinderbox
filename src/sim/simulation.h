@@ -393,6 +393,11 @@ private:
 	bool AttachHold( flecs::entity e, const Transform& t, const PlayerInput& in, const Motion& motion, size_t index, uint32_t& holdTick );
 	// Where a hold is, in the world; false when what it held on to is gone.
 	bool HoldPoint( const MotionHold& hold, b3Vec3& point ) const;
+	// A line in flight goes on one tick: what it meets on the way it takes hold of (its motion takes
+	// effect from now, and says its hold event), or at the end of its range it has found nothing.
+	void FlyHold( flecs::entity e, MotionState& motion );
+	// `hold` takes hold of what `hit` found: a player or a loose body it follows, else the world.
+	void HoldOn( MotionHold& hold, const RayHit& hit ) const;
 	// The effects of the motions that are on for the player `e` this tick: impulses, forces and
 	// links, on the player (`c`, not yet stored) and on their targets.
 	struct MotionEnd;

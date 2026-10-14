@@ -306,12 +306,17 @@ struct MotionHold
 	b3Vec3 point = {};		// the world point; on an anchor, the point in that body's frame
 	float length = 0.0f;	// a link's rope, in metres; 0: not measured yet (or no link)
 	uint32_t startTick = 0; // when it was thrown
-	uint32_t holdTick = 0;	// when it reaches the point and takes hold (it flies until then)
+	uint32_t holdTick = 0;	// when it takes hold (it flies until then); flying: when it reaches its range
 	uint16_t motion = 0;	// the motion it belongs to
 	uint8_t on = 0;
-	// 1: it found nothing: it flies out its range to `point` all the same, takes hold of nothing,
-	// and its motion ends when it gets there (holdTick)
+	// 1: it found nothing: it flew out its range to `point`, takes hold of nothing, and its motion
+	// ends when it gets there (holdTick)
 	uint8_t missed = 0;
+	// 1: in flight, a projectile: from `origin` toward `point` (the end of its range), it is traced
+	// tick by tick, and what it meets first it takes hold of (then `point` and `holdTick` are that)
+	uint8_t flying = 0;
+	uint8_t reserved[3] = {};
+	b3Vec3 origin = {};
 };
 
 // Tag: part of the static level.
@@ -377,7 +382,7 @@ CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );
 CB_CHECK_COMPONENT( RagdollPose, 40 * kRagdollParts );
 CB_CHECK_COMPONENT( MoveOverrides, 4 + 4 * kMoveParams );
 CB_CHECK_COMPONENT( MotionSlot, 16 );
-CB_CHECK_COMPONENT( MotionHold, 32 );
+CB_CHECK_COMPONENT( MotionHold, 48 );
 
 #undef CB_CHECK_COMPONENT
 
