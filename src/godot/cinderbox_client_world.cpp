@@ -355,6 +355,7 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 	}
 	if ( v.kind == present::VisualKind::Item && v.holder == 0 )
 	{
+		LeanItem( node ); // (before it is in the tree: what is about a holder never registers)
 		Director()->add_child( node ); // lying in the world; UpdateItem places it
 	}
 	else if ( v.kind == present::VisualKind::Item )

@@ -84,6 +84,11 @@ public:
 
 	// For reactions and predictions.
 	void Register( CbReaction* reaction );
+	// How many reactions and predictions are listening now (a measure of what the scene costs).
+	int64_t get_listener_count() const
+	{
+		return int64_t( m_reactions.size() + m_predictions.size() );
+	}
 	void Unregister( CbReaction* reaction );
 	int Predict( const godot::String& action, bool held );
 	void Register( CbPrediction* prediction );
