@@ -51,11 +51,11 @@ animation_player_path = NodePath("AnimationPlayer")
 animation_tree_path = NodePath("AnimationTree")
 replaces = PackedStringArray("Hang")
 graph_inputs = {
-"HangBlend/blend_amount": "motion.grapple.hook.Hook"
+"HangBlend/blend_amount": "motion.grapple.hook.Use"
 }
 editor_description = "Hanging on the line: the hook's animation pack (the hook's Animation Pack, prefabs/hook.tscn).
 
-Hang is a layer no character has, so it is laid over the whole body, for as long as its weight says: the HangBlend's graph input, \"motion.grapple.hook.Hook\", is 1 while the hook's motion is on (from the throw until the line is let go). An item's pack plays such a layer while the item is carried, in the hand or not.
+Hang is a layer no character has, so it is laid over the whole body, for as long as its weight says: the HangBlend's graph input, \"motion.grapple.hook.Use\", is 1 while the hook's motion is on (from the throw until the line is let go). An item's pack plays such a layer while the item is carried, in the hand or not.
 
 FullBody is here only to see the pose over a standing body in the editor: Replaces names Hang alone, so it is not baked.
 

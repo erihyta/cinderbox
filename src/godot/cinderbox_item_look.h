@@ -77,6 +77,41 @@ public:
 	{
 		return m_animationPack;
 	}
+	// When used: what must hold for a use to do anything ("dash.charges > 0"), what a use changes
+	// ("dash.charges -= 1"), the seconds between two, and the event a use says. For the helper nodes
+	// under the item (its probe, effects, moves): what using it does.
+	void set_use_conditions( const godot::PackedStringArray& v )
+	{
+		m_useConditions = v;
+	}
+	godot::PackedStringArray get_use_conditions() const
+	{
+		return m_useConditions;
+	}
+	void set_use_changes( const godot::PackedStringArray& v )
+	{
+		m_useChanges = v;
+	}
+	godot::PackedStringArray get_use_changes() const
+	{
+		return m_useChanges;
+	}
+	void set_use_cooldown( double v )
+	{
+		m_useCooldown = v;
+	}
+	double get_use_cooldown() const
+	{
+		return m_useCooldown;
+	}
+	void set_use_emits( const godot::String& v )
+	{
+		m_useEmits = v.strip_edges();
+	}
+	godot::String get_use_emits() const
+	{
+		return m_useEmits;
+	}
 	// The key it suggests for its slot ("V"); empty: the server's, or the slot's number.
 	void set_slot_key( const godot::String& v )
 	{
@@ -330,6 +365,10 @@ private:
 	godot::String m_animationPack;
 	godot::String m_holster;
 	godot::String m_slotKey;
+	godot::PackedStringArray m_useConditions;
+	godot::PackedStringArray m_useChanges;
+	double m_useCooldown = 0.0;
+	godot::String m_useEmits;
 	godot::Vector3 m_viewOffset;
 	godot::NodePath m_viewCamera;
 	godot::Vector3 m_viewRotation;
@@ -429,7 +468,7 @@ protected:
 	static void _bind_methods();
 
 private:
-	godot::String m_motion; // "grapple.hook/Hook": the set and the node; empty: any link
+	godot::String m_motion; // "grapple.hook/Use": the set and the node; empty: any link
 	godot::String m_scene;
 	godot::String m_from = "RightHand"; // the player's socket it starts at; empty: its chest
 };

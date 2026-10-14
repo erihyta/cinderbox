@@ -23,6 +23,18 @@
 // is wrong with it). The effects (CbImpulse, CbForce, CbLink) are CbMotionEffects: they share who
 // they act on (the player, what the probe found, the entity a field names) and along what.
 //
+// Under an item, the same nodes are what using it does, with no CbMotion: the item is the trigger
+// (its use and its "When used" rules), and nesting says what lives while what holds:
+//
+//   Hook                CbItem        use: its slot key (a press)   use_emits grapple.fired
+//   └── Throw           CbProbe       flies at 80 m/s; let go by using the hook again or a jump
+//       └── Rope        CbLink        to what the line found, reeled in at 4 m/s
+//           ├── Pull    CbForce       on the player, toward it
+//           └── Hanging CbMove        while it holds: gravity 0, air control 0.6
+//
+// They bake with the item into one motion named "Use" (motions/<kind>.cfg: "motion.<kind>.Use" in
+// a condition). BakeItemUse below.
+//
 // The set bakes to res://motions/<set_name>.cfg when its scene is saved (and when the mod is
 // published); the server mod names it: declare.Motions( "dash.moves" ). The rules stay the mod's:
 // it declares the action, the fields and the events, and decides who may (a field a condition
@@ -40,6 +52,17 @@ namespace cb::gd
 {
 
 // What every motion node is: something that bakes to lines of its set's file.
+class CbMotionPart;
+
+// Under a CbMotion, or anywhere under a CbItem (what using the item does).
+bool InMotion( const godot::Node* node );
+
+// What the motion-part nodes under an item (its probe, effects, CbMove nodes, at any depth, not
+// under a CbMotion) do when it is used, as one motion's lines ("motion\tUse" ...). "" with no error:
+// it has none. `use` is the item's (CbItem::Use); the rest its "When used" rules.
+std::string BakeItemUse( const godot::Node* item, const godot::String& kind, int use, const godot::PackedStringArray& conditions,
+						 const godot::PackedStringArray& changes, double cooldown, const godot::String& emits, godot::String& error );
+
 class CbMotionPart : public godot::Node
 {
 	GDCLASS( CbMotionPart, godot::Node )
@@ -154,6 +177,15 @@ public:
 
 	CB_MOTION_FIELD( double, range, m_range )
 	CB_MOTION_FIELD( double, travel, m_travel )
+	// Under an item: what lets it go (a bit each: using the item again, a jump), and how long it
+	// holds at most (0: until it is let go). Under a CbMotion, its until and duration say it.
+	enum Release
+	{
+		RELEASE_USE_AGAIN = 1,
+		RELEASE_JUMP = 2,
+	};
+	CB_MOTION_FIELD( int, release, m_release )
+	CB_MOTION_FIELD( double, hold_seconds, m_holdSeconds )
 
 protected:
 	static void _bind_methods();
@@ -161,6 +193,8 @@ protected:
 private:
 	double m_range = 40.0;
 	double m_travel = 60.0;
+	int m_release = RELEASE_USE_AGAIN | RELEASE_JUMP;
+	double m_holdSeconds = 0.0;
 };
 
 // Once, when the motion starts: an item of a kind is thrown into the world, in every simulation
@@ -200,6 +234,27 @@ private:
 	godot::Vector3 m_direction = godot::Vector3( 0, 1, 0 );
 	double m_ahead = 0.7;
 	double m_seconds = 5.0;
+};
+
+// How the player moves while it is on: movement parameters (friction 0, gravity 0). Under a probe or
+// a link, while that holds; directly under an item, for `duration` seconds from the use (a dash's
+// slide). The parameters win over the server's, the character's and a mod's for that long.
+class CbMove : public CbMotionPart
+{
+	GDCLASS( CbMove, CbMotionPart )
+
+public:
+	std::string Bake( godot::String& error ) const override;
+
+	CB_MOTION_FIELD( godot::Dictionary, parameters, m_parameters )
+	CB_MOTION_FIELD( double, duration, m_duration )
+
+protected:
+	static void _bind_methods();
+
+private:
+	godot::Dictionary m_parameters;
+	double m_duration = 0.0;
 };
 
 // What a motion does to something: who it acts on, and along what. The base of the effects.

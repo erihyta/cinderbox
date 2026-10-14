@@ -72,38 +72,47 @@ CbMotionPart            what they share: each bakes to lines, and warns in the t
 | Two players bound together | a `CbLink` whose target is a field the server mod writes the partner into |
 | Flight, a glide, a slide | nothing: `parameters` on the motion are enough |
 
-## A motion of an item
+## What an item does
 
-A `CbMotion` under a `CbItem` (in the item's own scene) is the item's: it is baked with the item
-and runs only for a player who has it. Nothing is named in C++: a mod that takes its items from its
-look (`declare.ItemsOfLook()`) gets their motions with them.
+Under a `CbItem`, the motion nodes need no `CbMotion`: the item is the trigger, and nesting says what
+lives while what holds. Using the item (its slot's key, or the use button with it in the hand)
+does what the nodes under it say, if its **When used** rules allow:
 
 ```
-Boots         CbItem     kind "dash.boots"   use: its slot key (a press)   slot 5   slot_key V
-│                        properties { inventory.start: 1 }                   (prefabs/boots.tscn)
-├── Body, Foot, Shaft, Carry
-└── Dash      CbMotion   on the cue dash.boots.used (the slot's key)   while dash.charges > 0
-    │                    0.18 s, friction 0; dash.charges -= 1; emits dash.started   with_item: Carried
-    └── Push  CbImpulse  11 m/s along where you walk
+Hook          CbItem     use: its slot key (a press)   slot 4   use_emits grapple.fired   (prefabs/hook.tscn)
+└── Throw     CbProbe    a line along the look, 80 m/s; let go: using the hook again, a jump; holds 2 s at most
+    └── Rope  CbLink     to what the line found, reeled in at 4 m/s
+        ├── Pull      CbForce   on the player, toward it: 160 m/s² up to 15 m/s, ramped in, reacting
+        └── Hanging   CbMove    while it holds: gravity 0, air control 0.6, airborne
+
+Boots         CbItem     use: its slot key (a press)   slot 5   slot_key V                (prefabs/boots.tscn)
+│                        use_conditions dash.charges > 0   use_changes dash.charges -= 1
+│                        use_cooldown 0.4   use_emits dash.started
+├── Push      CbImpulse  11 m/s along where you walk, the run's own speed replaced
+└── Slide     CbMove     for 0.18 s: no friction
 ```
 
-| | A motion in a `CbMotionSet` | A motion under a `CbItem` |
-|---|---|---|
-| Whose | every player's | who has the item |
-| For whom | its conditions | `with_item`: **In the hand** (the item is out) or **Carried** (in the hand or put away), and its conditions |
-| Baked to | `motions/<set_name>.cfg`, on saving the set's scene | `motions/<kind>.cfg`, on saving the item's scene (the item's file says `motions 1`) |
-| The server mod | `declare.Motions( "dash.moves" )` | `declare.ItemsOfLook()` |
+| On the `CbItem` (When used) | Means |
+|---|---|
+| `use_conditions` | what must hold for a use to do anything (`dash.charges > 0`): [expressions](looks.md#expressions), as a motion's conditions |
+| `use_changes` | fields of the player a use changes (`dash.charges -= 1`) |
+| `use_cooldown` | seconds between two uses |
+| `use_emits` | the event a use says (`dash.started`), for looks and state machines |
 
-- **How**: the bake writes the motion with one more condition: the kind's name (in the hand), or
-  `carried.<kind>`. Both can be typed by hand in any condition, a state machine's and a look's too.
-- **Its key is its slot's**: an item used by its slot's key (`use`) records `<kind>.used` on the
-  press, and its motion starts on that cue. The item suggests the key (`slot_key`); a player
-  changes it on the Keys page of the settings.
-- **Its name** for a `CbLinkLook` is `<kind>/<node>` (`dash.boots/Dash`).
-- **An item nobody has does nothing**: dropped, its motion stops for the one who dropped it and
-  starts for whoever picks it up.
-- **The shipped example** is the dash: the boots carry it, every life starts with a pair (the
-  inventory mod, slot 5), and the double jump stays a set's motion for everyone.
+| Node | Under the item |
+|---|---|
+| `CbProbe` | the line a use throws; with one, a use does something only if it finds something, and a use while a line of the player's is out does not throw another. `release`: using the item again, a jump (either lets it go); `hold_seconds`: the longest it holds (0: until let go) |
+| `CbLink`, `CbForce`, `CbImpulse`, `CbLaunch` | as under a motion; nested under the probe, they act on what it found, while it holds |
+| `CbMove` | how the player moves while it is on (`parameters`: friction, gravity, air control ...): under the probe or the link, while that holds; directly under the item, for `duration` seconds from the use |
+
+- **One motion**: they bake with the item into a motion named `Use` (`motions/<kind>.cfg`): in a
+  condition `motion.<kind>.Use` (the boots' pose weighs by `motion.dash.boots.Use`), for a
+  `CbLinkLook` `<kind>/Use`.
+- **When**: on `<kind>.used` (the press, or the use button's), or for an item used while held, for
+  as long as it is (`using.<kind>`).
+- **For who has it only**: the use is the holder's own, so nothing else is asked.
+- **A `CbMotion` under an item** still works (a second, separate move of the item's); `CbMotion` is
+  for movement with no item: a set everyone has (the double jump, flight).
 
 ## `CbMotion`: the trigger
 
@@ -214,15 +223,13 @@ the hand, and the engine records `grapple.hook.used` on that tick in every simul
 starts on that event, and ends on the same event, so the throw is predicted like any press.
 
 ```
-Hook          CbItem     kind "grapple.hook", use: its slot's key, slot 4   (prefabs/hook.tscn)
-│                        animation_pack grapple.hook_hang: hanging, while motion.grapple.hook.Hook
-└── Hook      CbMotion   on the cue grapple.hook.used (the hook's slot key)   conditions not linked
-    │                    with_item Carried
-    │                    until grapple.hook.used, pressed.jump      duration 2 s
-    │                    parameters { airborne: 1, air_control: 0.6, gravity: 0 }   emits grapple.fired
-    ├── Line  CbProbe    range 40 m, flies at 80 m/s
-    ├── Pull  CbForce    on the player, toward the target: 160 m/s² up to 15 m/s, ramp 0.1 s, react
+Hook          CbItem     kind "grapple.hook", use: its slot's key (a press), slot 4   (prefabs/hook.tscn)
+│                        use_emits grapple.fired
+│                        animation_pack grapple.hook_hang: hanging, while motion.grapple.hook.Use
+└── Throw     CbProbe    range 40 m, flies at 80 m/s; release: using it again, a jump; holds 2 s at most
     └── Rope  CbLink     to what the probe found: its length when it takes hold, reel 4 m/s
+        ├── Pull      CbForce   on the player, toward the target: 160 m/s² up to 15 m/s, ramp 0.1 s, react
+        └── Hanging   CbMove    { airborne: 1, air_control: 0.6, gravity: 0 } while it holds
 ```
 
 | `CbProbe` | Meaning |
@@ -256,14 +263,14 @@ Hook          CbItem     kind "grapple.hook", use: its slot's key, slot 4   (pre
 
 ```
 GrappleReactions            (vfx/reactions_grapple.tscn)
-├── Rope    CbLinkLook      motion "grapple.hook/Hook"   scene vfx/grapple_rope.tscn   from "RightHand"
+├── Rope    CbLinkLook      motion "grapple.hook/Use"   scene vfx/grapple_rope.tscn   from "RightHand"
 ├── Fired   CbReaction      on grapple.fired, subject $at: the throw's sound at the hand
 └── Hit     CbReaction      on grapple.fired, subject $at: a puff at the cue's point
 ```
 
 | Field | Meaning |
 |---|---|
-| `motion` | whose line it draws: the set and the node (`grapple.hook/Hook`). Empty: any line without a look of its own |
+| `motion` | whose line it draws: the set and the node (`grapple.hook/Use`). Empty: any line without a look of its own |
 | `scene` | a scene one metre long along its -Z; the game stretches it from the player to the line's end, while it flies and while it holds |
 | `from` | the player's socket it starts at (`RightHand`); empty, or a socket the character lacks: its chest |
 
@@ -366,8 +373,8 @@ Two things a state machine (the character's own, or an item's pack) can take a t
 | `motion.<name>` | true for as long as the motion is on | a pose that lasts as long as it does (hanging on a line, flying): in, on `motion.Hook`; out, on `not motion.Hook`. Or the weight of [an item's overlay](characters.md#animation-packs): the pose is laid over the whole body while it is 1 (the boots' dash, the hook's hang) |
 
 - **The name**: the node's alone (`motion.Hook`) when no other motion of the server has it, else the
-  set's and the node's (`motion.grapple.hook.Hook`; an item's set is named like its kind:
-  `motion.dash.boots.Dash`). One that is not found reads as 0 and is said when the server starts.
+  set's and the node's (`motion.grapple.hook.Use`; an item's set is named like its kind:
+  `motion.dash.boots.Use`). One that is not found reads as 0 and is said when the server starts.
 - **A state machine reads it as this tick's motions left it**, so the pose starts on the tick the
   motion does. **A motion's own condition reads it as the tick found it**, like the fields.
 - **Looks read it too** (a reaction's or a HUD node's condition), of the player they are about.

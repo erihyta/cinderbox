@@ -92,6 +92,20 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_slot_key" ), &CbItem::get_slot_key );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "slot_key", PROPERTY_HINT_PLACEHOLDER_TEXT, "V: the key it suggests for its slot (empty: the slot's number)" ),
 				  "set_slot_key", "get_slot_key" );
+	ADD_GROUP( "When used", "use_" );
+	ClassDB::bind_method( D_METHOD( "set_use_conditions", "value" ), &CbItem::set_use_conditions );
+	ClassDB::bind_method( D_METHOD( "get_use_conditions" ), &CbItem::get_use_conditions );
+	ClassDB::bind_method( D_METHOD( "set_use_changes", "value" ), &CbItem::set_use_changes );
+	ClassDB::bind_method( D_METHOD( "get_use_changes" ), &CbItem::get_use_changes );
+	ClassDB::bind_method( D_METHOD( "set_use_cooldown", "value" ), &CbItem::set_use_cooldown );
+	ClassDB::bind_method( D_METHOD( "get_use_cooldown" ), &CbItem::get_use_cooldown );
+	ClassDB::bind_method( D_METHOD( "set_use_emits", "value" ), &CbItem::set_use_emits );
+	ClassDB::bind_method( D_METHOD( "get_use_emits" ), &CbItem::get_use_emits );
+	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "use_conditions" ), "set_use_conditions", "get_use_conditions" );
+	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "use_changes" ), "set_use_changes", "get_use_changes" );
+	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "use_cooldown", PROPERTY_HINT_RANGE, "0,60,0.01,or_greater,suffix:s" ), "set_use_cooldown",
+				  "get_use_cooldown" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "use_emits", PROPERTY_HINT_PLACEHOLDER_TEXT, "dash.started" ), "set_use_emits", "get_use_emits" );
 	ADD_GROUP( "Hands", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "carry_grip", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D" ), "set_carry_grip",
 				  "get_carry_grip" );
@@ -156,7 +170,7 @@ void CbLinkLook::_bind_methods()
 {
 	ClassDB::bind_method( D_METHOD( "set_motion", "value" ), &CbLinkLook::set_motion );
 	ClassDB::bind_method( D_METHOD( "get_motion" ), &CbLinkLook::get_motion );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "motion", PROPERTY_HINT_PLACEHOLDER_TEXT, "grapple.hook/Hook (empty: any link)" ), "set_motion",
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "motion", PROPERTY_HINT_PLACEHOLDER_TEXT, "grapple.hook/Use (empty: any link)" ), "set_motion",
 				  "get_motion" );
 	ClassDB::bind_method( D_METHOD( "set_scene", "value" ), &CbLinkLook::set_scene );
 	ClassDB::bind_method( D_METHOD( "get_scene" ), &CbLinkLook::get_scene );
@@ -1080,6 +1094,14 @@ std::string CbItem::BakeMotions( String& error ) const
 	std::string text = "cinderbox_motions\t2\n# Baked from the CbMotion nodes of the CbItem " + std::string( kind.utf8().get_data() ) +
 					   ". Edit the item's scene and bake again.\n";
 	int count = 0;
+	// What using it does: the helper nodes under it, as one motion ("Use").
+	std::string use = BakeItemUse( this, kind, m_use, m_useConditions, m_useChanges, m_useCooldown, m_useEmits, error );
+	if ( use.empty() && error.is_empty() == false )
+	{
+		return std::string();
+	}
+	text += use;
+	count += use.empty() ? 0 : 1;
 	for ( int i = 0; i < get_child_count(); ++i )
 	{
 		auto* motion = Object::cast_to<CbMotion>( get_child( i ) );

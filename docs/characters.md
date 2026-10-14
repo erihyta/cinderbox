@@ -241,7 +241,7 @@ Conditions and expressions read simulation values, never scripts:
 | an item kind's name (`melee.bat`) | true while the player holds one, in any socket |
 | `carried.` and an item kind (`carried.dash.boots`) | true while the player has one, in the hand or put away |
 | `using.` and an item kind (`using.gun.rifle`) | true while the player uses one: in the hand with the use button down, or by its slot's key (the press; while held, for one used while held) |
-| `motion.` and a motion's name (`motion.Hook`, `motion.grapple.hook.Hook`) | true while that [motion](motions.md) of the player's is on: a pose for as long as a line holds, a flight lasts ([an item's overlay](#animation-packs) weighs by it). The node's name alone when no other motion has it, else the set's and the node's. A server's first 64 motions can be asked for |
+| `motion.` and a motion's name (`motion.Hook`, `motion.grapple.hook.Use`) | true while that [motion](motions.md) of the player's is on: a pose for as long as a line holds, a flight lasts ([an item's overlay](#animation-packs) weighs by it). The node's name alone when no other motion has it, else the set's and the node's. A server's first 64 motions can be asked for |
 
 The grammar is the [one expression language](looks.md#expressions) (`and or not`, comparisons, arithmetic,
 `?name`, parentheses). A name no mod declares reads as 0 (the server logs it). The bake fails with a reason for anything it cannot run (nested
@@ -400,8 +400,8 @@ bone filter) with its own weight, which says when it shows:
 
 | Item | Pack | Overlay | Weight (its Blend2's graph input) |
 |---|---|---|---|
-| the dash boots | `dash.boots_dash` (`server_mods/dash/client/animation_packs/boots_dash.tscn`) | `Dash` | `motion.dash.boots.Dash`: while the dash is on |
-| the grappling hook | `grapple.hook_hang` (`server_mods/grapple/client/animation_packs/hook_hang.tscn`) | `Hang` | `motion.grapple.hook.Hook`: from the throw until it is let go |
+| the dash boots | `dash.boots_dash` (`server_mods/dash/client/animation_packs/boots_dash.tscn`) | `Dash` | `motion.dash.boots.Use`: while the dash is on |
+| the grappling hook | `grapple.hook_hang` (`server_mods/grapple/client/animation_packs/hook_hang.tscn`) | `Hang` | `motion.grapple.hook.Use`: from the throw until it is let go |
 
 - **Authored like an upper-body pack**: a Blend2 whose blend input is the overlay's state machine,
   `Replaces` naming the overlay alone, and the Blend2's `blend_amount` in `graph_inputs` as its weight.

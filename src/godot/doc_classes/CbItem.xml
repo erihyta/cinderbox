@@ -66,6 +66,18 @@
 		<member name="preview_pack" type="String" setter="set_preview_pack" getter="get_preview_pack" default="&quot;&quot;">
 			The pack [member preview_hold] plays (a folder of [code]res://anim[/code], such as [code]melee.hold[/code]); empty: the item's own [member animation_pack], or the first there is.
 		</member>
+		<member name="use_changes" type="PackedStringArray" setter="set_use_changes" getter="get_use_changes" default="PackedStringArray()">
+			When used: fields of the player a use changes ([code]dash.charges -= 1[/code]). For the motion nodes under the item (what using it does).
+		</member>
+		<member name="use_conditions" type="PackedStringArray" setter="set_use_conditions" getter="get_use_conditions" default="PackedStringArray()">
+			When used: expressions that must all hold for a use to do anything ([code]dash.charges &gt; 0[/code]). The motion nodes under the item ([CbProbe], [CbLink], [CbForce], [CbImpulse], [CbLaunch], [CbMove]) are what a use does; they bake with the item into one motion named [code]Use[/code].
+		</member>
+		<member name="use_cooldown" type="float" setter="set_use_cooldown" getter="get_use_cooldown" default="0.0">
+			When used: seconds between two uses.
+		</member>
+		<member name="use_emits" type="String" setter="set_use_emits" getter="get_use_emits" default="&quot;&quot;">
+			When used: the event a use says ([code]dash.started[/code]), at the player: for looks and state machines.
+		</member>
 		<member name="slot_key" type="String" setter="set_slot_key" getter="get_slot_key" default="&quot;&quot;">
 			The key it suggests for its [member slot] ([code]V[/code], [code]MouseRight[/code]). A mod's suggestion ([code]declare.SlotKey[/code]) or an earlier item's for the same slot comes first; the player's own choice (the Keys page of the settings) wins over all. Empty: the slot's number.
 		</member>

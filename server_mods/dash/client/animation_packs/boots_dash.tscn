@@ -51,11 +51,11 @@ animation_player_path = NodePath("AnimationPlayer")
 animation_tree_path = NodePath("AnimationTree")
 replaces = PackedStringArray("Dash")
 graph_inputs = {
-"DashBlend/blend_amount": "motion.dash.boots.Dash"
+"DashBlend/blend_amount": "motion.dash.boots.Use"
 }
 editor_description = "The dash's pose: the boots' animation pack (the boots' Animation Pack, prefabs/boots.tscn).
 
-Dash is a layer no character has, so it is laid over the whole body, for as long as its weight says: the DashBlend's graph input, \"motion.dash.boots.Dash\", is 1 while the boots' Dash motion is on. An item's pack plays such a layer while the item is carried, in the hand or not.
+Dash is a layer no character has, so it is laid over the whole body, for as long as its weight says: the DashBlend's graph input, \"motion.dash.boots.Use\", is 1 while the boots' Dash motion is on. An item's pack plays such a layer while the item is carried, in the hand or not.
 
 FullBody is here only to see the dash over a standing body in the editor: Replaces names Dash alone, so it is not baked.
 

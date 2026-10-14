@@ -45,6 +45,33 @@ bool Plain( const String& text )
 }
 
 // Several conditions as one expression: all of them (" and "), or any of them (" or ").
+// "param" lines of a parameters dictionary, in the simulation's order; "" with `error` for a name
+// that is not a movement parameter.
+std::string ParamLines( const Dictionary& parameters, String& error )
+{
+	Array names = parameters.keys();
+	for ( int64_t i = 0; i < names.size(); ++i )
+	{
+		if ( MoveParamByName( Std( String( names[i] ).strip_edges() ).c_str() ) < 0 )
+		{
+			error = "parameters: \"" + String( names[i] ) + "\" is not a movement parameter";
+			return std::string();
+		}
+	}
+	std::string text;
+	for ( int p = 0; p < kMoveParams; ++p )
+	{
+		for ( int64_t i = 0; i < names.size(); ++i )
+		{
+			if ( MoveParamByName( Std( String( names[i] ).strip_edges() ).c_str() ) == p )
+			{
+				text += std::string( "param\t" ) + MoveParamInfoOf( p ).name + "\t" + Num( double( parameters[names[i]] ) ) + "\n";
+			}
+		}
+	}
+	return text;
+}
+
 bool Joined( const PackedStringArray& conditions, const char* with, String& out, String& bad )
 {
 	out = String();
@@ -544,16 +571,258 @@ void CbProbe::_bind_methods()
 {
 	CB_MOTION_PROP( CbProbe, Variant::FLOAT, range, PROPERTY_HINT_RANGE, "1,200,0.5,or_greater,suffix:m" )
 	CB_MOTION_PROP( CbProbe, Variant::FLOAT, travel, PROPERTY_HINT_RANGE, "0,200,1,or_greater,suffix:m/s" )
+	ADD_GROUP( "Under an item", "" );
+	CB_MOTION_PROP( CbProbe, Variant::INT, release, PROPERTY_HINT_FLAGS, "Using the item again,A jump" )
+	CB_MOTION_PROP( CbProbe, Variant::FLOAT, hold_seconds, PROPERTY_HINT_RANGE, "0,60,0.05,or_greater,suffix:s" )
 }
 
 std::string CbProbe::Bake( String& error ) const
 {
-	if ( Object::cast_to<CbMotion>( get_parent() ) == nullptr )
+	if ( InMotion( this ) == false )
 	{
-		Fail( error, "put it under a CbMotion: it is that motion's probe" );
+		Fail( error, "put it under a CbMotion, or under a CbItem (what using the item does): it is the line thrown" );
 		return std::string();
 	}
 	return "probe\t" + Num( m_range ) + "\t" + Num( m_travel ) + "\n";
+}
+
+// --- CbMove -----------------------------------------------------------------------------------------
+
+void CbMove::_bind_methods()
+{
+	CB_MOTION_PROP( CbMove, Variant::DICTIONARY, parameters, PROPERTY_HINT_DICTIONARY_TYPE, "String;float" )
+	CB_MOTION_PROP( CbMove, Variant::FLOAT, duration, PROPERTY_HINT_RANGE, "0,10,0.01,or_greater,suffix:s" )
+}
+
+std::string CbMove::Bake( String& error ) const
+{
+	if ( InMotion( this ) == false || Object::cast_to<CbMotion>( get_parent() ) != nullptr )
+	{
+		Fail( error, "put it under a CbItem, or under its CbProbe or CbLink (a CbMotion has parameters of its own)" );
+		return std::string();
+	}
+	if ( m_parameters.is_empty() )
+	{
+		Fail( error, "parameters: say how the player moves (friction 0, gravity 0)" );
+		return std::string();
+	}
+	String why;
+	std::string lines = ParamLines( m_parameters, why );
+	if ( lines.empty() )
+	{
+		Fail( error, why );
+	}
+	return lines;
+}
+
+// --- What using an item does ------------------------------------------------------------------------
+
+bool InMotion( const Node* node )
+{
+	if ( node == nullptr || node->get_parent() == nullptr )
+	{
+		return false;
+	}
+	if ( Object::cast_to<CbMotion>( node->get_parent() ) != nullptr )
+	{
+		return true;
+	}
+	for ( const Node* up = node->get_parent(); up != nullptr; up = up->get_parent() )
+	{
+		if ( Object::cast_to<CbMotion>( up ) != nullptr || Object::cast_to<CbMotionSet>( up ) != nullptr )
+		{
+			return false;
+		}
+		if ( up->is_class( "CbItem" ) )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+namespace
+{
+// The parts under `node` (not under a CbMotion), in tree order: the probe, the moves, the rest.
+void CollectItemParts( const Node* node, const CbProbe*& probe, int& probes, std::vector<const CbMove*>& moves,
+					   std::vector<const CbMotionPart*>& effects, int depth )
+{
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		Node* child = node->get_child( i );
+		if ( Object::cast_to<CbMotion>( child ) != nullptr || Object::cast_to<CbMotionSet>( child ) != nullptr )
+		{
+			continue;
+		}
+		if ( auto* p = Object::cast_to<CbProbe>( child ) )
+		{
+			probe = probe == nullptr ? p : probe;
+			probes += 1;
+		}
+		else if ( auto* m = Object::cast_to<CbMove>( child ) )
+		{
+			moves.push_back( m );
+		}
+		else if ( auto* part = Object::cast_to<CbMotionPart>( child ) )
+		{
+			effects.push_back( part );
+		}
+		if ( Object::cast_to<CbMotionPart>( child ) != nullptr )
+		{
+			CollectItemParts( child, probe, probes, moves, effects, depth + 1 );
+		}
+	}
+}
+} // namespace
+
+std::string BakeItemUse( const Node* item, const String& kind, int use, const PackedStringArray& conditions, const PackedStringArray& changes,
+						 double cooldown, const String& emits, String& error )
+{
+	const CbProbe* probe = nullptr;
+	int probes = 0;
+	std::vector<const CbMove*> moves;
+	std::vector<const CbMotionPart*> effects;
+	CollectItemParts( item, probe, probes, moves, effects, 0 );
+	if ( probe == nullptr && moves.empty() && effects.empty() )
+	{
+		return std::string();
+	}
+	auto fail = [&]( const String& why ) {
+		error = why;
+		return std::string();
+	};
+	if ( probes > 1 )
+	{
+		return fail( "an item throws one line: one CbProbe under it" );
+	}
+	// When: the use (its slot key, or the use button with it in the hand), or while it is in use.
+	const bool hold = use == 2;
+	std::string text = "motion\tUse\n";
+	text += hold ? std::string( "when\twhile\n" ) : "when\tevent\t" + Std( kind ) + ".used\n";
+	// If: in use (held), no line of the player's out (a press then lets one go, it does not throw
+	// another), and the item's own rules.
+	PackedStringArray all;
+	if ( hold )
+	{
+		all.push_back( "using." + kind );
+	}
+	if ( probe != nullptr )
+	{
+		all.push_back( "not linked" );
+	}
+	all.append_array( conditions );
+	String joined, bad;
+	if ( Joined( all, " and ", joined, bad ) == false )
+	{
+		return fail( "use_conditions: \"" + bad + "\" cannot have a tab or a #" );
+	}
+	if ( joined.is_empty() == false )
+	{
+		text += "if\t" + Std( joined ) + "\n";
+	}
+	// Until: what lets the line go.
+	if ( probe != nullptr && hold == false )
+	{
+		PackedStringArray until;
+		if ( probe->get_release() & CbProbe::RELEASE_USE_AGAIN )
+		{
+			until.push_back( kind + String( ".used" ) );
+		}
+		if ( probe->get_release() & CbProbe::RELEASE_JUMP )
+		{
+			until.push_back( "pressed.jump" );
+		}
+		String any;
+		if ( Joined( until, " or ", any, bad ) && any.is_empty() == false )
+		{
+			text += "until\t" + Std( any ) + "\n";
+		}
+	}
+	if ( cooldown > 0.0 )
+	{
+		text += "cooldown\t" + Num( cooldown ) + "\n";
+	}
+	// How long it is on: the line's longest hold, or a move's time from the use.
+	double duration = probe != nullptr ? probe->get_hold_seconds() : 0.0;
+	for ( const CbMove* move : moves )
+	{
+		duration = probe == nullptr ? std::max( duration, move->get_duration() ) : duration;
+	}
+	if ( duration > 0.0 && hold == false )
+	{
+		text += "duration\t" + Num( duration ) + "\n";
+	}
+	// How the player moves while it is on (the moves together; a later one wins a parameter).
+	Dictionary parameters;
+	for ( const CbMove* move : moves )
+	{
+		String why;
+		if ( move->Bake( why ).empty() )
+		{
+			return fail( String( move->get_name() ) + ": " + why );
+		}
+		parameters.merge( move->get_parameters(), true );
+	}
+	String why;
+	std::string params = ParamLines( parameters, why );
+	if ( why.is_empty() == false )
+	{
+		return fail( why );
+	}
+	text += params;
+	// Its probe, then its effects, in the order of the tree.
+	if ( probe != nullptr )
+	{
+		std::string line = probe->Bake( why );
+		if ( line.empty() )
+		{
+			return fail( String( probe->get_name() ) + ": " + why );
+		}
+		text += line;
+	}
+	for ( const CbMotionPart* part : effects )
+	{
+		std::string lines = part->Bake( why );
+		if ( lines.empty() )
+		{
+			return fail( String( part->get_name() ) + ": " + why );
+		}
+		text += lines;
+	}
+	for ( int64_t i = 0; i < changes.size(); ++i )
+	{
+		if ( changes[i].strip_edges().is_empty() )
+		{
+			continue;
+		}
+		cue::Change change;
+		String reason;
+		if ( cue::ParseChange( changes[i], change, &reason ) == false || Plain( change.field ) == false )
+		{
+			return fail( "use_changes \"" + changes[i] + "\": " + reason );
+		}
+		text += "change\t" + Std( change.field ) + "\t" + ( change.op == '=' ? std::string( "=" ) : std::string( 1, change.op ) + "=" ) + "\t" +
+				Num( change.value ) + "\n";
+	}
+	String emit = emits.strip_edges();
+	if ( emit.is_empty() == false )
+	{
+		if ( Plain( emit ) == false || emit.contains( " " ) )
+		{
+			return fail( "use_emits names one event" );
+		}
+		text += "emit\t" + Std( emit ) + "\n";
+	}
+	// What the simulation's own compiler says about it.
+	std::vector<Motion> compiled;
+	std::string compileError, ignored;
+	if ( CompileMotionSet( "check", "cinderbox_motions\t2\n" + text, ModSchema{}, compiled, compileError, ignored ) == false )
+	{
+		size_t colon = compileError.find( ": " );
+		std::string reason = compileError.substr( colon == std::string::npos ? 0 : colon + 2 );
+		return fail( String::utf8( reason.c_str() ) );
+	}
+	return text;
 }
 
 // --- CbLaunch ---------------------------------------------------------------------------------------
@@ -577,9 +846,9 @@ void CbLaunch::_bind_methods()
 
 std::string CbLaunch::Bake( String& error ) const
 {
-	if ( Object::cast_to<CbMotion>( get_parent() ) == nullptr )
+	if ( InMotion( this ) == false )
 	{
-		Fail( error, "put it under a CbMotion: it is what that motion throws" );
+		Fail( error, "put it under a CbMotion, or under a CbItem: it is what is thrown" );
 		return std::string();
 	}
 	String kind = m_itemKind.strip_edges();
@@ -621,9 +890,9 @@ void CbMotionEffect::_bind_methods()
 
 std::string CbMotionEffect::TargetWord( String& error ) const
 {
-	if ( Object::cast_to<CbMotion>( get_parent() ) == nullptr )
+	if ( InMotion( this ) == false )
 	{
-		Fail( error, "put it under a CbMotion: it is what that motion does" );
+		Fail( error, "put it under a CbMotion, or under a CbItem (what using the item does)" );
 		return std::string();
 	}
 	if ( m_target == TARGET_SELF )

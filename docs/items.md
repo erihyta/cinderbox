@@ -275,7 +275,7 @@ there is to say:
 | `properties` | numbers any mod may read: the rules that apply to it (`gun.damage` makes it a gun), its `slot`, `inventory.start` |
 | `animation_pack` | the pack it brings: its layers the character has while it is held (`gun.pistol_hold`), and its [overlay](characters.md#animation-packs) while it is carried at all (the boots' dash pose): a `CbAnimPack` scene of the same project |
 | `holster` | the socket it hangs in while it is put away (`Hip`, `Back`) |
-| `CbMotion` nodes under it | [motions of who has it](motions.md#a-motion-of-an-item): the dash that boots bring, started by the slot's key (`<kind>.used`) |
+| motion nodes under it (`CbProbe`, `CbLink`, `CbForce`, `CbImpulse`, `CbMove`), and its When used rules | [what using it does](motions.md#what-an-item-does): the boots' dash, the hook's line and rope |
 | `slot_key` | the key it suggests for its slot (`V`); the player's own wins |
 
 What it looks and sounds like when it is used is in the scene too, on cues that do not name the

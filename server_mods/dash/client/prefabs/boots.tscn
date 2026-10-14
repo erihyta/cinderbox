@@ -3,19 +3,18 @@
 ; The dash, as an item: whoever carries the boots can dash. They are used by their slot's key
 ; (use: a press), where they are: nothing changes hands. The key is the slot's (the fifth), and the
 ; boots suggest V for it (slot_key); players choose their own on the Keys page.
-; The motion is the item's own (the CbMotion under it), so it is baked with the item
-; (items/dash.boots.cfg and motions/dash.boots.cfg) and runs only for a player who has them.
 ;
-;   Dash         on the cue dash.boots.used (the slot's key), while dash.charges > 0: 0.18 s
-;                without friction; a charge is taken; emits dash.started
-;     Push       CbImpulse: 11 m/s along where you walk, the run's own speed replaced
-;
+; What a use does is the nodes under the item, and its "When used" rules:
+;   Boots   CbItem      when used: dash.charges > 0; dash.charges -= 1; 0.4 s between two;
+;                       says dash.started
+;   Push    CbImpulse   11 m/s along where you walk, the run's own speed replaced
+;   Slide   CbMove      for 0.18 s: no friction
+; They bake with the item into one motion, "Use" (items/dash.boots.cfg, motions/dash.boots.cfg).
 ; Its pose is its pack's (animation_packs/boots_dash.tscn, dash.boots_dash): a layer laid over the
-; whole body while the Dash motion is on.
+; whole body while motion.dash.boots.Use is on.
 ;
 ; The server mod (server_mods/dash/dash.cpp) takes the item from here (declare.ItemsOfLook()),
-; declares the fields and events the motion uses and gives the charges back. The key is the slot's:
-; no code declares it.
+; declares the fields and events the use reads and says, and gives the charges back.
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.12, 0.14, 0.28)
@@ -42,6 +41,10 @@ use = 1
 animation_pack = "dash.boots_dash"
 slot = 5
 slot_key = "V"
+use_conditions = PackedStringArray("dash.charges > 0")
+use_changes = PackedStringArray("dash.charges -= 1")
+use_cooldown = 0.4
+use_emits = "dash.started"
 carry_grip = NodePath("Carry")
 mass = 0.6
 
@@ -59,19 +62,12 @@ mesh = SubResource("Shaft")
 [node name="Carry" type="Marker3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.09, 0.08)
 
-[node name="Dash" type="CbMotion" parent="."]
-when = 2
-event = "dash.boots.used"
-conditions = PackedStringArray("dash.charges > 0")
-with_item = 1
-cooldown = 0.4
-duration = 0.18
+[node name="Push" type="CbImpulse" parent="."]
+speed = 11.0
+replace = 2
+
+[node name="Slide" type="CbMove" parent="."]
 parameters = {
 "friction": 0.0
 }
-changes = PackedStringArray("dash.charges -= 1")
-emits = "dash.started"
-
-[node name="Push" type="CbImpulse" parent="Dash"]
-speed = 11.0
-replace = 2
+duration = 0.18

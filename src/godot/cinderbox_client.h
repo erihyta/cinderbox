@@ -380,7 +380,7 @@ private:
 	std::unordered_map<uint32_t, std::vector<uint16_t>> m_heldKinds;
 	std::unordered_map<uint32_t, std::vector<uint16_t>> m_carriedKinds; // with what is put away
 	std::unordered_map<uint32_t, uint64_t> m_motionsOn;				// a player's motions that are on, a bit each
-	// What a look's condition may call a motion ("motion.dash.boots.Dash", "motion.Dash"), and its
+	// What a look's condition may call a motion ("motion.dash.boots.Use", "motion.Use"), and its
 	// bit: worked out when the schema's motions change.
 	std::vector<std::pair<godot::String, int>> m_motionKeys;
 	size_t m_motionKeysFor = 0;

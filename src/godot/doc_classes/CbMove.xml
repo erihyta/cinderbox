@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbMove" inherits="CbMotionPart" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/godotengine/godot/master/doc/class.xsd">
+	<brief_description>
+		How the player moves while what an item does is on.
+	</brief_description>
+	<description>
+		Movement parameters for a while, in what using an item does (the nodes under a [CbItem]). Under a [CbProbe] or a [CbLink], while that holds (hanging on a line: gravity 0). Directly under the item, for [member duration] seconds from the use (a dash's slide: friction 0). They win over the server's, the character's and a server mod's for that long. Under a [CbMotion], use its own parameters instead.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="duration" type="float" setter="set_duration" getter="get_duration" default="0.0">
+			Directly under the item: how long it lasts from the use, in seconds. Under a probe or a link: not read (it lasts while that holds).
+		</member>
+		<member name="parameters" type="Dictionary" setter="set_parameters" getter="get_parameters" default="{}">
+			Movement parameters by name ([code]friction[/code] = 0, [code]gravity[/code] = 0, [code]air_control[/code] = 0.6): see the server mods' movement parameters.
+		</member>
+	</members>
+</class>
