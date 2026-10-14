@@ -4466,6 +4466,146 @@ void TestThrownFromHand()
 	CHECK( said && ballsInWorld() == 0 && sim.FindEntity( carried ).is_valid() == false );
 }
 
+// Fast and small: a dart launched at 120 m/s (2 m a tick) is stopped by a level's wall 5 cm thick
+// (continuous collision against the level is Box3D's own), but passes a loose panel as thin
+// between two steps; a bolt, the same but a bullet (ItemShape::bullet: its CbItem's "bullet"),
+// stops at the panel too. And an item's own hits are kept for its mod however many other things
+// collide that tick: a dart dropped among a dozen crates landing on the same tick.
+void TestFastLaunch()
+{
+	ModSchema schema;
+	schema.itemKinds = { "t.dart", "t.bolt" };
+	schema.actions.push_back( { "fire", 0, "X" } );
+	schema.actions.push_back( { "bolt", 1, "Z" } );
+	const std::string text = "cinderbox_motions\t2\n"
+							 "motion\tFire\nwhen\tpress\tfire\nlaunch\tt.dart\t120\tlook\t0\t0.8\t5\n"
+							 "motion\tBolt\nwhen\tpress\tbolt\nlaunch\tt.bolt\t120\tlook\t0\t0.8\t5\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() );
+	if ( motions == nullptr )
+	{
+		return;
+	}
+	ItemShape dart;
+	dart.kind = 1;
+	dart.half = { 0.03f, 0.03f, 0.03f };
+	dart.center = { 0.0f, 0.0f, 0.0f };
+	dart.mass = 0.05f;
+	ItemShape bolt = dart;
+	bolt.bullet = 1;
+	// Where the dart (or the bolt) is after a second, fired down +Z at what stands 10 m ahead.
+	auto fire = [&]( bool wall, bool panel, ActionBits key ) {
+		LevelLayout map = FlatMap();
+		if ( wall )
+		{
+			map.statics.push_back( { { 0.0f, 2.0f, 10.0f }, { 30.0f, 2.0f, 0.025f }, 0.0f, 0.0f } );
+			QuantizeLayout( map );
+		}
+		Simulation sim( TestConfig(), map );
+		sim.SetItemShapes( { dart, bolt } );
+		sim.SetMotions( motions );
+		InputFrame f;
+		auto step = [&]( int n ) {
+			for ( int i = 0; i < n; ++i )
+			{
+				f.tick = sim.Tick();
+				sim.Step( f );
+				f.events.clear();
+				f.commands.clear();
+			}
+		};
+		f.events.push_back( { PlayerEventType::Join, 0 } );
+		step( 30 );
+		b3Vec3 at = sim.EntityTransform( sim.PlayerNetId( 0 ) )->position;
+		if ( panel )
+		{
+			SimCommand c;
+			c.type = CommandType::SpawnProp;
+			c.value = -1;
+			c.a = { at.x, at.y + 1.2f, at.z + 10.0f };
+			c.c = { 1.5f, 1.5f, 0.025f };
+			f.commands.push_back( c );
+		}
+		step( 30 );
+		f.inputs[0].actions = key;
+		step( 1 );
+		f.inputs[0].actions = 0;
+		step( 60 );
+		float furthest = -1000.0f;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+			if ( item != nullptr && item->holder == 0 )
+			{
+				furthest = std::max( furthest, sim.EntityTransform( r.netId )->position.z - at.z );
+			}
+		}
+		return furthest;
+	};
+	float open = fire( false, false, 1 );
+	float walled = fire( true, false, 1 );
+	float paneled = fire( false, true, 1 );
+	float bolted = fire( false, true, 2 );
+	std::printf( "    at 120 m/s, after a second: a dart in the open %.1f m, at a 5 cm wall 10 m off %.2f m, at a 5 cm loose panel %.2f m; "
+				 "a bolt (a bullet) at the panel %.2f m\n",
+				 open, walled, paneled, bolted );
+	CHECK( open > 20.0f && walled < 10.0f && bolted < 10.5f );
+
+	// A dart dropped among twelve crates, all landing on the same tick at the same speed: its hit
+	// is kept (the ring keeps the hardest eight a tick, and an item's own first).
+	{
+		Simulation sim( TestConfig(), FlatMap() );
+		sim.SetItemShapes( { dart, bolt } );
+		InputFrame f;
+		auto step = [&]( int n ) {
+			for ( int i = 0; i < n; ++i )
+			{
+				f.tick = sim.Tick();
+				sim.Step( f );
+				f.events.clear();
+				f.commands.clear();
+			}
+		};
+		step( 2 );
+		const float drop = 1.0f; // each falls a metre to the floor: 4.4 m/s
+		for ( int i = 0; i < 12; ++i )
+		{
+			SimCommand c;
+			c.type = CommandType::SpawnProp;
+			c.value = -1;
+			c.a = { -6.0f + float( i ), 0.2f + drop, 6.0f };
+			c.c = { 0.2f, 0.2f, 0.2f };
+			f.commands.push_back( c );
+		}
+		SimCommand d;
+		d.type = CommandType::SpawnItem;
+		d.target = 0;
+		d.index = 0;
+		d.a = { 0.0f, 0.03f + drop, 3.0f };
+		f.commands.push_back( d );
+		const uint32_t dartId = sim.Globals().nextNetId + 12;
+		uint32_t dartHits = 0, mostThatTick = 0;
+		uint32_t seen = sim.Globals().impactCount;
+		for ( int t = 0; t < 60; ++t )
+		{
+			step( 1 );
+			const SimGlobals& g = sim.Globals();
+			uint32_t thisTick = 0;
+			for ( ; seen < g.impactCount; ++seen )
+			{
+				const ImpactRecord& r = g.impacts[seen % kImpactHistory];
+				thisTick += 1;
+				dartHits += r.netIdA == dartId || r.netIdB == dartId ? 1 : 0;
+			}
+			mostThatTick = std::max( mostThatTick, thisTick );
+		}
+		std::printf( "    a dart among twelve crates landing together: its hits kept %u (the most impacts kept in a tick %u)\n", dartHits, mostThatTick );
+		CHECK( dartHits >= 1 );
+	}
+}
+
 // An item's own fields (ItemShape::fieldDefaults, declared by its CbItem): every new copy starts with
 // its kind's values, however it is made, and keeps its own from then on.
 void TestItemFields()
@@ -7002,6 +7142,7 @@ int main( int argc, char** argv )
 		{ "item_fields", TestItemFields },
 		{ "left_hand", TestLeftHand },
 		{ "thrown_from_hand", TestThrownFromHand },
+		{ "fast_launch", TestFastLaunch },
 		{ "item_use", TestItemUse },
 		{ "event_news", TestEventNews },
 		{ "world_items", TestWorldItems },

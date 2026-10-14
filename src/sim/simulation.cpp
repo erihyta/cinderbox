@@ -573,6 +573,7 @@ void Simulation::PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotatio
 	bodyDef.position = position;
 	bodyDef.rotation = bodyRotation;
 	bodyDef.linearVelocity = velocity;
+	bodyDef.isBullet = look.bullet != 0;
 	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
 	ShapeMaterial material;
 	material.density = look.mass / std::max( volume, 1e-6f );
@@ -1538,7 +1539,18 @@ void Simulation::CollectImpacts()
 		return a.netIdB < b.netIdB;
 	} );
 
-	size_t count = std::min( m_impactScratch.size(), size_t( kImpactsPerTick ) );
+	// An item's own hits first, whatever else collides, and all of them (as many as the ring holds):
+	// a mod decides what a thrown grenade's hit means (ctx.Hits), so none may be crowded out by
+	// crates falling about. The rest, the hardest, as many as a tick keeps.
+	auto isItem = [this]( uint32_t netId ) {
+		flecs::entity e = netId != 0 ? FindEntity( netId ) : flecs::entity();
+		return e.is_valid() && e.has<HeldItem>();
+	};
+	auto firstOther = std::stable_partition( m_impactScratch.begin(), m_impactScratch.end(), [&]( const ImpactRecord& r ) {
+		return isItem( r.netIdA ) || isItem( r.netIdB );
+	} );
+	size_t items = size_t( firstOther - m_impactScratch.begin() );
+	size_t count = std::min( m_impactScratch.size(), std::min( std::max( items, size_t( kImpactsPerTick ) ), size_t( kImpactHistory ) ) );
 	for ( size_t i = 0; i < count; ++i )
 	{
 		m_globals.impacts[m_globals.impactCount % kImpactHistory] = m_impactScratch[i];

@@ -10,7 +10,7 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x4342434Du; // 'MCBC': 12 an item's time is up; 11 an item's hand; 10 an item's own fields' defaults; 2 workshop items, 3 the character, 4 layers and stances, 5 the
+constexpr uint32_t kSchemaMagic = 0x4442434Du; // 'MCBD': 13 an item thrown fast (a bullet); 12 an item's time is up; 11 an item's hand; 10 an item's own fields' defaults; 2 workshop items, 3 the character, 4 layers and stances, 5 the
 												// character's state machine, 6 item kinds and sockets, 7 animation packs,
 												// 8 item shapes, 9 slots' keys
 
@@ -301,6 +301,7 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutU8( out, shape.holster );
 		PutU8( out, shape.use );
 		PutU8( out, shape.hand );
+		PutU8( out, shape.bullet );
 		PutU8( out, uint8_t( shape.usedEvent & 0xFF ) );
 		PutU8( out, uint8_t( shape.usedEvent >> 8 ) );
 		PutU8( out, uint8_t( shape.expiredEvent & 0xFF ) );
@@ -507,6 +508,7 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		shape.holster = r.U8();
 		shape.use = r.U8();
 		shape.hand = r.U8();
+		shape.bullet = r.U8();
 		shape.usedEvent = r.U8();
 		shape.usedEvent = uint16_t( shape.usedEvent | ( uint16_t( r.U8() ) << 8 ) );
 		shape.expiredEvent = r.U8();
@@ -525,7 +527,7 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 			field.raw = int32_t( raw );
 			shape.fieldDefaults.push_back( field );
 		}
-		if ( shape.slot > kMaxSlots || shape.use > kItemUseHold || shape.hand > kItemHandLeft )
+		if ( shape.slot > kMaxSlots || shape.use > kItemUseHold || shape.hand > kItemHandLeft || shape.bullet > 1 )
 		{
 			return false;
 		}

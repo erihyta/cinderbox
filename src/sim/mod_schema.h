@@ -143,6 +143,10 @@ struct ItemShape
 	// for as long as it is carried (a torch, a shield): out unless what is selected has its other
 	// hand on a marker (grip 1, 2), or another such item of a lower slot is there first.
 	uint8_t hand = kItemHandSelected;
+	// 1: lying in the world it is a bullet: moved with continuous collision against what moves too
+	// (a crate, a door), not only against the level, so a small fast throw does not pass a thin one
+	// between two steps. Costs a little more a step; for kinds that are thrown fast.
+	uint8_t bullet = 0;
 	// Its own fields (declared by its CbItem: the rifle's "gun.rounds"): what a new copy starts with,
 	// as board slots of entity fields and their raw values. A copy keeps its own from then on.
 	struct FieldDefault

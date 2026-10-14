@@ -86,6 +86,9 @@ void CbItem::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "animation_pack", PROPERTY_HINT_PLACEHOLDER_TEXT, "none: the character's own" ), "set_animation_pack",
 				  "get_animation_pack" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "holster", PROPERTY_HINT_PLACEHOLDER_TEXT, "none: out of sight (Hip, Back)" ), "set_holster", "get_holster" );
+	ClassDB::bind_method( D_METHOD( "set_bullet", "value" ), &CbItem::set_bullet );
+	ClassDB::bind_method( D_METHOD( "get_bullet" ), &CbItem::get_bullet );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "bullet" ), "set_bullet", "get_bullet" );
 	ADD_GROUP( "Slots", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "use", PROPERTY_HINT_ENUM,
 							  "Select it then the use button,Its slot key uses it (a press),Its slot key uses it while held" ),
@@ -996,6 +999,10 @@ Dictionary CbItem::bake() const
 	if ( m_hand == HAND_LEFT )
 	{
 		all["hand"] = m_hand;
+	}
+	if ( m_bullet )
+	{
+		all["bullet"] = 1;
 	}
 	Array names = all.keys();
 	names.sort();
