@@ -244,6 +244,25 @@ public:
 	{
 		return m_slot;
 	}
+	// Which hand it is in:
+	//   HAND_SELECTED  the slots' hand (the right), while its slot is the selected one.
+	//   HAND_LEFT      the left hand, for as long as it is carried: a grappling hook beside a gun.
+	//                  Put away while what is selected has its other hand at a marker (a rifle's
+	//                  barrel), or while another such item of a lower slot is there. What has its
+	//                  other hand as the animation has it (a pistol) is held with one hand then.
+	enum Hand
+	{
+		HAND_SELECTED = 0,
+		HAND_LEFT = 1,
+	};
+	void set_hand( int v )
+	{
+		m_hand = v;
+	}
+	int get_hand() const
+	{
+		return m_hand;
+	}
 
 	// Where the hands hold it: two markers in the scene (any Node3D; a Marker3D shows as a cross).
 	//
@@ -420,6 +439,7 @@ private:
 	godot::Dictionary m_properties;
 	godot::Dictionary m_fields;
 	int m_use = USE_SELECTED;
+	int m_hand = HAND_SELECTED;
 	int m_slot = 0;
 	godot::NodePath m_carryGrip;
 	int m_otherHand = OTHER_FREE;
@@ -490,3 +510,4 @@ private:
 
 VARIANT_ENUM_CAST( cb::gd::CbItem::OtherHand );
 VARIANT_ENUM_CAST( cb::gd::CbItem::Use );
+VARIANT_ENUM_CAST( cb::gd::CbItem::Hand );

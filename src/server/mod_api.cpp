@@ -1091,8 +1091,8 @@ void Context::ResolveLayers()
 				}
 			}
 		}
-		// Overlays: every item it carries, in the hand or put away, whose pack has a layer the
-		// character does not have (a dash, hanging on a line), one a slot, in NetId order.
+		// Overlays: every item it carries, in the hand or put away, whose pack has layers the
+		// character does not have (a dash, hanging on a line), a slot for each, in NetId order.
 		size_t overlay = ownLayers;
 		for ( uint32_t item : m_sim.CarriedItemsOf( netId ) )
 		{
@@ -1108,7 +1108,7 @@ void Context::ResolveLayers()
 			{
 				already |= fromItems[l] == source;
 			}
-			if ( already == false && overlay < layers )
+			for ( int n = already ? 0 : OverlayCount( *graph, *packs[size_t( brings->second )] ); n > 0 && overlay < layers; --n )
 			{
 				fromItems[overlay++] = source;
 			}

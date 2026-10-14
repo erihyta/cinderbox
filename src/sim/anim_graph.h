@@ -208,21 +208,35 @@ using AnimGraphPacks = std::vector<std::shared_ptr<const AnimGraph>>;
 // Overlays: after a character's own layers a player has this many more, for packs that bring a
 // layer the character does not have (a dash, hanging on a line). Such a layer is laid over the
 // whole body (or its own bone filter) with its own weight, which says when it shows
-// ("motion.Dash"). An item's pack takes one while the item is carried (AnimState::graph).
+// ("motion.Dash"). An item's pack takes a slot for each such layer while the item is carried
+// (AnimState::graph): the hook's hold for the left arm, and its hang for the whole body.
 constexpr size_t kOverlaySlots = 3;
 inline size_t LayerSlots( const AnimGraph& character )
 {
 	return character.layers.size() + kOverlaySlots;
 }
-// The layer of `pack` that the character does not have (its overlay), or -1.
-int OverlayLayerOf( const AnimGraph& character, const AnimGraph& pack );
+// The `nth` layer of `pack` that the character does not have (its overlays, in the pack's order),
+// or -1; and how many it has.
+int OverlayLayerOf( const AnimGraph& character, const AnimGraph& pack, int nth = 0 );
+int OverlayCount( const AnimGraph& character, const AnimGraph& pack );
+// Which of its pack's overlays slot `l` of `graph` (AnimState::graph) plays: the slots of one pack
+// are its overlays in order, so it is how many overlay slots before it play the same pack.
+template <class Layers> int OverlayNth( const AnimGraph& character, const Layers& graph, size_t l )
+{
+	int nth = 0;
+	for ( size_t k = character.layers.size(); k < l && k < graph.size(); ++k )
+	{
+		nth += graph[k].source == graph[l].source ? 1 : 0;
+	}
+	return nth;
+}
 
 // The layer that plays in slot `l` for `source` (0: its own; n: pack n-1's), and the graph it
 // belongs to (its clips, markers). A character's own slot: the pack's layer of the same name, else
-// the character's own. An overlay slot (past the character's layers): the pack's overlay, else a
-// layer of no states, which plays nothing.
+// the character's own. An overlay slot (past the character's layers): the pack's `nth` overlay
+// (OverlayNth), else a layer of no states, which plays nothing.
 const AnimGraphLayer& ResolveLayer( const AnimGraph& character, const AnimGraphPacks& packs, size_t l, uint8_t source,
-									const AnimGraph*& owner );
+									const AnimGraph*& owner, int nth = 0 );
 
 // Compiles graph.cfg text against the server's schema (names in conditions become board slots,
 // stances and events). Unknown names read as 0 and are listed in `warnings`; a malformed file

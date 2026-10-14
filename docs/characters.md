@@ -395,21 +395,24 @@ A marker in a pack's clip emits its event like a character's (`ctx.AnimationEmit
 **Overlays: a pose an item brings.** A pack's layer that the character does not have (any name but
 the character's own: `Dash`, `Hang`) is an overlay. After its own layers a player has
 `kOverlaySlots` (3) more, and every item it **carries** (in the hand or put away) whose pack has
-an overlay takes one, in the order of the items. An overlay is laid over the whole body (or its own
-bone filter) with its own weight, which says when it shows:
+overlays takes one for each, in the order of the items (a pack's in its own order). An overlay is
+laid over the whole body (or its own bone filter) with its own weight, which says when it shows:
 
 | Item | Pack | Overlay | Weight (its Blend2's graph input) |
 |---|---|---|---|
 | the dash boots | `dash.boots_dash` (`server_mods/dash/client/animation_packs/boots_dash.tscn`) | `Dash` | `motion.dash.boots.Use`: while the dash is on |
-| the grappling hook | `grapple.hook_hang` (`server_mods/grapple/client/animation_packs/hook_hang.tscn`) | `Hang` | `motion.grapple.hook.Use`: from the throw until it is let go |
+| the grappling hook | `grapple.hook_hang` (`server_mods/grapple/client/animation_packs/hook_hang.tscn`) | `Hold`, filtered to the left arm | `grapple.hook`: while it is out in a hand (the [left](items.md#the-left-hand)) |
+| | | `Hang` | `motion.grapple.hook.Use`: from the throw until it is let go |
 
 - **Authored like an upper-body pack**: a Blend2 whose blend input is the overlay's state machine,
-  `Replaces` naming the overlay alone, and the Blend2's `blend_amount` in `graph_inputs` as its weight.
+  `Replaces` naming the overlays, and each Blend2's `blend_amount` in `graph_inputs` as its weight.
+  The Blend2's filter is the overlay's bone filter (the hook's Hold: the left shoulder, arm, hand
+  and fingers); later overlays are laid over earlier ones.
 - **Its weight eases in and out** like a stance (0.2 s), and the pose is the simulation's: hit tests
   see it, and the player's own is predicted with the motion.
 - **No swap at the moment it matters**: the pack is in its slot as long as the item is carried, at
   weight 0; a motion turns it up the tick it starts.
-- **The clips** are the SDK placeholder's (`Sprint`, `Jump`: CC0), stand-ins until better ones are
-  put in those scenes.
+- **The clips** are the SDK placeholder's (`Sprint`, `Jump`, `Idle` for the hook's hold: CC0),
+  stand-ins until better ones are put in those scenes.
 The default characters still have pistol and bat states of their own: they play only on a server
 whose look has no such pack.

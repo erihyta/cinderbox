@@ -1081,7 +1081,7 @@ float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& in, float s
 	return top > 0 ? stack[top - 1] : 0.0f;
 }
 
-int OverlayLayerOf( const AnimGraph& character, const AnimGraph& pack )
+int OverlayLayerOf( const AnimGraph& character, const AnimGraph& pack, int nth )
 {
 	for ( size_t i = 0; i < pack.layers.size(); ++i )
 	{
@@ -1090,7 +1090,7 @@ int OverlayLayerOf( const AnimGraph& character, const AnimGraph& pack )
 		{
 			known |= own.name == pack.layers[i].name;
 		}
-		if ( known == false )
+		if ( known == false && nth-- == 0 )
 		{
 			return int( i );
 		}
@@ -1098,8 +1098,18 @@ int OverlayLayerOf( const AnimGraph& character, const AnimGraph& pack )
 	return -1;
 }
 
+int OverlayCount( const AnimGraph& character, const AnimGraph& pack )
+{
+	int count = 0;
+	while ( OverlayLayerOf( character, pack, count ) >= 0 )
+	{
+		++count;
+	}
+	return count;
+}
+
 const AnimGraphLayer& ResolveLayer( const AnimGraph& character, const AnimGraphPacks& packs, size_t l, uint8_t source,
-									const AnimGraph*& owner )
+									const AnimGraph*& owner, int nth )
 {
 	owner = &character;
 	if ( l >= character.layers.size() )
@@ -1110,7 +1120,7 @@ const AnimGraphLayer& ResolveLayer( const AnimGraph& character, const AnimGraphP
 			return kNothing;
 		}
 		const AnimGraph& pack = *packs[size_t( source - 1 )];
-		int overlay = OverlayLayerOf( character, pack );
+		int overlay = OverlayLayerOf( character, pack, nth );
 		if ( overlay < 0 )
 		{
 			return kNothing;
@@ -1186,7 +1196,7 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphP
 	{
 		AnimGraphLayerState& L = s.graph[l];
 		const AnimGraph* owner = nullptr;
-		const AnimGraphLayer& layer = ResolveLayer( character, packs, l, L.source, owner );
+		const AnimGraphLayer& layer = ResolveLayer( character, packs, l, L.source, owner, OverlayNth( character, s.graph, l ) );
 		const AnimGraph& graph = *owner; // the clips this layer plays
 		if ( layer.states.empty() )
 		{

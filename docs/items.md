@@ -92,6 +92,26 @@ item's to say: `use` on its `CbItem`.
 | **Its slot key uses it (a press)** | uses it where it is, once a press; nothing changes hands | an ability, a consumable: the dash boots, the grappling hook |
 | **Its slot key uses it while held** | the same, and it is in use for as long as the key is down | a jetpack, a shield |
 
+### The left hand
+
+`hand` on its `CbItem`: **The left hand while carried** keeps it in the left hand for as long as the
+player has it, beside what the slots' hand holds (the hook beside a gun). Its slot key still does
+what `use` says.
+
+| What is selected | The left hand |
+|---|---|
+| nothing, or an item with one hand (`other_hand` none) | the item |
+| an item whose other hand is as the animation has it (`other_hand` 3: the pistol, the bat) | the item; the selected one is held with one hand meanwhile |
+| an item whose other hand is at a marker (the rifle's barrel) | put away (its `holster`, or out of sight) until that is put away |
+| one such item itself | that item; the others are put away |
+
+- **Of two such items** the one in the lower slot is out.
+- **Its pose** is its pack's: an overlay filtered to the left arm, weighted by the item's bare kind
+  (`grapple.hook`: 1 while it is out in a hand). See [overlays](characters.md#animation-packs).
+- **`hand.<field>`** in a look reads the slots' hand, not the left.
+- **In first person** an arm is drawn when any item held asks for it (`view_left_hand`,
+  `view_right_hand`): the bat hides the left, the hook beside it shows it again.
+
 **The keys**: slot 1's is 1, slot 2's is 2 ... (0 for the tenth), unless the server suggests
 another: a mod with `declare.SlotKey( 5, "V" )`, or the item that goes to that slot with
 `slot_key` on its `CbItem` (the boots: V). The player's own choice wins: the Keys page of the
@@ -252,6 +272,7 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 | `properties` | named numbers any server mod may read, e.g. `pickup.hold_seconds` = 0.5. They replace what the item's mod declared in code for the same name |
 | `carry_grip`, `other_hand`, `other_grip` | [where the hands hold it](#both-hands-on-an-item) |
 | `use`, `slot` | [how it is used](#using-an-item), and the slot it goes to (1 is the first; 0: the first free one) |
+| `hand` | [the left hand](#the-left-hand) while it is carried, or the slots' hand while it is selected |
 | `view_offset`, `view_rotation`, `view_fov`, `view_left_hand`, `view_right_hand` | [first person](#first-person): where the hands and the item are in the holder's own view, the field of view they are drawn with, and which arms are drawn |
 | `view_camera` | first person, the other way: the item [floats](#floating) in front of the camera instead of being where the animation has it |
 | **Bake item** (button), saving the scene | writes `res://items/<kind>.cfg` |
