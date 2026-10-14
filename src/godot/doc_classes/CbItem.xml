@@ -52,7 +52,7 @@
 			Named numbers any server mod may read: [code]pickup.hold_seconds[/code] = 0.5, [code]inventory.slot[/code] = 3. They replace what the item's mod declared in code for the same names.
 		</member>
 		<member name="use" type="int" setter="set_use" getter="get_use" enum="CbItem.Use" default="0">
-			How a player uses it, on a server with slots. Either way its server mod is told the same thing ([code]ctx.Used( player, kind )[/code]), and the simulation records the event [code]&lt;kind&gt;.used[/code] on that tick where a mod declared it, so a [CbReaction] on it plays at once on the player's own screen.
+			How a player uses it, on a server with slots: its slot's key is its key. [b]Select it then the use button[/b]: the key takes it out (again: empty hands), and the left mouse button uses it (a tool, a weapon). [b]Its slot key uses it (a press)[/b]: the key uses it where it is, once a press, and nothing changes hands (the dash boots, the grappling hook). [b]Its slot key uses it while held[/b]: the same, and it is in use as long as the key is down (a jetpack). Whichever way, its server mod is told the same thing ([code]ctx.Used[/code], [code]ctx.Using[/code]), conditions read [code]using.&lt;kind&gt;[/code], and the simulation records the event [code]&lt;kind&gt;.used[/code] on the press (declared for an item of a mod that takes its items from its look), so a [CbMotion] or a [CbReaction] on it starts at once on the player's own screen.
 		</member>
 		<member name="preview_cue" type="String" setter="set_preview_cue" getter="get_preview_cue" default="&quot;&quot;">
 			With [member preview_hold]: the event the Fire the cue button fires ([code]melee.swing[/code]). It plays on the figure and in the First person panel: the pack's state machine hears it (a state entered on it, or on a stance a [CbPrediction] of this scene sets with it), and the item in the hand, a whole copy of this scene, plays its [CbReaction] nodes. The mod's [code]vfx/reactions*.tscn[/code] play beside the figure too.
@@ -65,6 +65,9 @@
 		</member>
 		<member name="preview_pack" type="String" setter="set_preview_pack" getter="get_preview_pack" default="&quot;&quot;">
 			The pack [member preview_hold] plays (a folder of [code]res://anim[/code], such as [code]melee.hold[/code]); empty: the item's own [member animation_pack], or the first there is.
+		</member>
+		<member name="slot_key" type="String" setter="set_slot_key" getter="get_slot_key" default="&quot;&quot;">
+			The key it suggests for its [member slot] ([code]V[/code], [code]MouseRight[/code]). A mod's suggestion ([code]declare.SlotKey[/code]) or an earlier item's for the same slot comes first; the player's own choice (the Keys page of the settings) wins over all. Empty: the slot's number.
 		</member>
 		<member name="slot" type="int" setter="set_slot" getter="get_slot" default="0">
 			The slot it goes to when a player comes to carry one: 1 is the first. What is there makes room (to a free slot, or onto the floor). 0: the first free slot.

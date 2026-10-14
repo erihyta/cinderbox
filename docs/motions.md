@@ -30,8 +30,7 @@ CbMotion nodes ──bake──> motions/<set>.cfg ──> the server reads it f
 | The motions | `server_mods/<mod>/client/motion_sets/<name>.tscn` | a `CbMotionSet` with `CbMotion` children, each with its parts under it; saving the scene bakes `motions/<set_name>.cfg` |
 
 ```cpp
-// server_mods/dash/dash.cpp: the names, and how many dashes a player has. Not the dash.
-m_dash = declare.Action( "dash", "V" );
+// server_mods/dash/dash.cpp: the names, and how many dashes a player has. Not the dash, not its key.
 m_charges = declare.Field( "dash.charges", BoardType::Int );
 m_started = declare.Event( "dash.started" );
 m_moves = declare.Motions( "dash.moves" );
@@ -41,10 +40,6 @@ ctx.Set( SlotTarget( slot ), m_charges, charges + 1 );   // one back every 2 s
 
 ```
 Moves        CbMotionSet   set_name "dash.moves"                (motion_sets/dash_moves.tscn)
-├── Dash        CbMotion   action "dash"   conditions dash.charges > 0   cooldown 0.4
-│   │                      duration 0.18 s with parameters { friction: 0 }
-│   │                      changes dash.charges -= 1      emits dash.started
-│   └── Push    CbImpulse  11 m/s along the move input, replacing the horizontal velocity
 └── DoubleJump  CbMotion   action "jump"   conditions not grounded   uses 1, back on the ground
     │                      emits dash.double_jump
     └── Up      CbImpulse  6.5 m/s up, replacing the vertical speed
@@ -84,9 +79,11 @@ and runs only for a player who has it. Nothing is named in C++: a mod that takes
 look (`declare.ItemsOfLook()`) gets their motions with them.
 
 ```
-Boots         CbItem     kind "dash.boots"   properties { inventory.start: 1 }   (prefabs/boots.tscn)
+Boots         CbItem     kind "dash.boots"   use: its slot key (a press)   slot 5   slot_key V
+│                        properties { inventory.start: 1 }                   (prefabs/boots.tscn)
 ├── Body, Foot, Shaft, Carry
-└── Dash      CbMotion   on "dash" (key V), while dash.charges > 0   with_item: Carried
+└── Dash      CbMotion   on the cue dash.boots.used (the slot's key)   while dash.charges > 0
+    │                    0.18 s, friction 0; dash.charges -= 1; emits dash.started   with_item: Carried
     └── Push  CbImpulse  11 m/s along where you walk
 ```
 
@@ -99,9 +96,9 @@ Boots         CbItem     kind "dash.boots"   properties { inventory.start: 1 }  
 
 - **How**: the bake writes the motion with one more condition: the kind's name (in the hand), or
   `carried.<kind>`. Both can be typed by hand in any condition, a state machine's and a look's too.
-- **Its key**: a motion on a press names an action. With a `key` beside it (`V`, `MouseRight`), the
-  item declares the action when no mod has, with that key as the suggestion: no line of C++. A
-  player changes it on the Keys page of the settings.
+- **Its key is its slot's**: an item used by its slot's key (`use`) records `<kind>.used` on the
+  press, and its motion starts on that cue. The item suggests the key (`slot_key`); a player
+  changes it on the Keys page of the settings.
 - **Its name** for a `CbLinkLook` is `<kind>/<node>` (`dash.boots/Dash`).
 - **An item nobody has does nothing**: dropped, its motion stops for the one who dropped it and
   starts for whoever picks it up.
