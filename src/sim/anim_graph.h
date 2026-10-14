@@ -202,9 +202,22 @@ struct AnimGraph
 // Animation packs a server's mods provide (sim/mod_schema.h animPacks), compiled; index = source - 1.
 using AnimGraphPacks = std::vector<std::shared_ptr<const AnimGraph>>;
 
-// The layer that plays as the character's layer `l` for `source` (0: its own; n: pack n-1's layer of
-// the same name), and the graph it belongs to (its clips, markers). A source that does not provide
-// that layer falls back to the character's own.
+// Overlays: after a character's own layers a player has this many more, for packs that bring a
+// layer the character does not have (a dash, hanging on a line). Such a layer is laid over the
+// whole body (or its own bone filter) with its own weight, which says when it shows
+// ("motion.Dash"). An item's pack takes one while the item is carried (AnimState::graph).
+constexpr size_t kOverlaySlots = 3;
+inline size_t LayerSlots( const AnimGraph& character )
+{
+	return character.layers.size() + kOverlaySlots;
+}
+// The layer of `pack` that the character does not have (its overlay), or -1.
+int OverlayLayerOf( const AnimGraph& character, const AnimGraph& pack );
+
+// The layer that plays in slot `l` for `source` (0: its own; n: pack n-1's), and the graph it
+// belongs to (its clips, markers). A character's own slot: the pack's layer of the same name, else
+// the character's own. An overlay slot (past the character's layers): the pack's overlay, else a
+// layer of no states, which plays nothing.
 const AnimGraphLayer& ResolveLayer( const AnimGraph& character, const AnimGraphPacks& packs, size_t l, uint8_t source,
 									const AnimGraph*& owner );
 

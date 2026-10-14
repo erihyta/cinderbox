@@ -1,0 +1,76 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://placeholder/skeleton.tscn" id="1_skeleton"]
+[ext_resource type="Animation" path="res://placeholder/clips/Idle.res" id="2_idle"]
+[ext_resource type="Animation" path="res://placeholder/clips/Sprint.res" id="3_dash"]
+
+[sub_resource type="AnimationLibrary" id="Clips"]
+_data = {
+&"Idle": ExtResource("2_idle"),
+&"Sprint": ExtResource("3_dash")
+}
+
+[sub_resource type="AnimationNodeAnimation" id="IdleClip"]
+animation = &"Idle"
+
+[sub_resource type="AnimationNodeAnimation" id="DashClip"]
+animation = &"Sprint"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="StartToIdle"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="StartToDash"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachine" id="FullBody"]
+states/Idle/node = SubResource("IdleClip")
+states/Idle/position = Vector2(300, 100)
+transitions = ["Start", "Idle", SubResource("StartToIdle")]
+
+[sub_resource type="AnimationNodeStateMachine" id="Dash"]
+states/Dash/node = SubResource("DashClip")
+states/Dash/position = Vector2(300, 100)
+transitions = ["Start", "Dash", SubResource("StartToDash")]
+
+[sub_resource type="AnimationNodeBlend2" id="DashBlend"]
+
+[sub_resource type="AnimationNodeBlendTree" id="Tree"]
+nodes/output/position = Vector2(700, 160)
+nodes/FullBody/node = SubResource("FullBody")
+nodes/FullBody/position = Vector2(100, 60)
+nodes/Dash/node = SubResource("Dash")
+nodes/Dash/position = Vector2(100, 260)
+nodes/DashBlend/node = SubResource("DashBlend")
+nodes/DashBlend/position = Vector2(420, 160)
+node_connections = [&"DashBlend", 0, &"FullBody", &"DashBlend", 1, &"Dash", &"output", 0, &"DashBlend"]
+
+[node name="BootsDashPack" type="CbAnimPack"]
+character_name = "dash.boots_dash"
+skeleton_path = NodePath("Skeleton3D")
+animation_player_path = NodePath("AnimationPlayer")
+animation_tree_path = NodePath("AnimationTree")
+replaces = PackedStringArray("Dash")
+graph_inputs = {
+"DashBlend/blend_amount": "motion.dash.boots.Dash"
+}
+editor_description = "The dash's pose: the boots' animation pack (the boots' Animation Pack, prefabs/boots.tscn).
+
+Dash is a layer no character has, so it is laid over the whole body, for as long as its weight says: the DashBlend's graph input, \"motion.dash.boots.Dash\", is 1 while the boots' Dash motion is on. An item's pack plays such a layer while the item is carried, in the hand or not.
+
+FullBody is here only to see the dash over a standing body in the editor: Replaces names Dash alone, so it is not baked.
+
+The clip is the SDK placeholder's Sprint (CC0): put another in the AnimationPlayer and in the Dash state to change the pose. Saving this scene bakes anim/dash.boots_dash/."
+
+[node name="Skeleton3D" parent="." instance=ExtResource("1_skeleton")]
+unique_name_in_owner = true
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+root_node = NodePath("..")
+libraries/ = SubResource("Clips")
+
+[node name="AnimationTree" type="AnimationTree" parent="."]
+active = false
+root_node = NodePath("..")
+tree_root = SubResource("Tree")
+anim_player = NodePath("../AnimationPlayer")
+parameters/DashBlend/blend_amount = 1.0

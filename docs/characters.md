@@ -240,7 +240,7 @@ Conditions and expressions read simulation values, never scripts:
 | a board field's name (`inventory.slot`) | the player's value (or the global one) |
 | an item kind's name (`melee.bat`) | true while the player holds one, in any socket |
 | `carried.` and an item kind (`carried.dash.boots`) | true while the player has one, in the hand or put away |
-| `motion.` and a motion's name (`motion.Hook`, `motion.grapple.moves.Hook`) | true while that [motion](motions.md) of the player's is on: a pose for as long as a line holds, a flight lasts. The node's name alone when no other motion has it, else the set's and the node's. A server's first 64 motions can be asked for |
+| `motion.` and a motion's name (`motion.Hook`, `motion.grapple.hook.Hook`) | true while that [motion](motions.md) of the player's is on: a pose for as long as a line holds, a flight lasts ([an item's overlay](#animation-packs) weighs by it). The node's name alone when no other motion has it, else the set's and the node's. A server's first 64 motions can be asked for |
 
 The grammar is the [one expression language](looks.md#expressions) (`and or not`, comparisons, arithmetic,
 `?name`, parentheses). A name no mod declares reads as 0 (the server logs it). The bake fails with a reason for anything it cannot run (nested
@@ -390,5 +390,25 @@ godot --headless --path godot --script res://addons/cinderbox_maps/make_weapon_c
 ```
 
 A marker in a pack's clip emits its event like a character's (`ctx.AnimationEmits` counts packs).
+
+**Overlays: a pose an item brings.** A pack's layer that the character does not have (any name but
+the character's own: `Dash`, `Hang`) is an overlay. After its own layers a player has
+`kOverlaySlots` (3) more, and every item it **carries** (in the hand or put away) whose pack has
+an overlay takes one, in the order of the items. An overlay is laid over the whole body (or its own
+bone filter) with its own weight, which says when it shows:
+
+| Item | Pack | Overlay | Weight (its Blend2's graph input) |
+|---|---|---|---|
+| the dash boots | `dash.boots_dash` (`server_mods/dash/client/animation_packs/boots_dash.tscn`) | `Dash` | `motion.dash.boots.Dash`: while the dash is on |
+| the grappling hook | `grapple.hook_hang` (`server_mods/grapple/client/animation_packs/hook_hang.tscn`) | `Hang` | `motion.grapple.hook.Hook`: from the throw until it is let go |
+
+- **Authored like an upper-body pack**: a Blend2 whose blend input is the overlay's state machine,
+  `Replaces` naming the overlay alone, and the Blend2's `blend_amount` in `graph_inputs` as its weight.
+- **Its weight eases in and out** like a stance (0.2 s), and the pose is the simulation's: hit tests
+  see it, and the player's own is predicted with the motion.
+- **No swap at the moment it matters**: the pack is in its slot as long as the item is carried, at
+  weight 0; a motion turns it up the tick it starts.
+- **The clips** are the SDK placeholder's (`Sprint`, `Jump`: CC0), stand-ins until better ones are
+  put in those scenes.
 The default characters still have pistol and bat states of their own: they play only on a server
 whose look has no such pack.

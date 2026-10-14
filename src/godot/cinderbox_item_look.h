@@ -417,7 +417,7 @@ protected:
 	static void _bind_methods();
 
 private:
-	godot::String m_motion; // "grapple.moves/Hook": the set and the node; empty: any link
+	godot::String m_motion; // "grapple.hook/Hook": the set and the node; empty: any link
 	godot::String m_scene;
 	godot::String m_from = "RightHand"; // the player's socket it starts at; empty: its chest
 };

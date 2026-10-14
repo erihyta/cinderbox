@@ -259,7 +259,7 @@ there is to say:
 | `kind` | the item kind (`gun.pistol`): the scene is the declaration |
 | the body, `mass`, the grips | as for any item |
 | `properties` | numbers any mod may read: the rules that apply to it (`gun.damage` makes it a gun), its `slot`, `inventory.start` |
-| `animation_pack` | the pack it brings while it is held (`gun.pistol_hold`): a `CbAnimPack` scene of the same project |
+| `animation_pack` | the pack it brings: its layers the character has while it is held (`gun.pistol_hold`), and its [overlay](characters.md#animation-packs) while it is carried at all (the boots' dash pose): a `CbAnimPack` scene of the same project |
 | `holster` | the socket it hangs in while it is put away (`Hip`, `Back`) |
 | `CbMotion` nodes under it | [motions of who has it](motions.md#a-motion-of-an-item): the dash that boots bring. One with a `key` declares its action, with that key |
 

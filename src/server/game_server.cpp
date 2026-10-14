@@ -168,8 +168,9 @@ bool GameServer::Start( const ServerOptions& options )
 	m_options.config.fields = uint16_t( m_schema.FieldCount( BoardScope::Entity ) );
 	m_options.config.globalFields = uint16_t( m_schema.FieldCount( BoardScope::Global ) );
 	m_options.config.motions = uint16_t( m_motions ? m_motions->list.size() : 0 );
+	// (The character's layers and the overlays after them: a pack's layer the character does not have.)
 	m_options.config.layers =
-		uint8_t( std::min( std::max( m_animGraph ? m_animGraph->layers.size() : size_t( 0 ), m_schema.layers.size() ), size_t( kLayerLimit ) ) );
+		uint8_t( std::min( std::max( m_animGraph ? LayerSlots( *m_animGraph ) : size_t( 0 ), m_schema.layers.size() ), size_t( kLayerLimit ) ) );
 	{
 		// What that costs: every client keeps, hashes and rolls back as much.
 		const SimConfig& c = m_options.config;

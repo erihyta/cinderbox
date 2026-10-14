@@ -207,8 +207,9 @@ Players weigh something: `mass` is a [movement parameter](server-mods.md#movemen
 
 ## Probes, forces and links: the grapple mod
 
-A probe is a line a motion throws at what the player looks at. `server_mods/grapple` is an item, one
-motion with three parts, and a look. Its C++ declares the names and gives every life a hook.
+A probe is a line a motion throws at what the player looks at. `server_mods/grapple` is an item with
+one motion of three parts under it, its pose, and a look. Its C++ declares the two events; the
+scene says the rest, a hook for every life among it.
 
 The hook is an [item used by its slot's key](items.md#using-an-item) (`prefabs/hook.tscn`, a `CbItem`
 with `use` "Its slot key uses it" and `slot` 4): the key uses it where it is, nothing comes into
@@ -216,8 +217,10 @@ the hand, and the engine records `grapple.hook.used` on that tick in every simul
 starts on that event, and ends on the same event, so the throw is predicted like any press.
 
 ```
-Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grapple_moves.tscn)
+Hook          CbItem     kind "grapple.hook", use: its slot's key, slot 4   (prefabs/hook.tscn)
+│                        animation_pack grapple.hook_hang: hanging, while motion.grapple.hook.Hook
 └── Hook      CbMotion   on the cue grapple.hook.used (the hook's slot key)   conditions not linked
+    │                    with_item Carried
     │                    until grapple.hook.used, pressed.jump      duration 2 s
     │                    parameters { airborne: 1, air_control: 0.6, gravity: 0 }   emits grapple.fired
     ├── Line  CbProbe    range 40 m, flies at 80 m/s
@@ -256,14 +259,14 @@ Moves   CbMotionSet   set_name "grapple.moves"               (motion_sets/grappl
 
 ```
 GrappleReactions            (vfx/reactions_grapple.tscn)
-├── Rope    CbLinkLook      motion "grapple.moves/Hook"   scene vfx/grapple_rope.tscn   from "RightHand"
+├── Rope    CbLinkLook      motion "grapple.hook/Hook"   scene vfx/grapple_rope.tscn   from "RightHand"
 ├── Fired   CbReaction      on grapple.fired, subject $at: the throw's sound at the hand
 └── Hit     CbReaction      on grapple.fired, subject $at: a puff at the cue's point
 ```
 
 | Field | Meaning |
 |---|---|
-| `motion` | whose line it draws: the set and the node (`grapple.moves/Hook`). Empty: any line without a look of its own |
+| `motion` | whose line it draws: the set and the node (`grapple.hook/Hook`). Empty: any line without a look of its own |
 | `scene` | a scene one metre long along its -Z; the game stretches it from the player to the line's end, while it flies and while it holds |
 | `from` | the player's socket it starts at (`RightHand`); empty, or a socket the character lacks: its chest |
 
@@ -363,10 +366,10 @@ Two things a state machine (the character's own, or an item's pack) can take a t
 | | What | For |
 |---|---|---|
 | The motion's event (`emits`) | one moment: the tick it starts | a pose that ends by itself (a dash: a state with a timed way out) |
-| `motion.<name>` | true for as long as the motion is on | a pose that lasts as long as it does (hanging on a line, flying): in, on `motion.Hook`; out, on `not motion.Hook` |
+| `motion.<name>` | true for as long as the motion is on | a pose that lasts as long as it does (hanging on a line, flying): in, on `motion.Hook`; out, on `not motion.Hook`. Or the weight of [an item's overlay](characters.md#animation-packs): the pose is laid over the whole body while it is 1 (the boots' dash, the hook's hang) |
 
 - **The name**: the node's alone (`motion.Hook`) when no other motion of the server has it, else the
-  set's and the node's (`motion.grapple.moves.Hook`; an item's set is named like its kind:
+  set's and the node's (`motion.grapple.hook.Hook`; an item's set is named like its kind:
   `motion.dash.boots.Dash`). One that is not found reads as 0 and is said when the server starts.
 - **A state machine reads it as this tick's motions left it**, so the pose starts on the tick the
   motion does. **A motion's own condition reads it as the tick found it**, like the fields.

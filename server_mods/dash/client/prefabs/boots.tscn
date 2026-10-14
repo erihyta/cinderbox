@@ -8,6 +8,9 @@
 ;                taken; emits dash.started
 ;     Push       CbImpulse: 11 m/s along where you walk, the run's own speed replaced
 ;
+; Its pose is its pack's (animation_packs/boots_dash.tscn, dash.boots_dash): a layer laid over the
+; whole body while the Dash motion is on.
+;
 ; The server mod (server_mods/dash/dash.cpp) takes the item from here (declare.ItemsOfLook()),
 ; declares the fields and events the motion uses and gives the charges back. The action and its key
 ; are said here (action, key): no code declares them.
@@ -33,6 +36,7 @@ display_name = "Dash boots"
 properties = {
 "inventory.start": 1.0
 }
+animation_pack = "dash.boots_dash"
 slot = 5
 carry_grip = NodePath("Carry")
 mass = 0.6

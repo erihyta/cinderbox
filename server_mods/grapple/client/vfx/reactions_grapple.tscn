@@ -11,7 +11,7 @@
 [node name="GrappleReactions" type="Node3D"]
 
 [node name="Rope" type="CbLinkLook" parent="."]
-motion = "grapple.moves/Hook"
+motion = "grapple.hook/Hook"
 scene = "res://vfx/grapple_rope.tscn"
 
 [node name="Fired" type="CbReaction" parent="."]

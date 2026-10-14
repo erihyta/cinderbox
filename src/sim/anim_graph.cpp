@@ -1061,10 +1061,43 @@ float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& in, float s
 	return top > 0 ? stack[top - 1] : 0.0f;
 }
 
+int OverlayLayerOf( const AnimGraph& character, const AnimGraph& pack )
+{
+	for ( size_t i = 0; i < pack.layers.size(); ++i )
+	{
+		bool known = false;
+		for ( const AnimGraphLayer& own : character.layers )
+		{
+			known |= own.name == pack.layers[i].name;
+		}
+		if ( known == false )
+		{
+			return int( i );
+		}
+	}
+	return -1;
+}
+
 const AnimGraphLayer& ResolveLayer( const AnimGraph& character, const AnimGraphPacks& packs, size_t l, uint8_t source,
 									const AnimGraph*& owner )
 {
 	owner = &character;
+	if ( l >= character.layers.size() )
+	{
+		static const AnimGraphLayer kNothing;
+		if ( source == 0 || size_t( source - 1 ) >= packs.size() || !packs[size_t( source - 1 )] )
+		{
+			return kNothing;
+		}
+		const AnimGraph& pack = *packs[size_t( source - 1 )];
+		int overlay = OverlayLayerOf( character, pack );
+		if ( overlay < 0 )
+		{
+			return kNothing;
+		}
+		owner = &pack;
+		return pack.layers[size_t( overlay )];
+	}
 	const AnimGraphLayer& own = character.layers[l];
 	if ( source == 0 || size_t( source - 1 ) >= packs.size() || !packs[size_t( source - 1 )] )
 	{
@@ -1123,16 +1156,25 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphP
 {
 	in.state = &s;
 	// (All the layers at once: a layer is held by reference below, and the list must not move.)
-	if ( s.graph.size() < character.layers.size() )
+	// (Only as many as the state has room for: a simulation's state is sized by its config.)
+	size_t slots = std::min( LayerSlots( character ), std::max( s.graph.size(), character.layers.size() ) );
+	if ( s.graph.size() < slots )
 	{
-		s.graph.resize( character.layers.size() );
+		s.graph.resize( slots );
 	}
-	for ( size_t l = 0; l < character.layers.size(); ++l )
+	for ( size_t l = 0; l < slots; ++l )
 	{
 		AnimGraphLayerState& L = s.graph[l];
 		const AnimGraph* owner = nullptr;
 		const AnimGraphLayer& layer = ResolveLayer( character, packs, l, L.source, owner );
 		const AnimGraph& graph = *owner; // the clips this layer plays
+		if ( layer.states.empty() )
+		{
+			// An overlay slot no pack fills: nothing plays, and it starts over when one does.
+			L.started = 0;
+			L.weight = 0.0f;
+			continue;
+		}
 		if ( L.started == 0 || L.state >= layer.states.size() || L.previous >= layer.states.size() )
 		{
 			uint8_t source = L.source;
