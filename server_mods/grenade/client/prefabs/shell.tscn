@@ -4,8 +4,9 @@
 ; on. A sphere 18 cm across: big enough to see coming. 0.4 kg, with some bounce, for a throw that
 ; lands softly and skips (the server mod sets it off on the first hard hit).
 ;
-; It is carried in slot 6, out of sight, and its slot's key (H) throws it (use: a press): what is
-; thrown is the one carried. The mod gives a new one a little after (grenade.cpp).
+; The impact grenade: it goes off on the first hard hit (the fused one is the frag mod's). It is
+; carried in slot 7, out of sight, and its slot's key (7) throws it (use: a press): what is thrown is
+; the one carried. The mod gives a new one a little after (grenade.cpp).
 ;   Throwing   CbMotion   on the press (grenade.shell.used), 0.7 s: the left arm's throw, its pack's
 ;                         (animation_packs/throw_arm.tscn); its clip says grenade.release at 0.27 s
 ;   Release    CbMotion   on grenade.release (the clip's marker): emits grenade.thrown
@@ -51,8 +52,7 @@ properties = {
 }
 animation_pack = "grenade.throw_arm"
 use = 1
-slot = 6
-slot_key = "H"
+slot = 7
 mass = 0.4
 friction = 0.8
 bounce = 0.35

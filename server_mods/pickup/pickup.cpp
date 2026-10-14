@@ -226,17 +226,25 @@ private:
 		ctx.DropItem( item, grip, Facing( aim ), velocity );
 	}
 
-	// N of every declared item kind in a ring around the map's spawn point.
+	// N of every declared item kind in a ring around the map's spawn point (not one that is not for
+	// picking up: a grenade).
 	void SpawnAround( Context& ctx )
 	{
-		const auto& kinds = ctx.Schema().itemKinds;
+		std::vector<int> kinds;
+		for ( int k = 0; k < int( ctx.Schema().itemKinds.size() ); ++k )
+		{
+			if ( ctx.ItemProperty( ItemKindHandle{ k }, "pickup.never", 0.0f ) == 0.0f )
+			{
+				kinds.push_back( k );
+			}
+		}
 		int total = int( kinds.size() ) * m_spawnEach;
 		b3Vec3 center = ctx.Map().spawnCenter;
 		for ( int i = 0; i < total; ++i )
 		{
 			float angle = 6.2831853f * float( i ) / float( std::max( total, 1 ) );
 			b3Vec3 at = { center.x + 3.0f * std::cos( angle ), center.y + 0.5f, center.z + 3.0f * std::sin( angle ) };
-			ItemKindHandle kind{ i % int( kinds.size() ) };
+			ItemKindHandle kind{ kinds[size_t( i ) % kinds.size()] };
 			ctx.SpawnWorldItem( kind, at, Facing( b3Vec3{ std::cos( angle ), 0.0f, std::sin( angle ) } ) );
 		}
 	}

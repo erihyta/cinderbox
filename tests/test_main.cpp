@@ -4364,12 +4364,12 @@ void TestThrownFromHand()
 {
 	ModSchema schema;
 	schema.itemKinds = { "t.ball" };
-	schema.events = { "t.release" };
+	schema.events = { "t.release", "t.ball.expired" };
 	schema.actions.push_back( { "throw", 0, "X" } );
 	schema.fields.push_back( { "t.marks", BoardType::Int, BoardScope::Entity, 0 } );
 	const std::string text = "cinderbox_motions\t2\n"
 							 "motion\tWindUp\nwhen\tpress\tthrow\nemit\tt.release\n"
-							 "motion\tRelease\nwhen\tevent\tt.release\nlaunch_carried\tt.ball\t10\tlook\t2\t0.8\t0\n";
+							 "motion\tRelease\nwhen\tevent\tt.release\nlaunch_carried\tt.ball\t10\tlook\t2\t0.8\t0.5\n";
 	schema.motionSets.push_back( { "t", "t.moves", text } );
 	std::string warnings;
 	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
@@ -4388,6 +4388,7 @@ void TestThrownFromHand()
 	ball.half = { 0.1f, 0.1f, 0.1f };
 	ball.center = { 0.0f, 0.0f, 0.0f };
 	ball.fieldDefaults = { { 0, 7 } };
+	ball.expiredEvent = 1; // ("t.ball.expired")
 	Simulation sim( config, FlatMap() );
 	sim.SetItemShapes( { ball } );
 	sim.SetMotions( motions );
@@ -4451,6 +4452,18 @@ void TestThrownFromHand()
 	f.inputs[0].actions = 1;
 	step( 3 );
 	CHECK( ballsInWorld() == 1 );
+	// Its time is up half a second after it left: it says so (its kind's expired event), where it
+	// was, with who threw it, and is gone.
+	step( 30 );
+	const SimGlobals& g = sim.Globals();
+	bool said = false;
+	for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+	{
+		const ModEventRecord& e = g.modEvents[i];
+		said |= e.type == 1 && e.netIdA == carried && e.netIdB == p0 && b3Length( e.point ) > 0.1f;
+	}
+	std::printf( "    half a second later: its time is up %d, and in the world %d\n", int( said ), ballsInWorld() );
+	CHECK( said && ballsInWorld() == 0 && sim.FindEntity( carried ).is_valid() == false );
 }
 
 // An item's own fields (ItemShape::fieldDefaults, declared by its CbItem): every new copy starts with

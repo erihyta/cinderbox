@@ -210,7 +210,7 @@ using AnimGraphPacks = std::vector<std::shared_ptr<const AnimGraph>>;
 // whole body (or its own bone filter) with its own weight, which says when it shows
 // ("motion.Dash"). An item's pack takes a slot for each such layer while the item is carried
 // (AnimState::graph): the hook's hold for the left arm, and its hang for the whole body.
-constexpr size_t kOverlaySlots = 3;
+constexpr size_t kOverlaySlots = 4;
 inline size_t LayerSlots( const AnimGraph& character )
 {
 	return character.layers.size() + kOverlaySlots;

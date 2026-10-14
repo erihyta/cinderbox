@@ -1,0 +1,3 @@
+This mod is switched off: it is compiled into cb_server but does not run by default.
+It is the impact grenade (it goes off on the first hard hit); the fused one is the frag mod.
+Start it by name (cb_server --mods <the others>,grenade), or delete this file to switch it on again.

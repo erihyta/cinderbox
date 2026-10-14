@@ -209,6 +209,13 @@ bool GameServer::Start( const ServerOptions& options )
 		}
 		Log( "slots: %d a player, the selected one's item in %s", int( m_options.config.slots ), hand->c_str() );
 	}
+	// What says that a copy's time is up: "<kind>.expired", where a mod declares it (with or without
+	// slots).
+	for ( size_t kind = 0; kind < m_schema.itemShapes.size() && kind < m_schema.itemKinds.size(); ++kind )
+	{
+		int expired = m_schema.FindEvent( m_schema.itemKinds[kind] + ".expired" );
+		m_schema.itemShapes[kind].expiredEvent = expired >= 0 ? uint16_t( expired ) : uint16_t( 0xFFFF );
+	}
 	// What a new copy of each kind starts with in its own fields (declared by its scene).
 	for ( const auto& [kind, defaults] : declarations.ItemFieldDefaults() )
 	{

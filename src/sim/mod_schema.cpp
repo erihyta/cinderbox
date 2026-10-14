@@ -10,7 +10,7 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x4242434Du; // 'MCBB': 11 an item's hand; 10 an item's own fields' defaults; 2 workshop items, 3 the character, 4 layers and stances, 5 the
+constexpr uint32_t kSchemaMagic = 0x4342434Du; // 'MCBC': 12 an item's time is up; 11 an item's hand; 10 an item's own fields' defaults; 2 workshop items, 3 the character, 4 layers and stances, 5 the
 												// character's state machine, 6 item kinds and sockets, 7 animation packs,
 												// 8 item shapes, 9 slots' keys
 
@@ -303,6 +303,8 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutU8( out, shape.hand );
 		PutU8( out, uint8_t( shape.usedEvent & 0xFF ) );
 		PutU8( out, uint8_t( shape.usedEvent >> 8 ) );
+		PutU8( out, uint8_t( shape.expiredEvent & 0xFF ) );
+		PutU8( out, uint8_t( shape.expiredEvent >> 8 ) );
 		PutU8( out, uint8_t( std::min<size_t>( shape.fieldDefaults.size(), 64 ) ) );
 		for ( size_t f = 0; f < shape.fieldDefaults.size() && f < 64; ++f )
 		{
@@ -507,6 +509,8 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		shape.hand = r.U8();
 		shape.usedEvent = r.U8();
 		shape.usedEvent = uint16_t( shape.usedEvent | ( uint16_t( r.U8() ) << 8 ) );
+		shape.expiredEvent = r.U8();
+		shape.expiredEvent = uint16_t( shape.expiredEvent | ( uint16_t( r.U8() ) << 8 ) );
 		uint8_t defaults = r.U8();
 		for ( uint8_t f = 0; f < defaults && f < 64 && r.ok; ++f )
 		{

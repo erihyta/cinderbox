@@ -1,8 +1,9 @@
-// A grenade: the example of an item thrown from the hand (a CbLaunch of the one carried,
-// sim/motions.h).
+// The impact grenade: an item thrown from the hand (a CbLaunch of the one carried, sim/motions.h)
+// that goes off on the first hard hit. Switched off (the "disabled" file): the fused grenade is the
+// frag mod's. Start it by name (cb_server --mods ...,grenade).
 //
 // What throwing is (a key, how hard, what leaves the hand, when) is not in this file: the grenade
-// is an item (prefabs/shell.tscn, a CbItem) carried in slot 6, whose slot's key (H) plays its
+// is an item (prefabs/shell.tscn, a CbItem) carried in slot 7, whose slot's key (7) plays its
 // throw on the left arm (its animation pack); the throw clip's marker, grenade.release, lets go of
 // the grenade the player carries (a CbLaunch under its Release motion). Every simulation runs that
 // from the player's own input, so the grenade leaves on the same tick on the thrower's own screen,
@@ -42,8 +43,9 @@ public:
 
 	void Declare( Declarations& declare ) override
 	{
-		// The grenade, its throw and its pose: its scene's. Its slot is the sixth.
-		declare.Slots( 6 );
+		// The grenade, its throw and its pose: its scene's. Its slot is the seventh (the frag's is the
+		// sixth).
+		declare.Slots( 7 );
 		declare.ItemsOfLook();
 		m_shell = declare.ItemKind( "grenade.shell" );
 		// Said by the grenade's throw: its clip's marker (the hand lets go), and the throw.
