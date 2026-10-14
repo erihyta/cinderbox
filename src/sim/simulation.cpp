@@ -1380,6 +1380,20 @@ void Simulation::ExpireProps()
 		const Prop* p = e.try_get<Prop>();
 		if ( p != nullptr && p->despawnTick != 0 && tick >= p->despawnTick )
 		{
+			// An item's time is up: said, where it was, if its kind has something to say (a fuse).
+			const HeldItem* item = e.try_get<HeldItem>();
+			uint16_t said = item != nullptr ? ItemShapeOf( item->kind ).expiredEvent : uint16_t( 0xFFFF );
+			if ( said != 0xFFFF )
+			{
+				ModEventRecord record;
+				record.type = said;
+				record.netIdA = r.netId;
+				record.netIdB = p->owner;
+				record.tick = tick;
+				const Transform* at = e.try_get<Transform>();
+				record.point = at != nullptr ? at->position : b3Vec3{};
+				RecordModEvent( record );
+			}
 			m_scratch.push_back( r );
 			continue;
 		}

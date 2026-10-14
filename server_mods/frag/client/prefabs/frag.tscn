@@ -1,0 +1,88 @@
+[gd_scene format=3]
+
+; The frag grenade: thrown from the hand, it bounces and rolls, and goes off when its fuse is out,
+; 2.5 s after it left the hand (the launch's seconds: when its time is up, the simulation says
+; frag.grenade.expired where it is, and the frag mod sets it off there). An item (CbItem), so it has
+; a body in the world that every simulation agrees on: a sphere 18 cm across, 0.4 kg, bouncier than
+; the impact grenade, which went off on the first hard hit.
+;
+; It is carried in slot 6, out of sight, and its slot's key (H) throws it (use: a press): what is
+; thrown is the one carried. The mod gives a new one a little after (frag.cpp).
+;   Throwing   CbMotion   on the press (frag.grenade.used), 0.7 s: the left arm's throw, its pack's
+;                         (animation_packs/throw_arm.tscn); its clip says frag.release at 0.27 s
+;   Release    CbMotion   on frag.release (the clip's marker): emits frag.thrown
+;     Frag     CbLaunch   the one carried, where the camera looks at 15 m/s, 3 m/s of lift and the
+;                         thrower's own velocity, from 0.8 m ahead; its time is up after 2.5 s
+;
+; Saving this scene bakes it into res://items/frag.grenade.cfg.
+
+[sub_resource type="SphereShape3D" id="Body"]
+radius = 0.09
+
+[sub_resource type="StandardMaterial3D" id="Shell"]
+albedo_color = Color(0.22, 0.24, 0.2, 1)
+metallic = 0.3
+roughness = 0.5
+
+[sub_resource type="SphereMesh" id="Ball"]
+material = SubResource("Shell")
+radius = 0.09
+height = 0.18
+radial_segments = 16
+rings = 8
+
+[sub_resource type="StandardMaterial3D" id="Band"]
+albedo_color = Color(1, 0.8, 0.15, 1)
+emission_enabled = true
+emission = Color(1, 0.75, 0.1, 1)
+emission_energy_multiplier = 1.5
+
+[sub_resource type="CylinderMesh" id="BandMesh"]
+material = SubResource("Band")
+top_radius = 0.092
+bottom_radius = 0.092
+height = 0.025
+radial_segments = 16
+
+[node name="Frag" type="CbItem"]
+kind = "frag.grenade"
+display_name = "Grenade"
+properties = {
+"inventory.start": 1.0
+}
+animation_pack = "frag.throw_arm"
+use = 1
+slot = 6
+slot_key = "H"
+mass = 0.4
+friction = 0.8
+bounce = 0.45
+
+[node name="Body" type="CollisionShape3D" parent="."]
+shape = SubResource("Body")
+
+[node name="Ball" type="MeshInstance3D" parent="."]
+mesh = SubResource("Ball")
+
+[node name="Band" type="MeshInstance3D" parent="."]
+mesh = SubResource("BandMesh")
+
+[node name="Throwing" type="CbMotion" parent="."]
+when = 2
+event = "frag.grenade.used"
+with_item = 1
+cooldown = 0.7
+duration = 0.7
+
+[node name="Release" type="CbMotion" parent="."]
+when = 2
+event = "frag.release"
+with_item = 1
+emits = "frag.thrown"
+
+[node name="Frag" type="CbLaunch" parent="Release"]
+what = 1
+speed = 15.0
+lift = 3.0
+ahead = 0.8
+seconds = 2.5
