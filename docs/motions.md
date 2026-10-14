@@ -241,7 +241,8 @@ Hook          CbItem     kind "grapple.hook", use: its slot's key (a press), slo
 
 | Step | What happens |
 |---|---|
-| The throw | two traces, like a shot: what is under the crosshair (along the camera's line from the point it orbits, or a shoulder), then from the player to that point, so something in between stops it. Nothing within range: a line that flies (`travel`) is thrown all the same, out its whole range, holds nothing, moves nobody, and is gone when it gets there (its event and cooldown happen; looks see `link_missed`); one that does not fly: nothing happens, not even the cooldown |
+| The throw | aimed at what is under the crosshair (along the camera's line from the point it orbits, or a shoulder), or as far as it reaches. **A line that flies (`travel`) is a projectile**: from the player toward that, each tick the stretch its tip covers is traced, and what it meets first it holds (something stepping into its way, not the wall behind); a body it holds it follows. At nothing, it flies out its whole range, holds nothing, moves nobody, and is gone when it gets there (its event and cooldown happen; looks see `link_missed`). **One that does not fly** holds at once on what is there (two traces: the crosshair's, then from the player), or nothing happens, not even the cooldown |
+| `hold_emits` | the event said where and when it takes hold, at the player, with what it holds as the other one: the grapple's puff where the hook lands (`grapple.hooked`) |
 | What it finds | the world: a point. A prop: a point on that body, which moves with it. A player: a point on its capsule (not a limb: hitboxes are the server's) |
 | Flying | until `distance / travel` has passed, the motion is not on yet: no parameters, no effects; the look draws the line growing |
 | Holding | the motion is on. Its effects run every tick, before the mover: here the pull (up to 15 m/s along the line) and the rope. `react` shares the closing speed with what it holds, so a crate flies to the player |
@@ -281,7 +282,8 @@ In conditions (a reaction, a HUD node), `linked` is true for a player whose line
 range all the same (the grapple's hit puff waits for `not link_missed`).
 
 **Why a probe, and not "the server says where it hit"**: every machine runs the simulation, so the
-throwing player's own game finds the same point the same tick, and the pull starts at once. A
+throwing player's own game flies the same line and meets the same thing on the same tick, and the
+pull starts at once. A
 round trip to the server would make every grapple wait one ping before it pulls. The server's run
 is still the truth: a client that guessed wrong is corrected by rollback, like any move.
 

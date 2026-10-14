@@ -2392,17 +2392,18 @@ void TestMotionsWhile()
 	CHECK( EvaluateAnimExpr( held, none, 0.0f ) == 1.0f );
 }
 
-// Probes, forces and links: a motion throws a line at what the player looks at; it flies and takes
-// hold; a force pulls the player toward what it found (which is pulled back), and a link is a rope
-// that keeps the two within its length (a grappling hook).
+// Probes, forces and links: a motion throws a line at what the player looks at; it flies, a
+// projectile traced tick by tick, and takes hold of what it meets first; a force pulls the player
+// toward that (which is pulled back), and a link is a rope that keeps the two within its length (a
+// grappling hook).
 void TestLinks()
 {
 	ModSchema schema;
-	schema.events = { "grapple.fired" };
+	schema.events = { "grapple.fired", "grapple.hooked" };
 	schema.actions.push_back( { "grapple", 0, "X" } );
 	schema.actions.push_back( { "leash", 1, "Z" } );
 	const std::string text = "cinderbox_motions\t2\n"
-							 "motion\tHook\nwhen\tpress\tgrapple\ncooldown\t0.2\nprobe\t40\t30\nuntil\tnot held.grapple\n"
+							 "motion\tHook\nwhen\tpress\tgrapple\ncooldown\t0.2\nprobe\t40\t30\nhold_emit\tgrapple.hooked\nuntil\tnot held.grapple\n"
 							 // 1920 N on an 80 kg player: 24 m/s^2; what it holds is pulled back by the same.
 							 "force\tself\tto\tforce\t1920\t0\t0\t1\nlink\thit\t0\t3\n"
 							 "param\tair_control\t0.6\nparam\tairborne\t1\nemit\tgrapple.fired\n"
@@ -2451,14 +2452,13 @@ void TestLinks()
 	b3Vec3 stood = position();
 	step( 1 );
 	const MotionHold* miss = holdOf();
-	CHECK( miss != nullptr && miss->on == 1 && miss->missed == 1 && miss->holdTick - miss->startTick == 80 && sim.Globals().modEventCount == 1 );
+	CHECK( miss != nullptr && miss->on == 1 && miss->flying == 1 && miss->holdTick - miss->startTick == 80 && sim.Globals().modEventCount == 1 );
 	step( 40 );
 	CHECK( sim.EntityHold( p0, end, holds, which ) && holds == false && end.y > stood.y + 10.0f );
 	CHECK( b3Distance( position(), stood ) < 0.01f && sim.PlayerCharacter( 0 )->grounded == 1 );
 	step( 41 );
-	std::printf( "    at the sky: flew out %.1f m, and was gone after %u ticks\n", b3Distance( miss->point, b3Add( stood, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) ),
-				 miss->holdTick - miss->startTick );
-	CHECK( holdOf()->on == 0 && sim.EntityHold( p0, end, holds, which ) == false && b3Distance( position(), stood ) < 0.01f );
+	std::printf( "    at the sky: flew out %.1f m, and was gone after %u ticks\n", b3Distance( miss->point, miss->origin ), miss->holdTick - miss->startTick );
+	CHECK( holdOf()->missed == 1 && holdOf()->on == 0 && sim.EntityHold( p0, end, holds, which ) == false && b3Distance( position(), stood ) < 0.01f );
 	f.inputs[0].actions = 0;
 	step( 15 ); // (its cooldown)
 
@@ -2468,29 +2468,36 @@ void TestLinks()
 	b3Vec3 from = position();
 	step( 1 );
 	const MotionHold* tether = holdOf();
-	CHECK( tether != nullptr && tether->on == 1 && tether->anchor == 0 && tether->motion == 0 );
+	CHECK( tether != nullptr && tether->on == 1 && tether->flying == 1 && tether->motion == 0 );
 	if ( tether == nullptr || tether->on == 0 )
 	{
 		return;
 	}
-	b3Vec3 anchor = tether->point;
-	float reach = b3Distance( anchor, b3Add( from, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) );
-	uint32_t flight = tether->holdTick - tether->startTick;
-	std::printf( "    thrown %.2f m at the wall: %u ticks of flight at 30 m/s\n", reach, flight );
-	CHECK( reach > 5.0f && reach < 40.0f && anchor.z > from.z + 5.0f );
-	// (The rope is measured when the line takes hold, not when it is thrown.)
-	CHECK( flight == uint32_t( reach / 30.0f * 60.0f + 0.5f ) && tether->length == 0.0f );
-	// The event is at where it will hold.
-	CHECK( sim.Globals().modEventCount == 2 && b3Distance( sim.Globals().modEvents[1].point, anchor ) < 0.001f );
-	// While it flies its end is on the way, and the player has not moved.
-	step( int( flight ) / 2 );
+	const uint32_t thrownAt = tether->startTick;
+	// While it flies its end is on the way, and the player has not moved; its parameters wait for
+	// it to hold (the motion is in effect from the tick its probe takes hold).
+	step( 10 );
 	CHECK( sim.EntityHold( p0, end, holds, which ) && holds == false && which == 0 );
-	CHECK( end.z > from.z + 1.0f && end.z < anchor.z - 1.0f && b3Distance( position(), from ) < 0.01f );
-	// Its parameters wait for it to hold: in flight the player still stands as it stood.
-	// (The motion is in effect from the tick its probe takes hold.)
+	CHECK( end.z > from.z + 1.0f && b3Distance( position(), from ) < 0.01f );
 	CHECK( sim.GetMotionState( sim.FindEntity( p0 ) ).slots[0].sinceTick > sim.Tick() && sim.PlayerCharacter( 0 )->grounded == 1 );
-	// Holding: the player is pulled along the line, and the rope is reeled in.
-	step( int( flight ) / 2 + 2 );
+	// It flies until it meets the wall: then it holds there, from that tick, and its parameters
+	// with it.
+	while ( holdOf()->flying == 1 && sim.Tick() < thrownAt + 90 )
+	{
+		step( 1 );
+	}
+	b3Vec3 anchor = holdOf()->point;
+	float reach = b3Distance( anchor, b3Add( from, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) );
+	uint32_t flight = holdOf()->holdTick - thrownAt;
+	std::printf( "    thrown %.2f m at the wall: %u ticks of flight at 30 m/s\n", reach, flight );
+	CHECK( holdOf()->on == 1 && holdOf()->missed == 0 && holdOf()->anchor == 0 && reach > 5.0f && reach < 40.0f && anchor.z > from.z + 5.0f );
+	// (A tick's stretch is traced at a time: it holds on the tick its tip passes the wall.)
+	CHECK( flight >= uint32_t( reach / 30.0f * 60.0f ) && flight <= uint32_t( reach / 30.0f * 60.0f ) + 1 );
+	// In effect from then; and it says so, there (one event at the throw, one where it holds).
+	CHECK( sim.GetMotionState( sim.FindEntity( p0 ) ).slots[0].sinceTick == holdOf()->holdTick );
+	const ModEventRecord& hooked = sim.Globals().modEvents[( sim.Globals().modEventCount - 1 ) % kModEventHistory];
+	CHECK( sim.Globals().modEventCount == 3 && hooked.type == 1 && hooked.tick == holdOf()->holdTick && b3Distance( hooked.point, anchor ) < 0.001f );
+	step( 2 );
 	CHECK( sim.EntityHold( p0, end, holds, which ) && holds && b3Distance( end, anchor ) < 0.001f );
 	// Holding, its parameters hold until something ends it: the player is airborne on the hook,
 	// though the floor is right under it.
@@ -2554,9 +2561,9 @@ void TestLinks()
 	float down = std::atan2( crateAt.y - eye.y, crateAt.z - eye.z );
 	f.inputs[0].cameraPitch = int16_t( down * 65536.0f / 6.2831853f );
 	f.inputs[0].actions = grapple;
-	step( 1 );
+	step( 15 ); // (6 m at 30 m/s)
 	CHECK( holdOf()->on == 1 && holdOf()->anchor == crate );
-	step( 60 );
+	step( 46 );
 	float pulled = crateAt.z - sim.EntityTransform( crate )->position.z;
 	std::printf( "    a crate on the hook came %.2f m closer in a second\n", pulled );
 	CHECK( pulled > 0.3f && holdOf()->on == 1 );
@@ -2570,6 +2577,45 @@ void TestLinks()
 	CHECK( holdOf()->on == 0 );
 	f.inputs[0].actions = 0;
 	step( 60 );
+
+	// A projectile: thrown at the wall, a crate dropped into its way while it flies is what it
+	// meets, and what it holds (aimed at, the wall was all there was at the throw).
+	{
+		f.inputs[0].cameraPitch = 500;
+		f.inputs[0].actions = grapple;
+		step( 3 );
+		const MotionHold* out = holdOf();
+		CHECK( out != nullptr && out->flying == 1 );
+		if ( out == nullptr )
+		{
+			return;
+		}
+		b3Vec3 along = b3Normalize( b3Sub( out->point, out->origin ) );
+		b3Vec3 inTheWay = b3MulAdd( out->origin, 8.0f, along );
+		uint32_t blocker = sim.Globals().nextNetId;
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.value = -1;
+		c.a = { inTheWay.x, inTheWay.y, inTheWay.z };
+		c.c = { 0.4f, 0.4f, 0.4f };
+		f.commands.push_back( c );
+		const uint32_t thrownAt = out->startTick;
+		while ( holdOf()->flying == 1 && sim.Tick() < thrownAt + 90 )
+		{
+			step( 1 );
+		}
+		b3Vec3 held;
+		CHECK( sim.EntityHold( p0, held, holds, which ) && holds );
+		std::printf( "    a crate dropped into the line's way: it holds the crate (%d), %.1f m out, after %u ticks\n", int( holdOf()->anchor == blocker ),
+					 b3Distance( held, holdOf()->origin ), holdOf()->holdTick - thrownAt );
+		CHECK( holdOf()->on == 1 && holdOf()->anchor == blocker && b3Distance( held, holdOf()->origin ) < 8.0f );
+		f.inputs[0].actions = 0;
+		step( 1 );
+		c.type = CommandType::Destroy;
+		c.target = blocker;
+		f.commands.push_back( c );
+		step( 60 );
+	}
 
 	// It is state: a joining client stays in step through a throw and a pull, and a rollback takes
 	// a throw back.

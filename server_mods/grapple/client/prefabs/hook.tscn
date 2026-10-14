@@ -5,8 +5,9 @@
 ; slot's key (the fourth) uses it where it is (use: a press), and what a use does is the nodes
 ; under it:
 ;   Hook          CbItem    when used: says grapple.fired
-;   Throw         CbProbe   a line along the look, flying at 80 m/s; let go by using the hook again
-;                           or a jump, or after 2 s of holding
+;   Throw         CbProbe   a line along the look, flying at 80 m/s: what it meets on the way it
+;                           holds (says grapple.hooked there); let go by using the hook again or a
+;                           jump, or after 2 s of holding
 ;     Rope        CbLink    to what the line found, reeled in at 4 m/s
 ;       Pull      CbForce   on the player, toward it: 160 m/s2 up to 15 m/s, ramped in, reacting
 ;       Hanging   CbMove    while it holds: gravity 0, air control 0.6, airborne
@@ -50,6 +51,7 @@ mesh = SubResource("Mesh")
 [node name="Throw" type="CbProbe" parent="."]
 travel = 80.0
 hold_seconds = 2.0
+hold_emits = "grapple.hooked"
 
 [node name="Rope" type="CbLink" parent="Throw"]
 reel = 4.0

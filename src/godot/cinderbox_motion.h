@@ -166,8 +166,10 @@ private:
 	godot::String m_emits;
 };
 
-// A line thrown along the look at what is under the crosshair. With one, its motion happens only
-// if the line finds something, and is on from when it takes hold until that is gone.
+// A line thrown along the look at what is under the crosshair. One that flies is a projectile: it
+// meets what is in its way on the way, holds that, and the motion is on from then until that is
+// gone; at nothing, it flies out its range and is gone. One that does not fly holds at once, or
+// its motion does not happen.
 class CbProbe : public CbMotionPart
 {
 	GDCLASS( CbProbe, CbMotionPart )
@@ -186,6 +188,9 @@ public:
 	};
 	CB_MOTION_FIELD( int, release, m_release )
 	CB_MOTION_FIELD( double, hold_seconds, m_holdSeconds )
+	// The event said where and when it takes hold (the player, and what it holds): a puff where
+	// the hook lands.
+	CB_MOTION_FIELD( godot::String, hold_emits, m_holdEmits )
 
 protected:
 	static void _bind_methods();
@@ -195,6 +200,7 @@ private:
 	double m_travel = 60.0;
 	int m_release = RELEASE_USE_AGAIN | RELEASE_JUMP;
 	double m_holdSeconds = 0.0;
+	godot::String m_holdEmits;
 };
 
 // Once, when the motion starts: an item of a kind is thrown into the world, in every simulation

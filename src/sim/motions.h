@@ -137,6 +137,9 @@ struct MotionEffect
 	float seconds = 0.0f;
 };
 
+// A motion slot's untilTick for one that lasts until something ends it.
+inline constexpr uint32_t kForever = 0xFFFFFFFFu;
+
 struct Motion
 {
 	enum class When : uint8_t
@@ -181,7 +184,8 @@ struct Motion
 	// A probe (When::Press and When::Event): thrown when the motion happens.
 	bool probe = false;
 	float probeRange = 0.0f;  // metres the line reaches
-	float probeTravel = 0.0f; // m/s it flies at; 0: it holds at once
+	float probeTravel = 0.0f; // m/s it flies at, traced tick by tick (a projectile); 0: it holds at once
+	int holdEvent = -1;		  // schema event said where and when the probe takes hold; -1: none
 	std::vector<MotionEffect> effects; // in the order of the nodes
 
 	// On from when it starts until something ends it (its condition, what its probe holds going away).

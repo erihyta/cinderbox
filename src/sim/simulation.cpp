@@ -1119,6 +1119,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		if ( m_motions )
 		{
 			MotionState motion = GetMotionState( e );
+			FlyHold( e, motion );
 			{
 				const AnimState before = GetAnimState( e );
 				Blackboard board = GetBoard( e );
@@ -2637,23 +2638,33 @@ bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerIn
 		view = b3MulAdd( view, ViewMode( in.view ) == ViewMode::ShoulderRight ? kShoulderOffset : -kShoulderOffset, detmath::YawRight( yaw ) );
 	}
 	RayHit seen;
-	if ( CastRay( view, b3MulSV( m.probeRange, look ), self, seen ) == false && CastRay( from, b3MulSV( m.probeRange, look ), self, seen ) == false )
+	if ( m.probeTravel > 0.0f )
 	{
-		// Nothing there: a line that flies is thrown all the same, out its range, and holds nothing.
-		if ( m.probeTravel <= 0.0f )
+		// A line that flies is a projectile: aimed now, at what is under the crosshair (or as far as
+		// it reaches), and traced tick by tick on its way (FlyHold): what it meets first, it holds.
+		b3Vec3 aim = CastRay( view, b3MulSV( m.probeRange, look ), self, seen ) ? seen.point : b3MulAdd( view, m.probeRange, look );
+		b3Vec3 toward = b3Sub( aim, from );
+		float far = b3Length( toward );
+		if ( far < kHoldMinLength )
 		{
 			return false;
 		}
-		MotionHold miss;
-		miss.point = b3MulAdd( from, m.probeRange, look );
-		miss.startTick = m_globals.tick;
-		miss.holdTick = m_globals.tick + std::max( 1u, uint32_t( m.probeRange / m.probeTravel * float( m_config.tickRate ) + 0.5f ) );
-		miss.motion = uint16_t( index );
-		miss.on = 1;
-		miss.missed = 1;
-		e.set<MotionHold>( miss );
-		holdTick = miss.holdTick;
+		MotionHold fly;
+		fly.origin = from;
+		fly.point = b3MulAdd( from, m.probeRange / far, toward );
+		fly.startTick = m_globals.tick;
+		fly.holdTick = m_globals.tick + std::max( 1u, uint32_t( m.probeRange / m.probeTravel * float( m_config.tickRate ) + 0.5f ) );
+		fly.motion = uint16_t( index );
+		fly.on = 1;
+		fly.flying = 1;
+		e.set<MotionHold>( fly );
+		holdTick = fly.holdTick; // (until it meets something: then from that tick)
 		return true;
+	}
+	// One that does not fly holds at once, on what is there, or is not thrown.
+	if ( CastRay( view, b3MulSV( m.probeRange, look ), self, seen ) == false && CastRay( from, b3MulSV( m.probeRange, look ), self, seen ) == false )
+	{
+		return false;
 	}
 	RayHit hit = seen;
 	b3Vec3 to = b3Sub( seen.point, from );
@@ -2669,6 +2680,20 @@ bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerIn
 	}
 
 	MotionHold hold;
+	HoldOn( hold, hit );
+	hold.length = 0.0f; // a link measures its rope when the probe takes hold
+	hold.startTick = m_globals.tick;
+	hold.holdTick = m_globals.tick;
+	hold.motion = uint16_t( index );
+	hold.on = 1;
+	e.set<MotionHold>( hold );
+	holdTick = hold.holdTick;
+	return true;
+}
+
+void Simulation::HoldOn( MotionHold& hold, const RayHit& hit ) const
+{
+	hold.anchor = 0;
 	hold.point = hit.point;
 	flecs::entity a = FindEntity( hit.netId );
 	if ( a.is_valid() && a.has<Character>() )
@@ -2685,14 +2710,59 @@ bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerIn
 			hold.point = b3Body_GetLocalPoint( body, hit.point );
 		}
 	}
-	hold.length = 0.0f; // a link measures its rope when the probe takes hold
-	hold.startTick = m_globals.tick;
-	hold.holdTick = m_globals.tick + ( m.probeTravel > 0.0f ? uint32_t( distance / m.probeTravel * float( m_config.tickRate ) + 0.5f ) : 0u );
-	hold.motion = uint16_t( index );
-	hold.on = 1;
-	e.set<MotionHold>( hold );
-	holdTick = hold.holdTick;
-	return true;
+}
+
+void Simulation::FlyHold( flecs::entity e, MotionState& motion )
+{
+	const MotionHold* found = e.try_get<MotionHold>();
+	if ( found == nullptr || found->on == 0 || found->flying == 0 || m_globals.tick <= found->startTick ||
+		 found->holdTick <= found->startTick || size_t( found->motion ) >= motion.slots.size() )
+	{
+		return;
+	}
+	MotionHold hold = *found;
+	// Where its tip was a tick ago, and where it is now: that stretch is traced.
+	auto tip = [&]( uint32_t tick ) {
+		float along = std::min( float( tick - hold.startTick ) / float( hold.holdTick - hold.startTick ), 1.0f );
+		return b3Add( hold.origin, b3MulSV( along, b3Sub( hold.point, hold.origin ) ) );
+	};
+	const uint32_t now = m_globals.tick;
+	b3Vec3 from = tip( now - 1 );
+	b3Vec3 to = tip( now );
+	RayHit hit;
+	if ( CastRay( from, b3Sub( to, from ), e.get<NetId>().value, hit ) )
+	{
+		HoldOn( hold, hit );
+		hold.flying = 0;
+		// It takes effect from now, for as long as it would have from where its range ends.
+		MotionSlot& slot = motion.slots[hold.motion];
+		if ( slot.untilTick != kForever && slot.untilTick >= slot.sinceTick )
+		{
+			slot.untilTick = now + ( slot.untilTick - slot.sinceTick );
+		}
+		slot.sinceTick = now;
+		hold.holdTick = now;
+		e.set<MotionHold>( hold );
+		const Motion& m = m_motions->list[hold.motion];
+		if ( m.holdEvent >= 0 )
+		{
+			ModEventRecord record;
+			record.type = uint16_t( m.holdEvent );
+			record.netIdA = e.get<NetId>().value;
+			record.netIdB = hold.anchor;
+			record.tick = now;
+			record.point = hit.point;
+			RecordModEvent( record );
+		}
+		return;
+	}
+	if ( now >= hold.holdTick )
+	{
+		// Out of its range, and nothing met: it holds nothing, and its motion ends.
+		hold.flying = 0;
+		hold.missed = 1;
+		e.set<MotionHold>( hold );
+	}
 }
 
 // One end of an effect: who it acts on, and how to move it.
@@ -3040,10 +3110,9 @@ bool Simulation::EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint16_t&
 	end = point;
 	if ( holds == false && hold->holdTick > hold->startTick )
 	{
-		// Flying: from the player toward where it will hold (or, found nothing, as far as it goes).
+		// Flying: its tip, on its way from where it was thrown toward the end of its range.
 		float along = std::min( float( m_globals.tick - hold->startTick ) / float( hold->holdTick - hold->startTick ), 1.0f );
-		b3Vec3 from = b3Add( t->position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
-		end = b3Add( from, b3MulSV( along, b3Sub( point, from ) ) );
+		end = b3Add( hold->origin, b3MulSV( along, b3Sub( point, hold->origin ) ) );
 	}
 	return true;
 }

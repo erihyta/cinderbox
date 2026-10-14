@@ -5,8 +5,9 @@
 // slot key uses it") with its own CbMotion under it (a CbProbe, a CbForce and a CbLink under that),
 // and its pose while it is on (its animation pack), baked and run by every simulation from the
 // player's own input:
-// press the hook's slot key to throw a line at what is under the crosshair; it flies there, takes
-// hold, and pulls you in on a rope that is reeled in, so you swing; press the key again to let go.
+// press the hook's slot key to throw a line at what is under the crosshair; it flies there, a
+// projectile, takes hold of what it meets first, and pulls you in on a rope that is reeled in, so
+// you swing; press the key again to let go. At nothing, it flies out its range and is gone.
 // On a prop, the prop comes to you too.
 //
 // The key uses the item where it is: nothing comes into the hand, and what was there stays. The
@@ -37,6 +38,8 @@ public:
 		// Recorded by the engine when a player uses the hook; the motion reads it by name.
 		m_used = declare.Event( "grapple.hook.used" );
 		m_fired = declare.Event( "grapple.fired" );
+		// Said by the hook's line where and when it takes hold (CbProbe.hold_emits): a puff there.
+		m_hooked = declare.Event( "grapple.hooked" );
 		// The hook, its motion and its pose: all of it is its scene's.
 		declare.ItemsOfLook();
 	}
@@ -48,6 +51,7 @@ public:
 private:
 	EventHandle m_used;
 	EventHandle m_fired;
+	EventHandle m_hooked;
 };
 
 } // namespace
