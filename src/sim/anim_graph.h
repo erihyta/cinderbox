@@ -83,7 +83,7 @@ struct AnimExpr
 		// "carried.gun.pistol": the player has an item of the kind, in the hand or put away (index:
 		// schema item kind). The kind's bare name asks for the hand alone.
 		CarriedKind,
-		// "motion.dash.boots.Dash", "motion.Dash": that motion of the player's is on (index: its
+		// "motion.dash.boots.Use", "motion.Hook": that motion of the player's is on (index: its
 		// place among the server's motions; the first 64 can be asked). The set's name and the
 		// node's, or the node's alone when no other motion has it.
 		MotionOn,

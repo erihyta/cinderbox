@@ -374,7 +374,7 @@ Two things a state machine (the character's own, or an item's pack) can take a t
 
 - **The name**: the node's alone (`motion.Hook`) when no other motion of the server has it, else the
   set's and the node's (`motion.grapple.hook.Use`; an item's set is named like its kind:
-  `motion.dash.boots.Dash`). One that is not found reads as 0 and is said when the server starts.
+  `motion.dash.boots.Use`). One that is not found reads as 0 and is said when the server starts.
 - **A state machine reads it as this tick's motions left it**, so the pose starts on the tick the
   motion does. **A motion's own condition reads it as the tick found it**, like the fields.
 - **Looks read it too** (a reaction's or a HUD node's condition), of the player they are about.
