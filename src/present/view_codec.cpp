@@ -127,7 +127,7 @@ EntityRecord ToRecord( const FrameEntity& f )
 	r.shape = uint8_t( f.shape );
 	r.slot = f.slot;
 	r.flags = uint8_t( ( f.hasAnim ? 1 : 0 ) | ( f.dead ? 2 : 0 ) | ( f.hasBoard ? 4 : 0 ) | ( f.stowed ? 8 : 0 ) | ( f.linked ? 16 : 0 ) |
-					   ( f.linkHolds ? 32 : 0 ) );
+					   ( f.linkHolds ? 32 : 0 ) | ( f.linkMissed ? 64 : 0 ) );
 	r.templateIndex = f.templateIndex;
 	r.stepCount = f.stepCount;
 	r.halfExtents = f.halfExtents;
@@ -162,6 +162,7 @@ FrameEntity FromRecord( const EntityRecord& r )
 	f.stowed = ( r.flags & 8 ) != 0;
 	f.linked = ( r.flags & 16 ) != 0;
 	f.linkHolds = ( r.flags & 32 ) != 0;
+	f.linkMissed = ( r.flags & 64 ) != 0;
 	f.templateIndex = r.templateIndex;
 	f.stepCount = r.stepCount;
 	f.halfExtents = r.halfExtents;

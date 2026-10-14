@@ -220,7 +220,7 @@ public:
 	// What a probe of the entity's motions holds on to, if one is out: where the line's end is now
 	// (flying toward where it will hold, or holding), whether it holds, and the motion that threw
 	// it. False when it has none.
-	bool EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint16_t& motion ) const;
+	bool EntityHold( uint32_t netId, b3Vec3& end, bool& holds, uint16_t& motion, bool* missed = nullptr ) const;
 	// Who threw it, for an item a motion launched (the player's NetId; 0: nobody, or it was
 	// picked up since).
 	uint32_t LaunchedBy( uint32_t netId ) const;

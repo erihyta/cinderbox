@@ -58,6 +58,7 @@ struct FrameEntity
 	// toward where it will hold, or holding), whether it holds, and the motion that threw it.
 	bool linked = false;
 	bool linkHolds = false;
+	bool linkMissed = false; // the line found nothing: it flies out its range and is gone
 	uint16_t linkMotion = 0;
 	b3Vec3 linkEnd = {};
 	// Players: the motions that are on, a bit each (the first 64 of the server's): "motion.<name>".

@@ -202,7 +202,7 @@ void CinderboxClient::PushStates()
 				hash = Mix( hash, 0x20000u + uint32_t( privates->values[field.slot] ) );
 			}
 		}
-		hash = Mix( hash, 0x30000u + ( v.linked ? 1u : 0u ) + ( v.linkHolds ? 2u : 0u ) );
+		hash = Mix( hash, 0x30000u + ( v.linked ? 1u : 0u ) + ( v.linkHolds ? 2u : 0u ) + ( v.linkMissed ? 4u : 0u ) );
 		hash = Mix( hash, 0x40000u + ( v.kind == present::VisualKind::Item && v.holder != 0 && v.stowed == false ? 1u : 0u ) );
 		bool firstPerson = m_firstPerson && v.kind == present::VisualKind::Player && v.netId == m_frame.frame.localNetId;
 		hash = Mix( hash, 0x50000u + ( firstPerson ? 1u : 0u ) );
@@ -235,12 +235,14 @@ void CinderboxClient::PushStates()
 		// What it holds, by item kind, as in the state machines' conditions.
 		if ( v.kind == present::VisualKind::Player )
 		{
-			// "linked": a link of its is out; "link_holds": and it has taken hold.
+			// "linked": a link of its is out; "link_holds": and it has taken hold; "link_missed": it
+			// found nothing, and flies out its range all the same.
 			// "first_person": the viewer looks out of this player's eyes (its own). For what only the
 			// first-person view shows: a held item's swing in front of the camera.
 			state["first_person"] = firstPerson;
 			state["linked"] = v.linked;
 			state["link_holds"] = v.linked && v.linkHolds;
+			state["link_missed"] = v.linked && v.linkMissed;
 			// "motion.<name>": that motion of its is on.
 			for ( const auto& [key, bit] : MotionKeys() )
 			{

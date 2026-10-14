@@ -309,7 +309,9 @@ struct MotionHold
 	uint32_t holdTick = 0;	// when it reaches the point and takes hold (it flies until then)
 	uint16_t motion = 0;	// the motion it belongs to
 	uint8_t on = 0;
-	uint8_t reserved = 0;
+	// 1: it found nothing: it flies out its range to `point` all the same, takes hold of nothing,
+	// and its motion ends when it gets there (holdTick)
+	uint8_t missed = 0;
 };
 
 // Tag: part of the static level.
