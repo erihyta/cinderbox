@@ -401,17 +401,20 @@ laid over the whole body (or its own bone filter) with its own weight, which say
 | Item | Pack | Overlay | Weight (its Blend2's graph input) |
 |---|---|---|---|
 | the dash boots | `dash.boots_dash` (`server_mods/dash/client/animation_packs/boots_dash.tscn`) | `Dash` | `motion.dash.boots.Use`: while the dash is on |
-| the grappling hook (a launcher on the arm: out of sight) | `grapple.hook_arm` (`server_mods/grapple/client/animation_packs/hook_arm.tscn`) | `Grapple`, filtered to the left arm | `motion.grapple.hook.Use`: from the throw until it is let go |
+| the grappling hook (out of sight; its line tied at the waist) | `grapple.hook_arm` (`server_mods/grapple/client/animation_packs/hook_arm.tscn`) | `Grapple`, filtered to the left arm: the throw | `motion.grapple.hook.Throwing`: 0.45 s from the throw; the pull needs no hands |
 
 - **Authored like an upper-body pack**: a Blend2 whose blend input is the overlay's state machine,
   `Replaces` naming the overlays, and each Blend2's `blend_amount` in `graph_inputs` as its weight.
   The Blend2's filter is the overlay's bone filter (the grapple's: the left shoulder, arm, hand
   and fingers); later overlays are laid over earlier ones.
 - **A hand an overlay moves lets go**: while an overlay that moves the hand reaching for a
-  two-handed item is more than half in, the item is carried with one hand (a rifle while the
-  grapple's arm is out), on every machine and in hit tests alike.
+  two-handed item is more than half in, the item is carried with one hand (a rifle during the
+  grapple's throw), on every machine and in hit tests alike.
 - **Its weight eases in and out** like a stance (0.2 s), and the pose is the simulation's: hit tests
   see it, and the player's own is predicted with the motion.
+- **A clip that starts over on each use**: the overlay's state machine waits in one state and goes
+  to the one that plays on the motion (`Ready` to `Throw` on `motion.grapple.hook.Throwing`, back on
+  `state_time > 0.7`, after the weight is out).
 - **No swap at the moment it matters**: the pack is in its slot as long as the item is carried, at
   weight 0; a motion turns it up the tick it starts.
 - **The clips** are the SDK placeholder's (`Sprint`, `Jump`'s left arm for the grapple: CC0),

@@ -108,8 +108,9 @@ what `use` says.
 - **Of two such items** the one in the lower slot is out.
 - **Its pose** is its pack's: an overlay filtered to the left arm, weighted by the item's bare kind
   (1 while it is out in a hand). See [overlays](characters.md#animation-packs).
-- **Not for an ability on the arm**: the grappling hook is not held at all (out of sight); its pack
-  moves the left arm while it is used, and a two-handed gun lets go meanwhile ([overlays](characters.md#animation-packs)).
+- **Not for gear**: the grappling hook is not held at all (out of sight), its line is tied at the
+  waist, and the left arm only throws it: its pack's overlay, for the 0.45 s of its `Throwing`
+  motion; a two-handed gun lets go meanwhile ([overlays](characters.md#animation-packs)).
 - **`hand.<field>`** in a look reads the slots' hand, not the left.
 - **In first person** an arm is drawn when any item held asks for it (`view_left_hand`,
   `view_right_hand`): the bat hides the left, a torch beside it shows it again.
