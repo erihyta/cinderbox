@@ -1296,8 +1296,9 @@ void TestItemShapes()
 // (or its bone filter) while its weight says so. The boots and the hook are carried, out of sight:
 // their packs take the overlay slots, one for each such layer (the boots' Dash, the hook's left-arm
 // Grapple), for as long as the player has them. The boots' dash pose shows while the Dash motion
-// is on, on the client the tick the server has it (predicted), and is gone after; the hook's arm
-// stays at nothing while it is not thrown.
+// is on, on the client the tick the server has it (predicted), and is gone after. The hook's is a
+// throw of the left arm: in while its Throwing motion is on (predicted too), out a second later
+// (whatever the line does: the pull needs no hands), and at nothing before.
 void TestItemPoses()
 {
 	const std::string root = CB_SOURCE_DIR;
@@ -1324,7 +1325,8 @@ void TestItemPoses()
 	{
 		return;
 	}
-	const uint32_t dashAt = 240;
+	const uint32_t dashAt = 240, throwAt = 300;
+	const uint16_t grapple = uint16_t( 1u << 3 ); // the hook's slot's key (the fourth)
 	Bot& bot = h.AddBot();
 	bot.script = [=]( uint32_t tick ) {
 		PlayerInput in;
@@ -1332,6 +1334,10 @@ void TestItemPoses()
 		if ( tick >= dashAt && tick < dashAt + 4 )
 		{
 			in.slotKeys = dash;
+		}
+		if ( tick >= throwAt && tick < throwAt + 4 )
+		{
+			in.slotKeys = grapple;
 		}
 		return in;
 	};
@@ -1374,13 +1380,15 @@ void TestItemPoses()
 		}
 		return script( tick );
 	};
-	h.RunUntil( 6.0 );
+	h.RunUntil( 7.0 );
 	h.server.SetTickObserver( {} );
 	h.Report();
 	CHECK( bot.client->GetStats().desyncs == 0 );
 
 	const uint32_t before = dashAt - 10, during = dashAt + 6, after = dashAt + 40;
-	bool have = truth.count( before ) && truth.count( during ) && truth.count( after ) && predicted.count( during );
+	const uint32_t throwing = throwAt + 20, thrown = throwAt + 75;
+	bool have = truth.count( before ) && truth.count( during ) && truth.count( after ) && predicted.count( during ) && truth.count( throwing ) &&
+				predicted.count( throwing ) && truth.count( thrown );
 	CHECK( have );
 	if ( have == false )
 	{
@@ -1405,6 +1413,10 @@ void TestItemPoses()
 	CHECK( truth[during].weight[bootsSlot] > 0.2f && predicted[during].weight[bootsSlot] == truth[during].weight[bootsSlot] );
 	CHECK( truth[after].weight[bootsSlot] == 0.0f );
 	CHECK( truth[during].weight[hookSlot] == 0.0f );
+	std::printf( "    the grapple's throw: %.2f while throwing (predicted %.2f), %.2f a second later\n", truth[throwing].weight[hookSlot],
+				 predicted[throwing].weight[hookSlot], truth[thrown].weight[hookSlot] );
+	CHECK( truth[throwing].weight[hookSlot] > 0.9f && predicted[throwing].weight[hookSlot] == truth[throwing].weight[hookSlot] );
+	CHECK( truth[thrown].weight[hookSlot] == 0.0f );
 	int compared = 0;
 	CHECK( h.CompareWithServer( bot, compared ) == 0 );
 }

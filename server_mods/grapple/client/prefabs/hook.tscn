@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://bj564ax5hngs6"]
 
-; The grappling hook: a launcher on the left arm, out of sight (no holster, not in a hand). Its
+; The grappling hook, as Attack on Titan's gear: out of sight (no holster, not in a hand), its
+; line tied to the player's waist and the hook doing the pulling, so both hands stay free. Its
 ; slot's key (the fourth) uses it where it is (use: a press), and what a use does is the nodes
 ; under it:
 ;   Hook          CbItem    when used: says grapple.fired
@@ -9,8 +10,10 @@
 ;     Rope        CbLink    to what the line found, reeled in at 4 m/s
 ;       Pull      CbForce   on the player, toward it: 160 m/s2 up to 15 m/s, ramped in, reacting
 ;       Hanging   CbMove    while it holds: gravity 0, air control 0.6, airborne
-; They bake with the item into one motion, "Use". While that is on, its pack
-; (animation_packs/hook_arm.tscn) moves the left arm alone: the right hand keeps its gun.
+; They bake with the item into one motion, "Use". Beside it:
+;   Throwing      CbMotion  on for 0.45 s from a use with no line out (the throw, whether or not the
+;                           line finds anything): the left arm's throw, and nothing more
+; Its pack (animation_packs/hook_arm.tscn) plays the throw on the left arm alone while Throwing is on.
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.22)
@@ -64,3 +67,10 @@ parameters = {
 "airborne": 1.0,
 "gravity": 0.0
 }
+
+[node name="Throwing" type="CbMotion" parent="."]
+when = 2
+event = "grapple.hook.used"
+conditions = PackedStringArray("not linked")
+with_item = 1
+duration = 0.45
