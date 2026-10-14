@@ -3450,12 +3450,22 @@ void TestFrag()
 	Simulation& server = h.server.Sim();
 	uint32_t seenEvents = 0, blastTick = 0, blastBy = 0;
 	b3Vec3 blastAt = {};
+	// How many the player carries (one stack of up to three), by tick.
+	std::map<uint32_t, int> stack;
 	h.server.SetTickObserver( [&] {
 		if ( bot.client->State() != ClientState::Playing )
 		{
 			return;
 		}
 		look( server, truth, trueExpiry );
+		uint32_t me = server.PlayerNetId( bot.client->Slot() );
+		int count = 0;
+		for ( const Simulation::EntityRef& r : server.Entities() )
+		{
+			const HeldItem* item = server.FindEntity( r.netId ).try_get<HeldItem>();
+			count += item != nullptr && item->holder == me && item->kind == uint16_t( frag ) ? int( StackOf( *item ) ) : 0;
+		}
+		stack[server.Tick()] = count;
 		const SimGlobals& g = server.Globals();
 		for ( ; seenEvents < g.modEventCount; ++seenEvents )
 		{
@@ -3509,6 +3519,9 @@ void TestFrag()
 	std::printf( "    %d predicted ticks compared with the server's: %d differ; its time up predicted on the same tick %d\n", compared, wrong,
 				 int( sameExpiry ) );
 	CHECK( compared > 150 && wrong == 0 && sameExpiry );
+	// Three to a stack: full before the throw, one fewer after, full again a refill later.
+	std::printf( "    carried: %d before the throw, %d after it, %d a refill later\n", stack[throwAt - 1], stack[leftAt + 5], stack[leftAt + 80] );
+	CHECK( stack[throwAt - 1] == 3 && stack[leftAt + 5] == 2 && stack[leftAt + 80] == 3 );
 }
 
 // Motions that hold are predicted too: behind 50 ms each way, flying into a wall, landing, a

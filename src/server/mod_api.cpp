@@ -973,7 +973,8 @@ std::vector<CarriedItem> Context::CarriedItems( PlayerSlot slot ) const
 		if ( item != nullptr && item->holder == holder )
 		{
 			SocketHandle socket = item->socket < m_schema.sockets.size() ? SocketHandle{ int( item->socket ) } : SocketHandle{};
-			out.push_back( { r.netId, ItemKindHandle{ int( item->kind ) }, item->stowed != 0, socket, item->slot == kNoSlot ? -1 : int( item->slot ) } );
+			out.push_back( { r.netId, ItemKindHandle{ int( item->kind ) }, item->stowed != 0, socket, item->slot == kNoSlot ? -1 : int( item->slot ),
+							 int( StackOf( *item ) ) } );
 		}
 	}
 	return out;

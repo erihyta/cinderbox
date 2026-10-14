@@ -4466,6 +4466,111 @@ void TestThrownFromHand()
 	CHECK( said && ballsInWorld() == 0 && sim.FindEntity( carried ).is_valid() == false );
 }
 
+// Stacks (ItemShape::stack): balls given to a player go onto a stack of them with room, one entity
+// with a count; what does not fit is a stack of its own in another slot. A throw of the one carried
+// splits one off the stack, with the stack's fields, and the rest stays.
+void TestStacks()
+{
+	ModSchema schema;
+	schema.itemKinds = { "t.ball" };
+	schema.actions.push_back( { "throw", 0, "X" } );
+	schema.fields.push_back( { "t.mark", BoardType::Int, BoardScope::Entity, 0 } );
+	const std::string text = "cinderbox_motions\t2\n"
+							 "motion\tThrow\nwhen\tpress\tthrow\nlaunch_carried\tt.ball\t8\tlook\t2\t0.8\t0\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() );
+	if ( motions == nullptr )
+	{
+		return;
+	}
+	SimConfig config = TestConfig();
+	config.slots = 3;
+	config.fields = 1;
+	ItemShape ball;
+	ball.kind = 1;
+	ball.half = { 0.1f, 0.1f, 0.1f };
+	ball.center = { 0.0f, 0.0f, 0.0f };
+	ball.stack = 3;
+	Simulation sim( config, FlatMap() );
+	sim.SetItemShapes( { ball } );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	auto give = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			SimCommand c;
+			c.type = CommandType::SpawnItem;
+			c.target = SlotTarget( 0 );
+			c.index = 0;
+			c.mode = kNoSocket;
+			c.value = 1;
+			f.commands.push_back( c );
+		}
+		step( 2 );
+	};
+	// What the player carries: the count in each slot (0: empty), and how many items those are.
+	auto carried = [&]( int& entities ) {
+		std::array<int, 3> counts = {};
+		entities = 0;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+			if ( item != nullptr && item->holder == p0 && item->slot < 3 )
+			{
+				counts[item->slot] = int( StackOf( *item ) );
+				entities += 1;
+			}
+		}
+		return counts;
+	};
+	int entities = 0;
+	give( 2 );
+	std::array<int, 3> two = carried( entities );
+	CHECK( two[0] == 2 && two[1] == 0 && entities == 1 );
+	give( 3 );
+	std::array<int, 3> five = carried( entities );
+	std::printf( "    two balls given: one stack of %d; three more: stacks of %d and %d (%d items)\n", two[0], five[0], five[1], entities );
+	CHECK( five[0] == 3 && five[1] == 2 && five[2] == 0 && entities == 2 );
+	// A mark on the first stack; a throw takes one off it, marked the same.
+	uint32_t first = sim.SlotItem( p0, 0 );
+	SimCommand mark;
+	mark.type = CommandType::SetField;
+	mark.target = first;
+	mark.index = 0;
+	mark.value = 9;
+	f.commands.push_back( mark );
+	step( 1 );
+	f.inputs[0].actions = 1;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	step( 2 );
+	uint32_t thrown = 0;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+		thrown = item != nullptr && item->holder == 0 ? r.netId : thrown;
+	}
+	std::array<int, 3> after = carried( entities );
+	std::printf( "    thrown from the first stack: one in the world (its mark %d), the stacks now %d and %d\n",
+				 thrown != 0 ? int( sim.BoardValue( thrown, 0 ) ) : -1, after[0], after[1] );
+	CHECK( thrown != 0 && thrown != first && sim.BoardValue( thrown, 0 ) == 9 && after[0] == 2 && after[1] == 2 && sim.SlotItem( p0, 0 ) == first );
+	CHECK( sim.LaunchedBy( thrown ) == p0 && StackOf( sim.FindEntity( thrown ).get<HeldItem>() ) == 1 );
+}
+
 // Fast and small: a dart launched at 120 m/s (2 m a tick) is stopped by a level's wall 5 cm thick
 // (continuous collision against the level is Box3D's own), but passes a loose panel as thin
 // between two steps; a bolt, the same but a bullet (ItemShape::bullet: its CbItem's "bullet"),
@@ -7143,6 +7248,7 @@ int main( int argc, char** argv )
 		{ "left_hand", TestLeftHand },
 		{ "thrown_from_hand", TestThrownFromHand },
 		{ "fast_launch", TestFastLaunch },
+		{ "stacks", TestStacks },
 		{ "item_use", TestItemUse },
 		{ "event_news", TestEventNews },
 		{ "world_items", TestWorldItems },

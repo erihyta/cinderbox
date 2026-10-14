@@ -128,7 +128,7 @@ the hook's hang).
 | Piece | Today | Would be |
 |---|---|---|
 | The screen | click an item, then a slot (M110) | a drag with the item under the cursor; right click drops; an icon on the `CbItem` |
-| Stacks | one item a slot | a stack size on the `CbItem`, a count per slot |
+| Stacks | **done (M157)**: `CbItem.stack`; a stack is one item with a count (`HeldItem::count`); given or picked up, onto a stack with room; a throw splits one off; `slot.count` in the HUD, `CarriedItem::count` for mods; the frag grenade stacks 3 | dropping or moving part of a stack; a mod that takes one off without throwing it |
 | Containers | players only | slots on any entity: a chest, a shop, a corpse |
 | Intents a mod declares | select, move and drop | "buy item 3", "vote 2": a `CbClick` sends it, the mod answers; no client code |
 | The holster | **done (M137)**: on the `CbItem`, with the item's animation pack, for a mod that takes its items from its look | |

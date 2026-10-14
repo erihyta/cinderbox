@@ -605,6 +605,7 @@ void CbList::_process( double )
 			names["slot.number"] = s + 1;
 			names["slot.selected"] = s == selected ? 1 : 0;
 			names["slot.empty"] = item == 0 ? 1 : 0;
+			names["slot.count"] = client->get_item_count( item ); // (a stack: how many; 0 empty)
 			found.push_back( item );
 			rowNames.push_back( names );
 		}

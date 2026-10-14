@@ -340,8 +340,15 @@ struct HeldItem
 	uint8_t socket = 0;	 // schema socket (kNoSocket: stowed out of sight)
 	uint8_t stowed = 0;	 // 1: carried, not in use
 	uint8_t slot = kNoSlot; // which of its holder's slots it is in (kNoSlot: none: a mod holds it)
-	uint8_t reserved[3] = {};
+	// How many it is: a stack of its kind (ItemShape::stack), one entity with one set of fields.
+	// 0 is one (what every item made without a count is).
+	uint8_t count = 0;
+	uint8_t reserved[2] = {};
 };
+inline uint32_t StackOf( const HeldItem& item )
+{
+	return item.count == 0 ? 1u : uint32_t( item.count );
+}
 
 // A player's slots (types.h): how many, which one is selected (kNoSlot: empty hands), and the
 // last intent carried out. Only on players of a server that has slots (SimConfig::slots).

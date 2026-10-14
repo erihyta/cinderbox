@@ -694,6 +694,34 @@ bool Simulation::GiveSlot( flecs::entity player, flecs::entity item, bool select
 	Slots slots = player.has<Slots>() ? player.get<Slots>() : Slots{ m_config.slots, kNoSlot, 0, 0 };
 	HeldItem held = item.get<HeldItem>();
 	const ItemShape rule = ItemShapeOf( held.kind );
+	// Onto a stack of its kind with room, the lowest slot's first: as many as fit. All of it: the
+	// item it was is gone. What does not fit goes on as an item of its own.
+	for ( uint8_t s = 0; rule.stack > 1 && s < slots.count; ++s )
+	{
+		flecs::entity onto = FindEntity( SlotItemOf( holder, s ) );
+		const HeldItem* stack = onto.is_valid() && onto != item ? onto.try_get<HeldItem>() : nullptr;
+		if ( stack == nullptr || stack->kind != held.kind || StackOf( *stack ) >= rule.stack )
+		{
+			continue;
+		}
+		uint32_t moved = std::min( StackOf( held ), uint32_t( rule.stack ) - StackOf( *stack ) );
+		HeldItem grown = *stack;
+		grown.count = uint8_t( StackOf( *stack ) + moved );
+		onto.set<HeldItem>( grown );
+		if ( moved >= StackOf( held ) )
+		{
+			DestroyEntity( item );
+			if ( select )
+			{
+				slots.selected = s;
+				player.set<Slots>( slots );
+				SettleSlots( holder, slots.selected );
+			}
+			return true;
+		}
+		held.count = uint8_t( StackOf( held ) - moved );
+		item.set<HeldItem>( held );
+	}
 	int slot = -1;
 	if ( rule.slot >= 1 && rule.slot <= slots.count )
 	{
@@ -1321,12 +1349,27 @@ void Simulation::CreateLaunched()
 		flecs::entity item;
 		if ( l.item != 0 )
 		{
-			// The copy it carried leaves its slot, as it is (its fields too).
+			// The copy it carried leaves its slot, as it is (its fields too); from a stack of more
+			// than one, one is split off it, with the stack's fields, and the rest stays.
 			item = FindEntity( l.item );
 			const HeldItem* held = item.is_valid() ? item.try_get<HeldItem>() : nullptr;
 			if ( held == nullptr || held->holder != l.owner )
 			{
 				continue;
+			}
+			if ( StackOf( *held ) > 1 )
+			{
+				HeldItem rest = *held;
+				rest.count = uint8_t( StackOf( *held ) - 1 );
+				item.set<HeldItem>( rest );
+				flecs::entity stack = item;
+				item = CreateEntity();
+				item.set<HeldItem>( { 0, l.kind, 0, 0 } );
+				StartItemFields( item, l.kind );
+				if ( HasBoard( stack ) )
+				{
+					SetBoard( item, GetBoard( stack ) );
+				}
 			}
 		}
 		else
@@ -1352,10 +1395,11 @@ uint32_t Simulation::CarriedCopyOf( uint32_t holder, uint16_t kind ) const
 		{
 			continue;
 		}
-		bool taken = std::any_of( m_launched.begin(), m_launched.end(), [&]( const Launched& l ) { return l.item == r.netId; } );
+		// (A stack may be thrown from as many times a tick as it has.)
+		uint32_t taken = uint32_t( std::count_if( m_launched.begin(), m_launched.end(), [&]( const Launched& l ) { return l.item == r.netId; } ) );
 		// In a hand first, then the lowest slot, then the oldest.
 		int rank = ( item->stowed == 0 ? 0 : 1 << 20 ) + int( item->slot ) * 4096;
-		if ( taken == false && rank < bestRank )
+		if ( taken < StackOf( *item ) && rank < bestRank )
 		{
 			best = r.netId;
 			bestRank = rank;

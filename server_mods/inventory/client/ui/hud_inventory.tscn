@@ -5,7 +5,8 @@
 ;
 ;   Hotbar    CbList of Slots, across the bottom: its child Slot is one slot as designed, copied for
 ;             every slot the player has. In a slot's row, {slot.number} is its number, {name} what
-;             its item is called, and slot.selected / slot.empty say which it is.
+;             its item is called, {slot.count} how many it is (a stack: Count shows it above
+;             one), and slot.selected / slot.empty say which it is.
 ;   Bag       the inventory screen. Key (a CbKey: "inventory", I, each press switches it, with
 ;             the cursor free meanwhile) keeps "ui.inventory", and Shown (a CbFieldBinding)
 ;             shows the screen while that is 1. Its Grid is another CbList of Slots, and
@@ -100,6 +101,14 @@ vertical_alignment = 1
 text_format = "{slot.number}   {name}"
 conditions = PackedStringArray("slot.selected")
 
+[node name="Count" type="CbFieldLabel" parent="Hotbar/Slot"]
+layout_mode = 2
+label_settings = SubResource("Away")
+horizontal_alignment = 2
+vertical_alignment = 2
+text_format = "x{slot.count}"
+conditions = PackedStringArray("slot.count > 1")
+
 [node name="Bag" type="PanelContainer" parent="."]
 anchors_preset = 8
 anchor_left = 0.5
@@ -176,3 +185,12 @@ text_format = "{slot.number}
 {name}
 (picked up)"
 conditions = PackedStringArray("ui.picked == slot.number")
+
+[node name="Count" type="CbFieldLabel" parent="Bag/Rows/Grid/Cell"]
+layout_mode = 2
+mouse_filter = 2
+label_settings = SubResource("Away")
+horizontal_alignment = 2
+vertical_alignment = 2
+text_format = "x{slot.count}"
+conditions = PackedStringArray("slot.count > 1")
