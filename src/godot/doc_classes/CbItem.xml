@@ -84,6 +84,9 @@
 		<member name="slot_key" type="String" setter="set_slot_key" getter="get_slot_key" default="&quot;&quot;">
 			The key it suggests for its [member slot] ([code]V[/code], [code]MouseRight[/code]). A mod's suggestion ([code]declare.SlotKey[/code]) or an earlier item's for the same slot comes first; the player's own choice (the Keys page of the settings) wins over all. Empty: the slot's number.
 		</member>
+		<member name="bullet" type="bool" setter="set_bullet" getter="get_bullet" default="false">
+			Thrown fast and small (a dart, a rocket): in the world it is moved with continuous collision against what moves too (a crate, a door), so it does not pass a thin one between two steps. The level's walls stop anything without it. It costs a little more each step.
+		</member>
 		<member name="hand" type="int" setter="set_hand" getter="get_hand" enum="CbItem.Hand" default="0">
 			Which hand it is in. [constant HAND_SELECTED]: the slots' hand, while its slot is the selected one. [constant HAND_LEFT]: the left hand for as long as it is carried, beside what the slots' hand holds (a torch beside a gun). It is put away while what is selected has its other hand at a marker (a rifle's barrel), or while another such item of a lower slot is there; what has its other hand as the animation has it (a pistol, a bat) is held with one hand beside it.
 		</member>

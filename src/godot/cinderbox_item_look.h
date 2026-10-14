@@ -255,6 +255,17 @@ public:
 		HAND_SELECTED = 0,
 		HAND_LEFT = 1,
 	};
+	// Thrown fast and small (a dart, a rocket): moved with continuous collision against what moves
+	// too, so it does not pass a thin crate or door between two steps. The level's walls stop
+	// anything; this costs a little more a step.
+	void set_bullet( bool v )
+	{
+		m_bullet = v;
+	}
+	bool get_bullet() const
+	{
+		return m_bullet;
+	}
 	void set_hand( int v )
 	{
 		m_hand = v;
@@ -440,6 +451,7 @@ private:
 	godot::Dictionary m_fields;
 	int m_use = USE_SELECTED;
 	int m_hand = HAND_SELECTED;
+	bool m_bullet = false;
 	int m_slot = 0;
 	godot::NodePath m_carryGrip;
 	int m_otherHand = OTHER_FREE;

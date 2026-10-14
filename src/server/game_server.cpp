@@ -209,6 +209,13 @@ bool GameServer::Start( const ServerOptions& options )
 		}
 		Log( "slots: %d a player, the selected one's item in %s", int( m_options.config.slots ), hand->c_str() );
 	}
+	// Thrown fast: a bullet in the world (the item property "bullet", its CbItem's). Any kind, with
+	// or without slots.
+	for ( size_t kind = 0; kind < m_schema.itemShapes.size(); ++kind )
+	{
+		auto found = m_itemProperties.find( std::make_pair( int( kind ), std::string( "bullet" ) ) );
+		m_schema.itemShapes[kind].bullet = found != m_itemProperties.end() && found->second != 0.0f ? 1 : 0;
+	}
 	// What says that a copy's time is up: "<kind>.expired", where a mod declares it (with or without
 	// slots).
 	for ( size_t kind = 0; kind < m_schema.itemShapes.size() && kind < m_schema.itemKinds.size(); ++kind )

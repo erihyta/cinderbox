@@ -276,6 +276,7 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 | `carry_grip`, `other_hand`, `other_grip` | [where the hands hold it](#both-hands-on-an-item) |
 | `use`, `slot` | [how it is used](#using-an-item), and the slot it goes to (1 is the first; 0: the first free one) |
 | `hand` | [the left hand](#the-left-hand) while it is carried, or the slots' hand while it is selected |
+| `bullet` | thrown fast and small (a dart, a rocket): in the world it is moved with continuous collision against what moves too, so it does not pass a thin crate or door between two steps ([Things that fly](motions.md#things-that-fly-the-grenades)) |
 | `view_offset`, `view_rotation`, `view_fov`, `view_left_hand`, `view_right_hand` | [first person](#first-person): where the hands and the item are in the holder's own view, the field of view they are drawn with, and which arms are drawn |
 | `view_camera` | first person, the other way: the item [floats](#floating) in front of the camera instead of being where the animation has it |
 | **Bake item** (button), saving the scene | writes `res://items/<kind>.cfg` |
