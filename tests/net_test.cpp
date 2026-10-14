@@ -1060,7 +1060,6 @@ void TestInventory()
 	uint16_t drop = schema.ActionMask( "drop" );
 	int gunKind = schema.FindItemKind( "gun.pistol" );
 	int batKind = schema.FindItemKind( "melee.bat" );
-	int hookKind = schema.FindItemKind( "grapple.hook" );
 	CHECK( gunSlot != 0 && batSlot != 0 && pickup != 0 && drop != 0 && gunKind >= 0 && batKind >= 0 );
 	if ( gunKind < 0 || batKind < 0 )
 	{
@@ -1172,13 +1171,10 @@ void TestInventory()
 				lyingBat = item != nullptr && item->holder == 0 && int( item->kind ) == batKind ? r.netId : lyingBat;
 			}
 		}
-		// A pistol, a bat, a rifle, a hook and the dash boots, and one of each lying about; the hook
-		// out in the left hand, and beside the pistol and the bat (their other hands are as animated).
-		bool hookOut = kindOf( server.HeldItemOf( me, kSocketLeftHand ) ) == hookKind;
-		startsStowed |= tick > 80 && tick < 100 && inHand == 0 && hookOut && c.carried == 5 && c.stowed == 4 && c.lying == 5;
+		startsStowed |= tick > 80 && tick < 100 && inHand == 0 && c.carried == 5 && c.stowed == 5 && c.lying == 5; // a pistol, a bat, a rifle, a hook and the dash boots, and one of each lying about
 		if ( tick > 130 && tick < 150 && kindOf( inHand ) == batKind )
 		{
-			batOut = hookOut && c.carried == 5 && c.stowed == 3;
+			batOut = c.carried == 5 && c.stowed == 4;
 			ownBat = inHand;
 		}
 		// What is in each slot is the simulation's to say (the look reads it from there): the life's
@@ -1188,7 +1184,7 @@ void TestInventory()
 		boardSaysStart |= tick > 130 && tick < 150 && ownBat != 0 && in3 == ownBat && kindOf( in2 ) == gunKind;
 		boardSaysSwap |= reached && tick < 600 && in3 == lyingBat && kindOf( in2 ) == gunKind;
 		boardSaysEmpty |= tick > 700 && in3 == 0 && kindOf( in2 ) == gunKind;
-		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && hookOut && c.carried == 5 && c.stowed == 3;
+		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == 5 && c.stowed == 4;
 		droppedBySwitching |= tick > 100 && tick < 200 && c.lying != 5;
 		// The lying bat is in the hand: the swap happened.
 		if ( inHand == lyingBat && lyingBat != 0 && tick < 520 )
@@ -1196,7 +1192,7 @@ void TestInventory()
 			reached = true;
 			const HeldItem* old = ownBat != 0 ? server.FindEntity( ownBat ).try_get<HeldItem>() : nullptr;
 			swapped |= old != nullptr && old->holder == 0 && c.lying == 5;
-			gunKept |= c.carried == 5 && c.stowed == 3;
+			gunKept |= c.carried == 5 && c.stowed == 4;
 		}
 		// The pistol's slot and back to the bat's: the picked-up bat is put away and taken out, never dropped.
 		const HeldItem* mine = lyingBat != 0 ? server.FindEntity( lyingBat ).try_get<HeldItem>() : nullptr;
@@ -1297,11 +1293,12 @@ void TestItemShapes()
 }
 
 // An item's pose: a pack's layer the character does not have is an overlay, laid over the body
-// (or its bone filter) while its weight says so. The boots and the hook are carried: their packs
-// take the overlay slots, one for each such layer (the boots' Dash; the hook's Hold and Hang), for
-// as long as the player has them. The boots' dash pose shows while the Dash motion is on, on the
-// client the tick the server has it (predicted), and is gone after; the hook is in the left hand,
-// so its Hold is on, and its Hang stays at nothing while it is not thrown.
+// (or its bone filter) while its weight says so. The boots and the hook are carried, out of sight:
+// their packs take the overlay slots, one for each such layer (the boots' Dash, the hook's left-arm
+// Grapple), for as long as the player has them. The boots' dash pose shows while the Dash motion
+// is on, on the client the tick the server has it (predicted), and is gone after. The hook's is a
+// throw of the left arm: in while its Throwing motion is on (predicted too), out a second later
+// (whatever the line does: the pull needs no hands), and at nothing before.
 void TestItemPoses()
 {
 	const std::string root = CB_SOURCE_DIR;
@@ -1321,14 +1318,15 @@ void TestItemPoses()
 	for ( size_t i = 0; i < schema.animPacks.size(); ++i )
 	{
 		boots = schema.animPacks[i].name == "dash.boots_dash" && schema.animPacks[i].graph.empty() == false ? int( i ) : boots;
-		hook = schema.animPacks[i].name == "grapple.hook_hang" && schema.animPacks[i].graph.empty() == false ? int( i ) : hook;
+		hook = schema.animPacks[i].name == "grapple.hook_arm" && schema.animPacks[i].graph.empty() == false ? int( i ) : hook;
 	}
 	CHECK( mannequin != nullptr && dash != 0 && boots >= 0 && hook >= 0 );
 	if ( mannequin == nullptr || dash == 0 || boots < 0 || hook < 0 )
 	{
 		return;
 	}
-	const uint32_t dashAt = 240;
+	const uint32_t dashAt = 240, throwAt = 300;
+	const uint16_t grapple = uint16_t( 1u << 3 ); // the hook's slot's key (the fourth)
 	Bot& bot = h.AddBot();
 	bot.script = [=]( uint32_t tick ) {
 		PlayerInput in;
@@ -1336,6 +1334,10 @@ void TestItemPoses()
 		if ( tick >= dashAt && tick < dashAt + 4 )
 		{
 			in.slotKeys = dash;
+		}
+		if ( tick >= throwAt && tick < throwAt + 4 )
+		{
+			in.slotKeys = grapple;
 		}
 		return in;
 	};
@@ -1378,41 +1380,43 @@ void TestItemPoses()
 		}
 		return script( tick );
 	};
-	h.RunUntil( 6.0 );
+	h.RunUntil( 7.0 );
 	h.server.SetTickObserver( {} );
 	h.Report();
 	CHECK( bot.client->GetStats().desyncs == 0 );
 
 	const uint32_t before = dashAt - 10, during = dashAt + 6, after = dashAt + 40;
-	bool have = truth.count( before ) && truth.count( during ) && truth.count( after ) && predicted.count( during );
+	const uint32_t throwing = throwAt + 20, thrown = throwAt + 75;
+	bool have = truth.count( before ) && truth.count( during ) && truth.count( after ) && predicted.count( during ) && truth.count( throwing ) &&
+				predicted.count( throwing ) && truth.count( thrown );
 	CHECK( have );
 	if ( have == false )
 	{
 		return;
 	}
-	// Which slot is whose: the boots' pack in one, the hook's in two after each other (Hold, then
-	// Hang), whichever order the packs come in.
-	int bootsSlot = -1, holdSlot = -1, hookSlots = 0;
+	// Which slot is whose: both packs are in, one each, whichever order.
+	int bootsSlot = -1, hookSlot = -1;
 	for ( size_t i = 0; i < kOverlaySlots; ++i )
 	{
 		bootsSlot = truth[before].source[i] == uint8_t( boots + 1 ) ? int( i ) : bootsSlot;
-		holdSlot = holdSlot < 0 && truth[before].source[i] == uint8_t( hook + 1 ) ? int( i ) : holdSlot;
-		hookSlots += truth[before].source[i] == uint8_t( hook + 1 ) ? 1 : 0;
+		hookSlot = truth[before].source[i] == uint8_t( hook + 1 ) ? int( i ) : hookSlot;
 	}
-	int hangSlot = holdSlot + 1;
-	std::printf( "    overlays: the boots' pack in slot %d, the hook's in %d (of %d)\n", bootsSlot, holdSlot, hookSlots );
-	CHECK( bootsSlot >= 0 && holdSlot >= 0 && hookSlots == 2 && bootsSlot != holdSlot && bootsSlot != hangSlot );
-	if ( bootsSlot < 0 || holdSlot < 0 || hookSlots != 2 )
+	std::printf( "    overlays: the boots' pack in slot %d, the hook's in slot %d\n", bootsSlot, hookSlot );
+	CHECK( bootsSlot >= 0 && hookSlot >= 0 && bootsSlot != hookSlot );
+	if ( bootsSlot < 0 || hookSlot < 0 )
 	{
 		return;
 	}
-	std::printf( "    the dash pose: %.2f before, %.2f during (predicted %.2f), %.2f after; holding the hook: %.2f, hanging: %.2f\n",
-				 truth[before].weight[bootsSlot], truth[during].weight[bootsSlot], predicted[during].weight[bootsSlot], truth[after].weight[bootsSlot],
-				 truth[during].weight[holdSlot], truth[during].weight[hangSlot] );
+	std::printf( "    the dash pose: %.2f before, %.2f during (predicted %.2f), %.2f after; the grapple's arm: %.2f\n", truth[before].weight[bootsSlot],
+				 truth[during].weight[bootsSlot], predicted[during].weight[bootsSlot], truth[after].weight[bootsSlot], truth[during].weight[hookSlot] );
 	CHECK( truth[before].weight[bootsSlot] == 0.0f );
 	CHECK( truth[during].weight[bootsSlot] > 0.2f && predicted[during].weight[bootsSlot] == truth[during].weight[bootsSlot] );
 	CHECK( truth[after].weight[bootsSlot] == 0.0f );
-	CHECK( truth[before].weight[holdSlot] > 0.99f && truth[during].weight[hangSlot] == 0.0f );
+	CHECK( truth[during].weight[hookSlot] == 0.0f );
+	std::printf( "    the grapple's throw: %.2f while throwing (predicted %.2f), %.2f a second later\n", truth[throwing].weight[hookSlot],
+				 predicted[throwing].weight[hookSlot], truth[thrown].weight[hookSlot] );
+	CHECK( truth[throwing].weight[hookSlot] > 0.9f && predicted[throwing].weight[hookSlot] == truth[throwing].weight[hookSlot] );
+	CHECK( truth[thrown].weight[hookSlot] == 0.0f );
 	int compared = 0;
 	CHECK( h.CompareWithServer( bot, compared ) == 0 );
 }

@@ -95,7 +95,7 @@ item's to say: `use` on its `CbItem`.
 ### The left hand
 
 `hand` on its `CbItem`: **The left hand while carried** keeps it in the left hand for as long as the
-player has it, beside what the slots' hand holds (the hook beside a gun). Its slot key still does
+player has it, beside what the slots' hand holds (a torch beside a gun). Its slot key still does
 what `use` says.
 
 | What is selected | The left hand |
@@ -107,10 +107,13 @@ what `use` says.
 
 - **Of two such items** the one in the lower slot is out.
 - **Its pose** is its pack's: an overlay filtered to the left arm, weighted by the item's bare kind
-  (`grapple.hook`: 1 while it is out in a hand). See [overlays](characters.md#animation-packs).
+  (1 while it is out in a hand). See [overlays](characters.md#animation-packs).
+- **Not for gear**: the grappling hook is not held at all (out of sight), its line is tied at the
+  waist, and the left arm only throws it: its pack's overlay, for the 0.45 s of its `Throwing`
+  motion; a two-handed gun lets go meanwhile ([overlays](characters.md#animation-packs)).
 - **`hand.<field>`** in a look reads the slots' hand, not the left.
 - **In first person** an arm is drawn when any item held asks for it (`view_left_hand`,
-  `view_right_hand`): the bat hides the left, the hook beside it shows it again.
+  `view_right_hand`): the bat hides the left, a torch beside it shows it again.
 
 **The keys**: slot 1's is 1, slot 2's is 2 ... (0 for the tenth), unless the server suggests
 another: a mod with `declare.SlotKey( 5, "V" )`, or the item that goes to that slot with

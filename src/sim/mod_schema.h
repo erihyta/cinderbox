@@ -136,7 +136,7 @@ struct ItemShape
 	uint8_t use = 0;
 	uint16_t usedEvent = 0xFFFF;
 	// Which hand it is in (kItemHand*): the slots' hand while its slot is selected, or the left hand
-	// for as long as it is carried (a grappling hook): out unless what is selected has its other
+	// for as long as it is carried (a torch, a shield): out unless what is selected has its other
 	// hand on a marker (grip 1, 2), or another such item of a lower slot is there first.
 	uint8_t hand = kItemHandSelected;
 	// Its own fields (declared by its CbItem: the rifle's "gun.rounds"): what a new copy starts with,

@@ -1,0 +1,90 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://placeholder/skeleton.tscn" id="1_skeleton"]
+[ext_resource type="Animation" path="res://placeholder/clips/Idle.res" id="2_idle"]
+[ext_resource type="Animation" path="res://placeholder/clips/Jump.res" id="3_arm"]
+
+[sub_resource type="AnimationLibrary" id="Clips"]
+_data = {
+&"Idle": ExtResource("2_idle"),
+&"Jump": ExtResource("3_arm")
+}
+
+[sub_resource type="AnimationNodeAnimation" id="IdleClip"]
+animation = &"Idle"
+
+[sub_resource type="AnimationNodeAnimation" id="ArmClip"]
+animation = &"Jump"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="StartToIdle"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="StartToReady"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="ReadyToThrow"]
+advance_mode = 2
+advance_expression = "motion.grapple.hook.Throwing"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="ThrowToReady"]
+advance_mode = 2
+advance_expression = "state_time > 0.7"
+
+[sub_resource type="AnimationNodeStateMachine" id="FullBody"]
+states/Idle/node = SubResource("IdleClip")
+states/Idle/position = Vector2(300, 100)
+transitions = ["Start", "Idle", SubResource("StartToIdle")]
+
+[sub_resource type="AnimationNodeStateMachine" id="Grapple"]
+states/Ready/node = SubResource("ArmClip")
+states/Ready/position = Vector2(300, 100)
+states/Throw/node = SubResource("ArmClip")
+states/Throw/position = Vector2(550, 100)
+transitions = ["Start", "Ready", SubResource("StartToReady"), "Ready", "Throw", SubResource("ReadyToThrow"), "Throw", "Ready", SubResource("ThrowToReady")]
+
+[sub_resource type="AnimationNodeBlend2" id="GrappleBlend"]
+filter_enabled = true
+filters = ["%Skeleton3D:LeftShoulder", "%Skeleton3D:LeftUpperArm", "%Skeleton3D:LeftLowerArm", "%Skeleton3D:LeftHand", "%Skeleton3D:LeftIndexProximal", "%Skeleton3D:LeftIndexIntermediate", "%Skeleton3D:LeftIndexDistal", "%Skeleton3D:LeftMiddleProximal", "%Skeleton3D:LeftMiddleIntermediate", "%Skeleton3D:LeftMiddleDistal", "%Skeleton3D:LeftLittleProximal", "%Skeleton3D:LeftLittleIntermediate", "%Skeleton3D:LeftLittleDistal", "%Skeleton3D:LeftRingProximal", "%Skeleton3D:LeftRingIntermediate", "%Skeleton3D:LeftRingDistal", "%Skeleton3D:LeftThumbMetacarpal", "%Skeleton3D:LeftThumbProximal", "%Skeleton3D:LeftThumbDistal"]
+
+[sub_resource type="AnimationNodeBlendTree" id="Tree"]
+nodes/output/position = Vector2(700, 160)
+nodes/FullBody/node = SubResource("FullBody")
+nodes/FullBody/position = Vector2(100, 60)
+nodes/Grapple/node = SubResource("Grapple")
+nodes/Grapple/position = Vector2(100, 260)
+nodes/GrappleBlend/node = SubResource("GrappleBlend")
+nodes/GrappleBlend/position = Vector2(420, 160)
+node_connections = [&"GrappleBlend", 0, &"FullBody", &"GrappleBlend", 1, &"Grapple", &"output", 0, &"GrappleBlend"]
+
+[node name="HookArmPack" type="CbAnimPack"]
+character_name = "grapple.hook_arm"
+skeleton_path = NodePath("Skeleton3D")
+animation_player_path = NodePath("AnimationPlayer")
+animation_tree_path = NodePath("AnimationTree")
+replaces = PackedStringArray("Grapple")
+graph_inputs = {
+"GrappleBlend/blend_amount": "motion.grapple.hook.Throwing"
+}
+editor_description = "The grapple's throw: the hook's animation pack (the hook's Animation Pack, prefabs/hook.tscn).
+
+The hook is not held, and the line is tied to the player's waist: the hook does the pulling, so the hands stay free. All the arm does is throw. Grapple is a layer no character has, so it is laid over the body, and its GrappleBlend's bone filter keeps it to the left arm (shoulder, arm, hand, fingers): whatever the right hand does (a gun, a bat) goes on.
+
+Its weight, the GrappleBlend's graph input \"motion.grapple.hook.Throwing\", is 1 for the 0.45 s the hook's Throwing motion is on (from a use with no line out), then eases out. The state machine starts the clip over on each throw: Ready goes to Throw when Throwing starts, and Throw back to Ready 0.7 s in, after the weight is out. An item held with both hands lets go with the left while the throw is more than half in.
+
+FullBody is here only to see the pose over a standing body in the editor: Replaces names Grapple alone, so it is not baked.
+
+The clip is the SDK placeholder's Jump (CC0), its left arm only: put a throw in the AnimationPlayer and in the Throw state. Saving this scene bakes anim/grapple.hook_arm/."
+
+[node name="Skeleton3D" parent="." instance=ExtResource("1_skeleton")]
+unique_name_in_owner = true
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+root_node = NodePath("..")
+libraries/ = SubResource("Clips")
+
+[node name="AnimationTree" type="AnimationTree" parent="."]
+active = false
+root_node = NodePath("..")
+tree_root = SubResource("Tree")
+anim_player = NodePath("../AnimationPlayer")
+parameters/GrappleBlend/blend_amount = 1.0

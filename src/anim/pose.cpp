@@ -213,6 +213,13 @@ void PoseEvaluator::BindSource( GraphSource& source, const AnimGraph& graph, std
 		}
 		source.masks.push_back( std::move( packed ) );
 		source.neck.push_back( neck );
+		bool left = layer.mask.empty(), right = layer.mask.empty();
+		for ( const std::string& bone : layer.mask )
+		{
+			left |= bone == "LeftHand";
+			right |= bone == "RightHand";
+		}
+		source.hands.push_back( { left, right } );
 	}
 	// Sample buffers: every point of a state and of the one fading out.
 	size_t most = 1;
@@ -235,6 +242,7 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 	const auto& skeleton = m_set.Skeleton();
 	std::vector<ozz::animation::BlendingJob::Layer> layers;
 	float neckKept = 1.0f;
+	m_overlayHands[0] = m_overlayHands[1] = 0.0f;
 	for ( size_t l = 0; l < LayerSlots( *m_graph ) && l < state.graph.size(); ++l )
 	{
 		AnimGraphLayerState L = state.graph[l];
@@ -316,6 +324,13 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 			bool borrowed = owner != m_graph.get() && source.masks[layerIndex].empty() && l < own.masks.size();
 			const auto& mask = borrowed ? own.masks[l] : source.masks[layerIndex];
 			BlendOver( m_layerPose, mask.empty() ? nullptr : &mask, L.weight );
+			if ( l >= m_graph->layers.size() && layerIndex < source.hands.size() )
+			{
+				for ( int h = 0; h < 2; ++h )
+				{
+					m_overlayHands[h] = source.hands[layerIndex][h] ? std::max( m_overlayHands[h], L.weight ) : m_overlayHands[h];
+				}
+			}
 			neckKept *= 1.0f - std::min( L.weight, 1.0f ) * ( borrowed ? own.neck[l] : source.neck[layerIndex] );
 		}
 	}
@@ -363,6 +378,7 @@ void PoseEvaluator::Evaluate( const AnimState& state, const HandGrip* grip )
 	{
 		// No state machine: the skeleton's rest.
 		m_neckCover = 0.0f;
+		m_overlayHands[0] = m_overlayHands[1] = 0.0f;
 		auto rest = m_set.Skeleton().joint_rest_poses();
 		std::copy( rest.begin(), rest.end(), m_blended.begin() );
 	}
@@ -452,6 +468,13 @@ void PoseEvaluator::Finish( const AnimState& state, const HandGrip* grip )
 		{
 			RotateSubtree( m_set, m_models, joint, b3MakeQuatFromAxisAngle( side, -pitch * share ) );
 		}
+	}
+
+	// An overlay that moves the other hand (the grapple's arm, thrown out to the line) takes it off
+	// the item for as long as it is more than half in: the item is carried with one hand.
+	if ( grip != nullptr && m_overlayHands[grip->leftCarries ? 1 : 0] > 0.5f )
+	{
+		grip = nullptr;
 	}
 
 	// An item both hands hold as the animation has them: where the other hand is now, before the

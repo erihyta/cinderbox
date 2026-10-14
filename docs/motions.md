@@ -80,10 +80,11 @@ does what the nodes under it say, if its **When used** rules allow:
 
 ```
 Hook          CbItem     use: its slot key (a press)   slot 4   use_emits grapple.fired   (prefabs/hook.tscn)
-└── Throw     CbProbe    a line along the look, 80 m/s; let go: using the hook again, a jump; holds 2 s at most
-    └── Rope  CbLink     to what the line found, reeled in at 4 m/s
-        ├── Pull      CbForce   on the player, toward it: 160 m/s² up to 15 m/s, ramped in, reacting
-        └── Hanging   CbMove    while it holds: gravity 0, air control 0.6, airborne
+├── Throw     CbProbe    a line along the look, 80 m/s; let go: using the hook again, a jump; holds 2 s at most
+│   └── Rope  CbLink     to what the line found, reeled in at 4 m/s
+│       ├── Pull      CbForce   on the player, toward it: 160 m/s² up to 15 m/s, ramped in, reacting
+│       └── Hanging   CbMove    while it holds: gravity 0, air control 0.6, airborne
+└── Throwing  CbMotion   a motion of its own: on a use with no line out, 0.45 s, no effects (the throw's pose)
 
 Boots         CbItem     use: its slot key (a press)   slot 5   slot_key V                (prefabs/boots.tscn)
 │                        use_conditions dash.charges > 0   use_changes dash.charges -= 1
@@ -225,11 +226,12 @@ starts on that event, and ends on the same event, so the throw is predicted like
 ```
 Hook          CbItem     kind "grapple.hook", use: its slot's key (a press), slot 4   (prefabs/hook.tscn)
 │                        use_emits grapple.fired
-│                        animation_pack grapple.hook_hang: hanging, while motion.grapple.hook.Use
-└── Throw     CbProbe    range 40 m, flies at 80 m/s; release: using it again, a jump; holds 2 s at most
-    └── Rope  CbLink     to what the probe found: its length when it takes hold, reel 4 m/s
-        ├── Pull      CbForce   on the player, toward the target: 160 m/s² up to 15 m/s, ramp 0.1 s, react
-        └── Hanging   CbMove    { airborne: 1, air_control: 0.6, gravity: 0 } while it holds
+│                        animation_pack grapple.hook_arm: the left arm's throw, while motion.grapple.hook.Throwing
+├── Throw     CbProbe    range 40 m, flies at 80 m/s; release: using it again, a jump; holds 2 s at most
+│   └── Rope  CbLink     to what the probe found: its length when it takes hold, reel 4 m/s
+│       ├── Pull      CbForce   on the player, toward the target: 160 m/s² up to 15 m/s, ramp 0.1 s, react
+│       └── Hanging   CbMove    { airborne: 1, air_control: 0.6, gravity: 0 } while it holds
+└── Throwing  CbMotion   when grapple.hook.used, if not linked; duration 0.45 s; no effects
 ```
 
 | `CbProbe` | Meaning |

@@ -98,6 +98,7 @@ private:
 		std::vector<const ozz::animation::Animation*> clips;
 		std::vector<ozz::vector<ozz::math::SimdFloat4>> masks;
 		std::vector<float> neck;
+		std::vector<std::array<bool, 2>> hands; // the layer moves the left, the right hand (no filter: both)
 	};
 	std::vector<GraphSource> m_sources;
 	void BindSource( GraphSource& source, const AnimGraph& graph, std::vector<const ozz::animation::Animation*> clips );
@@ -105,6 +106,7 @@ private:
 	std::vector<ozz::vector<ozz::math::SoaTransform>> m_graphLocals;
 	ozz::vector<ozz::math::SoaTransform> m_layerPose;
 	float m_neckCover = 0.0f;			// this pose: how much of the neck the upper layers set
+	float m_overlayHands[2] = {};		// this pose: the most an overlay moves the left, the right hand
 	ozz::vector<ozz::math::SoaTransform> m_scratch;
 	ozz::vector<ozz::math::SimdFloat4> m_keepWeights;
 	ozz::vector<ozz::math::SimdFloat4> m_layerWeights;
