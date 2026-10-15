@@ -1,11 +1,12 @@
 // A brawler's kit: the measure of step 5 (ROADMAP.md), made with today's nodes. Five skills on the
-// hotbar, as a Roblox fighting game has them, each an item of its own (client/prefabs):
+// hotbar, as a Roblox fighting game has them, each an item of its own (client/prefabs). The skills
+// are used by their slots' keys where they are (CbItem.slot_key_uses): nothing changes hands.
 //
-//   slot 1  Fist         click: a jab; three in a row, the third a finisher that flings
-//   slot 2  Dash strike  X: a lunge, and whoever is ahead is knocked back (3 s)
-//   slot 3  Uppercut     K, on the ground: whoever is ahead is launched up (4 s)
-//   slot 4  Ground slam  L, in the air: a dive, and a shockwave where you land (5 s)
-//   slot 5  Guard        hold Alt: slow, and the kit's hits on you do a quarter
+//   slot 1  Fist         selected, click: a jab; three in a row, the third a finisher that flings
+//   slot 2  Dash strike  2: a lunge, and whoever is ahead is knocked back (3 s)
+//   slot 3  Uppercut     3, on the ground: whoever is ahead is launched up (4 s)
+//   slot 4  Ground slam  4, in the air: a dive, and a shockwave where you land (5 s)
+//   slot 5  Guard        hold 5: slow, and the kit's hits on you do a quarter
 //
 // What a skill does to bodies (the lunge, the knockback, the launch, the dive) is its scene's: every
 // simulation runs it from the player's input, so it is predicted. The cooldowns and the combo are

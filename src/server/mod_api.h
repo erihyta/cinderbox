@@ -456,8 +456,9 @@ public:
 		return ( m_frame.inputs[slot].actions & action.mask ) != 0;
 	}
 	// Using items (on a server with slots). A copy is used from the hand (its slot selected, then the
-	// use button), or by its kind's own key wherever it is carried (CbItem.use_key: the selected
-	// copy, else the lowest slot's). Every copy is its own: two bats in two slots are two bats.
+	// use button), by its slot's key where it is (CbItem.slot_key_uses: a skill on the hotbar), or by
+	// its kind's own key wherever it is carried (CbItem.use_key: the selected copy, else the lowest
+	// slot's). Every copy is its own: two bats in two slots are two bats.
 	// How long a use lasts is the kind's (the item property "use": a tool while the button is down,
 	// a press, or a press and held).
 	//   Used      the player used one of that kind on this tick (the press)

@@ -3570,7 +3570,8 @@ void TestShop()
 	CHECK( bot.client->Privates().values[coins->slot] == 0 && bot.client->GetStats().desyncs == 0 );
 }
 
-// The brawler's kit (the brawl mod, step 5's measure): bot A walks up to bot B and goes through it:
+// The brawler's kit (the brawl mod, step 5's measure): bot A walks up to bot B and goes through it,
+// the skills by their slots' keys (2 to 5: the fist stays in the hand all the while):
 // three jabs (the third a finisher), a dash strike pressed twice (the second within its 3 s does
 // nothing), an uppercut, a jump and a ground slam that lands beside B, and a jab while B guards
 // (a quarter of the damage). What each did is counted by its events on the server; B's damage by
@@ -3579,17 +3580,14 @@ void TestBrawl()
 {
 	Harness h( 47889, {}, {}, { { "test.mods", "brawl" }, { "combat.max_health", "1000" } } );
 	const ModSchema& schema = h.server.Schema();
-	const ActionBits dashKey = UseKey( schema, "brawl.dash_strike" );
-	const ActionBits upperKey = UseKey( schema, "brawl.uppercut" );
-	const ActionBits slamKey = UseKey( schema, "brawl.slam" );
-	const ActionBits guardKey = UseKey( schema, "brawl.guard" );
+	// The skills' slots' keys use them (CbItem.slot_key_uses): 2 to 5, as a player's input has them.
+	const uint16_t dashKey = 1u << 1, upperKey = 1u << 2, slamKey = 1u << 3, guardKey = 1u << 4;
 	const int jab = schema.FindEvent( "brawl.jab.hit" ), finisher = schema.FindEvent( "brawl.finisher.hit" );
 	const int dashHit = schema.FindEvent( "brawl.dash_strike.hit" ), dashStarted = schema.FindEvent( "brawl.dash_strike.started" );
 	const int upperHit = schema.FindEvent( "brawl.uppercut.hit" ), landed = schema.FindEvent( "brawl.slam.landed" );
 	const int damage = schema.FindEvent( "combat.damage" );
-	CHECK( dashKey != 0 && upperKey != 0 && slamKey != 0 && guardKey != 0 );
 	CHECK( jab >= 0 && finisher >= 0 && dashHit >= 0 && dashStarted >= 0 && upperHit >= 0 && landed >= 0 && damage >= 0 );
-	if ( dashKey == 0 || jab < 0 || damage < 0 )
+	if ( jab < 0 || damage < 0 )
 	{
 		return;
 	}
@@ -3598,6 +3596,7 @@ void TestBrawl()
 	h.AddBot();
 	Bot& a = h.bots[0]; // (both first: a second AddBot may move the first)
 	Bot& b = h.bots[1];
+	bool fistKept = true;
 	// A: to within 1.6 m of B, looking at it; then the step of the plan that this tick is in.
 	a.script = [&, dashKey, upperKey, slamKey]( uint32_t tick ) {
 		PlayerInput in;
@@ -3618,11 +3617,11 @@ void TestBrawl()
 		}
 		if ( at_( 520 ) || at_( 560 ) )
 		{
-			in.actions |= dashKey; // the second within the 3 s: nothing
+			in.slotKeys |= dashKey; // the second within the 3 s: nothing
 		}
 		if ( at_( 700 ) )
 		{
-			in.actions |= upperKey;
+			in.slotKeys |= upperKey;
 		}
 		if ( at_( 860 ) )
 		{
@@ -3630,14 +3629,16 @@ void TestBrawl()
 		}
 		if ( at_( 880 ) )
 		{
-			in.actions |= slamKey;
+			in.slotKeys |= slamKey;
 		}
+		// The skills' keys never take the fist out of the hand.
+		fistKept = fistKept && ( tick < 300 || server.SelectedSlot( me ) == 0 );
 		return in;
 	};
 	// B stands; it guards around the last jab.
-	b.script = [guardKey]( uint32_t tick ) {
+	b.script = [=]( uint32_t tick ) {
 		PlayerInput in;
-		in.actions = tick >= 990 && tick < 1040 ? guardKey : 0;
+		in.slotKeys = tick >= 990 && tick < 1040 ? guardKey : 0;
 		return in;
 	};
 	std::map<int, int> count;
@@ -3670,6 +3671,7 @@ void TestBrawl()
 	CHECK( count[dashStarted] == 1 && count[dashHit] == 1 && count[upperHit] == 1 && count[landed] == 1 );
 	// 8, 8, 20, 15, 18, 25, and the guarded jab: 2.
 	CHECK( damages == std::vector<int32_t>( { 8, 8, 20, 15, 18, 25, 2 } ) );
+	CHECK( fistKept );
 	CHECK( a.client->GetStats().desyncs == 0 && b.client->GetStats().desyncs == 0 );
 }
 

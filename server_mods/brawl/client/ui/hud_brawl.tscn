@@ -38,7 +38,7 @@ theme_override_constants/separation = 4
 [node name="DashReady" type="CbFieldLabel" parent="Skills"]
 layout_mode = 2
 label_settings = SubResource("Ready")
-text_format = "[{key:brawl.dash_strike.use}]  DASH STRIKE  READY"
+text_format = "[{key:slot2}]  DASH STRIKE  READY"
 
 [node name="Shown" type="CbFieldBinding" parent="Skills/DashReady"]
 conditions = PackedStringArray("brawl.cd_dash <= 0", "carried.brawl.dash_strike")
@@ -46,7 +46,7 @@ conditions = PackedStringArray("brawl.cd_dash <= 0", "carried.brawl.dash_strike"
 [node name="DashCooling" type="CbFieldLabel" parent="Skills"]
 layout_mode = 2
 label_settings = SubResource("Small")
-text_format = "[{key:brawl.dash_strike.use}]  DASH STRIKE  {brawl.cd_dash}s"
+text_format = "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s"
 
 [node name="Shown" type="CbFieldBinding" parent="Skills/DashCooling"]
 conditions = PackedStringArray("brawl.cd_dash > 0", "carried.brawl.dash_strike")
@@ -54,7 +54,7 @@ conditions = PackedStringArray("brawl.cd_dash > 0", "carried.brawl.dash_strike")
 [node name="UpperReady" type="CbFieldLabel" parent="Skills"]
 layout_mode = 2
 label_settings = SubResource("Ready")
-text_format = "[{key:brawl.uppercut.use}]  UPPERCUT  READY"
+text_format = "[{key:slot3}]  UPPERCUT  READY"
 
 [node name="Shown" type="CbFieldBinding" parent="Skills/UpperReady"]
 conditions = PackedStringArray("brawl.cd_upper <= 0", "carried.brawl.uppercut")
@@ -62,7 +62,7 @@ conditions = PackedStringArray("brawl.cd_upper <= 0", "carried.brawl.uppercut")
 [node name="UpperCooling" type="CbFieldLabel" parent="Skills"]
 layout_mode = 2
 label_settings = SubResource("Small")
-text_format = "[{key:brawl.uppercut.use}]  UPPERCUT  {brawl.cd_upper}s"
+text_format = "[{key:slot3}]  UPPERCUT  {brawl.cd_upper}s"
 
 [node name="Shown" type="CbFieldBinding" parent="Skills/UpperCooling"]
 conditions = PackedStringArray("brawl.cd_upper > 0", "carried.brawl.uppercut")
@@ -70,7 +70,7 @@ conditions = PackedStringArray("brawl.cd_upper > 0", "carried.brawl.uppercut")
 [node name="SlamReady" type="CbFieldLabel" parent="Skills"]
 layout_mode = 2
 label_settings = SubResource("Ready")
-text_format = "[{key:brawl.slam.use}]  GROUND SLAM  READY"
+text_format = "[{key:slot4}]  GROUND SLAM  READY"
 
 [node name="Shown" type="CbFieldBinding" parent="Skills/SlamReady"]
 conditions = PackedStringArray("brawl.cd_slam <= 0", "carried.brawl.slam")
@@ -78,7 +78,7 @@ conditions = PackedStringArray("brawl.cd_slam <= 0", "carried.brawl.slam")
 [node name="SlamCooling" type="CbFieldLabel" parent="Skills"]
 layout_mode = 2
 label_settings = SubResource("Small")
-text_format = "[{key:brawl.slam.use}]  GROUND SLAM  {brawl.cd_slam}s"
+text_format = "[{key:slot4}]  GROUND SLAM  {brawl.cd_slam}s"
 
 [node name="Shown" type="CbFieldBinding" parent="Skills/SlamCooling"]
 conditions = PackedStringArray("brawl.cd_slam > 0", "carried.brawl.slam")
@@ -86,7 +86,7 @@ conditions = PackedStringArray("brawl.cd_slam > 0", "carried.brawl.slam")
 [node name="Guard" type="CbFieldLabel" parent="Skills"]
 layout_mode = 2
 label_settings = SubResource("Small")
-text_format = "[{key:brawl.guard.use}]  GUARD (hold)"
+text_format = "[{key:slot5}]  GUARD (hold)"
 
 [node name="Shown" type="CbFieldBinding" parent="Skills/Guard"]
 conditions = PackedStringArray("carried.brawl.guard", "not using.brawl.guard")

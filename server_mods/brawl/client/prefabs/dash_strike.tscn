@@ -1,9 +1,9 @@
 [gd_scene format=3]
 
-; Dash strike: X, from wherever it is carried. A lunge where you look; whoever is ahead within 4 m
+; Dash strike: its slot's key (2) uses it, and nothing changes hands. A lunge where you look; whoever is ahead within 4 m
 ; at the press is hit and knocked back. 3 s to come back (brawl.cd_dash, counted down by the motion
 ; set, shown by the HUD).
-;   DashStrike  CbItem     once a press, its own key X; when used: brawl.cd_dash <= 0;
+;   DashStrike  CbItem     once a press, by its slot's key; when used: brawl.cd_dash <= 0;
 ;                          brawl.cd_dash = 3; says brawl.dash_strike.started
 ;     Lunge     CbImpulse  16 m/s where you look, the horizontal speed replaced
 ;     Slide     CbMove     0.25 s without friction
@@ -33,7 +33,7 @@ properties = {
 }
 use = 1
 slot = 2
-use_key = "X"
+slot_key_uses = true
 use_conditions = PackedStringArray("brawl.cd_dash <= 0")
 use_changes = PackedStringArray("brawl.cd_dash = 3")
 use_emits = "brawl.dash_strike.started"

@@ -93,6 +93,9 @@ void CbItem::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "use", PROPERTY_HINT_ENUM, "While the button is down (a tool),Once a press,A press, and while held" ),
 				  "set_use", "get_use" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "slot", PROPERTY_HINT_RANGE, "0,36,1" ), "set_slot", "get_slot" );
+	ClassDB::bind_method( D_METHOD( "set_slot_key_uses", "value" ), &CbItem::set_slot_key_uses );
+	ClassDB::bind_method( D_METHOD( "get_slot_key_uses" ), &CbItem::get_slot_key_uses );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "slot_key_uses" ), "set_slot_key_uses", "get_slot_key_uses" );
 	ClassDB::bind_method( D_METHOD( "set_use_key", "value" ), &CbItem::set_use_key );
 	ClassDB::bind_method( D_METHOD( "get_use_key" ), &CbItem::get_use_key );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "use_key", PROPERTY_HINT_PLACEHOLDER_TEXT, "H: uses the first one carried, wherever it is (empty: from the hand only)" ),
@@ -1008,6 +1011,14 @@ Dictionary CbItem::bake() const
 	if ( m_bullet )
 	{
 		all["bullet"] = 1;
+	}
+	if ( m_slotKeyUses )
+	{
+		if ( m_use == USE_TOOL )
+		{
+			return fail( "slot_key_uses is for an item used once a press or while held (use)" );
+		}
+		all["slot_key_uses"] = 1;
 	}
 	if ( m_stack > 1 )
 	{

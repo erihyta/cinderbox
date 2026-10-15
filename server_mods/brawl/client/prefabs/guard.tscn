@@ -1,9 +1,9 @@
 [gd_scene format=3]
 
-; Guard: held, Alt, from wherever it is carried. While it is held you walk slowly, and the kit's
+; Guard: its slot's key (5), held. While it is held you walk slowly, and the kit's
 ; hits on you do a quarter of their damage (brawl.cpp asks ctx.Using). Other weapons' damage is
 ; not reduced: that is the combat mod's to take, and no mod can change another's damage.
-;   Guard       CbItem     a press, and while held; its own key Alt; says brawl.guard.up
+;   Guard       CbItem     a press, and while held, by its slot's key; says brawl.guard.up
 ;     Brace     CbMove     while it is held: walk and sprint 1.5 m/s, no jump
 
 [sub_resource type="BoxShape3D" id="Body"]
@@ -27,7 +27,7 @@ properties = {
 }
 use = 2
 slot = 5
-use_key = "Alt"
+slot_key_uses = true
 use_emits = "brawl.guard.up"
 mass = 0.5
 
