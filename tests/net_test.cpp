@@ -1225,15 +1225,16 @@ void TestInventory()
 		{
 			reached = true;
 			const HeldItem* old = ownBat != 0 ? server.FindEntity( ownBat ).try_get<HeldItem>() : nullptr;
-			bothKept |= old != nullptr && old->holder == me && old->stowed != 0 && c.carried == start + 1 && c.stowed == start && c.lying == lyingAtStart - 1;
+			// (By the bats themselves: with more than one free slot the bot may pick up something else too.)
+			bothKept |= old != nullptr && old->holder == me && old->stowed != 0 && c.carried > start;
 		}
 		// The pistol's slot: the picked-up bat is put away and kept.
-		awayAndKept |= tick > 545 && tick < 560 && kindOf( inHand ) == gunKind && picked != nullptr && picked->holder == me && picked->stowed != 0 &&
-					   c.lying == lyingAtStart - 1;
+		awayAndKept |= tick > 545 && tick < 560 && kindOf( inHand ) == gunKind && picked != nullptr && picked->holder == me && picked->stowed != 0;
 		// The bats' own keys: each brings out its own.
 		ownBatOut |= tick > 585 && tick < 600 && inHand == ownBat && ownBat != 0 && picked != nullptr && picked->stowed != 0;
 		pickedOut |= tick > 625 && tick < 640 && inHand == lyingBat && reached;
-		thrown |= tick > 655 && tick < 670 && inHand == 0 && c.carried == start && c.lying == lyingAtStart;
+		thrown |= tick > 655 && tick < 670 && inHand == 0 && picked != nullptr && picked->holder == 0 && ownBat != 0 &&
+				  server.FindEntity( ownBat ).get<HeldItem>().holder == me;
 		gunAfterThrow |= tick > 690 && tick < 710 && kindOf( inHand ) == gunKind;
 	} );
 	h.Report();
