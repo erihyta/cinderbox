@@ -147,6 +147,43 @@ Variant Value( const Token& token )
 	return t;
 }
 
+// "at <where> [from PATH] [offset X Y Z]", from the word after "at" up to `end`: the place into
+// `into`, and where it stopped in `next`. False, with why, when it cannot be read.
+bool ParseAt( const std::vector<Token>& w, size_t i, size_t end, Dictionary& into, size_t& next, String& why )
+{
+	if ( i >= end )
+	{
+		why = "at point, end, beam, follow, or a node's path";
+		return false;
+	}
+	const String where = w[i].text;
+	const int place = where == "point" ? 1 : where == "end" ? 2 : where == "beam" ? 3 : where == "follow" ? 5 : 4;
+	into["place"] = place;
+	if ( place == 4 )
+	{
+		into["place_node"] = where;
+	}
+	++i;
+	if ( i + 1 < end && w[i].quoted == false && w[i].text == "from" )
+	{
+		into["place_node"] = w[i + 1].text; // a beam from a node
+		i += 2;
+	}
+	if ( i < end && w[i].quoted == false && w[i].text == "offset" )
+	{
+		double x = 0, y = 0, z = 0;
+		if ( i + 3 >= end || Number( w[i + 1], x ) == false || Number( w[i + 2], y ) == false || Number( w[i + 3], z ) == false )
+		{
+			why = "offset X Y Z";
+			return false;
+		}
+		into["offset"] = Vector3( float( x ), float( y ), float( z ) );
+		i += 4;
+	}
+	next = i;
+	return true;
+}
+
 struct Building
 {
 	int line = 0;
@@ -401,34 +438,11 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 		}
 		if ( verb == "at" )
 		{
-			if ( w.size() < 2 )
+			size_t next = 0;
+			String why;
+			if ( ParseAt( w, 1, w.size(), rule.settings, next, why ) == false || next != w.size() )
 			{
-				fail( number, "at point, end, beam, follow, or a node's path" );
-				continue;
-			}
-			String where = w[1].text;
-			int place = where == "point" ? 1 : where == "end" ? 2 : where == "beam" ? 3 : where == "follow" ? 5 : 4;
-			rule.settings["place"] = place;
-			if ( place == 4 )
-			{
-				rule.settings["place_node"] = where;
-			}
-			size_t i = 2;
-			if ( i < w.size() && w[i].text == "from" && i + 1 < w.size() )
-			{
-				rule.settings["place_node"] = w[i + 1].text; // a beam from a node
-				i += 2;
-			}
-			if ( i < w.size() )
-			{
-				double x = 0, y = 0, z = 0;
-				if ( w[i].text != "offset" || i + 3 >= w.size() || Number( w[i + 1], x ) == false || Number( w[i + 2], y ) == false ||
-					 Number( w[i + 3], z ) == false || i + 4 != w.size() )
-				{
-					fail( number, "after where: offset X Y Z" );
-					continue;
-				}
-				rule.settings["offset"] = Vector3( float( x ), float( y ), float( z ) );
+				fail( number, why.is_empty() ? String( "after where: from PATH, offset X Y Z" ) : why );
 			}
 			continue;
 		}
@@ -436,6 +450,63 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 		Rule action;
 		action.line = number;
 		Dictionary& p = action.properties;
+		// Settings written on the action's own line (at, delay, chance, cooldown, wait): for this
+		// action only, over the rule's. Not after an expression ("= ...", volume_by), which runs to
+		// the end of the line.
+		{
+			size_t stop = w.size();
+			for ( size_t k = 1; k < w.size(); ++k )
+			{
+				if ( w[k].quoted == false && ( w[k].text == "volume_by" || ( verb == "set" && w[k].text == "=" ) ) )
+				{
+					stop = k;
+					break;
+				}
+			}
+			std::vector<Token> kept{ w[0] };
+			bool bad = false;
+			for ( size_t k = 1; k < stop && bad == false; )
+			{
+				const Token& token = w[k];
+				const String word = token.quoted ? String() : token.text;
+				double value = 0.0;
+				if ( word == "at" )
+				{
+					size_t next = 0;
+					String why;
+					if ( ParseAt( w, k + 1, stop, p, next, why ) == false )
+					{
+						fail( number, why );
+						bad = true;
+					}
+					k = next;
+				}
+				else if ( ( word == "delay" || word == "chance" || word == "cooldown" ) && k + 1 < stop && Number( w[k + 1], value ) )
+				{
+					p[word] = value;
+					k += 2;
+				}
+				else if ( word == "wait" )
+				{
+					p["wait_for_server"] = true;
+					k += 1;
+				}
+				else
+				{
+					kept.push_back( token );
+					k += 1;
+				}
+			}
+			if ( bad )
+			{
+				continue;
+			}
+			for ( size_t k = stop; k < w.size(); ++k )
+			{
+				kept.push_back( w[k] );
+			}
+			w = kept;
+		}
 		if ( verb == "sound" )
 		{
 			if ( w.size() < 2 )

@@ -71,7 +71,15 @@ func _initialize() -> void:
 func _process(_delta: float) -> bool:
 	_frames += 1
 	if _frames == 2:
-		_check("three actions and a prediction: four nodes", _rules.get_reaction_count() == 4)
+		_check("five actions and a prediction: six nodes", _rules.get_reaction_count() == 6)
+		var two := {}
+		for child in _rules.get_children(true):
+			if child is CbReaction and child.event == "test.two":
+				two[String(child.target)] = child
+		_check("a setting on the line is that action's: at point, delay 0.5", two.has("../../Barrel")
+			and two["../../Barrel"].place == CbReaction.PLACE_EVENT_POINT and is_equal_approx(two["../../Barrel"].delay, 0.5))
+		_check("... the rule's for the others: at end, no delay", two.has("../../Timer")
+			and two["../../Timer"].place == CbReaction.PLACE_EVENT_END and two["../../Timer"].delay == 0.0)
 		var predicted: CbPrediction = null
 		for child in _rules.get_children(true):
 			if child is CbPrediction:

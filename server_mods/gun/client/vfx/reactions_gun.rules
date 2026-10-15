@@ -3,6 +3,6 @@
 
 # Marked
 on mark.found
-    subject $other
-    at follow
-    scene res://vfx/mark_zone.tscn life 2
+	subject $other
+	at follow
+	scene res://vfx/mark_zone.tscn life 2

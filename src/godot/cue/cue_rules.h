@@ -24,7 +24,14 @@
 //
 //   settings   subject PATH, side a|b|either, kind KIND, template NAME, delay S, chance P,
 //              cooldown S, wait (wait for the server's cue), at point|end|beam|follow|PATH
-//              [from PATH: a beam's start] [offset X Y Z]: for every action of the rule
+//              [from PATH: a beam's start] [offset X Y Z]: for every action of the rule. at, delay,
+//              chance, cooldown and wait can also end an action's own line, for that action only
+//              (before an expression, which runs to the end of the line):
+//                on item.use
+//                    subject ^^
+//                    scene res://vfx/muzzle_flash.tscn under Muzzle life 0.3
+//                    scene res://vfx/tracer.tscn at beam from Muzzle life 0.06
+//                    sound res://assets/sfx/gunshot.wav at Muzzle volume -5
 //   actions    sound PATH [volume DB] [pitch P] [jitter J] [range M] [bus NAME] [volume_by EXPR]
 //              scene PATH [under PATH] [life S]
 //              play PLAYER ANIMATION [off ANIMATION]
