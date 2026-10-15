@@ -1061,17 +1061,19 @@ void TestPickup()
 // Switching slots moves items between the hand and stowed and never drops or makes one. A slot is a
 // place, not a kind's: picking up a bat that lies in the world while carrying one puts it in the
 // free slot and into the hand, and the first stays in its own. Each bat comes out by its own slot's
-// key, the one asked for. A thrown bat leaves its slot empty and the other where it was. With no
-// free slot, nothing is picked up. The number of items never changes.
+// key, the one asked for. A thrown bat leaves its slot empty and the other where it was. The number
+// of items never changes. (What a life starts with is counted, not assumed: the rifle is local, and
+// a checkout without it starts with one item fewer.)
 void TestInventory()
 {
-	// (A grid of 8 x 1, the server's options: one slot more than a life starts with.)
+	// (A grid of 8 x 1, the server's options: room for the bat picked up.)
 	Harness h( 47805, {}, {}, { { "pickup.spawn_each", "1" }, { "inventory.columns", "8" }, { "inventory.rows", "1" } } );
 	const ModSchema& schema = h.server.Schema();
 	CHECK( h.server.Sim().Config().slots == 8 );
 	ActionBits gunSlot = kKeySlot1;
 	ActionBits batSlot = kKeySlot2;
-	const uint16_t eighth = uint16_t( 1u << 7 ); // the eighth slot's key, as a player's input has it
+	// The slot the picked-up bat went to (the first free one), as its key is in a player's input.
+	std::atomic<int> pickedSlot{ -1 };
 	ActionBits pickup = schema.ActionMask( "pickup" );
 	ActionBits drop = schema.ActionMask( "drop" );
 	int gunKind = schema.FindItemKind( "gun.pistol" );
@@ -1123,9 +1125,9 @@ void TestInventory()
 		{
 			in.actions = gunSlot;
 		}
-		else if ( tick >= 600 && tick < 605 )
+		else if ( tick >= 600 && tick < 605 && pickedSlot >= 0 )
 		{
-			in.slotKeys = eighth;
+			in.slotKeys = uint16_t( 1u << pickedSlot );
 		}
 		else if ( tick >= 640 && tick < 645 )
 		{
@@ -1164,6 +1166,8 @@ void TestInventory()
 	bool slotsWithTwo = false;
 	bool slotsAfterThrow = false;
 	uint32_t ownBat = 0;
+	int start = 0;		 // what a life starts with
+	int lyingAtStart = 0; // what the pickup mod left lying: one of each kind
 	int startTotal = 0;
 	int leastTotal = 1000;
 	int mostTotal = 0;
@@ -1190,41 +1194,52 @@ void TestInventory()
 				lyingBat = item != nullptr && item->holder == 0 && int( item->kind ) == batKind ? r.netId : lyingBat;
 			}
 		}
-		startsStowed |= tick > 80 && tick < 100 && inHand == 0 && c.carried == 7 && c.stowed == 7 && c.lying == 5; // a pistol, a bat, a rifle, a hook, the dash boots and two grenades (tests run every mod), and one of each lying about (not grenades)
+		if ( tick > 80 && tick < 100 && inHand == 0 && c.carried > 0 && c.stowed == c.carried )
+		{
+			// The items of every mod the checkout has (tests run every mod), and one of each lying about.
+			startsStowed = c.carried >= 2 && c.carried <= 7 && c.lying >= 2;
+			start = c.carried;
+			lyingAtStart = c.lying;
+		}
 		if ( tick > 130 && tick < 150 && kindOf( inHand ) == batKind )
 		{
-			batOut = c.carried == 7 && c.stowed == 6;
+			batOut = c.carried == start && c.stowed == start - 1;
 			ownBat = inHand;
 		}
 		// What is in each slot is the simulation's to say (the look reads it from there).
 		uint32_t pistolSlot = server.SlotItem( me, 0 );
 		uint32_t batsSlot = server.SlotItem( me, 1 );
-		uint32_t freeSlot = server.SlotItem( me, 7 );
-		slotsAtStart |= tick > 130 && tick < 150 && ownBat != 0 && batsSlot == ownBat && kindOf( pistolSlot ) == gunKind && freeSlot == 0;
-		slotsWithTwo |= reached && tick < 640 && batsSlot == ownBat && freeSlot == lyingBat && kindOf( pistolSlot ) == gunKind;
-		slotsAfterThrow |= tick > 700 && batsSlot == ownBat && freeSlot == 0 && kindOf( pistolSlot ) == gunKind;
-		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == 7 && c.stowed == 6;
-		droppedBySwitching |= tick > 100 && tick < 200 && c.lying != 5;
+		const HeldItem* picked = lyingBat != 0 ? server.FindEntity( lyingBat ).try_get<HeldItem>() : nullptr;
+		if ( picked != nullptr && picked->holder == me && picked->slot != kNoSlot )
+		{
+			pickedSlot = int( picked->slot );
+		}
+		uint32_t freeSlot = pickedSlot >= 0 ? server.SlotItem( me, uint8_t( pickedSlot.load() ) ) : 0;
+		slotsAtStart |= tick > 130 && tick < 150 && ownBat != 0 && batsSlot == ownBat && kindOf( pistolSlot ) == gunKind;
+		slotsWithTwo |= reached && tick < 640 && batsSlot == ownBat && freeSlot == lyingBat && pickedSlot > 1 && kindOf( pistolSlot ) == gunKind;
+		slotsAfterThrow |= tick > 700 && batsSlot == ownBat && pickedSlot > 1 && freeSlot == 0 && kindOf( pistolSlot ) == gunKind;
+		gunOut |= tick > 180 && tick < 200 && kindOf( inHand ) == gunKind && c.carried == start && c.stowed == start - 1;
+		droppedBySwitching |= tick > 100 && tick < 200 && c.lying != lyingAtStart;
 		// The lying bat is in the hand: picked up, into the free slot; the first bat is still carried.
 		if ( inHand == lyingBat && lyingBat != 0 && tick < 520 )
 		{
 			reached = true;
 			const HeldItem* old = ownBat != 0 ? server.FindEntity( ownBat ).try_get<HeldItem>() : nullptr;
-			bothKept |= old != nullptr && old->holder == me && old->stowed != 0 && c.carried == 8 && c.stowed == 7 && c.lying == 4;
+			// (By the bats themselves: with more than one free slot the bot may pick up something else too.)
+			bothKept |= old != nullptr && old->holder == me && old->stowed != 0 && c.carried > start;
 		}
 		// The pistol's slot: the picked-up bat is put away and kept.
-		const HeldItem* picked = lyingBat != 0 ? server.FindEntity( lyingBat ).try_get<HeldItem>() : nullptr;
-		awayAndKept |= tick > 545 && tick < 560 && kindOf( inHand ) == gunKind && picked != nullptr && picked->holder == me && picked->stowed != 0 &&
-					   c.lying == 4;
+		awayAndKept |= tick > 545 && tick < 560 && kindOf( inHand ) == gunKind && picked != nullptr && picked->holder == me && picked->stowed != 0;
 		// The bats' own keys: each brings out its own.
 		ownBatOut |= tick > 585 && tick < 600 && inHand == ownBat && ownBat != 0 && picked != nullptr && picked->stowed != 0;
 		pickedOut |= tick > 625 && tick < 640 && inHand == lyingBat && reached;
-		thrown |= tick > 655 && tick < 670 && inHand == 0 && c.carried == 7 && c.lying == 5;
+		thrown |= tick > 655 && tick < 670 && inHand == 0 && picked != nullptr && picked->holder == 0 && ownBat != 0 &&
+				  server.FindEntity( ownBat ).get<HeldItem>().holder == me;
 		gunAfterThrow |= tick > 690 && tick < 710 && kindOf( inHand ) == gunKind;
 	} );
 	h.Report();
-	std::printf( "    starts stowed %d, bat out %d, pistol out %d, dropped by switching %d\n", int( startsStowed ), int( batOut ), int( gunOut ),
-				 int( droppedBySwitching ) );
+	std::printf( "    a life starts with %d items (%d lying about); starts stowed %d, bat out %d, pistol out %d, dropped by switching %d\n", start,
+				 lyingAtStart, int( startsStowed ), int( batOut ), int( gunOut ), int( droppedBySwitching ) );
 	std::printf( "    picked up the lying bat %d, both bats kept %d; put away and kept %d; the first bat's key %d, the second's %d\n", int( reached ),
 				 int( bothKept ), int( awayAndKept ), int( ownBatOut ), int( pickedOut ) );
 	std::printf( "    thrown %d, pistol after %d; items %d at the start, %d to %d throughout\n", int( thrown ), int( gunAfterThrow ), startTotal,
@@ -1237,7 +1252,7 @@ void TestInventory()
 	std::printf( "    the slots: at the start %d, with two bats %d, after the throw %d\n", int( slotsAtStart ), int( slotsWithTwo ),
 				 int( slotsAfterThrow ) );
 	CHECK( slotsAtStart && slotsWithTwo && slotsAfterThrow );
-	CHECK( startTotal == 19 && leastTotal == 19 && mostTotal == 19 ); // five lying, seven per player (two grenades); none made, none lost
+	CHECK( startTotal == lyingAtStart + 2 * start && leastTotal == startTotal && mostTotal == startTotal ); // none made, none lost
 	for ( Bot& b : h.bots )
 	{
 		CHECK( b.client->GetStats().desyncs == 0 );
@@ -1680,6 +1695,7 @@ void TestHeadshot()
 	int mostLying = 0;
 	bool wasDead = false;
 	bool newLifeHasItems = false;
+	int firstLife = 0; // what the first life carried (the items of every mod the checkout has)
 	h.RunUntil( 9.0, [&]( double ) {
 		Simulation& sim = h.server.Sim();
 		uint32_t victim = sim.PlayerNetId( h.bots[1].client->Slot() );
@@ -1704,7 +1720,8 @@ void TestHeadshot()
 		else
 		{
 			diedAt = 0;
-			newLifeHasItems |= wasDead && carried == 7; // a pistol, a bat, a rifle, a hook, the dash boots and two grenades (tests run every mod)
+			firstLife = wasDead ? firstLife : std::max( firstLife, carried );
+			newLifeHasItems |= wasDead && firstLife > 0 && carried == firstLife;
 		}
 		const SimGlobals& g = h.server.Sim().Globals();
 		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
@@ -3475,43 +3492,43 @@ void TestChest()
 
 // An intent a mod declares: the shop mod's "shop.buy", in a bot's input as a screen's button sends
 // it (kFirstModIntent + its place, the offer in intentA). The mod reads it on the tick it arrives:
-// the rifle (2 coins of the 3 a player starts with) is bought and given; asked again, refused (1
-// coin left); the coins are the player's own private field, on its client too.
+// a bat (1 coin of the 3 a player starts with) is bought and given, three times; asked a fourth
+// time, refused (no coins left); the coins are the player's own private field, on its client too.
 void TestShop()
 {
 	Harness h( 47887 );
 	const ModSchema& schema = h.server.Schema();
 	const int buy = schema.FindIntent( "shop.buy" );
-	const int rifle = schema.FindItemKind( "gun.rifle" );
+	const int bat = schema.FindItemKind( "melee.bat" );
 	const int refused = schema.FindEvent( "shop.refused" );
 	const BoardField* coins = schema.FindField( "shop.coins" );
-	CHECK( buy >= 0 && rifle >= 0 && refused >= 0 && coins != nullptr );
-	if ( buy < 0 || rifle < 0 || coins == nullptr )
+	CHECK( buy >= 0 && bat >= 0 && refused >= 0 && coins != nullptr );
+	if ( buy < 0 || bat < 0 || coins == nullptr )
 	{
 		return;
 	}
 	Bot& bot = h.AddBot();
-	const uint32_t firstAt = 200, secondAt = 260;
+	const uint32_t firstAt = 200, every = 20, lastAt = firstAt + 3 * every;
 	bot.script = [&]( uint32_t tick ) {
 		PlayerInput in;
 		in.intent = uint8_t( kFirstModIntent + buy );
-		in.intentA = 2; // the rifle
-		in.intentSeq = tick >= secondAt ? 2 : tick >= firstAt ? 1 : 0;
+		in.intentA = 1; // the bat
+		in.intentSeq = tick < firstAt ? 0 : uint8_t( 1 + std::min( tick - firstAt, lastAt - firstAt ) / every );
 		return in;
 	};
 	Simulation& server = h.server.Sim();
-	auto rifles = [&]() {
+	auto bats = [&]() {
 		uint32_t me = server.PlayerNetId( bot.client->Slot() );
 		int n = 0;
 		for ( const Simulation::EntityRef& r : server.Entities() )
 		{
 			const HeldItem* item = server.FindEntity( r.netId ).try_get<HeldItem>();
-			n += item != nullptr && me != 0 && item->holder == me && item->kind == uint16_t( rifle ) ? 1 : 0;
+			n += item != nullptr && me != 0 && item->holder == me && item->kind == uint16_t( bat ) ? 1 : 0;
 		}
 		return n;
 	};
-	int32_t coinsBefore = -1, coinsAfter = -1, coinsEnd = -1;
-	int riflesBefore = -1, riflesAfter = -1, riflesEnd = -1;
+	int32_t coinsBefore = -1, coinsEnd = -1;
+	int batsBefore = -1, batsEnd = -1;
 	uint32_t refusals = 0, seenEvents = 0;
 	h.server.SetTickObserver( [&] {
 		uint32_t tick = server.Tick();
@@ -3519,17 +3536,12 @@ void TestShop()
 		if ( tick == firstAt - 10 )
 		{
 			coinsBefore = now;
-			riflesBefore = rifles();
+			batsBefore = bats();
 		}
-		if ( tick == secondAt - 10 )
-		{
-			coinsAfter = now;
-			riflesAfter = rifles();
-		}
-		if ( tick == secondAt + 40 )
+		if ( tick == lastAt + 40 )
 		{
 			coinsEnd = now;
-			riflesEnd = rifles();
+			batsEnd = bats();
 		}
 		const SimGlobals& g = server.Globals();
 		for ( ; seenEvents < g.modEventCount; ++seenEvents )
@@ -3540,12 +3552,11 @@ void TestShop()
 	h.RunUntil( 5.5 );
 	h.server.SetTickObserver( {} );
 	h.Report();
-	std::printf( "    coins %d, rifles %d; after buying the rifle: %d, %d; asked again: %d, %d (%u refused); its own client sees %d coins\n",
-				 coinsBefore, riflesBefore, coinsAfter, riflesAfter, coinsEnd, riflesEnd, refusals, bot.client->Privates().values[coins->slot] );
-	CHECK( coinsBefore == 3 && riflesBefore == 1 );
-	CHECK( coinsAfter == 1 && riflesAfter == 2 );
-	CHECK( coinsEnd == 1 && riflesEnd == 2 && refusals == 1 );
-	CHECK( bot.client->Privates().values[coins->slot] == 1 && bot.client->GetStats().desyncs == 0 );
+	std::printf( "    coins %d, bats %d; after asking for four: %d, %d (%u refused); its own client sees %d coins\n", coinsBefore, batsBefore,
+				 coinsEnd, batsEnd, refusals, bot.client->Privates().values[coins->slot] );
+	CHECK( coinsBefore == 3 && batsBefore == 1 );
+	CHECK( coinsEnd == 0 && batsEnd == 4 && refusals == 1 );
+	CHECK( bot.client->Privates().values[coins->slot] == 0 && bot.client->GetStats().desyncs == 0 );
 }
 
 // A fused grenade across the wire, behind 100 ms: the frag mod's grenade is thrown from the hand like
