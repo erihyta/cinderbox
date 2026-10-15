@@ -102,6 +102,9 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_hand" ), &CbItem::get_hand );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "hand", PROPERTY_HINT_ENUM, "The slots' hand while selected,The left hand while carried" ), "set_hand",
 				  "get_hand" );
+	ClassDB::bind_method( D_METHOD( "set_icon", "value" ), &CbItem::set_icon );
+	ClassDB::bind_method( D_METHOD( "get_icon" ), &CbItem::get_icon );
+	ADD_PROPERTY( PropertyInfo( Variant::OBJECT, "icon", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D" ), "set_icon", "get_icon" );
 	ClassDB::bind_method( D_METHOD( "set_stack", "value" ), &CbItem::set_stack );
 	ClassDB::bind_method( D_METHOD( "get_stack" ), &CbItem::get_stack );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "stack", PROPERTY_HINT_RANGE, "1,99,1" ), "set_stack", "get_stack" );

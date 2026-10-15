@@ -12,6 +12,7 @@
 #include <godot_cpp/classes/camera3d.hpp>
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/marker3d.hpp>
+#include <godot_cpp/classes/texture2d.hpp>
 #include "cinderbox_body.h"
 
 #include <memory>
@@ -260,6 +261,16 @@ public:
 	// anything; this costs a little more a step.
 	// How many of it one slot holds: a stack (1: one). One given to a player who has a stack of it
 	// with room goes onto it; a throw of the one carried takes one off.
+	// What it looks like in an inventory's slot (a CbItemIcon shows it). None: a picture of this
+	// scene, taken in the game.
+	void set_icon( const godot::Ref<godot::Texture2D>& v )
+	{
+		m_icon = v;
+	}
+	godot::Ref<godot::Texture2D> get_icon() const
+	{
+		return m_icon;
+	}
 	void set_stack( int v )
 	{
 		m_stack = v;
@@ -463,6 +474,7 @@ private:
 	int m_hand = HAND_SELECTED;
 	bool m_bullet = false;
 	int m_stack = 1;
+	godot::Ref<godot::Texture2D> m_icon;
 	int m_slot = 0;
 	godot::NodePath m_carryGrip;
 	int m_otherHand = OTHER_FREE;

@@ -25,6 +25,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_selected_slot", "player" ), &CinderboxClient::get_selected_slot );
 	ClassDB::bind_method( D_METHOD( "get_slot_item", "player", "slot" ), &CinderboxClient::get_slot_item );
 	ClassDB::bind_method( D_METHOD( "get_item_count", "item" ), &CinderboxClient::get_item_count );
+	ClassDB::bind_method( D_METHOD( "get_item_icon", "item" ), &CinderboxClient::get_item_icon );
 	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "use", "actions", "view", "slot_keys" ),
 						  &CinderboxClient::set_input, DEFVAL( 0 ), DEFVAL( 0 ) );
 	ClassDB::bind_method( D_METHOD( "get_slot_keys" ), &CinderboxClient::get_slot_keys );
@@ -1287,6 +1288,7 @@ void CinderboxClient::_process( double delta )
 		return;
 	}
 
+	UpdateIcons();
 	if ( m_source->Take( m_frame ) )
 	{
 		m_haveFrame = true;

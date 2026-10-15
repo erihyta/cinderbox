@@ -38,6 +38,7 @@
 #include <godot_cpp/classes/quad_mesh.hpp>
 #include <godot_cpp/classes/label_settings.hpp>
 #include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/classes/texture_rect.hpp>
 #include <godot_cpp/classes/v_box_container.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 
@@ -370,6 +371,15 @@ public:
 		m_maxRows = v;
 		update_configuration_warnings();
 	}
+	// Rows of `columns` (0: one line): a grid. The list itself is then vertical, its lines across.
+	void set_columns( int v )
+	{
+		m_columns = v;
+	}
+	int get_columns() const
+	{
+		return m_columns;
+	}
 	int get_max_rows() const
 	{
 		return m_maxRows;
@@ -432,6 +442,8 @@ private:
 	godot::String m_sortBy;
 	bool m_descending = true;
 	int m_maxRows = 0; // 0: all
+	int m_columns = 0;
+	std::vector<godot::ObjectID> m_lines; // a grid's lines (HBoxContainers), in order
 	// Conditions on the list's own subject for showing it at all.
 	godot::PackedStringArray m_conditions;
 	// OF_EVENTS: the mod event it lists ("combat.killed"), how long a row stays, and what an event's
@@ -624,6 +636,63 @@ private:
 	int m_intent = INTENT_NONE;
 	// INTENT_MOVE_HERE: the slot that moves, as a number from 1 ("ui.picked").
 	godot::String m_from = "ui.picked";
+	godot::ObjectID m_client;
+};
+
+// Drag a slot (in a CbList of slots) onto another: what it holds moves there (the two trade, or onto
+// a stack of the same kind as many as fit); with Shift held, half of a stack. Dropped outside the
+// Control `inside` names (the inventory screen), it is thrown out of the slots. A child of the row's
+// Control, which is what is dragged and dropped on; the slots' intents are the player's input, so
+// they are predicted.
+class CbDrag : public godot::Node
+{
+	GDCLASS( CbDrag, godot::Node )
+
+public:
+	void _ready() override;
+	void _notification( int what );
+	godot::PackedStringArray _get_configuration_warnings() const override;
+
+	godot::Variant drag_data( const godot::Vector2& at );
+	bool can_drop( const godot::Vector2& at, const godot::Variant& data );
+	void drop( const godot::Vector2& at, const godot::Variant& data );
+
+	void set_inside( const godot::NodePath& v )
+	{
+		m_inside = v;
+	}
+	godot::NodePath get_inside() const
+	{
+		return m_inside;
+	}
+
+protected:
+	static void _bind_methods();
+
+private:
+	int64_t Slot() const; // this row's slot (0 is the first), -1: none
+	godot::NodePath m_inside;
+	bool m_dragging = false;
+	int64_t m_draggedSlot = -1;
+	godot::ObjectID m_client;
+};
+
+// What the row's item looks like: its kind's CbItem.icon, or a picture the game takes of its scene.
+// Nothing for an empty slot.
+class CbItemIcon : public godot::TextureRect
+{
+	GDCLASS( CbItemIcon, godot::TextureRect )
+
+public:
+	CbItemIcon();
+	void _process( double delta ) override;
+
+protected:
+	static void _bind_methods()
+	{
+	}
+
+private:
 	godot::ObjectID m_client;
 };
 

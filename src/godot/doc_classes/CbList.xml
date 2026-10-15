@@ -39,6 +39,9 @@
 		<member name="max_rows" type="int" setter="set_max_rows" getter="get_max_rows" default="0">
 			At most this many rows (the first ones, after sorting). 0: all. A top three is 3.
 		</member>
+		<member name="columns" type="int" setter="set_columns" getter="get_columns" default="0">
+			Rows of this many, stacked: a grid (the list is then vertical, and each line across, with the list's separation and alignment). 0: one line. A [CbFieldBinding] can bind it to a field ([code]inventory.columns[/code]).
+		</member>
 		<member name="conditions" type="PackedStringArray" setter="set_conditions" getter="get_conditions" default="PackedStringArray()">
 			Expressions on the list's own subject (the local player, or the row the list is in) that must hold for the list to be shown at all.
 		</member>

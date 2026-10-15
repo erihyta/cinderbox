@@ -4569,6 +4569,27 @@ void TestStacks()
 				 thrown != 0 ? int( sim.BoardValue( thrown, 0 ) ) : -1, after[0], after[1] );
 	CHECK( thrown != 0 && thrown != first && sim.BoardValue( thrown, 0 ) == 9 && after[0] == 2 && after[1] == 2 && sim.SlotItem( p0, 0 ) == first );
 	CHECK( sim.LaunchedBy( thrown ) == p0 && StackOf( sim.FindEntity( thrown ).get<HeldItem>() ) == 1 );
+
+	// The inventory screen's drags (the player's intents): the second stack moved onto the first
+	// goes onto it as far as it fits; half of the first moved to the empty slot is a stack of its
+	// own, marked as the first is.
+	uint8_t seq = 0;
+	auto intent = [&]( SlotIntent what, uint8_t a, uint8_t b ) {
+		f.inputs[0].intent = uint8_t( what );
+		f.inputs[0].intentA = a;
+		f.inputs[0].intentB = b;
+		f.inputs[0].intentSeq = ++seq;
+		step( 2 );
+	};
+	intent( SlotIntent::Move, 1, 0 );
+	std::array<int, 3> merged = carried( entities );
+	intent( SlotIntent::Split, 0, 2 );
+	std::array<int, 3> split = carried( entities );
+	uint32_t part = sim.SlotItem( p0, 2 );
+	std::printf( "    the second stack dragged onto the first: %d and %d; half of the first to the third slot: %d, %d, %d (its mark %d)\n",
+				 merged[0], merged[1], split[0], split[1], split[2], part != 0 ? int( sim.BoardValue( part, 0 ) ) : -1 );
+	CHECK( merged[0] == 3 && merged[1] == 1 );
+	CHECK( split[0] == 1 && split[1] == 1 && split[2] == 2 && part != 0 && part != first && sim.BoardValue( part, 0 ) == 9 );
 }
 
 // Fast and small: a dart launched at 120 m/s (2 m a tick) is stopped by a level's wall 5 cm thick

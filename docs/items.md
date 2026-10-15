@@ -66,7 +66,8 @@ and the player's own screen does not wait for the server. What a life is given a
 |---|---|
 | A number key (1 to 9) | that slot is selected: its item comes into the right hand, the one that was there goes to its holster. Nothing is made, destroyed or dropped |
 | The selected slot's key again | empty hands |
-| Moves one slot onto another (the inventory screen: click, then click) | the two trade what they hold (either may be empty). The selected slot stays selected, so the hand follows |
+| Moves one slot onto another (the inventory screen: a drag) | the two trade what they hold (either may be empty); onto a stack of the same kind, as many as fit go onto it. The selected slot stays selected, so the hand follows |
+| Splits a slot onto another (a Shift-drag) | half of its stack (rounded up) goes there: an empty slot gets a stack of its own, with the stack's fields; a stack of the same kind takes what fits |
 | Drops a slot | its item is thrown out in front; the slot is empty |
 
 | The server | What happens |
@@ -188,10 +189,12 @@ reads the engine's slots themselves, so it follows the hands on the tick of the 
 
 | Part | What |
 |---|---|
-| The hotbar | a `CbList` of Slots across the bottom: `"{slot.number}   {name}"`, highlighted while `slot.selected` |
-| The inventory screen (I) | the same list as a grid, with a free cursor: click an item, then a slot, and the two trade places ([Screens](looks.md#screens)) |
+| The grid | `inventory.columns` x `inventory.rows` slots (server options; 8 x 4 = 32 by default, 36 at most). The first row is the hotbar; slots 1 to 10 have keys (1 to 9, 0) unless an item suggests one, the bag's are reached with the mouse |
+| The hotbar | a `CbList` of Slots across the bottom, as long as a row (`max_rows` bound to `inventory.columns`): each slot its item's icon, its number, its count, a frame while `slot.selected`, its name as a tooltip |
+| The inventory screen (I) | every slot, a grid of `inventory.columns` (`CbList.columns`), with a free cursor: drag a slot onto another to move it, Shift-drag for half a stack, drag it out of the screen to drop it ([Screens](looks.md#screens)) |
+| Icons | an item kind's `CbItem.icon`; without one, the game takes a picture of its scene once (its meshes, framed) |
 
-The mod publishes no fields for it.
+The mod publishes one field for it: `inventory.columns`, how wide the grid is.
 
 **Holsters are optional, twice over.** The mod chooses whether its item has one, and the character
 chooses whether it has that socket: a `CbSocket` node named like it (`Back`, `Hip`) under a

@@ -39,10 +39,13 @@ enum class SlotIntent : uint8_t
 {
 	None = 0,
 	Select = 1, // intentA: the slot. The selected slot again, or kNoSlot: its item is put away, empty hands
-	Move = 2,	// intentA to intentB: the two slots trade what they hold (either may be empty)
+	Move = 2,	// intentA to intentB: the two slots trade what they hold (either may be empty); onto a
+				// stack of the same kind, as many as fit go onto it instead
 	Drop = 3,	// intentA: the slot, or kNoSlot for the selected one. Its item is thrown out
+	Split = 4,	// intentA to intentB: half of intentA's stack (rounded up) goes to intentB, empty or a
+				// stack of the same kind with room
 };
-inline constexpr uint8_t kLastSlotIntent = uint8_t( SlotIntent::Drop );
+inline constexpr uint8_t kLastSlotIntent = uint8_t( SlotIntent::Split );
 
 // Mod actions per player: a bit each in the input, held or not. The server tells clients which
 // bit is which (and the default key for it) when they join. An input is a record of one size,

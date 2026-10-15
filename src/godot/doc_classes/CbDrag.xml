@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbDrag" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		Drag a slot onto another, with no code: moves, merges, splits, drops.
+	</brief_description>
+	<description>
+		Put it under the [Control] of a row of a [CbList] of slots: that control is what is dragged, and what is dropped on (Godot's own drag and drop: a copy of the slot follows the cursor).
+		- Dropped on another slot: what it holds moves there. The two trade, or, onto a stack of the same kind, as many as fit go onto it.
+		- With Shift held when the drag starts: half of the stack (rounded up) goes there instead.
+		- Let go outside [member inside] (the inventory screen): it is dropped, thrown out in front of the player.
+		Each is an intent of the player's slots: it goes out in the player's own input, so every simulation carries it out and the player's own screen does not wait for the server.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="inside" type="NodePath" setter="set_inside" getter="get_inside" default="NodePath(&quot;&quot;)">
+			The control a drag let go outside of drops the slot (the inventory screen). Found by the path, or by its name among the node's ancestors and their children (a row is a copy, deeper in a grid). Empty: a drag never drops.
+		</member>
+	</members>
+</class>

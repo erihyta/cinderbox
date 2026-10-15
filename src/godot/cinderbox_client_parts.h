@@ -5,6 +5,7 @@
 //
 //   cinderbox_client.cpp         connecting, input, the frame it draws, the entities' nodes, the lead
 //   cinderbox_client_items.cpp   sockets and held items: where an item's scene hangs on a body
+//   cinderbox_client_icons.cpp   an item kind's icon: its CbItem's, or a picture of its scene
 //   cinderbox_client_world.cpp   the director: cues, state and the world's reactions
 //   cinderbox_client_values.cpp  what looks ask it: fields, conditions, formats, names, lists
 
@@ -34,6 +35,7 @@
 #include <godot_cpp/classes/viewport.hpp>
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/display_server.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/resource_loader.hpp>
