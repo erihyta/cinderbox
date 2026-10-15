@@ -1,11 +1,11 @@
 // A grappling hook: the example of a probe, a force and a link (sim/motions.h), and of an item
-// that is used by its slot's key.
+// used by its own key wherever it is carried.
 //
-// The hook is not in this file. It is an item (client/prefabs/hook.tscn, a CbItem that says "its
-// slot key uses it") with its own CbMotion under it (a CbProbe, a CbForce and a CbLink under that),
+// The hook is not in this file. It is an item (client/prefabs/hook.tscn, a CbItem used once a press,
+// its own key Q) with its own CbMotion under it (a CbProbe, a CbForce and a CbLink under that),
 // and its pose while it is on (its animation pack), baked and run by every simulation from the
 // player's own input:
-// press the hook's slot key to throw a line at what is under the crosshair; it flies there, a
+// press the hook's key (Q; or select it and press the use button) to throw a line at what is under the crosshair; it flies there, a
 // projectile, takes hold of what it meets first, and pulls you in on a rope that is reeled in, so
 // you swing; press the key again to let go. At nothing, it flies out its range and is gone.
 // On a prop, the prop comes to you too.

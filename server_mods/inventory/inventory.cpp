@@ -14,8 +14,9 @@
 //   dying                takes back what the life started with and drops the rest
 //
 // What an item is like in a slot is said by its own mod, as item properties the engine reads:
-//   "slot"      the slot the kind goes to (1 is the first), pushing out what is there. Without it:
-//               the first free slot
+//   "slot"      the slot the kind goes to (1 is the first) if it is free; else, or without it, the
+//               first free slot. A slot is a place, not a kind's: two of a kind are two items, each
+//               in a slot of its own, each taken out by that slot's key and used from the hand
 //   "holster"   the socket it hangs in while another slot is selected ("Back", "Hip"). Without it,
 //               or on a character without that socket, it is out of sight
 //

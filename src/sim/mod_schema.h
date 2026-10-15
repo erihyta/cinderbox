@@ -123,18 +123,23 @@ struct ItemShape
 	uint8_t grip = 0;
 	Float3 gripPosition;
 	float gripRotation[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
-	// Slots: the slot this kind goes to when a player comes to carry one (1 is the first; what is
-	// there is pushed out), or 0 for the first free one; and the socket it hangs in while it is
-	// not the selected one (255: out of sight).
+	// Slots: the slot this kind would go to when a player comes to carry one (1 is the first), if it
+	// is free; else, or with 0, the first free one. And the socket it hangs in while it is not the
+	// selected one (255: out of sight).
 	uint8_t slot = 0;
 	uint8_t holster = 255;
-	// How it is used (kItemUse*): 0 it is selected (its slot's key takes it out), then the use
-	// button uses it: a tool. 1 its slot's key uses it where it is, once a press, and the slot is not
-	// selected: a consumable, an ability (a dash, a hook's throw). 2 the same, and it is in use for as
-	// long as the key is held (a jetpack). The simulation records `usedEvent` (a mod event, schema
-	// order; 0xFFFF: none) at the player, with the item as the other entity, on the press.
+	// How it is used (kItemUse*), from the hand (its slot selected, then the use button) or by its
+	// own key (`useAction`) wherever it is carried: 0 the use button is down while it is in use (a
+	// gun, a bat: a tool). 1 once a press: a consumable, an ability (a grenade, a dash, a hook's
+	// throw). 2 a press, and in use while the button or key is held (a jetpack). Each copy is used on
+	// its own: a slot is a place, not a kind's. The simulation records `usedEvent` (a mod event,
+	// schema order; 0xFFFF: none) at the player, with the item as the other entity, on the press.
 	uint8_t use = 0;
 	uint16_t usedEvent = 0xFFFF;
+	// Its own key: a mod action's bit (`<kind>.use`, CbItem.use_key) that uses the first copy the
+	// player carries (the selected one, else the lowest slot's) where it is, without taking it out.
+	// 255: none, it is used from the hand only.
+	uint8_t useAction = 255;
 	// When a copy's time is up (one launched with seconds, removed then): `expiredEvent` (a mod event,
 	// "<kind>.expired" where a mod declares it; 0xFFFF: none), with the item as the first entity,
 	// whoever threw it as the second, at where it was. A fused grenade goes off on it.
@@ -190,9 +195,6 @@ struct ModSchema
 	std::vector<std::string> itemKinds;
 	std::vector<ItemShape> itemShapes;
 	std::vector<std::string> sockets = { "RightHand", "LeftHand" };
-	// The key suggested for each slot (index 0: slot 1; empty: the game's own, the slot's number). A
-	// player's own choice wins (the Keys page of the settings).
-	std::vector<std::string> slotKeys;
 	std::vector<AnimPackInfo> animPacks;
 	std::vector<MotionSetInfo> motionSets;
 

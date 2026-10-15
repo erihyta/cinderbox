@@ -90,14 +90,13 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_bullet" ), &CbItem::get_bullet );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "bullet" ), "set_bullet", "get_bullet" );
 	ADD_GROUP( "Slots", "" );
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "use", PROPERTY_HINT_ENUM,
-							  "Select it then the use button,Its slot key uses it (a press),Its slot key uses it while held" ),
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "use", PROPERTY_HINT_ENUM, "While the button is down (a tool),Once a press,A press, and while held" ),
 				  "set_use", "get_use" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "slot", PROPERTY_HINT_RANGE, "0,36,1" ), "set_slot", "get_slot" );
-	ClassDB::bind_method( D_METHOD( "set_slot_key", "value" ), &CbItem::set_slot_key );
-	ClassDB::bind_method( D_METHOD( "get_slot_key" ), &CbItem::get_slot_key );
-	ADD_PROPERTY( PropertyInfo( Variant::STRING, "slot_key", PROPERTY_HINT_PLACEHOLDER_TEXT, "V: the key it suggests for its slot (empty: the slot's number)" ),
-				  "set_slot_key", "get_slot_key" );
+	ClassDB::bind_method( D_METHOD( "set_use_key", "value" ), &CbItem::set_use_key );
+	ClassDB::bind_method( D_METHOD( "get_use_key" ), &CbItem::get_use_key );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "use_key", PROPERTY_HINT_PLACEHOLDER_TEXT, "H: uses the first one carried, wherever it is (empty: from the hand only)" ),
+				  "set_use_key", "get_use_key" );
 	ClassDB::bind_method( D_METHOD( "set_hand", "value" ), &CbItem::set_hand );
 	ClassDB::bind_method( D_METHOD( "get_hand" ), &CbItem::get_hand );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "hand", PROPERTY_HINT_ENUM, "The slots' hand while selected,The left hand while carried" ), "set_hand",
@@ -164,8 +163,8 @@ void CbItem::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::CALLABLE, "bake_button", PROPERTY_HINT_TOOL_BUTTON, "Bake item,Save", PROPERTY_USAGE_EDITOR ), "",
 				  "get_bake_button" );
 
-	BIND_ENUM_CONSTANT( USE_SELECTED );
-	BIND_ENUM_CONSTANT( USE_SLOT_KEY );
+	BIND_ENUM_CONSTANT( USE_TOOL );
+	BIND_ENUM_CONSTANT( USE_PRESS );
 	BIND_ENUM_CONSTANT( USE_HOLD );
 	BIND_ENUM_CONSTANT( HAND_SELECTED );
 	BIND_ENUM_CONSTANT( HAND_LEFT );
@@ -994,7 +993,7 @@ Dictionary CbItem::bake() const
 	// Sorted, so the same scene always bakes the same file (the item's hash depends on it). How it
 	// is used and where it goes are properties the engine reads; said here, they are the item's.
 	Dictionary all = m_properties.duplicate();
-	if ( m_use == USE_SLOT_KEY || m_use == USE_HOLD )
+	if ( m_use == USE_PRESS || m_use == USE_HOLD )
 	{
 		all["use"] = m_use;
 	}
@@ -1059,13 +1058,13 @@ Dictionary CbItem::bake() const
 	{
 		text += "holster " + m_holster + "\n";
 	}
-	if ( m_slotKey.is_empty() == false )
+	if ( m_useKey.is_empty() == false )
 	{
-		if ( m_slotKey.contains( " " ) || m_slot <= 0 )
+		if ( m_useKey.contains( " " ) )
 		{
-			return fail( "slot_key is one key (V), and needs the item's slot" );
+			return fail( "use_key is one key (H)" );
 		}
-		text += "slotkey " + m_slotKey + "\n";
+		text += "usekey " + m_useKey + "\n";
 	}
 	// Its own motions (CbMotion nodes under it): a set named like the kind, baked beside the item.
 	{

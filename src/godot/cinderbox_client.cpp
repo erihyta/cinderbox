@@ -31,7 +31,6 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_item_icon", "item" ), &CinderboxClient::get_item_icon );
 	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "use", "actions", "view", "slot_keys" ),
 						  &CinderboxClient::set_input, DEFVAL( 0 ), DEFVAL( 0 ) );
-	ClassDB::bind_method( D_METHOD( "get_slot_keys" ), &CinderboxClient::get_slot_keys );
 	ClassDB::bind_method( D_METHOD( "get_actions" ), &CinderboxClient::get_actions );
 	ClassDB::bind_method( D_METHOD( "get_mod_names" ), &CinderboxClient::get_mod_names );
 	ClassDB::bind_method( D_METHOD( "get_field", "net_id", "name" ), &CinderboxClient::get_field );

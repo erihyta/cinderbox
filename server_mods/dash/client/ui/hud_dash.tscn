@@ -20,4 +20,4 @@ offset_top = -112.0
 offset_right = 324.0
 offset_bottom = -84.0
 label_settings = SubResource("Small")
-text_format = "[{key:dash}]  DASH {dash.charges} / {dash.max}"
+text_format = "[{key:dash.boots.use}]  DASH {dash.charges} / {dash.max}"

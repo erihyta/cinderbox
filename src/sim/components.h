@@ -361,6 +361,8 @@ struct Slots
 	uint16_t prevKeys = 0; // the slot keys held last tick: a press is one that was not
 	uint16_t reserved2 = 0;
 	uint32_t open = 0; // the container open to it (a chest's NetId; 0: none)
+	uint32_t reserved3 = 0;
+	ActionBits prevActions = 0; // the mod actions held last tick: an item kind's own key (ItemShape::useAction)
 };
 
 // Slots of an entity that is not a player: a chest. Its items are held by it (HeldItem::holder),
@@ -392,7 +394,7 @@ CB_CHECK_COMPONENT( Prop, 12 );
 CB_CHECK_COMPONENT( AnimGraphLayerState, 40 );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( HeldItem, 12 );
-CB_CHECK_COMPONENT( Slots, 12 );
+CB_CHECK_COMPONENT( Slots, 24 );
 CB_CHECK_COMPONENT( Container, 4 );
 CB_CHECK_COMPONENT( Ragdoll, 20 );
 CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );

@@ -125,14 +125,15 @@ public:
 	{
 		return m_useEmits;
 	}
-	// The key it suggests for its slot ("V"); empty: the server's, or the slot's number.
-	void set_slot_key( const godot::String& v )
+	// Its own key ("H"): uses the first one carried, wherever it is (the action "<kind>.use").
+	// Empty: it is used from the hand only.
+	void set_use_key( const godot::String& v )
 	{
-		m_slotKey = v.strip_edges();
+		m_useKey = v.strip_edges();
 	}
-	godot::String get_slot_key() const
+	godot::String get_use_key() const
 	{
-		return m_slotKey;
+		return m_useKey;
 	}
 	void set_holster( const godot::String& v )
 	{
@@ -216,17 +217,17 @@ public:
 		return m_properties;
 	}
 
-	// In a player's slots (sim/types.h). How it is used:
-	//   USE_SELECTED   its slot's key takes it out; then the use button uses it. A tool, a weapon.
-	//   USE_SLOT_KEY   its slot's key uses it where it is, once a press, and nothing changes
-	//                  hands. A consumable, an ability (a dash, a hook's throw).
-	//   USE_HOLD       the same, and it is in use for as long as the key is held (a jetpack).
-	// And the slot it goes to when a player comes to carry one (1 is the first; what is there
-	// makes room), or 0 for the first free one.
+	// In a player's slots (sim/types.h). Any copy is used from the hand (its slot selected, then the
+	// use button), or by its own key (use_key) wherever it is. How long a use lasts:
+	//   USE_TOOL    while the button is down. A tool, a weapon.
+	//   USE_PRESS   once a press. A consumable, an ability (a grenade, a dash, a hook's throw).
+	//   USE_HOLD    a press, and in use for as long as it is held (a jetpack).
+	// And the slot it would go to when a player comes to carry one (1 is the first), if that one is
+	// free; 0, or taken: the first free one.
 	enum Use
 	{
-		USE_SELECTED = 0,
-		USE_SLOT_KEY = 1,
+		USE_TOOL = 0,
+		USE_PRESS = 1,
 		USE_HOLD = 2,
 	};
 	void set_use( int v )
@@ -427,7 +428,7 @@ private:
 	godot::String m_displayName; // what prompts and lists call it ("Bat")
 	godot::String m_animationPack;
 	godot::String m_holster;
-	godot::String m_slotKey;
+	godot::String m_useKey;
 	godot::PackedStringArray m_useConditions;
 	godot::PackedStringArray m_useChanges;
 	double m_useCooldown = 0.0;
@@ -470,7 +471,7 @@ private:
 	bool m_viewRightHand = true;
 	godot::Dictionary m_properties;
 	godot::Dictionary m_fields;
-	int m_use = USE_SELECTED;
+	int m_use = USE_TOOL;
 	int m_hand = HAND_SELECTED;
 	bool m_bullet = false;
 	int m_stack = 1;

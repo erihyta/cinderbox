@@ -585,7 +585,7 @@ func _bind_actions() -> void:
 	_slot_keys = 0 # (the slots' keys are bound again once the player has slots)
 	_actions = client.get_actions()
 	for action in _actions:
-		menu.bind_key(ACTION_PREFIX + String(action["name"]), String(action["key"]), String(action["name"]).replace("_", " ").capitalize(), "This server")
+		menu.bind_key(ACTION_PREFIX + String(action["name"]), String(action["key"]), _action_label(String(action["name"])).capitalize(), "This server")
 	print("mod actions: ", ", ".join(_actions.map(func(a): return "%s (%s)" % [a["name"], menu.key_text(ACTION_PREFIX + String(a["name"]))])))
 	_update_help()
 
@@ -712,6 +712,12 @@ func _action_bits() -> int:
 	return bits
 
 
+## What a mod action is called on the Keys page and in the help line: an item's own key
+## ("frag.grenade.use") by its item ("frag grenade").
+func _action_label(name: String) -> String:
+	return name.trim_suffix(".use").replace(".", " ").replace("_", " ")
+
+
 func _action_bit(name: String) -> int:
 	for action in _actions:
 		if action["name"] == name:
@@ -755,8 +761,8 @@ func _send_input(delta: float) -> void:
 			if args.has("probe-pitch"):
 				pitch = deg_to_rad(float(args["probe-pitch"]))
 		var elapsed := Time.get_ticks_msec() / 1000.0 - playing_since if playing_since >= 0.0 else 0.0
-		# A hook, if the server has one: a press throws it, the next lets it go.
-		# (The hook is an item used by its slot's key, the fourth: one intent every two seconds.)
+		# A hook, if the server has one: a press of its own key throws it, the next lets it go (one
+		# press every two seconds).
 		if view_probe:
 			# The probe's player only walks and turns; with "--view-probe=N" it has slot N out.
 			if _probe_slot > 0:
@@ -770,7 +776,7 @@ func _send_input(delta: float) -> void:
 			sprint = false
 		elif int(elapsed / 2.0) != _auto_hooks and client.get_mod_names().has("grapple"):
 			_auto_hooks = int(elapsed / 2.0)
-			client.send_intent(INTENT_SELECT, 3, 0)
+			actions |= _action_bit("grapple.hook.use")
 		if view_probe:
 			# With --probe-use it uses what it has out once, a second into standing still: the
 			# frames kept of that part are the use, from the press on.
@@ -778,10 +784,10 @@ func _send_input(delta: float) -> void:
 		elif elapsed < autoplay * 0.4:
 			if auto_rng.randf() < delta * 2.0:
 				actions |= _action_bit("spawn_prop")
-			# A grenade now and then, if the server has them: the sixth slot's key throws the one
-			# carried (the grenade mod's item).
-			if _slot_keys >= 6 and auto_rng.randf() < delta * 1.0:
-				slot_keys |= 1 << 5
+			# A grenade now and then, if the server has them: its own key throws one, from wherever
+			# it is carried.
+			if auto_rng.randf() < delta * 1.0:
+				actions |= _action_bit("frag.grenade.use")
 		elif elapsed < autoplay * 0.7:
 			_auto_select(0)
 			use = auto_rng.randf() < delta * 3.0
@@ -805,9 +811,8 @@ func _send_input(delta: float) -> void:
 			actions = _action_bits()
 			# The use button is the engine's: what is in the hand is used (what that does is its mod's).
 			use = Input.is_action_pressed("game_use")
-		# The slots' keys: what one does is its item's (take it out, or use it where it is). They
-		# go out held, like the buttons; the simulation sees the presses. Also while a screen has
-		# the mouse (the inventory), not in a recording.
+		# The slots' keys select their slots. They go out held, like the buttons; the simulation
+		# sees the presses. Also while a screen has the mouse (the inventory), not in a recording.
 		if _replay == "" and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or _ui_cursor):
 			for i in mini(_slot_keys, 16):
 				var slot_action := "game_slot_%d" % (i + 1)
@@ -816,24 +821,17 @@ func _send_input(delta: float) -> void:
 	client.set_input(move, yaw, pitch, jump, sprint, use, actions, _view(), slot_keys)
 
 
-## The slots' keys, once the player has slots (and again when their number changes): each one is
-## the server's suggestion (a mod's, or the item's that goes there), else the slot's number, and
-## the player's own on the Keys page wins.
+## The slots' keys, once the player has slots (and again when their number changes): 1 to 9 and 0
+## for the first ten, as in Minecraft; the player's own on the Keys page wins. A slot is a place:
+## its key selects it, whatever it holds. (The bag's slots past the tenth are reached with the
+## mouse, on the inventory screen. An item's own key, "H" for a grenade, is a mod action.)
 func _bind_slot_keys() -> void:
 	var count: int = client.get_slot_count(client.get_local_net_id()) if _joined else 0
 	if count == _slot_keys or count <= 0:
 		return
 	menu.forget_keys("Slots")
-	var suggested: PackedStringArray = client.get_slot_keys()
-	# (A slot past the tenth has a key only when the server suggests one: the bag's slots are
-	# reached with the mouse, on the inventory screen.)
-	for i in count:
-		var key := String(suggested[i]) if i < suggested.size() else ""
-		if key == "":
-			key = str(i + 1) if i < 9 else ("0" if i == 9 else "")
-		if key == "" and i >= 10:
-			continue
-		menu.bind_key("game_slot_%d" % (i + 1), key, "Slot %d" % (i + 1), "Slots")
+	for i in mini(count, 10):
+		menu.bind_key("game_slot_%d" % (i + 1), str(i + 1) if i < 9 else "0", "Slot %d" % (i + 1), "Slots")
 	_slot_keys = count
 	var bound := []
 	for i in mini(count, 10):
@@ -1034,7 +1032,7 @@ func _update_help() -> void:
 	var text := "%s%s%s%s move   %s sprint   %s jump" % [menu.key_text("game_forward"), menu.key_text("game_left"), menu.key_text("game_back"),
 		menu.key_text("game_right"), menu.key_text("game_sprint"), menu.key_text("game_jump")]
 	for action in _actions:
-		text += "   %s %s" % [menu.key_text(ACTION_PREFIX + String(action["name"])), String(action["name"]).replace("_", " ")]
+		text += "   %s %s" % [menu.key_text(ACTION_PREFIX + String(action["name"])), _action_label(String(action["name"]))]
 	help.text = text + "   Mouse orbit   Wheel zoom   %s first person   %s shoulder   Esc menu   F1 stats" % [menu.key_text("game_first_person"),
 		menu.key_text("game_shoulder")]
 

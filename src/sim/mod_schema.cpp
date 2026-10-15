@@ -10,7 +10,7 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x4642434Du; // 'MCBF': 15 intents a mod declares; 14 stacks; 13 an item thrown fast (a bullet); 12 an item's time is up; 11 an item's hand; 10 an item's own fields' defaults; 2 workshop items, 3 the character, 4 layers and stances, 5 the
+constexpr uint32_t kSchemaMagic = 0x4742434Du; // 'MCBG': 16 an item kind's own key, no slot keys; 15 intents a mod declares; 14 stacks; 13 an item thrown fast (a bullet); 12 an item's time is up; 11 an item's hand; 10 an item's own fields' defaults; 2 workshop items, 3 the character, 4 layers and stances, 5 the
 												// character's state machine, 6 item kinds and sockets, 7 animation packs,
 												// 8 item shapes, 9 slots' keys
 
@@ -318,6 +318,7 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutU8( out, shape.slot );
 		PutU8( out, shape.holster );
 		PutU8( out, shape.use );
+		PutU8( out, shape.useAction );
 		PutU8( out, shape.hand );
 		PutU8( out, shape.bullet );
 		PutU8( out, shape.stack );
@@ -355,11 +356,6 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutString( out, schema.motionSets[i].mod );
 		PutString( out, schema.motionSets[i].name );
 		PutText( out, schema.motionSets[i].text );
-	}
-	PutU8( out, uint8_t( std::min<size_t>( schema.slotKeys.size(), size_t( kMaxSlots ) ) ) );
-	for ( size_t i = 0; i < schema.slotKeys.size() && i < size_t( kMaxSlots ); ++i )
-	{
-		PutString( out, schema.slotKeys[i] );
 	}
 }
 
@@ -532,6 +528,7 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		shape.slot = r.U8();
 		shape.holster = r.U8();
 		shape.use = r.U8();
+		shape.useAction = r.U8();
 		shape.hand = r.U8();
 		shape.bullet = r.U8();
 		shape.stack = r.U8();
@@ -553,7 +550,8 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 			field.raw = int32_t( raw );
 			shape.fieldDefaults.push_back( field );
 		}
-		if ( shape.slot > kMaxSlots || shape.use > kItemUseHold || shape.hand > kItemHandLeft || shape.bullet > 1 )
+		if ( shape.slot > kMaxSlots || shape.use > kItemUseHold || shape.hand > kItemHandLeft || shape.bullet > 1 ||
+			 ( shape.useAction != 255 && shape.useAction >= kMaxActions ) )
 		{
 			return false;
 		}
@@ -582,12 +580,6 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		set.name = r.String();
 		set.text = r.Text();
 		out.motionSets.push_back( std::move( set ) );
-	}
-	uint8_t slotKeys = r.U8();
-	out.slotKeys.clear();
-	for ( uint8_t i = 0; i < slotKeys && i < uint8_t( kMaxSlots ) && r.ok; ++i )
-	{
-		out.slotKeys.push_back( r.String() );
 	}
 	return r.ok && r.at == size;
 }

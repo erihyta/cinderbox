@@ -1,9 +1,9 @@
 [gd_scene format=3 uid="uid://bj564ax5hngs6"]
 
 ; The grappling hook, as Attack on Titan's gear: out of sight (no holster, not in a hand), its
-; line tied to the player's waist and the hook doing the pulling, so both hands stay free. Its
-; slot's key (the fourth) uses it where it is (use: a press), and what a use does is the nodes
-; under it:
+; line tied to the player's waist and the hook doing the pulling, so both hands stay free. Its own
+; key (Q, use_key) uses it wherever it is carried (use: a press), or select it and press the use
+; button; what a use does is the nodes under it:
 ;   Hook          CbItem    when used: says grapple.fired
 ;   Throw         CbProbe   a line along the look, flying at 80 m/s: what it meets on the way it
 ;                           holds (says grapple.hooked there); let go by using the hook again or a
@@ -37,6 +37,7 @@ properties = {
 animation_pack = "grapple.hook_arm"
 use = 1
 slot = 4
+use_key = "Q"
 use_emits = "grapple.fired"
 mass = 0.8
 

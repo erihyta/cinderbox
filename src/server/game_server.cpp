@@ -205,6 +205,9 @@ bool GameServer::Start( const ServerOptions& options )
 			int use = property( "use" );
 			m_schema.itemShapes[kind].use = use == kItemUsePress || use == kItemUseHold ? uint8_t( use ) : kItemUseInHand;
 			m_schema.itemShapes[kind].hand = property( "hand" ) == kItemHandLeft ? kItemHandLeft : kItemHandSelected;
+			// Its own key, if its scene gives one (CbItem.use_key): an action's bit.
+			auto useAction = declarations.ItemUseActions().find( int( kind ) );
+			m_schema.itemShapes[kind].useAction = useAction != declarations.ItemUseActions().end() ? useAction->second : uint8_t( 255 );
 			int usedEvent = m_schema.FindEvent( m_schema.itemKinds[kind] + ".used" );
 			m_schema.itemShapes[kind].usedEvent = usedEvent >= 0 ? uint16_t( usedEvent ) : uint16_t( 0xFFFF );
 		}

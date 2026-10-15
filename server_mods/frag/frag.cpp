@@ -2,15 +2,15 @@
 // whose time is up (ItemShape::expiredEvent, sim/mod_schema.h).
 //
 // What throwing is (a key, how hard, what leaves the hand, when, how long the fuse) is not in this
-// file: the grenade is an item (client/prefabs/frag.tscn, a CbItem) carried in slot 6, whose slot's
-// key (H) plays its throw on the left arm (its animation pack); the throw clip's marker,
+// file: the grenade is an item (client/prefabs/frag.tscn, a CbItem) that goes to slot 6, whose own
+// key (H), or the use button with it selected, plays its throw on the left arm (its animation pack); the throw clip's marker,
 // frag.release, lets go of the grenade the player carries (a CbLaunch of the one carried), with
 // 2.5 s to live. It bounces and rolls as its body says. When its time is up the simulation says
 // "frag.grenade.expired" where it is, with whoever threw it, and removes it: on every machine, on
 // the same tick.
 //
 // This file is the rules: grenades come one at a time, a little apart (frag.refill_seconds), until a
-// player carries frag.carry of them (a stack in slot 6: the scene's stack), and what going off is. Everyone near is hurt (the combat mod's "combat.damage", like any other
+// player carries frag.carry of them (a stack: the scene's stack), and what going off is. Everyone near is hurt (the combat mod's "combat.damage", like any other
 // weapon's: less with distance), everything loose near it is thrown and sent tumbling (props,
 // items, ragdolls: so those it kills fly, and those it only hurts keep their feet). It does not go
 // off when it hits something: that was the impact grenade (the grenade mod, switched off).

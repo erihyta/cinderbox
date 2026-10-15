@@ -303,10 +303,10 @@ public:
 	// Name it like the mod's other names ("dash.moves"). The mod declares the actions, fields and
 	// events the motions name; who may use one is a field its condition reads.
 	MotionsHandle Motions( const std::string& name );
-	// The key suggested for a slot (1 is the first): "V" for the slot of a dash. The player's own
-	// choice wins; the first suggestion for a slot stays. An item's scene can say it too
-	// (CbItem.slot_key).
-	void SlotKey( int slot, const std::string& key );
+	// An item kind's own key ("H" for a grenade): the action "<kind>.use", which uses the first copy
+	// a player carries where it is (ItemShape::useAction). The player's own key wins (the Keys page).
+	// An item's scene says it (CbItem.use_key).
+	void ItemUseKey( ItemKindHandle kind, const std::string& key );
 	SocketHandle Socket( const std::string& name );
 
 	const ModSchema& Schema() const
@@ -337,12 +337,17 @@ private:
 	std::vector<std::vector<std::string>> m_itemMods; // per item kind: the mods that declared it
 	std::map<std::pair<int, std::string>, float> m_itemProperties;
 	std::map<int, int> m_itemLayers; // item kind -> animation pack
+	std::map<int, uint8_t> m_itemUseActions; // item kind -> the action bit of its own key
 	int m_slots = 0;
 
 public:
 	const std::map<int, int>& ItemLayersByKind() const
 	{
 		return m_itemLayers;
+	}
+	const std::map<int, uint8_t>& ItemUseActions() const
+	{
+		return m_itemUseActions;
 	}
 	// What a new copy of each kind starts with in its own fields (declared by its CbItem).
 	const std::map<int, std::vector<ItemShape::FieldDefault>>& ItemFieldDefaults() const
@@ -450,15 +455,19 @@ public:
 	{
 		return ( m_frame.inputs[slot].actions & action.mask ) != 0;
 	}
-	// Using items (on a server with slots). An item kind is used in one of two ways, which its
-	// look says (the item property "use"): selected and then the use button (a tool), or by its
-	// slot's key, where it is (a consumable, an ability).
-	//   Used    the player used one of that kind on this tick, whichever way that kind is used
-	//   Using   the use button is down with one of that kind in the hand (automatic fire)
+	// Using items (on a server with slots). A copy is used from the hand (its slot selected, then the
+	// use button), or by its kind's own key wherever it is carried (CbItem.use_key: the selected
+	// copy, else the lowest slot's). Every copy is its own: two bats in two slots are two bats.
+	// How long a use lasts is the kind's (the item property "use": a tool while the button is down,
+	// a press, or a press and held).
+	//   Used      the player used one of that kind on this tick (the press)
+	//   Using     one of that kind is in use this tick (automatic fire, a jetpack)
+	//   UsedItem  which copy: Used (held false) or Using (true); 0 for none
 	// The simulation records "<kind>.used" for the same tick, when a mod declared that event: a
 	// look reacts to it at once on the player's own screen.
 	bool Used( PlayerSlot slot, ItemKindHandle kind ) const;
 	bool Using( PlayerSlot slot, ItemKindHandle kind ) const;
+	uint32_t UsedItem( PlayerSlot slot, ItemKindHandle kind, bool held = false ) const;
 	// Went down this tick.
 	bool Pressed( PlayerSlot slot, ActionHandle action ) const
 	{
