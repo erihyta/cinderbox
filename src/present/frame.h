@@ -50,6 +50,7 @@ struct FrameEntity
 	uint16_t itemKind = 0;
 	uint8_t socket = 0;
 	bool stowed = false; // carried but put away: drawn in its socket if the character has it
+	bool inUse = false;	 // an item its holder uses this tick ("using.<kind>")
 	// Slots (sim/types.h). An item: the slot of its holder's it is in, and how many it is (a stack).
 	// A player: the slot it has selected, and how many it has. A container (a chest): how many it
 	// has. kNoSlot: none.

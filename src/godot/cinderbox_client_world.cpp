@@ -257,6 +257,10 @@ void CinderboxClient::PushStates()
 				auto carried = m_carriedKinds.find( v.netId );
 				state[String::utf8( ( "carried." + schema.itemKinds[kind] ).c_str() )] =
 					carried != m_carriedKinds.end() && std::find( carried->second.begin(), carried->second.end(), uint16_t( kind ) ) != carried->second.end();
+				// "using.<kind>": it uses one this tick (the button down with it in the hand, or its own key).
+				auto using_ = m_usingKinds.find( v.netId );
+				state[String::utf8( ( "using." + schema.itemKinds[kind] ).c_str() )] =
+					using_ != m_usingKinds.end() && std::find( using_->second.begin(), using_->second.end(), uint16_t( kind ) ) != using_->second.end();
 			}
 		}
 		// An item: whether it is in a hand (not lying, not put away). What is inside its scene asks.

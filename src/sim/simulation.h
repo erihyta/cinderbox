@@ -308,6 +308,11 @@ public:
 		bool inUse = false;
 	};
 	void ItemUses( uint32_t player, const PlayerInput& in, uint8_t prevButtons, ActionBits prevActions, std::vector<ItemUse>& out ) const;
+	// Whether this copy was in use on the last tick (a look's "using.<kind>", from the view frame).
+	bool ItemInUse( uint32_t item ) const
+	{
+		return std::find( m_usingItems.begin(), m_usingItems.end(), item ) != m_usingItems.end();
+	}
 	void SetAnimPacks( std::vector<std::shared_ptr<const AnimGraph>> packs )
 	{
 		m_animPacks = std::move( packs );
@@ -475,6 +480,7 @@ private:
 	std::vector<std::pair<uint32_t, uint16_t>> m_heldScratch; // holder NetId, item kind
 	std::vector<std::pair<uint32_t, uint16_t>> m_carriedScratch; // the same, with what is put away
 	std::vector<std::pair<uint32_t, uint16_t>> m_usingScratch;	 // what each is using this tick ("using.<kind>")
+	std::vector<uint32_t> m_usingItems;							 // the same, by the copy
 
 	std::shared_ptr<const AnimGraph> m_animGraph;
 	std::vector<std::shared_ptr<const AnimGraph>> m_animPacks;
@@ -505,6 +511,8 @@ private:
 	void PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity );
 	void TakeItemFromWorld( flecs::entity item, uint32_t holder, uint8_t socket );
 	void RecordModEvent( const ModEventRecord& record );
+	// A probe that takes hold says its hold_emits (Motion::holdEvent), with what it holds.
+	void SayHold( flecs::entity e, const Motion& m, uint32_t anchor, b3Vec3 point );
 	void FollowHolders();
 };
 

@@ -897,6 +897,7 @@ void Simulation::ItemUses( uint32_t player, const PlayerInput& in, uint8_t prevB
 void Simulation::StepSlots( const InputFrame& frame )
 {
 	m_usingScratch.clear();
+	m_usingItems.clear();
 	if ( m_config.slots == 0 )
 	{
 		return;
@@ -940,6 +941,7 @@ void Simulation::StepSlots( const InputFrame& frame )
 				if ( use.inUse )
 				{
 					m_usingScratch.push_back( { netId, FindEntity( use.item ).get<HeldItem>().kind } );
+					m_usingItems.push_back( use.item );
 				}
 				if ( use.used )
 				{
@@ -2918,8 +2920,16 @@ MoveParams Simulation::MoveOf( flecs::entity e ) const
 namespace
 {
 
-// A rope never reels in shorter than this, and nothing nearer than this is worth a throw.
+// A rope never reels in shorter than this, and nothing nearer than this is worth a throw of one. A
+// probe with no rope (a punch, a grab) holds anything in front of the player.
 constexpr float kHoldMinLength = 1.0f;
+constexpr float kHoldMinReach = 0.05f;
+
+float MinHoldLength( const Motion& m )
+{
+	bool rope = std::any_of( m.effects.begin(), m.effects.end(), []( const MotionEffect& e ) { return e.kind == MotionEffect::Kind::Link; } );
+	return rope ? kHoldMinLength : kHoldMinReach;
+}
 // Past a rope's end the two are brought back together at this rate (1/s of the excess), up to a speed.
 constexpr float kRopeStiffness = 10.0f;
 constexpr float kRopeMaxSpeed = 20.0f;
@@ -2980,7 +2990,7 @@ bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerIn
 		b3Vec3 aim = CastRay( view, b3MulSV( m.probeRange, look ), self, seen ) ? seen.point : b3MulAdd( view, m.probeRange, look );
 		b3Vec3 toward = b3Sub( aim, from );
 		float far = b3Length( toward );
-		if ( far < kHoldMinLength )
+		if ( far < MinHoldLength( m ) )
 		{
 			return false;
 		}
@@ -3009,7 +3019,7 @@ bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerIn
 		hit = nearer;
 	}
 	float distance = b3Distance( hit.point, from );
-	if ( distance < kHoldMinLength )
+	if ( distance < MinHoldLength( m ) )
 	{
 		return false;
 	}
@@ -3023,7 +3033,23 @@ bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerIn
 	hold.on = 1;
 	e.set<MotionHold>( hold );
 	holdTick = hold.holdTick;
+	SayHold( e, m, hold.anchor, hit.point );
 	return true;
+}
+
+void Simulation::SayHold( flecs::entity e, const Motion& m, uint32_t anchor, b3Vec3 point )
+{
+	// Its hold_emits, at the point it holds, with what it holds (0: the world).
+	if ( m.holdEvent >= 0 )
+	{
+		ModEventRecord record;
+		record.type = uint16_t( m.holdEvent );
+		record.netIdA = e.get<NetId>().value;
+		record.netIdB = anchor;
+		record.tick = m_globals.tick;
+		record.point = point;
+		RecordModEvent( record );
+	}
 }
 
 void Simulation::HoldOn( MotionHold& hold, const RayHit& hit ) const
@@ -3078,17 +3104,7 @@ void Simulation::FlyHold( flecs::entity e, MotionState& motion )
 		slot.sinceTick = now;
 		hold.holdTick = now;
 		e.set<MotionHold>( hold );
-		const Motion& m = m_motions->list[hold.motion];
-		if ( m.holdEvent >= 0 )
-		{
-			ModEventRecord record;
-			record.type = uint16_t( m.holdEvent );
-			record.netIdA = e.get<NetId>().value;
-			record.netIdB = hold.anchor;
-			record.tick = now;
-			record.point = hit.point;
-			RecordModEvent( record );
-		}
+		SayHold( e, m_motions->list[hold.motion], hold.anchor, hit.point );
 		return;
 	}
 	if ( now >= hold.holdTick )

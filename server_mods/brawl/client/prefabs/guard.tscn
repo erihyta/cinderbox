@@ -1,0 +1,45 @@
+[gd_scene format=3]
+
+; Guard: held, Alt, from wherever it is carried. While it is held you walk slowly, and the kit's
+; hits on you do a quarter of their damage (brawl.cpp asks ctx.Using). Other weapons' damage is
+; not reduced: that is the combat mod's to take, and no mod can change another's damage.
+;   Guard       CbItem     a press, and while held; its own key Alt; says brawl.guard.up
+;     Brace     CbMove     while it is held: walk and sprint 1.5 m/s, no jump
+
+[sub_resource type="BoxShape3D" id="Body"]
+size = Vector3(0.1, 0.1, 0.1)
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(0.6, 0.6, 0.65, 1)
+emission_enabled = true
+emission = Color(0.6, 0.6, 0.65, 1)
+emission_energy_multiplier = 0.6
+
+[sub_resource type="BoxMesh" id="Mesh"]
+material = SubResource("Mat")
+size = Vector3(0.1, 0.1, 0.1)
+
+[node name="Guard" type="CbItem"]
+kind = "brawl.guard"
+display_name = "Guard"
+properties = {
+"inventory.start": 1.0
+}
+use = 2
+slot = 5
+use_key = "Alt"
+use_emits = "brawl.guard.up"
+mass = 0.5
+
+[node name="Body" type="CollisionShape3D" parent="."]
+shape = SubResource("Body")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("Mesh")
+
+[node name="Brace" type="CbMove" parent="."]
+parameters = {
+"jump_speed": 0.0,
+"sprint_speed": 1.5,
+"walk_speed": 1.5
+}

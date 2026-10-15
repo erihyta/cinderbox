@@ -1,0 +1,72 @@
+[gd_scene format=3]
+
+; Dash strike: X, from wherever it is carried. A lunge where you look; whoever is ahead within 4 m
+; at the press is hit and knocked back. 3 s to come back (brawl.cd_dash, counted down by the motion
+; set, shown by the HUD).
+;   DashStrike  CbItem     once a press, its own key X; when used: brawl.cd_dash <= 0;
+;                          brawl.cd_dash = 3; says brawl.dash_strike.started
+;     Lunge     CbImpulse  16 m/s where you look, the horizontal speed replaced
+;     Slide     CbMove     0.25 s without friction
+;     Hit       CbMotion   on the same press (carried): a line 4 m ahead, at once
+;       Probe   CbProbe    says brawl.dash_strike.hit with who it hit
+;         Knock CbImpulse  10 m/s on who it hit, where you look
+; (The line is at the press, before the lunge moves you: nothing is hit along the way.)
+
+[sub_resource type="BoxShape3D" id="Body"]
+size = Vector3(0.1, 0.1, 0.1)
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(0.3, 0.7, 1.0, 1)
+emission_enabled = true
+emission = Color(0.3, 0.7, 1.0, 1)
+emission_energy_multiplier = 0.6
+
+[sub_resource type="BoxMesh" id="Mesh"]
+material = SubResource("Mat")
+size = Vector3(0.1, 0.1, 0.1)
+
+[node name="DashStrike" type="CbItem"]
+kind = "brawl.dash_strike"
+display_name = "Dash strike"
+properties = {
+"inventory.start": 1.0
+}
+use = 1
+slot = 2
+use_key = "X"
+use_conditions = PackedStringArray("brawl.cd_dash <= 0")
+use_changes = PackedStringArray("brawl.cd_dash = 3")
+use_emits = "brawl.dash_strike.started"
+mass = 0.5
+
+[node name="Body" type="CollisionShape3D" parent="."]
+shape = SubResource("Body")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("Mesh")
+
+[node name="Lunge" type="CbImpulse" parent="."]
+speed = 16.0
+replace = 2
+
+[node name="Slide" type="CbMove" parent="."]
+parameters = {
+"friction": 0.0
+}
+duration = 0.25
+
+[node name="Hit" type="CbMotion" parent="."]
+when = 2
+event = "brawl.dash_strike.used"
+conditions = PackedStringArray("brawl.cd_dash <= 0")
+with_item = 1
+duration = 0.05
+
+[node name="Probe" type="CbProbe" parent="Hit"]
+range = 4.0
+travel = 0.0
+hold_emits = "brawl.dash_strike.hit"
+
+[node name="Knock" type="CbImpulse" parent="Hit/Probe"]
+target = 1
+speed = 10.0

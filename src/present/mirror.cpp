@@ -115,6 +115,7 @@ flecs::entity Mirror::CreateVisual( const FrameEntity& f, bool withEffect )
 	v.itemKind = f.itemKind;
 	v.socket = f.socket;
 	v.stowed = f.stowed;
+	v.inUse = f.inUse;
 	v.slotIndex = f.slotIndex;
 	v.slotCount = f.slotCount;
 	v.container = f.container;
@@ -205,6 +206,7 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 		visual.itemKind = f.itemKind;
 		visual.socket = f.socket;
 		visual.stowed = f.stowed;
+		visual.inUse = f.inUse;
 		visual.slotIndex = f.slotIndex;
 		visual.slotCount = f.slotCount;
 		visual.container = f.container;

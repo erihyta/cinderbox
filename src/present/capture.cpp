@@ -75,6 +75,7 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.itemKind = item->kind;
 			f.socket = item->socket;
 			f.stowed = item->stowed != 0;
+			f.inUse = sim.ItemInUse( f.netId );
 			f.slotIndex = item->slot;
 			f.slotCount = uint8_t( StackOf( *item ) ); // (an item's: how many it is)
 			if ( sim.HasBoard( e ) )

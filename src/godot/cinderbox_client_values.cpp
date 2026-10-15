@@ -111,6 +111,7 @@ void CinderboxClient::RefreshHeldKinds()
 {
 	m_heldKinds.clear();
 	m_carriedKinds.clear();
+	m_usingKinds.clear();
 	m_motionsOn.clear();
 	m_handItems.clear();
 	if ( !m_mirror )
@@ -136,6 +137,10 @@ void CinderboxClient::RefreshHeldKinds()
 		if ( v.kind == present::VisualKind::Item && v.holder != 0 )
 		{
 			m_carriedKinds[v.holder].push_back( v.itemKind );
+			if ( v.inUse )
+			{
+				m_usingKinds[v.holder].push_back( v.itemKind );
+			}
 		}
 		if ( v.kind == present::VisualKind::Player && v.motionsOn != 0 )
 		{
@@ -199,6 +204,49 @@ bool CinderboxClient::Holds( uint32_t netId, uint16_t kind ) const
 	return it != m_heldKinds.end() && std::find( it->second.begin(), it->second.end(), kind ) != it->second.end();
 }
 
+bool CinderboxClient::PlayerName( uint32_t netId, const std::string& name, float& value ) const
+{
+	auto in = []( const std::unordered_map<uint32_t, std::vector<uint16_t>>& kinds, uint32_t who, int kind ) {
+		auto it = kinds.find( who );
+		return it != kinds.end() && std::find( it->second.begin(), it->second.end(), uint16_t( kind ) ) != it->second.end();
+	};
+	if ( name.rfind( "motion.", 0 ) == 0 )
+	{
+		const std::vector<std::pair<String, int>>& keys = const_cast<CinderboxClient*>( this )->MotionKeys();
+		String key = String::utf8( name.c_str() );
+		for ( const auto& [motion, bit] : keys )
+		{
+			if ( motion == key )
+			{
+				auto on = m_motionsOn.find( netId );
+				value = on != m_motionsOn.end() && ( ( on->second >> bit ) & 1 ) != 0 ? 1.0f : 0.0f;
+				return true;
+			}
+		}
+		return false;
+	}
+	for ( const char* prefix : { "carried.", "using." } )
+	{
+		if ( name.rfind( prefix, 0 ) == 0 )
+		{
+			int kind = m_frame.schema.FindItemKind( name.substr( std::string( prefix ).size() ) );
+			if ( kind < 0 )
+			{
+				return false;
+			}
+			value = in( prefix[0] == 'c' ? m_carriedKinds : m_usingKinds, netId, kind ) ? 1.0f : 0.0f;
+			return true;
+		}
+	}
+	int kind = m_frame.schema.FindItemKind( name );
+	if ( kind < 0 )
+	{
+		return false;
+	}
+	value = Holds( netId, uint16_t( kind ) ) ? 1.0f : 0.0f;
+	return true;
+}
+
 bool CinderboxClient::check_conditions( int64_t net_id, const PackedStringArray& conditions ) const
 {
 	return CheckWith( net_id, conditions, Dictionary() );
@@ -247,13 +295,7 @@ bool CinderboxClient::CheckWith( int64_t net_id, const PackedStringArray& condit
 			value = get_open_container( net_id ) != 0 ? 1.0f : 0.0f;
 			return true;
 		}
-		int kind = m_frame.schema.FindItemKind( name );
-		if ( kind < 0 )
-		{
-			return false;
-		}
-		value = Holds( uint32_t( net_id ), uint16_t( kind ) ) ? 1.0f : 0.0f;
-		return true;
+		return PlayerName( uint32_t( net_id ), name, value );
 	};
 	for ( const std::string& condition : Conditions( conditions ) )
 	{
@@ -306,14 +348,13 @@ Variant CinderboxClient::EvaluateWith( int64_t net_id, const String& expression,
 			value = get_open_container( net_id ) != 0 ? 1.0f : 0.0f;
 			return true;
 		}
-		int kind = m_frame.schema.FindItemKind( name );
-		known |= kind >= 0 || m_frame.schema.FindField( name ) != nullptr;
-		if ( kind < 0 )
+		known |= m_frame.schema.FindField( name ) != nullptr;
+		if ( PlayerName( uint32_t( net_id ), name, value ) )
 		{
-			return false;
+			known = true;
+			return true;
 		}
-		value = Holds( uint32_t( net_id ), uint16_t( kind ) ) ? 1.0f : 0.0f;
-		return true;
+		return false;
 	};
 	float value = 0.0f;
 	if ( present::EvaluateFields( m_frame.schema, ToStd( expression ), BoardOf( uint32_t( net_id ) ), globals, value, &names,

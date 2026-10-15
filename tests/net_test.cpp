@@ -152,9 +152,20 @@ struct Harness
 		: port( p )
 		, clientPort( p )
 	{
+		// Every mod that runs by default; a disabled one (a "disabled" file: the impact grenade, the
+		// brawler's kit) only when the test names it, in the mod option "test.mods" (a, b), as
+		// cb_server --mods would.
+		std::string named;
+		if ( auto it = modOptions.find( "test.mods" ); it != modOptions.end() )
+		{
+			named = "," + it->second + ",";
+		}
 		for ( const mods::ModInfo& info : mods::CompiledMods() )
 		{
-			server.AddMod( info.create() );
+			if ( info.onByDefault || named.find( "," + std::string( info.name ) + "," ) != std::string::npos )
+			{
+				server.AddMod( info.create() );
+			}
 		}
 		ServerOptions options;
 		options.port = port;
@@ -1465,7 +1476,7 @@ void TestItemLayers()
 {
 	const std::string root = CB_SOURCE_DIR;
 	std::shared_ptr<const CharacterAsset> mannequin;
-	Harness h( 47806, {}, {}, {}, [&]( ServerOptions& options ) {
+	Harness h( 47806, {}, {}, { { "test.mods", "sneak" } }, [&]( ServerOptions& options ) {
 		std::string error, warnings;
 		mannequin = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
 		options.character = mannequin;
@@ -1550,7 +1561,7 @@ void TestSneak()
 {
 	const std::string root = CB_SOURCE_DIR;
 	std::shared_ptr<const CharacterAsset> mannequin;
-	Harness h( 47803, {}, {}, {}, [&]( ServerOptions& options ) {
+	Harness h( 47803, {}, {}, { { "test.mods", "sneak" } }, [&]( ServerOptions& options ) {
 		std::string error, warnings;
 		mannequin = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
 		options.character = mannequin;
@@ -3185,7 +3196,7 @@ void TestGrenade()
 	// thrower's own feet.)
 	// (The throw is the character's to play: a character, and the grenade's pack.)
 	const std::string root = CB_SOURCE_DIR;
-	Harness h( 47881, {}, {}, { { "grenade.damage", "300" } }, [&]( ServerOptions& options ) {
+	Harness h( 47881, {}, {}, { { "grenade.damage", "300" }, { "test.mods", "grenade" } }, [&]( ServerOptions& options ) {
 		std::string error, warnings;
 		options.character = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
 		options.loadAnimPack = [root]( const std::string& mod, const std::string& pack, std::string& error, std::string& warnings ) {
@@ -3559,6 +3570,109 @@ void TestShop()
 	CHECK( bot.client->Privates().values[coins->slot] == 0 && bot.client->GetStats().desyncs == 0 );
 }
 
+// The brawler's kit (the brawl mod, step 5's measure): bot A walks up to bot B and goes through it:
+// three jabs (the third a finisher), a dash strike pressed twice (the second within its 3 s does
+// nothing), an uppercut, a jump and a ground slam that lands beside B, and a jab while B guards
+// (a quarter of the damage). What each did is counted by its events on the server; B's damage by
+// combat.damage. Nothing is corrected on either client.
+void TestBrawl()
+{
+	Harness h( 47889, {}, {}, { { "test.mods", "brawl" }, { "combat.max_health", "1000" } } );
+	const ModSchema& schema = h.server.Schema();
+	const ActionBits dashKey = UseKey( schema, "brawl.dash_strike" );
+	const ActionBits upperKey = UseKey( schema, "brawl.uppercut" );
+	const ActionBits slamKey = UseKey( schema, "brawl.slam" );
+	const ActionBits guardKey = UseKey( schema, "brawl.guard" );
+	const int jab = schema.FindEvent( "brawl.jab.hit" ), finisher = schema.FindEvent( "brawl.finisher.hit" );
+	const int dashHit = schema.FindEvent( "brawl.dash_strike.hit" ), dashStarted = schema.FindEvent( "brawl.dash_strike.started" );
+	const int upperHit = schema.FindEvent( "brawl.uppercut.hit" ), landed = schema.FindEvent( "brawl.slam.landed" );
+	const int damage = schema.FindEvent( "combat.damage" );
+	CHECK( dashKey != 0 && upperKey != 0 && slamKey != 0 && guardKey != 0 );
+	CHECK( jab >= 0 && finisher >= 0 && dashHit >= 0 && dashStarted >= 0 && upperHit >= 0 && landed >= 0 && damage >= 0 );
+	if ( dashKey == 0 || jab < 0 || damage < 0 )
+	{
+		return;
+	}
+	Simulation& server = h.server.Sim();
+	h.AddBot();
+	h.AddBot();
+	Bot& a = h.bots[0]; // (both first: a second AddBot may move the first)
+	Bot& b = h.bots[1];
+	// A: to within 1.6 m of B, looking at it; then the step of the plan that this tick is in.
+	a.script = [&, dashKey, upperKey, slamKey]( uint32_t tick ) {
+		PlayerInput in;
+		uint32_t me = server.PlayerNetId( a.client->Slot() ), it = server.PlayerNetId( b.client->Slot() );
+		const Transform* at = me != 0 ? server.EntityTransform( me ) : nullptr;
+		const Transform* to = it != 0 ? server.EntityTransform( it ) : nullptr;
+		if ( at != nullptr && to != nullptr )
+		{
+			float dx = to->position.x - at->position.x, dz = to->position.z - at->position.z;
+			in.cameraYaw = detmath::RadiansToYaw( std::atan2( dx, dz ) );
+			in.moveForward = dx * dx + dz * dz > 1.6f * 1.6f ? 127 : 0;
+		}
+		in.actions = tick >= 280 && tick < 290 ? kKeySlot1 : 0; // the fist out
+		auto at_ = [&]( uint32_t when ) { return tick >= when && tick < when + 3; };
+		if ( at_( 320 ) || at_( 345 ) || at_( 370 ) || at_( 1010 ) )
+		{
+			in.actions |= kKeyUse; // jab, jab, finisher; and the jab on a guard
+		}
+		if ( at_( 520 ) || at_( 560 ) )
+		{
+			in.actions |= dashKey; // the second within the 3 s: nothing
+		}
+		if ( at_( 700 ) )
+		{
+			in.actions |= upperKey;
+		}
+		if ( at_( 860 ) )
+		{
+			in.buttons |= BtnJump;
+		}
+		if ( at_( 880 ) )
+		{
+			in.actions |= slamKey;
+		}
+		return in;
+	};
+	// B stands; it guards around the last jab.
+	b.script = [guardKey]( uint32_t tick ) {
+		PlayerInput in;
+		in.actions = tick >= 990 && tick < 1040 ? guardKey : 0;
+		return in;
+	};
+	std::map<int, int> count;
+	std::vector<int32_t> damages;
+	uint32_t seen = 0;
+	h.server.SetTickObserver( [&] {
+		const SimGlobals& g = server.Globals();
+		uint32_t victim = server.PlayerNetId( b.client->Slot() );
+		for ( ; seen < g.modEventCount; ++seen )
+		{
+			const ModEventRecord& e = g.modEvents[seen % kModEventHistory];
+			count[int( e.type )] += 1;
+			if ( int( e.type ) == damage && e.netIdB == victim )
+			{
+				damages.push_back( e.value );
+			}
+		}
+	} );
+	h.RunUntil( 18.5 );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	std::string list;
+	for ( int32_t d : damages )
+	{
+		list += " " + std::to_string( d );
+	}
+	std::printf( "    jabs %d, finishers %d, dash strikes started %d (pressed twice), hit %d, uppercuts %d, slams landed %d; B's damage:%s\n",
+				 count[jab], count[finisher], count[dashStarted], count[dashHit], count[upperHit], count[landed], list.c_str() );
+	CHECK( count[jab] == 3 && count[finisher] == 1 );
+	CHECK( count[dashStarted] == 1 && count[dashHit] == 1 && count[upperHit] == 1 && count[landed] == 1 );
+	// 8, 8, 20, 15, 18, 25, and the guarded jab: 2.
+	CHECK( damages == std::vector<int32_t>( { 8, 8, 20, 15, 18, 25, 2 } ) );
+	CHECK( a.client->GetStats().desyncs == 0 && b.client->GetStats().desyncs == 0 );
+}
+
 // A fused grenade across the wire, behind 100 ms: the frag mod's grenade is thrown from the hand like
 // the impact one, bounces off the floor without going off, and when its time is up (2.5 s after it
 // left the hand) the simulation says frag.grenade.expired where it is, with who threw it, and
@@ -3726,7 +3840,7 @@ void TestFlight()
 	// it is empty, and a glide down.
 	const uint32_t flyOn = 300, level = 345, letGo = 700, flyOff = 760, thrustFrom = 960, thrustTo = 1230, glideTo = 1410;
 	// The jetpack is off unless the server says so.
-	Harness h( 47861, {}, {}, { { "flight.jetpack", "1" } } );
+	Harness h( 47861, {}, {}, { { "flight.jetpack", "1" }, { "test.mods", "flight" } } );
 	const ModSchema& schema = h.server.Schema();
 	uint16_t fly = schema.ActionMask( "fly" );
 	const BoardField* on = schema.FindField( "flight.on" );
@@ -4067,6 +4181,7 @@ int main( int argc, char** argv )
 		{ "frag", TestFrag },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
+		{ "brawl", TestBrawl },
 		{ "flight", TestFlight },
 		{ "grapple", TestGrapple },
 		{ "headshot", TestHeadshot },
