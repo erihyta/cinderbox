@@ -292,6 +292,7 @@ make it one, and none is a script:
 | Drags | a `CbDrag` under a slot's control: drag it onto another slot (move, merge), Shift-drag (half a stack), let go outside `inside` (drop). Godot's own drag and drop: a copy of the slot follows the cursor |
 | Icons | a `CbItemIcon` (a `TextureRect`) in a row: the row's item's icon (`CbItem.icon`, or a picture the game takes of its scene) |
 | Grids | `CbList.columns`: rows of that many, stacked (a `CbFieldBinding` can bind it to a field: `inventory.columns`) |
+| Containers | `CbList` of "Slots of the container open to its subject": a chest's slots (rows name `slot.container`); `CbKey.opens`: turning it on opens the container the player looks at, off closes it; `container_open` in conditions while one is open |
 
 The inventory screen (`server_mods/inventory/client/ui/hud_inventory.tscn`), on I:
 
@@ -314,7 +315,8 @@ Bag            PanelContainer
 
 - **An intent is the player's own input**: the move is carried out by every simulation, the player's own at once ([The inventory](items.md#the-inventory)).
 - **The hotbar** is the same slot in a `CbList` across the bottom, its `max_rows` bound to `inventory.columns`: the first row.
-- **What is not there yet**: an intent a mod declares ("buy item 3"); a slot of another entity's (a chest).
+- **The chest**: under the player's slots, a `Chest` part (a `CbList` of the open container's slots, the same cell) shown while `container_open`; the key opens the chest looked at.
+- **What is not there yet**: an intent a mod declares ("buy item 3").
 
 `CbPromptLabel` is the same in the world: a `Label3D` with a `text_format`, upright above its parent,
 facing the camera, the same size at any distance, hidden while its text is empty; with a
