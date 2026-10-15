@@ -170,6 +170,7 @@ while melee.hot
 | 4 | Reactions as rules | **done (M165, M166)**: reactions and predictions (`predict ... as ...`) | the soup is worst here: a gun's look is a dozen reactions |
 | 5 | An item's use as rules | the When used rules and the motions under a `CbItem` as lines; the probe, the link and the force stay nodes where they are things with a place | the skill kit's motions |
 | 6 | An item's own HUD | in the item's own scene, shown while it is selected or carried (a skill's cooldown on its slot) | from step 4; written with the sheet |
+| 6b | A HUD's sheet | **done (M168)**: `show`, `text`, `bind` lines on a HUD's controls (a `CbFieldBinding` each; `hides` off lets several take turns at one label); the kit's HUD: 20 nodes into 7 and a sheet. Not for a list's rows (they are copied per entry) | the HUD was the measure's second pain: 18 nodes for 4 lines |
 | 7 | The mods, converted | **reactions done (M166)**: every look's reactions and predictions are sheets (48 nodes into 13 sheets, each checked to do exactly what its nodes did); `tools/reactions_to_rules.py` converts a scene. Not yet: the HUDs, an item's use and motions (pieces 5 and 6 first); the rifle (licensed, local) | the examples are what modders copy |
 
 - **What it is not**: a script. Nothing in a sheet runs on its own; it is baked like the nodes, and
