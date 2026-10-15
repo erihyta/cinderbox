@@ -3,6 +3,8 @@
 #include "anim_graph.h"
 
 #include "detmath.h"
+#include "map.h"
+#include "reflect.h"
 #include "hit_test.h"
 #include "ragdoll.h"
 #include "util.h"
@@ -248,6 +250,48 @@ void Declarations::SlotKey( int slot, const std::string& key )
 	{
 		m_schema.slotKeys[size_t( slot - 1 )] = key; // the first one stays
 	}
+}
+
+void Declarations::ContainerTemplate( const std::string& name, const std::string& visual, b3Vec3 size, int slots )
+{
+	// (A map's names: letters, digits, _ and -.)
+	auto safe = []( const std::string& text ) {
+		return text.empty() == false && std::all_of( text.begin(), text.end(), []( char c ) {
+				   return ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) || ( c >= '0' && c <= '9' ) || c == '_' || c == '-';
+			   } );
+	};
+	if ( safe( name ) == false || safe( visual ) == false )
+	{
+		m_errors.push_back( m_mod + ": a template's name and look are letters, digits, _ and - (\"" + name + "\", \"" + visual + "\")" );
+		return;
+	}
+	auto raw = []( const char* field, int32_t value ) {
+		AuthoredField f;
+		f.id = Fnv32( field );
+		f.raw[0] = value;
+		return f;
+	};
+	EntityTemplate t;
+	t.name = name;
+	t.visual = visual;
+	AuthoredComponent shape;
+	shape.id = Fnv32( "Shape" );
+	shape.fields.push_back( raw( "kind", int32_t( ShapeKind::Box ) ) );
+	AuthoredField extent;
+	extent.id = Fnv32( "size" );
+	extent.raw[0] = MapQuantize( size.x, kMapPositionScale );
+	extent.raw[1] = MapQuantize( size.y, kMapPositionScale );
+	extent.raw[2] = MapQuantize( size.z, kMapPositionScale );
+	shape.fields.push_back( extent );
+	AuthoredComponent body;
+	body.id = Fnv32( "Body" );
+	body.fields.push_back( raw( "type", 0 ) ); // static
+	AuthoredComponent container;
+	container.id = Fnv32( "Container" );
+	container.fields.push_back( raw( "slots", int32_t( std::clamp( slots, 1, kMaxSlots ) ) ) );
+	t.components = { shape, body, container };
+	SanitizeTemplate( t );
+	m_templates.push_back( t );
 }
 
 double Declarations::Option( const std::string& name, double fallback ) const
@@ -969,6 +1013,58 @@ int Context::SelectedSlot( PlayerSlot player ) const
 uint32_t Context::SlotItem( PlayerSlot player, int slot ) const
 {
 	return slot >= 0 && slot < kMaxSlots ? m_sim.SlotItem( m_sim.PlayerNetId( player ), uint8_t( slot ) ) : 0;
+}
+
+std::vector<uint32_t> Context::Containers() const
+{
+	std::vector<uint32_t> out;
+	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	{
+		if ( flecs::entity( m_sim.World(), r.entity ).has<Container>() )
+		{
+			out.push_back( r.netId );
+		}
+	}
+	return out;
+}
+
+int Context::ContainerSlots( uint32_t container ) const
+{
+	flecs::entity e = m_sim.FindEntity( container );
+	return e.is_valid() && e.has<Container>() ? int( e.get<Container>().slots ) : 0;
+}
+
+uint32_t Context::ContainerItem( uint32_t container, int slot ) const
+{
+	return slot >= 0 && slot < ContainerSlots( container ) ? m_sim.SlotItem( container, uint8_t( slot ) ) : 0;
+}
+
+void Context::PutInContainer( uint32_t container, ItemKindHandle kind )
+{
+	if ( kind.Valid() == false || container == 0 )
+	{
+		return;
+	}
+	SimCommand c;
+	c.type = CommandType::SpawnItem;
+	c.target = container;
+	c.index = uint16_t( kind.index );
+	c.mode = kNoSocket;
+	c.value = 1;
+	Add( c );
+}
+
+int Context::FindTemplate( const std::string& name ) const
+{
+	const auto& templates = m_sim.Map().templates;
+	for ( size_t i = 0; i < templates.size(); ++i )
+	{
+		if ( templates[i].name == name )
+		{
+			return int( i );
+		}
+	}
+	return -1;
 }
 
 std::vector<CarriedItem> Context::CarriedItems( PlayerSlot slot ) const

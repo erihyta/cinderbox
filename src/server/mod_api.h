@@ -227,6 +227,16 @@ public:
 	{
 		m_options = options;
 	}
+	// A template the server adds to the map's, so a mod can place it (ctx.FindTemplate,
+	// ctx.SpawnTemplate) and clients draw it: a container (a chest), a static box `size` metres
+	// across with `slots` of its own, drawn as `visual` (a scene of the mod's look:
+	// res://prefabs/<visual>.tscn). One the map has by that name already is the map's. Names are a
+	// map's: letters, digits, _ and -.
+	void ContainerTemplate( const std::string& name, const std::string& visual, b3Vec3 size, int slots );
+	const std::vector<EntityTemplate>& Templates() const
+	{
+		return m_templates;
+	}
 	int SlotCount() const
 	{
 		return m_slots;
@@ -293,6 +303,7 @@ public:
 	}
 
 private:
+	std::vector<EntityTemplate> m_templates;
 	const std::map<std::string, std::string>* m_options = nullptr;
 	ModSchema m_schema;
 	std::vector<std::string> m_errors;
@@ -548,6 +559,15 @@ public:
 	int SlotCount() const;
 	int SelectedSlot( PlayerSlot player ) const;
 	uint32_t SlotItem( PlayerSlot player, int slot ) const;
+	// Containers (chests): the entities that have slots of their own, in NetId order; one's item in
+	// a slot (0: empty); and an item of `kind` put in one (onto a stack of its kind with room, else
+	// the first free slot; a full one takes nothing), on the next tick.
+	std::vector<uint32_t> Containers() const;
+	int ContainerSlots( uint32_t container ) const;
+	uint32_t ContainerItem( uint32_t container, int slot ) const;
+	void PutInContainer( uint32_t container, ItemKindHandle kind );
+	// A template of the map's (or a mod's: Declarations::ContainerTemplate) by its name; -1: none.
+	int FindTemplate( const std::string& name ) const;
 	// Everything the player in `slot` carries, in use and stowed, in NetId order.
 	std::vector<CarriedItem> CarriedItems( PlayerSlot slot ) const;
 	// Plays `pack`'s layer named `layer` ("FullBody") instead of the player's own, from its start; the

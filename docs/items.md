@@ -108,6 +108,26 @@ with a count, and one set of fields.
   **server mods** as `CarriedItem::count`.
 - **The count is the simulation's**: predicted, rolled back, in a joiner's snapshot.
 
+### Containers: chests
+
+An entity that is not a player can have **slots of its own**: a container. Its items are held by it
+(`HeldItem::holder` is the chest), out of sight, in its slots. Moving them is the slots' intents
+again, so it is predicted like the rest.
+
+| | What |
+|---|---|
+| Making one | a template with the `Container` component (`slots`, 1 to 36): authored in a map like any template, or declared by a mod (`declare.ContainerTemplate( name, look, size, slots )`: the server adds it to the map's templates, and clients get it with the map) |
+| Opening one | look at it within 3 m and open the inventory (I): the inventory's key `opens` (a `CbKey` setting) sends the Open intent; the screen's chest part shows its slots. Closing the screen closes it; so does walking more than 4 m from it, or dying, or it being gone |
+| Moving | drag between its slots and the player's as within one (move, merge, Shift-drag half, drag out to drop): an intent's slot with `kContainerSlotBit` (0x80) is the open container's |
+| Filling one | a server mod: `ctx.PutInContainer( chest, kind )` (onto a stack of its kind with room, else the first free slot); `ctx.Containers()`, `ctx.ContainerItem( chest, slot )` read them |
+| Gone | what it held falls out of it |
+
+**The chest mod** (`server_mods/chest`) is the example: it declares the template `chest` (a static
+box 0.9 x 0.6 x 0.55 m, its look `client/prefabs/chest.tscn`), places `chest.count` of them on the
+ground in a ring around the spawn point, and fills each with `chest.items` items a player may pick
+up. Not yet: a corpse's bag (a ragdoll carrying the dead player's items, or a box where it fell:
+undecided), a shop.
+
 ### The left hand
 
 `hand` on its `CbItem`: **The left hand while carried** keeps it in the left hand for as long as the

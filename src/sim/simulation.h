@@ -386,6 +386,9 @@ private:
 	// Up to `count` of `from`'s stack onto `onto`, a stack of the same kind with room (the rest of
 	// `from` stays; all of it: `from` is gone). False, and nothing done, when they do not stack.
 	bool MergeStacks( flecs::entity from, flecs::entity onto, uint32_t count );
+	// Into a container's slots: onto a stack of its kind with room, else the first free slot. False
+	// (and the item as it was) when it is full.
+	bool PutInContainer( flecs::entity box, flecs::entity item );
 	// The selected slot's item is in the hand; every other slotted item is stowed in its holster.
 	void SettleSlots( uint32_t holder, uint8_t selected );
 	// Out of the bag: thrown a little, from the chest, the way the player looks.

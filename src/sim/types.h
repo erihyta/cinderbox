@@ -44,8 +44,16 @@ enum class SlotIntent : uint8_t
 	Drop = 3,	// intentA: the slot, or kNoSlot for the selected one. Its item is thrown out
 	Split = 4,	// intentA to intentB: half of intentA's stack (rounded up) goes to intentB, empty or a
 				// stack of the same kind with room
+	Open = 5,	// the container the player looks at, within reach, is open to it (its slots are
+				// kContainerSlotBit | index in the others)
+	Close = 6,	// the open container is closed
 };
-inline constexpr uint8_t kLastSlotIntent = uint8_t( SlotIntent::Split );
+inline constexpr uint8_t kLastSlotIntent = uint8_t( SlotIntent::Close );
+// In an intent's slot: the open container's slot of this index, not the player's own.
+inline constexpr uint8_t kContainerSlotBit = 0x80;
+// How far a container is reached to open it, and how far the player may go before it closes.
+inline constexpr float kContainerReach = 3.0f;
+inline constexpr float kContainerKeep = 4.0f;
 
 // Mod actions per player: a bit each in the input, held or not. The server tells clients which
 // bit is which (and the default key for it) when they join. An input is a record of one size,

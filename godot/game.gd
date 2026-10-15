@@ -600,6 +600,9 @@ func _auto_bag(since: float) -> void:
 	var due := [0.0, 0.6, 0.7, 0.8, 2.6]
 	if _auto_bag_step >= due.size() or since < due[_auto_bag_step]:
 		return
+	# (With a chest about, the screen opens once the player stands at it, or two seconds late.)
+	if _auto_bag_step == 0 and client.get_containers().size() > 0 and not _chest_near and since < 2.0:
+		return
 	# The bag's cells, in order (a CbDrag in each; the hotbar's are not the bag's).
 	var cells := []
 	for drag in get_tree().root.find_children("*", "CbDrag", true, false):
@@ -661,6 +664,31 @@ func _mouse_motion(at: Vector2) -> void:
 	event.position = at
 	event.global_position = at
 	Input.parse_input_event(event)
+
+
+var _chest_near := false
+
+
+## The unattended player walks to the nearest container and looks at it, from a little before the
+## inventory screen opens until it closes: true meanwhile.
+func _auto_chest(elapsed: float) -> bool:
+	if elapsed < autoplay * 0.2 or elapsed > autoplay * 0.45 + 4.8:
+		return false
+	var me: Node3D = client.get_entity_node(client.get_local_net_id())
+	var nearest: Node3D = null
+	for id in client.get_containers():
+		var node: Node3D = client.get_entity_node(id)
+		if node != null and me != null and (nearest == null or node.global_position.distance_to(me.global_position) < nearest.global_position.distance_to(me.global_position)):
+			nearest = node
+	if nearest == null or me == null:
+		return false
+	var to := nearest.global_position - (me.global_position + Vector3(0, 1.5, 0))
+	var flat := Vector2(to.x, to.z).length()
+	yaw = atan2(-to.x, -to.z)
+	pitch = atan2(to.y, flat)
+	_chest_near = flat <= 1.8
+	auto_move = Vector2.ZERO if _chest_near else Vector2(0, 1)
+	return true
 
 
 ## The unattended player takes a slot's item out, once.
@@ -733,6 +761,13 @@ func _send_input(delta: float) -> void:
 			# The probe's player only walks and turns; with "--view-probe=N" it has slot N out.
 			if _probe_slot > 0:
 				_auto_select(_probe_slot - 1)
+		# Before the inventory screen opens, to the nearest chest (a container), looking at it: the
+		# screen then opens it too.
+		var to_chest := not view_probe and _auto_chest(elapsed)
+		if to_chest:
+			move = auto_move
+			jump = false
+			sprint = false
 		elif int(elapsed / 2.0) != _auto_hooks and client.get_mod_names().has("grapple"):
 			_auto_hooks = int(elapsed / 2.0)
 			client.send_intent(INTENT_SELECT, 3, 0)

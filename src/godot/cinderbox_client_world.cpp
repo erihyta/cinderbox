@@ -241,6 +241,8 @@ void CinderboxClient::PushStates()
 			// first-person view shows: a held item's swing in front of the camera.
 			state["first_person"] = firstPerson;
 			state["linked"] = v.linked;
+			// "container_open": a container (a chest) is open to it.
+			state["container_open"] = v.container != 0;
 			state["link_holds"] = v.linked && v.linkHolds;
 			state["link_missed"] = v.linked && v.linkMissed;
 			// "motion.<name>": that motion of its is on.

@@ -159,6 +159,8 @@ struct Harness
 		options.reconnectGraceSeconds = 10.0;
 		options.recordPath = recordPath;
 		options.modOptions = modOptions;
+		// (Tests run every mod; chests stand only where a test asks for them.)
+		options.modOptions.emplace( "chest.count", "0" );
 		options.lookItems = []( const std::string& mod ) {
 			std::vector<LookItem> items;
 			ListLookItemsFolder( std::string( CB_SOURCE_DIR ) + "/server_mods/" + mod + "/client", items );
@@ -360,7 +362,7 @@ void TestMapSync()
 	std::string error;
 	CHECK( WriteMapFile( mapPath.string(), bytes, error ) );
 
-	Harness h( 17806, {}, mapPath.string() );
+	Harness h( 17836, {}, mapPath.string() );
 	h.AddBot();
 	h.AddBot();
 	h.RunUntil( 3.0 );
@@ -376,9 +378,12 @@ void TestMapSync()
 		// The client rebuilt its simulation from the server's map, not from the built-in one.
 		CHECK( b.client->Map().name == authored.name );
 		CHECK( b.client->Map().statics.size() == authored.statics.size() );
-		CHECK( b.client->MapHash() == MapHash( bytes.data(), bytes.size() ) );
+		// The map's, and the mods' templates after them (the chest mod's): the map the server runs.
+		std::vector<uint8_t> served;
+		SerializeMap( h.server.Sim().Map(), served );
+		CHECK( b.client->MapHash() == MapHash( served.data(), served.size() ) && b.client->MapHash() != MapHash( bytes.data(), bytes.size() ) );
 		// Templates travel with the map, so clients can create the same entities the server does.
-		CHECK( b.client->Map().templates.size() == 1 );
+		CHECK( b.client->Map().templates.size() == 2 && b.client->Map().templates[1].name == "chest" );
 		CHECK( b.client->Map().templates[0].visual == "prop_bouncy" );
 		CHECK( b.client->Map().spawnTemplate == 0 );
 		int compared = 0;
@@ -3370,6 +3375,91 @@ void TestGrenade()
 	CHECK( bodySeen && bodyFlew > 2.0f );
 }
 
+// A chest across the wire, behind 100 ms: the chest mod's (a container template it declares, placed
+// on the ground near the spawn point, filled with what a player may pick up). The bot walks to it,
+// looks at it, opens it (the Open intent, in its own input) and drags the chest's first item into a
+// slot of its bag: the item is the bot's, on the server and on its own screen, and nothing is
+// corrected.
+void TestChest()
+{
+	Harness h( 47885, {}, {}, { { "chest.count", "1" }, { "chest.radius", "4" }, { "chest.items", "3" } } );
+	net::NetSimConfig link;
+	link.latencyMs = 50;
+	h.AddNetSim( 47886, link );
+	Bot& bot = h.AddBot();
+	Simulation& server = h.server.Sim();
+	uint32_t chest = 0;
+	uint8_t seq = 0;
+	uint32_t openedAt = 0, movedAt = 0;
+	const uint8_t bagSlot = 20;
+	bot.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		in.intentSeq = seq;
+		uint32_t me = server.PlayerNetId( bot.client->Slot() );
+		if ( chest == 0 )
+		{
+			for ( const Simulation::EntityRef& r : server.Entities() )
+			{
+				chest = server.FindEntity( r.netId ).has<Container>() ? r.netId : chest;
+			}
+		}
+		const Transform* at = me != 0 ? server.EntityTransform( me ) : nullptr;
+		const Transform* to = chest != 0 ? server.EntityTransform( chest ) : nullptr;
+		if ( at == nullptr || to == nullptr || tick < 120 )
+		{
+			return in;
+		}
+		// Toward it, looking at it; near enough, it opens it, then takes the first item.
+		float dx = to->position.x - at->position.x;
+		float dz = to->position.z - at->position.z;
+		float flat = std::sqrt( dx * dx + dz * dz );
+		float dy = to->position.y - ( at->position.y + kViewPivotHeight );
+		in.cameraYaw = detmath::RadiansToYaw( std::atan2( dx, dz ) );
+		in.cameraPitch = int16_t( std::atan2( dy, flat ) * 65536.0f / 6.2831853f );
+		in.moveForward = flat > 1.6f && openedAt == 0 ? 127 : 0;
+		if ( flat <= 1.6f && openedAt == 0 )
+		{
+			in.intent = uint8_t( SlotIntent::Open );
+			in.intentSeq = ++seq;
+			openedAt = tick;
+		}
+		else if ( openedAt != 0 && movedAt == 0 && tick > openedAt + 20 )
+		{
+			in.intent = uint8_t( SlotIntent::Move );
+			in.intentA = kContainerSlotBit | 0;
+			in.intentB = bagSlot;
+			in.intentSeq = ++seq;
+			movedAt = tick;
+		}
+		return in;
+	};
+	uint32_t firstItem = 0;
+	h.server.SetTickObserver( [&] {
+		if ( chest != 0 && firstItem == 0 )
+		{
+			firstItem = server.SlotItem( chest, 0 );
+		}
+	} );
+	h.RunUntil( 8.0 );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	uint32_t me = server.PlayerNetId( bot.client->Slot() );
+	int inChest = 0;
+	for ( uint8_t s = 0; chest != 0 && s < 9; ++s )
+	{
+		inChest += server.SlotItem( chest, s ) != 0 ? 1 : 0;
+	}
+	std::printf( "    a chest %s; opened at tick %u, the first item moved at %u: in the bag's slot %d now %d, the chest holds %d\n",
+				 chest != 0 ? "placed" : "missing", openedAt, movedAt, int( bagSlot ) + 1, int( server.SlotItem( me, bagSlot ) == firstItem && firstItem != 0 ),
+				 inChest );
+	CHECK( chest != 0 && firstItem != 0 && openedAt != 0 && movedAt != 0 );
+	CHECK( server.SlotItem( me, bagSlot ) == firstItem && server.SlotItem( chest, 0 ) == 0 && inChest >= 1 );
+	CHECK( server.FindEntity( me ).get<Slots>().open == chest );
+	CHECK( bot.client->GetStats().desyncs == 0 );
+	int compared = 0;
+	CHECK( h.CompareWithServer( bot, compared ) == 0 );
+}
+
 // A fused grenade across the wire, behind 100 ms: the frag mod's grenade is thrown from the hand like
 // the impact one, bounces off the floor without going off, and when its time is up (2.5 s after it
 // left the hand) the simulation says frag.grenade.expired where it is, with who threw it, and
@@ -3876,6 +3966,7 @@ int main( int argc, char** argv )
 		{ "dash", TestDash },
 		{ "grenade", TestGrenade },
 		{ "frag", TestFrag },
+		{ "chest", TestChest },
 		{ "flight", TestFlight },
 		{ "grapple", TestGrapple },
 		{ "headshot", TestHeadshot },
