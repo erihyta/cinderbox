@@ -76,6 +76,7 @@ The mods that ship:
 | `dash` | `dash.charges`, `dash.max`; events `dash.started`, `dash.double_jump`; the item `dash.boots` and the motion set `dash.moves` | the example of [motions](motions.md), and of [a motion an item brings](motions.md#what-an-item-does): the dash is the boots' (every life starts with a pair, with the inventory mod), the double jump everyone's. a dash along where you walk and a second jump in the air, both run by every simulation from the player's input, so your own are predicted. The mod only keeps the charges: 2, one back every 2 s (`dash.charges`, `dash.recharge_seconds`). The second jump is off unless `--mod-option dash.double_jump=1` |
 | `flight` | `flight.on`, `flight.fuel`; action `fly` (T); events `flight.started`, `flight.stopped`, `flight.thrust`; the motion set `flight.moves` | the example of [motions that hold](motions.md#motions-that-hold-the-flight-mod): T switches flight on and off, Space held in the air is a jetpack with a tank, Shift held while falling glides. All of it is the motion set; the mod only gives the first tank (`flight.fuel`). The jetpack is off unless `--mod-option flight.jetpack=1`. The whole mod is [switched off by default](#switched-off-by-default) |
 | `grapple` | events `grapple.hook.used`, `grapple.fired`, `grapple.hooked`; `declare.Slots( 4 )`; the item `grapple.hook` from its look | the example of a probe, a force and a link: all of it in the hook's scene (`client/prefabs/hook.tscn`: the item, its `Hook` motion, its hanging pose `grapple.hook_hang`); used by its slot's key, where it is. The mod declares the two events |
+| `shop` | intent `shop.buy`; `shop.coins`, a private field; events `shop.bought`, `shop.refused`; option `shop.start` | the example of an [intent a mod declares](#intents-a-mod-declares): a screen on B with three buttons (a frag grenade 1 coin, a bat 1, a rifle 2); a player starts with `shop.start` coins (3) and gets one per kill |
 | `chest` | the template `chest` (`declare.ContainerTemplate`: a static box with `chest.slots` slots, its look `prefabs/chest.tscn`); options `chest.count`, `chest.radius`, `chest.slots`, `chest.items` | the example of a [container](items.md#containers-chests): places chests on the ground around the spawn point (`ctx.FindTemplate`, `ctx.SpawnTemplate`, `ctx.CastRay` for the ground) and fills each (`ctx.Containers`, `ctx.PutInContainer`) |
 | `frag` | the item `frag.grenade` from its look (slot 6, key H); events `frag.release`, `frag.thrown`, `frag.grenade.expired`, `frag.blast`; `declare.Slots( 6 )`; options `frag.damage`, `frag.radius`, `frag.push`, `frag.refill_seconds`, `frag.carry` | the fused grenade, the example of [an item's time being up](motions.md#things-that-fly-the-grenades) and of a [stack](items.md#stacks): three to a slot, thrown one at a time from the hand; it bounces, and goes off when the simulation says its time is up; the mod gives them back one at a time while a player has fewer than three |
 | `grenade` (off) | the item `grenade.shell` from its look (slot 7); events `grenade.release`, `grenade.thrown`, `grenade.blast`; `declare.Slots( 7 )`; option `grenade.refill_seconds` | the impact grenade, switched off (its `disabled` file; start it by name): thrown from the hand, it goes off on the first hard hit (`ctx.Hits`) |
@@ -113,6 +114,30 @@ ctx.Set( SlotTarget( slot ), m_role, 3 );     // that player is told; nobody els
 - What happens in the world (where someone is, what they hold) is the simulation's and is not
   secret: every client simulates the whole world, so entities cannot be hidden from one.
 - The `secret` mod is the example, and `net_private_fields` the check.
+
+### Intents a mod declares
+
+A screen's button can ask something of a mod ("buy offer 2", "vote for map 3") with no client
+code: the mod declares the intent, a `CbClick` sends it, the mod answers.
+
+```cpp
+m_buy = declare.Intent( "shop.buy" );
+...
+for ( const IntentSent& asked : ctx.Intents( m_buy ) )   // who, and its numbers a and b
+{
+	ctx.GiveItem( SlotTarget( asked.slot ), ... );
+}
+```
+
+| | What |
+|---|---|
+| Sent | in the player's own input: the code `kFirstModIntent` (32) + the intent's place in the schema, with two numbers (0 to 255) |
+| Heard | `ctx.Intents( handle )`: each player who sent it, once, on the tick it arrives (a late or guessed input does not repeat it) |
+| Answered | by the mod, on the server; not predicted: the screen shows the answer when the server's state arrives |
+| A screen | `CbClick` `mod_intent = "shop.buy"`, `intent_a = "2"` (an expression: `slot.number` in a row); GDScript: `client.send_mod_intent( "shop.buy", 2, 0 )` |
+
+- As many as 223 intents across the mods; the same name from two mods is one intent.
+- The `shop` mod is the example, and `net_shop` the check.
 
 ### The combat mod
 
