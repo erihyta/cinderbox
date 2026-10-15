@@ -20,6 +20,7 @@
 #include "box3d/id.h"
 #include "flecs.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <utility>
