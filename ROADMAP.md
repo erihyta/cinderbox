@@ -167,10 +167,10 @@ while melee.hot
 | 1 | Measure first: a skill kit | **done (M163)**: the `brawl` mod, [measured below](#the-skill-kit-measured) | the pain decides which sheet comes first (reactions, motions or the HUD), not a guess |
 | 2 | The sheet | **done (M165)**: a `.rules` file beside the scene, a `CbRules` node pointing to it; each action becomes a `CbReaction` under it when the scene is used; the nodes keep working beside it | chosen over a text property in the scene: a real editor, clean diffs |
 | 3 | Checked as nodes are | **done (M165)** at publish and on the node: every name at its line, with "did you mean"; not yet: completion while typing, a mistake shown in the script editor | what nodes give for free today (step 1) is the real cost of text, not the parser |
-| 4 | Reactions as rules | **done (M165)** for reactions (the brawl kit's sounds: 9 nodes and 59 values into 8 rules); not yet: predictions (`CbPrediction`) as rules | the soup is worst here: a gun's look is a dozen reactions |
+| 4 | Reactions as rules | **done (M165, M166)**: reactions and predictions (`predict ... as ...`) | the soup is worst here: a gun's look is a dozen reactions |
 | 5 | An item's use as rules | the When used rules and the motions under a `CbItem` as lines; the probe, the link and the force stay nodes where they are things with a place | the skill kit's motions |
 | 6 | An item's own HUD | in the item's own scene, shown while it is selected or carried (a skill's cooldown on its slot) | from step 4; written with the sheet |
-| 7 | The mods, converted | pistol, bat, rifle, grenade, hook, boots, the HUDs: as few nodes as there are places | the examples are what modders copy |
+| 7 | The mods, converted | **reactions done (M166)**: every look's reactions and predictions are sheets (48 nodes into 13 sheets, each checked to do exactly what its nodes did); `tools/reactions_to_rules.py` converts a scene. Not yet: the HUDs, an item's use and motions (pieces 5 and 6 first); the rifle (licensed, local) | the examples are what modders copy |
 
 - **What it is not**: a script. Nothing in a sheet runs on its own; it is baked like the nodes, and
   the security model (no code in a look) holds.

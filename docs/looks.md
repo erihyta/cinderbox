@@ -450,6 +450,18 @@ while melee.hot
 | `on <event> [if <expression>]`, `while <expression>` | a rule starts: when, as a reaction's |
 | `subject`, `side`, `kind`, `template`, `delay`, `chance`, `cooldown`, `wait`, `at ... [from] [offset]` | its settings, for every action under it |
 | `sound`, `scene`, `play`, `set`, `call`, `shake`, `flash` | its actions: each becomes one `CbReaction` |
+| `predict <action> as <cue> [if <expression>]`, then `cooldown`, `held`, `change`, `stance ... on ...` | a [prediction](#predictions): one `CbPrediction` |
+
+```
+# prefabs/pistol.rules
+predict use as item.use if gun.ammo > 0 and !gun.reloading and !combat.dead
+    cooldown 0.19
+    change gun.ammo -= 1
+
+on item.use
+    subject ^^
+    scene res://vfx/muzzle_flash.tscn under Muzzle life 0.3
+```
 
 - **Every action is a `CbReaction`** under the `CbRules` node (never saved with the scene), so the
   director, the guard and the Cue Preview see nothing new.
@@ -459,8 +471,12 @@ while melee.hot
   brawl.uppercut.hit?)`). A rule with one is left out; the rest works.
 - **The editor opens `.rules`** in its script editor; packs ship them (`*.rules` in the export
   filter; the game's pack check allows them as data).
-- **The brawl kit's sounds** are the example: `server_mods/brawl/client/vfx/brawl.rules`, 8 rules
-  where there were 9 nodes and 59 values.
+- **Every look of the game is written so** (M166): the game's own `vfx/reactions.rules`, the
+  pistol's and the bat's sheets, and every mod's `reactions_<mod>.rules`: 48 nodes became 13 sheets.
+- **`under` attaches, `at` places**: `scene ... under Muzzle` rides on the muzzle; `at Muzzle` puts
+  it there, in the world, once. With neither, it goes where the `CbRules` node is (a `Node3D`).
+- **Converting a scene**: `python tools/reactions_to_rules.py <project> <scene>` writes its sheet
+  and leaves one `CbRules` node (each rule keeps the node's name as a comment).
 - `check_rules.gd` checks it: `godot --headless --path godot --script res://addons/cinderbox_maps/check_rules.gd`.
 
 ### Cue Preview (editor)
