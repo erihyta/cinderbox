@@ -10,9 +10,10 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 | 1 | [The SDK knows the server](#1-the-sdk-knows-the-server) | the editor knows the server's names: completed while typing, checked at publish |
 | 2 | [Mod testing](#2-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
 | 3 | [Items that do things](#3-items-that-do-things) | an item is used from the hand or by its own key; what it does is helper nodes under it; its state is its own; one tree per kind in the game |
-| 4 | [The inventory, finished](#4-the-inventory-finished) | drag, icons, stacks, chests, intents a mod declares, and slots as places |
-| 5 | [The client, finished](#5-the-client-finished) | what is left of the client's known limits, typed text, the game script in parts |
-| 6 | [Rules without a relink](#6-rules-without-a-relink) | a server mod's rules as a script the server loads, not C++ compiled into it |
+| 4 | [The inventory, finished](#4-the-inventory-finished) | drag, icons, stacks, chests, intents a mod declares, and slots as places; last, slots checked across compilers |
+| 5 | [Logic as text, places as nodes](#5-logic-as-text-places-as-nodes) | a scene's rules (when, if, change, emit) as lines in one sheet; nodes only for what is a place or a thing |
+| 6 | [The client, finished](#6-the-client-finished) | what is left of the client's known limits, typed text, the game script in parts |
+| 7 | [Rules without a relink](#7-rules-without-a-relink) | a server mod's rules as a script the server loads, not C++ compiled into it |
 
 - **Why this order** (rethought after M118). The pieces a game is made of are there now: movement
   (motions), things that fly (launches), items and slots, a HUD and a world that read the server's
@@ -22,6 +23,12 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 - **Why they are not last any more**: they wrap the client and the scenes, so they waited until
   those stopped changing. The redesign that broke scenes (M104 to M117: items, slots, the HUD's
   nodes, bodies, sizes) is over.
+- **Why logic as text comes next** (decided after M161): one `CbReaction` is one rule, so a gun
+  that reacts to eight things is eight nodes and eight inspector panels. That is the wall a bigger
+  mod hits first, before C++ does. It is not replaced by a script: what a player sees at once (a
+  dash, a throw) must be in the shared simulation, so it stays declarative and baked; only how it
+  is written changes. It comes before the client's leftovers because every step after it is
+  authored with it.
 - **Why rules get a step**: C++ compiled into the server is the highest wall a modder meets, and
   only the server runs rules, so they need no determinism: any language would do.
 - **Done before these**: movement parameters (M92), motions (M93, M94, M99), lists and keys in the
@@ -133,11 +140,43 @@ the hook's hang).
 | Slots are places | **done (M161)**, asked for as in Minecraft: a slot's key selects it whatever it holds (1 to 9, 0); any item is used from the hand; a kind's `slot` is where it goes if free, nothing is pushed out; an item's own key (`use_key`, the action `<kind>.use`) uses the first copy carried; two of a kind are two items, each used on its own | an off hand (Minecraft's F) |
 | Intents a mod declares | **done (M160)**: `declare.Intent`, `ctx.Intents` (once, on the tick it arrives); `CbClick.mod_intent` with two numbers; the shop mod (`shop.buy`, coins a private field) | predicted answers; numbers wider than a byte |
 | The holster | **done (M137)**: on the `CbItem`, with the item's animation pack, for a mod that takes its items from its look | |
-| An item's HUD | a scene of its mod's | in the item's own scene, shown while it is selected |
-| The rules API | C++ in each mod | what a mod decides about containers, named |
-| Checked across compilers | not yet | slots in the reference scenario |
+| Checked across compilers | not yet | slots in the reference scenario: moves, splits, stacks, a container, an item's own key (M161 changed `Slots`) |
 
-### 5. The client, finished
+- **Moved out**: an item's own HUD goes to [step 5](#5-logic-as-text-places-as-nodes) (it is
+  authored with the sheet); what a mod decides about containers, named, goes to
+  [step 7](#7-rules-without-a-relink) (it is a rules API).
+
+### 5. Logic as text, places as nodes
+
+Split by kind, don't replace. A scene keeps its nodes for what is **a place or a thing**: where a
+sound plays, which particle scene, which mesh glows, the hook's line, a socket. Its **logic** (when,
+if, change, emit, play, spawn) moves into one text property, a sheet of rules, in the line format
+the bakes already write (`motions/*.cfg`) and the expressions `src/expr` already reads. A rule names
+nodes by their path, as a `CbReaction` does today.
+
+```
+on melee.hit if $other:combat.health < 50
+    spawn res://vfx/spark.tscn at event.point lifetime 1
+    play AnimationPlayer glow
+while melee.hot
+    set Barrel surface_material_override/0:emission_energy_multiplier 4
+```
+
+| # | Piece | What | Why |
+|---|---|---|---|
+| 1 | Measure first: a skill kit | a Roblox-style fighting mod made with today's nodes: four or five skills on the hotbar, each with its own key, cooldowns, a combo, hits with knockback, its HUD; count its nodes and the clicks it took | the pain decides which sheet comes first (reactions, motions or the HUD), not a guess |
+| 2 | The sheet | one text property (on the item's, the reactions' or the HUD's root, as piece 1 says), parsed at bake into the same structures the nodes bake to; the nodes keep working beside it | no new language: the line format and `src/expr`; nothing the server or the simulation reads changes |
+| 3 | Checked as nodes are | the names checker (`cue_names`) reads the sheet: an unknown name is an error at its line, in the editor and at publish; completion while typing | what nodes give for free today (step 1) is the real cost of text, not the parser |
+| 4 | Reactions as rules | `on` / `while` / `if`, and what a `CbReaction` does: play, set, spawn, sound, shake; predictions (`CbPrediction`) as rules too | the soup is worst here: a gun's look is a dozen reactions |
+| 5 | An item's use as rules | the When used rules and the motions under a `CbItem` as lines; the probe, the link and the force stay nodes where they are things with a place | the skill kit's motions |
+| 6 | An item's own HUD | in the item's own scene, shown while it is selected or carried (a skill's cooldown on its slot) | from step 4; written with the sheet |
+| 7 | The mods, converted | pistol, bat, rifle, grenade, hook, boots, the HUDs: as few nodes as there are places | the examples are what modders copy |
+
+- **What it is not**: a script. Nothing in a sheet runs on its own; it is baked like the nodes, and
+  the security model (no code in a look) holds.
+- **A long sheet** that wants functions or loops is the sign for [a script for looks](#later-not-scheduled), later.
+
+### 6. The client, finished
 
 | Candidate | Today | Would be |
 |---|---|---|
@@ -151,7 +190,7 @@ the hook's hang).
 - **The camera stays Godot's**: a `Camera3D` the game's script places, not the extension's. That
   keeps the next thing open: [cameras a mod places](#later-not-scheduled).
 
-### 6. Rules without a relink
+### 7. Rules without a relink
 
 Today a server mod is C++ compiled into `cb_server`: a compiler, a relink and a restart for every
 change of a rule. Rules run on the server only, so nothing about them has to be deterministic or
@@ -163,6 +202,7 @@ shared with clients.
 | Reloaded while it runs | a changed rule is taken up without restarting the server: with step 2, an edit to a rule is seconds from being played |
 | C++ stays | for what a script is too slow for; both are mods to everything else |
 | The SDK writes it | step 1's scaffold writes the script, not a `.cpp` |
+| What a mod decides, named | the containers' rules (who may open one, what it takes), from step 4: a rules API, not C++ in each mod |
 
 ## Later, not scheduled
 
