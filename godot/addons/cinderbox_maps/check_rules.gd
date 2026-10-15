@@ -71,7 +71,17 @@ func _initialize() -> void:
 func _process(_delta: float) -> bool:
 	_frames += 1
 	if _frames == 2:
-		_check("five actions and a prediction: six nodes", _rules.get_reaction_count() == 6)
+		_check("five actions, a prediction and three HUD lines: nine nodes", _rules.get_reaction_count() == 9)
+		var bindings := []
+		for child in _rules.get_children(true):
+			if child.get_class() == "CbFieldBinding":
+				bindings.append(child)
+		_check("show: a binding that hides its target", bindings.size() == 3 and bindings[0].hides
+			and bindings[0].conditions == PackedStringArray(["combat.health > 0"]) and String(bindings[0].target) == "../../Panel")
+		_check("text: words into a property, only while it holds", not bindings[1].hides and bindings[1].text_format == "HP {combat.health}"
+			and bindings[1].property == "tooltip_text" and bindings[1].conditions == PackedStringArray(["combat.health < 50"]))
+		_check("bind: an expression into a part of a property", not bindings[2].hides and bindings[2].field == "combat.health / 100"
+			and bindings[2].property == "modulate:a" and bindings[2].conditions == PackedStringArray(["?combat.health"]))
 		var two := {}
 		for child in _rules.get_children(true):
 			if child is CbReaction and child.event == "test.two":
@@ -107,7 +117,7 @@ func _process(_delta: float) -> bool:
 		for p in problems:
 			lines.append(int(p.get_slice(":", 0).get_slice(" ", 1)))
 		lines.sort()
-		_check("its mistakes, each at its line (3, 4, 6, 9, 12, 15)", lines == [3, 4, 6, 9, 12, 15])
+		_check("its mistakes, each at its line (3, 4, 6, 9, 12, 15, 16, 17)", lines == [3, 4, 6, 9, 12, 15, 16, 17])
 		_check("the rule without one still works", _bad.get_reaction_count() == 1)
 		_timer.visible = true
 		_world.cue("test.fine", _item, null, {})

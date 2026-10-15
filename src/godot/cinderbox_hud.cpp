@@ -328,6 +328,9 @@ void CbFieldBinding::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "multiply" ), "set_multiply", "get_multiply" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "add" ), "set_add", "get_add" );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "conditions" ), "set_conditions", "get_conditions" );
+	ClassDB::bind_method( D_METHOD( "set_hides", "value" ), &CbFieldBinding::set_hides );
+	ClassDB::bind_method( D_METHOD( "get_hides" ), &CbFieldBinding::get_hides );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "hides" ), "set_hides", "get_hides" );
 }
 
 PackedStringArray CbFieldBinding::_get_configuration_warnings() const
@@ -352,7 +355,7 @@ void CbFieldBinding::_process( double )
 	if ( m_conditions.is_empty() == false )
 	{
 		bool holds = client->has_local_player() && client->CheckWith( subject, m_conditions, RowNames( this ) );
-		Variant visible = target->get( "visible" );
+		Variant visible = m_hides ? target->get( "visible" ) : Variant();
 		if ( visible.get_type() == Variant::BOOL && bool( visible ) != holds )
 		{
 			target->set( "visible", holds );

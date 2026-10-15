@@ -13,3 +13,5 @@ predict use
 on test.late
     call Timer hide
     delay 1
+show Panel
+bind Panel modulate:a combat.health

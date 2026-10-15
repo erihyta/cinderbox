@@ -1,0 +1,30 @@
+# The kit's HUD: each skill's key and whether it is ready, the guard, the combo. The labels are the
+# scene's (hud_brawl.tscn: where they are, their font); what they say, when, is here. The seconds
+# left are fields the kit's motions count down, so they move on the viewer's own screen at once.
+
+show Skills/Dash if carried.brawl.dash_strike
+text Skills/Dash "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
+text Skills/Dash "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s" if brawl.cd_dash > 0
+bind Skills/Dash modulate:r = 1 - 0.45 * (brawl.cd_dash <= 0)
+bind Skills/Dash modulate:b = 1 - 0.45 * (brawl.cd_dash <= 0)
+
+show Skills/Upper if carried.brawl.uppercut
+text Skills/Upper "[{key:slot3}]  UPPERCUT  READY" if brawl.cd_upper <= 0
+text Skills/Upper "[{key:slot3}]  UPPERCUT  {brawl.cd_upper}s" if brawl.cd_upper > 0
+bind Skills/Upper modulate:r = 1 - 0.45 * (brawl.cd_upper <= 0)
+bind Skills/Upper modulate:b = 1 - 0.45 * (brawl.cd_upper <= 0)
+
+show Skills/Slam if carried.brawl.slam
+text Skills/Slam "[{key:slot4}]  GROUND SLAM  READY" if brawl.cd_slam <= 0
+text Skills/Slam "[{key:slot4}]  GROUND SLAM  {brawl.cd_slam}s" if brawl.cd_slam > 0
+bind Skills/Slam modulate:r = 1 - 0.45 * (brawl.cd_slam <= 0)
+bind Skills/Slam modulate:b = 1 - 0.45 * (brawl.cd_slam <= 0)
+
+show Skills/Guard if carried.brawl.guard
+text Skills/Guard "[{key:slot5}]  GUARD (hold)" if not using.brawl.guard
+text Skills/Guard "GUARDING" if using.brawl.guard
+bind Skills/Guard modulate:r = 1 - 0.45 * using.brawl.guard
+bind Skills/Guard modulate:b = 1 - 0.45 * using.brawl.guard
+
+show Combo if brawl.combo > 0
+text Combo "COMBO {brawl.combo}"

@@ -233,6 +233,7 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			Rule made;
 			made.line = rule.line;
 			made.prediction = true;
+			made.type = "CbPrediction";
 			made.properties = rule.settings;
 			if ( rule.changes.is_empty() == false )
 			{
@@ -267,6 +268,93 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			continue;
 		}
 		const String verb = w[0].text;
+		// --- a HUD's line: show, text, bind (a CbFieldBinding each, on a control of the HUD)
+		if ( verb == "show" || verb == "text" || verb == "bind" )
+		{
+			finish();
+			// "... if <expression>": the condition, to the end of the line.
+			size_t cut = w.size();
+			for ( size_t k = 2; k < w.size(); ++k )
+			{
+				if ( w[k].quoted == false && w[k].text == "if" )
+				{
+					cut = k;
+					break;
+				}
+			}
+			Rule made;
+			made.line = number;
+			made.type = "CbFieldBinding";
+			Dictionary& p = made.properties;
+			if ( cut < w.size() )
+			{
+				if ( cut + 1 >= w.size() )
+				{
+					errors.push_back( "line " + String::num_int64( number ) + ": if what? if <expression>" );
+					continue;
+				}
+				p["conditions"] = PackedStringArray( { RestFrom( line, w[cut + 1] ) } );
+			}
+			String why;
+			if ( w.size() < 2 )
+			{
+				why = verb + String( " what? " ) + ( verb == "show" ? "show <node> if <expression>" : verb == "text" ? "text <node> \"format\" [into <property>] [if <expression>]" : "bind <node> <property> = <expression> [if <expression>]" );
+			}
+			else if ( verb == "show" )
+			{
+				if ( cut != 2 || p.has( "conditions" ) == false )
+				{
+					why = "show <node> if <expression>";
+				}
+			}
+			else if ( verb == "text" )
+			{
+				p["hides"] = false;
+				if ( cut < 3 )
+				{
+					why = "text <node> \"format\" [into <property>] [if <expression>]";
+				}
+				else
+				{
+					p["text_format"] = w[2].text;
+					if ( cut == 5 && w[3].text == "into" )
+					{
+						p["property"] = w[4].text;
+					}
+					else if ( cut != 3 )
+					{
+						why = "after the format: into <property>, or if <expression>";
+					}
+				}
+			}
+			else
+			{
+				p["hides"] = false;
+				if ( cut < 5 || w[3].text != "=" )
+				{
+					why = "bind <node> <property> = <expression> [if <expression>]";
+				}
+				else
+				{
+					p["property"] = w[2].text;
+					// (The expression, up to "if" or the end of the line.)
+					String expression = RestFrom( line, w[4] );
+					if ( cut < w.size() )
+					{
+						expression = line.substr( w[4].start, w[cut].start - w[4].start ).strip_edges();
+					}
+					p["field"] = expression;
+				}
+			}
+			if ( why.is_empty() == false )
+			{
+				errors.push_back( "line " + String::num_int64( number ) + ": " + why );
+				continue;
+			}
+			p["target"] = w[1].text;
+			out.push_back( made );
+			continue;
+		}
 		// --- a prediction: the viewer's own press, shown as the cue the server will answer with
 		if ( verb == "predict" )
 		{
@@ -645,7 +733,7 @@ void CbRules::Clear()
 	for ( int i = get_child_count( true ) - 1; i >= 0; --i )
 	{
 		Node* child = get_child( i, true );
-		if ( ( Object::cast_to<CbReaction>( child ) != nullptr || Object::cast_to<CbPrediction>( child ) != nullptr ) && child->get_owner() == nullptr )
+		if ( child->get_owner() == nullptr )
 		{
 			remove_child( child );
 			child->queue_free();
@@ -687,8 +775,15 @@ void CbRules::Build()
 	}
 	for ( const cue::Rule& rule : rules )
 	{
-		Node* reaction = rule.prediction ? static_cast<Node*>( memnew( CbPrediction ) ) : static_cast<Node*>( memnew( CbReaction ) );
-		reaction->set_name( ( rule.prediction ? "Predict" : "Rule" ) + String::num_int64( rule.line ) );
+		Node* reaction = rule.type == "CbReaction"	   ? static_cast<Node*>( memnew( CbReaction ) )
+						 : rule.type == "CbPrediction" ? static_cast<Node*>( memnew( CbPrediction ) )
+													   : Object::cast_to<Node>( ClassDB::instantiate( rule.type ) );
+		if ( reaction == nullptr )
+		{
+			m_problems.push_back( "line " + String::num_int64( rule.line ) + ": this game has no " + rule.type );
+			continue;
+		}
+		reaction->set_name( rule.type.substr( 2 ) + String::num_int64( rule.line ) );
 		bool ok = true;
 		Array keys = rule.properties.keys();
 		for ( int64_t i = 0; i < keys.size(); ++i )
