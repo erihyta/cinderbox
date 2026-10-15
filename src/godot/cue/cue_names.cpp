@@ -267,6 +267,7 @@ enum class Holds
 	Event,
 	Action,
 	Item,
+	Intent,
 	Expression,
 	Expressions, // an array of them
 	Format,
@@ -313,6 +314,9 @@ const Entry kTable[] = {
 	{ "CbKey", "conditions", Holds::Expressions },
 	{ "CbClick", "conditions", Holds::Expressions },
 	{ "CbClick", "sets", Holds::Sets },
+	{ "CbClick", "mod_intent", Holds::Intent },
+	{ "CbClick", "intent_a", Holds::Expression },
+	{ "CbClick", "intent_b", Holds::Expression },
 	{ "CbPromptLabel", "text_format", Holds::Format },
 	{ "CbPromptLabel", "progress_field", Holds::Expression },
 	{ "CbPromptLabel", "since_field", Holds::Expression },
@@ -321,7 +325,11 @@ const Entry kTable[] = {
 
 const char* KindOf( Holds holds )
 {
-	return holds == Holds::Event ? "event" : holds == Holds::Action ? "action" : holds == Holds::Item ? "item" : nullptr;
+	return holds == Holds::Event	? "event"
+		   : holds == Holds::Action ? "action"
+		   : holds == Holds::Item	? "item"
+		   : holds == Holds::Intent ? "intent"
+									: nullptr;
 }
 
 } // namespace
@@ -383,6 +391,7 @@ PackedStringArray Problems( const Node* node )
 		{
 			case Holds::Event:
 			case Holds::Item:
+			case Holds::Intent:
 				CheckName( book, KindOf( entry.holds ), String( value ), property, out );
 				break;
 			case Holds::Action:

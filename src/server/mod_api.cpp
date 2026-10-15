@@ -88,6 +88,22 @@ EventHandle Declarations::Event( const std::string& name )
 	return { int( m_schema.events.size() - 1 ) };
 }
 
+IntentHandle Declarations::Intent( const std::string& name )
+{
+	int existing = m_schema.FindIntent( name );
+	if ( existing >= 0 )
+	{
+		return { existing };
+	}
+	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.intents.size() >= size_t( 255 - kFirstModIntent ) )
+	{
+		m_errors.push_back( m_mod + ": bad intent \"" + name + "\"" );
+		return {};
+	}
+	m_schema.intents.push_back( name );
+	return { int( m_schema.intents.size() - 1 ) };
+}
+
 LayerHandle Declarations::Layer( const std::string& name )
 {
 	int existing = m_schema.FindLayer( name );
@@ -1013,6 +1029,26 @@ int Context::SelectedSlot( PlayerSlot player ) const
 uint32_t Context::SlotItem( PlayerSlot player, int slot ) const
 {
 	return slot >= 0 && slot < kMaxSlots ? m_sim.SlotItem( m_sim.PlayerNetId( player ), uint8_t( slot ) ) : 0;
+}
+
+std::vector<IntentSent> Context::Intents( IntentHandle intent ) const
+{
+	std::vector<IntentSent> out;
+	if ( intent.Valid() == false )
+	{
+		return out;
+	}
+	const uint8_t code = uint8_t( kFirstModIntent + intent.index );
+	for ( int i = 0; i < kMaxPlayers; ++i )
+	{
+		const PlayerInput& in = m_frame.inputs[i];
+		// (New on this tick: its count moved. A late or guessed input repeats the count.)
+		if ( m_sim.PlayerNetId( PlayerSlot( i ) ) != 0 && in.intent == code && in.intentSeq != m_previous[i].intentSeq )
+		{
+			out.push_back( { PlayerSlot( i ), in.intentA, in.intentB } );
+		}
+	}
+	return out;
 }
 
 std::vector<uint32_t> Context::Containers() const

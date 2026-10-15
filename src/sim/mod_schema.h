@@ -172,6 +172,8 @@ struct ModSchema
 	std::string character;
 	std::vector<BoardField> fields;
 	std::vector<std::string> events; // index = ModEventRecord::type
+	// Intents mods declare ("shop.buy"): a player's input carries one as kFirstModIntent + its index.
+	std::vector<std::string> intents;
 	std::vector<ModAction> actions;
 	// Animation layers and stances, declared by mods: names. A mod sets a stance on a layer; a
 	// character's state machine reads stances by name ("pistol") in its conditions and weights.
@@ -201,6 +203,7 @@ struct ModSchema
 	int FieldCount( BoardScope scope ) const;
 	// -1 when not declared.
 	int FindEvent( const std::string& name ) const;
+	int FindIntent( const std::string& name ) const;
 	const ModAction* FindAction( const std::string& name ) const;
 	// Bit mask of the named action, 0 when not declared.
 	ActionBits ActionMask( const std::string& name ) const;

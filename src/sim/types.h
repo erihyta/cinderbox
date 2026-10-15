@@ -49,6 +49,14 @@ enum class SlotIntent : uint8_t
 	Close = 6,	// the open container is closed
 };
 inline constexpr uint8_t kLastSlotIntent = uint8_t( SlotIntent::Close );
+// An intent a mod declares ("shop.buy"): kFirstModIntent + its place in the schema's intents, with
+// intentA and intentB as its two numbers. The simulation carries it and does nothing with it; the
+// mod reads it (Context::Intents) and answers.
+inline constexpr uint8_t kFirstModIntent = 32;
+inline constexpr bool KnownIntent( uint8_t intent )
+{
+	return intent <= kLastSlotIntent || intent >= kFirstModIntent;
+}
 // In an intent's slot: the open container's slot of this index, not the player's own.
 inline constexpr uint8_t kContainerSlotBit = 0x80;
 // How far a container is reached to open it, and how far the player may go before it closes.

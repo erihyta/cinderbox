@@ -10,7 +10,7 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x4542434Du; // 'MCBE': 14 stacks; 13 an item thrown fast (a bullet); 12 an item's time is up; 11 an item's hand; 10 an item's own fields' defaults; 2 workshop items, 3 the character, 4 layers and stances, 5 the
+constexpr uint32_t kSchemaMagic = 0x4642434Du; // 'MCBF': 15 intents a mod declares; 14 stacks; 13 an item thrown fast (a bullet); 12 an item's time is up; 11 an item's hand; 10 an item's own fields' defaults; 2 workshop items, 3 the character, 4 layers and stances, 5 the
 												// character's state machine, 6 item kinds and sockets, 7 animation packs,
 												// 8 item shapes, 9 slots' keys
 
@@ -193,6 +193,18 @@ int ModSchema::FindSocket( const std::string& name ) const
 	return -1;
 }
 
+int ModSchema::FindIntent( const std::string& name ) const
+{
+	for ( size_t i = 0; i < intents.size(); ++i )
+	{
+		if ( intents[i] == name )
+		{
+			return int( i );
+		}
+	}
+	return -1;
+}
+
 int ModSchema::FindEvent( const std::string& name ) const
 {
 	for ( size_t i = 0; i < events.size(); ++i )
@@ -248,6 +260,12 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 	for ( size_t i = 0; i < schema.events.size() && i < 65535; ++i )
 	{
 		PutString( out, schema.events[i] );
+	}
+	const size_t intents = std::min<size_t>( schema.intents.size(), size_t( 255 - kFirstModIntent ) );
+	PutU8( out, uint8_t( intents ) );
+	for ( size_t i = 0; i < intents; ++i )
+	{
+		PutString( out, schema.intents[i] );
 	}
 	PutU8( out, uint8_t( std::min<size_t>( schema.actions.size(), size_t( kMaxActions ) ) ) );
 	for ( size_t i = 0; i < schema.actions.size() && i < size_t( kMaxActions ); ++i )
@@ -404,6 +422,12 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 	for ( uint16_t i = 0; i < events && r.ok; ++i )
 	{
 		out.events.push_back( r.String() );
+	}
+	uint8_t intents = r.U8();
+	out.intents.clear();
+	for ( uint8_t i = 0; i < intents && r.ok; ++i )
+	{
+		out.intents.push_back( r.String() );
 	}
 	uint8_t actions = r.U8();
 	if ( actions > kMaxActions )

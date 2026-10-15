@@ -62,6 +62,25 @@ struct EventHandle
 	}
 };
 
+// An intent a mod declares (Declarations::Intent): a click on a screen sends it, the mod answers.
+struct IntentHandle
+{
+	int index = -1;
+
+	bool Valid() const
+	{
+		return index >= 0;
+	}
+};
+
+// One a player sent (Context::Intents): who, and its two numbers.
+struct IntentSent
+{
+	PlayerSlot slot = 0;
+	uint8_t a = 0;
+	uint8_t b = 0;
+};
+
 struct ActionHandle
 {
 	ActionBits mask = 0;
@@ -206,6 +225,10 @@ class Declarations
 public:
 	FieldHandle Field( const std::string& name, BoardType type, BoardScope scope = BoardScope::Entity );
 	EventHandle Event( const std::string& name );
+	// Something a player asks of the mod from a screen, with two numbers ("shop.buy", the offer):
+	// a CbClick's mod_intent sends it in the player's input; Context::Intents reads it. What it
+	// does is the mod's to say (on the server: it is not predicted).
+	IntentHandle Intent( const std::string& name );
 	// `key` is the suggested binding, as Godot names keys ("F", "R", "1") or "MouseLeft".
 	ActionHandle Action( const std::string& name, const std::string& key );
 	// Layers apply in declaration order (a later one wins where masks overlap). At most
@@ -473,6 +496,9 @@ public:
 	// ("combat.killed") without knowing it. At most the ring's size per tick. Markers in the
 	// character's animations record events too, from the player they played on.
 	std::vector<ModEventRecord> RecentEvents() const;
+	// The players who sent `intent` this tick (a click on a screen), and its numbers. Each is here
+	// once, on the tick it arrived.
+	std::vector<IntentSent> Intents( IntentHandle intent ) const;
 	// Whether the character's animations have a marker that emits `event` ("melee.strike" on the
 	// frame the swing connects). A mod can then time its effect by the animation, and keep its own
 	// timer for characters without one.

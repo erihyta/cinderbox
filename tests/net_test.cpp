@@ -2888,10 +2888,12 @@ void TestPrivateFields()
 		std::printf( "    slot %u was told %d (the server keeps %d)\n", unsigned( client.Slot() ), mine, kept );
 		CHECK( mine >= 1 && mine <= 99 );
 		CHECK( mine == kept );
-		// Nothing else arrived with it: every other private slot is empty.
+		// Nothing else arrived with it: every other private slot is empty (but the shop's coins,
+		// which are the player's own too).
+		const BoardField* coins = schema.FindField( "shop.coins" );
 		for ( size_t s = 0; s < client.Privates().values.size(); ++s )
 		{
-			CHECK( s == field->slot || client.Privates().values[s] == 0 );
+			CHECK( s == field->slot || ( coins != nullptr && s == coins->slot ) || client.Privates().values[s] == 0 );
 		}
 		for ( size_t j = 0; j < h.bots.size(); ++j )
 		{
@@ -3460,6 +3462,81 @@ void TestChest()
 	CHECK( h.CompareWithServer( bot, compared ) == 0 );
 }
 
+// An intent a mod declares: the shop mod's "shop.buy", in a bot's input as a screen's button sends
+// it (kFirstModIntent + its place, the offer in intentA). The mod reads it on the tick it arrives:
+// the rifle (2 coins of the 3 a player starts with) is bought and given; asked again, refused (1
+// coin left); the coins are the player's own private field, on its client too.
+void TestShop()
+{
+	Harness h( 47887 );
+	const ModSchema& schema = h.server.Schema();
+	const int buy = schema.FindIntent( "shop.buy" );
+	const int rifle = schema.FindItemKind( "gun.rifle" );
+	const int refused = schema.FindEvent( "shop.refused" );
+	const BoardField* coins = schema.FindField( "shop.coins" );
+	CHECK( buy >= 0 && rifle >= 0 && refused >= 0 && coins != nullptr );
+	if ( buy < 0 || rifle < 0 || coins == nullptr )
+	{
+		return;
+	}
+	Bot& bot = h.AddBot();
+	const uint32_t firstAt = 200, secondAt = 260;
+	bot.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		in.intent = uint8_t( kFirstModIntent + buy );
+		in.intentA = 2; // the rifle
+		in.intentSeq = tick >= secondAt ? 2 : tick >= firstAt ? 1 : 0;
+		return in;
+	};
+	Simulation& server = h.server.Sim();
+	auto rifles = [&]() {
+		uint32_t me = server.PlayerNetId( bot.client->Slot() );
+		int n = 0;
+		for ( const Simulation::EntityRef& r : server.Entities() )
+		{
+			const HeldItem* item = server.FindEntity( r.netId ).try_get<HeldItem>();
+			n += item != nullptr && me != 0 && item->holder == me && item->kind == uint16_t( rifle ) ? 1 : 0;
+		}
+		return n;
+	};
+	int32_t coinsBefore = -1, coinsAfter = -1, coinsEnd = -1;
+	int riflesBefore = -1, riflesAfter = -1, riflesEnd = -1;
+	uint32_t refusals = 0, seenEvents = 0;
+	h.server.SetTickObserver( [&] {
+		uint32_t tick = server.Tick();
+		int32_t now = h.server.Privates( bot.client->Slot() ).values[coins->slot];
+		if ( tick == firstAt - 10 )
+		{
+			coinsBefore = now;
+			riflesBefore = rifles();
+		}
+		if ( tick == secondAt - 10 )
+		{
+			coinsAfter = now;
+			riflesAfter = rifles();
+		}
+		if ( tick == secondAt + 40 )
+		{
+			coinsEnd = now;
+			riflesEnd = rifles();
+		}
+		const SimGlobals& g = server.Globals();
+		for ( ; seenEvents < g.modEventCount; ++seenEvents )
+		{
+			refusals += int( g.modEvents[seenEvents % kModEventHistory].type ) == refused ? 1 : 0;
+		}
+	} );
+	h.RunUntil( 5.5 );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	std::printf( "    coins %d, rifles %d; after buying the rifle: %d, %d; asked again: %d, %d (%u refused); its own client sees %d coins\n",
+				 coinsBefore, riflesBefore, coinsAfter, riflesAfter, coinsEnd, riflesEnd, refusals, bot.client->Privates().values[coins->slot] );
+	CHECK( coinsBefore == 3 && riflesBefore == 1 );
+	CHECK( coinsAfter == 1 && riflesAfter == 2 );
+	CHECK( coinsEnd == 1 && riflesEnd == 2 && refusals == 1 );
+	CHECK( bot.client->Privates().values[coins->slot] == 1 && bot.client->GetStats().desyncs == 0 );
+}
+
 // A fused grenade across the wire, behind 100 ms: the frag mod's grenade is thrown from the hand like
 // the impact one, bounces off the floor without going off, and when its time is up (2.5 s after it
 // left the hand) the simulation says frag.grenade.expired where it is, with who threw it, and
@@ -3967,6 +4044,7 @@ int main( int argc, char** argv )
 		{ "grenade", TestGrenade },
 		{ "frag", TestFrag },
 		{ "chest", TestChest },
+		{ "shop", TestShop },
 		{ "flight", TestFlight },
 		{ "grapple", TestGrapple },
 		{ "headshot", TestHeadshot },

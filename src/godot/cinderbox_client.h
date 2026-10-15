@@ -146,6 +146,9 @@ public:
 	int64_t get_slot_item( int64_t player, int64_t slot ) const;
 	// How many an item is (a stack); 0 for none.
 	int64_t get_item_count( int64_t item ) const;
+	// An intent a mod declares ("shop.buy"), with its two numbers (0 to 255), in the player's next
+	// input. False when the server's mods declare none by that name.
+	bool send_mod_intent( const godot::String& name, int64_t a, int64_t b );
 	// What an item looks like in a slot: its kind's CbItem.icon, or a picture of its scene taken once
 	// (empty until that is ready, a few frames after it is first asked for).
 	godot::Ref<godot::Texture2D> get_item_icon( int64_t item );

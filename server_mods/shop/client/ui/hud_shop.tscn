@@ -1,0 +1,120 @@
+[gd_scene format=3]
+
+; The shop mod's screen, on B. No scripts: a CbKey ("shop", B, each press switches it, the cursor
+; free meanwhile) keeps ui.shop, Shown (a CbFieldBinding) shows the panel while it is 1, and each
+; offer is a button: a CbClick whose mod_intent is "shop.buy" and intent_a the offer's number. The
+; click goes out in the player's input; the shop mod (shop.cpp) takes the price from shop.coins (a
+; private field: yours alone) and gives the item, and the screen shows it when that arrives.
+
+[sub_resource type="StyleBoxFlat" id="Panel"]
+bg_color = Color(0.05, 0.05, 0.07, 0.88)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0, 0, 0, 0.8)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 18.0
+content_margin_top = 14.0
+content_margin_right = 18.0
+content_margin_bottom = 18.0
+
+[sub_resource type="StyleBoxFlat" id="Button"]
+bg_color = Color(0.16, 0.17, 0.2, 0.9)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+content_margin_left = 14.0
+content_margin_top = 10.0
+content_margin_right = 14.0
+content_margin_bottom = 10.0
+
+[sub_resource type="LabelSettings" id="Title"]
+font_size = 18
+font_color = Color(1, 0.85, 0.35, 1)
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.85)
+
+[sub_resource type="LabelSettings" id="Offer"]
+font_size = 17
+font_color = Color(0.9, 0.92, 0.96, 1)
+outline_size = 3
+outline_color = Color(0, 0, 0, 0.8)
+
+[node name="ShopHud" type="CanvasLayer"]
+
+[node name="Shop" type="PanelContainer" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("Panel")
+
+[node name="Key" type="CbKey" parent="Shop"]
+action = "shop"
+key = "B"
+mode = 1
+cursor = true
+conditions = PackedStringArray("!combat.dead")
+
+[node name="Shown" type="CbFieldBinding" parent="Shop"]
+conditions = PackedStringArray("ui.shop")
+
+[node name="Rows" type="VBoxContainer" parent="Shop"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="CbFieldLabel" parent="Shop/Rows"]
+layout_mode = 2
+label_settings = SubResource("Title")
+horizontal_alignment = 1
+text_format = "SHOP     {shop.coins} coins     click to buy"
+
+[node name="Grenade" type="PanelContainer" parent="Shop/Rows"]
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Button")
+
+[node name="Buy" type="CbClick" parent="Shop/Rows/Grenade"]
+mod_intent = "shop.buy"
+intent_a = "0"
+
+[node name="Label" type="Label" parent="Shop/Rows/Grenade"]
+layout_mode = 2
+text = "Frag grenade          1 coin"
+label_settings = SubResource("Offer")
+
+[node name="Bat" type="PanelContainer" parent="Shop/Rows"]
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Button")
+
+[node name="Buy" type="CbClick" parent="Shop/Rows/Bat"]
+mod_intent = "shop.buy"
+intent_a = "1"
+
+[node name="Label" type="Label" parent="Shop/Rows/Bat"]
+layout_mode = 2
+text = "Bat                         1 coin"
+label_settings = SubResource("Offer")
+
+[node name="Rifle" type="PanelContainer" parent="Shop/Rows"]
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Button")
+
+[node name="Buy" type="CbClick" parent="Shop/Rows/Rifle"]
+mod_intent = "shop.buy"
+intent_a = "2"
+
+[node name="Label" type="Label" parent="Shop/Rows/Rifle"]
+layout_mode = 2
+text = "Rifle                       2 coins"
+label_settings = SubResource("Offer")

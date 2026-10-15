@@ -171,6 +171,7 @@ bool DumpNames( const char* path, const std::string& lookSource )
 		}
 	};
 	list( "item", schema.itemKinds );
+	list( "intent", schema.intents );
 	list( "stance", schema.stances );
 	list( "layer", schema.layers );
 	list( "socket", schema.sockets );

@@ -905,6 +905,16 @@ void CbClick::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "intent", PROPERTY_HINT_ENUM, "Nothing,Select this slot,Move a slot here,Drop this slot" ),
 				  "set_intent", "get_intent" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "from", PROPERTY_HINT_PLACEHOLDER_TEXT, "ui.picked" ), "set_from", "get_from" );
+	ClassDB::bind_method( D_METHOD( "set_mod_intent", "value" ), &CbClick::set_mod_intent );
+	ClassDB::bind_method( D_METHOD( "get_mod_intent" ), &CbClick::get_mod_intent );
+	ClassDB::bind_method( D_METHOD( "set_intent_a", "value" ), &CbClick::set_intent_a );
+	ClassDB::bind_method( D_METHOD( "get_intent_a" ), &CbClick::get_intent_a );
+	ClassDB::bind_method( D_METHOD( "set_intent_b", "value" ), &CbClick::set_intent_b );
+	ClassDB::bind_method( D_METHOD( "get_intent_b" ), &CbClick::get_intent_b );
+	ADD_GROUP( "A mod's intent", "" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "mod_intent", PROPERTY_HINT_PLACEHOLDER_TEXT, "shop.buy" ), "set_mod_intent", "get_mod_intent" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "intent_a", PROPERTY_HINT_PLACEHOLDER_TEXT, "slot.number, 3" ), "set_intent_a", "get_intent_a" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "intent_b", PROPERTY_HINT_PLACEHOLDER_TEXT, "0" ), "set_intent_b", "get_intent_b" );
 
 	BIND_ENUM_CONSTANT( INTENT_NONE );
 	BIND_ENUM_CONSTANT( INTENT_SELECT );
@@ -1009,6 +1019,19 @@ void CbClick::on_gui_input( const Ref<InputEvent>& event )
 		{
 			client->send_intent( int64_t( SlotIntent::Move ), slot, here );
 		}
+	}
+	// A mod's intent, with its two numbers (as the row reads them; 0 for none).
+	if ( m_modIntent.strip_edges().is_empty() == false )
+	{
+		auto number = [&]( const String& expression ) -> int64_t {
+			if ( expression.strip_edges().is_empty() )
+			{
+				return 0;
+			}
+			Variant value = expression.strip_edges().is_valid_float() ? Variant( expression.to_float() ) : client->EvaluateWith( subject, expression, names );
+			return value.get_type() == Variant::NIL ? 0 : std::clamp<int64_t>( int64_t( std::llround( double( value ) ) ), 0, 255 );
+		};
+		client->send_mod_intent( m_modIntent, number( m_intentA ), number( m_intentB ) );
 	}
 	for ( const String& set : m_sets )
 	{

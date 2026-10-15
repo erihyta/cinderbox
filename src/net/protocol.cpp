@@ -585,7 +585,7 @@ bool ReadInputDelta( ByteReader& r, PlayerInput& in, bool some )
 		in.intentA = r.Read<uint8_t>();
 		in.intentB = r.Read<uint8_t>();
 		in.intentSeq = r.Read<uint8_t>();
-		if ( in.intent > kLastSlotIntent )
+		if ( KnownIntent( in.intent ) == false )
 		{
 			return false;
 		}
