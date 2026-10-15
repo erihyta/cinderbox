@@ -30,6 +30,8 @@ const RESOURCE_EXTENSIONS := ["tscn", "scn", "tres", "res"]
 ## Plain media: pixels, samples and glyphs, nothing that can name a script.
 const MEDIA_EXTENSIONS := ["ctex", "stex", "sample", "oggvorbisstr", "mp3str", "fontdata",
 	"png", "jpg", "jpeg", "webp", "svg", "wav", "ogg", "mp3", "ttf", "otf"]
+## Rules sheets (CbRules): text a reaction node reads as data, line by line; never code.
+const RULES_EXTENSIONS := ["rules"]
 ## Redirect files: they must point at converted resources inside the pack.
 const REDIRECT_EXTENSIONS := ["remap", "import"]
 ## Types that are code, by name. Binary and text resources store type names as plain strings.
@@ -117,7 +119,7 @@ static func _check_file(zip: ZIPReader, file: String) -> String:
 		return _check_redirect(file, zip.read_file(file).get_string_from_utf8())
 	if ext in RESOURCE_EXTENSIONS:
 		return _check_resource(file, zip.read_file(file))
-	if ext in MEDIA_EXTENSIONS:
+	if ext in MEDIA_EXTENSIONS or ext in RULES_EXTENSIONS:
 		return ""
 	for prefix in DATA_PREFIXES:
 		if file.begins_with(prefix) and ext in CHARACTER_DATA_EXTENSIONS:

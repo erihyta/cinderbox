@@ -1,5 +1,6 @@
 #include "cue_names.h"
 
+#include "cue_rules.h"
 #include "expr.h"
 
 #include <godot_cpp/classes/file_access.hpp>
@@ -374,6 +375,73 @@ void Hint( const Object* object, PropertyInfo& property )
 	}
 }
 
+namespace
+{
+
+// One property's value, of what it holds: its names nobody declares, into `out`.
+void CheckValue( const Book& book, Holds holds, const Variant& value, const String& property, PackedStringArray& out )
+{
+	switch ( holds )
+	{
+		case Holds::Event:
+		case Holds::Item:
+		case Holds::Intent:
+			CheckName( book, KindOf( holds ), String( value ), property, out );
+			break;
+		case Holds::Action:
+		{
+			String action = String( value ).strip_edges();
+			if ( action != "jump" && action != "sprint" && action != "use" )
+			{
+				CheckName( book, "action", action, property, out );
+			}
+			break;
+		}
+		case Holds::Expression:
+			CheckExpression( book, String( value ), property, out );
+			break;
+		case Holds::Format:
+			CheckFormat( book, String( value ), property, out );
+			break;
+		case Holds::Expressions:
+		case Holds::Sets:
+		case Holds::Changes:
+		{
+			PackedStringArray lines = value;
+			for ( int64_t i = 0; i < lines.size(); ++i )
+			{
+				String line = lines[i];
+				if ( holds == Holds::Sets )
+				{
+					// "ui.x = expression": the right side is read.
+					int64_t equals = line.find( "=" );
+					line = equals >= 0 ? line.substr( equals + 1 ) : String();
+				}
+				else if ( holds == Holds::Changes )
+				{
+					// "field op value": the field is written, so it has to be one.
+					String field = line.strip_edges().get_slice( " ", 0 );
+					for ( const char* op : { "+=", "-=", "=" } )
+					{
+						field = field.get_slice( op, 0 ).strip_edges();
+					}
+					std::string name = Std( field );
+					if ( name.empty() == false && Has( book, "field", name ) == false )
+					{
+						out.push_back( property + String( ": no mod declares the field \"" ) + field + "\"" +
+									   Meant( name, book.byKind.count( "field" ) ? book.byKind.at( "field" ) : std::set<std::string>{} ) + "." );
+					}
+					continue;
+				}
+				CheckExpression( book, line, property, out );
+			}
+			break;
+		}
+	}
+}
+
+} // namespace
+
 PackedStringArray Problems( const Node* node )
 {
 	PackedStringArray out;
@@ -384,67 +452,32 @@ PackedStringArray Problems( const Node* node )
 	}
 	for ( const Entry& entry : kTable )
 	{
-		if ( node->is_class( entry.cls ) == false )
+		if ( node->is_class( entry.cls ) )
 		{
-			continue;
+			CheckValue( book, entry.holds, node->get( StringName( entry.property ) ), entry.property, out );
 		}
-		Variant value = node->get( StringName( entry.property ) );
-		String property = entry.property;
-		switch ( entry.holds )
+	}
+	// A rules sheet: each rule is read as the reaction it becomes, at its line of the file.
+	if ( node->is_class( "CbRules" ) )
+	{
+		String file = node->get( "file" );
+		if ( file.is_empty() == false && FileAccess::file_exists( file ) )
 		{
-			case Holds::Event:
-			case Holds::Item:
-			case Holds::Intent:
-				CheckName( book, KindOf( entry.holds ), String( value ), property, out );
-				break;
-			case Holds::Action:
+			PackedStringArray errors;
+			std::vector<cue::Rule> rules = cue::ParseRules( FileAccess::get_file_as_string( file ), errors );
+			for ( int64_t i = 0; i < errors.size(); ++i )
 			{
-				String action = String( value ).strip_edges();
-				if ( action != "jump" && action != "sprint" && action != "use" )
-				{
-					CheckName( book, "action", action, property, out );
-				}
-				break;
+				out.push_back( file + " " + errors[i] );
 			}
-			case Holds::Expression:
-				CheckExpression( book, String( value ), property, out );
-				break;
-			case Holds::Format:
-				CheckFormat( book, String( value ), property, out );
-				break;
-			case Holds::Expressions:
-			case Holds::Sets:
-			case Holds::Changes:
+			for ( const cue::Rule& rule : rules )
 			{
-				PackedStringArray lines = value;
-				for ( int64_t i = 0; i < lines.size(); ++i )
+				for ( const Entry& entry : kTable )
 				{
-					String line = lines[i];
-					if ( entry.holds == Holds::Sets )
+					if ( String( entry.cls ) == "CbReaction" && rule.properties.has( entry.property ) )
 					{
-						// "ui.x = expression": the right side is read.
-						int64_t equals = line.find( "=" );
-						line = equals >= 0 ? line.substr( equals + 1 ) : String();
+						CheckValue( book, entry.holds, rule.properties[entry.property], file + " line " + String::num_int64( rule.line ) + ": " + entry.property, out );
 					}
-					else if ( entry.holds == Holds::Changes )
-					{
-						// "field op value": the field is written, so it has to be one.
-						String field = line.strip_edges().get_slice( " ", 0 );
-						for ( const char* op : { "+=", "-=", "=" } )
-						{
-							field = field.get_slice( op, 0 ).strip_edges();
-						}
-						std::string name = Std( field );
-						if ( name.empty() == false && Has( book, "field", name ) == false )
-						{
-							out.push_back( property + String( ": no mod declares the field \"" ) + field + "\"" +
-										   Meant( name, book.byKind.count( "field" ) ? book.byKind.at( "field" ) : std::set<std::string>{} ) + "." );
-						}
-						continue;
-					}
-					CheckExpression( book, line, property, out );
 				}
-				break;
 			}
 		}
 	}

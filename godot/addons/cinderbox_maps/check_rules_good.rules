@@ -1,0 +1,8 @@
+# check_rules.gd's sheet: an item's rules, its plain paths from the item.
+while melee.hot
+    set Barrel visible false
+
+on melee.hit if $other:combat.health < 50
+    subject ^^
+    call Timer hide
+    shake 0.2 time 0.1
