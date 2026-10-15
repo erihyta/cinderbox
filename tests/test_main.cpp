@@ -6912,11 +6912,162 @@ void AppendMotionReference( std::vector<uint64_t>& hashes )
 	}
 }
 
+// And a scenario with slots: players who come and go are given items (tools, stacks, ones used once
+// a press or while held by their own keys, one for the left hand), press the slots' keys, move,
+// split, drop and use them, and open chests (containers) that were filled and one that is
+// destroyed. What slots compute (which copy a key finds, merges, splits, what falls where) has to
+// be the same on every build too. Its hashes follow the motion scenario's.
+void AppendSlotsReference( std::vector<uint64_t>& hashes )
+{
+	LevelLayout map = FlatMap();
+	EntityTemplate chest;
+	chest.name = "chest";
+	chest.visual = "prop_heavy";
+	chest.components.push_back( MakeIntComponent( "Shape", { { "kind", int32_t( ShapeKind::Box ) } } ) );
+	chest.components.push_back( MakeIntComponent( "Body", { { "type", 0 } } ) );
+	chest.components.push_back( MakeIntComponent( "Container", { { "slots", 6 } } ) );
+	map.templates.push_back( chest );
+	QuantizeLayout( map );
+	SimConfig config = TestConfig();
+	config.slots = 9;
+	config.slotHand = 0;
+	ItemShape tool;		 // a tool, in slot 1 if it is free
+	tool.slot = 1;
+	tool.usedEvent = 0;
+	ItemShape ball;		 // a stack of 5, used once a press, its own key the action of bit 0
+	ball.kind = 1;
+	ball.half = { 0.1f, 0.1f, 0.1f };
+	ball.center = { 0.0f, 0.0f, 0.0f };
+	ball.stack = 5;
+	ball.use = kItemUsePress;
+	ball.useAction = 0;
+	ball.usedEvent = 1;
+	ItemShape jet = tool; // used while held, its own key bit 1
+	jet.slot = 4;
+	jet.use = kItemUseHold;
+	jet.useAction = 1;
+	jet.usedEvent = 2;
+	ItemShape shield = tool; // the left hand while carried
+	shield.slot = 0;
+	shield.hand = kItemHandLeft;
+	shield.usedEvent = 0xFFFF;
+	const uint16_t kinds = 4;
+
+	test::ScenarioOptions options;
+	options.ticks = 900;
+	options.seed = 8765;
+	options.initialPlayers = 4;
+	options.maxPlayers = 6;
+	std::vector<InputFrame> frames = test::MakeScenario( options );
+	uint64_t rng = 0x5107;
+	uint8_t seq[kMaxPlayers] = {};
+	const uint32_t kChest = 0xFFFFFF00u; // a chest by its place among the three, until it exists
+	for ( InputFrame& f : frames )
+	{
+		if ( f.tick == 5 )
+		{
+			// Three chests ahead of the spawn, filled by commands (a mod's), as the chest mod does.
+			for ( int i = 0; i < 3; ++i )
+			{
+				SimCommand c;
+				c.type = CommandType::SpawnProp;
+				c.value = 0;
+				c.a = { -2.0f + 2.0f * float( i ), 0.5f, 3.0f };
+				f.commands.push_back( c );
+			}
+		}
+		for ( int p = 0; p < kMaxPlayers; ++p )
+		{
+			PlayerInput& in = f.inputs[p];
+			uint64_t r = NextRandom( rng );
+			// Given something now and then (into a free slot, onto a stack); a chest too.
+			if ( ( r & 31 ) == 0 )
+			{
+				SimCommand c;
+				c.type = CommandType::SpawnItem;
+				c.target = SlotTarget( PlayerSlot( p ) );
+				c.index = uint16_t( ( r >> 8 ) % kinds );
+				c.mode = kNoSocket;
+				c.value = 1;
+				const uint64_t where = r >> 5 & 7;
+				if ( where == 0 )
+				{
+					c.target = 0; // lying about
+					c.a = { test::ScenarioFloat( r >> 12, -3.0f, 6.0f ), 1.0f, test::ScenarioFloat( r >> 20, 1.0f, 4.0f ) };
+				}
+				else if ( where == 1 && f.tick > 10 )
+				{
+					c.target = kChest + uint32_t( ( r >> 12 ) % 3 ); // into a chest (its NetId is known once it is made)
+				}
+				f.commands.push_back( c );
+			}
+			// A slot's key, now and then held for a few ticks.
+			in.slotKeys = ( r >> 28 & 15 ) < 2 ? uint16_t( 1u << ( ( r >> 32 ) % 10 ) ) : uint16_t( 0 );
+			// An intent: select, move, split, drop, open, close; a slot of the open chest at times.
+			if ( ( r >> 36 & 15 ) == 0 )
+			{
+				uint64_t s = NextRandom( rng );
+				auto slot = [&]( uint64_t bits ) {
+					uint8_t at = uint8_t( bits % 9 );
+					return ( bits >> 4 & 3 ) == 0 ? uint8_t( kContainerSlotBit | ( at % 6 ) ) : at;
+				};
+				in.intent = uint8_t( 1 + s % uint64_t( kLastSlotIntent ) );
+				in.intentA = slot( s >> 8 );
+				in.intentB = slot( s >> 16 );
+				in.intentSeq = ++seq[p];
+			}
+			else
+			{
+				in.intentSeq = seq[p];
+			}
+		}
+		if ( f.tick == 600 )
+		{
+			// The middle chest is destroyed: what it held falls out.
+			SimCommand c;
+			c.type = CommandType::Destroy;
+			c.target = kChest + 1;
+			f.commands.push_back( c );
+		}
+	}
+	Simulation sim( config, map );
+	sim.SetItemShapes( { tool, ball, jet, shield } );
+	std::vector<uint32_t> chests;
+	for ( InputFrame& frame : frames )
+	{
+		if ( frame.tick == 6 )
+		{
+			for ( const Simulation::EntityRef& e : sim.Entities() )
+			{
+				if ( flecs::entity( sim.World(), e.entity ).has<Container>() )
+				{
+					chests.push_back( e.netId );
+				}
+			}
+			if ( chests.size() != 3 )
+			{
+				std::printf( "the slots reference has %zu chests, not 3\n", chests.size() );
+				std::abort();
+			}
+		}
+		for ( SimCommand& c : frame.commands )
+		{
+			if ( c.target >= kChest && c.target < kChest + 3 )
+			{
+				c.target = chests[c.target - kChest];
+			}
+		}
+		sim.Step( frame );
+		hashes.push_back( sim.ComputeHash() );
+	}
+}
+
 int DumpHashes( const char* path )
 {
 	auto frames = test::MakeScenario( {} );
 	auto hashes = RunReference( frames, TestConfig() );
 	AppendMotionReference( hashes );
+	AppendSlotsReference( hashes );
 	FILE* f = std::fopen( path, "w" );
 	if ( f == nullptr )
 	{
@@ -6937,6 +7088,7 @@ int CompareHashes( const char* path )
 	auto frames = test::MakeScenario( {} );
 	auto hashes = RunReference( frames, TestConfig() );
 	AppendMotionReference( hashes );
+	AppendSlotsReference( hashes );
 	FILE* f = std::fopen( path, "r" );
 	if ( f == nullptr )
 	{
