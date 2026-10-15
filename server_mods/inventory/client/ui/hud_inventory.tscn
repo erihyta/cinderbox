@@ -1,32 +1,28 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene format=3]
 
-; The inventory's look, laid over the game's when a server runs the inventory mod. No scripts, and
-; no fields of the mod's: it reads the engine's slots themselves, so it follows the hands at once.
+; The inventory's look, laid over the game's when a server runs the inventory mod. No scripts: it
+; reads the engine's slots themselves, so it follows the hands at once, and one field of the mod's,
+; inventory.columns (how wide the grid is: a server option).
 ;
-;   Hotbar    CbList of Slots, across the bottom: its child Slot is one slot as designed, copied for
-;             every slot the player has. In a slot's row, {slot.number} is its number, {name} what
-;             its item is called, {slot.count} how many it is (a stack: Count shows it above
-;             one), and slot.selected / slot.empty say which it is.
-;   Bag       the inventory screen. Key (a CbKey: "inventory", I, each press switches it, with
-;             the cursor free meanwhile) keeps "ui.inventory", and Shown (a CbFieldBinding)
-;             shows the screen while that is 1. Its Grid is another CbList of Slots, and
-;             each slot has two CbClick nodes, asked in order:
-;               PickUp   nothing is picked and the slot is not empty: ui.picked = this slot
-;               PutDown  something is picked: that slot moves here (the engine swaps the two, in
-;                        the player's own input, so it is predicted), and nothing is picked
-;             "ui.picked" is a value of the viewer's own: no server knows it.
+;   Hotbar    CbList of Slots, across the bottom: the first row of the grid (Columns, a
+;             CbFieldBinding, sets its max_rows to inventory.columns). Its child Slot is one slot as
+;             designed, copied for each: in a slot's row, {slot.number} is its number, {name} what
+;             its item is called, {slot.count} how many it is (a stack), and slot.selected /
+;             slot.empty say which it is. Icon (a CbItemIcon) is what the item looks like: its
+;             CbItem's icon, or a picture the game takes of its scene.
+;   Bag       the inventory screen. Key (a CbKey: "inventory", I, each press switches it, with the
+;             cursor free meanwhile) keeps "ui.inventory", and Shown (a CbFieldBinding) shows the
+;             screen while that is 1. Its Grid is another CbList of Slots, every slot, in rows of
+;             inventory.columns (Columns sets its columns).
+;   Drag      in every slot (a CbDrag): drag a slot onto another and what it holds moves there (the
+;             two trade, or onto a stack of its kind as many as fit); with Shift held, half of a
+;             stack; let go outside the Bag, it is dropped. The slots' intents are the player's own
+;             input, so they are predicted.
 ;
 ; Restyle it freely, or override it from a player mod at res://ui/hud_inventory.tscn.
 
-[sub_resource type="StyleBoxFlat" id="Box"]
-bg_color = Color(0.08, 0.08, 0.1, 0.55)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-
 [sub_resource type="StyleBoxFlat" id="Bag"]
-bg_color = Color(0.05, 0.05, 0.07, 0.85)
+bg_color = Color(0.05, 0.05, 0.07, 0.88)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
@@ -39,22 +35,44 @@ corner_radius_bottom_left = 8
 content_margin_left = 18.0
 content_margin_top = 14.0
 content_margin_right = 18.0
-content_margin_bottom = 16.0
+content_margin_bottom = 18.0
 
 [sub_resource type="StyleBoxFlat" id="Cell"]
-bg_color = Color(0.16, 0.17, 0.2, 0.9)
+bg_color = Color(0.16, 0.17, 0.2, 0.85)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxFlat" id="Chosen"]
+draw_center = false
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(1, 0.85, 0.35, 1)
 corner_radius_top_left = 6
 corner_radius_top_right = 6
 corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
 
-[sub_resource type="LabelSettings" id="Away"]
-font_size = 17
-font_color = Color(0.85, 0.87, 0.92, 0.75)
+[sub_resource type="LabelSettings" id="Number"]
+font_size = 13
+font_color = Color(0.85, 0.87, 0.92, 0.8)
 outline_size = 3
 outline_color = Color(0, 0, 0, 0.8)
 
-[sub_resource type="LabelSettings" id="Out"]
+[sub_resource type="LabelSettings" id="Count"]
+font_size = 16
+font_color = Color(1, 1, 1, 1)
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.9)
+
+[sub_resource type="LabelSettings" id="Title"]
 font_size = 17
 font_color = Color(1, 0.85, 0.35, 1)
 outline_size = 4
@@ -68,46 +86,57 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -400.0
-offset_top = -108.0
-offset_right = 400.0
-offset_bottom = -72.0
+offset_top = -112.0
+offset_bottom = -44.0
 grow_horizontal = 2
 grow_vertical = 0
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 alignment = 1
 vertical = false
 of = 3
-conditions = PackedStringArray("!combat.dead")
 
 [node name="Slot" type="PanelContainer" parent="Hotbar"]
-custom_minimum_size = Vector2(138, 36)
+custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
-theme_override_styles/panel = SubResource("Box")
+theme_override_styles/panel = SubResource("Cell")
 
-[node name="Away" type="CbFieldLabel" parent="Hotbar/Slot"]
+[node name="Icon" type="CbItemIcon" parent="Hotbar/Slot"]
 layout_mode = 2
-label_settings = SubResource("Away")
-horizontal_alignment = 1
-vertical_alignment = 1
-text_format = "{slot.number}   {name}"
-conditions = PackedStringArray("not slot.selected")
 
-[node name="Out" type="CbFieldLabel" parent="Hotbar/Slot"]
+[node name="Chosen" type="Panel" parent="Hotbar/Slot"]
 layout_mode = 2
-label_settings = SubResource("Out")
-horizontal_alignment = 1
-vertical_alignment = 1
-text_format = "{slot.number}   {name}"
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Chosen")
+
+[node name="Shown" type="CbFieldBinding" parent="Hotbar/Slot/Chosen"]
 conditions = PackedStringArray("slot.selected")
+
+[node name="Number" type="CbFieldLabel" parent="Hotbar/Slot"]
+layout_mode = 2
+size_flags_vertical = 0
+mouse_filter = 2
+label_settings = SubResource("Number")
+text_format = "{slot.number}"
 
 [node name="Count" type="CbFieldLabel" parent="Hotbar/Slot"]
 layout_mode = 2
-label_settings = SubResource("Away")
+mouse_filter = 2
+label_settings = SubResource("Count")
 horizontal_alignment = 2
 vertical_alignment = 2
-text_format = "x{slot.count}"
+text_format = "{slot.count}"
 conditions = PackedStringArray("slot.count > 1")
+
+[node name="Tip" type="CbFieldBinding" parent="Hotbar/Slot"]
+property = "tooltip_text"
+text_format = "{name}"
+
+[node name="Drag" type="CbDrag" parent="Hotbar/Slot"]
+inside = NodePath("Bag")
+
+[node name="Columns" type="CbFieldBinding" parent="Hotbar"]
+field = "inventory.columns"
+property = "max_rows"
 
 [node name="Bag" type="PanelContainer" parent="."]
 anchors_preset = 8
@@ -115,10 +144,6 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -330.0
-offset_top = -110.0
-offset_right = 330.0
-offset_bottom = 110.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("Bag")
@@ -137,60 +162,57 @@ conditions = PackedStringArray("ui.inventory")
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="Title" type="CbFieldLabel" parent="Bag/Rows"]
+[node name="Title" type="Label" parent="Bag/Rows"]
 layout_mode = 2
-label_settings = SubResource("Out")
+text = "INVENTORY     drag to move  ·  Shift-drag for half a stack  ·  drag out to drop"
+label_settings = SubResource("Title")
 horizontal_alignment = 1
-choice_field = "ui.picked > 0"
-choices = PackedStringArray("INVENTORY     click an item to pick it up", "INVENTORY     click a slot to put slot {ui.picked} there")
 
 [node name="Grid" type="CbList" parent="Bag/Rows"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 6
 alignment = 1
-vertical = false
 of = 3
 
-[node name="Cell" type="PanelContainer" parent="Bag/Rows/Grid"]
-custom_minimum_size = Vector2(146, 120)
+[node name="Slot" type="PanelContainer" parent="Bag/Rows/Grid"]
+custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 theme_override_styles/panel = SubResource("Cell")
 
-[node name="PickUp" type="CbClick" parent="Bag/Rows/Grid/Cell"]
-conditions = PackedStringArray("ui.picked == 0", "not slot.empty")
-sets = PackedStringArray("ui.picked = slot.number")
+[node name="Icon" type="CbItemIcon" parent="Bag/Rows/Grid/Slot"]
+layout_mode = 2
 
-[node name="PutDown" type="CbClick" parent="Bag/Rows/Grid/Cell"]
-conditions = PackedStringArray("ui.picked > 0")
-sets = PackedStringArray("ui.picked = 0")
-intent = 2
-
-[node name="Name" type="CbFieldLabel" parent="Bag/Rows/Grid/Cell"]
+[node name="Chosen" type="Panel" parent="Bag/Rows/Grid/Slot"]
 layout_mode = 2
 mouse_filter = 2
-label_settings = SubResource("Away")
-horizontal_alignment = 1
-vertical_alignment = 1
-text_format = "{slot.number}
-{name}"
-conditions = PackedStringArray("ui.picked != slot.number")
+theme_override_styles/panel = SubResource("Chosen")
 
-[node name="Picked" type="CbFieldLabel" parent="Bag/Rows/Grid/Cell"]
+[node name="Shown" type="CbFieldBinding" parent="Bag/Rows/Grid/Slot/Chosen"]
+conditions = PackedStringArray("slot.selected")
+
+[node name="Number" type="CbFieldLabel" parent="Bag/Rows/Grid/Slot"]
+layout_mode = 2
+size_flags_vertical = 0
+mouse_filter = 2
+label_settings = SubResource("Number")
+text_format = "{slot.number}"
+
+[node name="Count" type="CbFieldLabel" parent="Bag/Rows/Grid/Slot"]
 layout_mode = 2
 mouse_filter = 2
-label_settings = SubResource("Out")
-horizontal_alignment = 1
-vertical_alignment = 1
-text_format = "{slot.number}
-{name}
-(picked up)"
-conditions = PackedStringArray("ui.picked == slot.number")
-
-[node name="Count" type="CbFieldLabel" parent="Bag/Rows/Grid/Cell"]
-layout_mode = 2
-mouse_filter = 2
-label_settings = SubResource("Away")
+label_settings = SubResource("Count")
 horizontal_alignment = 2
 vertical_alignment = 2
-text_format = "x{slot.count}"
+text_format = "{slot.count}"
 conditions = PackedStringArray("slot.count > 1")
+
+[node name="Tip" type="CbFieldBinding" parent="Bag/Rows/Grid/Slot"]
+property = "tooltip_text"
+text_format = "{name}"
+
+[node name="Drag" type="CbDrag" parent="Bag/Rows/Grid/Slot"]
+inside = NodePath("Bag")
+
+[node name="Columns" type="CbFieldBinding" parent="Bag/Rows/Grid"]
+field = "inventory.columns"
+property = "columns"

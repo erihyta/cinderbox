@@ -688,6 +688,32 @@ void Simulation::ThrowOut( flecs::entity item, const Transform& from, uint16_t c
 	PutItemInWorld( item, grip, detmath::YawRotation( yaw ), b3Add( b3MulSV( 1.0f, ahead ), b3Vec3{ 0.0f, 1.5f, 0.0f } ) );
 }
 
+bool Simulation::MergeStacks( flecs::entity from, flecs::entity onto, uint32_t count )
+{
+	const HeldItem* a = from.try_get<HeldItem>();
+	const HeldItem* b = onto.try_get<HeldItem>();
+	const ItemShape rule = a != nullptr ? ItemShapeOf( a->kind ) : ItemShape{};
+	if ( a == nullptr || b == nullptr || from == onto || a->kind != b->kind || rule.stack <= 1 || StackOf( *b ) >= rule.stack )
+	{
+		return false;
+	}
+	uint32_t moved = std::min( { count, StackOf( *a ), uint32_t( rule.stack ) - StackOf( *b ) } );
+	HeldItem grown = *b;
+	grown.count = uint8_t( StackOf( *b ) + moved );
+	onto.set<HeldItem>( grown );
+	if ( moved >= StackOf( *a ) )
+	{
+		DestroyEntity( from );
+	}
+	else
+	{
+		HeldItem rest = *a;
+		rest.count = uint8_t( StackOf( *a ) - moved );
+		from.set<HeldItem>( rest );
+	}
+	return true;
+}
+
 bool Simulation::GiveSlot( flecs::entity player, flecs::entity item, bool select )
 {
 	uint32_t holder = player.get<NetId>().value;
@@ -887,14 +913,58 @@ void Simulation::StepSlots( const InputFrame& frame )
 		{
 			flecs::entity a = FindEntity( SlotItemOf( netId, in.intentA ) );
 			flecs::entity b = FindEntity( SlotItemOf( netId, in.intentB ) );
-			for ( const auto& [item, to] : { std::pair{ a, in.intentB }, std::pair{ b, in.intentA } } )
+			if ( a.is_valid() && b.is_valid() && MergeStacks( a, b, StackOf( a.get<HeldItem>() ) ) )
 			{
-				if ( item.is_valid() )
+				// Onto a stack of its kind: as many as fit (the rest stays where it was).
+			}
+			else
+			{
+				for ( const auto& [item, to] : { std::pair{ a, in.intentB }, std::pair{ b, in.intentA } } )
 				{
-					HeldItem moved = item.get<HeldItem>();
-					moved.slot = to;
-					item.set<HeldItem>( moved );
+					if ( item.is_valid() )
+					{
+						HeldItem moved = item.get<HeldItem>();
+						moved.slot = to;
+						item.set<HeldItem>( moved );
+					}
 				}
+			}
+		}
+		else if ( act && in.intent == uint8_t( SlotIntent::Split ) && in.intentA < slots.count && in.intentB < slots.count &&
+				  in.intentA != in.intentB )
+		{
+			flecs::entity a = FindEntity( SlotItemOf( netId, in.intentA ) );
+			flecs::entity b = FindEntity( SlotItemOf( netId, in.intentB ) );
+			const HeldItem* from = a.is_valid() ? a.try_get<HeldItem>() : nullptr;
+			uint32_t half = from != nullptr ? ( StackOf( *from ) + 1 ) / 2 : 0;
+			if ( from != nullptr && b.is_valid() )
+			{
+				MergeStacks( a, b, half ); // (nothing when b is another kind, or full)
+			}
+			else if ( from != nullptr && StackOf( *from ) > 1 )
+			{
+				// Into the empty slot: a stack of its own, with the stack's fields.
+				HeldItem rest = *from;
+				rest.count = uint8_t( StackOf( *from ) - half );
+				a.set<HeldItem>( rest );
+				flecs::entity part = CreateEntity();
+				HeldItem split = *from;
+				split.count = uint8_t( half );
+				split.slot = in.intentB;
+				part.set<HeldItem>( split );
+				StartItemFields( part, split.kind );
+				if ( HasBoard( a ) )
+				{
+					SetBoard( part, GetBoard( a ) );
+				}
+				part.set<Transform>( e.get<Transform>() );
+			}
+			else if ( from != nullptr )
+			{
+				// One alone: it moves.
+				HeldItem moved = *from;
+				moved.slot = in.intentB;
+				a.set<HeldItem>( moved );
 			}
 		}
 		else if ( act && in.intent == uint8_t( SlotIntent::Drop ) )

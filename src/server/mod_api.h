@@ -220,6 +220,13 @@ public:
 	// goes to, from 1; without it the first free one) and "holster" (the socket it hangs in while
 	// another slot is selected).
 	void Slots( int count );
+	// A server option (cb_server --mod-option inventory.rows=4), while declaring: what a mod declares
+	// may depend on it (how many slots). The fallback where there is none (and for the editor's names).
+	double Option( const std::string& name, double fallback ) const;
+	void SetOptions( const std::map<std::string, std::string>* options )
+	{
+		m_options = options;
+	}
 	int SlotCount() const
 	{
 		return m_slots;
@@ -286,6 +293,7 @@ public:
 	}
 
 private:
+	const std::map<std::string, std::string>* m_options = nullptr;
 	ModSchema m_schema;
 	std::vector<std::string> m_errors;
 	std::string m_mod;

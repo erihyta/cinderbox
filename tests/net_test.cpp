@@ -1053,8 +1053,11 @@ void TestPickup()
 // bat leaves its slot empty: no second one this life. The number of items never changes.
 void TestInventory()
 {
-	Harness h( 47805, {}, {}, { { "pickup.spawn_each", "1" } } );
+	// (A grid of 7 x 1, the server's options: as many slots as the items, so a second bat has to push
+	// the first one out.)
+	Harness h( 47805, {}, {}, { { "pickup.spawn_each", "1" }, { "inventory.columns", "7" }, { "inventory.rows", "1" } } );
 	const ModSchema& schema = h.server.Schema();
+	CHECK( h.server.Sim().Config().slots == 7 );
 	uint16_t gunSlot = kKeySlot1;
 	uint16_t batSlot = kKeySlot2;
 	uint16_t pickup = schema.ActionMask( "pickup" );

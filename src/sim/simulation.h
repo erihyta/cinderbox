@@ -383,6 +383,9 @@ private:
 	// A new arrival finds its slot (its kind's own, pushing out what is there; else the first free
 	// one). False when there is none: the player cannot carry it.
 	bool GiveSlot( flecs::entity player, flecs::entity item, bool select );
+	// Up to `count` of `from`'s stack onto `onto`, a stack of the same kind with room (the rest of
+	// `from` stays; all of it: `from` is gone). False, and nothing done, when they do not stack.
+	bool MergeStacks( flecs::entity from, flecs::entity onto, uint32_t count );
 	// The selected slot's item is in the hand; every other slotted item is stowed in its holster.
 	void SettleSlots( uint32_t holder, uint8_t selected );
 	// Out of the bag: thrown a little, from the chest, the way the player looks.

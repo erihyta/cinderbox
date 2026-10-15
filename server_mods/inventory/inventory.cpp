@@ -7,7 +7,9 @@
 // hot on the back).
 //
 // This mod says how many slots there are and what a life is given and loses:
-//   declare.Slots( 5 )   five slots; keys 1 to 5 select them, and a second press empties the hands
+//   declare.Slots( columns x rows )   a grid, 8 x 4 = 32 by default (inventory.columns,
+//                        inventory.rows); the first row is the hotbar, whose keys (1 to 8) select
+//                        them, a second press empties the hands; the rest is the bag (I)
 //   "inventory.start"    an item property: 1 gives every player one when a life starts
 //   dying                takes back what the life started with and drops the rest
 //
@@ -17,8 +19,10 @@
 //   "holster"   the socket it hangs in while another slot is selected ("Back", "Hip"). Without it,
 //               or on a character without that socket, it is out of sight
 //
-// It publishes nothing: its look (client/ui: the row of slots at the bottom of the screen, and the
-// inventory screen on I) reads the engine's slots themselves, so it follows the hands at once.
+// It publishes how many columns the grid has (inventory.columns, a field of the game's); its look
+// (client/ui: the hotbar, the first row, at the bottom of the screen, and the inventory screen on I,
+// all of it in rows of that many) reads the engine's slots themselves, so it follows the hands at
+// once. Server options: inventory.columns (default 8), inventory.rows (default 4); at most 36.
 
 #include "mod_api.h"
 
@@ -34,7 +38,6 @@ namespace
 using namespace cb;
 using namespace cb::mods;
 
-constexpr int kSlots = 5;
 
 struct Bag
 {
@@ -55,11 +58,20 @@ public:
 
 	void Declare( Declarations& declare ) override
 	{
-		declare.Slots( kSlots );
+		// A grid: the first row is the hotbar.
+		m_columns = int( std::clamp( declare.Option( "inventory.columns", 8.0 ), 1.0, double( kMaxSlots ) ) );
+		int rows = int( std::clamp( declare.Option( "inventory.rows", 4.0 ), 1.0, double( kMaxSlots ) ) );
+		declare.Slots( std::min( m_columns * rows, kMaxSlots ) );
+		m_columnsField = declare.Field( "inventory.columns", BoardType::Int, BoardScope::Global );
 	}
 
 	void Tick( Context& ctx ) override
 	{
+		if ( m_said == false )
+		{
+			ctx.Set( 0, m_columnsField, m_columns );
+			m_said = true;
+		}
 		for ( int i = 0; i < kMaxPlayers; ++i )
 		{
 			PlayerSlot slot = PlayerSlot( i );
@@ -133,6 +145,9 @@ public:
 	}
 
 private:
+	int m_columns = 8;
+	FieldHandle m_columnsField;
+	bool m_said = false;
 	void Die( Context& ctx, PlayerSlot slot, Bag& bag, const std::vector<CarriedItem>& carried )
 	{
 		b3Vec3 aim = ctx.AimDirection( slot );

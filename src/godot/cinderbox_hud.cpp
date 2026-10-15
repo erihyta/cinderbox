@@ -12,6 +12,8 @@
 #include <godot_cpp/classes/input_event_key.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
 #include <godot_cpp/classes/input_map.hpp>
+#include <godot_cpp/classes/h_box_container.hpp>
+#include <godot_cpp/classes/viewport.hpp>
 #include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/scene_tree.hpp>
 #include <godot_cpp/classes/time.hpp>
@@ -455,6 +457,9 @@ void CbList::_bind_methods()
 				  "get_sort_by" );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "descending" ), "set_descending", "get_descending" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "max_rows", PROPERTY_HINT_RANGE, "0,64,1,or_greater" ), "set_max_rows", "get_max_rows" );
+	ClassDB::bind_method( D_METHOD( "set_columns", "value" ), &CbList::set_columns );
+	ClassDB::bind_method( D_METHOD( "get_columns" ), &CbList::get_columns );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "columns", PROPERTY_HINT_RANGE, "0,36,1" ), "set_columns", "get_columns" );
 	ADD_GROUP( "Events", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "event", PROPERTY_HINT_PLACEHOLDER_TEXT, "combat.killed" ), "set_event", "get_event" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "seconds", PROPERTY_HINT_RANGE, "0.5,30,0.1,or_greater" ), "set_seconds", "get_seconds" );
@@ -654,6 +659,30 @@ void CbList::_process( double )
 		order.resize( size_t( m_maxRows ) );
 	}
 
+	// A grid: lines of `columns` rows, stacked; a row goes into its line, in its place.
+	const size_t columns = m_columns > 0 ? size_t( m_columns ) : 0;
+	auto lineFor = [&]( size_t i ) -> Node* {
+		if ( columns == 0 )
+		{
+			return this;
+		}
+		size_t line = i / columns;
+		while ( m_lines.size() <= line )
+		{
+			auto* box = memnew( HBoxContainer );
+			box->set_name( "Line" + String::num_int64( int64_t( m_lines.size() ) ) );
+			box->add_theme_constant_override( "separation", get_theme_constant( "separation" ) );
+			box->set_alignment( get_alignment() );
+			box->set_mouse_filter( Control::MOUSE_FILTER_IGNORE );
+			add_child( box );
+			m_lines.push_back( ObjectID( box->get_instance_id() ) );
+		}
+		return Object::cast_to<Node>( ObjectDB::get_instance( m_lines[line] ) );
+	};
+	if ( columns > 0 && is_vertical() == false )
+	{
+		set_vertical( true );
+	}
 	// A row per entry, in order; rows are kept and handed to whoever has that place now.
 	for ( size_t i = 0; i < order.size(); ++i )
 	{
@@ -668,7 +697,7 @@ void CbList::_process( double )
 			row->set_process_mode( PROCESS_MODE_INHERIT );
 			row->set_meta( SubjectMeta(), order[i].id );
 			row->set_meta( RankMeta(), int( i ) + 1 );
-			add_child( row );
+			lineFor( i )->add_child( row );
 			if ( i < m_rows.size() )
 			{
 				m_rows[i] = ObjectID( row->get_instance_id() );
@@ -677,6 +706,15 @@ void CbList::_process( double )
 			{
 				m_rows.push_back( ObjectID( row->get_instance_id() ) );
 			}
+		}
+		Node* line = lineFor( i );
+		if ( line != nullptr && row->get_parent() != line )
+		{
+			row->reparent( line, false );
+		}
+		if ( line != nullptr && columns > 0 && row->get_index() != int( i % columns ) )
+		{
+			line->move_child( row, int( i % columns ) );
 		}
 		row->set_meta( SubjectMeta(), order[i].id );
 		row->set_meta( RankMeta(), int( i ) + 1 );
@@ -689,6 +727,13 @@ void CbList::_process( double )
 		if ( auto* row = Object::cast_to<Control>( ObjectDB::get_instance( m_rows[i] ) ) )
 		{
 			row->set_visible( false );
+		}
+	}
+	for ( size_t l = 0; l < m_lines.size(); ++l )
+	{
+		if ( auto* box = Object::cast_to<Control>( ObjectDB::get_instance( m_lines[l] ) ) )
+		{
+			box->set_visible( columns > 0 && l * columns < order.size() );
 		}
 	}
 }
@@ -950,6 +995,145 @@ void CbClick::on_gui_input( const Ref<InputEvent>& event )
 		Variant value = client->EvaluateWith( subject, expression, names );
 		client->set_local_value( name, value.get_type() == Variant::NIL ? 0.0 : double( value ) );
 	}
+}
+
+// --- CbDrag ----------------------------------------------------------------------------------------
+
+void CbDrag::_bind_methods()
+{
+	ClassDB::bind_method( D_METHOD( "set_inside", "value" ), &CbDrag::set_inside );
+	ClassDB::bind_method( D_METHOD( "get_inside" ), &CbDrag::get_inside );
+	ADD_PROPERTY( PropertyInfo( Variant::NODE_PATH, "inside", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Control" ), "set_inside", "get_inside" );
+	ClassDB::bind_method( D_METHOD( "drag_data", "at" ), &CbDrag::drag_data );
+	ClassDB::bind_method( D_METHOD( "can_drop", "at", "data" ), &CbDrag::can_drop );
+	ClassDB::bind_method( D_METHOD( "drop", "at", "data" ), &CbDrag::drop );
+}
+
+PackedStringArray CbDrag::_get_configuration_warnings() const
+{
+	PackedStringArray warnings;
+	if ( Object::cast_to<Control>( get_parent() ) == nullptr )
+	{
+		warnings.push_back( "Put it under a Control in a CbList of slots: that is what is dragged, and dropped on." );
+	}
+	return warnings;
+}
+
+void CbDrag::_ready()
+{
+	if ( InGame() == false )
+	{
+		return;
+	}
+	if ( auto* control = Object::cast_to<Control>( get_parent() ) )
+	{
+		control->set_mouse_filter( Control::MOUSE_FILTER_STOP );
+		control->set_drag_forwarding( Callable( this, "drag_data" ), Callable( this, "can_drop" ), Callable( this, "drop" ) );
+	}
+}
+
+int64_t CbDrag::Slot() const
+{
+	const Dictionary names = RowNames( this );
+	return names.has( "slot.number" ) ? int64_t( double( names["slot.number"] ) ) - 1 : -1;
+}
+
+Variant CbDrag::drag_data( const Vector2& )
+{
+	CinderboxClient* client = FindClient( this, m_client );
+	auto* row = Object::cast_to<Control>( get_parent() );
+	const Dictionary names = RowNames( this );
+	const int64_t slot = Slot();
+	if ( client == nullptr || row == nullptr || client->has_local_player() == false || slot < 0 || names.get( "slot.empty", 1 ) != Variant( 0 ) )
+	{
+		return Variant();
+	}
+	// What follows the cursor: a copy of the slot, a little see-through.
+	if ( auto* copy = Object::cast_to<Control>( row->duplicate() ) )
+	{
+		copy->set_modulate( Color( 1, 1, 1, 0.75f ) );
+		copy->set_size( row->get_size() );
+		copy->set_mouse_filter( Control::MOUSE_FILTER_IGNORE );
+		auto* holder = memnew( Control );
+		holder->add_child( copy );
+		copy->set_position( -row->get_size() * 0.5f );
+		row->set_drag_preview( holder );
+	}
+	m_dragging = true;
+	m_draggedSlot = slot;
+	Dictionary data;
+	data["cb_slot"] = slot;
+	data["cb_half"] = Input::get_singleton()->is_key_pressed( KEY_SHIFT );
+	return data;
+}
+
+bool CbDrag::can_drop( const Vector2&, const Variant& data )
+{
+	Dictionary d = data;
+	return data.get_type() == Variant::DICTIONARY && d.has( "cb_slot" ) && Slot() >= 0;
+}
+
+void CbDrag::drop( const Vector2&, const Variant& data )
+{
+	CinderboxClient* client = FindClient( this, m_client );
+	Dictionary d = data;
+	const int64_t from = int64_t( d.get( "cb_slot", -1 ) );
+	const int64_t here = Slot();
+	if ( client == nullptr || from < 0 || here < 0 || from == here )
+	{
+		return;
+	}
+	bool half = bool( d.get( "cb_half", false ) );
+	client->send_intent( int64_t( half ? SlotIntent::Split : SlotIntent::Move ), from, here );
+}
+
+void CbDrag::_notification( int what )
+{
+	if ( what != NOTIFICATION_DRAG_END || m_dragging == false )
+	{
+		return;
+	}
+	m_dragging = false;
+	// Let go nowhere that takes it: outside the screen it belongs to, it is thrown out.
+	Viewport* viewport = get_viewport();
+	// (A row is a copy in a list, maybe in a grid's line: `inside` is also found by its name, as an
+	// ancestor or an ancestor's child.)
+	Control* inside = m_inside.is_empty() ? nullptr : Object::cast_to<Control>( get_node_or_null( m_inside ) );
+	const String name = m_inside.get_name_count() > 0 ? String( m_inside.get_name( m_inside.get_name_count() - 1 ) ) : String();
+	for ( Node* up = get_parent(); inside == nullptr && up != nullptr && name.is_empty() == false; up = up->get_parent() )
+	{
+		inside = String( up->get_name() ) == name ? Object::cast_to<Control>( up ) : Object::cast_to<Control>( up->get_node_or_null( NodePath( name ) ) );
+	}
+	CinderboxClient* client = FindClient( this, m_client );
+	if ( viewport == nullptr || inside == nullptr || client == nullptr || viewport->gui_is_drag_successful() || m_draggedSlot < 0 )
+	{
+		return;
+	}
+	if ( inside->get_global_rect().has_point( inside->get_global_mouse_position() ) == false )
+	{
+		client->send_intent( int64_t( SlotIntent::Drop ), m_draggedSlot, 0 );
+	}
+}
+
+// --- CbItemIcon ------------------------------------------------------------------------------------
+
+CbItemIcon::CbItemIcon()
+{
+	set_expand_mode( EXPAND_IGNORE_SIZE );
+	set_stretch_mode( STRETCH_KEEP_ASPECT_CENTERED );
+	set_mouse_filter( MOUSE_FILTER_IGNORE );
+}
+
+void CbItemIcon::_process( double )
+{
+	if ( InGame() == false )
+	{
+		return;
+	}
+	CinderboxClient* client = FindClient( this, m_client );
+	int64_t item = client != nullptr ? SubjectOf( this, client ) : 0;
+	// (A row of a list of slots is about the slot's item; outside one, the subject is a player.)
+	set_texture( client != nullptr && item != 0 ? client->get_item_icon( item ) : Ref<Texture2D>() );
 }
 
 } // namespace cb::gd

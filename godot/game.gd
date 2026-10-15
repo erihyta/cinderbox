@@ -597,11 +597,22 @@ var _auto_bag_step := 0
 func _auto_bag(since: float) -> void:
 	if not InputMap.has_action("cb_inventory"):
 		return
-	var due := [0.0, 0.6, 1.2, 2.6]
+	var due := [0.0, 0.6, 0.7, 0.8, 2.6]
 	if _auto_bag_step >= due.size() or since < due[_auto_bag_step]:
 		return
+	# The bag's cells, in order (a CbDrag in each; the hotbar's are not the bag's).
+	var cells := []
+	for drag in get_tree().root.find_children("*", "CbDrag", true, false):
+		var cell := drag.get_parent() as Control
+		var in_bag := false
+		var up: Node = cell
+		while up != null and not in_bag:
+			in_bag = up.name == "Bag"
+			up = up.get_parent()
+		if cell != null and in_bag and cell.is_visible_in_tree() and not cells.has(cell):
+			cells.append(cell)
 	match _auto_bag_step:
-		0, 3:
+		0, 4:
 			# The key itself, as a keyboard sends it (down, then up): it switches the screen.
 			for bound in InputMap.action_get_events("cb_inventory"):
 				for pressed in [true, false]:
@@ -610,23 +621,46 @@ func _auto_bag(since: float) -> void:
 						key.pressed = pressed
 						Input.parse_input_event(key)
 			print("autoplay: pressed the inventory key")
-		1, 2:
-			var cells := []
-			for click in get_tree().root.find_children("*", "CbClick", true, false):
-				var cell := click.get_parent() as Control
-				if cell != null and cell.is_visible_in_tree() and not cells.has(cell):
-					cells.append(cell)
-			var index := 0 if _auto_bag_step == 1 else 2
-			if index < cells.size():
-				for pressed in [true, false]:
-					var event := InputEventMouseButton.new()
-					event.button_index = MOUSE_BUTTON_LEFT
-					event.pressed = pressed
-					event.position = (cells[index] as Control).get_global_rect().get_center()
-					event.global_position = event.position
-					Input.parse_input_event(event)
-			print("autoplay: clicked slot ", index + 1, " of ", cells.size(), " in the inventory screen")
+		1, 2, 3:
+			# The first slot dragged onto the third: pressed, moved there, let go (a frame apart).
+			if cells.size() >= 3:
+				var from := (cells[0] as Control).get_global_rect().get_center()
+				var to := (cells[2] as Control).get_global_rect().get_center()
+				if _auto_bag_step == 1:
+					_mouse_button(from, true)
+					_mouse_motion(from + Vector2(12, 0))
+				elif _auto_bag_step == 2:
+					_mouse_motion(from.lerp(to, 0.5))
+					_mouse_motion(to)
+				else:
+					_mouse_button(to, false)
+					print("autoplay: dragged slot 1 onto slot 3 of ", cells.size(), " in the inventory screen")
 	_auto_bag_step += 1
+
+
+## Where the unattended player's mouse was last (a drag is seen from how far the mouse moved).
+var _auto_mouse := Vector2.ZERO
+
+
+func _mouse_button(at: Vector2, pressed: bool) -> void:
+	_auto_mouse = at
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = pressed
+	event.button_mask = MOUSE_BUTTON_MASK_LEFT if pressed else 0
+	event.position = at
+	event.global_position = at
+	Input.parse_input_event(event)
+
+
+func _mouse_motion(at: Vector2) -> void:
+	var event := InputEventMouseMotion.new()
+	event.button_mask = MOUSE_BUTTON_MASK_LEFT
+	event.relative = at - _auto_mouse
+	_auto_mouse = at
+	event.position = at
+	event.global_position = at
+	Input.parse_input_event(event)
 
 
 ## The unattended player takes a slot's item out, once.
@@ -720,7 +754,7 @@ func _send_input(delta: float) -> void:
 			_auto_select(1)
 			use = auto_rng.randf() < delta * 2.0
 		# The inventory screen, if a mod brings one (a CbKey named "inventory"): opened in the
-		# middle of the run, its first slot clicked and then its third (they trade places), closed.
+		# middle of the run, its first slot dragged onto its third (they trade places), closed.
 		if not view_probe:
 			_auto_bag(elapsed - autoplay * 0.45)
 		# Hold the scores key at the end (a mod's CbKey names it), so screenshots show them too.
@@ -741,7 +775,8 @@ func _send_input(delta: float) -> void:
 		# the mouse (the inventory), not in a recording.
 		if _replay == "" and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or _ui_cursor):
 			for i in mini(_slot_keys, 16):
-				if Input.is_action_pressed("game_slot_%d" % (i + 1)):
+				var slot_action := "game_slot_%d" % (i + 1)
+				if InputMap.has_action(slot_action) and Input.is_action_pressed(slot_action):
 					slot_keys |= 1 << i
 	client.set_input(move, yaw, pitch, jump, sprint, use, actions, _view(), slot_keys)
 
@@ -755,14 +790,18 @@ func _bind_slot_keys() -> void:
 		return
 	menu.forget_keys("Slots")
 	var suggested: PackedStringArray = client.get_slot_keys()
+	# (A slot past the tenth has a key only when the server suggests one: the bag's slots are
+	# reached with the mouse, on the inventory screen.)
 	for i in count:
 		var key := String(suggested[i]) if i < suggested.size() else ""
 		if key == "":
 			key = str(i + 1) if i < 9 else ("0" if i == 9 else "")
+		if key == "" and i >= 10:
+			continue
 		menu.bind_key("game_slot_%d" % (i + 1), key, "Slot %d" % (i + 1), "Slots")
 	_slot_keys = count
 	var bound := []
-	for i in count:
+	for i in mini(count, 10):
 		bound.append(menu.key_text("game_slot_%d" % (i + 1)))
 	print("slot keys: ", " ".join(bound))
 	_update_help()

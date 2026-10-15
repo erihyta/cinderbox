@@ -250,6 +250,18 @@ void Declarations::SlotKey( int slot, const std::string& key )
 	}
 }
 
+double Declarations::Option( const std::string& name, double fallback ) const
+{
+	auto it = m_options != nullptr ? m_options->find( name ) : decltype( m_options->end() )();
+	if ( m_options == nullptr || it == m_options->end() )
+	{
+		return fallback;
+	}
+	char* end = nullptr;
+	double value = std::strtod( it->second.c_str(), &end );
+	return end != it->second.c_str() ? value : fallback;
+}
+
 void Declarations::Slots( int count )
 {
 	if ( count < 0 || count > kMaxSlots )

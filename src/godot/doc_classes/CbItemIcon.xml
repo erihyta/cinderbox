@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbItemIcon" inherits="TextureRect" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		What the row's item looks like: its icon.
+	</brief_description>
+	<description>
+		In a row of a [CbList] (of slots, of items): the icon of that row's item, nothing for none. The icon is its kind's [member CbItem.icon]; without one, the game takes a picture of the item's scene once (its meshes, framed from the front and a little above, on a clear background) and keeps it.
+	</description>
+	<tutorials>
+	</tutorials>
+</class>

@@ -32,6 +32,7 @@
 #include <godot_cpp/classes/animation_library.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/packed_scene.hpp>
+#include <godot_cpp/classes/texture2d.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 
 #include <memory>
@@ -141,6 +142,9 @@ public:
 	int64_t get_slot_item( int64_t player, int64_t slot ) const;
 	// How many an item is (a stack); 0 for none.
 	int64_t get_item_count( int64_t item ) const;
+	// What an item looks like in a slot: its kind's CbItem.icon, or a picture of its scene taken once
+	// (empty until that is ready, a few frames after it is first asked for).
+	godot::Ref<godot::Texture2D> get_item_icon( int64_t item );
 	bool check_local_conditions( const godot::PackedStringArray& conditions ) const;
 	godot::Variant evaluate( int64_t net_id, const godot::String& expression ) const;
 	godot::Variant evaluate_local( const godot::String& expression ) const;
@@ -318,6 +322,17 @@ private:
 	// Held items: their looks by kind, and each character's sockets (placed from the pose every
 	// frame; items are their children).
 	std::map<std::string, godot::String> m_itemLooks;
+	// Icons by item kind (cinderbox_client_icons.cpp): a texture, or the viewport taking its picture.
+	struct Icon
+	{
+		godot::Ref<godot::Texture2D> texture;
+		godot::ObjectID viewport;
+		int frames = 0;
+		bool failed = false;
+	};
+	std::map<std::string, Icon> m_icons;
+	godot::Ref<godot::Texture2D> IconOfKind( const std::string& kind );
+	void UpdateIcons();
 	// What links are drawn as (CbLinkLook): by the motion's name ("": any), the scene and the
 	// socket it starts at. And the ropes that are out now, by the player's visual.
 	struct LinkLook
