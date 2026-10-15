@@ -1,17 +1,14 @@
 [gd_scene format=3]
 
 ; What the gun mod's look shows in the world. Nearly nothing: a gun's shot, its sounds and what its
-; hits look like are the gun's own (CbReaction nodes in its scene, prefabs/*.tscn, on the item
+; hits look like are the gun's own (the rules sheet beside its scene, prefabs/*.rules, on the item
 ; mod's cues), so each gun has its own and a new gun brings its own.
 ;
 ; Here is only what is about someone else than the holder: the mark mod's "mark.found" (the pistol's
 ; second use found a player) puts a zone around the marked player ($other) for 2 seconds.
+; The reactions: the rules sheet beside this scene (reactions_gun.rules).
 
 [node name="GunReactions" type="Node3D"]
 
-[node name="Marked" type="CbReaction" parent="."]
-event = "mark.found"
-subject = NodePath("$other")
-scene = "res://vfx/mark_zone.tscn"
-scene_lifetime = 2.0
-place = 5
+[node name="Rules" type="CbRules" parent="."]
+file = "res://vfx/reactions_gun.rules"

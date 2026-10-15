@@ -1,13 +1,14 @@
 [gd_scene format=3]
 
-; How the grapple mod looks and sounds.
+; How the grapple mod looks and sounds. Its reactions are the rules sheet beside it
+; (reactions_grapple.rules).
 ;
 ;   Rope    CbLinkLook     the rope: grapple_rope.tscn stretched from the waist (the Hip socket: the
 ;                          line is tied there, the hands stay free) to its
 ;                          end, while it flies and while it holds
-;   Fired   CbReaction     the throw's sound, at the player. The event comes from the motion, which
+;   Fired   a rule         the throw's sound, at the player. The event comes from the motion, which
 ;                          the viewer's own simulation runs: yours is heard on the press
-;   Hit     CbReaction     a puff where the hook takes hold, when it does (grapple.hooked, said
+;   Hit     a rule         a puff where the hook takes hold, when it does (grapple.hooked, said
 ;                          by the hook's line at that point)
 
 [node name="GrappleReactions" type="Node3D"]
@@ -17,20 +18,5 @@ motion = "grapple.hook/Use"
 scene = "res://vfx/grapple_rope.tscn"
 from = "Hip"
 
-[node name="Fired" type="CbReaction" parent="."]
-event = "grapple.fired"
-subject = NodePath("$at")
-place = 4
-place_node = NodePath("$at/Hip")
-sound = "res://assets/sfx/prop_spawn.wav"
-volume_db = -10.0
-pitch_scale = 2.0
-pitch_jitter = 0.1
-max_distance = 30.0
-
-[node name="Hit" type="CbReaction" parent="."]
-event = "grapple.hooked"
-subject = NodePath("$at")
-scene = "res://vfx/land.tscn"
-scene_lifetime = 2.0
-place = 1
+[node name="Rules" type="CbRules" parent="."]
+file = "res://vfx/reactions_grapple.rules"

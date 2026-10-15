@@ -1,0 +1,12 @@
+# reactions_pickup.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are
+# from the scene's root.
+
+# Prompt
+while pickup.target and pickup.hold == 0
+    subject $local
+    scene res://vfx/prompt.tscn under $local@pickup.target
+
+# PromptHold
+while pickup.target and pickup.hold > 0
+    subject $local
+    scene res://vfx/prompt_hold.tscn under $local@pickup.target

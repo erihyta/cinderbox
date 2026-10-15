@@ -1,0 +1,16 @@
+# reactions_grenade.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are
+# from the scene's root.
+
+# Thrown
+on grenade.thrown
+    subject $at
+    at point
+    sound res://assets/sfx/jump.wav volume -10 pitch 0.7 jitter 0.1 range 25
+
+# Blast
+on grenade.blast
+    subject $at
+    at point
+    sound res://assets/sfx/prop_destroy.wav volume 2 pitch 0.55 jitter 0.08 range 80
+    scene res://vfx/blast.tscn life 2
+    shake 0.25 time 0.35

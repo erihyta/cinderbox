@@ -1,5 +1,6 @@
 #include "cue_rules.h"
 
+#include "cue_prediction.h"
 #include "cue_reaction.h"
 
 #include <godot_cpp/classes/engine.hpp>
@@ -149,8 +150,10 @@ Variant Value( const Token& token )
 struct Building
 {
 	int line = 0;
-	Dictionary settings;			 // for every action of the rule
+	Dictionary settings;			 // for every action of the rule (a prediction: all of it)
 	std::vector<Rule> actions;		 // its own properties, and its line
+	bool prediction = false;
+	PackedStringArray changes;		 // a prediction's
 	bool bad = false;
 };
 
@@ -180,6 +183,19 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 		{
 			return;
 		}
+		if ( rule.prediction )
+		{
+			Rule made;
+			made.line = rule.line;
+			made.prediction = true;
+			made.properties = rule.settings;
+			if ( rule.changes.is_empty() == false )
+			{
+				made.properties["changes"] = rule.changes;
+			}
+			out.push_back( made );
+			return;
+		}
 		if ( rule.actions.empty() )
 		{
 			errors.push_back( "line " + String::num_int64( rule.line ) + ": the rule does nothing: give it an action (sound, scene, play, set, call, shake, flash)" );
@@ -206,6 +222,65 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			continue;
 		}
 		const String verb = w[0].text;
+		// --- a prediction: the viewer's own press, shown as the cue the server will answer with
+		if ( verb == "predict" )
+		{
+			finish();
+			rule = Building{};
+			rule.line = number;
+			rule.prediction = true;
+			open = true;
+			if ( w.size() < 4 || w[2].text != "as" )
+			{
+				fail( number, "predict <action> as <cue> [if <expression>]" );
+				continue;
+			}
+			rule.settings["action"] = w[1].text;
+			rule.settings["cue"] = w[3].text;
+			if ( w.size() >= 5 )
+			{
+				if ( w[4].text != "if" || w.size() < 6 )
+				{
+					fail( number, "after the cue: if <expression>" );
+					continue;
+				}
+				rule.settings["conditions"] = PackedStringArray( { RestFrom( line, w[5] ) } );
+			}
+			continue;
+		}
+		if ( open && rule.prediction )
+		{
+			double seconds = 0.0;
+			if ( verb == "cooldown" && w.size() == 2 && Number( w[1], seconds ) )
+			{
+				rule.settings["cooldown"] = seconds;
+			}
+			else if ( verb == "held" && w.size() == 1 )
+			{
+				rule.settings["while_held"] = true;
+			}
+			else if ( verb == "change" && w.size() >= 4 )
+			{
+				rule.changes.push_back( RestFrom( line, w[1] ) );
+			}
+			else if ( verb == "stance" && ( w.size() == 2 || ( w.size() == 4 && w[2].text == "on" ) ) )
+			{
+				rule.settings["stance"] = w[1].text;
+				if ( w.size() == 4 )
+				{
+					rule.settings["stance_layer"] = w[3].text;
+				}
+			}
+			else if ( verb != "on" && verb != "while" )
+			{
+				fail( number, "a prediction takes cooldown S, held, change FIELD OP NUMBER, stance NAME [on LAYER]" );
+				continue;
+			}
+			if ( verb != "on" && verb != "while" )
+			{
+				continue;
+			}
+		}
 		// --- a new rule
 		if ( verb == "on" || verb == "while" )
 		{
@@ -525,7 +600,7 @@ void CbRules::Clear()
 	for ( int i = get_child_count( true ) - 1; i >= 0; --i )
 	{
 		Node* child = get_child( i, true );
-		if ( Object::cast_to<CbReaction>( child ) != nullptr && child->get_owner() == nullptr )
+		if ( ( Object::cast_to<CbReaction>( child ) != nullptr || Object::cast_to<CbPrediction>( child ) != nullptr ) && child->get_owner() == nullptr )
 		{
 			remove_child( child );
 			child->queue_free();
@@ -567,8 +642,8 @@ void CbRules::Build()
 	}
 	for ( const cue::Rule& rule : rules )
 	{
-		auto* reaction = memnew( CbReaction );
-		reaction->set_name( "Rule" + String::num_int64( rule.line ) );
+		Node* reaction = rule.prediction ? static_cast<Node*>( memnew( CbPrediction ) ) : static_cast<Node*>( memnew( CbReaction ) );
+		reaction->set_name( ( rule.prediction ? "Predict" : "Rule" ) + String::num_int64( rule.line ) );
 		bool ok = true;
 		Array keys = rule.properties.keys();
 		for ( int64_t i = 0; i < keys.size(); ++i )

@@ -6,3 +6,8 @@ on melee.hit if $other:combat.health < 50
     subject ^^
     call Timer hide
     shake 0.2 time 0.1
+
+predict use as melee.swing if !combat.dead
+    cooldown 0.5
+    change melee.swings += 1
+    stance melee_swing on full

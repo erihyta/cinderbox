@@ -473,7 +473,7 @@ PackedStringArray Problems( const Node* node )
 			{
 				for ( const Entry& entry : kTable )
 				{
-					if ( String( entry.cls ) == "CbReaction" && rule.properties.has( entry.property ) )
+					if ( String( entry.cls ) == ( rule.prediction ? "CbPrediction" : "CbReaction" ) && rule.properties.has( entry.property ) )
 					{
 						CheckValue( book, entry.holds, rule.properties[entry.property], file + " line " + String::num_int64( rule.line ) + ": " + entry.property, out );
 					}

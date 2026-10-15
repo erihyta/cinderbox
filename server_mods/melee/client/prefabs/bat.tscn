@@ -191,36 +191,5 @@ shape = SubResource("Body")
 [node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=311034086]
 libraries/ = SubResource("AnimationLibrary_gysuc")
 
-[node name="GlowWhileHot" type="CbReaction" parent="." unique_id=979966992]
-when = 1
-conditions = PackedStringArray("melee.hot")
-target = NodePath("../Model/Barrel")
-property = "surface_material_override/0:emission_energy_multiplier"
-value = 4.0
-
-[node name="FlamesOnSwing" type="CbReaction" parent="." unique_id=244914519]
-event = "melee.swing"
-subject = NodePath("^^")
-animation_player = NodePath("../AnimationPlayer")
-animation = "slash"
-
-[node name="SparksOnHit" type="CbReaction" parent="." unique_id=164242142]
-event = "melee.hit"
-subject = NodePath("^^")
-target = NodePath("../Model/Sparks")
-method = "restart"
-
-[node name="PredictSwing" type="CbPrediction" parent="." unique_id=2143443249]
-action = "use"
-cue = "melee.swing"
-cooldown = 0.58
-stance = "melee_swing"
-stance_layer = "full"
-
-[node name="SparksOnSwing" type="CbReaction" parent="."]
-event = "melee.swing"
-subject = NodePath("^^")
-delay = 0.14
-target = NodePath("../Model/Sparks")
-method = "restart"
-editor_description = "The sparks of a swing, started again at every swing. (A one-shot particle node that an animation only switches on does not start again while its last burst is still out: swings in a row had no sparks.)"
+[node name="Rules" type="CbRules" parent="."]
+file = "res://prefabs/bat.rules"

@@ -1,0 +1,16 @@
+# reactions_dash.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are
+# from the scene's root.
+
+# Dashed
+on dash.started
+    subject $at
+    at point
+    sound res://assets/sfx/prop_spawn.wav volume -10 pitch 1.6 jitter 0.1 range 30
+    scene res://vfx/land.tscn life 2
+
+# DoubleJumped
+on dash.double_jump
+    subject $at
+    at point
+    sound res://assets/sfx/jump.wav volume -12 pitch 1.4 range 25
+    scene res://vfx/jump.tscn life 2

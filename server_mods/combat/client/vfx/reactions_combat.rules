@@ -1,0 +1,14 @@
+# reactions_combat.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are
+# from the scene's root.
+
+# Hurt
+on combat.hurt if is_local
+    subject $other
+    at point
+    flash rgba(0.8, 0.05, 0.05, 0.24) time 0.3
+
+# Died
+on combat.killed if is_local
+    subject $other
+    at point
+    flash rgba(0.6, 0, 0, 0.55) time 1.2

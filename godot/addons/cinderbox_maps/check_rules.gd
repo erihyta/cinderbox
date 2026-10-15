@@ -11,7 +11,7 @@ extends SceneTree
 ## │           └── Rules     CbRules  check_rules_good.rules: while melee.hot hide Barrel;
 ## │                                  on melee.hit with $other:combat.health < 50, Timer.hide() and a shake
 ## └── player_1              entity   {combat.health}
-## And a sheet with mistakes (check_rules_bad.rules): each is said with its line, the rest still works.
+## And a prediction (predict use as melee.swing), and a sheet with mistakes (check_rules_bad.rules): each is said with its line, the rest still works.
 
 var _failures := 0
 var _frames := 0
@@ -71,7 +71,14 @@ func _initialize() -> void:
 func _process(_delta: float) -> bool:
 	_frames += 1
 	if _frames == 2:
-		_check("three actions, three reactions", _rules.get_reaction_count() == 3)
+		_check("three actions and a prediction: four nodes", _rules.get_reaction_count() == 4)
+		var predicted: CbPrediction = null
+		for child in _rules.get_children(true):
+			if child is CbPrediction:
+				predicted = child
+		_check("the prediction, as written", predicted != null and predicted.action == "use" and predicted.cue == "melee.swing"
+			and is_equal_approx(predicted.cooldown, 0.5) and predicted.changes == PackedStringArray(["melee.swings += 1"])
+			and predicted.stance == "melee_swing" and predicted.stance_layer == "full" and predicted.conditions == PackedStringArray(["!combat.dead"]))
 		_check("none of them is saved with the scene (internal)", _rules.get_child_count() == 0)
 		_check("the good sheet says nothing", _rules.get_problems().is_empty())
 		_world.set_state(_item, {"melee.hot": true})
@@ -91,7 +98,8 @@ func _process(_delta: float) -> bool:
 		var lines := []
 		for p in problems:
 			lines.append(int(p.get_slice(":", 0).get_slice(" ", 1)))
-		_check("its mistakes, each at its line (3, 4, 6, 9)", lines == [3, 4, 6, 9])
+		lines.sort()
+		_check("its mistakes, each at its line (3, 4, 6, 9, 12)", lines == [3, 4, 6, 9, 12])
 		_check("the rule without one still works", _bad.get_reaction_count() == 1)
 		_timer.visible = true
 		_world.cue("test.fine", _item, null, {})

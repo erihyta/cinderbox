@@ -35,12 +35,21 @@
 //              shake AMOUNT [time S]
 //              flash rgba(r,g,b,a) [time S]
 //
+// A prediction (a CbPrediction: the viewer's own press shown at once, as the cue the server will
+// answer with) is a rule of its own, with no actions:
+//
+//   predict use as item.use if gun.ammo > 0 and !gun.reloading
+//       cooldown 0.19
+//       held                      (again and again while held, every cooldown: automatic fire)
+//       change gun.ammo -= 1      (until the server answers; one line each)
+//       stance melee_swing on full
+//
 // Paths are cue paths (cue_paths.h): an anchor ($at, $other, ^, ^^, $local, $world) and a path from
 // it, or a plain path from the node the CbRules node is under ("Barrel", "Muzzle/Sparks"; "." is
 // that node itself), which climbs no higher than the scene. # starts a comment. A line that cannot
 // be read is said with its number, and its rule is left out; the rest of the sheet still works.
 
-#include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/string.hpp>
@@ -50,10 +59,12 @@
 namespace cb::cue
 {
 
-// One action of a rule, as the CbReaction it becomes: its properties by name, and its line.
+// One action of a rule, as the CbReaction it becomes (or a prediction, as its CbPrediction): its
+// properties by name, and its line.
 struct Rule
 {
 	int line = 0;
+	bool prediction = false;
 	godot::Dictionary properties;
 };
 
@@ -68,11 +79,12 @@ bool IsPathProperty( const godot::String& name );
 namespace cb::gd
 {
 
-// A scene's rules sheet (cue_rules.h): the file it reads, and the CbReactions its rules become, under
-// it (internal children: never saved with the scene).
-class CbRules : public godot::Node
+// A scene's rules sheet (cue_rules.h): the file it reads, and the CbReactions (and CbPredictions)
+// its rules become, under it (internal children: never saved with the scene). A Node3D: what a rule
+// adds with no place of its own (a scene, a sound) goes where this node is.
+class CbRules : public godot::Node3D
 {
-	GDCLASS( CbRules, godot::Node )
+	GDCLASS( CbRules, godot::Node3D )
 
 public:
 	void set_file( const godot::String& v );
