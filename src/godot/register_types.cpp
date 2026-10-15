@@ -13,6 +13,7 @@
 #include "cue_prediction.h"
 #include "cue_preview.h"
 #include "cue_reaction.h"
+#include "cue_rules.h"
 #include "cinderbox_skeleton.h"
 
 #include <gdextension_interface.h>
@@ -56,6 +57,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbAnimPack );
 	GDREGISTER_CLASS( cb::gd::CbDirector );
 	GDREGISTER_CLASS( cb::gd::CbReaction );
+	GDREGISTER_CLASS( cb::gd::CbRules );
 	GDREGISTER_CLASS( cb::gd::CbPrediction );
 	GDREGISTER_CLASS( cb::gd::CbNames );
 	GDREGISTER_CLASS( cb::gd::CbTrackPlayer );

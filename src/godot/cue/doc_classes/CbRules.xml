@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbRules" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		A scene's reactions as lines of text: a rules sheet (a .rules file) instead of one [CbReaction] node each.
+	</brief_description>
+	<description>
+		Logic is text; what is a place or a thing stays a node. Put a [CbRules] where a [CbReaction] would go and point [member file] at a [code].rules[/code] file of the project. When the scene is used, each action of each rule becomes a [CbReaction] under this node (internal: never saved with the scene), so the director, the guard and the Cue Preview treat them as any other.
+		[codeblock]
+		# A thud where a hit lands, and the barrel glowing while the bat is hot.
+		on melee.hit
+		    subject $at
+		    at point
+		    sound res://assets/sfx/bat_hit.wav volume -6 jitter 0.1 range 40
+
+		while melee.hot
+		    set Barrel surface_material_override/0:emission_energy_multiplier 4 blend 0.2
+		[/codeblock]
+		A rule starts with [code]on &lt;event&gt; [if &lt;expression&gt;][/code] or [code]while &lt;expression&gt;[/code]; the lines under it are its settings and its actions (indenting is for the eye).
+		[b]Settings[/b], for every action of the rule: [code]subject PATH[/code], [code]side a|b|either[/code], [code]kind KIND[/code], [code]template NAME[/code], [code]delay S[/code], [code]chance P[/code], [code]cooldown S[/code], [code]wait[/code] (wait for the server's cue), [code]at point|end|beam|follow|PATH [from PATH] [offset X Y Z][/code].
+		[b]Actions[/b]: [code]sound PATH [volume DB] [pitch P] [jitter J] [range M] [bus NAME] [volume_by EXPR][/code]; [code]scene PATH [under PATH] [life S][/code]; [code]play PLAYER ANIMATION [off ANIMATION][/code]; [code]set PATH PROPERTY VALUE [blend S][/code] or [code]set PATH PROPERTY = EXPRESSION[/code]; [code]call PATH METHOD [ARGUMENTS][/code]; [code]shake AMOUNT [time S][/code]; [code]flash rgba(r, g, b, a) [time S][/code]. A value is a number, [code]true[/code], [code]false[/code], [code]rgb(r, g, b)[/code], [code]rgba(r, g, b, a)[/code], [code](x, y, z)[/code], a word or [code]"text"[/code].
+		[b]Paths[/b] are the reactions' (an anchor: [code]$at[/code], [code]$other[/code], [code]^[/code], [code]^^[/code], [code]$local[/code], [code]$world[/code]), or a plain path from the node this one is under ([code]Barrel[/code]; [code].[/code] is that node), climbing no higher than the scene. [code]#[/code] starts a comment.
+		[b]Mistakes[/b] are said with their line: on the node in the editor, and when the look is published (a name no mod declares too). A rule with one is left out; the rest of the sheet still works.
+		The editor opens [code].rules[/code] files in its script editor.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="file" type="String" setter="set_file" getter="get_file" default="&quot;&quot;">
+			The rules sheet: a [code].rules[/code] file of this project ([code]res://vfx/brawl.rules[/code]).
+		</member>
+	</members>
+</class>

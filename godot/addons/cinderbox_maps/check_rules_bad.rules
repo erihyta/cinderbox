@@ -1,0 +1,11 @@
+# Mistakes, each said at its line; only its rule is left out (line 7 goes with the while above it).
+on melee.hit
+    sound
+on
+while melee.hot
+    jump high
+set Barrel visible true
+on melee.hit
+    set ../Outside visible false
+on test.fine
+    call Timer hide

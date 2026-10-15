@@ -11,6 +11,7 @@ add_library(cb_cue STATIC
 	cue_prediction.cpp
 	cue_preview.cpp
 	cue_reaction.cpp
+	cue_rules.cpp
 )
 target_include_directories(cb_cue PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(cb_cue PUBLIC godot::cpp cb_expr)

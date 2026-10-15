@@ -1,3 +1,0 @@
-This mod is switched off: it is compiled into cb_server but does not run by default.
-It is a brawler's kit (step 5's measure), a game of its own.
-Start it by name (cb_server --mods inventory,combat,brawl), or delete this file to switch it on.

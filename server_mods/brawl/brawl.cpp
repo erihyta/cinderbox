@@ -16,8 +16,8 @@
 //   - the slam's landing: no node finds who is near a point, and no motion starts on landing, so
 //     the mod watches the diver and throws who is near when it lands (not predicted)
 //
-// Switched off (the "disabled" file): it is a game of its own. Start it by name, with the mods it
-// needs and without the other weapons:
+// It runs by default, beside the weapons; its skills then go to whatever slots are free (their
+// slots' keys use them wherever they are). Alone, with only what it needs:
 //   cb_server --mods inventory,combat,brawl
 // Server options: brawl.jab, brawl.finisher, brawl.dash, brawl.uppercut, brawl.slam (damage).
 

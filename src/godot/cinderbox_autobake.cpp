@@ -13,6 +13,7 @@
 #include <godot_cpp/classes/v_box_container.hpp>
 #include <godot_cpp/classes/world3d.hpp>
 #include <godot_cpp/classes/editor_paths.hpp>
+#include <godot_cpp/classes/editor_settings.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
@@ -235,6 +236,14 @@ void CbAutoBakePlugin::_enter_tree()
 	OfferNodes();
 	OfferTest();
 	MakeViewPanel();
+	// A rules sheet (CbRules) is text: the editor opens .rules files in its script editor.
+	Ref<EditorSettings> settings = EditorInterface::get_singleton()->get_editor_settings();
+	const String key = "docks/filesystem/textfile_extensions";
+	String extensions = settings.is_valid() && settings->has_setting( key ) ? String( settings->get_setting( key ) ) : String();
+	if ( settings.is_valid() && extensions.split( "," ).has( "rules" ) == false )
+	{
+		settings->set_setting( key, extensions.is_empty() ? String( "rules" ) : extensions + ",rules" );
+	}
 	set_process( true );
 }
 

@@ -165,9 +165,9 @@ while melee.hot
 | # | Piece | What | Why |
 |---|---|---|---|
 | 1 | Measure first: a skill kit | **done (M163)**: the `brawl` mod, [measured below](#the-skill-kit-measured) | the pain decides which sheet comes first (reactions, motions or the HUD), not a guess |
-| 2 | The sheet | one text property (on the item's, the reactions' or the HUD's root, as piece 1 says), parsed at bake into the same structures the nodes bake to; the nodes keep working beside it | no new language: the line format and `src/expr`; nothing the server or the simulation reads changes |
-| 3 | Checked as nodes are | the names checker (`cue_names`) reads the sheet: an unknown name is an error at its line, in the editor and at publish; completion while typing | what nodes give for free today (step 1) is the real cost of text, not the parser |
-| 4 | Reactions as rules | `on` / `while` / `if`, and what a `CbReaction` does: play, set, spawn, sound, shake; predictions (`CbPrediction`) as rules too | the soup is worst here: a gun's look is a dozen reactions |
+| 2 | The sheet | **done (M165)**: a `.rules` file beside the scene, a `CbRules` node pointing to it; each action becomes a `CbReaction` under it when the scene is used; the nodes keep working beside it | chosen over a text property in the scene: a real editor, clean diffs |
+| 3 | Checked as nodes are | **done (M165)** at publish and on the node: every name at its line, with "did you mean"; not yet: completion while typing, a mistake shown in the script editor | what nodes give for free today (step 1) is the real cost of text, not the parser |
+| 4 | Reactions as rules | **done (M165)** for reactions (the brawl kit's sounds: 9 nodes and 59 values into 8 rules); not yet: predictions (`CbPrediction`) as rules | the soup is worst here: a gun's look is a dozen reactions |
 | 5 | An item's use as rules | the When used rules and the motions under a `CbItem` as lines; the probe, the link and the force stay nodes where they are things with a place | the skill kit's motions |
 | 6 | An item's own HUD | in the item's own scene, shown while it is selected or carried (a skill's cooldown on its slot) | from step 4; written with the sheet |
 | 7 | The mods, converted | pistol, bat, rifle, grenade, hook, boots, the HUDs: as few nodes as there are places | the examples are what modders copy |
@@ -177,7 +177,7 @@ while melee.hot
 
 #### The skill kit, measured
 
-`server_mods/brawl` (M163, switched off: `--mods inventory,combat,brawl`): a fist with a three-hit
+`server_mods/brawl` (M163; on by default since M165, alone: `--mods inventory,combat,brawl`): a fist with a three-hit
 combo, a dash strike (X), an uppercut (K), a ground slam (L), a guard (hold Alt), cooldowns on the
 HUD. Made with today's nodes; `net_brawl` plays it.
 

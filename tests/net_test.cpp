@@ -152,9 +152,10 @@ struct Harness
 		: port( p )
 		, clientPort( p )
 	{
-		// Every mod that runs by default; a disabled one (a "disabled" file: the impact grenade, the
-		// brawler's kit) only when the test names it, in the mod option "test.mods" (a, b), as
-		// cb_server --mods would.
+		// Every mod that runs by default; a disabled one (a "disabled" file: the impact grenade) only
+		// when the test names it, in the mod option "test.mods" (a, b), as cb_server --mods would.
+		// The brawler's kit runs by default too, but its skills take the hotbar's first slots, where
+		// the tests expect the pistol, the bat and the rifle: it runs only when named as well.
 		std::string named;
 		if ( auto it = modOptions.find( "test.mods" ); it != modOptions.end() )
 		{
@@ -162,7 +163,8 @@ struct Harness
 		}
 		for ( const mods::ModInfo& info : mods::CompiledMods() )
 		{
-			if ( info.onByDefault || named.find( "," + std::string( info.name ) + "," ) != std::string::npos )
+			const bool asked = named.find( "," + std::string( info.name ) + "," ) != std::string::npos;
+			if ( ( info.onByDefault && std::string( info.name ) != "brawl" ) || asked )
 			{
 				server.AddMod( info.create() );
 			}
@@ -3598,7 +3600,7 @@ void TestBrawl()
 	Bot& b = h.bots[1];
 	bool fistKept = true;
 	// A: to within 1.6 m of B, looking at it; then the step of the plan that this tick is in.
-	a.script = [&, dashKey, upperKey, slamKey]( uint32_t tick ) {
+	a.script = [&]( uint32_t tick ) {
 		PlayerInput in;
 		uint32_t me = server.PlayerNetId( a.client->Slot() ), it = server.PlayerNetId( b.client->Slot() );
 		const Transform* at = me != 0 ? server.EntityTransform( me ) : nullptr;
@@ -4067,7 +4069,10 @@ void TestGrapple()
 		}
 		std::printf( "    %d predicted ticks compared with the server's: %d differ, worst %.4f m\n", compared, wrong, worst );
 		CHECK( compared > 300 && wrong == 0 && worst == 0.0f );
-		CHECK( predicted.count( throwAt + 1 ) && predicted[throwAt + 1].tethered );
+		// (The client's simulation is looked at when the test's loop runs: on a slow machine it may
+		// have run a few ticks between two looks. The first tick seen after the press is tethered.)
+		auto firstAfter = predicted.lower_bound( throwAt + 1 );
+		CHECK( firstAfter != predicted.end() && firstAfter->first <= throwAt + 4 && firstAfter->second.tethered );
 	}
 
 	// Two players, one ball: both hooks in it, and everyone agrees where it went.
