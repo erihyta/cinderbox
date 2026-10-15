@@ -472,9 +472,9 @@ LookItem ParseLookItem( const std::string& kind, const std::string& text )
 		{
 			item.motions = true;
 		}
-		else if ( key == "slotkey" )
+		else if ( key == "usekey" )
 		{
-			words >> item.slotKey;
+			words >> item.useKey;
 		}
 		else if ( key == "field" )
 		{

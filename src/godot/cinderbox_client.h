@@ -79,7 +79,6 @@ public:
 	void set_input( const godot::Vector2& move, double camera_yaw, double camera_pitch, bool jump, bool sprint, bool use, int64_t actions,
 					int64_t view = 0, int64_t slot_keys = 0 );
 	// The key each slot of the local player's suggests ("V"; "" for the slot's number), by slot.
-	godot::PackedStringArray get_slot_keys() const;
 	// Where the local player's line of sight starts for a view (ViewMode: 0 behind, 1 first person,
 	// 2 / 3 over the right / left shoulder), with the camera turned as `camera` is: the point the
 	// server takes for it too (mods::Context::ViewPosition), so the crosshair is exact.

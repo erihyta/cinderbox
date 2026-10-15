@@ -12,6 +12,7 @@
 #include "box3d/box3d.h"
 
 #include <algorithm>
+#include <bit>
 #include <cstdlib>
 
 namespace cb::mods
@@ -203,11 +204,10 @@ std::vector<Declarations::OwnItem> Declarations::ItemsOfLook()
 													 : int32_t( std::lround( field.value ) );
 			m_itemFieldDefaults[own.kind.index].push_back( { uint16_t( handle.slot ), raw } );
 		}
-		auto slot = look.properties.find( "slot" );
-		if ( look.slotKey.empty() == false && slot != look.properties.end() && slot->second >= 1.0f )
+		if ( look.useKey.empty() == false )
 		{
-			// The key it suggests for its slot (a mod's suggestion, or another item's, comes first).
-			SlotKey( int( slot->second ), look.slotKey );
+			// Its own key: uses the first one carried, wherever it is.
+			ItemUseKey( own.kind, look.useKey );
 		}
 		if ( look.motions )
 		{
@@ -251,20 +251,17 @@ void Declarations::ItemLayers( ItemKindHandle kind, AnimPackHandle pack )
 	m_itemLayers.emplace( kind.index, pack.index ); // the first one stays
 }
 
-void Declarations::SlotKey( int slot, const std::string& key )
+void Declarations::ItemUseKey( ItemKindHandle kind, const std::string& key )
 {
-	if ( slot < 1 || slot > kMaxSlots || key.empty() || key.size() > kMaxSchemaName || key.find( ' ' ) != std::string::npos )
+	if ( kind.Valid() == false || key.empty() || key.find( ' ' ) != std::string::npos )
 	{
-		m_errors.push_back( m_mod + ": bad slot key " + std::to_string( slot ) + " \"" + key + "\"" );
+		m_errors.push_back( m_mod + ": bad use key \"" + key + "\"" );
 		return;
 	}
-	if ( m_schema.slotKeys.size() < size_t( slot ) )
+	ActionHandle action = Action( m_schema.itemKinds[size_t( kind.index )] + ".use", key );
+	if ( action.mask != 0 && m_itemUseActions.count( kind.index ) == 0 )
 	{
-		m_schema.slotKeys.resize( size_t( slot ) );
-	}
-	if ( m_schema.slotKeys[size_t( slot - 1 )].empty() )
-	{
-		m_schema.slotKeys[size_t( slot - 1 )] = key; // the first one stays
+		m_itemUseActions[kind.index] = uint8_t( std::countr_zero( action.mask ) ); // the first one stays
 	}
 }
 
@@ -951,68 +948,34 @@ void Context::HoldItem( uint32_t item, SocketHandle socket )
 	Add( c );
 }
 
+// What the simulation's slots do with this tick's input (Simulation::ItemUses): the same copies.
+uint32_t Context::UsedItem( PlayerSlot slot, ItemKindHandle kind, bool held ) const
+{
+	if ( kind.Valid() == false || slot >= kMaxPlayers )
+	{
+		return 0;
+	}
+	std::vector<Simulation::ItemUse> uses;
+	m_sim.ItemUses( m_sim.PlayerNetId( slot ), m_frame.inputs[slot], m_previous[slot].buttons, m_previous[slot].actions, uses );
+	for ( const Simulation::ItemUse& use : uses )
+	{
+		const cb::HeldItem* item = m_sim.FindEntity( use.item ).try_get<cb::HeldItem>();
+		if ( item != nullptr && int( item->kind ) == kind.index && ( held ? use.inUse : use.used ) )
+		{
+			return use.item;
+		}
+	}
+	return 0;
+}
+
 bool Context::Using( PlayerSlot slot, ItemKindHandle kind ) const
 {
-	if ( kind.Valid() == false )
-	{
-		return false;
-	}
-	uint32_t player = m_sim.PlayerNetId( slot );
-	const PlayerInput& in = m_frame.inputs[slot];
-	uint8_t use = m_sim.ItemShapeOf( uint16_t( kind.index ) ).use;
-	if ( use == kItemUseHold )
-	{
-		// While the key of a slot it is in is down.
-		for ( uint8_t index = 0; index < 16; ++index )
-		{
-			uint32_t item = ( in.slotKeys >> index ) & 1 ? m_sim.SlotItem( player, index ) : 0;
-			const cb::HeldItem* held = item != 0 ? m_sim.FindEntity( item ).try_get<cb::HeldItem>() : nullptr;
-			if ( held != nullptr && int( held->kind ) == kind.index )
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-	if ( use == kItemUsePress )
-	{
-		return Used( slot, kind );
-	}
-	uint32_t item = m_sim.SlotItem( player, m_sim.SelectedSlot( player ) );
-	const cb::HeldItem* held = item != 0 ? m_sim.FindEntity( item ).try_get<cb::HeldItem>() : nullptr;
-	return held != nullptr && int( held->kind ) == kind.index && ( in.buttons & BtnUse ) != 0;
+	return UsedItem( slot, kind, true ) != 0;
 }
 
 bool Context::Used( PlayerSlot slot, ItemKindHandle kind ) const
 {
-	if ( kind.Valid() == false )
-	{
-		return false;
-	}
-	const PlayerInput& in = m_frame.inputs[slot];
-	if ( m_sim.ItemShapeOf( uint16_t( kind.index ) ).use != kItemUseInHand )
-	{
-		// Its slot's key, on the tick it goes down (or the select intent of a screen or a bot).
-		uint32_t player = m_sim.PlayerNetId( slot );
-		auto isKind = [&]( uint32_t item ) {
-			const cb::HeldItem* held = item != 0 ? m_sim.FindEntity( item ).try_get<cb::HeldItem>() : nullptr;
-			return held != nullptr && int( held->kind ) == kind.index;
-		};
-		if ( in.intent == uint8_t( SlotIntent::Select ) && in.intentSeq != m_previous[slot].intentSeq && isKind( m_sim.SlotItem( player, in.intentA ) ) )
-		{
-			return true;
-		}
-		uint16_t pressed = uint16_t( in.slotKeys & ~m_previous[slot].slotKeys );
-		for ( uint8_t index = 0; index < 16; ++index )
-		{
-			if ( ( ( pressed >> index ) & 1 ) && isKind( m_sim.SlotItem( player, index ) ) )
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-	return Using( slot, kind ) && ( m_previous[slot].buttons & BtnUse ) == 0;
+	return UsedItem( slot, kind, false ) != 0;
 }
 
 int Context::SlotCount() const

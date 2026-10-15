@@ -141,10 +141,13 @@ func _initialize() -> void:
 		baked.text.contains("scene res://prefabs/test_item.tscn\n") and baked.text.contains("name Test Item\n") and _near(_line(baked.text, "view"), [0, 0.05, 0.03]), baked.text)
 	# How it is used and where it goes are the item's to say: properties the engine reads.
 	_check("used by selecting, with no slot of its own: nothing is said", not baked.text.contains("property use") and not baked.text.contains("property slot"), baked.text)
-	made[0].use = CbItem.USE_SLOT_KEY
+	made[0].use = CbItem.USE_PRESS
 	made[0].slot = 3
+	made[0].use_key = "H"
 	baked = made[0].bake()
-	_check("used by its slot's key, in the third slot", baked.text.contains("property use 1") and baked.text.contains("property slot 3"), baked.text)
+	_check("used once a press, by its own key H, in the third slot", baked.text.contains("property use 1") and baked.text.contains("property slot 3") and baked.text.contains("usekey H\n"), baked.text)
+	made[0].use_key = ""
+
 	made[0].kind = "two words"
 	_check("a kind of two words is refused", made[0].bake().text == "" and String(made[0].bake().error).contains("kind"), made[0].bake().error)
 	made[0].kind = "test.item"

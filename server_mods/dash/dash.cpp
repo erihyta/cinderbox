@@ -39,7 +39,7 @@ public:
 	void Declare( Declarations& declare ) override
 	{
 		// The motions read and write these by name.
-		// (The key is the boots' slot's: they are used by it, and suggest V for it.)
+		// (The key is the boots' own, V: their scene's use_key.)
 		m_charges = declare.Field( "dash.charges", BoardType::Int );
 		m_max = declare.Field( "dash.max", BoardType::Int, BoardScope::Global );
 		m_doubleJumpOn = declare.Field( "dash.double_jump_on", BoardType::Bool, BoardScope::Global );

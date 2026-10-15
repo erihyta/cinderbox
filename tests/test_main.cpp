@@ -4046,8 +4046,9 @@ void TestEventNews()
 	CHECK( news.Sync( ring, count, 91, false ).empty() );
 }
 
-// Using an item: a tool is selected and then used with the use button; a consumable is used by its
-// slot's key, where it is. Either way the simulation records the kind's own event on that tick.
+// Using an item: any copy from the hand (selected, then the use button), and a kind with its own key
+// (ItemShape::useAction, a mod action) by that key where it is. Either way the simulation records
+// the kind's own event on that tick.
 void TestItemUse()
 {
 	SimConfig config = TestConfig();
@@ -4057,7 +4058,8 @@ void TestItemUse()
 	gun.slot = 1;
 	gun.usedEvent = 4; // "gun.used" in a schema
 	potion.slot = 2;
-	potion.use = 1; // its slot's key uses it
+	potion.use = kItemUsePress; // once a press
+	potion.useAction = 0;		// and its own key, the action of bit 0
 	potion.usedEvent = 5;
 	rock.slot = 3; // used like a tool, and nobody asked to hear of it
 
@@ -4134,18 +4136,32 @@ void TestItemUse()
 	f.inputs[0].buttons = 0;
 	step( 1 );
 
-	// The consumable: its slot's key uses it where it is. The gun stays in the hand.
-	intent( SlotIntent::Select, 1 );
+	// The consumable: its own key uses it where it is. The gun stays in the hand.
+	f.inputs[0].actions = 1;
 	step( 1 );
 	CHECK( events( 5 ) == 1 && sim.SelectedSlot( p0 ) == 0 && sim.HeldItemOf( p0, 0 ) == gunItem );
 	CHECK( sim.FindEntity( potionItem ).get<HeldItem>().stowed == 1 );
-	// The same input again is the same intent: not used twice.
+	// Held: still one use.
 	step( 3 );
 	CHECK( events( 5 ) == 0 );
-	// And the use button never uses it: it is the gun that is in the hand.
+	f.inputs[0].actions = 0;
+	step( 1 );
+	// And the use button uses what is in the hand: the gun.
 	f.inputs[0].buttons = BtnUse;
 	step( 1 );
 	CHECK( events( 5 ) == 0 && events( 4 ) == 1 );
+	f.inputs[0].buttons = 0;
+	step( 1 );
+	// Selected, its slot's key takes it out like anything else (that is not a use), and the use
+	// button uses it, once a press.
+	intent( SlotIntent::Select, 1 );
+	step( 1 );
+	CHECK( sim.SelectedSlot( p0 ) == 1 && events( 5 ) == 0 );
+	f.inputs[0].buttons = BtnUse;
+	step( 1 );
+	CHECK( events( 5 ) == 1 );
+	step( 3 );
+	CHECK( events( 5 ) == 0 );
 	f.inputs[0].buttons = 0;
 	step( 1 );
 
@@ -4167,7 +4183,7 @@ void TestItemUse()
 	freeze.mode = 1;
 	f.commands.push_back( freeze );
 	step( 1 );
-	intent( SlotIntent::Select, 1 );
+	f.inputs[0].actions = 1;
 	step( 1 );
 	CHECK( events( 5 ) == 0 );
 }
@@ -4175,10 +4191,11 @@ void TestItemUse()
 // Slots: what a player carries, in numbered places. Which slot is selected, and moving and dropping,
 // are in the player's input, so every simulation carries them out: here one simulation, its
 // snapshot, and a second run of the same inputs.
-// The slots' keys (PlayerInput::slotKeys, held; the simulation sees the presses). What a key does is
-// its item's: a tool in the hand is selected (again: empty hands), one used by its key where it
-// is records its ".used" once a press and changes no hands, one used while held is in use for as
-// long as the key is down ("using.<kind>").
+// The keys (held; the simulation sees the presses). A slot's key (PlayerInput::slotKeys) selects it,
+// whatever it holds (again: empty hands). A kind's own key (ItemShape::useAction, a mod action)
+// uses the first copy carried where it is: one used once a press records its ".used" once a press
+// and changes no hands, one used while held is in use for as long as the key is down
+// ("using.<kind>"). From the hand, the use button does the same.
 void TestSlotKeys()
 {
 	ModSchema schema;
@@ -4206,9 +4223,11 @@ void TestSlotKeys()
 	tool.slot = 1;
 	dash.slot = 2;
 	dash.use = kItemUsePress;
+	dash.useAction = 1; // the action of bit 1
 	dash.usedEvent = 0;
 	jet.slot = 3;
 	jet.use = kItemUseHold;
+	jet.useAction = 2;
 	jet.usedEvent = 1;
 	Simulation sim( config, FlatMap() );
 	sim.SetItemShapes( { tool, dash, jet } );
@@ -4243,6 +4262,12 @@ void TestSlotKeys()
 		f.inputs[0].slotKeys = 0;
 		step( 2 );
 	};
+	auto own = [&]( ActionBits keys, int ticks ) {
+		f.inputs[0].actions = keys;
+		step( ticks );
+		f.inputs[0].actions = 0;
+		step( 2 );
+	};
 	auto dashes = [&] { return sim.BoardValue( p0, 0 ); };
 	auto flying = [&] { return BoardToFloat( sim.BoardValue( p0, 1 ) ); };
 
@@ -4253,36 +4278,164 @@ void TestSlotKeys()
 	press( 1, 1 );
 	CHECK( sim.SelectedSlot( p0 ) == kNoSlot );
 	press( 1, 1 );
-	// The dash's key: one dash a press, however long it is held; the tool stays in the hand.
-	press( 2, 20 );
-	press( 2, 1 );
+	// The dash's own key: one dash a press, however long it is held; the tool stays in the hand.
+	own( 2, 20 );
+	own( 2, 1 );
 	std::printf( "    two presses of the dash's key: %d dashes; the hand still has slot %d\n", int( dashes() ), int( sim.SelectedSlot( p0 ) ) );
 	CHECK( dashes() == 2 && sim.SelectedSlot( p0 ) == 0 );
-	// The jet's key: in use while it is held (half a second), and not after.
-	press( 4, 30 );
+	// The jet's own key: in use while it is held (half a second), and not after.
+	own( 4, 30 );
 	float flown = flying();
 	step( 30 );
 	std::printf( "    the jet held half a second: %.1f (and %.1f after)\n", flown, flying() );
 	CHECK( flown > 25.0f && flown < 35.0f && flying() == flown && sim.SelectedSlot( p0 ) == 0 );
 	// Two keys at once: both, in the same tick.
-	press( 2 | 4, 1 );
+	own( 2 | 4, 1 );
 	CHECK( dashes() == 3 && flying() > flown );
-	// The dash gone (a grenade thrown, waiting for the next): its slot's key does nothing, and the
-	// tool stays in the hand.
+	// The dash's slot's key selects the dash, and the use button uses it from the hand.
+	press( 2, 1 );
+	CHECK( sim.SelectedSlot( p0 ) == 1 && dashes() == 3 );
+	f.inputs[0].buttons = BtnUse;
+	step( 10 );
+	f.inputs[0].buttons = 0;
+	step( 2 );
+	CHECK( dashes() == 4 );
+	// A slot is a place: the tool moved to the jet's slot and the jet to the tool's, each key
+	// selects what is there now, and the jet's own key still finds the jet.
+	f.inputs[0].intent = uint8_t( SlotIntent::Move );
+	f.inputs[0].intentA = 0;
+	f.inputs[0].intentB = 2;
+	f.inputs[0].intentSeq = uint8_t( f.inputs[0].intentSeq + 1 );
+	step( 2 );
+	press( 4, 1 );
+	CHECK( sim.SelectedSlot( p0 ) == 2 && sim.FindEntity( sim.SlotItem( p0, 2 ) ).get<HeldItem>().kind == 0 );
+	float before = flying();
+	own( 4, 10 );
+	CHECK( flying() > before && sim.SelectedSlot( p0 ) == 2 );
+	// The dash gone (a grenade thrown, waiting for the next): its slot's key empties the hands, and
+	// its own key does nothing.
 	SimCommand gone;
 	gone.type = CommandType::Destroy;
 	gone.target = sim.SlotItem( p0, 1 );
 	f.commands.push_back( gone );
 	step( 2 );
+	own( 2, 1 );
 	press( 2, 1 );
-	std::printf( "    the dash's slot empty, its key: the hand still has slot %d\n", int( sim.SelectedSlot( p0 ) ) );
-	CHECK( sim.SlotItem( p0, 1 ) == 0 && sim.SelectedSlot( p0 ) == 0 && dashes() == 3 );
+	std::printf( "    the dash gone: %d dashes; its slot's key selects slot %d\n", int( dashes() ), int( sim.SelectedSlot( p0 ) ) );
+	CHECK( sim.SlotItem( p0, 1 ) == 0 && sim.SelectedSlot( p0 ) == 1 && dashes() == 4 );
+}
+
+// Two of a kind are two items: each in a slot of its own, each used from the hand, each with its own
+// state. The bat that goes to slot 2 (ItemShape::slot) goes to the first free slot when slot 2 has
+// one already; moved anywhere, it is taken out and used as well. A kind's own key uses the selected
+// copy first, else the lowest slot's.
+void TestTwoOfAKind()
+{
+	SimConfig config = TestConfig();
+	config.slots = 8;
+	config.slotHand = 0;
+	ItemShape bat, frag;
+	bat.slot = 2;
+	bat.usedEvent = 0;
+	frag.slot = 6;
+	frag.use = kItemUsePress;
+	frag.useAction = 0;
+	frag.usedEvent = 1;
+	Simulation sim( config, FlatMap() );
+	sim.SetItemShapes( { bat, frag } );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto give = [&]( uint16_t kind ) {
+		SimCommand c;
+		c.type = CommandType::SpawnItem;
+		c.target = SlotTarget( 0 );
+		c.index = kind;
+		c.mode = kNoSocket;
+		c.value = 1;
+		f.commands.push_back( c );
+		step( 1 );
+	};
+	// The items used on the tick just simulated, of a kind's event.
+	auto usedItems = [&]( uint16_t type ) {
+		std::vector<uint32_t> out;
+		for ( uint32_t i = 0; i < sim.Globals().modEventCount; ++i )
+		{
+			const ModEventRecord& e = sim.Globals().modEvents[i % kModEventHistory];
+			if ( e.type == type && e.tick + 1 == sim.Tick() )
+			{
+				out.push_back( e.netIdB );
+			}
+		}
+		return out;
+	};
+	auto press = [&]( uint16_t keys ) {
+		f.inputs[0].slotKeys = keys;
+		step( 1 );
+		f.inputs[0].slotKeys = 0;
+		step( 1 );
+	};
+	auto use = [&]( uint16_t type ) {
+		f.inputs[0].buttons = BtnUse;
+		step( 1 );
+		std::vector<uint32_t> used = usedItems( type );
+		f.inputs[0].buttons = 0;
+		step( 1 );
+		return used;
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 10 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	give( 0 );
+	give( 0 );
+	give( 1 );
+	give( 1 );
+	uint32_t batA = sim.SlotItem( p0, 1 ), batB = sim.SlotItem( p0, 0 );
+	uint32_t fragA = sim.SlotItem( p0, 5 ), fragB = sim.SlotItem( p0, 2 );
+	std::printf( "    two bats in slots 2 and 1, two grenades in slots 6 and 3: %u %u %u %u\n", batA, batB, fragA, fragB );
+	CHECK( batA != 0 && batB != 0 && batA != batB && fragA != 0 && fragB != 0 && fragA != fragB );
+	// Each bat from its own slot, each its own.
+	press( 1 << 1 );
+	CHECK( use( 0 ) == std::vector<uint32_t>{ batA } );
+	press( 1 << 0 );
+	CHECK( use( 0 ) == std::vector<uint32_t>{ batB } );
+	// Moved to slot 7, a bat is taken out and used there.
+	f.inputs[0].intent = uint8_t( SlotIntent::Move );
+	f.inputs[0].intentA = 1;
+	f.inputs[0].intentB = 6;
+	f.inputs[0].intentSeq = uint8_t( f.inputs[0].intentSeq + 1 );
+	step( 2 );
+	press( 1 << 6 );
+	CHECK( sim.SelectedSlot( p0 ) == 6 && use( 0 ) == std::vector<uint32_t>{ batA } );
+	// A grenade from the hand: the one selected (slot 6's).
+	press( 1 << 5 );
+	CHECK( use( 1 ) == std::vector<uint32_t>{ fragA } );
+	// Its own key: the selected one first; with a bat selected, the lowest slot's (slot 3's).
+	f.inputs[0].actions = 1;
+	step( 1 );
+	std::vector<uint32_t> selectedFirst = usedItems( 1 );
+	f.inputs[0].actions = 0;
+	step( 1 );
+	press( 1 << 0 );
+	f.inputs[0].actions = 1;
+	step( 1 );
+	std::vector<uint32_t> lowest = usedItems( 1 );
+	f.inputs[0].actions = 0;
+	step( 1 );
+	CHECK( selectedFirst == std::vector<uint32_t>{ fragA } && lowest == std::vector<uint32_t>{ fragB } && sim.SelectedSlot( p0 ) == 0 );
 }
 
 // The left hand (ItemShape::hand): a hook is there while it is carried, beside a pistol in the
 // slots' hand (whose other hand is only as animated); a rifle with its other hand at a marker puts
 // it away, and putting the rifle away gives it back.
-// Of two such items the lower slot's is out. Using it by its key changes nothing in the hands.
+// Of two such items the lower slot's is out. Using it by its own key changes nothing in the hands.
 void TestLeftHand()
 {
 	SimConfig config = TestConfig();
@@ -4295,6 +4448,7 @@ void TestLeftHand()
 	rifle.grip = 1; // its other hand on the barrel
 	hook.slot = 3;
 	hook.use = kItemUsePress;
+	hook.useAction = 0;
 	hook.hand = kItemHandLeft;
 	shield.slot = 4;
 	shield.hand = kItemHandLeft;
@@ -4342,7 +4496,10 @@ void TestLeftHand()
 	press( 1 );
 	report( "the pistol" );
 	CHECK( kindIn( kSocketRightHand ) == 0 && kindIn( kSocketLeftHand ) == 2 );
-	press( 4 ); // the hook's key: used where it is
+	f.inputs[0].actions = 1; // the hook's own key: used where it is
+	step( 2 );
+	f.inputs[0].actions = 0;
+	step( 2 );
 	CHECK( sim.SelectedSlot( p0 ) == 0 && kindIn( kSocketRightHand ) == 0 && kindIn( kSocketLeftHand ) == 2 );
 	press( 2 );
 	report( "the rifle" );
@@ -4922,7 +5079,7 @@ void TestSlots()
 	config.slots = 3;
 	config.slotHand = 0; // the hand's socket
 	ItemShape gun, bat, rock;
-	gun.slot = 1; // its own slot, the first
+	gun.slot = 1; // the slot it goes to if that is free: the first
 	gun.holster = 2;
 	bat.slot = 2;
 	bat.holster = 1;
@@ -4991,10 +5148,10 @@ void TestSlots()
 				CHECK( sim.FindEntity( p0 ).has<Slots>() && sim.FindEntity( p0 ).get<Slots>().count == 3 && sim.SelectedSlot( p0 ) == kNoSlot );
 			}
 
-			// Given in any order, each kind goes to its own slot; the rock takes the free one.
-			give( 2 );
+			// Each kind goes to its slot, free; the rock to the first free one.
 			give( 1 );
 			give( 0 );
+			give( 2 );
 			step( 1 );
 			if ( checking )
 			{
@@ -5070,8 +5227,8 @@ void TestSlots()
 				CHECK( lying() == 2 && sim.SlotItem( p0, 1 ) == 0 && kindIn( 0 ) == 2 );
 			}
 
-			// Picked up again: into its own slot (the gun's is the first: the rock there makes room and
-			// drops), and out into the hand.
+			// Picked up again: its slot (the first) has the rock now, which stays there (a slot is a
+			// place): into the first free one, and out into the hand.
 			SimCommand take;
 			take.type = CommandType::PickUpItem;
 			take.target = SlotTarget( 0 );
@@ -5081,9 +5238,8 @@ void TestSlots()
 			step( 1 );
 			if ( checking )
 			{
-				CHECK( sim.SlotItem( p0, 0 ) == gunItem && sim.SelectedSlot( p0 ) == 0 && sim.HeldItemOf( p0, 0 ) == gunItem );
-				// The rock that was there made room: into a free slot, not onto the floor.
-				CHECK( kindIn( 1 ) == 2 && lying() == 1 );
+				CHECK( sim.SlotItem( p0, 1 ) == gunItem && sim.SelectedSlot( p0 ) == 1 && sim.HeldItemOf( p0, 0 ) == gunItem );
+				CHECK( kindIn( 0 ) == 2 && lying() == 1 );
 			}
 
 			// Full: a fourth item has nowhere to go and lies on the floor.
@@ -5094,26 +5250,26 @@ void TestSlots()
 			step( 1 );
 			if ( checking )
 			{
-				CHECK( kindIn( 1 ) == 2 && kindIn( 2 ) == 2 && lying() == 3 );
+				CHECK( kindIn( 0 ) == 2 && kindIn( 2 ) == 2 && lying() == 3 );
 			}
 
 			// A snapshot has all of it: restored, the same inputs go on to the same state.
 			Snapshot image;
 			sim.Save( image );
 			uint64_t before = sim.ComputeHash();
-			intent( SlotIntent::Select, 1 );
+			intent( SlotIntent::Select, 2 );
 			step( 3 );
 			uint64_t after = sim.ComputeHash();
 			sim.Load( image );
 			if ( checking )
 			{
-				CHECK( sim.ComputeHash() == before && sim.SelectedSlot( p0 ) == 0 );
+				CHECK( sim.ComputeHash() == before && sim.SelectedSlot( p0 ) == 1 );
 			}
 			f.tick = sim.Tick();
 			step( 3 );
 			if ( checking )
 			{
-				CHECK( sim.ComputeHash() == after && sim.SelectedSlot( p0 ) == 1 );
+				CHECK( sim.ComputeHash() == after && sim.SelectedSlot( p0 ) == 2 );
 			}
 
 			// A dead player's intents wait: nothing changes hands.
@@ -5126,7 +5282,7 @@ void TestSlots()
 			step( 2 );
 			if ( checking )
 			{
-				CHECK( sim.SelectedSlot( p0 ) == 1 );
+				CHECK( sim.SelectedSlot( p0 ) == 2 );
 			}
 		} );
 	}
@@ -7383,6 +7539,7 @@ int main( int argc, char** argv )
 		{ "held_items", TestHeldItems },
 		{ "slots", TestSlots },
 		{ "slot_keys", TestSlotKeys },
+		{ "two_of_a_kind", TestTwoOfAKind },
 		{ "item_fields", TestItemFields },
 		{ "left_hand", TestLeftHand },
 		{ "thrown_from_hand", TestThrownFromHand },

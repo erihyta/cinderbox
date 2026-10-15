@@ -5,8 +5,8 @@
 ; lands softly and skips (the server mod sets it off on the first hard hit).
 ;
 ; The impact grenade: it goes off on the first hard hit (the fused one is the frag mod's). It is
-; carried in slot 7, out of sight, and its slot's key (7) throws it (use: a press): what is thrown is
-; the one carried. The mod gives a new one a little after (grenade.cpp).
+; carried in slot 7 if it is free, out of sight; its own key (J, use_key) throws it from wherever it
+; is, or select it and press the use button (use: a press): what is thrown is the one carried. The mod gives a new one a little after (grenade.cpp).
 ;   Throwing   CbMotion   on the press (grenade.shell.used), 0.7 s: the left arm's throw, its pack's
 ;                         (animation_packs/throw_arm.tscn); its clip says grenade.release at 0.27 s
 ;   Release    CbMotion   on grenade.release (the clip's marker): emits grenade.thrown
@@ -53,6 +53,7 @@ properties = {
 animation_pack = "grenade.throw_arm"
 use = 1
 slot = 7
+use_key = "J"
 mass = 0.4
 friction = 0.8
 bounce = 0.35

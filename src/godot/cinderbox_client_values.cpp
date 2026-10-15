@@ -66,17 +66,6 @@ Array CinderboxClient::get_actions() const
 	return out;
 }
 
-PackedStringArray CinderboxClient::get_slot_keys() const
-{
-	PackedStringArray out;
-	int64_t count = get_slot_count( get_local_net_id() );
-	for ( int64_t i = 0; i < count; ++i )
-	{
-		out.push_back( size_t( i ) < m_frame.schema.slotKeys.size() ? String::utf8( m_frame.schema.slotKeys[size_t( i )].c_str() ) : String() );
-	}
-	return out;
-}
-
 PackedStringArray CinderboxClient::get_mod_names() const
 {
 	PackedStringArray out;

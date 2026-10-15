@@ -297,6 +297,17 @@ public:
 	{
 		return kind < m_itemShapes.size() ? m_itemShapes[kind] : ItemShape{};
 	}
+	// What a player uses this tick by its input, as its slots are before the tick changes them:
+	// the item in its hand by the use button, and one used by its kind's own key wherever it is
+	// carried (ItemShape::use, useAction). `used`: on this tick's press; `inUse`: in use this tick.
+	// The simulation's slots and the mods (Context::Used) both read it, so they agree.
+	struct ItemUse
+	{
+		uint32_t item = 0;
+		bool used = false;
+		bool inUse = false;
+	};
+	void ItemUses( uint32_t player, const PlayerInput& in, uint8_t prevButtons, ActionBits prevActions, std::vector<ItemUse>& out ) const;
 	void SetAnimPacks( std::vector<std::shared_ptr<const AnimGraph>> packs )
 	{
 		m_animPacks = std::move( packs );
@@ -468,6 +479,7 @@ private:
 	std::shared_ptr<const AnimGraph> m_animGraph;
 	std::vector<std::shared_ptr<const AnimGraph>> m_animPacks;
 	std::vector<ItemShape> m_itemShapes;
+	std::vector<ItemUse> m_useScratch;
 	std::shared_ptr<const Motions> m_motions;
 	std::vector<ModEventRecord> m_motionEvents;
 	std::vector<MotionActive> m_motionActive;

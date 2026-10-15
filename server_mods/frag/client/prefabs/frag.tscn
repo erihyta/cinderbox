@@ -6,8 +6,9 @@
 ; a body in the world that every simulation agrees on: a sphere 18 cm across, 0.4 kg, bouncier than
 ; the impact grenade, which went off on the first hard hit.
 ;
-; It is carried in slot 6, out of sight, three to a stack (stack), and its slot's key (H) throws one
-; (use: a press): what is thrown is one off the stack. The mod gives them one at a time, a little
+; It goes to slot 6 if that is free, out of sight, three to a stack (stack). Its own key (H, use_key)
+; throws one from wherever it is carried, or select it and press the use button (use: a press):
+; what is thrown is one off the stack. The mod gives them one at a time, a little
 ; apart, until there are three (frag.cpp).
 ;   Throwing   CbMotion   on the press (frag.grenade.used), 0.7 s: the left arm's throw, its pack's
 ;                         (animation_packs/throw_arm.tscn); its clip says frag.release at 0.27 s
@@ -54,7 +55,7 @@ properties = {
 animation_pack = "frag.throw_arm"
 use = 1
 slot = 6
-slot_key = "H"
+use_key = "H"
 stack = 3
 mass = 0.4
 friction = 0.8

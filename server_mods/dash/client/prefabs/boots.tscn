@@ -1,8 +1,8 @@
 [gd_scene format=3]
 
-; The dash, as an item: whoever carries the boots can dash. They are used by their slot's key
-; (use: a press), where they are: nothing changes hands. The key is the slot's (the fifth), and the
-; boots suggest V for it (slot_key); players choose their own on the Keys page.
+; The dash, as an item: whoever carries the boots can dash. They are used once a press (use), from
+; the hand like any item, or by their own key, V (use_key), wherever they are carried: nothing
+; changes hands. Players choose their own key on the Keys page.
 ;
 ; What a use does is the nodes under the item, and its "When used" rules:
 ;   Boots   CbItem      when used: dash.charges > 0; dash.charges -= 1; 0.4 s between two;
@@ -40,7 +40,7 @@ properties = {
 use = 1
 animation_pack = "dash.boots_dash"
 slot = 5
-slot_key = "V"
+use_key = "V"
 use_conditions = PackedStringArray("dash.charges > 0")
 use_changes = PackedStringArray("dash.charges -= 1")
 use_cooldown = 0.4

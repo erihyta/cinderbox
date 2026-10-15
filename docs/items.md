@@ -59,12 +59,12 @@ and the player's own screen does not wait for the server. What a life is given a
 | How many slots | up to 36 a player | `declare.Slots( 4 )` (the most any mod asks for) |
 | Select, move, drop | from the player's input, predicted | |
 | In the hand | the selected slot's item; the others are stowed in their holsters | |
-| Where a kind goes | its own slot, or the first free one | the item's `slot` and `holster` properties |
+| Where a kind goes | its `slot` if that is free, else the first free one | the item's `slot` and `holster` properties |
 | What a life starts with, what a death drops | | the `inventory` mod |
 
 | The player | What happens, on that tick |
 |---|---|
-| A number key (1 to 9) | that slot is selected: its item comes into the right hand, the one that was there goes to its holster. Nothing is made, destroyed or dropped |
+| A number key (1 to 9, 0 for the tenth) | that slot is selected, whatever it holds: its item comes into the right hand, the one that was there goes to its holster. Nothing is made, destroyed or dropped |
 | The selected slot's key again | empty hands |
 | Moves one slot onto another (the inventory screen: a drag) | the two trade what they hold (either may be empty); onto a stack of the same kind, as many as fit go onto it. The selected slot stays selected, so the hand follows |
 | Splits a slot onto another (a Shift-drag) | half of its stack (rounded up) goes there: an empty slot gets a stack of its own, with the stack's fields; a stack of the same kind takes what fits |
@@ -72,9 +72,12 @@ and the player's own screen does not wait for the server. What a life is given a
 
 | The server | What happens |
 |---|---|
-| Gives an item (`ctx.GiveItem`) | into its kind's own slot, or the first free one; with none free it lies on the floor |
-| A player picks one up (`ctx.PickUpItem`) | the same, and it is selected: it comes out. With no slot for it, it stays where it lies |
-| A kind's own slot is taken | what is there moves to a free slot, or drops |
+| Gives an item (`ctx.GiveItem`) | onto a stack of its kind with room; else into its `slot` if free, else the first free one; with none free it lies on the floor |
+| A player picks one up (`ctx.PickUpItem`) | the same, and it is selected: it comes out. With no room for it, it stays where it lies |
+
+**A slot is a place, not a kind's** (as in Minecraft). Two of a kind are two items: each in a slot
+of its own, each taken out by that slot's key, each used from the hand, each with its own state
+(rounds, heat). Nothing ever pushes what a slot holds out of it.
 
 - **Using an item** is the engine's too: see [Using an item](#using-an-item).
 - **It is state**: an item knows its slot (`HeldItem::slot`), a player which slot is selected (`Slots`). Hashed, rolled back, in snapshots and recordings.
@@ -84,14 +87,22 @@ and the player's own screen does not wait for the server. What a life is given a
 
 ### Using an item
 
-Every item is in a slot, and **the slot's key is the item's key**. What that key does is the
-item's to say: `use` on its `CbItem`.
+**Any item is used from the hand**: its slot's key takes it out (again: empty hands), the use
+button (left mouse) uses it. An item may also have **its own key** (`use_key` on its `CbItem`):
+it uses the first copy carried where it is, nothing changes hands.
 
-| `use` | Its slot's key | For |
+| Way | What | Which copy |
 |---|---|---|
-| **Select it, then the use button** | takes it out (again: empty hands); the left mouse button uses it | a tool, a weapon |
-| **Its slot key uses it (a press)** | uses it where it is, once a press; nothing changes hands | an ability, a consumable: the dash boots, the grappling hook |
-| **Its slot key uses it while held** | the same, and it is in use for as long as the key is down | a jetpack, a shield |
+| From the hand | select its slot, press the use button | the one in the hand |
+| Its own key (`use_key`: the frag's H, the boots' V, the hook's Q) | uses it where it is | the selected one, else the lowest slot's |
+
+`use` on its `CbItem` says how long a use lasts, either way:
+
+| `use` | A use is | For |
+|---|---|---|
+| **While the button is down** | in use while the button is down (one press: one `Used`) | a tool, a weapon |
+| **Once a press** | one use a press, however long it is held | an ability, a consumable: the grenade, the dash boots, the grappling hook |
+| **A press, and while held** | the press, and in use for as long as it is down | a jetpack, a shield |
 
 ### Stacks
 
@@ -134,8 +145,8 @@ it, the mod takes the coins and gives the item ([server-mods.md](server-mods.md#
 ### The left hand
 
 `hand` on its `CbItem`: **The left hand while carried** keeps it in the left hand for as long as the
-player has it, beside what the slots' hand holds (a torch beside a gun). Its slot key still does
-what `use` says.
+player has it, beside what the slots' hand holds (a torch beside a gun). Its own key, if it has
+one, uses it where it is.
 
 | What is selected | The left hand |
 |---|---|
@@ -154,24 +165,26 @@ what `use` says.
 - **In first person** an arm is drawn when any item held asks for it (`view_left_hand`,
   `view_right_hand`): the bat hides the left, a torch beside it shows it again.
 
-**The keys**: slot 1's is 1, slot 2's is 2 ... (0 for the tenth), unless the server suggests
-another: a mod with `declare.SlotKey( 5, "V" )`, or the item that goes to that slot with
-`slot_key` on its `CbItem` (the boots: V). The player's own choice wins: the Keys page of the
-settings lists the slots. Slot keys are sent held, with the input, so a press is the
-simulation's to see on every machine; the dash and the hook's throw are predicted from them.
+**The keys**: slot 1's is 1, slot 2's is 2 ... (0 for the tenth); the bag past the tenth is
+reached with the mouse. An item's own key is a mod action named `<kind>.use` (`frag.grenade.use`,
+H), declared by its `use_key`; a HUD shows it as `{key:frag.grenade.use}`. The player's own choice
+wins for both: the Keys page of the settings. Both are sent held, with the input, so a press is
+the simulation's to see on every machine; the dash and the hook's throw are predicted from them.
 
 Whichever way, the item's mod is told the same thing, on the tick it happens:
 
 ```cpp
-if ( ctx.Used( slot, m_gun ) ) { ... }      // used this tick, whichever way the kind is used
+if ( ctx.Used( slot, m_gun ) ) { ... }      // used this tick, from the hand or by its own key
 bool trigger = ctx.Using( slot, m_gun );     // in use: the button down with one in the hand, or its key held
+uint32_t which = ctx.UsedItem( slot, m_gun ); // the copy that was used (0: none)
 ```
 
 - **`using.<kind>`** in a condition (a motion's, a state machine's, a look's) is the same as
-  `ctx.Using`: the hand's item while the button is down, a press item on the tick of the press,
-  a held one while its key is down.
+  `ctx.Using`.
+- **The simulation and the mods agree**: both read what was used from the same function
+  (`Simulation::ItemUses`), on the slots as they were before the tick's keys and intents.
 - **`<kind>.used`** is declared for an item of a mod that takes its items from its look and is used
-  by its slot's key, so its motions can start on it (`when` On a cue) with no line of C++.
+  once a press or while held, so its motions can start on it (`when` On a cue) with no line of C++.
 
 - **The use button is the engine's**, like jump and sprint: no mod declares a `fire` action any more.
 - **`<kind>.used`**: where a mod declares that event (`declare.Event( "gun.pistol.used" )`), every simulation records it on the tick of the use, at the player, with the item as the other entity. The player's own simulation has it at once, so a `CbReaction` on it plays on the click with no `CbPrediction`.
@@ -344,7 +357,7 @@ there is to say:
 | `animation_pack` | the pack it brings: its layers the character has while it is held (`gun.pistol_hold`), and its [overlay](characters.md#animation-packs) while it is carried at all (the boots' dash pose): a `CbAnimPack` scene of the same project |
 | `holster` | the socket it hangs in while it is put away (`Hip`, `Back`) |
 | motion nodes under it (`CbProbe`, `CbLink`, `CbForce`, `CbImpulse`, `CbMove`), and its When used rules | [what using it does](motions.md#what-an-item-does): the boots' dash, the hook's line and rope |
-| `slot_key` | the key it suggests for its slot (`V`); the player's own wins |
+| `use_key` | its own key (`H`): uses the first one carried, wherever it is (the action `<kind>.use`); the player's own wins |
 
 What it looks and sounds like when it is used is in the scene too, on cues that do not name the
 item (the `item` mod's):

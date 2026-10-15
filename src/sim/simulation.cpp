@@ -806,38 +806,16 @@ bool Simulation::GiveSlot( flecs::entity player, flecs::entity item, bool select
 		held.count = uint8_t( StackOf( held ) - moved );
 		item.set<HeldItem>( held );
 	}
+	// The kind's slot, if it says one and it is free; else the first free one. What a slot holds
+	// stays there: a slot is a place, and two of a kind are two items, wherever they are.
 	int slot = -1;
-	if ( rule.slot >= 1 && rule.slot <= slots.count )
+	if ( rule.slot >= 1 && rule.slot <= slots.count && SlotItemOf( holder, uint8_t( rule.slot - 1 ) ) == 0 )
 	{
-		// The kind's own slot: what is there makes room.
 		slot = rule.slot - 1;
-		if ( uint32_t old = SlotItemOf( holder, uint8_t( slot ) ); old != 0 && FindEntity( old ) != item )
-		{
-			// To a free slot if there is one, else onto the floor.
-			int room = -1;
-			for ( int s = 0; s < int( slots.count ) && room < 0; ++s )
-			{
-				room = s != slot && SlotItemOf( holder, uint8_t( s ) ) == 0 ? s : -1;
-			}
-			flecs::entity moved = FindEntity( old );
-			if ( room >= 0 )
-			{
-				HeldItem other = moved.get<HeldItem>();
-				other.slot = uint8_t( room );
-				moved.set<HeldItem>( other );
-			}
-			else
-			{
-				ThrowOut( moved, player.get<Transform>(), 0 );
-			}
-		}
 	}
-	else
+	for ( int s = 0; s < int( slots.count ) && slot < 0; ++s )
 	{
-		for ( int s = 0; s < int( slots.count ) && slot < 0; ++s )
-		{
-			slot = SlotItemOf( holder, uint8_t( s ) ) == 0 ? s : -1;
-		}
+		slot = SlotItemOf( holder, uint8_t( s ) ) == 0 ? s : -1;
 	}
 	if ( slot < 0 )
 	{
@@ -853,6 +831,67 @@ bool Simulation::GiveSlot( flecs::entity player, flecs::entity item, bool select
 	player.set<Slots>( slots );
 	SettleSlots( holder, slots.selected );
 	return true;
+}
+
+void Simulation::ItemUses( uint32_t player, const PlayerInput& in, uint8_t prevButtons, ActionBits prevActions, std::vector<ItemUse>& out ) const
+{
+	out.clear();
+	flecs::entity e = FindEntity( player );
+	const Slots* slots = e.is_valid() ? e.try_get<Slots>() : nullptr;
+	const Character* c = e.is_valid() ? e.try_get<Character>() : nullptr;
+	if ( slots == nullptr || c == nullptr || c->dead != 0 || c->frozen != 0 )
+	{
+		return;
+	}
+	auto add = [&]( uint32_t item, uint8_t use, bool down, bool press ) {
+		bool used = press;
+		bool inUse = use == kItemUsePress ? press : down;
+		if ( item == 0 || ( used == false && inUse == false ) )
+		{
+			return;
+		}
+		for ( ItemUse& had : out )
+		{
+			if ( had.item == item )
+			{
+				had.used |= used;
+				had.inUse |= inUse;
+				return;
+			}
+		}
+		out.push_back( { item, used, inUse } );
+	};
+	// The use button: what is in the hand.
+	if ( uint32_t hand = SlotItemOf( player, slots->selected ); hand != 0 )
+	{
+		bool down = ( in.buttons & BtnUse ) != 0;
+		add( hand, ItemShapeOf( FindEntity( hand ).get<HeldItem>().kind ).use, down, down && ( prevButtons & BtnUse ) == 0 );
+	}
+	// A kind's own key: the first copy carried (the selected one, else the lowest slot's), where it is.
+	for ( size_t kind = 0; kind < m_itemShapes.size(); ++kind )
+	{
+		const uint8_t bit = m_itemShapes[kind].useAction;
+		if ( bit >= kMaxActions || ( ( in.actions >> bit ) & 1 ) == 0 )
+		{
+			continue;
+		}
+		uint32_t copy = 0;
+		uint8_t at = kNoSlot;
+		for ( const EntityRef& r : m_entities )
+		{
+			const HeldItem* item = flecs::entity( m_world, r.entity ).try_get<HeldItem>();
+			if ( item == nullptr || item->holder != player || item->kind != kind || item->slot == kNoSlot || item->slot >= slots->count )
+			{
+				continue;
+			}
+			if ( copy == 0 || item->slot == slots->selected || ( at != slots->selected && item->slot < at ) )
+			{
+				copy = r.netId;
+				at = item->slot;
+			}
+		}
+		add( copy, m_itemShapes[kind].use, true, ( ( prevActions >> bit ) & 1 ) == 0 );
+	}
 }
 
 void Simulation::StepSlots( const InputFrame& frame )
@@ -890,66 +929,35 @@ void Simulation::StepSlots( const InputFrame& frame )
 				RecordModEvent( record );
 			}
 		};
-		// What it is using this tick, for conditions ("using.<kind>"): the item in the hand while the
-		// use button is down, one used by its key on the press, one held by its key while it is down.
-		auto using_ = [&]( uint32_t item ) { m_usingScratch.push_back( { netId, FindEntity( item ).get<HeldItem>().kind } ); };
-		// The use button, on the tick it goes down: the item in the hand, if it is one that is used so.
-		if ( act && c.frozen == 0 && ( in.buttons & BtnUse ) != 0 )
+		// What it uses this tick (the item in the hand by the use button, one by its kind's own key),
+		// as its slots are before this tick's keys and intents: recorded, and for conditions what it
+		// is using ("using.<kind>").
+		if ( act )
 		{
-			uint32_t item = SlotItemOf( netId, slots.selected );
-			if ( item != 0 && ItemShapeOf( FindEntity( item ).get<HeldItem>().kind ).use == kItemUseInHand )
+			ItemUses( netId, in, c.prevButtons, slots.prevActions, m_useScratch );
+			for ( const ItemUse& use : m_useScratch )
 			{
-				using_( item );
-				if ( ( c.prevButtons & BtnUse ) == 0 )
+				if ( use.inUse )
 				{
-					used( item );
+					m_usingScratch.push_back( { netId, FindEntity( use.item ).get<HeldItem>().kind } );
+				}
+				if ( use.used )
+				{
+					used( use.item );
 				}
 			}
 		}
-		// A slot's key: what it does is the item's. In the hand: selects it (again: empty hands).
-		// Press: used where it is, nothing changes hands. Hold: the same, and in use while held.
-		auto slotKey = [&]( uint8_t index ) {
-			uint32_t item = index == kNoSlot ? 0 : SlotItemOf( netId, index );
-			uint8_t use = item != 0 ? ItemShapeOf( FindEntity( item ).get<HeldItem>().kind ).use : kItemUseInHand;
-			// Empty, the slot of a kind used by its key (a grenade thrown, waiting for the next): its
-			// key does nothing, rather than empty the hands.
-			for ( size_t k = 0; item == 0 && index != kNoSlot && k < m_itemShapes.size(); ++k )
-			{
-				if ( m_itemShapes[k].slot == index + 1 && m_itemShapes[k].use != kItemUseInHand )
-				{
-					return;
-				}
-			}
-			if ( use != kItemUseInHand )
-			{
-				if ( c.frozen == 0 )
-				{
-					used( item );
-				}
-			}
-			else
-			{
-				slots.selected = slots.selected == index ? kNoSlot : index;
-			}
-		};
+		slots.prevActions = in.actions;
+		// A slot's key selects it, whatever it holds (again: empty hands).
+		auto slotKey = [&]( uint8_t index ) { slots.selected = slots.selected == index ? kNoSlot : index; };
 		const uint16_t keys = in.slotKeys;
 		const uint16_t pressedKeys = uint16_t( keys & ~slots.prevKeys );
 		slots.prevKeys = keys;
 		for ( uint8_t index = 0; act && index < slots.count && index < 16; ++index )
 		{
-			uint16_t bit = uint16_t( 1u << index );
-			if ( pressedKeys & bit )
+			if ( pressedKeys & uint16_t( 1u << index ) )
 			{
 				slotKey( index );
-			}
-			if ( ( keys & bit ) && c.frozen == 0 )
-			{
-				uint32_t item = SlotItemOf( netId, index );
-				uint8_t use = item != 0 ? ItemShapeOf( FindEntity( item ).get<HeldItem>().kind ).use : kItemUseInHand;
-				if ( use == kItemUseHold || ( use == kItemUsePress && ( pressedKeys & bit ) ) )
-				{
-					using_( item );
-				}
 			}
 		}
 		// The container open to it closes when it is gone, or the player is too far from it, or dead.
@@ -2405,12 +2413,15 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			bool stowed = command.value == 1;
 			if ( holder != 0 && player.is_valid() && player.has<Character>() && held != nullptr && held->holder == 0 && m_config.slots > 0 )
 			{
-				// Into a slot, and out into the hand; with no slot for it, it stays where it lies.
+				// Into a slot (a free one, or onto a stack of its kind with room), and out into the hand;
+				// with no room for it, it stays where it lies.
 				const ItemShape rule = ItemShapeOf( held->kind );
-				bool room = rule.slot >= 1 && rule.slot <= m_config.slots;
+				bool room = false;
 				for ( uint8_t s = 0; s < m_config.slots && room == false; ++s )
 				{
-					room = SlotItemOf( holder, s ) == 0;
+					flecs::entity there = FindEntity( SlotItemOf( holder, s ) );
+					const HeldItem* stack = there.is_valid() ? there.try_get<HeldItem>() : nullptr;
+					room = stack == nullptr || ( rule.stack > 1 && stack->kind == held->kind && StackOf( *stack ) < rule.stack );
 				}
 				if ( room )
 				{

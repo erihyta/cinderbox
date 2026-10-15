@@ -55,7 +55,7 @@
 			Named numbers any server mod may read: [code]pickup.hold_seconds[/code] = 0.5, [code]inventory.slot[/code] = 3. They replace what the item's mod declared in code for the same names.
 		</member>
 		<member name="use" type="int" setter="set_use" getter="get_use" enum="CbItem.Use" default="0">
-			How a player uses it, on a server with slots: its slot's key is its key. [b]Select it then the use button[/b]: the key takes it out (again: empty hands), and the left mouse button uses it (a tool, a weapon). [b]Its slot key uses it (a press)[/b]: the key uses it where it is, once a press, and nothing changes hands (the dash boots, the grappling hook). [b]Its slot key uses it while held[/b]: the same, and it is in use as long as the key is down (a jetpack). Whichever way, its server mod is told the same thing ([code]ctx.Used[/code], [code]ctx.Using[/code]), conditions read [code]using.&lt;kind&gt;[/code], and the simulation records the event [code]&lt;kind&gt;.used[/code] on the press (declared for an item of a mod that takes its items from its look), so a [CbMotion] or a [CbReaction] on it starts at once on the player's own screen.
+			How long a use of it lasts, on a server with slots. Any copy is used from the hand (its slot's key takes it out, the left mouse button uses it), or by its own [member use_key] wherever it is carried. [b]While the button is down[/b]: a tool, a weapon. [b]Once a press[/b]: an ability, a consumable (the grenade, the dash boots, the grappling hook). [b]A press, and while held[/b]: in use as long as the button or key is down (a jetpack). Whichever way, its server mod is told the same thing ([code]ctx.Used[/code], [code]ctx.Using[/code], [code]ctx.UsedItem[/code]: which copy), conditions read [code]using.&lt;kind&gt;[/code], and the simulation records the event [code]&lt;kind&gt;.used[/code] on the press (declared for an item of a mod that takes its items from its look), so a [CbMotion] or a [CbReaction] on it starts at once on the player's own screen.
 		</member>
 		<member name="preview_cue" type="String" setter="set_preview_cue" getter="get_preview_cue" default="&quot;&quot;">
 			With [member preview_hold]: the event the Fire the cue button fires ([code]melee.swing[/code]). It plays on the figure and in the First person panel: the pack's state machine hears it (a state entered on it, or on a stance a [CbPrediction] of this scene sets with it), and the item in the hand, a whole copy of this scene, plays its [CbReaction] nodes. The mod's [code]vfx/reactions*.tscn[/code] play beside the figure too.
@@ -81,8 +81,8 @@
 		<member name="use_emits" type="String" setter="set_use_emits" getter="get_use_emits" default="&quot;&quot;">
 			When used: the event a use says ([code]dash.started[/code]), at the player: for looks and state machines.
 		</member>
-		<member name="slot_key" type="String" setter="set_slot_key" getter="get_slot_key" default="&quot;&quot;">
-			The key it suggests for its [member slot] ([code]V[/code], [code]MouseRight[/code]). A mod's suggestion ([code]declare.SlotKey[/code]) or an earlier item's for the same slot comes first; the player's own choice (the Keys page of the settings) wins over all. Empty: the slot's number.
+		<member name="use_key" type="String" setter="set_use_key" getter="get_use_key" default="&quot;&quot;">
+			Its own key ([code]H[/code], [code]MouseRight[/code]): uses the first copy the player carries (the selected one, else the lowest slot's) where it is, without taking it out. It is the mod action [code]&lt;kind&gt;.use[/code] ([code]{key:frag.grenade.use}[/code] in a HUD); the player's own choice (the Keys page of the settings) wins. Empty: it is used from the hand only.
 		</member>
 		<member name="icon" type="Texture2D" setter="set_icon" getter="get_icon">
 			What it looks like in an inventory's slot (a [CbItemIcon] shows it). None: the game takes a picture of this scene once (its meshes, framed, from the front and a little above) and uses that.
@@ -97,7 +97,7 @@
 			Which hand it is in. [constant HAND_SELECTED]: the slots' hand, while its slot is the selected one. [constant HAND_LEFT]: the left hand for as long as it is carried, beside what the slots' hand holds (a torch beside a gun). It is put away while what is selected has its other hand at a marker (a rifle's barrel), or while another such item of a lower slot is there; what has its other hand as the animation has it (a pistol, a bat) is held with one hand beside it.
 		</member>
 		<member name="slot" type="int" setter="set_slot" getter="get_slot" default="0">
-			The slot it goes to when a player comes to carry one: 1 is the first. What is there makes room (to a free slot, or onto the floor). 0: the first free slot.
+			The slot it goes to when a player comes to carry one (1 is the first), if that one is free; else, or with 0, the first free slot. Nothing is pushed out: a slot is a place, and a second copy goes to another one.
 		</member>
 		<member name="animation_pack" type="String" setter="set_animation_pack" getter="get_animation_pack" default="&quot;&quot;">
 			The animation pack the item brings ([code]gun.pistol_hold[/code]: a [CbAnimPack] scene of this project, by its name): while one is held, the pack's layers play instead of the holder's own. Empty: the character's own animations. Read by a server mod that takes its items from its look ([code]declare.ItemsOfLook()[/code]).
@@ -137,11 +137,11 @@
 		<constant name="HAND_LEFT" value="1" enum="Hand">
 			In the left hand for as long as it is carried, when that hand is free.
 		</constant>
-		<constant name="USE_SELECTED" value="0" enum="Use">
-			Its slot's key takes it out into the hand; then the use button (the left mouse button) uses it. A tool, a weapon.
+		<constant name="USE_TOOL" value="0" enum="Use">
+			In use while the button (or its own key) is down; one press is one use. A tool, a weapon.
 		</constant>
-		<constant name="USE_SLOT_KEY" value="1" enum="Use">
-			Its slot's key uses it where it is: nothing changes hands, and what was in the hand stays there. A consumable, an ability.
+		<constant name="USE_PRESS" value="1" enum="Use">
+			One use a press, however long it is held. A consumable, an ability.
 		</constant>
 		<constant name="OTHER_FREE" value="0" enum="OtherHand">
 			The animation's: nothing keeps it on the item. A one-handed item.
