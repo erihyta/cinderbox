@@ -1,6 +1,7 @@
 """Merges the rules of a sheet that say the same thing first: the same "on" or "while" line and the
 same subject (subject, side, kind, template). Each merged rule's own place and timing (at, delay,
-chance, cooldown, wait) go onto its actions' lines, so the merged rule does exactly what the rules
+chance, cooldown, wait) are written above its actions (a setting holds for the actions below it),
+going back to the default where the next needs it, so the merged rule does exactly what the rules
 did. A rule nothing merges with is left as it is, and so are comments and predictions. The sheet is
 rewritten: look at it before you commit.
 
@@ -12,6 +13,7 @@ import sys
 
 WHO = ("subject", "side", "kind", "template")
 OWN = ("at", "delay", "chance", "cooldown", "wait")
+DEFAULTS = {"at": "at here", "delay": "delay 0", "chance": "chance 1", "cooldown": "cooldown 0", "wait": "wait off"}
 
 
 def first_word(line):
@@ -65,14 +67,17 @@ def merge(path):
                 lines += g["comments"]
         lines.append(b["head"])
         lines += ["    " + w for w in b["who"]]
-        for g in group:
-            suffix = " ".join(g["own"])
-            for a in g["actions"]:
-                if suffix:
-                    # (Before an expression, which runs to the end of the line.)
-                    m = re.search(r"\s(=|volume_by)\s", a)
-                    a = a[: m.start()] + " " + suffix + a[m.start():] if m else a + " " + suffix
-                lines.append("    " + a)
+        # Those with no place or timing of their own first; then each one's, above its actions.
+        state = dict(DEFAULTS)
+        for g in sorted(group, key=lambda g: len(g["own"]) > 0):
+            want = dict(DEFAULTS)
+            for o in g["own"]:
+                want[first_word(o)] = o
+            for k in OWN:
+                if want[k] != state[k]:
+                    lines.append("    " + want[k])
+            state = want
+            lines += ["    " + a for a in g["actions"]]
         merged += len(group) - 1
         out.append("\n".join(lines))
     io.open(path, "w", encoding="utf-8", newline="").write(("\n\n".join(out) + "\n").replace("\n", nl))

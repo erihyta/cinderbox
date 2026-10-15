@@ -5,14 +5,18 @@
 on item.use
 	subject ^^
 	scene res://vfx/muzzle_flash.tscn under Muzzle life 0.3
-	scene res://vfx/tracer.tscn life 0.06 at beam from Muzzle
-	sound res://assets/sfx/gunshot.wav volume -5 jitter 0.06 range 70 at Muzzle
+	at beam from Muzzle
+	scene res://vfx/tracer.tscn life 0.06
+	at Muzzle
+	sound res://assets/sfx/gunshot.wav volume -5 jitter 0.06 range 70
 
 # ScanBeam, MarkSound
 on item.use2
 	subject ^^
-	scene res://vfx/scan_beam.tscn life 0.15 at beam from Muzzle
-	sound res://assets/sfx/dry_click.wav volume -4 pitch 1.8 range 25 at Muzzle
+	at beam from Muzzle
+	scene res://vfx/scan_beam.tscn life 0.15
+	at Muzzle
+	sound res://assets/sfx/dry_click.wav volume -4 pitch 1.8 range 25
 
 # PredictFire
 predict use as item.use if gun.ammo > 0 and !gun.reloading and !combat.dead

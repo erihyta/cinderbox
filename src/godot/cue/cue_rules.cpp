@@ -187,7 +187,9 @@ bool ParseAt( const std::vector<Token>& w, size_t i, size_t end, Dictionary& int
 struct Building
 {
 	int line = 0;
-	Dictionary settings;			 // for every action of the rule (a prediction: all of it)
+	Dictionary settings;			 // when it is (on, while, its conditions); a prediction: all of it
+	Dictionary current;				 // the settings read so far: each action below takes them as they are
+	int pendingSetting = 0;			 // the line of a setting no action has come after yet
 	std::vector<Rule> actions;		 // its own properties, and its line
 	bool prediction = false;
 	PackedStringArray changes;		 // a prediction's
@@ -218,6 +220,12 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 		open = false;
 		if ( rule.bad )
 		{
+			return;
+		}
+		if ( rule.prediction == false && rule.pendingSetting != 0 )
+		{
+			errors.push_back( "line " + String::num_int64( rule.pendingSetting ) +
+							  ": a setting after the last action does nothing (a setting is for the actions below it)" );
 			return;
 		}
 		if ( rule.prediction )
@@ -407,7 +415,8 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				fail( number, verb + String( " takes one word" ) );
 				continue;
 			}
-			rule.settings[verb == "subject" ? "subject" : verb == "kind" ? "subject_kind" : "subject_template"] = w[1].text;
+			rule.current[verb == "subject" ? "subject" : verb == "kind" ? "subject_kind" : "subject_template"] = w[1].text;
+			rule.pendingSetting = number;
 			continue;
 		}
 		if ( verb == "side" )
@@ -418,7 +427,8 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				fail( number, "side a, side b or side either" );
 				continue;
 			}
-			rule.settings["event_side"] = side == "a" ? 0 : side == "b" ? 1 : 2;
+			rule.current["event_side"] = side == "a" ? 0 : side == "b" ? 1 : 2;
+			rule.pendingSetting = number;
 			continue;
 		}
 		if ( verb == "delay" || verb == "chance" || verb == "cooldown" )
@@ -428,85 +438,44 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				fail( number, verb + String( " takes a number" ) );
 				continue;
 			}
-			rule.settings[verb] = number1;
+			rule.current[verb] = number1;
+			rule.pendingSetting = number;
 			continue;
 		}
 		if ( verb == "wait" )
 		{
-			rule.settings["wait_for_server"] = true;
+			if ( w.size() > 2 || ( w.size() == 2 && w[1].text != "off" ) )
+			{
+				fail( number, "wait, or wait off" );
+				continue;
+			}
+			rule.current["wait_for_server"] = w.size() == 1;
+			rule.pendingSetting = number;
 			continue;
 		}
 		if ( verb == "at" )
 		{
 			size_t next = 0;
 			String why;
-			if ( ParseAt( w, 1, w.size(), rule.settings, next, why ) == false || next != w.size() )
+			// (A new place: what the last one said about a node or an offset goes with it.)
+			rule.current.erase( "place_node" );
+			rule.current.erase( "offset" );
+			if ( w.size() == 2 && w[1].text == "here" )
+			{
+				rule.current["place"] = 0; // where the sheet's node is (under its parent)
+			}
+			else if ( ParseAt( w, 1, w.size(), rule.current, next, why ) == false || next != w.size() )
 			{
 				fail( number, why.is_empty() ? String( "after where: from PATH, offset X Y Z" ) : why );
+				continue;
 			}
+			rule.pendingSetting = number;
 			continue;
 		}
 		// --- actions
 		Rule action;
 		action.line = number;
 		Dictionary& p = action.properties;
-		// Settings written on the action's own line (at, delay, chance, cooldown, wait): for this
-		// action only, over the rule's. Not after an expression ("= ...", volume_by), which runs to
-		// the end of the line.
-		{
-			size_t stop = w.size();
-			for ( size_t k = 1; k < w.size(); ++k )
-			{
-				if ( w[k].quoted == false && ( w[k].text == "volume_by" || ( verb == "set" && w[k].text == "=" ) ) )
-				{
-					stop = k;
-					break;
-				}
-			}
-			std::vector<Token> kept{ w[0] };
-			bool bad = false;
-			for ( size_t k = 1; k < stop && bad == false; )
-			{
-				const Token& token = w[k];
-				const String word = token.quoted ? String() : token.text;
-				double value = 0.0;
-				if ( word == "at" )
-				{
-					size_t next = 0;
-					String why;
-					if ( ParseAt( w, k + 1, stop, p, next, why ) == false )
-					{
-						fail( number, why );
-						bad = true;
-					}
-					k = next;
-				}
-				else if ( ( word == "delay" || word == "chance" || word == "cooldown" ) && k + 1 < stop && Number( w[k + 1], value ) )
-				{
-					p[word] = value;
-					k += 2;
-				}
-				else if ( word == "wait" )
-				{
-					p["wait_for_server"] = true;
-					k += 1;
-				}
-				else
-				{
-					kept.push_back( token );
-					k += 1;
-				}
-			}
-			if ( bad )
-			{
-				continue;
-			}
-			for ( size_t k = stop; k < w.size(); ++k )
-			{
-				kept.push_back( w[k] );
-			}
-			w = kept;
-		}
 		if ( verb == "sound" )
 		{
 			if ( w.size() < 2 )
@@ -622,6 +591,11 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			fail( number, "\"" + verb + "\" is not a setting or an action of a rule" );
 			continue;
 		}
+		// The settings read so far, as they are now: a setting below it is for the actions after it.
+		Dictionary taken = rule.current.duplicate();
+		taken.merge( action.properties, true );
+		action.properties = taken;
+		rule.pendingSetting = 0;
 		rule.actions.push_back( action );
 	}
 	finish();

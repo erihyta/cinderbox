@@ -10,3 +10,6 @@ on melee.hit
 on test.fine
     call Timer hide
 predict use
+on test.late
+    call Timer hide
+    delay 1

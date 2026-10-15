@@ -23,15 +23,17 @@
 // (indenting is for the eye) are its settings and its actions:
 //
 //   settings   subject PATH, side a|b|either, kind KIND, template NAME, delay S, chance P,
-//              cooldown S, wait (wait for the server's cue), at point|end|beam|follow|PATH
-//              [from PATH: a beam's start] [offset X Y Z]: for every action of the rule. at, delay,
-//              chance, cooldown and wait can also end an action's own line, for that action only
-//              (before an expression, which runs to the end of the line):
+//              cooldown S, wait [off] (wait for the server's cue), at point|end|beam|follow|here|PATH
+//              [from PATH: a beam's start] [offset X Y Z]. A setting holds for the actions below
+//              it, until another line changes it (at here, delay 0, chance 1, cooldown 0, wait off
+//              go back to the defaults); one after the last action is a mistake:
 //                on item.use
 //                    subject ^^
 //                    scene res://vfx/muzzle_flash.tscn under Muzzle life 0.3
-//                    scene res://vfx/tracer.tscn at beam from Muzzle life 0.06
-//                    sound res://assets/sfx/gunshot.wav at Muzzle volume -5
+//                    at beam from Muzzle
+//                    scene res://vfx/tracer.tscn life 0.06
+//                    at Muzzle
+//                    sound res://assets/sfx/gunshot.wav volume -5
 //   actions    sound PATH [volume DB] [pitch P] [jitter J] [range M] [bus NAME] [volume_by EXPR]
 //              scene PATH [under PATH] [life S]
 //              play PLAYER ANIMATION [off ANIMATION]

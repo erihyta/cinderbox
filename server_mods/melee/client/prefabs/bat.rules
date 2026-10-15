@@ -10,7 +10,8 @@ while melee.hot
 on melee.swing
     subject ^^
     play AnimationPlayer slash
-    call Model/Sparks restart delay 0.14
+    delay 0.14
+    call Model/Sparks restart
 
 # SparksOnHit
 on melee.hit
