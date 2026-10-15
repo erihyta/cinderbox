@@ -81,6 +81,9 @@
 		<member name="use_emits" type="String" setter="set_use_emits" getter="get_use_emits" default="&quot;&quot;">
 			When used: the event a use says ([code]dash.started[/code]), at the player: for looks and state machines.
 		</member>
+		<member name="slot_key_uses" type="bool" setter="set_slot_key_uses" getter="get_slot_key_uses" default="false">
+			Its slot's key uses it where it is, instead of selecting the slot: a skill on a Roblox-style hotbar (the key 2 dashes, the slot is never selected). Once a press, or held for an item used while held ([member use]); not for a tool. Off: the key selects the slot, as for any item.
+		</member>
 		<member name="use_key" type="String" setter="set_use_key" getter="get_use_key" default="&quot;&quot;">
 			Its own key ([code]H[/code], [code]MouseRight[/code]): uses the first copy the player carries (the selected one, else the lowest slot's) where it is, without taking it out. It is the mod action [code]&lt;kind&gt;.use[/code] ([code]{key:frag.grenade.use}[/code] in a HUD); the player's own choice (the Keys page of the settings) wins. Empty: it is used from the hand only.
 		</member>

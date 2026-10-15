@@ -198,7 +198,7 @@ HUD. Made with today's nodes; `net_brawl` plays it.
 | Damage is not a node | every hit is an event the C++ turns into `combat.damage` | the rules API (step 7), or a damage the probe says |
 | No "who is near", no "on landing" | the slam's shockwave is C++, so it is not predicted | a sphere probe; a motion `when` landed |
 | No mod can change another's damage | the guard only softens the kit's own hits | a damage step between mods (step 7) |
-| Keys | free letters are few (X, K, L, Alt); a Roblox fighting game uses 1 to 4 to *use* a skill | an item option "its slot's key uses it", per item (M161 took that from every item) |
+| Keys | free letters are few (X, K, L, Alt); a Roblox fighting game uses 1 to 4 to *use* a skill | **done (M164)**: `CbItem.slot_key_uses`, per item; the kit's skills are on 2 to 5 |
 
 - **Found and fixed on the way** (the engine): a probe that does not fly never said its
   `hold_emits`; a probe refused anything nearer than 1 m (a rope's rule: a punch whiffed at punching
@@ -240,6 +240,7 @@ shared with clients.
 
 | What | Needs |
 |---|---|
+| Keys the server says | the server decides each slot's key (and the actions'), and clients take them on connect (today the player's own Keys page wins over a mod's suggestion) |
 | Cameras a mod places | a camera or a path in a mod's scene that a reaction makes the view for a while (a round's end, a kill cam, a scenic shot), with the game's own camera taking over again afterwards |
 | Vehicles | joints in the component registry and templates of several bodies; a seat (the mover off, the player carried); input routed to motors, as a motion routes it to the mover |
 | A script for looks | a sandboxed one, for what fields, intents and clicks cannot say; not visual scripting |

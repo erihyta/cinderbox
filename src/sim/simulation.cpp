@@ -867,6 +867,17 @@ void Simulation::ItemUses( uint32_t player, const PlayerInput& in, uint8_t prevB
 		bool down = ( in.buttons & BtnUse ) != 0;
 		add( hand, ItemShapeOf( FindEntity( hand ).get<HeldItem>().kind ).use, down, down && ( prevButtons & BtnUse ) == 0 );
 	}
+	// Its slot's key, for a kind that says so (ItemShape::slotKeyUses): the slot's item, where it is.
+	for ( uint8_t index = 0; index < slots->count && index < 16; ++index )
+	{
+		const uint16_t bit = uint16_t( 1u << index );
+		const uint32_t item = ( in.slotKeys & bit ) != 0 ? SlotItemOf( player, index ) : 0;
+		const uint16_t kind = item != 0 ? FindEntity( item ).get<HeldItem>().kind : uint16_t( 0 );
+		if ( item != 0 && kind < m_itemShapes.size() && m_itemShapes[kind].slotKeyUses != 0 )
+		{
+			add( item, m_itemShapes[kind].use, true, ( slots->prevKeys & bit ) == 0 );
+		}
+	}
 	// A kind's own key: the first copy carried (the selected one, else the lowest slot's), where it is.
 	for ( size_t kind = 0; kind < m_itemShapes.size(); ++kind )
 	{
@@ -950,8 +961,16 @@ void Simulation::StepSlots( const InputFrame& frame )
 			}
 		}
 		slots.prevActions = in.actions;
-		// A slot's key selects it, whatever it holds (again: empty hands).
-		auto slotKey = [&]( uint8_t index ) { slots.selected = slots.selected == index ? kNoSlot : index; };
+		// A slot's key selects it, whatever it holds (again: empty hands); unless what it holds is
+		// used by it (ItemShape::slotKeyUses, above): then nothing changes hands.
+		auto slotKey = [&]( uint8_t index ) {
+			const uint32_t item = index == kNoSlot ? 0 : SlotItemOf( netId, index );
+			if ( item != 0 && ItemShapeOf( FindEntity( item ).get<HeldItem>().kind ).slotKeyUses != 0 )
+			{
+				return;
+			}
+			slots.selected = slots.selected == index ? kNoSlot : index;
+		};
 		const uint16_t keys = in.slotKeys;
 		const uint16_t pressedKeys = uint16_t( keys & ~slots.prevKeys );
 		slots.prevKeys = keys;

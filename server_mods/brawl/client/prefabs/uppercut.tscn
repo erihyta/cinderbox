@@ -1,9 +1,9 @@
 [gd_scene format=3]
 
-; Uppercut: K, from wherever it is carried, on the ground. Whoever is within 3 m ahead is launched
+; Uppercut: its slot's key (3), on the ground. Whoever is within 3 m ahead is launched
 ; upward, and you hop after it. 4 s to come back (brawl.cd_upper). A miss does nothing and costs
 ; nothing: with a probe, a use only counts if the line finds something.
-;   Uppercut    CbItem     once a press, its own key K; when used: brawl.cd_upper <= 0, grounded;
+;   Uppercut    CbItem     once a press, by its slot's key; when used: brawl.cd_upper <= 0, grounded;
 ;                          brawl.cd_upper = 4; says brawl.uppercut.started
 ;     Rise      CbProbe    3 m along the look, at once; says brawl.uppercut.hit with who it hit
 ;       Launch  CbImpulse  12 m/s up on who it hit, its vertical speed replaced
@@ -30,7 +30,7 @@ properties = {
 }
 use = 1
 slot = 3
-use_key = "K"
+slot_key_uses = true
 use_conditions = PackedStringArray("brawl.cd_upper <= 0", "grounded")
 use_changes = PackedStringArray("brawl.cd_upper = 4")
 use_emits = "brawl.uppercut.started"

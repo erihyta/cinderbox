@@ -1,10 +1,10 @@
 [gd_scene format=3]
 
-; Ground slam: L, in the air. You dive straight down; where you land, everyone within 5 m is hurt
+; Ground slam: its slot's key (4), in the air. You dive straight down; where you land, everyone within 5 m is hurt
 ; and thrown away from you. 5 s to come back (brawl.cd_slam). The dive is predicted; the landing's
 ; shockwave is the server mod's (brawl.cpp: no node finds who is near a point, and no motion starts
 ; on landing), so its victims see it a round trip late.
-;   Slam        CbItem     once a press, its own key L; when used: brawl.cd_slam <= 0, not
+;   Slam        CbItem     once a press, by its slot's key; when used: brawl.cd_slam <= 0, not
 ;                          grounded; brawl.cd_slam = 5; says brawl.slam.started
 ;     Dive      CbImpulse  25 m/s straight down, the vertical speed replaced
 
@@ -29,7 +29,7 @@ properties = {
 }
 use = 1
 slot = 4
-use_key = "L"
+slot_key_uses = true
 use_conditions = PackedStringArray("brawl.cd_slam <= 0", "not grounded")
 use_changes = PackedStringArray("brawl.cd_slam = 5")
 use_emits = "brawl.slam.started"

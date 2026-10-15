@@ -140,6 +140,9 @@ struct ItemShape
 	// player carries (the selected one, else the lowest slot's) where it is, without taking it out.
 	// 255: none, it is used from the hand only.
 	uint8_t useAction = 255;
+	// 1: its slot's key uses it where it is (a press, or held for one used while held), and does not
+	// select the slot: a skill on a Roblox-style hotbar. 0: the key selects the slot, as for any item.
+	uint8_t slotKeyUses = 0;
 	// When a copy's time is up (one launched with seconds, removed then): `expiredEvent` (a mod event,
 	// "<kind>.expired" where a mod declares it; 0xFFFF: none), with the item as the first entity,
 	// whoever threw it as the second, at where it was. A fused grenade goes off on it.

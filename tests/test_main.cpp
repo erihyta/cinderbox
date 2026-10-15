@@ -4323,6 +4323,15 @@ void TestSlotKeys()
 	press( 2, 1 );
 	std::printf( "    the dash gone: %d dashes; its slot's key selects slot %d\n", int( dashes() ), int( sim.SelectedSlot( p0 ) ) );
 	CHECK( sim.SlotItem( p0, 1 ) == 0 && sim.SelectedSlot( p0 ) == 1 && dashes() == 4 );
+	// A kind its slot's key uses (ItemShape::slotKeyUses): the jet, now in slot 1. Its key held is
+	// the jet in use, and the slot is never selected.
+	jet.slotKeyUses = 1;
+	sim.SetItemShapes( { tool, dash, jet } );
+	float beforeKey = flying();
+	press( 1, 30 );
+	std::printf( "    the jet's slot key held half a second: %.1f more; the hand still has slot %d\n", flying() - beforeKey,
+				 int( sim.SelectedSlot( p0 ) ) );
+	CHECK( flying() - beforeKey > 25.0f && flying() - beforeKey < 35.0f && sim.SelectedSlot( p0 ) == 1 );
 }
 
 // Two of a kind are two items: each in a slot of its own, each used from the hand, each with its own
@@ -6942,10 +6951,11 @@ void AppendSlotsReference( std::vector<uint64_t>& hashes )
 	ball.use = kItemUsePress;
 	ball.useAction = 0;
 	ball.usedEvent = 1;
-	ItemShape jet = tool; // used while held, its own key bit 1
+	ItemShape jet = tool; // used while held, its own key bit 1, and its slot's key
 	jet.slot = 4;
 	jet.use = kItemUseHold;
 	jet.useAction = 1;
+	jet.slotKeyUses = 1;
 	jet.usedEvent = 2;
 	ItemShape shield = tool; // the left hand while carried
 	shield.slot = 0;

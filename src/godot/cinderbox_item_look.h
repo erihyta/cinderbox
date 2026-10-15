@@ -280,6 +280,16 @@ public:
 	{
 		return m_stack;
 	}
+	// Its slot's key uses it where it is, and does not select it (for one used once a press or while
+	// held): a skill on a Roblox-style hotbar.
+	void set_slot_key_uses( bool v )
+	{
+		m_slotKeyUses = v;
+	}
+	bool get_slot_key_uses() const
+	{
+		return m_slotKeyUses;
+	}
 	void set_bullet( bool v )
 	{
 		m_bullet = v;
@@ -474,6 +484,7 @@ private:
 	int m_use = USE_TOOL;
 	int m_hand = HAND_SELECTED;
 	bool m_bullet = false;
+	bool m_slotKeyUses = false;
 	int m_stack = 1;
 	godot::Ref<godot::Texture2D> m_icon;
 	int m_slot = 0;
