@@ -289,24 +289,32 @@ make it one, and none is a script:
 | A free cursor | a `CbKey` with `cursor`: while its value is 1 the mouse is the screen's, and the camera, the use button and the mods' actions do not hear it |
 | Values of the viewer's own | names that start with `ui.` (`ui.picked`, `ui.tab`): no server and no simulation knows them. Conditions, formats (`{ui.picked}`) and bindings read them like fields; 0 until set. They are what a screen remembers |
 | Clicks | a `CbClick` under any control: `conditions` (when it takes the click), `sets` (`ui.` values it changes), `intent` (what it asks of the player's slots) |
+| Drags | a `CbDrag` under a slot's control: drag it onto another slot (move, merge), Shift-drag (half a stack), let go outside `inside` (drop). Godot's own drag and drop: a copy of the slot follows the cursor |
+| Icons | a `CbItemIcon` (a `TextureRect`) in a row: the row's item's icon (`CbItem.icon`, or a picture the game takes of its scene) |
+| Grids | `CbList.columns`: rows of that many, stacked (a `CbFieldBinding` can bind it to a field: `inventory.columns`) |
 
 The inventory screen (`server_mods/inventory/client/ui/hud_inventory.tscn`), on I:
 
 ```
-Bag          PanelContainer
-├── Key      CbKey       action "inventory"  key "I"  each press switches it  cursor   (ui.inventory)
-├── Shown    CbFieldBinding   conditions ui.inventory: shows Bag
-└── Grid     CbList      of Slots
-    └── Cell PanelContainer            one slot, as designed: copied for every slot
-        ├── PickUp   CbClick   conditions ui.picked == 0, not slot.empty    sets ui.picked = slot.number
-        ├── PutDown  CbClick   conditions ui.picked > 0    intent Move a slot here (from ui.picked)    sets ui.picked = 0
-        ├── Name     CbFieldLabel   "{slot.number} {name}"                conditions ui.picked != slot.number
-        └── Picked   CbFieldLabel   the same, highlighted                  conditions ui.picked == slot.number
+Bag            PanelContainer
+├── Key        CbKey       action "inventory"  key "I"  each press switches it  cursor   (ui.inventory)
+├── Shown      CbFieldBinding   conditions ui.inventory: shows Bag
+└── Rows       VBoxContainer
+    ├── Title  Label
+    └── Grid   CbList      of Slots
+        ├── Slot     PanelContainer      one slot, as designed: copied for every slot, in lines of columns
+        │   ├── Icon     CbItemIcon     the item's icon
+        │   ├── Chosen   Panel          a frame (Shown: conditions slot.selected)
+        │   ├── Number   CbFieldLabel   "{slot.number}", top left
+        │   ├── Count    CbFieldLabel   "{slot.count}", bottom right, conditions slot.count > 1
+        │   ├── Tip      CbFieldBinding "{name}" into tooltip_text
+        │   └── Drag     CbDrag         inside Bag
+        └── Columns  CbFieldBinding    inventory.columns into columns
 ```
 
-- **The first `CbClick` whose conditions hold takes the click**, in the order of the tree: picking up does not also put down.
 - **An intent is the player's own input**: the move is carried out by every simulation, the player's own at once ([The inventory](items.md#the-inventory)).
-- **What a click cannot do yet**: an intent a mod declares ("buy item 3"); a drag; something that follows the cursor; right clicks.
+- **The hotbar** is the same slot in a `CbList` across the bottom, its `max_rows` bound to `inventory.columns`: the first row.
+- **What is not there yet**: an intent a mod declares ("buy item 3"); a slot of another entity's (a chest).
 
 `CbPromptLabel` is the same in the world: a `Label3D` with a `text_format`, upright above its parent,
 facing the camera, the same size at any distance, hidden while its text is empty; with a

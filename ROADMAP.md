@@ -127,7 +127,7 @@ the hook's hang).
 
 | Piece | Today | Would be |
 |---|---|---|
-| The screen | click an item, then a slot (M110) | a drag with the item under the cursor; right click drops; an icon on the `CbItem` |
+| The screen | **done (M158)**: a grid of `inventory.columns` x `inventory.rows` (8 x 4), the first row the hotbar; drag to move or merge (`CbDrag`), Shift-drag for half a stack (the `Split` intent), drag out to drop; icons (`CbItem.icon`, or a picture of its scene, `CbItemIcon`) | a split of one; a slot's item shown while dragged over; a key for the bag's slots |
 | Stacks | **done (M157)**: `CbItem.stack`; a stack is one item with a count (`HeldItem::count`); given or picked up, onto a stack with room; a throw splits one off; `slot.count` in the HUD, `CarriedItem::count` for mods; the frag grenade stacks 3 | dropping or moving part of a stack; a mod that takes one off without throwing it |
 | Containers | players only | slots on any entity: a chest, a shop, a corpse |
 | Intents a mod declares | select, move and drop | "buy item 3", "vote 2": a `CbClick` sends it, the mod answers; no client code |
