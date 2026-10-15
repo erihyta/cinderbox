@@ -75,18 +75,18 @@ CbMotionPart            what they share: each bakes to lines, and warns in the t
 ## What an item does
 
 Under a `CbItem`, the motion nodes need no `CbMotion`: the item is the trigger, and nesting says what
-lives while what holds. Using the item (its slot's key, or the use button with it in the hand)
+lives while what holds. Using the item (its own key, or the use button with it in the hand)
 does what the nodes under it say, if its **When used** rules allow:
 
 ```
-Hook          CbItem     use: its slot key (a press)   slot 4   use_emits grapple.fired   (prefabs/hook.tscn)
+Hook          CbItem     use: once a press   slot 4   use_key Q   use_emits grapple.fired   (prefabs/hook.tscn)
 ├── Throw     CbProbe    a line along the look, 80 m/s; let go: using the hook again, a jump; holds 2 s at most
 │   └── Rope  CbLink     to what the line found, reeled in at 4 m/s
 │       ├── Pull      CbForce   on the player, toward it: 160 m/s² up to 15 m/s, ramped in, reacting
 │       └── Hanging   CbMove    while it holds: gravity 0, air control 0.6, airborne
 └── Throwing  CbMotion   a motion of its own: on a use with no line out, 0.45 s, no effects (the throw's pose)
 
-Boots         CbItem     use: its slot key (a press)   slot 5   slot_key V                (prefabs/boots.tscn)
+Boots         CbItem     use: once a press   slot 5   use_key V                         (prefabs/boots.tscn)
 │                        use_conditions dash.charges > 0   use_changes dash.charges -= 1
 │                        use_cooldown 0.4   use_emits dash.started
 ├── Push      CbImpulse  11 m/s along where you walk, the run's own speed replaced
@@ -218,13 +218,13 @@ A probe is a line a motion throws at what the player looks at. `server_mods/grap
 one motion of three parts under it, its pose, and a look. Its C++ declares the two events; the
 scene says the rest, a hook for every life among it.
 
-The hook is an [item used by its slot's key](items.md#using-an-item) (`prefabs/hook.tscn`, a `CbItem`
-with `use` "Its slot key uses it" and `slot` 4): the key uses it where it is, nothing comes into
-the hand, and the engine records `grapple.hook.used` on that tick in every simulation. The motion
+The hook is an [item with its own key](items.md#using-an-item) (`prefabs/hook.tscn`, a `CbItem`
+with `use` "Once a press" and `use_key` Q): the key uses it where it is, nothing comes into
+the hand (or select it and press the use button), and the engine records `grapple.hook.used` on that tick in every simulation. The motion
 starts on that event, and ends on the same event, so the throw is predicted like any press.
 
 ```
-Hook          CbItem     kind "grapple.hook", use: its slot's key (a press), slot 4   (prefabs/hook.tscn)
+Hook          CbItem     kind "grapple.hook", use: once a press, use_key Q, slot 4   (prefabs/hook.tscn)
 │                        use_emits grapple.fired
 │                        animation_pack grapple.hook_arm: the left arm's throw, while motion.grapple.hook.Throwing
 ├── Throw     CbProbe    range 40 m, flies at 80 m/s; release: using it again, a jump; holds 2 s at most
@@ -297,12 +297,12 @@ A probe is a line: it has no body, nobody sees it coming, nothing can step out o
 | `frag` | `frag.grenade` (`prefabs/frag.tscn`) | when its fuse is out: 2.5 s after it left the hand, wherever it rolled | 6, H | on |
 | `grenade` | `grenade.shell` (`prefabs/shell.tscn`) | on its first hard hit (`ctx.Hits`) | 7 | off (`disabled`): start it by name |
 
-**Thrown from the hand**: the grenade is an item the player carries (out of sight). Its slot's key
-plays the throw on the left arm; the throw clip's marker lets go; what leaves is the grenade that
+**Thrown from the hand**: the grenade is an item the player carries (out of sight). Its own key
+(H), or the use button with it selected, plays the throw on the left arm; the throw clip's marker lets go; what leaves is the grenade that
 was carried, not a new one.
 
 ```
-Frag    CbItem   kind "frag.grenade"   use: its slot key (a press)   slot 6   slot_key H   (prefabs/frag.tscn)
+Frag    CbItem   kind "frag.grenade"   use: once a press   slot 6   use_key H   (prefabs/frag.tscn)
 │                animation_pack frag.throw_arm   properties { inventory.start: 1 }
 │                mass 0.4   friction 0.8   bounce 0.45
 ├── Body  CollisionShape3D   a sphere, 9 cm
@@ -316,7 +316,7 @@ The pack (`animation_packs/throw_arm.tscn`) is an overlay on the left arm while 
 its clip (`source/Throw.res`) carries the marker `frag.release` at 0.27 s. Every simulation plays
 the clip, so the release is on the same tick everywhere (`net_frag`: 18 ticks after the press;
 the client's throw is the server's). The mod gives a new grenade 1.2 s after a player has none
-(`frag.refill_seconds`; 0: one a life). Its slot's key does nothing while the slot is empty.
+(`frag.refill_seconds`; 0: one a life). Its key does nothing while none is carried.
 
 **An item's time is up**: a launch's `seconds` are how long the item lives. When they are out the
 simulation removes it, and first says `<kind>.expired` (where a mod declares that event: the frag

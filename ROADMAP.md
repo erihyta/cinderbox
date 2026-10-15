@@ -9,8 +9,8 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 |---|---|---|
 | 1 | [The SDK knows the server](#1-the-sdk-knows-the-server) | the editor knows the server's names: completed while typing, checked at publish |
 | 2 | [Mod testing](#2-mod-testing) | the client starts a server by itself: one button from an edit to playing it |
-| 3 | [Items that do things](#3-items-that-do-things) | an item is used by its slot's key; what it does is helper nodes under it; its state is its own; one tree per kind in the game |
-| 4 | [The inventory, finished](#4-the-inventory-finished) | drag, icons, stacks, chests, and intents a mod declares |
+| 3 | [Items that do things](#3-items-that-do-things) | an item is used from the hand or by its own key; what it does is helper nodes under it; its state is its own; one tree per kind in the game |
+| 4 | [The inventory, finished](#4-the-inventory-finished) | drag, icons, stacks, chests, intents a mod declares, and slots as places |
 | 5 | [The client, finished](#5-the-client-finished) | what is left of the client's known limits, typed text, the game script in parts |
 | 6 | [Rules without a relink](#6-rules-without-a-relink) | a server mod's rules as a script the server loads, not C++ compiled into it |
 
@@ -106,7 +106,7 @@ the hook's hang).
 
 | # | Piece | What | Why this way |
 |---|---|---|---|
-| 1 | Slot keys and use modes | **done (M146)**: an item's key is its slot's; `use` In the hand / Press / Hold; slot keys sent held with the input, rebindable on the Keys page, suggested by a mod (`declare.SlotKey`) or the item (`slot_key`); `using.<kind>`; the dash is the boots' slot key (V) | an item's `CbMotion.key` and declared actions (M144) are gone |
+| 1 | Slot keys and use modes | **done (M146)**: an item's key is its slot's; `use` In the hand / Press / Hold; slot keys sent held with the input, rebindable on the Keys page, suggested by a mod (`declare.SlotKey`) or the item (`slot_key`); `using.<kind>`; the dash is the boots' slot key (V). Replaced in M161: slots' keys only select, an item has its own key (`use_key`) | an item's `CbMotion.key` and declared actions (M144) are gone |
 | 2 | What an item does, as helpers | **done (M147)**: under a `CbItem`, a `CbProbe` (with `release` and `hold_seconds`), the effects and the new `CbMove`, nested as they hold, with the item's When used rules (`use_conditions`, `use_changes`, `use_cooldown`, `use_emits`), bake into one motion, `Use`; the hook and the boots are written so | the left hand (piece 5) is still to come: the hook is out of sight |
 | 3 | An item's state | **done (M148)**: `CbItem.fields` (name and starting value; its type from the value): a field of every copy, started by the simulation whichever way a copy is made, read and written by mods, read by looks as `hand.<field>`; the gun's rounds are the gun's (`gun.rounds`) | a state machine or a motion cannot read the hand's fields yet; the gun's HUD still reads the player's `gun.ammo` (a prediction counts it down at once) |
 | 4 | Copies on the floor are lean | **done (M149)**, in place of one tree per kind: a copy lying in the world keeps its look, its body and its reactions about itself; what is about a holder is taken out, and put back from its scene when somebody has it (with four of every item lying about: 57 listeners instead of 165) | one shared tree per kind was set aside: the copies somebody carries are few (a player's slots), each must place its effects at its own muzzle and in the first-person view, and the state is the item's fields now (M148) |
@@ -130,6 +130,7 @@ the hook's hang).
 | The screen | **done (M158)**: a grid of `inventory.columns` x `inventory.rows` (8 x 4), the first row the hotbar; drag to move or merge (`CbDrag`), Shift-drag for half a stack (the `Split` intent), drag out to drop; icons (`CbItem.icon`, or a picture of its scene, `CbItemIcon`) | a split of one; a slot's item shown while dragged over; a key for the bag's slots |
 | Stacks | **done (M157)**: `CbItem.stack`; a stack is one item with a count (`HeldItem::count`); given or picked up, onto a stack with room; a throw splits one off; `slot.count` in the HUD, `CarriedItem::count` for mods; the frag grenade stacks 3 | dropping or moving part of a stack; a mod that takes one off without throwing it |
 | Containers | **done (M159)**: a `Container` component (slots of an entity's own); opened by looking at it within reach with the inventory key (the Open intent), its slots beside the player's, moved between by the same drags (`kContainerSlotBit`); `declare.ContainerTemplate`, `ctx.PutInContainer`; the chest mod | a corpse's bag (undecided: the ragdoll carries it, or a box where it fell) |
+| Slots are places | **done (M161)**, asked for as in Minecraft: a slot's key selects it whatever it holds (1 to 9, 0); any item is used from the hand; a kind's `slot` is where it goes if free, nothing is pushed out; an item's own key (`use_key`, the action `<kind>.use`) uses the first copy carried; two of a kind are two items, each used on its own | an off hand (Minecraft's F) |
 | Intents a mod declares | **done (M160)**: `declare.Intent`, `ctx.Intents` (once, on the tick it arrives); `CbClick.mod_intent` with two numbers; the shop mod (`shop.buy`, coins a private field) | predicted answers; numbers wider than a byte |
 | The holster | **done (M137)**: on the `CbItem`, with the item's animation pack, for a mod that takes its items from its look | |
 | An item's HUD | a scene of its mod's | in the item's own scene, shown while it is selected |
