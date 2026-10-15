@@ -1,0 +1,60 @@
+[gd_scene format=3]
+
+; Uppercut: K, from wherever it is carried, on the ground. Whoever is within 3 m ahead is launched
+; upward, and you hop after it. 4 s to come back (brawl.cd_upper). A miss does nothing and costs
+; nothing: with a probe, a use only counts if the line finds something.
+;   Uppercut    CbItem     once a press, its own key K; when used: brawl.cd_upper <= 0, grounded;
+;                          brawl.cd_upper = 4; says brawl.uppercut.started
+;     Rise      CbProbe    3 m along the look, at once; says brawl.uppercut.hit with who it hit
+;       Launch  CbImpulse  12 m/s up on who it hit, its vertical speed replaced
+;       Hop     CbImpulse  6 m/s up on you
+
+[sub_resource type="BoxShape3D" id="Body"]
+size = Vector3(0.1, 0.1, 0.1)
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(1.0, 0.55, 0.2, 1)
+emission_enabled = true
+emission = Color(1.0, 0.55, 0.2, 1)
+emission_energy_multiplier = 0.6
+
+[sub_resource type="BoxMesh" id="Mesh"]
+material = SubResource("Mat")
+size = Vector3(0.1, 0.1, 0.1)
+
+[node name="Uppercut" type="CbItem"]
+kind = "brawl.uppercut"
+display_name = "Uppercut"
+properties = {
+"inventory.start": 1.0
+}
+use = 1
+slot = 3
+use_key = "K"
+use_conditions = PackedStringArray("brawl.cd_upper <= 0", "grounded")
+use_changes = PackedStringArray("brawl.cd_upper = 4")
+use_emits = "brawl.uppercut.started"
+mass = 0.5
+
+[node name="Body" type="CollisionShape3D" parent="."]
+shape = SubResource("Body")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("Mesh")
+
+[node name="Rise" type="CbProbe" parent="."]
+range = 3.0
+travel = 0.0
+hold_seconds = 0.05
+hold_emits = "brawl.uppercut.hit"
+
+[node name="Launch" type="CbImpulse" parent="Rise"]
+target = 1
+frame = 3
+speed = 12.0
+replace = 1
+
+[node name="Hop" type="CbImpulse" parent="Rise"]
+frame = 3
+speed = 6.0
+replace = 1

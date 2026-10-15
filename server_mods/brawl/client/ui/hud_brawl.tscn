@@ -1,0 +1,115 @@
+[gd_scene format=3]
+
+; The kit's HUD: each skill's key and whether it is ready, the combo, and the guard. No scripts:
+; every line is a CbFieldLabel, and a CbFieldBinding under it shows it while its conditions hold.
+; The seconds left are fields the kit's motions count down (motion_sets/brawl_moves.tscn), so they
+; move on the viewer's own screen at once. Each skill is two labels (ready, cooling), because a
+; label cannot say "READY" or "2.4s" by itself.
+
+[sub_resource type="LabelSettings" id="Small"]
+font_size = 20
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.75)
+
+[sub_resource type="LabelSettings" id="Ready"]
+font_size = 20
+font_color = Color(0.55, 1, 0.55, 1)
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.75)
+
+[sub_resource type="LabelSettings" id="Combo"]
+font_size = 30
+font_color = Color(1, 0.8, 0.3, 1)
+outline_size = 6
+outline_color = Color(0, 0, 0, 0.8)
+
+[node name="BrawlHud" type="CanvasLayer"]
+
+[node name="Skills" type="VBoxContainer" parent="."]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -260.0
+offset_right = 360.0
+offset_bottom = -120.0
+theme_override_constants/separation = 4
+
+[node name="DashReady" type="CbFieldLabel" parent="Skills"]
+layout_mode = 2
+label_settings = SubResource("Ready")
+text_format = "[{key:brawl.dash_strike.use}]  DASH STRIKE  READY"
+
+[node name="Shown" type="CbFieldBinding" parent="Skills/DashReady"]
+conditions = PackedStringArray("brawl.cd_dash <= 0", "carried.brawl.dash_strike")
+
+[node name="DashCooling" type="CbFieldLabel" parent="Skills"]
+layout_mode = 2
+label_settings = SubResource("Small")
+text_format = "[{key:brawl.dash_strike.use}]  DASH STRIKE  {brawl.cd_dash}s"
+
+[node name="Shown" type="CbFieldBinding" parent="Skills/DashCooling"]
+conditions = PackedStringArray("brawl.cd_dash > 0", "carried.brawl.dash_strike")
+
+[node name="UpperReady" type="CbFieldLabel" parent="Skills"]
+layout_mode = 2
+label_settings = SubResource("Ready")
+text_format = "[{key:brawl.uppercut.use}]  UPPERCUT  READY"
+
+[node name="Shown" type="CbFieldBinding" parent="Skills/UpperReady"]
+conditions = PackedStringArray("brawl.cd_upper <= 0", "carried.brawl.uppercut")
+
+[node name="UpperCooling" type="CbFieldLabel" parent="Skills"]
+layout_mode = 2
+label_settings = SubResource("Small")
+text_format = "[{key:brawl.uppercut.use}]  UPPERCUT  {brawl.cd_upper}s"
+
+[node name="Shown" type="CbFieldBinding" parent="Skills/UpperCooling"]
+conditions = PackedStringArray("brawl.cd_upper > 0", "carried.brawl.uppercut")
+
+[node name="SlamReady" type="CbFieldLabel" parent="Skills"]
+layout_mode = 2
+label_settings = SubResource("Ready")
+text_format = "[{key:brawl.slam.use}]  GROUND SLAM  READY"
+
+[node name="Shown" type="CbFieldBinding" parent="Skills/SlamReady"]
+conditions = PackedStringArray("brawl.cd_slam <= 0", "carried.brawl.slam")
+
+[node name="SlamCooling" type="CbFieldLabel" parent="Skills"]
+layout_mode = 2
+label_settings = SubResource("Small")
+text_format = "[{key:brawl.slam.use}]  GROUND SLAM  {brawl.cd_slam}s"
+
+[node name="Shown" type="CbFieldBinding" parent="Skills/SlamCooling"]
+conditions = PackedStringArray("brawl.cd_slam > 0", "carried.brawl.slam")
+
+[node name="Guard" type="CbFieldLabel" parent="Skills"]
+layout_mode = 2
+label_settings = SubResource("Small")
+text_format = "[{key:brawl.guard.use}]  GUARD (hold)"
+
+[node name="Shown" type="CbFieldBinding" parent="Skills/Guard"]
+conditions = PackedStringArray("carried.brawl.guard", "not using.brawl.guard")
+
+[node name="Guarding" type="CbFieldLabel" parent="Skills"]
+layout_mode = 2
+label_settings = SubResource("Ready")
+text_format = "GUARDING"
+
+[node name="Shown" type="CbFieldBinding" parent="Skills/Guarding"]
+conditions = PackedStringArray("using.brawl.guard")
+
+[node name="Combo" type="CbFieldLabel" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -150.0
+offset_top = 120.0
+offset_right = 150.0
+offset_bottom = 160.0
+horizontal_alignment = 1
+label_settings = SubResource("Combo")
+text_format = "COMBO {brawl.combo}"
+
+[node name="Shown" type="CbFieldBinding" parent="Combo"]
+conditions = PackedStringArray("brawl.combo > 0")

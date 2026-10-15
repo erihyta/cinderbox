@@ -55,6 +55,7 @@ struct Visual
 	uint16_t itemKind = 0;
 	uint8_t socket = 0;
 	bool stowed = false;
+	bool inUse = false; // an item its holder uses this tick
 	// Slots: an item's place among its holder's; a player's selected slot and how many it has.
 	uint8_t slotIndex = kNoSlot;
 	uint8_t slotCount = 0;

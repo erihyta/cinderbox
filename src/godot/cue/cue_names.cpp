@@ -184,11 +184,14 @@ void CheckRead( const Book& book, const std::string& written, const String& prop
 			return;
 		}
 	}
-	if ( name.rfind( "carried.", 0 ) == 0 )
+	for ( const char* key : { "carried.", "using." } )
 	{
-		// "carried.gun.pistol": the kind is what is declared.
-		CheckName( book, "item", Gd( name.substr( 8 ) ), property, out );
-		return;
+		if ( name.rfind( key, 0 ) == 0 )
+		{
+			// "carried.gun.pistol", "using.gun.pistol": the kind is what is declared.
+			CheckName( book, "item", Gd( name.substr( std::string( key ).size() ) ), property, out );
+			return;
+		}
 	}
 	size_t dot = name.find( '.' );
 	if ( dot == std::string::npos || book.declared.count( name ) != 0 )

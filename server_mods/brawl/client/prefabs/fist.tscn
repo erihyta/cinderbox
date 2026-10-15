@@ -1,0 +1,78 @@
+[gd_scene format=3]
+
+; The fist: the kit's click attack, in slot 1. Select it, click: a jab. Three in a row: the third is
+; a finisher that sends the target flying. No script: the combo is a field of the player's.
+;   Fist        CbItem     once a press; when used: brawl.combo < 2; brawl.combo += 1, and 1 s
+;                          before it fades (brawl.combo_left); 0.3 s between two
+;     Jab       CbProbe    2.8 m along the look, at once; says brawl.jab.hit with who it hit
+;       Knock   CbImpulse  4 m/s on who it hit, where you look
+;     Finisher  CbMotion   on the press with brawl.combo at 2: brawl.combo = 0
+;       Probe   CbProbe    the same line; says brawl.finisher.hit
+;         Fling CbImpulse  14 m/s on who it hit, where you look
+;         Lift  CbImpulse  5 m/s up on who it hit
+; The fading of the combo is the motion set's (motion_sets/brawl_moves.tscn); the damage is the
+; server mod's (brawl.cpp), on the hit events.
+
+[sub_resource type="BoxShape3D" id="Body"]
+size = Vector3(0.1, 0.1, 0.1)
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(0.9, 0.75, 0.55, 1)
+emission_enabled = true
+emission = Color(0.9, 0.75, 0.55, 1)
+emission_energy_multiplier = 0.6
+
+[sub_resource type="BoxMesh" id="Mesh"]
+material = SubResource("Mat")
+size = Vector3(0.1, 0.1, 0.1)
+
+[node name="Fist" type="CbItem"]
+kind = "brawl.fist"
+display_name = "Fist"
+properties = {
+"inventory.start": 1.0
+}
+use = 1
+slot = 1
+use_conditions = PackedStringArray("brawl.combo < 2")
+use_changes = PackedStringArray("brawl.combo += 1", "brawl.combo_left = 1")
+use_cooldown = 0.3
+mass = 0.5
+
+[node name="Body" type="CollisionShape3D" parent="."]
+shape = SubResource("Body")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("Mesh")
+
+[node name="Jab" type="CbProbe" parent="."]
+range = 2.8
+travel = 0.0
+hold_seconds = 0.05
+hold_emits = "brawl.jab.hit"
+
+[node name="Knock" type="CbImpulse" parent="Jab"]
+target = 1
+speed = 4.0
+
+[node name="Finisher" type="CbMotion" parent="."]
+when = 2
+event = "brawl.fist.used"
+conditions = PackedStringArray("brawl.combo >= 2")
+cooldown = 0.3
+duration = 0.05
+changes = PackedStringArray("brawl.combo = 0")
+
+[node name="Probe" type="CbProbe" parent="Finisher"]
+range = 2.8
+travel = 0.0
+hold_emits = "brawl.finisher.hit"
+
+[node name="Fling" type="CbImpulse" parent="Finisher/Probe"]
+target = 1
+speed = 14.0
+
+[node name="Lift" type="CbImpulse" parent="Finisher/Probe"]
+target = 1
+frame = 3
+speed = 5.0

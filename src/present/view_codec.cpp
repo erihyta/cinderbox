@@ -62,7 +62,7 @@ struct EntityFixed
 	uint8_t kind;
 	uint8_t shape;
 	uint8_t slot;
-	uint8_t flags; // 1 hasAnim, 2 dead, 4 hasBoard, 8 stowed, 16 linked, 32 the link holds
+	uint8_t flags; // 1 hasAnim, 2 dead, 4 hasBoard, 8 stowed, 16 linked, 32 the link holds, 64 it missed, 128 an item in use
 	uint32_t templateIndex;
 	uint32_t stepCount;
 	b3Vec3 halfExtents;
@@ -128,7 +128,7 @@ EntityRecord ToRecord( const FrameEntity& f )
 	r.shape = uint8_t( f.shape );
 	r.slot = f.slot;
 	r.flags = uint8_t( ( f.hasAnim ? 1 : 0 ) | ( f.dead ? 2 : 0 ) | ( f.hasBoard ? 4 : 0 ) | ( f.stowed ? 8 : 0 ) | ( f.linked ? 16 : 0 ) |
-					   ( f.linkHolds ? 32 : 0 ) | ( f.linkMissed ? 64 : 0 ) );
+					   ( f.linkHolds ? 32 : 0 ) | ( f.linkMissed ? 64 : 0 ) | ( f.inUse ? 128 : 0 ) );
 	r.templateIndex = f.templateIndex;
 	r.stepCount = f.stepCount;
 	r.halfExtents = f.halfExtents;
@@ -165,6 +165,7 @@ FrameEntity FromRecord( const EntityRecord& r )
 	f.linked = ( r.flags & 16 ) != 0;
 	f.linkHolds = ( r.flags & 32 ) != 0;
 	f.linkMissed = ( r.flags & 64 ) != 0;
+	f.inUse = ( r.flags & 128 ) != 0;
 	f.templateIndex = r.templateIndex;
 	f.stepCount = r.stepCount;
 	f.halfExtents = r.halfExtents;

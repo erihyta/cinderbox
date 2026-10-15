@@ -1,0 +1,48 @@
+[gd_scene format=3]
+
+; Ground slam: L, in the air. You dive straight down; where you land, everyone within 5 m is hurt
+; and thrown away from you. 5 s to come back (brawl.cd_slam). The dive is predicted; the landing's
+; shockwave is the server mod's (brawl.cpp: no node finds who is near a point, and no motion starts
+; on landing), so its victims see it a round trip late.
+;   Slam        CbItem     once a press, its own key L; when used: brawl.cd_slam <= 0, not
+;                          grounded; brawl.cd_slam = 5; says brawl.slam.started
+;     Dive      CbImpulse  25 m/s straight down, the vertical speed replaced
+
+[sub_resource type="BoxShape3D" id="Body"]
+size = Vector3(0.1, 0.1, 0.1)
+
+[sub_resource type="StandardMaterial3D" id="Mat"]
+albedo_color = Color(0.8, 0.25, 0.25, 1)
+emission_enabled = true
+emission = Color(0.8, 0.25, 0.25, 1)
+emission_energy_multiplier = 0.6
+
+[sub_resource type="BoxMesh" id="Mesh"]
+material = SubResource("Mat")
+size = Vector3(0.1, 0.1, 0.1)
+
+[node name="Slam" type="CbItem"]
+kind = "brawl.slam"
+display_name = "Ground slam"
+properties = {
+"inventory.start": 1.0
+}
+use = 1
+slot = 4
+use_key = "L"
+use_conditions = PackedStringArray("brawl.cd_slam <= 0", "not grounded")
+use_changes = PackedStringArray("brawl.cd_slam = 5")
+use_emits = "brawl.slam.started"
+mass = 0.5
+
+[node name="Body" type="CollisionShape3D" parent="."]
+shape = SubResource("Body")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("Mesh")
+
+[node name="Dive" type="CbImpulse" parent="."]
+frame = 4
+direction = Vector3(0, -1, 0)
+speed = 25.0
+replace = 1

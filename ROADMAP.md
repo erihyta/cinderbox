@@ -164,7 +164,7 @@ while melee.hot
 
 | # | Piece | What | Why |
 |---|---|---|---|
-| 1 | Measure first: a skill kit | a Roblox-style fighting mod made with today's nodes: four or five skills on the hotbar, each with its own key, cooldowns, a combo, hits with knockback, its HUD; count its nodes and the clicks it took | the pain decides which sheet comes first (reactions, motions or the HUD), not a guess |
+| 1 | Measure first: a skill kit | **done (M163)**: the `brawl` mod, [measured below](#the-skill-kit-measured) | the pain decides which sheet comes first (reactions, motions or the HUD), not a guess |
 | 2 | The sheet | one text property (on the item's, the reactions' or the HUD's root, as piece 1 says), parsed at bake into the same structures the nodes bake to; the nodes keep working beside it | no new language: the line format and `src/expr`; nothing the server or the simulation reads changes |
 | 3 | Checked as nodes are | the names checker (`cue_names`) reads the sheet: an unknown name is an error at its line, in the editor and at publish; completion while typing | what nodes give for free today (step 1) is the real cost of text, not the parser |
 | 4 | Reactions as rules | `on` / `while` / `if`, and what a `CbReaction` does: play, set, spawn, sound, shake; predictions (`CbPrediction`) as rules too | the soup is worst here: a gun's look is a dozen reactions |
@@ -174,6 +174,38 @@ while melee.hot
 
 - **What it is not**: a script. Nothing in a sheet runs on its own; it is baked like the nodes, and
   the security model (no code in a look) holds.
+
+#### The skill kit, measured
+
+`server_mods/brawl` (M163, switched off: `--mods inventory,combat,brawl`): a fist with a three-hit
+combo, a dash strike (X), an uppercut (K), a ground slam (L), a guard (hold Alt), cooldowns on the
+HUD. Made with today's nodes; `net_brawl` plays it.
+
+| Part | Nodes | Values set | What they are |
+|---|---|---|---|
+| The five skills | 31 | 106 | an item each; probes, impulses, moves, two motions |
+| Their clocks | 6 | 16 | a While motion per cooldown and two for the combo's fade |
+| The HUD | 20 | 18 | two labels per skill (READY, or the seconds), each with a binding |
+| The reactions | 9 | 59 | one per event: four hits and four whooshes that differ only in event and volume |
+| The rules (C++) | | 138 lines | damage, the guard, the slam's landing |
+
+| What hurt | Where | What would take it away |
+|---|---|---|
+| One node per event | reactions: 30% of every value set, for 8 sounds | **piece 4 first**: reactions as rules, a line each |
+| A label cannot choose its text | the HUD: 18 nodes for 4 lines | a sheet for the HUD (or text that says "READY" when a value is 0) |
+| No cooldown to read | 3 While motions, 3 fields, a condition and a change on each skill: only to show seconds | a skill's cooldown as a value (`cooldown.<kind>`), kept by the simulation |
+| No timer | the combo's fade: 2 motions and a field | a field that counts down by itself |
+| Damage is not a node | every hit is an event the C++ turns into `combat.damage` | the rules API (step 7), or a damage the probe says |
+| No "who is near", no "on landing" | the slam's shockwave is C++, so it is not predicted | a sphere probe; a motion `when` landed |
+| No mod can change another's damage | the guard only softens the kit's own hits | a damage step between mods (step 7) |
+| Keys | free letters are few (X, K, L, Alt); a Roblox fighting game uses 1 to 4 to *use* a skill | an item option "its slot's key uses it", per item (M161 took that from every item) |
+
+- **Found and fixed on the way** (the engine): a probe that does not fly never said its
+  `hold_emits`; a probe refused anything nearer than 1 m (a rope's rule: a punch whiffed at punching
+  distance); `using.<kind>` was never set for looks, and a HUD did not know `carried.<kind>`,
+  `using.<kind>` or `motion.<name>` (the docs said it did); tests ran every disabled mod.
+- **Not measured**: clicks in the editor. The scenes were written as text; the counts above are what
+  the inspector would have taken one by one.
 - **A long sheet** that wants functions or loops is the sign for [a script for looks](#later-not-scheduled), later.
 
 ### 6. The client, finished

@@ -402,6 +402,7 @@ private:
 	// condition, true while the player holds one ("pistol.gun"), as in the state machines.
 	std::unordered_map<uint32_t, std::vector<uint16_t>> m_heldKinds;
 	std::unordered_map<uint32_t, std::vector<uint16_t>> m_carriedKinds; // with what is put away
+	std::unordered_map<uint32_t, std::vector<uint16_t>> m_usingKinds;	 // what each uses this tick
 	std::unordered_map<uint32_t, uint64_t> m_motionsOn;				// a player's motions that are on, a bit each
 	std::unordered_map<uint32_t, uint32_t> m_handItems;				// the item in a player's hand (not put away)
 	// "hand.<field>": that field of the item in the player's hand (0 with none, or one without it).
@@ -414,6 +415,10 @@ private:
 	const std::vector<std::pair<godot::String, int>>& MotionKeys();
 	void RefreshHeldKinds();
 	bool Holds( uint32_t netId, uint16_t kind ) const;
+	// What a player has, by name, as the HUD and the world's reactions read it alike: "<kind>" (holds
+	// one), "carried.<kind>" (has one, put away or not), "using.<kind>" (uses one this tick),
+	// "motion.<name>" (that motion of its is on). False: not such a name.
+	bool PlayerName( uint32_t netId, const std::string& name, float& value ) const;
 	// "{key:pickup}" -> the binding of the server's action; "{look:pickup.target}" -> what the entity
 	// whose NetId the field holds is called (an item's display name, a player's name).
 	godot::String ResolveKeysAndLooks( int64_t net_id, const godot::String& format ) const;

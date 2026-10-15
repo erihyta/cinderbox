@@ -102,7 +102,7 @@ Boots         CbItem     use: once a press   slot 5   use_key V                 
 
 | Node | Under the item |
 |---|---|
-| `CbProbe` | the line a use throws; with one, a use does something only if it finds something, and a use while a line of the player's is out does not throw another. `release`: using the item again, a jump (either lets it go); `hold_seconds`: the longest it holds (0: until let go) |
+| `CbProbe` | the line a use throws (as near as a punch: only a probe with a rope wants 1 m at least); its `hold_emits` is said when it takes hold, flying or not, with what it holds; with one, a use does something only if it finds something, and a use while a line of the player's is out does not throw another. `release`: using the item again, a jump (either lets it go); `hold_seconds`: the longest it holds (0: until let go) |
 | `CbLink`, `CbForce`, `CbImpulse`, `CbLaunch` | as under a motion; nested under the probe, they act on what it found, while it holds |
 | `CbMove` | how the player moves while it is on (`parameters`: friction, gravity, air control ...): under the probe or the link, while that holds; directly under the item, for `duration` seconds from the use |
 
