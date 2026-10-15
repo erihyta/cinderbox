@@ -58,6 +58,7 @@ struct Visual
 	// Slots: an item's place among its holder's; a player's selected slot and how many it has.
 	uint8_t slotIndex = kNoSlot;
 	uint8_t slotCount = 0;
+	uint32_t container = 0; // players: the container open to it
 	// Players: a link that is out, as of the newest frame (present/frame.h).
 	bool linked = false;
 	bool linkHolds = false;

@@ -51,9 +51,12 @@ struct FrameEntity
 	uint8_t socket = 0;
 	bool stowed = false; // carried but put away: drawn in its socket if the character has it
 	// Slots (sim/types.h). An item: the slot of its holder's it is in, and how many it is (a stack).
-	// A player: the slot it has selected, and how many it has. kNoSlot: none.
+	// A player: the slot it has selected, and how many it has. A container (a chest): how many it
+	// has. kNoSlot: none.
 	uint8_t slotIndex = kNoSlot;
 	uint8_t slotCount = 0;
+	// Players: the container open to it (a chest's NetId; 0: none).
+	uint32_t container = 0;
 	// Players: a link that is out (sim/motions.h). Where its end is now, in the world (flying
 	// toward where it will hold, or holding), whether it holds, and the motion that threw it.
 	bool linked = false;

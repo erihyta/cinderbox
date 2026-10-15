@@ -313,6 +313,7 @@ void Simulation::RegisterComponents()
 	m_motionId = RegisterSizedComponent( "MotionState", m_config.motions > 0 ? 8 + uint32_t( m_config.motions ) * uint32_t( sizeof( MotionSlot ) ) : 0 );
 	RegisterSnapComponent<MotionHold>();
 	RegisterSnapComponent<Slots>();
+	RegisterSnapComponent<Container>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -344,6 +345,27 @@ flecs::entity Simulation::CreateEntity()
 
 void Simulation::DestroyEntity( flecs::entity e )
 {
+	if ( e.has<Container>() && e.has<Transform>() )
+	{
+		// What a chest held falls out of it.
+		const uint32_t self = e.get<NetId>().value;
+		const Transform at = e.get<Transform>();
+		std::vector<flecs::entity> held;
+		for ( const EntityRef& r : m_entities )
+		{
+			flecs::entity item( m_world, r.entity );
+			const HeldItem* h = item.try_get<HeldItem>();
+			if ( h != nullptr && h->holder == self )
+			{
+				held.push_back( item );
+			}
+		}
+		for ( size_t i = 0; i < held.size(); ++i )
+		{
+			b3Vec3 above = b3Add( at.position, b3Vec3{ 0.15f * float( i % 3 ), 0.8f + 0.25f * float( i / 3 ), 0.0f } );
+			PutItemInWorld( held[i], above, at.rotation, b3Vec3{ 0.0f, 1.0f, 0.0f } );
+		}
+	}
 	if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
 	{
 		b3DestroyBody( BodyOf( *pb ) );
@@ -519,6 +541,10 @@ flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 pos
 	bodyDef.linearVelocity = linear;
 	bodyDef.angularVelocity = angular;
 
+	// Slots of its own (a chest), set below once it is made.
+	constexpr uint32_t kContainer = Fnv32( "Container" );
+	const bool isContainer = TemplateHas( t, kContainer );
+	const uint8_t containerSlots = uint8_t( std::clamp( TemplateInt( t, kContainer, Fnv32( "slots" ), 9 ), 1, kMaxSlots ) );
 	constexpr uint32_t kMaterial = Fnv32( "Material" );
 	ShapeMaterial material;
 	material.density = TemplateFloat( t, kMaterial, Fnv32( "density" ), material.density );
@@ -535,6 +561,10 @@ flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 pos
 	e.set<Shape>( shape );
 	e.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );
 	e.set<TemplateRef>( { templateIndex } );
+	if ( isContainer )
+	{
+		e.set<Container>( { containerSlots, {} } );
+	}
 
 	constexpr uint32_t kProp = Fnv32( "Prop" );
 	if ( TemplateHas( t, kProp ) )
@@ -712,6 +742,34 @@ bool Simulation::MergeStacks( flecs::entity from, flecs::entity onto, uint32_t c
 		from.set<HeldItem>( rest );
 	}
 	return true;
+}
+
+bool Simulation::PutInContainer( flecs::entity box, flecs::entity item )
+{
+	const uint32_t holder = box.get<NetId>().value;
+	const uint8_t count = box.get<Container>().slots;
+	for ( uint8_t s = 0; s < count; ++s )
+	{
+		flecs::entity onto = FindEntity( SlotItemOf( holder, s ) );
+		if ( onto.is_valid() && MergeStacks( item, onto, StackOf( item.get<HeldItem>() ) ) && item.is_alive() == false )
+		{
+			return true;
+		}
+	}
+	for ( uint8_t s = 0; s < count; ++s )
+	{
+		if ( SlotItemOf( holder, s ) == 0 )
+		{
+			HeldItem h = item.get<HeldItem>();
+			h.holder = holder;
+			h.slot = s;
+			h.stowed = 1;
+			h.socket = kNoSocket;
+			item.set<HeldItem>( h );
+			return true;
+		}
+	}
+	return false;
 }
 
 bool Simulation::GiveSlot( flecs::entity player, flecs::entity item, bool select )
@@ -894,6 +952,14 @@ void Simulation::StepSlots( const InputFrame& frame )
 				}
 			}
 		}
+		// The container open to it closes when it is gone, or the player is too far from it, or dead.
+		if ( slots.open != 0 )
+		{
+			flecs::entity box = FindEntity( slots.open );
+			bool keep = box.is_valid() && box.has<Container>() && box.has<Transform>() && c.dead == 0 &&
+						b3Distance( box.get<Transform>().position, e.get<Transform>().position ) <= kContainerKeep;
+			slots.open = keep ? slots.open : 0;
+		}
 		if ( had && in.intentSeq == slots.seq )
 		{
 			e.set<Slots>( slots );
@@ -903,38 +969,75 @@ void Simulation::StepSlots( const InputFrame& frame )
 		// Once per intent: an input repeated while a packet is late, or guessed for someone else,
 		// has the same count and does nothing again.
 		slots.seq = in.intentSeq;
+		// A slot an intent names: one of the player's, or (kContainerSlotBit) one of the open
+		// container's. Its holder and its place there; holder 0: no such slot.
+		struct SlotRef
+		{
+			uint32_t holder = 0;
+			uint8_t index = 0;
+		};
+		auto address = [&]( uint8_t at ) {
+			SlotRef ref;
+			if ( at != kNoSlot && ( at & kContainerSlotBit ) != 0 )
+			{
+				flecs::entity box = slots.open != 0 ? FindEntity( slots.open ) : flecs::entity();
+				uint8_t index = uint8_t( at & ~kContainerSlotBit );
+				if ( box.is_valid() && box.has<Container>() && index < box.get<Container>().slots )
+				{
+					ref = { slots.open, index };
+				}
+			}
+			else if ( at < slots.count )
+			{
+				ref = { netId, at };
+			}
+			return ref;
+		};
+		// An item put in a slot: the player's (its hands are settled below), or a container's, out of
+		// sight there.
+		auto place = [&]( flecs::entity item, SlotRef to ) {
+			HeldItem h = item.get<HeldItem>();
+			h.holder = to.holder;
+			h.slot = to.index;
+			if ( to.holder != netId )
+			{
+				h.stowed = 1;
+				h.socket = kNoSocket;
+			}
+			item.set<HeldItem>( h );
+		};
+		const SlotRef refA = address( in.intentA );
+		const SlotRef refB = address( in.intentB );
+		const bool two = refA.holder != 0 && refB.holder != 0 && ( refA.holder != refB.holder || refA.index != refB.index );
 		if ( act && in.intent == uint8_t( SlotIntent::Select ) && ( in.intentA < slots.count || in.intentA == kNoSlot ) )
 		{
 			// The same as its key (a screen's click, a bot), or no slot at all: empty hands.
 			slotKey( in.intentA );
 		}
-		else if ( act && in.intent == uint8_t( SlotIntent::Move ) && in.intentA < slots.count && in.intentB < slots.count &&
-				  in.intentA != in.intentB )
+		else if ( act && in.intent == uint8_t( SlotIntent::Move ) && two )
 		{
-			flecs::entity a = FindEntity( SlotItemOf( netId, in.intentA ) );
-			flecs::entity b = FindEntity( SlotItemOf( netId, in.intentB ) );
+			flecs::entity a = FindEntity( SlotItemOf( refA.holder, refA.index ) );
+			flecs::entity b = FindEntity( SlotItemOf( refB.holder, refB.index ) );
 			if ( a.is_valid() && b.is_valid() && MergeStacks( a, b, StackOf( a.get<HeldItem>() ) ) )
 			{
 				// Onto a stack of its kind: as many as fit (the rest stays where it was).
 			}
 			else
 			{
-				for ( const auto& [item, to] : { std::pair{ a, in.intentB }, std::pair{ b, in.intentA } } )
+				if ( a.is_valid() )
 				{
-					if ( item.is_valid() )
-					{
-						HeldItem moved = item.get<HeldItem>();
-						moved.slot = to;
-						item.set<HeldItem>( moved );
-					}
+					place( a, refB );
+				}
+				if ( b.is_valid() )
+				{
+					place( b, refA );
 				}
 			}
 		}
-		else if ( act && in.intent == uint8_t( SlotIntent::Split ) && in.intentA < slots.count && in.intentB < slots.count &&
-				  in.intentA != in.intentB )
+		else if ( act && in.intent == uint8_t( SlotIntent::Split ) && two )
 		{
-			flecs::entity a = FindEntity( SlotItemOf( netId, in.intentA ) );
-			flecs::entity b = FindEntity( SlotItemOf( netId, in.intentB ) );
+			flecs::entity a = FindEntity( SlotItemOf( refA.holder, refA.index ) );
+			flecs::entity b = FindEntity( SlotItemOf( refB.holder, refB.index ) );
 			const HeldItem* from = a.is_valid() ? a.try_get<HeldItem>() : nullptr;
 			uint32_t half = from != nullptr ? ( StackOf( *from ) + 1 ) / 2 : 0;
 			if ( from != nullptr && b.is_valid() )
@@ -950,7 +1053,6 @@ void Simulation::StepSlots( const InputFrame& frame )
 				flecs::entity part = CreateEntity();
 				HeldItem split = *from;
 				split.count = uint8_t( half );
-				split.slot = in.intentB;
 				part.set<HeldItem>( split );
 				StartItemFields( part, split.kind );
 				if ( HasBoard( a ) )
@@ -958,22 +1060,41 @@ void Simulation::StepSlots( const InputFrame& frame )
 					SetBoard( part, GetBoard( a ) );
 				}
 				part.set<Transform>( e.get<Transform>() );
+				place( part, refB );
 			}
 			else if ( from != nullptr )
 			{
 				// One alone: it moves.
-				HeldItem moved = *from;
-				moved.slot = in.intentB;
-				a.set<HeldItem>( moved );
+				place( a, refB );
 			}
 		}
 		else if ( act && in.intent == uint8_t( SlotIntent::Drop ) )
 		{
-			uint8_t which = in.intentA == kNoSlot ? slots.selected : in.intentA;
-			if ( flecs::entity item = FindEntity( SlotItemOf( netId, which ) ); which < slots.count && item.is_valid() )
+			SlotRef which = in.intentA == kNoSlot ? address( slots.selected ) : refA;
+			if ( flecs::entity item = FindEntity( SlotItemOf( which.holder, which.index ) ); which.holder != 0 && item.is_valid() )
 			{
 				ThrowOut( item, e.get<Transform>(), in.cameraYaw );
 			}
+		}
+		else if ( act && in.intent == uint8_t( SlotIntent::Open ) )
+		{
+			// What the player looks at, within reach: a container is open to it.
+			float yaw = detmath::YawToRadians( in.cameraYaw );
+			b3CosSin pitch = detmath::CosSin( float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f ) );
+			b3Vec3 forward = detmath::YawForward( yaw );
+			b3Vec3 look = { forward.x * pitch.cosine, pitch.sine, forward.z * pitch.cosine };
+			b3Vec3 eye = b3Add( e.get<Transform>().position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+			RayHit hit;
+			flecs::entity box;
+			if ( CastRay( eye, b3MulSV( kContainerReach, look ), netId, hit ) )
+			{
+				box = FindEntity( hit.netId );
+			}
+			slots.open = box.is_valid() && box.has<Container>() ? hit.netId : 0;
+		}
+		else if ( in.intent == uint8_t( SlotIntent::Close ) )
+		{
+			slots.open = 0;
 		}
 		e.set<Slots>( slots );
 		SettleSlots( netId, slots.selected );
@@ -2211,6 +2332,20 @@ void Simulation::ApplyCommand( const SimCommand& command )
 				return;
 			}
 			flecs::entity player = FindEntity( holder );
+			if ( holder != 0 && player.is_valid() && player.has<Container>() )
+			{
+				// Into a container (a chest a mod fills): onto a stack of its kind with room, else the
+				// first free slot; a full one takes nothing.
+				flecs::entity item = CreateEntity();
+				item.set<HeldItem>( { 0, command.index, kNoSocket, 1 } );
+				StartItemFields( item, command.index );
+				item.set<Transform>( player.get<Transform>() );
+				if ( PutInContainer( player, item ) == false )
+				{
+					DestroyEntity( item );
+				}
+				return;
+			}
 			if ( holder == 0 || player.is_valid() == false || player.has<Character>() == false )
 			{
 				return;

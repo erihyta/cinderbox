@@ -4592,6 +4592,124 @@ void TestStacks()
 	CHECK( split[0] == 1 && split[1] == 1 && split[2] == 2 && part != 0 && part != first && sim.BoardValue( part, 0 ) == 9 );
 }
 
+// Containers: a chest (a template with a Container component) a command fills, opened by the player
+// looking at it within reach; its slots are reached with kContainerSlotBit in the slot intents:
+// moved to the player's, back into it, merged onto a stack. Walking away closes it; destroyed, what
+// it held falls out of it.
+void TestContainers()
+{
+	LevelLayout map = FlatMap();
+	EntityTemplate chest;
+	chest.name = "chest";
+	chest.visual = "prop_heavy";
+	chest.components.push_back( MakeIntComponent( "Shape", { { "kind", int32_t( ShapeKind::Box ) } } ) );
+	chest.components.push_back( MakeIntComponent( "Body", { { "type", 0 } } ) ); // static
+	chest.components.push_back( MakeIntComponent( "Container", { { "slots", 4 } } ) );
+	map.templates.push_back( chest );
+	QuantizeLayout( map );
+	SimConfig config = TestConfig();
+	config.slots = 3;
+	ItemShape ball;
+	ball.kind = 1;
+	ball.half = { 0.1f, 0.1f, 0.1f };
+	ball.center = { 0.0f, 0.0f, 0.0f };
+	ball.stack = 5;
+	ItemShape stone = ball;
+	stone.stack = 0;
+	Simulation sim( config, map );
+	sim.SetItemShapes( { ball, stone } );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	b3Vec3 at = sim.EntityTransform( p0 )->position;
+	// The chest, 1.5 m ahead (the player looks down +Z), at the height of its eyes' line.
+	uint32_t box = sim.Globals().nextNetId;
+	SimCommand spawn;
+	spawn.type = CommandType::SpawnProp;
+	spawn.value = 0;
+	spawn.a = { at.x, at.y + 0.6f, at.z + 1.5f };
+	f.commands.push_back( spawn );
+	step( 2 );
+	CHECK( sim.FindEntity( box ).is_valid() && sim.FindEntity( box ).has<Container>() );
+	// Filled by a command (a mod's): three balls (one stack) and a rock; the player has two balls.
+	auto give = [&]( uint32_t target, uint16_t kind, int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			SimCommand c;
+			c.type = CommandType::SpawnItem;
+			c.target = target;
+			c.index = kind;
+			c.mode = kNoSocket;
+			c.value = 1;
+			f.commands.push_back( c );
+		}
+		step( 2 );
+	};
+	give( box, 0, 3 );
+	give( box, 1, 1 );
+	give( SlotTarget( 0 ), 0, 2 );
+	auto count = [&]( uint32_t holder, uint8_t slot ) {
+		flecs::entity item = sim.FindEntity( sim.SlotItem( holder, slot ) );
+		return item.is_valid() ? int( StackOf( item.get<HeldItem>() ) ) : 0;
+	};
+	CHECK( count( box, 0 ) == 3 && count( box, 1 ) == 1 && count( p0, 0 ) == 2 );
+	uint8_t seq = 0;
+	auto intent = [&]( SlotIntent what, uint8_t a, uint8_t b ) {
+		f.inputs[0].intent = uint8_t( what );
+		f.inputs[0].intentA = a;
+		f.inputs[0].intentB = b;
+		f.inputs[0].intentSeq = ++seq;
+		step( 2 );
+	};
+	auto open = [&] { return sim.FindEntity( p0 ).get<Slots>().open; };
+	// Not open yet: its slots are not the player's to reach.
+	intent( SlotIntent::Move, kContainerSlotBit | 0, 1 );
+	CHECK( count( box, 0 ) == 3 && count( p0, 1 ) == 0 );
+	// Looked at, opened: the balls onto the player's two (as many as fit: 5), the rock to slot 2.
+	intent( SlotIntent::Open, 0, 0 );
+	uint32_t opened = open();
+	intent( SlotIntent::Move, kContainerSlotBit | 0, 0 );
+	intent( SlotIntent::Move, kContainerSlotBit | 1, 2 );
+	int balls = count( p0, 0 ), left = count( box, 0 ), rock = count( p0, 2 );
+	// Half of the player's balls back into the chest's last slot.
+	intent( SlotIntent::Split, 0, kContainerSlotBit | 3 );
+	int back = count( box, 3 );
+	std::printf( "    opened %d; the chest's balls onto the player's: %d (the chest keeps %d); the rock taken %d; half put back: %d\n",
+				 int( opened == box ), balls, left, rock, back );
+	CHECK( opened == box && balls == 5 && left == 0 && rock == 1 && back == 3 && count( p0, 0 ) == 2 );
+	const HeldItem* inBox = sim.FindEntity( sim.SlotItem( box, 3 ) ).try_get<HeldItem>();
+	CHECK( inBox != nullptr && inBox->holder == box && inBox->stowed == 1 && inBox->socket == kNoSocket );
+	// Walking away closes it.
+	f.inputs[0].moveForward = -127;
+	step( 120 );
+	f.inputs[0].moveForward = 0;
+	CHECK( open() == 0 );
+	// Destroyed, what it held falls out.
+	SimCommand gone;
+	gone.type = CommandType::Destroy;
+	gone.target = box;
+	f.commands.push_back( gone );
+	step( 30 );
+	int lying = 0;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+		lying += item != nullptr && item->holder == 0 ? 1 : 0;
+	}
+	std::printf( "    walked away: closed %d; the chest destroyed: %d lying where it was\n", int( open() == 0 ), lying );
+	CHECK( lying == 1 );
+}
+
 // Fast and small: a dart launched at 120 m/s (2 m a tick) is stopped by a level's wall 5 cm thick
 // (continuous collision against the level is Box3D's own), but passes a loose panel as thin
 // between two steps; a bolt, the same but a bullet (ItemShape::bullet: its CbItem's "bullet"),
@@ -7270,6 +7388,7 @@ int main( int argc, char** argv )
 		{ "thrown_from_hand", TestThrownFromHand },
 		{ "fast_launch", TestFastLaunch },
 		{ "stacks", TestStacks },
+		{ "containers", TestContainers },
 		{ "item_use", TestItemUse },
 		{ "event_news", TestEventNews },
 		{ "world_items", TestWorldItems },

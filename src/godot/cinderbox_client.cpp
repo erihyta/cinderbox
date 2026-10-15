@@ -25,6 +25,8 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_selected_slot", "player" ), &CinderboxClient::get_selected_slot );
 	ClassDB::bind_method( D_METHOD( "get_slot_item", "player", "slot" ), &CinderboxClient::get_slot_item );
 	ClassDB::bind_method( D_METHOD( "get_item_count", "item" ), &CinderboxClient::get_item_count );
+	ClassDB::bind_method( D_METHOD( "get_open_container", "player" ), &CinderboxClient::get_open_container );
+	ClassDB::bind_method( D_METHOD( "get_containers" ), &CinderboxClient::get_containers );
 	ClassDB::bind_method( D_METHOD( "get_item_icon", "item" ), &CinderboxClient::get_item_icon );
 	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "use", "actions", "view", "slot_keys" ),
 						  &CinderboxClient::set_input, DEFVAL( 0 ), DEFVAL( 0 ) );
@@ -243,6 +245,30 @@ int64_t CinderboxClient::get_slot_count( int64_t player ) const
 {
 	flecs::entity ve = m_mirror ? m_mirror->VisualOf( uint32_t( player ) ) : flecs::entity();
 	return ve.is_valid() ? int64_t( ve.get<present::Visual>().slotCount ) : 0;
+}
+
+int64_t CinderboxClient::get_open_container( int64_t player ) const
+{
+	flecs::entity ve = m_mirror ? m_mirror->VisualOf( uint32_t( player ) ) : flecs::entity();
+	return ve.is_valid() ? int64_t( ve.get<present::Visual>().container ) : 0;
+}
+
+PackedInt64Array CinderboxClient::get_containers() const
+{
+	PackedInt64Array out;
+	if ( !m_mirror )
+	{
+		return out;
+	}
+	m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
+							const present::RagdollAnim* ) {
+		// (A player's and an item's slotCount say other things.)
+		if ( v.kind != present::VisualKind::Player && v.kind != present::VisualKind::Item && v.slotCount > 0 )
+		{
+			out.push_back( int64_t( v.netId ) );
+		}
+	} );
+	return out;
 }
 
 int64_t CinderboxClient::get_selected_slot( int64_t player ) const

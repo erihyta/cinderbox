@@ -252,6 +252,12 @@ bool CinderboxClient::CheckWith( int64_t net_id, const PackedStringArray& condit
 		{
 			return true;
 		}
+		// A container (a chest) is open to it.
+		if ( name == "container_open" )
+		{
+			value = get_open_container( net_id ) != 0 ? 1.0f : 0.0f;
+			return true;
+		}
 		int kind = m_frame.schema.FindItemKind( name );
 		if ( kind < 0 )
 		{
@@ -303,6 +309,12 @@ Variant CinderboxClient::EvaluateWith( int64_t net_id, const String& expression,
 		if ( HandField( uint32_t( net_id ), name, value ) )
 		{
 			known |= m_frame.schema.FindField( name.substr( 5 ) ) != nullptr;
+			return true;
+		}
+		if ( name == "container_open" )
+		{
+			known = true;
+			value = get_open_container( net_id ) != 0 ? 1.0f : 0.0f;
 			return true;
 		}
 		int kind = m_frame.schema.FindItemKind( name );

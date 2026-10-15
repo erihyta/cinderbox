@@ -63,6 +63,14 @@ std::vector<ComponentDef> BuildRegistry()
 	};
 	registry.push_back( prop );
 
+	ComponentDef container;
+	container.name = "Container";
+	container.doc = "Slots of its own: a chest. A player looking at it within reach opens it with the inventory, and moves items to and from it.";
+	container.fields = {
+		{ "slots", FieldType::Int, { 9.0f, 0.0f, 0.0f }, 1.0f, 36.0f, nullptr, "How many it holds" },
+	};
+	registry.push_back( container );
+
 	return registry;
 }
 

@@ -138,6 +138,10 @@ public:
 	// Slots (the simulation's): how many a player has, which one is selected (-1: empty hands),
 	// and the item in one (0: empty).
 	int64_t get_slot_count( int64_t player ) const;
+	// The container open to a player (a chest's NetId; 0: none).
+	int64_t get_open_container( int64_t player ) const;
+	// The containers in the world (chests), by NetId.
+	godot::PackedInt64Array get_containers() const;
 	int64_t get_selected_slot( int64_t player ) const;
 	int64_t get_slot_item( int64_t player, int64_t slot ) const;
 	// How many an item is (a stack); 0 for none.

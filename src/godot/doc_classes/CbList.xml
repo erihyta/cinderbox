@@ -71,5 +71,8 @@
 		<constant name="OF_EVENTS" value="4" enum="Of">
 			A row per [member event] that happened, the newest last, each for [member seconds]; with [member max_rows], the newest that fit. A row is about the event's first entity. Its names: [code]{a}[/code] and [code]{b}[/code] are what the event's two entities are called, [code]{event.value}[/code] its number, and [code]event.a[/code] / [code]event.b[/code] their ids, for conditions. A kill feed is this with one [CbFieldLabel] as its row: [code]{a}  >  {b}[/code].
 		</constant>
+		<constant name="OF_CONTAINER_SLOTS" value="5" enum="Of">
+			A row per slot of the container open to the subject (a chest it opened: [member CbKey.opens]), empty ones too; none while none is open. The rows' names are a slot list's, and [code]slot.container[/code]: a [CbDrag] in one reaches the chest's slot.
+		</constant>
 	</constants>
 </class>

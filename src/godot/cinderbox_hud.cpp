@@ -449,7 +449,7 @@ void CbList::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_nobody_text" ), &CbList::get_nobody_text );
 	ClassDB::bind_method( D_METHOD( "on_mod_event", "name", "a", "b", "value", "position", "vector" ), &CbList::on_mod_event );
 	ADD_GROUP( "Rows", "" );
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "of", PROPERTY_HINT_ENUM, "Players,Items,Items its subject holds,Slots of its subject,Events that happened" ), "set_of", "get_of" );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "of", PROPERTY_HINT_ENUM, "Players,Items,Items its subject holds,Slots of its subject,Events that happened,Slots of the container open to its subject" ), "set_of", "get_of" );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "item_kind", PROPERTY_HINT_PLACEHOLDER_TEXT, "pistol.gun (empty: any)" ), "set_item_kind",
 				  "get_item_kind" );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "where" ), "set_where", "get_where" );
@@ -472,6 +472,7 @@ void CbList::_bind_methods()
 	BIND_ENUM_CONSTANT( OF_HELD_ITEMS );
 	BIND_ENUM_CONSTANT( OF_SLOTS );
 	BIND_ENUM_CONSTANT( OF_EVENTS );
+	BIND_ENUM_CONSTANT( OF_CONTAINER_SLOTS );
 }
 
 Control* CbList::Template() const
@@ -611,6 +612,27 @@ void CbList::_process( double )
 			names["slot.selected"] = s == selected ? 1 : 0;
 			names["slot.empty"] = item == 0 ? 1 : 0;
 			names["slot.count"] = client->get_item_count( item ); // (a stack: how many; 0 empty)
+			found.push_back( item );
+			rowNames.push_back( names );
+		}
+	}
+	if ( m_of == OF_CONTAINER_SLOTS )
+	{
+		// A row per slot of the container open to the subject (a chest), empty ones too; none while
+		// none is open. slot.container says a row's slot is the container's.
+		const int64_t box = client->get_open_container( subject );
+		const int64_t count = box != 0 ? client->get_slot_count( box ) : 0;
+		found.clear();
+		rowNames.clear();
+		for ( int64_t s = 0; s < count; ++s )
+		{
+			int64_t item = client->get_slot_item( box, s );
+			Dictionary names;
+			names["slot.number"] = s + 1;
+			names["slot.selected"] = 0;
+			names["slot.empty"] = item == 0 ? 1 : 0;
+			names["slot.count"] = client->get_item_count( item );
+			names["slot.container"] = 1;
 			found.push_back( item );
 			rowNames.push_back( names );
 		}
@@ -757,6 +779,9 @@ void CbKey::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_cursor", "value" ), &CbKey::set_cursor );
 	ClassDB::bind_method( D_METHOD( "get_cursor" ), &CbKey::get_cursor );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "cursor" ), "set_cursor", "get_cursor" );
+	ClassDB::bind_method( D_METHOD( "set_opens", "value" ), &CbKey::set_opens );
+	ClassDB::bind_method( D_METHOD( "get_opens" ), &CbKey::get_opens );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "opens" ), "set_opens", "get_opens" );
 	ClassDB::bind_method( D_METHOD( "set_conditions", "value" ), &CbKey::set_conditions );
 	ClassDB::bind_method( D_METHOD( "get_conditions" ), &CbKey::get_conditions );
 	ADD_PROPERTY( PropertyInfo( Variant::PACKED_STRING_ARRAY, "conditions" ), "set_conditions", "get_conditions" );
@@ -840,8 +865,13 @@ void CbKey::_process( double )
 	}
 	if ( m_said != int( on ) )
 	{
+		bool before = m_said == 1;
 		m_said = int( on );
 		client->set_local_value( value, on ? 1.0 : 0.0 );
+		if ( m_opens && on != before )
+		{
+			client->send_intent( int64_t( on ? SlotIntent::Open : SlotIntent::Close ), 0, 0 );
+		}
 	}
 }
 
@@ -1034,8 +1064,10 @@ void CbDrag::_ready()
 
 int64_t CbDrag::Slot() const
 {
+	// (A container's slot is named so to the slots' intents: kContainerSlotBit and its index.)
 	const Dictionary names = RowNames( this );
-	return names.has( "slot.number" ) ? int64_t( double( names["slot.number"] ) ) - 1 : -1;
+	int64_t slot = names.has( "slot.number" ) ? int64_t( double( names["slot.number"] ) ) - 1 : -1;
+	return slot >= 0 && names.has( "slot.container" ) ? slot | int64_t( kContainerSlotBit ) : slot;
 }
 
 Variant CbDrag::drag_data( const Vector2& )

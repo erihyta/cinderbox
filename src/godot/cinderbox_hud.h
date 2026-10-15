@@ -313,6 +313,7 @@ public:
 		OF_HELD_ITEMS = 2,
 		OF_SLOTS = 3,
 		OF_EVENTS = 4,
+		OF_CONTAINER_SLOTS = 5, // the slots of the container open to the subject (a chest)
 	};
 
 	CbList();
@@ -524,6 +525,16 @@ public:
 	{
 		return m_value;
 	}
+	// Turning it on opens the container the player looks at, within reach (a chest), and turning it
+	// off closes it: the inventory's key, for a chest's slots beside the player's.
+	void set_opens( bool v )
+	{
+		m_opens = v;
+	}
+	bool get_opens() const
+	{
+		return m_opens;
+	}
 	void set_cursor( bool v )
 	{
 		m_cursor = v;
@@ -561,6 +572,7 @@ private:
 	int m_said = -1; // what the value was last set to
 	// While the value is 1 the cursor is free, and the mouse is the screen's, not the game's.
 	bool m_cursor = false;
+	bool m_opens = false;
 };
 
 // What a click on its parent (any Control) does. No scripts and no wired signals: the node listens

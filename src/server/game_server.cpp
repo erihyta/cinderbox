@@ -247,7 +247,18 @@ bool GameServer::Start( const ServerOptions& options )
 			return false;
 		}
 	}
-	else
+	// The mods' templates (a chest) join the map's, unless it has one by that name: the map says.
+	bool added = false;
+	for ( const EntityTemplate& t : declarations.Templates() )
+	{
+		bool known = std::any_of( m_map.templates.begin(), m_map.templates.end(), [&]( const EntityTemplate& m ) { return m.name == t.name; } );
+		if ( known == false )
+		{
+			m_map.templates.push_back( t );
+			added = true;
+		}
+	}
+	if ( options.mapPath.empty() || added )
 	{
 		SerializeMap( m_map, m_mapBytes );
 	}

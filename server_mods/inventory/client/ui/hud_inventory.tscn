@@ -14,6 +14,9 @@
 ;             cursor free meanwhile) keeps "ui.inventory", and Shown (a CbFieldBinding) shows the
 ;             screen while that is 1. Its Grid is another CbList of Slots, every slot, in rows of
 ;             inventory.columns (Columns sets its columns).
+;   Chest     a container open to the player (a chest it looks at within reach when the screen
+;             opens: the Key "opens"): its slots, a CbList of the container's, under the player's,
+;             shown while "container_open". Drag between the two as within one.
 ;   Drag      in every slot (a CbDrag): drag a slot onto another and what it holds moves there (the
 ;             two trade, or onto a stack of its kind as many as fit); with Shift held, half of a
 ;             stack; let go outside the Bag, it is dropped. The slots' intents are the player's own
@@ -153,6 +156,7 @@ action = "inventory"
 key = "I"
 mode = 1
 cursor = true
+opens = true
 conditions = PackedStringArray("!combat.dead")
 
 [node name="Shown" type="CbFieldBinding" parent="Bag"]
@@ -214,5 +218,67 @@ text_format = "{name}"
 inside = NodePath("Bag")
 
 [node name="Columns" type="CbFieldBinding" parent="Bag/Rows/Grid"]
+field = "inventory.columns"
+property = "columns"
+
+[node name="Chest" type="VBoxContainer" parent="Bag/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Shown" type="CbFieldBinding" parent="Bag/Rows/Chest"]
+conditions = PackedStringArray("container_open")
+
+[node name="Title" type="Label" parent="Bag/Rows/Chest"]
+layout_mode = 2
+text = "CHEST"
+label_settings = SubResource("Title")
+horizontal_alignment = 1
+
+[node name="Grid" type="CbList" parent="Bag/Rows/Chest"]
+layout_mode = 2
+theme_override_constants/separation = 6
+alignment = 1
+of = 5
+
+[node name="Slot" type="PanelContainer" parent="Bag/Rows/Chest/Grid"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Cell")
+
+[node name="Icon" type="CbItemIcon" parent="Bag/Rows/Chest/Grid/Slot"]
+layout_mode = 2
+
+[node name="Chosen" type="Panel" parent="Bag/Rows/Chest/Grid/Slot"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Chosen")
+
+[node name="Shown" type="CbFieldBinding" parent="Bag/Rows/Chest/Grid/Slot/Chosen"]
+conditions = PackedStringArray("slot.selected")
+
+[node name="Number" type="CbFieldLabel" parent="Bag/Rows/Chest/Grid/Slot"]
+layout_mode = 2
+size_flags_vertical = 0
+mouse_filter = 2
+label_settings = SubResource("Number")
+text_format = "{slot.number}"
+
+[node name="Count" type="CbFieldLabel" parent="Bag/Rows/Chest/Grid/Slot"]
+layout_mode = 2
+mouse_filter = 2
+label_settings = SubResource("Count")
+horizontal_alignment = 2
+vertical_alignment = 2
+text_format = "{slot.count}"
+conditions = PackedStringArray("slot.count > 1")
+
+[node name="Tip" type="CbFieldBinding" parent="Bag/Rows/Chest/Grid/Slot"]
+property = "tooltip_text"
+text_format = "{name}"
+
+[node name="Drag" type="CbDrag" parent="Bag/Rows/Chest/Grid/Slot"]
+inside = NodePath("Bag")
+
+[node name="Columns" type="CbFieldBinding" parent="Bag/Rows/Chest/Grid"]
 field = "inventory.columns"
 property = "columns"

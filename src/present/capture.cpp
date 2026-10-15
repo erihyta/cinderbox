@@ -124,7 +124,12 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			{
 				f.slotIndex = slots->selected;
 				f.slotCount = slots->count;
+				f.container = slots->open;
 			}
+		}
+		if ( const Container* box = e.try_get<Container>() )
+		{
+			f.slotCount = box->slots; // (a chest's: how many it has)
 		}
 		if ( sim.HasBoard( e ) )
 		{
