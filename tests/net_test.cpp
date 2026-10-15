@@ -152,9 +152,10 @@ struct Harness
 		: port( p )
 		, clientPort( p )
 	{
-		// Every mod that runs by default; a disabled one (a "disabled" file: the impact grenade, the
-		// brawler's kit) only when the test names it, in the mod option "test.mods" (a, b), as
-		// cb_server --mods would.
+		// Every mod that runs by default; a disabled one (a "disabled" file: the impact grenade) only
+		// when the test names it, in the mod option "test.mods" (a, b), as cb_server --mods would.
+		// The brawler's kit runs by default too, but its skills take the hotbar's first slots, where
+		// the tests expect the pistol, the bat and the rifle: it runs only when named as well.
 		std::string named;
 		if ( auto it = modOptions.find( "test.mods" ); it != modOptions.end() )
 		{
@@ -162,7 +163,8 @@ struct Harness
 		}
 		for ( const mods::ModInfo& info : mods::CompiledMods() )
 		{
-			if ( info.onByDefault || named.find( "," + std::string( info.name ) + "," ) != std::string::npos )
+			const bool asked = named.find( "," + std::string( info.name ) + "," ) != std::string::npos;
+			if ( ( info.onByDefault && std::string( info.name ) != "brawl" ) || asked )
 			{
 				server.AddMod( info.create() );
 			}

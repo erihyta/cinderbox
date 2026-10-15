@@ -177,7 +177,7 @@ while melee.hot
 
 #### The skill kit, measured
 
-`server_mods/brawl` (M163, switched off: `--mods inventory,combat,brawl`): a fist with a three-hit
+`server_mods/brawl` (M163; on by default since M165, alone: `--mods inventory,combat,brawl`): a fist with a three-hit
 combo, a dash strike (X), an uppercut (K), a ground slam (L), a guard (hold Alt), cooldowns on the
 HUD. Made with today's nodes; `net_brawl` plays it.
 

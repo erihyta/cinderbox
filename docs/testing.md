@@ -71,7 +71,8 @@ Any change to simulation code or tuning legitimately changes them. Regenerate th
   another for 25 milestones. They all agreed (M162 checked the dumps), but nothing said so.
 - **Tests run without the licensed assets** in CI: count what a life starts with, don't assume it.
 - **Net tests run every mod that runs by default.** A disabled one (the impact grenade, flight,
-  sneak, the brawler's kit) only when the test names it: the mod option `test.mods` (`grenade`).
+  sneak) only when the test names it: the mod option `test.mods` (`grenade`). The brawler's kit runs by
+  default but takes the hotbar's first slots, where the tests expect the weapons: named too.
 
 ### Continuous integration
 
