@@ -94,6 +94,7 @@ it uses the first copy carried where it is, nothing changes hands.
 | Way | What | Which copy |
 |---|---|---|
 | From the hand | select its slot, press the use button | the one in the hand |
+| Its slot's key (`slot_key_uses`: the brawl kit's skills) | uses it where it is; the slot is never selected | the one in that slot |
 | Its own key (`use_key`: the frag's H, the boots' V, the hook's Q) | uses it where it is | the selected one, else the lowest slot's |
 
 `use` on its `CbItem` says how long a use lasts, either way:
