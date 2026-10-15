@@ -634,6 +634,33 @@ public:
 		m_from = v;
 		update_configuration_warnings();
 	}
+	// An intent a mod declares ("shop.buy"), with its two numbers: expressions read as the node's
+	// conditions are ("slot.number", "3"). Sent with the click, after the slots' intent if any.
+	void set_mod_intent( const godot::String& v )
+	{
+		m_modIntent = v;
+		update_configuration_warnings();
+	}
+	godot::String get_mod_intent() const
+	{
+		return m_modIntent;
+	}
+	void set_intent_a( const godot::String& v )
+	{
+		m_intentA = v;
+	}
+	godot::String get_intent_a() const
+	{
+		return m_intentA;
+	}
+	void set_intent_b( const godot::String& v )
+	{
+		m_intentB = v;
+	}
+	godot::String get_intent_b() const
+	{
+		return m_intentB;
+	}
 	godot::String get_from() const
 	{
 		return m_from;
@@ -648,6 +675,9 @@ private:
 	int m_intent = INTENT_NONE;
 	// INTENT_MOVE_HERE: the slot that moves, as a number from 1 ("ui.picked").
 	godot::String m_from = "ui.picked";
+	godot::String m_modIntent;
+	godot::String m_intentA;
+	godot::String m_intentB;
 	godot::ObjectID m_client;
 };
 

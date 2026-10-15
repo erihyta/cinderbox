@@ -26,6 +26,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_slot_item", "player", "slot" ), &CinderboxClient::get_slot_item );
 	ClassDB::bind_method( D_METHOD( "get_item_count", "item" ), &CinderboxClient::get_item_count );
 	ClassDB::bind_method( D_METHOD( "get_open_container", "player" ), &CinderboxClient::get_open_container );
+	ClassDB::bind_method( D_METHOD( "send_mod_intent", "name", "a", "b" ), &CinderboxClient::send_mod_intent );
 	ClassDB::bind_method( D_METHOD( "get_containers" ), &CinderboxClient::get_containers );
 	ClassDB::bind_method( D_METHOD( "get_item_icon", "item" ), &CinderboxClient::get_item_icon );
 	ClassDB::bind_method( D_METHOD( "set_input", "move", "camera_yaw", "camera_pitch", "jump", "sprint", "use", "actions", "view", "slot_keys" ),
@@ -295,6 +296,17 @@ int64_t CinderboxClient::get_slot_item( int64_t player, int64_t slot ) const
 	return found;
 }
 
+bool CinderboxClient::send_mod_intent( const String& name, int64_t a, int64_t b )
+{
+	int index = m_frame.schema.FindIntent( ToStd( name.strip_edges() ) );
+	if ( index < 0 )
+	{
+		return false;
+	}
+	send_intent( int64_t( kFirstModIntent ) + index, a, b );
+	return true;
+}
+
 int64_t CinderboxClient::get_item_count( int64_t item ) const
 {
 	flecs::entity ve = m_mirror && item != 0 ? m_mirror->VisualOf( uint32_t( item ) ) : flecs::entity();
@@ -303,7 +315,10 @@ int64_t CinderboxClient::get_item_count( int64_t item ) const
 
 void CinderboxClient::send_intent( int64_t kind, int64_t a, int64_t b )
 {
-	if ( kind >= 1 && kind <= int64_t( kLastSlotIntent ) && a >= 0 && a <= 255 && b >= 0 && b <= 255 && m_intents.size() < 16 )
+	// The slots' own, or one a mod declares (kFirstModIntent + its place in the schema).
+	bool known = ( kind >= 1 && kind <= int64_t( kLastSlotIntent ) ) ||
+				 ( kind >= int64_t( kFirstModIntent ) && size_t( kind - kFirstModIntent ) < m_frame.schema.intents.size() );
+	if ( known && a >= 0 && a <= 255 && b >= 0 && b <= 255 && m_intents.size() < 16 )
 	{
 		m_intents.push_back( { uint8_t( kind ), uint8_t( a ), uint8_t( b ) } );
 	}

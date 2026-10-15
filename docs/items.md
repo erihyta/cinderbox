@@ -126,7 +126,10 @@ again, so it is predicted like the rest.
 box 0.9 x 0.6 x 0.55 m, its look `client/prefabs/chest.tscn`), places `chest.count` of them on the
 ground in a ring around the spawn point, and fills each with `chest.items` items a player may pick
 up. Not yet: a corpse's bag (a ragdoll carrying the dead player's items, or a box where it fell:
-undecided), a shop.
+undecided).
+
+**A shop** is not a container: it is a mod's intent (`shop.buy`, the `shop` mod): a button sends
+it, the mod takes the coins and gives the item ([server-mods.md](server-mods.md#intents-a-mod-declares)).
 
 ### The left hand
 

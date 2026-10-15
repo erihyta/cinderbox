@@ -208,7 +208,7 @@ The HUD reads the board too, through script-free nodes any HUD scene can use:
 | `CbFieldBinding` | writes a field, or an expression over fields (`combat.health / combat.max_health`), into any property of its `target` (default: its parent), `value = field * multiply + add`; with conditions it hides the target while they fail. A `ProgressBar`'s `value` and `max_value`, a panel's `visible`, a colour. The property may be a part of one (`scale:x`, `modulate:a`). With a `text_format` it writes words instead (into `text`, or the property named): any node that shows text, a `Label3D` in the world too, can show the game's |
 | `CbList` | a row per player, item, slot, or event that happened: its first child is the row as you designed it, copied for every entry; `where` filters, `sort_by` orders, `max_rows` cuts ([Lists](#lists)). Of **Events** (`event` `combat.killed`, each row for `seconds`) it is a kill feed: `{a}` and `{b}` in a row are what the event's two entities are called |
 | `CbKey` | a key of the viewer's own, not one of the server's actions: `action` `scores`, `key` `Tab`. While it is held (or switched by each press) a value of the viewer's is 1: `ui.scores`. What that shows is whoever reads it: a `CbFieldBinding` with the condition `ui.scores` shows its target. With `cursor`, the mouse is the screen's meanwhile |
-| `CbClick` | what a click on its parent does: sets values of the viewer's own (`ui.picked = slot.number`), asks something of the player's slots (select, move, drop) ([Screens](#screens)) |
+| `CbClick` | what a click on its parent does: sets values of the viewer's own (`ui.picked = slot.number`), asks something of the player's slots (select, move, drop) or of a mod (`mod_intent`) ([Screens](#screens)) |
 
 Whose fields a HUD node reads is its **subject**: the local player, or inside a `CbList` row, that row's entity.
 
@@ -288,7 +288,7 @@ make it one, and none is a script:
 |---|---|
 | A free cursor | a `CbKey` with `cursor`: while its value is 1 the mouse is the screen's, and the camera, the use button and the mods' actions do not hear it |
 | Values of the viewer's own | names that start with `ui.` (`ui.picked`, `ui.tab`): no server and no simulation knows them. Conditions, formats (`{ui.picked}`) and bindings read them like fields; 0 until set. They are what a screen remembers |
-| Clicks | a `CbClick` under any control: `conditions` (when it takes the click), `sets` (`ui.` values it changes), `intent` (what it asks of the player's slots) |
+| Clicks | a `CbClick` under any control: `conditions` (when it takes the click), `sets` (`ui.` values it changes), `intent` (what it asks of the player's slots), `mod_intent` with `intent_a`, `intent_b` (what it asks of a mod: `shop.buy`, offer 2; see [server-mods.md](server-mods.md#intents-a-mod-declares)) |
 | Drags | a `CbDrag` under a slot's control: drag it onto another slot (move, merge), Shift-drag (half a stack), let go outside `inside` (drop). Godot's own drag and drop: a copy of the slot follows the cursor |
 | Icons | a `CbItemIcon` (a `TextureRect`) in a row: the row's item's icon (`CbItem.icon`, or a picture the game takes of its scene) |
 | Grids | `CbList.columns`: rows of that many, stacked (a `CbFieldBinding` can bind it to a field: `inventory.columns`) |

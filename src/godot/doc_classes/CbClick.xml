@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="CbClick" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<brief_description>
-		What a click on its parent does, with no code: sets values of the viewer's own, or asks something of the player's slots.
+		What a click on its parent does, with no code: sets values of the viewer's own, asks something of the player's slots, or of a mod.
 	</brief_description>
 	<description>
 		Put it under any [Control]: a click on that control (the left mouse button) is this node's. No script and no wired signal: the node listens itself.
 		It can do two things, either or both:
 		- [member sets]: change values of the viewer's own, whose names start with [code]ui.[/code] ([code]ui.picked = slot.number[/code], [code]ui.tab = 2[/code]). No server and no simulation knows them; conditions, formats and bindings read them like fields, 0 until set. They are what a screen remembers: which slot is picked up, which tab is open.
 		- [member intent]: ask something of the player's slots (select, move, drop). It goes out in the player's own input, so every simulation carries it out and the player's own screen does not wait for the server.
+		- [member mod_intent]: ask something of a mod, an intent it declares ([code]shop.buy[/code]), with two numbers ([member intent_a], [member intent_b]). It goes out in the player's input too; the mod answers on the server, and the screen shows the answer when it arrives.
 		Several under one control are asked in the order of the tree, and the first whose [member conditions] hold takes the click. So one that sets a value does not make the next one's condition true in the same click: a click-to-move inventory is two of them in a slot's row, one that picks the slot up and one that puts the picked slot down.
 		Inside a row of a [CbList] of slots, [code]slot.number[/code], [code]slot.selected[/code] and [code]slot.empty[/code] are that row's.
 		The cursor has to be free for a click: a [CbKey] with [member CbKey.cursor] frees it while its screen is shown.
@@ -26,6 +27,15 @@
 		</member>
 		<member name="from" type="String" setter="set_from" getter="get_from" default="&quot;ui.picked&quot;">
 			With [constant INTENT_MOVE_HERE]: an expression that gives the slot that moves, as a number from 1.
+		</member>
+		<member name="mod_intent" type="String" setter="set_mod_intent" getter="get_mod_intent" default="&quot;&quot;">
+			An intent a mod declares ([code]shop.buy[/code]), sent with the click (after [member intent], if any). Empty: none. A name no mod of the server declares sends nothing.
+		</member>
+		<member name="intent_a" type="String" setter="set_intent_a" getter="get_intent_a" default="&quot;&quot;">
+			The [member mod_intent]'s first number: an expression read as [member conditions] are ([code]2[/code], [code]slot.number[/code]), rounded and kept within 0 to 255. Empty: 0.
+		</member>
+		<member name="intent_b" type="String" setter="set_intent_b" getter="get_intent_b" default="&quot;&quot;">
+			The [member mod_intent]'s second number, as [member intent_a].
 		</member>
 	</members>
 	<constants>
