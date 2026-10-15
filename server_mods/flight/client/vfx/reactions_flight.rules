@@ -1,0 +1,23 @@
+# reactions_flight.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are
+# from the scene's root.
+
+# Started
+on flight.started
+    subject $at
+    at point
+    sound res://assets/sfx/prop_spawn.wav volume -12 pitch 0.7 range 30
+    scene res://vfx/jump.tscn life 2
+
+# Stopped
+on flight.stopped
+    subject $at
+    at point
+    sound res://assets/sfx/prop_destroy.wav volume -14 pitch 0.8 range 30
+
+# Thrust
+on flight.thrust
+    subject $at
+    cooldown 0.2
+    at point
+    sound res://assets/sfx/jump.wav volume -12 pitch 0.6 range 30
+    scene res://vfx/land.tscn life 2

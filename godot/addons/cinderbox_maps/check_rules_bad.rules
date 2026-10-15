@@ -9,3 +9,4 @@ on melee.hit
     set ../Outside visible false
 on test.fine
     call Timer hide
+predict use

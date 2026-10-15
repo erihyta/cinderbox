@@ -1,27 +1,9 @@
 [gd_scene format=3]
 
 ; The deathmatch mod's round sounds and screen effects, as world reactions.
+; The reactions: the rules sheet beside this scene (reactions_deathmatch.rules).
 
 [node name="DeathmatchReactions" type="Node3D"]
 
-[node name="RoundEnd" type="CbReaction" parent="."]
-event = "deathmatch.round_end"
-subject = NodePath("$at")
-place = 1
-sound = "res://assets/sfx/round_end.wav"
-volume_db = -4.0
-
-[node name="YouWon" type="CbReaction" parent="."]
-event = "deathmatch.round_end"
-subject = NodePath("$at")
-conditions = PackedStringArray("is_local")
-place = 1
-flash_color = Color(1, 0.85, 0.3, 0.35)
-flash_time = 1.0
-
-[node name="RoundStart" type="CbReaction" parent="."]
-event = "game.round_start"
-subject = NodePath("$at")
-place = 1
-sound = "res://assets/sfx/round_start.wav"
-volume_db = -6.0
+[node name="Rules" type="CbRules" parent="."]
+file = "res://vfx/reactions_deathmatch.rules"

@@ -1,0 +1,20 @@
+# reactions_deathmatch.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are
+# from the scene's root.
+
+# RoundEnd
+on deathmatch.round_end
+    subject $at
+    at point
+    sound res://assets/sfx/round_end.wav volume -4
+
+# YouWon
+on deathmatch.round_end if is_local
+    subject $at
+    at point
+    flash rgba(1, 0.85, 0.3, 0.35) time 1
+
+# RoundStart
+on game.round_start
+    subject $at
+    at point
+    sound res://assets/sfx/round_start.wav volume -6

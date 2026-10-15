@@ -1,0 +1,76 @@
+# pistol.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are
+# from the scene's root.
+
+# Flash
+on item.use
+    subject ^^
+    scene res://vfx/muzzle_flash.tscn under Muzzle life 0.3
+
+# Tracer
+on item.use
+    subject ^^
+    at beam from Muzzle
+    scene res://vfx/tracer.tscn life 0.06
+
+# ScanBeam
+on item.use2
+    subject ^^
+    at beam from Muzzle
+    scene res://vfx/scan_beam.tscn life 0.15
+
+# PredictFire
+predict use as item.use if gun.ammo > 0 and !gun.reloading and !combat.dead
+    cooldown 0.19
+    change gun.ammo -= 1
+
+# PredictDry
+predict use as item.use_failed if gun.ammo == 0 and !gun.reloading and !combat.dead
+    cooldown 0.19
+
+# PredictScan
+predict use2 as item.use2 if !gun.reloading and !combat.dead
+    cooldown 0.95
+
+# ShotSound
+on item.use
+    subject ^^
+    at Muzzle
+    sound res://assets/sfx/gunshot.wav volume -5 jitter 0.06 range 70
+
+# DrySound
+on item.use_failed
+    subject ^^
+    at Muzzle
+    sound res://assets/sfx/dry_click.wav volume -8 range 12
+
+# ReloadSound
+on item.reload
+    subject ^^
+    at Muzzle
+    sound res://assets/sfx/reload.wav volume -10 range 25
+
+# HitSurface
+on item.hit if event.value == 0
+    subject ^^
+    at point
+    sound res://assets/sfx/ricochet.wav volume -16 jitter 0.3 range 30
+    scene res://vfx/bullet_spark.tscn life 1
+
+# HitPlayer
+on item.hit if event.value > 0
+    subject ^^
+    at point
+    sound res://assets/sfx/body_hit.wav volume -8 jitter 0.15 range 40
+    scene res://vfx/hit_puff.tscn life 1
+
+# HitMarker
+on item.hit if is_local and event.value > 0
+    subject ^^
+    at ^^/Head
+    sound res://assets/sfx/hit_marker.wav volume -6
+
+# MarkSound
+on item.use2
+    subject ^^
+    at Muzzle
+    sound res://assets/sfx/dry_click.wav volume -4 pitch 1.8 range 25
