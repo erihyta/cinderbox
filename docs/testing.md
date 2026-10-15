@@ -55,10 +55,21 @@ powershell -ExecutionPolicy Bypass -File scripts\check_determinism.ps1 -Referenc
 scripts/check_determinism.sh tests/reference_hashes.txt
 ```
 
-`tests/reference_hashes.txt` holds the per-tick state hashes of the reference scenario, followed by
-those of a second run with [motions](motions.md) (the reference scenario has none). Any change to
-simulation code or tuning legitimately changes them. Regenerate the file with
+`tests/reference_hashes.txt` holds the per-tick state hashes of three runs, one after another:
+
+| Ticks | Run | What it covers |
+|---|---|---|
+| 0 to 1199 | the reference scenario | movement, props, kills and ragdolls, fields, events, players coming and going |
+| 1200 to 1799 | with [motions](motions.md) | dashes, forces, probes, links |
+| 1800 to 2699 | with [slots](items.md#the-inventory) | items given, the slots' keys, moves, splits, drops, items' own keys, the use button, chests filled and one destroyed |
+
+Any change to simulation code or tuning legitimately changes them. Regenerate the file with
 `cb_tests --dump tests/reference_hashes.txt` and commit it together with the change.
+
+- **A red CI is not optional.** CI was red from M136 to M161 (tests that assumed the local rifle,
+  a reference not regenerated), so the cross-load job was skipped and no build was compared with
+  another for 25 milestones. They all agreed (M162 checked the dumps), but nothing said so.
+- **Tests run without the licensed assets** in CI: count what a life starts with, don't assume it.
 
 ### Continuous integration
 

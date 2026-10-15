@@ -140,7 +140,7 @@ the hook's hang).
 | Slots are places | **done (M161)**, asked for as in Minecraft: a slot's key selects it whatever it holds (1 to 9, 0); any item is used from the hand; a kind's `slot` is where it goes if free, nothing is pushed out; an item's own key (`use_key`, the action `<kind>.use`) uses the first copy carried; two of a kind are two items, each used on its own | an off hand (Minecraft's F) |
 | Intents a mod declares | **done (M160)**: `declare.Intent`, `ctx.Intents` (once, on the tick it arrives); `CbClick.mod_intent` with two numbers; the shop mod (`shop.buy`, coins a private field) | predicted answers; numbers wider than a byte |
 | The holster | **done (M137)**: on the `CbItem`, with the item's animation pack, for a mod that takes its items from its look | |
-| Checked across compilers | not yet | slots in the reference scenario: moves, splits, stacks, a container, an item's own key (M161 changed `Slots`) |
+| Checked across compilers | **done (M162)**: a third reference run with slots (players coming and going, items given, keys, moves, splits, drops, own keys, the use button, chests); every build agrees | |
 
 - **Moved out**: an item's own HUD goes to [step 5](#5-logic-as-text-places-as-nodes) (it is
   authored with the sheet); what a mod decides about containers, named, goes to
