@@ -427,6 +427,42 @@ World node: a workshop item cannot reach the game's HUD or menus.
   `check_reactions.gd` drives one by hand, with no server:
   `godot --headless --path godot --script res://addons/cinderbox_maps/check_reactions.gd`.
 
+### Rules sheets
+
+Many reactions are one rule each: a node, an inspector, a dozen values. A **rules sheet** is the
+same reactions as lines of text, in a `.rules` file beside the scene; a `CbRules` node points to it
+(`file`). Logic is text; what is a place or a thing (a mesh to light up, a socket) stays a node,
+and a rule names it by its path.
+
+```
+# vfx/brawl.rules: a thud where each hit lands
+on brawl.jab.hit
+    subject $at
+    at point
+    sound res://assets/sfx/bat_hit.wav volume -6 jitter 0.1 range 40
+
+while melee.hot
+    set Barrel surface_material_override/0:emission_energy_multiplier 4 blend 0.2
+```
+
+| Line | Means |
+|---|---|
+| `on <event> [if <expression>]`, `while <expression>` | a rule starts: when, as a reaction's |
+| `subject`, `side`, `kind`, `template`, `delay`, `chance`, `cooldown`, `wait`, `at ... [from] [offset]` | its settings, for every action under it |
+| `sound`, `scene`, `play`, `set`, `call`, `shake`, `flash` | its actions: each becomes one `CbReaction` |
+
+- **Every action is a `CbReaction`** under the `CbRules` node (never saved with the scene), so the
+  director, the guard and the Cue Preview see nothing new.
+- **Plain paths** are from the node `CbRules` is under, and climb no higher than the scene.
+- **Mistakes say their line**: on the node in the editor, and at publish (a name no mod declares:
+  `res://vfx/brawl.rules line 22: event: no mod declares "brawl.upercut.hit" (did you mean
+  brawl.uppercut.hit?)`). A rule with one is left out; the rest works.
+- **The editor opens `.rules`** in its script editor; packs ship them (`*.rules` in the export
+  filter; the game's pack check allows them as data).
+- **The brawl kit's sounds** are the example: `server_mods/brawl/client/vfx/brawl.rules`, 8 rules
+  where there were 9 nodes and 59 values.
+- `check_rules.gd` checks it: `godot --headless --path godot --script res://addons/cinderbox_maps/check_rules.gd`.
+
 ### Cue Preview (editor)
 
 Every project with the Cinderbox extension has a **Cue Preview** bottom panel: it plays the edited
