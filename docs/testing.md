@@ -70,6 +70,8 @@ Any change to simulation code or tuning legitimately changes them. Regenerate th
   a reference not regenerated), so the cross-load job was skipped and no build was compared with
   another for 25 milestones. They all agreed (M162 checked the dumps), but nothing said so.
 - **Tests run without the licensed assets** in CI: count what a life starts with, don't assume it.
+- **Net tests run every mod that runs by default.** A disabled one (the impact grenade, flight,
+  sneak, the brawler's kit) only when the test names it: the mod option `test.mods` (`grenade`).
 
 ### Continuous integration
 
