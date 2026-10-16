@@ -160,7 +160,7 @@ func _run() -> void:
 	var recent: Array = _menu().recent_servers()
 	_check("  it is the recent server, with its map", recent.size() == 1 and recent[0]["address"] == "127.0.0.1:%d" % _port and recent[0]["map"] != "")
 	await _wait(1.5)
-	var huds: int = _game()._item_huds.size()
+	var huds: int = _game().presentation.item_huds.size()
 	await _shot("menu_3_playing")
 
 	print("camera")
@@ -169,12 +169,12 @@ func _run() -> void:
 	game.distance = 8.0
 	await _wait(0.5)
 	var cam: Camera3D = game.camera
-	print("    looking up: camera height %.2f m, distance %.2f of %.1f" % [cam.global_position.y, game._camera_distance, game.distance])
-	_check("  the floor keeps the camera above it", cam.global_position.y > 0.15 and game._camera_distance < game.distance - 1.0)
+	print("    looking up: camera height %.2f m, distance %.2f of %.1f" % [cam.global_position.y, game.view_camera.camera_distance, game.distance])
+	_check("  the floor keeps the camera above it", cam.global_position.y > 0.15 and game.view_camera.camera_distance < game.distance - 1.0)
 	await _shot("menu_4_camera_floor")
 	game.pitch = -0.35
 	await _wait(1.0)
-	_check("  with the way clear it is back at full distance", absf(game._camera_distance - game.distance) < 0.01)
+	_check("  with the way clear it is back at full distance", absf(game.view_camera.camera_distance - game.distance) < 0.01)
 	game.distance = 6.0
 
 	print("the Esc menu")
@@ -217,7 +217,7 @@ func _run() -> void:
 	await _wait(1.0)
 	var stats: Dictionary = _game().client.get_stats()
 	_check("  playing, no desyncs", stats["state"] == "playing" and stats["desyncs"] == 0)
-	_check("  the items' HUDs are there again (%d)" % huds, _game()._item_huds.size() == huds)
+	_check("  the items' HUDs are there again (%d)" % huds, _game().presentation.item_huds.size() == huds)
 
 	if _other_port != 0 and _failures == 0:
 		print("a server with other mods: the game starts again to join it")
@@ -243,7 +243,7 @@ func _after_restart() -> void:
 		problems.append("did not join")
 	else:
 		await _wait(1.0)
-		if not _game()._loaded_items.is_empty() or not _game()._item_huds.is_empty():
+		if not _game()._loaded_items.is_empty() or not _game().presentation.item_huds.is_empty():
 			problems.append("items of the first server are loaded")
 		if _menu().is_open():
 			problems.append("the menu is open")
