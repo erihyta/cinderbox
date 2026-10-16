@@ -101,6 +101,8 @@ var _next_screenshot := 0.0
 var _screenshots := 0
 var _event_counts := {}
 var _item_huds: Array[Node] = []
+## Items' own HUDs (CbItem.hud), by kind: {scene, carried, node}. Shown by _update_kind_huds.
+var _kind_huds := {}
 var _presented := false # this scene has loaded the items' reactions and HUDs
 var _refused := "" # why this server cannot be joined
 
@@ -257,6 +259,7 @@ func _process(delta: float) -> void:
 	client.first_person = first_person and client.get_local_net_id() != 0 and not client.is_local_player_dead()
 	_update_screen_effects(delta)
 	_update_hud()
+	_update_kind_huds()
 	_autoplay_finish()
 
 
@@ -541,6 +544,9 @@ func _restart_and_join() -> void:
 ## Reactions and item HUDs, loaded again now that items may have added or replaced some.
 func _reload_presentation() -> void:
 	client.clear_world_scenes()
+	for kind in _kind_huds:
+		if _kind_huds[kind]["node"] != null:
+			_kind_huds[kind]["node"].queue_free()
 	_load_reactions()
 	for node in _item_huds:
 		node.queue_free()
@@ -1168,14 +1174,46 @@ func _load_reactions() -> void:
 ## that kind is drawn as, what it is called and how it sits in first person.
 func _load_item_kinds() -> void:
 	var kinds := []
+	_kind_huds.clear()
 	if DirAccess.dir_exists_absolute("res://items"):
 		for file in DirAccess.get_files_at("res://items"):
 			if file.ends_with(".cfg"):
 				var kind: String = file.trim_suffix(".cfg")
-				client.add_item(kind, FileAccess.get_file_as_string("res://items/%s" % file))
+				var config := FileAccess.get_file_as_string("res://items/%s" % file)
+				client.add_item(kind, config)
 				kinds.append(kind)
+				# Its own HUD ("hud <scene>", "hudshows hand|carried"): shown by _update_kind_huds.
+				var hud := ""
+				var carried := false
+				for line in config.split("\n"):
+					var words := line.strip_edges().split(" ", false)
+					if words.size() == 2 and words[0] == "hud":
+						hud = words[1]
+					elif words.size() == 2 and words[0] == "hudshows":
+						carried = words[1] == "carried"
+				if hud != "":
+					_kind_huds[kind] = {"scene": hud, "carried": carried, "node": null}
 	kinds.sort()
-	print("items: ", kinds)
+	print("items: ", kinds, "" if _kind_huds.is_empty() else ", with their own HUDs: %s" % ", ".join(_kind_huds.keys()))
+
+
+## An item's own HUD (CbItem.hud): shown once for the viewer's own player while it has one in the
+## hand, or carries one at all (hud_shows), and freed when it does not.
+func _update_kind_huds() -> void:
+	for kind in _kind_huds:
+		var entry: Dictionary = _kind_huds[kind]
+		var asked: String = ("carried." if entry["carried"] else "") + kind
+		var want: bool = _joined and client.check_local_conditions(PackedStringArray([asked]))
+		var node: Node = entry["node"]
+		if want and node == null:
+			var scene := ResourceLoader.load(entry["scene"], "PackedScene") as PackedScene
+			node = CbDirector.instantiate(scene) if scene else null
+			if node:
+				add_child(node)
+				entry["node"] = node
+		elif not want and node != null:
+			node.queue_free()
+			entry["node"] = null
 
 
 func _on_mod_event(name: String, _a: int, _b: int, _value: int, _position: Vector3, _vector: Vector3) -> void:

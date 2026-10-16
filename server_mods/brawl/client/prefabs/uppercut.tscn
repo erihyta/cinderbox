@@ -35,6 +35,8 @@ use_conditions = PackedStringArray("brawl.cd_upper <= 0", "grounded")
 use_changes = PackedStringArray("brawl.cd_upper = 4")
 use_emits = "brawl.uppercut.started"
 mass = 0.5
+hud = "res://ui/uppercut_hud.tscn"
+hud_shows = 1
 
 [node name="Body" type="CollisionShape3D" parent="."]
 shape = SubResource("Body")

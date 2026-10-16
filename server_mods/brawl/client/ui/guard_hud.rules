@@ -1,0 +1,5 @@
+# The guard's line: its key, or GUARDING in green while it is held.
+text Line "[{key:slot5}]  GUARD (hold)" if not using.brawl.guard
+text Line "GUARDING" if using.brawl.guard
+bind Line modulate:r = 1 - 0.45 * using.brawl.guard
+bind Line modulate:b = 1 - 0.45 * using.brawl.guard

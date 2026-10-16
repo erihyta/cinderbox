@@ -38,6 +38,8 @@ use_conditions = PackedStringArray("brawl.cd_dash <= 0")
 use_changes = PackedStringArray("brawl.cd_dash = 3")
 use_emits = "brawl.dash_strike.started"
 mass = 0.5
+hud = "res://ui/dash_strike_hud.tscn"
+hud_shows = 1
 
 [node name="Body" type="CollisionShape3D" parent="."]
 shape = SubResource("Body")

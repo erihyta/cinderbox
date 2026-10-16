@@ -30,6 +30,8 @@ slot = 5
 slot_key_uses = true
 use_emits = "brawl.guard.up"
 mass = 0.5
+hud = "res://ui/guard_hud.tscn"
+hud_shows = 1
 
 [node name="Body" type="CollisionShape3D" parent="."]
 shape = SubResource("Body")

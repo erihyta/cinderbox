@@ -1,0 +1,2 @@
+# The pistol's own HUD: what its second use does, on its key.
+text Mark "[{key:use2}]  MARK A PLAYER" if !combat.dead
