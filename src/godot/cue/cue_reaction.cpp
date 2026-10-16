@@ -445,7 +445,7 @@ String CbReaction::Explain( const cue::Context& context, double now ) const
 	return acts;
 }
 
-bool CbReaction::Fire( const cue::Context& context, double now )
+bool CbReaction::Fire( const cue::Context& context, double now, Started* started )
 {
 	if ( m_when != WHEN_EVENT )
 	{
@@ -467,6 +467,10 @@ bool CbReaction::Fire( const cue::Context& context, double now )
 	}
 	// The cooldown (which keeps twenty props landing at once from stacking twenty sounds) starts now.
 	m_lastFired = now;
+	if ( started != nullptr )
+	{
+		started->reaction = ObjectID( get_instance_id() );
+	}
 	if ( m_delay > 0.0 && is_inside_tree() )
 	{
 		// Later, with the cue's entities looked up again (they may be gone by then).
@@ -475,18 +479,44 @@ bool CbReaction::Fire( const cue::Context& context, double now )
 		Dictionary args = context.args.duplicate();
 		args["point"] = context.point;
 		args["end"] = context.end;
-		get_tree()->create_timer( m_delay )->connect( "timeout", callable_mp( this, &CbReaction::Delayed ).bind( at, other, args ) );
+		// A guess's delay is numbered, so that taking the guess back can cancel it.
+		uint64_t serial = 0;
+		if ( started != nullptr )
+		{
+			serial = ++m_nextDelay;
+			started->delayed = serial;
+			m_guessedDelays[serial].started.reaction = started->reaction;
+		}
+		get_tree()->create_timer( m_delay )->connect( "timeout", callable_mp( this, &CbReaction::Delayed ).bind( at, other, args, serial ) );
 		return true;
 	}
-	Act( true, context );
+	Act( true, context, started );
 	return true;
 }
 
-void CbReaction::Delayed( uint64_t at, uint64_t other, Dictionary args )
+void CbReaction::Delayed( uint64_t at, uint64_t other, Dictionary args, uint64_t serial )
 {
 	if ( m_director == nullptr )
 	{
 		return;
+	}
+	Started* started = nullptr;
+	if ( serial != 0 )
+	{
+		auto guess = m_guessedDelays.find( serial );
+		if ( guess == m_guessedDelays.end() )
+		{
+			return; // the guess was taken back before its time
+		}
+		if ( guess->second.kept )
+		{
+			m_guessedDelays.erase( guess );
+		}
+		else
+		{
+			guess->second.acted = true;
+			started = &guess->second.started;
+		}
 	}
 	cue::Context context;
 	context.director = m_director;
@@ -497,7 +527,75 @@ void CbReaction::Delayed( uint64_t at, uint64_t other, Dictionary args )
 	context.args = args;
 	context.point = args.get( "point", Vector3() );
 	context.end = args.get( "end", context.point );
-	Act( true, context );
+	Act( true, context, started );
+}
+
+void CbReaction::TakeBack( const Started& started )
+{
+	if ( started.delayed != 0 )
+	{
+		auto guess = m_guessedDelays.find( started.delayed );
+		if ( guess == m_guessedDelays.end() )
+		{
+			return;
+		}
+		Started done = guess->second.started;
+		bool acted = guess->second.acted;
+		m_guessedDelays.erase( guess );
+		if ( acted )
+		{
+			done.delayed = 0;
+			TakeBack( done );
+		}
+		return;
+	}
+	for ( ObjectID id : started.nodes )
+	{
+		if ( auto* node = Object::cast_to<Node>( ObjectDB::get_instance( id ) ) )
+		{
+			node->queue_free();
+		}
+	}
+	auto* player = Object::cast_to<AnimationPlayer>( ObjectDB::get_instance( started.player ) );
+	if ( player != nullptr && player->is_playing() && player->get_current_animation() == started.animation )
+	{
+		player->stop();
+		if ( started.before.is_empty() == false && player->has_animation( started.before ) )
+		{
+			player->play( started.before );
+		}
+	}
+	if ( auto* target = Object::cast_to<Node>( ObjectDB::get_instance( started.target ) ) )
+	{
+		// Unless something else has set it since (its blend still running counts as this one's).
+		bool blending = m_tween.is_valid() && m_tween->is_running();
+		if ( blending || target->get_indexed( started.property ) == started.set )
+		{
+			if ( blending )
+			{
+				m_tween->kill();
+				m_tween.unref();
+			}
+			target->set_indexed( started.property, started.was );
+		}
+	}
+}
+
+void CbReaction::Keep( const Started& started )
+{
+	auto guess = m_guessedDelays.find( started.delayed );
+	if ( started.delayed == 0 || guess == m_guessedDelays.end() )
+	{
+		return;
+	}
+	if ( guess->second.acted )
+	{
+		m_guessedDelays.erase( guess );
+	}
+	else
+	{
+		guess->second.kept = true;
+	}
 }
 
 void CbReaction::Update( const cue::Context& context )
@@ -578,12 +676,12 @@ void CbReaction::set_on( bool on )
 	Act( on, context );
 }
 
-void CbReaction::PlaySound( Node* parent, bool global, const Vector3& where, double gain )
+Node* CbReaction::PlaySound( Node* parent, bool global, const Vector3& where, double gain )
 {
 	Ref<AudioStream> stream = ResourceLoader::get_singleton()->load( m_sound, "AudioStream" );
 	if ( stream.is_null() || parent == nullptr )
 	{
-		return;
+		return nullptr;
 	}
 	auto* player = memnew( AudioStreamPlayer3D );
 	player->set_stream( stream );
@@ -608,6 +706,7 @@ void CbReaction::PlaySound( Node* parent, bool global, const Vector3& where, dou
 	}
 	player->connect( "finished", Callable( player, "queue_free" ) );
 	player->play();
+	return player;
 }
 
 void CbReaction::SetProperty( Node* target, const NodePath& path, const Variant& value )
@@ -630,7 +729,7 @@ void CbReaction::SetProperty( Node* target, const NodePath& path, const Variant&
 	target->set_indexed( path, value );
 }
 
-void CbReaction::Act( bool on, const cue::Context& context )
+void CbReaction::Act( bool on, const cue::Context& context, Started* started )
 {
 	bool event = m_when == WHEN_EVENT;
 	bool refused = Refused( m_method, m_property );
@@ -649,6 +748,12 @@ void CbReaction::Act( bool on, const cue::Context& context )
 	}
 	if ( player != nullptr && animation.is_empty() == false && player->has_animation( animation ) )
 	{
+		if ( started != nullptr )
+		{
+			started->player = ObjectID( player->get_instance_id() );
+			started->animation = animation;
+			started->before = player->is_playing() ? String( player->get_current_animation() ) : String();
+		}
 		player->stop();
 		player->play( animation );
 	}
@@ -671,6 +776,13 @@ void CbReaction::Act( bool on, const cue::Context& context )
 				m_onTarget = ObjectID( target->get_instance_id() );
 			}
 			m_lastSet = Value( context, event ? target->get_indexed( path ) : m_original );
+			if ( started != nullptr && event )
+			{
+				started->target = ObjectID( target->get_instance_id() );
+				started->property = path;
+				started->was = target->get_indexed( path );
+				started->set = m_lastSet;
+			}
 			SetProperty( target, path, m_lastSet );
 		}
 		else if ( m_haveOriginal )
@@ -801,6 +913,10 @@ void CbReaction::Act( bool on, const cue::Context& context )
 				}
 				if ( event )
 				{
+					if ( started != nullptr )
+					{
+						started->nodes.push_back( ObjectID( spawned->get_instance_id() ) );
+					}
 					if ( m_sceneLifetime > 0.0 && is_inside_tree() )
 					{
 						Ref<SceneTreeTimer> timer = get_tree()->create_timer( m_sceneLifetime );
@@ -833,7 +949,11 @@ void CbReaction::Act( bool on, const cue::Context& context )
 		}
 		if ( gain > 0.0 )
 		{
-			PlaySound( parent, global, where.origin, gain );
+			Node* sound = PlaySound( parent, global, where.origin, gain );
+			if ( sound != nullptr && started != nullptr )
+			{
+				started->nodes.push_back( ObjectID( sound->get_instance_id() ) );
+			}
 		}
 	}
 }

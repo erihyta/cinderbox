@@ -27,7 +27,27 @@
 			<return type="int" />
 			<param index="0" name="action" type="String" />
 			<description>
-				The viewer (the entity given to [method set_local]) pressed an action. Every [CbPrediction] under the director for that action whose conditions hold plays its cue now, at the local entity, for the reactions that need nothing but that. When [method cue] is then called with the same name for the local entity (within a second), it plays only the reactions that waited: the ones that use the cue's point, end, value or other entity. Returns how many cues were predicted.
+				The viewer (the entity given to [method set_local]) pressed an action. Every [CbPrediction] under the director for that action whose conditions hold plays its cue now, at the local entity, for the reactions that need nothing but that. When [method cue] is then called with the same name for the local entity (before the guess is taken back: [method set_ticks]), it plays only the reactions that waited: the ones that use the cue's point, end, value or other entity. Returns how many cues were predicted.
+			</description>
+		</method>
+		<method name="set_ticks">
+			<return type="void" />
+			<param index="0" name="tick" type="int" />
+			<param index="1" name="confirmed" type="int" />
+			<description>
+				The tick the game is at (presses from now on go with it) and the first tick the server has not confirmed: every tick before it is the server's word. A press the server confirmed [member answer_ticks] past its tick without sending its cue was a wrong guess, and is taken back: the scenes and sounds its reactions added are freed, an animation it played stops (what played before goes on), a property it set is put back (unless something else set it since), a delayed reaction never acts. A shake, a flash or a method call cannot be undone. Without ticks (0, 0) a guess waits a second for its answer. The Cinderbox client calls it every frame.
+			</description>
+		</method>
+		<method name="get_taken_back_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				How many guesses were taken back so far.
+			</description>
+		</method>
+		<method name="get_late_answer_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				How many guesses taken back the server answered after all, within two seconds (the cue then played in full, late). More than none says [member answer_ticks] is too short.
 			</description>
 		</method>
 		<method name="pending_predictions">
@@ -126,8 +146,17 @@
 		<member name="auto_update" type="bool" setter="set_auto_update" getter="get_auto_update" default="true">
 			Call [method update] every frame. The Cinderbox client turns it off and updates after the entities have moved.
 		</member>
+		<member name="answer_ticks" type="int" setter="set_answer_ticks" getter="get_answer_ticks" default="8">
+			How many ticks past a press's tick the server may confirm without its cue before the guess is taken back ([method set_ticks]): room for an input that reached the server late, or a cue a mod sends a tick later.
+		</member>
 	</members>
 	<signals>
+		<signal name="taken_back">
+			<param index="0" name="cue" type="String" />
+			<description>
+				The server did not answer a predicted cue: what it showed was taken back ([method set_ticks]).
+			</description>
+		</signal>
 		<signal name="screen_effect">
 			<param index="0" name="shake" type="float" />
 			<param index="1" name="shake_time" type="float" />

@@ -39,9 +39,9 @@
 //
 // Both halves are the modder's: the server mod emits the cue, the look predicts it by the same
 // name. The conditions are the look's guess of the server's rule; where the guess is wrong, a
-// reaction played that should not have (it is not taken back), or the cue simply plays late;
-// changes and stances are put back when the prediction expires. Looks only: nothing here changes
-// the game.
+// reaction played that should not have, or the cue simply plays late. A guess the server does not
+// answer is taken back (CbDirector::set_ticks): what its reactions started stops, its changes and
+// stance end. Looks only: nothing here changes the game.
 
 #include "cue_paths.h"
 

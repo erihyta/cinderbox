@@ -32,6 +32,9 @@ var screenshot_every := 0.0
 var _next_screenshot := 0.0
 var _screenshots := 0
 var _event_counts := {}
+## The viewer's guesses (CbPrediction) made, and the ones the server never answered (taken back).
+var _guesses := 0
+var _taken_back := {}
 
 
 func _init(owner: Node, args: Dictionary) -> void:
@@ -48,6 +51,9 @@ func _init(owner: Node, args: Dictionary) -> void:
 	screenshot = args.get("screenshot", "")
 	screenshot_every = float(args.get("screenshot-every", "0"))
 	rng.seed = Time.get_ticks_usec()
+	var director: CbDirector = game.get_node("Client").get_director()
+	director.predicted.connect(func(_cue): _guesses += 1)
+	director.taken_back.connect(func(cue): _taken_back[cue] = _taken_back.get(cue, 0) + 1)
 
 
 ## What the unattended player does this frame: {move, jump, sprint, use, actions}. It turns the
@@ -328,6 +334,8 @@ func finish() -> void:
 	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
 		stats.get("state"), stats.get("checksums_verified", 0), stats.get("desyncs", 0), stats.get("fingerprint", "none"), stats.get("fp_environment_ok", "not simulating")])
 	print("mod events seen: ", _event_counts)
+	print("guesses: %d, taken back %d %s, of those answered late %d" % [_guesses, _taken_back.values().reduce(func(a, b): return a + b, 0),
+		_taken_back, client.get_director().get_late_answer_count()])
 	# What the scene costs: the reactions and predictions listening (a copy lying in the world has
 	# only its own).
 	for node in game.get_tree().root.find_children("*", "CbDirector", true, false):

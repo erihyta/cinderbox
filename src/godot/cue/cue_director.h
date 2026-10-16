@@ -11,6 +11,8 @@
 //   cue( "melee.hit", at, other, { value, strength, point, end } )   something happened
 //   press( "fire" )                       the viewer pressed an action: the CbPrediction nodes under
 //                                         it say which cue that will be, and it plays at once
+//   set_ticks( tick, confirmed )          where the game is, and up to where the server has
+//                                         answered: a guess it left unanswered is taken back
 //
 // Reactions register themselves when they enter its tree. "While" reactions are checked every frame
 // (update(), called from _process unless auto_update is off); cue reactions when a cue comes.
@@ -20,6 +22,8 @@
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/packed_scene.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
+
+#include "cue_reaction.h"
 
 #include <deque>
 #include <unordered_map>
@@ -60,6 +64,31 @@ public:
 	godot::Array pending_predictions();
 	// What that press would do, without doing it: { prediction path: "predicts <cue>" or why not }.
 	godot::Dictionary explain_press( const godot::String& action ) const;
+	// The tick the game is at (presses from now on go with it) and the first tick the server has
+	// not confirmed yet: every tick before it is the server's word. A press the server confirmed
+	// `answer_ticks` past its tick without sending its cue was a wrong guess: what its reactions
+	// started is taken back (scenes and sounds freed, an animation stopped, a property put back;
+	// not a shake or a method call), and its changes and stance end. Without ticks (0) a guess
+	// waits a second for its answer, then is taken back the same way.
+	void set_ticks( int64_t tick, int64_t confirmed );
+	void set_answer_ticks( int64_t v )
+	{
+		m_answerTicks = v;
+	}
+	int64_t get_answer_ticks() const
+	{
+		return m_answerTicks;
+	}
+	// How many guesses were taken back so far, and how many of those the server answered after all
+	// (its cue came within two seconds: it then played in full, late; a margin too short says so).
+	int64_t get_taken_back_count() const
+	{
+		return m_takenBack;
+	}
+	int64_t get_late_answer_count() const
+	{
+		return m_lateAnswers;
+	}
 	// What that cue would do, without doing it: { reaction path: "acts" or why not }.
 	godot::Dictionary explain( const godot::String& name, godot::Node* at, godot::Node* other, const godot::Dictionary& args );
 	void update();
@@ -120,22 +149,30 @@ private:
 	std::vector<godot::ObjectID> m_whiles;
 	std::unordered_map<godot::String, std::vector<godot::ObjectID>, StringHash> m_byCue;
 
-	// Plays a cue: every reaction listening for it but the ones in `skip`; the ones that acted are
-	// added to `acted`.
+	// Plays a cue: every reaction listening for it but the ones in `skip`; what the ones that acted
+	// started is added to `started`.
 	void Play( const godot::String& name, const cue::Context& context, const std::vector<godot::ObjectID>* skip,
-			   std::vector<godot::ObjectID>* acted );
+			   std::vector<Started>* started );
 	std::vector<godot::ObjectID> m_predictions;
 	// Cues shown on a press, waiting for the server's: the reactions that already played.
 	struct Shown
 	{
 		godot::String cue;
 		double at = 0.0;
-		std::vector<godot::ObjectID> acted;
+		uint32_t tick = 0; // 0: the host gives no ticks
+		std::vector<Started> started;
 		godot::PackedStringArray changes;
 		godot::String stance;
 		godot::String stanceLayer;
 	};
 	std::deque<Shown> m_shown;
+	uint32_t m_tick = 0;
+	uint32_t m_confirmed = 0;
+	int64_t m_answerTicks = 8;
+	int64_t m_takenBack = 0;
+	int64_t m_lateAnswers = 0;
+	std::deque<std::pair<godot::String, double>> m_takenBackRecently; // cue, when
+	void TakeBack( const Shown& shown );
 
 public:
 	// The same for C++ hosts: expired ones are dropped first.
