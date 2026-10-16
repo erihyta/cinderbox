@@ -11,8 +11,15 @@
 // 1 + l: stance layer l), each set every frame to the clip and time the pose is playing, so a flame
 // keyed at 0.13 s into the swing lights exactly then, on every screen.
 //
-// Rollback-safe: moving forward a little fires method and audio keys once; moving back, jumping far
-// or switching clips only applies values (no key fires twice when a correction replays a moment).
+// Rollback-safe: moving forward a little fires method and audio keys once; moving back or jumping
+// far only applies values (no key fires twice when a correction replays a moment).
+//
+// Seen from its start: a clip that is first seen a little way in (another player's swing, behind
+// latency: the pose is already where the server has it) still plays all of its tracks. They start
+// from the clip's beginning and run at twice the pose's pace until they are level with it, so every
+// key fires, in order, and a value keyed on and off (a flame) still shows; the pose is not held back.
+// A clip already far in (a join) only applies values. A correction that leaves a clip and comes back
+// to the same play of it goes on where it was.
 
 #include <godot_cpp/classes/animation_library.hpp>
 #include <godot_cpp/classes/animation_player.hpp>
@@ -48,6 +55,16 @@ public:
 
 	// What a channel plays ("" when none), for tests and debugging.
 	godot::String get_channel_clip( int channel ) const;
+	// How many clips were first seen a little way in (their tracks played from the start), and how
+	// many of those caught up with the pose.
+	int64_t get_late_start_count() const
+	{
+		return m_lateStarts;
+	}
+	int64_t get_caught_up_count() const
+	{
+		return m_caughtUp;
+	}
 	// Forget which nodes the tracks reached: a socket's item was swapped, and Godot's players keep
 	// pointing at the one that is gone.
 	void clear_caches();
@@ -63,16 +80,27 @@ private:
 		double time = 0.0;
 		double high = 0.0; // furthest time reached in this clip: keys up to here have fired
 		bool touched = false;
+		// Seen from its start: the tracks' own time, behind `time` until they are level with it.
+		bool catching = false;
+		double track = 0.0;
+		// The clip it played last, where it left it: a correction may come straight back to it.
+		godot::String leftClip;
+		double leftTime = 0.0;
 	};
 
 	Channel& ChannelAt( int channel );
 	void Reset( Channel& channel );
 	void Seek( Channel& channel, double time ); // values only, no keys fire
+	// The channel stops playing its clip: what it was still catching up on fires now.
+	void Leave( Channel& channel );
+	void CatchUp( Channel& channel, double time );
 
 	godot::Ref<godot::AnimationLibrary> m_library;
 	uint64_t m_root = 0;
 	std::vector<Channel> m_channels;
 	bool m_resetThisFrame = false;
+	int64_t m_lateStarts = 0;
+	int64_t m_caughtUp = 0;
 };
 
 } // namespace cb::gd

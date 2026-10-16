@@ -156,6 +156,49 @@ func _run(tracks: CbTrackPlayer, light: OmniLight3D, counter: Node) -> void:
 		t += 1.0 / 60.0
 	_expect(first_play == 1 and counter.hits == 2, "a clip started over fires its keys again", "%d then %d hits" % [first_play, counter.hits])
 
+	# Seen from its start: first seen 0.35 s in (behind latency), past the light's key at 0.3, before
+	# the call at 0.5. The tracks start from the beginning and catch up at twice the pace.
+	for first in [0.35, 0.45]:
+		_frame(tracks, [])
+		counter.hits = 0
+		var lit := false
+		var level_at := -1.0
+		t = first
+		while t <= 1.0:
+			_frame(tracks, [[0, "swing", t, false]])
+			lit = lit or light.visible
+			if level_at < 0.0 and counter.hits == 1:
+				level_at = t
+			t += 1.0 / 60.0
+		_expect(counter.hits == 1, "first seen %.2f s in: the call before it fires once" % first, "%d hits" % counter.hits)
+		_expect(lit, "... the light keyed before it still shows", "")
+		# (At twice the pace, the tracks reach the call at 0.5 when the pose is at first + (0.5 - 0) / 2.)
+		_expect(level_at > 0.0 and level_at <= first + 0.26, "... soon", "fired with the pose at %.3f s" % level_at)
+	_frame(tracks, [])
+	counter.hits = 0
+	_frame(tracks, [[0, "swing", 0.9, false]])
+	_frame(tracks, [[0, "swing", 0.95, false]])
+	_expect(counter.hits == 0, "first seen far in (a join): nothing fires", "%d hits" % counter.hits)
+	# The clip ends while its tracks are still catching up: what is left fires as it goes.
+	_frame(tracks, [])
+	counter.hits = 0
+	_frame(tracks, [[0, "swing", 0.48, false]])
+	_frame(tracks, [[0, "swing", 0.52, false]])
+	_frame(tracks, [])
+	_expect(counter.hits == 1, "it ends while catching up: the rest fires", "%d hits" % counter.hits)
+	# A correction leaves the swing for a frame and comes back to the same play: nothing again.
+	counter.hits = 0
+	t = 0.0
+	while t <= 0.6:
+		_frame(tracks, [[0, "swing", t, false]])
+		t += 1.0 / 60.0
+	_frame(tracks, [])
+	t = 0.62
+	while t <= 0.8:
+		_frame(tracks, [[0, "swing", t, false]])
+		t += 1.0 / 60.0
+	_expect(counter.hits == 1, "a correction that comes back to the same play fires nothing twice", "%d hits" % counter.hits)
+
 	# A loop fires every cycle: two seconds of a half-second loop.
 	counter.hits = 0
 	t = 0.0
@@ -165,11 +208,11 @@ func _run(tracks: CbTrackPlayer, light: OmniLight3D, counter: Node) -> void:
 	_expect(counter.hits == 4, "a looping key fires every cycle", "%d hits" % counter.hits)
 
 	# Channels with nothing to play go back to RESET.
-	_frame(tracks, [[0, "swing", 0.4, false]])
+	_frame(tracks, [[0, "swing", 0.6, false]])
 	_expect(light.visible, "(the light is on mid-swing)", "")
 	_frame(tracks, [])
 	_expect(not light.visible and tracks.get_channel_clip(0) == "", "an unplayed channel resets", "")
-	_frame(tracks, [[0, "swing", 0.4, false]])
+	_frame(tracks, [[0, "swing", 0.6, false]])
 	_frame(tracks, [[0, "walk", 0.2, true]])
 	_expect(not light.visible, "a clip that is bones only resets", "")
 
