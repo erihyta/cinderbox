@@ -1,0 +1,6 @@
+# Left out of repomix packs, kept in git.
+#
+# A .import file is Godot's note of how an asset is imported (its settings and its uid). Git keeps
+# them: without them every machine re-imports with default settings, and references by uid break.
+# A reader of the code needs nothing in them.
+**/*.import

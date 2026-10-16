@@ -6443,6 +6443,89 @@ void TestAnimLead()
 
 // The character built from the paid animation pack, where it was built (it is never in the
 // repository, so CI and fresh clones skip this): strafing plays its sideways jog, hips straight.
+// The lead reads the packs too: an item's pack whose upper layer shoots on "item.use", an event the
+// character's own machine never reads, is led on the press like the character's own layers are. A
+// pack's layer of the base's name is the base, and leads nothing.
+void TestLeadReadsPacks()
+{
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
+	std::string error, warnings;
+	auto set = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( set != nullptr );
+	if ( set == nullptr )
+	{
+		return;
+	}
+	ModSchema schema;
+	schema.layers = { "full", "upper" };
+	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
+	schema.events = { "pistol.fired", "melee.strike", "rifle.fired", "item.use", "test.base" };
+	schema.animPacks.push_back( { "test", "test.hold",
+								  "cinderbox_graph\t1\n"
+								  "clip\tPistol_Idle\t1.0\t1\n"
+								  "clip\tPistol_Shoot\t0.5\t0\n"
+								  "layer\tFullBody\n"
+								  "state\tStand\tclip\tPistol_Idle\t0\n"
+								  "transition\tStand\tStand\t1\t0.1\timmediate\t1\ttest.base\n"
+								  "start\tStand\n"
+								  "layer\tUpperBody\n"
+								  "state\tHold\tclip\tPistol_Idle\t0\n"
+								  "state\tShoot\tclip\tPistol_Shoot\t1\n"
+								  "transition\tHold\tShoot\t1\t0.05\timmediate\t1\titem.use\n"
+								  "transition\tShoot\tHold\t1\t0.1\tat_end\t1\t\n"
+								  "start\tHold\n" } );
+	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
+	AnimGraphPacks packs = CompileAnimPacks( schema, warnings );
+	CHECK( graph != nullptr && packs.size() == 1 && packs[0] != nullptr );
+	if ( graph == nullptr || packs.empty() || packs[0] == nullptr )
+	{
+		std::printf( "    %s %s\n", error.c_str(), warnings.c_str() );
+		return;
+	}
+	const int use = schema.FindEvent( "item.use" );
+	CHECK( graph->UpperLayersRead( AnimExpr::VarKind::Event, use ) == false ); // the character's own does not
+	CHECK( UpperLayersRead( *graph, packs, AnimExpr::VarKind::Event, use ) );  // the pack's upper layer does
+	CHECK( UpperLayersRead( *graph, packs, AnimExpr::VarKind::Event, schema.FindEvent( "test.base" ) ) == false ); // its base is not led
+
+	// The pack's upper layer in place of the character's, and a press of "use" predicted.
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	sim.SetAnimPacks( packs );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	SimCommand swap;
+	swap.type = CommandType::SwapLayer;
+	swap.target = SlotTarget( 0 );
+	swap.index = 1;
+	swap.value = 1;
+	f.commands.push_back( swap );
+	step( 30 );
+	AnimState shown = sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) );
+	CHECK( shown.graph.size() > 1 && shown.graph[1].source == 1 && shown.graph[1].state == 0 );
+	present::AnimLead lead;
+	lead.netId = sim.PlayerNetId( 0 );
+	lead.tickSeconds = sim.Config().TimeStep();
+	lead.seconds = 6.0f * lead.tickSeconds;
+	present::AnimLead::Input press;
+	press.age = 6.0f * lead.tickSeconds;
+	press.event = use;
+	lead.inputs.push_back( press );
+	AnimState led = present::LeadAnimState( shown, *graph, packs, lead );
+	std::printf( "    the pack's upper layer, led 6 ticks from the press: state %u, %.3f s in\n", unsigned( led.graph[1].state ),
+				 led.graph[1].time );
+	CHECK( led.graph[1].state == 1 && led.graph[1].time > 0.0f ); // Shoot, on the press
+}
+
 // Another player's swing first seen late (present/anim_catch_up.h), on the mannequin's machine: the
 // server's state is 15 ticks into the swing when the viewer first sees it. It is drawn from its
 // start and is level with the state within the catch-up's time; one seen on its first tick, or a
@@ -7877,6 +7960,7 @@ int main( int argc, char** argv )
 		{ "overlay_grip", TestOverlayGrip },
 		{ "anim_lead", TestAnimLead },
 		{ "anim_catch_up", TestAnimCatchUp },
+		{ "lead_reads_packs", TestLeadReadsPacks },
 		{ "ual_mannequin", TestUalMannequin },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "physics_threads", TestPhysicsThreads },
