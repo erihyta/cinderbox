@@ -71,6 +71,9 @@ struct ViewFrame
 	// --- The world at frame.tick --------------------------------------------------------------
 	bool hasWorld = false; // false until the source has one (still connecting)
 	PresentationFrame frame;
+	// The first tick the server has not confirmed: every tick before it is the server's word. 0 for
+	// a source that does not know (a recording, a view file).
+	uint32_t confirmedTick = 0;
 	// Drawing between frame.tick - 1 and frame.tick: where the source was at publishedAt (0..1),
 	// and how fast it moves on (ticks of world per tick of real time: 1 playing, 0 frozen or
 	// paused, 2 a recording at double speed).

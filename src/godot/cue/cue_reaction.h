@@ -40,12 +40,30 @@
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/transform3d.hpp>
 
+#include <unordered_map>
 #include <vector>
 
 namespace cb::gd
 {
 
 class CbDirector;
+
+// What one firing of a cue reaction started, so that a guess the server never confirms can be
+// taken back (CbDirector: a prediction left unanswered). A shake, a flash and a method call are
+// not in it: they cannot be undone.
+struct Started
+{
+	godot::ObjectID reaction;
+	std::vector<godot::ObjectID> nodes; // the scene and the sound it added: freed
+	godot::ObjectID player;				// the animation it played: stopped while it still plays,
+	godot::String animation;			// and what played before goes on
+	godot::String before;
+	godot::ObjectID target; // the property it set: put back while it still holds that value
+	godot::NodePath property;
+	godot::Variant was;
+	godot::Variant set;
+	uint64_t delayed = 0; // its delay: cancelled while it runs; what it then did, taken back
+};
 
 class CbReaction : public godot::Node
 {
@@ -91,8 +109,12 @@ public:
 		return m_event;
 	}
 	// Whether this cue is for this reaction, and its conditions hold: then it acts (now, or after its
-	// delay). True when it did.
-	bool Fire( const cue::Context& context, double now );
+	// delay). True when it did. `started`: what it started is written there (cue_director.h).
+	bool Fire( const cue::Context& context, double now, Started* started = nullptr );
+	// Undoes what a firing started, as far as it can; a delay still running does nothing.
+	void TakeBack( const Started& started );
+	// The server answered: what a delayed firing does is kept.
+	void Keep( const Started& started );
 	// Whether it uses what only the server's cue carries (its point or end, its value or strength,
 	// its other entity), or was told to wait (wait_for_server: it goes with something the server
 	// starts, like the body's swing): it cannot act on the viewer's own press (cue_prediction.h),
@@ -172,11 +194,11 @@ private:
 	bool Holds( const cue::Context& context, godot::Node* subject, godot::String* why = nullptr ) const;
 	// The part of Fire that decides; "" when it acts.
 	godot::String Refusal( const cue::Context& context, double now, bool rolled ) const;
-	void Delayed( uint64_t at, uint64_t other, godot::Dictionary args );
+	void Delayed( uint64_t at, uint64_t other, godot::Dictionary args, uint64_t serial );
 	void SetProperty( godot::Node* target, const godot::NodePath& path, const godot::Variant& value );
 	godot::Node* Subject( const cue::Context& context ) const;
-	void Act( bool on, const cue::Context& context );
-	void PlaySound( godot::Node* parent, bool global, const godot::Vector3& where, double gain );
+	void Act( bool on, const cue::Context& context, Started* started = nullptr );
+	godot::Node* PlaySound( godot::Node* parent, bool global, const godot::Vector3& where, double gain );
 	godot::Variant Value( const cue::Context& context, const godot::Variant& current ) const;
 	// A method or property this reaction names that the guard does not allow (cue_guard.h).
 	static bool Refused( const godot::String& method, const godot::String& property );
@@ -230,6 +252,16 @@ private:
 	double m_lastFired = -1e9;
 	bool m_warned = false; // said once that a path or condition does not parse
 	godot::Ref<godot::Tween> m_tween;
+	// Delayed firings of a guess: what each started once it acted. Taken back: gone from the map
+	// (a delay still running then does nothing). Kept: the server answered; forgotten once acted.
+	struct DelayedGuess
+	{
+		Started started;
+		bool acted = false;
+		bool kept = false;
+	};
+	uint64_t m_nextDelay = 0;
+	std::unordered_map<uint64_t, DelayedGuess> m_guessedDelays;
 
 	bool m_on = false;
 	bool m_haveOriginal = false;

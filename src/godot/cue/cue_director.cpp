@@ -33,6 +33,12 @@ void CbDirector::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "explain", "name", "at", "other", "args" ), &CbDirector::explain, DEFVAL( Variant() ),
 						  DEFVAL( Dictionary() ) );
 	ClassDB::bind_method( D_METHOD( "update" ), &CbDirector::update );
+	ClassDB::bind_method( D_METHOD( "set_ticks", "tick", "confirmed" ), &CbDirector::set_ticks );
+	ClassDB::bind_method( D_METHOD( "set_answer_ticks", "value" ), &CbDirector::set_answer_ticks );
+	ClassDB::bind_method( D_METHOD( "get_answer_ticks" ), &CbDirector::get_answer_ticks );
+	ClassDB::bind_method( D_METHOD( "get_taken_back_count" ), &CbDirector::get_taken_back_count );
+	ClassDB::bind_method( D_METHOD( "get_late_answer_count" ), &CbDirector::get_late_answer_count );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "answer_ticks" ), "set_answer_ticks", "get_answer_ticks" );
 	ClassDB::bind_static_method( "CbDirector", D_METHOD( "check_scene", "scene" ), &CbDirector::check_scene );
 	ClassDB::bind_static_method( "CbDirector", D_METHOD( "instantiate", "scene" ), &CbDirector::instantiate );
 	ClassDB::bind_method( D_METHOD( "set_auto_update", "value" ), &CbDirector::set_auto_update );
@@ -41,6 +47,8 @@ void CbDirector::_bind_methods()
 
 	// A press was shown as this cue before the server answered (CbPrediction).
 	ADD_SIGNAL( MethodInfo( "predicted", PropertyInfo( Variant::STRING, "cue" ) ) );
+	// The server did not answer it: what it showed was taken back (set_ticks).
+	ADD_SIGNAL( MethodInfo( "taken_back", PropertyInfo( Variant::STRING, "cue" ) ) );
 	// A reaction shook the camera or flashed the screen: the viewer's, so the game applies it.
 	ADD_SIGNAL( MethodInfo( "screen_effect", PropertyInfo( Variant::FLOAT, "shake" ), PropertyInfo( Variant::FLOAT, "shake_time" ),
 							PropertyInfo( Variant::COLOR, "flash_color" ), PropertyInfo( Variant::FLOAT, "flash_time" ) ) );
@@ -208,7 +216,7 @@ namespace
 constexpr double kEchoSeconds = 1.0;
 } // namespace
 
-void CbDirector::Play( const String& name, const cue::Context& context, const std::vector<ObjectID>* skip, std::vector<ObjectID>* acted )
+void CbDirector::Play( const String& name, const cue::Context& context, const std::vector<ObjectID>* skip, std::vector<Started>* started )
 {
 	Index();
 	auto it = m_byCue.find( name );
@@ -226,9 +234,10 @@ void CbDirector::Play( const String& name, const cue::Context& context, const st
 			continue;
 		}
 		auto* reaction = Object::cast_to<CbReaction>( ObjectDB::get_instance( id ) );
-		if ( reaction != nullptr && reaction->Fire( context, now ) && acted != nullptr )
+		Started one;
+		if ( reaction != nullptr && reaction->Fire( context, now, started != nullptr ? &one : nullptr ) && started != nullptr )
 		{
-			acted->push_back( id );
+			started->push_back( std::move( one ) );
 		}
 	}
 }
@@ -246,10 +255,35 @@ void CbDirector::cue( const String& name, Node* at, Node* other, const Dictionar
 		{
 			if ( it->cue == name )
 			{
-				already = std::move( it->acted );
+				// What it started stays, a delay still running too.
+				for ( const Started& one : it->started )
+				{
+					already.push_back( one.reaction );
+					if ( auto* reaction = Object::cast_to<CbReaction>( ObjectDB::get_instance( one.reaction ) ) )
+					{
+						reaction->Keep( one );
+					}
+				}
 				m_shown.erase( it );
 				echo = true;
 				break;
+			}
+		}
+		if ( echo == false )
+		{
+			double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
+			while ( m_takenBackRecently.empty() == false && now - m_takenBackRecently.front().second > 2.0 )
+			{
+				m_takenBackRecently.pop_front();
+			}
+			for ( auto it = m_takenBackRecently.begin(); it != m_takenBackRecently.end(); ++it )
+			{
+				if ( it->first == name )
+				{
+					m_lateAnswers += 1;
+					m_takenBackRecently.erase( it );
+					break;
+				}
 			}
 		}
 	}
@@ -259,11 +293,43 @@ void CbDirector::cue( const String& name, Node* at, Node* other, const Dictionar
 const std::deque<CbDirector::Shown>& CbDirector::Pending()
 {
 	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
-	while ( m_shown.empty() == false && now - m_shown.front().at > kEchoSeconds )
+	for ( auto it = m_shown.begin(); it != m_shown.end(); )
 	{
-		m_shown.pop_front();
+		bool late = now - it->at > kEchoSeconds;
+		bool unanswered = it->tick != 0 && m_confirmed > it->tick && int64_t( m_confirmed - it->tick ) > m_answerTicks;
+		if ( late || unanswered )
+		{
+			Shown gone = std::move( *it );
+			it = m_shown.erase( it );
+			TakeBack( gone );
+		}
+		else
+		{
+			++it;
+		}
 	}
 	return m_shown;
+}
+
+void CbDirector::TakeBack( const Shown& shown )
+{
+	for ( const Started& one : shown.started )
+	{
+		if ( auto* reaction = Object::cast_to<CbReaction>( ObjectDB::get_instance( one.reaction ) ) )
+		{
+			reaction->TakeBack( one );
+		}
+	}
+	m_takenBack += 1;
+	m_takenBackRecently.emplace_back( shown.cue, double( Time::get_singleton()->get_ticks_usec() ) / 1e6 );
+	emit_signal( "taken_back", shown.cue );
+}
+
+void CbDirector::set_ticks( int64_t tick, int64_t confirmed )
+{
+	m_tick = uint32_t( std::max<int64_t>( tick, 0 ) );
+	m_confirmed = uint32_t( std::max<int64_t>( confirmed, 0 ) );
+	Pending();
 }
 
 Array CbDirector::pending_predictions()
@@ -334,10 +400,11 @@ int CbDirector::Predict( const String& action, bool held )
 		Shown shown;
 		shown.cue = name;
 		shown.at = now;
+		shown.tick = m_tick;
 		shown.changes = prediction->get_changes();
 		shown.stance = prediction->get_stance().strip_edges();
 		shown.stanceLayer = prediction->get_stance_layer().strip_edges();
-		Play( name, context, nullptr, &shown.acted );
+		Play( name, context, nullptr, &shown.started );
 		m_shown.push_back( std::move( shown ) );
 		emit_signal( "predicted", name );
 		predicted += 1;

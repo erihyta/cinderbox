@@ -139,6 +139,11 @@ func _initialize() -> void:
 
 func _process(_delta: float) -> bool:
 	_frames += 1
+	if _step > 0:
+		if _take_back_step():
+			_finish()
+			return true
+		return false
 	if _frames != 2:
 		return false
 	var server := {"value": 1, "point": Vector3(1, 1, 1), "end": Vector3(9, 1, 1)}
@@ -265,6 +270,153 @@ func _process(_delta: float) -> bool:
 	for item in items:
 		item.free()
 
+	_take_back_start()
+	return false
+
+
+# --- A wrong guess taken back ----------------------------------------------------------------------
+#
+# Effects/Guess          press "kick" -> "test.kicked"
+# Effects/Anim           an AnimationPlayer playing "idle"
+# Effects/Puff           on test.kicked: a scene under Effects
+# Effects/Swing          on test.kicked: Anim plays "swing"
+# Effects/Lift           on test.kicked: PropMark.position = (0, 5, 0)
+# Effects/Hidden         on test.kicked: HiddenMark.hide()            (a method: not taken back)
+# Effects/Later          on test.kicked, delay 0.1: a scene under Effects
+
+var _anim: AnimationPlayer
+var _prop: Node3D
+var _hidden: Node3D
+var _taken: Array[String] = []
+var _step := 0
+var _wait_until := 0
+
+
+func _effect_scenes() -> int:
+	var count := 0
+	for child in _effects.get_children():
+		if child.scene_file_path == SCENE and not child.is_queued_for_deletion():
+			count += 1
+	return count
+
+
+func _take_back_start() -> void:
+	# What the checks above left waiting goes first (a second without an answer).
+	OS.delay_msec(1100)
+	_world.pending_predictions()
+	for child in _effects.get_children():
+		if child.scene_file_path == SCENE:
+			child.free()
+	var counted_before: int = _world.get_taken_back_count()
+	_world.taken_back.connect(func(cue): _taken.append(cue))
+	var guess := CbPrediction.new()
+	guess.name = "Guess"
+	guess.action = "kick"
+	guess.cue = "test.kicked"
+	_effects.add_child(guess)
+	_anim = AnimationPlayer.new()
+	_anim.name = "Anim"
+	var library := AnimationLibrary.new()
+	for clip in ["idle", "swing"]:
+		var animation := Animation.new()
+		animation.length = 1.0
+		animation.loop_mode = Animation.LOOP_LINEAR if clip == "idle" else Animation.LOOP_NONE
+		library.add_animation(clip, animation)
+	_anim.add_animation_library("", library)
+	_effects.add_child(_anim)
+	_prop = _mark("PropMark")
+	_hidden = _mark("HiddenMark")
+	var puff := _reaction("Puff")
+	puff.event = "test.kicked"
+	puff.scene = SCENE
+	puff.scene_lifetime = 100.0
+	var swing := _reaction("Swing")
+	swing.event = "test.kicked"
+	swing.animation_player = NodePath("../Anim")
+	swing.animation = "swing"
+	var lift := _reaction("Lift")
+	lift.event = "test.kicked"
+	lift.target = NodePath("../PropMark")
+	lift.property = "position"
+	lift.value = Vector3(0, 5, 0)
+	var hidden := _reaction("Hidden")
+	hidden.event = "test.kicked"
+	hidden.target = NodePath("../HiddenMark")
+	hidden.method = "hide"
+	var later := _reaction("Later")
+	later.event = "test.kicked"
+	later.scene = SCENE
+	later.scene_lifetime = 100.0
+	later.delay = 0.1
+
+	# The game is at tick 100; the server has confirmed up to 90.
+	_check("answer_ticks: 8 by default", _world.answer_ticks == 8)
+	_world.set_ticks(100, 90)
+	_anim.play("idle")
+	_check("a guess: it predicts", _world.press("kick") == 1)
+	_check("... and shows: a scene, an animation, a property, a method", _effect_scenes() == 1 and _anim.current_animation == "swing"
+		and _prop.position == Vector3(0, 5, 0) and not _hidden.visible)
+	_world.set_ticks(104, 101)
+	_world.set_ticks(110, 108)
+	_check("the server confirmed its tick, not yet past the margin: still waiting", _world.pending_predictions().size() == 1 and _taken.is_empty())
+	_world.set_ticks(111, 109)
+	_check("past the margin with no answer: taken back", _world.pending_predictions().is_empty() and _taken == ["test.kicked"]
+		and _world.get_taken_back_count() == counted_before + 1)
+	_check("... its scene is freed", _effect_scenes() == 0)
+	_check("... its animation stopped, and the one before goes on", _anim.current_animation == "idle")
+	_check("... its property put back", _prop.position == Vector3.ZERO)
+	_check("... a method call stays (it cannot be undone)", not _hidden.visible)
+	_hidden.show()
+	_step = 1
+	_wait_until = Time.get_ticks_msec() + 200
+
+
+func _take_back_step() -> bool:
+	if Time.get_ticks_msec() < _wait_until:
+		return false
+	match _step:
+		1:
+			_check("... and its delay, still running then, never acts", _effect_scenes() == 0)
+			# Answered: everything stays, the delay too.
+			_world.set_ticks(200, 190)
+			_world.press("kick")
+			_world.cue("test.kicked", _p0, null, {})
+			_world.set_ticks(220, 219)
+			_check("answered: nothing is taken back", _taken.size() == 1 and _effect_scenes() == 1 and _anim.current_animation == "swing")
+			_step = 2
+			_wait_until = Time.get_ticks_msec() + 200
+		2:
+			_check("answered: its delay acts", _effect_scenes() == 2)
+			for child in _effects.get_children():
+				if child.scene_file_path == SCENE:
+					child.free()
+			# Taken back after its delay acted: what the delay added goes too.
+			_world.set_ticks(300, 290)
+			_world.press("kick")
+			_step = 3
+			_wait_until = Time.get_ticks_msec() + 200
+		3:
+			_check("a delay acted before the guess was judged", _effect_scenes() == 2)
+			_world.set_ticks(320, 319)
+			_check("taken back: the delay's scene goes too", _effect_scenes() == 0 and _taken.size() == 2)
+			# A something that sets a property already changed since: left as it is.
+			_world.press("kick")
+			_prop.position = Vector3(1, 1, 1)
+			_world.set_ticks(340, 339)
+			_check("a property changed since by someone else is left alone", _prop.position == Vector3(1, 1, 1))
+			# No ticks (a host that gives none): a second without an answer.
+			_world.set_ticks(0, 0)
+			_world.press("kick")
+			_step = 4
+			_wait_until = Time.get_ticks_msec() + 1100
+		4:
+			_world.pending_predictions()
+			_check("no ticks: taken back after a second", _taken.size() == 4 and _effect_scenes() == 0)
+			_step = 5
+	return _step == 5
+
+
+func _finish() -> void:
 	# No local player: nothing to predict for.
 	_predict.cooldown = 0.0
 	_world.set_local(null)
@@ -272,4 +424,3 @@ func _process(_delta: float) -> bool:
 
 	print("predictions: %s" % ("ok" if _failures == 0 else "%d FAILED" % _failures))
 	quit(0 if _failures == 0 else 1)
-	return true

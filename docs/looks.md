@@ -105,9 +105,21 @@ PredictFire   CbPrediction   action "use"    cue "item.use"         (the rifle: 
   asks `ctx.Used`, and the look's prediction is `while_held` with the mod's time between shots
   as its `cooldown`. The predictions are counted from the press, not from the frames, so they keep
   the server's rate at any frame rate (`gun.cpp`, `prefabs/rifle.tscn`).
-- **A wrong guess**: a reaction that played is not taken back; changed fields and the led body
-  go back to the server's when the prediction expires (a second). Keep the conditions as close to
-  the server's rule as the board allows.
+- **A wrong guess is taken back**: once the server has confirmed the tick of the press, and 8
+  ticks more (`CbDirector.answer_ticks`), without sending the cue, the guess was wrong. Then:
+
+  | What the reaction did | Taken back |
+  |---|---|
+  | added a scene, played a sound | freed at once |
+  | played an animation | stopped while it still plays; what played before goes on |
+  | set a property | put back, unless something else set it since |
+  | waits for its `delay` | never acts |
+  | changes, stance | end: fields and the led body are the server's again |
+  | shook the camera, flashed the screen, called a method | stays: it cannot be undone |
+
+  A host that gives no ticks (a recording, the editor's preview) waits a second instead. Keep the
+  conditions as close to the server's rule as the board allows: a guess taken back is still a
+  flash that came and went.
 - **How the body is led**: the viewer runs your character's state machine forward from the state
   the server sent, with the predicted stance or event put in at the moment of the press, for the
   layers above the base (the legs follow movement, which is predicted already). When the server's

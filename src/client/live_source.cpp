@@ -36,6 +36,7 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 	f.alphaAtPublish = client.TickAlpha();
 	f.rate = client.State() == ClientState::Playing ? 1.0f : 0.0f;
 	f.hasWorld = false;
+	f.confirmedTick = 0;
 	if ( f.mapHash != client.MapHash() )
 	{
 		f.mapHash = client.MapHash();
@@ -77,6 +78,7 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 		f.frame.localNetId = sim.Globals().playerNetIds[client.Slot()];
 		rollback = session->GetStats();
 		confirmedTick = session->ConfirmedTick();
+		f.confirmedTick = confirmedTick;
 		rollbackWindow = session->MaxRollback();
 		f.hasWorld = true;
 	}

@@ -1376,6 +1376,8 @@ void CinderboxClient::_process( double delta )
 	UpdateMapVisual();
 	RefreshHeldKinds();
 	HandleEvents();
+	// Up to where the server has answered: a guess it left unanswered is taken back (CbDirector).
+	Director()->set_ticks( int64_t( m_frame.frame.tick ), int64_t( m_frame.confirmedTick ) );
 	// A source that plays someone else's input says what the local player pressed.
 	AnnouncePresses( m_frame.localPressed );
 	m_frame.localPressed = 0;
