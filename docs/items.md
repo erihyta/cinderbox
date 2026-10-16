@@ -143,6 +143,24 @@ undecided).
 **A shop** is not a container: it is a mod's intent (`shop.buy`, the `shop` mod): a button sends
 it, the mod takes the coins and gives the item ([server-mods.md](server-mods.md#intents-a-mod-declares)).
 
+### An item's own HUD
+
+`hud` on its `CbItem`: a HUD scene that comes with the item, so a new gun or skill brings its own
+lines and no mod's HUD has to name it. `hud_shows`: **In the hand** (while the viewer's own player
+has one out) or **While carried** (in any slot).
+
+| | What |
+|---|---|
+| Shown | once, for the viewer's own player, however many copies there are; freed when the condition stops |
+| Inside it | any HUD nodes, and a [sheet](looks.md#a-huds-sheet); `{hand.gun.rounds}` reads the copy in the hand |
+| Its name | not `hud_*.tscn`: those are a mod's HUDs, shown all the time (`ui/pistol_hud.tscn`) |
+| Where it sits | its own: each scene places itself (the brawl kit's four skills take a row each) |
+
+- **The examples**: the pistol's `ui/pistol_hud.tscn` (in the hand: what its second use does, on
+  its key), and each brawl skill's line (while carried: READY or the seconds left).
+- **The game shows it** (`game.gd`, `_update_kind_huds`): the bake writes `hud` and `hudshows` lines
+  into `items/<kind>.cfg`; the server skips them.
+
 ### The left hand
 
 `hand` on its `CbItem`: **The left hand while carried** keeps it in the left hand for as long as the
