@@ -11,3 +11,10 @@ predict use as melee.swing if !combat.dead
     cooldown 0.5
     change melee.swings += 1
     stance melee_swing on full
+
+on test.two
+    at end
+    call Timer hide
+    at point
+    delay 0.5
+    call Barrel hide

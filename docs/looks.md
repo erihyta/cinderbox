@@ -448,7 +448,7 @@ while melee.hot
 | Line | Means |
 |---|---|
 | `on <event> [if <expression>]`, `while <expression>` | a rule starts: when, as a reaction's |
-| `subject`, `side`, `kind`, `template`, `delay`, `chance`, `cooldown`, `wait`, `at ... [from] [offset]` | its settings, for every action under it |
+| `subject`, `side`, `kind`, `template`, `delay`, `chance`, `cooldown`, `wait [off]`, `at ... [from] [offset]`, `at here` | its settings: each holds for the actions below it |
 | `sound`, `scene`, `play`, `set`, `call`, `shake`, `flash` | its actions: each becomes one `CbReaction` |
 | `predict <action> as <cue> [if <expression>]`, then `cooldown`, `held`, `change`, `stance ... on ...` | a [prediction](#predictions): one `CbPrediction` |
 
@@ -461,6 +461,10 @@ predict use as item.use if gun.ammo > 0 and !gun.reloading and !combat.dead
 on item.use
     subject ^^
     scene res://vfx/muzzle_flash.tscn under Muzzle life 0.3
+    at beam from Muzzle
+    scene res://vfx/tracer.tscn life 0.06
+    at Muzzle
+    sound res://assets/sfx/gunshot.wav volume -5 jitter 0.06 range 70
 ```
 
 - **Every action is a `CbReaction`** under the `CbRules` node (never saved with the scene), so the
@@ -473,6 +477,11 @@ on item.use
   filter; the game's pack check allows them as data).
 - **Every look of the game is written so** (M166): the game's own `vfx/reactions.rules`, the
   pistol's and the bat's sheets, and every mod's `reactions_<mod>.rules`: 48 nodes became 13 sheets.
+- **A setting holds for the actions below it**, top to bottom, until another line changes it:
+  one rule plays a flash, a tracer and a shot, each where it belongs. `at here`, `delay 0`,
+  `chance 1`, `cooldown 0` and `wait off` go back to the defaults; a setting after the last action
+  does nothing, and is said as a mistake. `python tools/merge_rules.py <sheet>` merges rules that
+  start the same way into one so.
 - **`under` attaches, `at` places**: `scene ... under Muzzle` rides on the muzzle; `at Muzzle` puts
   it there, in the world, once. With neither, it goes where the `CbRules` node is (a `Node3D`).
 - **Converting a scene**: `python tools/reactions_to_rules.py <project> <scene>` writes its sheet

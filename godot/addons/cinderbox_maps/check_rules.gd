@@ -71,7 +71,15 @@ func _initialize() -> void:
 func _process(_delta: float) -> bool:
 	_frames += 1
 	if _frames == 2:
-		_check("three actions and a prediction: four nodes", _rules.get_reaction_count() == 4)
+		_check("five actions and a prediction: six nodes", _rules.get_reaction_count() == 6)
+		var two := {}
+		for child in _rules.get_children(true):
+			if child is CbReaction and child.event == "test.two":
+				two[String(child.target)] = child
+		_check("a setting holds for the actions below it: at point, delay 0.5", two.has("../../Barrel")
+			and two["../../Barrel"].place == CbReaction.PLACE_EVENT_POINT and is_equal_approx(two["../../Barrel"].delay, 0.5))
+		_check("... and not for the ones above: at end, no delay", two.has("../../Timer")
+			and two["../../Timer"].place == CbReaction.PLACE_EVENT_END and two["../../Timer"].delay == 0.0)
 		var predicted: CbPrediction = null
 		for child in _rules.get_children(true):
 			if child is CbPrediction:
@@ -99,7 +107,7 @@ func _process(_delta: float) -> bool:
 		for p in problems:
 			lines.append(int(p.get_slice(":", 0).get_slice(" ", 1)))
 		lines.sort()
-		_check("its mistakes, each at its line (3, 4, 6, 9, 12)", lines == [3, 4, 6, 9, 12])
+		_check("its mistakes, each at its line (3, 4, 6, 9, 12, 15)", lines == [3, 4, 6, 9, 12, 15])
 		_check("the rule without one still works", _bad.get_reaction_count() == 1)
 		_timer.visible = true
 		_world.cue("test.fine", _item, null, {})

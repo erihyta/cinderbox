@@ -147,10 +147,49 @@ Variant Value( const Token& token )
 	return t;
 }
 
+// "at <where> [from PATH] [offset X Y Z]", from the word after "at" up to `end`: the place into
+// `into`, and where it stopped in `next`. False, with why, when it cannot be read.
+bool ParseAt( const std::vector<Token>& w, size_t i, size_t end, Dictionary& into, size_t& next, String& why )
+{
+	if ( i >= end )
+	{
+		why = "at point, end, beam, follow, or a node's path";
+		return false;
+	}
+	const String where = w[i].text;
+	const int place = where == "point" ? 1 : where == "end" ? 2 : where == "beam" ? 3 : where == "follow" ? 5 : 4;
+	into["place"] = place;
+	if ( place == 4 )
+	{
+		into["place_node"] = where;
+	}
+	++i;
+	if ( i + 1 < end && w[i].quoted == false && w[i].text == "from" )
+	{
+		into["place_node"] = w[i + 1].text; // a beam from a node
+		i += 2;
+	}
+	if ( i < end && w[i].quoted == false && w[i].text == "offset" )
+	{
+		double x = 0, y = 0, z = 0;
+		if ( i + 3 >= end || Number( w[i + 1], x ) == false || Number( w[i + 2], y ) == false || Number( w[i + 3], z ) == false )
+		{
+			why = "offset X Y Z";
+			return false;
+		}
+		into["offset"] = Vector3( float( x ), float( y ), float( z ) );
+		i += 4;
+	}
+	next = i;
+	return true;
+}
+
 struct Building
 {
 	int line = 0;
-	Dictionary settings;			 // for every action of the rule (a prediction: all of it)
+	Dictionary settings;			 // when it is (on, while, its conditions); a prediction: all of it
+	Dictionary current;				 // the settings read so far: each action below takes them as they are
+	int pendingSetting = 0;			 // the line of a setting no action has come after yet
 	std::vector<Rule> actions;		 // its own properties, and its line
 	bool prediction = false;
 	PackedStringArray changes;		 // a prediction's
@@ -181,6 +220,12 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 		open = false;
 		if ( rule.bad )
 		{
+			return;
+		}
+		if ( rule.prediction == false && rule.pendingSetting != 0 )
+		{
+			errors.push_back( "line " + String::num_int64( rule.pendingSetting ) +
+							  ": a setting after the last action does nothing (a setting is for the actions below it)" );
 			return;
 		}
 		if ( rule.prediction )
@@ -370,7 +415,8 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				fail( number, verb + String( " takes one word" ) );
 				continue;
 			}
-			rule.settings[verb == "subject" ? "subject" : verb == "kind" ? "subject_kind" : "subject_template"] = w[1].text;
+			rule.current[verb == "subject" ? "subject" : verb == "kind" ? "subject_kind" : "subject_template"] = w[1].text;
+			rule.pendingSetting = number;
 			continue;
 		}
 		if ( verb == "side" )
@@ -381,7 +427,8 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				fail( number, "side a, side b or side either" );
 				continue;
 			}
-			rule.settings["event_side"] = side == "a" ? 0 : side == "b" ? 1 : 2;
+			rule.current["event_side"] = side == "a" ? 0 : side == "b" ? 1 : 2;
+			rule.pendingSetting = number;
 			continue;
 		}
 		if ( verb == "delay" || verb == "chance" || verb == "cooldown" )
@@ -391,45 +438,38 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				fail( number, verb + String( " takes a number" ) );
 				continue;
 			}
-			rule.settings[verb] = number1;
+			rule.current[verb] = number1;
+			rule.pendingSetting = number;
 			continue;
 		}
 		if ( verb == "wait" )
 		{
-			rule.settings["wait_for_server"] = true;
+			if ( w.size() > 2 || ( w.size() == 2 && w[1].text != "off" ) )
+			{
+				fail( number, "wait, or wait off" );
+				continue;
+			}
+			rule.current["wait_for_server"] = w.size() == 1;
+			rule.pendingSetting = number;
 			continue;
 		}
 		if ( verb == "at" )
 		{
-			if ( w.size() < 2 )
+			size_t next = 0;
+			String why;
+			// (A new place: what the last one said about a node or an offset goes with it.)
+			rule.current.erase( "place_node" );
+			rule.current.erase( "offset" );
+			if ( w.size() == 2 && w[1].text == "here" )
 			{
-				fail( number, "at point, end, beam, follow, or a node's path" );
+				rule.current["place"] = 0; // where the sheet's node is (under its parent)
+			}
+			else if ( ParseAt( w, 1, w.size(), rule.current, next, why ) == false || next != w.size() )
+			{
+				fail( number, why.is_empty() ? String( "after where: from PATH, offset X Y Z" ) : why );
 				continue;
 			}
-			String where = w[1].text;
-			int place = where == "point" ? 1 : where == "end" ? 2 : where == "beam" ? 3 : where == "follow" ? 5 : 4;
-			rule.settings["place"] = place;
-			if ( place == 4 )
-			{
-				rule.settings["place_node"] = where;
-			}
-			size_t i = 2;
-			if ( i < w.size() && w[i].text == "from" && i + 1 < w.size() )
-			{
-				rule.settings["place_node"] = w[i + 1].text; // a beam from a node
-				i += 2;
-			}
-			if ( i < w.size() )
-			{
-				double x = 0, y = 0, z = 0;
-				if ( w[i].text != "offset" || i + 3 >= w.size() || Number( w[i + 1], x ) == false || Number( w[i + 2], y ) == false ||
-					 Number( w[i + 3], z ) == false || i + 4 != w.size() )
-				{
-					fail( number, "after where: offset X Y Z" );
-					continue;
-				}
-				rule.settings["offset"] = Vector3( float( x ), float( y ), float( z ) );
-			}
+			rule.pendingSetting = number;
 			continue;
 		}
 		// --- actions
@@ -551,6 +591,11 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			fail( number, "\"" + verb + "\" is not a setting or an action of a rule" );
 			continue;
 		}
+		// The settings read so far, as they are now: a setting below it is for the actions after it.
+		Dictionary taken = rule.current.duplicate();
+		taken.merge( action.properties, true );
+		action.properties = taken;
+		rule.pendingSetting = 0;
 		rule.actions.push_back( action );
 	}
 	finish();
