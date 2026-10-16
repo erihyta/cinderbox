@@ -102,6 +102,7 @@ namespace cb::cue
 struct Rule
 {
 	int line = 0;
+	int head = 0; // the line its rule starts on (on, while, predict, use): where its event and its "if" are
 	bool prediction = false;
 	godot::String type = "CbReaction"; // the node it becomes: CbReaction, CbPrediction, CbFieldBinding;
 										   // "use": an item's use, for its bake (parts: [{class, properties}])

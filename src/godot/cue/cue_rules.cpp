@@ -264,6 +264,7 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 		{
 			Rule made;
 			made.line = action.line;
+			made.head = rule.line;
 			made.properties = rule.settings.duplicate();
 			made.properties.merge( action.properties, true );
 			out.push_back( made );

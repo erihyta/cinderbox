@@ -2,6 +2,7 @@
 
 #include "cinderbox_character.h"
 #include "cinderbox_item_look.h"
+#include "cinderbox_rules_editor.h"
 #include "pose.h" // CinderboxSkeleton holds a PoseEvaluator
 #include "cinderbox_skeleton.h"
 
@@ -14,6 +15,7 @@
 #include <godot_cpp/classes/world3d.hpp>
 #include <godot_cpp/classes/editor_paths.hpp>
 #include <godot_cpp/classes/editor_settings.hpp>
+#include <godot_cpp/classes/script_editor.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
@@ -233,6 +235,12 @@ void CbAutoBakePlugin::_enter_tree()
 	connect( "scene_saved", Callable( this, "on_scene_saved" ) );
 	m_motionInspector.instantiate();
 	add_inspector_plugin( m_motionInspector );
+	// .rules files: coloured, names offered while typing, mistakes marked on their lines.
+	if ( ScriptEditor* scripts = EditorInterface::get_singleton()->get_script_editor() )
+	{
+		m_rulesHighlighter = Ref<CbRulesHighlighter>( memnew( CbRulesHighlighter ) );
+		scripts->register_syntax_highlighter( m_rulesHighlighter );
+	}
 	OfferNodes();
 	OfferTest();
 	MakeViewPanel();
@@ -252,6 +260,11 @@ void CbAutoBakePlugin::_exit_tree()
 	disconnect( "scene_saved", Callable( this, "on_scene_saved" ) );
 	remove_inspector_plugin( m_motionInspector );
 	m_motionInspector.unref();
+	if ( ScriptEditor* scripts = EditorInterface::get_singleton()->get_script_editor(); scripts != nullptr && m_rulesHighlighter.is_valid() )
+	{
+		scripts->unregister_syntax_highlighter( m_rulesHighlighter );
+	}
+	m_rulesHighlighter.unref();
 	if ( m_viewPanel != nullptr )
 	{
 		remove_control_from_container( CONTAINER_SPATIAL_EDITOR_SIDE_RIGHT, m_viewPanel );

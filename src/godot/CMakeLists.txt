@@ -13,6 +13,7 @@ add_library(cinderbox_gd SHARED
 	cinderbox_client_values.cpp
 	cinderbox_client_world.cpp
 	cinderbox_autobake.cpp
+	cinderbox_rules_editor.cpp
 	cinderbox_track_player.cpp
 	cinderbox_entity_nodes.cpp
 	cinderbox_hud.cpp
