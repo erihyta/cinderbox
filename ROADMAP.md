@@ -215,7 +215,7 @@ HUD. Made with today's nodes; `net_brawl` plays it.
 |---|---|---|
 | A wrong guess is taken back | **done (M173)**: a press the server confirmed 8 ticks past without its cue is taken back: scenes and sounds freed, an animation stopped, a property put back, a delay cancelled; changes and stance end | a shake, a flash, a method call stay |
 | A swing seen from its start | **done (M174)**: another player's clip first seen up to 0.5 s in is drawn from its start and is level 0.1 s later; its keyed effects and sounds follow the drawn clip | for that 0.1 s the drawn swing is a little behind the one the server hit-tests |
-| Text nobody authored | player names only | chat, a team name, a message of the day (the parked `m101-text` branch has the mechanism) |
+| Text nobody authored | **done (M175)**: typed text as a mod's (`declare.TextChannel`, `ctx.Typed`, `ctx.Say`), shown by `CbTextLog` and `CbTextEntry`; the `chat` mod | a team name, a message of the day: a mod saying lines (`ctx.Say` from nobody) when a player joins is all they need |
 | A server list | join by address | recent and favourite servers with their mods and players |
 | Checked pack layers | a pack's layer may read what the lead cannot predict | the bake says so |
 | The game script | **done (M172)**: `game.gd` (1,256 lines) keeps joining, leaving, watching, the menu and the HUD (573); the unattended run and the view probe are `autoplay.gd`, reactions, items' HUDs and screen effects `presentation.gd`, the camera and the view model `view_camera.gd`, the keys and the help line `keys.gd` | |

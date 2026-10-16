@@ -78,6 +78,7 @@ The mods that ship:
 | `grapple` | events `grapple.hook.used`, `grapple.fired`, `grapple.hooked`; `declare.Slots( 4 )`; the item `grapple.hook` from its look | the example of a probe, a force and a link: all of it in the hook's scene (`client/prefabs/hook.tscn`: the item, its `Hook` motion, its hanging pose `grapple.hook_hang`); used by its slot's key, where it is. The mod declares the two events |
 | `brawl` | five skills from its look (`brawl.fist`, `.dash_strike`, `.uppercut`, `.slam`, `.guard`); fields `brawl.combo`, `brawl.combo_left`, `brawl.cd_*`; hit events; the set `brawl.moves` | a brawler's kit, step 5's measure: what a skill does to bodies is its scene's (predicted); this mod turns the probes' hit events into `combat.damage` (a quarter on a guard) and throws who is near where a slam lands. `--mods inventory,combat,brawl` |
 | `shop` | intent `shop.buy`; `shop.coins`, a private field; events `shop.bought`, `shop.refused`; option `shop.start` | the example of an [intent a mod declares](#intents-a-mod-declares): a screen on B with three buttons (a frag grenade 1 coin, a bat 1, a rifle 2); a player starts with `shop.start` coins (3) and gets one per kill |
+| `chat` | the text channel `chat`; options `chat.max_length`, `chat.burst`, `chat.burst_seconds` | the example of [typed text](#typed-text): what a player types (T, Enter) is said to everyone with its name; a line is cut to 120 characters, and more than 4 lines in 8 s gets only the sender a "slow down". Off: start the server without it, or a `disabled` file |
 | `chest` | the template `chest` (`declare.ContainerTemplate`: a static box with `chest.slots` slots, its look `prefabs/chest.tscn`); options `chest.count`, `chest.radius`, `chest.slots`, `chest.items` | the example of a [container](items.md#containers-chests): places chests on the ground around the spawn point (`ctx.FindTemplate`, `ctx.SpawnTemplate`, `ctx.CastRay` for the ground) and fills each (`ctx.Containers`, `ctx.PutInContainer`) |
 | `frag` | the item `frag.grenade` from its look (slot 6, key H); events `frag.release`, `frag.thrown`, `frag.grenade.expired`, `frag.blast`; `declare.Slots( 6 )`; options `frag.damage`, `frag.radius`, `frag.push`, `frag.refill_seconds`, `frag.carry` | the fused grenade, the example of [an item's time being up](motions.md#things-that-fly-the-grenades) and of a [stack](items.md#stacks): three to a slot, thrown one at a time from the hand; it bounces, and goes off when the simulation says its time is up; the mod gives them back one at a time while a player has fewer than three |
 | `grenade` (off) | the item `grenade.shell` from its look (slot 7); events `grenade.release`, `grenade.thrown`, `grenade.blast`; `declare.Slots( 7 )`; option `grenade.refill_seconds` | the impact grenade, switched off (its `disabled` file; start it by name): thrown from the hand, it goes off on the first hard hit (`ctx.Hits`) |
@@ -139,6 +140,31 @@ for ( const IntentSent& asked : ctx.Intents( m_buy ) )   // who, and its numbers
 
 - As many as 223 intents across the mods; the same name from two mods is one intent.
 - The `shop` mod is the example, and `net_shop` the check.
+
+### Typed text
+
+Words a player types (chat, a team name, a vote) are text nobody authored, so they cannot be in a
+look. The engine only carries them; what is said to whom is a mod's.
+
+```cpp
+declare.TextChannel( "chat" );
+...
+for ( const TypedText& typed : ctx.Typed() )            // who, which channel, the words
+{
+	ctx.Say( "chat", typed.text, typed.slot );           // to everyone, from that player
+}
+ctx.Say( "chat", "Slow down.", kNoSlot, typed.slot );    // the server's own words, to one player
+```
+
+| | What |
+|---|---|
+| Sent | a reliable message (`Text`), not the input: at most 200 bytes, printable, cut on a character |
+| Heard | `ctx.Typed()`: everything typed since the last tick, into a channel some mod declared; at most 4 a tick from one player. Text for a channel nobody declared goes nowhere |
+| Said | `ctx.Say( channel, text, from, to )`: from a player or from nobody (`kNoSlot`), to everyone or one player |
+| Shown | the mod's look: a [`CbTextLog` and a `CbTextEntry`](looks.md#hud-nodes). No such mod, no box |
+| Not | in the simulation, its hash, recordings or view files |
+
+- The `chat` mod is the example, and `net_chat` the check.
 
 ### The combat mod
 
