@@ -1,0 +1,55 @@
+[gd_scene format=3]
+
+; The chat mod's HUD, laid over the game's while a server runs the mod. No scripts: a CbTextLog
+; shows the "chat" channel's last lines, and a CbTextEntry under it opens on T (rebindable on the
+; Keys page): Enter sends, Esc closes. Who reads what is the chat mod's (chat.cpp).
+
+[sub_resource type="LabelSettings" id="Lines"]
+font_size = 18
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.8)
+
+[sub_resource type="StyleBoxFlat" id="Box"]
+bg_color = Color(0.05, 0.05, 0.07, 0.8)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 0.25)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+
+[node name="ChatHud" type="CanvasLayer"]
+
+[node name="Chat" type="VBoxContainer" parent="."]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -620.0
+offset_right = 584.0
+offset_bottom = -300.0
+grow_vertical = 0
+mouse_filter = 2
+alignment = 2
+
+[node name="Log" type="CbTextLog" parent="Chat"]
+layout_mode = 2
+size_flags_vertical = 10
+mouse_filter = 2
+label_settings = SubResource("Lines")
+autowrap_mode = 3
+vertical_alignment = 2
+
+[node name="Entry" type="CbTextEntry" parent="Chat"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("Box")
+theme_override_styles/focus = SubResource("Box")
+placeholder_text = "Say something (Enter sends, Esc closes)"

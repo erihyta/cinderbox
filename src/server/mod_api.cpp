@@ -4,6 +4,7 @@
 
 #include "detmath.h"
 #include "map.h"
+#include "protocol.h"
 #include "reflect.h"
 #include "hit_test.h"
 #include "ragdoll.h"
@@ -12,6 +13,7 @@
 #include "box3d/box3d.h"
 
 #include <algorithm>
+#include <cctype>
 #include <bit>
 #include <cstdlib>
 
@@ -103,6 +105,24 @@ IntentHandle Declarations::Intent( const std::string& name )
 	}
 	m_schema.intents.push_back( name );
 	return { int( m_schema.intents.size() - 1 ) };
+}
+
+void Declarations::TextChannel( const std::string& name )
+{
+	bool good = name.empty() == false && name.size() <= net::kMaxTextChannel;
+	for ( char c : name )
+	{
+		good = good && ( std::isalnum( uint8_t( c ) ) || c == '.' || c == '_' || c == '-' );
+	}
+	if ( good == false )
+	{
+		m_errors.push_back( m_mod + ": bad text channel \"" + name + "\"" );
+		return;
+	}
+	if ( std::find( m_textChannels.begin(), m_textChannels.end(), name ) == m_textChannels.end() )
+	{
+		m_textChannels.push_back( name );
+	}
 }
 
 LayerHandle Declarations::Layer( const std::string& name )
@@ -992,6 +1012,22 @@ int Context::SelectedSlot( PlayerSlot player ) const
 uint32_t Context::SlotItem( PlayerSlot player, int slot ) const
 {
 	return slot >= 0 && slot < kMaxSlots ? m_sim.SlotItem( m_sim.PlayerNetId( player ), uint8_t( slot ) ) : 0;
+}
+
+const std::vector<TypedText>& Context::Typed() const
+{
+	static const std::vector<TypedText> none;
+	return m_typed != nullptr ? *m_typed : none;
+}
+
+void Context::Say( const std::string& channel, const std::string& text, PlayerSlot from, PlayerSlot to )
+{
+	std::string words = net::SanitizeText( text, net::kMaxText );
+	if ( m_said == nullptr || words.empty() || channel.empty() || channel.size() > net::kMaxTextChannel )
+	{
+		return;
+	}
+	m_said->push_back( { channel, std::move( words ), from < kMaxPlayers ? from : kNoSlot, to < kMaxPlayers ? to : kNoSlot } );
 }
 
 std::vector<IntentSent> Context::Intents( IntentHandle intent ) const

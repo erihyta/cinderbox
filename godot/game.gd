@@ -527,7 +527,7 @@ func _send_input(delta: float) -> void:
 		sprint = steered["sprint"]
 		use = steered["use"]
 		actions = steered["actions"]
-	elif get_window().has_focus() and not menu.is_open():
+	elif get_window().has_focus() and not menu.is_open() and not client.is_typing():
 		move.x = float(Input.is_action_pressed("game_right")) - float(Input.is_action_pressed("game_left"))
 		move.y = float(Input.is_action_pressed("game_forward")) - float(Input.is_action_pressed("game_back"))
 		jump = Input.is_action_pressed("game_jump")

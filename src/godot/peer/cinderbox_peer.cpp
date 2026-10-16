@@ -38,6 +38,7 @@ void CinderboxPeer::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "takes_input" ), &CinderboxPeer::takes_input );
 	ClassDB::bind_method( D_METHOD( "set_input", "input" ), &CinderboxPeer::set_input );
 	ClassDB::bind_method( D_METHOD( "control", "name", "value" ), &CinderboxPeer::control );
+	ClassDB::bind_method( D_METHOD( "send_text", "channel", "text" ), &CinderboxPeer::send_text );
 
 	ClassDB::bind_method( D_METHOD( "set_host", "host" ), &CinderboxPeer::set_host );
 	ClassDB::bind_method( D_METHOD( "get_host" ), &CinderboxPeer::get_host );
@@ -121,6 +122,15 @@ void CinderboxPeer::set_input( const PackedByteArray& input )
 		in.view = in.view < kViewModes ? in.view : uint8_t( 0 );
 		in.intent = KnownIntent( in.intent ) ? in.intent : uint8_t( 0 );
 		m_source->SetInput( in );
+	}
+}
+
+void CinderboxPeer::send_text( const String& channel, const String& text )
+{
+	if ( m_source )
+	{
+		// (Bounded again where it is sent: GameClient::SendText.)
+		m_source->SendText( ToStd( channel ).substr( 0, 64 ), ToStd( text ).substr( 0, 1024 ) );
 	}
 }
 

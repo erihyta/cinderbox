@@ -81,6 +81,15 @@ void ObjectSource::SetInput( const PlayerInput& input )
 	target->call( "set_input", bytes );
 }
 
+void ObjectSource::SendText( const std::string& channel, const std::string& text )
+{
+	Object* target = Target();
+	if ( target != nullptr && target->has_method( "send_text" ) )
+	{
+		target->call( "send_text", String::utf8( channel.c_str() ), String::utf8( text.c_str() ) );
+	}
+}
+
 void ObjectSource::Control( const std::string& name, double value )
 {
 	Object* target = Target();

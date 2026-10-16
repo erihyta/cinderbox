@@ -35,6 +35,7 @@
 #include <godot_cpp/classes/texture2d.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 
+#include <deque>
 #include <memory>
 #include <unordered_map>
 
@@ -137,6 +138,26 @@ public:
 	// game frees the cursor and keeps the mouse from the camera and the use button.
 	void want_cursor( int64_t who, bool wanted );
 	bool wants_cursor() const;
+	// Typed text (a mod's channels: "chat"). send_text: words the viewer typed, to the server,
+	// which hands them to its mods. A box being typed into says so (want_typing): meanwhile the
+	// game keeps the keys from the player. Lines the mods said arrive as text_received( channel,
+	// from (a player's name; "" for the server's own words), text ) and stay in Texts() (the last
+	// 100) for the HUD's text nodes.
+	void send_text( const godot::String& channel, const godot::String& text );
+	void want_typing( int64_t who, bool typing );
+	bool is_typing() const;
+	struct ShownText
+	{
+		uint64_t serial = 0; // from 1, in the order they came
+		double at = 0.0;	 // seconds (Time's ticks)
+		godot::String channel;
+		godot::String from;
+		godot::String text;
+	};
+	const std::deque<ShownText>& Texts() const
+	{
+		return m_texts;
+	}
 	// Slots (the simulation's): how many a player has, which one is selected (-1: empty hands),
 	// and the item in one (0: empty).
 	int64_t get_slot_count( int64_t player ) const;
@@ -451,6 +472,11 @@ private:
 	ActionBits m_lastActions = 0;
 	std::map<std::string, double> m_localValues; // "ui." names
 	std::vector<int64_t> m_cursorWanters;
+	std::vector<int64_t> m_typers;
+	std::deque<ShownText> m_texts;
+	uint64_t m_textsSeen = 0; // of the source's count
+	uint64_t m_textSerial = 0;
+	void TakeTexts();
 	bool m_lastUse = false;
 	// Intents not sent yet, the one the input carries now, and when it went out.
 	std::vector<std::array<uint8_t, 3>> m_intents;

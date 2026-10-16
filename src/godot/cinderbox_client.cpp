@@ -20,6 +20,9 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_local_value", "name", "value" ), &CinderboxClient::set_local_value );
 	ClassDB::bind_method( D_METHOD( "get_local_value", "name" ), &CinderboxClient::get_local_value );
 	ClassDB::bind_method( D_METHOD( "want_cursor", "who", "wanted" ), &CinderboxClient::want_cursor );
+	ClassDB::bind_method( D_METHOD( "send_text", "channel", "text" ), &CinderboxClient::send_text );
+	ClassDB::bind_method( D_METHOD( "want_typing", "who", "typing" ), &CinderboxClient::want_typing );
+	ClassDB::bind_method( D_METHOD( "is_typing" ), &CinderboxClient::is_typing );
 	ClassDB::bind_method( D_METHOD( "wants_cursor" ), &CinderboxClient::wants_cursor );
 	ClassDB::bind_method( D_METHOD( "get_slot_count", "player" ), &CinderboxClient::get_slot_count );
 	ClassDB::bind_method( D_METHOD( "get_selected_slot", "player" ), &CinderboxClient::get_selected_slot );
@@ -97,6 +100,8 @@ void CinderboxClient::_bind_methods()
 							PropertyInfo( Variant::STRING, "kind" ), PropertyInfo( Variant::VECTOR3, "position" ),
 							PropertyInfo( Variant::STRING, "template_name" ) ) );
 	ADD_SIGNAL( MethodInfo( "visual_removed", PropertyInfo( Variant::INT, "visual_id" ) ) );
+	ADD_SIGNAL( MethodInfo( "text_received", PropertyInfo( Variant::STRING, "channel" ), PropertyInfo( Variant::STRING, "from" ),
+							PropertyInfo( Variant::STRING, "text" ) ) );
 	ADD_SIGNAL( MethodInfo( "player_jumped", PropertyInfo( Variant::INT, "net_id" ), PropertyInfo( Variant::VECTOR3, "position" ),
 							PropertyInfo( Variant::BOOL, "is_local" ) ) );
 	ADD_SIGNAL( MethodInfo( "player_landed", PropertyInfo( Variant::INT, "net_id" ), PropertyInfo( Variant::VECTOR3, "position" ),
@@ -226,6 +231,66 @@ void CinderboxClient::want_cursor( int64_t who, bool wanted )
 	else if ( wanted == false && found != m_cursorWanters.end() )
 	{
 		m_cursorWanters.erase( found );
+	}
+}
+
+void CinderboxClient::send_text( const String& channel, const String& text )
+{
+	if ( m_source != nullptr && channel.strip_edges().is_empty() == false && text.strip_edges().is_empty() == false )
+	{
+		m_source->SendText( ToStd( channel.strip_edges() ), ToStd( text ) );
+	}
+}
+
+void CinderboxClient::want_typing( int64_t who, bool typing )
+{
+	auto found = std::find( m_typers.begin(), m_typers.end(), who );
+	if ( typing && found == m_typers.end() )
+	{
+		m_typers.push_back( who );
+	}
+	else if ( typing == false && found != m_typers.end() )
+	{
+		m_typers.erase( found );
+	}
+}
+
+bool CinderboxClient::is_typing() const
+{
+	for ( int64_t who : m_typers )
+	{
+		if ( ObjectDB::get_instance( ObjectID( uint64_t( who ) ) ) != nullptr )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void CinderboxClient::TakeTexts()
+{
+	if ( m_frame.textCount < m_textsSeen )
+	{
+		m_textsSeen = 0; // another source
+	}
+	uint64_t fresh = std::min<uint64_t>( m_frame.textCount - m_textsSeen, m_frame.texts.size() );
+	m_textsSeen = m_frame.textCount;
+	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
+	for ( size_t i = m_frame.texts.size() - size_t( fresh ); i < m_frame.texts.size(); ++i )
+	{
+		const present::ViewText& t = m_frame.texts[i];
+		ShownText shown;
+		shown.serial = ++m_textSerial;
+		shown.at = now;
+		shown.channel = String::utf8( t.channel.c_str() );
+		shown.from = t.from < kMaxPlayers ? String::utf8( m_frame.names[t.from].c_str() ) : String();
+		shown.text = String::utf8( t.text.c_str() );
+		m_texts.push_back( shown );
+		if ( m_texts.size() > 100 )
+		{
+			m_texts.pop_front();
+		}
+		emit_signal( "text_received", shown.channel, shown.from, shown.text );
 	}
 }
 
@@ -1367,6 +1432,7 @@ void CinderboxClient::_process( double delta )
 		m_namesGeneration = m_frame.namesGeneration;
 		emit_signal( "names_changed" );
 	}
+	TakeTexts();
 	if ( m_frame.hasWorld == false )
 	{
 		return;

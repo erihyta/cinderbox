@@ -199,7 +199,7 @@ bool ReadInputs( ByteReader& r, InputArray& inputs )
 std::optional<MsgType> ReadType( ByteReader& r )
 {
 	uint8_t t = r.Read<uint8_t>();
-	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::Items ) )
+	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::Text ) )
 	{
 		return std::nullopt;
 	}
@@ -355,6 +355,52 @@ bool Decode( ByteReader& r, MsgPlayerNames& m )
 		m.names.push_back( { slot, std::move( name ) } );
 	}
 	return true;
+}
+
+void Encode( const MsgText& m, std::vector<uint8_t>& out )
+{
+	Begin( out, MsgType::Text );
+	ByteWriter w( out );
+	WriteShortString( w, m.channel, kMaxTextChannel );
+	w.Write( m.from );
+	WriteShortString( w, m.text, kMaxText );
+}
+
+bool Decode( ByteReader& r, MsgText& m )
+{
+	if ( ReadShortString( r, m.channel, kMaxTextChannel ) == false )
+	{
+		return false;
+	}
+	m.from = r.Read<PlayerSlot>();
+	return ReadShortString( r, m.text, kMaxText ) && r.Ok();
+}
+
+std::string SanitizeText( const std::string& text, size_t limit )
+{
+	std::string out;
+	for ( unsigned char c : text )
+	{
+		// Printable ASCII and UTF-8 continuation/lead bytes; no control characters.
+		if ( c >= 0x20 && c != 0x7F )
+		{
+			out += char( c );
+		}
+	}
+	size_t a = out.find_first_not_of( ' ' );
+	size_t b = out.find_last_not_of( ' ' );
+	out = a == std::string::npos ? std::string() : out.substr( a, b - a + 1 );
+	if ( out.size() > limit )
+	{
+		// Cut on a character boundary, not inside a UTF-8 sequence.
+		size_t cut = limit;
+		while ( cut > 0 && ( uint8_t( out[cut] ) & 0xC0 ) == 0x80 )
+		{
+			--cut;
+		}
+		out.resize( cut );
+	}
+	return out;
 }
 
 std::string SanitizeName( const std::string& name, PlayerSlot slot )

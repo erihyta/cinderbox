@@ -28,6 +28,15 @@ void LiveSource::SetInput( const PlayerInput& input )
 	m_latchedActions |= input.actions;
 }
 
+void LiveSource::SendText( const std::string& channel, const std::string& text )
+{
+	std::lock_guard<std::mutex> lock( m_inputMutex );
+	if ( m_toSend.size() < 8 )
+	{
+		m_toSend.push_back( { channel, text } );
+	}
+}
+
 void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 {
 	present::ViewFrame& f = Building();
@@ -55,6 +64,15 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 		f.schema = client.Schema();
 	}
 	f.privates = client.Privates();
+	if ( f.textCount != client.TextCount() )
+	{
+		f.textCount = client.TextCount();
+		f.texts.clear();
+		for ( const net::MsgText& t : client.Texts() )
+		{
+			f.texts.push_back( { t.channel, t.from, t.text } );
+		}
+	}
 	if ( f.namesGeneration != client.NamesGeneration() )
 	{
 		f.namesGeneration = client.NamesGeneration();
@@ -130,9 +148,20 @@ void LiveSource::Run()
 			return in;
 		} );
 
+		std::vector<std::pair<std::string, std::string>> toSend;
+		{
+			std::lock_guard<std::mutex> lock( m_inputMutex );
+			toSend.swap( m_toSend );
+		}
+		for ( const auto& [channel, text] : toSend )
+		{
+			client.SendText( channel, text );
+		}
+
 		uint32_t tick = client.CurrentTick();
 		bool rolledBack = client.GetStats().rolledBackLastFrame;
 		bool changed = published == false || tick != lastTick || rolledBack || client.ResetGeneration() != lastReset ||
+					   client.TextCount() != Building().textCount ||
 					   client.State() != lastState || client.GetStats().connectFailures != lastFailures;
 		if ( changed )
 		{

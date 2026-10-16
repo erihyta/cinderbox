@@ -12,6 +12,7 @@
 //   takes_input() -> bool                      whether set_input drives a local player
 //   set_input( input: PackedByteArray )        a PlayerInput (sim/types.h), 10 bytes
 //   control( name: String, value: float )      a named command
+//   send_text( channel: String, text: String ) words typed into a channel's box, for the server
 //
 // The peer extension's CinderboxPeer is one (src/godot/peer); a GDScript object can be another.
 
@@ -32,6 +33,7 @@ public:
 	bool TakesInput() const override;
 	void SetInput( const PlayerInput& input ) override;
 	void Control( const std::string& name, double value ) override;
+	void SendText( const std::string& channel, const std::string& text ) override;
 
 private:
 	godot::Object* Target() const;

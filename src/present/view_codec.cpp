@@ -32,6 +32,14 @@ enum PacketFlag : uint8_t
 	FlagStats = 1 << 4,
 	FlagCompact = 1 << 5,
 	FlagPrivates = 1 << 6, // the local player's private fields follow (else: the base's)
+	FlagExtra = 1 << 7,	   // a byte of ExtraFlags follows, and what it names
+};
+
+// What a live connection has besides the world (a recording has neither, so its files are as before).
+enum ExtraFlag : uint8_t
+{
+	ExtraTexts = 1 << 0,	 // the typed text's count and lines follow (else: the base's)
+	ExtraConfirmed = 1 << 1, // the server's confirmed tick follows (else: 0)
 };
 
 enum WorldFlag : uint8_t
@@ -1290,9 +1298,11 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 	bool names = base == nullptr || base->namesGeneration != frame.namesGeneration;
 	bool stats = base == nullptr || base->stats != frame.stats;
 	bool privates = base == nullptr ? frame.privates != kNoPrivates : frame.privates != base->privates;
+	bool texts = base == nullptr ? frame.textCount != 0 : frame.textCount != base->textCount;
+	uint8_t extra = uint8_t( ( texts ? ExtraTexts : 0 ) | ( frame.confirmedTick != 0 ? ExtraConfirmed : 0 ) );
 	uint8_t flags = uint8_t( ( frame.hasWorld ? FlagWorld : 0 ) | ( map ? FlagMap : 0 ) | ( schema ? FlagSchema : 0 ) |
 							 ( names ? FlagNames : 0 ) | ( stats ? FlagStats : 0 ) | ( compact ? FlagCompact : 0 ) |
-							 ( privates ? FlagPrivates : 0 ) );
+							 ( privates ? FlagPrivates : 0 ) | ( extra != 0 ? FlagExtra : 0 ) );
 
 	w.Write( kMagic );
 	w.Write( frame.serial );
@@ -1378,6 +1388,26 @@ void EncodeView( const ViewFrame& frame, const ViewFrame* base, double ageSecond
 				w.Write( uint16_t( slot ) );
 				w.Write( values[slot] );
 			}
+		}
+	}
+	if ( extra != 0 )
+	{
+		w.Write( extra );
+		if ( extra & ExtraTexts )
+		{
+			w.Write( frame.textCount );
+			size_t n = std::min( frame.texts.size(), ViewFrame::kViewTexts );
+			w.Write( uint8_t( n ) );
+			for ( size_t i = frame.texts.size() - n; i < frame.texts.size(); ++i )
+			{
+				WriteString( w, frame.texts[i].channel );
+				w.Write( frame.texts[i].from );
+				WriteString( w, frame.texts[i].text );
+			}
+		}
+		if ( extra & ExtraConfirmed )
+		{
+			w.Write( frame.confirmedTick );
 		}
 	}
 	section( &ViewCost::session );
@@ -1610,6 +1640,31 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	{
 		out.privates = base != nullptr ? base->privates : Blackboard{};
 	}
+	uint8_t extra = ( flags & FlagExtra ) != 0 ? r.Read<uint8_t>() : uint8_t( 0 );
+	if ( extra & ExtraTexts )
+	{
+		out.textCount = r.Read<uint64_t>();
+		uint8_t n = r.Read<uint8_t>();
+		if ( r.Ok() == false || n > ViewFrame::kViewTexts )
+		{
+			return false;
+		}
+		out.texts.clear();
+		for ( uint8_t i = 0; i < n && r.Ok(); ++i )
+		{
+			ViewText t;
+			t.channel = ReadString( r );
+			t.from = r.Read<PlayerSlot>();
+			t.text = ReadString( r );
+			out.texts.push_back( std::move( t ) );
+		}
+	}
+	else
+	{
+		out.textCount = base != nullptr ? base->textCount : 0;
+		out.texts = base != nullptr ? base->texts : std::vector<ViewText>{};
+	}
+	out.confirmedTick = ( extra & ExtraConfirmed ) != 0 ? r.Read<uint32_t>() : 0;
 
 	out.hasWorld = ( flags & FlagWorld ) != 0;
 	if ( out.hasWorld == false )

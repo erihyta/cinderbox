@@ -4,6 +4,7 @@
 #include "cinderbox_track_player.h"
 #include "cinderbox_entity_nodes.h"
 #include "cinderbox_hud.h"
+#include "cinderbox_text.h"
 #include "cinderbox_map_nodes.h"
 #include "cinderbox_body.h"
 #include "cinderbox_item_look.h"
@@ -93,6 +94,8 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_CLASS( cb::gd::CbFieldBinding );
 	GDREGISTER_CLASS( cb::gd::CbList );
 	GDREGISTER_CLASS( cb::gd::CbKey );
+	GDREGISTER_CLASS( cb::gd::CbTextEntry );
+	GDREGISTER_CLASS( cb::gd::CbTextLog );
 	GDREGISTER_CLASS( cb::gd::CbClick );
 	GDREGISTER_CLASS( cb::gd::CbDrag );
 	GDREGISTER_CLASS( cb::gd::CbItemIcon );

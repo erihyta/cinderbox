@@ -255,6 +255,13 @@ private:
 	std::array<bool, kMaxPlayers> m_privatesChanged{};
 	void SendPrivates( const Client& client );
 	uint64_t m_modRng = 0;
+	// Typed text: the channels mods declared, what players typed since the last tick (for the
+	// mods), and what the mods said (sent after they ran).
+	std::vector<std::string> m_textChannels;
+	std::vector<mods::TypedText> m_typed;
+	std::vector<mods::SaidText> m_said;
+	void HandleText( const Client& client, const net::MsgText& text );
+	void SendSaid();
 };
 
 } // namespace cb
