@@ -3,11 +3,12 @@
 ; The game's menus: joining a server, the in-game (Esc) menu, settings. No script: menu.gd finds the
 ; nodes below by their unique names and drives them, so a mod can restyle or rearrange this scene
 ; freely. A node that is missing is simply not used.
-;   panels:   %Main  %Connecting  %Pause  %Settings  %Keys   (one is shown at a time, over %Dim)
+;   panels:   %Main  %Server  %Connecting  %Pause  %Settings  %Keys   (one is shown at a time, over %Dim)
 ;   main:     %Message  %Name  %Address  %Join  %Recent (gets one button per server)  %OpenSettings  %Quit
+;   a server: %ServerTitle  %ServerInfo  %ServerMods (gets a row per workshop item)  %ServerStatus  %ServerBack  %ServerConnect
 ;   joining:  %ConnectingText  %Cancel
 ;   in game:  %PauseText  %Resume  %PauseSettings  %Leave  %PauseQuit
-;   settings: %Sensitivity  %SensitivityValue  %Volume  %VolumeValue  %Fullscreen  %OpenKeys  %SettingsBack
+;   settings: %Sensitivity  %SensitivityValue  %Volume  %VolumeValue  %Fullscreen  %Store  %OpenKeys  %SettingsBack
 ;   keys:     %KeyRows (gets a heading per group and a row per key: a name and a button)  %KeysReset  %KeysBack
 
 [node name="Menu" type="CanvasLayer"]
@@ -269,6 +270,15 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Fullscreen"
 
+[node name="StoreLabel" type="Label" parent="Center/Settings/Margin/Rows"]
+layout_mode = 2
+text = "Workshop store (a folder): where missing items are fetched from"
+
+[node name="Store" type="LineEdit" parent="Center/Settings/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "C:/cinderbox-store"
+
 [node name="OpenKeys" type="Button" parent="Center/Settings/Margin/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -331,3 +341,72 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Back"
+
+[node name="Server" type="PanelContainer" parent="Center"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(620, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Server"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="Rows" type="VBoxContainer" parent="Center/Server/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ServerTitle" type="Label" parent="Center/Server/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "Server"
+
+[node name="ServerInfo" type="Label" parent="Center/Server/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.75, 0.78, 0.82, 1)
+text = "Asking the server..."
+autowrap_mode = 3
+
+[node name="ModsLabel" type="Label" parent="Center/Server/Margin/Rows"]
+layout_mode = 2
+text = "Workshop items this server needs"
+
+[node name="ModsScroll" type="ScrollContainer" parent="Center/Server/Margin/Rows"]
+custom_minimum_size = Vector2(0, 280)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="ServerMods" type="VBoxContainer" parent="Center/Server/Margin/Rows/ModsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="ServerStatus" type="Label" parent="Center/Server/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="Buttons" type="HBoxContainer" parent="Center/Server/Margin/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ServerBack" type="Button" parent="Center/Server/Margin/Rows/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Back"
+
+[node name="Spacer" type="Control" parent="Center/Server/Margin/Rows/Buttons"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ServerConnect" type="Button" parent="Center/Server/Margin/Rows/Buttons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+text = "Connect"

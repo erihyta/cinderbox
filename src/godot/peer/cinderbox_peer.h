@@ -10,8 +10,10 @@
 // This library holds the simulation and the networking. The viewer library holds neither.
 
 #include "packet_handoff.h"
+#include "server_query.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 
@@ -24,6 +26,8 @@ namespace cb::gd
 class CinderboxPeer : public godot::RefCounted
 {
 	GDCLASS( CinderboxPeer, godot::RefCounted )
+
+	std::unique_ptr<ServerQuery> m_query;
 
 public:
 	CinderboxPeer();
@@ -44,6 +48,12 @@ public:
 	void control( const godot::String& name, double value );
 	// Words typed into a channel's box, for the server (a live connection only).
 	void send_text( const godot::String& channel, const godot::String& text );
+
+	// Asks the server at host:port what it is, without joining (client/server_query.h). Poll
+	// get_query() each frame: { state: "asking" | "answered" | "failed", error, map, players,
+	// max_players, compatible, items: [ { mod, sha256 } ] }. Starting another drops the last.
+	void query_server( const godot::String& host, int port );
+	godot::Dictionary get_query();
 
 	void set_host( const godot::String& v )
 	{

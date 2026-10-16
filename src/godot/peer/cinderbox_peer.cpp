@@ -3,6 +3,7 @@
 #include "live_source.h"
 #include "replay_source.h"
 
+#include <godot_cpp/classes/time.hpp>
 #include <godot_cpp/core/class_db.hpp>
 
 #include <algorithm>
@@ -39,6 +40,8 @@ void CinderboxPeer::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_input", "input" ), &CinderboxPeer::set_input );
 	ClassDB::bind_method( D_METHOD( "control", "name", "value" ), &CinderboxPeer::control );
 	ClassDB::bind_method( D_METHOD( "send_text", "channel", "text" ), &CinderboxPeer::send_text );
+	ClassDB::bind_method( D_METHOD( "query_server", "host", "port" ), &CinderboxPeer::query_server );
+	ClassDB::bind_method( D_METHOD( "get_query" ), &CinderboxPeer::get_query );
 
 	ClassDB::bind_method( D_METHOD( "set_host", "host" ), &CinderboxPeer::set_host );
 	ClassDB::bind_method( D_METHOD( "get_host" ), &CinderboxPeer::get_host );
@@ -132,6 +135,54 @@ void CinderboxPeer::send_text( const String& channel, const String& text )
 		// (Bounded again where it is sent: GameClient::SendText.)
 		m_source->SendText( ToStd( channel ).substr( 0, 64 ), ToStd( text ).substr( 0, 1024 ) );
 	}
+}
+
+namespace
+{
+
+double Seconds()
+{
+	return double( Time::get_singleton()->get_ticks_usec() ) / 1e6;
+}
+
+} // namespace
+
+void CinderboxPeer::query_server( const String& host, int port )
+{
+	m_query = std::make_unique<ServerQuery>();
+	m_query->Start( ToStd( host ), uint16_t( std::clamp( port, 1, 65535 ) ), Seconds() );
+}
+
+Dictionary CinderboxPeer::get_query()
+{
+	Dictionary out;
+	if ( m_query == nullptr )
+	{
+		out["state"] = "none";
+		return out;
+	}
+	if ( m_query->Update( Seconds() ) == false )
+	{
+		out["state"] = "asking";
+		return out;
+	}
+	out["state"] = m_query->Ok() ? "answered" : "failed";
+	out["error"] = String::utf8( m_query->Error().c_str() );
+	const net::MsgInfo& info = m_query->Info();
+	out["map"] = String::utf8( info.map.c_str() );
+	out["players"] = int64_t( info.players );
+	out["max_players"] = int64_t( info.maxPlayers );
+	out["compatible"] = m_query->Compatible();
+	Array items;
+	for ( const ModItem& item : info.items )
+	{
+		Dictionary entry;
+		entry["mod"] = String::utf8( item.mod.c_str() );
+		entry["sha256"] = String::utf8( item.sha256.c_str() );
+		items.push_back( entry );
+	}
+	out["items"] = items;
+	return out;
 }
 
 void CinderboxPeer::control( const String& name, double value )

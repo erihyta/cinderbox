@@ -199,7 +199,7 @@ bool ReadInputs( ByteReader& r, InputArray& inputs )
 std::optional<MsgType> ReadType( ByteReader& r )
 {
 	uint8_t t = r.Read<uint8_t>();
-	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::Text ) )
+	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::Info ) )
 	{
 		return std::nullopt;
 	}
@@ -374,6 +374,69 @@ bool Decode( ByteReader& r, MsgText& m )
 	}
 	m.from = r.Read<PlayerSlot>();
 	return ReadShortString( r, m.text, kMaxText ) && r.Ok();
+}
+
+void Encode( const MsgInfoRequest& m, std::vector<uint8_t>& out )
+{
+	Begin( out, MsgType::InfoRequest );
+	ByteWriter w( out );
+	w.Write( m.version );
+}
+
+bool Decode( ByteReader& r, MsgInfoRequest& m )
+{
+	m.version = r.Read<uint32_t>();
+	return r.Ok();
+}
+
+void Encode( const MsgInfo& m, std::vector<uint8_t>& out )
+{
+	Begin( out, MsgType::Info );
+	ByteWriter w( out );
+	w.Write( m.version );
+	w.Write( m.fingerprint );
+	WriteShortString( w, m.map, 64 );
+	w.Write( m.players );
+	w.Write( m.maxPlayers );
+	size_t n = std::min<size_t>( m.items.size(), kMaxItems );
+	w.Write( uint8_t( n ) );
+	for ( size_t i = 0; i < n; ++i )
+	{
+		WriteShortString( w, m.items[i].mod, 64 );
+		WriteShortString( w, m.items[i].sha256, 64 );
+	}
+}
+
+bool Decode( ByteReader& r, MsgInfo& m )
+{
+	m.version = r.Read<uint32_t>();
+	if ( r.Ok() == false || m.version != kProtocolVersion )
+	{
+		return false;
+	}
+	m.fingerprint = r.Read<uint64_t>();
+	if ( ReadShortString( r, m.map, 64 ) == false )
+	{
+		return false;
+	}
+	m.players = r.Read<uint8_t>();
+	m.maxPlayers = r.Read<uint8_t>();
+	uint8_t n = r.Read<uint8_t>();
+	if ( r.Ok() == false || n > kMaxItems )
+	{
+		return false;
+	}
+	m.items.clear();
+	for ( uint8_t i = 0; i < n; ++i )
+	{
+		ModItem item;
+		if ( ReadShortString( r, item.mod, 64 ) == false || ReadShortString( r, item.sha256, 64 ) == false || IsSha256( item.sha256 ) == false )
+		{
+			return false;
+		}
+		m.items.push_back( item );
+	}
+	return r.Ok();
 }
 
 std::string SanitizeText( const std::string& text, size_t limit )

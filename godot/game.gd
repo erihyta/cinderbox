@@ -19,7 +19,10 @@ extends Node3D
 ## it suggested, and every event plays whatever the reactions say.
 ##
 ## Joining: the game starts in the menu (an address, the servers joined last), unless --host or
-## --port says where to go. An attempt that fails comes back to the menu and says why: the address
+## --port says where to go. A server picked in the menu is asked first (CinderboxPeer.query_server):
+## the menu lists the workshop items it needs and where each stands here (subscribed, in the cache,
+## to download from the workshop store, not available), and Connect fetches the missing ones into
+## the cache (workshop.gd), then joins. Joining without the menu fetches them too. An attempt that fails comes back to the menu and says why: the address
 ## does not exist, nobody answered, the server refused, or its workshop items are missing. The
 ## server announces the workshop items its mods need. They must all be in the local workshop
 ## (workshop.gd), exactly as announced. Loaded items come before the player's own mods, which are
@@ -52,6 +55,7 @@ const MOUSE_SENSITIVITY := 0.003
 const MAX_PITCH := 1.5
 const Boot := preload("res://boot.gd")
 const Workshop := preload("res://workshop.gd")
+const WorkshopFetch := preload("res://workshop_fetch.gd")
 const Menu := preload("res://menu.gd")
 const Host := preload("res://host.gd")
 const Autoplay := preload("res://autoplay.gd")
@@ -102,6 +106,9 @@ var _joined := false # this attempt reached "playing"
 var _replay := "" # the recording or view file being watched ("": playing on a server)
 var _replay_is_view := false
 var _leaving := false # the scene is being replaced
+## The server picked in the menu, being asked or answered: { host, port, answered, items }.
+var _inspecting := {}
+var _fetch: RefCounted # the missing items being fetched for it (workshop_fetch.gd)
 
 
 func _ready() -> void:
@@ -145,7 +152,8 @@ func _ready() -> void:
 	menu = Menu.new()
 	menu.name = "MenuDriver"
 	add_child(menu)
-	menu.join_requested.connect(_join)
+	menu.join_requested.connect(_inspect)
+	menu.connect_requested.connect(_connect_inspected)
 	menu.host_requested.connect(_host)
 	menu.cancel_requested.connect(_leave.bind(""))
 	menu.leave_requested.connect(_leave.bind(""))
@@ -158,6 +166,11 @@ func _ready() -> void:
 	var local: bool = not _started and args.has("host-local")
 	var direct: bool = not _started and not local and (args.has("host") or args.has("port") or auto.seconds > 0.0)
 	var watch: bool = not _started and (args.has("replay") or args.has("view"))
+	if not _started:
+		# Items fetched for servers long ago, or too many of them, go (workshop.gd).
+		var trimmed: int = Workshop.trim_cache()
+		if trimmed > 0:
+			print("workshop cache: removed %d item(s) not used for a while" % trimmed)
 	_started = true
 	if watch:
 		_watch(args.get("view", args.get("replay", "")), args.has("view"))
@@ -212,6 +225,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	_watch_inspection()
 	_watch_connection()
 	if _leaving:
 		return
@@ -225,6 +239,62 @@ func _process(delta: float) -> void:
 
 
 # --- Joining and leaving --------------------------------------------------------------------------
+
+## A server picked in the menu: asked what it needs before anything is joined.
+func _inspect(host: String, port: int) -> void:
+	if peer == null:
+		menu.show_main(NO_LINK)
+		return
+	_inspecting = {"host": host, "port": port, "answered": false}
+	_fetch = null
+	peer.query_server(host, port)
+	menu.show_server(Menu.format_address(host, port))
+
+
+func _watch_inspection() -> void:
+	if _inspecting.is_empty():
+		return
+	if not menu.is_on_server():
+		_inspecting = {} # (Back)
+		_fetch = null
+		return
+	if not _inspecting["answered"]:
+		var answer: Dictionary = peer.get_query()
+		if answer.get("state", "") == "asking":
+			return
+		_inspecting["answered"] = true
+		if answer.get("state", "") != "answered":
+			_inspecting = {}
+			menu.show_main(String(answer.get("error", "The server did not answer.")))
+			return
+		_inspecting["items"] = answer.get("items", [])
+		menu.fill_server(answer)
+		return
+	if _fetch != null:
+		var done: bool = _fetch.step()
+		menu.set_server_status(_fetch.describe(), false)
+		if done:
+			var failed: String = _fetch.error
+			_fetch = null
+			if failed != "":
+				menu.set_server_status(failed, true)
+			else:
+				var host: String = _inspecting["host"]
+				var port: int = _inspecting["port"]
+				_inspecting = {}
+				_join(host, port)
+
+
+## Connect on the server panel: what is missing comes from the store into the cache, then the join.
+func _connect_inspected() -> void:
+	if _inspecting.is_empty() or not _inspecting["answered"] or _fetch != null:
+		return
+	var wanted := []
+	for item in _inspecting.get("items", []):
+		if Workshop.status(item["mod"], item["sha256"]) == "in_store":
+			wanted.append(item)
+	_fetch = WorkshopFetch.new(wanted)
+
 
 ## A server of the player's own: started, joined, and stopped when it is left (host.gd).
 func _host() -> void:
@@ -397,12 +467,17 @@ func _load_items() -> bool:
 	var paths: Array[String] = []
 	for item in client.get_required_items():
 		var path := Workshop.find_item(item["mod"], item["sha256"])
+		if path == "" and Workshop.status(item["mod"], item["sha256"]) == "in_store":
+			# (A join without the menu: fetched now, into the cache.)
+			var problem: String = Workshop.fetch_now(item["mod"], item["sha256"])
+			print("workshop item fetched from the store: %s %s" % [item["mod"], problem if problem != "" else "ok"])
+			path = Workshop.find_item(item["mod"], item["sha256"])
 		if path == "":
 			missing.append("%s (%s)" % [item["mod"], String(item["sha256"]).substr(0, 12)])
 		else:
 			paths.append(path)
 	if not missing.is_empty():
-		_refuse("This server needs workshop items you do not have:\n%s\nSubscribe to them and join again." % ", ".join(missing))
+		_refuse("This server needs workshop items you do not have, and your workshop store has not got them:\n%s" % ", ".join(missing))
 		return false
 	# Packs cannot be unloaded: an item from an earlier server that this one does not use would
 	# keep its HUD and reactions. A fresh process joins instead.

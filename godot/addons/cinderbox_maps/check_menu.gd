@@ -8,7 +8,12 @@ extends SceneTree
 ## back to the menu and say why), then joins the server, checks the camera stays above the floor,
 ## opens the Esc menu and the settings, leaves, and joins again from the recent list. --config keeps
 ## the test's name, settings and recent servers out of the player's own file. Exit code 0 when
-## everything held.
+## everything held. Every join goes through the server panel (the server is asked first), then
+## Connect.
+##
+## With --workshop=<an empty folder> --store=<the real workshop folder>, every item the server needs
+## is one to download: the panel says so, Subscribe keeps the first, Connect fetches the rest into
+## the cache, and the second join finds them there.
 ##
 ## With a second server that runs other mods (cb_server --port 7792 --mods inventory,props) and
 ## --other-port=7792 --result=<abs file>, it then joins that one from the menu. The first server's
@@ -99,6 +104,29 @@ func _type_and_join(address: String) -> void:
 	(_n("Join") as Button).pressed.emit()
 
 
+## The server panel, once the server answered: its rows' status texts.
+func _server_rows() -> Array:
+	var states := []
+	for row in _n("ServerMods").get_children():
+		states.append((row.get_child(1) as Label).text)
+	return states
+
+
+## Waits for the server panel's answer and presses Connect.
+func _connect_when_asked() -> bool:
+	var asked: bool = await _until(func(): return _shown("Server") and not (_n("ServerConnect") as Button).disabled, 10.0)
+	if asked:
+		(_n("ServerConnect") as Button).pressed.emit()
+	return asked
+
+
+func _store_given() -> bool:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--store="):
+			return true
+	return false
+
+
 func _message() -> String:
 	var label := _n("Message") as Label
 	return label.text if label.visible else ""
@@ -130,8 +158,6 @@ func _run() -> void:
 
 	print("a host that does not exist")
 	_type_and_join("no-such-host.invalid")
-	await process_frame
-	_check("  shows the connecting panel", _shown("Connecting"))
 	_check("  comes back to the menu", await _until(func(): return _shown("Main") and _message() != "", 15.0))
 	print("    \"%s\"" % _message())
 	_check("  says the address could not be found", _message().contains("could not be found"))
@@ -145,16 +171,28 @@ func _run() -> void:
 	_check("  says nobody answered", _message().contains("No answer"))
 	_check("  no recent server was recorded", _menu().recent_servers().is_empty())
 
-	print("cancel")
+	print("back, while the server is asked")
 	_type_and_join("127.0.0.1:%d" % (_port + 1))
 	await _wait(0.5)
-	_check("  connecting", _shown("Connecting") and _game().client.is_running())
-	(_n("Cancel") as Button).pressed.emit()
+	_check("  the server panel asks", _shown("Server") and (_n("ServerConnect") as Button).disabled)
+	(_n("ServerBack") as Button).pressed.emit()
 	_check("  back in the menu without a message", await _until(func(): return _shown("Main"), 5.0) and _message() == "")
+	await _wait(6.0)
+	_check("  and the late answer changes nothing", _shown("Main") and _message() == "")
 
 	print("the server")
 	_type_and_join("127.0.0.1:%d" % _port)
-	_check("  joins", await _until(func(): return _game()._joined, 20.0))
+	_check("  the server panel lists its workshop items", await _until(func(): return _shown("Server") and not _server_rows().is_empty(), 10.0))
+	var states := _server_rows()
+	print("    %d items: %s" % [states.size(), ", ".join(states)])
+	await _shot("menu_3a_server")
+	if _store_given():
+		# (Run with an empty --workshop and the real one as --store: every item is to download.)
+		_check("  each is to download from the store", states.all(func(s): return String(s).begins_with("Downloads on connect")))
+		(_n("ServerMods").get_child(0).get_child(2) as Button).pressed.emit()
+		_check("  Subscribe keeps one", _server_rows()[0] == "Subscribed")
+	_check("  Connect", await _connect_when_asked())
+	_check("  joins", await _until(func(): return _game()._joined, 30.0))
 	_check("  the menu is closed and the mouse is the game's", not _menu().is_open() and _mouse_is(Input.MOUSE_MODE_CAPTURED))
 	_check("  the name reached the server", await _until(func(): return _game().client.get_player_name(_game().client.get_local_net_id()) == "Menu Tester", 5.0))
 	var recent: Array = _menu().recent_servers()
@@ -213,6 +251,11 @@ func _run() -> void:
 
 	print("joining again from the recent list")
 	(buttons[0] as Button).pressed.emit()
+	if _store_given():
+		await _until(func(): return _shown("Server") and not _server_rows().is_empty(), 10.0)
+		var again := _server_rows()
+		_check("  what was downloaded is in the cache now", again.slice(1).all(func(s): return s == "In the cache") and again[0] == "Subscribed")
+	_check("  Connect", await _connect_when_asked())
 	_check("  joins", await _until(func(): return _game()._joined, 20.0))
 	await _wait(1.0)
 	var stats: Dictionary = _game().client.get_stats()
@@ -226,6 +269,7 @@ func _run() -> void:
 		(_n("Leave") as Button).pressed.emit()
 		await _until(func(): return _shown("Main"), 5.0)
 		_type_and_join("127.0.0.1:%d" % _other_port)
+		await _connect_when_asked()
 		# The process ends here when it works; the restarted one writes the result.
 		await _wait(15.0)
 		_check("  restarted", false)
