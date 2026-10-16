@@ -320,17 +320,20 @@ layer), at the clip and time the pose is playing.
 - A channel whose clip is bones only returns to the `RESET` animation's values.
 - No scripts: tracks call built-in methods (`restart`, `play`) or set properties.
 - Looks only: the server never sees these tracks.
-- **Seen from its start.** With network delay another player's swing is first seen a little way
-  in: the pose is already where the server has it. Its other tracks still play from the start:
+- **Seen from its start.** With network delay another player's swing reaches you late: the server's
+  state is already some way into it. It is drawn from its start anyway and played faster until it
+  is level, so it never pops from standing to mid-swing, and its tracks follow the drawn clip:
+  every key fires, in order, with the pose it was keyed on.
 
-  | First seen | Its tracks |
+  | First seen | Drawn |
   |---|---|
-  | up to 0.5 s in, a clip that does not loop | start from 0 and run at twice the pose's pace until level with it: every key fires, in order, and a value keyed on and off (a flame) still shows, shorter |
-  | the clip ends before they are level | what is left fires as it ends |
-  | further in (a join), or a loop | values only, as before |
+  | more than a tick and a half and up to 0.5 s in, a clip that does not loop | from 0, level with the state 0.1 s later (a 0.25 s gap: about 3.5 times as fast) |
+  | a frame in (your own player, or no delay) | as it is; the keys before that point fire at once |
+  | further in (a join), a loop, a blend space | as it is; values only |
 
-  The pose is never held back for it. A correction that leaves a clip and comes straight back to
-  the same play of it goes on where it was: nothing fires twice.
+  Looks only: the server hit-tests the state, not the drawn pose, so for that 0.1 s a hit can land
+  a little ahead of the drawn swing. A correction that leaves a clip and comes straight back to
+  the same play of it goes on where it was: it never starts over, and nothing fires twice.
 - Animation packs are bones only: their other tracks are not played.
 
 The robot's bat swing has a fire trail and a whoosh made this way. Put the nodes the tracks reach
