@@ -550,6 +550,22 @@ void GameServer::HandleEvent( const NetEvent& ev, double now )
 					HandleInput( *c, msg, now );
 				}
 			}
+			else if ( *type == MsgType::InfoRequest && c == nullptr )
+			{
+				// Someone asking what this server is (a menu, before joining): told, never welcomed.
+				MsgInfo info;
+				info.fingerprint = BuildFingerprint();
+				info.map = m_map.name;
+				info.maxPlayers = uint8_t( kMaxPlayers );
+				for ( const Client& other : m_clients )
+				{
+					info.players += other.used ? 1 : 0;
+				}
+				info.items = m_schema.items;
+				Encode( info, m_buffer );
+				m_transport.Send( ev.peer, ChannelReliable, m_buffer, true );
+				m_stats.infoRequests += 1;
+			}
 			else if ( *type == MsgType::Text && c != nullptr && c->welcomed )
 			{
 				MsgText msg;

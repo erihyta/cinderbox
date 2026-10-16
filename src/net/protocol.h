@@ -2,7 +2,8 @@
 
 // Wire protocol between server and clients.
 //
-// Channel 0 (reliable, ordered): Hello, Welcome, Reject, Checksum, ResyncRequest, PlayerNames, PrivateFields, Items, Text.
+// Channel 0 (reliable, ordered): Hello, Welcome, Reject, Checksum, ResyncRequest, PlayerNames, PrivateFields, Items, Text,
+// InfoRequest, Info.
 // Channel 1 (unreliable), both directions:
 //   client -> server: Input, repeating the last few ticks and acknowledging received frames;
 //   server -> client: FrameBatch, every frame from the client's acknowledgement to the newest.
@@ -22,7 +23,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 52; // 52: typed text (Text, both ways); 51: an item its slot's key uses; 50: a slot is a place (items used from the hand, or by a kind's own key); 49: intents a mod declares (in the schema, in the input); 48: containers (the Open and Close intents, a player's open one in its slots); 47: the Split intent; 46: stacks (a kind's in the schema, an item's count in the frame); 45: an item thrown fast (a bullet) in the schema; 44: an item's time is up (its event in the schema); 43: launch_carried in a motion, an event said after the motions; 42: a line in flight in the snapshot (a projectile); 41: an item's hand in the schema; 40: the slot keys in the input, a slot's suggested key in the schema; 39: an input packet's later ticks as changes, a pitch difference in a frame; 38: a look published again while the server runs (Items); 37: what is loose gives way to a player by its weight; a throw moves a whole ragdoll; 36: launches (a motion makes an item); 35: an item's friction and bounce, a map prop's body; 34: state sized by the mods (how many fields; the config says); 33: the use button, how an item kind is used; 32: slots (a player's intent in its input, an item's slot, the config's slots); 31: (unused: texts, parked); 30: mass; motions as triggers and effects (probes, forces, links, targets); 29: one more movement parameter (airborne); 28: tethers (a component, a line of a motion set); 27: two more movement parameters (air_friction, move_frame); 26: motion sets in the schema; 25: movement parameters (the config, SetMove); 24: an item body's turn; 23: grips as animated; 22: grips in the schema; 21: the view mode in the input; 20: no streaming clients; 19: private fields; 18: one animation system; 17: streaming clients; 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs; 9: layers and stances; 10: characters shipped with the game; 11: state machines in the schema; 12: held items; 13: animation packs; 14: items in the world; 15: stowed items; 16: 32 board slots
+inline constexpr uint32_t kProtocolVersion = 53; // 53: asking a server about itself before joining (InfoRequest, Info); 52: typed text (Text, both ways); 51: an item its slot's key uses; 50: a slot is a place (items used from the hand, or by a kind's own key); 49: intents a mod declares (in the schema, in the input); 48: containers (the Open and Close intents, a player's open one in its slots); 47: the Split intent; 46: stacks (a kind's in the schema, an item's count in the frame); 45: an item thrown fast (a bullet) in the schema; 44: an item's time is up (its event in the schema); 43: launch_carried in a motion, an event said after the motions; 42: a line in flight in the snapshot (a projectile); 41: an item's hand in the schema; 40: the slot keys in the input, a slot's suggested key in the schema; 39: an input packet's later ticks as changes, a pitch difference in a frame; 38: a look published again while the server runs (Items); 37: what is loose gives way to a player by its weight; a throw moves a whole ragdoll; 36: launches (a motion makes an item); 35: an item's friction and bounce, a map prop's body; 34: state sized by the mods (how many fields; the config says); 33: the use button, how an item kind is used; 32: slots (a player's intent in its input, an item's slot, the config's slots); 31: (unused: texts, parked); 30: mass; motions as triggers and effects (probes, forces, links, targets); 29: one more movement parameter (airborne); 28: tethers (a component, a line of a motion set); 27: two more movement parameters (air_friction, move_frame); 26: motion sets in the schema; 25: movement parameters (the config, SetMove); 24: an item body's turn; 23: grips as animated; 22: grips in the schema; 21: the view mode in the input; 20: no streaming clients; 19: private fields; 18: one animation system; 17: streaming clients; 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs; 9: layers and stances; 10: characters shipped with the game; 11: state machines in the schema; 12: held items; 13: animation packs; 14: items in the world; 15: stowed items; 16: 32 board slots
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t
@@ -46,6 +47,8 @@ enum class MsgType : uint8_t
 	PrivateFields = 10,
 	Items = 11,
 	Text = 12,
+	InfoRequest = 13,
+	Info = 14,
 };
 
 inline constexpr size_t kMaxPlayerName = 24;
@@ -76,6 +79,24 @@ inline constexpr size_t kMaxItems = 64;
 struct MsgItems
 {
 	std::vector<ModItem> items;
+};
+
+// C -> S, instead of a Hello: what is this server? It answers with an Info and nothing else (the
+// asker is not a player and is never welcomed), whatever version the asker is: the answer's own
+// version tells the asker whether it could join. A menu asks before joining, to list the workshop
+// items the server needs and fetch the missing ones (the server never sends them).
+struct MsgInfoRequest
+{
+	uint32_t version = kProtocolVersion;
+};
+struct MsgInfo
+{
+	uint32_t version = kProtocolVersion; // first, so any version can read it
+	uint64_t fingerprint = 0;			 // the simulation's build: equal, or joining is refused
+	std::string map;
+	uint8_t players = 0;
+	uint8_t maxPlayers = 0;
+	std::vector<ModItem> items; // the workshop items its mods need (and its character's)
 };
 
 // Typed text, both ways. C -> S: what the player typed into a channel's box (`from` is ignored:
@@ -166,6 +187,8 @@ void Encode( const MsgPlayerNames& m, std::vector<uint8_t>& out );
 void Encode( const MsgItems& m, std::vector<uint8_t>& out );
 void Encode( const MsgPrivateFields& m, std::vector<uint8_t>& out );
 void Encode( const MsgText& m, std::vector<uint8_t>& out );
+void Encode( const MsgInfoRequest& m, std::vector<uint8_t>& out );
+void Encode( const MsgInfo& m, std::vector<uint8_t>& out );
 
 bool Decode( ByteReader& r, MsgHello& m );
 bool Decode( ByteReader& r, MsgWelcome& m );
@@ -177,6 +200,9 @@ bool Decode( ByteReader& r, MsgPlayerNames& m );
 bool Decode( ByteReader& r, MsgItems& m );
 bool Decode( ByteReader& r, MsgPrivateFields& m );
 bool Decode( ByteReader& r, MsgText& m );
+bool Decode( ByteReader& r, MsgInfoRequest& m );
+// False also for an Info of another version past its version (only `version` is then set).
+bool Decode( ByteReader& r, MsgInfo& m );
 
 // Returns the message type and leaves the reader positioned at the payload.
 std::optional<MsgType> ReadType( ByteReader& r );

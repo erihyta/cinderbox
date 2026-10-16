@@ -7,11 +7,15 @@ extends Node
 ##
 ## What it remembers lives in user://player.cfg (or --config=FILE):
 ##   [player]   name
-##   [settings] sensitivity (0.2-3), volume (0-100), fullscreen
+##   [settings] sensitivity (0.2-3), volume (0-100), fullscreen, store (the workshop store folder)
 ##   [keys]     an action's name = the key the player chose for it ("cb_dash" = "MouseRight")
 ##   [servers]  recent: the servers joined last, newest first
 
+## The player picked a server (typed, or a recent one): game.gd asks it what it needs, and shows
+## the server panel (show_server, fill_server).
 signal join_requested(host: String, port: int)
+## Connect on the server panel: fetch what is missing, then join.
+signal connect_requested
 ## A server of the player's own: start one, join it (host.gd).
 signal host_requested
 signal cancel_requested
@@ -21,7 +25,8 @@ signal quit_requested
 
 const DEFAULT_PORT := 7777
 const RECENT_LIMIT := 6
-const PANELS := ["Main", "Connecting", "Pause", "Settings", "Keys"]
+const PANELS := ["Main", "Server", "Connecting", "Pause", "Settings", "Keys"]
+const Workshop := preload("res://workshop.gd")
 
 ## Mouse sensitivity as a multiplier; game.gd reads it.
 var sensitivity := 1.0
@@ -38,6 +43,7 @@ var _keys := {}		   # action -> key ("V", "MouseRight")
 var _key_info := {}	   # action -> { "key": the default, "label": String, "group": String }
 var _capturing := ""   # the action whose next key press is its new key
 var _apply_in := 0.0
+var _server_items: Array = [] # the server panel's workshop items: [{ mod, sha256 }]
 
 
 func _ready() -> void:
@@ -67,6 +73,8 @@ func _ready() -> void:
 	_press("OpenKeys", _open_keys)
 	_press("KeysBack", func(): _capturing = ""; _show("Settings"))
 	_press("KeysReset", _reset_keys)
+	_press("ServerBack", func(): show_main())
+	_press("ServerConnect", func(): connect_requested.emit())
 	var saved: Variant = _config().get_value("keys", "bound", {})
 	_keys = saved if saved is Dictionary else {}
 	var address := _node("Address") as LineEdit
@@ -98,6 +106,91 @@ func show_main(message := "") -> void:
 		address.grab_focus.call_deferred()
 	_fill_recent(recent)
 	_show("Main")
+
+
+## The server panel, while the server is being asked.
+func show_server(address: String) -> void:
+	_set_text("ServerTitle", address)
+	_set_text("ServerInfo", "Asking the server...")
+	_set_text("ServerStatus", "")
+	_server_items = []
+	_fill_server_rows()
+	var connect := _node("ServerConnect") as BaseButton
+	if connect:
+		connect.disabled = true
+	_show("Server")
+
+
+## The server's answer (CinderboxPeer.get_query): its map and players, a row per workshop item it
+## needs with where that item stands here, and Connect, which fetches what is missing first.
+func fill_server(info: Dictionary) -> void:
+	_server_items = info.get("items", [])
+	_set_text("ServerInfo", "%s     %d of %d players" % [info.get("map", ""), int(info.get("players", 0)), int(info.get("max_players", 0))])
+	_fill_server_rows()
+	if not bool(info.get("compatible", false)):
+		set_server_status("This server runs another version of the game: it cannot be joined.", false)
+
+
+## Whether the server panel is up (Back may have left it while the server was being asked).
+func is_on_server() -> bool:
+	return _visible("Server")
+
+
+## A line under the rows (what is being fetched, why Connect cannot be used), and whether it can.
+func set_server_status(text: String, can_connect: bool) -> void:
+	_set_text("ServerStatus", text)
+	var connect := _node("ServerConnect") as BaseButton
+	if connect:
+		connect.disabled = not can_connect
+
+
+func _fill_server_rows() -> void:
+	var box := _node("ServerMods")
+	if box == null:
+		return
+	for child in box.get_children():
+		box.remove_child(child)
+		child.queue_free()
+	var missing := 0
+	var to_fetch := 0
+	for item in _server_items:
+		var mod := String(item["mod"])
+		var sha := String(item["sha256"])
+		var status := Workshop.status(mod, sha)
+		var size := Workshop.size_of(mod, sha)
+		var row := HBoxContainer.new()
+		var name := Label.new()
+		name.text = "%s  %s" % [mod, sha.substr(0, 8)]
+		name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(name)
+		var state := Label.new()
+		state.text = {"subscribed": "Subscribed", "cached": "In the cache", "in_store": "Downloads on connect (%s)" % Workshop.size_text(size),
+			"missing": "Not available"}[status]
+		state.modulate = Color(1, 0.55, 0.5) if status == "missing" else Color(1, 1, 1, 0.75)
+		row.add_child(state)
+		var keep := Button.new()
+		keep.text = "Subscribed" if status == "subscribed" else "Subscribe"
+		keep.disabled = status == "subscribed" or status == "missing"
+		keep.pressed.connect(_on_subscribe.bind(mod, sha))
+		row.add_child(keep)
+		box.add_child(row)
+		missing += 1 if status == "missing" else 0
+		to_fetch += size if status == "in_store" else 0
+	var connect := _node("ServerConnect") as Button
+	if connect:
+		connect.text = "Connect" if to_fetch == 0 else "Download and connect"
+	if missing > 0:
+		set_server_status("%d item(s) are not in your workshop store (%s): this server cannot be joined." % [missing,
+			Workshop.store_folder() if Workshop.store_folder() != "" else "no store is set: Settings"], false)
+	else:
+		set_server_status("" if to_fetch == 0 else "%s to download from the workshop store." % Workshop.size_text(to_fetch), true)
+
+
+func _on_subscribe(mod: String, sha: String) -> void:
+	var problem := Workshop.subscribe(mod, sha)
+	_fill_server_rows()
+	if problem != "":
+		_set_text("ServerStatus", problem)
 
 
 func show_connecting(address: String) -> void:
@@ -267,6 +360,10 @@ func _load_settings() -> void:
 		check.toggled.connect(_on_fullscreen)
 	_set_text("SensitivityValue", "%.2f" % sensitivity)
 	_set_text("VolumeValue", "%d%%" % int(volume))
+	var store := _node("Store") as LineEdit
+	if store:
+		store.text = String(config.get_value("settings", "store", ""))
+		store.text_changed.connect(func(text): _save_setting("store", text.strip_edges()))
 
 
 func _save_setting(key: String, value: Variant) -> void:

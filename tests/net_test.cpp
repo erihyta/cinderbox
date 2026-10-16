@@ -2,6 +2,7 @@
 //
 //   cb_net_tests [name]
 
+#include "server_query.h"
 #include "detmath.h"
 #include "bot_brain.h"
 #include "anim_graph.h"
@@ -2946,6 +2947,40 @@ void TestPrivateFields()
 	std::printf( "    four numbers, all different: %d (they are random, 1 to 99)\n", int( allDiffer ) );
 }
 
+// Asking a server what it is before joining (ServerQuery, a menu's): its map, how many play, the
+// workshop items it needs, and whether this game could join; the asker never becomes a player.
+// Nobody at the address: told so once the wait is over.
+void TestServerInfo()
+{
+	const std::string sha( 64, 'a' );
+	Harness h( 47898, {}, {}, {}, [&]( ServerOptions& options ) { options.items = { { "chat", sha }, { "gun", sha } }; } );
+	h.AddBot();
+	h.RunUntil( 2.0 );
+	ServerQuery query;
+	CHECK( query.Start( "127.0.0.1", 47898, h.Now() ) );
+	h.RunUntil( h.Now() + 3.0, [&]( double now ) { query.Update( now ); } );
+	CHECK( query.Done() && query.Ok() );
+	const net::MsgInfo& info = query.Info();
+	std::printf( "    answered: map \"%s\", %u of %u players, %zu items, compatible %d\n", info.map.c_str(), unsigned( info.players ),
+				 unsigned( info.maxPlayers ), info.items.size(), int( query.Compatible() ) );
+	CHECK( info.map.empty() == false && info.players == 1 && info.maxPlayers == kMaxPlayers );
+	CHECK( info.items.size() == 2 && info.items[0].mod == "chat" && info.items[0].sha256 == sha );
+	CHECK( query.Compatible() );
+	h.RunUntil( h.Now() + 1.0 );
+	CHECK( h.server.GetStats().infoRequests == 1 && h.server.GetStats().joins == 1 );
+	CHECK( h.bots[0].client->Names()[1].empty() ); // nobody else is in the game
+
+	ServerQuery nobody;
+	nobody.Start( "127.0.0.1", 47899, h.Now() );
+	double asked = h.Now();
+	while ( nobody.Update( h.Now() ) == false && h.Now() - asked < 10.0 )
+	{
+		std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
+	}
+	std::printf( "    nobody there: \"%s\" after %.1f s\n", nobody.Error().c_str(), h.Now() - asked );
+	CHECK( nobody.Done() && nobody.Ok() == false && nobody.Error().rfind( "No answer", 0 ) == 0 );
+}
+
 // Typed text (the chat mod): a line one player types reaches everyone, with who said it; a channel
 // no mod declared goes nowhere; a long line is cut; past the burst, only the sender is told to slow
 // down. None of it touches the simulation.
@@ -4235,6 +4270,7 @@ int main( int argc, char** argv )
 		{ "flight", TestFlight },
 		{ "grapple", TestGrapple },
 		{ "chat", TestChat },
+		{ "server_info", TestServerInfo },
 		{ "headshot", TestHeadshot },
 		{ "pistol_mark", TestPistolMark },
 		{ "rifle", TestRifle },

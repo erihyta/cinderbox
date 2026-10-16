@@ -137,6 +137,7 @@ public:
 		uint64_t resyncRequests = 0;
 		uint64_t joins = 0;
 		uint64_t reconnects = 0;
+		uint64_t infoRequests = 0; // asked what the server is (a menu, before joining)
 		uint64_t ticks = 0;
 		double tickMsTotal = 0.0; // simulation + snapshot + send work per tick
 		double tickMsMax = 0.0;
