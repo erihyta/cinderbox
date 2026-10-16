@@ -51,12 +51,19 @@ namespace
 int g_failures = 0;
 
 // Real-time thresholds (late inputs) only hold when the simulation runs at optimized speed: in a
-// Debug build the server and four simulating clients cannot keep up on one thread.
+// Debug build the server and four simulating clients cannot keep up on one thread. Nor on a machine
+// too slow or too busy to: CB_NO_TIMING_CHECKS=1 turns them off (CI's shared macOS runner, where
+// they failed one run in three with nothing wrong).
+bool TimingChecks()
+{
 #if defined( NDEBUG )
-constexpr bool kTimingChecks = true;
+	const char* off = std::getenv( "CB_NO_TIMING_CHECKS" );
+	return off == nullptr || off[0] == '\0' || off[0] == '0';
 #else
-constexpr bool kTimingChecks = false;
+	return false;
 #endif
+}
+const bool kTimingChecks = TimingChecks();
 
 #define CHECK( cond )                                                                                                            \
 	do                                                                                                                           \
