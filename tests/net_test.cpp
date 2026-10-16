@@ -240,6 +240,13 @@ struct Harness
 		options.verbose = false;
 		options.logName = "bot" + std::to_string( bots.size() );
 		options.playerName = name.empty() ? options.logName : name;
+		// On a machine too slow for the real-time limits (CB_NO_TIMING_CHECKS), a bot sends its input
+		// further ahead, so it still reaches the server in time: tests that say on which tick the
+		// server saw a press hold there too.
+		if ( kTimingChecks == false )
+		{
+			options.leadMarginTicks = 6;
+		}
 		bot.client->Start( options, Now() );
 		bots.push_back( std::move( bot ) );
 		return bots.back();
