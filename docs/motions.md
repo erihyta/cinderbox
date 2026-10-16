@@ -93,6 +93,32 @@ Boots         CbItem     use: once a press   slot 5   use_key V                 
 └── Slide     CbMove     for 0.18 s: no friction
 ```
 
+**In the item's rules sheet** the same can be lines: a `use` rule bakes into the same `Use` motion,
+as if its parts were nodes under the item (the game skips it). For a use that is flat; a probe and
+what hangs on it (a rope, a pull) stay nodes, being a tree.
+
+```
+# prefabs/boots.rules
+use if dash.charges > 0
+    change dash.charges -= 1
+    cooldown 0.4
+    emit dash.started
+    impulse 11 replace horizontal
+    move for 0.18 friction 0
+```
+
+| Line | Is |
+|---|---|
+| `use [if EXPRESSION]` | the When used conditions (added to the item's own) |
+| `change`, `cooldown`, `emit` | `use_changes` (one line each), `use_cooldown`, `use_emits` |
+| `impulse SPEED [on self\|hit\|FIELD] [along look\|move\|facing\|up\|world\|to] [direction (x,y,z)] [replace ...]` | a `CbImpulse` |
+| `force STRENGTH [kind acceleration\|force\|velocity] [top SPEED] [ramp S] [react] [on ...] [along ...]` | a `CbForce` |
+| `move [for S] PARAMETER VALUE ...` | a `CbMove` |
+| `launch new KIND`, `launch carried`, then `[speed] [lift] [ahead] [seconds] [along ...]` | a `CbLaunch` |
+
+- **One `use` rule an item.** The baked file is the same as from the nodes: the boots, the slam,
+  the guard and the dash strike were converted and their `motions/*.cfg` compared.
+
 | On the `CbItem` (When used) | Means |
 |---|---|
 | `use_conditions` | what must hold for a use to do anything (`dash.charges > 0`): [expressions](looks.md#expressions), as a motion's conditions |
