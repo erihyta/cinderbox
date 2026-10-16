@@ -1,6 +1,10 @@
 extends Node3D
-## Base game presentation: joining and leaving, watching recordings, input, camera, HUD binding,
-## and loading world reactions.
+## Base game presentation: joining and leaving, watching recordings, input and the HUD. Its parts
+## each have a script of their own:
+##   autoplay.gd      the unattended player (--autoplay, --view-probe), screenshots
+##   presentation.gd  world reactions, items and their HUDs, the mods' HUDs, screen effects
+##   view_camera.gd   the camera (behind, over a shoulder, first person) and the view model
+##   keys.gd          the game's keys, the server's actions, the slots' keys, the help line
 ##
 ## Everything visual it uses is loaded by path, so mods can replace it:
 ##   res://ui/hud.tscn          HUD layout. Optional unique nodes: %Stats, %Banner, %Help.
@@ -46,19 +50,18 @@ const MOUSE_SENSITIVITY := 0.003
 ## degrees; the simulation takes up to 88). Behind the player the map pulls the camera in where it
 ## would go under the floor.
 const MAX_PITCH := 1.5
-const ACTION_PREFIX := "cb_"
-## What a player asks of its slots (the simulation's SlotIntent).
-const INTENT_SELECT := 1
 const Boot := preload("res://boot.gd")
 const Workshop := preload("res://workshop.gd")
 const Menu := preload("res://menu.gd")
 const Host := preload("res://host.gd")
+const Autoplay := preload("res://autoplay.gd")
+const Presentation := preload("res://presentation.gd")
+const ViewCamera := preload("res://view_camera.gd")
+const Keys := preload("res://keys.gd")
 const NO_PEER := "This copy of the game has no peer extension, so it cannot %s."
 const NO_LINK := "This copy of the game does not have the peer extension, so it cannot join servers."
 ## How long a server may take to answer before the attempt is given up.
 const JOIN_TIMEOUT := 10.0
-## The camera keeps this far off the map's surfaces.
-const CAMERA_RADIUS := 0.25
 
 ## These outlive the scene, which is reloaded when a server is left.
 static var _started := false # the command line's --host has been used
@@ -73,7 +76,6 @@ var peer: RefCounted
 var yaw := PI # facing +Z like the server's spawn orientation
 var pitch := -0.35
 var distance := 6.0
-var _camera_distance := 6.0 # after the map got in the way
 ## Looking out of the character's head instead of from behind it (the key left of 1 toggles it).
 var first_person := false
 ## Third person: the camera over a shoulder (1 right, -1 left) or straight behind (0). Z cycles.
@@ -82,27 +84,14 @@ var args := {}
 var hud: Node
 var show_debug := true
 
-var autoplay := 0.0
-var view_probe := false
-var _probe_slot := 0
-var _probe_frames_dir := ""
-var _probe_use := false
-var _probe_body := {}
-var _probe_frames := {} # part -> [Image]
-var _probe_part_since := {} # part -> when it began
-## view_probe: per part of the plan, the hand's place in the camera's frame: [least, most] of each axis.
-var _probe := {}
-var screenshot := ""
-var playing_since := -1.0
-var auto_rng := RandomNumberGenerator.new()
-var auto_move := Vector2.ZERO
-var screenshot_every := 0.0
-var _next_screenshot := 0.0
-var _screenshots := 0
-var _event_counts := {}
-var _item_huds: Array[Node] = []
-## Items' own HUDs (CbItem.hud), by kind: {scene, carried, node}. Shown by _update_kind_huds.
-var _kind_huds := {}
+## The parts of the game, each in a script of its own.
+var auto: Autoplay # the unattended player
+var presentation: Presentation # reactions, items and their HUDs, screen effects
+var view_camera: ViewCamera # the camera and the view model
+var keys: Keys # the game's keys, the server's actions, the slots' keys, the help line
+
+## A screen of a mod's (an inventory) has the mouse: the cursor is free and the game does not use it.
+var _ui_cursor := false
 var _presented := false # this scene has loaded the items' reactions and HUDs
 var _refused := "" # why this server cannot be joined
 
@@ -114,31 +103,17 @@ var _replay := "" # the recording or view file being watched ("": playing on a s
 var _replay_is_view := false
 var _leaving := false # the scene is being replaced
 
-var _actions: Array = [] # [{ name, bit, key }] from the server's mods
-## The local player's slots, as their keys are bound (game_slot_1 ...): how many.
-var _slot_keys := 0
-
-## The view model: what the player holds that floats in the first-person view, and the arms on it,
-## are drawn by a camera of their own over the world (the viewer puts them on a layer only this
-## camera sees). It stands where the game's camera does, with the field of view the held item asks
-## for, and has its own depth: what is held never passes into a wall.
-var _view_model: SubViewport
-var _view_model_camera: Camera3D
-var _view_model_rect: TextureRect
-var _shake := 0.0
-var _shake_decay := 1.0
-var _flash := 0.0
-var _flash_decay := 1.0
-var _flash_color := Color.WHITE
-var _flash_rect: ColorRect
-
 
 func _ready() -> void:
 	args = _parse_args()
 	# The camera is placed after everything has moved this frame (the viewer is a child and updates
 	# the drawn world after this node): a frame late, your own body would run ahead of your eyes.
-	RenderingServer.frame_pre_draw.connect(_update_camera)
-	_make_view_model()
+	auto = Autoplay.new(self, args)
+	presentation = Presentation.new(self)
+	keys = Keys.new(self)
+	view_camera = ViewCamera.new(self, camera)
+	RenderingServer.frame_pre_draw.connect(view_camera.update)
+	view_camera.make_view_model()
 	if ClassDB.class_exists("CinderboxPeer"):
 		peer = ClassDB.instantiate("CinderboxPeer")
 	if args.has("rollback") and peer != null:
@@ -151,29 +126,15 @@ func _ready() -> void:
 	# --physics-threads=N: the physics runs on N more threads (what is simulated stays the same).
 	if args.has("physics-threads") and peer != null:
 		peer.physics_threads = int(args["physics-threads"])
-	autoplay = float(args.get("autoplay", "0"))
-	# --view-probe: the unattended player goes into first person and walks and turns by a plan, and
-	# the run reports how far its hand moved on the screen in each part (it should stand still).
-	view_probe = args.has("view-probe")
-	_probe_slot = int(args.get("view-probe", "0")) if view_probe else 0
-	# --probe-frames=DIR: the probe also keeps what was drawn, a run of frames from each part of
-	# its plan, so what is on the screen can be measured (tools outside the game compare them).
-	_probe_frames_dir = args.get("probe-frames", "")
-	_probe_use = args.has("probe-use")
-	if view_probe and _probe_frames_dir != "":
-		RenderingServer.frame_post_draw.connect(_probe_capture)
-	screenshot = args.get("screenshot", "")
-	screenshot_every = float(args.get("screenshot-every", "0"))
-	auto_rng.seed = Time.get_ticks_usec()
 
-	client.visual_spawned.connect(_on_visual_spawned)
-	client.mod_event.connect(_on_mod_event)
-	client.get_director().screen_effect.connect(_on_screen_effect)
+	client.visual_spawned.connect(presentation.on_visual_spawned)
+	client.mod_event.connect(auto.on_mod_event)
+	client.get_director().screen_effect.connect(presentation.on_screen_effect)
 	client.schema_changed.connect(_on_schema_changed)
 	client.source_state_changed.connect(func(state): print("source: ", state))
 
-	_load_reactions()
-	_make_flash_overlay()
+	presentation.load_reactions()
+	presentation.make_flash_overlay()
 
 	# Everything a mod can replace goes through the guard (CbDirector.instantiate): a scene with
 	# anything but listed node classes and data is refused, and null comes back.
@@ -190,12 +151,12 @@ func _ready() -> void:
 	menu.leave_requested.connect(_leave.bind(""))
 	menu.resume_requested.connect(_resume)
 	menu.quit_requested.connect(_quit)
-	_bind_game_keys()
+	keys.bind_game_keys()
 
 	# The command line's server is joined once (its recording watched once); leaving it lands in
 	# the menu like any other.
 	var local: bool = not _started and args.has("host-local")
-	var direct: bool = not _started and not local and (args.has("host") or args.has("port") or autoplay > 0.0)
+	var direct: bool = not _started and not local and (args.has("host") or args.has("port") or auto.seconds > 0.0)
 	var watch: bool = not _started and (args.has("replay") or args.has("view"))
 	_started = true
 	if watch:
@@ -257,10 +218,10 @@ func _process(delta: float) -> void:
 	_send_input(delta)
 	# The viewer draws the player's own body for the view it is seen from.
 	client.first_person = first_person and client.get_local_net_id() != 0 and not client.is_local_player_dead()
-	_update_screen_effects(delta)
+	presentation.update_screen_effects(delta)
 	_update_hud()
-	_update_kind_huds()
-	_autoplay_finish()
+	presentation.update_kind_huds()
+	auto.finish()
 
 
 # --- Joining and leaving --------------------------------------------------------------------------
@@ -269,7 +230,7 @@ func _process(delta: float) -> void:
 func _host() -> void:
 	var started: Dictionary = Host.start(args)
 	if started.has("error"):
-		if autoplay > 0.0:
+		if auto.seconds > 0.0:
 			print("autoplay refused: ", started["error"])
 			get_tree().quit(3)
 			return
@@ -290,7 +251,7 @@ func _join(host: String, port: int) -> void:
 	_refused = ""
 	_joined = false
 	_joining_since = Time.get_ticks_msec() / 1000.0
-	if autoplay > 0.0:
+	if auto.seconds > 0.0:
 		menu.close()
 	else:
 		menu.show_connecting(_address)
@@ -355,10 +316,10 @@ func _leave(message: String) -> void:
 		push_warning(message.replace("\n", " "))
 	_stop()
 	Host.stop()
-	if autoplay > 0.0:
+	if auto.seconds > 0.0:
 		# Unattended runs have nobody to read a menu.
 		print("autoplay refused: ", message.replace("\n", " "))
-		autoplay = 0.0
+		auto.seconds = 0.0
 		get_tree().quit(3)
 		return
 	_menu_message = message
@@ -412,12 +373,12 @@ func _watch_connection() -> void:
 		return
 	elif state == "playing":
 		_joined = true
-		if autoplay <= 0.0:
+		if auto.seconds <= 0.0:
 			if _replay == "":
 				menu.remember_server(peer.host, peer.port, client.get_map_name())
 			menu.close()
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	elif autoplay > 0.0 or _replay != "":
+	elif auto.seconds > 0.0 or _replay != "":
 		return # unattended runs wait for their server; a recording has no connection to fail
 	elif int(stats.get("connect_failures", 0)) > 0:
 		_leave("The address \"%s\" could not be found. Check the spelling." % peer.host)
@@ -427,7 +388,7 @@ func _watch_connection() -> void:
 
 func _on_schema_changed() -> void:
 	if _load_items():
-		_bind_actions()
+		keys.bind_actions()
 
 
 ## Loads the workshop items the server announced. False (and leaves) if any is missing or refused.
@@ -486,7 +447,7 @@ func _load_items() -> bool:
 			ProjectSettings.load_resource_pack(mod, true)
 	# Also when the items were loaded by an earlier visit: this scene has not shown them yet.
 	if added or (not _presented and not paths.is_empty()):
-		_reload_presentation()
+		presentation.reload()
 	if replaced:
 		# What is in the world is drawn from the scenes as they are now.
 		client.rebuild_nodes()
@@ -541,195 +502,9 @@ func _restart_and_join() -> void:
 	get_tree().quit()
 
 
-## Reactions and item HUDs, loaded again now that items may have added or replaced some.
-func _reload_presentation() -> void:
-	client.clear_world_scenes()
-	for kind in _kind_huds:
-		if _kind_huds[kind]["node"] != null:
-			_kind_huds[kind]["node"].queue_free()
-	_load_reactions()
-	for node in _item_huds:
-		node.queue_free()
-	_item_huds.clear()
-	var names := []
-	for file in DirAccess.get_files_at("res://ui"):
-		var clean: String = file.trim_suffix(".remap")
-		if clean.begins_with("hud_") and clean.ends_with(".tscn"):
-			names.append(clean)
-	names.sort()
-	for file in names:
-		var scene := ResourceLoader.load("res://ui/%s" % file, "PackedScene", ResourceLoader.CACHE_MODE_REPLACE) as PackedScene
-		var node := CbDirector.instantiate(scene)
-		if node:
-			add_child(node)
-			_item_huds.append(node)
-	print("item HUDs: ", names)
-
-
-# --- Input ----------------------------------------------------------------------------------------
+# --- Input and the HUD ----------------------------------------------------------------------------
 #
-# The server's mods declare their actions and suggest a key for each. They become InputMap actions
-# named cb_<action>, so the usual Godot input remapping works on them too.
-
-## The game's own keys: InputMap actions like the mods' (game_*), so the Keys page rebinds them too.
-const GAME_KEYS := [
-	["game_forward", "W", "Forward"], ["game_back", "S", "Back"], ["game_left", "A", "Left"], ["game_right", "D", "Right"],
-	["game_jump", "Space", "Jump"], ["game_sprint", "Shift", "Sprint"], ["game_use", "MouseLeft", "Use what is in the hand"],
-	["game_first_person", "QuoteLeft", "First person"], ["game_shoulder", "Z", "Switch shoulder"],
-]
-
-
-func _bind_game_keys() -> void:
-	for key in GAME_KEYS:
-		menu.bind_key(key[0], key[1], key[2], "Game")
-
-
-func _bind_actions() -> void:
-	# Only the last server's: a HUD's own keys (CbKey) have the prefix too, and stay. The key is
-	# the one the mod suggests, or the player's own (the Keys page of the settings).
-	menu.forget_keys("This server")
-	_slot_keys = 0 # (the slots' keys are bound again once the player has slots)
-	_actions = client.get_actions()
-	for action in _actions:
-		menu.bind_key(ACTION_PREFIX + String(action["name"]), String(action["key"]), _action_label(String(action["name"])).capitalize(), "This server")
-	print("mod actions: ", ", ".join(_actions.map(func(a): return "%s (%s)" % [a["name"], menu.key_text(ACTION_PREFIX + String(a["name"]))])))
-	_update_help()
-
-
-## The unattended player's visit to the inventory screen: what it has done of it so far.
-var _auto_bag_step := 0
-
-
-func _auto_bag(since: float) -> void:
-	if not InputMap.has_action("cb_inventory"):
-		return
-	var due := [0.0, 0.6, 0.7, 0.8, 2.6]
-	if _auto_bag_step >= due.size() or since < due[_auto_bag_step]:
-		return
-	# (With a chest about, the screen opens once the player stands at it, or two seconds late.)
-	if _auto_bag_step == 0 and client.get_containers().size() > 0 and not _chest_near and since < 2.0:
-		return
-	# The bag's cells, in order (a CbDrag in each; the hotbar's are not the bag's).
-	var cells := []
-	for drag in get_tree().root.find_children("*", "CbDrag", true, false):
-		var cell := drag.get_parent() as Control
-		var in_bag := false
-		var up: Node = cell
-		while up != null and not in_bag:
-			in_bag = up.name == "Bag"
-			up = up.get_parent()
-		if cell != null and in_bag and cell.is_visible_in_tree() and not cells.has(cell):
-			cells.append(cell)
-	match _auto_bag_step:
-		0, 4:
-			# The key itself, as a keyboard sends it (down, then up): it switches the screen.
-			for bound in InputMap.action_get_events("cb_inventory"):
-				for pressed in [true, false]:
-					var key := (bound as InputEvent).duplicate() as InputEventKey
-					if key != null:
-						key.pressed = pressed
-						Input.parse_input_event(key)
-			print("autoplay: pressed the inventory key")
-		1, 2, 3:
-			# The first slot dragged onto the third: pressed, moved there, let go (a frame apart).
-			if cells.size() >= 3:
-				var from := (cells[0] as Control).get_global_rect().get_center()
-				var to := (cells[2] as Control).get_global_rect().get_center()
-				if _auto_bag_step == 1:
-					_mouse_button(from, true)
-					_mouse_motion(from + Vector2(12, 0))
-				elif _auto_bag_step == 2:
-					_mouse_motion(from.lerp(to, 0.5))
-					_mouse_motion(to)
-				else:
-					_mouse_button(to, false)
-					print("autoplay: dragged slot 1 onto slot 3 of ", cells.size(), " in the inventory screen")
-	_auto_bag_step += 1
-
-
-## Where the unattended player's mouse was last (a drag is seen from how far the mouse moved).
-var _auto_mouse := Vector2.ZERO
-
-
-func _mouse_button(at: Vector2, pressed: bool) -> void:
-	_auto_mouse = at
-	var event := InputEventMouseButton.new()
-	event.button_index = MOUSE_BUTTON_LEFT
-	event.pressed = pressed
-	event.button_mask = MOUSE_BUTTON_MASK_LEFT if pressed else 0
-	event.position = at
-	event.global_position = at
-	Input.parse_input_event(event)
-
-
-func _mouse_motion(at: Vector2) -> void:
-	var event := InputEventMouseMotion.new()
-	event.button_mask = MOUSE_BUTTON_MASK_LEFT
-	event.relative = at - _auto_mouse
-	_auto_mouse = at
-	event.position = at
-	event.global_position = at
-	Input.parse_input_event(event)
-
-
-var _chest_near := false
-
-
-## The unattended player walks to the nearest container and looks at it, from a little before the
-## inventory screen opens until it closes: true meanwhile.
-func _auto_chest(elapsed: float) -> bool:
-	if elapsed < autoplay * 0.2 or elapsed > autoplay * 0.45 + 4.8:
-		return false
-	var me: Node3D = client.get_entity_node(client.get_local_net_id())
-	var nearest: Node3D = null
-	for id in client.get_containers():
-		var node: Node3D = client.get_entity_node(id)
-		if node != null and me != null and (nearest == null or node.global_position.distance_to(me.global_position) < nearest.global_position.distance_to(me.global_position)):
-			nearest = node
-	if nearest == null or me == null:
-		return false
-	var to := nearest.global_position - (me.global_position + Vector3(0, 1.5, 0))
-	var flat := Vector2(to.x, to.z).length()
-	yaw = atan2(-to.x, -to.z)
-	pitch = atan2(to.y, flat)
-	_chest_near = flat <= 1.8
-	auto_move = Vector2.ZERO if _chest_near else Vector2(0, 1)
-	return true
-
-
-## The unattended player takes a slot's item out, once.
-var _auto_slot := -1
-## A screen of a mod's (an inventory) has the mouse: the cursor is free and the game does not use it.
-var _ui_cursor := false
-var _auto_hooks := 0
-
-
-func _auto_select(slot: int) -> void:
-	if slot != _auto_slot:
-		_auto_slot = slot
-		client.send_intent(INTENT_SELECT, slot, 0)
-
-
-func _action_bits() -> int:
-	var bits := 0
-	for action in _actions:
-		if Input.is_action_pressed(ACTION_PREFIX + String(action["name"])):
-			bits |= 1 << int(action["bit"])
-	return bits
-
-
-## What a mod action is called on the Keys page and in the help line: an item's own key
-## ("frag.grenade.use") by its item ("frag grenade").
-func _action_label(name: String) -> String:
-	return name.trim_suffix(".use").replace(".", " ").replace("_", " ")
-
-
-func _action_bit(name: String) -> int:
-	for action in _actions:
-		if action["name"] == name:
-			return 1 << int(action["bit"])
-	return 0
-
+# The keys are keys.gd's; the unattended player's input is autoplay.gd's.
 
 func _send_input(delta: float) -> void:
 	var move := Vector2.ZERO
@@ -744,69 +519,14 @@ func _send_input(delta: float) -> void:
 	var actions := 0
 	var use := false
 	var slot_keys := 0
-	_bind_slot_keys()
-	if autoplay > 0.0:
-		# Scripted player for unattended runs: props first, then the pistol, then the bat (if the
-		# server runs the melee mod).
-		if auto_rng.randf() < delta * 1.5:
-			auto_move = Vector2(auto_rng.randf_range(-1, 1), auto_rng.randf_range(0.2, 1))
-		move = auto_move
-		sprint = true
-		jump = auto_rng.randf() < delta * 1.0
-		yaw += delta * 0.6
-		if view_probe:
-			var plan := _probe_plan(Time.get_ticks_msec() / 1000.0 - playing_since if playing_since >= 0.0 else 0.0)
-			yaw += delta * (float(plan[2]) - 0.6)
-			move = plan[1]
-			sprint = bool(plan[3])
-			jump = false
-			first_person = true
-			if plan[0] == "looking up and down":
-				pitch = 0.9 * sin((Time.get_ticks_msec() / 1000.0) * 3.0)
-			# --probe-pitch=DEGREES: it looks that far up (down: negative) all the while.
-			if args.has("probe-pitch"):
-				pitch = deg_to_rad(float(args["probe-pitch"]))
-		var elapsed := Time.get_ticks_msec() / 1000.0 - playing_since if playing_since >= 0.0 else 0.0
-		# A hook, if the server has one: a press of its own key throws it, the next lets it go (one
-		# press every two seconds).
-		if view_probe:
-			# The probe's player only walks and turns; with "--view-probe=N" it has slot N out.
-			if _probe_slot > 0:
-				_auto_select(_probe_slot - 1)
-		# Before the inventory screen opens, to the nearest chest (a container), looking at it: the
-		# screen then opens it too.
-		var to_chest := not view_probe and _auto_chest(elapsed)
-		if to_chest:
-			move = auto_move
-			jump = false
-			sprint = false
-		elif int(elapsed / 2.0) != _auto_hooks and client.get_mod_names().has("grapple"):
-			_auto_hooks = int(elapsed / 2.0)
-			actions |= _action_bit("grapple.hook.use")
-		if view_probe:
-			# With --probe-use it uses what it has out once, a second into standing still: the
-			# frames kept of that part are the use, from the press on.
-			use = _probe_use and elapsed >= 4.0 and elapsed < 4.1
-		elif elapsed < autoplay * 0.4:
-			if auto_rng.randf() < delta * 2.0:
-				actions |= _action_bit("spawn_prop")
-			# A grenade now and then, if the server has them: its own key throws one, from wherever
-			# it is carried.
-			if auto_rng.randf() < delta * 1.0:
-				actions |= _action_bit("frag.grenade.use")
-		elif elapsed < autoplay * 0.7:
-			_auto_select(0)
-			use = auto_rng.randf() < delta * 3.0
-		else:
-			_auto_select(1)
-			use = auto_rng.randf() < delta * 2.0
-		# The inventory screen, if a mod brings one (a CbKey named "inventory"): opened in the
-		# middle of the run, its first slot dragged onto its third (they trade places), closed.
-		if not view_probe:
-			_auto_bag(elapsed - autoplay * 0.45)
-		# Hold the scores key at the end (a mod's CbKey names it), so screenshots show them too.
-		if elapsed > autoplay * 0.8 and InputMap.has_action("cb_scores") and not Input.is_action_pressed("cb_scores"):
-			Input.action_press("cb_scores")
+	keys.bind_slot_keys()
+	if auto.seconds > 0.0:
+		var steered: Dictionary = auto.steer(delta)
+		move = steered["move"]
+		jump = steered["jump"]
+		sprint = steered["sprint"]
+		use = steered["use"]
+		actions = steered["actions"]
 	elif get_window().has_focus() and not menu.is_open():
 		move.x = float(Input.is_action_pressed("game_right")) - float(Input.is_action_pressed("game_left"))
 		move.y = float(Input.is_action_pressed("game_forward")) - float(Input.is_action_pressed("game_back"))
@@ -814,233 +534,14 @@ func _send_input(delta: float) -> void:
 		sprint = Input.is_action_pressed("game_sprint")
 		# Actions only count while the game has the mouse, so the click that captures it is not a shot.
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-			actions = _action_bits()
+			actions = keys.action_bits()
 			# The use button is the engine's: what is in the hand is used (what that does is its mod's).
 			use = Input.is_action_pressed("game_use")
 		# The slots' keys select their slots. They go out held, like the buttons; the simulation
 		# sees the presses. Also while a screen has the mouse (the inventory), not in a recording.
 		if _replay == "" and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or _ui_cursor):
-			for i in mini(_slot_keys, 16):
-				var slot_action := "game_slot_%d" % (i + 1)
-				if InputMap.has_action(slot_action) and Input.is_action_pressed(slot_action):
-					slot_keys |= 1 << i
-	client.set_input(move, yaw, pitch, jump, sprint, use, actions, _view(), slot_keys)
-
-
-## The slots' keys, once the player has slots (and again when their number changes): 1 to 9 and 0
-## for the first ten, as in Minecraft; the player's own on the Keys page wins. A slot is a place:
-## its key selects it, whatever it holds. (The bag's slots past the tenth are reached with the
-## mouse, on the inventory screen. An item's own key, "H" for a grenade, is a mod action.)
-func _bind_slot_keys() -> void:
-	var count: int = client.get_slot_count(client.get_local_net_id()) if _joined else 0
-	if count == _slot_keys or count <= 0:
-		return
-	menu.forget_keys("Slots")
-	for i in mini(count, 10):
-		menu.bind_key("game_slot_%d" % (i + 1), str(i + 1) if i < 9 else "0", "Slot %d" % (i + 1), "Slots")
-	_slot_keys = count
-	var bound := []
-	for i in mini(count, 10):
-		bound.append(menu.key_text("game_slot_%d" % (i + 1)))
-	print("slot keys: ", " ".join(bound))
-	_update_help()
-
-
-## Which camera the player looks through, as the server is told (ViewMode): 0 behind, 1 first
-## person, 2 / 3 over the right / left shoulder. The server starts the line of sight where this
-## camera's does, so what is under the crosshair is what a shot is aimed at.
-func _view() -> int:
-	if first_person:
-		return 1
-	return 2 if shoulder > 0 else (3 if shoulder < 0 else 0)
-
-
-## First person: from the character's eye height above its feet, on its mover: steps, landings and
-## the bowing body do not move the camera. Of your own body the arms and what is below the hips
-## are drawn (CinderboxClient.first_person). False while there is no living body to look out of.
-func _update_first_person() -> bool:
-	var me: int = client.get_local_net_id()
-	if not first_person or me == 0 or client.is_local_player_dead() or client.get_entity_node(me) == null:
-		return false
-	camera.rotation = Vector3(pitch, yaw, 0)
-	camera.global_position = client.get_view_position(1, camera.global_transform.basis)
-	return true
-
-
-## view_probe: what the unattended player does `at` seconds into the run: [name, move, turn rate, sprint].
-func _probe_plan(at: float) -> Array:
-	if at < 3.0:
-		return ["settle", Vector2.ZERO, 0.0, false]
-	if at < 6.0:
-		return ["standing still", Vector2.ZERO, 0.0, false]
-	if at < 9.0:
-		return ["walking ahead", Vector2(0, 1), 0.0, false]
-	if at < 12.0:
-		return ["sprinting ahead", Vector2(0, 1), 0.0, true]
-	if at < 15.0:
-		return ["strafing left and right", Vector2(1 if fmod(at, 1.0) < 0.5 else -1, 0), 0.0, false]
-	if at < 18.0:
-		return ["standing, turning", Vector2.ZERO, 2.5, false]
-	if at < 21.0:
-		return ["walking and turning", Vector2(0, 1), 2.5, false]
-	return ["looking up and down", Vector2.ZERO, 0.0, false]
-
-
-## view_probe with --probe-frames: the frame just drawn, half size, 48 in a row from one second
-## into each part of the plan.
-func _probe_capture() -> void:
-	if playing_since < 0.0 or not client.first_person:
-		return
-	var now := Time.get_ticks_msec() / 1000.0 - playing_since
-	var part: String = _probe_plan(now)[0]
-	if part == "settle":
-		return
-	if not _probe_part_since.has(part):
-		_probe_part_since[part] = now
-		_probe_frames[part] = []
-	if now - float(_probe_part_since[part]) < 1.0 or (_probe_frames[part] as Array).size() >= 48:
-		return
-	var image := get_viewport().get_texture().get_image()
-	image.resize(image.get_width() / 2, image.get_height() / 2, Image.INTERPOLATE_BILINEAR)
-	(_probe_frames[part] as Array).append(image)
-
-
-## view_probe: where the right hand is in the camera's own frame, this drawn frame.
-func _probe_sample() -> void:
-	if not view_probe or playing_since < 0.0 or not client.first_person:
-		return
-	var part: String = _probe_plan(Time.get_ticks_msec() / 1000.0 - playing_since)[0]
-	if part == "settle":
-		return
-	var hand: Vector3 = camera.global_transform.affine_inverse() * client.get_bone_position(client.get_local_net_id(), "RightHand")
-	# The body's own place and facing against the camera's, to tell what moves when the hand does.
-	var body: Node3D = client.get_entity_node(client.get_local_net_id())
-	var origin: Vector3 = camera.global_transform.affine_inverse() * body.global_position
-	var turn: float = wrapf(body.global_rotation.y - camera.global_rotation.y, -PI, PI)
-	if not _probe_body.has(part):
-		_probe_body[part] = [origin, origin, turn, turn]
-	var was: Array = _probe_body[part]
-	_probe_body[part] = [Vector3(minf(was[0].x, origin.x), minf(was[0].y, origin.y), minf(was[0].z, origin.z)),
-		Vector3(maxf(was[1].x, origin.x), maxf(was[1].y, origin.y), maxf(was[1].z, origin.z)), minf(was[2], turn), maxf(was[3], turn)]
-	if not _probe.has(part):
-		_probe[part] = [hand, hand, 0]
-	var seen: Array = _probe[part]
-	_probe[part] = [Vector3(minf(seen[0].x, hand.x), minf(seen[0].y, hand.y), minf(seen[0].z, hand.z)),
-		Vector3(maxf(seen[1].x, hand.x), maxf(seen[1].y, hand.y), maxf(seen[1].z, hand.z)), seen[2] + 1]
-
-
-func _update_camera() -> void:
-	if _leaving or not is_inside_tree():
-		return
-	camera.near = 0.03 if first_person else 0.05
-	if _update_first_person():
-		if _shake > 0.0:
-			camera.global_position += Vector3(
-				auto_rng.randf_range(-_shake, _shake),
-				auto_rng.randf_range(-_shake, _shake),
-				auto_rng.randf_range(-_shake, _shake)) * 0.3
-		_camera_moved()
-		# The view model (the arms, and what they hold) goes to the camera where it is now: it is
-		# stitched to it. What floats in the view (an item with a view camera) goes in front of it.
-		client.place_view_items(camera.global_transform, get_process_delta_time())
-		_probe_sample()
-		_show_view_model(client.get_view_fov())
-		return
-	_show_view_model(0.0)
-	# The point above the player the camera orbits (moved to a shoulder, if it is), or its ragdoll
-	# while dead. The server's line of sight passes through the same point.
-	camera.rotation = Vector3(pitch, yaw, 0)
-	var target: Vector3 = client.get_view_position(_view(), camera.global_transform.basis)
-	# The map pulls the camera in at once, and it eases back out when the way is clear.
-	var back: Vector3 = camera.global_transform.basis.z
-	var free: float = client.get_camera_distance(target, back, distance, CAMERA_RADIUS)
-	_camera_distance = free if free < _camera_distance else minf(free, _camera_distance + 12.0 * get_process_delta_time())
-	camera.global_position = target + back * _camera_distance
-	if _shake > 0.0:
-		camera.global_position += Vector3(
-			auto_rng.randf_range(-_shake, _shake),
-			auto_rng.randf_range(-_shake, _shake),
-			auto_rng.randf_range(-_shake, _shake))
-	_camera_moved()
-
-
-func _make_view_model() -> void:
-	var layer: int = client.get_view_layer()
-	camera.cull_mask &= ~layer
-	_view_model = SubViewport.new()
-	_view_model.name = "ViewModel"
-	_view_model.transparent_bg = true
-	_view_model.msaa_3d = get_viewport().msaa_3d
-	_view_model.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	_view_model_camera = Camera3D.new()
-	_view_model_camera.cull_mask = layer
-	_view_model_camera.near = 0.01
-	_view_model_camera.far = 20.0
-	# The world's light without the world's picture: the sky lights what is held and is not drawn.
-	var world := ($WorldEnvironment as WorldEnvironment).environment
-	var env := Environment.new()
-	env.background_mode = Environment.BG_CLEAR_COLOR
-	env.sky = world.sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env.tonemap_mode = world.tonemap_mode
-	_view_model_camera.environment = env
-	_view_model.add_child(_view_model_camera)
-	add_child(_view_model)
-	# Under every HUD: over the world and nothing else.
-	var canvas := CanvasLayer.new()
-	canvas.layer = -1
-	_view_model_rect = TextureRect.new()
-	_view_model_rect.texture = _view_model.get_texture()
-	_view_model_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_view_model_rect.stretch_mode = TextureRect.STRETCH_SCALE
-	_view_model_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_view_model_rect.visible = false
-	canvas.add_child(_view_model_rect)
-	add_child(canvas)
-
-
-## `fov` 0: nothing floats in the view, and nothing is drawn for it.
-func _show_view_model(fov: float) -> void:
-	var on := fov > 0.0
-	if _view_model_rect.visible != on:
-		_view_model_rect.visible = on
-		_view_model.render_target_update_mode = SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED
-	if not on:
-		return
-	var size: Vector2i = get_viewport().get_visible_rect().size
-	if _view_model.size != size:
-		_view_model.size = size
-	_view_model_camera.fov = fov
-	_view_model_camera.global_transform = camera.global_transform
-	_view_model_camera.force_update_transform()
-
-
-## The camera is placed just before the frame is drawn (so it has this frame's newest pose), which
-## is after Godot has passed this frame's moved nodes on to the renderer: left at that, the frame
-## would be drawn from where the camera was a frame ago, while the player's body is drawn where it
-## is now. In first person that makes the arms shake against the view with every step, by the
-## distance walked in a frame. So the camera's move is passed on at once.
-func _camera_moved() -> void:
-	camera.force_update_transform()
-
-
-func _update_help() -> void:
-	if hud == null:
-		return
-	var help := hud.get_node_or_null("%Help") as Label
-	if help == null:
-		return
-	if _replay != "":
-		help.text = "Space pause   Left/Right -/+5 s   Up/Down speed   , . step   Home restart   N next player   Mouse orbit   Wheel zoom   ` first person   Z shoulder   Esc menu   F1 stats"
-		return
-	# (The keys as they are bound now: the player's own, where one was chosen.)
-	var text := "%s%s%s%s move   %s sprint   %s jump" % [menu.key_text("game_forward"), menu.key_text("game_left"), menu.key_text("game_back"),
-		menu.key_text("game_right"), menu.key_text("game_sprint"), menu.key_text("game_jump")]
-	for action in _actions:
-		text += "   %s %s" % [menu.key_text(ACTION_PREFIX + String(action["name"])), _action_label(String(action["name"]))]
-	help.text = text + "   Mouse orbit   Wheel zoom   %s first person   %s shoulder   Esc menu   F1 stats" % [menu.key_text("game_first_person"),
-		menu.key_text("game_shoulder")]
+			slot_keys = keys.slot_key_bits()
+	client.set_input(move, yaw, pitch, jump, sprint, use, actions, view_camera.view(), slot_keys)
 
 
 func _update_hud() -> void:
@@ -1049,7 +550,7 @@ func _update_hud() -> void:
 	var stats: Dictionary = client.get_stats()
 	var label := hud.get_node_or_null("%Stats") as Label
 	if label:
-		label.visible = show_debug and (_joined or autoplay > 0.0)
+		label.visible = show_debug and (_joined or auto.seconds > 0.0)
 		label.text = "%d FPS   %s\ntick %d   confirmed %d   window %d\nrtt %d ms   rollbacks %d (last %d)   stalled %.1f s\nchecksums ok %d   desyncs %d\nentities %d   animation: %s\nmods: %s" % [
 			Engine.get_frames_per_second(), stats.get("state", ""),
 			stats.get("tick", 0), stats.get("confirmed_tick", 0), stats.get("rollback_window", 0),
@@ -1063,7 +564,7 @@ func _update_hud() -> void:
 	var banner := hud.get_node_or_null("%Banner") as Label
 	if banner:
 		var state: String = stats.get("state", "")
-		banner.visible = state != "playing" and (_joined or autoplay > 0.0)
+		banner.visible = state != "playing" and (_joined or auto.seconds > 0.0)
 		if _replay != "" and state == "playing":
 			# A recording says where it is whenever it is not simply playing on.
 			var follow: int = stats.get("replay_follow", -1)
@@ -1078,179 +579,3 @@ func _update_hud() -> void:
 			banner.text = "Connection lost - time is paused, reconnecting...\nEsc: menu"
 		else:
 			banner.text = "Connecting..."
-
-
-func _autoplay_finish() -> void:
-	if autoplay <= 0.0:
-		return
-	if playing_since < 0.0:
-		if client.get_source_state() == "playing":
-			playing_since = Time.get_ticks_msec() / 1000.0
-		return
-	var elapsed := Time.get_ticks_msec() / 1000.0 - playing_since
-	if screenshot != "" and screenshot_every > 0.0 and elapsed >= _next_screenshot:
-		_next_screenshot = elapsed + screenshot_every
-		_screenshots += 1
-		var path := "%s_%d.png" % [screenshot.trim_suffix(".png"), _screenshots]
-		get_viewport().get_texture().get_image().save_png(path)
-	if elapsed < autoplay:
-		return
-	autoplay = 0.0
-	if screenshot != "":
-		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png(screenshot)
-	var stats: Dictionary = client.get_stats()
-	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
-		stats.get("state"), stats.get("checksums_verified", 0), stats.get("desyncs", 0), stats.get("fingerprint", "none"), stats.get("fp_environment_ok", "not simulating")])
-	print("mod events seen: ", _event_counts)
-	# What the scene costs: the reactions and predictions listening (a copy lying in the world has
-	# only its own).
-	for node in get_tree().root.find_children("*", "CbDirector", true, false):
-		print("listening: %d reactions and predictions" % node.get_listener_count())
-		break
-	for part in _probe_frames:
-		DirAccess.make_dir_recursive_absolute(_probe_frames_dir)
-		var frames: Array = _probe_frames[part]
-		for i in frames.size():
-			(frames[i] as Image).save_png("%s/%s_%02d.png" % [_probe_frames_dir, String(part).replace(" ", "_").replace(",", ""), i])
-	for part in _probe:
-		var moved: Vector3 = (_probe[part][1] - _probe[part][0]) * 100.0
-		print("view probe, %-24s the hand moved %.2f mm across, %.2f mm up and down, %.2f mm in depth on the screen (%d frames)" % [
-			part + ":", moved.x * 10.0, moved.y * 10.0, moved.z * 10.0, _probe[part][2]])
-		var middle: Vector3 = (_probe[part][0] + _probe[part][1]) * 0.5
-		print("            %-24s the hand is %.0f mm to the right, %.0f mm up, %.0f mm ahead of the camera" % ["", middle.x * 1000.0, middle.y * 1000.0, -middle.z * 1000.0])
-		var body_moved: Vector3 = (_probe_body[part][1] - _probe_body[part][0]) * 1000.0
-		print("            %-24s the body's origin moved %.2f / %.2f / %.2f mm against the camera, its facing %.3f degrees" % [
-			"", body_moved.x, body_moved.y, body_moved.z, rad_to_deg(_probe_body[part][3] - _probe_body[part][2])])
-	# What a press of the use button would predict now, and why not (each CbPrediction, by its path).
-	print("use would predict: ", client.get_director().explain_press("use"))
-	_stop()
-	# (A source that cannot desync, a view file, reports none.)
-	Host.stop()
-	get_tree().quit(0 if stats.get("desyncs", 0) == 0 and stats.get("state") == "playing" else 2)
-
-
-func _make_flash_overlay() -> void:
-	# Its own layer, so a mod replacing the HUD cannot remove it by accident.
-	var layer := CanvasLayer.new()
-	layer.layer = 100
-	add_child(layer)
-	_flash_rect = ColorRect.new()
-	_flash_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_flash_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_flash_rect.color = Color(1, 1, 1, 0)
-	_flash_rect.visible = false
-	layer.add_child(_flash_rect)
-
-
-# --- World reactions -----------------------------------------------------------------------------
-#
-# What plays when is data: every res://vfx/reactions*.tscn is loaded once and handed to the client,
-# which runs its CbReaction nodes on every event (spawns, jumps, impacts, mod events, the local
-# player's presses). A mod adds reactions by adding a file of its own instead of replacing the
-# game's. Screen effects come back here, since the camera and the overlay are the game's.
-
-func _load_reactions() -> void:
-	var names := []
-	for file in DirAccess.get_files_at("res://vfx"):
-		# Exported games list resources under their remapped names.
-		var clean: String = file.trim_suffix(".remap")
-		if clean.begins_with("reactions") and (clean.ends_with(".tscn") or clean.ends_with(".scn")):
-			names.append(clean)
-	names.sort()
-	for file in names:
-		var scene := ResourceLoader.load("res://vfx/%s" % file, "PackedScene", ResourceLoader.CACHE_MODE_REPLACE) as PackedScene
-		if scene == null:
-			push_warning("vfx/%s is not a scene" % file)
-			continue
-		var reactions := CbDirector.instantiate(scene)
-		if reactions:
-			client.add_world_scene(reactions)
-	print("world reactions: ", names)
-	_load_item_kinds()
-
-
-## Items: every res://items/<kind>.cfg (baked from a scene whose root is a CbItem) says which scene
-## that kind is drawn as, what it is called and how it sits in first person.
-func _load_item_kinds() -> void:
-	var kinds := []
-	_kind_huds.clear()
-	if DirAccess.dir_exists_absolute("res://items"):
-		for file in DirAccess.get_files_at("res://items"):
-			if file.ends_with(".cfg"):
-				var kind: String = file.trim_suffix(".cfg")
-				var config := FileAccess.get_file_as_string("res://items/%s" % file)
-				client.add_item(kind, config)
-				kinds.append(kind)
-				# Its own HUD ("hud <scene>", "hudshows hand|carried"): shown by _update_kind_huds.
-				var hud := ""
-				var carried := false
-				for line in config.split("\n"):
-					var words := line.strip_edges().split(" ", false)
-					if words.size() == 2 and words[0] == "hud":
-						hud = words[1]
-					elif words.size() == 2 and words[0] == "hudshows":
-						carried = words[1] == "carried"
-				if hud != "":
-					_kind_huds[kind] = {"scene": hud, "carried": carried, "node": null}
-	kinds.sort()
-	print("items: ", kinds, "" if _kind_huds.is_empty() else ", with their own HUDs: %s" % ", ".join(_kind_huds.keys()))
-
-
-## An item's own HUD (CbItem.hud): shown once for the viewer's own player while it has one in the
-## hand, or carries one at all (hud_shows), and freed when it does not.
-func _update_kind_huds() -> void:
-	for kind in _kind_huds:
-		var entry: Dictionary = _kind_huds[kind]
-		var asked: String = ("carried." if entry["carried"] else "") + kind
-		var want: bool = _joined and client.check_local_conditions(PackedStringArray([asked]))
-		var node: Node = entry["node"]
-		if want and node == null:
-			var scene := ResourceLoader.load(entry["scene"], "PackedScene") as PackedScene
-			node = CbDirector.instantiate(scene) if scene else null
-			if node:
-				add_child(node)
-				entry["node"] = node
-		elif not want and node != null:
-			node.queue_free()
-			entry["node"] = null
-
-
-func _on_mod_event(name: String, _a: int, _b: int, _value: int, _position: Vector3, _vector: Vector3) -> void:
-	_event_counts[name] = _event_counts.get(name, 0) + 1
-
-
-func _on_screen_effect(shake: float, shake_time: float, flash_color: Color, flash_time: float) -> void:
-	if shake > 0.0:
-		_shake = max(_shake, shake)
-		_shake_decay = shake / max(shake_time, 0.05)
-	if flash_color.a > 0.0:
-		_flash_color = flash_color
-		_flash = flash_color.a
-		_flash_decay = flash_color.a / max(flash_time, 0.02)
-
-
-func _update_screen_effects(delta: float) -> void:
-	_shake = max(0.0, _shake - _shake_decay * delta)
-	if _flash > 0.0:
-		_flash = max(0.0, _flash - _flash_decay * delta)
-		_flash_rect.color = Color(_flash_color.r, _flash_color.g, _flash_color.b, _flash)
-		_flash_rect.visible = _flash > 0.0
-
-
-func _on_visual_spawned(_visual_id: int, net_id: int, kind: String, node: Node3D, _position: Vector3,
-		_with_effect: bool, _template_name: String) -> void:
-	if kind == "prop" and node != null and node.has_meta("tint_by_net_id"):
-		_tint(node, net_id)
-
-
-func _tint(node: Node3D, net_id: int) -> void:
-	var mesh := node as MeshInstance3D
-	if mesh == null:
-		return
-	var h := hash(net_id)
-	var color := Color.from_hsv(float(h % 360) / 360.0, 0.45, 0.85)
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 0.7
-	mesh.material_override = material
