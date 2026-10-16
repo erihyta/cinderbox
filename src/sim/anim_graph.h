@@ -205,6 +205,12 @@ struct AnimGraph
 // Animation packs a server's mods provide (sim/mod_schema.h animPacks), compiled; index = source - 1.
 using AnimGraphPacks = std::vector<std::shared_ptr<const AnimGraph>>;
 
+// Whether a layer above the base reads that stance or event, the character's own or one any pack
+// brings (a pack's layer of the base's name is the base, and is not counted): what the viewer's
+// lead runs ahead for a prediction (present/anim_lead.h). An item's pack (the pistol's recoil on
+// "item.use") is read as much as the character's own machine.
+bool UpperLayersRead( const AnimGraph& character, const AnimGraphPacks& packs, AnimExpr::VarKind kind, int index );
+
 // Overlays: after a character's own layers a player has this many more, for packs that bring a
 // layer the character does not have (a dash, hanging on a line). Such a layer is laid over the
 // whole body (or its own bone filter) with its own weight, which says when it shows

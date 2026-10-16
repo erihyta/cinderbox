@@ -124,7 +124,9 @@ PredictFire   CbPrediction   action "use"    cue "item.use"         (the rifle: 
   the server sent, with the predicted stance or event put in at the moment of the press, for the
   layers above the base (the legs follow movement, which is predicted already). When the server's
   answer arrives nothing jumps; afterwards the lead is given back slowly (the upper body plays 15%
-  slower until it is level again). At most half a second ahead.
+  slower until it is level again). At most half a second ahead. A stance or event counts when an
+  upper layer reads it: the character's own, or one an item's animation pack brings (the pistol's
+  recoil on `item.use`).
 - **Looks only**: nothing is sent anywhere, and no rule runs on the client.
 - **Not for movement**: a predicted cue cannot move the player. What a mod adds to movement is a
   [motion](motions.md), which the viewer's own simulation runs; the events it emits need no prediction.

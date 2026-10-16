@@ -1145,6 +1145,64 @@ const AnimGraphLayer& ResolveLayer( const AnimGraph& character, const AnimGraphP
 	return own;
 }
 
+namespace
+{
+
+bool LayerReads( const AnimGraphLayer& layer, AnimExpr::VarKind kind, int index )
+{
+	auto reads = [&]( const AnimExpr& expr ) {
+		for ( const AnimExpr::Step& step : expr.steps )
+		{
+			if ( step.op == AnimExpr::Op::Var && step.kind == kind && int( step.index ) == index )
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	if ( reads( layer.weight ) )
+	{
+		return true;
+	}
+	for ( const AnimGraphState& state : layer.states )
+	{
+		if ( reads( state.input ) || reads( state.inputY ) )
+		{
+			return true;
+		}
+		for ( const AnimGraphTransition& t : state.transitions )
+		{
+			if ( reads( t.condition ) )
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+} // namespace
+
+bool UpperLayersRead( const AnimGraph& character, const AnimGraphPacks& packs, AnimExpr::VarKind kind, int index )
+{
+	if ( character.UpperLayersRead( kind, index ) )
+	{
+		return true;
+	}
+	const std::string base = character.layers.empty() ? std::string() : character.layers[0].name;
+	for ( const auto& pack : packs )
+	{
+		for ( const AnimGraphLayer& layer : pack ? pack->layers : std::vector<AnimGraphLayer>{} )
+		{
+			if ( layer.name != base && LayerReads( layer, kind, index ) )
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 bool AnimGraph::UpperLayersRead( AnimExpr::VarKind kind, int index ) const
 {
 	auto reads = [&]( const AnimExpr& expr ) {

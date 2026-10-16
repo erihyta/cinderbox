@@ -1302,17 +1302,17 @@ void CinderboxClient::LeadLocalPlayer( float delta )
 	float newest = 0.0f;
 	for ( const auto& shown : Director()->Pending() )
 	{
-		// Only what the character's upper layers read: its machine may not care.
+		// Only what the upper layers read (the character's own, or a pack's): its machine may not care.
 		present::AnimLead::Input input;
 		input.age = float( now - shown.at );
 		int event = schema.FindEvent( ToStd( shown.cue ) );
-		if ( event >= 0 && library.graph->UpperLayersRead( AnimExpr::VarKind::Event, event ) )
+		if ( event >= 0 && UpperLayersRead( *library.graph, library.packs, AnimExpr::VarKind::Event, event ) )
 		{
 			input.event = event;
 		}
 		int stance = shown.stance.is_empty() ? -1 : schema.FindStance( ToStd( shown.stance ) );
 		int layer = shown.stanceLayer.is_empty() ? -1 : schema.FindLayer( ToStd( shown.stanceLayer ) );
-		if ( stance >= 0 && layer >= 0 && layer < kLayerLimit && library.graph->UpperLayersRead( AnimExpr::VarKind::Stance, stance + 1 ) )
+		if ( stance >= 0 && layer >= 0 && layer < kLayerLimit && UpperLayersRead( *library.graph, library.packs, AnimExpr::VarKind::Stance, stance + 1 ) )
 		{
 			input.layer = layer;
 			input.stance = uint8_t( stance + 1 );
