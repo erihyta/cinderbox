@@ -11,8 +11,13 @@
 // 1 + l: stance layer l), each set every frame to the clip and time the pose is playing, so a flame
 // keyed at 0.13 s into the swing lights exactly then, on every screen.
 //
-// Rollback-safe: moving forward a little fires method and audio keys once; moving back, jumping far
-// or switching clips only applies values (no key fires twice when a correction replays a moment).
+// Rollback-safe: moving forward a little fires method and audio keys once; moving back or jumping
+// far only applies values (no key fires twice when a correction replays a moment).
+//
+// A clip is played from its start: the keys from 0 to where it is first seen fire, so one first seen
+// a frame in loses nothing. Another player's clip first seen late is drawn from its start and
+// caught up (present/anim_catch_up.h), and the tracks follow that drawn time. A correction that
+// leaves a clip and comes straight back to the same play of it goes on where it was.
 
 #include <godot_cpp/classes/animation_library.hpp>
 #include <godot_cpp/classes/animation_player.hpp>
@@ -63,11 +68,16 @@ private:
 		double time = 0.0;
 		double high = 0.0; // furthest time reached in this clip: keys up to here have fired
 		bool touched = false;
+		// The clip it played last, where it left it: a correction may come straight back to it.
+		godot::String leftClip;
+		double leftTime = 0.0;
 	};
 
 	Channel& ChannelAt( int channel );
 	void Reset( Channel& channel );
 	void Seek( Channel& channel, double time ); // values only, no keys fire
+	// The channel stops playing its clip (remembered: a correction may come straight back to it).
+	void Leave( Channel& channel );
 
 	godot::Ref<godot::AnimationLibrary> m_library;
 	uint64_t m_root = 0;

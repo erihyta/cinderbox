@@ -10,6 +10,7 @@
 
 #include "anim_controller.h"
 #include "anim_graph.h"
+#include "anim_catch_up.h"
 #include "anim_lead.h"
 #include "map.h"
 #include "pose.h"
@@ -6442,6 +6443,124 @@ void TestAnimLead()
 
 // The character built from the paid animation pack, where it was built (it is never in the
 // repository, so CI and fresh clones skip this): strafing plays its sideways jog, hips straight.
+// Another player's swing first seen late (present/anim_catch_up.h), on the mannequin's machine: the
+// server's state is 15 ticks into the swing when the viewer first sees it. It is drawn from its
+// start and is level with the state within the catch-up's time; one seen on its first tick, or a
+// player first drawn mid-swing, is drawn as it is; a correction that comes back to it goes on.
+void TestAnimCatchUp()
+{
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
+	std::string error, warnings;
+	auto set = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( set != nullptr );
+	if ( set == nullptr )
+	{
+		return;
+	}
+	ModSchema schema;
+	schema.layers = { "full", "upper" };
+	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
+	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
+	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
+	CHECK( graph != nullptr );
+	if ( graph == nullptr )
+	{
+		return;
+	}
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetAnimGraph( graph );
+	const float dt = sim.Config().TimeStep();
+	InputFrame f;
+	auto step = [&]() {
+		f.tick = sim.Tick();
+		sim.Step( f );
+		f.events.clear();
+		f.commands.clear();
+	};
+	auto stance = [&]( int32_t value ) {
+		SimCommand c;
+		c.type = CommandType::Stance;
+		c.target = SlotTarget( 0 );
+		c.index = 0;
+		c.value = value;
+		f.commands.push_back( c );
+	};
+	auto state = [&]() { return sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) ); };
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	for ( int i = 0; i < 30; ++i )
+	{
+		step();
+	}
+	stance( 1 ); // the bat is out
+	for ( int i = 0; i < 60; ++i )
+	{
+		step();
+	}
+	const AnimState ready = state();
+	// The swing, tick by tick, as the server has it.
+	stance( 2 );
+	std::vector<AnimState> swing;
+	for ( int i = 0; i < 40; ++i )
+	{
+		step();
+		swing.push_back( state() );
+	}
+	const uint8_t swingState = swing[20].graph[1].state;
+	CHECK( swingState != ready.graph[1].state );
+
+	// Seen 15 ticks late: standing until then, then the server's state as it is now.
+	present::AnimCatchUp memory;
+	const int late = 15;
+	for ( int i = 0; i < 20; ++i )
+	{
+		present::CatchUpAnimState( ready, *graph, {}, memory, dt, dt );
+	}
+	float previous = -1.0f;
+	int level = -1;
+	bool forward = true;
+	float first = -1.0f;
+	for ( int i = late; i < 40; ++i )
+	{
+		AnimState drawn = present::CatchUpAnimState( swing[size_t( i )], *graph, {}, memory, dt, dt );
+		CHECK( std::memcmp( &drawn.graph[0], &swing[size_t( i )].graph[0], sizeof( AnimGraphLayerState ) ) == 0 ); // the legs as they are
+		float t = drawn.graph[1].time;
+		first = first < 0.0f ? t : first;
+		forward = forward && t > previous;
+		previous = t;
+		if ( level < 0 && std::fabs( t - swing[size_t( i )].graph[1].time ) < 1e-5f )
+		{
+			level = i - late;
+		}
+	}
+	std::printf( "    a swing first seen %.3f s in is drawn from %.3f s and level %d tick(s) later\n", swing[late].graph[1].time, first,
+				 level );
+	CHECK( swing[late].graph[1].time > 0.2f );
+	CHECK( first < 0.5f * dt );								 // from its start
+	CHECK( forward );										 // never back
+	CHECK( level > 0 && float( level ) * dt <= present::kCatchUpSeconds + 1.5f * dt ); // and soon level
+	CHECK( memory.started == 1 );
+
+	// A correction that leaves it for a frame and comes back to the same play: on from where it was.
+	AnimState back = present::CatchUpAnimState( ready, *graph, {}, memory, dt, dt );
+	(void)back;
+	AnimState again = present::CatchUpAnimState( swing[39], *graph, {}, memory, dt, dt );
+	CHECK( std::fabs( again.graph[1].time - swing[39].graph[1].time ) < 1e-5f );
+	CHECK( memory.started == 1 );
+
+	// Seen on its first tick: as it is.
+	present::AnimCatchUp onTime;
+	present::CatchUpAnimState( ready, *graph, {}, onTime, dt, dt );
+	AnimState drawn = present::CatchUpAnimState( swing[0], *graph, {}, onTime, dt, dt );
+	CHECK( drawn == swing[0] );
+	CHECK( onTime.started == 0 );
+
+	// A player first drawn mid-swing (a join): as it is.
+	present::AnimCatchUp joined;
+	drawn = present::CatchUpAnimState( swing[20], *graph, {}, joined, dt, dt );
+	CHECK( drawn == swing[20] );
+	CHECK( joined.started == 0 );
+}
+
 void TestUalMannequin()
 {
 	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/ual_mannequin";
@@ -7728,6 +7847,7 @@ int main( int argc, char** argv )
 		{ "layer_swap", TestLayerSwap },
 		{ "overlay_grip", TestOverlayGrip },
 		{ "anim_lead", TestAnimLead },
+		{ "anim_catch_up", TestAnimCatchUp },
 		{ "ual_mannequin", TestUalMannequin },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "physics_threads", TestPhysicsThreads },

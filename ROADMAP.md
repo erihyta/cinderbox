@@ -214,7 +214,7 @@ HUD. Made with today's nodes; `net_brawl` plays it.
 | Candidate | Today | Would be |
 |---|---|---|
 | A wrong guess is taken back | **done (M173)**: a press the server confirmed 8 ticks past without its cue is taken back: scenes and sounds freed, an animation stopped, a property put back, a delay cancelled; changes and stance end | a shake, a flash, a method call stay |
-| A swing seen from its start | behind latency another player's swing is first seen a little way in, and keys before that point do not fire | the skipped keys fire on the first frame it is seen |
+| A swing seen from its start | **done (M174)**: another player's clip first seen up to 0.5 s in is drawn from its start and is level 0.1 s later; its keyed effects and sounds follow the drawn clip | for that 0.1 s the drawn swing is a little behind the one the server hit-tests |
 | Text nobody authored | player names only | chat, a team name, a message of the day (the parked `m101-text` branch has the mechanism) |
 | A server list | join by address | recent and favourite servers with their mods and players |
 | Checked pack layers | a pack's layer may read what the lead cannot predict | the bake says so |

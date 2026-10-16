@@ -320,9 +320,20 @@ layer), at the clip and time the pose is playing.
 - A channel whose clip is bones only returns to the `RESET` animation's values.
 - No scripts: tracks call built-in methods (`restart`, `play`) or set properties.
 - Looks only: the server never sees these tracks.
-- With network delay, a swing the server started is first seen a little way in, and method and
-  audio keys before that point do not fire (values do). Sounds that must not be missed belong to
-  a [reaction](looks.md#reactions) on the mod's cue.
+- **Seen from its start.** With network delay another player's swing reaches you late: the server's
+  state is already some way into it. It is drawn from its start anyway and played faster until it
+  is level, so it never pops from standing to mid-swing, and its tracks follow the drawn clip:
+  every key fires, in order, with the pose it was keyed on.
+
+  | First seen | Drawn |
+  |---|---|
+  | more than a tick and a half and up to 0.5 s in, a clip that does not loop | from 0, level with the state 0.1 s later (a 0.25 s gap: about 3.5 times as fast) |
+  | a frame in (your own player, or no delay) | as it is; the keys before that point fire at once |
+  | further in (a join), a loop, a blend space | as it is; values only |
+
+  Looks only: the server hit-tests the state, not the drawn pose, so for that 0.1 s a hit can land
+  a little ahead of the drawn swing. A correction that leaves a clip and comes straight back to
+  the same play of it goes on where it was: it never starts over, and nothing fires twice.
 - Animation packs are bones only: their other tracks are not played.
 
 The robot's bat swing has a fire trail and a whoosh made this way. Put the nodes the tracks reach

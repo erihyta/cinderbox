@@ -3,6 +3,7 @@
 #include <godot_cpp/classes/animation.hpp>
 #include <godot_cpp/core/class_db.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 using namespace godot;
@@ -64,12 +65,22 @@ CbTrackPlayer::Channel& CbTrackPlayer::ChannelAt( int channel )
 	return c;
 }
 
+void CbTrackPlayer::Leave( Channel& c )
+{
+	if ( c.clip.is_empty() == false )
+	{
+		c.leftClip = c.clip;
+		c.leftTime = c.time;
+	}
+}
+
 void CbTrackPlayer::Reset( Channel& c )
 {
 	if ( c.player == nullptr || c.clip.is_empty() )
 	{
 		return;
 	}
+	Leave( c );
 	if ( c.player->has_animation( "RESET" ) )
 	{
 		c.player->play( "RESET" );
@@ -113,14 +124,26 @@ void CbTrackPlayer::play_at( int channel, const String& clip, double time, bool 
 	}
 	if ( clip != c.clip || ( restarted && time < c.time ) )
 	{
-		// A new clip, or the same one started over: its values at `time`; keys before `time` are
-		// history and do not fire.
+		Leave( c );
+		// The same play of a clip it just left (a correction went away and came straight back):
+		// on from there, nothing fires twice.
+		bool resumed = restarted == false && clip == c.leftClip && time >= c.leftTime && time - c.leftTime < kMaxFiringStep;
 		c.player->play( clip );
-		Seek( c, time );
 		c.clip = clip;
-		c.time = time;
-		c.high = time;
-		return;
+		if ( resumed )
+		{
+			Seek( c, c.leftTime );
+			c.time = c.leftTime;
+			c.high = c.leftTime;
+		}
+		else
+		{
+			// From its start: what lies between it and `time` plays below as a step forward. Far
+			// in (a join), that step is too long, and only the values apply.
+			Seek( c, 0.0 );
+			c.time = 0.0;
+			c.high = 0.0;
+		}
 	}
 
 	double length = m_library->get_animation( clip )->get_length();

@@ -10,6 +10,7 @@
 
 #include "joint_math.h"
 #include "mod_schema.h"
+#include "anim_catch_up.h"
 #include "anim_lead.h"
 #include "event_news.h"
 #include "frame.h"
@@ -97,6 +98,8 @@ struct PlayerAnim
 	// its upper layers led (anim_lead.h).
 	AnimState shown;
 	std::shared_ptr<anim::PoseEvaluator> evaluator;
+	// Another player's clip first seen late, drawn from its start (anim_catch_up.h).
+	AnimCatchUp catchUp;
 };
 
 // A ragdoll's parts at the last two ticks, and the pose built from them.
@@ -134,6 +137,7 @@ struct HandGrips
 struct FrameTiming
 {
 	float tickAlpha = 0.0f;
+	float tickSeconds = 1.0f / 60.0f;
 };
 
 // Script state

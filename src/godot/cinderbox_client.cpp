@@ -51,6 +51,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "place_view_items", "camera", "delta" ), &CinderboxClient::place_view_items );
 	ClassDB::bind_method( D_METHOD( "get_view_layer" ), &CinderboxClient::get_view_layer );
 	ClassDB::bind_method( D_METHOD( "get_view_fov" ), &CinderboxClient::get_view_fov );
+	ClassDB::bind_method( D_METHOD( "get_animations_caught_up" ), &CinderboxClient::get_animations_caught_up );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "first_person", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE ), "set_first_person",
 				  "get_first_person" );
 	ClassDB::bind_method( D_METHOD( "get_camera_distance", "target", "direction", "max_distance", "radius" ),
@@ -1001,6 +1002,17 @@ void CinderboxClient::place_view_items( const Transform3D& camera, double delta 
 int64_t CinderboxClient::get_view_layer() const
 {
 	return int64_t( CinderboxSkeleton::kViewLayer );
+}
+
+int64_t CinderboxClient::get_animations_caught_up() const
+{
+	int64_t count = 0;
+	if ( m_mirror )
+	{
+		m_mirror->ForEach( [&]( uint64_t, const present::Visual&, const present::RenderPose&, const present::PlayerAnim* anim,
+								const present::RagdollAnim* ) { count += anim != nullptr ? anim->catchUp.started : 0; } );
+	}
+	return count;
 }
 
 double CinderboxClient::get_view_fov() const
