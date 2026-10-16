@@ -457,32 +457,141 @@ PackedStringArray Problems( const Node* node )
 			CheckValue( book, entry.holds, node->get( StringName( entry.property ) ), entry.property, out );
 		}
 	}
-	// A rules sheet: each rule is read as the reaction it becomes, at its line of the file.
+	// A rules sheet: each rule is read as the node it becomes, at its line of the file.
 	if ( node->is_class( "CbRules" ) )
 	{
 		String file = node->get( "file" );
 		if ( file.is_empty() == false && FileAccess::file_exists( file ) )
 		{
-			PackedStringArray errors;
-			std::vector<cue::Rule> rules = cue::ParseRules( FileAccess::get_file_as_string( file ), errors );
-			for ( int64_t i = 0; i < errors.size(); ++i )
+			for ( const auto& [line, why] : SheetProblems( FileAccess::get_file_as_string( file ) ) )
 			{
-				out.push_back( file + " " + errors[i] );
-			}
-			for ( const cue::Rule& rule : rules )
-			{
-				for ( const Entry& entry : kTable )
-				{
-					// (A use is read as the motion it is baked into.)
-					if ( String( entry.cls ) == ( rule.type == "use" ? String( "CbMotion" ) : rule.type ) && rule.properties.has( entry.property ) )
-					{
-						CheckValue( book, entry.holds, rule.properties[entry.property], file + " line " + String::num_int64( rule.line ) + ": " + entry.property, out );
-					}
-				}
+				out.push_back( file + " line " + String::num_int64( line ) + ": " + why );
 			}
 		}
 	}
 	return out;
+}
+
+std::vector<std::pair<int, String>> SheetProblems( const String& text )
+{
+	std::vector<std::pair<int, String>> out;
+	PackedStringArray errors;
+	std::vector<cue::Rule> rules = cue::ParseRules( text, errors );
+	for ( int64_t i = 0; i < errors.size(); ++i )
+	{
+		// ("line N: why")
+		String error = errors[i];
+		int64_t colon = error.find( ":" );
+		out.push_back( { int( error.substr( 5, colon - 5 ).to_int() ), error.substr( colon + 1 ).strip_edges() } );
+	}
+	const Book& book = TheBook();
+	if ( book.known == false )
+	{
+		return out;
+	}
+	for ( const cue::Rule& rule : rules )
+	{
+		for ( const Entry& entry : kTable )
+		{
+			// (A use is read as the motion it is baked into.)
+			if ( String( entry.cls ) == ( rule.type == "use" ? String( "CbMotion" ) : rule.type ) && rule.properties.has( entry.property ) )
+			{
+				PackedStringArray found;
+				CheckValue( book, entry.holds, rule.properties[entry.property], entry.property, found );
+				// (What a rule's first line says is marked there, not at the action that took it.)
+				bool head = rule.head > 0 && ( String( entry.property ) == "event" || String( entry.property ) == "conditions" );
+				for ( int64_t i = 0; i < found.size(); ++i )
+				{
+					out.push_back( { head ? rule.head : rule.line, found[i] } );
+				}
+			}
+		}
+	}
+	std::sort( out.begin(), out.end(), []( const auto& a, const auto& b ) { return a.first < b.first; } );
+	return out;
+}
+
+namespace
+{
+
+// The words of a sheet: what starts a rule, its settings, its actions, and the words they take.
+const char* const kSheetWords[] = { "on", "while", "predict", "use", "show", "text", "bind", "if", "and", "or", "not", "as", "subject",
+									"side", "kind", "template", "delay", "chance", "cooldown", "wait", "at", "here", "point", "end",
+									"beam", "follow", "from", "offset", "sound", "scene", "play", "set", "call", "shake", "flash",
+									"volume", "pitch", "jitter", "range", "bus", "volume_by", "under", "life", "off", "blend", "time",
+									"held", "change", "stance", "emit", "impulse", "force", "move", "launch", "replace", "along",
+									"direction", "top", "ramp", "react", "for", "new", "carried", "speed", "lift", "ahead", "seconds",
+									"into" };
+
+} // namespace
+
+PackedStringArray Completions( const String& prefix )
+{
+	std::set<std::string> found;
+	const std::string start = Std( prefix );
+	auto offer = [&]( const std::string& word ) {
+		if ( word.rfind( start, 0 ) == 0 && word != start )
+		{
+			found.insert( word );
+		}
+	};
+	for ( const char* word : kSheetWords )
+	{
+		offer( word );
+	}
+	const Book& book = TheBook();
+	for ( const auto& [kind, names] : book.byKind )
+	{
+		for ( const std::string& name : names )
+		{
+			offer( name );
+			if ( kind == "item" )
+			{
+				offer( "carried." + name );
+				offer( "using." + name );
+			}
+		}
+	}
+	PackedStringArray out;
+	for ( const std::string& word : found )
+	{
+		if ( out.size() >= 60 )
+		{
+			break;
+		}
+		out.push_back( Gd( word ) );
+	}
+	return out;
+}
+
+String WordKind( const String& word )
+{
+	if ( word.is_empty() )
+	{
+		return String();
+	}
+	for ( const char* known : kSheetWords )
+	{
+		if ( word == known )
+		{
+			return "word";
+		}
+	}
+	if ( word.is_valid_float() )
+	{
+		return "number";
+	}
+	const Book& book = TheBook();
+	std::string name = Std( word );
+	for ( const char* prefix : { "carried.", "using.", "!", "?" } )
+	{
+		name = name.rfind( prefix, 0 ) == 0 ? name.substr( std::string( prefix ).size() ) : name;
+	}
+	if ( book.known && ( book.declared.count( name ) != 0 || Has( book, "action", name ) || Has( book, "intent", name ) || Has( book, "event", name ) ) )
+	{
+		return "name";
+	}
+	return name.find( '.' ) != std::string::npos ? "unknown" : String();
 }
 
 PackedStringArray ProblemsUnder( const Node* root )
@@ -521,6 +630,9 @@ void CbNames::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "is_known" ), &CbNames::is_known );
 	ClassDB::bind_method( D_METHOD( "get_names", "kind" ), &CbNames::get_names );
 	ClassDB::bind_method( D_METHOD( "check_scene", "root" ), &CbNames::check_scene );
+	ClassDB::bind_method( D_METHOD( "sheet_problems", "text" ), &CbNames::sheet_problems );
+	ClassDB::bind_method( D_METHOD( "complete", "prefix" ), &CbNames::complete );
+	ClassDB::bind_method( D_METHOD( "word_kind", "word" ), &CbNames::word_kind );
 }
 
 bool CbNames::is_known() const
@@ -551,6 +663,26 @@ PackedStringArray CbNames::get_names( const String& kind ) const
 		}
 	}
 	return out;
+}
+
+Dictionary CbNames::sheet_problems( const String& text ) const
+{
+	Dictionary out;
+	for ( const auto& [line, why] : names::SheetProblems( text ) )
+	{
+		out[line] = out.has( line ) ? String( out[line] ) + "\n" + why : why;
+	}
+	return out;
+}
+
+PackedStringArray CbNames::complete( const String& prefix ) const
+{
+	return names::Completions( prefix );
+}
+
+String CbNames::word_kind( const String& word ) const
+{
+	return names::WordKind( word );
 }
 
 PackedStringArray CbNames::check_scene( Node* root ) const

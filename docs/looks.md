@@ -498,8 +498,11 @@ on item.use
 - **Mistakes say their line**: on the node in the editor, and at publish (a name no mod declares:
   `res://vfx/brawl.rules line 22: event: no mod declares "brawl.upercut.hit" (did you mean
   brawl.uppercut.hit?)`). A rule with one is left out; the rest works.
-- **The editor opens `.rules`** in its script editor; packs ship them (`*.rules` in the export
-  filter; the game's pack check allows them as data).
+- **The editor opens `.rules`** in its script editor, coloured (the sheet's words, the names mods
+  declare, numbers, text, comments; a dotted name nobody declares in red), with the names offered
+  while typing (`brawl.cd` offers `brawl.cd_dash`, `carried.` the item kinds), and a line with a
+  mistake tinted: put the caret on it to read why. Packs ship them (`*.rules` in the export filter;
+  the game's pack check allows them as data).
 - **Every look of the game is written so** (M166): the game's own `vfx/reactions.rules`, the
   pistol's and the bat's sheets, and every mod's `reactions_<mod>.rules`: 48 nodes became 13 sheets.
 - **A setting holds for the actions below it**, top to bottom, until another line changes it:

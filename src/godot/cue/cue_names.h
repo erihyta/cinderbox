@@ -24,6 +24,10 @@
 #include <godot_cpp/core/property_info.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
+
+#include <utility>
+#include <vector>
 
 namespace cb::gd::names
 {
@@ -39,6 +43,14 @@ godot::PackedStringArray Problems( const godot::Node* node );
 
 // The same for a node and everything under it, each line with the node's path.
 godot::PackedStringArray ProblemsUnder( const godot::Node* root );
+
+// A rules sheet's text: what cannot be read and what it names that nobody declares, by line (from 1).
+std::vector<std::pair<int, godot::String>> SheetProblems( const godot::String& text );
+// For typing a sheet: the words and names that start with `prefix` ("brawl.cd" -> brawl.cd_dash ...).
+godot::PackedStringArray Completions( const godot::String& prefix );
+// What a word of a sheet is, for its colour: "word" (one of the sheet's), "number", "name" (one a mod
+// declares), "unknown" (a name with a dot nobody declares), or "" (anything else: a path, a file).
+godot::String WordKind( const godot::String& word );
 
 } // namespace cb::gd::names
 
@@ -57,6 +69,12 @@ public:
 	godot::PackedStringArray get_names( const godot::String& kind ) const;
 	// What `root` and the nodes under it name that nobody declares: "Path/To/Node: ...".
 	godot::PackedStringArray check_scene( godot::Node* root ) const;
+	// A rules sheet's text: {line (from 1): why}. The editor marks those lines.
+	godot::Dictionary sheet_problems( const godot::String& text ) const;
+	// The words and names a sheet may go on with, from what is typed.
+	godot::PackedStringArray complete( const godot::String& prefix ) const;
+	// What a word is, for its colour (names::WordKind).
+	godot::String word_kind( const godot::String& word ) const;
 
 protected:
 	static void _bind_methods();

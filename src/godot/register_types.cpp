@@ -14,6 +14,7 @@
 #include "cue_preview.h"
 #include "cue_reaction.h"
 #include "cue_rules.h"
+#include "cinderbox_rules_editor.h"
 #include "cinderbox_skeleton.h"
 
 #include <gdextension_interface.h>
@@ -40,6 +41,8 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 		// A character is baked when its scene is saved.
 		GDREGISTER_INTERNAL_CLASS( cb::gd::CbMotionInspector );
 		GDREGISTER_INTERNAL_CLASS( cb::gd::CbAutoBakePlugin );
+		// A rules sheet in the script editor: colours, names offered, mistakes marked.
+		GDREGISTER_INTERNAL_CLASS( cb::gd::CbRulesHighlighter );
 		EditorPlugins::add_by_type<cb::gd::CbAutoBakePlugin>();
 		return;
 	}
