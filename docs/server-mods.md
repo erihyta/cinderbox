@@ -334,20 +334,30 @@ simulation. The pistol multiplies its damage by `pistol.zone.<zone>`.
 
 A mod's **look** (reactions, HUD, meshes, sounds) is a workshop item, like a Steam Workshop or
 Counter-Strike mod. **Game servers never send it**: a server only announces which item each of its
-mods needs, and players must already have that exact item.
+mods needs (a name and a SHA-256), and players get that exact item from the workshop: subscribed
+beforehand, or fetched when they connect.
 
 | Piece | Where |
 |---|---|
 | The item's source | `server_mods/<mod>/client/`, a Godot project next to the mod's code, with a "Mod" export preset |
 | Publishing | `tools\publish_mod.ps1 -Mod <mod>`: packs it, names it by its SHA-256, installs it into the local workshop, writes `server_mods/<mod>/client_item.cfg` (commit it) |
-| The workshop | for now a folder: `user://workshop/<mod>/<sha256>.zip` (`%APPDATA%\Godot\app_userdata\Cinderbox\workshop`); `godot/workshop.gd` is the one place a real workshop would plug in |
+| Subscribed items | kept: `user://workshop/<mod>/<sha256>.zip` (`%APPDATA%\Godot\app_userdata\Cinderbox\workshop`, or `--workshop=DIR`) |
+| Cached items | fetched on connect: `user://cache/<mod>/<sha256>.zip` (or `--cache=DIR`); at start, what was not used for 30 days goes, then the least recently used past 2 GB |
+| The workshop store | where missing items come from: for now a folder of the same layout (`--store=DIR`, or Settings > Workshop store). `godot/workshop.gd` is the one place Steam Workshop would plug in |
 | What the server announces | the hash from `bin/items/<mod>.item` (the build copies `client_item.cfg` there; `--items DIR` to use another folder) |
 
-Joining a server:
-1. The server's schema lists the items its mods need.
-2. Anything missing or different: the client leaves and says exactly which items to get.
-3. Otherwise items load after the base game and **before your own mods**, which load again last, so you
-   can still restyle what an item ships. Their `ui/hud_<mod>.tscn` is laid over the game's HUD.
+Joining a server from the menu:
+1. **Asked first** (an `InfoRequest` on the game port: the asker never becomes a player). The server
+   answers with its map, its players and the items it needs.
+2. **The server panel** lists each item: Subscribed, In the cache, Downloads on connect (its size),
+   or Not available (not in the store: Connect is off). Subscribe on a row keeps an item.
+3. **Connect** (bottom right) fetches what is missing from the store into the cache, checks every
+   file against its hash, then joins.
+4. Items load after the base game and **before your own mods**, which load again last, so you can
+   still restyle what an item ships. Their `ui/hud_<mod>.tscn` is laid over the game's HUD.
+
+Joining without the menu (`--host`, a link later) fetches from the store the same way; an item the
+store has not got ends the attempt, naming it.
 
 After changing a mod's client project, publish it again and rebuild: the new hash is what servers
 announce, and older copies stay in the workshop for servers that still announce them.
