@@ -2946,6 +2946,49 @@ void TestPrivateFields()
 	std::printf( "    four numbers, all different: %d (they are random, 1 to 99)\n", int( allDiffer ) );
 }
 
+// Typed text (the chat mod): a line one player types reaches everyone, with who said it; a channel
+// no mod declared goes nowhere; a long line is cut; past the burst, only the sender is told to slow
+// down. None of it touches the simulation.
+void TestChat()
+{
+	using namespace net;
+	CHECK( SanitizeText( "  hi\tthere \n", kMaxText ) == "hithere" );
+	CHECK( SanitizeText( std::string( 300, 'x' ), kMaxText ).size() == kMaxText );
+	Harness h( 47897, {}, {}, { { "chat.max_length", "20" }, { "chat.burst", "2" } } );
+	h.AddBot();
+	h.AddBot();
+	h.RunUntil( 2.0 );
+	GameClient& a = *h.bots[0].client;
+	GameClient& b = *h.bots[1].client;
+	CHECK( a.State() == ClientState::Playing && b.State() == ClientState::Playing );
+	a.SendText( "chat", "  hello everyone  " );
+	a.SendText( "nowhere", "lost" );
+	h.RunUntil( h.Now() + 1.0 );
+	for ( GameClient* c : { &a, &b } )
+	{
+		CHECK( c->TextCount() == 1 );
+		if ( c->Texts().empty() == false )
+		{
+			const MsgText& t = c->Texts().back();
+			std::printf( "    slot %u heard [%s] %u: \"%s\"\n", unsigned( c->Slot() ), t.channel.c_str(), unsigned( t.from ), t.text.c_str() );
+			CHECK( t.channel == "chat" && t.from == a.Slot() && t.text == "hello everyone" );
+		}
+	}
+	// A long line, then one past the burst (2 lines): the first is cut to chat.max_length, the
+	// second is not said, and only its sender hears why.
+	a.SendText( "chat", std::string( 50, 'x' ) );
+	h.RunUntil( h.Now() + 0.5 );
+	a.SendText( "chat", "one too many" );
+	h.RunUntil( h.Now() + 1.0 );
+	CHECK( b.TextCount() == 2 && b.Texts().back().text == std::string( 20, 'x' ) );
+	CHECK( a.TextCount() == 3 && a.Texts().back().from == kNoSlot && a.Texts().back().text.rfind( "Slow down", 0 ) == 0 );
+	std::printf( "    the sender was told: \"%s\"\n", a.Texts().empty() ? "" : a.Texts().back().text.c_str() );
+	for ( GameClient* c : { &a, &b } )
+	{
+		CHECK( c->GetStats().desyncs == 0 && c->GetStats().checksumsVerified > 0 );
+	}
+}
+
 // Movement parameters reach every client: the server's options, with its character's own values
 // laid over them, travel in the welcome's config, so a client predicts the same walk and jump.
 void TestMoveParams()
@@ -4191,6 +4234,7 @@ int main( int argc, char** argv )
 		{ "brawl", TestBrawl },
 		{ "flight", TestFlight },
 		{ "grapple", TestGrapple },
+		{ "chat", TestChat },
 		{ "headshot", TestHeadshot },
 		{ "pistol_mark", TestPistolMark },
 		{ "rifle", TestRifle },

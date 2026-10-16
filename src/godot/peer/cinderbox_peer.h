@@ -42,6 +42,8 @@ public:
 	bool takes_input() const;
 	void set_input( const godot::PackedByteArray& input );
 	void control( const godot::String& name, double value );
+	// Words typed into a channel's box, for the server (a live connection only).
+	void send_text( const godot::String& channel, const godot::String& text );
 
 	void set_host( const godot::String& v )
 	{

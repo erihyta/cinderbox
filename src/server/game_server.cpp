@@ -54,6 +54,7 @@ bool GameServer::Start( const ServerOptions& options )
 	}
 	m_schema = declarations.Schema();
 	m_schema.items = options.items;
+	m_textChannels = declarations.TextChannels();
 	m_itemProperties = declarations.ItemProperties();
 	m_itemLayers = declarations.ItemLayersByKind();
 	// Item bodies authored in Godot (baked into the declaring mod's item) replace declared ones, and
@@ -549,6 +550,14 @@ void GameServer::HandleEvent( const NetEvent& ev, double now )
 					HandleInput( *c, msg, now );
 				}
 			}
+			else if ( *type == MsgType::Text && c != nullptr && c->welcomed )
+			{
+				MsgText msg;
+				if ( Decode( r, msg ) )
+				{
+					HandleText( *c, msg );
+				}
+			}
 			else if ( *type == MsgType::ResyncRequest && c != nullptr && c->welcomed )
 			{
 				MsgResyncRequest msg;
@@ -827,10 +836,13 @@ void GameServer::RunMods( InputFrame& frame )
 	ctx.SetLayers( &m_layerWishes, &m_itemLayers );
 	ctx.SetPrivates( &m_privates, &m_privatesChanged );
 	ctx.SetHitTester( m_hits.get() );
+	ctx.SetTexts( &m_typed, &m_said );
 	for ( const auto& mod : m_mods )
 	{
 		mod->Tick( ctx );
 	}
+	m_typed.clear();
+	SendSaid();
 	// What a mod told one player goes to that player, and to nobody else.
 	for ( const Client& c : m_clients )
 	{
@@ -846,6 +858,43 @@ void GameServer::RunMods( InputFrame& frame )
 	frame.commands.erase( std::remove_if( frame.commands.begin(), frame.commands.end(),
 										  []( const SimCommand& c ) { return IsSendableCommand( c ) == false; } ),
 						  frame.commands.end() );
+}
+
+void GameServer::HandleText( const Client& c, const MsgText& text )
+{
+	// Only into a channel a mod declared, and not more than a few a tick from one player (what is
+	// too many for a chat is its mod's to say).
+	if ( std::find( m_textChannels.begin(), m_textChannels.end(), text.channel ) == m_textChannels.end() )
+	{
+		return;
+	}
+	std::string words = SanitizeText( text.text, kMaxText );
+	size_t mine = size_t( std::count_if( m_typed.begin(), m_typed.end(), [&]( const mods::TypedText& t ) { return t.slot == c.slot; } ) );
+	if ( words.empty() || mine >= 4 )
+	{
+		return;
+	}
+	m_typed.push_back( { c.slot, text.channel, std::move( words ) } );
+}
+
+void GameServer::SendSaid()
+{
+	for ( const mods::SaidText& said : m_said )
+	{
+		MsgText msg;
+		msg.channel = said.channel;
+		msg.from = said.from;
+		msg.text = said.text;
+		Encode( msg, m_buffer );
+		for ( const Client& c : m_clients )
+		{
+			if ( c.used && c.connected && c.welcomed && ( said.to == kNoSlot || said.to == c.slot ) )
+			{
+				m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
+			}
+		}
+	}
+	m_said.clear();
 }
 
 std::string GameServer::UniqueName( const std::string& wanted, const Client& self ) const

@@ -40,6 +40,17 @@ struct ViewStat
 	bool operator==( const ViewStat& ) const = default;
 };
 
+// A line of typed text a mod said (net::MsgText): its channel, who it is from (kNoSlot: the
+// server's own words) and the words.
+struct ViewText
+{
+	std::string channel;
+	PlayerSlot from = kNoSlot;
+	std::string text;
+
+	bool operator==( const ViewText& ) const = default;
+};
+
 struct ViewFrame
 {
 	// Changes with every new frame; Take() copies only a newer one.
@@ -88,6 +99,13 @@ struct ViewFrame
 	// someone else's input (a recording). A source fed by the viewer's own input leaves it 0: the
 	// viewer already knows what it pressed.
 	ActionBits localPressed = 0;
+
+	// The newest lines of typed text (at most kViewTexts, oldest first), and how many have come in
+	// all: the viewer shows the ones past the count it has seen. Sources without a connection
+	// have none.
+	static constexpr size_t kViewTexts = 32;
+	std::vector<ViewText> texts;
+	uint64_t textCount = 0;
 };
 
 class ViewSource
@@ -104,6 +122,10 @@ public:
 		return false;
 	}
 	virtual void SetInput( const PlayerInput& )
+	{
+	}
+	// Words the viewer typed into a channel's box, for the server (a live connection only).
+	virtual void SendText( const std::string&, const std::string& )
 	{
 	}
 

@@ -73,6 +73,24 @@ struct IntentHandle
 	}
 };
 
+// What a player typed into a channel's box (Context::Typed): who, where, and the words (printable,
+// at most net::kMaxText bytes).
+struct TypedText
+{
+	PlayerSlot slot = 0;
+	std::string channel;
+	std::string text;
+};
+
+// A line a mod says on a channel (Context::Say): to everyone, or to one player.
+struct SaidText
+{
+	std::string channel;
+	std::string text;
+	PlayerSlot from = kNoSlot; // the player it is from (kNoSlot: the server's own words)
+	PlayerSlot to = kNoSlot;	 // kNoSlot: everyone
+};
+
 // One a player sent (Context::Intents): who, and its two numbers.
 struct IntentSent
 {
@@ -229,6 +247,14 @@ public:
 	// a CbClick's mod_intent sends it in the player's input; Context::Intents reads it. What it
 	// does is the mod's to say (on the server: it is not predicted).
 	IntentHandle Intent( const std::string& name );
+	// A channel players can type into ("chat"): what they type there reaches the mods
+	// (Context::Typed). Text for a channel no mod declared goes nowhere. Names are short (at most
+	// 32 bytes): letters, digits, '.', '_' and '-'.
+	void TextChannel( const std::string& name );
+	const std::vector<std::string>& TextChannels() const
+	{
+		return m_textChannels;
+	}
 	// `key` is the suggested binding, as Godot names keys ("F", "R", "1") or "MouseLeft".
 	ActionHandle Action( const std::string& name, const std::string& key );
 	// Layers apply in declaration order (a later one wins where masks overlap). At most
@@ -326,6 +352,7 @@ public:
 	}
 
 private:
+	std::vector<std::string> m_textChannels;
 	std::vector<EntityTemplate> m_templates;
 	const std::map<std::string, std::string>* m_options = nullptr;
 	ModSchema m_schema;
@@ -509,6 +536,9 @@ public:
 	// The players who sent `intent` this tick (a click on a screen), and its numbers. Each is here
 	// once, on the tick it arrived.
 	std::vector<IntentSent> Intents( IntentHandle intent ) const;
+	// What players typed since the last tick, into channels the mods declared, in the order it
+	// arrived. Nothing is said to anyone until a mod says it (Say).
+	const std::vector<TypedText>& Typed() const;
 	// Whether the character's animations have a marker that emits `event` ("melee.strike" on the
 	// frame the swing connects). A mod can then time its effect by the animation, and keep its own
 	// timer for characters without one.
@@ -534,6 +564,11 @@ public:
 	// as the values in the commands.
 	uint64_t Random();
 	float RandomRange( float lo, float hi );
+
+	// A line on a channel, to everyone (`to` kNoSlot) or one player, from a player or (`from`
+	// kNoSlot) from nobody: the server's own words. Words only: it never touches the simulation,
+	// and recordings do not keep it. Printable characters, at most net::kMaxText bytes.
+	void Say( const std::string& channel, const std::string& text, PlayerSlot from = kNoSlot, PlayerSlot to = kNoSlot );
 
 	// --- Commands -----------------------------------------------------------------------------
 	// Targets are NetIds; use SlotTarget( slot ) for a player, which also works for one joining
@@ -628,6 +663,11 @@ public:
 	SocketHandle ItemSocket( ItemKindHandle kind, const std::string& name ) const;
 	// Where private fields live: one board per player slot, kept by the server (not the simulation)
 	// and sent to that player alone. `changed` gets the slots a Set wrote to.
+	void SetTexts( const std::vector<TypedText>* typed, std::vector<SaidText>* said )
+	{
+		m_typed = typed;
+		m_said = said;
+	}
 	void SetPrivates( std::array<Blackboard, kMaxPlayers>* privates, std::array<bool, kMaxPlayers>* changed )
 	{
 		m_privates = privates;
@@ -691,6 +731,8 @@ private:
 	LayerWishes* m_layerWishes = nullptr;
 	std::array<Blackboard, kMaxPlayers>* m_privates = nullptr;
 	std::array<bool, kMaxPlayers>* m_privatesChanged = nullptr;
+	const std::vector<TypedText>* m_typed = nullptr;
+	std::vector<SaidText>* m_said = nullptr;
 	const std::map<int, int>* m_itemLayers = nullptr;
 	// Which layer of the character `layer` names, and whose slot `target` is (-1: neither a slot nor
 	// a player).

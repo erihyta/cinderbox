@@ -32,6 +32,13 @@ var screenshot_every := 0.0
 var _next_screenshot := 0.0
 var _screenshots := 0
 var _event_counts := {}
+## Typed text: lines the unattended player said, and the lines it heard back (a chat mod's).
+var _said := 0
+var _heard: Array[String] = []
+## Its visit to the chat box: 0 not yet, 1 its key pressed, 2 typing, 3 Enter pressed, 4 done;
+## and what it saw on the way.
+var _chat_step := 0
+var _chat_seen := ""
 ## The viewer's guesses (CbPrediction) made, and the ones the server never answered (taken back).
 var _guesses := 0
 var _taken_back := {}
@@ -51,6 +58,7 @@ func _init(owner: Node, args: Dictionary) -> void:
 	screenshot = args.get("screenshot", "")
 	screenshot_every = float(args.get("screenshot-every", "0"))
 	rng.seed = Time.get_ticks_usec()
+	game.get_node("Client").text_received.connect(func(channel, from, text): _heard.append("%s %s: %s" % [channel, from, text]))
 	var director: CbDirector = game.get_node("Client").get_director()
 	director.predicted.connect(func(_cue): _guesses += 1)
 	director.taken_back.connect(func(cue): _taken_back[cue] = _taken_back.get(cue, 0) + 1)
@@ -122,6 +130,9 @@ func steer(delta: float) -> Dictionary:
 	# middle of the run, its first slot dragged onto its third (they trade places), closed.
 	if not view_probe:
 		_bag(elapsed - seconds * 0.45)
+	# A line of chat a third of the way in, if the server has a box for it (a mod's CbTextEntry).
+	if elapsed > seconds * 0.3:
+		_chat()
 	# Hold the scores key at the end (a mod's CbKey names it), so screenshots show them too.
 	if elapsed > seconds * 0.8 and InputMap.has_action("cb_scores") and not Input.is_action_pressed("cb_scores"):
 		Input.action_press("cb_scores")
@@ -177,6 +188,42 @@ func _bag(since: float) -> void:
 					_mouse_button(to, false)
 					print("autoplay: dragged slot 1 onto slot 3 of ", cells.size(), " in the inventory screen")
 	_bag_step += 1
+
+
+## The chat box, as a player uses it: its key (with the mouse the game's), the words typed key by
+## key, Enter.
+func _chat() -> void:
+	var entries: Array = game.get_tree().root.find_children("*", "CbTextEntry", true, false)
+	if entries.is_empty() or _chat_step >= 4:
+		return
+	var entry = entries[0]
+	match _chat_step:
+		0:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+			for bound in InputMap.action_get_events("cb_" + String(entry.action)) if InputMap.has_action("cb_" + String(entry.action)) else []:
+				for pressed in [true, false]:
+					var key := (bound as InputEvent).duplicate() as InputEventKey
+					if key != null:
+						key.pressed = pressed
+						Input.parse_input_event(key)
+		1:
+			pass # (the key reaches the game a frame later)
+		2:
+			_chat_seen = "opened %s, typing %s" % [entry.is_open(), game.client.is_typing()]
+			for c in "hello from the unattended player":
+				var key := InputEventKey.new()
+				key.pressed = true
+				key.unicode = c.unicode_at(0)
+				key.keycode = OS.find_keycode_from_string(c.to_upper()) if c != " " else KEY_SPACE
+				Input.parse_input_event(key)
+			var enter := InputEventKey.new()
+			enter.pressed = true
+			enter.keycode = KEY_ENTER
+			Input.parse_input_event(enter)
+			_said = 1
+		3:
+			_chat_seen += ", then closed %s, typing %s" % [not entry.is_open(), game.client.is_typing()]
+	_chat_step += 1
 
 
 ## Where the unattended player's mouse was last (a drag is seen from how far the mouse moved).
@@ -334,6 +381,8 @@ func finish() -> void:
 	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
 		stats.get("state"), stats.get("checksums_verified", 0), stats.get("desyncs", 0), stats.get("fingerprint", "none"), stats.get("fp_environment_ok", "not simulating")])
 	print("mod events seen: ", _event_counts)
+	var logs: Array = game.get_tree().root.find_children("*", "CbTextLog", true, false)
+	print("typed text: said %d (%s), heard %s, the log shows %s" % [_said, _chat_seen, _heard, (logs[0] as Label).text.c_escape() if not logs.is_empty() else "(no log)"])
 	# Other players' clips first seen a little way in (behind latency), drawn from their start.
 	print("animations caught up: %d" % client.get_animations_caught_up())
 	print("guesses: %d, taken back %d %s, of those answered late %d" % [_guesses, _taken_back.values().reduce(func(a, b): return a + b, 0),

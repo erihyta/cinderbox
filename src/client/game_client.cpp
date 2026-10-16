@@ -235,6 +235,20 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 					}
 					break;
 				}
+				case MsgType::Text:
+				{
+					MsgText msg;
+					if ( Decode( r, msg ) )
+					{
+						m_texts.push_back( std::move( msg ) );
+						if ( m_texts.size() > 32 )
+						{
+							m_texts.erase( m_texts.begin() );
+						}
+						m_textCount += 1;
+					}
+					break;
+				}
 				case MsgType::PlayerNames:
 				{
 					MsgPlayerNames msg;
@@ -646,6 +660,23 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	{
 		VerifyChecksums();
 	}
+}
+
+void GameClient::SendText( const std::string& channel, const std::string& text )
+{
+	if ( m_state != ClientState::Playing )
+	{
+		return;
+	}
+	MsgText msg;
+	msg.channel = channel.substr( 0, kMaxTextChannel );
+	msg.text = SanitizeText( text, kMaxText );
+	if ( msg.text.empty() )
+	{
+		return;
+	}
+	Encode( msg, m_buffer );
+	m_transport.Send( m_transport.ServerPeer(), ChannelReliable, m_buffer, true );
 }
 
 void GameClient::SendInputs()

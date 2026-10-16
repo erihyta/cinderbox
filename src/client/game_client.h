@@ -142,6 +142,17 @@ public:
 	{
 		return m_namesGeneration;
 	}
+	// Typed text: send words into a channel; the lines mods said, newest last (at most 32 kept),
+	// and how many came in all.
+	void SendText( const std::string& channel, const std::string& text );
+	const std::vector<net::MsgText>& Texts() const
+	{
+		return m_texts;
+	}
+	uint64_t TextCount() const
+	{
+		return m_textCount;
+	}
 	// This player's private fields, as the server last sent them (all 0 until it does).
 	const Blackboard& Privates() const
 	{
@@ -220,6 +231,8 @@ private:
 	std::array<std::string, kMaxPlayers> m_names;
 	uint64_t m_namesGeneration = 0;
 	Blackboard m_privates;
+	std::vector<net::MsgText> m_texts;
+	uint64_t m_textCount = 0;
 
 	ClientState m_state = ClientState::Idle;
 	std::string m_rejectReason;

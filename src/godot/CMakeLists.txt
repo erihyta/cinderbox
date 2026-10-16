@@ -17,6 +17,7 @@ add_library(cinderbox_gd SHARED
 	cinderbox_track_player.cpp
 	cinderbox_entity_nodes.cpp
 	cinderbox_hud.cpp
+	cinderbox_text.cpp
 	cinderbox_body.cpp
 	cinderbox_item_look.cpp
 	cinderbox_map_nodes.cpp

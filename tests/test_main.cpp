@@ -7418,6 +7418,35 @@ void TestViewCodec()
 	std::printf( "    a tick in which nothing changed: %zu bytes\n", packet.size() );
 	CHECK( packet.size() < 128 );
 
+	// Typed text and the confirmed tick (a live connection's): in a whole packet, the lines again
+	// only when more came; without either, the packet is as it was (a recording's).
+	{
+		present::ViewFrame plain = frames.back();
+		std::vector<uint8_t> before;
+		present::EncodeView( plain, nullptr, 0.0, before );
+		present::ViewFrame live = plain;
+		live.confirmedTick = live.frame.tick - 3;
+		live.textCount = 2;
+		live.texts = { { "chat", 1, "hello" }, { "chat", kNoSlot, "Slow down" } };
+		std::vector<uint8_t> bytes;
+		present::EncodeView( live, nullptr, 0.0, bytes );
+		present::ViewFrame got;
+		CHECK( present::DecodeView( bytes.data(), bytes.size(), nullptr, got ) );
+		CHECK( got.confirmedTick == live.confirmedTick && got.textCount == 2 && got.texts == live.texts );
+		present::ViewFrame next = live;
+		next.serial += 1;
+		next.confirmedTick += 1;
+		present::EncodeView( next, &live, 0.0, bytes );
+		present::ViewFrame same = got;
+		CHECK( present::DecodeView( bytes.data(), bytes.size(), &got, same ) );
+		CHECK( same.texts == live.texts && same.textCount == 2 && same.confirmedTick == next.confirmedTick );
+		std::vector<uint8_t> again;
+		present::EncodeView( plain, nullptr, 0.0, again );
+		CHECK( again == before );
+		present::ViewFrame back;
+		CHECK( present::DecodeView( again.data(), again.size(), nullptr, back ) && back.confirmedTick == 0 && back.texts.empty() );
+	}
+
 	// The local player's private fields: in a whole packet, in a delta when they changed, and
 	// otherwise the base's, at no cost.
 	{

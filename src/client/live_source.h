@@ -28,6 +28,7 @@ public:
 	}
 	// The latest input, sampled by the simulation on its next tick.
 	void SetInput( const PlayerInput& input ) override;
+	void SendText( const std::string& channel, const std::string& text ) override;
 
 private:
 	void Run() override;
@@ -39,6 +40,7 @@ private:
 	PlayerInput m_input{};
 	uint8_t m_latchedButtons = 0; // presses shorter than a tick still reach the simulation
 	ActionBits m_latchedActions = 0;
+	std::vector<std::pair<std::string, std::string>> m_toSend; // typed text, for the thread to send
 };
 
 } // namespace cb
