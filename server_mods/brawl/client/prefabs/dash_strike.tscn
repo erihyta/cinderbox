@@ -3,10 +3,8 @@
 ; Dash strike: its slot's key (2) uses it, and nothing changes hands. A lunge where you look; whoever is ahead within 4 m
 ; at the press is hit and knocked back. 3 s to come back (brawl.cd_dash, counted down by the motion
 ; set, shown by the HUD).
-;   DashStrike  CbItem     once a press, by its slot's key; when used: brawl.cd_dash <= 0;
-;                          brawl.cd_dash = 3; says brawl.dash_strike.started
-;     Lunge     CbImpulse  16 m/s where you look, the horizontal speed replaced
-;     Slide     CbMove     0.25 s without friction
+;   DashStrike  CbItem     once a press, by its slot's key; its lunge is its sheet's
+;                          (dash_strike.rules): 16 m/s, 0.25 s without friction, 3 s apart
 ;     Hit       CbMotion   on the same press (carried): a line 4 m ahead, at once
 ;       Probe   CbProbe    says brawl.dash_strike.hit with who it hit
 ;         Knock CbImpulse  10 m/s on who it hit, where you look
@@ -34,9 +32,6 @@ properties = {
 use = 1
 slot = 2
 slot_key_uses = true
-use_conditions = PackedStringArray("brawl.cd_dash <= 0")
-use_changes = PackedStringArray("brawl.cd_dash = 3")
-use_emits = "brawl.dash_strike.started"
 mass = 0.5
 hud = "res://ui/dash_strike_hud.tscn"
 hud_shows = 1
@@ -46,16 +41,6 @@ shape = SubResource("Body")
 
 [node name="Mesh" type="MeshInstance3D" parent="."]
 mesh = SubResource("Mesh")
-
-[node name="Lunge" type="CbImpulse" parent="."]
-speed = 16.0
-replace = 2
-
-[node name="Slide" type="CbMove" parent="."]
-parameters = {
-"friction": 0.0
-}
-duration = 0.25
 
 [node name="Hit" type="CbMotion" parent="."]
 when = 2
@@ -72,3 +57,6 @@ hold_emits = "brawl.dash_strike.hit"
 [node name="Knock" type="CbImpulse" parent="Hit/Probe"]
 target = 1
 speed = 10.0
+
+[node name="Rules" type="CbRules" parent="."]
+file = "res://prefabs/dash_strike.rules"

@@ -192,7 +192,9 @@ struct Building
 	int pendingSetting = 0;			 // the line of a setting no action has come after yet
 	std::vector<Rule> actions;		 // its own properties, and its line
 	bool prediction = false;
-	PackedStringArray changes;		 // a prediction's
+	bool use = false;				 // an item's use (for its bake)
+	Array parts;					 // a use's motion parts: {class, properties}
+	PackedStringArray changes;		 // a prediction's, a use's
 	bool bad = false;
 };
 
@@ -226,6 +228,17 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 		{
 			errors.push_back( "line " + String::num_int64( rule.pendingSetting ) +
 							  ": a setting after the last action does nothing (a setting is for the actions below it)" );
+			return;
+		}
+		if ( rule.use )
+		{
+			Rule made;
+			made.line = rule.line;
+			made.type = "use";
+			made.properties = rule.settings;
+			made.properties["changes"] = rule.changes;
+			made.properties["parts"] = rule.parts;
+			out.push_back( made );
 			return;
 		}
 		if ( rule.prediction )
@@ -353,6 +366,205 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			}
 			p["target"] = w[1].text;
 			out.push_back( made );
+			continue;
+		}
+		// --- an item's use: for its bake
+		if ( verb == "use" )
+		{
+			finish();
+			rule = Building{};
+			rule.line = number;
+			rule.use = true;
+			open = true;
+			if ( w.size() >= 2 )
+			{
+				if ( w[1].text != "if" || w.size() < 3 )
+				{
+					fail( number, "use [if <expression>]" );
+					continue;
+				}
+				rule.settings["conditions"] = PackedStringArray( { RestFrom( line, w[2] ) } );
+			}
+			continue;
+		}
+		if ( open && rule.use && verb != "on" && verb != "while" && verb != "predict" && verb != "show" && verb != "text" && verb != "bind" )
+		{
+			double value = 0.0;
+			if ( verb == "change" && w.size() >= 4 )
+			{
+				rule.changes.push_back( RestFrom( line, w[1] ) );
+				continue;
+			}
+			if ( verb == "cooldown" && w.size() == 2 && Number( w[1], value ) )
+			{
+				rule.settings["cooldown"] = value;
+				continue;
+			}
+			if ( verb == "emit" && w.size() == 2 )
+			{
+				rule.settings["emits"] = w[1].text;
+				continue;
+			}
+			// A motion part: its class and properties, made into a node by the item's bake.
+			Dictionary part;
+			Dictionary props;
+			String why;
+			size_t i = 1;
+			auto frameOf = [&]( const String& word ) {
+				return word == "look" ? 0 : word == "move" ? 1 : word == "facing" ? 2 : word == "up" ? 3 : word == "world" ? 4 : word == "to" ? 5 : -1;
+			};
+			// The words a part shares: on, along, direction.
+			auto common = [&]( const String& word, size_t& k ) {
+				if ( word == "on" && k + 1 < w.size() )
+				{
+					String who = w[k + 1].text;
+					props["target"] = who == "self" ? 0 : who == "hit" ? 1 : 2;
+					if ( who != "self" && who != "hit" )
+					{
+						props["target_field"] = who;
+					}
+					k += 2;
+					return true;
+				}
+				if ( word == "along" && k + 1 < w.size() && frameOf( w[k + 1].text ) >= 0 )
+				{
+					props["frame"] = frameOf( w[k + 1].text );
+					k += 2;
+					return true;
+				}
+				if ( word == "direction" && k + 1 < w.size() && Value( w[k + 1] ).get_type() == Variant::VECTOR3 )
+				{
+					props["direction"] = Value( w[k + 1] );
+					k += 2;
+					return true;
+				}
+				return false;
+			};
+			if ( verb == "impulse" || verb == "force" )
+			{
+				if ( w.size() < 2 || Number( w[1], value ) == false )
+				{
+					fail( number, verb + String( " <how much> ..." ) );
+					continue;
+				}
+				part["class"] = verb == "impulse" ? "CbImpulse" : "CbForce";
+				props[verb == "impulse" ? "speed" : "strength"] = value;
+				for ( i = 2; i < w.size() && why.is_empty(); )
+				{
+					const String word = w[i].text;
+					if ( common( word, i ) )
+					{
+						continue;
+					}
+					if ( verb == "impulse" && word == "replace" && i + 1 < w.size() )
+					{
+						String r = w[i + 1].text;
+						int replace = r == "nothing" ? 0 : r == "vertical" ? 1 : r == "horizontal" ? 2 : r == "all" ? 3 : -1;
+						if ( replace < 0 )
+						{
+							why = "replace nothing, vertical, horizontal or all";
+						}
+						props["replace"] = replace;
+						i += 2;
+					}
+					else if ( verb == "force" && word == "kind" && i + 1 < w.size() )
+					{
+						String k = w[i + 1].text;
+						int kind = k == "acceleration" ? 0 : k == "force" ? 1 : k == "velocity" ? 2 : -1;
+						if ( kind < 0 )
+						{
+							why = "kind acceleration, force or velocity";
+						}
+						props["kind"] = kind;
+						i += 2;
+					}
+					else if ( verb == "force" && ( word == "top" || word == "ramp" ) && i + 1 < w.size() && Number( w[i + 1], value ) )
+					{
+						props[word == "top" ? "speed" : "ramp_in"] = value;
+						i += 2;
+					}
+					else if ( verb == "force" && word == "react" )
+					{
+						props["react"] = true;
+						i += 1;
+					}
+					else
+					{
+						why = "\"" + word + "\" is not something " + verb + " takes";
+					}
+				}
+			}
+			else if ( verb == "move" )
+			{
+				part["class"] = "CbMove";
+				Dictionary parameters;
+				i = 1;
+				if ( i + 1 < w.size() && w[i].text == "for" && Number( w[i + 1], value ) )
+				{
+					props["duration"] = value;
+					i += 2;
+				}
+				for ( ; i + 1 < w.size() && why.is_empty(); i += 2 )
+				{
+					if ( Number( w[i + 1], value ) == false )
+					{
+						why = w[i].text + " wants a number";
+					}
+					parameters[w[i].text] = value;
+				}
+				if ( i < w.size() && why.is_empty() )
+				{
+					why = "move [for S] PARAMETER VALUE ...";
+				}
+				props["parameters"] = parameters;
+			}
+			else if ( verb == "launch" )
+			{
+				part["class"] = "CbLaunch";
+				if ( w.size() >= 2 && w[1].text == "carried" )
+				{
+					props["what"] = 1;
+					i = 2;
+				}
+				else if ( w.size() >= 3 && w[1].text == "new" )
+				{
+					props["what"] = 0;
+					props["item_kind"] = w[2].text;
+					i = 3;
+				}
+				else
+				{
+					why = "launch new <kind>, or launch carried";
+				}
+				while ( i < w.size() && why.is_empty() )
+				{
+					const String word = w[i].text;
+					if ( common( word, i ) )
+					{
+						continue;
+					}
+					if ( ( word == "speed" || word == "lift" || word == "ahead" || word == "seconds" ) && i + 1 < w.size() && Number( w[i + 1], value ) )
+					{
+						props[word] = value;
+						i += 2;
+					}
+					else
+					{
+						why = "\"" + word + "\" is not something launch takes";
+					}
+				}
+			}
+			else
+			{
+				why = "\"" + verb + "\" is not part of a use: change, cooldown, emit, impulse, force, move, launch";
+			}
+			if ( why.is_empty() == false )
+			{
+				fail( number, why );
+				continue;
+			}
+			part["properties"] = props;
+			rule.parts.push_back( part );
 			continue;
 		}
 		// --- a prediction: the viewer's own press, shown as the cue the server will answer with
@@ -775,6 +987,10 @@ void CbRules::Build()
 	}
 	for ( const cue::Rule& rule : rules )
 	{
+		if ( rule.type == "use" )
+		{
+			continue; // (baked with the item: its Use motion)
+		}
 		Node* reaction = rule.type == "CbReaction"	   ? static_cast<Node*>( memnew( CbReaction ) )
 						 : rule.type == "CbPrediction" ? static_cast<Node*>( memnew( CbPrediction ) )
 													   : Object::cast_to<Node>( ClassDB::instantiate( rule.type ) );

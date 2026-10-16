@@ -1,0 +1,5 @@
+# The guard, while it is held: slow, no jump; says brawl.guard.up when it goes up.
+
+use
+    emit brawl.guard.up
+    move jump_speed 0 sprint_speed 1.5 walk_speed 1.5

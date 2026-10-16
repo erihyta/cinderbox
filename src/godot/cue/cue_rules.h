@@ -53,6 +53,24 @@
 //       change gun.ammo -= 1      (until the server answers; one line each)
 //       stance melee_swing on full
 //
+// What using an item does, in the item's own sheet: baked with the item into its "Use" motion, as
+// the When used settings and the motion nodes under a CbItem are (the game skips it):
+//
+//   use if dash.charges > 0
+//       change dash.charges -= 1      (one line each)
+//       cooldown 0.4
+//       emit dash.started
+//       impulse 11 replace horizontal
+//       move for 0.18 friction 0
+//
+//   impulse SPEED [on self|hit|FIELD] [along look|move|facing|up|world|to] [direction (x,y,z)]
+//                 [replace nothing|vertical|horizontal|all]
+//   force STRENGTH [kind acceleration|force|velocity] [top SPEED] [ramp S] [react] [on ...] [along ...]
+//   move [for S] PARAMETER VALUE [PARAMETER VALUE ...]
+//   launch new KIND | launch carried, then [speed S] [lift L] [ahead M] [seconds S] [along ...]
+//
+// A probe and what hangs on it (a rope, a pull) stay nodes under the item: they are a tree.
+//
 // A HUD's logic is one line each, on the controls the HUD scene has (a CbFieldBinding each):
 //
 //   show Skills/Dash if carried.brawl.dash_strike         (shown while it holds)
@@ -85,7 +103,8 @@ struct Rule
 {
 	int line = 0;
 	bool prediction = false;
-	godot::String type = "CbReaction"; // the node it becomes: CbReaction, CbPrediction, CbFieldBinding
+	godot::String type = "CbReaction"; // the node it becomes: CbReaction, CbPrediction, CbFieldBinding;
+										   // "use": an item's use, for its bake (parts: [{class, properties}])
 	godot::Dictionary properties;
 };
 

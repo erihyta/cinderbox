@@ -1,0 +1,8 @@
+# What the dash boots do when used: a dash, if a charge is left.
+
+use if dash.charges > 0
+    change dash.charges -= 1
+    cooldown 0.4
+    emit dash.started
+    impulse 11 replace horizontal
+    move for 0.18 friction 0
