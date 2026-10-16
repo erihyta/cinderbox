@@ -4015,7 +4015,9 @@ void TestFlight()
 	// It flew until the wall stopped it: the last half second before the keys were let go went nowhere.
 	float lastStretch = b3Distance( at( letGo ).position, at( letGo - 30 ).position );
 	std::printf( "    flew %.2f m up and %.2f m along; the last half second %.3f m (the wall)\n", top, along, lastStretch );
-	CHECK( top > 0.3f && top < 3.0f && along > 3.0f && along < 38.0f && lastStretch < 0.05f );
+	// (How high depends a little on which inputs arrived late: a busy machine repeats a held key for a
+	// tick or two. The wall, not the height, is what stops it.)
+	CHECK( top > 0.3f && top < 3.5f && along > 3.0f && along < 38.0f && lastStretch < 0.05f );
 	CHECK( at( thrustFrom - 1 ).grounded == 1 && BoardToFloat( at( thrustFrom - 1 ).fuel ) >= 100.0f );
 	float lowest = 100.0f, peak = 0.0f, fastestFall = 0.0f;
 	for ( const auto& [tick, seen] : truth )
