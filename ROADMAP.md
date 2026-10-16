@@ -12,7 +12,7 @@ What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work 
 | 3 | [Items that do things](#3-items-that-do-things) | an item is used from the hand or by its own key; what it does is helper nodes under it; its state is its own; one tree per kind in the game |
 | 4 | [The inventory, finished](#4-the-inventory-finished) | drag, icons, stacks, chests, intents a mod declares, and slots as places; last, slots checked across compilers |
 | 5 | [Logic as text, places as nodes](#5-logic-as-text-places-as-nodes) | a scene's rules (when, if, change, emit) as lines in one sheet; nodes only for what is a place or a thing |
-| 6 | [The client, finished](#6-the-client-finished) | what is left of the client's known limits, typed text, the game script in parts |
+| 6 | [The client, finished](#6-the-client-finished) | **done (M172 to M177)**: the game script in parts, a wrong guess taken back, a swing seen from its start, typed text, a server's mods before joining, the lead reading packs |
 | 7 | [Rules without a relink](#7-rules-without-a-relink) | a server mod's rules as a script the server loads, not C++ compiled into it |
 
 - **Why this order** (rethought after M118). The pieces a game is made of are there now: movement
@@ -218,7 +218,7 @@ HUD. Made with today's nodes; `net_brawl` plays it.
 | Text nobody authored | **done (M175)**: typed text as a mod's (`declare.TextChannel`, `ctx.Typed`, `ctx.Say`), shown by `CbTextLog` and `CbTextEntry`; the `chat` mod | a team name, a message of the day: a mod saying lines (`ctx.Say` from nobody) when a player joins is all they need |
 | A server list | join by address | put off: how players find servers (Steam, a website's "play" link, a game's own menu) is not decided |
 | A server's mods before joining | **done (M176)**: the server is asked first; a panel lists its workshop items and where each stands here; Connect fetches the missing ones from the store (a folder for now) into a cache, then joins | Steam Workshop as the store |
-| Checked pack layers | a pack's layer may read what the lead cannot predict | the bake says so |
+| Checked pack layers | **done (M177)**: the lead ran ahead only for what the character's own machine reads, so a pack's layer (the pistol's recoil on `item.use`) was not led; it reads the packs too now. Nothing for the bake to say | what the lead holds still (vertical speed, a jump) stays held, as for the character's own layers |
 | The game script | **done (M172)**: `game.gd` (1,256 lines) keeps joining, leaving, watching, the menu and the HUD (573); the unattended run and the view probe are `autoplay.gd`, reactions, items' HUDs and screen effects `presentation.gd`, the camera and the view model `view_camera.gd`, the keys and the help line `keys.gd` | |
 
 - **The camera stays Godot's**: a `Camera3D` the game's script places, not the extension's. That
