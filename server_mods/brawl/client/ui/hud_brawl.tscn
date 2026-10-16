@@ -1,12 +1,7 @@
 [gd_scene format=3]
 
-; The kit's HUD: the labels, where they are and how they look. What they say and when they show is
-; the rules sheet beside this scene (hud_brawl.rules).
-
-[sub_resource type="LabelSettings" id="Small"]
-font_size = 20
-outline_size = 4
-outline_color = Color(0, 0, 0, 0.75)
+; The kit's HUD: the combo, where it is and how it looks; what it says is the rules sheet beside this
+; scene (hud_brawl.rules). Each skill's line is its own HUD (CbItem.hud), shown while it is carried.
 
 [sub_resource type="LabelSettings" id="Combo"]
 font_size = 30
@@ -15,32 +10,6 @@ outline_size = 6
 outline_color = Color(0, 0, 0, 0.8)
 
 [node name="BrawlHud" type="CanvasLayer"]
-
-[node name="Skills" type="VBoxContainer" parent="."]
-anchors_preset = 2
-anchor_top = 1.0
-anchor_bottom = 1.0
-offset_left = 24.0
-offset_top = -260.0
-offset_right = 360.0
-offset_bottom = -120.0
-theme_override_constants/separation = 4
-
-[node name="Dash" type="Label" parent="Skills"]
-layout_mode = 2
-label_settings = SubResource("Small")
-
-[node name="Upper" type="Label" parent="Skills"]
-layout_mode = 2
-label_settings = SubResource("Small")
-
-[node name="Slam" type="Label" parent="Skills"]
-layout_mode = 2
-label_settings = SubResource("Small")
-
-[node name="Guard" type="Label" parent="Skills"]
-layout_mode = 2
-label_settings = SubResource("Small")
 
 [node name="Combo" type="Label" parent="."]
 anchors_preset = 5

@@ -1,0 +1,5 @@
+# The ground slam's line: READY in green, or the seconds left.
+text Line "[{key:slot4}]  GROUND SLAM  READY" if brawl.cd_slam <= 0
+text Line "[{key:slot4}]  GROUND SLAM  {brawl.cd_slam}s" if brawl.cd_slam > 0
+bind Line modulate:r = 1 - 0.45 * (brawl.cd_slam <= 0)
+bind Line modulate:b = 1 - 0.45 * (brawl.cd_slam <= 0)

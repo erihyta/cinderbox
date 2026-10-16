@@ -147,6 +147,13 @@ func _initialize() -> void:
 	baked = made[0].bake()
 	_check("used once a press, by its own key H, in the third slot", baked.text.contains("property use 1") and baked.text.contains("property slot 3") and baked.text.contains("usekey H\n"), baked.text)
 	made[0].use_key = ""
+	made[0].hud = "res://ui/test_hud.tscn"
+	made[0].hud_shows = CbItem.HUD_CARRIED
+	baked = made[0].bake()
+	_check("its own HUD, shown while carried", baked.text.contains("hud res://ui/test_hud.tscn\n") and baked.text.contains("hudshows carried\n"), baked.text)
+	made[0].hud = "ui/test_hud.tscn"
+	_check("a HUD that is not res:// is refused", made[0].bake().text == "" and String(made[0].bake().error).contains("hud"), made[0].bake().error)
+	made[0].hud = ""
 
 	made[0].kind = "two words"
 	_check("a kind of two words is refused", made[0].bake().text == "" and String(made[0].bake().error).contains("kind"), made[0].bake().error)

@@ -1,0 +1,5 @@
+# The uppercut's line: READY in green, or the seconds left.
+text Line "[{key:slot3}]  UPPERCUT  READY" if brawl.cd_upper <= 0
+text Line "[{key:slot3}]  UPPERCUT  {brawl.cd_upper}s" if brawl.cd_upper > 0
+bind Line modulate:r = 1 - 0.45 * (brawl.cd_upper <= 0)
+bind Line modulate:b = 1 - 0.45 * (brawl.cd_upper <= 0)

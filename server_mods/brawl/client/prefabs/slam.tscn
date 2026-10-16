@@ -34,6 +34,8 @@ use_conditions = PackedStringArray("brawl.cd_slam <= 0", "not grounded")
 use_changes = PackedStringArray("brawl.cd_slam = 5")
 use_emits = "brawl.slam.started"
 mass = 0.5
+hud = "res://ui/slam_hud.tscn"
+hud_shows = 1
 
 [node name="Body" type="CollisionShape3D" parent="."]
 shape = SubResource("Body")

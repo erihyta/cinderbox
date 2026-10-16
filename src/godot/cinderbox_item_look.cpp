@@ -96,6 +96,10 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_slot_key_uses", "value" ), &CbItem::set_slot_key_uses );
 	ClassDB::bind_method( D_METHOD( "get_slot_key_uses" ), &CbItem::get_slot_key_uses );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "slot_key_uses" ), "set_slot_key_uses", "get_slot_key_uses" );
+	ClassDB::bind_method( D_METHOD( "set_hud", "value" ), &CbItem::set_hud );
+	ClassDB::bind_method( D_METHOD( "get_hud" ), &CbItem::get_hud );
+	ClassDB::bind_method( D_METHOD( "set_hud_shows", "value" ), &CbItem::set_hud_shows );
+	ClassDB::bind_method( D_METHOD( "get_hud_shows" ), &CbItem::get_hud_shows );
 	ClassDB::bind_method( D_METHOD( "set_use_key", "value" ), &CbItem::set_use_key );
 	ClassDB::bind_method( D_METHOD( "get_use_key" ), &CbItem::get_use_key );
 	ADD_PROPERTY( PropertyInfo( Variant::STRING, "use_key", PROPERTY_HINT_PLACEHOLDER_TEXT, "H: uses the first one carried, wherever it is (empty: from the hand only)" ),
@@ -166,6 +170,12 @@ void CbItem::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::CALLABLE, "bake_button", PROPERTY_HINT_TOOL_BUTTON, "Bake item,Save", PROPERTY_USAGE_EDITOR ), "",
 				  "get_bake_button" );
 
+	ADD_GROUP( "Its HUD", "" );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "hud", PROPERTY_HINT_FILE, "*.tscn" ), "set_hud", "get_hud" );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "hud_shows", PROPERTY_HINT_ENUM, "In the hand,While carried" ), "set_hud_shows", "get_hud_shows" );
+	ADD_GROUP( "", "" );
+	BIND_ENUM_CONSTANT( HUD_IN_HAND );
+	BIND_ENUM_CONSTANT( HUD_CARRIED );
 	BIND_ENUM_CONSTANT( USE_TOOL );
 	BIND_ENUM_CONSTANT( USE_PRESS );
 	BIND_ENUM_CONSTANT( USE_HOLD );
@@ -1076,6 +1086,16 @@ Dictionary CbItem::bake() const
 			return fail( "use_key is one key (H)" );
 		}
 		text += "usekey " + m_useKey + "\n";
+	}
+	// Its own HUD, for the game (the server skips these lines).
+	if ( m_hud.is_empty() == false )
+	{
+		if ( m_hud.begins_with( "res://" ) == false || m_hud.contains( " " ) )
+		{
+			return fail( "hud is a scene of this project (res://ui/my_hud.tscn)" );
+		}
+		text += "hud " + m_hud + "\n";
+		text += String( "hudshows " ) + ( m_hudShows == HUD_CARRIED ? "carried" : "hand" ) + "\n";
 	}
 	// Its own motions (CbMotion nodes under it): a set named like the kind, baked beside the item.
 	{

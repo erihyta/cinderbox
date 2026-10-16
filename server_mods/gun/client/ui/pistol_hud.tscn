@@ -1,0 +1,28 @@
+[gd_scene format=3]
+
+; The pistol's own HUD (CbItem.hud on prefabs/pistol.tscn, shown while it is in the hand): what its
+; second use is, on the key it is bound to. The ammo count is the gun mod's (hud_gun.tscn), for
+; every gun. (Named without "hud_": those are a mod's HUDs, shown all the time.)
+
+[sub_resource type="LabelSettings" id="Small"]
+font_size = 18
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.75)
+
+[node name="PistolHud" type="CanvasLayer"]
+
+[node name="Mark" type="Label" parent="."]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -284.0
+offset_top = -148.0
+offset_right = -24.0
+offset_bottom = -124.0
+label_settings = SubResource("Small")
+horizontal_alignment = 2
+
+[node name="Rules" type="CbRules" parent="."]
+file = "res://ui/pistol_hud.rules"

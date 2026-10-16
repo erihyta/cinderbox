@@ -36,6 +36,12 @@
 		</method>
 	</methods>
 	<members>
+		<member name="hud" type="String" setter="set_hud" getter="get_hud" default="&quot;&quot;">
+			Its own HUD: a scene of this project ([code]res://ui/pistol_hud.tscn[/code], not named [code]hud_*.tscn[/code]: those are a mod's, shown all the time), shown over the screen for the viewer's own player as [member hud_shows] says, once however many copies there are. Inside it, any HUD nodes and a [CbRules] sheet; [code]{hand.gun.rounds}[/code] reads the copy in the hand.
+		</member>
+		<member name="hud_shows" type="int" setter="set_hud_shows" getter="get_hud_shows" enum="CbItem.HudShows" default="0">
+			When its [member hud] shows: [constant HUD_IN_HAND] while the viewer's own player has one out, [constant HUD_CARRIED] while it has one in any slot.
+		</member>
 		<member name="holster" type="String" setter="set_holster" getter="get_holster" default="&quot;&quot;">
 			The socket the item hangs in while it is put away ([code]Hip[/code], [code]Back[/code]); empty: out of sight. Read by a server mod that takes its items from its look.
 		</member>

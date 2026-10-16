@@ -45,6 +45,7 @@ properties = {
 }
 animation_pack = "gun.pistol_hold"
 holster = "Hip"
+hud = "res://ui/pistol_hud.tscn"
 slot = 1
 carry_grip = NodePath("Carry")
 other_hand = 3

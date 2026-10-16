@@ -1,0 +1,25 @@
+[gd_scene format=3]
+
+; The guard's own HUD (CbItem.hud on prefabs/guard.tscn, shown while it is carried): one line, its key
+; and whether it is ready. What it says is the sheet beside it (guard_hud.rules). Its row is its own:
+; the four skills' lines stack at the bottom left.
+
+[sub_resource type="LabelSettings" id="Small"]
+font_size = 20
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.75)
+
+[node name="GuardHud" type="CanvasLayer"]
+
+[node name="Line" type="Label" parent="."]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -176.0
+offset_right = 360.0
+offset_bottom = -150.0
+label_settings = SubResource("Small")
+
+[node name="Rules" type="CbRules" parent="."]
+file = "res://ui/guard_hud.rules"

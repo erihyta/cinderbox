@@ -125,6 +125,29 @@ public:
 	{
 		return m_useEmits;
 	}
+	// Its own HUD: a scene the game shows over the screen for the viewer's own player while it has one
+	// in the hand (HUD_IN_HAND) or carries one at all (HUD_CARRIED); once, however many copies.
+	enum HudShows
+	{
+		HUD_IN_HAND = 0,
+		HUD_CARRIED = 1,
+	};
+	void set_hud( const godot::String& v )
+	{
+		m_hud = v.strip_edges();
+	}
+	godot::String get_hud() const
+	{
+		return m_hud;
+	}
+	void set_hud_shows( int v )
+	{
+		m_hudShows = v;
+	}
+	int get_hud_shows() const
+	{
+		return m_hudShows;
+	}
 	// Its own key ("H"): uses the first one carried, wherever it is (the action "<kind>.use").
 	// Empty: it is used from the hand only.
 	void set_use_key( const godot::String& v )
@@ -439,6 +462,8 @@ private:
 	godot::String m_animationPack;
 	godot::String m_holster;
 	godot::String m_useKey;
+	godot::String m_hud;
+	int m_hudShows = HUD_IN_HAND;
 	godot::PackedStringArray m_useConditions;
 	godot::PackedStringArray m_useChanges;
 	double m_useCooldown = 0.0;
@@ -557,4 +582,5 @@ private:
 
 VARIANT_ENUM_CAST( cb::gd::CbItem::OtherHand );
 VARIANT_ENUM_CAST( cb::gd::CbItem::Use );
+VARIANT_ENUM_CAST( cb::gd::CbItem::HudShows );
 VARIANT_ENUM_CAST( cb::gd::CbItem::Hand );
