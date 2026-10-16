@@ -4,9 +4,8 @@
 ; and thrown away from you. 5 s to come back (brawl.cd_slam). The dive is predicted; the landing's
 ; shockwave is the server mod's (brawl.cpp: no node finds who is near a point, and no motion starts
 ; on landing), so its victims see it a round trip late.
-;   Slam        CbItem     once a press, by its slot's key; when used: brawl.cd_slam <= 0, not
-;                          grounded; brawl.cd_slam = 5; says brawl.slam.started
-;     Dive      CbImpulse  25 m/s straight down, the vertical speed replaced
+;   Slam        CbItem     once a press, by its slot's key; what a use does is its sheet's
+;                          (slam.rules): a dive, 25 m/s straight down, and brawl.slam.started
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.1)
@@ -30,9 +29,6 @@ properties = {
 use = 1
 slot = 4
 slot_key_uses = true
-use_conditions = PackedStringArray("brawl.cd_slam <= 0", "not grounded")
-use_changes = PackedStringArray("brawl.cd_slam = 5")
-use_emits = "brawl.slam.started"
 mass = 0.5
 hud = "res://ui/slam_hud.tscn"
 hud_shows = 1
@@ -43,8 +39,5 @@ shape = SubResource("Body")
 [node name="Mesh" type="MeshInstance3D" parent="."]
 mesh = SubResource("Mesh")
 
-[node name="Dive" type="CbImpulse" parent="."]
-frame = 4
-direction = Vector3(0, -1, 0)
-speed = 25.0
-replace = 1
+[node name="Rules" type="CbRules" parent="."]
+file = "res://prefabs/slam.rules"

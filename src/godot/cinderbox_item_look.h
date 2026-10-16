@@ -443,6 +443,9 @@ public:
 
 	// The text of items/<kind>.cfg, or "" (and why in the returned { text, error }).
 	godot::Dictionary bake() const;
+	// Its motions' file, as bake_to_project writes it (motions/<kind>.cfg): {text, error}; text "" with
+	// no error when it has none.
+	godot::Dictionary bake_motions() const;
 	// The inspector's button, and what saving the scene does: writes res://items/<kind>.cfg.
 	// The CbMotion nodes under the item, as a motion set named like the kind (motions/<kind>.cfg):
 	// each with the condition that its player has the item. Empty with no error: it has none.

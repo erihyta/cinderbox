@@ -3,8 +3,8 @@
 ; Guard: its slot's key (5), held. While it is held you walk slowly, and the kit's
 ; hits on you do a quarter of their damage (brawl.cpp asks ctx.Using). Other weapons' damage is
 ; not reduced: that is the combat mod's to take, and no mod can change another's damage.
-;   Guard       CbItem     a press, and while held, by its slot's key; says brawl.guard.up
-;     Brace     CbMove     while it is held: walk and sprint 1.5 m/s, no jump
+;   Guard       CbItem     a press, and while held, by its slot's key; what it does is its sheet's
+;                          (guard.rules): walk and sprint 1.5 m/s, no jump; says brawl.guard.up
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.1)
@@ -28,7 +28,6 @@ properties = {
 use = 2
 slot = 5
 slot_key_uses = true
-use_emits = "brawl.guard.up"
 mass = 0.5
 hud = "res://ui/guard_hud.tscn"
 hud_shows = 1
@@ -39,9 +38,5 @@ shape = SubResource("Body")
 [node name="Mesh" type="MeshInstance3D" parent="."]
 mesh = SubResource("Mesh")
 
-[node name="Brace" type="CbMove" parent="."]
-parameters = {
-"jump_speed": 0.0,
-"sprint_speed": 1.5,
-"walk_speed": 1.5
-}
+[node name="Rules" type="CbRules" parent="."]
+file = "res://prefabs/guard.rules"

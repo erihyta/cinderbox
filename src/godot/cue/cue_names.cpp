@@ -473,7 +473,8 @@ PackedStringArray Problems( const Node* node )
 			{
 				for ( const Entry& entry : kTable )
 				{
-					if ( String( entry.cls ) == rule.type && rule.properties.has( entry.property ) )
+					// (A use is read as the motion it is baked into.)
+					if ( String( entry.cls ) == ( rule.type == "use" ? String( "CbMotion" ) : rule.type ) && rule.properties.has( entry.property ) )
 					{
 						CheckValue( book, entry.holds, rule.properties[entry.property], file + " line " + String::num_int64( rule.line ) + ": " + entry.property, out );
 					}

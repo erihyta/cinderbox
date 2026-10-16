@@ -1,0 +1,7 @@
+# check_grips.gd's item: its use as a sheet's rule.
+use if test.ready
+    change test.uses += 1
+    cooldown 0.5
+    emit test.used
+    impulse 3 along up replace all
+    move for 0.2 friction 0
