@@ -218,7 +218,7 @@ HUD. Made with today's nodes; `net_brawl` plays it.
 | Text nobody authored | player names only | chat, a team name, a message of the day (the parked `m101-text` branch has the mechanism) |
 | A server list | join by address | recent and favourite servers with their mods and players |
 | Checked pack layers | a pack's layer may read what the lead cannot predict | the bake says so |
-| The game script | `game.gd` is nearly 1,000 lines: input, the camera, the unattended run, the view probe | scripts of their own, all still in Godot |
+| The game script | **done (M172)**: `game.gd` (1,256 lines) keeps joining, leaving, watching, the menu and the HUD (573); the unattended run and the view probe are `autoplay.gd`, reactions, items' HUDs and screen effects `presentation.gd`, the camera and the view model `view_camera.gd`, the keys and the help line `keys.gd` | |
 
 - **The camera stays Godot's**: a `Camera3D` the game's script places, not the extension's. That
   keeps the next thing open: [cameras a mod places](#later-not-scheduled).
