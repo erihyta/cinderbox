@@ -270,6 +270,16 @@ public:
 	{
 		return m_add;
 	}
+	// With conditions: the target is hidden while they fail (on, the default), or they only say when
+	// this writes (off: several bindings can take turns at one label, "READY" or "2.4s").
+	void set_hides( bool v )
+	{
+		m_hides = v;
+	}
+	bool get_hides() const
+	{
+		return m_hides;
+	}
 	void set_conditions( const godot::PackedStringArray& v )
 	{
 		m_conditions = v;
@@ -291,6 +301,7 @@ private:
 	float m_multiply = 1.0f;
 	float m_add = 0.0f;
 	godot::PackedStringArray m_conditions;
+	bool m_hides = true;
 	godot::ObjectID m_client;
 };
 

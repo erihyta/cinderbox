@@ -53,6 +53,17 @@
 //       change gun.ammo -= 1      (until the server answers; one line each)
 //       stance melee_swing on full
 //
+// A HUD's logic is one line each, on the controls the HUD scene has (a CbFieldBinding each):
+//
+//   show Skills/Dash if carried.brawl.dash_strike         (shown while it holds)
+//   text Skills/Dash "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
+//   text Skills/Dash "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s" if brawl.cd_dash > 0
+//   bind Health/Bar value = combat.health * 100 / combat.max_health
+//
+//   show PATH if EXPRESSION
+//   text PATH "FORMAT" [into PROPERTY] [if EXPRESSION]     (several may take turns at one label)
+//   bind PATH PROPERTY = EXPRESSION [if EXPRESSION]
+//
 // Paths are cue paths (cue_paths.h): an anchor ($at, $other, ^, ^^, $local, $world) and a path from
 // it, or a plain path from the node the CbRules node is under ("Barrel", "Muzzle/Sparks"; "." is
 // that node itself), which climbs no higher than the scene. # starts a comment. A line that cannot
@@ -74,6 +85,7 @@ struct Rule
 {
 	int line = 0;
 	bool prediction = false;
+	godot::String type = "CbReaction"; // the node it becomes: CbReaction, CbPrediction, CbFieldBinding
 	godot::Dictionary properties;
 };
 

@@ -18,3 +18,7 @@ on test.two
     at point
     delay 0.5
     call Barrel hide
+
+show Panel if combat.health > 0
+text Panel "HP {combat.health}" into tooltip_text if combat.health < 50
+bind Panel modulate:a = combat.health / 100 if ?combat.health

@@ -205,7 +205,7 @@ The HUD reads the board too, through script-free nodes any HUD scene can use:
 | Node | Does |
 |---|---|
 | `CbFieldLabel` | a Label with a `text_format` (`"AMMO {gun.ammo} / {gun.magazine}"`), shown while its `conditions` hold. `{an expression}` works too: `"{combat.health * 100 / combat.max_health}%"`. With `choice_field` and `choices` it shows the line a number picks ([Saying things](#saying-things)) |
-| `CbFieldBinding` | writes a field, or an expression over fields (`combat.health / combat.max_health`), into any property of its `target` (default: its parent), `value = field * multiply + add`; with conditions it hides the target while they fail. A `ProgressBar`'s `value` and `max_value`, a panel's `visible`, a colour. The property may be a part of one (`scale:x`, `modulate:a`). With a `text_format` it writes words instead (into `text`, or the property named): any node that shows text, a `Label3D` in the world too, can show the game's |
+| `CbFieldBinding` | writes a field, or an expression over fields (`combat.health / combat.max_health`), into any property of its `target` (default: its parent), `value = field * multiply + add`; with conditions it hides the target while they fail (`hides` off: they only say when it writes, so several can take turns at one label). A `ProgressBar`'s `value` and `max_value`, a panel's `visible`, a colour. The property may be a part of one (`scale:x`, `modulate:a`). With a `text_format` it writes words instead (into `text`, or the property named): any node that shows text, a `Label3D` in the world too, can show the game's |
 | `CbList` | a row per player, item, slot, or event that happened: its first child is the row as you designed it, copied for every entry; `where` filters, `sort_by` orders, `max_rows` cuts ([Lists](#lists)). Of **Events** (`event` `combat.killed`, each row for `seconds`) it is a kill feed: `{a}` and `{b}` in a row are what the event's two entities are called |
 | `CbKey` | a key of the viewer's own, not one of the server's actions: `action` `scores`, `key` `Tab`. While it is held (or switched by each press) a value of the viewer's is 1: `ui.scores`. What that shows is whoever reads it: a `CbFieldBinding` with the condition `ui.scores` shows its target. With `cursor`, the mouse is the screen's meanwhile |
 | `CbClick` | what a click on its parent does: sets values of the viewer's own (`ui.picked = slot.number`), asks something of the player's slots (select, move, drop) or of a mod (`mod_intent`) ([Screens](#screens)) |
@@ -216,6 +216,31 @@ In formats, `{field}` is the subject's field, `{name}` what it is called (a play
 name of the player a field points at (`"{name:deathmatch.winner} WINS"`), `{look:field}` what the
 entity a field points at is called (an item's `display_name`: `"Bat"`), and `{key:action}` the key
 the player has that action bound to now (`"E"`, `"LMB"`: rebinding shows).
+
+### A HUD's sheet
+
+What a HUD's controls say and when they show can be lines of its [rules sheet](#rules-sheets)
+too: the controls stay nodes (where they are, their font), the logic is text. Each line is a
+`CbFieldBinding` on a control.
+
+```
+# ui/hud_brawl.rules: one plain Label says READY or the seconds left
+show Skills/Dash if carried.brawl.dash_strike
+text Skills/Dash "[{key:slot2}]  DASH STRIKE  READY" if brawl.cd_dash <= 0
+text Skills/Dash "[{key:slot2}]  DASH STRIKE  {brawl.cd_dash}s" if brawl.cd_dash > 0
+bind Skills/Dash modulate:r = 1 - 0.45 * (brawl.cd_dash <= 0)
+```
+
+| Line | Does |
+|---|---|
+| `show PATH if EXPRESSION` | the control is shown while it holds |
+| `text PATH "FORMAT" [into PROPERTY] [if EXPRESSION]` | writes the words (into `text`, or the property named) while it holds; several may take turns at one control |
+| `bind PATH PROPERTY = EXPRESSION [if EXPRESSION]` | writes the number (`value`, `modulate:a`, `scale:x`) while it holds |
+
+- **Where it pays**: a control with logic piled on it (the kit's skills: 20 nodes became 7 and a
+  sheet of 22 lines). A single `CbFieldLabel` is already one node: keep it.
+- **Not in a list's rows**: a `CbList` copies its first child for every entry, and a sheet's lines
+  are not copied with it. A row keeps its own nodes.
 
 ### Saying things
 

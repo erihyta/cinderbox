@@ -27,6 +27,9 @@ size = Vector3(0.01, 0.012, 0.012)
 [node name="Pistol" type="CbItem" unique_id=1499270042]
 kind = "gun.pistol"
 display_name = "Pistol"
+fields = {
+"gun.rounds": 12
+}
 properties = {
 "gun.automatic": 0.0,
 "gun.damage": 25.0,
@@ -39,9 +42,6 @@ properties = {
 "inventory.start": 1.0,
 "mark.range": 80.0,
 "mark.seconds": 1.0
-}
-fields = {
-"gun.rounds": 12
 }
 animation_pack = "gun.pistol_hold"
 holster = "Hip"
@@ -76,5 +76,5 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.014388949, 0.0062951446
 [node name="Muzzle" type="Node3D" parent="." unique_id=478220168]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.04, -0.175)
 
-[node name="Rules" type="CbRules" parent="."]
+[node name="Rules" type="CbRules" parent="." unique_id=244198892]
 file = "res://prefabs/pistol.rules"
