@@ -50,22 +50,27 @@ void RegisterPlayerAnimation( flecs::world& world )
 	} );
 
 	// Sample, blend and build model matrices from the state between the last two ticks; the
-	// viewer's own player with its upper layers led by what its looks predicted (anim_lead.h).
+	// viewer's own player with its upper layers led by what its looks predicted (anim_lead.h),
+	// another player's clip first seen late drawn from its start (anim_catch_up.h).
 	world.system<PlayerAnim, const Visual>( "EvaluatePlayerPose" ).each( []( flecs::iter& it, size_t, PlayerAnim& a, const Visual& v ) {
 		if ( a.evaluator == nullptr )
 		{
 			return;
 		}
-		float alpha = it.world().get<FrameTiming>().tickAlpha;
-		a.shown = anim::InterpolateAnimState( a.previous, a.current, alpha );
+		const FrameTiming& timing = it.world().get<FrameTiming>();
+		a.shown = anim::InterpolateAnimState( a.previous, a.current, timing.tickAlpha );
 		const AnimLead& lead = it.world().get<AnimLead>();
+		const AnimLibrary& lib = it.world().get<AnimLibrary>();
 		if ( lead.netId != 0 && lead.netId == v.netId )
 		{
-			const AnimLibrary& lib = it.world().get<AnimLibrary>();
 			if ( lib.graph )
 			{
 				a.shown = LeadAnimState( a.shown, *lib.graph, lib.packs, lead );
 			}
+		}
+		else if ( lib.graph )
+		{
+			a.shown = CatchUpAnimState( a.shown, *lib.graph, lib.packs, a.catchUp, it.delta_time(), timing.tickSeconds );
 		}
 		const HandGrips& grips = it.world().get<HandGrips>();
 		auto grip = grips.byHolder.find( v.netId );

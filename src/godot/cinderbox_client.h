@@ -110,6 +110,9 @@ public:
 	// item's, or the game's own 60), or 0 while the view is not first person.
 	int64_t get_view_layer() const;
 	double get_view_fov() const;
+	// How many of other players' clips were first seen late and drawn from their start
+	// (present/anim_catch_up.h), over the players here now.
+	int64_t get_animations_caught_up() const;
 
 	// What the server's mods declared. Each action: { name, bit, key }.
 	godot::Array get_actions() const;

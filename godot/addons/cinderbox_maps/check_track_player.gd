@@ -73,6 +73,13 @@ func _initialize() -> void:
 	loop.track_insert_key(loop_call, 0.25, {"method": "hit", "args": []})
 	library.add_animation("loop", loop)
 
+	var jab := Animation.new()
+	jab.length = 0.5
+	var jab_call := jab.add_track(Animation.TYPE_METHOD)
+	jab.track_set_path(jab_call, NodePath("Counter"))
+	jab.track_insert_key(jab_call, 0.1, {"method": "hit", "args": []})
+	library.add_animation("jab", jab)
+
 	var reset := Animation.new()
 	reset.length = 0.001
 	var reset_vis := reset.add_track(Animation.TYPE_VALUE)
@@ -93,7 +100,7 @@ func _initialize() -> void:
 		"the swing's two other tracks are kept, its bone track is not", "")
 	_expect(is_equal_approx(tracks.get_animation("swing").length, 1.0), "the copy keeps the length", "")
 	_expect(not tracks.has_animation("walk"), "an animation that is bones only is not in the library", "")
-	_expect(tracks.has_animation("RESET") and tracks.has_animation("loop"), "RESET and the loop are in it", "")
+	_expect(tracks.has_animation("RESET") and tracks.has_animation("loop") and tracks.has_animation("jab"), "RESET, the loop and the jab are in it", "")
 	_expect(swing.get_track_count() == 3, "the character's own animation is untouched", "")
 
 	_tracks = CbTrackPlayer.new()
@@ -156,37 +163,24 @@ func _run(tracks: CbTrackPlayer, light: OmniLight3D, counter: Node) -> void:
 		t += 1.0 / 60.0
 	_expect(first_play == 1 and counter.hits == 2, "a clip started over fires its keys again", "%d then %d hits" % [first_play, counter.hits])
 
-	# Seen from its start: first seen 0.35 s in (behind latency), past the light's key at 0.3, before
-	# the call at 0.5. The tracks start from the beginning and catch up at twice the pace.
-	for first in [0.35, 0.45]:
-		_frame(tracks, [])
-		counter.hits = 0
-		var lit := false
-		var level_at := -1.0
-		t = first
-		while t <= 1.0:
-			_frame(tracks, [[0, "swing", t, false]])
-			lit = lit or light.visible
-			if level_at < 0.0 and counter.hits == 1:
-				level_at = t
-			t += 1.0 / 60.0
-		_expect(counter.hits == 1, "first seen %.2f s in: the call before it fires once" % first, "%d hits" % counter.hits)
-		_expect(lit, "... the light keyed before it still shows", "")
-		# (At twice the pace, the tracks reach the call at 0.5 when the pose is at first + (0.5 - 0) / 2.)
-		_expect(level_at > 0.0 and level_at <= first + 0.26, "... soon", "fired with the pose at %.3f s" % level_at)
+	# First seen a little way in (a frame or two): the keys from its start fire. (Seen later than
+	# that, another player's clip is drawn from its start and caught up before it gets here:
+	# present/anim_catch_up.h.)
+	_frame(tracks, [])
+	counter.hits = 0
+	_frame(tracks, [[2, "jab", 0.15, false]])
+	_expect(counter.hits == 1, "first seen just past a key: it fires", "%d hits" % counter.hits)
+	_frame(tracks, [])
+	counter.hits = 0
+	_frame(tracks, [[2, "jab", 0.4, false]])
+	_expect(counter.hits == 0, "first seen far past it: values only", "%d hits" % counter.hits)
 	_frame(tracks, [])
 	counter.hits = 0
 	_frame(tracks, [[0, "swing", 0.9, false]])
 	_frame(tracks, [[0, "swing", 0.95, false]])
 	_expect(counter.hits == 0, "first seen far in (a join): nothing fires", "%d hits" % counter.hits)
-	# The clip ends while its tracks are still catching up: what is left fires as it goes.
-	_frame(tracks, [])
-	counter.hits = 0
-	_frame(tracks, [[0, "swing", 0.48, false]])
-	_frame(tracks, [[0, "swing", 0.52, false]])
-	_frame(tracks, [])
-	_expect(counter.hits == 1, "it ends while catching up: the rest fires", "%d hits" % counter.hits)
 	# A correction leaves the swing for a frame and comes back to the same play: nothing again.
+	_frame(tracks, [])
 	counter.hits = 0
 	t = 0.0
 	while t <= 0.6:

@@ -334,14 +334,8 @@ func finish() -> void:
 	print("autoplay done: %s, checksums ok %d, desyncs %d, fingerprint %s, fp ok %s" % [
 		stats.get("state"), stats.get("checksums_verified", 0), stats.get("desyncs", 0), stats.get("fingerprint", "none"), stats.get("fp_environment_ok", "not simulating")])
 	print("mod events seen: ", _event_counts)
-	# Clips first seen a little way in (another player's swing, behind latency) whose other tracks
-	# played from their start (CbTrackPlayer).
-	var late := 0
-	var caught := 0
-	for tracks in game.get_tree().root.find_children("*", "CbTrackPlayer", true, false):
-		late += tracks.get_late_start_count()
-		caught += tracks.get_caught_up_count()
-	print("animation tracks seen late: %d, caught up %d (%d track players)" % [late, caught, game.get_tree().root.find_children("*", "CbTrackPlayer", true, false).size()])
+	# Other players' clips first seen a little way in (behind latency), drawn from their start.
+	print("animations caught up: %d" % client.get_animations_caught_up())
 	print("guesses: %d, taken back %d %s, of those answered late %d" % [_guesses, _taken_back.values().reduce(func(a, b): return a + b, 0),
 		_taken_back, client.get_director().get_late_answer_count()])
 	# What the scene costs: the reactions and predictions listening (a copy lying in the world has

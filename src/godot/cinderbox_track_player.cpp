@@ -16,10 +16,6 @@ namespace
 
 // Forward moves up to this long fire keys; longer jumps (a join, a reconnect) only apply values.
 constexpr double kMaxFiringStep = 0.25;
-// A clip first seen up to this far in plays its tracks from the start (behind latency), faster than
-// the pose by kCatchUpPace until they are level.
-constexpr double kMaxLateStart = 0.5;
-constexpr double kCatchUpPace = 2.0;
 
 } // namespace
 
@@ -30,8 +26,6 @@ void CbTrackPlayer::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "play_at", "channel", "clip", "time", "loops", "restarted" ), &CbTrackPlayer::play_at, DEFVAL( false ) );
 	ClassDB::bind_method( D_METHOD( "end_frame" ), &CbTrackPlayer::end_frame );
 	ClassDB::bind_method( D_METHOD( "get_channel_clip", "channel" ), &CbTrackPlayer::get_channel_clip );
-	ClassDB::bind_method( D_METHOD( "get_late_start_count" ), &CbTrackPlayer::get_late_start_count );
-	ClassDB::bind_method( D_METHOD( "get_caught_up_count" ), &CbTrackPlayer::get_caught_up_count );
 	ClassDB::bind_method( D_METHOD( "clear_caches" ), &CbTrackPlayer::clear_caches );
 }
 
@@ -73,48 +67,10 @@ CbTrackPlayer::Channel& CbTrackPlayer::ChannelAt( int channel )
 
 void CbTrackPlayer::Leave( Channel& c )
 {
-	if ( c.clip.is_empty() )
+	if ( c.clip.is_empty() == false )
 	{
-		return;
-	}
-	if ( c.catching && c.time > c.track && c.time - c.track < 1.0 )
-	{
-		c.player->advance( c.time - c.track );
-		c.high = std::max( c.high, c.time );
-	}
-	c.catching = false;
-	c.leftClip = c.clip;
-	c.leftTime = c.time;
-}
-
-void CbTrackPlayer::CatchUp( Channel& c, double time )
-{
-	double step = time - c.time;
-	c.time = time;
-	if ( step >= kMaxFiringStep )
-	{
-		// A long jump while catching up: values only, as any long jump.
-		Seek( c, time );
-		c.catching = false;
-		c.high = time;
-		return;
-	}
-	double target = std::min( time, c.track + kCatchUpPace * std::max( step, 0.0 ) );
-	if ( target > c.track )
-	{
-		c.player->advance( target - c.track );
-		c.track = target;
-	}
-	if ( c.track >= time )
-	{
-		// Level with the pose (or a correction stepped the pose back behind the tracks).
-		c.catching = false;
-		m_caughtUp += 1;
-		c.high = c.track;
-		if ( c.track != time )
-		{
-			Seek( c, time );
-		}
+		c.leftClip = c.clip;
+		c.leftTime = c.time;
 	}
 }
 
@@ -180,30 +136,14 @@ void CbTrackPlayer::play_at( int channel, const String& clip, double time, bool 
 			c.time = c.leftTime;
 			c.high = c.leftTime;
 		}
-		else if ( loops == false && time > 0.0 && time <= kMaxLateStart )
-		{
-			// First seen a little way in: the tracks start from the beginning and catch up.
-			Seek( c, 0.0 );
-			c.time = time;
-			c.track = 0.0;
-			c.high = 0.0;
-			c.catching = true;
-			m_lateStarts += 1;
-			return;
-		}
 		else
 		{
-			// From its start, or far in (a join): its values at `time`; keys before it are history.
-			Seek( c, time );
-			c.time = time;
-			c.high = time;
-			return;
+			// From its start: what lies between it and `time` plays below as a step forward. Far
+			// in (a join), that step is too long, and only the values apply.
+			Seek( c, 0.0 );
+			c.time = 0.0;
+			c.high = 0.0;
 		}
-	}
-	if ( c.catching )
-	{
-		CatchUp( c, time );
-		return;
 	}
 
 	double length = m_library->get_animation( clip )->get_length();
@@ -264,7 +204,7 @@ void CbTrackPlayer::end_frame()
 		{
 			if ( c.clip.is_empty() == false )
 			{
-				Seek( c, c.catching ? c.track : c.time );
+				Seek( c, c.time );
 			}
 		}
 		m_resetThisFrame = false;
