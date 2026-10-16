@@ -268,7 +268,8 @@ func _initialize() -> void:
 		_impulse(m, 1.0)
 		many.append(m)
 	var big := _make(many)
-	_check("more than 16 motions refuse the bake", big.bake().text == "" and String(big.bake().error).contains("16"), big.bake().error)
+	# (Sixteen was the most once; since M113 a player has a slot for every motion the mods have.)
+	_check("seventeen motions bake", big.bake().text != "" and String(big.bake().error) == "", big.bake().error)
 	big.free()
 
 	print("motions: %s" % ("ok" if _failures == 0 else "%d FAILED" % _failures))

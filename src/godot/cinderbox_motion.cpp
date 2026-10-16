@@ -217,7 +217,7 @@ const Info kSetInfo = { "", "A mod's motions: the CbMotion nodes under it, baked
 						"[b]set_name[/b]: what the server mod asks for: declare.Motions( \"dash.moves\" ).\n"
 						"[b]Baking[/b]: saving the scene, the Bake button, and publishing the mod. A bake that changes "
 						"nothing writes nothing.\n"
-						"[b]At most 16 motions[/b] on a server, all its mods' sets together." };
+						"[b]As many motions as the mods have[/b]: a player keeps 16 bytes for each, all its mods' sets together." };
 
 template <size_t N>
 const Info* FindInfo( const Info ( &table )[N], const String& key )
