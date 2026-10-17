@@ -390,7 +390,7 @@ and stop when it is dropped. A mod's own `SwapLayer` on the same layer wins whil
 | Item | Pack | Layer | States |
 |---|---|---|---|
 | pistol | `gun.pistol_hold` (`server_mods/gun/client/animation_packs/pistol_hold.tscn`) | `UpperBody` | `Hold`; `Shoot` on `item.use`, back at its end |
-| bat | `melee.hold` (`server_mods/melee/client/animation_packs/bat_hold.tscn`) | `UpperBody` | `Ready`; `Swing` on the `melee.swing` event (the look predicts it), started over by the next one, back to `Ready` after 0.45 s of swinging (`state_time > 0.45`, the mod's swing): nothing waits for the server's word that a swing ended. `Sword_Attack` carries the `melee.strike` marker |
+| bat | `melee.hold` (`server_mods/melee/client/animation_packs/bat_hold.tscn`) | `UpperBody` | `Ready`; `Swing` on the `melee.swing` event (the look predicts it), started over by the next one, back to `Ready` on the clip's `melee.done` marker (1.1 s, the end of the follow-through). `Sword_Attack` carries `melee.strike` (the hit) and `melee.done` (the end): the mod times the swing by the same markers, so the look and the rule cannot drift apart, and nothing waits for the server's word that a swing ended |
 | rifle | `gun.rifle_hold` (its look is not in the repository) | `UpperBody` | `Hold`; `Fire` on `item.use` |
 
 All three are upper-body packs: the legs keep the character's own walk, so a crouch (`sneak` swaps
