@@ -287,12 +287,17 @@ func _after_restart() -> void:
 		problems.append("did not join")
 	else:
 		await _wait(1.0)
-		if not _game()._loaded_items.is_empty() or not _game().presentation.item_huds.is_empty():
-			problems.append("items of the first server are loaded")
+		# Only what this server needs is loaded (its own items, none of the first server's).
+		var needed := {}
+		for item in _game().client.get_required_items():
+			needed[String(item["mod"])] = true
+		for sha in _game()._loaded_items:
+			if not needed.has(String(_game()._loaded_items[sha])):
+				problems.append("%s of the first server is loaded" % _game()._loaded_items[sha])
 		if _menu().is_open():
 			problems.append("the menu is open")
-		if _game()._link.port != _other_port:
-			problems.append("joined port %d" % _game()._link.port)
+		if _game().peer.port != _other_port:
+			problems.append("joined port %d" % _game().peer.port)
 		var recent: Array = _menu().recent_servers()
 		if recent.size() != 2 or recent[0]["address"] != "127.0.0.1:%d" % _other_port:
 			problems.append("recent servers are %s" % str(recent))
