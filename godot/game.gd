@@ -489,7 +489,9 @@ func _load_items() -> bool:
 		wanted_mods[path.get_base_dir().get_file()] = true
 	for sha in _loaded_items:
 		if not wanted.has(sha) and not wanted_mods.has(_loaded_items[sha]):
-			_restart_and_join()
+			# (After this frame: this is the viewer's own frame work, which must not stop its source
+			# under itself; quitting from inside it never let the process end.)
+			_restart_and_join.call_deferred()
 			return false
 
 	var added := false
@@ -560,6 +562,13 @@ func _restart_and_join() -> void:
 	var cut := restart.find("--")
 	if cut != -1:
 		restart = restart.slice(0, cut)
+	# Godot keeps its own options (--path, --headless) out of the command line it reports: without
+	# the project's folder, a game run from the source (not exported) would start somewhere else and
+	# never join.
+	if not OS.has_feature("template"):
+		restart = PackedStringArray(["--path", ProjectSettings.globalize_path("res://")]) + restart
+	if DisplayServer.get_name() == "headless":
+		restart = PackedStringArray(["--headless"]) + restart
 	restart.append("--")
 	for arg in OS.get_cmdline_user_args():
 		if not (arg.begins_with("--host=") or arg.begins_with("--port=") or arg.begins_with("--replay=") or arg.begins_with("--view=")):

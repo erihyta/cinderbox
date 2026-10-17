@@ -114,6 +114,9 @@ public:
 	// How many of other players' clips were first seen late and drawn from their start
 	// (present/anim_catch_up.h), over the players here now.
 	int64_t get_animations_caught_up() const;
+	// What a player is drawn playing this frame (its pose's state, after the lead and the catch-up):
+	// [ { channel (0: the base layer), clip, time (seconds into it), loops } ].
+	godot::Array get_drawn_clips( int64_t net_id ) const;
 
 	// What the server's mods declared. Each action: { name, bit, key }.
 	godot::Array get_actions() const;

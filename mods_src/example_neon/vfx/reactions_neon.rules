@@ -1,0 +1,25 @@
+# reactions_neon.tscn's reactions, as a rules sheet (CbRules: docs/looks.md, Rules sheets). Plain paths are
+# from the scene's root.
+
+# LocalLand
+on landed if is_local
+    subject $at
+    kind player
+    at point offset 0 0.1 0
+    sound res://assets/sfx/neon_blip.wav volume -14 jitter 0.25
+    scene res://vfx/prop_spawn.tscn life 2
+
+# CrateBreak
+on destroying
+    subject $at
+    template heavy_crate
+    at point
+    scene res://vfx/prop_spawn.tscn life 3
+
+# SpawnFlash
+on spawned if is_local
+    subject $at
+    kind prop
+    cooldown 0.4
+    at point
+    flash rgba(1, 0.2, 0.8, 0.12) time 0.12

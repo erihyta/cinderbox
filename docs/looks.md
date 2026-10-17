@@ -122,9 +122,9 @@ PredictFire   CbPrediction   action "use"    cue "item.use"         (the rifle: 
   flash that came and went.
 - **How the body is led**: the viewer runs your character's state machine forward from the state
   the server sent, with the predicted stance or event put in at the moment of the press, for the
-  layers above the base (the legs follow movement, which is predicted already). When the server's
-  answer arrives nothing jumps; afterwards the lead is given back slowly (the upper body plays 15%
-  slower until it is level again). At most half a second ahead. A stance or event counts when an
+  layers above the base (the legs follow movement, which is predicted already). The server acts on
+  a press in the tick it was made, so its answer lands at that tick: from then on the state has it
+  by itself, and the lead stops. At most half a second ahead. A stance or event counts when an
   upper layer reads it: the character's own, or one an item's animation pack brings (the pistol's
   recoil on `item.use`).
 - **Looks only**: nothing is sent anywhere, and no rule runs on the client.

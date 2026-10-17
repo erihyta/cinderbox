@@ -18,7 +18,9 @@ on melee.hit
     subject ^^
     call Model/Sparks restart
 
-# PredictSwing
+# PredictSwing: the server swings again only once the last swing is over, at the clip's melee.done
+# marker (1.1 s: animation_packs/source/Sword_Attack.res); a guess more often than that is a swing
+# the server refuses. Move the marker, change this.
 predict use as melee.swing
-    cooldown 0.58
+    cooldown 1.1
     stance melee_swing on full

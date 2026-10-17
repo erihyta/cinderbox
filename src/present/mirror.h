@@ -138,6 +138,7 @@ struct FrameTiming
 {
 	float tickAlpha = 0.0f;
 	float tickSeconds = 1.0f / 60.0f;
+	uint32_t localNetId = 0; // the viewer's own player (0: none)
 };
 
 // Script state
