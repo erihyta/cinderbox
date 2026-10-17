@@ -2695,8 +2695,9 @@ void TestSprintSwing()
 	int strikeEvent = schema.FindEvent( "melee.strike" );
 	CHECK( fire != 0 && bat != 0 && swingEvent >= 0 && strikeEvent >= 0 );
 
-	// Bat out, then swing once a second: standing (ticks 200..500), walking (500..800), sprinting
-	// (800..1100), in a circle so the walls are never reached.
+	// Bat out, then swing every 1.25 s (a swing lasts 1.1 s, to its clip's melee.done marker):
+	// standing (ticks 200..500), walking (500..800), sprinting (800..1100), in a circle so the walls
+	// are never reached.
 	h.AddBot().script = [=]( uint32_t tick ) {
 		PlayerInput in;
 		in.cameraYaw = uint16_t( tick * 40 );
@@ -2712,7 +2713,7 @@ void TestSprintSwing()
 		{
 			in.buttons = BtnSprint;
 		}
-		if ( tick >= 200 && ( tick % 60 ) < 3 )
+		if ( tick >= 200 && ( tick % 75 ) < 3 )
 		{
 			in.actions = fire;
 		}

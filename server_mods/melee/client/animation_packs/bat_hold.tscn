@@ -27,7 +27,7 @@ advance_expression = "melee.swing"
 [sub_resource type="AnimationNodeStateMachineTransition" id="SwingToReady"]
 xfade_time = 0.25
 advance_mode = 2
-advance_expression = "state_time > 0.45"
+advance_expression = "melee.done"
 
 [sub_resource type="AnimationNodeStateMachine" id="UpperBody"]
 states/Ready/node = SubResource("ReadyClip")
@@ -51,7 +51,7 @@ editor_description = "How the bat is held and swung: an animation pack for the u
 
 Its state machine replaces a character's \"UpperBody\" layer while a bat is in the hand (melee.cpp: ItemLayers).
 
-Ready is the idle. Swing starts on the mod's \"melee.swing\" event (the look predicts it, so the player's own swing starts at the click), and starts over on the next one; it goes back to Ready after 0.45 s of swinging, the mod's swing (melee.cpp: kSwingSeconds). Both are known on every machine at once: nothing waits for the server's word that a swing ended, which arrives a round trip late. Sword_Attack has a marker, melee.strike: the moment the mod tests the hit. Move it in the Animation panel.
+Ready is the idle. Swing starts on the mod's \"melee.swing\" event (the look predicts it, so the player's own swing starts at the click), and starts over on the next one; it goes back to Ready on the clip's own \"melee.done\" marker, the end of the follow-through. The mod ends the swing on the same marker, so the look and the rule cannot drift apart, and nothing waits for the server's word that a swing ended (it arrives a round trip late). Sword_Attack has two markers: melee.strike, the moment the mod tests the hit, and melee.done, where the swing is over and the next may start. Move them in the Animation panel.
 
 In the tree, the state machine node is named UpperBody: that name is the layer it replaces. It has no bone filter: it moves the bones the character's own UpperBody layer moves (spine, arms, head), and the legs keep the character's own walk.
 

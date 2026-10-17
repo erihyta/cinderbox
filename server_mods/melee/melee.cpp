@@ -9,9 +9,11 @@
 // upper body while a bat is in the hand. The legs keep the character's walk.
 //
 // Out, the "melee" stance is set and the body faces where the camera looks. The left mouse button
-// swings: the "melee_swing" stance for kSwingSeconds, which the pack's Swing state plays on, and at
-// the strike a fan of short rays in front of the chest looks for someone to hit. Hits are posed
-// like everything else, so a swing lands where it is drawn.
+// swings: "melee.swing", which the pack's Swing state starts on, and at the strike a fan of short
+// rays in front of the chest looks for someone to hit. Hits are posed like everything else, so a
+// swing lands where it is drawn. How long a swing lasts is the animation's: its "melee.strike"
+// marker is the hit, its "melee.done" marker the end, after which the next may start (the pack
+// goes back to Ready on the same marker). A character without the markers swings by the timers.
 //
 // Health is not kept here. A hit goes out as "combat.damage", and the combat mod applies it and
 // credits the kill: mods cooperate by event, not by call.
@@ -29,9 +31,9 @@ using namespace cb;
 using namespace cb::mods;
 
 constexpr int32_t kDamage = 40;
-constexpr float kSwingSeconds = 0.45f;	// the swing stance, then back to the ready stance
+constexpr float kSwingSeconds = 0.45f;	// how long a swing lasts, unless the animation says (melee.done)
 constexpr float kStrikeSeconds = 0.2f;	// when in the swing the hit is tested, unless the animation says
-constexpr float kCooldownSeconds = 0.6f;
+constexpr float kCooldownSeconds = 0.6f; // from a swing's start to the next, at least
 constexpr float kHotSeconds = 2.0f; // how long the bat glows after it hits someone
 constexpr float kReach = 1.8f;			// metres from the chest
 constexpr float kFan = 0.45f;			// radians either side of straight ahead
@@ -95,6 +97,8 @@ public:
 		m_damage = declare.Event( "combat.damage" );
 		// A marker in the character's swing animation: the frame it connects (a = who swings).
 		m_strike = declare.Event( "melee.strike" );
+		// Another: the swing is over, the follow-through too; the next may start.
+		m_done = declare.Event( "melee.done" );
 	}
 
 	void Tick( Context& ctx ) override
@@ -103,7 +107,8 @@ public:
 		// A swing that carries a strike marker (the pack's, or a character's own) hits on it; one
 		// without, on the timer.
 		bool marked = ctx.AnimationEmits( m_strike );
-		std::vector<ModEventRecord> recent = marked ? ctx.RecentEvents() : std::vector<ModEventRecord>();
+		bool endMarked = ctx.AnimationEmits( m_done );
+		std::vector<ModEventRecord> recent = marked || endMarked ? ctx.RecentEvents() : std::vector<ModEventRecord>();
 		for ( size_t i = 0; i < m_hotBats.size(); )
 		{
 			if ( tick >= m_hotBats[i].until )
@@ -177,7 +182,12 @@ public:
 						}
 					}
 				}
-				if ( elapsed >= Ticks( ctx, kSwingSeconds ) )
+				bool done = endMarked == false && elapsed >= Ticks( ctx, kSwingSeconds );
+				for ( const ModEventRecord& e : recent )
+				{
+					done |= e.type == uint16_t( m_done.index ) && e.netIdA == netId;
+				}
+				if ( done )
 				{
 					s.swinging = false;
 					ctx.SetStance( target, m_full, m_ready );
@@ -246,6 +256,7 @@ private:
 	FieldHandle m_hot;
 	LayerHandle m_full;
 	StanceHandle m_ready;
+	EventHandle m_done;
 	StanceHandle m_swingStance;
 	EventHandle m_swing;
 	EventHandle m_hit;
