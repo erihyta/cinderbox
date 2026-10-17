@@ -18,7 +18,8 @@ on melee.hit
     subject ^^
     call Model/Sparks restart
 
-# PredictSwing
+# PredictSwing: the server swings at most every 0.6 s (melee.cpp: kCooldownSeconds); a guess more
+# often than that is a swing the server refuses.
 predict use as melee.swing
-    cooldown 0.58
+    cooldown 0.6
     stance melee_swing on full

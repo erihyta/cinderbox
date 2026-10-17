@@ -68,8 +68,10 @@ void RegisterPlayerAnimation( flecs::world& world )
 				a.shown = LeadAnimState( a.shown, *lib.graph, lib.packs, lead );
 			}
 		}
-		else if ( lib.graph )
+		else if ( lib.graph && v.netId != timing.localNetId )
 		{
+			// (Not the viewer's own: its swing starts on its click, from the lead, whether or not the
+			// lead is running this frame.)
 			a.shown = CatchUpAnimState( a.shown, *lib.graph, lib.packs, a.catchUp, it.delta_time(), timing.tickSeconds );
 		}
 		const HandGrips& grips = it.world().get<HandGrips>();

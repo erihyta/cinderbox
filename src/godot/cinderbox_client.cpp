@@ -55,6 +55,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_view_layer" ), &CinderboxClient::get_view_layer );
 	ClassDB::bind_method( D_METHOD( "get_view_fov" ), &CinderboxClient::get_view_fov );
 	ClassDB::bind_method( D_METHOD( "get_animations_caught_up" ), &CinderboxClient::get_animations_caught_up );
+	ClassDB::bind_method( D_METHOD( "get_drawn_clips", "net_id" ), &CinderboxClient::get_drawn_clips );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "first_person", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE ), "set_first_person",
 				  "get_first_person" );
 	ClassDB::bind_method( D_METHOD( "get_camera_distance", "target", "direction", "max_distance", "radius" ),
@@ -1069,6 +1070,33 @@ int64_t CinderboxClient::get_view_layer() const
 	return int64_t( CinderboxSkeleton::kViewLayer );
 }
 
+Array CinderboxClient::get_drawn_clips( int64_t net_id ) const
+{
+	Array out;
+	if ( !m_mirror )
+	{
+		return out;
+	}
+	const auto& library = m_mirror->World().get<present::AnimLibrary>();
+	m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim* anim,
+							const present::RagdollAnim* ) {
+		if ( anim == nullptr || int64_t( v.netId ) != net_id || !library.graph )
+		{
+			return;
+		}
+		for ( const anim::ActiveClip& clip : anim::ActiveClips( anim->shown, *library.graph, library.packs ) )
+		{
+			Dictionary entry;
+			entry["channel"] = clip.channel;
+			entry["clip"] = String::utf8( clip.name.c_str() );
+			entry["time"] = clip.time;
+			entry["loops"] = clip.loops;
+			out.push_back( entry );
+		}
+	} );
+	return out;
+}
+
 int64_t CinderboxClient::get_animations_caught_up() const
 {
 	int64_t count = 0;
@@ -1279,14 +1307,11 @@ void CinderboxClient::UpdateNodes()
 
 namespace
 {
-// The lead is given back at this share of real time once nothing is predicted: the upper layers
-// play that much slower until they are level with the server again.
-constexpr float kLeadReturn = 0.15f;
 // Never further ahead than this, whatever the latency.
 constexpr float kMaxLead = 0.5f;
 } // namespace
 
-void CinderboxClient::LeadLocalPlayer( float delta )
+void CinderboxClient::LeadLocalPlayer( float )
 {
 	present::AnimLead lead;
 	uint32_t local = m_frame.frame.localNetId;
@@ -1323,8 +1348,12 @@ void CinderboxClient::LeadLocalPlayer( float delta )
 			lead.inputs.push_back( input );
 		}
 	}
-	// Ahead by the time since the oldest unanswered press; afterwards the lead is given back slowly.
-	m_lead = lead.inputs.empty() ? std::max( 0.0f, m_lead - kLeadReturn * delta ) : std::max( m_lead, newest );
+	// Ahead by the time since the oldest unanswered press, and not at all once it is answered: the
+	// server acts on a press in the tick it was made, so its answer puts the stance or event in at
+	// that tick (a rollback), and the state has it as old as the press already. (It used to be given
+	// back slowly, as if the answer came a round trip after the press: on top of an answered state
+	// that ran the swing ahead twice, a jump of the whole lead when the answer came.)
+	m_lead = lead.inputs.empty() ? 0.0f : newest;
 	m_lead = std::min( m_lead, kMaxLead );
 	if ( m_lead <= 0.0f )
 	{

@@ -165,7 +165,7 @@ void Mirror::Update( const PresentationFrame& frame, float tickAlpha, float fram
 {
 	m_events.clear();
 	Sync( frame, tickAlpha, frameSeconds );
-	m_world.set<FrameTiming>( { tickAlpha, frame.tickSeconds } );
+	m_world.set<FrameTiming>( { tickAlpha, frame.tickSeconds, frame.localNetId } );
 	m_world.progress( frameSeconds );
 }
 

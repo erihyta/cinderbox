@@ -11,8 +11,8 @@
 //   lead = how far ahead the upper layers are shown (seconds)
 //
 //   press ........ the lead grows with the time since the press, the predicted input is put in
-//   server's word  the state now has it by itself; the lead stays, so nothing jumps
-//   afterwards ... the lead is given back slowly (the layers play a little slower until it is 0)
+//   server's word  the server acted in the tick of the press, so the state has it as old as the
+//                  press by itself: the lead stops (CinderboxClient::LeadLocalPlayer)
 //
 // Looks only: nothing is sent anywhere, and the server's state is what the lead starts from every
 // frame, so a wrong guess corrects itself when the prediction expires. The base layer (the legs)
