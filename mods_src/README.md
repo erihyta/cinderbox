@@ -81,6 +81,6 @@ contained one would be refused.
 ## example_neon
 
 This mod replaces the prop spawn effect with a magenta burst, gives box props a glowing cyan
-material, and adds three reactions of its own (`vfx/reactions_neon.tscn`): a landing puff and
+material, and adds three reactions of its own (`vfx/reactions_neon.rules`, a rules sheet in `vfx/reactions_neon.tscn`): a landing puff and
 blip only the local player gets, using a sound the mod ships itself; a burst when a `heavy_crate`
 is destroyed; and a magenta screen flash when the local player spawns something.
