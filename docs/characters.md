@@ -56,8 +56,7 @@ committed:
 | `make_mannequin.gd --pack=source` | how to build it | committed (names only) |
 
 To build it: copy `Unreal-Godot/UAL1.glb` to `godot/characters/ual_mannequin/source/`, give its
-import the same settings as `mannequin/source/UAL1_Standard.glb.import` (the bone map, and
-`Sword_Attack` saved to `res://characters/ual_mannequin/animations/`), then:
+import the same settings as `mannequin/source/UAL1_Standard.glb.import` (the bone map), then:
 
 ```sh
 godot --headless --path godot --script res://addons/cinderbox_maps/make_mannequin.gd -- --pack=source --force
@@ -97,8 +96,8 @@ With `--character none`, players use the procedural placeholder rig, which has d
    - a `CbCharacter` root: `character_name`, and the paths to the `Skeleton3D`, the
      `AnimationPlayer` and the `AnimationTree`;
    - the `AnimationTree`: the character's state machine ([State machines](#state-machines)). Copy
-     the robot's or the mannequin's to start: legs by speed and a jump on a base layer, the mods'
-     stances on an upper-body layer;
+     the robot's or the mannequin's to start: legs by speed and a jump on a base layer, and an
+     upper-body layer for items' packs to swap (the mannequin's is a rest, weight 0);
    - the imported model under it, with the `Skeleton3D` at the root's origin, unrotated and
      unscaled (the bake checks this);
    - a `CinderboxSkeleton` whose `skeleton_path` points at the `Skeleton3D`, with `retarget` off
@@ -236,7 +235,7 @@ Conditions and expressions read simulation values, never scripts:
 | `aiming`, `backward`, `state_time` | a mod's Aim; walking backwards; seconds in the current state |
 | a stance's name (`pistol`, `melee`) | true while any layer has it (mods' `SetStance`) |
 | a mod event's name (`item.use`, `attack`) | on the tick it is emitted at this player: its value (1 if the value is 0), so `attack` and `attack == 2` both work: a trigger |
-| ... the same event, while already in the state it leads to | starts that state over, with the transition's crossfade: a shot fired during the last one's recoil plays the recoil again (the pistol fires every 0.2 s, its clip is 0.63 s). Godot has no transition from a state to itself, so the bake derives this from the transition you drew (`Pistol -> Shoot` on `item.use`). The clip's own keys (a sound, a flash keyed inside it) fire again too, as long as that transition has a crossfade |
+| ... the same event, while already in the state it leads to | starts that state over, with the transition's crossfade: a shot fired during the last one's recoil plays the recoil again (the pistol fires every 0.2 s, its clip is 0.63 s). Godot has no transition from a state to itself, so the bake derives this from the transition you drew (the pistol pack's `Hold -> Shoot` on `item.use`). The clip's own keys (a sound, a flash keyed inside it) fire again too, as long as that transition has a crossfade |
 | a board field's name (`inventory.slot`) | the player's value (or the global one) |
 | an item kind's name (`melee.bat`) | true while the player holds one, in any socket |
 | `carried.` and an item kind (`carried.dash.boots`) | true while the player has one, in the hand or put away |
@@ -248,11 +247,10 @@ The grammar is the [one expression language](looks.md#expressions) (`and or not`
 state machines, other blend nodes, a missing animation).
 
 A mod times its effect by the animation with `ctx.AnimationEmits( event )`: the melee mod hits on
-the mannequin's `melee.strike` marker, and on its own timer for characters without one. To edit an
-imported animation (add a marker or a track), save it to a file in the import settings (Save to
-File, Keep Custom Tracks), as the mannequin does with `Sword_Attack`. Check markers after a
-reimport: a reimport in Godot 4.7.1 kept the added track but dropped the marker (4.7.2 kept both).
-The mannequin's generator puts its marker back whenever it bakes.
+the `melee.strike` marker of its pack's `Sword_Attack`, and on its own timer where no marker is. To
+edit an imported animation (add a marker or a track), save it to a file in the import settings
+(Save to File, Keep Custom Tracks). Check markers after a reimport: a reimport in Godot 4.7.1 kept
+the added track but dropped the marker (4.7.2 kept both); the bake warns when a clip lost one.
 
 ## Layers and stances
 
@@ -261,14 +259,15 @@ A mod says what a player is doing; the character says what that looks like.
 | Who | Does | Example |
 |---|---|---|
 | a mod | declares names: `d.Layer( "upper" )`, `d.Stance( "pistol" )`, and sets a stance on a layer: `ctx.SetStance( player, layer, stance )` (a default `StanceHandle` clears it) | the pistol sets `pistol` on `upper` while it is out; the bat sets `melee`, and `melee_swing` for a swing |
-| a character | reads stances by name in its state machine's conditions and layer weights | the mannequin's upper layer: `Rest -> Pistol` when `pistol`, weight `pistol or melee or melee_swing` |
+| a character | reads stances by name in its state machine's conditions and layer weights | the robot's upper layer, weighted by `pistol or melee or melee_swing` |
 
 - A stance is a name and nothing more: no clip is tied to it. A character whose machine never
   reads `pistol` simply does not change when the pistol comes out.
 - Stances are part of the simulation's animation state, so everyone draws what they lead to and
   the server's hit tests use it.
-- The mannequin and the robot have states for the shipped mods' stances; the placeholder rig has
-  none (the engine carries no game content).
+- Items bring their looks as [packs](#animation-packs): the mannequin's upper layer is only a rest
+  (weight 0), which a held bat or gun swaps for its pack's. The robot still has states for the
+  shipped mods' stances; the placeholder rig has none (the engine carries no game content).
 
 ## Aiming
 
