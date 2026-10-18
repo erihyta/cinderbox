@@ -80,7 +80,7 @@ The mods that ship:
 | `shop` | intent `shop.buy`; `shop.coins`, a private field; events `shop.bought`, `shop.refused`; option `shop.start` | the example of an [intent a mod declares](#intents-a-mod-declares): a screen on B with three buttons (a frag grenade 1 coin, a bat 1, a rifle 2); a player starts with `shop.start` coins (3) and gets one per kill |
 | `chat` | the text channel `chat`; options `chat.max_length`, `chat.burst`, `chat.burst_seconds` | the example of [typed text](#typed-text): what a player types (T, Enter) is said to everyone with its name; a line is cut to 120 characters, and more than 4 lines in 8 s gets only the sender a "slow down". Off: start the server without it, or a `disabled` file |
 | `chest` | the template `chest` (`declare.ContainerTemplate`: a static box with `chest.slots` slots, its look `prefabs/chest.tscn`); options `chest.count`, `chest.radius`, `chest.slots`, `chest.items` | the example of a [container](items.md#containers-chests): places chests on the ground around the spawn point (`ctx.FindTemplate`, `ctx.SpawnTemplate`, `ctx.CastRay` for the ground) and fills each (`ctx.Containers`, `ctx.PutInContainer`) |
-| `frag` | the item `frag.grenade` from its look (slot 6, key H); events `frag.release`, `frag.thrown`, `frag.grenade.expired`, `frag.blast`; `declare.Slots( 6 )`; options `frag.damage`, `frag.radius`, `frag.push`, `frag.refill_seconds`, `frag.carry` | the fused grenade, the example of [an item's time being up](motions.md#things-that-fly-the-grenades) and of a [stack](items.md#stacks): three to a slot, thrown one at a time from the hand; it bounces, and goes off when the simulation says its time is up; the mod gives them back one at a time while a player has fewer than three |
+| `frag` | the item `frag.grenade` from its look (slot 6, key H); events `frag.release`, `frag.thrown`, `frag.grenade.expired`, `frag.blast`; `declare.Slots( 6 )`; options `frag.damage`, `frag.radius`, `frag.push`, `frag.refill_seconds`, `frag.carry`, `frag.break_radius` (walls whose centre is this close break; default `frag.radius`), `frag.rubble_seconds` (pieces go after this long; 0 keeps them) | the fused grenade, the example of [an item's time being up](motions.md#things-that-fly-the-grenades) and of a [stack](items.md#stacks): three to a slot, thrown one at a time from the hand; it bounces, and goes off when the simulation says its time is up; the mod gives them back one at a time while a player has fewer than three |
 | `grenade` (off) | the item `grenade.shell` from its look (slot 7); events `grenade.release`, `grenade.thrown`, `grenade.blast`; `declare.Slots( 7 )`; option `grenade.refill_seconds` | the impact grenade, switched off (its `disabled` file; start it by name): thrown from the hand, it goes off on the first hard hit (`ctx.Hits`) |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; `deathmatch.ending`, how the last round ended, a number the look has [the words](looks.md#saying-things) for; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
@@ -218,6 +218,17 @@ Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod re
 ```bash
 cb_server --port 7777 --mod-option deathmatch.kills=5 --mod-option deathmatch.round_seconds=120
 ```
+
+## Breaking a wall
+
+A map's [breakable walls](maps.md#walls-that-break) break only when a mod says so.
+
+| Call | Does |
+|---|---|
+| `ctx.BreakablesNear( point, radius )` | the walls whose centre is within `radius` of `point`, nearest first |
+| `ctx.Break( wall, blast, speed, seconds )` | takes the wall out and puts its pieces in; each flies away from `blast` (and a little up) at `speed / (1 + its distance)`. `seconds` > 0: the pieces go after that long |
+
+The frag grenade breaks every wall within `frag.break_radius` of where it goes off, at `frag.push`.
 
 ## A push that turns
 
