@@ -25,6 +25,7 @@
 #include <memory>
 #include <utility>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 namespace cb
@@ -140,6 +141,7 @@ public:
 		uint64_t charactersNs = 0; // the characters' movement, motions and animation
 		uint64_t physicsNs = 0;	   // the physics step
 		uint64_t afterNs = 0;	   // what is read back from the physics, and the rest
+		uint64_t slotsNs = 0;	   // of the characters' part: the slots (selecting, moving, settling)
 		// The physics step's own parts, in milliseconds (the physics library's figures).
 		double pairsMs = 0.0;	   // finding new pairs of shapes that may touch
 		double collideMs = 0.0;	   // working out the contacts
@@ -474,8 +476,32 @@ private:
 	std::vector<EntityRef> m_scratch;
 	std::vector<uint8_t> m_hashScratch;
 	std::vector<uint8_t> m_sizedScratch;
-	// Shape index -> NetId, rebuilt only when a shape has to be named (impacts, ray casts).
+	// Shape index -> NetId, rebuilt only when a shape has to be named (impacts, ray casts) and
+	// something changed since: a body made or gone, an entity added or removed, a snapshot loaded
+	// (the observers in RegisterIndexes). Derived data: never hashed, never in a snapshot.
 	std::vector<std::pair<uint32_t, uint32_t>> m_shapeLookup;
+	bool m_shapeLookupStale = true;
+	// Each holder's items, in m_entities' order: what SlotItemOf and SettleSlots walk instead of
+	// every entity. Rebuilt when an item gains, loses or changes its holder (the HeldItem
+	// observer), an entity is added or removed, or a snapshot is loaded. An item's own fields are
+	// read fresh at each use, so only who holds what is cached. Derived data, like the above.
+	mutable std::unordered_map<uint32_t, std::vector<EntityRef>> m_itemsByHolder;
+	mutable bool m_itemsByHolderStale = true;
+	std::unordered_map<flecs::entity_t, uint32_t> m_holderOf; // what the index was built with
+	const std::vector<EntityRef>& ItemsOf( uint32_t holder ) const;
+	void RegisterIndexes();
+
+public:
+	// Tests: every answer of the indexes above is compared with a scan of every entity, and a
+	// difference stops the process (a stale index the observers missed). Off in the game.
+	static inline bool s_checkIndexes = false;
+
+private:
+	void IndexesStale()
+	{
+		m_shapeLookupStale = true;
+		m_itemsByHolderStale = true;
+	}
 	std::vector<ImpactRecord> m_impactScratch;
 	std::vector<int> m_markerScratch;
 	std::vector<std::pair<uint32_t, uint16_t>> m_heldScratch; // holder NetId, item kind
