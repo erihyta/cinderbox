@@ -6,9 +6,13 @@
 #include "reflect.h"
 
 #include <godot_cpp/classes/box_mesh.hpp>
+#include <godot_cpp/classes/box_shape3d.hpp>
+#include <godot_cpp/classes/capsule_shape3d.hpp>
+#include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/sphere_mesh.hpp>
+#include <godot_cpp/classes/sphere_shape3d.hpp>
 #include <godot_cpp/classes/standard_material3d.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -26,8 +30,8 @@ namespace cb::gd
 namespace
 {
 
-// Roll beyond this is dropped by the format and worth telling the mapper about.
-constexpr float kRollEpsilon = 0.001f;
+// Scales this close count as the same (a sphere scaled unevenly is not a sphere).
+constexpr float kScaleEpsilon = 0.001f;
 
 Ref<StandardMaterial3D> PreviewMaterial( const Color& color )
 {
@@ -236,6 +240,90 @@ void CollectTemplates( Node* node, BakeContext& ctx )
 	}
 }
 
+// A piece of level geometry where `at` puts it: turned (yaw, pitch, roll as Godot's YXZ order),
+// the scale left to the caller.
+LevelBox PieceAt( const Transform3D& at, ShapeKind kind, const Vector3& halfExtents )
+{
+	Vector3 euler = at.basis.orthonormalized().get_euler( EULER_ORDER_YXZ );
+	LevelBox out;
+	out.kind = kind;
+	out.center = ToSim( at.origin );
+	out.halfExtents = ToSim( halfExtents );
+	out.pitch = float( euler.x );
+	out.yaw = float( euler.y );
+	out.roll = float( euler.z );
+	return out;
+}
+
+bool Uneven( float a, float b )
+{
+	return std::fabs( a - b ) > kScaleEpsilon * std::max( std::fabs( a ), std::fabs( b ) );
+}
+
+// A CbStatic's CollisionShape3D children, each a piece of its own where it is. Returns how many
+// there were (used or not): with none, the CbStatic is its own box.
+int BakeStaticShapes( CbStatic* body, const Transform3D& here, BakeContext& ctx )
+{
+	int found = 0;
+	for ( int i = 0; i < body->get_child_count(); ++i )
+	{
+		auto* node = Object::cast_to<CollisionShape3D>( body->get_child( i ) );
+		if ( node == nullptr )
+		{
+			continue;
+		}
+		found += 1;
+		String name = body->get_name() + String( "/" ) + node->get_name();
+		Ref<Shape3D> shape = node->get_shape();
+		if ( node->is_disabled() || shape.is_null() )
+		{
+			ctx.warnings.push_back( String( "skipped " ) + name + ( shape.is_null() ? ": it has no shape" : ": it is disabled" ) );
+			continue;
+		}
+		Transform3D at = here * node->get_transform();
+		Vector3 scale = at.basis.get_scale().abs();
+		LevelBox piece;
+		if ( auto* box = Object::cast_to<BoxShape3D>( shape.ptr() ) )
+		{
+			piece = PieceAt( at, ShapeKind::Box, box->get_size() * scale * 0.5f );
+		}
+		else if ( auto* sphere = Object::cast_to<SphereShape3D>( shape.ptr() ) )
+		{
+			if ( Uneven( float( scale.x ), float( scale.y ) ) || Uneven( float( scale.x ), float( scale.z ) ) )
+			{
+				ctx.warnings.push_back( name + ": a sphere scaled unevenly stays round (its largest scale)" );
+			}
+			float radius = float( sphere->get_radius() ) * float( std::max( { scale.x, scale.y, scale.z } ) );
+			piece = PieceAt( at, ShapeKind::Sphere, Vector3( radius, 0.0f, 0.0f ) );
+		}
+		else if ( auto* capsule = Object::cast_to<CapsuleShape3D>( shape.ptr() ) )
+		{
+			if ( Uneven( float( scale.x ), float( scale.z ) ) )
+			{
+				ctx.warnings.push_back( name + ": a capsule scaled unevenly across stays round (its larger scale)" );
+			}
+			float radius = float( capsule->get_radius() ) * float( std::max( scale.x, scale.z ) );
+			float height = float( capsule->get_height() ) * float( scale.y );
+			// Box3D's capsule is the distance between its two sphere centres, which cannot go negative.
+			piece = PieceAt( at, ShapeKind::Capsule, Vector3( radius, std::max( 0.5f * height - radius, 0.0f ), 0.0f ) );
+		}
+		else
+		{
+			ctx.warnings.push_back( String( "skipped " ) + name + ": a " + shape->get_class() +
+									" is not a level shape yet (box, sphere and capsule are)" );
+			continue;
+		}
+		const b3Vec3 h = piece.halfExtents;
+		if ( ( piece.kind == ShapeKind::Box && ( h.x <= 0.0f || h.y <= 0.0f || h.z <= 0.0f ) ) || h.x <= 0.0f )
+		{
+			ctx.warnings.push_back( String( "skipped " ) + name + ": size must be positive" );
+			continue;
+		}
+		ctx.layout.statics.push_back( piece );
+	}
+	return found;
+}
+
 // Transforms are accumulated down the tree instead of read with get_global_transform(), so baking
 // works on a scene that is not inside a tree (headless) and is always relative to the map root.
 void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
@@ -248,27 +336,18 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 
 	if ( auto* box = Object::cast_to<CbStatic>( node ) )
 	{
-		const Transform3D& gt = here;
-		Vector3 euler = gt.basis.get_euler( EULER_ORDER_YXZ );
-		Vector3 scale = gt.basis.get_scale();
-		Vector3 size = box->get_size() * scale;
-
-		if ( std::fabs( float( euler.z ) ) > kRollEpsilon )
+		// Its CollisionShape3D children, or else its own box.
+		if ( BakeStaticShapes( box, here, ctx ) == 0 )
 		{
-			ctx.warnings.push_back( String( "roll ignored on " ) + box->get_name() );
-		}
-		if ( size.x <= 0.0f || size.y <= 0.0f || size.z <= 0.0f )
-		{
-			ctx.warnings.push_back( String( "skipped " ) + box->get_name() + ": size must be positive" );
-		}
-		else
-		{
-			LevelBox out;
-			out.center = ToSim( gt.origin );
-			out.halfExtents = ToSim( size * 0.5f );
-			out.pitch = float( euler.x );
-			out.yaw = float( euler.y );
-			ctx.layout.statics.push_back( out );
+			Vector3 size = box->get_size() * here.basis.get_scale().abs();
+			if ( size.x <= 0.0f || size.y <= 0.0f || size.z <= 0.0f )
+			{
+				ctx.warnings.push_back( String( "skipped " ) + box->get_name() + ": size must be positive" );
+			}
+			else
+			{
+				ctx.layout.statics.push_back( PieceAt( here, ShapeKind::Box, size * 0.5f ) );
+			}
 		}
 	}
 	else if ( auto* prop = Object::cast_to<CbProp>( node ) )
@@ -376,10 +455,25 @@ void CbStatic::set_size( const Vector3& size )
 
 void CbStatic::_notification( int what )
 {
-	if ( what == NOTIFICATION_ENTER_TREE || what == NOTIFICATION_READY )
+	if ( what == NOTIFICATION_ENTER_TREE || what == NOTIFICATION_READY || what == NOTIFICATION_CHILD_ORDER_CHANGED )
 	{
 		UpdatePreview();
 	}
+}
+
+PackedStringArray CbStatic::_get_configuration_warnings() const
+{
+	PackedStringArray warnings;
+	for ( int i = 0; i < get_child_count(); ++i )
+	{
+		if ( Object::cast_to<CollisionShape3D>( get_child( i ) ) != nullptr )
+		{
+			warnings.push_back( "The CollisionShape3D children are its shape; `size` is not used. (Their own warning about a "
+								"missing physics body can be ignored: Cinderbox's physics reads them.)" );
+			break;
+		}
+	}
+	return warnings;
 }
 
 void CbStatic::UpdatePreview()
@@ -389,6 +483,14 @@ void CbStatic::UpdatePreview()
 		return;
 	}
 	MeshInstance3D* preview = EnsurePreview( this, m_preview );
+	// With CollisionShape3D children those are its shape, and Godot draws them itself.
+	bool shaped = false;
+	for ( int i = 0; i < get_child_count(); ++i )
+	{
+		shaped |= Object::cast_to<CollisionShape3D>( get_child( i ) ) != nullptr;
+	}
+	preview->set_visible( shaped == false );
+	update_configuration_warnings();
 	Ref<BoxMesh> mesh;
 	mesh.instantiate();
 	mesh->set_size( m_size );
@@ -540,6 +642,20 @@ Dictionary CinderboxMapBaker::bake( Node* root, const String& path )
 	BakeNode( root, Transform3D(), ctx );
 
 	result["statics"] = int( ctx.layout.statics.size() );
+	// Each static piece as it will be stored (after rounding onto the map's grid, below).
+	QuantizeLayout( ctx.layout );
+	Array pieces;
+	for ( const LevelBox& box : ctx.layout.statics )
+	{
+		Dictionary piece;
+		static const char* const kKinds[] = { "box", "sphere", "capsule" };
+		piece["kind"] = kKinds[int( box.kind )];
+		piece["center"] = Vector3( box.center.x, box.center.y, box.center.z );
+		piece["half_extents"] = Vector3( box.halfExtents.x, box.halfExtents.y, box.halfExtents.z );
+		piece["rotation"] = Vector3( box.pitch, box.yaw, box.roll ); // Godot's YXZ euler
+		pieces.push_back( piece );
+	}
+	result["pieces"] = pieces;
 	result["props"] = int( ctx.layout.props.size() );
 	result["templates"] = int( ctx.layout.templates.size() );
 	result["instances"] = int( ctx.layout.instances.size() );

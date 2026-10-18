@@ -15,7 +15,9 @@
 // Layout:
 //   "CBMP", u32 version, u32 flags, u32 nameLength, name bytes (no terminator),
 //   i32 spawnCenter[3], i32 spawnRadius,
-//   u32 staticCount,  per static: i32 center[3], i32 halfExtents[3], i32 pitch, i32 yaw
+//   u32 staticCount,  per static: u8 kind, u8 pad[3], i32 center[3], i32 halfExtents[3],
+//                                 i32 pitch, i32 yaw, i32 roll
+//                     (version 3: i32 center[3], i32 halfExtents[3], i32 pitch, i32 yaw: a box)
 //   u32 propCount,    per prop:   u8 kind, u8 pad[3], i32 position[3], i32 halfExtents[3]
 //   u32 templateCount, per template: name, visual, u32 componentCount,
 //                        per component: u32 componentId, u32 fieldCount,
@@ -43,7 +45,9 @@
 namespace cb
 {
 
-inline constexpr uint32_t kMapVersion = 3; // 3: a prop's body (mass, density, friction, bounce)
+inline constexpr uint32_t kMapVersion = 4; // 4: a static's shape and roll. 3: a prop's body
+// The oldest version still read (what it lacks takes its old meaning).
+inline constexpr uint32_t kMapOldestVersion = 3;
 
 // Fixed-point grids. Powers of two, see above.
 inline constexpr float kMapPositionScale = 1024.0f;

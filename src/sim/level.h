@@ -11,12 +11,18 @@
 namespace cb
 {
 
+// A piece of solid level geometry: a box, a sphere or a capsule, turned any way. The turn is
+// yaw, then pitch, then roll (Godot's YXZ order): rotation = yaw(Y) * pitch(X) * roll(Z).
+// halfExtents as Shape's: a box's half size; a sphere's radius in x; a capsule's radius in x and
+// half the distance between its two sphere centres in y (it stands along Y).
 struct LevelBox
 {
 	b3Vec3 center;
 	b3Vec3 halfExtents;
 	float pitch; // rotation about X in radians (ramps)
 	float yaw;	 // rotation about Y in radians
+	float roll = 0.0f; // rotation about Z in radians
+	ShapeKind kind = ShapeKind::Box;
 };
 
 struct LevelProp

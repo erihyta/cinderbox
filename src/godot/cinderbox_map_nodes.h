@@ -12,9 +12,10 @@
 //
 // Conventions, matching the simulation:
 // - Positions are the node's global position; +Y is up.
-// - A static box is rotated by its yaw (around Y) and pitch (around X) only. Roll is ignored, and
-//   the baker reports it.
-// - `size` is the full size in metres, multiplied by the node's global scale.
+// - A static piece turns any way: yaw (around Y), pitch (around X) and roll (around Z), Godot's
+//   YXZ order, each on a 1/4096 rad grid.
+// - `size` is the full size in metres, multiplied by the node's global scale; so are a
+//   CollisionShape3D's sizes.
 
 #include "cinderbox_body.h"
 
@@ -26,7 +27,9 @@
 namespace cb::gd
 {
 
-// Solid level geometry: walls, floors, ramps, steps, platforms.
+// Solid level geometry: walls, floors, ramps, steps, platforms. Its own box (`size`), or the
+// CollisionShape3D children it has (box, sphere, capsule; any rotation, roll too), each baked as a
+// piece of its own.
 class CbStatic : public godot::Node3D
 {
 	GDCLASS( CbStatic, godot::Node3D )
@@ -39,6 +42,7 @@ public:
 	}
 
 	void _notification( int what );
+	godot::PackedStringArray _get_configuration_warnings() const override;
 
 protected:
 	static void _bind_methods();
@@ -124,7 +128,8 @@ class CinderboxMapBaker : public godot::RefCounted
 	GDCLASS( CinderboxMapBaker, godot::RefCounted )
 
 public:
-	// Returns { ok, error, path, statics, props, spawn_found, bytes, hash, warnings }.
+	// Returns { ok, error, path, statics, pieces, props, spawn_found, bytes, hash, warnings }; pieces:
+	// each static piece as stored ({ kind, center, half_extents, rotation: YXZ euler }).
 	godot::Dictionary bake( godot::Node* root, const godot::String& path );
 
 protected:

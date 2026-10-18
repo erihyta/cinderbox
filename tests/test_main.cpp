@@ -115,7 +115,7 @@ bool SameLayout( const LevelLayout& a, const LevelLayout& b )
 		const LevelBox& x = a.statics[i];
 		const LevelBox& y = b.statics[i];
 		if ( sameVec( x.center, y.center ) == false || sameVec( x.halfExtents, y.halfExtents ) == false || x.pitch != y.pitch ||
-			 x.yaw != y.yaw )
+			 x.yaw != y.yaw || x.roll != y.roll || x.kind != y.kind )
 		{
 			return false;
 		}
@@ -340,6 +340,108 @@ float BallHeightAfter( float restitution, uint32_t ticks )
 		}
 	}
 	return -1.0f;
+}
+
+// Level pieces of every shape, turned any way (map version 4): a box rolled upright is a wall, a
+// capsule rolled over lies along X, a sphere is round; the turn is Godot's (yaw, then pitch, then
+// roll); they survive the file; a version 3 file (boxes, no roll) still loads; a bad shape is refused.
+void TestMapShapes()
+{
+	constexpr float kQuarter = 1.5707964f;
+	LevelLayout map;
+	map.name = "shapes";
+	map.spawnCenter = { 0.0f, 1.5f, 10.0f };
+	map.spawnRadius = 2.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+	// A slab 4 m long, rolled upright: a wall from y 0 to 4.
+	map.statics.push_back( { { 0.0f, 2.0f, 0.0f }, { 2.0f, 0.1f, 0.5f }, 0.0f, 0.0f, kQuarter, ShapeKind::Box } );
+	map.statics.push_back( { { 5.0f, 1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }, 0.0f, 0.0f, 0.0f, ShapeKind::Sphere } );
+	// A capsule 4 m tip to tip, rolled over: lying along X, its top at y 1.5.
+	map.statics.push_back( { { -6.0f, 1.0f, 0.0f }, { 0.5f, 1.5f, 0.0f }, 0.0f, 0.0f, kQuarter, ShapeKind::Capsule } );
+	// Yawed and rolled a quarter each: its X turns to +Y, its Z to +X (as Godot's YXZ euler has it).
+	map.statics.push_back( { { 0.0f, 1.0f, -8.0f }, { 1.0f, 0.2f, 0.3f }, 0.0f, kQuarter, kQuarter, ShapeKind::Box } );
+	QuantizeLayout( map );
+
+	std::vector<uint8_t> bytes;
+	SerializeMap( map, bytes );
+	LevelLayout loaded;
+	std::string error;
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) );
+	CHECK( SameLayout( map, loaded ) );
+
+	Simulation sim( TestConfig(), loaded );
+	auto down = [&]( float x, float z ) {
+		RayHit hit;
+		return sim.CastRay( { x, 6.0f, z }, { 0.0f, -10.0f, 0.0f }, 0, hit ) ? hit.point.y : -1.0f;
+	};
+	RayHit wall;
+	bool walled = sim.CastRay( { -3.0f, 3.5f, 0.0f }, { 6.0f, 0.0f, 0.0f }, 0, wall );
+	std::printf( "    a ray at 3.5 m meets the rolled slab at x %.3f; down onto the sphere %.3f, the lying capsule %.3f\n",
+				 walled ? wall.point.x : 99.0f, down( 5.0f, 0.0f ), down( -7.2f, 0.0f ) );
+	CHECK( walled && std::fabs( wall.point.x + 0.1f ) < 0.01f );
+	CHECK( std::fabs( down( 5.0f, 0.0f ) - 2.0f ) < 0.01f );
+	CHECK( std::fabs( down( -7.2f, 0.0f ) - 1.5f ) < 0.01f ); // standing, it would be 3 m
+
+	const Transform* turned = nullptr;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		const Transform* at = sim.EntityTransform( r.netId );
+		if ( at != nullptr && at->position.z < -7.0f )
+		{
+			turned = at;
+		}
+	}
+	CHECK( turned != nullptr );
+	b3Vec3 x = b3RotateVector( turned->rotation, { 1.0f, 0.0f, 0.0f } );
+	b3Vec3 z = b3RotateVector( turned->rotation, { 0.0f, 0.0f, 1.0f } );
+	CHECK( x.y > 0.999f && z.x > 0.999f );
+
+	// Version 3: boxes, pitch and yaw. Read as boxes without roll.
+	std::vector<uint8_t> old;
+	auto u32 = [&]( uint32_t v ) {
+		for ( int i = 0; i < 4; ++i )
+		{
+			old.push_back( uint8_t( v >> ( 8 * i ) ) );
+		}
+	};
+	auto pos = [&]( float a, float b, float c ) {
+		for ( float v : { a, b, c } )
+		{
+			u32( uint32_t( MapQuantize( v, kMapPositionScale ) ) );
+		}
+	};
+	old = { 'C', 'B', 'M', 'P' };
+	u32( 3 );
+	u32( 0 );
+	u32( 3 );
+	old.insert( old.end(), { 'o', 'l', 'd' } );
+	pos( 0.0f, 1.5f, 0.0f );
+	u32( uint32_t( MapQuantize( 2.0f, kMapPositionScale ) ) );
+	u32( 1 ); // one static
+	pos( 0.0f, -0.5f, 0.0f );
+	pos( 10.0f, 0.5f, 10.0f );
+	u32( uint32_t( MapQuantize( 0.25f, kMapAngleScale ) ) );
+	u32( uint32_t( MapQuantize( -0.5f, kMapAngleScale ) ) );
+	u32( 0 ); // props
+	u32( 0 ); // templates
+	u32( 0 ); // instances
+	u32( kNoTemplate );
+	LevelLayout fromOld;
+	CHECK( DeserializeMap( old.data(), old.size(), fromOld, error ) );
+	CHECK( fromOld.statics.size() == 1 && fromOld.statics[0].kind == ShapeKind::Box && fromOld.statics[0].roll == 0.0f &&
+		   fromOld.statics[0].pitch == 0.25f && fromOld.statics[0].yaw == -0.5f && fromOld.statics[0].halfExtents.x == 10.0f );
+
+	// A shape this build does not know, and a box of no size, are refused.
+	const size_t firstKind = 4 + 4 + 4 + 4 + map.name.size() + 12 + 4 + 4;
+	std::vector<uint8_t> unknown = bytes;
+	CHECK( unknown[firstKind] == uint8_t( ShapeKind::Box ) );
+	unknown[firstKind] = 7;
+	LevelLayout refused;
+	CHECK( DeserializeMap( unknown.data(), unknown.size(), refused, error ) == false );
+	LevelLayout flat = map;
+	flat.statics[0].halfExtents.y = 0.0f;
+	SerializeMap( flat, unknown );
+	CHECK( DeserializeMap( unknown.data(), unknown.size(), refused, error ) == false );
 }
 
 // Entities described by components in the editor must reach the simulation exactly as authored:
@@ -8065,6 +8167,7 @@ int main( int argc, char** argv )
 	};
 	const Test tests[] = {
 		{ "map_format", TestMapFormat },
+		{ "map_shapes", TestMapShapes },
 		{ "templates", TestTemplates },
 		{ "sim_events", TestSimEvents },
 		{ "repeatability", TestRepeatability },

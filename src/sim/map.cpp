@@ -163,6 +163,7 @@ void QuantizeLayout( LevelLayout& layout )
 		SnapVec( box.halfExtents, kMapPositionScale );
 		Snap( box.pitch, kMapAngleScale );
 		Snap( box.yaw, kMapAngleScale );
+		Snap( box.roll, kMapAngleScale );
 	}
 	for ( LevelProp& prop : layout.props )
 	{
@@ -194,10 +195,15 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 	AppendU32( out, uint32_t( layout.statics.size() ) );
 	for ( const LevelBox& box : layout.statics )
 	{
+		out.push_back( uint8_t( box.kind ) );
+		out.push_back( 0 );
+		out.push_back( 0 );
+		out.push_back( 0 );
 		AppendPos( out, box.center );
 		AppendPos( out, box.halfExtents );
 		AppendI32( out, MapQuantize( box.pitch, kMapAngleScale ) );
 		AppendI32( out, MapQuantize( box.yaw, kMapAngleScale ) );
+		AppendI32( out, MapQuantize( box.roll, kMapAngleScale ) );
 	}
 
 	AppendU32( out, uint32_t( layout.props.size() ) );
@@ -257,9 +263,10 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 
 	Reader rd{ data, size, 4 };
 	uint32_t version = rd.U32();
-	if ( version != kMapVersion )
+	if ( version < kMapOldestVersion || version > kMapVersion )
 	{
-		error = "map version " + std::to_string( version ) + ", expected " + std::to_string( kMapVersion );
+		error = "map version " + std::to_string( version ) + ", expected " + std::to_string( kMapOldestVersion ) + " to " +
+				std::to_string( kMapVersion );
 		return false;
 	}
 	rd.U32(); // flags
@@ -276,8 +283,10 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 	layout.spawnRadius = MapDequantize( rd.I32(), kMapPositionScale );
 
 	uint32_t staticCount = rd.U32();
-	// Each entry is 32 bytes, so a count larger than the remaining bytes is corrupt input.
-	if ( rd.ok == false || staticCount > ( size - rd.cursor ) / 32 )
+	// Each entry is 40 bytes (32 before version 4), so a count larger than the remaining bytes is
+	// corrupt input.
+	const size_t staticBytes = version >= 4 ? 40 : 32;
+	if ( rd.ok == false || staticCount > ( size - rd.cursor ) / staticBytes )
 	{
 		error = "corrupt static list";
 		return false;
@@ -286,10 +295,32 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 	for ( uint32_t i = 0; i < staticCount; ++i )
 	{
 		LevelBox box;
+		if ( version >= 4 )
+		{
+			uint8_t kind = rd.U8();
+			rd.U8();
+			rd.U8();
+			rd.U8();
+			if ( kind > uint8_t( ShapeKind::Capsule ) )
+			{
+				error = "unknown static shape";
+				return false;
+			}
+			box.kind = ShapeKind( kind );
+		}
 		box.center = rd.Pos();
 		box.halfExtents = rd.Pos();
 		box.pitch = MapDequantize( rd.I32(), kMapAngleScale );
 		box.yaw = MapDequantize( rd.I32(), kMapAngleScale );
+		box.roll = version >= 4 ? MapDequantize( rd.I32(), kMapAngleScale ) : 0.0f;
+		// What Box3D could not build: a box or sphere of no size, a capsule of no radius.
+		const b3Vec3 h = box.halfExtents;
+		bool solid = box.kind == ShapeKind::Box ? ( h.x > 0.0f && h.y > 0.0f && h.z > 0.0f ) : ( h.x > 0.0f && h.y >= 0.0f );
+		if ( solid == false )
+		{
+			error = "a static's size is out of range";
+			return false;
+		}
 		layout.statics.push_back( box );
 	}
 
