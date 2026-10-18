@@ -632,9 +632,11 @@ void CinderboxClient::HandleEvents()
 					break;
 				}
 				const present::Visual& v = ve.get<present::Visual>();
-				if ( v.kind == present::VisualKind::Static && m_hideStaticBoxes )
+				if ( v.kind == present::VisualKind::Static && m_hideStaticBoxes && v.templateIndex == kNoTemplate )
 				{
-					// The map scene already draws this geometry.
+					// The map scene already draws the map's own pieces. Something static made from a
+					// template (a mod's chest, a map's static entity) is not in the scene: its own look
+					// draws it, as for anything else.
 					break;
 				}
 				Node3D* node = CreateNode( e.visual, v );
