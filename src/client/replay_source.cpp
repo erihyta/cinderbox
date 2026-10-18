@@ -47,6 +47,7 @@ void ReplaySource::Fill( ReplayPlayer& player, float alpha )
 	{
 		f.mapHash = MapHash( reader.MapBytes().data(), reader.MapBytes().size() );
 		f.mapName = reader.Map().name;
+		m_level.SetLevel( reader.Map(), f.mapHash );
 		for ( const EntityTemplate& t : reader.Map().templates )
 		{
 			f.templateNames.push_back( t.name );

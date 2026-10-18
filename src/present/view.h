@@ -134,6 +134,14 @@ public:
 	virtual void Control( const std::string&, double )
 	{
 	}
+
+	// How far a ball of `radius` travels from `origin` along `direction` (unit length) before the
+	// level's static shapes stop it, at most `maxDistance`: a third-person camera's question, asked
+	// on the viewer's thread. -1: this source cannot say (the viewer asks the frame instead).
+	virtual float CameraFreeDistance( b3Vec3, b3Vec3, float, float )
+	{
+		return -1.0f;
+	}
 };
 
 } // namespace cb::present

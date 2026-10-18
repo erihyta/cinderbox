@@ -3943,6 +3943,22 @@ float Simulation::RayCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, fl
 	return fraction; // clip: only closer hits from here on
 }
 
+float Simulation::StaticFreeDistance( b3Vec3 origin, b3Vec3 direction, float maxDistance, float radius )
+{
+	PhysicsArena::Scope scope( *m_arena );
+	const b3Vec3 centre = { 0.0f, 0.0f, 0.0f };
+	const b3ShapeProxy ball = { &centre, 1, radius };
+	b3QueryFilter filter = { ~uint64_t( 0 ), CatStatic, 0, nullptr };
+	float closest = 1.0f;
+	auto nearest = []( b3ShapeId, b3Pos, b3Vec3, float fraction, uint64_t, int, int, void* context ) -> float {
+		float& best = *static_cast<float*>( context );
+		best = std::min( best, fraction );
+		return fraction; // (only nearer ones from here on)
+	};
+	b3World_CastShape( m_physicsWorld, origin, &ball, b3MulSV( maxDistance, direction ), filter, nearest, &closest );
+	return closest * maxDistance;
+}
+
 bool Simulation::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit, bool skipPlayers )
 {
 	PhysicsArena::Scope scope( *m_arena );

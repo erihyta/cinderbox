@@ -264,6 +264,10 @@ public:
 	// and disabled bodies (and every player's capsule with `skipPlayers`). Returns false when it hits
 	// nothing.
 	bool CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit, bool skipPlayers = false );
+	// How far a ball of `radius` travels from `origin` along `direction` (unit length) before the
+	// static level stops it (every shape it has, meshes and terrain included), at most `maxDistance`.
+	// A camera's question: presentation only, nothing in the simulation depends on it.
+	float StaticFreeDistance( b3Vec3 origin, b3Vec3 direction, float maxDistance, float radius );
 	// The level this simulation was built from (templates, spawn template).
 	const LevelLayout& Map() const
 	{

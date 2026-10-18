@@ -69,14 +69,15 @@ with a `visual` keeps that prefab; one with neither draws its shape's default pr
 - Triangle meshes and height fields never move: Box3D collides a moving body with one only when
   it is static. Under a `CbProp`, a template or an item they are skipped (or the item's bake stops)
   with a reason. A model's **Mesh > Create Collision Shape**, type **Trimesh**, makes one.
-- The camera does not stop at a triangle mesh or a height field yet: it can look through a hillside
-  or into a cave wall. Players, props and shots collide with them as with anything.
+- The third-person camera stops at the level as it is: a hillside, a cave wall, a hull's own faces
+  (the game's own copy of the level's static shapes, built once per map). Props never stop it.
 - From a model: select its `MeshInstance3D` (under the `CbStatic`), **Mesh > Create Collision
   Shape**, placement **Sibling**, type **Single Convex** (one hull) or **Simplified Convex**. A
   concave model (an arch) is several hulls: **Multiple Convex** makes them.
 - A hull's points are stored on the map's 1/1024 m grid, scaled; hulls alike are stored once.
   Every machine builds the same hull from them (the fourth reference run checks it on every build).
-- A map drawn without its scene shows a hull as its bounding box, and the camera stops at that box.
+- A map drawn without its scene shows a hull as its bounding box. Watching a view file (which has
+  no level of its own) the camera stops at boxes, balls, capsules and hulls' bounds only.
 - Godot's warning on a `CollisionShape3D` ("must be a child of a physics body") does not apply here
   and can be ignored: Cinderbox's physics reads it, Godot's never runs.
 - The bake says what it made of each node in the Bake Map output.

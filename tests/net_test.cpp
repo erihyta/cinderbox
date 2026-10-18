@@ -8,6 +8,7 @@
 #include "anim_graph.h"
 #include "character_item.h"
 #include "joint_math.h"
+#include "level_query.h"
 #include "live_source.h"
 #include "pose.h"
 #include "sha256.h"
@@ -1363,6 +1364,63 @@ void TestItemShapes()
 // item with more than one CollisionShape3D, or one a box or ball cannot say): parsed, its one shape
 // the box that holds them; refused when a part is not a body; through the schema unchanged; and in
 // the world one body of all of them, weighing what the file says, whatever part a ray meets.
+// The camera against the level as it is (LevelQuery, what a live or replay source answers the
+// viewer's camera with): a terrain hill and a triangle-mesh wall stop the camera's ball where their
+// surfaces are, not at their bounds; open sky lets it go its whole way; a prop never stops it;
+// there is no answer before a level, and a new level replaces the old.
+void TestLevelQuery()
+{
+	LevelLayout map;
+	map.name = "camera";
+	map.spawnCenter = { 0.0f, 1.5f, 20.0f };
+	map.spawnRadius = 2.0f;
+	LevelHeightField hill;
+	hill.countX = 9;
+	hill.countZ = 9;
+	for ( int z = 0; z < 9; ++z )
+	{
+		for ( int x = 0; x < 9; ++x )
+		{
+			hill.heights.push_back( 4.0f - 0.25f * float( ( x - 4 ) * ( x - 4 ) + ( z - 4 ) * ( z - 4 ) ) );
+		}
+	}
+	map.heightFields.push_back( hill );
+	map.statics.push_back( { { -4.0f, 0.0f, -4.0f }, { 8.0f, 4.0f, 8.0f }, 0.0f, 0.0f, 0.0f, ShapeKind::HeightField, 0 } );
+	// A wall of two triangles at z 10, facing -Z, 6 m wide and 4 m high.
+	LevelMesh wall;
+	wall.vertices = { { -3.0f, 0.0f, 0.0f }, { 3.0f, 0.0f, 0.0f }, { 3.0f, 4.0f, 0.0f }, { -3.0f, 4.0f, 0.0f } };
+	wall.indices = { 0, 2, 1, 0, 3, 2 };
+	map.meshes.push_back( wall );
+	map.statics.push_back( { { 0.0f, 0.0f, 10.0f }, { 3.0f, 4.0f, 0.001f }, 0.0f, 0.0f, 0.0f, ShapeKind::Mesh, 0 } );
+	map.props.push_back( { ShapeKind::Box, { 0.0f, 1.0f, -10.0f }, { 1.0f, 1.0f, 1.0f } } ); // in the way of the last look
+	QuantizeLayout( map );
+
+	LevelQuery query;
+	CHECK( query.FreeDistance( { 0.0f, 10.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, 20.0f, 0.2f ) < 0.0f ); // no level yet
+	query.SetLevel( map, 1 );
+	const float onHill = query.FreeDistance( { 0.0f, 10.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, 20.0f, 0.2f );			 // down onto its top (4 m)
+	const float onSlope = query.FreeDistance( { 2.0f, 10.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, 20.0f, 0.2f );		 // its side, 3 m up
+	const float atWall = query.FreeDistance( { 0.0f, 2.0f, 5.0f }, { 0.0f, 0.0f, 1.0f }, 20.0f, 0.2f );			 // the wall 5 m ahead
+	const float sky = query.FreeDistance( { 0.0f, 10.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 20.0f, 0.2f );				 // up: nothing
+	const float pastProp = query.FreeDistance( { 0.0f, 1.0f, -5.0f }, { 0.0f, 0.0f, -1.0f }, 20.0f, 0.2f );		 // through the box
+	std::printf( "    the camera's ball stops %.2f m down on the hill's top, %.2f m on its side, %.2f m at the wall; up %.2f m; through a prop %.2f m\n",
+				 onHill, onSlope, atWall, sky, pastProp );
+	CHECK( std::fabs( onHill - 5.8f ) < 0.05f );  // 10 - 4 - 0.2
+	CHECK( std::fabs( onSlope - 6.8f ) < 0.15f ); // 10 - 3 - 0.2 (the cells are flat between points)
+	CHECK( std::fabs( atWall - 4.8f ) < 0.02f );
+	CHECK( sky == 20.0f && pastProp == 20.0f );
+	// A new level: the old one's hill is gone.
+	LevelLayout flat;
+	flat.name = "flat";
+	flat.spawnCenter = { 0.0f, 1.5f, 0.0f };
+	flat.spawnRadius = 2.0f;
+	flat.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+	QuantizeLayout( flat );
+	query.SetLevel( flat, 2 );
+	const float onFlat = query.FreeDistance( { 0.0f, 10.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, 20.0f, 0.2f );
+	CHECK( std::fabs( onFlat - 9.8f ) < 0.02f );
+}
+
 void TestItemParts()
 {
 	// A hammer: a handle along the item's -Z (a capsule turned from Y), a head, and a wedge (a hull).
@@ -4388,6 +4446,7 @@ int main( int argc, char** argv )
 		{ "character_item", TestCharacterItem },
 		{ "item_shapes", TestItemShapes },
 		{ "item_parts", TestItemParts },
+		{ "level_query", TestLevelQuery },
 		{ "sneak", TestSneak },
 		{ "move_params", TestMoveParams },
 		{ "dash", TestDash },

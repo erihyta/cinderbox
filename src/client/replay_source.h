@@ -22,6 +22,7 @@
 // "fp_environment_ok", "replay_seconds", "replay_length_seconds", "replay_speed", "replay_paused",
 // "replay_ended", "replay_follow" (the slot, or -1).
 
+#include "level_query.h"
 #include "source_thread.h"
 
 #include <mutex>
@@ -41,12 +42,17 @@ public:
 	~ReplaySource() override;
 
 	void Control( const std::string& name, double value ) override;
+	float CameraFreeDistance( b3Vec3 origin, b3Vec3 direction, float maxDistance, float radius ) override
+	{
+		return m_level.FreeDistance( origin, direction, maxDistance, radius );
+	}
 
 private:
 	void Run() override;
 	void Fill( ReplayPlayer& player, float alpha );
 
 	std::string m_path;
+	LevelQuery m_level;
 
 	std::mutex m_controlMutex;
 	std::vector<std::pair<std::string, double>> m_controls;

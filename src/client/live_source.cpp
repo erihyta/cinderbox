@@ -50,6 +50,7 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 	{
 		f.mapHash = client.MapHash();
 		f.mapName = client.Map().name;
+		m_level.SetLevel( client.Map(), client.MapHash() );
 		f.templateNames.clear();
 		f.templateVisuals.clear();
 		for ( const EntityTemplate& t : client.Map().templates )

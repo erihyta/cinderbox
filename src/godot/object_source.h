@@ -13,6 +13,9 @@
 //   set_input( input: PackedByteArray )        a PlayerInput (sim/types.h), 10 bytes
 //   control( name: String, value: float )      a named command
 //   send_text( channel: String, text: String ) words typed into a channel's box, for the server
+//   camera_free_distance( origin: Vector3, direction: Vector3, max: float, radius: float ) -> float
+//                                              how far a camera's ball goes before the level's
+//                                              static shapes stop it (ViewSource); -1: cannot say
 //
 // The peer extension's CinderboxPeer is one (src/godot/peer); a GDScript object can be another.
 
@@ -34,6 +37,7 @@ public:
 	void SetInput( const PlayerInput& input ) override;
 	void Control( const std::string& name, double value ) override;
 	void SendText( const std::string& channel, const std::string& text ) override;
+	float CameraFreeDistance( b3Vec3 origin, b3Vec3 direction, float maxDistance, float radius ) override;
 
 private:
 	godot::Object* Target() const;
