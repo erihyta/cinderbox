@@ -334,8 +334,10 @@ void CinderboxClient::RetargetTracks( Node* entity, Node* root )
 
 Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 {
-	Ref<PackedScene> prefab = Prefab( v );
-	Node3D* node = nullptr;
+	HideMapLooks();
+	// Drawn by its own node in the map's scene (a prop's meshes), copied; else a prefab.
+	Node3D* node = MapLookCopy( v );
+	Ref<PackedScene> prefab = node == nullptr ? Prefab( v ) : Ref<PackedScene>();
 	if ( prefab.is_valid() )
 	{
 		// (A scene the guard refuses is not drawn: an empty node stands in, like a missing prefab.)

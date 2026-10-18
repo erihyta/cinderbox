@@ -159,6 +159,59 @@ bool MapHullBuilds( const std::vector<b3Vec3>& points )
 namespace
 {
 
+void AppendPiece( std::vector<uint8_t>& out, const LevelBox& box )
+{
+	out.push_back( uint8_t( box.kind ) );
+	out.push_back( 0 );
+	out.push_back( 0 );
+	out.push_back( 0 );
+	AppendPos( out, box.center );
+	AppendPos( out, box.halfExtents );
+	AppendI32( out, MapQuantize( box.pitch, kMapAngleScale ) );
+	AppendI32( out, MapQuantize( box.yaw, kMapAngleScale ) );
+	AppendI32( out, MapQuantize( box.roll, kMapAngleScale ) );
+	AppendU32( out, box.hull );
+}
+
+// A piece as `version` wrote it, checked: what Box3D could not build is refused.
+bool ReadPiece( Reader& rd, uint32_t version, const LevelLayout& layout, LevelBox& box, std::string& error )
+{
+	if ( version >= 4 )
+	{
+		uint8_t kind = rd.U8();
+		rd.U8();
+		rd.U8();
+		rd.U8();
+		if ( kind > uint8_t( ShapeKind::Hull ) || ( kind == uint8_t( ShapeKind::Hull ) && version < 5 ) )
+		{
+			error = "unknown static shape";
+			return false;
+		}
+		box.kind = ShapeKind( kind );
+	}
+	box.center = rd.Pos();
+	box.halfExtents = rd.Pos();
+	box.pitch = MapDequantize( rd.I32(), kMapAngleScale );
+	box.yaw = MapDequantize( rd.I32(), kMapAngleScale );
+	box.roll = version >= 4 ? MapDequantize( rd.I32(), kMapAngleScale ) : 0.0f;
+	box.hull = version >= 5 ? rd.U32() : 0;
+	if ( box.kind == ShapeKind::Hull && box.hull >= layout.hulls.size() )
+	{
+		error = "a static names a hull that is not in the map";
+		return false;
+	}
+	// A box or sphere of no size, a capsule of no radius.
+	const b3Vec3 h = box.halfExtents;
+	bool boxy = box.kind == ShapeKind::Box || box.kind == ShapeKind::Hull; // (a hull's: its bounds)
+	bool solid = boxy ? ( h.x > 0.0f && h.y > 0.0f && h.z > 0.0f ) : ( h.x > 0.0f && h.y >= 0.0f );
+	if ( solid == false )
+	{
+		error = "a static's size is out of range";
+		return false;
+	}
+	return true;
+}
+
 // Names reach clients as resource paths (res://maps/<name>.tscn, res://prefabs/<visual>.tscn) and
 // they come from the server, so they may not contain anything that walks out of those folders.
 bool SafeName( const std::string& name )
@@ -185,6 +238,21 @@ void QuantizeLayout( LevelLayout& layout )
 		Snap( box.pitch, kMapAngleScale );
 		Snap( box.yaw, kMapAngleScale );
 		Snap( box.roll, kMapAngleScale );
+	}
+	for ( std::vector<LevelBox>& set : layout.shapeSets )
+	{
+		for ( LevelBox& box : set )
+		{
+			SnapVec( box.center, kMapPositionScale );
+			SnapVec( box.halfExtents, kMapPositionScale );
+			Snap( box.pitch, kMapAngleScale );
+			Snap( box.yaw, kMapAngleScale );
+			Snap( box.roll, kMapAngleScale );
+		}
+	}
+	for ( LevelInstance& instance : layout.instances )
+	{
+		Snap( instance.roll, kMapAngleScale );
 	}
 	for ( std::vector<b3Vec3>& hull : layout.hulls )
 	{
@@ -233,16 +301,17 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 	AppendU32( out, uint32_t( layout.statics.size() ) );
 	for ( const LevelBox& box : layout.statics )
 	{
-		out.push_back( uint8_t( box.kind ) );
-		out.push_back( 0 );
-		out.push_back( 0 );
-		out.push_back( 0 );
-		AppendPos( out, box.center );
-		AppendPos( out, box.halfExtents );
-		AppendI32( out, MapQuantize( box.pitch, kMapAngleScale ) );
-		AppendI32( out, MapQuantize( box.yaw, kMapAngleScale ) );
-		AppendI32( out, MapQuantize( box.roll, kMapAngleScale ) );
-		AppendU32( out, box.hull );
+		AppendPiece( out, box );
+	}
+
+	AppendU32( out, uint32_t( layout.shapeSets.size() ) );
+	for ( const std::vector<LevelBox>& set : layout.shapeSets )
+	{
+		AppendU32( out, uint32_t( set.size() ) );
+		for ( const LevelBox& box : set )
+		{
+			AppendPiece( out, box );
+		}
 	}
 
 	AppendU32( out, uint32_t( layout.props.size() ) );
@@ -278,6 +347,8 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 				AppendI32( out, field.raw[2] );
 			}
 		}
+		AppendU32( out, t.shapes );
+		AppendU32( out, t.look );
 	}
 
 	AppendU32( out, uint32_t( layout.instances.size() ) );
@@ -287,6 +358,7 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 		AppendPos( out, instance.position );
 		AppendI32( out, MapQuantize( instance.pitch, kMapAngleScale ) );
 		AppendI32( out, MapQuantize( instance.yaw, kMapAngleScale ) );
+		AppendI32( out, MapQuantize( instance.roll, kMapAngleScale ) );
 	}
 
 	AppendU32( out, layout.spawnTemplate );
@@ -366,40 +438,41 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 	for ( uint32_t i = 0; i < staticCount; ++i )
 	{
 		LevelBox box;
-		if ( version >= 4 )
+		if ( ReadPiece( rd, version, layout, box, error ) == false )
 		{
-			uint8_t kind = rd.U8();
-			rd.U8();
-			rd.U8();
-			rd.U8();
-			if ( kind > uint8_t( ShapeKind::Hull ) || ( kind == uint8_t( ShapeKind::Hull ) && version < 5 ) )
-			{
-				error = "unknown static shape";
-				return false;
-			}
-			box.kind = ShapeKind( kind );
-		}
-		box.center = rd.Pos();
-		box.halfExtents = rd.Pos();
-		box.pitch = MapDequantize( rd.I32(), kMapAngleScale );
-		box.yaw = MapDequantize( rd.I32(), kMapAngleScale );
-		box.roll = version >= 4 ? MapDequantize( rd.I32(), kMapAngleScale ) : 0.0f;
-		box.hull = version >= 5 ? rd.U32() : 0;
-		if ( box.kind == ShapeKind::Hull && box.hull >= layout.hulls.size() )
-		{
-			error = "a static names a hull that is not in the map";
-			return false;
-		}
-		// What Box3D could not build: a box or sphere of no size, a capsule of no radius.
-		const b3Vec3 h = box.halfExtents;
-		bool boxy = box.kind == ShapeKind::Box || box.kind == ShapeKind::Hull; // (a hull's: its bounds)
-		bool solid = boxy ? ( h.x > 0.0f && h.y > 0.0f && h.z > 0.0f ) : ( h.x > 0.0f && h.y >= 0.0f );
-		if ( solid == false )
-		{
-			error = "a static's size is out of range";
 			return false;
 		}
 		layout.statics.push_back( box );
+	}
+
+	if ( version >= 6 )
+	{
+		uint32_t setCount = rd.U32();
+		// The smallest a set can be is a count and one piece.
+		if ( rd.ok == false || setCount > ( size - rd.cursor ) / 48 )
+		{
+			error = "corrupt shape set list";
+			return false;
+		}
+		layout.shapeSets.reserve( setCount );
+		for ( uint32_t i = 0; i < setCount; ++i )
+		{
+			uint32_t pieceCount = rd.U32();
+			if ( rd.ok == false || pieceCount < 1 || pieceCount > kMapSetPieceLimit || pieceCount > ( size - rd.cursor ) / 44 )
+			{
+				error = "a body has no shapes, or too many";
+				return false;
+			}
+			std::vector<LevelBox> set( pieceCount );
+			for ( LevelBox& box : set )
+			{
+				if ( ReadPiece( rd, version, layout, box, error ) == false )
+				{
+					return false;
+				}
+			}
+			layout.shapeSets.push_back( std::move( set ) );
+		}
 	}
 
 	uint32_t propCount = rd.U32();
@@ -483,6 +556,16 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 			}
 			t.components.push_back( std::move( component ) );
 		}
+		if ( version >= 6 )
+		{
+			t.shapes = rd.U32();
+			t.look = rd.U32();
+			if ( t.shapes != kNoShapes && t.shapes >= layout.shapeSets.size() )
+			{
+				error = "a template names shapes that are not in the map";
+				return false;
+			}
+		}
 		// Values this build does not understand are dropped, and the rest is clamped to its range,
 		// so a map can never push the simulation outside what the registry allows.
 		SanitizeTemplate( t );
@@ -490,7 +573,7 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 	}
 
 	uint32_t instanceCount = rd.U32();
-	if ( rd.ok == false || instanceCount > ( size - rd.cursor ) / 24 )
+	if ( rd.ok == false || instanceCount > ( size - rd.cursor ) / ( version >= 6 ? 28 : 24 ) )
 	{
 		error = "corrupt instance list";
 		return false;
@@ -503,6 +586,7 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 		instance.position = rd.Pos();
 		instance.pitch = MapDequantize( rd.I32(), kMapAngleScale );
 		instance.yaw = MapDequantize( rd.I32(), kMapAngleScale );
+		instance.roll = version >= 6 ? MapDequantize( rd.I32(), kMapAngleScale ) : 0.0f;
 		if ( instance.templateIndex >= layout.templates.size() )
 		{
 			error = "instance refers to a template that is not in the map";

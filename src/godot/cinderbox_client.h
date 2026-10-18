@@ -280,6 +280,12 @@ private:
 	void HandleEvents();
 	void UpdateNodes();
 	godot::Ref<godot::PackedScene> Prefab( const present::Visual& v );
+	// Which look node of the map's scene draws this entity (its template's "#<n>"); -1: none.
+	int MapLookOf( const present::Visual& v ) const;
+	// A copy of it, shown; null without one.
+	godot::Node3D* MapLookCopy( const present::Visual& v );
+	// Hides the look nodes the templates use (their entities draw copies), once per template list.
+	void HideMapLooks();
 	godot::Ref<godot::PackedScene> LoadPrefab( const char* name );
 	godot::Ref<godot::PackedScene> LoadScene( const godot::String& path );
 	godot::Node3D* CreateNode( uint64_t visual, const present::Visual& v );
@@ -317,6 +323,11 @@ private:
 	godot::ObjectID m_mapVisual;
 	uint64_t m_visualMapHash = 0;
 	bool m_hideStaticBoxes = false;
+	// The map scene's look nodes (MapLookNodes) and the scale each stands at: a template whose look
+	// is one ("#<n>") draws as a copy of it, and the node itself is hidden.
+	std::vector<godot::ObjectID> m_mapLooks;
+	std::vector<godot::Vector3> m_mapLookScales;
+	std::vector<std::string> m_hiddenFor; // the template list the hidden ones were chosen by
 	std::unordered_map<std::string, godot::Ref<godot::PackedScene>> m_prefabs;
 
 	// The World node, a CbDirector: every entity node, world reaction scene and placed effect lives

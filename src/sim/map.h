@@ -16,15 +16,19 @@
 //   "CBMP", u32 version, u32 flags, u32 nameLength, name bytes (no terminator),
 //   i32 spawnCenter[3], i32 spawnRadius,
 //   u32 hullCount,    per hull:   u32 pointCount, i32 point[3] each          (version 5 on)
-//   u32 staticCount,  per static: u8 kind, u8 pad[3], i32 center[3], i32 halfExtents[3],
-//                                 i32 pitch, i32 yaw, i32 roll, u32 hull
-//                     (version 4: no hull; version 3: i32 center[3], i32 halfExtents[3],
-//                      i32 pitch, i32 yaw: a box)
+//   u32 staticCount,  per static: a piece
+//   u32 setCount,     per set:    u32 pieceCount, each a piece (in the body's frame)  (version 6 on)
+//     a piece: u8 kind, u8 pad[3], i32 center[3], i32 halfExtents[3], i32 pitch, i32 yaw, i32 roll,
+//              u32 hull
+//              (version 4: no hull; version 3: i32 center[3], i32 halfExtents[3], i32 pitch,
+//               i32 yaw: a box)
 //   u32 propCount,    per prop:   u8 kind, u8 pad[3], i32 position[3], i32 halfExtents[3]
 //   u32 templateCount, per template: name, visual, u32 componentCount,
 //                        per component: u32 componentId, u32 fieldCount,
 //                          per field: u32 fieldId, i32 value[3]
-//   u32 instanceCount, per instance: u32 templateIndex, i32 position[3], i32 pitch, i32 yaw
+//                        u32 shapes, u32 look                                    (version 6 on)
+//   u32 instanceCount, per instance: u32 templateIndex, i32 position[3], i32 pitch, i32 yaw,
+//                        i32 roll                                                (version 6 on)
 //   u32 spawnTemplate (kNoTemplate for none)
 //
 // Component and field ids are name hashes (see reflect.h), so the registry can grow and be
@@ -47,7 +51,9 @@
 namespace cb
 {
 
-inline constexpr uint32_t kMapVersion = 5; // 5: hulls. 4: a static's shape and roll. 3: a prop's body
+// 6: bodies of several shapes, a template's look, an instance's roll. 5: hulls. 4: a static's shape
+// and roll. 3: a prop's body.
+inline constexpr uint32_t kMapVersion = 6;
 // The oldest version still read (what it lacks takes its old meaning).
 inline constexpr uint32_t kMapOldestVersion = 3;
 
@@ -61,6 +67,8 @@ inline constexpr uint32_t kMapNameLimit = 64;
 
 // Points a hull may be given (Box3D keeps at most 128 of them as its corners).
 inline constexpr uint32_t kMapHullPointLimit = 1024;
+// Shapes one body may have.
+inline constexpr uint32_t kMapSetPieceLimit = 64;
 
 // Largest magnitude a quantized value can hold (int -> float stays exact below 2^24).
 inline constexpr float kMapPositionLimit = 16000.0f;

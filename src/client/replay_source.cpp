@@ -50,7 +50,7 @@ void ReplaySource::Fill( ReplayPlayer& player, float alpha )
 		for ( const EntityTemplate& t : reader.Map().templates )
 		{
 			f.templateNames.push_back( t.name );
-			f.templateVisuals.push_back( t.visual );
+			f.templateVisuals.push_back( TemplateLookName( t ) );
 		}
 		f.schema = reader.Schema();
 		f.schemaGeneration = 1;

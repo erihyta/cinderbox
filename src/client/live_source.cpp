@@ -55,7 +55,7 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 		for ( const EntityTemplate& t : client.Map().templates )
 		{
 			f.templateNames.push_back( t.name );
-			f.templateVisuals.push_back( t.visual );
+			f.templateVisuals.push_back( TemplateLookName( t ) );
 		}
 	}
 	if ( f.schemaGeneration != client.SchemaGeneration() )

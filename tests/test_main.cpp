@@ -29,6 +29,8 @@
 #include "rollback.h"
 #include "scenario.h"
 #include "simulation.h"
+
+#include "box3d/box3d.h"
 #include "view_codec.h"
 #include "view_file.h"
 
@@ -120,9 +122,26 @@ bool SameLayout( const LevelLayout& a, const LevelLayout& b )
 			return false;
 		}
 	}
-	if ( a.hulls.size() != b.hulls.size() )
+	if ( a.hulls.size() != b.hulls.size() || a.shapeSets.size() != b.shapeSets.size() )
 	{
 		return false;
+	}
+	for ( size_t i = 0; i < a.shapeSets.size(); ++i )
+	{
+		if ( a.shapeSets[i].size() != b.shapeSets[i].size() )
+		{
+			return false;
+		}
+		for ( size_t p = 0; p < a.shapeSets[i].size(); ++p )
+		{
+			const LevelBox& x = a.shapeSets[i][p];
+			const LevelBox& y = b.shapeSets[i][p];
+			if ( sameVec( x.center, y.center ) == false || sameVec( x.halfExtents, y.halfExtents ) == false || x.pitch != y.pitch ||
+				 x.yaw != y.yaw || x.roll != y.roll || x.kind != y.kind || x.hull != y.hull )
+			{
+				return false;
+			}
+		}
 	}
 	for ( size_t i = 0; i < a.hulls.size(); ++i )
 	{
@@ -480,6 +499,111 @@ void TestMapShapes()
 	missing.statics.back().hull = 5;
 	SerializeMap( missing, unknown );
 	CHECK( DeserializeMap( unknown.data(), unknown.size(), refused, error ) == false );
+}
+
+// Bodies of several shapes (map version 6): a template's shape set is one body, whatever part of it
+// is hit; a weight given is the body's however many shapes it has; a hull can be one of them; a
+// placement turns with roll; the set, the look and the roll survive the file.
+void TestMapBodies()
+{
+	LevelLayout map;
+	map.name = "bodies";
+	map.spawnCenter = { 0.0f, 1.5f, 10.0f };
+	map.spawnRadius = 2.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+	map.hulls.push_back( { { -0.3f, 0.0f, -0.3f }, { 0.3f, 0.0f, -0.3f }, { 0.3f, 0.0f, 0.3f }, { -0.3f, 0.0f, 0.3f }, { 0.0f, 0.5f, 0.0f } } );
+	// A dumbbell: two balls on a bar lying along X.
+	map.shapeSets.push_back( { { { -1.0f, 0.0f, 0.0f }, { 0.4f, 0.0f, 0.0f }, 0.0f, 0.0f, 0.0f, ShapeKind::Sphere },
+							   { { 1.0f, 0.0f, 0.0f }, { 0.4f, 0.0f, 0.0f }, 0.0f, 0.0f, 0.0f, ShapeKind::Sphere },
+							   { { 0.0f, 0.0f, 0.0f }, { 0.1f, 0.8f, 0.0f }, 0.0f, 0.0f, 1.5707964f, ShapeKind::Capsule } } );
+	// An L of two boards, with a little pyramid on its foot.
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 1.0f, 0.1f, 0.3f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box },
+							   { { 0.9f, 0.5f, 0.0f }, { 0.1f, 0.6f, 0.3f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box },
+							   { { -0.6f, 0.1f, 0.0f }, { 0.3f, 0.5f, 0.3f }, 0.0f, 0.0f, 0.0f, ShapeKind::Hull, 0 } } );
+	EntityTemplate dumbbell;
+	dumbbell.name = "dumbbell";
+	dumbbell.components.push_back( MakeComponent( "Material", { { "mass", 10.0f } } ) );
+	dumbbell.shapes = 0;
+	dumbbell.look = 3;
+	EntityTemplate ell;
+	ell.name = "ell";
+	ell.shapes = 1;
+	map.templates = { dumbbell, ell };
+	map.instances.push_back( { 0, { 0.0f, 2.0f, 0.0f }, 0.0f, 0.0f } );
+	map.instances.push_back( { 1, { 6.0f, 2.0f, 0.0f }, 0.0f, 0.0f, 0.3f } );
+	map.instances.push_back( { 0, { -6.0f, 2.0f, 0.0f }, 0.0f, 1.5707964f } ); // along Z
+	QuantizeLayout( map );
+
+	std::vector<uint8_t> bytes;
+	SerializeMap( map, bytes );
+	LevelLayout loaded;
+	std::string error;
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) );
+	CHECK( SameLayout( map, loaded ) );
+	CHECK( loaded.shapeSets.size() == 2 && loaded.shapeSets[1].size() == 3 && loaded.shapeSets[1][2].kind == ShapeKind::Hull );
+	CHECK( loaded.templates.size() == 2 && loaded.templates[0].shapes == 0 && loaded.templates[0].look == 3 &&
+		   loaded.templates[1].shapes == 1 && loaded.templates[1].look == kNoLook );
+	CHECK( TemplateLookName( loaded.templates[0] ) == "#3" && TemplateLookName( loaded.templates[1] ).empty() );
+	CHECK( loaded.instances.size() == 3 && loaded.instances[1].roll == map.instances[1].roll && map.instances[1].roll != 0.0f );
+
+	Simulation sim( TestConfig(), loaded );
+	InputFrame frame;
+	for ( int i = 0; i < 180; ++i )
+	{
+		frame.tick = sim.Tick();
+		sim.Step( frame );
+	}
+	uint32_t ids[3] = {};
+	int found = 0;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		flecs::entity e( sim.World(), r.entity );
+		if ( e.has<TemplateRef>() && found < 3 )
+		{
+			ids[found++] = r.netId;
+		}
+	}
+	CHECK( found == 3 );
+	flecs::entity first = sim.FindEntity( ids[0] );
+	const float mass = b3Body_GetMass( sim.BodyOf( first.get<PhysicsBody>() ) );
+	const Shape& bounds = first.get<Shape>();
+	const Transform& lying = *sim.EntityTransform( ids[0] );
+	std::printf( "    the dumbbell weighs %.3f kg, its bounds %.2f x %.2f x %.2f, its middle at %.3f m\n", mass, bounds.halfExtents.x,
+				 bounds.halfExtents.y, bounds.halfExtents.z, lying.position.y );
+	CHECK( std::fabs( mass - 10.0f ) < 0.01f );
+	CHECK( std::fabs( bounds.halfExtents.x - 1.4f ) < 0.01f && std::fabs( bounds.halfExtents.y - 0.4f ) < 0.01f );
+	CHECK( std::fabs( lying.position.y - 0.4f ) < 0.02f ); // on its balls, the bar off the ground
+
+	// Whatever part is hit, it is the one entity.
+	auto down = [&]( float x, float z, uint32_t& who ) {
+		RayHit hit;
+		bool any = sim.CastRay( { x, 6.0f, z }, { 0.0f, -10.0f, 0.0f }, 0, hit );
+		who = any ? hit.netId : 0;
+		return any ? hit.point.y : -1.0f;
+	};
+	const float x = lying.position.x, z = lying.position.z;
+	uint32_t ball = 0, bar = 0, turned = 0;
+	const float ballTop = down( x + 1.0f, z, ball );
+	const float barTop = down( x, z, bar );
+	down( -6.0f, 1.0f, turned );
+	std::printf( "    down onto a ball %.3f m, onto the bar %.3f m\n", ballTop, barTop );
+	CHECK( ball == ids[0] && bar == ids[0] && std::fabs( ballTop - 0.8f ) < 0.03f && std::fabs( barTop - 0.5f ) < 0.03f );
+	CHECK( turned == ids[2] ); // the one along Z has a ball at z 1
+
+	// The L came to rest on its boards, not through the floor.
+	const Transform& ellAt = *sim.EntityTransform( ids[1] );
+	std::printf( "    the L rests at %.3f m\n", ellAt.position.y );
+	CHECK( ellAt.position.y > 0.05f && ellAt.position.y < 1.5f );
+
+	// A set naming no hull of the map, and a template naming no set, are refused.
+	LevelLayout bad = map;
+	bad.shapeSets[1][2].hull = 4;
+	SerializeMap( bad, bytes );
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
+	bad = map;
+	bad.templates[1].shapes = 2;
+	SerializeMap( bad, bytes );
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
 }
 
 // Entities described by components in the editor must reach the simulation exactly as authored:
@@ -7609,6 +7733,25 @@ void AppendShapesReference( std::vector<uint64_t>& hashes )
 			map.props.push_back( { ShapeKind::Sphere, { x - 0.4f, 6.0f, z + 0.3f }, { 0.35f, 0.0f, 0.0f } } );
 		}
 	}
+	// Bodies of several shapes, a hull among them, turned and dropped among the pieces.
+	map.shapeSets.push_back( { { { -1.0f, 0.0f, 0.0f }, { 0.4f, 0.0f, 0.0f }, 0.0f, 0.0f, 0.0f, ShapeKind::Sphere },
+							   { { 1.0f, 0.0f, 0.0f }, { 0.4f, 0.0f, 0.0f }, 0.0f, 0.0f, 0.0f, ShapeKind::Sphere },
+							   { { 0.0f, 0.0f, 0.0f }, { 0.1f, 0.8f, 0.0f }, 0.0f, 0.0f, 1.5707964f, ShapeKind::Capsule } } );
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 1.0f, 0.1f, 0.3f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box },
+							   { { 0.9f, 0.5f, 0.0f }, { 0.1f, 0.6f, 0.3f }, 0.2f, 0.0f, 0.0f, ShapeKind::Box },
+							   { { -0.6f, 0.4f, 0.0f }, { 1.0f, 1.1f, 1.0f }, 0.0f, 0.5f, 0.3f, ShapeKind::Hull, 3 } } );
+	EntityTemplate dumbbell;
+	dumbbell.name = "dumbbell";
+	dumbbell.components.push_back( MakeComponent( "Material", { { "mass", 12.0f } } ) );
+	dumbbell.shapes = 0;
+	EntityTemplate ell;
+	ell.name = "ell";
+	ell.shapes = 1;
+	map.templates = { dumbbell, ell };
+	map.instances.push_back( { 0, { -5.0f, 5.0f, 0.5f }, 0.3f, 0.2f, 0.1f } );
+	map.instances.push_back( { 1, { 0.5f, 6.0f, -5.5f }, -0.2f, 0.9f, 0.4f } );
+	map.instances.push_back( { 0, { 5.5f, 7.0f, 5.0f }, 0.0f, 1.2f, -0.3f } );
+	map.instances.push_back( { 1, { 0.2f, 8.0f, 0.3f }, 0.5f, 0.0f, 0.0f } );
 	QuantizeLayout( map );
 	Simulation sim( TestConfig(), map );
 	hashes.push_back( sim.ComputeHash() );
@@ -8262,6 +8405,7 @@ int main( int argc, char** argv )
 	const Test tests[] = {
 		{ "map_format", TestMapFormat },
 		{ "map_shapes", TestMapShapes },
+		{ "map_bodies", TestMapBodies },
 		{ "templates", TestTemplates },
 		{ "sim_events", TestSimEvents },
 		{ "repeatability", TestRepeatability },

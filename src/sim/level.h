@@ -40,13 +40,14 @@ struct LevelProp
 	float restitution = 0.0f;
 };
 
-// One placement of a template in the level.
+// One placement of a template in the level, turned as a piece is (yaw, pitch, roll).
 struct LevelInstance
 {
 	uint32_t templateIndex;
 	b3Vec3 position;
 	float pitch;
 	float yaw;
+	float roll = 0.0f;
 };
 
 struct LevelLayout
@@ -63,6 +64,9 @@ struct LevelLayout
 	// The hulls' points, each list in its piece's own frame (centred and turned with it, the
 	// scale already in), on the position grid. Box3D builds the same hull from them everywhere.
 	std::vector<std::vector<b3Vec3>> hulls;
+	// Bodies of several shapes (a template's CollisionShape3D children): each set's pieces in the
+	// body's own frame (a piece's center is its offset from the body's origin).
+	std::vector<std::vector<LevelBox>> shapeSets;
 	std::vector<LevelProp> props;
 	b3Vec3 spawnCenter;
 	float spawnRadius;
