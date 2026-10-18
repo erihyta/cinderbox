@@ -110,5 +110,10 @@ func update_help() -> void:
 		menu.key_text("game_right"), menu.key_text("game_sprint"), menu.key_text("game_jump")]
 	for action in actions:
 		text += "   %s %s" % [menu.key_text(ACTION_PREFIX + String(action["name"])), action_label(String(action["name"]))]
+	# The HUDs' own keys (the inventory, the scores, the chat), once their screens are there.
+	var server := actions.map(func(a): return ACTION_PREFIX + String(a["name"]))
+	for action in menu.screen_keys():
+		if not server.has(action):
+			text += "   %s %s" % [menu.key_text(action), String(action).trim_prefix(ACTION_PREFIX).replace("_", " ")]
 	help.text = text + "   Mouse orbit   Wheel zoom   %s first person   %s shoulder   Esc menu   F1 stats" % [menu.key_text("game_first_person"),
 		menu.key_text("game_shoulder")]

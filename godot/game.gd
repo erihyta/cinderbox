@@ -160,6 +160,7 @@ func _ready() -> void:
 	menu.resume_requested.connect(_resume)
 	menu.quit_requested.connect(_quit)
 	keys.bind_game_keys()
+	menu.screen_keys_changed.connect(keys.update_help)
 
 	# The command line's server is joined once (its recording watched once); leaving it lands in
 	# the menu like any other.
