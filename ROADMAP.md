@@ -22,13 +22,14 @@ A proposal: the order is open to change. Each row is a milestone or two.
 
 | # | What | In one line |
 |---|---|---|
-| 1 | [Loose ends](#1-loose-ends) | rolling and drag on bodies, the camera against meshes and terrain, the two network tests that miss a tick |
+| 1 | [Loose ends](#1-loose-ends) | rolling and drag on bodies, slopes too steep to walk, the arms belong to what is held, the camera against meshes and terrain, the two network tests that miss a tick |
 | 2 | [Destructible walls](#2-destructible-walls) | a wall breaks into pieces authored beforehand, by what is made to break it; shared by everyone |
 | 3 | [Vehicles](#3-vehicles) | bodies joined in a template, a seat, input routed to motors |
 | 4 | [Authoring, finished](#4-authoring-finished) | the editor's leftovers: names in expressions, a prebuilt SDK, an item used in its preview, publish checks |
 
-- **Why loose ends first**: each is small, and two of them are felt in any map with the new shapes
-  (a ball that never stops, a camera that looks through a hillside).
+- **Why loose ends first**: each is small, and each is felt in play: a ball that never stops, a
+  player who runs up a 60° slope, a rifle held wrong while dashing, a camera that looks through a
+  hillside.
 - **Why walls before vehicles**: the shapes work (M183 to M187) was for them; what is left is the
   fractured asset and the swap, and the physics questions are answered already (below).
 - **Why vehicles next**: the other big "a sandbox should have this"; they need joints in
@@ -40,6 +41,8 @@ A proposal: the order is open to change. Each row is a milestone or two.
 | Piece | What |
 |---|---|
 | Things that roll stop | a ball rolling without slipping loses nothing to friction (that is physics), so it rolls until a wall stops it. Box3D has rolling resistance (spheres, capsules) and damping; a body gets `rolling` and `drag` beside `friction` and `bounce` (a beach ball: much drag; a bowling ball: little). Defaults of 0 keep every reference hash |
+| Slopes too steep to walk | measured (M188): there is no limit. The mover stands wherever its ray down finds ground, so a player stands still on 70° and runs up 60° at nearly full speed; nothing slides. A movement parameter `max_slope` (the ground's normal from that ray; Unity's default is 45°, Unreal's 44.8°; ours would start at 50°): steeper ground does not hold the player up, so it slides down along the slope, cannot walk or jump up it, and lands on what is below. A mod can change it (a climbing game, ice). Every map today is walkable below it (the sandbox's steepest ramp is 45.8°, the arena's 20°), so the reference hashes should not move; a box's edge under the ray is the case to check |
+| The arms belong to what is held | an overlay (the boots' dash pose, the hook's hang) is laid over the whole body after the held item's layer, so it repaints the arms that hold a two-handed rifle, and the left hand is pulled to a rifle that is no longer where the pose put it. The rule: what the hands hold wins the arms. An overlay still poses the legs and the body; the arms keep the item's pose, unless the overlay says it takes a hand (the grapple's throw does: then that hand lets go, as now). In the shared pose, so hitboxes follow; the dash and the hook poses are placeholders either way |
 | The camera against surfaces | the camera stops at boxes, balls, capsules and hulls' bounds; a mesh's or terrain's bounds would be a whole hillside, so it skips them and can look through a cave wall. It could cast its ray in the client's own simulation, which has every shape exactly |
 | Tests that miss a tick | `net_flight` and `net_grapple` look up exact ticks they sampled from a real-time run and now and then miss one (fails locally about one run in three or five; CI has caught it once on macOS). They should record every tick |
 
@@ -99,7 +102,8 @@ What the old steps left, not scheduled. A row moves up into "Next" when it is wa
 | Sheets and HUDs | a sheet for a list's rows; an item's HUD drawn on its slot; the mods' HUDs, item uses and motions converted to sheets (their reactions are) |
 | Motions | a lasting force as a C++ command; a test of one player hooked to another; a knocked-down ragdoll state; carrying a player; a preview panel |
 | Animation | a state's playback speed (the bat's whole swing in 0.6 s, a slow-motion finisher; markers move with it); the dash's and the hook's poses are placeholders |
-| The client | keys the server says (today the player's own Keys page wins over a mod's suggestion); cameras a mod places (a round's end, a kill cam); a script for looks (sandboxed, for what fields, intents and clicks cannot say; not visual scripting) |
+| Feet on the ground | foot IK, **in the shared pose**, beside the aim chain: each foot's ground found by a ray in the simulation (the server's for hit tests, the client's prediction for drawing: the same shapes, so the same answer), the hips lowered to the lower foot, two-bone IK for each leg. Then the legs' hitboxes are where the feet are drawn. Not Godot's IK nodes: they would run after the pose (visual only, and the bake warns: the legs have hitboxes), and Godot's physics has no level to find (collision is Box3D's) |
+| The client | keys the server says: a server maps keys to what they do, an item's own key included (its action `<kind>.use`), sent once at join; a game's "Q is the dash strike" whatever slot it is in. Costs nothing: the client already turns keys into action bits each frame, only the table's source changes. A player may still rebind (the Keys page, per server), the server's map being the start; cameras a mod places (a round's end, a kill cam); a script for looks (sandboxed, for what fields, intents and clicks cannot say; not visual scripting) |
 | Games | teams and spectators (mods, once private fields and the board cover them); lists on one entity (array fields, or a `CbList` over a field family) |
 
 ## Routes not taken
@@ -111,6 +115,7 @@ What the old steps left, not scheduled. A row moves up into "Next" when it is wa
 | The viewer guesses a command (`CbPrediction` with a push) | the viewer has no simulation: a guessed push cannot collide, and a pull would fight every frame's correction |
 | Separate physics for the map and the game | there is one world; a map's bodies and a mod's are authored the same way (M185) |
 | Godot's physics at runtime | collision is Box3D's on the server and in every client's prediction; Godot's `CollisionShape3D` is only how shapes are authored |
+| Hitboxes as physics bodies | a player is one kinematic capsule in the physics; the hitboxes are shapes on the shared pose that hit tests ask (shots, probes, a melee swing). As bodies, each bone would be moved every tick (15 per player), copied in every snapshot, and shove props with its limbs. Ragdolls are bodies already, when a player falls |
 
 ## Housekeeping
 
