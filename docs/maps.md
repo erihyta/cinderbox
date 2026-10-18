@@ -17,6 +17,8 @@ The markers carry the collision the simulation needs; everything else in the sce
 | `CbEntity` | Places a template in the level, or defines one inline from its own components. |
 
 1. Make a scene in `godot/maps/`, for example `arena.tscn` (copy `example_arena.tscn` to start).
+   `test_ground.tscn` is the arena opened onto bumpy terrain with a building-sized block on it, for
+   trying movement, slopes and the camera (`make_test_ground.gd` makes it anew from the arena).
 2. Place `CbStatic` nodes for the collision (boxes, or [shapes](#collision-shapes) under them), and
    your own meshes, lights and effects for the look.
 3. Press **Bake Map** in the 3D toolbar, or run `tools\bake_map.ps1 -Scene res://maps/arena.tscn`.
