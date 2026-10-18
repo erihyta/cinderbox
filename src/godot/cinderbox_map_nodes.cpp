@@ -15,6 +15,7 @@
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/sphere_mesh.hpp>
 #include <godot_cpp/classes/sphere_shape3d.hpp>
+#include <godot_cpp/classes/visual_instance3d.hpp>
 #include <godot_cpp/classes/standard_material3d.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -22,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 using namespace godot;
@@ -55,7 +57,8 @@ MeshInstance3D* EnsurePreview( Node3D* parent, MeshInstance3D*& slot )
 	if ( slot == nullptr )
 	{
 		slot = memnew( MeshInstance3D );
-		parent->add_child( slot );
+		// Internal: not a child the bake, a look's copy or the scene tree dock sees.
+		parent->add_child( slot, false, Node::INTERNAL_MODE_BACK );
 	}
 	return slot;
 }
@@ -75,7 +78,90 @@ struct BakeContext
 	LevelLayout layout;
 	Array warnings;
 	int spawnCount = 0;
+	// Each look node's number (MapLookNodes).
+	std::unordered_map<const Node*, uint32_t> looks;
 };
+
+uint32_t LookOf( const BakeContext& ctx, const Node* node )
+{
+	auto it = ctx.looks.find( node );
+	return it != ctx.looks.end() ? it->second : kNoLook;
+}
+
+// Whether a body node draws something of its own: a mesh, a sprite, a light, particles under it.
+bool HasLook( Node* node )
+{
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		Node* child = node->get_child( i );
+		if ( Object::cast_to<VisualInstance3D>( child ) != nullptr || HasLook( child ) )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+// What a body's own frame leaves of where it is: its scale (its shapes take it, the body has none).
+Transform3D ScaleOf( const Transform3D& here )
+{
+	return Transform3D( Basis::from_scale( here.basis.get_scale().abs() ), Vector3() );
+}
+
+// A component as an author would have attached it, from values by field name.
+AuthoredComponent MakeComponent( const char* name, std::initializer_list<std::pair<const char*, double>> values )
+{
+	AuthoredComponent component;
+	const ComponentDef* def = FindComponent( name );
+	if ( def == nullptr )
+	{
+		return component;
+	}
+	component.id = def->Id();
+	for ( const auto& [field, value] : values )
+	{
+		for ( const FieldDef& known : def->fields )
+		{
+			if ( std::string( known.name ) == field )
+			{
+				AuthoredField authored;
+				authored.id = known.Id();
+				authored.raw[0] = MapQuantize( std::clamp( float( value ), known.min, known.max ), kMapPositionScale );
+				component.fields.push_back( authored );
+			}
+		}
+	}
+	return component;
+}
+
+// A set of a body's shapes; an identical one already in the map is shared.
+uint32_t AddShapeSet( BakeContext& ctx, std::vector<LevelBox>&& set )
+{
+	LevelLayout snapped;
+	snapped.shapeSets.push_back( set );
+	QuantizeLayout( snapped );
+	auto same = []( const LevelBox& a, const LevelBox& b ) {
+		return a.kind == b.kind && a.hull == b.hull && a.center.x == b.center.x && a.center.y == b.center.y && a.center.z == b.center.z &&
+			   a.halfExtents.x == b.halfExtents.x && a.halfExtents.y == b.halfExtents.y && a.halfExtents.z == b.halfExtents.z &&
+			   a.pitch == b.pitch && a.yaw == b.yaw && a.roll == b.roll;
+	};
+	const std::vector<LevelBox>& mine = snapped.shapeSets[0];
+	for ( size_t i = 0; i < ctx.layout.shapeSets.size(); ++i )
+	{
+		const std::vector<LevelBox>& other = ctx.layout.shapeSets[i];
+		bool alike = other.size() == mine.size();
+		for ( size_t k = 0; alike && k < mine.size(); ++k )
+		{
+			alike = same( other[k], mine[k] );
+		}
+		if ( alike )
+		{
+			return uint32_t( i );
+		}
+	}
+	ctx.layout.shapeSets.push_back( mine );
+	return uint32_t( ctx.layout.shapeSets.size() - 1 );
+}
 
 int32_t QuantizeField( const FieldDef& field, const Variant& value, int component )
 {
@@ -182,7 +268,8 @@ uint32_t AddTemplate( BakeContext& ctx, EntityTemplate&& candidate )
 	for ( size_t i = 0; i < ctx.layout.templates.size(); ++i )
 	{
 		const EntityTemplate& existing = ctx.layout.templates[i];
-		if ( existing.visual == candidate.visual && SameComponents( existing.components, candidate.components ) )
+		if ( existing.visual == candidate.visual && existing.shapes == candidate.shapes && existing.look == candidate.look &&
+			 SameComponents( existing.components, candidate.components ) )
 		{
 			return uint32_t( i );
 		}
@@ -203,6 +290,8 @@ uint32_t FindTemplateByName( const BakeContext& ctx, const std::string& name )
 	return kNoTemplate;
 }
 
+void BodyOfNode( Node3D* node, const Transform3D& here, EntityTemplate& t, BakeContext& ctx );
+
 // First pass: named templates, so an entity can reference one that appears later in the scene.
 void CollectTemplates( Node* node, BakeContext& ctx )
 {
@@ -214,6 +303,8 @@ void CollectTemplates( Node* node, BakeContext& ctx )
 		t.name = SafeText( templateName.is_empty() ? String( source->get_name() ) : templateName );
 		t.visual = SafeText( source->get_visual() );
 		t.components = ReadComponents( source, source->get_name(), ctx );
+		// (Where a template stands does not matter, only its own scale.)
+		BodyOfNode( source, source->get_transform(), t, ctx );
 
 		if ( FindTemplateByName( ctx, t.name ) != kNoTemplate )
 		{
@@ -318,9 +409,10 @@ bool Uneven( float a, float b )
 	return std::fabs( a - b ) > kScaleEpsilon * std::max( std::fabs( a ), std::fabs( b ) );
 }
 
-// A CbStatic's CollisionShape3D children, each a piece of its own where it is. Returns how many
-// there were (used or not): with none, the CbStatic is its own box.
-int BakeStaticShapes( CbStatic* body, const Transform3D& here, BakeContext& ctx )
+// A body node's CollisionShape3D children, each a piece where `frame` puts it (a CbStatic's: in
+// the map; a body's: in its own frame, the scale above it in), into `out`. Returns how many there
+// were (used or not): with none, a node is its own box or ball.
+int BakeShapes( Node* body, const Transform3D& frame, std::vector<LevelBox>& out, BakeContext& ctx )
 {
 	int found = 0;
 	for ( int i = 0; i < body->get_child_count(); ++i )
@@ -338,7 +430,7 @@ int BakeStaticShapes( CbStatic* body, const Transform3D& here, BakeContext& ctx 
 			ctx.warnings.push_back( String( "skipped " ) + name + ( shape.is_null() ? ": it has no shape" : ": it is disabled" ) );
 			continue;
 		}
-		Transform3D at = here * node->get_transform();
+		Transform3D at = frame * node->get_transform();
 		Vector3 scale = at.basis.get_scale().abs();
 		LevelBox piece;
 		if ( auto* box = Object::cast_to<BoxShape3D>( shape.ptr() ) )
@@ -402,7 +494,7 @@ int BakeStaticShapes( CbStatic* body, const Transform3D& here, BakeContext& ctx 
 		else
 		{
 			ctx.warnings.push_back( String( "skipped " ) + name + ": a " + shape->get_class() +
-									" is not a level shape yet (box, sphere, capsule, cylinder and convex polygon are)" );
+									" is not a body's shape yet (box, sphere, capsule, cylinder and convex polygon are)" );
 			continue;
 		}
 		const b3Vec3 h = piece.halfExtents;
@@ -412,9 +504,80 @@ int BakeStaticShapes( CbStatic* body, const Transform3D& here, BakeContext& ctx 
 			ctx.warnings.push_back( String( "skipped " ) + name + ": size must be positive" );
 			continue;
 		}
-		ctx.layout.statics.push_back( piece );
+		out.push_back( piece );
 	}
 	return found;
+}
+
+// A template's shapes from its node's CollisionShape3D children, and its look: the node itself
+// when it has no visual and draws something of its own.
+void BodyOfNode( Node3D* node, const Transform3D& here, EntityTemplate& t, BakeContext& ctx )
+{
+	std::vector<LevelBox> set;
+	if ( BakeShapes( node, ScaleOf( here ), set, ctx ) > 0 )
+	{
+		if ( set.empty() )
+		{
+			ctx.warnings.push_back( node->get_name() + String( ": none of its shapes could be used; its Shape component is" ) );
+		}
+		else
+		{
+			t.shapes = AddShapeSet( ctx, std::move( set ) );
+		}
+	}
+	if ( t.visual.empty() && HasLook( node ) )
+	{
+		t.look = LookOf( ctx, node );
+	}
+}
+
+LevelInstance InstanceAt( uint32_t index, const Transform3D& here )
+{
+	Vector3 euler = here.basis.orthonormalized().get_euler( EULER_ORDER_YXZ );
+	LevelInstance instance;
+	instance.templateIndex = index;
+	instance.position = ToSim( here.origin );
+	instance.pitch = float( euler.x );
+	instance.yaw = float( euler.y );
+	instance.roll = float( euler.z );
+	return instance;
+}
+
+// A CbProp with CollisionShape3D children, or with a look of its own (a mesh under it), is a body
+// like a template's: its shapes (or its box or ball) on one body, drawn by its own node, turned as
+// it stands. Returns false for a plain one (the map's prop list, as always).
+bool BakeBodyProp( CbProp* prop, const Transform3D& here, BakeContext& ctx )
+{
+	std::vector<LevelBox> set;
+	const int found = BakeShapes( prop, ScaleOf( here ), set, ctx );
+	const bool look = HasLook( prop );
+	if ( found == 0 && look == false )
+	{
+		return false;
+	}
+	if ( found == 0 )
+	{
+		Vector3 scale = here.basis.get_scale().abs();
+		set.push_back( prop->get_shape() == CbProp::SHAPE_SPHERE
+						   ? PieceAt( Transform3D(), ShapeKind::Sphere, Vector3( prop->get_radius() * float( scale.x ), 0.0f, 0.0f ) )
+						   : PieceAt( Transform3D(), ShapeKind::Box, prop->get_size() * scale * 0.5f ) );
+	}
+	if ( set.empty() )
+	{
+		ctx.warnings.push_back( String( "skipped " ) + prop->get_name() + ": none of its shapes could be used" );
+		return true;
+	}
+	EntityTemplate t;
+	t.name = SafeText( prop->get_name() );
+	t.components.push_back( MakeComponent( "Material", { { "density", prop->get_density() },
+														  { "friction", prop->get_friction() },
+														  { "restitution", prop->get_bounce() },
+														  { "mass", prop->get_mass() } } ) );
+	t.components.push_back( MakeComponent( "Prop", { { "lifetime_seconds", 0.0 } } ) );
+	t.shapes = AddShapeSet( ctx, std::move( set ) );
+	t.look = look ? LookOf( ctx, prop ) : kNoLook;
+	ctx.layout.instances.push_back( InstanceAt( AddTemplate( ctx, std::move( t ) ), here ) );
+	return true;
 }
 
 // Transforms are accumulated down the tree instead of read with get_global_transform(), so baking
@@ -430,7 +593,7 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 	if ( auto* box = Object::cast_to<CbStatic>( node ) )
 	{
 		// Its CollisionShape3D children, or else its own box.
-		if ( BakeStaticShapes( box, here, ctx ) == 0 )
+		if ( BakeShapes( box, here, ctx.layout.statics, ctx ) == 0 )
 		{
 			Vector3 size = box->get_size() * here.basis.get_scale().abs();
 			if ( size.x <= 0.0f || size.y <= 0.0f || size.z <= 0.0f )
@@ -443,7 +606,11 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 			}
 		}
 	}
-	else if ( auto* prop = Object::cast_to<CbProp>( node ) )
+	else if ( auto* prop = Object::cast_to<CbProp>( node ); prop != nullptr && BakeBodyProp( prop, here, ctx ) )
+	{
+		// (A body of its own shapes, or drawn by its own node: a template and its placement.)
+	}
+	else if ( prop != nullptr )
 	{
 		const Transform3D& gt = here;
 		Vector3 scale = gt.basis.get_scale();
@@ -485,6 +652,7 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 			inlineTemplate.name = SafeText( entity->get_name() );
 			inlineTemplate.visual = SafeText( entity->get_visual() );
 			inlineTemplate.components = ReadComponents( entity, entity->get_name(), ctx );
+			BodyOfNode( entity, here, inlineTemplate, ctx );
 			if ( inlineTemplate.components.empty() )
 			{
 				ctx.warnings.push_back( String( "skipped " ) + entity->get_name() +
@@ -498,13 +666,7 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 
 		if ( index != kNoTemplate )
 		{
-			Vector3 euler = here.basis.get_euler( EULER_ORDER_YXZ );
-			LevelInstance instance;
-			instance.templateIndex = index;
-			instance.position = ToSim( here.origin );
-			instance.pitch = float( euler.x );
-			instance.yaw = float( euler.y );
-			ctx.layout.instances.push_back( instance );
+			ctx.layout.instances.push_back( InstanceAt( index, here ) );
 		}
 	}
 	else if ( auto* spawn = Object::cast_to<CbSpawn>( node ) )
@@ -529,6 +691,19 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 }
 
 } // namespace
+
+void MapLookNodes( Node* node, std::vector<Node3D*>& out )
+{
+	if ( Object::cast_to<CbProp>( node ) != nullptr || Object::cast_to<CbTemplate>( node ) != nullptr ||
+		 Object::cast_to<CbEntity>( node ) != nullptr )
+	{
+		out.push_back( Object::cast_to<Node3D>( node ) );
+	}
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		MapLookNodes( node->get_child( i ), out );
+	}
+}
 
 // --- CbStatic -----------------------------------------------------------------------------------
 
@@ -731,11 +906,29 @@ Dictionary CinderboxMapBaker::bake( Node* root, const String& path )
 	ctx.layout.name = name;
 	ctx.layout.spawnCenter = b3Vec3{ 0.0f, 1.5f, 0.0f };
 	ctx.layout.spawnRadius = 4.0f;
+	std::vector<Node3D*> looks;
+	MapLookNodes( root, looks );
+	for ( size_t i = 0; i < looks.size(); ++i )
+	{
+		ctx.looks[looks[i]] = uint32_t( i );
+	}
 	CollectTemplates( root, ctx );
 	BakeNode( root, Transform3D(), ctx );
 
 	result["statics"] = int( ctx.layout.statics.size() );
 	result["hulls"] = int( ctx.layout.hulls.size() );
+	// Each template's body as stored: its shapes (a count; 0: its Shape component) and its look.
+	Array bodies;
+	for ( const EntityTemplate& t : ctx.layout.templates )
+	{
+		Dictionary body;
+		body["name"] = String( t.name.c_str() );
+		body["shapes"] = t.shapes < ctx.layout.shapeSets.size() ? int( ctx.layout.shapeSets[t.shapes].size() ) : 0;
+		body["look"] = t.look == kNoLook ? -1 : int( t.look );
+		body["visual"] = String( TemplateLookName( t ).c_str() );
+		bodies.push_back( body );
+	}
+	result["bodies"] = bodies;
 	// Each static piece as it will be stored (after rounding onto the map's grid, below).
 	QuantizeLayout( ctx.layout );
 	Array pieces;

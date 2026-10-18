@@ -1,4 +1,5 @@
 #include "cinderbox_client_parts.h"
+#include "cinderbox_map_nodes.h"
 
 namespace cb::gd
 {
@@ -499,6 +500,65 @@ Ref<PackedScene> CinderboxClient::LoadPrefab( const char* name )
 	return scene;
 }
 
+int CinderboxClient::MapLookOf( const present::Visual& v ) const
+{
+	if ( v.templateIndex >= m_frame.templateVisuals.size() )
+	{
+		return -1;
+	}
+	const std::string& visual = m_frame.templateVisuals[v.templateIndex];
+	if ( visual.size() < 2 || visual[0] != '#' )
+	{
+		return -1;
+	}
+	const int look = std::atoi( visual.c_str() + 1 );
+	return look >= 0 && size_t( look ) < m_mapLooks.size() ? look : -1;
+}
+
+Node3D* CinderboxClient::MapLookCopy( const present::Visual& v )
+{
+	const int look = MapLookOf( v );
+	auto* source = look >= 0 ? Object::cast_to<Node3D>( ObjectDB::get_instance( m_mapLooks[size_t( look )] ) ) : nullptr;
+	if ( source == nullptr )
+	{
+		return nullptr;
+	}
+	auto* copy = Object::cast_to<Node3D>( source->duplicate() );
+	if ( copy != nullptr )
+	{
+		copy->set_visible( true );
+		copy->set_transform( Transform3D() );
+	}
+	return copy;
+}
+
+void CinderboxClient::HideMapLooks()
+{
+	if ( m_hiddenFor == m_frame.templateVisuals )
+	{
+		return;
+	}
+	m_hiddenFor = m_frame.templateVisuals;
+	std::vector<bool> used( m_mapLooks.size(), false );
+	for ( size_t t = 0; t < m_frame.templateVisuals.size(); ++t )
+	{
+		present::Visual v;
+		v.templateIndex = uint32_t( t );
+		const int look = MapLookOf( v );
+		if ( look >= 0 )
+		{
+			used[size_t( look )] = true;
+		}
+	}
+	for ( size_t i = 0; i < m_mapLooks.size(); ++i )
+	{
+		if ( auto* node = Object::cast_to<Node3D>( ObjectDB::get_instance( m_mapLooks[i] ) ) )
+		{
+			node->set_visible( used[i] == false );
+		}
+	}
+}
+
 Ref<PackedScene> CinderboxClient::Prefab( const present::Visual& v )
 {
 	// An entity made from a map template draws as whatever the template names, so a map author
@@ -506,7 +566,7 @@ Ref<PackedScene> CinderboxClient::Prefab( const present::Visual& v )
 	if ( v.templateIndex < m_frame.templateVisuals.size() )
 	{
 		const std::string& visual = m_frame.templateVisuals[v.templateIndex];
-		if ( visual.empty() == false )
+		if ( visual.empty() == false && visual[0] != '#' )
 		{
 			Ref<PackedScene> scene = LoadPrefab( visual.c_str() );
 			if ( scene.is_valid() )
@@ -1286,6 +1346,12 @@ void CinderboxClient::UpdateNodes()
 			return;
 		}
 
+		if ( const int look = MapLookOf( v ); look >= 0 )
+		{
+			// Drawn by a copy of its node in the map: as big as it stands there.
+			node->set_transform( Transform3D( rotation * Basis::from_scale( m_mapLookScales[size_t( look )] * s ), ToGodot( pose.position ) ) );
+			return;
+		}
 		Vector3 size;
 		switch ( v.shape )
 		{
@@ -1610,6 +1676,9 @@ void CinderboxClient::UpdateMapVisual()
 	}
 	m_visualMapHash = m_frame.mapHash;
 	m_hideStaticBoxes = false;
+	m_mapLooks.clear();
+	m_mapLookScales.clear();
+	m_hiddenFor.clear();
 
 	if ( auto* old = Object::cast_to<Node>( ObjectDB::get_instance( m_mapVisual ) ) )
 	{
@@ -1653,9 +1722,27 @@ void CinderboxClient::UpdateMapVisual()
 		return;
 	}
 	node->set_name( "Map" );
+	// The nodes templates may be drawn by, numbered as the bake numbered them, and the scale each
+	// stands at in the map (its copies keep it; the body has none).
+	std::vector<Node3D*> looks;
+	MapLookNodes( node, looks );
+	for ( Node3D* look : looks )
+	{
+		Transform3D placed = look->get_transform();
+		for ( Node* up = look->get_parent(); up != nullptr && up != node; up = up->get_parent() )
+		{
+			if ( auto* spatial = Object::cast_to<Node3D>( up ) )
+			{
+				placed = spatial->get_transform() * placed;
+			}
+		}
+		m_mapLooks.push_back( ObjectID( look->get_instance_id() ) );
+		m_mapLookScales.push_back( placed.basis.get_scale().abs() );
+	}
 	Director()->add_child( node );
 	m_mapVisual = node->get_instance_id();
 	m_hideStaticBoxes = true;
+	HideMapLooks();
 }
 
 Dictionary CinderboxClient::get_stats() const

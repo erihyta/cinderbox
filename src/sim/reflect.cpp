@@ -43,6 +43,7 @@ std::vector<ComponentDef> BuildRegistry()
 		{ "density", FieldType::Float, { 40.0f, 0.0f, 0.0f }, 0.001f, 1000.0f, nullptr, "kg/m^3" },
 		{ "friction", FieldType::Float, { 0.6f, 0.0f, 0.0f }, 0.0f, 10.0f, nullptr, "" },
 		{ "restitution", FieldType::Float, { 0.0f, 0.0f, 0.0f }, 0.0f, 1.0f, nullptr, "Bounciness" },
+		{ "mass", FieldType::Float, { 0.0f, 0.0f, 0.0f }, 0.0f, 10000.0f, nullptr, "kg; 0: its volume times density" },
 	};
 	registry.push_back( material );
 
@@ -109,6 +110,15 @@ const ComponentDef* FindComponent( uint32_t componentId )
 const ComponentDef* FindComponent( const std::string& name )
 {
 	return FindComponent( Fnv32( name.c_str() ) );
+}
+
+std::string TemplateLookName( const EntityTemplate& t )
+{
+	if ( t.visual.empty() && t.look != kNoLook )
+	{
+		return "#" + std::to_string( t.look );
+	}
+	return t.visual;
 }
 
 const AuthoredComponent* EntityTemplate::Find( uint32_t componentId ) const

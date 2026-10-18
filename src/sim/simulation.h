@@ -385,6 +385,10 @@ private:
 	b3ShapeId CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material = {} );
 	// A convex hull of `points` (in the body's frame); null if they make none (all in a plane).
 	b3ShapeId CreateHullShape( b3BodyId body, const std::vector<b3Vec3>& points, uint64_t category, const ShapeMaterial& material = {} );
+	// A body's shapes as a set says (each piece where it is in the body's frame); the first one's
+	// id, and in `bounds` the half size of a box about the body's origin that holds them all.
+	b3ShapeId CreateShapeSet( b3BodyId body, const std::vector<LevelBox>& set, uint64_t category, const ShapeMaterial& material,
+							  b3Vec3& bounds );
 	static PhysicsBody MakePhysicsBody( b3BodyId body, b3ShapeId shape );
 
 	void ApplyEvents( const InputFrame& frame );

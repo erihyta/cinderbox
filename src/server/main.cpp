@@ -2,10 +2,12 @@
 //
 //   cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]
 //             [--prop-lifetime SEC] [--props-per-player N] [--props-global N]
-//             [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]
+//             [--map FILE.cbmap | --map NAME] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]
 //             [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...
 //             [--character NAME [--workshop DIR]] [--quiet]
 //
+// --map NAME: maps/NAME.cbmap, next to this executable, in the working folder, or in a checkout the
+// project's godot/maps.
 // --move NAME=VALUE: how players move (sim/move_params.h): walk_speed, sprint_speed, accelerate,
 // friction, stop_speed, air_control, gravity, jump_speed, turn_rate, max_fall. A character that says
 // how it moves (its anim.cfg, "move.walk_speed") wins over these; a mod's SetMove wins over both.
@@ -64,7 +66,7 @@ void Usage()
 {
 	std::printf( "usage: cb_server [--port N] [--tick-rate HZ] [--seed N] [--substeps N]\n"
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
-				 "                 [--map FILE.cbmap] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
+				 "                 [--map FILE.cbmap | --map NAME] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
 				 "                 [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
 				 "                 [--physics-threads N]\n"
 				 "                 [--character NAME [--workshop DIR]] [--quiet]\n" );
@@ -409,6 +411,24 @@ int main( int argc, char** argv )
 	{
 		Usage();
 		return 1;
+	}
+	// A map named without a folder or an extension is maps/<name>.cbmap: next to this executable, in
+	// the working folder, or (in a checkout) the project's own maps.
+	if ( options.mapPath.empty() == false && std::filesystem::path( options.mapPath ).has_parent_path() == false &&
+		 std::filesystem::path( options.mapPath ).has_extension() == false )
+	{
+		std::vector<std::filesystem::path> places = { exeDir / "maps", std::filesystem::current_path() / "maps" };
+#if defined( CB_CHARACTERS_SOURCE_DIR )
+		places.push_back( std::filesystem::path( CB_CHARACTERS_SOURCE_DIR ).parent_path() / "maps" );
+#endif
+		for ( const std::filesystem::path& place : places )
+		{
+			if ( std::filesystem::exists( place / ( options.mapPath + ".cbmap" ) ) )
+			{
+				options.mapPath = ( place / ( options.mapPath + ".cbmap" ) ).string();
+				break;
+			}
+		}
 	}
 	cb::PhysicsThreads::Start( g_physicsThreads >= 0 ? g_physicsThreads : cb::PhysicsThreads::Suggested() );
 	options.physicsThreaded = cb::PhysicsThreads::Count() > 0;

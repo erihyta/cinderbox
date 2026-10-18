@@ -24,6 +24,8 @@
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 
+#include <vector>
+
 namespace cb::gd
 {
 
@@ -120,6 +122,10 @@ private:
 	float m_radius = 4.0f;
 	godot::MeshInstance3D* m_preview = nullptr;
 };
+
+// The nodes of a map's scene a template's look can be (EntityTemplate::look): every CbProp,
+// CbTemplate and CbEntity, in scene-tree order. The bake numbers them and a client finds them so.
+void MapLookNodes( godot::Node* node, std::vector<godot::Node3D*>& out );
 
 // Walks a scene and writes the .cbmap. Entities are baked in scene-tree order, which is the order
 // the simulation creates them in and therefore part of the map's identity.

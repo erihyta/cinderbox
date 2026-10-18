@@ -5,6 +5,7 @@
 #include "box3d_shim.h"
 #include "detmath.h"
 #include "level.h"
+#include "map.h"
 #include "motions.h"
 #include "mover.h"
 #include "ragdoll.h"
@@ -431,6 +432,77 @@ b3ShapeId Simulation::CreateHullShape( b3BodyId body, const std::vector<b3Vec3>&
 	return id;
 }
 
+b3ShapeId Simulation::CreateShapeSet( b3BodyId body, const std::vector<LevelBox>& set, uint64_t category, const ShapeMaterial& material,
+									   b3Vec3& bounds )
+{
+	b3ShapeDef def = MakeShapeDef( category, material );
+	b3ShapeId first = {};
+	bounds = { 0.0f, 0.0f, 0.0f };
+	auto reach = [&]( b3Vec3 point ) {
+		bounds = { std::max( bounds.x, std::fabs( point.x ) ), std::max( bounds.y, std::fabs( point.y ) ),
+				   std::max( bounds.z, std::fabs( point.z ) ) };
+	};
+	for ( const LevelBox& piece : set )
+	{
+		const b3Transform at = { piece.center, MakeRotation( piece.yaw, piece.pitch, piece.roll ) };
+		const b3Vec3 h = piece.halfExtents;
+		b3ShapeId id = {};
+		switch ( piece.kind )
+		{
+			case ShapeKind::Box:
+			{
+				b3BoxHull hull = b3MakeTransformedBoxHull( h.x, h.y, h.z, at );
+				id = b3CreateHullShape( body, &def, &hull.base );
+				for ( int corner = 0; corner < 8; ++corner )
+				{
+					reach( b3TransformPoint( at, { corner & 1 ? h.x : -h.x, corner & 2 ? h.y : -h.y, corner & 4 ? h.z : -h.z } ) );
+				}
+				break;
+			}
+			case ShapeKind::Sphere:
+			{
+				b3Sphere sphere = { piece.center, h.x };
+				id = b3CreateSphereShape( body, &def, &sphere );
+				reach( b3Add( piece.center, { h.x, h.x, h.x } ) );
+				reach( b3Sub( piece.center, { h.x, h.x, h.x } ) );
+				break;
+			}
+			case ShapeKind::Capsule:
+			{
+				b3Capsule capsule = { b3TransformPoint( at, { 0.0f, -h.y, 0.0f } ), b3TransformPoint( at, { 0.0f, h.y, 0.0f } ), h.x };
+				id = b3CreateCapsuleShape( body, &def, &capsule );
+				for ( b3Vec3 end : { capsule.center1, capsule.center2 } )
+				{
+					reach( b3Add( end, { h.x, h.x, h.x } ) );
+					reach( b3Sub( end, { h.x, h.x, h.x } ) );
+				}
+				break;
+			}
+			case ShapeKind::Hull:
+			{
+				if ( piece.hull >= m_map.hulls.size() )
+				{
+					break;
+				}
+				const std::vector<b3Vec3>& points = m_map.hulls[piece.hull];
+				b3HullData* hull = b3CreateHull( points.data(), int( points.size() ), B3_MAX_HULL_VERTICES );
+				if ( hull != nullptr )
+				{
+					id = b3CreateTransformedHullShape( body, &def, hull, at, { 1.0f, 1.0f, 1.0f } );
+					b3DestroyHull( hull );
+				}
+				for ( const b3Vec3& point : points )
+				{
+					reach( b3TransformPoint( at, point ) );
+				}
+				break;
+			}
+		}
+		first = first.index1 == 0 ? id : first;
+	}
+	return first;
+}
+
 b3ShapeId Simulation::CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material )
 {
 	b3ShapeDef def = MakeShapeDef( category, material );
@@ -500,7 +572,7 @@ void Simulation::BuildLevel()
 	// Template instances come last, in the order the map lists them.
 	for ( const LevelInstance& instance : layout.instances )
 	{
-		CreateFromTemplate( instance.templateIndex, instance.position, MakeRotation( instance.yaw, instance.pitch ),
+		CreateFromTemplate( instance.templateIndex, instance.position, MakeRotation( instance.yaw, instance.pitch, instance.roll ),
 							{ 0.0f, 0.0f, 0.0f }, 0 );
 	}
 }
@@ -592,7 +664,32 @@ flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 pos
 
 	bool isStatic = bodyDef.type == b3_staticBody;
 	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
-	b3ShapeId shapeId = CreateShape( body, shape, isStatic ? CatStatic : CatProp, material );
+	b3ShapeId shapeId;
+	if ( t.shapes < m_map.shapeSets.size() )
+	{
+		// Its own shapes. What the Shape component would have drawn is the box that holds them.
+		b3Vec3 bounds;
+		shapeId = CreateShapeSet( body, m_map.shapeSets[t.shapes], isStatic ? CatStatic : CatProp, material, bounds );
+		shape.kind = ShapeKind::Box;
+		shape.halfExtents = bounds;
+	}
+	else
+	{
+		shapeId = CreateShape( body, shape, isStatic ? CatStatic : CatProp, material );
+	}
+	// A weight of its own: the shapes' densities scaled so the body weighs it.
+	const float mass = TemplateFloat( t, kMaterial, Fnv32( "mass" ), 0.0f );
+	if ( mass > 0.0f && isStatic == false && b3Body_GetMass( body ) > 0.0f )
+	{
+		const float scale = mass / b3Body_GetMass( body );
+		b3ShapeId shapes[kMapSetPieceLimit];
+		const int count = b3Body_GetShapes( body, shapes, int( kMapSetPieceLimit ) );
+		for ( int i = 0; i < count; ++i )
+		{
+			b3Shape_SetDensity( shapes[i], b3Shape_GetDensity( shapes[i] ) * scale, false );
+		}
+		b3Body_ApplyMassFromShapes( body );
+	}
 
 	flecs::entity e = CreateEntity();
 	e.set<Transform>( { position, rotation } );
@@ -2999,7 +3096,22 @@ void Simulation::BuildShapeLookup()
 		flecs::entity e( m_world, r.entity );
 		if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
 		{
-			m_shapeLookup.push_back( { uint32_t( pb->shape.index1 ), r.netId } );
+			// A body of several shapes is one entity whichever of them is hit.
+			b3BodyId body = BodyOf( *pb );
+			const int count = b3Body_IsValid( body ) ? b3Body_GetShapeCount( body ) : 0;
+			if ( count <= 1 )
+			{
+				m_shapeLookup.push_back( { uint32_t( pb->shape.index1 ), r.netId } );
+			}
+			else
+			{
+				b3ShapeId shapes[kMapSetPieceLimit];
+				const int got = b3Body_GetShapes( body, shapes, int( kMapSetPieceLimit ) );
+				for ( int i = 0; i < got; ++i )
+				{
+					m_shapeLookup.push_back( { uint32_t( shapes[i].index1 ), r.netId } );
+				}
+			}
 		}
 		if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
 		{

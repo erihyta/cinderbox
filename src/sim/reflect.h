@@ -101,6 +101,11 @@ struct AuthoredComponent
 	std::vector<AuthoredField> fields;
 };
 
+// A template without shapes of its own (its Shape component says it), or without a look in the
+// map's scene (its visual, or the shape's default prefab, draws it).
+inline constexpr uint32_t kNoShapes = 0xFFFFFFFFu;
+inline constexpr uint32_t kNoLook = 0xFFFFFFFFu;
+
 // A named entity definition a map can place and the server can spawn at runtime.
 struct EntityTemplate
 {
@@ -108,9 +113,20 @@ struct EntityTemplate
 	// Prefab a client draws for it (presentation only; the simulation ignores it).
 	std::string visual;
 	std::vector<AuthoredComponent> components;
+	// Its body's shapes, LevelLayout::shapeSets[shapes] (its CollisionShape3D children), in place of
+	// the Shape component; kNoShapes: the Shape component.
+	uint32_t shapes = kNoShapes;
+	// Without a visual: the node of the map's scene that draws it (its own node, copied for each
+	// entity), counted in scene-tree order over CbProp, CbTemplate and CbEntity nodes
+	// (MapLookNodes). Presentation only.
+	uint32_t look = kNoLook;
 
 	const AuthoredComponent* Find( uint32_t componentId ) const;
 };
+
+// What a client's template list says draws a template: its visual (a prefab's name), or "#<n>"
+// for the n-th look node of the map's scene, or "" (the shape's default prefab).
+std::string TemplateLookName( const EntityTemplate& t );
 
 // Readers used by the simulation. `fallback` is returned when the field was not authored, so
 // callers can pass the engine's own default.
