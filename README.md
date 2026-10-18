@@ -65,8 +65,9 @@ pulling a change that adds one), open `godot/` in the editor once or run
 The client is the Godot project in `godot/` (Godot 4.7 or later).
 
 ```sh
-# terminal 1
+# terminal 1 (the built-in sandbox, or a map baked in the editor: godot/maps/<name>.cbmap)
 cb_server --port 7777
+cb_server --port 7777 --map example_arena
 # terminal 2, 3, ...: the Godot client (after building clang-release); it opens in the menu
 godot --path godot
 # or straight into a server
