@@ -10,7 +10,7 @@ The markers carry the collision the simulation needs; everything else in the sce
 | Node | What it becomes |
 |---|---|
 | `CbStatic` | Solid level geometry: floor, wall, ramp, step, platform. A box of `size` (full size in metres), or the [shapes](#collision-shapes) under it. |
-| `CbProp` | A dynamic box or sphere the level starts with. A [body](#a-body) like any other: `mass`, `density`, `friction`, `bounce` |
+| `CbProp` | A dynamic body the level starts with: a box or sphere, or the [shapes](#collision-shapes) under it, drawn by its own meshes. A [body](#a-body) like any other: `mass`, `density`, `friction`, `bounce` |
 | `CbSpawn` | Where players appear. One per map. |
 | `CbTemplate` | A named entity built from components (see Entities below). |
 | `CbComponent` | One component on a template, with the fields the simulation defines. |
@@ -20,7 +20,8 @@ The markers carry the collision the simulation needs; everything else in the sce
 2. Place `CbStatic` nodes for the collision (boxes, or [shapes](#collision-shapes) under them), and
    your own meshes, lights and effects for the look.
 3. Press **Bake Map** in the 3D toolbar, or run `tools\bake_map.ps1 -Scene res://maps/arena.tscn`.
-4. Run the server on it: `cb_server --map godot\maps\arena.cbmap`.
+4. Run the server on it: `cb_server --map arena` (it finds `maps/arena.cbmap` next to the server,
+   in the working folder, or in a checkout's `godot/maps`), or name the file: `--map path\arena.cbmap`.
 
 The server sends the baked map to every client when it joins, so clients always play the server's
 level and can never disagree about it. Clients then look for `res://maps/<name>.tscn` to draw it; if
@@ -34,9 +35,24 @@ the format and `src/sim/reflect.h` for the component registry.
 
 ## Collision shapes
 
-A `CbStatic` can hold Godot's own `CollisionShape3D` nodes as direct children. Each one becomes a
-piece of level geometry of its own, where it is and turned the way it is; the `CbStatic`'s `size` is
-then not used. Godot's handles, and **Mesh > Create Collision Shape** on a model, make them as usual.
+Every body node takes Godot's own `CollisionShape3D` nodes as direct children; Godot's handles, and
+**Mesh > Create Collision Shape** on a model, make them as usual.
+
+| Node | Its shapes are |
+|---|---|
+| `CbStatic` | each a piece of level geometry of its own, where it is (its `size` is then not used) |
+| `CbProp` | one body of all of them, a [body](#a-body) as its settings say; it falls and tumbles as one |
+| `CbTemplate`, and a `CbEntity` with its own components | one body of all of them, in place of its `Shape` component |
+
+A body's weight (`mass`, or `Material.mass` on a template) is the whole body's, however many shapes
+it has. A ray, a shot or a hook that meets any of its shapes meets the one entity.
+
+**Its look**: a `CbProp`, `CbTemplate` or inline `CbEntity` with meshes (or sprites, lights,
+particles) of its own under it is drawn by them: each entity made from it is a copy of that node,
+moved with the body, as big as the node stands in the map; the node itself is not drawn where it was
+placed. A `CbProp` with meshes and no shapes is its own box or ball, drawn by its meshes. A template
+with a `visual` keeps that prefab; one with neither draws its shape's default prefab. A plain
+`CbProp` (no children) is the map's simple box or ball, as before.
 
 | Shape | Baked as |
 |---|---|
@@ -57,10 +73,11 @@ then not used. Godot's handles, and **Mesh > Create Collision Shape** on a model
 - Godot's warning on a `CollisionShape3D` ("must be a child of a physics body") does not apply here
   and can be ignored: Cinderbox's physics reads it, Godot's never runs.
 - The bake says what it made of each node in the Bake Map output.
-- Only level geometry for now; props and templates keep their own shape settings.
+- Items keep their own shape settings (`item.cfg`) for now.
 
 Turns are stored as yaw, pitch and roll (Godot's YXZ order) on the 1/4096 rad grid. Maps baked
-before this (version 3: boxes without roll; version 4: no hulls) still load.
+before this (version 3: boxes without roll; version 4: no hulls; version 5: one shape per body)
+still load. A placed entity turns with roll too.
 
 ## A body
 
@@ -87,9 +104,9 @@ and its fields appear:
 
 | Component | Fields |
 |---|---|
-| `Shape` | `kind` (Box, Sphere, Capsule), `size`, `radius`, `height` |
+| `Shape` | `kind` (Box, Sphere, Capsule), `size`, `radius`, `height` (or `CollisionShape3D` children instead) |
 | `Body` | `type` (Static, Kinematic, Dynamic), `gravity_scale`, `linear_damping`, `angular_damping` |
-| `Material` | `density`, `friction`, `restitution` |
+| `Material` | `density`, `friction`, `restitution`, `mass` (kg; 0: its volume times density) |
 | `Velocity` | `linear`, `angular` the entity starts with |
 | `Prop` | `lifetime_seconds` (0 keeps it forever); makes it count against the prop caps |
 
