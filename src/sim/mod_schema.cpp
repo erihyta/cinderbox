@@ -1,5 +1,7 @@
 #include "mod_schema.h"
 
+#include "map.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -327,6 +329,27 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutU8( out, uint8_t( shape.usedEvent >> 8 ) );
 		PutU8( out, uint8_t( shape.expiredEvent & 0xFF ) );
 		PutU8( out, uint8_t( shape.expiredEvent >> 8 ) );
+		PutU8( out, uint8_t( std::min<size_t>( shape.parts.size(), kItemPartLimit ) ) );
+		for ( size_t p = 0; p < shape.parts.size() && p < kItemPartLimit; ++p )
+		{
+			const ItemPart& part = shape.parts[p];
+			PutU8( out, part.kind );
+			for ( float v : { part.half.x, part.half.y, part.half.z, part.center.x, part.center.y, part.center.z, part.turn[0], part.turn[1],
+							  part.turn[2], part.turn[3] } )
+			{
+				PutF32( out, v );
+			}
+			const size_t points = std::min( part.points.size(), kItemHullPointLimit );
+			PutU8( out, uint8_t( points & 0xFF ) );
+			PutU8( out, uint8_t( points >> 8 ) );
+			for ( size_t k = 0; k < points; ++k )
+			{
+				for ( float v : { part.points[k].x, part.points[k].y, part.points[k].z } )
+				{
+					PutF32( out, v );
+				}
+			}
+		}
 		PutU8( out, uint8_t( std::min<size_t>( shape.fieldDefaults.size(), 64 ) ) );
 		for ( size_t f = 0; f < shape.fieldDefaults.size() && f < 64; ++f )
 		{
@@ -538,6 +561,59 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		shape.usedEvent = uint16_t( shape.usedEvent | ( uint16_t( r.U8() ) << 8 ) );
 		shape.expiredEvent = r.U8();
 		shape.expiredEvent = uint16_t( shape.expiredEvent | ( uint16_t( r.U8() ) << 8 ) );
+		// Its parts: shapes the physics can build, within reach of the item, turned by a rotation.
+		uint8_t parts = r.U8();
+		if ( parts > kItemPartLimit )
+		{
+			return false;
+		}
+		for ( uint8_t p = 0; p < parts && r.ok; ++p )
+		{
+			ItemPart part;
+			part.kind = r.U8();
+			float q[10];
+			for ( float& f : q )
+			{
+				f = r.F32();
+			}
+			part.half = { q[0], q[1], q[2] };
+			part.center = { q[3], q[4], q[5] };
+			float length = 0.0f;
+			for ( int k = 0; k < 4; ++k )
+			{
+				part.turn[k] = q[6 + k];
+				length += q[6 + k] * q[6 + k];
+			}
+			size_t points = r.U8();
+			points |= size_t( r.U8() ) << 8;
+			if ( part.kind > 3 || points > kItemHullPointLimit || ( part.kind == 3 ) != ( points >= 4 ) || sane( length, 0.9f, 1.1f ) == false ||
+				 sane( q[3], -4.0f, 4.0f ) == false || sane( q[4], -4.0f, 4.0f ) == false || sane( q[5], -4.0f, 4.0f ) == false )
+			{
+				return false;
+			}
+			const bool boxy = part.kind == 0 || part.kind == 3; // (a hull's half is its bounds)
+			if ( sane( q[0], 0.005f, 4.0f ) == false || ( boxy && ( sane( q[1], 0.005f, 4.0f ) == false || sane( q[2], 0.005f, 4.0f ) == false ) ) ||
+				 ( part.kind == 2 && sane( q[1], 0.0f, 4.0f ) == false ) )
+			{
+				return false;
+			}
+			std::vector<b3Vec3> hull;
+			for ( size_t k = 0; k < points && r.ok; ++k )
+			{
+				Float3 point = { r.F32(), r.F32(), r.F32() };
+				if ( sane( point.x, -4.0f, 4.0f ) == false || sane( point.y, -4.0f, 4.0f ) == false || sane( point.z, -4.0f, 4.0f ) == false )
+				{
+					return false;
+				}
+				part.points.push_back( point );
+				hull.push_back( { point.x, point.y, point.z } );
+			}
+			if ( part.kind == 3 && r.ok && MapHullBuilds( hull ) == false )
+			{
+				return false;
+			}
+			shape.parts.push_back( std::move( part ) );
+		}
 		uint8_t defaults = r.U8();
 		for ( uint8_t f = 0; f < defaults && f < 64 && r.ok; ++f )
 		{

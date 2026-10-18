@@ -3,8 +3,8 @@ extends SceneTree
 ##
 ##   godot --headless --path server_mods/melee/client --script <repo>/godot/addons/cinderbox_maps/bake_items.gd
 ##
-## Every scene of the project whose root is a CbItem is an item. Its body (the CollisionShape3D under
-## it: a box or a sphere, placed from the grip), its mass, its grips and its properties are written
+## Every scene of the project whose root is a CbItem is an item. Its body (the CollisionShape3D nodes
+## under it: one box or ball, or several shapes of any kind, placed from the grip), its mass, its grips and its properties are written
 ## to res://items/<kind>.cfg with the scene's path, its name and its first-person view. The server
 ## reads the body from that file in the mod's workshop item; the game finds the scene by it. So the
 ## item drawn in the editor is the item in the game.

@@ -318,7 +318,7 @@ so it falls, tumbles, gets shot across the floor, and does so identically on eve
 
 | Mod API | Does |
 |---|---|
-| the `CollisionShape3D` under the item's `CbItem` | its body in the world: a box or a sphere, placed from the grip (the bat: a 0.82 m box whose centre is 0.31 m in front of it), with the item's `mass`. Authored with Godot's shape gizmo, baked to `items/<kind>.cfg` |
+| the `CollisionShape3D` nodes under the item's `CbItem` | its body in the world, placed from the grip (the bat: a 0.82 m box whose centre is 0.31 m in front of it), with the item's `mass`. One box or ball, or several shapes of any kind a map's body can have (box, sphere, capsule, cylinder, convex polygon; turned and scaled any way) making one body: a hammer's head and handle. Authored with Godot's shape gizmo, baked to `items/<kind>.cfg` |
 | `declare.ItemKind( "x", BoxItem( half, center, mass ) )` | the same from code, for a mod without a look (`SphereItem` too); a baked body replaces it |
 | `ctx.SpawnWorldItem( kind, grip, rotation, velocity )` | one on the floor |
 | `ctx.DropItem( item, grip, rotation, velocity )` | out of the hand; thrown if it has a velocity |
@@ -357,7 +357,7 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 
 | Under it | Meaning |
 |---|---|
-| a `CollisionShape3D` | the body: a `BoxShape3D` or `SphereShape3D`, moved to where the shape's centre is. Not scaled |
+| `CollisionShape3D` nodes | the body: one or several shapes (box, sphere, capsule, cylinder, convex polygon), each where it is; up to 16, a hull up to 256 points. One unscaled box or ball bakes as items always have (`shape`, `half`, `center`, `turn`), so such an item's file and hash do not change; anything else bakes as `part` lines |
 | two `Marker3D`s | [where the hands hold it](#both-hands-on-an-item): the item's `carry_grip` and `other_grip` name them |
 | anything else | its look: meshes, lights, particles; `CbReaction` nodes for what it shows (`subject` `^^`: whoever holds it); `CbPrediction` nodes for what its own use looks like on the click, which speak only for the copy in the viewer's hand ([Predictions](looks.md#predictions)) |
 

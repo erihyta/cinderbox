@@ -424,85 +424,25 @@ int BakeShapes( Node* body, const Transform3D& frame, std::vector<LevelBox>& out
 		}
 		found += 1;
 		String name = body->get_name() + String( "/" ) + node->get_name();
-		Ref<Shape3D> shape = node->get_shape();
-		if ( node->is_disabled() || shape.is_null() )
+		BakedShape baked;
+		String why = BakeShape( node, frame * node->get_transform(), name, baked, ctx.warnings );
+		if ( why.is_empty() == false )
 		{
-			ctx.warnings.push_back( String( "skipped " ) + name + ( shape.is_null() ? ": it has no shape" : ": it is disabled" ) );
+			ctx.warnings.push_back( String( "skipped " ) + name + ": " + why );
 			continue;
 		}
-		Transform3D at = frame * node->get_transform();
-		Vector3 scale = at.basis.get_scale().abs();
-		LevelBox piece;
-		if ( auto* box = Object::cast_to<BoxShape3D>( shape.ptr() ) )
+		LevelBox piece = PieceAt( baked.at, baked.kind, baked.half );
+		if ( baked.kind == ShapeKind::Hull )
 		{
-			piece = PieceAt( at, ShapeKind::Box, box->get_size() * scale * 0.5f );
-		}
-		else if ( auto* sphere = Object::cast_to<SphereShape3D>( shape.ptr() ) )
-		{
-			if ( Uneven( float( scale.x ), float( scale.y ) ) || Uneven( float( scale.x ), float( scale.z ) ) )
-			{
-				ctx.warnings.push_back( name + ": a sphere scaled unevenly stays round (its largest scale)" );
-			}
-			float radius = float( sphere->get_radius() ) * float( std::max( { scale.x, scale.y, scale.z } ) );
-			piece = PieceAt( at, ShapeKind::Sphere, Vector3( radius, 0.0f, 0.0f ) );
-		}
-		else if ( auto* capsule = Object::cast_to<CapsuleShape3D>( shape.ptr() ) )
-		{
-			if ( Uneven( float( scale.x ), float( scale.z ) ) )
-			{
-				ctx.warnings.push_back( name + ": a capsule scaled unevenly across stays round (its larger scale)" );
-			}
-			float radius = float( capsule->get_radius() ) * float( std::max( scale.x, scale.z ) );
-			float height = float( capsule->get_height() ) * float( scale.y );
-			// Box3D's capsule is the distance between its two sphere centres, which cannot go negative.
-			piece = PieceAt( at, ShapeKind::Capsule, Vector3( radius, std::max( 0.5f * height - radius, 0.0f ), 0.0f ) );
-		}
-		else if ( auto* cylinder = Object::cast_to<CylinderShape3D>( shape.ptr() ) )
-		{
-			// Two rims of points: a hull, so any scale is kept (an oval drum stays oval).
-			piece = PieceAt( at, ShapeKind::Hull, Vector3() );
 			std::vector<b3Vec3> points;
-			float radius = float( cylinder->get_radius() );
-			float half = 0.5f * float( cylinder->get_height() );
-			for ( int side = 0; side < kCylinderSides; ++side )
+			for ( const Vector3& point : baked.points )
 			{
-				float angle = 6.2831853f * float( side ) / float( kCylinderSides );
-				for ( float y : { -half, half } )
-				{
-					points.push_back( { radius * std::cos( angle ) * float( scale.x ), y * float( scale.y ),
-										radius * std::sin( angle ) * float( scale.z ) } );
-				}
+				points.push_back( ToSim( point ) );
 			}
 			if ( AddHull( std::move( points ), name, ctx, piece ) == false )
 			{
 				continue;
 			}
-		}
-		else if ( auto* convex = Object::cast_to<ConvexPolygonShape3D>( shape.ptr() ) )
-		{
-			piece = PieceAt( at, ShapeKind::Hull, Vector3() );
-			std::vector<b3Vec3> points;
-			for ( const Vector3& point : convex->get_points() )
-			{
-				points.push_back( ToSim( point * scale ) );
-			}
-			if ( AddHull( std::move( points ), name, ctx, piece ) == false )
-			{
-				continue;
-			}
-		}
-		else
-		{
-			ctx.warnings.push_back( String( "skipped " ) + name + ": a " + shape->get_class() +
-									" is not a body's shape yet (box, sphere, capsule, cylinder and convex polygon are)" );
-			continue;
-		}
-		const b3Vec3 h = piece.halfExtents;
-		bool boxy = piece.kind == ShapeKind::Box || piece.kind == ShapeKind::Hull;
-		if ( ( boxy && ( h.x <= 0.0f || h.y <= 0.0f || h.z <= 0.0f ) ) || h.x <= 0.0f )
-		{
-			ctx.warnings.push_back( String( "skipped " ) + name + ": size must be positive" );
-			continue;
 		}
 		out.push_back( piece );
 	}
@@ -703,6 +643,81 @@ void MapLookNodes( Node* node, std::vector<Node3D*>& out )
 	{
 		MapLookNodes( node->get_child( i ), out );
 	}
+}
+
+String BakeShape( const CollisionShape3D* node, const Transform3D& at, const String& name, BakedShape& out, Array& warnings )
+{
+	Ref<Shape3D> shape = node->get_shape();
+	if ( shape.is_null() )
+	{
+		return "it has no shape";
+	}
+	if ( node->is_disabled() )
+	{
+		return "it is disabled";
+	}
+	const Vector3 scale = at.basis.get_scale().abs();
+	out = BakedShape();
+	out.at = Transform3D( at.basis.orthonormalized(), at.origin );
+	if ( auto* box = Object::cast_to<BoxShape3D>( shape.ptr() ) )
+	{
+		out.kind = ShapeKind::Box;
+		out.half = box->get_size() * scale * 0.5f;
+	}
+	else if ( auto* sphere = Object::cast_to<SphereShape3D>( shape.ptr() ) )
+	{
+		if ( Uneven( float( scale.x ), float( scale.y ) ) || Uneven( float( scale.x ), float( scale.z ) ) )
+		{
+			warnings.push_back( name + String( ": a sphere scaled unevenly stays round (its largest scale)" ) );
+		}
+		out.kind = ShapeKind::Sphere;
+		out.half = Vector3( float( sphere->get_radius() ) * float( std::max( { scale.x, scale.y, scale.z } ) ), 0.0f, 0.0f );
+	}
+	else if ( auto* capsule = Object::cast_to<CapsuleShape3D>( shape.ptr() ) )
+	{
+		if ( Uneven( float( scale.x ), float( scale.z ) ) )
+		{
+			warnings.push_back( name + String( ": a capsule scaled unevenly across stays round (its larger scale)" ) );
+		}
+		float radius = float( capsule->get_radius() ) * float( std::max( scale.x, scale.z ) );
+		float height = float( capsule->get_height() ) * float( scale.y );
+		// Box3D's capsule is the distance between its two sphere centres, which cannot go negative.
+		out.kind = ShapeKind::Capsule;
+		out.half = Vector3( radius, std::max( 0.5f * height - radius, 0.0f ), 0.0f );
+	}
+	else if ( auto* cylinder = Object::cast_to<CylinderShape3D>( shape.ptr() ) )
+	{
+		// Two rims of points: a hull, so any scale is kept (an oval drum stays oval).
+		out.kind = ShapeKind::Hull;
+		float radius = float( cylinder->get_radius() );
+		float half = 0.5f * float( cylinder->get_height() );
+		for ( int side = 0; side < kCylinderSides; ++side )
+		{
+			float angle = 6.2831853f * float( side ) / float( kCylinderSides );
+			for ( float y : { -half, half } )
+			{
+				out.points.push_back( Vector3( radius * std::cos( angle ), y, radius * std::sin( angle ) ) * scale );
+			}
+		}
+	}
+	else if ( auto* convex = Object::cast_to<ConvexPolygonShape3D>( shape.ptr() ) )
+	{
+		out.kind = ShapeKind::Hull;
+		for ( const Vector3& point : convex->get_points() )
+		{
+			out.points.push_back( point * scale );
+		}
+	}
+	else
+	{
+		return String( "a " ) + shape->get_class() + " is not a body's shape yet (box, sphere, capsule, cylinder and convex polygon are)";
+	}
+	bool boxy = out.kind == ShapeKind::Box;
+	if ( out.kind != ShapeKind::Hull && ( ( boxy && ( out.half.x <= 0.0f || out.half.y <= 0.0f || out.half.z <= 0.0f ) ) || out.half.x <= 0.0f ) )
+	{
+		return "size must be positive";
+	}
+	return String();
 }
 
 // --- CbStatic -----------------------------------------------------------------------------------

@@ -389,6 +389,11 @@ private:
 	// id, and in `bounds` the half size of a box about the body's origin that holds them all.
 	b3ShapeId CreateShapeSet( b3BodyId body, const std::vector<LevelBox>& set, uint64_t category, const ShapeMaterial& material,
 							  b3Vec3& bounds );
+	// One shape of a body, `at` in its frame (a hull's `points` in its own); `bounds` grows to hold it.
+	b3ShapeId CreatePiece( b3BodyId body, uint64_t category, const ShapeMaterial& material, ShapeKind kind, b3Vec3 half, b3Transform at,
+						   const std::vector<b3Vec3>* points, b3Vec3& bounds );
+	// The body's shapes' densities scaled so it weighs `mass` (nothing for 0).
+	void WeighBody( b3BodyId body, float mass );
 	static PhysicsBody MakePhysicsBody( b3BodyId body, b3ShapeId shape );
 
 	void ApplyEvents( const InputFrame& frame );

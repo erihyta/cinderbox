@@ -19,6 +19,9 @@
 
 #include "cinderbox_body.h"
 
+#include "components.h"
+
+#include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
@@ -126,6 +129,20 @@ private:
 // The nodes of a map's scene a template's look can be (EntityTemplate::look): every CbProp,
 // CbTemplate and CbEntity, in scene-tree order. The bake numbers them and a client finds them so.
 void MapLookNodes( godot::Node* node, std::vector<godot::Node3D*>& out );
+
+// One CollisionShape3D as a body's shape where `at` puts it (its place in the body's frame, scale
+// and all): its kind, its half size as Shape has it, where it is and how it is turned (no scale:
+// that is in the sizes), and a hull's points (in its own frame, scaled). Returns "" when it becomes a
+// shape, else why not; what is kept but worth saying (an uneven sphere) goes to `warnings`.
+struct BakedShape
+{
+	cb::ShapeKind kind = cb::ShapeKind::Box;
+	godot::Vector3 half;
+	godot::Transform3D at;
+	std::vector<godot::Vector3> points;
+};
+godot::String BakeShape( const godot::CollisionShape3D* node, const godot::Transform3D& at, const godot::String& name, BakedShape& out,
+						 godot::Array& warnings );
 
 // Walks a scene and writes the .cbmap. Entities are baked in scene-tree order, which is the order
 // the simulation creates them in and therefore part of the map's identity.

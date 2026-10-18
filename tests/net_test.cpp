@@ -20,6 +20,7 @@
 #include "replay.h"
 #include "replay_source.h"
 #include "simulation.h"
+#include "box3d/box3d.h"
 #include "util.h"
 
 #include <chrono>
@@ -1352,6 +1353,94 @@ void TestItemShapes()
 	properties.clear();
 	CHECK( LoadItemShapeFolder( root + "/server_mods/melee/client", "melee.bat", shape, error, &properties ) );
 	CHECK( properties.count( "pickup.hold_seconds" ) == 1 && properties["pickup.hold_seconds"] == 0.5f );
+}
+
+// An item's body of several shapes (items/<kind>.cfg "part" lines, as the bake writes them for an
+// item with more than one CollisionShape3D, or one a box or ball cannot say): parsed, its one shape
+// the box that holds them; refused when a part is not a body; through the schema unchanged; and in
+// the world one body of all of them, weighing what the file says, whatever part a ray meets.
+void TestItemParts()
+{
+	// A hammer: a handle along the item's -Z (a capsule turned from Y), a head, and a wedge (a hull).
+	const std::string hammer = "# baked\n"
+							   "part capsule 0.03 0.3 0 0 0 -0.3 0.70711 0 0 0.70711\n"
+							   "part box 0.12 0.05 0.05 0 0 -0.62 0 0 0 1\n"
+							   "part hull 0.06 0.05 0.05 0.18 0 -0.62 0 0 0 1 4 0 -0.05 -0.05 0 0.05 -0.05 0 0 0.05 0.06 0 0\n"
+							   "mass 2\n";
+	ItemShape shape;
+	std::string error;
+	CHECK( ParseItemShape( hammer, shape, error ) );
+	std::printf( "    the hammer: %zu parts, held in a box of %.2f x %.2f x %.2f\n", shape.parts.size(), shape.half.x, shape.half.y,
+				 shape.half.z );
+	CHECK( shape.parts.size() == 3 && shape.parts[2].kind == 3 && shape.parts[2].points.size() == 4 && shape.mass == 2.0f );
+	CHECK( shape.kind == 0 && shape.center.z == 0.0f && shape.turn[3] == 1.0f && shape.half.z > 0.66f && shape.half.x > 0.23f );
+	// Refused: a flat hull, a turn that is no rotation, an unknown kind, too many parts.
+	CHECK( ParseItemShape( "part hull 0.1 0.1 0.1 0 0 0 0 0 0 1 4 0 0 0 0.1 0 0 0 0 0.1 0.1 0 0.1\n", shape, error ) == false );
+	CHECK( ParseItemShape( "part box 0.1 0.1 0.1 0 0 0 0 0 0 3\n", shape, error ) == false );
+	CHECK( ParseItemShape( "part cone 0.1 0.1 0.1 0 0 0 0 0 0 1\n", shape, error ) == false );
+	std::string many;
+	for ( int i = 0; i < 17; ++i )
+	{
+		many += "part sphere 0.05 0 0 0 0 0 0 0 0 1\n";
+	}
+	CHECK( ParseItemShape( many, shape, error ) == false );
+	CHECK( ParseItemShape( hammer, shape, error ) );
+
+	// Through the schema as it was written.
+	ModSchema schema;
+	schema.itemKinds = { "test.hammer" };
+	schema.itemShapes = { shape };
+	std::vector<uint8_t> bytes;
+	EncodeSchema( schema, bytes );
+	ModSchema back;
+	CHECK( DecodeSchema( bytes.data(), bytes.size(), back ) && back.itemShapes.size() == 1 && back.itemShapes[0] == shape );
+
+	// In the world: dropped from a metre, it lands and lies; it weighs 2 kg; head and handle are it.
+	LevelLayout map;
+	map.name = "items";
+	map.spawnCenter = { 0.0f, 1.5f, 8.0f };
+	map.spawnRadius = 2.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 10.0f, 0.5f, 10.0f }, 0.0f, 0.0f } );
+	QuantizeLayout( map );
+	SimConfig config;
+	Simulation sim( config, map );
+	sim.SetItemShapes( { shape } );
+	InputFrame f;
+	SimCommand c;
+	c.type = CommandType::SpawnItem;
+	c.target = 0;
+	c.index = 0;
+	c.mode = kNoSocket;
+	c.value = 1;
+	c.a = { 0.0f, 1.0f, 0.0f };
+	f.commands.push_back( c );
+	for ( int i = 0; i < 180; ++i )
+	{
+		f.tick = sim.Tick();
+		sim.Step( f );
+		f.commands.clear();
+	}
+	uint32_t item = 0;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		item = flecs::entity( sim.World(), r.entity ).has<HeldItem>() ? r.netId : item;
+	}
+	CHECK( item != 0 );
+	flecs::entity e = sim.FindEntity( item );
+	CHECK( e.has<PhysicsBody>() );
+	const float mass = b3Body_GetMass( sim.BodyOf( e.get<PhysicsBody>() ) );
+	const Transform at = *sim.EntityTransform( item );
+	b3Vec3 head = b3Add( at.position, b3RotateVector( at.rotation, { 0.0f, 0.0f, -0.62f } ) );
+	b3Vec3 grip = b3Add( at.position, b3RotateVector( at.rotation, { 0.0f, 0.0f, -0.1f } ) );
+	RayHit onHead, onHandle;
+	bool headHit = sim.CastRay( { head.x, 3.0f, head.z }, { 0.0f, -4.0f, 0.0f }, 0, onHead );
+	bool handleHit = sim.CastRay( { grip.x, 3.0f, grip.z }, { 0.0f, -4.0f, 0.0f }, 0, onHandle );
+	std::printf( "    lying: %.3f kg, its grip %.3f m up; down onto the head %.3f m, onto the handle %.3f m\n", mass, at.position.y,
+				 headHit ? onHead.point.y : -1.0f, handleHit ? onHandle.point.y : -1.0f );
+	CHECK( std::fabs( mass - 2.0f ) < 0.01f );
+	CHECK( at.position.y > 0.0f && at.position.y < 0.2f );
+	CHECK( headHit && onHead.netId == item && handleHit && onHandle.netId == item );
+	CHECK( onHead.point.y > onHandle.point.y ); // the head stands higher than the handle
 }
 
 // An item's pose: a pack's layer the character does not have is an overlay, laid over the body
@@ -4278,6 +4367,7 @@ int main( int argc, char** argv )
 		{ "deathmatch", TestDeathmatch },
 		{ "character_item", TestCharacterItem },
 		{ "item_shapes", TestItemShapes },
+		{ "item_parts", TestItemParts },
 		{ "sneak", TestSneak },
 		{ "move_params", TestMoveParams },
 		{ "dash", TestDash },

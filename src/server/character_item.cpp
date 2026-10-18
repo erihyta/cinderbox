@@ -1,5 +1,6 @@
 #include "character_item.h"
 
+#include "map.h"
 #include "sha256.h"
 
 #include "miniz.h"
@@ -208,6 +209,57 @@ bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error
 			( key == "half" ? shape.half : shape.center ) = v;
 			haveHalf |= key == "half";
 		}
+		else if ( key == "part" )
+		{
+			// part <box|sphere|capsule|hull> <half x y z> <centre x y z> <turn x y z w> [<points> <x y z>...]
+			// (a hull's points, in the part's own frame)
+			std::string kind;
+			ItemPart part;
+			float v[10];
+			words >> kind;
+			const char* const kinds[] = { "box", "sphere", "capsule", "hull" };
+			part.kind = 255;
+			for ( uint8_t k = 0; k < 4; ++k )
+			{
+				part.kind = kind == kinds[k] ? k : part.kind;
+			}
+			if ( part.kind == 255 || !( words >> v[0] >> v[1] >> v[2] >> v[3] >> v[4] >> v[5] >> v[6] >> v[7] >> v[8] >> v[9] ) )
+			{
+				error = "a part is box, sphere, capsule or hull, then its half size, centre and turn (x y z w)";
+				return false;
+			}
+			part.half = { v[0], v[1], v[2] };
+			part.center = { v[3], v[4], v[5] };
+			for ( int k = 0; k < 4; ++k )
+			{
+				part.turn[k] = v[6 + k];
+			}
+			if ( part.kind == 3 )
+			{
+				size_t count = 0;
+				if ( !( words >> count ) || count < 4 || count > kItemHullPointLimit )
+				{
+					error = "a hull part needs 4 to " + std::to_string( kItemHullPointLimit ) + " points";
+					return false;
+				}
+				for ( size_t k = 0; k < count; ++k )
+				{
+					Float3 point;
+					if ( !( words >> point.x >> point.y >> point.z ) )
+					{
+						error = "a hull part has fewer points than it says";
+						return false;
+					}
+					part.points.push_back( point );
+				}
+			}
+			if ( shape.parts.size() >= kItemPartLimit )
+			{
+				error = "an item has at most " + std::to_string( kItemPartLimit ) + " parts";
+				return false;
+			}
+			shape.parts.push_back( std::move( part ) );
+		}
 		else if ( key == "mass" )
 		{
 			if ( !( words >> shape.mass ) )
@@ -294,9 +346,77 @@ bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error
 		}
 	}
 	auto sane = []( float f, float lo, float hi ) { return std::isfinite( f ) && f >= lo && f <= hi; };
+	if ( shape.parts.empty() == false )
+	{
+		// A body of parts sits at the item's frame; its one shape is the box that holds them.
+		b3Vec3 bounds = { 0.005f, 0.005f, 0.005f };
+		auto reach = [&]( b3Vec3 p ) {
+			bounds = { std::max( bounds.x, std::fabs( p.x ) ), std::max( bounds.y, std::fabs( p.y ) ), std::max( bounds.z, std::fabs( p.z ) ) };
+		};
+		for ( const ItemPart& part : shape.parts )
+		{
+			const b3Vec3 c = { part.center.x, part.center.y, part.center.z };
+			const b3Vec3 h = { part.half.x, part.half.y, part.half.z };
+			const float length = part.turn[0] * part.turn[0] + part.turn[1] * part.turn[1] + part.turn[2] * part.turn[2] + part.turn[3] * part.turn[3];
+			const bool boxy = part.kind == 0 || part.kind == 3;
+			if ( sane( length, 0.9f, 1.1f ) == false || sane( h.x, 0.005f, 4.0f ) == false ||
+				 ( boxy && ( sane( h.y, 0.005f, 4.0f ) == false || sane( h.z, 0.005f, 4.0f ) == false ) ) ||
+				 ( part.kind == 2 && sane( h.y, 0.0f, 4.0f ) == false ) || sane( c.x, -4.0f, 4.0f ) == false ||
+				 sane( c.y, -4.0f, 4.0f ) == false || sane( c.z, -4.0f, 4.0f ) == false )
+			{
+				error = "a part's size must be between 0.005 and 4 m, its centre within 4 m, its turn a rotation";
+				return false;
+			}
+			const b3Quat q = b3NormalizeQuat( { { part.turn[0], part.turn[1], part.turn[2] }, part.turn[3] } );
+			std::vector<b3Vec3> corners;
+			if ( part.kind == 0 || part.kind == 3 )
+			{
+				for ( int k = 0; k < 8; ++k )
+				{
+					corners.push_back( { k & 1 ? h.x : -h.x, k & 2 ? h.y : -h.y, k & 4 ? h.z : -h.z } );
+				}
+			}
+			else
+			{
+				const float r = h.x, y = part.kind == 2 ? h.y + h.x : h.x;
+				for ( int k = 0; k < 8; ++k )
+				{
+					corners.push_back( { k & 1 ? r : -r, k & 2 ? y : -y, k & 4 ? r : -r } );
+				}
+			}
+			for ( const b3Vec3& corner : corners )
+			{
+				reach( b3Add( c, b3RotateVector( q, corner ) ) );
+			}
+			if ( part.kind == 3 )
+			{
+				std::vector<b3Vec3> hull;
+				for ( const Float3& p : part.points )
+				{
+					if ( sane( p.x, -4.0f, 4.0f ) == false || sane( p.y, -4.0f, 4.0f ) == false || sane( p.z, -4.0f, 4.0f ) == false )
+					{
+						error = "a hull part's points must be within 4 m";
+						return false;
+					}
+					hull.push_back( { p.x, p.y, p.z } );
+				}
+				if ( MapHullBuilds( hull ) == false )
+				{
+					error = "a hull part's points make no solid (they lie in a plane)";
+					return false;
+				}
+			}
+		}
+		shape.kind = 0;
+		shape.half = { std::min( bounds.x, 4.0f ), std::min( bounds.y, 4.0f ), std::min( bounds.z, 4.0f ) };
+		shape.center = {};
+		shape.turn[0] = shape.turn[1] = shape.turn[2] = 0.0f;
+		shape.turn[3] = 1.0f;
+		haveShape = haveHalf = true;
+	}
 	if ( haveShape == false || haveHalf == false )
 	{
-		error = "needs a shape and its half extents";
+		error = "needs a shape and its half extents, or its parts";
 		return false;
 	}
 	for ( float h : { shape.half.x, shape.half.y, shape.half.z } )
