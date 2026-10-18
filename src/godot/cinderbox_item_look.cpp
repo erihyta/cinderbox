@@ -1036,6 +1036,10 @@ Dictionary CbItem::bake() const
 		{
 			BakedShape baked;
 			String why = BakeShape( node, toCarried * InSceneFrame( node, this ), node->get_name(), baked, warnings );
+			if ( why.is_empty() && ( baked.kind == ShapeKind::Mesh || baked.kind == ShapeKind::HeightField ) )
+			{
+				why = "a concave polygon or a height map is level geometry only: Box3D moves no body of one";
+			}
 			if ( why.is_empty() == false )
 			{
 				return fail( String( node->get_name() ) + ": " + why );

@@ -35,6 +35,7 @@
 #include "view_file.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <limits>
 #include <cinttypes>
@@ -602,6 +603,165 @@ void TestMapBodies()
 	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
 	bad = map;
 	bad.templates[1].shapes = 2;
+	SerializeMap( bad, bytes );
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
+}
+
+// Level surfaces (map version 7): a triangle mesh (a trough) and a height field (a bowl with a hole).
+// Balls dropped on them roll to their bottoms; one over the hole falls through; rays meet them where
+// they are; they survive the file; a rollback snapshot and a portable one (its bytes gone once
+// loaded) continue as the original does; a surface where it may not be is refused.
+void TestMapSurfaces()
+{
+	LevelLayout map;
+	map.name = "surfaces";
+	map.spawnCenter = { 0.0f, 1.5f, 30.0f };
+	map.spawnRadius = 2.0f;
+	// The trough: two slopes 4 m wide meeting at x 0, along z from -3 to 3; faces up.
+	LevelMesh trough;
+	trough.vertices = { { -4.0f, 2.0f, -3.0f }, { 0.0f, 0.0f, -3.0f }, { 4.0f, 2.0f, -3.0f },
+						{ -4.0f, 2.0f, 3.0f },	{ 0.0f, 0.0f, 3.0f },  { 4.0f, 2.0f, 3.0f } };
+	for ( auto [a, b, c] : { std::array<uint32_t, 3>{ 0, 1, 4 }, { 0, 4, 3 }, { 1, 2, 5 }, { 1, 5, 4 } } )
+	{
+		// Counter-clockwise seen from above: the face points up.
+		const b3Vec3 n = b3Cross( b3Sub( trough.vertices[b], trough.vertices[a] ), b3Sub( trough.vertices[c], trough.vertices[a] ) );
+		trough.indices.insert( trough.indices.end(), { a, n.y > 0.0f ? b : c, n.y > 0.0f ? c : b } );
+	}
+	map.meshes.push_back( trough );
+	map.statics.push_back( { { 0.0f, 0.0f, 0.0f }, { 4.0f, 2.0f, 3.0f }, 0.0f, 0.0f, 0.0f, ShapeKind::Mesh, 0 } );
+	// The bowl: 9 by 9 points a metre apart from its corner at (20, 0, -4); its bottom at (24, 0, 0).
+	LevelHeightField bowl;
+	bowl.countX = 9;
+	bowl.countZ = 9;
+	for ( int z = 0; z < 9; ++z )
+	{
+		for ( int x = 0; x < 9; ++x )
+		{
+			bowl.heights.push_back( 0.125f * float( ( x - 4 ) * ( x - 4 ) + ( z - 4 ) * ( z - 4 ) ) );
+		}
+	}
+	bowl.holes.assign( 64, 0 );
+	bowl.holes[7 * 8 + 7] = 1; // the far corner cell: x 7..8, z 7..8
+	map.heightFields.push_back( bowl );
+	map.statics.push_back( { { 20.0f, 0.0f, -4.0f }, { 8.0f, 4.0f, 8.0f }, 0.0f, 0.0f, 0.0f, ShapeKind::HeightField, 0 } );
+	map.props.push_back( { ShapeKind::Sphere, { 2.5f, 4.0f, 0.0f }, { 0.3f, 0.0f, 0.0f } } );	// onto a slope
+	map.props.push_back( { ShapeKind::Sphere, { 26.0f, 5.0f, 1.0f }, { 0.3f, 0.0f, 0.0f } } );	// into the bowl
+	map.props.push_back( { ShapeKind::Sphere, { 27.5f, 9.0f, 3.5f }, { 0.15f, 0.0f, 0.0f } } ); // over the hole
+	QuantizeLayout( map );
+
+	std::vector<uint8_t> bytes;
+	SerializeMap( map, bytes );
+	LevelLayout loaded;
+	std::string error;
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) );
+	CHECK( SameLayout( map, loaded ) );
+	CHECK( loaded.meshes.size() == 1 && loaded.meshes[0].indices == map.meshes[0].indices && loaded.heightFields.size() == 1 &&
+		   loaded.heightFields[0].heights == map.heightFields[0].heights && loaded.heightFields[0].holes == map.heightFields[0].holes );
+
+	Simulation sim( TestConfig(), loaded );
+	std::vector<uint32_t> balls;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		if ( flecs::entity( sim.World(), r.entity ).has<Prop>() )
+		{
+			balls.push_back( r.netId );
+		}
+	}
+	CHECK( balls.size() == 3 );
+	RayHit hit;
+	CHECK( sim.CastRay( { 1.0f, 5.0f, 0.0f }, { 0.0f, -10.0f, 0.0f }, 0, hit ) && std::fabs( hit.point.y - 0.5f ) < 0.01f );
+	CHECK( sim.CastRay( { 26.0f, 5.0f, 0.0f }, { 0.0f, -10.0f, 0.0f }, 0, hit ) && std::fabs( hit.point.y - 0.5f ) < 0.02f );
+	const float bottom = sim.CastRay( { 24.0f, 5.0f, 0.0f }, { 0.0f, -10.0f, 0.0f }, 0, hit ) ? hit.point.y : -1.0f;
+	CHECK( std::fabs( bottom ) < 0.02f );
+
+	// A rollback snapshot at tick 30, and a portable one, taken while the balls roll.
+	InputFrame frame;
+	auto step = [&]( Simulation& s ) {
+		frame.tick = s.Tick();
+		s.Step( frame );
+	};
+	for ( int i = 0; i < 30; ++i )
+	{
+		step( sim );
+	}
+	Snapshot early;
+	sim.Save( early );
+	Simulation other( TestConfig(), loaded );
+	{
+		std::vector<uint8_t> portable;
+		sim.SavePortable( portable );
+		CHECK( other.LoadPortable( portable ) );
+	} // (its bytes are gone: the loaded world keeps its own copy of the surfaces)
+	std::vector<uint64_t> ahead, again, elsewhere;
+	for ( int i = 0; i < 300; ++i )
+	{
+		step( sim );
+		ahead.push_back( sim.ComputeHash() );
+		step( other );
+		elsewhere.push_back( other.ComputeHash() );
+	}
+	CHECK( sim.EntityTransform( balls[0] ) != nullptr && sim.EntityTransform( balls[1] ) != nullptr );
+	const b3Vec3 inTrough = sim.EntityTransform( balls[0] )->position;
+	const b3Vec3 inBowl = sim.EntityTransform( balls[1] )->position;
+	const Transform* fell = sim.EntityTransform( balls[2] );
+	std::printf( "    after 5.5 s: the trough's ball at x %.2f, y %.2f; the bowl's at (%.2f, %.2f, %.2f); the one over the hole %s\n",
+				 inTrough.x, inTrough.y, inBowl.x, inBowl.y, inBowl.z, fell == nullptr ? "fell through (gone at the kill plane)" : "is still here" );
+	CHECK( std::fabs( inTrough.x ) < 0.6f && inTrough.y < 0.8f );
+	// (A ball rolls on and on in a bowl: nothing slows its rolling. It stays in it, on its surface.)
+	const float surface = 0.125f * ( ( inBowl.x - 24.0f ) * ( inBowl.x - 24.0f ) + inBowl.z * inBowl.z );
+	CHECK( std::fabs( inBowl.x - 24.0f ) < 4.0f && std::fabs( inBowl.z ) < 4.0f && inBowl.y > surface && inBowl.y < surface + 0.6f );
+	CHECK( fell == nullptr || fell->position.y < -1.0f );
+	sim.Load( early );
+	for ( int i = 0; i < 300; ++i )
+	{
+		step( sim );
+		again.push_back( sim.ComputeHash() );
+	}
+	CHECK( again == ahead );	 // restored from the rollback snapshot: the same run
+	CHECK( elsewhere == ahead ); // and from the portable one
+
+	// A player stands on the terrain (at its bottom, and on its slope) and walks up it, and stands in
+	// the trough: as high above each as on flat ground (1.38 m), grounded.
+	for ( b3Vec3 spawn : { b3Vec3{ 24.0f, 2.0f, 0.0f }, b3Vec3{ 22.0f, 2.0f, 0.0f }, b3Vec3{ 1.0f, 3.0f, 0.0f } } )
+	{
+		LevelLayout walk = loaded;
+		walk.props.clear(); // (no ball rolling under it)
+		walk.spawnCenter = { spawn.x + 5.25f, spawn.y, spawn.z }; // (the first slot stands 5.25 m to its left)
+		walk.spawnRadius = 0.0f;
+		Simulation player( TestConfig(), walk );
+		InputFrame f;
+		f.events.push_back( { PlayerEventType::Join, 0 } );
+		for ( int i = 0; i < 90; ++i )
+		{
+			f.tick = player.Tick();
+			player.Step( f );
+			f.events.clear();
+		}
+		const Character* body = player.PlayerCharacter( 0 );
+		const b3Vec3 stood = player.EntityTransform( player.PlayerNetId( 0 ) )->position;
+		f.inputs[0].moveForward = 127;
+		for ( int i = 0; i < 60; ++i )
+		{
+			f.tick = player.Tick();
+			player.Step( f );
+		}
+		const b3Vec3 walked = player.EntityTransform( player.PlayerNetId( 0 ) )->position;
+		std::printf( "    a player put at (%.0f, %.0f, %.0f) stands at y %.2f (grounded %d), and a second's walk takes it %.2f m, %.2f m up\n",
+					 spawn.x, spawn.y, spawn.z, stood.y, int( body != nullptr && body->grounded ), b3Distance( stood, walked ),
+					 walked.y - stood.y );
+		RayHit ground;
+		CHECK( player.CastRay( { spawn.x, 5.0f, spawn.z }, { 0.0f, -10.0f, 0.0f }, player.PlayerNetId( 0 ), ground, true ) );
+		CHECK( body != nullptr && body->grounded && std::fabs( stood.y - ground.point.y - 1.38f ) < 0.03f );
+		CHECK( b3Distance( stood, walked ) > 1.0f );
+	}
+
+	// A surface in a body's set, or in a version 6 map, is refused.
+	LevelLayout bad = map;
+	bad.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 4.0f, 2.0f, 3.0f }, 0.0f, 0.0f, 0.0f, ShapeKind::Mesh, 0 } } );
+	SerializeMap( bad, bytes );
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
+	bad = map;
+	bad.meshes[0].indices[0] = 99;
 	SerializeMap( bad, bytes );
 	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
 }
@@ -7752,6 +7912,33 @@ void AppendShapesReference( std::vector<uint64_t>& hashes )
 	map.instances.push_back( { 1, { 0.5f, 6.0f, -5.5f }, -0.2f, 0.9f, 0.4f } );
 	map.instances.push_back( { 0, { 5.5f, 7.0f, 5.0f }, 0.0f, 1.2f, -0.3f } );
 	map.instances.push_back( { 1, { 0.2f, 8.0f, 0.3f }, 0.5f, 0.0f, 0.0f } );
+	// Level surfaces: a trough of triangles and a bumpy patch of terrain (one cell a hole), turned,
+	// with balls rolling on them.
+	LevelMesh trough;
+	trough.vertices = { { -3.0f, 1.5f, -2.0f }, { 0.0f, 0.0f, -2.0f }, { 3.0f, 1.5f, -2.0f },
+						{ -3.0f, 1.5f, 2.0f },	{ 0.0f, 0.2f, 2.0f },  { 3.0f, 1.5f, 2.0f } };
+	trough.indices = { 0, 4, 1, 0, 3, 4, 1, 5, 2, 1, 4, 5 };
+	map.meshes.push_back( trough );
+	map.statics.push_back( { { 14.0f, 0.0f, 0.0f }, { 3.0f, 1.5f, 2.0f }, 0.0f, 0.3f, 0.05f, ShapeKind::Mesh, 0 } );
+	LevelHeightField bumps;
+	bumps.countX = 7;
+	bumps.countZ = 6;
+	bumps.scale = { 1.5f, 0.75f, 1.25f };
+	const float rows[6][7] = { { 0, 1, 2, 1, 0, 1, 0 }, { 1, 2, 3, 2, 1, 0, 1 }, { 0, 1, 2, 0.5f, 0, 1, 2 },
+							   { 2, 1, 0, 0, 1, 2, 1 }, { 1, 0, 1, 2, 3, 2, 0 }, { 0, 1, 0, 1, 2, 1, 0 } };
+	for ( const auto& row : rows )
+	{
+		bumps.heights.insert( bumps.heights.end(), std::begin( row ), std::end( row ) );
+	}
+	bumps.holes.assign( 30, 0 );
+	bumps.holes[2 * 6 + 3] = 1;
+	map.heightFields.push_back( bumps );
+	map.statics.push_back( { { -18.0f, 0.0f, -4.0f }, { 9.0f, 2.25f, 6.25f }, 0.0f, 0.2f, 0.0f, ShapeKind::HeightField, 0 } );
+	for ( int i = 0; i < 4; ++i )
+	{
+		map.props.push_back( { ShapeKind::Sphere, { 13.0f + 0.6f * float( i ), 4.0f + float( i ), -1.0f + 0.5f * float( i ) }, { 0.3f, 0.0f, 0.0f } } );
+		map.props.push_back( { ShapeKind::Box, { -15.0f + 1.3f * float( i ), 5.0f + float( i ), -1.0f + 0.7f * float( i ) }, { 0.3f, 0.3f, 0.3f } } );
+	}
 	QuantizeLayout( map );
 	Simulation sim( TestConfig(), map );
 	// Items of several parts (a hammer: a turned handle, a head, a wedge hull), dropped among them.
@@ -8440,6 +8627,7 @@ int main( int argc, char** argv )
 		{ "map_format", TestMapFormat },
 		{ "map_shapes", TestMapShapes },
 		{ "map_bodies", TestMapBodies },
+		{ "map_surfaces", TestMapSurfaces },
 		{ "templates", TestTemplates },
 		{ "sim_events", TestSimEvents },
 		{ "repeatability", TestRepeatability },

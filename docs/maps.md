@@ -61,9 +61,16 @@ with a `visual` keeps that prefab; one with neither draws its shape's default pr
 | `CapsuleShape3D` | a capsule along its Y (scaled unevenly across: its larger scale, with a warning) |
 | `CylinderShape3D` | a hull: two rims of 16 points (any scale kept: an oval drum stays oval) |
 | `ConvexPolygonShape3D` | a hull of its points (4 to 1024; Box3D keeps at most 128 corners) |
-| anything else | skipped, with a warning (triangle meshes and height fields are later) |
+| `ConcavePolygonShape3D` | a triangle mesh (a cave, an arch, stairs; up to 262,144 vertices). **Level geometry only** (a `CbStatic`'s) |
+| `HeightMapShape3D` | a height field (terrain; up to 2049 points a side), scaled; a point that is not a number is a hole in the cells around it. **Level geometry only** |
+| anything else | skipped, with a warning |
 
 - A disabled `CollisionShape3D` is skipped, and so is a hull whose points lie in a plane.
+- Triangle meshes and height fields never move: Box3D collides a moving body with one only when
+  it is static. Under a `CbProp`, a template or an item they are skipped (or the item's bake stops)
+  with a reason. A model's **Mesh > Create Collision Shape**, type **Trimesh**, makes one.
+- The camera does not stop at a triangle mesh or a height field yet: it can look through a hillside
+  or into a cave wall. Players, props and shots collide with them as with anything.
 - From a model: select its `MeshInstance3D` (under the `CbStatic`), **Mesh > Create Collision
   Shape**, placement **Sibling**, type **Single Convex** (one hull) or **Simplified Convex**. A
   concave model (an arch) is several hulls: **Multiple Convex** makes them.
@@ -76,8 +83,8 @@ with a `visual` keeps that prefab; one with neither draws its shape's default pr
 - Items keep their own shape settings (`item.cfg`) for now.
 
 Turns are stored as yaw, pitch and roll (Godot's YXZ order) on the 1/4096 rad grid. Maps baked
-before this (version 3: boxes without roll; version 4: no hulls; version 5: one shape per body)
-still load. A placed entity turns with roll too.
+before this (version 3: boxes without roll; version 4: no hulls; version 5: one shape per body;
+version 6: no triangle meshes or height fields) still load. A placed entity turns with roll too.
 
 ## A body
 

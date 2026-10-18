@@ -44,6 +44,10 @@ enum class ShapeKind : uint8_t
 	// A convex hull: level pieces only, its points are the map's (LevelBox::hull); halfExtents are
 	// its bounds, for what draws or tests it without the points.
 	Hull = 3,
+	// A triangle mesh and a height field: static level pieces only (Box3D's rule), their data the
+	// map's (LevelBox::hull names it in LevelLayout::meshes / heightFields); halfExtents their bounds.
+	Mesh = 4,
+	HeightField = 5,
 };
 
 // Collision and presentation geometry.

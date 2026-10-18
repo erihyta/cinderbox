@@ -174,7 +174,7 @@ void AppendPiece( std::vector<uint8_t>& out, const LevelBox& box )
 }
 
 // A piece as `version` wrote it, checked: what Box3D could not build is refused.
-bool ReadPiece( Reader& rd, uint32_t version, const LevelLayout& layout, LevelBox& box, std::string& error )
+bool ReadPiece( Reader& rd, uint32_t version, const LevelLayout& layout, LevelBox& box, std::string& error, bool level = false )
 {
 	if ( version >= 4 )
 	{
@@ -182,9 +182,11 @@ bool ReadPiece( Reader& rd, uint32_t version, const LevelLayout& layout, LevelBo
 		rd.U8();
 		rd.U8();
 		rd.U8();
-		if ( kind > uint8_t( ShapeKind::Hull ) || ( kind == uint8_t( ShapeKind::Hull ) && version < 5 ) )
+		const bool surface = kind == uint8_t( ShapeKind::Mesh ) || kind == uint8_t( ShapeKind::HeightField );
+		if ( kind > uint8_t( ShapeKind::HeightField ) || ( kind == uint8_t( ShapeKind::Hull ) && version < 5 ) ||
+			 ( surface && ( version < 7 || level == false ) ) )
 		{
-			error = "unknown static shape";
+			error = surface ? "a triangle mesh or height field can only be level geometry" : "unknown static shape";
 			return false;
 		}
 		box.kind = ShapeKind( kind );
@@ -195,14 +197,15 @@ bool ReadPiece( Reader& rd, uint32_t version, const LevelLayout& layout, LevelBo
 	box.yaw = MapDequantize( rd.I32(), kMapAngleScale );
 	box.roll = version >= 4 ? MapDequantize( rd.I32(), kMapAngleScale ) : 0.0f;
 	box.hull = version >= 5 ? rd.U32() : 0;
-	if ( box.kind == ShapeKind::Hull && box.hull >= layout.hulls.size() )
+	if ( ( box.kind == ShapeKind::Hull && box.hull >= layout.hulls.size() ) || ( box.kind == ShapeKind::Mesh && box.hull >= layout.meshes.size() ) ||
+		 ( box.kind == ShapeKind::HeightField && box.hull >= layout.heightFields.size() ) )
 	{
-		error = "a static names a hull that is not in the map";
+		error = "a static names a hull, mesh or height field that is not in the map";
 		return false;
 	}
 	// A box or sphere of no size, a capsule of no radius.
 	const b3Vec3 h = box.halfExtents;
-	bool boxy = box.kind == ShapeKind::Box || box.kind == ShapeKind::Hull; // (a hull's: its bounds)
+	bool boxy = box.kind != ShapeKind::Sphere && box.kind != ShapeKind::Capsule; // (a hull's, a mesh's: its bounds)
 	bool solid = boxy ? ( h.x > 0.0f && h.y > 0.0f && h.z > 0.0f ) : ( h.x > 0.0f && h.y >= 0.0f );
 	if ( solid == false )
 	{
@@ -261,6 +264,21 @@ void QuantizeLayout( LevelLayout& layout )
 			SnapVec( point, kMapPositionScale );
 		}
 	}
+	for ( LevelMesh& mesh : layout.meshes )
+	{
+		for ( b3Vec3& vertex : mesh.vertices )
+		{
+			SnapVec( vertex, kMapPositionScale );
+		}
+	}
+	for ( LevelHeightField& field : layout.heightFields )
+	{
+		SnapVec( field.scale, kMapPositionScale );
+		for ( float& height : field.heights )
+		{
+			Snap( height, kMapPositionScale );
+		}
+	}
 	for ( LevelProp& prop : layout.props )
 	{
 		SnapVec( prop.position, kMapPositionScale );
@@ -295,6 +313,47 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 		for ( const b3Vec3& point : hull )
 		{
 			AppendPos( out, point );
+		}
+	}
+
+	AppendU32( out, uint32_t( layout.meshes.size() ) );
+	for ( const LevelMesh& mesh : layout.meshes )
+	{
+		AppendU32( out, uint32_t( mesh.vertices.size() ) );
+		for ( const b3Vec3& vertex : mesh.vertices )
+		{
+			AppendPos( out, vertex );
+		}
+		AppendU32( out, uint32_t( mesh.indices.size() / 3 ) );
+		for ( size_t i = 0; i + 2 < mesh.indices.size(); i += 3 )
+		{
+			AppendU32( out, mesh.indices[i] );
+			AppendU32( out, mesh.indices[i + 1] );
+			AppendU32( out, mesh.indices[i + 2] );
+		}
+	}
+	AppendU32( out, uint32_t( layout.heightFields.size() ) );
+	for ( const LevelHeightField& field : layout.heightFields )
+	{
+		AppendU32( out, field.countX );
+		AppendU32( out, field.countZ );
+		AppendPos( out, field.scale );
+		for ( float height : field.heights )
+		{
+			AppendI32( out, MapQuantize( height, kMapPositionScale ) );
+		}
+		uint32_t holes = 0;
+		for ( uint8_t hole : field.holes )
+		{
+			holes += hole != 0 ? 1 : 0;
+		}
+		AppendU32( out, holes );
+		for ( size_t cell = 0; cell < field.holes.size(); ++cell )
+		{
+			if ( field.holes[cell] != 0 )
+			{
+				AppendU32( out, uint32_t( cell ) );
+			}
 		}
 	}
 
@@ -425,6 +484,96 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 		}
 	}
 
+	if ( version >= 7 )
+	{
+		uint32_t meshCount = rd.U32();
+		if ( rd.ok == false || meshCount > ( size - rd.cursor ) / 8 )
+		{
+			error = "corrupt mesh list";
+			return false;
+		}
+		for ( uint32_t i = 0; i < meshCount; ++i )
+		{
+			LevelMesh mesh;
+			uint32_t vertexCount = rd.U32();
+			if ( rd.ok == false || vertexCount < 3 || vertexCount > kMapMeshVertexLimit || vertexCount > ( size - rd.cursor ) / 12 )
+			{
+				error = "a mesh has too few or too many vertices";
+				return false;
+			}
+			mesh.vertices.resize( vertexCount );
+			for ( b3Vec3& vertex : mesh.vertices )
+			{
+				vertex = rd.Pos();
+			}
+			uint32_t triangleCount = rd.U32();
+			if ( rd.ok == false || triangleCount < 1 || triangleCount > kMapMeshTriangleLimit || triangleCount > ( size - rd.cursor ) / 12 )
+			{
+				error = "a mesh has no triangles, or too many";
+				return false;
+			}
+			mesh.indices.resize( size_t( triangleCount ) * 3 );
+			for ( uint32_t& index : mesh.indices )
+			{
+				index = rd.U32();
+				if ( index >= vertexCount )
+				{
+					error = "a mesh's triangle names a vertex it does not have";
+					return false;
+				}
+			}
+			layout.meshes.push_back( std::move( mesh ) );
+		}
+		uint32_t fieldCount = rd.U32();
+		if ( rd.ok == false || fieldCount > ( size - rd.cursor ) / 24 )
+		{
+			error = "corrupt height field list";
+			return false;
+		}
+		for ( uint32_t i = 0; i < fieldCount; ++i )
+		{
+			LevelHeightField field;
+			field.countX = rd.U32();
+			field.countZ = rd.U32();
+			field.scale = rd.Pos();
+			const uint64_t points = uint64_t( field.countX ) * field.countZ;
+			if ( rd.ok == false || field.countX < 2 || field.countZ < 2 || field.countX > kMapHeightFieldSideLimit ||
+				 field.countZ > kMapHeightFieldSideLimit || points > ( size - rd.cursor ) / 4 || field.scale.x <= 0.0f || field.scale.y <= 0.0f ||
+				 field.scale.z <= 0.0f )
+			{
+				error = "a height field's size is out of range";
+				return false;
+			}
+			field.heights.resize( size_t( points ) );
+			for ( float& height : field.heights )
+			{
+				height = MapDequantize( rd.I32(), kMapPositionScale );
+			}
+			const uint32_t cells = ( field.countX - 1 ) * ( field.countZ - 1 );
+			uint32_t holes = rd.U32();
+			if ( rd.ok == false || holes > cells || holes > ( size - rd.cursor ) / 4 )
+			{
+				error = "a height field has more holes than cells";
+				return false;
+			}
+			if ( holes > 0 )
+			{
+				field.holes.assign( cells, 0 );
+			}
+			for ( uint32_t h = 0; h < holes; ++h )
+			{
+				uint32_t cell = rd.U32();
+				if ( cell >= cells )
+				{
+					error = "a height field's hole is not one of its cells";
+					return false;
+				}
+				field.holes[cell] = 1;
+			}
+			layout.heightFields.push_back( std::move( field ) );
+		}
+	}
+
 	uint32_t staticCount = rd.U32();
 	// Each entry is 44 bytes (40 in version 4, 32 before), so a count larger than the remaining
 	// bytes is corrupt input.
@@ -438,7 +587,7 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 	for ( uint32_t i = 0; i < staticCount; ++i )
 	{
 		LevelBox box;
-		if ( ReadPiece( rd, version, layout, box, error ) == false )
+		if ( ReadPiece( rd, version, layout, box, error, true ) == false )
 		{
 			return false;
 		}

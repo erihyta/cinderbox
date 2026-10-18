@@ -9,7 +9,9 @@
 #include <godot_cpp/classes/box_shape3d.hpp>
 #include <godot_cpp/classes/capsule_shape3d.hpp>
 #include <godot_cpp/classes/collision_shape3d.hpp>
+#include <godot_cpp/classes/concave_polygon_shape3d.hpp>
 #include <godot_cpp/classes/convex_polygon_shape3d.hpp>
+#include <godot_cpp/classes/height_map_shape3d.hpp>
 #include <godot_cpp/classes/cylinder_shape3d.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
@@ -21,7 +23,9 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -404,6 +408,103 @@ bool AddHull( std::vector<b3Vec3> points, const String& name, BakeContext& ctx, 
 	return true;
 }
 
+// A triangle mesh as the map stores it: its vertices on the grid, alike ones made one, its
+// triangles counter-clockwise (Godot's are clockwise); the piece's half size its bounds.
+bool AddMesh( const BakedShape& baked, const String& name, BakeContext& ctx, LevelBox& piece )
+{
+	LevelMesh mesh;
+	std::map<std::array<int32_t, 3>, uint32_t> known;
+	b3Vec3 bounds = { 0.0f, 0.0f, 0.0f };
+	for ( size_t i = 0; i + 2 < baked.points.size(); i += 3 )
+	{
+		uint32_t corner[3];
+		for ( int k = 0; k < 3; ++k )
+		{
+			const Vector3& p = baked.points[i + size_t( k )];
+			std::array<int32_t, 3> key = { MapQuantize( float( p.x ), kMapPositionScale ), MapQuantize( float( p.y ), kMapPositionScale ),
+										   MapQuantize( float( p.z ), kMapPositionScale ) };
+			auto found = known.find( key );
+			if ( found == known.end() )
+			{
+				b3Vec3 v = { MapDequantize( key[0], kMapPositionScale ), MapDequantize( key[1], kMapPositionScale ),
+							 MapDequantize( key[2], kMapPositionScale ) };
+				bounds = { std::max( bounds.x, std::fabs( v.x ) ), std::max( bounds.y, std::fabs( v.y ) ), std::max( bounds.z, std::fabs( v.z ) ) };
+				found = known.emplace( key, uint32_t( mesh.vertices.size() ) ).first;
+				mesh.vertices.push_back( v );
+			}
+			corner[k] = found->second;
+		}
+		if ( corner[0] == corner[1] || corner[1] == corner[2] || corner[0] == corner[2] )
+		{
+			continue; // (a triangle of no area, once on the grid)
+		}
+		mesh.indices.insert( mesh.indices.end(), { corner[0], corner[2], corner[1] } );
+	}
+	if ( mesh.indices.empty() || mesh.vertices.size() > kMapMeshVertexLimit || mesh.indices.size() / 3 > kMapMeshTriangleLimit )
+	{
+		ctx.warnings.push_back( String( "skipped " ) + name + vformat( ": a mesh needs a triangle and at most %d vertices and %d triangles",
+																		int( kMapMeshVertexLimit ), int( kMapMeshTriangleLimit ) ) );
+		return false;
+	}
+	piece.kind = ShapeKind::Mesh;
+	piece.halfExtents = { std::max( bounds.x, 0.001f ), std::max( bounds.y, 0.001f ), std::max( bounds.z, 0.001f ) };
+	piece.hull = uint32_t( ctx.layout.meshes.size() );
+	ctx.layout.meshes.push_back( std::move( mesh ) );
+	return true;
+}
+
+// A height field as the map stores it: its heights on the grid, a point that is not a number a
+// hole in every cell it is a corner of.
+bool AddHeightField( const BakedShape& baked, const String& name, BakeContext& ctx, LevelBox& piece )
+{
+	if ( baked.countX > int( kMapHeightFieldSideLimit ) || baked.countZ > int( kMapHeightFieldSideLimit ) || baked.scale.x <= 0.0f ||
+		 baked.scale.y <= 0.0f || baked.scale.z <= 0.0f )
+	{
+		ctx.warnings.push_back( String( "skipped " ) + name + vformat( ": a height map is at most %d points a side, and scaled up",
+																		int( kMapHeightFieldSideLimit ) ) );
+		return false;
+	}
+	LevelHeightField field;
+	field.countX = uint32_t( baked.countX );
+	field.countZ = uint32_t( baked.countZ );
+	field.scale = ToSim( baked.scale );
+	field.heights.resize( baked.heights.size() );
+	std::vector<uint8_t> holes( size_t( field.countX - 1 ) * ( field.countZ - 1 ), 0 );
+	bool anyHole = false;
+	float highest = 0.0f;
+	for ( uint32_t z = 0; z < field.countZ; ++z )
+	{
+		for ( uint32_t x = 0; x < field.countX; ++x )
+		{
+			const float h = baked.heights[size_t( z ) * field.countX + x];
+			const bool hole = std::isfinite( h ) == false || std::fabs( h ) > 1.0e6f;
+			field.heights[size_t( z ) * field.countX + x] = hole ? 0.0f : h;
+			highest = hole ? highest : std::max( highest, std::fabs( h * float( baked.scale.y ) ) );
+			for ( int dz = -1; hole && dz <= 0; ++dz )
+			{
+				for ( int dx = -1; dx <= 0; ++dx )
+				{
+					int cx = int( x ) + dx, cz = int( z ) + dz;
+					if ( cx >= 0 && cz >= 0 && cx < int( field.countX ) - 1 && cz < int( field.countZ ) - 1 )
+					{
+						holes[size_t( cz ) * ( field.countX - 1 ) + size_t( cx )] = 1;
+						anyHole = true;
+					}
+				}
+			}
+		}
+	}
+	if ( anyHole )
+	{
+		field.holes = std::move( holes );
+	}
+	piece.kind = ShapeKind::HeightField;
+	piece.halfExtents = { float( field.countX - 1 ) * field.scale.x, std::max( highest, 0.001f ), float( field.countZ - 1 ) * field.scale.z };
+	piece.hull = uint32_t( ctx.layout.heightFields.size() );
+	ctx.layout.heightFields.push_back( std::move( field ) );
+	return true;
+}
+
 bool Uneven( float a, float b )
 {
 	return std::fabs( a - b ) > kScaleEpsilon * std::max( std::fabs( a ), std::fabs( b ) );
@@ -412,7 +513,7 @@ bool Uneven( float a, float b )
 // A body node's CollisionShape3D children, each a piece where `frame` puts it (a CbStatic's: in
 // the map; a body's: in its own frame, the scale above it in), into `out`. Returns how many there
 // were (used or not): with none, a node is its own box or ball.
-int BakeShapes( Node* body, const Transform3D& frame, std::vector<LevelBox>& out, BakeContext& ctx )
+int BakeShapes( Node* body, const Transform3D& frame, std::vector<LevelBox>& out, BakeContext& ctx, bool level = false )
 {
 	int found = 0;
 	for ( int i = 0; i < body->get_child_count(); ++i )
@@ -431,7 +532,21 @@ int BakeShapes( Node* body, const Transform3D& frame, std::vector<LevelBox>& out
 			ctx.warnings.push_back( String( "skipped " ) + name + ": " + why );
 			continue;
 		}
+		if ( ( baked.kind == ShapeKind::Mesh || baked.kind == ShapeKind::HeightField ) && level == false )
+		{
+			ctx.warnings.push_back( String( "skipped " ) + name +
+									": a concave polygon or a height map is level geometry only (a CbStatic's): Box3D moves no body of one" );
+			continue;
+		}
 		LevelBox piece = PieceAt( baked.at, baked.kind, baked.half );
+		if ( baked.kind == ShapeKind::Mesh && AddMesh( baked, name, ctx, piece ) == false )
+		{
+			continue;
+		}
+		if ( baked.kind == ShapeKind::HeightField && AddHeightField( baked, name, ctx, piece ) == false )
+		{
+			continue;
+		}
 		if ( baked.kind == ShapeKind::Hull )
 		{
 			std::vector<b3Vec3> points;
@@ -533,7 +648,7 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 	if ( auto* box = Object::cast_to<CbStatic>( node ) )
 	{
 		// Its CollisionShape3D children, or else its own box.
-		if ( BakeShapes( box, here, ctx.layout.statics, ctx ) == 0 )
+		if ( BakeShapes( box, here, ctx.layout.statics, ctx, true ) == 0 )
 		{
 			Vector3 size = box->get_size() * here.basis.get_scale().abs();
 			if ( size.x <= 0.0f || size.y <= 0.0f || size.z <= 0.0f )
@@ -708,9 +823,43 @@ String BakeShape( const CollisionShape3D* node, const Transform3D& at, const Str
 			out.points.push_back( point * scale );
 		}
 	}
+	else if ( auto* concave = Object::cast_to<ConcavePolygonShape3D>( shape.ptr() ) )
+	{
+		out.kind = ShapeKind::Mesh;
+		for ( const Vector3& point : concave->get_faces() )
+		{
+			out.points.push_back( point * scale );
+		}
+		if ( out.points.size() < 3 )
+		{
+			return "it has no triangles";
+		}
+		out.half = Vector3( 1, 1, 1 );
+	}
+	else if ( auto* map = Object::cast_to<HeightMapShape3D>( shape.ptr() ) )
+	{
+		// Godot's is centred on its node, a point a metre apart; Box3D's starts at a corner.
+		out.kind = ShapeKind::HeightField;
+		out.countX = map->get_map_width();
+		out.countZ = map->get_map_depth();
+		out.scale = scale;
+		PackedFloat32Array data = map->get_map_data();
+		if ( out.countX < 2 || out.countZ < 2 || data.size() != int64_t( out.countX ) * out.countZ )
+		{
+			return "its map is smaller than 2 by 2, or its data does not fill it";
+		}
+		for ( int64_t i = 0; i < data.size(); ++i )
+		{
+			out.heights.push_back( data[i] );
+		}
+		const Vector3 corner( -0.5f * float( out.countX - 1 ) * scale.x, 0.0f, -0.5f * float( out.countZ - 1 ) * scale.z );
+		out.at.origin += out.at.basis.xform( corner );
+		out.half = Vector3( 1, 1, 1 );
+	}
 	else
 	{
-		return String( "a " ) + shape->get_class() + " is not a body's shape yet (box, sphere, capsule, cylinder and convex polygon are)";
+		return String( "a " ) + shape->get_class() +
+			   " is not a body's shape yet (box, sphere, capsule, cylinder, convex polygon; on a CbStatic also concave polygon and height map)";
 	}
 	bool boxy = out.kind == ShapeKind::Box;
 	if ( out.kind != ShapeKind::Hull && ( ( boxy && ( out.half.x <= 0.0f || out.half.y <= 0.0f || out.half.z <= 0.0f ) ) || out.half.x <= 0.0f ) )
@@ -950,8 +1099,36 @@ Dictionary CinderboxMapBaker::bake( Node* root, const String& path )
 	for ( const LevelBox& box : ctx.layout.statics )
 	{
 		Dictionary piece;
-		static const char* const kKinds[] = { "box", "sphere", "capsule", "hull" };
+		static const char* const kKinds[] = { "box", "sphere", "capsule", "hull", "mesh", "height_field" };
 		piece["kind"] = kKinds[int( box.kind )];
+		if ( box.kind == ShapeKind::Mesh )
+		{
+			const LevelMesh& mesh = ctx.layout.meshes[box.hull];
+			PackedVector3Array vertices;
+			for ( const b3Vec3& v : mesh.vertices )
+			{
+				vertices.push_back( Vector3( v.x, v.y, v.z ) );
+			}
+			PackedInt32Array indices;
+			for ( uint32_t index : mesh.indices )
+			{
+				indices.push_back( int32_t( index ) );
+			}
+			piece["vertices"] = vertices;
+			piece["indices"] = indices; // counter-clockwise
+		}
+		if ( box.kind == ShapeKind::HeightField )
+		{
+			const LevelHeightField& field = ctx.layout.heightFields[box.hull];
+			piece["count"] = Vector2i( int( field.countX ), int( field.countZ ) );
+			piece["scale"] = Vector3( field.scale.x, field.scale.y, field.scale.z );
+			int holes = 0;
+			for ( uint8_t hole : field.holes )
+			{
+				holes += hole;
+			}
+			piece["holes"] = holes;
+		}
 		if ( box.kind == ShapeKind::Hull )
 		{
 			PackedVector3Array points;
