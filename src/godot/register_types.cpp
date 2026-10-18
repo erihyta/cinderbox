@@ -69,6 +69,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	GDREGISTER_ABSTRACT_CLASS( cb::gd::CbBody );
 	GDREGISTER_CLASS( cb::gd::CbStatic );
 	GDREGISTER_CLASS( cb::gd::CbProp );
+	GDREGISTER_CLASS( cb::gd::CbBreakable );
 	GDREGISTER_CLASS( cb::gd::CbSpawn );
 	GDREGISTER_CLASS( cb::gd::CbComponent );
 	GDREGISTER_CLASS( cb::gd::CbTemplate );

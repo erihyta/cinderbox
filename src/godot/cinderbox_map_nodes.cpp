@@ -98,6 +98,10 @@ bool HasLook( Node* node )
 	for ( int i = 0; i < node->get_child_count(); ++i )
 	{
 		Node* child = node->get_child( i );
+		if ( IsLookNode( child ) )
+		{
+			continue; // a body of its own (a breakable's piece): its meshes are its own look
+		}
 		if ( Object::cast_to<VisualInstance3D>( child ) != nullptr || HasLook( child ) )
 		{
 			return true;
@@ -601,15 +605,32 @@ LevelInstance InstanceAt( uint32_t index, const Transform3D& here )
 // A CbProp with CollisionShape3D children, or with a look of its own (a mesh under it), is a body
 // like a template's: its shapes (or its box or ball) on one body, drawn by its own node, turned as
 // it stands. Returns false for a plain one (the map's prop list, as always).
+// The template of a prop that is a body of its own (BakeBodyProp; a breakable's piece): `here` is
+// where it stands, its scale in (the body has none). False when none of its shapes could be used.
+bool PropTemplate( CbProp* prop, const Transform3D& here, bool debris, EntityTemplate& t, BakeContext& ctx );
+
 bool BakeBodyProp( CbProp* prop, const Transform3D& here, BakeContext& ctx )
+{
+	std::vector<LevelBox> unused;
+	BakeContext probe; // (only whether it has shapes: the real bake is PropTemplate's)
+	const int found = BakeShapes( prop, ScaleOf( here ), unused, probe );
+	if ( found == 0 && HasLook( prop ) == false )
+	{
+		return false;
+	}
+	EntityTemplate t;
+	if ( PropTemplate( prop, here, false, t, ctx ) )
+	{
+		ctx.layout.instances.push_back( InstanceAt( AddTemplate( ctx, std::move( t ) ), here ) );
+	}
+	return true;
+}
+
+bool PropTemplate( CbProp* prop, const Transform3D& here, bool debris, EntityTemplate& t, BakeContext& ctx )
 {
 	std::vector<LevelBox> set;
 	const int found = BakeShapes( prop, ScaleOf( here ), set, ctx );
 	const bool look = HasLook( prop );
-	if ( found == 0 && look == false )
-	{
-		return false;
-	}
 	if ( found == 0 )
 	{
 		Vector3 scale = here.basis.get_scale().abs();
@@ -620,9 +641,8 @@ bool BakeBodyProp( CbProp* prop, const Transform3D& here, BakeContext& ctx )
 	if ( set.empty() )
 	{
 		ctx.warnings.push_back( String( "skipped " ) + prop->get_name() + ": none of its shapes could be used" );
-		return true;
+		return false;
 	}
-	EntityTemplate t;
 	t.name = SafeText( prop->get_name() );
 	t.components.push_back( MakeComponent( "Material", { { "density", prop->get_density() },
 														  { "friction", prop->get_friction() },
@@ -633,11 +653,68 @@ bool BakeBodyProp( CbProp* prop, const Transform3D& here, BakeContext& ctx )
 	{
 		t.components.push_back( MakeComponent( "Body", { { "linear_damping", prop->get_drag() }, { "angular_damping", prop->get_drag() } } ) );
 	}
-	t.components.push_back( MakeComponent( "Prop", { { "lifetime_seconds", 0.0 } } ) );
+	if ( debris )
+	{
+		AuthoredComponent rubble;
+		rubble.id = Fnv32( "Debris" );
+		t.components.push_back( rubble );
+	}
+	else
+	{
+		t.components.push_back( MakeComponent( "Prop", { { "lifetime_seconds", 0.0 } } ) );
+	}
 	t.shapes = AddShapeSet( ctx, std::move( set ) );
 	t.look = look ? LookOf( ctx, prop ) : kNoLook;
-	ctx.layout.instances.push_back( InstanceAt( AddTemplate( ctx, std::move( t ) ), here ) );
 	return true;
+}
+
+// A breakable: a static template of its shapes and look, its CbProp children its pieces (rubble
+// templates, placed in its frame), and its placement.
+void BakeBreakable( CbBreakable* node, const Transform3D& here, BakeContext& ctx )
+{
+	std::vector<LevelBox> set;
+	BakeShapes( node, ScaleOf( here ), set, ctx );
+	if ( set.empty() )
+	{
+		ctx.warnings.push_back( String( "skipped " ) + node->get_name() + ": a breakable needs CollisionShape3D children (its shapes whole)" );
+		return;
+	}
+	EntityTemplate wall;
+	wall.name = SafeText( node->get_name() );
+	wall.components.push_back( MakeComponent( "Body", { { "type", 0.0 } } ) );
+	wall.components[0].fields[0].raw[0] = 0; // (an enum: static)
+	wall.shapes = AddShapeSet( ctx, std::move( set ) );
+	wall.look = HasLook( node ) ? LookOf( ctx, node ) : kNoLook;
+	const Transform3D frame( here.basis.orthonormalized(), here.origin );
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		auto* prop = Object::cast_to<CbProp>( node->get_child( i ) );
+		if ( prop == nullptr )
+		{
+			continue;
+		}
+		// Where the piece is in the wall's frame, the scale above it in its shapes.
+		const Transform3D in = frame.affine_inverse() * ( here * prop->get_transform() );
+		EntityTemplate piece;
+		if ( PropTemplate( prop, Transform3D( Basis::from_scale( in.basis.get_scale().abs() ), Vector3() ), true, piece, ctx ) == false )
+		{
+			continue;
+		}
+		piece.name = SafeText( node->get_name() + String( "_" ) + prop->get_name() );
+		const Vector3 euler = in.basis.orthonormalized().get_euler( EULER_ORDER_YXZ );
+		TemplatePiece placed;
+		placed.templateIndex = AddTemplate( ctx, std::move( piece ) );
+		placed.position = ToSim( in.origin );
+		placed.pitch = float( euler.x );
+		placed.yaw = float( euler.y );
+		placed.roll = float( euler.z );
+		wall.pieces.push_back( placed );
+	}
+	if ( wall.pieces.empty() )
+	{
+		ctx.warnings.push_back( node->get_name() + String( ": it has no CbProp children, so it never breaks" ) );
+	}
+	ctx.layout.instances.push_back( InstanceAt( AddTemplate( ctx, std::move( wall ) ), here ) );
 }
 
 // Transforms are accumulated down the tree instead of read with get_global_transform(), so baking
@@ -650,6 +727,11 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 		here = parent * spatial->get_transform();
 	}
 
+	if ( auto* breakable = Object::cast_to<CbBreakable>( node ) )
+	{
+		BakeBreakable( breakable, here, ctx );
+		return; // its pieces are its own, not the map's props
+	}
 	if ( auto* box = Object::cast_to<CbStatic>( node ) )
 	{
 		// Its CollisionShape3D children, or else its own box.
@@ -756,8 +838,7 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 
 void MapLookNodes( Node* node, std::vector<Node3D*>& out )
 {
-	if ( Object::cast_to<CbProp>( node ) != nullptr || Object::cast_to<CbTemplate>( node ) != nullptr ||
-		 Object::cast_to<CbEntity>( node ) != nullptr )
+	if ( IsLookNode( node ) )
 	{
 		out.push_back( Object::cast_to<Node3D>( node ) );
 	}
@@ -874,6 +955,42 @@ String BakeShape( const CollisionShape3D* node, const Transform3D& at, const Str
 		return "size must be positive";
 	}
 	return String();
+}
+
+bool IsLookNode( const Node* node )
+{
+	return Object::cast_to<CbProp>( node ) != nullptr || Object::cast_to<CbTemplate>( node ) != nullptr ||
+		   Object::cast_to<CbEntity>( node ) != nullptr || Object::cast_to<CbBreakable>( node ) != nullptr;
+}
+
+// --- CbBreakable --------------------------------------------------------------------------------
+
+PackedStringArray CbBreakable::_get_configuration_warnings() const
+{
+	PackedStringArray warnings;
+	bool shapes = false, pieces = false;
+	for ( int i = 0; i < get_child_count(); ++i )
+	{
+		shapes = shapes || Object::cast_to<CollisionShape3D>( get_child( i ) ) != nullptr;
+		pieces = pieces || Object::cast_to<CbProp>( get_child( i ) ) != nullptr;
+	}
+	if ( shapes == false )
+	{
+		warnings.push_back( "Give it CollisionShape3D children: its shapes while it stands." );
+	}
+	if ( pieces == false )
+	{
+		warnings.push_back( "Give it CbProp children: the pieces it breaks into (each its own shapes or box, and meshes)." );
+	}
+	return warnings;
+}
+
+void CbBreakable::_notification( int what )
+{
+	if ( what == NOTIFICATION_CHILD_ORDER_CHANGED && InEditor() )
+	{
+		update_configuration_warnings();
+	}
 }
 
 // --- CbStatic -----------------------------------------------------------------------------------
@@ -1097,6 +1214,8 @@ Dictionary CinderboxMapBaker::bake( Node* root, const String& path )
 		body["shapes"] = t.shapes < ctx.layout.shapeSets.size() ? int( ctx.layout.shapeSets[t.shapes].size() ) : 0;
 		body["look"] = t.look == kNoLook ? -1 : int( t.look );
 		body["visual"] = String( TemplateLookName( t ).c_str() );
+		body["pieces"] = int( t.pieces.size() );
+		body["debris"] = t.Find( Fnv32( "Debris" ) ) != nullptr;
 		bodies.push_back( body );
 	}
 	result["bodies"] = bodies;

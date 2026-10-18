@@ -412,7 +412,9 @@ b3ShapeDef MakeShapeDef( uint64_t category, const ShapeMaterial& material )
 	def.baseMaterial.restitution = material.restitution;
 	def.baseMaterial.rollingResistance = material.rolling;
 	def.filter.categoryBits = category;
-	def.filter.maskBits = ~uint64_t( 0 );
+	// A player's capsule never touches rubble: the mover meets it with its own casts instead, as
+	// something solid, so players stand on it and are stopped by it but never shove it.
+	def.filter.maskBits = category == CatPlayer ? ~uint64_t( CatDebris ) : ~uint64_t( 0 );
 	// Either shape enabling hit events is enough, so the static level does not need them.
 	def.enableHitEvents = category != CatStatic;
 	return def;
@@ -761,19 +763,20 @@ flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 pos
 	material.rolling = TemplateFloat( t, kMaterial, Fnv32( "rolling" ), material.rolling );
 
 	bool isStatic = bodyDef.type == b3_staticBody;
+	const uint64_t category = isStatic ? CatStatic : TemplateHas( t, Fnv32( "Debris" ) ) ? CatDebris : CatProp;
 	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
 	b3ShapeId shapeId;
 	if ( t.shapes < m_map.shapeSets.size() )
 	{
 		// Its own shapes. What the Shape component would have drawn is the box that holds them.
 		b3Vec3 bounds;
-		shapeId = CreateShapeSet( body, m_map.shapeSets[t.shapes], isStatic ? CatStatic : CatProp, material, bounds );
+		shapeId = CreateShapeSet( body, m_map.shapeSets[t.shapes], category, material, bounds );
 		shape.kind = ShapeKind::Box;
 		shape.halfExtents = bounds;
 	}
 	else
 	{
-		shapeId = CreateShape( body, shape, isStatic ? CatStatic : CatProp, material );
+		shapeId = CreateShape( body, shape, category, material );
 	}
 	// A weight of its own: the shapes' densities scaled so the body weighs it.
 	if ( isStatic == false )
@@ -2597,6 +2600,37 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			record.point = ToVec( command.a );
 			record.vector = ToVec( command.b );
 			RecordModEvent( record );
+			return;
+		}
+
+		case CommandType::Break:
+		{
+			flecs::entity wall = FindEntity( ResolveTarget( command.target ) );
+			const TemplateRef* ref = wall.is_valid() ? wall.try_get<TemplateRef>() : nullptr;
+			if ( ref == nullptr || ref->index >= m_map.templates.size() || m_map.templates[ref->index].pieces.empty() )
+			{
+				return; // nothing that breaks
+			}
+			const Transform at = wall.get<Transform>();
+			const b3Vec3 blast = ToVec( command.a );
+			const float speed = std::max( command.b.x, 0.0f );
+			const std::vector<TemplatePiece> pieces = m_map.templates[ref->index].pieces;
+			DestroyEntity( wall );
+			for ( const TemplatePiece& piece : pieces )
+			{
+				const b3Vec3 position = b3Add( at.position, b3RotateVector( at.rotation, piece.position ) );
+				const b3Quat rotation = b3NormalizeQuat( b3MulQuat( at.rotation, MakeRotation( piece.yaw, piece.pitch, piece.roll ) ) );
+				// Away from the blast, a little up, slower the further it was.
+				b3Vec3 away = b3Sub( position, blast );
+				const float distance = b3Length( away );
+				away = distance > 1e-4f ? b3MulSV( 1.0f / distance, away ) : b3Vec3{ 0.0f, 1.0f, 0.0f };
+				away = b3Normalize( b3Add( away, { 0.0f, 0.3f, 0.0f } ) );
+				flecs::entity e = CreateFromTemplate( piece.templateIndex, position, rotation, b3MulSV( speed / ( 1.0f + distance ), away ), 0 );
+				if ( e.is_valid() && command.other > 0 )
+				{
+					e.set<Prop>( { 0, m_globals.tick, m_globals.tick + command.other } );
+				}
+			}
 			return;
 		}
 

@@ -110,6 +110,25 @@ private:
 	godot::MeshInstance3D* m_preview = nullptr;
 };
 
+// A wall (or anything static) that breaks: its CollisionShape3D children are its shapes whole, its
+// meshes its look whole, and its CbProp children are what it breaks into: each piece a body of its
+// own (its shapes or its box, its meshes, its Body settings), rubble that players stand on and are
+// stopped by but never shove. A mod breaks it (ctx.Break: the frag grenade's blast does); until then
+// it is static and costs nothing.
+class CbBreakable : public godot::Node3D
+{
+	GDCLASS( CbBreakable, godot::Node3D )
+
+public:
+	godot::PackedStringArray _get_configuration_warnings() const override;
+	void _notification( int what );
+
+protected:
+	static void _bind_methods()
+	{
+	}
+};
+
 // Where players appear. Exactly one per map; the simulation spreads the slots around it.
 class CbSpawn : public godot::Node3D
 {
@@ -135,8 +154,10 @@ private:
 };
 
 // The nodes of a map's scene a template's look can be (EntityTemplate::look): every CbProp,
-// CbTemplate and CbEntity, in scene-tree order. The bake numbers them and a client finds them so.
+// CbTemplate, CbEntity and CbBreakable, in scene-tree order. The bake numbers them and a client finds
+// them so. A look drawn is a copy of its node without the look nodes under it (a breakable's pieces).
 void MapLookNodes( godot::Node* node, std::vector<godot::Node3D*>& out );
+bool IsLookNode( const godot::Node* node );
 
 // One CollisionShape3D as a body's shape where `at` puts it (its place in the body's frame, scale
 // and all): its kind, its half size as Shape has it, where it is and how it is turned (no scale:

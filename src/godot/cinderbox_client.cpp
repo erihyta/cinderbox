@@ -526,6 +526,28 @@ Node3D* CinderboxClient::MapLookCopy( const present::Visual& v )
 	auto* copy = Object::cast_to<Node3D>( source->duplicate() );
 	if ( copy != nullptr )
 	{
+		// Without the bodies under it (a breakable's pieces: each draws itself when it is there).
+		std::vector<Node*> nested;
+		std::function<void( Node* )> find = [&]( Node* n ) {
+			for ( int i = 0; i < n->get_child_count(); ++i )
+			{
+				Node* child = n->get_child( i );
+				if ( IsLookNode( child ) )
+				{
+					nested.push_back( child );
+				}
+				else
+				{
+					find( child );
+				}
+			}
+		};
+		find( copy );
+		for ( Node* n : nested )
+		{
+			n->get_parent()->remove_child( n );
+			memdelete( n );
+		}
 		copy->set_visible( true );
 		copy->set_transform( Transform3D() );
 	}

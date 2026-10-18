@@ -838,6 +838,43 @@ void Context::Destroy( uint32_t target )
 	Add( c );
 }
 
+void Context::Break( uint32_t target, b3Vec3 blast, float speed, float seconds )
+{
+	SimCommand c;
+	c.type = CommandType::Break;
+	c.target = target;
+	c.a = { blast.x, blast.y, blast.z };
+	c.b = { std::max( speed, 0.0f ), 0.0f, 0.0f };
+	c.other = uint32_t( std::max( seconds, 0.0f ) * float( m_sim.Config().tickRate ) );
+	Add( c );
+}
+
+std::vector<uint32_t> Context::BreakablesNear( b3Vec3 point, float radius ) const
+{
+	std::vector<std::pair<float, uint32_t>> found;
+	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	{
+		flecs::entity e( m_sim.World(), r.entity );
+		const TemplateRef* ref = e.try_get<TemplateRef>();
+		if ( ref == nullptr || ref->index >= m_sim.Map().templates.size() || m_sim.Map().templates[ref->index].pieces.empty() )
+		{
+			continue;
+		}
+		const float distance = b3Length( b3Sub( e.get<Transform>().position, point ) );
+		if ( distance <= radius )
+		{
+			found.push_back( { distance, r.netId } );
+		}
+	}
+	std::stable_sort( found.begin(), found.end(), []( const auto& a, const auto& b ) { return a.first < b.first; } );
+	std::vector<uint32_t> out;
+	for ( const auto& [distance, netId] : found )
+	{
+		out.push_back( netId );
+	}
+	return out;
+}
+
 void Context::Push( uint32_t target, b3Vec3 point, b3Vec3 vector, ImpulseMode mode )
 {
 	SimCommand c;

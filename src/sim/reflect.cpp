@@ -65,6 +65,11 @@ std::vector<ComponentDef> BuildRegistry()
 	};
 	registry.push_back( prop );
 
+	ComponentDef debris;
+	debris.name = "Debris";
+	debris.doc = "Rubble: players stand on it and are stopped by it, but do not push it (a broken wall's pieces).";
+	registry.push_back( debris );
+
 	ComponentDef container;
 	container.name = "Container";
 	container.doc = "Slots of its own: a chest. A player looking at it within reach opens it with the inventory, and moves items to and from it.";

@@ -826,6 +826,171 @@ void TestRolling()
 	CHECK( reach[2] < reach[1] && reach[1] < reach[0] ); // drag stopped it sooner
 }
 
+// A breakable wall (map version 9: a template's pieces): it stops a player like any wall; a Break
+// command takes it away and puts its four pieces where they were, flying away from the blast; they
+// settle; a player walking into the rubble is stopped by it and stands on it but never shoves it;
+// the pieces survive the file; a piece that breaks itself is refused.
+void TestBreakable()
+{
+	LevelLayout map;
+	map.name = "breakable";
+	map.spawnCenter = { 5.25f, 1.5f, 6.0f };
+	map.spawnRadius = 0.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 1.5f, 1.0f, 0.2f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );	 // the wall
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 0.74f, 0.49f, 0.19f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } ); // a quarter
+	EntityTemplate wall;
+	wall.name = "wall";
+	wall.components.push_back( MakeIntComponent( "Body", { { "type", 0 } } ) );
+	wall.shapes = 0;
+	for ( float x : { -0.75f, 0.75f } )
+	{
+		for ( float y : { -0.5f, 0.5f } )
+		{
+			wall.pieces.push_back( { 1, { x, y, 0.0f } } );
+		}
+	}
+	EntityTemplate brick;
+	brick.name = "brick";
+	brick.shapes = 1;
+	AuthoredComponent debris;
+	debris.id = Fnv32( "Debris" );
+	brick.components.push_back( debris );
+	EntityTemplate slabTemplate; // rubble of another shape, flat
+	slabTemplate.name = "slab";
+	slabTemplate.shapes = 2;
+	slabTemplate.components.push_back( debris );
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 1.0f, 0.15f, 1.0f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );
+	map.templates = { wall, brick, slabTemplate };
+	map.instances.push_back( { 0, { 0.0f, 1.0f, 0.0f }, 0.0f, 0.0f } );
+	QuantizeLayout( map );
+	std::vector<uint8_t> bytes;
+	SerializeMap( map, bytes );
+	LevelLayout loaded;
+	std::string error;
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) );
+	CHECK( loaded.templates.size() == 3 && loaded.templates[0].pieces == map.templates[0].pieces && loaded.templates[0].pieces.size() == 4 );
+
+	Simulation sim( TestConfig(), loaded );
+	InputFrame f;
+	auto run = [&]( int ticks ) {
+		for ( int i = 0; i < ticks; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto of = [&]( uint32_t index ) {
+		std::vector<uint32_t> out;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const TemplateRef* ref = flecs::entity( sim.World(), r.entity ).try_get<TemplateRef>();
+			if ( ref != nullptr && ref->index == index )
+			{
+				out.push_back( r.netId );
+			}
+		}
+		return out;
+	};
+	auto player = [&]() { return sim.EntityTransform( sim.PlayerNetId( 0 ) )->position; };
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	run( 30 );
+	f.inputs[0].cameraYaw = 32768; // forward is -Z: toward the wall and on through
+	f.inputs[0].moveForward = 127;
+	run( 180 );
+	const float stopped = player().z;
+	CHECK( of( 0 ).size() == 1 && stopped > 0.4f ); // the wall stops it
+	f.inputs[0].moveForward = 0;
+	f.inputs[0].cameraYaw = 0;
+	run( 30 );
+
+	// The blast in front of the wall: the pieces fly away from it, behind the wall.
+	SimCommand blast;
+	blast.type = CommandType::Break;
+	blast.target = of( 0 )[0];
+	blast.a = { 0.0f, 1.0f, 1.0f };
+	blast.b = { 14.0f, 0.0f, 0.0f };
+	f.commands.push_back( blast );
+	run( 1 );
+	const std::vector<uint32_t> pieces = of( 1 );
+	CHECK( of( 0 ).empty() && pieces.size() == 4 );
+	if ( pieces.size() != 4 )
+	{
+		return;
+	}
+	bool away = true;
+	for ( uint32_t id : pieces )
+	{
+		const flecs::entity e = sim.FindEntity( id );
+		away = away && b3Body_GetLinearVelocity( sim.BodyOf( e.get<PhysicsBody>() ) ).z < -1.0f;
+	}
+	CHECK( away );
+	run( 240 ); // they land and settle
+
+	// The player walks on through where the wall was, into the rubble: it does not shove it.
+	std::vector<b3Vec3> before;
+	for ( uint32_t id : pieces )
+	{
+		before.push_back( sim.EntityTransform( id )->position );
+	}
+	const b3Vec3 start = player();
+	f.inputs[0].cameraYaw = 32768;
+	f.inputs[0].moveForward = 127;
+	float moved = 0.0f, highest = 0.0f;
+	for ( int i = 0; i < 240; ++i )
+	{
+		run( 1 );
+		highest = std::max( highest, player().y );
+	}
+	for ( size_t i = 0; i < pieces.size(); ++i )
+	{
+		moved = std::max( moved, b3Distance( before[i], sim.EntityTransform( pieces[i] )->position ) );
+	}
+	std::printf( "    the wall stopped the player at z %.2f; broken, its 4 pieces flew off behind it and settled; the player walked from z %.2f "
+				 "to %.2f through them (up to %.2f m high), and the most a piece moved was %.4f m\n",
+				 stopped, start.z, player().z, highest, moved );
+	CHECK( player().z < -1.0f ); // it went on through where the wall was
+	CHECK( moved < 0.001f );	 // and shoved no piece
+
+	// A slab of rubble 30 cm high in its way: it walks up onto it, stands on it, and does not shove it.
+	SimCommand slab;
+	slab.type = CommandType::SpawnProp;
+	slab.value = 2;
+	slab.a = { player().x, 0.2f, player().z - 2.5f };
+	f.commands.push_back( slab );
+	f.inputs[0].moveForward = 0;
+	run( 60 );
+	const std::vector<uint32_t> slabs = of( 2 );
+	CHECK( slabs.size() == 1 );
+	if ( slabs.empty() )
+	{
+		return;
+	}
+	const b3Vec3 slabAt = sim.EntityTransform( slabs[0] )->position;
+	f.inputs[0].moveForward = 127;
+	float onTop = 0.0f;
+	for ( int i = 0; i < 50; ++i )
+	{
+		run( 1 );
+		onTop = std::max( onTop, player().y );
+	}
+	const float shoved = b3Distance( slabAt, sim.EntityTransform( slabs[0] )->position );
+	std::printf( "    onto a slab of rubble: the player rose to %.2f m, the slab moved %.4f m\n", onTop, shoved );
+	CHECK( onTop > 1.38f + 0.25f && shoved < 0.001f );
+
+	// A piece that breaks itself, or names no template, is refused.
+	LevelLayout bad = map;
+	bad.templates[1].pieces.push_back( { 1, {} } );
+	SerializeMap( bad, bytes );
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
+	bad = map;
+	bad.templates[0].pieces[0].templateIndex = 7;
+	SerializeMap( bad, bytes );
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
+}
+
 // Slopes (max_slope, 50 degrees by default): on a ramp up to it a player stands still and walks up;
 // on a steeper one it slides down and cannot walk up; a mod's 90 lets it stand on a 70° one again
 // (as before there was a limit).
@@ -8125,7 +8290,25 @@ void AppendShapesReference( std::vector<uint64_t>& hashes )
 	EntityTemplate ell;
 	ell.name = "ell";
 	ell.shapes = 1;
-	map.templates = { dumbbell, ell };
+	// A breakable wall of six bricks (rubble), broken by a blast a second in.
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 1.5f, 1.0f, 0.25f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 0.49f, 0.32f, 0.24f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );
+	EntityTemplate wall;
+	wall.name = "wall";
+	wall.components.push_back( MakeIntComponent( "Body", { { "type", 0 } } ) );
+	wall.shapes = uint32_t( map.shapeSets.size() - 2 );
+	for ( int i = 0; i < 6; ++i )
+	{
+		wall.pieces.push_back( { 3, { -1.0f + float( i % 3 ), i < 3 ? -0.66f : 0.0f, 0.0f }, 0.0f, 0.0f, 0.05f * float( i ) } );
+	}
+	EntityTemplate brick;
+	brick.name = "brick";
+	brick.shapes = uint32_t( map.shapeSets.size() - 1 );
+	AuthoredComponent rubble;
+	rubble.id = Fnv32( "Debris" );
+	brick.components.push_back( rubble );
+	map.templates = { dumbbell, ell, wall, brick };
+	map.instances.push_back( { 2, { -6.0f, 1.0f, -6.0f }, 0.0f, 0.4f } );
 	map.instances.push_back( { 0, { -5.0f, 5.0f, 0.5f }, 0.3f, 0.2f, 0.1f } );
 	map.instances.push_back( { 1, { 0.5f, 6.0f, -5.5f }, -0.2f, 0.9f, 0.4f } );
 	map.instances.push_back( { 0, { 5.5f, 7.0f, 5.0f }, 0.0f, 1.2f, -0.3f } );
@@ -8187,6 +8370,22 @@ void AppendShapesReference( std::vector<uint64_t>& hashes )
 	{
 		frame.tick = sim.Tick();
 		frame.commands.clear();
+		if ( tick == 60 )
+		{
+			for ( const Simulation::EntityRef& r : sim.Entities() )
+			{
+				const TemplateRef* ref = flecs::entity( sim.World(), r.entity ).try_get<TemplateRef>();
+				if ( ref != nullptr && ref->index == 2 )
+				{
+					SimCommand c;
+					c.type = CommandType::Break;
+					c.target = r.netId;
+					c.a = { -5.5f, 1.2f, -4.0f };
+					c.b = { 9.0f, 0.0f, 0.0f };
+					frame.commands.push_back( c );
+				}
+			}
+		}
 		if ( tick < 3 )
 		{
 			SimCommand c;
@@ -8847,6 +9046,7 @@ int main( int argc, char** argv )
 		{ "map_bodies", TestMapBodies },
 		{ "map_surfaces", TestMapSurfaces },
 		{ "rolling", TestRolling },
+		{ "breakable", TestBreakable },
 		{ "slopes", TestSlopes },
 		{ "templates", TestTemplates },
 		{ "sim_events", TestSimEvents },
