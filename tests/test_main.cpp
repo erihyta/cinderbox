@@ -7533,6 +7533,108 @@ void TestRetarget()
 	CHECK( std::fabs( shin - 0.42f ) < 0.01f );
 }
 
+// What the hands hold wins the arms: with an item's hold in the upper body, an overlay of the whole
+// body (a dash's pose) moves the body (the head) but leaves both arms as the hold has them; an overlay whose
+// filter names the left hand (a throw) takes that arm, and the right stays with the hold; with
+// nothing held, the dash's pose has the arms too.
+void TestHeldArms()
+{
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
+	std::string error, warnings;
+	std::shared_ptr<const anim::AnimSet> set = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( set != nullptr );
+	if ( set == nullptr )
+	{
+		return;
+	}
+	ModSchema schema;
+	schema.animPacks.push_back( { "test", "test.hold",
+								  "cinderbox_graph\t1\nclip\tSprint\t0.6666667\t1\nlayer\tUpperBody\nstate\tHold\tclip\tSprint\t0\nstart\tHold\n" } );
+	schema.animPacks.push_back( { "test", "test.dash",
+								  "cinderbox_graph\t1\nclip\tJump_Land\t1.2666667\t0\nlayer\tDash\nstate\tDash\tclip\tJump_Land\t0\nstart\tDash\n" } );
+	schema.animPacks.push_back( { "test", "test.throw",
+								  "cinderbox_graph\t1\nclip\tJump\t2.5\t1\nlayer\tThrow\n"
+								  "mask\tLeftShoulder\tLeftUpperArm\tLeftLowerArm\tLeftHand\n"
+								  "state\tThrow\tclip\tJump\t0\nstart\tThrow\n" } );
+	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
+	AnimGraphPacks packs = CompileAnimPacks( schema, warnings );
+	CHECK( graph != nullptr && packs.size() == 3 && packs[0] != nullptr && packs[1] != nullptr && packs[2] != nullptr );
+	if ( graph == nullptr || packs.size() != 3 )
+	{
+		std::printf( "    %s %s\n", error.c_str(), warnings.c_str() );
+		return;
+	}
+	std::vector<std::shared_ptr<const anim::PackClips>> fitted;
+	for ( const auto& pack : packs )
+	{
+		fitted.push_back( anim::FitPack( set, *pack, *set, warnings ) );
+	}
+	SimConfig config = TestConfig();
+	config.layers = uint8_t( LayerSlots( *graph ) );
+	Simulation sim( config, FlatMap() );
+	sim.SetAnimGraph( graph );
+	sim.SetAnimPacks( packs );
+	anim::PoseEvaluator pose( *set );
+	pose.SetGraph( graph, warnings );
+	pose.SetPacks( packs, fitted );
+	InputFrame f;
+	auto swap = [&]( size_t layer, int source ) {
+		SimCommand c;
+		c.type = CommandType::SwapLayer;
+		c.target = SlotTarget( 0 );
+		c.index = uint16_t( layer );
+		c.value = source;
+		f.commands.push_back( c );
+		for ( int i = 0; i < 45; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	struct Joints
+	{
+		b3Vec3 left, right, head;
+	};
+	// The pose of this moment, and of the same moment without the overlay (its weight 0): the hands
+	// where the chest has them (a hold's shape, wherever the body bends), the head in the model.
+	auto joints = [&]( bool overlaid ) {
+		AnimState s = sim.GetAnimState( sim.FindEntity( sim.PlayerNetId( 0 ) ) );
+		if ( overlaid == false )
+		{
+			s.graph[graph->layers.size()].weight = 0.0f;
+		}
+		pose.Evaluate( s );
+		const ozz::math::Float4x4 chest = ozz::math::Invert( pose.Models()[size_t( anim::FindJoint( *set, "UpperChest" ) )] );
+		auto at = [&]( int j, bool fromChest ) {
+			float v[4];
+			ozz::math::StorePtrU( ( fromChest ? chest * pose.Models()[size_t( j )] : pose.Models()[size_t( j )] ).cols[3], v );
+			return b3Vec3{ v[0], v[1], v[2] };
+		};
+		return Joints{ at( set->ArmJoints( true ).hand, true ), at( set->ArmJoints( false ).hand, true ),
+					   at( anim::FindJoint( *set, "Head" ), false ) };
+	};
+	const size_t overlay = graph->layers.size();
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	swap( 1, 0 );
+	swap( overlay, 2 ); // the dash's pose, nothing held
+	const Joints bare = joints( false ), bareDash = joints( true );
+	swap( 1, 1 ); // the hold, the dash's pose over it
+	const Joints held = joints( false ), heldDash = joints( true );
+	swap( overlay, 3 ); // the throw over the hold
+	const Joints heldThrow = joints( true ), heldNoThrow = joints( false );
+	std::printf( "    the dash's pose, nothing held: hands move %.3f / %.3f m. Over a hold: hands %.4f / %.4f m, the head %.3f m. "
+				 "A throw over a hold: left hand %.3f m, right %.4f m\n",
+				 b3Distance( bare.left, bareDash.left ), b3Distance( bare.right, bareDash.right ), b3Distance( held.left, heldDash.left ),
+				 b3Distance( held.right, heldDash.right ), b3Distance( held.head, heldDash.head ), b3Distance( heldNoThrow.left, heldThrow.left ),
+				 b3Distance( heldNoThrow.right, heldThrow.right ) );
+	CHECK( b3Distance( bare.left, bareDash.left ) > 0.05f && b3Distance( bare.right, bareDash.right ) > 0.05f ); // no hold: its arms
+	CHECK( b3Distance( held.head, heldDash.head ) > 0.02f );													   // over a hold: the body
+	CHECK( b3Distance( held.left, heldDash.left ) < 0.001f && b3Distance( held.right, heldDash.right ) < 0.001f ); // and the hold's arms
+	CHECK( b3Distance( heldNoThrow.left, heldThrow.left ) > 0.05f && b3Distance( heldNoThrow.right, heldThrow.right ) < 0.001f ); // a throw takes its hand
+}
+
 // An overlay that moves the other hand takes it off a two-handed item (the grapple's arm while a
 // rifle is out): with the overlay in, the grip changes nothing; without it, the hand goes to the grip.
 void TestOverlayGrip()
@@ -8794,6 +8896,7 @@ int main( int argc, char** argv )
 		{ "retarget", TestRetarget },
 		{ "layer_swap", TestLayerSwap },
 		{ "overlay_grip", TestOverlayGrip },
+		{ "held_arms", TestHeldArms },
 		{ "anim_lead", TestAnimLead },
 		{ "anim_catch_up", TestAnimCatchUp },
 		{ "lead_reads_packs", TestLeadReadsPacks },

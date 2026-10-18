@@ -99,6 +99,9 @@ private:
 		std::vector<ozz::vector<ozz::math::SimdFloat4>> masks;
 		std::vector<float> neck;
 		std::vector<std::array<bool, 2>> hands; // the layer moves the left, the right hand (no filter: both)
+		// The layer's filter names the left, the right hand: an overlay that does takes that hand off
+		// what is held (a throw); one without a filter (a dash's whole body) leaves the arms to it.
+		std::vector<std::array<bool, 2>> namedHands;
 	};
 	std::vector<GraphSource> m_sources;
 	void BindSource( GraphSource& source, const AnimGraph& graph, std::vector<const ozz::animation::Animation*> clips );
@@ -107,6 +110,13 @@ private:
 	ozz::vector<ozz::math::SoaTransform> m_layerPose;
 	float m_neckCover = 0.0f;			// this pose: how much of the neck the upper layers set
 	float m_overlayHands[2] = {};		// this pose: the most an overlay moves the left, the right hand
+	// What the hands hold wins the arms: the pose as the character's own layers left it (the held
+	// item's hold, before any overlay), how much of it there was, which hands its layers pose, and
+	// each arm's joints (the upper arm and all below it) as a mask.
+	ozz::vector<ozz::math::SoaTransform> m_heldPose;
+	float m_heldWeight = 0.0f;
+	bool m_heldHands[2] = {};
+	ozz::vector<ozz::math::SimdFloat4> m_armMasks[2];
 	ozz::vector<ozz::math::SoaTransform> m_scratch;
 	ozz::vector<ozz::math::SimdFloat4> m_keepWeights;
 	ozz::vector<ozz::math::SimdFloat4> m_layerWeights;

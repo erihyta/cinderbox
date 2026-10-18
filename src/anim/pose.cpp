@@ -118,6 +118,42 @@ PoseEvaluator::PoseEvaluator( const AnimSet& set )
 	m_keepWeights.resize( soaJoints );
 	m_layerWeights.resize( soaJoints );
 	m_layerPose.resize( soaJoints );
+	m_heldPose.resize( soaJoints );
+	// Each arm: its shoulder (the upper arm's parent: a hold poses it too) and every joint below it
+	// (the upper arm, the hand, the fingers, what hangs there).
+	const int joints = skeleton.num_joints();
+	auto parents = skeleton.joint_parents();
+	for ( int h = 0; h < 2; ++h )
+	{
+		const int arm = set.ArmJoints( h == 0 ).upper;
+		const int upper = arm >= 0 && parents[size_t( arm )] >= 0 ? int( parents[size_t( arm )] ) : arm;
+		if ( upper < 0 )
+		{
+			continue;
+		}
+		std::vector<float> weights( size_t( joints ), 0.0f );
+		for ( int j = 0; j < joints; ++j )
+		{
+			for ( int up = j; up >= 0; up = parents[size_t( up )] )
+			{
+				if ( up == upper )
+				{
+					weights[size_t( j )] = 1.0f;
+					break;
+				}
+			}
+		}
+		m_armMasks[h].resize( size_t( soaJoints ) );
+		for ( int i = 0; i < soaJoints; ++i )
+		{
+			float lane[4];
+			for ( int k = 0; k < 4; ++k )
+			{
+				lane[k] = i * 4 + k < joints ? weights[size_t( i * 4 + k )] : 0.0f;
+			}
+			m_armMasks[h][size_t( i )] = ozz::math::simd_float4::Load( lane[0], lane[1], lane[2], lane[3] );
+		}
+	}
 }
 
 void PoseEvaluator::SetGraph( std::shared_ptr<const AnimGraph> graph, std::string& warnings )
@@ -220,6 +256,7 @@ void PoseEvaluator::BindSource( GraphSource& source, const AnimGraph& graph, std
 			right |= bone == "RightHand";
 		}
 		source.hands.push_back( { left, right } );
+		source.namedHands.push_back( { left && layer.mask.empty() == false, right && layer.mask.empty() == false } );
 	}
 	// Sample buffers: every point of a state and of the one fading out.
 	size_t most = 1;
@@ -243,9 +280,18 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 	std::vector<ozz::animation::BlendingJob::Layer> layers;
 	float neckKept = 1.0f;
 	m_overlayHands[0] = m_overlayHands[1] = 0.0f;
+	m_heldWeight = 0.0f;
+	m_heldHands[0] = m_heldHands[1] = false;
+	bool heldKept = false, overlaid = false;
 	for ( size_t l = 0; l < LayerSlots( *m_graph ) && l < state.graph.size(); ++l )
 	{
 		AnimGraphLayerState L = state.graph[l];
+		if ( l >= m_graph->layers.size() && heldKept == false && m_heldWeight > 0.0f )
+		{
+			// Before the first overlay: the arms as what is held poses them.
+			m_heldPose = m_blended;
+			heldKept = true;
+		}
 		// The layer as the simulation plays it: the character's own, or a pack's it was swapped to.
 		const AnimGraph* owner = nullptr;
 		const AnimGraphLayer& layer = ResolveLayer( *m_graph, m_packs, l, L.source, owner, OverlayNth( *m_graph, state.graph, l ) );
@@ -324,17 +370,41 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 			bool borrowed = owner != m_graph.get() && source.masks[layerIndex].empty() && l < own.masks.size();
 			const auto& mask = borrowed ? own.masks[l] : source.masks[layerIndex];
 			BlendOver( m_layerPose, mask.empty() ? nullptr : &mask, L.weight );
-			if ( l >= m_graph->layers.size() && layerIndex < source.hands.size() )
+			if ( l >= m_graph->layers.size() && layerIndex < source.namedHands.size() )
 			{
 				for ( int h = 0; h < 2; ++h )
 				{
-					m_overlayHands[h] = source.hands[layerIndex][h] ? std::max( m_overlayHands[h], L.weight ) : m_overlayHands[h];
+					m_overlayHands[h] = source.namedHands[layerIndex][h] ? std::max( m_overlayHands[h], L.weight ) : m_overlayHands[h];
 				}
+				overlaid = true;
+			}
+			else if ( l < m_graph->layers.size() && layerIndex < source.hands.size() )
+			{
+				// One of the character's own upper layers (an item's hold swapped into it, or its own
+				// stance's): the arms it poses are the held thing's.
+				const auto& hands = borrowed && l < own.hands.size() ? own.hands[l] : source.hands[layerIndex];
+				m_heldWeight = std::max( m_heldWeight, std::min( L.weight, 1.0f ) );
+				m_heldHands[0] = m_heldHands[0] || hands[0];
+				m_heldHands[1] = m_heldHands[1] || hands[1];
 			}
 			neckKept *= 1.0f - std::min( L.weight, 1.0f ) * ( borrowed ? own.neck[l] : source.neck[layerIndex] );
 		}
 	}
 	m_neckCover = 1.0f - neckKept;
+
+	// What the hands hold wins the arms: an overlay (a dash's pose, a hook's hang) poses the legs and
+	// the body, and the held item's arms are put back, unless the overlay takes that hand (a throw:
+	// then the item lets go of it, Finish).
+	if ( heldKept && overlaid )
+	{
+		for ( int h = 0; h < 2; ++h )
+		{
+			if ( m_heldHands[h] && m_overlayHands[h] <= 0.5f && m_armMasks[h].empty() == false )
+			{
+				BlendOver( m_heldPose, &m_armMasks[h], m_heldWeight );
+			}
+		}
+	}
 }
 
 void PoseEvaluator::BlendOver( const ozz::vector<ozz::math::SoaTransform>& pose, const ozz::vector<ozz::math::SimdFloat4>* mask,
