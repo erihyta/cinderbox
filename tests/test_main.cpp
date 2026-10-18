@@ -163,7 +163,8 @@ bool SameLayout( const LevelLayout& a, const LevelLayout& b )
 		const LevelProp& x = a.props[i];
 		const LevelProp& y = b.props[i];
 		if ( x.kind != y.kind || sameVec( x.position, y.position ) == false || sameVec( x.halfExtents, y.halfExtents ) == false ||
-			 x.mass != y.mass || x.density != y.density || x.friction != y.friction || x.restitution != y.restitution )
+			 x.mass != y.mass || x.density != y.density || x.friction != y.friction || x.restitution != y.restitution ||
+			 x.rolling != y.rolling || x.drag != y.drag )
 		{
 			return false;
 		}
@@ -764,6 +765,121 @@ void TestMapSurfaces()
 	bad.meshes[0].indices[0] = 99;
 	SerializeMap( bad, bytes );
 	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
+}
+
+// Rolling and drag (a body's, as a map's prop has them): of three balls rolled off the same ramp,
+// the one without rolling resistance rolls on, the one with it comes to a stop, and the one with
+// drag stops sooner; the values survive the file.
+void TestRolling()
+{
+	LevelLayout map;
+	map.name = "rolling";
+	map.spawnCenter = { 0.0f, 1.5f, 40.0f };
+	map.spawnRadius = 2.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 40.0f, 0.5f, 40.0f }, 0.0f, 0.0f } );
+	// A ramp 6 m long at 20°.
+	const float a = 0.349f;
+	map.statics.push_back( { { 0.0f, 3.0f * std::sin( a ), -3.0f * std::cos( a ) }, { 6.0f, 0.1f, 3.0f }, -a, 0.0f } );
+	for ( int i = 0; i < 3; ++i )
+	{
+		LevelProp ball{ ShapeKind::Sphere, { -3.0f + 3.0f * float( i ), 2.5f, -5.0f }, { 0.3f, 0.0f, 0.0f } };
+		ball.rolling = i == 0 ? 0.0f : 0.05f;
+		ball.drag = i == 2 ? 0.5f : 0.0f;
+		map.props.push_back( ball );
+	}
+	QuantizeLayout( map );
+	std::vector<uint8_t> bytes;
+	SerializeMap( map, bytes );
+	LevelLayout loaded;
+	std::string error;
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) && SameLayout( map, loaded ) );
+	CHECK( loaded.props[1].rolling == map.props[1].rolling && loaded.props[2].drag == map.props[2].drag && map.props[2].drag > 0.0f );
+
+	Simulation sim( TestConfig(), loaded );
+	std::vector<uint32_t> balls;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		if ( flecs::entity( sim.World(), r.entity ).has<Prop>() )
+		{
+			balls.push_back( r.netId );
+		}
+	}
+	CHECK( balls.size() == 3 );
+	InputFrame f;
+	float speed[3] = {}, reach[3] = {};
+	for ( int t = 0; t < 900; ++t )
+	{
+		f.tick = sim.Tick();
+		sim.Step( f );
+	}
+	for ( int i = 0; i < 3; ++i )
+	{
+		const flecs::entity e = sim.FindEntity( balls[size_t( i )] );
+		const b3Vec3 v = b3Body_GetLinearVelocity( sim.BodyOf( e.get<PhysicsBody>() ) );
+		speed[i] = b3Length( v );
+		reach[i] = std::fabs( sim.EntityTransform( balls[size_t( i )] )->position.z + 5.0f ); // from where it was dropped
+	}
+	std::printf( "    after 15 s: rolling 0 at %.2f m/s, %.1f m out; rolling 0.05 at %.2f m/s, %.1f m out; with drag 0.5 at %.2f m/s, %.1f m out\n",
+				 speed[0], reach[0], speed[1], reach[1], speed[2], reach[2] );
+	CHECK( speed[0] > 1.0f );						   // rolls on
+	CHECK( speed[1] < 0.05f && speed[2] < 0.05f );	   // came to a stop
+	CHECK( reach[2] < reach[1] && reach[1] < reach[0] ); // drag stopped it sooner
+}
+
+// Slopes (max_slope, 50 degrees by default): on a ramp up to it a player stands still and walks up;
+// on a steeper one it slides down and cannot walk up; a mod's 90 lets it stand on a 70° one again
+// (as before there was a limit).
+void TestSlopes()
+{
+	struct Case
+	{
+		float degrees;
+		float maxSlope;
+	};
+	for ( Case k : { Case{ 30.0f, 50.0f }, Case{ 45.0f, 50.0f }, Case{ 55.0f, 50.0f }, Case{ 70.0f, 50.0f }, Case{ 70.0f, 90.0f } } )
+	{
+		const float a = k.degrees * 3.14159265f / 180.0f;
+		LevelLayout ramp;
+		ramp.name = "ramp";
+		ramp.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 30.0f, 0.5f, 30.0f }, 0.0f, 0.0f } );
+		// A slab 20 m long rising toward -Z, its middle at z -10.
+		ramp.statics.push_back( { { 0.0f, 10.0f * std::tan( a ) * 0.5f, -10.0f }, { 4.0f, 0.2f, 10.0f / std::cos( a ) }, a, 0.0f } );
+		ramp.spawnCenter = { 5.25f, 10.0f * std::tan( a ) * 0.5f + 0.2f / std::cos( a ) + 1.5f, -10.0f }; // (slot 0 stands 5.25 m left)
+		ramp.spawnRadius = 0.0f;
+		QuantizeLayout( ramp );
+		SimConfig config = TestConfig();
+		config.move.values[int( MoveParam::MaxSlope )] = k.maxSlope;
+		Simulation s( config, ramp );
+		InputFrame f;
+		f.events.push_back( { PlayerEventType::Join, 0 } );
+		auto run = [&]( int ticks ) {
+			for ( int i = 0; i < ticks; ++i )
+			{
+				f.tick = s.Tick();
+				s.Step( f );
+				f.events.clear();
+			}
+			return s.EntityTransform( s.PlayerNetId( 0 ) )->position;
+		};
+		const b3Vec3 landed = run( 30 );
+		const b3Vec3 stood = run( 90 );
+		f.inputs[0].moveForward = 127;
+		f.inputs[0].cameraYaw = 32768; // forward is -Z: up the ramp
+		const b3Vec3 walked = run( 90 );
+		const bool walkable = k.degrees <= k.maxSlope;
+		std::printf( "    %2.0f° with max_slope %2.0f: standing 1.5 s it moved %.2f m down; walking up 1.5 s it rose %.2f m\n", k.degrees,
+					 k.maxSlope, landed.y - stood.y, walked.y - stood.y );
+		if ( walkable )
+		{
+			CHECK( std::fabs( stood.y - landed.y ) < 0.05f );			 // stands still
+			CHECK( k.degrees > 45.0f || walked.y - stood.y > 1.5f ); // and walks up a slope one can
+		}
+		else
+		{
+			CHECK( landed.y - stood.y > 1.0f ); // slides down
+			CHECK( walked.y < stood.y + 0.3f ); // and does not walk up
+		}
+	}
 }
 
 // Entities described by components in the editor must reach the simulation exactly as authored:
@@ -8628,6 +8744,8 @@ int main( int argc, char** argv )
 		{ "map_shapes", TestMapShapes },
 		{ "map_bodies", TestMapBodies },
 		{ "map_surfaces", TestMapSurfaces },
+		{ "rolling", TestRolling },
+		{ "slopes", TestSlopes },
 		{ "templates", TestTemplates },
 		{ "sim_events", TestSimEvents },
 		{ "repeatability", TestRepeatability },

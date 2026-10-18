@@ -43,6 +43,7 @@ std::vector<ComponentDef> BuildRegistry()
 		{ "density", FieldType::Float, { 40.0f, 0.0f, 0.0f }, 0.001f, 1000.0f, nullptr, "kg/m^3" },
 		{ "friction", FieldType::Float, { 0.6f, 0.0f, 0.0f }, 0.0f, 10.0f, nullptr, "" },
 		{ "restitution", FieldType::Float, { 0.0f, 0.0f, 0.0f }, 0.0f, 1.0f, nullptr, "Bounciness" },
+		{ "rolling", FieldType::Float, { 0.0f, 0.0f, 0.0f }, 0.0f, 1.0f, nullptr, "Rolling resistance: a ball slows by about this times gravity" },
 		{ "mass", FieldType::Float, { 0.0f, 0.0f, 0.0f }, 0.0f, 10000.0f, nullptr, "kg; 0: its volume times density" },
 	};
 	registry.push_back( material );

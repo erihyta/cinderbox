@@ -1301,6 +1301,10 @@ void TestItemShapes()
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nfriction 0.05\nbounce 0.7\n", shape, error ) && shape.friction == 0.05f &&
 		   shape.restitution == 0.7f );
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nbounce 1.5\n", shape, error ) == false );
+	CHECK( ParseItemShape( "shape sphere\nhalf 0.1 0.1 0.1\nrolling 0.08\ndrag 1.5\n", shape, error ) && shape.rolling == 0.08f &&
+		   shape.drag == 1.5f );
+	CHECK( ParseItemShape( "shape sphere\nhalf 0.1 0.1 0.1\nrolling 3\n", shape, error ) == false );
+	CHECK( ParseItemShape( "shape sphere\nhalf 0.1 0.1 0.1\ndrag -1\n", shape, error ) == false );
 	CHECK( ParseItemShape( "shape box\nhalf 0.1 0.1 0.1\nfriction -1\n", shape, error ) == false );
 	CHECK( ParseItemShape( "shape capsule\nhalf 0.1 0.1 0.1\n", shape, error ) == false && error.empty() == false );
 	CHECK( ParseItemShape( "shape box\n", shape, error ) == false );				   // no size
@@ -4088,14 +4092,22 @@ void TestFlight()
 		into[sim.Tick()] = { sim.EntityTransform( netId )->position, sim.BoardValue( netId, on->slot ), sim.BoardValue( netId, fuel->slot ),
 							 sim.Globals().modEventCount, c->grounded };
 	};
+	// The server's state at every tick it runs (an update can run several); the client's as it shows it.
+	h.server.SetTickObserver( [&] {
+		GameClient& client = *h.bots[0].client;
+		if ( client.State() == ClientState::Playing )
+		{
+			look( server, client.Slot(), truth );
+		}
+	} );
 	h.RunUntil( 33.0, [&]( double ) {
 		GameClient& client = *h.bots[0].client;
 		if ( client.Session() != nullptr && client.State() == ClientState::Playing )
 		{
 			look( client.Session()->Sim(), client.Slot(), predicted );
-			look( server, client.Slot(), truth );
 		}
 	} );
+	h.server.SetTickObserver( {} );
 	h.Report();
 	GameClient& client = *h.bots[0].client;
 	CHECK( client.GetStats().rttMs >= 90 );
@@ -4214,14 +4226,22 @@ void TestGrapple()
 			seen.tethered = sim.EntityHold( netId, seen.end, seen.holds, motion );
 			into[sim.Tick()] = seen;
 		};
+		// The server's state at every tick it runs (an update can run several); the client's as it shows it.
+		h.server.SetTickObserver( [&] {
+			GameClient& client = *h.bots[0].client;
+			if ( client.State() == ClientState::Playing )
+			{
+				look( server, client.Slot(), truth );
+			}
+		} );
 		h.RunUntil( 13.0, [&]( double ) {
 			GameClient& client = *h.bots[0].client;
 			if ( client.Session() != nullptr && client.State() == ClientState::Playing )
 			{
 				look( client.Session()->Sim(), client.Slot(), predicted );
-				look( server, client.Slot(), truth );
 			}
 		} );
+		h.server.SetTickObserver( {} );
 		h.Report();
 		GameClient& client = *h.bots[0].client;
 		CHECK( client.GetStats().rttMs >= 90 && client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );

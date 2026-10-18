@@ -17,12 +17,18 @@ void CbBody::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_friction" ), &CbBody::get_friction );
 	ClassDB::bind_method( D_METHOD( "set_bounce", "value" ), &CbBody::set_bounce );
 	ClassDB::bind_method( D_METHOD( "get_bounce" ), &CbBody::get_bounce );
+	ClassDB::bind_method( D_METHOD( "set_rolling", "value" ), &CbBody::set_rolling );
+	ClassDB::bind_method( D_METHOD( "get_rolling" ), &CbBody::get_rolling );
+	ClassDB::bind_method( D_METHOD( "set_drag", "value" ), &CbBody::set_drag );
+	ClassDB::bind_method( D_METHOD( "get_drag" ), &CbBody::get_drag );
 	ADD_GROUP( "Body", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "mass", PROPERTY_HINT_RANGE, "0,1000,0.01,or_greater,suffix:kg" ), "set_mass", "get_mass" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "density", PROPERTY_HINT_RANGE, "0.001,1000,0.001,or_greater,suffix:kg/m3" ), "set_density",
 				  "get_density" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "friction", PROPERTY_HINT_RANGE, "0,2,0.01,or_greater" ), "set_friction", "get_friction" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "bounce", PROPERTY_HINT_RANGE, "0,1,0.01" ), "set_bounce", "get_bounce" );
+	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "rolling", PROPERTY_HINT_RANGE, "0,1,0.005" ), "set_rolling", "get_rolling" );
+	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "drag", PROPERTY_HINT_RANGE, "0,10,0.01,or_greater,suffix:/s" ), "set_drag", "get_drag" );
 }
 
 } // namespace cb::gd

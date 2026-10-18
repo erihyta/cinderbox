@@ -410,6 +410,7 @@ b3ShapeDef MakeShapeDef( uint64_t category, const ShapeMaterial& material )
 	def.density = material.density;
 	def.baseMaterial.friction = material.friction;
 	def.baseMaterial.restitution = material.restitution;
+	def.baseMaterial.rollingResistance = material.rolling;
 	def.filter.categoryBits = category;
 	def.filter.maskBits = ~uint64_t( 0 );
 	// Either shape enabling hit events is enough, so the static level does not need them.
@@ -653,7 +654,7 @@ void Simulation::BuildLevel()
 	for ( const LevelProp& prop : layout.props )
 	{
 		// Its body as the map says: a weight it was given is a density for its size.
-		ShapeMaterial material{ prop.density, prop.friction, prop.restitution };
+		ShapeMaterial material{ prop.density, prop.friction, prop.restitution, prop.rolling, prop.drag };
 		if ( prop.mass > 0.0f )
 		{
 			const b3Vec3 h = prop.halfExtents;
@@ -682,6 +683,8 @@ flecs::entity Simulation::CreateProp( ShapeKind kind, b3Vec3 position, b3Quat ro
 	bodyDef.position = position;
 	bodyDef.rotation = rotation;
 	bodyDef.linearVelocity = velocity;
+	bodyDef.linearDamping = material.drag;
+	bodyDef.angularDamping = material.drag;
 	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
 	b3ShapeId shapeId = CreateShape( body, shape, CatProp, material );
 
@@ -755,6 +758,7 @@ flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 pos
 	material.density = TemplateFloat( t, kMaterial, Fnv32( "density" ), material.density );
 	material.friction = TemplateFloat( t, kMaterial, Fnv32( "friction" ), material.friction );
 	material.restitution = TemplateFloat( t, kMaterial, Fnv32( "restitution" ), material.restitution );
+	material.rolling = TemplateFloat( t, kMaterial, Fnv32( "rolling" ), material.rolling );
 
 	bool isStatic = bodyDef.type == b3_staticBody;
 	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
@@ -826,11 +830,14 @@ void Simulation::PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotatio
 	bodyDef.rotation = bodyRotation;
 	bodyDef.linearVelocity = velocity;
 	bodyDef.isBullet = look.bullet != 0;
+	bodyDef.linearDamping = look.drag;
+	bodyDef.angularDamping = look.drag;
 	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
 	ShapeMaterial material;
 	material.density = look.mass / std::max( volume, 1e-6f );
 	material.friction = look.friction;
 	material.restitution = look.restitution;
+	material.rolling = look.rolling;
 	b3ShapeId shapeId;
 	if ( look.parts.empty() == false )
 	{

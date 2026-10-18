@@ -288,6 +288,7 @@ How players move is a set of values, not constants in the engine (`src/sim/move_
 | `move_frame` | 0 | 0: the movement input moves along the ground. 1: along the camera, pitch included (flight) |
 | `airborne` | 0 | 1: the character is in the air whatever is under it (on a hook): no ground friction, no jump, the in-air animation. The ground still carries it, so it does not sink; it lands when the parameter is gone |
 | `mass` | 80 kg | what the character weighs: against the props it walks into (the two trade momentum), under a motion's force in newtons, and on a rope ([Weight](motions.md#weight)). 1 to 10,000 |
+| `max_slope` | 50 | the steepest ground that holds the character up, in degrees: on steeper ground (a ramp, the side of a ball) it slides down and cannot walk or jump up it. 90: any (as before M190). Unity starts at 45, Unreal at 44.8 |
 
 | Who sets it | How | Wins over |
 |---|---|---|

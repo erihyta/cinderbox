@@ -627,7 +627,12 @@ bool BakeBodyProp( CbProp* prop, const Transform3D& here, BakeContext& ctx )
 	t.components.push_back( MakeComponent( "Material", { { "density", prop->get_density() },
 														  { "friction", prop->get_friction() },
 														  { "restitution", prop->get_bounce() },
-														  { "mass", prop->get_mass() } } ) );
+														  { "mass", prop->get_mass() },
+														  { "rolling", prop->get_rolling() } } ) );
+	if ( prop->get_drag() > 0.0 )
+	{
+		t.components.push_back( MakeComponent( "Body", { { "linear_damping", prop->get_drag() }, { "angular_damping", prop->get_drag() } } ) );
+	}
 	t.components.push_back( MakeComponent( "Prop", { { "lifetime_seconds", 0.0 } } ) );
 	t.shapes = AddShapeSet( ctx, std::move( set ) );
 	t.look = look ? LookOf( ctx, prop ) : kNoLook;
@@ -685,6 +690,8 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 		out.density = float( prop->get_density() );
 		out.friction = float( prop->get_friction() );
 		out.restitution = float( prop->get_bounce() );
+		out.rolling = float( prop->get_rolling() );
+		out.drag = float( prop->get_drag() );
 		ctx.layout.props.push_back( out );
 	}
 	else if ( auto* entity = Object::cast_to<CbEntity>( node ) )

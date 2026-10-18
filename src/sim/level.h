@@ -58,6 +58,8 @@ struct LevelProp
 	float density = 40.0f;
 	float friction = 0.6f;
 	float restitution = 0.0f;
+	float rolling = 0.0f; // rolling resistance (a ball slows by about this times gravity)
+	float drag = 0.0f;	  // how fast its speed and spin fade, per second
 };
 
 // One placement of a template in the level, turned as a piece is (yaw, pitch, roll).

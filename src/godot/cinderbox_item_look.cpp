@@ -1102,6 +1102,14 @@ Dictionary CbItem::bake() const
 	{
 		text += vformat( "bounce %.3f\n", m_bounce );
 	}
+	if ( m_rolling != 0.0 )
+	{
+		text += vformat( "rolling %.3f\n", m_rolling );
+	}
+	if ( m_drag != 0.0 )
+	{
+		text += vformat( "drag %.3f\n", m_drag );
+	}
 	if ( turn.is_equal_approx( Quaternion() ) == false )
 	{
 		text += vformat( "turn %.5f %.5f %.5f %.5f\n", turn.x, turn.y, turn.z, turn.w );

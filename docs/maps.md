@@ -84,7 +84,7 @@ with a `visual` keeps that prefab; one with neither draws its shape's default pr
 
 Turns are stored as yaw, pitch and roll (Godot's YXZ order) on the 1/4096 rad grid. Maps baked
 before this (version 3: boxes without roll; version 4: no hulls; version 5: one shape per body;
-version 6: no triangle meshes or height fields) still load. A placed entity turns with roll too.
+version 6: no triangle meshes or height fields; version 7: no rolling or drag) still load. A placed entity turns with roll too.
 
 ## A body
 
@@ -97,11 +97,14 @@ What a body is is said one way wherever a scene describes one (`CbBody`, the bas
 | `density` | kilograms per cubic metre, used when no mass is given: at 40, a crate 1 m across is 40 kg |
 | `friction` | how it grips what it touches: 0 is ice, 0.6 the usual |
 | `bounce` | how much of a hit it gives back: 0 none, 1 all of it |
+| `rolling` | rolling resistance (balls, capsules): a ball on the ground slows by about this times gravity. 0 rolls on until something stops it. A map's `CbProp` starts at 0.05; an item at 0 (its mod's to tune) |
+| `drag` | how fast its speed and spin fade, per second, in the air too: a beach ball 1, a stone 0 |
 
 - Every simulation builds the same body from them: weight decides what a player's push, a hook's
   pull and a rope share with it; friction and bounce are the physics engine's.
 - A prop's are baked into the `.cbmap` (in thousandths), an item's into its `items/<kind>.cfg`
-  (`mass`, and `friction` / `bounce` when they are not the usual).
+  (`mass`, and `friction` / `bounce` / `rolling` / `drag` when they are not the usual). A template
+  says rolling in its `Material`, drag as its `Body`'s damping.
 
 ## Entities and components
 
@@ -113,7 +116,7 @@ and its fields appear:
 |---|---|
 | `Shape` | `kind` (Box, Sphere, Capsule), `size`, `radius`, `height` (or `CollisionShape3D` children instead) |
 | `Body` | `type` (Static, Kinematic, Dynamic), `gravity_scale`, `linear_damping`, `angular_damping` |
-| `Material` | `density`, `friction`, `restitution`, `mass` (kg; 0: its volume times density) |
+| `Material` | `density`, `friction`, `restitution`, `mass` (kg; 0: its volume times density), `rolling` |
 | `Velocity` | `linear`, `angular` the entity starts with |
 | `Prop` | `lifetime_seconds` (0 keeps it forever); makes it count against the prop caps |
 

@@ -329,6 +329,8 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutU8( out, uint8_t( shape.usedEvent >> 8 ) );
 		PutU8( out, uint8_t( shape.expiredEvent & 0xFF ) );
 		PutU8( out, uint8_t( shape.expiredEvent >> 8 ) );
+		PutF32( out, shape.rolling );
+		PutF32( out, shape.drag );
 		PutU8( out, uint8_t( std::min<size_t>( shape.parts.size(), kItemPartLimit ) ) );
 		for ( size_t p = 0; p < shape.parts.size() && p < kItemPartLimit; ++p )
 		{
@@ -561,6 +563,12 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		shape.usedEvent = uint16_t( shape.usedEvent | ( uint16_t( r.U8() ) << 8 ) );
 		shape.expiredEvent = r.U8();
 		shape.expiredEvent = uint16_t( shape.expiredEvent | ( uint16_t( r.U8() ) << 8 ) );
+		shape.rolling = r.F32();
+		shape.drag = r.F32();
+		if ( sane( shape.rolling, 0.0f, 1.0f ) == false || sane( shape.drag, 0.0f, 100.0f ) == false )
+		{
+			return false;
+		}
 		// Its parts: shapes the physics can build, within reach of the item, turned by a rotation.
 		uint8_t parts = r.U8();
 		if ( parts > kItemPartLimit )
