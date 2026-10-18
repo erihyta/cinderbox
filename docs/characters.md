@@ -417,9 +417,14 @@ laid over the whole body (or its own bone filter) with its own weight, which say
   `Replaces` naming the overlays, and each Blend2's `blend_amount` in `graph_inputs` as its weight.
   The Blend2's filter is the overlay's bone filter (the grapple's: the left shoulder, arm, hand
   and fingers); later overlays are laid over earlier ones.
-- **A hand an overlay moves lets go**: while an overlay that moves the hand reaching for a
-  two-handed item is more than half in, the item is carried with one hand (a rifle during the
-  grapple's throw), on every machine and in hit tests alike.
+- **What the hands hold wins the arms**: an overlay poses the body, and the arms of what the
+  player holds (its upper-body layer) are put back over it, shoulder down. A dash's whole-body pose
+  bends the body and moves the legs; a two-handed rifle stays held as its pack holds it.
+- **A hand an overlay names lets go**: an overlay whose bone filter lists a hand (the grapple's and
+  the grenades' throws: the left shoulder, arm, hand and fingers) takes that arm while it is more
+  than half in, and a two-handed item is carried with the other hand meanwhile (a rifle during the
+  grapple's throw), on every machine and in hit tests alike. An overlay without a filter takes no
+  hand.
 - **Its weight eases in and out** like a stance (0.2 s), and the pose is the simulation's: hit tests
   see it, and the player's own is predicted with the motion.
 - **A clip that starts over on each use**: the overlay's state machine waits in one state and goes
