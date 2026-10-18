@@ -138,6 +138,7 @@ Simulation::Simulation( const SimConfig& config, const LevelLayout& map )
 	m_globalBoard.resize( config.globalFields );
 
 	RegisterComponents();
+	RegisterIndexes();
 
 	std::unique_lock<std::mutex> lock( WorldLifetimeMutex() );
 	PhysicsArena::Scope scope( *m_arena );
@@ -340,6 +341,7 @@ flecs::entity Simulation::CreateEntity()
 	e.set<NetId>( { netId } );
 	// NetIds only grow, so appending keeps the list sorted.
 	m_entities.push_back( { netId, e.id() } );
+	IndexesStale();
 	return e;
 }
 
@@ -386,6 +388,7 @@ void Simulation::DestroyEntity( flecs::entity e )
 	if ( it != m_entities.end() && it->netId == netId )
 	{
 		m_entities.erase( it );
+		IndexesStale();
 	}
 	e.destruct();
 }
@@ -648,21 +651,85 @@ uint8_t Simulation::SelectedSlot( uint32_t player ) const
 	return slots != nullptr ? slots->selected : kNoSlot;
 }
 
+void Simulation::RegisterIndexes()
+{
+	// Bodies: a shape made or gone changes which shape is whose.
+	m_world.observer<const PhysicsBody>( "ShapeLookupStale" ).event( flecs::OnSet ).event( flecs::OnRemove ).each(
+		[this]( flecs::entity, const PhysicsBody& ) { m_shapeLookupStale = true; } );
+	m_world.observer<const RagdollBodies>( "RagdollLookupStale" ).event( flecs::OnSet ).event( flecs::OnRemove ).each(
+		[this]( flecs::entity, const RagdollBodies& ) { m_shapeLookupStale = true; } );
+	// Items: only a change of holder matters (a slot or a socket is read fresh at each use).
+	m_world.observer<const HeldItem>( "HolderChanged" ).event( flecs::OnSet ).each( [this]( flecs::entity e, const HeldItem& item ) {
+		auto known = m_holderOf.find( e.id() );
+		if ( known == m_holderOf.end() || known->second != item.holder )
+		{
+			m_itemsByHolderStale = true;
+		}
+	} );
+	m_world.observer<const HeldItem>( "HolderGone" ).event( flecs::OnRemove ).each(
+		[this]( flecs::entity, const HeldItem& ) { m_itemsByHolderStale = true; } );
+}
+
+const std::vector<Simulation::EntityRef>& Simulation::ItemsOf( uint32_t holder ) const
+{
+	if ( m_itemsByHolderStale )
+	{
+		m_itemsByHolder.clear();
+		auto& holderOf = const_cast<std::unordered_map<flecs::entity_t, uint32_t>&>( m_holderOf );
+		holderOf.clear();
+		for ( const EntityRef& r : m_entities )
+		{
+			if ( const HeldItem* item = flecs::entity( m_world, r.entity ).try_get<HeldItem>() )
+			{
+				holderOf[r.entity] = item->holder;
+				if ( item->holder != 0 )
+				{
+					m_itemsByHolder[item->holder].push_back( r );
+				}
+			}
+		}
+		m_itemsByHolderStale = false;
+	}
+	static const std::vector<EntityRef> none;
+	auto found = m_itemsByHolder.find( holder );
+	return found != m_itemsByHolder.end() ? found->second : none;
+}
+
 uint32_t Simulation::SlotItemOf( uint32_t holder, uint8_t slot ) const
 {
 	if ( holder == 0 || slot == kNoSlot )
 	{
 		return 0;
 	}
-	for ( const EntityRef& r : m_entities )
+	uint32_t found = 0;
+	for ( const EntityRef& r : ItemsOf( holder ) )
 	{
 		const HeldItem* item = flecs::entity( m_world, r.entity ).try_get<HeldItem>();
 		if ( item != nullptr && item->holder == holder && item->slot == slot )
 		{
-			return r.netId;
+			found = r.netId;
+			break;
 		}
 	}
-	return 0;
+	if ( s_checkIndexes )
+	{
+		uint32_t scanned = 0;
+		for ( const EntityRef& r : m_entities )
+		{
+			const HeldItem* item = flecs::entity( m_world, r.entity ).try_get<HeldItem>();
+			if ( item != nullptr && item->holder == holder && item->slot == slot )
+			{
+				scanned = r.netId;
+				break;
+			}
+		}
+		if ( scanned != found )
+		{
+			std::fprintf( stderr, "SlotItemOf( %u, %u ): the index says %u, every entity %u\n", holder, unsigned( slot ), found, scanned );
+			std::abort();
+		}
+	}
+	return found;
 }
 
 void Simulation::SettleSlots( uint32_t holder, uint8_t selected )
@@ -673,7 +740,9 @@ void Simulation::SettleSlots( uint32_t holder, uint8_t selected )
 	// and is held with one hand while it is there.
 	uint8_t leftSlot = kNoSlot;
 	bool leftFree = true;
-	for ( const EntityRef& r : m_entities )
+	// (A copy: setting an item below may make the index stale and rebuild it.)
+	const std::vector<EntityRef> items = ItemsOf( holder );
+	for ( const EntityRef& r : items )
 	{
 		const HeldItem* item = flecs::entity( m_world, r.entity ).try_get<HeldItem>();
 		if ( item == nullptr || item->holder != holder || item->slot == kNoSlot )
@@ -690,7 +759,7 @@ void Simulation::SettleSlots( uint32_t holder, uint8_t selected )
 			leftSlot = item->slot;
 		}
 	}
-	for ( const EntityRef& r : m_entities )
+	for ( const EntityRef& r : items )
 	{
 		flecs::entity e( m_world, r.entity );
 		const HeldItem* item = e.try_get<HeldItem>();
@@ -1288,7 +1357,11 @@ void Simulation::RecordModEvent( const ModEventRecord& record )
 void Simulation::MoveCharacters( const InputFrame& frame )
 {
 	// What the players ask of their slots, first: everything below asks what is in the hand.
-	StepSlots( frame );
+	{
+		auto start = std::chrono::steady_clock::now();
+		StepSlots( frame );
+		m_profile.slotsNs += uint64_t( std::chrono::duration_cast<std::chrono::nanoseconds>( std::chrono::steady_clock::now() - start ).count() );
+	}
 	// What everyone holds, for state machines that ask ("attack and melee.bat").
 	m_heldScratch.clear();
 	m_carriedScratch.clear();
@@ -2062,6 +2135,7 @@ void Simulation::DeserializeEcs( const std::vector<uint8_t>& in )
 	}
 
 	m_entities = std::move( restored );
+	IndexesStale();
 }
 
 void Simulation::Save( Snapshot& out )
@@ -2874,6 +2948,13 @@ void Simulation::EnforceRagdollCap( uint32_t cap )
 
 void Simulation::BuildShapeLookup()
 {
+	if ( m_shapeLookupStale == false && s_checkIndexes == false )
+	{
+		return;
+	}
+	auto kept = m_shapeLookupStale ? decltype( m_shapeLookup )() : m_shapeLookup;
+	bool wasStale = m_shapeLookupStale;
+	m_shapeLookupStale = false;
 	m_shapeLookup.clear();
 	for ( const EntityRef& r : m_entities )
 	{
@@ -2891,6 +2972,11 @@ void Simulation::BuildShapeLookup()
 		}
 	}
 	std::sort( m_shapeLookup.begin(), m_shapeLookup.end() );
+	if ( s_checkIndexes && wasStale == false && kept != m_shapeLookup )
+	{
+		std::fprintf( stderr, "BuildShapeLookup: kept as it was, but the world has changed\n" );
+		std::abort();
+	}
 }
 
 uint32_t Simulation::NetIdOfShape( b3ShapeId shape ) const

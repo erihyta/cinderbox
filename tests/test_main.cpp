@@ -936,6 +936,86 @@ void TestPhysicsThreads()
 	PhysicsThreads::Start( 0 );
 }
 
+// What two loops cost with a full server: 64 players with eight items each, props about (the
+// scenario's). The slots' part of a step, and a ray (a shot, a probe), timed; a report, no limits.
+void TestLoops()
+{
+	test::ScenarioOptions opt;
+	opt.initialPlayers = kMaxPlayers;
+	opt.maxPlayers = kMaxPlayers;
+	opt.churn = false;
+	opt.ticks = 900;
+	auto frames = test::MakeScenario( opt );
+	// Eight items for everyone, a while after joining.
+	for ( int slot = 0; slot < kMaxPlayers; ++slot )
+	{
+		for ( int i = 0; i < 8; ++i )
+		{
+			SimCommand c;
+			c.type = CommandType::SpawnItem;
+			c.target = SlotTarget( PlayerSlot( slot ) );
+			c.index = uint16_t( i % 2 );
+			c.mode = kNoSocket;
+			c.value = 1;
+			frames[40].commands.push_back( c );
+		}
+	}
+
+	SimConfig config = TestConfig();
+	config.physicsArenaMB = 128;
+	config.slots = 8;
+	config.slotHand = 0;
+	Simulation sim( config );
+	ItemShape stick, rock;
+	stick.holster = 1;
+	sim.SetItemShapes( { stick, rock } );
+
+	// (Timed as the game runs: without the tests' check of every index answer.)
+	struct Unchecked
+	{
+		bool was = Simulation::s_checkIndexes;
+		Unchecked() { Simulation::s_checkIndexes = false; }
+		~Unchecked() { Simulation::s_checkIndexes = was; }
+	} unchecked;
+	for ( size_t t = 0; t < 300; ++t )
+	{
+		sim.Step( frames[t] );
+	}
+	Simulation::StepProfile before = sim.Profile();
+	auto t0 = Clock::now();
+	for ( size_t t = 300; t < frames.size(); ++t )
+	{
+		sim.Step( frames[t] );
+	}
+	double steps = double( frames.size() - 300 );
+	double stepMs = MsSince( t0 ) / steps;
+	double slotsMs = double( sim.Profile().slotsNs - before.slotsNs ) / 1e6 / steps;
+
+	size_t held = 0;
+	for ( const auto& r : sim.Entities() )
+	{
+		held += flecs::entity( sim.World(), r.entity ).has<HeldItem>() ? 1 : 0;
+	}
+	// Rays from each player, as many as a busy tick might cast (everyone shooting twice).
+	const int rays = 2 * kMaxPlayers;
+	t0 = Clock::now();
+	int hits = 0;
+	for ( int i = 0; i < rays; ++i )
+	{
+		uint32_t netId = sim.PlayerNetId( PlayerSlot( i % kMaxPlayers ) );
+		const Transform* from = netId != 0 ? sim.EntityTransform( netId ) : nullptr;
+		RayHit hit;
+		if ( from != nullptr && sim.CastRay( from->position, b3Vec3{ 30.0f * float( ( i % 7 ) - 3 ), -1.0f, 30.0f }, netId, hit ) )
+		{
+			hits += 1;
+		}
+	}
+	double rayMs = MsSince( t0 ) / double( rays );
+	std::printf( "    %zu entities (%zu items held); a step %.3f ms, of it the slots %.3f ms; a ray %.4f ms (%d of %d hit)\n",
+				 sim.Entities().size(), held, stepMs, slotsMs, rayMs, hits, rays );
+	CHECK( held == size_t( 8 * kMaxPlayers ) );
+}
+
 void TestStress()
 {
 	// 64 players, lots of props: timing report for the rollback budget.
@@ -7874,6 +7954,8 @@ void TestViewFile()
 
 int main( int argc, char** argv )
 {
+	// Every index answer checked against a scan of every entity (simulation.h).
+	Simulation::s_checkIndexes = true;
 	if ( argc == 2 && std::strcmp( argv[1], "--anim-hash" ) == 0 )
 	{
 		std::printf( "%016" PRIx64 "\n", AnimPoseHash( *anim::AnimSet::CreateProcedural() ) );
@@ -7964,6 +8046,7 @@ int main( int argc, char** argv )
 		{ "ual_mannequin", TestUalMannequin },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "physics_threads", TestPhysicsThreads },
+		{ "loops", TestLoops },
 		{ "stress", TestStress },
 	};
 

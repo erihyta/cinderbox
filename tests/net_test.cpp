@@ -4252,6 +4252,8 @@ void TestGrapple()
 
 int main( int argc, char** argv )
 {
+	// Every index answer checked against a scan of every entity (simulation.h).
+	Simulation::s_checkIndexes = true;
 #if defined( _WIN32 )
 	timeBeginPeriod( 1 );
 #endif
