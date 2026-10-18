@@ -9,7 +9,7 @@ The markers carry the collision the simulation needs; everything else in the sce
 
 | Node | What it becomes |
 |---|---|
-| `CbStatic` | A solid box: floor, wall, ramp, step, platform. `size` is the full size in metres. |
+| `CbStatic` | Solid level geometry: floor, wall, ramp, step, platform. A box of `size` (full size in metres), or the [shapes](#collision-shapes) under it. |
 | `CbProp` | A dynamic box or sphere the level starts with. A [body](#a-body) like any other: `mass`, `density`, `friction`, `bounce` |
 | `CbSpawn` | Where players appear. One per map. |
 | `CbTemplate` | A named entity built from components (see Entities below). |
@@ -17,7 +17,8 @@ The markers carry the collision the simulation needs; everything else in the sce
 | `CbEntity` | Places a template in the level, or defines one inline from its own components. |
 
 1. Make a scene in `godot/maps/`, for example `arena.tscn` (copy `example_arena.tscn` to start).
-2. Place `CbStatic` boxes for the collision, and your own meshes, lights and effects for the look.
+2. Place `CbStatic` nodes for the collision (boxes, or [shapes](#collision-shapes) under them), and
+   your own meshes, lights and effects for the look.
 3. Press **Bake Map** in the 3D toolbar, or run `tools\bake_map.ps1 -Scene res://maps/arena.tscn`.
 4. Run the server on it: `cb_server --map godot\maps\arena.cbmap`.
 
@@ -30,6 +31,28 @@ Baked values, including authored component fields, are rounded to fixed-point (1
 1/4096 rad) so a map is identical on every platform, and the order of the nodes in the scene is
 the order entities are created in, which is part of the map's identity. See `src/sim/map.h` for
 the format and `src/sim/reflect.h` for the component registry.
+
+## Collision shapes
+
+A `CbStatic` can hold Godot's own `CollisionShape3D` nodes as direct children. Each one becomes a
+piece of level geometry of its own, where it is and turned the way it is; the `CbStatic`'s `size` is
+then not used. Godot's handles, and **Mesh > Create Collision Shape** on a model, make them as usual.
+
+| Shape | Baked as |
+|---|---|
+| `BoxShape3D` | a box, turned any way (yaw, pitch and roll) |
+| `SphereShape3D` | a sphere (scaled unevenly: its largest scale, with a warning) |
+| `CapsuleShape3D` | a capsule along its Y (scaled unevenly across: its larger scale, with a warning) |
+| anything else | skipped, with a warning (cylinders, hulls and meshes are next) |
+
+- A disabled `CollisionShape3D` is skipped.
+- Godot's warning on a `CollisionShape3D` ("must be a child of a physics body") does not apply here
+  and can be ignored: Cinderbox's physics reads it, Godot's never runs.
+- The bake says what it made of each node in the Bake Map output.
+- Only level geometry for now; props and templates keep their own shape settings.
+
+Turns are stored as yaw, pitch and roll (Godot's YXZ order) on the 1/4096 rad grid. Maps baked
+before this (version 3: boxes without roll) still load.
 
 ## A body
 

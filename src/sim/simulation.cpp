@@ -75,11 +75,18 @@ bool IsFinite( const Float3& f )
 	return IsFinite( f.x ) && IsFinite( f.y ) && IsFinite( f.z );
 }
 
-b3Quat MakeRotation( float yaw, float pitch )
+// Yaw, then pitch, then roll (Godot's YXZ order). No roll leaves the product of the first two as it
+// always was, so levels without roll build exactly as before.
+b3Quat MakeRotation( float yaw, float pitch, float roll = 0.0f )
 {
 	b3Quat qYaw = b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, yaw );
 	b3Quat qPitch = b3MakeQuatFromAxisAngle( b3Vec3{ 1.0f, 0.0f, 0.0f }, pitch );
-	return b3MulQuat( qYaw, qPitch );
+	b3Quat turned = b3MulQuat( qYaw, qPitch );
+	if ( roll == 0.0f )
+	{
+		return turned;
+	}
+	return b3MulQuat( turned, b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 0.0f, 1.0f }, roll ) );
 }
 
 void AppendBytes( std::vector<uint8_t>& out, const void* data, size_t size )
@@ -431,8 +438,8 @@ void Simulation::BuildLevel()
 
 	for ( const LevelBox& box : layout.statics )
 	{
-		Transform t{ box.center, MakeRotation( box.yaw, box.pitch ) };
-		Shape shape{ ShapeKind::Box, {}, box.halfExtents };
+		Transform t{ box.center, MakeRotation( box.yaw, box.pitch, box.roll ) };
+		Shape shape{ box.kind, {}, box.halfExtents };
 
 		b3BodyDef bodyDef = b3DefaultBodyDef();
 		bodyDef.type = b3_staticBody;
