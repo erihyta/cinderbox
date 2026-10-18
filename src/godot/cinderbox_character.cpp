@@ -1209,6 +1209,33 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 			cfg += "clip." + Std( animationName ) + " = " + Std( file ) + "\n";
 			++clips;
 		}
+		// A marker the last bake had, on a clip that is still here, and gone now: most likely the
+		// clip was written again by its model's import (save_to_file keeps custom tracks, not
+		// markers). The marker times the rules (a strike), so it is said loudly.
+		if ( FileAccess::file_exists( folder + "graph.cfg" ) )
+		{
+			String before = FileAccess::get_file_as_string( folder + "graph.cfg" );
+			String now = String::utf8( graph.c_str() );
+			PackedStringArray nowLines = now.split( "\n", false );
+			for ( const String& line : before.split( "\n", false ) )
+			{
+				PackedStringArray f = line.strip_edges().split( "\t" );
+				if ( f.size() != 4 || f[0] != "marker" || now.contains( "clip\t" + f[1] + "\t" ) == false )
+				{
+					continue; // not a marker, or its clip is gone on purpose
+				}
+				bool kept = false;
+				for ( const String& other : nowLines )
+				{
+					PackedStringArray g = other.strip_edges().split( "\t" );
+					kept |= g.size() == 4 && g[0] == "marker" && g[1] == f[1] && g[3] == f[3];
+				}
+				if ( kept == false )
+				{
+					warnings += "animation " + f[1] + " lost its marker " + f[3] + " since the last bake (a re-import of its model writes the clip again and drops markers: put it back in the Animation panel); ";
+				}
+			}
+		}
 		if ( WriteText( folder + "graph.cfg", graph, error ) == false )
 		{
 			return fail( error );

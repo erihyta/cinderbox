@@ -173,7 +173,7 @@ advance_mode = 2
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_0ynns"]
 xfade_time = 0.15
 advance_mode = 2
-advance_expression = "pistol or rifle"
+advance_expression = "gun"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_wnmgd"]
 xfade_time = 0.15
@@ -188,7 +188,7 @@ advance_condition = &"melee_swing"
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_k7pk6"]
 xfade_time = 0.05
 advance_mode = 2
-advance_expression = "pistol.fired or rifle.fired"
+advance_expression = "item.use"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_lo6wb"]
 xfade_time = 0.15
@@ -203,12 +203,12 @@ advance_condition = &"melee"
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_nlfyn"]
 xfade_time = 0.15
 advance_mode = 2
-advance_expression = "not pistol and not rifle"
+advance_expression = "not gun"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_e38ba"]
 xfade_time = 0.15
 advance_mode = 2
-advance_expression = "not pistol and not rifle"
+advance_expression = "not gun"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_ob45v"]
 xfade_time = 0.05
@@ -218,7 +218,7 @@ advance_condition = &"melee_swing"
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_cfc4f"]
 xfade_time = 0.15
 advance_mode = 2
-advance_expression = "pistol or rifle"
+advance_expression = "gun"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_hsr08"]
 xfade_time = 0.15
@@ -268,7 +268,7 @@ animation_player_path = NodePath("Model/AnimationPlayer")
 animation_tree_path = NodePath("AnimationTree")
 graph_inputs = {
 "FullBody/Locomotion/blend_position": "forward_speed",
-"UpperBodyBlend/blend_amount": "pistol or rifle or melee or melee_swing"
+"UpperBodyBlend/blend_amount": "gun or melee or melee_swing"
 }
 
 [node name="Model" parent="." unique_id=984932362 instance=ExtResource("1_3txul")]
@@ -496,8 +496,6 @@ parameters/FullBody/conditions/jumped = false
 parameters/FullBody/Locomotion/blend_position = 0.0
 parameters/UpperBody/conditions/melee = false
 parameters/UpperBody/conditions/melee_swing = false
-parameters/UpperBody/conditions/pistol = false
-parameters/UpperBody/conditions/pistol.fired = false
 parameters/UpperBodyBlend/blend_amount = 0.0
 
 [editable path="Model"]
