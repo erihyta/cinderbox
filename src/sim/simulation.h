@@ -383,6 +383,8 @@ private:
 	flecs::entity CreatePlayer( PlayerSlot slot );
 	void PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw );
 	b3ShapeId CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material = {} );
+	// A convex hull of `points` (in the body's frame); null if they make none (all in a plane).
+	b3ShapeId CreateHullShape( b3BodyId body, const std::vector<b3Vec3>& points, uint64_t category, const ShapeMaterial& material = {} );
 	static PhysicsBody MakePhysicsBody( b3BodyId body, b3ShapeId shape );
 
 	void ApplyEvents( const InputFrame& frame );

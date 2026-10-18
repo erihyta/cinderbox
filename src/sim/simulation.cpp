@@ -400,7 +400,10 @@ void Simulation::DestroyEntity( flecs::entity e )
 	e.destruct();
 }
 
-b3ShapeId Simulation::CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material )
+namespace
+{
+
+b3ShapeDef MakeShapeDef( uint64_t category, const ShapeMaterial& material )
 {
 	b3ShapeDef def = b3DefaultShapeDef();
 	def.density = material.density;
@@ -410,6 +413,27 @@ b3ShapeId Simulation::CreateShape( b3BodyId body, const Shape& shape, uint64_t c
 	def.filter.maskBits = ~uint64_t( 0 );
 	// Either shape enabling hit events is enough, so the static level does not need them.
 	def.enableHitEvents = category != CatStatic;
+	return def;
+}
+
+} // namespace
+
+b3ShapeId Simulation::CreateHullShape( b3BodyId body, const std::vector<b3Vec3>& points, uint64_t category, const ShapeMaterial& material )
+{
+	b3HullData* hull = b3CreateHull( points.data(), int( points.size() ), B3_MAX_HULL_VERTICES );
+	if ( hull == nullptr )
+	{
+		return {};
+	}
+	b3ShapeDef def = MakeShapeDef( category, material );
+	b3ShapeId id = b3CreateHullShape( body, &def, hull ); // (the world keeps a copy)
+	b3DestroyHull( hull );
+	return id;
+}
+
+b3ShapeId Simulation::CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material )
+{
+	b3ShapeDef def = MakeShapeDef( category, material );
 
 	switch ( shape.kind )
 	{
@@ -428,6 +452,8 @@ b3ShapeId Simulation::CreateShape( b3BodyId body, const Shape& shape, uint64_t c
 			b3Capsule capsule = { { 0.0f, -shape.halfExtents.y, 0.0f }, { 0.0f, shape.halfExtents.y, 0.0f }, shape.halfExtents.x };
 			return b3CreateCapsuleShape( body, &def, &capsule );
 		}
+		case ShapeKind::Hull:
+			break; // its points are not in the Shape: CreateHullShape
 	}
 	return {};
 }
@@ -446,7 +472,10 @@ void Simulation::BuildLevel()
 		bodyDef.position = t.position;
 		bodyDef.rotation = t.rotation;
 		b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
-		b3ShapeId shapeId = CreateShape( body, shape, CatStatic );
+		// (A map's hulls were built once when it was read, so they build here.)
+		b3ShapeId shapeId = box.kind == ShapeKind::Hull && box.hull < layout.hulls.size()
+								? CreateHullShape( body, layout.hulls[box.hull], CatStatic )
+								: CreateShape( body, shape, CatStatic );
 
 		flecs::entity e = CreateEntity();
 		e.set<Transform>( t );
@@ -2822,6 +2851,8 @@ flecs::entity Simulation::CreateRagdoll( flecs::entity player, uint32_t lifetime
 			case ShapeKind::Capsule:
 				volume += detmath::kPi * s.x * s.x * ( 2.0f * s.y + ( 4.0f / 3.0f ) * s.x );
 				break;
+			case ShapeKind::Hull:
+				break; // (no ragdoll part is one)
 		}
 	}
 	const float density = MoveOf( player )[MoveParam::Mass] / volume;

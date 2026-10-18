@@ -11,10 +11,11 @@
 namespace cb
 {
 
-// A piece of solid level geometry: a box, a sphere or a capsule, turned any way. The turn is
+// A piece of solid level geometry: a box, a sphere, a capsule or a convex hull, turned any way. The turn is
 // yaw, then pitch, then roll (Godot's YXZ order): rotation = yaw(Y) * pitch(X) * roll(Z).
 // halfExtents as Shape's: a box's half size; a sphere's radius in x; a capsule's radius in x and
-// half the distance between its two sphere centres in y (it stands along Y).
+// half the distance between its two sphere centres in y (it stands along Y); a hull's bounds,
+// with its points in LevelLayout::hulls.
 struct LevelBox
 {
 	b3Vec3 center;
@@ -23,6 +24,7 @@ struct LevelBox
 	float yaw;	 // rotation about Y in radians
 	float roll = 0.0f; // rotation about Z in radians
 	ShapeKind kind = ShapeKind::Box;
+	uint32_t hull = 0; // a hull's points: LevelLayout::hulls[hull]
 };
 
 struct LevelProp
@@ -58,6 +60,9 @@ struct LevelLayout
 	// Template the spawn-prop button creates, or kNoTemplate to keep the built-in behaviour.
 	uint32_t spawnTemplate = kNoTemplate;
 	std::vector<LevelBox> statics;
+	// The hulls' points, each list in its piece's own frame (centred and turned with it, the
+	// scale already in), on the position grid. Box3D builds the same hull from them everywhere.
+	std::vector<std::vector<b3Vec3>> hulls;
 	std::vector<LevelProp> props;
 	b3Vec3 spawnCenter;
 	float spawnRadius;

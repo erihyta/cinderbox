@@ -41,10 +41,14 @@ enum class ShapeKind : uint8_t
 	Box = 0,
 	Sphere = 1,
 	Capsule = 2,
+	// A convex hull: level pieces only, its points are the map's (LevelBox::hull); halfExtents are
+	// its bounds, for what draws or tests it without the points.
+	Hull = 3,
 };
 
 // Collision and presentation geometry.
 // Box: halfExtents. Sphere: x = radius. Capsule: x = radius, y = half distance between centers (along Y).
+// Hull: halfExtents its bounds (the points are elsewhere).
 struct Shape
 {
 	ShapeKind kind = ShapeKind::Box;

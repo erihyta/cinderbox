@@ -1,7 +1,9 @@
 extends SceneTree
 ## Checks what the map bake makes of a CbStatic's CollisionShape3D children: each a piece of its own,
-## turned as the node is (roll too), sized by its shape and the scale above it; shapes a level cannot
-## have yet are said and skipped; a CbStatic without children is its own box, as before.
+## turned as the node is (roll too), sized by its shape and the scale above it; cylinders and convex
+## polygons are hulls (their points scaled, two identical ones sharing a list); a flat hull, a shape a
+## level cannot have yet and a disabled one are said and skipped; a CbStatic without children is its
+## own box, as before.
 ##
 ##   godot --headless --path godot --script res://addons/cinderbox_maps/check_map_shapes.gd
 ##
@@ -59,23 +61,35 @@ func _initialize() -> void:
 	capsule.radius = 0.3
 	capsule.height = 2.0
 	var capsule_node := _shape(rocks, "Pillar", capsule, Transform3D(Basis.from_euler(Vector3(0, 0, deg_to_rad(90))), Vector3(-1, 0, 1)))
-	_shape(rocks, "Drum", CylinderShape3D.new(), Transform3D())
+	# Two drums alike (Godot's cylinder: radius 0.5, height 2), a gem and a flat one.
+	var drum_node := _shape(rocks, "Drum", CylinderShape3D.new(), Transform3D(Basis(), Vector3(0, 0, -2)))
+	_shape(rocks, "Drum2", CylinderShape3D.new(), Transform3D(Basis(), Vector3(2, 0, -2)))
+	var gem := ConvexPolygonShape3D.new()
+	gem.points = PackedVector3Array([Vector3(1, 0, 0), Vector3(-1, 0, 0), Vector3(0, 1, 0), Vector3(0, -1, 0), Vector3(0, 0, 1),
+			Vector3(0, 0, -1)])
+	var gem_node := _shape(rocks, "Gem", gem, Transform3D(Basis.from_euler(Vector3(0.3, 0.2, 0.1)), Vector3(-2, 1, -1)))
+	var flat := ConvexPolygonShape3D.new()
+	flat.points = PackedVector3Array([Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(1, 0, 1)])
+	_shape(rocks, "Flat", flat, Transform3D())
+	_shape(rocks, "Edge", WorldBoundaryShape3D.new(), Transform3D())
 	var off := _shape(rocks, "Off", BoxShape3D.new(), Transform3D())
 	off.disabled = true
 
 	var result: Dictionary = CinderboxMapBaker.new().bake(root, "user://check_map_shapes.cbmap")
 	_check("the bake succeeds", result["ok"], result["error"])
 	var pieces: Array = result.get("pieces", [])
-	_check("four pieces: the floor, a box, a sphere, a capsule; the cylinder and the disabled one skipped", pieces.size() == 4, pieces.size())
+	_check("seven pieces: the floor, a box, a sphere, a capsule, two drums, a gem", pieces.size() == 7, pieces.size())
+	_check("two hulls: the drums share theirs", int(result.get("hulls", 0)) == 2, result.get("hulls"))
 	var warnings: Array = result["warnings"]
-	var said_cylinder := false
-	var said_disabled := false
+	var said := {"Flat": false, "Edge": false, "Off": false}
 	for w in warnings:
-		said_cylinder = said_cylinder or (w.contains("Drum") and w.contains("CylinderShape3D"))
-		said_disabled = said_disabled or (w.contains("Off") and w.contains("disabled"))
-	_check("the cylinder is said (not a level shape yet)", said_cylinder, warnings)
-	_check("the disabled shape is said", said_disabled, warnings)
-	if pieces.size() != 4:
+		said["Flat"] = said["Flat"] or (w.contains("Flat") and w.contains("plane"))
+		said["Edge"] = said["Edge"] or (w.contains("Edge") and w.contains("WorldBoundaryShape3D"))
+		said["Off"] = said["Off"] or (w.contains("Off") and w.contains("disabled"))
+	_check("a flat hull is said", said["Flat"], warnings)
+	_check("a shape a level cannot have is said", said["Edge"], warnings)
+	_check("the disabled shape is said", said["Off"], warnings)
+	if pieces.size() != 7:
 		root.free()
 		quit(1)
 		return
@@ -85,21 +99,33 @@ func _initialize() -> void:
 		floor_piece)
 
 	# Each piece where its node is, as Godot has it: centre, turn (the stored YXZ euler gives back the
-	# node's own basis) and size (the shape's times the scale above it).
+	# node's own basis) and size (the shape's times the scale above it; a hull's bounds).
 	for check in [[pieces[1], box_node, "box", Vector3(1, 0.5, 3)], [pieces[2], sphere_node, "sphere", Vector3(1.5, 0, 0)],
-			[pieces[3], capsule_node, "capsule", Vector3(0.6, 1.4, 0)]]:
+			[pieces[3], capsule_node, "capsule", Vector3(0.6, 1.4, 0)], [pieces[4], drum_node, "hull", Vector3(1, 2, 1)],
+			[pieces[6], gem_node, "hull", Vector3(2, 2, 2)]]:
 		var piece: Dictionary = check[0]
 		var node: CollisionShape3D = check[1]
+		var what: String = str(check[2]) + " (" + node.name + ")"
 		var placed: Transform3D = rocks.transform * node.transform
 		var turned := Basis.from_euler(piece["rotation"], EULER_ORDER_YXZ)
 		var same_turn := true
 		for axis in 3:
 			same_turn = same_turn and _close(turned[axis], placed.basis.orthonormalized()[axis], 0.003)
-		_check(check[2] + ": its kind", piece["kind"] == check[2], piece["kind"])
-		_check(check[2] + ": where it is", _close(piece["center"], placed.origin), [piece["center"], placed.origin])
-		_check(check[2] + ": turned as it is", same_turn, [piece["rotation"], placed.basis.get_euler(EULER_ORDER_YXZ)])
-		_check(check[2] + ": its size", _close(piece["half_extents"], check[3]), piece["half_extents"])
+		_check(what + ": its kind", piece["kind"] == check[2], piece["kind"])
+		_check(what + ": where it is", _close(piece["center"], placed.origin), [piece["center"], placed.origin])
+		_check(what + ": turned as it is", same_turn, [piece["rotation"], placed.basis.get_euler(EULER_ORDER_YXZ)])
+		_check(what + ": its size", _close(piece["half_extents"], check[3]), piece["half_extents"])
 	_check("the box keeps its roll", absf(float(pieces[1]["rotation"].z)) > 0.1, pieces[1]["rotation"])
+
+	# A hull's points, in its piece's own frame with the scale in: the gem's are its own, doubled.
+	var gem_points: PackedVector3Array = pieces[6].get("points", PackedVector3Array())
+	var doubled := gem_points.size() == 6
+	for i in mini(gem_points.size(), 6):
+		doubled = doubled and _close(gem_points[i], gem.points[i] * 2.0)
+	_check("the gem's points, scaled", doubled, gem_points)
+	var drum_points: PackedVector3Array = pieces[4].get("points", PackedVector3Array())
+	_check("a drum is 32 points, two rims of 16", drum_points.size() == 32, drum_points.size())
+	_check("the drums share one hull", pieces[4].get("hull", -1) == pieces[5].get("hull", -2), [pieces[4].get("hull"), pieces[5].get("hull")])
 
 	root.free()
 	print("%d failure(s)" % _failures)

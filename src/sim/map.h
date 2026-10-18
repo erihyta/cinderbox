@@ -15,9 +15,11 @@
 // Layout:
 //   "CBMP", u32 version, u32 flags, u32 nameLength, name bytes (no terminator),
 //   i32 spawnCenter[3], i32 spawnRadius,
+//   u32 hullCount,    per hull:   u32 pointCount, i32 point[3] each          (version 5 on)
 //   u32 staticCount,  per static: u8 kind, u8 pad[3], i32 center[3], i32 halfExtents[3],
-//                                 i32 pitch, i32 yaw, i32 roll
-//                     (version 3: i32 center[3], i32 halfExtents[3], i32 pitch, i32 yaw: a box)
+//                                 i32 pitch, i32 yaw, i32 roll, u32 hull
+//                     (version 4: no hull; version 3: i32 center[3], i32 halfExtents[3],
+//                      i32 pitch, i32 yaw: a box)
 //   u32 propCount,    per prop:   u8 kind, u8 pad[3], i32 position[3], i32 halfExtents[3]
 //   u32 templateCount, per template: name, visual, u32 componentCount,
 //                        per component: u32 componentId, u32 fieldCount,
@@ -45,7 +47,7 @@
 namespace cb
 {
 
-inline constexpr uint32_t kMapVersion = 4; // 4: a static's shape and roll. 3: a prop's body
+inline constexpr uint32_t kMapVersion = 5; // 5: hulls. 4: a static's shape and roll. 3: a prop's body
 // The oldest version still read (what it lacks takes its old meaning).
 inline constexpr uint32_t kMapOldestVersion = 3;
 
@@ -57,6 +59,9 @@ inline constexpr float kMapBodyScale = 1000.0f;
 
 inline constexpr uint32_t kMapNameLimit = 64;
 
+// Points a hull may be given (Box3D keeps at most 128 of them as its corners).
+inline constexpr uint32_t kMapHullPointLimit = 1024;
+
 // Largest magnitude a quantized value can hold (int -> float stays exact below 2^24).
 inline constexpr float kMapPositionLimit = 16000.0f;
 
@@ -64,6 +69,10 @@ inline constexpr float kMapPositionLimit = 16000.0f;
 // operation, and int -> float is exact below 2^24. Authored component values use them too.
 int32_t MapQuantize( float value, float scale );
 float MapDequantize( int32_t value, float scale );
+
+// Whether Box3D makes a hull of these points: not when they all lie in a plane or on a line. A
+// map's are checked when it is read, so the simulation can build every one.
+bool MapHullBuilds( const std::vector<b3Vec3>& points );
 
 // Rounds every value in the layout onto the storage grid, so that serializing and reading it back
 // yields exactly the same floats. Call this on any layout built in code.
