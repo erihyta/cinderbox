@@ -85,7 +85,7 @@ static uint32_t ReadU32( Cursor* c )
 	return v;
 }
 
-bool cbx_DeserializeWorld( b3WorldId worldId, const uint8_t* data, size_t size )
+bool cbx_DeserializeWorld( b3WorldId worldId, const uint8_t* data, size_t size, cbx_KeepFcn* keep, void* keepContext )
 {
 	Cursor c = { data, size, 0, true };
 
@@ -97,8 +97,8 @@ bool cbx_DeserializeWorld( b3WorldId worldId, const uint8_t* data, size_t size )
 		return false;
 	}
 
-	// Slots borrow the input bytes. Hulls are cloned into the world, and this project does not use
-	// meshes, height fields or compounds (which would keep referencing the slot memory).
+	// Slots borrow the input bytes. Hulls are cloned into the world; a mesh or a height field is used
+	// where it is, so it gets lasting memory of its own (`keep`). This project makes no compounds.
 	b3RegistrySlot* slots = NULL;
 	if ( slotCount > 0 )
 	{
@@ -114,10 +114,22 @@ bool cbx_DeserializeWorld( b3WorldId worldId, const uint8_t* data, size_t size )
 		uint32_t kind = ReadU32( &c );
 		uint32_t byteCount = ReadU32( &c );
 		const uint8_t* bytes = Take( &c, byteCount );
-		if ( kind != (uint32_t)b3_geometryHull )
+		const bool kept = kind == (uint32_t)b3_geometryMesh || kind == (uint32_t)b3_geometryHeightField;
+		if ( ( kind != (uint32_t)b3_geometryHull && kept == false ) || bytes == NULL )
 		{
 			c.ok = false;
 			break;
+		}
+		if ( kept )
+		{
+			uint8_t* copy = keep != NULL ? (uint8_t*)keep( keepContext, byteCount ) : NULL;
+			if ( copy == NULL )
+			{
+				c.ok = false;
+				break;
+			}
+			memcpy( copy, bytes, byteCount );
+			bytes = copy;
 		}
 		slots[i].kind = (b3GeometryKind)kind;
 		slots[i].byteCount = (int)byteCount;

@@ -24,7 +24,10 @@ typedef void cbx_WriteFcn( void* context, const void* data, size_t size );
 void cbx_SerializeWorld( b3WorldId worldId, cbx_WriteFcn* write, void* context );
 
 // Overwrites an existing world in place. Returns false on a corrupt or incompatible image.
-bool cbx_DeserializeWorld( b3WorldId worldId, const uint8_t* data, size_t size );
+// `keep` gives lasting memory for what the world keeps pointing at (a triangle mesh's, a height
+// field's data): it outlives the call, and the world's own arena never has it.
+typedef void* cbx_KeepFcn( void* context, size_t size );
+bool cbx_DeserializeWorld( b3WorldId worldId, const uint8_t* data, size_t size, cbx_KeepFcn* keep, void* keepContext );
 
 #ifdef __cplusplus
 }

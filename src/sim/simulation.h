@@ -389,6 +389,8 @@ private:
 	// id, and in `bounds` the half size of a box about the body's origin that holds them all.
 	b3ShapeId CreateShapeSet( b3BodyId body, const std::vector<LevelBox>& set, uint64_t category, const ShapeMaterial& material,
 							  b3Vec3& bounds );
+	// A level piece of a triangle mesh or a height field (static only), at the body's origin.
+	b3ShapeId CreateSurfaceShape( b3BodyId body, const LevelBox& piece );
 	// One shape of a body, `at` in its frame (a hull's `points` in its own); `bounds` grows to hold it.
 	b3ShapeId CreatePiece( b3BodyId body, uint64_t category, const ShapeMaterial& material, ShapeKind kind, b3Vec3 half, b3Transform at,
 						   const std::vector<b3Vec3>* points, b3Vec3& bounds );
@@ -461,6 +463,11 @@ private:
 	StepProfile m_profile;
 	flecs::world m_world;
 	std::unique_ptr<PhysicsArena> m_arena;
+	// The level's triangle meshes and height fields: static, never changed, so out of the world's
+	// arena (a snapshot does not copy them, a restore leaves them where they are). Made only for a
+	// map that has them; what a portable load brings is kept in `m_keptGeometry`.
+	std::unique_ptr<PhysicsArena> m_levelArena;
+	std::vector<std::unique_ptr<uint64_t[]>> m_keptGeometry;
 	std::unique_ptr<PhysicsTasks> m_tasks;
 	b3WorldId m_physicsWorld = {};
 

@@ -22,6 +22,7 @@
 #include "components.h"
 
 #include <godot_cpp/classes/collision_shape3d.hpp>
+#include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
@@ -134,12 +135,19 @@ void MapLookNodes( godot::Node* node, std::vector<godot::Node3D*>& out );
 // and all): its kind, its half size as Shape has it, where it is and how it is turned (no scale:
 // that is in the sizes), and a hull's points (in its own frame, scaled). Returns "" when it becomes a
 // shape, else why not; what is kept but worth saying (an uneven sphere) goes to `warnings`.
+// A triangle mesh (ConcavePolygonShape3D): `points` three a triangle, as Godot has them (clockwise
+// seen from the side they face). A height field (HeightMapShape3D): `at` its corner, `countX` by
+// `countZ` heights scaled by `scale` (a non-finite one makes the cells around it holes).
 struct BakedShape
 {
 	cb::ShapeKind kind = cb::ShapeKind::Box;
 	godot::Vector3 half;
 	godot::Transform3D at;
 	std::vector<godot::Vector3> points;
+	int countX = 0;
+	int countZ = 0;
+	godot::Vector3 scale;
+	std::vector<float> heights;
 };
 godot::String BakeShape( const godot::CollisionShape3D* node, const godot::Transform3D& at, const godot::String& name, BakedShape& out,
 						 godot::Array& warnings );

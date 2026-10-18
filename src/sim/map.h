@@ -16,6 +16,11 @@
 //   "CBMP", u32 version, u32 flags, u32 nameLength, name bytes (no terminator),
 //   i32 spawnCenter[3], i32 spawnRadius,
 //   u32 hullCount,    per hull:   u32 pointCount, i32 point[3] each          (version 5 on)
+//   u32 meshCount,    per mesh:   u32 vertexCount, i32 vertex[3] each, u32 triangleCount,
+//                                 u32 index[3] each (counter-clockwise)          (version 7 on)
+//   u32 fieldCount,   per height field: u32 countX, u32 countZ, i32 scale[3],
+//                                 i32 height each (countX * countZ, row by row along z),
+//                                 u32 holeCount, u32 cell each (a hole)         (version 7 on)
 //   u32 staticCount,  per static: a piece
 //   u32 setCount,     per set:    u32 pieceCount, each a piece (in the body's frame)  (version 6 on)
 //     a piece: u8 kind, u8 pad[3], i32 center[3], i32 halfExtents[3], i32 pitch, i32 yaw, i32 roll,
@@ -51,9 +56,9 @@
 namespace cb
 {
 
-// 6: bodies of several shapes, a template's look, an instance's roll. 5: hulls. 4: a static's shape
-// and roll. 3: a prop's body.
-inline constexpr uint32_t kMapVersion = 6;
+// 7: triangle meshes and height fields. 6: bodies of several shapes, a template's look, an
+// instance's roll. 5: hulls. 4: a static's shape and roll. 3: a prop's body.
+inline constexpr uint32_t kMapVersion = 7;
 // The oldest version still read (what it lacks takes its old meaning).
 inline constexpr uint32_t kMapOldestVersion = 3;
 
@@ -69,6 +74,10 @@ inline constexpr uint32_t kMapNameLimit = 64;
 inline constexpr uint32_t kMapHullPointLimit = 1024;
 // Shapes one body may have.
 inline constexpr uint32_t kMapSetPieceLimit = 64;
+// A triangle mesh's vertices and triangles, and a height field's points along a side.
+inline constexpr uint32_t kMapMeshVertexLimit = 262144;
+inline constexpr uint32_t kMapMeshTriangleLimit = 524288;
+inline constexpr uint32_t kMapHeightFieldSideLimit = 2049;
 
 // Largest magnitude a quantized value can hold (int -> float stays exact below 2^24).
 inline constexpr float kMapPositionLimit = 16000.0f;

@@ -490,6 +490,9 @@ b3ShapeId Simulation::CreatePiece( b3BodyId body, uint64_t category, const Shape
 			}
 			break;
 		}
+		case ShapeKind::Mesh:
+		case ShapeKind::HeightField:
+			break; // level pieces only (static): never a body's part
 	}
 	return id;
 }
@@ -507,6 +510,72 @@ b3ShapeId Simulation::CreateShapeSet( b3BodyId body, const std::vector<LevelBox>
 		first = first.index1 == 0 ? id : first;
 	}
 	return first;
+}
+
+b3ShapeId Simulation::CreateSurfaceShape( b3BodyId body, const LevelBox& piece )
+{
+	const LevelLayout& layout = m_map;
+	if ( m_levelArena == nullptr )
+	{
+		// As much as the level's surfaces could take while they are built (their trees, the work).
+		size_t bytes = size_t( 16 ) << 20;
+		for ( const LevelMesh& mesh : layout.meshes )
+		{
+			bytes += mesh.vertices.size() * 64 + mesh.indices.size() * 64;
+		}
+		for ( const LevelHeightField& field : layout.heightFields )
+		{
+			bytes += field.heights.size() * 16;
+		}
+		m_levelArena = std::make_unique<PhysicsArena>( bytes );
+	}
+	const b3ShapeDef def = MakeShapeDef( CatStatic, {} );
+	if ( piece.kind == ShapeKind::Mesh && piece.hull < layout.meshes.size() )
+	{
+		const LevelMesh& mesh = layout.meshes[piece.hull];
+		b3MeshData* data = nullptr;
+		{
+			PhysicsArena::Scope level( *m_levelArena );
+			b3MeshDef meshDef = {};
+			meshDef.vertices = const_cast<b3Vec3*>( mesh.vertices.data() );
+			meshDef.indices = reinterpret_cast<int32_t*>( const_cast<uint32_t*>( mesh.indices.data() ) );
+			meshDef.vertexCount = int( mesh.vertices.size() );
+			meshDef.triangleCount = int( mesh.indices.size() / 3 );
+			meshDef.identifyEdges = true;
+			data = b3CreateMesh( &meshDef, nullptr, 0 );
+		}
+		return data != nullptr ? b3CreateMeshShape( body, &def, data, { 1.0f, 1.0f, 1.0f } ) : b3ShapeId{};
+	}
+	if ( piece.kind == ShapeKind::HeightField && piece.hull < layout.heightFields.size() )
+	{
+		const LevelHeightField& field = layout.heightFields[piece.hull];
+		b3HeightFieldData* data = nullptr;
+		{
+			PhysicsArena::Scope level( *m_levelArena );
+			std::vector<uint8_t> materials( size_t( field.countX - 1 ) * ( field.countZ - 1 ), 0 );
+			for ( size_t cell = 0; cell < field.holes.size() && cell < materials.size(); ++cell )
+			{
+				materials[cell] = field.holes[cell] != 0 ? uint8_t( B3_HEIGHT_FIELD_HOLE ) : uint8_t( 0 );
+			}
+			float lowest = field.heights.empty() ? 0.0f : field.heights[0], highest = lowest;
+			for ( float height : field.heights )
+			{
+				lowest = std::min( lowest, height );
+				highest = std::max( highest, height );
+			}
+			b3HeightFieldDef fieldDef = {};
+			fieldDef.heights = const_cast<float*>( field.heights.data() );
+			fieldDef.materialIndices = materials.data();
+			fieldDef.scale = field.scale;
+			fieldDef.countX = int( field.countX );
+			fieldDef.countZ = int( field.countZ );
+			fieldDef.globalMinimumHeight = lowest;
+			fieldDef.globalMaximumHeight = highest > lowest ? highest : lowest + 1.0f;
+			data = b3CreateHeightField( &fieldDef );
+		}
+		return data != nullptr ? b3CreateHeightFieldShape( body, &def, data ) : b3ShapeId{};
+	}
+	return {};
 }
 
 void Simulation::WeighBody( b3BodyId body, float mass )
@@ -548,6 +617,9 @@ b3ShapeId Simulation::CreateShape( b3BodyId body, const Shape& shape, uint64_t c
 		}
 		case ShapeKind::Hull:
 			break; // its points are not in the Shape: CreateHullShape
+		case ShapeKind::Mesh:
+		case ShapeKind::HeightField:
+			break; // level pieces only: CreateSurfaceShape
 	}
 	return {};
 }
@@ -567,9 +639,9 @@ void Simulation::BuildLevel()
 		bodyDef.rotation = t.rotation;
 		b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
 		// (A map's hulls were built once when it was read, so they build here.)
-		b3ShapeId shapeId = box.kind == ShapeKind::Hull && box.hull < layout.hulls.size()
-								? CreateHullShape( body, layout.hulls[box.hull], CatStatic )
-								: CreateShape( body, shape, CatStatic );
+		b3ShapeId shapeId = box.kind == ShapeKind::Hull && box.hull < layout.hulls.size() ? CreateHullShape( body, layout.hulls[box.hull], CatStatic )
+							: box.kind == ShapeKind::Mesh || box.kind == ShapeKind::HeightField ? CreateSurfaceShape( body, box )
+																								: CreateShape( body, shape, CatStatic );
 
 		flecs::entity e = CreateEntity();
 		e.set<Transform>( t );
@@ -2371,7 +2443,13 @@ bool Simulation::LoadPortable( const std::vector<uint8_t>& in )
 	const uint8_t* ecs = rd.Take( ecsSize );
 
 	PhysicsArena::Scope scope( *m_arena );
-	if ( cbx_DeserializeWorld( m_physicsWorld, in.data() + rd.cursor, in.size() - rd.cursor ) == false )
+	// A mesh's or height field's data the world will point at: kept by the simulation, 8-aligned.
+	auto keep = []( void* context, size_t size ) -> void* {
+		auto& kept = *static_cast<std::vector<std::unique_ptr<uint64_t[]>>*>( context );
+		kept.push_back( std::make_unique<uint64_t[]>( ( size + 7 ) / 8 ) );
+		return kept.back().get();
+	};
+	if ( cbx_DeserializeWorld( m_physicsWorld, in.data() + rd.cursor, in.size() - rd.cursor, keep, &m_keptGeometry ) == false )
 	{
 		return false;
 	}
@@ -2990,6 +3068,8 @@ flecs::entity Simulation::CreateRagdoll( flecs::entity player, uint32_t lifetime
 				volume += detmath::kPi * s.x * s.x * ( 2.0f * s.y + ( 4.0f / 3.0f ) * s.x );
 				break;
 			case ShapeKind::Hull:
+			case ShapeKind::Mesh:
+			case ShapeKind::HeightField:
 				break; // (no ragdoll part is one)
 		}
 	}

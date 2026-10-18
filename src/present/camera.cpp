@@ -121,6 +121,9 @@ float CameraFreeDistance( const PresentationFrame& frame, b3Vec3 origin, b3Vec3 
 			case ShapeKind::Capsule:
 				t = RayCapsule( o, d, e.halfExtents.y, e.halfExtents.x + radius );
 				break;
+			case ShapeKind::Mesh:
+			case ShapeKind::HeightField:
+				break; // (their bounds are a whole cave or hillside: the camera does not stop at them yet)
 		}
 		if ( t >= 0.0f )
 		{
