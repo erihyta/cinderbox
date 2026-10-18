@@ -62,6 +62,18 @@ bool ObjectSource::Take( present::ViewFrame& out )
 	return true;
 }
 
+float ObjectSource::CameraFreeDistance( b3Vec3 origin, b3Vec3 direction, float maxDistance, float radius )
+{
+	Object* target = Target();
+	if ( target == nullptr || target->has_method( "camera_free_distance" ) == false )
+	{
+		return -1.0f;
+	}
+	Variant result = target->call( "camera_free_distance", Vector3( origin.x, origin.y, origin.z ),
+								   Vector3( direction.x, direction.y, direction.z ), maxDistance, radius );
+	return result.get_type() == Variant::FLOAT || result.get_type() == Variant::INT ? float( double( result ) ) : -1.0f;
+}
+
 bool ObjectSource::TakesInput() const
 {
 	Object* target = Target();

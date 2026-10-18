@@ -1,6 +1,7 @@
 # The networked client, and the view sources built on it (see present/view.h): everything a viewer
 # needs to be handed frames, with no rendering.
 add_library(cb_client_core STATIC
+	level_query.cpp
 	game_client.cpp
 	live_source.cpp
 	replay_player.cpp

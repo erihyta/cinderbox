@@ -36,6 +36,8 @@ void CinderboxPeer::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "stop" ), &CinderboxPeer::stop );
 	ClassDB::bind_method( D_METHOD( "is_running" ), &CinderboxPeer::is_running );
 	ClassDB::bind_method( D_METHOD( "take", "whole" ), &CinderboxPeer::take );
+	ClassDB::bind_method( D_METHOD( "camera_free_distance", "origin", "direction", "max_distance", "radius" ),
+						  &CinderboxPeer::camera_free_distance );
 	ClassDB::bind_method( D_METHOD( "takes_input" ), &CinderboxPeer::takes_input );
 	ClassDB::bind_method( D_METHOD( "set_input", "input" ), &CinderboxPeer::set_input );
 	ClassDB::bind_method( D_METHOD( "control", "name", "value" ), &CinderboxPeer::control );
@@ -64,6 +66,16 @@ void CinderboxPeer::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "rollback_max", PROPERTY_HINT_RANGE, "1,64" ), "set_rollback_max", "get_rollback_max" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "reconcile_every", PROPERTY_HINT_RANGE, "1,8" ), "set_reconcile_every", "get_reconcile_every" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "physics_threads", PROPERTY_HINT_RANGE, "-1,31" ), "set_physics_threads", "get_physics_threads" );
+}
+
+double CinderboxPeer::camera_free_distance( const Vector3& origin, const Vector3& direction, double max_distance, double radius )
+{
+	if ( !m_source )
+	{
+		return -1.0;
+	}
+	return m_source->CameraFreeDistance( { float( origin.x ), float( origin.y ), float( origin.z ) },
+										 { float( direction.x ), float( direction.y ), float( direction.z ) }, float( max_distance ), float( radius ) );
 }
 
 void CinderboxPeer::Start( std::unique_ptr<present::ViewSource> source )

@@ -43,6 +43,8 @@ public:
 
 	// The source's side of the viewer protocol.
 	godot::PackedByteArray take( bool whole );
+	// For the viewer's camera (ViewSource::CameraFreeDistance); -1 when the source cannot say.
+	double camera_free_distance( const godot::Vector3& origin, const godot::Vector3& direction, double max_distance, double radius );
 	bool takes_input() const;
 	void set_input( const godot::PackedByteArray& input );
 	void control( const godot::String& name, double value );

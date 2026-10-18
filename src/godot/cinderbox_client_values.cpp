@@ -484,6 +484,17 @@ double CinderboxClient::get_camera_distance( const Vector3& target, const Vector
 	{
 		return max_distance;
 	}
+	// The source's own copy of the level has every shape as it is (a cave wall, a hillside); a source
+	// that has none (a view file) leaves it to the frame's boxes, balls and bounds.
+	if ( m_source )
+	{
+		const float exact = m_source->CameraFreeDistance( { float( target.x ), float( target.y ), float( target.z ) },
+														  { float( d.x ), float( d.y ), float( d.z ) }, float( max_distance ), float( radius ) );
+		if ( exact >= 0.0f )
+		{
+			return exact;
+		}
+	}
 	return present::CameraFreeDistance( m_frame.frame, { target.x, target.y, target.z }, { d.x, d.y, d.z }, float( max_distance ),
 										float( radius ) );
 }
