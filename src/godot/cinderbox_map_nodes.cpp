@@ -9,6 +9,8 @@
 #include <godot_cpp/classes/box_shape3d.hpp>
 #include <godot_cpp/classes/capsule_shape3d.hpp>
 #include <godot_cpp/classes/collision_shape3d.hpp>
+#include <godot_cpp/classes/convex_polygon_shape3d.hpp>
+#include <godot_cpp/classes/cylinder_shape3d.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/sphere_mesh.hpp>
@@ -32,6 +34,9 @@ namespace
 
 // Scales this close count as the same (a sphere scaled unevenly is not a sphere).
 constexpr float kScaleEpsilon = 0.001f;
+
+// A cylinder's hull: this many points around each of its two rims.
+constexpr int kCylinderSides = 16;
 
 Ref<StandardMaterial3D> PreviewMaterial( const Color& color )
 {
@@ -255,6 +260,59 @@ LevelBox PieceAt( const Transform3D& at, ShapeKind kind, const Vector3& halfExte
 	return out;
 }
 
+// A hull's points as the map stores them: scaled, on the grid; shared with an identical hull
+// already in the map. Returns false (and says why) when Box3D would make no hull of them.
+bool AddHull( std::vector<b3Vec3> points, const String& name, BakeContext& ctx, LevelBox& piece )
+{
+	if ( points.size() < 4 || points.size() > kMapHullPointLimit )
+	{
+		ctx.warnings.push_back( String( "skipped " ) + name + ": a hull needs 4 to " + String::num_int64( kMapHullPointLimit ) +
+								" points, it has " + String::num_int64( int64_t( points.size() ) ) );
+		return false;
+	}
+	b3Vec3 bounds = { 0.0f, 0.0f, 0.0f };
+	for ( b3Vec3& point : points )
+	{
+		point.x = MapDequantize( MapQuantize( point.x, kMapPositionScale ), kMapPositionScale );
+		point.y = MapDequantize( MapQuantize( point.y, kMapPositionScale ), kMapPositionScale );
+		point.z = MapDequantize( MapQuantize( point.z, kMapPositionScale ), kMapPositionScale );
+		bounds = { std::max( bounds.x, std::fabs( point.x ) ), std::max( bounds.y, std::fabs( point.y ) ),
+				   std::max( bounds.z, std::fabs( point.z ) ) };
+	}
+	if ( MapHullBuilds( points ) == false )
+	{
+		ctx.warnings.push_back( String( "skipped " ) + name + ": its points make no solid (they lie in a plane)" );
+		return false;
+	}
+	piece.kind = ShapeKind::Hull;
+	piece.halfExtents = bounds;
+	auto same = []( const std::vector<b3Vec3>& a, const std::vector<b3Vec3>& b ) {
+		if ( a.size() != b.size() )
+		{
+			return false;
+		}
+		for ( size_t i = 0; i < a.size(); ++i )
+		{
+			if ( a[i].x != b[i].x || a[i].y != b[i].y || a[i].z != b[i].z )
+			{
+				return false;
+			}
+		}
+		return true;
+	};
+	for ( size_t i = 0; i < ctx.layout.hulls.size(); ++i )
+	{
+		if ( same( ctx.layout.hulls[i], points ) )
+		{
+			piece.hull = uint32_t( i );
+			return true;
+		}
+	}
+	piece.hull = uint32_t( ctx.layout.hulls.size() );
+	ctx.layout.hulls.push_back( std::move( points ) );
+	return true;
+}
+
 bool Uneven( float a, float b )
 {
 	return std::fabs( a - b ) > kScaleEpsilon * std::max( std::fabs( a ), std::fabs( b ) );
@@ -307,14 +365,49 @@ int BakeStaticShapes( CbStatic* body, const Transform3D& here, BakeContext& ctx 
 			// Box3D's capsule is the distance between its two sphere centres, which cannot go negative.
 			piece = PieceAt( at, ShapeKind::Capsule, Vector3( radius, std::max( 0.5f * height - radius, 0.0f ), 0.0f ) );
 		}
+		else if ( auto* cylinder = Object::cast_to<CylinderShape3D>( shape.ptr() ) )
+		{
+			// Two rims of points: a hull, so any scale is kept (an oval drum stays oval).
+			piece = PieceAt( at, ShapeKind::Hull, Vector3() );
+			std::vector<b3Vec3> points;
+			float radius = float( cylinder->get_radius() );
+			float half = 0.5f * float( cylinder->get_height() );
+			for ( int side = 0; side < kCylinderSides; ++side )
+			{
+				float angle = 6.2831853f * float( side ) / float( kCylinderSides );
+				for ( float y : { -half, half } )
+				{
+					points.push_back( { radius * std::cos( angle ) * float( scale.x ), y * float( scale.y ),
+										radius * std::sin( angle ) * float( scale.z ) } );
+				}
+			}
+			if ( AddHull( std::move( points ), name, ctx, piece ) == false )
+			{
+				continue;
+			}
+		}
+		else if ( auto* convex = Object::cast_to<ConvexPolygonShape3D>( shape.ptr() ) )
+		{
+			piece = PieceAt( at, ShapeKind::Hull, Vector3() );
+			std::vector<b3Vec3> points;
+			for ( const Vector3& point : convex->get_points() )
+			{
+				points.push_back( ToSim( point * scale ) );
+			}
+			if ( AddHull( std::move( points ), name, ctx, piece ) == false )
+			{
+				continue;
+			}
+		}
 		else
 		{
 			ctx.warnings.push_back( String( "skipped " ) + name + ": a " + shape->get_class() +
-									" is not a level shape yet (box, sphere and capsule are)" );
+									" is not a level shape yet (box, sphere, capsule, cylinder and convex polygon are)" );
 			continue;
 		}
 		const b3Vec3 h = piece.halfExtents;
-		if ( ( piece.kind == ShapeKind::Box && ( h.x <= 0.0f || h.y <= 0.0f || h.z <= 0.0f ) ) || h.x <= 0.0f )
+		bool boxy = piece.kind == ShapeKind::Box || piece.kind == ShapeKind::Hull;
+		if ( ( boxy && ( h.x <= 0.0f || h.y <= 0.0f || h.z <= 0.0f ) ) || h.x <= 0.0f )
 		{
 			ctx.warnings.push_back( String( "skipped " ) + name + ": size must be positive" );
 			continue;
@@ -642,14 +735,25 @@ Dictionary CinderboxMapBaker::bake( Node* root, const String& path )
 	BakeNode( root, Transform3D(), ctx );
 
 	result["statics"] = int( ctx.layout.statics.size() );
+	result["hulls"] = int( ctx.layout.hulls.size() );
 	// Each static piece as it will be stored (after rounding onto the map's grid, below).
 	QuantizeLayout( ctx.layout );
 	Array pieces;
 	for ( const LevelBox& box : ctx.layout.statics )
 	{
 		Dictionary piece;
-		static const char* const kKinds[] = { "box", "sphere", "capsule" };
+		static const char* const kKinds[] = { "box", "sphere", "capsule", "hull" };
 		piece["kind"] = kKinds[int( box.kind )];
+		if ( box.kind == ShapeKind::Hull )
+		{
+			PackedVector3Array points;
+			for ( const b3Vec3& point : ctx.layout.hulls[box.hull] )
+			{
+				points.push_back( Vector3( point.x, point.y, point.z ) );
+			}
+			piece["points"] = points;
+			piece["hull"] = int( box.hull );
+		}
 		piece["center"] = Vector3( box.center.x, box.center.y, box.center.z );
 		piece["half_extents"] = Vector3( box.halfExtents.x, box.halfExtents.y, box.halfExtents.z );
 		piece["rotation"] = Vector3( box.pitch, box.yaw, box.roll ); // Godot's YXZ euler

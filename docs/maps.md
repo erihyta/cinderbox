@@ -43,16 +43,24 @@ then not used. Godot's handles, and **Mesh > Create Collision Shape** on a model
 | `BoxShape3D` | a box, turned any way (yaw, pitch and roll) |
 | `SphereShape3D` | a sphere (scaled unevenly: its largest scale, with a warning) |
 | `CapsuleShape3D` | a capsule along its Y (scaled unevenly across: its larger scale, with a warning) |
-| anything else | skipped, with a warning (cylinders, hulls and meshes are next) |
+| `CylinderShape3D` | a hull: two rims of 16 points (any scale kept: an oval drum stays oval) |
+| `ConvexPolygonShape3D` | a hull of its points (4 to 1024; Box3D keeps at most 128 corners) |
+| anything else | skipped, with a warning (triangle meshes and height fields are later) |
 
-- A disabled `CollisionShape3D` is skipped.
+- A disabled `CollisionShape3D` is skipped, and so is a hull whose points lie in a plane.
+- From a model: select its `MeshInstance3D` (under the `CbStatic`), **Mesh > Create Collision
+  Shape**, placement **Sibling**, type **Single Convex** (one hull) or **Simplified Convex**. A
+  concave model (an arch) is several hulls: **Multiple Convex** makes them.
+- A hull's points are stored on the map's 1/1024 m grid, scaled; hulls alike are stored once.
+  Every machine builds the same hull from them (the fourth reference run checks it on every build).
+- A map drawn without its scene shows a hull as its bounding box, and the camera stops at that box.
 - Godot's warning on a `CollisionShape3D` ("must be a child of a physics body") does not apply here
   and can be ignored: Cinderbox's physics reads it, Godot's never runs.
 - The bake says what it made of each node in the Bake Map output.
 - Only level geometry for now; props and templates keep their own shape settings.
 
 Turns are stored as yaw, pitch and roll (Godot's YXZ order) on the 1/4096 rad grid. Maps baked
-before this (version 3: boxes without roll) still load.
+before this (version 3: boxes without roll; version 4: no hulls) still load.
 
 ## A body
 

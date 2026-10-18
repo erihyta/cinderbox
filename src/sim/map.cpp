@@ -1,6 +1,9 @@
 #include "map.h"
 
+#include "physics_arena.h"
 #include "util.h"
+
+#include "box3d/collision.h"
 
 #include <cmath>
 #include <cstdio>
@@ -138,6 +141,24 @@ struct Reader
 	}
 };
 
+} // namespace
+
+bool MapHullBuilds( const std::vector<b3Vec3>& points )
+{
+	static thread_local PhysicsArena arena( size_t( 4 ) << 20 );
+	PhysicsArena::Scope scope( arena );
+	b3HullData* hull = b3CreateHull( points.data(), int( points.size() ), B3_MAX_HULL_VERTICES );
+	if ( hull == nullptr )
+	{
+		return false;
+	}
+	b3DestroyHull( hull );
+	return true;
+}
+
+namespace
+{
+
 // Names reach clients as resource paths (res://maps/<name>.tscn, res://prefabs/<visual>.tscn) and
 // they come from the server, so they may not contain anything that walks out of those folders.
 bool SafeName( const std::string& name )
@@ -164,6 +185,13 @@ void QuantizeLayout( LevelLayout& layout )
 		Snap( box.pitch, kMapAngleScale );
 		Snap( box.yaw, kMapAngleScale );
 		Snap( box.roll, kMapAngleScale );
+	}
+	for ( std::vector<b3Vec3>& hull : layout.hulls )
+	{
+		for ( b3Vec3& point : hull )
+		{
+			SnapVec( point, kMapPositionScale );
+		}
 	}
 	for ( LevelProp& prop : layout.props )
 	{
@@ -192,6 +220,16 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 	AppendPos( out, layout.spawnCenter );
 	AppendI32( out, MapQuantize( layout.spawnRadius, kMapPositionScale ) );
 
+	AppendU32( out, uint32_t( layout.hulls.size() ) );
+	for ( const std::vector<b3Vec3>& hull : layout.hulls )
+	{
+		AppendU32( out, uint32_t( hull.size() ) );
+		for ( const b3Vec3& point : hull )
+		{
+			AppendPos( out, point );
+		}
+	}
+
 	AppendU32( out, uint32_t( layout.statics.size() ) );
 	for ( const LevelBox& box : layout.statics )
 	{
@@ -204,6 +242,7 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 		AppendI32( out, MapQuantize( box.pitch, kMapAngleScale ) );
 		AppendI32( out, MapQuantize( box.yaw, kMapAngleScale ) );
 		AppendI32( out, MapQuantize( box.roll, kMapAngleScale ) );
+		AppendU32( out, box.hull );
 	}
 
 	AppendU32( out, uint32_t( layout.props.size() ) );
@@ -282,10 +321,42 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 	layout.spawnCenter = rd.Pos();
 	layout.spawnRadius = MapDequantize( rd.I32(), kMapPositionScale );
 
+	if ( version >= 5 )
+	{
+		uint32_t hullCount = rd.U32();
+		// The smallest a hull can be is a count and four points.
+		if ( rd.ok == false || hullCount > ( size - rd.cursor ) / 52 )
+		{
+			error = "corrupt hull list";
+			return false;
+		}
+		layout.hulls.reserve( hullCount );
+		for ( uint32_t i = 0; i < hullCount; ++i )
+		{
+			uint32_t pointCount = rd.U32();
+			if ( rd.ok == false || pointCount < 4 || pointCount > kMapHullPointLimit || pointCount > ( size - rd.cursor ) / 12 )
+			{
+				error = "a hull has too few or too many points";
+				return false;
+			}
+			std::vector<b3Vec3> hull( pointCount );
+			for ( b3Vec3& point : hull )
+			{
+				point = rd.Pos();
+			}
+			if ( MapHullBuilds( hull ) == false )
+			{
+				error = "a hull's points make no solid (they lie in a plane)";
+				return false;
+			}
+			layout.hulls.push_back( std::move( hull ) );
+		}
+	}
+
 	uint32_t staticCount = rd.U32();
-	// Each entry is 40 bytes (32 before version 4), so a count larger than the remaining bytes is
-	// corrupt input.
-	const size_t staticBytes = version >= 4 ? 40 : 32;
+	// Each entry is 44 bytes (40 in version 4, 32 before), so a count larger than the remaining
+	// bytes is corrupt input.
+	const size_t staticBytes = version >= 5 ? 44 : version >= 4 ? 40 : 32;
 	if ( rd.ok == false || staticCount > ( size - rd.cursor ) / staticBytes )
 	{
 		error = "corrupt static list";
@@ -301,7 +372,7 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 			rd.U8();
 			rd.U8();
 			rd.U8();
-			if ( kind > uint8_t( ShapeKind::Capsule ) )
+			if ( kind > uint8_t( ShapeKind::Hull ) || ( kind == uint8_t( ShapeKind::Hull ) && version < 5 ) )
 			{
 				error = "unknown static shape";
 				return false;
@@ -313,9 +384,16 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 		box.pitch = MapDequantize( rd.I32(), kMapAngleScale );
 		box.yaw = MapDequantize( rd.I32(), kMapAngleScale );
 		box.roll = version >= 4 ? MapDequantize( rd.I32(), kMapAngleScale ) : 0.0f;
+		box.hull = version >= 5 ? rd.U32() : 0;
+		if ( box.kind == ShapeKind::Hull && box.hull >= layout.hulls.size() )
+		{
+			error = "a static names a hull that is not in the map";
+			return false;
+		}
 		// What Box3D could not build: a box or sphere of no size, a capsule of no radius.
 		const b3Vec3 h = box.halfExtents;
-		bool solid = box.kind == ShapeKind::Box ? ( h.x > 0.0f && h.y > 0.0f && h.z > 0.0f ) : ( h.x > 0.0f && h.y >= 0.0f );
+		bool boxy = box.kind == ShapeKind::Box || box.kind == ShapeKind::Hull; // (a hull's: its bounds)
+		bool solid = boxy ? ( h.x > 0.0f && h.y > 0.0f && h.z > 0.0f ) : ( h.x > 0.0f && h.y >= 0.0f );
 		if ( solid == false )
 		{
 			error = "a static's size is out of range";

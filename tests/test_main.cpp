@@ -115,9 +115,27 @@ bool SameLayout( const LevelLayout& a, const LevelLayout& b )
 		const LevelBox& x = a.statics[i];
 		const LevelBox& y = b.statics[i];
 		if ( sameVec( x.center, y.center ) == false || sameVec( x.halfExtents, y.halfExtents ) == false || x.pitch != y.pitch ||
-			 x.yaw != y.yaw || x.roll != y.roll || x.kind != y.kind )
+			 x.yaw != y.yaw || x.roll != y.roll || x.kind != y.kind || x.hull != y.hull )
 		{
 			return false;
+		}
+	}
+	if ( a.hulls.size() != b.hulls.size() )
+	{
+		return false;
+	}
+	for ( size_t i = 0; i < a.hulls.size(); ++i )
+	{
+		if ( a.hulls[i].size() != b.hulls[i].size() )
+		{
+			return false;
+		}
+		for ( size_t p = 0; p < a.hulls[i].size(); ++p )
+		{
+			if ( sameVec( a.hulls[i][p], b.hulls[i][p] ) == false )
+			{
+				return false;
+			}
 		}
 	}
 	for ( size_t i = 0; i < a.props.size(); ++i )
@@ -342,9 +360,11 @@ float BallHeightAfter( float restitution, uint32_t ticks )
 	return -1.0f;
 }
 
-// Level pieces of every shape, turned any way (map version 4): a box rolled upright is a wall, a
-// capsule rolled over lies along X, a sphere is round; the turn is Godot's (yaw, then pitch, then
-// roll); they survive the file; a version 3 file (boxes, no roll) still loads; a bad shape is refused.
+// Level pieces of every shape, turned any way (map versions 4 and 5): a box rolled upright is a
+// wall, a capsule rolled over lies along X, a sphere is round, a hull (a pyramid) slopes where its
+// points say and turns over with its piece; the turn is Godot's (yaw, then pitch, then roll); they
+// survive the file; a version 3 file (boxes, no roll) still loads; a bad shape, and a hull whose
+// points lie in a plane, are refused.
 void TestMapShapes()
 {
 	constexpr float kQuarter = 1.5707964f;
@@ -360,6 +380,11 @@ void TestMapShapes()
 	map.statics.push_back( { { -6.0f, 1.0f, 0.0f }, { 0.5f, 1.5f, 0.0f }, 0.0f, 0.0f, kQuarter, ShapeKind::Capsule } );
 	// Yawed and rolled a quarter each: its X turns to +Y, its Z to +X (as Godot's YXZ euler has it).
 	map.statics.push_back( { { 0.0f, 1.0f, -8.0f }, { 1.0f, 0.2f, 0.3f }, 0.0f, kQuarter, kQuarter, ShapeKind::Box } );
+	// A pyramid 2 m across and 2 m tall, and the same one upside down (rolled half a turn): both
+	// pieces share the one point list.
+	map.hulls.push_back( { { -1.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, 1.0f }, { -1.0f, 0.0f, 1.0f }, { 0.0f, 2.0f, 0.0f } } );
+	map.statics.push_back( { { 10.0f, 0.0f, 0.0f }, { 1.0f, 2.0f, 1.0f }, 0.0f, 0.0f, 0.0f, ShapeKind::Hull, 0 } );
+	map.statics.push_back( { { 14.0f, 2.0f, 0.0f }, { 1.0f, 2.0f, 1.0f }, 0.0f, 0.0f, 2.0f * kQuarter, ShapeKind::Hull, 0 } );
 	QuantizeLayout( map );
 
 	std::vector<uint8_t> bytes;
@@ -381,6 +406,10 @@ void TestMapShapes()
 	CHECK( walled && std::fabs( wall.point.x + 0.1f ) < 0.01f );
 	CHECK( std::fabs( down( 5.0f, 0.0f ) - 2.0f ) < 0.01f );
 	CHECK( std::fabs( down( -7.2f, 0.0f ) - 1.5f ) < 0.01f ); // standing, it would be 3 m
+	std::printf( "    the pyramid's slope halfway out is at %.3f m; the one upside down is flat on top at %.3f m\n", down( 10.5f, 0.0f ),
+				 down( 14.0f, 0.0f ) );
+	CHECK( std::fabs( down( 10.5f, 0.0f ) - 1.0f ) < 0.01f );
+	CHECK( std::fabs( down( 14.0f, 0.0f ) - 2.0f ) < 0.01f ); // its apex would be at 4 m
 
 	const Transform* turned = nullptr;
 	for ( const Simulation::EntityRef& r : sim.Entities() )
@@ -432,7 +461,7 @@ void TestMapShapes()
 		   fromOld.statics[0].pitch == 0.25f && fromOld.statics[0].yaw == -0.5f && fromOld.statics[0].halfExtents.x == 10.0f );
 
 	// A shape this build does not know, and a box of no size, are refused.
-	const size_t firstKind = 4 + 4 + 4 + 4 + map.name.size() + 12 + 4 + 4;
+	const size_t firstKind = 4 + 4 + 4 + 4 + map.name.size() + 12 + 4 + 4 + 4 + 5 * 12 + 4; // (past the hull)
 	std::vector<uint8_t> unknown = bytes;
 	CHECK( unknown[firstKind] == uint8_t( ShapeKind::Box ) );
 	unknown[firstKind] = 7;
@@ -441,6 +470,15 @@ void TestMapShapes()
 	LevelLayout flat = map;
 	flat.statics[0].halfExtents.y = 0.0f;
 	SerializeMap( flat, unknown );
+	CHECK( DeserializeMap( unknown.data(), unknown.size(), refused, error ) == false );
+	LevelLayout plane = map;
+	plane.hulls[0][4] = { 0.0f, 0.0f, 0.5f }; // the apex down in the base's plane
+	SerializeMap( plane, unknown );
+	CHECK( DeserializeMap( unknown.data(), unknown.size(), refused, error ) == false );
+	std::printf( "    a flat hull: %s\n", error.c_str() );
+	LevelLayout missing = map;
+	missing.statics.back().hull = 5;
+	SerializeMap( missing, unknown );
 	CHECK( DeserializeMap( unknown.data(), unknown.size(), refused, error ) == false );
 }
 
@@ -7529,12 +7567,67 @@ void AppendSlotsReference( std::vector<uint64_t>& hashes )
 	}
 }
 
+// The fourth reference run: a level of every piece shape (hulls built by Box3D from the map's points,
+// pieces rolled), and boxes and balls dropped onto it. Every build must build the same hulls and
+// land the same things on them. The points are written out, not computed, so no libm is involved.
+void AppendShapesReference( std::vector<uint64_t>& hashes )
+{
+	LevelLayout map;
+	map.name = "shapes_reference";
+	map.spawnCenter = { 0.0f, 1.5f, 20.0f };
+	map.spawnRadius = 2.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 30.0f, 0.5f, 30.0f }, 0.0f, 0.0f } );
+	// A pyramid, an eight-sided drum, a wedge and a lumpy rock.
+	map.hulls.push_back( { { -1.5f, 0.0f, -1.5f }, { 1.5f, 0.0f, -1.5f }, { 1.5f, 0.0f, 1.5f }, { -1.5f, 0.0f, 1.5f }, { 0.0f, 2.0f, 0.0f } } );
+	map.hulls.push_back( {} );
+	const float drum[8][2] = { { 1.0f, 0.0f }, { 0.7071f, 0.7071f }, { 0.0f, 1.0f }, { -0.7071f, 0.7071f },
+							   { -1.0f, 0.0f }, { -0.7071f, -0.7071f }, { 0.0f, -1.0f }, { 0.7071f, -0.7071f } };
+	for ( const auto& rim : drum )
+	{
+		map.hulls.back().push_back( { rim[0], -0.75f, rim[1] } );
+		map.hulls.back().push_back( { rim[0], 0.75f, rim[1] } );
+	}
+	map.hulls.push_back( { { -2.0f, 0.0f, -1.0f }, { 2.0f, 0.0f, -1.0f }, { -2.0f, 0.0f, 1.0f }, { 2.0f, 0.0f, 1.0f }, { 2.0f, 1.2f, -1.0f },
+						   { 2.0f, 1.2f, 1.0f } } );
+	map.hulls.push_back( { { 0.9f, 0.1f, 0.2f }, { -0.8f, 0.3f, 0.6f }, { 0.1f, 1.1f, -0.2f }, { 0.3f, -0.6f, -0.9f }, { -0.5f, -0.4f, -0.7f },
+						   { 0.6f, 0.7f, 0.8f }, { -0.2f, 0.9f, 0.7f }, { 0.4f, -0.2f, 1.0f }, { -1.0f, 0.2f, -0.3f } } );
+	map.statics.push_back( { { -6.0f, 0.0f, 0.0f }, { 1.5f, 2.0f, 1.5f }, 0.0f, 0.3f, 0.0f, ShapeKind::Hull, 0 } );
+	map.statics.push_back( { { 0.0f, 0.6f, 0.0f }, { 1.0f, 0.75f, 1.0f }, 0.0f, 0.0f, 1.5707964f, ShapeKind::Hull, 1 } ); // lying
+	map.statics.push_back( { { 6.0f, 0.0f, 0.0f }, { 2.0f, 1.2f, 1.0f }, 0.0f, -0.7f, 0.0f, ShapeKind::Hull, 2 } );
+	map.statics.push_back( { { 0.0f, 0.8f, -6.0f }, { 1.0f, 1.1f, 1.0f }, 0.4f, 1.1f, -0.6f, ShapeKind::Hull, 3 } );
+	map.statics.push_back( { { 0.0f, 0.5f, 6.0f }, { 2.0f, 0.1f, 0.6f }, 0.2f, 0.5f, 0.35f, ShapeKind::Box } );
+	map.statics.push_back( { { -6.0f, 0.6f, 6.0f }, { 0.6f, 1.0f, 0.0f }, 0.0f, 0.0f, 1.2f, ShapeKind::Capsule } );
+	map.statics.push_back( { { 6.0f, 0.0f, 6.0f }, { 1.2f, 0.0f, 0.0f }, 0.0f, 0.0f, 0.0f, ShapeKind::Sphere } );
+	// Boxes and balls above each piece, a little off its middle so they roll and tumble.
+	for ( int row = 0; row < 3; ++row )
+	{
+		for ( int column = 0; column < 3; ++column )
+		{
+			float x = -6.0f + 6.0f * float( column ) + 0.3f;
+			float z = -6.0f + 6.0f * float( row ) + 0.2f;
+			map.props.push_back( { ShapeKind::Box, { x, 4.0f, z }, { 0.3f, 0.3f, 0.3f } } );
+			map.props.push_back( { ShapeKind::Sphere, { x - 0.4f, 6.0f, z + 0.3f }, { 0.35f, 0.0f, 0.0f } } );
+		}
+	}
+	QuantizeLayout( map );
+	Simulation sim( TestConfig(), map );
+	hashes.push_back( sim.ComputeHash() );
+	InputFrame frame;
+	for ( uint32_t tick = 0; tick < 360; ++tick )
+	{
+		frame.tick = sim.Tick();
+		sim.Step( frame );
+		hashes.push_back( sim.ComputeHash() );
+	}
+}
+
 int DumpHashes( const char* path )
 {
 	auto frames = test::MakeScenario( {} );
 	auto hashes = RunReference( frames, TestConfig() );
 	AppendMotionReference( hashes );
 	AppendSlotsReference( hashes );
+	AppendShapesReference( hashes );
 	FILE* f = std::fopen( path, "w" );
 	if ( f == nullptr )
 	{
@@ -7556,6 +7649,7 @@ int CompareHashes( const char* path )
 	auto hashes = RunReference( frames, TestConfig() );
 	AppendMotionReference( hashes );
 	AppendSlotsReference( hashes );
+	AppendShapesReference( hashes );
 	FILE* f = std::fopen( path, "r" );
 	if ( f == nullptr )
 	{

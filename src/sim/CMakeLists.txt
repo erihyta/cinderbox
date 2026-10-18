@@ -1,6 +1,7 @@
 # What the simulation's data means, without the simulation: components, the map format, the mod
 # schema, the baked state machines. Everything that only reads or draws the world links this
-# (animation, presentation, the Godot viewer) and never steps a world.
+# (animation, presentation, the Godot viewer) and never steps a world. (The physics arena is here
+# for the map format: reading a map builds each hull once, to refuse one Box3D cannot make.)
 add_library(cb_sim_data STATIC
 	anim_controller.cpp
 	anim_graph.cpp
@@ -9,6 +10,7 @@ add_library(cb_sim_data STATIC
 	mod_schema.cpp
 	motions.cpp
 	move_params.cpp
+	physics_arena.cpp
 	reflect.cpp
 	world_lifetime.cpp
 )
@@ -21,7 +23,6 @@ add_library(cb_sim STATIC
 	box3d_shim.c
 	fingerprint.cpp
 	mover.cpp
-	physics_arena.cpp
 	physics_threads.cpp
 	rollback.cpp
 	simulation.cpp

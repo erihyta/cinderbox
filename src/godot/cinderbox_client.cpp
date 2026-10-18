@@ -1296,6 +1296,7 @@ void CinderboxClient::UpdateNodes()
 				size = Vector3( 2.0f * v.halfExtents.x, 2.0f * ( v.halfExtents.y + v.halfExtents.x ), 2.0f * v.halfExtents.x );
 				break;
 			case ShapeKind::Box:
+			case ShapeKind::Hull: // (a map without its scene: a hull drawn as its bounds)
 			default:
 				size = ToGodot( v.halfExtents ) * 2.0f;
 				break;

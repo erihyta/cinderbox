@@ -112,6 +112,7 @@ float CameraFreeDistance( const PresentationFrame& frame, b3Vec3 origin, b3Vec3 
 		switch ( e.shape )
 		{
 			case ShapeKind::Box:
+			case ShapeKind::Hull: // (its bounds: the camera stops a little early near a round one)
 				t = RayBox( o, d, { e.halfExtents.x + radius, e.halfExtents.y + radius, e.halfExtents.z + radius } );
 				break;
 			case ShapeKind::Sphere:
