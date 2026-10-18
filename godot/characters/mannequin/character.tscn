@@ -152,101 +152,16 @@ states/Locomotion/node = SubResource("AnimationNodeBlendSpace1D_2b6ip")
 states/Locomotion/position = Vector2(300, 100)
 transitions = ["Start", "Locomotion", SubResource("AnimationNodeStateMachineTransition_kq2ih"), "Locomotion", "JumpStart", SubResource("AnimationNodeStateMachineTransition_bnqe6"), "Locomotion", "Fall", SubResource("AnimationNodeStateMachineTransition_rd8sy"), "JumpStart", "Land", SubResource("AnimationNodeStateMachineTransition_8w3im"), "JumpStart", "Fall", SubResource("AnimationNodeStateMachineTransition_3n61k"), "Fall", "Land", SubResource("AnimationNodeStateMachineTransition_e7b5m"), "Land", "JumpStart", SubResource("AnimationNodeStateMachineTransition_mfsil"), "Land", "Locomotion", SubResource("AnimationNodeStateMachineTransition_iytit")]
 
-[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_ovscv"]
-animation = &"Pistol_Idle"
-
-[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_al8dw"]
-animation = &"Sword_Idle"
-
 [sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_e2qhb"]
 animation = &"Idle"
-
-[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_7gso3"]
-animation = &"Pistol_Shoot"
-
-[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_rxoif"]
-animation = &"Sword_Attack"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_v4q4v"]
 advance_mode = 2
 
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_0ynns"]
-xfade_time = 0.15
-advance_mode = 2
-advance_expression = "gun"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_wnmgd"]
-xfade_time = 0.15
-advance_mode = 2
-advance_condition = &"melee"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_53l40"]
-xfade_time = 0.05
-advance_mode = 2
-advance_condition = &"melee_swing"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_k7pk6"]
-xfade_time = 0.05
-advance_mode = 2
-advance_expression = "item.use"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_lo6wb"]
-xfade_time = 0.15
-switch_mode = 2
-advance_mode = 2
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_cyku4"]
-xfade_time = 0.15
-advance_mode = 2
-advance_condition = &"melee"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_nlfyn"]
-xfade_time = 0.15
-advance_mode = 2
-advance_expression = "not gun"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_e38ba"]
-xfade_time = 0.15
-advance_mode = 2
-advance_expression = "not gun"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_ob45v"]
-xfade_time = 0.05
-advance_mode = 2
-advance_condition = &"melee_swing"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_cfc4f"]
-xfade_time = 0.15
-advance_mode = 2
-advance_expression = "gun"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_hsr08"]
-xfade_time = 0.15
-advance_mode = 2
-advance_expression = "not melee and not melee_swing"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_lpded"]
-xfade_time = 0.25
-advance_mode = 2
-advance_expression = "not melee_swing and melee"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_die0j"]
-xfade_time = 0.25
-advance_mode = 2
-advance_expression = "not melee_swing and not melee"
-
 [sub_resource type="AnimationNodeStateMachine" id="AnimationNodeStateMachine_qr12r"]
-states/Pistol/node = SubResource("AnimationNodeAnimation_ovscv")
-states/Pistol/position = Vector2(550, 0)
-states/Ready/node = SubResource("AnimationNodeAnimation_al8dw")
-states/Ready/position = Vector2(550, 220)
 states/Rest/node = SubResource("AnimationNodeAnimation_e2qhb")
 states/Rest/position = Vector2(300, 100)
-states/Shoot/node = SubResource("AnimationNodeAnimation_7gso3")
-states/Shoot/position = Vector2(800, 0)
-states/Swing/node = SubResource("AnimationNodeAnimation_rxoif")
-states/Swing/position = Vector2(800, 220)
-transitions = ["Start", "Rest", SubResource("AnimationNodeStateMachineTransition_v4q4v"), "Rest", "Pistol", SubResource("AnimationNodeStateMachineTransition_0ynns"), "Rest", "Ready", SubResource("AnimationNodeStateMachineTransition_wnmgd"), "Rest", "Swing", SubResource("AnimationNodeStateMachineTransition_53l40"), "Pistol", "Shoot", SubResource("AnimationNodeStateMachineTransition_k7pk6"), "Shoot", "Pistol", SubResource("AnimationNodeStateMachineTransition_lo6wb"), "Pistol", "Ready", SubResource("AnimationNodeStateMachineTransition_cyku4"), "Pistol", "Rest", SubResource("AnimationNodeStateMachineTransition_nlfyn"), "Shoot", "Rest", SubResource("AnimationNodeStateMachineTransition_e38ba"), "Ready", "Swing", SubResource("AnimationNodeStateMachineTransition_ob45v"), "Ready", "Pistol", SubResource("AnimationNodeStateMachineTransition_cfc4f"), "Ready", "Rest", SubResource("AnimationNodeStateMachineTransition_hsr08"), "Swing", "Ready", SubResource("AnimationNodeStateMachineTransition_lpded"), "Swing", "Rest", SubResource("AnimationNodeStateMachineTransition_die0j")]
+transitions = ["Start", "Rest", SubResource("AnimationNodeStateMachineTransition_v4q4v")]
 
 [sub_resource type="AnimationNodeBlend2" id="AnimationNodeBlend2_0qnk2"]
 filter_enabled = true
@@ -268,7 +183,7 @@ animation_player_path = NodePath("Model/AnimationPlayer")
 animation_tree_path = NodePath("AnimationTree")
 graph_inputs = {
 "FullBody/Locomotion/blend_position": "forward_speed",
-"UpperBodyBlend/blend_amount": "gun or melee or melee_swing"
+"UpperBodyBlend/blend_amount": "0"
 }
 
 [node name="Model" parent="." unique_id=984932362 instance=ExtResource("1_3txul")]
@@ -494,8 +409,6 @@ anim_player = NodePath("../Model/AnimationPlayer")
 parameters/FullBody/conditions/grounded = false
 parameters/FullBody/conditions/jumped = false
 parameters/FullBody/Locomotion/blend_position = 0.0
-parameters/UpperBody/conditions/melee = false
-parameters/UpperBody/conditions/melee_swing = false
 parameters/UpperBodyBlend/blend_amount = 0.0
 
 [editable path="Model"]

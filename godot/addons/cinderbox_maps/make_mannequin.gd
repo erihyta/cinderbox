@@ -15,12 +15,11 @@ extends SceneTree
 ##
 ##   UpperBlend (Blend2, filter: the spine and everything above it)
 ##     Base:  Locomotion (1D blend space on forward_speed) <-> JumpStart / Fall / Land
-##     Upper: Rest, Pistol <-> Shoot (on pistol.fired or rifle.fired), Ready <-> Swing (the melee mod's stances)
+##     Upper: Rest (blend 0: the base plays alone)
 ##
-## The swing (Sword_Attack, saved to animations/ by the glb's import settings so it can be edited)
-## gets a "melee.strike" marker where the hand is fastest, which the melee mod hits on. (The bat's
-## fire is the melee mod's own look, not the character's.) Everything here is what an author would
-## do by hand in the editor; open the scene and edit freely.
+## The upper layer is a place for items' packs: a held bat or gun swaps in its pack's UpperBody
+## (server_mods/*/client/animation_packs), which has the item's states, clips and markers. Everything
+## here is what an author would do by hand in the editor; open the scene and edit freely.
 ##
 ## `-- --pack=source` builds characters/ual_mannequin/ from the library's paid Source version instead
 ## (put UAL1.glb in characters/ual_mannequin/source/ and give its import the same settings as the
@@ -42,13 +41,7 @@ const PACKS := {
 }
 var SOURCE: String
 var OUT_DIR: String
-var SWING: String
 var _pack := "standard"
-# The hand fire earlier versions keyed on the swing (the bat's own look has it now).
-const OLD_FIRE_PATH := "Armature/Skeleton3D/At_RightHand/HandFire"
-# The playback track earlier versions keyed on the swing to play the held item's "slash" (the bat
-# plays it itself now, from the melee.swing cue).
-const OLD_HELD_ITEM_PLAYER := "Armature/Skeleton3D/At_RightHand/RightHand/Item/AnimationPlayer"
 
 # Standard: blend space points at the speeds the clips actually cover (measured from their foot
 # travel), so the feet stay planted: walking backwards plays the same clips in reverse.
@@ -67,8 +60,6 @@ const LOCOMOTION_2D := [
 	[Vector2(-JOG, 0), "Jog_Left"], [Vector2(JOG, 0), "Jog_Right"],
 	[Vector2(0, -JOG), "Jog_Bwd"], [Vector2(-DIAGONAL, -DIAGONAL), "Jog_Bwd_L"], [Vector2(DIAGONAL, -DIAGONAL), "Jog_Bwd_R"],
 ]
-const STRIKE_TIME := 0.4 # Sword_Attack: the hand is fastest here
-
 # zone, bone, radius; capsules run along the bone to its child (the profile's +Y), spheres sit on it.
 const CAPSULES := [
 	["torso", "Spine", 0.17], ["torso", "Chest", 0.18], ["torso", "UpperChest", 0.17],
@@ -90,12 +81,10 @@ func _initialize() -> void:
 		return
 	SOURCE = PACKS[_pack]["source"]
 	OUT_DIR = PACKS[_pack]["out"]
-	SWING = OUT_DIR.path_join("animations/Sword_Attack.res")
 	var scene_path := OUT_DIR.path_join("character.tscn")
 	if ResourceLoader.exists(scene_path) and not ("--force" in OS.get_cmdline_user_args()):
 		var existing := (load(scene_path) as PackedScene).instantiate() as CbCharacter
 		print("baking the existing ", scene_path, " (--force rebuilds it)")
-		_mark_swing() # a reimport of the glb may have dropped the marker
 		_bake(existing)
 		return
 
@@ -136,7 +125,6 @@ func _initialize() -> void:
 
 	_add_hitboxes()
 	_add_sockets()
-	_mark_swing()
 	_add_tree(player)
 
 	var packed := PackedScene.new()
@@ -200,27 +188,11 @@ func _add_tree(player: AnimationPlayer) -> void:
 	_go(base, "Land", "JumpStart", "jumped", 0.1)
 	_go(base, "Land", "Locomotion", "state_time > 0.35 or speed > 1.5", 0.25)
 
-	# The upper body follows the mods' stances (and the pistol's shots).
+	# The upper body: a rest, unweighted. Items' packs swap in their own UpperBody (its mask is this
+	# layer's), with the states, clips and markers they need.
 	var upper := AnimationNodeStateMachine.new()
 	upper.add_node("Rest", _clip("Idle"), Vector2(300, 100))
-	upper.add_node("Pistol", _clip("Pistol_Idle"), Vector2(550, 0))
-	upper.add_node("Shoot", _clip("Pistol_Shoot"), Vector2(800, 0))
-	upper.add_node("Ready", _clip("Sword_Idle"), Vector2(550, 220))
-	upper.add_node("Swing", _clip("Sword_Attack"), Vector2(800, 220))
 	_go(upper, "Start", "Rest")
-	_go(upper, "Rest", "Pistol", "pistol or rifle", 0.15)
-	_go(upper, "Rest", "Ready", "melee", 0.15)
-	_go(upper, "Rest", "Swing", "melee_swing", 0.05)
-	_go(upper, "Pistol", "Shoot", "pistol.fired or rifle.fired", 0.05)
-	_go(upper, "Shoot", "Pistol", "", 0.15, true)
-	_go(upper, "Pistol", "Ready", "melee", 0.15)
-	_go(upper, "Pistol", "Rest", "not pistol and not rifle", 0.15)
-	_go(upper, "Shoot", "Rest", "not pistol and not rifle", 0.15)
-	_go(upper, "Ready", "Swing", "melee_swing", 0.05)
-	_go(upper, "Ready", "Pistol", "pistol or rifle", 0.15)
-	_go(upper, "Ready", "Rest", "not melee and not melee_swing", 0.15)
-	_go(upper, "Swing", "Ready", "not melee_swing and melee", 0.25)
-	_go(upper, "Swing", "Rest", "not melee_swing and not melee", 0.25)
 
 	var blend := AnimationNodeBlend2.new()
 	blend.filter_enabled = true
@@ -253,7 +225,7 @@ func _add_tree(player: AnimationPlayer) -> void:
 	# What drives the tree's numbers, as the simulation computes them.
 	_root.graph_inputs = {
 		"FullBody/Locomotion/blend_position": "move_right, move_forward" if _pack == "source" else "forward_speed",
-		"UpperBodyBlend/blend_amount": "pistol or rifle or melee or melee_swing",
+		"UpperBodyBlend/blend_amount": "0",
 	}
 
 
@@ -280,32 +252,10 @@ func _go(machine: AnimationNodeStateMachine, from: String, to: String, when := "
 	machine.add_transition(from, to, t)
 
 
-# --- The swing: a marker for the server ------------------------------------------------------------
-
-# Sword_Attack is saved to its own file by the glb's import settings (Save to File, Keep Custom
-# Tracks), which is how an imported animation becomes editable. A track added to it survives
-# reimports; a reimport in Godot 4.7.1 dropped the marker, so this puts it back when it is missing.
-func _mark_swing() -> void:
-	var swing := load(SWING) as Animation
-	if swing == null:
-		printerr("no ", SWING, ": the glb's import must save Sword_Attack to that file")
-		return
-	if not swing.has_marker("melee.strike"):
-		swing.add_marker("melee.strike", STRIKE_TIME)
-	var old := swing.find_track(NodePath(OLD_FIRE_PATH + ":emitting"), Animation.TYPE_VALUE)
-	if old >= 0:
-		swing.remove_track(old)
-	var held := swing.find_track(NodePath(OLD_HELD_ITEM_PLAYER), Animation.TYPE_ANIMATION)
-	if held >= 0:
-		swing.remove_track(held)
-	if ResourceSaver.save(swing, SWING) != OK:
-		printerr("cannot save ", SWING)
-
-
 # --- Sockets ----------------------------------------------------------------------------------------
 
 # RightHand and LeftHand, where held items go. The game would make them at the hands anyway; here
-# they are real nodes, so the swing's track can reach what the right hand holds, and an author can
+# they are real nodes, so a track can reach what the right hand holds, and an author can
 # move them. The frame is the one items are made in: the grip on the palm, the item along -Z (the
 # way the hand points it), which is the placeholder rig's hand frame turned onto this skeleton.
 func _add_sockets() -> void:

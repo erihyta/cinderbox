@@ -1252,6 +1252,14 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	{
 		return fail( error );
 	}
+	// Clip files an earlier bake wrote that this one did not (the machine uses fewer clips now).
+	for ( const String& file : DirAccess::get_files_at( folder ) )
+	{
+		if ( file.begins_with( "clip_" ) && file.ends_with( ".ozz" ) && String::utf8( cfg.c_str() ).contains( " = " + file + "\n" ) == false )
+		{
+			DirAccess::remove_absolute( folder + file );
+		}
+	}
 
 	// --- Hitboxes, in their bone's space.
 	std::vector<CbHitbox*> hitboxNodes;

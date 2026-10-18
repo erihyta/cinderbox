@@ -6147,6 +6147,78 @@ void CheckHeldItem( const anim::AnimSet& set, anim::PoseEvaluator& pose )
 	CHECK( z.y > 0.7f );
 }
 
+// The shipped items' animation packs on the mannequin, as a server declares them and a client loads
+// them: the bat's (source 1: Ready, Swing on melee.swing, the strike and the end as markers) and the
+// pistol's (source 2: Hold, Shoot on item.use). The character's own upper layer is only a rest.
+struct ShippedPacks
+{
+	AnimGraphPacks graphs;
+	std::vector<std::shared_ptr<const anim::PackClips>> clips;
+	enum Event : int
+	{
+		Use,
+		Strike,
+		Fired,
+		Swing,
+		Done
+	};
+	static constexpr uint8_t Bat = 1, Pistol = 2;
+	bool loaded = false; // LoadShippedPacks went well
+	int StateOf( uint8_t source, const char* name ) const
+	{
+		const auto& states = graphs[size_t( source - 1 )]->layers[0].states;
+		for ( size_t i = 0; i < states.size(); ++i )
+		{
+			if ( states[i].name == name )
+			{
+				return int( i );
+			}
+		}
+		return -1;
+	}
+};
+
+void MannequinSchema( ModSchema& schema )
+{
+	schema.layers = { "full", "upper" };
+	schema.stances = { "melee", "melee_swing", "gun", "rifle" };
+	schema.events = { "item.use", "melee.strike", "rifle.fired", "melee.swing", "melee.done" };
+	for ( const char* pack : { "melee/melee.hold", "gun/gun.pistol_hold" } )
+	{
+		std::string mod = pack, name = mod.substr( mod.find( '/' ) + 1 ), text;
+		mod.resize( mod.find( '/' ) );
+		CHECK( anim::DiskReader( std::string( CB_SOURCE_DIR ) + "/server_mods/" + mod + "/client/anim/" + name )( "graph.cfg", text ) );
+		schema.animPacks.push_back( { mod, name, text } );
+	}
+}
+
+// `character`: whose clips the packs' are fitted to (null: the simulation's only, no clips).
+void LoadShippedPacks( const ModSchema& schema, const anim::AnimSet* character, ShippedPacks& out )
+{
+	std::string error, warnings;
+	out.graphs = CompileAnimPacks( schema, warnings );
+	CHECK( out.graphs.size() == 2 && out.graphs[0] != nullptr && out.graphs[1] != nullptr && warnings.empty() );
+	if ( out.graphs.size() != 2 || out.graphs[0] == nullptr || out.graphs[1] == nullptr )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	for ( size_t i = 0; character != nullptr && i < out.graphs.size(); ++i )
+	{
+		const AnimPackInfo& pack = schema.animPacks[i];
+		std::shared_ptr<const anim::AnimSet> set = anim::AnimSet::Load(
+			anim::DiskReader( std::string( CB_SOURCE_DIR ) + "/server_mods/" + pack.mod + "/client/anim/" + pack.name ), pack.name, error, warnings );
+		CHECK( set != nullptr );
+		if ( set == nullptr )
+		{
+			std::printf( "    %s\n", error.c_str() );
+			return;
+		}
+		out.clips.push_back( anim::FitPack( set, *out.graphs[i], *character, warnings ) );
+	}
+	out.loaded = true;
+}
+
 void TestMannequinCharacter()
 {
 	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
@@ -6169,11 +6241,9 @@ void TestMannequinCharacter()
 	anim::BindHitboxes( hitboxes, *set, warnings );
 	CHECK( hitboxes.boxes.size() == count && count >= 10 );
 
-	// The shipped mods' names, as a server would send them.
+	// The shipped mods' names and packs, as a server would send them.
 	ModSchema schema;
-	schema.layers = { "full", "upper" };
-	schema.stances = { "melee", "melee_swing", "gun", "rifle" };
-	schema.events = { "item.use", "melee.strike", "rifle.fired" };
+	MannequinSchema( schema );
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
 	CHECK( graph != nullptr );
 	if ( graph == nullptr )
@@ -6182,9 +6252,18 @@ void TestMannequinCharacter()
 		return;
 	}
 	CHECK( warnings.empty() );
-	CHECK( graph->layers.size() == 2 && graph->EmitsEvent( 1 ) );
+	ShippedPacks packs;
+	LoadShippedPacks( schema, set.get(), packs );
+	if ( packs.loaded == false )
+	{
+		return;
+	}
+	// The strike is the bat's pack's marker; the character's own clips have none.
+	CHECK( graph->layers.size() == 2 && graph->EmitsEvent( ShippedPacks::Strike ) == false &&
+		   packs.graphs[0]->EmitsEvent( ShippedPacks::Strike ) );
 	anim::PoseEvaluator pose( *set );
 	pose.SetGraph( graph, warnings );
+	pose.SetPacks( packs.graphs, packs.clips );
 	CHECK( warnings.empty() );
 	auto stateOf = [&]( int layer, const char* name ) {
 		const auto& states = graph->layers[size_t( layer )].states;
@@ -6201,6 +6280,7 @@ void TestMannequinCharacter()
 	// The simulation runs the state machine; the pose follows it.
 	Simulation sim( TestConfig(), FlatMap() );
 	sim.SetAnimGraph( graph );
+	sim.SetAnimPacks( packs.graphs );
 	InputFrame f;
 	auto step = [&]( int n ) {
 		for ( int i = 0; i < n; ++i )
@@ -6266,11 +6346,13 @@ void TestMannequinCharacter()
 	step( 120 );
 	CHECK( state().graph[0].state == stateOf( 0, "Locomotion" ) );
 
-	// The pistol: the upper layer draws it, aims (the aim chain), and plays a shot on item.use.
-	command( CommandType::Stance, 1, 3, 0 ); // upper layer, pistol
+	// The pistol: its pack's upper layer holds it, aims (the aim chain), and plays a shot on item.use.
+	const int pistolHold = packs.StateOf( ShippedPacks::Pistol, "Hold" ), pistolShoot = packs.StateOf( ShippedPacks::Pistol, "Shoot" );
+	CHECK( pistolHold >= 0 && pistolShoot >= 0 );
+	command( CommandType::SwapLayer, 1, ShippedPacks::Pistol, 0 );
 	command( CommandType::Aim, 0, 0, 1 );
 	step( 30 );
-	CHECK( state().graph[1].state == stateOf( 1, "Pistol" ) && state().graph[1].weight == 1.0f );
+	CHECK( state().graph[1].source == ShippedPacks::Pistol && state().graph[1].state == pistolHold && state().graph[1].weight == 1.0f );
 	pose.Evaluate( state() );
 	b3Vec3 shoulder = at( "RightUpperArm" );
 	b3Vec3 hand = at( "RightHand" );
@@ -6305,9 +6387,9 @@ void TestMannequinCharacter()
 	}
 	command( CommandType::Event, 0, 0, 0 ); // item.use, by this player
 	step( 1 );
-	CHECK( state().graph[1].state == stateOf( 1, "Shoot" ) );
+	CHECK( state().graph[1].state == pistolShoot );
 	step( 60 );
-	CHECK( state().graph[1].state == stateOf( 1, "Pistol" ) );
+	CHECK( state().graph[1].state == pistolHold );
 	// Rapid fire: a shot during the recoil of the last one starts the recoil over (the pistol fires
 	// every 0.2 s, the clip is 0.63 s long), and the state lasts until the last shot's has played.
 	{
@@ -6318,7 +6400,7 @@ void TestMannequinCharacter()
 		command( CommandType::Event, 0, 0, 0 );
 		step( 1 );
 		std::printf( "    a second shot %.2f s into the first: the state is %.3f s old again\n", before, state().graph[1].stateTime );
-		CHECK( state().graph[1].state == stateOf( 1, "Shoot" ) && before > 0.15f );
+		CHECK( state().graph[1].state == pistolShoot && before > 0.15f );
 		CHECK( state().graph[1].stateTime <= 1.5f * dt && state().graph[1].time <= 1.5f * dt );
 		// It fades from where the last recoil was, not from the idle.
 		CHECK( state().graph[1].previous == state().graph[1].state && state().graph[1].previousTime > 0.15f );
@@ -6326,7 +6408,7 @@ void TestMannequinCharacter()
 		// for the moment of the crossfade.
 		auto restarted = [&]() {
 			bool any = false;
-			for ( const anim::ActiveClip& clip : anim::ActiveClips( state(), *graph ) )
+			for ( const anim::ActiveClip& clip : anim::ActiveClips( state(), *graph, packs.graphs ) )
 			{
 				any |= clip.channel == 1 && clip.restarted;
 			}
@@ -6337,28 +6419,28 @@ void TestMannequinCharacter()
 		CHECK( restarted() == false );
 		command( CommandType::Event, 0, 0, 0 );
 		step( 21 ); // 45 ticks after the first shot: one play of the clip would have ended by now
-		CHECK( state().graph[1].state == stateOf( 1, "Shoot" ) );
+		CHECK( state().graph[1].state == pistolShoot );
 		step( 15 );
-		CHECK( state().graph[1].state == stateOf( 1, "Pistol" ) );
+		CHECK( state().graph[1].state == pistolHold );
 	}
 
-	// The bat: the swing's marker emits melee.strike once, 0.4 s in.
-	command( CommandType::Stance, 1, 0, 0 );
+	// The bat: its pack's swing starts on melee.swing, and the clip's marker emits melee.strike once,
+	// 0.4 s in.
 	command( CommandType::Aim, 0, 0, 0 );
-	command( CommandType::Stance, 0, 1, 0 ); // full layer, melee
+	command( CommandType::SwapLayer, 1, ShippedPacks::Bat, 0 );
 	step( 30 );
-	CHECK( state().graph[1].state == stateOf( 1, "Ready" ) );
+	CHECK( state().graph[1].source == ShippedPacks::Bat && state().graph[1].state == packs.StateOf( ShippedPacks::Bat, "Ready" ) );
 	auto strikes = [&]() {
 		int n = 0;
 		for ( uint32_t i = 0; i < std::min( sim.Globals().modEventCount, kModEventHistory ); ++i )
 		{
-			n += sim.Globals().modEvents[i].type == 1 ? 1 : 0;
+			n += sim.Globals().modEvents[i].type == ShippedPacks::Strike ? 1 : 0;
 		}
 		return n;
 	};
-	command( CommandType::Stance, 0, 2, 0 ); // melee_swing
+	command( CommandType::Event, ShippedPacks::Swing, 0, 0 );
 	step( 1 );
-	CHECK( state().graph[1].state == stateOf( 1, "Swing" ) );
+	CHECK( state().graph[1].state == packs.StateOf( ShippedPacks::Bat, "Swing" ) );
 	step( 20 );
 	CHECK( strikes() == 0 );
 	step( 10 );
@@ -6373,10 +6455,10 @@ void TestMannequinCharacter()
 	CheckHeldItem( *procedural, placeholder );
 }
 
-// The viewer's own player ahead of the server (present/anim_lead.h), on the mannequin's machine.
-// A press 12 ticks before the server answers: the swing starts on the press, its clock runs on
-// evenly through the moment the server's stance arrives, and the legs are left alone. A predicted
-// event does the same for the pistol's recoil.
+// The viewer's own player ahead of the server (present/anim_lead.h), on the mannequin with the
+// shipped bat and pistol packs. A press 12 ticks before the server answers: the swing starts on the
+// press, its clock runs on evenly through the moment the server's event arrives, and the legs are
+// left alone. A predicted event does the same for the pistol's recoil.
 void TestAnimLead()
 {
 	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
@@ -6388,33 +6470,25 @@ void TestAnimLead()
 		return;
 	}
 	ModSchema schema;
-	schema.layers = { "full", "upper" };
-	schema.stances = { "melee", "melee_swing", "gun", "rifle" };
-	schema.events = { "item.use", "melee.strike", "rifle.fired" };
+	MannequinSchema( schema );
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
+	ShippedPacks packs;
 	CHECK( graph != nullptr );
-	if ( graph == nullptr )
+	LoadShippedPacks( schema, nullptr, packs );
+	if ( graph == nullptr || packs.loaded == false )
 	{
 		return;
 	}
-	auto stateOf = [&]( const char* name ) {
-		const auto& states = graph->layers[1].states;
-		for ( size_t i = 0; i < states.size(); ++i )
-		{
-			if ( states[i].name == name )
-			{
-				return int( i );
-			}
-		}
-		return -1;
-	};
-	// What the machine reads above its base layer: the stances and the shot, not the strike marker.
-	CHECK( graph->UpperLayersRead( AnimExpr::VarKind::Stance, 2 ) );
-	CHECK( graph->UpperLayersRead( AnimExpr::VarKind::Event, 0 ) );
-	CHECK( graph->UpperLayersRead( AnimExpr::VarKind::Event, 1 ) == false );
+	const int ready = packs.StateOf( ShippedPacks::Bat, "Ready" ), swing = packs.StateOf( ShippedPacks::Bat, "Swing" );
+	const int hold = packs.StateOf( ShippedPacks::Pistol, "Hold" ), shoot = packs.StateOf( ShippedPacks::Pistol, "Shoot" );
+	// What the packs read above the base layer: the swing and the shot, not the strike marker.
+	CHECK( UpperLayersRead( *graph, packs.graphs, AnimExpr::VarKind::Event, ShippedPacks::Swing ) );
+	CHECK( UpperLayersRead( *graph, packs.graphs, AnimExpr::VarKind::Event, ShippedPacks::Use ) );
+	CHECK( UpperLayersRead( *graph, packs.graphs, AnimExpr::VarKind::Event, ShippedPacks::Strike ) == false );
 
 	Simulation sim( TestConfig(), FlatMap() );
 	sim.SetAnimGraph( graph );
+	sim.SetAnimPacks( packs.graphs );
 	const float dt = sim.Config().TimeStep();
 	InputFrame f;
 	auto step = [&]( int n ) {
@@ -6442,14 +6516,14 @@ void TestAnimLead()
 	f.events.push_back( { PlayerEventType::Join, 0 } );
 	step( 30 );
 	lead.netId = sim.PlayerNetId( 0 );
-	command( CommandType::Stance, 0, 1 ); // full layer: melee, the bat is out
+	command( CommandType::SwapLayer, 1, ShippedPacks::Bat ); // the bat is out
 	step( 60 );
-	CHECK( state().graph[1].state == stateOf( "Ready" ) );
+	CHECK( state().graph[1].source == ShippedPacks::Bat && state().graph[1].state == ready );
 
 	// No lead: nothing changes.
 	{
 		AnimState now = state();
-		AnimState same = present::LeadAnimState( now, *graph, {}, lead );
+		AnimState same = present::LeadAnimState( now, *graph, packs.graphs, lead );
 		CHECK( same == now );
 	}
 
@@ -6462,7 +6536,7 @@ void TestAnimLead()
 	{
 		if ( t == latency )
 		{
-			command( CommandType::Stance, 0, 2 ); // the server's answer: melee_swing
+			command( CommandType::Event, ShippedPacks::Swing, 0 ); // the server's answer: melee.swing
 		}
 		if ( t > 0 )
 		{
@@ -6474,19 +6548,18 @@ void TestAnimLead()
 		{
 			present::AnimLead::Input input;
 			input.age = float( t ) * dt;
-			input.layer = 0;
-			input.stance = 2;
+			input.event = ShippedPacks::Swing;
 			lead.inputs.push_back( input );
 		}
 		AnimState shown = state();
-		AnimState led = present::LeadAnimState( shown, *graph, {}, lead );
+		AnimState led = present::LeadAnimState( shown, *graph, packs.graphs, lead );
 		// The legs are the server's.
 		CHECK( std::memcmp( &led.graph[0], &shown.graph[0], sizeof( AnimGraphLayerState ) ) == 0 );
 		if ( t < latency )
 		{
-			CHECK( shown.graph[1].state == stateOf( "Ready" ) ); // the server has not swung yet
+			CHECK( shown.graph[1].state == ready ); // the server has not swung yet
 		}
-		if ( led.graph[1].state == stateOf( "Swing" ) )
+		if ( led.graph[1].state == swing )
 		{
 			firstSwing = firstSwing < 0 ? t : firstSwing;
 			if ( previousTime >= 0.0f && led.graph[1].time < 1.4f )
@@ -6502,23 +6575,22 @@ void TestAnimLead()
 	CHECK( previousTime > 35.0f * dt ); // and it ran on from the press, not from the answer
 
 	// A predicted event: the shot's recoil state, before the server says the pistol fired.
-	command( CommandType::Stance, 0, 0 );
-	command( CommandType::Stance, 1, 3 ); // upper layer: pistol
+	command( CommandType::SwapLayer, 1, ShippedPacks::Pistol );
 	step( 60 );
-	CHECK( state().graph[1].state == stateOf( "Pistol" ) );
+	CHECK( state().graph[1].source == ShippedPacks::Pistol && state().graph[1].state == hold );
 	lead.inputs.clear();
 	present::AnimLead::Input shot;
 	shot.age = 4.0f * dt;
-	shot.event = 0; // item.use
+	shot.event = ShippedPacks::Use;
 	lead.inputs.push_back( shot );
 	lead.seconds = 4.0f * dt;
-	AnimState recoil = present::LeadAnimState( state(), *graph, {}, lead );
-	CHECK( recoil.graph[1].state == stateOf( "Shoot" ) );
+	AnimState recoil = present::LeadAnimState( state(), *graph, packs.graphs, lead );
+	CHECK( recoil.graph[1].state == shoot );
 	CHECK( std::fabs( recoil.graph[1].time - 4.0f * dt ) < 0.5f * dt ); // as old as the press
 	// An expired or refused prediction: no input, so the server's state as it is, only later.
 	lead.inputs.clear();
-	AnimState back = present::LeadAnimState( state(), *graph, {}, lead );
-	CHECK( back.graph[1].state == stateOf( "Pistol" ) );
+	AnimState back = present::LeadAnimState( state(), *graph, packs.graphs, lead );
+	CHECK( back.graph[1].state == hold );
 }
 
 // The character built from the paid animation pack, where it was built (it is never in the
@@ -6621,17 +6693,18 @@ void TestAnimCatchUp()
 		return;
 	}
 	ModSchema schema;
-	schema.layers = { "full", "upper" };
-	schema.stances = { "melee", "melee_swing", "gun", "rifle" };
-	schema.events = { "item.use", "melee.strike", "rifle.fired" };
+	MannequinSchema( schema );
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
+	ShippedPacks packs;
 	CHECK( graph != nullptr );
-	if ( graph == nullptr )
+	LoadShippedPacks( schema, nullptr, packs );
+	if ( graph == nullptr || packs.loaded == false )
 	{
 		return;
 	}
 	Simulation sim( TestConfig(), FlatMap() );
 	sim.SetAnimGraph( graph );
+	sim.SetAnimPacks( packs.graphs );
 	const float dt = sim.Config().TimeStep();
 	InputFrame f;
 	auto step = [&]() {
@@ -6640,11 +6713,11 @@ void TestAnimCatchUp()
 		f.events.clear();
 		f.commands.clear();
 	};
-	auto stance = [&]( int32_t value ) {
+	auto command = [&]( CommandType type, uint8_t index, int32_t value ) {
 		SimCommand c;
-		c.type = CommandType::Stance;
+		c.type = type;
 		c.target = SlotTarget( 0 );
-		c.index = 0;
+		c.index = index;
 		c.value = value;
 		f.commands.push_back( c );
 	};
@@ -6654,14 +6727,14 @@ void TestAnimCatchUp()
 	{
 		step();
 	}
-	stance( 1 ); // the bat is out
+	command( CommandType::SwapLayer, 1, ShippedPacks::Bat ); // the bat is out
 	for ( int i = 0; i < 60; ++i )
 	{
 		step();
 	}
 	const AnimState ready = state();
 	// The swing, tick by tick, as the server has it.
-	stance( 2 );
+	command( CommandType::Event, ShippedPacks::Swing, 0 );
 	std::vector<AnimState> swing;
 	for ( int i = 0; i < 40; ++i )
 	{
@@ -6676,7 +6749,7 @@ void TestAnimCatchUp()
 	const int late = 15;
 	for ( int i = 0; i < 20; ++i )
 	{
-		present::CatchUpAnimState( ready, *graph, {}, memory, dt, dt );
+		present::CatchUpAnimState( ready, *graph, packs.graphs, memory, dt, dt );
 	}
 	float previous = -1.0f;
 	int level = -1;
@@ -6684,7 +6757,7 @@ void TestAnimCatchUp()
 	float first = -1.0f;
 	for ( int i = late; i < 40; ++i )
 	{
-		AnimState drawn = present::CatchUpAnimState( swing[size_t( i )], *graph, {}, memory, dt, dt );
+		AnimState drawn = present::CatchUpAnimState( swing[size_t( i )], *graph, packs.graphs, memory, dt, dt );
 		CHECK( std::memcmp( &drawn.graph[0], &swing[size_t( i )].graph[0], sizeof( AnimGraphLayerState ) ) == 0 ); // the legs as they are
 		float t = drawn.graph[1].time;
 		first = first < 0.0f ? t : first;
@@ -6704,22 +6777,22 @@ void TestAnimCatchUp()
 	CHECK( memory.started == 1 );
 
 	// A correction that leaves it for a frame and comes back to the same play: on from where it was.
-	AnimState back = present::CatchUpAnimState( ready, *graph, {}, memory, dt, dt );
+	AnimState back = present::CatchUpAnimState( ready, *graph, packs.graphs, memory, dt, dt );
 	(void)back;
-	AnimState again = present::CatchUpAnimState( swing[39], *graph, {}, memory, dt, dt );
+	AnimState again = present::CatchUpAnimState( swing[39], *graph, packs.graphs, memory, dt, dt );
 	CHECK( std::fabs( again.graph[1].time - swing[39].graph[1].time ) < 1e-5f );
 	CHECK( memory.started == 1 );
 
 	// Seen on its first tick: as it is.
 	present::AnimCatchUp onTime;
-	present::CatchUpAnimState( ready, *graph, {}, onTime, dt, dt );
-	AnimState drawn = present::CatchUpAnimState( swing[0], *graph, {}, onTime, dt, dt );
+	present::CatchUpAnimState( ready, *graph, packs.graphs, onTime, dt, dt );
+	AnimState drawn = present::CatchUpAnimState( swing[0], *graph, packs.graphs, onTime, dt, dt );
 	CHECK( drawn == swing[0] );
 	CHECK( onTime.started == 0 );
 
 	// A player first drawn mid-swing (a join): as it is.
 	present::AnimCatchUp joined;
-	drawn = present::CatchUpAnimState( swing[20], *graph, {}, joined, dt, dt );
+	drawn = present::CatchUpAnimState( swing[20], *graph, packs.graphs, joined, dt, dt );
 	CHECK( drawn == swing[20] );
 	CHECK( joined.started == 0 );
 }
