@@ -22,6 +22,8 @@ signal cancel_requested
 signal resume_requested
 signal leave_requested
 signal quit_requested
+## A HUD's own key (a CbKey, a CbTextEntry) appeared: the help line says it too.
+signal screen_keys_changed
 
 const DEFAULT_PORT := 7777
 const RECENT_LIMIT := 6
@@ -474,7 +476,17 @@ func _set_action_key(action: String, key: String) -> void:
 
 ## Actions that appeared by themselves (a HUD's CbKey gives its own a key when its screen first
 ## runs) are listed too, and get the player's key if one was chosen for them.
+## The HUDs' own keys found so far (a CbKey's, a CbTextEntry's): [action], in the order they came.
+func screen_keys() -> Array:
+	var found := []
+	for action in _key_info:
+		if _key_info[action]["group"] == "Screens":
+			found.append(action)
+	return found
+
+
 func _adopt_keys() -> void:
+	var adopted := false
 	for name in InputMap.get_actions():
 		var action := String(name)
 		if not action.begins_with("cb_") or _key_info.has(action):
@@ -484,6 +496,9 @@ func _adopt_keys() -> void:
 		_key_info[action] = {"key": key, "label": action.substr(3).replace("_", " ").capitalize(), "group": "Screens"}
 		if _keys.has(action):
 			_set_action_key(action, String(_keys[action]))
+		adopted = true
+	if adopted:
+		screen_keys_changed.emit()
 
 
 func _process(delta: float) -> void:
