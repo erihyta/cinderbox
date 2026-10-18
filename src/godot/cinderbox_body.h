@@ -9,6 +9,9 @@
 //   density   kilograms per cubic metre, used when no mass is given (40: a 1 m crate is 40 kg)
 //   friction  0 is ice, 0.6 the usual, more grips harder
 //   bounce    0 does not bounce, 1 loses nothing
+//   rolling   rolling resistance (balls, capsules): a ball on the ground slows by about this times
+//             gravity. 0 rolls on until something stops it (a map's prop starts at 0.05)
+//   drag      how fast its speed and spin fade, per second, in the air too (a beach ball: 1)
 //
 // Not a node to place: the base of the ones that are.
 
@@ -55,6 +58,23 @@ public:
 		return m_bounce;
 	}
 
+	void set_rolling( double v )
+	{
+		m_rolling = v;
+	}
+	double get_rolling() const
+	{
+		return m_rolling;
+	}
+	void set_drag( double v )
+	{
+		m_drag = v;
+	}
+	double get_drag() const
+	{
+		return m_drag;
+	}
+
 	// What it weighs for a volume: its mass, or its density's worth.
 	double MassFor( double volume ) const
 	{
@@ -68,6 +88,8 @@ protected:
 	double m_density = 40.0;
 	double m_friction = 0.6;
 	double m_bounce = 0.0;
+	double m_rolling = 0.0;
+	double m_drag = 0.0;
 };
 
 } // namespace cb::gd

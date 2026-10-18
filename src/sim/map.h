@@ -27,7 +27,8 @@
 //              u32 hull
 //              (version 4: no hull; version 3: i32 center[3], i32 halfExtents[3], i32 pitch,
 //               i32 yaw: a box)
-//   u32 propCount,    per prop:   u8 kind, u8 pad[3], i32 position[3], i32 halfExtents[3]
+//   u32 propCount,    per prop:   u8 kind, u8 pad[3], i32 position[3], i32 halfExtents[3],
+//                                 i32 mass, density, friction, bounce, [rolling, drag (version 8 on)]
 //   u32 templateCount, per template: name, visual, u32 componentCount,
 //                        per component: u32 componentId, u32 fieldCount,
 //                          per field: u32 fieldId, i32 value[3]
@@ -56,9 +57,9 @@
 namespace cb
 {
 
-// 7: triangle meshes and height fields. 6: bodies of several shapes, a template's look, an
+// 8: a prop's rolling and drag. 7: triangle meshes and height fields. 6: bodies of several shapes, a template's look, an
 // instance's roll. 5: hulls. 4: a static's shape and roll. 3: a prop's body.
-inline constexpr uint32_t kMapVersion = 7;
+inline constexpr uint32_t kMapVersion = 8;
 // The oldest version still read (what it lacks takes its old meaning).
 inline constexpr uint32_t kMapOldestVersion = 3;
 

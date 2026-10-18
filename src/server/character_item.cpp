@@ -268,6 +268,14 @@ bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error
 				return false;
 			}
 		}
+		else if ( key == "rolling" || key == "drag" )
+		{
+			if ( !( words >> ( key == "rolling" ? shape.rolling : shape.drag ) ) )
+			{
+				error = key + " needs a number";
+				return false;
+			}
+		}
 		else if ( key == "friction" || key == "bounce" )
 		{
 			if ( !( words >> ( key == "friction" ? shape.friction : shape.restitution ) ) )
@@ -443,6 +451,11 @@ bool ParseItemShape( const std::string& text, ItemShape& out, std::string& error
 	if ( sane( shape.friction, 0.0f, 10.0f ) == false || sane( shape.restitution, 0.0f, 1.0f ) == false )
 	{
 		error = "friction must be between 0 and 10, bounce between 0 and 1";
+		return false;
+	}
+	if ( sane( shape.rolling, 0.0f, 1.0f ) == false || sane( shape.drag, 0.0f, 100.0f ) == false )
+	{
+		error = "rolling must be between 0 and 1, drag between 0 and 100";
 		return false;
 	}
 	out = shape;

@@ -130,6 +130,9 @@ struct ItemShape
 	// How it grips and how it bounces while it lies in the world, as for any body.
 	float friction = 0.6f;
 	float restitution = 0.0f;
+	// Rolling resistance and drag, as any body's (0: rolls on, nothing slows it in the air).
+	float rolling = 0.0f;
+	float drag = 0.0f;
 	// How the body is turned in the item's frame (x y z w): the item is carried as its scene's
 	// carrying grip says, and its body lies as the scene has it, whichever way that grip is turned.
 	float turn[4] = { 0.0f, 0.0f, 0.0f, 1.0f };

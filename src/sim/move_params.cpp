@@ -23,6 +23,7 @@ const MoveParamInfo kInfo[kMoveParams] = {
 	{ "move_frame", 0.0f, 1.0f, "0: the movement input moves along the ground. 1: along the camera, pitch included (flight)." },
 	{ "airborne", 0.0f, 1.0f, "1: the character is in the air whatever is under it: no ground friction, no jump, the in-air animation." },
 	{ "mass", 1.0f, 10000.0f, "What the character weighs, in kg: how much it gives and takes when it pushes props, and how forces move it." },
+	{ "max_slope", 0.0f, 90.0f, "The steepest ground that holds the character up, in degrees: on steeper it slides down, and cannot walk or jump up it. 90: any." },
 };
 
 const MoveParamInfo kNone = { "", 0.0f, 0.0f, "" };

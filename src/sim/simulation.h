@@ -39,6 +39,10 @@ struct ShapeMaterial
 	float density = 40.0f; // kg/m^3: a crate 0.8 m across is 20 kg
 	float friction = 0.6f;
 	float restitution = 0.0f;
+	// Rolling resistance (balls and capsules: a ball on the ground slows by about `rolling` times
+	// gravity), and drag: how fast its speed and spin fade in the air and everywhere, per second.
+	float rolling = 0.0f;
+	float drag = 0.0f;
 };
 
 struct Snapshot

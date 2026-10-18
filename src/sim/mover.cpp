@@ -181,8 +181,13 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	b3QueryFilter groundFilter = { CatPlayer, CatStatic | CatProp | CatRagdoll, 0, nullptr };
 	b3RayResult ray = b3World_CastRayClosest( body.world, rayOrigin, { 0.0f, -rayLength, 0.0f }, groundFilter );
 
+	// Ground steeper than max_slope does not hold the character up: it slides down it, under gravity,
+	// along the slope the mover's planes give it, and cannot walk or jump up it.
+	const float maxSlope = params[MoveParam::MaxSlope];
+	const bool tooSteep = ray.hit && maxSlope < 90.0f && ray.normal.y < detmath::CosSin( maxSlope * ( detmath::kPi / 180.0f ) ).cosine;
+
 	bool wasGrounded = c.grounded != 0;
-	if ( ray.hit == false || v.y > 0.0f )
+	if ( ray.hit == false || v.y > 0.0f || tooSteep )
 	{
 		c.grounded = 0;
 		c.pogoVelocity = 0.0f;

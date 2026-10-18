@@ -67,6 +67,13 @@ class CbProp : public CbBody
 	GDCLASS( CbProp, CbBody )
 
 public:
+	// A map's ball rolls to a stop: it starts with some rolling resistance (an item, whose rolling
+	// is its mod's to tune, starts at 0).
+	CbProp()
+	{
+		m_rolling = 0.05;
+	}
+
 	enum PropShape
 	{
 		SHAPE_BOX = 0,
