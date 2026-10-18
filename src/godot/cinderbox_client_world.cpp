@@ -361,6 +361,27 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 			tree->set_active( false );
 		}
 	}
+	// Its hitboxes are where they were authored; the server and the simulation read the baked
+	// ones (hitboxes.cfg). Gone from what is drawn, with the bone attachments they leave empty
+	// (on the mannequin, 11 of 15: the sockets' stay), each a node Godot would follow every frame.
+	if ( v.kind == present::VisualKind::Player )
+	{
+		TypedArray<Node> hitboxes = node->find_children( "*", "CbHitbox", true, false );
+		for ( int64_t i = 0; i < hitboxes.size(); ++i )
+		{
+			if ( Node* hitbox = Object::cast_to<Node>( hitboxes[i] ) )
+			{
+				Node* attachment = hitbox->get_parent();
+				attachment->remove_child( hitbox );
+				memdelete( hitbox );
+				if ( Object::cast_to<BoneAttachment3D>( attachment ) != nullptr && attachment->get_child_count() == 0 )
+				{
+					attachment->get_parent()->remove_child( attachment );
+					memdelete( attachment );
+				}
+			}
+		}
+	}
 	if ( v.kind == present::VisualKind::Item && v.holder == 0 )
 	{
 		LeanItem( node ); // (before it is in the tree: what is about a holder never registers)

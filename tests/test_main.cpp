@@ -6172,8 +6172,8 @@ void TestMannequinCharacter()
 	// The shipped mods' names, as a server would send them.
 	ModSchema schema;
 	schema.layers = { "full", "upper" };
-	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
-	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
+	schema.stances = { "melee", "melee_swing", "gun", "rifle" };
+	schema.events = { "item.use", "melee.strike", "rifle.fired" };
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
 	CHECK( graph != nullptr );
 	if ( graph == nullptr )
@@ -6266,7 +6266,7 @@ void TestMannequinCharacter()
 	step( 120 );
 	CHECK( state().graph[0].state == stateOf( 0, "Locomotion" ) );
 
-	// The pistol: the upper layer draws it, aims (the aim chain), and plays a shot on pistol.fired.
+	// The pistol: the upper layer draws it, aims (the aim chain), and plays a shot on item.use.
 	command( CommandType::Stance, 1, 3, 0 ); // upper layer, pistol
 	command( CommandType::Aim, 0, 0, 1 );
 	step( 30 );
@@ -6303,7 +6303,7 @@ void TestMannequinCharacter()
 					 asAnimated.x, asAnimated.y, asAnimated.z, asAimed.x, asAimed.y, asAimed.z, handsAnimated.x, handsAnimated.y, handsAnimated.z,
 					 handsAimed.x, handsAimed.y, handsAimed.z );
 	}
-	command( CommandType::Event, 0, 0, 0 ); // pistol.fired, by this player
+	command( CommandType::Event, 0, 0, 0 ); // item.use, by this player
 	step( 1 );
 	CHECK( state().graph[1].state == stateOf( 1, "Shoot" ) );
 	step( 60 );
@@ -6389,8 +6389,8 @@ void TestAnimLead()
 	}
 	ModSchema schema;
 	schema.layers = { "full", "upper" };
-	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
-	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
+	schema.stances = { "melee", "melee_swing", "gun", "rifle" };
+	schema.events = { "item.use", "melee.strike", "rifle.fired" };
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
 	CHECK( graph != nullptr );
 	if ( graph == nullptr )
@@ -6509,7 +6509,7 @@ void TestAnimLead()
 	lead.inputs.clear();
 	present::AnimLead::Input shot;
 	shot.age = 4.0f * dt;
-	shot.event = 0; // pistol.fired
+	shot.event = 0; // item.use
 	lead.inputs.push_back( shot );
 	lead.seconds = 4.0f * dt;
 	AnimState recoil = present::LeadAnimState( state(), *graph, {}, lead );
@@ -6523,7 +6523,7 @@ void TestAnimLead()
 
 // The character built from the paid animation pack, where it was built (it is never in the
 // repository, so CI and fresh clones skip this): strafing plays its sideways jog, hips straight.
-// The lead reads the packs too: an item's pack whose upper layer shoots on "item.use", an event the
+// The lead reads the packs too: an item's pack whose upper layer shoots on "test.shot", an event the
 // character's own machine never reads, is led on the press like the character's own layers are. A
 // pack's layer of the base's name is the base, and leads nothing.
 void TestLeadReadsPacks()
@@ -6538,8 +6538,8 @@ void TestLeadReadsPacks()
 	}
 	ModSchema schema;
 	schema.layers = { "full", "upper" };
-	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
-	schema.events = { "pistol.fired", "melee.strike", "rifle.fired", "item.use", "test.base" };
+	schema.stances = { "melee", "melee_swing", "gun", "rifle" };
+	schema.events = { "item.use", "melee.strike", "rifle.fired", "test.shot", "test.base" };
 	schema.animPacks.push_back( { "test", "test.hold",
 								  "cinderbox_graph\t1\n"
 								  "clip\tPistol_Idle\t1.0\t1\n"
@@ -6551,7 +6551,7 @@ void TestLeadReadsPacks()
 								  "layer\tUpperBody\n"
 								  "state\tHold\tclip\tPistol_Idle\t0\n"
 								  "state\tShoot\tclip\tPistol_Shoot\t1\n"
-								  "transition\tHold\tShoot\t1\t0.05\timmediate\t1\titem.use\n"
+								  "transition\tHold\tShoot\t1\t0.05\timmediate\t1\ttest.shot\n"
 								  "transition\tShoot\tHold\t1\t0.1\tat_end\t1\t\n"
 								  "start\tHold\n" } );
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
@@ -6562,7 +6562,7 @@ void TestLeadReadsPacks()
 		std::printf( "    %s %s\n", error.c_str(), warnings.c_str() );
 		return;
 	}
-	const int use = schema.FindEvent( "item.use" );
+	const int use = schema.FindEvent( "test.shot" );
 	CHECK( graph->UpperLayersRead( AnimExpr::VarKind::Event, use ) == false ); // the character's own does not
 	CHECK( UpperLayersRead( *graph, packs, AnimExpr::VarKind::Event, use ) );  // the pack's upper layer does
 	CHECK( UpperLayersRead( *graph, packs, AnimExpr::VarKind::Event, schema.FindEvent( "test.base" ) ) == false ); // its base is not led
@@ -6622,8 +6622,8 @@ void TestAnimCatchUp()
 	}
 	ModSchema schema;
 	schema.layers = { "full", "upper" };
-	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
-	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
+	schema.stances = { "melee", "melee_swing", "gun", "rifle" };
+	schema.events = { "item.use", "melee.strike", "rifle.fired" };
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
 	CHECK( graph != nullptr );
 	if ( graph == nullptr )
@@ -6933,8 +6933,8 @@ void TestOverlayGrip()
 		return;
 	}
 	ModSchema schema;
-	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
-	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
+	schema.stances = { "melee", "melee_swing", "gun", "rifle" };
+	schema.events = { "item.use", "melee.strike", "rifle.fired" };
 	// A layer the character does not have, for the left arm alone, always in.
 	schema.animPacks.push_back( { "test", "test.arm",
 								  "cinderbox_graph\t1\n"
@@ -7020,8 +7020,8 @@ void TestLayerSwap()
 		return;
 	}
 	ModSchema schema;
-	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
-	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
+	schema.stances = { "melee", "melee_swing", "gun", "rifle" };
+	schema.events = { "item.use", "melee.strike", "rifle.fired" };
 	// The pack's own graph: a crouch (standing in: the landing clip, held) on the FullBody layer.
 	schema.animPacks.push_back( { "test", "test.crouch",
 								  "cinderbox_graph\t1\n"
