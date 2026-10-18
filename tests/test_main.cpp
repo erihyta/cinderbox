@@ -7754,11 +7754,45 @@ void AppendShapesReference( std::vector<uint64_t>& hashes )
 	map.instances.push_back( { 1, { 0.2f, 8.0f, 0.3f }, 0.5f, 0.0f, 0.0f } );
 	QuantizeLayout( map );
 	Simulation sim( TestConfig(), map );
+	// Items of several parts (a hammer: a turned handle, a head, a wedge hull), dropped among them.
+	ItemShape hammer;
+	hammer.half = { 0.24f, 0.06f, 0.68f };
+	hammer.center = {};
+	hammer.mass = 2.0f;
+	ItemPart handle;
+	handle.kind = uint8_t( ShapeKind::Capsule );
+	handle.half = { 0.03f, 0.3f, 0.0f };
+	handle.center = { 0.0f, 0.0f, -0.3f };
+	handle.turn[0] = 0.70711f;
+	handle.turn[3] = 0.70711f;
+	ItemPart head;
+	head.kind = uint8_t( ShapeKind::Box );
+	head.half = { 0.12f, 0.05f, 0.05f };
+	head.center = { 0.0f, 0.0f, -0.62f };
+	ItemPart wedge;
+	wedge.kind = uint8_t( ShapeKind::Hull );
+	wedge.half = { 0.06f, 0.05f, 0.05f };
+	wedge.center = { 0.18f, 0.0f, -0.62f };
+	wedge.points = { { 0.0f, -0.05f, -0.05f }, { 0.0f, 0.05f, -0.05f }, { 0.0f, 0.0f, 0.05f }, { 0.06f, 0.0f, 0.0f } };
+	hammer.parts = { handle, head, wedge };
+	sim.SetItemShapes( { hammer } );
 	hashes.push_back( sim.ComputeHash() );
 	InputFrame frame;
 	for ( uint32_t tick = 0; tick < 360; ++tick )
 	{
 		frame.tick = sim.Tick();
+		frame.commands.clear();
+		if ( tick < 3 )
+		{
+			SimCommand c;
+			c.type = CommandType::SpawnItem;
+			c.target = 0;
+			c.index = 0;
+			c.mode = kNoSocket;
+			c.value = 1;
+			c.a = { -5.5f + 5.0f * float( tick ), 4.0f + float( tick ), 0.3f * float( tick ) };
+			frame.commands.push_back( c );
+		}
 		sim.Step( frame );
 		hashes.push_back( sim.ComputeHash() );
 	}

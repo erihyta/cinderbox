@@ -111,7 +111,10 @@ func _initialize() -> void:
 	made = _item(null, null)
 	made[1].scale = Vector3(2, 1, 1)
 	baked = made[0].bake()
-	_check("a scaled body is refused", baked.text == "" and String(baked.error).contains("unscaled"), baked.error)
+	# A scaled body bakes as a part (M186), the scale in its size; the item's old format is for one
+	# unscaled box or ball.
+	_check("a scaled body is a part, the scale in its size", baked.error == "" and String(baked.text).contains("part box ") and
+		String(baked.text).contains("shape ") == false, baked.text)
 	made[0].free()
 	# The other hand: free (no grip line), turned with its marker (1), at a marker nobody named.
 	made = _item(null, Vector3(0, 0, 0.3))

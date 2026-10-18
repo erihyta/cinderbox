@@ -10,6 +10,7 @@
 #include "cue_prediction.h"
 #include "cue_rules.h"
 #include "events.h"
+#include "cinderbox_map_nodes.h"
 #include "mod_schema.h"
 #include "pose.h"
 #include "types.h"
@@ -253,34 +254,60 @@ Transform3D InSceneFrame( const Node3D* node, const Node* root )
 	return t;
 }
 
-// The item's body: the first CollisionShape3D in its scene.
+// The item's body: the CollisionShape3D nodes in its scene (the first, when it is one box or ball).
+std::vector<const CollisionShape3D*> ShapesOf( const Node* item )
+{
+	std::vector<const CollisionShape3D*> out;
+	TypedArray<Node> found = const_cast<Node*>( item )->find_children( "*", "CollisionShape3D", true, false );
+	for ( int64_t i = 0; i < found.size(); ++i )
+	{
+		out.push_back( Object::cast_to<CollisionShape3D>( found[i] ) );
+	}
+	return out;
+}
+
 const CollisionShape3D* BodyOf( const Node* item )
 {
-	TypedArray<Node> found = const_cast<Node*>( item )->find_children( "*", "CollisionShape3D", true, false );
-	return found.size() > 0 ? Object::cast_to<CollisionShape3D>( found[0] ) : nullptr;
+	std::vector<const CollisionShape3D*> shapes = ShapesOf( item );
+	return shapes.empty() ? nullptr : shapes[0];
+}
+
+// Whether the item's body is the one box or ball the item format has always had (unscaled): then it
+// bakes as it always did, and an item's file (its hash) does not change.
+bool OneSimpleShape( const Node* item )
+{
+	std::vector<const CollisionShape3D*> shapes = ShapesOf( item );
+	if ( shapes.size() != 1 || shapes[0]->get_shape().is_null() || shapes[0]->is_disabled() )
+	{
+		return false;
+	}
+	Ref<Shape3D> shape = shapes[0]->get_shape();
+	if ( Object::cast_to<BoxShape3D>( shape.ptr() ) == nullptr && Object::cast_to<SphereShape3D>( shape.ptr() ) == nullptr )
+	{
+		return false;
+	}
+	Transform3D t = InSceneFrame( shapes[0], SceneRoot( shapes[0] ) );
+	return t.basis.get_scale().is_equal_approx( Vector3( 1, 1, 1 ) ) && t.basis.determinant() > 0.0f;
 }
 
 String ShapeProblem( const CollisionShape3D* body )
 {
 	if ( body == nullptr )
 	{
-		return "Give it a CollisionShape3D child with a BoxShape3D or a SphereShape3D: its body when it lies in the world.";
+		return "Give it a CollisionShape3D child (a box, a ball, a capsule, a cylinder or a convex polygon; several make one body): "
+			   "its body when it lies in the world.";
 	}
-	Ref<Shape3D> shape = body->get_shape();
-	if ( shape.is_null() )
+	// Each of its shapes as the bake would make it (turned and scaled any way: the bake writes them
+	// in the frame the item is carried in, the scale in their sizes).
+	for ( const CollisionShape3D* node : ShapesOf( SceneRoot( body ) ) )
 	{
-		return "Give its CollisionShape3D a BoxShape3D or a SphereShape3D.";
-	}
-	if ( Object::cast_to<BoxShape3D>( shape.ptr() ) == nullptr && Object::cast_to<SphereShape3D>( shape.ptr() ) == nullptr )
-	{
-		return "An item's body is a box or a sphere (" + shape->get_class() + " cannot be baked).";
-	}
-	// It may be turned any way (the bake writes its turn in the frame the item is carried in), but
-	// not scaled: the shape's size is the body's.
-	Transform3D t = InSceneFrame( body, SceneRoot( body ) );
-	if ( t.basis.get_scale().is_equal_approx( Vector3( 1, 1, 1 ) ) == false || t.basis.determinant() < 0.0f )
-	{
-		return "Keep its CollisionShape3D unscaled (set the shape's size instead).";
+		BakedShape baked;
+		Array said;
+		String why = BakeShape( node, InSceneFrame( node, SceneRoot( node ) ), node->get_name(), baked, said );
+		if ( why.is_empty() == false )
+		{
+			return String( node->get_name() ) + ": " + why + ".";
+		}
 	}
 	return String();
 }
@@ -952,23 +979,27 @@ Dictionary CbItem::bake() const
 	{
 		return fail( "name its kind in one word (melee.bat)" );
 	}
+	const bool simple = OneSimpleShape( this );
 	const CollisionShape3D* body = BodyOf( this );
-	String problem = ShapeProblem( body );
+	String problem = simple ? String() : ShapeProblem( body );
 	if ( problem.is_empty() == false )
 	{
 		return fail( problem );
 	}
 	Vector3 half;
 	String shapeName = "box";
-	if ( auto* box = Object::cast_to<BoxShape3D>( body->get_shape().ptr() ) )
+	if ( simple )
 	{
-		half = box->get_size() * 0.5f;
-	}
-	else
-	{
-		float radius = Object::cast_to<SphereShape3D>( body->get_shape().ptr() )->get_radius();
-		half = Vector3( radius, radius, radius );
-		shapeName = "sphere";
+		if ( auto* box = Object::cast_to<BoxShape3D>( body->get_shape().ptr() ) )
+		{
+			half = box->get_size() * 0.5f;
+		}
+		else
+		{
+			float radius = Object::cast_to<SphereShape3D>( body->get_shape().ptr() )->get_radius();
+			half = Vector3( radius, radius, radius );
+			shapeName = "sphere";
+		}
 	}
 	if ( m_carryGrip.is_empty() == false && Object::cast_to<Node3D>( get_node_or_null( m_carryGrip ) ) == nullptr )
 	{
@@ -982,16 +1013,82 @@ Dictionary CbItem::bake() const
 	}
 	// Everything is written in the frame the item is carried in.
 	const Transform3D toCarried = CarryFrameUnder( this ).affine_inverse();
-	const Transform3D inCarried = ( toCarried * InSceneFrame( body, this ) ).orthonormalized();
-	Vector3 center = inCarried.origin;
-	Quaternion turn = inCarried.basis.get_rotation_quaternion();
 	String text = "# Baked from the item's CbItem (its scene's root). Edit the scene and bake again.\n";
-	text += "shape " + shapeName + "\n";
-	text += vformat( "half %.4f %.4f %.4f\n", half.x, half.y, half.z );
-	text += vformat( "center %.4f %.4f %.4f\n", center.x, center.y, center.z );
+	Quaternion turn;
+	double volume = 0.0;
+	if ( simple )
+	{
+		const Transform3D inCarried = ( toCarried * InSceneFrame( body, this ) ).orthonormalized();
+		Vector3 center = inCarried.origin;
+		turn = inCarried.basis.get_rotation_quaternion();
+		text += "shape " + shapeName + "\n";
+		text += vformat( "half %.4f %.4f %.4f\n", half.x, half.y, half.z );
+		text += vformat( "center %.4f %.4f %.4f\n", center.x, center.y, center.z );
+		volume = shapeName == "sphere" ? 4.18879 * half.x * half.x * half.x : 8.0 * half.x * half.y * half.z;
+	}
+	else
+	{
+		// A body of several shapes (or of one a box or ball cannot say): each a part, where it is in
+		// the frame the item is carried in, its size with the scale above it.
+		Array warnings;
+		int parts = 0;
+		for ( const CollisionShape3D* node : ShapesOf( this ) )
+		{
+			BakedShape baked;
+			String why = BakeShape( node, toCarried * InSceneFrame( node, this ), node->get_name(), baked, warnings );
+			if ( why.is_empty() == false )
+			{
+				return fail( String( node->get_name() ) + ": " + why );
+			}
+			static const char* const kKinds[] = { "box", "sphere", "capsule", "hull" };
+			const Vector3 h = baked.half;
+			const Vector3 c = baked.at.origin;
+			const Quaternion q = baked.at.basis.get_rotation_quaternion();
+			String line = vformat( "part %s ", kKinds[int( baked.kind )] );
+			if ( baked.kind == ShapeKind::Hull )
+			{
+				if ( baked.points.size() < 4 || baked.points.size() > kItemHullPointLimit )
+				{
+					return fail( String( node->get_name() ) + vformat( ": a hull needs 4 to %d points", int( kItemHullPointLimit ) ) );
+				}
+				Vector3 bounds( 0.005f, 0.005f, 0.005f );
+				for ( const Vector3& point : baked.points )
+				{
+					bounds = bounds.max( point.abs() );
+				}
+				line += vformat( "%.4f %.4f %.4f ", bounds.x, bounds.y, bounds.z );
+				volume += 8.0 * bounds.x * bounds.y * bounds.z * 0.5; // (about half its bounds)
+			}
+			else
+			{
+				line += vformat( "%.4f %.4f %.4f ", h.x, h.y, h.z );
+				volume += baked.kind == ShapeKind::Box		? 8.0 * h.x * h.y * h.z
+						  : baked.kind == ShapeKind::Sphere ? 4.18879 * h.x * h.x * h.x
+															: 3.14159 * h.x * h.x * ( 2.0 * h.y + 4.18879 / 3.14159 * h.x );
+			}
+			line += vformat( "%.4f %.4f %.4f %.5f %.5f %.5f %.5f", c.x, c.y, c.z, q.x, q.y, q.z, q.w );
+			if ( baked.kind == ShapeKind::Hull )
+			{
+				line += vformat( " %d", int( baked.points.size() ) );
+				for ( const Vector3& point : baked.points )
+				{
+					line += vformat( " %.4f %.4f %.4f", point.x, point.y, point.z );
+				}
+			}
+			text += line + "\n";
+			parts += 1;
+		}
+		if ( parts == 0 )
+		{
+			return fail( ShapeProblem( nullptr ) );
+		}
+		if ( parts > int( kItemPartLimit ) )
+		{
+			return fail( vformat( "an item's body has at most %d shapes", int( kItemPartLimit ) ) );
+		}
+	}
 	// Its body, as any body says it: a weight (its own, or its density's worth), and how it grips
 	// and bounces when they are not the usual.
-	double volume = shapeName == "sphere" ? 4.18879 * half.x * half.x * half.x : 8.0 * half.x * half.y * half.z;
 	text += vformat( "mass %.3f\n", MassFor( volume ) );
 	if ( m_friction != 0.6 )
 	{

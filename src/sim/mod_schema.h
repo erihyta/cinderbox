@@ -104,6 +104,23 @@ inline constexpr uint8_t kItemUseHold = 2;	 // the same, and it is in use while 
 inline constexpr uint8_t kItemHandSelected = 0; // the slots' hand, while its slot is the selected one
 inline constexpr uint8_t kItemHandLeft = 1;		// the left hand while it is carried, when that hand is free
 
+// One shape of an item's body of several (its scene's CollisionShape3D nodes), in the frame the
+// item is carried in.
+struct ItemPart
+{
+	uint8_t kind = 0; // ShapeKind: 0 box, 1 sphere, 2 capsule, 3 hull
+	Float3 half;	  // as Shape's: a box's half size; a radius in x; a capsule's half segment in y
+	Float3 center;
+	float turn[4] = { 0.0f, 0.0f, 0.0f, 1.0f }; // x y z w
+	std::vector<Float3> points;					// a hull's, in the part's own frame
+
+	bool operator==( const ItemPart& ) const = default;
+};
+
+// Parts an item's body may have, and points one of its hulls may have.
+inline constexpr size_t kItemPartLimit = 16;
+inline constexpr size_t kItemHullPointLimit = 256;
+
 struct ItemShape
 {
 	uint8_t kind = 0; // ShapeKind: 0 box (half extents), 1 sphere (radius = half.x)
@@ -116,6 +133,10 @@ struct ItemShape
 	// How the body is turned in the item's frame (x y z w): the item is carried as its scene's
 	// carrying grip says, and its body lies as the scene has it, whichever way that grip is turned.
 	float turn[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	// A body of several shapes, each where it is in the item's frame; then the body sits at the
+	// item's frame (center 0, no turn) and `kind` / `half` are the box that holds them. Empty: the
+	// one box or sphere above.
+	std::vector<ItemPart> parts;
 	// Where the other hand holds it, in the item's frame (the hand that carries it is at the origin):
 	// 0 nowhere (a one-handed item); 1 the other hand's wrist goes to `gripPosition`; 2 and its hand
 	// takes `gripRotation` (x y z w), as a hand carrying an item placed there would be turned; 3 the

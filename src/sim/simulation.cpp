@@ -432,75 +432,97 @@ b3ShapeId Simulation::CreateHullShape( b3BodyId body, const std::vector<b3Vec3>&
 	return id;
 }
 
-b3ShapeId Simulation::CreateShapeSet( b3BodyId body, const std::vector<LevelBox>& set, uint64_t category, const ShapeMaterial& material,
-									   b3Vec3& bounds )
+b3ShapeId Simulation::CreatePiece( b3BodyId body, uint64_t category, const ShapeMaterial& material, ShapeKind kind, b3Vec3 h,
+									b3Transform at, const std::vector<b3Vec3>* points, b3Vec3& bounds )
 {
-	b3ShapeDef def = MakeShapeDef( category, material );
-	b3ShapeId first = {};
-	bounds = { 0.0f, 0.0f, 0.0f };
+	const b3ShapeDef def = MakeShapeDef( category, material );
 	auto reach = [&]( b3Vec3 point ) {
 		bounds = { std::max( bounds.x, std::fabs( point.x ) ), std::max( bounds.y, std::fabs( point.y ) ),
 				   std::max( bounds.z, std::fabs( point.z ) ) };
 	};
+	b3ShapeId id = {};
+	switch ( kind )
+	{
+		case ShapeKind::Box:
+		{
+			b3BoxHull hull = b3MakeTransformedBoxHull( h.x, h.y, h.z, at );
+			id = b3CreateHullShape( body, &def, &hull.base );
+			for ( int corner = 0; corner < 8; ++corner )
+			{
+				reach( b3TransformPoint( at, { corner & 1 ? h.x : -h.x, corner & 2 ? h.y : -h.y, corner & 4 ? h.z : -h.z } ) );
+			}
+			break;
+		}
+		case ShapeKind::Sphere:
+		{
+			b3Sphere sphere = { at.p, h.x };
+			id = b3CreateSphereShape( body, &def, &sphere );
+			reach( b3Add( at.p, { h.x, h.x, h.x } ) );
+			reach( b3Sub( at.p, { h.x, h.x, h.x } ) );
+			break;
+		}
+		case ShapeKind::Capsule:
+		{
+			b3Capsule capsule = { b3TransformPoint( at, { 0.0f, -h.y, 0.0f } ), b3TransformPoint( at, { 0.0f, h.y, 0.0f } ), h.x };
+			id = b3CreateCapsuleShape( body, &def, &capsule );
+			for ( b3Vec3 end : { capsule.center1, capsule.center2 } )
+			{
+				reach( b3Add( end, { h.x, h.x, h.x } ) );
+				reach( b3Sub( end, { h.x, h.x, h.x } ) );
+			}
+			break;
+		}
+		case ShapeKind::Hull:
+		{
+			if ( points == nullptr )
+			{
+				break;
+			}
+			b3HullData* hull = b3CreateHull( points->data(), int( points->size() ), B3_MAX_HULL_VERTICES );
+			if ( hull != nullptr )
+			{
+				id = b3CreateTransformedHullShape( body, &def, hull, at, { 1.0f, 1.0f, 1.0f } );
+				b3DestroyHull( hull );
+			}
+			for ( const b3Vec3& point : *points )
+			{
+				reach( b3TransformPoint( at, point ) );
+			}
+			break;
+		}
+	}
+	return id;
+}
+
+b3ShapeId Simulation::CreateShapeSet( b3BodyId body, const std::vector<LevelBox>& set, uint64_t category, const ShapeMaterial& material,
+									   b3Vec3& bounds )
+{
+	b3ShapeId first = {};
+	bounds = { 0.0f, 0.0f, 0.0f };
 	for ( const LevelBox& piece : set )
 	{
 		const b3Transform at = { piece.center, MakeRotation( piece.yaw, piece.pitch, piece.roll ) };
-		const b3Vec3 h = piece.halfExtents;
-		b3ShapeId id = {};
-		switch ( piece.kind )
-		{
-			case ShapeKind::Box:
-			{
-				b3BoxHull hull = b3MakeTransformedBoxHull( h.x, h.y, h.z, at );
-				id = b3CreateHullShape( body, &def, &hull.base );
-				for ( int corner = 0; corner < 8; ++corner )
-				{
-					reach( b3TransformPoint( at, { corner & 1 ? h.x : -h.x, corner & 2 ? h.y : -h.y, corner & 4 ? h.z : -h.z } ) );
-				}
-				break;
-			}
-			case ShapeKind::Sphere:
-			{
-				b3Sphere sphere = { piece.center, h.x };
-				id = b3CreateSphereShape( body, &def, &sphere );
-				reach( b3Add( piece.center, { h.x, h.x, h.x } ) );
-				reach( b3Sub( piece.center, { h.x, h.x, h.x } ) );
-				break;
-			}
-			case ShapeKind::Capsule:
-			{
-				b3Capsule capsule = { b3TransformPoint( at, { 0.0f, -h.y, 0.0f } ), b3TransformPoint( at, { 0.0f, h.y, 0.0f } ), h.x };
-				id = b3CreateCapsuleShape( body, &def, &capsule );
-				for ( b3Vec3 end : { capsule.center1, capsule.center2 } )
-				{
-					reach( b3Add( end, { h.x, h.x, h.x } ) );
-					reach( b3Sub( end, { h.x, h.x, h.x } ) );
-				}
-				break;
-			}
-			case ShapeKind::Hull:
-			{
-				if ( piece.hull >= m_map.hulls.size() )
-				{
-					break;
-				}
-				const std::vector<b3Vec3>& points = m_map.hulls[piece.hull];
-				b3HullData* hull = b3CreateHull( points.data(), int( points.size() ), B3_MAX_HULL_VERTICES );
-				if ( hull != nullptr )
-				{
-					id = b3CreateTransformedHullShape( body, &def, hull, at, { 1.0f, 1.0f, 1.0f } );
-					b3DestroyHull( hull );
-				}
-				for ( const b3Vec3& point : points )
-				{
-					reach( b3TransformPoint( at, point ) );
-				}
-				break;
-			}
-		}
+		const std::vector<b3Vec3>* points = piece.kind == ShapeKind::Hull && piece.hull < m_map.hulls.size() ? &m_map.hulls[piece.hull] : nullptr;
+		b3ShapeId id = CreatePiece( body, category, material, piece.kind, piece.halfExtents, at, points, bounds );
 		first = first.index1 == 0 ? id : first;
 	}
 	return first;
+}
+
+void Simulation::WeighBody( b3BodyId body, float mass )
+{
+	if ( mass <= 0.0f || b3Body_GetMass( body ) <= 0.0f )
+	{
+		return;
+	}
+	const float scale = mass / b3Body_GetMass( body );
+	b3ShapeId shapes[kMapSetPieceLimit];
+	const int count = b3Body_GetShapes( body, shapes, int( kMapSetPieceLimit ) );
+	for ( int i = 0; i < count; ++i )
+	{
+		b3Shape_SetDensity( shapes[i], b3Shape_GetDensity( shapes[i] ) * scale, false );
+	}
+	b3Body_ApplyMassFromShapes( body );
 }
 
 b3ShapeId Simulation::CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material )
@@ -678,17 +700,9 @@ flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 pos
 		shapeId = CreateShape( body, shape, isStatic ? CatStatic : CatProp, material );
 	}
 	// A weight of its own: the shapes' densities scaled so the body weighs it.
-	const float mass = TemplateFloat( t, kMaterial, Fnv32( "mass" ), 0.0f );
-	if ( mass > 0.0f && isStatic == false && b3Body_GetMass( body ) > 0.0f )
+	if ( isStatic == false )
 	{
-		const float scale = mass / b3Body_GetMass( body );
-		b3ShapeId shapes[kMapSetPieceLimit];
-		const int count = b3Body_GetShapes( body, shapes, int( kMapSetPieceLimit ) );
-		for ( int i = 0; i < count; ++i )
-		{
-			b3Shape_SetDensity( shapes[i], b3Shape_GetDensity( shapes[i] ) * scale, false );
-		}
-		b3Body_ApplyMassFromShapes( body );
+		WeighBody( body, TemplateFloat( t, kMaterial, Fnv32( "mass" ), 0.0f ) );
 	}
 
 	flecs::entity e = CreateEntity();
@@ -745,7 +759,34 @@ void Simulation::PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotatio
 	material.density = look.mass / std::max( volume, 1e-6f );
 	material.friction = look.friction;
 	material.restitution = look.restitution;
-	b3ShapeId shapeId = CreateShape( body, shape, CatProp, material );
+	b3ShapeId shapeId;
+	if ( look.parts.empty() == false )
+	{
+		// Its parts, each where it is in the item's frame (the body sits there: no centre, no turn),
+		// and its weight shared among them.
+		b3Vec3 bounds = { 0.0f, 0.0f, 0.0f };
+		shapeId = {};
+		for ( const ItemPart& part : look.parts )
+		{
+			std::vector<b3Vec3> points;
+			for ( const Float3& point : part.points )
+			{
+				points.push_back( { point.x, point.y, point.z } );
+			}
+			const b3Transform at = { { part.center.x, part.center.y, part.center.z },
+									 b3NormalizeQuat( { { part.turn[0], part.turn[1], part.turn[2] }, part.turn[3] } ) };
+			b3ShapeId id =
+				CreatePiece( body, CatProp, material, ShapeKind( part.kind ), { part.half.x, part.half.y, part.half.z }, at, &points, bounds );
+			shapeId = shapeId.index1 == 0 ? id : shapeId;
+		}
+		WeighBody( body, look.mass );
+		shape.kind = ShapeKind::Box;
+		shape.halfExtents = bounds;
+	}
+	else
+	{
+		shapeId = CreateShape( body, shape, CatProp, material );
+	}
 
 	held.holder = 0;
 	held.socket = 0;
