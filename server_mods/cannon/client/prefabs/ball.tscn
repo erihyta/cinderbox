@@ -1,9 +1,4 @@
-[gd_scene format=3]
-
-; A cannon ball: iron, 15 cm across, 8 kg; fast, so the simulation traces it (bullet) and it never
-; passes through a thin wall between two ticks. The cannon launches it (prefabs/cannon.tscn); what
-; it does when it hits is the cannon mod's. Not for a slot, and not for picking up (the mod says so).
-; Saving this scene bakes it into res://items/cannon.ball.cfg.
+[gd_scene format=3 uid="uid://btswoay0g72df"]
 
 [sub_resource type="SphereShape3D" id="Body"]
 radius = 0.075
@@ -20,16 +15,17 @@ height = 0.15
 radial_segments = 16
 rings = 8
 
-[node name="Ball" type="CbItem"]
+[node name="Ball" type="CbItem" unique_id=1031533485]
 kind = "cannon.ball"
 display_name = "Cannon ball"
 bullet = true
-mass = 8.0
-friction = 0.6
+mass = 40.0
 bounce = 0.15
 
-[node name="Body" type="CollisionShape3D" parent="."]
+[node name="Body" type="CollisionShape3D" parent="." unique_id=1680463105]
+transform = Transform3D(5, 0, 0, 0, 5, 0, 0, 0, 5, 0, 0, 0)
 shape = SubResource("Body")
 
-[node name="Mesh" type="MeshInstance3D" parent="."]
+[node name="Mesh" type="MeshInstance3D" parent="." unique_id=447429385]
+transform = Transform3D(5, 0, 0, 0, 5, 0, 0, 0, 5, 0, 0, 0)
 mesh = SubResource("Ball")
