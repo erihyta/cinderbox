@@ -3882,7 +3882,8 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 					continue;
 				}
 				float mine = 1.0f / self.mass;
-				float theirs = target.mass > 0.0f ? 1.0f / target.mass : 0.0f;
+				// (A rope that does not react moves the player alone: what it holds weighs as the world.)
+				float theirs = target.mass > 0.0f && effect.react ? 1.0f / target.mass : 0.0f;
 				float impulse = ( need - approach ) / ( mine + theirs );
 				PushEnd( self, c, b3MulSV( impulse * mine, toward ) );
 				if ( theirs > 0.0f )

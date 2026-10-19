@@ -212,7 +212,10 @@ const Info kLinkInfo[] = {
 	{ "Link", "How long the rope is.",
 	  "[b]length[/b]: metres. 0: the distance when the motion's probe takes hold.\n"
 	  "[b]reel[/b]: metres of rope taken in a second, for a rope that started at the probe's distance. It is never "
-	  "shorter than a metre." },
+	  "shorter than a metre.\n"
+	  "[b]react[/b]: on, the rope pulls both ends by what they weigh (a crate comes to the player). Off, it acts on "
+	  "the player alone: what it holds is never moved by it, as if it were part of the world; a player hooked to a "
+	  "rolling ball is dragged along by it." },
 };
 
 const Info kSetInfo = { "", "A mod's motions: the CbMotion nodes under it, baked to motions/<set_name>.cfg for the server.",
@@ -1028,6 +1031,7 @@ void CbLink::_bind_methods()
 	ADD_GROUP( "Link", "" );
 	CB_MOTION_PROP( CbLink, Variant::FLOAT, length, PROPERTY_HINT_RANGE, "0,100,0.1,or_greater,suffix:m" )
 	CB_MOTION_PROP( CbLink, Variant::FLOAT, reel, PROPERTY_HINT_RANGE, "0,50,0.1,or_greater,suffix:m/s" )
+	CB_MOTION_PROP( CbLink, Variant::BOOL, react, PROPERTY_HINT_NONE, "" )
 }
 
 void CbLink::_validate_property( PropertyInfo& property ) const
@@ -1051,7 +1055,8 @@ std::string CbLink::Bake( String& error ) const
 		Fail( error, "a rope goes to something else: what the probe found, or the entity a field names" );
 		return std::string();
 	}
-	return "link\t" + target + "\t" + Num( m_length ) + "\t" + Num( m_reel ) + "\n";
+	// (A rope that reacts, the default, bakes as it always did.)
+	return "link\t" + target + "\t" + Num( m_length ) + "\t" + Num( m_reel ) + ( m_react ? "" : "\t0" ) + "\n";
 }
 
 #undef CB_MOTION_PROP

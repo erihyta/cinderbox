@@ -416,15 +416,18 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		}
 		else if ( key == "link" )
 		{
-			// link <target> <length> <reel>
+			// link <target> <length> <reel> [react: 1, or 0 for the player alone]
 			MotionEffect e;
 			e.kind = MotionEffect::Kind::Link;
+			e.react = true;
 			if ( w.size() < 4 || ParseTarget( w[1], schema, m.name, e.target, warnings ) == false || e.target.kind == MotionTarget::Kind::Self ||
-				 Number( w[2], 0.0f, 500.0f, e.length ) == false || Number( w[3], 0.0f, 100.0f, e.reel ) == false )
+				 Number( w[2], 0.0f, 500.0f, e.length ) == false || Number( w[3], 0.0f, 100.0f, e.reel ) == false ||
+				 ( w.size() > 4 && w[4] != "0" && w[4] != "1" ) )
 			{
 				return fail( "link wants a target that is not the player itself (hit, @field), a length (m; 0: the distance when the probe "
-							 "takes hold) and a reel (m/s)" );
+							 "takes hold), a reel (m/s) and, if it acts on the player alone, 0" );
 			}
+			e.react = w.size() <= 4 || w[4] == "1";
 			m.effects.push_back( e );
 		}
 		else if ( key == "launch" || key == "launch_carried" )

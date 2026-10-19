@@ -397,6 +397,8 @@ public:
 
 	CB_MOTION_FIELD( double, length, m_length )
 	CB_MOTION_FIELD( double, reel, m_reel )
+	// Off: the rope acts on the player alone, never moving what it holds.
+	CB_MOTION_FIELD( bool, react, m_react )
 
 protected:
 	static void _bind_methods();
@@ -404,6 +406,7 @@ protected:
 private:
 	double m_length = 0.0;
 	double m_reel = 0.0;
+	bool m_react = true;
 };
 
 // The root: a mod's motions, baked to one file.

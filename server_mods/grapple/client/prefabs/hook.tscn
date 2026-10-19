@@ -35,18 +35,17 @@ mesh = SubResource("Mesh")
 
 [node name="Throw" type="CbProbe" parent="." unique_id=48109204]
 travel = 80.0
-holds = 1
 hold_seconds = 2.0
 hold_emits = "grapple.hooked"
 
 [node name="Rope" type="CbLink" parent="Throw" unique_id=4377214]
 reel = 4.0
+react = false
 
 [node name="Pull" type="CbForce" parent="Throw/Rope" unique_id=447720571]
 strength = 160.0
 speed = 15.0
 ramp_in = 0.1
-react = true
 frame = 5
 
 [node name="Hanging" type="CbMove" parent="Throw/Rope" unique_id=703807614]

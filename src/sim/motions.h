@@ -123,7 +123,9 @@ struct MotionEffect
 	// Velocity: the speed it brings the target to.
 	float speed = 0.0f;
 	float ramp = 0.0f;	// Force: seconds from nothing to full strength
-	bool react = false; // Force: the other end (the player, or what the probe found) is pushed back
+	// Force: the other end (the player, or what the probe found) is pushed back. Link: the rope pulls
+	// both ends by their weights; off, the player alone (what it holds is as if it were the world).
+	bool react = false;
 	// Link. The rope's length in metres; 0: the distance when the motion's probe takes hold.
 	float length = 0.0f;
 	float reel = 0.0f; // metres of rope taken in a second
