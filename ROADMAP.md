@@ -23,7 +23,7 @@ A proposal: the order is open to change. Each row is a milestone or two.
 | # | What | In one line |
 |---|---|---|
 | 1 | [Loose ends](#1-loose-ends) | **done (M190 to M192)**: rolling and drag on bodies, slopes too steep to walk, the arms belong to what is held, the camera against meshes and terrain, the two network tests that miss a tick |
-| 2 | [Destructible walls](#2-destructible-walls) | **done (M195)**: a wall breaks into pieces authored beforehand, by what is made to break it; shared by everyone |
+| 2 | [Destructible walls](#2-destructible-walls) | **done (M195 to M198)**: a wall breaks into pieces authored beforehand, by what is made to break it; shared by everyone |
 | 3 | [Vehicles](#3-vehicles) | bodies joined in a template, a seat, input routed to motors |
 | 4 | [Authoring, finished](#4-authoring-finished) | the editor's leftovers: names in expressions, a prebuilt SDK, an item used in its preview, publish checks |
 
@@ -57,7 +57,7 @@ is made to destroy (a charge, a rocket) breaks it, not any loose body that bumps
 | The swap | **done (M195)**: `ctx.Break`; the frag grenade breaks walls near it. The plan: a destruction event takes the wall out of the simulation and puts its pieces in, moving as the blast says; shared by everyone like a ragdoll |
 | Who may move the pieces | **done (M195)**: `CatDebris`. The plan: a collision filter, not mass: a player's capsule is kinematic, which the solver treats as infinitely heavy, so no mass keeps it from shoving debris. Debris gets a category the capsule's shape does not collide with, while the mover's ground and wall casts still include it: players stand on rubble and are stopped by it, but cannot push it; shots move nothing unless a mod pushes |
 | Settling | partly: pieces settle and sleep, and a mod can have them go after a while; turning static is not done. The plan: pieces are never mispredicted (only resimulated), they settle and sleep, and one asleep long enough can turn static, costing nothing |
-| Holes, not the whole wall | not done, proposed: a blast takes out only the chunks near it; the rest stay up, static, until a chunk is left holding nothing (a support check from the ground up) and falls |
+| Holes, not the whole wall | **done (M198)**: a blast takes out the pieces near it; the rest stand, static, while touching pieces join them to the held ones (`held_at`); the rest fall |
 | Glue | not done: with step 3's joints. The plan: blocks held by Box3D's weld joints with a breaking force, for things that should wobble before they break: the joints of step 3 |
 
 ### 3. Vehicles

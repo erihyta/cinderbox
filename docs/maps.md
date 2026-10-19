@@ -47,8 +47,16 @@ A `CbBreakable` is a wall (or anything static) and what it breaks into, authored
 | `CbProp` nodes | its pieces: each a body of its own (its shapes or its box, its meshes, its [body](#a-body) settings), at most 256 |
 
 - **Whole**, it is static: it costs nothing in rollback, and nothing that bumps into it breaks it.
-- **Broken** (a mod calls `ctx.Break`; the frag grenade's blast does): the wall goes and its pieces
-  come in where they stood, flying away from the blast. Everyone sees the same pieces.
+- **Broken** (a mod calls `ctx.Break`; the frag grenade's blast does): a **hole**. The pieces near
+  the blast fly away from it; the rest **stand** where they were, static (they cost nothing either),
+  until another blast takes them or nothing holds them up any more. Everyone sees the same pieces.
+- **What holds it up**: `held_at` on the `CbBreakable` (Bottom by default; Top, Sides: a wall
+  between pillars, hung from a ceiling) says which pieces hold it: those along that edge of its
+  shapes. A standing piece stays up while pieces that touch it, one to the next, join it to a held
+  one; after every break, any that nothing joins falls. Blow out the foot of an arch and the arch
+  comes down.
+- **Which pieces touch** is found by the bake: two pieces whose faces are within 3 cm of each other
+  (bricks laid with a gap, chunks the Fracture tool cut). An edge or a corner alone does not hold.
 - **Pieces are rubble**: players stand on them and are stopped by them, but never shove them (they
   are in a collision group the player's capsule ignores). Blasts, shots and other bodies move them.
 - The bake makes the wall a static template placed where it stands, and each piece a template of its
@@ -130,7 +138,7 @@ with a `visual` keeps that prefab; one with neither draws its shape's default pr
 Turns are stored as yaw, pitch and roll (Godot's YXZ order) on the 1/4096 rad grid. Maps baked
 before this (version 3: boxes without roll; version 4: no hulls; version 5: one shape per body;
 version 6: no triangle meshes or height fields; version 7: no rolling or drag; version 8: no
-breakables) still load. A placed entity turns with roll too.
+breakables; version 9: no holes, so any break brings a whole wall down) still load. A placed entity turns with roll too.
 
 ## A body
 
