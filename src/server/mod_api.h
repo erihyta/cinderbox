@@ -519,6 +519,12 @@ public:
 		return SlotOf( netId ) >= 0;
 	}
 	bool IsDynamic( uint32_t netId ) const;
+	// A wall that breaks (a map's CbBreakable, whole, or a piece of it a blast left standing): what
+	// Break takes.
+	bool IsBreakable( uint32_t netId ) const;
+	// How fast a body moves (its centre, m/s): a prop, an item lying or flying, a player. Zero for
+	// anything static or gone.
+	b3Vec3 EntityVelocity( uint32_t netId ) const;
 	// Everything loose within `radius` of `point`, nearest first: props, items lying in the world,
 	// ragdolls (what Push moves). Not players, and not the map. For a blast, a magnet, a wind.
 	std::vector<NearBody> BodiesNear( b3Vec3 point, float radius ) const;

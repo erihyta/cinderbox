@@ -615,6 +615,37 @@ int32_t Context::GetGlobal( FieldHandle field ) const
 	return field.Valid() ? m_sim.GlobalBoardValue( field.slot ) : 0;
 }
 
+bool Context::IsBreakable( uint32_t netId ) const
+{
+	flecs::entity e = m_sim.FindEntity( netId );
+	if ( e.is_valid() == false )
+	{
+		return false;
+	}
+	if ( e.has<WallPiece>() )
+	{
+		return true;
+	}
+	const TemplateRef* ref = e.try_get<TemplateRef>();
+	return ref != nullptr && ref->index < m_sim.Map().templates.size() && m_sim.Map().templates[ref->index].pieces.empty() == false;
+}
+
+b3Vec3 Context::EntityVelocity( uint32_t netId ) const
+{
+	flecs::entity e = m_sim.FindEntity( netId );
+	if ( e.is_valid() == false )
+	{
+		return { 0.0f, 0.0f, 0.0f };
+	}
+	const PhysicsBody* pb = e.try_get<PhysicsBody>();
+	if ( pb != nullptr && e.has<Character>() == false )
+	{
+		return b3Body_GetLinearVelocity( m_sim.BodyOf( *pb ) );
+	}
+	const Velocity* v = e.try_get<Velocity>();
+	return v != nullptr ? v->linear : b3Vec3{ 0.0f, 0.0f, 0.0f };
+}
+
 bool Context::IsDynamic( uint32_t netId ) const
 {
 	flecs::entity e = m_sim.FindEntity( netId );

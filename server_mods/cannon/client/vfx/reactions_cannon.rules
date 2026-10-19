@@ -1,0 +1,16 @@
+# How the cannon looks and sounds (reactions_cannon.tscn reads this sheet; docs/looks.md, Rules
+# sheets). The balls need nothing here: they are items, drawn from their own scene.
+
+# Fired
+on cannon.fired
+    subject $at
+    at point
+    sound res://assets/sfx/impact.wav volume 4 pitch 0.45 jitter 0.05 range 60
+    shake 0.12 time 0.2
+
+# A wall broken where a ball hit it
+on cannon.smash
+    subject $at
+    at point
+    sound res://assets/sfx/prop_destroy.wav volume 2 pitch 0.7 jitter 0.1 range 70
+    scene res://vfx/dust.tscn life 2.5

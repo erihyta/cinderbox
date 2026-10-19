@@ -1,0 +1,10 @@
+[gd_scene format=3]
+
+; How the cannon looks and sounds: its boom, and dust where a ball breaks a wall. The cannon and
+; its balls need nothing here: they are items, drawn from their own scenes.
+; The reactions: the rules sheet beside this scene (reactions_cannon.rules).
+
+[node name="CannonReactions" type="Node3D"]
+
+[node name="Rules" type="CbRules" parent="."]
+file = "res://vfx/reactions_cannon.rules"
