@@ -8,7 +8,8 @@
 // press the hook's key (Q; or select it and press the use button) to throw a line at what is under the crosshair; it flies there, a
 // projectile, takes hold of what it meets first, and pulls you in on a rope that is reeled in, so
 // you swing; press the key again to let go. At nothing, it flies out its range and is gone.
-// On a prop, the prop comes to you too.
+// It holds anything, but moves only its player: what it holds is never pulled (its rope and its
+// pull do not react). Pulling things in (a winch, a claw) would be a mod of its own.
 //
 // The key uses the item where it is: nothing comes into the hand, and what was there stays. The
 // engine records "grapple.hook.used" on that tick in every simulation, and the motion starts (and

@@ -37,7 +37,8 @@
 // When it starts:
 //   probe       a line along the look at what is under the crosshair, up to a range. It flies there
 //               at a speed and takes hold. The motion happens only if the line finds something, and
-//               is on from the moment it holds until what it holds on to is gone
+//               is on from the moment it holds until what it holds on to is gone. It may hold only
+//               some things (holds: level, bodies, players); anything else stops it
 //   impulse     a change of a target's velocity along a frame, added or replacing a part of it
 //   change      board fields of the player: dash.charges -= 1 (in a while motion, += and -= are per
 //               second and = is set when it starts)
@@ -122,7 +123,9 @@ struct MotionEffect
 	// Velocity: the speed it brings the target to.
 	float speed = 0.0f;
 	float ramp = 0.0f;	// Force: seconds from nothing to full strength
-	bool react = false; // Force: the other end (the player, or what the probe found) is pushed back
+	// Force: the other end (the player, or what the probe found) is pushed back. Link: the rope pulls
+	// both ends by their weights; off, the player alone (what it holds is as if it were the world).
+	bool react = false;
 	// Link. The rope's length in metres; 0: the distance when the motion's probe takes hold.
 	float length = 0.0f;
 	float reel = 0.0f; // metres of rope taken in a second
@@ -139,6 +142,13 @@ struct MotionEffect
 	float ahead = 0.7f;
 	float seconds = 0.0f;
 };
+
+// What a probe may hold on to: the level (anything static: map pieces, a static entity, a wall that
+// breaks), bodies (props, items lying about, rubble, ragdolls), players.
+inline constexpr uint8_t kProbeHoldsLevel = 1;
+inline constexpr uint8_t kProbeHoldsBodies = 2;
+inline constexpr uint8_t kProbeHoldsPlayers = 4;
+inline constexpr uint8_t kProbeHoldsAll = 7;
 
 // A motion slot's untilTick for one that lasts until something ends it.
 inline constexpr uint32_t kForever = 0xFFFFFFFFu;
@@ -189,6 +199,8 @@ struct Motion
 	float probeRange = 0.0f;  // metres the line reaches
 	float probeTravel = 0.0f; // m/s it flies at, traced tick by tick (a projectile); 0: it holds at once
 	int holdEvent = -1;		  // schema event said where and when the probe takes hold; -1: none
+	// What it may hold on to (kProbeHolds bits). Something else in its way stops it: it holds nothing.
+	uint8_t probeHolds = kProbeHoldsAll;
 	std::vector<MotionEffect> effects; // in the order of the nodes
 
 	// On from when it starts until something ends it (its condition, what its probe holds going away).

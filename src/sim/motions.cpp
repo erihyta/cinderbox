@@ -350,6 +350,24 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			m.probe = true;
 		}
+		else if ( key == "holds" )
+		{
+			// holds <level|bodies|players>...
+			m.probeHolds = 0;
+			for ( size_t k = 1; k < w.size(); ++k )
+			{
+				uint8_t bit = w[k] == "level" ? kProbeHoldsLevel : w[k] == "bodies" ? kProbeHoldsBodies : w[k] == "players" ? kProbeHoldsPlayers : 0;
+				if ( bit == 0 )
+				{
+					return fail( "holds wants what the probe may hold on to: level, bodies, players" );
+				}
+				m.probeHolds |= bit;
+			}
+			if ( m.probeHolds == 0 )
+			{
+				return fail( "holds wants what the probe may hold on to: level, bodies, players" );
+			}
+		}
 		else if ( key == "impulse" )
 		{
 			// impulse <target> <speed> <frame> <replace> [x y z]
@@ -398,15 +416,18 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		}
 		else if ( key == "link" )
 		{
-			// link <target> <length> <reel>
+			// link <target> <length> <reel> [react: 1, or 0 for the player alone]
 			MotionEffect e;
 			e.kind = MotionEffect::Kind::Link;
+			e.react = true;
 			if ( w.size() < 4 || ParseTarget( w[1], schema, m.name, e.target, warnings ) == false || e.target.kind == MotionTarget::Kind::Self ||
-				 Number( w[2], 0.0f, 500.0f, e.length ) == false || Number( w[3], 0.0f, 100.0f, e.reel ) == false )
+				 Number( w[2], 0.0f, 500.0f, e.length ) == false || Number( w[3], 0.0f, 100.0f, e.reel ) == false ||
+				 ( w.size() > 4 && w[4] != "0" && w[4] != "1" ) )
 			{
 				return fail( "link wants a target that is not the player itself (hit, @field), a length (m; 0: the distance when the probe "
-							 "takes hold) and a reel (m/s)" );
+							 "takes hold), a reel (m/s) and, if it acts on the player alone, 0" );
 			}
+			e.react = w.size() <= 4 || w[4] == "1";
 			m.effects.push_back( e );
 		}
 		else if ( key == "launch" || key == "launch_carried" )

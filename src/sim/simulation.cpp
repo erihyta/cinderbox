@@ -3436,7 +3436,7 @@ bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerIn
 		hit = nearer;
 	}
 	float distance = b3Distance( hit.point, from );
-	if ( distance < MinHoldLength( m ) )
+	if ( distance < MinHoldLength( m ) || ( HoldKind( hit ) & m.probeHolds ) == 0 )
 	{
 		return false;
 	}
@@ -3467,6 +3467,25 @@ void Simulation::SayHold( flecs::entity e, const Motion& m, uint32_t anchor, b3V
 		record.point = point;
 		RecordModEvent( record );
 	}
+}
+
+uint8_t Simulation::HoldKind( const RayHit& hit ) const
+{
+	flecs::entity a = FindEntity( hit.netId );
+	if ( a.is_valid() && a.has<Character>() )
+	{
+		return kProbeHoldsPlayers;
+	}
+	if ( a.is_valid() && a.has<RagdollBodies>() )
+	{
+		return kProbeHoldsBodies;
+	}
+	if ( a.is_valid() && a.has<PhysicsBody>() && a.has<StaticGeometry>() == false &&
+		 b3Body_GetType( BodyOf( a.get<PhysicsBody>() ) ) == b3_dynamicBody )
+	{
+		return kProbeHoldsBodies;
+	}
+	return kProbeHoldsLevel;
 }
 
 void Simulation::HoldOn( MotionHold& hold, const RayHit& hit ) const
@@ -3510,6 +3529,17 @@ void Simulation::FlyHold( flecs::entity e, MotionState& motion )
 	RayHit hit;
 	if ( CastRay( from, b3Sub( to, from ), e.get<NetId>().value, hit ) )
 	{
+		if ( ( HoldKind( hit ) & m_motions->list[hold.motion].probeHolds ) == 0 )
+		{
+			// Something it may not hold on to is in its way: it stops there, holding nothing, and is
+			// gone (its line ends there, now).
+			hold.point = hit.point;
+			hold.holdTick = now;
+			hold.flying = 0;
+			hold.missed = 1;
+			e.set<MotionHold>( hold );
+			return;
+		}
 		HoldOn( hold, hit );
 		hold.flying = 0;
 		// It takes effect from now, for as long as it would have from where its range ends.
@@ -3852,7 +3882,8 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 					continue;
 				}
 				float mine = 1.0f / self.mass;
-				float theirs = target.mass > 0.0f ? 1.0f / target.mass : 0.0f;
+				// (A rope that does not react moves the player alone: what it holds weighs as the world.)
+				float theirs = target.mass > 0.0f && effect.react ? 1.0f / target.mass : 0.0f;
 				float impulse = ( need - approach ) / ( mine + theirs );
 				PushEnd( self, c, b3MulSV( impulse * mine, toward ) );
 				if ( theirs > 0.0f )

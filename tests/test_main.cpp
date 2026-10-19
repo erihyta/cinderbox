@@ -3178,6 +3178,179 @@ void TestMotionsWhile()
 	CHECK( EvaluateAnimExpr( held, none, 0.0f ) == 1.0f );
 }
 
+// What a probe may hold on to (holds): a hook that holds only the level is stopped by a crate in its
+// way and holds nothing; one that holds at once is not thrown at a crate at all; both hold the wall.
+// The crate is not moved. A holds line that names nothing does not compile.
+void TestProbeHolds()
+{
+	ModSchema schema;
+	schema.actions.push_back( { "hook", 0, "X" } );
+	schema.actions.push_back( { "grab", 1, "Z" } );
+	const std::string text = "cinderbox_motions\t2\n"
+							 "motion\tHook\nwhen\tpress\thook\nprobe\t40\t30\nholds\tlevel\nuntil\tnot held.hook\n"
+							 "force\tself\tto\tforce\t1920\t0\t0\t1\nlink\thit\t0\t3\n"
+							 "motion\tGrab\nwhen\tpress\tgrab\nprobe\t40\t0\nholds\tlevel\nlink\thit\t0\t0\nuntil\tnot held.grab\n";
+	schema.motionSets.push_back( { "hooks", "hooks.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 && motions->list[0].probeHolds == kProbeHoldsLevel &&
+		   motions->list[1].probeHolds == kProbeHoldsLevel );
+	if ( motions == nullptr || motions->list.size() != 2 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	{
+		ModSchema bad = schema;
+		bad.motionSets[0].text = "cinderbox_motions\t2\nmotion\tHook\nwhen\tpress\thook\nprobe\t40\t30\nholds\tclouds\n";
+		std::vector<Motion> out;
+		std::string error, warned;
+		CHECK( CompileMotionSet( "hooks", bad.motionSets[0].text, bad, out, error, warned ) == false && error.find( "holds" ) != std::string::npos );
+	}
+
+	Simulation sim( TestConfig() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	const uint16_t hook = 1, grab = 2;
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	auto holdOf = [&]() -> const MotionHold* { return sim.FindEntity( p0 ).try_get<MotionHold>(); };
+	auto position = [&] { return sim.EntityTransform( p0 )->position; };
+
+	// A crate on the floor 6 m ahead, between the player and the wall.
+	uint32_t crate = sim.Globals().nextNetId;
+	b3Vec3 here = position();
+	{
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.value = -1;
+		c.a = { here.x, here.y + 0.3f, here.z + 6.0f };
+		c.c = { 0.4f, 0.4f, 0.4f };
+		f.commands.push_back( c );
+	}
+	step( 90 );
+	b3Vec3 crateAt = sim.EntityTransform( crate )->position;
+	b3Vec3 eye = b3Add( position(), b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+	f.inputs[0].cameraPitch = int16_t( std::atan2( crateAt.y - eye.y, crateAt.z - eye.z ) * 65536.0f / 6.2831853f );
+
+	// The hook flies, meets the crate and stops there, holding nothing.
+	f.inputs[0].actions = hook;
+	step( 30 );
+	const MotionHold* hold = holdOf();
+	CHECK( hold != nullptr && hold->on == 0 && hold->missed == 1 && hold->anchor == 0 && b3Distance( hold->point, crateAt ) < 0.6f );
+	f.inputs[0].actions = 0;
+	step( 15 );
+	// The grab holds at once or not at all: at the crate, not at all.
+	f.inputs[0].actions = grab;
+	step( 2 );
+	hold = holdOf();
+	CHECK( hold != nullptr && hold->on == 0 );
+	f.inputs[0].actions = 0;
+	step( 30 );
+	float moved = b3Distance( sim.EntityTransform( crate )->position, crateAt );
+	std::printf( "    a hook that holds the level only, at a crate: held nothing; the crate moved %.3f m\n", moved );
+	CHECK( moved < 0.01f && b3Distance( position(), here ) < 0.05f );
+
+	// Over the crate, at the wall: it holds there and pulls.
+	f.inputs[0].cameraPitch = 500;
+	f.inputs[0].actions = hook;
+	step( 120 );
+	hold = holdOf();
+	CHECK( hold != nullptr && hold->on == 1 && hold->anchor == 0 && hold->missed == 0 );
+	std::printf( "    at the wall: it holds; the player came %.2f m\n", b3Distance( position(), here ) );
+	CHECK( b3Distance( position(), here ) > 1.0f );
+}
+
+// A rope and a pull that do not react (link ... 0, force ... react 0): the hook holds a crate, and
+// only the player moves, toward it; the crate stays until the player reaches it. A link's react is
+// 0 or 1.
+void TestRopeAlone()
+{
+	ModSchema schema;
+	schema.actions.push_back( { "hook", 0, "X" } );
+	const std::string text = "cinderbox_motions\t2\n"
+							 "motion\tHook\nwhen\tpress\thook\nprobe\t40\t30\nuntil\tnot held.hook\n"
+							 "force\tself\tto\taccel\t40\t12\t0\t0\nlink\thit\t0\t3\t0\nparam\tairborne\t1\nparam\tgravity\t0\n";
+	schema.motionSets.push_back( { "hooks", "hooks.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 1 && motions->list[0].effects.size() == 2 &&
+		   motions->list[0].effects[0].react == false && motions->list[0].effects[1].react == false );
+	if ( motions == nullptr || motions->list.size() != 1 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	{
+		std::vector<Motion> out;
+		std::string error, warned;
+		CHECK( CompileMotionSet( "hooks", "cinderbox_motions\t2\nmotion\tA\nwhen\tpress\thook\nprobe\t40\t0\nlink\thit\t0\t0\t2\n", schema, out, error, warned ) ==
+			   false );
+		out.clear();
+		CHECK( CompileMotionSet( "hooks", "cinderbox_motions\t2\nmotion\tA\nwhen\tpress\thook\nprobe\t40\t0\nlink\thit\t0\t0\n", schema, out, error, warned ) &&
+			   out.size() == 1 && out[0].effects[0].react );
+	}
+
+	Simulation sim( TestConfig() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	uint32_t p0 = sim.PlayerNetId( 0 );
+	auto position = [&] { return sim.EntityTransform( p0 )->position; };
+	uint32_t crate = sim.Globals().nextNetId;
+	b3Vec3 here = position();
+	{
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.value = -1;
+		c.a = { here.x, here.y + 0.3f, here.z + 8.0f };
+		c.c = { 0.4f, 0.4f, 0.4f };
+		f.commands.push_back( c );
+	}
+	step( 90 );
+	b3Vec3 crateAt = sim.EntityTransform( crate )->position;
+	b3Vec3 eye = b3Add( position(), b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+	f.inputs[0].cameraPitch = int16_t( std::atan2( crateAt.y - eye.y, crateAt.z - eye.z ) * 65536.0f / 6.2831853f );
+	f.inputs[0].actions = 1;
+	float drift = 0.0f;
+	float nearest = 1e9f;
+	bool held = false;
+	for ( int i = 0; i < 120; ++i )
+	{
+		step( 1 );
+		const MotionHold* hold = sim.FindEntity( p0 ).try_get<MotionHold>();
+		held = held || ( hold != nullptr && hold->on != 0 && hold->flying == 0 && hold->anchor == crate );
+		float apart = b3Distance( position(), sim.EntityTransform( crate )->position );
+		nearest = std::min( nearest, apart );
+		if ( apart > 1.5f )
+		{
+			drift = std::max( drift, b3Distance( sim.EntityTransform( crate )->position, crateAt ) );
+		}
+	}
+	std::printf( "    a rope that does not react, on a crate: the player came to %.2f m of it; the crate moved %.3f m before\n", nearest, drift );
+	CHECK( held && nearest < 2.0f && drift < 0.01f );
+}
+
 // Probes, forces and links: a motion throws a line at what the player looks at; it flies, a
 // projectile traced tick by tick, and takes hold of what it meets first; a force pulls the player
 // toward that (which is pulled back), and a link is a rope that keeps the two within its length (a
@@ -9064,6 +9237,8 @@ int main( int argc, char** argv )
 		{ "item_motions", TestItemMotions },
 		{ "motion_conditions", TestMotionConditions },
 		{ "links", TestLinks },
+		{ "probe_holds", TestProbeHolds },
+		{ "rope_alone", TestRopeAlone },
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },

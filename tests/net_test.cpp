@@ -4433,7 +4433,9 @@ void TestGrapple()
 		CHECK( firstAfter != predicted.end() && firstAfter->first <= throwAt + 4 && firstAfter->second.tethered );
 	}
 
-	// Two players, one ball: both hooks in it, and everyone agrees where it went.
+	// Two players, one ball: both hooks hold it, but a hook pulls only its own player (its rope and
+	// its pull do not react): the players fly to the ball, which does not move until they reach it;
+	// and everyone agrees.
 	{
 		Harness h( 47873 );
 		ActionBits grapple = UseKey( h.server.Schema(), "grapple.hook" );
@@ -4458,6 +4460,10 @@ void TestGrapple()
 		uint32_t ball = 0;
 		b3Vec3 ballAt = {};
 		int bothOn = 0;
+		b3Vec3 ballHeld = {};
+		float drift = 0.0f;	  // how far the ball went while both held it and neither had reached it
+		float nearest = 1e9f; // the nearest a player came to it
+		float startFar = 0.0f;
 		h.RunUntil( 9.0, [&]( double ) {
 			if ( ball == 0 )
 			{
@@ -4488,20 +4494,35 @@ void TestGrapple()
 			if ( ball != 0 && server.Tick() > 300 && server.Tick() < 420 )
 			{
 				int on = 0;
+				float apart = 1e9f;
 				for ( int i = 0; i < 2; ++i )
 				{
 					flecs::entity e = server.FindEntity( server.PlayerNetId( h.bots[size_t( i )].client->Slot() ) );
 					const MotionHold* tether = e.is_valid() ? e.try_get<MotionHold>() : nullptr;
-					on += tether != nullptr && tether->on != 0 && tether->anchor == ball ? 1 : 0;
+					on += tether != nullptr && tether->on != 0 && tether->flying == 0 && tether->missed == 0 && tether->anchor == ball ? 1 : 0;
+					if ( e.is_valid() )
+					{
+						apart = std::min( apart, b3Distance( e.get<Transform>().position, server.EntityTransform( ball )->position ) );
+					}
+				}
+				if ( on == 2 && bothOn < 2 )
+				{
+					ballHeld = server.EntityTransform( ball )->position;
+					startFar = apart;
 				}
 				bothOn = std::max( bothOn, on );
+				nearest = std::min( nearest, apart );
+				// (Until a player reaches it: then it is bumped, as anything a player runs into is.)
+				if ( on == 2 && apart > 1.6f )
+				{
+					drift = std::max( drift, b3Distance( server.EntityTransform( ball )->position, ballHeld ) );
+				}
 			}
 		} );
 		h.Report();
-		CHECK( ball != 0 && bothOn == 2 );
-		float moved = ball != 0 && server.EntityTransform( ball ) != nullptr ? b3Distance( server.EntityTransform( ball )->position, ballAt ) : 0.0f;
-		std::printf( "    two hooks in one ball: it went %.2f m\n", moved );
-		CHECK( moved > 1.0f );
+		std::printf( "    two hooks in one ball: the players came from %.2f m to %.2f m; the ball moved %.3f m before they reached it\n", startFar,
+					 nearest, drift );
+		CHECK( ball != 0 && bothOn == 2 && drift < 0.01f && nearest < startFar - 2.0f );
 		for ( Bot& b : h.bots )
 		{
 			int compared = 0;

@@ -68,7 +68,7 @@ CbMotionPart            what they share: each bakes to lines, and warns in the t
 | A jetpack, a wind, a conveyor, a brake | a `CbForce` (the motion a While, or with a `duration`) |
 | A grappling hook | a `CbProbe`, a `CbForce` toward what it found, a `CbLink` |
 | A grenade, a thrown ball, a rocket | a `CbLaunch` ([Things that fly](#things-that-fly-the-grenades)) |
-| A tractor beam on a prop | a `CbProbe`, a `CbForce` whose target is what it found |
+| A tractor beam on a prop, a winch | a `CbProbe` (holds: bodies), a `CbForce` whose target is what it found |
 | Two players bound together | a `CbLink` whose target is a field the server mod writes the partner into |
 | Flight, a glide, a slide | nothing: `parameters` on the motion are enough |
 
@@ -81,8 +81,8 @@ does what the nodes under it say, if its **When used** rules allow:
 ```
 Hook          CbItem     use: once a press   slot 4   use_key Q   use_emits grapple.fired   (prefabs/hook.tscn)
 ├── Throw     CbProbe    a line along the look, 80 m/s; let go: using the hook again, a jump; holds 2 s at most
-│   └── Rope  CbLink     to what the line found, reeled in at 4 m/s
-│       ├── Pull      CbForce   on the player, toward it: 160 m/s² up to 15 m/s, ramped in, reacting
+│   └── Rope  CbLink     to what the line found, reeled in at 4 m/s; moves the player alone
+│       ├── Pull      CbForce   on the player, toward it: 160 m/s² up to 15 m/s, ramped in; moves the player alone
 │       └── Hanging   CbMove    while it holds: gravity 0, air control 0.6, airborne
 └── Throwing  CbMotion   a motion of its own: on a use with no line out, 0.45 s, no effects (the throw's pose)
 
@@ -254,8 +254,8 @@ Hook          CbItem     kind "grapple.hook", use: once a press, use_key Q, slot
 │                        use_emits grapple.fired
 │                        animation_pack grapple.hook_arm: the left arm's throw, while motion.grapple.hook.Throwing
 ├── Throw     CbProbe    range 40 m, flies at 80 m/s; release: using it again, a jump; holds 2 s at most
-│   └── Rope  CbLink     to what the probe found: its length when it takes hold, reel 4 m/s
-│       ├── Pull      CbForce   on the player, toward the target: 160 m/s² up to 15 m/s, ramp 0.1 s, react
+│   └── Rope  CbLink     to what the probe found: its length when it takes hold, reel 4 m/s, react off
+│       ├── Pull      CbForce   on the player, toward the target: 160 m/s² up to 15 m/s, ramp 0.1 s, react off
 │       └── Hanging   CbMove    { airborne: 1, air_control: 0.6, gravity: 0 } while it holds
 └── Throwing  CbMotion   when grapple.hook.used, if not linked; duration 0.45 s; no effects
 ```
@@ -264,6 +264,7 @@ Hook          CbItem     kind "grapple.hook", use: once a press, use_key Q, slot
 |---|---|
 | `range` | how far the line reaches, in metres. The motion **happens only if the line finds something** |
 | `travel` | the speed it flies at: it takes hold after distance / speed. 0: at once |
+| `holds` | what it may hold on to: the level (anything static: map pieces, a static entity, a wall that breaks), bodies (props, items lying about, rubble, ragdolls), players. All three by default. Anything else in its way **stops it, holding nothing**: one that flies is gone where it hit (as a miss: `link_missed`), one that does not fly is not thrown |
 
 | Step | What happens |
 |---|---|
@@ -271,7 +272,7 @@ Hook          CbItem     kind "grapple.hook", use: once a press, use_key Q, slot
 | `hold_emits` | the event said where and when it takes hold, at the player, with what it holds as the other one: the grapple's puff where the hook lands (`grapple.hooked`) |
 | What it finds | the world: a point. A prop: a point on that body, which moves with it. A player: a point on its capsule (not a limb: hitboxes are the server's) |
 | Flying | until `distance / travel` has passed, the motion is not on yet: no parameters, no effects; the look draws the line growing |
-| Holding | the motion is on. Its effects run every tick, before the mover: here the pull (up to 15 m/s along the line) and the rope. `react` shares the closing speed with what it holds, so a crate flies to the player |
+| Holding | the motion is on. Its effects run every tick, before the mover: here the pull (up to 15 m/s along the line) and the rope. `react` shares the closing speed with what it holds, so a crate flies to the player. **The hook's pull and rope do not react**: it holds anything (a wall, a ball, a player) but moves only its own player, so what it holds is never pulled in; a winch or a claw is a motion of its own (its rope and pull reacting) |
 | While it holds | its `parameters` hold. The grapple's `airborne` = 1 puts the player in the air from the moment the hook takes hold until it lets go: nothing rubs the pull off, the in-air animation plays, and the player falls back to the ground afterwards. `gravity` = 0 makes it a zip line: straight to the point at one speed |
 | Its time | `duration` 2: it lets go by itself two seconds after it took hold, and the player keeps its speed; gravity is back on that tick. (`link_distance < 1.8` in `until` would let go on arrival instead) |
 | Letting go | `until` (the key again, or a jump: `pressed.jump`); the `duration`; what it held on to being destroyed; the player dying, or being put somewhere else (a respawn) |
@@ -484,9 +485,10 @@ emit	dash.started
 | Line | Fields |
 |---|---|
 | `probe` | range, travel |
+| `holds` | what the probe may hold on to: `level`, `bodies`, `players` (one or more; no line: all) |
 | `impulse` | target, speed, frame, replace, and x y z for a world direction |
 | `force` | target, frame, kind (`accel`, `force`, `velocity`), strength, speed, ramp, react (0 or 1), and x y z |
-| `link` | target, length, reel |
+| `link` | target, length, reel, and 0 for a rope that acts on the player alone (no number: it reacts) |
 | `launch` | item kind, speed, frame, lift, ahead, seconds, and x y z for a world direction |
 
 A target is `self`, `hit` or `@field`.
