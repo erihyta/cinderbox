@@ -350,6 +350,24 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			m.probe = true;
 		}
+		else if ( key == "holds" )
+		{
+			// holds <level|bodies|players>...
+			m.probeHolds = 0;
+			for ( size_t k = 1; k < w.size(); ++k )
+			{
+				uint8_t bit = w[k] == "level" ? kProbeHoldsLevel : w[k] == "bodies" ? kProbeHoldsBodies : w[k] == "players" ? kProbeHoldsPlayers : 0;
+				if ( bit == 0 )
+				{
+					return fail( "holds wants what the probe may hold on to: level, bodies, players" );
+				}
+				m.probeHolds |= bit;
+			}
+			if ( m.probeHolds == 0 )
+			{
+				return fail( "holds wants what the probe may hold on to: level, bodies, players" );
+			}
+		}
 		else if ( key == "impulse" )
 		{
 			// impulse <target> <speed> <frame> <replace> [x y z]

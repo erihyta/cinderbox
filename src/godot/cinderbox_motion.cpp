@@ -172,6 +172,8 @@ const Info kProbeInfo[] = {
 	  "[b]range[/b]: how far it reaches, in metres.\n"
 	  "[b]travel[/b]: the speed it flies at; it takes hold after distance / speed. 0: at once. The motion's forces, "
 	  "links and parameters wait for it to take hold.\n"
+	  "[b]holds[/b]: what it may hold on to: the level (anything static), bodies (props, items, rubble, ragdolls), "
+	  "players. Anything else in its way stops it, holding nothing (a grappling hook: the level only).\n"
 	  "What it finds is the motion's [b]hit[/b]: a point of the world, of a prop, or of another player's body. Effects "
 	  "act on it (target: What the probe found) or go toward it (frame: Toward the target), and a CbLink is a rope to "
 	  "it. The motion is on until its [b]until[/b] holds or what it found is gone. A CbLinkLook draws the line.\n"
@@ -571,6 +573,7 @@ void CbProbe::_bind_methods()
 {
 	CB_MOTION_PROP( CbProbe, Variant::FLOAT, range, PROPERTY_HINT_RANGE, "1,200,0.5,or_greater,suffix:m" )
 	CB_MOTION_PROP( CbProbe, Variant::FLOAT, travel, PROPERTY_HINT_RANGE, "0,200,1,or_greater,suffix:m/s" )
+	CB_MOTION_PROP( CbProbe, Variant::INT, holds, PROPERTY_HINT_FLAGS, "The level,Bodies,Players" )
 	ADD_GROUP( "Under an item", "" );
 	CB_MOTION_PROP( CbProbe, Variant::INT, release, PROPERTY_HINT_FLAGS, "Using the item again,A jump" )
 	CB_MOTION_PROP( CbProbe, Variant::FLOAT, hold_seconds, PROPERTY_HINT_RANGE, "0,60,0.05,or_greater,suffix:s" )
@@ -586,6 +589,20 @@ std::string CbProbe::Bake( String& error ) const
 		return std::string();
 	}
 	std::string out = "probe\t" + Num( m_range ) + "\t" + Num( m_travel ) + "\n";
+	const int all = HOLDS_LEVEL | HOLDS_BODIES | HOLDS_PLAYERS;
+	if ( ( m_holds & all ) == 0 )
+	{
+		Fail( error, "holds: it has to be able to hold on to something" );
+		return std::string();
+	}
+	if ( ( m_holds & all ) != all )
+	{
+		out += "holds";
+		out += ( m_holds & HOLDS_LEVEL ) ? "\tlevel" : "";
+		out += ( m_holds & HOLDS_BODIES ) ? "\tbodies" : "";
+		out += ( m_holds & HOLDS_PLAYERS ) ? "\tplayers" : "";
+		out += "\n";
+	}
 	String emits = m_holdEmits.strip_edges();
 	if ( emits.is_empty() == false )
 	{

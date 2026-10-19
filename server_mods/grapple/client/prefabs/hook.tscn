@@ -5,9 +5,10 @@
 ; key (Q, use_key) uses it wherever it is carried (use: a press), or select it and press the use
 ; button; what a use does is the nodes under it:
 ;   Hook          CbItem    when used: says grapple.fired
-;   Throw         CbProbe   a line along the look, flying at 80 m/s: what it meets on the way it
-;                           holds (says grapple.hooked there); let go by using the hook again or a
-;                           jump, or after 2 s of holding
+;   Throw         CbProbe   a line along the look, flying at 80 m/s: the level it meets on the way
+;                           it holds (says grapple.hooked there); a prop or a player in its way
+;                           stops it, holding nothing (holds: the level only: it is not a winch);
+;                           let go by using the hook again or a jump, or after 2 s of holding
 ;     Rope        CbLink    to what the line found, reeled in at 4 m/s
 ;       Pull      CbForce   on the player, toward it: 160 m/s2 up to 15 m/s, ramped in, reacting
 ;       Hanging   CbMove    while it holds: gravity 0, air control 0.6, airborne
@@ -51,6 +52,7 @@ mesh = SubResource("Mesh")
 
 [node name="Throw" type="CbProbe" parent="."]
 travel = 80.0
+holds = 1
 hold_seconds = 2.0
 hold_emits = "grapple.hooked"
 

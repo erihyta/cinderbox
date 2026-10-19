@@ -444,6 +444,8 @@ private:
 	void FlyHold( flecs::entity e, MotionState& motion );
 	// `hold` takes hold of what `hit` found: a player or a loose body it follows, else the world.
 	void HoldOn( MotionHold& hold, const RayHit& hit ) const;
+	// What a probe's hit is: kProbeHoldsLevel, kProbeHoldsBodies or kProbeHoldsPlayers (motions.h).
+	uint8_t HoldKind( const RayHit& hit ) const;
 	// The effects of the motions that are on for the player `e` this tick: impulses, forces and
 	// links, on the player (`c`, not yet stored) and on their targets.
 	struct MotionEnd;

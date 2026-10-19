@@ -4433,7 +4433,8 @@ void TestGrapple()
 		CHECK( firstAfter != predicted.end() && firstAfter->first <= throwAt + 4 && firstAfter->second.tethered );
 	}
 
-	// Two players, one ball: both hooks in it, and everyone agrees where it went.
+	// Two players, one ball: the hook holds only the level, so both hooks are stopped by the ball and
+	// hold nothing; the ball stays, and everyone agrees.
 	{
 		Harness h( 47873 );
 		ActionBits grapple = UseKey( h.server.Schema(), "grapple.hook" );
@@ -4458,6 +4459,7 @@ void TestGrapple()
 		uint32_t ball = 0;
 		b3Vec3 ballAt = {};
 		int bothOn = 0;
+		int stopped = 0;
 		h.RunUntil( 9.0, [&]( double ) {
 			if ( ball == 0 )
 			{
@@ -4492,16 +4494,20 @@ void TestGrapple()
 				{
 					flecs::entity e = server.FindEntity( server.PlayerNetId( h.bots[size_t( i )].client->Slot() ) );
 					const MotionHold* tether = e.is_valid() ? e.try_get<MotionHold>() : nullptr;
-					on += tether != nullptr && tether->on != 0 && tether->anchor == ball ? 1 : 0;
+					on += tether != nullptr && tether->on != 0 && tether->flying == 0 && tether->missed == 0 ? 1 : 0;
+					stopped += tether != nullptr && tether->missed != 0 && tether->startTick >= 300 && server.Tick() == 419 &&
+									   b3Distance( tether->point, server.EntityTransform( ball )->position ) < 1.0f
+								   ? 1
+								   : 0;
 				}
 				bothOn = std::max( bothOn, on );
 			}
 		} );
 		h.Report();
-		CHECK( ball != 0 && bothOn == 2 );
-		float moved = ball != 0 && server.EntityTransform( ball ) != nullptr ? b3Distance( server.EntityTransform( ball )->position, ballAt ) : 0.0f;
-		std::printf( "    two hooks in one ball: it went %.2f m\n", moved );
-		CHECK( moved > 1.0f );
+		CHECK( ball != 0 && bothOn == 0 && stopped == 2 );
+		float moved = ball != 0 && server.EntityTransform( ball ) != nullptr ? b3Distance( server.EntityTransform( ball )->position, ballAt ) : 1e9f;
+		std::printf( "    two hooks at one ball: both stopped by it (%d), holding nothing; it moved %.3f m\n", stopped, moved );
+		CHECK( moved < 0.05f );
 		for ( Bot& b : h.bots )
 		{
 			int compared = 0;

@@ -179,6 +179,14 @@ public:
 
 	CB_MOTION_FIELD( double, range, m_range )
 	CB_MOTION_FIELD( double, travel, m_travel )
+	// What it may hold on to, a bit each: the level, bodies, players. Anything else stops it.
+	enum Holds
+	{
+		HOLDS_LEVEL = 1,
+		HOLDS_BODIES = 2,
+		HOLDS_PLAYERS = 4,
+	};
+	CB_MOTION_FIELD( int, holds, m_holds )
 	// Under an item: what lets it go (a bit each: using the item again, a jump), and how long it
 	// holds at most (0: until it is let go). Under a CbMotion, its until and duration say it.
 	enum Release
@@ -198,6 +206,7 @@ protected:
 private:
 	double m_range = 40.0;
 	double m_travel = 60.0;
+	int m_holds = HOLDS_LEVEL | HOLDS_BODIES | HOLDS_PLAYERS;
 	int m_release = RELEASE_USE_AGAIN | RELEASE_JUMP;
 	double m_holdSeconds = 0.0;
 	godot::String m_holdEmits;
