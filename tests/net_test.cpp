@@ -4083,9 +4083,10 @@ void TestFrag()
 // all; with the default (half its blast's), it blows a hole: the bricks near it fly, the rest stand
 // (static, held at the wall's foot), and, tick for tick, the client that predicted it has the same
 // bricks standing where the server has them.
-void TestFragBreaks()
+// The sandbox with a breakable wall of 8 x 4 bricks (held at its foot), `ahead` metres in front of
+// the first player, written to `mapPath`. `first`: the wall's template (its bricks' is the next).
+void WriteBrickWallMap( const std::filesystem::path& mapPath, float ahead, uint32_t& first )
 {
-	const std::string root = CB_SOURCE_DIR;
 	LevelLayout map = GetLevelLayout();
 	map.name = "wall";
 	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 2.0f, 1.0f, 0.2f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );
@@ -4100,7 +4101,7 @@ void TestFragBreaks()
 	body.fields.push_back( fixed );
 	wall.components.push_back( body );
 	wall.shapes = uint32_t( map.shapeSets.size() - 2 );
-	const uint32_t first = uint32_t( map.templates.size() );
+	first = uint32_t( map.templates.size() );
 	for ( int row = 0; row < 4; ++row )
 	{
 		for ( int column = 0; column < 8; ++column )
@@ -4127,15 +4128,24 @@ void TestFragBreaks()
 	brick.components.push_back( rubble );
 	map.templates.push_back( wall );
 	map.templates.push_back( brick );
-	// Just in front of where the first player stands: its grenade hits it and goes off at its foot.
+	// `ahead` metres in front of where the first player stands, across its look.
 	const b3Vec3 spawn = map.spawnCenter;
-	map.instances.push_back( { first, { spawn.x - 5.25f, 1.0f, spawn.z + 1.5f }, 0.0f, 0.0f } );
+	map.instances.push_back( { first, { spawn.x - 5.25f, 1.0f, spawn.z + ahead }, 0.0f, 0.0f } );
 	QuantizeLayout( map );
 	std::vector<uint8_t> bytes;
 	SerializeMap( map, bytes );
-	std::filesystem::path mapPath = std::filesystem::temp_directory_path() / "cb_net_test_frag_wall.cbmap";
 	std::string error;
 	CHECK( WriteMapFile( mapPath.string(), bytes, error ) );
+}
+
+void TestFragBreaks()
+{
+	const std::string root = CB_SOURCE_DIR;
+	// Just in front of where the first player stands: its grenade hits it and goes off at its foot.
+	const b3Vec3 spawn = GetLevelLayout().spawnCenter;
+	std::filesystem::path mapPath = std::filesystem::temp_directory_path() / "cb_net_test_frag_wall.cbmap";
+	uint32_t first = 0;
+	WriteBrickWallMap( mapPath, 1.5f, first );
 
 	// Bricks loose, and those standing (by NetId, where they are).
 	struct Bricks
@@ -4230,6 +4240,103 @@ void TestFragBreaks()
 	CHECK( all.loose == 32 && all.standing.empty() );
 	run( 47902, nullptr, hole );
 	CHECK( hole.loose > 0 && hole.standing.size() > 8 && hole.loose + int( hole.standing.size() ) == 32 );
+	std::error_code ignored;
+	std::filesystem::remove( mapPath, ignored );
+}
+
+// The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
+// breaks a hole in it with no blast (the mod hears what the ball ran into, and breaks the wall
+// there), and goes on through: past the wall, while bricks still stand. The client that predicted
+// it has the same bricks standing. With a break speed above the ball's, it only bounces off.
+void TestCannon()
+{
+	const std::string root = CB_SOURCE_DIR;
+	std::filesystem::path mapPath = std::filesystem::temp_directory_path() / "cb_net_test_cannon_wall.cbmap";
+	uint32_t first = 0;
+	WriteBrickWallMap( mapPath, 6.0f, first );
+	const b3Vec3 spawn = GetLevelLayout().spawnCenter;
+	const float wallZ = spawn.z + 6.0f;
+	struct Result
+	{
+		int walls = 0;
+		int loose = 0;
+		int standing = 0;
+		float farthest = -1e9f; // how far along +Z a ball got
+		bool fired = false;
+		bool same = false;
+		uint32_t desyncs = 0;
+	};
+	auto run = [&]( uint16_t port, const char* breakSpeed, Result& out ) {
+		const uint32_t fireAt = 240;
+		std::map<std::string, std::string> options = { { "test.mods", "cannon" } };
+		if ( breakSpeed != nullptr )
+		{
+			options["cannon.break_speed"] = breakSpeed;
+		}
+		Harness h( port, {}, mapPath.string(), options, [&]( ServerOptions& options ) {
+			std::string error, warnings;
+			options.character = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
+		} );
+		const ActionBits fire = UseKey( h.server.Schema(), "cannon.cannon" );
+		const int ballKind = h.server.Schema().FindItemKind( "cannon.ball" );
+		CHECK( fire != 0 && ballKind >= 0 );
+		net::NetSimConfig link;
+		link.latencyMs = 50;
+		h.AddNetSim( uint16_t( port + 1 ), link );
+		Bot& bot = h.AddBot();
+		bot.script = [&]( uint32_t tick ) {
+			PlayerInput in;
+			in.actions = tick >= fireAt && tick < fireAt + 4 ? fire : ActionBits( 0 );
+			return in;
+		};
+		auto count = [&]( const Simulation& sim, Result& r ) {
+			r.walls = r.loose = r.standing = 0;
+			for ( const Simulation::EntityRef& e : sim.Entities() )
+			{
+				flecs::entity entity = sim.FindEntity( e.netId );
+				const TemplateRef* ref = entity.try_get<TemplateRef>();
+				r.walls += ref != nullptr && ref->index == first ? 1 : 0;
+				if ( ref != nullptr && ref->index == first + 1 )
+				{
+					( entity.has<WallPiece>() ? r.standing : r.loose ) += 1;
+				}
+			}
+		};
+		h.server.SetTickObserver( [&] {
+			const Simulation& sim = h.server.Sim();
+			for ( const Simulation::EntityRef& e : sim.Entities() )
+			{
+				const HeldItem* item = sim.FindEntity( e.netId ).try_get<HeldItem>();
+				if ( item != nullptr && item->holder == 0 && int( item->kind ) == ballKind )
+				{
+					out.fired = true;
+					out.farthest = std::max( out.farthest, sim.EntityTransform( e.netId )->position.z );
+				}
+			}
+		} );
+		h.RunUntil( 7.0 );
+		h.server.SetTickObserver( {} );
+		h.Report();
+		count( h.server.Sim(), out );
+		Result mine;
+		GameClient& client = *bot.client;
+		if ( client.Session() != nullptr )
+		{
+			count( client.Session()->Sim(), mine );
+		}
+		out.same = mine.walls == out.walls && mine.loose == out.loose && mine.standing == out.standing;
+		out.desyncs = uint32_t( client.GetStats().desyncs );
+		std::printf( "    break speed %s: a ball fired (%d), got to z %.2f (the wall at %.2f); the server has %d wall, %d bricks loose, %d standing; "
+					 "the client %s; desyncs %u\n",
+					 breakSpeed != nullptr ? breakSpeed : "default", int( out.fired ), out.farthest, wallZ, out.walls, out.loose, out.standing,
+					 out.same ? "the same" : "not the same", out.desyncs );
+	};
+	Result hole, bounce;
+	run( 47906, nullptr, hole );
+	CHECK( hole.fired && hole.walls == 0 && hole.loose > 0 && hole.standing > 0 && hole.loose + hole.standing == 32 );
+	CHECK( hole.farthest > wallZ + 1.0f && hole.same && hole.desyncs == 0 );
+	run( 47908, "100", bounce );
+	CHECK( bounce.fired && bounce.walls == 1 && bounce.loose == 0 && bounce.standing == 0 && bounce.farthest < wallZ && bounce.same && bounce.desyncs == 0 );
 	std::error_code ignored;
 	std::filesystem::remove( mapPath, ignored );
 }
@@ -4630,6 +4737,7 @@ int main( int argc, char** argv )
 		{ "grenade", TestGrenade },
 		{ "frag", TestFrag },
 		{ "frag_breaks", TestFragBreaks },
+		{ "cannon", TestCannon },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },

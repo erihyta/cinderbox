@@ -1,0 +1,54 @@
+[gd_scene format=3]
+
+; The cannon: carried out of sight, used by its own key (N, use_key) wherever it is carried, or
+; select it and press the use button (use: a press). Each use launches a new cannon ball, at most
+; one every 1.2 s:
+;   Cannon   CbItem     says cannon.fired (the look's boom)
+;     Fire   CbLaunch   a new cannon.ball (prefabs/ball.tscn) where the camera looks, at 36 m/s
+;                       with 1 m/s of lift and the shooter's own velocity, from 0.9 m ahead; it is
+;                       gone again after 10 s
+; What a ball does when it hits is the cannon mod's (cannon.cpp): a hole in a wall that breaks, a
+; hurt to a player. Saving this scene bakes it into res://items/cannon.cannon.cfg.
+
+[sub_resource type="CylinderShape3D" id="Body"]
+height = 0.9
+radius = 0.14
+
+[sub_resource type="StandardMaterial3D" id="Iron"]
+albedo_color = Color(0.18, 0.18, 0.2, 1)
+metallic = 0.7
+roughness = 0.45
+
+[sub_resource type="CylinderMesh" id="Barrel"]
+material = SubResource("Iron")
+top_radius = 0.11
+bottom_radius = 0.14
+height = 0.9
+radial_segments = 16
+
+[node name="Cannon" type="CbItem"]
+kind = "cannon.cannon"
+display_name = "Cannon"
+properties = {
+"inventory.start": 1.0
+}
+use = 1
+use_key = "N"
+use_cooldown = 1.2
+use_emits = "cannon.fired"
+mass = 20.0
+
+[node name="Body" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0)
+shape = SubResource("Body")
+
+[node name="Barrel" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0)
+mesh = SubResource("Barrel")
+
+[node name="Fire" type="CbLaunch" parent="."]
+item_kind = "cannon.ball"
+speed = 36.0
+lift = 1.0
+ahead = 0.9
+seconds = 10.0
