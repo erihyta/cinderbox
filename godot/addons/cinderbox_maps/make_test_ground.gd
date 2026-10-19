@@ -2,13 +2,15 @@ extends SceneTree
 ## Makes res://maps/test_ground.tscn and bakes it: everything example_arena.tscn has (a copy, so the
 ## two can change apart), its east wall opened onto bumpy terrain 40 m across, with a building-sized
 ## block (12 x 36 x 12 m) standing on it. The balls roll to a stop (rolling 0.05; the spawnable
-## bouncy ball 0.03).
+## bouncy ball 0.03). Two walls a grenade breaks: one of twelve bricks, one of concrete cut into 28
+## chunks by the fracture tool.
 ##
 ##   godot --headless --path godot --script res://addons/cinderbox_maps/make_test_ground.gd
 ##
 ## Then play it: cb_server --map test_ground (or the game's --host-local "--server-arg=--map test_ground").
 ## Running it again makes the scene anew from the arena: edits made to test_ground.tscn are lost.
 
+const Fracture := preload("res://addons/cinderbox_maps/fracture.gd")
 const OUT_SCENE := "res://maps/test_ground.tscn"
 const OUT_MAP := "res://maps/test_ground.cbmap"
 const TERRAIN_MESH := "res://maps/test_ground_terrain.res"
@@ -128,6 +130,31 @@ func _initialize() -> void:
 			brick.add_child(look_brick)
 			wall.add_child(brick)
 	root.add_child(wall)
+
+	# A concrete wall cut by the fracture tool (the Fracture button does the same): 5 x 3.5 x 0.5 m in
+	# 28 irregular chunks, crowded toward its middle.
+	var concrete := CbBreakable.new()
+	concrete.name = "ConcreteWall"
+	concrete.position = Vector3(-8, 1.75, -12)
+	var slab := BoxShape3D.new()
+	slab.size = Vector3(5, 3.5, 0.5)
+	var slab_shape := CollisionShape3D.new()
+	slab_shape.name = "Shape"
+	slab_shape.shape = slab
+	concrete.add_child(slab_shape)
+	var slab_look := MeshInstance3D.new()
+	slab_look.name = "Mesh"
+	var slab_mesh := BoxMesh.new()
+	slab_mesh.size = slab.size
+	slab_mesh.material = _material(Color(0.66, 0.66, 0.63))
+	slab_look.mesh = slab_mesh
+	concrete.add_child(slab_look)
+	var chunks: Dictionary = Fracture.fracture(concrete, 28, 5, 0.4)
+	for chunk in chunks.pieces:
+		chunk.density = 60.0
+		concrete.add_child(chunk)
+	concrete.set_meta("cinderbox_fracture", {"pieces": 28, "seed": 5, "crowd": 0.4})
+	root.add_child(concrete)
 
 	# Balls that roll to a stop: the props (a CbProp starts at 0.05) and the spawnable template's.
 	var material := root.get_node_or_null("Templates/bouncy_ball/Material")
