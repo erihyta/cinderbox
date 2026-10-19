@@ -61,7 +61,8 @@ A `CbBreakable` is a wall (or anything static) and what it breaks into, authored
   are in a collision group the player's capsule ignores). Blasts, shots and other bodies move them.
 - The bake makes the wall a static template placed where it stands, and each piece a template of its
   own; its pieces are not the map's props. `test_ground.tscn` has two, 12 m north of the spawn:
-  `BrickWall` (twelve bricks placed by hand) and `ConcreteWall` (28 chunks cut by the tool below).
+  `BrickWall` (twelve bricks placed by hand) and `ConcreteWall` (28 chunks cut by the tool below);
+  and `GreatWall` across the north end, 11 m ahead of the spawn (24 x 7 m, 150 chunks).
 
 ### Cutting a wall into chunks
 
@@ -79,6 +80,8 @@ Pieces can be placed by hand (bricks, planks), or cut: select a `CbBreakable` an
 - A thin shape is cut through: every chunk goes from one face to the other.
 - Outside faces get the wall's own material (its first mesh's); the cut faces a darker copy of it.
   Textures run on across chunks (laid on from the side each face looks toward, a metre a repeat).
+- Each chunk is cut against its 40 nearest, then any other whose side a corner of it turns out to
+  be on: exact, and a wall of 150 chunks is cut in a tenth of a second.
 - It replaces the pieces the wall had, taking their body settings (`density`, `friction`, ...);
   each chunk weighs by its size. Undo puts the old pieces back. The settings are kept on the node
   for next time.
