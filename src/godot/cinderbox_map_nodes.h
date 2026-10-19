@@ -123,10 +123,29 @@ public:
 	godot::PackedStringArray _get_configuration_warnings() const override;
 	void _notification( int what );
 
-protected:
-	static void _bind_methods()
+	// Where it is held up, a bit each: the pieces at its foot (the ground), at its top (a ceiling),
+	// at its two ends (pillars). A blast leaves a piece standing while touching pieces join it to a
+	// held one.
+	enum HeldAt
 	{
+		HELD_BOTTOM = 1,
+		HELD_TOP = 2,
+		HELD_SIDES = 4,
+	};
+	void set_held_at( int held )
+	{
+		m_heldAt = held;
 	}
+	int get_held_at() const
+	{
+		return m_heldAt;
+	}
+
+protected:
+	static void _bind_methods();
+
+private:
+	int m_heldAt = HELD_BOTTOM;
 };
 
 // Where players appear. Exactly one per map; the simulation spreads the slots around it.

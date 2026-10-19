@@ -35,6 +35,8 @@
 //                        u32 shapes, u32 look                                    (version 6 on)
 //                        u32 pieceCount, per piece: u32 template, i32 position[3],
 //                          i32 pitch, i32 yaw, i32 roll                          (version 9 on)
+//                          u32 held                                              (version 10 on)
+//                        u32 linkCount, per link: u32 a, u32 b (pieces that touch)  (version 10 on)
 //   u32 instanceCount, per instance: u32 templateIndex, i32 position[3], i32 pitch, i32 yaw,
 //                        i32 roll                                                (version 6 on)
 //   u32 spawnTemplate (kNoTemplate for none)
@@ -59,11 +61,12 @@
 namespace cb
 {
 
-// 9: breakable templates (their pieces). 8: a prop's rolling and drag. 7: triangle meshes and height fields. 6: bodies of several shapes, a template's look, an
+// 10: which pieces of a breakable hold it up, and which touch (holes). 9: breakable templates (their pieces). 8: a prop's rolling and drag. 7: triangle meshes and height fields. 6: bodies of several shapes, a template's look, an
 // instance's roll. 5: hulls. 4: a static's shape and roll. 3: a prop's body.
-inline constexpr uint32_t kMapVersion = 9;
-// Pieces a breakable may come apart into.
+inline constexpr uint32_t kMapVersion = 10;
+// Pieces a breakable may come apart into, and pairs of them that touch.
 inline constexpr uint32_t kMapPieceLimit = 256;
+inline constexpr uint32_t kMapPieceLinkLimit = 4096;
 // The oldest version still read (what it lacks takes its old meaning).
 inline constexpr uint32_t kMapOldestVersion = 3;
 

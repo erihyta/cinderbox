@@ -138,6 +138,25 @@ func _initialize() -> void:
 	_check("crowded: small near the focus, big away from it", near.size() > far.size() and mean.call(near) * 3.0 < mean.call(far),
 		[near.size(), mean.call(near), far.size(), mean.call(far)])
 
+	# A big wall, 24 x 7 x 0.6 m, in 150 chunks crowded at one end: each cut against its near
+	# neighbours first, then any it missed; still they fill it, and none starts inside another.
+	var big := _wall(_box(Vector3(24, 7, 0.6)))
+	var big_focus := Node3D.new()
+	big_focus.name = "FractureFocus"
+	big_focus.position = Vector3(-9, -2, 0)
+	big.add_child(big_focus)
+	var started := Time.get_ticks_msec()
+	var big_pieces: Array = Fracture.fracture(big, 150, 2, 0.6).pieces
+	var took := Time.get_ticks_msec() - started
+	var big_volume := 0.0
+	for piece in big_pieces:
+		big_volume += _volume(piece)
+	_check("a 24 x 7 x 0.6 m wall cut into 150 that fill it (100.8 m3, less the gaps), in %d ms" % took,
+		big_pieces.size() == 150 and absf(big_volume - 100.8) < 0.5, [big_pieces.size(), big_volume])
+	for piece in big_pieces:
+		piece.free()
+	big.free()
+
 	# A convex wall: a wedge.
 	var wedge := ConvexPolygonShape3D.new()
 	wedge.points = PackedVector3Array([Vector3(-1, -1, -1), Vector3(1, -1, -1), Vector3(-1, -1, 1), Vector3(1, -1, 1), Vector3(-1, 1, -1), Vector3(1, 1, -1)])
@@ -172,6 +191,10 @@ func _initialize() -> void:
 	var one_shape := rubble.all(func(b): return b["shapes"] == 1 and b["debris"])
 	_check("the wall with 24 pieces, each a template of one shape", walls.size() == 1 and walls[0]["pieces"] == 24 and rubble.size() == 24 and
 		one_shape, [walls, rubble.size()])
+	# Cut chunks touch their neighbours face to face: every chunk at least one, so more links than
+	# chunks less one; those along its foot hold it up.
+	_check("its chunks touch (more links than chunks less one), some held at its foot", walls.size() == 1 and walls[0]["links"] >= 23 and
+		walls[0]["held"] >= 2 and walls[0]["held"] < 24, walls)
 
 	for list in [pieces, again.pieces, other.pieces, crowded, cut.pieces]:
 		for piece in list:

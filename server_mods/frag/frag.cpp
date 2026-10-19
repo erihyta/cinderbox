@@ -12,16 +12,18 @@
 // This file is the rules: grenades come one at a time, a little apart (frag.refill_seconds), until a
 // player carries frag.carry of them (a stack: the scene's stack), and what going off is. Everyone near is hurt (the combat mod's "combat.damage", like any other
 // weapon's: less with distance), everything loose near it is thrown and sent tumbling (props,
-// items, ragdolls: so those it kills fly, and those it only hurts keep their feet), and a breakable
-// (a map's CbBreakable: a wall) near it breaks, its pieces flung away. It does not go
+// items, ragdolls: so those it kills fly, and those it only hurts keep their feet), and it blows a
+// hole in a breakable (a map's CbBreakable: a wall) near it: the pieces near it are flung away, the
+// rest stand while something holds them up. It does not go
 // off when it hits something: that was the impact grenade (the grenade mod, switched off).
 //
 // Server options: frag.damage (at the centre, default 90), frag.radius (metres, default 5),
 // frag.push (how fast what is loose is thrown at the centre, m/s, default 12), frag.refill_seconds
 // (how long a player waits for the next while it has fewer than it carries, default 1.2; 0: never:
 // one a life), frag.carry (how many, default 3: the scene's stack holds that many),
-// frag.break_radius (metres from a breakable's centre within which it breaks, default frag.radius;
-// 0: nothing breaks), frag.rubble_seconds (how long its pieces stay, default 0: for good).
+// frag.break_radius (metres: a breakable's pieces whose centre is this near go, default half of
+// frag.radius; 0: nothing breaks), frag.rubble_seconds (how long its pieces stay, default 0: for
+// good).
 
 #include "mod_api.h"
 
@@ -64,7 +66,7 @@ public:
 	{
 		m_centreDamage = float( std::clamp( ctx.Option( "frag.damage", 90.0 ), 0.0, 10000.0 ) );
 		m_radius = float( std::clamp( ctx.Option( "frag.radius", 5.0 ), 0.5, 50.0 ) );
-		m_breakRadius = float( std::clamp( ctx.Option( "frag.break_radius", double( m_radius ) ), 0.0, 50.0 ) );
+		m_breakRadius = float( std::clamp( ctx.Option( "frag.break_radius", double( m_radius ) * 0.5 ), 0.0, 50.0 ) );
 		m_rubbleSeconds = float( std::clamp( ctx.Option( "frag.rubble_seconds", 0.0 ), 0.0, 3600.0 ) );
 		m_push = float( std::clamp( ctx.Option( "frag.push", 12.0 ), 0.0, 100.0 ) );
 		m_refillTicks = uint32_t( std::clamp( ctx.Option( "frag.refill_seconds", 1.2 ), 0.0, 600.0 ) * double( ctx.Config().tickRate ) + 0.5 );
@@ -141,10 +143,13 @@ private:
 		uint32_t throwerTarget = throwerSlot >= 0 ? SlotTarget( PlayerSlot( throwerSlot ) ) : 0;
 
 		ctx.Emit( m_blast, throwerTarget, 0, int32_t( m_radius * 100.0f ), point );
-		// What breaks near it comes apart, its pieces flung as hard as the loose things are.
-		for ( uint32_t breakable : ctx.BreakablesNear( point, m_breakRadius ) )
+		// A hole in what breaks near it: the pieces near it flung as hard as the loose things are.
+		if ( m_breakRadius > 0.0f )
 		{
-			ctx.Break( breakable, point, m_push, m_rubbleSeconds );
+			for ( uint32_t breakable : ctx.BreakablesNear( point, m_breakRadius ) )
+			{
+				ctx.Break( breakable, point, m_push, m_rubbleSeconds, m_breakRadius );
+			}
 		}
 		for ( int i = 0; i < kMaxPlayers; ++i )
 		{
@@ -214,7 +219,7 @@ private:
 	EventHandle m_damage;
 	float m_centreDamage = 90.0f;
 	float m_radius = 5.0f;
-	float m_breakRadius = 5.0f;
+	float m_breakRadius = 2.5f;
 	float m_rubbleSeconds = 0.0f;
 	float m_push = 12.0f;
 	uint32_t m_refillTicks = 72;

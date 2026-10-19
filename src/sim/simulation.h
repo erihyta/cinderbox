@@ -386,8 +386,14 @@ private:
 							  uint32_t owner, uint32_t lifetimeTicks, const ShapeMaterial& material = {} );
 	// Builds an entity from a map template: shape, body, material and initial velocity all come
 	// from the authored values, with the engine's defaults for anything the author left alone.
+	// `standing`: a static body whatever the template says (a breakable's piece left standing).
 	flecs::entity CreateFromTemplate( uint32_t templateIndex, b3Vec3 position, b3Quat rotation, b3Vec3 extraVelocity,
-									  uint32_t owner );
+									  uint32_t owner, bool standing = false );
+	// A breakable's pieces near `blast` (all of them when `radius` is 0) fly away from it at
+	// `speed / (1 + distance)`; then any standing piece no chain of touching pieces joins to a held
+	// one falls. `target` is the whole wall or any piece of it left standing. `rubbleTicks` > 0:
+	// the pieces that go are removed after that long.
+	void BreakWall( flecs::entity target, b3Vec3 blast, float radius, float speed, uint32_t rubbleTicks );
 	flecs::entity CreatePlayer( PlayerSlot slot );
 	void PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw );
 	b3ShapeId CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material = {} );
