@@ -213,8 +213,12 @@ enum class CommandType : uint8_t
 	// target (a player), index = MoveParam, mode = 1: a.x is that player's value for the parameter
 	// (clamped to its range) until mode = 0 gives it back to the server's (SimConfig::move).
 	SetMove = 17,
+	// target (a breakable: an entity whose template has pieces), a = where the blast is, b.x = the
+	// speed (m/s) a piece at the blast is sent away with (less with distance: b.x / (1 + metres)),
+	// other = the pieces' lifetime in ticks (0: forever). The entity goes, its pieces come.
+	Break = 18,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::SetMove );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Break );
 
 enum ImpulseMode : uint8_t
 {

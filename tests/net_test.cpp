@@ -4078,6 +4078,102 @@ void TestFrag()
 	CHECK( stack[throwAt - 1] == 3 && stack[leftAt + 5] == 2 && stack[leftAt + 80] == 3 );
 }
 
+// The frag grenade breaks a wall (a breakable: a map template with pieces): thrown ahead at a wall
+// standing in its way, its blast takes the wall away and leaves its four pieces, on the server and,
+// tick for tick, on the client that predicted it.
+void TestFragBreaks()
+{
+	const std::string root = CB_SOURCE_DIR;
+	LevelLayout map = GetLevelLayout();
+	map.name = "wall";
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 2.0f, 1.0f, 0.2f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 0.99f, 0.49f, 0.19f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );
+	EntityTemplate wall;
+	wall.name = "wall";
+	AuthoredComponent body;
+	body.id = Fnv32( "Body" );
+	AuthoredField fixed;
+	fixed.id = Fnv32( "type" );
+	fixed.raw[0] = 0;
+	body.fields.push_back( fixed );
+	wall.components.push_back( body );
+	wall.shapes = uint32_t( map.shapeSets.size() - 2 );
+	const uint32_t first = uint32_t( map.templates.size() );
+	for ( float x : { -1.0f, 1.0f } )
+	{
+		for ( float y : { -0.5f, 0.5f } )
+		{
+			wall.pieces.push_back( { first + 1, { x, y, 0.0f } } );
+		}
+	}
+	EntityTemplate brick;
+	brick.name = "brick";
+	brick.shapes = uint32_t( map.shapeSets.size() - 1 );
+	AuthoredComponent rubble;
+	rubble.id = Fnv32( "Debris" );
+	brick.components.push_back( rubble );
+	map.templates.push_back( wall );
+	map.templates.push_back( brick );
+	// In front of where the first player stands, a few metres on: where its grenade goes.
+	const b3Vec3 spawn = map.spawnCenter;
+	map.instances.push_back( { first, { spawn.x - 5.25f, 1.0f, spawn.z + 7.0f }, 0.0f, 0.0f } );
+	QuantizeLayout( map );
+	std::vector<uint8_t> bytes;
+	SerializeMap( map, bytes );
+	std::filesystem::path mapPath = std::filesystem::temp_directory_path() / "cb_net_test_frag_wall.cbmap";
+	std::string error;
+	CHECK( WriteMapFile( mapPath.string(), bytes, error ) );
+
+	const uint32_t throwAt = 240;
+	Harness h( 47900, {}, mapPath.string(), { { "frag.break_radius", "12" } }, [&]( ServerOptions& options ) {
+		std::string error, warnings;
+		options.character = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
+		options.loadAnimPack = [root]( const std::string& mod, const std::string& pack, std::string& error, std::string& warnings ) {
+			return LoadAnimPackFolder( root + "/server_mods/" + mod + "/client", pack, error, warnings );
+		};
+	} );
+	const ActionBits throwKey = UseKey( h.server.Schema(), "frag.grenade" );
+	net::NetSimConfig link;
+	link.latencyMs = 50;
+	h.AddNetSim( 47901, link );
+	Bot& bot = h.AddBot();
+	bot.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraPitch = -3000;
+		in.actions = tick >= throwAt && tick < throwAt + 4 ? throwKey : ActionBits( 0 );
+		return in;
+	};
+	auto count = [&]( const Simulation& sim, uint32_t index ) {
+		int n = 0;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const TemplateRef* ref = sim.FindEntity( r.netId ).try_get<TemplateRef>();
+			n += ref != nullptr && ref->index == index ? 1 : 0;
+		}
+		return n;
+	};
+	uint32_t brokenAt = 0;
+	h.server.SetTickObserver( [&] {
+		const Simulation& sim = h.server.Sim();
+		brokenAt = brokenAt == 0 && count( sim, first + 1 ) > 0 ? sim.Tick() : brokenAt;
+	} );
+	h.RunUntil( 8.0 );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	const Simulation& server = h.server.Sim();
+	GameClient& client = *bot.client;
+	const int clientWalls = client.Session() != nullptr ? count( client.Session()->Sim(), first ) : -1;
+	const int clientPieces = client.Session() != nullptr ? count( client.Session()->Sim(), first + 1 ) : -1;
+	std::printf( "    the wall broke at tick %u (%.2f s after the throw); the server has %d wall, %d pieces; the client %d wall, %d pieces; "
+				 "desyncs %u\n",
+				 brokenAt, float( brokenAt - throwAt ) / 60.0f, count( server, first ), count( server, first + 1 ), clientWalls, clientPieces,
+				 client.GetStats().desyncs );
+	CHECK( brokenAt > throwAt && count( server, first ) == 0 && count( server, first + 1 ) == 4 );
+	CHECK( clientWalls == 0 && clientPieces == 4 && client.GetStats().desyncs == 0 );
+	std::error_code ignored;
+	std::filesystem::remove( mapPath, ignored );
+}
+
 // Motions that hold are predicted too: behind 50 ms each way, flying into a wall, landing, a
 // jetpack run until its tank is empty and a glide down are, tick for tick, what the server then
 // has: the position, the fuel the gauge shows, the events. The flight mod's C++ only gives the fuel
@@ -4452,6 +4548,7 @@ int main( int argc, char** argv )
 		{ "dash", TestDash },
 		{ "grenade", TestGrenade },
 		{ "frag", TestFrag },
+		{ "frag_breaks", TestFragBreaks },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },

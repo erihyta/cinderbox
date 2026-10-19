@@ -93,6 +93,42 @@ func _initialize() -> void:
 	block.mesh = box
 	tower.add_child(block)
 
+	# A wall that breaks (a frag grenade's blast breaks it): 4 x 3 m, twelve bricks of 1 x 1 x 0.4 m.
+	var wall := CbBreakable.new()
+	wall.name = "BrickWall"
+	wall.position = Vector3(0, 1.5, -12)
+	var whole := BoxShape3D.new()
+	whole.size = Vector3(4, 3, 0.4)
+	var whole_shape := CollisionShape3D.new()
+	whole_shape.name = "Shape"
+	whole_shape.shape = whole
+	wall.add_child(whole_shape)
+	var whole_look := MeshInstance3D.new()
+	whole_look.name = "Mesh"
+	var whole_mesh := BoxMesh.new()
+	whole_mesh.size = Vector3(4, 3, 0.4)
+	whole_mesh.material = _material(Color(0.62, 0.32, 0.24))
+	whole_look.mesh = whole_mesh
+	wall.add_child(whole_look)
+	var brick_mesh := BoxMesh.new()
+	brick_mesh.size = Vector3(0.98, 0.98, 0.4)
+	brick_mesh.material = _material(Color(0.62, 0.32, 0.24))
+	var dark := BoxMesh.new()
+	dark.size = Vector3(0.98, 0.98, 0.4)
+	dark.material = _material(Color(0.5, 0.25, 0.19))
+	for row in 3:
+		for column in 4:
+			var brick := CbProp.new()
+			brick.name = "Brick%d_%d" % [row, column]
+			brick.size = Vector3(0.98, 0.98, 0.4)
+			brick.position = Vector3(-1.5 + column, -1.0 + row, 0)
+			var look_brick := MeshInstance3D.new()
+			look_brick.name = "Mesh"
+			look_brick.mesh = brick_mesh if (row + column) % 2 == 0 else dark
+			brick.add_child(look_brick)
+			wall.add_child(brick)
+	root.add_child(wall)
+
 	# Balls that roll to a stop: the props (a CbProp starts at 0.05) and the spawnable template's.
 	var material := root.get_node_or_null("Templates/bouncy_ball/Material")
 	if material != null:

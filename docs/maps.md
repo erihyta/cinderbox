@@ -11,6 +11,7 @@ The markers carry the collision the simulation needs; everything else in the sce
 |---|---|
 | `CbStatic` | Solid level geometry: floor, wall, ramp, step, platform. A box of `size` (full size in metres), or the [shapes](#collision-shapes) under it. |
 | `CbProp` | A dynamic body the level starts with: a box or sphere, or the [shapes](#collision-shapes) under it, drawn by its own meshes. A [body](#a-body) like any other: `mass`, `density`, `friction`, `bounce` |
+| `CbBreakable` | A [wall that breaks](#walls-that-break): static and whole until a mod breaks it, then the `CbProp` pieces under it. |
 | `CbSpawn` | Where players appear. One per map. |
 | `CbTemplate` | A named entity built from components (see Entities below). |
 | `CbComponent` | One component on a template, with the fields the simulation defines. |
@@ -34,6 +35,25 @@ Baked values, including authored component fields, are rounded to fixed-point (1
 1/4096 rad) so a map is identical on every platform, and the order of the nodes in the scene is
 the order entities are created in, which is part of the map's identity. See `src/sim/map.h` for
 the format and `src/sim/reflect.h` for the component registry.
+
+## Walls that break
+
+A `CbBreakable` is a wall (or anything static) and what it breaks into, authored beforehand.
+
+| Under it | Is |
+|---|---|
+| `CollisionShape3D` nodes | the wall's shapes while it is whole |
+| meshes (and other look nodes) | how it looks whole; the pieces' meshes are not part of it |
+| `CbProp` nodes | its pieces: each a body of its own (its shapes or its box, its meshes, its [body](#a-body) settings), at most 256 |
+
+- **Whole**, it is static: it costs nothing in rollback, and nothing that bumps into it breaks it.
+- **Broken** (a mod calls `ctx.Break`; the frag grenade's blast does): the wall goes and its pieces
+  come in where they stood, flying away from the blast. Everyone sees the same pieces.
+- **Pieces are rubble**: players stand on them and are stopped by them, but never shove them (they
+  are in a collision group the player's capsule ignores). Blasts, shots and other bodies move them.
+- The bake makes the wall a static template placed where it stands, and each piece a template of its
+  own; its pieces are not the map's props. `test_ground.tscn` has one: `BrickWall`, twelve bricks,
+  12 m north of the spawn.
 
 ## Collision shapes
 
@@ -87,7 +107,8 @@ with a `visual` keeps that prefab; one with neither draws its shape's default pr
 
 Turns are stored as yaw, pitch and roll (Godot's YXZ order) on the 1/4096 rad grid. Maps baked
 before this (version 3: boxes without roll; version 4: no hulls; version 5: one shape per body;
-version 6: no triangle meshes or height fields; version 7: no rolling or drag) still load. A placed entity turns with roll too.
+version 6: no triangle meshes or height fields; version 7: no rolling or drag; version 8: no
+breakables) still load. A placed entity turns with roll too.
 
 ## A body
 

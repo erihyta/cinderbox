@@ -257,6 +257,16 @@ void QuantizeLayout( LevelLayout& layout )
 	{
 		Snap( instance.roll, kMapAngleScale );
 	}
+	for ( EntityTemplate& t : layout.templates )
+	{
+		for ( TemplatePiece& piece : t.pieces )
+		{
+			SnapVec( piece.position, kMapPositionScale );
+			Snap( piece.pitch, kMapAngleScale );
+			Snap( piece.yaw, kMapAngleScale );
+			Snap( piece.roll, kMapAngleScale );
+		}
+	}
 	for ( std::vector<b3Vec3>& hull : layout.hulls )
 	{
 		for ( b3Vec3& point : hull )
@@ -410,6 +420,15 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 		}
 		AppendU32( out, t.shapes );
 		AppendU32( out, t.look );
+		AppendU32( out, uint32_t( t.pieces.size() ) );
+		for ( const TemplatePiece& piece : t.pieces )
+		{
+			AppendU32( out, piece.templateIndex );
+			AppendPos( out, piece.position );
+			AppendI32( out, MapQuantize( piece.pitch, kMapAngleScale ) );
+			AppendI32( out, MapQuantize( piece.yaw, kMapAngleScale ) );
+			AppendI32( out, MapQuantize( piece.roll, kMapAngleScale ) );
+		}
 	}
 
 	AppendU32( out, uint32_t( layout.instances.size() ) );
@@ -722,10 +741,42 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 				return false;
 			}
 		}
+		if ( version >= 9 )
+		{
+			uint32_t pieces = rd.U32();
+			if ( rd.ok == false || pieces > kMapPieceLimit || pieces > ( size - rd.cursor ) / 28 )
+			{
+				error = "a template has too many pieces";
+				return false;
+			}
+			for ( uint32_t p = 0; p < pieces; ++p )
+			{
+				TemplatePiece piece;
+				piece.templateIndex = rd.U32();
+				piece.position = rd.Pos();
+				piece.pitch = MapDequantize( rd.I32(), kMapAngleScale );
+				piece.yaw = MapDequantize( rd.I32(), kMapAngleScale );
+				piece.roll = MapDequantize( rd.I32(), kMapAngleScale );
+				t.pieces.push_back( piece );
+			}
+		}
 		// Values this build does not understand are dropped, and the rest is clamped to its range,
 		// so a map can never push the simulation outside what the registry allows.
 		SanitizeTemplate( t );
 		layout.templates.push_back( std::move( t ) );
+	}
+
+	// A piece is a template of the map, and never a breakable itself (no breaking twice).
+	for ( const EntityTemplate& t : layout.templates )
+	{
+		for ( const TemplatePiece& piece : t.pieces )
+		{
+			if ( piece.templateIndex >= layout.templates.size() || layout.templates[piece.templateIndex].pieces.empty() == false )
+			{
+				error = "a breakable's piece is not a template of the map, or breaks itself";
+				return false;
+			}
+		}
 	}
 
 	uint32_t instanceCount = rd.U32();

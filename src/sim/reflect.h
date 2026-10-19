@@ -106,6 +106,23 @@ struct AuthoredComponent
 inline constexpr uint32_t kNoShapes = 0xFFFFFFFFu;
 inline constexpr uint32_t kNoLook = 0xFFFFFFFFu;
 
+// One piece a breakable template comes apart into: a template of its own (a body, its look), where
+// it is in the breakable's frame and how it is turned (yaw, pitch, roll as a piece is).
+struct TemplatePiece
+{
+	uint32_t templateIndex = 0;
+	b3Vec3 position = { 0.0f, 0.0f, 0.0f };
+	float pitch = 0.0f;
+	float yaw = 0.0f;
+	float roll = 0.0f;
+
+	bool operator==( const TemplatePiece& o ) const
+	{
+		return templateIndex == o.templateIndex && position.x == o.position.x && position.y == o.position.y && position.z == o.position.z &&
+			   pitch == o.pitch && yaw == o.yaw && roll == o.roll;
+	}
+};
+
 // A named entity definition a map can place and the server can spawn at runtime.
 struct EntityTemplate
 {
@@ -120,6 +137,8 @@ struct EntityTemplate
 	// entity), counted in scene-tree order over CbProp, CbTemplate and CbEntity nodes
 	// (MapLookNodes). Presentation only.
 	uint32_t look = kNoLook;
+	// What it breaks into (a Break command): none, it does not break.
+	std::vector<TemplatePiece> pieces;
 
 	const AuthoredComponent* Find( uint32_t componentId ) const;
 };

@@ -35,8 +35,10 @@ float LevelQuery::FreeDistance( b3Vec3 origin, b3Vec3 direction, float maxDistan
 		std::vector<LevelInstance> kept;
 		for ( const LevelInstance& instance : statics.instances )
 		{
+			// (Not a breakable: it may be gone, and this copy is never told.)
 			const bool fixed = instance.templateIndex < statics.templates.size() &&
-							   TemplateInt( statics.templates[instance.templateIndex], Fnv32( "Body" ), Fnv32( "type" ), 2 ) == 0;
+							   TemplateInt( statics.templates[instance.templateIndex], Fnv32( "Body" ), Fnv32( "type" ), 2 ) == 0 &&
+							   statics.templates[instance.templateIndex].pieces.empty();
 			if ( fixed )
 			{
 				kept.push_back( instance );

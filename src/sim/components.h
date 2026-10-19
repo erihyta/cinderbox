@@ -420,6 +420,9 @@ enum CollisionCategory : uint64_t
 	CatProp = 1 << 1,
 	CatPlayer = 1 << 2,
 	CatRagdoll = 1 << 3,
+	// Rubble (a broken wall's pieces): a player's capsule does not collide with it, so a player never
+	// shoves it, while the mover's own casts still meet it (players stand on it and are stopped by it).
+	CatDebris = 1 << 4,
 };
 
 } // namespace cb

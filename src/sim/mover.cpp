@@ -178,7 +178,7 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	float pogoRest = 3.0f * kCapsuleRadius;
 	float rayLength = pogoRest + kCapsuleRadius;
 	b3Pos rayOrigin = b3Add( t.position, capsule.center1 );
-	b3QueryFilter groundFilter = { CatPlayer, CatStatic | CatProp | CatRagdoll, 0, nullptr };
+	b3QueryFilter groundFilter = { CatPlayer, CatStatic | CatProp | CatRagdoll | CatDebris, 0, nullptr };
 	b3RayResult ray = b3World_CastRayClosest( body.world, rayOrigin, { 0.0f, -rayLength, 0.0f }, groundFilter );
 
 	// Ground steeper than max_slope does not hold the character up: it slides down it, under gravity,
@@ -258,9 +258,10 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	for ( int i = 0; i < ctx.count; ++i )
 	{
 		b3BodyId other = b3Shape_GetBody( ctx.shapes[i] );
-		if ( b3Body_GetType( other ) != b3_dynamicBody )
+		if ( b3Body_GetType( other ) != b3_dynamicBody || ( b3Shape_GetFilter( ctx.shapes[i] ).categoryBits & CatDebris ) != 0 )
 		{
-			// What does not move stops the character outright.
+			// What does not move stops the character outright; so does rubble, which a player never
+			// shoves (its pieces move only when something breaks them or lands on them).
 			solid[solidCount++] = ctx.planes[i];
 			continue;
 		}

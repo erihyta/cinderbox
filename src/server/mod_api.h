@@ -522,6 +522,9 @@ public:
 	// Everything loose within `radius` of `point`, nearest first: props, items lying in the world,
 	// ragdolls (what Push moves). Not players, and not the map. For a blast, a magnet, a wind.
 	std::vector<NearBody> BodiesNear( b3Vec3 point, float radius ) const;
+	// What breaks (an entity whose template has pieces: a map's CbBreakable) within `radius` of
+	// `point`, by the distance to its centre, nearest first.
+	std::vector<uint32_t> BreakablesNear( b3Vec3 point, float radius ) const;
 
 	// Entities of a kind, in NetId order (creation order).
 	std::vector<uint32_t> Props() const;
@@ -584,6 +587,9 @@ public:
 					uint32_t lifetimeTicks );
 	void SpawnTemplate( uint32_t templateIndex, b3Vec3 position, float yaw, b3Vec3 velocity, uint32_t owner, uint32_t lifetimeTicks );
 	void Destroy( uint32_t target );
+	// A breakable comes apart (CommandType::Break): its pieces fly away from `blast`, a piece at the
+	// blast at `speed` m/s, slower with distance; they stay `seconds` (0: for good).
+	void Break( uint32_t target, b3Vec3 blast, float speed, float seconds = 0.0f );
 	void Push( uint32_t target, b3Vec3 point, b3Vec3 vector, ImpulseMode mode );
 	// ragdollLifetimeTicks 0 keeps it; ragdollCap 0 means no limit.
 	void Kill( uint32_t target, bool ragdoll, b3Vec3 hitPoint = {}, b3Vec3 hitVelocity = {}, uint32_t ragdollLifetimeTicks = 0,
