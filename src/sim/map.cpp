@@ -428,6 +428,13 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 			AppendI32( out, MapQuantize( piece.pitch, kMapAngleScale ) );
 			AppendI32( out, MapQuantize( piece.yaw, kMapAngleScale ) );
 			AppendI32( out, MapQuantize( piece.roll, kMapAngleScale ) );
+			AppendU32( out, piece.held ? 1u : 0u );
+		}
+		AppendU32( out, uint32_t( t.links.size() ) );
+		for ( const PieceLink& link : t.links )
+		{
+			AppendU32( out, link.a );
+			AppendU32( out, link.b );
 		}
 	}
 
@@ -757,7 +764,28 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 				piece.pitch = MapDequantize( rd.I32(), kMapAngleScale );
 				piece.yaw = MapDequantize( rd.I32(), kMapAngleScale );
 				piece.roll = MapDequantize( rd.I32(), kMapAngleScale );
+				piece.held = version >= 10 && rd.U32() != 0;
 				t.pieces.push_back( piece );
+			}
+			if ( version >= 10 )
+			{
+				uint32_t links = rd.U32();
+				if ( rd.ok == false || links > kMapPieceLinkLimit || links > ( size - rd.cursor ) / 8 )
+				{
+					error = "a template has too many links between its pieces";
+					return false;
+				}
+				for ( uint32_t l = 0; l < links; ++l )
+				{
+					uint32_t a = rd.U32();
+					uint32_t b = rd.U32();
+					if ( rd.ok == false || a >= b || b >= pieces )
+					{
+						error = "a link between pieces that a template does not have";
+						return false;
+					}
+					t.links.push_back( { uint16_t( a ), uint16_t( b ) } );
+				}
 			}
 		}
 		// Values this build does not understand are dropped, and the rest is clamped to its range,

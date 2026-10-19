@@ -172,6 +172,10 @@ func _initialize() -> void:
 	var one_shape := rubble.all(func(b): return b["shapes"] == 1 and b["debris"])
 	_check("the wall with 24 pieces, each a template of one shape", walls.size() == 1 and walls[0]["pieces"] == 24 and rubble.size() == 24 and
 		one_shape, [walls, rubble.size()])
+	# Cut chunks touch their neighbours face to face: every chunk at least one, so more links than
+	# chunks less one; those along its foot hold it up.
+	_check("its chunks touch (more links than chunks less one), some held at its foot", walls.size() == 1 and walls[0]["links"] >= 23 and
+		walls[0]["held"] >= 2 and walls[0]["held"] < 24, walls)
 
 	for list in [pieces, again.pieces, other.pieces, crowded, cut.pieces]:
 		for piece in list:

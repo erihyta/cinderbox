@@ -668,8 +668,217 @@ bool PropTemplate( CbProp* prop, const Transform3D& here, bool debris, EntityTem
 	return true;
 }
 
+// --- Holes: which pieces touch, which hold the wall up ---
+
+// Pieces this near along a face touch (hold each other up); a piece this near the wall's held
+// edge is held.
+constexpr float kTouch = 0.03f;
+
+// The points of what a CollisionShape3D covers, where `at` puts it: a box's corners, a hull's
+// points; for any other kind the corners of its bounds.
+void ShapePoints( const CollisionShape3D* node, const Transform3D& at, std::vector<Vector3>& out )
+{
+	Ref<Shape3D> shape = node->get_shape();
+	if ( shape.is_null() || node->is_disabled() )
+	{
+		return;
+	}
+	AABB box;
+	if ( auto* hull = Object::cast_to<ConvexPolygonShape3D>( shape.ptr() ) )
+	{
+		for ( const Vector3& p : hull->get_points() )
+		{
+			out.push_back( at.xform( p ) );
+		}
+		return;
+	}
+	if ( auto* cube = Object::cast_to<BoxShape3D>( shape.ptr() ) )
+	{
+		box = AABB( -cube->get_size() * 0.5f, cube->get_size() );
+	}
+	else if ( shape->get_debug_mesh().is_valid() )
+	{
+		box = shape->get_debug_mesh()->get_aabb();
+	}
+	for ( int i = 0; i < 8; ++i )
+	{
+		out.push_back( at.xform( box.get_endpoint( i ) ) );
+	}
+}
+
+// A piece's points where `in` puts it (in the wall's frame): its shapes', or its own box or ball's.
+std::vector<Vector3> PiecePoints( CbProp* prop, const Transform3D& in )
+{
+	std::vector<Vector3> out;
+	for ( int i = 0; i < prop->get_child_count(); ++i )
+	{
+		if ( auto* shape = Object::cast_to<CollisionShape3D>( prop->get_child( i ) ) )
+		{
+			ShapePoints( shape, in * shape->get_transform(), out );
+		}
+	}
+	if ( out.empty() )
+	{
+		const Vector3 half = prop->get_shape() == CbProp::SHAPE_SPHERE ? Vector3( 1, 1, 1 ) * prop->get_radius() : prop->get_size() * 0.5f;
+		const AABB box( -half, half * 2.0f );
+		for ( int i = 0; i < 8; ++i )
+		{
+			out.push_back( in.xform( box.get_endpoint( i ) ) );
+		}
+	}
+	return out;
+}
+
+// The faces of the hull of `points`, outward: every plane through three of them with the rest behind.
+std::vector<Plane> HullPlanes( const std::vector<Vector3>& raw )
+{
+	std::vector<Vector3> points;
+	for ( const Vector3& p : raw )
+	{
+		if ( std::none_of( points.begin(), points.end(), [&]( const Vector3& q ) { return q.distance_to( p ) < 1e-4f; } ) )
+		{
+			points.push_back( p );
+		}
+	}
+	std::vector<Plane> planes;
+	const size_t n = std::min<size_t>( points.size(), 64 );
+	for ( size_t i = 0; i < n; ++i )
+	{
+		for ( size_t j = i + 1; j < n; ++j )
+		{
+			for ( size_t k = j + 1; k < n; ++k )
+			{
+				Vector3 normal = ( points[j] - points[i] ).cross( points[k] - points[i] );
+				if ( normal.length() < 1e-7f )
+				{
+					continue;
+				}
+				normal = normal.normalized();
+				const float d = normal.dot( points[i] );
+				bool above = false, below = false;
+				for ( size_t m = 0; m < n; ++m )
+				{
+					const float side = normal.dot( points[m] ) - d;
+					above = above || side > 1e-4f;
+					below = below || side < -1e-4f;
+				}
+				if ( above && below )
+				{
+					continue;
+				}
+				const Plane plane = above ? Plane( -normal, -d ) : Plane( normal, d );
+				if ( std::none_of( planes.begin(), planes.end(), [&]( const Plane& q ) {
+						 return q.normal.distance_to( plane.normal ) < 1e-3f && std::fabs( q.d - plane.d ) < 1e-4f;
+					 } ) )
+				{
+					planes.push_back( plane );
+				}
+			}
+		}
+	}
+	return planes;
+}
+
+// Those of `points` within kTouch of the hull with these faces, added to `out`.
+void PointsNear( const std::vector<Vector3>& points, const std::vector<Plane>& planes, std::vector<Vector3>& out )
+{
+	if ( planes.size() < 4 )
+	{
+		return;
+	}
+	for ( const Vector3& p : points )
+	{
+		bool inside = true;
+		for ( const Plane& plane : planes )
+		{
+			inside = inside && plane.distance_to( p ) <= kTouch;
+		}
+		if ( inside )
+		{
+			out.push_back( p );
+		}
+	}
+}
+
+// Whether points span a face at least this wide each way (not a line, an edge, a corner).
+constexpr float kFaceWidth = 0.05f;
+bool SpansFace( const std::vector<Vector3>& points )
+{
+	if ( points.size() < 3 )
+	{
+		return false;
+	}
+	// Its longest stretch, and how far from that line the points go.
+	Vector3 from, to;
+	float longest = 0.0f;
+	for ( size_t i = 0; i < points.size(); ++i )
+	{
+		for ( size_t j = i + 1; j < points.size(); ++j )
+		{
+			if ( points[i].distance_to( points[j] ) > longest )
+			{
+				longest = points[i].distance_to( points[j] );
+				from = points[i];
+				to = points[j];
+			}
+		}
+	}
+	if ( longest < kFaceWidth )
+	{
+		return false;
+	}
+	const Vector3 along = ( to - from ) / longest;
+	float wide = 0.0f;
+	for ( const Vector3& p : points )
+	{
+		const Vector3 off = p - from;
+		wide = std::max( wide, ( off - along * off.dot( along ) ).length() );
+	}
+	return wide >= kFaceWidth;
+}
+
+// Which pieces touch: the corners of each within kTouch of the other span a face (a face against a
+// face, as a brick on a brick or two chunks the fracture tool cut; an edge or a corner alone does
+// not hold). Which hold the wall up: those within kTouch of its bounds where it is held.
+void LinkPieces( const std::vector<std::vector<Vector3>>& pieces, const AABB& wall, int heldAt, EntityTemplate& t )
+{
+	std::vector<std::vector<Plane>> faces;
+	std::vector<AABB> bounds;
+	for ( const std::vector<Vector3>& points : pieces )
+	{
+		faces.push_back( HullPlanes( points ) );
+		AABB box( points.empty() ? Vector3() : points[0], Vector3() );
+		for ( const Vector3& p : points )
+		{
+			box.expand_to( p );
+		}
+		bounds.push_back( box );
+	}
+	const Vector3 low = wall.position, high = wall.position + wall.size;
+	for ( size_t i = 0; i < pieces.size() && i < t.pieces.size(); ++i )
+	{
+		const Vector3 a = bounds[i].position, b = bounds[i].position + bounds[i].size;
+		t.pieces[i].held = ( ( heldAt & CbBreakable::HELD_BOTTOM ) && a.y <= low.y + kTouch ) || ( ( heldAt & CbBreakable::HELD_TOP ) && b.y >= high.y - kTouch ) ||
+						   ( ( heldAt & CbBreakable::HELD_SIDES ) && ( a.x <= low.x + kTouch || b.x >= high.x - kTouch ) );
+		for ( size_t j = i + 1; j < pieces.size() && j < t.pieces.size() && t.links.size() < kMapPieceLinkLimit; ++j )
+		{
+			if ( bounds[i].grow( kTouch ).intersects( bounds[j] ) == false )
+			{
+				continue;
+			}
+			std::vector<Vector3> near;
+			PointsNear( pieces[i], faces[j], near );
+			PointsNear( pieces[j], faces[i], near );
+			if ( SpansFace( near ) )
+			{
+				t.links.push_back( { uint16_t( i ), uint16_t( j ) } );
+			}
+		}
+	}
+}
+
 // A breakable: a static template of its shapes and look, its CbProp children its pieces (rubble
-// templates, placed in its frame), and its placement.
+// templates, placed in its frame), which of them touch and which hold it up, and its placement.
 void BakeBreakable( CbBreakable* node, const Transform3D& here, BakeContext& ctx )
 {
 	std::vector<LevelBox> set;
@@ -686,6 +895,21 @@ void BakeBreakable( CbBreakable* node, const Transform3D& here, BakeContext& ctx
 	wall.shapes = AddShapeSet( ctx, std::move( set ) );
 	wall.look = HasLook( node ) ? LookOf( ctx, node ) : kNoLook;
 	const Transform3D frame( here.basis.orthonormalized(), here.origin );
+	// Its bounds whole, in its own frame (where it is held), and each piece's points there.
+	std::vector<Vector3> whole;
+	std::vector<std::vector<Vector3>> points;
+	for ( int i = 0; i < node->get_child_count(); ++i )
+	{
+		if ( auto* shape = Object::cast_to<CollisionShape3D>( node->get_child( i ) ) )
+		{
+			ShapePoints( shape, frame.affine_inverse() * ( here * shape->get_transform() ), whole );
+		}
+	}
+	AABB bounds( whole.empty() ? Vector3() : whole[0], Vector3() );
+	for ( const Vector3& p : whole )
+	{
+		bounds.expand_to( p );
+	}
 	for ( int i = 0; i < node->get_child_count(); ++i )
 	{
 		auto* prop = Object::cast_to<CbProp>( node->get_child( i ) );
@@ -700,6 +924,7 @@ void BakeBreakable( CbBreakable* node, const Transform3D& here, BakeContext& ctx
 		{
 			continue;
 		}
+		points.push_back( PiecePoints( prop, in ) );
 		piece.name = SafeText( node->get_name() + String( "_" ) + prop->get_name() );
 		const Vector3 euler = in.basis.orthonormalized().get_euler( EULER_ORDER_YXZ );
 		TemplatePiece placed;
@@ -713,6 +938,12 @@ void BakeBreakable( CbBreakable* node, const Transform3D& here, BakeContext& ctx
 	if ( wall.pieces.empty() )
 	{
 		ctx.warnings.push_back( node->get_name() + String( ": it has no CbProp children, so it never breaks" ) );
+	}
+	LinkPieces( points, bounds, node->get_held_at(), wall );
+	if ( wall.pieces.empty() == false &&
+		 std::none_of( wall.pieces.begin(), wall.pieces.end(), []( const TemplatePiece& piece ) { return piece.held; } ) )
+	{
+		ctx.warnings.push_back( node->get_name() + String( ": none of its pieces is where it is held (held_at), so a hole brings all of it down" ) );
 	}
 	ctx.layout.instances.push_back( InstanceAt( AddTemplate( ctx, std::move( wall ) ), here ) );
 }
@@ -965,6 +1196,16 @@ bool IsLookNode( const Node* node )
 
 // --- CbBreakable --------------------------------------------------------------------------------
 
+void CbBreakable::_bind_methods()
+{
+	ClassDB::bind_method( D_METHOD( "set_held_at", "held" ), &CbBreakable::set_held_at );
+	ClassDB::bind_method( D_METHOD( "get_held_at" ), &CbBreakable::get_held_at );
+	ADD_PROPERTY( PropertyInfo( Variant::INT, "held_at", PROPERTY_HINT_FLAGS, "Bottom,Top,Sides" ), "set_held_at", "get_held_at" );
+	BIND_CONSTANT( HELD_BOTTOM );
+	BIND_CONSTANT( HELD_TOP );
+	BIND_CONSTANT( HELD_SIDES );
+}
+
 PackedStringArray CbBreakable::_get_configuration_warnings() const
 {
 	PackedStringArray warnings;
@@ -1215,6 +1456,8 @@ Dictionary CinderboxMapBaker::bake( Node* root, const String& path )
 		body["look"] = t.look == kNoLook ? -1 : int( t.look );
 		body["visual"] = String( TemplateLookName( t ).c_str() );
 		body["pieces"] = int( t.pieces.size() );
+		body["held"] = int( std::count_if( t.pieces.begin(), t.pieces.end(), []( const TemplatePiece& piece ) { return piece.held; } ) );
+		body["links"] = int( t.links.size() );
 		body["debris"] = t.Find( Fnv32( "Debris" ) ) != nullptr;
 		bodies.push_back( body );
 	}

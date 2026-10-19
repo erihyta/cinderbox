@@ -767,109 +767,109 @@ _surfaces = [{
 "vertex_data": PackedByteArray("k6gyPwBDTb4AAIC+06cdP2wz674AAIA+k6gyPwBDTb4AAIA+k6gyPwBDTb4AAIC+06cdP2wz674AAIC+06cdP2wz674AAIA+AAbWPJ3ODD8AAIA+akhrvyrivj4AAIC+AAbWPJ3ODD8AAIC+AAbWPJ3ODD8AAIA+akhrvyrivj4AAIA+akhrvyrivj4AAIC+AAbWPJ3ODD8AAIC+kCD/PggSST4AAIA+AAbWPJ3ODD8AAIA+AAbWPJ3ODD8AAIC+kCD/PggSST4AAIC+kCD/PggSST4AAIA+kCD/PggSST4AAIC+k6gyPwBDTb4AAIA+kCD/PggSST4AAIA+kCD/PggSST4AAIC+k6gyPwBDTb4AAIC+k6gyPwBDTb4AAIA+MuEzYe52sLEy4TNh7nawsTLhM2HudrCxMuEzYe52sLEy4TNh7nawsTLhM2HudrCxymvJ604XLrbKa8nrThcutspryetOFy62ymvJ604XLrbKa8nrThcutspryetOFy620LYuyZZIv9TQti7Jlki/1NC2LsmWSL/U0LYuyZZIv9TQti7Jlki/1NC2LsmWSL/UKdXVqo5tVNIp1dWqjm1U0inV1aqObVTSKdXVqo5tVNIp1dWqjm1U0inV1aqObVTS")
 }]
 
-[node name="TestGround" type="Node3D" unique_id=1643106737]
+[node name="TestGround" type="Node3D" unique_id=598762775]
 
-[node name="Ground" type="CbStatic" parent="." unique_id=1433796209]
+[node name="Ground" type="CbStatic" parent="." unique_id=1559628810]
 size = Vector3(40, 1, 40)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ground" unique_id=865627177]
+[node name="Mesh" type="MeshInstance3D" parent="Ground" unique_id=1186413817]
 mesh = SubResource("Mesh_0")
 
-[node name="WallNorth" type="CbStatic" parent="." unique_id=621172152]
+[node name="WallNorth" type="CbStatic" parent="." unique_id=1434803992]
 size = Vector3(40, 3, 0.5)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 20.25)
 
-[node name="Mesh" type="MeshInstance3D" parent="WallNorth" unique_id=139706202]
+[node name="Mesh" type="MeshInstance3D" parent="WallNorth" unique_id=434985634]
 mesh = SubResource("Mesh_1")
 
-[node name="WallSouth" type="CbStatic" parent="." unique_id=672536845]
+[node name="WallSouth" type="CbStatic" parent="." unique_id=630928051]
 size = Vector3(40, 3, 0.5)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -20.25)
 
-[node name="Mesh" type="MeshInstance3D" parent="WallSouth" unique_id=1859984259]
+[node name="Mesh" type="MeshInstance3D" parent="WallSouth" unique_id=1148694664]
 mesh = SubResource("Mesh_1")
 
-[node name="WallWest" type="CbStatic" parent="." unique_id=857608404]
+[node name="WallWest" type="CbStatic" parent="." unique_id=1153445754]
 size = Vector3(0.5, 3, 40)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -20.25, 1.5, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="WallWest" unique_id=1795276276]
+[node name="Mesh" type="MeshInstance3D" parent="WallWest" unique_id=1310032419]
 mesh = SubResource("Mesh_2")
 
-[node name="Ramp" type="CbStatic" parent="." unique_id=582198650]
+[node name="Ramp" type="CbStatic" parent="." unique_id=1509699288]
 size = Vector3(6, 0.4, 8)
 transform = Transform3D(1, 0, 0, 0, 0.939373, -0.342898, 0, 0.342898, 0.939373, 8, 0.9, 6)
 
-[node name="Mesh" type="MeshInstance3D" parent="Ramp" unique_id=146907260]
+[node name="Mesh" type="MeshInstance3D" parent="Ramp" unique_id=2043229218]
 mesh = SubResource("Mesh_3")
 
-[node name="PlatformLow" type="CbStatic" parent="." unique_id=95321530]
+[node name="PlatformLow" type="CbStatic" parent="." unique_id=1799272683]
 size = Vector3(6, 0.4, 6)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 2, -6)
 
-[node name="Mesh" type="MeshInstance3D" parent="PlatformLow" unique_id=658452680]
+[node name="Mesh" type="MeshInstance3D" parent="PlatformLow" unique_id=1535929022]
 mesh = SubResource("Mesh_4")
 
-[node name="PlatformHigh" type="CbStatic" parent="." unique_id=1920407451]
+[node name="PlatformHigh" type="CbStatic" parent="." unique_id=867485877]
 size = Vector3(4, 0.4, 4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 4, -13)
 
-[node name="Mesh" type="MeshInstance3D" parent="PlatformHigh" unique_id=343322978]
+[node name="Mesh" type="MeshInstance3D" parent="PlatformHigh" unique_id=1503184895]
 mesh = SubResource("Mesh_5")
 
-[node name="Pillar" type="CbStatic" parent="." unique_id=1241503688]
+[node name="Pillar" type="CbStatic" parent="." unique_id=836642906]
 size = Vector3(1.5, 5, 1.5)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 2.5, -10)
 
-[node name="Mesh" type="MeshInstance3D" parent="Pillar" unique_id=247250366]
+[node name="Mesh" type="MeshInstance3D" parent="Pillar" unique_id=1966728885]
 mesh = SubResource("Mesh_6")
 
-[node name="CrateA" type="CbProp" parent="." unique_id=2143879796]
+[node name="CrateA" type="CbProp" parent="." unique_id=525876800]
 size = Vector3(1, 1, 1)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.5, -2)
 
-[node name="CrateB" type="CbProp" parent="." unique_id=1296945098]
+[node name="CrateB" type="CbProp" parent="." unique_id=1307937862]
 size = Vector3(1, 1, 1)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.8, 0.5, -2)
 
-[node name="CrateC" type="CbProp" parent="." unique_id=1943045924]
+[node name="CrateC" type="CbProp" parent="." unique_id=921678436]
 size = Vector3(1, 1, 1)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.15, 1.5, -2)
 
-[node name="BallA" type="CbProp" parent="." unique_id=13252671]
+[node name="BallA" type="CbProp" parent="." unique_id=857215243]
 shape = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 0.5, -2)
 
-[node name="BallB" type="CbProp" parent="." unique_id=1993865234]
+[node name="BallB" type="CbProp" parent="." unique_id=180457223]
 shape = 1
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, 0.5, -3.2)
 
-[node name="Spawn" type="CbSpawn" parent="." unique_id=1124639797]
+[node name="Spawn" type="CbSpawn" parent="." unique_id=1848210353]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 4)
 
-[node name="Templates" type="Node3D" parent="." unique_id=875992841]
+[node name="Templates" type="Node3D" parent="." unique_id=1157801225]
 
-[node name="bouncy_ball" type="CbTemplate" parent="Templates" unique_id=1455978389]
+[node name="bouncy_ball" type="CbTemplate" parent="Templates" unique_id=755508248]
 template_name = "bouncy_ball"
 visual = "prop_bouncy"
 spawnable = true
 
-[node name="Shape" type="CbComponent" parent="Templates/bouncy_ball" unique_id=1481386333]
+[node name="Shape" type="CbComponent" parent="Templates/bouncy_ball" unique_id=1839671492]
 component = 1
 kind = 1
 size = Vector3(1, 1, 1)
 radius = 0.35
 height = 2.0
 
-[node name="Body" type="CbComponent" parent="Templates/bouncy_ball" unique_id=1477198772]
+[node name="Body" type="CbComponent" parent="Templates/bouncy_ball" unique_id=1886553746]
 component = 2
 type = 2
 gravity_scale = 0.75
 linear_damping = 0.05
 angular_damping = 0.05
 
-[node name="Material" type="CbComponent" parent="Templates/bouncy_ball" unique_id=2078676969]
+[node name="Material" type="CbComponent" parent="Templates/bouncy_ball" unique_id=2105049012]
 component = 3
 density = 0.4
 friction = 0.3
@@ -877,29 +877,29 @@ restitution = 0.85
 rolling = 0.03
 mass = 0.0
 
-[node name="Prop" type="CbComponent" parent="Templates/bouncy_ball" unique_id=504723990]
+[node name="Prop" type="CbComponent" parent="Templates/bouncy_ball" unique_id=1037959478]
 component = 5
 lifetime_seconds = 25.0
 
-[node name="heavy_crate" type="CbTemplate" parent="Templates" unique_id=650679619]
+[node name="heavy_crate" type="CbTemplate" parent="Templates" unique_id=964017416]
 template_name = "heavy_crate"
 visual = "prop_heavy"
 
-[node name="Shape" type="CbComponent" parent="Templates/heavy_crate" unique_id=1281320484]
+[node name="Shape" type="CbComponent" parent="Templates/heavy_crate" unique_id=298827047]
 component = 1
 kind = 0
 size = Vector3(1.2, 1.2, 1.2)
 radius = 0.5
 height = 2.0
 
-[node name="Body" type="CbComponent" parent="Templates/heavy_crate" unique_id=349996253]
+[node name="Body" type="CbComponent" parent="Templates/heavy_crate" unique_id=1502188786]
 component = 2
 type = 2
 gravity_scale = 1.0
 linear_damping = 0.0
 angular_damping = 0.4
 
-[node name="Material" type="CbComponent" parent="Templates/heavy_crate" unique_id=540525532]
+[node name="Material" type="CbComponent" parent="Templates/heavy_crate" unique_id=1358714514]
 component = 3
 density = 12.0
 friction = 0.9
@@ -907,144 +907,144 @@ restitution = 0.0
 rolling = 0.0
 mass = 0.0
 
-[node name="HeavyCrateA" type="CbEntity" parent="." unique_id=326305415]
+[node name="HeavyCrateA" type="CbEntity" parent="." unique_id=437880091]
 template_name = "heavy_crate"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.6, -8)
 
-[node name="HeavyCrateB" type="CbEntity" parent="." unique_id=964268810]
+[node name="HeavyCrateB" type="CbEntity" parent="." unique_id=426749835]
 template_name = "heavy_crate"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 1.85, -8)
 
-[node name="Pedestal" type="CbEntity" parent="." unique_id=1916511100]
+[node name="Pedestal" type="CbEntity" parent="." unique_id=1050204662]
 visual = "prop_heavy"
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 0.4, -14)
 
-[node name="Shape" type="CbComponent" parent="Pedestal" unique_id=718206610]
+[node name="Shape" type="CbComponent" parent="Pedestal" unique_id=563336858]
 component = 1
 kind = 0
 size = Vector3(2.5, 0.8, 2.5)
 radius = 0.5
 height = 2.0
 
-[node name="Body" type="CbComponent" parent="Pedestal" unique_id=268019428]
+[node name="Body" type="CbComponent" parent="Pedestal" unique_id=1295535727]
 component = 2
 type = 0
 gravity_scale = 1.0
 linear_damping = 0.0
 angular_damping = 0.0
 
-[node name="Terrain" type="CbStatic" parent="." unique_id=718236145]
+[node name="Terrain" type="CbStatic" parent="." unique_id=1843419932]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40.5, 0, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="Terrain" unique_id=1264199435]
+[node name="Shape" type="CollisionShape3D" parent="Terrain" unique_id=1660865939]
 transform = Transform3D(0.5, 0, 0, 0, 1, 0, 0, 0, 0.5, 0, 0, 0)
 shape = SubResource("HeightMapShape3D_fyyyq")
 
-[node name="Mesh" type="MeshInstance3D" parent="Terrain" unique_id=1327920541]
+[node name="Mesh" type="MeshInstance3D" parent="Terrain" unique_id=626534097]
 material_override = SubResource("StandardMaterial3D_5jy5r")
 mesh = ExtResource("1_cyld6")
 
-[node name="Tower" type="CbStatic" parent="." unique_id=1421098327]
+[node name="Tower" type="CbStatic" parent="." unique_id=1902909942]
 size = Vector3(12, 36, 12)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 46, 17.130228, -8)
 
-[node name="Mesh" type="MeshInstance3D" parent="Tower" unique_id=1434078383]
+[node name="Mesh" type="MeshInstance3D" parent="Tower" unique_id=1157485595]
 mesh = SubResource("BoxMesh_ot7dv")
 
-[node name="BrickWall" type="CbBreakable" parent="." unique_id=1191473567]
+[node name="BrickWall" type="CbBreakable" parent="." unique_id=1242350673]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -12)
 
-[node name="Shape" type="CollisionShape3D" parent="BrickWall" unique_id=519193170]
+[node name="Shape" type="CollisionShape3D" parent="BrickWall" unique_id=2091717805]
 shape = SubResource("BoxShape3D_tpcvb")
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall" unique_id=862992387]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall" unique_id=569636303]
 mesh = SubResource("BoxMesh_iht56")
 
-[node name="Brick0_0" type="CbProp" parent="BrickWall" unique_id=1005426921]
+[node name="Brick0_0" type="CbProp" parent="BrickWall" unique_id=670178055]
 size = Vector3(0.98, 0.98, 0.4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, -1, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick0_0" unique_id=509899162]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick0_0" unique_id=640302452]
 mesh = SubResource("BoxMesh_740xo")
 
-[node name="Brick0_1" type="CbProp" parent="BrickWall" unique_id=128441680]
+[node name="Brick0_1" type="CbProp" parent="BrickWall" unique_id=850757844]
 size = Vector3(0.98, 0.98, 0.4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, -1, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick0_1" unique_id=710333391]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick0_1" unique_id=323983354]
 mesh = SubResource("BoxMesh_03pir")
 
-[node name="Brick0_2" type="CbProp" parent="BrickWall" unique_id=572154141]
+[node name="Brick0_2" type="CbProp" parent="BrickWall" unique_id=1074176805]
 size = Vector3(0.98, 0.98, 0.4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, -1, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick0_2" unique_id=690336831]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick0_2" unique_id=1062273486]
 mesh = SubResource("BoxMesh_740xo")
 
-[node name="Brick0_3" type="CbProp" parent="BrickWall" unique_id=923526193]
+[node name="Brick0_3" type="CbProp" parent="BrickWall" unique_id=647457073]
 size = Vector3(0.98, 0.98, 0.4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, -1, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick0_3" unique_id=1523984798]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick0_3" unique_id=2038535818]
 mesh = SubResource("BoxMesh_03pir")
 
-[node name="Brick1_0" type="CbProp" parent="BrickWall" unique_id=383458116]
+[node name="Brick1_0" type="CbProp" parent="BrickWall" unique_id=861499950]
 size = Vector3(0.98, 0.98, 0.4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick1_0" unique_id=111619359]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick1_0" unique_id=188160175]
 mesh = SubResource("BoxMesh_03pir")
 
-[node name="Brick1_1" type="CbProp" parent="BrickWall" unique_id=1493198928]
+[node name="Brick1_1" type="CbProp" parent="BrickWall" unique_id=283133398]
 size = Vector3(0.98, 0.98, 0.4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick1_1" unique_id=1011181482]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick1_1" unique_id=1750893130]
 mesh = SubResource("BoxMesh_740xo")
 
-[node name="Brick1_2" type="CbProp" parent="BrickWall" unique_id=1072614102]
+[node name="Brick1_2" type="CbProp" parent="BrickWall" unique_id=1634008332]
 size = Vector3(0.98, 0.98, 0.4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick1_2" unique_id=273133089]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick1_2" unique_id=1721013045]
 mesh = SubResource("BoxMesh_03pir")
 
-[node name="Brick1_3" type="CbProp" parent="BrickWall" unique_id=690286550]
+[node name="Brick1_3" type="CbProp" parent="BrickWall" unique_id=901338961]
 size = Vector3(0.98, 0.98, 0.4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick1_3" unique_id=299774148]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick1_3" unique_id=868322367]
 mesh = SubResource("BoxMesh_740xo")
 
-[node name="Brick2_0" type="CbProp" parent="BrickWall" unique_id=1541536125]
+[node name="Brick2_0" type="CbProp" parent="BrickWall" unique_id=1240076561]
 size = Vector3(0.98, 0.98, 0.4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 1, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick2_0" unique_id=1904986791]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick2_0" unique_id=1245308518]
 mesh = SubResource("BoxMesh_740xo")
 
-[node name="Brick2_1" type="CbProp" parent="BrickWall" unique_id=1810021413]
+[node name="Brick2_1" type="CbProp" parent="BrickWall" unique_id=2120677063]
 size = Vector3(0.98, 0.98, 0.4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 1, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick2_1" unique_id=49358452]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick2_1" unique_id=863174308]
 mesh = SubResource("BoxMesh_03pir")
 
-[node name="Brick2_2" type="CbProp" parent="BrickWall" unique_id=464570851]
+[node name="Brick2_2" type="CbProp" parent="BrickWall" unique_id=1762931822]
 size = Vector3(0.98, 0.98, 0.4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick2_2" unique_id=83961293]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick2_2" unique_id=1073705278]
 mesh = SubResource("BoxMesh_740xo")
 
-[node name="Brick2_3" type="CbProp" parent="BrickWall" unique_id=1507199816]
+[node name="Brick2_3" type="CbProp" parent="BrickWall" unique_id=1647953872]
 size = Vector3(0.98, 0.98, 0.4)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 1, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick2_3" unique_id=1697968051]
+[node name="Mesh" type="MeshInstance3D" parent="BrickWall/Brick2_3" unique_id=1589412898]
 mesh = SubResource("BoxMesh_03pir")
 
-[node name="ConcreteWall" type="CbBreakable" parent="." unique_id=723877057]
+[node name="ConcreteWall" type="CbBreakable" parent="." unique_id=350228803]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 1.75, -12)
 metadata/cinderbox_fracture = {
 "crowd": 0.4,
@@ -1052,288 +1052,288 @@ metadata/cinderbox_fracture = {
 "seed": 5
 }
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall" unique_id=1460325299]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall" unique_id=1011913279]
 shape = SubResource("BoxShape3D_6ld38")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall" unique_id=2114571058]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall" unique_id=1217816292]
 mesh = SubResource("BoxMesh_0ftdp")
 
-[node name="Piece0" type="CbProp" parent="ConcreteWall" unique_id=1135696587]
+[node name="Piece0" type="CbProp" parent="ConcreteWall" unique_id=321641262]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.08486072, 0.33416116, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece0" unique_id=817556227]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece0" unique_id=1399309046]
 shape = SubResource("ConvexPolygonShape3D_liiws")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece0" unique_id=2045229158]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece0" unique_id=892578234]
 mesh = SubResource("ArrayMesh_e5v8a")
 
-[node name="Piece1" type="CbProp" parent="ConcreteWall" unique_id=1988321272]
+[node name="Piece1" type="CbProp" parent="ConcreteWall" unique_id=2075121908]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.6766212, 0.10666625, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece1" unique_id=1249885311]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece1" unique_id=672604912]
 shape = SubResource("ConvexPolygonShape3D_yhkag")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece1" unique_id=1297061917]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece1" unique_id=1429738172]
 mesh = SubResource("ArrayMesh_5ijqe")
 
-[node name="Piece2" type="CbProp" parent="ConcreteWall" unique_id=876057822]
+[node name="Piece2" type="CbProp" parent="ConcreteWall" unique_id=1545292501]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1956431, 0.36075792, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece2" unique_id=1651120268]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece2" unique_id=2112446814]
 shape = SubResource("ConvexPolygonShape3D_j6sny")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece2" unique_id=999919465]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece2" unique_id=321555814]
 mesh = SubResource("ArrayMesh_dcrws")
 
-[node name="Piece3" type="CbProp" parent="ConcreteWall" unique_id=785966888]
+[node name="Piece3" type="CbProp" parent="ConcreteWall" unique_id=1539347505]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.8741062, -0.5534596, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece3" unique_id=1257146338]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece3" unique_id=1920468090]
 shape = SubResource("ConvexPolygonShape3D_dvyk3")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece3" unique_id=1284217365]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece3" unique_id=2122679374]
 mesh = SubResource("ArrayMesh_susrm")
 
-[node name="Piece4" type="CbProp" parent="ConcreteWall" unique_id=988198659]
+[node name="Piece4" type="CbProp" parent="ConcreteWall" unique_id=972779670]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4642535, 0.15146023, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece4" unique_id=1434040408]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece4" unique_id=1093319782]
 shape = SubResource("ConvexPolygonShape3D_hv2xk")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece4" unique_id=1600708536]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece4" unique_id=1041167170]
 mesh = SubResource("ArrayMesh_y4phr")
 
-[node name="Piece5" type="CbProp" parent="ConcreteWall" unique_id=777235622]
+[node name="Piece5" type="CbProp" parent="ConcreteWall" unique_id=457387140]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0633101, -0.7020613, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece5" unique_id=1058477377]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece5" unique_id=1169519128]
 shape = SubResource("ConvexPolygonShape3D_3f4id")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece5" unique_id=2093077183]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece5" unique_id=1366600504]
 mesh = SubResource("ArrayMesh_lsbda")
 
-[node name="Piece6" type="CbProp" parent="ConcreteWall" unique_id=1624260104]
+[node name="Piece6" type="CbProp" parent="ConcreteWall" unique_id=1672774829]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09505027, -0.059348553, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece6" unique_id=878342685]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece6" unique_id=1734488513]
 shape = SubResource("ConvexPolygonShape3D_msc4v")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece6" unique_id=402052194]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece6" unique_id=1451789422]
 mesh = SubResource("ArrayMesh_ttlcy")
 
-[node name="Piece7" type="CbProp" parent="ConcreteWall" unique_id=1443788430]
+[node name="Piece7" type="CbProp" parent="ConcreteWall" unique_id=2017188546]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7036215, -0.03261988, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece7" unique_id=1840897830]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece7" unique_id=933998923]
 shape = SubResource("ConvexPolygonShape3D_0pyah")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece7" unique_id=936494340]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece7" unique_id=1271935700]
 mesh = SubResource("ArrayMesh_sdt1i")
 
-[node name="Piece8" type="CbProp" parent="ConcreteWall" unique_id=1182221827]
+[node name="Piece8" type="CbProp" parent="ConcreteWall" unique_id=1476229512]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.29856506, 0.2821673, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece8" unique_id=807857054]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece8" unique_id=1417591238]
 shape = SubResource("ConvexPolygonShape3D_l1y1c")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece8" unique_id=2113751770]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece8" unique_id=189979250]
 mesh = SubResource("ArrayMesh_6751c")
 
-[node name="Piece9" type="CbProp" parent="ConcreteWall" unique_id=674237646]
+[node name="Piece9" type="CbProp" parent="ConcreteWall" unique_id=649674855]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.33596307, -0.15959647, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece9" unique_id=1714066383]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece9" unique_id=1212259858]
 shape = SubResource("ConvexPolygonShape3D_g8xyc")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece9" unique_id=584748907]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece9" unique_id=1397380704]
 mesh = SubResource("ArrayMesh_8veoa")
 
-[node name="Piece10" type="CbProp" parent="ConcreteWall" unique_id=7762039]
+[node name="Piece10" type="CbProp" parent="ConcreteWall" unique_id=1411473341]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.38116962, 0.42557523, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece10" unique_id=1848763043]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece10" unique_id=2146693706]
 shape = SubResource("ConvexPolygonShape3D_4p5od")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece10" unique_id=1962220593]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece10" unique_id=872936515]
 mesh = SubResource("ArrayMesh_xrikk")
 
-[node name="Piece11" type="CbProp" parent="ConcreteWall" unique_id=1189896614]
+[node name="Piece11" type="CbProp" parent="ConcreteWall" unique_id=1296740050]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.3518077, 0.039791595, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece11" unique_id=1517816361]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece11" unique_id=422757055]
 shape = SubResource("ConvexPolygonShape3D_3jrt5")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece11" unique_id=1728310104]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece11" unique_id=1146308978]
 mesh = SubResource("ArrayMesh_ulhna")
 
-[node name="Piece12" type="CbProp" parent="ConcreteWall" unique_id=1024146250]
+[node name="Piece12" type="CbProp" parent="ConcreteWall" unique_id=1319589021]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.32377192, -0.34301284, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece12" unique_id=1403984460]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece12" unique_id=158776966]
 shape = SubResource("ConvexPolygonShape3D_tg2p6")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece12" unique_id=627782909]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece12" unique_id=969051135]
 mesh = SubResource("ArrayMesh_5xalx")
 
-[node name="Piece13" type="CbProp" parent="ConcreteWall" unique_id=822908754]
+[node name="Piece13" type="CbProp" parent="ConcreteWall" unique_id=1424644456]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.21887465, -1.443773, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece13" unique_id=1184003024]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece13" unique_id=704995827]
 shape = SubResource("ConvexPolygonShape3D_tqw3h")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece13" unique_id=1722981788]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece13" unique_id=1079463537]
 mesh = SubResource("ArrayMesh_60wyn")
 
-[node name="Piece14" type="CbProp" parent="ConcreteWall" unique_id=1134219150]
+[node name="Piece14" type="CbProp" parent="ConcreteWall" unique_id=1727372693]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.1905432, 0.093872726, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece14" unique_id=758167114]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece14" unique_id=1271711382]
 shape = SubResource("ConvexPolygonShape3D_xg462")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece14" unique_id=1635513713]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece14" unique_id=1490175702]
 mesh = SubResource("ArrayMesh_ppbmg")
 
-[node name="Piece15" type="CbProp" parent="ConcreteWall" unique_id=52529129]
+[node name="Piece15" type="CbProp" parent="ConcreteWall" unique_id=462399795]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.9435385, -0.53696215, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece15" unique_id=733570650]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece15" unique_id=1025191676]
 shape = SubResource("ConvexPolygonShape3D_2o4op")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece15" unique_id=375800031]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece15" unique_id=885909378]
 mesh = SubResource("ArrayMesh_f053r")
 
-[node name="Piece16" type="CbProp" parent="ConcreteWall" unique_id=1315833515]
+[node name="Piece16" type="CbProp" parent="ConcreteWall" unique_id=240722372]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.19168971, 0.8616204, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece16" unique_id=570646919]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece16" unique_id=155074016]
 shape = SubResource("ConvexPolygonShape3D_1cogb")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece16" unique_id=675847738]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece16" unique_id=667635828]
 mesh = SubResource("ArrayMesh_yfn6m")
 
-[node name="Piece17" type="CbProp" parent="ConcreteWall" unique_id=42715517]
+[node name="Piece17" type="CbProp" parent="ConcreteWall" unique_id=113505917]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.3724097, 0.6200056, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece17" unique_id=1778255927]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece17" unique_id=1146937851]
 shape = SubResource("ConvexPolygonShape3D_1nh48")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece17" unique_id=1879774999]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece17" unique_id=565354346]
 mesh = SubResource("ArrayMesh_pibpd")
 
-[node name="Piece18" type="CbProp" parent="ConcreteWall" unique_id=689478604]
+[node name="Piece18" type="CbProp" parent="ConcreteWall" unique_id=821935166]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.0032578, 1.1237638, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece18" unique_id=2140291628]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece18" unique_id=1079186209]
 shape = SubResource("ConvexPolygonShape3D_atq23")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece18" unique_id=2020639445]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece18" unique_id=129240503]
 mesh = SubResource("ArrayMesh_jneuc")
 
-[node name="Piece19" type="CbProp" parent="ConcreteWall" unique_id=2092022652]
+[node name="Piece19" type="CbProp" parent="ConcreteWall" unique_id=1682654018]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.32978517, 1.5799438, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece19" unique_id=820486556]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece19" unique_id=386611243]
 shape = SubResource("ConvexPolygonShape3D_06y5p")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece19" unique_id=629012963]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece19" unique_id=2048278256]
 mesh = SubResource("ArrayMesh_7uiei")
 
-[node name="Piece20" type="CbProp" parent="ConcreteWall" unique_id=850457713]
+[node name="Piece20" type="CbProp" parent="ConcreteWall" unique_id=2088581304]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.87700015, -1.2790844, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece20" unique_id=1233670937]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece20" unique_id=1388078469]
 shape = SubResource("ConvexPolygonShape3D_cs5dx")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece20" unique_id=458993991]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece20" unique_id=761665334]
 mesh = SubResource("ArrayMesh_jsahv")
 
-[node name="Piece21" type="CbProp" parent="ConcreteWall" unique_id=1848913823]
+[node name="Piece21" type="CbProp" parent="ConcreteWall" unique_id=760884622]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.3772247, -0.1416131, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece21" unique_id=1431779390]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece21" unique_id=1265883305]
 shape = SubResource("ConvexPolygonShape3D_gscey")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece21" unique_id=656101254]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece21" unique_id=1636124823]
 mesh = SubResource("ArrayMesh_6bjqc")
 
-[node name="Piece22" type="CbProp" parent="ConcreteWall" unique_id=2031398741]
+[node name="Piece22" type="CbProp" parent="ConcreteWall" unique_id=2564960]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.592316, 1.6685698, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece22" unique_id=1859370412]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece22" unique_id=511118278]
 shape = SubResource("ConvexPolygonShape3D_evbjy")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece22" unique_id=55128568]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece22" unique_id=320109038]
 mesh = SubResource("ArrayMesh_c4i08")
 
-[node name="Piece23" type="CbProp" parent="ConcreteWall" unique_id=1502194179]
+[node name="Piece23" type="CbProp" parent="ConcreteWall" unique_id=2090642351]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.31266126, 1.3091646, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece23" unique_id=1619640013]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece23" unique_id=1653790216]
 shape = SubResource("ConvexPolygonShape3D_f3356")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece23" unique_id=1197457700]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece23" unique_id=400085314]
 mesh = SubResource("ArrayMesh_ux0oo")
 
-[node name="Piece24" type="CbProp" parent="ConcreteWall" unique_id=1008313775]
+[node name="Piece24" type="CbProp" parent="ConcreteWall" unique_id=1930077985]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.6138421, 0.4792301, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece24" unique_id=686041300]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece24" unique_id=768293616]
 shape = SubResource("ConvexPolygonShape3D_c4tbn")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece24" unique_id=1060825407]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece24" unique_id=1038929427]
 mesh = SubResource("ArrayMesh_tmogb")
 
-[node name="Piece25" type="CbProp" parent="ConcreteWall" unique_id=1399319720]
+[node name="Piece25" type="CbProp" parent="ConcreteWall" unique_id=764131203]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.4336908, 1.0401405, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece25" unique_id=319007416]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece25" unique_id=658064214]
 shape = SubResource("ConvexPolygonShape3D_2vm2s")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece25" unique_id=560100076]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece25" unique_id=69581680]
 mesh = SubResource("ArrayMesh_m4n2v")
 
-[node name="Piece26" type="CbProp" parent="ConcreteWall" unique_id=897664754]
+[node name="Piece26" type="CbProp" parent="ConcreteWall" unique_id=1015201312]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7054278, -0.7682052, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece26" unique_id=282866717]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece26" unique_id=1169569501]
 shape = SubResource("ConvexPolygonShape3D_juesi")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece26" unique_id=1140887907]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece26" unique_id=339280004]
 mesh = SubResource("ArrayMesh_v77jy")
 
-[node name="Piece27" type="CbProp" parent="ConcreteWall" unique_id=750004015]
+[node name="Piece27" type="CbProp" parent="ConcreteWall" unique_id=1557474352]
 density = 60.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5809263, -1.2906233, 0)
 
-[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece27" unique_id=1641546060]
+[node name="Shape" type="CollisionShape3D" parent="ConcreteWall/Piece27" unique_id=1365579035]
 shape = SubResource("ConvexPolygonShape3D_0s0qj")
 
-[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece27" unique_id=939263644]
+[node name="Mesh" type="MeshInstance3D" parent="ConcreteWall/Piece27" unique_id=900269341]
 mesh = SubResource("ArrayMesh_1hqe3")

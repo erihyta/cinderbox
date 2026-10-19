@@ -332,6 +332,17 @@ struct StaticGeometry
 {
 };
 
+// A piece of a breakable left standing when a blast took out the pieces near it: static, until a
+// blast takes it too or nothing holds it up any more. `wall` is the NetId the whole wall had (all
+// its standing pieces share it), `wallTemplate` the wall's template (its pieces and links),
+// `piece` which of them it is.
+struct WallPiece
+{
+	uint32_t wall = 0;
+	uint32_t wallTemplate = 0;
+	uint32_t piece = 0;
+};
+
 // "This entity did not come from a template."
 inline constexpr uint32_t kNoTemplate = 0xFFFFFFFFu;
 
@@ -401,6 +412,7 @@ CB_CHECK_COMPONENT( Character, 52 );
 CB_CHECK_COMPONENT( Prop, 12 );
 CB_CHECK_COMPONENT( AnimGraphLayerState, 40 );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
+CB_CHECK_COMPONENT( WallPiece, 12 );
 CB_CHECK_COMPONENT( HeldItem, 12 );
 CB_CHECK_COMPONENT( Slots, 24 );
 CB_CHECK_COMPONENT( Container, 4 );

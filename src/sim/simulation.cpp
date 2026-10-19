@@ -323,6 +323,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<MotionHold>();
 	RegisterSnapComponent<Slots>();
 	RegisterSnapComponent<Container>();
+	RegisterSnapComponent<WallPiece>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -700,7 +701,7 @@ flecs::entity Simulation::CreateProp( ShapeKind kind, b3Vec3 position, b3Quat ro
 }
 
 flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 position, b3Quat rotation, b3Vec3 extraVelocity,
-											  uint32_t owner )
+											  uint32_t owner, bool standing )
 {
 	if ( templateIndex >= m_map.templates.size() )
 	{
@@ -738,7 +739,7 @@ flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 pos
 	constexpr uint32_t kBody = Fnv32( "Body" );
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	int32_t bodyType = std::clamp( TemplateInt( t, kBody, Fnv32( "type" ), int32_t( b3_dynamicBody ) ), 0, 2 );
-	bodyDef.type = b3BodyType( bodyType );
+	bodyDef.type = standing ? b3_staticBody : b3BodyType( bodyType );
 	bodyDef.gravityScale = TemplateFloat( t, kBody, Fnv32( "gravity_scale" ), bodyDef.gravityScale );
 	bodyDef.linearDamping = TemplateFloat( t, kBody, Fnv32( "linear_damping" ), bodyDef.linearDamping );
 	bodyDef.angularDamping = TemplateFloat( t, kBody, Fnv32( "angular_damping" ), bodyDef.angularDamping );
@@ -808,6 +809,153 @@ flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 pos
 		e.add<StaticGeometry>();
 	}
 	return e;
+}
+
+void Simulation::BreakWall( flecs::entity target, b3Vec3 blast, float radius, float speed, uint32_t rubbleTicks )
+{
+	// The wall: whole (a template with pieces), or a piece of it left standing by a blast before.
+	uint32_t wallId = 0;
+	uint32_t wallTemplate = kNoTemplate;
+	bool whole = false;
+	if ( const WallPiece* piece = target.try_get<WallPiece>() )
+	{
+		wallId = piece->wall;
+		wallTemplate = piece->wallTemplate;
+	}
+	else if ( const TemplateRef* ref = target.try_get<TemplateRef>() )
+	{
+		wallId = target.get<NetId>().value;
+		wallTemplate = ref->index;
+		whole = true;
+	}
+	if ( wallTemplate >= m_map.templates.size() || m_map.templates[wallTemplate].pieces.empty() )
+	{
+		return; // nothing that breaks
+	}
+	const EntityTemplate& wt = m_map.templates[wallTemplate];
+	const size_t n = wt.pieces.size();
+
+	// The pieces that stand, by their index; for a whole wall, none yet.
+	std::vector<flecs::entity> stand( n );
+	if ( whole == false )
+	{
+		for ( const EntityRef& r : m_entities )
+		{
+			flecs::entity e( m_world, r.entity );
+			const WallPiece* piece = e.try_get<WallPiece>();
+			if ( piece != nullptr && piece->wall == wallId && piece->piece < n )
+			{
+				stand[piece->piece] = e;
+			}
+		}
+	}
+	// A piece that goes: a body of its own, moving as it is sent (removed after a while, if asked).
+	auto fly = [&]( size_t i, b3Vec3 position, b3Quat rotation, b3Vec3 velocity ) {
+		flecs::entity e = CreateFromTemplate( wt.pieces[i].templateIndex, position, rotation, velocity, 0 );
+		if ( e.is_valid() && rubbleTicks > 0 )
+		{
+			e.set<Prop>( { 0, m_globals.tick, m_globals.tick + rubbleTicks } );
+		}
+	};
+	// Away from the blast, a little up, slower the further it was.
+	auto thrown = [&]( b3Vec3 position, float& distance ) {
+		b3Vec3 away = b3Sub( position, blast );
+		distance = b3Length( away );
+		away = distance > 1e-4f ? b3MulSV( 1.0f / distance, away ) : b3Vec3{ 0.0f, 1.0f, 0.0f };
+		away = b3Normalize( b3Add( away, { 0.0f, 0.3f, 0.0f } ) );
+		return b3MulSV( speed / ( 1.0f + distance ), away );
+	};
+
+	if ( whole )
+	{
+		// It comes apart: the pieces near the blast fly, the rest stand where they were.
+		const Transform at = target.get<Transform>();
+		DestroyEntity( target );
+		for ( size_t i = 0; i < n; ++i )
+		{
+			const TemplatePiece& piece = wt.pieces[i];
+			const b3Vec3 position = b3Add( at.position, b3RotateVector( at.rotation, piece.position ) );
+			const b3Quat rotation = b3NormalizeQuat( b3MulQuat( at.rotation, MakeRotation( piece.yaw, piece.pitch, piece.roll ) ) );
+			float distance = 0.0f;
+			const b3Vec3 velocity = thrown( position, distance );
+			if ( radius <= 0.0f || distance <= radius )
+			{
+				fly( i, position, rotation, velocity );
+				continue;
+			}
+			flecs::entity e = CreateFromTemplate( piece.templateIndex, position, rotation, { 0.0f, 0.0f, 0.0f }, 0, true );
+			if ( e.is_valid() )
+			{
+				e.set<WallPiece>( { wallId, wallTemplate, uint32_t( i ) } );
+				stand[i] = e;
+			}
+		}
+	}
+	else
+	{
+		// What still stands near the blast goes too.
+		for ( size_t i = 0; i < n; ++i )
+		{
+			if ( stand[i].is_valid() == false )
+			{
+				continue;
+			}
+			const Transform at = stand[i].get<Transform>();
+			float distance = 0.0f;
+			const b3Vec3 velocity = thrown( at.position, distance );
+			if ( radius <= 0.0f || distance <= radius )
+			{
+				DestroyEntity( stand[i] );
+				stand[i] = flecs::entity();
+				fly( i, at.position, at.rotation, velocity );
+			}
+		}
+	}
+
+	// What holds it up: from the held pieces still standing, along the links between standing
+	// pieces. A piece nothing joins to one falls (it starts still; gravity takes it).
+	std::vector<std::vector<uint32_t>> touching( n );
+	for ( const PieceLink& link : wt.links )
+	{
+		if ( link.a < n && link.b < n )
+		{
+			touching[link.a].push_back( link.b );
+			touching[link.b].push_back( link.a );
+		}
+	}
+	std::vector<uint8_t> held( n, 0 );
+	std::vector<uint32_t> reach;
+	for ( size_t i = 0; i < n; ++i )
+	{
+		if ( stand[i].is_valid() && wt.pieces[i].held )
+		{
+			held[i] = 1;
+			reach.push_back( uint32_t( i ) );
+		}
+	}
+	while ( reach.empty() == false )
+	{
+		const uint32_t i = reach.back();
+		reach.pop_back();
+		for ( uint32_t j : touching[i] )
+		{
+			if ( held[j] == 0 && stand[j].is_valid() )
+			{
+				held[j] = 1;
+				reach.push_back( j );
+			}
+		}
+	}
+	for ( size_t i = 0; i < n; ++i )
+	{
+		if ( stand[i].is_valid() && held[i] == 0 )
+		{
+			const Transform at = stand[i].get<Transform>();
+			DestroyEntity( stand[i] );
+			stand[i] = flecs::entity();
+			fly( i, at.position, at.rotation, { 0.0f, 0.0f, 0.0f } );
+		}
+	}
 }
 
 // Box3D ids embed the world slot, which differs between processes. Components store them with
@@ -2606,30 +2754,9 @@ void Simulation::ApplyCommand( const SimCommand& command )
 		case CommandType::Break:
 		{
 			flecs::entity wall = FindEntity( ResolveTarget( command.target ) );
-			const TemplateRef* ref = wall.is_valid() ? wall.try_get<TemplateRef>() : nullptr;
-			if ( ref == nullptr || ref->index >= m_map.templates.size() || m_map.templates[ref->index].pieces.empty() )
+			if ( wall.is_valid() )
 			{
-				return; // nothing that breaks
-			}
-			const Transform at = wall.get<Transform>();
-			const b3Vec3 blast = ToVec( command.a );
-			const float speed = std::max( command.b.x, 0.0f );
-			const std::vector<TemplatePiece> pieces = m_map.templates[ref->index].pieces;
-			DestroyEntity( wall );
-			for ( const TemplatePiece& piece : pieces )
-			{
-				const b3Vec3 position = b3Add( at.position, b3RotateVector( at.rotation, piece.position ) );
-				const b3Quat rotation = b3NormalizeQuat( b3MulQuat( at.rotation, MakeRotation( piece.yaw, piece.pitch, piece.roll ) ) );
-				// Away from the blast, a little up, slower the further it was.
-				b3Vec3 away = b3Sub( position, blast );
-				const float distance = b3Length( away );
-				away = distance > 1e-4f ? b3MulSV( 1.0f / distance, away ) : b3Vec3{ 0.0f, 1.0f, 0.0f };
-				away = b3Normalize( b3Add( away, { 0.0f, 0.3f, 0.0f } ) );
-				flecs::entity e = CreateFromTemplate( piece.templateIndex, position, rotation, b3MulSV( speed / ( 1.0f + distance ), away ), 0 );
-				if ( e.is_valid() && command.other > 0 )
-				{
-					e.set<Prop>( { 0, m_globals.tick, m_globals.tick + command.other } );
-				}
+				BreakWall( wall, ToVec( command.a ), std::max( command.b.y, 0.0f ), std::max( command.b.x, 0.0f ), command.other );
 			}
 			return;
 		}

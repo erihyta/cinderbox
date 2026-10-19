@@ -991,6 +991,185 @@ void TestBreakable()
 	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
 }
 
+// Holes (map version 10: which pieces hold a wall up, which touch): a wall of 3 x 3 bricks held at
+// its foot. A blast at its middle takes the middle brick and leaves 8 standing, static and still; a
+// blast at its foot's left end takes that one, and the rest still stand (joined round by the right);
+// one at its right end takes that one, and then nothing joins the upper bricks to the one held brick
+// left, so they fall. Standing pieces survive a portable snapshot and the file.
+void TestHoles()
+{
+	LevelLayout map;
+	map.name = "holes";
+	map.spawnCenter = { 0.0f, 1.0f, 8.0f };
+	map.spawnRadius = 0.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 1.5f, 1.5f, 0.2f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );	 // the wall
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 0.49f, 0.49f, 0.19f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } ); // a brick
+	EntityTemplate wall;
+	wall.name = "wall";
+	wall.components.push_back( MakeIntComponent( "Body", { { "type", 0 } } ) );
+	wall.shapes = 0;
+	// Brick (row, column) is piece row * 3 + column; the bottom row is held.
+	for ( int row = 0; row < 3; ++row )
+	{
+		for ( int column = 0; column < 3; ++column )
+		{
+			TemplatePiece piece = { 1, { float( column - 1 ), float( row - 1 ), 0.0f } };
+			piece.held = row == 0;
+			wall.pieces.push_back( piece );
+			const uint16_t i = uint16_t( row * 3 + column );
+			if ( column < 2 )
+			{
+				wall.links.push_back( { i, uint16_t( i + 1 ) } );
+			}
+			if ( row < 2 )
+			{
+				wall.links.push_back( { i, uint16_t( i + 3 ) } );
+			}
+		}
+	}
+	EntityTemplate brick;
+	brick.name = "brick";
+	brick.shapes = 1;
+	AuthoredComponent debris;
+	debris.id = Fnv32( "Debris" );
+	brick.components.push_back( debris );
+	map.templates = { wall, brick };
+	map.instances.push_back( { 0, { 0.0f, 1.5f, 0.0f }, 0.0f, 0.0f } );
+	QuantizeLayout( map );
+	std::vector<uint8_t> bytes;
+	SerializeMap( map, bytes );
+	LevelLayout loaded;
+	std::string error;
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) );
+	CHECK( loaded.templates.size() == 2 && loaded.templates[0].pieces == map.templates[0].pieces && loaded.templates[0].links == map.templates[0].links &&
+		   loaded.templates[0].links.size() == 12 && loaded.templates[0].pieces[1].held && loaded.templates[0].pieces[4].held == false );
+
+	Simulation sim( TestConfig(), loaded );
+	InputFrame f;
+	auto run = [&]( int ticks ) {
+		for ( int i = 0; i < ticks; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	// The standing pieces by brick, and the loose ones.
+	auto standing = [&]() {
+		std::vector<uint32_t> out( 9, 0 );
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const WallPiece* piece = flecs::entity( sim.World(), r.entity ).try_get<WallPiece>();
+			if ( piece != nullptr && piece->piece < 9 )
+			{
+				out[piece->piece] = r.netId;
+			}
+		}
+		return out;
+	};
+	auto count = []( const std::vector<uint32_t>& ids ) { return int( std::count_if( ids.begin(), ids.end(), []( uint32_t id ) { return id != 0; } ) ); };
+	auto loose = [&]() {
+		std::vector<uint32_t> out;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			flecs::entity e( sim.World(), r.entity );
+			const TemplateRef* ref = e.try_get<TemplateRef>();
+			if ( ref != nullptr && ref->index == 1 && e.has<WallPiece>() == false )
+			{
+				out.push_back( r.netId );
+			}
+		}
+		return out;
+	};
+	auto blastAt = [&]( uint32_t target, b3Vec3 at ) {
+		SimCommand c;
+		c.type = CommandType::Break;
+		c.target = target;
+		c.a = { at.x, at.y, at.z };
+		c.b = { 6.0f, 0.6f, 0.0f }; // speed, radius
+		f.commands.push_back( c );
+		run( 1 );
+	};
+	run( 10 );
+	uint32_t whole = 0;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		const TemplateRef* ref = flecs::entity( sim.World(), r.entity ).try_get<TemplateRef>();
+		whole = ref != nullptr && ref->index == 0 ? r.netId : whole;
+	}
+	CHECK( whole != 0 );
+
+	// At the middle: the middle brick goes; eight stand, static, where they were, and stay.
+	blastAt( whole, { 0.0f, 1.5f, 0.5f } );
+	std::vector<uint32_t> up = standing();
+	CHECK( sim.FindEntity( whole ).is_valid() == false && count( up ) == 8 && up[4] == 0 && loose().size() == 1 );
+	bool still = up[0] != 0;
+	std::vector<b3Vec3> was( 9 );
+	for ( int i = 0; i < 9; ++i )
+	{
+		if ( up[size_t( i )] != 0 )
+		{
+			flecs::entity e = sim.FindEntity( up[size_t( i )] );
+			still = still && b3Body_GetType( sim.BodyOf( e.get<PhysicsBody>() ) ) == b3_staticBody && e.has<StaticGeometry>();
+			was[size_t( i )] = e.get<Transform>().position;
+			const b3Vec3 placed = { float( i % 3 - 1 ), 1.5f + float( i / 3 - 1 ), 0.0f };
+			still = still && b3Distance( was[size_t( i )], placed ) < 0.001f;
+		}
+	}
+	run( 120 );
+	for ( int i = 0; i < 9; ++i )
+	{
+		if ( up[size_t( i )] != 0 )
+		{
+			still = still && b3Distance( sim.EntityTransform( up[size_t( i )] )->position, was[size_t( i )] ) < 1e-6f;
+		}
+	}
+	CHECK( still );
+
+	// A copy of the world as it stands, loaded elsewhere, is the same world.
+	{
+		std::vector<uint8_t> image;
+		sim.SavePortable( image );
+		Simulation other( TestConfig(), loaded );
+		CHECK( other.LoadPortable( image ) && other.ComputeHash() == sim.ComputeHash() );
+	}
+
+	// At the foot's left end: that brick goes; the rest stand, joined round to the right.
+	blastAt( up[1], { -1.0f, 0.5f, 0.5f } );
+	up = standing();
+	CHECK( count( up ) == 7 && up[0] == 0 && up[6] != 0 && loose().size() == 2 );
+	// At its right end: that brick goes, and the five above, joined to nothing held, fall.
+	blastAt( up[1], { 1.0f, 0.5f, 0.5f } );
+	up = standing();
+	const std::vector<uint32_t> fell = loose();
+	CHECK( count( up ) == 1 && up[1] != 0 && fell.size() == 8 );
+	run( 120 );
+	// (The top row stood at 2.5 m: none is up there now; one may lie on the brick left standing.)
+	int down = 0;
+	float highest = 0.0f;
+	for ( uint32_t id : fell )
+	{
+		down += sim.EntityTransform( id )->position.y < 1.0f ? 1 : 0;
+		highest = std::max( highest, sim.EntityTransform( id )->position.y );
+	}
+	std::printf( "    a 3 x 3 wall: a hole in the middle left 8 standing; two blasts at its foot's ends left 1; of the 8 down, %d on the "
+				 "ground, the highest at %.2f m\n",
+				 down, highest );
+	CHECK( down >= 7 && highest < 1.6f );
+
+	// A link between pieces it does not have is refused.
+	LevelLayout bad = map;
+	bad.templates[0].links.push_back( { 3, 9 } );
+	SerializeMap( bad, bytes );
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
+	bad = map;
+	bad.templates[0].links.push_back( { 4, 4 } );
+	SerializeMap( bad, bytes );
+	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
+}
+
 // Slopes (max_slope, 50 degrees by default): on a ramp up to it a player stands still and walks up;
 // on a steeper one it slides down and cannot walk up; a mod's 90 lets it stand on a 70° one again
 // (as before there was a limit).
@@ -8410,6 +8589,7 @@ void AppendSlotsReference( std::vector<uint64_t>& hashes )
 // The fourth reference run: a level of every piece shape (hulls built by Box3D from the map's points,
 // pieces rolled), and boxes and balls dropped onto it. Every build must build the same hulls and
 // land the same things on them. The points are written out, not computed, so no libm is involved.
+// Two breakable walls: one broken whole, one holed three times (its top falls).
 void AppendShapesReference( std::vector<uint64_t>& hashes )
 {
 	LevelLayout map;
@@ -8480,8 +8660,28 @@ void AppendShapesReference( std::vector<uint64_t>& hashes )
 	AuthoredComponent rubble;
 	rubble.id = Fnv32( "Debris" );
 	brick.components.push_back( rubble );
-	map.templates = { dumbbell, ell, wall, brick };
+	// Another of 3 x 3 bricks, held at its foot, that blasts hole: its middle, its foot's two ends
+	// (then its top falls).
+	EntityTemplate holed = wall;
+	holed.name = "holed";
+	holed.pieces.clear();
+	for ( int i = 0; i < 9; ++i )
+	{
+		TemplatePiece piece = { 3, { -1.0f + float( i % 3 ), -0.66f + 0.66f * float( i / 3 ), 0.0f } };
+		piece.held = i < 3;
+		holed.pieces.push_back( piece );
+		if ( i % 3 < 2 )
+		{
+			holed.links.push_back( { uint16_t( i ), uint16_t( i + 1 ) } );
+		}
+		if ( i < 6 )
+		{
+			holed.links.push_back( { uint16_t( i ), uint16_t( i + 3 ) } );
+		}
+	}
+	map.templates = { dumbbell, ell, wall, brick, holed };
 	map.instances.push_back( { 2, { -6.0f, 1.0f, -6.0f }, 0.0f, 0.4f } );
+	map.instances.push_back( { 4, { 10.0f, 0.99f, 9.0f }, 0.0f, 0.3f } );
 	map.instances.push_back( { 0, { -5.0f, 5.0f, 0.5f }, 0.3f, 0.2f, 0.1f } );
 	map.instances.push_back( { 1, { 0.5f, 6.0f, -5.5f }, -0.2f, 0.9f, 0.4f } );
 	map.instances.push_back( { 0, { 5.5f, 7.0f, 5.0f }, 0.0f, 1.2f, -0.3f } );
@@ -8559,6 +8759,30 @@ void AppendShapesReference( std::vector<uint64_t>& hashes )
 				}
 			}
 		}
+		// The holes: a blast at the middle, then at the foot's ends (whatever of it stands nearest).
+		const b3Vec3 holes[3] = { { 10.0f, 0.99f, 9.6f }, { 9.04f, 0.33f, 9.9f }, { 10.95f, 0.33f, 9.3f } };
+		for ( int k = 0; k < 3; ++k )
+		{
+			if ( tick != 120u + 60u * uint32_t( k ) )
+			{
+				continue;
+			}
+			for ( const Simulation::EntityRef& r : sim.Entities() )
+			{
+				flecs::entity e( sim.World(), r.entity );
+				const TemplateRef* ref = e.try_get<TemplateRef>();
+				if ( ( ref != nullptr && ref->index == 4 ) || e.has<WallPiece>() )
+				{
+					SimCommand c;
+					c.type = CommandType::Break;
+					c.target = r.netId;
+					c.a = { holes[k].x, holes[k].y, holes[k].z };
+					c.b = { 5.0f, 0.75f, 0.0f };
+					frame.commands.push_back( c );
+					break;
+				}
+			}
+		}
 		if ( tick < 3 )
 		{
 			SimCommand c;
@@ -8573,6 +8797,13 @@ void AppendShapesReference( std::vector<uint64_t>& hashes )
 		sim.Step( frame );
 		hashes.push_back( sim.ComputeHash() );
 	}
+	// (The holed wall: of its nine, the one brick between the two blasted at its foot stands.)
+	int standing = 0;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		standing += flecs::entity( sim.World(), r.entity ).has<WallPiece>() ? 1 : 0;
+	}
+	CHECK( standing == 1 );
 }
 
 int DumpHashes( const char* path )
@@ -9220,6 +9451,7 @@ int main( int argc, char** argv )
 		{ "map_surfaces", TestMapSurfaces },
 		{ "rolling", TestRolling },
 		{ "breakable", TestBreakable },
+		{ "holes", TestHoles },
 		{ "slopes", TestSlopes },
 		{ "templates", TestTemplates },
 		{ "sim_events", TestSimEvents },

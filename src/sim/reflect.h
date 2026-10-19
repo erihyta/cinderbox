@@ -115,12 +115,24 @@ struct TemplatePiece
 	float pitch = 0.0f;
 	float yaw = 0.0f;
 	float roll = 0.0f;
+	// It holds the wall up (it stands on the ground, or is held where the wall is fixed): a piece
+	// that no chain of touching pieces joins to one of these falls.
+	bool held = false;
 
 	bool operator==( const TemplatePiece& o ) const
 	{
 		return templateIndex == o.templateIndex && position.x == o.position.x && position.y == o.position.y && position.z == o.position.z &&
-			   pitch == o.pitch && yaw == o.yaw && roll == o.roll;
+			   pitch == o.pitch && yaw == o.yaw && roll == o.roll && held == o.held;
 	}
+};
+
+// Two pieces of a breakable that touch (indices into its pieces, a < b): each holds the other up.
+struct PieceLink
+{
+	uint16_t a = 0;
+	uint16_t b = 0;
+
+	bool operator==( const PieceLink& o ) const = default;
 };
 
 // A named entity definition a map can place and the server can spawn at runtime.
@@ -139,6 +151,9 @@ struct EntityTemplate
 	uint32_t look = kNoLook;
 	// What it breaks into (a Break command): none, it does not break.
 	std::vector<TemplatePiece> pieces;
+	// Which of its pieces touch. Broken in part (a hole), a piece stands while touching pieces join it
+	// to a held one. None (a map from before), every piece falls when any part of it breaks.
+	std::vector<PieceLink> links;
 
 	const AuthoredComponent* Find( uint32_t componentId ) const;
 };

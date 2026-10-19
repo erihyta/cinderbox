@@ -1,7 +1,8 @@
 extends SceneTree
 ## Checks what the map bake makes of a CbBreakable: a static template of its shapes and its look,
 ## placed where it stands; its CbProp children its pieces (rubble templates: Debris, each drawn by its
-## own node), not the map's props; its own look leaves the pieces' meshes to them.
+## own node), not the map's props; its own look leaves the pieces' meshes to them; which of its pieces
+## touch, and which hold it up (held_at).
 ##
 ##   godot --headless --path godot --script res://addons/cinderbox_maps/check_map_breakable.gd
 ##
@@ -76,6 +77,38 @@ func _initialize() -> void:
 		looks[body["look"]] = true
 	_check("the wall and each piece have looks of their own", looks.size() == 4, looks)
 	_check("no warnings", result["warnings"].is_empty(), result["warnings"])
+	# Holes: the three pieces side by side touch in two pairs; held at its foot, all three stand on it.
+	_check("its pieces: two pairs touch, three held at its foot", walls.size() == 1 and walls[0]["links"] == 2 and walls[0]["held"] == 3, walls)
+	# Held at its ends instead (pillars): the two end pieces.
+	wall.held_at = CbBreakable.HELD_SIDES
+	var sides: Dictionary = CinderboxMapBaker.new().bake(root, "user://check_map_breakable.cbmap")
+	var held_sides := -1
+	for body in sides.get("bodies", []):
+		if int(body["pieces"]) > 0:
+			held_sides = body["held"]
+	_check("held at its ends: the two end pieces", held_sides == 2, held_sides)
+	# Held nowhere: a hole brings it all down, and the bake says so.
+	wall.held_at = 0
+	var nowhere: Dictionary = CinderboxMapBaker.new().bake(root, "user://check_map_breakable.cbmap")
+	# Bricks 2 x 2, 2 cm apart: side by side and one on another they touch; corner to corner not.
+	var bricks := CbBreakable.new()
+	bricks.position = Vector3(-4, 1, 0)
+	_box(bricks, Vector3(2, 2, 0.4), Vector3())
+	for i in 4:
+		var brick := CbProp.new()
+		brick.size = Vector3(0.98, 0.98, 0.4)
+		brick.position = Vector3(-0.5 + i % 2, -0.5 + i / 2, 0)
+		bricks.add_child(brick)
+	root.add_child(bricks)
+	var grid: Dictionary = CinderboxMapBaker.new().bake(root, "user://check_map_breakable.cbmap")
+	var grid_links := -1
+	for body in grid.get("bodies", []):
+		if int(body["pieces"]) == 4:
+			grid_links = body["links"]
+	_check("bricks 2 x 2: four pairs touch, not the two corner to corner", grid_links == 4, grid_links)
+	root.remove_child(bricks)
+	bricks.free()
+	_check("held nowhere: it says so", nowhere["warnings"].size() == 1 and str(nowhere["warnings"][0]).contains("held_at"), nowhere["warnings"])
 
 	root.free()
 	print("%d failure(s)" % _failures)
