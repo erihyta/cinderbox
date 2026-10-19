@@ -74,6 +74,7 @@ The mods that ship:
 | `mark` | `mark.found`; the item mod's `use2` and `item.use2` | a second use for an item that says `mark.range` (the pistol): a ray that harms nothing and names the player it finds. The example of a use added to items made in the editor |
 | `secret` | `secret.number`, a private field; option `secret.numbers` | the example of a private field: off unless `--mod-option secret.numbers=1`; then each player is told a number from 1 to 99 that nobody else is sent |
 | `dash` | `dash.charges`, `dash.max`; events `dash.started`, `dash.double_jump`; the item `dash.boots` and the motion set `dash.moves` | the example of [motions](motions.md), and of [a motion an item brings](motions.md#what-an-item-does): the dash is the boots' (every life starts with a pair, with the inventory mod), the double jump everyone's. a dash along where you walk and a second jump in the air, both run by every simulation from the player's input, so your own are predicted. The mod only keeps the charges: 2, one back every 2 s (`dash.charges`, `dash.recharge_seconds`). The second jump is off unless `--mod-option dash.double_jump=1` |
+| `cannon` (off) | the items `cannon.cannon` (key N) and `cannon.ball` from its look; events `cannon.fired`, `cannon.smash`; options `cannon.break_speed`, `cannon.hole`, `cannon.through`, `cannon.damage`, `cannon.rubble_seconds` | walls broken by what hits them, with no blast: the example of `ctx.Hits` with `ctx.Break`. The cannon launches an 8 kg ball at 36 m/s (its scene: a `CbLaunch` under the item); a ball that meets a wall faster than `cannon.break_speed` (12 m/s) knocks a hole in it as wide as it was fast (`cannon.hole`: 0.9 m at 30 m/s), its pieces flung on the ball's way, and goes on through with a share of its speed (`cannon.through`, 0.6); a ball that hits a player hurts it (`combat.damage`, by speed) |
 | `flight` | `flight.on`, `flight.fuel`; action `fly` (T); events `flight.started`, `flight.stopped`, `flight.thrust`; the motion set `flight.moves` | the example of [motions that hold](motions.md#motions-that-hold-the-flight-mod): T switches flight on and off, Space held in the air is a jetpack with a tank, Shift held while falling glides. All of it is the motion set; the mod only gives the first tank (`flight.fuel`). The jetpack is off unless `--mod-option flight.jetpack=1`. The whole mod is [switched off by default](#switched-off-by-default) |
 | `grapple` | events `grapple.hook.used`, `grapple.fired`, `grapple.hooked`; `declare.Slots( 4 )`; the item `grapple.hook` from its look | the example of a probe, a force and a link; it holds anything but moves only its own player (its rope and pull do not react): all of it in the hook's scene (`client/prefabs/hook.tscn`: the item, its `Hook` motion, its hanging pose `grapple.hook_hang`); used by its slot's key, where it is. The mod declares the two events |
 | `brawl` | five skills from its look (`brawl.fist`, `.dash_strike`, `.uppercut`, `.slam`, `.guard`); fields `brawl.combo`, `brawl.combo_left`, `brawl.cd_*`; hit events; the set `brawl.moves` | a brawler's kit, step 5's measure: what a skill does to bodies is its scene's (predicted); this mod turns the probes' hit events into `combat.damage` (a quarter on a guard) and throws who is near where a slam lands. `--mods inventory,combat,brawl` |
@@ -228,7 +229,15 @@ A map's [breakable walls](maps.md#walls-that-break) break only when a mod says s
 | `ctx.BreakablesNear( point, radius )` | the walls (whole, or what stands of them) with a piece's centre within `radius` of `point`, nearest first: one each, to give `Break` |
 | `ctx.Break( wall, blast, speed, seconds, radius )` | a hole: the wall's pieces within `radius` of `blast` (0: all of them) fly away from it (and a little up) at `speed / (1 + their distance)`; the rest stand, static, and any that nothing holds up any more falls. `seconds` > 0: what goes is removed after that long |
 
-The frag grenade blows a hole `frag.break_radius` across (2.5 m by default) in every wall near where it goes off, at `frag.push`.
+| `ctx.IsBreakable( netId )` | whether it is a wall that breaks (whole, or a piece of one left standing): for a mod that hears what something hit |
+
+- **By a blast**: the frag grenade blows a hole `frag.break_radius` across (2.5 m by default) in
+  every wall near where it goes off, at `frag.push`.
+- **By what hits it**: the cannon reads `ctx.Hits( ball )` (what its balls ran into on the tick
+  before, how fast, where) and breaks the wall a ball met, there, by how fast it was going. The ball
+  has already bounced off when the wall breaks, so the mod gives it back a share of the speed it had
+  a tick before (`ctx.EntityVelocity`, read every tick) and it goes on through the hole. A wall
+  is still never broken by a bump: only by what a mod says breaks it.
 
 ## A push that turns
 
