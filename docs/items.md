@@ -351,6 +351,7 @@ Bat          CbItem             kind "melee.bat"  display_name "Bat"  mass 1.1  
 | `hand` | [the left hand](#the-left-hand) while it is carried, or the slots' hand while it is selected |
 | `stack` | [how many one slot holds](#stacks): a stack, one item with a count |
 | `bullet` | thrown fast and small (a dart, a rocket): in the world it is moved with continuous collision against what moves too, so it does not pass a thin crate or door between two steps ([Things that fly](motions.md#things-that-fly-the-grenades)) |
+| **Breaks walls**: `break_speed`, `break_hole`, `break_through` | lying in the world, a copy that meets a [wall that breaks](maps.md#walls-that-break) at `break_speed` m/s or faster (0: never) knocks a hole in it, in the same step, so every player's own simulation shows it at once: `break_hole` metres (its radius) at 30 m/s, wider the faster; the pieces flung its way; it goes on with `break_through` of its velocity (0: it bounces off as it would). `<kind>.smash` is said there, where a mod declares it (the item first, the wall second). The cannon ball's |
 | `view_offset`, `view_rotation`, `view_fov`, `view_left_hand`, `view_right_hand` | [first person](#first-person): where the hands and the item are in the holder's own view, the field of view they are drawn with, and which arms are drawn |
 | `view_camera` | first person, the other way: the item [floats](#floating) in front of the camera instead of being where the animation has it |
 | **Bake item** (button), saving the scene | writes `res://items/<kind>.cfg` |
