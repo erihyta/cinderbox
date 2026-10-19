@@ -232,6 +232,18 @@ bool GameServer::Start( const ServerOptions& options )
 	{
 		int expired = m_schema.FindEvent( m_schema.itemKinds[kind] + ".expired" );
 		m_schema.itemShapes[kind].expiredEvent = expired >= 0 ? uint16_t( expired ) : uint16_t( 0xFFFF );
+		// What it breaks (its CbItem's break_speed, break_hole, break_through), and what says so:
+		// "<kind>.smash", where a mod declares it.
+		auto number = [&]( const char* name, float low, float high ) {
+			auto found = m_itemProperties.find( std::make_pair( int( kind ), std::string( name ) ) );
+			return found != m_itemProperties.end() ? std::clamp( found->second, low, high ) : 0.0f;
+		};
+		ItemShape& shape = m_schema.itemShapes[kind];
+		shape.breakSpeed = number( "break_speed", 0.0f, 1000.0f );
+		shape.breakHole = number( "break_hole", 0.0f, 20.0f );
+		shape.breakThrough = number( "break_through", 0.0f, 1.0f );
+		int smash = m_schema.FindEvent( m_schema.itemKinds[kind] + ".smash" );
+		shape.breakEvent = smash >= 0 ? uint16_t( smash ) : uint16_t( 0xFFFF );
 	}
 	// What a new copy of each kind starts with in its own fields (declared by its scene).
 	for ( const auto& [kind, defaults] : declarations.ItemFieldDefaults() )

@@ -19,6 +19,9 @@ rings = 8
 kind = "cannon.ball"
 display_name = "Cannon ball"
 bullet = true
+break_speed = 12.0
+break_hole = 1.2
+break_through = 0.6
 mass = 40.0
 bounce = 0.15
 

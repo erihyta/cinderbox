@@ -171,6 +171,17 @@ struct ItemShape
 	// "<kind>.expired" where a mod declares it; 0xFFFF: none), with the item as the first entity,
 	// whoever threw it as the second, at where it was. A fused grenade goes off on it.
 	uint16_t expiredEvent = 0xFFFF;
+	// It breaks walls (CbItem.break_speed): lying in the world, a copy that meets a breakable (a
+	// map's CbBreakable, or a piece of one left standing) at `breakSpeed` m/s or faster knocks a hole
+	// in it there, in the same step, so every simulation sees it at once: `breakHole` metres across
+	// (its radius) at 30 m/s, wider the faster; the pieces flung its way; it goes on with
+	// `breakThrough` of the velocity it had (0: it bounces off as it would). `breakEvent`
+	// ("<kind>.smash" where a mod declares it; 0xFFFF: none) is said there, the item first, the wall
+	// second. 0: it breaks nothing.
+	float breakSpeed = 0.0f;
+	float breakHole = 0.0f;
+	float breakThrough = 0.0f;
+	uint16_t breakEvent = 0xFFFF;
 	// Which hand it is in (kItemHand*): the slots' hand while its slot is selected, or the left hand
 	// for as long as it is carried (a torch, a shield): out unless what is selected has its other
 	// hand on a marker (grip 1, 2), or another such item of a lower slot is there first.

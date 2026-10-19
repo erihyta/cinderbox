@@ -8,8 +8,8 @@ on cannon.fired
 	sound res://assets/sfx/impact.wav volume 4 pitch 0.45 jitter 0.05 range 60
 	shake 0.12 time 0.2
 
-# A wall broken where a ball hit it
-on cannon.smash
+# A wall broken where a ball hit it (said by the simulation: on the same tick on every screen)
+on cannon.ball.smash
 	subject $at
 	at point
 	sound res://assets/sfx/prop_destroy.wav volume 2 pitch 0.7 jitter 0.1 range 70
