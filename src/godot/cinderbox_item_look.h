@@ -321,6 +321,33 @@ public:
 	{
 		return m_bullet;
 	}
+	// It breaks walls it meets this fast lying in the world (ItemShape::breakSpeed; 0: never): a hole
+	// `break_hole` metres (its radius) at 30 m/s, wider the faster; it goes on with `break_through`
+	// of its velocity.
+	void set_break_speed( double v )
+	{
+		m_breakSpeed = v;
+	}
+	double get_break_speed() const
+	{
+		return m_breakSpeed;
+	}
+	void set_break_hole( double v )
+	{
+		m_breakHole = v;
+	}
+	double get_break_hole() const
+	{
+		return m_breakHole;
+	}
+	void set_break_through( double v )
+	{
+		m_breakThrough = v;
+	}
+	double get_break_through() const
+	{
+		return m_breakThrough;
+	}
 	void set_hand( int v )
 	{
 		m_hand = v;
@@ -512,6 +539,9 @@ private:
 	int m_use = USE_TOOL;
 	int m_hand = HAND_SELECTED;
 	bool m_bullet = false;
+	double m_breakSpeed = 0.0;
+	double m_breakHole = 1.0;
+	double m_breakThrough = 0.0;
 	bool m_slotKeyUses = false;
 	int m_stack = 1;
 	godot::Ref<godot::Texture2D> m_icon;

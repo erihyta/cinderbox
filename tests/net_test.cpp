@@ -4245,9 +4245,11 @@ void TestFragBreaks()
 }
 
 // The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
-// breaks a hole in it with no blast (the mod hears what the ball ran into, and breaks the wall
-// there), and goes on through: past the wall, while bricks still stand. The client that predicted
-// it has the same bricks standing. With a break speed above the ball's, it only bounces off.
+// breaks a hole in it with no blast, and goes on through: past the wall, while bricks still stand.
+// The ball's scene says it breaks walls (CbItem.break_speed), so the simulation breaks it in the
+// step the ball meets it: the player's own simulation, ahead of the server by its lead, shows the
+// wall broken on the very tick the server breaks it (not a lead later, after a correction), and
+// ends with the same bricks standing.
 void TestCannon()
 {
 	const std::string root = CB_SOURCE_DIR;
@@ -4256,87 +4258,78 @@ void TestCannon()
 	WriteBrickWallMap( mapPath, 6.0f, first );
 	const b3Vec3 spawn = GetLevelLayout().spawnCenter;
 	const float wallZ = spawn.z + 6.0f;
-	struct Result
+	const uint32_t fireAt = 240;
+	Harness h( 47906, {}, mapPath.string(), { { "test.mods", "cannon" } }, [&]( ServerOptions& options ) {
+		std::string error, warnings;
+		options.character = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
+	} );
+	const ActionBits fire = UseKey( h.server.Schema(), "cannon.cannon" );
+	const int ballKind = h.server.Schema().FindItemKind( "cannon.ball" );
+	CHECK( fire != 0 && ballKind >= 0 && h.server.Schema().itemShapes[size_t( std::max( ballKind, 0 ) )].breakSpeed > 0.0f );
+	net::NetSimConfig link;
+	link.latencyMs = 50;
+	h.AddNetSim( 47907, link );
+	Bot& bot = h.AddBot();
+	struct Bricks
 	{
 		int walls = 0;
 		int loose = 0;
 		int standing = 0;
-		float farthest = -1e9f; // how far along +Z a ball got
-		bool fired = false;
-		bool same = false;
-		uint32_t desyncs = 0;
 	};
-	auto run = [&]( uint16_t port, const char* breakSpeed, Result& out ) {
-		const uint32_t fireAt = 240;
-		std::map<std::string, std::string> options = { { "test.mods", "cannon" } };
-		if ( breakSpeed != nullptr )
+	auto count = [&]( const Simulation& sim ) {
+		Bricks r;
+		for ( const Simulation::EntityRef& e : sim.Entities() )
 		{
-			options["cannon.break_speed"] = breakSpeed;
-		}
-		Harness h( port, {}, mapPath.string(), options, [&]( ServerOptions& options ) {
-			std::string error, warnings;
-			options.character = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
-		} );
-		const ActionBits fire = UseKey( h.server.Schema(), "cannon.cannon" );
-		const int ballKind = h.server.Schema().FindItemKind( "cannon.ball" );
-		CHECK( fire != 0 && ballKind >= 0 );
-		net::NetSimConfig link;
-		link.latencyMs = 50;
-		h.AddNetSim( uint16_t( port + 1 ), link );
-		Bot& bot = h.AddBot();
-		bot.script = [&]( uint32_t tick ) {
-			PlayerInput in;
-			in.actions = tick >= fireAt && tick < fireAt + 4 ? fire : ActionBits( 0 );
-			return in;
-		};
-		auto count = [&]( const Simulation& sim, Result& r ) {
-			r.walls = r.loose = r.standing = 0;
-			for ( const Simulation::EntityRef& e : sim.Entities() )
+			flecs::entity entity = sim.FindEntity( e.netId );
+			const TemplateRef* ref = entity.try_get<TemplateRef>();
+			r.walls += ref != nullptr && ref->index == first ? 1 : 0;
+			if ( ref != nullptr && ref->index == first + 1 )
 			{
-				flecs::entity entity = sim.FindEntity( e.netId );
-				const TemplateRef* ref = entity.try_get<TemplateRef>();
-				r.walls += ref != nullptr && ref->index == first ? 1 : 0;
-				if ( ref != nullptr && ref->index == first + 1 )
-				{
-					( entity.has<WallPiece>() ? r.standing : r.loose ) += 1;
-				}
+				( entity.has<WallPiece>() ? r.standing : r.loose ) += 1;
 			}
-		};
-		h.server.SetTickObserver( [&] {
-			const Simulation& sim = h.server.Sim();
-			for ( const Simulation::EntityRef& e : sim.Entities() )
-			{
-				const HeldItem* item = sim.FindEntity( e.netId ).try_get<HeldItem>();
-				if ( item != nullptr && item->holder == 0 && int( item->kind ) == ballKind )
-				{
-					out.fired = true;
-					out.farthest = std::max( out.farthest, sim.EntityTransform( e.netId )->position.z );
-				}
-			}
-		} );
-		h.RunUntil( 7.0 );
-		h.server.SetTickObserver( {} );
-		h.Report();
-		count( h.server.Sim(), out );
-		Result mine;
-		GameClient& client = *bot.client;
-		if ( client.Session() != nullptr )
-		{
-			count( client.Session()->Sim(), mine );
 		}
-		out.same = mine.walls == out.walls && mine.loose == out.loose && mine.standing == out.standing;
-		out.desyncs = uint32_t( client.GetStats().desyncs );
-		std::printf( "    break speed %s: a ball fired (%d), got to z %.2f (the wall at %.2f); the server has %d wall, %d bricks loose, %d standing; "
-					 "the client %s; desyncs %u\n",
-					 breakSpeed != nullptr ? breakSpeed : "default", int( out.fired ), out.farthest, wallZ, out.walls, out.loose, out.standing,
-					 out.same ? "the same" : "not the same", out.desyncs );
+		return r;
 	};
-	Result hole, bounce;
-	run( 47906, nullptr, hole );
-	CHECK( hole.fired && hole.walls == 0 && hole.loose > 0 && hole.standing > 0 && hole.loose + hole.standing == 32 );
-	CHECK( hole.farthest > wallZ + 1.0f && hole.same && hole.desyncs == 0 );
-	run( 47908, "100", bounce );
-	CHECK( bounce.fired && bounce.walls == 1 && bounce.loose == 0 && bounce.standing == 0 && bounce.farthest < wallZ && bounce.same && bounce.desyncs == 0 );
+	// The tick the player's own simulation (its present, predicted) first has the wall broken.
+	uint32_t clientSaw = 0;
+	bot.script = [&]( uint32_t tick ) {
+		auto* session = bot.client->Session();
+		if ( clientSaw == 0 && session != nullptr && session->Sim().Tick() > fireAt && count( session->Sim() ).walls == 0 )
+		{
+			clientSaw = session->Sim().Tick();
+		}
+		PlayerInput in;
+		in.actions = tick >= fireAt && tick < fireAt + 4 ? fire : ActionBits( 0 );
+		return in;
+	};
+	uint32_t serverBroke = 0;
+	float farthest = -1e9f;
+	h.server.SetTickObserver( [&] {
+		const Simulation& sim = h.server.Sim();
+		serverBroke = serverBroke == 0 && sim.Tick() > fireAt && count( sim ).walls == 0 ? sim.Tick() : serverBroke;
+		for ( const Simulation::EntityRef& e : sim.Entities() )
+		{
+			const HeldItem* item = sim.FindEntity( e.netId ).try_get<HeldItem>();
+			if ( item != nullptr && item->holder == 0 && int( item->kind ) == ballKind )
+			{
+				farthest = std::max( farthest, sim.EntityTransform( e.netId )->position.z );
+			}
+		}
+	} );
+	h.RunUntil( 7.0 );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	const Bricks server = count( h.server.Sim() );
+	const Bricks mine = bot.client->Session() != nullptr ? count( bot.client->Session()->Sim() ) : Bricks{ -1 };
+	const bool same = mine.walls == server.walls && mine.loose == server.loose && mine.standing == server.standing;
+	std::printf( "    a ball got to z %.2f (the wall at %.2f); the server broke the wall on tick %u, the player's own simulation showed it broken "
+				 "on tick %u; the server has %d bricks loose, %d standing; the client %s; desyncs %u\n",
+				 farthest, wallZ, serverBroke, clientSaw, server.loose, server.standing, same ? "the same" : "not the same",
+				 uint32_t( bot.client->GetStats().desyncs ) );
+	CHECK( serverBroke > fireAt && server.walls == 0 && server.loose > 0 && server.standing > 0 && server.loose + server.standing == 32 );
+	CHECK( farthest > wallZ + 1.0f && same && bot.client->GetStats().desyncs == 0 );
+	// Predicted: on the server's tick (a tick's give for when the script looks), not a lead later.
+	CHECK( clientSaw != 0 && clientSaw <= serverBroke + 1 );
 	std::error_code ignored;
 	std::filesystem::remove( mapPath, ignored );
 }

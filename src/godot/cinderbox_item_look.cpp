@@ -92,6 +92,17 @@ void CbItem::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "set_bullet", "value" ), &CbItem::set_bullet );
 	ClassDB::bind_method( D_METHOD( "get_bullet" ), &CbItem::get_bullet );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "bullet" ), "set_bullet", "get_bullet" );
+	ADD_GROUP( "Breaks walls", "break_" );
+	ClassDB::bind_method( D_METHOD( "set_break_speed", "value" ), &CbItem::set_break_speed );
+	ClassDB::bind_method( D_METHOD( "get_break_speed" ), &CbItem::get_break_speed );
+	ClassDB::bind_method( D_METHOD( "set_break_hole", "value" ), &CbItem::set_break_hole );
+	ClassDB::bind_method( D_METHOD( "get_break_hole" ), &CbItem::get_break_hole );
+	ClassDB::bind_method( D_METHOD( "set_break_through", "value" ), &CbItem::set_break_through );
+	ClassDB::bind_method( D_METHOD( "get_break_through" ), &CbItem::get_break_through );
+	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "break_speed", PROPERTY_HINT_RANGE, "0,200,0.5,or_greater,suffix:m/s" ), "set_break_speed",
+				  "get_break_speed" );
+	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "break_hole", PROPERTY_HINT_RANGE, "0,10,0.05,or_greater,suffix:m" ), "set_break_hole", "get_break_hole" );
+	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "break_through", PROPERTY_HINT_RANGE, "0,1,0.05" ), "set_break_through", "get_break_through" );
 	ADD_GROUP( "Slots", "" );
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "use", PROPERTY_HINT_ENUM, "While the button is down (a tool),Once a press,A press, and while held" ),
 				  "set_use", "get_use" );
@@ -1132,6 +1143,12 @@ Dictionary CbItem::bake() const
 	if ( m_bullet )
 	{
 		all["bullet"] = 1;
+	}
+	if ( m_breakSpeed > 0.0 )
+	{
+		all["break_speed"] = m_breakSpeed;
+		all["break_hole"] = m_breakHole;
+		all["break_through"] = m_breakThrough;
 	}
 	if ( m_slotKeyUses )
 	{

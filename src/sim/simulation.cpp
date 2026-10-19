@@ -2241,6 +2241,7 @@ void Simulation::SyncFromPhysics()
 
 void Simulation::CollectImpacts()
 {
+	m_impactScratch.clear(); // (what BreakByItems reads: this step's hits, none)
 	b3ContactEvents events = b3World_GetContactEvents( m_physicsWorld );
 	if ( events.hitCount <= 0 )
 	{
@@ -2296,6 +2297,106 @@ void Simulation::CollectImpacts()
 	{
 		m_globals.impacts[m_globals.impactCount % kImpactHistory] = m_impactScratch[i];
 		m_globals.impactCount += 1;
+	}
+}
+
+void Simulation::RememberBreakers()
+{
+	m_breakersBefore.clear();
+	if ( m_anyBreaks == false )
+	{
+		return;
+	}
+	for ( const EntityRef& r : m_entities )
+	{
+		flecs::entity e( m_world, r.entity );
+		const HeldItem* item = e.try_get<HeldItem>();
+		const PhysicsBody* pb = item != nullptr && item->holder == 0 ? e.try_get<PhysicsBody>() : nullptr;
+		if ( pb != nullptr && ItemShapeOf( item->kind ).breakSpeed > 0.0f )
+		{
+			m_breakersBefore.push_back( { r.netId, b3Body_GetLinearVelocity( BodyOf( *pb ) ) } );
+		}
+	}
+}
+
+void Simulation::BreakByItems()
+{
+	if ( m_breakersBefore.empty() || m_impactScratch.empty() )
+	{
+		return;
+	}
+	// What this step's hits mean, decided first (breaking changes what the later ones name): an item
+	// that breaks walls, each once, against a wall that breaks. In the hits' order (the hardest
+	// first, then by the entities): the same in every simulation.
+	struct Smash
+	{
+		uint32_t item = 0;
+		uint32_t wall = 0;
+		b3Vec3 point = {};
+		b3Vec3 before = {};
+		float speed = 0.0f;
+	};
+	std::vector<Smash> smashes;
+	auto breakable = [this]( flecs::entity e ) {
+		if ( e.has<WallPiece>() )
+		{
+			return true;
+		}
+		const TemplateRef* ref = e.try_get<TemplateRef>();
+		return ref != nullptr && ref->index < m_map.templates.size() && m_map.templates[ref->index].pieces.empty() == false;
+	};
+	for ( const ImpactRecord& hit : m_impactScratch )
+	{
+		for ( int side = 0; side < 2; ++side )
+		{
+			const uint32_t itemId = side == 0 ? hit.netIdA : hit.netIdB;
+			const uint32_t wallId = side == 0 ? hit.netIdB : hit.netIdA;
+			auto was = std::find_if( m_breakersBefore.begin(), m_breakersBefore.end(), [&]( const auto& b ) { return b.first == itemId; } );
+			flecs::entity wall = wallId != 0 ? FindEntity( wallId ) : flecs::entity();
+			if ( was == m_breakersBefore.end() || wall.is_valid() == false || breakable( wall ) == false ||
+				 std::any_of( smashes.begin(), smashes.end(), [&]( const Smash& s ) { return s.item == itemId; } ) )
+			{
+				continue;
+			}
+			const ItemShape shape = ItemShapeOf( FindEntity( itemId ).get<HeldItem>().kind );
+			const float speed = std::max( b3Length( was->second ), hit.speed );
+			if ( speed >= shape.breakSpeed )
+			{
+				smashes.push_back( { itemId, wallId, hit.point, was->second, speed } );
+			}
+		}
+	}
+	for ( const Smash& smash : smashes )
+	{
+		flecs::entity item = FindEntity( smash.item );
+		flecs::entity wall = FindEntity( smash.wall );
+		if ( item.is_valid() == false || wall.is_valid() == false )
+		{
+			continue; // (another item's hole took it this step)
+		}
+		const ItemShape shape = ItemShapeOf( item.get<HeldItem>().kind );
+		const float moving = b3Length( smash.before );
+		const b3Vec3 way = moving > 0.01f ? b3MulSV( 1.0f / moving, smash.before ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
+		// A hole as wide as it was fast; the pieces flung its way (from half a metre behind the hit).
+		const float radius = std::clamp( shape.breakHole * smash.speed / 30.0f, 0.25f, 4.0f );
+		BreakWall( wall, b3Sub( smash.point, b3MulSV( 0.5f, way ) ), radius, 0.5f * smash.speed, 0 );
+		// It has bounced off in this step: on through the hole instead, with a share of what it had.
+		if ( shape.breakThrough > 0.0f )
+		{
+			b3Body_SetLinearVelocity( BodyOf( item.get<PhysicsBody>() ), b3MulSV( shape.breakThrough, smash.before ) );
+		}
+		if ( shape.breakEvent != 0xFFFF )
+		{
+			ModEventRecord record;
+			record.type = shape.breakEvent;
+			record.netIdA = smash.item;
+			record.netIdB = smash.wall;
+			record.tick = m_globals.tick;
+			record.value = int32_t( radius * 100.0f );
+			record.point = smash.point;
+			record.vector = way;
+			RecordModEvent( record );
+		}
 	}
 }
 
@@ -2411,6 +2512,7 @@ void Simulation::Step( const InputFrame& frame )
 	EnforcePropCaps();
 	spent( m_profile.charactersNs );
 
+	RememberBreakers();
 	b3World_Step( m_physicsWorld, m_config.TimeStep(), int( m_config.subSteps ) );
 	spent( m_profile.physicsNs );
 	{
@@ -2426,6 +2528,7 @@ void Simulation::Step( const InputFrame& frame )
 	}
 
 	CollectImpacts();
+	BreakByItems();
 	SyncFromPhysics();
 	FollowHolders();
 	UpdateFootsteps();

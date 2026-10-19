@@ -297,6 +297,7 @@ public:
 	void SetItemShapes( std::vector<ItemShape> shapes )
 	{
 		m_itemShapes = std::move( shapes );
+		m_anyBreaks = std::any_of( m_itemShapes.begin(), m_itemShapes.end(), []( const ItemShape& s ) { return s.breakSpeed > 0.0f; } );
 	}
 	// Slots: which one a player has selected (kNoSlot: none, or no slots), what is in one.
 	uint8_t SelectedSlot( uint32_t player ) const;
@@ -466,6 +467,10 @@ private:
 	void SyncFromPhysics();
 	// Reads Box3D's contact hit events into the impact ring, strongest first.
 	void CollectImpacts();
+	// Items that break walls (ItemShape::breakSpeed): how they move before the step, and the walls
+	// they met in it broken, there and then (so every simulation breaks them on the same tick).
+	void RememberBreakers();
+	void BreakByItems();
 	// Advances each character's stride and counts a step whenever it completes one.
 	void UpdateFootsteps();
 	void HandleOutOfBounds();
@@ -546,6 +551,10 @@ private:
 	std::shared_ptr<const AnimGraph> m_animGraph;
 	std::vector<std::shared_ptr<const AnimGraph>> m_animPacks;
 	std::vector<ItemShape> m_itemShapes;
+	// Some kind breaks walls (ItemShape::breakSpeed); and those of its copies lying in the world, as
+	// they moved before this step (what they had before they hit something).
+	bool m_anyBreaks = false;
+	std::vector<std::pair<uint32_t, b3Vec3>> m_breakersBefore;
 	std::vector<ItemUse> m_useScratch;
 	std::shared_ptr<const Motions> m_motions;
 	std::vector<ModEventRecord> m_motionEvents;

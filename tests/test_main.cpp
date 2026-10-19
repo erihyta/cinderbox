@@ -1170,6 +1170,124 @@ void TestHoles()
 	CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) == false );
 }
 
+// Items that break walls (ItemShape::breakSpeed): a ball thrown at a 3 x 3 wall at 30 m/s breaks it
+// in the step it meets it: the middle brick goes (a hole 0.9 m across at 30 m/s), eight stand, the
+// ball never turns back and goes on through, and says so (its breakEvent) there. Thrown at 8 m/s,
+// below its break speed, it bounces off and the wall stands whole.
+void TestItemBreaks()
+{
+	LevelLayout map;
+	map.name = "item_breaks";
+	map.spawnCenter = { 0.0f, 1.0f, 12.0f };
+	map.spawnRadius = 0.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 1.5f, 1.5f, 0.2f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 0.49f, 0.49f, 0.19f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );
+	EntityTemplate wall;
+	wall.name = "wall";
+	wall.components.push_back( MakeIntComponent( "Body", { { "type", 0 } } ) );
+	wall.shapes = 0;
+	for ( int i = 0; i < 9; ++i )
+	{
+		TemplatePiece piece = { 1, { float( i % 3 - 1 ), float( i / 3 - 1 ), 0.0f } };
+		piece.held = i < 3;
+		wall.pieces.push_back( piece );
+		if ( i % 3 < 2 )
+		{
+			wall.links.push_back( { uint16_t( i ), uint16_t( i + 1 ) } );
+		}
+		if ( i < 6 )
+		{
+			wall.links.push_back( { uint16_t( i ), uint16_t( i + 3 ) } );
+		}
+	}
+	EntityTemplate brick;
+	brick.name = "brick";
+	brick.shapes = 1;
+	AuthoredComponent debris;
+	debris.id = Fnv32( "Debris" );
+	brick.components.push_back( debris );
+	map.templates = { wall, brick };
+	map.instances.push_back( { 0, { 0.0f, 1.5f, 0.0f }, 0.0f, 0.0f } );
+	QuantizeLayout( map );
+
+	ItemShape ball;
+	ball.kind = 1;
+	ball.half = { 0.15f, 0.15f, 0.15f };
+	ball.center = {};
+	ball.mass = 8.0f;
+	ball.restitution = 0.3f;
+	ball.bullet = 1;
+	ball.breakSpeed = 12.0f;
+	ball.breakHole = 0.9f;
+	ball.breakThrough = 0.6f;
+	ball.breakEvent = 0;
+
+	struct Outcome
+	{
+		bool whole = true;
+		int standing = 0;
+		float endZ = 0.0f;
+		bool turnedBack = false;
+		bool said = false;
+	};
+	auto throwAt = [&]( float speed ) {
+		Outcome out;
+		Simulation sim( TestConfig(), map );
+		sim.SetItemShapes( { ball } );
+		InputFrame f;
+		auto step = [&]() {
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.commands.clear();
+		};
+		for ( int i = 0; i < 5; ++i )
+		{
+			step();
+		}
+		uint32_t item = sim.Globals().nextNetId;
+		SimCommand c;
+		c.type = CommandType::SpawnItem;
+		c.target = 0;
+		c.index = 0;
+		c.a = { 0.0f, 1.5f, 3.0f };
+		c.b = { 0.0f, 0.0f, -speed };
+		f.commands.push_back( c );
+		for ( int i = 0; i < 60; ++i )
+		{
+			step();
+			const flecs::entity e = sim.FindEntity( item );
+			if ( e.is_valid() && e.has<PhysicsBody>() )
+			{
+				out.turnedBack = out.turnedBack || b3Body_GetLinearVelocity( sim.BodyOf( e.get<PhysicsBody>() ) ).z > 0.5f;
+				out.endZ = sim.EntityTransform( item )->position.z;
+			}
+		}
+		// The wall whole (its template's entity), or how many of its bricks stand.
+		out.whole = false;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			flecs::entity e( sim.World(), r.entity );
+			const TemplateRef* ref = e.try_get<TemplateRef>();
+			out.whole = out.whole || ( ref != nullptr && ref->index == 0 );
+			out.standing += e.has<WallPiece>() ? 1 : 0;
+		}
+		for ( uint32_t k = 0; k < std::min<uint32_t>( sim.Globals().modEventCount, kModEventHistory ); ++k )
+		{
+			const ModEventRecord& record = sim.Globals().modEvents[k];
+			out.said = out.said || ( record.type == 0 && record.netIdA == item );
+		}
+		return out;
+	};
+	const Outcome fast = throwAt( 30.0f );
+	const Outcome slow = throwAt( 8.0f );
+	std::printf( "    at 30 m/s: the wall %s, %d bricks stand, the ball %s and is at z %.2f; at 8 m/s: the wall %s, the ball %s\n",
+				 fast.whole ? "stands whole" : "broke", fast.standing, fast.turnedBack ? "turned back" : "never turned back", fast.endZ,
+				 slow.whole ? "stands whole" : "broke", slow.turnedBack ? "bounced off" : "did not bounce" );
+	CHECK( fast.whole == false && fast.standing == 8 && fast.turnedBack == false && fast.endZ < -1.0f && fast.said );
+	CHECK( slow.whole && slow.standing == 0 && slow.turnedBack && slow.said == false );
+}
+
 // Slopes (max_slope, 50 degrees by default): on a ramp up to it a player stands still and walks up;
 // on a steeper one it slides down and cannot walk up; a mod's 90 lets it stand on a 70° one again
 // (as before there was a limit).
@@ -9452,6 +9570,7 @@ int main( int argc, char** argv )
 		{ "rolling", TestRolling },
 		{ "breakable", TestBreakable },
 		{ "holes", TestHoles },
+		{ "item_breaks", TestItemBreaks },
 		{ "slopes", TestSlopes },
 		{ "templates", TestTemplates },
 		{ "sim_events", TestSimEvents },
