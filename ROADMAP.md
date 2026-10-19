@@ -91,6 +91,14 @@ Decided to wait; each says what it waits for.
 | How players find servers | undecided: Steam, a website's "play" link that starts the game, a game's own menu or a desktop shortcut. Until then: join by address, Test locally, a server's mods listed before joining |
 | Steam Workshop as the store | the decision above; the store is a folder today |
 | Ships | Box3D growing what they lack (buoyancy) rather than more patches (two today: `cmake/patches/`). In the simulation, so everyone predicts them: platform carry (step 3), several shapes per body (done), a buoyancy component with a wave function the water's look shares |
+| **The player's body, for motions** | a mod that wants it. Small engine pieces, each in the simulation (so a motion using them is predicted like any other), asked about after M200. In the order they would likely be wanted: |
+| · Touching a wall | the mover already meets walls when it clips the velocity; it would say so: a condition (`wall`: touching one, beside or ahead) and a frame along it (`along_wall`, `off_wall`) for forces and impulses. Wallrunning, wall jumps, a climb that knows where the wall ends (no wall ahead: over the ledge), a ledge grab |
+| · Teleport | a motion effect that sets where the player is (`CbTeleport`): to the target (what the probe found, or a field's entity) at an offset in its frame (1.2 m behind it, facing its back), or to the probe's point. Blink, "behind you", swapping places, a return-to-mark |
+| · What the body passes through | movement parameters: `pass_players`, `pass_props`, `pass_level` (0 or 1): the mover ignores those (the player's own capsule too, so others' casts pass it). A dash that goes through the target and ends behind it (the fast-move blink, without a teleport), phasing through crowds, a ghost or a spectator flying through walls (`pass_level` with `move_frame` 1) |
+| · Not hittable | a movement parameter `hittable` (0 or 1): shots, probes and swings pass the player's hitboxes. A dodge roll's invulnerable frames, a phase skill. (Damage itself is the combat mod's; this is whether anything reaches the body) |
+| · The capsule's size | movement parameters for its height and radius, so a crouch fits under a low gap (the sneak mod's crouch only lowers the pose), a shrink or grow potion, a slide under a door. The mover keeps the feet where they are and does not stand up where the full height would not fit |
+| · Keep speed, steer | a motion effect that turns the velocity toward a frame without changing its size (and trades height for speed: a dive speeds up, a climb slows). An elytra-like glide (today's forces push toward a set speed, whatever the pitch), a grind rail, a ricochet |
+| · Hidden from others | a field the viewer reads to fade a player's body (and its held item) for everyone but the player itself. Invisibility, a cloak, a spectator. (Presentation only: the body still collides and is hit, unless the pieces above say otherwise) |
 
 ## Leftovers, by area
 
