@@ -52,8 +52,30 @@ A `CbBreakable` is a wall (or anything static) and what it breaks into, authored
 - **Pieces are rubble**: players stand on them and are stopped by them, but never shove them (they
   are in a collision group the player's capsule ignores). Blasts, shots and other bodies move them.
 - The bake makes the wall a static template placed where it stands, and each piece a template of its
-  own; its pieces are not the map's props. `test_ground.tscn` has one: `BrickWall`, twelve bricks,
-  12 m north of the spawn.
+  own; its pieces are not the map's props. `test_ground.tscn` has two, 12 m north of the spawn:
+  `BrickWall` (twelve bricks placed by hand) and `ConcreteWall` (28 chunks cut by the tool below).
+
+### Cutting a wall into chunks
+
+Pieces can be placed by hand (bricks, planks), or cut: select a `CbBreakable` and press
+**Fracture** in the 3D toolbar.
+
+| Setting | What |
+|---|---|
+| Pieces | how many chunks (2 to 256) |
+| Seed | another number, other chunks; the same number, the same chunks |
+| Crowd | 0 to 1: the share of chunks crowded around a child `Node3D` named `FractureFocus` (else the wall's centre): small chunks there, big ones farther out |
+
+- It cuts the wall's `BoxShape3D` and `ConvexPolygonShape3D` shapes (others: it says why not) into
+  irregular convex chunks (Voronoi cells). Each is a `CbProp` with a hull and a mesh of its own.
+- A thin shape is cut through: every chunk goes from one face to the other.
+- Outside faces get the wall's own material (its first mesh's); the cut faces a darker copy of it.
+  Textures run on across chunks (laid on from the side each face looks toward, a metre a repeat).
+- It replaces the pieces the wall had, taking their body settings (`density`, `friction`, ...);
+  each chunk weighs by its size. Undo puts the old pieces back. The settings are kept on the node
+  for next time.
+- Scripts can cut too: `preload("res://addons/cinderbox_maps/fracture.gd").fracture(wall, pieces, seed, crowd)`
+  (`make_test_ground.gd` does).
 
 ## Collision shapes
 
