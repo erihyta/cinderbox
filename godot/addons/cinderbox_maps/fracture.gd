@@ -160,19 +160,37 @@ static func _seeds(source: Dictionary, rng: RandomNumberGenerator, focus: Vector
 	return seeds
 
 
+# Seeds a cell is first cut by: the nearest ones (a cell's faces are its near neighbours'; all of
+# them would make a wall of many chunks slow to cut: every plane against every pair of planes).
+const NEAREST := 40
+
+
 # The chunk nearer seed i than to any other, inside the shape: a CbProp centred on it.
 static func _cell(seeds: Array, i: int, outer: Array, outside: Material, inside: Material) -> Node3D:
-	var planes := outer.duplicate()
-	var cut := []
-	for j in seeds.size():
-		if j == i:
-			continue
-		var normal: Vector3 = (seeds[j] - seeds[i]).normalized()
-		planes.append(Plane(normal, normal.dot((seeds[i] + seeds[j]) * 0.5) - GAP))
+	var others := range(seeds.size()).filter(func(j): return j != i)
+	others.sort_custom(func(a, b): return seeds[a].distance_squared_to(seeds[i]) < seeds[b].distance_squared_to(seeds[i]))
+	var by := others.slice(0, NEAREST)
 	var points := []
-	for p in Geometry3D.compute_convex_mesh_points(planes):
-		if not points.any(func(q): return q.distance_to(p) < EPS * 10.0):
-			points.append(p)
+	var planes := []
+	while true:
+		planes = outer.duplicate()
+		for j in by:
+			var normal: Vector3 = (seeds[j] - seeds[i]).normalized()
+			planes.append(Plane(normal, normal.dot((seeds[i] + seeds[j]) * 0.5) - GAP))
+		points = []
+		for p in Geometry3D.compute_convex_mesh_points(planes):
+			if not points.any(func(q): return q.distance_to(p) < EPS * 10.0):
+				points.append(p)
+		# A corner nearer another seed than its own: that seed is a neighbour too; cut again with it.
+		var missed := []
+		for j in others.slice(by.size()):
+			for p in points:
+				if p.distance_squared_to(seeds[j]) < p.distance_squared_to(seeds[i]) - EPS:
+					missed.append(j)
+					break
+		if missed.is_empty():
+			break
+		by.append_array(missed)
 	if points.size() < 4:
 		return null
 	var centre := Vector3()
