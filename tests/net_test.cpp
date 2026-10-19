@@ -4460,6 +4460,7 @@ void TestGrapple()
 		b3Vec3 ballAt = {};
 		int bothOn = 0;
 		int stopped = 0;
+		bool stoppedBy[2] = { false, false };
 		h.RunUntil( 9.0, [&]( double ) {
 			if ( ball == 0 )
 			{
@@ -4495,12 +4496,15 @@ void TestGrapple()
 					flecs::entity e = server.FindEntity( server.PlayerNetId( h.bots[size_t( i )].client->Slot() ) );
 					const MotionHold* tether = e.is_valid() ? e.try_get<MotionHold>() : nullptr;
 					on += tether != nullptr && tether->on != 0 && tether->flying == 0 && tether->missed == 0 ? 1 : 0;
-					stopped += tether != nullptr && tether->missed != 0 && tether->startTick >= 300 && server.Tick() == 419 &&
-									   b3Distance( tether->point, server.EntityTransform( ball )->position ) < 1.0f
-								   ? 1
-								   : 0;
+					// (Sampled now and then: each player's is remembered once seen stopped at the ball.)
+					if ( tether != nullptr && tether->missed != 0 && tether->startTick >= 300 &&
+						 b3Distance( tether->point, server.EntityTransform( ball )->position ) < 1.0f )
+					{
+						stoppedBy[i] = true;
+					}
 				}
 				bothOn = std::max( bothOn, on );
+				stopped = int( stoppedBy[0] ) + int( stoppedBy[1] );
 			}
 		} );
 		h.Report();
