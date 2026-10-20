@@ -574,7 +574,7 @@ Two checks:
 | When | What | Checked by |
 |---|---|---|
 | Before a pack loads | only known kinds of files in these folders (and Godot's converted copies of them), redirects that stay inside the pack, no compressed resources, no resource that names a script type or a script file | `boot.gd`; `check_mod_validator.gd` runs it on real packs and hostile ones |
-| Before a scene is used | only listed node classes (meshes, particles, lights, sounds, animation, UI controls, the `Cb*` nodes: never an `HTTPRequest`, a `Window`, a camera), no script, no signal wired to a method, no node path that leaves the scene, animations that call only listed methods | the scene guard (`src/godot/cue/cue_guard.h`); `check_guard.gd` |
+| Before a scene is used | only listed node classes (meshes, particles, lights, sounds, animation, UI controls, an `Area3D` a sheet's find reads, the `Cb*` nodes: never an `HTTPRequest`, a `Window`, a camera), no script, no signal wired to a method, no node path that leaves the scene, animations that call only listed methods | the scene guard (`src/godot/cue/cue_guard.h`); `check_guard.gd` |
 
 A scene the guard refuses is not instantiated (a warning says what it found); the game draws its
 plain stand-in instead. Gameplay stays in the simulation and in the server's mods, so a pack cannot
