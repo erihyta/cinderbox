@@ -1,8 +1,18 @@
-# Rules as a language (draft)
+# Rules as a language
 
-**A draft, not built.** The grammar proposed for [roadmap step 3](../ROADMAP.md#3-rules-as-a-language):
-the rules sheet grows into a small language the simulation runs, so everything that moves on screen
-is predicted, and a mod's C++ keeps only what the server alone should decide.
+The grammar of [roadmap step 3](../ROADMAP.md#3-rules-as-a-language): the rules sheet grows into a
+small language the simulation runs, so everything that moves on screen is predicted, and a mod's C++
+keeps only what the server alone should decide. **Partly built**: what is marked *built* works
+today; the rest is the plan.
+
+| Part | State |
+|---|---|
+| Blocks: `motion` headers, `on use` / `on press` / `on EVENT` / `while` / `when`, `then when ... within`, `after`, `timeout`, `if` / `else`, `end`, `lasts`, `until`, `cooldown`, `uses`, `item` | *built* (M204) |
+| Statements in a block: `change`, `emit`, `impulse`, `force`, `move [for S]`, `launch` (as a `use` rule has them) | *built* (M204) |
+| `find`, `cast`, shapes from nodes, `away`, effects on a target | planned (step 3.2) |
+| `curve()`, `time`, markers, `follow` | planned (3.3) |
+| `owner item`, `break`, `remove self` | planned (3.4) |
+| `impulse kind momentum`, `every` | planned (3.5) |
 
 ## The idea in one picture
 
@@ -30,7 +40,7 @@ Every machine runs it, and rollback runs a tick again many times. So:
 | **No files, no network, no text building** | it runs inside the physics step |
 
 A running motion's record: which step it waits at, since which tick, its anchor (a point and a
-facing), its current target. A fixed size, like the 16 bytes a motion has today.
+facing), its current target. A fixed size, like the 28 bytes a motion has today (its step, since when, its ifs' answers).
 
 ## A sheet: three kinds of block
 
@@ -44,7 +54,32 @@ motion NAME TRIGGER [if EXPRESSION]
     statements
 ```
 
-`use [if ...]` (today's form) stays as the short way to write `motion Use on use [if ...]`.
+`use [if ...]` (today's form) stays; `motion NAME on use` is a motion of its own, beside it.
+
+### How a block runs (built)
+
+- **Steps.** A `then when` or an `after` line starts a new **step**. The first step is what happens
+  when the motion starts; each next one starts once its wait is over (`after` seconds since the step
+  before started, then `when` its condition holds), at the earliest on the tick after. So `then when
+  grounded` after a dive is the tick after the player touches the ground.
+- **Once and lasting.** A step's once statements (`change`, `emit`, `impulse`, `launch`, `end`)
+  happen when it starts. Its lasting ones (`force`, `move`) act while it is the current step;
+  `move for S`, for S seconds from when the step started.
+- **`if` is decided when its step starts**, and holds for the whole step: an `if` around a `move`
+  moves for the whole step or not at all. A condition asked every tick is a `while` motion's.
+- **Giving up.** `then when EXPRESSION within S` gives up after S seconds: the `timeout` lines
+  below it (once statements only) run, and the motion ends. Without a `timeout`, it just ends.
+- **When it ends**: its `lasts` run out, its `until` holds, an `end` is reached, a wait gives up,
+  or, with none of `lasts` and `until`, its last step's longest `move for` is over (one tick at
+  least). A motion that waits is on while it waits (`motion.<name>` is true), so a press does not
+  start it again.
+- **`when EXPRESSION`** starts it on the tick the expression turns true. Its first answer is only
+  remembered: a player standing from the start has not landed.
+- **In an item's sheet** a motion is for whoever has the item out; `item carried`, whoever carries
+  it. `on use` is the item's use (its key, or the button with it in the hand), whoever.
+- **In the file** (`motions/<set>.cfg`, version 3): `step <after> <within> [condition]`,
+  `timeout`, `guard [condition]` (an `if`, written out: `not ( a ) and ( b )`), `end`, `when edge
+  <condition>`, and `param <name> <value> <seconds>`.
 
 ## Triggers
 
@@ -65,10 +100,11 @@ wall (once that condition exists). One general edge, not one trigger per case.
 | Line | Means | Today's |
 |---|---|---|
 | `cooldown S` | seconds between two starts | `cooldown` |
-| `uses N refill ground` / `refill after S` | charges | `uses`, `refill` |
+| `uses N`, `uses N refill ground`, `uses N refill after S` | charges | `uses`, `refill` |
 | `lasts S` | the motion ends S seconds after it starts | `duration` |
 | `until EXPRESSION` | ends it when it holds (several lines: any) | `until` |
-| `owner self` / `owner item` | who runs it: the player (default), or the item itself while it is in the world (a grenade's own fuse) | **new** |
+| `item hand` / `item carried` | in an item's sheet: who may run it, whoever has the item out (the default) or whoever carries it | `with_item` |
+| `owner self` / `owner item` | who runs it: the player (default), or the item itself while it is in the world (a grenade's own fuse). *Planned* | **new** |
 
 ## Statements
 
@@ -101,10 +137,11 @@ there until they are done; **lasting** ones act every tick until the motion ends
 
 | Statement | Does |
 |---|---|
-| `then when EXPRESSION [within S]` | waits until it holds; with `within`, gives up after S seconds (an `else` block below runs then) |
+| `then when EXPRESSION [within S]` | waits until it holds; with `within`, gives up after S seconds (the `timeout` lines below it run then) |
 | `after S` | waits S seconds |
+| `timeout` | what a `within` that gave up runs (once statements), before the motion ends |
 | `every S` | the block below runs now and every S seconds while the motion lasts (a burn, a rapid fire, a pulse) |
-| `if EXPRESSION` / `else` | a block runs or not |
+| `if EXPRESSION` / `else` | a block (indented under it) runs or not, decided when its step starts |
 
 ### Finding things
 
@@ -290,14 +327,14 @@ motion     := "motion" NAME trigger [ "if" expr ] NEWLINE INDENT { setting } { s
 use        := "use" [ "if" expr ] NEWLINE INDENT { setting } { stmt } DEDENT
 trigger    := "on use" | "on press" ACTION | "on" EVENT | "while" expr | "when" expr
 setting    := "cooldown" num | "uses" num [ "refill" ( "ground" | "after" num ) ]
-            | "lasts" num | "until" expr | "owner" ( "self" | "item" )
+            | "lasts" num | "until" expr | "item" ( "hand" | "carried" ) | "owner" ( "self" | "item" )
 stmt       := once | lasting | wait | flow | query
 once       := "change" field op value | "emit" EVENT [ "at" point ]
             | "impulse" value [ "kind" kind ] { option } | "launch" launch-args
             | "break" { option } | "remove self" | "end"
 lasting    := "force" value { option } | "move" [ "for" value ] { PARAM value }
             | "link" { option } | "follow" NODE { option }
-wait       := "then when" expr [ "within" num ] | "after" num
+wait       := "then when" expr [ "within" num ] | "after" num | "timeout"
 flow       := "every" num block-body | "if" expr block-body [ "else" block-body ]
 query      := "find" shape { option } block-body | "cast" shape { option } block-body
 shape      := NODE | "ray" | "sphere" num | "box" vec | "capsule" num num
@@ -326,9 +363,9 @@ the editor and at publish, as today.
 | A shape that follows a bone (a sword's swing sweeping its arc)? | later: a `cast` along a pose marker over the swing's ticks |
 | Other players' presses | unchanged: seen when their input arrives. The language makes the presser's own screen instant and keeps everyone else's from being corrected |
 
-## Order of work (when started)
+## Order of work
 
-1. **Blocks**: `motion` headers, `when`, `then when`, `after`, `if` / `else`, `end`; today's `use` sheets unchanged.
+1. **Blocks** (*built*, M204): `motion` headers, `when`, `then when`, `after`, `timeout`, `if` / `else`, `end`; today's `use` sheets unchanged. The brawl slam's landing is its sheet's now (`then when grounded`).
 2. **Finding**: `find`, `cast` with shapes from nodes, per-target blocks, `away`, `move` on a target.
 3. **Curves and markers**: `curve()`, `time`, `along NODE`, `from NODE`, `turn`; `follow`.
 4. **Items run motions**: `owner item`, `break`, `remove self`; the frag grenade's blast predicted.

@@ -97,6 +97,22 @@ Boots         CbItem     use: once a press   slot 5   use_key V                 
 as if its parts were nodes under the item (the game skips it). For a use that is flat; a probe and
 what hangs on it (a rope, a pull) stay nodes, being a tree.
 
+**A motion block** (`motion NAME ...`) in a sheet under an item or a `CbMotionSet` is a whole
+motion as text, with what nodes cannot say: steps that wait (`then when grounded`, `after 0.5`, a
+`timeout`), `if` / `else`, `end`, and a trigger that fires once as an expression turns true
+(`when`). The grammar: [rules-language.md](rules-language.md).
+
+```
+# prefabs/slam.rules: a dive, and where it lands said on the tick after it touches the ground
+motion Slam on use if brawl.cd_slam <= 0 and not grounded
+    lasts 3
+    change brawl.cd_slam = 5
+    emit brawl.slam.started
+    impulse 25 along world direction (0, -1, 0) replace vertical
+    then when grounded
+    emit brawl.slam.landed
+```
+
 ```
 # prefabs/boots.rules
 use if dash.charges > 0
@@ -161,7 +177,7 @@ use if dash.charges > 0
 - **Order**: a tick runs the frame's commands, then each player's motions (in the schema's order), then the mover. So a `Set` from the mod and a `change` from a motion in the same tick both count.
 - **Conditions read the fields as the tick found them**: a motion that changes a field does not start another until the next tick. That is what makes a toggle of two motions (`FlyOn` if not `flight.on`, `FlyOff` if `flight.on`) one switch a press.
 - **A frozen or dead player** does none; a key held through a freeze is not a press when it ends.
-- **As many motions as the mods' sets have**, all together: a player carries 16 bytes for each.
+- **As many motions as the mods' sets have**, all together: a player carries 28 bytes for each.
 - **In the editor**: every group has an info row (click the icon), every property a hover text, F1 opens the class reference. A part that cannot run is a warning on its node, on its motion and on the set, and stops the bake.
 - **Names the editor cannot check**: the action, fields and events are the server mod's. One no mod declares makes that part do nothing (the motion never happens, the change is skipped, nothing is emitted), and the server says so when it starts.
 
@@ -490,8 +506,15 @@ emit	dash.started
 | `force` | target, frame, kind (`accel`, `force`, `velocity`), strength, speed, ramp, react (0 or 1), and x y z |
 | `link` | target, length, reel, and 0 for a rope that acts on the player alone (no number: it reacts) |
 | `launch` | item kind, speed, frame, lift, ahead, seconds, and x y z for a world direction |
+| `param` | name, value, and seconds from when its step starts (none: while it is the step) |
+| `when edge` | a condition: the motion starts on the tick it turns true |
+| `step` | seconds after the step before, seconds its wait may take (0: any), and a condition to wait for: what follows is the next step |
+| `timeout` | what follows runs when the step before gave up waiting; then the motion ends |
+| `guard` | a condition (none: no guard): what follows counts only if it held when its step started |
+| `end` | the motion ends after this tick |
 
-A target is `self`, `hit` or `@field`.
+A target is `self`, `hit` or `@field`. Version 3 of the file (a sheet's motion blocks) has the last
+five; a file without them is written as version 2.
 
 | Step | Who |
 |---|---|
