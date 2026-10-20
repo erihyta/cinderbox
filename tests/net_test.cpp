@@ -4085,7 +4085,8 @@ void TestFrag()
 // bricks standing where the server has them.
 // The sandbox with a breakable wall of 8 x 4 bricks (held at its foot), `ahead` metres in front of
 // the first player, written to `mapPath`. `first`: the wall's template (its bricks' is the next).
-void WriteBrickWallMap( const std::filesystem::path& mapPath, float ahead, uint32_t& first )
+// `glue`: its bricks welded where they touch from the start (0: a static wall until broken).
+void WriteBrickWallMap( const std::filesystem::path& mapPath, float ahead, uint32_t& first, float glue = 0.0f )
 {
 	LevelLayout map = GetLevelLayout();
 	map.name = "wall";
@@ -4126,11 +4127,13 @@ void WriteBrickWallMap( const std::filesystem::path& mapPath, float ahead, uint3
 	AuthoredComponent rubble;
 	rubble.id = Fnv32( "Debris" );
 	brick.components.push_back( rubble );
+	wall.glue = glue;
 	map.templates.push_back( wall );
 	map.templates.push_back( brick );
-	// `ahead` metres in front of where the first player stands, across its look.
+	// `ahead` metres in front of where the first player stands, across its look (a brick's middle, not a
+	// seam between two, straight ahead of it).
 	const b3Vec3 spawn = map.spawnCenter;
-	map.instances.push_back( { first, { spawn.x - 5.25f, 1.0f, spawn.z + ahead }, 0.0f, 0.0f } );
+	map.instances.push_back( { first, { spawn.x - 5.0f, 1.0f, spawn.z + ahead }, 0.0f, 0.0f } );
 	QuantizeLayout( map );
 	std::vector<uint8_t> bytes;
 	SerializeMap( map, bytes );
@@ -4154,7 +4157,7 @@ void TestFragBreaks()
 		int loose = 0;
 		std::vector<std::pair<uint32_t, b3Vec3>> standing;
 	};
-	auto run = [&]( uint16_t port, const char* breakRadius, Bricks& server ) {
+	auto run = [&]( uint16_t port, const char* breakRadius, Bricks& server, bool moving = false ) {
 		const uint32_t throwAt = 240;
 		std::map<std::string, std::string> options;
 		if ( breakRadius != nullptr )
@@ -4205,7 +4208,7 @@ void TestFragBreaks()
 		const int blastEvent = h.server.Schema().FindEvent( "frag.blast" );
 		h.server.SetTickObserver( [&] {
 			const Simulation& sim = h.server.Sim();
-			brokenAt = brokenAt == 0 && bricks( sim ).walls == 0 ? sim.Tick() : brokenAt;
+			brokenAt = brokenAt == 0 && bricks( sim ).loose > 0 ? sim.Tick() : brokenAt;
 			const SimGlobals& g = sim.Globals();
 			for ( uint32_t k = 0; k < std::min<uint32_t>( g.modEventCount, kModEventHistory ); ++k )
 			{
@@ -4225,9 +4228,12 @@ void TestFragBreaks()
 		bool same = server.standing.size() == mine.standing.size();
 		for ( size_t i = 0; same && i < server.standing.size(); ++i )
 		{
-			same = server.standing[i].first == mine.standing[i].first && b3Distance( server.standing[i].second, mine.standing[i].second ) < 1e-5f;
+			// (Glued bricks are bodies that may still move, and the client is a lead ahead: the same bricks,
+			// and the checksums say the rest.)
+			same = server.standing[i].first == mine.standing[i].first &&
+				   ( moving || b3Distance( server.standing[i].second, mine.standing[i].second ) < 1e-5f );
 		}
-		std::printf( "    the blast at (%.2f %.2f %.2f); the wall at (%.2f %.2f %.2f)\n", blastAt.x, blastAt.y, blastAt.z, spawn.x - 5.25f, 1.0f, spawn.z + 1.5f );
+		std::printf( "    the blast at (%.2f %.2f %.2f); the wall at (%.2f %.2f %.2f)\n", blastAt.x, blastAt.y, blastAt.z, spawn.x - 5.0f, 1.0f, spawn.z + 1.5f );
 		std::printf( "    break radius %s: the wall broke at tick %u (%.2f s after the throw); the server has %d wall, %d bricks loose, %d "
 					 "standing; the client %d wall, %d loose, %d standing (%s); desyncs %u\n",
 					 breakRadius != nullptr ? breakRadius : "default", brokenAt, float( brokenAt - throwAt ) / 60.0f, server.walls, server.loose,
@@ -4235,11 +4241,16 @@ void TestFragBreaks()
 					 client.GetStats().desyncs );
 		CHECK( brokenAt > throwAt && server.walls == 0 && mine.walls == 0 && mine.loose == server.loose && same && client.GetStats().desyncs == 0 );
 	};
-	Bricks all, hole;
+	Bricks all, hole, glued;
 	run( 47900, "12", all );
 	CHECK( all.loose == 32 && all.standing.empty() );
 	run( 47902, nullptr, hole );
 	CHECK( hole.loose > 0 && hole.standing.size() > 8 && hole.loose + int( hole.standing.size() ) == 32 );
+	// Glued (its bricks bodies from the start, welded): the blast takes its foot and what is above,
+	// held up only by welds, comes down by its own weight; the client has the same bricks still glued.
+	WriteBrickWallMap( mapPath, 1.5f, first, 30000.0f );
+	run( 47904, "3.5", glued, true );
+	CHECK( glued.loose > 16 && glued.loose + int( glued.standing.size() ) == 32 );
 	std::error_code ignored;
 	std::filesystem::remove( mapPath, ignored );
 }

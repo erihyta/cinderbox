@@ -395,6 +395,13 @@ private:
 	// one falls. `target` is the whole wall or any piece of it left standing. `rubbleTicks` > 0:
 	// the pieces that go are removed after that long.
 	void BreakWall( flecs::entity target, b3Vec3 blast, float radius, float speed, uint32_t rubbleTicks );
+	// A glued breakable (EntityTemplate::glue) where the map places it: its pieces made at once, the
+	// held ones static, welded where they touch.
+	void CreateGluedWall( uint32_t templateIndex, b3Vec3 position, b3Quat rotation );
+	// After a step: the welds pulled harder than their glue, broken; then any glued piece left with
+	// no weld is loose (rubble).
+	void BreakGlue();
+	void LoosenPieces();
 	flecs::entity CreatePlayer( PlayerSlot slot );
 	void PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw );
 	b3ShapeId CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material = {} );

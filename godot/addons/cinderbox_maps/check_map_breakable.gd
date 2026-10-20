@@ -87,6 +87,16 @@ func _initialize() -> void:
 		if int(body["pieces"]) > 0:
 			held_sides = body["held"]
 	_check("held at its ends: the two end pieces", held_sides == 2, held_sides)
+	# Glued: the bake keeps its glue.
+	wall.held_at = CbBreakable.HELD_BOTTOM
+	wall.glue = 5000.0
+	var glued: Dictionary = CinderboxMapBaker.new().bake(root, "user://check_map_breakable.cbmap")
+	var glue := -1.0
+	for body in glued.get("bodies", []):
+		if int(body["pieces"]) > 0:
+			glue = body["glue"]
+	_check("glued at 5000 N: the bake keeps it", glue == 5000.0, glue)
+	wall.glue = 0.0
 	# Held nowhere: a hole brings it all down, and the bake says so.
 	wall.held_at = 0
 	var nowhere: Dictionary = CinderboxMapBaker.new().bake(root, "user://check_map_breakable.cbmap")

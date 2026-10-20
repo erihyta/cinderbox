@@ -670,8 +670,14 @@ void Simulation::BuildLevel()
 	// Template instances come last, in the order the map lists them.
 	for ( const LevelInstance& instance : layout.instances )
 	{
-		CreateFromTemplate( instance.templateIndex, instance.position, MakeRotation( instance.yaw, instance.pitch, instance.roll ),
-							{ 0.0f, 0.0f, 0.0f }, 0 );
+		const b3Quat rotation = MakeRotation( instance.yaw, instance.pitch, instance.roll );
+		if ( instance.templateIndex < layout.templates.size() && layout.templates[instance.templateIndex].glue > 0.0f &&
+			 layout.templates[instance.templateIndex].pieces.empty() == false )
+		{
+			CreateGluedWall( instance.templateIndex, instance.position, rotation );
+			continue;
+		}
+		CreateFromTemplate( instance.templateIndex, instance.position, rotation, { 0.0f, 0.0f, 0.0f }, 0 );
 	}
 }
 
@@ -811,6 +817,95 @@ flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 pos
 	return e;
 }
 
+void Simulation::CreateGluedWall( uint32_t templateIndex, b3Vec3 position, b3Quat rotation )
+{
+	const EntityTemplate& wt = m_map.templates[templateIndex];
+	const size_t n = wt.pieces.size();
+	std::vector<flecs::entity> pieces( n );
+	std::vector<b3Transform> at( n );
+	uint32_t wallId = 0;
+	for ( size_t i = 0; i < n; ++i )
+	{
+		const TemplatePiece& piece = wt.pieces[i];
+		at[i] = { b3Add( position, b3RotateVector( rotation, piece.position ) ),
+				  b3NormalizeQuat( b3MulQuat( rotation, MakeRotation( piece.yaw, piece.pitch, piece.roll ) ) ) };
+		pieces[i] = CreateFromTemplate( piece.templateIndex, at[i].p, at[i].q, { 0.0f, 0.0f, 0.0f }, 0, piece.held );
+		if ( pieces[i].is_valid() && wallId == 0 )
+		{
+			wallId = pieces[i].get<NetId>().value; // (the wall is known by its first piece)
+		}
+	}
+	for ( size_t i = 0; i < n; ++i )
+	{
+		if ( pieces[i].is_valid() )
+		{
+			pieces[i].set<WallPiece>( { wallId, templateIndex, uint32_t( i ) } );
+		}
+	}
+	// Welds where they touch (not between two held pieces: both are static).
+	for ( const PieceLink& link : wt.links )
+	{
+		if ( link.a >= n || link.b >= n || pieces[link.a].is_valid() == false || pieces[link.b].is_valid() == false ||
+			 ( wt.pieces[link.a].held && wt.pieces[link.b].held ) )
+		{
+			continue;
+		}
+		// (Box3D wants a static body first.)
+		const uint16_t a = wt.pieces[link.b].held ? link.b : link.a;
+		const uint16_t b = a == link.a ? link.b : link.a;
+		b3WeldJointDef def = b3DefaultWeldJointDef();
+		def.base.bodyIdA = BodyOf( pieces[a].get<PhysicsBody>() );
+		def.base.bodyIdB = BodyOf( pieces[b].get<PhysicsBody>() );
+		def.base.localFrameA = b3Transform_identity;
+		def.base.localFrameB = b3InvMulTransforms( at[b], at[a] );
+		def.base.forceThreshold = wt.glue;
+		def.base.torqueThreshold = wt.glue; // (newton metres: as if pulled a metre from the weld)
+		b3CreateWeldJoint( m_physicsWorld, &def );
+	}
+}
+
+void Simulation::BreakGlue()
+{
+	b3JointEvents events = b3World_GetJointEvents( m_physicsWorld );
+	if ( events.count <= 0 )
+	{
+		return;
+	}
+	// (Box3D says them in an order of its own: by the joints' ids, the same everywhere.)
+	std::vector<b3JointId> overloaded;
+	for ( int i = 0; i < events.count; ++i )
+	{
+		overloaded.push_back( events.jointEvents[i].jointId );
+	}
+	std::sort( overloaded.begin(), overloaded.end(), []( b3JointId a, b3JointId b ) { return a.index1 < b.index1; } );
+	for ( b3JointId joint : overloaded )
+	{
+		if ( b3Joint_IsValid( joint ) && b3Joint_GetType( joint ) == b3_weldJoint )
+		{
+			b3DestroyJoint( joint, true );
+		}
+	}
+	LoosenPieces();
+}
+
+void Simulation::LoosenPieces()
+{
+	std::vector<flecs::entity> loose;
+	for ( const EntityRef& r : m_entities )
+	{
+		flecs::entity e( m_world, r.entity );
+		const PhysicsBody* pb = e.has<WallPiece>() ? e.try_get<PhysicsBody>() : nullptr;
+		if ( pb != nullptr && b3Body_GetType( BodyOf( *pb ) ) == b3_dynamicBody && b3Body_GetJointCount( BodyOf( *pb ) ) == 0 )
+		{
+			loose.push_back( e );
+		}
+	}
+	for ( flecs::entity e : loose )
+	{
+		e.remove<WallPiece>();
+	}
+}
+
 void Simulation::BreakWall( flecs::entity target, b3Vec3 blast, float radius, float speed, uint32_t rubbleTicks )
 {
 	// The wall: whole (a template with pieces), or a piece of it left standing by a blast before.
@@ -903,13 +998,41 @@ void Simulation::BreakWall( flecs::entity target, b3Vec3 blast, float radius, fl
 			const Transform at = stand[i].get<Transform>();
 			float distance = 0.0f;
 			const b3Vec3 velocity = thrown( at.position, distance );
-			if ( radius <= 0.0f || distance <= radius )
+			if ( radius > 0.0f && distance > radius )
 			{
-				DestroyEntity( stand[i] );
-				stand[i] = flecs::entity();
-				fly( i, at.position, at.rotation, velocity );
+				continue;
 			}
+			const b3BodyId body = BodyOf( stand[i].get<PhysicsBody>() );
+			if ( b3Body_GetType( body ) == b3_dynamicBody )
+			{
+				// A glued piece: its welds let go, and it flies as it is.
+				std::vector<b3JointId> welds( size_t( b3Body_GetJointCount( body ) ) );
+				welds.resize( size_t( b3Body_GetJoints( body, welds.data(), int( welds.size() ) ) ) );
+				for ( b3JointId weld : welds )
+				{
+					b3DestroyJoint( weld, true );
+				}
+				b3Body_SetLinearVelocity( body, velocity );
+				b3Body_SetAwake( body, true );
+				stand[i].remove<WallPiece>();
+				if ( rubbleTicks > 0 )
+				{
+					stand[i].set<Prop>( { 0, m_globals.tick, m_globals.tick + rubbleTicks } );
+				}
+				stand[i] = flecs::entity();
+				continue;
+			}
+			DestroyEntity( stand[i] );
+			stand[i] = flecs::entity();
+			fly( i, at.position, at.rotation, velocity );
 		}
+	}
+	if ( wt.glue > 0.0f )
+	{
+		// What holds a glued wall up is its welds: the physics says what falls. A piece left with none
+		// is loose.
+		LoosenPieces();
+		return;
 	}
 
 	// What holds it up: from the held pieces still standing, along the links between standing
@@ -2528,6 +2651,7 @@ void Simulation::Step( const InputFrame& frame )
 	}
 
 	CollectImpacts();
+	BreakGlue();
 	BreakByItems();
 	SyncFromPhysics();
 	FollowHolders();

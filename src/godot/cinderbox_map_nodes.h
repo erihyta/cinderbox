@@ -140,12 +140,23 @@ public:
 	{
 		return m_heldAt;
 	}
+	// Glued (newtons, 0: not): its pieces are bodies from the start, welded where they touch, the held
+	// ones static; a weld pulled harder than this breaks. It sags, cracks and falls by its own physics.
+	void set_glue( double glue )
+	{
+		m_glue = glue;
+	}
+	double get_glue() const
+	{
+		return m_glue;
+	}
 
 protected:
 	static void _bind_methods();
 
 private:
 	int m_heldAt = HELD_BOTTOM;
+	double m_glue = 0.0;
 };
 
 // Where players appear. Exactly one per map; the simulation spreads the slots around it.

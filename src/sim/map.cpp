@@ -5,6 +5,7 @@
 
 #include "box3d/collision.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -266,6 +267,7 @@ void QuantizeLayout( LevelLayout& layout )
 			Snap( piece.yaw, kMapAngleScale );
 			Snap( piece.roll, kMapAngleScale );
 		}
+		t.glue = std::round( std::clamp( t.glue, 0.0f, 1.0e9f ) );
 	}
 	for ( std::vector<b3Vec3>& hull : layout.hulls )
 	{
@@ -436,6 +438,7 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 			AppendU32( out, link.a );
 			AppendU32( out, link.b );
 		}
+		AppendU32( out, uint32_t( std::clamp( t.glue, 0.0f, 1.0e9f ) + 0.5f ) );
 	}
 
 	AppendU32( out, uint32_t( layout.instances.size() ) );
@@ -786,6 +789,10 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 					}
 					t.links.push_back( { uint16_t( a ), uint16_t( b ) } );
 				}
+			}
+			if ( version >= 11 )
+			{
+				t.glue = float( rd.U32() );
 			}
 		}
 		// Values this build does not understand are dropped, and the rest is clamped to its range,
