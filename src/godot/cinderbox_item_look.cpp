@@ -1387,6 +1387,12 @@ std::string CbItem::BakeMotions( String& error ) const
 	}
 	text += use;
 	count += use.empty() ? 0 : 1;
+	// (The names of its motions: a sheet's may not take one of them.)
+	std::vector<std::string> names;
+	if ( use.empty() == false )
+	{
+		names.push_back( "Use" );
+	}
 	for ( int i = 0; i < get_child_count(); ++i )
 	{
 		auto* motion = Object::cast_to<CbMotion>( get_child( i ) );
@@ -1401,6 +1407,20 @@ std::string CbItem::BakeMotions( String& error ) const
 		}
 		text += lines;
 		count += 1;
+		names.push_back( std::string( String( motion->get_name() ).utf8().get_data() ) );
+	}
+	// The motion blocks of its rules sheets: a file of version 3 (steps, ifs, an edge).
+	std::string sheetLines;
+	size_t before = names.size();
+	if ( BakeSheetMotions( this, kind, sheetLines, names, error ) == false )
+	{
+		return std::string();
+	}
+	if ( sheetLines.empty() == false )
+	{
+		text.replace( 0, std::string( "cinderbox_motions	2" ).size(), "cinderbox_motions	3" );
+		text += sheetLines;
+		count += int( names.size() - before );
 	}
 	return count > 0 ? text : std::string();
 }

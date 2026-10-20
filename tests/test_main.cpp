@@ -3066,7 +3066,8 @@ void TestMotions()
 	}
 	CHECK( motions->list.size() == 3 && motions->list[0].name == "dash.moves/Dash" );
 	CHECK( motions->list[0].action == 0 && motions->list[1].action == kMotionActionJump && motions->list[2].action == 3 );
-	CHECK( motions->list[0].changes.size() == 2 && motions->list[0].event == 0 && motions->list[1].event == 1 );
+	CHECK( motions->list[0].First().changes.size() == 2 && motions->list[0].First().emits.size() == 1 && motions->list[0].First().emits[0].event == 0 &&
+		   motions->list[1].First().emits[0].event == 1 );
 
 	Simulation sim( TestConfig(), FlatMap() );
 	sim.SetMotions( motions );
@@ -3268,7 +3269,8 @@ void TestMotions()
 	CHECK( CompileMotionSet( "t", "cinderbox_motions\t2\nmotion\tA\nwhen\tpress\tfly\nchange\tround.time\t=\t1\nchange\tfly.fuel\t-=\t1\nemit\tfly.up\n",
 							 schema, inert, error, warned ) );
 	std::printf( "    %s\n", warned.c_str() );
-	CHECK( inert.size() == 1 && inert[0].action == -1 && inert[0].changes.empty() && inert[0].event == -1 );
+	CHECK( inert.size() == 1 && inert[0].action == -1 && inert[0].First().changes.empty() &&
+		   inert[0].First().emits.size() == 1 && inert[0].First().emits[0].event == -1 );
 	CHECK( warned.find( "\"fly\"" ) != std::string::npos && warned.find( "round.time" ) != std::string::npos &&
 		   warned.find( "fly.fuel" ) != std::string::npos && warned.find( "fly.up" ) != std::string::npos );
 
@@ -3411,6 +3413,215 @@ void TestItemMotions()
 	uint32_t p1 = sim.PlayerNetId( 1 );
 	CHECK( BoardToFloat( sim.BoardValue( p1, 0 ) ) == 0.0f && BoardToFloat( sim.BoardValue( p1, 1 ) ) == 0.0f );
 	CHECK( carried() > carriedThen );
+}
+
+// A motion's steps (a rules sheet's motion block, docs/rules-language.md): a wait for a condition, a
+// wait that gives up, a wait by time, guards decided when a step starts, an end, an edge trigger.
+void TestMotionSteps()
+{
+	ModSchema schema;
+	schema.fields.push_back( { "slam.big", BoardType::Int, BoardScope::Entity, 0 } );
+	schema.fields.push_back( { "t.count", BoardType::Int, BoardScope::Entity, 1 } );
+	schema.events = { "slam.started", "slam.landed", "slam.big_landed", "slam.small_landed", "landed",
+					  "hang.gave_up", "hang.held", "later.a", "later.b" };
+	schema.actions.push_back( { "slam", 0, "Q" } );
+	schema.actions.push_back( { "hang", 1, "E" } );
+	schema.actions.push_back( { "later", 2, "R" } );
+	schema.actions.push_back( { "stop", 3, "F" } );
+	const std::string text = "cinderbox_motions\t3\n"
+							 "motion\tSlam\nwhen\tpress\tslam\nif\tnot grounded\nemit\tslam.started\n"
+							 "impulse\tself\t25\tworld\tvertical\t0\t-1\t0\n"
+							 "step\t0\t3\tgrounded\nemit\tslam.landed\n"
+							 "guard\tslam.big > 0\nemit\tslam.big_landed\n"
+							 "guard\tnot ( slam.big > 0 )\nemit\tslam.small_landed\n"
+							 "guard\nparam\twalk_speed\t0\t1\n"
+							 "motion\tLand\nwhen\tedge\tgrounded\nemit\tlanded\n"
+							 "motion\tHang\nwhen\tpress\thang\nstep\t0\t0.5\tslam.big > 5\nemit\thang.held\ntimeout\nemit\thang.gave_up\n"
+							 "motion\tLater\nwhen\tpress\tlater\nemit\tlater.a\nstep\t0.5\t0\nemit\tlater.b\nchange\tt.count\t+=\t1\n"
+							 "motion\tStop\nwhen\tpress\tstop\nduration\t2\nparam\twalk_speed\t1\nguard\tgrounded\nend\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 5 );
+	if ( motions == nullptr || motions->list.size() != 5 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	const Motion& slam = motions->list[0];
+	CHECK( slam.steps.size() == 2 && slam.steps[0].next == 1 && slam.steps[1].next == -1 && slam.steps[1].guards.size() == 2 &&
+		   slam.steps[1].emits.size() == 3 && slam.steps[1].length == 1.0f && slam.Held() );
+	const Motion& hang = motions->list[2];
+	CHECK( hang.steps.size() == 3 && hang.steps[0].next == 1 && hang.steps[1].onTimeout == 2 && hang.steps[2].timeout );
+	CHECK( motions->list[1].when == Motion::When::Edge );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	std::vector<ModEventRecord> seen;
+	uint32_t counted = 0;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+			for ( ; counted < sim.Globals().modEventCount; ++counted )
+			{
+				seen.push_back( sim.Globals().modEvents[counted % kModEventHistory] );
+			}
+		}
+	};
+	auto count = [&]( int type ) {
+		return int( std::count_if( seen.begin(), seen.end(), [&]( const ModEventRecord& e ) { return int( e.type ) == type; } ) );
+	};
+	auto tickOf = [&]( int type ) {
+		for ( size_t i = seen.size(); i-- > 0; )
+		{
+			if ( int( seen[i].type ) == type )
+			{
+				return seen[i].tick;
+			}
+		}
+		return 0u;
+	};
+	auto tap = [&]( uint16_t action ) {
+		f.inputs[0].actions = action;
+		step( 1 );
+		f.inputs[0].actions = 0;
+	};
+	const uint16_t slamKey = 1, hangKey = 2, laterKey = 4, stopKey = 8;
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	const uint32_t p0 = sim.PlayerNetId( 0 );
+	auto grounded = [&] { return sim.PlayerCharacter( 0 )->grounded != 0; };
+	auto on = [&]( int motion ) { return ( sim.EntityMotionsOn( p0 ) >> motion & 1u ) != 0; };
+	// A player who spawns standing has not landed: the edge's first answer is only remembered.
+	const int spawnLandings = count( 4 );
+	std::printf( "    landings by the spawn: %d\n", spawnLandings );
+	CHECK( grounded() && spawnLandings <= 1 );
+
+	// On the ground the slam does not start (its condition); in the air it dives, waits, and on the
+	// tick after it lands takes its second step: the landing said, the small one (its guard), and
+	// no walking for a second.
+	tap( slamKey );
+	CHECK( count( 0 ) == 0 );
+	f.inputs[0].buttons = BtnJump;
+	step( 1 );
+	f.inputs[0].buttons = 0;
+	step( 20 );
+	CHECK( grounded() == false );
+	tap( slamKey );
+	CHECK( count( 0 ) == 1 && sim.PlayerCharacter( 0 )->velocity.y < -20.0f && on( 0 ) );
+	uint32_t landTick = 0;
+	for ( int i = 0; i < 120 && count( 1 ) == 0; ++i )
+	{
+		step( 1 );
+		landTick = grounded() && landTick == 0 ? sim.Tick() - 1 : landTick;
+	}
+	std::printf( "    the slam landed on tick %u, its step started on tick %u\n", landTick, tickOf( 1 ) );
+	CHECK( count( 1 ) == 1 && tickOf( 1 ) == landTick + 1 && count( 3 ) == 1 && count( 2 ) == 0 );
+	CHECK( count( 4 ) == spawnLandings + 1 ); // the edge: one landing, one start
+	CHECK( on( 0 ) && sim.PlayerMove( 0 )[MoveParam::WalkSpeed] == 0.0f );
+	step( 58 );
+	CHECK( on( 0 ) && sim.PlayerMove( 0 )[MoveParam::WalkSpeed] == 0.0f );
+	step( 2 );
+	CHECK( on( 0 ) == false && sim.PlayerMove( 0 )[MoveParam::WalkSpeed] != 0.0f );
+
+	// Its guard is decided when the step starts: with the field set, the big landing instead.
+	SimCommand set;
+	set.type = CommandType::SetField;
+	set.target = SlotTarget( 0 );
+	set.index = 0;
+	set.value = 1;
+	f.commands.push_back( set );
+	f.inputs[0].buttons = BtnJump;
+	step( 1 );
+	f.inputs[0].buttons = 0;
+	step( 20 );
+	tap( slamKey );
+	step( 60 );
+	CHECK( count( 1 ) == 2 && count( 2 ) == 1 && count( 3 ) == 1 && count( 4 ) == spawnLandings + 2 );
+	step( 60 );
+
+	// A wait that gives up: within half a second the field never passes 5, so its timeout runs and
+	// the motion ends.
+	tap( hangKey );
+	CHECK( on( 2 ) );
+	step( 29 );
+	CHECK( count( 5 ) == 0 && on( 2 ) );
+	step( 2 );
+	CHECK( count( 5 ) == 1 && count( 6 ) == 0 );
+	step( 1 );
+	CHECK( on( 2 ) == false );
+	// ... and a wait that is met in time: the field set, the held step instead.
+	tap( hangKey );
+	set.value = 9;
+	f.commands.push_back( set );
+	step( 3 );
+	CHECK( count( 6 ) == 1 && count( 5 ) == 1 );
+	step( 60 );
+
+	// A wait by time: half a second after the press, its second step (and its change, once).
+	tap( laterKey );
+	const uint32_t pressed = tickOf( 7 );
+	step( 40 );
+	CHECK( count( 7 ) == 1 && count( 8 ) == 1 && tickOf( 8 ) == pressed + 30 && sim.BoardValue( p0, 1 ) == 1 );
+
+	// It is state: a copy made while a step waits goes on the same, and a rollback takes it back.
+	tap( laterKey );
+	step( 5 );
+	std::vector<uint8_t> image;
+	sim.SavePortable( image );
+	Simulation client( TestConfig(), FlatMap() );
+	client.SetMotions( motions );
+	CHECK( client.LoadPortable( image ) && client.ComputeHash() == sim.ComputeHash() );
+	Snapshot before;
+	sim.Save( before );
+	const uint64_t hashBefore = sim.ComputeHash();
+	for ( int i = 0; i < 40; ++i )
+	{
+		f.tick = sim.Tick();
+		sim.Step( f );
+		client.Step( f );
+	}
+	CHECK( sim.BoardValue( p0, 1 ) == 2 && client.ComputeHash() == sim.ComputeHash() );
+	sim.Load( before );
+	CHECK( sim.BoardValue( p0, 1 ) == 1 && sim.ComputeHash() == hashBefore );
+	step( 40 );
+	CHECK( sim.BoardValue( p0, 1 ) == 2 );
+
+	// An end under a guard: standing, it ends after the tick it starts; in the air it lasts.
+	tap( stopKey );
+	CHECK( on( 4 ) );
+	step( 1 );
+	CHECK( on( 4 ) == false );
+	step( 120 );
+	f.inputs[0].buttons = BtnJump;
+	step( 1 );
+	f.inputs[0].buttons = 0;
+	step( 10 );
+	tap( stopKey );
+	step( 5 );
+	CHECK( on( 4 ) && sim.PlayerMove( 0 )[MoveParam::WalkSpeed] == 1.0f );
+
+	// What a file may not say.
+	auto fails = [&]( const std::string& body ) {
+		std::vector<Motion> out;
+		std::string error, warned;
+		bool ok = CompileMotionSet( "t", "cinderbox_motions\t3\n" + body, schema, out, error, warned );
+		return ok == false;
+	};
+	CHECK( fails( "motion\tA\nwhen\twhile\nstep\t1\t0\n" ) );					   // a while has no steps
+	CHECK( fails( "motion\tA\nwhen\tpress\tslam\nstep\t0\t1\n" ) );			   // giving up, waiting for nothing
+	CHECK( fails( "motion\tA\nwhen\tpress\tslam\ntimeout\n" ) );				   // a timeout of nothing
+	CHECK( fails( "motion\tA\nwhen\tpress\tslam\nstep\t1\t0\ncooldown\t1\n" ) ); // the motion's, after a step
+	CHECK( fails( "motion\tA\nwhen\tpress\tslam\nstep\t0\t1\tgrounded\ntimeout\nparam\twalk_speed\t0\n" ) );
+	CHECK( fails( "motion\tA\nwhen\tedge\n" ) );
+	CHECK( fails( "motion\tA\nwhen\tpress\tslam\nguard\tnot (\n" ) );
+	CHECK( fails( "motion\tA\nwhen\tpress\tslam\nparam\twalk_speed\t1\t-1\n" ) );
+	CHECK( fails( "motion\tA\nwhen\tpress\tslam\nstep\t0\t0\n" ) == false );
 }
 
 // "motion.<name>" in a condition: that motion of the player's is on. A motion's own conditions read
@@ -3651,7 +3862,7 @@ void TestMotionsWhile()
 	CHECK( CompileMotionSet( "t", "cinderbox_motions\t2\nmotion\tA\nwhen\twhile\nif\theld.warp\nchange\tflight.count\t+=\t1\n", schema, out, error,
 							 warned ) );
 	std::printf( "    %s\n", warned.c_str() );
-	CHECK( out.size() == 1 && out[0].changes.empty() );
+	CHECK( out.size() == 1 && out[0].First().changes.empty() );
 	CHECK( warned.find( "per second" ) != std::string::npos && warned.find( "held.warp" ) != std::string::npos );
 	CHECK( CompileMotionSet( "t", "cinderbox_motions\t2\nmotion\tA\nwhen\tevent\n", schema, out, error, warned ) == false );
 
@@ -3772,8 +3983,8 @@ void TestRopeAlone()
 	schema.motionSets.push_back( { "hooks", "hooks.moves", text } );
 	std::string warnings;
 	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
-	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 1 && motions->list[0].effects.size() == 2 &&
-		   motions->list[0].effects[0].react == false && motions->list[0].effects[1].react == false );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 1 && motions->list[0].First().effects.size() == 2 &&
+		   motions->list[0].First().effects[0].react == false && motions->list[0].First().effects[1].react == false );
 	if ( motions == nullptr || motions->list.size() != 1 )
 	{
 		std::printf( "    %s\n", warnings.c_str() );
@@ -3786,7 +3997,7 @@ void TestRopeAlone()
 			   false );
 		out.clear();
 		CHECK( CompileMotionSet( "hooks", "cinderbox_motions\t2\nmotion\tA\nwhen\tpress\thook\nprobe\t40\t0\nlink\thit\t0\t0\n", schema, out, error, warned ) &&
-			   out.size() == 1 && out[0].effects[0].react );
+			   out.size() == 1 && out[0].First().effects[0].react );
 	}
 
 	Simulation sim( TestConfig() );
@@ -3859,8 +4070,8 @@ void TestLinks()
 	schema.motionSets.push_back( { "grapple", "grapple.moves", text } );
 	std::string warnings;
 	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
-	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 && motions->list[0].probe && motions->list[0].effects.size() == 2 &&
-		   motions->list[0].effects[1].kind == MotionEffect::Kind::Link );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 && motions->list[0].probe && motions->list[0].First().effects.size() == 2 &&
+		   motions->list[0].First().effects[1].kind == MotionEffect::Kind::Link );
 	if ( motions == nullptr || motions->list.size() != 2 )
 	{
 		std::printf( "    %s\n", warnings.c_str() );
@@ -5986,8 +6197,8 @@ void TestThrownFromHand()
 	schema.motionSets.push_back( { "t", "t.moves", text } );
 	std::string warnings;
 	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
-	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 && motions->list[1].effects.size() == 1 &&
-		   motions->list[1].effects[0].carried );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 && motions->list[1].First().effects.size() == 1 &&
+		   motions->list[1].First().effects[0].carried );
 	if ( motions == nullptr || motions->list.size() != 2 )
 	{
 		std::printf( "    %s\n", warnings.c_str() );
@@ -9777,6 +9988,7 @@ int main( int argc, char** argv )
 		{ "move_params", TestMoveParams },
 		{ "motions", TestMotions },
 		{ "motions_while", TestMotionsWhile },
+		{ "motion_steps", TestMotionSteps },
 		{ "item_motions", TestItemMotions },
 		{ "motion_conditions", TestMotionConditions },
 		{ "links", TestLinks },

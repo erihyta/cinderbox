@@ -184,6 +184,192 @@ bool ParseAt( const std::vector<Token>& w, size_t i, size_t end, Dictionary& int
 	return true;
 }
 
+// How far in a line's text starts: a tab is four spaces.
+int Column( const String& line )
+{
+	int column = 0;
+	for ( int64_t i = 0; i < line.length(); ++i )
+	{
+		if ( line[i] == ' ' )
+		{
+			column += 1;
+		}
+		else if ( line[i] == '\t' )
+		{
+			column += 4;
+		}
+		else
+		{
+			break;
+		}
+	}
+	return column;
+}
+
+// A motion part (impulse, force, move, launch): its class and properties, made into a node by the
+// bake. False, with why, when the line is none of them or cannot be read.
+bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
+{
+	const String verb = w[0].text;
+	double value = 0.0;
+	Dictionary props;
+	size_t i = 1;
+	auto frameOf = [&]( const String& word ) {
+		return word == "look" ? 0 : word == "move" ? 1 : word == "facing" ? 2 : word == "up" ? 3 : word == "world" ? 4 : word == "to" ? 5 : -1;
+	};
+	// The words a part shares: on, along, direction.
+	auto common = [&]( const String& word, size_t& k ) {
+		if ( word == "on" && k + 1 < w.size() )
+		{
+			String who = w[k + 1].text;
+			props["target"] = who == "self" ? 0 : who == "hit" ? 1 : 2;
+			if ( who != "self" && who != "hit" )
+			{
+				props["target_field"] = who;
+			}
+			k += 2;
+			return true;
+		}
+		if ( word == "along" && k + 1 < w.size() && frameOf( w[k + 1].text ) >= 0 )
+		{
+			props["frame"] = frameOf( w[k + 1].text );
+			k += 2;
+			return true;
+		}
+		if ( word == "direction" && k + 1 < w.size() && Value( w[k + 1] ).get_type() == Variant::VECTOR3 )
+		{
+			props["direction"] = Value( w[k + 1] );
+			k += 2;
+			return true;
+		}
+		return false;
+	};
+	if ( verb == "impulse" || verb == "force" )
+	{
+		if ( w.size() < 2 || Number( w[1], value ) == false )
+		{
+			why = verb + String( " <how much> ..." );
+			return false;
+		}
+		part["class"] = verb == "impulse" ? "CbImpulse" : "CbForce";
+		props[verb == "impulse" ? "speed" : "strength"] = value;
+		for ( i = 2; i < w.size() && why.is_empty(); )
+		{
+			const String word = w[i].text;
+			if ( common( word, i ) )
+			{
+				continue;
+			}
+			if ( verb == "impulse" && word == "replace" && i + 1 < w.size() )
+			{
+				String r = w[i + 1].text;
+				int replace = r == "nothing" ? 0 : r == "vertical" ? 1 : r == "horizontal" ? 2 : r == "all" ? 3 : -1;
+				if ( replace < 0 )
+				{
+					why = "replace nothing, vertical, horizontal or all";
+				}
+				props["replace"] = replace;
+				i += 2;
+			}
+			else if ( verb == "force" && word == "kind" && i + 1 < w.size() )
+			{
+				String k = w[i + 1].text;
+				int kind = k == "acceleration" ? 0 : k == "force" ? 1 : k == "velocity" ? 2 : -1;
+				if ( kind < 0 )
+				{
+					why = "kind acceleration, force or velocity";
+				}
+				props["kind"] = kind;
+				i += 2;
+			}
+			else if ( verb == "force" && ( word == "top" || word == "ramp" ) && i + 1 < w.size() && Number( w[i + 1], value ) )
+			{
+				props[word == "top" ? "speed" : "ramp_in"] = value;
+				i += 2;
+			}
+			else if ( verb == "force" && word == "react" )
+			{
+				props["react"] = true;
+				i += 1;
+			}
+			else
+			{
+				why = "\"" + word + "\" is not something " + verb + " takes";
+			}
+		}
+	}
+	else if ( verb == "move" )
+	{
+		part["class"] = "CbMove";
+		Dictionary parameters;
+		i = 1;
+		if ( i + 1 < w.size() && w[i].text == "for" && Number( w[i + 1], value ) )
+		{
+			props["duration"] = value;
+			i += 2;
+		}
+		for ( ; i + 1 < w.size() && why.is_empty(); i += 2 )
+		{
+			if ( Number( w[i + 1], value ) == false )
+			{
+				why = w[i].text + String( " wants a number" );
+			}
+			parameters[w[i].text] = value;
+		}
+		if ( i < w.size() && why.is_empty() )
+		{
+			why = "move [for S] PARAMETER VALUE ...";
+		}
+		props["parameters"] = parameters;
+	}
+	else if ( verb == "launch" )
+	{
+		part["class"] = "CbLaunch";
+		if ( w.size() >= 2 && w[1].text == "carried" )
+		{
+			props["what"] = 1;
+			i = 2;
+		}
+		else if ( w.size() >= 3 && w[1].text == "new" )
+		{
+			props["what"] = 0;
+			props["item_kind"] = w[2].text;
+			i = 3;
+		}
+		else
+		{
+			why = "launch new <kind>, or launch carried";
+		}
+		while ( i < w.size() && why.is_empty() )
+		{
+			const String word = w[i].text;
+			if ( common( word, i ) )
+			{
+				continue;
+			}
+			if ( ( word == "speed" || word == "lift" || word == "ahead" || word == "seconds" ) && i + 1 < w.size() && Number( w[i + 1], value ) )
+			{
+				props[word] = value;
+				i += 2;
+			}
+			else
+			{
+				why = "\"" + word + "\" is not something launch takes";
+			}
+		}
+	}
+	else
+	{
+		why = "\"" + verb + "\" is not one of: change, cooldown, emit, impulse, force, move, launch";
+	}
+	if ( why.is_empty() == false )
+	{
+		return false;
+	}
+	part["properties"] = props;
+	return true;
+}
+
 struct Building
 {
 	int line = 0;
@@ -193,6 +379,19 @@ struct Building
 	std::vector<Rule> actions;		 // its own properties, and its line
 	bool prediction = false;
 	bool use = false;				 // an item's use (for its bake)
+	// A motion block (for the bake: run by the simulation). Its steps; the ifs open around the line
+	// being read (their column, their condition, whether it is their else now); its lines' columns.
+	bool motion = false;
+	Array steps;
+	struct Frame
+	{
+		int column = 0;
+		String condition;
+		bool otherwise = false;
+	};
+	std::vector<Frame> frames;
+	int headColumn = 0;
+	int bodyColumn = -1;
 	Array parts;					 // a use's motion parts: {class, properties}
 	PackedStringArray changes;		 // a prediction's, a use's
 	bool bad = false;
@@ -228,6 +427,16 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 		{
 			errors.push_back( "line " + String::num_int64( rule.pendingSetting ) +
 							  ": a setting after the last action does nothing (a setting is for the actions below it)" );
+			return;
+		}
+		if ( rule.motion )
+		{
+			Rule made;
+			made.line = rule.line;
+			made.type = "motion";
+			made.properties = rule.settings;
+			made.properties["steps"] = rule.steps;
+			out.push_back( made );
 			return;
 		}
 		if ( rule.use )
@@ -369,6 +578,275 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			out.push_back( made );
 			continue;
 		}
+		// --- a motion block: for the bake, run by the simulation (docs/rules-language.md)
+		if ( verb == "motion" )
+		{
+			finish();
+			rule = Building{};
+			rule.line = number;
+			rule.motion = true;
+			rule.headColumn = Column( line );
+			open = true;
+			Dictionary first;
+			first["statements"] = Array();
+			rule.steps.push_back( first );
+			// motion NAME on use | on press ACTION | on EVENT | while EXPR | when EXPR, then [if EXPR]
+			const char* usage = "motion NAME on use, on press ACTION, on EVENT, while EXPRESSION or when EXPRESSION, then [if EXPRESSION]";
+			if ( w.size() < 3 || w[1].text.contains( "/" ) || w[1].text.contains( "." ) || w[1].quoted )
+			{
+				fail( number, usage );
+				continue;
+			}
+			rule.settings["name"] = w[1].text;
+			const String how = w[2].text;
+			size_t cut = w.size();
+			for ( size_t k = 3; k < w.size(); ++k )
+			{
+				if ( w[k].quoted == false && w[k].text == "if" )
+				{
+					cut = k;
+					break;
+				}
+			}
+			if ( how == "on" && w.size() >= 4 && w[3].text == "use" && cut == 4 )
+			{
+				rule.settings["trigger"] = "use";
+			}
+			else if ( how == "on" && w.size() >= 5 && w[3].text == "press" && cut == 5 )
+			{
+				rule.settings["trigger"] = "press";
+				rule.settings["action"] = w[4].text;
+			}
+			else if ( how == "on" && cut == 4 )
+			{
+				rule.settings["trigger"] = "event";
+				rule.settings["event"] = w[3].text;
+			}
+			else if ( ( how == "while" || how == "when" ) && cut > 3 )
+			{
+				rule.settings["trigger"] = how;
+				rule.settings["expression"] = line.substr( w[3].start, ( cut < w.size() ? w[cut].start : line.length() ) - w[3].start ).strip_edges();
+				int64_t hash = String( rule.settings["expression"] ).find( "#" );
+				if ( hash >= 0 )
+				{
+					rule.settings["expression"] = String( rule.settings["expression"] ).substr( 0, hash ).strip_edges();
+				}
+			}
+			else
+			{
+				fail( number, usage );
+				continue;
+			}
+			if ( cut < w.size() )
+			{
+				if ( cut + 1 >= w.size() || how == "while" )
+				{
+					fail( number, how == "while" ? String( "a while's expression is its condition: no if" ) : String( "if what? if <expression>" ) );
+					continue;
+				}
+				rule.settings["conditions"] = PackedStringArray( { RestFrom( line, w[cut + 1] ) } );
+			}
+			continue;
+		}
+		if ( open && rule.motion && verb != "on" && verb != "while" && verb != "predict" && verb != "use" && verb != "show" &&
+			 verb != "text" && verb != "bind" )
+		{
+			const int column = Column( line );
+			if ( column <= rule.headColumn )
+			{
+				fail( number, "a motion's lines are indented under it" );
+				continue;
+			}
+			rule.bodyColumn = rule.bodyColumn < 0 ? column : rule.bodyColumn;
+			// The ifs this line is out of are closed (an else stays in its if).
+			while ( rule.frames.empty() == false &&
+					( verb == "else" ? rule.frames.back().column > column : rule.frames.back().column >= column ) )
+			{
+				rule.frames.pop_back();
+			}
+			const bool top = column <= rule.bodyColumn && rule.frames.empty();
+			Dictionary step = rule.steps[rule.steps.size() - 1];
+			Array statements = step["statements"];
+			// What the line is under: every open if (its else: not it), as one condition.
+			auto guard = [&]() {
+				String all;
+				for ( const auto& frame : rule.frames )
+				{
+					String one = frame.otherwise ? "not ( " + frame.condition + " )" : "( " + frame.condition + " )";
+					all += all.is_empty() ? one : " and " + one;
+				}
+				return all;
+			};
+			auto add = [&]( Dictionary statement ) {
+				statement["guard"] = guard();
+				statement["line"] = number;
+				statements.push_back( statement );
+			};
+			double value = 0.0;
+			if ( verb == "if" )
+			{
+				if ( w.size() < 2 )
+				{
+					fail( number, "if <expression>" );
+					continue;
+				}
+				rule.frames.push_back( { column, RestFrom( line, w[1] ), false } );
+				continue;
+			}
+			if ( verb == "else" )
+			{
+				if ( w.size() != 1 || rule.frames.empty() || rule.frames.back().column != column || rule.frames.back().otherwise )
+				{
+					fail( number, "an else is under an if, as far in as it" );
+					continue;
+				}
+				rule.frames.back().otherwise = true;
+				continue;
+			}
+			// --- what starts a step, or the motion's own settings: not under an if
+			const bool stepLine = verb == "then" || verb == "after" || verb == "timeout";
+			const bool setting = verb == "cooldown" || verb == "uses" || verb == "lasts" || verb == "until" || verb == "item";
+			if ( ( stepLine || setting ) && top == false )
+			{
+				fail( number, "\"" + verb + "\" is the motion's: as far in as its first line, not under an if" );
+				continue;
+			}
+			if ( stepLine )
+			{
+				Dictionary next;
+				next["statements"] = Array();
+				next["line"] = number;
+				if ( verb == "timeout" )
+				{
+					if ( w.size() != 1 || double( step.get( "within", 0.0 ) ) <= 0.0 || bool( step.get( "timeout", false ) ) )
+					{
+						fail( number, "a timeout comes right after a then when ... within S" );
+						continue;
+					}
+					next["timeout"] = true;
+				}
+				else if ( verb == "after" )
+				{
+					if ( w.size() != 2 || Number( w[1], value ) == false || value < 0.0 )
+					{
+						fail( number, "after <seconds>" );
+						continue;
+					}
+					next["after"] = value;
+				}
+				else
+				{
+					// then when EXPRESSION [within S]
+					size_t end = w.size();
+					if ( w.size() >= 4 && w[w.size() - 2].text == "within" )
+					{
+						if ( Number( w[w.size() - 1], value ) == false || value <= 0.0 )
+						{
+							fail( number, "within <seconds>" );
+							continue;
+						}
+						next["within"] = value;
+						end = w.size() - 2;
+					}
+					if ( w.size() < 3 || w[1].text != "when" || end < 3 )
+					{
+						fail( number, "then when <expression> [within S]" );
+						continue;
+					}
+					next["wait"] = line.substr( w[2].start, w[end - 1].start + w[end - 1].text.length() - w[2].start ).strip_edges();
+				}
+				step["statements"] = statements;
+				rule.steps[rule.steps.size() - 1] = step;
+				rule.steps.push_back( next );
+				continue;
+			}
+			if ( setting )
+			{
+				if ( rule.steps.size() > 1 )
+				{
+					fail( number, "\"" + verb + "\" is the motion's: before its first then or after" );
+					continue;
+				}
+				if ( verb == "until" && w.size() >= 2 )
+				{
+					PackedStringArray until = rule.settings.get( "until", PackedStringArray() );
+					until.push_back( RestFrom( line, w[1] ) );
+					rule.settings["until"] = until;
+				}
+				else if ( ( verb == "cooldown" || verb == "lasts" ) && w.size() == 2 && Number( w[1], value ) && value >= 0.0 )
+				{
+					rule.settings[verb] = value;
+				}
+				else if ( verb == "uses" && w.size() >= 2 && w[1].text.is_valid_int() && w[1].text.to_int() > 0 &&
+						  ( w.size() == 2 || ( w.size() == 4 && w[2].text == "refill" && w[3].text == "ground" ) ||
+							( w.size() == 5 && w[2].text == "refill" && w[3].text == "after" && Number( w[4], value ) && value > 0.0 ) ) )
+				{
+					rule.settings["uses"] = w[1].text.to_int();
+					rule.settings["refill"] = w.size() == 4 ? Variant( "ground" ) : Variant( w.size() == 5 ? value : 0.0 );
+				}
+				else if ( verb == "item" && w.size() == 2 && ( w[1].text == "carried" || w[1].text == "hand" ) )
+				{
+					rule.settings["item"] = w[1].text;
+				}
+				else
+				{
+					fail( number, verb == "until"	 ? "until <expression>"
+								  : verb == "uses" ? "uses N, uses N refill ground, or uses N refill after S"
+								  : verb == "item" ? "item hand (the default: whoever has it out) or item carried (in the hand or put away)"
+												   : verb + String( " <seconds>" ) );
+				}
+				continue;
+			}
+			// --- statements
+			Dictionary statement;
+			if ( verb == "change" )
+			{
+				if ( w.size() < 4 )
+				{
+					fail( number, "change FIELD = VALUE, += or -=" );
+					continue;
+				}
+				statement["kind"] = "change";
+				statement["text"] = RestFrom( line, w[1] );
+			}
+			else if ( verb == "emit" )
+			{
+				if ( w.size() != 2 )
+				{
+					fail( number, "emit <event>" );
+					continue;
+				}
+				statement["kind"] = "emit";
+				statement["text"] = w[1].text;
+			}
+			else if ( verb == "end" )
+			{
+				if ( w.size() != 1 )
+				{
+					fail( number, "end (alone on its line)" );
+					continue;
+				}
+				statement["kind"] = "end";
+			}
+			else
+			{
+				Dictionary part;
+				String why;
+				if ( ParsePart( w, part, why ) == false )
+				{
+					fail( number, why.begins_with( "\"" + verb + "\" is not one of" )
+									  ? "\"" + verb + "\" is not a line of a motion: if, else, then when, after, timeout, cooldown, uses, lasts, until, item, change, emit, end, impulse, force, move, launch"
+									  : why );
+					continue;
+				}
+				statement["kind"] = "part";
+				statement["part"] = part;
+			}
+			add( statement );
+			step["statements"] = statements;
+			rule.steps[rule.steps.size() - 1] = step;
+			continue;
+		}
 		// --- an item's use: for its bake
 		if ( verb == "use" )
 		{
@@ -388,7 +866,8 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			}
 			continue;
 		}
-		if ( open && rule.use && verb != "on" && verb != "while" && verb != "predict" && verb != "show" && verb != "text" && verb != "bind" )
+		if ( open && rule.use && verb != "on" && verb != "while" && verb != "predict" && verb != "show" && verb != "text" && verb != "bind" &&
+			 verb != "motion" )
 		{
 			double value = 0.0;
 			if ( verb == "change" && w.size() >= 4 )
@@ -408,163 +887,12 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			}
 			// A motion part: its class and properties, made into a node by the item's bake.
 			Dictionary part;
-			Dictionary props;
 			String why;
-			size_t i = 1;
-			auto frameOf = [&]( const String& word ) {
-				return word == "look" ? 0 : word == "move" ? 1 : word == "facing" ? 2 : word == "up" ? 3 : word == "world" ? 4 : word == "to" ? 5 : -1;
-			};
-			// The words a part shares: on, along, direction.
-			auto common = [&]( const String& word, size_t& k ) {
-				if ( word == "on" && k + 1 < w.size() )
-				{
-					String who = w[k + 1].text;
-					props["target"] = who == "self" ? 0 : who == "hit" ? 1 : 2;
-					if ( who != "self" && who != "hit" )
-					{
-						props["target_field"] = who;
-					}
-					k += 2;
-					return true;
-				}
-				if ( word == "along" && k + 1 < w.size() && frameOf( w[k + 1].text ) >= 0 )
-				{
-					props["frame"] = frameOf( w[k + 1].text );
-					k += 2;
-					return true;
-				}
-				if ( word == "direction" && k + 1 < w.size() && Value( w[k + 1] ).get_type() == Variant::VECTOR3 )
-				{
-					props["direction"] = Value( w[k + 1] );
-					k += 2;
-					return true;
-				}
-				return false;
-			};
-			if ( verb == "impulse" || verb == "force" )
-			{
-				if ( w.size() < 2 || Number( w[1], value ) == false )
-				{
-					fail( number, verb + String( " <how much> ..." ) );
-					continue;
-				}
-				part["class"] = verb == "impulse" ? "CbImpulse" : "CbForce";
-				props[verb == "impulse" ? "speed" : "strength"] = value;
-				for ( i = 2; i < w.size() && why.is_empty(); )
-				{
-					const String word = w[i].text;
-					if ( common( word, i ) )
-					{
-						continue;
-					}
-					if ( verb == "impulse" && word == "replace" && i + 1 < w.size() )
-					{
-						String r = w[i + 1].text;
-						int replace = r == "nothing" ? 0 : r == "vertical" ? 1 : r == "horizontal" ? 2 : r == "all" ? 3 : -1;
-						if ( replace < 0 )
-						{
-							why = "replace nothing, vertical, horizontal or all";
-						}
-						props["replace"] = replace;
-						i += 2;
-					}
-					else if ( verb == "force" && word == "kind" && i + 1 < w.size() )
-					{
-						String k = w[i + 1].text;
-						int kind = k == "acceleration" ? 0 : k == "force" ? 1 : k == "velocity" ? 2 : -1;
-						if ( kind < 0 )
-						{
-							why = "kind acceleration, force or velocity";
-						}
-						props["kind"] = kind;
-						i += 2;
-					}
-					else if ( verb == "force" && ( word == "top" || word == "ramp" ) && i + 1 < w.size() && Number( w[i + 1], value ) )
-					{
-						props[word == "top" ? "speed" : "ramp_in"] = value;
-						i += 2;
-					}
-					else if ( verb == "force" && word == "react" )
-					{
-						props["react"] = true;
-						i += 1;
-					}
-					else
-					{
-						why = "\"" + word + "\" is not something " + verb + " takes";
-					}
-				}
-			}
-			else if ( verb == "move" )
-			{
-				part["class"] = "CbMove";
-				Dictionary parameters;
-				i = 1;
-				if ( i + 1 < w.size() && w[i].text == "for" && Number( w[i + 1], value ) )
-				{
-					props["duration"] = value;
-					i += 2;
-				}
-				for ( ; i + 1 < w.size() && why.is_empty(); i += 2 )
-				{
-					if ( Number( w[i + 1], value ) == false )
-					{
-						why = w[i].text + " wants a number";
-					}
-					parameters[w[i].text] = value;
-				}
-				if ( i < w.size() && why.is_empty() )
-				{
-					why = "move [for S] PARAMETER VALUE ...";
-				}
-				props["parameters"] = parameters;
-			}
-			else if ( verb == "launch" )
-			{
-				part["class"] = "CbLaunch";
-				if ( w.size() >= 2 && w[1].text == "carried" )
-				{
-					props["what"] = 1;
-					i = 2;
-				}
-				else if ( w.size() >= 3 && w[1].text == "new" )
-				{
-					props["what"] = 0;
-					props["item_kind"] = w[2].text;
-					i = 3;
-				}
-				else
-				{
-					why = "launch new <kind>, or launch carried";
-				}
-				while ( i < w.size() && why.is_empty() )
-				{
-					const String word = w[i].text;
-					if ( common( word, i ) )
-					{
-						continue;
-					}
-					if ( ( word == "speed" || word == "lift" || word == "ahead" || word == "seconds" ) && i + 1 < w.size() && Number( w[i + 1], value ) )
-					{
-						props[word] = value;
-						i += 2;
-					}
-					else
-					{
-						why = "\"" + word + "\" is not something launch takes";
-					}
-				}
-			}
-			else
-			{
-				why = "\"" + verb + "\" is not part of a use: change, cooldown, emit, impulse, force, move, launch";
-			}
-			if ( why.is_empty() == false )
+			if ( ParsePart( w, part, why ) == false )
 			{
 				fail( number, why );
 				continue;
 			}
-			part["properties"] = props;
 			rule.parts.push_back( part );
 			continue;
 		}
@@ -988,9 +1316,9 @@ void CbRules::Build()
 	}
 	for ( const cue::Rule& rule : rules )
 	{
-		if ( rule.type == "use" )
+		if ( rule.type == "use" || rule.type == "motion" )
 		{
-			continue; // (baked with the item: its Use motion)
+			continue; // (baked with the item or the motion set: motions the simulation runs)
 		}
 		Node* reaction = rule.type == "CbReaction"	   ? static_cast<Node*>( memnew( CbReaction ) )
 						 : rule.type == "CbPrediction" ? static_cast<Node*>( memnew( CbPrediction ) )

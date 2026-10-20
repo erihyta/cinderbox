@@ -3680,7 +3680,7 @@ MoveParams Simulation::MoveOf( flecs::entity e ) const
 	{
 		if ( HasMotionState( e ) )
 		{
-			ApplyMotionParams( *m_motions, GetMotionState( e ), m_globals.tick, params );
+			ApplyMotionParams( *m_motions, GetMotionState( e ), m_globals.tick, m_config.tickRate, params );
 		}
 	}
 	return params;
@@ -3698,7 +3698,11 @@ constexpr float kHoldMinReach = 0.05f;
 
 float MinHoldLength( const Motion& m )
 {
-	bool rope = std::any_of( m.effects.begin(), m.effects.end(), []( const MotionEffect& e ) { return e.kind == MotionEffect::Kind::Link; } );
+	bool rope = false;
+	for ( const MotionStep& step : m.steps )
+	{
+		rope = rope || std::any_of( step.effects.begin(), step.effects.end(), []( const MotionEffect& e ) { return e.kind == MotionEffect::Kind::Link; } );
+	}
 	return rope ? kHoldMinLength : kHoldMinReach;
 }
 // Past a rope's end the two are brought back together at this rate (1/s of the excess), up to a speed.
@@ -4072,8 +4076,17 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 		const MotionTarget hitTarget{ MotionTarget::Kind::Hit, 0, true };
 		const MotionEnd hit = m.probe ? ResolveEnd( e, t, hitTarget, &hold, board ) : MotionEnd{};
 
-		for ( const MotionEffect& effect : m.effects )
+		if ( size_t( slot.step ) >= m.steps.size() )
 		{
+			continue;
+		}
+		// Its current step's: the once ones when the step starts, the lasting ones while it is the step.
+		for ( const MotionEffect& effect : m.steps[slot.step].effects )
+		{
+			if ( MotionGuardHolds( slot, effect.guard ) == false )
+			{
+				continue;
+			}
 			const MotionEnd target = ResolveEnd( e, t, effect.target, holds ? &hold : nullptr, board );
 			if ( target.kind == MotionEnd::Kind::None )
 			{
@@ -4154,7 +4167,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				{
 					continue;
 				}
-				const float ramp = MotionRamp( effect, m_globals.tick - slot.sinceTick, m_config.tickRate );
+				const float ramp = MotionRamp( effect, m_globals.tick - MotionStepStart( slot ), m_config.tickRate );
 				const float along = b3Dot( EndVelocity( target, c ), direction );
 				float change = 0.0f;
 				switch ( effect.push )

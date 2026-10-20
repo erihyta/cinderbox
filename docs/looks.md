@@ -492,6 +492,7 @@ while melee.hot
 | `subject`, `side`, `kind`, `template`, `delay`, `chance`, `cooldown`, `wait [off]`, `at ... [from] [offset]`, `at here` | its settings: each holds for the actions below it |
 | `sound`, `scene`, `play`, `set`, `call`, `shake`, `flash` | its actions: each becomes one `CbReaction` |
 | `predict <action> as <cue> [if <expression>]`, then `cooldown`, `held`, `change`, `stance ... on ...` | a [prediction](#predictions): one `CbPrediction` |
+| `motion NAME on ...`, `while ...`, `when ...`, then its lines | a motion the simulation runs, not the viewer: baked with the item or the motion set ([rules-language.md](rules-language.md)) |
 
 ```
 # prefabs/pistol.rules

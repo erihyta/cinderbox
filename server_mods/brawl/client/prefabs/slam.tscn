@@ -1,11 +1,11 @@
 [gd_scene format=3]
 
 ; Ground slam: its slot's key (4), in the air. You dive straight down; where you land, everyone within 5 m is hurt
-; and thrown away from you. 5 s to come back (brawl.cd_slam). The dive is predicted; the landing's
-; shockwave is the server mod's (brawl.cpp: no node finds who is near a point, and no motion starts
-; on landing), so its victims see it a round trip late.
+; and thrown away from you. 5 s to come back (brawl.cd_slam). The dive and the landing are predicted
+; (slam.rules: a motion block that waits for the ground); the shockwave is still the server mod's
+; (brawl.cpp: no node finds who is near a point yet), so its victims see it a round trip late.
 ;   Slam        CbItem     once a press, by its slot's key; what a use does is its sheet's
-;                          (slam.rules): a dive, 25 m/s straight down, and brawl.slam.started
+;                          (slam.rules): a dive, 25 m/s straight down, then brawl.slam.landed
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.1)

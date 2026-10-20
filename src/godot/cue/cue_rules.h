@@ -71,6 +71,25 @@
 //
 // A probe and what hangs on it (a rope, a pull) stay nodes under the item: they are a tree.
 //
+// A motion block: a motion of its own, run by the simulation, baked with the item or the motion set
+// the sheet is under (docs/rules-language.md). Here indenting counts: an if's lines are further in.
+//
+//   motion Slam on use if brawl.cd_slam <= 0 and not grounded
+//       lasts 3                         (settings: cooldown S, uses N [refill ground | refill after S],
+//       emit brawl.slam.started          lasts S, until EXPR, item hand|carried; before any step)
+//       impulse 25 along world direction (0, -1, 0) replace vertical
+//       then when grounded within 2     (a step: once the wait is over; after S, by time)
+//       emit brawl.slam.landed
+//       if brawl.combo > 2              (decided when the step starts)
+//           move for 0.5 walk_speed 0
+//       else
+//           change brawl.combo = 0
+//       timeout                         (what a wait that gave up runs, before the motion ends)
+//       emit brawl.slam.missed
+//
+//   motion NAME on use | on press ACTION | on EVENT | while EXPR | when EXPR (once, as it turns true)
+//   statements: change, emit, end, and the use rule's impulse, force, move, launch
+//
 // A HUD's logic is one line each, on the controls the HUD scene has (a CbFieldBinding each):
 //
 //   show Skills/Dash if carried.brawl.dash_strike         (shown while it holds)

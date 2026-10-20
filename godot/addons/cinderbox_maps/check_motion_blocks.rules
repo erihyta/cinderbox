@@ -1,0 +1,38 @@
+# check_motion_blocks.gd's sheet: motion blocks, run by the simulation (docs/rules-language.md).
+
+# A dive, then on the ground: what it says depends on a field, decided when the landing starts.
+motion Slam on press slam if not grounded
+	cooldown 2
+	lasts 3
+	emit slam.started
+	impulse 25 along world direction (0, -1, 0) replace vertical
+	move gravity 30
+	then when grounded within 2
+	emit slam.landed
+	if slam.big > 0
+		emit slam.big_landed
+		move for 0.5 walk_speed 0
+	else
+		emit slam.small_landed
+		if slam.loud
+			emit slam.loud
+	change slam.count += 1
+	timeout
+	emit slam.missed
+
+# Once, as it turns true.
+motion Land when grounded if not motion.Slam
+	emit landed
+
+# By time, and an end.
+motion Later on press later
+	uses 2 refill after 3
+	emit later.a
+	after 0.5
+	emit later.b
+	if later.stop
+		end
+	move for 1 friction 0
+
+on slam.landed
+	shake 0.3

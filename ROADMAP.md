@@ -24,7 +24,7 @@ A proposal: the order is open to change. Each row is a milestone or two.
 |---|---|---|
 | 1 | [Loose ends](#1-loose-ends) | **done (M190 to M192)**: rolling and drag on bodies, slopes too steep to walk, the arms belong to what is held, the camera against meshes and terrain, the two network tests that miss a tick |
 | 2 | [Destructible walls](#2-destructible-walls) | **done (M195 to M198)**: a wall breaks into pieces authored beforehand, by what is made to break it; shared by everyone |
-| 3 | [Rules as a language](#3-rules-as-a-language) | the rules sheet grows into a small language the simulation runs: everything that moves on screen predicted, a mod's C++ left with what only the server decides. [The grammar, a draft](docs/rules-language.md) |
+| 3 | [Rules as a language](#3-rules-as-a-language) | **begun (M204: blocks)**: the rules sheet grows into a small language the simulation runs: everything that moves on screen predicted, a mod's C++ left with what only the server decides. [The grammar, a draft](docs/rules-language.md) |
 | 4 | [Vehicles](#4-vehicles) | bodies joined in a template, a seat, input routed to motors (begun in M202: glue is Box3D's weld joints) |
 | 5 | [Authoring, finished](#5-authoring-finished) | the editor's leftovers: names in expressions, a prebuilt SDK, an item used in its preview, publish checks |
 
@@ -67,7 +67,7 @@ is made to destroy (a charge, a rocket) breaks it, not any loose body that bumps
 
 ### 3. Rules as a language
 
-[docs/rules-language.md](docs/rules-language.md) is the grammar, as a draft. In short: a `motion`
+[docs/rules-language.md](docs/rules-language.md) is the grammar (what is built is marked). In short: a `motion`
 block in a `.rules` sheet, run by every simulation, with triggers (`on use`, `on press`, `on EVENT`,
 `while`, and `when`: once, as an expression turns true), waits (`then when`, `after`, `every`),
 queries (`find` everything inside a shape, `cast` a shape along a direction; a block runs per
@@ -77,7 +77,7 @@ them. The motion nodes keep working and get nothing new.
 
 | Piece | What |
 |---|---|
-| Blocks | `motion NAME TRIGGER`, `when`, `then when`, `after`, `if` / `else`, `end`; today's `use` sheets unchanged |
+| Blocks | **done (M204)**: `motion NAME TRIGGER`, `when`, `then when ... within`, `after`, `timeout`, `if` / `else`, `end`; today's `use` sheets unchanged; the brawl slam's landing is its sheet's |
 | Finding | `find SHAPE` and `cast SHAPE`, a shape being any `CollisionShape3D` (a convex one made from a mesh too) or written inline; `away`; `move` on a target (a slow, a root) |
 | Curves and markers | `curve(NODE, x)` and `time` in expressions; directions and launch points from `Marker3D`s, `turn`; `follow` a `Path3D` |
 | Items run motions | `owner item`: an item in the world runs its own sheet; `break`; the frag grenade's blast predicted |
