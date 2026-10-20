@@ -154,6 +154,11 @@ struct EntityTemplate
 	// Which of its pieces touch. Broken in part (a hole), a piece stands while touching pieces join it
 	// to a held one. None (a map from before), every piece falls when any part of it breaks.
 	std::vector<PieceLink> links;
+	// Glued (newtons, 0: not): it never stands whole; from the start its pieces are bodies of their
+	// own, welded where they touch (its links), the held ones static. A weld pulled or pushed harder
+	// than this breaks (twisted: this times a metre), so it sags, cracks and falls apart by its own
+	// physics; a blast frees the pieces near it.
+	float glue = 0.0f;
 
 	const AuthoredComponent* Find( uint32_t componentId ) const;
 };

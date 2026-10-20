@@ -1288,6 +1288,197 @@ void TestItemBreaks()
 	CHECK( slow.whole && slow.standing == 0 && slow.turnedBack && slow.said == false );
 }
 
+// Glue (map version 11: a breakable's glue): its pieces are bodies from the start, welded where they
+// touch, the held ones static.
+// - A tower of four blocks, held at its foot, strongly glued: it stands still. A blast takes the
+//   third block; the top one, glued only to it, is loose and falls; the two below stand.
+// - An arm of three blocks out from a held pillar: strongly glued it holds; weakly glued, its welds
+//   break under its own weight and it falls.
+// The same run twice is the same world, and a copy loaded elsewhere too; the glue survives the file.
+void TestGlue()
+{
+	auto build = [&]( float glue, bool arm ) {
+		LevelLayout map;
+		map.name = "glue";
+		map.spawnCenter = { 0.0f, 1.0f, 12.0f };
+		map.spawnRadius = 0.0f;
+		map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+		map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 0.5f, 2.0f, 0.5f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );
+		map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 0.49f, 0.49f, 0.49f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );
+		EntityTemplate wall;
+		wall.name = "tower";
+		wall.components.push_back( MakeIntComponent( "Body", { { "type", 0 } } ) );
+		wall.shapes = 0;
+		wall.glue = glue;
+		for ( int i = 0; i < 4; ++i )
+		{
+			// A tower: four up. An arm: the pillar's foot, then three out to the side at its height.
+			TemplatePiece piece = { 1, arm && i > 0 ? b3Vec3{ float( i ), 0.0f, 0.0f } : b3Vec3{ 0.0f, float( i ), 0.0f } };
+			piece.held = i == 0;
+			wall.pieces.push_back( piece );
+			if ( i > 0 )
+			{
+				wall.links.push_back( { uint16_t( i - 1 ), uint16_t( i ) } );
+			}
+		}
+		EntityTemplate block;
+		block.name = "block";
+		block.shapes = 1;
+		AuthoredComponent debris;
+		debris.id = Fnv32( "Debris" );
+		block.components.push_back( debris );
+		map.templates = { wall, block };
+		map.instances.push_back( { 0, { 0.0f, arm ? 2.5f : 0.5f, 0.0f }, 0.0f, 0.0f } );
+		QuantizeLayout( map );
+		return map;
+	};
+	// The file keeps the glue.
+	{
+		LevelLayout map = build( 25000.0f, false );
+		std::vector<uint8_t> bytes;
+		SerializeMap( map, bytes );
+		LevelLayout loaded;
+		std::string error;
+		CHECK( DeserializeMap( bytes.data(), bytes.size(), loaded, error ) && loaded.templates[0].glue == 25000.0f );
+	}
+	auto run = [&]( Simulation& sim, int ticks, std::vector<SimCommand> at60 = {} ) {
+		InputFrame f;
+		for ( int i = 0; i < ticks; ++i )
+		{
+			f.tick = sim.Tick();
+			if ( i == 60 )
+			{
+				f.commands = at60;
+			}
+			sim.Step( f );
+			f.commands.clear();
+		}
+	};
+	// The pieces by index: where each is, and whether it is still glued (a WallPiece).
+	auto pieces = [&]( Simulation& sim, std::vector<b3Vec3>& where, std::vector<int>& glued ) {
+		where.assign( 4, { 0.0f, -100.0f, 0.0f } );
+		glued.assign( 4, 0 );
+		int i = 0;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			flecs::entity e( sim.World(), r.entity );
+			const TemplateRef* ref = e.try_get<TemplateRef>();
+			if ( ref != nullptr && ref->index == 1 && i < 4 )
+			{
+				where[size_t( i )] = e.get<Transform>().position;
+				glued[size_t( i )] = e.has<WallPiece>() ? 1 : 0;
+				++i;
+			}
+		}
+	};
+
+	// The tower stands; a blast takes its third block, and the top falls.
+	{
+		const LevelLayout map = build( 25000.0f, false );
+		Simulation sim( TestConfig(), map );
+		std::vector<b3Vec3> before, after;
+		std::vector<int> glued;
+		run( sim, 50 );
+		pieces( sim, before, glued );
+		run( sim, 10 );
+		SimCommand blast;
+		blast.type = CommandType::Break;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			blast.target = flecs::entity( sim.World(), r.entity ).has<WallPiece>() ? r.netId : blast.target;
+		}
+		blast.a = { 0.0f, 2.5f, 0.6f };
+		blast.b = { 24.0f, 0.8f, 0.0f };
+		run( sim, 1, {} );
+		std::vector<b3Vec3> justBefore;
+		pieces( sim, justBefore, glued );
+		InputFrame f;
+		f.tick = sim.Tick();
+		f.commands = { blast };
+		sim.Step( f );
+		std::vector<b3Vec3> stood;
+		pieces( sim, stood, glued );
+		const int gluedAfterBlast = glued[0] + glued[1] + glued[2] + glued[3];
+		run( sim, 120 );
+		pieces( sim, after, glued );
+		float still = 0.0f;
+		for ( int i = 0; i < 4; ++i )
+		{
+			still = std::max( still, b3Distance( before[size_t( i )], justBefore[size_t( i )] ) );
+		}
+		std::printf( "    a glued tower of 4: still before the blast (%.4f m); after it %d glued; its top fell from %.2f to %.2f m; the two below "
+					 "moved %.4f m\n",
+					 still, gluedAfterBlast, before[3].y, after[3].y, std::max( b3Distance( before[0], after[0] ), b3Distance( before[1], after[1] ) ) );
+		CHECK( still < 0.01f && gluedAfterBlast == 2 && glued[0] == 1 && glued[1] == 1 && glued[2] == 0 && glued[3] == 0 );
+		CHECK( after[3].y < before[3].y - 1.5f && b3Distance( before[1], after[1] ) < 0.01f );
+		// A copy of it loaded elsewhere is the same world.
+		std::vector<uint8_t> image;
+		sim.SavePortable( image );
+		Simulation other( TestConfig(), map );
+		CHECK( other.LoadPortable( image ) && other.ComputeHash() == sim.ComputeHash() );
+	}
+
+	// test_ground's glued tower (40 chunks cut by the fracture tool, welded at 20000 N where the bake
+	// found them touching) stands on its own for 5 s.
+	{
+		LevelLayout ground;
+		std::vector<uint8_t> bytes;
+		std::string error;
+		CHECK( LoadMapFile( std::string( CB_SOURCE_DIR ) + "/godot/maps/test_ground.cbmap", ground, bytes, error ) );
+		Simulation sim( TestConfig(), ground );
+		std::vector<std::pair<uint32_t, b3Vec3>> tower;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			flecs::entity e( sim.World(), r.entity );
+			const WallPiece* piece = e.try_get<WallPiece>();
+			if ( piece != nullptr && piece->wallTemplate < ground.templates.size() && ground.templates[piece->wallTemplate].glue > 0.0f )
+			{
+				tower.push_back( { r.netId, e.get<Transform>().position } );
+			}
+		}
+		const auto started = std::chrono::steady_clock::now();
+		run( sim, 300 );
+		const double ms = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - started ).count();
+		float moved = 0.0f;
+		int glued = 0;
+		for ( const auto& [netId, at] : tower )
+		{
+			flecs::entity e = sim.FindEntity( netId );
+			moved = std::max( moved, e.is_valid() ? b3Distance( e.get<Transform>().position, at ) : 1e9f );
+			glued += e.is_valid() && e.has<WallPiece>() ? 1 : 0;
+		}
+		std::printf( "    test_ground's glued tower: %d pieces, %d still glued after 5 s, the most one moved %.4f m (5 s of the map in %.0f ms)\n",
+					 int( tower.size() ), glued, moved, ms );
+		CHECK( tower.size() == 40 && glued == 40 && moved < 0.02f );
+	}
+
+	// The arm: strong glue holds it out; weak glue breaks under its weight.
+	for ( float glue : { 100000.0f, 200.0f } )
+	{
+		const LevelLayout map = build( glue, true );
+		Simulation sim( TestConfig(), map );
+		Simulation again( TestConfig(), map );
+		std::vector<b3Vec3> start, end;
+		std::vector<int> glued;
+		run( sim, 2 );
+		pieces( sim, start, glued );
+		run( sim, 178 );
+		run( again, 180 );
+		pieces( sim, end, glued );
+		const float dropped = start[3].y - end[3].y;
+		std::printf( "    an arm of 3 glued at %.0f N: its end dropped %.2f m, %d pieces still glued\n", glue, dropped, glued[0] + glued[1] + glued[2] + glued[3] );
+		CHECK( again.ComputeHash() == sim.ComputeHash() );
+		if ( glue > 1000.0f )
+		{
+			CHECK( dropped < 0.05f && glued[3] == 1 );
+		}
+		else
+		{
+			CHECK( dropped > 1.0f && glued[3] == 0 );
+		}
+	}
+}
+
 // Slopes (max_slope, 50 degrees by default): on a ramp up to it a player stands still and walks up;
 // on a steeper one it slides down and cannot walk up; a mod's 90 lets it stand on a 70° one again
 // (as before there was a limit).
@@ -9571,6 +9762,7 @@ int main( int argc, char** argv )
 		{ "breakable", TestBreakable },
 		{ "holes", TestHoles },
 		{ "item_breaks", TestItemBreaks },
+		{ "glue", TestGlue },
 		{ "slopes", TestSlopes },
 		{ "templates", TestTemplates },
 		{ "sim_events", TestSimEvents },

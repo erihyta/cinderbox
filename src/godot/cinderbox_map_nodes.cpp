@@ -940,6 +940,7 @@ void BakeBreakable( CbBreakable* node, const Transform3D& here, BakeContext& ctx
 		ctx.warnings.push_back( node->get_name() + String( ": it has no CbProp children, so it never breaks" ) );
 	}
 	LinkPieces( points, bounds, node->get_held_at(), wall );
+	wall.glue = float( std::max( node->get_glue(), 0.0 ) );
 	if ( wall.pieces.empty() == false &&
 		 std::none_of( wall.pieces.begin(), wall.pieces.end(), []( const TemplatePiece& piece ) { return piece.held; } ) )
 	{
@@ -1204,6 +1205,9 @@ void CbBreakable::_bind_methods()
 	BIND_CONSTANT( HELD_BOTTOM );
 	BIND_CONSTANT( HELD_TOP );
 	BIND_CONSTANT( HELD_SIDES );
+	ClassDB::bind_method( D_METHOD( "set_glue", "glue" ), &CbBreakable::set_glue );
+	ClassDB::bind_method( D_METHOD( "get_glue" ), &CbBreakable::get_glue );
+	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "glue", PROPERTY_HINT_RANGE, "0,200000,100,or_greater,suffix:N" ), "set_glue", "get_glue" );
 }
 
 PackedStringArray CbBreakable::_get_configuration_warnings() const
@@ -1458,6 +1462,7 @@ Dictionary CinderboxMapBaker::bake( Node* root, const String& path )
 		body["pieces"] = int( t.pieces.size() );
 		body["held"] = int( std::count_if( t.pieces.begin(), t.pieces.end(), []( const TemplatePiece& piece ) { return piece.held; } ) );
 		body["links"] = int( t.links.size() );
+		body["glue"] = double( t.glue );
 		body["debris"] = t.Find( Fnv32( "Debris" ) ) != nullptr;
 		bodies.push_back( body );
 	}

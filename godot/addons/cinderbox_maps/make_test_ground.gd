@@ -3,7 +3,8 @@ extends SceneTree
 ## two can change apart), its east wall opened onto bumpy terrain 40 m across, with a building-sized
 ## block (12 x 36 x 12 m) standing on it. The balls roll to a stop (rolling 0.05; the spawnable
 ## bouncy ball 0.03). Walls a grenade breaks: one of twelve bricks, one of concrete cut into 28
-## chunks by the fracture tool, and a great one (24 x 7 m, 150 chunks) across the north end.
+## chunks by the fracture tool, a great one (24 x 7 m, 150 chunks) across the north end, and a
+## glued tower (40 chunks welded together) at its west side.
 ##
 ##   godot --headless --path godot --script res://addons/cinderbox_maps/make_test_ground.gd
 ##
@@ -162,6 +163,12 @@ func _initialize() -> void:
 	# A great one across the arena's north end, 11 m ahead of the spawn: 24 x 7 x 0.6 m in 150 chunks,
 	# a little crowded toward its middle, for holes upon holes.
 	root.add_child(_cut_wall("GreatWall", Vector3(0, 3.5, 15), Vector3(24, 7, 0.6), Color(0.6, 0.6, 0.64), 150, 11, 0.25))
+	# A glued tower (CbBreakable.glue): 2.5 x 6 x 2.5 m in 40 chunks, welded where they touch at
+	# 20000 N, standing at its foot. It is bodies from the start: a hole lets what is above it sag,
+	# crack and fall by its own physics.
+	var glued := _cut_wall("GluedTower", Vector3(-12, 3, 8), Vector3(2.5, 6, 2.5), Color(0.72, 0.6, 0.45), 40, 3, 0.0)
+	glued.glue = 20000.0
+	root.add_child(glued)
 
 	# Balls that roll to a stop: the props (a CbProp starts at 0.05) and the spawnable template's.
 	var material := root.get_node_or_null("Templates/bouncy_ball/Material")
