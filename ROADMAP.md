@@ -58,7 +58,7 @@ is made to destroy (a charge, a rocket) breaks it, not any loose body that bumps
 | Who may move the pieces | **done (M195)**: `CatDebris`. The plan: a collision filter, not mass: a player's capsule is kinematic, which the solver treats as infinitely heavy, so no mass keeps it from shoving debris. Debris gets a category the capsule's shape does not collide with, while the mover's ground and wall casts still include it: players stand on rubble and are stopped by it, but cannot push it; shots move nothing unless a mod pushes |
 | Settling | **done**: Box3D's own sleeping (on by default; the simulation adds nothing of its own). Turning a long-asleep piece static was **dropped**: a sleeping body is already skipped by the solver, and a static one would still be an entity in every snapshot, so it would save next to nothing. A mod can have pieces go after a while (`seconds`) |
 | Holes, not the whole wall | **done (M198)**: a blast takes out the pieces near it; the rest stand, static, while touching pieces join them to the held ones (`held_at`); the rest fall |
-| Glue | not done: with step 3's joints. The plan: blocks held by Box3D's weld joints with a breaking force, for things that should wobble before they break: the joints of step 3 |
+| Glue | **done (M202)**: `CbBreakable.glue`: its pieces bodies from the start, welded (Box3D's weld joints) where they touch, the held ones static; a weld past its glue breaks, so it sags, cracks and falls by its own physics |
 
 ### 3. Vehicles
 

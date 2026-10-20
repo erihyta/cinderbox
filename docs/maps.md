@@ -57,12 +57,20 @@ A `CbBreakable` is a wall (or anything static) and what it breaks into, authored
   comes down.
 - **Which pieces touch** is found by the bake: two pieces whose faces are within 3 cm of each other
   (bricks laid with a gap, chunks the Fracture tool cut). An edge or a corner alone does not hold.
+- **Glued** (`glue`, newtons; 0: the static wall above): the wall never stands whole. From the
+  start its pieces are bodies of their own, welded where they touch, the held ones static. A weld
+  pulled, pushed or twisted harder than its glue breaks; a piece left with no weld is rubble. So a
+  glued wall or tower sags, cracks and falls apart by its own physics: blow out its foot and what is
+  above comes down under its own weight; a heavy ball cracks the welds it hits. A blast still frees
+  the pieces near it. Each piece is a body that sleeps when still, so a glued wall costs a little
+  more than a static one: for towers, bridges, wooden things, not every wall of a map.
 - **Pieces are rubble**: players stand on them and are stopped by them, but never shove them (they
   are in a collision group the player's capsule ignores). Blasts, shots and other bodies move them.
 - The bake makes the wall a static template placed where it stands, and each piece a template of its
   own; its pieces are not the map's props. `test_ground.tscn` has two, 12 m north of the spawn:
   `BrickWall` (twelve bricks placed by hand) and `ConcreteWall` (28 chunks cut by the tool below);
-  and `GreatWall` across the north end, 11 m ahead of the spawn (24 x 7 m, 150 chunks).
+  `GreatWall` across the north end, 11 m ahead of the spawn (24 x 7 m, 150 chunks); and
+  `GluedTower` at its west side (2.5 x 6 x 2.5 m, 40 chunks welded at 20000 N).
 
 ### Cutting a wall into chunks
 
@@ -141,7 +149,8 @@ with a `visual` keeps that prefab; one with neither draws its shape's default pr
 Turns are stored as yaw, pitch and roll (Godot's YXZ order) on the 1/4096 rad grid. Maps baked
 before this (version 3: boxes without roll; version 4: no hulls; version 5: one shape per body;
 version 6: no triangle meshes or height fields; version 7: no rolling or drag; version 8: no
-breakables; version 9: no holes, so any break brings a whole wall down) still load. A placed entity turns with roll too.
+breakables; version 9: no holes, so any break brings a whole wall down; version 10: no glue) still
+load. A placed entity turns with roll too.
 
 ## A body
 
