@@ -13,9 +13,9 @@
 // fields the scenes' motions write and count down. This file is what nodes cannot say:
 //   - damage: a hit is the probe's event (brawl.jab.hit ..., with who was hit), and this mod turns
 //     it into combat.damage, a quarter of it on someone guarding
-//   - the slam's shockwave: its landing is the sheet's (a motion block's "then when grounded" says
-//     brawl.slam.landed, on every machine), but no node yet finds who is near a point, so this mod
-//     throws who is near where it landed (not predicted: step 3's "find" will make it the sheet's)
+//   - the slam's shockwave is its sheet's too (a motion block waits for the ground, then finds who
+//     is in its Shockwave region and throws them, predicted); this mod hurts each one it says
+//     (brawl.slam.hit, with who was found)
 //
 // It runs by default, beside the weapons; its skills then go to whatever slots are free (their
 // slots' keys use them wherever they are). Alone, with only what it needs:
@@ -33,8 +33,7 @@ using namespace cb::mods;
 namespace
 {
 
-constexpr float kSlamRadius = 5.0f;
-constexpr float kSlamPush = 9.0f; // m/s away, and half of it up
+constexpr float kSlamPush = 9.0f; // m/s away, and half of it up: what the sheet throws (for a ragdoll)
 constexpr float kGuardShare = 0.25f;
 
 class BrawlMod final : public ServerMod
@@ -63,6 +62,7 @@ public:
 		declare.Event( "brawl.guard.up" );
 		m_slamStarted = declare.Event( "brawl.slam.started" );
 		m_slamLanded = declare.Event( "brawl.slam.landed" );
+		m_slamHit = declare.Event( "brawl.slam.hit" );
 		m_damage = declare.Event( "combat.damage" );
 		declare.Motions( "brawl.moves" );
 		// The five skills: all of them are their scenes'.
@@ -92,35 +92,15 @@ public:
 					Hurt( ctx, e.netIdA, e.netIdB, m_amounts[i], e.point, {} );
 				}
 			}
-			// A slam that landed (its sheet says so): everyone near is hurt and thrown away from where.
-			if ( int( e.type ) == m_slamLanded.index )
+			// Someone the slam's shockwave found (its sheet throws them): hurt, by the slam's damage.
+			if ( int( e.type ) == m_slamHit.index )
 			{
-				Shockwave( ctx, e.netIdA, e.point );
-			}
-		}
-	}
-
-	void Shockwave( Context& ctx, uint32_t slammer, b3Vec3 at )
-	{
-		for ( int j = 0; j < kMaxPlayers; ++j )
-		{
-			uint32_t other = ctx.PlayerNetId( PlayerSlot( j ) );
-			const Transform* there = other != 0 ? ctx.EntityTransform( other ) : nullptr;
-			if ( other == slammer || there == nullptr || ctx.PlayerCharacter( PlayerSlot( j ) ) == nullptr )
-			{
-				continue;
-			}
-			b3Vec3 to = b3Sub( there->position, at );
-			float distance = b3Length( to );
-			if ( distance > kSlamRadius )
-			{
-				continue;
-			}
-			b3Vec3 away = distance > 0.01f ? b3MulSV( 1.0f / distance, b3Vec3{ to.x, 0.0f, to.z } ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
-			b3Vec3 push = b3Add( b3MulSV( kSlamPush, away ), b3Vec3{ 0.0f, 0.5f * kSlamPush, 0.0f } );
-			if ( Hurt( ctx, slammer, other, m_slamDamage, at, push ) )
-			{
-				ctx.Push( other, at, push, ImpulseVelocity );
+				const Transform* from = ctx.EntityTransform( e.netIdA );
+				b3Vec3 away = from != nullptr ? b3Sub( e.point, from->position ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
+				away.y = 0.0f;
+				float length = b3Length( away );
+				away = length > 0.01f ? b3MulSV( 1.0f / length, away ) : away;
+				Hurt( ctx, e.netIdA, e.netIdB, m_slamDamage, e.point, b3Add( b3MulSV( kSlamPush, away ), b3Vec3{ 0.0f, 0.5f * kSlamPush, 0.0f } ) );
 			}
 		}
 	}
@@ -144,6 +124,7 @@ public:
 	std::array<int32_t, 4> m_amounts{};
 	EventHandle m_slamStarted;
 	EventHandle m_slamLanded;
+	EventHandle m_slamHit;
 	EventHandle m_damage;
 	int32_t m_slamDamage = 25;
 	int m_guard = -1;

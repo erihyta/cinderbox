@@ -215,15 +215,15 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 	Dictionary props;
 	size_t i = 1;
 	auto frameOf = [&]( const String& word ) {
-		return word == "look" ? 0 : word == "move" ? 1 : word == "facing" ? 2 : word == "up" ? 3 : word == "world" ? 4 : word == "to" ? 5 : -1;
+		return word == "look" ? 0 : word == "move" ? 1 : word == "facing" ? 2 : word == "up" ? 3 : word == "world" ? 4 : word == "to" ? 5 : word == "away" ? 6 : -1;
 	};
 	// The words a part shares: on, along, direction.
 	auto common = [&]( const String& word, size_t& k ) {
 		if ( word == "on" && k + 1 < w.size() )
 		{
 			String who = w[k + 1].text;
-			props["target"] = who == "self" ? 0 : who == "hit" ? 1 : 2;
-			if ( who != "self" && who != "hit" )
+			props["target"] = who == "self" ? 0 : who == "hit" ? 1 : who == "found" ? 3 : 2;
+			if ( who != "self" && who != "hit" && who != "found" )
 			{
 				props["target_field"] = who;
 			}
@@ -392,6 +392,10 @@ struct Building
 	std::vector<Frame> frames;
 	int headColumn = 0;
 	int bodyColumn = -1;
+	// The find being read (its column; -1: none): the lines further in are what happens to each thing
+	// it found.
+	int findColumn = -1;
+	Dictionary find;
 	Array parts;					 // a use's motion parts: {class, properties}
 	PackedStringArray changes;		 // a prediction's, a use's
 	bool bad = false;
@@ -658,6 +662,48 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				continue;
 			}
 			rule.bodyColumn = rule.bodyColumn < 0 ? column : rule.bodyColumn;
+			// --- inside a find: what happens to each thing it found (an impulse, a move for, an emit)
+			if ( rule.findColumn >= 0 && column <= rule.findColumn )
+			{
+				rule.findColumn = -1;
+			}
+			if ( rule.findColumn >= 0 )
+			{
+				Array inside = rule.find["statements"];
+				Dictionary statement;
+				statement["line"] = number;
+				if ( verb == "emit" && w.size() == 2 )
+				{
+					statement["kind"] = "emit";
+					statement["text"] = w[1].text;
+				}
+				else
+				{
+					Dictionary part;
+					String why;
+					const bool allowed = verb == "impulse" || verb == "move";
+					if ( allowed == false || ParsePart( w, part, why ) == false )
+					{
+						fail( number, allowed ? why
+											  : "\"" + verb + "\" inside a find: what happens to each thing it found is an impulse, a move for some seconds, or an emit" );
+						continue;
+					}
+					Dictionary props = part["properties"];
+					if ( verb == "impulse" && props.has( "target" ) == false )
+					{
+						props["target"] = 3; // (what it found, unless it says)
+					}
+					if ( verb == "move" && double( props.get( "duration", 0.0 ) ) <= 0.0 )
+					{
+						fail( number, "a move inside a find is given to what it found for some seconds: move for S ..." );
+						continue;
+					}
+					statement["kind"] = "part";
+					statement["part"] = part;
+				}
+				inside.push_back( statement );
+				continue;
+			}
 			// The ifs this line is out of are closed (an else stays in its if).
 			while ( rule.frames.empty() == false &&
 					( verb == "else" ? rule.frames.back().column > column : rule.frames.back().column >= column ) )
@@ -799,6 +845,89 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			}
 			// --- statements
 			Dictionary statement;
+			if ( verb == "find" )
+			{
+				// find SHAPE [players] [bodies] [self] [max N] [along facing|look|world]; SHAPE: a node's
+				// path (an Area3D, a CollisionShape3D), sphere R, box (X,Y,Z), capsule R H
+				const char* usage = "find SHAPE [players] [bodies] [self] [max N] [along facing|look|world], SHAPE a node's path, sphere R, box (X,Y,Z) or capsule R H";
+				size_t i = 1;
+				Dictionary shape;
+				double a = 0.0, b = 0.0;
+				if ( w.size() >= 3 && w[1].text == "sphere" && Number( w[2], a ) && a > 0.0 )
+				{
+					shape["kind"] = "sphere";
+					shape["radius"] = a;
+					i = 3;
+				}
+				else if ( w.size() >= 3 && w[1].text == "box" && Value( w[2] ).get_type() == Variant::VECTOR3 )
+				{
+					shape["kind"] = "box";
+					shape["size"] = Value( w[2] );
+					i = 3;
+				}
+				else if ( w.size() >= 4 && w[1].text == "capsule" && Number( w[2], a ) && Number( w[3], b ) && a > 0.0 && b >= 2.0 * a )
+				{
+					shape["kind"] = "capsule";
+					shape["radius"] = a;
+					shape["height"] = b;
+					i = 4;
+				}
+				else if ( w.size() >= 2 && w[1].quoted == false && w[1].text != "sphere" && w[1].text != "box" && w[1].text != "capsule" )
+				{
+					shape["kind"] = "node";
+					shape["path"] = w[1].text;
+					i = 2;
+				}
+				else
+				{
+					fail( number, usage );
+					continue;
+				}
+				bool players = false, bodies = false, ok = true;
+				for ( ; i < w.size() && ok; )
+				{
+					const String word = w[i].text;
+					if ( word == "players" || word == "bodies" )
+					{
+						( word == "players" ? players : bodies ) = true;
+						i += 1;
+					}
+					else if ( word == "self" )
+					{
+						statement["self"] = true;
+						i += 1;
+					}
+					else if ( word == "max" && i + 1 < w.size() && w[i + 1].text.is_valid_int() && w[i + 1].text.to_int() >= 1 && w[i + 1].text.to_int() <= 16 )
+					{
+						statement["most"] = w[i + 1].text.to_int();
+						i += 2;
+					}
+					else if ( word == "along" && i + 1 < w.size() && ( w[i + 1].text == "facing" || w[i + 1].text == "look" || w[i + 1].text == "world" ) )
+					{
+						statement["frame"] = w[i + 1].text;
+						i += 2;
+					}
+					else
+					{
+						ok = false;
+					}
+				}
+				if ( ok == false )
+				{
+					fail( number, usage );
+					continue;
+				}
+				statement["kind"] = "find";
+				statement["shape"] = shape;
+				statement["who"] = players == bodies ? "all" : players ? "players" : "bodies";
+				statement["statements"] = Array();
+				add( statement );
+				step["statements"] = statements;
+				rule.steps[rule.steps.size() - 1] = step;
+				rule.findColumn = column;
+				rule.find = statement;
+				continue;
+			}
 			if ( verb == "change" )
 			{
 				if ( w.size() < 4 )
@@ -835,7 +964,7 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				if ( ParsePart( w, part, why ) == false )
 				{
 					fail( number, why.begins_with( "\"" + verb + "\" is not one of" )
-									  ? "\"" + verb + "\" is not a line of a motion: if, else, then when, after, timeout, cooldown, uses, lasts, until, item, change, emit, end, impulse, force, move, launch"
+									  ? "\"" + verb + "\" is not a line of a motion: if, else, then when, after, timeout, cooldown, uses, lasts, until, item, change, emit, end, find, impulse, force, move, launch"
 									  : why );
 					continue;
 				}

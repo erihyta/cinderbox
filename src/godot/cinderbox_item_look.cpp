@@ -15,6 +15,7 @@
 #include "pose.h"
 #include "types.h"
 
+#include <godot_cpp/classes/area3d.hpp>
 #include <godot_cpp/classes/box_shape3d.hpp>
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/dir_access.hpp>
@@ -265,14 +266,24 @@ Transform3D InSceneFrame( const Node3D* node, const Node* root )
 	return t;
 }
 
-// The item's body: the CollisionShape3D nodes in its scene (the first, when it is one box or ball).
+// The item's body: the CollisionShape3D nodes in its scene (the first, when it is one box or ball);
+// not those under an Area3D, a region its sheet's motions find things in.
 std::vector<const CollisionShape3D*> ShapesOf( const Node* item )
 {
 	std::vector<const CollisionShape3D*> out;
 	TypedArray<Node> found = const_cast<Node*>( item )->find_children( "*", "CollisionShape3D", true, false );
 	for ( int64_t i = 0; i < found.size(); ++i )
 	{
-		out.push_back( Object::cast_to<CollisionShape3D>( found[i] ) );
+		const auto* shape = Object::cast_to<CollisionShape3D>( found[i] );
+		bool region = false;
+		for ( const Node* up = shape->get_parent(); up != nullptr && up != item && region == false; up = up->get_parent() )
+		{
+			region = Object::cast_to<Area3D>( up ) != nullptr;
+		}
+		if ( region == false )
+		{
+			out.push_back( shape );
+		}
 	}
 	return out;
 }

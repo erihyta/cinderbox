@@ -67,7 +67,15 @@ std::string BakeItemUse( const godot::Node* item, const godot::String& kind, int
 // A motion block of a rules sheet (cue_rules.h: its properties) as one motion's lines of a motions
 // file of version 3. `kind`: the item whose sheet it is (its "on use", and who may run it: whoever has
 // the item out, or carries it), empty in a motion set's. "" with `error` when it cannot be baked.
-std::string BakeSheetMotion( const godot::Dictionary& motion, const godot::String& kind, godot::String& error );
+// `from`: the node the sheet's CbRules is under (a find's node path starts there); `root`: the item
+// or the motion set being baked (a find's shape is placed in its frame).
+std::string BakeSheetMotion( const godot::Dictionary& motion, const godot::String& kind, const godot::Node* from, const godot::Node* root,
+							 godot::String& error );
+
+// A find's shape (a sheet's "find SHAPE": its properties) as "shape" lines of a motions file: the
+// convex pieces of a node of the scene (an Area3D's CollisionShape3D children, or one), in the
+// player's frame; or one written in the line, around the player's middle.
+bool FindShapeLines( const godot::Dictionary& shape, const godot::Node* from, const godot::Node* root, std::string& out, godot::String& why );
 
 // The motion blocks of the rules sheets under `node` (a CbRules at any depth), baked: their lines,
 // and their names. False with `error` ("<file> line N: why").
@@ -304,6 +312,7 @@ public:
 		TARGET_SELF = 0,
 		TARGET_HIT = 1,
 		TARGET_FIELD = 2,
+		TARGET_FOUND = 3, // inside a sheet's find: each thing it found
 	};
 	enum Frame
 	{
@@ -313,6 +322,7 @@ public:
 		FRAME_UP = 3,
 		FRAME_WORLD = 4,
 		FRAME_TO = 5,
+		FRAME_AWAY = 6, // inside a sheet's find: from the player out to what it found, along the ground
 	};
 
 	CB_MOTION_FIELD( int, target, m_target )

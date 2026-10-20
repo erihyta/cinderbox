@@ -9,7 +9,8 @@ today; the rest is the plan.
 |---|---|
 | Blocks: `motion` headers, `on use` / `on press` / `on EVENT` / `while` / `when`, `then when ... within`, `after`, `timeout`, `if` / `else`, `end`, `lasts`, `until`, `cooldown`, `uses`, `item` | *built* (M204) |
 | Statements in a block: `change`, `emit`, `impulse`, `force`, `move [for S]`, `launch` (as a `use` rule has them) | *built* (M204) |
-| `find`, `cast`, shapes from nodes, `away`, effects on a target | planned (step 3.2) |
+| `find` with shapes from nodes or written in the line, a block per thing found, `found`, `away`, `move for` on a player found, `emit` with who was found | *built* (M205) |
+| `cast` (a shape swept along a direction: the probe in a sheet), `distance` / `reach` and `$target:FIELD` in a find's lines, `at POINT` | planned (3.2, next) |
 | `curve()`, `time`, markers, `follow` | planned (3.3) |
 | `owner item`, `break`, `remove self` | planned (3.4) |
 | `impulse kind momentum`, `every` | planned (3.5) |
@@ -147,18 +148,23 @@ there until they are done; **lasting** ones act every tick until the motion ends
 
 | Statement | Does |
 |---|---|
-| `find SHAPE [at POINT] [facing DIRECTION] [players] [props] [items] [walls] [not self] [max N]` | everything overlapping the shape now. The block below runs **once per target found**, nearest first, `$target` being each |
+| `find SHAPE [players] [bodies] [self] [max N] [along facing\|look\|world]` | *built*: everything the shape overlaps when its step starts. The lines further in run **once per thing found**, nearest first (then by id), at most N (16): `impulse` (on what it found, unless `on self`), `move for S ...` (given to a player found for S seconds), `emit` (said with the player as A and what it found as B, at it). Players and bodies (props, items lying about) both unless one is named; the player itself only with `self`; the shape turned as the player faces (the default), looks (with the pitch), or not at all |
 | `cast SHAPE [along DIRECTION] [range R] [speed V] [holds level\|bodies\|players]` | a shape moved along a direction: the first thing it hits. Speed 0: at once (a ray); otherwise it flies (today's probe). The block runs when it hits, with `$target` and `point` |
 
 | A `SHAPE` is | |
 |---|---|
-| a node's path | a `CollisionShape3D` in the item's scene: a sphere, box, capsule, or a convex shape made from a mesh (Godot's *Mesh > Create Collision Shape*). Placed where the node is, relative to the owner. **This is how a probe's shape is authored**: draw it in the 3D view |
-| `ray` | a line (today's probe) |
-| `sphere R`, `box (X,Y,Z)`, `capsule R H` | written in the line, for quick ones |
+| a node's path | *built*: an `Area3D` (its `CollisionShape3D` children together) or one `CollisionShape3D`, from the node the sheet's `CbRules` is under: a sphere, capsule, box, cylinder, or a convex shape made from a mesh (Godot's *Mesh > Create Collision Shape*). Drawn around the scene's origin as if the player stood there (its feet) facing -Z. **This is how a probe's shape is authored**: draw it in the 3D view. An `Area3D` under an item is not part of its body |
+| `ray` | a line (today's probe; with `cast`, planned) |
+| `sphere R`, `box (X,Y,Z)`, `capsule R H` | *built*: written in the line, around the player's middle (a metre up) |
 
-Inside a `find` or `cast` block these are readable in expressions: `distance` (from the shape's
-origin to the target), `reach` (`distance` over the shape's size: 0 at the centre, 1 at the edge),
-`point`, `$target:FIELD`.
+- **`along away`** (inside a find): from where the player is out to what it found, along the ground
+  (right on top of it: where the player faces). `on found` is the default target there; `on self`
+  reaches the player.
+- **A `move` given** holds on that player for its seconds, after its own motions' parameters (a slow
+  holds through its dash); the newest wins a parameter. A player holds six at most (the oldest goes).
+- **Planned**: readable in a find's lines, `distance` (from the player to what it found), `reach`
+  (that over the shape's size: 0 at the centre, 1 at the edge), `point`, `$target:FIELD`; a find
+  `at` a point other than the player.
 
 ## Who and where
 
@@ -197,7 +203,7 @@ runs. Two words are added:
 So falloff, ramps and shapes over time are expressions, not new settings:
 
 ```
-impulse 9 * curve(Falloff, reach) away          # strong at the centre, weak at the edge
+impulse 9 * curve(Falloff, reach) along away          # strong at the centre, weak at the edge
 force 40 * curve(Ramp, time / 0.3) along look   # the curve is the ramp-in
 move speed 0.3 + 0.7 * time / 2 for 2           # a slow that wears off
 ```
@@ -230,20 +236,19 @@ use if dash.charges > 0
     move for 0.18 friction 0
 ```
 
-### The ground slam: no C++ but damage
+### The ground slam: no C++ but damage (*built*: `server_mods/brawl/client/prefabs/slam.rules`)
 
 ```
 motion Slam on use if brawl.cd_slam <= 0 and not grounded
     lasts 3
     change brawl.cd_slam = 5
     emit brawl.slam.started
-    impulse 25 along world (0, -1, 0) replace vertical
+    impulse 25 along world direction (0, -1, 0) replace vertical
     then when grounded
     emit brawl.slam.landed
-    find Shockwave players props not self        # a CollisionShape3D: a flat cylinder, 5 m
-        impulse 9 * curve(Falloff, reach) away
+    find Shockwave players                       # an Area3D: a cylinder 5 m around the feet
+        impulse 9 along away
         impulse 4.5 along up
-        move for 1.5 speed 0.6
         emit brawl.slam.hit                      # the brawl mod: 25 damage
 ```
 
@@ -255,8 +260,8 @@ motion Blast on frag.grenade.expired
     owner item
     emit frag.blast
     break radius 2.5 speed 14 seconds 8
-    find Blast players props not self            # a sphere, 5 m
-        impulse 14 * curve(Falloff, reach) away
+    find Blast players bodies                  # a sphere, 5 m
+        impulse 14 * curve(Falloff, reach) along away
         emit frag.blast.hit                      # the frag mod: damage by distance
                                                  # (the simulation removes it on .expired, as today)
 ```
@@ -289,7 +294,7 @@ use if not combat.dead
 motion Flame while held.use and flame.fuel > 0
     change flame.fuel -= 25
     every 0.1
-        find Cone players props not self         # a convex shape made from a cone mesh
+        find Cone players bodies               # a convex shape made from a cone mesh
             impulse 0.6 along look
             emit flame.burn                       # the mod: damage over time
 ```
@@ -301,7 +306,7 @@ motion Leap on press leap if grounded
     cooldown 4
     follow LeapArc over 0.6 turn                 # a Path3D in the item's scene
     then when grounded within 2
-        find Landing players not self
+        find Landing players
             move for 1 speed 0                   # rooted for a second
 ```
 
@@ -366,7 +371,7 @@ the editor and at publish, as today.
 ## Order of work
 
 1. **Blocks** (*built*, M204): `motion` headers, `when`, `then when`, `after`, `timeout`, `if` / `else`, `end`; today's `use` sheets unchanged. The brawl slam's landing is its sheet's now (`then when grounded`).
-2. **Finding**: `find`, `cast` with shapes from nodes, per-target blocks, `away`, `move` on a target.
+2. **Finding**: `find` (*built*, M205: the brawl slam's shockwave is its sheet's now, the mod only hurts), then `cast` with shapes from nodes, `distance` and `reach`.
 3. **Curves and markers**: `curve()`, `time`, `along NODE`, `from NODE`, `turn`; `follow`.
 4. **Items run motions**: `owner item`, `break`, `remove self`; the frag grenade's blast predicted.
 5. **`impulse kind momentum`**, `every`.

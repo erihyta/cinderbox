@@ -3624,6 +3624,203 @@ void TestMotionSteps()
 	CHECK( fails( "motion\tA\nwhen\tpress\tslam\nstep\t0\t0\n" ) == false );
 }
 
+// A motion's finds (a sheet's "find SHAPE", docs/rules-language.md): what a shape overlaps when its
+// step starts, each in turn: thrown away from the player, slowed for a while, said with who it was.
+void TestMotionFinds()
+{
+	ModSchema schema;
+	schema.events = { "wave.hit", "poke.hit" };
+	schema.actions.push_back( { "wave", 0, "Q" } );
+	schema.actions.push_back( { "poke", 1, "E" } );
+	// A wave: a ball of 4 m around a point a metre up; everything in it (not the player) thrown
+	// away along the ground and up, a player found slowed to nothing for a second. A poke: a box
+	// from half a metre to 3 m ahead, the nearest player only.
+	const std::string text = "cinderbox_motions\t3\n"
+							 "motion\tWave\nwhen\tpress\twave\n"
+							 "find\tall\t0\t16\tfacing\nshape\t4\t0\t1\t0\n"
+							 "impulse\tfound\t9\taway\tnone\nimpulse\tfound\t4\tup\tnone\nparam\twalk_speed\t0\t1\nemit\twave.hit\nendfind\n"
+							 "motion\tPoke\nwhen\tpress\tpoke\n"
+							 "find\tplayers\t0\t1\tfacing\nshape\t0\t-0.5\t0\t0.5\t0.5\t0\t0.5\t-0.5\t2\t0.5\t0.5\t2\t0.5\t-0.5\t0\t3\t0.5\t0\t3\t-0.5\t2\t3\t0.5\t2\t3\n"
+							 "emit\tpoke.hit\nendfind\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 );
+	if ( motions == nullptr || motions->list.size() != 2 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	const MotionFind& wave = motions->list[0].First().finds.at( 0 );
+	CHECK( wave.pieces.size() == 1 && wave.pieces[0].points.size() == 1 && wave.pieces[0].radius == 4.0f && wave.effects.size() == 2 &&
+		   wave.effects[0].target.kind == MotionTarget::Kind::Found && wave.effects[0].frame == MotionFrame::Away && wave.moves.size() == 1 &&
+		   wave.emits.size() == 1 && wave.self == false && wave.most == 16 );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	std::vector<ModEventRecord> seen;
+	uint32_t counted = 0;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+			for ( ; counted < sim.Globals().modEventCount; ++counted )
+			{
+				seen.push_back( sim.Globals().modEvents[counted % kModEventHistory] );
+			}
+		}
+	};
+	auto place = [&]( int slot, b3Vec3 at, uint16_t yaw ) {
+		SimCommand c;
+		c.type = CommandType::Respawn;
+		c.target = sim.PlayerNetId( PlayerSlot( slot ) );
+		c.mode = 1;
+		c.a = { at.x, at.y, at.z };
+		c.index = yaw;
+		f.commands.push_back( c );
+	};
+	auto crate = [&]( b3Vec3 at ) {
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.mode = uint8_t( ShapeKind::Box );
+		c.value = -1;
+		c.a = { at.x, at.y, at.z };
+		c.c = { 0.4f, 0.4f, 0.4f };
+		f.commands.push_back( c );
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	f.events.push_back( { PlayerEventType::Join, 1 } );
+	step( 2 );
+	const uint32_t p0 = sim.PlayerNetId( 0 ), p1 = sim.PlayerNetId( 1 );
+	place( 0, { 0.0f, 1.0f, 0.0f }, 0 );
+	place( 1, { 0.0f, 1.0f, 2.0f }, 0 );
+	crate( { -3.0f, 0.4f, 0.0f } );
+	crate( { 10.0f, 0.4f, 0.0f } );
+	step( 60 );
+	std::vector<uint32_t> crates;
+	for ( const auto& r : sim.Entities() )
+	{
+		flecs::entity e( sim.World(), r.entity );
+		if ( e.has<Prop>() )
+		{
+			crates.push_back( r.netId );
+		}
+	}
+	CHECK( crates.size() == 2 && sim.PlayerCharacter( 1 )->grounded == 1 );
+	if ( crates.size() != 2 )
+	{
+		return;
+	}
+	auto events = [&]( int type ) {
+		std::vector<uint32_t> who;
+		for ( const ModEventRecord& e : seen )
+		{
+			if ( int( e.type ) == type )
+			{
+				who.push_back( e.netIdB );
+			}
+		}
+		return who;
+	};
+	auto bodyVelocity = [&]( uint32_t netId ) {
+		const PhysicsBody* pb = sim.FindEntity( netId ).try_get<PhysicsBody>();
+		return pb != nullptr ? b3Body_GetLinearVelocity( sim.BodyOf( *pb ) ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
+	};
+
+	// The wave: the player ahead (2 m) and the crate beside (3 m) are found, nearest first; the far
+	// crate and the player itself are not. Each is thrown away along the ground, and up.
+	const float walk = sim.PlayerMove( 1 )[MoveParam::WalkSpeed];
+	b3Vec3 before = sim.PlayerCharacter( 0 )->velocity;
+	f.inputs[0].actions = 1;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	const b3Vec3 v1 = sim.PlayerCharacter( 1 )->velocity;
+	const b3Vec3 vCrate = bodyVelocity( crates[0] );
+	std::printf( "    the wave: the player ahead at (%.2f, %.2f, %.2f) m/s, the crate beside at (%.2f, %.2f, %.2f)\n", v1.x, v1.y, v1.z,
+				 vCrate.x, vCrate.y, vCrate.z );
+	CHECK( v1.z > 8.0f && std::fabs( v1.x ) < 0.5f && v1.y > 3.0f );
+	CHECK( vCrate.x < -8.0f && vCrate.y > 3.0f && b3Length( bodyVelocity( crates[1] ) ) < 0.01f );
+	CHECK( b3Length( b3Sub( sim.PlayerCharacter( 0 )->velocity, before ) ) < 0.01f );
+	CHECK( ( events( 0 ) == std::vector<uint32_t>{ p1, crates[0] } ) );
+	CHECK( seen.size() == 2 && seen[0].netIdA == p0 && seen[0].tick == sim.Tick() - 1 );
+	// The player found walks at nothing for a second (its own movement after the throw), then again.
+	CHECK( sim.PlayerMove( 1 )[MoveParam::WalkSpeed] == 0.0f && sim.PlayerMove( 0 )[MoveParam::WalkSpeed] == walk );
+	step( 58 );
+	CHECK( sim.PlayerMove( 1 )[MoveParam::WalkSpeed] == 0.0f );
+	step( 3 );
+	CHECK( sim.PlayerMove( 1 )[MoveParam::WalkSpeed] == walk );
+	step( 120 );
+
+	// The poke: a box ahead, the nearest player only; facing away, nobody.
+	place( 1, { 0.0f, 1.0f, 2.0f }, 0 );
+	place( 0, { 0.0f, 1.0f, 0.0f }, 0 );
+	step( 60 );
+	f.inputs[0].actions = 2;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	CHECK( ( events( 1 ) == std::vector<uint32_t>{ p1 } ) );
+	place( 0, { 0.0f, 1.0f, 0.0f }, 32768 );
+	step( 30 );
+	f.inputs[0].actions = 2;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	CHECK( events( 1 ).size() == 1 );
+	step( 30 );
+
+	// It is state: a copy made while a slow holds goes on the same, and a rollback takes the wave back.
+	place( 0, { 0.0f, 1.0f, 0.0f }, 0 );
+	place( 1, { 0.0f, 1.0f, 2.0f }, 0 );
+	step( 60 );
+	f.inputs[0].actions = 1;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	step( 10 );
+	std::vector<uint8_t> image;
+	sim.SavePortable( image );
+	Simulation client( TestConfig(), FlatMap() );
+	client.SetMotions( motions );
+	CHECK( client.LoadPortable( image ) && client.ComputeHash() == sim.ComputeHash() && client.PlayerMove( 1 )[MoveParam::WalkSpeed] == 0.0f );
+	for ( int i = 0; i < 70; ++i )
+	{
+		f.tick = sim.Tick();
+		sim.Step( f );
+		client.Step( f );
+	}
+	CHECK( client.ComputeHash() == sim.ComputeHash() && client.PlayerMove( 1 )[MoveParam::WalkSpeed] == walk );
+	place( 1, { 0.0f, 1.0f, 2.0f }, 0 );
+	step( 60 );
+	Snapshot quiet;
+	sim.Save( quiet );
+	const uint64_t hashQuiet = sim.ComputeHash();
+	f.inputs[0].actions = 1;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	CHECK( sim.PlayerMove( 1 )[MoveParam::WalkSpeed] == 0.0f );
+	sim.Load( quiet );
+	CHECK( sim.ComputeHash() == hashQuiet && sim.PlayerMove( 1 )[MoveParam::WalkSpeed] == walk );
+
+	// What a file may not say.
+	auto fails = [&]( const std::string& body ) {
+		std::vector<Motion> out;
+		std::string error, warned;
+		return CompileMotionSet( "t", "cinderbox_motions\t3\n" + body, schema, out, error, warned ) == false;
+	};
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tall\t0\t16\tfacing\nendfind\n" ) );						// no shape
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tall\t0\t16\tfacing\nshape\t1\t0\t0\t0\n" ) );			// not ended
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tall\t0\t16\tfacing\nshape\t1\t0\t0\t0\ncooldown\t1\nendfind\n" ) );
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tall\t0\t16\tfacing\nshape\t1\t0\t0\t0\nparam\twalk_speed\t0\nendfind\n" ) );
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nimpulse\tfound\t5\tup\tnone\n" ) );							   // found, outside
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nimpulse\tself\t5\taway\tnone\n" ) );							   // away, outside
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tsome\t0\t16\tfacing\nshape\t1\t0\t0\t0\nendfind\n" ) );
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tall\t0\t17\tfacing\nshape\t1\t0\t0\t0\nendfind\n" ) );
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tall\t0\t16\tfacing\nshape\t1\t0\t0\nendfind\n" ) );
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tall\t0\t16\tfacing\nshape\t1\t0\t0\t0\nendfind\n" ) == false );
+}
+
 // "motion.<name>" in a condition: that motion of the player's is on. A motion's own conditions read
 // it as the tick found it; the name is the set's and the node's, or the node's alone when it is
 // the only one.
@@ -9989,6 +10186,7 @@ int main( int argc, char** argv )
 		{ "motions", TestMotions },
 		{ "motions_while", TestMotionsWhile },
 		{ "motion_steps", TestMotionSteps },
+		{ "motion_finds", TestMotionFinds },
 		{ "item_motions", TestItemMotions },
 		{ "motion_conditions", TestMotionConditions },
 		{ "links", TestLinks },

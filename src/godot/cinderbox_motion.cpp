@@ -10,7 +10,14 @@
 #include "motions.h"
 #include "move_params.h"
 
+#include <godot_cpp/classes/area3d.hpp>
+#include <godot_cpp/classes/box_shape3d.hpp>
+#include <godot_cpp/classes/capsule_shape3d.hpp>
+#include <godot_cpp/classes/collision_shape3d.hpp>
+#include <godot_cpp/classes/convex_polygon_shape3d.hpp>
+#include <godot_cpp/classes/cylinder_shape3d.hpp>
 #include <godot_cpp/classes/dir_access.hpp>
+#include <godot_cpp/classes/sphere_shape3d.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -94,7 +101,7 @@ bool Joined( const PackedStringArray& conditions, const char* with, String& out,
 	return true;
 }
 
-const char* const kFrames[] = { "look", "move", "facing", "up", "world", "to" };
+const char* const kFrames[] = { "look", "move", "facing", "up", "world", "to", "away" };
 const char* const kReplaces[] = { "none", "vertical", "horizontal", "all" };
 const char* const kPushes[] = { "accel", "force", "velocity" };
 
@@ -862,7 +869,215 @@ std::string BakeItemUse( const Node* item, const String& kind, int use, const Pa
 
 // --- A rules sheet's motion blocks ------------------------------------------------------------------
 
-std::string BakeSheetMotion( const Dictionary& p, const String& kind, String& error )
+namespace
+{
+
+// A statement's motion part (a sheet's impulse, force, move, launch) as lines: a move as parameters
+// (with its seconds), the rest as the node it would be, under a motion, baked as one.
+std::string BakeSheetPart( const Dictionary& part, const String& kind, String& why )
+{
+	Dictionary props = part.get( "properties", Dictionary() );
+	if ( String( part["class"] ) == "CbMove" )
+	{
+		// Parameters from when the step starts: for its seconds, or while it is the step.
+		std::string seconds = double( props.get( "duration", 0.0 ) ) > 0.0 ? "\t" + Num( double( props["duration"] ) ) : std::string();
+		std::string params = ParamLines( props.get( "parameters", Dictionary() ), why );
+		if ( params.empty() )
+		{
+			why = why.is_empty() ? String( "move wants a parameter and a value" ) : why;
+			return std::string();
+		}
+		for ( size_t at = 0; ( at = params.find( '\n', at ) ) != std::string::npos; at += seconds.size() + 1 )
+		{
+			params.insert( at, seconds );
+		}
+		return params;
+	}
+	if ( String( part["class"] ) == "CbLaunch" && int( props.get( "what", 0 ) ) == CbLaunch::WHAT_CARRIED && props.has( "item_kind" ) == false )
+	{
+		props["item_kind"] = kind; // (the item's own)
+	}
+	auto* node = Object::cast_to<CbMotionPart>( ClassDB::instantiate( StringName( String( part["class"] ) ) ) );
+	if ( node == nullptr )
+	{
+		why = "this game has no " + String( part["class"] );
+		return std::string();
+	}
+	Array keys = props.keys();
+	for ( int64_t k = 0; k < keys.size(); ++k )
+	{
+		node->set( StringName( String( keys[k] ) ), props[keys[k]] );
+	}
+	CbMotion* holder = memnew( CbMotion );
+	holder->add_child( node );
+	std::string lines = node->Bake( why );
+	holder->remove_child( node );
+	memdelete( node );
+	memdelete( holder );
+	return lines;
+}
+
+// A point of a shape in the player's frame, as the simulation has it: Godot's forward is -Z, the
+// simulation's +Z (the same turn about Y by half a circle).
+std::string PointWords( const Vector3& p )
+{
+	return "\t" + Num( 0.0f - p.x ) + "\t" + Num( p.y ) + "\t" + Num( 0.0f - p.z ); // (0 - 0 is 0, where -0 would print "-0")
+}
+
+// Where a node is in `root`'s frame (its transforms up to it); false when it is not under it.
+bool FrameIn( const Node* node, const Node* root, Transform3D& out )
+{
+	out = Transform3D();
+	for ( const Node* at = node; at != nullptr; at = at->get_parent() )
+	{
+		if ( at == root )
+		{
+			return true;
+		}
+		if ( const auto* spatial = Object::cast_to<Node3D>( at ) )
+		{
+			out = spatial->get_transform() * out;
+		}
+	}
+	return false;
+}
+
+} // namespace
+
+bool FindShapeLines( const Dictionary& shape, const Node* from, const Node* root, std::string& out, String& why )
+{
+	const String kind = shape.get( "kind", "" );
+	// Written in the line: around the player's middle, a metre up.
+	if ( kind == "sphere" )
+	{
+		out = "shape\t" + Num( double( shape["radius"] ) ) + PointWords( Vector3( 0, 1, 0 ) ) + "\n";
+		return true;
+	}
+	if ( kind == "capsule" )
+	{
+		double r = shape["radius"], h = shape["height"];
+		out = "shape\t" + Num( r ) + PointWords( Vector3( 0, float( 1.0 + h / 2.0 - r ), 0 ) ) + PointWords( Vector3( 0, float( 1.0 - h / 2.0 + r ), 0 ) ) + "\n";
+		return true;
+	}
+	if ( kind == "box" )
+	{
+		Vector3 half = Vector3( shape["size"] ).abs() / 2.0f;
+		out = "shape\t0";
+		for ( int c = 0; c < 8; ++c )
+		{
+			out += PointWords( Vector3( c & 1 ? half.x : -half.x, 1.0f + ( c & 2 ? half.y : -half.y ), c & 4 ? half.z : -half.z ) );
+		}
+		out += "\n";
+		return true;
+	}
+	// A node of the scene: an Area3D (its CollisionShape3D children) or a CollisionShape3D, drawn
+	// around the scene's origin as if the player stood there facing -Z.
+	const String path = shape.get( "path", "" );
+	const Node* node = from != nullptr ? from->get_node_or_null( NodePath( path ) ) : nullptr;
+	if ( node == nullptr )
+	{
+		why = "find: no node " + path + ( from != nullptr ? " (a path from " + String( from->get_name() ) + ")" : String() );
+		return false;
+	}
+	std::vector<const CollisionShape3D*> shapes;
+	if ( const auto* single = Object::cast_to<CollisionShape3D>( node ) )
+	{
+		shapes.push_back( single );
+	}
+	else if ( Object::cast_to<Area3D>( node ) != nullptr )
+	{
+		for ( int i = 0; i < node->get_child_count(); ++i )
+		{
+			if ( const auto* child = Object::cast_to<CollisionShape3D>( node->get_child( i ) ) )
+			{
+				shapes.push_back( child );
+			}
+		}
+	}
+	if ( shapes.empty() )
+	{
+		why = "find: " + path + " is not an Area3D with CollisionShape3D children, or a CollisionShape3D";
+		return false;
+	}
+	out.clear();
+	for ( const CollisionShape3D* piece : shapes )
+	{
+		if ( piece->is_disabled() )
+		{
+			continue;
+		}
+		Transform3D xf;
+		if ( FrameIn( piece, root, xf ) == false )
+		{
+			why = "find: " + path + " is not in the scene being baked";
+			return false;
+		}
+		const float scale = xf.basis.get_scale().abs().x;
+		Ref<Shape3D> s = piece->get_shape();
+		if ( auto* ball = Object::cast_to<SphereShape3D>( s.ptr() ) )
+		{
+			out += "shape\t" + Num( ball->get_radius() * scale ) + PointWords( xf.origin ) + "\n";
+		}
+		else if ( auto* capsule = Object::cast_to<CapsuleShape3D>( s.ptr() ) )
+		{
+			float r = capsule->get_radius(), h = std::max( capsule->get_height(), 2.0f * r );
+			out += "shape\t" + Num( r * scale ) + PointWords( xf.xform( Vector3( 0, h / 2 - r, 0 ) ) ) + PointWords( xf.xform( Vector3( 0, r - h / 2, 0 ) ) ) + "\n";
+		}
+		else if ( auto* box = Object::cast_to<BoxShape3D>( s.ptr() ) )
+		{
+			Vector3 half = box->get_size() / 2.0f;
+			out += "shape\t0";
+			for ( int c = 0; c < 8; ++c )
+			{
+				out += PointWords( xf.xform( Vector3( c & 1 ? half.x : -half.x, c & 2 ? half.y : -half.y, c & 4 ? half.z : -half.z ) ) );
+			}
+			out += "\n";
+		}
+		else if ( auto* cylinder = Object::cast_to<CylinderShape3D>( s.ptr() ) )
+		{
+			// Two rings of 16.
+			out += "shape\t0";
+			for ( int ring = 0; ring < 2; ++ring )
+			{
+				for ( int k = 0; k < 16; ++k )
+				{
+					float angle = float( k ) * float( Math_TAU ) / 16.0f;
+					out += PointWords( xf.xform( Vector3( cylinder->get_radius() * std::cos( angle ), ( ring == 0 ? 0.5f : -0.5f ) * cylinder->get_height(),
+														  cylinder->get_radius() * std::sin( angle ) ) ) );
+				}
+			}
+			out += "\n";
+		}
+		else if ( auto* hull = Object::cast_to<ConvexPolygonShape3D>( s.ptr() ) )
+		{
+			PackedVector3Array points = hull->get_points();
+			if ( points.is_empty() || points.size() > 128 )
+			{
+				why = "find: " + path + "'s convex shape has " + String::num_int64( points.size() ) + " points (1 to 128)";
+				return false;
+			}
+			out += "shape\t0";
+			for ( int64_t k = 0; k < points.size(); ++k )
+			{
+				out += PointWords( xf.xform( points[k] ) );
+			}
+			out += "\n";
+		}
+		else
+		{
+			why = "find: " + path + ": a find's shape is a sphere, a capsule, a box, a cylinder or a convex polygon";
+			return false;
+		}
+	}
+	if ( out.empty() )
+	{
+		why = "find: " + path + " has no shape that is on";
+		return false;
+	}
+	return true;
+}
+
+std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node* from, const Node* root, String& error )
 {
 	auto fail = [&]( const String& why ) {
 		error = why;
@@ -1020,52 +1235,48 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, String& er
 			}
 			else if ( what == "part" )
 			{
-				Dictionary part = statement["part"];
-				Dictionary props = part.get( "properties", Dictionary() );
-				if ( String( part["class"] ) == "CbMove" )
-				{
-					// Parameters from when the step starts: for its seconds, or while it is the step.
-					std::string seconds = double( props.get( "duration", 0.0 ) ) > 0.0 ? "\t" + Num( double( props["duration"] ) ) : std::string();
-					String why;
-					std::string params = ParamLines( props.get( "parameters", Dictionary() ), why );
-					if ( params.empty() )
-					{
-						return fail( line + ( why.is_empty() ? String( "move wants a parameter and a value" ) : why ) );
-					}
-					for ( size_t at = 0; ( at = params.find( '\n', at ) ) != std::string::npos; at += seconds.size() + 1 )
-					{
-						params.insert( at, seconds );
-					}
-					text += params;
-					continue;
-				}
-				// The node it would be, under a motion, baked as one.
-				if ( String( part["class"] ) == "CbLaunch" && int( props.get( "what", 0 ) ) == CbLaunch::WHAT_CARRIED && props.has( "item_kind" ) == false )
-				{
-					props["item_kind"] = kind; // (the item's own)
-				}
-				auto* node = Object::cast_to<CbMotionPart>( ClassDB::instantiate( StringName( String( part["class"] ) ) ) );
-				if ( node == nullptr )
-				{
-					return fail( line + String( "this game has no " ) + String( part["class"] ) );
-				}
-				Array keys = props.keys();
-				for ( int64_t k = 0; k < keys.size(); ++k )
-				{
-					node->set( StringName( String( keys[k] ) ), props[keys[k]] );
-				}
-				CbMotion* holder = memnew( CbMotion );
-				holder->add_child( node );
 				String why;
-				std::string lines = node->Bake( why );
-				holder->remove_child( node );
-				memdelete( node );
-				memdelete( holder );
+				std::string lines = BakeSheetPart( statement["part"], kind, why );
 				if ( lines.empty() )
 				{
 					return fail( line + why );
 				}
 				text += lines;
+			}
+			else if ( what == "find" )
+			{
+				// find <who> <self> <at most> <frame>, its shape's pieces, what happens to each, endfind
+				String why;
+				std::string shape;
+				if ( FindShapeLines( statement["shape"], from, root, shape, why ) == false )
+				{
+					return fail( line + why );
+				}
+				text += "find\t" + Std( String( statement.get( "who", "all" ) ) ) + "\t" + ( bool( statement.get( "self", false ) ) ? "1" : "0" ) + "\t" +
+						std::to_string( int( statement.get( "most", 16 ) ) ) + "\t" + Std( String( statement.get( "frame", "facing" ) ) ) + "\n" + shape;
+				Array inside = statement.get( "statements", Array() );
+				for ( int64_t k = 0; k < inside.size(); ++k )
+				{
+					Dictionary each = inside[k];
+					const String at = "line " + String::num_int64( int64_t( each.get( "line", 0 ) ) ) + ": ";
+					if ( String( each.get( "kind", "" ) ) == "emit" )
+					{
+						String event = String( each["text"] ).strip_edges();
+						if ( Plain( event ) == false || event.contains( " " ) )
+						{
+							return fail( at + String( "emit names one event" ) );
+						}
+						text += "emit\t" + Std( event ) + "\n";
+						continue;
+					}
+					std::string lines = BakeSheetPart( each["part"], kind, why );
+					if ( lines.empty() )
+					{
+						return fail( at + why );
+					}
+					text += lines;
+				}
+				text += "endfind\n";
 			}
 		}
 	}
@@ -1115,7 +1326,7 @@ bool BakeSheetMotions( const Node* node, const String& kind, std::string& lines,
 				continue;
 			}
 			String why;
-			std::string baked = BakeSheetMotion( rule.properties, kind, why );
+			std::string baked = BakeSheetMotion( rule.properties, kind, Object::cast_to<Node>( sheets[s] )->get_parent(), node, why );
 			if ( baked.empty() )
 			{
 				// (A statement's mistake says its line; the rest are the motion's first line's.)
@@ -1202,12 +1413,14 @@ void CbMotionEffect::_bind_methods()
 	BIND_ENUM_CONSTANT( TARGET_SELF );
 	BIND_ENUM_CONSTANT( TARGET_HIT );
 	BIND_ENUM_CONSTANT( TARGET_FIELD );
+	BIND_ENUM_CONSTANT( TARGET_FOUND );
 	BIND_ENUM_CONSTANT( FRAME_LOOK );
 	BIND_ENUM_CONSTANT( FRAME_MOVE );
 	BIND_ENUM_CONSTANT( FRAME_FACING );
 	BIND_ENUM_CONSTANT( FRAME_UP );
 	BIND_ENUM_CONSTANT( FRAME_WORLD );
 	BIND_ENUM_CONSTANT( FRAME_TO );
+	BIND_ENUM_CONSTANT( FRAME_AWAY );
 }
 
 std::string CbMotionEffect::TargetWord( String& error ) const
@@ -1225,6 +1438,10 @@ std::string CbMotionEffect::TargetWord( String& error ) const
 	{
 		return "hit";
 	}
+	if ( m_target == TARGET_FOUND )
+	{
+		return "found"; // (a sheet's find bakes it; a node outside one is refused by the compiler)
+	}
 	String field = m_targetField.strip_edges();
 	if ( m_target != TARGET_FIELD || field.is_empty() || Plain( field ) == false || field.contains( " " ) )
 	{
@@ -1236,7 +1453,7 @@ std::string CbMotionEffect::TargetWord( String& error ) const
 
 std::string CbMotionEffect::FrameWord() const
 {
-	return kFrames[m_frame >= 0 && m_frame <= FRAME_TO ? m_frame : FRAME_MOVE];
+	return kFrames[m_frame >= 0 && m_frame <= FRAME_AWAY ? m_frame : FRAME_MOVE];
 }
 
 std::string CbMotionEffect::WorldWords() const

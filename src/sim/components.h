@@ -351,6 +351,23 @@ struct WallPiece
 	uint32_t piece = 0;
 };
 
+// Movement parameters another's motion gave a player for a while: a find's "move for" (a slow, a
+// root). Laid over its own after its motions' (the newest wins a parameter); a few at once, a new
+// one taking the place of one that is over, else of the oldest.
+inline constexpr int kMoveEffects = 6;
+struct MoveEffect
+{
+	uint32_t sinceTick = 0; // when it was given
+	uint32_t untilTick = 0; // it holds while the tick is below this; 0: an empty place
+	float value = 0.0f;
+	uint8_t param = 0; // MoveParam
+	uint8_t reserved[3] = {};
+};
+struct MoveEffects
+{
+	MoveEffect list[kMoveEffects] = {};
+};
+
 // "This entity did not come from a template."
 inline constexpr uint32_t kNoTemplate = 0xFFFFFFFFu;
 
@@ -421,6 +438,8 @@ CB_CHECK_COMPONENT( Prop, 12 );
 CB_CHECK_COMPONENT( AnimGraphLayerState, 40 );
 CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( WallPiece, 12 );
+CB_CHECK_COMPONENT( MoveEffect, 16 );
+CB_CHECK_COMPONENT( MoveEffects, 16 * kMoveEffects );
 CB_CHECK_COMPONENT( HeldItem, 12 );
 CB_CHECK_COMPONENT( Slots, 24 );
 CB_CHECK_COMPONENT( Container, 4 );

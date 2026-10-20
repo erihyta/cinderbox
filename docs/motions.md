@@ -512,9 +512,11 @@ emit	dash.started
 | `timeout` | what follows runs when the step before gave up waiting; then the motion ends |
 | `guard` | a condition (none: no guard): what follows counts only if it held when its step started |
 | `end` | the motion ends after this tick |
+| `find` | who (`players`, `bodies`, `all`), whether the player itself counts (0 or 1), at most how many (1 to 16), how its shape is turned (`facing`, `look`, `world`). Then its `shape` lines, what happens to each thing found (`impulse` on `found`, along `away`; `param` with its seconds, given to a player found; `emit`), and `endfind` |
+| `shape` | a convex piece of a find's shape: a radius, then its points (x y z each, in the player's frame: its feet, forward +Z) |
 
-A target is `self`, `hit` or `@field`. Version 3 of the file (a sheet's motion blocks) has the last
-five; a file without them is written as version 2.
+A target is `self`, `hit`, `@field`, or inside a find `found`. Version 3 of the file (a sheet's
+motion blocks) has the last seven; a file without them is written as version 2.
 
 | Step | Who |
 |---|---|
