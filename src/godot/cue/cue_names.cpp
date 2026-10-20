@@ -491,6 +491,72 @@ std::vector<std::pair<int, String>> SheetProblems( const String& text )
 	}
 	for ( const cue::Rule& rule : rules )
 	{
+		if ( rule.type == "motion" )
+		{
+			// A motion block: its first line's names there, each statement's at its own line.
+			const Dictionary& p = rule.properties;
+			auto check = [&]( int line, Holds holds, const Variant& value, const char* property ) {
+				PackedStringArray found;
+				CheckValue( book, holds, value, property, found );
+				for ( int64_t i = 0; i < found.size(); ++i )
+				{
+					out.push_back( { line, found[i] } );
+				}
+			};
+			if ( p.has( "action" ) )
+			{
+				check( rule.line, Holds::Action, p["action"], "action" );
+			}
+			if ( p.has( "event" ) )
+			{
+				check( rule.line, Holds::Event, p["event"], "event" );
+			}
+			if ( p.has( "expression" ) )
+			{
+				check( rule.line, Holds::Expressions, PackedStringArray( { String( p["expression"] ) } ), "when" );
+			}
+			if ( p.has( "conditions" ) )
+			{
+				check( rule.line, Holds::Expressions, p["conditions"], "if" );
+			}
+			Array steps = p.get( "steps", Array() );
+			for ( int64_t s = 0; s < steps.size(); ++s )
+			{
+				Dictionary step = steps[s];
+				if ( step.has( "wait" ) )
+				{
+					check( int( step.get( "line", rule.line ) ), Holds::Expressions, PackedStringArray( { String( step["wait"] ) } ), "then when" );
+				}
+				Array statements = step.get( "statements", Array() );
+				for ( int64_t i = 0; i < statements.size(); ++i )
+				{
+					Dictionary statement = statements[i];
+					int line = int( statement.get( "line", rule.line ) );
+					String kind = statement.get( "kind", "" );
+					if ( String( statement.get( "guard", "" ) ).is_empty() == false )
+					{
+						check( line, Holds::Expressions, PackedStringArray( { String( statement["guard"] ) } ), "if" );
+					}
+					if ( kind == "emit" )
+					{
+						check( line, Holds::Event, statement["text"], "emit" );
+					}
+					else if ( kind == "change" )
+					{
+						check( line, Holds::Changes, PackedStringArray( { String( statement["text"] ) } ), "change" );
+					}
+					else if ( kind == "part" )
+					{
+						Dictionary props = Dictionary( statement["part"] ).get( "properties", Dictionary() );
+						if ( props.has( "item_kind" ) )
+						{
+							check( line, Holds::Item, props["item_kind"], "launch" );
+						}
+					}
+				}
+			}
+			continue;
+		}
 		for ( const Entry& entry : kTable )
 		{
 			// (A use is read as the motion it is baked into.)
@@ -521,7 +587,8 @@ const char* const kSheetWords[] = { "on", "while", "predict", "use", "show", "te
 									"volume", "pitch", "jitter", "range", "bus", "volume_by", "under", "life", "off", "blend", "time",
 									"held", "change", "stance", "emit", "impulse", "force", "move", "launch", "replace", "along",
 									"direction", "top", "ramp", "react", "for", "new", "carried", "speed", "lift", "ahead", "seconds",
-									"into" };
+									"into", "motion", "when", "then", "after", "within", "timeout", "else", "lasts", "until", "uses",
+									"refill", "ground", "item", "hand", "press" };
 
 } // namespace
 

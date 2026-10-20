@@ -4,6 +4,7 @@
 
 #include "cue/cue_info.h"
 #include "cue/cue_prediction.h" // ParseChange: a motion's changes are written as a prediction's are
+#include "cue/cue_rules.h"
 
 #include "mod_schema.h"
 #include "motions.h"
@@ -14,6 +15,7 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
+#include <algorithm>
 #include <charconv>
 #include <vector>
 
@@ -858,6 +860,281 @@ std::string BakeItemUse( const Node* item, const String& kind, int use, const Pa
 	return text;
 }
 
+// --- A rules sheet's motion blocks ------------------------------------------------------------------
+
+std::string BakeSheetMotion( const Dictionary& p, const String& kind, String& error )
+{
+	auto fail = [&]( const String& why ) {
+		error = why;
+		return std::string();
+	};
+	const String name = p.get( "name", "" );
+	if ( name.is_empty() || Plain( name ) == false || name.contains( " " ) )
+	{
+		return fail( "a motion's name is one word" );
+	}
+	std::string text = "motion\t" + Std( name ) + "\n";
+	const String trigger = p.get( "trigger", "" );
+	PackedStringArray conditions;
+	auto word = [&]( const char* key ) {
+		String w = String( p.get( key, "" ) ).strip_edges();
+		return Plain( w ) && w.contains( " " ) == false ? w : String();
+	};
+	if ( trigger == "use" )
+	{
+		if ( kind.is_empty() )
+		{
+			return fail( "on use is for an item's sheet (a motion set's motions are everyone's)" );
+		}
+		text += "when\tevent\t" + Std( kind ) + ".used\n";
+	}
+	else if ( trigger == "press" )
+	{
+		if ( word( "action" ).is_empty() )
+		{
+			return fail( "on press wants one action" );
+		}
+		text += "when\tpress\t" + Std( word( "action" ) ) + "\n";
+	}
+	else if ( trigger == "event" )
+	{
+		if ( word( "event" ).is_empty() )
+		{
+			return fail( "on wants one event" );
+		}
+		text += "when\tevent\t" + Std( word( "event" ) ) + "\n";
+	}
+	else if ( trigger == "while" || trigger == "when" )
+	{
+		String expression = String( p.get( "expression", "" ) ).strip_edges();
+		if ( expression.is_empty() || Plain( expression ) == false )
+		{
+			return fail( trigger + String( " wants an expression (with no tab or #)" ) );
+		}
+		if ( trigger == "while" )
+		{
+			text += "when\twhile\n";
+			conditions.push_back( expression );
+		}
+		else
+		{
+			text += "when\tedge\t" + Std( expression ) + "\n";
+		}
+	}
+	else
+	{
+		return fail( "a motion starts on use, on press, on an event, while or when" );
+	}
+	// Who may: in an item's sheet, whoever has it out (or carries it); its use says so itself.
+	if ( kind.is_empty() == false && trigger != "use" )
+	{
+		conditions.push_back( String( p.get( "item", "hand" ) ) == "carried" ? "carried." + kind : kind );
+	}
+	conditions.append_array( p.get( "conditions", PackedStringArray() ) );
+	String all, any, bad;
+	if ( Joined( conditions, " and ", all, bad ) == false || Joined( p.get( "until", PackedStringArray() ), " or ", any, bad ) == false )
+	{
+		return fail( "\"" + bad + "\" cannot have a tab or a #" );
+	}
+	if ( all.is_empty() == false )
+	{
+		text += "if\t" + Std( all ) + "\n";
+	}
+	if ( any.is_empty() == false )
+	{
+		text += "until\t" + Std( any ) + "\n";
+	}
+	if ( double( p.get( "cooldown", 0.0 ) ) > 0.0 )
+	{
+		text += "cooldown\t" + Num( double( p["cooldown"] ) ) + "\n";
+	}
+	if ( int( p.get( "uses", 0 ) ) > 0 )
+	{
+		Variant refill = p.get( "refill", 0.0 );
+		text += "uses\t" + std::to_string( int( p["uses"] ) ) + "\t" +
+				( refill.get_type() == Variant::STRING ? Std( String( refill ) ) : Num( double( refill ) ) ) + "\n";
+	}
+	if ( double( p.get( "lasts", 0.0 ) ) > 0.0 )
+	{
+		text += "duration\t" + Num( double( p["lasts"] ) ) + "\n";
+	}
+
+	Array steps = p.get( "steps", Array() );
+	for ( int64_t s = 0; s < steps.size(); ++s )
+	{
+		Dictionary step = steps[s];
+		if ( s > 0 && bool( step.get( "timeout", false ) ) )
+		{
+			text += "timeout\n";
+		}
+		else if ( s > 0 )
+		{
+			String wait = String( step.get( "wait", "" ) ).strip_edges();
+			if ( Plain( wait ) == false )
+			{
+				return fail( "then when \"" + wait + "\" cannot have a tab or a #" );
+			}
+			text += "step\t" + Num( double( step.get( "after", 0.0 ) ) ) + "\t" + Num( double( step.get( "within", 0.0 ) ) ) +
+					( wait.is_empty() ? std::string() : "\t" + Std( wait ) ) + "\n";
+		}
+		String guard;
+		Array statements = step.get( "statements", Array() );
+		for ( int64_t i = 0; i < statements.size(); ++i )
+		{
+			Dictionary statement = statements[i];
+			const String line = "line " + String::num_int64( int64_t( statement.get( "line", 0 ) ) ) + ": ";
+			String under = String( statement.get( "guard", "" ) ).strip_edges();
+			if ( Plain( under ) == false )
+			{
+				return fail( line + String( "if \"" ) + under + "\" cannot have a tab or a #" );
+			}
+			if ( under != guard )
+			{
+				text += under.is_empty() ? std::string( "guard\n" ) : "guard\t" + Std( under ) + "\n";
+				guard = under;
+			}
+			const String what = statement.get( "kind", "" );
+			if ( what == "change" )
+			{
+				cue::Change change;
+				String why;
+				if ( cue::ParseChange( statement["text"], change, &why ) == false || Plain( change.field ) == false )
+				{
+					return fail( line + String( "change \"" ) + String( statement["text"] ) + "\": " + why );
+				}
+				text += "change\t" + Std( change.field ) + "\t" + ( change.op == '=' ? std::string( "=" ) : std::string( 1, change.op ) + "=" ) +
+						"\t" + Num( change.value ) + "\n";
+			}
+			else if ( what == "emit" )
+			{
+				String event = String( statement["text"] ).strip_edges();
+				if ( Plain( event ) == false || event.contains( " " ) )
+				{
+					return fail( line + String( "emit names one event" ) );
+				}
+				text += "emit\t" + Std( event ) + "\n";
+			}
+			else if ( what == "end" )
+			{
+				text += "end\n";
+			}
+			else if ( what == "part" )
+			{
+				Dictionary part = statement["part"];
+				Dictionary props = part.get( "properties", Dictionary() );
+				if ( String( part["class"] ) == "CbMove" )
+				{
+					// Parameters from when the step starts: for its seconds, or while it is the step.
+					std::string seconds = double( props.get( "duration", 0.0 ) ) > 0.0 ? "\t" + Num( double( props["duration"] ) ) : std::string();
+					String why;
+					std::string params = ParamLines( props.get( "parameters", Dictionary() ), why );
+					if ( params.empty() )
+					{
+						return fail( line + ( why.is_empty() ? String( "move wants a parameter and a value" ) : why ) );
+					}
+					for ( size_t at = 0; ( at = params.find( '\n', at ) ) != std::string::npos; at += seconds.size() + 1 )
+					{
+						params.insert( at, seconds );
+					}
+					text += params;
+					continue;
+				}
+				// The node it would be, under a motion, baked as one.
+				if ( String( part["class"] ) == "CbLaunch" && int( props.get( "what", 0 ) ) == CbLaunch::WHAT_CARRIED && props.has( "item_kind" ) == false )
+				{
+					props["item_kind"] = kind; // (the item's own)
+				}
+				auto* node = Object::cast_to<CbMotionPart>( ClassDB::instantiate( StringName( String( part["class"] ) ) ) );
+				if ( node == nullptr )
+				{
+					return fail( line + String( "this game has no " ) + String( part["class"] ) );
+				}
+				Array keys = props.keys();
+				for ( int64_t k = 0; k < keys.size(); ++k )
+				{
+					node->set( StringName( String( keys[k] ) ), props[keys[k]] );
+				}
+				CbMotion* holder = memnew( CbMotion );
+				holder->add_child( node );
+				String why;
+				std::string lines = node->Bake( why );
+				holder->remove_child( node );
+				memdelete( node );
+				memdelete( holder );
+				if ( lines.empty() )
+				{
+					return fail( line + why );
+				}
+				text += lines;
+			}
+		}
+	}
+
+	// What the simulation's own compiler says about it.
+	std::vector<Motion> compiled;
+	std::string compileError, ignored;
+	if ( CompileMotionSet( "check", "cinderbox_motions\t3\n" + text, ModSchema{}, compiled, compileError, ignored ) == false )
+	{
+		size_t colon = compileError.find( ": " );
+		std::string why = compileError.substr( colon == std::string::npos ? 0 : colon + 2 );
+		std::string prefix = "check/" + Std( name ) + ": ";
+		if ( why.rfind( prefix, 0 ) == 0 )
+		{
+			why = why.substr( prefix.size() );
+		}
+		return fail( String::utf8( why.c_str() ) );
+	}
+	return text;
+}
+
+bool BakeSheetMotions( const Node* node, const String& kind, std::string& lines, std::vector<std::string>& names, String& error )
+{
+	TypedArray<Node> sheets = node->find_children( "*", "CbRules", true, false );
+	for ( int64_t s = 0; s < sheets.size(); ++s )
+	{
+		String file = Object::cast_to<Node>( sheets[s] )->get( "file" );
+		if ( file.is_empty() || FileAccess::file_exists( file ) == false )
+		{
+			continue;
+		}
+		PackedStringArray problems;
+		const String text = FileAccess::get_file_as_string( file );
+		std::vector<cue::Rule> rules = cue::ParseRules( text, problems );
+		// A sheet with motion blocks bakes only without a mistake: one it could not read would be a
+		// motion silently left out.
+		const bool hasMotions = text.begins_with( "motion " ) || text.contains( "\nmotion " ) || text.contains( "\nmotion\t" );
+		if ( hasMotions && problems.is_empty() == false )
+		{
+			error = file + " " + problems[0];
+			return false;
+		}
+		for ( const cue::Rule& rule : rules )
+		{
+			if ( rule.type != "motion" )
+			{
+				continue;
+			}
+			String why;
+			std::string baked = BakeSheetMotion( rule.properties, kind, why );
+			if ( baked.empty() )
+			{
+				// (A statement's mistake says its line; the rest are the motion's first line's.)
+				error = file + ( why.begins_with( "line " ) ? " " + why : " line " + String::num_int64( rule.line ) + ": " + why );
+				return false;
+			}
+			std::string name = Std( String( rule.properties["name"] ) );
+			if ( std::find( names.begin(), names.end(), name ) != names.end() )
+			{
+				error = file + " line " + String::num_int64( rule.line ) + ": there is a motion named " + String( name.c_str() ) + " already";
+				return false;
+			}
+			names.push_back( name );
+			lines += baked;
+		}
+	}
+	return true;
+}
+
 // --- CbLaunch ---------------------------------------------------------------------------------------
 
 void CbLaunch::_bind_methods()
@@ -1090,6 +1367,7 @@ std::string CbMotionSet::Bake( String& error ) const
 	}
 	std::string text = "cinderbox_motions\t2\n# Baked from the CbMotion nodes of a CbMotionSet. Edit the scene and bake again.\n";
 	int count = 0;
+	std::vector<std::string> names;
 	for ( int i = 0; i < get_child_count(); ++i )
 	{
 		auto* motion = Object::cast_to<CbMotion>( get_child( i ) );
@@ -1110,6 +1388,20 @@ std::string CbMotionSet::Bake( String& error ) const
 		}
 		text += lines;
 		count += 1;
+		names.push_back( Std( String( motion->get_name() ) ) );
+	}
+	// The motion blocks of its rules sheets (a CbRules under it): a file of version 3.
+	std::string sheetLines;
+	size_t before = names.size();
+	if ( BakeSheetMotions( this, String(), sheetLines, names, error ) == false )
+	{
+		return std::string();
+	}
+	if ( sheetLines.empty() == false )
+	{
+		text.replace( 0, std::string( "cinderbox_motions\t2" ).size(), "cinderbox_motions\t3" );
+		text += sheetLines;
+		count += int( names.size() - before );
 	}
 	if ( count > kMotionLimit )
 	{
@@ -1124,10 +1416,11 @@ Dictionary CbMotionSet::bake() const
 	Dictionary result;
 	String error;
 	std::string text = Bake( error );
+	// (How many: its lines that start one.)
 	int motions = 0;
-	for ( int i = 0; i < get_child_count(); ++i )
+	for ( size_t at = text.find( "\nmotion\t" ); at != std::string::npos; at = text.find( "\nmotion\t", at + 1 ) )
 	{
-		motions += Object::cast_to<CbMotion>( get_child( i ) ) != nullptr ? 1 : 0;
+		motions += 1;
 	}
 	result["text"] = String::utf8( text.c_str() );
 	result["error"] = text.empty() ? error : String();

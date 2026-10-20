@@ -45,6 +45,19 @@
 //   emit        a mod event at the player: looks react to it, state machines enter on it, server
 //               mods hear it
 //
+// Steps (a rules sheet's motion block: docs/rules-language.md):
+//   step        what comes after the step before: it starts once its wait is over (`after` seconds
+//               since the step before started, then `when` its condition holds), at the earliest the
+//               tick after. With `within`, a wait that takes longer gives up: the step's timeout step
+//               runs (once statements only) and the motion ends; without one, it just ends
+//   guard       the statements below it count only if its condition held when the step started (a
+//               sheet's if / else), decided once, so a lasting one holds for the whole step
+//   end         the motion ends after this tick
+// A motion with steps is on until it ends: its `duration`, its `until`, an `end`, a timeout, or
+// its last step's longest `for` (a move's seconds) run out. Without steps it is as it always was.
+// Its once statements (impulses, launches, changes, emits) happen when their step starts; its
+// lasting ones (forces, links, parameters) act while it is the step (a parameter: for its seconds).
+//
 // A target is who an effect acts on: the player itself, what the motion's probe found, or the
 // entity a field of the player names (a NetId a server mod wrote there: who it is bound to).
 //
@@ -141,6 +154,8 @@ struct MotionEffect
 	float lift = 0.0f;
 	float ahead = 0.7f;
 	float seconds = 0.0f;
+	// The step's guard it is under (MotionStep::guards), -1: none.
+	int8_t guard = -1;
 };
 
 // What a probe may hold on to: the level (anything static: map pieces, a static entity, a wall that
@@ -153,14 +168,13 @@ inline constexpr uint8_t kProbeHoldsAll = 7;
 // A motion slot's untilTick for one that lasts until something ends it.
 inline constexpr uint32_t kForever = 0xFFFFFFFFu;
 
-struct Motion
+// How many guards (a sheet's if / else) a step may have: a bit each in its slot.
+inline constexpr int kMotionGuards = 16;
+// How many steps a motion may have.
+inline constexpr int kMotionSteps = 64;
+
+struct MotionStep
 {
-	enum class When : uint8_t
-	{
-		Press = 0, // `action` goes down
-		While = 1, // every tick `condition` holds
-		Event = 2, // the mod event `trigger` was recorded at the player this tick
-	};
 	enum class ChangeOp : uint8_t
 	{
 		Set = 0,
@@ -173,17 +187,57 @@ struct Motion
 		BoardType type = BoardType::Int;
 		ChangeOp op = ChangeOp::Set;
 		float value = 0.0f;
+		int8_t guard = -1;
 	};
 	struct Param
 	{
 		uint8_t param = 0; // MoveParam
 		float value = 0.0f;
+		float seconds = 0.0f; // from when the step starts; 0: while it is the step
+		int8_t guard = -1;
 	};
+	struct Emit
+	{
+		int event = -1; // schema event; -1: no mod declared it (nothing is emitted)
+		int8_t guard = -1;
+	};
+
+	// How it is reached (not the first step): `after` seconds since the step before started, then
+	// when `wait` holds. `within`: seconds after which the wait gives up (0: never).
+	AnimExpr wait;
+	float after = 0.0f;
+	float within = 0.0f;
+	bool timeout = false; // the step a wait that gave up runs: once statements, then the motion ends
+	int next = -1;		  // the step after this one (-1: the last)
+	int onTimeout = -1;	  // this step's timeout step, when its wait gives up (-1: the motion ends)
+	float length = 0.0f;  // its longest parameter's seconds: how long a last step keeps the motion on
+
+	std::vector<AnimExpr> guards; // decided when the step starts: a bit each in the slot
+	std::vector<Param> params;
+	std::vector<Change> changes;
+	std::vector<Emit> emits;
+	std::vector<int8_t> ends;		   // an "end" each, under a guard (-1: none)
+	std::vector<MotionEffect> effects; // in the order of the nodes
+};
+
+struct Motion
+{
+	enum class When : uint8_t
+	{
+		Press = 0, // `action` goes down
+		While = 1, // every tick `condition` holds
+		Event = 2, // the mod event `trigger` was recorded at the player this tick
+		Edge = 3,  // once, on the tick `edge` turns true (it was false on the tick before)
+	};
+	using ChangeOp = MotionStep::ChangeOp;
+	using Change = MotionStep::Change;
+	using Param = MotionStep::Param;
 
 	std::string name; // "dash.moves/Dash": the set and the node
 	When when = When::Press;
 	int action = -1;  // When::Press. -1: no mod declared it, so it never happens
 	int trigger = -1; // When::Event: the schema event. -1: no mod declared it, so it never happens
+	AnimExpr edge;	  // When::Edge
 	AnimExpr condition;
 	float cooldown = 0.0f;
 	uint32_t uses = 0;			 // 0: no limit
@@ -191,9 +245,6 @@ struct Motion
 	float refillSeconds = 0.0f;	 // ... or this long after the last use (0: never by time)
 	float duration = 0.0f;
 	AnimExpr until; // ends it; with one (or a probe) a press keeps it on until then
-	std::vector<Param> params;
-	std::vector<Change> changes;
-	int event = -1; // schema event, -1: none (or no mod declared it)
 	// A probe (When::Press and When::Event): thrown when the motion happens.
 	bool probe = false;
 	float probeRange = 0.0f;  // metres the line reaches
@@ -201,12 +252,19 @@ struct Motion
 	int holdEvent = -1;		  // schema event said where and when the probe takes hold; -1: none
 	// What it may hold on to (kProbeHolds bits). Something else in its way stops it: it holds nothing.
 	uint8_t probeHolds = kProbeHoldsAll;
-	std::vector<MotionEffect> effects; // in the order of the nodes
+	// What it does, step by step: the first is what happens when it starts. Never empty.
+	std::vector<MotionStep> steps = std::vector<MotionStep>( 1 );
 
-	// On from when it starts until something ends it (its condition, what its probe holds going away).
+	// On from when it starts until something ends it (its condition, what its probe holds going away,
+	// a wait for its next step).
 	bool Held() const
 	{
-		return when != When::While && ( probe || until.Empty() == false );
+		return when != When::While && ( probe || until.Empty() == false || steps.size() > 1 );
+	}
+	// What it does when it starts (and all it does, without steps).
+	const MotionStep& First() const
+	{
+		return steps.front();
 	}
 };
 
@@ -265,8 +323,13 @@ struct MotionInputs
 struct MotionActive
 {
 	uint16_t index = 0;
-	bool started = false; // this is the tick it took effect: impulses happen now
+	bool started = false; // this is the tick its step took effect: impulses happen now
 };
+
+// The tick a motion's current step took effect (the first: when the motion did, or its probe held).
+uint32_t MotionStepStart( const MotionSlot& slot );
+// Whether a statement under `guard` counts in the slot's step.
+bool MotionGuardHolds( const MotionSlot& slot, int8_t guard );
 
 // Decides the player's motions for one tick, before the mover: which start, which go on, which
 // end. Changes `board` and appends the events they emit (`point` and `tick` are the caller's to
@@ -276,7 +339,7 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 				 bool& boardChanged, std::vector<ModEventRecord>& events, std::vector<MotionActive>& active );
 
 // Lays the movement parameters of the motions that are on at `tick` over `params`, in order.
-void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32_t tick, MoveParams& params );
+void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32_t tick, uint32_t tickRate, MoveParams& params );
 
 // A frame's direction for a player (unit length). MotionFrame::To is the caller's: it is toward a
 // target only the simulation can find.

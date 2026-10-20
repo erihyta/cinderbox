@@ -47,6 +47,7 @@
 #include <godot_cpp/variant/vector3.hpp>
 
 #include <string>
+#include <vector>
 
 namespace cb::gd
 {
@@ -62,6 +63,16 @@ bool InMotion( const godot::Node* node );
 // it has none. `use` is the item's (CbItem::Use); the rest its "When used" rules.
 std::string BakeItemUse( const godot::Node* item, const godot::String& kind, int use, const godot::PackedStringArray& conditions,
 						 const godot::PackedStringArray& changes, double cooldown, const godot::String& emits, godot::String& error );
+
+// A motion block of a rules sheet (cue_rules.h: its properties) as one motion's lines of a motions
+// file of version 3. `kind`: the item whose sheet it is (its "on use", and who may run it: whoever has
+// the item out, or carries it), empty in a motion set's. "" with `error` when it cannot be baked.
+std::string BakeSheetMotion( const godot::Dictionary& motion, const godot::String& kind, godot::String& error );
+
+// The motion blocks of the rules sheets under `node` (a CbRules at any depth), baked: their lines,
+// and their names. False with `error` ("<file> line N: why").
+bool BakeSheetMotions( const godot::Node* node, const godot::String& kind, std::string& lines, std::vector<std::string>& names,
+					   godot::String& error );
 
 class CbMotionPart : public godot::Node
 {

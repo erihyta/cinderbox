@@ -297,6 +297,14 @@ struct MotionSlot
 	uint32_t untilTick = 0; // it is on (its movement parameters hold) while the tick is below this
 	uint32_t used = 0;		// uses since the last refill
 	uint32_t sinceTick = 0; // the tick it took effect (a probe: when it took hold): forces ramp from it
+	// Its steps (a sheet's motion block): the tick its current step started (not the first's: that
+	// is sinceTick), which step, and its guards' answers when it started (a bit each).
+	uint32_t stepTick = 0;
+	uint16_t step = 0;
+	uint16_t guards = 0;
+	// A When::Edge motion's condition on the tick before: bit 0, it was asked; bit 1, it held.
+	uint8_t edge = 0;
+	uint8_t unused[3] = {}; // (no padding the compiler fills: the slots are copied as bytes)
 };
 
 struct MotionState
@@ -420,7 +428,7 @@ CB_CHECK_COMPONENT( Ragdoll, 20 );
 CB_CHECK_COMPONENT( RagdollBodies, 16 * kRagdollParts );
 CB_CHECK_COMPONENT( RagdollPose, 40 * kRagdollParts );
 CB_CHECK_COMPONENT( MoveOverrides, 4 + 4 * kMoveParams );
-CB_CHECK_COMPONENT( MotionSlot, 16 );
+CB_CHECK_COMPONENT( MotionSlot, 28 );
 CB_CHECK_COMPONENT( MotionHold, 48 );
 
 #undef CB_CHECK_COMPONENT

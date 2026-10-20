@@ -92,7 +92,7 @@ bool HeardEvent( int event, const MotionInputs& in )
 	return false;
 }
 
-void ApplyChange( const Motion::Change& change, Blackboard& board )
+void ApplyChange( const MotionStep::Change& change, Blackboard& board )
 {
 	int32_t& stored = board.values[change.slot];
 	if ( change.type == BoardType::Float )
@@ -223,6 +223,9 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 	std::string line;
 	bool header = false;
 	std::vector<Motion> motions;
+	// Per step of the motion being read: its current guard, and its guards' conditions as written.
+	std::vector<int8_t> guards;
+	std::vector<std::vector<std::string>> guardTexts;
 	int number = 0;
 	auto fail = [&]( const std::string& what ) {
 		error = "motions " + set + ", line " + std::to_string( number ) + ": " + what;
@@ -243,9 +246,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		const std::string& key = w[0];
 		if ( header == false )
 		{
-			if ( key != "cinderbox_motions" || w.size() < 2 || w[1] != "2" )
+			// 3: steps, guards, ends, a parameter's seconds, more than one emit, an edge (a sheet's blocks)
+			if ( key != "cinderbox_motions" || w.size() < 2 || ( w[1] != "2" && w[1] != "3" ) )
 			{
-				return fail( "not a motions file (it starts with \"cinderbox_motions\t2\")" );
+				return fail( "not a motions file (it starts with \"cinderbox_motions\t2\" or 3)" );
 			}
 			header = true;
 			continue;
@@ -259,6 +263,8 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			Motion m;
 			m.name = set + "/" + w[1];
 			motions.push_back( m );
+			guards.assign( 1, -1 );
+			guardTexts.assign( 1, {} );
 			continue;
 		}
 		if ( motions.empty() )
@@ -266,11 +272,32 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			return fail( "\"" + key + "\" before the first motion" );
 		}
 		Motion& m = motions.back();
+		MotionStep& step = m.steps.back();
+		// The step's guard for what follows ("guard": none), as its bit.
+		int8_t& guard = guards.back();
+		// What a motion as a whole says comes before its first step's statements end.
+		auto whole = [&]() {
+			return m.steps.size() == 1 ? true : fail( "\"" + key + "\" is the motion's: before its first \"step\"" );
+		};
 		if ( key == "when" )
 		{
+			if ( whole() == false )
+			{
+				return false;
+			}
 			if ( w.size() >= 2 && w[1] == "while" )
 			{
 				m.when = Motion::When::While;
+				continue;
+			}
+			if ( w.size() >= 2 && w[1] == "edge" )
+			{
+				std::string exprError;
+				m.when = Motion::When::Edge;
+				if ( w.size() < 3 || CompileAnimExpr( w[2], schema, m.edge, exprError, warnings ) == false )
+				{
+					return fail( "when edge: " + ( w.size() < 3 ? std::string( "a condition" ) : exprError ) );
+				}
 				continue;
 			}
 			if ( w.size() >= 3 && w[1] == "event" && w[2].empty() == false )
@@ -308,6 +335,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		}
 		else if ( key == "if" || key == "until" )
 		{
+			if ( whole() == false )
+			{
+				return false;
+			}
 			std::string exprError;
 			if ( w.size() < 2 || CompileAnimExpr( w[1], schema, key == "if" ? m.condition : m.until, exprError, warnings ) == false )
 			{
@@ -316,6 +347,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		}
 		else if ( key == "cooldown" )
 		{
+			if ( whole() == false )
+			{
+				return false;
+			}
 			if ( w.size() < 2 || Number( w[1], 0.0f, kMaxMotionSeconds, m.cooldown ) == false )
 			{
 				return fail( "cooldown wants seconds, 0 to 3600" );
@@ -323,6 +358,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		}
 		else if ( key == "duration" )
 		{
+			if ( whole() == false )
+			{
+				return false;
+			}
 			if ( w.size() < 2 || Number( w[1], 0.0f, kMaxMotionSeconds, m.duration ) == false )
 			{
 				return fail( "duration wants seconds, 0 to 3600" );
@@ -330,6 +369,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		}
 		else if ( key == "uses" )
 		{
+			if ( whole() == false )
+			{
+				return false;
+			}
 			float uses = 0.0f;
 			if ( w.size() < 3 || Number( w[1], 0.0f, float( kMaxMotionUses ), uses ) == false )
 			{
@@ -344,6 +387,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		}
 		else if ( key == "probe" )
 		{
+			if ( whole() == false )
+			{
+				return false;
+			}
 			if ( w.size() < 3 || Number( w[1], 1.0f, 500.0f, m.probeRange ) == false || Number( w[2], 0.0f, 1000.0f, m.probeTravel ) == false )
 			{
 				return fail( "probe wants its range (1 to 500 m) and its travel speed (m/s, 0: at once)" );
@@ -352,6 +399,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		}
 		else if ( key == "holds" )
 		{
+			if ( whole() == false )
+			{
+				return false;
+			}
 			// holds <level|bodies|players>...
 			m.probeHolds = 0;
 			for ( size_t k = 1; k < w.size(); ++k )
@@ -386,11 +437,12 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 							 "it replaces (none, vertical, horizontal, all)" );
 			}
 			e.replace = MotionEffect::Replace( replace );
+			e.guard = guard;
 			if ( e.frame == MotionFrame::World && ParseWorld( w, 5, e.direction ) == false )
 			{
 				return fail( "a world frame wants its direction: x y z, each -1 to 1, not all zero" );
 			}
-			m.effects.push_back( e );
+			step.effects.push_back( e );
 		}
 		else if ( key == "force" )
 		{
@@ -408,11 +460,12 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			e.push = MotionEffect::Push( push );
 			e.react = w[7] == "1";
+			e.guard = guard;
 			if ( e.frame == MotionFrame::World && ParseWorld( w, 8, e.direction ) == false )
 			{
 				return fail( "a world frame wants its direction: x y z, each -1 to 1, not all zero" );
 			}
-			m.effects.push_back( e );
+			step.effects.push_back( e );
 		}
 		else if ( key == "link" )
 		{
@@ -428,7 +481,8 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 							 "takes hold), a reel (m/s) and, if it acts on the player alone, 0" );
 			}
 			e.react = w.size() <= 4 || w[4] == "1";
-			m.effects.push_back( e );
+			e.guard = guard;
+			step.effects.push_back( e );
 		}
 		else if ( key == "launch" || key == "launch_carried" )
 		{
@@ -455,18 +509,23 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			{
 				warnings += m.name + ": no mod declares the item kind \"" + w[1] + "\": nothing is launched; ";
 			}
-			m.effects.push_back( e );
+			e.guard = guard;
+			step.effects.push_back( e );
 		}
 		else if ( key == "param" )
 		{
+			// param <name> <value> [seconds from when the step starts]
 			int param = w.size() >= 3 ? MoveParamByName( w[1].c_str() ) : -1;
 			Motion::Param p;
-			if ( param < 0 || Number( w[2], MoveParamInfoOf( param ).min, MoveParamInfoOf( param ).max, p.value ) == false )
+			if ( param < 0 || Number( w[2], MoveParamInfoOf( param ).min, MoveParamInfoOf( param ).max, p.value ) == false ||
+				 ( w.size() > 3 && Number( w[3], 0.0f, kMaxMotionSeconds, p.seconds ) == false ) )
 			{
-				return fail( "param wants a movement parameter and a value in its range" );
+				return fail( "param wants a movement parameter, a value in its range and, if it holds for less than its step, seconds" );
 			}
 			p.param = uint8_t( param );
-			m.params.push_back( p );
+			p.guard = guard;
+			step.params.push_back( p );
+			step.length = std::max( step.length, p.seconds );
 		}
 		else if ( key == "change" )
 		{
@@ -484,10 +543,15 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			change.slot = field->slot;
 			change.type = field->type;
-			m.changes.push_back( change );
+			change.guard = guard;
+			step.changes.push_back( change );
 		}
 		else if ( key == "hold_emit" )
 		{
+			if ( whole() == false )
+			{
+				return false;
+			}
 			if ( w.size() < 2 || w[1].empty() )
 			{
 				return fail( "hold_emit wants an event" );
@@ -504,11 +568,87 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			{
 				return fail( "emit wants an event" );
 			}
-			m.event = schema.FindEvent( w[1] );
-			if ( m.event < 0 )
+			MotionStep::Emit emit;
+			emit.event = schema.FindEvent( w[1] );
+			emit.guard = guard;
+			if ( emit.event < 0 )
 			{
 				warnings += m.name + ": no mod declares the event \"" + w[1] + "\": nothing is emitted; ";
 			}
+			step.emits.push_back( emit );
+		}
+		else if ( key == "end" )
+		{
+			step.ends.push_back( guard );
+		}
+		else if ( key == "guard" )
+		{
+			// guard [condition]: what follows counts only if it held when the step started; none: all
+			// of it does. One condition is one bit, however often it is named.
+			if ( w.size() < 2 || w[1].empty() )
+			{
+				guard = -1;
+				continue;
+			}
+			std::vector<std::string>& texts = guardTexts.back();
+			auto known = std::find( texts.begin(), texts.end(), w[1] );
+			if ( known != texts.end() )
+			{
+				guard = int8_t( known - texts.begin() );
+				continue;
+			}
+			if ( int( texts.size() ) >= kMotionGuards )
+			{
+				return fail( "a step has at most " + std::to_string( kMotionGuards ) + " conditions (if, else)" );
+			}
+			AnimExpr expr;
+			std::string exprError;
+			if ( CompileAnimExpr( w[1], schema, expr, exprError, warnings ) == false )
+			{
+				return fail( "guard: " + exprError );
+			}
+			guard = int8_t( texts.size() );
+			texts.push_back( w[1] );
+			step.guards.push_back( expr );
+		}
+		else if ( key == "step" || key == "timeout" )
+		{
+			// step <after seconds> <within seconds> [condition]: what comes once its wait is over.
+			// timeout: what the step before runs when its wait gives up.
+			if ( int( m.steps.size() ) >= kMotionSteps )
+			{
+				return fail( "a motion has at most " + std::to_string( kMotionSteps ) + " steps" );
+			}
+			MotionStep next;
+			if ( key == "timeout" )
+			{
+				if ( step.within <= 0.0f || step.timeout || m.steps.size() < 2 )
+				{
+					return fail( "timeout comes right after a step that waits within some seconds" );
+				}
+				next.timeout = true;
+			}
+			else
+			{
+				if ( w.size() < 3 || Number( w[1], 0.0f, kMaxMotionSeconds, next.after ) == false ||
+					 Number( w[2], 0.0f, kMaxMotionSeconds, next.within ) == false )
+				{
+					return fail( "step wants its seconds after the step before (0: none), the seconds its wait may take (0: any) and, if it "
+								 "waits for one, a condition" );
+				}
+				std::string exprError;
+				if ( w.size() > 3 && w[3].empty() == false && CompileAnimExpr( w[3], schema, next.wait, exprError, warnings ) == false )
+				{
+					return fail( "step: " + exprError );
+				}
+				if ( next.within > 0.0f && next.wait.Empty() )
+				{
+					return fail( "a step that gives up within some seconds waits for a condition" );
+				}
+			}
+			m.steps.push_back( next );
+			guards.push_back( -1 );
+			guardTexts.emplace_back();
 		}
 		else
 		{
@@ -518,7 +658,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 	if ( header == false )
 	{
 		number = 1;
-		return fail( "not a motions file (it starts with \"cinderbox_motions\t2\")" );
+		return fail( "not a motions file (it starts with \"cinderbox_motions\t2\" or 3)" );
 	}
 	for ( Motion& m : motions )
 	{
@@ -530,16 +670,48 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		{
 			return wrong( "a probe is thrown by a press or an event, not by a while motion" );
 		}
-		for ( const MotionEffect& e : m.effects )
+		if ( m.when == Motion::When::While && m.steps.size() > 1 )
 		{
-			bool needsHit = e.target.kind == MotionTarget::Kind::Hit || ( e.frame == MotionFrame::To && e.target.kind != MotionTarget::Kind::Field );
-			if ( needsHit && m.probe == false )
+			return wrong( "a while motion has no steps: it starts again on every tick its condition holds" );
+		}
+		for ( size_t s = 0; s < m.steps.size(); ++s )
+		{
+			MotionStep& step = m.steps[s];
+			for ( const MotionEffect& e : step.effects )
 			{
-				return wrong( "an effect on \"hit\", or along \"to\", needs the motion to have a probe (or a target that is a field)" );
+				bool needsHit = e.target.kind == MotionTarget::Kind::Hit || ( e.frame == MotionFrame::To && e.target.kind != MotionTarget::Kind::Field );
+				if ( needsHit && m.probe == false )
+				{
+					return wrong( "an effect on \"hit\", or along \"to\", needs the motion to have a probe (or a target that is a field)" );
+				}
+				if ( e.kind == MotionEffect::Kind::Link && e.length <= 0.0f && m.probe == false )
+				{
+					return wrong( "a link without a probe needs a length" );
+				}
+				if ( step.timeout && ( e.kind == MotionEffect::Kind::Force || e.kind == MotionEffect::Kind::Link ) )
+				{
+					return wrong( "a timeout's statements happen once (no force, link or parameter): the motion ends after it" );
+				}
 			}
-			if ( e.kind == MotionEffect::Kind::Link && e.length <= 0.0f && m.probe == false )
+			if ( step.timeout && step.params.empty() == false )
 			{
-				return wrong( "a link without a probe needs a length" );
+				return wrong( "a timeout's statements happen once (no force, link or parameter): the motion ends after it" );
+			}
+			// The step after this one: the next that is not a timeout; its timeout, the one right after.
+			if ( step.timeout == false )
+			{
+				for ( size_t n = s + 1; n < m.steps.size() && step.next < 0; ++n )
+				{
+					step.next = m.steps[n].timeout ? -1 : int( n );
+					if ( m.steps[n].timeout == false )
+					{
+						break;
+					}
+				}
+			}
+			if ( s + 1 < m.steps.size() && m.steps[s + 1].timeout )
+			{
+				step.onTimeout = int( s + 1 );
 			}
 		}
 		if ( m.when != Motion::When::While )
@@ -547,12 +719,13 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			continue;
 		}
 		// Per second, a whole number never moves: a tick's share of it rounds to nothing.
-		for ( size_t i = m.changes.size(); i-- > 0; )
+		std::vector<Motion::Change>& changes = m.steps.front().changes;
+		for ( size_t i = changes.size(); i-- > 0; )
 		{
-			if ( m.changes[i].op != Motion::ChangeOp::Set && m.changes[i].type != BoardType::Float )
+			if ( changes[i].op != Motion::ChangeOp::Set && changes[i].type != BoardType::Float )
 			{
 				warnings += m.name + ": a while motion's += and -= are per second and need a Float field: the change is skipped; ";
-				m.changes.erase( m.changes.begin() + std::ptrdiff_t( i ) );
+				changes.erase( changes.begin() + std::ptrdiff_t( i ) );
 			}
 		}
 	}
@@ -659,6 +832,35 @@ std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::str
 	return motions;
 }
 
+namespace
+{
+
+// A step's guards as they are now: a bit each.
+uint16_t GuardBits( const MotionStep& step, const AnimGraphInputs& values )
+{
+	uint16_t bits = 0;
+	for ( size_t g = 0; g < step.guards.size(); ++g )
+	{
+		if ( EvaluateAnimExpr( step.guards[g], values, 0.0f ) != 0.0f )
+		{
+			bits = uint16_t( bits | ( 1u << g ) );
+		}
+	}
+	return bits;
+}
+
+} // namespace
+
+uint32_t MotionStepStart( const MotionSlot& slot )
+{
+	return slot.step == 0 ? slot.sinceTick : slot.stepTick;
+}
+
+bool MotionGuardHolds( const MotionSlot& slot, int8_t guard )
+{
+	return guard < 0 || ( ( slot.guards >> guard ) & 1u ) != 0;
+}
+
 void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& state, const Character& c, Blackboard& board,
 				 bool& boardChanged, std::vector<ModEventRecord>& events, std::vector<MotionActive>& active )
 {
@@ -695,6 +897,16 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 			}
 		}
 
+		// An edge's condition is asked every tick, so a turn to true is seen whenever it comes (the
+		// first answer is only remembered: a player who spawns standing has not landed).
+		bool turned = false;
+		if ( m.when == Motion::When::Edge )
+		{
+			bool holds = EvaluateAnimExpr( m.edge, *in.values, 0.0f ) != 0.0f;
+			turned = ( slot.edge & 1u ) != 0 && ( slot.edge & 2u ) == 0 && holds;
+			slot.edge = uint8_t( 1u | ( holds ? 2u : 0u ) );
+		}
+
 		bool starts = in.canAct;
 		if ( starts && m.when == Motion::When::Press )
 		{
@@ -703,6 +915,10 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		else if ( starts && m.when == Motion::When::Event )
 		{
 			starts = m.trigger >= 0 && HeardEvent( m.trigger, in );
+		}
+		else if ( starts && m.when == Motion::When::Edge )
+		{
+			starts = turned;
 		}
 		// One that is held does not start again while it is on.
 		starts = starts && ( on == false || m.Held() == false );
@@ -716,22 +932,26 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 			starts = false;
 		}
 
-		if ( starts )
-		{
-			for ( const Motion::Change& change : m.changes )
+		// A step's once statements: its changes, its emits, its ends (in that order).
+		auto onceStatements = [&]( const MotionStep& step, bool perSecond, bool firstOfWhile ) {
+			for ( const MotionStep::Change& change : step.changes )
 			{
-				if ( isWhile == false )
+				if ( MotionGuardHolds( slot, change.guard ) == false )
+				{
+					continue;
+				}
+				if ( perSecond == false )
 				{
 					ApplyChange( change, board );
 				}
 				else if ( change.op != Motion::ChangeOp::Set )
 				{
 					// Per second.
-					Motion::Change step = change;
-					step.value = change.value * dt;
-					ApplyChange( step, board );
+					MotionStep::Change part = change;
+					part.value = change.value * dt;
+					ApplyChange( part, board );
 				}
-				else if ( wasOn == false )
+				else if ( firstOfWhile )
 				{
 					ApplyChange( change, board );
 				}
@@ -742,12 +962,33 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 				boardChanged = true;
 			}
 			// When it happens; for a while motion, when it starts.
-			if ( m.event >= 0 && wasOn == false )
+			for ( const MotionStep::Emit& emit : step.emits )
 			{
-				ModEventRecord record;
-				record.type = uint16_t( m.event );
-				events.push_back( record );
+				if ( emit.event >= 0 && ( perSecond == false || firstOfWhile ) && MotionGuardHolds( slot, emit.guard ) )
+				{
+					ModEventRecord record;
+					record.type = uint16_t( emit.event );
+					events.push_back( record );
+				}
 			}
+			bool ends = false;
+			for ( int8_t guard : step.ends )
+			{
+				ends = ends || MotionGuardHolds( slot, guard );
+			}
+			return ends;
+		};
+
+		bool entered = false;
+		if ( starts )
+		{
+			const MotionStep& first = m.steps.front();
+			if ( isWhile == false || wasOn == false )
+			{
+				slot.step = 0;
+				slot.guards = GuardBits( first, *in.values );
+			}
+			bool ends = onceStatements( first, isWhile, wasOn == false );
 
 			slot.lastTick = now;
 			if ( isWhile )
@@ -766,6 +1007,51 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 				slot.sinceTick = effectTick;
 				uint32_t length = Ticks( m.duration, in.tickRate );
 				slot.untilTick = m.Held() && length == 0 ? kForever : effectTick + length;
+				if ( ends )
+				{
+					slot.untilTick = std::min( slot.untilTick, effectTick + 1 );
+				}
+			}
+		}
+		else if ( on && m.steps.size() > 1 && in.tick >= slot.sinceTick && size_t( slot.step ) < m.steps.size() )
+		{
+			// Waiting for its next step (once its first took effect: a probe has to hold first).
+			const int nextIndex = m.steps[slot.step].next;
+			if ( nextIndex >= 0 )
+			{
+				const MotionStep& next = m.steps[size_t( nextIndex )];
+				const uint32_t waited = in.tick - MotionStepStart( slot );
+				bool ready = waited >= std::max<uint32_t>( 1, Ticks( next.after, in.tickRate ) ) &&
+							 ( next.wait.Empty() || EvaluateAnimExpr( next.wait, *in.values, 0.0f ) != 0.0f );
+				int enter = ready ? nextIndex : -1;
+				if ( ready == false && next.within > 0.0f && waited >= Ticks( next.within, in.tickRate ) )
+				{
+					// It gave up: its timeout, if it has one, then the end.
+					enter = next.onTimeout;
+					if ( enter < 0 )
+					{
+						slot.untilTick = in.tick;
+						on = false;
+					}
+				}
+				if ( enter >= 0 )
+				{
+					const MotionStep& step = m.steps[size_t( enter )];
+					slot.step = uint16_t( enter );
+					slot.stepTick = in.tick;
+					slot.guards = GuardBits( step, *in.values );
+					bool ends = onceStatements( step, false, false );
+					entered = true;
+					if ( step.timeout || ends )
+					{
+						slot.untilTick = std::min( slot.untilTick, in.tick + 1 );
+					}
+					else if ( step.next < 0 && m.duration <= 0.0f && m.until.Empty() && m.probe == false )
+					{
+						// The last step: on for its longest parameter's seconds (one tick at least).
+						slot.untilTick = in.tick + std::max<uint32_t>( 1, Ticks( step.length, in.tickRate ) );
+					}
+				}
 			}
 		}
 
@@ -774,21 +1060,29 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		bool startsNow = slot.lastTick != 0 && slot.sinceTick == in.tick && ( starts || isWhile == false );
 		if ( inEffect || ( starts && slot.sinceTick == in.tick ) )
 		{
-			active.push_back( { uint8_t( i ), startsNow } );
+			active.push_back( { uint16_t( i ), startsNow || entered } );
 		}
 	}
 	state.prevActions = in.input->actions;
 }
 
-void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32_t tick, MoveParams& params )
+void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32_t tick, uint32_t tickRate, MoveParams& params )
 {
 	for ( size_t i = 0; i < motions.list.size(); ++i )
 	{
 		const MotionSlot slot = state.slots[i];
-		if ( slot.lastTick != 0 && slot.sinceTick <= tick && tick < slot.untilTick )
+		const Motion& m = motions.list[i];
+		if ( slot.lastTick != 0 && slot.sinceTick <= tick && tick < slot.untilTick && size_t( slot.step ) < m.steps.size() )
 		{
-			for ( const Motion::Param& p : motions.list[i].params )
+			const MotionStep& step = m.steps[slot.step];
+			for ( const Motion::Param& p : step.params )
 			{
+				// Under a guard that did not hold; past its seconds.
+				if ( MotionGuardHolds( slot, p.guard ) == false ||
+					 ( p.seconds > 0.0f && tick - MotionStepStart( slot ) >= std::max<uint32_t>( 1, Ticks( p.seconds, tickRate ) ) ) )
+				{
+					continue;
+				}
 				params.values[p.param] = p.value;
 			}
 		}
