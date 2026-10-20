@@ -112,7 +112,60 @@ func _run() -> void:
 	_check("by default: whoever has it out", item_text.contains("motion\tSpin\nwhen\tpress\tspin\nif\t( test.hammer )\n"))
 	item.free()
 
+	# Finds: a region drawn in the scene (an Area3D, a box ahead), or one written in the line.
+	_scratch("motion Wave on press wave\n\tfind Wave players bodies\n\t\timpulse 9 along away\n\t\timpulse 4 along up\n" +
+		"\t\tmove for 1 walk_speed 0\n\t\temit wave.hit\n" +
+		"motion Poke on press poke\n\tfind Cone players max 1 along look\n\t\temit poke.hit\n" +
+		"motion Near on press near\n\tif not grounded\n\t\tfind sphere 2 self\n\t\t\timpulse 3 on self along up\n\temit near.done\n")
+	var finds := _set_with(SCRATCH, false)
+	var region := Area3D.new()
+	region.name = "Wave"
+	var ball := CollisionShape3D.new()
+	var sphere := SphereShape3D.new()
+	sphere.radius = 4.0
+	ball.shape = sphere
+	ball.position = Vector3(0, 1, 0)
+	region.add_child(ball)
+	finds.add_child(region)
+	var cone := CollisionShape3D.new()
+	cone.name = "Cone"
+	var box := BoxShape3D.new()
+	box.size = Vector3(1, 2, 2.5)
+	cone.shape = box
+	cone.position = Vector3(0, 1, -1.75)  # ahead: Godot's forward is -Z
+	finds.add_child(cone)
+	var found: Dictionary = finds.bake()
+	var found_text := String(found["text"])
+	_check("finds bake", found_text.is_empty() == false, String(found["error"]))
+	_check("a region: its sphere, then what happens to each", found_text.contains("motion\tWave\nwhen\tpress\twave\nfind\tall\t0\t16\tfacing\n" +
+		"shape\t4\t0\t1\t0\nimpulse\tfound\t9\taway\tnone\nimpulse\tfound\t4\tup\tnone\nparam\twalk_speed\t0\t1\nemit\twave.hit\nendfind\n"), found_text)
+	_check("a box ahead: turned to the simulation's forward (+Z), players, one, by the look",
+		found_text.contains("find\tplayers\t0\t1\tlook\nshape\t0\t0.5\t0\t3\t-0.5\t0\t3\t0.5\t2\t3\t-0.5\t2\t3\t0.5\t0\t0.5\t"))
+	_check("written in the line, the player itself, under an if",
+		found_text.contains("guard\t( not grounded )\nfind\tall\t1\t16\tfacing\nshape\t2\t0\t1\t0\nimpulse\tself\t3\tup\tnone\nendfind\nguard\nemit\tnear.done\n"))
+	finds.free()
+
+	# A find's region under an item is not part of the item's body.
+	var holder := CbItem.new()
+	holder.kind = "test.wand"
+	var body := CollisionShape3D.new()
+	body.shape = BoxShape3D.new()
+	holder.add_child(body)
+	var zone := Area3D.new()
+	var zone_shape := CollisionShape3D.new()
+	zone_shape.shape = SphereShape3D.new()
+	zone.add_child(zone_shape)
+	holder.add_child(zone)
+	var item_baked: Dictionary = holder.bake()
+	var item_lines := String(item_baked["text"])
+	_check("an Area3D under an item is not its body", item_lines.contains("box") and not item_lines.contains("sphere"), item_lines.substr(0, 400))
+	holder.free()
+
 	# What refuses the bake, with its file and line.
+	_refused("a find of a node that is not there", "motion A on press a\n\tfind Nope\n\t\temit x\n", "line 2: find: no node Nope")
+	_refused("a force inside a find", "motion A on press a\n\tfind sphere 2\n\t\tforce 3\n", "line 3: \"force\" inside a find")
+	_refused("a move inside a find with no seconds", "motion A on press a\n\tfind sphere 2\n\t\tmove walk_speed 0\n", "line 3: a move inside a find")
+	_refused("away outside a find", "motion A on press a\n\timpulse 3 along away\n", "what a find found")
 	_refused("a timeout's lasting statement", "motion A on press a\n\tthen when grounded within 1\n\ttimeout\n\tmove friction 0\n", "happen once")
 	_refused("a line not indented under its motion", "motion A on press a\nemit x\n", "line 2: a motion's lines are indented")
 	_refused("an else with no if", "motion A on press a\n\telse\n", "line 2: an else is under an if")

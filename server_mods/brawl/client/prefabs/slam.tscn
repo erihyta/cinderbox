@@ -1,11 +1,13 @@
 [gd_scene format=3]
 
 ; Ground slam: its slot's key (4), in the air. You dive straight down; where you land, everyone within 5 m is hurt
-; and thrown away from you. 5 s to come back (brawl.cd_slam). The dive and the landing are predicted
-; (slam.rules: a motion block that waits for the ground); the shockwave is still the server mod's
-; (brawl.cpp: no node finds who is near a point yet), so its victims see it a round trip late.
+; and thrown away from you. 5 s to come back (brawl.cd_slam). The dive, the landing and the shockwave
+; are predicted (slam.rules: a motion block that waits for the ground, then finds who is in the
+; Shockwave region); the damage is the brawl mod's (brawl.slam.hit).
 ;   Slam        CbItem     once a press, by its slot's key; what a use does is its sheet's
-;                          (slam.rules): a dive, 25 m/s straight down, then brawl.slam.landed
+;                          (slam.rules): a dive, 25 m/s straight down, then the shockwave
+;   Shockwave   Area3D     the region the landing finds players in: a cylinder 5 m around the feet
+;                          (its shape is not the item's body)
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.1)
@@ -15,6 +17,10 @@ albedo_color = Color(0.8, 0.25, 0.25, 1)
 emission_enabled = true
 emission = Color(0.8, 0.25, 0.25, 1)
 emission_energy_multiplier = 0.6
+
+[sub_resource type="CylinderShape3D" id="Wave"]
+radius = 5.0
+height = 4.0
 
 [sub_resource type="BoxMesh" id="Mesh"]
 material = SubResource("Mat")
@@ -38,6 +44,12 @@ shape = SubResource("Body")
 
 [node name="Mesh" type="MeshInstance3D" parent="."]
 mesh = SubResource("Mesh")
+
+[node name="Shockwave" type="Area3D" parent="."]
+
+[node name="Shape" type="CollisionShape3D" parent="Shockwave"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+shape = SubResource("Wave")
 
 [node name="Rules" type="CbRules" parent="."]
 file = "res://prefabs/slam.rules"

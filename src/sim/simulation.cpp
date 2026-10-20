@@ -324,6 +324,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<Slots>();
 	RegisterSnapComponent<Container>();
 	RegisterSnapComponent<WallPiece>();
+	RegisterSnapComponent<MoveEffects>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -3683,6 +3684,28 @@ MoveParams Simulation::MoveOf( flecs::entity e ) const
 			ApplyMotionParams( *m_motions, GetMotionState( e ), m_globals.tick, m_config.tickRate, params );
 		}
 	}
+	// ... but what another's motion gave it for a while comes after: a slow holds through a dash.
+	if ( const MoveEffects* given = e.try_get<MoveEffects>() )
+	{
+		// The newest last, so it wins (by when it was given, then by place: the same on every machine).
+		int order[kMoveEffects];
+		int count = 0;
+		for ( int i = 0; i < kMoveEffects; ++i )
+		{
+			const MoveEffect& m = given->list[i];
+			if ( m.untilTick != 0 && m.sinceTick <= m_globals.tick && m_globals.tick < m.untilTick && m.param < kMoveParams )
+			{
+				order[count++] = i;
+			}
+		}
+		std::sort( order, order + count, [&]( int a, int b ) {
+			return given->list[a].sinceTick != given->list[b].sinceTick ? given->list[a].sinceTick < given->list[b].sinceTick : a < b;
+		} );
+		for ( int k = 0; k < count; ++k )
+		{
+			params.values[given->list[order[k]].param] = given->list[order[k]].value;
+		}
+	}
 	return params;
 }
 
@@ -3943,47 +3966,20 @@ Simulation::MotionEnd Simulation::ResolveEnd( flecs::entity self, const Transfor
 											   const Blackboard& board ) const
 {
 	MotionEnd end;
-	auto player = [&]( flecs::entity who, MotionEnd::Kind kind ) {
-		end.kind = kind;
-		end.entity = who;
-		end.point = b3Add( kind == MotionEnd::Kind::Self ? t.position : who.get<Transform>().position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
-		end.mass = MoveOf( who )[MoveParam::Mass];
-	};
 	auto entity = [&]( flecs::entity who, const b3Vec3* at ) {
-		if ( who.is_valid() == false )
+		end = EndOf( self, t, who );
+		if ( at != nullptr && ( end.kind == MotionEnd::Kind::Player || end.kind == MotionEnd::Kind::Body ) )
 		{
-			return;
-		}
-		if ( who == self )
-		{
-			player( who, MotionEnd::Kind::Self );
-		}
-		else if ( const Character* other = who.try_get<Character>() )
-		{
-			if ( other->dead == 0 )
-			{
-				player( who, MotionEnd::Kind::Player );
-				end.point = at != nullptr ? *at : end.point;
-			}
-		}
-		else if ( const PhysicsBody* pb = who.try_get<PhysicsBody>(); pb != nullptr && who.has<RagdollBodies>() == false )
-		{
-			b3BodyId body = BodyOf( *pb );
-			if ( b3Body_GetType( body ) == b3_dynamicBody )
-			{
-				end.kind = MotionEnd::Kind::Body;
-				end.entity = who;
-				end.body = body;
-				end.point = at != nullptr ? *at : b3Body_GetWorldCenter( body );
-				end.mass = b3Body_GetMass( body );
-			}
+			end.point = *at;
 		}
 	};
 	switch ( target.kind )
 	{
 		case MotionTarget::Kind::Self:
-			player( self, MotionEnd::Kind::Self );
+			end = EndOf( self, t, self );
 			break;
+		case MotionTarget::Kind::Found:
+			break; // (a find's: RunFind)
 		case MotionTarget::Kind::Hit:
 		{
 			b3Vec3 at = {};
@@ -4008,6 +4004,237 @@ Simulation::MotionEnd Simulation::ResolveEnd( flecs::entity self, const Transfor
 			break;
 	}
 	return end;
+}
+
+Simulation::MotionEnd Simulation::EndOf( flecs::entity self, const Transform& t, flecs::entity who ) const
+{
+	MotionEnd end;
+	if ( who.is_valid() == false )
+	{
+		return end;
+	}
+	auto player = [&]( MotionEnd::Kind kind ) {
+		end.kind = kind;
+		end.entity = who;
+		end.point = b3Add( kind == MotionEnd::Kind::Self ? t.position : who.get<Transform>().position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+		end.mass = MoveOf( who )[MoveParam::Mass];
+	};
+	if ( who == self )
+	{
+		player( MotionEnd::Kind::Self );
+	}
+	else if ( const Character* other = who.try_get<Character>() )
+	{
+		if ( other->dead == 0 )
+		{
+			player( MotionEnd::Kind::Player );
+		}
+	}
+	else if ( const PhysicsBody* pb = who.try_get<PhysicsBody>(); pb != nullptr && who.has<RagdollBodies>() == false )
+	{
+		b3BodyId body = BodyOf( *pb );
+		if ( b3Body_GetType( body ) == b3_dynamicBody )
+		{
+			end.kind = MotionEnd::Kind::Body;
+			end.entity = who;
+			end.body = body;
+			end.point = b3Body_GetWorldCenter( body );
+			end.mass = b3Body_GetMass( body );
+		}
+	}
+	return end;
+}
+
+void Simulation::ImpulseEnd( const MotionEffect& effect, const MotionEnd& target, Character& c, b3Vec3 direction )
+{
+	// What it replaces is taken away first: a jump in the air is the same jump.
+	b3Vec3 had = EndVelocity( target, c );
+	b3Vec3 keep = had;
+	switch ( effect.replace )
+	{
+		case MotionEffect::Replace::None:
+			break;
+		case MotionEffect::Replace::Vertical:
+			keep.y = 0.0f;
+			break;
+		case MotionEffect::Replace::Horizontal:
+			keep.x = 0.0f;
+			keep.z = 0.0f;
+			break;
+		case MotionEffect::Replace::All:
+			keep = { 0.0f, 0.0f, 0.0f };
+			break;
+	}
+	PushEnd( target, c, b3Add( b3Sub( keep, had ), b3MulSV( effect.strength, direction ) ) );
+}
+
+void Simulation::GiveMove( flecs::entity who, uint8_t param, float value, float seconds )
+{
+	MoveEffects given = who.has<MoveEffects>() ? who.get<MoveEffects>() : MoveEffects{};
+	const uint32_t now = m_globals.tick;
+	// A place that is over, else the one given longest ago (the first such: the same everywhere).
+	int place = 0;
+	for ( int i = 0; i < kMoveEffects; ++i )
+	{
+		const MoveEffect& m = given.list[i];
+		if ( m.untilTick == 0 || m.untilTick <= now )
+		{
+			place = i;
+			break;
+		}
+		if ( m.sinceTick < given.list[place].sinceTick )
+		{
+			place = i;
+		}
+	}
+	MoveEffect& m = given.list[place];
+	m = MoveEffect{};
+	m.sinceTick = now;
+	// Its seconds from the next tick, when the mover first reads it (one tick at least).
+	m.untilTick = now + 1 + std::max<uint32_t>( 1, uint32_t( seconds * float( m_config.tickRate ) + 0.5f ) );
+	m.param = param;
+	m.value = value;
+	who.set<MoveEffects>( given );
+}
+
+void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const MotionFind& find,
+						  const MotionEnd& self, const MotionEnd& hit )
+{
+	const uint32_t selfId = e.get<NetId>().value;
+	// The shape, turned as the player faces (or looks), at its feet.
+	b3Quat turn = b3Quat_identity;
+	if ( find.frame == MotionFrame::Facing )
+	{
+		turn = detmath::YawRotation( c.facingYaw );
+	}
+	else if ( find.frame == MotionFrame::Look )
+	{
+		float pitch = float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f );
+		turn = b3MulQuat( detmath::YawRotation( detmath::YawToRadians( in.cameraYaw ) ),
+						  b3MakeQuatFromAxisAngle( b3Vec3{ 1.0f, 0.0f, 0.0f }, -pitch ) );
+	}
+	std::vector<uint32_t>& found = m_findScratch;
+	found.clear();
+	{
+		PhysicsArena::Scope scope( *m_arena );
+		BuildShapeLookup();
+		b3Vec3 points[128];
+		for ( const MotionFind::Piece& piece : find.pieces )
+		{
+			int count = int( std::min<size_t>( piece.points.size(), 128 ) );
+			for ( int i = 0; i < count; ++i )
+			{
+				points[i] = b3RotateVector( turn, piece.points[size_t( i )] );
+			}
+			const b3ShapeProxy proxy = { points, count, piece.radius };
+			b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( 0 ), 0, nullptr };
+			struct Found
+			{
+				const Simulation* sim;
+				std::vector<uint32_t>* out;
+			} ctx{ this, &found };
+			auto each = []( b3ShapeId shape, void* context ) -> bool {
+				auto* f = static_cast<Found*>( context );
+				uint32_t netId = f->sim->NetIdOfShape( shape );
+				if ( netId != 0 )
+				{
+					f->out->push_back( netId );
+				}
+				return true; // all of them
+			};
+			b3World_OverlapShape( m_physicsWorld, t.position, &proxy, filter, each, &ctx );
+		}
+	}
+	// What it may find, nearest first (then by id: the same order on every machine), at most so many.
+	std::sort( found.begin(), found.end() );
+	found.erase( std::unique( found.begin(), found.end() ), found.end() );
+	struct Target
+	{
+		float distance;
+		uint32_t netId;
+		MotionEnd end;
+	};
+	std::vector<Target> targets;
+	for ( uint32_t netId : found )
+	{
+		if ( netId == selfId && find.self == false )
+		{
+			continue;
+		}
+		MotionEnd end = EndOf( e, t, FindEntity( netId ) );
+		bool player = end.kind == MotionEnd::Kind::Player || end.kind == MotionEnd::Kind::Self;
+		if ( end.kind == MotionEnd::Kind::None || ( player && ( find.who & kProbeHoldsPlayers ) == 0 ) ||
+			 ( end.kind == MotionEnd::Kind::Body && ( find.who & kProbeHoldsBodies ) == 0 ) )
+		{
+			continue;
+		}
+		targets.push_back( { b3Distance( end.point, t.position ), netId, end } );
+	}
+	std::sort( targets.begin(), targets.end(),
+			   []( const Target& a, const Target& b ) { return a.distance != b.distance ? a.distance < b.distance : a.netId < b.netId; } );
+	if ( targets.size() > size_t( find.most ) )
+	{
+		targets.resize( size_t( find.most ) );
+	}
+
+	for ( const Target& target : targets )
+	{
+		for ( const MotionEffect& effect : find.effects )
+		{
+			const MotionEnd& on = effect.target.kind == MotionTarget::Kind::Self ? self
+								  : effect.target.kind == MotionTarget::Kind::Hit ? hit
+																				  : target.end;
+			if ( on.kind == MotionEnd::Kind::None || on.kind == MotionEnd::Kind::World )
+			{
+				continue;
+			}
+			b3Vec3 direction = {};
+			float length = 0.0f;
+			if ( effect.frame == MotionFrame::Away )
+			{
+				// Along the ground, from the player out to it; right on top of it, where it faces.
+				b3Vec3 out = b3Sub( target.end.point, t.position );
+				direction = b3GetLengthAndNormalize( &length, b3Vec3{ out.x, 0.0f, out.z } );
+				direction = length < 0.001f ? detmath::YawForward( c.facingYaw ) : direction;
+			}
+			else if ( effect.frame == MotionFrame::To )
+			{
+				direction = b3GetLengthAndNormalize( &length, b3Sub( target.end.point, self.point ) );
+				if ( length < 0.001f )
+				{
+					continue;
+				}
+			}
+			else
+			{
+				direction = MotionDirection( effect.frame, effect.direction, c, in );
+			}
+			ImpulseEnd( effect, on, c, direction );
+		}
+		// A player it found moves as it is given, for its seconds.
+		if ( target.end.kind == MotionEnd::Kind::Player || target.end.kind == MotionEnd::Kind::Self )
+		{
+			for ( const MotionFind::Move& move : find.moves )
+			{
+				GiveMove( target.end.entity, move.param, move.value, move.seconds );
+			}
+		}
+		for ( int event : find.emits )
+		{
+			if ( event < 0 )
+			{
+				continue;
+			}
+			ModEventRecord record;
+			record.type = uint16_t( event );
+			record.netIdA = selfId;
+			record.netIdB = target.netId;
+			record.tick = m_globals.tick;
+			record.point = target.end.point;
+			record.late = 1; // (the motions have run: they hear it next tick)
+			RecordModEvent( record );
+		}
+	}
 }
 
 b3Vec3 Simulation::EndVelocity( const MotionEnd& end, const Character& c ) const
@@ -4141,25 +4368,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				{
 					continue;
 				}
-				// What it replaces is taken away first: a jump in the air is the same jump.
-				b3Vec3 had = EndVelocity( target, c );
-				b3Vec3 keep = had;
-				switch ( effect.replace )
-				{
-					case MotionEffect::Replace::None:
-						break;
-					case MotionEffect::Replace::Vertical:
-						keep.y = 0.0f;
-						break;
-					case MotionEffect::Replace::Horizontal:
-						keep.x = 0.0f;
-						keep.z = 0.0f;
-						break;
-					case MotionEffect::Replace::All:
-						keep = { 0.0f, 0.0f, 0.0f };
-						break;
-				}
-				PushEnd( target, c, b3Add( b3Sub( keep, had ), b3MulSV( effect.strength, direction ) ) );
+				ImpulseEnd( effect, target, c, direction );
 			}
 			else if ( effect.kind == MotionEffect::Kind::Force )
 			{
@@ -4256,6 +4465,17 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				if ( theirs > 0.0f )
 				{
 					PushEnd( target, c, b3MulSV( -impulse * theirs, toward ) );
+				}
+			}
+		}
+		// Its step's finds, when the step starts.
+		if ( on.started )
+		{
+			for ( const MotionFind& find : m.steps[slot.step].finds )
+			{
+				if ( MotionGuardHolds( slot, find.guard ) )
+				{
+					RunFind( e, c, t, in, find, self, hit );
 				}
 			}
 		}

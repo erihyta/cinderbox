@@ -1,5 +1,6 @@
-# The ground slam: a dive straight down, in the air, 5 s apart; and where it lands, said on the tick
-# after it touches the ground, by every simulation (the brawl mod's shockwave answers it).
+# The ground slam: a dive straight down, in the air, 5 s apart. On the tick after it touches the
+# ground, everyone in the Shockwave region (a cylinder 5 m around the feet) is thrown away from it
+# and up, by every simulation: the brawl mod only hurts them (brawl.slam.hit).
 
 motion Slam on use if brawl.cd_slam <= 0 and not grounded
 	lasts 3
@@ -8,3 +9,7 @@ motion Slam on use if brawl.cd_slam <= 0 and not grounded
 	impulse 25 along world direction (0, -1, 0) replace vertical
 	then when grounded
 	emit brawl.slam.landed
+	find Shockwave players
+		impulse 9 along away
+		impulse 4.5 along up
+		emit brawl.slam.hit

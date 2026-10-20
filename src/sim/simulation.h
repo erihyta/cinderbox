@@ -467,6 +467,15 @@ private:
 						  const Blackboard& board ) const;
 	b3Vec3 EndVelocity( const MotionEnd& end, const Character& c ) const;
 	void PushEnd( const MotionEnd& end, Character& c, b3Vec3 change );
+	// The end an entity is (a live player, a dynamic body that is not a ragdoll); None otherwise.
+	MotionEnd EndOf( flecs::entity self, const Transform& t, flecs::entity who ) const;
+	// An impulse on `target` along `direction`, after taking away what it replaces.
+	void ImpulseEnd( const MotionEffect& effect, const MotionEnd& target, Character& c, b3Vec3 direction );
+	// A find of a motion step that starts now: what its shape overlaps, and what happens to each.
+	void RunFind( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const MotionFind& find, const MotionEnd& self,
+				  const MotionEnd& hit );
+	// A movement parameter given to a player for some seconds (MoveEffects).
+	void GiveMove( flecs::entity who, uint8_t param, float value, float seconds );
 	void ApplyMotionEffects( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const MotionState& state,
 							 const Blackboard& board, const std::vector<MotionActive>& active );
 	void ExpireProps();
@@ -566,6 +575,7 @@ private:
 	std::shared_ptr<const Motions> m_motions;
 	std::vector<ModEventRecord> m_motionEvents;
 	std::vector<MotionActive> m_motionActive;
+	std::vector<uint32_t> m_findScratch; // what a find's shape overlaps
 	// What this tick's motions throw (a Launch effect), made once every player has moved: an item
 	// of a kind, where, how fast, whose, and for how long.
 	struct Launched

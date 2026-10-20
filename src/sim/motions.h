@@ -84,6 +84,7 @@ struct MotionTarget
 		Self = 0,  // the player the motion runs for
 		Hit = 1,   // what the motion's probe found (nothing, when that is the world)
 		Field = 2, // the entity whose NetId is in a field of the player (0, or gone: nobody)
+		Found = 3, // inside a find: each thing it found, in turn
 	};
 	Kind kind = Kind::Self;
 	uint16_t slot = 0; // Kind::Field: the board slot
@@ -99,6 +100,7 @@ enum class MotionFrame : uint8_t
 	Up = 3,
 	World = 4, // `direction`, as given
 	To = 5,	   // from the player toward the target (what the probe found; the entity a field names)
+	Away = 6,  // inside a find: from where the player is out to what it found, along the ground
 };
 
 struct MotionEffect
@@ -173,6 +175,37 @@ inline constexpr int kMotionGuards = 16;
 // How many steps a motion may have.
 inline constexpr int kMotionSteps = 64;
 
+// A find (a sheet's "find SHAPE"): everything the shape overlaps when its step starts, each in turn,
+// nearest first. Its shape is in the player's frame (its feet, forward +Z), turned as `frame` says.
+struct MotionFind
+{
+	// A convex piece of the shape: points (a sphere one, a capsule two, a box eight, a hull its own)
+	// and a radius around them.
+	struct Piece
+	{
+		std::vector<b3Vec3> points;
+		float radius = 0.0f;
+	};
+	std::vector<Piece> pieces;
+	MotionFrame frame = MotionFrame::Facing; // Facing, Look (with the pitch) or World (not turned)
+	uint8_t who = kProbeHoldsPlayers | kProbeHoldsBodies; // players, bodies (kProbeHolds bits)
+	bool self = false;								   // the player itself may be found
+	uint8_t most = 16;								   // at most this many, the nearest
+	int8_t guard = -1;
+	// What happens to each: impulses (on what it found, unless they say), emits (with what it found,
+	// at it), and movement parameters given to a player it found for their seconds.
+	std::vector<MotionEffect> effects;
+	std::vector<int> emits;
+	struct Move
+	{
+		uint8_t param = 0;
+		float value = 0.0f;
+		float seconds = 0.0f;
+	};
+	std::vector<Move> moves;
+};
+inline constexpr int kFindMost = 16;
+
 struct MotionStep
 {
 	enum class ChangeOp : uint8_t
@@ -218,6 +251,7 @@ struct MotionStep
 	std::vector<Emit> emits;
 	std::vector<int8_t> ends;		   // an "end" each, under a guard (-1: none)
 	std::vector<MotionEffect> effects; // in the order of the nodes
+	std::vector<MotionFind> finds;	   // after its effects
 };
 
 struct Motion

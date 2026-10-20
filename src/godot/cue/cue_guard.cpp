@@ -44,6 +44,8 @@ const char* const kNodeClasses[] = {
 	"CSGCombiner3D", "Path3D", "PathFollow3D",
 	// Loose bodies for looks only (the simulation's entities never have Godot bodies)
 	"StaticBody3D", "RigidBody3D", "CollisionShape3D",
+	// A region a rules sheet's find reads at the bake (its shapes go into the motions file)
+	"Area3D",
 	// Skeletons and animation
 	"Skeleton3D", "BoneAttachment3D", "LookAtModifier3D", "SpringBoneSimulator3D", "AnimationPlayer", "AnimationTree",
 	// Sound

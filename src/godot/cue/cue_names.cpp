@@ -545,6 +545,18 @@ std::vector<std::pair<int, String>> SheetProblems( const String& text )
 					{
 						check( line, Holds::Changes, PackedStringArray( { String( statement["text"] ) } ), "change" );
 					}
+					else if ( kind == "find" )
+					{
+						Array inside = statement.get( "statements", Array() );
+						for ( int64_t k = 0; k < inside.size(); ++k )
+						{
+							Dictionary each = inside[k];
+							if ( String( each.get( "kind", "" ) ) == "emit" )
+							{
+								check( int( each.get( "line", line ) ), Holds::Event, each["text"], "emit" );
+							}
+						}
+					}
 					else if ( kind == "part" )
 					{
 						Dictionary props = Dictionary( statement["part"] ).get( "properties", Dictionary() );
@@ -588,7 +600,8 @@ const char* const kSheetWords[] = { "on", "while", "predict", "use", "show", "te
 									"held", "change", "stance", "emit", "impulse", "force", "move", "launch", "replace", "along",
 									"direction", "top", "ramp", "react", "for", "new", "carried", "speed", "lift", "ahead", "seconds",
 									"into", "motion", "when", "then", "after", "within", "timeout", "else", "lasts", "until", "uses",
-									"refill", "ground", "item", "hand", "press" };
+									"refill", "ground", "item", "hand", "press", "find", "found", "away", "players", "bodies", "self", "max",
+									"sphere", "box", "capsule" };
 
 } // namespace
 

@@ -124,6 +124,11 @@ bool ParseTarget( const std::string& word, const ModSchema& schema, const std::s
 		out.kind = MotionTarget::Kind::Hit;
 		return true;
 	}
+	if ( word == "found" )
+	{
+		out.kind = MotionTarget::Kind::Found;
+		return true;
+	}
 	if ( word.size() > 1 && word[0] == '@' )
 	{
 		out.kind = MotionTarget::Kind::Field;
@@ -143,8 +148,8 @@ bool ParseTarget( const std::string& word, const ModSchema& schema, const std::s
 
 bool ParseFrame( const std::string& word, MotionFrame& out )
 {
-	static const char* const kFrames[] = { "look", "move", "facing", "up", "world", "to" };
-	for ( int i = 0; i < 6; ++i )
+	static const char* const kFrames[] = { "look", "move", "facing", "up", "world", "to", "away" };
+	for ( int i = 0; i < 7; ++i )
 	{
 		if ( word == kFrames[i] )
 		{
@@ -226,6 +231,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 	// Per step of the motion being read: its current guard, and its guards' conditions as written.
 	std::vector<int8_t> guards;
 	std::vector<std::vector<std::string>> guardTexts;
+	bool inFind = false; // between a "find" and its "endfind": what happens to each thing found
 	int number = 0;
 	auto fail = [&]( const std::string& what ) {
 		error = "motions " + set + ", line " + std::to_string( number ) + ": " + what;
@@ -260,6 +266,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			{
 				return fail( "a motion needs a name" );
 			}
+			if ( inFind )
+			{
+				return fail( "a find ends (endfind) before the next motion" );
+			}
 			Motion m;
 			m.name = set + "/" + w[1];
 			motions.push_back( m );
@@ -279,6 +289,66 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		auto whole = [&]() {
 			return m.steps.size() == 1 ? true : fail( "\"" + key + "\" is the motion's: before its first \"step\"" );
 		};
+		// --- a find: its shape, then what happens to each thing it found, then endfind
+		if ( key == "find" )
+		{
+			// find <players|bodies|all> <self 0|1> <at most> <facing|look|world>
+			if ( inFind )
+			{
+				return fail( "a find inside a find" );
+			}
+			MotionFind find;
+			find.who = w.size() >= 2 ? ( w[1] == "players" ? kProbeHoldsPlayers : w[1] == "bodies" ? kProbeHoldsBodies : w[1] == "all" ? uint8_t( kProbeHoldsPlayers | kProbeHoldsBodies ) : 0 ) : 0;
+			float most = 0.0f;
+			if ( w.size() < 5 || find.who == 0 || ( w[2] != "0" && w[2] != "1" ) || Number( w[3], 1.0f, float( kFindMost ), most ) == false ||
+				 ( w[4] != "facing" && w[4] != "look" && w[4] != "world" ) )
+			{
+				return fail( "find wants who (players, bodies, all), whether the player itself counts (0 or 1), at most how many (1 to " +
+							 std::to_string( kFindMost ) + ") and how its shape is turned (facing, look, world)" );
+			}
+			find.self = w[2] == "1";
+			find.most = uint8_t( most );
+			find.frame = w[4] == "facing" ? MotionFrame::Facing : w[4] == "look" ? MotionFrame::Look : MotionFrame::World;
+			find.guard = guard;
+			step.finds.push_back( find );
+			inFind = true;
+			continue;
+		}
+		if ( key == "shape" )
+		{
+			// shape <radius> <x y z>...: a convex piece, in the player's frame
+			MotionFind::Piece piece;
+			size_t count = w.size() >= 2 ? ( w.size() - 2 ) / 3 : 0;
+			if ( inFind == false || w.size() < 5 || ( w.size() - 2 ) % 3 != 0 || count > 128 || Number( w[1], 0.0f, 100.0f, piece.radius ) == false )
+			{
+				return fail( "shape (inside a find) wants a radius (0 to 100 m) and its points, x y z each (1 to 128)" );
+			}
+			for ( size_t k = 0; k < count; ++k )
+			{
+				b3Vec3 point = {};
+				if ( Number( w[2 + 3 * k], -100.0f, 100.0f, point.x ) == false || Number( w[3 + 3 * k], -100.0f, 100.0f, point.y ) == false ||
+					 Number( w[4 + 3 * k], -100.0f, 100.0f, point.z ) == false )
+				{
+					return fail( "a shape's points are within 100 m of the player" );
+				}
+				piece.points.push_back( point );
+			}
+			step.finds.back().pieces.push_back( piece );
+			continue;
+		}
+		if ( key == "endfind" )
+		{
+			if ( inFind == false || step.finds.back().pieces.empty() )
+			{
+				return fail( inFind ? "a find has a shape" : "endfind with no find" );
+			}
+			inFind = false;
+			continue;
+		}
+		if ( inFind && key != "impulse" && key != "emit" && key != "param" )
+		{
+			return fail( "\"" + key + "\" inside a find: what happens to each thing found is an impulse, an emit or a param (with its seconds)" );
+		}
 		if ( key == "when" )
 		{
 			if ( whole() == false )
@@ -442,6 +512,16 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			{
 				return fail( "a world frame wants its direction: x y z, each -1 to 1, not all zero" );
 			}
+			if ( inFind != ( e.target.kind == MotionTarget::Kind::Found || e.frame == MotionFrame::Away ) && inFind == false )
+			{
+				return fail( "\"found\" and \"away\" are what a find found: inside a find" );
+			}
+			if ( inFind )
+			{
+				e.guard = -1; // (the find's guard holds for all of it)
+				step.finds.back().effects.push_back( e );
+				continue;
+			}
 			step.effects.push_back( e );
 		}
 		else if ( key == "force" )
@@ -524,6 +604,15 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			p.param = uint8_t( param );
 			p.guard = guard;
+			if ( inFind )
+			{
+				if ( p.seconds <= 0.0f )
+				{
+					return fail( "a param inside a find is given to what it found for some seconds: give them" );
+				}
+				step.finds.back().moves.push_back( { p.param, p.value, p.seconds } );
+				continue;
+			}
 			step.params.push_back( p );
 			step.length = std::max( step.length, p.seconds );
 		}
@@ -574,6 +663,11 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			if ( emit.event < 0 )
 			{
 				warnings += m.name + ": no mod declares the event \"" + w[1] + "\": nothing is emitted; ";
+			}
+			if ( inFind )
+			{
+				step.finds.back().emits.push_back( emit.event );
+				continue;
 			}
 			step.emits.push_back( emit );
 		}
@@ -660,6 +754,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		number = 1;
 		return fail( "not a motions file (it starts with \"cinderbox_motions\t2\" or 3)" );
 	}
+	if ( inFind )
+	{
+		return fail( "a find ends (endfind)" );
+	}
 	for ( Motion& m : motions )
 	{
 		auto wrong = [&]( const std::string& what ) {
@@ -679,6 +777,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			MotionStep& step = m.steps[s];
 			for ( const MotionEffect& e : step.effects )
 			{
+				if ( e.target.kind == MotionTarget::Kind::Found || e.frame == MotionFrame::Away )
+				{
+					return wrong( "\"found\" and \"away\" are what a find found: inside a find" );
+				}
 				bool needsHit = e.target.kind == MotionTarget::Kind::Hit || ( e.frame == MotionFrame::To && e.target.kind != MotionTarget::Kind::Field );
 				if ( needsHit && m.probe == false )
 				{
