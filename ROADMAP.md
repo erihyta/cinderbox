@@ -24,8 +24,9 @@ A proposal: the order is open to change. Each row is a milestone or two.
 |---|---|---|
 | 1 | [Loose ends](#1-loose-ends) | **done (M190 to M192)**: rolling and drag on bodies, slopes too steep to walk, the arms belong to what is held, the camera against meshes and terrain, the two network tests that miss a tick |
 | 2 | [Destructible walls](#2-destructible-walls) | **done (M195 to M198)**: a wall breaks into pieces authored beforehand, by what is made to break it; shared by everyone |
-| 3 | [Vehicles](#3-vehicles) | bodies joined in a template, a seat, input routed to motors |
-| 4 | [Authoring, finished](#4-authoring-finished) | the editor's leftovers: names in expressions, a prebuilt SDK, an item used in its preview, publish checks |
+| 3 | [Rules as a language](#3-rules-as-a-language) | the rules sheet grows into a small language the simulation runs: everything that moves on screen predicted, a mod's C++ left with what only the server decides. [The grammar, a draft](docs/rules-language.md) |
+| 4 | [Vehicles](#4-vehicles) | bodies joined in a template, a seat, input routed to motors (begun in M202: glue is Box3D's weld joints) |
+| 5 | [Authoring, finished](#5-authoring-finished) | the editor's leftovers: names in expressions, a prebuilt SDK, an item used in its preview, publish checks |
 
 - **Why loose ends first**: each is small, and each is felt in play: a ball that never stops, a
   player who runs up a 60° slope, a rifle held wrong while dashing, a camera that looks through a
@@ -34,6 +35,10 @@ A proposal: the order is open to change. Each row is a milestone or two.
   fractured asset and the swap, and the physics questions are answered already (below).
 - **Why vehicles next**: the other big "a sandbox should have this"; they need joints in
   templates, which walls held together by glue would use too.
+- **Why the language before vehicles** (decided after M202): what a mod's C++ does to bodies is
+  seen a lead late (brawl's slam throws people with `ctx.Push`; a slow is `ctx.SetMove`), because
+  no node could say it: no "when it lands", no "everyone near this point". Adding one node per case
+  would not end; a few general words do. Vehicles' input-to-motors is then written in it too.
 - **Authoring after**: it waits until the content above settles, as the client did.
 
 ### 1. Loose ends
@@ -60,7 +65,32 @@ is made to destroy (a charge, a rocket) breaks it, not any loose body that bumps
 | Holes, not the whole wall | **done (M198)**: a blast takes out the pieces near it; the rest stand, static, while touching pieces join them to the held ones (`held_at`); the rest fall |
 | Glue | **done (M202)**: `CbBreakable.glue`: its pieces bodies from the start, welded (Box3D's weld joints) where they touch, the held ones static; a weld past its glue breaks, so it sags, cracks and falls by its own physics |
 
-### 3. Vehicles
+### 3. Rules as a language
+
+[docs/rules-language.md](docs/rules-language.md) is the grammar, as a draft. In short: a `motion`
+block in a `.rules` sheet, run by every simulation, with triggers (`on use`, `on press`, `on EVENT`,
+`while`, and `when`: once, as an expression turns true), waits (`then when`, `after`, `every`),
+queries (`find` everything inside a shape, `cast` a shape along a direction; a block runs per
+target found), effects on the owner or each target, and numbers that are expressions, with Godot
+`Curve`s read in them. Shapes, markers and paths stay nodes, drawn in the 3D view; the sheet names
+them. The motion nodes keep working and get nothing new.
+
+| Piece | What |
+|---|---|
+| Blocks | `motion NAME TRIGGER`, `when`, `then when`, `after`, `if` / `else`, `end`; today's `use` sheets unchanged |
+| Finding | `find SHAPE` and `cast SHAPE`, a shape being any `CollisionShape3D` (a convex one made from a mesh too) or written inline; `away`; `move` on a target (a slow, a root) |
+| Curves and markers | `curve(NODE, x)` and `time` in expressions; directions and launch points from `Marker3D`s, `turn`; `follow` a `Path3D` |
+| Items run motions | `owner item`: an item in the world runs its own sheet; `break`; the frag grenade's blast predicted |
+| Physics words | `impulse ... kind momentum` (N·s, so weight counts) beside today's change of velocity; `every` |
+| The mods converted | brawl, frag, cannon, grapple, flight, dash: their C++ left with damage, charges and rules |
+
+- **Not "server mods on clients"** (a route not taken, below): the language is data in the look,
+  which clients have already, and deterministic and bounded by design. A mod's C++ stays on the
+  server.
+- **The parked pieces become words**: touching a wall is a condition (`wall`) and a direction, a
+  teleport a statement, passing through a movement parameter.
+
+### 4. Vehicles
 
 | Piece | What |
 |---|---|
@@ -69,7 +99,7 @@ is made to destroy (a charge, a rocket) breaks it, not any loose body that bumps
 | Input to motors | as a motion routes input to the mover, a vehicle routes it to its joints' motors and its forces; the rules (who may drive, damage) are a mod's |
 | Platform carry | standing on a moving deck carries the player (its velocity and turn): the mover needs it for a vehicle you stand on, and ships later |
 
-### 4. Authoring, finished
+### 5. Authoring, finished
 
 | Piece | What |
 |---|---|
@@ -91,7 +121,7 @@ Decided to wait; each says what it waits for.
 | How players find servers | undecided: Steam, a website's "play" link that starts the game, a game's own menu or a desktop shortcut. Until then: join by address, Test locally, a server's mods listed before joining |
 | Steam Workshop as the store | the decision above; the store is a folder today |
 | Ships | Box3D growing what they lack (buoyancy) rather than more patches (two today: `cmake/patches/`). In the simulation, so everyone predicts them: platform carry (step 3), several shapes per body (done), a buoyancy component with a wave function the water's look shares |
-| **The player's body, for motions** | a mod that wants it. Small engine pieces, each in the simulation (so a motion using them is predicted like any other), asked about after M200. In the order they would likely be wanted: |
+| **The player's body, for motions** | a mod that wants it; once step 3 is in, each is a word of the language ([the draft's last example](docs/rules-language.md#what-the-parked-players-body-pieces-would-add-words-not-new-nodes)). Small engine pieces, each in the simulation (so a motion using them is predicted like any other), asked about after M200. In the order they would likely be wanted: |
 | · Touching a wall | the mover already meets walls when it clips the velocity; it would say so: a condition (`wall`: touching one, beside or ahead) and a frame along it (`along_wall`, `off_wall`) for forces and impulses. Wallrunning, wall jumps, a climb that knows where the wall ends (no wall ahead: over the ledge), a ledge grab |
 | · Teleport | a motion effect that sets where the player is (`CbTeleport`): to the target (what the probe found, or a field's entity) at an offset in its frame (1.2 m behind it, facing its back), or to the probe's point. Blink, "behind you", swapping places, a return-to-mark |
 | · What the body passes through | movement parameters: `pass_players`, `pass_props`, `pass_level` (0 or 1): the mover ignores those (the player's own capsule too, so others' casts pass it). A dash that goes through the target and ends behind it (the fast-move blink, without a teleport), phasing through crowds, a ghost or a spectator flying through walls (`pass_level` with `move_frame` 1) |
@@ -108,7 +138,7 @@ What the old steps left, not scheduled. A row moves up into "Next" when it is wa
 |---|---|
 | Items | a state machine or a motion reading the hand's fields; a lifetime for an item that was not launched; a fuse that starts when the pin is pulled (a cook); bots that use what a mod adds; a bot count in the menu |
 | The inventory | a split of one; a slot's item shown while dragged over; a key for the bag's slots; dropping or moving part of a stack; a mod taking one off a stack without throwing it; an off hand (Minecraft's F); a corpse's bag (undecided: the ragdoll carries it, or a box where it fell); predicted answers to a mod's intents; numbers wider than a byte in an intent |
-| Sheets and HUDs | a sheet for a list's rows; an item's HUD drawn on its slot; the mods' HUDs, item uses and motions converted to sheets (their reactions are) |
+| Sheets and HUDs | a sheet for a list's rows; an item's HUD drawn on its slot; the mods' HUDs, item uses and motions converted to sheets (their reactions are; step 3 does the motions) |
 | Motions | a lasting force as a C++ command; a test of one player hooked to another; a knocked-down ragdoll state; carrying a player; a preview panel |
 | Animation | a state's playback speed (the bat's whole swing in 0.6 s, a slow-motion finisher; markers move with it); the dash's and the hook's poses are placeholders |
 | Feet on the ground | foot IK, **in the shared pose**, beside the aim chain: each foot's ground found by a ray in the simulation (the server's for hit tests, the client's prediction for drawing: the same shapes, so the same answer), the hips lowered to the lower foot, two-bone IK for each leg. Then the legs' hitboxes are where the feet are drawn. Not Godot's IK nodes: they would run after the pose (visual only, and the bake warns: the legs have hitboxes), and Godot's physics has no level to find (collision is Box3D's) |
