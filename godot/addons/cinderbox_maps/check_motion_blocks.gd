@@ -161,6 +161,33 @@ func _run() -> void:
 	_check("an Area3D under an item is not its body", item_lines.contains("box") and not item_lines.contains("sphere"), item_lines.substr(0, 400))
 	holder.free()
 
+	# Casts: a line thrown when the motion starts; what is under it happens while it holds.
+	_scratch("motion Grab on press grab if not linked\n\tuntil pressed.grab\n\temit grab.thrown\n" +
+		"\tcast sphere 0.5 range 10 speed 30 holds bodies players\n\t\temit grab.held\n\t\tlink length 2\n\t\timpulse 3 along up\n" +
+		"motion Swipe on press swipe\n\tcast Blade range 3\n\t\timpulse 6 along look\n")
+	var casts := _set_with(SCRATCH, false)
+	var blade := CollisionShape3D.new()
+	blade.name = "Blade"
+	var flat := BoxShape3D.new()
+	flat.size = Vector3(2, 0.1, 0.1)
+	blade.shape = flat
+	casts.add_child(blade)
+	var cast_baked: Dictionary = casts.bake()
+	var cast_text := String(cast_baked["text"])
+	_check("casts bake", cast_text.is_empty() == false, String(cast_baked["error"]))
+	_check("a ball thrown to fly: the probe, what it holds, its shape, its event, on what it holds",
+		cast_text.contains("motion\tGrab\nwhen\tpress\tgrab\nif\t( not linked )\nuntil\t( pressed.grab )\nemit\tgrab.thrown\n" +
+		"probe\t10\t30\nholds\tbodies\tplayers\nprobe_shape\t0.5\t0\t0\t0\nhold_emit\tgrab.held\nlink\thit\t2\t0\nimpulse\thit\t3\tup\tnone\n"), cast_text)
+	_check("a blade drawn in the scene, around its own origin, at once",
+		cast_text.contains("motion\tSwipe\nwhen\tpress\tswipe\nprobe\t3\t0\nprobe_shape\t0\t1\t-0.05\t0.05\t-1\t-0.05\t0.05\t"))
+	casts.free()
+	_refused("a cast in a later step", "motion A on press a\n\tafter 1\n\tcast ray range 5\n\t\timpulse 1\n", "line 3: a cast is thrown when the motion starts")
+	_refused("a cast under an if", "motion A on press a\n\tif grounded\n\t\tcast ray range 5\n", "line 3: a cast is thrown when the motion starts")
+	_refused("two casts", "motion A on press a\n\tcast ray range 5\n\tcast ray range 5\n", "line 3: a motion casts once")
+	_refused("an impulse beside a cast", "motion A on press a\n\timpulse 3\n\tcast ray range 5\n", "line 2: with a cast")
+	_refused("two events when it holds", "motion A on press a\n\tcast ray range 5\n\t\temit x\n\t\temit y\n", "line 4: a cast says one event")
+	_refused("a cast with no range", "motion A on press a\n\tcast ray\n", "line 2: cast SHAPE range R")
+
 	# What refuses the bake, with its file and line.
 	_refused("a find of a node that is not there", "motion A on press a\n\tfind Nope\n\t\temit x\n", "line 2: find: no node Nope")
 	_refused("a force inside a find", "motion A on press a\n\tfind sphere 2\n\t\tforce 3\n", "line 3: \"force\" inside a find")

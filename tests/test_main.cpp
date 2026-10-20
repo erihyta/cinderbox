@@ -3821,6 +3821,160 @@ void TestMotionFinds()
 	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tall\t0\t16\tfacing\nshape\t1\t0\t0\t0\nendfind\n" ) == false );
 }
 
+// A probe with a shape (a sheet's "cast sphere R", or a node's shape): swept along its line instead of
+// a ray, so it catches what passes beside the line; turned to the line, so what is level stays level.
+void TestMotionCasts()
+{
+	ModSchema schema;
+	schema.events = { "hooked" };
+	schema.actions.push_back( { "ray", 0, "Q" } );
+	schema.actions.push_back( { "ball", 1, "E" } );
+	schema.actions.push_back( { "fly", 2, "R" } );
+	schema.actions.push_back( { "blade", 3, "F" } );
+	schema.actions.push_back( { "post", 4, "G" } );
+	const std::string text = "cinderbox_motions\t3\n"
+							 "motion\tRay\nwhen\tpress\tray\nprobe\t10\t0\nhold_emit\thooked\nimpulse\thit\t5\tlook\tnone\n"
+							 "motion\tBall\nwhen\tpress\tball\nprobe\t10\t0\nprobe_shape\t0.7\t0\t0\t0\nhold_emit\thooked\nimpulse\thit\t5\tlook\tnone\n"
+							 "motion\tFly\nwhen\tpress\tfly\nprobe\t10\t40\nprobe_shape\t0.7\t0\t0\t0\nhold_emit\thooked\n"
+							 // A blade: 2 m wide, flat (5 cm), along the line.
+							 "motion\tBlade\nwhen\tpress\tblade\nprobe\t10\t0\nprobe_shape\t0\t-1\t-0.025\t-0.025\t1\t-0.025\t-0.025\t-1\t0.025\t-0.025\t1\t0.025\t-0.025"
+							 "\t-1\t-0.025\t0.025\t1\t-0.025\t0.025\t-1\t0.025\t0.025\t1\t0.025\t0.025\nhold_emit\thooked\n"
+							 // The same blade stood on its end: 2 m tall, 5 cm wide.
+							 "motion\tPost\nwhen\tpress\tpost\nprobe\t10\t0\nprobe_shape\t0\t-0.025\t-1\t-0.025\t0.025\t-1\t-0.025\t-0.025\t1\t-0.025\t0.025\t1\t-0.025"
+							 "\t-0.025\t-1\t0.025\t0.025\t-1\t0.025\t-0.025\t1\t0.025\t0.025\t1\t0.025\nhold_emit\thooked\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 5 );
+	if ( motions == nullptr || motions->list.size() != 5 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	CHECK( motions->list[0].probePoints.empty() && motions->list[1].probePoints.size() == 1 && motions->list[1].probeRadius == 0.7f &&
+		   motions->list[3].probePoints.size() == 8 );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	std::vector<ModEventRecord> seen;
+	uint32_t counted = 0;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+			for ( ; counted < sim.Globals().modEventCount; ++counted )
+			{
+				seen.push_back( sim.Globals().modEvents[counted % kModEventHistory] );
+			}
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 2 );
+	const uint32_t p0 = sim.PlayerNetId( 0 );
+	auto place = [&]( b3Vec3 at, uint16_t yaw ) {
+		SimCommand c;
+		c.type = CommandType::Respawn;
+		c.target = p0;
+		c.mode = 1;
+		c.a = { at.x, at.y, at.z };
+		c.index = yaw;
+		f.commands.push_back( c );
+		f.inputs[0].cameraYaw = yaw;
+		f.inputs[0].cameraPitch = 0;
+	};
+	// A post 3 m tall standing beside the line, 5 m ahead: its near side 0.5 m from it.
+	auto post = [&]( b3Vec3 at ) {
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.mode = uint8_t( ShapeKind::Box );
+		c.value = -1;
+		c.a = { at.x, at.y, at.z };
+		c.c = { 0.4f, 1.5f, 0.4f };
+		f.commands.push_back( c );
+	};
+	auto hooked = [&] { return int( seen.size() ); };
+	auto press = [&]( uint16_t action ) {
+		f.inputs[0].actions = action;
+		step( 1 );
+		f.inputs[0].actions = 0;
+		step( 1 );
+	};
+	place( { 0.0f, 1.0f, 0.0f }, 0 );
+	post( { 0.9f, 1.5f, 5.0f } );
+	step( 30 );
+	uint32_t postId = 0;
+	for ( const auto& r : sim.Entities() )
+	{
+		postId = flecs::entity( sim.World(), r.entity ).has<Prop>() ? r.netId : postId;
+	}
+	CHECK( postId != 0 );
+
+	// The line passes beside it and finds nothing: the motion does not happen.
+	press( 1 );
+	CHECK( hooked() == 0 );
+	step( 10 );
+	// A ball 0.7 m round swept along the same line catches it, and the impulse moves it.
+	press( 2 );
+	CHECK( hooked() == 1 && seen[0].netIdB == postId );
+	const PhysicsBody* body = sim.FindEntity( postId ).try_get<PhysicsBody>();
+	const b3Vec3 moving = body != nullptr ? b3Body_GetLinearVelocity( sim.BodyOf( *body ) ) : b3Vec3{};
+	std::printf( "    the ball caught the post 0.5 m beside the line; it moves at (%.2f, %.2f, %.2f) m/s\n", moving.x, moving.y, moving.z );
+	CHECK( moving.z > 1.0f );
+	step( 120 );
+
+	// Thrown to fly, the same ball catches it on its way (5 m at 40 m/s: within ten ticks).
+	place( { 0.0f, 1.0f, 0.0f }, 0 );
+	SimCommand gone;
+	gone.type = CommandType::Destroy;
+	gone.target = postId;
+	f.commands.push_back( gone );
+	post( { 0.9f, 1.5f, 5.0f } );
+	step( 30 );
+	for ( const auto& r : sim.Entities() )
+	{
+		postId = flecs::entity( sim.World(), r.entity ).has<Prop>() ? r.netId : postId;
+	}
+	f.inputs[0].actions = 4;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	CHECK( hooked() == 1 );
+	step( 10 );
+	CHECK( hooked() == 2 && seen[1].netIdB == postId );
+	step( 150 );
+
+	// Turned to a line along +X: a flat blade 2 m wide still lies flat, so it catches a post 0.5 m
+	// beside the line; the same blade on its end, 5 cm wide, does not.
+	place( { 0.0f, 1.0f, 0.0f }, 16384 );
+	f.commands.push_back( gone );
+	gone.target = postId;
+	f.commands.back().target = postId;
+	post( { 5.0f, 1.5f, 0.9f } );
+	step( 30 );
+	for ( const auto& r : sim.Entities() )
+	{
+		postId = flecs::entity( sim.World(), r.entity ).has<Prop>() ? r.netId : postId;
+	}
+	press( 16 );
+	CHECK( hooked() == 2 );
+	step( 10 );
+	press( 8 );
+	CHECK( hooked() == 3 && seen[2].netIdB == postId );
+
+	// What a file may not say.
+	auto fails = [&]( const std::string& body ) {
+		std::vector<Motion> out;
+		std::string error, warned;
+		return CompileMotionSet( "t", "cinderbox_motions\t3\n" + body, schema, out, error, warned ) == false;
+	};
+	CHECK( fails( "motion\tA\nwhen\tpress\tray\nprobe_shape\t0.5\t0\t0\t0\n" ) ); // no probe
+	CHECK( fails( "motion\tA\nwhen\tpress\tray\nprobe\t10\t0\nprobe_shape\t0.5\t0\t0\n" ) );
+	CHECK( fails( "motion\tA\nwhen\tpress\tray\nprobe\t10\t0\nprobe_shape\t50\t0\t0\t0\n" ) );
+}
+
 // "motion.<name>" in a condition: that motion of the player's is on. A motion's own conditions read
 // it as the tick found it; the name is the set's and the node's, or the node's alone when it is
 // the only one.
@@ -10187,6 +10341,7 @@ int main( int argc, char** argv )
 		{ "motions_while", TestMotionsWhile },
 		{ "motion_steps", TestMotionSteps },
 		{ "motion_finds", TestMotionFinds },
+		{ "motion_casts", TestMotionCasts },
 		{ "item_motions", TestItemMotions },
 		{ "motion_conditions", TestMotionConditions },
 		{ "links", TestLinks },

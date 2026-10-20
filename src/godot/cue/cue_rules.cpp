@@ -298,6 +298,33 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 			}
 		}
 	}
+	else if ( verb == "link" )
+	{
+		// link [length L] [reel S] [alone] [on ...]: a rope to what the cast holds (or a field's entity)
+		part["class"] = "CbLink";
+		for ( i = 1; i < w.size() && why.is_empty(); )
+		{
+			const String word = w[i].text;
+			if ( word == "on" && common( word, i ) )
+			{
+				continue;
+			}
+			if ( ( word == "length" || word == "reel" ) && i + 1 < w.size() && Number( w[i + 1], value ) )
+			{
+				props[word] = value;
+				i += 2;
+			}
+			else if ( word == "alone" )
+			{
+				props["react"] = false; // (it moves the player alone: what it holds is as the world)
+				i += 1;
+			}
+			else
+			{
+				why = "\"" + word + "\" is not something link takes: length L, reel S, alone, on ...";
+			}
+		}
+	}
 	else if ( verb == "move" )
 	{
 		part["class"] = "CbMove";
@@ -360,7 +387,7 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 	}
 	else
 	{
-		why = "\"" + verb + "\" is not one of: change, cooldown, emit, impulse, force, move, launch";
+		why = "\"" + verb + "\" is not one of: change, cooldown, emit, impulse, force, link, move, launch";
 	}
 	if ( why.is_empty() == false )
 	{
@@ -396,6 +423,8 @@ struct Building
 	// it found.
 	int findColumn = -1;
 	Dictionary find;
+	bool castBlock = false; // the open block is a cast (else a find)
+	bool cast = false;		// the motion has one
 	Array parts;					 // a use's motion parts: {class, properties}
 	PackedStringArray changes;		 // a prediction's, a use's
 	bool bad = false;
@@ -674,6 +703,19 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				statement["line"] = number;
 				if ( verb == "emit" && w.size() == 2 )
 				{
+					if ( rule.castBlock && inside.size() > 0 )
+					{
+						bool emitted = false;
+						for ( int64_t k = 0; k < inside.size(); ++k )
+						{
+							emitted = emitted || String( Dictionary( inside[k] ).get( "kind", "" ) ) == "emit";
+						}
+						if ( emitted )
+						{
+							fail( number, "a cast says one event when it takes hold" );
+							continue;
+						}
+					}
 					statement["kind"] = "emit";
 					statement["text"] = w[1].text;
 				}
@@ -681,19 +723,21 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				{
 					Dictionary part;
 					String why;
-					const bool allowed = verb == "impulse" || verb == "move";
+					const bool allowed = rule.castBlock ? ( verb == "impulse" || verb == "force" || verb == "link" || verb == "move" )
+														: ( verb == "impulse" || verb == "move" );
 					if ( allowed == false || ParsePart( w, part, why ) == false )
 					{
-						fail( number, allowed ? why
-											  : "\"" + verb + "\" inside a find: what happens to each thing it found is an impulse, a move for some seconds, or an emit" );
+						fail( number, allowed			  ? why
+									  : rule.castBlock ? "\"" + verb + "\" inside a cast: what it does while it holds is an impulse, a force, a link, a move, or an emit when it takes hold"
+														  : "\"" + verb + "\" inside a find: what happens to each thing it found is an impulse, a move for some seconds, or an emit" );
 						continue;
 					}
 					Dictionary props = part["properties"];
-					if ( verb == "impulse" && props.has( "target" ) == false )
+					if ( ( verb == "impulse" || ( rule.castBlock && verb == "force" ) ) && props.has( "target" ) == false )
 					{
-						props["target"] = 3; // (what it found, unless it says)
+						props["target"] = rule.castBlock ? 1 : 3; // (what it holds, or found, unless it says)
 					}
-					if ( verb == "move" && double( props.get( "duration", 0.0 ) ) <= 0.0 )
+					if ( rule.castBlock == false && verb == "move" && double( props.get( "duration", 0.0 ) ) <= 0.0 )
 					{
 						fail( number, "a move inside a find is given to what it found for some seconds: move for S ..." );
 						continue;
@@ -926,6 +970,84 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				rule.steps[rule.steps.size() - 1] = step;
 				rule.findColumn = column;
 				rule.find = statement;
+				rule.castBlock = false;
+				continue;
+			}
+			if ( verb == "cast" )
+			{
+				// cast SHAPE range R [speed V] [holds level|bodies|players ...]; SHAPE: ray, sphere R, or a
+				// node's path (one convex shape, around its origin)
+				const char* usage = "cast SHAPE range R [speed V] [holds level bodies players], SHAPE ray, sphere R, or a node's path";
+				if ( rule.steps.size() > 1 || rule.frames.empty() == false || rule.cast )
+				{
+					fail( number, rule.cast ? "a motion casts once" : "a cast is thrown when the motion starts: in its first step, not under an if" );
+					continue;
+				}
+				size_t i = 1;
+				Dictionary shape;
+				double a = 0.0;
+				if ( w.size() >= 2 && w[1].text == "ray" )
+				{
+					shape["kind"] = "ray";
+					i = 2;
+				}
+				else if ( w.size() >= 3 && w[1].text == "sphere" && Number( w[2], a ) && a > 0.0 )
+				{
+					shape["kind"] = "sphere";
+					shape["radius"] = a;
+					i = 3;
+				}
+				else if ( w.size() >= 2 && w[1].quoted == false && w[1].text != "range" )
+				{
+					shape["kind"] = "node";
+					shape["path"] = w[1].text;
+					i = 2;
+				}
+				else
+				{
+					fail( number, usage );
+					continue;
+				}
+				PackedStringArray holds;
+				bool ok = true;
+				for ( ; i < w.size() && ok; )
+				{
+					const String word = w[i].text;
+					if ( ( word == "range" || word == "speed" ) && i + 1 < w.size() && Number( w[i + 1], a ) && a >= 0.0 )
+					{
+						statement[word] = a;
+						i += 2;
+					}
+					else if ( word == "holds" )
+					{
+						i += 1;
+						for ( ; i < w.size() && ( w[i].text == "level" || w[i].text == "bodies" || w[i].text == "players" ); ++i )
+						{
+							holds.push_back( w[i].text );
+						}
+						ok = holds.is_empty() == false;
+					}
+					else
+					{
+						ok = false;
+					}
+				}
+				if ( ok == false || statement.has( "range" ) == false )
+				{
+					fail( number, usage );
+					continue;
+				}
+				statement["kind"] = "cast";
+				statement["shape"] = shape;
+				statement["holds"] = holds;
+				statement["statements"] = Array();
+				add( statement );
+				step["statements"] = statements;
+				rule.steps[rule.steps.size() - 1] = step;
+				rule.findColumn = column;
+				rule.find = statement;
+				rule.castBlock = true;
+				rule.cast = true;
 				continue;
 			}
 			if ( verb == "change" )
@@ -964,7 +1086,7 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				if ( ParsePart( w, part, why ) == false )
 				{
 					fail( number, why.begins_with( "\"" + verb + "\" is not one of" )
-									  ? "\"" + verb + "\" is not a line of a motion: if, else, then when, after, timeout, cooldown, uses, lasts, until, item, change, emit, end, find, impulse, force, move, launch"
+									  ? "\"" + verb + "\" is not a line of a motion: if, else, then when, after, timeout, cooldown, uses, lasts, until, item, change, emit, end, find, cast, impulse, force, link, move, launch"
 									  : why );
 					continue;
 				}

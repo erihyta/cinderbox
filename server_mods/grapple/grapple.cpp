@@ -2,7 +2,7 @@
 // used by its own key wherever it is carried.
 //
 // The hook is not in this file. It is an item (client/prefabs/hook.tscn, a CbItem used once a press,
-// its own key Q) with its own CbMotion under it (a CbProbe, a CbForce and a CbLink under that),
+// its own key Q) whose rules sheet (hook.rules) has its motion: a cast, a rope and a pull under it,
 // and its pose while it is on (its animation pack), baked and run by every simulation from the
 // player's own input:
 // press the hook's key (Q; or select it and press the use button) to throw a line at what is under the crosshair; it flies there, a
@@ -39,7 +39,7 @@ public:
 		// Recorded by the engine when a player uses the hook; the motion reads it by name.
 		m_used = declare.Event( "grapple.hook.used" );
 		m_fired = declare.Event( "grapple.fired" );
-		// Said by the hook's line where and when it takes hold (CbProbe.hold_emits): a puff there.
+		// Said by the hook's line where and when it takes hold (the cast's emit in hook.rules): a puff there.
 		m_hooked = declare.Event( "grapple.hooked" );
 		// The hook, its motion and its pose: all of it is its scene's.
 		declare.ItemsOfLook();

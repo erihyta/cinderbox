@@ -3805,14 +3805,14 @@ bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerIn
 		return true;
 	}
 	// One that does not fly holds at once, on what is there, or is not thrown.
-	if ( CastRay( view, b3MulSV( m.probeRange, look ), self, seen ) == false && CastRay( from, b3MulSV( m.probeRange, look ), self, seen ) == false )
+	if ( CastRay( view, b3MulSV( m.probeRange, look ), self, seen ) == false && CastProbe( m, from, b3MulSV( m.probeRange, look ), self, seen ) == false )
 	{
 		return false;
 	}
 	RayHit hit = seen;
 	b3Vec3 to = b3Sub( seen.point, from );
 	RayHit nearer;
-	if ( CastRay( from, b3MulSV( 1.02f, to ), self, nearer ) )
+	if ( CastProbe( m, from, b3MulSV( 1.02f, to ), self, nearer ) )
 	{
 		hit = nearer;
 	}
@@ -3908,7 +3908,7 @@ void Simulation::FlyHold( flecs::entity e, MotionState& motion )
 	b3Vec3 from = tip( now - 1 );
 	b3Vec3 to = tip( now );
 	RayHit hit;
-	if ( CastRay( from, b3Sub( to, from ), e.get<NetId>().value, hit ) )
+	if ( CastProbe( m_motions->list[hold.motion], from, b3Sub( to, from ), e.get<NetId>().value, hit ) )
 	{
 		if ( ( HoldKind( hit ) & m_motions->list[hold.motion].probeHolds ) == 0 )
 		{
@@ -4609,6 +4609,52 @@ float Simulation::StaticFreeDistance( b3Vec3 origin, b3Vec3 direction, float max
 	};
 	b3World_CastShape( m_physicsWorld, origin, &ball, b3MulSV( maxDistance, direction ), filter, nearest, &closest );
 	return closest * maxDistance;
+}
+
+namespace
+{
+
+// The turn from forward (+Z) to `direction` (unit length): about Y to its heading, then about X to its
+// pitch, so what is level stays level. Half angles by square roots, the same on every machine.
+b3Quat TurnTo( b3Vec3 direction )
+{
+	auto half = []( float cosine, float sine, b3Vec3 axis ) {
+		float c = std::sqrt( std::max( 0.0f, ( 1.0f + cosine ) * 0.5f ) );
+		float s = std::sqrt( std::max( 0.0f, ( 1.0f - cosine ) * 0.5f ) ) * ( sine < 0.0f ? -1.0f : 1.0f );
+		return b3Quat{ b3MulSV( s, axis ), c };
+	};
+	float flat = std::sqrt( direction.x * direction.x + direction.z * direction.z );
+	b3Quat yaw = flat > 1.0e-6f ? half( direction.z / flat, direction.x / flat, b3Vec3{ 0.0f, 1.0f, 0.0f } ) : b3Quat_identity;
+	// (Up is a turn of -pitch about X: +Z goes to +Y.)
+	b3Quat pitch = half( flat, -direction.y, b3Vec3{ 1.0f, 0.0f, 0.0f } );
+	return b3MulQuat( yaw, pitch );
+}
+
+} // namespace
+
+bool Simulation::CastProbe( const Motion& m, b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit )
+{
+	if ( m.probePoints.empty() )
+	{
+		return CastRay( origin, translation, ignoreNetId, hit );
+	}
+	float length = 0.0f;
+	b3Vec3 direction = b3GetLengthAndNormalize( &length, translation );
+	b3Quat turn = length > 0.0f ? TurnTo( direction ) : b3Quat_identity;
+	b3Vec3 points[128];
+	int count = int( std::min<size_t>( m.probePoints.size(), 128 ) );
+	for ( int i = 0; i < count; ++i )
+	{
+		points[i] = b3RotateVector( turn, m.probePoints[size_t( i )] );
+	}
+	const b3ShapeProxy proxy = { points, count, m.probeRadius };
+	PhysicsArena::Scope scope( *m_arena );
+	BuildShapeLookup();
+	hit = RayHit{};
+	RayContext ctx{ this, ignoreNetId, &hit, false, false };
+	b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( 0 ), 0, nullptr };
+	b3World_CastShape( m_physicsWorld, origin, &proxy, translation, filter, &Simulation::RayCallback, &ctx );
+	return ctx.found;
 }
 
 bool Simulation::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit, bool skipPlayers )
