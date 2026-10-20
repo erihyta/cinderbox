@@ -5,4 +5,4 @@
 on mark.found
 	subject $other
 	at follow
-	scene res://vfx/mark_zone.tscn life 2
+	scene res://vfx/mark_zone.tscn life 3
