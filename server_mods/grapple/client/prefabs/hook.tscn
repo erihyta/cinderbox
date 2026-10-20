@@ -22,7 +22,6 @@ animation_pack = "grapple.hook_arm"
 use = 1
 slot = 4
 use_key = "Q"
-use_emits = "grapple.fired"
 mass = 0.8
 
 [node name="Body" type="CollisionShape3D" parent="." unique_id=1748304673]
@@ -33,31 +32,5 @@ shape = SubResource("Body")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.11)
 mesh = SubResource("Mesh")
 
-[node name="Throw" type="CbProbe" parent="." unique_id=48109204]
-travel = 80.0
-hold_seconds = 2.0
-hold_emits = "grapple.hooked"
-
-[node name="Rope" type="CbLink" parent="Throw" unique_id=4377214]
-reel = 4.0
-react = false
-
-[node name="Pull" type="CbForce" parent="Throw/Rope" unique_id=447720571]
-strength = 160.0
-speed = 15.0
-ramp_in = 0.1
-frame = 5
-
-[node name="Hanging" type="CbMove" parent="Throw/Rope" unique_id=703807614]
-parameters = {
-"air_control": 0.6,
-"airborne": 1.0,
-"gravity": 0.0
-}
-
-[node name="Throwing" type="CbMotion" parent="." unique_id=814521285]
-when = 2
-event = "grapple.hook.used"
-conditions = PackedStringArray("not linked")
-with_item = 1
-duration = 0.45
+[node name="Rules" type="CbRules" parent="."]
+file = "res://prefabs/hook.rules"

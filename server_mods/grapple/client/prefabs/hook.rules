@@ -1,0 +1,18 @@
+# The grappling hook: thrown at what is under the crosshair (its key, Q), it flies (80 m/s, out to
+# 40 m), takes hold of what it meets first and pulls you in on a rope reeled in at 4 m/s, so you
+# swing. It holds anything but moves only you: the rope and the pull act on the player alone. Using
+# it again, or a jump, lets go; it holds 2 s at most. A use while a line is out throws no other.
+
+motion Throw on use if not linked
+	until grapple.hook.used or pressed.jump
+	lasts 2
+	emit grapple.fired
+	cast ray range 40 speed 80
+		emit grapple.hooked
+		link reel 4 alone
+		force 160 top 15 ramp 0.1 on self along to
+		move air_control 0.6 gravity 0 airborne 1
+
+# The arm's throw (its animation pack's state machine reads motion.grapple.hook.Throwing).
+motion Throwing on use if not linked
+	lasts 0.45

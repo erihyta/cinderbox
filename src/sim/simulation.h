@@ -264,6 +264,9 @@ public:
 	// and disabled bodies (and every player's capsule with `skipPlayers`). Returns false when it hits
 	// nothing.
 	bool CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit, bool skipPlayers = false );
+	// A motion's probe from `origin` along `translation`: its shape swept, turned to the line (a line
+	// without one: CastRay). What it meets first.
+	bool CastProbe( const Motion& m, b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit );
 	// How far a ball of `radius` travels from `origin` along `direction` (unit length) before the
 	// static level stops it (every shape it has, meshes and terrain included), at most `maxDistance`.
 	// A camera's question: presentation only, nothing in the simulation depends on it.

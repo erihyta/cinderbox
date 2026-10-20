@@ -286,6 +286,10 @@ struct Motion
 	int holdEvent = -1;		  // schema event said where and when the probe takes hold; -1: none
 	// What it may hold on to (kProbeHolds bits). Something else in its way stops it: it holds nothing.
 	uint8_t probeHolds = kProbeHoldsAll;
+	// Its shape (a sheet's cast of a shape): points around the line's tip in the frame of the line
+	// (forward +Z), and a radius around them. None: a line (a ray).
+	std::vector<b3Vec3> probePoints;
+	float probeRadius = 0.0f;
 	// What it does, step by step: the first is what happens when it starts. Never empty.
 	std::vector<MotionStep> steps = std::vector<MotionStep>( 1 );
 

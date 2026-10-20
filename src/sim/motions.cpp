@@ -467,6 +467,30 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			m.probe = true;
 		}
+		else if ( key == "probe_shape" )
+		{
+			// probe_shape <radius> <x y z>...: what the line sweeps, around its tip
+			if ( whole() == false )
+			{
+				return false;
+			}
+			size_t count = w.size() >= 2 ? ( w.size() - 2 ) / 3 : 0;
+			if ( w.size() < 5 || ( w.size() - 2 ) % 3 != 0 || count > 128 || Number( w[1], 0.0f, 20.0f, m.probeRadius ) == false )
+			{
+				return fail( "probe_shape wants a radius (0 to 20 m) and its points, x y z each (1 to 128)" );
+			}
+			m.probePoints.clear();
+			for ( size_t k = 0; k < count; ++k )
+			{
+				b3Vec3 point = {};
+				if ( Number( w[2 + 3 * k], -20.0f, 20.0f, point.x ) == false || Number( w[3 + 3 * k], -20.0f, 20.0f, point.y ) == false ||
+					 Number( w[4 + 3 * k], -20.0f, 20.0f, point.z ) == false )
+				{
+					return fail( "a probe's shape is within 20 m of its tip" );
+				}
+				m.probePoints.push_back( point );
+			}
+		}
 		else if ( key == "holds" )
 		{
 			if ( whole() == false )
@@ -767,6 +791,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		if ( m.when == Motion::When::While && m.probe )
 		{
 			return wrong( "a probe is thrown by a press or an event, not by a while motion" );
+		}
+		if ( m.probePoints.empty() == false && m.probe == false )
+		{
+			return wrong( "a probe's shape without a probe" );
 		}
 		if ( m.when == Motion::When::While && m.steps.size() > 1 )
 		{

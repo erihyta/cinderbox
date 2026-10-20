@@ -1175,6 +1175,24 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 	}
 
 	Array steps = p.get( "steps", Array() );
+	// With a cast, what the first step does to bodies waits for it to take hold: so it goes under it.
+	if ( steps.is_empty() == false )
+	{
+		Array first = Dictionary( steps[0] ).get( "statements", Array() );
+		bool casts = false;
+		int64_t loose = -1;
+		for ( int64_t i = 0; i < first.size(); ++i )
+		{
+			Dictionary statement = first[i];
+			casts = casts || String( statement.get( "kind", "" ) ) == "cast";
+			loose = loose < 0 && String( statement.get( "kind", "" ) ) == "part" ? int64_t( statement.get( "line", 0 ) ) : loose;
+		}
+		if ( casts && loose >= 0 )
+		{
+			return fail( "line " + String::num_int64( loose ) +
+						 ": with a cast, what the motion's first step does to bodies goes under the cast (it happens while it holds)" );
+		}
+	}
 	for ( int64_t s = 0; s < steps.size(); ++s )
 	{
 		Dictionary step = steps[s];
@@ -1242,6 +1260,67 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 					return fail( line + why );
 				}
 				text += lines;
+			}
+			else if ( what == "cast" )
+			{
+				// probe <range> <speed>, what it may hold, its shape; then what it does while it holds
+				// (on what it holds, unless it says), and its event when it takes hold
+				String why;
+				Dictionary shape = statement["shape"];
+				std::string probeShape;
+				if ( String( shape.get( "kind", "" ) ) == "sphere" )
+				{
+					probeShape = "probe_shape\t" + Num( double( shape["radius"] ) ) + "\t0\t0\t0\n";
+				}
+				else if ( String( shape.get( "kind", "" ) ) == "node" )
+				{
+					// One convex shape, around its own origin (the line's tip), forward -Z as drawn.
+					const Node* drawn = from != nullptr ? from->get_node_or_null( NodePath( String( shape["path"] ) ) ) : nullptr;
+					std::string pieces;
+					if ( FindShapeLines( shape, from, drawn, pieces, why ) == false )
+					{
+						return fail( line + why.replace( "find:", "cast:" ) );
+					}
+					if ( pieces.find( "\nshape\t" ) != std::string::npos )
+					{
+						return fail( line + String( "cast: its shape is one piece (one CollisionShape3D)" ) );
+					}
+					probeShape = "probe_" + pieces;
+				}
+				text += "probe\t" + Num( double( statement.get( "range", 40.0 ) ) ) + "\t" + Num( double( statement.get( "speed", 0.0 ) ) ) + "\n";
+				PackedStringArray holds = statement.get( "holds", PackedStringArray() );
+				if ( holds.is_empty() == false && holds.size() < 3 )
+				{
+					text += "holds";
+					for ( int64_t k = 0; k < holds.size(); ++k )
+					{
+						text += "\t" + Std( holds[k] );
+					}
+					text += "\n";
+				}
+				text += probeShape;
+				Array inside = statement.get( "statements", Array() );
+				for ( int64_t k = 0; k < inside.size(); ++k )
+				{
+					Dictionary each = inside[k];
+					const String at = "line " + String::num_int64( int64_t( each.get( "line", 0 ) ) ) + ": ";
+					if ( String( each.get( "kind", "" ) ) == "emit" )
+					{
+						String event = String( each["text"] ).strip_edges();
+						if ( Plain( event ) == false || event.contains( " " ) )
+						{
+							return fail( at + String( "emit names one event" ) );
+						}
+						text += "hold_emit\t" + Std( event ) + "\n";
+						continue;
+					}
+					std::string lines = BakeSheetPart( each["part"], kind, why );
+					if ( lines.empty() )
+					{
+						return fail( at + why );
+					}
+					text += lines;
+				}
 			}
 			else if ( what == "find" )
 			{

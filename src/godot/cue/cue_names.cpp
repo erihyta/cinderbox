@@ -545,7 +545,7 @@ std::vector<std::pair<int, String>> SheetProblems( const String& text )
 					{
 						check( line, Holds::Changes, PackedStringArray( { String( statement["text"] ) } ), "change" );
 					}
-					else if ( kind == "find" )
+					else if ( kind == "find" || kind == "cast" )
 					{
 						Array inside = statement.get( "statements", Array() );
 						for ( int64_t k = 0; k < inside.size(); ++k )
@@ -601,7 +601,7 @@ const char* const kSheetWords[] = { "on", "while", "predict", "use", "show", "te
 									"direction", "top", "ramp", "react", "for", "new", "carried", "speed", "lift", "ahead", "seconds",
 									"into", "motion", "when", "then", "after", "within", "timeout", "else", "lasts", "until", "uses",
 									"refill", "ground", "item", "hand", "press", "find", "found", "away", "players", "bodies", "self", "max",
-									"sphere", "box", "capsule" };
+									"sphere", "box", "capsule", "cast", "ray", "range", "holds", "level", "link", "length", "reel", "alone" };
 
 } // namespace
 

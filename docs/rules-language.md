@@ -10,7 +10,8 @@ today; the rest is the plan.
 | Blocks: `motion` headers, `on use` / `on press` / `on EVENT` / `while` / `when`, `then when ... within`, `after`, `timeout`, `if` / `else`, `end`, `lasts`, `until`, `cooldown`, `uses`, `item` | *built* (M204) |
 | Statements in a block: `change`, `emit`, `impulse`, `force`, `move [for S]`, `launch` (as a `use` rule has them) | *built* (M204) |
 | `find` with shapes from nodes or written in the line, a block per thing found, `found`, `away`, `move for` on a player found, `emit` with who was found | *built* (M205) |
-| `cast` (a shape swept along a direction: the probe in a sheet), `distance` / `reach` and `$target:FIELD` in a find's lines, `at POINT` | planned (3.2, next) |
+| `cast` (the probe in a sheet: a line, a ball or a shape drawn in the scene, swept along the look; what is under it happens while it holds), `link` | *built* (M206: the grapple is a sheet now) |
+| `distance` / `reach` and `$target:FIELD` in a find's lines, `at POINT`, a cast in a later step | planned (with curves, 3.3) |
 | `curve()`, `time`, markers, `follow` | planned (3.3) |
 | `owner item`, `break`, `remove self` | planned (3.4) |
 | `impulse kind momentum`, `every` | planned (3.5) |
@@ -131,7 +132,7 @@ there until they are done; **lasting** ones act every tick until the motion ends
 |---|---|
 | `force VALUE [kind acceleration\|force\|velocity] [top S] [react] [on WHO] [along DIRECTION]` | every tick while on, as `CbForce` |
 | `move [for S] PARAMETER VALUE ...` | movement parameters of the owner, or of the target inside `find` / `cast` (a slow, a root) |
-| `link [length L] [reel S] [react]` | a rope to the target, as `CbLink` |
+| `link [length L] [reel S] [alone] [on WHO]` | *built*, under a cast: a rope to what it holds (or a field's entity), as `CbLink`; length 0: as long as it is when the cast takes hold; `alone`: it moves the player only |
 | `follow PATH [over S \| speed V] [turn]` | **new**: carries the owner along a `Path3D` placed relative to where the motion started (a leap arc, a curved dash, a rail) |
 
 ### Waits and order
@@ -149,12 +150,14 @@ there until they are done; **lasting** ones act every tick until the motion ends
 | Statement | Does |
 |---|---|
 | `find SHAPE [players] [bodies] [self] [max N] [along facing\|look\|world]` | *built*: everything the shape overlaps when its step starts. The lines further in run **once per thing found**, nearest first (then by id), at most N (16): `impulse` (on what it found, unless `on self`), `move for S ...` (given to a player found for S seconds), `emit` (said with the player as A and what it found as B, at it). Players and bodies (props, items lying about) both unless one is named; the player itself only with `self`; the shape turned as the player faces (the default), looks (with the pitch), or not at all |
-| `cast SHAPE [along DIRECTION] [range R] [speed V] [holds level\|bodies\|players]` | a shape moved along a direction: the first thing it hits. Speed 0: at once (a ray); otherwise it flies (today's probe). The block runs when it hits, with `$target` and `point` |
+| `cast SHAPE range R [speed V] [holds level bodies players]` | *built*: the probe. Thrown when the motion starts, along the look at what is under the crosshair; speed 0: it holds at once on what is there, or the motion does not happen; otherwise it flies and holds what it meets first. The lines further in are what it does **while it holds**: `impulse` and `force` (on what it holds, unless `on self`), `link`, `move` (the player's while it holds), and one `emit`, said where and when it takes hold. Only in the motion's first step, not under an `if`, once a motion; with one, what that step does to bodies goes under it |
 
 | A `SHAPE` is | |
 |---|---|
 | a node's path | *built*: an `Area3D` (its `CollisionShape3D` children together) or one `CollisionShape3D`, from the node the sheet's `CbRules` is under: a sphere, capsule, box, cylinder, or a convex shape made from a mesh (Godot's *Mesh > Create Collision Shape*). Drawn around the scene's origin as if the player stood there (its feet) facing -Z. **This is how a probe's shape is authored**: draw it in the 3D view. An `Area3D` under an item is not part of its body |
-| `ray` | a line (today's probe; with `cast`, planned) |
+| `ray` | *built*: a cast's plain line |
+| `sphere R` (a cast) | *built*: a ball swept along the line: it catches what passes beside it |
+| a node's path (a cast) | *built*: one `CollisionShape3D` (or an `Area3D` with one), drawn around its own origin as the line's tip, forward -Z; turned to the line, so what is level stays level (a flat blade stays flat) |
 | `sphere R`, `box (X,Y,Z)`, `capsule R H` | *built*: written in the line, around the player's middle (a metre up) |
 
 - **`along away`** (inside a find): from where the player is out to what it found, along the ground
@@ -266,17 +269,18 @@ motion Blast on frag.grenade.expired
                                                  # (the simulation removes it on .expired, as today)
 ```
 
-### The grappling hook, as one block
+### The grappling hook, as one block (*built*: `server_mods/grapple/client/prefabs/hook.rules`)
 
 ```
-motion Hook on use
-    until pressed.jump or pressed.grapple
+motion Throw on use if not linked
+    until grapple.hook.used or pressed.jump
     lasts 2
-    cast ray along look range 40 speed 80 holds level bodies players
-        emit grapple.hooked at point
-        link reel 4
-        force 120 kind velocity top 24 on self along to
-        move gravity 0.6
+    emit grapple.fired
+    cast ray range 40 speed 80
+        emit grapple.hooked
+        link reel 4 alone
+        force 160 top 15 ramp 0.1 on self along to
+        move air_control 0.6 gravity 0 airborne 1
 ```
 
 ### A cannon with its muzzle as a marker
@@ -371,7 +375,7 @@ the editor and at publish, as today.
 ## Order of work
 
 1. **Blocks** (*built*, M204): `motion` headers, `when`, `then when`, `after`, `timeout`, `if` / `else`, `end`; today's `use` sheets unchanged. The brawl slam's landing is its sheet's now (`then when grounded`).
-2. **Finding**: `find` (*built*, M205: the brawl slam's shockwave is its sheet's now, the mod only hurts), then `cast` with shapes from nodes, `distance` and `reach`.
+2. **Finding** (*built*): `find` (M205: the brawl slam's shockwave is its sheet's now, the mod only hurts), `cast` (M206: the grapple is a sheet now). `distance` and `reach` come with curves.
 3. **Curves and markers**: `curve()`, `time`, `along NODE`, `from NODE`, `turn`; `follow`.
 4. **Items run motions**: `owner item`, `break`, `remove self`; the frag grenade's blast predicted.
 5. **`impulse kind momentum`**, `every`.

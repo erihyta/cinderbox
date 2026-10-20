@@ -256,9 +256,10 @@ Players weigh something: `mass` is a [movement parameter](server-mods.md#movemen
 
 ## Probes, forces and links: the grapple mod
 
-A probe is a line a motion throws at what the player looks at. `server_mods/grapple` is an item with
-one motion of three parts under it, its pose, and a look. Its C++ declares the two events; the
-scene says the rest, a hook for every life among it.
+A probe is a line a motion throws at what the player looks at: a node's `CbProbe`, or a sheet's
+[`cast`](rules-language.md#finding-things) (which can also sweep a shape: a ball, a blade).
+`server_mods/grapple` is an item whose sheet has the hook's motion, its pose, and a look. Its C++
+declares the two events; the scene and its sheet say the rest, a hook for every life among it.
 
 The hook is an [item with its own key](items.md#using-an-item) (`prefabs/hook.tscn`, a `CbItem`
 with `use` "Once a press" and `use_key` Q): the key uses it where it is, nothing comes into
@@ -267,14 +268,25 @@ starts on that event, and ends on the same event, so the throw is predicted like
 
 ```
 Hook          CbItem     kind "grapple.hook", use: once a press, use_key Q, slot 4   (prefabs/hook.tscn)
-│                        use_emits grapple.fired
 │                        animation_pack grapple.hook_arm: the left arm's throw, while motion.grapple.hook.Throwing
-├── Throw     CbProbe    range 40 m, flies at 80 m/s; release: using it again, a jump; holds 2 s at most
-│   └── Rope  CbLink     to what the probe found: its length when it takes hold, reel 4 m/s, react off
-│       ├── Pull      CbForce   on the player, toward the target: 160 m/s² up to 15 m/s, ramp 0.1 s, react off
-│       └── Hanging   CbMove    { airborne: 1, air_control: 0.6, gravity: 0 } while it holds
-└── Throwing  CbMotion   when grapple.hook.used, if not linked; duration 0.45 s; no effects
+└── Rules     CbRules    prefabs/hook.rules:
+
+motion Throw on use if not linked
+    until grapple.hook.used or pressed.jump        # using it again, or a jump, lets go
+    lasts 2                                        # it holds 2 s at most
+    emit grapple.fired
+    cast ray range 40 speed 80                     # the probe: 40 m, flies at 80 m/s
+        emit grapple.hooked                        # said where and when it takes hold
+        link reel 4 alone                          # a rope to what it holds, reeled in; moves the player alone
+        force 160 top 15 ramp 0.1 on self along to # the pull: on the player, toward what it holds
+        move air_control 0.6 gravity 0 airborne 1  # how the player moves while it holds
+
+motion Throwing on use if not linked
+    lasts 0.45                                     # the arm's throw (its pose reads it)
 ```
+
+(Until M206 these were nodes: a `CbProbe` with a `CbLink`, a `CbForce` and a `CbMove` under it,
+and a `CbMotion`. They bake to the same lines; the motion's name is `Throw` now, not `Use`.)
 
 | `CbProbe` | Meaning |
 |---|---|
@@ -512,11 +524,12 @@ emit	dash.started
 | `timeout` | what follows runs when the step before gave up waiting; then the motion ends |
 | `guard` | a condition (none: no guard): what follows counts only if it held when its step started |
 | `end` | the motion ends after this tick |
+| `probe_shape` | a radius, then points (x y z each, around the line's tip, forward +Z): what the probe sweeps instead of a line, turned to the line so that what is level stays level |
 | `find` | who (`players`, `bodies`, `all`), whether the player itself counts (0 or 1), at most how many (1 to 16), how its shape is turned (`facing`, `look`, `world`). Then its `shape` lines, what happens to each thing found (`impulse` on `found`, along `away`; `param` with its seconds, given to a player found; `emit`), and `endfind` |
 | `shape` | a convex piece of a find's shape: a radius, then its points (x y z each, in the player's frame: its feet, forward +Z) |
 
 A target is `self`, `hit`, `@field`, or inside a find `found`. Version 3 of the file (a sheet's
-motion blocks) has the last seven; a file without them is written as version 2.
+motion blocks) has the last eight; a file without them is written as version 2.
 
 | Step | Who |
 |---|---|
