@@ -236,6 +236,29 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 			k += 2;
 			return true;
 		}
+		if ( word == "along" && k + 1 < w.size() && w[k + 1].quoted == false )
+		{
+			// Along a marker drawn in the scene: its forward (-Z), turned with the look.
+			props["marker"] = w[k + 1].text;
+			k += 2;
+			return true;
+		}
+		if ( word == "turn" && k + 1 < w.size() )
+		{
+			// turn (yaw, pitch): degrees, right and up, after its frame gives the direction.
+			String inside = w[k + 1].text;
+			PackedStringArray two = inside.begins_with( "(" ) && inside.ends_with( ")" ) ? inside.substr( 1, inside.length() - 2 ).split( "," )
+																						  : PackedStringArray();
+			if ( two.size() != 2 || two[0].strip_edges().is_valid_float() == false || two[1].strip_edges().is_valid_float() == false )
+			{
+				why = "turn (yaw, pitch): degrees, right and up";
+				k += 2;
+				return true;
+			}
+			props["turn"] = Vector2( float( two[0].strip_edges().to_float() ), float( two[1].strip_edges().to_float() ) );
+			k += 2;
+			return true;
+		}
 		if ( word == "direction" && k + 1 < w.size() && Value( w[k + 1] ).get_type() == Variant::VECTOR3 )
 		{
 			props["direction"] = Value( w[k + 1] );
@@ -399,6 +422,18 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 			if ( ( word == "speed" || word == "lift" || word == "ahead" || word == "seconds" ) && i + 1 < w.size() && Number( w[i + 1], value ) )
 			{
 				props[word] = value;
+				i += 2;
+			}
+			else if ( word == "speed" && i + 1 < w.size() && w[i + 1].text.begins_with( "(" ) )
+			{
+				// speed (EXPRESSION): read when it is thrown.
+				props["speed"] = 0.0;
+				props["value_expression"] = w[i + 1].text;
+				i += 2;
+			}
+			else if ( word == "from" && i + 1 < w.size() && w[i + 1].quoted == false )
+			{
+				props["from"] = w[i + 1].text; // (a marker's place: where it starts)
 				i += 2;
 			}
 			else
@@ -1072,6 +1107,23 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				rule.cast = true;
 				continue;
 			}
+			if ( verb == "follow" )
+			{
+				// follow PATH over S: carried along a Path3D drawn in the scene
+				double seconds = 0.0;
+				if ( w.size() != 4 || w[1].quoted || w[2].text != "over" || Number( w[3], seconds ) == false || seconds <= 0.0 )
+				{
+					fail( number, "follow PATH over S: a Path3D beside the sheet, and the seconds it takes" );
+					continue;
+				}
+				statement["kind"] = "follow";
+				statement["path"] = w[1].text;
+				statement["seconds"] = seconds;
+				add( statement );
+				step["statements"] = statements;
+				rule.steps[rule.steps.size() - 1] = step;
+				continue;
+			}
 			if ( verb == "change" )
 			{
 				if ( w.size() < 4 )
@@ -1108,7 +1160,7 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				if ( ParsePart( w, part, why ) == false )
 				{
 					fail( number, why.begins_with( "\"" + verb + "\" is not one of" )
-									  ? "\"" + verb + "\" is not a line of a motion: if, else, then when, after, timeout, cooldown, uses, lasts, until, item, change, emit, end, find, cast, impulse, force, link, move, launch"
+									  ? "\"" + verb + "\" is not a line of a motion: if, else, then when, after, timeout, cooldown, uses, lasts, until, item, change, emit, end, find, cast, impulse, force, link, move, launch, follow"
 									  : why );
 					continue;
 				}

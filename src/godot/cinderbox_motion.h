@@ -457,6 +457,8 @@ private:
 
 // How many values a curve is baked into.
 inline constexpr int kCurveSamples = 64;
+// How many points a path a motion follows is baked into.
+inline constexpr int kPathSamples = 32;
 
 // The root: a mod's motions, baked to one file.
 class CbMotionSet : public CbMotionPart

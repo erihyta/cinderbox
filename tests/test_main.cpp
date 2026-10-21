@@ -4128,6 +4128,154 @@ void TestMotionCurves()
 	CHECK( fails( "motion\tA\nwhen\tpress\twave\nimpulse\tself\tcurve(C, 1)\tup\tnone\ncurve\tC\t0\t1\t0\t1\n" ) ); // named before it is
 }
 
+// Directions and places drawn in the scene (docs/rules-language.md): a marker's forward, turned with
+// the look; a direction turned by degrees; a launch from a marker's place; a leap along a path.
+void TestMotionMarkers()
+{
+	ModSchema schema;
+	schema.itemKinds = { "t.ball" };
+	schema.fields.push_back( { "t.power", BoardType::Float, BoardScope::Entity, 0 } );
+	schema.actions.push_back( { "mark", 0, "Q" } );
+	schema.actions.push_back( { "right", 1, "E" } );
+	schema.actions.push_back( { "up", 2, "R" } );
+	schema.actions.push_back( { "throw", 3, "F" } );
+	schema.actions.push_back( { "leap", 4, "G" } );
+	const std::string text = "cinderbox_motions\t3\n"
+							 // A marker drawn ahead and up (0.6 up, 0.8 ahead).
+							 "motion\tMark\nwhen\tpress\tmark\nimpulse\tself\t10\tmarker\tall\t0\t0.6\t0.8\n"
+							 "motion\tRight\nwhen\tpress\tright\nimpulse\tself\t10\tlook\tall\nturn\t90\t0\n"
+							 "motion\tUp\nwhen\tpress\tup\nimpulse\tself\t10\tlook\tall\nturn\t0\t30\n"
+							 // From a marker 1 m to the left, 1.5 m up, half a metre ahead; at twice t.power.
+							 "motion\tThrow\nwhen\tpress\tthrow\nlaunch\tt.ball\t2 * t.power\tlook\t0\t0.7\t2\nfrom\t1\t1.5\t0.5\n"
+							 // An arc: a metre up and 4 m ahead, in a second.
+							 "motion\tLeap\nwhen\tpress\tleap\nduration\t1\npath\tArc\t0\t0\t0\t0\t0.75\t1\t0\t1\t2\t0\t0.75\t3\t0\t0\t4\n"
+							 "param\tgravity\t0\nfollow\tArc\t1\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 5 );
+	if ( motions == nullptr || motions->list.size() != 5 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	CHECK( motions->list[0].First().effects[0].frame == MotionFrame::Marker && motions->list[1].First().effects[0].turned &&
+		   motions->list[3].First().effects[0].fromMarker && motions->list[3].First().effects[0].strengthExpr == 0 &&
+		   motions->list[4].paths.size() == 1 && motions->list[4].First().effects[0].kind == MotionEffect::Kind::Follow );
+
+	SimConfig config = TestConfig();
+	config.slots = 2;
+	ItemShape ball;
+	ball.kind = 1;
+	ball.half = { 0.1f, 0.1f, 0.1f };
+	ball.center = { 0.0f, 0.0f, 0.0f };
+	Simulation sim( config, FlatMap() );
+	sim.SetItemShapes( { ball } );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 2 );
+	const uint32_t p0 = sim.PlayerNetId( 0 );
+	auto place = [&]( uint16_t yaw ) {
+		SimCommand c;
+		c.type = CommandType::Respawn;
+		c.target = p0;
+		c.mode = 1;
+		c.a = { 0.0f, 1.0f, 0.0f };
+		c.index = yaw;
+		f.commands.push_back( c );
+		f.inputs[0].cameraYaw = yaw;
+		f.inputs[0].cameraPitch = 0;
+		step( 60 );
+	};
+	auto press = [&]( uint16_t action ) {
+		f.inputs[0].actions = action;
+		step( 1 );
+		f.inputs[0].actions = 0;
+		return sim.PlayerCharacter( 0 )->velocity;
+	};
+	auto near = []( b3Vec3 a, b3Vec3 b, float within ) { return b3Distance( a, b ) < within; };
+
+	// A marker's direction, as drawn: ahead and up; looking along +X, it turns with the look.
+	place( 0 );
+	b3Vec3 v = press( 1 );
+	std::printf( "    a marker ahead and up: (%.2f, %.2f, %.2f) m/s\n", v.x, v.y, v.z );
+	CHECK( near( v, { 0.0f, 6.0f, 8.0f }, 0.6f ) );
+	place( 16384 );
+	v = press( 1 );
+	CHECK( near( v, { 8.0f, 6.0f, 0.0f }, 0.6f ) );
+	// Turned 90 degrees right of the look (+Z): right is -X. Turned 30 degrees up.
+	place( 0 );
+	v = press( 2 );
+	std::printf( "    the look turned 90 degrees right: (%.2f, %.2f, %.2f) m/s\n", v.x, v.y, v.z );
+	CHECK( v.x < -8.5f && std::fabs( v.z ) < 0.3f ); // (a tick of ground friction on the way)
+	place( 0 );
+	v = press( 4 );
+	std::printf( "    the look turned 30 degrees up: (%.2f, %.2f, %.2f) m/s\n", v.x, v.y, v.z );
+	CHECK( near( v, { 0.0f, 5.0f, 8.66f }, 0.6f ) );
+
+	// A launch from a marker's place, at twice t.power (5): 10 m/s along the look.
+	place( 0 );
+	SimCommand set;
+	set.type = CommandType::SetField;
+	set.target = SlotTarget( 0 );
+	set.index = 0;
+	set.value = BoardFromFloat( 5.0f );
+	f.commands.push_back( set );
+	step( 1 );
+	const b3Vec3 feet = sim.EntityTransform( p0 )->position;
+	press( 8 );
+	uint32_t thrown = 0;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+		thrown = item != nullptr && item->holder == 0 ? r.netId : thrown;
+	}
+	CHECK( thrown != 0 );
+	if ( thrown != 0 )
+	{
+		const b3Vec3 at = sim.EntityTransform( thrown )->position;
+		const PhysicsBody* pb = sim.FindEntity( thrown ).try_get<PhysicsBody>();
+		const b3Vec3 speed = pb != nullptr ? b3Body_GetLinearVelocity( sim.BodyOf( *pb ) ) : b3Vec3{};
+		std::printf( "    thrown from the marker: at (%.2f, %.2f, %.2f) from the feet, at (%.2f, %.2f, %.2f) m/s\n", at.x - feet.x, at.y - feet.y,
+					 at.z - feet.z, speed.x, speed.y, speed.z );
+		CHECK( near( b3Sub( at, feet ), { 1.0f, 1.5f, 0.5f + 10.0f / 60.0f }, 0.15f ) && std::fabs( speed.z - 10.0f ) < 0.3f );
+	}
+
+	// A leap along a path: a metre up halfway, 4 m ahead at its end, a second.
+	place( 0 );
+	const b3Vec3 start = sim.EntityTransform( p0 )->position;
+	press( 16 );
+	step( 29 );
+	const b3Vec3 half = sim.EntityTransform( p0 )->position;
+	step( 30 );
+	const b3Vec3 end = sim.EntityTransform( p0 )->position;
+	std::printf( "    the leap: halfway %.2f m up and %.2f ahead, at its end %.2f ahead\n", half.y - start.y, half.z - start.z, end.z - start.z );
+	CHECK( std::fabs( half.y - start.y - 1.0f ) < 0.15f && std::fabs( half.z - start.z - 2.0f ) < 0.15f && std::fabs( end.z - start.z - 4.0f ) < 0.2f );
+
+	// What a file may not say.
+	auto fails = [&]( const std::string& body ) {
+		std::vector<Motion> out;
+		std::string error, warned;
+		return CompileMotionSet( "t", "cinderbox_motions\t3\n" + body, schema, out, error, warned ) == false;
+	};
+	CHECK( fails( "motion\tA\nwhen\tpress\tmark\nturn\t90\t0\n" ) );												 // no effect to turn
+	CHECK( fails( "motion\tA\nwhen\tpress\tmark\nimpulse\tself\t1\tup\tnone\nfrom\t0\t1\t0\n" ) );					 // from, not a launch
+	CHECK( fails( "motion\tA\nwhen\tpress\tmark\nfollow\tNope\t1\n" ) );												 // no such path
+	CHECK( fails( "motion\tA\nwhen\tpress\tmark\npath\tP\t0\t0\t0\n" ) );												 // one point
+	CHECK( fails( "motion\tA\nwhen\tpress\tmark\nimpulse\tself\t1\tmarker\tnone\n" ) );								 // no direction
+	CHECK( fails( "motion\tA\nwhen\tpress\tmark\nimpulse\tself\t1\tup\tnone\nturn\t0\t100\n" ) );						 // past straight up
+}
+
 // "motion.<name>" in a condition: that motion of the player's is on. A motion's own conditions read
 // it as the tick found it; the name is the set's and the node's, or the node's alone when it is
 // the only one.
@@ -10496,6 +10644,7 @@ int main( int argc, char** argv )
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },
+		{ "motion_markers", TestMotionMarkers },
 		{ "item_motions", TestItemMotions },
 		{ "motion_conditions", TestMotionConditions },
 		{ "links", TestLinks },

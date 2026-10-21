@@ -148,8 +148,8 @@ bool ParseTarget( const std::string& word, const ModSchema& schema, const std::s
 
 bool ParseFrame( const std::string& word, MotionFrame& out )
 {
-	static const char* const kFrames[] = { "look", "move", "facing", "up", "world", "to", "away" };
-	for ( int i = 0; i < 7; ++i )
+	static const char* const kFrames[] = { "look", "move", "facing", "up", "world", "to", "away", "marker" };
+	for ( int i = 0; i < 8; ++i )
 	{
 		if ( word == kFrames[i] )
 		{
@@ -208,10 +208,55 @@ b3Vec3 MotionDirection( MotionFrame frame, b3Vec3 world, const Character& c, con
 			return { 0.0f, 1.0f, 0.0f };
 		case MotionFrame::World:
 			return world;
+		case MotionFrame::Marker:
+		{
+			// As drawn, turned as the look is: its heading, then its pitch.
+			b3CosSin pitch = detmath::CosSin( float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f ) );
+			b3Vec3 up = { world.x, world.y * pitch.cosine + world.z * pitch.sine, -world.y * pitch.sine + world.z * pitch.cosine };
+			return b3RotateVector( detmath::YawRotation( yaw ), up );
+		}
 		case MotionFrame::To:
+		case MotionFrame::Away:
 			break;
 	}
 	return { 0.0f, 1.0f, 0.0f };
+}
+
+b3Vec3 MotionTurn( const MotionEffect& effect, b3Vec3 d )
+{
+	if ( effect.turned == false )
+	{
+		return d;
+	}
+	// Its heading, about up; then its pitch, about its own right (straight up or down has no right:
+	// it keeps it).
+	b3Vec3 r = { d.x * effect.yawCos + d.z * effect.yawSin, d.y, -d.x * effect.yawSin + d.z * effect.yawCos };
+	float flat = std::sqrt( r.x * r.x + r.z * r.z );
+	if ( flat < 1.0e-6f )
+	{
+		return r;
+	}
+	// (Rodrigues' turn about k = (-z, 0, x) / flat: k x r is (-xy / flat, flat, -zy / flat), k . r is 0.)
+	b3Vec3 across = { -r.x * r.y / flat, flat, -r.z * r.y / flat };
+	return b3Add( b3MulSV( effect.pitchCos, r ), b3MulSV( effect.pitchSin, across ) );
+}
+
+b3Vec3 MotionPathAt( const Motion::Path& path, float u )
+{
+	const size_t count = path.points.size();
+	if ( count == 0 )
+	{
+		return { 0.0f, 0.0f, 0.0f };
+	}
+	if ( count == 1 )
+	{
+		return path.points.front();
+	}
+	u = u > 0.0f ? ( u < 1.0f ? u : 1.0f ) : 0.0f;
+	float at = u * float( count - 1 );
+	size_t i = std::min( size_t( at ), count - 2 );
+	float f = at - float( i );
+	return b3Add( path.points[i], b3MulSV( f, b3Sub( path.points[i + 1], path.points[i] ) ) );
 }
 
 float MotionRamp( const MotionEffect& effect, uint32_t ticksOn, uint32_t tickRate )
@@ -377,7 +422,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			inFind = false;
 			continue;
 		}
-		if ( inFind && key != "impulse" && key != "emit" && key != "param" )
+		if ( inFind && key != "impulse" && key != "emit" && key != "param" && key != "turn" )
 		{
 			return fail( "\"" + key + "\" inside a find: what happens to each thing found is an impulse, an emit or a param (with its seconds)" );
 		}
@@ -499,6 +544,91 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			m.probe = true;
 		}
+		else if ( key == "turn" || key == "from" )
+		{
+			// turn <yaw> <pitch>: degrees, right and up; from <x y z>: a launch's start. Both are of
+			// the effect on the line before.
+			std::vector<MotionEffect>& list = inFind ? step.finds.back().effects : step.effects;
+			if ( list.empty() )
+			{
+				return fail( key + " is of the effect on the line before: none" );
+			}
+			MotionEffect& e = list.back();
+			if ( key == "turn" )
+			{
+				float yaw = 0.0f, pitch = 0.0f;
+				if ( w.size() < 3 || Number( w[1], -360.0f, 360.0f, yaw ) == false || Number( w[2], -90.0f, 90.0f, pitch ) == false )
+				{
+					return fail( "turn wants a heading (-360 to 360 degrees, right) and a pitch (-90 to 90, up)" );
+				}
+				// (Right is a turn about up the other way round from YawForward's: hence the minus.)
+				b3CosSin turnYaw = detmath::CosSin( -yaw * ( detmath::kTwoPi / 360.0f ) );
+				b3CosSin turnPitch = detmath::CosSin( pitch * ( detmath::kTwoPi / 360.0f ) );
+				e.turned = true;
+				e.yawCos = turnYaw.cosine;
+				e.yawSin = turnYaw.sine;
+				e.pitchCos = turnPitch.cosine;
+				e.pitchSin = turnPitch.sine;
+			}
+			else
+			{
+				if ( e.kind != MotionEffect::Kind::Launch || w.size() < 4 || Number( w[1], -20.0f, 20.0f, e.from.x ) == false ||
+					 Number( w[2], -20.0f, 20.0f, e.from.y ) == false || Number( w[3], -20.0f, 20.0f, e.from.z ) == false )
+				{
+					return fail( "from is a launch's: where it starts, x y z within 20 m of the player's feet" );
+				}
+				e.fromMarker = true;
+			}
+		}
+		else if ( key == "path" )
+		{
+			// path <name> <x y z>...: points at even steps along it, from where it starts
+			if ( whole() == false )
+			{
+				return false;
+			}
+			Motion::Path path;
+			path.name = w.size() >= 2 ? w[1] : std::string();
+			size_t count = w.size() >= 2 ? ( w.size() - 2 ) / 3 : 0;
+			if ( path.name.empty() || w.size() < 8 || ( w.size() - 2 ) % 3 != 0 || count > 256 )
+			{
+				return fail( "path wants a name and its points, x y z each (2 to 256)" );
+			}
+			for ( size_t k = 0; k < count; ++k )
+			{
+				b3Vec3 point = {};
+				if ( Number( w[2 + 3 * k], -100.0f, 100.0f, point.x ) == false || Number( w[3 + 3 * k], -100.0f, 100.0f, point.y ) == false ||
+					 Number( w[4 + 3 * k], -100.0f, 100.0f, point.z ) == false )
+				{
+					return fail( "a path's points are within 100 m of where it starts" );
+				}
+				path.points.push_back( point );
+			}
+			for ( const Motion::Path& other : m.paths )
+			{
+				if ( other.name == path.name )
+				{
+					return fail( "the motion has a path named " + path.name + " already" );
+				}
+			}
+			m.paths.push_back( path );
+		}
+		else if ( key == "follow" )
+		{
+			// follow <path> <seconds>: the player carried along it
+			MotionEffect e;
+			e.kind = MotionEffect::Kind::Follow;
+			e.guard = guard;
+			for ( size_t k = 0; w.size() >= 2 && k < m.paths.size(); ++k )
+			{
+				e.path = m.paths[k].name == w[1] ? int16_t( k ) : e.path;
+			}
+			if ( w.size() < 3 || e.path < 0 || Number( w[2], 0.05f, kMaxMotionSeconds, e.seconds ) == false )
+			{
+				return fail( "follow wants a path the motion has (a path line before it) and its seconds" );
+			}
+			step.effects.push_back( e );
+		}
 		else if ( key == "curve" )
 		{
 			// curve <name> <min> <max> <values>...: what "curve(name, x)" reads, at even steps
@@ -600,7 +730,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			e.replace = MotionEffect::Replace( replace );
 			e.guard = guard;
-			if ( e.frame == MotionFrame::World && ParseWorld( w, 5, e.direction ) == false )
+			if ( ( e.frame == MotionFrame::World || e.frame == MotionFrame::Marker ) && ParseWorld( w, 5, e.direction ) == false )
 			{
 				return fail( "a world frame wants its direction: x y z, each -1 to 1, not all zero" );
 			}
@@ -638,7 +768,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			e.push = MotionEffect::Push( push );
 			e.react = w[7] == "1";
 			e.guard = guard;
-			if ( e.frame == MotionFrame::World && ParseWorld( w, 8, e.direction ) == false )
+			if ( ( e.frame == MotionFrame::World || e.frame == MotionFrame::Marker ) && ParseWorld( w, 8, e.direction ) == false )
 			{
 				return fail( "a world frame wants its direction: x y z, each -1 to 1, not all zero" );
 			}
@@ -668,14 +798,19 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			MotionEffect e;
 			e.kind = MotionEffect::Kind::Launch;
 			e.carried = key == "launch_carried";
-			if ( w.size() < 7 || w[1].empty() || Number( w[2], 0.0f, kMaxMotionImpulse, e.strength ) == false || ParseFrame( w[3], e.frame ) == false ||
+			std::string why;
+			if ( w.size() >= 3 && strength( m, w[2], kMaxMotionImpulse, e, why ) == false )
+			{
+				return fail( "launch: its speed: " + why );
+			}
+			if ( w.size() < 7 || w[1].empty() || ParseFrame( w[3], e.frame ) == false ||
 				 e.frame == MotionFrame::To || Number( w[4], -kMaxMotionImpulse, kMaxMotionImpulse, e.lift ) == false ||
 				 Number( w[5], 0.0f, 5.0f, e.ahead ) == false || Number( w[6], 0.0f, 600.0f, e.seconds ) == false )
 			{
 				return fail( "launch wants an item kind, a speed (m/s), a frame (look, move, facing, up, world), a lift (m/s upward), how far "
 							 "ahead it starts (0 to 5 m) and its seconds (0: it stays)" );
 			}
-			if ( e.frame == MotionFrame::World && ParseWorld( w, 7, e.direction ) == false )
+			if ( ( e.frame == MotionFrame::World || e.frame == MotionFrame::Marker ) && ParseWorld( w, 7, e.direction ) == false )
 			{
 				return fail( "a world frame wants its direction: x y z, each -1 to 1, not all zero" );
 			}
@@ -892,7 +1027,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				{
 					return wrong( "a link without a probe needs a length" );
 				}
-				if ( step.timeout && ( e.kind == MotionEffect::Kind::Force || e.kind == MotionEffect::Kind::Link ) )
+				if ( step.timeout && ( e.kind == MotionEffect::Kind::Force || e.kind == MotionEffect::Kind::Link || e.kind == MotionEffect::Kind::Follow ) )
 				{
 					return wrong( "a timeout's statements happen once (no force, link or parameter): the motion ends after it" );
 				}
