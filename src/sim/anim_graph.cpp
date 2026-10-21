@@ -21,7 +21,10 @@ constexpr float kMinClipLength = 1.0f / 1024.0f;
 const char* const kBuiltinNames[AnimExpr::BuiltinCount] = {
 	"speed",	  "forward_speed", "vertical_speed", "grounded",	"airborne_time", "jumped",
 	"aiming",	  "backward",	   "state_time",	 "move_forward", "move_right",	"linked",	  "link_distance",
+	"time",		  "distance",	   "reach",
 };
+
+thread_local const std::vector<AnimCurve>* t_curveNames = nullptr;
 
 // --- Expressions ----------------------------------------------------------------------------------
 // The language is the shared one (expr/expr.h). The simulation runs its own copy of a program with
@@ -68,6 +71,27 @@ public:
 					std::swap( quiet, m_warnings );
 					step.op = AnimExpr::Op::Const;
 					step.value = probe.kind != AnimExpr::VarKind::Zero ? 1.0f : 0.0f;
+					break;
+				}
+				case expr::Op::Curve:
+				{
+					// The curve by its name, among those the motion being compiled has.
+					const std::string& name = program.curves[s.name];
+					step.op = AnimExpr::Op::Curve;
+					bool found = false;
+					for ( size_t i = 0; t_curveNames != nullptr && i < t_curveNames->size() && found == false; ++i )
+					{
+						if ( ( *t_curveNames )[i].name == name )
+						{
+							step.index = uint16_t( i );
+							found = true;
+						}
+					}
+					if ( found == false )
+					{
+						error = "'" + m_text + "': no curve named " + name + ( t_curveNames == nullptr ? " (curves are a motion's)" : " in this motion" );
+						return false;
+					}
 					break;
 				}
 				default:
@@ -1009,6 +1033,31 @@ std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, cons
 	return graph;
 }
 
+float SampleAnimCurve( const AnimCurve& curve, float x )
+{
+	const size_t count = curve.samples.size();
+	if ( count == 0 )
+	{
+		return 0.0f;
+	}
+	if ( count == 1 || curve.max <= curve.min )
+	{
+		return curve.samples.front();
+	}
+	// (Not a NaN's way: a comparison that fails goes to the start.)
+	float t = ( x - curve.min ) / ( curve.max - curve.min );
+	t = t > 0.0f ? ( t < 1.0f ? t : 1.0f ) : 0.0f;
+	float at = t * float( count - 1 );
+	size_t i = std::min( size_t( at ), count - 2 );
+	float f = at - float( i );
+	return curve.samples[i] + ( curve.samples[i + 1] - curve.samples[i] ) * f;
+}
+
+void SetAnimCurveNames( const std::vector<AnimCurve>* curves )
+{
+	t_curveNames = curves;
+}
+
 float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& in, float stateTime )
 {
 	float stack[kMaxExprStack];
@@ -1028,6 +1077,10 @@ float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& in, float s
 				continue;
 			case AnimExpr::Op::Negate:
 				stack[top - 1] = -stack[top - 1];
+				continue;
+			case AnimExpr::Op::Curve:
+				stack[top - 1] =
+					in.curves != nullptr && s.index < in.curves->size() ? SampleAnimCurve( ( *in.curves )[s.index], stack[top - 1] ) : 0.0f;
 				continue;
 			default:
 				break;

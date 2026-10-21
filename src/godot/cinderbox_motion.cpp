@@ -6,6 +6,7 @@
 #include "cue/cue_prediction.h" // ParseChange: a motion's changes are written as a prediction's are
 #include "cue/cue_rules.h"
 
+#include "expr.h"
 #include "mod_schema.h"
 #include "motions.h"
 #include "move_params.h"
@@ -23,6 +24,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
+#include <functional>
 #include <charconv>
 #include <vector>
 
@@ -914,7 +916,70 @@ std::string BakeSheetPart( const Dictionary& part, const String& kind, String& w
 	holder->remove_child( node );
 	memdelete( node );
 	memdelete( holder );
+	// An expression where its number is (an impulse's speed, a force's strength): in its place.
+	String expression = String( props.get( "value_expression", "" ) ).strip_edges();
+	if ( lines.empty() == false && expression.is_empty() == false )
+	{
+		if ( Plain( expression ) == false )
+		{
+			why = "\"" + expression + "\" cannot have a tab or a #";
+			return std::string();
+		}
+		const int field = String( part["class"] ) == "CbImpulse" ? 2 : 4;
+		size_t at = 0;
+		for ( int k = 0; k < field; ++k )
+		{
+			at = lines.find( '\t', at ) + 1;
+		}
+		size_t end = lines.find_first_of( "\t\n", at );
+		lines.replace( at, end - at, Std( expression ) );
+	}
 	return lines;
+}
+
+// The curves a motion's expressions read ("curve(Falloff, reach)"), from CbCurve nodes (or any
+// node with a Curve in "curve") found by name from `from`: "curve" lines, a value at even steps.
+bool CurveLines( const std::vector<std::string>& expressions, const Node* from, std::string& out, String& why )
+{
+	std::vector<std::string> names;
+	for ( const std::string& text : expressions )
+	{
+		expr::Program program;
+		std::string error;
+		if ( text.empty() || expr::Compile( text, program, error ) == false )
+		{
+			continue; // (what is not an expression is said by the simulation's compiler)
+		}
+		for ( const std::string& name : program.curves )
+		{
+			if ( std::find( names.begin(), names.end(), name ) == names.end() )
+			{
+				names.push_back( name );
+			}
+		}
+	}
+	for ( const std::string& name : names )
+	{
+		const Node* node = from != nullptr ? from->get_node_or_null( NodePath( String::utf8( name.c_str() ) ) ) : nullptr;
+		Ref<Curve> curve = node != nullptr ? Ref<Curve>( node->get( "curve" ) ) : Ref<Curve>();
+		if ( curve.is_null() )
+		{
+			why = "curve(" + String::utf8( name.c_str() ) + ", ...): no CbCurve named " + String::utf8( name.c_str() ) + " with a curve beside the sheet";
+			return false;
+		}
+		float lo = curve->get_min_domain(), hi = curve->get_max_domain();
+		if ( hi <= lo )
+		{
+			hi = lo + 1.0f;
+		}
+		out += "curve\t" + name + "\t" + Num( lo ) + "\t" + Num( hi );
+		for ( int k = 0; k < kCurveSamples; ++k )
+		{
+			out += "\t" + Num( curve->sample( lo + ( hi - lo ) * float( k ) / float( kCurveSamples - 1 ) ) );
+		}
+		out += "\n";
+	}
+	return true;
 }
 
 // A point of a shape in the player's frame, as the simulation has it: Godot's forward is -Z, the
@@ -1089,6 +1154,49 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 		return fail( "a motion's name is one word" );
 	}
 	std::string text = "motion\t" + Std( name ) + "\n";
+	{
+		// Every expression it has, for the curves they read (written first: before what reads them).
+		std::vector<std::string> expressions;
+		auto add = [&]( const Variant& v ) {
+			if ( v.get_type() == Variant::PACKED_STRING_ARRAY )
+			{
+				PackedStringArray all = v;
+				for ( int64_t k = 0; k < all.size(); ++k )
+				{
+					expressions.push_back( Std( all[k] ) );
+				}
+			}
+			else if ( v.get_type() == Variant::STRING )
+			{
+				expressions.push_back( Std( String( v ) ) );
+			}
+		};
+		add( p.get( "expression", Variant() ) );
+		add( p.get( "conditions", Variant() ) );
+		add( p.get( "until", Variant() ) );
+		std::function<void( const Array& )> statementsOf = [&]( const Array& list ) {
+			for ( int64_t k = 0; k < list.size(); ++k )
+			{
+				Dictionary statement = list[k];
+				add( statement.get( "guard", Variant() ) );
+				add( Dictionary( Dictionary( statement.get( "part", Dictionary() ) ).get( "properties", Dictionary() ) ).get( "value_expression", Variant() ) );
+				statementsOf( statement.get( "statements", Array() ) );
+			}
+		};
+		Array all = p.get( "steps", Array() );
+		for ( int64_t k = 0; k < all.size(); ++k )
+		{
+			add( Dictionary( all[k] ).get( "wait", Variant() ) );
+			statementsOf( Dictionary( all[k] ).get( "statements", Array() ) );
+		}
+		std::string curves;
+		String why;
+		if ( CurveLines( expressions, from, curves, why ) == false )
+		{
+			return fail( why );
+		}
+		text += curves;
+	}
 	const String trigger = p.get( "trigger", "" );
 	PackedStringArray conditions;
 	auto word = [&]( const char* key ) {
@@ -1633,6 +1741,25 @@ std::string CbLink::Bake( String& error ) const
 }
 
 #undef CB_MOTION_PROP
+
+// --- CbCurve ----------------------------------------------------------------------------------------
+
+void CbCurve::_bind_methods()
+{
+	ClassDB::bind_method( D_METHOD( "set_curve", "curve" ), &CbCurve::set_curve );
+	ClassDB::bind_method( D_METHOD( "get_curve" ), &CbCurve::get_curve );
+	ADD_PROPERTY( PropertyInfo( Variant::OBJECT, "curve", PROPERTY_HINT_RESOURCE_TYPE, "Curve" ), "set_curve", "get_curve" );
+}
+
+PackedStringArray CbCurve::_get_configuration_warnings() const
+{
+	PackedStringArray out;
+	if ( m_curve.is_null() )
+	{
+		out.push_back( "Give it a Curve: a rules sheet's motion reads it by this node's name, curve(" + String( get_name() ) + ", x)." );
+	}
+	return out;
+}
 
 // --- CbMotionSet ------------------------------------------------------------------------------------
 

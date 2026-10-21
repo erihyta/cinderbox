@@ -246,14 +246,36 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 	};
 	if ( verb == "impulse" || verb == "force" )
 	{
-		if ( w.size() < 2 || Number( w[1], value ) == false )
+		// How much: a number, or an expression up to the first word that is an option (read when it
+		// acts: "9 * curve(Falloff, reach)", "2 * dash.power").
+		size_t options = 1;
+		while ( options < w.size() && w[options].quoted == false &&
+				( w[options].text == "on" || w[options].text == "along" || w[options].text == "direction" || w[options].text == "replace" ||
+				  w[options].text == "kind" || w[options].text == "top" || w[options].text == "ramp" || w[options].text == "react" ) == false )
+		{
+			++options;
+		}
+		if ( options < 2 )
 		{
 			why = verb + String( " <how much> ..." );
 			return false;
 		}
 		part["class"] = verb == "impulse" ? "CbImpulse" : "CbForce";
-		props[verb == "impulse" ? "speed" : "strength"] = value;
-		for ( i = 2; i < w.size() && why.is_empty(); )
+		if ( options == 2 && Number( w[1], value ) )
+		{
+			props[verb == "impulse" ? "speed" : "strength"] = value;
+		}
+		else
+		{
+			String expression;
+			for ( size_t k = 1; k < options; ++k )
+			{
+				expression += ( k > 1 ? " " : "" ) + w[k].text;
+			}
+			props[verb == "impulse" ? "speed" : "strength"] = 0.0;
+			props["value_expression"] = expression;
+		}
+		for ( i = options; i < w.size() && why.is_empty(); )
 		{
 			const String word = w[i].text;
 			if ( common( word, i ) )

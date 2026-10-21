@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="CbCurve" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<brief_description>
+		A curve a rules sheet's motion reads by this node's name: a falloff, a ramp, a shape over time.
+	</brief_description>
+	<description>
+		Put it in the scene of the sheet (under the node the [CbRules] is under) and name it; a motion block's numbers read it as [code]curve(Name, x)[/code]: [code]impulse 9 * curve(Falloff, reach) along away[/code], [code]force 40 * curve(Ramp, time / 0.3) along look[/code].
+		The bake writes it into the motions file as 64 values at even steps over the curve's domain, so every machine reads the same; between two of them it is read in a straight line, and past its ends it holds the end's value.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="curve" type="Curve" setter="set_curve" getter="get_curve">
+			The curve, drawn in the inspector's curve editor. Its domain is what [code]x[/code] runs over (0 to 1 by default: what [code]reach[/code] is).
+		</member>
+	</members>
+</class>

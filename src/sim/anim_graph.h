@@ -65,6 +65,7 @@ struct AnimExpr
 		NotEqual,
 		And,
 		Or,
+		Curve, // the value on the stack through the curve `index` (AnimGraphInputs::curves)
 	};
 	enum class VarKind : uint8_t
 	{
@@ -110,6 +111,12 @@ struct AnimExpr
 		// How far the player is from what that probe holds on to, in metres (0: none is out). So a
 		// motion can let go when it has arrived: "link_distance < 1.5".
 		LinkDistance,
+		// A motion's (sim/motions.h): seconds since its step started; inside a find, how far what it
+		// found is (metres) and how far out it is along the ground (0 at the player, 1 at the shape's
+		// farthest edge). Elsewhere 0.
+		Time,
+		Distance,
+		Reach,
 		BuiltinCount,
 	};
 	struct Step
@@ -258,6 +265,21 @@ AnimGraphPacks CompileAnimPacks( const ModSchema& schema, std::string& warnings 
 bool CompileAnimExpr( const std::string& text, const ModSchema& schema, AnimExpr& out, std::string& error, std::string& warnings );
 
 // Everything a condition can read, for one player on one tick.
+// A curve an expression reads ("curve(Falloff, reach)"): its values at even steps from `min` to
+// `max` (at least two), read between them in a straight line, held at its ends.
+struct AnimCurve
+{
+	std::string name;
+	float min = 0.0f;
+	float max = 1.0f;
+	std::vector<float> samples;
+};
+float SampleAnimCurve( const AnimCurve& curve, float x );
+
+// The curves "curve(NAME, x)" may name while expressions are compiled on this thread (a motion's:
+// sim/motions.cpp sets it); null: a curve is an error.
+void SetAnimCurveNames( const std::vector<AnimCurve>* curves );
+
 struct AnimGraphInputs
 {
 	float builtins[AnimExpr::BuiltinCount] = {};
@@ -285,6 +307,8 @@ struct AnimGraphInputs
 	// Kinds it is using this tick ("using.<kind>").
 	const uint16_t* usingKinds = nullptr;
 	uint32_t usingCount = 0;
+	// The curves "curve(...)" reads (the motion's own; null: 0).
+	const std::vector<AnimCurve>* curves = nullptr;
 };
 
 float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& inputs, float stateTime );

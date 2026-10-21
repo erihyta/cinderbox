@@ -3975,6 +3975,159 @@ void TestMotionCasts()
 	CHECK( fails( "motion\tA\nwhen\tpress\tray\nprobe\t10\t0\nprobe_shape\t50\t0\t0\t0\n" ) );
 }
 
+// Numbers that are expressions (docs/rules-language.md): a strength read when it acts, from a field,
+// from a curve over how far out a find's target is ("reach"), and "time" since a step started.
+void TestMotionCurves()
+{
+	ModSchema schema;
+	schema.fields.push_back( { "t.power", BoardType::Float, BoardScope::Entity, 0 } );
+	schema.events = { "later.a", "later.b" };
+	schema.actions.push_back( { "wave", 0, "Q" } );
+	schema.actions.push_back( { "jump2", 1, "E" } );
+	schema.actions.push_back( { "lift", 2, "R" } );
+	schema.actions.push_back( { "later", 3, "F" } );
+	const std::string text = "cinderbox_motions\t3\n"
+							 // A wave 6 m round: what it finds is thrown at 10 m/s at the player, nothing at its edge.
+							 "motion\tWave\nwhen\tpress\twave\ncurve\tFall\t0\t1\t1\t0\n"
+							 "find\tbodies\t0\t16\tfacing\nshape\t6\t0\t1\t0\nimpulse\tfound\t10 * curve(Fall, reach)\taway\tnone\nendfind\n"
+							 "motion\tJump2\nwhen\tpress\tjump2\nimpulse\tself\t2 * t.power\tup\tvertical\n"
+							 "motion\tLift\nwhen\tpress\tlift\nduration\t0.5\nforce\tself\tup\taccel\tt.power * 10\t0\t0\t0\n"
+							 "motion\tLater\nwhen\tpress\tlater\nemit\tlater.a\nstep\t0\t0\ttime >= 0.5\nemit\tlater.b\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 4 );
+	if ( motions == nullptr || motions->list.size() != 4 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	const Motion& wave = motions->list[0];
+	CHECK( wave.curves.size() == 1 && wave.curves[0].samples.size() == 2 && wave.exprs.size() == 1 && wave.First().finds[0].effects[0].strengthExpr == 0 &&
+		   wave.First().finds[0].extent == 6.0f );
+	CHECK( SampleAnimCurve( wave.curves[0], 0.25f ) == 0.75f && SampleAnimCurve( wave.curves[0], -1.0f ) == 1.0f && SampleAnimCurve( wave.curves[0], 2.0f ) == 0.0f );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	std::vector<ModEventRecord> seen;
+	uint32_t counted = 0;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+			for ( ; counted < sim.Globals().modEventCount; ++counted )
+			{
+				seen.push_back( sim.Globals().modEvents[counted % kModEventHistory] );
+			}
+		}
+	};
+	auto press = [&]( uint16_t action ) {
+		f.inputs[0].actions = action;
+		step( 1 );
+		f.inputs[0].actions = 0;
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 2 );
+	const uint32_t p0 = sim.PlayerNetId( 0 );
+	SimCommand at;
+	at.type = CommandType::Respawn;
+	at.target = p0;
+	at.mode = 1;
+	at.a = { 0.0f, 1.0f, 0.0f };
+	f.commands.push_back( at );
+	for ( float x : { 1.5f, 4.5f } )
+	{
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.mode = uint8_t( ShapeKind::Box );
+		c.value = -1;
+		c.a = { x, 0.4f, 0.0f };
+		c.c = { 0.3f, 0.3f, 0.3f };
+		f.commands.push_back( c );
+	}
+	step( 60 );
+	std::vector<uint32_t> crates;
+	for ( const auto& r : sim.Entities() )
+	{
+		if ( flecs::entity( sim.World(), r.entity ).has<Prop>() )
+		{
+			crates.push_back( r.netId );
+		}
+	}
+	CHECK( crates.size() == 2 );
+	if ( crates.size() != 2 )
+	{
+		return;
+	}
+	auto velocity = [&]( uint32_t netId ) {
+		const PhysicsBody* pb = sim.FindEntity( netId ).try_get<PhysicsBody>();
+		return pb != nullptr ? b3Body_GetLinearVelocity( sim.BodyOf( *pb ) ) : b3Vec3{};
+	};
+
+	// The near crate (a quarter of the way out) is thrown three times as hard as the far one (three
+	// quarters out): 7.5 and 2.5 m/s.
+	press( 1 );
+	const float near = velocity( crates[0] ).x, far = velocity( crates[1] ).x;
+	std::printf( "    a wave's falloff: the crate 1.5 m out at %.2f m/s, the one 4.5 m out at %.2f m/s\n", near, far );
+	CHECK( std::fabs( near - 7.5f ) < 0.5f && std::fabs( far - 2.5f ) < 0.5f );
+	step( 120 );
+
+	// A strength from a field: twice t.power (3), up.
+	SimCommand set;
+	set.type = CommandType::SetField;
+	set.target = SlotTarget( 0 );
+	set.index = 0;
+	set.value = BoardFromFloat( 3.0f );
+	f.commands.push_back( set );
+	step( 1 );
+	press( 2 );
+	std::printf( "    an impulse of 2 * t.power: %.2f m/s up\n", sim.PlayerCharacter( 0 )->velocity.y );
+	CHECK( sim.PlayerCharacter( 0 )->velocity.y > 5.5f && sim.PlayerCharacter( 0 )->velocity.y <= 6.0f );
+	step( 120 );
+
+	// A force of t.power * 10 (30 m/s², above gravity) lifts the player off; at 1 it would not.
+	press( 4 );
+	step( 20 );
+	CHECK( sim.PlayerCharacter( 0 )->grounded == 0 );
+	step( 120 );
+	set.value = BoardFromFloat( 1.0f );
+	f.commands.push_back( set );
+	step( 1 );
+	press( 4 );
+	step( 20 );
+	CHECK( sim.PlayerCharacter( 0 )->grounded == 1 );
+	step( 60 );
+
+	// "time" in a wait: half a second after the step started.
+	press( 8 );
+	step( 40 );
+	uint32_t a = 0, b = 0;
+	for ( const ModEventRecord& e : seen )
+	{
+		a = int( e.type ) == 0 ? e.tick : a;
+		b = int( e.type ) == 1 ? e.tick : b;
+	}
+	CHECK( a != 0 && b == a + 30 );
+
+	// What a file may not say.
+	auto fails = [&]( const std::string& body ) {
+		std::vector<Motion> out;
+		std::string error, warned;
+		return CompileMotionSet( "t", "cinderbox_motions\t3\n" + body, schema, out, error, warned ) == false;
+	};
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nimpulse\tself\tcurve(Nope, 1)\tup\tnone\n" ) ); // no such curve
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\ncurve\tC\t1\t1\t0\t1\n" ) );						// its end not past its start
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\ncurve\tC\t0\t1\t0\n" ) );							// one value
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nimpulse\tself\t500\tup\tnone\n" ) );				// a number past the limit
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nimpulse\tself\t2 *\tup\tnone\n" ) );				// not an expression
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\ncurve\tC\t0\t1\t0\t1\ncurve\tC\t0\t1\t0\t1\n" ) );
+	CHECK( fails( "motion\tA\nwhen\tpress\twave\nimpulse\tself\tcurve(C, 1)\tup\tnone\ncurve\tC\t0\t1\t0\t1\n" ) ); // named before it is
+}
+
 // "motion.<name>" in a condition: that motion of the player's is on. A motion's own conditions read
 // it as the tick found it; the name is the set's and the node's, or the node's alone when it is
 // the only one.
@@ -10342,6 +10495,7 @@ int main( int argc, char** argv )
 		{ "motion_steps", TestMotionSteps },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
+		{ "motion_curves", TestMotionCurves },
 		{ "item_motions", TestItemMotions },
 		{ "motion_conditions", TestMotionConditions },
 		{ "links", TestLinks },

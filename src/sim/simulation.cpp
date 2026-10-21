@@ -2090,7 +2090,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				}
 				// The effects read the state the motions just decided (the parameters that hold).
 				SetMotionState( e, motion );
-				ApplyMotionEffects( e, c, t, in, motion, boardBefore, m_motionActive );
+				ApplyMotionEffects( e, c, t, in, motion, boardBefore, m_motionActive, values );
 			}
 		}
 
@@ -4045,7 +4045,7 @@ Simulation::MotionEnd Simulation::EndOf( flecs::entity self, const Transform& t,
 	return end;
 }
 
-void Simulation::ImpulseEnd( const MotionEffect& effect, const MotionEnd& target, Character& c, b3Vec3 direction )
+void Simulation::ImpulseEnd( const MotionEffect& effect, float strength, const MotionEnd& target, Character& c, b3Vec3 direction )
 {
 	// What it replaces is taken away first: a jump in the air is the same jump.
 	b3Vec3 had = EndVelocity( target, c );
@@ -4065,7 +4065,7 @@ void Simulation::ImpulseEnd( const MotionEffect& effect, const MotionEnd& target
 			keep = { 0.0f, 0.0f, 0.0f };
 			break;
 	}
-	PushEnd( target, c, b3Add( b3Sub( keep, had ), b3MulSV( effect.strength, direction ) ) );
+	PushEnd( target, c, b3Add( b3Sub( keep, had ), b3MulSV( strength, direction ) ) );
 }
 
 void Simulation::GiveMove( flecs::entity who, uint8_t param, float value, float seconds )
@@ -4097,8 +4097,8 @@ void Simulation::GiveMove( flecs::entity who, uint8_t param, float value, float 
 	who.set<MoveEffects>( given );
 }
 
-void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const MotionFind& find,
-						  const MotionEnd& self, const MotionEnd& hit )
+void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const Motion& m, const MotionFind& find,
+						  const MotionEnd& self, const MotionEnd& hit, const AnimGraphInputs& motionValues )
 {
 	const uint32_t selfId = e.get<NetId>().value;
 	// The shape, turned as the player faces (or looks), at its feet.
@@ -4179,6 +4179,13 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 
 	for ( const Target& target : targets )
 	{
+		// What its strengths read about it: how far it is, and how far out along the ground.
+		AnimGraphInputs values = motionValues;
+		values.builtins[AnimExpr::Distance] = target.distance;
+		b3Vec3 out = b3Sub( target.end.point, t.position );
+		float along = std::sqrt( out.x * out.x + out.z * out.z );
+		float reach = find.extent > 0.0f ? along / find.extent : 0.0f;
+		values.builtins[AnimExpr::Reach] = reach < 1.0f ? reach : 1.0f;
 		for ( const MotionEffect& effect : find.effects )
 		{
 			const MotionEnd& on = effect.target.kind == MotionTarget::Kind::Self ? self
@@ -4209,7 +4216,7 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 			{
 				direction = MotionDirection( effect.frame, effect.direction, c, in );
 			}
-			ImpulseEnd( effect, on, c, direction );
+			ImpulseEnd( effect, MotionStrength( m, effect, values, kMotionImpulseLimit ), on, c, direction );
 		}
 		// A player it found moves as it is given, for its seconds.
 		if ( target.end.kind == MotionEnd::Kind::Player || target.end.kind == MotionEnd::Kind::Self )
@@ -4283,7 +4290,7 @@ void Simulation::PushEnd( const MotionEnd& end, Character& c, b3Vec3 change )
 }
 
 void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const MotionState& state,
-									 const Blackboard& board, const std::vector<MotionActive>& active )
+									 const Blackboard& board, const std::vector<MotionActive>& active, const AnimGraphInputs& playerValues )
 {
 	const float dt = m_config.TimeStep();
 	for ( const MotionActive& on : active )
@@ -4299,6 +4306,10 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 			continue;
 		}
 		bool holdChanged = false;
+		// What its strengths read: the player's values, its curves, and the time since its step started.
+		AnimGraphInputs values = playerValues;
+		values.curves = &m.curves;
+		values.builtins[AnimExpr::Time] = float( m_globals.tick - std::min( m_globals.tick, MotionStepStart( slot ) ) ) * dt;
 		const MotionEnd self = ResolveEnd( e, t, MotionTarget{}, nullptr, board );
 		const MotionTarget hitTarget{ MotionTarget::Kind::Hit, 0, true };
 		const MotionEnd hit = m.probe ? ResolveEnd( e, t, hitTarget, &hold, board ) : MotionEnd{};
@@ -4368,7 +4379,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				{
 					continue;
 				}
-				ImpulseEnd( effect, target, c, direction );
+				ImpulseEnd( effect, MotionStrength( m, effect, values, kMotionImpulseLimit ), target, c, direction );
 			}
 			else if ( effect.kind == MotionEffect::Kind::Force )
 			{
@@ -4377,20 +4388,21 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 					continue;
 				}
 				const float ramp = MotionRamp( effect, m_globals.tick - MotionStepStart( slot ), m_config.tickRate );
+				const float strength = MotionStrength( m, effect, values, MotionForceLimit( effect ) );
 				const float along = b3Dot( EndVelocity( target, c ), direction );
 				float change = 0.0f;
 				switch ( effect.push )
 				{
 					case MotionEffect::Push::Acceleration:
-						change = effect.strength * ramp * dt;
+						change = strength * ramp * dt;
 						break;
 					case MotionEffect::Push::Force:
-						change = effect.strength * ramp / target.mass * dt;
+						change = strength * ramp / target.mass * dt;
 						break;
 					case MotionEffect::Push::Velocity:
 					{
 						// Toward the speed, no faster than its rate lets it.
-						float rate = std::fabs( effect.strength ) * ramp * dt;
+						float rate = std::fabs( strength ) * ramp * dt;
 						change = std::clamp( effect.speed - along, -rate, rate );
 						// With a reaction on something that can move, the speed is the two's toward
 						// each other, and each takes its share of the change by the other's weight:
@@ -4475,7 +4487,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 			{
 				if ( MotionGuardHolds( slot, find.guard ) )
 				{
-					RunFind( e, c, t, in, find, self, hit );
+					RunFind( e, c, t, in, m, find, self, hit, values );
 				}
 			}
 		}
