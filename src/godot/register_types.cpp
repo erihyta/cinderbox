@@ -82,6 +82,7 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	// Motions: what a mod adds to how players move, baked for the simulation.
 	GDREGISTER_ABSTRACT_CLASS( cb::gd::CbMotionPart );
 	GDREGISTER_CLASS( cb::gd::CbMotionSet );
+	GDREGISTER_CLASS( cb::gd::CbCurve );
 	GDREGISTER_CLASS( cb::gd::CbMotion );
 	GDREGISTER_CLASS( cb::gd::CbProbe );
 	GDREGISTER_CLASS( cb::gd::CbMove );

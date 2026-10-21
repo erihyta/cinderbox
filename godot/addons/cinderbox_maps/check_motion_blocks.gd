@@ -188,6 +188,33 @@ func _run() -> void:
 	_refused("two events when it holds", "motion A on press a\n\tcast ray range 5\n\t\temit x\n\t\temit y\n", "line 4: a cast says one event")
 	_refused("a cast with no range", "motion A on press a\n\tcast ray\n", "line 2: cast SHAPE range R")
 
+	# Numbers that are expressions, and a curve drawn in a CbCurve beside the sheet.
+	_scratch("motion Wave on press wave\n\tfind sphere 6\n\t\timpulse 9 * curve(Falloff, reach) along away\n" +
+		"\tforce 2 * dash.power along up\n")
+	var curves := _set_with(SCRATCH, false)
+	var falloff := CbCurve.new()
+	falloff.name = "Falloff"
+	var line := Curve.new()
+	line.add_point(Vector2(0, 1), 0, -1, Curve.TANGENT_LINEAR, Curve.TANGENT_LINEAR)
+	line.add_point(Vector2(1, 0), -1, 0, Curve.TANGENT_LINEAR, Curve.TANGENT_LINEAR)
+	falloff.curve = line
+	curves.add_child(falloff)
+	var curve_baked: Dictionary = curves.bake()
+	var curve_text := String(curve_baked["text"])
+	_check("curves bake", curve_text.is_empty() == false, String(curve_baked["error"]))
+	var curve_line := ""
+	for each in curve_text.split("\n"):
+		if each.begins_with("curve\tFalloff\t"):
+			curve_line = each
+	var values := curve_line.split("\t")
+	_check("the curve: its domain, then 64 values from 1 to 0", values.size() == 68 and values[2] == "0" and values[3] == "1" and
+		values[4] == "1" and values[67] == "0" and absf(float(values[35]) - 0.507937) < 0.001, curve_line.substr(0, 120))
+	_check("written right after the motion's name (before what reads it)", curve_text.contains("motion\tWave\ncurve\tFalloff\t"))
+	_check("an expression where an impulse's speed is, and a force's strength",
+		curve_text.contains("impulse\tfound\t9 * curve(Falloff, reach)\taway\tnone\n") and curve_text.contains("force\tself\tup\taccel\t2 * dash.power\t0\t0\t0\n"), curve_text)
+	curves.free()
+	_refused("a curve no CbCurve has", "motion A on press a\n\timpulse curve(Nope, 1) along up\n", "line 1: curve(Nope, ...): no CbCurve named Nope")
+
 	# What refuses the bake, with its file and line.
 	_refused("a find of a node that is not there", "motion A on press a\n\tfind Nope\n\t\temit x\n", "line 2: find: no node Nope")
 	_refused("a force inside a find", "motion A on press a\n\tfind sphere 2\n\t\tforce 3\n", "line 3: \"force\" inside a find")

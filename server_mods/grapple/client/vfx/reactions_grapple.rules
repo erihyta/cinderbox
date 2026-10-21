@@ -3,12 +3,12 @@
 
 # Fired
 on grapple.fired
-    subject $at
-    at $at/Hip
-    sound res://assets/sfx/prop_spawn.wav volume -10 pitch 2 jitter 0.1 range 30
+	subject $at
+	at $at/Hip
+	sound res://assets/sfx/prop_spawn.wav volume -10 pitch 2 jitter 0.1 range 30
 
 # Hit
 on grapple.hooked
-    subject $at
-    at point
-    scene res://vfx/land.tscn life 2
+	subject $at
+	at point
+	scene res://vfx/land.tscn life 2

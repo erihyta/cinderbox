@@ -12,6 +12,8 @@
 //   arithmetic     + - * /   unary -   ( )
 //   comparison     == != < <= > >=       (1 or 0)
 //   logic          not !   and &&   or ||
+//   curve(NAME, x) a curve's value at x (a Curve the reader knows by NAME; the simulation's motions
+//                  have them, baked from the scene; a reader without curves reads 0)
 //
 // From loosest to tightest: or, and, not, comparison, + -, * /, unary -. So "!a == b" is
 // "not (a == b)", and "a or b and c" is "a or (b and c)". Anything that is not 0 is true. A name
@@ -48,6 +50,7 @@ enum class Op : uint8_t
 	NotEqual,
 	And,
 	Or,
+	Curve, // the value on the stack, through the curve curves[name]
 };
 
 struct Step
@@ -61,6 +64,7 @@ struct Program
 {
 	std::vector<Step> steps; // empty: always true
 	std::vector<std::string> names;
+	std::vector<std::string> curves; // the curves it reads, by name (not names: no mod declares them)
 	std::string text;
 
 	bool Empty() const

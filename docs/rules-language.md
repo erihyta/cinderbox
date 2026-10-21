@@ -11,7 +11,8 @@ today; the rest is the plan.
 | Statements in a block: `change`, `emit`, `impulse`, `force`, `move [for S]`, `launch` (as a `use` rule has them) | *built* (M204) |
 | `find` with shapes from nodes or written in the line, a block per thing found, `found`, `away`, `move for` on a player found, `emit` with who was found | *built* (M205) |
 | `cast` (the probe in a sheet: a line, a ball or a shape drawn in the scene, swept along the look; what is under it happens while it holds), `link` | *built* (M206: the grapple is a sheet now) |
-| `distance` / `reach` and `$target:FIELD` in a find's lines, `at POINT`, a cast in a later step | planned (with curves, 3.3) |
+| Numbers that are expressions (an `impulse`'s and a `force`'s), `curve(Name, x)` from a `CbCurve`, `time`, `distance` and `reach` in a find | *built* (M207) |
+| Markers (`along NODE`, `from NODE`), `turn`, `follow` a `Path3D`; expressions in a `move` and a `launch`; `$target:FIELD` in a find's lines, `at POINT`, a cast in a later step | planned (3.3, next) |
 | `curve()`, `time`, markers, `follow` | planned (3.3) |
 | `owner item`, `break`, `remove self` | planned (3.4) |
 | `impulse kind momentum`, `every` | planned (3.5) |
@@ -195,23 +196,28 @@ there until they are done; **lasting** ones act every tick until the motion ends
 
 ## Numbers and curves
 
-Any number in a statement may be an [expression](looks.md#expressions), read when the statement
-runs. Two words are added:
+*Built* (M207) for an `impulse`'s speed and a `force`'s strength: anything up to the first option
+word is an [expression](looks.md#expressions), read when the effect acts (an impulse when its step
+starts, a force every tick), within the same limits as a number (200 m/s; a force's own). A `move`'s
+values and a `launch`'s are numbers still. Words added, for a motion's expressions:
 
 | Write | Means |
 |---|---|
-| `curve(NODE, X)` | a `Curve` resource on a node, read at X. Baked into a table of 64 points, so every machine reads the same |
-| `time` | seconds since this step started (since the motion started, at its first step) |
+| `curve(Name, x)` | the curve of the `CbCurve` node named `Name` beside the sheet (under the node its `CbRules` is under), read at `x`. Drawn in the inspector's curve editor; baked into 64 values at even steps over its domain (0 to 1 by default), read between two in a straight line, held past its ends: every machine reads the same |
+| `time` | seconds since the motion's current step started (0 while it is off). Everywhere in a motion: a strength, a wait (`then when time >= 0.5`), an `until`, an `if` |
+| `distance` | inside a find: metres from the player to what it found (its middle) |
+| `reach` | inside a find: how far out along the ground what it found is, 0 at the player, 1 at the shape's farthest edge (its points and radius) |
 
 So falloff, ramps and shapes over time are expressions, not new settings:
 
 ```
-impulse 9 * curve(Falloff, reach) along away          # strong at the centre, weak at the edge
-force 40 * curve(Ramp, time / 0.3) along look   # the curve is the ramp-in
-move speed 0.3 + 0.7 * time / 2 for 2           # a slow that wears off
+impulse 9 * curve(Falloff, reach) along away   # strong at the centre, weak at the edge
+force 40 * curve(Ramp, time / 0.3) along look  # the curve is the ramp-in
+impulse 2 * dash.power along up                # a field: a jump that grows with an upgrade
 ```
 
-`ramp_in` and the like keep working; a curve is the general form.
+`ramp_in` and the like keep working; a curve is the general form. A state machine or a look reads
+`time`, `distance` and `reach` as 0, and a curve as 0.
 
 ## Impulse, force: the physics words
 
@@ -376,7 +382,7 @@ the editor and at publish, as today.
 
 1. **Blocks** (*built*, M204): `motion` headers, `when`, `then when`, `after`, `timeout`, `if` / `else`, `end`; today's `use` sheets unchanged. The brawl slam's landing is its sheet's now (`then when grounded`).
 2. **Finding** (*built*): `find` (M205: the brawl slam's shockwave is its sheet's now, the mod only hurts), `cast` (M206: the grapple is a sheet now). `distance` and `reach` come with curves.
-3. **Curves and markers**: `curve()`, `time`, `along NODE`, `from NODE`, `turn`; `follow`.
+3. **Curves and markers**: `curve()`, `time`, `distance`, `reach` (*built*, M207); `along NODE`, `from NODE`, `turn`, `follow` (next).
 4. **Items run motions**: `owner item`, `break`, `remove self`; the frag grenade's blast predicted.
 5. **`impulse kind momentum`**, `every`.
 6. **The mods converted**: brawl, frag, cannon, grapple, flight, dash, as the test that nothing is lost.

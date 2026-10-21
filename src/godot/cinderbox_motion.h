@@ -41,6 +41,7 @@
 // reads). In the game these nodes do nothing.
 
 #include <godot_cpp/classes/editor_inspector_plugin.hpp>
+#include <godot_cpp/classes/curve.hpp>
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
@@ -429,6 +430,33 @@ private:
 	double m_reel = 0.0;
 	bool m_react = true;
 };
+
+// A curve a rules sheet's motion reads by this node's name ("curve(Falloff, reach)"): drawn in the
+// inspector's curve editor, baked into the motions file as values at even steps over its domain.
+class CbCurve : public godot::Node
+{
+	GDCLASS( CbCurve, godot::Node )
+
+public:
+	void set_curve( const godot::Ref<godot::Curve>& v )
+	{
+		m_curve = v;
+	}
+	godot::Ref<godot::Curve> get_curve() const
+	{
+		return m_curve;
+	}
+	godot::PackedStringArray _get_configuration_warnings() const override;
+
+protected:
+	static void _bind_methods();
+
+private:
+	godot::Ref<godot::Curve> m_curve;
+};
+
+// How many values a curve is baked into.
+inline constexpr int kCurveSamples = 64;
 
 // The root: a mod's motions, baked to one file.
 class CbMotionSet : public CbMotionPart

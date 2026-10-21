@@ -234,8 +234,31 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 	bool inFind = false; // between a "find" and its "endfind": what happens to each thing found
 	int number = 0;
 	auto fail = [&]( const std::string& what ) {
+		SetAnimCurveNames( nullptr );
 		error = "motions " + set + ", line " + std::to_string( number ) + ": " + what;
 		return false;
+	};
+	// A strength: a number, or an expression (kept in the motion's exprs) read when it acts.
+	auto strength = [&]( Motion& m, const std::string& word, float limit, MotionEffect& e, std::string& why ) {
+		if ( Number( word, -limit, limit, e.strength ) )
+		{
+			return true;
+		}
+		float number = 0.0f;
+		if ( ParseAnimFloat( word.c_str(), word.size(), number ) )
+		{
+			why = "a number from " + std::to_string( int( -limit ) ) + " to " + std::to_string( int( limit ) );
+			return false;
+		}
+		AnimExpr expr;
+		if ( CompileAnimExpr( word, schema, expr, why, warnings ) == false )
+		{
+			return false;
+		}
+		e.strength = 0.0f;
+		e.strengthExpr = int16_t( m.exprs.size() );
+		m.exprs.push_back( expr );
+		return true;
 	};
 	while ( std::getline( lines, line ) )
 	{
@@ -283,6 +306,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		}
 		Motion& m = motions.back();
 		MotionStep& step = m.steps.back();
+		SetAnimCurveNames( &m.curves ); // ("curve(NAME, x)" names this motion's)
 		// The step's guard for what follows ("guard": none), as its bit.
 		int8_t& guard = guards.back();
 		// What a motion as a whole says comes before its first step's statements end.
@@ -341,6 +365,14 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			if ( inFind == false || step.finds.back().pieces.empty() )
 			{
 				return fail( inFind ? "a find has a shape" : "endfind with no find" );
+			}
+			MotionFind& done = step.finds.back();
+			for ( const MotionFind::Piece& piece : done.pieces )
+			{
+				for ( const b3Vec3& p : piece.points )
+				{
+					done.extent = std::max( done.extent, std::sqrt( p.x * p.x + p.z * p.z ) + piece.radius );
+				}
 			}
 			inFind = false;
 			continue;
@@ -467,6 +499,38 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			m.probe = true;
 		}
+		else if ( key == "curve" )
+		{
+			// curve <name> <min> <max> <values>...: what "curve(name, x)" reads, at even steps
+			if ( whole() == false )
+			{
+				return false;
+			}
+			AnimCurve curve;
+			curve.name = w.size() >= 2 ? w[1] : std::string();
+			if ( w.size() < 6 || curve.name.empty() || w.size() - 4 > 256 || Number( w[2], -1.0e6f, 1.0e6f, curve.min ) == false ||
+				 Number( w[3], -1.0e6f, 1.0e6f, curve.max ) == false || curve.max <= curve.min )
+			{
+				return fail( "curve wants a name, where it starts and ends (the end past the start) and its values (2 to 252)" );
+			}
+			for ( size_t k = 4; k < w.size(); ++k )
+			{
+				float value = 0.0f;
+				if ( Number( w[k], -1.0e6f, 1.0e6f, value ) == false )
+				{
+					return fail( "a curve's values are numbers" );
+				}
+				curve.samples.push_back( value );
+			}
+			for ( const AnimCurve& other : m.curves )
+			{
+				if ( other.name == curve.name )
+				{
+					return fail( "the motion has a curve named " + curve.name + " already" );
+				}
+			}
+			m.curves.push_back( curve );
+		}
 		else if ( key == "probe_shape" )
 		{
 			// probe_shape <radius> <x y z>...: what the line sweeps, around its tip
@@ -524,8 +588,12 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			{
 				replace = w[4] == kReplaces[i] ? i : replace;
 			}
-			if ( w.size() < 5 || ParseTarget( w[1], schema, m.name, e.target, warnings ) == false ||
-				 Number( w[2], -kMaxMotionImpulse, kMaxMotionImpulse, e.strength ) == false || ParseFrame( w[3], e.frame ) == false || replace < 0 )
+			std::string why;
+			if ( w.size() >= 3 && strength( m, w[2], kMaxMotionImpulse, e, why ) == false )
+			{
+				return fail( "impulse: its speed: " + why );
+			}
+			if ( w.size() < 5 || ParseTarget( w[1], schema, m.name, e.target, warnings ) == false || ParseFrame( w[3], e.frame ) == false || replace < 0 )
 			{
 				return fail( "impulse wants a target (self, hit, @field), a speed (m/s), a frame (look, move, facing, up, world, to) and what "
 							 "it replaces (none, vertical, horizontal, all)" );
@@ -555,8 +623,13 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			e.kind = MotionEffect::Kind::Force;
 			int push = w.size() >= 8 ? ( w[3] == "accel" ? 0 : ( w[3] == "force" ? 1 : ( w[3] == "velocity" ? 2 : -1 ) ) ) : -1;
 			float limit = push == 1 ? kMaxMotionForce : kMaxMotionAccel;
+			std::string why;
+			if ( push >= 0 && strength( m, w[4], limit, e, why ) == false )
+			{
+				return fail( "force: its strength: " + why );
+			}
 			if ( push < 0 || ParseTarget( w[1], schema, m.name, e.target, warnings ) == false || ParseFrame( w[2], e.frame ) == false ||
-				 Number( w[4], -limit, limit, e.strength ) == false || Number( w[5], -kMaxMotionImpulse, kMaxMotionImpulse, e.speed ) == false ||
+				 Number( w[5], -kMaxMotionImpulse, kMaxMotionImpulse, e.speed ) == false ||
 				 Number( w[6], 0.0f, 60.0f, e.ramp ) == false || ( w[7] != "0" && w[7] != "1" ) )
 			{
 				return fail( "force wants a target (self, hit, @field), a frame, a kind (accel, force, velocity), a strength, a speed, a "
@@ -773,6 +846,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			return fail( "unknown line \"" + key + "\"" );
 		}
 	}
+	SetAnimCurveNames( nullptr );
 	if ( header == false )
 	{
 		number = 1;
@@ -986,6 +1060,22 @@ uint32_t MotionStepStart( const MotionSlot& slot )
 	return slot.step == 0 ? slot.sinceTick : slot.stepTick;
 }
 
+float MotionForceLimit( const MotionEffect& effect )
+{
+	return effect.push == MotionEffect::Push::Force ? kMaxMotionForce : kMaxMotionAccel;
+}
+
+float MotionStrength( const Motion& m, const MotionEffect& effect, const AnimGraphInputs& values, float limit )
+{
+	if ( effect.strengthExpr < 0 || size_t( effect.strengthExpr ) >= m.exprs.size() )
+	{
+		return effect.strength;
+	}
+	float value = EvaluateAnimExpr( m.exprs[size_t( effect.strengthExpr )], values, 0.0f );
+	// (Not a NaN's way: a comparison that fails gives 0.)
+	return value > -limit ? ( value < limit ? value : limit ) : ( value <= -limit ? -limit : 0.0f );
+}
+
 bool MotionGuardHolds( const MotionSlot& slot, int8_t guard )
 {
 	return guard < 0 || ( ( slot.guards >> guard ) & 1u ) != 0;
@@ -1001,6 +1091,11 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		const Motion& m = motions.list[i];
 		MotionSlot& slot = state.slots[i];
 		const bool isWhile = m.when == Motion::When::While;
+		// What its expressions read: the player's values, its curves, and its step's time (0 when off).
+		AnimGraphInputs values = *in.values;
+		values.curves = &m.curves;
+		values.builtins[AnimExpr::Time] =
+			slot.lastTick != 0 && in.tick < slot.untilTick && in.tick >= MotionStepStart( slot ) ? float( in.tick - MotionStepStart( slot ) ) * dt : 0.0f;
 		// A while motion that was on last tick goes on without asking its cooldown again.
 		const bool wasOn = isWhile && slot.lastTick != 0 && slot.untilTick == in.tick;
 		bool on = slot.lastTick != 0 && in.tick < slot.untilTick && isWhile == false;
@@ -1010,7 +1105,7 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		if ( on && m.Held() )
 		{
 			bool lost = m.probe && ( in.held != int( i ) || in.holdAlive == false );
-			bool done = m.until.Empty() == false && slot.lastTick != now && EvaluateAnimExpr( m.until, *in.values, 0.0f ) != 0.0f;
+			bool done = m.until.Empty() == false && slot.lastTick != now && EvaluateAnimExpr( m.until, values, 0.0f ) != 0.0f;
 			if ( lost || done )
 			{
 				slot.untilTick = in.tick;
@@ -1032,7 +1127,7 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		bool turned = false;
 		if ( m.when == Motion::When::Edge )
 		{
-			bool holds = EvaluateAnimExpr( m.edge, *in.values, 0.0f ) != 0.0f;
+			bool holds = EvaluateAnimExpr( m.edge, values, 0.0f ) != 0.0f;
 			turned = ( slot.edge & 1u ) != 0 && ( slot.edge & 2u ) == 0 && holds;
 			slot.edge = uint8_t( 1u | ( holds ? 2u : 0u ) );
 		}
@@ -1054,7 +1149,7 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 		starts = starts && ( on == false || m.Held() == false );
 		starts = starts && ( wasOn || slot.lastTick == 0 || now - slot.lastTick >= Ticks( m.cooldown, in.tickRate ) );
 		starts = starts && ( isWhile || m.uses == 0 || slot.used < m.uses );
-		starts = starts && ( m.condition.Empty() || EvaluateAnimExpr( m.condition, *in.values, 0.0f ) != 0.0f );
+		starts = starts && ( m.condition.Empty() || EvaluateAnimExpr( m.condition, values, 0.0f ) != 0.0f );
 		// A probe has to find something to hold on to, or the motion does not happen.
 		uint32_t effectTick = in.tick;
 		if ( starts && m.probe && ( in.attach == nullptr || in.attach( in.user, m, i, effectTick ) == false ) )
@@ -1116,7 +1211,7 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 			if ( isWhile == false || wasOn == false )
 			{
 				slot.step = 0;
-				slot.guards = GuardBits( first, *in.values );
+				slot.guards = GuardBits( first, values );
 			}
 			bool ends = onceStatements( first, isWhile, wasOn == false );
 
@@ -1152,7 +1247,7 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 				const MotionStep& next = m.steps[size_t( nextIndex )];
 				const uint32_t waited = in.tick - MotionStepStart( slot );
 				bool ready = waited >= std::max<uint32_t>( 1, Ticks( next.after, in.tickRate ) ) &&
-							 ( next.wait.Empty() || EvaluateAnimExpr( next.wait, *in.values, 0.0f ) != 0.0f );
+							 ( next.wait.Empty() || EvaluateAnimExpr( next.wait, values, 0.0f ) != 0.0f );
 				int enter = ready ? nextIndex : -1;
 				if ( ready == false && next.within > 0.0f && waited >= Ticks( next.within, in.tickRate ) )
 				{
@@ -1169,7 +1264,7 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 					const MotionStep& step = m.steps[size_t( enter )];
 					slot.step = uint16_t( enter );
 					slot.stepTick = in.tick;
-					slot.guards = GuardBits( step, *in.values );
+					slot.guards = GuardBits( step, values );
 					bool ends = onceStatements( step, false, false );
 					entered = true;
 					if ( step.timeout || ends )

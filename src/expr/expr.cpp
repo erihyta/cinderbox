@@ -402,6 +402,33 @@ private:
 			Next();
 			return true;
 		}
+		if ( IsWord() && m_token.text == "curve" && m_pos < m_text.size() && m_text[m_pos] == '(' )
+		{
+			// curve(NAME, x): x's program, then the curve over it.
+			Next();
+			Next();
+			if ( IsWord() == false )
+			{
+				m_error = "curve( wants the curve's name first: curve(Falloff, reach)";
+				return false;
+			}
+			std::string name = m_token.text;
+			Next();
+			if ( Expect( Token::Symbol, "," ) == false || Or() == false || Expect( Token::Symbol, ")" ) == false )
+			{
+				return false;
+			}
+			Step step;
+			step.op = Op::Curve;
+			auto found = std::find( m_out.curves.begin(), m_out.curves.end(), name );
+			step.name = uint16_t( found - m_out.curves.begin() );
+			if ( found == m_out.curves.end() )
+			{
+				m_out.curves.push_back( name );
+			}
+			m_out.steps.push_back( step );
+			return true;
+		}
 		if ( IsWord() )
 		{
 			if ( m_token.text == "true" || m_token.text == "false" )
@@ -502,6 +529,9 @@ float Evaluate( const Program& program, const Reader& read )
 				continue;
 			case Op::Negate:
 				stack[top - 1] = -stack[top - 1];
+				continue;
+			case Op::Curve:
+				stack[top - 1] = 0.0f; // (no curves here: the simulation reads them)
 				continue;
 			default:
 				break;

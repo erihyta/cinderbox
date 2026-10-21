@@ -158,6 +158,8 @@ struct MotionEffect
 	float seconds = 0.0f;
 	// The step's guard it is under (MotionStep::guards), -1: none.
 	int8_t guard = -1;
+	// Impulse, Force: its strength as an expression, read when it acts (Motion::exprs; -1: `strength`).
+	int16_t strengthExpr = -1;
 };
 
 // What a probe may hold on to: the level (anything static: map pieces, a static entity, a wall that
@@ -203,6 +205,9 @@ struct MotionFind
 		float seconds = 0.0f;
 	};
 	std::vector<Move> moves;
+	// How far out along the ground its shape reaches from the player (its points and radius): what
+	// "reach" is a share of.
+	float extent = 0.0f;
 };
 inline constexpr int kFindMost = 16;
 
@@ -292,6 +297,10 @@ struct Motion
 	float probeRadius = 0.0f;
 	// What it does, step by step: the first is what happens when it starts. Never empty.
 	std::vector<MotionStep> steps = std::vector<MotionStep>( 1 );
+	// The curves its expressions read ("curve(Falloff, reach)"), and the expressions its effects'
+	// strengths are (MotionEffect::strengthExpr).
+	std::vector<AnimCurve> curves;
+	std::vector<AnimExpr> exprs;
 
 	// On from when it starts until something ends it (its condition, what its probe holds going away,
 	// a wait for its next step).
@@ -368,6 +377,11 @@ struct MotionActive
 uint32_t MotionStepStart( const MotionSlot& slot );
 // Whether a statement under `guard` counts in the slot's step.
 bool MotionGuardHolds( const MotionSlot& slot, int8_t guard );
+// An effect's strength now: its number, or its expression read against `values`, held within `limit`.
+float MotionStrength( const Motion& m, const MotionEffect& effect, const AnimGraphInputs& values, float limit );
+// Limits of an effect's strength: an impulse's m/s, a force's newtons or m/s^2.
+inline constexpr float kMotionImpulseLimit = 200.0f;
+float MotionForceLimit( const MotionEffect& effect );
 
 // Decides the player's motions for one tick, before the mover: which start, which go on, which
 // end. Changes `board` and appends the events they emit (`point` and `tick` are the caller's to
