@@ -15,7 +15,7 @@
 #   vfx\reactions_<mod>.tscn                       a prediction, a reaction
 #   ui\hud_<mod>.tscn                              its HUD
 #   animation_packs\<mod>_animations.tscn          an animation pack: the default tree in full, replacing the upper body
-#   motion_sets\<mod>_moves.tscn                  a motion: a key that moves the player
+#   motion_sets\<mod>_moves.tscn, .rules          a motion: a key that moves the player (its sheet)
 # and the server's half, which declares exactly the names those scenes use:
 #   server_mods\<mod>\<mod>.cpp                   the rules (C++, compiled into the server)
 # Files that are already there are kept: -New on an existing project only adds what is missing.
@@ -115,6 +115,7 @@ if ($New) {
 		Starter "animation_pack.tscn" (Join-Path $project "animation_packs\${New}_animations.tscn") $New
 	}
 	Starter "motion_set.tscn" (Join-Path $project "motion_sets\${New}_moves.tscn") $New
+	Starter "motion_set.rules" (Join-Path $project "motion_sets\${New}_moves.rules") $New
 	# The server's half: the rules, declaring exactly the names the starter scenes use. Kept if the mod
 	# has one already.
 	$code = Join-Path $root "server_mods\$New\$New.cpp"

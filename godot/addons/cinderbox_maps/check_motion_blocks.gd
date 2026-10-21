@@ -290,6 +290,16 @@ func _run() -> void:
 	_refused("every under an if", "motion A on press a\n\tif grounded\n\t\tevery 1\n", "line 3: every S")
 	_refused("an impulse of a kind there is not", "motion A on press a\n\timpulse 3 along up kind mass\n", "line 2: kind velocity or momentum")
 
+	# The SDK's starter sheet (a new mod's motions) bakes, its name filled in.
+	var starter := FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://").path_join("../sdk/starters/motion_set.rules"))
+	_scratch(starter.replace("MODNAME", "demo"))
+	var demo := _set_with(SCRATCH, false)
+	var demo_baked: Dictionary = demo.bake()
+	_check("the SDK's starter sheet bakes", starter.is_empty() == false and String(demo_baked["text"]).contains("motion\tUse\nwhen\tpress\tdemo_use\n" +
+		"if\t( demo.charges > 0 )\ncooldown\t0.5\nchange\tdemo.charges\t-=\t1\nemit\tdemo.moved\nimpulse\tself\t10\tmove\thorizontal\nparam\tfriction\t0\t0.2\n"),
+		String(demo_baked["text"]) + String(demo_baked["error"]))
+	demo.free()
+
 	# What refuses the bake, with its file and line.
 	_refused("a find of a node that is not there", "motion A on press a\n\tfind Nope\n\t\temit x\n", "line 2: find: no node Nope")
 	_refused("a force inside a find", "motion A on press a\n\tfind sphere 2\n\t\tforce 3\n", "line 3: \"force\" inside a find")

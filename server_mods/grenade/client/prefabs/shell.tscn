@@ -7,12 +7,9 @@
 ; The impact grenade: it goes off on the first hard hit (the fused one is the frag mod's). It is
 ; carried in slot 7 if it is free, out of sight; its own key (J, use_key) throws it from wherever it
 ; is, or select it and press the use button (use: a press): what is thrown is the one carried. The mod gives a new one a little after (grenade.cpp).
-;   Throwing   CbMotion   on the press (grenade.shell.used), 0.7 s: the left arm's throw, its pack's
-;                         (animation_packs/throw_arm.tscn); its clip says grenade.release at 0.27 s
-;   Release    CbMotion   on grenade.release (the clip's marker): emits grenade.thrown
-;     Shell    CbLaunch   the one carried (what: the one the player carries), where the camera
-;                         looks at 17 m/s, 3 m/s of lift and the thrower's own velocity, from 0.8 m
-;                         ahead; removed after 4 s if nothing set it off
+;   Rules      CbRules    shell.rules: Throwing (the press, 0.7 s: the left arm's throw, its
+;                         pack's; its clip says grenade.release at 0.27 s) and Release (the one
+;                         carried, where the camera looks at 17 m/s and 3 up, 4 s to live)
 ;
 ; Saving this scene bakes it into res://items/grenade.shell.cfg.
 
@@ -67,22 +64,5 @@ mesh = SubResource("Ball")
 [node name="Band" type="MeshInstance3D" parent="."]
 mesh = SubResource("BandMesh")
 
-[node name="Throwing" type="CbMotion" parent="."]
-when = 2
-event = "grenade.shell.used"
-with_item = 1
-cooldown = 0.7
-duration = 0.7
-
-[node name="Release" type="CbMotion" parent="."]
-when = 2
-event = "grenade.release"
-with_item = 1
-emits = "grenade.thrown"
-
-[node name="Shell" type="CbLaunch" parent="Release"]
-what = 1
-speed = 17.0
-lift = 3.0
-ahead = 0.8
-seconds = 4.0
+[node name="Rules" type="CbRules" parent="."]
+file = "res://prefabs/shell.rules"

@@ -1,0 +1,22 @@
+# The fist: a jab, twice in a row; the third use within the combo's window is a finisher. Each is a
+# line 2.8 m along the look that holds what it hits for a moment (its hit said with who it was: the
+# brawl mod's damage).
+
+motion Jab on use if not linked and brawl.combo < 2
+	until brawl.fist.used or pressed.jump
+	cooldown 0.3
+	lasts 0.05
+	change brawl.combo += 1
+	change brawl.combo_left = 1
+	cast ray range 2.8
+		emit brawl.jab.hit
+		impulse 4 along move
+
+motion Finisher on use if brawl.combo >= 2
+	cooldown 0.3
+	lasts 0.05
+	change brawl.combo = 0
+	cast ray range 2.8
+		emit brawl.finisher.hit
+		impulse 14 along move
+		impulse 5 along up

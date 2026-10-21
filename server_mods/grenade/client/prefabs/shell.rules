@@ -1,0 +1,11 @@
+# The throw: its key plays the arm's throw (Throwing: its pack reads it); the clip's marker,
+# grenade.release, lets go of the one carried, with 4 s to live (the mod sets it off on a hit).
+
+motion Throwing on use
+	cooldown 0.7
+	lasts 0.7
+
+motion Release on grenade.release
+	item carried
+	emit grenade.thrown
+	launch carried speed 17 lift 3 ahead 0.8 seconds 4
