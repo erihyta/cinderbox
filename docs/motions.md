@@ -15,8 +15,13 @@ A motion is to movement what a [`CbReaction`](looks.md#reactions) is to the look
 cue, or while conditions hold, do this to the player (and to what it reaches)*. It is authored in Godot, baked to text, sent in the schema
 and run by the simulation, the way a character's [state machine](characters.md#state-machines) is.
 
+**Every mod's motions are rules sheets now** (M211: motion blocks, [rules-language.md](rules-language.md)).
+The motion nodes below still work and bake to the same file, and the sheets' words map onto them;
+they get nothing new.
+
 ```
-CbMotion nodes ──bake──> motions/<set>.cfg ──> the server reads it from the mod's item
+a sheet's motion blocks ──bake──> motions/<set>.cfg ──> the server reads it from the mod's item
+(or CbMotion nodes)
                                                      │ the schema (welcome, recordings)
    your press ──> your simulation runs the motion ───┤
                   the server runs the same motion  ──┘   same input, same state, same result
@@ -27,7 +32,7 @@ CbMotion nodes ──bake──> motions/<set>.cfg ──> the server reads it f
 | Half | Where | What |
 |---|---|---|
 | The rules | `server_mods/<mod>/<mod>.cpp` | declares the action, the fields and the events the motions name, names the set (`declare.Motions( "dash.moves" )`), and decides who may: a field a condition reads |
-| The motions | `server_mods/<mod>/client/motion_sets/<name>.tscn` | a `CbMotionSet` with `CbMotion` children, each with its parts under it; saving the scene bakes `motions/<set_name>.cfg` |
+| The motions | `server_mods/<mod>/client/motion_sets/<name>.tscn` | a `CbMotionSet` with a `CbRules` sheet of motion blocks under it (or `CbMotion` children); saving the scene bakes `motions/<set_name>.cfg` |
 
 ```cpp
 // server_mods/dash/dash.cpp: the names, and how many dashes a player has. Not the dash, not its key.
@@ -40,9 +45,12 @@ ctx.Set( SlotTarget( slot ), m_charges, charges + 1 );   // one back every 2 s
 
 ```
 Moves        CbMotionSet   set_name "dash.moves"                (motion_sets/dash_moves.tscn)
-└── DoubleJump  CbMotion   action "jump"   conditions not grounded   uses 1, back on the ground
-    │                      emits dash.double_jump
-    └── Up      CbImpulse  6.5 m/s up, replacing the vertical speed
+└── Rules    CbRules       motion_sets/dash_moves.rules:
+
+motion DoubleJump on press jump if not grounded and dash.double_jump_on
+    uses 1 refill ground
+    emit dash.double_jump
+    impulse 6.5 along up replace vertical
 ```
 
 ## The nodes
@@ -78,24 +86,20 @@ Under a `CbItem`, the motion nodes need no `CbMotion`: the item is the trigger, 
 lives while what holds. Using the item (its own key, or the use button with it in the hand)
 does what the nodes under it say, if its **When used** rules allow:
 
-```
-Hook          CbItem     use: once a press   slot 4   use_key Q   use_emits grapple.fired   (prefabs/hook.tscn)
-├── Throw     CbProbe    a line along the look, 80 m/s; let go: using the hook again, a jump; holds 2 s at most
-│   └── Rope  CbLink     to what the line found, reeled in at 4 m/s; moves the player alone
-│       ├── Pull      CbForce   on the player, toward it: 160 m/s² up to 15 m/s, ramped in; moves the player alone
-│       └── Hanging   CbMove    while it holds: gravity 0, air control 0.6, airborne
-└── Throwing  CbMotion   a motion of its own: on a use with no line out, 0.45 s, no effects (the throw's pose)
+The boots' sheet (`server_mods/dash/client/prefabs/boots.rules`, a `CbRules` under the item):
 
-Boots         CbItem     use: once a press   slot 5   use_key V                         (prefabs/boots.tscn)
-│                        use_conditions dash.charges > 0   use_changes dash.charges -= 1
-│                        use_cooldown 0.4   use_emits dash.started
-├── Push      CbImpulse  11 m/s along where you walk, the run's own speed replaced
-└── Slide     CbMove     for 0.18 s: no friction
+```
+use if dash.charges > 0
+    change dash.charges -= 1
+    cooldown 0.4
+    emit dash.started
+    impulse 11 replace horizontal
+    move for 0.18 friction 0
 ```
 
-**In the item's rules sheet** the same can be lines: a `use` rule bakes into the same `Use` motion,
-as if its parts were nodes under the item (the game skips it). For a use that is flat; a probe and
-what hangs on it (a rope, a pull) stay nodes, being a tree.
+**A `use` rule** bakes into the item's `Use` motion, as if its parts were nodes under the item,
+with the item's **When used** settings. The hook's is a motion block instead, for its `cast`
+([the grapple mod](#probes-forces-and-links-the-grapple-mod)).
 
 **A motion block** (`motion NAME ...`) in a sheet under an item or a `CbMotionSet` is a whole
 motion as text, with what nodes cannot say: steps that wait (`then when grounded`, `after 0.5`, a
@@ -362,11 +366,20 @@ Frag    CbItem   kind "frag.grenade"   use: once a press   slot 6   use_key H   
 │                mass 0.4   friction 0.8   bounce 0.45
 ├── Body  CollisionShape3D   a sphere, 9 cm
 ├── Ball, Band  MeshInstance3D
-├── Throwing    CbMotion   on frag.grenade.used (the key)   0.7 s   cooldown 0.7 s: the arm's throw
-├── Release     CbMotion   on frag.release (the clip's marker)   emits frag.thrown
-│   └── Frag    CbLaunch   what: the one carried   speed 15 m/s   lift 3 m/s   ahead 0.8 m   seconds 2.5 (the fuse)
 ├── Blast       Area3D     a ball 8 m round: where its blast throws things (not its body)
-└── Rules       CbRules    frag.rules: the blast, the grenade's own motion (owner item, on expired)
+└── Rules       CbRules    frag.rules:
+
+motion Throwing on use                 # the arm's throw (its pack reads it); its clip says frag.release
+    cooldown 0.7
+    lasts 0.7
+
+motion Release on frag.release         # the clip's marker: the one carried leaves the hand
+    item carried
+    emit frag.thrown
+    launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
+
+motion Blast on expired                # the grenade's own (owner item): see rules-language.md
+    ...
 ```
 
 The pack (`animation_packs/throw_arm.tscn`) is an overlay on the left arm while `Throwing` is on;
@@ -427,7 +440,7 @@ ctx.Set( 0, m_doubleJumpOn, ctx.Option( "dash.double_jump", 0.0 ) != 0.0 ? 1 : 0
 ```
 
 ```
-DoubleJump  CbMotion   action "jump"   conditions not grounded, dash.double_jump_on
+motion DoubleJump on press jump if not grounded and dash.double_jump_on
 ```
 
 The double jump and the jetpack ship this way, off by default
@@ -440,17 +453,28 @@ The double jump and the jetpack ship this way, off by default
 player its first tank; everything else is the set.
 
 ```
-Moves     CbMotionSet   set_name "flight.moves"             (motion_sets/flight_moves.tscn)
-├── FlyOn    on "fly" (T)   conditions not flight.on    changes flight.on = 1    emits flight.started
-├── FlyOff   on "fly" (T)   conditions flight.on        changes flight.on = 0    emits flight.stopped
-├── Flying   while   flight.on
-│                    parameters { gravity: 0, move_frame: 1, air_control: 1, air_friction: 3, walk_speed: 7, sprint_speed: 12 }
-├── Thrust   while   flight.jetpack_on, held.jump, not grounded, not flight.on, flight.fuel > 0
-│   │                changes flight.fuel -= 30     emits flight.thrust
-│   └── Lift   CbForce   acceleration 26 m/s² up (gravity is 18)
-├── Refuel   while   grounded, flight.fuel < 100      changes flight.fuel += 40
-└── Glide    while   held.sprint, not grounded, vertical_speed < 0, not flight.on
-                     parameters { gravity: 3, max_fall: 2.5, air_control: 0.8 }
+# motion_sets/flight_moves.rules (the sheet of flight_moves.tscn's CbMotionSet, "flight.moves")
+motion FlyOn on press fly if not flight.on
+    change flight.on = 1
+    emit flight.started
+
+motion FlyOff on press fly if flight.on
+    change flight.on = 0
+    emit flight.stopped
+
+motion Flying while flight.on
+    move walk_speed 7 sprint_speed 12 air_control 1 gravity 0 air_friction 3 move_frame 1
+
+motion Thrust while flight.jetpack_on and held.jump and not grounded and not flight.on and flight.fuel > 0
+    change flight.fuel -= 30          # a while's += and -= are per second
+    emit flight.thrust
+    force 26 along up                 # 26 m/s² (gravity is 18)
+
+motion Refuel while flight.jetpack_on and grounded and flight.fuel < 100
+    change flight.fuel += 40
+
+motion Glide while held.sprint and not grounded and vertical_speed < 0 and not flight.on
+    move air_control 0.8 gravity 3 max_fall 2.5
 ```
 
 | Key | What happens |
