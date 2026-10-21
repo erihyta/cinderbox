@@ -3924,7 +3924,8 @@ void TestBrawl()
 // A fused grenade across the wire, behind 100 ms: the frag mod's grenade is thrown from the hand like
 // the impact one, bounces off the floor without going off, and when its time is up (2.5 s after it
 // left the hand) the simulation says frag.grenade.expired where it is, with who threw it, and
-// removes it, on the client on the same tick as on the server; the mod's C++ sets it off there.
+// removes it, on the client on the same tick as on the server; its sheet sets it off there, on that
+// tick (frag.rules: a motion the grenade owns), and the mod's C++ hurts who is near.
 void TestFrag()
 {
 	const uint32_t throwAt = 300;
@@ -4055,7 +4056,8 @@ void TestFrag()
 	CHECK( leftAt > throwAt + 10 && leftAt < throwAt + 25 && bounced );
 	CHECK( goneAt >= leftAt + 149 && goneAt <= leftAt + 152 );
 	CHECK( fuse != nullptr && trueExpiry.size() == 1 && fuse->netIdB == player && fuse->netIdA == truth[leftAt].netId );
-	CHECK( blastTick != 0 && fuse != nullptr && blastTick > fuse->tick && blastTick <= fuse->tick + 2 && b3Distance( blastAt, fuse->point ) < 0.001f );
+	// The blast is its sheet's (owner item): on the tick its time is up, where it was, on every machine.
+	CHECK( blastTick != 0 && fuse != nullptr && blastTick == fuse->tick && b3Distance( blastAt, fuse->point ) < 0.001f );
 	// The client had all of it on the same ticks, at the same places, the first time it simulated
 	// them: the flight, the bounces, and its time being up.
 	int compared = 0, wrong = 0;

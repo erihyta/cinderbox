@@ -4276,6 +4276,178 @@ void TestMotionMarkers()
 	CHECK( fails( "motion\tA\nwhen\tpress\tmark\nimpulse\tself\t1\tup\tnone\nturn\t0\t100\n" ) );						 // past straight up
 }
 
+// An item's own motions (a sheet's "owner item", docs/rules-language.md): a bomb whose fuse runs out
+// throws what is near it, harder the nearer, said as its thrower's; one a mod pokes removes itself.
+// Run by the simulation where the item is, so every machine has the blast on the same tick.
+void TestItemBlast()
+{
+	ModSchema schema;
+	schema.itemKinds = { "t.bomb" };
+	schema.events = { "t.bomb.expired", "t.boom", "t.hit", "t.poke" };
+	schema.actions.push_back( { "throw", 0, "Q" } );
+	schema.fields.push_back( { "t.push", BoardType::Float, BoardScope::Global, 0 } );
+	// The bomb's own set (named by its kind): a blast 4 m round, its push a field the mod sets.
+	schema.motionSets.push_back( { "t", "t.bomb",
+								   "cinderbox_motions\t3\n"
+								   "motion\tBlast\nwhen\tevent\tt.bomb.expired\nowner\titem\nemit\tt.boom\n"
+								   "find\tall\t0\t16\tfacing\nshape\t4\t0\t0\t0\n"
+								   "impulse\tfound\t(distance < 4) * t.push * (1 - distance / 4)\taway\tnone\nemit\tt.hit\nendfind\n"
+								   "motion\tPoke\nwhen\tevent\tt.poke\nowner\titem\nremove\n" } );
+	// The player's: the bomb dropped where it stands, half a second to live.
+	schema.motionSets.push_back( { "t", "t.moves", "cinderbox_motions\t3\nmotion\tThrow\nwhen\tpress\tthrow\nlaunch\tt.bomb\t0\tfacing\t0\t0.7\t0.5\n" } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 3 );
+	if ( motions == nullptr || motions->list.size() != 3 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	CHECK( motions->list[0].ownerItem && motions->list[0].itemKind == 0 && motions->list[1].First().removes.size() == 1 &&
+		   motions->list[2].ownerItem == false );
+
+	SimConfig config = TestConfig();
+	config.slots = 2;
+	config.globalFields = 1;
+	ItemShape bomb;
+	bomb.kind = 1;
+	bomb.half = { 0.1f, 0.1f, 0.1f };
+	bomb.center = { 0.0f, 0.0f, 0.0f };
+	bomb.expiredEvent = 0; // ("t.bomb.expired")
+	Simulation sim( config, FlatMap() );
+	sim.SetItemShapes( { bomb } );
+	sim.SetMotions( motions );
+	InputFrame f;
+	std::vector<ModEventRecord> seen;
+	uint32_t counted = 0;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+			for ( ; counted < sim.Globals().modEventCount; ++counted )
+			{
+				seen.push_back( sim.Globals().modEvents[counted % kModEventHistory] );
+			}
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 2 );
+	const uint32_t p0 = sim.PlayerNetId( 0 );
+	SimCommand at;
+	at.type = CommandType::Respawn;
+	at.target = p0;
+	at.mode = 1;
+	at.a = { 0.0f, 1.0f, 0.0f };
+	f.commands.push_back( at );
+	SimCommand set;
+	set.type = CommandType::SetField;
+	set.target = 0;
+	set.index = 0;
+	set.value = BoardFromFloat( 12.0f );
+	f.commands.push_back( set );
+	// A crate 2.5 m ahead of where the bomb lands, one 6 m off.
+	for ( float z : { 3.2f, 6.7f } )
+	{
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.mode = uint8_t( ShapeKind::Box );
+		c.value = -1;
+		c.a = { 0.0f, 0.3f, z };
+		c.c = { 0.3f, 0.3f, 0.3f };
+		f.commands.push_back( c );
+	}
+	step( 60 );
+	std::vector<uint32_t> crates;
+	for ( const auto& r : sim.Entities() )
+	{
+		if ( flecs::entity( sim.World(), r.entity ).has<Prop>() )
+		{
+			crates.push_back( r.netId );
+		}
+	}
+	CHECK( crates.size() == 2 );
+	if ( crates.size() != 2 )
+	{
+		return;
+	}
+	auto velocity = [&]( uint32_t netId ) {
+		const PhysicsBody* pb = sim.FindEntity( netId ).try_get<PhysicsBody>();
+		return pb != nullptr ? b3Body_GetLinearVelocity( sim.BodyOf( *pb ) ) : b3Vec3{};
+	};
+
+	// Dropped, it lies there; when its time is up its blast throws the near crate away (+Z) and the
+	// player back (-Z), not the far crate; said as the player's, with what each was.
+	f.inputs[0].actions = 1;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	uint32_t thrown = 0;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+		thrown = item != nullptr && item->holder == 0 ? r.netId : thrown;
+	}
+	CHECK( thrown != 0 );
+	step( 28 );
+	CHECK( seen.empty() && b3Length( velocity( crates[0] ) ) < 0.01f );
+	step( 2 );
+	const b3Vec3 crate = velocity( crates[0] ), player = sim.PlayerCharacter( 0 )->velocity;
+	std::printf( "    the blast: the crate ahead at (%.2f, %.2f, %.2f) m/s, the player at (%.2f, %.2f, %.2f) m/s, the far crate %.2f\n", crate.x,
+				 crate.y, crate.z, player.x, player.y, player.z, b3Length( velocity( crates[1] ) ) );
+	CHECK( crate.z > 3.0f && crate.z < 9.0f && player.z < -3.0f && b3Length( velocity( crates[1] ) ) < 0.01f );
+	CHECK( sim.FindEntity( thrown ).is_valid() == false );
+	int booms = 0, hits = 0;
+	bool hitCrate = false, hitPlayer = false;
+	for ( const ModEventRecord& e : seen )
+	{
+		booms += e.type == 1 && e.netIdA == p0 && e.netIdB == thrown ? 1 : 0;
+		hits += e.type == 2 && e.netIdA == p0 ? 1 : 0;
+		hitCrate = hitCrate || ( e.type == 2 && e.netIdB == crates[0] );
+		hitPlayer = hitPlayer || ( e.type == 2 && e.netIdB == p0 );
+	}
+	CHECK( booms == 1 && hits == 2 && hitCrate && hitPlayer );
+
+	// A bomb lying in the world that a mod pokes (an event said at it) removes itself, that tick.
+	SimCommand lay;
+	lay.type = CommandType::SpawnItem;
+	lay.target = 0;
+	lay.index = 0;
+	lay.a = { 5.0f, 0.5f, 0.0f };
+	lay.c = { 0.0f, 0.0f, 0.0f };
+	f.commands.push_back( lay );
+	step( 5 );
+	uint32_t lying = 0;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		const HeldItem* item = flecs::entity( sim.World(), r.entity ).try_get<HeldItem>();
+		lying = item != nullptr && item->holder == 0 ? r.netId : lying;
+	}
+	CHECK( lying != 0 );
+	SimCommand poke;
+	poke.type = CommandType::Event;
+	poke.index = 3;
+	poke.target = lying;
+	f.commands.push_back( poke );
+	step( 1 );
+	CHECK( lying != 0 && sim.FindEntity( lying ).is_valid() == false );
+
+	// What a file may not say.
+	auto fails = [&]( const std::string& body ) {
+		std::vector<Motion> out;
+		std::string error, warned;
+		return CompileMotionSet( "t.bomb", "cinderbox_motions\t3\n" + body, schema, out, error, warned ) == false;
+	};
+	CHECK( fails( "motion\tA\nwhen\tevent\tt.poke\nowner\titem\nstep\t1\t0\nemit\tt.boom\n" ) );		  // a step
+	CHECK( fails( "motion\tA\nwhen\tpress\tthrow\nowner\titem\n" ) );									  // a press
+	CHECK( fails( "motion\tA\nwhen\tevent\tt.poke\nowner\titem\nimpulse\tself\t3\tlook\tnone\n" ) );	  // a look
+	CHECK( fails( "motion\tA\nwhen\tevent\tt.poke\nowner\titem\nparam\twalk_speed\t1\n" ) );			  // a move
+	CHECK( fails( "motion\tA\nwhen\tpress\tthrow\nremove\n" ) );										  // remove self, a player's
+	CHECK( fails( "motion\tA\nwhen\tevent\tt.poke\nowner\titem\nbreak\t30\t1\t0\n" ) );				  // a break too wide
+	CHECK( fails( "motion\tA\nwhen\tevent\tt.poke\nowner\titem\nbreak\t2\t12\t0\n" ) == false );
+}
+
 // "motion.<name>" in a condition: that motion of the player's is on. A motion's own conditions read
 // it as the tick found it; the name is the set's and the node's, or the node's alone when it is
 // the only one.
@@ -10645,6 +10817,7 @@ int main( int argc, char** argv )
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },
 		{ "motion_markers", TestMotionMarkers },
+		{ "item_blast", TestItemBlast },
 		{ "item_motions", TestItemMotions },
 		{ "motion_conditions", TestMotionConditions },
 		{ "links", TestLinks },

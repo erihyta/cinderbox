@@ -5,17 +5,18 @@
 // file: the grenade is an item (client/prefabs/frag.tscn, a CbItem) that goes to slot 6, whose own
 // key (H), or the use button with it selected, plays its throw on the left arm (its animation pack); the throw clip's marker,
 // frag.release, lets go of the grenade the player carries (a CbLaunch of the one carried), with
-// 2.5 s to live. It bounces and rolls as its body says. When its time is up the simulation says
-// "frag.grenade.expired" where it is, with whoever threw it, and removes it: on every machine, on
-// the same tick.
+// 2.5 s to live. It bounces and rolls as its body says. When its time is up the simulation sets it
+// off where it is, as its sheet says (client/prefabs/frag.rules: a motion the grenade owns): it says
+// frag.blast, blows a hole in a wall near it and throws what is loose; and it says
+// "frag.grenade.expired" there, with whoever threw it, and removes it: on every machine, on the same
+// tick, so the blast is never a lead late on anyone's screen.
 //
 // This file is the rules: grenades come one at a time, a little apart (frag.refill_seconds), until a
-// player carries frag.carry of them (a stack: the scene's stack), and what going off is. Everyone near is hurt (the combat mod's "combat.damage", like any other
-// weapon's: less with distance), everything loose near it is thrown and sent tumbling (props,
-// items, ragdolls: so those it kills fly, and those it only hurts keep their feet), and it blows a
-// hole in a breakable (a map's CbBreakable: a wall) near it: the pieces near it are flung away, the
-// rest stand while something holds them up. It does not go
-// off when it hits something: that was the impact grenade (the grenade mod, switched off).
+// player carries frag.carry of them (a stack: the scene's stack), how big a blast is (its options,
+// published as fields the sheet reads: frag.radius, frag.push, frag.break_radius,
+// frag.rubble_seconds), and who it hurts: everyone near (the combat mod's "combat.damage", like any
+// other weapon's: less with distance); the bodies it kills, and those lying near, are flung. It does
+// not go off when it hits something: that was the impact grenade (the grenade mod, switched off).
 //
 // Server options: frag.damage (at the centre, default 90), frag.radius (metres, default 5),
 // frag.push (how fast what is loose is thrown at the centre, m/s, default 12), frag.refill_seconds
@@ -56,6 +57,11 @@ public:
 		// Said by the simulation when a grenade's time is up ("<kind>.expired"): the fuse.
 		m_expired = declare.Event( "frag.grenade.expired" );
 		m_blast = declare.Event( "frag.blast" );
+		// The blast's numbers, for its sheet (frag.rules): the server's options.
+		m_radiusField = declare.Field( "frag.radius", BoardType::Float, BoardScope::Global );
+		m_pushField = declare.Field( "frag.push", BoardType::Float, BoardScope::Global );
+		m_breakRadiusField = declare.Field( "frag.break_radius", BoardType::Float, BoardScope::Global );
+		m_rubbleField = declare.Field( "frag.rubble_seconds", BoardType::Float, BoardScope::Global );
 		// The combat mod's (see combat.cpp): what a hit on a player is said with.
 		m_damage = declare.Event( "combat.damage" );
 		// Not for picking up, and not for a slot: it is on its way.
@@ -75,6 +81,14 @@ public:
 
 	void Tick( Context& ctx ) override
 	{
+		if ( m_published == false )
+		{
+			ctx.SetFloat( 0, m_radiusField, m_radius );
+			ctx.SetFloat( 0, m_pushField, m_push );
+			ctx.SetFloat( 0, m_breakRadiusField, m_breakRadius );
+			ctx.SetFloat( 0, m_rubbleField, m_rubbleSeconds );
+			m_published = true;
+		}
 		Refill( ctx );
 		// The blasts of the last few ticks throw those they killed, now that they have fallen.
 		for ( size_t i = 0; i < m_recent.size(); )
@@ -142,15 +156,7 @@ private:
 		int throwerSlot = thrower != 0 ? ctx.SlotOf( thrower ) : -1;
 		uint32_t throwerTarget = throwerSlot >= 0 ? SlotTarget( PlayerSlot( throwerSlot ) ) : 0;
 
-		ctx.Emit( m_blast, throwerTarget, 0, int32_t( m_radius * 100.0f ), point );
-		// A hole in what breaks near it: the pieces near it flung as hard as the loose things are.
-		if ( m_breakRadius > 0.0f )
-		{
-			for ( uint32_t breakable : ctx.BreakablesNear( point, m_breakRadius ) )
-			{
-				ctx.Break( breakable, point, m_push, m_rubbleSeconds, m_breakRadius );
-			}
-		}
+		// (The blast itself, its hole and what is loose thrown, are its sheet's: frag.rules.)
 		for ( int i = 0; i < kMaxPlayers; ++i )
 		{
 			PlayerSlot slot = PlayerSlot( i );
@@ -176,14 +182,14 @@ private:
 				ctx.Emit( m_damage, throwerTarget, ctx.PlayerNetId( slot ), damage, point, push );
 			}
 		}
-		// Everything loose is thrown too; those it kills fall a tick or two from now, and are thrown
-		// as they fall (the blast is remembered that long).
+		// The bodies lying near are flung (what is loose its sheet threw already); those it kills fall
+		// a tick or two from now, and are flung as they fall (the blast is remembered that long).
 		Throw( ctx, point, 0 );
 		m_recent.push_back( { point, ctx.Tick() } );
 	}
 
-	// Everything loose within the blast is thrown; with `fallenSince`, only the bodies that fell
-	// at or after that tick (the ones this blast killed).
+	// The bodies (ragdolls) within the blast are flung; with `fallenSince`, only those that fell at or
+	// after that tick (the ones this blast killed).
 	void Throw( Context& ctx, b3Vec3 point, uint32_t fallenSince )
 	{
 		for ( const NearBody& body : ctx.BodiesNear( point, m_radius ) )
@@ -192,22 +198,18 @@ private:
 			{
 				continue;
 			}
+			if ( body.ragdollSince == 0 )
+			{
+				continue; // (what is loose: its sheet's)
+			}
 			b3Vec3 to = b3Sub( body.position, point );
 			float share = 1.0f - body.distance / m_radius;
 			b3Vec3 away = body.distance > 0.01f ? b3MulSV( 1.0f / body.distance, to ) : b3Vec3{ 0.0f, 1.0f, 0.0f };
-			if ( body.ragdollSince != 0 )
-			{
-				// A body: the whole of it, up and away. Once per blast.
-				m_flung.push_back( body.netId );
-				ctx.Push( body.netId, body.position,
-						  b3Add( b3MulSV( m_push * ( 0.3f + 0.5f * share ), away ), b3Vec3{ 0.0f, 0.45f * m_push * ( 0.3f + 0.5f * share ), 0.0f } ),
-						  ImpulseThrow );
-				continue;
-			}
-			// Hit on the side that faces the blast, low: off its centre, so it tumbles as it goes.
-			float off = 0.3f * body.radius * std::clamp( body.radius / 0.5f, 0.15f, 1.0f );
-			b3Vec3 where = b3Sub( body.position, b3Add( b3MulSV( off, away ), b3Vec3{ 0.0f, 0.6f * off, 0.0f } ) );
-			ctx.Push( body.netId, where, b3Add( b3MulSV( m_push * share, away ), b3Vec3{ 0.0f, 0.35f * m_push * share, 0.0f } ), ImpulseVelocity );
+			// A body: the whole of it, up and away. Once per blast.
+			m_flung.push_back( body.netId );
+			ctx.Push( body.netId, body.position,
+					  b3Add( b3MulSV( m_push * ( 0.3f + 0.5f * share ), away ), b3Vec3{ 0.0f, 0.45f * m_push * ( 0.3f + 0.5f * share ), 0.0f } ),
+					  ImpulseThrow );
 		}
 	}
 
@@ -217,6 +219,11 @@ private:
 	EventHandle m_expired;
 	EventHandle m_blast;
 	EventHandle m_damage;
+	FieldHandle m_radiusField;
+	FieldHandle m_pushField;
+	FieldHandle m_breakRadiusField;
+	FieldHandle m_rubbleField;
+	bool m_published = false;
 	float m_centreDamage = 90.0f;
 	float m_radius = 5.0f;
 	float m_breakRadius = 2.5f;

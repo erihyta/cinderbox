@@ -1,8 +1,8 @@
 [gd_scene format=3]
 
 ; The frag grenade: thrown from the hand, it bounces and rolls, and goes off when its fuse is out,
-; 2.5 s after it left the hand (the launch's seconds: when its time is up, the simulation says
-; frag.grenade.expired where it is, and the frag mod sets it off there). An item (CbItem), so it has
+; 2.5 s after it left the hand (the launch's seconds: when its time is up, every simulation sets it
+; off where it is, as its sheet says: frag.rules; the frag mod hurts who is near). An item (CbItem), so it has
 ; a body in the world that every simulation agrees on: a sphere 18 cm across, 0.4 kg, bouncier than
 ; the impact grenade, which went off on the first hard hit.
 ;
@@ -15,11 +15,17 @@
 ;   Release    CbMotion   on frag.release (the clip's marker): emits frag.thrown
 ;     Frag     CbLaunch   the one carried, where the camera looks at 15 m/s, 3 m/s of lift and the
 ;                         thrower's own velocity, from 0.8 m ahead; its time is up after 2.5 s
+;   Blast      Area3D     the region its blast throws things in: a ball 8 m round (how far it reaches
+;                         is the frag mod's frag.radius, within it; not the grenade's body)
+;   Rules      CbRules    frag.rules: the blast (owner item: the grenade's, on expired)
 ;
 ; Saving this scene bakes it into res://items/frag.grenade.cfg.
 
 [sub_resource type="SphereShape3D" id="Body"]
 radius = 0.09
+
+[sub_resource type="SphereShape3D" id="Reach"]
+radius = 8.0
 
 [sub_resource type="StandardMaterial3D" id="Shell"]
 albedo_color = Color(0.22, 0.24, 0.2, 1)
@@ -89,3 +95,11 @@ speed = 15.0
 lift = 3.0
 ahead = 0.8
 seconds = 2.5
+
+[node name="Blast" type="Area3D" parent="."]
+
+[node name="Shape" type="CollisionShape3D" parent="Blast"]
+shape = SubResource("Reach")
+
+[node name="Rules" type="CbRules" parent="."]
+file = "res://prefabs/frag.rules"

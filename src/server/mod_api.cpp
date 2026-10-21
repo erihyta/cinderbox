@@ -882,66 +882,7 @@ void Context::Break( uint32_t target, b3Vec3 blast, float speed, float seconds, 
 
 std::vector<uint32_t> Context::BreakablesNear( b3Vec3 point, float radius ) const
 {
-	// Per wall (the NetId it had whole): the nearest piece, and what to give Break for it.
-	struct Near
-	{
-		uint32_t wall = 0;
-		float distance = 0.0f;
-		uint32_t target = 0;
-	};
-	std::vector<Near> walls;
-	auto consider = [&]( uint32_t wall, float distance, uint32_t target ) {
-		if ( distance > radius )
-		{
-			return;
-		}
-		for ( Near& n : walls )
-		{
-			if ( n.wall == wall )
-			{
-				if ( distance < n.distance )
-				{
-					n.distance = distance;
-					n.target = target;
-				}
-				return;
-			}
-		}
-		walls.push_back( { wall, distance, target } );
-	};
-	const auto& templates = m_sim.Map().templates;
-	for ( const Simulation::EntityRef& r : m_sim.Entities() )
-	{
-		flecs::entity e( m_sim.World(), r.entity );
-		const Transform& at = e.get<Transform>();
-		if ( const WallPiece* piece = e.try_get<WallPiece>() )
-		{
-			consider( piece->wall, b3Length( b3Sub( at.position, point ) ), r.netId );
-			continue;
-		}
-		const TemplateRef* ref = e.try_get<TemplateRef>();
-		if ( ref == nullptr || ref->index >= templates.size() || templates[ref->index].pieces.empty() )
-		{
-			continue;
-		}
-		for ( const TemplatePiece& piece : templates[ref->index].pieces )
-		{
-			const b3Vec3 where = b3Add( at.position, b3RotateVector( at.rotation, piece.position ) );
-			consider( r.netId, b3Length( b3Sub( where, point ) ), r.netId );
-		}
-	}
-	std::vector<std::pair<float, uint32_t>> found;
-	for ( const Near& n : walls )
-	{
-		found.push_back( { n.distance, n.target } );
-	}
-	std::stable_sort( found.begin(), found.end(), []( const auto& a, const auto& b ) { return a.first < b.first; } );
-	std::vector<uint32_t> out;
-	for ( const auto& [distance, netId] : found )
-	{
-		out.push_back( netId );
-	}
-	return out;
+	return m_sim.BreakablesNear( point, radius );
 }
 
 void Context::Push( uint32_t target, b3Vec3 point, b3Vec3 vector, ImpulseMode mode )

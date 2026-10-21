@@ -363,8 +363,10 @@ Frag    CbItem   kind "frag.grenade"   use: once a press   slot 6   use_key H   
 ├── Body  CollisionShape3D   a sphere, 9 cm
 ├── Ball, Band  MeshInstance3D
 ├── Throwing    CbMotion   on frag.grenade.used (the key)   0.7 s   cooldown 0.7 s: the arm's throw
-└── Release     CbMotion   on frag.release (the clip's marker)   emits frag.thrown
-    └── Frag    CbLaunch   what: the one carried   speed 15 m/s   lift 3 m/s   ahead 0.8 m   seconds 2.5 (the fuse)
+├── Release     CbMotion   on frag.release (the clip's marker)   emits frag.thrown
+│   └── Frag    CbLaunch   what: the one carried   speed 15 m/s   lift 3 m/s   ahead 0.8 m   seconds 2.5 (the fuse)
+├── Blast       Area3D     a ball 8 m round: where its blast throws things (not its body)
+└── Rules       CbRules    frag.rules: the blast, the grenade's own motion (owner item, on expired)
 ```
 
 The pack (`animation_packs/throw_arm.tscn`) is an overlay on the left arm while `Throwing` is on;
@@ -377,8 +379,11 @@ the client's throw is the server's). The mod gives a new grenade 1.2 s after a p
 simulation removes it, and first says `<kind>.expired` (where a mod declares that event: the frag
 mod declares `frag.grenade.expired`) at where it is, with the item as the first entity and who
 threw it as the second. It is the simulation's, so the thrower's own game has it on the same tick
-(`net_frag`: 240 ticks of flight, bounces and the fuse, the server's exactly). The frag mod hears
-it (`ctx.RecentEvents()`) and sets the grenade off there.
+(`net_frag`: 240 ticks of flight, bounces and the fuse, the server's exactly). Before it goes, its
+own motions that answer it run (a sheet's [`owner item`](rules-language.md#settings-lines-under-the-header-before-any-statement)):
+the grenade's `frag.rules` says `frag.blast`, breaks the walls near it and throws what is loose, on
+that tick on every machine. The frag mod hears the event (`ctx.RecentEvents()`) and hurts who was
+near, and flings the bodies it killed.
 
 | `CbLaunch` | Meaning |
 |---|---|
@@ -524,6 +529,9 @@ emit	dash.started
 | `timeout` | what follows runs when the step before gave up waiting; then the motion ends |
 | `guard` | a condition (none: no guard): what follows counts only if it held when its step started |
 | `end` | the motion ends after this tick |
+| `owner` | `item`: the item of the set's kind runs it, lying in the world, once, when its event is said at it |
+| `break` | a radius, a speed, seconds (each a number or an expression): walls near the owner broken |
+| `remove` | the owner item leaves the world |
 | `turn` | a heading and a pitch (degrees, right and up): the direction of the effect on the line before, turned |
 | `from` | x y z: where the launch on the line before starts (a marker's place in the player's frame, turned with its heading) |
 | `path` | a name, then points (x y z each, at even steps, from where it starts, forward +Z): what a `follow` carries the player along. Before what follows it |

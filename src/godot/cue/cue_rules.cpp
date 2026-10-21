@@ -852,7 +852,7 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			}
 			// --- what starts a step, or the motion's own settings: not under an if
 			const bool stepLine = verb == "then" || verb == "after" || verb == "timeout";
-			const bool setting = verb == "cooldown" || verb == "uses" || verb == "lasts" || verb == "until" || verb == "item";
+			const bool setting = verb == "cooldown" || verb == "uses" || verb == "lasts" || verb == "until" || verb == "item" || verb == "owner";
 			if ( ( stepLine || setting ) && top == false )
 			{
 				fail( number, "\"" + verb + "\" is the motion's: as far in as its first line, not under an if" );
@@ -935,11 +935,16 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				{
 					rule.settings["item"] = w[1].text;
 				}
+				else if ( verb == "owner" && w.size() == 2 && ( w[1].text == "item" || w[1].text == "player" ) )
+				{
+					rule.settings["owner"] = w[1].text;
+				}
 				else
 				{
 					fail( number, verb == "until"	 ? "until <expression>"
 								  : verb == "uses" ? "uses N, uses N refill ground, or uses N refill after S"
 								  : verb == "item" ? "item hand (the default: whoever has it out) or item carried (in the hand or put away)"
+								  : verb == "owner" ? "owner item (the item runs it, lying in the world) or owner player (the default)"
 												   : verb + String( " <seconds>" ) );
 				}
 				continue;
@@ -1124,6 +1129,41 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				rule.steps[rule.steps.size() - 1] = step;
 				continue;
 			}
+			if ( verb == "break" )
+			{
+				// break radius R [speed S] [seconds S]: walls near the owner. A number, a name, or an
+				// expression in brackets each.
+				bool ok = w.size() >= 3 && w.size() % 2 == 1;
+				for ( size_t k = 1; ok && k + 1 < w.size(); k += 2 )
+				{
+					const String word = w[k].text;
+					ok = ( word == "radius" || word == "speed" || word == "seconds" ) && w[k + 1].quoted == false;
+					statement[word] = w[k + 1].text;
+				}
+				if ( ok == false || statement.has( "radius" ) == false )
+				{
+					fail( number, "break radius R [speed S] [seconds S]: the walls within R of it, their pieces flung at S, staying S seconds (0: for good)" );
+					continue;
+				}
+				statement["kind"] = "break";
+				add( statement );
+				step["statements"] = statements;
+				rule.steps[rule.steps.size() - 1] = step;
+				continue;
+			}
+			if ( verb == "remove" )
+			{
+				if ( w.size() != 2 || w[1].text != "self" )
+				{
+					fail( number, "remove self (an item's motion: the item leaves the world)" );
+					continue;
+				}
+				statement["kind"] = "remove";
+				add( statement );
+				step["statements"] = statements;
+				rule.steps[rule.steps.size() - 1] = step;
+				continue;
+			}
 			if ( verb == "change" )
 			{
 				if ( w.size() < 4 )
@@ -1160,7 +1200,7 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				if ( ParsePart( w, part, why ) == false )
 				{
 					fail( number, why.begins_with( "\"" + verb + "\" is not one of" )
-									  ? "\"" + verb + "\" is not a line of a motion: if, else, then when, after, timeout, cooldown, uses, lasts, until, item, change, emit, end, find, cast, impulse, force, link, move, launch, follow"
+									  ? "\"" + verb + "\" is not a line of a motion: if, else, then when, after, timeout, cooldown, uses, lasts, until, item, owner, change, emit, end, find, cast, impulse, force, link, move, launch, follow, break, remove"
 									  : why );
 					continue;
 				}

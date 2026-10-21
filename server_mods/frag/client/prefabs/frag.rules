@@ -1,0 +1,11 @@
+# The grenade going off: when its time is up, every simulation sets it off where it is, on the same
+# tick (so the blast is never a lead late). The numbers are the frag mod's (its options, published
+# as fields); hurting who is near is the mod's too (combat.damage).
+
+motion Blast on expired
+	owner item
+	emit frag.blast
+	break radius frag.break_radius speed frag.push seconds frag.rubble_seconds
+	find Blast bodies
+		impulse (distance < frag.radius) * frag.push * (1 - distance / frag.radius) along away
+		impulse (distance < frag.radius) * 0.35 * frag.push * (1 - distance / frag.radius) along up

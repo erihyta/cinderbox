@@ -15,7 +15,7 @@ today; the rest is the plan.
 | Markers (`along NODE`, `launch ... from NODE`), `turn (yaw, pitch)`, `follow PATH over S`, a launch's `speed (EXPRESSION)` | *built* (M208) |
 | Expressions in a `move` (a parameter is read by the mover whenever it moves, with no motion's values at hand); `$target:FIELD` in a find's lines, `at POINT`, `PATH at T`, a cast in a later step | planned |
 | `curve()`, `time`, markers, `follow` | planned (3.3) |
-| `owner item`, `break`, `remove self` | planned (3.4) |
+| `owner item` (an item's own motion, `on expired` or `on EVENT`), `break`, `remove self` | *built* (M209: the frag grenade's blast is its sheet's) |
 | `impulse kind momentum`, `every` | planned (3.5) |
 
 ## The idea in one picture
@@ -108,7 +108,7 @@ wall (once that condition exists). One general edge, not one trigger per case.
 | `lasts S` | the motion ends S seconds after it starts | `duration` |
 | `until EXPRESSION` | ends it when it holds (several lines: any) | `until` |
 | `item hand` / `item carried` | in an item's sheet: who may run it, whoever has the item out (the default) or whoever carries it | `with_item` |
-| `owner self` / `owner item` | who runs it: the player (default), or the item itself while it is in the world (a grenade's own fuse). *Planned* | **new** |
+| `owner player` / `owner item` | *built*: who runs it: the player (the default), or the item itself while it lies in the world (in an item's sheet). An item's motion happens once, when its event is said at the item: `on expired` (its time up: the launch's seconds; it runs before the item goes), or `on EVENT` (a mod's, said at it). So it has no steps, no cast, no cooldown, uses, lasts, until, `if` on its first line, `move` or `end`; its `if` blocks read the item's fields, the game's, and `speed`. It says its events as its thrower's (A the thrower, B the item: whose blast it is), and pushes itself or what it finds along up, world, away or to (an item has no look) | **new** |
 
 ## Statements
 
@@ -124,8 +124,8 @@ there until they are done; **lasting** ones act every tick until the motion ends
 | `emit EVENT [at POINT]` | a mod event: for looks, state machines, and a mod's C++ (damage) |
 | `impulse VALUE [kind velocity\|momentum] [on WHO] [along DIRECTION] [replace vertical\|horizontal\|all]` | a change of velocity (m/s, any weight: the default) or of momentum (N·s: heavy things move less) |
 | `launch new KIND \| carried [speed S \| speed (EXPRESSION)] [lift] [ahead] [seconds] [along DIRECTION] [from NODE]` | *built*: an item into the world; `from` a marker: its place around the player (turned with its heading), instead of `ahead` of where its look starts (the cannon's muzzle) |
-| `break [radius R] [speed S] [seconds S] [at POINT]` | breakable walls near the point open, as a grenade's blast does today |
-| `remove self` | the owner item leaves the world (a mine once it has gone off) |
+| `break radius R [speed S] [seconds S]` | *built*: the breakable walls whose nearest piece is within R of the owner (its feet, or the item) lose their pieces that near, flung at S (10 by default), staying S seconds (0, the default: for good). Each a number, a name (`frag.break_radius`: a field a mod sets from its options) or an expression in brackets |
+| `remove self` | *built*: the owner item leaves the world (a mine once it has gone off). An item's motion only |
 | `end` | the motion ends here |
 
 ### Lasting
@@ -262,19 +262,20 @@ motion Slam on use if brawl.cd_slam <= 0 and not grounded
         emit brawl.slam.hit                      # the brawl mod: 25 damage
 ```
 
-### A frag grenade whose blast is predicted
+### A frag grenade whose blast is predicted (*built*: `server_mods/frag/client/prefabs/frag.rules`)
 
 ```
-# frag.grenade's own sheet: it runs on the grenade while it is in the world
-motion Blast on frag.grenade.expired
+motion Blast on expired                          # its time up: the launch's seconds
     owner item
-    emit frag.blast
-    break radius 2.5 speed 14 seconds 8
-    find Blast players bodies                  # a sphere, 5 m
-        impulse 14 * curve(Falloff, reach) along away
-        emit frag.blast.hit                      # the frag mod: damage by distance
-                                                 # (the simulation removes it on .expired, as today)
+    emit frag.blast                              # A: who threw it; the frag mod hurts who is near
+    break radius frag.break_radius speed frag.push seconds frag.rubble_seconds
+    find Blast bodies                            # an Area3D: a ball 8 m round
+        impulse (distance < frag.radius) * frag.push * (1 - distance / frag.radius) along away
+        impulse (distance < frag.radius) * 0.35 * frag.push * (1 - distance / frag.radius) along up
 ```
+
+The numbers are fields the frag mod sets from its server options (`frag.radius`, `frag.push`,
+`frag.break_radius`, `frag.rubble_seconds`): the rules stay the mod's, the physics is the sheet's.
 
 ### The grappling hook, as one block (*built*: `server_mods/grapple/client/prefabs/hook.rules`)
 
@@ -384,6 +385,6 @@ the editor and at publish, as today.
 1. **Blocks** (*built*, M204): `motion` headers, `when`, `then when`, `after`, `timeout`, `if` / `else`, `end`; today's `use` sheets unchanged. The brawl slam's landing is its sheet's now (`then when grounded`).
 2. **Finding** (*built*): `find` (M205: the brawl slam's shockwave is its sheet's now, the mod only hurts), `cast` (M206: the grapple is a sheet now). `distance` and `reach` come with curves.
 3. **Curves and markers** (*built*): `curve()`, `time`, `distance`, `reach` (M207); `along NODE`, `from NODE`, `turn`, `follow` (M208).
-4. **Items run motions**: `owner item`, `break`, `remove self`; the frag grenade's blast predicted.
+4. **Items run motions** (*built*, M209): `owner item`, `break`, `remove self`; the frag grenade's blast predicted.
 5. **`impulse kind momentum`**, `every`.
 6. **The mods converted**: brawl, frag, cannon, grapple, flight, dash, as the test that nothing is lost.
