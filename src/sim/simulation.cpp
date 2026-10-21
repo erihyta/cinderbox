@@ -275,6 +275,19 @@ void Simulation::SetMotions( std::shared_ptr<const Motions> motions )
 		motions = nullptr;
 	}
 	m_motions = std::move( motions );
+	m_itemMotions.clear();
+	for ( size_t i = 0; m_motions && i < m_motions->list.size(); ++i )
+	{
+		const Motion& m = m_motions->list[i];
+		if ( m.ownerItem && m.itemKind >= 0 )
+		{
+			if ( m_itemMotions.size() <= size_t( m.itemKind ) )
+			{
+				m_itemMotions.resize( size_t( m.itemKind ) + 1 );
+			}
+			m_itemMotions[size_t( m.itemKind )].push_back( uint16_t( i ) );
+		}
+	}
 }
 
 bool Simulation::HasAnimState( flecs::entity e ) const
@@ -2240,6 +2253,7 @@ void Simulation::ExpireProps()
 {
 	uint32_t tick = m_globals.tick;
 	m_scratch.clear();
+	std::vector<std::pair<EntityRef, int>> goingOff;
 	for ( const EntityRef& r : m_entities )
 	{
 		flecs::entity e( m_world, r.entity );
@@ -2259,6 +2273,7 @@ void Simulation::ExpireProps()
 				const Transform* at = e.try_get<Transform>();
 				record.point = at != nullptr ? at->position : b3Vec3{};
 				RecordModEvent( record );
+				goingOff.push_back( { r, int( said ) } );
 			}
 			m_scratch.push_back( r );
 			continue;
@@ -2269,7 +2284,14 @@ void Simulation::ExpireProps()
 			m_scratch.push_back( r );
 		}
 	}
-	for ( const EntityRef& r : m_scratch )
+	// What their sheets say they do then (a grenade's blast), while they are still here: after the
+	// walk over the entities, as it may break walls (new pieces) and move things.
+	const std::vector<EntityRef> going = m_scratch;
+	for ( const auto& [r, event] : goingOff )
+	{
+		RunItemMotions( flecs::entity( m_world, r.entity ), event, true );
+	}
+	for ( const EntityRef& r : going )
 	{
 		DestroyEntity( flecs::entity( m_world, r.entity ) );
 	}
@@ -2654,6 +2676,7 @@ void Simulation::Step( const InputFrame& frame )
 	CollectImpacts();
 	BreakGlue();
 	BreakByItems();
+	RunItemEvents();
 	SyncFromPhysics();
 	FollowHolders();
 	UpdateFootsteps();
@@ -4097,10 +4120,228 @@ void Simulation::GiveMove( flecs::entity who, uint8_t param, float value, float 
 	who.set<MoveEffects>( given );
 }
 
+void Simulation::RunBreaks( const Motion& m, const MotionStep& step, const MotionSlot& slot, b3Vec3 at, const AnimGraphInputs& values )
+{
+	for ( const MotionStep::Break& b : step.breaks )
+	{
+		if ( MotionGuardHolds( slot, b.guard ) == false )
+		{
+			continue;
+		}
+		const float radius = MotionValueOf( m, b.radius, values, 0.0f, 20.0f );
+		const float speed = MotionValueOf( m, b.speed, values, 0.0f, 200.0f );
+		const float seconds = MotionValueOf( m, b.seconds, values, 0.0f, 3600.0f );
+		if ( radius <= 0.0f )
+		{
+			continue;
+		}
+		const uint32_t rubble = uint32_t( seconds * float( m_config.tickRate ) );
+		for ( uint32_t wall : BreakablesNear( at, radius ) )
+		{
+			flecs::entity target = FindEntity( wall );
+			if ( target.is_valid() )
+			{
+				BreakWall( target, at, radius, speed, rubble );
+			}
+		}
+	}
+}
+
+void Simulation::RunItemMotions( flecs::entity item, int event, bool expiring )
+{
+	const HeldItem* held = item.is_valid() ? item.try_get<HeldItem>() : nullptr;
+	if ( held == nullptr || held->holder != 0 || !m_motions || size_t( held->kind ) >= m_itemMotions.size() || event < 0 )
+	{
+		return;
+	}
+	const uint32_t itemId = item.get<NetId>().value;
+	const Prop* prop = item.try_get<Prop>();
+	const uint32_t thrower = prop != nullptr ? prop->owner : 0;
+	const Transform t = item.get<Transform>();
+	for ( uint16_t index : m_itemMotions[size_t( held->kind )] )
+	{
+		const Motion& m = m_motions->list[index];
+		if ( m.trigger != event || item.is_valid() == false )
+		{
+			continue;
+		}
+		// What its expressions read: the item's fields, the game's, its curves.
+		Blackboard board = HasBoard( item ) ? GetBoard( item ) : Blackboard{};
+		AnimGraphInputs values;
+		values.board = &board.values;
+		values.globalBoard = &m_globalBoard;
+		values.events = m_globals.modEvents;
+		values.eventCount = m_globals.modEventCount;
+		values.tick = m_globals.tick;
+		values.netId = itemId;
+		values.curves = &m.curves;
+		const PhysicsBody* pb = item.try_get<PhysicsBody>();
+		values.builtins[AnimExpr::Speed] = pb != nullptr ? b3Length( b3Body_GetLinearVelocity( BodyOf( *pb ) ) ) : 0.0f;
+		const MotionStep& step = m.steps.front();
+		MotionSlot slot;
+		slot.guards = MotionGuardBits( step, values );
+		// Its fields, then what it says (as its thrower's: whose blast it is), then what it does.
+		bool changed = false;
+		for ( const MotionStep::Change& change : step.changes )
+		{
+			if ( MotionGuardHolds( slot, change.guard ) && HasBoard( item ) )
+			{
+				int32_t& stored = board.values[change.slot];
+				float value = change.type == BoardType::Float ? BoardToFloat( stored ) : float( stored );
+				value = change.op == Motion::ChangeOp::Set ? change.value : change.op == Motion::ChangeOp::Add ? value + change.value : value - change.value;
+				stored = change.type == BoardType::Float ? BoardFromFloat( value ) : int32_t( value );
+				changed = true;
+			}
+		}
+		if ( changed )
+		{
+			SetBoard( item, board );
+		}
+		for ( const MotionStep::Emit& emit : step.emits )
+		{
+			if ( emit.event >= 0 && MotionGuardHolds( slot, emit.guard ) )
+			{
+				ModEventRecord record;
+				record.type = uint16_t( emit.event );
+				record.netIdA = thrower;
+				record.netIdB = itemId;
+				record.tick = m_globals.tick;
+				record.point = t.position;
+				record.late = 1;
+				RecordModEvent( record );
+			}
+		}
+		RunBreaks( m, step, slot, t.position, values );
+		// Itself: pushed; what it finds (as its own player has none: no look, no facing).
+		Character none;
+		PlayerInput still;
+		const MotionEnd self = EndOf( flecs::entity(), t, item );
+		for ( const MotionEffect& effect : step.effects )
+		{
+			if ( MotionGuardHolds( slot, effect.guard ) && self.kind == MotionEnd::Kind::Body )
+			{
+				b3Vec3 direction = MotionTurn( effect, MotionDirection( effect.frame, effect.direction, none, still ) );
+				ImpulseEnd( effect, MotionStrength( m, effect, values, kMotionImpulseLimit ), self, none, direction );
+			}
+		}
+		for ( const MotionFind& find : step.finds )
+		{
+			if ( MotionGuardHolds( slot, find.guard ) )
+			{
+				RunFind( item, none, t, still, m, find, self, MotionEnd{}, values, thrower );
+			}
+		}
+		bool remove = false;
+		for ( int8_t guard : step.removes )
+		{
+			remove = remove || MotionGuardHolds( slot, guard );
+		}
+		if ( remove && expiring == false )
+		{
+			DestroyEntity( item );
+			return;
+		}
+	}
+}
+
+void Simulation::RunItemEvents()
+{
+	if ( m_itemMotions.empty() )
+	{
+		return;
+	}
+	// This tick's events said at a live item that has motions (newest first in the ring: gathered,
+	// then run oldest first, the order they were said).
+	std::vector<std::pair<uint32_t, int>> said;
+	const uint32_t kept = std::min( m_globals.modEventCount, kModEventHistory );
+	for ( uint32_t i = 0; i < kept; ++i )
+	{
+		const ModEventRecord& e = m_globals.modEvents[( m_globals.modEventCount - 1 - i ) % kModEventHistory];
+		if ( e.tick != m_globals.tick )
+		{
+			break;
+		}
+		said.push_back( { e.netIdA, int( e.type ) } );
+	}
+	for ( size_t i = said.size(); i-- > 0; )
+	{
+		flecs::entity item = said[i].first != 0 ? FindEntity( said[i].first ) : flecs::entity();
+		const HeldItem* held = item.is_valid() ? item.try_get<HeldItem>() : nullptr;
+		if ( held != nullptr && size_t( held->kind ) < m_itemMotions.size() && m_itemMotions[size_t( held->kind )].empty() == false )
+		{
+			RunItemMotions( item, said[i].second, false );
+		}
+	}
+}
+
+std::vector<uint32_t> Simulation::BreakablesNear( b3Vec3 point, float radius ) const
+{
+	// Per wall (the NetId it had whole): the nearest piece, and what to break it by.
+	struct Near
+	{
+		uint32_t wall = 0;
+		float distance = 0.0f;
+		uint32_t target = 0;
+	};
+	std::vector<Near> walls;
+	auto consider = [&]( uint32_t wall, float distance, uint32_t target ) {
+		if ( distance > radius )
+		{
+			return;
+		}
+		for ( Near& n : walls )
+		{
+			if ( n.wall == wall )
+			{
+				if ( distance < n.distance )
+				{
+					n.distance = distance;
+					n.target = target;
+				}
+				return;
+			}
+		}
+		walls.push_back( { wall, distance, target } );
+	};
+	for ( const EntityRef& r : m_entities )
+	{
+		flecs::entity e( m_world, r.entity );
+		const Transform& at = e.get<Transform>();
+		if ( const WallPiece* piece = e.try_get<WallPiece>() )
+		{
+			consider( piece->wall, b3Length( b3Sub( at.position, point ) ), r.netId );
+			continue;
+		}
+		const TemplateRef* ref = e.try_get<TemplateRef>();
+		if ( ref == nullptr || ref->index >= m_map.templates.size() || m_map.templates[ref->index].pieces.empty() )
+		{
+			continue;
+		}
+		for ( const TemplatePiece& piece : m_map.templates[ref->index].pieces )
+		{
+			const b3Vec3 where = b3Add( at.position, b3RotateVector( at.rotation, piece.position ) );
+			consider( r.netId, b3Length( b3Sub( where, point ) ), r.netId );
+		}
+	}
+	std::vector<std::pair<float, uint32_t>> found;
+	for ( const Near& n : walls )
+	{
+		found.push_back( { n.distance, n.target } );
+	}
+	std::stable_sort( found.begin(), found.end(), []( const auto& a, const auto& b ) { return a.first < b.first; } );
+	std::vector<uint32_t> out;
+	for ( const auto& [distance, netId] : found )
+	{
+		out.push_back( netId );
+	}
+	return out;
+}
+
 void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const Motion& m, const MotionFind& find,
-						  const MotionEnd& self, const MotionEnd& hit, const AnimGraphInputs& motionValues )
+						  const MotionEnd& self, const MotionEnd& hit, const AnimGraphInputs& motionValues, uint32_t sayer )
 {
 	const uint32_t selfId = e.get<NetId>().value;
+	sayer = sayer != 0 ? sayer : selfId;
 	// The shape, turned as the player faces (or looks), at its feet.
 	b3Quat turn = b3Quat_identity;
 	if ( find.frame == MotionFrame::Facing )
@@ -4235,7 +4476,7 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 			}
 			ModEventRecord record;
 			record.type = uint16_t( event );
-			record.netIdA = selfId;
+			record.netIdA = sayer;
 			record.netIdB = target.netId;
 			record.tick = m_globals.tick;
 			record.point = target.end.point;
@@ -4507,14 +4748,15 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				}
 			}
 		}
-		// Its step's finds, when the step starts.
+		// Its step's walls and finds, when the step starts.
 		if ( on.started )
 		{
+			RunBreaks( m, m.steps[slot.step], slot, t.position, values );
 			for ( const MotionFind& find : m.steps[slot.step].finds )
 			{
 				if ( MotionGuardHolds( slot, find.guard ) )
 				{
-					RunFind( e, c, t, in, m, find, self, hit, values );
+					RunFind( e, c, t, in, m, find, self, hit, values, 0 );
 				}
 			}
 		}

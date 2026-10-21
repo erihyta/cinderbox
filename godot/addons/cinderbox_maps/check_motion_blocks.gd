@@ -259,6 +259,25 @@ func _run() -> void:
 	_refused("a path that is not there", "motion A on press a\n\tlasts 1\n\tfollow Nope over 1\n", "line 1: follow Nope: no Path3D")
 	_refused("a turn of one number", "motion A on press a\n\timpulse 3 along look turn (90)\n", "line 2: turn (yaw, pitch)")
 
+	# An item's own motion: on its expiry, where it lies; walls broken, itself removed.
+	_scratch("motion Blast on expired\n\towner item\n\temit bomb.boom\n\tbreak radius bomb.radius speed 12\n\tfind sphere 4 bodies\n" +
+		"\t\timpulse 10 along away\n\tremove self\n")
+	var bomb := CbItem.new()
+	bomb.name = "Bomb"
+	bomb.kind = "test.bomb"
+	var bomb_rules := CbRules.new()
+	bomb_rules.name = "Rules"
+	bomb_rules.file = SCRATCH
+	bomb.add_child(bomb_rules)
+	var bomb_baked: Dictionary = bomb.bake_motions()
+	var bomb_text := String(bomb_baked["text"])
+	_check("an item's own motion: on its expiry, owner item, no one's hand asked",
+		bomb_text.contains("motion\tBlast\nwhen\tevent\ttest.bomb.expired\nowner\titem\nemit\tbomb.boom\nbreak\tbomb.radius\t12\t0\n" +
+		"find\tbodies\t0\t16\tfacing\nshape\t4\t0\t1\t0\nimpulse\tfound\t10\taway\tnone\nendfind\nremove\n"), bomb_text + String(bomb_baked["error"]))
+	bomb.free()
+	_refused("owner item in a motion set", "motion A on expired\n\towner item\n\temit x\n", "line 1: owner item is for an item's sheet")
+	_refused("a break with no radius", "motion A on press a\n\tbreak speed 3\n", "line 2: break radius R")
+
 	# What refuses the bake, with its file and line.
 	_refused("a find of a node that is not there", "motion A on press a\n\tfind Nope\n\t\temit x\n", "line 2: find: no node Nope")
 	_refused("a force inside a find", "motion A on press a\n\tfind sphere 2\n\t\tforce 3\n", "line 3: \"force\" inside a find")

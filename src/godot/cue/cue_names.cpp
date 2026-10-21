@@ -507,7 +507,8 @@ std::vector<std::pair<int, String>> SheetProblems( const String& text )
 			{
 				check( rule.line, Holds::Action, p["action"], "action" );
 			}
-			if ( p.has( "event" ) )
+			// ("on expired": the item's own time being up, "<kind>.expired": the simulation's word.)
+			if ( p.has( "event" ) && String( p["event"] ) != "expired" )
 			{
 				check( rule.line, Holds::Event, p["event"], "event" );
 			}

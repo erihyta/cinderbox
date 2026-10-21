@@ -227,6 +227,13 @@ struct MotionFind
 };
 inline constexpr int kFindMost = 16;
 
+// A number a statement says: as written, or an expression read when it acts (Motion::exprs).
+struct MotionValue
+{
+	float number = 0.0f;
+	int16_t expr = -1;
+};
+
 struct MotionStep
 {
 	enum class ChangeOp : uint8_t
@@ -273,6 +280,15 @@ struct MotionStep
 	std::vector<int8_t> ends;		   // an "end" each, under a guard (-1: none)
 	std::vector<MotionEffect> effects; // in the order of the nodes
 	std::vector<MotionFind> finds;	   // after its effects
+	// Walls broken where the owner is (a sheet's "break"): those within `radius` (metres) lose the
+	// pieces that near, flung at `speed`, staying `seconds` (0: for good).
+	struct Break
+	{
+		MotionValue radius, speed, seconds;
+		int8_t guard = -1;
+	};
+	std::vector<Break> breaks;
+	std::vector<int8_t> removes; // an item's "remove self" each, under a guard
 };
 
 struct Motion
@@ -325,6 +341,11 @@ struct Motion
 		std::vector<b3Vec3> points;
 	};
 	std::vector<Path> paths;
+	// Run by an item lying in the world, not by players (a sheet's "owner item"): its kind (schema
+	// index; -1: the set is no item's, and it never runs). One step, once, when its event is said at
+	// the item (its own expiry: "<kind>.expired").
+	bool ownerItem = false;
+	int itemKind = -1;
 
 	// On from when it starts until something ends it (its condition, what its probe holds going away,
 	// a wait for its next step).
@@ -401,6 +422,10 @@ struct MotionActive
 uint32_t MotionStepStart( const MotionSlot& slot );
 // Whether a statement under `guard` counts in the slot's step.
 bool MotionGuardHolds( const MotionSlot& slot, int8_t guard );
+// A step's guards as they are now: a bit each (what a step's start decides).
+uint16_t MotionGuardBits( const MotionStep& step, const AnimGraphInputs& values );
+// A statement's number now, held within lo and hi.
+float MotionValueOf( const Motion& m, const MotionValue& value, const AnimGraphInputs& values, float lo, float hi );
 // An effect's strength now: its number, or its expression read against `values`, held within `limit`.
 float MotionStrength( const Motion& m, const MotionEffect& effect, const AnimGraphInputs& values, float limit );
 // Limits of an effect's strength: an impulse's m/s, a force's newtons or m/s^2.

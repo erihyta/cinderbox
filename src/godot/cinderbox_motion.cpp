@@ -1335,6 +1335,15 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 		String w = String( p.get( key, "" ) ).strip_edges();
 		return Plain( w ) && w.contains( " " ) == false ? w : String();
 	};
+	const bool ownerItem = String( p.get( "owner", "player" ) ) == "item";
+	if ( ownerItem && kind.is_empty() )
+	{
+		return fail( "owner item is for an item's sheet" );
+	}
+	if ( ownerItem && trigger != "event" )
+	{
+		return fail( "an item's motion (owner item) starts on an event said at it: on expired, or on EVENT" );
+	}
 	if ( trigger == "use" )
 	{
 		if ( kind.is_empty() )
@@ -1357,7 +1366,9 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 		{
 			return fail( "on wants one event" );
 		}
-		text += "when\tevent\t" + Std( word( "event" ) ) + "\n";
+		// "expired": the item's own time being up ("<kind>.expired", said by the simulation).
+		String event = word( "event" ) == "expired" && kind.is_empty() == false ? kind + String( ".expired" ) : word( "event" );
+		text += "when\tevent\t" + Std( event ) + "\n";
 	}
 	else if ( trigger == "while" || trigger == "when" )
 	{
@@ -1380,8 +1391,13 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 	{
 		return fail( "a motion starts on use, on press, on an event, while or when" );
 	}
-	// Who may: in an item's sheet, whoever has it out (or carries it); its use says so itself.
-	if ( kind.is_empty() == false && trigger != "use" )
+	if ( ownerItem )
+	{
+		text += "owner\titem\n";
+	}
+	// Who may: in an item's sheet, whoever has it out (or carries it); its use says so itself, and an
+	// item's own motion is not a player's.
+	if ( kind.is_empty() == false && trigger != "use" && ownerItem == false )
 	{
 		conditions.push_back( String( p.get( "item", "hand" ) ) == "carried" ? "carried." + kind : kind );
 	}
@@ -1500,6 +1516,23 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 					return fail( line + why );
 				}
 				text += lines;
+			}
+			else if ( what == "break" )
+			{
+				auto value = [&]( const char* key, const char* otherwise ) {
+					String v = String( statement.get( key, otherwise ) ).strip_edges();
+					return Plain( v ) ? Std( v ) : std::string();
+				};
+				std::string radius = value( "radius", "0" ), speed = value( "speed", "10" ), seconds = value( "seconds", "0" );
+				if ( radius.empty() || speed.empty() || seconds.empty() )
+				{
+					return fail( line + String( "break: no tab or # in its numbers" ) );
+				}
+				text += "break\t" + radius + "\t" + speed + "\t" + seconds + "\n";
+			}
+			else if ( what == "remove" )
+			{
+				text += "remove\n";
 			}
 			else if ( what == "follow" )
 			{

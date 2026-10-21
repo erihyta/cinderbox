@@ -283,6 +283,28 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		error = "motions " + set + ", line " + std::to_string( number ) + ": " + what;
 		return false;
 	};
+	// A statement's number: as written, or an expression (kept in the motion's exprs) read when it acts.
+	auto valueOf = [&]( Motion& m, const std::string& word, float lo, float hi, MotionValue& out, std::string& why ) {
+		if ( Number( word, lo, hi, out.number ) )
+		{
+			return true;
+		}
+		float number = 0.0f;
+		if ( ParseAnimFloat( word.c_str(), word.size(), number ) )
+		{
+			why = "a number from " + std::to_string( lo ) + " to " + std::to_string( hi );
+			return false;
+		}
+		AnimExpr expr;
+		if ( CompileAnimExpr( word, schema, expr, why, warnings ) == false )
+		{
+			return false;
+		}
+		out.number = 0.0f;
+		out.expr = int16_t( m.exprs.size() );
+		m.exprs.push_back( expr );
+		return true;
+	};
 	// A strength: a number, or an expression (kept in the motion's exprs) read when it acts.
 	auto strength = [&]( Motion& m, const std::string& word, float limit, MotionEffect& e, std::string& why ) {
 		if ( Number( word, -limit, limit, e.strength ) )
@@ -543,6 +565,42 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				return fail( "probe wants its range (1 to 500 m) and its travel speed (m/s, 0: at once)" );
 			}
 			m.probe = true;
+		}
+		else if ( key == "owner" )
+		{
+			// owner item: the item runs it, lying in the world (its set is the item's: named by its kind)
+			if ( whole() == false )
+			{
+				return false;
+			}
+			if ( w.size() < 2 || ( w[1] != "item" && w[1] != "player" ) )
+			{
+				return fail( "owner wants item (or player: the default)" );
+			}
+			m.ownerItem = w[1] == "item";
+			m.itemKind = m.ownerItem ? schema.FindItemKind( set ) : -1;
+			if ( m.ownerItem && m.itemKind < 0 && schema.itemKinds.empty() == false )
+			{
+				warnings += m.name + ": owner item, but no mod declares the item kind \"" + set + "\" (an item's set is named by its kind): it never runs; ";
+			}
+		}
+		else if ( key == "break" )
+		{
+			// break <radius> <speed> <seconds>: walls where the owner is
+			MotionStep::Break b;
+			std::string why;
+			if ( w.size() < 4 || valueOf( m, w[1], 0.0f, 20.0f, b.radius, why ) == false || valueOf( m, w[2], 0.0f, 200.0f, b.speed, why ) == false ||
+				 valueOf( m, w[3], 0.0f, kMaxMotionSeconds, b.seconds, why ) == false )
+			{
+				return fail( "break wants a radius (to 20 m), a speed (m/s) and how long its pieces stay (seconds, 0: for good)" +
+							 ( why.empty() ? std::string() : ": " + why ) );
+			}
+			b.guard = guard;
+			step.breaks.push_back( b );
+		}
+		else if ( key == "remove" )
+		{
+			step.removes.push_back( guard );
 		}
 		else if ( key == "turn" || key == "from" )
 		{
@@ -1005,6 +1063,38 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		{
 			return wrong( "a probe's shape without a probe" );
 		}
+		if ( m.ownerItem )
+		{
+			// Once, when its event is said at the item: nothing that lasts, waits or counts.
+			const MotionStep& only = m.steps.front();
+			if ( m.when != Motion::When::Event || m.steps.size() > 1 || m.probe || m.cooldown > 0.0f || m.uses > 0 || m.duration > 0.0f ||
+				 m.until.Empty() == false || m.condition.Empty() == false || only.params.empty() == false || only.ends.empty() == false )
+			{
+				return wrong( "an item's motion happens once, on an event (on expired): no steps, cast, cooldown, uses, lasts, until, if, move or end" );
+			}
+			for ( const MotionEffect& e : only.effects )
+			{
+				if ( e.kind != MotionEffect::Kind::Impulse || e.frame == MotionFrame::Look || e.frame == MotionFrame::Move ||
+					 e.frame == MotionFrame::Facing || e.frame == MotionFrame::Marker || e.target.kind != MotionTarget::Kind::Self )
+				{
+					return wrong( "an item's motion pushes itself (along up or world) or what it finds; it has no look" );
+				}
+			}
+			for ( const MotionFind& find : only.finds )
+			{
+				for ( const MotionEffect& e : find.effects )
+				{
+					if ( e.frame == MotionFrame::Look || e.frame == MotionFrame::Move || e.frame == MotionFrame::Facing || e.frame == MotionFrame::Marker )
+					{
+						return wrong( "an item has no look: what it finds goes along away, to, up or world" );
+					}
+				}
+			}
+		}
+		else if ( m.steps.front().removes.empty() == false || std::any_of( m.steps.begin(), m.steps.end(), []( const MotionStep& s ) { return s.removes.empty() == false; } ) )
+		{
+			return wrong( "remove self is an item's (owner item)" );
+		}
 		if ( m.when == Motion::When::While && m.steps.size() > 1 )
 		{
 			return wrong( "a while motion has no steps: it starts again on every tick its condition holds" );
@@ -1190,6 +1280,18 @@ uint16_t GuardBits( const MotionStep& step, const AnimGraphInputs& values )
 
 } // namespace
 
+uint16_t MotionGuardBits( const MotionStep& step, const AnimGraphInputs& values )
+{
+	return GuardBits( step, values );
+}
+
+float MotionValueOf( const Motion& m, const MotionValue& value, const AnimGraphInputs& values, float lo, float hi )
+{
+	float v = value.expr >= 0 && size_t( value.expr ) < m.exprs.size() ? EvaluateAnimExpr( m.exprs[size_t( value.expr )], values, 0.0f ) : value.number;
+	// (Not a NaN's way: a comparison that fails gives lo.)
+	return v > lo ? ( v < hi ? v : hi ) : lo;
+}
+
 uint32_t MotionStepStart( const MotionSlot& slot )
 {
 	return slot.step == 0 ? slot.sinceTick : slot.stepTick;
@@ -1225,6 +1327,10 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 	{
 		const Motion& m = motions.list[i];
 		MotionSlot& slot = state.slots[i];
+		if ( m.ownerItem )
+		{
+			continue; // (an item's: Simulation::RunItemMotions)
+		}
 		const bool isWhile = m.when == Motion::When::While;
 		// What its expressions read: the player's values, its curves, and its step's time (0 when off).
 		AnimGraphInputs values = *in.values;
