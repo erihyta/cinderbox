@@ -16,7 +16,7 @@ today; the rest is the plan.
 | Expressions in a `move` (a parameter is read by the mover whenever it moves, with no motion's values at hand); `$target:FIELD` in a find's lines, `at POINT`, `PATH at T`, a cast in a later step | planned |
 | `curve()`, `time`, markers, `follow` | planned (3.3) |
 | `owner item` (an item's own motion, `on expired` or `on EVENT`), `break`, `remove self` | *built* (M209: the frag grenade's blast is its sheet's) |
-| `impulse kind momentum`, `every` | planned (3.5) |
+| `impulse ... kind momentum`, `every S` | *built* (M210) |
 
 ## The idea in one picture
 
@@ -122,7 +122,7 @@ there until they are done; **lasting** ones act every tick until the motion ends
 |---|---|
 | `change FIELD -= N` / `+= N` / `= N` | a field of the owner (or the target, inside `find` / `cast`, with `$target:FIELD`) |
 | `emit EVENT [at POINT]` | a mod event: for looks, state machines, and a mod's C++ (damage) |
-| `impulse VALUE [kind velocity\|momentum] [on WHO] [along DIRECTION] [replace vertical\|horizontal\|all]` | a change of velocity (m/s, any weight: the default) or of momentum (N·s: heavy things move less) |
+| `impulse VALUE [kind velocity\|momentum] [on WHO] [along DIRECTION] [replace vertical\|horizontal\|all]` | *built*: a change of velocity (m/s, any weight: the default; to 200) or of momentum (`kind momentum`: N·s, shared out by what the target weighs, to 100000; heavy things move less) |
 | `launch new KIND \| carried [speed S \| speed (EXPRESSION)] [lift] [ahead] [seconds] [along DIRECTION] [from NODE]` | *built*: an item into the world; `from` a marker: its place around the player (turned with its heading), instead of `ahead` of where its look starts (the cannon's muzzle) |
 | `break radius R [speed S] [seconds S]` | *built*: the breakable walls whose nearest piece is within R of the owner (its feet, or the item) lose their pieces that near, flung at S (10 by default), staying S seconds (0, the default: for good). Each a number, a name (`frag.break_radius`: a field a mod sets from its options) or an expression in brackets |
 | `remove self` | *built*: the owner item leaves the world (a mine once it has gone off). An item's motion only |
@@ -144,7 +144,7 @@ there until they are done; **lasting** ones act every tick until the motion ends
 | `then when EXPRESSION [within S]` | waits until it holds; with `within`, gives up after S seconds (the `timeout` lines below it run then) |
 | `after S` | waits S seconds |
 | `timeout` | what a `within` that gave up runs (once statements), before the motion ends |
-| `every S` | the block below runs now and every S seconds while the motion lasts (a burn, a rapid fire, a pulse) |
+| `every S` | *built*: the lines after it in its step happen when the step starts and every S seconds while it is the step, 64 times at most (a burn, a rapid fire, a pulse). As far in as the motion's first line, once a step, not under an `if` (an `if` among the lines after it is fine); what follows is once statements only: `change`, `emit`, `impulse`, `launch`, `find`, `break`. In a `while` motion: from when it starts, while it holds |
 | `if EXPRESSION` / `else` | a block (indented under it) runs or not, decided when its step starts |
 
 ### Finding things
@@ -300,15 +300,15 @@ use if not combat.dead
     launch new cannon.ball speed 36 lift 1 seconds 10 from Muzzle along Muzzle
 ```
 
-### A flamethrower: a cone, every tick
+### A flamethrower: a cone, ten times a second
 
 ```
 motion Flame while held.use and flame.fuel > 0
-    change flame.fuel -= 25
-    every 0.1
-        find Cone players bodies               # a convex shape made from a cone mesh
-            impulse 0.6 along look
-            emit flame.burn                       # the mod: damage over time
+    change flame.fuel -= 25                      # per second, while it is on
+    every 0.1                                    # the lines below: now, and every 0.1 s
+    find Cone players bodies                     # a convex shape made from a cone mesh
+        impulse 0.6 along away
+        emit flame.burn                          # the mod: damage over time
 ```
 
 ### A leap along a drawn arc
@@ -352,7 +352,7 @@ once       := "change" field op value | "emit" EVENT [ "at" point ]
 lasting    := "force" value { option } | "move" [ "for" value ] { PARAM value }
             | "link" { option } | "follow" NODE { option }
 wait       := "then when" expr [ "within" num ] | "after" num | "timeout"
-flow       := "every" num block-body | "if" expr block-body [ "else" block-body ]
+flow       := "every" num | "if" expr block-body [ "else" block-body ]   (every: the rest of its step repeats)
 query      := "find" shape { option } block-body | "cast" shape { option } block-body
 shape      := NODE | "ray" | "sphere" num | "box" vec | "capsule" num num
 value      := expr                                  (looks.md's expressions, plus curve() and time)
@@ -386,5 +386,5 @@ the editor and at publish, as today.
 2. **Finding** (*built*): `find` (M205: the brawl slam's shockwave is its sheet's now, the mod only hurts), `cast` (M206: the grapple is a sheet now). `distance` and `reach` come with curves.
 3. **Curves and markers** (*built*): `curve()`, `time`, `distance`, `reach` (M207); `along NODE`, `from NODE`, `turn`, `follow` (M208).
 4. **Items run motions** (*built*, M209): `owner item`, `break`, `remove self`; the frag grenade's blast predicted.
-5. **`impulse kind momentum`**, `every`.
+5. **`impulse kind momentum`**, `every` (*built*, M210).
 6. **The mods converted**: brawl, frag, cannon, grapple, flight, dash, as the test that nothing is lost.

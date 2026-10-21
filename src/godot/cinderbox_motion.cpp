@@ -985,6 +985,10 @@ std::string BakeSheetPart( const Dictionary& part, const String& kind, const Nod
 	{
 		return lines;
 	}
+	if ( bool( props.get( "momentum", false ) ) && lines.rfind( "impulse\t", 0 ) == 0 )
+	{
+		lines.replace( 0, 7, "impulse_momentum" ); // (its number N s, not m/s)
+	}
 	if ( marker.is_empty() == false )
 	{
 		// The frame's word: "world" becomes "marker" (a force has it a field earlier).
@@ -1533,6 +1537,10 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 			else if ( what == "remove" )
 			{
 				text += "remove\n";
+			}
+			else if ( what == "every" )
+			{
+				text += "every\t" + Num( double( statement["seconds"] ) ) + "\n";
 			}
 			else if ( what == "follow" )
 			{

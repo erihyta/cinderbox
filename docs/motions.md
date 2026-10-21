@@ -529,6 +529,8 @@ emit	dash.started
 | `timeout` | what follows runs when the step before gave up waiting; then the motion ends |
 | `guard` | a condition (none: no guard): what follows counts only if it held when its step started |
 | `end` | the motion ends after this tick |
+| `impulse_momentum` | as `impulse`, its number momentum (N s) shared out by what the target weighs |
+| `every` | seconds: what follows in its step happens when the step starts and that often after, 64 times at most |
 | `owner` | `item`: the item of the set's kind runs it, lying in the world, once, when its event is said at it |
 | `break` | a radius, a speed, seconds (each a number or an expression): walls near the owner broken |
 | `remove` | the owner item leaves the world |
