@@ -4216,6 +4216,7 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 			{
 				direction = MotionDirection( effect.frame, effect.direction, c, in );
 			}
+			direction = MotionTurn( effect, direction );
 			ImpulseEnd( effect, MotionStrength( m, effect, values, kMotionImpulseLimit ), on, c, direction );
 		}
 		// A player it found moves as it is given, for its seconds.
@@ -4347,7 +4348,29 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 			{
 				direction = MotionDirection( effect.frame, effect.direction, c, in );
 			}
+			direction = MotionTurn( effect, direction );
 
+			if ( effect.kind == MotionEffect::Kind::Follow )
+			{
+				// Carried along its path: this tick's stretch of it, turned as the player faces, as
+				// its velocity (the mover still meets walls on the way).
+				if ( target.kind != MotionEnd::Kind::Self || effect.path < 0 || size_t( effect.path ) >= m.paths.size() )
+				{
+					continue;
+				}
+				const uint32_t ticksOn = m_globals.tick - std::min( m_globals.tick, MotionStepStart( slot ) );
+				const float total = std::max( effect.seconds, dt );
+				const float u0 = std::min( 1.0f, float( ticksOn ) * dt / total );
+				const float u1 = std::min( 1.0f, float( ticksOn + 1 ) * dt / total );
+				if ( u0 >= 1.0f )
+				{
+					continue;
+				}
+				const Motion::Path& path = m.paths[size_t( effect.path )];
+				b3Vec3 stretch = b3RotateVector( detmath::YawRotation( c.facingYaw ), b3Sub( MotionPathAt( path, u1 ), MotionPathAt( path, u0 ) ) );
+				PushEnd( target, c, b3Sub( b3MulSV( 1.0f / dt, stretch ), c.velocity ) );
+				continue;
+			}
 			if ( effect.kind == MotionEffect::Kind::Launch )
 			{
 				if ( on.started == false || effect.known == false )
@@ -4358,7 +4381,8 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				// as the camera is; with the player's own velocity, so a throw on the run goes further.
 				float yaw = detmath::YawToRadians( in.cameraYaw );
 				b3Vec3 from = b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
-				b3Vec3 velocity = b3Add( b3Add( b3MulSV( effect.strength, direction ), b3Vec3{ 0.0f, effect.lift, 0.0f } ), c.velocity );
+				const float speed = MotionStrength( m, effect, values, kMotionImpulseLimit );
+				b3Vec3 velocity = b3Add( b3Add( b3MulSV( speed, direction ), b3Vec3{ 0.0f, effect.lift, 0.0f } ), c.velocity );
 				uint32_t lifetime = effect.seconds > 0.0f ? std::max<uint32_t>( 1, uint32_t( effect.seconds * float( m_config.tickRate ) + 0.5f ) ) : 0u;
 				uint32_t copy = 0;
 				if ( effect.carried )
@@ -4369,8 +4393,11 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 						continue; // none left to throw
 					}
 				}
-				m_launched.push_back( { effect.itemKind, b3Add( from, b3MulSV( effect.ahead, direction ) ), detmath::YawRotation( yaw ), velocity,
-										e.get<NetId>().value, lifetime, copy } );
+				// From a marker: its place around the player, turned with its heading; else ahead of
+				// where its look starts.
+				b3Vec3 start = effect.fromMarker ? b3Add( t.position, b3RotateVector( detmath::YawRotation( yaw ), effect.from ) )
+												 : b3Add( from, b3MulSV( effect.ahead, direction ) );
+				m_launched.push_back( { effect.itemKind, start, detmath::YawRotation( yaw ), velocity, e.get<NetId>().value, lifetime, copy } );
 				continue;
 			}
 			if ( effect.kind == MotionEffect::Kind::Impulse )

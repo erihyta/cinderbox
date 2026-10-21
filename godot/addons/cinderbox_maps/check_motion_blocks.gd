@@ -215,6 +215,50 @@ func _run() -> void:
 	curves.free()
 	_refused("a curve no CbCurve has", "motion A on press a\n\timpulse curve(Nope, 1) along up\n", "line 1: curve(Nope, ...): no CbCurve named Nope")
 
+	# Markers and paths drawn in the scene: a muzzle tilted 30 degrees up, an arc 4 m ahead.
+	_scratch("motion Shoot on press shoot\n\tlaunch new test.ball speed (2 * power.x) along Muzzle from Muzzle\n" +
+		"motion Sidestep on press sidestep\n\timpulse 10 along look turn (90, 0)\n" +
+		"motion Leap on press leap\n\tlasts 1\n\tmove gravity 0\n\tfollow Arc over 1\n")
+	var drawn := _set_with(SCRATCH, false)
+	var muzzle := Marker3D.new()
+	muzzle.name = "Muzzle"
+	muzzle.position = Vector3(0.3, 1.5, -0.5)
+	muzzle.rotation_degrees = Vector3(30, 0, 0)
+	drawn.add_child(muzzle)
+	var arc := Path3D.new()
+	arc.name = "Arc"
+	var points := Curve3D.new()
+	points.add_point(Vector3(0, 0, 0))
+	points.add_point(Vector3(0, 1, -2))
+	points.add_point(Vector3(0, 0, -4))
+	arc.curve = points
+	drawn.add_child(arc)
+	var drawn_baked: Dictionary = drawn.bake()
+	var drawn_text := String(drawn_baked["text"])
+	_check("markers and paths bake", drawn_text.is_empty() == false, String(drawn_baked["error"]))
+	var shoot := ""
+	for each in drawn_text.split("\n"):
+		if each.begins_with("launch\t"):
+			shoot = each
+	var shot := shoot.split("\t")
+	_check("a launch along the marker: its forward turned to +Z, 30 degrees up; its speed an expression",
+		shot.size() == 10 and shot[2] == "(2 * power.x)" and shot[3] == "marker" and shot[7] == "0" and absf(float(shot[8]) - 0.5) < 0.001 and
+		absf(float(shot[9]) - 0.866) < 0.001, shoot)
+	_check("from the marker's place, turned to +Z", drawn_text.contains("\nfrom\t-0.3\t1.5\t0.5\n"))
+	_check("a turn after its effect", drawn_text.contains("impulse\tself\t10\tlook\tnone\nturn\t90\t0\n"))
+	var arc_line := ""
+	for each in drawn_text.split("\n"):
+		if each.begins_with("path\tArc\t"):
+			arc_line = each
+	var arc_words := arc_line.split("\t")
+	_check("a path: 32 points from where it starts, its end 4 m ahead (+Z)", arc_words.size() == 98 and arc_words[2] == "0" and
+		arc_words[4] == "0" and absf(float(arc_words[97]) - 4.0) < 0.01 and absf(float(arc_words[96])) < 0.01, arc_line.substr(0, 120))
+	_check("written up front, and followed", drawn_text.contains("motion\tLeap\npath\tArc\t") and drawn_text.contains("follow\tArc\t1\n"))
+	drawn.free()
+	_refused("along a marker that is not there", "motion A on press a\n\timpulse 3 along Nope\n", "line 2: along Nope: no Node3D")
+	_refused("a path that is not there", "motion A on press a\n\tlasts 1\n\tfollow Nope over 1\n", "line 1: follow Nope: no Path3D")
+	_refused("a turn of one number", "motion A on press a\n\timpulse 3 along look turn (90)\n", "line 2: turn (yaw, pitch)")
+
 	# What refuses the bake, with its file and line.
 	_refused("a find of a node that is not there", "motion A on press a\n\tfind Nope\n\t\temit x\n", "line 2: find: no node Nope")
 	_refused("a force inside a find", "motion A on press a\n\tfind sphere 2\n\t\tforce 3\n", "line 3: \"force\" inside a find")

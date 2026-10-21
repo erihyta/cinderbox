@@ -101,6 +101,7 @@ enum class MotionFrame : uint8_t
 	World = 4, // `direction`, as given
 	To = 5,	   // from the player toward the target (what the probe found; the entity a field names)
 	Away = 6,  // inside a find: from where the player is out to what it found, along the ground
+	Marker = 7, // `direction` as drawn in the scene (a marker's forward), turned with the look
 };
 
 struct MotionEffect
@@ -111,6 +112,7 @@ struct MotionEffect
 		Force = 1,	 // every tick it is on
 		Link = 2,	 // every tick it is on
 		Launch = 3,	 // once, when the motion starts: an item of a kind is thrown into the world
+		Follow = 4,	 // every tick it is on: the player is carried along a path (Motion::paths)
 	};
 	enum class Replace : uint8_t
 	{
@@ -158,9 +160,23 @@ struct MotionEffect
 	float seconds = 0.0f;
 	// The step's guard it is under (MotionStep::guards), -1: none.
 	int8_t guard = -1;
-	// Impulse, Force: its strength as an expression, read when it acts (Motion::exprs; -1: `strength`).
+	// Impulse, Force, Launch: its strength (a launch's speed) as an expression, read when it acts
+	// (Motion::exprs; -1: `strength`).
 	int16_t strengthExpr = -1;
+	// Its direction turned after its frame gives it: by a heading (right is positive) and a pitch (up
+	// is positive), as cosines and sines worked out once, the same on every machine.
+	bool turned = false;
+	float yawCos = 1.0f, yawSin = 0.0f, pitchCos = 1.0f, pitchSin = 0.0f;
+	// Launch: where it starts, a marker's place in the player's frame (its feet, forward +Z), turned
+	// with its heading; without one, ahead of where its look starts.
+	bool fromMarker = false;
+	b3Vec3 from = {};
+	// Follow: the path (Motion::paths), over `seconds`.
+	int16_t path = -1;
 };
+
+// A direction turned as an effect says (MotionEffect::turned).
+b3Vec3 MotionTurn( const MotionEffect& effect, b3Vec3 direction );
 
 // What a probe may hold on to: the level (anything static: map pieces, a static entity, a wall that
 // breaks), bodies (props, items lying about, rubble, ragdolls), players.
@@ -301,6 +317,14 @@ struct Motion
 	// strengths are (MotionEffect::strengthExpr).
 	std::vector<AnimCurve> curves;
 	std::vector<AnimExpr> exprs;
+	// The paths its follows carry the player along: points at even steps along them from where it
+	// starts (0, 0, 0), in the player's frame (forward +Z).
+	struct Path
+	{
+		std::string name;
+		std::vector<b3Vec3> points;
+	};
+	std::vector<Path> paths;
 
 	// On from when it starts until something ends it (its condition, what its probe holds going away,
 	// a wait for its next step).
@@ -394,8 +418,11 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32_t tick, uint32_t tickRate, MoveParams& params );
 
 // A frame's direction for a player (unit length). MotionFrame::To is the caller's: it is toward a
-// target only the simulation can find.
+// target only the simulation can find. World and Marker take `world`: as it is, or turned with the look.
 b3Vec3 MotionDirection( MotionFrame frame, b3Vec3 world, const Character& c, const PlayerInput& in );
+
+// Where a path is a share `u` (0 to 1) of the way along it.
+b3Vec3 MotionPathAt( const Motion::Path& path, float u );
 
 // How much of a force is there `ticksOn` ticks after its motion took effect: 0 to 1.
 float MotionRamp( const MotionEffect& effect, uint32_t ticksOn, uint32_t tickRate );

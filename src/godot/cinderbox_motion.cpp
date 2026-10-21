@@ -17,7 +17,9 @@
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/convex_polygon_shape3d.hpp>
 #include <godot_cpp/classes/cylinder_shape3d.hpp>
+#include <godot_cpp/classes/curve3d.hpp>
 #include <godot_cpp/classes/dir_access.hpp>
+#include <godot_cpp/classes/path3d.hpp>
 #include <godot_cpp/classes/sphere_shape3d.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -876,9 +878,53 @@ namespace
 
 // A statement's motion part (a sheet's impulse, force, move, launch) as lines: a move as parameters
 // (with its seconds), the rest as the node it would be, under a motion, baked as one.
-std::string BakeSheetPart( const Dictionary& part, const String& kind, String& why )
+// Where a node is in `root`'s frame (below).
+bool FrameIn( const Node* node, const Node* root, Transform3D& out );
+
+// A point of the scene, in the simulation's frame (forward +Z): Godot's forward is -Z.
+Vector3 SimPoint( const Vector3& p )
 {
-	Dictionary props = part.get( "properties", Dictionary() );
+	return Vector3( 0.0f - p.x, p.y, 0.0f - p.z ); // (0 - 0 is 0, where -0 would print "-0")
+}
+
+// A node beside the sheet, and where it is in the frame of what is baked; false with why.
+bool PlaceOf( const String& path, const Node* from, const Node* root, const char* what, Transform3D& out, String& why )
+{
+	const Node* node = from != nullptr ? from->get_node_or_null( NodePath( path ) ) : nullptr;
+	if ( Object::cast_to<Node3D>( node ) == nullptr )
+	{
+		why = String( what ) + " " + path + ": no Node3D (a Marker3D) of that name beside the sheet";
+		return false;
+	}
+	if ( FrameIn( node, root, out ) == false )
+	{
+		why = String( what ) + " " + path + " is not in the scene being baked";
+		return false;
+	}
+	return true;
+}
+
+std::string BakeSheetPart( const Dictionary& part, const String& kind, const Node* from, const Node* root, String& why )
+{
+	Dictionary props = part.get( "properties", Dictionary() ).duplicate();
+	// Along a marker: its forward in the scene, written as a world direction and named "marker" after.
+	const String marker = props.get( "marker", "" );
+	if ( marker.is_empty() == false )
+	{
+		Transform3D place;
+		if ( PlaceOf( marker, from, root, "along", place, why ) == false )
+		{
+			return std::string();
+		}
+		Vector3 forward = SimPoint( -place.basis.get_column( 2 ) ).normalized();
+		if ( forward.length() < 0.5f )
+		{
+			why = "along " + marker + ": it has no forward (its scale is 0)";
+			return std::string();
+		}
+		props["frame"] = 4;
+		props["direction"] = forward;
+	}
 	if ( String( part["class"] ) == "CbMove" )
 	{
 		// Parameters from when the step starts: for its seconds, or while it is the step.
@@ -912,6 +958,7 @@ std::string BakeSheetPart( const Dictionary& part, const String& kind, String& w
 	}
 	CbMotion* holder = memnew( CbMotion );
 	holder->add_child( node );
+	// (Its direction is the simulation's already: the node writes it as it is, normalized.)
 	std::string lines = node->Bake( why );
 	holder->remove_child( node );
 	memdelete( node );
@@ -925,7 +972,7 @@ std::string BakeSheetPart( const Dictionary& part, const String& kind, String& w
 			why = "\"" + expression + "\" cannot have a tab or a #";
 			return std::string();
 		}
-		const int field = String( part["class"] ) == "CbImpulse" ? 2 : 4;
+		const int field = String( part["class"] ) == "CbForce" ? 4 : 2; // (an impulse's speed, a launch's, a force's strength)
 		size_t at = 0;
 		for ( int k = 0; k < field; ++k )
 		{
@@ -934,7 +981,71 @@ std::string BakeSheetPart( const Dictionary& part, const String& kind, String& w
 		size_t end = lines.find_first_of( "\t\n", at );
 		lines.replace( at, end - at, Std( expression ) );
 	}
+	if ( lines.empty() )
+	{
+		return lines;
+	}
+	if ( marker.is_empty() == false )
+	{
+		// The frame's word: "world" becomes "marker" (a force has it a field earlier).
+		const int field = String( part["class"] ) == "CbForce" ? 2 : 3;
+		size_t at = 0;
+		for ( int k = 0; k < field; ++k )
+		{
+			at = lines.find( '\t', at ) + 1;
+		}
+		lines.replace( at, 5, "marker" );
+	}
+	if ( props.has( "turn" ) )
+	{
+		Vector2 turn = props["turn"];
+		if ( turn.y < -90.0f || turn.y > 90.0f || turn.x < -360.0f || turn.x > 360.0f )
+		{
+			why = "turn (yaw, pitch): a heading from -360 to 360 degrees, a pitch from -90 to 90";
+			return std::string();
+		}
+		lines += "turn\t" + Num( turn.x ) + "\t" + Num( turn.y ) + "\n";
+	}
+	const String start = props.get( "from", "" );
+	if ( start.is_empty() == false )
+	{
+		Transform3D place;
+		if ( PlaceOf( start, from, root, "from", place, why ) == false )
+		{
+			return std::string();
+		}
+		Vector3 at = SimPoint( place.origin );
+		lines += "from\t" + Num( at.x ) + "\t" + Num( at.y ) + "\t" + Num( at.z ) + "\n";
+	}
 	return lines;
+}
+
+// The paths a motion's follows carry the player along (Path3D nodes beside the sheet): "path" lines,
+// points at even steps along each from where it starts, in the simulation's frame.
+bool PathLines( const std::vector<std::string>& names, const Node* from, const Node* root, std::string& out, String& why )
+{
+	for ( const std::string& name : names )
+	{
+		const String path = String::utf8( name.c_str() );
+		const Path3D* node = Object::cast_to<Path3D>( from != nullptr ? from->get_node_or_null( NodePath( path ) ) : nullptr );
+		Ref<Curve3D> curve = node != nullptr ? node->get_curve() : Ref<Curve3D>();
+		Transform3D place;
+		if ( curve.is_null() || curve->get_point_count() < 2 || FrameIn( node, root, place ) == false )
+		{
+			why = "follow " + path + ": no Path3D of that name, with two points at least, beside the sheet";
+			return false;
+		}
+		const float length = curve->get_baked_length();
+		const Vector3 first = place.xform( curve->sample_baked( 0.0f ) );
+		out += "path\t" + name;
+		for ( int k = 0; k < kPathSamples; ++k )
+		{
+			Vector3 at = SimPoint( place.xform( curve->sample_baked( length * float( k ) / float( kPathSamples - 1 ) ) ) - first );
+			out += "\t" + Num( at.x ) + "\t" + Num( at.y ) + "\t" + Num( at.z );
+		}
+		out += "\n";
+	}
+	return true;
 }
 
 // The curves a motion's expressions read ("curve(Falloff, reach)"), from CbCurve nodes (or any
@@ -1196,6 +1307,27 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 			return fail( why );
 		}
 		text += curves;
+		// The paths its follows name, the same way.
+		std::vector<std::string> paths;
+		for ( int64_t k = 0; k < all.size(); ++k )
+		{
+			Array list = Dictionary( all[k] ).get( "statements", Array() );
+			for ( int64_t i = 0; i < list.size(); ++i )
+			{
+				Dictionary statement = list[i];
+				std::string name = Std( String( statement.get( "path", "" ) ) );
+				if ( String( statement.get( "kind", "" ) ) == "follow" && std::find( paths.begin(), paths.end(), name ) == paths.end() )
+				{
+					paths.push_back( name );
+				}
+			}
+		}
+		std::string pathLines;
+		if ( PathLines( paths, from, root, pathLines, why ) == false )
+		{
+			return fail( why );
+		}
+		text += pathLines;
 	}
 	const String trigger = p.get( "trigger", "" );
 	PackedStringArray conditions;
@@ -1362,12 +1494,16 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 			else if ( what == "part" )
 			{
 				String why;
-				std::string lines = BakeSheetPart( statement["part"], kind, why );
+				std::string lines = BakeSheetPart( statement["part"], kind, from, root, why );
 				if ( lines.empty() )
 				{
 					return fail( line + why );
 				}
 				text += lines;
+			}
+			else if ( what == "follow" )
+			{
+				text += "follow\t" + Std( String( statement["path"] ) ) + "\t" + Num( double( statement["seconds"] ) ) + "\n";
 			}
 			else if ( what == "cast" )
 			{
@@ -1422,7 +1558,7 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 						text += "hold_emit\t" + Std( event ) + "\n";
 						continue;
 					}
-					std::string lines = BakeSheetPart( each["part"], kind, why );
+					std::string lines = BakeSheetPart( each["part"], kind, from, root, why );
 					if ( lines.empty() )
 					{
 						return fail( at + why );
@@ -1456,7 +1592,7 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 						text += "emit\t" + Std( event ) + "\n";
 						continue;
 					}
-					std::string lines = BakeSheetPart( each["part"], kind, why );
+					std::string lines = BakeSheetPart( each["part"], kind, from, root, why );
 					if ( lines.empty() )
 					{
 						return fail( at + why );
