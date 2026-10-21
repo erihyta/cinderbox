@@ -12,7 +12,8 @@ today; the rest is the plan.
 | `find` with shapes from nodes or written in the line, a block per thing found, `found`, `away`, `move for` on a player found, `emit` with who was found | *built* (M205) |
 | `cast` (the probe in a sheet: a line, a ball or a shape drawn in the scene, swept along the look; what is under it happens while it holds), `link` | *built* (M206: the grapple is a sheet now) |
 | Numbers that are expressions (an `impulse`'s and a `force`'s), `curve(Name, x)` from a `CbCurve`, `time`, `distance` and `reach` in a find | *built* (M207) |
-| Markers (`along NODE`, `from NODE`), `turn`, `follow` a `Path3D`; expressions in a `move` and a `launch`; `$target:FIELD` in a find's lines, `at POINT`, a cast in a later step | planned (3.3, next) |
+| Markers (`along NODE`, `launch ... from NODE`), `turn (yaw, pitch)`, `follow PATH over S`, a launch's `speed (EXPRESSION)` | *built* (M208) |
+| Expressions in a `move` (a parameter is read by the mover whenever it moves, with no motion's values at hand); `$target:FIELD` in a find's lines, `at POINT`, `PATH at T`, a cast in a later step | planned |
 | `curve()`, `time`, markers, `follow` | planned (3.3) |
 | `owner item`, `break`, `remove self` | planned (3.4) |
 | `impulse kind momentum`, `every` | planned (3.5) |
@@ -122,7 +123,7 @@ there until they are done; **lasting** ones act every tick until the motion ends
 | `change FIELD -= N` / `+= N` / `= N` | a field of the owner (or the target, inside `find` / `cast`, with `$target:FIELD`) |
 | `emit EVENT [at POINT]` | a mod event: for looks, state machines, and a mod's C++ (damage) |
 | `impulse VALUE [kind velocity\|momentum] [on WHO] [along DIRECTION] [replace vertical\|horizontal\|all]` | a change of velocity (m/s, any weight: the default) or of momentum (N·s: heavy things move less) |
-| `launch new KIND \| carried [speed] [lift] [ahead] [seconds] [along DIRECTION] [from NODE]` | an item into the world, as today; `from` a marker (the cannon's muzzle) |
+| `launch new KIND \| carried [speed S \| speed (EXPRESSION)] [lift] [ahead] [seconds] [along DIRECTION] [from NODE]` | *built*: an item into the world; `from` a marker: its place around the player (turned with its heading), instead of `ahead` of where its look starts (the cannon's muzzle) |
 | `break [radius R] [speed S] [seconds S] [at POINT]` | breakable walls near the point open, as a grenade's blast does today |
 | `remove self` | the owner item leaves the world (a mine once it has gone off) |
 | `end` | the motion ends here |
@@ -134,7 +135,7 @@ there until they are done; **lasting** ones act every tick until the motion ends
 | `force VALUE [kind acceleration\|force\|velocity] [top S] [react] [on WHO] [along DIRECTION]` | every tick while on, as `CbForce` |
 | `move [for S] PARAMETER VALUE ...` | movement parameters of the owner, or of the target inside `find` / `cast` (a slow, a root) |
 | `link [length L] [reel S] [alone] [on WHO]` | *built*, under a cast: a rope to what it holds (or a field's entity), as `CbLink`; length 0: as long as it is when the cast takes hold; `alone`: it moves the player only |
-| `follow PATH [over S \| speed V] [turn]` | **new**: carries the owner along a `Path3D` placed relative to where the motion started (a leap arc, a curved dash, a rail) |
+| `follow PATH over S` | *built*: carries the player along a `Path3D` beside the sheet, drawn from its first point as if the player stood there facing −Z, in S seconds: each tick its stretch of the path is the player's velocity, turned as it faces, so walls still stop it (give it `move gravity 0`, or gravity pulls it off). A leap arc, a curved dash. Baked into 32 points at even steps |
 
 ### Waits and order
 
@@ -183,9 +184,9 @@ there until they are done; **lasting** ones act every tick until the motion ends
 | `look`, `move`, `facing`, `up` | as today |
 | `world (x,y,z)` | as given |
 | `to` / `away` | toward the target / from the shape's origin out to the target (a shockwave) |
-| `NODE` | **new**: a `Marker3D`'s forward (−Z) in the owner's frame: an arrow drawn in the 3D view |
-| `PATH at T` | **new**: the tangent of a `Path3D` at T (0 to 1) |
-| any of these `turn (yaw, pitch)` | turned by degrees: `along look turn (0, 20)` throws a little above the look |
+| `NODE` | *built*: a `Marker3D`'s (any `Node3D`'s) forward (−Z) as drawn beside the sheet, as if the player stood at the origin facing −Z; turned as the look is (its heading and its pitch): an arrow drawn in the 3D view |
+| `PATH at T` | planned: the tangent of a `Path3D` at T (0 to 1) |
+| any of these, then `turn (yaw, pitch)` | *built*: turned by degrees, right and up (pitch within ±90): `along look turn (0, 20)` throws a little above the look, `along move turn (90, 0)` sidesteps |
 
 | `at POINT` | |
 |---|---|
@@ -382,7 +383,7 @@ the editor and at publish, as today.
 
 1. **Blocks** (*built*, M204): `motion` headers, `when`, `then when`, `after`, `timeout`, `if` / `else`, `end`; today's `use` sheets unchanged. The brawl slam's landing is its sheet's now (`then when grounded`).
 2. **Finding** (*built*): `find` (M205: the brawl slam's shockwave is its sheet's now, the mod only hurts), `cast` (M206: the grapple is a sheet now). `distance` and `reach` come with curves.
-3. **Curves and markers**: `curve()`, `time`, `distance`, `reach` (*built*, M207); `along NODE`, `from NODE`, `turn`, `follow` (next).
+3. **Curves and markers** (*built*): `curve()`, `time`, `distance`, `reach` (M207); `along NODE`, `from NODE`, `turn`, `follow` (M208).
 4. **Items run motions**: `owner item`, `break`, `remove self`; the frag grenade's blast predicted.
 5. **`impulse kind momentum`**, `every`.
 6. **The mods converted**: brawl, frag, cannon, grapple, flight, dash, as the test that nothing is lost.

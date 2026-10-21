@@ -524,13 +524,18 @@ emit	dash.started
 | `timeout` | what follows runs when the step before gave up waiting; then the motion ends |
 | `guard` | a condition (none: no guard): what follows counts only if it held when its step started |
 | `end` | the motion ends after this tick |
+| `turn` | a heading and a pitch (degrees, right and up): the direction of the effect on the line before, turned |
+| `from` | x y z: where the launch on the line before starts (a marker's place in the player's frame, turned with its heading) |
+| `path` | a name, then points (x y z each, at even steps, from where it starts, forward +Z): what a `follow` carries the player along. Before what follows it |
+| `follow` | a path's name and seconds: every tick its stretch of the path is the player's velocity, turned as it faces |
 | `curve` | a name, where its domain starts and ends, then its values at even steps over it (2 to 252): what `curve(name, x)` reads in this motion's expressions. Before what reads it |
 | `probe_shape` | a radius, then points (x y z each, around the line's tip, forward +Z): what the probe sweeps instead of a line, turned to the line so that what is level stays level |
 | `find` | who (`players`, `bodies`, `all`), whether the player itself counts (0 or 1), at most how many (1 to 16), how its shape is turned (`facing`, `look`, `world`). Then its `shape` lines, what happens to each thing found (`impulse` on `found`, along `away`; `param` with its seconds, given to a player found; `emit`), and `endfind` |
 | `shape` | a convex piece of a find's shape: a radius, then its points (x y z each, in the player's frame: its feet, forward +Z) |
 
-An impulse's speed and a force's strength may be an expression instead of a number (version 3: no
-tab, no #). A target is `self`, `hit`, `@field`, or inside a find `found`. Version 3 of the file (a sheet's
+An impulse's speed, a force's strength and a launch's speed may be an expression instead of a
+number (version 3: no tab, no #). A frame may be `marker` (with x y z, as `world`: a direction drawn
+in the scene, turned as the look is). A target is `self`, `hit`, `@field`, or inside a find `found`. Version 3 of the file (a sheet's
 motion blocks) has the last eight; a file without them is written as version 2.
 
 | Step | Who |
