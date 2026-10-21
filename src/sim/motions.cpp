@@ -372,7 +372,9 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			return fail( "\"" + key + "\" before the first motion" );
 		}
 		Motion& m = motions.back();
-		MotionStep& step = m.steps.back();
+		// The step being read, and where its statements go: after an "every", its repeat.
+		MotionStep& parent = m.steps.back();
+		MotionStep& step = parent.repeats.empty() ? parent : parent.repeats.back();
 		SetAnimCurveNames( &m.curves ); // ("curve(NAME, x)" names this motion's)
 		// The step's guard for what follows ("guard": none), as its bit.
 		int8_t& guard = guards.back();
@@ -444,7 +446,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			inFind = false;
 			continue;
 		}
-		if ( inFind && key != "impulse" && key != "emit" && key != "param" && key != "turn" )
+		if ( inFind && key != "impulse" && key != "impulse_momentum" && key != "emit" && key != "param" && key != "turn" )
 		{
 			return fail( "\"" + key + "\" inside a find: what happens to each thing found is an impulse, an emit or a param (with its seconds)" );
 		}
@@ -765,21 +767,33 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				return fail( "holds wants what the probe may hold on to: level, bodies, players" );
 			}
 		}
-		else if ( key == "impulse" )
+		else if ( key == "every" )
 		{
-			// impulse <target> <speed> <frame> <replace> [x y z]
+			// every <seconds>: what follows in this step happens again and again
+			float seconds = 0.0f;
+			if ( inFind || parent.repeats.empty() == false || parent.timeout || w.size() < 2 || Number( w[1], 1.0f / 60.0f, kMaxMotionSeconds, seconds ) == false )
+			{
+				return fail( "every wants its seconds (a tick at least), once a step, not in a timeout or a find" );
+			}
+			parent.every = seconds;
+			parent.repeats.emplace_back();
+		}
+		else if ( key == "impulse" || key == "impulse_momentum" )
+		{
+			// impulse <target> <speed> <frame> <replace> [x y z]; impulse_momentum: N s, not m/s
 			static const char* const kReplaces[] = { "none", "vertical", "horizontal", "all" };
 			MotionEffect e;
 			e.kind = MotionEffect::Kind::Impulse;
+			e.momentum = key == "impulse_momentum";
 			int replace = -1;
 			for ( int i = 0; w.size() >= 5 && i < 4; ++i )
 			{
 				replace = w[4] == kReplaces[i] ? i : replace;
 			}
 			std::string why;
-			if ( w.size() >= 3 && strength( m, w[2], kMaxMotionImpulse, e, why ) == false )
+			if ( w.size() >= 3 && strength( m, w[2], e.momentum ? kMotionMomentumLimit : kMaxMotionImpulse, e, why ) == false )
 			{
-				return fail( "impulse: its speed: " + why );
+				return fail( key + ": its " + ( e.momentum ? "momentum" : "speed" ) + ": " + why );
 			}
 			if ( w.size() < 5 || ParseTarget( w[1], schema, m.name, e.target, warnings ) == false || ParseFrame( w[3], e.frame ) == false || replace < 0 )
 			{
@@ -993,7 +1007,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			guard = int8_t( texts.size() );
 			texts.push_back( w[1] );
-			step.guards.push_back( expr );
+			parent.guards.push_back( expr );
 		}
 		else if ( key == "step" || key == "timeout" )
 		{
@@ -1006,7 +1020,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			MotionStep next;
 			if ( key == "timeout" )
 			{
-				if ( step.within <= 0.0f || step.timeout || m.steps.size() < 2 )
+				if ( parent.within <= 0.0f || parent.timeout || m.steps.size() < 2 )
 				{
 					return fail( "timeout comes right after a step that waits within some seconds" );
 				}
@@ -1125,6 +1139,18 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			if ( step.timeout && step.params.empty() == false )
 			{
 				return wrong( "a timeout's statements happen once (no force, link or parameter): the motion ends after it" );
+			}
+			for ( const MotionStep& repeat : step.repeats )
+			{
+				bool lasting = repeat.params.empty() == false || repeat.ends.empty() == false || repeat.removes.empty() == false;
+				for ( const MotionEffect& e : repeat.effects )
+				{
+					lasting = lasting || ( e.kind != MotionEffect::Kind::Impulse && e.kind != MotionEffect::Kind::Launch );
+				}
+				if ( lasting || m.ownerItem )
+				{
+					return wrong( "what follows every happens once each time: changes, emits, impulses, launches, finds and breaks (not in an item's motion)" );
+				}
 			}
 			// The step after this one: the next that is not a timeout; its timeout, the one right after.
 			if ( step.timeout == false )
@@ -1279,6 +1305,17 @@ uint16_t GuardBits( const MotionStep& step, const AnimGraphInputs& values )
 }
 
 } // namespace
+
+bool MotionRepeatsNow( const MotionStep& step, uint32_t stepStart, uint32_t tick, uint32_t tickRate )
+{
+	if ( step.repeats.empty() || tick < stepStart )
+	{
+		return false;
+	}
+	const uint32_t period = std::max<uint32_t>( 1, Ticks( step.every, tickRate ) );
+	const uint32_t since = tick - stepStart;
+	return since % period == 0 && since / period < kMotionRepeats;
+}
 
 uint16_t MotionGuardBits( const MotionStep& step, const AnimGraphInputs& values )
 {
@@ -1523,6 +1560,15 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 
 		// Its effects apply on every tick it is in effect, and on the tick it starts.
 		bool inEffect = slot.lastTick != 0 && slot.sinceTick <= in.tick && in.tick < slot.untilTick;
+		// What its step does again and again: its changes and emits on the ticks it happens.
+		if ( inEffect && size_t( slot.step ) < m.steps.size() &&
+			 MotionRepeatsNow( m.steps[slot.step], MotionStepStart( slot ), in.tick, in.tickRate ) )
+		{
+			if ( onceStatements( m.steps[slot.step].repeats.front(), false, false ) )
+			{
+				slot.untilTick = std::min( slot.untilTick, in.tick + 1 );
+			}
+		}
 		bool startsNow = slot.lastTick != 0 && slot.sinceTick == in.tick && ( starts || isWhile == false );
 		if ( inEffect || ( starts && slot.sinceTick == in.tick ) )
 		{

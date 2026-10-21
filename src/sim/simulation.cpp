@@ -4088,7 +4088,9 @@ void Simulation::ImpulseEnd( const MotionEffect& effect, float strength, const M
 			keep = { 0.0f, 0.0f, 0.0f };
 			break;
 	}
-	PushEnd( target, c, b3Add( b3Sub( keep, had ), b3MulSV( strength, direction ) ) );
+	// Momentum (N s) moves a heavy target less: its change of velocity is the momentum over its mass.
+	const float change = effect.momentum ? ( target.mass > 0.0f ? strength / target.mass : 0.0f ) : strength;
+	PushEnd( target, c, b3Add( b3Sub( keep, had ), b3MulSV( change, direction ) ) );
 }
 
 void Simulation::GiveMove( flecs::entity who, uint8_t param, float value, float seconds )
@@ -4221,7 +4223,7 @@ void Simulation::RunItemMotions( flecs::entity item, int event, bool expiring )
 			if ( MotionGuardHolds( slot, effect.guard ) && self.kind == MotionEnd::Kind::Body )
 			{
 				b3Vec3 direction = MotionTurn( effect, MotionDirection( effect.frame, effect.direction, none, still ) );
-				ImpulseEnd( effect, MotionStrength( m, effect, values, kMotionImpulseLimit ), self, none, direction );
+				ImpulseEnd( effect, MotionStrength( m, effect, values, effect.momentum ? kMotionMomentumLimit : kMotionImpulseLimit ), self, none, direction );
 			}
 		}
 		for ( const MotionFind& find : step.finds )
@@ -4458,7 +4460,7 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 				direction = MotionDirection( effect.frame, effect.direction, c, in );
 			}
 			direction = MotionTurn( effect, direction );
-			ImpulseEnd( effect, MotionStrength( m, effect, values, kMotionImpulseLimit ), on, c, direction );
+			ImpulseEnd( effect, MotionStrength( m, effect, values, effect.momentum ? kMotionMomentumLimit : kMotionImpulseLimit ), on, c, direction );
 		}
 		// A player it found moves as it is given, for its seconds.
 		if ( target.end.kind == MotionEnd::Kind::Player || target.end.kind == MotionEnd::Kind::Self )
@@ -4560,8 +4562,10 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 		{
 			continue;
 		}
-		// Its current step's: the once ones when the step starts, the lasting ones while it is the step.
-		for ( const MotionEffect& effect : m.steps[slot.step].effects )
+		// Its current step's: the once ones when the step starts, the lasting ones while it is the step
+		// (and its repeat's, on the ticks it happens).
+		auto runEffects = [&]( const std::vector<MotionEffect>& effects, bool startsNow ) {
+		for ( const MotionEffect& effect : effects )
 		{
 			if ( MotionGuardHolds( slot, effect.guard ) == false )
 			{
@@ -4614,7 +4618,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 			}
 			if ( effect.kind == MotionEffect::Kind::Launch )
 			{
-				if ( on.started == false || effect.known == false )
+				if ( startsNow == false || effect.known == false )
 				{
 					continue;
 				}
@@ -4643,11 +4647,11 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 			}
 			if ( effect.kind == MotionEffect::Kind::Impulse )
 			{
-				if ( on.started == false || target.kind == MotionEnd::Kind::World )
+				if ( startsNow == false || target.kind == MotionEnd::Kind::World )
 				{
 					continue;
 				}
-				ImpulseEnd( effect, MotionStrength( m, effect, values, kMotionImpulseLimit ), target, c, direction );
+				ImpulseEnd( effect, MotionStrength( m, effect, values, effect.momentum ? kMotionMomentumLimit : kMotionImpulseLimit ), target, c, direction );
 			}
 			else if ( effect.kind == MotionEffect::Kind::Force )
 			{
@@ -4748,17 +4752,28 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				}
 			}
 		}
-		// Its step's walls and finds, when the step starts.
-		if ( on.started )
-		{
-			RunBreaks( m, m.steps[slot.step], slot, t.position, values );
-			for ( const MotionFind& find : m.steps[slot.step].finds )
+		};
+		runEffects( m.steps[slot.step].effects, on.started );
+		// Its step's walls and finds, when the step starts; its repeat's, each time it happens.
+		auto runOnce = [&]( const MotionStep& step ) {
+			RunBreaks( m, step, slot, t.position, values );
+			for ( const MotionFind& find : step.finds )
 			{
 				if ( MotionGuardHolds( slot, find.guard ) )
 				{
 					RunFind( e, c, t, in, m, find, self, hit, values, 0 );
 				}
 			}
+		};
+		if ( on.started )
+		{
+			runOnce( m.steps[slot.step] );
+		}
+		const MotionStep& current = m.steps[slot.step];
+		if ( MotionRepeatsNow( current, MotionStepStart( slot ), m_globals.tick, m_config.tickRate ) )
+		{
+			runEffects( current.repeats.front().effects, true );
+			runOnce( current.repeats.front() );
 		}
 		if ( holdChanged )
 		{

@@ -4448,6 +4448,151 @@ void TestItemBlast()
 	CHECK( fails( "motion\tA\nwhen\tevent\tt.poke\nowner\titem\nbreak\t2\t12\t0\n" ) == false );
 }
 
+// An impulse of momentum (heavy things move less) and a step's repeat ("every S": the lines after it,
+// again and again while it is the step).
+void TestMotionRepeats()
+{
+	ModSchema schema;
+	schema.fields.push_back( { "t.n", BoardType::Int, BoardScope::Entity, 0 } );
+	schema.fields.push_back( { "t.m", BoardType::Int, BoardScope::Entity, 1 } );
+	schema.fields.push_back( { "t.k", BoardType::Int, BoardScope::Entity, 2 } );
+	schema.events = { "p.start", "p.tick" };
+	schema.actions.push_back( { "shove", 0, "Q" } );
+	schema.actions.push_back( { "hop", 1, "E" } );
+	schema.actions.push_back( { "pulse", 2, "R" } );
+	schema.actions.push_back( { "burn", 3, "F" } );
+	schema.actions.push_back( { "rapid", 4, "G" } );
+	const std::string text = "cinderbox_motions\t3\n"
+							 "motion\tShove\nwhen\tpress\tshove\nfind\tbodies\t0\t16\tfacing\nshape\t4\t0\t1\t0\nimpulse_momentum\tfound\t40\taway\tnone\nendfind\n"
+							 "motion\tHop\nwhen\tpress\thop\nimpulse_momentum\tself\t400\tup\tvertical\n"
+							 "motion\tPulse\nwhen\tpress\tpulse\nduration\t1\nemit\tp.start\nevery\t0.25\nemit\tp.tick\nchange\tt.n\t+=\t1\n"
+							 "motion\tBurn\nwhen\twhile\nif\theld.burn\nevery\t0.5\nchange\tt.m\t+=\t1\n"
+							 "motion\tRapid\nwhen\tpress\trapid\nduration\t3\nevery\t0.0167\nchange\tt.k\t+=\t1\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 5 );
+	if ( motions == nullptr || motions->list.size() != 5 || warnings.empty() == false )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	const MotionStep& pulse = motions->list[2].First();
+	CHECK( motions->list[1].First().effects[0].momentum && pulse.every == 0.25f && pulse.repeats.size() == 1 &&
+		   pulse.emits.size() == 1 && pulse.repeats[0].emits.size() == 1 && pulse.repeats[0].changes.size() == 1 );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	std::vector<ModEventRecord> seen;
+	uint32_t counted = 0;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+			for ( ; counted < sim.Globals().modEventCount; ++counted )
+			{
+				seen.push_back( sim.Globals().modEvents[counted % kModEventHistory] );
+			}
+		}
+	};
+	auto press = [&]( uint16_t action ) {
+		f.inputs[0].actions = action;
+		step( 1 );
+		f.inputs[0].actions = 0;
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 2 );
+	const uint32_t p0 = sim.PlayerNetId( 0 );
+	SimCommand at;
+	at.type = CommandType::Respawn;
+	at.target = p0;
+	at.mode = 1;
+	at.a = { 0.0f, 1.0f, 0.0f };
+	f.commands.push_back( at );
+	// A small crate and a big one, either side of the player.
+	for ( float x : { 2.0f, -2.0f } )
+	{
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.mode = uint8_t( ShapeKind::Box );
+		c.value = -1;
+		c.a = { x, 0.6f, 0.0f };
+		c.c = x > 0.0f ? Float3{ 0.2f, 0.2f, 0.2f } : Float3{ 0.5f, 0.5f, 0.5f };
+		f.commands.push_back( c );
+	}
+	step( 60 );
+	std::vector<uint32_t> crates;
+	for ( const auto& r : sim.Entities() )
+	{
+		if ( flecs::entity( sim.World(), r.entity ).has<Prop>() )
+		{
+			crates.push_back( r.netId );
+		}
+	}
+	CHECK( crates.size() == 2 );
+	if ( crates.size() != 2 )
+	{
+		return;
+	}
+	auto body = [&]( uint32_t netId ) { return sim.BodyOf( sim.FindEntity( netId ).get<PhysicsBody>() ); };
+
+	// The same momentum: the light crate flies off as much faster as it is lighter.
+	press( 1 );
+	const float light = std::fabs( b3Body_GetLinearVelocity( body( crates[0] ) ).x ), heavy = std::fabs( b3Body_GetLinearVelocity( body( crates[1] ) ).x );
+	const float lightMass = b3Body_GetMass( body( crates[0] ) ), heavyMass = b3Body_GetMass( body( crates[1] ) );
+	std::printf( "    40 N s: the %.1f kg crate at %.2f m/s, the %.1f kg one at %.2f m/s\n", lightMass, light, heavyMass, heavy );
+	CHECK( std::fabs( light - 40.0f / lightMass ) < 0.3f && std::fabs( heavy - 40.0f / heavyMass ) < 0.3f ); // (a tick of ground friction on the way)
+	step( 60 );
+	// On the player: 400 N s over its mass.
+	const float mass = sim.PlayerMove( 0 )[MoveParam::Mass];
+	press( 2 );
+	std::printf( "    400 N s up on a player of %.0f kg: %.2f m/s\n", mass, sim.PlayerCharacter( 0 )->velocity.y );
+	CHECK( std::fabs( sim.PlayerCharacter( 0 )->velocity.y - 400.0f / mass ) < 0.4f );
+	step( 120 );
+
+	// Every quarter second for a second: 4 times (0, 15, 30, 45 ticks after the press), its start once.
+	const uint32_t pressed = sim.Tick();
+	press( 4 );
+	step( 70 );
+	std::vector<uint32_t> ticks;
+	int starts = 0;
+	for ( const ModEventRecord& e : seen )
+	{
+		ticks.push_back( e.type == 1 ? e.tick - pressed : 9999u );
+		starts += e.type == 0 ? 1 : 0;
+	}
+	ticks.erase( std::remove( ticks.begin(), ticks.end(), 9999u ), ticks.end() );
+	CHECK( starts == 1 && ( ticks == std::vector<uint32_t>{ 0, 15, 30, 45 } ) && sim.BoardValue( p0, 0 ) == 4 );
+	// In a while: every half second it holds (1.2 s held: at 0, 30, 60 ticks).
+	f.inputs[0].actions = 8;
+	step( 72 );
+	f.inputs[0].actions = 0;
+	step( 30 );
+	CHECK( sim.BoardValue( p0, 1 ) == 3 );
+	// Every tick for three seconds stops at 64.
+	press( 16 );
+	step( 200 );
+	std::printf( "    every tick for 3 s: %d times\n", sim.BoardValue( p0, 2 ) );
+	CHECK( sim.BoardValue( p0, 2 ) == int32_t( kMotionRepeats ) );
+
+	// What a file may not say.
+	auto fails = [&]( const std::string& body ) {
+		std::vector<Motion> out;
+		std::string error, warned;
+		return CompileMotionSet( "t", "cinderbox_motions\t3\n" + body, schema, out, error, warned ) == false;
+	};
+	CHECK( fails( "motion\tA\nwhen\tpress\tpulse\nevery\t0.5\nevery\t0.5\n" ) );						// twice in a step
+	CHECK( fails( "motion\tA\nwhen\tpress\tpulse\nevery\t0.5\nparam\twalk_speed\t1\n" ) );			// a parameter
+	CHECK( fails( "motion\tA\nwhen\tpress\tpulse\nevery\t0\n" ) );									// no time
+	CHECK( fails( "motion\tA\nwhen\tpress\tpulse\nfind\tall\t0\t16\tfacing\nshape\t1\t0\t0\t0\nevery\t1\nendfind\n" ) ); // in a find
+	CHECK( fails( "motion\tA\nwhen\tpress\tpulse\nimpulse_momentum\tself\t200000\tup\tnone\n" ) );	// past its limit
+	CHECK( fails( "motion\tA\nwhen\tpress\tpulse\nevery\t1\nemit\tp.tick\nstep\t1\t0\nevery\t1\nemit\tp.tick\n" ) == false ); // one each step
+}
+
 // "motion.<name>" in a condition: that motion of the player's is on. A motion's own conditions read
 // it as the tick found it; the name is the set's and the node's, or the node's alone when it is
 // the only one.
@@ -10818,6 +10963,7 @@ int main( int argc, char** argv )
 		{ "motion_curves", TestMotionCurves },
 		{ "motion_markers", TestMotionMarkers },
 		{ "item_blast", TestItemBlast },
+		{ "motion_repeats", TestMotionRepeats },
 		{ "item_motions", TestItemMotions },
 		{ "motion_conditions", TestMotionConditions },
 		{ "links", TestLinks },

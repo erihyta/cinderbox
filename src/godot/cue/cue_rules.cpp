@@ -316,6 +316,17 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 				props["replace"] = replace;
 				i += 2;
 			}
+			else if ( verb == "impulse" && word == "kind" && i + 1 < w.size() )
+			{
+				// kind velocity (the default: m/s, whatever it weighs) or momentum (N s: heavy moves less)
+				String k = w[i + 1].text;
+				if ( k != "velocity" && k != "momentum" )
+				{
+					why = "kind velocity or momentum";
+				}
+				props["momentum"] = k == "momentum";
+				i += 2;
+			}
 			else if ( verb == "force" && word == "kind" && i + 1 < w.size() )
 			{
 				String k = w[i + 1].text;
@@ -852,6 +863,25 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			}
 			// --- what starts a step, or the motion's own settings: not under an if
 			const bool stepLine = verb == "then" || verb == "after" || verb == "timeout";
+			if ( verb == "every" )
+			{
+				// every S: what follows in this step, again and again while it is the step
+				double seconds = 0.0;
+				if ( top == false || w.size() != 2 || Number( w[1], seconds ) == false || seconds <= 0.0 )
+				{
+					fail( number, "every S: as far in as the motion's first line, not under an if; what follows in its step happens every S seconds" );
+					continue;
+				}
+				Dictionary every;
+				every["kind"] = "every";
+				every["seconds"] = seconds;
+				every["line"] = number;
+				every["guard"] = String();
+				statements.push_back( every );
+				step["statements"] = statements;
+				rule.steps[rule.steps.size() - 1] = step;
+				continue;
+			}
 			const bool setting = verb == "cooldown" || verb == "uses" || verb == "lasts" || verb == "until" || verb == "item" || verb == "owner";
 			if ( ( stepLine || setting ) && top == false )
 			{
@@ -1200,7 +1230,7 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				if ( ParsePart( w, part, why ) == false )
 				{
 					fail( number, why.begins_with( "\"" + verb + "\" is not one of" )
-									  ? "\"" + verb + "\" is not a line of a motion: if, else, then when, after, timeout, cooldown, uses, lasts, until, item, owner, change, emit, end, find, cast, impulse, force, link, move, launch, follow, break, remove"
+									  ? "\"" + verb + "\" is not a line of a motion: if, else, then when, after, timeout, cooldown, uses, lasts, until, item, owner, change, emit, end, every, find, cast, impulse, force, link, move, launch, follow, break, remove"
 									  : why );
 					continue;
 				}

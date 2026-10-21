@@ -278,6 +278,18 @@ func _run() -> void:
 	_refused("owner item in a motion set", "motion A on expired\n\towner item\n\temit x\n", "line 1: owner item is for an item's sheet")
 	_refused("a break with no radius", "motion A on press a\n\tbreak speed 3\n", "line 2: break radius R")
 
+	# A repeat (every), and an impulse of momentum.
+	_scratch("motion Flame on press flame\n\tlasts 1\n\temit flame.on\n\tevery 0.1\n\tfind sphere 3 players\n\t\timpulse 0.6 along away\n" +
+		"\timpulse 400 along up kind momentum\n")
+	var flame := _set_with(SCRATCH, false)
+	var flame_baked: Dictionary = flame.bake()
+	var flame_text := String(flame_baked["text"])
+	_check("every: what follows repeats; an impulse of momentum", flame_text.contains("emit\tflame.on\nevery\t0.1\nfind\tplayers\t0\t16\tfacing\n" +
+		"shape\t3\t0\t1\t0\nimpulse\tfound\t0.6\taway\tnone\nendfind\nimpulse_momentum\tself\t400\tup\tnone\n"), flame_text + String(flame_baked["error"]))
+	flame.free()
+	_refused("every under an if", "motion A on press a\n\tif grounded\n\t\tevery 1\n", "line 3: every S")
+	_refused("an impulse of a kind there is not", "motion A on press a\n\timpulse 3 along up kind mass\n", "line 2: kind velocity or momentum")
+
 	# What refuses the bake, with its file and line.
 	_refused("a find of a node that is not there", "motion A on press a\n\tfind Nope\n\t\temit x\n", "line 2: find: no node Nope")
 	_refused("a force inside a find", "motion A on press a\n\tfind sphere 2\n\t\tforce 3\n", "line 3: \"force\" inside a find")

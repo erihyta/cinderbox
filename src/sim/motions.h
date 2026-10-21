@@ -173,6 +173,9 @@ struct MotionEffect
 	b3Vec3 from = {};
 	// Follow: the path (Motion::paths), over `seconds`.
 	int16_t path = -1;
+	// Impulse: `strength` is momentum (N s), shared out by what the target weighs, not a change of
+	// velocity whatever it weighs.
+	bool momentum = false;
 };
 
 // A direction turned as an effect says (MotionEffect::turned).
@@ -289,7 +292,17 @@ struct MotionStep
 	};
 	std::vector<Break> breaks;
 	std::vector<int8_t> removes; // an item's "remove self" each, under a guard
+	// What it does again and again (a sheet's "every S": the lines after it): once when the step
+	// starts and every `every` seconds while it is the step, 64 times at most. Its once statements
+	// only (changes, emits, impulses, launches, finds, breaks); its guards are this step's.
+	float every = 0.0f;
+	std::vector<MotionStep> repeats; // empty, or one
 };
+inline constexpr uint32_t kMotionRepeats = 64;
+inline constexpr float kMotionMomentumLimit = 100000.0f; // N s
+
+// Whether a step's repeat happens on `tick` (its step started at `stepStart`).
+bool MotionRepeatsNow( const MotionStep& step, uint32_t stepStart, uint32_t tick, uint32_t tickRate );
 
 struct Motion
 {
