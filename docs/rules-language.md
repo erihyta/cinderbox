@@ -7,6 +7,7 @@ today; the rest is the plan.
 
 | Part | State |
 |---|---|
+| Every mod's motions as sheets (none uses a motion node; the SDK's starter is a sheet) | *built* (M211) |
 | Blocks: `motion` headers, `on use` / `on press` / `on EVENT` / `while` / `when`, `then when ... within`, `after`, `timeout`, `if` / `else`, `end`, `lasts`, `until`, `cooldown`, `uses`, `item` | *built* (M204) |
 | Statements in a block: `change`, `emit`, `impulse`, `force`, `move [for S]`, `launch` (as a `use` rule has them) | *built* (M204) |
 | `find` with shapes from nodes or written in the line, a block per thing found, `found`, `away`, `move for` on a player found, `emit` with who was found | *built* (M205) |
@@ -387,4 +388,4 @@ the editor and at publish, as today.
 3. **Curves and markers** (*built*): `curve()`, `time`, `distance`, `reach` (M207); `along NODE`, `from NODE`, `turn`, `follow` (M208).
 4. **Items run motions** (*built*, M209): `owner item`, `break`, `remove self`; the frag grenade's blast predicted.
 5. **`impulse kind momentum`**, `every` (*built*, M210).
-6. **The mods converted**: brawl, frag, cannon, grapple, flight, dash, as the test that nothing is lost.
+6. **The mods converted** (*built*, M211): brawl, frag, cannon, grapple, flight, dash and the grenade mod are sheets; none uses a motion node; the SDK's starter motion set is a sheet. Nothing was lost (every test as before); the brawl fist's finisher and the dash strike now push what they hit, which their nodes never baked.

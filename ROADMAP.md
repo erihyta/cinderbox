@@ -24,7 +24,7 @@ A proposal: the order is open to change. Each row is a milestone or two.
 |---|---|---|
 | 1 | [Loose ends](#1-loose-ends) | **done (M190 to M192)**: rolling and drag on bodies, slopes too steep to walk, the arms belong to what is held, the camera against meshes and terrain, the two network tests that miss a tick |
 | 2 | [Destructible walls](#2-destructible-walls) | **done (M195 to M198)**: a wall breaks into pieces authored beforehand, by what is made to break it; shared by everyone |
-| 3 | [Rules as a language](#3-rules-as-a-language) | **begun (M204: blocks; M205: find; M206: cast; M207: curves; M208: markers; M209: items; M210: momentum, every)**: the rules sheet grows into a small language the simulation runs: everything that moves on screen predicted, a mod's C++ left with what only the server decides. [The grammar, a draft](docs/rules-language.md) |
+| 3 | [Rules as a language](#3-rules-as-a-language) | **done (M204 to M211)**: the rules sheet grows into a small language the simulation runs: everything that moves on screen predicted, a mod's C++ left with what only the server decides. [The grammar, a draft](docs/rules-language.md) |
 | 4 | [Vehicles](#4-vehicles) | bodies joined in a template, a seat, input routed to motors (begun in M202: glue is Box3D's weld joints) |
 | 5 | [Authoring, finished](#5-authoring-finished) | the editor's leftovers: names in expressions, a prebuilt SDK, an item used in its preview, publish checks |
 
@@ -82,7 +82,7 @@ them. The motion nodes keep working and get nothing new.
 | Curves and markers | **curves done (M207)**: an impulse's and a force's strength as an expression; `curve(Name, x)` from a `CbCurve`; `time`, and `distance` / `reach` in a find. **markers done (M208)**: directions and launch points from `Marker3D`s, `turn (yaw, pitch)`, `follow` a `Path3D` |
 | Items run motions | **done (M209)**: `owner item`: an item in the world runs its own sheet's motion when its event is said at it (`on expired`); `break`, `remove self`; the frag grenade's blast predicted (its numbers the mod's options, as fields) |
 | Physics words | **done (M210)**: `impulse ... kind momentum` (N·s, so weight counts) beside the change of velocity; `every S` (the rest of a step, again and again) |
-| The mods converted | brawl, frag, cannon, grapple, flight, dash: their C++ left with damage, charges and rules |
+| The mods converted | **done (M211)**: brawl, frag, cannon, grapple, flight, dash and the grenade mod are sheets; their C++ left with damage, charges and rules; the SDK's starter motion set is a sheet |
 
 - **Not "server mods on clients"** (a route not taken, below): the language is data in the look,
   which clients have already, and deterministic and bounded by design. A mod's C++ stays on the

@@ -1,0 +1,17 @@
+# The kit's timers: each counts down a second a second while above 0; the combo ends when its
+# window has run out (brawl.combo_left).
+
+motion ComboFade while brawl.combo_left > 0
+	change brawl.combo_left -= 1
+
+motion ComboReset while brawl.combo_left <= 0 and brawl.combo > 0
+	change brawl.combo = 0
+
+motion CoolDash while brawl.cd_dash > 0
+	change brawl.cd_dash -= 1
+
+motion CoolUpper while brawl.cd_upper > 0
+	change brawl.cd_upper -= 1
+
+motion CoolSlam while brawl.cd_slam > 0
+	change brawl.cd_slam -= 1

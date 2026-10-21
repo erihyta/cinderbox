@@ -1,0 +1,25 @@
+# Flight: its key switches it on and off (one press, one switch: both read the field as the tick
+# found it); while on, no gravity and the camera's way is up. The jetpack: jump held in the air while
+# fuel lasts, refuelled on the ground. The glide: sprint held while falling.
+
+motion FlyOn on press fly if not flight.on
+	change flight.on = 1
+	emit flight.started
+
+motion FlyOff on press fly if flight.on
+	change flight.on = 0
+	emit flight.stopped
+
+motion Flying while flight.on
+	move walk_speed 7 sprint_speed 12 air_control 1 gravity 0 air_friction 3 move_frame 1
+
+motion Thrust while flight.jetpack_on and held.jump and not grounded and not flight.on and flight.fuel > 0
+	change flight.fuel -= 30
+	emit flight.thrust
+	force 26 along up
+
+motion Refuel while flight.jetpack_on and grounded and flight.fuel < 100
+	change flight.fuel += 40
+
+motion Glide while held.sprint and not grounded and vertical_speed < 0 and not flight.on
+	move air_control 0.8 gravity 3 max_fall 2.5

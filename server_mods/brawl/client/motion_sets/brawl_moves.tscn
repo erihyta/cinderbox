@@ -3,38 +3,12 @@
 ; The kit's clocks, as motions every simulation runs (so they are predicted): there is no cooldown a
 ; HUD can read, and no timer, so each is a Float field a While motion counts down.
 ;
-;   ComboFade   CbMotion   while brawl.combo_left > 0: it falls 1 a second
-;   ComboReset  CbMotion   while it is out and a combo is going: brawl.combo = 0
-;   CoolDash    CbMotion   while brawl.cd_dash > 0: it falls 1 a second (the HUD shows it)
-;   CoolUpper   CbMotion   the same for brawl.cd_upper
-;   CoolSlam    CbMotion   the same for brawl.cd_slam
+;   Rules   CbRules   brawl_moves.rules: ComboFade, ComboReset, CoolDash, CoolUpper, CoolSlam
 ;
 ; The skills set them (their When used changes: brawl.cd_dash = 3); the server mod declares them.
 
 [node name="Moves" type="CbMotionSet"]
 set_name = "brawl.moves"
 
-[node name="ComboFade" type="CbMotion" parent="."]
-when = 1
-conditions = PackedStringArray("brawl.combo_left > 0")
-changes = PackedStringArray("brawl.combo_left -= 1")
-
-[node name="ComboReset" type="CbMotion" parent="."]
-when = 1
-conditions = PackedStringArray("brawl.combo_left <= 0", "brawl.combo > 0")
-changes = PackedStringArray("brawl.combo = 0")
-
-[node name="CoolDash" type="CbMotion" parent="."]
-when = 1
-conditions = PackedStringArray("brawl.cd_dash > 0")
-changes = PackedStringArray("brawl.cd_dash -= 1")
-
-[node name="CoolUpper" type="CbMotion" parent="."]
-when = 1
-conditions = PackedStringArray("brawl.cd_upper > 0")
-changes = PackedStringArray("brawl.cd_upper -= 1")
-
-[node name="CoolSlam" type="CbMotion" parent="."]
-when = 1
-conditions = PackedStringArray("brawl.cd_slam > 0")
-changes = PackedStringArray("brawl.cd_slam -= 1")
+[node name="Rules" type="CbRules" parent="."]
+file = "res://motion_sets/brawl_moves.rules"

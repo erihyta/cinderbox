@@ -1,0 +1,11 @@
+# The uppercut, on the ground, 4 s apart: whoever is ahead (3 m) is launched up, and you hop.
+
+motion Rise on use if not linked and brawl.cd_upper <= 0 and grounded
+	until brawl.uppercut.used or pressed.jump
+	lasts 0.05
+	change brawl.cd_upper = 4
+	emit brawl.uppercut.started
+	cast ray range 3
+		emit brawl.uppercut.hit
+		impulse 12 along up replace vertical
+		impulse 6 on self along up replace vertical

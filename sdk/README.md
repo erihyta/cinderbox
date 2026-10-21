@@ -24,7 +24,7 @@ machines. No game and no server are needed to author. The rules are the mod's C+
 | `prefabs/`, `vfx/`, `ui/`, `assets/` | the mod's scenes, effects, HUD, sounds and textures | yes |
 | `animation_packs/` | the mod's animation pack scenes; `animation_packs/source/` for their models and clips | no (what they bake to is) |
 | `anim/<pack>/` | baked animation packs: written on save and when publishing, never edited | yes |
-| `motion_sets/` | the mod's motion scenes: `CbMotionSet` roots with `CbMotion` nodes and their parts ([docs/motions.md](../docs/motions.md)) | no (what they bake to is) |
+| `motion_sets/` | the mod's motion scenes: `CbMotionSet` roots with a rules sheet of motion blocks ([docs/rules-language.md](../docs/rules-language.md)) | no (what they bake to is) |
 | `motions/<set>.cfg` | baked motions: written on save and when publishing, never edited | yes |
 | `items/<kind>.cfg` | baked item bodies: written when publishing, never edited | yes |
 | `placeholder/` | the placeholder: a humanoid skeleton with no model (`skeleton.tscn`; the editor draws its bones) and its locomotion clips (`clips/`) | no |
@@ -52,7 +52,7 @@ there the first time a project is opened with it. One you take out of the favori
 | `vfx/reactions_<mod>.tscn` | predict a press (`CbPrediction`), react to events (`CbReaction`) |
 | `ui/hud_<mod>.tscn` | show fields while the item is out (`CbFieldLabel`) |
 | `animation_packs/<mod>_animations.tscn` | an animation pack: the default AnimationTree in full, replacing the upper body |
-| `motion_sets/<mod>_moves.tscn` | add to how players move, predicted: a push on a press, with a charge and an event (a `CbMotion` with a `CbImpulse`) |
+| `motion_sets/<mod>_moves.tscn`, `.rules` | add to how players move, predicted: a push on a press, with a charge and an event (a motion block in the set's sheet) |
 
 Files that already exist are kept. Delete the starters a mod does not need.
 

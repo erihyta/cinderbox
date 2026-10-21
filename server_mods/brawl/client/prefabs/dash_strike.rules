@@ -1,8 +1,14 @@
-# The dash strike's lunge: 16 m/s, a moment without friction, 3 s apart. (Whoever is ahead is hit by
-# its Hit motion, a node: a probe and what it does to what it finds are a tree.)
+# The dash strike: a lunge, 16 m/s, a moment without friction, 3 s apart; whoever is ahead (4 m) is
+# knocked back.
 
 use if brawl.cd_dash <= 0
-    change brawl.cd_dash = 3
-    emit brawl.dash_strike.started
-    impulse 16 replace horizontal
-    move for 0.25 friction 0
+	change brawl.cd_dash = 3
+	emit brawl.dash_strike.started
+	impulse 16 replace horizontal
+	move for 0.25 friction 0
+
+motion Hit on use if brawl.cd_dash <= 0
+	lasts 0.05
+	cast ray range 4
+		emit brawl.dash_strike.hit
+		impulse 10 along move

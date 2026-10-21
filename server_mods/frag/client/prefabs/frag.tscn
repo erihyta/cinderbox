@@ -10,14 +10,12 @@
 ; throws one from wherever it is carried, or select it and press the use button (use: a press):
 ; what is thrown is one off the stack. The mod gives them one at a time, a little
 ; apart, until there are three (frag.cpp).
-;   Throwing   CbMotion   on the press (frag.grenade.used), 0.7 s: the left arm's throw, its pack's
-;                         (animation_packs/throw_arm.tscn); its clip says frag.release at 0.27 s
-;   Release    CbMotion   on frag.release (the clip's marker): emits frag.thrown
-;     Frag     CbLaunch   the one carried, where the camera looks at 15 m/s, 3 m/s of lift and the
-;                         thrower's own velocity, from 0.8 m ahead; its time is up after 2.5 s
 ;   Blast      Area3D     the region its blast throws things in: a ball 8 m round (how far it reaches
 ;                         is the frag mod's frag.radius, within it; not the grenade's body)
-;   Rules      CbRules    frag.rules: the blast (owner item: the grenade's, on expired)
+;   Rules      CbRules    frag.rules: Throwing (the press, 0.7 s: the left arm's throw, its pack's; its
+;                         clip says frag.release at 0.27 s), Release (the one carried, where the
+;                         camera looks at 15 m/s and 3 up, 2.5 s to live), and the Blast (owner
+;                         item: the grenade's, on expired)
 ;
 ; Saving this scene bakes it into res://items/frag.grenade.cfg.
 
@@ -75,26 +73,6 @@ mesh = SubResource("Ball")
 
 [node name="Band" type="MeshInstance3D" parent="."]
 mesh = SubResource("BandMesh")
-
-[node name="Throwing" type="CbMotion" parent="."]
-when = 2
-event = "frag.grenade.used"
-with_item = 1
-cooldown = 0.7
-duration = 0.7
-
-[node name="Release" type="CbMotion" parent="."]
-when = 2
-event = "frag.release"
-with_item = 1
-emits = "frag.thrown"
-
-[node name="Frag" type="CbLaunch" parent="Release"]
-what = 1
-speed = 15.0
-lift = 3.0
-ahead = 0.8
-seconds = 2.5
 
 [node name="Blast" type="Area3D" parent="."]
 

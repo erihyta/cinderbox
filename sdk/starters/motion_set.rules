@@ -1,0 +1,13 @@
+# The MODNAME mod's motions: what its players can do besides walking and jumping, with no code.
+# Every simulation runs them from the player's own input (the server's, and each client's own
+# prediction), so a move starts on the tick of the press. Nothing here waits for the server.
+# The language: docs/rules-language.md.
+
+# On "MODNAME_use", while MODNAME.charges > 0: a push along where you walk, a moment without
+# friction, a charge taken, and the event "MODNAME.moved".
+motion Use on press MODNAME_use if MODNAME.charges > 0
+	cooldown 0.5
+	change MODNAME.charges -= 1
+	emit MODNAME.moved
+	impulse 10 along move replace horizontal
+	move for 0.2 friction 0

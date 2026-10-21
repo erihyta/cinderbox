@@ -24,8 +24,6 @@ properties = {
 }
 use = 1
 use_key = "N"
-use_cooldown = 1.2
-use_emits = "cannon.fired"
 mass = 20.0
 
 [node name="Body" type="CollisionShape3D" parent="." unique_id=1827849778]
@@ -36,9 +34,5 @@ shape = SubResource("Body")
 transform = Transform3D(1, 0, 0, 0, -4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0)
 mesh = SubResource("Barrel")
 
-[node name="Fire" type="CbLaunch" parent="." unique_id=661328523]
-item_kind = "cannon.ball"
-speed = 36.0
-lift = 1.0
-ahead = 0.9
-seconds = 10.0
+[node name="Rules" type="CbRules" parent="."]
+file = "res://prefabs/cannon.rules"

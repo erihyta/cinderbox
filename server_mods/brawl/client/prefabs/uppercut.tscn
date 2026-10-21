@@ -3,11 +3,9 @@
 ; Uppercut: its slot's key (3), on the ground. Whoever is within 3 m ahead is launched
 ; upward, and you hop after it. 4 s to come back (brawl.cd_upper). A miss does nothing and costs
 ; nothing: with a probe, a use only counts if the line finds something.
-;   Uppercut    CbItem     once a press, by its slot's key; when used: brawl.cd_upper <= 0, grounded;
-;                          brawl.cd_upper = 4; says brawl.uppercut.started
-;     Rise      CbProbe    3 m along the look, at once; says brawl.uppercut.hit with who it hit
-;       Launch  CbImpulse  12 m/s up on who it hit, its vertical speed replaced
-;       Hop     CbImpulse  6 m/s up on you
+;   Uppercut    CbItem     once a press, by its slot's key
+;     Rules     CbRules    uppercut.rules: Rise (brawl.cd_upper <= 0, grounded; a line 3 m ahead,
+;                          at once: 12 m/s up on who it hit, 6 up on you; brawl.cd_upper = 4)
 
 [sub_resource type="BoxShape3D" id="Body"]
 size = Vector3(0.1, 0.1, 0.1)
@@ -31,9 +29,6 @@ properties = {
 use = 1
 slot = 3
 slot_key_uses = true
-use_conditions = PackedStringArray("brawl.cd_upper <= 0", "grounded")
-use_changes = PackedStringArray("brawl.cd_upper = 4")
-use_emits = "brawl.uppercut.started"
 mass = 0.5
 hud = "res://ui/uppercut_hud.tscn"
 hud_shows = 1
@@ -44,19 +39,5 @@ shape = SubResource("Body")
 [node name="Mesh" type="MeshInstance3D" parent="."]
 mesh = SubResource("Mesh")
 
-[node name="Rise" type="CbProbe" parent="."]
-range = 3.0
-travel = 0.0
-hold_seconds = 0.05
-hold_emits = "brawl.uppercut.hit"
-
-[node name="Launch" type="CbImpulse" parent="Rise"]
-target = 1
-frame = 3
-speed = 12.0
-replace = 1
-
-[node name="Hop" type="CbImpulse" parent="Rise"]
-frame = 3
-speed = 6.0
-replace = 1
+[node name="Rules" type="CbRules" parent="."]
+file = "res://prefabs/uppercut.rules"
