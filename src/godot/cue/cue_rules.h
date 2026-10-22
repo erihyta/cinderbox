@@ -53,8 +53,8 @@
 //       change gun.ammo -= 1      (until the server answers; one line each)
 //       stance melee_swing on full
 //
-// What using an item does, in the item's own sheet: baked with the item into its "Use" motion, as
-// the When used settings and the motion nodes under a CbItem are (the game skips it):
+// What using an item does, in the item's own sheet: "use [if EXPRESSION]" is "motion Use on use [if
+// EXPRESSION]", word for word (a motion block, below), baked with the item:
 //
 //   use if dash.charges > 0
 //       change dash.charges -= 1      (one line each)
@@ -63,13 +63,15 @@
 //       impulse 11 replace horizontal
 //       move for 0.18 friction 0
 //
-//   impulse SPEED [on self|hit|FIELD] [along look|move|facing|up|world|to] [direction (x,y,z)]
-//                 [replace nothing|vertical|horizontal|all]
+//   impulse SPEED [on self|target|FIELD] [along look|move|facing|up|to|away|world (x,y,z)|NODE]
+//                 [replace nothing|vertical|horizontal|all] [kind velocity|momentum]
 //   force STRENGTH [kind acceleration|force|velocity] [top SPEED] [ramp S] [react] [on ...] [along ...]
 //   move [for S] PARAMETER VALUE [PARAMETER VALUE ...]
 //   launch new KIND | launch carried, then [speed S] [lift L] [ahead M] [seconds S] [along ...]
 //
-// A probe and what hangs on it (a rope, a pull) stay nodes under the item: they are a tree.
+// Every amount may be an expression: the words up to the next option word (a move's value, up to the
+// next parameter). The motion's times, counts and directions are numbers. Where each line may stand
+// is one table (kLineRules, in the .cpp; docs/rules-language.md).
 //
 // A motion block: a motion of its own, run by the simulation, baked with the item or the motion set
 // the sheet is under (docs/rules-language.md). Here indenting counts: an if's lines are further in.
@@ -77,7 +79,7 @@
 //   motion Slam on use if brawl.cd_slam <= 0 and not grounded
 //       lasts 3                         (settings: cooldown S, uses N [refill ground | refill after S],
 //       emit brawl.slam.started          lasts S, until EXPR, item hand|carried; before any step)
-//       impulse 25 along world direction (0, -1, 0) replace vertical
+//       impulse 25 along world (0, -1, 0) replace vertical
 //       then when grounded within 2     (a step: once the wait is over; after S, by time)
 //       emit brawl.slam.landed
 //       if brawl.combo > 2              (decided when the step starts)
@@ -88,7 +90,7 @@
 //       emit brawl.slam.missed
 //
 //   motion NAME on use | on press ACTION | on EVENT | while EXPR | when EXPR (once, as it turns true)
-//   statements: change, emit, end, and the use rule's impulse, force, move, launch
+//   statements: change, emit, end, every, find, cast, impulse, force, link, move, launch, follow, break, remove
 //
 // A HUD's logic is one line each, on the controls the HUD scene has (a CbFieldBinding each):
 //
@@ -124,7 +126,7 @@ struct Rule
 	int head = 0; // the line its rule starts on (on, while, predict, use): where its event and its "if" are
 	bool prediction = false;
 	godot::String type = "CbReaction"; // the node it becomes: CbReaction, CbPrediction, CbFieldBinding;
-										   // "use": an item's use, for its bake (parts: [{class, properties}])
+										   // "motion": a motion block (a use is one), for its bake
 	godot::Dictionary properties;
 };
 
@@ -133,6 +135,11 @@ std::vector<Rule> ParseRules( const godot::String& text, godot::PackedStringArra
 
 // The CbReaction properties that hold a node path.
 bool IsPathProperty( const godot::String& name );
+
+// The movement parameters' names (sim/move_params.h), said once by the extension that knows them
+// (register_types.cpp): in a move's line, where one value (an expression of several words) ends and
+// the next parameter starts. Without them each value is one word.
+void SetMoveParameterNames( const godot::PackedStringArray& names );
 
 } // namespace cb::cue
 
