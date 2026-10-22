@@ -83,6 +83,8 @@ void ReplaySource::Fill( ReplayPlayer& player, float alpha )
 	f.stats.push_back( { "replay_paused", m_paused } );
 	f.stats.push_back( { "replay_ended", ended } );
 	f.stats.push_back( { "replay_follow", int64_t( m_follow ) } );
+	// The followed player's motions, for the debug HUD.
+	f.stats.push_back( { "motions", m_follow >= 0 ? sim.DescribeMotions( PlayerSlot( m_follow ) ) : std::string() } );
 }
 
 void ReplaySource::Run()

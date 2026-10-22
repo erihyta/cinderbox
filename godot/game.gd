@@ -642,6 +642,11 @@ func _update_hud() -> void:
 			stats.get("rtt_ms", 0), stats.get("rollbacks", 0), stats.get("last_rollback_depth", 0), stats.get("stalled_seconds", 0.0),
 			stats.get("checksums_verified", 0), stats.get("desyncs", 0),
 			stats.get("entities", 0), stats.get("animation", ""), ", ".join(client.get_mod_names())]
+		# Your motions: what is on (its step, what it waits for, what its cast holds), and why the
+		# last one you asked for did not start.
+		var motions: String = stats.get("motions", "")
+		if motions.strip_edges() != "":
+			label.text += "\nmotions:\n" + motions.strip_edges()
 	var help := hud.get_node_or_null("%Help") as Label
 	if help:
 		help.visible = _joined

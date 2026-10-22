@@ -292,6 +292,7 @@ struct MotionStep
 	// How it is reached (not the first step): `after` seconds since the step before started, then
 	// when `wait` holds. `within`: seconds after which the wait gives up (0: never).
 	AnimExpr wait;
+	std::string waitText; // (as written: for the debug HUD)
 	float after = 0.0f;
 	float within = 0.0f;
 	bool timeout = false; // the step a wait that gave up runs: once statements, then the motion ends
@@ -346,6 +347,7 @@ struct Motion
 	int trigger = -1; // When::Event: the schema event. -1: no mod declared it, so it never happens
 	AnimExpr edge;	  // When::Edge
 	AnimExpr condition;
+	std::string conditionText; // (as written: for the debug HUD)
 	float cooldown = 0.0f;
 	uint32_t uses = 0;			 // 0: no limit
 	bool refillOnGround = false; // uses come back when the player stands
@@ -426,6 +428,25 @@ uint64_t MotionsOnAt( const MotionState& state, uint32_t tick );
 std::shared_ptr<const Motions> CompileMotions( const ModSchema& schema, std::string& warnings );
 
 // What one tick of motions needs to know about a player, besides its components.
+// Why a motion that was asked to start (pressed, its event heard, its edge turned) did not: for the
+// debug HUD's motion lines (Simulation::DescribeMotions). Not state: nothing reads it back.
+struct MotionRefusal
+{
+	enum class Why : uint8_t
+	{
+		None = 0,
+		Frozen = 1,		   // the player may not act
+		On = 2,			   // it is on already, and held on
+		Cooldown = 3,	   // its cooldown has not run out
+		Uses = 4,		   // its uses are spent
+		Condition = 5,	   // its condition does not hold
+		NothingToHold = 6, // its cast found nothing
+	};
+	uint16_t motion = 0;
+	Why why = Why::None;
+};
+const char* MotionRefusalText( MotionRefusal::Why why );
+
 struct MotionInputs
 {
 	const PlayerInput* input = nullptr;
@@ -445,6 +466,8 @@ struct MotionInputs
 	// does not happen). `holdTick` is when it takes hold.
 	bool ( *attach )( void* user, const Motion& motion, size_t index, uint32_t& holdTick ) = nullptr;
 	void* user = nullptr;
+	// Where to say why a motion asked to start did not (none: not said).
+	std::vector<MotionRefusal>* refusals = nullptr;
 };
 
 // A motion that is on this tick, for the simulation to apply its effects.
