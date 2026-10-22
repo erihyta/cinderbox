@@ -59,8 +59,9 @@ building system.
   server has one character, humanoid. So the body comes first, then who drives it.
 - **Why possession, not an NPC type**: a player is a controller (its keys, its name, its score);
   what it drives is a body (an entity whose scene is a character). An NPC is then nothing new: a body
-  a mod drives. The same split gives spectators, Prop Hunt (a player drives a crate), mind control,
-  and a vehicle driven by the same keys.
+  a mod drives. The same split gives spectators, Prop Hunt (a player drives a crate), and mind
+  control. (Not vehicles: a possessed body moves by the character controller; a vehicle is a body
+  of motors, so a player sits in it and keeps its own.)
 - **Vehicles and authoring later**: the core engine first; the nodes (motion nodes and the rest)
   are reworked once it is complete, and kept as they are until then.
 
@@ -200,7 +201,7 @@ shows what the simulation says, from the server's frames and the player's own in
 | Driving without a player | `ctx.Drive( entity, input )`: the same input a player's keys make, each tick, in the frame as a list of what changed (one sender, so cheap). **An NPC is a body a mod drives**: no type of its own, not under the 64 players' arrays; moved in the same two passes as players, after them, by NetId; a client predicts it as another player (its last input again) |
 | Rules see bodies | `Kill`, `Respawn`, `Push`, `SetMove`, fields, events, hit tests work on any body; a `find` gains `npcs` beside `players`; the combat mod hurts and kills any body |
 | Not predicted at first | a possession is the server's, so it is seen a lead late (the old body moves on a moment); a sheet's `possess` could predict it later |
-| What it opens | NPCs, spectators (a controller with no body, or a free camera's), Prop Hunt, mind control, a vehicle possessed and driven by its sheets (instead of a seat) |
+| What it opens | NPCs, spectators (a controller with no body, or a free camera's), Prop Hunt, mind control. A body possessed moves by the character controller; a vehicle does not, so it keeps its seat |
 
 ### 10. Finding the way
 
@@ -223,7 +224,7 @@ Postponed after M211 (the core engine first). In the order they would likely com
 | Piece | What |
 |---|---|
 | Joints in templates | a template of several bodies (each its shapes) joined by Box3D's joints (revolute, prismatic, weld, wheel), authored as nodes in the scene |
-| A seat | a player sits: the mover is off, the player is carried by the body and drawn in its pose. Or, once step 9 is in, the vehicle is possessed and its sheets turn the same keys into motors |
+| A seat | a player sits: the mover is off, the player is carried by the body and drawn in its pose. (a seated player keeps its body; the vehicle reads its keys) |
 | Input to motors | as a motion routes input to the mover, a vehicle routes it to its joints' motors and its forces; the rules (who may drive, damage) are a mod's |
 | Platform carry | standing on a moving deck carries the player (its velocity and turn): the mover needs it for a vehicle you stand on, and ships later |
 
