@@ -27,7 +27,7 @@ A proposal: the order is open to change. Each row is a milestone or two.
 | 3 | [Rules as a language](#3-rules-as-a-language) | **done (M204 to M211)**: the rules sheet grows into a small language the simulation runs: everything that moves on screen predicted, a mod's C++ left with what only the server decides. [The reference](docs/rules-language.md) |
 | 4 | [A player's slot changes nothing](#4-a-players-slot-changes-nothing) | **done (M212)**: every player's motions in one pass, every player's move in another; what a motion does to another player lands on the same tick, after the target's own |
 | 5 | [The language made regular](#5-the-language-made-regular) | **done (M213 to M215)**: one table of where each line may stand, one word per role, one origin for shapes, `use` a motion, every amount an expression; [the reference](docs/rules-language.md) rewritten from what is built; the motion lines in the debug HUD |
-| 6 | [Characters per entity](#6-characters-per-entity) | any character scene is a kind; every body has its own: state machine, hitboxes, capsule, camera |
+| 6 | [Characters per entity](#6-characters-per-entity) | **half done (M216)**: the server's list of characters, each body its own state machine, hitboxes, capsule and movement, in the simulation and on the server. Left: the client draws each body as its own; the camera per scene; where shots start |
 | 7 | [Any skeleton](#7-any-skeleton) | the humanoid's features become what a character has, not what every one must; characters with no skeleton |
 | 8 | [The animation tree, wider](#8-the-animation-tree-wider) | what a Godot developer reaches for next (nested state machines, OneShot, Add, TimeScale, crossfade curves), and layers that are the look's alone |
 | 9 | [Entities and who drives them](#9-entities-and-who-drives-them) | possession: a player is a controller that drives a body; one `Spawn` for every scene; an NPC is a body a mod drives |
@@ -152,9 +152,9 @@ server has many, and every body says which it is.
 
 | Piece | What |
 |---|---|
-| Characters are kinds | a character scene is a kind by its name (`zoo.dragon`), in a mod's look as an item is, or a character item; the server announces every character it uses (players download what they lack, by its hash, as today) and the schema lists them |
-| Each body its own | a character entity says its kind; the simulation runs that kind's state machine for it and the server hit-tests that kind's hitboxes; its animation state is sized by its own layers |
-| Its capsule | its height and radius from the scene (today one size for everyone): the mover keeps the feet where they are |
+| Characters are kinds | **done in the simulation and on the server (M216)**, as `declare.Character`; a client draws each as its own next. The plan: a character scene is a kind by its name (`zoo.dragon`), in a mod's look as an item is, or a character item; the server announces every character it uses (players download what they lack, by its hash, as today) and the schema lists them |
+| Each body its own | **done (M216)** on the server and in every simulation (`CharacterKind`, `SetCharacter`). The plan: a character entity says its kind; the simulation runs that kind's state machine for it and the server hit-tests that kind's hitboxes; its animation state is sized by its own layers |
+| Its capsule | **done (M216)**: a `CapsuleShape3D` under the `CbCharacter`. The plan: its height and radius from the scene (today one size for everyone): the mover keeps the feet where they are |
 | Its camera | **every body is seen from behind** (third person), its distance and height from the scene; **first person only where the scene has a first-person camera** (a node placed at the eyes): without one the view key does nothing. The mannequin gets one, so it plays as now |
 | Where shots start | the first-person camera's place if the scene has one, else an eye marker, else the top of its capsule (today: the head, a humanoid's) |
 | The game's own | the mannequin and the placeholder rig stay what a server uses when it names none |

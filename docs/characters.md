@@ -4,7 +4,9 @@ Characters, their state machines, and what poses a player. Part of the [manual](
 
 ## Characters
 
-Everyone on a server plays as one character, chosen by the server:
+A server has a **list of characters**: its own (below), every player's when it joins, and those
+its mods declare. Every body is one of them, with its own capsule, state machine, hitboxes and
+movement ([Characters per body](#characters-per-body)). The server's own:
 
 ```bash
 cb_server                      # the default: mannequin, shipped with the game
@@ -16,6 +18,21 @@ cb_server --character none     # the procedural placeholder rig
 |---|---|---|---|
 | shipped with the game (`mannequin`) | `godot/characters/<name>/` | `bin/characters/<name>/` (the build copies the baked files there) | nothing: it is in the base game |
 | workshop item (`robot`) | `characters/<name>/client/` | the item's zip in the workshop | the exact item (by SHA-256) |
+
+### Characters per body
+
+*Built in the simulation and on the server (M216); a client still draws every body as the server's
+own character until the viewer learns the rest (roadmap step 6).*
+
+| Piece | How |
+|---|---|
+| A mod's character | `declare.Character( "zoo.dragon" )`: a `CbCharacter` scene in the mod's client project, baked into `characters/<name>/` of its item (as a character item's is). Players download it with the mod's item |
+| A body becomes it | `ctx.SetCharacter( SlotTarget( slot ), dragon )`: from the next tick, every simulation runs that body as it; an invalid handle gives the server's own back |
+| Its capsule | a `CollisionShape3D` with a `CapsuleShape3D` right under the `CbCharacter`, as a Godot character has its collision shape: its radius and whole height (none: 0.3 m round, 1.6 m tall). When a body changes character its feet stay where they were |
+| Its state machine | its own: the body's layers start over when it changes. Animation packs are fitted to each character's skeleton |
+| Its hitboxes | the server poses and hit-tests each body as its own character |
+| Its movement | its `movement` (walk speed and the rest), over the server's for its bodies |
+| In the schema | `ModSchema::characters`: [0] the server's own, then the mods'; each its name, mod, state machine, capsule and movement |
 
 ### The default character: the mannequin
 

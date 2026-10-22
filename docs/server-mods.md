@@ -31,6 +31,7 @@ and mods need no determinism of their own.
 | `Aim` | turns the player's aim chain (its character's arm, by default) toward where it looks, or lets it go |
 | `Facing` | the body faces where the camera looks, or turns toward where it walks (freelook, the default) |
 | `Stance` | plays a stance on one of the player's animation layers, or clears it |
+| `SetCharacter` | the player is one of the server's characters from the next tick (`declare.Character`: a `CbCharacter` scene of the mod's look): its capsule, state machine, hitboxes and movement ([characters.md](characters.md#characters-per-body)) |
 | `SetMove` | sets one of a player's [movement parameters](#movement-parameters) (walk speed, jump, gravity, ...), or gives it back |
 
 ```cpp
