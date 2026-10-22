@@ -27,7 +27,12 @@ A proposal: the order is open to change. Each row is a milestone or two.
 | 3 | [Rules as a language](#3-rules-as-a-language) | **done (M204 to M211)**: the rules sheet grows into a small language the simulation runs: everything that moves on screen predicted, a mod's C++ left with what only the server decides. [The reference](docs/rules-language.md) |
 | 4 | [A player's slot changes nothing](#4-a-players-slot-changes-nothing) | **done (M212)**: every player's motions in one pass, every player's move in another; what a motion does to another player lands on the same tick, after the target's own |
 | 5 | [The language made regular](#5-the-language-made-regular) | **done (M213 to M215)**: one table of where each line may stand, one word per role, one origin for shapes, `use` a motion, every amount an expression; [the reference](docs/rules-language.md) rewritten from what is built; the motion lines in the debug HUD |
-| 6 | [NPCs](#6-npcs) | characters no player drives: a server mod's brain gives them inputs, and every simulation moves, animates and hit-tests them as it does players |
+| 6 | [Characters per entity](#6-characters-per-entity) | any character scene is a kind; every body has its own: state machine, hitboxes, capsule, camera |
+| 7 | [Any skeleton](#7-any-skeleton) | the humanoid's features become what a character has, not what every one must; characters with no skeleton |
+| 8 | [The animation tree, wider](#8-the-animation-tree-wider) | what a Godot developer reaches for next (nested state machines, OneShot, Add, TimeScale, crossfade curves), and layers that are the look's alone |
+| 9 | [Entities and who drives them](#9-entities-and-who-drives-them) | possession: a player is a controller that drives a body; one `Spawn` for every scene; an NPC is a body a mod drives |
+| 10 | [Finding the way](#10-finding-the-way) | a navigation mesh on the server, for a mod's brains |
+| 11 | [The proof: waves](#11-the-proof-waves) | NPCs that walk to the nearest player and swing at it, waves that grow |
 
 Steps 4 and 5 of the last version (vehicles, authoring finished) are [Later](#later), with the
 building system.
@@ -48,8 +53,14 @@ building system.
 - **Why the language made regular before anything new** (decided after M211): every word added
   since M204 brought its own rule of where it may stand; each new one would add more. Cleaning it
   while eight milestones old is cheap; the mods and the SDK's starter are the only sheets.
-- **Why NPCs next**: they open whole kinds of game (waves, bosses, pets, tower defense, PvE) for
-  the least engine work: an NPC is a character with inputs from a server mod instead of a player.
+- **Why characters before NPCs** (decided after M215): an NPC wants a body of its own (a zombie,
+  a dragon, a chicken), and authoring one should be what a Godot developer does for any character:
+  a scene with its skeleton, its animation tree, its hitboxes, made from zero in the editor. Today a
+  server has one character, humanoid. So the body comes first, then who drives it.
+- **Why possession, not an NPC type**: a player is a controller (its keys, its name, its score);
+  what it drives is a body (an entity whose scene is a character). An NPC is then nothing new: a body
+  a mod drives. The same split gives spectators, Prop Hunt (a player drives a crate), mind control,
+  and a vehicle driven by the same keys.
 - **Vehicles and authoring later**: the core engine first; the nodes (motion nodes and the rest)
   are reworked once it is complete, and kept as they are until then.
 
@@ -131,23 +142,77 @@ sheets.
 | The reference | built and planned mixed, the status table contradicting itself (curves "planned" and "built"), `at POINT` and `PATH at T` shown as if they work | **done (M215)**: `docs/rules-language.md` lists only what works, one table per statement with where it may stand; what is planned moves to a short list at the end |
 | A motion inspector | nothing shows why a motion did not happen | **done (M215)**: the debug HUD (F1) lists each motion that is on (its step, what it waits for, how long, what its cast holds) and the last refused start with its reason. The plan was: the debug HUD (F1) gets a row per player: each motion that is on, its step, since when, what it waits for, its target; a refused start says which condition failed |
 
-### 6. NPCs
+### 6. Characters per entity
 
-A character no player drives. Everything a player's body has, an NPC has: the mover, motions (an
-NPC can use a skill: its action bits press it), the state machine, the pose, hitboxes, held items,
-a ragdoll. What differs is where its input comes from: a server mod's brain, each tick, carried in
-the frame like a command. So every simulation moves it, a client predicts it as it predicts another
-player (its last input again), and nothing about it is decided twice.
+A character is a scene authored in the Godot editor, from zero, as a Godot developer would author
+any character (a player, a monster, a pet): a model on a `Skeleton3D`, an `AnimationPlayer`, an
+`AnimationTree`, `CbHitbox` and `CbSocket` nodes. Saving it bakes it, as today. What changes: a
+server has many, and every body says which it is.
 
 | Piece | What |
 |---|---|
-| The entity | `ctx.SpawnNpc( position, yaw )` and `Destroy`: a `Character` with an `Npc` tag, not in a player slot, so not under the 64-player arrays; moved in the same two passes as players, after them, by NetId. A server's cap (`--npcs`) |
-| Its input | `ctx.SetNpcInput( npc, input )`: move axes, where it looks, buttons, actions, as a player's. In the frame as a list of what changed (one sender, so cheap); held until changed |
-| Rules see it | `Kill`, `Respawn`, `Push`, `SetMove`, board fields, events, `CastRay` hit tests, a `find`'s `players` (and `npcs` to tell them apart): an NPC is a body like a player's. The combat mod hurts and kills NPCs as it does players |
-| The viewer | drawn as a character (its name a field; lists and HUDs can show it); no camera, no private fields |
-| Finding the way | server only, so it need not be deterministic: a navigation mesh made from the map's level when the server starts (Recast/Detour), `ctx.FindPath( from, to )`, and a mod's helpers to walk it |
-| The proof | a `waves` mod: NPCs that walk to the nearest player and swing at it, waves that grow; tested in a network test (hashes equal, no desyncs) and with bots |
-| Later | several characters a server (a zombie is not the mannequin: today one character per server); a brain in a sheet (deterministic, so every simulation runs it and an NPC's moves are predicted exactly, at a rollback cost); how many NPCs a client can carry, measured |
+| Characters are kinds | a character scene is a kind by its name (`zoo.dragon`), in a mod's look as an item is, or a character item; the server announces every character it uses (players download what they lack, by its hash, as today) and the schema lists them |
+| Each body its own | a character entity says its kind; the simulation runs that kind's state machine for it and the server hit-tests that kind's hitboxes; its animation state is sized by its own layers |
+| Its capsule | its height and radius from the scene (today one size for everyone): the mover keeps the feet where they are |
+| Its camera | **every body is seen from behind** (third person), its distance and height from the scene; **first person only where the scene has a first-person camera** (a node placed at the eyes): without one the view key does nothing. The mannequin gets one, so it plays as now |
+| Where shots start | the first-person camera's place if the scene has one, else an eye marker, else the top of its capsule (today: the head, a humanoid's) |
+| The game's own | the mannequin and the placeholder rig stay what a server uses when it names none |
+
+### 7. Any skeleton
+
+What assumes a humanoid becomes what a character has. A humanoid has all of it; a dragon brings its
+own skeleton, state machine, hitboxes and sockets, and has only what fits.
+
+| Piece | Today, for everyone | After |
+|---|---|---|
+| The ragdoll | eleven bodies from a fixed humanoid pose | a humanoid's as now; another skeleton's authored on its scene (bodies on bones, joints), or none: it does not fall as a ragdoll |
+| Hands and holding | sockets by name, two-handed grips, the arms put back over an overlay | a character holds in the sockets it has; one with none holds nothing (a mod's `Give` refuses) |
+| Animation packs | retargeted by humanoid bone names | they fit the skeletons that have those names; another skeleton's are its own |
+| The first-person body | the arms and legs copies, the torso hidden | the humanoid's, where the scene has a first-person camera and a humanoid skeleton |
+| The look and aim chains | named bones (already per character) | as now |
+| Hit zones | `head`, `chest`, ... | names a character gives its hitboxes; a mod reading a zone handles one that is not there |
+| No skeleton at all | the placeholder rig is a skeleton | a character that is a mesh and its capsule: no pose, no state machine, hit-tested as its capsule (a ball game, a top-down shooter) |
+
+### 8. The animation tree, wider
+
+The state machine runs in the simulation (its state decides the pose, the pose the hitboxes, and the
+server hit-tests those), so it is baked into a deterministic subset of Godot's `AnimationTree`. The
+subset grows toward what a Godot developer reaches for, and what only the eye needs is let loose.
+
+| Piece | What |
+|---|---|
+| More of the tree | nested state machines, `OneShot`, `Add`, `TimeScale` (a state's playback speed), crossfade curves; each baked and run the same everywhere |
+| Layers that are the look's | a layer a character marks as its look's runs on the client alone, with all of Godot's `AnimationTree` (a face, breathing, a tail's wag): it may not move a bone that has a hitbox or say a marker a rule hears, and the bake refuses it if it does |
+
+### 9. Entities and who drives them
+
+Possession, as Unreal has it (a controller possesses a pawn): the keys are the controller's,
+always the same (move, look, jump, sprint, the actions); what they do comes with the body (its
+motions, its sheets, its items: a chicken's jump can be a flap). The client stays what it is: it
+shows what the simulation says, from the server's frames and the player's own input.
+
+| Piece | What |
+|---|---|
+| One spawn | `ctx.Spawn( kind, position, yaw, velocity )`: whatever the scene of that kind is: an item lying in the world, a map's template (named, no longer numbered), a character. `Give( holder, kind, socket )` puts an item in a hand (today's `SpawnItem`). The old verbs stay a while as thin wrappers |
+| Possession | `ctx.Possess( slot, entity )`: the player of that slot drives that body from the next tick; the camera follows (the viewer already follows its own entity). A joining player is given a body of the server's character, as now; a mod may give it another (a class, a dragon form) |
+| What is whose | **the body's**: its fields (health), its items and inventory, its motions, its ragdoll. **The controller's**: its name, its score, its private fields, its keys. What you see is what it has; who you are stays with you |
+| The body left behind | stays in the world: idle, driven by a mod, or removed, as the mod says |
+| Driving without a player | `ctx.Drive( entity, input )`: the same input a player's keys make, each tick, in the frame as a list of what changed (one sender, so cheap). **An NPC is a body a mod drives**: no type of its own, not under the 64 players' arrays; moved in the same two passes as players, after them, by NetId; a client predicts it as another player (its last input again) |
+| Rules see bodies | `Kill`, `Respawn`, `Push`, `SetMove`, fields, events, hit tests work on any body; a `find` gains `npcs` beside `players`; the combat mod hurts and kills any body |
+| Not predicted at first | a possession is the server's, so it is seen a lead late (the old body moves on a moment); a sheet's `possess` could predict it later |
+| What it opens | NPCs, spectators (a controller with no body, or a free camera's), Prop Hunt, mind control, a vehicle possessed and driven by its sheets (instead of a seat) |
+
+### 10. Finding the way
+
+Server only, so it need not be deterministic: a navigation mesh made from the map's level when the
+server starts (Recast/Detour), `ctx.FindPath( from, to )`, and a mod's helpers to walk it.
+
+### 11. The proof: waves
+
+A `waves` mod: NPCs of their own character that walk to the nearest player and swing at it, waves
+that grow. Tested in a network test (hashes equal, no desyncs) and with bots; how many NPCs a client
+carries, measured. Later: a brain in a sheet (deterministic, so every simulation runs it and an
+NPC's moves are predicted exactly, at a rollback cost).
 
 ## Later
 
@@ -158,7 +223,7 @@ Postponed after M211 (the core engine first). In the order they would likely com
 | Piece | What |
 |---|---|
 | Joints in templates | a template of several bodies (each its shapes) joined by Box3D's joints (revolute, prismatic, weld, wheel), authored as nodes in the scene |
-| A seat | a player sits: the mover is off, the player is carried by the body and drawn in its pose |
+| A seat | a player sits: the mover is off, the player is carried by the body and drawn in its pose. Or, once step 9 is in, the vehicle is possessed and its sheets turn the same keys into motors |
 | Input to motors | as a motion routes input to the mover, a vehicle routes it to its joints' motors and its forces; the rules (who may drive, damage) are a mod's |
 | Platform carry | standing on a moving deck carries the player (its velocity and turn): the mover needs it for a vehicle you stand on, and ships later |
 
