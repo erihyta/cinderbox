@@ -1127,16 +1127,20 @@ bool FrameIn( const Node* node, const Node* root, Transform3D& out )
 bool FindShapeLines( const Dictionary& shape, const Node* from, const Node* root, std::string& out, String& why )
 {
 	const String kind = shape.get( "kind", "" );
-	// Written in the line: around the player's middle, a metre up.
+	// Every shape is placed from the player's feet, as if it stood at the scene's origin facing -Z:
+	// one drawn where it is drawn, one written in the line around the feet; "at (x, y, z)" moves
+	// either, metres right, up and ahead.
+	const Vector3 at = shape.get( "at", Vector3() );
+	const Vector3 moved( at.x, at.y, 0.0f - at.z );
 	if ( kind == "sphere" )
 	{
-		out = "shape\t" + Num( double( shape["radius"] ) ) + PointWords( Vector3( 0, 1, 0 ) ) + "\n";
+		out = "shape\t" + Num( double( shape["radius"] ) ) + PointWords( moved ) + "\n";
 		return true;
 	}
 	if ( kind == "capsule" )
 	{
 		double r = shape["radius"], h = shape["height"];
-		out = "shape\t" + Num( r ) + PointWords( Vector3( 0, float( 1.0 + h / 2.0 - r ), 0 ) ) + PointWords( Vector3( 0, float( 1.0 - h / 2.0 + r ), 0 ) ) + "\n";
+		out = "shape\t" + Num( r ) + PointWords( moved + Vector3( 0, float( h / 2.0 - r ), 0 ) ) + PointWords( moved + Vector3( 0, float( r - h / 2.0 ), 0 ) ) + "\n";
 		return true;
 	}
 	if ( kind == "box" )
@@ -1145,7 +1149,7 @@ bool FindShapeLines( const Dictionary& shape, const Node* from, const Node* root
 		out = "shape\t0";
 		for ( int c = 0; c < 8; ++c )
 		{
-			out += PointWords( Vector3( c & 1 ? half.x : -half.x, 1.0f + ( c & 2 ? half.y : -half.y ), c & 4 ? half.z : -half.z ) );
+			out += PointWords( moved + Vector3( c & 1 ? half.x : -half.x, c & 2 ? half.y : -half.y, c & 4 ? half.z : -half.z ) );
 		}
 		out += "\n";
 		return true;
@@ -1192,6 +1196,7 @@ bool FindShapeLines( const Dictionary& shape, const Node* from, const Node* root
 			why = "find: " + path + " is not in the scene being baked";
 			return false;
 		}
+		xf.origin += moved;
 		const float scale = xf.basis.get_scale().abs().x;
 		Ref<Shape3D> s = piece->get_shape();
 		if ( auto* ball = Object::cast_to<SphereShape3D>( s.ptr() ) )
@@ -1348,13 +1353,30 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 	{
 		return fail( "an item's motion (owner item) starts on an event said at it: on expired, or on EVENT" );
 	}
+	// The item's own "When used" fields (its CbItem's use_conditions, use_changes, use_cooldown,
+	// use_emits) join its motion named Use, as they join a use made of nodes.
+	const bool itemUse = trigger == "use" && name == "Use" && root != nullptr && root->get( "use_conditions" ).get_type() == Variant::PACKED_STRING_ARRAY;
 	if ( trigger == "use" )
 	{
 		if ( kind.is_empty() )
 		{
 			return fail( "on use is for an item's sheet (a motion set's motions are everyone's)" );
 		}
-		text += "when\tevent\t" + Std( kind ) + ".used\n";
+		// An item used while its key is held (use: a press, and while held) is in use while it is held:
+		// its use motions are on for as long, as a use made of nodes is.
+		if ( root != nullptr && int( root->get( "use" ) ) == kItemUseHold )
+		{
+			text += "when\twhile\n";
+			conditions.push_back( "using." + kind );
+		}
+		else
+		{
+			text += "when\tevent\t" + Std( kind ) + ".used\n";
+		}
+		if ( itemUse )
+		{
+			conditions.append_array( PackedStringArray( root->get( "use_conditions" ) ) );
+		}
 	}
 	else if ( trigger == "press" )
 	{
@@ -1419,9 +1441,10 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 	{
 		text += "until\t" + Std( any ) + "\n";
 	}
-	if ( double( p.get( "cooldown", 0.0 ) ) > 0.0 )
+	const double cooldown = p.has( "cooldown" ) ? double( p["cooldown"] ) : itemUse ? double( root->get( "use_cooldown" ) ) : 0.0;
+	if ( cooldown > 0.0 )
 	{
-		text += "cooldown\t" + Num( double( p["cooldown"] ) ) + "\n";
+		text += "cooldown\t" + Num( cooldown ) + "\n";
 	}
 	if ( int( p.get( "uses", 0 ) ) > 0 )
 	{
@@ -1633,6 +1656,18 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 						text += "emit\t" + Std( event ) + "\n";
 						continue;
 					}
+					if ( String( each.get( "kind", "" ) ) == "change" )
+					{
+						// The owner's field, once for each thing found.
+						cue::Change change;
+						if ( cue::ParseChange( each["text"], change, &why ) == false || Plain( change.field ) == false )
+						{
+							return fail( at + String( "change \"" ) + String( each["text"] ) + "\": " + why );
+						}
+						text += "change\t" + Std( change.field ) + "\t" + ( change.op == '=' ? std::string( "=" ) : std::string( 1, change.op ) + "=" ) +
+								"\t" + Num( change.value ) + "\n";
+						continue;
+					}
 					std::string lines = BakeSheetPart( each["part"], kind, from, root, why );
 					if ( lines.empty() )
 					{
@@ -1641,6 +1676,40 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 					text += lines;
 				}
 				text += "endfind\n";
+			}
+		}
+		if ( s == 0 && itemUse )
+		{
+			// The item's own changes and event, after the first step's (as a use of nodes has them).
+			if ( guard.is_empty() == false )
+			{
+				text += "guard\n";
+				guard = String();
+			}
+			PackedStringArray changes = root->get( "use_changes" );
+			for ( int64_t k = 0; k < changes.size(); ++k )
+			{
+				if ( changes[k].strip_edges().is_empty() )
+				{
+					continue;
+				}
+				cue::Change change;
+				String why;
+				if ( cue::ParseChange( changes[k], change, &why ) == false || Plain( change.field ) == false )
+				{
+					return fail( "use_changes \"" + changes[k] + "\": " + why );
+				}
+				text += "change\t" + Std( change.field ) + "\t" + ( change.op == '=' ? std::string( "=" ) : std::string( 1, change.op ) + "=" ) + "\t" +
+						Num( change.value ) + "\n";
+			}
+			const String emits = String( root->get( "use_emits" ) ).strip_edges();
+			if ( emits.is_empty() == false )
+			{
+				if ( Plain( emits ) == false || emits.contains( " " ) )
+				{
+					return fail( "use_emits names one event" );
+				}
+				text += "emit\t" + Std( emits ) + "\n";
 			}
 		}
 	}

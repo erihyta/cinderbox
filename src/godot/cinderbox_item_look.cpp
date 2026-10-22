@@ -1317,81 +1317,10 @@ std::string CbItem::BakeMotions( String& error ) const
 	std::string text = "cinderbox_motions\t2\n# Baked from the CbMotion nodes of the CbItem " + std::string( kind.utf8().get_data() ) +
 					   ". Edit the item's scene and bake again.\n";
 	int count = 0;
-	// What using it does: the helper nodes under it, as one motion ("Use"); and a "use" rule of its
-	// rules sheets (a CbRules under it), as the same: its conditions and changes are added to the When
-	// used ones, its cooldown and emit say them, its parts are motion nodes made for the bake.
-	PackedStringArray conditions = m_useConditions;
-	PackedStringArray changes = m_useChanges;
-	double cooldown = m_useCooldown;
-	String emits = m_useEmits;
-	std::vector<Node*> made;
-	int uses = 0;
-	TypedArray<Node> sheets = find_children( "*", "CbRules", true, false );
-	for ( int64_t s = 0; s < sheets.size(); ++s )
-	{
-		String file = Object::cast_to<Node>( sheets[s] )->get( "file" );
-		if ( file.is_empty() || FileAccess::file_exists( file ) == false )
-		{
-			continue;
-		}
-		PackedStringArray problems;
-		for ( const cue::Rule& rule : cue::ParseRules( FileAccess::get_file_as_string( file ), problems ) )
-		{
-			if ( rule.type != "use" )
-			{
-				continue;
-			}
-			if ( ++uses > 1 )
-			{
-				error = file + " line " + String::num_int64( rule.line ) + ": an item has one use rule";
-				break;
-			}
-			const Dictionary& p = rule.properties;
-			conditions.append_array( p.get( "conditions", PackedStringArray() ) );
-			changes.append_array( p.get( "changes", PackedStringArray() ) );
-			cooldown = p.has( "cooldown" ) ? double( p["cooldown"] ) : cooldown;
-			if ( p.has( "emits" ) && emits.is_empty() == false && emits != String( p["emits"] ) )
-			{
-				error = file + " line " + String::num_int64( rule.line ) + ": the item's use_emits says " + emits + " already";
-				break;
-			}
-			emits = p.has( "emits" ) ? String( p["emits"] ) : emits;
-			Array parts = p.get( "parts", Array() );
-			for ( int64_t i = 0; i < parts.size(); ++i )
-			{
-				Dictionary part = parts[i];
-				Node* node = Object::cast_to<Node>( ClassDB::instantiate( StringName( String( part["class"] ) ) ) );
-				if ( node == nullptr )
-				{
-					continue;
-				}
-				Dictionary props = part["properties"];
-				Array keys = props.keys();
-				for ( int64_t k = 0; k < keys.size(); ++k )
-				{
-					node->set( StringName( String( keys[k] ) ), props[keys[k]] );
-				}
-				made.push_back( node );
-			}
-		}
-	}
-	// (Under the item for the bake, as a part placed there by hand would be; never owned, so never
-	// saved, and taken out again at once.)
-	CbItem* self = const_cast<CbItem*>( this );
-	for ( Node* node : made )
-	{
-		self->add_child( node );
-	}
-	std::string use;
-	if ( error.is_empty() )
-	{
-		use = BakeItemUse( this, kind, m_use, conditions, changes, cooldown, emits, error );
-	}
-	for ( Node* node : made )
-	{
-		self->remove_child( node );
-		memdelete( node );
-	}
+	// What using it does, made of the helper nodes under it: one motion ("Use"), with the When used
+	// fields. A rules sheet's "use" is a motion block named Use (baked below with the sheet's others),
+	// which takes the When used fields the same way.
+	std::string use = BakeItemUse( this, kind, m_use, m_useConditions, m_useChanges, m_useCooldown, m_useEmits, error );
 	if ( use.empty() && error.is_empty() == false )
 	{
 		return std::string();

@@ -12,6 +12,8 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/vector3.hpp>
 
+#include <vector>
+
 using namespace godot;
 
 namespace cb::cue
@@ -206,6 +208,125 @@ int Column( const String& line )
 	return column;
 }
 
+// --- Where a line of a motion block may stand -------------------------------------------------------
+// One table: every refusal of a line for where it stands is made from it, and the reference
+// (docs/rules-language.md, "Where a line may stand") is the same table.
+enum Place : uint8_t
+{
+	kInStep = 1,	 // a step's own lines (under an if in it too)
+	kInEvery = 2,	 // after an every, in its step: what happens again and again
+	kInTimeout = 4,	 // a timeout's lines: once, and the motion ends
+	kInFind = 8,	 // what happens to each thing a find found
+	kInCast = 16,	 // what a cast does while it holds
+	kInItem = 32,	 // an item's motion (owner item): it all happens in one tick
+	kItemOnly = 64,	 // (only an item's motion has it)
+};
+
+struct LineRule
+{
+	const char* verb;
+	uint8_t places;
+};
+
+const LineRule kLineRules[] = {
+	{ "change", kInStep | kInEvery | kInTimeout | kInFind | kInItem },
+	{ "emit", kInStep | kInEvery | kInTimeout | kInFind | kInCast | kInItem },
+	{ "impulse", kInStep | kInEvery | kInTimeout | kInFind | kInCast | kInItem },
+	{ "launch", kInStep | kInEvery | kInTimeout },
+	{ "break", kInStep | kInEvery | kInTimeout | kInItem },
+	{ "find", kInStep | kInEvery | kInTimeout | kInItem },
+	{ "if", kInStep | kInEvery | kInTimeout | kInItem },
+	{ "else", kInStep | kInEvery | kInTimeout | kInItem },
+	{ "move for", kInStep | kInFind | kInCast },
+	{ "move", kInStep | kInCast },
+	{ "force", kInStep | kInCast },
+	{ "link", kInStep | kInCast },
+	{ "follow", kInStep },
+	{ "end", kInStep },
+	{ "remove", kInStep | kInItem | kItemOnly },
+	{ "cast", kInStep },
+	{ "every", kInStep },
+};
+
+const LineRule* LineRuleOf( const String& verb )
+{
+	for ( const LineRule& rule : kLineRules )
+	{
+		if ( verb == rule.verb )
+		{
+			return &rule;
+		}
+	}
+	return nullptr;
+}
+
+String PlaceName( uint8_t place )
+{
+	return place == kInEvery	 ? "after an every"
+		   : place == kInTimeout ? "in a timeout"
+		   : place == kInFind	 ? "in a find"
+		   : place == kInCast	 ? "in a cast"
+		   : place == kInItem	 ? "in an item's motion (it happens in one tick)"
+								 : "in a step";
+}
+
+// Why `verb` may not stand at `place` (in an item's motion too, with `item`); empty: it may.
+String Misplaced( const String& verb, uint8_t place, bool item )
+{
+	const LineRule* rule = LineRuleOf( verb );
+	if ( rule == nullptr )
+	{
+		return String();
+	}
+	const bool here = ( rule->places & place ) != 0;
+	const bool forItem = item == false || ( rule->places & kInItem ) != 0;
+	const bool itemOnly = ( rule->places & kItemOnly ) == 0 || item;
+	if ( here && forItem && itemOnly )
+	{
+		return String();
+	}
+	if ( itemOnly == false )
+	{
+		return "\"" + verb + "\" is an item's motion's (owner item)";
+	}
+	const uint8_t where = here ? uint8_t( kInItem ) : place;
+	String list;
+	std::vector<const char*> verbs;
+	for ( const LineRule& other : kLineRules )
+	{
+		const bool fits = where == kInItem ? ( other.places & kInItem ) != 0 : ( other.places & where ) != 0 && ( other.places & kItemOnly ) == 0;
+		if ( fits )
+		{
+			verbs.push_back( other.verb );
+		}
+	}
+	for ( size_t k = 0; k < verbs.size(); ++k )
+	{
+		list += ( k == 0 ? "" : k + 1 == verbs.size() ? " or " : ", " ) + String( verbs[k] );
+	}
+	return "\"" + verb + "\" cannot stand " + PlaceName( where ) + ": there a line is " + list;
+}
+
+// "on target": what the block a line is in is about (a find's thing found, a cast's hold), until the
+// block resolves it (ResolveTarget).
+constexpr int kBlockTarget = 4;
+
+// A part's "on target" made what its block is about: what a cast holds (1) or a find found (3).
+// False outside a find or a cast.
+bool ResolveTarget( Dictionary& props, bool inFind, bool inCast )
+{
+	if ( int( props.get( "target", 0 ) ) != kBlockTarget )
+	{
+		return true;
+	}
+	if ( inFind == false && inCast == false )
+	{
+		return false;
+	}
+	props["target"] = inCast ? 1 : 3;
+	return true;
+}
+
 // A motion part (impulse, force, move, launch): its class and properties, made into a node by the
 // bake. False, with why, when the line is none of them or cannot be read.
 bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
@@ -221,13 +342,23 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 	auto common = [&]( const String& word, size_t& k ) {
 		if ( word == "on" && k + 1 < w.size() )
 		{
+			// self; target (what the find found, or what the cast holds: kBlockTarget until the block
+			// says which); found and hit, the older words for the same; else a field naming an entity.
 			String who = w[k + 1].text;
-			props["target"] = who == "self" ? 0 : who == "hit" ? 1 : who == "found" ? 3 : 2;
-			if ( who != "self" && who != "hit" && who != "found" )
+			props["target"] = who == "self" ? 0 : who == "hit" ? 1 : who == "found" ? 3 : who == "target" ? kBlockTarget : 2;
+			if ( who != "self" && who != "hit" && who != "found" && who != "target" )
 			{
 				props["target_field"] = who;
 			}
 			k += 2;
+			return true;
+		}
+		if ( word == "along" && k + 2 < w.size() && w[k + 1].text == "world" && Value( w[k + 2] ).get_type() == Variant::VECTOR3 )
+		{
+			// along world (x, y, z)
+			props["frame"] = 4;
+			props["direction"] = Value( w[k + 2] );
+			k += 3;
 			return true;
 		}
 		if ( word == "along" && k + 1 < w.size() && frameOf( w[k + 1].text ) >= 0 )
@@ -473,7 +604,6 @@ struct Building
 	int pendingSetting = 0;			 // the line of a setting no action has come after yet
 	std::vector<Rule> actions;		 // its own properties, and its line
 	bool prediction = false;
-	bool use = false;				 // an item's use (for its bake)
 	// A motion block (for the bake: run by the simulation). Its steps; the ifs open around the line
 	// being read (their column, their condition, whether it is their else now); its lines' columns.
 	bool motion = false;
@@ -493,8 +623,7 @@ struct Building
 	Dictionary find;
 	bool castBlock = false; // the open block is a cast (else a find)
 	bool cast = false;		// the motion has one
-	Array parts;					 // a use's motion parts: {class, properties}
-	PackedStringArray changes;		 // a prediction's, a use's
+	PackedStringArray changes;		 // a prediction's
 	bool bad = false;
 };
 
@@ -532,22 +661,60 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 		}
 		if ( rule.motion )
 		{
+			// An item's motion (owner item) happens in one tick: what it may have is checked as a whole,
+			// since "owner item" may come after its first lines.
+			if ( String( rule.settings.get( "owner", "player" ) ) == "item" )
+			{
+				const char* once = "an item's motion (owner item) happens in one tick, on an event said at it: ";
+				if ( rule.steps.size() > 1 )
+				{
+					errors.push_back( "line " + String::num_int64( int64_t( Dictionary( rule.steps[1] ).get( "line", rule.line ) ) ) + ": " + String( once ) +
+									  "no then, after or timeout" );
+					return;
+				}
+				for ( const char* setting : { "cooldown", "uses", "lasts", "until", "conditions" } )
+				{
+					if ( rule.settings.has( setting ) )
+					{
+						errors.push_back( "line " + String::num_int64( rule.line ) + ": " + String( once ) + "no " +
+										  ( String( setting ) == "conditions" ? String( "if on its first line (an if block is fine)" ) : String( setting ) ) );
+						return;
+					}
+				}
+				Array list = Dictionary( rule.steps[0] ).get( "statements", Array() );
+				for ( int64_t k = 0; k < list.size(); ++k )
+				{
+					Dictionary statement = list[k];
+					const String misplaced = Misplaced( statement.get( "verb", "" ), kInStep, true );
+					if ( misplaced.is_empty() == false )
+					{
+						errors.push_back( "line " + String::num_int64( int64_t( statement.get( "line", rule.line ) ) ) + ": " + misplaced );
+						return;
+					}
+				}
+			}
+			else
+			{
+				for ( int64_t s = 0; s < rule.steps.size(); ++s )
+				{
+					Array list = Dictionary( rule.steps[s] ).get( "statements", Array() );
+					for ( int64_t k = 0; k < list.size(); ++k )
+					{
+						Dictionary statement = list[k];
+						if ( String( statement.get( "verb", "" ) ) == "remove" )
+						{
+							errors.push_back( "line " + String::num_int64( int64_t( statement.get( "line", rule.line ) ) ) + ": " +
+											  Misplaced( "remove", kInStep, false ) );
+							return;
+						}
+					}
+				}
+			}
 			Rule made;
 			made.line = rule.line;
 			made.type = "motion";
 			made.properties = rule.settings;
 			made.properties["steps"] = rule.steps;
-			out.push_back( made );
-			return;
-		}
-		if ( rule.use )
-		{
-			Rule made;
-			made.line = rule.line;
-			made.type = "use";
-			made.properties = rule.settings;
-			made.properties["changes"] = rule.changes;
-			made.properties["parts"] = rule.parts;
 			out.push_back( made );
 			return;
 		}
@@ -769,7 +936,26 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				Array inside = rule.find["statements"];
 				Dictionary statement;
 				statement["line"] = number;
-				if ( verb == "emit" && w.size() == 2 )
+				const String placed = verb == "move" && w.size() > 1 && w[1].text == "for" ? String( "move for" ) : verb;
+				const String misplaced = Misplaced( placed, rule.castBlock ? kInCast : kInFind, false );
+				if ( misplaced.is_empty() == false )
+				{
+					fail( number, misplaced );
+					continue;
+				}
+				statement["verb"] = placed;
+				if ( verb == "change" )
+				{
+					// (Of the motion's owner, once for each thing found: a count of what was hit.)
+					if ( w.size() < 4 )
+					{
+						fail( number, "change FIELD = VALUE, += or -=" );
+						continue;
+					}
+					statement["kind"] = "change";
+					statement["text"] = RestFrom( line, w[1] );
+				}
+				else if ( verb == "emit" && w.size() == 2 )
 				{
 					if ( rule.castBlock && inside.size() > 0 )
 					{
@@ -791,13 +977,9 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				{
 					Dictionary part;
 					String why;
-					const bool allowed = rule.castBlock ? ( verb == "impulse" || verb == "force" || verb == "link" || verb == "move" )
-														: ( verb == "impulse" || verb == "move" );
-					if ( allowed == false || ParsePart( w, part, why ) == false )
+					if ( ParsePart( w, part, why ) == false )
 					{
-						fail( number, allowed			  ? why
-									  : rule.castBlock ? "\"" + verb + "\" inside a cast: what it does while it holds is an impulse, a force, a link, a move, or an emit when it takes hold"
-														  : "\"" + verb + "\" inside a find: what happens to each thing it found is an impulse, a move for some seconds, or an emit" );
+						fail( number, why );
 						continue;
 					}
 					Dictionary props = part["properties"];
@@ -805,11 +987,7 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 					{
 						props["target"] = rule.castBlock ? 1 : 3; // (what it holds, or found, unless it says)
 					}
-					if ( rule.castBlock == false && verb == "move" && double( props.get( "duration", 0.0 ) ) <= 0.0 )
-					{
-						fail( number, "a move inside a find is given to what it found for some seconds: move for S ..." );
-						continue;
-					}
+					ResolveTarget( props, rule.castBlock == false, rule.castBlock );
 					statement["kind"] = "part";
 					statement["part"] = part;
 				}
@@ -867,6 +1045,16 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			{
 				// every S: what follows in this step, again and again while it is the step
 				double seconds = 0.0;
+				bool again = false;
+				for ( int64_t k = 0; k < statements.size(); ++k )
+				{
+					again = again || String( Dictionary( statements[k] ).get( "kind", "" ) ) == "every";
+				}
+				if ( bool( step.get( "timeout", false ) ) || again )
+				{
+					fail( number, Misplaced( "every", again ? kInEvery : kInTimeout, false ) );
+					continue;
+				}
 				if ( top == false || w.size() != 2 || Number( w[1], seconds ) == false || seconds <= 0.0 )
 				{
 					fail( number, "every S: as far in as the motion's first line, not under an if; what follows in its step happens every S seconds" );
@@ -874,6 +1062,7 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				}
 				Dictionary every;
 				every["kind"] = "every";
+				every["verb"] = "every";
 				every["seconds"] = seconds;
 				every["line"] = number;
 				every["guard"] = String();
@@ -979,13 +1168,32 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				}
 				continue;
 			}
-			// --- statements
+			// --- statements, where they may stand (the table above): a step's own, after its every, a
+			// timeout's (an item's motion is checked as a whole when it ends)
 			Dictionary statement;
+			{
+				bool afterEvery = false;
+				for ( int64_t k = 0; k < statements.size(); ++k )
+				{
+					afterEvery = afterEvery || String( Dictionary( statements[k] ).get( "kind", "" ) ) == "every";
+				}
+				const uint8_t place = bool( step.get( "timeout", false ) ) ? kInTimeout : afterEvery ? kInEvery : kInStep;
+				const String placed = verb == "move" && w.size() > 1 && w[1].text == "for" ? String( "move for" ) : verb;
+				const bool ownerItem = String( rule.settings.get( "owner", "player" ) ) == "item";
+				// (An item's own line, before "owner item" was said, is checked when the motion ends.)
+				const String misplaced = placed == "remove" ? String() : Misplaced( placed, place, ownerItem );
+				if ( misplaced.is_empty() == false )
+				{
+					fail( number, misplaced );
+					continue;
+				}
+				statement["verb"] = placed;
+			}
 			if ( verb == "find" )
 			{
-				// find SHAPE [players] [bodies] [self] [max N] [along facing|look|world]; SHAPE: a node's
+				// find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at (X,Y,Z)]; SHAPE: a node's
 				// path (an Area3D, a CollisionShape3D), sphere R, box (X,Y,Z), capsule R H
-				const char* usage = "find SHAPE [players] [bodies] [self] [max N] [along facing|look|world], SHAPE a node's path, sphere R, box (X,Y,Z) or capsule R H";
+				const char* usage = "find SHAPE [players] [bodies] [self] [max N] [turned facing|look|none] [at (X,Y,Z)], SHAPE a node's path, sphere R, box (X,Y,Z) or capsule R H";
 				size_t i = 1;
 				Dictionary shape;
 				double a = 0.0, b = 0.0;
@@ -1038,9 +1246,18 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 						statement["most"] = w[i + 1].text.to_int();
 						i += 2;
 					}
-					else if ( word == "along" && i + 1 < w.size() && ( w[i + 1].text == "facing" || w[i + 1].text == "look" || w[i + 1].text == "world" ) )
+					else if ( ( word == "turned" && i + 1 < w.size() && ( w[i + 1].text == "facing" || w[i + 1].text == "look" || w[i + 1].text == "none" ) ) ||
+							  ( word == "along" && i + 1 < w.size() && ( w[i + 1].text == "facing" || w[i + 1].text == "look" || w[i + 1].text == "world" ) ) )
 					{
-						statement["frame"] = w[i + 1].text;
+						// turned facing (the default), look (with the pitch) or none; "along" the older word
+						statement["frame"] = w[i + 1].text == "none" ? String( "world" ) : w[i + 1].text;
+						i += 2;
+					}
+					else if ( word == "at" && i + 1 < w.size() && Value( w[i + 1] ).get_type() == Variant::VECTOR3 )
+					{
+						// at (x, y, z): moved from where it is placed, in the player's frame (metres right,
+						// up and ahead)
+						shape["at"] = Value( w[i + 1] );
 						i += 2;
 					}
 					else
@@ -1234,6 +1451,12 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 									  : why );
 					continue;
 				}
+				Dictionary props = part["properties"];
+				if ( ResolveTarget( props, false, false ) == false )
+				{
+					fail( number, "on target is what a find found or what a cast holds: inside one" );
+					continue;
+				}
 				statement["kind"] = "part";
 				statement["part"] = part;
 			}
@@ -1242,14 +1465,20 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			rule.steps[rule.steps.size() - 1] = step;
 			continue;
 		}
-		// --- an item's use: for its bake
+		// --- an item's use: "use [if EXPRESSION]" is "motion Use on use [if EXPRESSION]", word for word
 		if ( verb == "use" )
 		{
 			finish();
 			rule = Building{};
 			rule.line = number;
-			rule.use = true;
+			rule.motion = true;
+			rule.headColumn = Column( line );
 			open = true;
+			Dictionary first;
+			first["statements"] = Array();
+			rule.steps.push_back( first );
+			rule.settings["name"] = "Use";
+			rule.settings["trigger"] = "use";
 			if ( w.size() >= 2 )
 			{
 				if ( w[1].text != "if" || w.size() < 3 )
@@ -1259,36 +1488,6 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 				}
 				rule.settings["conditions"] = PackedStringArray( { RestFrom( line, w[2] ) } );
 			}
-			continue;
-		}
-		if ( open && rule.use && verb != "on" && verb != "while" && verb != "predict" && verb != "show" && verb != "text" && verb != "bind" &&
-			 verb != "motion" )
-		{
-			double value = 0.0;
-			if ( verb == "change" && w.size() >= 4 )
-			{
-				rule.changes.push_back( RestFrom( line, w[1] ) );
-				continue;
-			}
-			if ( verb == "cooldown" && w.size() == 2 && Number( w[1], value ) )
-			{
-				rule.settings["cooldown"] = value;
-				continue;
-			}
-			if ( verb == "emit" && w.size() == 2 )
-			{
-				rule.settings["emits"] = w[1].text;
-				continue;
-			}
-			// A motion part: its class and properties, made into a node by the item's bake.
-			Dictionary part;
-			String why;
-			if ( ParsePart( w, part, why ) == false )
-			{
-				fail( number, why );
-				continue;
-			}
-			rule.parts.push_back( part );
 			continue;
 		}
 		// --- a prediction: the viewer's own press, shown as the cue the server will answer with
