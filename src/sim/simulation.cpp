@@ -4531,6 +4531,16 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 				GiveMove( target.end.entity, move.param, move.value, move.seconds );
 			}
 		}
+		// The owner's fields, once for each thing found.
+		if ( find.changes.empty() == false )
+		{
+			Blackboard board = GetBoard( e );
+			for ( const MotionFind::Change& change : find.changes )
+			{
+				ApplyFindChange( change, board );
+			}
+			SetBoard( e, board );
+		}
 		for ( int event : find.emits )
 		{
 			if ( event < 0 )

@@ -224,6 +224,15 @@ struct MotionFind
 		float seconds = 0.0f;
 	};
 	std::vector<Move> moves;
+	// Changes of the owner's fields, once for each thing found (a count of what was hit).
+	struct Change
+	{
+		uint16_t slot = 0; // board slot of the owner's field
+		BoardType type = BoardType::Int;
+		uint8_t op = 0; // MotionStep::ChangeOp: set, add, subtract
+		float value = 0.0f;
+	};
+	std::vector<Change> changes;
 	// How far out along the ground its shape reaches from the player (its points and radius): what
 	// "reach" is a share of.
 	float extent = 0.0f;
@@ -451,6 +460,9 @@ float MotionForceLimit( const MotionEffect& effect );
 // effects apply this tick, in order.
 void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& state, const Character& c, Blackboard& board,
 				 bool& boardChanged, std::vector<ModEventRecord>& events, std::vector<MotionActive>& active );
+
+// A find's change of its owner's field (once for each thing found), on `board`.
+void ApplyFindChange( const MotionFind::Change& change, Blackboard& board );
 
 // Lays the movement parameters of the motions that are on at `tick` over `params`, in order.
 void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32_t tick, uint32_t tickRate, MoveParams& params );

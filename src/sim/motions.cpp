@@ -181,6 +181,16 @@ bool ParseWorld( const std::vector<std::string>& w, size_t at, b3Vec3& out )
 
 } // namespace
 
+void ApplyFindChange( const MotionFind::Change& change, Blackboard& board )
+{
+	MotionStep::Change as;
+	as.slot = change.slot;
+	as.type = change.type;
+	as.op = MotionStep::ChangeOp( change.op );
+	as.value = change.value;
+	ApplyChange( as, board );
+}
+
 b3Vec3 MotionDirection( MotionFrame frame, b3Vec3 world, const Character& c, const PlayerInput& in )
 {
 	float yaw = detmath::YawToRadians( in.cameraYaw );
@@ -446,9 +456,9 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			inFind = false;
 			continue;
 		}
-		if ( inFind && key != "impulse" && key != "impulse_momentum" && key != "emit" && key != "param" && key != "turn" )
+		if ( inFind && key != "impulse" && key != "impulse_momentum" && key != "emit" && key != "param" && key != "turn" && key != "change" )
 		{
-			return fail( "\"" + key + "\" inside a find: what happens to each thing found is an impulse, an emit or a param (with its seconds)" );
+			return fail( "\"" + key + "\" inside a find: what happens to each thing found is an impulse, an emit, a change or a param (with its seconds)" );
 		}
 		if ( key == "when" )
 		{
@@ -937,6 +947,12 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			change.slot = field->slot;
 			change.type = field->type;
 			change.guard = guard;
+			if ( inFind )
+			{
+				// The owner's field, once for each thing found (the find's guard holds for all of it).
+				step.finds.back().changes.push_back( { change.slot, change.type, uint8_t( change.op ), change.value } );
+				continue;
+			}
 			step.changes.push_back( change );
 		}
 		else if ( key == "hold_emit" )
@@ -1509,6 +1525,12 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 				// is held, until something ends it.
 				slot.sinceTick = effectTick;
 				uint32_t length = Ticks( m.duration, in.tickRate );
+				// With no lasts (duration) and nothing that holds it on, a motion of one step is on for its
+				// longest parameter's seconds, as a last step entered later is (below).
+				if ( length == 0 && m.Held() == false && first.length > 0.0f )
+				{
+					length = std::max<uint32_t>( 1, Ticks( first.length, in.tickRate ) );
+				}
 				slot.untilTick = m.Held() && length == 0 ? kForever : effectTick + length;
 				if ( ends )
 				{

@@ -3725,6 +3725,80 @@ void TestMotionOrder()
 	CHECK( lunge0.eastFirst.z < -1.0f && lunge0.eastFirst.z > -3.0f && lunge0.eastFirst.y > 2.0f );
 }
 
+// M213: a find's change is its owner's field, once for each thing found; and a motion of one step
+// with no lasts is on for its longest move's seconds (its parameters hold that long).
+void TestMotionRegular()
+{
+	ModSchema schema;
+	schema.fields.push_back( { "t.hits", BoardType::Int, BoardScope::Entity, 0 } );
+	schema.actions.push_back( { "wave", 0, "Q" } );
+	schema.actions.push_back( { "slide", 1, "E" } );
+	const std::string text = "cinderbox_motions\t3\n"
+							 "motion\tWave\nwhen\tpress\twave\n"
+							 "find\tplayers\t0\t16\tfacing\nshape\t4\t0\t0\t0\nchange\tt.hits\t+=\t1\nendfind\n"
+							 "motion\tSlide\nwhen\tpress\tslide\nparam\tfriction\t0\t0.2\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 );
+	if ( motions == nullptr || motions->list.size() != 2 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	CHECK( motions->list[0].First().finds.at( 0 ).changes.size() == 1 );
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto place = [&]( int slot, b3Vec3 at ) {
+		SimCommand c;
+		c.type = CommandType::Respawn;
+		c.target = sim.PlayerNetId( PlayerSlot( slot ) );
+		c.mode = 1;
+		c.a = { at.x, at.y, at.z };
+		f.commands.push_back( c );
+	};
+	for ( int slot = 0; slot < 4; ++slot )
+	{
+		f.events.push_back( { PlayerEventType::Join, PlayerSlot( slot ) } );
+	}
+	step( 2 );
+	place( 0, { 0.0f, 1.0f, 0.0f } );
+	place( 1, { 2.0f, 1.0f, 0.0f } );
+	place( 2, { -2.0f, 1.0f, 1.0f } );
+	place( 3, { 20.0f, 1.0f, 0.0f } ); // far
+	step( 60 );
+	f.inputs[0].actions = 1;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	const int hits = sim.GetBoard( sim.FindEntity( sim.PlayerNetId( 0 ) ) ).values[0];
+	std::printf( "    a wave that found two players: t.hits %d\n", hits );
+	CHECK( hits == 2 );
+
+	// The slide: friction 0 for 0.2 s (12 ticks), then the server's again.
+	const float friction = sim.PlayerMove( 0 )[MoveParam::Friction];
+	f.inputs[0].actions = 2;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	int held = 0;
+	for ( int i = 0; i < 20; ++i )
+	{
+		held += sim.PlayerMove( 0 )[MoveParam::Friction] == 0.0f ? 1 : 0;
+		step( 1 );
+	}
+	std::printf( "    a slide of one step, no lasts: friction 0 for %d ticks (the server's %.1f after)\n", held, sim.PlayerMove( 0 )[MoveParam::Friction] );
+	CHECK( friction > 0.0f && held == 11 && sim.PlayerMove( 0 )[MoveParam::Friction] == friction );
+}
+
 void TestMotionFinds()
 {
 	ModSchema schema;
@@ -11058,6 +11132,7 @@ int main( int argc, char** argv )
 		{ "motions_while", TestMotionsWhile },
 		{ "motion_steps", TestMotionSteps },
 		{ "motion_order", TestMotionOrder },
+		{ "motion_regular", TestMotionRegular },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },

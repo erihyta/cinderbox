@@ -602,7 +602,9 @@ const char* const kSheetWords[] = { "on", "while", "predict", "use", "show", "te
 									"direction", "top", "ramp", "react", "for", "new", "carried", "speed", "lift", "ahead", "seconds",
 									"into", "motion", "when", "then", "after", "within", "timeout", "else", "lasts", "until", "uses",
 									"refill", "ground", "item", "hand", "press", "find", "found", "away", "players", "bodies", "self", "max",
-									"sphere", "box", "capsule", "cast", "ray", "range", "holds", "level", "link", "length", "reel", "alone" };
+									"sphere", "box", "capsule", "cast", "ray", "range", "holds", "level", "link", "length", "reel", "alone",
+								"target", "turned", "none", "every", "break", "radius", "remove", "owner", "player", "turn", "momentum",
+								"velocity", "acceleration", "world", "look", "facing", "up", "to", "hit", "curve", "distance", "reach" };
 
 } // namespace
 

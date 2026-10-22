@@ -142,7 +142,7 @@ func _run() -> void:
 	_check("a box ahead: turned to the simulation's forward (+Z), players, one, by the look",
 		found_text.contains("find\tplayers\t0\t1\tlook\nshape\t0\t0.5\t0\t3\t-0.5\t0\t3\t0.5\t2\t3\t-0.5\t2\t3\t0.5\t0\t0.5\t"))
 	_check("written in the line, the player itself, under an if",
-		found_text.contains("guard\t( not grounded )\nfind\tall\t1\t16\tfacing\nshape\t2\t0\t1\t0\nimpulse\tself\t3\tup\tnone\nendfind\nguard\nemit\tnear.done\n"))
+		found_text.contains("guard\t( not grounded )\nfind\tall\t1\t16\tfacing\nshape\t2\t0\t0\t0\nimpulse\tself\t3\tup\tnone\nendfind\nguard\nemit\tnear.done\n"))
 	finds.free()
 
 	# A find's region under an item is not part of the item's body.
@@ -273,7 +273,7 @@ func _run() -> void:
 	var bomb_text := String(bomb_baked["text"])
 	_check("an item's own motion: on its expiry, owner item, no one's hand asked",
 		bomb_text.contains("motion\tBlast\nwhen\tevent\ttest.bomb.expired\nowner\titem\nemit\tbomb.boom\nbreak\tbomb.radius\t12\t0\n" +
-		"find\tbodies\t0\t16\tfacing\nshape\t4\t0\t1\t0\nimpulse\tfound\t10\taway\tnone\nendfind\nremove\n"), bomb_text + String(bomb_baked["error"]))
+		"find\tbodies\t0\t16\tfacing\nshape\t4\t0\t0\t0\nimpulse\tfound\t10\taway\tnone\nendfind\nremove\n"), bomb_text + String(bomb_baked["error"]))
 	bomb.free()
 	_refused("owner item in a motion set", "motion A on expired\n\towner item\n\temit x\n", "line 1: owner item is for an item's sheet")
 	_refused("a break with no radius", "motion A on press a\n\tbreak speed 3\n", "line 2: break radius R")
@@ -285,7 +285,7 @@ func _run() -> void:
 	var flame_baked: Dictionary = flame.bake()
 	var flame_text := String(flame_baked["text"])
 	_check("every: what follows repeats; an impulse of momentum", flame_text.contains("emit\tflame.on\nevery\t0.1\nfind\tplayers\t0\t16\tfacing\n" +
-		"shape\t3\t0\t1\t0\nimpulse\tfound\t0.6\taway\tnone\nendfind\nimpulse_momentum\tself\t400\tup\tnone\n"), flame_text + String(flame_baked["error"]))
+		"shape\t3\t0\t0\t0\nimpulse\tfound\t0.6\taway\tnone\nendfind\nimpulse_momentum\tself\t400\tup\tnone\n"), flame_text + String(flame_baked["error"]))
 	flame.free()
 	_refused("every under an if", "motion A on press a\n\tif grounded\n\t\tevery 1\n", "line 3: every S")
 	_refused("an impulse of a kind there is not", "motion A on press a\n\timpulse 3 along up kind mass\n", "line 2: kind velocity or momentum")
@@ -302,10 +302,14 @@ func _run() -> void:
 
 	# What refuses the bake, with its file and line.
 	_refused("a find of a node that is not there", "motion A on press a\n\tfind Nope\n\t\temit x\n", "line 2: find: no node Nope")
-	_refused("a force inside a find", "motion A on press a\n\tfind sphere 2\n\t\tforce 3\n", "line 3: \"force\" inside a find")
-	_refused("a move inside a find with no seconds", "motion A on press a\n\tfind sphere 2\n\t\tmove walk_speed 0\n", "line 3: a move inside a find")
+	_refused("a force inside a find", "motion A on press a\n\tfind sphere 2\n\t\tforce 3\n",
+		"line 3: \"force\" cannot stand in a find: there a line is change, emit, impulse or move for")
+	_refused("a move inside a find with no seconds", "motion A on press a\n\tfind sphere 2\n\t\tmove walk_speed 0\n", "line 3: \"move\" cannot stand in a find")
 	_refused("away outside a find", "motion A on press a\n\timpulse 3 along away\n", "what a find found")
-	_refused("a timeout's lasting statement", "motion A on press a\n\tthen when grounded within 1\n\ttimeout\n\tmove friction 0\n", "happen once")
+	_refused("a timeout's lasting statement", "motion A on press a\n\tthen when grounded within 1\n\ttimeout\n\tmove friction 0\n",
+		"line 4: \"move\" cannot stand in a timeout")
+
+	_run_regular()
 	_refused("a line not indented under its motion", "motion A on press a\nemit x\n", "line 2: a motion's lines are indented")
 	_refused("an else with no if", "motion A on press a\n\telse\n", "line 2: an else is under an if")
 	_refused("a setting under an if", "motion A on press a\n\tif x\n\t\tcooldown 1\n", "line 3: \"cooldown\" is the motion's")
@@ -319,3 +323,85 @@ func _run() -> void:
 
 	print("check_motion_blocks: %s" % ("all held" if _failures == 0 else "%d FAILED" % _failures))
 	quit(0 if _failures == 0 else 1)
+
+
+# What an item's sheet bakes to (its motions file's text, or its error).
+func _item_bake(text: String, kind: String, use: int = 1) -> String:
+	_scratch(text)
+	var item := CbItem.new()
+	item.name = "Thing"
+	item.kind = kind
+	item.use = use
+	var rules := CbRules.new()
+	rules.name = "Rules"
+	rules.file = SCRATCH
+	item.add_child(rules)
+	var baked: Dictionary = item.bake_motions()
+	item.free()
+	return String(baked["text"]) if String(baked["text"]).is_empty() == false else "ERROR " + String(baked["error"])
+
+
+# What a motion set's sheet bakes to (its text, or its error).
+func _set_bake(text: String) -> String:
+	_scratch(text)
+	var set := _set_with(SCRATCH, false)
+	var baked: Dictionary = set.bake()
+	set.free()
+	return String(baked["text"]) if String(baked["text"]).is_empty() == false else "ERROR " + String(baked["error"])
+
+
+# The language made regular (M213): one table of where a line may stand, one word per role, one
+# spelling per direction, one origin for shapes, and "use" a motion.
+func _run_regular() -> void:
+	# use [if ...] is motion Use on use [if ...], word for word: the same bake.
+	var body := "\tcooldown 0.4\n\tchange t.charges -= 1\n\temit t.dashed\n\timpulse 11 replace horizontal\n\tmove for 0.18 friction 0\n"
+	var short := _item_bake("use if t.charges > 0\n" + body, "test.boots")
+	var long := _item_bake("motion Use on use if t.charges > 0\n" + body, "test.boots")
+	_check("use is motion Use on use, word for word", short == long and short.contains("motion\tUse\nwhen\tevent\ttest.boots.used\n" +
+		"if\t( t.charges > 0 )\ncooldown\t0.4\nchange\tt.charges\t-=\t1\nemit\tt.dashed\nimpulse\tself\t11\tmove\thorizontal\nparam\tfriction\t0\t0.18\n"), short)
+	var both := _item_bake("use\n\temit a\nmotion Use on use\n\temit b\n", "test.boots")
+	_check("one Use an item", both.begins_with("ERROR") and both.contains("named Use already"), both)
+	var held := _item_bake("use\n\temit t.guard\n\tmove walk_speed 1.5\n", "test.guard", 2)
+	_check("an item used while held: its use is on while it is held",
+		held.contains("motion\tUse\nwhen\twhile\nif\t( using.test.guard )\nemit\tt.guard\nparam\twalk_speed\t1.5\n"), held)
+	var casting := _item_bake("use\n\tcast ray range 4\n\t\timpulse 10 on target along look\n", "test.rod")
+	_check("a use may cast (it is a motion)", casting.contains("motion\tUse\nwhen\tevent\ttest.rod.used\nprobe\t4\t0\nimpulse\thit\t10\tlook\tnone\n"), casting)
+
+	# One word for what a block is about: target (found, hit the older words).
+	var targets := _set_bake("motion A on press a\n\tfind sphere 2\n\t\timpulse 3 on target along up\n" +
+		"motion B on press b\n\tcast ray range 5\n\t\timpulse 4 on target along up\n")
+	_check("on target: what a find found, what a cast holds", targets.contains("impulse\tfound\t3\tup\tnone\nendfind\n") and
+		targets.contains("probe\t5\t0\nimpulse\thit\t4\tup\tnone\n"), targets)
+	_refused("on target outside a find or a cast", "motion A on press a\n\timpulse 3 on target along up\n", "line 2: on target is what a find found")
+
+	# One spelling per direction: along world (x, y, z); a find's shape turned facing, look or none.
+	var down := _set_bake("motion A on press a\n\timpulse 9 along world (0, -1, 0)\nmotion B on press b\n\timpulse 9 along world direction (0, -1, 0)\n")
+	_check("along world (x, y, z), and the older along world direction (...)", down.count("impulse\tself\t9\tworld\tnone\t0\t-1\t0\n") == 2, down)
+	var turned := _set_bake("motion A on press a\n\tfind sphere 2 turned look\n\t\temit x\nmotion B on press b\n\tfind sphere 2 turned none\n\t\temit x\n" +
+		"motion C on press c\n\tfind sphere 2 along look\n\t\temit x\n")
+	_check("a find turned look, none; along look the older word", turned.count("find\tall\t0\t16\tlook\n") == 2 and turned.contains("find\tall\t0\t16\tworld\n"), turned)
+
+	# One origin for shapes: from the feet, drawn or written; at (x, y, z) moves either (right, up, ahead).
+	var placed := _set_bake("motion A on press a\n\tfind sphere 2 at (0, 1, 3)\n\t\temit x\n")
+	_check("a shape written in the line, moved: a metre up, 3 m ahead (+Z)", placed.contains("shape\t2\t0\t1\t3\n"), placed)
+
+	# A find's change: the owner's field, once for each thing found.
+	var counted := _set_bake("motion A on press a\n\tfind sphere 2 players\n\t\tchange t.hits += 1\n\t\temit x\n")
+	_check("change in a find", counted.contains("find\tplayers\t0\t16\tfacing\nshape\t2\t0\t0\t0\nchange\tt.hits\t+=\t1\nemit\tx\nendfind\n"), counted)
+
+	# Where a line may stand: one table, one way of saying no.
+	_refused("a launch in a find", "motion A on press a\n\tfind sphere 2\n\t\tlaunch carried\n",
+		"line 3: \"launch\" cannot stand in a find: there a line is change, emit, impulse or move for")
+	_refused("a link in a find", "motion A on press a\n\tfind sphere 2\n\t\tlink length 2\n", "line 3: \"link\" cannot stand in a find")
+	_refused("a change in a cast", "motion A on press a\n\tcast ray range 3\n\t\tchange t.x = 1\n",
+		"line 3: \"change\" cannot stand in a cast: there a line is emit, impulse, move for, move, force or link")
+	_refused("a force after an every", "motion A on press a\n\tlasts 1\n\tevery 0.5\n\tforce 3 along up\n", "line 4: \"force\" cannot stand after an every")
+	_refused("a second every in a step", "motion A on press a\n\tlasts 1\n\tevery 0.5\n\temit x\n\tevery 0.2\n", "line 5: \"every\" cannot stand after an every")
+	_refused("an every in a timeout", "motion A on press a\n\tthen when grounded within 1\n\ttimeout\n\tevery 0.5\n", "line 4: \"every\" cannot stand in a timeout")
+	_refused("remove in a player's motion", "motion A on press a\n\tremove self\n", "line 2: \"remove\" is an item's motion's (owner item)")
+	var lasting := _item_bake("motion Boom on expired\n\towner item\n\tforce 3 along up\n", "test.bomb")
+	_check("a force in an item's motion: it happens in one tick", lasting.contains("line 3: \"force\" cannot stand in an item's motion (it happens in one tick)"), lasting)
+	var waits := _item_bake("motion Boom on expired\n\towner item\n\tafter 1\n\temit x\n", "test.bomb")
+	_check("a step in an item's motion", waits.contains("happens in one tick, on an event said at it: no then, after or timeout"), waits)
+	var before := _item_bake("motion Boom on expired\n\tremove self\n\towner item\n", "test.bomb")
+	_check("remove before owner item is said: fine", before.contains("owner\titem\nremove\n"), before)
