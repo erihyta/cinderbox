@@ -58,7 +58,12 @@ int Verify( const net::ReplayReader& replay )
 	}
 
 	Simulation sim( replay.Config(), replay.Map() );
-	sim.SetAnimGraph( replay.Graph() );
+	{
+		std::vector<cb::Simulation::CharacterBody> characters;
+		std::string ignored;
+		cb::Simulation::CharactersOf( replay.Schema(), characters, ignored );
+		sim.SetCharacters( std::move( characters ) );
+	}
 	sim.SetAnimPacks( replay.Packs() );
 	sim.SetMotions( replay.MotionSets() );
 	sim.SetItemShapes( replay.Schema().itemShapes );

@@ -368,6 +368,14 @@ struct MoveEffects
 	MoveEffect list[kMoveEffects] = {};
 };
 
+// Which character a body is (ModSchema::characters): its capsule, its state machine, its hitboxes,
+// its look. Only a body that is not the server's own character (0) has it.
+struct CharacterKind
+{
+	uint16_t index = 0;
+	uint16_t reserved = 0;
+};
+
 // The values of a player's own motions' moves that are expressions (a sheet's "move speed 2 *
 // t.power"), read when their step started: the mover reads parameters with no expression's inputs at
 // hand, so they are kept here while they hold. A place per value, keyed by its motion and its place
@@ -458,6 +466,7 @@ CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( WallPiece, 12 );
 CB_CHECK_COMPONENT( MoveEffect, 16 );
 CB_CHECK_COMPONENT( MoveEffects, 16 * kMoveEffects );
+CB_CHECK_COMPONENT( CharacterKind, 4 );
 CB_CHECK_COMPONENT( MoveValue, 8 );
 CB_CHECK_COMPONENT( MoveValues, 8 * kMoveValues );
 CB_CHECK_COMPONENT( HeldItem, 12 );

@@ -66,6 +66,12 @@ std::shared_ptr<const CharacterAsset> LoadCharacter( const anim::FileReader& rea
 std::shared_ptr<const CharacterAsset> LoadCharacterItem( const std::string& zipPath, const ModItem& item, std::string& error,
 													std::string& warnings )
 {
+	return LoadModCharacterItem( zipPath, item, item.mod, error, warnings );
+}
+
+std::shared_ptr<const CharacterAsset> LoadModCharacterItem( const std::string& zipPath, const ModItem& item, const std::string& name,
+														   std::string& error, std::string& warnings )
+{
 	std::ifstream in( zipPath, std::ios::binary );
 	if ( in.good() == false )
 	{
@@ -88,9 +94,9 @@ std::shared_ptr<const CharacterAsset> LoadCharacterItem( const std::string& zipP
 		error = zipPath + " is not a zip";
 		return nullptr;
 	}
-	const std::string folder = "characters/" + item.mod + "/";
-	anim::FileReader read = [&]( const std::string& name, std::string& out ) {
-		std::string path = folder + name;
+	const std::string folder = "characters/" + name + "/";
+	anim::FileReader read = [&]( const std::string& file, std::string& out ) {
+		std::string path = folder + file;
 		int index = mz_zip_reader_locate_file( &zip, path.c_str(), nullptr, 0 );
 		if ( index < 0 )
 		{
@@ -107,9 +113,15 @@ std::shared_ptr<const CharacterAsset> LoadCharacterItem( const std::string& zipP
 		return true;
 	};
 
-	auto character = LoadCharacter( read, item.mod, folder, error, warnings );
+	auto character = LoadCharacter( read, name, folder, error, warnings );
 	mz_zip_reader_end( &zip );
 	return character;
+}
+
+std::shared_ptr<const CharacterAsset> LoadModCharacterFolder( const std::string& dir, const std::string& name, std::string& error,
+															 std::string& warnings )
+{
+	return LoadCharacter( anim::DiskReader( dir + "/characters/" + name ), name, dir + "/characters/" + name + "/", error, warnings );
 }
 
 std::shared_ptr<const anim::AnimSet> LoadAnimPackItem( const std::string& zipPath, const ModItem& item, const std::string& pack,

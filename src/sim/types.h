@@ -217,8 +217,12 @@ enum class CommandType : uint8_t
 	// speed (m/s) a piece at the blast is sent away with (less with distance: b.x / (1 + metres)),
 	// other = the pieces' lifetime in ticks (0: forever). The entity goes, its pieces come.
 	Break = 18,
+	// target (a player), index = character (ModSchema::characters): from the next tick its body is
+	// that character's: its capsule (the feet stay where they are), its state machine (its layers
+	// start over). An index the schema does not have does nothing.
+	SetCharacter = 19,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Break );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::SetCharacter );
 
 enum ImpulseMode : uint8_t
 {

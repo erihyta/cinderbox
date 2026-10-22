@@ -511,7 +511,7 @@ void CinderboxClient::RebuildCharacterNodes( bool itemsToo )
 
 std::shared_ptr<const AnimGraph> CinderboxClient::ServerGraph( const anim::AnimSet& set, const String& name )
 {
-	const std::string& text = m_frame.schema.animGraph;
+	const std::string& text = m_frame.schema.characters.front().graph;
 	if ( text.empty() )
 	{
 		return nullptr;
@@ -581,7 +581,7 @@ void CinderboxClient::ServerPacks( const anim::AnimSet& set, AnimGraphPacks& pac
 
 String CinderboxClient::get_character() const
 {
-	return String::utf8( m_frame.schema.character.c_str() );
+	return String::utf8( m_frame.schema.characters.front().name.c_str() );
 }
 
 String CinderboxClient::use_character( const String& name )

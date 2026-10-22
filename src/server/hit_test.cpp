@@ -1,6 +1,7 @@
 #include "hit_test.h"
 
 #include "joint_math.h"
+#include "mover.h"
 #include "ragdoll.h"
 
 #include "ozz/base/maths/simd_math.h"
@@ -59,24 +60,48 @@ bool GripOf( Simulation& sim, uint32_t netId, anim::HandGrip& out )
 } // namespace
 
 HitTester::HitTester( std::shared_ptr<const CharacterAsset> character )
-	: m_character( std::move( character ) )
-	, m_pose( *m_character->animations )
 {
+	AddCharacter( std::move( character ) );
+}
+
+size_t HitTester::AddCharacter( std::shared_ptr<const CharacterAsset> character )
+{
+	Entry kind;
+	kind.asset = std::move( character );
+	kind.pose = std::make_unique<anim::PoseEvaluator>( *kind.asset->animations );
 	// The rest pose's extent, doubled for the limbs' reach in motion, and the largest hitbox.
 	float extent = 0.0f;
-	for ( const ozz::math::Float4x4& m : m_character->animations->RestModels() )
+	for ( const ozz::math::Float4x4& m : kind.asset->animations->RestModels() )
 	{
 		float v[4];
 		ozz::math::StorePtrU( m.cols[3], v );
 		extent = std::max( extent, std::sqrt( v[0] * v[0] + v[1] * v[1] + v[2] * v[2] ) );
 	}
 	float largest = 0.0f;
-	for ( const anim::Hitbox& box : m_character->hitboxes.boxes )
+	for ( const anim::Hitbox& box : kind.asset->hitboxes.boxes )
 	{
 		largest = std::max( { largest, box.radius, box.height, box.halfExtents.x, box.halfExtents.y, box.halfExtents.z } );
 	}
-	m_reach = extent * 1.5f + largest * m_character->animations->Scale() + 0.25f;
-	m_eyeHeight = anim::EyeHeight( *m_character->animations );
+	kind.reach = extent * 1.5f + largest * kind.asset->animations->Scale() + 0.25f;
+	kind.eyeHeight = anim::EyeHeight( *kind.asset->animations );
+	m_kinds.push_back( std::move( kind ) );
+	return m_kinds.size() - 1;
+}
+
+void HitTester::SetGraph( size_t character, std::shared_ptr<const AnimGraph> graph, std::string& warnings )
+{
+	if ( character < m_kinds.size() )
+	{
+		m_kinds[character].pose->SetGraph( std::move( graph ), warnings );
+	}
+}
+
+void HitTester::SetPacks( size_t character, AnimGraphPacks packs, std::vector<std::shared_ptr<const anim::PackClips>> clips )
+{
+	if ( character < m_kinds.size() )
+	{
+		m_kinds[character].pose->SetPacks( std::move( packs ), std::move( clips ) );
+	}
 }
 
 bool HitTester::JointPosition( Simulation& sim, PlayerSlot slot, const char* joint, b3Vec3& out )
@@ -84,17 +109,20 @@ bool HitTester::JointPosition( Simulation& sim, PlayerSlot slot, const char* joi
 	uint32_t netId = sim.PlayerNetId( slot );
 	const Transform* transform = netId != 0 ? sim.EntityTransform( netId ) : nullptr;
 	AnimStateCopy state = netId != 0 ? sim.EntityAnimState( netId ) : AnimStateCopy();
-	int index = anim::FindJoint( *m_character->animations, joint );
+	const uint16_t character = netId != 0 ? sim.CharacterOf( sim.FindEntity( netId ) ) : uint16_t( 0 );
+	Entry& kind = Kind( character );
+	int index = anim::FindJoint( *kind.asset->animations, joint );
 	if ( transform == nullptr || state == nullptr || index < 0 )
 	{
 		return false;
 	}
 	anim::HandGrip grip;
-	m_pose.Evaluate( *state, GripOf( sim, netId, grip ) ? &grip : nullptr );
+	kind.pose->Evaluate( *state, GripOf( sim, netId, grip ) ? &grip : nullptr );
 	float v[4];
-	ozz::math::StorePtrU( m_pose.Models()[size_t( index )].cols[3], v );
+	ozz::math::StorePtrU( kind.pose->Models()[size_t( index )].cols[3], v );
 	// Model space has the feet at the origin and faces +Z, like the hitboxes.
-	b3Vec3 feet = b3Sub( transform->position, b3Vec3{ 0.0f, ragdoll::kFeetBelowCenter, 0.0f } );
+	const Simulation::CharacterBody& body = sim.Body( character );
+	b3Vec3 feet = b3Sub( transform->position, b3Vec3{ 0.0f, mover::FeetBelowCenter( body.radius, body.halfHeight ), 0.0f } );
 	out = b3Add( feet, b3RotateVector( transform->rotation, b3Vec3{ v[0], v[1], v[2] } ) );
 	return true;
 }
@@ -118,15 +146,19 @@ bool HitTester::CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uin
 		{
 			continue;
 		}
-		b3Vec3 feet = b3Sub( transform->position, b3Vec3{ 0.0f, ragdoll::kFeetBelowCenter, 0.0f } );
-		if ( NearRay( origin, translation, limit, feet, m_reach ) == false )
+		// As its own character: its feet, its reach, its pose, its hitboxes.
+		const uint16_t which = sim.CharacterOf( sim.FindEntity( netId ) );
+		Entry& kind = Kind( which );
+		const Simulation::CharacterBody& body = sim.Body( which );
+		b3Vec3 feet = b3Sub( transform->position, b3Vec3{ 0.0f, mover::FeetBelowCenter( body.radius, body.halfHeight ), 0.0f } );
+		if ( NearRay( origin, translation, limit, feet, kind.reach ) == false )
 		{
 			continue;
 		}
 		anim::HandGrip grip;
-		m_pose.Evaluate( *state, GripOf( sim, netId, grip ) ? &grip : nullptr );
+		kind.pose->Evaluate( *state, GripOf( sim, netId, grip ) ? &grip : nullptr );
 		anim::HitboxHit boxHit;
-		if ( anim::RayHitboxes( m_character->hitboxes, m_pose.Models(), feet, transform->rotation, origin, translation, limit, boxHit ) )
+		if ( anim::RayHitboxes( kind.asset->hitboxes, kind.pose->Models(), feet, transform->rotation, origin, translation, limit, boxHit ) )
 		{
 			limit = boxHit.fraction;
 			hit.netId = netId;

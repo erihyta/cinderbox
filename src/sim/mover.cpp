@@ -174,9 +174,9 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	}
 
 	// Pogo spring keeps the capsule hovering above the ground, which smooths steps and slopes.
-	b3Capsule capsule = { { 0.0f, -kCapsuleHalfHeight, 0.0f }, { 0.0f, kCapsuleHalfHeight, 0.0f }, kCapsuleRadius };
-	float pogoRest = 3.0f * kCapsuleRadius;
-	float rayLength = pogoRest + kCapsuleRadius;
+	b3Capsule capsule = { { 0.0f, -body.halfHeight, 0.0f }, { 0.0f, body.halfHeight, 0.0f }, body.radius };
+	float pogoRest = 3.0f * body.radius;
+	float rayLength = pogoRest + body.radius;
 	b3Pos rayOrigin = b3Add( t.position, capsule.center1 );
 	b3QueryFilter groundFilter = { CatPlayer, CatStatic | CatProp | CatRagdoll | CatDebris, 0, nullptr };
 	b3RayResult ray = b3World_CastRayClosest( body.world, rayOrigin, { 0.0f, -rayLength, 0.0f }, groundFilter );

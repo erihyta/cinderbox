@@ -3946,6 +3946,101 @@ void TestMotionInspector()
 	CHECK( refused.find( "t.moves/Zap did not start 0.0 s ago: its if: t.ready > 0" ) != std::string::npos );
 }
 
+// M216: characters per body. Two characters, each its capsule and its state machine: a body made the
+// second (SetCharacter) stands on its own capsule with its feet where they were, runs the second's
+// state machine, and a snapshot taken then and loaded into another simulation goes on the same.
+void TestCharacters()
+{
+	const char* small = "cinderbox_graph\t1\nclip\tidle\t1\t1\nlayer\tbase\nstate\tIdle\tclip\tidle\t0\nstart\tIdle\n";
+	const char* big = "cinderbox_graph\t1\nclip\trest\t2\t1\nclip\troar\t1\t0\nlayer\tbase\nstate\tRest\tclip\trest\t0\n"
+					  "state\tRoar\tclip\troar\t0\nstart\tRest\ntransition\tRest\tRoar\t0\t0\timmediate\t1\troar\n";
+	ModSchema schema;
+	schema.events = { "roar" };
+	std::string error, warnings;
+	auto smallGraph = CompileAnimGraph( small, schema, error, warnings );
+	auto bigGraph = CompileAnimGraph( big, schema, error, warnings );
+	CHECK( smallGraph != nullptr && bigGraph != nullptr );
+	if ( smallGraph == nullptr || bigGraph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	auto make = [&]( Simulation& sim ) {
+		sim.SetCharacters( { { smallGraph, kDefaultCapsuleRadius, kDefaultCapsuleHalfHeight }, { bigGraph, 0.8f, 1.2f } } );
+	};
+	Simulation sim( TestConfig(), FlatMap() );
+	make( sim );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	f.events.push_back( { PlayerEventType::Join, 1 } );
+	step( 90 );
+	const uint32_t dragon = sim.PlayerNetId( 1 );
+	const float smallCentre = sim.EntityTransform( dragon )->position.y;
+	CHECK( sim.CharacterOf( sim.FindEntity( dragon ) ) == 0 );
+
+	SimCommand become;
+	become.type = CommandType::SetCharacter;
+	become.target = SlotTarget( 1 );
+	become.index = 1;
+	f.commands.push_back( become );
+	step( 90 );
+	const flecs::entity e = sim.FindEntity( dragon );
+	const float bigCentre = sim.EntityTransform( dragon )->position.y;
+	const Shape shape = e.get<Shape>();
+	std::printf( "    a body made the second character: capsule %.2f / %.2f, its centre %.2f m up (was %.2f): its feet on the ground\n",
+				 double( shape.halfExtents.x ), double( shape.halfExtents.y ), double( bigCentre ), double( smallCentre ) );
+	CHECK( sim.CharacterOf( e ) == 1 && shape.halfExtents.x == 0.8f && shape.halfExtents.y == 1.2f );
+	// Feet below the centre: 0.5 + 0.9 - 0.02 for the first, 1.2 + 2.4 - 0.02 for the second.
+	CHECK( std::fabs( ( bigCentre - smallCentre ) - ( 3.58f - 1.38f ) ) < 0.05f );
+	CHECK( sim.CharacterOf( sim.FindEntity( sim.PlayerNetId( 0 ) ) ) == 0 );
+
+	// Its own state machine: a roar plays the second's Roar.
+	SimCommand roar;
+	roar.type = CommandType::Event;
+	roar.index = 0;
+	roar.target = dragon;
+	f.commands.push_back( roar );
+	step( 2 );
+	const AnimState anim = sim.GetAnimState( e );
+	int roaring = -1;
+	for ( size_t s = 0; s < bigGraph->layers[0].states.size(); ++s )
+	{
+		roaring = bigGraph->layers[0].states[s].name == "Roar" ? int( s ) : roaring;
+	}
+	std::printf( "    its state machine: state %d (Roar is %d)\n", int( anim.graph[0].state ), roaring );
+	CHECK( roaring >= 0 && int( anim.graph[0].state ) == roaring );
+
+	// A copy (a joining client's: the portable snapshot) goes on the same.
+	std::vector<uint8_t> image;
+	sim.SavePortable( image );
+	Simulation copy( TestConfig(), FlatMap() );
+	make( copy );
+	CHECK( copy.LoadPortable( image ) );
+	for ( int i = 0; i < 60; ++i )
+	{
+		f.tick = sim.Tick();
+		sim.Step( f );
+		copy.Step( f );
+	}
+	CHECK( sim.ComputeHash() == copy.ComputeHash() && copy.CharacterOf( copy.FindEntity( dragon ) ) == 1 );
+
+	// Back to the first: the component goes, the capsule is the default again.
+	become.index = 0;
+	f.commands.push_back( become );
+	step( 60 );
+	CHECK( sim.FindEntity( dragon ).has<CharacterKind>() == false && sim.FindEntity( dragon ).get<Shape>().halfExtents.x == kDefaultCapsuleRadius );
+	CHECK( std::fabs( sim.EntityTransform( dragon )->position.y - smallCentre ) < 0.05f );
+}
+
 void TestMotionFinds()
 {
 	ModSchema schema;
@@ -10756,7 +10851,7 @@ std::vector<present::ViewFrame> ScenarioViewFrames( uint32_t ticks )
 	ModSchema schema;
 	schema.mods = { "pistol", "deathmatch" };
 	schema.events = { "pistol.fired", "combat.killed" };
-	schema.character = "mannequin";
+	schema.characters.front().name = "mannequin";
 
 	std::vector<present::ViewFrame> frames;
 	present::ViewFrame f;
@@ -10984,7 +11079,7 @@ void TestViewCodec()
 	CHECK( got.alphaAtPublish == last.alphaAtPublish && got.localPressed == last.localPressed );
 	CHECK( got.stats == last.stats );
 	CHECK( got.mapHash == 0x1234 && got.mapName == "sandbox" && got.templateVisuals == last.templateVisuals );
-	CHECK( got.schema.character == "mannequin" && got.schema.events == last.schema.events );
+	CHECK( got.schema.characters.front().name == "mannequin" && got.schema.events == last.schema.events );
 	CHECK( got.names[0] == "Ada" && got.names[3] == "Grace" && got.namesGeneration == 2 );
 	CHECK( got.frame.tick == last.frame.tick && got.frame.localNetId == last.frame.localNetId );
 	CHECK( got.frame.entities.size() == last.frame.entities.size() && got.frame.ragdolls.size() == last.frame.ragdolls.size() );
@@ -11282,6 +11377,7 @@ int main( int argc, char** argv )
 		{ "motion_regular", TestMotionRegular },
 		{ "motion_amounts", TestMotionAmounts },
 		{ "motion_inspector", TestMotionInspector },
+		{ "characters", TestCharacters },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },

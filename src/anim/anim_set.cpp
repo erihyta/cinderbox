@@ -756,6 +756,22 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 		}
 		set->m_movement.push_back( { param, ClampMoveParam( param, number ) } );
 	}
+	if ( cfg.count( "capsule_radius" ) || cfg.count( "capsule_height" ) )
+	{
+		// Its capsule: a radius, and a whole height (two radii at least), as Godot's CapsuleShape3D has
+		// them; kept as the simulation's (the centre to a sphere's centre).
+		float radius = cfg.count( "capsule_radius" ) ? std::strtof( cfg["capsule_radius"].c_str(), nullptr ) : 0.3f;
+		float height = cfg.count( "capsule_height" ) ? std::strtof( cfg["capsule_height"].c_str(), nullptr ) : 1.6f;
+		if ( ( radius >= 0.05f && radius <= 5.0f ) == false || ( height >= 2.0f * radius && height <= 2.0f * radius + 20.0f ) == false )
+		{
+			warnings += "capsule_radius / capsule_height: a radius from 0.05 to 5 m and a height of two radii at least; the default capsule used; ";
+		}
+		else
+		{
+			set->m_capsuleRadius = radius;
+			set->m_capsuleHalfHeight = height / 2.0f - radius;
+		}
+	}
 	if ( cfg.count( "lock_root_xz" ) )
 	{
 		set->m_lockRootXZ = cfg["lock_root_xz"] != "false" && cfg["lock_root_xz"] != "0";

@@ -299,13 +299,11 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 		return;
 	}
 
-	// The character's state machine: the simulation must run exactly the server's.
-	std::shared_ptr<const AnimGraph> graph;
-	if ( schema.animGraph.empty() == false )
+	// The characters' state machines and capsules: the simulation must run exactly the server's.
+	std::vector<Simulation::CharacterBody> characters;
 	{
-		std::string error, warnings;
-		graph = CompileAnimGraph( schema.animGraph, schema, error, warnings );
-		if ( graph == nullptr )
+		std::string error;
+		if ( Simulation::CharactersOf( schema, characters, error ) == false )
 		{
 			m_rejectReason = "bad animation state machine from the server: " + error;
 			m_state = ClientState::Rejected;
@@ -335,7 +333,7 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 			m_session->SetReconcileEvery( m_options.reconcileEveryTicks );
 			m_session->Sim().SetPhysicsThreaded( m_options.physicsThreaded );
 		}
-		m_session->Sim().SetAnimGraph( graph );
+		m_session->Sim().SetCharacters( characters );
 		std::string packWarnings;
 		m_session->Sim().SetAnimPacks( CompileAnimPacks( schema, packWarnings ) );
 		m_session->Sim().SetMotions( CompileMotions( schema, packWarnings ) );

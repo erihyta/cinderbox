@@ -54,6 +54,11 @@ struct ServerOptions
 	std::vector<ModItem> items;
 	// The character everyone plays as (null: the built-in rig). Its item must be in `items`.
 	std::shared_ptr<const CharacterAsset> character;
+	// Reads a character a mod declared (the baked files under characters/<name>/ in its workshop
+	// item). Unset or failing: its bodies are the built-in rig.
+	std::function<std::shared_ptr<const CharacterAsset>( const std::string& mod, const std::string& name, std::string& error,
+														 std::string& warnings )>
+		loadCharacter;
 	// Reads a mod's animation pack (the baked files under anim/<pack>/ in its workshop item). Unset
 	// or failing: the pack's swaps do nothing.
 	std::function<std::shared_ptr<const anim::AnimSet>( const std::string& mod, const std::string& pack, std::string& error,
@@ -244,7 +249,9 @@ private:
 	// The mods' own state lives here; the simulation never sees it.
 	std::unique_ptr<flecs::world> m_modWorld;
 	std::unique_ptr<HitTester> m_hits;
-	std::shared_ptr<const AnimGraph> m_animGraph;
+	std::vector<std::shared_ptr<const AnimGraph>> m_graphs; // each character's (ModSchema::characters)
+	// The characters as the simulation has them: each its state machine, its capsule, its movement.
+	std::vector<Simulation::CharacterBody> CharacterBodies() const;
 	AnimGraphPacks m_animPacks;
 	std::shared_ptr<const Motions> m_motions;
 	std::map<std::pair<int, std::string>, float> m_itemProperties; // what mods declared about item kinds

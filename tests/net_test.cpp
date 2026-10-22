@@ -158,10 +158,16 @@ struct Harness
 	// Runs every compiled server mod, like cb_server does by default.
 	explicit Harness( uint16_t p, const std::string& recordPath = {}, const std::string& mapPath = {},
 					  const std::map<std::string, std::string>& modOptions = {},
-					  const std::function<void( ServerOptions& )>& configure = {} )
+					  const std::function<void( ServerOptions& )>& configure = {},
+					  std::vector<std::unique_ptr<mods::ServerMod>> extraMods = {} )
 		: port( p )
 		, clientPort( p )
 	{
+		// A test's own mods first (they declare before the shipped ones).
+		for ( auto& mod : extraMods )
+		{
+			server.AddMod( std::move( mod ) );
+		}
 		// Every mod that runs by default; a disabled one (a "disabled" file: the impact grenade) only
 		// when the test names it, in the mod option "test.mods" (a, b), as cb_server --mods would.
 		// The brawler's kit runs by default too, but its skills take the hotbar's first slots, where
@@ -1764,7 +1770,7 @@ void TestSneak()
 		return in;
 	};
 	std::string error, warnings;
-	auto graph = CompileAnimGraph( schema.animGraph, schema, error, warnings );
+	auto graph = CompileAnimGraph( schema.characters.front().graph, schema, error, warnings );
 	AnimGraphPacks packs = CompileAnimPacks( schema, warnings );
 	CHECK( graph != nullptr && packs.size() == schema.animPacks.size() );
 	if ( graph == nullptr || packs.size() != schema.animPacks.size() )
@@ -2590,7 +2596,7 @@ void TestProtocol()
 		schema.events = { "item.use", "combat.killed" };
 		schema.actions.push_back( { "fire", 0, "MouseLeft" } );
 		schema.items.push_back( { "pistol", std::string( 64, 'a' ) } );
-		schema.animGraph = std::string( 70000, 'g' ); // longer than any name: its own length prefix
+		schema.characters.front().graph = std::string( 70000, 'g' ); // longer than any name: its own length prefix
 		std::vector<uint8_t> bytes;
 		EncodeSchema( schema, bytes );
 		ModSchema back;
@@ -4257,6 +4263,88 @@ void TestFragBreaks()
 	std::filesystem::remove( mapPath, ignored );
 }
 
+// M216: characters per body. A test mod declares a second character (the mannequin's baked files with
+// a capsule of its own: 0.5 m round, 3 m tall) and makes a player it on a press; the server and the
+// bot's own simulation both run that body as it, its capsule standing on its feet, with no desync.
+class ShapeshiftMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_shift";
+	}
+	void Declare( mods::Declarations& declare ) override
+	{
+		m_shift = declare.Action( "test.shift", "" );
+		m_big = declare.Character( "test.big" );
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		for ( int slot = 0; slot < kMaxPlayers; ++slot )
+		{
+			if ( ctx.Pressed( PlayerSlot( slot ), m_shift ) )
+			{
+				ctx.SetCharacter( SlotTarget( PlayerSlot( slot ) ), m_big );
+			}
+		}
+	}
+
+private:
+	mods::ActionHandle m_shift;
+	mods::CharacterHandle m_big;
+};
+
+void TestCharacters()
+{
+	namespace fs = std::filesystem;
+	const std::string root = CB_SOURCE_DIR;
+	const fs::path dir = fs::temp_directory_path() / "cb_net_test_characters";
+	fs::remove_all( dir );
+	fs::create_directories( dir / "characters" );
+	fs::copy( root + "/godot/characters/mannequin", dir / "characters" / "test.big", fs::copy_options::recursive );
+	{
+		std::ofstream cfg( dir / "characters" / "test.big" / "anim.cfg", std::ios::app );
+		cfg << "\ncapsule_radius = 0.5\ncapsule_height = 3\n";
+	}
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	extra.push_back( std::make_unique<ShapeshiftMod>() );
+	Harness h(
+		47910, {}, {}, {},
+		[&]( ServerOptions& options ) {
+			options.loadCharacter = [dir]( const std::string&, const std::string& name, std::string& error, std::string& warnings ) {
+				return LoadModCharacterFolder( dir.string(), name, error, warnings );
+			};
+		},
+		std::move( extra ) );
+	const ModSchema& schema = h.server.Schema();
+	CHECK( schema.characters.size() == 2 && schema.characters[1].name == "test.big" && schema.characters[1].radius == 0.5f &&
+		   schema.characters[1].halfHeight == 1.0f && schema.characters[1].graph.empty() == false );
+	const ActionBits shift = schema.ActionMask( "test.shift" );
+	Bot& bot = h.AddBot();
+	bot.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		in.actions = tick >= 120 && tick < 125 ? shift : 0;
+		return in;
+	};
+	h.RunUntil( 5.0 );
+	h.Report();
+	GameClient& client = *h.bots[0].client;
+	Simulation& server = h.server.Sim();
+	const uint32_t netId = server.PlayerNetId( client.Slot() );
+	const flecs::entity body = server.FindEntity( netId );
+	CHECK( body.is_valid() && server.CharacterOf( body ) == 1 );
+	const Shape shape = body.is_valid() ? body.get<Shape>() : Shape{};
+	std::printf( "    the server: the player is character %u, its capsule %.2f / %.2f, its centre %.2f m up\n", unsigned( server.CharacterOf( body ) ),
+				 double( shape.halfExtents.x ), double( shape.halfExtents.y ), double( server.EntityTransform( netId )->position.y ) );
+	CHECK( shape.halfExtents.x == 0.5f && shape.halfExtents.y == 1.0f );
+	// Its feet on the ground: the centre the capsule's own height above it (1 + 1.5 - 0.02).
+	CHECK( std::fabs( server.EntityTransform( netId )->position.y - 2.48f ) < 0.1f );
+	RollbackSession* session = client.Session();
+	CHECK( session != nullptr && session->Sim().CharacterOf( session->Sim().FindEntity( netId ) ) == 1 );
+	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+	fs::remove_all( dir );
+}
+
 // The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
 // breaks a hole in it with no blast, and goes on through: past the wall, while bricks still stand.
 // The ball's scene says it breaks walls (CbItem.break_speed), so the simulation breaks it in the
@@ -4744,6 +4832,7 @@ int main( int argc, char** argv )
 		{ "frag", TestFrag },
 		{ "frag_breaks", TestFragBreaks },
 		{ "cannon", TestCannon },
+		{ "characters", TestCharacters },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },

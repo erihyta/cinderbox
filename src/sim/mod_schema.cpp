@@ -1,4 +1,5 @@
 #include "mod_schema.h"
+#include "move_params.h"
 
 #include "map.h"
 
@@ -12,7 +13,7 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kSchemaMagic = 0x4842434Du; // 'MCBH': 17 an item its slot's key uses; 16 an item kind's own key, no slot keys; 15 intents a mod declares; 14 stacks; 13 an item thrown fast (a bullet); 12 an item's time is up; 11 an item's hand; 10 an item's own fields' defaults; 2 workshop items, 3 the character, 4 layers and stances, 5 the
+constexpr uint32_t kSchemaMagic = 0x4942434Du; // 'MCBI': 18 a list of characters, each its state machine and capsule; 17 an item its slot's key uses; 16 an item kind's own key, no slot keys; 15 intents a mod declares; 14 stacks; 13 an item thrown fast (a bullet); 12 an item's time is up; 11 an item's hand; 10 an item's own fields' defaults; 2 workshop items, 3 the character, 4 layers and stances, 5 the
 												// character's state machine, 6 item kinds and sockets, 7 animation packs,
 												// 8 item shapes, 9 slots' keys
 
@@ -183,6 +184,18 @@ int ModSchema::FindItemKind( const std::string& name ) const
 	return -1;
 }
 
+int ModSchema::FindCharacter( const std::string& name ) const
+{
+	for ( size_t i = 0; i < characters.size(); ++i )
+	{
+		if ( characters[i].name == name )
+		{
+			return int( i );
+		}
+	}
+	return -1;
+}
+
 int ModSchema::FindSocket( const std::string& name ) const
 {
 	for ( size_t i = 0; i < sockets.size(); ++i )
@@ -283,7 +296,23 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutString( out, schema.items[i].mod );
 		PutString( out, schema.items[i].sha256 );
 	}
-	PutString( out, schema.character );
+	// The characters: [0] the server's own, then those mods declare.
+	PutU8( out, uint8_t( std::min<size_t>( schema.characters.size(), kMaxCharacters ) ) );
+	for ( size_t i = 0; i < schema.characters.size() && i < kMaxCharacters; ++i )
+	{
+		const CharacterInfo& c = schema.characters[i];
+		PutString( out, c.name );
+		PutString( out, c.mod );
+		PutText( out, c.graph );
+		PutF32( out, c.radius );
+		PutF32( out, c.halfHeight );
+		PutU8( out, uint8_t( std::min<size_t>( c.move.size(), 64 ) ) );
+		for ( size_t m = 0; m < c.move.size() && m < 64; ++m )
+		{
+			PutU8( out, c.move[m].first );
+			PutF32( out, c.move[m].second );
+		}
+	}
 	PutU8( out, uint8_t( std::min<size_t>( schema.layers.size(), size_t( kLayerLimit ) ) ) );
 	for ( size_t i = 0; i < schema.layers.size() && i < size_t( kLayerLimit ); ++i )
 	{
@@ -294,7 +323,6 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 	{
 		PutString( out, schema.stances[i] );
 	}
-	PutText( out, schema.animGraph );
 	PutU8( out, uint8_t( std::min<size_t>( schema.itemKinds.size(), 255 ) ) );
 	for ( size_t i = 0; i < schema.itemKinds.size() && i < 255; ++i )
 	{
@@ -485,8 +513,39 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		}
 		out.items.push_back( std::move( item ) );
 	}
-	// A workshop character is also one of the items; one that ships with the game is not.
-	out.character = r.String();
+	// The characters (a workshop character is also one of the items; one that ships with the game is
+	// not): at least the server's own, each a capsule a body can be.
+	uint8_t characters = r.U8();
+	if ( characters == 0 || characters > kMaxCharacters )
+	{
+		return false;
+	}
+	out.characters.clear();
+	for ( uint8_t i = 0; i < characters && r.ok; ++i )
+	{
+		CharacterInfo c;
+		c.name = r.String();
+		c.mod = r.String();
+		c.graph = r.Text();
+		c.radius = r.F32();
+		c.halfHeight = r.F32();
+		uint8_t moves = r.U8();
+		for ( uint8_t m = 0; m < moves && r.ok; ++m )
+		{
+			uint8_t param = r.U8();
+			float value = r.F32();
+			if ( param >= kMoveParams || ClampMoveParam( param, value ) != value )
+			{
+				return false;
+			}
+			c.move.push_back( { param, value } );
+		}
+		if ( ( c.radius >= 0.05f && c.radius <= 5.0f ) == false || ( c.halfHeight >= 0.0f && c.halfHeight <= 10.0f ) == false )
+		{
+			return false;
+		}
+		out.characters.push_back( std::move( c ) );
+	}
 	uint8_t layers = r.U8();
 	for ( uint8_t i = 0; i < layers && r.ok; ++i )
 	{
@@ -501,7 +560,6 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 	{
 		out.stances.push_back( r.String() );
 	}
-	out.animGraph = r.Text();
 	uint8_t kinds = r.U8();
 	for ( uint8_t i = 0; i < kinds && r.ok; ++i )
 	{

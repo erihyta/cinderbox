@@ -9,7 +9,7 @@ namespace cb::net
 namespace
 {
 constexpr uint32_t kMagic = 0x50524243u; // "CBRP"
-constexpr uint32_t kVersion = 46; // 46: amounts that are expressions, a change in a find, MoveValues; 45: impulses of momentum, every; 44: an item's own motions; 43: markers, turns, paths in a motion set; 42: curves and expressions in a motion set; 41: a probe's shape; 40: a motion's finds, MoveEffects; 39: a motion's steps (its slot is 28 bytes, a set of version 3); 38: glued breakables; 37: items that break walls; 36: holes in breakables; 35: what a probe may hold on to; 34: the Break command, breakables in the map; 33: rolling and drag (an item's, a prop's), max_slope; 32: an item's body of several shapes (the schema), maps of version 4 to 6; 31: an item its slot's key uses (the schema); 30: Slots keeps the actions held; 29: intents a mod declares; 28: containers; 27: a stack moved onto its kind merges, half of one splits; 26: stacks; 25: bullets, an item's hits kept first; 24: an item's time is up says so; 23: an item thrown from the hand, motions hear what was said after them a tick late; 22: a line that flies is a projectile, and one at nothing is thrown (M152, M153); 21: the slot keys in the input, 20: the mover and loose bodies, a throw on a ragdoll, 19: launches (a motion makes an item), 18: an item's friction and bounce, a map prop's body, 17: state sized by the mods (the config says how many fields), 16: how an item kind is used, 15: slots (the input's intent, an item's slot), 14: (unused), 13: mass, motion effects, 12: one more movement parameter, 11: tethers, 10: two more movement parameters, 9: motion sets in the schema, 8: movement parameters in the config, 7: an item body's turn, 6: grips in the schema, 2: per-field input encoding, 3: baked map, 4: commands and mod schema, 5: one animation system
+constexpr uint32_t kVersion = 47; // 47: characters per body; 46: amounts that are expressions, a change in a find, MoveValues; 45: impulses of momentum, every; 44: an item's own motions; 43: markers, turns, paths in a motion set; 42: curves and expressions in a motion set; 41: a probe's shape; 40: a motion's finds, MoveEffects; 39: a motion's steps (its slot is 28 bytes, a set of version 3); 38: glued breakables; 37: items that break walls; 36: holes in breakables; 35: what a probe may hold on to; 34: the Break command, breakables in the map; 33: rolling and drag (an item's, a prop's), max_slope; 32: an item's body of several shapes (the schema), maps of version 4 to 6; 31: an item its slot's key uses (the schema); 30: Slots keeps the actions held; 29: intents a mod declares; 28: containers; 27: a stack moved onto its kind merges, half of one splits; 26: stacks; 25: bullets, an item's hits kept first; 24: an item's time is up says so; 23: an item thrown from the hand, motions hear what was said after them a tick late; 22: a line that flies is a projectile, and one at nothing is thrown (M152, M153); 21: the slot keys in the input, 20: the mover and loose bodies, a throw on a ragdoll, 19: launches (a motion makes an item), 18: an item's friction and bounce, a map prop's body, 17: state sized by the mods (the config says how many fields), 16: how an item kind is used, 15: slots (the input's intent, an item's slot), 14: (unused), 13: mass, motion effects, 12: one more movement parameter, 11: tethers, 10: two more movement parameters, 9: motion sets in the schema, 8: movement parameters in the config, 7: an item body's turn, 6: grips in the schema, 2: per-field input encoding, 3: baked map, 4: commands and mod schema, 5: one animation system
 constexpr uint8_t kRecordFrame = 1;
 constexpr uint8_t kRecordChecksum = 2;
 } // namespace
@@ -141,14 +141,23 @@ bool ReplayReader::Open( const std::string& path, std::string& error )
 		m_packs = CompileAnimPacks( m_schema, ignored );
 		m_motions = CompileMotions( m_schema, ignored );
 	}
-	if ( m_schema.animGraph.empty() == false )
+	// Every character's state machine must compile ([0]'s is kept: Graph()).
+	for ( size_t i = 0; i < m_schema.characters.size(); ++i )
 	{
+		if ( m_schema.characters[i].graph.empty() )
+		{
+			continue;
+		}
 		std::string graphError, warnings;
-		m_graph = CompileAnimGraph( m_schema.animGraph, m_schema, graphError, warnings );
-		if ( m_graph == nullptr )
+		auto graph = CompileAnimGraph( m_schema.characters[i].graph, m_schema, graphError, warnings );
+		if ( graph == nullptr )
 		{
 			error = "replay's animation state machine: " + graphError;
 			return false;
+		}
+		if ( i == 0 )
+		{
+			m_graph = graph;
 		}
 	}
 	std::string mapError;

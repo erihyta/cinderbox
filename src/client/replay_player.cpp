@@ -18,7 +18,13 @@ bool ReplayPlayer::Open( const std::string& path, std::string& error )
 		return false;
 	}
 	m_sim = std::make_unique<Simulation>( m_reader.Config(), m_reader.Map() );
-	m_sim->SetAnimGraph( m_reader.Graph() );
+	{
+		// Every character's state machine and capsule (the reader has checked they compile).
+		std::vector<Simulation::CharacterBody> characters;
+		std::string ignored;
+		Simulation::CharactersOf( m_reader.Schema(), characters, ignored );
+		m_sim->SetCharacters( std::move( characters ) );
+	}
 	m_sim->SetAnimPacks( m_reader.Packs() );
 	m_sim->SetMotions( m_reader.MotionSets() );
 	m_sim->SetItemShapes( m_reader.Schema().itemShapes );

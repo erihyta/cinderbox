@@ -31,6 +31,7 @@
 #include <godot_cpp/classes/bone_attachment3d.hpp>
 #include <godot_cpp/classes/box_shape3d.hpp>
 #include <godot_cpp/classes/capsule_shape3d.hpp>
+#include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/curve.hpp>
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/editor_file_system.hpp>
@@ -996,6 +997,22 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	cfg += "aim = " + Std( m_aimChain.strip_edges() ) + "\n";
 	cfg += "aim_tip = " + Std( m_aimTip.strip_edges() ) + "\n";
 	cfg += "look = " + Std( m_lookChain.strip_edges() ) + "\n";
+	// Its body's capsule: a CollisionShape3D with a CapsuleShape3D right under the CbCharacter, as a
+	// Godot character has its collision shape (none: the default capsule). Its radius and its whole
+	// height, scaled as it is.
+	for ( int i = 0; i < get_child_count(); ++i )
+	{
+		const auto* holder = Object::cast_to<CollisionShape3D>( get_child( i ) );
+		Ref<CapsuleShape3D> capsule = holder != nullptr ? Ref<CapsuleShape3D>( holder->get_shape() ) : Ref<CapsuleShape3D>();
+		if ( capsule.is_null() || holder->is_disabled() )
+		{
+			continue;
+		}
+		const Vector3 scale = holder->get_transform().basis.get_scale().abs();
+		cfg += "capsule_radius = " + Num( double( capsule->get_radius() * std::max( scale.x, scale.z ) ) ) + "\n";
+		cfg += "capsule_height = " + Num( double( capsule->get_height() * scale.y ) ) + "\n";
+		break;
+	}
 	// How it moves, in the simulation's order so that the file does not depend on the dictionary's.
 	for ( int p = 0; p < kMoveParams; ++p )
 	{
