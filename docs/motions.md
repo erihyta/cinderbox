@@ -97,9 +97,10 @@ use if dash.charges > 0
     move for 0.18 friction 0
 ```
 
-**A `use` rule** bakes into the item's `Use` motion, as if its parts were nodes under the item,
-with the item's **When used** settings. The hook's is a motion block instead, for its `cast`
-([the grapple mod](#probes-forces-and-links-the-grapple-mod)).
+**A `use` rule** is the item's `Use` motion: `use [if ...]` is `motion Use on use [if ...]` word
+for word (M213), so it takes every line a motion block does (a `cast`, steps, a `find`), with the
+item's **When used** settings joined. An item used while its key is held has it on while it is
+held.
 
 **A motion block** (`motion NAME ...`) in a sheet under an item or a `CbMotionSet` is a whole
 motion as text, with what nodes cannot say: steps that wait (`then when grounded`, `after 0.5`, a
@@ -112,7 +113,7 @@ motion Slam on use if brawl.cd_slam <= 0 and not grounded
     lasts 3
     change brawl.cd_slam = 5
     emit brawl.slam.started
-    impulse 25 along world direction (0, -1, 0) replace vertical
+    impulse 25 along world (0, -1, 0) replace vertical
     then when grounded
     emit brawl.slam.landed
 ```
@@ -565,7 +566,7 @@ emit	dash.started
 | `follow` | a path's name and seconds: every tick its stretch of the path is the player's velocity, turned as it faces |
 | `curve` | a name, where its domain starts and ends, then its values at even steps over it (2 to 252): what `curve(name, x)` reads in this motion's expressions. Before what reads it |
 | `probe_shape` | a radius, then points (x y z each, around the line's tip, forward +Z): what the probe sweeps instead of a line, turned to the line so that what is level stays level |
-| `find` | who (`players`, `bodies`, `all`), whether the player itself counts (0 or 1), at most how many (1 to 16), how its shape is turned (`facing`, `look`, `world`). Then its `shape` lines, what happens to each thing found (`impulse` on `found`, along `away`; `param` with its seconds, given to a player found; `emit`), and `endfind` |
+| `find` | who (`players`, `bodies`, `all`), whether the player itself counts (0 or 1), at most how many (1 to 16), how its shape is turned (`facing`, `look`, `world`). Then its `shape` lines, what happens to each thing found (`impulse` on `found`, along `away`; `param` with its seconds, given to a player found; `change`, of the owner's field; `emit`), and `endfind` |
 | `shape` | a convex piece of a find's shape: a radius, then its points (x y z each, in the player's frame: its feet, forward +Z) |
 
 An impulse's speed, a force's strength and a launch's speed may be an expression instead of a
