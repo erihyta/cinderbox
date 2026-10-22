@@ -2091,7 +2091,13 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				bool boardChanged = false;
 				m_motionEvents.clear();
 				m_motionActive.clear();
+				m_refusalScratch.clear();
+				motionIn.refusals = &m_refusalScratch;
 				RunMotions( *m_motions, motionIn, motion, c, board, boardChanged, m_motionEvents, m_motionActive );
+				if ( m_refusalScratch.empty() == false )
+				{
+					m_motionNotes[size_t( slot )] = { m_refusalScratch.back().motion, m_refusalScratch.back().why, m_globals.tick };
+				}
 				if ( boardChanged )
 				{
 					SetBoard( e, board );
@@ -4610,6 +4616,100 @@ void Simulation::PushEnd( const MotionEnd& end, Character& c, b3Vec3 change )
 		default:
 			break;
 	}
+}
+
+std::string Simulation::DescribeMotions( PlayerSlot slot ) const
+{
+	const uint32_t netId = slot < kMaxPlayers ? m_globals.playerNetIds[slot] : 0;
+	const flecs::entity e = netId != 0 ? FindEntity( netId ) : flecs::entity();
+	if ( !m_motions || e.is_valid() == false || HasMotionState( e ) == false )
+	{
+		return std::string();
+	}
+	const MotionState state = GetMotionState( e );
+	const uint32_t tick = m_globals.tick;
+	const float dt = m_config.TimeStep();
+	const MotionHold* hold = e.try_get<MotionHold>();
+	std::string out;
+	char line[512];
+	for ( size_t i = 0; i < m_motions->list.size(); ++i )
+	{
+		const Motion& m = m_motions->list[i];
+		const MotionSlot s = state.slots[i];
+		if ( m.ownerItem || s.lastTick == 0 || tick >= s.untilTick || size_t( s.step ) >= m.steps.size() )
+		{
+			continue;
+		}
+		std::string what = m.name;
+		if ( m.steps.size() > 1 )
+		{
+			std::snprintf( line, sizeof( line ), "  step %u of %zu", unsigned( s.step ) + 1u, m.steps.size() );
+			what += line;
+			const int next = m.steps[s.step].next;
+			if ( next >= 0 )
+			{
+				const MotionStep& waits = m.steps[size_t( next )];
+				what += "  waits for ";
+				what += waits.waitText.empty() ? std::string() : waits.waitText;
+				if ( waits.after > 0.0f )
+				{
+					std::snprintf( line, sizeof( line ), "%s%.1f s", waits.waitText.empty() ? "" : " after ", double( waits.after ) );
+					what += line;
+				}
+				if ( waits.within > 0.0f )
+				{
+					std::snprintf( line, sizeof( line ), " (gives up after %.1f s)", double( waits.within ) );
+					what += line;
+				}
+			}
+		}
+		std::snprintf( line, sizeof( line ), "  for %.1f s", double( float( tick - std::min( tick, MotionStepStart( s ) ) ) * dt ) );
+		what += line;
+		if ( s.untilTick != kForever )
+		{
+			std::snprintf( line, sizeof( line ), ", %.1f s left", double( float( s.untilTick - tick ) * dt ) );
+			what += line;
+		}
+		if ( m.probe && hold != nullptr && hold->on != 0 && hold->motion == i )
+		{
+			if ( hold->flying != 0 && tick < hold->holdTick )
+			{
+				what += "  its cast flies";
+			}
+			else if ( hold->missed != 0 )
+			{
+				what += "  its cast found nothing";
+			}
+			else
+			{
+				std::snprintf( line, sizeof( line ), "  holds %s", hold->anchor != 0 ? ( "#" + std::to_string( hold->anchor ) ).c_str() : "the level" );
+				what += line;
+			}
+		}
+		out += what + "\n";
+	}
+	// The last start refused, for a while.
+	const MotionNote& note = m_motionNotes[slot];
+	if ( note.why != MotionRefusal::Why::None && size_t( note.motion ) < m_motions->list.size() && tick >= note.tick &&
+		 float( tick - note.tick ) * dt <= 3.0f )
+	{
+		const Motion& m = m_motions->list[note.motion];
+		std::string why = MotionRefusalText( note.why );
+		if ( note.why == MotionRefusal::Why::Condition && m.conditionText.empty() == false )
+		{
+			why += ": " + m.conditionText;
+		}
+		else if ( note.why == MotionRefusal::Why::Cooldown )
+		{
+			const MotionSlot s = state.slots[note.motion];
+			const float left = m.cooldown - float( note.tick + 1 - s.lastTick ) * dt;
+			std::snprintf( line, sizeof( line ), " (%.1f s left then)", double( std::max( left, 0.0f ) ) );
+			why += line;
+		}
+		std::snprintf( line, sizeof( line ), "%s did not start %.1f s ago: %s\n", m.name.c_str(), double( float( tick - note.tick ) * dt ), why.c_str() );
+		out += line;
+	}
+	return out;
 }
 
 void Simulation::KeepMoveValues( flecs::entity e, uint16_t motion, const MotionStep& step, const MotionSlot& slot, const AnimGraphInputs& values )

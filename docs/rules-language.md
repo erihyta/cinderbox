@@ -1,97 +1,98 @@
 # Rules as a language
 
-The grammar of [roadmap step 3](../ROADMAP.md#3-rules-as-a-language): the rules sheet grows into a
-small language the simulation runs, so everything that moves on screen is predicted, and a mod's C++
-keeps only what the server alone should decide. **Partly built**: what is marked *built* works
-today; the rest is the plan.
-
-| Part | State |
-|---|---|
-| Every mod's motions as sheets (none uses a motion node; the SDK's starter is a sheet) | *built* (M211) |
-| Blocks: `motion` headers, `on use` / `on press` / `on EVENT` / `while` / `when`, `then when ... within`, `after`, `timeout`, `if` / `else`, `end`, `lasts`, `until`, `cooldown`, `uses`, `item` | *built* (M204) |
-| Statements in a block: `change`, `emit`, `impulse`, `force`, `move [for S]`, `launch` (as a `use` rule has them) | *built* (M204) |
-| `find` with shapes from nodes or written in the line, a block per thing found, `found`, `away`, `move for` on a player found, `emit` with who was found | *built* (M205) |
-| `cast` (the probe in a sheet: a line, a ball or a shape drawn in the scene, swept along the look; what is under it happens while it holds), `link` | *built* (M206: the grapple is a sheet now) |
-| Numbers that are expressions (an `impulse`'s and a `force`'s), `curve(Name, x)` from a `CbCurve`, `time`, `distance` and `reach` in a find | *built* (M207) |
-| Markers (`along NODE`, `launch ... from NODE`), `turn (yaw, pitch)`, `follow PATH over S`, a launch's `speed (EXPRESSION)` | *built* (M208) |
-| `$target:FIELD` in a find's lines, `at POINT`, `PATH at T`, a cast in a later step | planned |
-| `owner item` (an item's own motion, `on expired` or `on EVENT`), `break`, `remove self` | *built* (M209: the frag grenade's blast is its sheet's) |
-| `impulse ... kind momentum`, `every S` | *built* (M210) |
-| Every amount an expression: a `move`'s values (read when its step starts), a `change`'s, a launch's speed, lift, ahead and seconds, a force's top, a link's length and reel, a `break`'s, a move a find gives; times, counts and directions stay numbers | *built* (M214) |
-| Made regular: one table of where a line may stand (every refusal made from it), `on target`, `along world (x, y, z)`, a find `turned` and `at`, every find shape from the feet, `change` in a find, `use` exactly `motion Use on use`, an item's motion one tick | *built* (M213) |
-
-## The idea in one picture
+A **motion block** in a `.rules` sheet is a motion the simulation runs: every machine (the server,
+every client) runs the same lines on the same input, so what a player does to bodies is predicted
+on their own screen and rolled back like movement. A mod's C++ keeps only what the server alone
+should decide (damage, score, rounds). This page is the reference: **everything on it is built**;
+what is planned is listed [at the end](#planned).
 
 ```
 a .rules sheet ──bake──> motions/<set>.cfg ──> every simulation runs it (server and clients)
-    │                                            same input, same state, same result: predicted
-    └── names nodes by path: shapes, markers, paths, curves (things you see in the 3D view)
+    └── names nodes by path: shapes, markers, paths, curves (drawn in the 3D view)
 
 a server mod (C++) ──> damage, score, rounds, shops, who wins: the server's only, a lead late
 ```
 
-| Goes in the sheet (simulation) | Stays in C++ (server) | Stays in looks (viewer) |
+| In the sheet (every simulation) | In a mod's C++ (the server) | In looks (the viewer) |
 |---|---|---|
-| anything that moves a body, starts or ends a motion, finds who is near, changes a movement parameter, launches, breaks a wall | damage, health rules, score, inventories, timers of a round, anything secret or decided by the server | sounds, particles, camera shakes, HUD text: reactions and predictions as today |
+| what moves a body, starts or ends a motion, finds who is near, changes a movement parameter, launches, breaks a wall, changes the player's fields | damage, health, score, inventories, round timers, anything secret | sounds, particles, shakes, HUD text: reactions and predictions |
+
+See also: [motions.md](motions.md) (what motions are, what conditions read, the baked file),
+[looks.md](looks.md#expressions) (the expression language).
 
 ## What the language may not do
 
-Every machine runs it, and rollback runs a tick again many times. So:
+Every machine runs it, and rollback runs a tick again many times:
 
 | Rule | Why |
 |---|---|
-| **Deterministic**: no clock, no randomness but the simulation's own (`random` is seeded by the tick and the player) | the server and every client must reach the same result |
-| **Bounded**: no loops but `every`, which ends with its motion and runs at most 64 times; `find` takes at most 16 targets | a tick always costs about the same, however often it is run again |
-| **No storage of its own**: state is fields, the world, and each running motion's small record (below) | the record is rolled back with the rest; nothing outside it can drift |
-| **No files, no network, no text building** | it runs inside the physics step |
+| **Deterministic**: no clock, no randomness but the simulation's | the server and every client reach the same result |
+| **Bounded**: no loops but `every` (64 times at most); a `find` takes 16 things at most | a tick costs about the same however often it is run again |
+| **No storage of its own**: fields, the world, each motion's small record (28 bytes: its step, since when, its ifs' answers) | the record rolls back with the rest |
+| **No files, no network, no text** | it runs inside the physics step |
 
-A running motion's record: which step it waits at, since which tick, its anchor (a point and a
-facing), its current target. A fixed size, like the 28 bytes a motion has today (its step, since when, its ifs' answers).
-
-## A sheet: three kinds of block
-
-A `.rules` file already holds reactions (`on`, `while`), predictions (`predict`) and HUD lines
-(`show`, `text`, `bind`), all run by the viewer. The new block is **`motion`**, run by the
-simulation. Its first word keeps the two apart: `on` and `while` stay the viewer's.
+## A motion block
 
 ```
 motion NAME TRIGGER [if EXPRESSION]
-    [setting lines]
-    statements
+    settings
+    lines
 ```
 
-`use [if EXPRESSION]` is `motion Use on use [if EXPRESSION]`, word for word (M213): the same lines,
-the same bake. An item has one motion named `Use`; its `CbItem`'s *When used* fields join it.
+- **`use [if EXPRESSION]`** is `motion Use on use [if EXPRESSION]`, word for word: an item's use.
+  An item has one motion named `Use`; its `CbItem`'s *When used* fields join it.
+- A sheet's other blocks (`on`, `while`, `predict`, `show`, `text`, `bind`) are the viewer's
+  ([looks.md](looks.md)); the first word keeps the two apart.
+- Indenting counts: an `if`'s lines, a `find`'s and a `cast`'s are further in. A tab is four spaces.
+- In an **item's sheet** a motion is for whoever has the item out (`item carried`: whoever carries
+  it); in a **motion set** (`CbMotionSet`), everyone's.
 
-### How a block runs (built)
+### Triggers
 
-- **Steps.** A `then when` or an `after` line starts a new **step**. The first step is what happens
+| Trigger | Starts it |
+|---|---|
+| `on use` | the item is used (its key, or the use button with it in the hand). An item used while its key is held (`use`: a press, and while held) has it on while it is held. An item's sheet only |
+| `on press ACTION` | the action goes down: `jump`, `sprint`, or one a mod declares |
+| `on EVENT` | a mod event, or a simulation event, said at the owner this tick (`brawl.stunned`); in an item's sheet `on expired` is its own time running out |
+| `while EXPRESSION` | on every tick it holds; off when it stops. No steps |
+| `when EXPRESSION` | once, on the tick it turns true (false the tick before; its first answer is only remembered): `when grounded` is a landing |
+
+### Settings
+
+As far in as the motion's first line, not under an `if`, before its first `then` or `after`.
+
+| Setting | Means |
+|---|---|
+| `cooldown S` | seconds between two starts |
+| `uses N`, `uses N refill ground`, `uses N refill after S` | charges |
+| `lasts S` | it ends S seconds after it starts |
+| `until EXPRESSION` | it ends when this holds (several lines: any) |
+| `item hand` / `item carried` | in an item's sheet: whoever has it out (the default), or whoever carries it |
+| `owner player` / `owner item` | who runs it: the player (the default), or the item while it lies in the world ([an item's motion](#an-items-motion)) |
+
+### How a block runs
+
+- **Steps.** `then when EXPRESSION` or `after S` starts a new step. The first step is what happens
   when the motion starts; each next one starts once its wait is over (`after` seconds since the step
-  before started, then `when` its condition holds), at the earliest on the tick after. So `then when
-  grounded` after a dive is the tick after the player touches the ground.
-- **Once and lasting.** A step's once statements (`change`, `emit`, `impulse`, `launch`, `end`)
-  happen when it starts. Its lasting ones (`force`, `move`) act while it is the current step;
-  `move for S`, for S seconds from when the step started.
-- **`if` is decided when its step starts**, and holds for the whole step: an `if` around a `move`
-  moves for the whole step or not at all. A condition asked every tick is a `while` motion's.
-- **Giving up.** `then when EXPRESSION within S` gives up after S seconds: the `timeout` lines
-  below it (once statements only) run, and the motion ends. Without a `timeout`, it just ends.
-- **When it ends**: its `lasts` run out, its `until` holds, an `end` is reached, a wait gives up,
-  or, with none of `lasts` and `until`, its last step's longest `move for` is over (one tick at
-  least; a motion of one step too, since M213). A motion that waits is on while it waits
-  (`motion.<name>` is true), so a press does not start it again.
-- **`when EXPRESSION`** starts it on the tick the expression turns true. Its first answer is only
-  remembered: a player standing from the start has not landed.
-- **In an item's sheet** a motion is for whoever has the item out; `item carried`, whoever carries
-  it. `on use` is the item's use (its key, or the button with it in the hand), whoever.
-- **In the file** (`motions/<set>.cfg`, version 3): `step <after> <within> [condition]`,
-  `timeout`, `guard [condition]` (an `if`, written out: `not ( a ) and ( b )`), `end`, `when edge
-  <condition>`, and `param <name> <value> <seconds>`.
+  before started, then its condition), at the earliest on the tick after.
+- **Once and lasting.** A step's once lines (`change`, `emit`, `impulse`, `launch`, `break`,
+  `find`, `end`) happen when it starts; its lasting ones (`force`, `move`, `link`, `follow`) act
+  while it is the current step (`move for S`: S seconds from its start).
+- **`if` is decided when its step starts** and holds for the whole step. A condition asked every
+  tick is a `while` motion's.
+- **Giving up.** `then when EXPRESSION within S` gives up after S seconds: its `timeout` lines run,
+  and the motion ends (without a `timeout`, it just ends).
+- **It ends** when its `lasts` run out, its `until` holds, an `end` is reached, a wait gives up, or,
+  with neither `lasts` nor `until`, when its last step's longest `move for` is over (one tick at
+  least). A motion that waits is on while it waits (`motion.<name>` is true), so a press does not
+  start it again.
+- **Its effects on other players** land after their own motions, on the same tick, whatever their
+  slots (M212); pushes from several players on one add up.
 
 ## Where a line may stand
 
-*Built* (M213). One table: the parser says every refusal from it (`"force" cannot stand in a find:
-there a line is change, emit, impulse or move for`), and this is the same table.
+One table: the parser says every refusal from it (`"force" cannot stand in a find: there a line is
+change, emit, impulse or move for`).
 
 | Line | In a step | After `every` | In a `timeout` | In a `find` | In a `cast` | In an item's motion |
 |---|---|---|---|---|---|---|
@@ -103,196 +104,206 @@ there a line is change, emit, impulse or move for`), and this is the same table.
 | `find` | yes | yes | yes | | | yes |
 | `if` / `else` | yes | yes | yes | | | yes |
 | `move for S` | yes | | | yes: given to a player found | yes | |
-| `move` (while the step lasts) | yes | | | | yes: while it holds | |
+| `move` | yes | | | | yes: while it holds | |
 | `force`, `link` | yes | | | | yes | |
 | `follow`, `end` | yes | | | | | |
 | `remove self` | | | | | | yes (only there) |
 | `cast` | the first step, not under an `if`, once a motion | | | | | |
 | `every` | as far in as the motion's first line, once a step | | | | | |
 
-- **Structure lines** (`then when`, `after`, `timeout`) and **settings** (`cooldown`, `uses`,
-  `lasts`, `until`, `item`, `owner`) stand as far in as the motion's first line, not under an `if`;
-  settings before the first `then` or `after`.
-- **An item's motion** (`owner item`) happens in one tick, on an event said at it: no structure
-  lines, no settings but `owner`, no `if` on its first line (an `if` block is fine), and what the
-  table's last column allows. It has no look or keys: it pushes along `up`, `world`, `away` or `to`.
-- **Why the gaps**: a find's and a cast's lines happen to something (each thing found, what is
-  held); `every` and a timeout repeat or end, so nothing that lasts; a cast is thrown when the
-  motion starts. `if` around `every` or a `cast` is not there: an `every` is the rest of its step,
-  and a cast belongs to the motion, not to a step.
+Why the gaps: a find's and a cast's lines happen *to* something; `every` and a `timeout` repeat or
+end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 
-## Triggers
-
-| Trigger | Starts the motion | Today's equivalent |
-|---|---|---|
-| `on use` | the item is used (in an item's sheet) | `use`, CbItem's When used |
-| `on press ACTION` | the action goes down (`dash`, `jump`, `sprint`, any a mod declares) | On a press |
-| `on EVENT` | a mod event or a simulation event at the owner (`brawl.stunned`, `frag.grenade.expired`, `impact`) | On a cue |
-| `while EXPRESSION` | on every tick it holds, off when it stops | While |
-| `when EXPRESSION` | **new**: once, on the tick the expression turns true (it was false the tick before) | none |
-
-`when` is what replaces a "landed" trigger: `when grounded` is a landing, `when flight.fuel <= 0`
-an empty tank, `when combat.health < 20` a low-health burst, `when wall` the first touch of a
-wall (once that condition exists). One general edge, not one trigger per case.
-
-## Settings (lines under the header, before any statement)
-
-| Line | Means | Today's |
-|---|---|---|
-| `cooldown S` | seconds between two starts | `cooldown` |
-| `uses N`, `uses N refill ground`, `uses N refill after S` | charges | `uses`, `refill` |
-| `lasts S` | the motion ends S seconds after it starts | `duration` |
-| `until EXPRESSION` | ends it when it holds (several lines: any) | `until` |
-| `item hand` / `item carried` | in an item's sheet: who may run it, whoever has the item out (the default) or whoever carries it | `with_item` |
-| `owner player` / `owner item` | *built*: who runs it: the player (the default), or the item itself while it lies in the world (in an item's sheet). An item's motion happens in one tick, when its event is said at the item: `on expired` (its time up: the launch's seconds; it runs before the item goes), or `on EVENT` (a mod's, said at it). What it may have is the last column of [where a line may stand](#where-a-line-may-stand); its `if` blocks read the item's fields, the game's, and `speed`. It says its events as its thrower's (A the thrower, B the item: whose blast it is) | **new** |
-
-## Statements
-
-Run top to bottom on the tick they are reached. Most finish at once; **waits** hold the motion
-there until they are done; **lasting** ones act every tick until the motion ends (or their own
-`for`).
+## Lines
 
 ### Once
 
-| Statement | Does |
+| Line | Does |
 |---|---|
-| `change FIELD -= N` / `+= N` / `= N` | a field of the owner; in a find, once for each thing found (*built*, M213: a count of what was hit). The target's own fields (`$target:FIELD`) are planned |
-| `emit EVENT [at POINT]` | a mod event: for looks, state machines, and a mod's C++ (damage) |
-| `impulse VALUE [kind velocity\|momentum] [on WHO] [along DIRECTION] [replace vertical\|horizontal\|all]` | *built*: a change of velocity (m/s, any weight: the default; to 200) or of momentum (`kind momentum`: N·s, shared out by what the target weighs, to 100000; heavy things move less) |
-| `launch new KIND \| carried [speed S] [lift L] [ahead M] [seconds S] [along DIRECTION] [from NODE]` | *built*: an item into the world; its speed, lift, ahead and seconds [amounts](#numbers-and-curves), read when it is thrown; `from` a marker: its place around the player (turned with its heading), instead of `ahead` of where its look starts (the cannon's muzzle) |
-| `break radius R [speed S] [seconds S]` | *built*: the breakable walls whose nearest piece is within R of the owner (its feet, or the item) lose their pieces that near, flung at S (10 by default), staying S seconds (0, the default: for good). Each a number, a name (`frag.break_radius`: a field a mod sets from its options) or an expression in brackets |
-| `remove self` | *built*: the owner item leaves the world (a mine once it has gone off). An item's motion only |
+| `change FIELD = VALUE` / `+= VALUE` / `-= VALUE` | a field of the owner (in a find: once for each thing found) |
+| `emit EVENT` | a mod event, at the owner: for looks, state machines and a mod's C++. In a find, A is the player and B what it found, at it |
+| `impulse VALUE [kind velocity\|momentum] [on WHO] [along DIRECTION] [replace nothing\|vertical\|horizontal\|all]` | a change of velocity (m/s whatever it weighs, to 200), or of momentum (`kind momentum`: N·s, to 100000, shared out by what the target weighs). `replace`: that part of the velocity is cleared first |
+| `launch new KIND \| carried [speed S] [lift L] [ahead M] [seconds S] [along DIRECTION] [from NODE]` | an item into the world: a new one of a kind, or the one carried (in a hand first, else the lowest slot's), with the player's own velocity; `seconds` until it is removed (0: it stays); `from` a marker's place instead of `ahead` of where the look starts |
+| `break radius R [speed S] [seconds S]` | breakable walls whose nearest piece is within R of the owner lose their pieces that near, flung at S (10), staying S seconds (0: for good) |
+| `remove self` | the owner item leaves the world |
 | `end` | the motion ends here |
 
 ### Lasting
 
-| Statement | Does |
+| Line | Does |
 |---|---|
-| `force VALUE [kind acceleration\|force\|velocity] [top S] [ramp S] [react] [on WHO] [along DIRECTION]` | every tick while on, as `CbForce`; its value and its `top` amounts read every tick; `ramp` (seconds to full strength) a number |
-| `move [for S] PARAMETER VALUE ...` | movement parameters of the owner, or of the target inside `find` / `cast` (a slow, a root). Each value an amount: the words up to the next parameter's name (`move walk_speed 2 * t.power sprint_speed 3`), read when its step starts and held as it was (a field changed later does not move it); in a find, read for each thing found (`move for 1 walk_speed distance`). `for S`, a number |
-| `link [length L] [reel S] [alone] [on WHO]` | *built*, under a cast: a rope to what it holds (or a field's entity), as `CbLink`; its length and reel amounts, read every tick; length 0: as long as it is when the cast takes hold; `alone`: it moves the player only |
-| `follow PATH over S` | *built*: carries the player along a `Path3D` beside the sheet, drawn from its first point as if the player stood there facing −Z, in S seconds: each tick its stretch of the path is the player's velocity, turned as it faces, so walls still stop it (give it `move gravity 0`, or gravity pulls it off). A leap arc, a curved dash. Baked into 32 points at even steps |
+| `force VALUE [kind acceleration\|force\|velocity] [top S] [ramp S] [react] [on WHO] [along DIRECTION]` | every tick: m/s² (`acceleration`, the default), newtons (`force`), or toward the speed `top` (`velocity`); `top` caps the other two; `ramp` seconds to full strength; `react`: the other end is pushed back |
+| `move [for S] PARAMETER VALUE ...` | the owner's movement parameters (`walk_speed`, `gravity`, `friction`, `air_control`, ... [the list](server-mods.md#movement-parameters)) while it is the step, or for S seconds. In a find, given to the player found for S seconds (a slow, a root); a player holds six such at most |
+| `link [length L] [reel S] [alone] [on WHO]` | under a cast: a rope to what it holds (or a field's entity). Length 0: as long as it is when it takes hold; reel: metres a second taken in; `alone`: it moves the player only |
+| `follow PATH over S` | carried along a `Path3D` beside the sheet (drawn from its first point, facing −Z), in S seconds; walls still stop it |
 
-### Waits and order
+### Order
 
-| Statement | Does |
+| Line | Does |
 |---|---|
-| `then when EXPRESSION [within S]` | waits until it holds; with `within`, gives up after S seconds (the `timeout` lines below it run then) |
-| `after S` | waits S seconds |
-| `timeout` | what a `within` that gave up runs (once statements), before the motion ends |
-| `every S` | *built*: the lines after it in its step happen when the step starts and every S seconds while it is the step, 64 times at most (a burn, a rapid fire, a pulse). What may follow it: [the table](#where-a-line-may-stand). In a `while` motion: from when it starts, while it holds |
-| `if EXPRESSION` / `else` | a block (indented under it) runs or not, decided when its step starts |
+| `then when EXPRESSION [within S]` | the next step, once this holds (giving up after S seconds) |
+| `after S` | the next step, S seconds after this one started |
+| `timeout` | what a `within` that gave up runs, before the motion ends |
+| `every S` | the lines after it in its step happen when the step starts and every S seconds while it is the step (64 times at most) |
+| `if EXPRESSION` / `else` | the lines further in happen or not, decided when the step starts |
 
-### Finding things
+### Finding
 
-| Statement | Does |
+| Line | Does |
 |---|---|
-| `find SHAPE [players] [bodies] [self] [max N] [turned facing\|look\|none] [at (x, y, z)]` | *built*: everything the shape overlaps when its step starts. The lines further in run **once per thing found**, nearest first (then by id), at most N (16): `impulse` (on what it found, unless `on self`), `move for S ...` (given to a player found for S seconds), `change` (the owner's field), `emit` (said with the player as A and what it found as B, at it). Players and bodies (props, items lying about) both unless one is named; the player itself only with `self`; the shape turned as the player faces (the default), looks (with the pitch), or not at all (`none`; `along facing\|look\|world` is the older spelling); `at` moves it, metres right, up and ahead |
-| `cast SHAPE range R [speed V] [holds level bodies players]` | *built*: the probe. Thrown when the motion starts, along the look at what is under the crosshair; speed 0: it holds at once on what is there, or the motion does not happen; otherwise it flies and holds what it meets first. The lines further in are what it does **while it holds**: `impulse` and `force` (on what it holds, unless `on self`), `link`, `move` (the player's while it holds), and one `emit`, said where and when it takes hold. Only in the motion's first step, not under an `if`, once a motion; with one, what that step does to bodies goes under it |
+| `find SHAPE [players] [bodies] [self] [max N] [turned facing\|look\|none] [at (x, y, z)]` | everything the shape overlaps when its step starts; the lines further in run once for each, nearest first, at most N (16). Players and bodies (props, items lying about) unless one is named; the player itself only with `self`; the shape turned as the player faces (the default), as it looks (with the pitch), or not at all |
+| `cast SHAPE range R [speed V] [holds level bodies players]` | a line thrown along the look when the motion starts: at once (speed 0: it holds what is there, or the motion does not happen) or flying at V m/s, holding what it meets first. The lines further in act **while it holds**; with a cast, what the first step does to bodies goes under it |
 
-| A `SHAPE` is | |
+| A `SHAPE` | |
 |---|---|
-| a node's path | *built*: an `Area3D` (its `CollisionShape3D` children together) or one `CollisionShape3D`, from the node the sheet's `CbRules` is under: a sphere, capsule, box, cylinder, or a convex shape made from a mesh (Godot's *Mesh > Create Collision Shape*). Drawn around the scene's origin as if the player stood there (its feet) facing -Z. **This is how a find's shape is authored**: draw it in the 3D view. An `Area3D` under an item is not part of its body |
-| `ray` | *built*: a cast's plain line |
-| `sphere R` (a cast) | *built*: a ball swept along the line: it catches what passes beside it |
-| a node's path (a cast) | *built*: one `CollisionShape3D` (or an `Area3D` with one), drawn around its own origin as the line's tip, forward -Z; turned to the line, so what is level stays level (a flat blade stays flat) |
-| `sphere R`, `box (X,Y,Z)`, `capsule R H` | *built*: written in the line, around the player's feet, as a drawn one is (M213; before, a metre up). `at (0, 1, 0)` puts it around the middle |
+| a node's path (a find) | an `Area3D` (its `CollisionShape3D` children) or one `CollisionShape3D` beside the sheet: a sphere, capsule, box, cylinder or convex shape, drawn as if the player stood at the scene's origin (its feet) facing −Z |
+| `sphere R`, `box (X,Y,Z)`, `capsule R H` (a find) | written in the line, around the player's feet |
+| `at (x, y, z)` (a find) | moves either: metres right, up and ahead |
+| `ray` (a cast) | a line |
+| `sphere R` (a cast) | a ball swept along the line |
+| a node's path (a cast) | one convex `CollisionShape3D`, drawn around its own origin as the line's tip, forward −Z |
 
-- **`along away`** (inside a find): from where the player is out to what it found, along the ground
-  (right on top of it: where the player faces). What it found is the default target there (`on
-  target`); `on self` reaches the player.
-- **A `move` given** holds on that player for its seconds, after its own motions' parameters (a slow
-  holds through its dash); the newest wins a parameter. A player holds six at most (the oldest goes).
-- **Planned**: `point` and `$target:FIELD` readable in a find's lines; a find around a point other
-  than the player (`at POINT` below). (`distance` and `reach` are built: [numbers](#numbers-and-curves).)
+An `Area3D` under an item is not part of the item's body.
 
-## Who and where
+### Who and which way
 
 | `on WHO` | |
 |---|---|
-| `self` | the owner (the default outside `find` / `cast`) |
-| `target` | *built* (M213): what the find found, or what the cast holds (the default inside one); only there. `found` and `hit` are the older words for it |
-| `FIELD` | the entity a field names (`bind.partner`) |
+| `self` | the owner (the default outside a find or a cast) |
+| `target` | what the find found, or what the cast holds (the default inside one); only there. `found` and `hit` are older words for it |
+| `FIELD` | the entity a field of the player names |
 
 | `along DIRECTION` | |
 |---|---|
-| `look`, `move`, `facing`, `up` | as today |
-| `world (x, y, z)` | *built*: as given, in the world (`world direction (x, y, z)` is the older spelling) |
-| `to` / `away` | toward the target / from the shape's origin out to the target (a shockwave) |
-| `NODE` | *built*: a `Marker3D`'s (any `Node3D`'s) forward (−Z) as drawn beside the sheet, as if the player stood at the origin facing −Z; turned as the look is (its heading and its pitch): an arrow drawn in the 3D view |
-| `PATH at T` | planned: the tangent of a `Path3D` at T (0 to 1) |
-| any of these, then `turn (yaw, pitch)` | *built*: turned by degrees, right and up (pitch within ±90): `along look turn (0, 20)` throws a little above the look, `along move turn (90, 0)` sidesteps |
+| `look`, `move`, `facing`, `up` | where the camera looks; the move input (the facing with none); the body's facing; up |
+| `world (x, y, z)` | as given, in the world (`world direction (x, y, z)`, the older spelling) |
+| `to` | toward the target (what the cast holds, or a field's entity) |
+| `away` | in a find: from the player out to what it found, along the ground |
+| `NODE` | a `Marker3D`'s (any `Node3D`'s) forward (−Z) as drawn, turned as the look is |
+| then `turn (yaw, pitch)` | turned by degrees, right and up |
 
-Planned (none of it is built):
+## An item's motion
 
-| `at POINT` | |
-|---|---|
-| `here` | the owner now (the default) |
-| `anchor` | where the motion was when it started |
-| `point` | where the last `cast` hit |
-| `NODE` | a marker in the owner's frame |
+`owner item` in an item's sheet: the item runs it, where it lies in the world, **in one tick**, when
+its event is said at it (`on expired`: its time is up, before it goes; `on EVENT`: a mod's, said at
+it). So: no `then`, `after` or `timeout`, no settings but `owner`, no `if` on its first line (an
+`if` block is fine), and only what [the table's](#where-a-line-may-stand) last column allows. It has
+no look or keys, so it pushes along `up`, `world`, `away` or `to`. Its events are said as its
+thrower's (A the thrower, B the item); its expressions read its fields, the game's, and `speed`.
 
-## Numbers and curves
+## Numbers
 
-**One rule** (*built*, M214): every **amount** a line says may be an
-[expression](looks.md#expressions): the words up to the line's next option word (for a `move`, up to
-the next parameter's name), or a word in brackets. It is read when its line acts, within the same
-limits as a number:
+**Every amount may be an [expression](looks.md#expressions)**: the words up to the line's next
+option word (for a `move`, up to the next parameter's name), or a word in brackets, read when its
+line acts, within the same limits as a number.
 
 | Read | Amounts |
 |---|---|
-| when its step starts (a once line) | an `impulse`'s; a `change`'s value; a `launch`'s speed, lift, ahead and seconds; a `break`'s radius, speed and seconds; a `move`'s values (held as they were for as long as the move holds: the mover has no expression's inputs at hand) |
+| when its step starts | an `impulse`'s; a `change`'s value; a `launch`'s speed, lift, ahead and seconds; a `break`'s radius, speed and seconds; a `move`'s values (held as they were while the move holds) |
 | for each thing found | in a find: an `impulse`'s, a `change`'s, a `move for`'s values |
 | every tick | a `force`'s value and its `top`; a `link`'s length and reel |
 
-**Numbers, always**, because they shape the motion itself (its steps, its record, its bounds) or are
-worked out once:
+**Numbers, always**: the motion's own times (`cooldown`, `lasts`, `after`, `within`, `every`, `move
+for`'s seconds, `follow ... over`, a force's `ramp`), counts (`uses`, `max`), directions and places
+(`world (x, y, z)`, `turn`, `at`), and a cast's `range` and `speed`. They shape the motion, or are
+needed before anything is read.
 
-| Kind | Which |
+What a motion's expressions read, beyond what [conditions read](motions.md#cbmotion-the-trigger):
+
+| Word | |
 |---|---|
-| the motion's own times | `cooldown`, `lasts`, `after`, `within`, `every`, `move for`'s seconds, `follow ... over`, a force's `ramp` |
-| counts | `uses`, a find's `max` |
-| directions and places | `world (x, y, z)`, `turn (yaw, pitch)`, a find's `at (x, y, z)` |
-| a cast's `range` and `speed` | the line is thrown, and flies, before anything is read |
-
-A step's moves read at most 16 values from expressions. Words added, for a motion's expressions:
-
-| Write | Means |
-|---|---|
-| `curve(Name, x)` | the curve of the `CbCurve` node named `Name` beside the sheet (under the node its `CbRules` is under), read at `x`. Drawn in the inspector's curve editor; baked into 64 values at even steps over its domain (0 to 1 by default), read between two in a straight line, held past its ends: every machine reads the same |
-| `time` | seconds since the motion's current step started (0 while it is off). Everywhere in a motion: a strength, a wait (`then when time >= 0.5`), an `until`, an `if` |
-| `distance` | inside a find: metres from the player to what it found (its middle) |
-| `reach` | inside a find: how far out along the ground what it found is, 0 at the player, 1 at the shape's farthest edge (its points and radius) |
-
-So falloff, ramps and shapes over time are expressions, not new settings:
+| `curve(Name, x)` | the `CbCurve` named `Name` beside the sheet, read at x (baked into 64 values, read between two in a straight line, held past its ends) |
+| `time` | seconds since the current step started (0 while off) |
+| `distance` | in a find: metres from the player to what it found |
+| `reach` | in a find: how far out along the ground it is, 0 at the player, 1 at the shape's edge |
 
 ```
 impulse 9 * curve(Falloff, reach) along away   # strong at the centre, weak at the edge
-force 40 * curve(Ramp, time / 0.3) along look  # the curve is the ramp-in
-impulse 2 * dash.power along up                # a field: a jump that grows with an upgrade
-move walk_speed 4 + slow.bonus friction 0      # a move's value, read when its step starts
-change brawl.combo += 1 + brawl.streak         # a change's value
+force 40 * curve(Ramp, time / 0.3) along look  # a ramp drawn as a curve
+move walk_speed 4 + slow.bonus friction 0      # read when the step starts
+change brawl.combo += 1 + brawl.streak
 ```
 
-`ramp_in` and the like keep working; a curve is the general form. A state machine or a look reads
-`time`, `distance` and `reach` as 0, and a curve as 0.
-
-## Impulse, force: the physics words
-
-| Word | Is | Unit | Weight matters |
+| Physics word | Is | Unit | Weight matters |
 |---|---|---|---|
-| `impulse ... kind velocity` (default) | a change of velocity, once | m/s | no: a crate and a truck both get 9 m/s |
-| `impulse ... kind momentum` | an impulse proper: a change of momentum, once | N·s | yes: 900 N·s is 9 m/s to 100 kg, 0.9 m/s to 1000 kg |
-| `force ... kind acceleration` | a change of velocity per second, every tick | m/s² | no |
-| `force ... kind force` | a force, every tick | N | yes |
+| `impulse` (`kind velocity`) | a change of velocity, once | m/s | no: a crate and a truck both get 9 m/s |
+| `impulse ... kind momentum` | a change of momentum, once | N·s | yes: 900 N·s is 9 m/s to 100 kg |
+| `force` (`kind acceleration`) | a change of velocity per second | m/s² | no |
+| `force ... kind force` | a force | N | yes |
 
-An impulse is a force over a moment (N·s = N × s), not an acceleration: an acceleration is what
-a force gives per second. `kind velocity` is what games mostly want (Unity's `VelocityChange`),
-and Godot's `apply_impulse` is `kind momentum`.
+## Limits
 
-## Examples
+| Limit | |
+|---|---|
+| things a find takes | 16 |
+| times an `every` repeats | 64 |
+| `if`s a step decides | 16 |
+| steps a motion has | 64 |
+| a step's `move` values from expressions | 16 |
+| moves a player is given at once | 6 (the oldest goes) |
+| casts a motion has | 1 |
 
-### The dash (*built*: `server_mods/dash/client/prefabs/boots.rules`): `use` is `motion Use on use`
+## Seeing what a motion does
+
+The debug HUD (F1) lists your motions: each that is on, its step and what it waits for, how long it
+has been on and has left, what its cast holds; and the last one you asked for that did not start,
+and why (its cooldown, its uses, its `if` as written, it is on already, its cast found nothing, you
+may not act). A recording shows the followed player's.
+
+## Examples (the shipped sheets)
+
+The ground slam (`server_mods/brawl/client/prefabs/slam.rules`): a dive, and on landing everyone
+in the drawn `Shockwave` cylinder thrown away and up; the brawl mod only hurts them.
+
+```
+motion Slam on use if brawl.cd_slam <= 0 and not grounded
+	lasts 3
+	change brawl.cd_slam = 5
+	emit brawl.slam.started
+	impulse 25 along world (0, -1, 0) replace vertical
+	then when grounded
+	emit brawl.slam.landed
+	find Shockwave players
+		impulse 9 along away
+		impulse 4.5 along up
+		emit brawl.slam.hit
+```
+
+The frag grenade (`server_mods/frag/client/prefabs/frag.rules`): thrown on the arm's marker, it
+goes off where it lies when its time is up, on the same tick everywhere; its numbers are the mod's
+options, published as fields.
+
+```
+motion Release on frag.release
+	item carried
+	emit frag.thrown
+	launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
+
+motion Blast on expired
+	owner item
+	emit frag.blast
+	break radius frag.break_radius speed frag.push seconds frag.rubble_seconds
+	find Blast bodies
+		impulse (distance < frag.radius) * frag.push * (1 - distance / frag.radius) along away
+		impulse (distance < frag.radius) * 0.35 * frag.push * (1 - distance / frag.radius) along up
+```
+
+The grappling hook (`server_mods/grapple/client/prefabs/hook.rules`):
+
+```
+motion Throw on use if not linked
+	until grapple.hook.used or pressed.jump
+	lasts 2
+	emit grapple.fired
+	cast ray range 40 speed 80
+		emit grapple.hooked
+		link reel 4 alone
+		force 160 top 15 ramp 0.1 on self along to
+		move air_control 0.6 gravity 0 airborne 1
+```
+
+The dash boots (`server_mods/dash/client/prefabs/boots.rules`) and flight's jetpack
+(`server_mods/flight/client/motion_sets/flight_moves.rules`, a while motion):
 
 ```
 use if dash.charges > 0
@@ -301,151 +312,72 @@ use if dash.charges > 0
     emit dash.started
     impulse 11 replace horizontal
     move for 0.18 friction 0
-```
 
-### The ground slam: no C++ but damage (*built*: `server_mods/brawl/client/prefabs/slam.rules`)
-
-```
-motion Slam on use if brawl.cd_slam <= 0 and not grounded
-    lasts 3
-    change brawl.cd_slam = 5
-    emit brawl.slam.started
-    impulse 25 along world (0, -1, 0) replace vertical
-    then when grounded
-    emit brawl.slam.landed
-    find Shockwave players                       # an Area3D: a cylinder 5 m around the feet
-        impulse 9 along away
-        impulse 4.5 along up
-        emit brawl.slam.hit                      # the brawl mod: 25 damage
-```
-
-### A frag grenade whose blast is predicted (*built*: `server_mods/frag/client/prefabs/frag.rules`)
-
-```
-motion Blast on expired                          # its time up: the launch's seconds
-    owner item
-    emit frag.blast                              # A: who threw it; the frag mod hurts who is near
-    break radius frag.break_radius speed frag.push seconds frag.rubble_seconds
-    find Blast bodies                            # an Area3D: a ball 8 m round
-        impulse (distance < frag.radius) * frag.push * (1 - distance / frag.radius) along away
-        impulse (distance < frag.radius) * 0.35 * frag.push * (1 - distance / frag.radius) along up
-```
-
-The numbers are fields the frag mod sets from its server options (`frag.radius`, `frag.push`,
-`frag.break_radius`, `frag.rubble_seconds`): the rules stay the mod's, the physics is the sheet's.
-
-### The grappling hook, as one block (*built*: `server_mods/grapple/client/prefabs/hook.rules`)
-
-```
-motion Throw on use if not linked
-    until grapple.hook.used or pressed.jump
-    lasts 2
-    emit grapple.fired
-    cast ray range 40 speed 80
-        emit grapple.hooked
-        link reel 4 alone
-        force 160 top 15 ramp 0.1 on self along to
-        move air_control 0.6 gravity 0 airborne 1
-```
-
-### A cannon with its muzzle as a marker
-
-```
-use if not combat.dead
-    cooldown 1.2
-    emit cannon.fired
-    launch new cannon.ball speed 36 lift 1 seconds 10 from Muzzle along Muzzle
-```
-
-### A flamethrower: a cone, ten times a second
-
-```
-motion Flame while held.use and flame.fuel > 0
-    change flame.fuel -= 25                      # per second, while it is on
-    every 0.1                                    # the lines below: now, and every 0.1 s
-    find Cone players bodies                     # a convex shape made from a cone mesh
-        impulse 0.6 along away
-        emit flame.burn                          # the mod: damage over time
-```
-
-### A leap along a drawn arc
-
-```
-motion Leap on press leap if grounded
-    cooldown 4
-    follow LeapArc over 0.6 turn                 # a Path3D in the item's scene
-    then when grounded within 2
-        find Landing players
-            move for 1 speed 0                   # rooted for a second
-```
-
-### What the parked "player's body" pieces would add (words, not new nodes)
-
-```
-motion WallRun while wall and held.jump and not grounded
-    move gravity 0.2
-    force 30 kind velocity top 9 along wall
-
-motion Blink on press blink
-    cooldown 6
-    cast ray along look range 20
-        teleport to target behind 1.2
+motion Thrust while flight.jetpack_on and held.jump and not grounded and not flight.on and flight.fuel > 0
+	change flight.fuel -= 30          # per second, in a while motion
+	emit flight.thrust
+	force 26 along up
 ```
 
 ## Grammar, in short
 
 ```
-sheet      := { block }
-block      := motion | use | reaction | prediction | hud-line          (the last three as today)
-motion     := "motion" NAME trigger [ "if" expr ] NEWLINE INDENT { setting } { stmt } DEDENT
-use        := "use" [ "if" expr ] ...                      (exactly: "motion Use on use" [ "if" expr ] ...)
+block      := motion | use
+motion     := "motion" NAME trigger [ "if" expr ] NEWLINE INDENT { setting } { line } DEDENT
+use        := "use" [ "if" expr ] ...                          (exactly "motion Use on use" ...)
 trigger    := "on use" | "on press" ACTION | "on" EVENT | "while" expr | "when" expr
-setting    := "cooldown" num | "uses" num [ "refill" ( "ground" | "after" num ) ]
-            | "lasts" num | "until" expr | "item" ( "hand" | "carried" ) | "owner" ( "player" | "item" )
-stmt       := once | lasting | wait | flow | query
-once       := "change" field op value | "emit" EVENT [ "at" point ]
-            | "impulse" value [ "kind" kind ] { option } | "launch" launch-args
-            | "break" { option } | "remove self" | "end"
-lasting    := "force" value { option } | "move" [ "for" value ] { PARAM value }
-            | "link" { option } | "follow" NODE { option }
-wait       := "then when" expr [ "within" num ] | "after" num | "timeout"
-flow       := "every" num | "if" expr block-body [ "else" block-body ]   (every: the rest of its step repeats)
-query      := "find" shape { option } block-body | "cast" shape { option } block-body
-shape      := NODE | "ray" | "sphere" num | "box" vec | "capsule" num num
-find-opts  := "players" | "bodies" | "self" | "max" num | "turned" ( "facing" | "look" | "none" ) | "at" vec
-who        := "self" | "target" | FIELD                              (where each line stands: the table above)
-value      := expr                                  (looks.md's expressions, plus curve() and time)
-option     := "on" who | "along" direction | "at" point | "replace" what | "top" value | ...
+setting    := "cooldown" num | "uses" num [ "refill" ( "ground" | "after" num ) ] | "lasts" num
+            | "until" expr | "item" ( "hand" | "carried" ) | "owner" ( "player" | "item" )
+line       := once | lasting | order | finding          (where each may stand: the table above)
+once       := "change" FIELD op amount | "emit" EVENT | "impulse" amount { option }
+            | "launch" ( "new" KIND | "carried" ) { launch-option } | "break" { break-option }
+            | "remove self" | "end"
+lasting    := "force" amount { option } | "move" [ "for" num ] { PARAM amount }
+            | "link" { link-option } | "follow" NODE "over" num
+order      := "then when" expr [ "within" num ] | "after" num | "timeout" | "every" num
+            | "if" expr ... [ "else" ... ]
+finding    := "find" shape { find-option } ... | "cast" shape "range" num [ "speed" num ] [ "holds" ... ] ...
+amount     := a number, or an expression up to the next option word
+option     := "on" who | "along" direction [ "turn" vec2 ] | "replace" ... | "kind" ... | "top" amount
+            | "ramp" num | "react"
+who        := "self" | "target" | FIELD
+direction  := "look" | "move" | "facing" | "up" | "to" | "away" | "world" vec | NODE
 ```
-
-Indentation is a tab or four spaces, as sheets are today. Mistakes are said with their line, in
-the editor and at publish, as today.
 
 ## The nodes
 
-| Node | After |
+The motion nodes (`CbMotion`, `CbImpulse`, `CbForce`, `CbMove`, `CbLink`, `CbLaunch`, `CbProbe`)
+bake to the same file and are kept as they are, not maintained, until they are reworked with the
+other authoring nodes. No shipped mod uses them. What a sheet names stays a node: `CollisionShape3D`
+and `Area3D` (shapes), `Marker3D` (arrows and places), `Path3D` (paths), `CbCurve` (curves).
+
+## Planned
+
+| What | |
 |---|---|
-| `CbMotion`, `CbImpulse`, `CbForce`, `CbMove`, `CbLink`, `CbLaunch`, `CbProbe` | keep working, bake to the same file; no new features. A tool writes a scene's motions as a sheet, as `reactions_to_rules.py` did for reactions |
-| `CollisionShape3D`, `Marker3D`, `Path3D`, a node holding a `Curve` | what the sheet names: places, shapes and arrows, seen and edited in the 3D view |
+| `$target:FIELD` | the target's own fields, read in a find's or a cast's lines |
+| `at POINT` | a find or an emit around a point other than the owner (`anchor`, where the cast hit, a marker) |
+| `PATH at T` | a direction along a `Path3D` |
+| A cast in a later step | today a cast is thrown when the motion starts |
+| The player's body | `wall` (a condition and a direction), `teleport`, passing through, not hittable, the capsule's size, keep speed and steer, hidden from others ([ROADMAP.md](../ROADMAP.md#parked)) |
 
-## Open questions
-
-| Question | Leaning |
+| Open question | Leaning |
 |---|---|
-| Two slows on one player: the stronger, the newer, or multiplied? | the newer wins per parameter, as motions do today; `move ... multiply` to stack |
-| How many timed `move`s may a player carry from others? | a few slots each (4), the oldest dropped: a fixed size for rollback |
-| May a sheet change another player's fields (`$target:combat.health -= 25`)? | not at first: health is a mod's rule; `emit` and the mod's C++ do it. The HUD shows it a lead late, which is how damage is today |
-| `owner item` for a prop of the map (a mine, a door), not only an item? | later: once items work |
-| A shape that follows a bone (a sword's swing sweeping its arc)? | later: a `cast` along a pose marker over the swing's ticks |
-| Other players' presses | unchanged: seen when their input arrives. The language makes the presser's own screen instant and keeps everyone else's from being corrected |
+| Two slows on one player: the stronger, the newer, or multiplied? | the newer wins per parameter (today's); a `multiply` to stack |
+| May a sheet change another player's fields? | not at first: health is a mod's rule (`emit`, then the mod's C++) |
+| `owner item` for a map's prop (a mine, a door)? | later |
+| A shape that follows a bone (a sword's arc)? | later: a cast along a pose marker over the swing's ticks |
 
-## Order of work
+## How it came to be
 
-1. **Blocks** (*built*, M204): `motion` headers, `when`, `then when`, `after`, `timeout`, `if` / `else`, `end`; today's `use` sheets unchanged. The brawl slam's landing is its sheet's now (`then when grounded`).
-2. **Finding** (*built*): `find` (M205: the brawl slam's shockwave is its sheet's now, the mod only hurts), `cast` (M206: the grapple is a sheet now). `distance` and `reach` come with curves.
-3. **Curves and markers** (*built*): `curve()`, `time`, `distance`, `reach` (M207); `along NODE`, `from NODE`, `turn`, `follow` (M208).
-4. **Items run motions** (*built*, M209): `owner item`, `break`, `remove self`; the frag grenade's blast predicted.
-5. **`impulse kind momentum`**, `every` (*built*, M210).
-6. **The mods converted** (*built*, M211): brawl, frag, cannon, grapple, flight, dash and the grenade mod are sheets; none uses a motion node; the SDK's starter motion set is a sheet. Nothing was lost (every test as before); the brawl fist's finisher and the dash strike now push what they hit, which their nodes never baked.
-7. **Made regular** (*built*, M213): the table of where a line may stand, `on target`, `along world (x, y, z)`, `turned`, `at`, shapes from the feet, `change` in a find, `use` a motion, an item's motion one tick. Found on the way: a motion of one step with no `lasts` was on for no tick, so its `move for` never held (the dash boots' and the dash strike's, once `use` was a motion); it is now on for its longest `move for`, as a last step entered later always was.
-8. **Every amount an expression** (*built*, M214): a `move`'s values (read when the step starts, kept in `MoveValues` while they hold), a `change`'s, a launch's speed, lift, ahead and seconds, a force's top, a link's length and reel, a `break`'s of several words, a move a find gives (`walk_speed distance`); the motion's times, counts and directions stay numbers.
+| Milestone | |
+|---|---|
+| M204 | blocks: steps, `if` / `else`, `end`, `when` |
+| M205, M206 | `find`; `cast` (the grapple a sheet) |
+| M207, M208 | curves, `time`, `distance`, `reach`; markers, `turn`, `follow` |
+| M209, M210 | an item's motion, `break`, `remove self`; `kind momentum`, `every` |
+| M211 | every mod's motions are sheets |
+| M212 | effects on other players do not depend on the slots |
+| M213 | made regular: where a line may stand, `target`, `along world (x, y, z)`, `turned`, `at`, shapes from the feet, `change` in a find, `use` a motion; a motion of one step on for its longest `move for` |
+| M214 | every amount an expression |
+| M215 | this reference, rewritten from what is built; the motion lines in the debug HUD |

@@ -101,6 +101,12 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 		rollbackWindow = session->MaxRollback();
 		f.hasWorld = true;
 	}
+	// The local player's motions, for the debug HUD (F1): what is on, and why a start was refused.
+	std::string motions;
+	if ( RollbackSession* session = client.Session() )
+	{
+		motions = session->Sim().DescribeMotions( client.Slot() );
+	}
 
 	f.stats.clear();
 	f.stats.push_back( { "reject_reason", client.RejectReason() } );
@@ -122,6 +128,7 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 	f.stats.push_back( { "kbit_down_total", double( s.bytesReceived ) * 8.0 / 1000.0 } );
 	f.stats.push_back( { "fingerprint", FingerprintText( fingerprint ) } );
 	f.stats.push_back( { "fp_environment_ok", FpEnvironmentOk() } );
+	f.stats.push_back( { "motions", motions } );
 }
 
 void LiveSource::Run()

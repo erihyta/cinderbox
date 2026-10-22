@@ -3894,6 +3894,58 @@ void TestMotionAmounts()
 	CHECK( up > 4.9f && up < 5.1f );
 }
 
+// M215: the debug HUD's motion lines (DescribeMotions): a motion waiting at its step says what for;
+// a press refused says why (its cooldown, its if); the simulation's state does not change for it.
+void TestMotionInspector()
+{
+	ModSchema schema;
+	schema.fields.push_back( { "t.ready", BoardType::Int, BoardScope::Entity, 0 } );
+	schema.actions.push_back( { "dive", 0, "Q" } );
+	schema.actions.push_back( { "zap", 1, "E" } );
+	const std::string text = "cinderbox_motions\t3\n"
+							 "motion\tDive\nwhen\tpress\tdive\ncooldown\t2\nimpulse\tself\t3\tup\tnone\nstep\t0\t0\tgrounded and t.ready > 0\n"
+							 "motion\tZap\nwhen\tpress\tzap\nif\tt.ready > 0\nimpulse\tself\t1\tup\tnone\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && motions->list.size() == 2 );
+	if ( motions == nullptr || motions->list.size() != 2 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	CHECK( sim.DescribeMotions( 0 ).empty() );
+	f.inputs[0].actions = 1;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	step( 10 );
+	const std::string waiting = sim.DescribeMotions( 0 );
+	std::printf( "    a dive waiting:\n      %s", waiting.c_str() );
+	CHECK( waiting.find( "t.moves/Dive  step 1 of 2  waits for grounded and t.ready > 0  for 0.2 s" ) != std::string::npos );
+	f.inputs[0].actions = 1; // again, in its cooldown (and on: it is held on while it waits)
+	step( 1 );
+	f.inputs[0].actions = 2; // the zap, whose if does not hold
+	step( 1 );
+	f.inputs[0].actions = 0;
+	const std::string refused = sim.DescribeMotions( 0 );
+	std::printf( "    a zap refused:\n      %s", refused.c_str() );
+	CHECK( refused.find( "t.moves/Zap did not start 0.0 s ago: its if: t.ready > 0" ) != std::string::npos );
+}
+
 void TestMotionFinds()
 {
 	ModSchema schema;
@@ -11229,6 +11281,7 @@ int main( int argc, char** argv )
 		{ "motion_order", TestMotionOrder },
 		{ "motion_regular", TestMotionRegular },
 		{ "motion_amounts", TestMotionAmounts },
+		{ "motion_inspector", TestMotionInspector },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },

@@ -171,7 +171,7 @@ read: a reaction, a prediction, a HUD node, a character's state machine.
 | `motion.Hook`, `motion.grapple.hook.Use` | that motion of the player's is on (the node's name alone when it is the only one of that name) |
 | `name == 2`, `!=`, `>`, `>=`, `<`, `<=` | a comparison: 1 or 0 (`true` / `false` are 1 / 0) |
 | `+ - * /`, `-x`, `( )` | arithmetic; dividing by 0 gives 0 |
-| `curve(Name, x)` | a curve's value at x: a motion's (a `CbCurve` beside its sheet, [rules-language.md](rules-language.md#numbers-and-curves)); elsewhere 0 |
+| `curve(Name, x)` | a curve's value at x: a motion's (a `CbCurve` beside its sheet, [rules-language.md](rules-language.md#numbers)); elsewhere 0 |
 | `and` / `&&`, `or` / `\|\|` | both, either |
 | a field against a field | `combat.health <= combat.max_health / 4` |
 

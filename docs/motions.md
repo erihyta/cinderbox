@@ -263,7 +263,7 @@ Players weigh something: `mass` is a [movement parameter](server-mods.md#movemen
 ## Probes, forces and links: the grapple mod
 
 A probe is a line a motion throws at what the player looks at: a node's `CbProbe`, or a sheet's
-[`cast`](rules-language.md#finding-things) (which can also sweep a shape: a ball, a blade).
+[`cast`](rules-language.md#finding) (which can also sweep a shape: a ball, a blade).
 `server_mods/grapple` is an item whose sheet has the hook's motion, its pose, and a look. Its C++
 declares the two events; the scene and its sheet say the rest, a hook for every life among it.
 
@@ -395,7 +395,7 @@ simulation removes it, and first says `<kind>.expired` (where a mod declares tha
 mod declares `frag.grenade.expired`) at where it is, with the item as the first entity and who
 threw it as the second. It is the simulation's, so the thrower's own game has it on the same tick
 (`net_frag`: 240 ticks of flight, bounces and the fuse, the server's exactly). Before it goes, its
-own motions that answer it run (a sheet's [`owner item`](rules-language.md#settings-lines-under-the-header-before-any-statement)):
+own motions that answer it run (a sheet's [`owner item`](rules-language.md#settings)):
 the grenade's `frag.rules` says `frag.blast`, breaks the walls near it and throws what is loose, on
 that tick on every machine. The frag mod hears the event (`ctx.RecentEvents()`) and hurts who was
 near, and flings the bodies it killed.

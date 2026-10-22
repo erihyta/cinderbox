@@ -537,6 +537,10 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			{
 				return fail( ( key == "if" ? "condition: " : "until: " ) + exprError );
 			}
+			if ( key == "if" )
+			{
+				m.conditionText = w[1];
+			}
 		}
 		else if ( key == "cooldown" )
 		{
@@ -1071,6 +1075,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				{
 					return fail( "step: " + exprError );
 				}
+				next.waitText = w.size() > 3 ? w[3] : std::string();
 				if ( next.within > 0.0f && next.wait.Empty() )
 				{
 					return fail( "a step that gives up within some seconds waits for a condition" );
@@ -1361,6 +1366,27 @@ float MotionValueOf( const Motion& m, const MotionValue& value, const AnimGraphI
 	return v > lo ? ( v < hi ? v : hi ) : lo;
 }
 
+const char* MotionRefusalText( MotionRefusal::Why why )
+{
+	switch ( why )
+	{
+		case MotionRefusal::Why::Frozen:
+			return "the player may not act";
+		case MotionRefusal::Why::On:
+			return "it is on already";
+		case MotionRefusal::Why::Cooldown:
+			return "its cooldown";
+		case MotionRefusal::Why::Uses:
+			return "its uses are spent";
+		case MotionRefusal::Why::Condition:
+			return "its if";
+		case MotionRefusal::Why::NothingToHold:
+			return "its cast found nothing";
+		default:
+			return "";
+	}
+}
+
 float MotionAmount( const Motion& m, float number, int16_t expr, const AnimGraphInputs& values, float lo, float hi )
 {
 	MotionValue value;
@@ -1450,29 +1476,54 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 			slot.edge = uint8_t( 1u | ( holds ? 2u : 0u ) );
 		}
 
-		bool starts = in.canAct;
-		if ( starts && m.when == Motion::When::Press )
+		// What would start it (a press, an event, an edge; a while motion, every tick), then what may
+		// keep it from starting, in order: the first that does is why (MotionInputs::refusals).
+		bool triggered = true;
+		if ( m.when == Motion::When::Press )
 		{
-			starts = Pressed( m, in, state.prevActions );
+			triggered = Pressed( m, in, state.prevActions );
 		}
-		else if ( starts && m.when == Motion::When::Event )
+		else if ( m.when == Motion::When::Event )
 		{
-			starts = m.trigger >= 0 && HeardEvent( m.trigger, in );
+			triggered = m.trigger >= 0 && HeardEvent( m.trigger, in );
 		}
-		else if ( starts && m.when == Motion::When::Edge )
+		else if ( m.when == Motion::When::Edge )
 		{
-			starts = turned;
+			triggered = turned;
 		}
+		bool starts = triggered && in.canAct;
+		MotionRefusal::Why why = triggered && in.canAct == false ? MotionRefusal::Why::Frozen : MotionRefusal::Why::None;
+		auto refuse = [&]( MotionRefusal::Why reason ) {
+			starts = false;
+			why = reason;
+		};
 		// One that is held does not start again while it is on.
-		starts = starts && ( on == false || m.Held() == false );
-		starts = starts && ( wasOn || slot.lastTick == 0 || now - slot.lastTick >= Ticks( m.cooldown, in.tickRate ) );
-		starts = starts && ( isWhile || m.uses == 0 || slot.used < m.uses );
-		starts = starts && ( m.condition.Empty() || EvaluateAnimExpr( m.condition, values, 0.0f ) != 0.0f );
+		if ( starts && on && m.Held() )
+		{
+			refuse( MotionRefusal::Why::On );
+		}
+		if ( starts && wasOn == false && slot.lastTick != 0 && now - slot.lastTick < Ticks( m.cooldown, in.tickRate ) )
+		{
+			refuse( MotionRefusal::Why::Cooldown );
+		}
+		if ( starts && isWhile == false && m.uses != 0 && slot.used >= m.uses )
+		{
+			refuse( MotionRefusal::Why::Uses );
+		}
+		if ( starts && m.condition.Empty() == false && EvaluateAnimExpr( m.condition, values, 0.0f ) == 0.0f )
+		{
+			refuse( MotionRefusal::Why::Condition );
+		}
 		// A probe has to find something to hold on to, or the motion does not happen.
 		uint32_t effectTick = in.tick;
 		if ( starts && m.probe && ( in.attach == nullptr || in.attach( in.user, m, i, effectTick ) == false ) )
 		{
-			starts = false;
+			refuse( MotionRefusal::Why::NothingToHold );
+		}
+		// (A while motion's condition fails on most ticks: that is no news.)
+		if ( why != MotionRefusal::Why::None && isWhile == false && in.refusals != nullptr )
+		{
+			in.refusals->push_back( { uint16_t( i ), why } );
 		}
 
 		// A step's once statements: its changes, its emits, its ends (in that order).

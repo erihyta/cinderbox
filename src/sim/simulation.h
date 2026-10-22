@@ -260,6 +260,10 @@ public:
 	// A player's motions: where each is (all never used when it has none).
 	bool HasMotionState( flecs::entity e ) const;
 	MotionState GetMotionState( flecs::entity e ) const;
+	// The motions of the player in `slot`, for the debug HUD: a line each that is on (its step, what
+	// it waits for, how long, what its cast holds), and the last start refused in the last 3 s and
+	// why. Empty without motions.
+	std::string DescribeMotions( PlayerSlot slot ) const;
 	// The closest thing a ray from `origin` along `translation` hits, skipping entity `ignoreNetId`
 	// and disabled bodies (and every player's capsule with `skipPlayers`). Returns false when it hits
 	// nothing.
@@ -615,6 +619,16 @@ private:
 		b3Vec3 change;
 	};
 	std::vector<PlayerPush> m_playerPushes;
+	// The last start of a motion refused for each player, and when (DescribeMotions). Not state:
+	// only the debug HUD reads it.
+	struct MotionNote
+	{
+		uint16_t motion = 0;
+		MotionRefusal::Why why = MotionRefusal::Why::None;
+		uint32_t tick = 0;
+	};
+	std::array<MotionNote, kMaxPlayers> m_motionNotes{};
+	std::vector<MotionRefusal> m_refusalScratch;
 	bool m_deferPlayerPushes = false;
 	// Each player's character between its motions and its move (MoveCharacters), by slot.
 	std::vector<Character> m_turnCharacters;
