@@ -3626,6 +3626,105 @@ void TestMotionSteps()
 
 // A motion's finds (a sheet's "find SHAPE", docs/rules-language.md): what a shape overlaps when its
 // step starts, each in turn: thrown away from the player, slowed for a while, said with who it was.
+// Which slot a player has changes nothing (M212): every player's motions run on the world as the
+// tick found it, and what they do to other players lands after the targets' own motions, on the
+// same tick. Two players 2 m apart, face to face: both shove at once; then one shoves while the
+// other dashes at it. Each is played twice, with the two players' slots swapped, and the players
+// end where they did, to the bit.
+void TestMotionOrder()
+{
+	ModSchema schema;
+	schema.actions.push_back( { "shove", 0, "Q" } );
+	schema.actions.push_back( { "lunge", 1, "E" } );
+	const std::string text = "cinderbox_motions\t3\n"
+							 "motion\tShove\nwhen\tpress\tshove\n"
+							 "find\tplayers\t0\t16\tfacing\nshape\t3\t0\t1\t0\n"
+							 "impulse\tfound\t9\taway\tnone\nimpulse\tfound\t3\tup\tnone\nendfind\n"
+							 "motion\tLunge\nwhen\tpress\tlunge\nimpulse\tself\t11\tfacing\thorizontal\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 2 );
+	if ( motions == nullptr || motions->list.size() != 2 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+
+	struct Ends
+	{
+		b3Vec3 west, east;		   // where each is after the press and half a second
+		b3Vec3 westFirst, eastFirst; // its velocity on the tick of the press
+	};
+	// `westSlot`: the slot of the player at z 0 facing +z (the other, at z 2 facing -z, has the other).
+	auto play = [&]( int westSlot, ActionBits westPress, ActionBits eastPress ) {
+		Simulation sim( TestConfig(), FlatMap() );
+		sim.SetMotions( motions );
+		InputFrame f;
+		auto step = [&]( int n ) {
+			for ( int i = 0; i < n; ++i )
+			{
+				f.tick = sim.Tick();
+				sim.Step( f );
+				f.events.clear();
+				f.commands.clear();
+			}
+		};
+		auto place = [&]( int slot, b3Vec3 at, uint16_t yaw ) {
+			SimCommand c;
+			c.type = CommandType::Respawn;
+			c.target = sim.PlayerNetId( PlayerSlot( slot ) );
+			c.mode = 1;
+			c.a = { at.x, at.y, at.z };
+			c.index = yaw;
+			f.commands.push_back( c );
+		};
+		const int eastSlot = 1 - westSlot;
+		f.events.push_back( { PlayerEventType::Join, 0 } );
+		f.events.push_back( { PlayerEventType::Join, 1 } );
+		step( 2 );
+		place( westSlot, { 0.0f, 1.0f, 0.0f }, 0 );
+		place( eastSlot, { 0.0f, 1.0f, 2.0f }, 32768 );
+		f.inputs[size_t( westSlot )].cameraYaw = 0;
+		f.inputs[size_t( eastSlot )].cameraYaw = 32768;
+		step( 60 );
+		f.inputs[size_t( westSlot )].actions = westPress;
+		f.inputs[size_t( eastSlot )].actions = eastPress;
+		step( 1 );
+		Ends ends;
+		ends.westFirst = sim.PlayerCharacter( PlayerSlot( westSlot ) )->velocity;
+		ends.eastFirst = sim.PlayerCharacter( PlayerSlot( eastSlot ) )->velocity;
+		f.inputs[size_t( westSlot )].actions = 0;
+		f.inputs[size_t( eastSlot )].actions = 0;
+		step( 30 );
+		ends.west = sim.EntityTransform( sim.PlayerNetId( PlayerSlot( westSlot ) ) )->position;
+		ends.east = sim.EntityTransform( sim.PlayerNetId( PlayerSlot( eastSlot ) ) )->position;
+		return ends;
+	};
+	auto same = []( b3Vec3 a, b3Vec3 b ) {
+		return a.x == b.x && a.y == b.y && a.z == b.z;
+	};
+
+	// Both shove: each is thrown away from the other on the tick of the press, whatever its slot.
+	const Ends both0 = play( 0, 1, 1 );
+	const Ends both1 = play( 1, 1, 1 );
+	std::printf( "    both shove: west at z %.3f, east at z %.3f (west in slot 0); %.3f, %.3f (west in slot 1)\n", both0.west.z, both0.east.z,
+				 both1.west.z, both1.east.z );
+	CHECK( both0.westFirst.z < -8.0f && both0.eastFirst.z > 8.0f && both1.westFirst.z < -8.0f && both1.eastFirst.z > 8.0f );
+	CHECK( same( both0.west, both1.west ) && same( both0.east, both1.east ) );
+	// And the two are mirror images of each other.
+	CHECK( std::fabs( both0.west.z + ( both0.east.z - 2.0f ) ) < 1e-3f && std::fabs( both0.west.y - both0.east.y ) < 1e-4f );
+
+	// West shoves while east lunges at it: east's lunge (its own, replacing its horizontal speed) comes
+	// first, the shove after it, so east goes on toward west at 11 - 9 = 2 m/s, whatever the slots.
+	const Ends lunge0 = play( 0, 1, 2 );
+	const Ends lunge1 = play( 1, 1, 2 );
+	std::printf( "    a shove on a lunge: east at %.2f m/s on the tick, ends at z %.3f (west in slot 0); %.2f m/s, z %.3f (west in slot 1)\n",
+				 lunge0.eastFirst.z, lunge0.east.z, lunge1.eastFirst.z, lunge1.east.z );
+	CHECK( same( lunge0.eastFirst, lunge1.eastFirst ) && same( lunge0.east, lunge1.east ) && same( lunge0.west, lunge1.west ) );
+	CHECK( lunge0.eastFirst.z < -1.0f && lunge0.eastFirst.z > -3.0f && lunge0.eastFirst.y > 2.0f );
+}
+
 void TestMotionFinds()
 {
 	ModSchema schema;
@@ -10958,6 +11057,7 @@ int main( int argc, char** argv )
 		{ "motions", TestMotions },
 		{ "motions_while", TestMotionsWhile },
 		{ "motion_steps", TestMotionSteps },
+		{ "motion_order", TestMotionOrder },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },
