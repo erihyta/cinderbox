@@ -544,6 +544,18 @@ int main( int argc, char** argv )
 		std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
 		return cb::LoadAnimPackItem( zip, item, pack, error, warnings );
 	};
+	// Characters a mod declares: characters/<name>/, baked from a CbCharacter scene of its look.
+	options.loadCharacter = [itemsDir, workshopDir]( const std::string& mod, const std::string& name, std::string& error,
+													 std::string& warnings ) -> std::shared_ptr<const cb::CharacterAsset> {
+		cb::ModItem item;
+		if ( ReadItem( itemsDir, mod, item ) == false )
+		{
+			error = "no item manifest for mod " + mod;
+			return nullptr;
+		}
+		std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
+		return cb::LoadModCharacterItem( zip, item, name, error, warnings );
+	};
 	// Motions: motions/<set>.cfg, baked from the mod's CbMotion nodes.
 	options.loadMotions = [itemsDir, workshopDir]( const std::string& mod, const std::string& set, std::string& text, std::string& error ) {
 		cb::ModItem item;

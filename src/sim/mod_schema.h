@@ -73,6 +73,27 @@ struct ModItem
 // An animation pack a mod provides: AnimationTree layers a player's own can be swapped for ("FullBody"
 // for a crouch walk). Baked into the mod's workshop item under anim/<name>/; the graph travels here
 // so every simulation runs the server's.
+// A character a body may be (Simulation's CharacterKind): a scene authored in the editor (a
+// CbCharacter), baked into the item it ships in. Its state machine and its capsule travel here, so
+// every simulation runs the same; how it looks is the item's. Character 0 is the server's own,
+// every player's unless a mod says another.
+inline constexpr float kDefaultCapsuleRadius = 0.3f;
+inline constexpr float kDefaultCapsuleHalfHeight = 0.5f; // the centre to a sphere's centre
+inline constexpr size_t kMaxCharacters = 64;
+struct CharacterInfo
+{
+	std::string name;  // res://characters/<name>/: the game's own, a character item's, or a mod's
+	std::string mod;   // the mod whose item it is in ("": the server's own character)
+	std::string graph; // its state machine (graph.cfg text); "" for the procedural rig
+	float radius = kDefaultCapsuleRadius;
+	float halfHeight = kDefaultCapsuleHalfHeight;
+	// How it moves, where its scene says so (CbCharacter.movement): movement parameters (move_params.h)
+	// and their values, laid over the server's for its bodies. [0]'s are in the server's already.
+	std::vector<std::pair<uint8_t, float>> move;
+
+	bool operator==( const CharacterInfo& ) const = default;
+};
+
 struct AnimPackInfo
 {
 	std::string mod;
@@ -210,9 +231,10 @@ struct ModSchema
 {
 	std::vector<std::string> mods; // names of the mods the server runs, for display
 	std::vector<ModItem> items;	   // the client items those mods need, and the character's
-	// The character everyone plays as: res://characters/<name>/, from a workshop item (then also in
-	// `items`) or from the game itself (the default, "mannequin"). Empty for the procedural rig.
-	std::string character;
+	// The characters bodies may be: [0] the server's own, every player's unless a mod gives another;
+	// then those mods declare. A workshop character is also in `items`; one that ships with the game
+	// is not. [0]'s name is empty for the procedural rig. Never empty.
+	std::vector<CharacterInfo> characters = std::vector<CharacterInfo>( 1 );
 	std::vector<BoardField> fields;
 	std::vector<std::string> events; // index = ModEventRecord::type
 	// Intents mods declare ("shop.buy"): a player's input carries one as kFirstModIntent + its index.
@@ -223,9 +245,6 @@ struct ModSchema
 	// AnimState stores their indices.
 	std::vector<std::string> layers;
 	std::vector<std::string> stances;
-	// The character's state machine (graph.cfg text, sim/anim_graph.h): the baked one of the
-	// server's character, or the placeholder rig's.
-	std::string animGraph;
 	// Kinds of items mods spawn ("melee.bat"; a look per kind in the mod's client item), their
 	// bodies when they lie in the world (same index), and the sockets they are held in: the hands
 	// every character has, then any a mod names (a character provides it as a CbSocket node, or the
@@ -252,6 +271,7 @@ struct ModSchema
 	int FindStance( const std::string& name ) const;
 	int FindItemKind( const std::string& name ) const;
 	int FindSocket( const std::string& name ) const;
+	int FindCharacter( const std::string& name ) const;
 };
 
 inline constexpr size_t kMaxSchemaName = 64;

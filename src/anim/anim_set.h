@@ -98,6 +98,17 @@ public:
 	{
 		return m_movement;
 	}
+	// Its body's capsule: anim.cfg "capsule_radius = 0.3", "capsule_height = 1.6" (a CapsuleShape3D
+	// under the CbCharacter: its radius and its whole height), as the simulation has it (the centre
+	// to a sphere's centre). The default capsule when the file says none.
+	float CapsuleRadius() const
+	{
+		return m_capsuleRadius;
+	}
+	float CapsuleHalfHeight() const
+	{
+		return m_capsuleHalfHeight;
+	}
 	int NeckJoint() const
 	{
 		return m_neckJoint;
@@ -221,6 +232,8 @@ private:
 	bool m_turnLegs = true;
 	bool m_faceForward = false;
 	std::vector<std::pair<int, float>> m_movement;
+	float m_capsuleRadius = 0.3f;
+	float m_capsuleHalfHeight = 0.5f;
 	int m_neckJoint = -1;
 	std::string m_description;
 	std::map<std::string, ozz::unique_ptr<ozz::animation::Animation>> m_namedClips;

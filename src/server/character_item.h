@@ -36,6 +36,14 @@ std::shared_ptr<const CharacterAsset> BuiltInCharacter();
 std::shared_ptr<const CharacterAsset> LoadCharacterItem( const std::string& zipPath, const ModItem& item, std::string& error,
 													std::string& warnings );
 
+// A character of a mod's look: characters/<name>/ of its workshop item (checked against the item's
+// SHA-256), or of a folder (tests, a mod's client project): baked there from a CbCharacter scene of
+// the mod's client project, as a character item's is.
+std::shared_ptr<const CharacterAsset> LoadModCharacterItem( const std::string& zipPath, const ModItem& item, const std::string& name,
+														   std::string& error, std::string& warnings );
+std::shared_ptr<const CharacterAsset> LoadModCharacterFolder( const std::string& dir, const std::string& name, std::string& error,
+															 std::string& warnings );
+
 // A character that ships with the game (godot/characters/<name>/, which every client has in its base
 // pack): the build copies its baked files next to cb_server, into characters/<name>/.
 std::shared_ptr<const CharacterAsset> LoadCharacterFolder( const std::string& dir, const std::string& name, std::string& error,

@@ -52,6 +52,24 @@ func _initialize() -> void:
 	baked = character.bake_to(folder)
 	_check("a value outside its range refuses the bake", not baked.ok and String(baked.error).contains("gravity"), str(baked.get("error", "")))
 
+	# Its body's capsule (M216): none written without a CollisionShape3D under it; a CapsuleShape3D
+	# there is its radius and its whole height.
+	character.movement = {}
+	baked = character.bake_to(folder)
+	var cfg := FileAccess.get_file_as_string(folder + "anim.cfg")
+	_check("no capsule node: no capsule lines (the default capsule)", baked.ok and not cfg.contains("capsule_"), str(baked.get("error", "")))
+	var holder := CollisionShape3D.new()
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = 0.5
+	capsule.height = 3.0
+	holder.shape = capsule
+	character.add_child(holder)
+	baked = character.bake_to(folder)
+	cfg = FileAccess.get_file_as_string(folder + "anim.cfg")
+	_check("a CapsuleShape3D under it: its radius and whole height", baked.ok and cfg.contains("capsule_radius = 0.5\n") and
+		cfg.contains("capsule_height = 3\n"), cfg.substr(0, 300))
+	holder.free()
+
 	character.free()
 	var dir := DirAccess.open(folder)
 	if dir != null:

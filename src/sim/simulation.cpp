@@ -339,6 +339,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<WallPiece>();
 	RegisterSnapComponent<MoveEffects>();
 	RegisterSnapComponent<MoveValues>();
+	RegisterSnapComponent<CharacterKind>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -1776,7 +1777,7 @@ flecs::entity Simulation::CreatePlayer( PlayerSlot slot )
 	uint32_t netId = e.get<NetId>().value;
 
 	Transform t{ SpawnPoint( slot ), detmath::YawRotation( 0.0f ) };
-	Shape shape{ ShapeKind::Capsule, {}, { kCapsuleRadius, kCapsuleHalfHeight, 0.0f } };
+	Shape shape{ ShapeKind::Capsule, {}, { Body( 0 ).radius, Body( 0 ).halfHeight, 0.0f } };
 
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_kinematicBody;
@@ -1907,7 +1908,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	// What everyone holds, for state machines that ask ("attack and melee.bat").
 	m_heldScratch.clear();
 	m_carriedScratch.clear();
-	if ( m_animGraph || m_motions )
+	if ( AnyGraph() || m_motions )
 	{
 		for ( const EntityRef& r : m_entities )
 		{
@@ -2171,13 +2172,14 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		// Frozen: the mover still runs (gravity, the ground, being pushed), with no intent.
 		PlayerInput still;
 		still.cameraYaw = in.cameraYaw;
-		mover::Move( { m_physicsWorld, BodyOf( pb ), ShapeOf( pb ) }, MoveOf( e ), m_config.TimeStep(), m_globals.tick,
-					 c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed, c, t );
+		const CharacterBody& bodyKind = Body( CharacterOf( e ) );
+		mover::Move( { m_physicsWorld, BodyOf( pb ), ShapeOf( pb ), bodyKind.radius, bodyKind.halfHeight }, MoveOf( e ), m_config.TimeStep(),
+					 m_globals.tick, c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed, c, t );
 		c.prevButtons = in.buttons;
 
 		AnimState anim = GetAnimState( e );
 		UpdateAnimState( anim, c, in, m_globals.tick, m_config.TimeStep() );
-		if ( m_animGraph )
+		if ( const AnimGraph* graph = Body( CharacterOf( e ) ).graph.get() )
 		{
 			// The character's own state machine, on what this tick's movement and commands left.
 			Blackboard board = GetBoard( e );
@@ -2210,7 +2212,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				graphIn.motionsOn = MotionsOnAt( GetMotionState( e ), m_globals.tick );
 			}
 			m_markerScratch.clear();
-			UpdateAnimGraph( anim, *m_animGraph, m_animPacks, graphIn, m_config.TimeStep(), m_markerScratch );
+			UpdateAnimGraph( anim, *graph, m_animPacks, graphIn, m_config.TimeStep(), m_markerScratch );
 			for ( int event : m_markerScratch )
 			{
 				// A marker the playing clip crossed: the mod event of its name, from this player.
@@ -3063,6 +3065,56 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			return;
 		}
 
+		case CommandType::SetCharacter:
+		{
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() == false || e.has<Character>() == false || command.index >= m_characters.size() )
+			{
+				return;
+			}
+			const uint16_t was = CharacterOf( e );
+			const uint16_t now = uint16_t( command.index );
+			if ( was == now )
+			{
+				return;
+			}
+			if ( now == 0 )
+			{
+				e.remove<CharacterKind>();
+			}
+			else
+			{
+				e.set<CharacterKind>( { now, 0 } );
+			}
+			// Its capsule: the new character's, with the feet where they were.
+			const CharacterBody& from = Body( was );
+			const CharacterBody& to = Body( now );
+			Transform t = e.get<Transform>();
+			t.position.y += mover::FeetBelowCenter( to.radius, to.halfHeight ) - mover::FeetBelowCenter( from.radius, from.halfHeight );
+			PhysicsBody pb = e.get<PhysicsBody>();
+			const bool enabled = b3Body_IsEnabled( BodyOf( pb ) );
+			b3DestroyShape( ShapeOf( pb ), false );
+			Shape shape{ ShapeKind::Capsule, {}, { to.radius, to.halfHeight, 0.0f } };
+			b3ShapeId shapeId = CreateShape( BodyOf( pb ), shape, CatPlayer );
+			b3Body_SetTransform( BodyOf( pb ), t.position, t.rotation );
+			if ( enabled == false )
+			{
+				b3Body_Disable( BodyOf( pb ) );
+			}
+			e.set<Shape>( shape );
+			e.set<PhysicsBody>( MakePhysicsBody( BodyOf( pb ), shapeId ) );
+			e.set<Transform>( t );
+			// Its state machine's layers start over: the new character's are not the old one's.
+			AnimState anim = GetAnimState( e );
+			for ( size_t l = 0; l < anim.graph.size(); ++l )
+			{
+				anim.graph[l] = AnimGraphLayerState{};
+			}
+			SetAnimState( e, anim );
+			IndexesStale();
+			return;
+		}
+
 		case CommandType::Break:
 		{
 			flecs::entity wall = FindEntity( ResolveTarget( command.target ) );
@@ -3528,7 +3580,8 @@ flecs::entity Simulation::CreateRagdoll( flecs::entity player, uint32_t lifetime
 	const Transform t = player.get<Transform>();
 	const Character c = player.get<Character>();
 	b3Quat facing = detmath::YawRotation( c.facingYaw );
-	b3Vec3 feet = b3Sub( t.position, b3Vec3{ 0.0f, kFeetBelowCenter, 0.0f } );
+	const CharacterBody& kind = Body( CharacterOf( player ) );
+	b3Vec3 feet = b3Sub( t.position, b3Vec3{ 0.0f, mover::FeetBelowCenter( kind.radius, kind.halfHeight ), 0.0f } );
 
 	// The body weighs what the player did (its mass, a movement parameter): the parts share it by
 	// their volume.
@@ -3750,6 +3803,15 @@ const Character* Simulation::PlayerCharacter( PlayerSlot slot ) const
 MoveParams Simulation::MoveOf( flecs::entity e ) const
 {
 	MoveParams params = m_config.move;
+	// Its character's own (a dragon walks slower), where it is not the server's own: the server's
+	// has its own in SimConfig::move already.
+	for ( const auto& [param, value] : Body( CharacterOf( e ) ).move )
+	{
+		if ( param < kMoveParams && CharacterOf( e ) != 0 )
+		{
+			params.values[param] = value;
+		}
+	}
 	if ( const MoveOverrides* set = e.try_get<MoveOverrides>() )
 	{
 		for ( int i = 0; i < kMoveParams; ++i )
@@ -4751,6 +4813,61 @@ void Simulation::KeepMoveValues( flecs::entity e, uint16_t motion, const MotionS
 		}
 	}
 	e.set<MoveValues>( kept );
+}
+
+bool Simulation::CharactersOf( const ModSchema& schema, std::vector<CharacterBody>& out, std::string& error )
+{
+	out.clear();
+	for ( const CharacterInfo& info : schema.characters )
+	{
+		CharacterBody body;
+		body.radius = info.radius;
+		body.halfHeight = info.halfHeight;
+		body.move = info.move;
+		if ( info.graph.empty() == false )
+		{
+			std::string why, warnings;
+			body.graph = CompileAnimGraph( info.graph, schema, why, warnings );
+			if ( body.graph == nullptr )
+			{
+				error = "character " + ( info.name.empty() ? std::string( "built-in" ) : info.name ) + ": " + why;
+				return false;
+			}
+		}
+		out.push_back( std::move( body ) );
+	}
+	if ( out.empty() )
+	{
+		out.resize( 1 );
+	}
+	return true;
+}
+
+void Simulation::SetCharacters( std::vector<CharacterBody> characters )
+{
+	if ( characters.empty() )
+	{
+		characters.resize( 1 );
+	}
+	m_characters = std::move( characters );
+}
+
+uint16_t Simulation::CharacterOf( flecs::entity e ) const
+{
+	const CharacterKind* kind = e.is_valid() ? e.try_get<CharacterKind>() : nullptr;
+	return kind != nullptr && kind->index < m_characters.size() ? kind->index : uint16_t( 0 );
+}
+
+bool Simulation::AnyGraph() const
+{
+	for ( const CharacterBody& c : m_characters )
+	{
+		if ( c.graph )
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 void Simulation::ApplyPlayerPushes()

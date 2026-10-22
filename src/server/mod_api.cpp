@@ -7,6 +7,7 @@
 #include "protocol.h"
 #include "reflect.h"
 #include "hit_test.h"
+#include "mover.h"
 #include "ragdoll.h"
 #include "util.h"
 
@@ -383,6 +384,27 @@ AnimPackHandle Declarations::AnimPack( const std::string& name )
 	return { int( m_schema.animPacks.size() - 1 ) };
 }
 
+CharacterHandle Declarations::Character( const std::string& name )
+{
+	for ( size_t i = 0; i < m_schema.characters.size(); ++i )
+	{
+		if ( m_schema.characters[i].name == name )
+		{
+			return { int( i ) };
+		}
+	}
+	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.characters.size() >= kMaxCharacters )
+	{
+		m_errors.push_back( m_mod + ": bad character \"" + name + "\"" );
+		return {};
+	}
+	CharacterInfo character;
+	character.name = name;
+	character.mod = m_mod;
+	m_schema.characters.push_back( character );
+	return { int( m_schema.characters.size() - 1 ) };
+}
+
 MotionsHandle Declarations::Motions( const std::string& name )
 {
 	for ( size_t i = 0; i < m_schema.motionSets.size(); ++i )
@@ -542,8 +564,10 @@ b3Vec3 Context::ViewPosition( PlayerSlot slot ) const
 			{
 				return EyePosition( slot );
 			}
-			b3Vec3 feet = b3Sub( t->position, b3Vec3{ 0.0f, ragdoll::kFeetBelowCenter, 0.0f } );
-			return b3Add( b3Add( feet, b3Vec3{ 0.0f, m_hits->EyeHeight(), 0.0f } ), b3MulSV( kEyeAhead, AimDirection( slot ) ) );
+			const uint16_t character = m_sim.CharacterOf( m_sim.FindEntity( m_sim.PlayerNetId( slot ) ) );
+			const Simulation::CharacterBody& body = m_sim.Body( character );
+			b3Vec3 feet = b3Sub( t->position, b3Vec3{ 0.0f, mover::FeetBelowCenter( body.radius, body.halfHeight ), 0.0f } );
+			return b3Add( b3Add( feet, b3Vec3{ 0.0f, m_hits->EyeHeight( character ), 0.0f } ), b3MulSV( kEyeAhead, AimDirection( slot ) ) );
 		}
 		case ViewMode::ShoulderRight:
 		case ViewMode::ShoulderLeft:
@@ -1191,6 +1215,15 @@ int Context::SlotOfTarget( uint32_t target ) const
 		return slot < uint32_t( kMaxPlayers ) ? int( slot ) : -1;
 	}
 	return SlotOf( target );
+}
+
+void Context::SetCharacter( uint32_t target, CharacterHandle character )
+{
+	SimCommand c;
+	c.type = CommandType::SetCharacter;
+	c.target = target;
+	c.index = uint16_t( character.Valid() ? character.index : 0 );
+	Add( c );
 }
 
 void Context::SwapLayer( uint32_t target, AnimPackHandle pack, const std::string& layer )

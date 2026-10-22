@@ -164,6 +164,17 @@ struct AnimPackHandle
 	}
 };
 
+// A character the mod ships (ModSchema::characters): a body may be it (Context::SetCharacter).
+struct CharacterHandle
+{
+	int index = -1;
+
+	bool Valid() const
+	{
+		return index >= 0;
+	}
+};
+
 // A set of motions the mod ships (sim/motions.h: CbMotion nodes baked into its item as
 // motions/<name>.cfg).
 struct MotionsHandle
@@ -324,6 +335,11 @@ public:
 	// An animation pack in this mod's client item: its layers can replace a player's own of the same
 	// name (Context::SwapLayer). Name it like the mod's other names ("sneak.crouch").
 	AnimPackHandle AnimPack( const std::string& name );
+	// A character in this mod's client item: a CbCharacter scene of its client project, baked into
+	// characters/<name>/ (its skeleton, its state machine, its hitboxes, its capsule). A body may be
+	// it (Context::SetCharacter); players download it with the mod's item. Name it like the mod's
+	// other names ("zoo.dragon"). The server's own character is 0; a name it already has is it.
+	CharacterHandle Character( const std::string& name );
 	// A set of motions in this mod's client item: what its players can do besides walking and
 	// jumping (a dash, a double jump), run by every simulation, so a player's own are predicted.
 	// Name it like the mod's other names ("dash.moves"). The mod declares the actions, fields and
@@ -660,6 +676,10 @@ public:
 	// layer's name is the character's (its AnimationTree's). Does nothing when the character has no
 	// such layer. The pose follows it everywhere, the server's hit tests too.
 	void SwapLayer( uint32_t target, AnimPackHandle pack, const std::string& layer );
+	// The player `target` is `character` from the next tick: its capsule (feet where they were), its
+	// state machine (its layers start over), its hitboxes, its look. An invalid handle: the server's
+	// own character again.
+	void SetCharacter( uint32_t target, CharacterHandle character );
 	// The player's own layer again (or the one a held item brings).
 	void RestoreLayer( uint32_t target, const std::string& layer );
 	// The server's: where mods' swaps are kept, and which packs items bring. After every mod has

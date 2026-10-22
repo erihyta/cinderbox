@@ -109,11 +109,42 @@ bool GameServer::Start( const ServerOptions& options )
 		}
 	}
 	std::shared_ptr<const CharacterAsset> character = options.character ? options.character : BuiltInCharacter();
-	m_schema.character = character->name;
-	// How players move: the server's options, then what the character says about itself.
+	m_schema.characters.front().name = character->name;
+	// How players move: the server's options, then what its own character says about itself.
 	for ( const auto& [param, value] : character->animations->Movement() )
 	{
 		m_options.config.move.values[param] = value;
+	}
+	// The characters: [0] the server's own, then those its mods declared, each read from its mod's
+	// item (one that cannot be read is the built-in rig, so a body made it still stands).
+	std::vector<std::shared_ptr<const CharacterAsset>> assets = { character };
+	for ( size_t i = 1; i < m_schema.characters.size(); ++i )
+	{
+		CharacterInfo& info = m_schema.characters[i];
+		std::string error, warnings;
+		std::shared_ptr<const CharacterAsset> asset = options.loadCharacter ? options.loadCharacter( info.mod, info.name, error, warnings ) : nullptr;
+		if ( asset == nullptr )
+		{
+			Log( "character %s (mod %s) is not available%s%s; its bodies are the built-in rig", info.name.c_str(), info.mod.c_str(),
+				 error.empty() ? "" : ": ", error.c_str() );
+			asset = BuiltInCharacter();
+		}
+		else if ( warnings.empty() == false )
+		{
+			Log( "character %s: %s", info.name.c_str(), warnings.c_str() );
+		}
+		for ( const auto& [param, value] : asset->animations->Movement() )
+		{
+			info.move.push_back( { uint8_t( param ), value } );
+		}
+		assets.push_back( asset );
+	}
+	for ( size_t i = 0; i < assets.size(); ++i )
+	{
+		CharacterInfo& info = m_schema.characters[i];
+		info.graph = assets[i]->animations->GraphText();
+		info.radius = assets[i]->animations->CapsuleRadius();
+		info.halfHeight = assets[i]->animations->CapsuleHalfHeight();
 	}
 	m_hits = std::make_unique<HitTester>( character );
 	{
@@ -139,27 +170,41 @@ bool GameServer::Start( const ServerOptions& options )
 			}
 			packSets.push_back( set );
 		}
-		// The character's state machine, if it has one: the simulation runs it, the hit tests pose by
-		// it, and it goes to every client in the schema.
-		m_schema.animGraph = character->animations->GraphText();
-		if ( m_schema.animGraph.empty() == false )
+		m_animPacks = CompileAnimPacks( m_schema, warnings );
+		// Each character's state machine, if it has one: the simulation runs it for its bodies, the hit
+		// tests pose them by it, and it goes to every client in the schema; the packs fitted to its
+		// skeleton.
+		m_graphs.assign( assets.size(), nullptr );
+		for ( size_t i = 0; i < assets.size(); ++i )
 		{
-			std::string error;
-			m_animGraph = CompileAnimGraph( m_schema.animGraph, m_schema, error, warnings );
-			if ( m_animGraph == nullptr )
+			if ( i > 0 )
 			{
-				Log( "character %s: its state machine does not load: %s", character->name.c_str(), error.c_str() );
-				return false;
+				m_hits->AddCharacter( assets[i] );
 			}
-			m_hits->SetGraph( m_animGraph, warnings );
-			m_animPacks = CompileAnimPacks( m_schema, warnings );
-			std::vector<std::shared_ptr<const anim::PackClips>> fitted;
-			for ( size_t i = 0; i < m_animPacks.size(); ++i )
+			const std::string& text = m_schema.characters[i].graph;
+			if ( text.empty() )
 			{
-				fitted.push_back( m_animPacks[i] && packSets[i] ? anim::FitPack( packSets[i], *m_animPacks[i], *character->animations, warnings )
+				continue;
+			}
+			std::string error;
+			m_graphs[i] = CompileAnimGraph( text, m_schema, error, warnings );
+			if ( m_graphs[i] == nullptr )
+			{
+				Log( "character %s: its state machine does not load: %s", assets[i]->name.c_str(), error.c_str() );
+				if ( i == 0 )
+				{
+					return false;
+				}
+				continue;
+			}
+			m_hits->SetGraph( i, m_graphs[i], warnings );
+			std::vector<std::shared_ptr<const anim::PackClips>> fitted;
+			for ( size_t p = 0; p < m_animPacks.size(); ++p )
+			{
+				fitted.push_back( m_animPacks[p] && packSets[p] ? anim::FitPack( packSets[p], *m_animPacks[p], *assets[i]->animations, warnings )
 															   : nullptr );
 			}
-			m_hits->SetPacks( m_animPacks, fitted );
+			m_hits->SetPacks( i, m_animPacks, fitted );
 		}
 		if ( warnings.empty() == false )
 		{
@@ -170,9 +215,14 @@ bool GameServer::Start( const ServerOptions& options )
 	m_options.config.fields = uint16_t( m_schema.FieldCount( BoardScope::Entity ) );
 	m_options.config.globalFields = uint16_t( m_schema.FieldCount( BoardScope::Global ) );
 	m_options.config.motions = uint16_t( m_motions ? m_motions->list.size() : 0 );
-	// (The character's layers and the overlays after them: a pack's layer the character does not have.)
-	m_options.config.layers =
-		uint8_t( std::min( std::max( m_animGraph ? LayerSlots( *m_animGraph ) : size_t( 0 ), m_schema.layers.size() ), size_t( kLayerLimit ) ) );
+	// (The most any character has: its layers and the overlays after them, a pack's layer the
+	// character does not have.)
+	size_t layers = m_schema.layers.size();
+	for ( const auto& graph : m_graphs )
+	{
+		layers = std::max( layers, graph ? LayerSlots( *graph ) : size_t( 0 ) );
+	}
+	m_options.config.layers = uint8_t( std::min( layers, size_t( kLayerLimit ) ) );
 	{
 		// What that costs: every client keeps, hashes and rolls back as much.
 		const SimConfig& c = m_options.config;
@@ -284,7 +334,7 @@ bool GameServer::Start( const ServerOptions& options )
 
 	m_sim = std::make_unique<Simulation>( m_options.config, m_map );
 	m_sim->SetPhysicsThreaded( m_options.physicsThreaded );
-	m_sim->SetAnimGraph( m_animGraph );
+	m_sim->SetCharacters( CharacterBodies() );
 	m_sim->SetAnimPacks( m_animPacks );
 	m_sim->SetMotions( m_motions );
 	m_sim->SetItemShapes( m_schema.itemShapes );
@@ -384,6 +434,17 @@ bool GameServer::Start( const ServerOptions& options )
 		}
 	}
 	return true;
+}
+
+std::vector<Simulation::CharacterBody> GameServer::CharacterBodies() const
+{
+	std::vector<Simulation::CharacterBody> bodies;
+	for ( size_t i = 0; i < m_schema.characters.size(); ++i )
+	{
+		const CharacterInfo& info = m_schema.characters[i];
+		bodies.push_back( { i < m_graphs.size() ? m_graphs[i] : nullptr, info.radius, info.halfHeight, info.move } );
+	}
+	return bodies;
 }
 
 void GameServer::Log( const char* fmt, ... ) const

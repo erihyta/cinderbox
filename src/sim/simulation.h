@@ -290,16 +290,44 @@ public:
 	// The item `holder` has in use in `socket` (stowed items are in nobody's hand), or 0.
 	uint32_t HeldItemOf( uint32_t holder, uint32_t socket ) const;
 
-	// The character's state machine (sim/anim_graph.h), compiled against the server's schema.
-	// Like the map it must be the same everywhere, so it travels in the schema; set it before the
-	// first Step. Without one, players' animation states carry how they move and nothing plays.
+	// The characters a body may be (ModSchema::characters, in its order): each its state machine
+	// (sim/anim_graph.h, compiled against the server's schema) and its capsule. Like the map they
+	// must be the same everywhere, so they travel in the schema; set them before the first Step.
+	// [0] is the server's own, every player's unless a SetCharacter says another. A character with
+	// no state machine: its bodies' animation states carry how they move and nothing plays.
+	struct CharacterBody
+	{
+		std::shared_ptr<const AnimGraph> graph;
+		float radius = kDefaultCapsuleRadius;
+		float halfHeight = kDefaultCapsuleHalfHeight;
+		// Its movement values, laid over the server's (SimConfig::move) for its bodies.
+		std::vector<std::pair<uint8_t, float>> move;
+	};
+	void SetCharacters( std::vector<CharacterBody> characters );
+	// Every character of a schema as the simulation runs it (its state machine compiled against the
+	// schema, its capsule, its movement): what a client, a replay and a test hand SetCharacters.
+	// False, with `error`, when a state machine does not compile.
+	static bool CharactersOf( const ModSchema& schema, std::vector<CharacterBody>& out, std::string& error );
+	// Character 0's state machine alone (its capsule the default): a server or a test with one.
 	void SetAnimGraph( std::shared_ptr<const AnimGraph> graph )
 	{
-		m_animGraph = std::move( graph );
+		m_characters.front().graph = std::move( graph );
 	}
+	// Character 0's state machine.
 	const AnimGraph* Graph() const
 	{
-		return m_animGraph.get();
+		return m_characters.front().graph.get();
+	}
+	// Which character a body is (0 for one with no CharacterKind, or an index past the list), and
+	// that character.
+	uint16_t CharacterOf( flecs::entity e ) const;
+	const CharacterBody& Body( uint16_t character ) const
+	{
+		return m_characters[character < m_characters.size() ? character : 0];
+	}
+	size_t CharacterCount() const
+	{
+		return m_characters.size();
 	}
 	// The mods' animation packs (compiled from the schema), whose layers players can swap to.
 	// The bodies of items lying in the world, by kind (ModSchema::itemShapes); set before the first
@@ -580,7 +608,8 @@ private:
 	std::vector<std::pair<uint32_t, uint16_t>> m_usingScratch;	 // what each is using this tick ("using.<kind>")
 	std::vector<uint32_t> m_usingItems;							 // the same, by the copy
 
-	std::shared_ptr<const AnimGraph> m_animGraph;
+	std::vector<CharacterBody> m_characters = std::vector<CharacterBody>( 1 );
+	bool AnyGraph() const;
 	std::vector<std::shared_ptr<const AnimGraph>> m_animPacks;
 	std::vector<ItemShape> m_itemShapes;
 	// Some kind breaks walls (ItemShape::breakSpeed); and those of its copies lying in the world, as
