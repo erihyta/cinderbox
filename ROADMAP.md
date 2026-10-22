@@ -25,8 +25,12 @@ A proposal: the order is open to change. Each row is a milestone or two.
 | 1 | [Loose ends](#1-loose-ends) | **done (M190 to M192)**: rolling and drag on bodies, slopes too steep to walk, the arms belong to what is held, the camera against meshes and terrain, the two network tests that miss a tick |
 | 2 | [Destructible walls](#2-destructible-walls) | **done (M195 to M198)**: a wall breaks into pieces authored beforehand, by what is made to break it; shared by everyone |
 | 3 | [Rules as a language](#3-rules-as-a-language) | **done (M204 to M211)**: the rules sheet grows into a small language the simulation runs: everything that moves on screen predicted, a mod's C++ left with what only the server decides. [The grammar, a draft](docs/rules-language.md) |
-| 4 | [Vehicles](#4-vehicles) | bodies joined in a template, a seat, input routed to motors (begun in M202: glue is Box3D's weld joints) |
-| 5 | [Authoring, finished](#5-authoring-finished) | the editor's leftovers: names in expressions, a prebuilt SDK, an item used in its preview, publish checks |
+| 4 | [A player's slot changes nothing](#4-a-players-slot-changes-nothing) | **done (M212)**: every player's motions in one pass, every player's move in another; what a motion does to another player lands on the same tick, after the target's own |
+| 5 | [The language made regular](#5-the-language-made-regular) | one rule for numbers, one table of where each line may stand, one word per role, one origin for shapes; the reference rewritten from what is built; a motion inspector |
+| 6 | [NPCs](#6-npcs) | characters no player drives: a server mod's brain gives them inputs, and every simulation moves, animates and hit-tests them as it does players |
+
+Steps 4 and 5 of the last version (vehicles, authoring finished) are [Later](#later), with the
+building system.
 
 - **Why loose ends first**: each is small, and each is felt in play: a ball that never stops, a
   player who runs up a 60° slope, a rifle held wrong while dashing, a camera that looks through a
@@ -39,7 +43,15 @@ A proposal: the order is open to change. Each row is a milestone or two.
   seen a lead late (brawl's slam throws people with `ctx.Push`; a slow is `ctx.SetMove`), because
   no node could say it: no "when it lands", no "everyone near this point". Adding one node per case
   would not end; a few general words do. Vehicles' input-to-motors is then written in it too.
-- **Authoring after**: it waits until the content above settles, as the client did.
+- **Why the slot order first** (decided after M211): small, and a fighting kit leans on it: every
+  `find` that shoves another player depended on who joined first.
+- **Why the language made regular before anything new** (decided after M211): every word added
+  since M204 brought its own rule of where it may stand; each new one would add more. Cleaning it
+  while eight milestones old is cheap; the mods and the SDK's starter are the only sheets.
+- **Why NPCs next**: they open whole kinds of game (waves, bosses, pets, tower defense, PvE) for
+  the least engine work: an NPC is a character with inputs from a server mod instead of a player.
+- **Vehicles and authoring later**: the core engine first; the nodes (motion nodes and the rest)
+  are reworked once it is complete, and kept as they are until then.
 
 ### 1. Loose ends
 
@@ -90,7 +102,58 @@ them. The motion nodes keep working and get nothing new.
 - **The parked pieces become words**: touching a wall is a condition (`wall`) and a direction, a
   teleport a statement, passing through a movement parameter.
 
-### 4. Vehicles
+### 4. A player's slot changes nothing
+
+**Done (M212).** Before, `MoveCharacters` ran each player's motions and then its mover, slot by
+slot: a push from a higher slot reached a lower one a tick late, a `find` saw lower slots already
+moved, and a target's own lunge (`replace horizontal`) wiped out a push from a lower slot only. Now
+every player's motions run first, on the world as the tick found it; what they do to other players
+is kept and lands after the targets' own; then everyone moves. `motion_order` swaps two players'
+slots and checks they end where they did, to the bit.
+
+### 5. The language made regular
+
+What M204 to M211 built works, but each word came with its own rule of where it may stand and how
+its numbers are written, and [docs/rules-language.md](docs/rules-language.md) mixes the built and
+the planned (and contradicts itself). The sheets that exist are the mods' and the SDK's starter, so
+changing the language now costs little; old spellings stay accepted for a while and a tool rewrites
+sheets.
+
+| Piece | Today | After |
+|---|---|---|
+| One rule for numbers | an impulse's and a force's strength take a bare expression up to the first option word; a launch's speed only in brackets (`speed (EXPR)`); `break` a number, a name or brackets; `move`, `lift`, `ahead`, `seconds` plain numbers | every number may be an expression: bare up to the next option word, or in brackets, everywhere (settings like `cooldown` read when the motion starts) |
+| One table of where a line may stand | each statement has its own rule, said in its own error: `cast` only in the first step, not under an `if`, once; `every` once a step, not under an `if`, only one-off lines after it; a find's lines only `impulse`, `move for`, `emit`; an item's motion no steps, `cast`, `cooldown`, `uses`, `lasts`, `until`, `move`, `end`, nor an `if` on its first line | the places a line can be (a step, an `if`, after `every`, in a find, in a cast, an item's motion) and what each allows: one table in the code that the parser's errors and the reference are both made from. Then relax what is cheap: `if` around `every` and `cast` (an `if` is decided when its step starts, and a cast's step is the first), `change` and `launch` in a find |
+| One word per role | the thing a block is about is `found` in a find and `hit` in a cast (the reference says `target`) | `target` in both (`found`, `hit` still read); `$target:FIELD` when fields of the target come |
+| One spelling per direction | `along world direction (0, -1, 0)` in the sheets, `world (x,y,z)` in the reference; a find's `along facing` turns its shape, where `along` is a direction everywhere else | `along world (x, y, z)`; a find's shape turned by `turned facing\|look\|none` |
+| One origin for shapes | a drawn find shape around the player's feet; one written in the line (`sphere 3`) around its middle, a metre up; a cast's around the line's tip | every find shape at the feet, facing as the find says, with `at (x, y, z)` to move it (no shipped sheet writes one inline); a cast's at its tip, as now |
+| An item's motion is one instant step | its limits listed one by one | said once: an item's motion happens in one tick (so no waits, nothing lasting, no cast); it has no look or keys (so directions are `up`, `world`, `away`, `to`) |
+| `use` is a motion | `use` stays beside `motion NAME on use`, its own thing | `use [if ...]` is exactly `motion Use on use [if ...]` |
+| The reference | built and planned mixed, the status table contradicting itself (curves "planned" and "built"), `at POINT` and `PATH at T` shown as if they work | `docs/rules-language.md` lists only what works, one table per statement with where it may stand; what is planned moves to a short list at the end |
+| A motion inspector | nothing shows why a motion did not happen | the debug HUD (F1) gets a row per player: each motion that is on, its step, since when, what it waits for, its target; a refused start says which condition failed |
+
+### 6. NPCs
+
+A character no player drives. Everything a player's body has, an NPC has: the mover, motions (an
+NPC can use a skill: its action bits press it), the state machine, the pose, hitboxes, held items,
+a ragdoll. What differs is where its input comes from: a server mod's brain, each tick, carried in
+the frame like a command. So every simulation moves it, a client predicts it as it predicts another
+player (its last input again), and nothing about it is decided twice.
+
+| Piece | What |
+|---|---|
+| The entity | `ctx.SpawnNpc( position, yaw )` and `Destroy`: a `Character` with an `Npc` tag, not in a player slot, so not under the 64-player arrays; moved in the same two passes as players, after them, by NetId. A server's cap (`--npcs`) |
+| Its input | `ctx.SetNpcInput( npc, input )`: move axes, where it looks, buttons, actions, as a player's. In the frame as a list of what changed (one sender, so cheap); held until changed |
+| Rules see it | `Kill`, `Respawn`, `Push`, `SetMove`, board fields, events, `CastRay` hit tests, a `find`'s `players` (and `npcs` to tell them apart): an NPC is a body like a player's. The combat mod hurts and kills NPCs as it does players |
+| The viewer | drawn as a character (its name a field; lists and HUDs can show it); no camera, no private fields |
+| Finding the way | server only, so it need not be deterministic: a navigation mesh made from the map's level when the server starts (Recast/Detour), `ctx.FindPath( from, to )`, and a mod's helpers to walk it |
+| The proof | a `waves` mod: NPCs that walk to the nearest player and swing at it, waves that grow; tested in a network test (hashes equal, no desyncs) and with bots |
+| Later | several characters a server (a zombie is not the mannequin: today one character per server); a brain in a sheet (deterministic, so every simulation runs it and an NPC's moves are predicted exactly, at a rollback cost); how many NPCs a client can carry, measured |
+
+## Later
+
+Postponed after M211 (the core engine first). In the order they would likely come back.
+
+### Vehicles
 
 | Piece | What |
 |---|---|
@@ -99,7 +162,7 @@ them. The motion nodes keep working and get nothing new.
 | Input to motors | as a motion routes input to the mover, a vehicle routes it to its joints' motors and its forces; the rules (who may drive, damage) are a mod's |
 | Platform carry | standing on a moving deck carries the player (its velocity and turn): the mover needs it for a vehicle you stand on, and ships later |
 
-### 5. Authoring, finished
+### Authoring, finished
 
 | Piece | What |
 |---|---|
@@ -110,6 +173,43 @@ them. The motion nodes keep working and get nothing new.
 | The preview, fuller | cues with someone else in them (a hit); the pack chosen from a list; the character's own mesh |
 | A rules change restarts the test | publishing a look while the server runs takes effect at once unless the simulation reads it (an item's body, a pack's state machine, a motion): then the hosted test could restart the server itself |
 | The SDK's prose | `sdk/README.md` around the starters is from before the redesign |
+| The nodes reworked | the authoring nodes (the motion nodes among them) are kept as they are, not maintained, until the core engine is complete; then reworked together |
+
+### Building
+
+Players placing pieces into the world (walls, ramps, floors), the way a base is built.
+
+| Piece | What |
+|---|---|
+| Placing | a sheet statement that places a template on a grid in front of the player (snapped, turned in steps), so the placer's own simulation shows it on the press, as a launch does |
+| The preview | the ghost of the piece where it would go, drawn by the viewer from the same cast the placement uses |
+| Holding together | pieces joined where they touch (glue's weld joints, M202), each breakable; what loses its hold falls |
+| Rules | what a piece costs, who may build where, how many: a mod's |
+| Staying | a server mod saves and loads what was built (server only, not the simulation's concern) |
+| The cost | every piece is state in every snapshot: a cap per player and per server, and static pieces where possible |
+
+### A second server model (considered)
+
+Asked after M211: a model for many more players, chosen by the server's owner. Not scheduled; what
+it would be:
+
+| | Today's model (lockstep, rollback) | The second model |
+|---|---|---|
+| Other players | simulated from their inputs, predicted, rolled back | shown from the server's states, interpolated (a little in the past); only the local player predicted |
+| Props | moved by bodies and by actions | moved only by actions (a charge, a blast, a rocket, a swing that hits): a player's body does not push or wake them. The props are then a function of the actions alone, so every client simulates them from the actions the server confirms (with the tick and the place) and rolls back only when one arrives late, not every tick |
+| Two players on one prop | both push it, each predicted | neither pushes it with its body; both hit it, and the two hits land in tick order everywhere |
+| Player against player | bodies collide; a shove is predicted on the shover's screen | no collision between players; a shove is the server's, felt by the victim when it arrives (as in Roblox) |
+| What scales | 64 players: every client steps everyone | the players a client sees (area of interest) and the actions, not every input of every player |
+
+- **The same core**: the simulation, the sheets, the mods and the viewer are shared; only who is
+  simulated and what the frames carry differ. A server says which model it runs; the client picks
+  the source for it (the viewer already does not know where frames come from).
+- **What it costs a game**: bodies that shove props (kicking a crate, a ball rolled by walking into
+  it) and predicted knockback on other players; a remote player's swing shows a little after its
+  effect on a prop (two timelines: players in the past, props in the present).
+- **Open**: a prop pulled by a player (a grapple's rope) couples the two every tick: its puller's
+  positions would be sent as actions while it pulls; far props (outside the area of interest) are
+  either all simulated (cheap when few and asleep) or kept by region with a snapshot on entering.
 
 ## Parked
 
@@ -120,7 +220,7 @@ Decided to wait; each says what it waits for.
 | Rules without a relink | as long as possible (asked). A server mod's rules as a sandboxed script the server loads and reloads (the same `Declare` / `Start` / `Tick` and `Context` verbs), C++ kept for what is too slow; the SDK's scaffold would write the script. Rules run on the server only, so any language would do |
 | How players find servers | undecided: Steam, a website's "play" link that starts the game, a game's own menu or a desktop shortcut. Until then: join by address, Test locally, a server's mods listed before joining |
 | Steam Workshop as the store | the decision above; the store is a folder today |
-| Ships | Box3D growing what they lack (buoyancy) rather than more patches (two today: `cmake/patches/`). In the simulation, so everyone predicts them: platform carry (step 3), several shapes per body (done), a buoyancy component with a wave function the water's look shares |
+| Ships | Box3D growing what they lack (buoyancy) rather than more patches (two today: `cmake/patches/`). In the simulation, so everyone predicts them: platform carry (vehicles, later), several shapes per body (done), a buoyancy component with a wave function the water's look shares |
 | **The player's body, for motions** | a mod that wants it; once step 3 is in, each is a word of the language ([the draft's last example](docs/rules-language.md#what-the-parked-players-body-pieces-would-add-words-not-new-nodes)). Small engine pieces, each in the simulation (so a motion using them is predicted like any other), asked about after M200. In the order they would likely be wanted: |
 | · Touching a wall | the mover already meets walls when it clips the velocity; it would say so: a condition (`wall`: touching one, beside or ahead) and a frame along it (`along_wall`, `off_wall`) for forces and impulses. Wallrunning, wall jumps, a climb that knows where the wall ends (no wall ahead: over the ledge), a ledge grab |
 | · Teleport | a motion effect that sets where the player is (`CbTeleport`): to the target (what the probe found, or a field's entity) at an offset in its frame (1.2 m behind it, facing its back), or to the probe's point. Blink, "behind you", swapping places, a return-to-mark |
@@ -142,7 +242,7 @@ What the old steps left, not scheduled. A row moves up into "Next" when it is wa
 | Motions | a lasting force as a C++ command; a test of one player hooked to another; a knocked-down ragdoll state; carrying a player; a preview panel |
 | Animation | a state's playback speed (the bat's whole swing in 0.6 s, a slow-motion finisher; markers move with it); the dash's and the hook's poses are placeholders |
 | Feet on the ground | foot IK, **in the shared pose**, beside the aim chain: each foot's ground found by a ray in the simulation (the server's for hit tests, the client's prediction for drawing: the same shapes, so the same answer), the hips lowered to the lower foot, two-bone IK for each leg. Then the legs' hitboxes are where the feet are drawn. Not Godot's IK nodes: they would run after the pose (visual only, and the bake warns: the legs have hitboxes), and Godot's physics has no level to find (collision is Box3D's) |
-| The client | keys the server says: a server maps keys to what they do, an item's own key included (its action `<kind>.use`), sent once at join; a game's "Q is the dash strike" whatever slot it is in. Costs nothing: the client already turns keys into action bits each frame, only the table's source changes. A player may still rebind (the Keys page, per server), the server's map being the start; cameras a mod places (a round's end, a kill cam); a script for looks (sandboxed, for what fields, intents and clicks cannot say; not visual scripting) |
+| The client | keys the server says: a server maps keys to what they do, an item's own key included (its action `<kind>.use`), sent once at join; a game's "Q is the dash strike" whatever slot it is in. Costs nothing: the client already turns keys into action bits each frame, only the table's source changes. A player may still rebind (the Keys page, per server), the server's map being the start; cameras a mod places (a round's end, a kill cam). **The UI stays presentation-only** (decided after M211): a screen shows what fields say, is moved through with input, and sends intents from its buttons and boxes (as a Minecraft server's menus are chests). What that cannot say becomes a widget the engine gives (a text box, a slider, a drag, a placement preview), not a script |
 | Games | teams and spectators (mods, once private fields and the board cover them); lists on one entity (array fields, or a `CbList` over a field family) |
 
 ## Routes not taken

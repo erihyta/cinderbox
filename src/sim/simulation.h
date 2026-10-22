@@ -604,6 +604,21 @@ private:
 	};
 	std::vector<Launched> m_launched;
 	void CreateLaunched();
+	// What players' motions do to other players this tick, kept until every player's motions have
+	// run, then applied in the order they were made (MoveCharacters). So whoever has the lower slot,
+	// a push is felt on the tick it is given, after the target's own motions, and every motion reads
+	// the others' velocities as the tick found them. Scratch: empty between steps.
+	struct PlayerPush
+	{
+		uint32_t netId;
+		MotionEffect::Replace replace;
+		b3Vec3 change;
+	};
+	std::vector<PlayerPush> m_playerPushes;
+	bool m_deferPlayerPushes = false;
+	// Each player's character between its motions and its move (MoveCharacters), by slot.
+	std::vector<Character> m_turnCharacters;
+	void ApplyPlayerPushes();
 	// The copy of `kind` the player `holder` carries that a launch throws (in a hand first, then the
 	// lowest slot's), not one already thrown this tick; 0: none.
 	uint32_t CarriedCopyOf( uint32_t holder, uint16_t kind ) const;

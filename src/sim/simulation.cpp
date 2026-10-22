@@ -1921,7 +1921,48 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			}
 		}
 	}
-	// Slot order == deterministic order, and independent of entity creation history.
+	// What a player holds, carries and uses, for what reads its items (motions, its state machine).
+	struct Kinds
+	{
+		uint16_t held[16];
+		uint32_t heldCount = 0;
+		uint16_t carried[32];
+		uint32_t carriedCount = 0;
+		uint16_t usingKinds[16];
+		uint32_t usingCount = 0;
+	};
+	auto kindsOf = [this]( uint32_t netId, Kinds& k ) {
+		for ( const auto& [holder, kind] : m_heldScratch )
+		{
+			if ( holder == netId && k.heldCount < 16 )
+			{
+				k.held[k.heldCount++] = kind;
+			}
+		}
+		for ( const auto& [holder, kind] : m_carriedScratch )
+		{
+			if ( holder == netId && k.carriedCount < 32 )
+			{
+				k.carried[k.carriedCount++] = kind;
+			}
+		}
+		for ( const auto& [holder, kind] : m_usingScratch )
+		{
+			if ( holder == netId && k.usingCount < 16 )
+			{
+				k.usingKinds[k.usingCount++] = kind;
+			}
+		}
+	};
+
+	// Two passes, so nothing depends on which slot a player has. First every player's motions, each
+	// on the world as the tick found it (no one has moved yet), with what they do to other players
+	// kept and applied once all have run, after the targets' own; then every player moves. Within a
+	// pass, slot order: deterministic, and independent of entity creation history.
+	std::array<uint8_t, kMaxPlayers> moving{};
+	m_turnCharacters.resize( kMaxPlayers );
+	m_playerPushes.clear();
+	m_deferPlayerPushes = true;
 	for ( int slot = 0; slot < kMaxPlayers; ++slot )
 	{
 		uint32_t netId = m_globals.playerNetIds[slot];
@@ -1952,39 +1993,17 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			}
 			continue;
 		}
-		Transform t = e.get<Transform>();
-		PhysicsBody pb = e.get<PhysicsBody>();
-
-		uint8_t pressed = uint8_t( in.buttons & ~c.prevButtons );
-
-		// What everything that reads the player's items asks for.
-		uint16_t held[16];
-		uint32_t heldCount = 0;
-		for ( const auto& [holder, kind] : m_heldScratch )
-		{
-			if ( holder == netId && heldCount < 16 )
-			{
-				held[heldCount++] = kind;
-			}
-		}
-		uint16_t carried[32];
-		uint32_t carriedCount = 0;
-		for ( const auto& [holder, kind] : m_carriedScratch )
-		{
-			if ( holder == netId && carriedCount < 32 )
-			{
-				carried[carriedCount++] = kind;
-			}
-		}
-		uint16_t usingKinds[16];
-		uint32_t usingCount = 0;
-		for ( const auto& [holder, kind] : m_usingScratch )
-		{
-			if ( holder == netId && usingCount < 16 )
-			{
-				usingKinds[usingCount++] = kind;
-			}
-		}
+		moving[slot] = 1;
+		const Transform t = e.get<Transform>();
+		const uint8_t pressed = uint8_t( in.buttons & ~c.prevButtons );
+		Kinds kinds;
+		kindsOf( netId, kinds );
+		const uint16_t* held = kinds.held;
+		const uint32_t heldCount = kinds.heldCount;
+		const uint16_t* carried = kinds.carried;
+		const uint32_t carriedCount = kinds.carriedCount;
+		const uint16_t* usingKinds = kinds.usingKinds;
+		const uint32_t usingCount = kinds.usingCount;
 
 		// The mods' motions (a dash, a double jump), before the mover: on the world as the last tick
 		// and this tick's commands left it, by this tick's input. A frozen player does none.
@@ -2106,6 +2125,41 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				ApplyMotionEffects( e, c, t, in, motion, boardBefore, m_motionActive, values );
 			}
 		}
+		// (Stored once every player's motions have run: until then the others read it as it was.)
+		m_turnCharacters[size_t( slot )] = c;
+	}
+	m_deferPlayerPushes = false;
+	for ( int slot = 0; slot < kMaxPlayers; ++slot )
+	{
+		if ( moving[slot] )
+		{
+			FindEntity( m_globals.playerNetIds[slot] ).set<Character>( m_turnCharacters[size_t( slot )] );
+		}
+	}
+	// What their motions did to others: after the targets' own, in the order they were done.
+	ApplyPlayerPushes();
+
+	for ( int slot = 0; slot < kMaxPlayers; ++slot )
+	{
+		if ( moving[slot] == 0 )
+		{
+			continue;
+		}
+		const uint32_t netId = m_globals.playerNetIds[slot];
+		flecs::entity e = FindEntity( netId );
+		const PlayerInput& in = frame.inputs[slot];
+		Character c = e.get<Character>();
+		Transform t = e.get<Transform>();
+		PhysicsBody pb = e.get<PhysicsBody>();
+		const uint8_t pressed = uint8_t( in.buttons & ~c.prevButtons );
+		Kinds kinds;
+		kindsOf( netId, kinds );
+		const uint16_t* held = kinds.held;
+		const uint32_t heldCount = kinds.heldCount;
+		const uint16_t* carried = kinds.carried;
+		const uint32_t carriedCount = kinds.carriedCount;
+		const uint16_t* usingKinds = kinds.usingKinds;
+		const uint32_t usingCount = kinds.usingCount;
 
 		// Frozen: the mover still runs (gravity, the ground, being pushed), with no intent.
 		PlayerInput still;
@@ -4090,6 +4144,13 @@ void Simulation::ImpulseEnd( const MotionEffect& effect, float strength, const M
 	}
 	// Momentum (N s) moves a heavy target less: its change of velocity is the momentum over its mass.
 	const float change = effect.momentum ? ( target.mass > 0.0f ? strength / target.mass : 0.0f ) : strength;
+	if ( target.kind == MotionEnd::Kind::Player && m_deferPlayerPushes )
+	{
+		// Another player, while the motions run: what it replaces is taken from its velocity when the
+		// push lands (after its own motions), not from what it had when this was decided.
+		m_playerPushes.push_back( { target.entity.get<NetId>().value, effect.replace, b3MulSV( change, direction ) } );
+		return;
+	}
 	PushEnd( target, c, b3Add( b3Sub( keep, had ), b3MulSV( change, direction ) ) );
 }
 
@@ -4519,7 +4580,12 @@ void Simulation::PushEnd( const MotionEnd& end, Character& c, b3Vec3 change )
 			break;
 		case MotionEnd::Kind::Player:
 		{
-			// A player with a lower slot has moved already this tick: it feels this on its next.
+			if ( m_deferPlayerPushes )
+			{
+				// While the motions run: kept for when every player's have (ApplyPlayerPushes).
+				m_playerPushes.push_back( { end.entity.get<NetId>().value, MotionEffect::Replace::None, change } );
+				break;
+			}
 			Character other = end.entity.get<Character>();
 			pushed( other, change );
 			end.entity.set<Character>( other );
@@ -4531,6 +4597,44 @@ void Simulation::PushEnd( const MotionEnd& end, Character& c, b3Vec3 change )
 		default:
 			break;
 	}
+}
+
+void Simulation::ApplyPlayerPushes()
+{
+	for ( const PlayerPush& push : m_playerPushes )
+	{
+		flecs::entity who = FindEntity( push.netId );
+		if ( who.is_valid() == false || who.has<Character>() == false )
+		{
+			continue;
+		}
+		Character other = who.get<Character>();
+		const b3Vec3 had = other.velocity;
+		b3Vec3 keep = had;
+		switch ( push.replace )
+		{
+			case MotionEffect::Replace::None:
+				break;
+			case MotionEffect::Replace::Vertical:
+				keep.y = 0.0f;
+				break;
+			case MotionEffect::Replace::Horizontal:
+				keep.x = 0.0f;
+				keep.z = 0.0f;
+				break;
+			case MotionEffect::Replace::All:
+				keep = { 0.0f, 0.0f, 0.0f };
+				break;
+		}
+		const b3Vec3 by = b3Add( b3Sub( keep, had ), push.change );
+		other.velocity = b3Add( had, by );
+		if ( by.y > 0.0f && other.velocity.y > 0.0f )
+		{
+			other.grounded = 0; // lifted off, as a jump is (PushEnd)
+		}
+		who.set<Character>( other );
+	}
+	m_playerPushes.clear();
 }
 
 void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transform& t, const PlayerInput& in, const MotionState& state,
