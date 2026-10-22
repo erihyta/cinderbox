@@ -163,7 +163,7 @@ Authoritative server, client rollback (`src/net`, `src/client`).
 - Frames encode a mask of players whose input changed, then only the changed fields; commands carry a field mask.
 - ENet's throttle is off (it dropped unreliable packets after large reliable transfers, which stalled clients).
 - **Replays** (`cb_server --record`): every authoritative frame plus checksums; `cb_replay verify` re-simulates headlessly.
-- Protocol 37, replay version 20 (`src/net/protocol.h`, `replay.cpp`).
+- Protocol 68, replay version 46 (`src/net/protocol.h`, `replay.cpp`): each says in its comment what every version changed.
 
 ## The viewer protocol
 

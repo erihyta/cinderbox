@@ -14,9 +14,10 @@ today; the rest is the plan.
 | `cast` (the probe in a sheet: a line, a ball or a shape drawn in the scene, swept along the look; what is under it happens while it holds), `link` | *built* (M206: the grapple is a sheet now) |
 | Numbers that are expressions (an `impulse`'s and a `force`'s), `curve(Name, x)` from a `CbCurve`, `time`, `distance` and `reach` in a find | *built* (M207) |
 | Markers (`along NODE`, `launch ... from NODE`), `turn (yaw, pitch)`, `follow PATH over S`, a launch's `speed (EXPRESSION)` | *built* (M208) |
-| Expressions in a `move` (a parameter is read by the mover whenever it moves, with no motion's values at hand); `$target:FIELD` in a find's lines, `at POINT`, `PATH at T`, a cast in a later step | planned |
+| `$target:FIELD` in a find's lines, `at POINT`, `PATH at T`, a cast in a later step | planned |
 | `owner item` (an item's own motion, `on expired` or `on EVENT`), `break`, `remove self` | *built* (M209: the frag grenade's blast is its sheet's) |
 | `impulse ... kind momentum`, `every S` | *built* (M210) |
+| Every amount an expression: a `move`'s values (read when its step starts), a `change`'s, a launch's speed, lift, ahead and seconds, a force's top, a link's length and reel, a `break`'s, a move a find gives; times, counts and directions stay numbers | *built* (M214) |
 | Made regular: one table of where a line may stand (every refusal made from it), `on target`, `along world (x, y, z)`, a find `turned` and `at`, every find shape from the feet, `change` in a find, `use` exactly `motion Use on use`, an item's motion one tick | *built* (M213) |
 
 ## The idea in one picture
@@ -158,7 +159,7 @@ there until they are done; **lasting** ones act every tick until the motion ends
 | `change FIELD -= N` / `+= N` / `= N` | a field of the owner; in a find, once for each thing found (*built*, M213: a count of what was hit). The target's own fields (`$target:FIELD`) are planned |
 | `emit EVENT [at POINT]` | a mod event: for looks, state machines, and a mod's C++ (damage) |
 | `impulse VALUE [kind velocity\|momentum] [on WHO] [along DIRECTION] [replace vertical\|horizontal\|all]` | *built*: a change of velocity (m/s, any weight: the default; to 200) or of momentum (`kind momentum`: N·s, shared out by what the target weighs, to 100000; heavy things move less) |
-| `launch new KIND \| carried [speed S \| speed (EXPRESSION)] [lift] [ahead] [seconds] [along DIRECTION] [from NODE]` | *built*: an item into the world; `from` a marker: its place around the player (turned with its heading), instead of `ahead` of where its look starts (the cannon's muzzle) |
+| `launch new KIND \| carried [speed S] [lift L] [ahead M] [seconds S] [along DIRECTION] [from NODE]` | *built*: an item into the world; its speed, lift, ahead and seconds [amounts](#numbers-and-curves), read when it is thrown; `from` a marker: its place around the player (turned with its heading), instead of `ahead` of where its look starts (the cannon's muzzle) |
 | `break radius R [speed S] [seconds S]` | *built*: the breakable walls whose nearest piece is within R of the owner (its feet, or the item) lose their pieces that near, flung at S (10 by default), staying S seconds (0, the default: for good). Each a number, a name (`frag.break_radius`: a field a mod sets from its options) or an expression in brackets |
 | `remove self` | *built*: the owner item leaves the world (a mine once it has gone off). An item's motion only |
 | `end` | the motion ends here |
@@ -167,9 +168,9 @@ there until they are done; **lasting** ones act every tick until the motion ends
 
 | Statement | Does |
 |---|---|
-| `force VALUE [kind acceleration\|force\|velocity] [top S] [react] [on WHO] [along DIRECTION]` | every tick while on, as `CbForce` |
-| `move [for S] PARAMETER VALUE ...` | movement parameters of the owner, or of the target inside `find` / `cast` (a slow, a root) |
-| `link [length L] [reel S] [alone] [on WHO]` | *built*, under a cast: a rope to what it holds (or a field's entity), as `CbLink`; length 0: as long as it is when the cast takes hold; `alone`: it moves the player only |
+| `force VALUE [kind acceleration\|force\|velocity] [top S] [ramp S] [react] [on WHO] [along DIRECTION]` | every tick while on, as `CbForce`; its value and its `top` amounts read every tick; `ramp` (seconds to full strength) a number |
+| `move [for S] PARAMETER VALUE ...` | movement parameters of the owner, or of the target inside `find` / `cast` (a slow, a root). Each value an amount: the words up to the next parameter's name (`move walk_speed 2 * t.power sprint_speed 3`), read when its step starts and held as it was (a field changed later does not move it); in a find, read for each thing found (`move for 1 walk_speed distance`). `for S`, a number |
+| `link [length L] [reel S] [alone] [on WHO]` | *built*, under a cast: a rope to what it holds (or a field's entity), as `CbLink`; its length and reel amounts, read every tick; length 0: as long as it is when the cast takes hold; `alone`: it moves the player only |
 | `follow PATH over S` | *built*: carries the player along a `Path3D` beside the sheet, drawn from its first point as if the player stood there facing −Z, in S seconds: each tick its stretch of the path is the player's velocity, turned as it faces, so walls still stop it (give it `move gravity 0`, or gravity pulls it off). A leap arc, a curved dash. Baked into 32 points at even steps |
 
 ### Waits and order
@@ -233,10 +234,28 @@ Planned (none of it is built):
 
 ## Numbers and curves
 
-*Built* (M207) for an `impulse`'s speed and a `force`'s strength: anything up to the first option
-word is an [expression](looks.md#expressions), read when the effect acts (an impulse when its step
-starts, a force every tick), within the same limits as a number (200 m/s; a force's own). A `move`'s
-values and a `launch`'s are numbers still. Words added, for a motion's expressions:
+**One rule** (*built*, M214): every **amount** a line says may be an
+[expression](looks.md#expressions): the words up to the line's next option word (for a `move`, up to
+the next parameter's name), or a word in brackets. It is read when its line acts, within the same
+limits as a number:
+
+| Read | Amounts |
+|---|---|
+| when its step starts (a once line) | an `impulse`'s; a `change`'s value; a `launch`'s speed, lift, ahead and seconds; a `break`'s radius, speed and seconds; a `move`'s values (held as they were for as long as the move holds: the mover has no expression's inputs at hand) |
+| for each thing found | in a find: an `impulse`'s, a `change`'s, a `move for`'s values |
+| every tick | a `force`'s value and its `top`; a `link`'s length and reel |
+
+**Numbers, always**, because they shape the motion itself (its steps, its record, its bounds) or are
+worked out once:
+
+| Kind | Which |
+|---|---|
+| the motion's own times | `cooldown`, `lasts`, `after`, `within`, `every`, `move for`'s seconds, `follow ... over`, a force's `ramp` |
+| counts | `uses`, a find's `max` |
+| directions and places | `world (x, y, z)`, `turn (yaw, pitch)`, a find's `at (x, y, z)` |
+| a cast's `range` and `speed` | the line is thrown, and flies, before anything is read |
+
+A step's moves read at most 16 values from expressions. Words added, for a motion's expressions:
 
 | Write | Means |
 |---|---|
@@ -251,6 +270,8 @@ So falloff, ramps and shapes over time are expressions, not new settings:
 impulse 9 * curve(Falloff, reach) along away   # strong at the centre, weak at the edge
 force 40 * curve(Ramp, time / 0.3) along look  # the curve is the ramp-in
 impulse 2 * dash.power along up                # a field: a jump that grows with an upgrade
+move walk_speed 4 + slow.bonus friction 0      # a move's value, read when its step starts
+change brawl.combo += 1 + brawl.streak         # a change's value
 ```
 
 `ramp_in` and the like keep working; a curve is the general form. A state machine or a look reads
@@ -427,3 +448,4 @@ the editor and at publish, as today.
 5. **`impulse kind momentum`**, `every` (*built*, M210).
 6. **The mods converted** (*built*, M211): brawl, frag, cannon, grapple, flight, dash and the grenade mod are sheets; none uses a motion node; the SDK's starter motion set is a sheet. Nothing was lost (every test as before); the brawl fist's finisher and the dash strike now push what they hit, which their nodes never baked.
 7. **Made regular** (*built*, M213): the table of where a line may stand, `on target`, `along world (x, y, z)`, `turned`, `at`, shapes from the feet, `change` in a find, `use` a motion, an item's motion one tick. Found on the way: a motion of one step with no `lasts` was on for no tick, so its `move for` never held (the dash boots' and the dash strike's, once `use` was a motion); it is now on for its longest `move for`, as a last step entered later always was.
+8. **Every amount an expression** (*built*, M214): a `move`'s values (read when the step starts, kept in `MoveValues` while they hold), a `change`'s, a launch's speed, lift, ahead and seconds, a force's top, a link's length and reel, a `break`'s of several words, a move a find gives (`walk_speed distance`); the motion's times, counts and directions stay numbers.
