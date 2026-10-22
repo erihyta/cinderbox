@@ -227,6 +227,7 @@ Postponed after M211 (the core engine first). In the order they would likely com
 | A seat | a player sits: the mover is off, the player is carried by the body and drawn in its pose. (a seated player keeps its body; the vehicle reads its keys) |
 | Input to motors | as a motion routes input to the mover, a vehicle routes it to its joints' motors and its forces; the rules (who may drive, damage) are a mod's |
 | Platform carry | standing on a moving deck carries the player (its velocity and turn): the mover needs it for a vehicle you stand on, and ships later |
+| A body's own controls (an idea, later) | every body says how it is driven: the character controller (the mover, as today), a vehicle's (its motors and forces), others. Possessing a body takes its controls with it: the same keys drive a character on foot and a car its motors, and a seat could become a possession. Waits for step 9 (possession) and vehicles |
 
 ### Authoring, finished
 
