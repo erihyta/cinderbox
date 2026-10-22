@@ -78,7 +78,15 @@ std::string ParamLines( const Dictionary& parameters, String& error )
 		{
 			if ( MoveParamByName( Std( String( names[i] ).strip_edges() ).c_str() ) == p )
 			{
-				text += std::string( "param\t" ) + MoveParamInfoOf( p ).name + "\t" + Num( double( parameters[names[i]] ) ) + "\n";
+				// A number, or an expression (a sheet's: read when its step starts).
+				const Variant value = parameters[names[i]];
+				if ( value.get_type() == Variant::STRING && Plain( String( value ) ) == false )
+				{
+					error = "parameters: \"" + String( value ) + "\" cannot have a tab or a #";
+					return std::string();
+				}
+				text += std::string( "param\t" ) + MoveParamInfoOf( p ).name + "\t" +
+						( value.get_type() == Variant::STRING ? Std( String( value ).strip_edges() ) : Num( double( value ) ) ) + "\n";
 			}
 		}
 	}
@@ -881,6 +889,28 @@ namespace
 // Where a node is in `root`'s frame (below).
 bool FrameIn( const Node* node, const Node* root, Transform3D& out );
 
+// A sheet's "change FIELD OP VALUE" as a "change" line: its value a number, or an expression (the
+// rest of the line). "" with why when it cannot be read.
+std::string ChangeLine( const String& text, String& why )
+{
+	cue::Change change;
+	if ( cue::ParseChange( text, change, &why ) && Plain( change.field ) )
+	{
+		return "change\t" + Std( change.field ) + "\t" + ( change.op == '=' ? std::string( "=" ) : std::string( 1, change.op ) + "=" ) + "\t" +
+			   Num( change.value ) + "\n";
+	}
+	const String trimmed = text.strip_edges();
+	PackedStringArray words = trimmed.split( " ", false );
+	if ( words.size() < 3 || ( words[1] != "=" && words[1] != "+=" && words[1] != "-=" ) || Plain( trimmed ) == false )
+	{
+		why = "change FIELD = VALUE, += or -= (a number or an expression)";
+		return std::string();
+	}
+	const String value = trimmed.substr( trimmed.find( " " + words[1] + " " ) + words[1].length() + 2 ).strip_edges();
+	why = String();
+	return "change\t" + Std( words[0] ) + "\t" + Std( words[1] ) + "\t" + Std( value ) + "\n";
+}
+
 // A point of the scene, in the simulation's frame (forward +Z): Godot's forward is -Z.
 Vector3 SimPoint( const Vector3& p )
 {
@@ -963,20 +993,31 @@ std::string BakeSheetPart( const Dictionary& part, const String& kind, const Nod
 	holder->remove_child( node );
 	memdelete( node );
 	memdelete( holder );
-	// An expression where its number is (an impulse's speed, a force's strength): in its place.
-	String expression = String( props.get( "value_expression", "" ) ).strip_edges();
-	if ( lines.empty() == false && expression.is_empty() == false )
+	// The amounts that are expressions, each in its number's place in the first line (by its field:
+	// an impulse's speed 2; a force's strength 4 and top 5; a link's length 2 and reel 3; a launch's
+	// speed 2, lift 4, ahead 5, seconds 6).
+	Dictionary amounts = props.get( "amounts", Dictionary() );
+	Array fields = amounts.keys();
+	for ( int64_t f = 0; lines.empty() == false && f < fields.size(); ++f )
 	{
+		const String expression = String( amounts[fields[f]] ).strip_edges();
 		if ( Plain( expression ) == false )
 		{
 			why = "\"" + expression + "\" cannot have a tab or a #";
 			return std::string();
 		}
-		const int field = String( part["class"] ) == "CbForce" ? 4 : 2; // (an impulse's speed, a launch's, a force's strength)
+		const int field = int( fields[f] );
 		size_t at = 0;
-		for ( int k = 0; k < field; ++k )
+		for ( int k = 0; k < field && at != std::string::npos; ++k )
 		{
-			at = lines.find( '\t', at ) + 1;
+			at = lines.find( '\t', at );
+			at = at == std::string::npos ? at : at + 1;
+		}
+		const size_t first = lines.find( '\n' );
+		if ( at == std::string::npos || at > first )
+		{
+			why = "\"" + expression + "\": no place for it in what the line bakes to";
+			return std::string();
 		}
 		size_t end = lines.find_first_of( "\t\n", at );
 		lines.replace( at, end - at, Std( expression ) );
@@ -1299,7 +1340,33 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 			{
 				Dictionary statement = list[k];
 				add( statement.get( "guard", Variant() ) );
-				add( Dictionary( Dictionary( statement.get( "part", Dictionary() ) ).get( "properties", Dictionary() ) ).get( "value_expression", Variant() ) );
+				// Its amounts that are expressions: a part's, a move's values, a change's, a break's.
+				Dictionary props = Dictionary( statement.get( "part", Dictionary() ) ).get( "properties", Dictionary() );
+				Array amounts = Dictionary( props.get( "amounts", Dictionary() ) ).values();
+				for ( int64_t a = 0; a < amounts.size(); ++a )
+				{
+					add( amounts[a] );
+				}
+				Array values = Dictionary( props.get( "parameters", Dictionary() ) ).values();
+				for ( int64_t a = 0; a < values.size(); ++a )
+				{
+					add( values[a] );
+				}
+				for ( const char* key : { "radius", "speed", "seconds" } )
+				{
+					add( statement.get( key, Variant() ) );
+				}
+				if ( String( statement.get( "kind", "" ) ) == "change" )
+				{
+					// (Its value: after the operator.)
+					PackedStringArray words = String( statement.get( "text", "" ) ).strip_edges().split( " ", false );
+					String rest;
+					for ( int64_t k = 2; k < words.size(); ++k )
+					{
+						rest += ( k > 2 ? " " : "" ) + words[k];
+					}
+					add( rest );
+				}
 				statementsOf( statement.get( "statements", Array() ) );
 			}
 		};
@@ -1512,14 +1579,13 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 			const String what = statement.get( "kind", "" );
 			if ( what == "change" )
 			{
-				cue::Change change;
 				String why;
-				if ( cue::ParseChange( statement["text"], change, &why ) == false || Plain( change.field ) == false )
+				std::string changed = ChangeLine( statement["text"], why );
+				if ( changed.empty() )
 				{
 					return fail( line + String( "change \"" ) + String( statement["text"] ) + "\": " + why );
 				}
-				text += "change\t" + Std( change.field ) + "\t" + ( change.op == '=' ? std::string( "=" ) : std::string( 1, change.op ) + "=" ) +
-						"\t" + Num( change.value ) + "\n";
+				text += changed;
 			}
 			else if ( what == "emit" )
 			{
@@ -1659,13 +1725,12 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 					if ( String( each.get( "kind", "" ) ) == "change" )
 					{
 						// The owner's field, once for each thing found.
-						cue::Change change;
-						if ( cue::ParseChange( each["text"], change, &why ) == false || Plain( change.field ) == false )
+						std::string changed = ChangeLine( each["text"], why );
+						if ( changed.empty() )
 						{
 							return fail( at + String( "change \"" ) + String( each["text"] ) + "\": " + why );
 						}
-						text += "change\t" + Std( change.field ) + "\t" + ( change.op == '=' ? std::string( "=" ) : std::string( 1, change.op ) + "=" ) +
-								"\t" + Num( change.value ) + "\n";
+						text += changed;
 						continue;
 					}
 					std::string lines = BakeSheetPart( each["part"], kind, from, root, why );

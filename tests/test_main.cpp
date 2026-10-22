@@ -3799,6 +3799,101 @@ void TestMotionRegular()
 	CHECK( friction > 0.0f && held == 11 && sim.PlayerMove( 0 )[MoveParam::Friction] == friction );
 }
 
+// M214: every amount may be an expression. A move's value is read when its step starts and holds
+// as it was (a field changed after does not move it); a change's value, a move given by a find (by
+// how far what it found is), a force's top speed are read when they act.
+void TestMotionAmounts()
+{
+	ModSchema schema;
+	schema.fields.push_back( { "t.power", BoardType::Int, BoardScope::Entity, 0 } );
+	schema.fields.push_back( { "t.n", BoardType::Int, BoardScope::Entity, 1 } );
+	schema.actions.push_back( { "boost", 0, "Q" } );
+	schema.actions.push_back( { "wave", 1, "E" } );
+	schema.actions.push_back( { "rise", 2, "R" } );
+	const std::string text = "cinderbox_motions\t3\n"
+							 "motion\tBoost\nwhen\tpress\tboost\nduration\t1\nparam\twalk_speed\t2 * t.power\nchange\tt.n\t+=\tt.power + 1\n"
+							 "motion\tWave\nwhen\tpress\twave\n"
+							 "find\tplayers\t0\t16\tfacing\nshape\t6\t0\t0\t0\nparam\twalk_speed\tdistance\t1\nendfind\n"
+							 "motion\tRise\nwhen\tpress\trise\nduration\t1\nparam\tgravity\t0\nforce\tself\tup\tvelocity\t60\tt.power\t0\t0\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 3 );
+	if ( motions == nullptr || motions->list.size() != 3 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetMotions( motions );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto set = [&]( uint16_t index, int32_t value ) {
+		SimCommand c;
+		c.type = CommandType::SetField;
+		c.target = SlotTarget( 0 );
+		c.index = index;
+		c.value = value;
+		f.commands.push_back( c );
+	};
+	auto place = [&]( int slot, b3Vec3 at ) {
+		SimCommand c;
+		c.type = CommandType::Respawn;
+		c.target = sim.PlayerNetId( PlayerSlot( slot ) );
+		c.mode = 1;
+		c.a = { at.x, at.y, at.z };
+		f.commands.push_back( c );
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	f.events.push_back( { PlayerEventType::Join, 1 } );
+	step( 2 );
+	place( 0, { 0.0f, 1.0f, 0.0f } );
+	place( 1, { 4.0f, 1.0f, 0.0f } );
+	set( 0, 3 );
+	step( 60 );
+	const flecs::entity me = sim.FindEntity( sim.PlayerNetId( 0 ) );
+
+	// The boost: walk speed 2 * 3, and t.n += 3 + 1; the power changed to 5 after: still 6.
+	f.inputs[0].actions = 1;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	const float boosted = sim.PlayerMove( 0 )[MoveParam::WalkSpeed];
+	const int n = sim.GetBoard( me ).values[1];
+	set( 0, 5 );
+	step( 10 );
+	const float later = sim.PlayerMove( 0 )[MoveParam::WalkSpeed];
+	std::printf( "    a boost of 2 * t.power (3): walk speed %.1f, still %.1f with t.power 5; t.n += t.power + 1: %d\n", boosted, later, n );
+	CHECK( boosted == 6.0f && later == 6.0f && n == 4 );
+	CHECK( me.has<MoveValues>() && sim.FindEntity( sim.PlayerNetId( 1 ) ).has<MoveValues>() == false );
+	step( 60 );
+	CHECK( sim.PlayerMove( 0 )[MoveParam::WalkSpeed] != 6.0f );
+
+	// The wave: the player 4 m away given walk speed 4 (its distance) for a second.
+	f.inputs[0].actions = 2;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	const float given = sim.PlayerMove( 1 )[MoveParam::WalkSpeed];
+	std::printf( "    a wave giving walk speed = distance: %.2f to the player 4 m away\n", given );
+	CHECK( given > 3.8f && given < 4.2f );
+
+	// The rise: a force toward t.power (5) m/s up.
+	f.inputs[0].actions = 4;
+	step( 1 );
+	f.inputs[0].actions = 0;
+	step( 30 );
+	const float up = sim.PlayerCharacter( 0 )->velocity.y;
+	std::printf( "    a rise toward t.power m/s: %.2f m/s up\n", up );
+	CHECK( up > 4.9f && up < 5.1f );
+}
+
 void TestMotionFinds()
 {
 	ModSchema schema;
@@ -11133,6 +11228,7 @@ int main( int argc, char** argv )
 		{ "motion_steps", TestMotionSteps },
 		{ "motion_order", TestMotionOrder },
 		{ "motion_regular", TestMotionRegular },
+		{ "motion_amounts", TestMotionAmounts },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },

@@ -310,6 +310,7 @@ func _run() -> void:
 		"line 4: \"move\" cannot stand in a timeout")
 
 	_run_regular()
+	_run_amounts()
 	_refused("a line not indented under its motion", "motion A on press a\nemit x\n", "line 2: a motion's lines are indented")
 	_refused("an else with no if", "motion A on press a\n\telse\n", "line 2: an else is under an if")
 	_refused("a setting under an if", "motion A on press a\n\tif x\n\t\tcooldown 1\n", "line 3: \"cooldown\" is the motion's")
@@ -405,3 +406,25 @@ func _run_regular() -> void:
 	_check("a step in an item's motion", waits.contains("happens in one tick, on an event said at it: no then, after or timeout"), waits)
 	var before := _item_bake("motion Boom on expired\n\tremove self\n\towner item\n", "test.bomb")
 	_check("remove before owner item is said: fine", before.contains("owner\titem\nremove\n"), before)
+
+
+# Every amount may be an expression (M214): the words up to the next option word, written in the
+# number's place; times, counts and directions stay numbers.
+func _run_amounts() -> void:
+	var moves := _set_bake("motion A on press a\n\tlasts 1\n\tmove walk_speed 2 * t.power sprint_speed 3\n")
+	_check("a move's values: an expression up to the next parameter", moves.contains("param\twalk_speed\t2 * t.power\n") and
+		moves.contains("param\tsprint_speed\t3\n"), moves)
+	var changed := _set_bake("motion A on press a\n\tchange t.n += t.power + 1\n")
+	_check("a change's value", changed.contains("change\tt.n\t+=\tt.power + 1\n"), changed)
+	var top := _set_bake("motion A on press a\n\tlasts 1\n\tforce 50 kind velocity top 2 * t.power along up\n")
+	_check("a force's top", top.contains("force\tself\tup\tvelocity\t50\t2 * t.power\t0\t0\n"), top)
+	var rope := _set_bake("motion A on press a\n\tcast ray range 5\n\t\tlink length 2 + t.extra reel t.reel\n")
+	_check("a link's length and reel", rope.contains("link\thit\t2 + t.extra\tt.reel"), rope)
+	var thrown := _set_bake("motion A on press a\n\tlaunch new test.ball speed t.speed + 1 lift t.lift ahead 0.5 seconds 2 * t.life along up\n")
+	_check("a launch's speed, lift and seconds", thrown.contains("launch\ttest.ball\tt.speed + 1\tup\tt.lift\t0.5\t2 * t.life\n"), thrown)
+	var given := _set_bake("motion A on press a\n\tfind sphere 3 players\n\t\tmove for 1 walk_speed distance\n")
+	_check("a move a find gives: its value an expression", given.contains("param\twalk_speed\tdistance\t1\n"), given)
+	var walls := _set_bake("motion A on press a\n\tbreak radius 2 * t.r speed 10\n")
+	_check("a break's numbers of several words", walls.contains("break\t2 * t.r\t10\t0\n"), walls)
+	_refused("a move's seconds from an expression", "motion A on press a\n\tmove for t.x walk_speed 1\n", "line 2: move for S: its seconds are a number")
+	_refused("a move of a parameter there is not", "motion A on press a\n\tlasts 1\n\tmove fly_power 3\n", "line 3: move: \"fly_power\" is not a movement parameter")

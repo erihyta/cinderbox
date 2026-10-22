@@ -307,6 +307,47 @@ String Misplaced( const String& verb, uint8_t place, bool item )
 	return "\"" + verb + "\" cannot stand " + PlaceName( where ) + ": there a line is " + list;
 }
 
+// The movement parameters' names (SetMoveParameterNames): where a move's value ends and the next
+// parameter starts. (Made on first use: a Godot type built while the library loads, before
+// godot-cpp is ready, makes the library fail to load.)
+PackedStringArray& MoveParameters()
+{
+	static PackedStringArray names;
+	return names;
+}
+
+// An amount a line says: the words from w[k] up to the next that `stops` (unquoted), or the line's
+// end. One word that is a number is a number; anything else is an expression, read when the line
+// acts. False when there is no word.
+struct Amount
+{
+	bool numeric = false;
+	double number = 0.0;
+	String text;
+};
+
+template <typename Stops>
+bool TakeAmount( const std::vector<Token>& w, size_t& k, Stops stops, Amount& out )
+{
+	size_t end = k;
+	while ( end < w.size() && ( w[end].quoted || stops( w[end].text ) == false ) )
+	{
+		++end;
+	}
+	if ( end == k )
+	{
+		return false;
+	}
+	out = Amount{};
+	out.numeric = end == k + 1 && Number( w[k], out.number );
+	for ( size_t i = k; i < end; ++i )
+	{
+		out.text += ( i > k ? " " : "" ) + w[i].text;
+	}
+	k = end;
+	return true;
+}
+
 // "on target": what the block a line is in is about (a find's thing found, a cast's hold), until the
 // block resolves it (ResolveTarget).
 constexpr int kBlockTarget = 4;
@@ -334,6 +375,17 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 	const String verb = w[0].text;
 	double value = 0.0;
 	Dictionary props;
+	// The amounts that are expressions, by their place in the line the part bakes to (its first): the
+	// bake writes each there in place of its number (BakeSheetPart).
+	Dictionary amounts;
+	// An amount into the node's property `property` (its number, or 0 and the expression at `field`).
+	auto amountInto = [&]( const Amount& amount, const char* property, int field ) {
+		props[property] = amount.numeric ? amount.number : 0.0;
+		if ( amount.numeric == false )
+		{
+			amounts[field] = amount.text;
+		}
+	};
 	size_t i = 1;
 	auto frameOf = [&]( const String& word ) {
 		return word == "look" ? 0 : word == "move" ? 1 : word == "facing" ? 2 : word == "up" ? 3 : word == "world" ? 4 : word == "to" ? 5 : word == "away" ? 6 : -1;
@@ -402,10 +454,12 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 	{
 		// How much: a number, or an expression up to the first word that is an option (read when it
 		// acts: "9 * curve(Falloff, reach)", "2 * dash.power").
+		auto forceStops = []( const String& word ) {
+			return word == "on" || word == "along" || word == "direction" || word == "replace" || word == "kind" || word == "top" ||
+				   word == "ramp" || word == "react" || word == "turn";
+		};
 		size_t options = 1;
-		while ( options < w.size() && w[options].quoted == false &&
-				( w[options].text == "on" || w[options].text == "along" || w[options].text == "direction" || w[options].text == "replace" ||
-				  w[options].text == "kind" || w[options].text == "top" || w[options].text == "ramp" || w[options].text == "react" ) == false )
+		while ( options < w.size() && ( w[options].quoted || forceStops( w[options].text ) == false ) )
 		{
 			++options;
 		}
@@ -415,19 +469,16 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 			return false;
 		}
 		part["class"] = verb == "impulse" ? "CbImpulse" : "CbForce";
-		if ( options == 2 && Number( w[1], value ) )
 		{
-			props[verb == "impulse" ? "speed" : "strength"] = value;
-		}
-		else
-		{
-			String expression;
-			for ( size_t k = 1; k < options; ++k )
+			// (The words before the first option word, found above.)
+			Amount main;
+			main.numeric = options == 2 && Number( w[1], main.number );
+			for ( size_t j = 1; j < options; ++j )
 			{
-				expression += ( k > 1 ? " " : "" ) + w[k].text;
+				main.text += ( j > 1 ? " " : "" ) + w[j].text;
 			}
-			props[verb == "impulse" ? "speed" : "strength"] = 0.0;
-			props["value_expression"] = expression;
+			// (An impulse's speed is its line's third field, a force's strength its fifth.)
+			amountInto( main, verb == "impulse" ? "speed" : "strength", verb == "impulse" ? 2 : 4 );
 		}
 		for ( i = options; i < w.size() && why.is_empty(); )
 		{
@@ -469,9 +520,17 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 				props["kind"] = kind;
 				i += 2;
 			}
-			else if ( verb == "force" && ( word == "top" || word == "ramp" ) && i + 1 < w.size() && Number( w[i + 1], value ) )
+			else if ( verb == "force" && word == "top" && i + 1 < w.size() )
 			{
-				props[word == "top" ? "speed" : "ramp_in"] = value;
+				// top SPEED: an amount (the line's sixth field)
+				i += 1;
+				Amount top;
+				TakeAmount( w, i, forceStops, top );
+				amountInto( top, "speed", 5 );
+			}
+			else if ( verb == "force" && word == "ramp" && i + 1 < w.size() && Number( w[i + 1], value ) )
+			{
+				props["ramp_in"] = value; // (a time of the motion's: a number)
 				i += 2;
 			}
 			else if ( verb == "force" && word == "react" )
@@ -496,10 +555,13 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 			{
 				continue;
 			}
-			if ( ( word == "length" || word == "reel" ) && i + 1 < w.size() && Number( w[i + 1], value ) )
+			if ( ( word == "length" || word == "reel" ) && i + 1 < w.size() )
 			{
-				props[word] = value;
-				i += 2;
+				// length L, reel S: amounts (the line's third and fourth fields)
+				i += 1;
+				Amount amount;
+				TakeAmount( w, i, []( const String& next ) { return next == "length" || next == "reel" || next == "alone" || next == "on"; }, amount );
+				amountInto( amount, word == "length" ? "length" : "reel", word == "length" ? 2 : 3 );
 			}
 			else if ( word == "alone" )
 			{
@@ -517,22 +579,50 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 		part["class"] = "CbMove";
 		Dictionary parameters;
 		i = 1;
-		if ( i + 1 < w.size() && w[i].text == "for" && Number( w[i + 1], value ) )
+		if ( i + 1 < w.size() && w[i].text == "for" )
 		{
+			// (Its seconds: a time of the motion's, a number.)
+			if ( Number( w[i + 1], value ) == false )
+			{
+				why = "move for S: its seconds are a number";
+				return false;
+			}
 			props["duration"] = value;
 			i += 2;
 		}
-		for ( ; i + 1 < w.size() && why.is_empty(); i += 2 )
+		// PARAMETER VALUE ...: a value is the words up to the next parameter's name (a number, or an
+		// expression read when its step starts). Without the names (cue used alone), one word each.
+		while ( i < w.size() && why.is_empty() )
 		{
-			if ( Number( w[i + 1], value ) == false )
+			const String name = w[i].text;
+			i += 1;
+			Amount amount;
+			const bool named = MoveParameters().is_empty() == false;
+			size_t stop = i;
+			bool took = false;
+			if ( named )
 			{
-				why = w[i].text + String( " wants a number" );
+				took = TakeAmount( w, stop, []( const String& next ) { return MoveParameters().has( next ); }, amount );
 			}
-			parameters[w[i].text] = value;
-		}
-		if ( i < w.size() && why.is_empty() )
-		{
-			why = "move [for S] PARAMETER VALUE ...";
+			else if ( i < w.size() )
+			{
+				amount.numeric = Number( w[i], amount.number );
+				amount.text = w[i].text;
+				stop = i + 1;
+				took = true;
+			}
+			if ( took == false )
+			{
+				why = "move [for S] PARAMETER VALUE ...: " + name + " wants a value";
+				break;
+			}
+			if ( named && MoveParameters().has( name ) == false )
+			{
+				why = "move: \"" + name + "\" is not a movement parameter";
+				break;
+			}
+			parameters[name] = amount.numeric ? Variant( amount.number ) : Variant( amount.text );
+			i = stop;
 		}
 		props["parameters"] = parameters;
 	}
@@ -561,17 +651,19 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 			{
 				continue;
 			}
-			if ( ( word == "speed" || word == "lift" || word == "ahead" || word == "seconds" ) && i + 1 < w.size() && Number( w[i + 1], value ) )
+			if ( ( word == "speed" || word == "lift" || word == "ahead" || word == "seconds" ) && i + 1 < w.size() )
 			{
-				props[word] = value;
-				i += 2;
-			}
-			else if ( word == "speed" && i + 1 < w.size() && w[i + 1].text.begins_with( "(" ) )
-			{
-				// speed (EXPRESSION): read when it is thrown.
-				props["speed"] = 0.0;
-				props["value_expression"] = w[i + 1].text;
-				i += 2;
+				// Amounts, read when it is thrown: the line's third, fifth, sixth and seventh fields.
+				i += 1;
+				Amount amount;
+				TakeAmount( w, i,
+							[]( const String& next ) {
+								return next == "speed" || next == "lift" || next == "ahead" || next == "seconds" || next == "from" || next == "along" ||
+									   next == "on" || next == "turn" || next == "direction";
+							},
+							amount );
+				const int field = word == "speed" ? 2 : word == "lift" ? 4 : word == "ahead" ? 5 : 6;
+				amountInto( amount, word == "speed" ? "speed" : word == "lift" ? "lift" : word == "ahead" ? "ahead" : "seconds", field );
 			}
 			else if ( word == "from" && i + 1 < w.size() && w[i + 1].quoted == false )
 			{
@@ -591,6 +683,10 @@ bool ParsePart( const std::vector<Token>& w, Dictionary& part, String& why )
 	if ( why.is_empty() == false )
 	{
 		return false;
+	}
+	if ( amounts.is_empty() == false )
+	{
+		props["amounts"] = amounts;
 	}
 	part["properties"] = props;
 	return true;
@@ -628,6 +724,11 @@ struct Building
 };
 
 } // namespace
+
+void SetMoveParameterNames( const PackedStringArray& names )
+{
+	MoveParameters() = names;
+}
 
 bool IsPathProperty( const String& name )
 {
@@ -1380,12 +1481,15 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			{
 				// break radius R [speed S] [seconds S]: walls near the owner. A number, a name, or an
 				// expression in brackets each.
-				bool ok = w.size() >= 3 && w.size() % 2 == 1;
-				for ( size_t k = 1; ok && k + 1 < w.size(); k += 2 )
+				bool ok = w.size() >= 3;
+				auto breakStops = []( const String& next ) { return next == "radius" || next == "speed" || next == "seconds"; };
+				for ( size_t k = 1; ok && k < w.size(); )
 				{
 					const String word = w[k].text;
-					ok = ( word == "radius" || word == "speed" || word == "seconds" ) && w[k + 1].quoted == false;
-					statement[word] = w[k + 1].text;
+					k += 1;
+					Amount amount;
+					ok = breakStops( word ) && TakeAmount( w, k, breakStops, amount );
+					statement[word] = amount.text; // (a number, or an expression: the bake writes it as it is)
 				}
 				if ( ok == false || statement.has( "radius" ) == false )
 				{

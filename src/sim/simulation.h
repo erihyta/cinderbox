@@ -619,6 +619,8 @@ private:
 	// Each player's character between its motions and its move (MoveCharacters), by slot.
 	std::vector<Character> m_turnCharacters;
 	void ApplyPlayerPushes();
+	// The values of the moves of `motion`'s step that are expressions, read as it starts (MoveValues).
+	void KeepMoveValues( flecs::entity e, uint16_t motion, const MotionStep& step, const MotionSlot& slot, const AnimGraphInputs& values );
 	// The copy of `kind` the player `holder` carries that a launch throws (in a hand first, then the
 	// lowest slot's), not one already thrown this tick; 0: none.
 	uint32_t CarriedCopyOf( uint32_t holder, uint16_t kind ) const;

@@ -17,6 +17,7 @@
 #include "cue_rules.h"
 #include "cinderbox_rules_editor.h"
 #include "cinderbox_skeleton.h"
+#include "move_params.h"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/classes/editor_plugin_registration.hpp>
@@ -50,6 +51,15 @@ void InitializeCinderbox( ModuleInitializationLevel level )
 	if ( level != MODULE_INITIALIZATION_LEVEL_SCENE )
 	{
 		return;
+	}
+	// A sheet's move lines: where a value ends and the next movement parameter starts.
+	{
+		godot::PackedStringArray names;
+		for ( int p = 0; p < cb::kMoveParams; ++p )
+		{
+			names.push_back( godot::String( cb::MoveParamInfoOf( p ).name ) );
+		}
+		cb::cue::SetMoveParameterNames( names );
 	}
 	GDREGISTER_CLASS( cb::gd::CinderboxSkeleton );
 	GDREGISTER_CLASS( cb::gd::CbPoseModifier );

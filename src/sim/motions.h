@@ -163,6 +163,14 @@ struct MotionEffect
 	// Impulse, Force, Launch: its strength (a launch's speed) as an expression, read when it acts
 	// (Motion::exprs; -1: `strength`).
 	int16_t strengthExpr = -1;
+	// The other amounts as expressions, read when it acts (-1: the number above): a force's `speed`,
+	// a link's `length` and `reel`, a launch's `lift`, `ahead` and `seconds`.
+	int16_t speedExpr = -1;
+	int16_t lengthExpr = -1;
+	int16_t reelExpr = -1;
+	int16_t liftExpr = -1;
+	int16_t aheadExpr = -1;
+	int16_t secondsExpr = -1;
 	// Its direction turned after its frame gives it: by a heading (right is positive) and a pitch (up
 	// is positive), as cosines and sines worked out once, the same on every machine.
 	bool turned = false;
@@ -222,6 +230,7 @@ struct MotionFind
 		uint8_t param = 0;
 		float value = 0.0f;
 		float seconds = 0.0f;
+		int16_t expr = -1; // its value as an expression, read for each thing found (-1: `value`)
 	};
 	std::vector<Move> moves;
 	// Changes of the owner's fields, once for each thing found (a count of what was hit).
@@ -231,6 +240,7 @@ struct MotionFind
 		BoardType type = BoardType::Int;
 		uint8_t op = 0; // MotionStep::ChangeOp: set, add, subtract
 		float value = 0.0f;
+		int16_t expr = -1; // its value as an expression, read for each thing found (-1: `value`)
 	};
 	std::vector<Change> changes;
 	// How far out along the ground its shape reaches from the player (its points and radius): what
@@ -261,6 +271,7 @@ struct MotionStep
 		ChangeOp op = ChangeOp::Set;
 		float value = 0.0f;
 		int8_t guard = -1;
+		int16_t expr = -1; // its value as an expression, read when it happens (-1: `value`)
 	};
 	struct Param
 	{
@@ -268,6 +279,9 @@ struct MotionStep
 		float value = 0.0f;
 		float seconds = 0.0f; // from when the step starts; 0: while it is the step
 		int8_t guard = -1;
+		// Its value as an expression (-1: `value`): read when its step starts and kept for as long as
+		// it holds (MoveValues: the mover has no expression's inputs at hand).
+		int16_t expr = -1;
 	};
 	struct Emit
 	{
@@ -448,6 +462,8 @@ bool MotionGuardHolds( const MotionSlot& slot, int8_t guard );
 uint16_t MotionGuardBits( const MotionStep& step, const AnimGraphInputs& values );
 // A statement's number now, held within lo and hi.
 float MotionValueOf( const Motion& m, const MotionValue& value, const AnimGraphInputs& values, float lo, float hi );
+// An amount: `number`, or the motion's expression `expr` (-1: none) read now, within lo and hi.
+float MotionAmount( const Motion& m, float number, int16_t expr, const AnimGraphInputs& values, float lo, float hi );
 // An effect's strength now: its number, or its expression read against `values`, held within `limit`.
 float MotionStrength( const Motion& m, const MotionEffect& effect, const AnimGraphInputs& values, float limit );
 // Limits of an effect's strength: an impulse's m/s, a force's newtons or m/s^2.
@@ -464,8 +480,11 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 // A find's change of its owner's field (once for each thing found), on `board`.
 void ApplyFindChange( const MotionFind::Change& change, Blackboard& board );
 
-// Lays the movement parameters of the motions that are on at `tick` over `params`, in order.
-void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32_t tick, uint32_t tickRate, MoveParams& params );
+// Lays the movement parameters of the motions that are on at `tick` over `params`, in order. A
+// parameter whose value is an expression takes the value read when its step started (`read`; none
+// there: it is left out).
+void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32_t tick, uint32_t tickRate, MoveParams& params,
+						const MoveValues* read = nullptr );
 
 // A frame's direction for a player (unit length). MotionFrame::To is the caller's: it is toward a
 // target only the simulation can find. World and Marker take `world`: as it is, or turned with the look.

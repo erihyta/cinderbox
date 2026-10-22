@@ -338,6 +338,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<Container>();
 	RegisterSnapComponent<WallPiece>();
 	RegisterSnapComponent<MoveEffects>();
+	RegisterSnapComponent<MoveValues>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -3758,7 +3759,7 @@ MoveParams Simulation::MoveOf( flecs::entity e ) const
 	{
 		if ( HasMotionState( e ) )
 		{
-			ApplyMotionParams( *m_motions, GetMotionState( e ), m_globals.tick, m_config.tickRate, params );
+			ApplyMotionParams( *m_motions, GetMotionState( e ), m_globals.tick, m_config.tickRate, params, e.try_get<MoveValues>() );
 		}
 	}
 	// ... but what another's motion gave it for a while comes after: a slow holds through a dash.
@@ -4251,7 +4252,8 @@ void Simulation::RunItemMotions( flecs::entity item, int event, bool expiring )
 			{
 				int32_t& stored = board.values[change.slot];
 				float value = change.type == BoardType::Float ? BoardToFloat( stored ) : float( stored );
-				value = change.op == Motion::ChangeOp::Set ? change.value : change.op == Motion::ChangeOp::Add ? value + change.value : value - change.value;
+				const float amount = MotionAmount( m, change.value, change.expr, values, -1.0e9f, 1.0e9f );
+				value = change.op == Motion::ChangeOp::Set ? amount : change.op == Motion::ChangeOp::Add ? value + amount : value - amount;
 				stored = change.type == BoardType::Float ? BoardFromFloat( value ) : int32_t( value );
 				changed = true;
 			}
@@ -4528,15 +4530,16 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 		{
 			for ( const MotionFind::Move& move : find.moves )
 			{
-				GiveMove( target.end.entity, move.param, move.value, move.seconds );
+				GiveMove( target.end.entity, move.param, MotionAmount( m, move.value, move.expr, values, MoveParamInfoOf( move.param ).min, MoveParamInfoOf( move.param ).max ), move.seconds );
 			}
 		}
 		// The owner's fields, once for each thing found.
 		if ( find.changes.empty() == false )
 		{
 			Blackboard board = GetBoard( e );
-			for ( const MotionFind::Change& change : find.changes )
+			for ( MotionFind::Change change : find.changes )
 			{
+				change.value = MotionAmount( m, change.value, change.expr, values, -1.0e9f, 1.0e9f );
 				ApplyFindChange( change, board );
 			}
 			SetBoard( e, board );
@@ -4609,6 +4612,47 @@ void Simulation::PushEnd( const MotionEnd& end, Character& c, b3Vec3 change )
 	}
 }
 
+void Simulation::KeepMoveValues( flecs::entity e, uint16_t motion, const MotionStep& step, const MotionSlot& slot, const AnimGraphInputs& values )
+{
+	const MoveValues* had = e.try_get<MoveValues>();
+	bool any = false;
+	for ( const MotionStep::Param& p : step.params )
+	{
+		any = any || p.expr >= 0;
+	}
+	if ( any == false && had == nullptr )
+	{
+		return; // (a player whose motions read no move from an expression never has the component)
+	}
+	MoveValues kept = had != nullptr ? *had : MoveValues{};
+	// This motion's places are taken again: what its new step reads.
+	for ( MoveValue& place : kept.list )
+	{
+		place = place.motion == uint16_t( motion + 1 ) ? MoveValue{} : place;
+	}
+	const Motion& m = m_motions->list[motion];
+	for ( size_t k = 0; k < step.params.size(); ++k )
+	{
+		const MotionStep::Param& p = step.params[k];
+		if ( p.expr < 0 || MotionGuardHolds( slot, p.guard ) == false )
+		{
+			continue;
+		}
+		const MoveParamInfo& info = MoveParamInfoOf( p.param );
+		for ( MoveValue& place : kept.list )
+		{
+			if ( place.motion == 0 )
+			{
+				place.motion = uint16_t( motion + 1 );
+				place.index = uint8_t( k );
+				place.value = MotionAmount( m, p.value, p.expr, values, info.min, info.max );
+				break;
+			}
+		}
+	}
+	e.set<MoveValues>( kept );
+}
+
 void Simulation::ApplyPlayerPushes()
 {
 	for ( const PlayerPush& push : m_playerPushes )
@@ -4676,6 +4720,10 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 		{
 			continue;
 		}
+		if ( on.started )
+		{
+			KeepMoveValues( e, on.index, m.steps[slot.step], slot, values );
+		}
 		// Its current step's: the once ones when the step starts, the lasting ones while it is the step
 		// (and its repeat's, on the ticks it happens).
 		auto runEffects = [&]( const std::vector<MotionEffect>& effects, bool startsNow ) {
@@ -4741,8 +4789,11 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				float yaw = detmath::YawToRadians( in.cameraYaw );
 				b3Vec3 from = b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
 				const float speed = MotionStrength( m, effect, values, kMotionImpulseLimit );
-				b3Vec3 velocity = b3Add( b3Add( b3MulSV( speed, direction ), b3Vec3{ 0.0f, effect.lift, 0.0f } ), c.velocity );
-				uint32_t lifetime = effect.seconds > 0.0f ? std::max<uint32_t>( 1, uint32_t( effect.seconds * float( m_config.tickRate ) + 0.5f ) ) : 0u;
+				const float lift = MotionAmount( m, effect.lift, effect.liftExpr, values, -kMotionImpulseLimit, kMotionImpulseLimit );
+				const float ahead = MotionAmount( m, effect.ahead, effect.aheadExpr, values, 0.0f, 5.0f );
+				const float seconds = MotionAmount( m, effect.seconds, effect.secondsExpr, values, 0.0f, 600.0f );
+				b3Vec3 velocity = b3Add( b3Add( b3MulSV( speed, direction ), b3Vec3{ 0.0f, lift, 0.0f } ), c.velocity );
+				uint32_t lifetime = seconds > 0.0f ? std::max<uint32_t>( 1, uint32_t( seconds * float( m_config.tickRate ) + 0.5f ) ) : 0u;
 				uint32_t copy = 0;
 				if ( effect.carried )
 				{
@@ -4755,7 +4806,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				// From a marker: its place around the player, turned with its heading; else ahead of
 				// where its look starts.
 				b3Vec3 start = effect.fromMarker ? b3Add( t.position, b3RotateVector( detmath::YawRotation( yaw ), effect.from ) )
-												 : b3Add( from, b3MulSV( effect.ahead, direction ) );
+												 : b3Add( from, b3MulSV( ahead, direction ) );
 				m_launched.push_back( { effect.itemKind, start, detmath::YawRotation( yaw ), velocity, e.get<NetId>().value, lifetime, copy } );
 				continue;
 			}
@@ -4776,6 +4827,8 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				const float ramp = MotionRamp( effect, m_globals.tick - MotionStepStart( slot ), m_config.tickRate );
 				const float strength = MotionStrength( m, effect, values, MotionForceLimit( effect ) );
 				const float along = b3Dot( EndVelocity( target, c ), direction );
+				// Its speed (the top, or the speed it brings the target to), read when it acts.
+				const float top = MotionAmount( m, effect.speed, effect.speedExpr, values, -kMotionImpulseLimit, kMotionImpulseLimit );
 				float change = 0.0f;
 				switch ( effect.push )
 				{
@@ -4789,7 +4842,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 					{
 						// Toward the speed, no faster than its rate lets it.
 						float rate = std::fabs( strength ) * ramp * dt;
-						change = std::clamp( effect.speed - along, -rate, rate );
+						change = std::clamp( top - along, -rate, rate );
 						// With a reaction on something that can move, the speed is the two's toward
 						// each other, and each takes its share of the change by the other's weight:
 						// the light one does the moving, and the two never close faster than the
@@ -4799,15 +4852,15 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 						if ( effect.react && other.mass > 0.0f && other.kind != MotionEnd::Kind::None && other.kind != MotionEnd::Kind::World )
 						{
 							float closing = along - b3Dot( EndVelocity( other, c ), direction );
-							change = std::clamp( effect.speed - closing, -rate, rate ) * other.mass / ( target.mass + other.mass );
+							change = std::clamp( top - closing, -rate, rate ) * other.mass / ( target.mass + other.mass );
 						}
 						break;
 					}
 				}
-				if ( effect.push != MotionEffect::Push::Velocity && effect.speed > 0.0f )
+				if ( effect.push != MotionEffect::Push::Velocity && top > 0.0f )
 				{
 					// A top speed along the push: past it, it pushes no more.
-					float room = change >= 0.0f ? effect.speed - along : effect.speed + along;
+					float room = change >= 0.0f ? top - along : top + along;
 					change = room <= 0.0f ? 0.0f : ( change >= 0.0f ? std::min( change, room ) : std::max( change, -room ) );
 				}
 				if ( change == 0.0f )
@@ -4832,14 +4885,14 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				// when the probe took hold; reeling shortens it.
 				float distance = 0.0f;
 				b3Vec3 toward = b3GetLengthAndNormalize( &distance, b3Sub( target.point, self.point ) );
-				float length = effect.length;
+				float length = MotionAmount( m, effect.length, effect.lengthExpr, values, 0.0f, 500.0f );
 				if ( length <= 0.0f )
 				{
 					if ( hold.length <= 0.0f )
 					{
 						hold.length = std::max( distance, kHoldMinLength );
 					}
-					hold.length = std::max( kHoldMinLength, hold.length - effect.reel * dt );
+					hold.length = std::max( kHoldMinLength, hold.length - MotionAmount( m, effect.reel, effect.reelExpr, values, 0.0f, 100.0f ) * dt );
 					holdChanged = true;
 					length = hold.length;
 				}

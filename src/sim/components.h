@@ -368,6 +368,24 @@ struct MoveEffects
 	MoveEffect list[kMoveEffects] = {};
 };
 
+// The values of a player's own motions' moves that are expressions (a sheet's "move speed 2 *
+// t.power"), read when their step started: the mover reads parameters with no expression's inputs at
+// hand, so they are kept here while they hold. A place per value, keyed by its motion and its place
+// in its step; a step that starts takes its motion's places again. Only players whose motions have
+// such moves have it.
+inline constexpr int kMoveValues = 16;
+struct MoveValue
+{
+	uint16_t motion = 0; // the motion (Motions::list), plus one; 0: an empty place
+	uint8_t index = 0;	 // the parameter's place in its step (MotionStep::params)
+	uint8_t reserved = 0;
+	float value = 0.0f;
+};
+struct MoveValues
+{
+	MoveValue list[kMoveValues] = {};
+};
+
 // "This entity did not come from a template."
 inline constexpr uint32_t kNoTemplate = 0xFFFFFFFFu;
 
@@ -440,6 +458,8 @@ CB_CHECK_COMPONENT( TemplateRef, 4 );
 CB_CHECK_COMPONENT( WallPiece, 12 );
 CB_CHECK_COMPONENT( MoveEffect, 16 );
 CB_CHECK_COMPONENT( MoveEffects, 16 * kMoveEffects );
+CB_CHECK_COMPONENT( MoveValue, 8 );
+CB_CHECK_COMPONENT( MoveValues, 8 * kMoveValues );
 CB_CHECK_COMPONENT( HeldItem, 12 );
 CB_CHECK_COMPONENT( Slots, 24 );
 CB_CHECK_COMPONENT( Container, 4 );

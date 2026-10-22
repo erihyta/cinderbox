@@ -315,6 +315,18 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 		m.exprs.push_back( expr );
 		return true;
 	};
+	// An amount: a number within lo and hi, or an expression (its place in the motion's exprs).
+	auto amount = [&]( Motion& m, const std::string& word, float lo, float hi, float& number, int16_t& expr ) {
+		MotionValue value;
+		std::string why;
+		if ( valueOf( m, word, lo, hi, value, why ) == false )
+		{
+			return false;
+		}
+		number = value.number;
+		expr = value.expr;
+		return true;
+	};
 	// A strength: a number, or an expression (kept in the motion's exprs) read when it acts.
 	auto strength = [&]( Motion& m, const std::string& word, float limit, MotionEffect& e, std::string& why ) {
 		if ( Number( word, -limit, limit, e.strength ) )
@@ -841,7 +853,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				return fail( "force: its strength: " + why );
 			}
 			if ( push < 0 || ParseTarget( w[1], schema, m.name, e.target, warnings ) == false || ParseFrame( w[2], e.frame ) == false ||
-				 Number( w[5], -kMaxMotionImpulse, kMaxMotionImpulse, e.speed ) == false ||
+				 amount( m, w[5], -kMaxMotionImpulse, kMaxMotionImpulse, e.speed, e.speedExpr ) == false ||
 				 Number( w[6], 0.0f, 60.0f, e.ramp ) == false || ( w[7] != "0" && w[7] != "1" ) )
 			{
 				return fail( "force wants a target (self, hit, @field), a frame, a kind (accel, force, velocity), a strength, a speed, a "
@@ -863,7 +875,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			e.kind = MotionEffect::Kind::Link;
 			e.react = true;
 			if ( w.size() < 4 || ParseTarget( w[1], schema, m.name, e.target, warnings ) == false || e.target.kind == MotionTarget::Kind::Self ||
-				 Number( w[2], 0.0f, 500.0f, e.length ) == false || Number( w[3], 0.0f, 100.0f, e.reel ) == false ||
+				 amount( m, w[2], 0.0f, 500.0f, e.length, e.lengthExpr ) == false || amount( m, w[3], 0.0f, 100.0f, e.reel, e.reelExpr ) == false ||
 				 ( w.size() > 4 && w[4] != "0" && w[4] != "1" ) )
 			{
 				return fail( "link wants a target that is not the player itself (hit, @field), a length (m; 0: the distance when the probe "
@@ -886,8 +898,8 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				return fail( "launch: its speed: " + why );
 			}
 			if ( w.size() < 7 || w[1].empty() || ParseFrame( w[3], e.frame ) == false ||
-				 e.frame == MotionFrame::To || Number( w[4], -kMaxMotionImpulse, kMaxMotionImpulse, e.lift ) == false ||
-				 Number( w[5], 0.0f, 5.0f, e.ahead ) == false || Number( w[6], 0.0f, 600.0f, e.seconds ) == false )
+				 e.frame == MotionFrame::To || amount( m, w[4], -kMaxMotionImpulse, kMaxMotionImpulse, e.lift, e.liftExpr ) == false ||
+				 amount( m, w[5], 0.0f, 5.0f, e.ahead, e.aheadExpr ) == false || amount( m, w[6], 0.0f, 600.0f, e.seconds, e.secondsExpr ) == false )
 			{
 				return fail( "launch wants an item kind, a speed (m/s), a frame (look, move, facing, up, world), a lift (m/s upward), how far "
 							 "ahead it starts (0 to 5 m) and its seconds (0: it stays)" );
@@ -911,7 +923,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			// param <name> <value> [seconds from when the step starts]
 			int param = w.size() >= 3 ? MoveParamByName( w[1].c_str() ) : -1;
 			Motion::Param p;
-			if ( param < 0 || Number( w[2], MoveParamInfoOf( param ).min, MoveParamInfoOf( param ).max, p.value ) == false ||
+			if ( param < 0 || amount( m, w[2], MoveParamInfoOf( param ).min, MoveParamInfoOf( param ).max, p.value, p.expr ) == false ||
 				 ( w.size() > 3 && Number( w[3], 0.0f, kMaxMotionSeconds, p.seconds ) == false ) )
 			{
 				return fail( "param wants a movement parameter, a value in its range and, if it holds for less than its step, seconds" );
@@ -924,16 +936,20 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				{
 					return fail( "a param inside a find is given to what it found for some seconds: give them" );
 				}
-				step.finds.back().moves.push_back( { p.param, p.value, p.seconds } );
+				step.finds.back().moves.push_back( { p.param, p.value, p.seconds, p.expr } );
 				continue;
 			}
 			step.params.push_back( p );
 			step.length = std::max( step.length, p.seconds );
+			if ( p.expr >= 0 && std::count_if( step.params.begin(), step.params.end(), []( const Motion::Param& q ) { return q.expr >= 0; } ) > kMoveValues )
+			{
+				return fail( "a step's moves read at most " + std::to_string( kMoveValues ) + " values from expressions" );
+			}
 		}
 		else if ( key == "change" )
 		{
 			Motion::Change change;
-			if ( w.size() < 4 || ( w[2] != "=" && w[2] != "+=" && w[2] != "-=" ) || Number( w[3], -1.0e9f, 1.0e9f, change.value ) == false )
+			if ( w.size() < 4 || ( w[2] != "=" && w[2] != "+=" && w[2] != "-=" ) || amount( m, w[3], -1.0e9f, 1.0e9f, change.value, change.expr ) == false )
 			{
 				return fail( "change wants a field, an operator (=, +=, -=) and a number" );
 			}
@@ -950,7 +966,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			if ( inFind )
 			{
 				// The owner's field, once for each thing found (the find's guard holds for all of it).
-				step.finds.back().changes.push_back( { change.slot, change.type, uint8_t( change.op ), change.value } );
+				step.finds.back().changes.push_back( { change.slot, change.type, uint8_t( change.op ), change.value, change.expr } );
 				continue;
 			}
 			step.changes.push_back( change );
@@ -1143,7 +1159,7 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 				{
 					return wrong( "an effect on \"hit\", or along \"to\", needs the motion to have a probe (or a target that is a field)" );
 				}
-				if ( e.kind == MotionEffect::Kind::Link && e.length <= 0.0f && m.probe == false )
+				if ( e.kind == MotionEffect::Kind::Link && e.length <= 0.0f && e.lengthExpr < 0 && m.probe == false )
 				{
 					return wrong( "a link without a probe needs a length" );
 				}
@@ -1345,6 +1361,14 @@ float MotionValueOf( const Motion& m, const MotionValue& value, const AnimGraphI
 	return v > lo ? ( v < hi ? v : hi ) : lo;
 }
 
+float MotionAmount( const Motion& m, float number, int16_t expr, const AnimGraphInputs& values, float lo, float hi )
+{
+	MotionValue value;
+	value.number = number;
+	value.expr = expr;
+	return MotionValueOf( m, value, values, lo, hi );
+}
+
 uint32_t MotionStepStart( const MotionSlot& slot )
 {
 	return slot.step == 0 ? slot.sinceTick : slot.stepTick;
@@ -1453,12 +1477,14 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 
 		// A step's once statements: its changes, its emits, its ends (in that order).
 		auto onceStatements = [&]( const MotionStep& step, bool perSecond, bool firstOfWhile ) {
-			for ( const MotionStep::Change& change : step.changes )
+			for ( MotionStep::Change change : step.changes )
 			{
 				if ( MotionGuardHolds( slot, change.guard ) == false )
 				{
 					continue;
 				}
+				// A value that is an expression: read now.
+				change.value = MotionAmount( m, change.value, change.expr, values, -1.0e9f, 1.0e9f );
 				if ( perSecond == false )
 				{
 					ApplyChange( change, board );
@@ -1600,7 +1626,8 @@ void RunMotions( const Motions& motions, const MotionInputs& in, MotionState& st
 	state.prevActions = in.input->actions;
 }
 
-void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32_t tick, uint32_t tickRate, MoveParams& params )
+void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32_t tick, uint32_t tickRate, MoveParams& params,
+						const MoveValues* read )
 {
 	for ( size_t i = 0; i < motions.list.size(); ++i )
 	{
@@ -1609,15 +1636,30 @@ void ApplyMotionParams( const Motions& motions, const MotionState& state, uint32
 		if ( slot.lastTick != 0 && slot.sinceTick <= tick && tick < slot.untilTick && size_t( slot.step ) < m.steps.size() )
 		{
 			const MotionStep& step = m.steps[slot.step];
-			for ( const Motion::Param& p : step.params )
+			for ( size_t k = 0; k < step.params.size(); ++k )
 			{
+				const Motion::Param& p = step.params[k];
 				// Under a guard that did not hold; past its seconds.
 				if ( MotionGuardHolds( slot, p.guard ) == false ||
 					 ( p.seconds > 0.0f && tick - MotionStepStart( slot ) >= std::max<uint32_t>( 1, Ticks( p.seconds, tickRate ) ) ) )
 				{
 					continue;
 				}
-				params.values[p.param] = p.value;
+				if ( p.expr < 0 )
+				{
+					params.values[p.param] = p.value;
+					continue;
+				}
+				// An expression: the value read when its step started.
+				for ( int v = 0; read != nullptr && v < kMoveValues; ++v )
+				{
+					const MoveValue& kept = read->list[v];
+					if ( kept.motion == uint16_t( i + 1 ) && kept.index == uint8_t( k ) )
+					{
+						params.values[p.param] = kept.value;
+						break;
+					}
+				}
 			}
 		}
 	}
