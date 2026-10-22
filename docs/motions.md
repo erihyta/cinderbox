@@ -180,6 +180,7 @@ use if dash.charges > 0
 
 - **Order**: a tick runs the frame's commands, then each player's motions (in the schema's order), then the mover. So a `Set` from the mod and a `change` from a motion in the same tick both count.
 - **Conditions read the fields as the tick found them**: a motion that changes a field does not start another until the next tick. That is what makes a toggle of two motions (`FlyOn` if not `flight.on`, `FlyOff` if `flight.on`) one switch a press.
+- **A player's slot changes nothing** (M212): every player's motions run before anyone moves, so a `find` or a probe sees everyone where the tick found them, and a velocity read of another player is what it had then. What a motion does to another player (an impulse, a force, a rope's pull) lands after that player's own motions, on the same tick: a shove on a player who dashes this tick is added to the dash, not wiped out by it. Pushes from several players on one player add up, in slot order.
 - **A frozen or dead player** does none; a key held through a freeze is not a press when it ends.
 - **As many motions as the mods' sets have**, all together: a player carries 28 bytes for each.
 - **In the editor**: every group has an info row (click the icon), every property a hover text, F1 opens the class reference. A part that cannot run is a warning on its node, on its motion and on the set, and stops the bake.
@@ -602,7 +603,7 @@ one ball: both hold on to it, it goes 8 m, and both clients have the server's st
 
 | Missing | Roadmap |
 |---|---|
-| An effect on another player is felt by it on its next tick when it has a lower slot (it has moved already), and no test hooks one player to another yet. In first person a line starts at the same point as in third person, not the eye | later |
+| No test hooks one player to another yet. In first person a line starts at the same point as in third person, not the eye | later |
 | A lasting force as a server mod's command (C++), a knocked-down ragdoll a heavy hit puts a player in, carrying a player, structures that break | later |
 | A preview panel; `motion.<name>` in conditions and state machines; names checked at publish | Motions in the editor |
 | Another player's dash is seen when its input arrives: its press is guessed by repeating its last input, as a jump is | by design |
