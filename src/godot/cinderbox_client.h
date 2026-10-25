@@ -84,6 +84,10 @@ public:
 	// 2 / 3 over the right / left shoulder), with the camera turned as `camera` is: the point the
 	// server takes for it too (mods::Context::ViewPosition), so the crosshair is exact.
 	godot::Vector3 get_view_position( int64_t view, const godot::Basis& camera ) const;
+	// Whether the local player's body may be seen through its eyes: its character's scene has a
+	// first-person camera (the built-in rig may). Without, a first-person view is sent, and seen,
+	// as the view from behind.
+	bool has_first_person() const;
 	// The viewer looks out of its own player's eyes. The world stays the third-person one: its body
 	// keeps the pose everyone sees and casts that pose's shadow, what it holds too, and is only not
 	// drawn. What the viewer sees of itself are copies for the eye: its legs (slid back as it looks

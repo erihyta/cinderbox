@@ -344,8 +344,8 @@ Shooting at the crosshair is `ctx.CastAim( slot, range, hit, origin, direction )
 
 | Step | Ray | Why |
 |---|---|---|
-| What is aimed at | from where the player's line of sight starts (`ViewPosition`), along the camera's direction | the camera's choice: the character's eye height above its feet in first person, the pivot above the body behind it, 0.45 m to a side over a shoulder (`PlayerInput::view`) |
-| What is hit | from the eye on the posed head (`HeadPosition`) to that point | the body's: whatever is between the head and the target stops the shot, even where the camera sees past it |
+| What is aimed at | from where the player's line of sight starts (`ViewPosition`), along the camera's direction | the camera's choice: the character's eye height above its feet in first person (only for a character with a first-person camera), the pivot above the body behind it, 0.45 m to a side over a shoulder (`PlayerInput::view`) |
+| What is hit | from the posed eye (`HeadPosition`: the character's first-person camera or Eye marker as posed; else its head; else the top of its capsule) to that point | the body's: whatever is between the eye and the target stops the shot, even where the camera sees past it |
 
 The client sends only which view it uses and where it looks; both origins are computed by the
 server from the simulation, so a shot cannot start anywhere the player is not.

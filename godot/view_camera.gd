@@ -31,7 +31,7 @@ func _init(owner: Node, game_camera: Camera3D) -> void:
 ## person, 2 / 3 over the right / left shoulder. The server starts the line of sight where this
 ## camera's does, so what is under the crosshair is what a shot is aimed at.
 func view() -> int:
-	if game.first_person:
+	if game.first_person and game.client.has_first_person():
 		return 1
 	return 2 if game.shoulder > 0 else (3 if game.shoulder < 0 else 0)
 
@@ -42,7 +42,7 @@ func view() -> int:
 func _update_first_person() -> bool:
 	var client = game.client
 	var me: int = client.get_local_net_id()
-	if not game.first_person or me == 0 or client.is_local_player_dead() or client.get_entity_node(me) == null:
+	if not game.sees_first_person() or client.get_entity_node(me) == null:
 		return false
 	camera.rotation = Vector3(game.pitch, game.yaw, 0)
 	camera.global_position = client.get_view_position(1, camera.global_transform.basis)
@@ -54,7 +54,7 @@ func update() -> void:
 	if game._leaving or not game.is_inside_tree():
 		return
 	var shake: float = game.presentation.shake
-	camera.near = 0.03 if game.first_person else 0.05
+	camera.near = 0.03 if game.sees_first_person() else 0.05
 	if _update_first_person():
 		if shake > 0.0:
 			camera.global_position += Vector3(

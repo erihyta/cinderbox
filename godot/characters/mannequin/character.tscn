@@ -367,6 +367,9 @@ zone = "head"
 transform = Transform3D(0.9999942, -0.003439541, -3.516674e-05, 0.0034363111, 0.99940467, -0.03433159, 0.00015323237, 0.034331262, 0.99941075, -0.0041484125, 0.13659382, 0.0400562)
 shape = SubResource("SphereShape3D_2i51g")
 
+[node name="FirstPersonCamera" type="Camera3D" parent="Model/Armature/Skeleton3D/At_Head" unique_id=1418033571]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0.09, 0)
+
 [node name="At_Hips" type="BoneAttachment3D" parent="Model/Armature/Skeleton3D" index="13" unique_id=1277654084]
 transform = Transform3D(0.9730813, 0.021871202, -0.22942197, -2.3283064e-08, 0.9954867, 0.09490139, 0.23046213, -0.092346765, 0.96868944, -0.0021551885, 0.8758324, -0.08635663)
 bone_name = "Hips"

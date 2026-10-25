@@ -225,6 +225,13 @@ func _unhandled_input(event: InputEvent) -> void:
 					_replay_key(event.keycode)
 
 
+## Whether the player looks out of its body's eyes now: it asked to, and the body's character has a
+## first-person camera in its scene (without one it is seen from behind; the wish is kept for a body
+## that has one).
+func sees_first_person() -> bool:
+	return first_person and client.get_local_net_id() != 0 and not client.is_local_player_dead() and client.has_first_person()
+
+
 func _process(delta: float) -> void:
 	_watch_inspection()
 	_watch_connection()
@@ -232,7 +239,7 @@ func _process(delta: float) -> void:
 		return
 	_send_input(delta)
 	# The viewer draws the player's own body for the view it is seen from.
-	client.first_person = first_person and client.get_local_net_id() != 0 and not client.is_local_player_dead()
+	client.first_person = sees_first_person()
 	presentation.update_screen_effects(delta)
 	_update_hud()
 	presentation.update_kind_huds()

@@ -2691,13 +2691,36 @@ Simulation::PhysicsCounts Simulation::CountPhysics() const
 	return out;
 }
 
-void Simulation::Step( const InputFrame& frame )
+void Simulation::Step( const InputFrame& given )
 {
-	if ( frame.tick != m_globals.tick )
+	if ( given.tick != m_globals.tick )
 	{
-		std::fprintf( stderr, "Simulation::Step: frame for tick %u, expected %u\n", frame.tick, m_globals.tick );
+		std::fprintf( stderr, "Simulation::Step: frame for tick %u, expected %u\n", given.tick, m_globals.tick );
 		std::abort();
 	}
+	// A body whose character has no first-person camera is seen from behind only: a first-person
+	// view in its input is the third-person one, in every simulation.
+	const InputFrame* chosen = &given;
+	InputFrame narrowed;
+	if ( m_someSeenFromBehind )
+	{
+		for ( int slot = 0; slot < kMaxPlayers; ++slot )
+		{
+			const uint32_t netId = m_globals.playerNetIds[slot];
+			if ( netId == 0 || ViewMode( given.inputs[slot].view ) != ViewMode::FirstPerson ||
+				 Body( CharacterOf( FindEntity( netId ) ) ).firstPerson )
+			{
+				continue;
+			}
+			if ( chosen == &given )
+			{
+				narrowed = given;
+				chosen = &narrowed;
+			}
+			narrowed.inputs[slot].view = uint8_t( ViewMode::ThirdPerson );
+		}
+	}
+	const InputFrame& frame = *chosen;
 
 	PhysicsArena::Scope scope( *m_arena );
 	if ( m_tasks->threaded )
@@ -4824,6 +4847,7 @@ bool Simulation::CharactersOf( const ModSchema& schema, std::vector<CharacterBod
 		body.radius = info.radius;
 		body.halfHeight = info.halfHeight;
 		body.move = info.move;
+		body.firstPerson = info.firstPerson;
 		if ( info.graph.empty() == false )
 		{
 			std::string why, warnings;
@@ -4850,6 +4874,7 @@ void Simulation::SetCharacters( std::vector<CharacterBody> characters )
 		characters.resize( 1 );
 	}
 	m_characters = std::move( characters );
+	m_someSeenFromBehind = std::any_of( m_characters.begin(), m_characters.end(), []( const CharacterBody& c ) { return c.firstPerson == false; } );
 }
 
 uint16_t Simulation::CharacterOf( flecs::entity e ) const

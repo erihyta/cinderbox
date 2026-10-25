@@ -4132,6 +4132,96 @@ void TestViewerCharacters()
 	CHECK( characterIn( frame, second ) == 0 && skeletonOf( second ) == small.get() );
 }
 
+// M218: a character's eyes and whether it may be seen in first person. The mannequin's scene has a
+// first-person camera on its head: its eye is there, where the game's eye always was (9 cm above
+// the head bone); a character whose files give an eye on the body and no camera has that eye and
+// no first person; and a body of such a character is seen from behind in every simulation: a
+// first-person view in its input does not turn it to face the camera, while one that may does.
+void TestFirstPersonCamera()
+{
+	namespace fs = std::filesystem;
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
+	std::string error, warnings;
+	auto mannequin = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( mannequin != nullptr );
+	if ( mannequin == nullptr )
+	{
+		return;
+	}
+	const int head = anim::FindJoint( *mannequin, "Head" );
+	float v[4];
+	ozz::math::StorePtrU( mannequin->RestModels()[size_t( head )].cols[3], v );
+	std::printf( "    the mannequin: first person %s, its eye on joint %d (the head %d), %.4f m up (the head + kEyeUp: %.4f)\n",
+				 mannequin->FirstPerson() ? "yes" : "no", mannequin->EyeJoint(), head, double( anim::EyeHeight( *mannequin ) ),
+				 double( v[1] + kEyeUp ) );
+	CHECK( mannequin->FirstPerson() && mannequin->EyeJoint() == head && std::fabs( anim::EyeHeight( *mannequin ) - ( v[1] + kEyeUp ) ) < 1e-3f );
+	auto builtIn = anim::AnimSet::CreateProcedural();
+	CHECK( builtIn->FirstPerson() && builtIn->EyeJoint() == -2 );
+
+	// Its files with an eye on the body and no camera; then an eye on a bone it has not.
+	const fs::path copy = fs::temp_directory_path() / "cb_test_first_person";
+	fs::remove_all( copy );
+	fs::copy( dir, copy, fs::copy_options::recursive );
+	auto rewrite = [&]( const std::string& eye ) {
+		std::ifstream in( copy / "anim.cfg" );
+		std::string line, text;
+		while ( std::getline( in, line ) )
+		{
+			if ( line.rfind( "eye =", 0 ) != 0 && line.rfind( "first_person =", 0 ) != 0 )
+			{
+				text += line + "\n";
+			}
+		}
+		in.close();
+		std::ofstream( copy / "anim.cfg" ) << text << eye << "\n";
+	};
+	rewrite( "eye = . 0.0 1.2 0.1" );
+	warnings.clear();
+	auto marked = anim::AnimSet::Load( copy.string(), error, warnings );
+	CHECK( marked != nullptr && marked->FirstPerson() == false && marked->EyeJoint() == -1 && std::fabs( anim::EyeHeight( *marked ) - 1.2f ) < 1e-5f );
+	rewrite( "eye = Tail 0 0 0" );
+	warnings.clear();
+	auto wrong = anim::AnimSet::Load( copy.string(), error, warnings );
+	CHECK( wrong != nullptr && wrong->EyeJoint() == -2 && warnings.find( "eye = Tail" ) != std::string::npos );
+	fs::remove_all( copy );
+
+	// In the simulation: the second character may not be seen in first person.
+	Simulation sim( TestConfig(), FlatMap() );
+	Simulation::CharacterBody seen, behind;
+	behind.firstPerson = false;
+	sim.SetCharacters( { seen, behind } );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	f.events.push_back( { PlayerEventType::Join, 1 } );
+	SimCommand become;
+	become.type = CommandType::SetCharacter;
+	become.target = SlotTarget( 1 );
+	become.index = 1;
+	f.commands.push_back( become );
+	step( 30 );
+	const float before = sim.PlayerCharacter( PlayerSlot( 1 ) )->facingYaw;
+	for ( int slot = 0; slot < 2; ++slot )
+	{
+		f.inputs[slot].view = uint8_t( ViewMode::FirstPerson );
+		f.inputs[slot].cameraYaw = 16384; // a quarter turn
+	}
+	step( 10 );
+	const float yaw = detmath::WrapAngle( detmath::YawToRadians( 16384 ) );
+	const float first = sim.PlayerCharacter( PlayerSlot( 0 ) )->facingYaw, second = sim.PlayerCharacter( PlayerSlot( 1 ) )->facingYaw;
+	std::printf( "    looking a quarter turn away in first person: the one that may faces %.3f (the camera %.3f), the other %.3f (was %.3f)\n",
+				 double( first ), double( yaw ), double( second ), double( before ) );
+	CHECK( std::fabs( first - yaw ) < 1e-4f && second == before );
+}
+
 void TestMotionFinds()
 {
 	ModSchema schema;
@@ -11470,6 +11560,7 @@ int main( int argc, char** argv )
 		{ "motion_inspector", TestMotionInspector },
 		{ "characters", TestCharacters },
 		{ "viewer_characters", TestViewerCharacters },
+		{ "first_person_camera", TestFirstPersonCamera },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },

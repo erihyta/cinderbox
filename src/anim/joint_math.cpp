@@ -85,17 +85,44 @@ int FindJoint( const AnimSet& set, const char* profileName )
 	return -1;
 }
 
+bool EyePoint( const AnimSet& set, const Models& models, b3Vec3& out )
+{
+	auto column = [&]( int joint, int c ) {
+		float v[4];
+		ozz::math::StorePtrU( models[size_t( joint )].cols[c], v );
+		return b3Vec3{ v[0], v[1], v[2] };
+	};
+	const int eye = set.EyeJoint();
+	if ( eye == -1 )
+	{
+		out = set.EyeOffset();
+		return true;
+	}
+	if ( eye >= 0 && size_t( eye ) < models.size() )
+	{
+		// The bone's frame as posed (its axes carry the pose's scale, as a hitbox's do).
+		const b3Vec3 at = set.EyeOffset();
+		out = b3Add( column( eye, 3 ), b3Add( b3MulSV( at.x, column( eye, 0 ) ), b3Add( b3MulSV( at.y, column( eye, 1 ) ), b3MulSV( at.z, column( eye, 2 ) ) ) ) );
+		return true;
+	}
+	const int head = FindJoint( set, "Head" );
+	if ( head < 0 || size_t( head ) >= models.size() )
+	{
+		return false;
+	}
+	out = b3Add( column( head, 3 ), b3Vec3{ 0.0f, kEyeUp, 0.0f } );
+	return true;
+}
+
 float EyeHeight( const AnimSet& set )
 {
-	int head = FindJoint( set, "Head" );
-	if ( head < 0 || size_t( head ) >= set.RestModels().size() )
+	b3Vec3 eye;
+	if ( EyePoint( set, set.RestModels(), eye ) == false )
 	{
-		// A rig without a head: where the third-person camera's pivot is.
+		// A rig without a head or an eye: where the third-person camera's pivot is.
 		return ragdoll::kFeetBelowCenter + kViewPivotHeight;
 	}
-	float v[4];
-	ozz::math::StorePtrU( set.RestModels()[size_t( head )].cols[3], v );
-	return v[1] + kEyeUp;
+	return eye.y;
 }
 
 void RotateSubtree( const AnimSet& set, Models& models, int joint, b3Quat turn )
