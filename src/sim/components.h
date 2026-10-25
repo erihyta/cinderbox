@@ -376,6 +376,15 @@ struct CharacterKind
 	uint16_t reserved = 0;
 };
 
+// A character's body that nobody drives (M220): no controller (no Character, no animation state),
+// a physics body of its capsule with its rotation locked, so it stands, falls and is pushed, and
+// the physics engine sleeps it. A slot possessing it gives it the controller again.
+struct IdleBody
+{
+	uint16_t character = 0; // ModSchema::characters
+	uint16_t reserved = 0;
+};
+
 // The values of a player's own motions' moves that are expressions (a sheet's "move speed 2 *
 // t.power"), read when their step started: the mover reads parameters with no expression's inputs at
 // hand, so they are kept here while they hold. A place per value, keyed by its motion and its place
@@ -427,7 +436,9 @@ struct Slots
 	uint8_t count = 0;
 	uint8_t selected = kNoSlot;
 	uint8_t seq = 0;
-	uint8_t reserved = 0;
+	// 1: a slot has just taken this body over: the next tick takes its input's intent count and keys
+	// as they are, without acting on them (they were sent for the body it drove before).
+	uint8_t resync = 0;
 	uint16_t prevKeys = 0; // the slot keys held last tick: a press is one that was not
 	uint16_t reserved2 = 0;
 	uint32_t open = 0; // the container open to it (a chest's NetId; 0: none)
@@ -467,6 +478,7 @@ CB_CHECK_COMPONENT( WallPiece, 12 );
 CB_CHECK_COMPONENT( MoveEffect, 16 );
 CB_CHECK_COMPONENT( MoveEffects, 16 * kMoveEffects );
 CB_CHECK_COMPONENT( CharacterKind, 4 );
+CB_CHECK_COMPONENT( IdleBody, 4 );
 CB_CHECK_COMPONENT( MoveValue, 8 );
 CB_CHECK_COMPONENT( MoveValues, 8 * kMoveValues );
 CB_CHECK_COMPONENT( HeldItem, 12 );

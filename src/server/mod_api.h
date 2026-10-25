@@ -680,6 +680,17 @@ public:
 	// state machine (its layers start over), its hitboxes, its look. An invalid handle: the server's
 	// own character again.
 	void SetCharacter( uint32_t target, CharacterHandle character );
+	// A body of `character` nobody drives, its feet at `feet`, facing `yaw` (radians): drawn as its
+	// character, standing; a physics body of its capsule (it falls, it is pushed, it settles).
+	// `possessor`: a slot that drives it at once, as Possess (kNoSlot: nobody). An invalid handle:
+	// the server's own character.
+	void SpawnCharacter( CharacterHandle character, b3Vec3 feet, float yaw, PlayerSlot possessor = kNoSlot );
+	// The player in `slot` drives `body` (one of IdleBodies) from the next tick; the body it drove
+	// stands where it is, nobody's, what it held put away (a dead one goes). Nothing happens for a
+	// body someone drives.
+	void Possess( PlayerSlot slot, uint32_t body );
+	// The characters' bodies nobody drives (NetIds).
+	std::vector<uint32_t> IdleBodies() const;
 	// The player's own layer again (or the one a held item brings).
 	void RestoreLayer( uint32_t target, const std::string& layer );
 	// The server's: where mods' swaps are kept, and which packs items bring. After every mod has

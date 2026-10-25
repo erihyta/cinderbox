@@ -449,6 +449,12 @@ private:
 	void BreakGlue();
 	void LoosenPieces();
 	flecs::entity CreatePlayer( PlayerSlot slot );
+	// Bodies nobody drives, and taking them over (M220).
+	flecs::entity CreateIdleBody( uint16_t character, b3Vec3 feet, float yaw, b3Vec3 velocity );
+	b3BodyId CreateIdlePhysics( const Shape& shape, const Transform& t, b3Vec3 velocity, float mass, b3ShapeId& shapeId );
+	void MakeIdle( flecs::entity e );
+	void MakeDriven( flecs::entity e, PlayerSlot slot );
+	void Possess( PlayerSlot slot, flecs::entity body );
 	void PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw );
 	b3ShapeId CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material = {} );
 	// A convex hull of `points` (in the body's frame); null if they make none (all in a plane).

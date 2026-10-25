@@ -32,6 +32,7 @@
 
 #include "box3d/box3d.h"
 #include "mirror.h"
+#include "mover.h"
 #include "pose_tools.h"
 #include "view_codec.h"
 #include "view_file.h"
@@ -4221,6 +4222,134 @@ void TestFirstPersonCamera()
 	std::printf( "    looking a quarter turn away in first person: the one that may faces %.3f (the camera %.3f), the other %.3f (was %.3f)\n",
 				 double( first ), double( yaw ), double( second ), double( before ) );
 	CHECK( std::fabs( first - yaw ) < 1e-4f && second == before );
+}
+
+// M220: bodies apart from players. A body of a second character spawned in the air, nobody's,
+// falls and stands with its feet on the ground (a physics body of its capsule, reaching down to its
+// feet, its rotation locked); a slot possesses it: the slot drives it (it walks on the input), and
+// the body it drove stands where it was, nobody's, the item it held put away, not sunk into the
+// floor and not tipped over; it is pushed like any loose body; another slot cannot take a body
+// someone drives; a joining client's copy (the portable snapshot) and a rollback go on the same.
+void TestPossession()
+{
+	Simulation sim( TestConfig(), FlatMap() );
+	Simulation::CharacterBody small, big;
+	big.radius = 0.5f;
+	big.halfHeight = 1.0f;
+	sim.SetCharacters( { small, big } );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	f.events.push_back( { PlayerEventType::Join, 1 } );
+	step( 30 );
+	const uint32_t first = sim.PlayerNetId( 0 );
+	const float standing = sim.EntityTransform( first )->position.y;
+	{
+		SimCommand give;
+		give.type = CommandType::SpawnItem;
+		give.target = SlotTarget( 0 );
+		give.index = 0;
+		give.mode = uint8_t( kSocketRightHand );
+		f.commands.push_back( give );
+	}
+	step( 2 );
+	const std::vector<uint32_t> carried = sim.CarriedItemsOf( first );
+
+	// A body nobody drives, spawned in the air.
+	const uint32_t body = sim.Globals().nextNetId;
+	SimCommand spawn;
+	spawn.type = CommandType::SpawnBody;
+	spawn.index = 1;
+	spawn.a = { 3.0f, 2.0f, 0.0f };
+	spawn.value = 16384;
+	f.commands.push_back( spawn );
+	step( 150 );
+	flecs::entity idle = sim.FindEntity( body );
+	const float feet = mover::FeetBelowCenter( big.radius, big.halfHeight );
+	const float landed = idle.is_valid() ? sim.EntityTransform( body )->position.y : -1.0f;
+	std::printf( "    a body nobody drives, spawned 2 m up: its centre %.3f m up (its feet %.3f below it); character %u\n", double( landed ),
+				 double( feet ), unsigned( sim.CharacterOf( idle ) ) );
+	CHECK( idle.is_valid() && idle.has<IdleBody>() && idle.has<Character>() == false && sim.CharacterOf( idle ) == 1 &&
+		   std::fabs( landed - feet ) < 0.05f );
+
+	// Slot 0 possesses it.
+	SimCommand possess;
+	possess.type = CommandType::Possess;
+	possess.target = SlotTarget( 0 );
+	possess.other = body;
+	f.commands.push_back( possess );
+	step( 2 );
+	flecs::entity left = sim.FindEntity( first );
+	CHECK( sim.PlayerNetId( 0 ) == body && sim.FindEntity( body ).has<Character>() && sim.FindEntity( body ).get<Character>().slot == 0 &&
+		   sim.HasAnimState( sim.FindEntity( body ) ) );
+	CHECK( left.is_valid() && left.has<IdleBody>() && left.has<Character>() == false && sim.CharacterOf( left ) == 0 );
+	bool putAway = carried.empty() == false;
+	for ( uint32_t item : carried )
+	{
+		const HeldItem* held = sim.FindEntity( item ).try_get<HeldItem>();
+		putAway = putAway && held != nullptr && held->holder == first && held->stowed == 1;
+	}
+	CHECK( putAway );
+	f.inputs[0].moveForward = 127;
+	const b3Vec3 from = sim.EntityTransform( body )->position;
+	step( 60 );
+	f.inputs[0].moveForward = 0;
+	const b3Vec3 to = sim.EntityTransform( body )->position;
+	const Transform stood = *sim.EntityTransform( first );
+	std::printf( "    driven, it walked %.2f m; the body left stands %.3f m up (driven it stood %.3f), turned %.4f off upright\n",
+				 double( b3Distance( from, to ) ), double( stood.position.y ), double( standing ),
+				 double( std::fabs( stood.rotation.v.x ) + std::fabs( stood.rotation.v.z ) ) );
+	CHECK( b3Distance( from, to ) > 1.0f && std::fabs( stood.position.y - standing ) < 0.05f &&
+		   std::fabs( stood.rotation.v.x ) + std::fabs( stood.rotation.v.z ) < 1e-4f );
+
+	// Slot 1 cannot take the body slot 0 drives.
+	possess.target = SlotTarget( 1 );
+	f.commands.push_back( possess );
+	step( 2 );
+	CHECK( sim.PlayerNetId( 0 ) == body && sim.PlayerNetId( 1 ) != body );
+
+	// Pushed like any loose body.
+	SimCommand push;
+	push.type = CommandType::Impulse;
+	push.target = first;
+	push.mode = ImpulseVelocity;
+	push.b = { 3.0f, 0.0f, 0.0f };
+	f.commands.push_back( push );
+	step( 20 );
+	CHECK( sim.EntityTransform( first )->position.x > stood.position.x + 0.3f );
+
+	// A joining client's copy, and a rollback, go on the same.
+	std::vector<uint8_t> image;
+	sim.SavePortable( image );
+	Simulation copy( TestConfig(), FlatMap() );
+	copy.SetCharacters( { small, big } );
+	CHECK( copy.LoadPortable( image ) );
+	Snapshot snap;
+	sim.Save( snap );
+	f.inputs[0].moveRight = 127;
+	for ( int i = 0; i < 60; ++i )
+	{
+		f.tick = sim.Tick();
+		sim.Step( f );
+		copy.Step( f );
+	}
+	const uint64_t ahead = sim.ComputeHash();
+	CHECK( ahead == copy.ComputeHash() );
+	sim.Load( snap );
+	for ( int i = 0; i < 60; ++i )
+	{
+		f.tick = sim.Tick();
+		sim.Step( f );
+	}
+	CHECK( sim.ComputeHash() == ahead );
 }
 
 void TestMotionFinds()
@@ -11680,6 +11809,7 @@ int main( int argc, char** argv )
 		{ "viewer_characters", TestViewerCharacters },
 		{ "first_person_camera", TestFirstPersonCamera },
 		{ "any_skeleton", TestAnySkeleton },
+		{ "possession", TestPossession },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },

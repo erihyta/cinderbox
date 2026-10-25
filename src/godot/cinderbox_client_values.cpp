@@ -544,7 +544,7 @@ int CinderboxClient::SlotOfNetId( uint32_t netId ) const
 	}
 	const present::Visual& v = ve.get<present::Visual>();
 	bool person = v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll;
-	return person ? int( v.slot ) : -1;
+	return person && v.slot < kMaxPlayers ? int( v.slot ) : -1;
 }
 
 PackedInt64Array CinderboxClient::get_players() const

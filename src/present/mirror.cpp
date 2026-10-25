@@ -167,8 +167,9 @@ flecs::entity Mirror::CreateVisual( const FrameEntity& f, bool withEffect )
 	e.set<Visual>( v );
 	e.set<TickPoses>( {} );
 	e.set<RenderPose>( { f.transform.position, f.transform.rotation, {}, withEffect ? 0.0f : 1.0f } );
-	if ( f.kind == VisualKind::Player && f.hasAnim )
+	if ( f.kind == VisualKind::Player )
 	{
+		// (A body nobody drives has no animation state: it stands in its rest pose.)
 		e.set<PlayerAnim>( { f.anim, f.anim, f.anim, nullptr } );
 	}
 	if ( f.kind == VisualKind::Ragdoll )
@@ -324,7 +325,17 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 			std::copy( fr.parts, fr.parts + kRagdollParts, ra.current );
 		}
 
-		if ( f.hasAnim )
+		if ( visual.kind == VisualKind::Player && ve.has<PlayerAnim>() == false )
+		{
+			ve.set<PlayerAnim>( { f.anim, f.anim, f.anim, nullptr } );
+		}
+		if ( visual.kind == VisualKind::Player && f.hasAnim == false )
+		{
+			// A body nobody drives (just left, or never driven): its rest pose, not its last stride.
+			PlayerAnim& pa = ve.get_mut<PlayerAnim>();
+			pa.previous = pa.current = pa.shown = AnimState{};
+		}
+		else if ( f.hasAnim )
 		{
 			PlayerAnim& pa = ve.get_mut<PlayerAnim>();
 			AnimMode oldMode = pa.current.mode;
