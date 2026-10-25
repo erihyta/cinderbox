@@ -30,6 +30,7 @@
 #include <godot_cpp/classes/animation_tree.hpp>
 #include <godot_cpp/classes/bone_attachment3d.hpp>
 #include <godot_cpp/classes/box_shape3d.hpp>
+#include <godot_cpp/classes/camera3d.hpp>
 #include <godot_cpp/classes/capsule_shape3d.hpp>
 #include <godot_cpp/classes/collision_shape3d.hpp>
 #include <godot_cpp/classes/curve.hpp>
@@ -276,6 +277,9 @@ void CbCharacter::_bind_methods()
 	CB_PROP( Variant::BOOL, lock_root_xz, PROPERTY_HINT_NONE, "" )
 	CB_PROP( Variant::BOOL, turn_legs, PROPERTY_HINT_NONE, "" )
 	CB_PROP( Variant::BOOL, face_forward, PROPERTY_HINT_NONE, "" )
+	ADD_GROUP( "Camera", "" );
+	CB_PROP( Variant::NODE_PATH, first_person_camera, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Camera3D" )
+	CB_PROP( Variant::NODE_PATH, eye, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node3D" )
 	ADD_GROUP( "State machine", "" );
 	CB_PROP( Variant::NODE_PATH, animation_tree_path, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "AnimationTree" )
 	CB_PROP( Variant::DICTIONARY, graph_inputs, PROPERTY_HINT_DICTIONARY_TYPE, "String;String" )
@@ -894,6 +898,44 @@ Ref<AnimationLibrary> CbCharacter::build_track_library()
 	return library;
 }
 
+Node3D* CbCharacter::FindEye( bool& camera, String& warnings ) const
+{
+	camera = false;
+	if ( m_firstPersonCamera.is_empty() == false )
+	{
+		auto* found = Object::cast_to<Camera3D>( get_node_or_null( m_firstPersonCamera ) );
+		if ( found != nullptr )
+		{
+			camera = true;
+			return found;
+		}
+		warnings += "first_person_camera " + String( m_firstPersonCamera ) + " is not a Camera3D; ";
+	}
+	else
+	{
+		TypedArray<Node> cameras = find_children( "*", "Camera3D", true, false );
+		if ( cameras.size() == 1 )
+		{
+			camera = true;
+			return Object::cast_to<Camera3D>( cameras[0] );
+		}
+		if ( cameras.size() > 1 )
+		{
+			warnings += "several Camera3D nodes: first_person_camera says which is at its eyes; ";
+		}
+	}
+	if ( m_eye.is_empty() == false )
+	{
+		auto* found = Object::cast_to<Node3D>( get_node_or_null( m_eye ) );
+		if ( found == nullptr )
+		{
+			warnings += "eye " + String( m_eye ) + " is not a Node3D; ";
+		}
+		return found;
+	}
+	return Object::cast_to<Node3D>( find_child( "Eye", true, false ) );
+}
+
 Dictionary CbCharacter::bake_to( const String& requestedFolder )
 {
 	Dictionary result;
@@ -1012,6 +1054,30 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		cfg += "capsule_radius = " + Num( double( capsule->get_radius() * std::max( scale.x, scale.z ) ) ) + "\n";
 		cfg += "capsule_height = " + Num( double( capsule->get_height() * scale.y ) ) + "\n";
 		break;
+	}
+	// Its eyes: its first-person camera (then it may be seen in first person) or its Eye marker,
+	// in the frame of the bone it rides on (a BoneAttachment3D above it), or of the body.
+	{
+		bool camera = false;
+		if ( Node3D* eye = FindEye( camera, warnings ) )
+		{
+			BoneAttachment3D* attachment = nullptr;
+			for ( Node* n = eye->get_parent(); n != nullptr && n != this && attachment == nullptr; n = n->get_parent() )
+			{
+				attachment = Object::cast_to<BoneAttachment3D>( n );
+			}
+			const Vector3 at = RelativeTo( eye, attachment != nullptr ? static_cast<Node*>( attachment ) : static_cast<Node*>( this ) ).origin;
+			const String bone = attachment != nullptr ? attachment->get_bone_name() : String( "." );
+			if ( bone != "." && skeleton->find_bone( bone ) < 0 )
+			{
+				warnings += String( eye->get_name() ) + " rides on " + bone + ", which is not in the skeleton; its eyes are its head's; ";
+			}
+			else
+			{
+				cfg += Std( vformat( "eye = %s %.5f %.5f %.5f\n", bone, at.x, at.y, at.z ) );
+			}
+		}
+		cfg += std::string( "first_person = " ) + ( camera ? "true" : "false" ) + "\n";
 	}
 	// How it moves, in the simulation's order so that the file does not depend on the dictionary's.
 	for ( int p = 0; p < kMoveParams; ++p )

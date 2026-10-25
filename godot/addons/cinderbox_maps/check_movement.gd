@@ -26,6 +26,16 @@ func _lines(folder: String) -> PackedStringArray:
 	return out
 
 
+## The lines of a baked anim.cfg that say where its eyes are.
+func _eye_lines(cfg: String) -> String:
+	var out := PackedStringArray()
+	for line in cfg.split("
+"):
+		if line.begins_with("eye") or line.begins_with("first_person"):
+			out.append(line)
+	return ", ".join(out)
+
+
 func _initialize() -> void:
 	var scene: PackedScene = load("res://characters/mannequin/character.tscn")
 	var character: CbCharacter = scene.instantiate()
@@ -69,6 +79,29 @@ func _initialize() -> void:
 	_check("a CapsuleShape3D under it: its radius and whole height", baked.ok and cfg.contains("capsule_radius = 0.5\n") and
 		cfg.contains("capsule_height = 3\n"), cfg.substr(0, 300))
 	holder.free()
+
+	# Its eyes (M218): the mannequin's first-person camera rides on its head; without a camera it
+	# may not be seen in first person, and an Eye marker still says where its eyes are.
+	baked = character.bake_to(folder)
+	cfg = FileAccess.get_file_as_string(folder + "anim.cfg")
+	_check("a first-person camera: first person, the eye on its bone", baked.ok and cfg.contains("first_person = true\n") and
+		cfg.contains("eye = Head 0.00000 0.09000 0.00000\n"), _eye_lines(cfg))
+	var camera := character.find_child("FirstPersonCamera", true, false)
+	camera.get_parent().remove_child(camera)
+	camera.free()
+	baked = character.bake_to(folder)
+	cfg = FileAccess.get_file_as_string(folder + "anim.cfg")
+	_check("no camera: no first person, no eye (the head's)", baked.ok and cfg.contains("first_person = false\n") and
+		not cfg.contains("eye ="), _eye_lines(cfg))
+	var marker := Marker3D.new()
+	marker.name = "Eye"
+	marker.position = Vector3(0, 1.5, 0.1)
+	character.add_child(marker)
+	baked = character.bake_to(folder)
+	cfg = FileAccess.get_file_as_string(folder + "anim.cfg")
+	_check("an Eye marker on the body: its eye there, still no first person", baked.ok and cfg.contains("first_person = false\n") and
+		cfg.contains("eye = . 0.00000 1.50000 0.10000\n"), _eye_lines(cfg))
+	marker.free()
 
 	character.free()
 	var dir := DirAccess.open(folder)

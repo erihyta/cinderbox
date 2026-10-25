@@ -113,6 +113,25 @@ public:
 	{
 		return m_neckJoint;
 	}
+	// Where its eyes are: anim.cfg "eye = Head 0 0.1 0.08", a bone (or "." for the body itself,
+	// its feet's frame) and a point in that bone's frame, as the scene has its first-person camera
+	// or its Eye marker (CbCharacter). Shots start there, and a first-person view looks out from
+	// it. EyeJoint: -1 the body, -2 none (the head's, else the top of the capsule, is used).
+	int EyeJoint() const
+	{
+		return m_eyeJoint;
+	}
+	b3Vec3 EyeOffset() const
+	{
+		return m_eyeOffset;
+	}
+	// Whether its bodies may be seen through their eyes: anim.cfg "first_person = true", a
+	// first-person camera in its scene. Without one a body is seen from behind only. The
+	// built-in rig may.
+	bool FirstPerson() const
+	{
+		return m_firstPerson;
+	}
 	// Keep the root joint from drifting horizontally (clips exported without "In Place").
 	bool LockRootXZ() const
 	{
@@ -234,6 +253,9 @@ private:
 	std::vector<std::pair<int, float>> m_movement;
 	float m_capsuleRadius = 0.3f;
 	float m_capsuleHalfHeight = 0.5f;
+	int m_eyeJoint = -2;
+	b3Vec3 m_eyeOffset = {};
+	bool m_firstPerson = false;
 	int m_neckJoint = -1;
 	std::string m_description;
 	std::map<std::string, ozz::unique_ptr<ozz::animation::Animation>> m_namedClips;

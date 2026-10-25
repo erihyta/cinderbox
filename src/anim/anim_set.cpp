@@ -648,6 +648,7 @@ std::unique_ptr<AnimSet> AnimSet::CreateProcedural()
 	set->m_namedClips["fall"] = BuildClip( "fall", kFallSeconds, FallPose );
 	set->m_namedClips["land"] = BuildClip( "land", kLandSeconds, LandPose );
 	set->m_graphText = kPlaceholderGraph;
+	set->m_firstPerson = true; // (the game's own: seen from its head's height)
 	set->m_description = "procedural placeholder rig";
 	ComputeRestModels( *set, set->m_restModels, set->m_scale );
 	set->ComputeAttachFrames();
@@ -770,6 +771,45 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 		{
 			set->m_capsuleRadius = radius;
 			set->m_capsuleHalfHeight = height / 2.0f - radius;
+		}
+	}
+	if ( cfg.count( "first_person" ) )
+	{
+		set->m_firstPerson = cfg["first_person"] == "true" || cfg["first_person"] == "1";
+	}
+	if ( cfg.count( "eye" ) )
+	{
+		// eye = <bone or .> x y z
+		std::istringstream words( cfg["eye"] );
+		std::string bone, word;
+		float v[3];
+		int n = 0;
+		words >> bone;
+		while ( n < 3 && ( words >> word ) && expr::ParseFloat( word.c_str(), word.size(), v[n] ) )
+		{
+			++n;
+		}
+		int joint = -2;
+		if ( bone == "." )
+		{
+			joint = -1;
+		}
+		else
+		{
+			auto names = set->m_skeleton->joint_names();
+			for ( int j = 0; j < int( names.size() ); ++j )
+			{
+				joint = bone == names[size_t( j )] ? j : joint;
+			}
+		}
+		if ( n != 3 || joint == -2 )
+		{
+			warnings += "eye = " + cfg["eye"] + ": a bone of the skeleton (or .) and a point (x y z); its eye is the head's; ";
+		}
+		else
+		{
+			set->m_eyeJoint = joint;
+			set->m_eyeOffset = { v[0], v[1], v[2] };
 		}
 	}
 	if ( cfg.count( "lock_root_xz" ) )
@@ -934,6 +974,12 @@ bool AnimSet::Save( const std::string& dir ) const
 	cfg << "skeleton = skeleton.ozz\n";
 	cfg << "scale = " << m_scale << "\n";
 	cfg << "lock_root_xz = " << ( m_lockRootXZ ? "true" : "false" ) << "\n";
+	cfg << "first_person = " << ( m_firstPerson ? "true" : "false" ) << "\n";
+	if ( m_eyeJoint >= -1 )
+	{
+		cfg << "eye = " << ( m_eyeJoint < 0 ? std::string( "." ) : std::string( m_skeleton->joint_names()[size_t( m_eyeJoint )] ) ) << " "
+			<< m_eyeOffset.x << " " << m_eyeOffset.y << " " << m_eyeOffset.z << "\n";
+	}
 	cfg << "aim = " << m_aimConfig << "\n";
 	cfg << "aim_tip = " << m_aimTipName << "\n";
 	cfg << "look = " << m_lookConfig << "\n";

@@ -538,10 +538,24 @@ b3Vec3 Context::EyePosition( PlayerSlot slot ) const
 
 b3Vec3 Context::HeadPosition( PlayerSlot slot ) const
 {
+	// Its character's eye as posed (its first-person camera's place in its scene, or its Eye
+	// marker's), a little ahead, as the camera sits.
+	b3Vec3 eye;
+	if ( m_hits != nullptr && m_hits->BakedEyePosition( m_sim, slot, eye ) )
+	{
+		return b3Add( eye, b3MulSV( kEyeAhead, AimDirection( slot ) ) );
+	}
 	b3Vec3 head;
 	if ( m_hits == nullptr || m_hits->JointPosition( m_sim, slot, "Head", head ) == false )
 	{
-		return EyePosition( slot );
+		// Neither, and no head: the top of its capsule.
+		const Transform* t = m_sim.EntityTransform( m_sim.PlayerNetId( slot ) );
+		if ( t == nullptr )
+		{
+			return {};
+		}
+		const Simulation::CharacterBody& body = m_sim.Body( m_sim.CharacterOf( m_sim.FindEntity( m_sim.PlayerNetId( slot ) ) ) );
+		return b3Add( t->position, b3Vec3{ 0.0f, body.halfHeight + body.radius, 0.0f } );
 	}
 	// A little ahead of the face and above the joint, as the first-person camera sits.
 	b3Vec3 forward = AimDirection( slot );
@@ -555,7 +569,13 @@ b3Vec3 Context::HeadPosition( PlayerSlot slot ) const
 b3Vec3 Context::ViewPosition( PlayerSlot slot ) const
 {
 	const PlayerInput& in = m_frame.inputs[slot];
-	switch ( ViewMode( in.view ) )
+	ViewMode view = ViewMode( in.view );
+	if ( view == ViewMode::FirstPerson &&
+		 m_sim.Body( m_sim.CharacterOf( m_sim.FindEntity( m_sim.PlayerNetId( slot ) ) ) ).firstPerson == false )
+	{
+		view = ViewMode::ThirdPerson; // (no first-person camera in its scene: seen from behind only)
+	}
+	switch ( view )
 	{
 		case ViewMode::FirstPerson:
 		{
@@ -573,7 +593,7 @@ b3Vec3 Context::ViewPosition( PlayerSlot slot ) const
 		case ViewMode::ShoulderLeft:
 		{
 			b3Vec3 right = detmath::YawRight( detmath::YawToRadians( in.cameraYaw ) );
-			float side = ViewMode( in.view ) == ViewMode::ShoulderRight ? kShoulderOffset : -kShoulderOffset;
+			float side = view == ViewMode::ShoulderRight ? kShoulderOffset : -kShoulderOffset;
 			return b3MulAdd( EyePosition( slot ), side, right );
 		}
 		case ViewMode::ThirdPerson:

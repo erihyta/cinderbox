@@ -127,6 +127,30 @@ bool HitTester::JointPosition( Simulation& sim, PlayerSlot slot, const char* joi
 	return true;
 }
 
+bool HitTester::BakedEyePosition( Simulation& sim, PlayerSlot slot, b3Vec3& out )
+{
+	uint32_t netId = sim.PlayerNetId( slot );
+	const Transform* transform = netId != 0 ? sim.EntityTransform( netId ) : nullptr;
+	AnimStateCopy state = netId != 0 ? sim.EntityAnimState( netId ) : AnimStateCopy();
+	const uint16_t character = netId != 0 ? sim.CharacterOf( sim.FindEntity( netId ) ) : uint16_t( 0 );
+	Entry& kind = Kind( character );
+	if ( transform == nullptr || state == nullptr || kind.asset->animations->EyeJoint() < -1 )
+	{
+		return false;
+	}
+	anim::HandGrip grip;
+	kind.pose->Evaluate( *state, GripOf( sim, netId, grip ) ? &grip : nullptr );
+	b3Vec3 eye;
+	if ( anim::EyePoint( *kind.asset->animations, kind.pose->Models(), eye ) == false )
+	{
+		return false;
+	}
+	const Simulation::CharacterBody& body = sim.Body( character );
+	b3Vec3 feet = b3Sub( transform->position, b3Vec3{ 0.0f, mover::FeetBelowCenter( body.radius, body.halfHeight ), 0.0f } );
+	out = b3Add( feet, b3RotateVector( transform->rotation, eye ) );
+	return true;
+}
+
 bool HitTester::CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit )
 {
 	bool found = sim.CastRay( origin, translation, ignoreNetId, hit, true );

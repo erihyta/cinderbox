@@ -17,6 +17,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "is_running" ), &CinderboxClient::is_running );
 	ClassDB::bind_method( D_METHOD( "control", "name", "value" ), &CinderboxClient::control );
 	ClassDB::bind_method( D_METHOD( "takes_input" ), &CinderboxClient::takes_input );
+	ClassDB::bind_method( D_METHOD( "has_first_person" ), &CinderboxClient::has_first_person );
 	ClassDB::bind_method( D_METHOD( "send_intent", "kind", "a", "b" ), &CinderboxClient::send_intent );
 	ClassDB::bind_method( D_METHOD( "set_local_value", "name", "value" ), &CinderboxClient::set_local_value );
 	ClassDB::bind_method( D_METHOD( "get_local_value", "name" ), &CinderboxClient::get_local_value );
@@ -190,6 +191,13 @@ void CinderboxClient::control( const String& name, double value )
 	{
 		m_source->Control( ToStd( name ), value );
 	}
+}
+
+bool CinderboxClient::has_first_person() const
+{
+	const std::vector<CharacterInfo>& characters = m_frame.schema.characters;
+	const uint8_t local = m_mirror ? m_mirror->LocalCharacter() : uint8_t( 0 );
+	return characters.empty() || characters[local < characters.size() ? local : 0].firstPerson;
 }
 
 bool CinderboxClient::takes_input() const
@@ -412,6 +420,10 @@ void CinderboxClient::set_input( const Vector2& move, double camera_yaw, double 
 	in.actions = ActionBits( actions );
 	in.slotKeys = uint16_t( slot_keys & 0xFFFF );
 	in.view = view >= 0 && view < int64_t( kViewModes ) ? uint8_t( view ) : uint8_t( 0 );
+	if ( ViewMode( in.view ) == ViewMode::FirstPerson && has_first_person() == false )
+	{
+		in.view = uint8_t( ViewMode::ThirdPerson ); // (every simulation would take it so)
+	}
 	// The next intent, once the last one has had a tick to itself: the simulation carries one out
 	// when the count changes, so two in one tick would be one.
 	double now = double( Time::get_singleton()->get_ticks_usec() ) / 1e6;

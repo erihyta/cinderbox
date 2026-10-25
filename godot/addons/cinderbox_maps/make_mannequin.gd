@@ -125,6 +125,7 @@ func _initialize() -> void:
 
 	_add_hitboxes()
 	_add_sockets()
+	_add_camera()
 	_add_tree(player)
 
 	var packed := PackedScene.new()
@@ -297,6 +298,27 @@ func _add_sockets() -> void:
 		holster.transform = spec[2]
 		at.add_child(holster)
 		holster.owner = _root
+
+
+# --- The first-person camera -------------------------------------------------------------------------
+
+# At the eyes, riding on the head: 9 cm above the head bone, looking the way the body faces (+Z).
+# With it the mannequin may be seen in first person, from here; shots start here too.
+func _add_camera() -> void:
+	var rest := _skeleton.get_bone_global_rest(_skeleton.find_bone("Head"))
+	var attachment := _skeleton.get_node_or_null("At_Head") as BoneAttachment3D
+	if attachment == null:
+		attachment = BoneAttachment3D.new()
+		attachment.name = "At_Head"
+		attachment.bone_name = "Head"
+		_skeleton.add_child(attachment)
+		attachment.owner = _root
+		attachment.transform = rest
+	var camera := Camera3D.new()
+	camera.name = "FirstPersonCamera"
+	camera.transform = rest.affine_inverse() * Transform3D(Basis(Vector3.UP, PI), rest.origin + Vector3(0, 0.09, 0))
+	attachment.add_child(camera)
+	camera.owner = _root
 
 
 # --- Hitboxes ----------------------------------------------------------------------------------------

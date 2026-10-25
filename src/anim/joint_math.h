@@ -28,8 +28,14 @@ b3Quat Arc( b3Vec3 from, b3Vec3 to );
 // Index of a joint by its humanoid-profile name (Mixamo names match too), -1 if absent.
 int FindJoint( const AnimSet& set, const char* profileName );
 
-// How high above the feet a first-person camera sits: the head joint of the rest pose plus
-// kEyeUp. It does not follow the animation, so walking, landing and bowing do not move it.
+// Where a character's eye is in a pose (model space: the feet at the origin, facing +Z): its
+// baked eye (AnimSet::EyeJoint, a first-person camera's or an Eye marker's place) as the pose has
+// that bone; else its head joint and kEyeUp above it. False for neither (no head): the caller uses
+// the top of the capsule.
+bool EyePoint( const AnimSet& set, const Models& models, b3Vec3& out );
+
+// How high above the feet a first-person camera sits: the eye of the rest pose (EyePoint), else
+// a pivot's height. It does not follow the animation, so walking, landing and bowing do not move it.
 float EyeHeight( const AnimSet& set );
 
 // Rotates `joint` and everything below it about the joint's position.

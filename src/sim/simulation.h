@@ -302,6 +302,10 @@ public:
 		float halfHeight = kDefaultCapsuleHalfHeight;
 		// Its movement values, laid over the server's (SimConfig::move) for its bodies.
 		std::vector<std::pair<uint8_t, float>> move;
+		// Whether its bodies may look out of their eyes (CharacterInfo::firstPerson): without, a
+		// first-person view in the input is the third-person one (the body does not turn to face
+		// the camera for it).
+		bool firstPerson = true;
 	};
 	void SetCharacters( std::vector<CharacterBody> characters );
 	// Every character of a schema as the simulation runs it (its state machine compiled against the
@@ -609,6 +613,7 @@ private:
 	std::vector<uint32_t> m_usingItems;							 // the same, by the copy
 
 	std::vector<CharacterBody> m_characters = std::vector<CharacterBody>( 1 );
+	bool m_someSeenFromBehind = false; // a character without first person (Step narrows the views)
 	bool AnyGraph() const;
 	std::vector<std::shared_ptr<const AnimGraph>> m_animPacks;
 	std::vector<ItemShape> m_itemShapes;

@@ -157,6 +157,22 @@ public:
 	{
 		return m_aimTip;
 	}
+	void set_first_person_camera( const godot::NodePath& v )
+	{
+		m_firstPersonCamera = v;
+	}
+	godot::NodePath get_first_person_camera() const
+	{
+		return m_firstPersonCamera;
+	}
+	void set_eye( const godot::NodePath& v )
+	{
+		m_eye = v;
+	}
+	godot::NodePath get_eye() const
+	{
+		return m_eye;
+	}
 	void set_animation_tree_path( const godot::NodePath& v )
 	{
 		m_tree = v;
@@ -255,6 +271,15 @@ private:
 	godot::String m_aimChain = "RightUpperArm:1";
 	godot::String m_aimTip = "RightHand";
 	godot::String m_lookChain = "Spine:0.2 Chest:0.2 UpperChest:0.2 Neck:0.2 Head:0.2";
+	// Its eyes. A Camera3D placed at them (this path; empty: the scene's one Camera3D) lets its
+	// bodies be seen in first person, from there; without one they are seen from behind only. An
+	// Eye marker (a Node3D: this path; empty: a node named Eye) says where they are without
+	// allowing first person. Under a BoneAttachment3D either follows that bone. Shots start there
+	// (else at the head; else at the top of the capsule).
+	godot::NodePath m_firstPersonCamera;
+	godot::NodePath m_eye;
+	// The camera (true) or the marker found for the bake; null for neither.
+	godot::Node3D* FindEye( bool& camera, godot::String& warnings ) const;
 };
 
 // Authoring a mod's animation pack: layers a server mod can swap a player's own for (a crouch walk

@@ -145,6 +145,7 @@ bool GameServer::Start( const ServerOptions& options )
 		info.graph = assets[i]->animations->GraphText();
 		info.radius = assets[i]->animations->CapsuleRadius();
 		info.halfHeight = assets[i]->animations->CapsuleHalfHeight();
+		info.firstPerson = assets[i]->animations->FirstPerson();
 	}
 	m_hits = std::make_unique<HitTester>( character );
 	{

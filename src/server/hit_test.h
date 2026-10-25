@@ -30,6 +30,10 @@ public:
 	// Where a joint of a player is this tick (humanoid-profile name, "Head"), from the same pose
 	// the hit tests use. False for a player that is not there or a rig without the joint.
 	bool JointPosition( Simulation& sim, PlayerSlot slot, const char* joint, b3Vec3& out );
+	// Where a player's eye is this tick, from the same pose: its character's baked eye (a
+	// first-person camera's or an Eye marker's place in its scene, anim::EyePoint). False for a
+	// player that is not there or a character with neither (nor a head).
+	bool BakedEyePosition( Simulation& sim, PlayerSlot slot, b3Vec3& out );
 	// How high above its feet a character's first-person camera sits (anim::EyeHeight).
 	float EyeHeight( size_t character = 0 ) const
 	{

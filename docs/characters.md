@@ -21,8 +21,8 @@ cb_server --character none     # the procedural placeholder rig
 
 ### Characters per body
 
-*Built in the simulation and on the server (M216), and drawn so by the client (M217). The camera
-per scene and where shots start come next (roadmap step 6).*
+*Built in the simulation and on the server (M216), drawn so by the client (M217), with its own
+eyes and first person (M218).*
 
 | Piece | How |
 |---|---|
@@ -33,6 +33,8 @@ per scene and where shots start come next (roadmap step 6).*
 | Its hitboxes | the server poses and hit-tests each body as its own character |
 | Its movement | its `movement` (walk speed and the rest), over the server's for its bodies |
 | In the schema | `ModSchema::characters`: [0] the server's own, then the mods'; each its name, mod, state machine, capsule and movement |
+| Its eyes | a `Camera3D` in its scene at the eyes (the **first-person camera**: `first_person_camera`, or the scene's one camera); under a `BoneAttachment3D` it rides on that bone. **First person only with one**: without, the view key does nothing and a first-person view is the view from behind in every simulation. An `Eye` marker (a `Node3D` named Eye, or `eye`) says where the eyes are without allowing first person |
+| Where shots start | its eyes as posed (the camera's, else the Eye marker's place); else its head; else the top of its capsule. A first-person view looks out from the camera's height above the feet |
 | Drawn | each body by its own character's `character.tscn` (its `ragdoll.tscn` when it falls), posed on its skeleton by its state machine, its feet where its capsule has them; a body that changes character is drawn again by the new one's scene, with what it holds. One whose files cannot be read is drawn with the server's own character's look (a warning), still moving as its own |
 
 ### The default character: the mannequin
@@ -126,6 +128,9 @@ With `--character none`, players use the procedural placeholder rig, which has d
      `UpperChest:0.3 RightUpperArm:1`) and `aim_tip` (the bone that ends up on the line of sight);
      `look_chain`, the bones that bend with the camera's pitch ([Facing](#facing)).
      The default, `RightUpperArm:1` to `RightHand`, points the right arm.
+   - its eyes: a `Camera3D` at them (under the head's `BoneAttachment3D`, looking the way the
+     body faces) if it may be seen in first person; else, optionally, a `Node3D` named `Eye`
+     there, for where its shots start. The mannequin's rides 9 cm above its head bone;
    - `movement`, if the character moves in its own way: [movement parameters](server-mods.md#movement-parameters)
      by name, `walk_speed` = 2.4 for a walk clip made at that speed. They win over the server's
      own; what is left out is the server's. A name that is no parameter, or a value outside its

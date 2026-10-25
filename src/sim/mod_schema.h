@@ -90,6 +90,9 @@ struct CharacterInfo
 	// How it moves, where its scene says so (CbCharacter.movement): movement parameters (move_params.h)
 	// and their values, laid over the server's for its bodies. [0]'s are in the server's already.
 	std::vector<std::pair<uint8_t, float>> move;
+	// Whether its bodies may be seen through their eyes (a first-person camera in its scene:
+	// AnimSet::FirstPerson). Without, a first-person view is the third-person one, everywhere.
+	bool firstPerson = true;
 
 	bool operator==( const CharacterInfo& ) const = default;
 };

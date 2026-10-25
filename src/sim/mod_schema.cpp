@@ -306,6 +306,7 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutText( out, c.graph );
 		PutF32( out, c.radius );
 		PutF32( out, c.halfHeight );
+		PutU8( out, c.firstPerson ? 1 : 0 );
 		PutU8( out, uint8_t( std::min<size_t>( c.move.size(), 64 ) ) );
 		for ( size_t m = 0; m < c.move.size() && m < 64; ++m )
 		{
@@ -529,6 +530,7 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		c.graph = r.Text();
 		c.radius = r.F32();
 		c.halfHeight = r.F32();
+		c.firstPerson = r.U8() != 0;
 		uint8_t moves = r.U8();
 		for ( uint8_t m = 0; m < moves && r.ok; ++m )
 		{
