@@ -44,6 +44,7 @@ godot::String CheckScene( const godot::Ref<godot::PackedScene>& scene );
 godot::String CheckResource( const godot::Ref<godot::Resource>& resource );
 
 // An instance of the scene, or null (with a warning, once per scene) when it is refused or empty.
+// Its cameras are taken out (a character's first-person camera is a place in the editor only).
 godot::Node* Instantiate( const godot::Ref<godot::PackedScene>& scene );
 
 } // namespace cb::cue

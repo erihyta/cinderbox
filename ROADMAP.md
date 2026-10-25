@@ -28,7 +28,7 @@ A proposal: the order is open to change. Each row is a milestone or two.
 | 4 | [A player's slot changes nothing](#4-a-players-slot-changes-nothing) | **done (M212)**: every player's motions in one pass, every player's move in another; what a motion does to another player lands on the same tick, after the target's own |
 | 5 | [The language made regular](#5-the-language-made-regular) | **done (M213 to M215)**: one table of where each line may stand, one word per role, one origin for shapes, `use` a motion, every amount an expression; [the reference](docs/rules-language.md) rewritten from what is built; the motion lines in the debug HUD |
 | 6 | [Characters per entity](#6-characters-per-entity) | **done (M216–M218)**: the server's list of characters, each body its own state machine, hitboxes, capsule, movement and eyes, in the simulation, on the server and in the client's drawing; first person only with a first-person camera in the scene. Left for later: the third-person camera's distance and height from the scene |
-| 7 | [Any skeleton](#7-any-skeleton) | the humanoid's features become what a character has, not what every one must; characters with no skeleton |
+| 7 | [Any skeleton](#7-any-skeleton) | **first part done (M219)**: any skeleton bakes and plays (the critter); without a humanoid's bones no ragdoll, packs that do not fit are not swapped in, items drawn only in its sockets. Left: authored ragdolls for other skeletons, characters with no skeleton |
 | 8 | [The animation tree, wider](#8-the-animation-tree-wider) | what a Godot developer reaches for next (nested state machines, OneShot, Add, TimeScale, crossfade curves), and layers that are the look's alone |
 | 9 | [Entities and who drives them](#9-entities-and-who-drives-them) | possession: a player is a controller that drives a body; one `Spawn` for every scene; an NPC is a body a mod drives |
 | 10 | [Finding the way](#10-finding-the-way) | a navigation mesh on the server, for a mod's brains |
@@ -166,11 +166,11 @@ own skeleton, state machine, hitboxes and sockets, and has only what fits.
 
 | Piece | Today, for everyone | After |
 |---|---|---|
-| The ragdoll | eleven bodies from a fixed humanoid pose | a humanoid's as now; another skeleton's authored on its scene (bodies on bones, joints), or none: it does not fall as a ragdoll |
-| Hands and holding | sockets by name, two-handed grips, the arms put back over an overlay | a character holds in the sockets it has; one with none holds nothing (a mod's `Give` refuses) |
-| Animation packs | retargeted by humanoid bone names | they fit the skeletons that have those names; another skeleton's are its own |
-| The first-person body | the arms and legs copies, the torso hidden | the humanoid's, where the scene has a first-person camera and a humanoid skeleton |
-| The look and aim chains | named bones (already per character) | as now |
+| The ragdoll | eleven bodies from a fixed humanoid pose | **none for another skeleton (M219)**. Later: another skeleton's authored on its scene (bodies on bones, joints) |
+| Hands and holding | sockets by name, two-handed grips, the arms put back over an overlay | **done (M219), changed**: items stay a body's whatever it is (a critter's skills are items in its slots), drawn only in a socket it has; no `Give` refuses |
+| Animation packs | retargeted by humanoid bone names | **done (M219)**: a pack fits a skeleton with at least half its bones by name; one that does not is not swapped in |
+| The first-person body | the arms and legs copies, the torso hidden | **done (M219)**: the humanoid's as before; another's body hidden from the eye |
+| The look and aim chains | named bones (already per character) | **done (M219)**: by profile name or the bone's own |
 | Hit zones | `head`, `chest`, ... | names a character gives its hitboxes; a mod reading a zone handles one that is not there |
 | No skeleton at all | the placeholder rig is a skeleton | a character that is a mesh and its capsule: no pose, no state machine, hit-tested as its capsule (a ball game, a top-down shooter) |
 

@@ -91,10 +91,14 @@ float RestHeight( const ozz::animation::Skeleton& skeleton, const char* profile 
 std::shared_ptr<const PackClips> FitPack( std::shared_ptr<const AnimSet> packSet, const AnimGraph& graph, const AnimSet& character,
 										  std::string& warnings )
 {
-	auto fitted = std::make_shared<PackClips>();
-	fitted->pack = packSet;
 	const AnimSet& pack = *packSet;
 	bool same = SameSkeleton( pack.Skeleton(), character.Skeleton() );
+	if ( same == false && PackFits( pack.Skeleton(), character.Skeleton() ) == false )
+	{
+		return nullptr;
+	}
+	auto fitted = std::make_shared<PackClips>();
+	fitted->pack = packSet;
 	for ( const AnimGraphClip& clip : graph.clips )
 	{
 		const ozz::animation::Animation* source = pack.NamedClip( clip.name );
@@ -122,6 +126,29 @@ std::shared_ptr<const PackClips> FitPack( std::shared_ptr<const AnimSet> packSet
 		}
 	}
 	return fitted;
+}
+
+bool PackFits( const ozz::animation::Skeleton& pack, const ozz::animation::Skeleton& character )
+{
+	if ( SameSkeleton( pack, character ) )
+	{
+		return true;
+	}
+	int shared = 0;
+	for ( int s = 0; s < pack.num_joints(); ++s )
+	{
+		const char* name = ProfileName( pack.joint_names()[size_t( s )] );
+		for ( int t = 0; name != nullptr && t < character.num_joints(); ++t )
+		{
+			const char* other = ProfileName( character.joint_names()[size_t( t )] );
+			if ( other != nullptr && std::strcmp( name, other ) == 0 )
+			{
+				++shared;
+				break;
+			}
+		}
+	}
+	return shared > 0 && 2 * shared >= pack.num_joints();
 }
 
 bool SameSkeleton( const ozz::animation::Skeleton& a, const ozz::animation::Skeleton& b )

@@ -1,15 +1,19 @@
 #include "cinderbox_skeleton.h"
+#include "cinderbox_character.h" // CbSocket
 
 #include "joint_math.h"
 #include "pose.h"
 #include "profile.h"
 
+#include <godot_cpp/classes/bone_attachment3d.hpp>
 #include <godot_cpp/classes/box_mesh.hpp>
 #include <godot_cpp/classes/geometry_instance3d.hpp>
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/standard_material3d.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
+
+#include <functional>
 
 #include <algorithm>
 #include <cmath>
@@ -483,7 +487,8 @@ void PassOn( Node* node );
 }
 
 // The viewer's own body, while the viewer looks out of it: its meshes cast their shadows and are
-// not drawn. Otherwise as they were.
+// not drawn. Otherwise as they were. Its meshes: those skinned to the skeleton, and the rigid parts
+// on its bones (under a BoneAttachment3D: a robot's, a critter's), not what its sockets hold.
 void CinderboxSkeleton::HideBody( Skeleton3D* target )
 {
 	ObjectID want = m_firstPersonBody ? ObjectID( target->get_instance_id() ) : ObjectID();
@@ -504,14 +509,26 @@ void CinderboxSkeleton::HideBody( Skeleton3D* target )
 	{
 		return;
 	}
-	for ( int i = 0; i < target->get_child_count(); ++i )
-	{
-		if ( auto* mesh = Object::cast_to<MeshInstance3D>( target->get_child( i ) ) )
+	std::function<void( Node*, bool )> hide = [&]( Node* parent, bool onBone ) {
+		for ( int i = 0; i < parent->get_child_count(); ++i )
 		{
-			m_hiddenCasts.emplace_back( ObjectID( mesh->get_instance_id() ), int( mesh->get_cast_shadows_setting() ) );
-			mesh->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_SHADOWS_ONLY );
+			Node* child = parent->get_child( i );
+			if ( Object::cast_to<CbSocket>( child ) != nullptr )
+			{
+				continue; // (what is held is drawn for the view as it says)
+			}
+			if ( auto* mesh = Object::cast_to<MeshInstance3D>( child ) )
+			{
+				m_hiddenCasts.emplace_back( ObjectID( mesh->get_instance_id() ), int( mesh->get_cast_shadows_setting() ) );
+				mesh->set_cast_shadows_setting( GeometryInstance3D::SHADOW_CASTING_SETTING_SHADOWS_ONLY );
+			}
+			if ( onBone || Object::cast_to<BoneAttachment3D>( child ) != nullptr )
+			{
+				hide( child, true );
+			}
 		}
-	}
+	};
+	hide( target, false );
 }
 
 namespace

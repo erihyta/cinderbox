@@ -306,7 +306,12 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		PutText( out, c.graph );
 		PutF32( out, c.radius );
 		PutF32( out, c.halfHeight );
-		PutU8( out, c.firstPerson ? 1 : 0 );
+		PutU8( out, uint8_t( ( c.firstPerson ? 1 : 0 ) | ( c.ragdoll ? 2 : 0 ) ) );
+		PutU8( out, uint8_t( std::min<size_t>( c.packs.size(), 255 ) ) );
+		for ( size_t p = 0; p < c.packs.size() && p < 255; ++p )
+		{
+			PutU8( out, c.packs[p] );
+		}
 		PutU8( out, uint8_t( std::min<size_t>( c.move.size(), 64 ) ) );
 		for ( size_t m = 0; m < c.move.size() && m < 64; ++m )
 		{
@@ -530,7 +535,14 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		c.graph = r.Text();
 		c.radius = r.F32();
 		c.halfHeight = r.F32();
-		c.firstPerson = r.U8() != 0;
+		const uint8_t flags = r.U8();
+		c.firstPerson = ( flags & 1 ) != 0;
+		c.ragdoll = ( flags & 2 ) != 0;
+		const uint8_t packCount = r.U8();
+		for ( uint8_t p = 0; p < packCount && r.ok; ++p )
+		{
+			c.packs.push_back( r.U8() != 0 ? 1 : 0 );
+		}
 		uint8_t moves = r.U8();
 		for ( uint8_t m = 0; m < moves && r.ok; ++m )
 		{

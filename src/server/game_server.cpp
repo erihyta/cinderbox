@@ -146,6 +146,7 @@ bool GameServer::Start( const ServerOptions& options )
 		info.radius = assets[i]->animations->CapsuleRadius();
 		info.halfHeight = assets[i]->animations->CapsuleHalfHeight();
 		info.firstPerson = assets[i]->animations->FirstPerson();
+		info.ragdoll = assets[i]->animations->Humanoid();
 	}
 	m_hits = std::make_unique<HitTester>( character );
 	{
@@ -200,10 +201,17 @@ bool GameServer::Start( const ServerOptions& options )
 			}
 			m_hits->SetGraph( i, m_graphs[i], warnings );
 			std::vector<std::shared_ptr<const anim::PackClips>> fitted;
+			std::vector<uint8_t> fits;
 			for ( size_t p = 0; p < m_animPacks.size(); ++p )
 			{
 				fitted.push_back( m_animPacks[p] && packSets[p] ? anim::FitPack( packSets[p], *m_animPacks[p], *assets[i]->animations, warnings )
 															   : nullptr );
+				// (A pack whose files are missing is said to fit: it does nothing anywhere.)
+				fits.push_back( fitted.back() != nullptr || packSets[p] == nullptr ? 1 : 0 );
+			}
+			if ( std::find( fits.begin(), fits.end(), uint8_t( 0 ) ) != fits.end() )
+			{
+				m_schema.characters[i].packs = fits;
 			}
 			m_hits->SetPacks( i, m_animPacks, fitted );
 		}
@@ -442,8 +450,17 @@ std::vector<Simulation::CharacterBody> GameServer::CharacterBodies() const
 	std::vector<Simulation::CharacterBody> bodies;
 	for ( size_t i = 0; i < m_schema.characters.size(); ++i )
 	{
+		// As every client's simulation has them (Simulation::CharactersOf), with the graph compiled here.
 		const CharacterInfo& info = m_schema.characters[i];
-		bodies.push_back( { i < m_graphs.size() ? m_graphs[i] : nullptr, info.radius, info.halfHeight, info.move } );
+		Simulation::CharacterBody body;
+		body.graph = i < m_graphs.size() ? m_graphs[i] : nullptr;
+		body.radius = info.radius;
+		body.halfHeight = info.halfHeight;
+		body.move = info.move;
+		body.firstPerson = info.firstPerson;
+		body.ragdoll = info.ragdoll;
+		body.packs = info.packs;
+		bodies.push_back( std::move( body ) );
 	}
 	return bodies;
 }

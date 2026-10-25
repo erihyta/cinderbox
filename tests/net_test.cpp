@@ -4347,6 +4347,137 @@ void TestCharacters()
 	fs::remove_all( dir );
 }
 
+// M219: a server whose own character is not a humanoid (the critter), and a mod's character with
+// no first-person camera. The schema says the critter falls as no ragdoll and fits no humanoid
+// pack; a test mod kills a critter asking for a ragdoll and none is made, on the server or the
+// bot's simulation; another bot made the camera-less character looks in first person and is seen
+// from behind on the server as in its own simulation (it does not turn to the camera). No desyncs.
+class AnySkeletonMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_any_skeleton";
+	}
+	void Declare( mods::Declarations& declare ) override
+	{
+		m_die = declare.Action( "test.die", "" );
+		m_blind = declare.Action( "test.blind", "" );
+		m_character = declare.Character( "test.blind" );
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		for ( int slot = 0; slot < kMaxPlayers; ++slot )
+		{
+			if ( ctx.Pressed( PlayerSlot( slot ), m_die ) )
+			{
+				ctx.Kill( SlotTarget( PlayerSlot( slot ) ), true );
+			}
+			if ( ctx.Pressed( PlayerSlot( slot ), m_blind ) )
+			{
+				ctx.SetCharacter( SlotTarget( PlayerSlot( slot ) ), m_character );
+			}
+		}
+	}
+
+private:
+	mods::ActionHandle m_die, m_blind;
+	mods::CharacterHandle m_character;
+};
+
+void TestAnySkeleton()
+{
+	namespace fs = std::filesystem;
+	const std::string root = CB_SOURCE_DIR;
+	const fs::path dir = fs::temp_directory_path() / "cb_net_test_any_skeleton";
+	fs::remove_all( dir );
+	fs::create_directories( dir / "characters" );
+	// The mannequin without its first-person camera.
+	fs::copy( root + "/godot/characters/mannequin", dir / "characters" / "test.blind", fs::copy_options::recursive );
+	{
+		std::ifstream in( dir / "characters" / "test.blind" / "anim.cfg" );
+		std::string line, text;
+		while ( std::getline( in, line ) )
+		{
+			text += line.rfind( "first_person", 0 ) == 0 || line.rfind( "eye", 0 ) == 0 ? std::string() : line + "\n";
+		}
+		in.close();
+		std::ofstream( dir / "characters" / "test.blind" / "anim.cfg" ) << text;
+	}
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	extra.push_back( std::make_unique<AnySkeletonMod>() );
+	Harness h(
+		47912, {}, {}, {},
+		[&]( ServerOptions& options ) {
+			std::string error, warnings;
+			options.character = LoadCharacterFolder( root + "/characters/critter/client/characters/critter", "critter", error, warnings );
+			CHECK( options.character != nullptr );
+			options.loadCharacter = [dir]( const std::string&, const std::string& name, std::string& error, std::string& warnings ) {
+				return LoadModCharacterFolder( dir.string(), name, error, warnings );
+			};
+			options.loadAnimPack = [root]( const std::string& mod, const std::string& pack, std::string& error, std::string& warnings ) {
+				return LoadAnimPackFolder( root + "/server_mods/" + mod + "/client", pack, error, warnings );
+			};
+		},
+		std::move( extra ) );
+	const ModSchema& schema = h.server.Schema();
+	CHECK( schema.characters.size() == 2 && schema.animPacks.empty() == false );
+	if ( schema.characters.size() != 2 )
+	{
+		return;
+	}
+	const CharacterInfo& critter = schema.characters[0];
+	std::printf( "    the critter: ragdoll %s, first person %s, packs fitting %zu of %zu; test.blind: first person %s\n",
+				 critter.ragdoll ? "yes" : "no", critter.firstPerson ? "yes" : "no",
+				 size_t( std::count( critter.packs.begin(), critter.packs.end(), uint8_t( 1 ) ) ), critter.packs.size(),
+				 schema.characters[1].firstPerson ? "yes" : "no" );
+	CHECK( critter.ragdoll == false && critter.firstPerson && schema.characters[1].firstPerson == false && schema.characters[1].ragdoll );
+	CHECK( schema.animPacks.empty() || ( critter.packs.size() == schema.animPacks.size() &&
+										 std::count( critter.packs.begin(), critter.packs.end(), uint8_t( 1 ) ) == 0 ) );
+	const ActionBits die = schema.ActionMask( "test.die" ), blind = schema.ActionMask( "test.blind" );
+	Bot& dying = h.AddBot();
+	dying.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		in.moveForward = tick > 60 && tick < 150 ? 127 : 0;
+		in.actions = tick >= 180 && tick < 184 ? die : 0;
+		return in;
+	};
+	Bot& looking = h.AddBot();
+	looking.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		in.actions = tick >= 60 && tick < 64 ? blind : 0;
+		in.view = tick > 120 ? uint8_t( ViewMode::FirstPerson ) : uint8_t( ViewMode::ThirdPerson );
+		in.cameraYaw = 16384;
+		return in;
+	};
+	int ragdolls = 0;
+	h.server.SetTickObserver( [&] {
+		const Simulation& sim = h.server.Sim();
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			ragdolls += sim.FindEntity( r.netId ).has<Ragdoll>() ? 1 : 0;
+		}
+	} );
+	h.RunUntil( 5.0 );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	Simulation& server = h.server.Sim();
+	GameClient& first = *h.bots[0].client;
+	GameClient& second = *h.bots[1].client;
+	const Character* killed = server.PlayerCharacter( first.Slot() );
+	const Character* blindOne = server.PlayerCharacter( second.Slot() );
+	const float camera = detmath::WrapAngle( detmath::YawToRadians( 16384 ) );
+	std::printf( "    the killed critter dead %d, ragdolls seen %d; the camera-less body faces %.3f (its camera %.3f); desyncs %u and %u\n",
+				 killed != nullptr ? int( killed->dead ) : -1, ragdolls, blindOne != nullptr ? double( blindOne->facingYaw ) : -9.0,
+				 double( camera ), first.GetStats().desyncs, second.GetStats().desyncs );
+	CHECK( killed != nullptr && killed->dead && ragdolls == 0 );
+	CHECK( blindOne != nullptr && server.CharacterOf( server.FindEntity( server.PlayerNetId( second.Slot() ) ) ) == 1 &&
+		   std::fabs( blindOne->facingYaw - camera ) > 0.5f );
+	CHECK( first.GetStats().desyncs == 0 && second.GetStats().desyncs == 0 && first.GetStats().checksumsVerified > 0 &&
+		   second.GetStats().checksumsVerified > 0 );
+	fs::remove_all( dir );
+}
+
 // The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
 // breaks a hole in it with no blast, and goes on through: past the wall, while bricks still stand.
 // The ball's scene says it breaks walls (CbItem.break_speed), so the simulation breaks it in the
@@ -4835,6 +4966,7 @@ int main( int argc, char** argv )
 		{ "frag_breaks", TestFragBreaks },
 		{ "cannon", TestCannon },
 		{ "characters", TestCharacters },
+		{ "any_skeleton", TestAnySkeleton },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },

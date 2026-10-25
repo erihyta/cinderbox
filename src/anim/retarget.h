@@ -41,6 +41,12 @@ struct PackClips
 	std::vector<ozz::unique_ptr<ozz::animation::Animation>> owned;
 	std::shared_ptr<const AnimSet> pack; // the clips it shares as they are live there
 };
+// Whether a pack made on `pack` can play on `character`: the same skeleton, or one that has at
+// least half of the pack's bones by their humanoid-profile names (a humanoid's pack on another
+// humanoid; not on a critter).
+bool PackFits( const ozz::animation::Skeleton& pack, const ozz::animation::Skeleton& character );
+
+// (Null for a character the pack does not fit: PackFits.)
 std::shared_ptr<const PackClips> FitPack( std::shared_ptr<const AnimSet> pack, const AnimGraph& graph, const AnimSet& character,
 										  std::string& warnings );
 

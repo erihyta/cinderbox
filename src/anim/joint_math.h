@@ -25,7 +25,8 @@ b3Quat Nlerp( b3Quat a, b3Quat b, float t );
 // The shortest rotation taking unit vector `from` onto unit vector `to`.
 b3Quat Arc( b3Vec3 from, b3Vec3 to );
 
-// Index of a joint by its humanoid-profile name (Mixamo names match too), -1 if absent.
+// Index of a joint by its humanoid-profile name (Mixamo names match too), else by its own name
+// (a skeleton of any names: a critter's "Skull"), -1 if absent.
 int FindJoint( const AnimSet& set, const char* profileName );
 
 // Where a character's eye is in a pose (model space: the feet at the origin, facing +Z): its

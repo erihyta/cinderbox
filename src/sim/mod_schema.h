@@ -93,6 +93,12 @@ struct CharacterInfo
 	// Whether its bodies may be seen through their eyes (a first-person camera in its scene:
 	// AnimSet::FirstPerson). Without, a first-person view is the third-person one, everywhere.
 	bool firstPerson = true;
+	// Whether its bodies may fall as the game's ragdoll (a humanoid: AnimSet::Humanoid). Without,
+	// a kill that asks for a ragdoll leaves none.
+	bool ragdoll = true;
+	// Which of the schema's animation packs fit its skeleton (1 each; empty: every one). A mod's
+	// swap to one that does not leaves its bodies' own layer playing.
+	std::vector<uint8_t> packs;
 
 	bool operator==( const CharacterInfo& ) const = default;
 };

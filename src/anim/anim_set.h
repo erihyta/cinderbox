@@ -132,6 +132,10 @@ public:
 	{
 		return m_firstPerson;
 	}
+	// Whether it is a humanoid, as far as the game's humanoid features go: it has every bone the
+	// ragdoll is hung on (ragdoll::kParts' rig joints: the hips, the spine, the neck, the arms and
+	// legs). Without, its bodies fall as no ragdoll.
+	bool Humanoid() const;
 	// Keep the root joint from drifting horizontally (clips exported without "In Place").
 	bool LockRootXZ() const
 	{

@@ -1,0 +1,11 @@
+; The critter character (four legs and a tail, no humanoid bones): a workshop item servers name with cb_server --character critter. No code; the
+; character's scene and what the editor baked from it (ozz skeleton and clips, hitboxes) live in
+; characters/critter/. Open character.tscn, edit, press Bake on the CbCharacter, then publish with:
+;   tools\publish_mod.ps1 -Character critter
+
+config_version=5
+
+[application]
+
+config/name="Cinderbox item: critter"
+config/features=PackedStringArray("4.7", "Forward Plus")

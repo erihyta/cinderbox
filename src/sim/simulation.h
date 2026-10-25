@@ -306,6 +306,10 @@ public:
 		// first-person view in the input is the third-person one (the body does not turn to face
 		// the camera for it).
 		bool firstPerson = true;
+		// Whether its bodies fall as the ragdoll (CharacterInfo::ragdoll).
+		bool ragdoll = true;
+		// Which animation packs fit it (CharacterInfo::packs; empty: all).
+		std::vector<uint8_t> packs;
 	};
 	void SetCharacters( std::vector<CharacterBody> characters );
 	// Every character of a schema as the simulation runs it (its state machine compiled against the

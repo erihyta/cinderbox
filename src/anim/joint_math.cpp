@@ -82,6 +82,13 @@ int FindJoint( const AnimSet& set, const char* profileName )
 			return j;
 		}
 	}
+	for ( int j = 0; j < int( names.size() ); ++j )
+	{
+		if ( std::strcmp( names[size_t( j )], profileName ) == 0 )
+		{
+			return j;
+		}
+	}
 	return -1;
 }
 

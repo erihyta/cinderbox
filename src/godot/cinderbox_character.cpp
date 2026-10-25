@@ -8,6 +8,7 @@
 #include "anim_set.h"
 #include "hitboxes.h"
 #include "move_params.h"
+#include "ragdoll.h"
 
 #include "ozz/animation/offline/animation_builder.h"
 #include "ozz/animation/offline/raw_animation.h"
@@ -1014,12 +1015,27 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 	{
 		boneOf[size_t( j )] = skeleton->find_bone( String::utf8( built->joint_names()[size_t( j )] ) );
 	}
-	for ( const char* required : { "Hips", "Head", "RightHand", "LeftHand", "LeftFoot", "RightFoot" } )
+	// A skeleton of any bone names bakes. A humanoid (SkeletonProfileHumanoid's names, as Godot's
+	// retargeting gives them) also gets what is a humanoid's: the ragdoll, and packs that fit by
+	// those names. One with some of them and not the rest most likely lost them in the import.
+	int humanoidBones = 0;
+	const int humanoidNeeded = int( sizeof( ragdoll::kParts ) / sizeof( ragdoll::kParts[0] ) );
+	String missing;
+	for ( const ragdoll::PartDef& part : ragdoll::kParts )
 	{
-		if ( skeleton->find_bone( required ) < 0 )
+		if ( skeleton->find_bone( part.rigJoint ) >= 0 )
 		{
-			warnings += String( "no bone named " ) + required + " (use Godot's SkeletonProfileHumanoid names); ";
+			++humanoidBones;
 		}
+		else
+		{
+			missing += String( missing.is_empty() ? "" : ", " ) + part.rigJoint;
+		}
+	}
+	if ( humanoidBones > 0 && humanoidBones < humanoidNeeded )
+	{
+		warnings += "some of a humanoid's bones and not " + missing +
+					": it is not taken for a humanoid (no ragdoll); use Godot's SkeletonProfileHumanoid names; ";
 	}
 
 	DirAccess::make_dir_recursive_absolute( folder );
