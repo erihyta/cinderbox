@@ -218,9 +218,21 @@ sheets, its items: a chicken's jump can be a flap). The client stays a presenter
 | Not predicted at first | a possession is the server's, so it is seen a lead late (the old body moves on a moment); a sheet's `possess` could predict it later |
 | What it opens | NPCs, spectators (a controller with no body, or a free camera's), Prop Hunt, mind control. Not vehicles: a body possessed walks by the controller; a vehicle is driven by its motors, so a player sits in it and keeps its own body ([Later](#vehicles): a body's own controls) |
 
-- **Not a goal**: moving as any shape. The controller sweeps a capsule; a long table walks as an
-  upright capsule fitted to it, or the author puts a capsule in its scene. A controller of any shape
-  is far more work and waits for a game that needs it.
+- **Not a goal**: a controller of any other shape. The controller is always the capsule (the
+  scene's, else one fitted to the entity); it does the walking (the ground, steps, slopes).
+- **The entity's shape tied to the capsule** (M221, asked after M219): while driven, an entity
+  whose own shapes are not its capsule has them go along with it, and each tick its move is cast
+  with them too (Box3D casts any shape): where they would hit something, the capsule is held back
+  with them. A big box does not fit through a small doorway, and nothing pokes through a wall. One
+  more cast a tick, only for such a body.
+- **The animations need nothing new**: the state machine reads what the controller gives (the
+  velocity, grounded, airborne time, the facing) and the input's look, as a shoved player plays its
+  walk today. Any driven entity with a skeleton and a state machine is animated by it; one without
+  has nothing to pose.
+- **What it costs**: nothing for an entity nobody drives (it has no controller, so the controller's
+  pass never meets it); a driven entity what a player costs today. The work of M220 is the
+  simulation's, the hit tests' and the mod API's loops over the 64 slots becoming loops over the
+  driven bodies, in a fixed order.
 
 ### 9. Finding the way
 
