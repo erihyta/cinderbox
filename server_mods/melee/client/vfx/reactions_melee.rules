@@ -3,18 +3,18 @@
 
 # Swing
 on melee.swing
-    subject $at
-    at $at/RightHand
-    sound res://assets/sfx/swing.wav volume -6 jitter 0.08 range 30
+	subject $at
+	at $at/RightHand
+	sound res://assets/sfx/swing.wav volume -6 jitter 0.08 range 30
 
 # HitPlayer
 on melee.hit if event.value > 0
-    subject $at
-    at point
-    sound res://assets/sfx/bat_hit.wav volume -2 jitter 0.1 range 40
+	subject $at
+	at point
+	sound res://assets/sfx/bat_hit.wav volume -2 jitter 0.1 range 40
 
 # HitProp
 on melee.hit if event.value == 0
-    subject $at
-    at point
-    sound res://assets/sfx/bat_hit.wav volume -10 jitter 0.2 range 25
+	subject $at
+	at point
+	sound res://assets/sfx/bat_hit.wav volume -10 jitter 0.2 range 25

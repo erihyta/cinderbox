@@ -1,29 +1,7 @@
-[gd_scene format=3]
-
-; The frag grenade: thrown from the hand, it bounces and rolls, and goes off when its fuse is out,
-; 2.5 s after it left the hand (the launch's seconds: when its time is up, every simulation sets it
-; off where it is, as its sheet says: frag.rules; the frag mod hurts who is near). An item (CbItem), so it has
-; a body in the world that every simulation agrees on: a sphere 18 cm across, 0.4 kg, bouncier than
-; the impact grenade, which went off on the first hard hit.
-;
-; It goes to slot 6 if that is free, out of sight, three to a stack (stack). Its own key (H, use_key)
-; throws one from wherever it is carried, or select it and press the use button (use: a press):
-; what is thrown is one off the stack. The mod gives them one at a time, a little
-; apart, until there are three (frag.cpp).
-;   Blast      Area3D     the region its blast throws things in: a ball 8 m round (how far it reaches
-;                         is the frag mod's frag.radius, within it; not the grenade's body)
-;   Rules      CbRules    frag.rules: Throwing (the press, 0.7 s: the left arm's throw, its pack's; its
-;                         clip says frag.release at 0.27 s), Release (the one carried, where the
-;                         camera looks at 15 m/s and 3 up, 2.5 s to live), and the Blast (owner
-;                         item: the grenade's, on expired)
-;
-; Saving this scene bakes it into res://items/frag.grenade.cfg.
+[gd_scene format=3 uid="uid://bbfj2lrc230si"]
 
 [sub_resource type="SphereShape3D" id="Body"]
 radius = 0.09
-
-[sub_resource type="SphereShape3D" id="Reach"]
-radius = 8.0
 
 [sub_resource type="StandardMaterial3D" id="Shell"]
 albedo_color = Color(0.22, 0.24, 0.2, 1)
@@ -50,7 +28,10 @@ bottom_radius = 0.092
 height = 0.025
 radial_segments = 16
 
-[node name="Frag" type="CbItem"]
+[sub_resource type="SphereShape3D" id="Reach"]
+radius = 8.0
+
+[node name="Frag" type="CbItem" unique_id=1869682717]
 kind = "frag.grenade"
 display_name = "Grenade"
 properties = {
@@ -64,20 +45,22 @@ stack = 3
 mass = 0.4
 friction = 0.8
 bounce = 0.45
+rolling = 0.2
+drag = 0.2
 
-[node name="Body" type="CollisionShape3D" parent="."]
+[node name="Body" type="CollisionShape3D" parent="." unique_id=26959491]
 shape = SubResource("Body")
 
-[node name="Ball" type="MeshInstance3D" parent="."]
+[node name="Ball" type="MeshInstance3D" parent="." unique_id=1041602608]
 mesh = SubResource("Ball")
 
-[node name="Band" type="MeshInstance3D" parent="."]
+[node name="Band" type="MeshInstance3D" parent="." unique_id=866795022]
 mesh = SubResource("BandMesh")
 
-[node name="Blast" type="Area3D" parent="."]
+[node name="Blast" type="Area3D" parent="." unique_id=689343043]
 
-[node name="Shape" type="CollisionShape3D" parent="Blast"]
+[node name="Shape" type="CollisionShape3D" parent="Blast" unique_id=1249550435]
 shape = SubResource("Reach")
 
-[node name="Rules" type="CbRules" parent="."]
+[node name="Rules" type="CbRules" parent="." unique_id=2127743095]
 file = "res://prefabs/frag.rules"

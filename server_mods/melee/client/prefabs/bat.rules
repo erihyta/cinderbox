@@ -3,20 +3,20 @@
 
 # GlowWhileHot
 while melee.hot
-    set Model/Barrel surface_material_override/0:emission_energy_multiplier 4.0
+	set Model/Barrel surface_material_override/0:emission_energy_multiplier 4.0
 
 # FlamesOnSwing
 # SparksOnSwing: The sparks of a swing, started again at every swing. (A one-shot particle node that an animation only switches on does not start again while its last burst is still out: swings in a row had no sparks.)
 on melee.swing
-    subject ^^
-    play AnimationPlayer slash
-    delay 0.14
-    call Model/Sparks restart
+	subject ^^
+	play AnimationPlayer slash
+	delay 0.14
+	call Model/Sparks restart
 
 # SparksOnHit
 on melee.hit
-    subject ^^
-    call Model/Sparks restart
+	subject ^^
+	call Model/Sparks restart
 
 # PredictSwing: the server swings again only once the last swing is over, at the clip's melee.done
 # marker (1.1 s: animation_packs/source/Sword_Attack.res); a guess more often than that is a swing
