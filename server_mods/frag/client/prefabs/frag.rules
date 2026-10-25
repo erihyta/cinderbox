@@ -1,3 +1,11 @@
+# The frag grenade (frag.tscn, a CbItem: every simulation agrees on its body): a sphere 18 cm across,
+# 0.4 kg, bouncy (0.45), with some rolling and air drag (0.2 each) so it settles near where it lands.
+# It goes to slot 6 if that is free, out of sight, three to a stack; its own key (H) throws one from
+# wherever it is carried, or select it and press use. The mod gives them one at a time, a little
+# apart, until there are three (frag.cpp). Its Blast (an Area3D, a ball 8 m round) is the region the
+# blast throws things in; how far it hurts is the mod's frag.radius. (This note lives here: Godot drops
+# a scene's comments when it saves it.)
+#
 # The throw: its key plays the arm's throw (Throwing: its pack reads it); the clip's marker,
 # frag.release, lets go of the one carried, with 2.5 s to live.
 #

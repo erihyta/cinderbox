@@ -4252,7 +4252,9 @@ void TestFragBreaks()
 	Bricks all, hole, glued;
 	run( 47900, "12", all );
 	CHECK( all.loose == 32 && all.standing.empty() );
-	run( 47902, nullptr, hole );
+	// A radius of its own, smaller than the default (half the blast's): the grenade lands about a
+	// metre short of the wall, where the default takes its whole foot and so all of it.
+	run( 47902, "1.8", hole );
 	CHECK( hole.loose > 0 && hole.standing.size() > 8 && hole.loose + int( hole.standing.size() ) == 32 );
 	// Glued (its bricks bodies from the start, welded): the blast takes its foot and what is above,
 	// held up only by welds, comes down by its own weight; the client has the same bricks still glued.

@@ -1056,7 +1056,9 @@ Dictionary CbCharacter::bake_to( const String& requestedFolder )
 		break;
 	}
 	// Its eyes: its first-person camera (then it may be seen in first person) or its Eye marker,
-	// in the frame of the bone it rides on (a BoneAttachment3D above it), or of the body.
+	// in the frame of the bone it rides on (a BoneAttachment3D above it), or of the body. (A
+	// pack's clips go to other characters: it has no eyes of its own.)
+	if ( IsPack() == false )
 	{
 		bool camera = false;
 		if ( Node3D* eye = FindEye( camera, warnings ) )
