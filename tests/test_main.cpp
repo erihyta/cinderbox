@@ -31,6 +31,7 @@
 #include "simulation.h"
 
 #include "box3d/box3d.h"
+#include "mirror.h"
 #include "view_codec.h"
 #include "view_file.h"
 
@@ -4039,6 +4040,96 @@ void TestCharacters()
 	step( 60 );
 	CHECK( sim.FindEntity( dragon ).has<CharacterKind>() == false && sim.FindEntity( dragon ).get<Shape>().halfExtents.x == kDefaultCapsuleRadius );
 	CHECK( std::fabs( sim.EntityTransform( dragon )->position.y - smallCentre ) < 0.05f );
+}
+
+// M217: the viewer draws each body as its own character. A body made the second character says so
+// in its frame, through the viewer's bytes too, and the mirror poses it on that character's
+// skeleton (and the others on the first's); made the first again, it goes back.
+void TestViewerCharacters()
+{
+	Simulation sim( TestConfig(), FlatMap() );
+	sim.SetCharacters( { { nullptr, kDefaultCapsuleRadius, kDefaultCapsuleHalfHeight }, { nullptr, 0.8f, 1.2f } } );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	f.events.push_back( { PlayerEventType::Join, 1 } );
+	step( 30 );
+	SimCommand become;
+	become.type = CommandType::SetCharacter;
+	become.target = SlotTarget( 1 );
+	become.index = 1;
+	f.commands.push_back( become );
+	step( 30 );
+	const uint32_t first = sim.PlayerNetId( 0 ), second = sim.PlayerNetId( 1 );
+
+	// Captured, and through the bytes a viewer reads.
+	auto viewed = [&]() -> present::ViewFrame {
+		present::ViewFrame frame;
+		frame.serial = 1;
+		frame.state = "playing";
+		frame.hasWorld = true;
+		present::CaptureFrame( sim, frame.frame );
+		frame.frame.resetGeneration = 1;
+		std::vector<uint8_t> bytes;
+		present::EncodeView( frame, nullptr, 0.0, bytes );
+		present::ViewFrame back;
+		bool decoded = present::DecodeView( bytes.data(), bytes.size(), nullptr, back );
+		return decoded ? back : present::ViewFrame{};
+	};
+	auto characterIn = [&]( const present::ViewFrame& frame, uint32_t netId ) {
+		for ( const present::FrameEntity& e : frame.frame.entities )
+		{
+			if ( e.netId == netId )
+			{
+				return int( e.character );
+			}
+		}
+		return -1;
+	};
+	present::ViewFrame frame = viewed();
+	std::printf( "    in the frame: the first player is character %d, the second %d\n", characterIn( frame, first ),
+				 characterIn( frame, second ) );
+	CHECK( characterIn( frame, first ) == 0 && characterIn( frame, second ) == 1 );
+
+	// Posed on its own character's skeleton.
+	std::shared_ptr<const anim::AnimSet> small = anim::AnimSet::CreateProcedural(), big = anim::AnimSet::CreateProcedural();
+	present::Mirror mirror( small );
+	std::vector<present::CharacterAnim> characters( 2 );
+	characters[0].set = small;
+	characters[1].set = big;
+	characters[1].feet = 3.58f;
+	mirror.SetCharacters( characters );
+	auto skeletonOf = [&]( uint32_t netId ) {
+		const anim::AnimSet* set = nullptr;
+		mirror.ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim* a,
+							 const present::RagdollAnim* ) {
+			if ( v.netId == netId && a != nullptr && a->evaluator )
+			{
+				set = &a->evaluator->Set();
+			}
+		} );
+		return set;
+	};
+	mirror.Update( frame.frame, 0.0f, 1.0f / 60.0f );
+	CHECK( skeletonOf( first ) == small.get() && skeletonOf( second ) == big.get() );
+	CHECK( mirror.Library().Of( 1 ).feet == 3.58f && mirror.Library().Of( 7 ).set == small );
+
+	become.index = 0;
+	f.commands.push_back( become );
+	step( 10 );
+	frame = viewed();
+	mirror.Update( frame.frame, 0.0f, 1.0f / 60.0f );
+	std::printf( "    made the first again: character %d, posed on the %s skeleton\n", characterIn( frame, second ),
+				 skeletonOf( second ) == small.get() ? "first's" : "second's" );
+	CHECK( characterIn( frame, second ) == 0 && skeletonOf( second ) == small.get() );
 }
 
 void TestMotionFinds()
@@ -11378,6 +11469,7 @@ int main( int argc, char** argv )
 		{ "motion_amounts", TestMotionAmounts },
 		{ "motion_inspector", TestMotionInspector },
 		{ "characters", TestCharacters },
+		{ "viewer_characters", TestViewerCharacters },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },

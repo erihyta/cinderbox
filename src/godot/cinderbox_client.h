@@ -224,21 +224,22 @@ public:
 	godot::String format_fields( int64_t net_id, const godot::String& format ) const;
 	// The workshop items this server's mods need: [{ mod, sha256 }].
 	godot::Array get_required_items() const;
-	// The character item everyone plays as on this server ("" for the built-in rig).
+	// The server's own character, every player's when it joins ("" for the built-in rig).
 	godot::String get_character() const;
-	// Plays as characters/<name>/ from the mounted packs: its baked ozz skeleton and clips
-	// (anim.cfg) drive every player, and character.tscn is the player prefab. "" goes back to the
-	// built-in rig. Returns an error message, or "" when it worked. Nothing is imported here: the
-	// files were baked in the editor and shipped in the item.
-	godot::String use_character( const godot::String& name );
+	// Draws every body as its own character, of the server's list (ModSchema::characters): each
+	// characters/<name>/ from the mounted packs, its baked ozz skeleton and clips (anim.cfg) and
+	// character.tscn its prefab; "" is the built-in rig. Returns an error message when the server's
+	// own cannot be used, or "" (one of the mods' that cannot is drawn as the server's own, with a
+	// warning). Nothing is imported here: the files were baked in the editor and shipped in items.
+	godot::String use_characters();
 	// Every node the viewer made for what is in the world is made again from its scene as it is
 	// now: after a look was loaded again over itself.
 	void rebuild_nodes();
-	// The schema's state machine for this character, compiled; warns when it will not fit.
-	std::shared_ptr<const AnimGraph> ServerGraph( const anim::AnimSet& set, const godot::String& name );
-	// The server's animation packs, compiled, and their clips (res://anim/<pack>/, from the mods'
-	// items) fitted to this character.
-	void ServerPacks( const anim::AnimSet& set, AnimGraphPacks& packs, std::vector<std::shared_ptr<const anim::PackClips>>& clips );
+	// The schema's state machine for one of its characters, compiled; warns when it will not fit.
+	std::shared_ptr<const AnimGraph> ServerGraph( const anim::AnimSet& set, size_t character );
+	// The server's animation packs, compiled, and their skeletons and clips (res://anim/<pack>/,
+	// from the mods' items), to be fitted to each character.
+	void ServerPacks( AnimGraphPacks& packs, std::vector<std::shared_ptr<const anim::AnimSet>>& sets );
 
 	// What the source says about itself ("rtt_ms", "desyncs", ...), plus "state", "entities" and
 	// "animation".
@@ -289,8 +290,9 @@ private:
 	godot::Ref<godot::PackedScene> LoadPrefab( const char* name );
 	godot::Ref<godot::PackedScene> LoadScene( const godot::String& path );
 	godot::Node3D* CreateNode( uint64_t visual, const present::Visual& v );
-	// Players and ragdolls again with the current prefab (after the character changed).
-	void RebuildCharacterNodes( bool itemsToo = false );
+	// Players and ragdolls again with the current prefab (after the characters changed); `only`:
+	// just these players' (by NetId), and what they hold.
+	void RebuildCharacterNodes( bool itemsToo = false, const std::vector<uint32_t>& only = {} );
 	const Blackboard* BoardOf( uint32_t netId ) const;
 	std::vector<std::string> Conditions( const godot::PackedStringArray& conditions ) const;
 
@@ -298,14 +300,28 @@ private:
 	godot::String m_prefabDir = "res://prefabs";
 	godot::String m_mapDir = "res://maps";
 
-	std::shared_ptr<const anim::AnimSet> m_animSet;
+	std::shared_ptr<const anim::AnimSet> m_animSet; // the server's own character's (or the built-in rig)
 	std::unique_ptr<present::Mirror> m_mirror;
-	godot::String m_character;		 // the character in use ("" = built-in)
-	godot::String m_characterFolder; // res://characters/<name>/
-	// What the character's animations do besides moving bones, copied out of its AnimationPlayer
-	// when the first one is drawn (null: nothing, or not looked yet).
-	godot::Ref<godot::AnimationLibrary> m_trackLibrary;
-	bool m_trackLibraryBuilt = false;
+	// A character as this viewer draws it (ModSchema::characters, in its order; the mirror has
+	// its skeleton, state machine and feet).
+	struct ViewCharacter
+	{
+		godot::String name;
+		godot::String folder; // res://characters/<name>/ ("": the built-in prefab)
+		bool loaded = false;  // false: drawn as the server's own
+		std::shared_ptr<const anim::AnimSet> set; // its baked skeleton and clips (null: not loaded)
+		// What its animations do besides moving bones, copied out of its AnimationPlayer when the
+		// first one is drawn (null: nothing, or not looked yet); its tracks pointed at the moved
+		// sockets once.
+		godot::Ref<godot::AnimationLibrary> tracks;
+		bool tracksBuilt = false;
+		bool retargeted = false;
+	};
+	std::vector<ViewCharacter> m_characters;
+	// The character a body is drawn as (null: none known yet, the built-in prefab).
+	ViewCharacter* ViewOf( uint8_t character );
+	std::unordered_map<uint64_t, uint8_t> m_nodeCharacters; // body visual id -> the character its node was made of
+	float FeetOf( uint64_t visual ) const; // how far below a body's centre its feet are
 	std::unordered_map<uint64_t, godot::ObjectID> m_trackPlayers; // visual id -> CbTrackPlayer
 	std::unique_ptr<present::ViewSource> m_source;
 	void Open( std::unique_ptr<present::ViewSource> source );
@@ -358,10 +374,9 @@ private:
 	godot::String EntityName( const present::Visual& v ) const;
 	// Sockets are moved to their entity's root in the game (so "^^/RightHand/Item" means the same on
 	// every rig); the animation tracks that reached an item through the socket's authored place are
-	// pointed at the new one, once per library.
+	// pointed at the new one, once per character.
 	std::vector<std::pair<godot::String, godot::String>> m_socketMoves; // from the entity: old path, new
-	godot::ObjectID m_retargetedLibrary;
-	void RetargetTracks( godot::Node* entity, godot::Node* root );
+	void RetargetTracks( ViewCharacter& character, godot::Node* entity, godot::Node* root );
 
 	// Held items: their looks by kind, and each character's sockets (placed from the pose every
 	// frame; items are their children).
@@ -430,7 +445,7 @@ private:
 	void ShadowsOnly( godot::Node* node, bool on ); // an item's visuals cast their shadows and are not drawn, or as they were
 	bool m_firstPerson = false;
 	godot::ObjectID m_firstPersonSkeleton; // whose body is cut for it now
-	void FirstPersonBody( uint32_t netId, godot::Node* node, const AnimState* state, present::Models& models );
+	void FirstPersonBody( uint32_t netId, uint8_t character, godot::Node* node, const AnimState* state, present::Models& models );
 	// The viewer's own pose as its animations have it, before the aim (see FirstPersonBody).
 	std::unique_ptr<anim::PoseEvaluator> m_viewPose;
 	const anim::AnimSet* m_viewPoseSet = nullptr;

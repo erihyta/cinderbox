@@ -46,6 +46,8 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.transform = RagdollFrame( pose.part[ragdoll::Pelvis], r->yaw );
 			f.velocity = pose.linear[ragdoll::Pelvis];
 			f.ragdoll = uint32_t( out.ragdolls.size() );
+			// (Its player's character: the skeleton it hangs off.)
+			f.character = uint8_t( sim.CharacterOf( sim.FindEntity( sim.PlayerNetId( r->slot ) ) ) );
 			if ( sim.HasBoard( e ) )
 			{
 				f.board = sim.GetBoard( e );
@@ -121,6 +123,7 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.dead = ch->dead != 0;
 			f.linked = sim.EntityHold( f.netId, f.linkEnd, f.linkHolds, f.linkMotion, &f.linkMissed );
 			f.motionsOn = sim.EntityMotionsOn( f.netId );
+			f.character = uint8_t( sim.CharacterOf( e ) );
 			if ( const Slots* slots = e.try_get<Slots>() )
 			{
 				f.slotIndex = slots->selected;

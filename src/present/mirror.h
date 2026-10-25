@@ -68,6 +68,8 @@ struct Visual
 	uint64_t motionsOn = 0; // the player's motions that are on, a bit each
 	uint16_t linkMotion = 0;
 	b3Vec3 linkEnd = {};
+	// Players and ragdolls: which character's body (AnimLibrary::characters).
+	uint8_t character = 0;
 };
 
 // Poses at the two most recent ticks, for interpolation.
@@ -98,6 +100,7 @@ struct PlayerAnim
 	// its upper layers led (anim_lead.h).
 	AnimState shown;
 	std::shared_ptr<anim::PoseEvaluator> evaluator;
+	uint8_t character = 0; // whose skeleton the evaluator poses (made again when the body's changes)
 	// Another player's clip first seen late, drawn from its start (anim_catch_up.h).
 	AnimCatchUp catchUp;
 };
@@ -116,14 +119,29 @@ struct RagdollAnim
 	Models models;
 };
 
-// World singletons read by the scripts.
-struct AnimLibrary
+// A character as the viewer draws its bodies: its skeleton and clips, its ragdoll rig, its state
+// machine (as the server compiled it), the mods' animation packs' clips fitted to its skeleton, and
+// how far below a body's centre its feet are (its capsule's).
+struct CharacterAnim
 {
 	std::shared_ptr<const anim::AnimSet> set;
 	std::shared_ptr<const RagdollRig> ragdoll;
-	std::shared_ptr<const AnimGraph> graph; // the character's state machine, as the server compiled it
-	AnimGraphPacks packs;					// the mods' animation packs (as the simulation has them)
-	std::vector<std::shared_ptr<const anim::PackClips>> packClips; // and their clips fitted to the character
+	std::shared_ptr<const AnimGraph> graph;
+	std::vector<std::shared_ptr<const anim::PackClips>> packClips;
+	float feet = 1.38f;
+};
+
+// World singletons read by the scripts.
+struct AnimLibrary
+{
+	// ModSchema::characters, in its order: [0] the server's own. Never empty.
+	std::vector<CharacterAnim> characters;
+	AnimGraphPacks packs; // the mods' animation packs (as the simulation has them)
+
+	const CharacterAnim& Of( size_t character ) const
+	{
+		return characters[character < characters.size() ? character : 0];
+	}
 };
 
 // The items held with both hands this frame, by the NetId of who holds them (joint_math.h
@@ -193,8 +211,11 @@ public:
 	Mirror( const Mirror& ) = delete;
 	Mirror& operator=( const Mirror& ) = delete;
 
-	// Switch to another character's skeleton and clips (the server's character is known only once
-	// it has welcomed us). Every player gets a new pose evaluator; the ragdoll rig follows.
+	// The characters bodies are (the server's are known only once it has welcomed us): each its
+	// skeleton and clips, its state machine, its packs' clips, its feet. Every player gets a new
+	// pose evaluator, of its own character's skeleton; the ragdoll rigs follow.
+	void SetCharacters( std::vector<CharacterAnim> characters, AnimGraphPacks packs = {} );
+	// One character for every body (a viewer with no server: a recording of one, a preview).
 	void SetAnimSet( std::shared_ptr<const anim::AnimSet> animSet, std::shared_ptr<const AnimGraph> graph = nullptr,
 					 AnimGraphPacks packs = {}, std::vector<std::shared_ptr<const anim::PackClips>> packClips = {} );
 
@@ -237,10 +258,17 @@ public:
 
 	// The local player's render pose, if there is one.
 	bool LocalPlayer( RenderPose& out ) const;
+	// Which character the local player's body is (0 when there is none).
+	uint8_t LocalCharacter() const;
 
-	const anim::AnimSet& AnimSet() const
+	// A character's skeleton and clips (0: the server's own).
+	const anim::AnimSet& AnimSet( size_t character = 0 ) const
 	{
-		return *m_animSet;
+		return *Library().Of( character ).set;
+	}
+	const AnimLibrary& Library() const
+	{
+		return m_world.get<AnimLibrary>();
 	}
 	flecs::world& World()
 	{

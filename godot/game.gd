@@ -531,8 +531,8 @@ func _load_items() -> bool:
 		client.rebuild_nodes()
 		print("a look was published again: shown as it is now")
 	_presented = true
-	# The server's character (one of the items just loaded), or the built-in rig.
-	var character_problem: String = client.use_character(client.get_character())
+	# The server's characters (in the items just loaded; its own may be the built-in rig).
+	var character_problem: String = client.use_characters()
 	if character_problem != "":
 		_refuse("This server's character could not be used: %s" % character_problem)
 		return false

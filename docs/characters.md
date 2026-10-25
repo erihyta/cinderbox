@@ -21,8 +21,8 @@ cb_server --character none     # the procedural placeholder rig
 
 ### Characters per body
 
-*Built in the simulation and on the server (M216); a client still draws every body as the server's
-own character until the viewer learns the rest (roadmap step 6).*
+*Built in the simulation and on the server (M216), and drawn so by the client (M217). The camera
+per scene and where shots start come next (roadmap step 6).*
 
 | Piece | How |
 |---|---|
@@ -33,6 +33,7 @@ own character until the viewer learns the rest (roadmap step 6).*
 | Its hitboxes | the server poses and hit-tests each body as its own character |
 | Its movement | its `movement` (walk speed and the rest), over the server's for its bodies |
 | In the schema | `ModSchema::characters`: [0] the server's own, then the mods'; each its name, mod, state machine, capsule and movement |
+| Drawn | each body by its own character's `character.tscn` (its `ragdoll.tscn` when it falls), posed on its skeleton by its state machine, its feet where its capsule has them; a body that changes character is drawn again by the new one's scene, with what it holds. One whose files cannot be read is drawn with the server's own character's look (a warning), still moving as its own |
 
 ### The default character: the mannequin
 
