@@ -103,6 +103,28 @@ already holds what the game needs, baked in the editor.
 With `--character none`, players use the procedural placeholder rig, which has default zones
 (head, torso, arm, leg).
 
+### A character that is not a humanoid
+
+Any skeleton bakes and plays (M219). What a humanoid has (Godot's `SkeletonProfileHumanoid` bone
+names, as its retargeting gives them) it gets; another skeleton does without, and the rest is the same.
+
+| | A humanoid | Another skeleton (`characters/critter`: four legs, a tail) |
+|---|---|---|
+| Its state machine, clips, hitboxes, capsule, movement, eyes | its own | its own |
+| Aim and look chains, the eye's bone | bones by profile name | bones by their own names (`NeckBase:0.5 Skull:1`) |
+| Dying with a ragdoll | the game's ragdoll | none: a kill that asks for one leaves none (`CharacterInfo::ragdoll`) |
+| Animation packs | fitted by bone names | a pack that fits too few of its bones (under half) is not swapped in: its own layer plays on (`CharacterInfo::packs`) |
+| Items | held in its hand sockets | still its own (in its slots: skills work), drawn only in a socket it has |
+| First person | arms and legs drawn for the eye | its body hidden from the eye, the view from its camera |
+
+A skeleton with some of a humanoid's bones and not the rest is warned about at the bake (most likely
+an import that lost them). `make_critter.gd` builds the critter, as `make_character_example.gd` the
+robot:
+
+```sh
+godot --headless --path godot --script res://addons/cinderbox_maps/make_critter.gd -- --out=<abs path>/characters/critter/client/characters/critter
+```
+
 ### Making a character
 
 1. Make an item project: `characters/<name>/client/` with `project.godot` and a "Mod" export

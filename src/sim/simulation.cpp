@@ -3406,9 +3406,15 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			}
 			AnimState a = GetAnimState( e );
 			AnimGraphLayerState& layer = a.graph[command.index];
-			if ( layer.source != uint8_t( command.value ) )
+			uint8_t source = uint8_t( command.value );
+			const std::vector<uint8_t>& fits = Body( CharacterOf( e ) ).packs;
+			if ( source > 0 && fits.empty() == false && ( size_t( source - 1 ) >= fits.size() || fits[size_t( source - 1 )] == 0 ) )
 			{
-				layer.source = uint8_t( command.value );
+				source = 0; // a pack its skeleton cannot play: its own layer plays on
+			}
+			if ( layer.source != source )
+			{
+				layer.source = source;
 				layer.started = 0; // starts over in the new layer's start state
 			}
 			SetAnimState( e, a );
@@ -3553,7 +3559,7 @@ void Simulation::KillPlayer( flecs::entity e, const SimCommand& command )
 		return;
 	}
 
-	if ( command.mode == 1 )
+	if ( command.mode == 1 && Body( CharacterOf( e ) ).ragdoll )
 	{
 		flecs::entity body = CreateRagdoll( e, command.other );
 		SimCommand hit = command;
@@ -4848,6 +4854,8 @@ bool Simulation::CharactersOf( const ModSchema& schema, std::vector<CharacterBod
 		body.halfHeight = info.halfHeight;
 		body.move = info.move;
 		body.firstPerson = info.firstPerson;
+		body.ragdoll = info.ragdoll;
+		body.packs = info.packs;
 		if ( info.graph.empty() == false )
 		{
 			std::string why, warnings;

@@ -32,6 +32,7 @@
 
 #include "box3d/box3d.h"
 #include "mirror.h"
+#include "pose_tools.h"
 #include "view_codec.h"
 #include "view_file.h"
 
@@ -9601,6 +9602,123 @@ void TestMannequinCharacter()
 // shipped bat and pistol packs. A press 12 ticks before the server answers: the swing starts on the
 // press, its clock runs on evenly through the moment the server's event arrives, and the legs are
 // left alone. A predicted event does the same for the pistol's recoil.
+// M219: a character that is not a humanoid. The critter (characters/critter: four legs and a tail,
+// bones of its own names) loads with no warnings; its aim and look chains and its eye are found by
+// its own bone names; it is not taken for a humanoid (the mannequin and the built-in rig are); the
+// simulation runs its state machine and the pose follows it (its legs swing as it trots); the
+// humanoid packs fit none of its bones; the ragdoll rig finds nothing to hang on it; and a body of
+// it, killed with a ragdoll asked for, falls as none.
+void TestAnySkeleton()
+{
+	const std::string dir = std::string( CB_SOURCE_DIR ) + "/characters/critter/client/characters/critter";
+	std::string error, warnings;
+	std::shared_ptr<const anim::AnimSet> critter = anim::AnimSet::Load( dir, error, warnings );
+	CHECK( critter != nullptr );
+	if ( critter == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	std::printf( "    %s; warnings: %s\n", critter->Description().c_str(), warnings.empty() ? "none" : warnings.c_str() );
+	CHECK( warnings.empty() );
+	const int skull = anim::FindJoint( *critter, "Skull" ), neck = anim::FindJoint( *critter, "NeckBase" );
+	CHECK( skull >= 0 && neck >= 0 && critter->AimTip() == skull && critter->AimJoints().size() == 2 &&
+		   critter->LookJoints().size() == 2 && critter->EyeJoint() == skull && critter->FirstPerson() );
+	auto mannequin = anim::AnimSet::Load( std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin", error, warnings );
+	CHECK( critter->Humanoid() == false && mannequin != nullptr && mannequin->Humanoid() && anim::AnimSet::CreateProcedural()->Humanoid() );
+
+	// Its state machine, run by the simulation; the pose follows it.
+	ModSchema schema;
+	MannequinSchema( schema );
+	warnings.clear();
+	auto graph = CompileAnimGraph( critter->GraphText(), schema, error, warnings );
+	CHECK( graph != nullptr && warnings.empty() );
+	if ( graph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	ShippedPacks packs;
+	LoadShippedPacks( schema, critter.get(), packs );
+	size_t fitted = 0;
+	for ( const auto& clips : packs.clips )
+	{
+		fitted += clips != nullptr ? 1 : 0;
+	}
+	std::printf( "    the humanoid packs fitted to it: %zu of %zu\n", fitted, packs.clips.size() );
+	CHECK( fitted == 0 && packs.clips.size() == 2 );
+	anim::PoseEvaluator pose( *critter );
+	pose.SetGraph( graph, warnings );
+	pose.SetPacks( packs.graphs, packs.clips );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	Simulation::CharacterBody body;
+	body.graph = graph;
+	body.radius = critter->CapsuleRadius();
+	body.halfHeight = critter->CapsuleHalfHeight();
+	body.ragdoll = critter->Humanoid();
+	body.packs = { 0, 0 }; // (as the server finds them: neither fits)
+	sim.SetCharacters( { body } );
+	sim.SetAnimPacks( packs.graphs );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 60 );
+	const flecs::entity e = sim.FindEntity( sim.PlayerNetId( 0 ) );
+	auto kneeMoved = [&]() {
+		pose.Evaluate( sim.GetAnimState( e ), nullptr );
+		const int leg = anim::FindJoint( *critter, "LegFL2" );
+		float v[4], r[4];
+		ozz::math::StorePtrU( pose.Models()[size_t( leg )].cols[3], v );
+		ozz::math::StorePtrU( critter->RestModels()[size_t( leg )].cols[3], r );
+		return std::sqrt( ( v[0] - r[0] ) * ( v[0] - r[0] ) + ( v[1] - r[1] ) * ( v[1] - r[1] ) + ( v[2] - r[2] ) * ( v[2] - r[2] ) );
+	};
+	const float standing = kneeMoved();
+	f.inputs[0].moveForward = 127;
+	float trotting = 0.0f;
+	for ( int i = 0; i < 40; ++i )
+	{
+		step( 1 );
+		trotting = std::max( trotting, kneeMoved() );
+	}
+	std::printf( "    its front left knee from where it rests: %.3f m standing, up to %.3f m trotting\n", double( standing ), double( trotting ) );
+	CHECK( trotting > standing + 0.05f );
+
+	// A mod swapping its layer to a pack that does not fit it: its own layer plays on.
+	SimCommand swap;
+	swap.type = CommandType::SwapLayer;
+	swap.target = SlotTarget( 0 );
+	swap.index = 0;
+	swap.value = ShippedPacks::Pistol;
+	f.commands.push_back( swap );
+	step( 2 );
+	CHECK( sim.GetAnimState( e ).graph[0].source == 0 );
+
+	// No ragdoll to hang on it, and none to fall as.
+	const present::RagdollRig rig = present::BuildRagdollRig( *critter );
+	CHECK( std::all_of( rig.anchorJoint.begin(), rig.anchorJoint.end(), []( int j ) { return j < 0; } ) );
+	SimCommand kill;
+	kill.type = CommandType::Kill;
+	kill.target = SlotTarget( 0 );
+	kill.mode = 1;
+	f.commands.push_back( kill );
+	step( 2 );
+	int ragdolls = 0;
+	for ( const Simulation::EntityRef& r : sim.Entities() )
+	{
+		ragdolls += sim.FindEntity( r.netId ).has<Ragdoll>() ? 1 : 0;
+	}
+	CHECK( sim.PlayerCharacter( PlayerSlot( 0 ) )->dead && ragdolls == 0 );
+}
+
 void TestAnimLead()
 {
 	const std::string dir = std::string( CB_SOURCE_DIR ) + "/godot/characters/mannequin";
@@ -11561,6 +11679,7 @@ int main( int argc, char** argv )
 		{ "characters", TestCharacters },
 		{ "viewer_characters", TestViewerCharacters },
 		{ "first_person_camera", TestFirstPersonCamera },
+		{ "any_skeleton", TestAnySkeleton },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },

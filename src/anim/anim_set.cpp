@@ -1,6 +1,7 @@
 #include "anim_set.h"
 
 #include "joint_math.h"
+#include "ragdoll.h"
 #include "expr.h"
 #include "detmath.h"
 #include "profile.h"
@@ -875,6 +876,18 @@ std::unique_ptr<AnimSet> AnimSet::Load( const FileReader& read, const std::strin
 	set->m_description = dir + " (" + std::to_string( set->m_skeleton->num_joints() ) + " joints, " +
 						 ( graph ? "a state machine with " : "no state machine, " ) + std::to_string( set->m_namedClips.size() ) + " clips)";
 	return set;
+}
+
+bool AnimSet::Humanoid() const
+{
+	for ( const ragdoll::PartDef& part : ragdoll::kParts )
+	{
+		if ( FindJoint( *this, part.rigJoint ) < 0 )
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 void AnimSet::SetAim( const std::string& chain, const std::string& tip, std::string& warnings )

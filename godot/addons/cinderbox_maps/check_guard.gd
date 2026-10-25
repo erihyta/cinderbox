@@ -90,7 +90,18 @@ func _run() -> void:
 	print("nodes")
 	_refused("an HTTPRequest", _with(Node3D.new(), HTTPRequest.new(), "Fetch"), "HTTPRequest")
 	_refused("a Window", _with(Node3D.new(), Window.new(), "Popup"), "Window")
-	_refused("a Camera3D", _with(Node3D.new(), Camera3D.new(), "Eye"), "Camera3D")
+	# A camera (a character's first-person one) may be in a look; in the game it is taken out, so a
+	# look never takes the player's view, even one made current.
+	var eye := Camera3D.new()
+	eye.current = true
+	var holder := Node3D.new()
+	holder.name = "Head"
+	var seen := _pack(_with(_with(Node3D.new(), holder), eye, "Eye"))
+	var made: Node = CbDirector.instantiate(seen)
+	_check("accepts a Camera3D, and takes it out of the instance", CbDirector.check_scene(seen) == "" and made != null and
+		made.find_children("*", "Camera3D", true, false).is_empty() and made.get_node_or_null("Head") != null)
+	if made:
+		made.free()
 	_refused("a SubViewport", _with(Control.new(), SubViewport.new(), "View"), "SubViewport")
 	_refused("a LinkButton", _with(Control.new(), LinkButton.new(), "Link"), "LinkButton")
 	_refused("a Timer", _with(Node3D.new(), Timer.new(), "Tick"), "Timer")

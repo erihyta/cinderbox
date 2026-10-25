@@ -1,6 +1,7 @@
 #include "cue_guard.h"
 
 #include <godot_cpp/classes/animation.hpp>
+#include <godot_cpp/classes/camera3d.hpp>
 #include <godot_cpp/classes/animation_library.hpp>
 #include <godot_cpp/classes/animation_node.hpp>
 #include <godot_cpp/classes/animation_node_state_machine_transition.hpp>
@@ -31,9 +32,10 @@ namespace
 const char* const kNodeClasses[] = {
 	// Structure
 	"Node", "Node3D", "Marker3D", "Node2D", "Marker2D", "CanvasLayer", "CanvasGroup",
-	// An item's eye in first person: a camera in the editor only (it leaves the scene in the game).
-	// No other camera: a look does not take the player's view.
-	"CbViewCamera",
+	// Eyes: an item's in first person (CbViewCamera), a character's first-person camera (a Camera3D
+	// at its eyes). Cameras in the editor only: their places are baked, and Instantiate takes every
+	// camera out of a scene before it is in the game, so a look never takes the player's view.
+	"CbViewCamera", "Camera3D",
 	// 3D looks
 	"MeshInstance3D", "MultiMeshInstance3D", "Sprite3D", "AnimatedSprite3D", "Label3D", "Decal",
 	"GPUParticles3D", "CPUParticles3D", "GPUParticlesAttractorBox3D", "GPUParticlesAttractorSphere3D",
@@ -383,13 +385,42 @@ String CheckScene( const Ref<PackedScene>& scene )
 	return problem;
 }
 
+namespace
+{
+// Every camera under `node` (not yet in a tree, so none was ever current) goes.
+void RemoveCameras( Node* node )
+{
+	for ( int64_t i = node->get_child_count() - 1; i >= 0; --i )
+	{
+		Node* child = node->get_child( i );
+		if ( Object::cast_to<Camera3D>( child ) != nullptr )
+		{
+			node->remove_child( child );
+			memdelete( child );
+			continue;
+		}
+		RemoveCameras( child );
+	}
+}
+} // namespace
+
 Node* Instantiate( const Ref<PackedScene>& scene )
 {
 	if ( scene.is_null() || CheckScene( scene ).is_empty() == false )
 	{
 		return nullptr;
 	}
-	return scene->instantiate();
+	Node* node = scene->instantiate();
+	if ( Object::cast_to<Camera3D>( node ) != nullptr )
+	{
+		memdelete( node ); // (a scene that is a camera is nothing to draw)
+		return nullptr;
+	}
+	if ( node != nullptr )
+	{
+		RemoveCameras( node );
+	}
+	return node;
 }
 
 } // namespace cb::cue
