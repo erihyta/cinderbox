@@ -4478,6 +4478,87 @@ void TestAnySkeleton()
 	fs::remove_all( dir );
 }
 
+// M220: possession on a live server. A test mod spawns a body nobody drives when the game starts,
+// and on a press the player possesses it (ctx.IdleBodies, ctx.Possess); later it spawns another
+// and the player takes it at once (SpawnCharacter with a possessor). The server and the bot's own
+// simulation agree on who drives what, the bodies left stand nobody's, and there are no desyncs.
+class PossessMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_possess";
+	}
+	void Declare( mods::Declarations& declare ) override
+	{
+		m_take = declare.Action( "test.take", "" );
+		m_become = declare.Action( "test.become", "" );
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		if ( m_spawned == false )
+		{
+			m_spawned = true;
+			const b3Vec3 spawn = GetLevelLayout().spawnCenter;
+			ctx.SpawnCharacter( mods::CharacterHandle{ 0 }, b3Vec3{ spawn.x + 3.0f, spawn.y, spawn.z }, 0.0f );
+		}
+		for ( int slot = 0; slot < kMaxPlayers; ++slot )
+		{
+			if ( ctx.Pressed( PlayerSlot( slot ), m_take ) )
+			{
+				const std::vector<uint32_t> free = ctx.IdleBodies();
+				if ( free.empty() == false )
+				{
+					ctx.Possess( PlayerSlot( slot ), free.front() );
+				}
+			}
+			if ( ctx.Pressed( PlayerSlot( slot ), m_become ) )
+			{
+				const b3Vec3 spawn = GetLevelLayout().spawnCenter;
+				ctx.SpawnCharacter( mods::CharacterHandle{ 0 }, b3Vec3{ spawn.x - 3.0f, spawn.y, spawn.z }, 1.0f, PlayerSlot( slot ) );
+			}
+		}
+	}
+
+private:
+	mods::ActionHandle m_take, m_become;
+	bool m_spawned = false;
+};
+
+void TestPossession()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	extra.push_back( std::make_unique<PossessMod>() );
+	// (A view file of it, for watching in the game: CB_POSSESSION_VIEW names where.)
+	const char* viewPath = std::getenv( "CB_POSSESSION_VIEW" );
+	Harness h( 47914, {}, {}, {}, [&]( ServerOptions& options ) { options.recordViewPath = viewPath != nullptr ? viewPath : ""; }, std::move( extra ) );
+	const ModSchema& schema = h.server.Schema();
+	const ActionBits take = schema.ActionMask( "test.take" ), become = schema.ActionMask( "test.become" );
+	Bot& bot = h.AddBot();
+	bot.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		in.actions = tick >= 120 && tick < 124 ? take : tick >= 240 && tick < 244 ? become : 0;
+		in.moveForward = tick > 150 && tick < 230 ? 127 : 0;
+		return in;
+	};
+	h.RunUntil( 6.0 );
+	h.Report();
+	GameClient& client = *h.bots[0].client;
+	Simulation& server = h.server.Sim();
+	RollbackSession* session = client.Session();
+	const uint32_t now = server.PlayerNetId( client.Slot() );
+	int idle = 0;
+	for ( const Simulation::EntityRef& r : server.Entities() )
+	{
+		idle += server.FindEntity( r.netId ).has<IdleBody>() ? 1 : 0;
+	}
+	std::printf( "    the player drives %u now; bodies nobody drives: %d; desyncs %u, checksums %u\n", now, idle, client.GetStats().desyncs,
+				 client.GetStats().checksumsVerified );
+	// Its first body and the one it took first stand nobody's; it drives the last one spawned for it.
+	CHECK( idle == 2 && server.FindEntity( now ).has<Character>() && session != nullptr && session->Sim().PlayerNetId( client.Slot() ) == now );
+	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+}
+
 // The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
 // breaks a hole in it with no blast, and goes on through: past the wall, while bricks still stand.
 // The ball's scene says it breaks walls (CbItem.break_speed), so the simulation breaks it in the
@@ -4967,6 +5048,7 @@ int main( int argc, char** argv )
 		{ "cannon", TestCannon },
 		{ "characters", TestCharacters },
 		{ "any_skeleton", TestAnySkeleton },
+		{ "possession", TestPossession },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },

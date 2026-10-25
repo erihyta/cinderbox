@@ -221,8 +221,17 @@ enum class CommandType : uint8_t
 	// that character's: its capsule (the feet stay where they are), its state machine (its layers
 	// start over). An index the schema does not have does nothing.
 	SetCharacter = 19,
+	// index = character (ModSchema::characters), a = where its feet stand, value = its yaw (the
+	// input's units, 65536 a turn): a body of that character nobody drives (IdleBody). target = a
+	// slot (SlotTarget): that slot possesses it at once, as Possess does.
+	SpawnBody = 20,
+	// target = a slot (SlotTarget), other = a body nobody drives: the slot drives it from now on. The
+	// body it drove is left: what it held is put away (not dropped), and it stands where it is,
+	// nobody's; a dead one is removed with what it carried. Nothing happens for a body someone
+	// drives, or one that is not a character's.
+	Possess = 21,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::SetCharacter );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Possess );
 
 enum ImpulseMode : uint8_t
 {

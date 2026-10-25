@@ -51,10 +51,11 @@ CbDirector* CinderboxClient::get_director()
 
 String CinderboxClient::EntityName( const present::Visual& v ) const
 {
-	// Players by slot: stable while they are connected, so paths can name them.
+	// Players by slot: stable while they are connected, so paths can name them. A body nobody
+	// drives by its NetId.
 	if ( v.kind == present::VisualKind::Player )
 	{
-		return "player_" + String::num_int64( int64_t( v.slot ) );
+		return v.slot < kMaxPlayers ? "player_" + String::num_int64( int64_t( v.slot ) ) : "body_" + String::num_int64( int64_t( v.netId ) );
 	}
 	if ( v.kind == present::VisualKind::Item && v.holder != 0 )
 	{

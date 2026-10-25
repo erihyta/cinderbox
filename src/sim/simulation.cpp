@@ -340,6 +340,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<MoveEffects>();
 	RegisterSnapComponent<MoveValues>();
 	RegisterSnapComponent<CharacterKind>();
+	RegisterSnapComponent<IdleBody>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -372,6 +373,18 @@ flecs::entity Simulation::CreateEntity()
 
 void Simulation::DestroyEntity( flecs::entity e )
 {
+	if ( e.has<IdleBody>() )
+	{
+		// A body nobody drives (fallen out of the world): what it carried goes with it.
+		const uint32_t self = e.get<NetId>().value;
+		for ( uint32_t item : CarriedItemsOf( self ) )
+		{
+			if ( flecs::entity it = FindEntity( item ); it.is_valid() && it != e )
+			{
+				DestroyEntity( it );
+			}
+		}
+	}
 	if ( e.has<Container>() && e.has<Transform>() )
 	{
 		// What a chest held falls out of it.
@@ -1537,6 +1550,14 @@ void Simulation::StepSlots( const InputFrame& frame )
 		const Character& c = e.get<Character>();
 		const bool had = e.has<Slots>();
 		Slots slots = had ? e.get<Slots>() : Slots{ m_config.slots, kNoSlot, in.intentSeq, 0 };
+		if ( slots.resync != 0 )
+		{
+			// Just taken over: what the input says was meant for the body the slot drove before.
+			slots.resync = 0;
+			slots.seq = in.intentSeq;
+			slots.prevKeys = in.slotKeys;
+			slots.prevActions = in.actions;
+		}
 		const bool act = had && c.dead == 0;
 		// Using an item is recorded where every simulation can see it (the player's own at once): the
 		// kind's event, at the player, with the item.
@@ -1798,6 +1819,184 @@ flecs::entity Simulation::CreatePlayer( PlayerSlot slot )
 
 	m_globals.playerNetIds[slot] = netId;
 	return e;
+}
+
+b3BodyId Simulation::CreateIdlePhysics( const Shape& shape, const Transform& t, b3Vec3 velocity, float mass, b3ShapeId& shapeId )
+{
+	b3BodyDef def = b3DefaultBodyDef();
+	def.type = b3_dynamicBody;
+	def.position = t.position;
+	def.rotation = t.rotation;
+	def.linearVelocity = velocity;
+	// Upright, facing where it faced: it slides and falls, it does not tip over.
+	def.motionLocks = { false, false, false, true, true, true };
+	b3BodyId body = b3CreateBody( m_physicsWorld, &def );
+	// Its capsule reaches down to its feet: driven, the mover holds the capsule above them on a ray,
+	// so standing on its own it would sink by the difference. The body's origin stays where a driven
+	// one's is (the capsule's centre), so it is drawn the same way.
+	const float r = shape.halfExtents.x, h = shape.halfExtents.y;
+	const float feet = mover::FeetBelowCenter( r, h );
+	b3Capsule capsule = { { 0.0f, std::min( -feet + r, h ), 0.0f }, { 0.0f, h, 0.0f }, r };
+	// It weighs what it did when it was driven (its mass, a movement parameter).
+	const float length = capsule.center2.y - capsule.center1.y;
+	const float volume = detmath::kPi * r * r * ( length + ( 4.0f / 3.0f ) * r );
+	ShapeMaterial material;
+	material.density = volume > 0.0f ? mass / volume : material.density;
+	b3ShapeDef shapeDef = MakeShapeDef( CatProp, material );
+	shapeId = b3CreateCapsuleShape( body, &shapeDef, &capsule );
+	return body;
+}
+
+flecs::entity Simulation::CreateIdleBody( uint16_t character, b3Vec3 feet, float yaw, b3Vec3 velocity )
+{
+	character = character < m_characters.size() ? character : uint16_t( 0 );
+	const CharacterBody& kind = Body( character );
+	flecs::entity e = CreateEntity();
+	Shape shape{ ShapeKind::Capsule, {}, { kind.radius, kind.halfHeight, 0.0f } };
+	Transform t{ b3Add( feet, b3Vec3{ 0.0f, mover::FeetBelowCenter( kind.radius, kind.halfHeight ), 0.0f } ), detmath::YawRotation( yaw ) };
+	MoveParams move = m_config.move;
+	for ( const auto& [param, value] : kind.move )
+	{
+		if ( param < kMoveParams && character != 0 ) // (the server's own are in the config already, as MoveOf)
+		{
+			move.values[param] = value;
+		}
+	}
+	b3ShapeId shapeId;
+	b3BodyId body = CreateIdlePhysics( shape, t, velocity, move[MoveParam::Mass], shapeId );
+	e.set<Transform>( t );
+	e.set<Velocity>( { velocity, { 0.0f, 0.0f, 0.0f } } );
+	e.set<Shape>( shape );
+	e.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );
+	e.set<IdleBody>( { character, 0 } );
+	return e;
+}
+
+void Simulation::MakeIdle( flecs::entity e )
+{
+	if ( e.is_valid() == false || e.has<Character>() == false )
+	{
+		return;
+	}
+	const uint32_t netId = e.get<NetId>().value;
+	// What it held is put away, not dropped: still its own.
+	if ( e.has<Slots>() )
+	{
+		Slots slots = e.get<Slots>();
+		slots.selected = kNoSlot;
+		e.set<Slots>( slots );
+		SettleSlots( netId, kNoSlot );
+	}
+	else
+	{
+		for ( const EntityRef& r : m_entities )
+		{
+			flecs::entity item( m_world, r.entity );
+			if ( const HeldItem* held = item.try_get<HeldItem>(); held != nullptr && held->holder == netId && held->stowed == 0 )
+			{
+				HeldItem put = *held;
+				put.stowed = 1;
+				put.socket = kNoSocket;
+				item.set<HeldItem>( put );
+			}
+		}
+	}
+	const Character c = e.get<Character>();
+	const uint16_t character = CharacterOf( e );
+	const float mass = MoveOf( e )[MoveParam::Mass];
+	Transform t = e.get<Transform>();
+	t.rotation = detmath::YawRotation( c.facingYaw );
+	const Shape shape = e.get<Shape>();
+
+	b3DestroyBody( BodyOf( e.get<PhysicsBody>() ) );
+	b3ShapeId shapeId;
+	b3BodyId body = CreateIdlePhysics( shape, t, c.velocity, mass, shapeId );
+	e.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );
+	e.set<Transform>( t );
+	e.set<Velocity>( { c.velocity, { 0.0f, 0.0f, 0.0f } } );
+	// The controller goes: its state, its animation, whatever its motions had going.
+	e.remove<Character>();
+	e.remove<CharacterKind>();
+	e.remove<MotionHold>();
+	e.remove<MoveEffects>();
+	e.remove<MoveValues>();
+	ecs_remove_id( m_world.c_ptr(), e.id(), m_animId );
+	if ( m_motionId != 0 )
+	{
+		ecs_remove_id( m_world.c_ptr(), e.id(), m_motionId );
+	}
+	e.set<IdleBody>( { character, 0 } );
+}
+
+void Simulation::MakeDriven( flecs::entity e, PlayerSlot slot )
+{
+	const uint16_t character = e.get<IdleBody>().character;
+	const Transform at = e.get<Transform>();
+	const b3Vec3 velocity = e.has<Velocity>() ? e.get<Velocity>().linear : b3Vec3{ 0.0f, 0.0f, 0.0f };
+	// Its yaw, from its upright rotation (a turn about +Y).
+	const float yaw = detmath::WrapAngle( 2.0f * detmath::Atan2( at.rotation.v.y, at.rotation.s ) );
+	Transform t{ at.position, detmath::YawRotation( yaw ) };
+	const Shape shape = e.get<Shape>();
+
+	b3DestroyBody( BodyOf( e.get<PhysicsBody>() ) );
+	b3BodyDef def = b3DefaultBodyDef();
+	def.type = b3_kinematicBody;
+	def.position = t.position;
+	def.rotation = t.rotation;
+	b3BodyId body = b3CreateBody( m_physicsWorld, &def );
+	b3ShapeId shapeId = CreateShape( body, shape, CatPlayer );
+
+	Character c;
+	c.slot = slot;
+	c.facingYaw = yaw;
+	c.velocity = velocity;
+	e.remove<IdleBody>();
+	e.set<Transform>( t );
+	e.set<Velocity>( {} );
+	e.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );
+	e.set<Character>( c );
+	if ( character != 0 )
+	{
+		e.set<CharacterKind>( { character, 0 } );
+	}
+	SetAnimState( e, AnimState{} );
+	if ( e.has<Slots>() )
+	{
+		Slots slots = e.get<Slots>();
+		slots.resync = 1;
+		e.set<Slots>( slots );
+	}
+}
+
+void Simulation::Possess( PlayerSlot slot, flecs::entity body )
+{
+	if ( slot >= kMaxPlayers )
+	{
+		return;
+	}
+	uint32_t& driven = m_globals.playerNetIds[slot];
+	if ( driven == 0 || body.is_valid() == false || body.has<IdleBody>() == false )
+	{
+		return; // (a slot nobody is in, or a body that is not a free character's)
+	}
+	if ( flecs::entity old = FindEntity( driven ); old.is_valid() )
+	{
+		if ( old.get<Character>().dead != 0 )
+		{
+			// Dead, it is its ragdoll or nothing: it goes, with what it carried.
+			for ( uint32_t item : CarriedItemsOf( driven ) )
+			{
+				DestroyEntity( FindEntity( item ) );
+			}
+			DestroyEntity( old );
+		}
+		else
+		{
+			MakeIdle( old );
+		}
+	}
+	MakeDriven( body, slot );
+	driven = body.get<NetId>().value;
 }
 
 void Simulation::PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw )
@@ -3085,6 +3284,35 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			record.point = ToVec( command.a );
 			record.vector = ToVec( command.b );
 			RecordModEvent( record );
+			return;
+		}
+
+		case CommandType::SpawnBody:
+		{
+			const float yaw = detmath::YawToRadians( uint16_t( command.value & 0xFFFF ) );
+			flecs::entity body = CreateIdleBody( command.index, ToVec( command.a ), yaw, { 0.0f, 0.0f, 0.0f } );
+			if ( command.target & kSlotTargetBit )
+			{
+				const uint32_t slot = command.target & ~kSlotTargetBit;
+				if ( slot < uint32_t( kMaxPlayers ) )
+				{
+					Possess( PlayerSlot( slot ), body );
+				}
+			}
+			return;
+		}
+
+		case CommandType::Possess:
+		{
+			if ( ( command.target & kSlotTargetBit ) == 0 )
+			{
+				return;
+			}
+			const uint32_t slot = command.target & ~kSlotTargetBit;
+			if ( slot < uint32_t( kMaxPlayers ) )
+			{
+				Possess( PlayerSlot( slot ), FindEntity( command.other ) );
+			}
 			return;
 		}
 
@@ -4887,6 +5115,10 @@ void Simulation::SetCharacters( std::vector<CharacterBody> characters )
 
 uint16_t Simulation::CharacterOf( flecs::entity e ) const
 {
+	if ( const IdleBody* idle = e.is_valid() ? e.try_get<IdleBody>() : nullptr )
+	{
+		return idle->character < m_characters.size() ? idle->character : uint16_t( 0 );
+	}
 	const CharacterKind* kind = e.is_valid() ? e.try_get<CharacterKind>() : nullptr;
 	return kind != nullptr && kind->index < m_characters.size() ? kind->index : uint16_t( 0 );
 }

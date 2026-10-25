@@ -37,6 +37,18 @@ eyes and first person (M218).*
 | Where shots start | its eyes as posed (the camera's, else the Eye marker's place); else its head; else the top of its capsule. A first-person view looks out from the camera's height above the feet |
 | Drawn | each body by its own character's `character.tscn` (its `ragdoll.tscn` when it falls), posed on its skeleton by its state machine, its feet where its capsule has them; a body that changes character is drawn again by the new one's scene, with what it holds. One whose files cannot be read is drawn with the server's own character's look (a warning), still moving as its own |
 
+### Bodies nobody drives, and possession
+
+*M220.* A player's slot drives a body; the body is what the mod gives it. Joining spawns the
+server's own character and drives it, as before.
+
+| | |
+|---|---|
+| A body nobody drives | `ctx.SpawnCharacter( character, feet, yaw )`, or a body its player left: no controller, no animation state; a physics body of its capsule reaching down to its feet, its rotation locked, so it stands, falls, is pushed and settles (the physics engine sleeps it). Drawn as its character in its rest pose, hit as its capsule. It costs what a prop costs |
+| Possessing one | `ctx.Possess( slot, body )`: the body gets the controller (its state machine starts over), the slot drives it from the next tick; the camera follows. The body left stands where it was; what it held is put away, not dropped, and stays its own |
+| What goes with the slot | its keys, its name; what is the body's stays with it (its fields, its items, its character) |
+| Not yet | a prop as a body (M221), a mod driving a body (M222) |
+
 ### The default character: the mannequin
 
 The [Universal Animation Library](https://quaternius.com) mannequin by Quaternius (CC0), in

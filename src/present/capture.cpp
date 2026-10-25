@@ -108,6 +108,18 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.kind = VisualKind::Player;
 			f.slot = c->slot;
 		}
+		else if ( const IdleBody* idle = e.try_get<IdleBody>() )
+		{
+			// A character's body nobody drives: drawn as its character, standing (no animation state).
+			f.kind = VisualKind::Player;
+			f.slot = kNoSlot;
+			f.character = uint8_t( sim.CharacterOf( e ) );
+			if ( const Slots* slots = e.try_get<Slots>() )
+			{
+				f.slotIndex = slots->selected;
+				f.slotCount = slots->count;
+			}
+		}
 		else
 		{
 			f.kind = VisualKind::Prop;

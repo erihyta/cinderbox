@@ -1246,6 +1246,39 @@ void Context::SetCharacter( uint32_t target, CharacterHandle character )
 	Add( c );
 }
 
+void Context::SpawnCharacter( CharacterHandle character, b3Vec3 feet, float yaw, PlayerSlot possessor )
+{
+	SimCommand c;
+	c.type = CommandType::SpawnBody;
+	c.index = uint16_t( character.Valid() ? character.index : 0 );
+	c.a = { feet.x, feet.y, feet.z };
+	c.value = int32_t( detmath::RadiansToYaw( yaw ) );
+	c.target = possessor < kMaxPlayers ? SlotTarget( possessor ) : 0;
+	Add( c );
+}
+
+void Context::Possess( PlayerSlot slot, uint32_t body )
+{
+	SimCommand c;
+	c.type = CommandType::Possess;
+	c.target = SlotTarget( slot );
+	c.other = body;
+	Add( c );
+}
+
+std::vector<uint32_t> Context::IdleBodies() const
+{
+	std::vector<uint32_t> out;
+	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	{
+		if ( flecs::entity( m_sim.World(), r.entity ).has<IdleBody>() )
+		{
+			out.push_back( r.netId );
+		}
+	}
+	return out;
+}
+
 void Context::SwapLayer( uint32_t target, AnimPackHandle pack, const std::string& layer )
 {
 	int l = LayerIndex( layer );

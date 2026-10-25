@@ -165,7 +165,7 @@ FrameEntity FromRecord( const EntityRecord& r )
 	f.netId = r.netId;
 	f.kind = VisualKind( r.kind );
 	f.shape = ShapeKind( r.shape );
-	f.slot = PlayerSlot( std::min<int>( r.slot, kMaxPlayers - 1 ) );
+	f.slot = PlayerSlot( r.slot < kMaxPlayers ? r.slot : kNoSlot );
 	f.hasAnim = ( r.flags & 1 ) != 0;
 	f.dead = ( r.flags & 2 ) != 0;
 	f.hasBoard = ( r.flags & 4 ) != 0;
@@ -212,7 +212,7 @@ FrameRagdoll FromRecord( const RagdollRecord& r )
 	FrameRagdoll f;
 	f.netId = r.netId;
 	f.owner = r.owner;
-	f.slot = PlayerSlot( std::min<int>( r.slot, kMaxPlayers - 1 ) );
+	f.slot = PlayerSlot( r.slot < kMaxPlayers ? r.slot : kNoSlot );
 	f.yaw = r.yaw;
 	std::copy( r.parts, r.parts + kRagdollParts, f.parts );
 	return f;
