@@ -300,21 +300,20 @@ void CinderboxClient::PushStates()
 	director->set_local( m_frame.frame.localNetId != 0 ? get_entity_node( int64_t( m_frame.frame.localNetId ) ) : nullptr );
 }
 
-void CinderboxClient::RetargetTracks( Node* entity, Node* root )
+void CinderboxClient::RetargetTracks( ViewCharacter& character, Node* entity, Node* root )
 {
-	if ( m_trackLibrary.is_null() || m_socketMoves.empty() ||
-		 ObjectID( m_trackLibrary->get_instance_id() ) == m_retargetedLibrary )
+	if ( character.tracks.is_null() || m_socketMoves.empty() || character.retargeted )
 	{
 		return;
 	}
-	m_retargetedLibrary = ObjectID( m_trackLibrary->get_instance_id() );
+	character.retargeted = true;
 	// Track paths are from `root`; the moves are from the entity.
 	String rootFromEntity = String( entity->get_path_to( root ) );
 	String entityFromRoot = String( root->get_path_to( entity ) );
-	TypedArray<StringName> names = m_trackLibrary->get_animation_list();
+	TypedArray<StringName> names = character.tracks->get_animation_list();
 	for ( int64_t i = 0; i < names.size(); ++i )
 	{
-		Ref<Animation> animation = m_trackLibrary->get_animation( names[i] );
+		Ref<Animation> animation = character.tracks->get_animation( names[i] );
 		for ( int32_t t = 0; animation.is_valid() && t < animation->get_track_count(); ++t )
 		{
 			String path = String( animation->track_get_path( t ) );
@@ -423,11 +422,16 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 	}
 
 	m_trackPlayers.erase( visual );
-	if ( CbCharacter* character = v.kind == present::VisualKind::Player ? FindInPrefab<CbCharacter>( node ) : nullptr )
+	if ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll )
 	{
-		if ( m_trackLibraryBuilt == false )
+		m_nodeCharacters[visual] = v.character;
+	}
+	ViewCharacter* view = v.kind == present::VisualKind::Player ? ViewOf( v.character ) : nullptr;
+	if ( CbCharacter* character = view != nullptr ? FindInPrefab<CbCharacter>( node ) : nullptr )
+	{
+		if ( view->tracksBuilt == false )
 		{
-			m_trackLibraryBuilt = true;
+			view->tracksBuilt = true;
 			Ref<AnimationLibrary> library = character->build_track_library();
 			if ( library->get_animation_list().is_empty() == false )
 			{
@@ -435,17 +439,17 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 				String problem = cue::CheckResource( library );
 				if ( problem.is_empty() )
 				{
-					m_trackLibrary = library;
+					view->tracks = library;
 				}
 				else
 				{
-					UtilityFunctions::push_warning( "Cinderbox: the animations of ", m_characterFolder,
+					UtilityFunctions::push_warning( "Cinderbox: the animations of ", view->folder,
 													" play their bones only: a track has ", problem );
 				}
 			}
 		}
 		// The character's own AnimationPlayer names the root its tracks' paths start from.
-		if ( m_trackLibrary.is_valid() )
+		if ( view->tracks.is_valid() )
 		{
 			auto* source = Object::cast_to<AnimationPlayer>( character->get_node_or_null( character->get_animation_player_path() ) );
 			Node* root = source != nullptr ? source->get_node_or_null( source->get_root_node() ) : nullptr;
@@ -454,8 +458,8 @@ Node3D* CinderboxClient::CreateNode( uint64_t visual, const present::Visual& v )
 				auto* tracks = memnew( CbTrackPlayer );
 				tracks->set_name( "TrackPlayer" );
 				source->get_parent()->add_child( tracks );
-				RetargetTracks( node, root );
-				tracks->setup( m_trackLibrary, root );
+				RetargetTracks( *view, node, root );
+				tracks->setup( view->tracks, root );
 				m_trackPlayers[visual] = tracks->get_instance_id();
 			}
 		}
@@ -478,21 +482,24 @@ void CinderboxClient::rebuild_nodes()
 	RebuildCharacterNodes( true );
 }
 
-void CinderboxClient::RebuildCharacterNodes( bool itemsToo )
+void CinderboxClient::RebuildCharacterNodes( bool itemsToo, const std::vector<uint32_t>& only )
 {
 	if ( !m_mirror )
 	{
 		return;
 	}
+	auto picked = [&]( uint32_t netId ) { return std::find( only.begin(), only.end(), netId ) != only.end(); };
 	// (The characters first: an item goes into its holder's new socket.)
 	std::vector<std::pair<uint64_t, present::Visual>> rebuild, items;
 	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
 							const present::RagdollAnim* ) {
-		if ( ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll ) && m_nodes.count( id ) )
+		if ( ( v.kind == present::VisualKind::Player || v.kind == present::VisualKind::Ragdoll ) && m_nodes.count( id ) &&
+			 ( only.empty() || ( v.kind == present::VisualKind::Player && picked( v.netId ) ) ) )
 		{
 			rebuild.emplace_back( id, v );
 		}
-		else if ( itemsToo && v.kind == present::VisualKind::Item && m_nodes.count( id ) )
+		else if ( ( itemsToo || ( only.empty() == false && picked( v.holder ) ) ) && v.kind == present::VisualKind::Item &&
+				  m_nodes.count( id ) )
 		{
 			items.emplace_back( id, v );
 		}
@@ -509,9 +516,11 @@ void CinderboxClient::RebuildCharacterNodes( bool itemsToo )
 	}
 }
 
-std::shared_ptr<const AnimGraph> CinderboxClient::ServerGraph( const anim::AnimSet& set, const String& name )
+std::shared_ptr<const AnimGraph> CinderboxClient::ServerGraph( const anim::AnimSet& set, size_t character )
 {
-	const std::string& text = m_frame.schema.characters.front().graph;
+	const CharacterInfo& info = m_frame.schema.characters[character];
+	const std::string& text = info.graph;
+	String name = info.name.empty() ? String( "built-in" ) : String::utf8( info.name.c_str() );
 	if ( text.empty() )
 	{
 		return nullptr;
@@ -539,12 +548,29 @@ std::shared_ptr<const AnimGraph> CinderboxClient::ServerGraph( const anim::AnimS
 	return graph;
 }
 
-void CinderboxClient::ServerPacks( const anim::AnimSet& set, AnimGraphPacks& packs,
-								   std::vector<std::shared_ptr<const anim::PackClips>>& clips )
+namespace
+{
+// A folder's baked files (from a mounted item), read for anim::AnimSet::Load.
+anim::FileReader ReadFrom( const String& folder )
+{
+	return [folder]( const std::string& file, std::string& bytes ) {
+		String path = folder + String::utf8( file.c_str() );
+		if ( FileAccess::file_exists( path ) == false )
+		{
+			return false;
+		}
+		PackedByteArray data = FileAccess::get_file_as_bytes( path );
+		bytes.assign( reinterpret_cast<const char*>( data.ptr() ), size_t( data.size() ) );
+		return true;
+	};
+}
+} // namespace
+
+void CinderboxClient::ServerPacks( AnimGraphPacks& packs, std::vector<std::shared_ptr<const anim::AnimSet>>& sets )
 {
 	std::string warnings;
 	packs = CompileAnimPacks( m_frame.schema, warnings );
-	clips.assign( packs.size(), nullptr );
+	sets.assign( packs.size(), nullptr );
 	for ( size_t i = 0; i < packs.size(); ++i )
 	{
 		if ( !packs[i] )
@@ -554,24 +580,12 @@ void CinderboxClient::ServerPacks( const anim::AnimSet& set, AnimGraphPacks& pac
 		// The pack's baked files, from its mod's item (mounted like every other item).
 		const AnimPackInfo& info = m_frame.schema.animPacks[i];
 		String folder = "res://anim/" + String::utf8( info.name.c_str() ) + "/";
-		anim::FileReader read = [folder]( const std::string& file, std::string& bytes ) {
-			String path = folder + String::utf8( file.c_str() );
-			if ( FileAccess::file_exists( path ) == false )
-			{
-				return false;
-			}
-			PackedByteArray data = FileAccess::get_file_as_bytes( path );
-			bytes.assign( reinterpret_cast<const char*>( data.ptr() ), size_t( data.size() ) );
-			return true;
-		};
 		std::string error;
-		std::shared_ptr<const anim::AnimSet> packSet = anim::AnimSet::Load( read, ToStd( folder ), error, warnings );
-		if ( packSet == nullptr )
+		sets[i] = anim::AnimSet::Load( ReadFrom( folder ), ToStd( folder ), error, warnings );
+		if ( sets[i] == nullptr )
 		{
 			warnings += "animation pack " + info.name + ": " + error + "; ";
-			continue;
 		}
-		clips[i] = anim::FitPack( packSet, *packs[i], set, warnings );
 	}
 	if ( warnings.empty() == false )
 	{
@@ -581,79 +595,134 @@ void CinderboxClient::ServerPacks( const anim::AnimSet& set, AnimGraphPacks& pac
 
 String CinderboxClient::get_character() const
 {
-	return String::utf8( m_frame.schema.characters.front().name.c_str() );
+	return m_frame.schema.characters.empty() ? String() : String::utf8( m_frame.schema.characters.front().name.c_str() );
 }
 
-String CinderboxClient::use_character( const String& name )
+CinderboxClient::ViewCharacter* CinderboxClient::ViewOf( uint8_t character )
 {
-	if ( name == m_character && m_animSet )
+	if ( m_characters.empty() )
 	{
-		// Same character; the server's state machine and packs may still be new.
-		auto graph = ServerGraph( *m_animSet, name );
-		AnimGraphPacks packs;
-		std::vector<std::shared_ptr<const anim::PackClips>> packClips;
-		ServerPacks( *m_animSet, packs, packClips );
-		if ( m_mirror )
+		return nullptr;
+	}
+	ViewCharacter& view = m_characters[character < m_characters.size() ? character : 0];
+	return view.loaded ? &view : &m_characters.front();
+}
+
+float CinderboxClient::FeetOf( uint64_t visual ) const
+{
+	if ( !m_mirror )
+	{
+		return present::kFeetOffset;
+	}
+	flecs::entity ve( m_mirror->World(), visual );
+	uint8_t character = ve.is_alive() && ve.has<present::Visual>() ? ve.get<present::Visual>().character : 0;
+	return m_mirror->Library().Of( character ).feet;
+}
+
+String CinderboxClient::use_characters()
+{
+	const std::vector<CharacterInfo>& infos = m_frame.schema.characters;
+	std::vector<ViewCharacter> views( std::max<size_t>( infos.size(), 1 ) );
+	bool changed = views.size() != m_characters.size();
+	for ( size_t i = 0; i < views.size(); ++i )
+	{
+		String name = i < infos.size() ? String::utf8( infos[i].name.c_str() ) : String();
+		ViewCharacter& view = views[i];
+		if ( i < m_characters.size() && m_characters[i].name == name && m_characters[i].set )
 		{
-			m_mirror->SetAnimSet( m_animSet, graph, packs, packClips );
-			m_mirror->SetItemShapes( m_frame.schema.itemShapes );
+			view = m_characters[i]; // the same one: what was read of it stays
+			continue;
 		}
-		return String();
-	}
-	std::shared_ptr<const anim::AnimSet> set;
-	String folder;
-	if ( name.is_empty() )
-	{
-		m_animSet.reset();
-		EnsureAnimations(); // the built-in rig, or --animations
-		set = m_animSet;
-	}
-	else
-	{
-		folder = "res://characters/" + name + "/";
-		anim::FileReader read = [folder]( const std::string& file, std::string& bytes ) {
-			String path = folder + String::utf8( file.c_str() );
-			if ( FileAccess::file_exists( path ) == false )
+		changed = true;
+		view.name = name;
+		if ( name.is_empty() )
+		{
+			if ( i == 0 )
 			{
-				return false;
+				m_animSet.reset();
+				EnsureAnimations(); // the built-in rig, or --animations
+				view.set = m_animSet;
+				view.loaded = true;
 			}
-			PackedByteArray data = FileAccess::get_file_as_bytes( path );
-			bytes.assign( reinterpret_cast<const char*>( data.ptr() ), size_t( data.size() ) );
-			return true;
-		};
+			continue;
+		}
+		String folder = "res://characters/" + name + "/";
 		std::string error, warnings;
-		std::unique_ptr<anim::AnimSet> loaded = anim::AnimSet::Load( read, ToStd( folder ), error, warnings );
+		std::shared_ptr<const anim::AnimSet> loaded = anim::AnimSet::Load( ReadFrom( folder ), ToStd( folder ), error, warnings );
+		String problem;
 		if ( loaded == nullptr )
 		{
-			return String::utf8( ( "character " + ToStd( name ) + ": " + error ).c_str() );
+			problem = String::utf8( ( "character " + ToStd( name ) + ": " + error ).c_str() );
+		}
+		else if ( ResourceLoader::get_singleton()->exists( folder + "character.tscn" ) == false )
+		{
+			problem = "character " + name + " has no " + folder + "character.tscn";
+		}
+		if ( problem.is_empty() == false )
+		{
+			if ( i == 0 )
+			{
+				return problem;
+			}
+			// (Its body still moves as the simulation has it: its capsule, its state machine.)
+			UtilityFunctions::push_warning( "Cinderbox: ", problem, "; drawn with the server's own character's look" );
+			continue;
 		}
 		if ( warnings.empty() == false )
 		{
 			UtilityFunctions::push_warning( "Cinderbox character ", name, ": ", String::utf8( warnings.c_str() ) );
 		}
-		if ( ResourceLoader::get_singleton()->exists( folder + "character.tscn" ) == false )
-		{
-			return "character " + name + " has no " + folder + "character.tscn";
-		}
-		set = std::move( loaded );
+		UtilityFunctions::print( "Cinderbox character: ", name, " (", String::utf8( loaded->Description().c_str() ), ")" );
+		view.folder = folder;
+		view.set = std::move( loaded );
+		view.loaded = true;
 	}
-	UtilityFunctions::print( "Cinderbox character: ", name.is_empty() ? String( "built-in" ) : name, " (",
-							 String::utf8( set->Description().c_str() ), ")" );
-	m_character = name;
-	m_characterFolder = folder;
-	m_trackLibrary.unref(); // read from the character's AnimationPlayer when the first one is drawn
-	m_trackLibraryBuilt = false;
-	m_animSet = set;
-	auto graph = ServerGraph( *set, name );
+	if ( changed && views.front().name.is_empty() )
+	{
+		UtilityFunctions::print( "Cinderbox character: built-in (", String::utf8( views.front().set->Description().c_str() ), ")" );
+	}
+	m_animSet = views.front().set;
+
+	// Each as the mirror poses it: a character that could not be read is posed on the server's own
+	// skeleton, by its own state machine, its feet where its own capsule has them.
 	AnimGraphPacks packs;
-	std::vector<std::shared_ptr<const anim::PackClips>> packClips;
-	ServerPacks( *set, packs, packClips );
+	std::vector<std::shared_ptr<const anim::AnimSet>> packSets;
+	ServerPacks( packs, packSets );
+	std::string fitWarnings;
+	std::vector<present::CharacterAnim> anims( views.size() );
+	for ( size_t i = 0; i < views.size(); ++i )
+	{
+		const auto& set = views[i].loaded ? views[i].set : views.front().set;
+		present::CharacterAnim& anim = anims[i];
+		anim.set = set;
+		anim.graph = i < infos.size() ? ServerGraph( *set, i ) : nullptr;
+		anim.packClips.assign( packs.size(), nullptr );
+		for ( size_t p = 0; p < packs.size(); ++p )
+		{
+			if ( packs[p] && packSets[p] )
+			{
+				anim.packClips[p] = anim::FitPack( packSets[p], *packs[p], *set, fitWarnings );
+			}
+		}
+		if ( i < infos.size() )
+		{
+			anim.feet = mover::FeetBelowCenter( infos[i].radius, infos[i].halfHeight );
+		}
+	}
+	if ( fitWarnings.empty() == false )
+	{
+		UtilityFunctions::push_warning( "Cinderbox animation packs: ", String::utf8( fitWarnings.c_str() ) );
+	}
+	m_characters = std::move( views );
 	if ( m_mirror )
 	{
-		m_mirror->SetAnimSet( set, graph, packs, packClips );
+		m_mirror->SetCharacters( std::move( anims ), std::move( packs ) );
 		m_mirror->SetItemShapes( m_frame.schema.itemShapes );
 	}
-	RebuildCharacterNodes();
+	if ( changed )
+	{
+		RebuildCharacterNodes();
+	}
 	return String();
 }
 

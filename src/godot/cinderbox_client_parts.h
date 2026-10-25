@@ -14,6 +14,7 @@
 #include "cinderbox_item_look.h"
 #include "motions.h"
 #include "ragdoll.h"
+#include "mover.h"
 #include "joint_math.h"
 
 #include "camera.h"

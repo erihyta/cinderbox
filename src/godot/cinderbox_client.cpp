@@ -73,7 +73,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "format_fields", "net_id", "format" ), &CinderboxClient::format_fields );
 	ClassDB::bind_method( D_METHOD( "get_required_items" ), &CinderboxClient::get_required_items );
 	ClassDB::bind_method( D_METHOD( "get_character" ), &CinderboxClient::get_character );
-	ClassDB::bind_method( D_METHOD( "use_character", "name" ), &CinderboxClient::use_character );
+	ClassDB::bind_method( D_METHOD( "use_characters" ), &CinderboxClient::use_characters );
 	ClassDB::bind_method( D_METHOD( "rebuild_nodes" ), &CinderboxClient::rebuild_nodes );
 	ClassDB::bind_method( D_METHOD( "add_world_scene", "scene" ), &CinderboxClient::add_world_scene );
 	ClassDB::bind_method( D_METHOD( "clear_world_scenes" ), &CinderboxClient::clear_world_scenes );
@@ -604,17 +604,21 @@ Ref<PackedScene> CinderboxClient::Prefab( const present::Visual& v )
 		case present::VisualKind::Static:
 			return LoadPrefab( "static_box" );
 		case present::VisualKind::Player:
-			if ( m_characterFolder.is_empty() == false )
+		{
+			const ViewCharacter* character = ViewOf( v.character );
+			if ( character != nullptr && character->folder.is_empty() == false )
 			{
-				return LoadScene( m_characterFolder + "character.tscn" );
+				return LoadScene( character->folder + String( "character.tscn" ) );
 			}
 			return LoadPrefab( "player" );
+		}
 		case present::VisualKind::Ragdoll:
 		{
-			if ( m_characterFolder.is_empty() == false )
+			const ViewCharacter* character = ViewOf( v.character );
+			if ( character != nullptr && character->folder.is_empty() == false )
 			{
-				String own = m_characterFolder + "ragdoll.tscn";
-				return LoadScene( ResourceLoader::get_singleton()->exists( own ) ? own : m_characterFolder + "character.tscn" );
+				String own = character->folder + String( "ragdoll.tscn" );
+				return LoadScene( ResourceLoader::get_singleton()->exists( own ) ? own : character->folder + String( "character.tscn" ) );
 			}
 			String path = m_prefabDir.path_join( "ragdoll.tscn" );
 			return ResourceLoader::get_singleton()->exists( path ) ? LoadPrefab( "ragdoll" ) : LoadPrefab( "player" );
@@ -689,6 +693,7 @@ void CinderboxClient::HandleEvents()
 			case present::EventType::Removed:
 			{
 				m_stateHashes.erase( e.visual );
+				m_nodeCharacters.erase( e.visual );
 				m_itemHolders.erase( e.visual );
 				m_sockets.erase( e.visual );
 				auto it = m_nodes.find( e.visual );
@@ -709,13 +714,13 @@ void CinderboxClient::HandleEvents()
 			{
 				bool isLocal = e.netId == m_frame.frame.localNetId;
 				emit_signal( e.type == present::EventType::Jumped ? "player_jumped" : "player_landed", int64_t( e.netId ),
-							 position - Vector3( 0, present::kFeetOffset, 0 ), isLocal );
+							 position - Vector3( 0, FeetOf( e.visual ), 0 ), isLocal );
 				break;
 			}
 			case present::EventType::Footstep:
 			{
 				bool isLocal = e.netId == m_frame.frame.localNetId;
-				emit_signal( "footstep", int64_t( e.netId ), position - Vector3( 0, present::kFeetOffset, 0 ), isLocal );
+				emit_signal( "footstep", int64_t( e.netId ), position - Vector3( 0, FeetOf( e.visual ), 0 ), isLocal );
 				break;
 			}
 			case present::EventType::Impact:
@@ -756,7 +761,7 @@ void CinderboxClient::HandleEvents()
 			case present::EventType::Landed:
 			case present::EventType::Footstep:
 				cue = e.type == present::EventType::Jumped ? "jumped" : e.type == present::EventType::Landed ? "landed" : "footstep";
-				args["point"] = position - Vector3( 0, present::kFeetOffset, 0 );
+				args["point"] = position - Vector3( 0, FeetOf( e.visual ), 0 );
 				break;
 			case present::EventType::Impact:
 				cue = "impact";
@@ -784,10 +789,12 @@ void CinderboxClient::HandleEvents()
 // put as one piece under the camera's eye, which stands still above the feet, and turned so that it
 // follows the camera; the arms are moved by the held item's view offset. The body's own pose is not
 // touched.
-void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimState* state, present::Models& models )
+void CinderboxClient::FirstPersonBody( uint32_t netId, uint8_t character, Node* node, const AnimState* state, present::Models& models )
 {
+	const present::CharacterAnim& look = m_mirror->Library().Of( character );
+	const anim::AnimSet& set = *look.set;
 	CinderboxSkeleton* skeleton = FindSkeleton( node );
-	bool on = m_firstPerson && state != nullptr && skeleton != nullptr && m_animSet != nullptr;
+	bool on = m_firstPerson && state != nullptr && skeleton != nullptr;
 	if ( auto* was = Object::cast_to<CinderboxSkeleton>( ObjectDB::get_instance( m_firstPersonSkeleton ) ) )
 	{
 		if ( was != skeleton || on == false )
@@ -838,15 +845,15 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	skeleton->set_view_arms( floats );
 	skeleton->set_view_hands( hands[0], hands[1] );
 	m_viewSpeed = state->groundSpeed;
-	int head = anim::FindJoint( *m_animSet, "Head" );
-	int spine = anim::FindJoint( *m_animSet, "Spine" );
-	int chest = anim::FindJoint( *m_animSet, "UpperChest" );
-	int arms[2] = { anim::FindJoint( *m_animSet, "LeftShoulder" ), anim::FindJoint( *m_animSet, "RightShoulder" ) };
+	int head = anim::FindJoint( set, "Head" );
+	int spine = anim::FindJoint( set, "Spine" );
+	int chest = anim::FindJoint( set, "UpperChest" );
+	int arms[2] = { anim::FindJoint( set, "LeftShoulder" ), anim::FindJoint( set, "RightShoulder" ) };
 	if ( head < 0 || spine < 0 || chest < 0 || arms[0] < 0 || arms[1] < 0 || size_t( head ) >= models.size() )
 	{
 		return;
 	}
-	const auto& restModels = m_animSet->RestModels();
+	const auto& restModels = set.RestModels();
 	auto placeOf = []( const ozz::math::Float4x4& m ) {
 		float v[4];
 		ozz::math::StorePtrU( m.cols[3], v );
@@ -863,17 +870,17 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	// as one piece, so the arms and the hands on an item are exactly as the animations have them
 	// (the stance's own turn of the shoulders, the other hand's place). The hips and the legs below
 	// stay the real pose's: they walk.
-	int aimedFrom = state->aiming != 0 && m_animSet->AimJoints().empty() == false ? m_animSet->AimJoints().back().first : -1;
+	int aimedFrom = state->aiming != 0 && set.AimJoints().empty() == false ? set.AimJoints().back().first : -1;
 	{
-		const auto& library = m_mirror->World().get<present::AnimLibrary>();
-		if ( m_viewPose == nullptr || m_viewPoseSet != m_animSet.get() || m_viewPoseGraph != library.graph.get() )
+		const present::AnimLibrary& library = m_mirror->Library();
+		if ( m_viewPose == nullptr || m_viewPoseSet != &set || m_viewPoseGraph != look.graph.get() )
 		{
-			m_viewPose = std::make_unique<anim::PoseEvaluator>( *m_animSet );
+			m_viewPose = std::make_unique<anim::PoseEvaluator>( set );
 			std::string ignored;
-			m_viewPose->SetGraph( library.graph, ignored );
-			m_viewPose->SetPacks( library.packs, library.packClips );
-			m_viewPoseSet = m_animSet.get();
-			m_viewPoseGraph = library.graph.get();
+			m_viewPose->SetGraph( look.graph, ignored );
+			m_viewPose->SetPacks( library.packs, look.packClips );
+			m_viewPoseSet = &set;
+			m_viewPoseGraph = look.graph.get();
 		}
 		AnimState still = *state;
 		still.aiming = 0;
@@ -882,12 +889,12 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 		still.groundSpeed = 0.0f;
 		still.moveForward = 0.0f;
 		still.moveRight = 0.0f;
-		if ( library.graph != nullptr && library.graph->layers.empty() == false )
+		if ( look.graph != nullptr && look.graph->layers.empty() == false )
 		{
 			// The base layer where it starts (standing), at one moment of it.
 			AnimGraphLayerState base;
 			base.started = 1;
-			base.state = base.previous = uint8_t( library.graph->layers[0].start );
+			base.state = base.previous = uint8_t( look.graph->layers[0].start );
 			base.weight = 1.0f;
 			base.stateTime = 1.0f;
 			still.graph[0] = base;
@@ -897,7 +904,7 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 		bool placed = m_mirror->GripOf( netId, grip ) && grip.asAnimated == false;
 		m_viewPose->Evaluate( still, placed ? &grip : nullptr );
 		const present::Models& steady = m_viewPose->Models();
-		auto parents = m_animSet->Skeleton().joint_parents();
+		auto parents = set.Skeleton().joint_parents();
 		std::vector<bool> above( models.size(), false );
 		for ( size_t joint = size_t( spine ); joint < models.size() && joint < steady.size(); ++joint )
 		{
@@ -945,16 +952,16 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 	// Where a camera with this aim is, as the game places its own (get_view_position): what the
 	// pose below is made for.
 	m_viewAimCamera = Transform3D( Basis( Vector3( right.x, right.y, right.z ), Vector3( up.x, up.y, up.z ), Vector3( -forward.x, -forward.y, -forward.z ) ),
-								   Vector3( 0.0f, anim::EyeHeight( *m_animSet ), 0.0f ) + Vector3( forward.x, forward.y, forward.z ) * kEyeAhead );
+								   Vector3( 0.0f, anim::EyeHeight( set ), 0.0f ) + Vector3( forward.x, forward.y, forward.z ) * kEyeAhead );
 	m_viewAimKnown = true;
 
-	if ( aimedFrom >= 0 && m_animSet->AimTip() >= 0 )
+	if ( aimedFrom >= 0 && set.AimTip() >= 0 )
 	{
 		// Aiming: the whole piece is turned so that the aimed arm is on the line of sight again.
-		b3Vec3 line = b3Sub( placeOf( models[size_t( m_animSet->AimTip() )] ), pinned() );
+		b3Vec3 line = b3Sub( placeOf( models[size_t( set.AimTip() )] ), pinned() );
 		if ( b3LengthSquared( line ) > 1e-8f )
 		{
-			anim::RotateSubtreeAbout( *m_animSet, models, spine, pinned(), anim::Arc( b3Normalize( line ), forward ) );
+			anim::RotateSubtreeAbout( set, models, spine, pinned(), anim::Arc( b3Normalize( line ), forward ) );
 		}
 	}
 	else
@@ -962,9 +969,9 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 		// Not aiming: it turns with the camera the rest of the way, like something the camera holds.
 		// The pose has turned the shoulders by only a part of the pitch (the look chain's shares up
 		// to the chest, while the character faces the camera).
-		auto parents = m_animSet->Skeleton().joint_parents();
+		auto parents = set.Skeleton().joint_parents();
 		float turned = 0.0f;
-		for ( const auto& [joint, share] : m_animSet->LookJoints() )
+		for ( const auto& [joint, share] : set.LookJoints() )
 		{
 			for ( int j = arms[0]; j >= 0; j = parents[size_t( j )] )
 			{
@@ -972,22 +979,22 @@ void CinderboxClient::FirstPersonBody( uint32_t netId, Node* node, const AnimSta
 			}
 		}
 		float pitchLeft = state->aimPitch * ( 1.0f - turned * float( state->look ) / 255.0f );
-		anim::RotateSubtreeAbout( *m_animSet, models, spine, pinned(), b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, state->aimYaw ) );
-		anim::RotateSubtreeAbout( *m_animSet, models, spine, pinned(), b3MakeQuatFromAxisAngle( right, pitchLeft ) );
+		anim::RotateSubtreeAbout( set, models, spine, pinned(), b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, state->aimYaw ) );
+		anim::RotateSubtreeAbout( set, models, spine, pinned(), b3MakeQuatFromAxisAngle( right, pitchLeft ) );
 	}
 	// Its held point is where the rest pose has it under the head, carried round with the camera:
 	// the arms come out of the same place on the screen wherever the player looks.
-	b3Vec3 pivot = { 0.0f, anim::EyeHeight( *m_animSet ), 0.0f };
+	b3Vec3 pivot = { 0.0f, anim::EyeHeight( set ), 0.0f };
 	b3Vec3 fromPivot = b3Sub( b3Add( eye, b3Sub( pinnedAtRest, restHead ) ), pivot );
 	fromPivot = b3RotateVector( b3MakeQuatFromAxisAngle( b3Vec3{ 0.0f, 1.0f, 0.0f }, state->aimYaw ), fromPivot );
 	fromPivot = b3RotateVector( b3MakeQuatFromAxisAngle( right, state->aimPitch ), fromPivot );
-	anim::TranslateSubtree( *m_animSet, models, spine, b3Sub( b3Add( pivot, fromPivot ), pinned() ) );
+	anim::TranslateSubtree( set, models, spine, b3Sub( b3Add( pivot, fromPivot ), pinned() ) );
 	// The held item's place in the view: the hands are turned about the carrying one and moved
 	// there, and the arms reach for it. (The camera's axes in this frame: right, up, and back.)
 	b3Vec3 placed = b3Add( b3MulSV( offset.x, right ), b3Add( b3MulSV( offset.y, up ), b3MulSV( offset.z, forward ) ) );
 	Basis axes( Vector3( right.x, right.y, right.z ), Vector3( up.x, up.y, up.z ), Vector3( -forward.x, -forward.y, -forward.z ) );
 	Basis turned = axes * Basis::from_euler( turn * float( Math_PI / 180.0 ) ) * axes.inverse();
-	int carrying = anim::FindJoint( *m_animSet, "RightHand" );
+	int carrying = anim::FindJoint( set, "RightHand" );
 	b3Vec3 about = carrying >= 0 && size_t( carrying ) < models.size() ? placeOf( models[size_t( carrying )] ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
 	Vector3 hand( about.x, about.y, about.z );
 	// (Not what floats in the view: its view camera says where it is.)
@@ -1161,14 +1168,15 @@ Array CinderboxClient::get_drawn_clips( int64_t net_id ) const
 	{
 		return out;
 	}
-	const auto& library = m_mirror->World().get<present::AnimLibrary>();
+	const present::AnimLibrary& library = m_mirror->Library();
 	m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim* anim,
 							const present::RagdollAnim* ) {
-		if ( anim == nullptr || int64_t( v.netId ) != net_id || !library.graph )
+		const auto& graph = library.Of( v.character ).graph;
+		if ( anim == nullptr || int64_t( v.netId ) != net_id || !graph )
 		{
 			return;
 		}
-		for ( const anim::ActiveClip& clip : anim::ActiveClips( anim->shown, *library.graph, library.packs ) )
+		for ( const anim::ActiveClip& clip : anim::ActiveClips( anim->shown, *graph, library.packs ) )
 		{
 			Dictionary entry;
 			entry["channel"] = clip.channel;
@@ -1281,6 +1289,22 @@ void CinderboxClient::ViewLayers( Node* node, bool on )
 void CinderboxClient::UpdateNodes()
 {
 	m_viewItems.clear();
+	{
+		// A body that became another character is drawn by that one's scene from now on.
+		std::vector<uint32_t> changed;
+		m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim*,
+								const present::RagdollAnim* ) {
+			auto was = m_nodeCharacters.find( id );
+			if ( v.kind == present::VisualKind::Player && was != m_nodeCharacters.end() && was->second != v.character )
+			{
+				changed.push_back( v.netId );
+			}
+		} );
+		if ( changed.empty() == false )
+		{
+			RebuildCharacterNodes( false, changed );
+		}
+	}
 	m_mirror->ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose& pose, const present::PlayerAnim* anim,
 							const present::RagdollAnim* ragdoll ) {
 		auto it = m_nodes.find( id );
@@ -1312,7 +1336,7 @@ void CinderboxClient::UpdateNodes()
 			Vector3 origin = ToGodot( pose.position );
 			if ( v.kind == present::VisualKind::Player )
 			{
-				origin -= Vector3( 0, present::kFeetOffset, 0 );
+				origin -= Vector3( 0, m_mirror->Library().Of( v.character ).feet, 0 );
 			}
 			node->set_transform( Transform3D( rotation.scaled( Vector3( s, s, s ) ), origin ) );
 
@@ -1335,7 +1359,7 @@ void CinderboxClient::UpdateNodes()
 				{
 					// The view's arms have a pose of their own; the body keeps this one.
 					m_viewModels = *models;
-					FirstPersonBody( v.netId, node, anim != nullptr ? &anim->shown : nullptr, m_viewModels );
+					FirstPersonBody( v.netId, v.character, node, anim != nullptr ? &anim->shown : nullptr, m_viewModels );
 					if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
 					{
 						skeleton->SetViewPose( m_firstPersonSkeleton == ObjectID( skeleton->get_instance_id() ) ? &m_viewModels : nullptr );
@@ -1343,7 +1367,7 @@ void CinderboxClient::UpdateNodes()
 				}
 				if ( CinderboxSkeleton* skeleton = FindSkeleton( node ) )
 				{
-					skeleton->ApplyPose( *m_animSet, *models );
+					skeleton->ApplyPose( m_mirror->AnimSet( v.character ), *models );
 				}
 			}
 			// What the playing animations do besides moving bones.
@@ -1355,10 +1379,11 @@ void CinderboxClient::UpdateNodes()
 									  : nullptr;
 				if ( tracks != nullptr )
 				{
-					const auto& library = m_mirror->World().get<present::AnimLibrary>();
+					const present::AnimLibrary& library = m_mirror->Library();
+					const auto& graph = library.Of( v.character ).graph;
 					const AnimState& state = anim->shown; // what the pose was evaluated from
 					tracks->begin_frame();
-					auto clips = library.graph ? anim::ActiveClips( state, *library.graph, library.packs ) : std::vector<anim::ActiveClip>{};
+					auto clips = graph ? anim::ActiveClips( state, *graph, library.packs ) : std::vector<anim::ActiveClip>{};
 					for ( const anim::ActiveClip& clip : clips )
 					{
 						tracks->play_at( clip.channel, TrackClipName( String::utf8( clip.name.c_str() ) ), clip.time, clip.loops, clip.restarted );
@@ -1406,8 +1431,9 @@ void CinderboxClient::LeadLocalPlayer( float )
 {
 	present::AnimLead lead;
 	uint32_t local = m_frame.frame.localNetId;
-	const auto& library = m_mirror->World().get<present::AnimLibrary>();
-	if ( local == 0 || !library.graph )
+	const present::AnimLibrary& library = m_mirror->Library();
+	const auto& graph = library.Of( m_mirror->LocalCharacter() ).graph;
+	if ( local == 0 || !graph )
 	{
 		m_lead = 0.0f;
 		m_mirror->SetAnimLead( lead );
@@ -1422,13 +1448,13 @@ void CinderboxClient::LeadLocalPlayer( float )
 		present::AnimLead::Input input;
 		input.age = float( now - shown.at );
 		int event = schema.FindEvent( ToStd( shown.cue ) );
-		if ( event >= 0 && UpperLayersRead( *library.graph, library.packs, AnimExpr::VarKind::Event, event ) )
+		if ( event >= 0 && UpperLayersRead( *graph, library.packs, AnimExpr::VarKind::Event, event ) )
 		{
 			input.event = event;
 		}
 		int stance = shown.stance.is_empty() ? -1 : schema.FindStance( ToStd( shown.stance ) );
 		int layer = shown.stanceLayer.is_empty() ? -1 : schema.FindLayer( ToStd( shown.stanceLayer ) );
-		if ( stance >= 0 && layer >= 0 && layer < kLayerLimit && UpperLayersRead( *library.graph, library.packs, AnimExpr::VarKind::Stance, stance + 1 ) )
+		if ( stance >= 0 && layer >= 0 && layer < kLayerLimit && UpperLayersRead( *graph, library.packs, AnimExpr::VarKind::Stance, stance + 1 ) )
 		{
 			input.layer = layer;
 			input.stance = uint8_t( stance + 1 );

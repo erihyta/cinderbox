@@ -458,12 +458,13 @@ Vector3 CinderboxClient::get_view_position( int64_t view, const Basis& camera ) 
 		case ViewMode::FirstPerson:
 		{
 			present::RenderPose pose;
-			if ( m_mirror && m_animSet && is_local_player_dead() == false && m_mirror->LocalPlayer( pose ) )
+			if ( m_mirror && is_local_player_dead() == false && m_mirror->LocalPlayer( pose ) )
 			{
 				// The character's eye height above its feet, as Context::ViewPosition places it: on
 				// the mover, so no animation moves the camera.
-				Vector3 feet = ToGodot( pose.position ) - Vector3( 0, ragdoll::kFeetBelowCenter, 0 );
-				return feet + Vector3( 0, anim::EyeHeight( *m_animSet ), 0 ) - camera.get_column( 2 ) * kEyeAhead;
+				const present::CharacterAnim& look = m_mirror->Library().Of( m_mirror->LocalCharacter() );
+				Vector3 feet = ToGodot( pose.position ) - Vector3( 0, look.feet, 0 );
+				return feet + Vector3( 0, anim::EyeHeight( *look.set ), 0 ) - camera.get_column( 2 ) * kEyeAhead;
 			}
 			return pivot;
 		}

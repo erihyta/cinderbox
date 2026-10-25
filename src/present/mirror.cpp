@@ -45,17 +45,46 @@ bool Mirror::GripOf( uint32_t netId, anim::HandGrip& out ) const
 	return true;
 }
 
+void Mirror::SetCharacters( std::vector<CharacterAnim> characters, AnimGraphPacks packs )
+{
+	for ( CharacterAnim& c : characters )
+	{
+		if ( c.set && c.ragdoll == nullptr )
+		{
+			c.ragdoll = std::make_shared<RagdollRig>( BuildRagdollRig( *c.set ) );
+		}
+	}
+	if ( characters.empty() || characters.front().set == nullptr )
+	{
+		CharacterAnim first;
+		first.set = m_animSet;
+		first.ragdoll = std::make_shared<RagdollRig>( BuildRagdollRig( *m_animSet ) );
+		characters.insert( characters.begin(), first );
+	}
+	// (A character whose skeleton is missing is drawn as the first.)
+	for ( CharacterAnim& c : characters )
+	{
+		if ( c.set == nullptr )
+		{
+			float feet = c.feet; // (its body is its own capsule's still)
+			c = characters.front();
+			c.feet = feet;
+		}
+	}
+	m_animSet = characters.front().set;
+	m_world.set<AnimLibrary>( { std::move( characters ), std::move( packs ) } );
+	// Every player's evaluator is made again, of its own character's (EvaluatePlayerPose).
+	m_world.each( [&]( PlayerAnim& a ) { a.evaluator.reset(); } );
+}
+
 void Mirror::SetAnimSet( std::shared_ptr<const anim::AnimSet> animSet, std::shared_ptr<const AnimGraph> graph, AnimGraphPacks packs,
 						 std::vector<std::shared_ptr<const anim::PackClips>> packClips )
 {
-	m_animSet = std::move( animSet );
-	m_world.set<AnimLibrary>( { m_animSet, std::make_shared<RagdollRig>( BuildRagdollRig( *m_animSet ) ), graph, packs, packClips } );
-	m_world.each( [&]( PlayerAnim& a ) {
-		a.evaluator = std::make_shared<anim::PoseEvaluator>( *m_animSet );
-		std::string ignored; // reported once, by whoever set the graph
-		a.evaluator->SetGraph( graph, ignored );
-		a.evaluator->SetPacks( packs, packClips );
-	} );
+	CharacterAnim one;
+	one.set = std::move( animSet );
+	one.graph = std::move( graph );
+	one.packClips = std::move( packClips );
+	SetCharacters( { std::move( one ) }, std::move( packs ) );
 }
 
 void Mirror::SetAnimLead( const AnimLead& lead )
@@ -75,7 +104,12 @@ Mirror::Mirror( std::shared_ptr<const anim::AnimSet> animSet )
 	m_world.component<SpawnEffect>();
 	m_world.component<DestroyEffect>();
 	m_world.component<RagdollAnim>();
-	m_world.set<AnimLibrary>( { m_animSet, std::make_shared<RagdollRig>( BuildRagdollRig( *m_animSet ) ) } );
+	{
+		CharacterAnim first;
+		first.set = m_animSet;
+		first.ragdoll = std::make_shared<RagdollRig>( BuildRagdollRig( *m_animSet ) );
+		m_world.set<AnimLibrary>( { { first }, {} } );
+	}
 	m_world.set<FrameTiming>( {} );
 	m_world.set<AnimLead>( {} );
 	m_world.set<HandGrips>( {} );
@@ -216,6 +250,7 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 		visual.motionsOn = f.motionsOn;
 		visual.linkMotion = f.linkMotion;
 		visual.linkEnd = f.linkEnd;
+		visual.character = f.character;
 		if ( visual.isLocalPlayer )
 		{
 			m_localPlayer = ve;
@@ -458,6 +493,15 @@ bool Mirror::LocalPlayer( RenderPose& out ) const
 	}
 	out = m_localPlayer.get<RenderPose>();
 	return true;
+}
+
+uint8_t Mirror::LocalCharacter() const
+{
+	if ( m_localPlayer.is_valid() == false || m_localPlayer.is_alive() == false )
+	{
+		return 0;
+	}
+	return m_localPlayer.get<Visual>().character;
 }
 
 } // namespace cb::present

@@ -29,9 +29,10 @@ b3Quat Nlerp( b3Quat a, b3Quat b, float t )
 void RegisterRagdolls( flecs::world& world )
 {
 	// Parts interpolated between the last two ticks, then a skeleton pose hung off them.
-	world.system<RagdollAnim>( "EvaluateRagdollPose" ).each( []( flecs::iter& it, size_t, RagdollAnim& ra ) {
-		const AnimLibrary& lib = it.world().get<AnimLibrary>();
-		if ( lib.ragdoll == nullptr )
+	world.system<RagdollAnim, const Visual>( "EvaluateRagdollPose" ).each( []( flecs::iter& it, size_t, RagdollAnim& ra, const Visual& v ) {
+		// Its player's character's rig.
+		const std::shared_ptr<const RagdollRig>& rig = it.world().get<AnimLibrary>().Of( v.character ).ragdoll;
+		if ( rig == nullptr )
 		{
 			return;
 		}
@@ -48,11 +49,11 @@ void RegisterRagdolls( flecs::world& world )
 		if ( ra.hasStart && ra.age < kBlendSeconds )
 		{
 			Models target;
-			RagdollModels( *lib.ragdoll, parts, frame, target );
+			RagdollModels( *rig, parts, frame, target );
 			BlendModels( ra.start, target, std::clamp( ra.age / kBlendSeconds, 0.0f, 1.0f ), ra.models );
 			return;
 		}
-		RagdollModels( *lib.ragdoll, parts, frame, ra.models );
+		RagdollModels( *rig, parts, frame, ra.models );
 	} );
 }
 

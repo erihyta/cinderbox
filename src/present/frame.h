@@ -67,6 +67,9 @@ struct FrameEntity
 	b3Vec3 linkEnd = {};
 	// Players: the motions that are on, a bit each (the first 64 of the server's): "motion.<name>".
 	uint64_t motionsOn = 0;
+	// Players and ragdolls: which character's body it is (ModSchema::characters): its skeleton, its
+	// state machine, its scene. A ragdoll's: its player's.
+	uint8_t character = 0;
 };
 
 struct FrameRagdoll

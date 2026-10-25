@@ -80,7 +80,7 @@ struct EntityFixed
 	uint32_t holder;
 	uint16_t itemKind;
 	uint8_t socket;
-	uint8_t socketPad;
+	uint8_t character; // players and ragdolls: which character's body (0 in files from before it)
 	b3Vec3 linkEnd;
 	uint8_t slotIndex;
 	uint8_t slotCount;
@@ -155,7 +155,7 @@ EntityRecord ToRecord( const FrameEntity& f )
 	r.slotIndex = f.slotIndex;
 	r.slotCount = f.slotCount;
 	r.container = f.container;
-	r.socketPad = 0;
+	r.character = f.character;
 	return r;
 }
 
@@ -185,6 +185,7 @@ FrameEntity FromRecord( const EntityRecord& r )
 	f.holder = r.holder;
 	f.itemKind = r.itemKind;
 	f.socket = r.socket;
+	f.character = r.character;
 	f.linkMotion = r.linkMotion;
 	f.linkEnd = r.linkEnd;
 	f.motionsOn = uint64_t( r.motionsOnLow ) | ( uint64_t( r.motionsOnHigh ) << 32 );
@@ -631,7 +632,7 @@ struct RestRecord
 	uint32_t holder;
 	uint16_t itemKind;
 	uint8_t socket;
-	uint8_t socketPad;
+	uint8_t character;
 	b3Vec3 linkEnd;
 	uint8_t slotIndex;
 	uint8_t slotCount;
@@ -655,6 +656,7 @@ RestRecord Rest( const EntityRecord& record )
 	rest.holder = record.holder;
 	rest.itemKind = record.itemKind;
 	rest.socket = record.socket;
+	rest.character = record.character;
 	rest.linkMotion = record.linkMotion;
 	rest.linkEnd = record.linkEnd;
 	rest.slotIndex = record.slotIndex;
@@ -676,6 +678,7 @@ void SetRest( EntityRecord& record, const RestRecord& rest )
 	record.holder = rest.holder;
 	record.itemKind = rest.itemKind;
 	record.socket = rest.socket;
+	record.character = rest.character;
 	record.linkMotion = rest.linkMotion;
 	record.linkEnd = rest.linkEnd;
 	record.slotIndex = rest.slotIndex;
