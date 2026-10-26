@@ -5231,6 +5231,167 @@ void TestNpcItems()
 	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
 }
 
+// Step 10: waves. The waves mod's NPCs (the brawl fist each) come for the bot; a test mod stands in
+// for the bot's own fists (a blow to every NPC near it, once a second), so the waves fall and the
+// next, bigger, comes. The NPCs hurt the bot, the kills are the bot's, and the bot's simulation agrees.
+class FistsMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_fists";
+	}
+	void Declare( mods::Declarations& declare ) override
+	{
+		m_damage = declare.Event( "combat.damage" );
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		const uint32_t player = ctx.PlayerNetId( 0 );
+		const Transform* at = player != 0 ? ctx.EntityTransform( player ) : nullptr;
+		if ( at == nullptr || ++m_ticks % 60 != 0 )
+		{
+			return;
+		}
+		for ( uint32_t npc : ctx.ModDrivenBodies() )
+		{
+			const Transform* t = ctx.EntityTransform( npc );
+			const Character* c = ctx.BodyCharacter( npc );
+			if ( t != nullptr && c != nullptr && c->dead == 0 && b3Length( t->position - at->position ) < 2.5f )
+			{
+				ctx.Emit( m_damage, player, npc, 50, t->position );
+			}
+		}
+	}
+	mods::EventHandle m_damage;
+	uint32_t m_ticks = 0;
+};
+
+void TestWaves()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	extra.push_back( std::make_unique<FistsMod>() );
+	Harness h( 47932, {}, {},
+			   { { "test.mods", "brawl,waves" },
+				 { "waves.first", "2" },
+				 { "waves.grow", "1" },
+				 { "waves.pause_seconds", "1" },
+				 { "waves.ring", "6" } },
+			   {}, std::move( extra ) );
+	Bot& bot = h.AddBot();
+	Simulation& server = h.server.Sim();
+	// The bot goes for the nearest NPC standing (its blows knock it back).
+	bot.script = [&]( uint32_t ) {
+		PlayerInput in;
+		const uint32_t me = server.PlayerNetId( bot.client->Slot() );
+		const Transform* mine = me != 0 ? server.EntityTransform( me ) : nullptr;
+		float best = 1e30f;
+		for ( const Simulation::EntityRef& r : server.Entities() )
+		{
+			const flecs::entity e = server.FindEntity( r.netId );
+			const Transform* t = e.has<ModDriven>() && e.get<Character>().dead == 0 ? server.EntityTransform( r.netId ) : nullptr;
+			if ( mine != nullptr && t != nullptr && b3Length( t->position - mine->position ) < best )
+			{
+				best = b3Length( t->position - mine->position );
+				in.cameraYaw = detmath::RadiansToYaw( std::atan2( t->position.x - mine->position.x, t->position.z - mine->position.z ) );
+				in.moveForward = best > 1.2f ? 127 : 0;
+			}
+		}
+		return in;
+	};
+	const ModSchema& schema = h.server.Schema();
+	const BoardField* wave = schema.FindField( "waves.wave" );
+	const BoardField* health = schema.FindField( "combat.health" );
+	const BoardField* kills = schema.FindField( "combat.kills" );
+	CHECK( wave != nullptr && health != nullptr && kills != nullptr );
+	if ( wave == nullptr || health == nullptr || kills == nullptr )
+	{
+		return;
+	}
+	int lowest = 1000, most = 0;
+	uint32_t traced = 0;
+	h.RunUntil( 25.0, [&]( double ) {
+		const uint32_t me = server.PlayerNetId( h.bots[0].client->Slot() );
+		lowest = me != 0 ? std::min( lowest, server.BoardValue( me, health->slot ) ) : lowest;
+		size_t npcs = 0;
+		for ( const Simulation::EntityRef& r : server.Entities() )
+		{
+			npcs += server.FindEntity( r.netId ).has<ModDriven>() ? 1 : 0;
+		}
+		most = std::max( most, int( npcs ) );
+		if ( std::getenv( "CB_WAVES_TRACE" ) != nullptr && server.Tick() % 60 == 0 && server.Tick() != traced )
+		{
+			traced = server.Tick();
+			for ( const Simulation::EntityRef& r : server.Entities() )
+			{
+				const flecs::entity e = server.FindEntity( r.netId );
+				if ( e.has<ModDriven>() || r.netId == me )
+				{
+					const Transform* t = server.EntityTransform( r.netId );
+					const PlayerInput in = e.has<ModDriven>() ? e.get<ModDriven>().input : PlayerInput{};
+					std::printf( "  t%u %u (%.2f, %.2f, %.2f) dead %d fwd %d yaw %u btn %d\n", server.Tick(), r.netId, double( t->position.x ),
+								 double( t->position.y ), double( t->position.z ), int( e.get<Character>().dead ), int( in.moveForward ),
+								 unsigned( in.cameraYaw ), int( in.buttons ) );
+				}
+			}
+		}
+	} );
+	h.Report();
+	const uint32_t me = server.PlayerNetId( h.bots[0].client->Slot() );
+	std::printf( "    wave %d; at most %d NPCs at once; the bot's lowest health %d, its kills %d; desyncs %u\n",
+				 server.GlobalBoardValue( wave->slot ), most, lowest, server.BoardValue( me, kills->slot ), h.bots[0].client->GetStats().desyncs );
+	CHECK( server.GlobalBoardValue( wave->slot ) >= 3 );
+	CHECK( lowest < 100 );
+	CHECK( server.BoardValue( me, kills->slot ) >= 5 ); // (the first two waves: 2 + 3)
+	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
+}
+
+// How much a client pays for NPCs: one wave of 32 coming for the bot, against the same seconds with
+// none (the step's time, a rollback's ticks). Printed; checked only that it stays in sync.
+void TestWavesCost()
+{
+	Harness h( 47934, {}, {},
+			   { { "test.mods", "brawl,waves" },
+				 { "waves.first", "32" },
+				 { "waves.most", "32" },
+				 { "waves.pause_seconds", "6" },
+				 { "waves.ring", "10" } },
+			   {} );
+	h.AddBot();
+	h.RunUntil( 2.0 );
+	RollbackSession* session = h.bots[0].client->Session();
+	CHECK( session != nullptr );
+	if ( session == nullptr )
+	{
+		return;
+	}
+	// No NPCs from 2 s to 5.5 s; the wave (at 6 s) all there from 8 s on.
+	const RollbackSession::Stats s0 = session->GetStats();
+	h.RunUntil( 5.5 );
+	const RollbackSession::Stats s1 = session->GetStats();
+	h.RunUntil( 8.0 );
+	const RollbackSession::Stats s2 = session->GetStats();
+	h.RunUntil( 13.0 );
+	const RollbackSession::Stats s3 = session->GetStats();
+	h.Report();
+	size_t npcs = 0;
+	for ( const Simulation::EntityRef& r : h.server.Sim().Entities() )
+	{
+		npcs += h.server.Sim().FindEntity( r.netId ).has<ModDriven>() ? 1 : 0;
+	}
+	auto perStep = [&]( const RollbackSession::Stats& a, const RollbackSession::Stats& b ) {
+		return b.steps > a.steps ? double( b.stepNs - a.stepNs ) / double( b.steps - a.steps ) / 1e6 : 0.0;
+	};
+	auto perSecond = [&]( const RollbackSession::Stats& a, const RollbackSession::Stats& b, double seconds ) {
+		return double( b.steps - a.steps ) / seconds;
+	};
+	std::printf( "    a client's tick: %.3f ms with no NPCs, %.3f ms with %zu (%.0f and %.0f ticks a second, resimulated ones included); desyncs %llu\n",
+				 perStep( s0, s1 ), perStep( s2, s3 ), npcs, perSecond( s0, s1, 3.5 ), perSecond( s2, s3, 5.0 ),
+				 (unsigned long long)h.bots[0].client->GetStats().desyncs );
+	CHECK( npcs == 32 );
+	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
+}
+
 // The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
 // breaks a hole in it with no blast, and goes on through: past the wall, while bricks still stand.
 // The ball's scene says it breaks walls (CbItem.break_speed), so the simulation breaks it in the
@@ -5750,6 +5911,8 @@ int main( int argc, char** argv )
 		{ "map_body", TestMapBody },
 		{ "navigation", TestNavigation },
 		{ "npc_items", TestNpcItems },
+		{ "waves", TestWaves },
+		{ "waves_cost", TestWavesCost },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },
