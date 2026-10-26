@@ -4601,6 +4601,98 @@ void TestPossessProp()
 	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
 }
 
+// M222: an NPC on a live server. A test mod spawns a body when the game starts and drives it in a
+// square (forward, its look turned a quarter every second): the bot's own simulation predicts it
+// with its last input and agrees (no desyncs); the mod sends only the changes; a shot at it through
+// the server's hit tests hits it by its hitboxes (a zone).
+class NpcMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_npc";
+	}
+	void Declare( mods::Declarations& ) override
+	{
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		const b3Vec3 spawn = GetLevelLayout().spawnCenter;
+		if ( m_body == 0 )
+		{
+			if ( m_asked == false )
+			{
+				m_asked = true;
+				ctx.SpawnCharacter( mods::CharacterHandle{ 0 }, b3Vec3{ spawn.x + 4.0f, spawn.y, spawn.z + 4.0f }, 0.0f );
+			}
+			const std::vector<uint32_t> free = ctx.IdleBodies();
+			m_body = free.empty() ? 0 : free.front();
+			return;
+		}
+		++m_ticks;
+		PlayerInput in;
+		in.moveForward = 100;
+		in.cameraYaw = uint16_t( ( m_ticks / 60 ) * 16384 );
+		PlayerInput before;
+		const bool driven = ctx.DrivenByMod( m_body, &before );
+		if ( driven == false || ( before == in ) == false )
+		{
+			++m_sent;
+		}
+		ctx.Drive( m_body, in );
+		if ( m_ticks == 200 )
+		{
+			// A shot at it, from 6 m off, through the server's hit tests.
+			const Transform* t = ctx.EntityTransform( m_body );
+			RayHit hit;
+			const b3Vec3 from = { t->position.x - 6.0f, t->position.y, t->position.z };
+			m_hit = ctx.CastRay( from, b3Vec3{ 12.0f, 0.0f, 0.0f }, 0, hit ) && hit.netId == m_body && hit.zone != nullptr;
+			m_zone = hit.zone != nullptr ? hit.zone : "";
+		}
+	}
+
+	uint32_t m_body = 0;
+	uint32_t m_ticks = 0;
+	uint32_t m_sent = 0;
+	bool m_asked = false;
+	bool m_hit = false;
+	std::string m_zone;
+};
+
+void TestNpc()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	auto mod = std::make_unique<NpcMod>();
+	NpcMod* npc = mod.get();
+	extra.push_back( std::move( mod ) );
+	const std::string root = CB_SOURCE_DIR;
+	Harness h( 47918, {}, {}, {},
+			   [&]( ServerOptions& options ) {
+				   std::string error, warnings;
+				   options.character = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
+				   const char* view = std::getenv( "CB_NPC_VIEW" ); // (a view file of it, for the game)
+				   options.recordViewPath = view != nullptr ? view : "";
+			   },
+			   std::move( extra ) );
+	h.AddBot();
+	h.RunUntil( 6.0 );
+	h.Report();
+	GameClient& client = *h.bots[0].client;
+	Simulation& server = h.server.Sim();
+	const flecs::entity body = server.FindEntity( npc->m_body );
+	const Transform* at = server.EntityTransform( npc->m_body );
+	std::printf( "    the NPC %u: driven %d, at (%.1f, %.1f); %u inputs sent in %u ticks; the shot %s (%s); desyncs %u, checksums %u\n",
+				 npc->m_body, int( body.has<ModDriven>() ), at != nullptr ? double( at->position.x ) : 0.0, at != nullptr ? double( at->position.z ) : 0.0,
+				 npc->m_sent, npc->m_ticks, npc->m_hit ? "hit it" : "missed", npc->m_zone.c_str(), client.GetStats().desyncs,
+				 client.GetStats().checksumsVerified );
+	CHECK( body.is_valid() && body.has<ModDriven>() && body.has<Character>() );
+	CHECK( npc->m_sent > 0 && npc->m_sent < npc->m_ticks / 30 );
+	CHECK( npc->m_hit );
+	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+	RollbackSession* session = client.Session();
+	CHECK( session != nullptr && session->Sim().FindEntity( npc->m_body ).has<ModDriven>() );
+}
+
 // The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
 // breaks a hole in it with no blast, and goes on through: past the wall, while bricks still stand.
 // The ball's scene says it breaks walls (CbItem.break_speed), so the simulation breaks it in the
@@ -5092,6 +5184,7 @@ int main( int argc, char** argv )
 		{ "any_skeleton", TestAnySkeleton },
 		{ "possession", TestPossession },
 		{ "possess_prop", TestPossessProp },
+		{ "npc", TestNpc },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },

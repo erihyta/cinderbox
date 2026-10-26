@@ -457,6 +457,14 @@ private:
 	// A prop taken over (M221) and given back; its bounds holding its move back.
 	void DriveProp( flecs::entity e, PlayerSlot slot );
 	void ReleaseProp( flecs::entity e );
+	// Everyone who moves this tick: the players, by slot, then the bodies mods drive, by NetId.
+	struct DriverRef
+	{
+		uint32_t netId;
+		PlayerInput input;
+		int slot; // -1: a mod's
+	};
+	std::vector<DriverRef> m_drivers;
 	void HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 start, float startYaw, Transform& t, Character& c );
 	void Possess( PlayerSlot slot, flecs::entity body );
 

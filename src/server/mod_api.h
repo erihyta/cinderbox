@@ -691,6 +691,16 @@ public:
 	void Possess( PlayerSlot slot, uint32_t body );
 	// The characters' bodies nobody drives (NetIds).
 	std::vector<uint32_t> IdleBodies() const;
+	// The mod drives `body` (a character's body nobody drives, or a loose prop: CanPossess) with
+	// `input`, as a player's keys would drive it: from the next tick, and with that input until it
+	// says otherwise (so call it when the input changes, or every tick: only a change is sent). Its
+	// motions, its state machine, its hit tests are a player's; every simulation predicts it with
+	// its last input. An NPC is a body a mod drives.
+	void Drive( uint32_t body, const PlayerInput& input );
+	// It is driven no more: it stands where it is, nobody's (a prop: a loose body again).
+	void StopDriving( uint32_t body );
+	// Whether a mod drives `body` (and with what, if `input`).
+	bool DrivenByMod( uint32_t body, PlayerInput* input = nullptr ) const;
 	// Whether a slot may drive `body` (Possess): a character's body nobody drives, or a loose prop
 	// (not an item, a ragdoll, a container or anything static).
 	bool CanPossess( uint32_t body ) const

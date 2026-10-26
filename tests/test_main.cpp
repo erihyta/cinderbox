@@ -4469,6 +4469,120 @@ void TestPossessProp()
 	CHECK( left.is_valid() && left.has<Character>() == false && left.has<DrivenProp>() == false && sim.PlayerNetId( 0 ) == 0 );
 }
 
+// M222: bodies a mod drives. An input survives being packed into a command exactly. A body nobody
+// drives, driven by a Drive command: it walks on that input and goes on with it with no further
+// command (as a client predicts it), plays its walk (its animation state follows), stops on a new
+// input; a crate driven the same way walks too; a portable copy and a rollback go on the same; told
+// to stop, it stands nobody's.
+void TestModDriven()
+{
+	PlayerInput odd;
+	odd.moveRight = -127;
+	odd.moveForward = 93;
+	odd.cameraYaw = 65535;
+	odd.cameraPitch = -16000;
+	odd.buttons = 0xA5;
+	odd.view = 3;
+	odd.actions = ActionBits( 0xF00DBEEFu );
+	odd.intent = 2;
+	odd.intentA = 255;
+	odd.intentSeq = 200;
+	odd.slotKeys = 0x8001;
+	SimCommand packed;
+	PackInput( odd, packed );
+	CHECK( UnpackInput( packed ) == odd );
+
+	Simulation sim( TestConfig(), FlatMap() );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto drive = [&]( uint32_t body, int8_t forward, int mode = 1 ) {
+		PlayerInput in;
+		in.moveForward = forward;
+		SimCommand c;
+		c.type = CommandType::Drive;
+		c.target = body;
+		c.mode = uint8_t( mode );
+		PackInput( in, c );
+		f.commands.push_back( c );
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 10 );
+	const uint32_t npc = sim.Globals().nextNetId;
+	SimCommand spawn;
+	spawn.type = CommandType::SpawnBody;
+	spawn.a = { 4.0f, 0.0f, -6.0f };
+	f.commands.push_back( spawn );
+	step( 30 );
+	const b3Vec3 start = sim.EntityTransform( npc )->position;
+	drive( npc, 127 );
+	step( 40 );
+	const flecs::entity e = sim.FindEntity( npc );
+	const b3Vec3 walked = sim.EntityTransform( npc )->position;
+	const float speed = sim.GetAnimState( e ).groundSpeed;
+	CHECK( e.has<ModDriven>() && e.has<Character>() && e.get<Character>().slot == kNoSlot && e.has<IdleBody>() == false );
+	step( 40 ); // no command: on with the same input
+	const b3Vec3 further = sim.EntityTransform( npc )->position;
+	std::printf( "    driven: %.2f m in 40 ticks, %.2f more in 40 with no command; its walk at %.2f m/s\n", double( walked.z - start.z ),
+				 double( further.z - walked.z ), double( speed ) );
+	CHECK( walked.z - start.z > 1.0f && further.z - walked.z > 1.5f && speed > 1.0f );
+	drive( npc, 0 );
+	step( 40 );
+	const b3Vec3 v = e.get<Character>().velocity;
+	std::printf( "    a new input (none): its velocity %.3f %.3f %.3f\n", double( v.x ), double( v.y ), double( v.z ) );
+	CHECK( b3Length( b3Vec3{ v.x, 0.0f, v.z } ) < 0.1f );
+
+	// A crate, driven.
+	const uint32_t crate = sim.Globals().nextNetId;
+	SimCommand box;
+	box.type = CommandType::SpawnProp;
+	box.value = -1;
+	box.mode = uint8_t( ShapeKind::Box );
+	box.a = { -4.0f, 0.4f, -6.0f };
+	box.c = { 0.3f, 0.3f, 0.3f };
+	f.commands.push_back( box );
+	step( 30 );
+	const float crateStart = sim.EntityTransform( crate )->position.z;
+	drive( crate, 127 );
+	step( 60 );
+	CHECK( sim.FindEntity( crate ).has<DrivenProp>() && sim.EntityTransform( crate )->position.z > crateStart + 1.5f );
+
+	// A copy and a rollback go on the same, with both driven.
+	drive( npc, 100 );
+	step( 1 );
+	std::vector<uint8_t> image;
+	sim.SavePortable( image );
+	Simulation copy( TestConfig(), FlatMap() );
+	CHECK( copy.LoadPortable( image ) );
+	Snapshot snap;
+	sim.Save( snap );
+	for ( int i = 0; i < 60; ++i )
+	{
+		f.tick = sim.Tick();
+		sim.Step( f );
+		copy.Step( f );
+	}
+	const uint64_t ahead = sim.ComputeHash();
+	CHECK( ahead == copy.ComputeHash() );
+	sim.Load( snap );
+	step( 60 );
+	CHECK( sim.ComputeHash() == ahead );
+
+	// Driven no more.
+	drive( npc, 0, 0 );
+	drive( crate, 0, 0 );
+	step( 2 );
+	CHECK( sim.FindEntity( npc ).has<IdleBody>() && sim.FindEntity( npc ).has<Character>() == false && sim.FindEntity( npc ).has<ModDriven>() == false );
+	CHECK( sim.FindEntity( crate ).has<DrivenProp>() == false && sim.FindEntity( crate ).has<Character>() == false );
+}
+
 void TestMotionFinds()
 {
 	ModSchema schema;
@@ -11928,6 +12042,7 @@ int main( int argc, char** argv )
 		{ "any_skeleton", TestAnySkeleton },
 		{ "possession", TestPossession },
 		{ "possess_prop", TestPossessProp },
+		{ "mod_driven", TestModDriven },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },

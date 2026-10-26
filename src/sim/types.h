@@ -231,8 +231,13 @@ enum class CommandType : uint8_t
 	// is, nobody's (a prop is a loose body again, with the speed it had); a dead one is removed with
 	// what it carried. Nothing happens for a body someone drives, or anything else.
 	Possess = 21,
+	// target = a body, mode = 1: a mod drives it with the input packed in a, b, c (PackInput), from
+	// this tick on and with that input until the next Drive says otherwise: a character's body
+	// nobody drives, or a loose prop, gets the controller (as Possess gives it, with no slot). mode
+	// = 0: it is driven no more and stands where it is, nobody's. An NPC is a body a mod drives.
+	Drive = 22,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Possess );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Drive );
 
 enum ImpulseMode : uint8_t
 {
@@ -289,6 +294,34 @@ struct SimCommand
 	}
 };
 static_assert( sizeof( SimCommand ) == 52, "SimCommand has padding" );
+
+// A PlayerInput in a command's a, b, c: three of its bytes to each float, as a whole number below
+// 2^24, which a float holds exactly (and is always finite, so the command can be sent).
+inline void PackInput( const PlayerInput& in, SimCommand& c )
+{
+	uint8_t bytes[27] = {};
+	std::memcpy( bytes, &in, sizeof( PlayerInput ) );
+	float* out[9] = { &c.a.x, &c.a.y, &c.a.z, &c.b.x, &c.b.y, &c.b.z, &c.c.x, &c.c.y, &c.c.z };
+	for ( int i = 0; i < 9; ++i )
+	{
+		*out[i] = float( uint32_t( bytes[3 * i] ) | ( uint32_t( bytes[3 * i + 1] ) << 8 ) | ( uint32_t( bytes[3 * i + 2] ) << 16 ) );
+	}
+}
+inline PlayerInput UnpackInput( const SimCommand& c )
+{
+	uint8_t bytes[27] = {};
+	const float in[9] = { c.a.x, c.a.y, c.a.z, c.b.x, c.b.y, c.b.z, c.c.x, c.c.y, c.c.z };
+	for ( int i = 0; i < 9; ++i )
+	{
+		const uint32_t v = in[i] >= 0.0f && in[i] < 16777216.0f ? uint32_t( in[i] ) : 0u;
+		bytes[3 * i] = uint8_t( v );
+		bytes[3 * i + 1] = uint8_t( v >> 8 );
+		bytes[3 * i + 2] = uint8_t( v >> 16 );
+	}
+	PlayerInput out;
+	std::memcpy( &out, bytes, sizeof( PlayerInput ) );
+	return out;
+}
 
 // Everything the simulation consumes for one tick. The server's copy is authoritative.
 // Events are applied first, then commands in the order listed, then inputs.

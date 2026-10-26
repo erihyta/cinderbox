@@ -1263,6 +1263,41 @@ void Context::SpawnCharacter( CharacterHandle character, b3Vec3 feet, float yaw,
 	Add( c );
 }
 
+void Context::Drive( uint32_t body, const PlayerInput& input )
+{
+	PlayerInput now;
+	if ( DrivenByMod( body, &now ) && now == input )
+	{
+		return; // (it goes on with what it has)
+	}
+	SimCommand c;
+	c.type = CommandType::Drive;
+	c.target = body;
+	c.mode = 1;
+	PackInput( input, c );
+	Add( c );
+}
+
+void Context::StopDriving( uint32_t body )
+{
+	SimCommand c;
+	c.type = CommandType::Drive;
+	c.target = body;
+	c.mode = 0;
+	Add( c );
+}
+
+bool Context::DrivenByMod( uint32_t body, PlayerInput* input ) const
+{
+	const flecs::entity e = m_sim.FindEntity( body );
+	const ModDriven* npc = e.is_valid() ? e.try_get<ModDriven>() : nullptr;
+	if ( npc != nullptr && input != nullptr )
+	{
+		*input = npc->input;
+	}
+	return npc != nullptr;
+}
+
 void Context::Possess( PlayerSlot slot, uint32_t body )
 {
 	SimCommand c;

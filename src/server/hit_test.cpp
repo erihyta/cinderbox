@@ -155,15 +155,15 @@ bool HitTester::CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uin
 {
 	bool found = sim.CastRay( origin, translation, ignoreNetId, hit, true );
 	float limit = found ? hit.fraction : 1.0f;
-	for ( int i = 0; i < kMaxPlayers; ++i )
+	// Every character's body someone drives: a player's, or one a mod drives (an NPC).
+	for ( const Simulation::EntityRef& r : sim.Entities() )
 	{
-		PlayerSlot slot = PlayerSlot( i );
-		uint32_t netId = sim.PlayerNetId( slot );
-		if ( netId == 0 || netId == ignoreNetId )
+		const uint32_t netId = r.netId;
+		const Character* character = netId != ignoreNetId ? flecs::entity( sim.World(), r.entity ).try_get<Character>() : nullptr;
+		if ( character == nullptr )
 		{
 			continue;
 		}
-		const Character* character = sim.PlayerCharacter( slot );
 		const Transform* transform = sim.EntityTransform( netId );
 		AnimStateCopy state = sim.EntityAnimState( netId );
 		if ( character == nullptr || character->dead || transform == nullptr || state == nullptr || sim.FindEntity( netId ).has<DrivenProp>() )
