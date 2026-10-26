@@ -5144,6 +5144,93 @@ void TestNavigation()
 	fs::remove( path );
 }
 
+// NPCs use items (M228): their input selects slots and uses what they hold, as a player's does. A
+// test mod gives an NPC the brawl kit's fist, has it select it (its slot's key), walk up to the bot
+// and jab it; the bot jabs back. Both are hurt (combat), the bot's own simulation agrees.
+class BrawlerMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_brawler";
+	}
+	void Declare( mods::Declarations& ) override
+	{
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		++m_ticks;
+		const b3Vec3 at = GetLevelLayout().spawnCenter;
+		if ( m_ticks == 20 )
+		{
+			m_fist = mods::ItemKindHandle{ ctx.Schema().FindItemKind( "brawl.fist" ) };
+			ctx.SpawnCharacter( mods::CharacterHandle{ 0 }, b3Vec3{ at.x + 3.0f, at.y, at.z }, 0.0f );
+		}
+		if ( m_npc == 0 )
+		{
+			const std::vector<uint32_t> free = ctx.IdleBodies();
+			if ( free.empty() == false && m_ticks > 30 )
+			{
+				m_npc = free.front();
+				ctx.Drive( m_npc, PlayerInput{} );
+				ctx.GiveItem( m_npc, m_fist, mods::SocketHandle{} );
+			}
+			return;
+		}
+		const uint32_t player = ctx.PlayerNetId( 0 );
+		const Transform* target = player != 0 ? ctx.EntityTransform( player ) : nullptr;
+		PlayerInput in = target != nullptr ? ctx.WalkToward( m_npc, target->position, 1.6f ) : PlayerInput{};
+		if ( target != nullptr )
+		{
+			// Facing it even when near enough to stop.
+			const Transform* me = ctx.EntityTransform( m_npc );
+			in.cameraYaw = detmath::RadiansToYaw( std::atan2( target->position.x - me->position.x, target->position.z - me->position.z ) );
+		}
+		in.slotKeys = m_ticks > 40 && m_ticks < 44 ? 1 : 0; // its slot 1's key: the fist out
+		in.buttons |= m_ticks > 60 && m_ticks % 30 < 3 ? uint8_t( BtnUse ) : uint8_t( 0 );
+		ctx.Drive( m_npc, in );
+	}
+	mods::ItemKindHandle m_fist;
+	uint32_t m_npc = 0;
+	uint32_t m_ticks = 0;
+};
+
+void TestNpcItems()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	auto mod = std::make_unique<BrawlerMod>();
+	BrawlerMod* brawler = mod.get();
+	extra.push_back( std::move( mod ) );
+	Harness h( 47930, {}, {}, { { "test.mods", "brawl" } }, {}, std::move( extra ) );
+	Bot& bot = h.AddBot();
+	Simulation& server = h.server.Sim();
+	bot.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		const uint32_t me = server.PlayerNetId( bot.client->Slot() );
+		const Transform* mine = me != 0 ? server.EntityTransform( me ) : nullptr;
+		const Transform* npc = brawler->m_npc != 0 ? server.EntityTransform( brawler->m_npc ) : nullptr;
+		if ( mine != nullptr && npc != nullptr )
+		{
+			in.cameraYaw = detmath::RadiansToYaw( std::atan2( npc->position.x - mine->position.x, npc->position.z - mine->position.z ) );
+		}
+		in.slotKeys = tick > 50 && tick < 54 ? 1 : 0;
+		in.buttons = tick > 90 && tick % 40 < 3 ? uint8_t( BtnUse ) : uint8_t( 0 );
+		return in;
+	};
+	h.RunUntil( 8.0 );
+	h.Report();
+	const BoardField* field = h.server.Schema().FindField( "combat.health" );
+	auto health = [&]( uint32_t netId ) { return field != nullptr && netId != 0 ? server.BoardValue( netId, field->slot ) : -1; };
+	const uint32_t player = server.PlayerNetId( h.bots[0].client->Slot() );
+	const Slots* slots = brawler->m_npc != 0 ? server.FindEntity( brawler->m_npc ).try_get<Slots>() : nullptr;
+	std::printf( "    the NPC holds slot %d; the player's health %d, the NPC's %d; desyncs %u\n", slots != nullptr ? int( slots->selected ) : -1,
+				 health( player ), health( brawler->m_npc ), h.bots[0].client->GetStats().desyncs );
+	CHECK( slots != nullptr && slots->selected == 0 );
+	CHECK( health( player ) < 100 && health( player ) >= 0 );
+	CHECK( health( brawler->m_npc ) < 100 && health( brawler->m_npc ) >= 0 );
+	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
+}
+
 // The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
 // breaks a hole in it with no blast, and goes on through: past the wall, while bricks still stand.
 // The ball's scene says it breaks walls (CbItem.break_speed), so the simulation breaks it in the
@@ -5662,6 +5749,7 @@ int main( int argc, char** argv )
 		{ "combat_npc", TestCombatNpc },
 		{ "map_body", TestMapBody },
 		{ "navigation", TestNavigation },
+		{ "npc_items", TestNpcItems },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },
