@@ -488,7 +488,7 @@ void PassOn( Node* node );
 
 // The viewer's own body, while the viewer looks out of it: its meshes cast their shadows and are
 // not drawn. Otherwise as they were. Its meshes: those skinned to the skeleton, and the rigid parts
-// on its bones (under a BoneAttachment3D: a robot's, a critter's), not what its sockets hold.
+// on its bones (under a BoneAttachment3D: a critter's), not what its sockets hold.
 void CinderboxSkeleton::HideBody( Skeleton3D* target )
 {
 	ObjectID want = m_firstPersonBody ? ObjectID( target->get_instance_id() ) : ObjectID();

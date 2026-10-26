@@ -1,7 +1,7 @@
 # Publishes a server mod's look, or a character, as a workshop item.
 #
 #   powershell -ExecutionPolicy Bypass -File tools\publish_mod.ps1 -Mod pistol [-Workshop DIR]
-#   powershell -ExecutionPolicy Bypass -File tools\publish_mod.ps1 -Character robot [-Workshop DIR]
+#   powershell -ExecutionPolicy Bypass -File tools\publish_mod.ps1 -Character critter [-Workshop DIR]
 #
 # 1. Packs server_mods\<mod>\client, or characters\<name>\client (a Godot project, see its "Mod"
 #    export preset), with pack_mod.ps1, which bakes what the server reads first: item bodies and
