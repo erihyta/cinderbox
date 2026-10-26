@@ -48,6 +48,7 @@ struct Fighter
 	int32_t kills = 0;
 	int32_t deaths = 0;
 	uint32_t falls = 0; // Character::fallCount last seen
+	uint32_t body = 0;	// the body the slot drove when they were seen (a possession changes it)
 };
 
 struct Dead
@@ -195,6 +196,15 @@ private:
 		}
 		uint32_t target = SlotTarget( f.slot );
 		uint32_t tick = ctx.Tick();
+
+		// Another body (a possession): its falls are its own, and the player's health, kills and
+		// deaths go on its board, where the HUD reads them.
+		if ( const uint32_t body = ctx.PlayerNetId( f.slot ); body != f.body )
+		{
+			f.body = body;
+			f.falls = c->fallCount;
+			Publish( ctx, f, e.has<Dead>() );
+		}
 
 		if ( const Dead* dead = e.try_get<Dead>() )
 		{

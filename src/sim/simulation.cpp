@@ -1789,6 +1789,10 @@ b3ShapeId Simulation::ShapeOf( const PhysicsBody& pb ) const
 b3Vec3 Simulation::SpawnPoint( PlayerSlot slot ) const
 {
 	const LevelLayout& layout = m_map;
+	if ( slot >= kMaxPlayers )
+	{
+		return layout.spawnCenter; // (a body no player drives: an NPC)
+	}
 	float col = float( slot % 8 );
 	float row = float( slot / 8 );
 	return { layout.spawnCenter.x - 5.25f + 1.5f * col, layout.spawnCenter.y, layout.spawnCenter.z + 1.5f * row };
@@ -1988,7 +1992,7 @@ void Simulation::Possess( PlayerSlot slot, flecs::entity body )
 	}
 	if ( flecs::entity old = FindEntity( driven ); old.is_valid() )
 	{
-		if ( old.get<Character>().dead != 0 )
+		if ( old.get<Character>().dead != 0 && old.has<DrivenProp>() == false )
 		{
 			// Dead, it is its ragdoll or nothing: it goes, with what it carried.
 			for ( uint32_t item : CarriedItemsOf( driven ) )
@@ -2115,6 +2119,7 @@ void Simulation::ReleaseProp( flecs::entity e )
 	const b3Quat upright = detmath::YawRotation( c.facingYaw );
 	b3Body_SetTransform( body, origin, upright );
 	b3Body_SetType( body, b3_dynamicBody );
+	b3Body_Enable( body ); // (its driver may have died in it: a dead body is out of the world)
 	b3ShapeId shapes[64];
 	const int count = b3Body_GetShapes( body, shapes, 64 );
 	for ( int i = 0; i < count; ++i )
@@ -2733,38 +2738,51 @@ void Simulation::ExpireProps()
 
 void Simulation::EnforcePropCaps()
 {
-	// Spawned props in NetId order == spawn order, so the front of each list is the oldest.
-	uint32_t perOwner[kMaxPlayers] = {};
+	// Spawned props in NetId order == spawn order, so the front of each list is the oldest. Counted
+	// by the owner's NetId: the body that spawned them, whoever drives it now (a body a player left,
+	// one a mod drives, has no slot to count them by).
+	std::vector<std::pair<uint32_t, uint32_t>> perOwner; // owner NetId, how many
+	auto countOf = [&]( uint32_t owner ) -> uint32_t& {
+		for ( auto& [id, count] : perOwner )
+		{
+			if ( id == owner )
+			{
+				return count;
+			}
+		}
+		perOwner.push_back( { owner, 0 } );
+		return perOwner.back().second;
+	};
 	uint32_t total = 0;
 	m_scratch.clear();
 
 	// First pass: count.
 	for ( const EntityRef& r : m_entities )
 	{
-		const Prop* p = flecs::entity( m_world, r.entity ).try_get<Prop>();
-		if ( p == nullptr || p->owner == 0 )
+		const flecs::entity prop( m_world, r.entity );
+		const Prop* p = prop.try_get<Prop>();
+		if ( p == nullptr || p->owner == 0 || prop.has<Character>() )
 		{
-			continue;
+			continue; // (a prop someone drives is a body, not a prop to count)
 		}
 		total += 1;
-		flecs::entity owner = FindEntity( p->owner );
-		if ( owner.is_valid() )
+		if ( FindEntity( p->owner ).is_valid() )
 		{
-			perOwner[owner.get<Character>().slot] += 1;
+			countOf( p->owner ) += 1;
 		}
 	}
 
 	// Second pass: oldest first, drop while over a cap.
 	for ( const EntityRef& r : m_entities )
 	{
-		const Prop* p = flecs::entity( m_world, r.entity ).try_get<Prop>();
-		if ( p == nullptr || p->owner == 0 )
+		const flecs::entity prop( m_world, r.entity );
+		const Prop* p = prop.try_get<Prop>();
+		if ( p == nullptr || p->owner == 0 || prop.has<Character>() )
 		{
-			continue;
+			continue; // (a prop someone drives is a body, not a prop to count)
 		}
 
-		flecs::entity owner = FindEntity( p->owner );
-		uint32_t* ownerCount = owner.is_valid() ? &perOwner[owner.get<Character>().slot] : nullptr;
+		uint32_t* ownerCount = FindEntity( p->owner ).is_valid() ? &countOf( p->owner ) : nullptr;
 		bool overOwner = ownerCount != nullptr && *ownerCount > m_config.propsPerPlayer;
 		bool overGlobal = total > m_config.propsGlobal;
 		if ( overOwner || overGlobal )
@@ -3500,7 +3518,21 @@ void Simulation::ApplyCommand( const SimCommand& command )
 				if ( e.has<ModDriven>() )
 				{
 					e.remove<ModDriven>();
-					MakeIdle( e );
+					if ( e.get<Character>().dead != 0 && e.has<DrivenProp>() == false )
+					{
+						// Dead, it is its ragdoll or nothing (as a player's left dead): it goes, with
+						// what it carried. A prop is given back.
+						const uint32_t self = e.get<NetId>().value;
+						for ( uint32_t item : CarriedItemsOf( self ) )
+						{
+							DestroyEntity( FindEntity( item ) );
+						}
+						DestroyEntity( e );
+					}
+					else
+					{
+						MakeIdle( e );
+					}
 				}
 				return;
 			}
