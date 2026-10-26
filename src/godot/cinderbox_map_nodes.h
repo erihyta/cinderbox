@@ -183,6 +183,36 @@ private:
 	godot::MeshInstance3D* m_preview = nullptr;
 };
 
+// A character's body the map places, standing where the node is, facing where it faces: nobody
+// drives it until a player or a mod takes it over. `character` is a character item's name
+// ("critter"): the server loads it and players download it.
+class CbCharacterBody : public godot::Node3D
+{
+	GDCLASS( CbCharacterBody, godot::Node3D )
+
+public:
+	void set_character( const godot::String& name )
+	{
+		m_character = name;
+		UpdatePreview();
+	}
+	godot::String get_character() const
+	{
+		return m_character;
+	}
+
+	void _notification( int what );
+
+protected:
+	static void _bind_methods();
+
+private:
+	void UpdatePreview();
+
+	godot::String m_character;
+	godot::MeshInstance3D* m_preview = nullptr;
+};
+
 // The nodes of a map's scene a template's look can be (EntityTemplate::look): every CbProp,
 // CbTemplate, CbEntity and CbBreakable, in scene-tree order. The bake numbers them and a client finds
 // them so. A look drawn is a copy of its node without the look nodes under it (a breakable's pieces).

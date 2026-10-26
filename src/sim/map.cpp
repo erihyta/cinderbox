@@ -302,6 +302,11 @@ void QuantizeLayout( LevelLayout& layout )
 		Snap( prop.rolling, kMapBodyScale );
 		Snap( prop.drag, kMapBodyScale );
 	}
+	for ( LevelBody& body : layout.bodies )
+	{
+		SnapVec( body.feet, kMapPositionScale );
+		Snap( body.yaw, kMapAngleScale );
+	}
 	SnapVec( layout.spawnCenter, kMapPositionScale );
 	Snap( layout.spawnRadius, kMapPositionScale );
 }
@@ -452,6 +457,15 @@ void SerializeMap( const LevelLayout& layout, std::vector<uint8_t>& out )
 	}
 
 	AppendU32( out, layout.spawnTemplate );
+
+	AppendU32( out, uint32_t( std::min<size_t>( layout.bodies.size(), kMapBodyLimit ) ) );
+	for ( size_t i = 0; i < layout.bodies.size() && i < kMapBodyLimit; ++i )
+	{
+		const LevelBody& body = layout.bodies[i];
+		AppendString( out, body.character.substr( 0, kMapNameLimit ) );
+		AppendPos( out, body.feet );
+		AppendI32( out, MapQuantize( body.yaw, kMapAngleScale ) );
+	}
 }
 
 bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::string& error )
@@ -842,6 +856,29 @@ bool DeserializeMap( const uint8_t* data, size_t size, LevelLayout& out, std::st
 	{
 		error = "spawn template is not in the map";
 		return false;
+	}
+
+	if ( version >= 12 )
+	{
+		const uint32_t bodyCount = rd.U32();
+		if ( rd.ok == false || bodyCount > kMapBodyLimit )
+		{
+			error = "corrupt body list";
+			return false;
+		}
+		for ( uint32_t i = 0; i < bodyCount && rd.ok; ++i )
+		{
+			LevelBody body;
+			body.character = rd.Text();
+			body.feet = rd.Pos();
+			body.yaw = MapDequantize( rd.I32(), kMapAngleScale );
+			if ( SafeName( body.character ) == false )
+			{
+				error = "bad character name in the body list";
+				return false;
+			}
+			layout.bodies.push_back( std::move( body ) );
+		}
 	}
 
 	if ( rd.ok == false )

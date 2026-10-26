@@ -15,6 +15,7 @@
 #include <godot_cpp/classes/cylinder_shape3d.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
+#include <godot_cpp/classes/capsule_mesh.hpp>
 #include <godot_cpp/classes/sphere_mesh.hpp>
 #include <godot_cpp/classes/sphere_shape3d.hpp>
 #include <godot_cpp/classes/visual_instance3d.hpp>
@@ -1045,6 +1046,22 @@ void BakeNode( Node* node, const Transform3D& parent, BakeContext& ctx )
 			ctx.layout.instances.push_back( InstanceAt( index, here ) );
 		}
 	}
+	else if ( auto* placed = Object::cast_to<CbCharacterBody>( node ) )
+	{
+		const String name = placed->get_character().strip_edges();
+		if ( name.is_empty() )
+		{
+			ctx.warnings.push_back( String( "a CbCharacterBody without a character is left out: " ) + placed->get_name() );
+		}
+		else
+		{
+			LevelBody body;
+			body.character = std::string( name.utf8().get_data() );
+			body.feet = ToSim( here.origin );
+			body.yaw = float( here.basis.orthonormalized().get_euler( EULER_ORDER_YXZ ).y );
+			ctx.layout.bodies.push_back( body );
+		}
+	}
 	else if ( auto* spawn = Object::cast_to<CbSpawn>( node ) )
 	{
 		ctx.spawnCount += 1;
@@ -1403,6 +1420,41 @@ void CbSpawn::UpdatePreview()
 	mesh->set_height( m_radius * 2.0f );
 	mesh->set_material( PreviewMaterial( Color( 0.4f, 1.0f, 0.5f, 0.25f ) ) );
 	preview->set_mesh( mesh );
+}
+
+// --- CbCharacterBody ----------------------------------------------------------------------------
+
+void CbCharacterBody::_bind_methods()
+{
+	ClassDB::bind_method( D_METHOD( "set_character", "name" ), &CbCharacterBody::set_character );
+	ClassDB::bind_method( D_METHOD( "get_character" ), &CbCharacterBody::get_character );
+	ADD_PROPERTY( PropertyInfo( Variant::STRING, "character", PROPERTY_HINT_PLACEHOLDER_TEXT, "a character item's name: critter" ), "set_character",
+				  "get_character" );
+}
+
+void CbCharacterBody::_notification( int what )
+{
+	if ( what == NOTIFICATION_ENTER_TREE || what == NOTIFICATION_READY )
+	{
+		UpdatePreview();
+	}
+}
+
+void CbCharacterBody::UpdatePreview()
+{
+	if ( InEditor() == false || is_inside_tree() == false )
+	{
+		return;
+	}
+	// A stand-in where it will stand, its feet at the node (the character's own scene is in its item).
+	MeshInstance3D* preview = EnsurePreview( this, m_preview );
+	Ref<CapsuleMesh> mesh;
+	mesh.instantiate();
+	mesh->set_radius( 0.3f );
+	mesh->set_height( 1.6f );
+	mesh->set_material( PreviewMaterial( Color( 1.0f, 0.7f, 0.3f, 0.35f ) ) );
+	preview->set_mesh( mesh );
+	preview->set_position( Vector3( 0.0f, 0.8f, 0.0f ) );
 }
 
 // --- CinderboxMapBaker --------------------------------------------------------------------------

@@ -47,6 +47,15 @@ struct LevelHeightField
 	std::vector<uint8_t> holes;	 // (countX - 1) * (countZ - 1), or empty: none
 };
 
+// A character's body the map places, nobody driving it (CbCharacterBody): the server spawns it when
+// the game starts, of that character (a character item's name: the server loads it and announces it).
+struct LevelBody
+{
+	std::string character;
+	b3Vec3 feet = {};
+	float yaw = 0.0f;
+};
+
 struct LevelProp
 {
 	ShapeKind kind;
@@ -92,6 +101,7 @@ struct LevelLayout
 	// body's own frame (a piece's center is its offset from the body's origin).
 	std::vector<std::vector<LevelBox>> shapeSets;
 	std::vector<LevelProp> props;
+	std::vector<LevelBody> bodies;
 	b3Vec3 spawnCenter;
 	float spawnRadius;
 };

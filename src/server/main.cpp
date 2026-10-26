@@ -544,6 +544,8 @@ int main( int argc, char** argv )
 		std::string zip = ( std::filesystem::path( workshopDir ) / mod / ( item.sha256 + ".zip" ) ).string();
 		return cb::LoadAnimPackItem( zip, item, pack, error, warnings );
 	};
+	// A character item's manifest (a map's CbCharacterBody names one).
+	options.characterItem = [itemsDir]( const std::string& name, cb::ModItem& item ) { return ReadItem( itemsDir, name, item ); };
 	// Characters a mod declares: characters/<name>/, baked from a CbCharacter scene of its look.
 	options.loadCharacter = [itemsDir, workshopDir]( const std::string& mod, const std::string& name, std::string& error,
 													 std::string& warnings ) -> std::shared_ptr<const cb::CharacterAsset> {

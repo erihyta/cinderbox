@@ -707,6 +707,8 @@ public:
 	void StopDriving( uint32_t body );
 	// Whether a mod drives `body` (and with what, if `input`).
 	bool DrivenByMod( uint32_t body, PlayerInput* input = nullptr ) const;
+	// The bodies mods drive (NPCs), by NetId.
+	std::vector<uint32_t> ModDrivenBodies() const;
 	// Whether a slot may drive `body` (Possess): a character's body nobody drives, or a loose prop
 	// (not an item, a ragdoll, a container or anything static).
 	bool CanPossess( uint32_t body ) const

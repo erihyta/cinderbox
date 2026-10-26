@@ -17,8 +17,8 @@
 //   you read     combat.health, combat.max_health, combat.dead, combat.kills, combat.deaths
 //                (a player's Character::dead says the same as combat.dead, a tick sooner)
 //
-// Bodies a mod drives (NPCs: ctx.Drive) are hurt and killed the same way, their health on their own
-// board from the first time they are hurt; they can kill too. Bringing one back is the driving
+// Bodies a mod drives (NPCs: ctx.Drive) are hurt and killed the same way, at full health on their own
+// board from the tick a mod starts driving them; they can kill too. Bringing one back is the driving
 // mod's: combat does not respawn an NPC (Respawn it, and it is at full health again; or let it go).
 //
 // Options (cb_server --mod-option combat.max_health=150):
@@ -149,6 +149,11 @@ public:
 			}
 		}
 
+		// Every body a mod drives is a fighter, at full health from the start (FighterOf makes one).
+		for ( uint32_t body : ctx.ModDrivenBodies() )
+		{
+			FighterOf( ctx, body );
+		}
 		// NPCs no mod drives any more (given back, gone) are fighters no more.
 		for ( auto it = m_byNpc.begin(); it != m_byNpc.end(); )
 		{
@@ -275,7 +280,7 @@ private:
 		}
 	}
 
-	// A player's fighter, or an NPC's (made when it is first named: full health on its board).
+	// A player's fighter, or an NPC's (made the first time it is seen: full health on its board).
 	flecs::entity FighterOf( Context& ctx, uint32_t netId )
 	{
 		int slot = ctx.SlotOf( netId );
