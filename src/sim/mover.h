@@ -27,6 +27,9 @@ struct Body
 	b3ShapeId shape; // the capsule: the mover does not collide with it
 	float radius = kCapsuleRadius;
 	float halfHeight = kCapsuleHalfHeight;
+	// Where the physics body's origin is from the capsule's centre: a driven prop's sits below it
+	// (its shapes are its own, its capsule a walker fitted to it). The mover meets none of its shapes.
+	b3Vec3 offset = { 0.0f, 0.0f, 0.0f };
 };
 
 // How far below a capsule's centre its feet are: the pogo holds the bottom sphere's centre three

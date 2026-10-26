@@ -75,7 +75,8 @@ func update() -> void:
 	var target: Vector3 = game.client.get_view_position(view(), camera.global_transform.basis)
 	# The map pulls the camera in at once, and it eases back out when the way is clear.
 	var back: Vector3 = camera.global_transform.basis.z
-	var free: float = game.client.get_camera_distance(target, back, game.distance, CAMERA_RADIUS)
+	# (As far back as the body is big: a crate is seen from closer, a giant from further.)
+	var free: float = game.client.get_camera_distance(target, back, game.distance * game.client.get_view_scale(), CAMERA_RADIUS)
 	camera_distance = free if free < camera_distance else minf(free, camera_distance + 12.0 * game.get_process_delta_time())
 	camera.global_position = target + back * camera_distance
 	if shake > 0.0:

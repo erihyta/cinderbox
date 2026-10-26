@@ -4559,6 +4559,48 @@ void TestPossession()
 	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
 }
 
+// M221: the possess mod on a live server, on the sandbox's props. The bot takes the nearest body
+// (a prop), walks it about, then takes the nearest other: the server and its own simulation agree
+// on what it drives, and there are no desyncs.
+void TestPossessProp()
+{
+	const char* viewPath = std::getenv( "CB_POSSESS_VIEW" ); // (a view file of it, for the game)
+	Harness h( 47916, {}, {}, { { "test.mods", "possess" } },
+			   [&]( ServerOptions& options ) { options.recordViewPath = viewPath != nullptr ? viewPath : ""; } );
+	const ActionBits take = h.server.Schema().ActionMask( "possess.nearest" );
+	CHECK( take != 0 );
+	Bot& bot = h.AddBot();
+	bot.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		in.actions = ( tick >= 90 && tick < 94 ) || ( tick >= 330 && tick < 334 ) ? take : 0;
+		in.moveForward = tick > 120 && tick < 300 ? 127 : 0;
+		in.cameraYaw = uint16_t( tick * 40 );
+		return in;
+	};
+	uint32_t firstTaken = 0;
+	h.server.SetTickObserver( [&] {
+		const Simulation& sim = h.server.Sim();
+		if ( sim.Tick() == 200 )
+		{
+			firstTaken = sim.PlayerNetId( 0 );
+		}
+	} );
+	h.RunUntil( 7.0 );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	GameClient& client = *h.bots[0].client;
+	Simulation& server = h.server.Sim();
+	const uint32_t now = server.PlayerNetId( client.Slot() );
+	const flecs::entity first = server.FindEntity( firstTaken );
+	std::printf( "    first it drove %u (%s), now %u (%s); desyncs %u, checksums %u\n", firstTaken,
+				 first.is_valid() && first.has<DrivenProp>() == false && first.has<Prop>() ? "a prop again" : "?", now,
+				 server.FindEntity( now ).has<DrivenProp>() ? "a prop" : "a character's body", client.GetStats().desyncs,
+				 client.GetStats().checksumsVerified );
+	CHECK( first.is_valid() && first.has<Prop>() && first.has<DrivenProp>() == false && now != firstTaken );
+	CHECK( client.Session() != nullptr && client.Session()->Sim().PlayerNetId( client.Slot() ) == now );
+	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+}
+
 // The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
 // breaks a hole in it with no blast, and goes on through: past the wall, while bricks still stand.
 // The ball's scene says it breaks walls (CbItem.break_speed), so the simulation breaks it in the
@@ -5049,6 +5091,7 @@ int main( int argc, char** argv )
 		{ "characters", TestCharacters },
 		{ "any_skeleton", TestAnySkeleton },
 		{ "possession", TestPossession },
+		{ "possess_prop", TestPossessProp },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },

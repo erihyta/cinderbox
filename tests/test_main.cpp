@@ -4352,6 +4352,123 @@ void TestPossession()
 	CHECK( sim.ComputeHash() == ahead );
 }
 
+// M221: driving a prop. A wall with a doorway 1 m wide. A player possesses a crate 0.6 m across:
+// it walks on the input, upright, its bottom on the ground, and goes through the doorway; the body
+// the player left stands nobody's. It then possesses a crate 1.6 m across, whose walking capsule
+// (0.4 m) would fit: its bounds go along and stop it at the wall, while the first crate is a loose
+// body again. A shot hits the driven crate as its own shape; a joining client's copy goes on the
+// same; the player leaving gives the crate back to the world.
+void TestPossessProp()
+{
+	LevelLayout map = FlatMap();
+	map.statics.push_back( { { -5.5f, 1.5f, 6.0f }, { 5.0f, 1.5f, 0.25f }, 0.0f, 0.0f } );
+	map.statics.push_back( { { 5.5f, 1.5f, 6.0f }, { 5.0f, 1.5f, 0.25f }, 0.0f, 0.0f } );
+	QuantizeLayout( map );
+	Simulation sim( TestConfig(), map );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto crate = [&]( b3Vec3 at, b3Vec3 half ) {
+		const uint32_t id = sim.Globals().nextNetId;
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.value = -1;
+		c.mode = uint8_t( ShapeKind::Box );
+		c.a = { at.x, at.y, at.z };
+		c.c = { half.x, half.y, half.z };
+		f.commands.push_back( c );
+		step( 1 );
+		return id;
+	};
+	auto possess = [&]( uint32_t body ) {
+		SimCommand c;
+		c.type = CommandType::Possess;
+		c.target = SlotTarget( 0 );
+		c.other = body;
+		f.commands.push_back( c );
+		step( 2 );
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 30 );
+	const uint32_t first = sim.PlayerNetId( 0 );
+	const uint32_t small = crate( { 0.0f, 0.4f, 2.0f }, { 0.3f, 0.3f, 0.3f } );
+	const uint32_t big = crate( { 0.0f, 0.6f, -3.0f }, { 0.8f, 0.5f, 0.8f } );
+	step( 60 );
+
+	possess( small );
+	CHECK( sim.PlayerNetId( 0 ) == small && sim.FindEntity( small ).has<DrivenProp>() && sim.FindEntity( first ).has<IdleBody>() );
+	step( 30 );
+	present::PresentationFrame frame;
+	auto drawn = [&]( uint32_t netId ) {
+		present::CaptureFrame( sim, frame );
+		for ( const present::FrameEntity& e : frame.entities )
+		{
+			if ( e.netId == netId )
+			{
+				return e;
+			}
+		}
+		return present::FrameEntity{};
+	};
+	const present::FrameEntity standing = drawn( small );
+	std::printf( "    the small crate driven: drawn as a %s at %.3f m up (its half height 0.3), turned %.4f off upright\n",
+				 standing.kind == present::VisualKind::Prop ? "prop" : "player", double( standing.transform.position.y ),
+				 double( std::fabs( standing.transform.rotation.v.x ) + std::fabs( standing.transform.rotation.v.z ) ) );
+	CHECK( standing.kind == present::VisualKind::Prop && std::fabs( standing.transform.position.y - 0.3f ) < 0.05f &&
+		   std::fabs( standing.transform.rotation.v.x ) + std::fabs( standing.transform.rotation.v.z ) < 1e-3f );
+	f.inputs[0].moveForward = 127;
+	f.inputs[0].cameraYaw = 0;
+	step( 180 );
+	const b3Vec3 through = drawn( small ).transform.position;
+	std::printf( "    walked to the doorway: it is at z %.2f (the wall at 6), x %.2f\n", double( through.z ), double( through.x ) );
+	CHECK( through.z > 7.0f );
+
+	// The big one: through the same doorway it does not go.
+	f.inputs[0].moveForward = 0;
+	possess( big );
+	CHECK( sim.PlayerNetId( 0 ) == big && sim.FindEntity( small ).has<DrivenProp>() == false && sim.FindEntity( small ).has<Character>() == false );
+	const DrivenProp walker = sim.FindEntity( big ).get<DrivenProp>();
+	f.inputs[0].moveForward = 127;
+	step( 300 );
+	f.inputs[0].moveForward = 0;
+	const b3Vec3 held = drawn( big ).transform.position;
+	std::printf( "    the big crate (its walking capsule %.2f m round): held at z %.2f, x %.2f, by its bounds\n", double( walker.radius ),
+				 double( held.z ), double( held.x ) );
+	CHECK( walker.radius * 2.0f < 1.0f && held.z < 5.4f && held.z > 4.0f );
+
+	// A shot hits it as its shape.
+	RayHit hit;
+	const bool shot = sim.CastRay( b3Vec3{ held.x, 0.5f, held.z - 6.0f }, b3Vec3{ 0.0f, 0.0f, 12.0f }, 0, hit, true );
+	CHECK( shot && hit.netId == big );
+
+	std::vector<uint8_t> image;
+	sim.SavePortable( image );
+	Simulation copy( TestConfig(), map );
+	CHECK( copy.LoadPortable( image ) );
+	f.inputs[0].moveRight = 127;
+	for ( int i = 0; i < 60; ++i )
+	{
+		f.tick = sim.Tick();
+		sim.Step( f );
+		copy.Step( f );
+	}
+	CHECK( sim.ComputeHash() == copy.ComputeHash() );
+
+	// The player leaves: the crate stays, a loose body.
+	f.inputs[0] = {};
+	f.events.push_back( { PlayerEventType::Leave, 0 } );
+	step( 2 );
+	flecs::entity left = sim.FindEntity( big );
+	CHECK( left.is_valid() && left.has<Character>() == false && left.has<DrivenProp>() == false && sim.PlayerNetId( 0 ) == 0 );
+}
+
 void TestMotionFinds()
 {
 	ModSchema schema;
@@ -11810,6 +11927,7 @@ int main( int argc, char** argv )
 		{ "first_person_camera", TestFirstPersonCamera },
 		{ "any_skeleton", TestAnySkeleton },
 		{ "possession", TestPossession },
+		{ "possess_prop", TestPossessProp },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },

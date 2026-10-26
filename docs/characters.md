@@ -47,7 +47,8 @@ server's own character and drives it, as before.
 | A body nobody drives | `ctx.SpawnCharacter( character, feet, yaw )`, or a body its player left: no controller, no animation state; a physics body of its capsule reaching down to its feet, its rotation locked, so it stands, falls, is pushed and settles (the physics engine sleeps it). Drawn as its character in its rest pose, hit as its capsule. It costs what a prop costs |
 | Possessing one | `ctx.Possess( slot, body )`: the body gets the controller (its state machine starts over), the slot drives it from the next tick; the camera follows. The body left stands where it was; what it held is put away, not dropped, and stays its own |
 | What goes with the slot | its keys, its name; what is the body's stays with it (its fields, its items, its character) |
-| Not yet | a prop as a body (M221), a mod driving a body (M222) |
+| A prop as a body (M221) | `ctx.Possess( slot, prop )` on a loose prop (`ctx.CanPossess` says which): its own physics body turns kinematic and keeps its shapes, upright, facing as it faced; the controller walks it with a capsule fitted to it, its feet at the prop's bottom; its bounds go along and stop its move where they would meet a wall, a player or another driven prop, so a big box does not fit a small doorway. It is drawn as itself, hit as its own shapes, seen from behind only (no first person), the camera as far back as it is big. Left, or its player gone, it is a loose body again where it stands, with the speed it had |
+| Not yet | a mod driving a body (M222); a `CbCharacter` with no skeleton; an item as a body |
 
 ### The default character: the mannequin
 

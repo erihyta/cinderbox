@@ -533,7 +533,7 @@ b3Vec3 Context::EyePosition( PlayerSlot slot ) const
 		return {};
 	}
 	// Clients orbit their third-person camera around this point (see game.gd).
-	return b3Add( t->position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+	return m_sim.ViewPivot( m_sim.FindEntity( m_sim.PlayerNetId( slot ) ), t->position );
 }
 
 b3Vec3 Context::HeadPosition( PlayerSlot slot ) const
@@ -554,7 +554,13 @@ b3Vec3 Context::HeadPosition( PlayerSlot slot ) const
 		{
 			return {};
 		}
-		const Simulation::CharacterBody& body = m_sim.Body( m_sim.CharacterOf( m_sim.FindEntity( m_sim.PlayerNetId( slot ) ) ) );
+		const flecs::entity e = m_sim.FindEntity( m_sim.PlayerNetId( slot ) );
+		if ( const DrivenProp* prop = e.is_valid() ? e.try_get<DrivenProp>() : nullptr )
+		{
+			// A driven prop: from its top.
+			return b3Vec3{ t->position.x, t->position.y - prop->drop + prop->high[1], t->position.z };
+		}
+		const Simulation::CharacterBody& body = m_sim.Body( m_sim.CharacterOf( e ) );
 		return b3Add( t->position, b3Vec3{ 0.0f, body.halfHeight + body.radius, 0.0f } );
 	}
 	// A little ahead of the face and above the joint, as the first-person camera sits.
@@ -571,7 +577,7 @@ b3Vec3 Context::ViewPosition( PlayerSlot slot ) const
 	const PlayerInput& in = m_frame.inputs[slot];
 	ViewMode view = ViewMode( in.view );
 	if ( view == ViewMode::FirstPerson &&
-		 m_sim.Body( m_sim.CharacterOf( m_sim.FindEntity( m_sim.PlayerNetId( slot ) ) ) ).firstPerson == false )
+		 m_sim.SeenInFirstPerson( m_sim.FindEntity( m_sim.PlayerNetId( slot ) ) ) == false )
 	{
 		view = ViewMode::ThirdPerson; // (no first-person camera in its scene: seen from behind only)
 	}

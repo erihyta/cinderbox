@@ -225,10 +225,11 @@ enum class CommandType : uint8_t
 	// input's units, 65536 a turn): a body of that character nobody drives (IdleBody). target = a
 	// slot (SlotTarget): that slot possesses it at once, as Possess does.
 	SpawnBody = 20,
-	// target = a slot (SlotTarget), other = a body nobody drives: the slot drives it from now on. The
-	// body it drove is left: what it held is put away (not dropped), and it stands where it is,
-	// nobody's; a dead one is removed with what it carried. Nothing happens for a body someone
-	// drives, or one that is not a character's.
+	// target = a slot (SlotTarget), other = a body nobody drives: a character's (IdleBody), or a
+	// prop (a loose body: not an item, a ragdoll, a container or static): the slot drives it from now
+	// on. The body it drove is left: what it held is put away (not dropped), and it stands where it
+	// is, nobody's (a prop is a loose body again, with the speed it had); a dead one is removed with
+	// what it carried. Nothing happens for a body someone drives, or anything else.
 	Possess = 21,
 };
 inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Possess );

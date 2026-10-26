@@ -99,9 +99,17 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 		f.shape = shape.kind;
 		f.halfExtents = shape.halfExtents;
 
+		f.slot = kNoSlot; // (a prop's is its driver's: a slot only while one drives it)
 		if ( e.has<StaticGeometry>() )
 		{
 			f.kind = VisualKind::Static;
+		}
+		else if ( const DrivenProp* prop = e.try_get<DrivenProp>() )
+		{
+			// A prop a player drives: drawn as the prop, where its body is (below the mover's centre).
+			f.kind = VisualKind::Prop;
+			f.slot = e.get<Character>().slot;
+			f.transform.position.y -= prop->drop;
 		}
 		else if ( const Character* c = e.try_get<Character>() )
 		{
@@ -156,8 +164,9 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 		{
 			f.velocity = v->linear;
 		}
-		if ( sim.HasAnimState( e ) )
+		if ( sim.HasAnimState( e ) && f.kind == VisualKind::Player )
 		{
+			// (A driven prop has a state but nothing to pose with it.)
 			f.anim = sim.GetAnimState( e );
 			f.hasAnim = true;
 		}

@@ -454,7 +454,23 @@ private:
 	b3BodyId CreateIdlePhysics( const Shape& shape, const Transform& t, b3Vec3 velocity, float mass, b3ShapeId& shapeId );
 	void MakeIdle( flecs::entity e );
 	void MakeDriven( flecs::entity e, PlayerSlot slot );
+	// A prop taken over (M221) and given back; its bounds holding its move back.
+	void DriveProp( flecs::entity e, PlayerSlot slot );
+	void ReleaseProp( flecs::entity e );
+	void HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 start, float startYaw, Transform& t, Character& c );
 	void Possess( PlayerSlot slot, flecs::entity body );
+
+public:
+	// Whether a body may be seen through its eyes: its character's first-person camera, and not a prop.
+	bool SeenInFirstPerson( flecs::entity e ) const;
+	// The point a body's third-person camera orbits, given where the body is (its Transform): the
+	// view pivot above its centre (a driven prop's own centre, below the mover's), where its line of
+	// sight passes and its lines start.
+	b3Vec3 ViewPivot( flecs::entity e, b3Vec3 position ) const;
+	// Whether a slot may drive it (Possess): a character's body nobody drives, or a loose prop.
+	bool Possessable( flecs::entity e ) const;
+
+private:
 	void PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw );
 	b3ShapeId CreateShape( b3BodyId body, const Shape& shape, uint64_t category, const ShapeMaterial& material = {} );
 	// A convex hull of `points` (in the body's frame); null if they make none (all in a plane).

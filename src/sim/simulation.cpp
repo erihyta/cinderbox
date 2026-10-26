@@ -341,6 +341,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<MoveValues>();
 	RegisterSnapComponent<CharacterKind>();
 	RegisterSnapComponent<IdleBody>();
+	RegisterSnapComponent<DrivenProp>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -1745,7 +1746,7 @@ void Simulation::StepSlots( const InputFrame& frame )
 			b3CosSin pitch = detmath::CosSin( float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f ) );
 			b3Vec3 forward = detmath::YawForward( yaw );
 			b3Vec3 look = { forward.x * pitch.cosine, pitch.sine, forward.z * pitch.cosine };
-			b3Vec3 eye = b3Add( e.get<Transform>().position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+			b3Vec3 eye = ViewPivot( e, e.get<Transform>().position );
 			RayHit hit;
 			flecs::entity box;
 			if ( CastRay( eye, b3MulSV( kContainerReach, look ), netId, hit ) )
@@ -1878,6 +1879,11 @@ void Simulation::MakeIdle( flecs::entity e )
 	{
 		return;
 	}
+	if ( e.has<DrivenProp>() )
+	{
+		ReleaseProp( e ); // a prop again
+		return;
+	}
 	const uint32_t netId = e.get<NetId>().value;
 	// What it held is put away, not dropped: still its own.
 	if ( e.has<Slots>() )
@@ -1975,9 +1981,9 @@ void Simulation::Possess( PlayerSlot slot, flecs::entity body )
 		return;
 	}
 	uint32_t& driven = m_globals.playerNetIds[slot];
-	if ( driven == 0 || body.is_valid() == false || body.has<IdleBody>() == false )
+	if ( driven == 0 || Possessable( body ) == false )
 	{
-		return; // (a slot nobody is in, or a body that is not a free character's)
+		return; // (a slot nobody is in, or a body that is not free to drive)
 	}
 	if ( flecs::entity old = FindEntity( driven ); old.is_valid() )
 	{
@@ -1995,9 +2001,143 @@ void Simulation::Possess( PlayerSlot slot, flecs::entity body )
 			MakeIdle( old );
 		}
 	}
-	MakeDriven( body, slot );
+	if ( body.has<IdleBody>() )
+	{
+		MakeDriven( body, slot );
+	}
+	else
+	{
+		DriveProp( body, slot );
+	}
 	driven = body.get<NetId>().value;
 }
+
+bool Simulation::Possessable( flecs::entity e ) const
+{
+	if ( e.is_valid() == false || e.has<Character>() )
+	{
+		return false;
+	}
+	if ( e.has<IdleBody>() )
+	{
+		return true;
+	}
+	// A loose body: not an item (held or lying), a ragdoll, a container, a wall's piece standing, or
+	// anything static.
+	const PhysicsBody* pb = e.try_get<PhysicsBody>();
+	if ( pb == nullptr || e.has<StaticGeometry>() || e.has<HeldItem>() || e.has<Ragdoll>() || e.has<RagdollBodies>() || e.has<Container>() ||
+		 e.has<WallPiece>() )
+	{
+		return false;
+	}
+	return b3Body_GetType( BodyOf( *pb ) ) == b3_dynamicBody;
+}
+
+b3Vec3 Simulation::ViewPivot( flecs::entity e, b3Vec3 position ) const
+{
+	const DrivenProp* prop = e.is_valid() ? e.try_get<DrivenProp>() : nullptr;
+	return { position.x, position.y + kViewPivotHeight - ( prop != nullptr ? prop->drop : 0.0f ), position.z };
+}
+
+bool Simulation::SeenInFirstPerson( flecs::entity e ) const
+{
+	return e.has<DrivenProp>() == false && Body( CharacterOf( e ) ).firstPerson;
+}
+
+void Simulation::DriveProp( flecs::entity e, PlayerSlot slot )
+{
+	b3BodyId body = BodyOf( e.get<PhysicsBody>() );
+	const b3Vec3 origin = b3Body_GetPosition( body );
+	const b3Vec3 velocity = b3Body_GetLinearVelocity( body );
+	// Upright, keeping its heading.
+	const b3Vec3 forward = b3RotateVector( b3Body_GetRotation( body ), b3Vec3{ 0.0f, 0.0f, 1.0f } );
+	const float yaw = forward.x * forward.x + forward.z * forward.z > 1e-6f ? detmath::Atan2( forward.x, forward.z ) : 0.0f;
+	// Its bounds in its own frame: at the identity rotation, from its origin.
+	b3Body_SetTransform( body, origin, b3Quat_identity );
+	const b3AABB box = b3Body_ComputeAABB( body );
+	const b3Quat upright = detmath::YawRotation( yaw );
+	DrivenProp prop;
+	prop.low[0] = box.lowerBound.x - origin.x;
+	prop.low[1] = box.lowerBound.y - origin.y;
+	prop.low[2] = box.lowerBound.z - origin.z;
+	prop.high[0] = box.upperBound.x - origin.x;
+	prop.high[1] = box.upperBound.y - origin.y;
+	prop.high[2] = box.upperBound.z - origin.z;
+	// The walking capsule, fitted: its feet at the prop's bottom (the mover holds the capsule three
+	// radii above them), its top at the prop's top, no wider than the prop.
+	const float height = std::max( prop.high[1] - prop.low[1], 0.05f );
+	const float across = 0.5f * std::max( prop.high[0] - prop.low[0], prop.high[2] - prop.low[2] );
+	prop.radius = std::clamp( std::min( across, ( height + 0.02f ) / 5.0f ), 0.05f, 0.6f );
+	prop.halfHeight = std::max( 0.0f, ( height + 0.02f - 4.0f * prop.radius ) / 2.0f );
+	const float feet = mover::FeetBelowCenter( prop.radius, prop.halfHeight );
+	const b3Vec3 centre = { origin.x, origin.y + prop.low[1] + feet, origin.z };
+	prop.drop = centre.y - origin.y;
+
+	b3Body_SetTransform( body, origin, upright );
+	b3Body_SetType( body, b3_kinematicBody );
+	b3Body_SetLinearVelocity( body, { 0.0f, 0.0f, 0.0f } );
+	b3Body_SetAngularVelocity( body, { 0.0f, 0.0f, 0.0f } );
+	b3ShapeId shapes[64];
+	const int count = b3Body_GetShapes( body, shapes, 64 );
+	for ( int i = 0; i < count; ++i )
+	{
+		b3Filter filter = b3Shape_GetFilter( shapes[i] );
+		prop.category = i == 0 ? uint32_t( filter.categoryBits ) : prop.category;
+		filter.categoryBits = CatDriven;
+		b3Shape_SetFilter( shapes[i], filter, true );
+	}
+
+	Character c;
+	c.slot = slot;
+	c.facingYaw = yaw;
+	c.velocity = velocity;
+	e.set<Transform>( { centre, upright } );
+	e.set<Velocity>( {} );
+	e.set<Character>( c );
+	e.set<DrivenProp>( prop );
+	SetAnimState( e, AnimState{} );
+	if ( const Prop* p = e.try_get<Prop>(); p != nullptr && p->despawnTick != 0 )
+	{
+		Prop kept = *p;
+		kept.despawnTick = 0; // (a player's body does not run out)
+		e.set<Prop>( kept );
+	}
+}
+
+void Simulation::ReleaseProp( flecs::entity e )
+{
+	const DrivenProp prop = e.get<DrivenProp>();
+	const Character c = e.get<Character>();
+	const Transform t = e.get<Transform>();
+	b3BodyId body = BodyOf( e.get<PhysicsBody>() );
+	const b3Vec3 origin = { t.position.x, t.position.y - prop.drop, t.position.z };
+	const b3Quat upright = detmath::YawRotation( c.facingYaw );
+	b3Body_SetTransform( body, origin, upright );
+	b3Body_SetType( body, b3_dynamicBody );
+	b3ShapeId shapes[64];
+	const int count = b3Body_GetShapes( body, shapes, 64 );
+	for ( int i = 0; i < count; ++i )
+	{
+		b3Filter filter = b3Shape_GetFilter( shapes[i] );
+		filter.categoryBits = prop.category != 0 ? prop.category : uint64_t( CatProp );
+		b3Shape_SetFilter( shapes[i], filter, true );
+	}
+	b3Body_SetLinearVelocity( body, c.velocity );
+	b3Body_SetAwake( body, true );
+	e.set<Transform>( { origin, upright } );
+	e.set<Velocity>( { c.velocity, { 0.0f, 0.0f, 0.0f } } );
+	e.remove<Character>();
+	e.remove<DrivenProp>();
+	e.remove<MotionHold>();
+	e.remove<MoveEffects>();
+	e.remove<MoveValues>();
+	ecs_remove_id( m_world.c_ptr(), e.id(), m_animId );
+	if ( m_motionId != 0 )
+	{
+		ecs_remove_id( m_world.c_ptr(), e.id(), m_motionId );
+	}
+}
+
 
 void Simulation::PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw )
 {
@@ -2029,7 +2169,8 @@ void Simulation::PlaceCharacter( flecs::entity e, b3Vec3 position, float yaw )
 	}
 
 	b3BodyId body = BodyOf( e.get<PhysicsBody>() );
-	b3Body_SetTransform( body, t.position, t.rotation );
+	const float drop = e.has<DrivenProp>() ? e.get<DrivenProp>().drop : 0.0f;
+	b3Body_SetTransform( body, b3Vec3{ t.position.x, t.position.y - drop, t.position.z }, t.rotation );
 	b3Body_SetLinearVelocity( body, { 0.0f, 0.0f, 0.0f } );
 }
 
@@ -2046,6 +2187,11 @@ void Simulation::ApplyEvents( const InputFrame& frame )
 		if ( ev.type == PlayerEventType::Join && netId == 0 )
 		{
 			CreatePlayer( ev.slot );
+		}
+		else if ( ev.type == PlayerEventType::Leave && netId != 0 && FindEntity( netId ).has<DrivenProp>() )
+		{
+			ReleaseProp( FindEntity( netId ) ); // (a map's crate stays the map's)
+			netId = 0;
 		}
 		else if ( ev.type == PlayerEventType::Leave && netId != 0 )
 		{
@@ -2251,7 +2397,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				values.builtins[AnimExpr::Linked] = heldMotion >= 0 && missed == false ? 1.0f : 0.0f;
 				// (From where the line leaves the player: the point its camera orbits.)
 				values.builtins[AnimExpr::LinkDistance] =
-					holdAlive && missed == false ? b3Distance( where, b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } ) ) : 0.0f;
+					holdAlive && missed == false ? b3Distance( where, ViewPivot( e, t.position ) ) : 0.0f;
 				values.globalBoard = &m_globalBoard;
 				values.events = m_globals.modEvents;
 				values.eventCount = m_globals.modEventCount;
@@ -2372,8 +2518,21 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		PlayerInput still;
 		still.cameraYaw = in.cameraYaw;
 		const CharacterBody& bodyKind = Body( CharacterOf( e ) );
-		mover::Move( { m_physicsWorld, BodyOf( pb ), ShapeOf( pb ), bodyKind.radius, bodyKind.halfHeight }, MoveOf( e ), m_config.TimeStep(),
-					 m_globals.tick, c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed, c, t );
+		const DrivenProp* driven = e.try_get<DrivenProp>();
+		mover::Body moving{ m_physicsWorld, BodyOf( pb ), ShapeOf( pb ), bodyKind.radius, bodyKind.halfHeight };
+		if ( driven != nullptr )
+		{
+			moving.radius = driven->radius;
+			moving.halfHeight = driven->halfHeight;
+			moving.offset = { 0.0f, -driven->drop, 0.0f };
+		}
+		const b3Vec3 moveStart = t.position;
+		const float yawStart = c.facingYaw;
+		mover::Move( moving, MoveOf( e ), m_config.TimeStep(), m_globals.tick, c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed, c, t );
+		if ( driven != nullptr )
+		{
+			HoldBackProp( e, *driven, moveStart, yawStart, t, c );
+		}
 		c.prevButtons = in.buttons;
 
 		AnimState anim = GetAnimState( e );
@@ -2907,7 +3066,7 @@ void Simulation::Step( const InputFrame& given )
 		{
 			const uint32_t netId = m_globals.playerNetIds[slot];
 			if ( netId == 0 || ViewMode( given.inputs[slot].view ) != ViewMode::FirstPerson ||
-				 Body( CharacterOf( FindEntity( netId ) ) ).firstPerson )
+				 SeenInFirstPerson( FindEntity( netId ) ) )
 			{
 				continue;
 			}
@@ -3319,7 +3478,7 @@ void Simulation::ApplyCommand( const SimCommand& command )
 		case CommandType::SetCharacter:
 		{
 			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
-			if ( e.is_valid() == false || e.has<Character>() == false || command.index >= m_characters.size() )
+			if ( e.is_valid() == false || e.has<Character>() == false || e.has<DrivenProp>() || command.index >= m_characters.size() )
 			{
 				return;
 			}
@@ -3787,7 +3946,7 @@ void Simulation::KillPlayer( flecs::entity e, const SimCommand& command )
 		return;
 	}
 
-	if ( command.mode == 1 && Body( CharacterOf( e ) ).ragdoll )
+	if ( command.mode == 1 && Body( CharacterOf( e ) ).ragdoll && e.has<DrivenProp>() == false )
 	{
 		flecs::entity body = CreateRagdoll( e, command.other );
 		SimCommand hit = command;
@@ -4177,7 +4336,7 @@ bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerIn
 	// What is under the crosshair: along the camera's line from where it passes the player (the
 	// point a third-person camera orbits, moved to a shoulder if the camera is). Then the line itself
 	// goes from the player to that point, so something in between stops it.
-	b3Vec3 from = b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+	b3Vec3 from = ViewPivot( e, t.position );
 	b3Vec3 view = from;
 	if ( ViewMode( in.view ) == ViewMode::ShoulderRight || ViewMode( in.view ) == ViewMode::ShoulderLeft )
 	{
@@ -4419,7 +4578,7 @@ Simulation::MotionEnd Simulation::EndOf( flecs::entity self, const Transform& t,
 	auto player = [&]( MotionEnd::Kind kind ) {
 		end.kind = kind;
 		end.entity = who;
-		end.point = b3Add( kind == MotionEnd::Kind::Self ? t.position : who.get<Transform>().position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+		end.point = kind == MotionEnd::Kind::Self ? ViewPivot( self, t.position ) : ViewPivot( who, who.get<Transform>().position );
 		end.mass = MoveOf( who )[MoveParam::Mass];
 	};
 	if ( who == self )
@@ -5269,7 +5428,7 @@ void Simulation::ApplyMotionEffects( flecs::entity e, Character& c, const Transf
 				// From where the player's look starts, a little ahead (clear of its own capsule), turned
 				// as the camera is; with the player's own velocity, so a throw on the run goes further.
 				float yaw = detmath::YawToRadians( in.cameraYaw );
-				b3Vec3 from = b3Add( t.position, b3Vec3{ 0.0f, kViewPivotHeight, 0.0f } );
+				b3Vec3 from = ViewPivot( e, t.position );
 				const float speed = MotionStrength( m, effect, values, kMotionImpulseLimit );
 				const float lift = MotionAmount( m, effect.lift, effect.liftExpr, values, -kMotionImpulseLimit, kMotionImpulseLimit );
 				const float ahead = MotionAmount( m, effect.ahead, effect.aheadExpr, values, 0.0f, 5.0f );
@@ -5519,7 +5678,7 @@ float Simulation::RayCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, fl
 	{
 		return -1.0f; // filter: carry on as if it were not there
 	}
-	if ( ctx->skipPlayers && netId != 0 )
+	if ( ctx->skipPlayers && netId != 0 && ctx->sim->FindEntity( netId ).has<DrivenProp>() == false )
 	{
 		for ( uint32_t player : ctx->sim->m_globals.playerNetIds )
 		{
@@ -5611,6 +5770,52 @@ bool Simulation::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetI
 	b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( 0 ), 0, nullptr };
 	b3World_CastRay( m_physicsWorld, origin, translation, filter, &Simulation::RayCallback, &ctx );
 	return ctx.found;
+}
+
+void Simulation::HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 start, float startYaw, Transform& t, Character& c )
+{
+	// Only across: the mover has the ground, steps and slopes; the prop's bounds come along and stop
+	// where they would meet the world, another player or a driven prop (a big box does not fit a
+	// small doorway). Raised a little off the ground so the floor it stands on is not in the way.
+	const b3Vec3 across = { t.position.x - start.x, 0.0f, t.position.z - start.z };
+	const float length = b3Length( across );
+	if ( length < 1e-5f )
+	{
+		return;
+	}
+	const float lift = std::min( 0.15f, 0.25f * ( prop.high[1] - prop.low[1] ) );
+	const b3Quat turn = detmath::YawRotation( startYaw );
+	b3Vec3 points[8];
+	for ( int i = 0; i < 8; ++i )
+	{
+		const b3Vec3 corner = { ( i & 1 ) ? prop.high[0] : prop.low[0], ( i & 2 ) ? prop.high[1] : prop.low[1] + lift,
+								( i & 4 ) ? prop.high[2] : prop.low[2] };
+		points[i] = b3RotateVector( turn, corner );
+	}
+	const b3ShapeProxy proxy = { points, 8, 0.0f };
+	const b3Vec3 from = { start.x, start.y - prop.drop, start.z };
+	PhysicsArena::Scope scope( *m_arena );
+	BuildShapeLookup();
+	RayHit hit;
+	RayContext ctx{ this, e.get<NetId>().value, &hit, false, false };
+	b3QueryFilter filter = { CatDriven, CatStatic | CatPlayer | CatDriven | CatDebris, 0, nullptr };
+	b3World_CastShape( m_physicsWorld, from, &proxy, across, filter, &Simulation::RayCallback, &ctx );
+	if ( ctx.found == false || b3Dot( hit.normal, across ) >= 0.0f )
+	{
+		return; // nothing in the way (or only what it is moving away from)
+	}
+	const float kept = std::max( 0.0f, hit.fraction - 0.01f / length );
+	t.position.x = start.x + across.x * kept;
+	t.position.z = start.z + across.z * kept;
+	// Its speed into what stopped it goes.
+	const b3Vec3 normal = b3Normalize( b3Vec3{ hit.normal.x, 0.0f, hit.normal.z } );
+	const float into = b3Dot( c.velocity, normal );
+	if ( into < 0.0f )
+	{
+		c.velocity = b3MulSub( c.velocity, into, normal );
+	}
+	b3Body_SetTargetTransform( BodyOf( e.get<PhysicsBody>() ), { b3Vec3{ t.position.x, t.position.y - prop.drop, t.position.z }, t.rotation },
+							   m_config.TimeStep(), true );
 }
 
 } // namespace cb

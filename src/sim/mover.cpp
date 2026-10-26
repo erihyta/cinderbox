@@ -28,6 +28,11 @@ bool SameShape( b3ShapeId a, b3ShapeId b )
 	return a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation;
 }
 
+bool SameBody( b3BodyId a, b3BodyId b )
+{
+	return a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation;
+}
+
 // The most a loose body may push the character out of itself in one solve, in metres, before its
 // share of the two weights is taken (see CollectPlanes).
 constexpr float kLoosePush = 0.5f;
@@ -35,6 +40,7 @@ constexpr float kLoosePush = 0.5f;
 struct MoverContext
 {
 	b3ShapeId self;
+	b3BodyId selfBody; // (none of its shapes: a driven prop has several)
 	float mass; // the character's, kg
 	b3Pos origin;
 	int count;
@@ -45,13 +51,14 @@ struct MoverContext
 
 bool MoverFilter( b3ShapeId shapeId, void* context )
 {
-	return SameShape( shapeId, static_cast<MoverContext*>( context )->self ) == false;
+	auto* ctx = static_cast<MoverContext*>( context );
+	return SameShape( shapeId, ctx->self ) == false && SameBody( b3Shape_GetBody( shapeId ), ctx->selfBody ) == false;
 }
 
 bool CollectPlanes( b3ShapeId shapeId, const b3PlaneResult* results, int count, void* context )
 {
 	auto* ctx = static_cast<MoverContext*>( context );
-	if ( SameShape( shapeId, ctx->self ) )
+	if ( SameShape( shapeId, ctx->self ) || SameBody( b3Shape_GetBody( shapeId ), ctx->selfBody ) )
 	{
 		return true;
 	}
@@ -229,6 +236,7 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 
 	MoverContext ctx;
 	ctx.self = body.shape;
+	ctx.selfBody = body.body;
 	ctx.mass = params[MoveParam::Mass];
 	ctx.count = 0;
 	for ( int iteration = 0; iteration < kMoverIterations; ++iteration )
@@ -305,7 +313,7 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	t.rotation = detmath::YawRotation( c.facingYaw );
 
 	// Drive the kinematic body so props feel the motion during the physics step.
-	b3Body_SetTargetTransform( body.body, { t.position, t.rotation }, dt, true );
+	b3Body_SetTargetTransform( body.body, { b3Add( t.position, body.offset ), t.rotation }, dt, true );
 }
 
 } // namespace cb::mover
