@@ -9632,6 +9632,59 @@ void TestOneShot()
 	CHECK( b3Distance( full, over ) > 1e-3f );
 }
 
+// A nested state machine as the bake flattens it (M232): its states under its name, the way in to
+// its start, the way out from where it ends. Played through: into Combat/Slash on the event, on to
+// Combat/Recover at the slash's end, back to Idle once Recover has had 0.5 s.
+void TestNestedMachine()
+{
+	ModSchema schema = TestGraphSchema();
+	const std::string text = "cinderbox_graph\t1\n"
+							 "clip\tidle\t2\t1\n"
+							 "clip\tslash\t0.4\t0\n"
+							 "layer\tBase\n"
+							 "state\tIdle\tclip\tidle\t0\n"
+							 "state\tCombat/Slash\tclip\tslash\t0\n"
+							 "state\tCombat/Recover\tclip\tidle\t0\n"
+							 "transition\tIdle\tCombat/Slash\t1\t0\timmediate\t1\ttest.punch\n"
+							 "transition\tCombat/Recover\tIdle\t1\t0.3\timmediate\t1\tstate_time > 0.5\n"
+							 "transition\tCombat/Slash\tCombat/Recover\t1\t0\tat_end\t1\t\n"
+							 "start\tIdle\n";
+	std::string error, warnings;
+	auto graph = CompileAnimGraph( text, schema, error, warnings );
+	CHECK( graph != nullptr );
+	if ( graph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	AnimState s;
+	AnimGraphPacks packs;
+	std::vector<int> markers;
+	ModEventRecord punch{};
+	punch.type = uint16_t( schema.FindEvent( "test.punch" ) );
+	punch.netIdA = 7;
+	auto step = [&]( bool punched ) {
+		AnimGraphInputs in;
+		in.netId = 7;
+		in.events = punched ? &punch : nullptr;
+		in.eventCount = punched ? 1 : 0;
+		UpdateAnimGraph( s, *graph, packs, in, 0.1f, markers );
+		return graph->layers[0].states[s.graph[0].state].name;
+	};
+	step( false );
+	CHECK( step( true ) == "Combat/Slash" );
+	int recoverAt = -1, idleAt = -1;
+	for ( int i = 1; i <= 20 && idleAt < 0; ++i )
+	{
+		const std::string now = step( false );
+		recoverAt = now == "Combat/Recover" && recoverAt < 0 ? i : recoverAt;
+		idleAt = now == "Idle" ? i : idleAt;
+	}
+	std::printf( "    into Combat/Slash, on to Combat/Recover after %d ticks of 0.1 s (a 0.4 s slash), back to Idle after %d\n", recoverAt, idleAt );
+	CHECK( recoverAt >= 4 && recoverAt <= 5 );
+	CHECK( idleAt - recoverAt >= 5 && idleAt - recoverAt <= 7 );
+}
+
 void TestAnimGraph()
 {
 	// Numbers read the same everywhere.
@@ -12599,6 +12652,7 @@ int main( int argc, char** argv )
 		{ "anim_graph", TestAnimGraph },
 		{ "state_speed", TestStateSpeed },
 		{ "one_shot", TestOneShot },
+		{ "nested_machine", TestNestedMachine },
 		{ "held_items", TestHeldItems },
 		{ "slots", TestSlots },
 		{ "slot_keys", TestSlotKeys },

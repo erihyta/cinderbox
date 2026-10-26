@@ -55,6 +55,7 @@
 #include <charconv>
 #include <cmath>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -350,6 +351,18 @@ namespace
 {
 
 // A number for graph.cfg: the shortest form that reads back as the same float, always with a '.'.
+// A transition as baked: between two states of a layer (a nested machine's flattened in).
+struct GraphOut
+{
+	std::string from;
+	std::string to;
+	int priority = 1;
+	std::string xfade;
+	std::string mode;
+	std::string condition;
+	std::string curve;
+};
+
 // How many steps a crossfade curve is sampled in.
 constexpr int kFadeCurveSteps = 16;
 
@@ -701,10 +714,21 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 			continue;
 		}
 
-		Ref<AnimationNodeStateMachine> machine = layer.machine;
+		// A machine's states, and its nested machines' flattened in under its name ("Sword/Slash"):
+		// a transition into a nested machine goes to its start; one out of it leaves from each of its
+		// states (At End: from where it reaches its End, on that transition's condition too).
+		std::function<String( Ref<AnimationNodeStateMachine>, String, String, String&, std::vector<GraphOut>&, std::vector<GraphOut>&,
+							  std::vector<std::string>& )>
+			bakeMachine;
+		bakeMachine = [&]( Ref<AnimationNodeStateMachine> machine, String paramPrefix, String namePrefix, String& start,
+						   std::vector<GraphOut>& outs, std::vector<GraphOut>& ends, std::vector<std::string>& members ) -> String {
 		TypedArray<StringName> names = machine->get_node_list();
 		int states = 0;
 		String first;
+		std::map<std::string, std::string> entry;				// a node's state, or its machine's start
+		std::map<std::string, std::vector<std::string>> inside; // a node's states (a nested machine's all)
+		std::map<std::string, std::vector<GraphOut>> endsOf;	// where a nested machine reaches its End
+		std::vector<GraphOut> deeper;							// nested machines' own transitions
 		for ( int64_t i = 0; i < names.size(); ++i )
 		{
 			String name = String( StringName( names[i] ) );
@@ -717,9 +741,31 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 				return "state name '" + name + "' cannot be baked (no '=', '#', tabs or new lines)";
 			}
 			Ref<AnimationNode> node = machine->get_node( name );
+			if ( Ref<AnimationNodeStateMachine> sub = node; sub.is_valid() )
+			{
+				if ( sub->get_state_machine_type() == AnimationNodeStateMachine::STATE_MACHINE_TYPE_GROUPED )
+				{
+					warnings += paramPrefix + name + ": a grouped state machine is baked as a nested one; ";
+				}
+				String subStart;
+				std::vector<std::string> subStates;
+				std::vector<GraphOut> subEnds;
+				String problem = bakeMachine( sub, paramPrefix + name + "/", namePrefix + name + "/", subStart, deeper, subEnds, subStates );
+				if ( problem.is_empty() == false )
+				{
+					return problem;
+				}
+				entry[Std( name )] = Std( subStart );
+				inside[Std( name )] = subStates;
+				endsOf[Std( name )] = subEnds;
+				members.insert( members.end(), subStates.begin(), subStates.end() );
+				first = states == 0 ? subStart : first;
+				++states;
+				continue;
+			}
 			// Its parameters' path (a blend space's position), and how fast it plays: a state may be a
 			// blend tree of one animation or blend space, through a TimeScale node, into its output.
-			String param = layer.prefix + name;
+			String param = paramPrefix + name;
 			String speed;
 			double speedFactor = 1.0;
 			if ( Ref<AnimationNodeBlendTree> inner = node; inner.is_valid() )
@@ -782,7 +828,7 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 					}
 				}
 				bool backward = clip->get_play_mode() == AnimationNodeAnimation::PLAY_MODE_BACKWARD;
-				body += "state\t" + Std( name ) + "\tclip\t" + Std( String( clip->get_animation() ) ) + "\t" + ( backward ? "1" : "0" ) + "\n";
+				body += "state\t" + Std( namePrefix + name ) + "\tclip\t" + Std( String( clip->get_animation() ) ) + "\t" + ( backward ? "1" : "0" ) + "\n";
 			}
 			else if ( Ref<AnimationNodeBlendSpace1D> space = node; space.is_valid() )
 			{
@@ -793,30 +839,30 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 				}
 				if ( driver.is_empty() )
 				{
-					return "blend space " + layer.prefix + name + " needs a graph_inputs entry for " + layer.prefix + name +
+					return "blend space " + paramPrefix + name + " needs a graph_inputs entry for " + paramPrefix + name +
 						   "/blend_position (like \"speed\")";
 				}
-				String problem = checkExpression( driver, layer.prefix + name + "/blend_position" );
+				String problem = checkExpression( driver, paramPrefix + name + "/blend_position" );
 				if ( problem.is_empty() == false )
 				{
 					return problem;
 				}
-				body += "state\t" + Std( name ) + "\tblend\t" + Std( driver ) + "\n";
+				body += "state\t" + Std( namePrefix + name ) + "\tblend\t" + Std( driver ) + "\n";
 				if ( space->get_blend_point_count() == 0 )
 				{
-					return "blend space " + layer.prefix + name + " has no points";
+					return "blend space " + paramPrefix + name + " has no points";
 				}
 				for ( int p = 0; p < space->get_blend_point_count(); ++p )
 				{
 					Ref<AnimationNodeAnimation> point = space->get_blend_point_node( p );
 					if ( point.is_null() )
 					{
-						return "blend space " + layer.prefix + name + ": its points must be animations";
+						return "blend space " + paramPrefix + name + ": its points must be animations";
 					}
 					problem = useAnimation( point->get_animation() );
 					if ( problem.is_empty() == false )
 					{
-						return layer.prefix + name + ": " + problem;
+						return paramPrefix + name + ": " + problem;
 					}
 					bool backward = point->get_play_mode() == AnimationNodeAnimation::PLAY_MODE_BACKWARD;
 					body += "point\t" + Num( space->get_blend_point_position( p ) ) + "\t" + Std( String( point->get_animation() ) ) +
@@ -840,15 +886,15 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 				}
 				if ( comma < 0 )
 				{
-					return "2D blend space " + layer.prefix + name + " needs a graph_inputs entry for " + layer.prefix + name +
+					return "2D blend space " + paramPrefix + name + " needs a graph_inputs entry for " + paramPrefix + name +
 						   "/blend_position with two expressions, x and y (like \"move_right, move_forward\")";
 				}
 				String x = driver.substr( 0, comma ).strip_edges();
 				String y = driver.substr( comma + 1 ).strip_edges();
-				String problem = checkExpression( x, layer.prefix + name + "/blend_position x" );
+				String problem = checkExpression( x, paramPrefix + name + "/blend_position x" );
 				if ( problem.is_empty() )
 				{
-					problem = checkExpression( y, layer.prefix + name + "/blend_position y" );
+					problem = checkExpression( y, paramPrefix + name + "/blend_position y" );
 				}
 				if ( problem.is_empty() == false )
 				{
@@ -856,24 +902,24 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 				}
 				if ( plane->get_blend_point_count() == 0 )
 				{
-					return "2D blend space " + layer.prefix + name + " has no points";
+					return "2D blend space " + paramPrefix + name + " has no points";
 				}
 				if ( plane->get_blend_mode() != AnimationNodeBlendSpace2D::BLEND_MODE_INTERPOLATED )
 				{
-					warnings += layer.prefix + name + ": only the interpolated blend mode is baked; ";
+					warnings += paramPrefix + name + ": only the interpolated blend mode is baked; ";
 				}
-				body += "state\t" + Std( name ) + "\tblend2d\t" + Std( x ) + "\t" + Std( y ) + "\n";
+				body += "state\t" + Std( namePrefix + name ) + "\tblend2d\t" + Std( x ) + "\t" + Std( y ) + "\n";
 				for ( int p = 0; p < plane->get_blend_point_count(); ++p )
 				{
 					Ref<AnimationNodeAnimation> point = plane->get_blend_point_node( p );
 					if ( point.is_null() )
 					{
-						return "2D blend space " + layer.prefix + name + ": its points must be animations";
+						return "2D blend space " + paramPrefix + name + ": its points must be animations";
 					}
 					problem = useAnimation( point->get_animation() );
 					if ( problem.is_empty() == false )
 					{
-						return layer.prefix + name + ": " + problem;
+						return paramPrefix + name + ": " + problem;
 					}
 					Vector2 at = plane->get_blend_point_position( p );
 					bool backward = point->get_play_mode() == AnimationNodeAnimation::PLAY_MODE_BACKWARD;
@@ -907,7 +953,7 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 			}
 			else
 			{
-				return layer.prefix + name + " is a " + node->get_class() +
+				return paramPrefix + name + " is a " + node->get_class() +
 					   "; states are animations, 1D and 2D blend spaces, or a blend tree of one (nested machines are not baked yet)";
 			}
 			if ( speedFactor < 0.0 )
@@ -927,16 +973,18 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 			}
 			if ( states == 0 )
 			{
-				first = name;
+				first = namePrefix + name;
 			}
+			entry[Std( name )] = Std( namePrefix + name );
+			inside[Std( name )] = { Std( namePrefix + name ) };
+			members.push_back( Std( namePrefix + name ) );
 			++states;
 		}
 		if ( states == 0 )
 		{
-			return "state machine " + layer.name + " has no states";
+			return "state machine " + ( paramPrefix.is_empty() ? layer.name : paramPrefix ) + " has no states";
 		}
 
-		String start;
 		for ( int t = 0; t < machine->get_transition_count(); ++t )
 		{
 			String from = String( machine->get_transition_from( t ) );
@@ -944,15 +992,10 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 			Ref<AnimationNodeStateMachineTransition> transition = machine->get_transition( t );
 			if ( from == "Start" )
 			{
-				start = to;
+				start = entry.count( Std( to ) ) ? String::utf8( entry[Std( to )].c_str() ) : to;
 				continue;
 			}
-			String where = layer.prefix + from + " -> " + to;
-			if ( to == "End" )
-			{
-				warnings += where + ": transitions to End are not baked; ";
-				continue;
-			}
+			String where = paramPrefix + from + " -> " + to;
 			switch ( transition->get_advance_mode() )
 			{
 				case AnimationNodeStateMachineTransition::ADVANCE_MODE_AUTO:
@@ -999,13 +1042,76 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 					curve += ( i > 0 ? "," : "" ) + Num( double( shape->sample( float( i ) / float( kFadeCurveSteps ) ) ) );
 				}
 			}
-			body += "transition\t" + Std( from ) + "\t" + Std( to ) + "\t" + std::to_string( transition->get_priority() ) + "\t" +
-					Num( transition->get_xfade_time() ) + "\t" + mode + "\t1\t" + Std( combined ) + ( curve.empty() ? "" : "\t" + curve ) + "\n";
+			const GraphOut made{ "", "", transition->get_priority(), Num( transition->get_xfade_time() ), mode, Std( combined ), curve };
+			auto both = []( const std::string& x, const std::string& y ) {
+				return x.empty() ? y : y.empty() ? x : "(" + x + ") and (" + y + ")";
+			};
+			const std::string source = Std( from );
+			const std::vector<std::string> sources = inside[source];
+			if ( to == "End" )
+			{
+				// This machine ends here: its parent's At End ways out leave from these states.
+				for ( const std::string& state : sources )
+				{
+					GraphOut end = made;
+					end.from = state;
+					ends.push_back( end );
+				}
+				continue;
+			}
+			if ( entry.count( Std( to ) ) == 0 || sources.empty() )
+			{
+				continue; // (not a state of this machine)
+			}
+			const std::string target = entry[Std( to )];
+			if ( endsOf.count( source ) && made.mode == "at_end" )
+			{
+				// Out of a nested machine at its end: from where it reaches its End, on both conditions.
+				if ( endsOf[source].empty() )
+				{
+					warnings += where + ": the nested machine never reaches its End, so this At End transition never runs; ";
+				}
+				for ( const GraphOut& end : endsOf[source] )
+				{
+					outs.push_back( { end.from, target, made.priority, made.xfade, end.mode, both( end.condition, made.condition ), made.curve } );
+				}
+				continue;
+			}
+			for ( const std::string& state : sources )
+			{
+				GraphOut way = made;
+				way.from = state;
+				way.to = target;
+				outs.push_back( way );
+			}
 		}
 		if ( start.is_empty() )
 		{
-			warnings += "state machine " + layer.name + " has no transition from Start: it starts in " + first + "; ";
+			warnings += "state machine " + ( paramPrefix.is_empty() ? layer.name : paramPrefix ) + " has no transition from Start: it starts in " +
+						first + "; ";
 			start = first;
+		}
+		// A machine's own ways out are tried before its nested machines' (on equal priorities).
+		outs.insert( outs.end(), deeper.begin(), deeper.end() );
+		return String();
+		};
+
+		String start;
+		std::vector<GraphOut> outs, ends;
+		std::vector<std::string> members;
+		String problem = bakeMachine( layer.machine, layer.prefix, "", start, outs, ends, members );
+		if ( problem.is_empty() == false )
+		{
+			return problem;
+		}
+		if ( ends.empty() == false )
+		{
+			warnings += "state machine " + layer.name + ": transitions to End are not baked; ";
+		}
+		for ( const GraphOut& o : outs )
+		{
+			body += "transition\t" + o.from + "\t" + o.to + "\t" + std::to_string( o.priority ) + "\t" + o.xfade + "\t" + o.mode + "\t1\t" +
+					o.condition + ( o.curve.empty() ? "" : "\t" + o.curve ) + "\n";
 		}
 		body += "start\t" + Std( start ) + "\n";
 	}
