@@ -84,6 +84,9 @@ private:
 	void Finish( const AnimState& state, const HandGrip* grip );
 	// Blends `pose` over m_blended by per-joint `mask` (empty: every joint) times `weight`.
 	void BlendOver( const ozz::vector<ozz::math::SoaTransform>& pose, const ozz::vector<ozz::math::SimdFloat4>* mask, float weight );
+	// Adds `pose`'s difference from the skeleton's rest onto the pose so far, by `weight` (Godot's
+	// Add2, a OneShot's Add mix mode).
+	void AddOver( const ozz::vector<ozz::math::SoaTransform>& pose, const ozz::vector<ozz::math::SimdFloat4>* mask, float weight );
 
 	// State machine layers.
 	void EvaluateGraph( const AnimState& state );
@@ -118,6 +121,7 @@ private:
 	bool m_heldHands[2] = {};
 	ozz::vector<ozz::math::SimdFloat4> m_armMasks[2];
 	ozz::vector<ozz::math::SoaTransform> m_scratch;
+	ozz::vector<ozz::math::SoaTransform> m_delta; // an added layer's difference from the rest
 	ozz::vector<ozz::math::SimdFloat4> m_keepWeights;
 	ozz::vector<ozz::math::SimdFloat4> m_layerWeights;
 };

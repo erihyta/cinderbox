@@ -115,6 +115,54 @@ func _initialize() -> void:
 	machine.add_node("Odd", odd)
 	baked = character.bake_to(folder)
 	_check("a state's blend tree of a Blend2 is refused, and says why", not baked.ok and String(baked.error).contains("TimeScale"), str(baked.get("error", "")))
+	machine.remove_node("Odd")
+
+	# OneShot and Add2 (M231): a root blend tree of the machine, a OneShot of the second animation
+	# through a TimeScale over it, and an added machine over both.
+	var root_tree := AnimationNodeBlendTree.new()
+	root_tree.add_node("Base", machine)
+	var kick := AnimationNodeOneShot.new()
+	kick.fadein_time = 0.1
+	kick.fadeout_time = 0.2
+	root_tree.add_node("Kick", kick)
+	var kick_clip := AnimationNodeAnimation.new()
+	kick_clip.animation = second
+	root_tree.add_node("KickClip", kick_clip)
+	root_tree.add_node("KickSpeed", AnimationNodeTimeScale.new())
+	var lean_machine := AnimationNodeStateMachine.new()
+	var lean_clip := AnimationNodeAnimation.new()
+	lean_clip.animation = first
+	lean_machine.add_node("Lean", lean_clip)
+	lean_machine.add_transition("Start", "Lean", AnimationNodeStateMachineTransition.new())
+	root_tree.add_node("LeanMachine", lean_machine)
+	var lean := AnimationNodeAdd2.new()
+	root_tree.add_node("Lean", lean)
+	root_tree.connect_node("Kick", 0, "Base")
+	root_tree.connect_node("KickSpeed", 0, "KickClip")
+	root_tree.connect_node("Kick", 1, "KickSpeed")
+	root_tree.connect_node("Lean", 0, "Kick")
+	root_tree.connect_node("Lean", 1, "LeanMachine")
+	root_tree.connect_node("output", 0, "Lean")
+	tree.tree_root = root_tree
+	tree.set("parameters/KickSpeed/scale", 2.0)
+	character.graph_inputs = {"Base/Fast/Scale/scale": "speed * 0.5", "Kick/request": "jumped", "Lean/add_amount": "speed > 2"}
+	baked = character.bake_to(folder)
+	_check("a OneShot and an Add2 bake", baked.ok, str(baked.get("error", "")))
+	graph = _graph(folder)
+	var layer_lines := PackedStringArray()
+	for line in graph.split("\n"):
+		if line.begins_with("layer\t"):
+			layer_lines.append(line.substr(6))
+	_check("... as layers in the tree's order", layer_lines == PackedStringArray(["Base", "Kick", "LeanMachine"]), str(layer_lines))
+	_check("the OneShot: its fades and its request", _line_starting(graph, "shot\t") == "shot\t0.1\t0.2\tjumped", _line_starting(graph, "shot\t"))
+	_check("... its one state, at its TimeScale's speed", graph.contains("state\tShot\tclip\t%s\t0\nspeed\t2.0\nstart\tShot\n" % second) or
+		graph.contains("state\tShot\tclip\t%s\t0\nspeed\t2\nstart\tShot\n" % second), graph.substr(graph.find("shot\t"), 120))
+	_check("the Add2: an added layer weighed by its amount", graph.contains("layer\tLeanMachine\nweight\tspeed > 2\nadd\n"),
+		graph.substr(graph.find("layer\tLeanMachine"), 60))
+	_check("the machine below them keeps its own paths", _after_state(graph, "Fast") == "speed\tspeed * 0.5", _after_state(graph, "Fast"))
+	character.graph_inputs = {"Lean/add_amount": "1"}
+	baked = character.bake_to(folder)
+	_check("a OneShot without a request is refused, and says why", not baked.ok and String(baked.error).contains("Kick/request"), str(baked.get("error", "")))
 
 	print("check_anim_tree: %s" % ("all held" if _failures == 0 else "%d failed" % _failures))
 	quit(1 if _failures > 0 else 0)

@@ -20,11 +20,13 @@
 #include "ozz/base/io/stream.h"
 
 #include <godot_cpp/classes/animation.hpp>
+#include <godot_cpp/classes/animation_node_add2.hpp>
 #include <godot_cpp/classes/animation_node_animation.hpp>
 #include <godot_cpp/classes/animation_node_blend2.hpp>
 #include <godot_cpp/classes/animation_node_blend_space1_d.hpp>
 #include <godot_cpp/classes/animation_node_blend_space2d.hpp>
 #include <godot_cpp/classes/animation_node_blend_tree.hpp>
+#include <godot_cpp/classes/animation_node_one_shot.hpp>
 #include <godot_cpp/classes/animation_node_state_machine.hpp>
 #include <godot_cpp/classes/animation_node_state_machine_transition.hpp>
 #include <godot_cpp/classes/animation_node_time_scale.hpp>
@@ -382,6 +384,15 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 		String prefix; // its parameters' path under "parameters/"
 		PackedStringArray mask;
 		String weight;
+		bool additive = false; // an Add2's, or a OneShot's in Add mix mode
+		// A OneShot: no machine; the animation it plays once, and when.
+		bool shot = false;
+		String shotClip;
+		bool shotBackward = false;
+		String shotSpeed;
+		double fadeIn = 0.0;
+		double fadeOut = 0.0;
+		String request;
 	};
 	std::vector<Layer> layers;
 
@@ -423,11 +434,108 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 				layers.push_back( { name, machine, name + "/", {}, "" } );
 				return String();
 			}
+			// A node's bone filter, as a layer's mask.
+			auto maskOf = [&]( Ref<AnimationNode> filtered, PackedStringArray& mask ) {
+				if ( filtered->is_filter_enabled() )
+				{
+					Array filters = filtered->get( "filters" );
+					for ( int64_t i = 0; i < filters.size(); ++i )
+					{
+						NodePath path = filters[i];
+						String bone = path.get_concatenated_subnames();
+						if ( bone.is_empty() == false )
+						{
+							mask.push_back( bone );
+						}
+					}
+				}
+			};
+			if ( Ref<AnimationNodeOneShot> shot = node; shot.is_valid() )
+			{
+				// What is below it, then the animation it plays once over it (through a TimeScale).
+				String problem = walk( inputOf( name, 0 ) );
+				if ( problem.is_empty() == false )
+				{
+					return problem;
+				}
+				Layer layer{ name, Ref<AnimationNodeStateMachine>(), name + "/", {}, "" };
+				layer.shot = true;
+				layer.additive = shot->get_mix_mode() == AnimationNodeOneShot::MIX_MODE_ADD;
+				layer.fadeIn = shot->get_fadein_time();
+				layer.fadeOut = shot->get_fadeout_time();
+				layer.request = input( name + "/request" );
+				if ( layer.request.is_empty() )
+				{
+					return "OneShot " + name + " needs a graph_inputs entry for " + name + "/request: when it plays (like \"attack\")";
+				}
+				String at = inputOf( name, 1 );
+				Ref<AnimationNode> played = at.is_empty() ? Ref<AnimationNode>() : blendTree->get_node( at );
+				if ( Ref<AnimationNodeTimeScale> scale = played; scale.is_valid() )
+				{
+					layer.shotSpeed = input( at + "/scale" );
+					if ( layer.shotSpeed.is_empty() )
+					{
+						const Variant value = tree->get( "parameters/" + at + "/scale" );
+						const double factor = value.get_type() == Variant::FLOAT || value.get_type() == Variant::INT ? double( value ) : 1.0;
+						layer.shotSpeed = factor == 1.0 ? String() : String( Num( factor ).c_str() );
+					}
+					at = inputOf( at, 0 );
+					played = at.is_empty() ? Ref<AnimationNode>() : blendTree->get_node( at );
+				}
+				Ref<AnimationNodeAnimation> clip = played;
+				if ( clip.is_null() )
+				{
+					return "OneShot " + name + ": its shot input must be an animation (through a TimeScale if it plays at another speed)";
+				}
+				layer.shotClip = clip->get_animation();
+				layer.shotBackward = clip->get_play_mode() == AnimationNodeAnimation::PLAY_MODE_BACKWARD;
+				if ( shot->has_autorestart() )
+				{
+					warnings += "OneShot " + name + ": autorestart is not baked (it plays when its request turns true); ";
+				}
+				if ( shot->get_fadein_curve().is_valid() || shot->get_fadeout_curve().is_valid() )
+				{
+					warnings += "OneShot " + name + ": its fade curves are not baked (it fades linearly); ";
+				}
+				maskOf( shot, layer.mask );
+				layers.push_back( layer );
+				return String();
+			}
+			if ( Ref<AnimationNodeAdd2> add = node; add.is_valid() )
+			{
+				String problem = walk( inputOf( name, 0 ) );
+				if ( problem.is_empty() == false )
+				{
+					return problem;
+				}
+				String overName = inputOf( name, 1 );
+				Ref<AnimationNodeStateMachine> over = overName.is_empty() ? Ref<AnimationNode>() : blendTree->get_node( overName );
+				if ( over.is_null() )
+				{
+					return "Add2 " + name + ": its add input must be a state machine";
+				}
+				Layer layer{ overName, over, overName + "/", {}, input( name + "/add_amount" ) };
+				layer.additive = true;
+				if ( layer.weight.is_empty() )
+				{
+					// Its amount as set in the tree (Godot's default is 0: nothing added).
+					const Variant value = tree->get( "parameters/" + name + "/add_amount" );
+					const double amount = value.get_type() == Variant::FLOAT || value.get_type() == Variant::INT ? double( value ) : 0.0;
+					layer.weight = String( Num( amount ).c_str() );
+					if ( amount == 0.0 )
+					{
+						warnings += "Add2 " + name + " adds nothing: its add_amount is 0 and graph_inputs has no " + name + "/add_amount; ";
+					}
+				}
+				maskOf( add, layer.mask );
+				layers.push_back( layer );
+				return String();
+			}
 			Ref<AnimationNodeBlend2> blend = node;
 			if ( blend.is_null() )
 			{
 				return "blend tree node " + name + " is a " + node->get_class() +
-					   "; the bake takes state machines layered with Blend2 nodes";
+					   "; the bake takes state machines layered with Blend2 or Add2 nodes, and OneShot nodes";
 			}
 			String problem = walk( inputOf( name, 0 ) );
 			if ( problem.is_empty() == false )
@@ -562,6 +670,35 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 				return problem;
 			}
 			body += "weight\t" + Std( layer.weight ) + "\n";
+		}
+		if ( layer.additive )
+		{
+			body += "add\n";
+		}
+		if ( layer.shot )
+		{
+			// One state, played once on its request.
+			for ( const String& expression : { layer.request, layer.shotSpeed } )
+			{
+				String problem = expression.is_empty() ? String() : checkExpression( expression, layer.name + ( expression == layer.request ? " request" : " speed" ) );
+				if ( problem.is_empty() == false )
+				{
+					return problem;
+				}
+			}
+			String problem = useAnimation( layer.shotClip );
+			if ( problem.is_empty() == false )
+			{
+				return layer.name + ": " + problem;
+			}
+			body += "shot\t" + Num( layer.fadeIn ) + "\t" + Num( layer.fadeOut ) + "\t" + Std( layer.request ) + "\n";
+			body += "state\tShot\tclip\t" + Std( layer.shotClip ) + "\t" + ( layer.shotBackward ? "1" : "0" ) + "\n";
+			if ( layer.shotSpeed.is_empty() == false )
+			{
+				body += "speed\t" + Std( layer.shotSpeed ) + "\n";
+			}
+			body += "start\tShot\n";
+			continue;
 		}
 
 		Ref<AnimationNodeStateMachine> machine = layer.machine;
