@@ -7,12 +7,14 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 |---|---|
 | The simulation | one deterministic C++ simulation on the server and every client, bit-exact across Windows, Linux and macOS/ARM64 and across Clang, GCC and MSVC |
 | Netcode | an authoritative server, client prediction and rollback, recordings that replay |
-| Rules | C++ server mods that change the world only through commands: `inventory`, `combat`, `pistol`, `rifle`, `melee`, `pickup`, `deathmatch`, ... |
+| Rules | C++ server mods that change the world only through commands: `inventory`, `combat`, `gun`, `melee`, `brawl`, `pickup`, `deathmatch`, `waves`, ... |
+| The rules language | what moves on screen (an item's use, a dash, a hook, a skill) is a sheet the simulation runs, so it is predicted: [docs/rules-language.md](docs/rules-language.md) |
 | Looks | Godot scenes with no code (reactions, predictions, HUD nodes), shipped as workshop items |
-| Motions | what mods add to movement, authored as nodes, baked and run by every simulation, so a player's own are predicted |
-| Authoring | maps, characters, state machines and item bodies are made in the Godot editor and baked for the server |
+| Bodies | a player drives a body: its own character, another character's, or a loose prop; a mod drives bodies too (NPCs), which walk the server's navigation mesh |
+| The world | physics props, destructible walls broken into authored pieces, items in the world, containers |
+| Authoring | maps, characters, their animation trees, items and motions are made in the Godot editor and baked for the server |
 
-Milestones M1 to M98 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
+Milestones M1 to M232 are done (the roadmap's steps 1 to 11); [docs/HISTORY.md](docs/HISTORY.md) lists them.
 
 ## The manual
 
@@ -21,9 +23,10 @@ Milestones M1 to M98 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them.
 | this page | building, playing, the controls |
 | [docs/server-mods.md](docs/server-mods.md) | writing a mod's rules, the shipped mods, private fields, hit tests, workshop items, the SDK |
 | [docs/looks.md](docs/looks.md) | reactions, predictions, the expression language, HUD nodes, the Cue Preview, client mods |
-| [docs/characters.md](docs/characters.md) | characters, state machines, layers and stances, aiming, animation packs |
+| [docs/characters.md](docs/characters.md) | characters, what an animation tree bakes to, layers and stances, aiming, animation packs, bodies and possession, NPCs |
 | [docs/items.md](docs/items.md) | held items, sockets, the inventory, grips, items in the world |
 | [docs/motions.md](docs/motions.md) | what a mod adds to movement (a dash, a double jump, flight, a jetpack, a grappling hook), predicted: `CbMotion` and its parts (impulses, forces, probes, links); what players weigh |
+| [docs/rules-language.md](docs/rules-language.md) | the rules language's reference: every line a sheet may hold, where it may stand, what it reads |
 | [docs/maps.md](docs/maps.md) | maps, templates and components |
 | [docs/testing.md](docs/testing.md) | the tools, the determinism checks, CI |
 | [sdk/README.md](sdk/README.md) | the Godot project a mod's look is made in |
@@ -63,6 +66,18 @@ pulling a change that adds one), open `godot/` in the editor once or run
 ## Playing
 
 The client is the Godot project in `godot/` (Godot 4.7 or later).
+
+**Trying things on this machine:** the menu's **Test locally** starts a `cb_server` of this build
+with its default mods, joins it, and stops it when you leave. From the command line:
+
+```sh
+godot --path godot -- --host-local                      # the default mods
+godot --path godot -- --host-local=combat,waves --bots=2 # only these mods, and two bots
+godot --path godot -- --host-local --server-arg="--map test_ground --mod-option waves.first=10"
+powershell -ExecutionPolicy Bypass -File tools\test_mod.ps1 -Mod waves   # build, publish a mod's look, then the same
+```
+
+**A server of its own:**
 
 ```sh
 # terminal 1 (the built-in sandbox, or a map baked in the editor: godot/maps/<name>.cbmap)
@@ -105,14 +120,21 @@ A join that fails comes back to the menu and says why:
 ### Controls
 
 - WASD moves, Shift sprints and Space jumps: the engine's own controls.
-- Everything else comes from the server's mods, bound to the keys they suggest. With the shipped mods:
-  1 to 3 select a slot (pistol, bat, rifle; the same key again empties the hands), the left mouse button uses what is in the hand, R reloads, E picks
-  up, G throws, V dashes (twice, then they come back), Q throws a grappling hook at what is
-  under the crosshair and pulls you there (Q again lets go), and F with empty hands spawns a prop.
-  Switched off by default: the crouch (C, the `sneak` mod), the `flight` mod (T flies, Shift
-  glides, and its jetpack), and the second jump in the air
-  ([what is off](docs/server-mods.md#switched-off-by-default)).
-- The mouse orbits the camera and the wheel zooms. Tab shows the scoreboard where a mod brings one (combat, deathmatch).
+- Everything else comes from the server's mods, bound to the keys they suggest, and every key can
+  be changed on the **Keys** page (Settings). With the default mods:
+
+  | Keys | What |
+  |---|---|
+  | 1, 2, 3, ... | the hotbar's slots. Each item goes to the slot it asks for, else the first free one. The brawl kit's come first: the fist (1, in the hand), then its skills, which the slot's key uses at once (the dash strike, the uppercut, the ground slam, the guard); then the pistol, the rifle, the grenade and the rest. The same key again empties the hands |
+  | left / right mouse | use what is in the hand / its second use |
+  | V, Q, H | the dash boots (twice, then they come back), the grappling hook (Q again lets go), a grenade: each item's own key, from wherever it is carried |
+  | R, E, G, F | reload; pick up (or open a chest you look at); throw what is in the hand; spawn a prop with empty hands |
+  | I, B, T, Tab | the bag (drag items between slots); the shop; chat (Enter sends); the scoreboard while held |
+
+  Switched off by default ([what is off](docs/server-mods.md#switched-off-by-default)): the crouch
+  (C, `sneak`), flight (T, `flight`), the impact grenade (J, `grenade`), the cannon (N, `cannon`),
+  taking over the nearest body (P, `possess`), and the waves of NPCs (`waves`).
+- The mouse orbits the camera and the wheel zooms.
 - The key left of 1 (`` ` `` / `~`) switches between the camera behind the player and **first person**:
   from the character's eye height above its feet, on its mover, so steps, landings and the bowing
   body do not move it. Both views look 86 degrees up and down; from behind, the map pulls the
@@ -182,10 +204,19 @@ powershell -ExecutionPolicy Bypass -File tools\export_client.ps1     # -> dist\C
 The export needs the Godot 4.7.2 export templates, installed either from the editor or extracted to
 `%LOCALAPPDATA%\cinderbox-build\tools\godot\templates`. Packs in `mods\` are copied to `dist\Cinderbox\mods`.
 
-`cb_server` is in `<build dir>/bin`. Its options are `--tick-rate`, `--seed`, `--substeps`,
-`--prop-lifetime`, `--props-per-player`, `--props-global`, `--move NAME=VALUE`
-([movement parameters](docs/server-mods.md#movement-parameters)), and `--mods A,B` / `--mods none` / `--list-mods`
-(every compiled server mod runs by default, except the ones switched off: see [docs/server-mods.md](docs/server-mods.md)).
+`cb_server` is in `<build dir>/bin` (`cb_server --help` lists everything):
+
+| Option | What |
+|---|---|
+| `--port N`, `--tick-rate HZ`, `--seed N`, `--substeps N` | the server itself |
+| `--map NAME` or `--map FILE.cbmap` | a map baked in the editor (`godot/maps/`); without it, the built-in sandbox |
+| `--mods A,B`, `--mods none`, `--list-mods` | which server mods run: every compiled one by default, except the ones switched off ([docs/server-mods.md](docs/server-mods.md)) |
+| `--mod-option NAME=VALUE` | a mod's option (`waves.first=10`, `deathmatch.kills=20`); each mod's are in its file's top comment |
+| `--character NAME [--workshop DIR]` | the character everyone plays as ([docs/characters.md](docs/characters.md)) |
+| `--move NAME=VALUE` | how players move ([movement parameters](docs/server-mods.md#movement-parameters)) |
+| `--prop-lifetime SEC`, `--props-per-player N`, `--props-global N` | the props players spawn |
+| `--record FILE`, `--record-view FILE` | a recording, a view file (see [Watching a recording](#watching-a-recording)) |
+| `--physics-threads N`, `--exit-when-empty SEC`, `--quiet` | threads for the physics; stop once nobody is connected; less output |
 
 ## License
 

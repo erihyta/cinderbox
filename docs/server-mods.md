@@ -75,6 +75,9 @@ The mods that ship:
 | `inventory` | `declare.Slots( columns x rows )` (8 x 4 by default: the options `inventory.columns`, `inventory.rows`, read with `declare.Option` while declaring); the field `inventory.columns` | the rules of [the inventory](items.md#the-inventory): a grid whose first row is the hotbar (the slots themselves, and selecting, moving and dropping, are the engine's); what a life starts with (`inventory.start`) and what a death takes back and drops. Its look: the hotbar, and the inventory screen on I (drag and drop, icons) |
 | `melee` | layer `full`, stances `melee`, `melee_swing`; events `melee.swing`, `melee.hit`, `combat.damage`, and the clip's markers `melee.strike`, `melee.done` | the bat: it brings the `melee.hold` animation pack (`ItemLayers`), an upper body of its own (ready, and the swing on the `melee_swing` stance), over the character's own legs; in first person the same swing is seen from the eye (the item's `view_offset` and `view_rotation` bring the hip-high hold into the picture; one arm drawn); left mouse swings, for as long as the clip says (to its `melee.done` marker, 1.1 s; the next swing may start then), a fan of 1.8 m rays from the chest at the strike, spread sideways and pitched as far up or down as the player looks (look at the floor to hit what is low), 40 damage through `combat.damage` |
 | `props` | action `spawn_prop` (F) | F with empty hands throws a prop (the map's spawnable template, or a random box or sphere) |
+| `pickup` | actions `pickup` (E), `drop` (G); fields `pickup.target`, `pickup.hold`, `pickup.since`; options `pickup.spawn_each`, `pickup.hold_seconds` | items lying in the world: near one, its prompt ("[E] Pick up Bat"); E takes it, G throws what the hand holds; an item property `pickup.hold_seconds` makes E a hold |
+| `expire` | option `expire.seconds` (60) | an item someone held and then left lying is removed after that long (0: never); picking it up stops the clock |
+| `sneak` (off) | action `crouch` (C); field `sneak.sneaking`; option `sneak.speed` | the crouch: a pose and a slower walk ([below](#movement-parameters)) |
 | `item` | events `item.use`, `item.use_failed`, `item.use2`, `item.hit`, `item.reload`; actions `use2` (right mouse), `reload` (R) | what using an item is called, whatever the item: the cues an item's own scene answers, which do not name it. For an item no mod rules it says `item.use` and `item.use2` on the press, so an item with no rules still has its look; a mod that rules a kind marks it `item.ruled` and says the cues when its rule does |
 | `gun` | `gun.ammo`, `gun.magazine`, `gun.reloading` (of the gun in the hand); stance `gun` on `upper`; the item mod's cues; `combat.damage` | the rules of anything that shoots. **Which guns there are is not in the code**: every item of its look whose scene says `gun.damage` is one (`declare.ItemsOfLook()`), with `gun.magazine`, `gun.fire_seconds`, `gun.automatic` (held fire), `gun.reload_seconds`, `gun.range`, `gun.kill_push`, `gun.prop_push`; its animation pack, holster and slot are the scene's too. A magazine is the gun's own: its rounds are the gun's field `gun.rounds`, which its scene declares with the full count (`CbItem.fields`). Shipped: the pistol (25 damage, 12 rounds, a press a shot). The rifle (14, 30 rounds, held) is a second scene whose files are local (licensed animations) |
 | `mark` | `mark.found`; the item mod's `use2` and `item.use2` | a second use for an item that says `mark.range` (the pistol): a ray that harms nothing and names the player it finds. The example of a use added to items made in the editor |
@@ -83,7 +86,7 @@ The mods that ship:
 | `waves` (off) | fields `waves.wave`, `waves.left` (global); events `waves.started`, `waves.cleared`; options `waves.first` (3), `waves.grow` (2), `waves.most` (24), `waves.pause_seconds` (4), `waves.ring` (14), `waves.reach` (1.6), `waves.slot` (1) | NPCs in waves that grow: each stands up on a ring around the spawn with the brawl fist (run it with `brawl`), finds its way to the nearest living player on the navigation mesh and jabs it twice a second once within reach; the next wave comes once the last is down. Its dead are cleared after 2 s; combat hurts them and credits the kills |
 | `possess` (off) | action `possess.nearest` (P) | a test of driving bodies: the key makes the player drive the nearest other body it may (a crate, a ball, a character's body nobody drives), within 15 m; the body it leaves stands where it is, nobody's |
 | `cannon` (off) | the items `cannon.cannon` (key N) and `cannon.ball` from its look; events `cannon.fired`, `cannon.ball.smash`; option `cannon.damage` | walls broken by what hits them, with no blast. The cannon launches a 40 kg ball (0.75 m across) at 36 m/s (its scene: a `CbLaunch` under the item); what a ball does to a wall is its scene's too (its CbItem's **Breaks walls**: 12 m/s, a 1.2 m hole at 30 m/s, on through with 0.6 of its speed), done by the simulation, so it is predicted; the mod's C++ only hurts a player a ball hits (`combat.damage`, by speed) |
-| `flight` | `flight.on`, `flight.fuel`; action `fly` (T); events `flight.started`, `flight.stopped`, `flight.thrust`; the motion set `flight.moves` | the example of [motions that hold](motions.md#motions-that-hold-the-flight-mod): T switches flight on and off, Space held in the air is a jetpack with a tank, Shift held while falling glides. All of it is the motion set; the mod only gives the first tank (`flight.fuel`). The jetpack is off unless `--mod-option flight.jetpack=1`. The whole mod is [switched off by default](#switched-off-by-default) |
+| `flight` (off) | `flight.on`, `flight.fuel`; action `fly` (T); events `flight.started`, `flight.stopped`, `flight.thrust`; the motion set `flight.moves` | the example of [motions that hold](motions.md#motions-that-hold-the-flight-mod): T switches flight on and off, Space held in the air is a jetpack with a tank, Shift held while falling glides. All of it is the motion set; the mod only gives the first tank (`flight.fuel`). The jetpack is off unless `--mod-option flight.jetpack=1`. The whole mod is [switched off by default](#switched-off-by-default) |
 | `grapple` | events `grapple.hook.used`, `grapple.fired`, `grapple.hooked`; `declare.Slots( 4 )`; the item `grapple.hook` from its look | the example of a probe, a force and a link; it holds anything but moves only its own player (its rope and pull do not react): all of it in the hook's scene and sheet (`client/prefabs/hook.tscn` and `hook.rules`: the item, its `Throw` motion, a `cast` with a rope and a pull); used by its slot's key, where it is. The mod declares the two events |
 | `brawl` | five skills from its look (`brawl.fist`, `.dash_strike`, `.uppercut`, `.slam`, `.guard`); fields `brawl.combo`, `brawl.combo_left`, `brawl.cd_*`; hit events; the set `brawl.moves` | a brawler's kit, step 5's measure: what a skill does to bodies is its scene's (predicted); this mod turns the probes' hit events into `combat.damage` (a quarter on a guard) and hurts whom a slam's shockwave finds (`brawl.slam.hit`: the slam's sheet waits for the ground, finds who is in its `Shockwave` region and throws them, on every machine). `--mods inventory,combat,brawl` |
 | `shop` | intent `shop.buy`; `shop.coins`, a private field; events `shop.bought`, `shop.refused`; option `shop.start` | the example of an [intent a mod declares](#intents-a-mod-declares): a screen on B with three buttons (a frag grenade 1 coin, a bat 1, a rifle 2); a player starts with `shop.start` coins (3) and gets one per kill |
@@ -93,10 +96,10 @@ The mods that ship:
 | `grenade` (off) | the item `grenade.shell` from its look (slot 7); events `grenade.release`, `grenade.thrown`, `grenade.blast`; `declare.Slots( 7 )`; option `grenade.refill_seconds` | the impact grenade, switched off (its `disabled` file; start it by name): thrown from the hand, it goes off on the first hard hit (`ctx.Hits`) |
 | `deathmatch` | `deathmatch.score` per player; `deathmatch.phase`, `.seconds`, `.round`, `.winner`, `.kill_limit` for the game; `deathmatch.ending`, how the last round ended, a number the look has [the words](looks.md#saying-things) for; events `deathmatch.round_end`, `game.round_start` | rounds: first to 10 kills, or the best score after 300 s; falling costs a point; everyone is frozen for a 6 s intermission, then the world is cleared, everyone respawns and scores reset |
 
-Mods cooperate through the board and through item properties (`pistol` and `melee` tell `inventory` which slot
-their item lives in). They also cooperate through events: `pistol` and `melee` say `combat.damage`,
+Mods cooperate through the board and through item properties (an item's `slot` tells `inventory` which slot
+it lives in). They also cooperate through events: `gun`, `melee` and `brawl` say `combat.damage`,
 `combat` answers with `combat.hurt` and `combat.killed`, `deathmatch` scores the kills, and its
-`game.round_start` gives everyone full health (`combat`) and a full magazine (`pistol`).
+`game.round_start` gives everyone full health (`combat`) and a full magazine (`gun`).
 
 ### Private fields
 
@@ -205,7 +208,7 @@ ctx.Emit( m_damage, SlotTarget( slot ), hit.netId, 40, hit.point, push );
 | `combat.fall_counts` | 1 | falling out of the world is a death (0: it is not) |
 
 - Events are heard a tick after they are sent: damage lands the tick after the hit.
-- Without the mod (`--mods pistol,inventory`) weapons fire and report hits, and nobody dies.
+- Without the mod (`--mods gun,inventory`) weapons fire and report hits, and nobody dies.
 - Its look is its own workshop item: the health bar, YOU DIED, the kill feed and the scoreboard
   (`ui/hud_combat.tscn`), and the red flash when you are hurt or die (`vfx/reactions_combat.tscn`),
   whatever weapon did it. A weapon's look keeps what is the weapon's (the hit puff, the hit marker).
@@ -219,7 +222,7 @@ Server operators tune mods with `--mod-option NAME=VALUE` (repeatable); a mod re
 | `deathmatch.round_seconds` | 300 |
 | `deathmatch.pause_seconds` | 6 (the intermission) |
 | `deathmatch.fall_penalty` | 1 point lost for falling out of the world |
-| `pistol.zone.<zone>` | damage multiplier for a hit zone of the server's character: `head` 2, anything else 1 |
+| `gun.zone.<zone>` | damage multiplier for a hit zone of the character hit: `head` 2, anything else 1 |
 | `pickup.spawn_each` | 0; N drops N of every item kind the mods declared around the spawn point at start |
 | `pickup.hold_seconds` | 0 (a tap); how long E must be held to pick up an item whose mod does not say (see item properties) |
 | `expire.seconds` | 60; an item that was held and then left lying is removed after this long (0: never) |
@@ -298,6 +301,7 @@ These ship but do not run unless a server asks for them. Nothing was deleted.
 | The double jump (a motion of the `dash` mod) | the server option `dash.double_jump`, 0 by default: the motion's condition reads `dash.double_jump_on`, which the mod publishes | `cb_server --mod-option dash.double_jump=1` |
 | The `flight` mod (T flies, Shift glides) | the file `server_mods/flight/disabled`, like `sneak` | name it: `cb_server --mods combat,dash,...,flight`, or delete the file and re-run CMake |
 | The jetpack (motions of the `flight` mod) | the server option `flight.jetpack`, 0 by default: the motions' conditions read `flight.jetpack_on`, and the fuel gauge hides without it | run the `flight` mod, with `--mod-option flight.jetpack=1` |
+| The `grenade` (the impact grenade, J), `cannon` (N), `possess` (P takes over the nearest body) and `waves` (NPCs in waves; run it with `brawl`) mods | their `disabled` files, like `sneak` | name them in `--mods`; in the game, `--host-local=...` or `tools\test_mod.ps1 -Mod waves` |
 
 - **A whole mod**: the `disabled` file. `cb_server --list-mods` marks it, and `--mods` can still name it. Net tests run it only when they name it (`test.mods`); they leave out the `brawl` kit too, which runs by default but takes the hotbar's first slots.
 - **A part of a mod**: a server option the mod publishes as a field, and a condition on it. That is the pattern for any motion a server should be able to switch: the rule is the server's, the motion asks.
@@ -360,7 +364,7 @@ server from the simulation, so a shot cannot start anywhere the player is not.
 Gameplay mods cast rays with `ctx.CastRay`. Players are hit by their character's hitboxes, posed
 from the simulation's animation state at that tick, and `hit.zone` names the zone. Only the server
 does this (mods run there), so hit tests cost clients nothing and never enter the rolled-back
-simulation. The pistol multiplies its damage by `pistol.zone.<zone>`.
+simulation. The `gun` mod multiplies its damage by `gun.zone.<zone>`.
 
 ## Workshop items
 

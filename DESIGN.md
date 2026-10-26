@@ -216,7 +216,7 @@ inputs ──> server: mods read the world + this tick's inputs ──> commands
 | Mod | Owns |
 |---|---|
 | `combat` | health, death, ragdolls, respawning, kills and deaths; hears `combat.damage`, `combat.heal`, `game.round_start`; says `combat.hurt`, `combat.killed`, `combat.respawned` |
-| `pistol` | the gun: ammo, reload, hitscan with hit zones, the `mark` ray; a hit on a player is `combat.damage` |
+| `gun` | the pistol and the rifle: ammo, reload, hitscan with hit zones; a hit on a player is `combat.damage` (`mark`: the ray a second use marks with) |
 | `melee` | the bat: a swing timed by the character's `melee.strike` marker, damage through `combat.damage` |
 | `inventory` | the rules of what a player carries: how many slots, what a life starts with, what a death drops (the slots are the engine's) |
 | `pickup` | picking up and dropping items, hold-to-use progress on the board |
@@ -225,6 +225,13 @@ inputs ──> server: mods read the world + this tick's inputs ──> commands
 | `dash` | the charges of a dash; the dash and a double jump themselves are its motion set, run by every simulation |
 | `flight` | a player's first tank; flight, the jetpack, its fuel and the glide are its motion set |
 | `grapple` | three names; the grappling hook is its motion (a probe, a force and a link), its rope a `CbLinkLook` |
+| `brawl` | the brawler's kit: a fist and four skills whose sheets are their moves; turns their hits into `combat.damage` (a guard takes a quarter) |
+| `frag`, `grenade` | the fused grenade (a stack of three, its sheet sets it off); the impact grenade (off) |
+| `chat`, `shop`, `chest` | typed text; buying with an intent; containers placed around the spawn |
+| `waves`, `possess`, `cannon` | NPCs in waves on the navigation mesh; taking over the nearest body; a cannon whose balls break walls (all off) |
+| `item`, `secret` | the cues an item's use says, whatever the item; a private field (the example) |
+
+Every mod, its names and options: [docs/server-mods.md](docs/server-mods.md).
 
 ## Workshop items and packs
 
@@ -232,9 +239,9 @@ A server mod has two halves: its **rules** (C++ in `cb_server`) and its **look**
 players subscribe to). Characters are items too.
 
 ```
-server_mods/gun/client/  ──publish_mod.ps1──>  workshop: pistol/<sha256>.zip   (players have it)
-                                     └──> client_item.cfg (sha256) ──build──> bin/items/pistol.item
-cb_server announces "pistol <sha256>" in the schema; a client without that exact item leaves and says what is missing
+server_mods/gun/client/  ──publish_mod.ps1──>  workshop: gun/<sha256>.zip   (players have it)
+                                     └──> client_item.cfg (sha256) ──build──> bin/items/gun.item
+cb_server announces "gun <sha256>" in the schema; a client without that exact item leaves and says what is missing
 ```
 
 | Defence | When | What |
@@ -394,8 +401,8 @@ src/sim/          deterministic simulation shared by server and client, as two l
   anim_graph.*      a character's state machine: its text, the compiler and the runner
 src/anim/         ozz: the placeholder rig and baked characters (anim_set.*), the pose from a state machine (pose.*), joint names (profile.*)
 src/net/          wire protocol, ENet wrapper, network simulator (netsim.*), replay files (replay.*)
-src/server/       authoritative GameServer (library), the mod API (mod_api.*) and cb_server
-server_mods/      gameplay mods compiled into cb_server: inventory, props, pistol, melee, pickup, deathmatch, ...
+src/server/       authoritative GameServer (library), the mod API (mod_api.*), the navigation mesh (navigation.*) and cb_server
+server_mods/      gameplay mods compiled into cb_server: inventory, props, gun, melee, brawl, pickup, deathmatch, waves, ...
 godot/characters/ characters shipped with the game (mannequin: source glb, bone map, scene, baked files)
 characters/       character items: <name>/client is the item's Godot project, <name>/client_item.cfg its hash
   <mod>/client/     a mod's look as a Godot project, published as a workshop item
@@ -432,7 +439,7 @@ mods_src/         client mod projects (example_neon)
 tests/            determinism, rollback, gameplay, animation and loopback network tests
 scripts/          cross-compiler determinism check, stress test
 sdk/              the Godot project a mod's look is made from (sdk/README.md)
-tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, export_client.ps1, bake_map.ps1, make_sfx.py (placeholder sounds)
+tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, test_mod.ps1, export_client.ps1, bake_map.ps1, make_sfx.py (placeholder sounds)
 ```
 
 ## Known limits
@@ -441,7 +448,7 @@ tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, export_client.ps1, bak
 |---|---|
 | Prediction | a reaction played on a wrong guess is not taken back; the led body holds what the state says about movement still over the lead; packs' layers are not checked for what they read; a predicted event's clock is one tick ahead on the frame its answer arrives |
 | Animation tracks | behind latency a swing is first seen a little way in, and keys before that point do not fire; a state started over by an event (rapid fire) fires its keys again only when the transition has a crossfade (that is how the viewer tells a restart from a rollback); packs' non-bone tracks are not played |
-| State machines | no nested machines, OneShot/Add/TimeScale nodes, `travel()`, or crossfade curves |
+| State machines | what bakes is a subset of Godot's tree ([characters.md](docs/characters.md#state-machines)): no `travel()`, Sync switching or transitions to End at the top; a OneShot's autorestart and fade curves are not baked; a grouped machine is baked as a nested one; other blend nodes are refused |
 | Characters | a slot drives a body, and may possess another: a character's or a loose prop (M220, M221), walked by the capsule controller (a prop's bounds hold its move back), or driven by a mod (an NPC, M222: it selects and uses items as a player does (M228), the `waves` mod's come in waves (M229); the combat mod hurts and kills them, at full health from the start (M224, M225); a mod's Destroy leaves any body someone drives: it stops driving it first); every body is one of the server's characters, in the simulation, the server's hit tests (M216) and the client's drawing (M217); first person only for a character with a first-person camera in its scene, shots from its eyes (M218); the third-person camera is the same for every body; another skeleton than a humanoid plays (M219) without a ragdoll, packs that do not fit it, or arms in first person; no character without a skeleton yet; the scene ships its animations' bone tracks next to the ozz clips |
 | Players with latency | every client simulates the whole world and resimulates its rollback window when a remote input was not what it guessed (it rarely is: a mouse turns every tick). With 64 players and a 200 ms round trip that is about 16 steps a tick at 0.8 ms each: 87% of one core on this machine at full speed, with nothing to spare for a slower one (M139's measurements). `reconcile_every` 2 halves it. The step itself is the cost; snapshots are 5% since M139. Of a step at 64 players, physics and the characters are about 0.4 ms each. The physics follows what is awake, not the players: 0.02 ms with 2 players and no props, 0.3 to 0.4 ms with the 300 props the test's bots keep in the air (M140). The network is not the limit |
 | Movement | a mod's `SetMove` and `Push` are commands, so they are not predicted (a motion is). The controller is kinematic: its mass decides what contacts, forces and ropes exchange, but a player is not knocked over. Pushes from several players on one player in a tick add up, in slot order. A probe's line starts at the same point in every view (not at the eye in first person). One probe per player. A While motion's per-second changes need a Float field and are not clamped (a tank fills to a little over full). Another player's motion is seen when its input arrives |
@@ -450,10 +457,10 @@ tools/            sdk.ps1, pack_mod.ps1, publish_mod.ps1, export_client.ps1, bak
 | Combat | no teams, no spectators |
 | Aiming | no marker when the shot is blocked by something the camera sees past (cover in third person); the first-person camera does not lower when crouching (it follows the mover, and crouching is an animation); the bat's strike is rays in the look direction from the chest, not the bat's path through the pose; bots always use the camera behind |
 | First-person body | the world is the third-person one and first person only shows copies: the body is set to cast its shadow without being drawn, a legs copy and an arms copy are made for the eye (three poses of one skeleton for the viewer's own player), and the arms and the held item are drawn by a second camera over the world (the sun's shadow map is drawn once more for it). The legs are slid back when looking down, so the feet are not exactly where the body's are; the view's pose is the upper body standing still; third-person holds are not framed for the eye, so most items need a `view_offset` and `view_rotation`; fingers are the clip's; a held item's shadow is of its meshes at rest; what is stowed on the body is not drawn in first person |
-| Items | one body shape per item; two kinds sharing a holster socket overlap |
+| Items | two kinds sharing a holster socket overlap |
 | Packs | the checks do not make Godot's or ozz's parsers safe against malformed files |
 | Menu | no server browser |
-| Large files | `simulation.cpp` is about 2,900 lines (the mover left it in M92); `cinderbox_client.cpp` is in four parts since M117, the largest 1,250 |
+| Large files | `simulation.cpp` is about 6,000 lines (the mover left it in M92; possession, driven props and NPCs came in since); `cinderbox_client.cpp` is in four parts since M117, the largest 1,900 |
 
 ## Measurements (Clang Release, 32-thread desktop, everything on one machine)
 

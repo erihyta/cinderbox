@@ -41,6 +41,23 @@ All tools are in `<build dir>/bin`.
 | `godot --path server_mods/<mod>/client --script <repo>/godot/addons/cinderbox_maps/check_item_preview.gd -- --scene=res://prefabs/<item>.tscn --out=F.png [--aim] [--view] [--cue=NAME --after=SEC]` | Draws an item's in-hand preview (`CbItem.preview_hold`) outside the editor and saves the picture: the figure beside the item, or with `--view` what the holder sees in first person (the editor's panel); with `--cue` that cue is fired a second in and the picture taken `--after` seconds later (a swing, a shot). Exit code 1 when no figure appears, when what is in the hand is not one copy of the item, or when the other hand is not at its marker |
 | `scripts/stress_test.sh --bots N --full M --latency MS --jitter MS --loss % --rollback T [--reconcile-every N] [--spin 1] [--physics-threads N] [--server-physics-threads N]` | Starts a server, the simulator and the bots, and prints a summary. For each full bot: where a second went (steps, snapshots saved and loaded, hashes: how many and what one costs) what a step is made of (commands, characters, physics, the rest), what the physics step is made of (pairs, collide, solve, ...) and what the physics world holds (bodies, how many awake, contacts). `--spin 1`: the full bots' threads never sleep, as a game that draws does not; without it a processor saving power runs them at a third of its speed and every time is too high. Times still differ two to three times between runs on a laptop (heat): compare runs made one after another |
 
+
+## The Godot checks
+
+Each runs headless and exits 0 when everything held.
+
+| Command | What it checks |
+|---|---|
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_anim_tree.gd` | What more of an AnimationTree bakes to (step 11): a `TimeScale`'s scale or its graph input as a state's speed, a stretched custom timeline, a crossfade curve's samples; `OneShot` and `Add2` layers in the tree's order; a nested state machine flattened (its states under its name, the ways in and out); and what is refused |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_item_parts.gd` | What an item's bake makes of its `CollisionShape3D` nodes: one box as before, a scaled box or a capsule as a part, several parts in the carried frame, a cylinder as a hull; a shape no body can have refused |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_map_shapes.gd` | What the map bake makes of a `CbStatic`'s shapes: a piece each, turned and sized as the node; cylinders and convex polygons as hulls; what a level cannot have said and skipped |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_map_surfaces.gd` | Level surfaces: a `ConcavePolygonShape3D` as a triangle mesh, a `HeightMapShape3D` as a height field (holes too); either under a prop or in an item refused |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_map_bodies.gd` | Bodies with shapes and looks of their own: a `CbProp` with shapes and a mesh as a template drawn by its node, one with only a mesh, a plain one, a `CbTemplate` placed by a `CbEntity` |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_map_breakable.gd` | A `CbBreakable`: a static template of its shapes and look, its `CbProp` children its pieces, which of them touch and which hold it up |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_fracture.gd` | The fracture tool: the chunks fill the wall, each goes through it, the same settings give the same chunks, crowding at the focus, faces outward, convex walls cut, each chunk baked as a hull |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_pack.gd -- PACK.zip...` | Packs the way the game checks them before loading (`boot.gd`); `tools\pack_mod.ps1` runs it on what it just packed |
+| `godot --headless --path godot --script res://addons/cinderbox_maps/check_workshop.gd -- --workshop=DIR --cache=DIR --store=DIR` | Where workshop items come from: missing, then fetched from the store into the cache a piece at a time, subscribed and trimmed (three empty folders of its own) |
+
 ```sh
 # a lossy 64-player session, recorded and verified afterwards
 scripts/stress_test.sh --bots 64 --full 4 --latency 25 --jitter 5 --loss 1 --duration 60 --record session.cbr

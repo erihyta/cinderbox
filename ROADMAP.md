@@ -308,7 +308,6 @@ Moved from step 7 (after M219). Today a skeleton without a humanoid's bones fall
 | An item used in its preview | press the item's key in the editor's preview and watch what it does |
 | The preview, fuller | cues with someone else in them (a hit); the pack chosen from a list; the character's own mesh |
 | A rules change restarts the test | publishing a look while the server runs takes effect at once unless the simulation reads it (an item's body, a pack's state machine, a motion): then the hosted test could restart the server itself |
-| The SDK's prose | `sdk/README.md` around the starters is from before the redesign |
 | The nodes reworked | the authoring nodes (the motion nodes among them) are kept as they are, not maintained, until the core engine is complete; then reworked together |
 
 ### Building
