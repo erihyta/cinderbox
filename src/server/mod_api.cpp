@@ -1,4 +1,5 @@
 #include "mod_api.h"
+#include "navigation.h"
 
 #include "anim_graph.h"
 
@@ -1285,6 +1286,37 @@ void Context::StopDriving( uint32_t body )
 	c.target = body;
 	c.mode = 0;
 	Add( c );
+}
+
+bool Context::FindPath( b3Vec3 from, b3Vec3 to, std::vector<b3Vec3>& corners ) const
+{
+	corners.clear();
+	return m_nav != nullptr && m_nav->FindPath( from, to, corners );
+}
+
+bool Context::NearestWalkable( b3Vec3 point, b3Vec3& out ) const
+{
+	return m_nav != nullptr && m_nav->Nearest( point, out );
+}
+
+PlayerInput Context::WalkToward( uint32_t body, b3Vec3 target, float near, bool sprint ) const
+{
+	PlayerInput in;
+	const Transform* t = m_sim.EntityTransform( body );
+	if ( t == nullptr )
+	{
+		return in;
+	}
+	const b3Vec3 to = { target.x - t->position.x, 0.0f, target.z - t->position.z };
+	if ( b3Length( to ) <= near )
+	{
+		return in;
+	}
+	// The input's yaw: 0 looks down +Z (sim/types.h), and forward walks where it looks.
+	in.cameraYaw = detmath::RadiansToYaw( detmath::Atan2( to.x, to.z ) );
+	in.moveForward = 127;
+	in.buttons = sprint ? uint8_t( BtnSprint ) : uint8_t( 0 );
+	return in;
 }
 
 std::vector<uint32_t> Context::ModDrivenBodies() const

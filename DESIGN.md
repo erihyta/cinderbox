@@ -34,6 +34,7 @@ looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <─
 | Physics | Box3D (erincatto/box3d), its step on several threads (see below), cross-platform determinism mode, two local patches (`cmake/patches/`) |
 | Animation | ozz-animation 0.17.0, scalar (non-SIMD) build; clips and skeletons baked from Godot scenes |
 | Networking | ENet (UDP), dedicated headless server |
+| Finding the way | Recast & Detour 1.6.0, on the server only (a navigation mesh built when the game starts; not part of the simulation) |
 | Client | Godot 4.7 through GDExtensions (godot-cpp 4.5 API): a viewer and a peer |
 | Game rules | C++ server mods compiled into `cb_server` (`server_mods/`), talking to the world only through commands |
 | Looks | Godot scenes and resource packs with no scripts (reactions, predictions, HUD nodes) |
@@ -47,7 +48,7 @@ looks (workshop items, data only)  <── viewer (Godot) <── ViewFrame <─
 | `cb_anim` | skeletons, clips, the pose, hitboxes, retargeting | `cb_sim_data`, ozz |
 | `cb_present`, `cb_capture` | the viewer protocol, the mirror, the frame codec; a simulation's state as a frame | `cb_anim` |
 | `cb_net`, `cb_client_core` | protocol and transport; the live and replay sources | ENet |
-| `cb_server_core`, `cb_server_mods` | the server, the mod API; the mods | everything above |
+| `cb_server_core`, `cb_server_mods` | the server, the mod API, the navigation mesh; the mods | everything above, Recast & Detour |
 
 ## Determinism
 

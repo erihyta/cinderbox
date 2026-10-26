@@ -34,6 +34,7 @@
 
 namespace cb
 {
+class NavMesh;
 class HitTester;
 }
 
@@ -582,6 +583,10 @@ public:
 	{
 		m_hits = hits;
 	}
+	void SetNavMesh( const NavMesh* nav )
+	{
+		m_nav = nav;
+	}
 	void SetOptions( const std::map<std::string, std::string>* options )
 	{
 		m_options = options;
@@ -709,6 +714,17 @@ public:
 	bool DrivenByMod( uint32_t body, PlayerInput* input = nullptr ) const;
 	// The bodies mods drive (NPCs), by NetId.
 	std::vector<uint32_t> ModDrivenBodies() const;
+
+	// Finding the way (on the server's navigation mesh: where its own character can walk, made from
+	// what does not move when the game starts). The corners of a way from `from` to `to` (feet
+	// heights): the first where `from` is, the last `to` or the nearest point to it there is a way
+	// to. False when either end is far from anywhere to walk.
+	bool FindPath( b3Vec3 from, b3Vec3 to, std::vector<b3Vec3>& corners ) const;
+	// The nearest point one can walk to (within a few metres of `point`).
+	bool NearestWalkable( b3Vec3 point, b3Vec3& out ) const;
+	// The input that walks `body` toward `target` (its feet there): facing it, forward; nothing
+	// once within `near` metres. For Drive: an NPC following a path drives toward its next corner.
+	PlayerInput WalkToward( uint32_t body, b3Vec3 target, float near = 0.3f, bool sprint = false ) const;
 	// Whether a slot may drive `body` (Possess): a character's body nobody drives, or a loose prop
 	// (not an item, a ragdoll, a container or anything static).
 	bool CanPossess( uint32_t body ) const
@@ -809,6 +825,7 @@ private:
 	int LayerIndex( const std::string& layer ) const;
 	int SlotOfTarget( uint32_t target ) const;
 	HitTester* m_hits = nullptr;
+	const NavMesh* m_nav = nullptr;
 };
 
 class ServerMod

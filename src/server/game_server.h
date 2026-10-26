@@ -8,6 +8,7 @@
 #include "anim_graph.h"
 #include "character_item.h"
 #include "hit_test.h"
+#include "navigation.h"
 #include "map.h"
 #include "mod_api.h"
 #include "protocol.h"
@@ -253,6 +254,7 @@ private:
 	// The mods' own state lives here; the simulation never sees it.
 	std::unique_ptr<flecs::world> m_modWorld;
 	std::unique_ptr<HitTester> m_hits;
+	NavMesh m_nav; // where the server's own character can walk (built at the start)
 	std::vector<std::shared_ptr<const AnimGraph>> m_graphs; // each character's (ModSchema::characters)
 	// The characters as the simulation has them: each its state machine, its capsule, its movement.
 	std::vector<Simulation::CharacterBody> CharacterBodies() const;

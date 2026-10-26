@@ -1,5 +1,6 @@
 #include "game_server.h"
 #include "detmath.h"
+#include "mover.h"
 
 #include "capture.h"
 #include "view_codec.h"
@@ -378,6 +379,26 @@ bool GameServer::Start( const ServerOptions& options )
 	m_sim->SetAnimPacks( m_animPacks );
 	m_sim->SetMotions( m_motions );
 	m_sim->SetItemShapes( m_schema.itemShapes );
+	{
+		// Where the server's own character can walk (mods find their way on it): what does not
+		// move, as the simulation's physics has it.
+		NavAgent agent;
+		const CharacterInfo& own = m_schema.characters.front();
+		agent.radius = own.radius;
+		agent.height = mover::FeetBelowCenter( own.radius, own.halfHeight ) + own.halfHeight + own.radius;
+		agent.maxSlope = m_options.config.move[MoveParam::MaxSlope];
+		const auto started = std::chrono::steady_clock::now();
+		std::string error;
+		if ( m_nav.Build( *m_sim, agent, error ) )
+		{
+			Log( "navigation mesh: %zu polygons from %zu triangles, in %lld ms", m_nav.Polygons(), m_nav.Triangles(),
+				 (long long)std::chrono::duration_cast<std::chrono::milliseconds>( std::chrono::steady_clock::now() - started ).count() );
+		}
+		else
+		{
+			Log( "no navigation mesh: %s (FindPath finds nothing)", error.c_str() );
+		}
+	}
 	m_modWorld = std::make_unique<flecs::world>( CreateFlecsWorld() );
 	m_modRng = options.config.seed ^ 0x6D6F6473ull; // "mods"
 	m_history.assign( kFrameHistory, InputFrame{} );
@@ -468,6 +489,7 @@ bool GameServer::Start( const ServerOptions& options )
 		ctx.SetOptions( &m_options.modOptions );
 		ctx.SetItemProperties( &m_itemProperties );
 		ctx.SetHitTester( m_hits.get() );
+		ctx.SetNavMesh( &m_nav );
 		for ( const auto& mod : m_mods )
 		{
 			mod->Start( ctx );
@@ -993,6 +1015,7 @@ void GameServer::RunMods( InputFrame& frame )
 	ctx.SetLayers( &m_layerWishes, &m_itemLayers );
 	ctx.SetPrivates( &m_privates, &m_privatesChanged );
 	ctx.SetHitTester( m_hits.get() );
+	ctx.SetNavMesh( &m_nav );
 	ctx.SetTexts( &m_typed, &m_said );
 	for ( const auto& mod : m_mods )
 	{
