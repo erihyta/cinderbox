@@ -32,7 +32,7 @@ A proposal: the order is open to change. Each row is a milestone or two.
 | 8 | [Bodies and who drives them](#8-bodies-and-who-drives-them) | **done (M220 to M222)**: bodies nobody drives, possession of a character's body or a prop, a mod driving a body (an NPC); the character controller is something an entity has while it is driven, read from its scene; a player possesses any entity, a mod drives one (an NPC); nothing extra for a body nobody drives |
 | 9 | [Finding the way](#9-finding-the-way) | **done (M227)**: a navigation mesh on the server (Recast/Detour), `ctx.FindPath`, `NearestWalkable`, `WalkToward` |
 | 10 | [The proof: waves](#10-the-proof-waves) | **done (M228, M229)**: the `waves` mod: NPCs with the brawl fist find their way to the nearest player and jab it, waves that grow; 32 NPCs cost a client about 0.07 ms each a tick |
-| 11 | [The animation tree, wider](#11-the-animation-tree-wider) | what a Godot developer reaches for next (nested state machines, OneShot, Add, TimeScale, crossfade curves), and layers that are the look's alone |
+| 11 | [The animation tree, wider](#11-the-animation-tree-wider) | **done (M230 to M232)**: TimeScale and crossfade curves, OneShot and Add2, nested state machines |
 
 Steps 4 and 5 of the last version (vehicles, authoring finished) are [Later](#later), with the
 building system.
@@ -260,17 +260,24 @@ their own (the mod's, declared like any; the server's own character now), a brai
 
 The state machine runs in the simulation (its state decides the pose, the pose the hitboxes, and the
 server hit-tests those), so it is baked into a deterministic subset of Godot's `AnimationTree`. The
-subset grows toward what a Godot developer reaches for, and what only the eye needs is let loose.
+subset grows toward what a Godot developer reaches for. (What only the eye needs: see
+[our own animation authoring](#our-own-animation-authoring-apart-from-godots), later.)
 Moved after the NPCs (decided after M219): polish for animated characters.
 
 | Piece | What |
 |---|---|
-| More of the tree | `TimeScale` (a state's playback speed, an expression) and a stretched custom timeline, crossfade curves: **done (M230)**. `OneShot` and `Add2`: **done (M231)**. Nested state machines: baked and run the same everywhere |
-| Layers that are the look's | a layer a character marks as its look's runs on the client alone, with all of Godot's `AnimationTree` (a face, breathing, a tail's wag): it may not move a bone that has a hitbox or say a marker a rule hears, and the bake refuses it if it does |
+| More of the tree | `TimeScale` (a state's playback speed, an expression) and a stretched custom timeline, crossfade curves: **done (M230)**. `OneShot` and `Add2`: **done (M231)**. Nested state machines: **done (M232)**, flattened by the bake |
 
 ## Later
 
 Postponed after M211 (the core engine first). In the order they would likely come back.
+
+### Our own animation authoring, apart from Godot's
+
+Decided after M231 instead of layers that are the look's alone (a face, breathing, a tail's wag on
+the client): when the time comes, the animation the simulation runs gets an authoring mechanism of
+its own, apart from Godot's, and Godot's `AnimationTree`s are left for what is only seen. Only the
+skeletal bones would be replicated on the server. Much later; it needs more decisions first.
 
 ### Ragdolls for any skeleton
 

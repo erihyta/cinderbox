@@ -164,5 +164,54 @@ func _initialize() -> void:
 	baked = character.bake_to(folder)
 	_check("a OneShot without a request is refused, and says why", not baked.ok and String(baked.error).contains("Kick/request"), str(baked.get("error", "")))
 
+	# Nested state machines (M232), flattened: Combat holds Slash then Recover, which reaches its End.
+	# Into it goes to its start; its ways out leave from each of its states, At End from where it
+	# ends; its own transitions come after its parent's.
+	tree.tree_root = machine
+	var combat := AnimationNodeStateMachine.new()
+	var slash := AnimationNodeAnimation.new()
+	slash.animation = second
+	combat.add_node("Slash", slash)
+	var recover := AnimationNodeAnimation.new()
+	recover.animation = first
+	combat.add_node("Recover", recover)
+	combat.add_transition("Start", "Slash", AnimationNodeStateMachineTransition.new())
+	var slashed := AnimationNodeStateMachineTransition.new()
+	slashed.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+	slashed.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
+	combat.add_transition("Slash", "Recover", slashed)
+	var done := AnimationNodeStateMachineTransition.new()
+	done.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+	done.advance_expression = "state_time > 0.5"
+	combat.add_transition("Recover", "End", done)
+	machine.add_node("Combat", combat)
+	var attack := AnimationNodeStateMachineTransition.new()
+	attack.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+	attack.advance_expression = "aiming"
+	machine.add_transition("Idle", "Combat", attack)
+	var after := AnimationNodeStateMachineTransition.new()
+	after.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+	after.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
+	after.xfade_time = 0.3
+	machine.add_transition("Combat", "Idle", after)
+	var flee := AnimationNodeStateMachineTransition.new()
+	flee.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+	flee.advance_expression = "speed > 3"
+	machine.add_transition("Combat", "Fast", flee)
+	character.graph_inputs = {"Fast/Scale/scale": "speed * 0.5"}
+	baked = character.bake_to(folder)
+	_check("a nested state machine bakes", baked.ok, str(baked.get("error", "")))
+	graph = _graph(folder)
+	_check("its states, under its name", graph.contains("state\tCombat/Slash\tclip\t%s\t0\n" % second) and
+		graph.contains("state\tCombat/Recover\tclip\t%s\t0\n" % first), graph)
+	_check("into it: to its start", _line_starting(graph, "transition\tIdle\tCombat/Slash\t") != "", _line_starting(graph, "transition\tIdle\tCombat"))
+	_check("out of it: from each of its states", _line_starting(graph, "transition\tCombat/Slash\tFast\t") != "" and
+		_line_starting(graph, "transition\tCombat/Recover\tFast\t") != "")
+	var at_end := _line_starting(graph, "transition\tCombat/Recover\tIdle\t")
+	_check("out at its end: from where it ends, on both conditions", at_end == "transition\tCombat/Recover\tIdle\t1\t0.3\timmediate\t1\tstate_time > 0.5", at_end)
+	_check("... and not from where it does not end", _line_starting(graph, "transition\tCombat/Slash\tIdle\t") == "")
+	_check("its own transitions after its parent's", graph.find("transition\tCombat/Slash\tCombat/Recover\t") > graph.find("transition\tCombat/Recover\tFast\t"),
+		_line_starting(graph, "transition\tCombat/Slash\tCombat/Recover\t"))
+
 	print("check_anim_tree: %s" % ("all held" if _failures == 0 else "%d failed" % _failures))
 	quit(1 if _failures > 0 else 0)

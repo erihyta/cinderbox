@@ -276,6 +276,7 @@ rollback replays it exactly; the tree itself never runs in the game.
 | an `Animation` node's custom timeline, stretched (`stretch_time_scale`) | the clip played in the timeline's length: the bat's whole swing in 0.6 s whatever the clip's own length (with a TimeScale too, both) |
 | transitions: Auto advance, advance condition, advance expression, priority, crossfade, Immediate / At End | the same (Sync switching becomes Immediate) |
 | a transition's `xfade_curve` | the fade through the curve (17 samples, read between them): an ease in, a snap at the end |
+| a state that is itself a `StateMachine` (nested, any depth) | its states flattened into the layer under its name (`Combat/Slash`): a transition into it goes to its start; one out of it leaves from each of its states, an At End one from where it reaches its End (on that transition's condition too); its own transitions are tried after its parent's on equal priorities. Its parameters keep their paths (`"FullBody/Combat/Aim/blend_position"`). A grouped machine is baked as a nested one (warned) |
 | markers on animations | the mod event of the same name, from the player, when the clip passes it (a motion waiting for it hears it the tick after: the grenade's release) |
 | every other track (particles, sounds, lights) | stays in the animation, played by clients in step ([An animation's other tracks](#an-animations-other-tracks)) |
 
@@ -309,8 +310,8 @@ Conditions and expressions read simulation values, never scripts:
 | `motion.` and a motion's name (`motion.Hook`, `motion.grapple.hook.Use`) | true while that [motion](motions.md) of the player's is on: a pose for as long as a line holds, a flight lasts ([an item's overlay](#animation-packs) weighs by it). The node's name alone when no other motion has it, else the set's and the node's. A server's first 64 motions can be asked for |
 
 The grammar is the [one expression language](looks.md#expressions) (`and or not`, comparisons, arithmetic,
-`?name`, parentheses). A name no mod declares reads as 0 (the server logs it). The bake fails with a reason for anything it cannot run (nested
-state machines, other blend nodes, a missing animation). It warns about what it bakes otherwise: a
+`?name`, parentheses). A name no mod declares reads as 0 (the server logs it). The bake fails with a reason for anything it cannot run (other
+blend nodes, a missing animation). It warns about what it bakes otherwise: a
 custom timeline that is not stretched, its start offset, a negative speed (it plays as stopped).
 
 A mod times its effect by the animation with `ctx.AnimationEmits( event )`: the melee mod hits on
