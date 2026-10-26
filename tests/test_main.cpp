@@ -4575,12 +4575,127 @@ void TestModDriven()
 	step( 60 );
 	CHECK( sim.ComputeHash() == ahead );
 
-	// Driven no more.
+	// Driven no more: alive, it stands nobody's.
 	drive( npc, 0, 0 );
 	drive( crate, 0, 0 );
 	step( 2 );
 	CHECK( sim.FindEntity( npc ).has<IdleBody>() && sim.FindEntity( npc ).has<Character>() == false && sim.FindEntity( npc ).has<ModDriven>() == false );
 	CHECK( sim.FindEntity( crate ).has<DrivenProp>() == false && sim.FindEntity( crate ).has<Character>() == false );
+	// Killed (it fell as its ragdoll), then given back: the body goes, it does not stand up again.
+	drive( npc, 50 );
+	step( 2 );
+	SimCommand kill;
+	kill.type = CommandType::Kill;
+	kill.target = npc;
+	kill.mode = 1;
+	f.commands.push_back( kill );
+	step( 3 );
+	drive( npc, 0, 0 );
+	step( 2 );
+	CHECK( sim.FindEntity( npc ).is_valid() == false );
+}
+
+// Found after M222 (hunting bugs): what a slot drives can be removed: a mod's Destroy, the props
+// cap (the player spawned the crate it drives). The body a slot drives stays; anything else goes.
+void TestDrivenBodyKept()
+{
+	SimConfig config = TestConfig();
+	config.propsGlobal = 2;
+	Simulation sim( config, FlatMap() );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	auto crate = [&]( float x ) {
+		const uint32_t id = sim.Globals().nextNetId;
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.target = SlotTarget( 0 ); // the player's own: it counts against its cap
+		c.value = -1;
+		c.mode = uint8_t( ShapeKind::Box );
+		c.a = { x, 0.4f, 3.0f };
+		c.c = { 0.3f, 0.3f, 0.3f };
+		f.commands.push_back( c );
+		step( 1 );
+		return id;
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 10 );
+	const uint32_t mine = crate( 0.0f );
+	step( 30 );
+	SimCommand possess;
+	possess.type = CommandType::Possess;
+	possess.target = SlotTarget( 0 );
+	possess.other = mine;
+	f.commands.push_back( possess );
+	step( 2 );
+	CHECK( sim.PlayerNetId( 0 ) == mine );
+	// Over the cap: the oldest goes, but not the one it drives.
+	crate( 1.0f );
+	crate( 2.0f );
+	crate( 3.0f );
+	step( 5 );
+	CHECK( sim.PlayerNetId( 0 ) == mine && sim.FindEntity( mine ).is_valid() );
+	// A mod's Destroy: not the body a slot drives.
+	SimCommand destroy;
+	destroy.type = CommandType::Destroy;
+	destroy.target = mine;
+	f.commands.push_back( destroy );
+	step( 5 );
+	f.inputs[0].moveForward = 127;
+	step( 30 );
+	CHECK( sim.PlayerNetId( 0 ) == mine && sim.FindEntity( mine ).is_valid() && sim.FindEntity( mine ).has<Character>() );
+
+	// Killed while it drives a crate, then gone: the crate stays, a loose body that collides and is
+	// hit again (not left disabled, as a dead body is). (A world of its own: no caps.)
+	Simulation world( TestConfig(), FlatMap() );
+	auto stepWorld = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = world.Tick();
+			world.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f = InputFrame{};
+	f.tick = 0;
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	stepWorld( 10 );
+	const uint32_t box = world.Globals().nextNetId;
+	SimCommand spawnBox;
+	spawnBox.type = CommandType::SpawnProp;
+	spawnBox.value = -1;
+	spawnBox.mode = uint8_t( ShapeKind::Box );
+	spawnBox.a = { 0.0f, 0.4f, 3.0f };
+	spawnBox.c = { 0.3f, 0.3f, 0.3f };
+	f.commands.push_back( spawnBox );
+	stepWorld( 30 );
+	possess.other = box;
+	f.commands.push_back( possess );
+	stepWorld( 2 );
+	CHECK( world.PlayerNetId( 0 ) == box );
+	SimCommand kill;
+	kill.type = CommandType::Kill;
+	kill.target = SlotTarget( 0 );
+	kill.mode = 1;
+	f.commands.push_back( kill );
+	stepWorld( 5 );
+	f.events.push_back( { PlayerEventType::Leave, 0 } );
+	stepWorld( 30 );
+	const flecs::entity left = world.FindEntity( box );
+	CHECK( left.is_valid() && left.has<Character>() == false );
+	const b3Vec3 at = left.is_valid() ? world.EntityTransform( box )->position : b3Vec3{};
+	RayHit hit;
+	const bool seen = world.CastRay( b3Vec3{ at.x, at.y, at.z - 3.0f }, b3Vec3{ 0.0f, 0.0f, 6.0f }, 0, hit );
+	std::printf( "    the crate after its driver died and left: at %.2f m up, a ray %s it\n", double( at.y ), seen && hit.netId == box ? "hits" : "misses" );
+	CHECK( seen && hit.netId == box );
 }
 
 void TestMotionFinds()
@@ -11969,8 +12084,34 @@ void TestViewFile()
 
 } // namespace
 
+#if defined( _WIN32 )
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+// A crash says where: the return addresses from this executable's start, for llvm-symbolizer
+// (--relative-address) with its .pdb.
+static LONG WINAPI SayWhereItCrashed( EXCEPTION_POINTERS* info )
+{
+	void* frames[48];
+	const USHORT count = CaptureStackBackTrace( 0, 48, frames, nullptr );
+	const uintptr_t base = reinterpret_cast<uintptr_t>( GetModuleHandleA( nullptr ) );
+	std::fprintf( stderr, "crashed: exception 0x%08lx at 0x%llx; the stack, from the executable's start:\n",
+				  info->ExceptionRecord->ExceptionCode,
+				  static_cast<unsigned long long>( reinterpret_cast<uintptr_t>( info->ExceptionRecord->ExceptionAddress ) - base ) );
+	for ( USHORT i = 0; i < count; ++i )
+	{
+		std::fprintf( stderr, "  0x%llx\n", static_cast<unsigned long long>( reinterpret_cast<uintptr_t>( frames[i] ) - base ) );
+	}
+	std::fflush( stderr );
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
 int main( int argc, char** argv )
 {
+#if defined( _WIN32 )
+	SetUnhandledExceptionFilter( SayWhereItCrashed );
+#endif
 	// Every index answer checked against a scan of every entity (simulation.h).
 	Simulation::s_checkIndexes = true;
 	if ( argc == 2 && std::strcmp( argv[1], "--anim-hash" ) == 0 )
@@ -12043,6 +12184,7 @@ int main( int argc, char** argv )
 		{ "possession", TestPossession },
 		{ "possess_prop", TestPossessProp },
 		{ "mod_driven", TestModDriven },
+		{ "driven_body_kept", TestDrivenBodyKept },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },

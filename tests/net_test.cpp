@@ -4693,6 +4693,240 @@ void TestNpc()
 	CHECK( session != nullptr && session->Sim().FindEntity( npc->m_body ).has<ModDriven>() );
 }
 
+// Found after M222: leaving a body after firing the cannon crashed the server. The bot fires, then
+// takes over the nearest body while the ball flies, and again once it has landed.
+void TestLeaveAfterFiring()
+{
+	const std::string root = CB_SOURCE_DIR;
+	Harness h( 47920, {}, {}, { { "test.mods", "cannon,possess" } }, [&]( ServerOptions& options ) {
+		std::string error, warnings;
+		options.character = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
+	} );
+	const ActionBits fire = UseKey( h.server.Schema(), "cannon.cannon" );
+	const ActionBits take = h.server.Schema().ActionMask( "possess.nearest" );
+	CHECK( fire != 0 && take != 0 );
+	Bot& bot = h.AddBot();
+	bot.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		in.actions = ( tick >= 120 && tick < 124 ) ? fire : ( tick >= 126 && tick < 130 ) || ( tick >= 300 && tick < 304 ) ? take : 0;
+		return in;
+	};
+	h.RunUntil( 7.0 );
+	h.Report();
+	GameClient& client = *h.bots[0].client;
+	std::fprintf( stderr, "    desyncs %u, checksums %u\n", client.GetStats().desyncs, client.GetStats().checksumsVerified );
+	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+	// The body it drives now carries the player's health and deaths (the combat mod's), as its first did.
+	Simulation& server = h.server.Sim();
+	auto field = [&]( const char* name ) {
+		for ( const BoardField& f : h.server.Schema().fields )
+		{
+			if ( f.name == name )
+			{
+				const flecs::entity body = server.FindEntity( server.PlayerNetId( client.Slot() ) );
+				return server.HasBoard( body ) ? server.GetBoard( body ).values[f.slot] : -1;
+			}
+		}
+		return -2;
+	};
+	std::fprintf( stderr, "    on its new body: combat.health %d, combat.deaths %d\n", field( "combat.health" ), field( "combat.deaths" ) );
+	CHECK( field( "combat.health" ) == 100 && field( "combat.deaths" ) == 0 );
+}
+
+// Found after M222 (hunting bugs): everything at once. Every mod, the ones off by default too;
+// three bots pressing every action, slot keys and intents, jumping, turning, changing views and
+// possessing what is near, on a seeded random script; a test mod spawning bodies, driving them at
+// random (NPCs), giving them back, killing players and NPCs with and without ragdolls and
+// respawning them. No crash, no desyncs.
+class ChaosMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_chaos";
+	}
+	void Declare( mods::Declarations& ) override
+	{
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		++m_ticks;
+		const b3Vec3 spawn = GetLevelLayout().spawnCenter;
+		auto random = [&]( uint32_t n ) { return uint32_t( ctx.Random() % n ); };
+		if ( m_ticks % 90 == 0 && m_spawned < 6 )
+		{
+			++m_spawned;
+			ctx.SpawnCharacter( mods::CharacterHandle{ 0 }, b3Vec3{ spawn.x + float( random( 9 ) ) - 4.0f, spawn.y + 1.0f, spawn.z + float( random( 9 ) ) },
+								float( random( 6 ) ) );
+		}
+		// Bodies nobody drives: some are driven.
+		for ( uint32_t body : ctx.IdleBodies() )
+		{
+			if ( random( 30 ) == 0 )
+			{
+				PlayerInput in;
+				in.moveForward = int8_t( random( 255 ) ) ;
+				in.moveRight = int8_t( random( 255 ) );
+				in.cameraYaw = uint16_t( random( 65536 ) );
+				ctx.Drive( body, in );
+				m_npcs.push_back( body );
+			}
+		}
+		for ( size_t i = 0; i < m_npcs.size(); ++i )
+		{
+			const uint32_t npc = m_npcs[i];
+			if ( ctx.DrivenByMod( npc ) == false )
+			{
+				continue;
+			}
+			const uint32_t roll = random( 400 );
+			if ( roll < 8 )
+			{
+				PlayerInput in;
+				in.moveForward = int8_t( random( 255 ) );
+				in.cameraYaw = uint16_t( random( 65536 ) );
+				in.buttons = uint8_t( random( 8 ) );
+				ctx.Drive( npc, in );
+			}
+			else if ( roll < 10 )
+			{
+				ctx.StopDriving( npc );
+			}
+			else if ( roll < 12 )
+			{
+				ctx.Kill( npc, random( 2 ) == 0 );
+			}
+			else if ( roll < 14 )
+			{
+				ctx.Respawn( npc );
+			}
+		}
+		for ( int slot = 0; slot < kMaxPlayers; ++slot )
+		{
+			const uint32_t body = ctx.PlayerNetId( PlayerSlot( slot ) );
+			if ( body == 0 )
+			{
+				continue;
+			}
+			const uint32_t roll = random( 600 );
+			if ( roll == 0 )
+			{
+				ctx.Kill( SlotTarget( PlayerSlot( slot ) ), random( 2 ) == 0 );
+			}
+			else if ( roll < 4 )
+			{
+				ctx.Respawn( SlotTarget( PlayerSlot( slot ) ) );
+			}
+		}
+	}
+
+private:
+	uint32_t m_ticks = 0;
+	uint32_t m_spawned = 0;
+	std::vector<uint32_t> m_npcs;
+};
+
+void TestChaos()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	extra.push_back( std::make_unique<ChaosMod>() );
+	const std::string root = CB_SOURCE_DIR;
+	Harness h( 47922, {}, {}, { { "test.mods", "cannon,flight,grenade,sneak,possess" } },
+			   [&]( ServerOptions& options ) {
+				   const char* view = std::getenv( "CB_CHAOS_VIEW" ); // (a view file of it, for the game)
+				   options.recordViewPath = view != nullptr ? view : "";
+				   std::string error, warnings;
+				   options.character = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
+				   options.loadAnimPack = [root]( const std::string& mod, const std::string& pack, std::string& error, std::string& warnings ) {
+					   return LoadAnimPackFolder( root + "/server_mods/" + mod + "/client", pack, error, warnings );
+				   };
+			   },
+			   std::move( extra ) );
+	const ModSchema& schema = h.server.Schema();
+	ActionBits every = 0;
+	for ( const auto& action : schema.actions )
+	{
+		every |= ActionBits( 1 ) << action.bit;
+	}
+	for ( int b = 0; b < 3; ++b )
+	{
+		Bot& bot = h.AddBot();
+		auto rng = std::make_shared<uint64_t>( 0x9E3779B97F4A7C15ull * uint64_t( b + 1 ) );
+		auto held = std::make_shared<PlayerInput>();
+		bot.script = [rng, held, every]( uint32_t tick ) {
+			auto next = [&]() {
+				*rng ^= *rng << 13;
+				*rng ^= *rng >> 7;
+				*rng ^= *rng << 17;
+				return *rng;
+			};
+			PlayerInput& in = *held;
+			if ( tick % 12 == 0 )
+			{
+				in.moveForward = int8_t( next() % 255 );
+				in.moveRight = int8_t( next() % 255 );
+				in.cameraYaw = uint16_t( next() );
+				in.cameraPitch = int16_t( int( next() % 32000 ) - 16000 );
+				in.buttons = uint8_t( next() & kEngineButtons );
+				in.actions = ActionBits( next() ) & every;
+				in.slotKeys = uint16_t( next() & 0x3FF );
+				in.view = uint8_t( next() % kViewModes );
+				if ( next() % 3 == 0 )
+				{
+					in.intent = uint8_t( 1 + next() % 4 );
+					in.intentA = uint8_t( next() % 10 );
+					in.intentB = uint8_t( next() % 10 );
+					in.intentSeq = uint8_t( in.intentSeq + 1 );
+				}
+			}
+			return in;
+		};
+	}
+	// What went on: bodies changing hands, NPCs, ragdolls, props players spawned.
+	uint32_t swaps = 0, mostNpcs = 0, mostRagdolls = 0, mostProps = 0;
+	std::array<uint32_t, 3> last{};
+	h.server.SetTickObserver( [&] {
+		const Simulation& sim = h.server.Sim();
+		for ( int s = 0; s < 3; ++s )
+		{
+			const uint32_t now = sim.PlayerNetId( PlayerSlot( s ) );
+			swaps += last[size_t( s )] != 0 && now != 0 && now != last[size_t( s )] ? 1 : 0;
+			last[size_t( s )] = now;
+		}
+		uint32_t npcs = 0, ragdolls = 0, props = 0;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const flecs::entity e = sim.FindEntity( r.netId );
+			npcs += e.has<ModDriven>() ? 1 : 0;
+			ragdolls += e.has<Ragdoll>() ? 1 : 0;
+			props += e.has<Prop>() && e.get<Prop>().owner != 0 ? 1 : 0;
+		}
+		mostNpcs = std::max( mostNpcs, npcs );
+		mostRagdolls = std::max( mostRagdolls, ragdolls );
+		mostProps = std::max( mostProps, props );
+	} );
+	h.RunUntil( 10.0 );
+	// A late joiner, from a portable snapshot with NPCs, driven props and bodies nobody drives in it.
+	h.AddBot();
+	h.RunUntil( 20.0 );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	for ( Bot& b : h.bots )
+	{
+		int compared = 0;
+		CHECK( h.CompareWithServer( b, compared ) == 0 && compared > 50 );
+	}
+	std::fprintf( stderr, "    bodies changed hands %u times; at most %u NPCs, %u ragdolls, %u props players spawned\n", swaps, mostNpcs,
+				  mostRagdolls, mostProps );
+	CHECK( swaps > 0 && mostNpcs > 0 && mostRagdolls > 0 && mostProps > 0 );
+	for ( size_t b = 0; b < h.bots.size(); ++b )
+	{
+		const GameClient& client = *h.bots[b].client;
+		std::fprintf( stderr, "    bot %zu: desyncs %u, checksums %u\n", b, client.GetStats().desyncs, client.GetStats().checksumsVerified );
+		CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+	}
+}
+
 // The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
 // breaks a hole in it with no blast, and goes on through: past the wall, while bricks still stand.
 // The ball's scene says it breaks walls (CbItem.break_speed), so the simulation breaks it in the
@@ -5143,11 +5377,32 @@ void TestGrapple()
 
 } // namespace
 
+#if defined( _WIN32 )
+// A crash says where: the return addresses from this executable's start, for llvm-symbolizer
+// (--relative-address) with its .pdb.
+LONG WINAPI SayWhereItCrashed( EXCEPTION_POINTERS* info )
+{
+	void* frames[48];
+	const USHORT count = CaptureStackBackTrace( 0, 48, frames, nullptr );
+	const uintptr_t base = reinterpret_cast<uintptr_t>( GetModuleHandleA( nullptr ) );
+	std::fprintf( stderr, "crashed: exception 0x%08lx at 0x%llx; the stack, from the executable's start:\n",
+				  info->ExceptionRecord->ExceptionCode,
+				  static_cast<unsigned long long>( reinterpret_cast<uintptr_t>( info->ExceptionRecord->ExceptionAddress ) - base ) );
+	for ( USHORT i = 0; i < count; ++i )
+	{
+		std::fprintf( stderr, "  0x%llx\n", static_cast<unsigned long long>( reinterpret_cast<uintptr_t>( frames[i] ) - base ) );
+	}
+	std::fflush( stderr );
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
 int main( int argc, char** argv )
 {
 	// Every index answer checked against a scan of every entity (simulation.h).
 	Simulation::s_checkIndexes = true;
 #if defined( _WIN32 )
+	SetUnhandledExceptionFilter( SayWhereItCrashed );
 	timeBeginPeriod( 1 );
 #endif
 
@@ -5185,6 +5440,8 @@ int main( int argc, char** argv )
 		{ "possession", TestPossession },
 		{ "possess_prop", TestPossessProp },
 		{ "npc", TestNpc },
+		{ "leave_after_firing", TestLeaveAfterFiring },
+		{ "chaos", TestChaos },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },

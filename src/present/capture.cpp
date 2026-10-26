@@ -47,7 +47,7 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 			f.velocity = pose.linear[ragdoll::Pelvis];
 			f.ragdoll = uint32_t( out.ragdolls.size() );
 			// (Its player's character: the skeleton it hangs off.)
-			f.character = uint8_t( sim.CharacterOf( sim.FindEntity( sim.PlayerNetId( r->slot ) ) ) );
+			f.character = uint8_t( sim.CharacterOf( sim.FindEntity( r->owner ) ) ); // (the body it fell from: a player's or an NPC's)
 			if ( sim.HasBoard( e ) )
 			{
 				f.board = sim.GetBoard( e );

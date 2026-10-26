@@ -208,7 +208,7 @@ public:
 
 	bool IsPlayerActive( PlayerSlot slot ) const
 	{
-		return m_globals.playerNetIds[slot] != 0;
+		return slot < kMaxPlayers && m_globals.playerNetIds[slot] != 0;
 	}
 
 	// --- Read-only queries (server mods, tools) ------------------------------------------------
@@ -217,7 +217,7 @@ public:
 	// 0 if the slot is empty.
 	uint32_t PlayerNetId( PlayerSlot slot ) const
 	{
-		return m_globals.playerNetIds[slot];
+		return slot < kMaxPlayers ? m_globals.playerNetIds[slot] : 0; // (kNoSlot: a body no player drives)
 	}
 	// Null if the slot is empty.
 	const Character* PlayerCharacter( PlayerSlot slot ) const;

@@ -103,6 +103,18 @@ public:
 					ctx.Freeze( SlotTarget( slot ), true );
 				}
 			}
+			// Another body (a possession): the player's score goes on its board too, and between
+			// rounds it stands still like the rest.
+			const uint32_t body = ctx.PlayerNetId( slot );
+			if ( body != 0 && m_bodies[i] != 0 && body != m_bodies[i] && ctx.Joining( slot ) == false )
+			{
+				ctx.Set( SlotTarget( slot ), m_score, m_scores[i] );
+				if ( m_state == Intermission )
+				{
+					ctx.Freeze( SlotTarget( slot ), true );
+				}
+			}
+			m_bodies[i] = body;
 		}
 
 		if ( m_state == Playing )
@@ -245,6 +257,7 @@ private:
 	int32_t m_lastSeconds = -1;
 	bool m_published = false;
 	int32_t m_scores[kMaxPlayers] = {};
+	uint32_t m_bodies[kMaxPlayers] = {}; // the body each slot drove last tick
 };
 
 } // namespace
