@@ -75,7 +75,21 @@ FetchContent_Declare(miniz
 	GIT_SHALLOW FALSE
 )
 
+# --- Recast & Detour v1.6.0 (the server's navigation mesh: ROADMAP.md step 9; server only) ---
+set(RECASTNAVIGATION_DEMO OFF CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_TESTS OFF CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_EXAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(recastnavigation
+	GIT_REPOSITORY https://github.com/recastnavigation/recastnavigation.git
+	GIT_TAG 6dc1667f580357e8a2154c28b7867bea7e8ad3a7 # v1.6.0
+	GIT_SHALLOW FALSE
+)
+
 FetchContent_MakeAvailable(flecs box3d enet ozz miniz)
+# (Its CMakeLists asks for a CMake older than 3.5, which CMake 4 refuses: for it alone, taken as 3.5.)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+FetchContent_MakeAvailable(recastnavigation)
+unset(CMAKE_POLICY_VERSION_MINIMUM)
 
 # ozz's scalar math is chosen by a definition that ozz sets for its own sources only. Its math is
 # mostly inline, so whoever includes its headers needs the definition too: without it our own code

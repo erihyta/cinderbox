@@ -30,7 +30,7 @@ A proposal: the order is open to change. Each row is a milestone or two.
 | 6 | [Characters per entity](#6-characters-per-entity) | **done (M216–M218)**: the server's list of characters, each body its own state machine, hitboxes, capsule, movement and eyes, in the simulation, on the server and in the client's drawing; first person only with a first-person camera in the scene. The third-person camera's distance and height from the body's size moved to step 8 |
 | 7 | [Any skeleton](#7-any-skeleton) | **done (M219)**: any skeleton bakes and plays (the critter); without a humanoid's bones no ragdoll, packs that do not fit are not swapped in, items drawn only in its sockets. Authored ragdolls for other skeletons moved to [Later](#later); a character with no skeleton is step 8's |
 | 8 | [Bodies and who drives them](#8-bodies-and-who-drives-them) | **done (M220 to M222)**: bodies nobody drives, possession of a character's body or a prop, a mod driving a body (an NPC); the character controller is something an entity has while it is driven, read from its scene; a player possesses any entity, a mod drives one (an NPC); nothing extra for a body nobody drives |
-| 9 | [Finding the way](#9-finding-the-way) | a navigation mesh on the server, for a mod's brains |
+| 9 | [Finding the way](#9-finding-the-way) | **done (M227)**: a navigation mesh on the server (Recast/Detour), `ctx.FindPath`, `NearestWalkable`, `WalkToward` |
 | 10 | [The proof: waves](#10-the-proof-waves) | NPCs that walk to the nearest player and swing at it, waves that grow |
 | 11 | [The animation tree, wider](#11-the-animation-tree-wider) | what a Godot developer reaches for next (nested state machines, OneShot, Add, TimeScale, crossfade curves), and layers that are the look's alone |
 
@@ -236,8 +236,11 @@ sheets, its items: a chicken's jump can be a flap). The client stays a presenter
 
 ### 9. Finding the way
 
-Server only, so it need not be deterministic: a navigation mesh made from the map's level when the
-server starts (Recast/Detour), `ctx.FindPath( from, to )`, and a mod's helpers to walk it.
+**Done (M227).** Server only, so it need not be deterministic: a navigation mesh made when the
+server starts (Recast/Detour) from everything static in its physics world, `ctx.FindPath( from, to )`,
+and a mod's helpers to walk it (`NearestWalkable`, `WalkToward`). Later: one mesh per character
+size (it is the server's own character's now), a mesh mended when a wall breaks, off-mesh links
+(a jump, a ladder).
 
 ### 10. The proof: waves
 

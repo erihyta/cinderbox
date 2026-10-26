@@ -5051,6 +5051,99 @@ void TestMapBody()
 	CHECK( session != nullptr && session->Sim().FindEntity( body ).has<IdleBody>() && h.bots[0].client->GetStats().desyncs == 0 );
 }
 
+// Step 9: finding the way. A map with a wall across it and a doorway 5 m off to one side: the
+// server's navigation mesh finds the way through the doorway, and a test mod walks an NPC along it
+// (FindPath, then WalkToward each corner in turn) to a point behind the wall. The bot's own
+// simulation agrees all the way (no desyncs).
+class WalkerMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_walker";
+	}
+	void Declare( mods::Declarations& ) override
+	{
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		++m_ticks;
+		if ( m_ticks == 20 )
+		{
+			ctx.SpawnCharacter( mods::CharacterHandle{ 0 }, m_start, 0.0f );
+		}
+		if ( m_body == 0 )
+		{
+			const std::vector<uint32_t> free = ctx.IdleBodies();
+			if ( free.empty() == false && m_ticks > 40 )
+			{
+				m_body = free.front();
+				const Transform* t = ctx.EntityTransform( m_body );
+				const b3Vec3 feet = { t->position.x, m_start.y, t->position.z };
+				m_found = ctx.FindPath( feet, m_goal, m_corners );
+			}
+			return;
+		}
+		// Toward the next corner; on to the one after once near.
+		const Transform* t = ctx.EntityTransform( m_body );
+		while ( m_next < m_corners.size() &&
+				b3Length( b3Vec3{ m_corners[m_next].x - t->position.x, 0.0f, m_corners[m_next].z - t->position.z } ) < 0.4f )
+		{
+			++m_next;
+		}
+		ctx.Drive( m_body, m_next < m_corners.size() ? ctx.WalkToward( m_body, m_corners[m_next] ) : PlayerInput{} );
+	}
+
+	b3Vec3 m_start = { 0.0f, 0.0f, -6.0f };
+	b3Vec3 m_goal = { 0.0f, 0.0f, 6.0f };
+	std::vector<b3Vec3> m_corners;
+	bool m_found = false;
+	size_t m_next = 0;
+	uint32_t m_body = 0;
+	uint32_t m_ticks = 0;
+};
+
+void TestNavigation()
+{
+	namespace fs = std::filesystem;
+	LevelLayout map;
+	map.name = "doorway";
+	map.spawnCenter = { -12.0f, 1.5f, -12.0f };
+	map.spawnRadius = 2.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+	// The wall at z = 0, from x = -20 to 4 and from 6 to 20: the doorway between x = 4 and 6.
+	map.statics.push_back( { { -8.0f, 1.5f, 0.0f }, { 12.0f, 1.5f, 0.25f }, 0.0f, 0.0f } );
+	map.statics.push_back( { { 13.0f, 1.5f, 0.0f }, { 7.0f, 1.5f, 0.25f }, 0.0f, 0.0f } );
+	QuantizeLayout( map );
+	std::vector<uint8_t> bytes;
+	SerializeMap( map, bytes );
+	const fs::path path = fs::temp_directory_path() / "cb_net_test_doorway.cbmap";
+	std::string error;
+	CHECK( WriteMapFile( path.string(), bytes, error ) );
+
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	auto mod = std::make_unique<WalkerMod>();
+	WalkerMod* walker = mod.get();
+	extra.push_back( std::move( mod ) );
+	Harness h( 47928, {}, path.string(), {}, {}, std::move( extra ) );
+	h.AddBot();
+	h.RunUntil( 12.0 );
+	h.Report();
+	const Transform* at = walker->m_body != 0 ? h.server.Sim().EntityTransform( walker->m_body ) : nullptr;
+	bool throughDoor = false;
+	for ( const b3Vec3& c : walker->m_corners )
+	{
+		throughDoor = throughDoor || ( c.x > 3.5f && c.x < 6.5f && std::fabs( c.z ) < 1.5f );
+	}
+	std::printf( "    the way: %zu corners%s; the NPC ended at (%.2f, %.2f), the goal (0, 6); desyncs %u\n", walker->m_corners.size(),
+				 throughDoor ? ", through the doorway" : "", at ? double( at->position.x ) : 0.0, at ? double( at->position.z ) : 0.0,
+				 h.bots[0].client->GetStats().desyncs );
+	CHECK( walker->m_found && walker->m_corners.size() >= 3 && throughDoor );
+	CHECK( at != nullptr && b3Length( b3Vec3{ at->position.x - 0.0f, 0.0f, at->position.z - 6.0f } ) < 1.0f );
+	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
+	fs::remove( path );
+}
+
 // The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
 // breaks a hole in it with no blast, and goes on through: past the wall, while bricks still stand.
 // The ball's scene says it breaks walls (CbItem.break_speed), so the simulation breaks it in the
@@ -5568,6 +5661,7 @@ int main( int argc, char** argv )
 		{ "chaos", TestChaos },
 		{ "combat_npc", TestCombatNpc },
 		{ "map_body", TestMapBody },
+		{ "navigation", TestNavigation },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },
