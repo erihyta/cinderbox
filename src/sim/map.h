@@ -62,9 +62,11 @@
 namespace cb
 {
 
-// 11: a breakable's glue. 10: which pieces of a breakable hold it up, and which touch (holes). 9: breakable templates (their pieces). 8: a prop's rolling and drag. 7: triangle meshes and height fields. 6: bodies of several shapes, a template's look, an
+// 12: characters' bodies the map places. 11: a breakable's glue. 10: which pieces of a breakable hold it up, and which touch (holes). 9: breakable templates (their pieces). 8: a prop's rolling and drag. 7: triangle meshes and height fields. 6: bodies of several shapes, a template's look, an
 // instance's roll. 5: hulls. 4: a static's shape and roll. 3: a prop's body.
-inline constexpr uint32_t kMapVersion = 11;
+inline constexpr uint32_t kMapVersion = 12;
+// Characters' bodies a map may place.
+inline constexpr uint32_t kMapBodyLimit = 256;
 // Pieces a breakable may come apart into, and pairs of them that touch.
 inline constexpr uint32_t kMapPieceLimit = 256;
 inline constexpr uint32_t kMapPieceLinkLimit = 4096;

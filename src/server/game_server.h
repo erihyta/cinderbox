@@ -59,6 +59,9 @@ struct ServerOptions
 	std::function<std::shared_ptr<const CharacterAsset>( const std::string& mod, const std::string& name, std::string& error,
 														 std::string& warnings )>
 		loadCharacter;
+	// A character item's manifest by its name (a map's CbCharacterBody names one): announced to
+	// players like a mod's item. Unset or false: not announced.
+	std::function<bool( const std::string& name, ModItem& item )> characterItem;
 	// Reads a mod's animation pack (the baked files under anim/<pack>/ in its workshop item). Unset
 	// or failing: the pack's swaps do nothing.
 	std::function<std::shared_ptr<const anim::AnimSet>( const std::string& mod, const std::string& pack, std::string& error,
@@ -239,6 +242,7 @@ private:
 	std::vector<uint8_t> m_image;
 	// The map as loaded, forwarded to every client on join.
 	LevelLayout m_map;
+	bool m_mapBodiesPlaced = false; // its characters' bodies spawned (the first tick)
 	std::vector<uint8_t> m_mapBytes;
 	uint64_t m_mapHash = 0;
 	std::vector<uint64_t> m_hashes;

@@ -205,12 +205,16 @@ void TestMapFormat()
 	authored.props.push_back( { ShapeKind::Sphere, { -4.4444f, 1.1111f, 0.0f }, { 0.5f, 0.0f, 0.0f } } );
 	// (And a body that is not the usual one: a weight of its own, slippery, bouncy.)
 	authored.props.push_back( { ShapeKind::Box, { 2.0f, 1.0f, 0.0f }, { 0.5f, 0.5f, 0.5f }, 12.3456f, 77.7777f, 0.1234f, 0.8765f } );
+	// (And a character's body it places: map version 12.)
+	authored.bodies.push_back( { "critter", { 3.3333f, 0.0f, -2.5f }, 1.2345f } );
 	QuantizeLayout( authored );
 	std::vector<uint8_t> authoredBytes;
 	SerializeMap( authored, authoredBytes );
 	LevelLayout authoredBack;
 	CHECK( DeserializeMap( authoredBytes.data(), authoredBytes.size(), authoredBack, error ) );
 	CHECK( SameLayout( authored, authoredBack ) );
+	CHECK( authoredBack.bodies.size() == 1 && authoredBack.bodies[0].character == "critter" &&
+		   authoredBack.bodies[0].feet.x == authored.bodies[0].feet.x && authoredBack.bodies[0].yaw == authored.bodies[0].yaw );
 	CHECK( authoredBack.props.size() == 2 && authoredBack.props[1].mass > 12.3f && authoredBack.props[1].restitution > 0.87f &&
 		   authoredBack.props[0].mass == 0.0f && authoredBack.props[0].density == 40.0f );
 	{
@@ -4696,6 +4700,189 @@ void TestDrivenBodyKept()
 	const bool seen = world.CastRay( b3Vec3{ at.x, at.y, at.z - 3.0f }, b3Vec3{ 0.0f, 0.0f, 6.0f }, 0, hit );
 	std::printf( "    the crate after its driver died and left: at %.2f m up, a ray %s it\n", double( at.y ), seen && hit.netId == box ? "hits" : "misses" );
 	CHECK( seen && hit.netId == box );
+}
+
+// Found after M224: a driven crate walked into walls. A crate 1 m across driven at a wall, at an
+// angle and with its look swinging (so it turns as it goes): no corner of it gets into the wall.
+void TestPropWalls()
+{
+	LevelLayout map = FlatMap();
+	map.statics.push_back( { { 0.0f, 1.5f, 6.25f }, { 10.0f, 1.5f, 0.25f }, 0.0f, 0.0f } ); // its face at z = 6
+	QuantizeLayout( map );
+	Simulation sim( TestConfig(), map );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 10 );
+	const uint32_t crate = sim.Globals().nextNetId;
+	SimCommand c;
+	c.type = CommandType::SpawnProp;
+	c.value = -1;
+	c.mode = uint8_t( ShapeKind::Box );
+	c.a = { 0.0f, 0.6f, 2.0f };
+	c.c = { 0.5f, 0.5f, 0.5f };
+	f.commands.push_back( c );
+	step( 30 );
+	SimCommand possess;
+	possess.type = CommandType::Possess;
+	possess.target = SlotTarget( 0 );
+	possess.other = crate;
+	f.commands.push_back( possess );
+	step( 2 );
+	float deepest = -10.0f;
+	for ( int i = 0; i < 400; ++i )
+	{
+		f.inputs[0].moveForward = 127;
+		f.inputs[0].moveRight = int8_t( i % 120 < 60 ? 60 : -60 );
+		f.inputs[0].cameraYaw = uint16_t( int( 3000.0f * std::sin( float( i ) * 0.05f ) ) );
+		step( 1 );
+		const Transform& t = *sim.EntityTransform( crate );
+		const DrivenProp& prop = sim.FindEntity( crate ).get<DrivenProp>();
+		for ( int k = 0; k < 8; ++k )
+		{
+			const b3Vec3 corner = { ( k & 1 ) ? prop.high[0] : prop.low[0], ( k & 2 ) ? prop.high[1] : prop.low[1], ( k & 4 ) ? prop.high[2] : prop.low[2] };
+			const b3Vec3 at = b3Add( b3Vec3{ t.position.x, t.position.y - prop.drop, t.position.z }, b3RotateVector( t.rotation, corner ) );
+			deepest = std::max( deepest, at.z - 6.0f );
+		}
+	}
+	std::printf( "    the crate's deepest corner into the wall: %.3f m\n", double( deepest ) );
+	CHECK( deepest < 0.02f );
+
+	// Against the wall, it leaves it again: straight back, and along it.
+	f.inputs[0] = {};
+	f.inputs[0].moveForward = 127;
+	step( 60 ); // (pressed to it, facing it)
+	const b3Vec3 pressed = sim.EntityTransform( crate )->position;
+	f.inputs[0].moveForward = -127;
+	step( 30 );
+	const b3Vec3 backed = sim.EntityTransform( crate )->position;
+	f.inputs[0].moveForward = 127;
+	step( 60 );
+	f.inputs[0].moveForward = 0;
+	f.inputs[0].moveRight = 127;
+	step( 30 );
+	const b3Vec3 slid = sim.EntityTransform( crate )->position;
+	std::printf( "    against the wall at z %.2f: backed off to %.2f; along it %.2f m\n", double( pressed.z ), double( backed.z ),
+				 double( std::fabs( slid.x - pressed.x ) ) );
+	CHECK( pressed.z - backed.z > 0.5f && std::fabs( slid.x - pressed.x ) > 0.5f );
+	f.inputs[0] = {};
+
+	// Against a player, both ways as between two players: neither shoves the other.
+	f.inputs[0] = {};
+	f.events.push_back( { PlayerEventType::Join, 1 } );
+	step( 30 );
+	const uint32_t other = sim.PlayerNetId( 1 );
+	const b3Vec3 stands = sim.EntityTransform( other )->position;
+	const b3Vec3 box = sim.EntityTransform( crate )->position;
+	// The crate drives at the player (its look turned toward it), and on.
+	const b3Vec3 toward = b3Sub( stands, box );
+	f.inputs[0].cameraYaw = detmath::RadiansToYaw( detmath::Atan2( toward.x, toward.z ) );
+	f.inputs[0].moveForward = 127;
+	step( 150 );
+	f.inputs[0].moveForward = 0;
+	const float shoved = b3Length( b3Sub( sim.EntityTransform( other )->position, stands ) );
+	// The player walks into the crate.
+	const b3Vec3 boxNow = sim.EntityTransform( crate )->position;
+	const b3Vec3 back = b3Sub( boxNow, sim.EntityTransform( other )->position );
+	f.inputs[1].cameraYaw = detmath::RadiansToYaw( detmath::Atan2( back.x, back.z ) );
+	f.inputs[1].moveForward = 127;
+	step( 150 );
+	const float pushed = b3Length( b3Sub( sim.EntityTransform( crate )->position, boxNow ) );
+	std::printf( "    the crate driven into a player moved it %.3f m; the player walking into the crate moved it %.3f m\n", double( shoved ),
+				 double( pushed ) );
+	CHECK( shoved < 0.05f && pushed < 0.05f );
+}
+
+// Found after M225: a driven crate next to a wall could not leave it. Walls turned 30 degrees, a
+// corner; a crate pressed into them at random, then walked away: it gets away every time.
+void TestPropLeavesWalls()
+{
+	LevelLayout map = FlatMap();
+	map.statics.push_back( { { 0.0f, 1.5f, 8.0f }, { 6.0f, 1.5f, 0.25f }, 0.0f, 0.5236f } ); // turned 30 degrees
+	map.statics.push_back( { { -8.0f, 1.5f, 0.0f }, { 0.25f, 1.5f, 6.0f }, 0.0f, 0.0f } );	// and a corner with
+	map.statics.push_back( { { -4.0f, 1.5f, -6.0f }, { 4.0f, 1.5f, 0.25f }, 0.0f, 0.0f } ); // this one
+	QuantizeLayout( map );
+	Simulation sim( TestConfig(), map );
+	InputFrame f;
+	auto step = [&]( int n ) {
+		for ( int i = 0; i < n; ++i )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+			f.commands.clear();
+		}
+	};
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	step( 10 );
+	const uint32_t crate = sim.Globals().nextNetId;
+	SimCommand c;
+	c.type = CommandType::SpawnProp;
+	c.value = -1;
+	c.mode = uint8_t( ShapeKind::Box );
+	c.a = { 0.0f, 0.6f, 2.0f };
+	c.c = { 0.5f, 0.5f, 0.5f };
+	f.commands.push_back( c );
+	step( 30 );
+	SimCommand possess;
+	possess.type = CommandType::Possess;
+	possess.target = SlotTarget( 0 );
+	possess.other = crate;
+	f.commands.push_back( possess );
+	step( 2 );
+	uint64_t rng = 12345;
+	auto next = [&]() {
+		rng ^= rng << 13;
+		rng ^= rng >> 7;
+		rng ^= rng << 17;
+		return rng;
+	};
+	int stuck = 0, tries = 0;
+	// Toward each wall in turn, jiggled into it, then away in four directions.
+	const float aims[3] = { 0.0f, -1.5708f, 3.1416f };
+	for ( int round = 0; round < 30; ++round )
+	{
+		f.inputs[0] = {};
+		f.inputs[0].cameraYaw = detmath::RadiansToYaw( aims[round % 3] + float( int( next() % 60 ) - 30 ) * 0.01f );
+		for ( int i = 0; i < 150; ++i )
+		{
+			f.inputs[0].moveForward = 127;
+			f.inputs[0].moveRight = int8_t( int( next() % 255 ) - 127 );
+			step( 1 );
+		}
+		const b3Vec3 at = sim.EntityTransform( crate )->position;
+		// Back, or off to either side, each from the same moment: stuck is when none of them gets
+		// away (in a corner one side is the other wall).
+		Snapshot pressed;
+		sim.Save( pressed );
+		const uint32_t tick = f.tick;
+		float gone = 0.0f;
+		for ( int way = 0; way < 3; ++way )
+		{
+			sim.Load( pressed );
+			f.tick = tick;
+			f.inputs[0].moveRight = way == 1 ? 127 : way == 2 ? -127 : 0;
+			f.inputs[0].moveForward = way == 0 ? -127 : 0;
+			step( 40 );
+			gone = std::max( gone, b3Length( b3Sub( sim.EntityTransform( crate )->position, at ) ) );
+		}
+		++tries;
+		if ( gone < 0.5f )
+		{
+			++stuck;
+			std::printf( "    stuck at (%.2f, %.2f) after round %d: moved %.3f m\n", double( at.x ), double( at.z ), round, double( gone ) );
+		}
+	}
+	std::printf( "    %d of %d times it could not leave a wall\n", stuck, tries );
+	CHECK( stuck == 0 );
 }
 
 void TestMotionFinds()
@@ -12185,6 +12372,8 @@ int main( int argc, char** argv )
 		{ "possess_prop", TestPossessProp },
 		{ "mod_driven", TestModDriven },
 		{ "driven_body_kept", TestDrivenBodyKept },
+		{ "prop_walls", TestPropWalls },
+		{ "prop_leaves_walls", TestPropLeavesWalls },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
 		{ "motion_curves", TestMotionCurves },

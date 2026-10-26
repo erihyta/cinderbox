@@ -458,6 +458,12 @@ public:
 	{
 		return m_sim.PlayerNetId( slot );
 	}
+	// Any body's controller state (a player's, or one a mod drives); null for a body nobody drives.
+	const Character* BodyCharacter( uint32_t netId ) const
+	{
+		const flecs::entity e = m_sim.FindEntity( netId );
+		return e.is_valid() ? e.try_get<Character>() : nullptr;
+	}
 	const Character* PlayerCharacter( PlayerSlot slot ) const
 	{
 		return m_sim.PlayerCharacter( slot );
@@ -701,6 +707,8 @@ public:
 	void StopDriving( uint32_t body );
 	// Whether a mod drives `body` (and with what, if `input`).
 	bool DrivenByMod( uint32_t body, PlayerInput* input = nullptr ) const;
+	// The bodies mods drive (NPCs), by NetId.
+	std::vector<uint32_t> ModDrivenBodies() const;
 	// Whether a slot may drive `body` (Possess): a character's body nobody drives, or a loose prop
 	// (not an item, a ragdoll, a container or anything static).
 	bool CanPossess( uint32_t body ) const

@@ -34,7 +34,7 @@ namespace
 const char* const kOfferedNodes[] = {
 	"CbReaction",	"CbPrediction", "CbItem",	"CbLinkLook", "CbMotionSet",   "CbMotion",	"CbProbe", "CbLaunch", "CbImpulse", "CbForce", "CbLink",	"CbFieldLabel",
 	"CbFieldBinding", "CbList", "CbKey", "CbClick", "CbPromptLabel", "CbCharacter", "CbAnimPack",	   "CbHitbox",	"CbSocket",
-	"CbStatic",		"CbProp",		"CbBreakable", "CbSpawn",	   "CbTemplate",	"CbComponent", "CbEntity",
+	"CbStatic",		"CbProp",		"CbBreakable", "CbSpawn", "CbCharacterBody",	   "CbTemplate",	"CbComponent", "CbEntity",
 };
 
 PackedStringArray ReadLines( const String& path )

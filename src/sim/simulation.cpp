@@ -5855,48 +5855,170 @@ bool Simulation::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetI
 
 void Simulation::HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 start, float startYaw, Transform& t, Character& c )
 {
-	// Only across: the mover has the ground, steps and slopes; the prop's bounds come along and stop
-	// where they would meet the world, another player or a driven prop (a big box does not fit a
-	// small doorway). Raised a little off the ground so the floor it stands on is not in the way.
-	const b3Vec3 across = { t.position.x - start.x, 0.0f, t.position.z - start.z };
-	const float length = b3Length( across );
-	if ( length < 1e-5f )
-	{
-		return;
-	}
+	// The mover has the ground, steps and slopes; the prop's upright bounds come along and keep out
+	// of the world, other players and other driven props (a big box does not fit a small doorway, a
+	// corner does not swing into a wall). Raised a little off the ground so the floor it stands on
+	// is not in the way.
+	const uint32_t self = e.get<NetId>().value;
 	const float lift = std::min( 0.15f, 0.25f * ( prop.high[1] - prop.low[1] ) );
-	const b3Quat turn = detmath::YawRotation( startYaw );
+	// The gap it keeps from what it meets: past Box3D's speculative distance (2 cm), within which a
+	// cast starting there would say it touches already, with no direction to slide along.
+	constexpr float kSkin = 0.03f;
 	b3Vec3 points[8];
-	for ( int i = 0; i < 8; ++i )
-	{
-		const b3Vec3 corner = { ( i & 1 ) ? prop.high[0] : prop.low[0], ( i & 2 ) ? prop.high[1] : prop.low[1] + lift,
-								( i & 4 ) ? prop.high[2] : prop.low[2] };
-		points[i] = b3RotateVector( turn, corner );
-	}
-	const b3ShapeProxy proxy = { points, 8, 0.0f };
-	const b3Vec3 from = { start.x, start.y - prop.drop, start.z };
+	// Its bounds turned to `yaw`, shrunk by `inset` all round but at the floor (an inset that makes
+	// them clear says how far in they are).
+	auto shapeAt = [&]( float yaw, float inset ) {
+		const b3Quat turn = detmath::YawRotation( yaw );
+		for ( int i = 0; i < 8; ++i )
+		{
+			const b3Vec3 corner = { ( i & 1 ) ? prop.high[0] - inset : prop.low[0] + inset, ( i & 2 ) ? prop.high[1] - inset : prop.low[1] + lift,
+									( i & 4 ) ? prop.high[2] - inset : prop.low[2] + inset };
+			points[i] = b3RotateVector( turn, corner );
+		}
+		return b3ShapeProxy{ points, 8, 0.0f };
+	};
+	// (Anything that does not move by itself: the level, a static template's body (a wall's standing
+	// pieces), rubble, players, other driven props. A loose body is shoved by the capsule instead.)
+	const b3QueryFilter filter = { CatDriven, CatStatic | CatProp | CatPlayer | CatDriven | CatDebris, 0, nullptr };
 	PhysicsArena::Scope scope( *m_arena );
 	BuildShapeLookup();
-	RayHit hit;
-	RayContext ctx{ this, e.get<NetId>().value, &hit, false, false };
-	b3QueryFilter filter = { CatDriven, CatStatic | CatPlayer | CatDriven | CatDebris, 0, nullptr };
-	b3World_CastShape( m_physicsWorld, from, &proxy, across, filter, &Simulation::RayCallback, &ctx );
-	if ( ctx.found == false || b3Dot( hit.normal, across ) >= 0.0f )
+	struct Overlap
 	{
-		return; // nothing in the way (or only what it is moving away from)
-	}
-	const float kept = std::max( 0.0f, hit.fraction - 0.01f / length );
-	t.position.x = start.x + across.x * kept;
-	t.position.z = start.z + across.z * kept;
-	// Its speed into what stopped it goes.
-	const b3Vec3 normal = b3Normalize( b3Vec3{ hit.normal.x, 0.0f, hit.normal.z } );
-	const float into = b3Dot( c.velocity, normal );
-	if ( into < 0.0f )
+		const Simulation* sim;
+		uint32_t self;
+		bool found;
+	};
+	auto overlaps = [&]( b3Vec3 origin, float yaw, float inset ) {
+		const b3ShapeProxy proxy = shapeAt( yaw, inset );
+		Overlap o{ this, self, false };
+		b3World_OverlapShape( m_physicsWorld, origin, &proxy, filter,
+							  []( b3ShapeId shape, void* context ) {
+								  auto* o = static_cast<Overlap*>( context );
+								  if ( o->sim->NetIdOfShape( shape ) == o->self || b3Body_GetType( b3Shape_GetBody( shape ) ) == b3_dynamicBody )
+								  {
+									  return true; // (its own shapes; a loose body)
+								  }
+								  o->found = true;
+								  return false;
+							  },
+							  &o );
+		return o.found;
+	};
+	// How far into something its bounds are, roughly (0: clear): the least inset that clears them.
+	const float across0 = 0.5f * std::min( prop.high[0] - prop.low[0], prop.high[2] - prop.low[2] );
+	auto depth = [&]( b3Vec3 origin, float yaw ) {
+		if ( overlaps( origin, yaw, 0.0f ) == false )
+		{
+			return 0.0f;
+		}
+		for ( float inset = 0.01f; inset < across0; inset *= 2.0f )
+		{
+			if ( overlaps( origin, yaw, inset ) == false )
+			{
+				return inset;
+			}
+		}
+		return across0;
+	};
+	auto bodyAt = [&]( b3Vec3 centre ) { return b3Vec3{ centre.x, centre.y - prop.drop, centre.z }; };
+	const b3Vec3 from = bodyAt( start );
+	const float inside = depth( from, startYaw );
+
+	// The turn: only where it does not put the bounds further into something.
+	float yaw = c.facingYaw;
+	if ( yaw != startYaw && depth( from, yaw ) > inside )
 	{
-		c.velocity = b3MulSub( c.velocity, into, normal );
+		yaw = startYaw;
+		c.facingYaw = startYaw;
+		t.rotation = detmath::YawRotation( startYaw );
 	}
-	b3Body_SetTargetTransform( BodyOf( e.get<PhysicsBody>() ), { b3Vec3{ t.position.x, t.position.y - prop.drop, t.position.z }, t.rotation },
-							   m_config.TimeStep(), true );
+
+	const b3Vec3 across = { t.position.x - start.x, 0.0f, t.position.z - start.z };
+	if ( b3Length( across ) > 1e-5f )
+	{
+		if ( inside > 0.0f )
+		{
+			// Already in something (taken over against a wall, a corner turned in): any way that is
+			// not further in, so it always gets out.
+			if ( depth( bodyAt( t.position ), yaw ) > inside )
+			{
+				t.position.x = start.x;
+				t.position.z = start.z;
+			}
+		}
+		else
+		{
+			// Up to what is in the way, then along it with what is left (once).
+			b3Vec3 at = from;
+			b3Vec3 left = across;
+			for ( int pass = 0; pass < 2; ++pass )
+			{
+				const float length = b3Length( left );
+				if ( length < 1e-5f )
+				{
+					break;
+				}
+				const b3ShapeProxy proxy = shapeAt( yaw, 0.0f );
+				struct Cast
+				{
+					const Simulation* sim;
+					uint32_t self;
+					bool found;
+					float fraction;
+					b3Vec3 normal;
+				} cast{ this, self, false, 1.0f, {} };
+				b3World_CastShape( m_physicsWorld, at, &proxy, left, filter,
+								   []( b3ShapeId shape, b3Pos, b3Vec3 normal, float fraction, uint64_t, int, int, void* context ) -> float {
+									   auto* cast = static_cast<Cast*>( context );
+									   if ( cast->sim->NetIdOfShape( shape ) == cast->self || b3Body_GetType( b3Shape_GetBody( shape ) ) == b3_dynamicBody )
+									   {
+										   return -1.0f; // (its own shapes; a loose body)
+									   }
+									   if ( fraction < cast->fraction || cast->found == false )
+									   {
+										   cast->found = true;
+										   cast->fraction = fraction;
+										   cast->normal = normal;
+									   }
+									   return fraction;
+								   },
+								   &cast );
+				if ( cast.found == false )
+				{
+					at = b3Add( at, left );
+					break;
+				}
+				float flat = 0.0f;
+				const b3Vec3 normal = b3GetLengthAndNormalize( &flat, b3Vec3{ cast.normal.x, 0.0f, cast.normal.z } );
+				if ( flat < 1e-3f )
+				{
+					// Touching from the start, with no direction to say: the move is taken if it does not
+					// put it further in.
+					if ( depth( b3Add( at, left ), yaw ) <= depth( at, yaw ) )
+					{
+						at = b3Add( at, left );
+					}
+					break;
+				}
+				// To the contact, then the skin back off it, along its normal (not along the way it came:
+				// at a slant that would leave next to no gap).
+				at = b3MulAdd( at, cast.fraction, left );
+				at = b3MulAdd( at, kSkin, normal );
+				b3Vec3 rest = b3MulSV( 1.0f - cast.fraction, left );
+				rest = b3MulSub( rest, b3Dot( rest, normal ), normal );
+				left = rest;
+				// Its speed into what stopped it goes.
+				const float into = b3Dot( c.velocity, normal );
+				if ( into < 0.0f )
+				{
+					c.velocity = b3MulSub( c.velocity, into, normal );
+				}
+			}
+			t.position.x = at.x;
+			t.position.z = at.z;
+		}
+	}
+	b3Body_SetTargetTransform( BodyOf( e.get<PhysicsBody>() ), { bodyAt( t.position ), t.rotation }, m_config.TimeStep(), true );
 }
 
 } // namespace cb

@@ -1287,6 +1287,19 @@ void Context::StopDriving( uint32_t body )
 	Add( c );
 }
 
+std::vector<uint32_t> Context::ModDrivenBodies() const
+{
+	std::vector<uint32_t> out;
+	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	{
+		if ( flecs::entity( m_sim.World(), r.entity ).has<ModDriven>() )
+		{
+			out.push_back( r.netId );
+		}
+	}
+	return out;
+}
+
 bool Context::DrivenByMod( uint32_t body, PlayerInput* input ) const
 {
 	const flecs::entity e = m_sim.FindEntity( body );

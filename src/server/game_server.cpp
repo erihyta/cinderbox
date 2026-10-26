@@ -1,4 +1,5 @@
 #include "game_server.h"
+#include "detmath.h"
 
 #include "capture.h"
 #include "view_codec.h"
@@ -110,6 +111,36 @@ bool GameServer::Start( const ServerOptions& options )
 	}
 	std::shared_ptr<const CharacterAsset> character = options.character ? options.character : BuiltInCharacter();
 	m_schema.characters.front().name = character->name;
+	// The characters the map places bodies of (CbCharacterBody): on the list like a mod's, each from
+	// its own item (a character item: its name is its mod's), and that item announced to players.
+	if ( options.mapPath.empty() == false )
+	{
+		LevelLayout placed;
+		std::vector<uint8_t> bytes;
+		std::string error;
+		if ( LoadMapFile( options.mapPath, placed, bytes, error ) )
+		{
+			for ( const LevelBody& body : placed.bodies )
+			{
+				const bool known = std::any_of( m_schema.characters.begin(), m_schema.characters.end(),
+												[&]( const CharacterInfo& c ) { return c.name == body.character; } );
+				if ( known || m_schema.characters.size() >= kMaxCharacters )
+				{
+					continue;
+				}
+				CharacterInfo info;
+				info.name = body.character;
+				info.mod = body.character;
+				m_schema.characters.push_back( info );
+				ModItem item;
+				if ( options.characterItem && options.characterItem( body.character, item ) &&
+					 std::none_of( m_schema.items.begin(), m_schema.items.end(), [&]( const ModItem& i ) { return i.mod == item.mod; } ) )
+				{
+					m_schema.items.push_back( item );
+				}
+			}
+		}
+	}
 	// How players move: the server's options, then what its own character says about itself.
 	for ( const auto& [param, value] : character->animations->Movement() )
 	{
@@ -866,6 +897,25 @@ void GameServer::RunTick( double now )
 	}
 
 	RunMods( frame );
+	// The bodies the map places, on the first tick (as commands, so every simulation has them, a
+	// joining one from the snapshot).
+	for ( const LevelBody& body : m_map.bodies )
+	{
+		if ( m_mapBodiesPlaced )
+		{
+			break;
+		}
+		SimCommand c;
+		c.type = CommandType::SpawnBody;
+		for ( size_t i = 0; i < m_schema.characters.size(); ++i )
+		{
+			c.index = m_schema.characters[i].name == body.character ? uint16_t( i ) : c.index;
+		}
+		c.a = { body.feet.x, body.feet.y, body.feet.z };
+		c.value = int32_t( detmath::RadiansToYaw( body.yaw ) );
+		frame.commands.push_back( c );
+	}
+	m_mapBodiesPlaced = true;
 
 	// Joining / reconnecting / desynced clients get the state before this tick.
 	for ( Client& c : m_clients )

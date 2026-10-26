@@ -16,6 +16,7 @@
 #include "fingerprint.h"
 #include "game_client.h"
 #include "game_server.h"
+#include "mover.h"
 #include "map.h"
 #include "netsim.h"
 #include "replay.h"
@@ -4927,6 +4928,129 @@ void TestChaos()
 	}
 }
 
+// Combat hurts NPCs too (after M223): a test mod drives a body, standing, and has the player hit it
+// three times (combat.damage, 40 each): it is hurt, then killed, the kill the player's; brought back
+// by its mod (Respawn), it is at full health again.
+class HurtNpcMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_hurt_npc";
+	}
+	void Declare( mods::Declarations& declare ) override
+	{
+		m_damage = declare.Event( "combat.damage" );
+		m_health = declare.Field( "combat.health", BoardType::Int );
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		++m_ticks;
+		const b3Vec3 spawn = GetLevelLayout().spawnCenter;
+		if ( m_ticks == 30 )
+		{
+			ctx.SpawnCharacter( mods::CharacterHandle{ 0 }, b3Vec3{ spawn.x + 4.0f, spawn.y, spawn.z }, 0.0f );
+		}
+		if ( m_ticks == 40 )
+		{
+			const std::vector<uint32_t> free = ctx.IdleBodies();
+			m_npc = free.empty() ? 0 : free.front();
+			ctx.Drive( m_npc, PlayerInput{} );
+		}
+		if ( m_ticks == 90 )
+		{
+			m_healthBefore = ctx.Get( m_npc, m_health ); // (before any hit)
+		}
+		const uint32_t player = ctx.PlayerNetId( 0 );
+		if ( m_npc != 0 && player != 0 && ( m_ticks == 100 || m_ticks == 110 || m_ticks == 120 ) )
+		{
+			ctx.Emit( m_damage, player, m_npc, 40, ctx.EntityTransform( m_npc )->position );
+		}
+		if ( m_ticks == 140 )
+		{
+			const Character* c = ctx.BodyCharacter( m_npc );
+			m_deadAt140 = c != nullptr && c->dead != 0;
+			ctx.Respawn( m_npc );
+		}
+	}
+	mods::EventHandle m_damage;
+	mods::FieldHandle m_health;
+	int32_t m_healthBefore = -1;
+	uint32_t m_ticks = 0;
+	uint32_t m_npc = 0;
+	bool m_deadAt140 = false;
+};
+
+void TestCombatNpc()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	auto mod = std::make_unique<HurtNpcMod>();
+	HurtNpcMod* hurt = mod.get();
+	extra.push_back( std::move( mod ) );
+	Harness h( 47924, {}, {}, {}, {}, std::move( extra ) );
+	h.AddBot();
+	h.RunUntil( 4.0 );
+	h.Report();
+	Simulation& server = h.server.Sim();
+	auto field = [&]( uint32_t netId, const char* name ) {
+		for ( const BoardField& f : h.server.Schema().fields )
+		{
+			if ( f.name == name )
+			{
+				const flecs::entity e = server.FindEntity( netId );
+				return server.HasBoard( e ) ? server.GetBoard( e ).values[f.slot] : -1;
+			}
+		}
+		return -2;
+	};
+	const uint32_t player = server.PlayerNetId( h.bots[0].client->Slot() );
+	std::printf( "    the NPC: dead after three hits %d; now health %d, deaths %d; the player's kills %d; desyncs %u\n", int( hurt->m_deadAt140 ),
+				 field( hurt->m_npc, "combat.health" ), field( hurt->m_npc, "combat.deaths" ), field( player, "combat.kills" ),
+				 h.bots[0].client->GetStats().desyncs );
+	std::printf( "    its health before it was hit: %d\n", hurt->m_healthBefore );
+	CHECK( hurt->m_healthBefore == 100 );
+	CHECK( hurt->m_deadAt140 && field( hurt->m_npc, "combat.health" ) == 100 && field( hurt->m_npc, "combat.deaths" ) == 1 &&
+		   field( player, "combat.kills" ) == 1 );
+	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
+}
+
+// A map places a character's body (CbCharacterBody): test_ground's critter. The server puts the
+// critter on its list (from its item), and spawns the body on the first tick: nobody's, standing on
+// its feet; a client has it too.
+void TestMapBody()
+{
+	const std::string root = CB_SOURCE_DIR;
+	Harness h( 47926, {}, root + "/godot/maps/test_ground.cbmap", {}, [&]( ServerOptions& options ) {
+		options.loadCharacter = [root]( const std::string&, const std::string& name, std::string& error, std::string& warnings ) {
+			return LoadModCharacterFolder( root + "/characters/" + name + "/client", name, error, warnings );
+		};
+	} );
+	const ModSchema& schema = h.server.Schema();
+	int critter = -1;
+	for ( size_t i = 0; i < schema.characters.size(); ++i )
+	{
+		critter = schema.characters[i].name == "critter" ? int( i ) : critter;
+	}
+	CHECK( critter > 0 );
+	h.AddBot();
+	h.RunUntil( 3.0 );
+	h.Report();
+	Simulation& server = h.server.Sim();
+	uint32_t body = 0;
+	for ( const Simulation::EntityRef& r : server.Entities() )
+	{
+		const flecs::entity e = server.FindEntity( r.netId );
+		body = e.has<IdleBody>() && int( server.CharacterOf( e ) ) == critter ? r.netId : body;
+	}
+	const Transform* at = body != 0 ? server.EntityTransform( body ) : nullptr;
+	const float feet = critter > 0 ? mover::FeetBelowCenter( schema.characters[size_t( critter )].radius, schema.characters[size_t( critter )].halfHeight ) : 0.0f;
+	std::printf( "    the map's critter: body %u at (%.2f, %.2f, %.2f), its feet %.3f m up\n", body, at ? double( at->position.x ) : 0.0,
+				 at ? double( at->position.y ) : 0.0, at ? double( at->position.z ) : 0.0, at ? double( at->position.y - feet ) : -1.0 );
+	CHECK( body != 0 && at != nullptr && std::fabs( at->position.y - feet ) < 0.1f );
+	RollbackSession* session = h.bots[0].client->Session();
+	CHECK( session != nullptr && session->Sim().FindEntity( body ).has<IdleBody>() && h.bots[0].client->GetStats().desyncs == 0 );
+}
+
 // The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
 // breaks a hole in it with no blast, and goes on through: past the wall, while bricks still stand.
 // The ball's scene says it breaks walls (CbItem.break_speed), so the simulation breaks it in the
@@ -5442,6 +5566,8 @@ int main( int argc, char** argv )
 		{ "npc", TestNpc },
 		{ "leave_after_firing", TestLeaveAfterFiring },
 		{ "chaos", TestChaos },
+		{ "combat_npc", TestCombatNpc },
+		{ "map_body", TestMapBody },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },
