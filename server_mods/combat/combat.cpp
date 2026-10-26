@@ -17,6 +17,10 @@
 //   you read     combat.health, combat.max_health, combat.dead, combat.kills, combat.deaths
 //                (a player's Character::dead says the same as combat.dead, a tick sooner)
 //
+// Bodies a mod drives (NPCs: ctx.Drive) are hurt and killed the same way, their health on their own
+// board from the first time they are hurt; they can kill too. Bringing one back is the driving
+// mod's: combat does not respawn an NPC (Respawn it, and it is at full health again; or let it go).
+//
 // Options (cb_server --mod-option combat.max_health=150):
 //   combat.max_health       health at the start of a life (100)
 //   combat.respawn_seconds  from death to the next life (3)
@@ -34,6 +38,7 @@
 #include "mod_api.h"
 
 #include <algorithm>
+#include <map>
 
 namespace
 {
@@ -44,6 +49,7 @@ using namespace cb::mods;
 struct Fighter
 {
 	PlayerSlot slot = 0;
+	uint32_t npc = 0;	// a body a mod drives (its NetId); 0: the player in `slot`
 	int32_t health = 0;
 	int32_t kills = 0;
 	int32_t deaths = 0;
@@ -143,6 +149,20 @@ public:
 			}
 		}
 
+		// NPCs no mod drives any more (given back, gone) are fighters no more.
+		for ( auto it = m_byNpc.begin(); it != m_byNpc.end(); )
+		{
+			if ( ctx.DrivenByMod( it->first ) == false )
+			{
+				it->second.destruct();
+				it = m_byNpc.erase( it );
+			}
+			else
+			{
+				++it;
+			}
+		}
+
 		// Collected first: a death adds Dead, which moves the entity between tables.
 		m_scratch.clear();
 		m_fighters.each( [&]( flecs::entity e, Fighter& ) { m_scratch.push_back( e ); } );
@@ -167,9 +187,15 @@ public:
 	}
 
 private:
+	// Where a fighter's numbers go, and what a command about it names.
+	static uint32_t TargetOf( const Fighter& f )
+	{
+		return f.npc != 0 ? f.npc : SlotTarget( f.slot );
+	}
+
 	void Publish( Context& ctx, const Fighter& f, bool dead )
 	{
-		uint32_t target = SlotTarget( f.slot );
+		uint32_t target = TargetOf( f );
 		ctx.Set( target, m_health, f.health );
 		ctx.Set( target, m_maxHealthField, m_maxHealth );
 		ctx.Set( target, m_kills, f.kills );
@@ -184,11 +210,21 @@ private:
 		e.remove<Dead>();
 		f.health = m_maxHealth;
 		Publish( ctx, f, false );
-		ctx.Emit( m_respawned, SlotTarget( f.slot ) );
+		ctx.Emit( m_respawned, TargetOf( f ) );
 	}
 
 	void Update( Context& ctx, flecs::entity e, Fighter& f )
 	{
+		if ( f.npc != 0 )
+		{
+			// An NPC: back when its mod brings it back (it is not respawned here).
+			const Character* c = ctx.BodyCharacter( f.npc );
+			if ( const Dead* dead = e.try_get<Dead>(); dead != nullptr && c != nullptr && c->dead == 0 && ctx.Tick() > dead->diedTick )
+			{
+				NewLife( ctx, e, f );
+			}
+			return;
+		}
 		const Character* c = ctx.PlayerCharacter( f.slot );
 		if ( ctx.PlayerNetId( f.slot ) == 0 || c == nullptr )
 		{
@@ -239,10 +275,29 @@ private:
 		}
 	}
 
+	// A player's fighter, or an NPC's (made when it is first named: full health on its board).
 	flecs::entity FighterOf( Context& ctx, uint32_t netId )
 	{
 		int slot = ctx.SlotOf( netId );
-		return slot >= 0 ? m_bySlot[slot] : flecs::entity();
+		if ( slot >= 0 )
+		{
+			return m_bySlot[slot];
+		}
+		if ( netId == 0 || ctx.DrivenByMod( netId ) == false )
+		{
+			return flecs::entity();
+		}
+		if ( auto it = m_byNpc.find( netId ); it != m_byNpc.end() )
+		{
+			return it->second;
+		}
+		Fighter f;
+		f.npc = netId;
+		f.health = m_maxHealth;
+		flecs::entity e = ctx.World().entity().set<Fighter>( f );
+		m_byNpc[netId] = e;
+		Publish( ctx, f, false );
+		return e;
 	}
 
 	void Hurt( Context& ctx, uint32_t attackerNetId, uint32_t victimNetId, int32_t damage, b3Vec3 point, b3Vec3 push )
@@ -253,9 +308,9 @@ private:
 			return;
 		}
 		Fighter v = victim.get<Fighter>();
-		uint32_t victimTarget = SlotTarget( v.slot );
+		uint32_t victimTarget = TargetOf( v );
 		flecs::entity attacker = FighterOf( ctx, attackerNetId );
-		uint32_t attackerTarget = attacker.is_valid() ? SlotTarget( attacker.get<Fighter>().slot ) : 0;
+		uint32_t attackerTarget = attacker.is_valid() ? TargetOf( attacker.get<Fighter>() ) : 0;
 
 		int32_t lost = std::min( damage, v.health );
 		v.health -= lost;
@@ -294,7 +349,7 @@ private:
 		Fighter f = who.get<Fighter>();
 		f.health = std::min( f.health + amount, m_maxHealth );
 		who.set<Fighter>( f );
-		ctx.Set( SlotTarget( f.slot ), m_health, f.health );
+		ctx.Set( TargetOf( f ), m_health, f.health );
 	}
 
 	FieldHandle m_health;
@@ -317,6 +372,7 @@ private:
 
 	flecs::query<Fighter> m_fighters;
 	flecs::entity m_bySlot[kMaxPlayers];
+	std::map<uint32_t, flecs::entity> m_byNpc; // by the body's NetId
 	std::vector<flecs::entity> m_scratch;
 };
 

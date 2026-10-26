@@ -458,6 +458,12 @@ public:
 	{
 		return m_sim.PlayerNetId( slot );
 	}
+	// Any body's controller state (a player's, or one a mod drives); null for a body nobody drives.
+	const Character* BodyCharacter( uint32_t netId ) const
+	{
+		const flecs::entity e = m_sim.FindEntity( netId );
+		return e.is_valid() ? e.try_get<Character>() : nullptr;
+	}
 	const Character* PlayerCharacter( PlayerSlot slot ) const
 	{
 		return m_sim.PlayerCharacter( slot );

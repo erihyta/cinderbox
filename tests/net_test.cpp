@@ -4927,6 +4927,83 @@ void TestChaos()
 	}
 }
 
+// Combat hurts NPCs too (after M223): a test mod drives a body, standing, and has the player hit it
+// three times (combat.damage, 40 each): it is hurt, then killed, the kill the player's; brought back
+// by its mod (Respawn), it is at full health again.
+class HurtNpcMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_hurt_npc";
+	}
+	void Declare( mods::Declarations& declare ) override
+	{
+		m_damage = declare.Event( "combat.damage" );
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		++m_ticks;
+		const b3Vec3 spawn = GetLevelLayout().spawnCenter;
+		if ( m_ticks == 30 )
+		{
+			ctx.SpawnCharacter( mods::CharacterHandle{ 0 }, b3Vec3{ spawn.x + 4.0f, spawn.y, spawn.z }, 0.0f );
+		}
+		if ( m_ticks == 40 )
+		{
+			const std::vector<uint32_t> free = ctx.IdleBodies();
+			m_npc = free.empty() ? 0 : free.front();
+			ctx.Drive( m_npc, PlayerInput{} );
+		}
+		const uint32_t player = ctx.PlayerNetId( 0 );
+		if ( m_npc != 0 && player != 0 && ( m_ticks == 100 || m_ticks == 110 || m_ticks == 120 ) )
+		{
+			ctx.Emit( m_damage, player, m_npc, 40, ctx.EntityTransform( m_npc )->position );
+		}
+		if ( m_ticks == 140 )
+		{
+			const Character* c = ctx.BodyCharacter( m_npc );
+			m_deadAt140 = c != nullptr && c->dead != 0;
+			ctx.Respawn( m_npc );
+		}
+	}
+	mods::EventHandle m_damage;
+	uint32_t m_ticks = 0;
+	uint32_t m_npc = 0;
+	bool m_deadAt140 = false;
+};
+
+void TestCombatNpc()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	auto mod = std::make_unique<HurtNpcMod>();
+	HurtNpcMod* hurt = mod.get();
+	extra.push_back( std::move( mod ) );
+	Harness h( 47924, {}, {}, {}, {}, std::move( extra ) );
+	h.AddBot();
+	h.RunUntil( 4.0 );
+	h.Report();
+	Simulation& server = h.server.Sim();
+	auto field = [&]( uint32_t netId, const char* name ) {
+		for ( const BoardField& f : h.server.Schema().fields )
+		{
+			if ( f.name == name )
+			{
+				const flecs::entity e = server.FindEntity( netId );
+				return server.HasBoard( e ) ? server.GetBoard( e ).values[f.slot] : -1;
+			}
+		}
+		return -2;
+	};
+	const uint32_t player = server.PlayerNetId( h.bots[0].client->Slot() );
+	std::printf( "    the NPC: dead after three hits %d; now health %d, deaths %d; the player's kills %d; desyncs %u\n", int( hurt->m_deadAt140 ),
+				 field( hurt->m_npc, "combat.health" ), field( hurt->m_npc, "combat.deaths" ), field( player, "combat.kills" ),
+				 h.bots[0].client->GetStats().desyncs );
+	CHECK( hurt->m_deadAt140 && field( hurt->m_npc, "combat.health" ) == 100 && field( hurt->m_npc, "combat.deaths" ) == 1 &&
+		   field( player, "combat.kills" ) == 1 );
+	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
+}
+
 // The cannon (a mod of its own, off by default): a ball fired at a wall of 8 x 4 bricks 6 m ahead
 // breaks a hole in it with no blast, and goes on through: past the wall, while bricks still stand.
 // The ball's scene says it breaks walls (CbItem.break_speed), so the simulation breaks it in the
@@ -5442,6 +5519,7 @@ int main( int argc, char** argv )
 		{ "npc", TestNpc },
 		{ "leave_after_firing", TestLeaveAfterFiring },
 		{ "chaos", TestChaos },
+		{ "combat_npc", TestCombatNpc },
 		{ "chest", TestChest },
 		{ "shop", TestShop },
 		{ "brawl", TestBrawl },
