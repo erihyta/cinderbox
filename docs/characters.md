@@ -4,12 +4,13 @@ Characters, their state machines, and what poses a player. Part of the [manual](
 
 ## Characters
 
-A server has a **list of characters**: its own (below), every player's when it joins, and those
-its mods declare. Every body is one of them, with its own capsule, state machine, hitboxes and
-movement ([Characters per body](#characters-per-body)). The server's own:
+A server has a **list of characters**: its own (below), those its mods declare, and those its
+map's bodies are (`CbCharacterBody`, [maps](maps.md)). Every body is one of them, with its own
+capsule, state machine, hitboxes and movement ([Characters per body](#characters-per-body)).
+Players do not bring characters of their own. The server's own:
 
 ```bash
-cb_server                      # the default: mannequin, shipped with the game
+cb_server                      # the default: ual_mannequin where it is built (below), else mannequin
 cb_server --character robot    # a workshop item [--workshop DIR]
 cb_server --character none     # the procedural placeholder rig
 ```
@@ -50,8 +51,9 @@ server's own character and drives it, as before.
 | A prop as a body (M221) | `ctx.Possess( slot, prop )` on a loose prop (`ctx.CanPossess` says which): its own physics body turns kinematic and keeps its shapes, upright, facing as it faced; the controller walks it with a capsule fitted to it, its feet at the prop's bottom; its bounds go along and stop its move where they would meet a wall, a player or another driven prop, so a big box does not fit a small doorway. It is drawn as itself, hit as its own shapes, seen from behind only (no first person), the camera as far back as it is big. Left, or its player gone, it is a loose body again where it stands, with the speed it had |
 | A body the map places | a `CbCharacterBody` in the map's scene (test_ground has a critter): its character's item is announced, and the body stands there from the first tick, nobody's |
 | A driven prop's bounds (M225) | they keep out of the world, static bodies, players and other driven props, moving and turning: a turn that would put a corner in a wall is not taken, a move stops where they would meet something and slides along it; a crate and a player do not shove each other (as two players do not) |
-| A body a mod drives (M222) | `ctx.Drive( body, input )`: an NPC. The same input a player's keys make; the body moves in the same passes as the players, after them, in NetId order; every simulation goes on with its last input until a change arrives (a `Drive` command, sent only when it changes), so a client predicts it as it predicts another player. Hit by its hitboxes like a player |
-| Not yet | a `CbCharacter` with no skeleton; an item as a body; an NPC using items (its slots, its keys) |
+| A body a mod drives (M222) | `ctx.Drive( body, input )`: an NPC. The same input a player's keys make; the body moves in the same passes as the players, after them, in NetId order; every simulation goes on with its last input until a change arrives (a `Drive` command, sent only when it changes), so a client predicts it as it predicts another player. Hit by its hitboxes like a player. It uses items as a player does (M228): `ctx.GiveItem`, its slot's key in `slotKeys` to select one, `BtnUse` to use it (an item kind's sheets run for it); the combat mod hurts and kills it, at full health from the start |
+| Its way about (M227) | the server's navigation mesh, made from everything static when the game starts: `ctx.FindPath`, `NearestWalkable`, `WalkToward` give the input that walks a body there ([server-mods.md](server-mods.md)). The `waves` mod is the example: NPCs with the brawl fist that find the nearest player and jab it |
+| Not yet | a `CbCharacter` with no skeleton; an item as a body; NPCs using the C++ melee and gun kits (they read players' slots only) |
 
 ### The default character: the mannequin
 
@@ -300,7 +302,7 @@ Conditions and expressions read simulation values, never scripts:
 | `move_forward`, `move_right` | smoothed ground velocity in the body's frame (m/s): for directional blend spaces |
 | `vertical_speed`, `grounded`, `airborne_time`, `jumped` | the body's movement (`jumped`: on the tick of a jump) |
 | `aiming`, `backward`, `state_time` | a mod's Aim; walking backwards; seconds in the current state |
-| a stance's name (`pistol`, `melee`) | true while any layer has it (mods' `SetStance`) |
+| a stance's name (`gun`, `melee`) | true while any layer has it (mods' `SetStance`) |
 | a mod event's name (`item.use`, `attack`) | on the tick it is emitted at this player: its value (1 if the value is 0), so `attack` and `attack == 2` both work: a trigger |
 | ... the same event, while already in the state it leads to | starts that state over, with the transition's crossfade: a shot fired during the last one's recoil plays the recoil again (the pistol fires every 0.2 s, its clip is 0.63 s). Godot has no transition from a state to itself, so the bake derives this from the transition you drew (the pistol pack's `Hold -> Shoot` on `item.use`). The clip's own keys (a sound, a flash keyed inside it) fire again too, as long as that transition has a crossfade |
 | a board field's name (`inventory.slot`) | the player's value (or the global one) |
@@ -326,11 +328,11 @@ A mod says what a player is doing; the character says what that looks like.
 
 | Who | Does | Example |
 |---|---|---|
-| a mod | declares names: `d.Layer( "upper" )`, `d.Stance( "pistol" )`, and sets a stance on a layer: `ctx.SetStance( player, layer, stance )` (a default `StanceHandle` clears it) | the pistol sets `pistol` on `upper` while it is out; the bat sets `melee`, and `melee_swing` for a swing |
+| a mod | declares names: `d.Layer( "upper" )`, `d.Stance( "gun" )`, and sets a stance on a layer: `ctx.SetStance( player, layer, stance )` (a default `StanceHandle` clears it) | the gun mod sets `gun` on `upper` while a gun is out; the bat sets `melee`, and `melee_swing` for a swing |
 | a character | reads stances by name in its state machine's conditions and layer weights | the robot's upper layer, weighted by `pistol or melee or melee_swing` |
 
 - A stance is a name and nothing more: no clip is tied to it. A character whose machine never
-  reads `pistol` simply does not change when the pistol comes out.
+  reads `gun` simply does not change when a gun comes out.
 - Stances are part of the simulation's animation state, so everyone draws what they lead to and
   the server's hit tests use it.
 - Items bring their looks as [packs](#animation-packs): the mannequin's upper layer is only a rest

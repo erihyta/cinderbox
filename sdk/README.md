@@ -12,10 +12,14 @@ machines. No game and no server are needed to author. The rules are the mod's C+
 | 2. Put it into this project | `powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -Setup` |
 | 3. Make a mod's project from this one | `powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New <mod>` |
 | 4. Open `server_mods\<mod>\client` in Godot 4.7 and author | |
-| 5. Publish | `powershell -ExecutionPolicy Bypass -File tools\publish_mod.ps1 -Mod <mod>` |
-| 6. Restart the server and the game | |
+| 5. Try it | **Test mod** in the editor's toolbar, or `tools\test_mod.ps1 -Mod <mod>` ([below](#a-new-mod-both-halves)) |
+| 6. Publish again while it runs | `powershell -ExecutionPolicy Bypass -File tools\publish_mod.ps1 -Mod <mod>`: the running game shows the new look within a second or two |
 
-`-Update <mod>` refreshes a project's extension and placeholder (close the project in Godot first).
+| `sdk.ps1` also | Does |
+|---|---|
+| `-Update <mod>` | refreshes a project's extension, placeholder and export preset (close the project in Godot first) |
+| `-Extensions` | copies the built extension into every mod's, character's and the SDK's project |
+| `-Starters` | rebuilds `sdk\starters`' animation packs |
 
 ## What is in the project
 
@@ -113,12 +117,14 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 | `FullBody` | only the locomotion | not baked |
 | both, or empty | both | |
 
-**Rules that are not Godot's**
+**Rules that are not Godot's** (what of a tree bakes, node by node: [docs/characters.md](../docs/characters.md#state-machines):
+states may be animations, blend spaces, a `TimeScale`d one, or nested state machines; the root may
+stack layers with `Blend2`, `Add2` and `OneShot`)
 
 | Rule | Why |
 |---|---|
 | Transitions: Advance Mode **Auto**, with a condition or expression | the simulation runs the machine; nothing calls `travel()` |
-| Conditions are the game's names: `forward_speed`, `speed`, `grounded`, `jumped`, `airborne_time`, `state_time`, a stance (`rifle`), a server mod's event (`item.use`) | they are computed on the server and on every client |
+| Conditions are the game's names: `forward_speed`, `speed`, `grounded`, `jumped`, `airborne_time`, `state_time`, a stance (`gun`), a server mod's event (`item.use`) | they are computed on the server and on every client |
 | A blend space's position comes from **Graph Inputs** on the root (`FullBody/Move/blend_position = forward_speed`) | the same |
 | The layer names are fixed: `FullBody`, `UpperBody` | a pack's layer replaces the character's layer of the same name |
 | `UpperBodyBlend`'s amount is yours in the editor (1 to see the upper body); in the game the layer plays in full while the pack is swapped in | the server decides when |
@@ -155,8 +161,8 @@ A pack is an ordinary Godot scene: a model, an `AnimationPlayer` and an `Animati
 ## Try things without a game
 
 - **Cue Preview** (bottom panel): plays the open scene's reactions on stand-in players. Fire a cue
-- **An item in a hand**: select an item's root and tick Preview > Hold: a figure beside it holds a copy, in the pose of the project's animation pack. Move a grip marker and watch the hand.
   by name, set any state name, pick the local player.
+- **An item in a hand**: select an item's root and tick Preview > Hold: a figure beside it holds a copy, in the pose of the project's animation pack. Move a grip marker and watch the hand.
 - **AnimationTree**: set a pack's tree Active in the editor to watch its states on the model.
 
 ## A new mod, both halves
@@ -168,11 +174,11 @@ powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New mymod
 | It makes | What |
 |---|---|
 | `server_mods/mymod/client/` | the look's project: an item (`prefabs/mymod.tscn`), reactions, a HUD, an animation pack, a motion |
-| `server_mods/mymod/mymod.cpp` | the rules, in C++: it declares exactly the names those scenes use (`mymod.item`, `mymod.used`, `mymod_use`, `mymod.charges`, `mymod.moved`, `mymod.moves`, `mymod.animations`), gives every life the item in a fifth slot, and gives the motion's charges back |
+| `server_mods/mymod/mymod.cpp` | the rules, in C++: it declares exactly the names those scenes use (`mymod.item`, `mymod.used`, `mymod_use`, `mymod.charges`, `mymod.moved`, `mymod.moves`, `mymod.animations`), gives every life the item (its scene asks for slot 5), and gives the motion's charges back |
 
 | Then | Why |
 |---|---|
-| open `server_mods/mymod/client` in Godot and press **Test mod** (in the toolbar) | it saves the scenes, builds the server (which finds the new mod and writes its names for the editor), publishes the look (a name nobody declares stops it), and starts the game on a server of its own. The mod is in the game: slot 5, and Q. Closing the game stops the server |
+| open `server_mods/mymod/client` in Godot and press **Test mod** (in the toolbar) | it saves the scenes, builds the server (which finds the new mod and writes its names for the editor), publishes the look (a name nobody declares stops it), and starts the game on a server of its own. The mod is in the game: its item in slot 5 if that is free (with the default mods it is not: the brawl kit takes 1 to 5, so the first free one), and its motion on Q, which the grapple has too: change one on the Keys page, or the key in `mymod.cpp`. Closing the game stops the server |
 | or, in a terminal: `tools\test_mod.ps1 -Mod mymod` | the same thing; `-Bots 4` adds bot players, `-Only` runs just this mod beside `combat` and `inventory`, `-NoBuild` skips the build when only the look changed |
 | while it runs: `tools\publish_mod.ps1 -Mod mymod` | the look is published again and the running game shows it within a second or two: scenes, effects, HUD, sounds, first-person settings. No restart. A change the server reads (an item's body or properties, an animation pack, a motion) is not taken this way: the server says so, and it is taken when the server is started again |
 
@@ -183,7 +189,6 @@ powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New mymod
 
 | Missing | Until then |
 |---|---|
-| A preview of the item in a character's hand, with the grips solved and a pack playing | publish and look in the game |
 | A prebuilt SDK download: the extension has to be built from source | build with the `godot-export` preset |
-| Reloading a published look without restarting the server and the game | restart both |
+| A change the server reads (an item's body or properties, an animation pack, a motion) taken while it runs | publishing says so; start the server again (Test mod does) |
 | Maps: the Bake Map button is in the game's project (`godot/`), not here | make maps there |

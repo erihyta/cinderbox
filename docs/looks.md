@@ -365,12 +365,13 @@ facing the camera, the same size at any distance, hidden while its text is empty
 `progress_field` it draws a bar under the text that fills as the field goes from 0 to 1. A reaction
 puts it where it belongs (see [Items in the world](items.md#items-in-the-world)).
 
-The pistol's HUD (`server_mods/gun/client/ui/hud_pistol.tscn`) is built from these: a health bar
-(`ProgressBar` from `combat.health` and `combat.max_health`), ammo, reloading, crosshair, kills and
-deaths, the kill feed and the scoreboard. None of it is script, so a client mod can restyle all of it.
+The gun mod's HUD (`server_mods/gun/client/ui/hud_gun.tscn`) is built from these: the ammo,
+the reload and the crosshair while a gun is out. The health bar (`ProgressBar` from `combat.health`
+and `combat.max_health`), kills and deaths, the kill feed and the scoreboard are the combat mod's
+(`hud_combat.tscn`). None of it is script, so a client mod can restyle all of it.
 
 `godot/vfx/reactions.tscn` is the game's own set; the pistol's look (predicted shots, tracers, hits,
-reload, the pistol item's look) is `prefabs/pistol.tscn` in its workshop item, and being hurt
+reload, the pistol item's look) is `prefabs/pistol.tscn` in the gun mod's workshop item, and being hurt
 or dying looks the same for every weapon (`vfx/reactions_combat.tscn`, the combat mod's item); `mods_src/example_neon/vfx/reactions_neon.tscn` shows a mod adding three more,
 including its own sound. All are edited in the Godot editor, as scenes.
 

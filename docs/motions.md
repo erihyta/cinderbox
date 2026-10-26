@@ -605,6 +605,6 @@ one ball: both hold on to it, it goes 8 m, and both clients have the server's st
 | Missing | Roadmap |
 |---|---|
 | No test hooks one player to another yet. In first person a line starts at the same point as in third person, not the eye | later |
-| A lasting force as a server mod's command (C++), a knocked-down ragdoll a heavy hit puts a player in, carrying a player, structures that break | later |
-| A preview panel; `motion.<name>` in conditions and state machines; names checked at publish | Motions in the editor |
+| A lasting force as a server mod's command (C++), a knocked-down ragdoll a heavy hit puts a player in, carrying a player | later |
+| A preview panel (`motion.<name>` in conditions and state machines, and names checked at publish, are in) | later |
 | Another player's dash is seen when its input arrives: its press is guessed by repeating its last input, as a jump is | by design |
