@@ -1,7 +1,7 @@
 extends SceneTree
 ## Bakes the characters of an item's project, run inside that project by tools/pack_mod.ps1:
 ##
-##   godot --headless --path characters/robot/client --script <repo>/godot/addons/cinderbox_maps/bake_characters.gd
+##   godot --headless --path characters/critter/client --script <repo>/godot/addons/cinderbox_maps/bake_characters.gd
 ##
 ## Every res://characters/<name>/character.tscn whose root is a CbCharacter is baked into its own
 ## folder (the ozz skeleton and clips, the state machine, the hitboxes): what the server and every

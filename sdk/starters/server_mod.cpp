@@ -8,7 +8,7 @@
 //
 //   MODNAME.item       an item kind      prefabs/MODNAME.tscn (a CbItem: its body, grips, look)
 //   MODNAME.used       an event          sent when a player uses the item: its reactions play
-//   MODNAME_use        an action (Q)     the starter motion's key (motion_sets/MODNAME_moves.tscn)
+//   MODNAME_use        an action (X)     the starter motion's key (motion_sets/MODNAME_moves.tscn)
 //   MODNAME.charges    a field           how many of that motion a player has left
 //   MODNAME.moved      an event          the motion sends it
 //   MODNAME.moves      a motion set      baked from motion_sets/MODNAME_moves.tscn
@@ -54,7 +54,7 @@ public:
 		m_used = declare.Event( "MODNAME.used" );
 
 		// The motion (a short burst along where the player walks) reads and writes these.
-		m_use = declare.Action( "MODNAME_use", "Q" );
+		m_use = declare.Action( "MODNAME_use", "X" );
 		m_charges = declare.Field( "MODNAME.charges", BoardType::Int );
 		m_moved = declare.Event( "MODNAME.moved" );
 		m_moves = declare.Motions( "MODNAME.moves" );

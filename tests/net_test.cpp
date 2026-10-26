@@ -919,15 +919,15 @@ void TestCharacterItem()
 		{
 			std::string bytes;
 			anim::DiskReader( ( dir / "baked" ).string() )( entry.path().filename().string(), bytes );
-			std::string name = "characters/robot/" + entry.path().filename().string();
+			std::string name = "characters/example/" + entry.path().filename().string();
 			mz_zip_writer_add_mem( &zip, name.c_str(), bytes.data(), bytes.size(), MZ_DEFAULT_COMPRESSION );
 		}
 		if ( withHitboxes )
 		{
 			std::string text = anim::FormatHitboxes( anim::DefaultHitboxes() );
-			mz_zip_writer_add_mem( &zip, "characters/robot/hitboxes.cfg", text.data(), text.size(), MZ_DEFAULT_COMPRESSION );
+			mz_zip_writer_add_mem( &zip, "characters/example/hitboxes.cfg", text.data(), text.size(), MZ_DEFAULT_COMPRESSION );
 		}
-		mz_zip_writer_add_mem( &zip, "characters/robot/character.tscn", "[gd_scene]", 10, 0 );
+		mz_zip_writer_add_mem( &zip, "characters/example/character.tscn", "[gd_scene]", 10, 0 );
 		void* data = nullptr;
 		size_t size = 0;
 		mz_zip_writer_finalize_heap_archive( &zip, &data, &size );
@@ -936,9 +936,9 @@ void TestCharacterItem()
 		return bytes;
 	};
 	auto install = [&]( const std::string& bytes, ModItem& item ) {
-		item.mod = "robot";
+		item.mod = "example";
 		item.sha256 = Sha256Hex( bytes.data(), bytes.size() );
-		fs::path path = dir / "workshop" / "robot" / ( item.sha256 + ".zip" );
+		fs::path path = dir / "workshop" / "example" / ( item.sha256 + ".zip" );
 		fs::create_directories( path.parent_path() );
 		std::ofstream( path, std::ios::binary ).write( bytes.data(), std::streamsize( bytes.size() ) );
 		return path.string();
@@ -951,7 +951,7 @@ void TestCharacterItem()
 	CHECK( character != nullptr );
 	if ( character != nullptr )
 	{
-		CHECK( character->name == "robot" );
+		CHECK( character->name == "example" );
 		CHECK( character->hitboxes.boxes.size() == anim::DefaultHitboxes().boxes.size() );
 		CHECK( character->animations->Skeleton().num_joints() == anim::AnimSet::CreateProcedural()->Skeleton().num_joints() );
 	}
@@ -3201,8 +3201,9 @@ void TestChat()
 // laid over them, travel in the welcome's config, so a client predicts the same walk and jump.
 void TestMoveParams()
 {
-	// The robot's baked files, with how it moves added to its anim.cfg (what CbCharacter.movement bakes).
-	std::filesystem::path source = std::filesystem::path( CB_SOURCE_DIR ) / "characters/robot/client/characters/robot";
+	// The critter's baked files, with how it moves in its anim.cfg replaced (what CbCharacter.movement
+	// bakes): its own walk and sprint left out, a jump and a fall of its own put in.
+	std::filesystem::path source = std::filesystem::path( CB_SOURCE_DIR ) / "characters/critter/client/characters/critter";
 	std::filesystem::path dir = std::filesystem::temp_directory_path() / "cinderbox_move_test";
 	std::filesystem::remove_all( dir );
 	std::filesystem::create_directories( dir );
@@ -3214,18 +3215,25 @@ void TestMoveParams()
 		}
 	}
 	{
-		std::ofstream cfg( dir / "anim.cfg", std::ios::app );
-		cfg << "\nmove.jump_speed = 9\nmove.max_fall = 12\n";
+		std::ifstream in( dir / "anim.cfg" );
+		std::string kept, line;
+		while ( std::getline( in, line ) )
+		{
+			kept += line.rfind( "move.", 0 ) == 0 ? "" : line + "\n";
+		}
+		in.close();
+		std::ofstream cfg( dir / "anim.cfg", std::ios::trunc );
+		cfg << kept << "move.jump_speed = 9\nmove.max_fall = 12\n";
 	}
 	std::string error, warnings;
-	auto robot = LoadCharacterFolder( dir.string(), "robot", error, warnings );
+	auto critter = LoadCharacterFolder( dir.string(), "critter", error, warnings );
 	std::filesystem::remove_all( dir );
-	if ( robot == nullptr )
+	if ( critter == nullptr )
 	{
-		std::printf( "    the robot did not load: %s\n", error.c_str() );
+		std::printf( "    the critter did not load: %s\n", error.c_str() );
 	}
-	CHECK( robot != nullptr );
-	if ( robot == nullptr )
+	CHECK( critter != nullptr );
+	if ( critter == nullptr )
 	{
 		return;
 	}
@@ -3234,7 +3242,7 @@ void TestMoveParams()
 		// As `cb_server --move walk_speed=4.5 --move jump_speed=5` would.
 		options.config.move.values[int( MoveParam::WalkSpeed )] = 4.5f;
 		options.config.move.values[int( MoveParam::JumpSpeed )] = 5.0f;
-		options.character = robot;
+		options.character = critter;
 	} );
 	MoveParams expected;
 	expected.values[int( MoveParam::WalkSpeed )] = 4.5f; // the server's option

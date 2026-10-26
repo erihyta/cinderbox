@@ -178,7 +178,7 @@ powershell -ExecutionPolicy Bypass -File tools\sdk.ps1 -New mymod
 
 | Then | Why |
 |---|---|
-| open `server_mods/mymod/client` in Godot and press **Test mod** (in the toolbar) | it saves the scenes, builds the server (which finds the new mod and writes its names for the editor), publishes the look (a name nobody declares stops it), and starts the game on a server of its own. The mod is in the game: its item in slot 5 if that is free (with the default mods it is not: the brawl kit takes 1 to 5, so the first free one), and its motion on Q, which the grapple has too: change one on the Keys page, or the key in `mymod.cpp`. Closing the game stops the server |
+| open `server_mods/mymod/client` in Godot and press **Test mod** (in the toolbar) | it saves the scenes, builds the server (which finds the new mod and writes its names for the editor), publishes the look (a name nobody declares stops it), and starts the game on a server of its own. The mod is in the game: its item in slot 5 if that is free (with the default mods it is not: the brawl kit takes 1 to 5, so the first free one), and its motion on X. Closing the game stops the server |
 | or, in a terminal: `tools\test_mod.ps1 -Mod mymod` | the same thing; `-Bots 4` adds bot players, `-Only` runs just this mod beside `combat` and `inventory`, `-NoBuild` skips the build when only the look changed |
 | while it runs: `tools\publish_mod.ps1 -Mod mymod` | the look is published again and the running game shows it within a second or two: scenes, effects, HUD, sounds, first-person settings. No restart. A change the server reads (an item's body or properties, an animation pack, a motion) is not taken this way: the server says so, and it is taken when the server is started again |
 
