@@ -342,6 +342,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<CharacterKind>();
 	RegisterSnapComponent<IdleBody>();
 	RegisterSnapComponent<DrivenProp>();
+	RegisterSnapComponent<ModDriven>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -2306,20 +2307,32 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	// on the world as the tick found it (no one has moved yet), with what they do to other players
 	// kept and applied once all have run, after the targets' own; then every player moves. Within a
 	// pass, slot order: deterministic, and independent of entity creation history.
-	std::array<uint8_t, kMaxPlayers> moving{};
-	m_turnCharacters.resize( kMaxPlayers );
-	m_playerPushes.clear();
-	m_deferPlayerPushes = true;
+	m_drivers.clear();
 	for ( int slot = 0; slot < kMaxPlayers; ++slot )
 	{
-		uint32_t netId = m_globals.playerNetIds[slot];
-		if ( netId == 0 )
+		if ( const uint32_t netId = m_globals.playerNetIds[slot]; netId != 0 )
 		{
-			continue;
+			m_drivers.push_back( { netId, frame.inputs[slot], slot } );
 		}
-
+	}
+	for ( const EntityRef& r : m_entities )
+	{
+		// (NetIds in order: the list is sorted.)
+		if ( const ModDriven* npc = flecs::entity( m_world, r.entity ).try_get<ModDriven>() )
+		{
+			m_drivers.push_back( { r.netId, npc->input, -1 } );
+		}
+	}
+	std::vector<uint8_t> moving( m_drivers.size(), 0 );
+	m_turnCharacters.resize( m_drivers.size() );
+	m_playerPushes.clear();
+	m_deferPlayerPushes = true;
+	for ( size_t d = 0; d < m_drivers.size(); ++d )
+	{
+		const int slot = m_drivers[d].slot;
+		const uint32_t netId = m_drivers[d].netId;
 		flecs::entity e = FindEntity( netId );
-		const PlayerInput& in = frame.inputs[slot];
+		const PlayerInput& in = m_drivers[d].input;
 		Character c = e.get<Character>();
 		if ( c.dead )
 		{
@@ -2340,7 +2353,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			}
 			continue;
 		}
-		moving[slot] = 1;
+		moving[d] = 1;
 		const Transform t = e.get<Transform>();
 		const uint8_t pressed = uint8_t( in.buttons & ~c.prevButtons );
 		Kinds kinds;
@@ -2440,7 +2453,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				m_refusalScratch.clear();
 				motionIn.refusals = &m_refusalScratch;
 				RunMotions( *m_motions, motionIn, motion, c, board, boardChanged, m_motionEvents, m_motionActive );
-				if ( m_refusalScratch.empty() == false )
+				if ( m_refusalScratch.empty() == false && slot >= 0 )
 				{
 					m_motionNotes[size_t( slot )] = { m_refusalScratch.back().motion, m_refusalScratch.back().why, m_globals.tick };
 				}
@@ -2479,28 +2492,28 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			}
 		}
 		// (Stored once every player's motions have run: until then the others read it as it was.)
-		m_turnCharacters[size_t( slot )] = c;
+		m_turnCharacters[d] = c;
 	}
 	m_deferPlayerPushes = false;
-	for ( int slot = 0; slot < kMaxPlayers; ++slot )
+	for ( size_t d = 0; d < m_drivers.size(); ++d )
 	{
-		if ( moving[slot] )
+		if ( moving[d] )
 		{
-			FindEntity( m_globals.playerNetIds[slot] ).set<Character>( m_turnCharacters[size_t( slot )] );
+			FindEntity( m_drivers[d].netId ).set<Character>( m_turnCharacters[d] );
 		}
 	}
 	// What their motions did to others: after the targets' own, in the order they were done.
 	ApplyPlayerPushes();
 
-	for ( int slot = 0; slot < kMaxPlayers; ++slot )
+	for ( size_t d = 0; d < m_drivers.size(); ++d )
 	{
-		if ( moving[slot] == 0 )
+		if ( moving[d] == 0 )
 		{
 			continue;
 		}
-		const uint32_t netId = m_globals.playerNetIds[slot];
+		const uint32_t netId = m_drivers[d].netId;
 		flecs::entity e = FindEntity( netId );
-		const PlayerInput& in = frame.inputs[slot];
+		const PlayerInput& in = m_drivers[d].input;
 		Character c = e.get<Character>();
 		Transform t = e.get<Transform>();
 		PhysicsBody pb = e.get<PhysicsBody>();
@@ -3472,6 +3485,44 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			{
 				Possess( PlayerSlot( slot ), FindEntity( command.other ) );
 			}
+			return;
+		}
+
+		case CommandType::Drive:
+		{
+			flecs::entity e = FindEntity( command.target );
+			if ( e.is_valid() == false )
+			{
+				return;
+			}
+			if ( command.mode == 0 )
+			{
+				if ( e.has<ModDriven>() )
+				{
+					e.remove<ModDriven>();
+					MakeIdle( e );
+				}
+				return;
+			}
+			const PlayerInput in = UnpackInput( command );
+			if ( e.has<ModDriven>() )
+			{
+				e.set<ModDriven>( { in } );
+				return;
+			}
+			if ( Possessable( e ) == false )
+			{
+				return; // (a player's body, an item, a ragdoll, ...)
+			}
+			if ( e.has<IdleBody>() )
+			{
+				MakeDriven( e, kNoSlot );
+			}
+			else
+			{
+				DriveProp( e, kNoSlot );
+			}
+			e.set<ModDriven>( { in } );
 			return;
 		}
 
@@ -5678,14 +5729,12 @@ float Simulation::RayCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, fl
 	{
 		return -1.0f; // filter: carry on as if it were not there
 	}
-	if ( ctx->skipPlayers && netId != 0 && ctx->sim->FindEntity( netId ).has<DrivenProp>() == false )
+	if ( ctx->skipPlayers && netId != 0 )
 	{
-		for ( uint32_t player : ctx->sim->m_globals.playerNetIds )
+		const flecs::entity who = ctx->sim->FindEntity( netId );
+		if ( who.has<Character>() && who.has<DrivenProp>() == false )
 		{
-			if ( player == netId )
-			{
-				return -1.0f;
-			}
+			return -1.0f; // (a player's or an NPC's: hit by its hitboxes)
 		}
 	}
 	if ( ctx->found == false || fraction < ctx->hit->fraction )

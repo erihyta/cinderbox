@@ -389,6 +389,13 @@ struct DrivenProp
 	uint32_t category = 0; // its shapes' collision category before (given back when it is left)
 };
 
+// A body a mod drives (M222): the input it moves by, the last a Drive command gave (it goes on with
+// it until the next one: a client predicts it with that). An NPC.
+struct ModDriven
+{
+	PlayerInput input;
+};
+
 // A character's body that nobody drives (M220): no controller (no Character, no animation state),
 // a physics body of its capsule with its rotation locked, so it stands, falls and is pushed, and
 // the physics engine sleeps it. A slot possessing it gives it the controller again.
@@ -493,6 +500,7 @@ CB_CHECK_COMPONENT( MoveEffects, 16 * kMoveEffects );
 CB_CHECK_COMPONENT( CharacterKind, 4 );
 CB_CHECK_COMPONENT( IdleBody, 4 );
 CB_CHECK_COMPONENT( DrivenProp, 40 );
+CB_CHECK_COMPONENT( ModDriven, 24 );
 CB_CHECK_COMPONENT( MoveValue, 8 );
 CB_CHECK_COMPONENT( MoveValues, 8 * kMoveValues );
 CB_CHECK_COMPONENT( HeldItem, 12 );
