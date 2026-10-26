@@ -5861,13 +5861,18 @@ void Simulation::HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 s
 	// is not in the way.
 	const uint32_t self = e.get<NetId>().value;
 	const float lift = std::min( 0.15f, 0.25f * ( prop.high[1] - prop.low[1] ) );
+	// The gap it keeps from what it meets: past Box3D's speculative distance (2 cm), within which a
+	// cast starting there would say it touches already, with no direction to slide along.
+	constexpr float kSkin = 0.03f;
 	b3Vec3 points[8];
-	auto shapeAt = [&]( float yaw ) {
+	// Its bounds turned to `yaw`, shrunk by `inset` all round but at the floor (an inset that makes
+	// them clear says how far in they are).
+	auto shapeAt = [&]( float yaw, float inset ) {
 		const b3Quat turn = detmath::YawRotation( yaw );
 		for ( int i = 0; i < 8; ++i )
 		{
-			const b3Vec3 corner = { ( i & 1 ) ? prop.high[0] : prop.low[0], ( i & 2 ) ? prop.high[1] : prop.low[1] + lift,
-									( i & 4 ) ? prop.high[2] : prop.low[2] };
+			const b3Vec3 corner = { ( i & 1 ) ? prop.high[0] - inset : prop.low[0] + inset, ( i & 2 ) ? prop.high[1] - inset : prop.low[1] + lift,
+									( i & 4 ) ? prop.high[2] - inset : prop.low[2] + inset };
 			points[i] = b3RotateVector( turn, corner );
 		}
 		return b3ShapeProxy{ points, 8, 0.0f };
@@ -5883,8 +5888,8 @@ void Simulation::HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 s
 		uint32_t self;
 		bool found;
 	};
-	auto overlaps = [&]( b3Vec3 origin, float yaw ) {
-		const b3ShapeProxy proxy = shapeAt( yaw );
+	auto overlaps = [&]( b3Vec3 origin, float yaw, float inset ) {
+		const b3ShapeProxy proxy = shapeAt( yaw, inset );
 		Overlap o{ this, self, false };
 		b3World_OverlapShape( m_physicsWorld, origin, &proxy, filter,
 							  []( b3ShapeId shape, void* context ) {
@@ -5899,12 +5904,29 @@ void Simulation::HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 s
 							  &o );
 		return o.found;
 	};
+	// How far into something its bounds are, roughly (0: clear): the least inset that clears them.
+	const float across0 = 0.5f * std::min( prop.high[0] - prop.low[0], prop.high[2] - prop.low[2] );
+	auto depth = [&]( b3Vec3 origin, float yaw ) {
+		if ( overlaps( origin, yaw, 0.0f ) == false )
+		{
+			return 0.0f;
+		}
+		for ( float inset = 0.01f; inset < across0; inset *= 2.0f )
+		{
+			if ( overlaps( origin, yaw, inset ) == false )
+			{
+				return inset;
+			}
+		}
+		return across0;
+	};
 	auto bodyAt = [&]( b3Vec3 centre ) { return b3Vec3{ centre.x, centre.y - prop.drop, centre.z }; };
 	const b3Vec3 from = bodyAt( start );
+	const float inside = depth( from, startYaw );
 
-	// The turn: only if the turned bounds are clear where it stands.
+	// The turn: only where it does not put the bounds further into something.
 	float yaw = c.facingYaw;
-	if ( yaw != startYaw && overlaps( from, yaw ) )
+	if ( yaw != startYaw && depth( from, yaw ) > inside )
 	{
 		yaw = startYaw;
 		c.facingYaw = startYaw;
@@ -5914,10 +5936,11 @@ void Simulation::HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 s
 	const b3Vec3 across = { t.position.x - start.x, 0.0f, t.position.z - start.z };
 	if ( b3Length( across ) > 1e-5f )
 	{
-		if ( overlaps( from, yaw ) )
+		if ( inside > 0.0f )
 		{
-			// Already in something (taken over against a wall): out, not further in.
-			if ( overlaps( bodyAt( t.position ), yaw ) )
+			// Already in something (taken over against a wall, a corner turned in): any way that is
+			// not further in, so it always gets out.
+			if ( depth( bodyAt( t.position ), yaw ) > inside )
 			{
 				t.position.x = start.x;
 				t.position.z = start.z;
@@ -5935,7 +5958,7 @@ void Simulation::HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 s
 				{
 					break;
 				}
-				const b3ShapeProxy proxy = shapeAt( yaw );
+				const b3ShapeProxy proxy = shapeAt( yaw, 0.0f );
 				struct Cast
 				{
 					const Simulation* sim;
@@ -5960,20 +5983,28 @@ void Simulation::HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 s
 									   return fraction;
 								   },
 								   &cast );
-				RayHit hit;
-				hit.fraction = cast.fraction;
-				hit.normal = cast.normal;
-				const bool blocked = cast.found;
-				if ( blocked == false )
+				if ( cast.found == false )
 				{
 					at = b3Add( at, left );
 					break;
 				}
-				const float kept = std::max( 0.0f, hit.fraction - 0.01f / length );
-				at = b3MulAdd( at, kept, left );
 				float flat = 0.0f;
-				const b3Vec3 normal = b3GetLengthAndNormalize( &flat, b3Vec3{ hit.normal.x, 0.0f, hit.normal.z } );
-				b3Vec3 rest = b3MulSV( 1.0f - kept, left );
+				const b3Vec3 normal = b3GetLengthAndNormalize( &flat, b3Vec3{ cast.normal.x, 0.0f, cast.normal.z } );
+				if ( flat < 1e-3f )
+				{
+					// Touching from the start, with no direction to say: the move is taken if it does not
+					// put it further in.
+					if ( depth( b3Add( at, left ), yaw ) <= depth( at, yaw ) )
+					{
+						at = b3Add( at, left );
+					}
+					break;
+				}
+				// To the contact, then the skin back off it, along its normal (not along the way it came:
+				// at a slant that would leave next to no gap).
+				at = b3MulAdd( at, cast.fraction, left );
+				at = b3MulAdd( at, kSkin, normal );
+				b3Vec3 rest = b3MulSV( 1.0f - cast.fraction, left );
 				rest = b3MulSub( rest, b3Dot( rest, normal ), normal );
 				left = rest;
 				// Its speed into what stopped it goes.
