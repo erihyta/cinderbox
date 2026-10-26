@@ -43,6 +43,7 @@ inline constexpr int kMotionActionSprint = kMaxActions + 1;
 
 inline constexpr int kMaxGraphStates = 64;	   // per layer
 inline constexpr int kMaxBlendPoints = 32;	   // per blend space
+inline constexpr float kMaxStateSpeed = 16.0f;
 
 // A compiled condition or input: a little stack program over the values above.
 struct AnimExpr
@@ -157,6 +158,9 @@ struct AnimGraphTransition
 	float xfade = 0.0f;
 	bool atEnd = false;
 	AnimExpr condition;
+	// How the new state fades in over the crossfade (Godot's xfade_curve): its weight at even steps
+	// of the fade from start to end, read between them in a straight line. Empty: linear.
+	std::vector<float> curve;
 };
 
 struct AnimGraphState
@@ -177,6 +181,10 @@ struct AnimGraphState
 	AnimExpr input;
 	AnimExpr inputY;
 	std::vector<std::array<int, 3>> triangles; // point indices, as Godot triangulated them
+	// How fast its clock runs (a TimeScale node in the state's blend tree, or a clip's custom
+	// timeline): 1 is the clip's own speed, 0.5 half of it. An expression, read every tick, held in
+	// [0, kMaxStateSpeed]. Empty: 1. Markers move with it: they sit on the clip's own clock.
+	AnimExpr speed;
 	std::vector<AnimGraphTransition> transitions; // in the order they are tried
 	// The transitions of other states that lead here on a mod event ("pistol.fired"): while the
 	// layer is already in this state, the event starts it over, with that transition's crossfade.
@@ -317,6 +325,13 @@ float EvaluateAnimExpr( const AnimExpr& expr, const AnimGraphInputs& inputs, flo
 // clip's only point gets 1. Weights sum to 1.
 using AnimBlendWeights = std::array<float, kMaxBlendPoints>;
 void AnimGraphWeights( const AnimGraphState& state, float x, float y, AnimBlendWeights& out );
+
+// A state's speed this tick (AnimGraphState::speed).
+float AnimStateSpeed( const AnimGraphState& state, const AnimGraphInputs& inputs, float stateTime );
+
+// How much of the layer's state shows over the one it fades from, 0 to 1: the crossfade so far,
+// through the curve of the transition that started it (linear without one).
+float AnimGraphFadeIn( const AnimGraphLayer& layer, const AnimGraphLayerState& L );
 
 // Advances the graph's layers in `state` by one tick (a layer not started yet begins in its start
 // state). Markers crossed append their schema event

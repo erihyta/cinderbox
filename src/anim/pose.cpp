@@ -319,7 +319,7 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 		}
 
 		// The state, crossfading from the one before it.
-		float in = L.fadeLength > 0.0f ? std::min( L.stateTime / L.fadeLength, 1.0f ) : 1.0f;
+		float in = AnimGraphFadeIn( layer, L );
 		layers.clear();
 		size_t buffer = 0;
 		auto sample = [&]( const AnimGraphState& s, float time, float blend, float blendY, float weight ) {

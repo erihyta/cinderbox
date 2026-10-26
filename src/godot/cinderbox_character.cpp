@@ -27,6 +27,7 @@
 #include <godot_cpp/classes/animation_node_blend_tree.hpp>
 #include <godot_cpp/classes/animation_node_state_machine.hpp>
 #include <godot_cpp/classes/animation_node_state_machine_transition.hpp>
+#include <godot_cpp/classes/animation_node_time_scale.hpp>
 #include <godot_cpp/classes/animation_player.hpp>
 #include <godot_cpp/classes/animation_tree.hpp>
 #include <godot_cpp/classes/bone_attachment3d.hpp>
@@ -347,6 +348,9 @@ namespace
 {
 
 // A number for graph.cfg: the shortest form that reads back as the same float, always with a '.'.
+// How many steps a crossfade curve is sampled in.
+constexpr int kFadeCurveSteps = 16;
+
 std::string Num( double value )
 {
 	char buffer[32];
@@ -576,6 +580,46 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 				return "state name '" + name + "' cannot be baked (no '=', '#', tabs or new lines)";
 			}
 			Ref<AnimationNode> node = machine->get_node( name );
+			// Its parameters' path (a blend space's position), and how fast it plays: a state may be a
+			// blend tree of one animation or blend space, through a TimeScale node, into its output.
+			String param = layer.prefix + name;
+			String speed;
+			double speedFactor = 1.0;
+			if ( Ref<AnimationNodeBlendTree> inner = node; inner.is_valid() )
+			{
+				Array links = inner->get( "node_connections" );
+				auto feeding = [&]( String to ) -> String {
+					for ( int64_t i = 0; i + 2 < links.size(); i += 3 )
+					{
+						if ( String( links[i] ) == to && int( links[i + 1] ) == 0 )
+						{
+							return String( links[i + 2] );
+						}
+					}
+					return String();
+				};
+				String at = feeding( "output" );
+				Ref<AnimationNode> playing = at.is_empty() ? Ref<AnimationNode>() : inner->get_node( at );
+				if ( Ref<AnimationNodeTimeScale> scale = playing; scale.is_valid() )
+				{
+					const String path = param + "/" + at + "/scale";
+					speed = input( path );
+					if ( speed.is_empty() )
+					{
+						const Variant value = tree->get( "parameters/" + path );
+						speedFactor = value.get_type() == Variant::FLOAT || value.get_type() == Variant::INT ? double( value ) : 1.0;
+					}
+					at = feeding( at );
+					playing = at.is_empty() ? Ref<AnimationNode>() : inner->get_node( at );
+				}
+				if ( Ref<AnimationNodeAnimation>( playing ).is_null() && Ref<AnimationNodeBlendSpace1D>( playing ).is_null() &&
+					 Ref<AnimationNodeBlendSpace2D>( playing ).is_null() )
+				{
+					return param + ": a state's blend tree is one animation or blend space, through a TimeScale node if it plays at another speed, into its output";
+				}
+				param += "/" + at;
+				node = playing;
+			}
 			if ( Ref<AnimationNodeAnimation> clip = node; clip.is_valid() )
 			{
 				String problem = useAnimation( clip->get_animation() );
@@ -583,12 +627,29 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 				{
 					return layer.name + "/" + name + ": " + problem;
 				}
+				if ( clip->is_using_custom_timeline() )
+				{
+					// A custom timeline stretched: the clip plays in the timeline's length.
+					const double length = player->get_animation( clip->get_animation() )->get_length();
+					if ( clip->is_stretching_time_scale() && clip->get_timeline_length() > 0.0 )
+					{
+						speedFactor *= length / clip->get_timeline_length();
+					}
+					else
+					{
+						warnings += param + ": only a stretched custom timeline is baked (its speed); ";
+					}
+					if ( clip->get_start_offset() != 0.0 )
+					{
+						warnings += param + ": the custom timeline's start offset is not baked; ";
+					}
+				}
 				bool backward = clip->get_play_mode() == AnimationNodeAnimation::PLAY_MODE_BACKWARD;
 				body += "state\t" + Std( name ) + "\tclip\t" + Std( String( clip->get_animation() ) ) + "\t" + ( backward ? "1" : "0" ) + "\n";
 			}
 			else if ( Ref<AnimationNodeBlendSpace1D> space = node; space.is_valid() )
 			{
-				String driver = input( layer.prefix + name + "/blend_position" );
+				String driver = input( param + "/blend_position" );
 				if ( driver.is_empty() )
 				{
 					driver = input( name + "/blend_position" );
@@ -628,7 +689,7 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 			else if ( Ref<AnimationNodeBlendSpace2D> plane = node; plane.is_valid() )
 			{
 				// Two expressions, "x, y" (the blend position is a Vector2).
-				String driver = input( layer.prefix + name + "/blend_position" );
+				String driver = input( param + "/blend_position" );
 				if ( driver.is_empty() )
 				{
 					driver = input( name + "/blend_position" );
@@ -710,7 +771,22 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 			else
 			{
 				return layer.prefix + name + " is a " + node->get_class() +
-					   "; states are animations or 1D and 2D blend spaces (nested machines are not baked yet)";
+					   "; states are animations, 1D and 2D blend spaces, or a blend tree of one (nested machines are not baked yet)";
+			}
+			if ( speedFactor < 0.0 )
+			{
+				warnings += param + ": a negative speed plays as 0 (stopped); ";
+			}
+			if ( speed.is_empty() == false || speedFactor != 1.0 )
+			{
+				String text = speed.is_empty() ? String( Num( speedFactor ).c_str() )
+											   : speedFactor == 1.0 ? speed : "(" + speed + ") * " + String( Num( speedFactor ).c_str() );
+				String problem = checkExpression( text, param + " speed" );
+				if ( problem.is_empty() == false )
+				{
+					return problem;
+				}
+				body += "speed\t" + Std( text ) + "\n";
 			}
 			if ( states == 0 )
 			{
@@ -777,12 +853,17 @@ String CbCharacter::BakeGraph( AnimationTree* tree, AnimationPlayer* player, std
 				default:
 					break;
 			}
-			if ( transition->get_xfade_curve().is_valid() )
+			// The crossfade's curve, sampled (how far the new state has faded in).
+			std::string curve;
+			if ( Ref<Curve> shape = transition->get_xfade_curve(); shape.is_valid() )
 			{
-				warnings += where + ": the crossfade curve is not baked (it fades linearly); ";
+				for ( int i = 0; i <= kFadeCurveSteps; ++i )
+				{
+					curve += ( i > 0 ? "," : "" ) + Num( double( shape->sample( float( i ) / float( kFadeCurveSteps ) ) ) );
+				}
 			}
 			body += "transition\t" + Std( from ) + "\t" + Std( to ) + "\t" + std::to_string( transition->get_priority() ) + "\t" +
-					Num( transition->get_xfade_time() ) + "\t" + mode + "\t1\t" + Std( combined ) + "\n";
+					Num( transition->get_xfade_time() ) + "\t" + mode + "\t1\t" + Std( combined ) + ( curve.empty() ? "" : "\t" + curve ) + "\n";
 		}
 		if ( start.is_empty() )
 		{
