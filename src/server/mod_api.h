@@ -691,6 +691,12 @@ public:
 	void Possess( PlayerSlot slot, uint32_t body );
 	// The characters' bodies nobody drives (NetIds).
 	std::vector<uint32_t> IdleBodies() const;
+	// Whether a slot may drive `body` (Possess): a character's body nobody drives, or a loose prop
+	// (not an item, a ragdoll, a container or anything static).
+	bool CanPossess( uint32_t body ) const
+	{
+		return m_sim.Possessable( m_sim.FindEntity( body ) );
+	}
 	// The player's own layer again (or the one a held item brings).
 	void RestoreLayer( uint32_t target, const std::string& layer );
 	// The server's: where mods' swaps are kept, and which packs items bring. After every mod has

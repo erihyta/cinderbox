@@ -88,6 +88,9 @@ public:
 	// first-person camera (the built-in rig may). Without, a first-person view is sent, and seen,
 	// as the view from behind.
 	bool has_first_person() const;
+	// How far the third-person camera stands back, as a share of the usual: the local body's height
+	// against the default character's (a crate 0.6 m tall is seen from closer, a giant from further).
+	double get_view_scale() const;
 	// The viewer looks out of its own player's eyes. The world stays the third-person one: its body
 	// keeps the pose everyone sees and casts that pose's shadow, what it holds too, and is only not
 	// drawn. What the viewer sees of itself are copies for the eye: its legs (slid back as it looks

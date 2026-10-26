@@ -178,11 +178,20 @@ double ViewFileSource::FrameSeconds() const
 	return tick * double( m_current.stride );
 }
 
+namespace
+{
+// A body a slot drives: a player's, or a prop one drives (its slot is its driver's).
+bool Driven( const FrameEntity& e )
+{
+	return ( e.kind == VisualKind::Player || e.kind == VisualKind::Prop ) && e.slot < kMaxPlayers;
+}
+} // namespace
+
 uint32_t ViewFileSource::PlayerInSlot( int slot ) const
 {
 	for ( const FrameEntity& e : m_current.frame.entities )
 	{
-		if ( e.kind == VisualKind::Player && int( e.slot ) == slot )
+		if ( Driven( e ) && int( e.slot ) == slot )
 		{
 			return e.netId;
 		}
@@ -196,7 +205,7 @@ int ViewFileSource::NextSlot( int from ) const
 	int first = -1;
 	for ( const FrameEntity& e : m_current.frame.entities )
 	{
-		if ( e.kind != VisualKind::Player )
+		if ( Driven( e ) == false )
 		{
 			continue;
 		}
@@ -220,7 +229,7 @@ int ViewFileSource::FollowedSlot() const
 	// Whoever the file was recorded as, else the first player there is.
 	for ( const FrameEntity& e : m_current.frame.entities )
 	{
-		if ( m_current.frame.localNetId != 0 && e.netId == m_current.frame.localNetId && e.kind == VisualKind::Player )
+		if ( m_current.frame.localNetId != 0 && e.netId == m_current.frame.localNetId && Driven( e ) )
 		{
 			return int( e.slot );
 		}

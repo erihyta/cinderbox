@@ -18,6 +18,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "control", "name", "value" ), &CinderboxClient::control );
 	ClassDB::bind_method( D_METHOD( "takes_input" ), &CinderboxClient::takes_input );
 	ClassDB::bind_method( D_METHOD( "has_first_person" ), &CinderboxClient::has_first_person );
+	ClassDB::bind_method( D_METHOD( "get_view_scale" ), &CinderboxClient::get_view_scale );
 	ClassDB::bind_method( D_METHOD( "send_intent", "kind", "a", "b" ), &CinderboxClient::send_intent );
 	ClassDB::bind_method( D_METHOD( "set_local_value", "name", "value" ), &CinderboxClient::set_local_value );
 	ClassDB::bind_method( D_METHOD( "get_local_value", "name" ), &CinderboxClient::get_local_value );
@@ -196,8 +197,54 @@ void CinderboxClient::control( const String& name, double value )
 bool CinderboxClient::has_first_person() const
 {
 	const std::vector<CharacterInfo>& characters = m_frame.schema.characters;
+	if ( m_mirror )
+	{
+		// A prop a player drives has no eyes to look out of.
+		flecs::entity mine = m_mirror->VisualOf( m_frame.frame.localNetId );
+		if ( mine.is_valid() && mine.get<present::Visual>().kind != present::VisualKind::Player )
+		{
+			return false;
+		}
+	}
 	const uint8_t local = m_mirror ? m_mirror->LocalCharacter() : uint8_t( 0 );
 	return characters.empty() || characters[local < characters.size() ? local : 0].firstPerson;
+}
+
+double CinderboxClient::get_view_scale() const
+{
+	const float usual = mover::FeetBelowCenter( kDefaultCapsuleRadius, kDefaultCapsuleHalfHeight ) + kDefaultCapsuleHalfHeight + kDefaultCapsuleRadius;
+	flecs::entity mine = m_mirror ? m_mirror->VisualOf( m_frame.frame.localNetId ) : flecs::entity();
+	if ( mine.is_valid() == false )
+	{
+		return 1.0;
+	}
+	const present::Visual& v = mine.get<present::Visual>();
+	float height = usual;
+	if ( v.kind == present::VisualKind::Player )
+	{
+		const std::vector<CharacterInfo>& characters = m_frame.schema.characters;
+		if ( v.character < characters.size() )
+		{
+			const CharacterInfo& c = characters[v.character];
+			height = mover::FeetBelowCenter( c.radius, c.halfHeight ) + c.halfHeight + c.radius;
+		}
+	}
+	else
+	{
+		switch ( v.shape )
+		{
+			case ShapeKind::Sphere:
+				height = 2.0f * v.halfExtents.x;
+				break;
+			case ShapeKind::Capsule:
+				height = 2.0f * ( v.halfExtents.x + v.halfExtents.y );
+				break;
+			default:
+				height = 2.0f * v.halfExtents.y;
+				break;
+		}
+	}
+	return double( std::clamp( height / usual, 0.5f, 4.0f ) );
 }
 
 bool CinderboxClient::takes_input() const

@@ -376,6 +376,19 @@ struct CharacterKind
 	uint16_t reserved = 0;
 };
 
+// A prop a slot drives (M221): its own physics body (kinematic while driven, dynamic again when
+// left) and its own shapes (CatDriven); the mover walks it with a capsule fitted to it, its feet at
+// the prop's bottom. Its upright bounds go along and hold the move back where they would hit.
+struct DrivenProp
+{
+	float radius = 0.0f; // the walking capsule's
+	float halfHeight = 0.0f;
+	float drop = 0.0f;  // the body's origin below the mover's centre
+	float low[3] = {};  // its bounds at the identity rotation, from the body's origin
+	float high[3] = {};
+	uint32_t category = 0; // its shapes' collision category before (given back when it is left)
+};
+
 // A character's body that nobody drives (M220): no controller (no Character, no animation state),
 // a physics body of its capsule with its rotation locked, so it stands, falls and is pushed, and
 // the physics engine sleeps it. A slot possessing it gives it the controller again.
@@ -479,6 +492,7 @@ CB_CHECK_COMPONENT( MoveEffect, 16 );
 CB_CHECK_COMPONENT( MoveEffects, 16 * kMoveEffects );
 CB_CHECK_COMPONENT( CharacterKind, 4 );
 CB_CHECK_COMPONENT( IdleBody, 4 );
+CB_CHECK_COMPONENT( DrivenProp, 40 );
 CB_CHECK_COMPONENT( MoveValue, 8 );
 CB_CHECK_COMPONENT( MoveValues, 8 * kMoveValues );
 CB_CHECK_COMPONENT( HeldItem, 12 );
@@ -503,6 +517,9 @@ enum CollisionCategory : uint64_t
 	// Rubble (a broken wall's pieces): a player's capsule does not collide with it, so a player never
 	// shoves it, while the mover's own casts still meet it (players stand on it and are stopped by it).
 	CatDebris = 1 << 4,
+	// A prop a player drives (M221): its own shapes, moved with the mover. Others walk into it and
+	// shots hit it; its own mover's ground ray does not stand on it (nor anyone's: as a player).
+	CatDriven = 1 << 5,
 };
 
 } // namespace cb

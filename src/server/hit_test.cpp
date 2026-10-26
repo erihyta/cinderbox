@@ -112,7 +112,7 @@ bool HitTester::JointPosition( Simulation& sim, PlayerSlot slot, const char* joi
 	const uint16_t character = netId != 0 ? sim.CharacterOf( sim.FindEntity( netId ) ) : uint16_t( 0 );
 	Entry& kind = Kind( character );
 	int index = anim::FindJoint( *kind.asset->animations, joint );
-	if ( transform == nullptr || state == nullptr || index < 0 )
+	if ( transform == nullptr || state == nullptr || index < 0 || sim.FindEntity( netId ).has<DrivenProp>() )
 	{
 		return false;
 	}
@@ -134,7 +134,7 @@ bool HitTester::BakedEyePosition( Simulation& sim, PlayerSlot slot, b3Vec3& out 
 	AnimStateCopy state = netId != 0 ? sim.EntityAnimState( netId ) : AnimStateCopy();
 	const uint16_t character = netId != 0 ? sim.CharacterOf( sim.FindEntity( netId ) ) : uint16_t( 0 );
 	Entry& kind = Kind( character );
-	if ( transform == nullptr || state == nullptr || kind.asset->animations->EyeJoint() < -1 )
+	if ( transform == nullptr || state == nullptr || kind.asset->animations->EyeJoint() < -1 || sim.FindEntity( netId ).has<DrivenProp>() )
 	{
 		return false;
 	}
@@ -166,9 +166,9 @@ bool HitTester::CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uin
 		const Character* character = sim.PlayerCharacter( slot );
 		const Transform* transform = sim.EntityTransform( netId );
 		AnimStateCopy state = sim.EntityAnimState( netId );
-		if ( character == nullptr || character->dead || transform == nullptr || state == nullptr )
+		if ( character == nullptr || character->dead || transform == nullptr || state == nullptr || sim.FindEntity( netId ).has<DrivenProp>() )
 		{
-			continue;
+			continue; // (a driven prop is hit as its own shapes, by the world's cast)
 		}
 		// As its own character: its feet, its reach, its pose, its hitboxes.
 		const uint16_t which = sim.CharacterOf( sim.FindEntity( netId ) );

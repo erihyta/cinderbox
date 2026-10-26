@@ -335,7 +335,7 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 			PlayerAnim& pa = ve.get_mut<PlayerAnim>();
 			pa.previous = pa.current = pa.shown = AnimState{};
 		}
-		else if ( f.hasAnim )
+		else if ( f.hasAnim && ve.has<PlayerAnim>() )
 		{
 			PlayerAnim& pa = ve.get_mut<PlayerAnim>();
 			AnimMode oldMode = pa.current.mode;
