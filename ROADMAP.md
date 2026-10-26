@@ -31,7 +31,7 @@ A proposal: the order is open to change. Each row is a milestone or two.
 | 7 | [Any skeleton](#7-any-skeleton) | **done (M219)**: any skeleton bakes and plays (the critter); without a humanoid's bones no ragdoll, packs that do not fit are not swapped in, items drawn only in its sockets. Authored ragdolls for other skeletons moved to [Later](#later); a character with no skeleton is step 8's |
 | 8 | [Bodies and who drives them](#8-bodies-and-who-drives-them) | **done (M220 to M222)**: bodies nobody drives, possession of a character's body or a prop, a mod driving a body (an NPC); the character controller is something an entity has while it is driven, read from its scene; a player possesses any entity, a mod drives one (an NPC); nothing extra for a body nobody drives |
 | 9 | [Finding the way](#9-finding-the-way) | **done (M227)**: a navigation mesh on the server (Recast/Detour), `ctx.FindPath`, `NearestWalkable`, `WalkToward` |
-| 10 | [The proof: waves](#10-the-proof-waves) | NPCs that walk to the nearest player and swing at it, waves that grow |
+| 10 | [The proof: waves](#10-the-proof-waves) | **done (M228, M229)**: the `waves` mod: NPCs with the brawl fist find their way to the nearest player and jab it, waves that grow; 32 NPCs cost a client about 0.07 ms each a tick |
 | 11 | [The animation tree, wider](#11-the-animation-tree-wider) | what a Godot developer reaches for next (nested state machines, OneShot, Add, TimeScale, crossfade curves), and layers that are the look's alone |
 
 Steps 4 and 5 of the last version (vehicles, authoring finished) are [Later](#later), with the
@@ -244,13 +244,17 @@ size (it is the server's own character's now), a mesh mended when a wall breaks,
 
 ### 10. The proof: waves
 
-A `waves` mod: NPCs of their own character that walk to the nearest player and swing at it, waves
+**Done (M228, M229).** A `waves` mod: NPCs that walk to the nearest player and swing at it, waves
 that grow. Tested in a network test (hashes equal, no desyncs) and with bots; how many NPCs a client
 carries, measured. Later: a brain in a sheet (deterministic, so every simulation runs it and an
 NPC's moves are predicted exactly, at a rollback cost).
 
 Ready (M228): an NPC selects and uses items as a player does (its input's slot keys and use button),
 so a wave's NPC can be given the brawl fist and jab with it; brawl's attacks hurt NPCs too.
+
+Measured (M229, `net_waves_cost`): a client's tick takes about 0.3 ms with no NPCs and 2.6 ms with
+32 coming for it, about 0.07 ms an NPC, resimulated ticks included. Later: NPCs of a character of
+their own (the mod's, declared like any; the server's own character now), a brain in a sheet.
 
 ### 11. The animation tree, wider
 
