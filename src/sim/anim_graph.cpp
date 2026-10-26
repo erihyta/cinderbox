@@ -812,6 +812,26 @@ std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, cons
 		{
 			return fail( "'" + kind + "' before any layer" );
 		}
+		else if ( kind == "add" )
+		{
+			graph->layers.back().additive = true;
+		}
+		else if ( kind == "shot" )
+		{
+			AnimGraphLayer& layer = graph->layers.back();
+			std::string why;
+			if ( f.size() < 4 || ToFloat( f[1], layer.fadeIn ) == false || ToFloat( f[2], layer.fadeOut ) == false )
+			{
+				return fail( "shot needs a fade in, a fade out and a request" );
+			}
+			if ( CompileAnimExpr( f[3], schema, layer.request, why, warnings ) == false )
+			{
+				return fail( why );
+			}
+			layer.shot = true;
+			layer.fadeIn = std::max( layer.fadeIn, 0.0f );
+			layer.fadeOut = std::max( layer.fadeOut, 0.0f );
+		}
 		else if ( kind == "mask" )
 		{
 			graph->layers.back().mask.assign( f.begin() + 1, f.end() );
@@ -934,6 +954,11 @@ std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, cons
 		error = "graph.cfg has no layers";
 		return nullptr;
 	}
+	if ( graph->layers[0].shot || graph->layers[0].additive )
+	{
+		error = "the first layer is the base: it cannot be a one-shot or added";
+		return nullptr;
+	}
 
 	for ( const auto& [layerIndex, name] : starts )
 	{
@@ -991,6 +1016,11 @@ std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, cons
 		if ( layer.states.empty() )
 		{
 			error = "layer '" + layer.name + "' has no states";
+			return nullptr;
+		}
+		if ( layer.shot && ( layer.states.size() != 1 || layer.states[0].transitions.empty() == false ) )
+		{
+			error = "one-shot layer '" + layer.name + "' plays one state, with no transitions";
 			return nullptr;
 		}
 		for ( AnimGraphState& state : layer.states )
@@ -1301,13 +1331,13 @@ bool AnimGraph::UpperLayersRead( AnimExpr::VarKind kind, int index ) const
 	};
 	for ( size_t l = 1; l < layers.size(); ++l )
 	{
-		if ( reads( layers[l].weight ) )
+		if ( reads( layers[l].weight ) || reads( layers[l].request ) )
 		{
 			return true;
 		}
 		for ( const AnimGraphState& state : layers[l].states )
 		{
-			if ( reads( state.input ) || reads( state.inputY ) )
+			if ( reads( state.input ) || reads( state.inputY ) || reads( state.speed ) )
 			{
 				return true;
 			}
@@ -1322,6 +1352,65 @@ bool AnimGraph::UpperLayersRead( AnimExpr::VarKind kind, int index ) const
 	}
 	return false;
 }
+
+namespace
+{
+
+// A OneShot's layer: fired on the request's rising edge, played once, faded in and out.
+void UpdateShot( const AnimGraph& graph, const AnimGraphLayer& layer, AnimGraphLayerState& L, const AnimGraphInputs& in, float dt,
+				 std::vector<int>& markers )
+{
+	const AnimGraphState& state = layer.states[0];
+	const bool request = EvaluateAnimExpr( layer.request, in, L.stateTime ) != 0.0f;
+	const bool fired = request && L.previousBlendY == 0.0f;
+	L.previousBlendY = request ? 1.0f : 0.0f;
+	L.state = L.previous = 0;
+	L.fadeLength = 0.0f;
+	if ( fired )
+	{
+		L.previousBlend = 1.0f; // playing, from the start (a shot already playing starts over)
+		L.time = 0.0f;
+		L.stateTime = 0.0f;
+	}
+	if ( L.previousBlend == 0.0f )
+	{
+		L.weight = 0.0f;
+		return;
+	}
+	if ( state.blend )
+	{
+		L.blend = EvaluateAnimExpr( state.input, in, L.stateTime );
+		L.blendY = state.planar ? EvaluateAnimExpr( state.inputY, in, L.stateTime ) : 0.0f;
+	}
+	const bool entered = L.stateTime == 0.0f;
+	const float before = L.time;
+	const float speed = AnimStateSpeed( state, in, L.stateTime );
+	bool ended = false;
+	const bool wrapped = Advance( graph, state, L.blend, L.blendY, L.time, dt * speed, 0.0f, ended );
+	L.stateTime = std::min( L.stateTime + dt, kMaxStateTime );
+	FireMarkers( graph, state, before, L.time, wrapped, entered, markers );
+	// Once through: the clip's end (a looping one's first round, a blend space's cycle).
+	const float length = state.blend ? 1.0f : graph.clips[size_t( state.points[0].clip )].length;
+	if ( wrapped || ( state.blend == false && L.time >= length ) )
+	{
+		L.previousBlend = 0.0f;
+		L.weight = 0.0f;
+		L.time = 0.0f;
+		return;
+	}
+	// In over fadeIn (from wherever it was: a shot fired again does not drop out), out over the
+	// last fadeOut seconds at its speed.
+	const float rise = layer.fadeIn > 0.0f ? L.weight + dt / layer.fadeIn : 1.0f;
+	float left = 1.0f;
+	if ( layer.fadeOut > 0.0f )
+	{
+		const float secondsLeft = state.blend ? 1.0f : ( speed > 0.0f ? ( length - L.time ) / speed : layer.fadeOut );
+		left = secondsLeft / layer.fadeOut;
+	}
+	L.weight = std::clamp( std::min( rise, left ), 0.0f, 1.0f );
+}
+
+} // namespace
 
 float AnimStateSpeed( const AnimGraphState& state, const AnimGraphInputs& inputs, float stateTime )
 {
@@ -1395,6 +1484,11 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphP
 			L.weight = ( l == 0 || layer.weight.Empty() ) ? 1.0f : std::clamp( EvaluateAnimExpr( layer.weight, in, 0.0f ), 0.0f, 1.0f );
 		}
 
+		if ( layer.shot )
+		{
+			UpdateShot( graph, layer, L, in, dt, markers );
+			continue;
+		}
 		// The layer's weight eases toward its expression, like a stance fading in.
 		if ( l > 0 )
 		{

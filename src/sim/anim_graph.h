@@ -200,6 +200,17 @@ struct AnimGraphLayer
 	std::vector<std::string> mask; // bones (humanoid-profile names) it covers; empty: every bone
 	AnimExpr weight;			   // empty: 1
 	int start = 0;
+	// Added to what is below it instead of laid over it (Godot's Add2, a OneShot's Add mix mode):
+	// its pose's difference from the skeleton's rest, by its weight, through its mask.
+	bool additive = false;
+	// A OneShot: its one state plays once from the tick `request` turns true (again: from the
+	// start), fading in over `fadeIn` and out over the last `fadeOut` seconds; its weight is that
+	// fade. Its layer state keeps whether it plays in previousBlend, and the request's last value in
+	// previousBlendY (a one-state layer has no use for them).
+	bool shot = false;
+	AnimExpr request;
+	float fadeIn = 0.0f;
+	float fadeOut = 0.0f;
 	std::vector<AnimGraphState> states;
 };
 

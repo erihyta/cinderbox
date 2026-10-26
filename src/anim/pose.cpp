@@ -115,6 +115,7 @@ PoseEvaluator::PoseEvaluator( const AnimSet& set )
 	m_blended.resize( soaJoints );
 	m_models.resize( skeleton.num_joints() );
 	m_scratch.resize( soaJoints );
+	m_delta.resize( soaJoints );
 	m_keepWeights.resize( soaJoints );
 	m_layerWeights.resize( soaJoints );
 	m_layerPose.resize( soaJoints );
@@ -369,7 +370,14 @@ void PoseEvaluator::EvaluateGraph( const AnimState& state )
 			const GraphSource& own = m_sources[0];
 			bool borrowed = owner != m_graph.get() && source.masks[layerIndex].empty() && l < own.masks.size();
 			const auto& mask = borrowed ? own.masks[l] : source.masks[layerIndex];
-			BlendOver( m_layerPose, mask.empty() ? nullptr : &mask, L.weight );
+			if ( layer.additive )
+			{
+				AddOver( m_layerPose, mask.empty() ? nullptr : &mask, L.weight );
+			}
+			else
+			{
+				BlendOver( m_layerPose, mask.empty() ? nullptr : &mask, L.weight );
+			}
 			if ( l >= m_graph->layers.size() && layerIndex < source.namedHands.size() )
 			{
 				for ( int h = 0; h < 2; ++h )
@@ -429,6 +437,39 @@ void PoseEvaluator::BlendOver( const ozz::vector<ozz::math::SoaTransform>& pose,
 	blending.threshold = 0.001f;
 	blending.layers = ozz::make_span( layers );
 	blending.rest_pose = skeleton.joint_rest_poses();
+	blending.output = ozz::make_span( m_scratch );
+	if ( blending.Run() )
+	{
+		std::swap( m_blended, m_scratch );
+	}
+}
+
+void PoseEvaluator::AddOver( const ozz::vector<ozz::math::SoaTransform>& pose, const ozz::vector<ozz::math::SimdFloat4>* mask,
+							 float weight )
+{
+	const auto& skeleton = m_set.Skeleton();
+	const auto rest = skeleton.joint_rest_poses();
+	const ozz::math::SimdFloat4 w = ozz::math::simd_float4::Load1( std::min( weight, 1.0f ) );
+	for ( size_t i = 0; i < m_delta.size() && i < rest.size(); ++i )
+	{
+		// ozz adds a layer as pose * delta (sim's order: the delta in the joint's own frame).
+		m_delta[i].translation = pose[i].translation - rest[i].translation;
+		m_delta[i].rotation = ozz::math::Conjugate( rest[i].rotation ) * pose[i].rotation;
+		m_delta[i].scale = pose[i].scale / rest[i].scale;
+		m_layerWeights[i] = mask != nullptr ? w * ( *mask )[i] : w;
+	}
+	ozz::animation::BlendingJob::Layer base;
+	base.weight = 1.0f;
+	base.transform = ozz::make_span( m_blended );
+	ozz::animation::BlendingJob::Layer added;
+	added.weight = 1.0f;
+	added.transform = ozz::make_span( m_delta );
+	added.joint_weights = ozz::make_span( m_layerWeights );
+	ozz::animation::BlendingJob blending;
+	blending.threshold = 0.001f;
+	blending.layers = ozz::span<const ozz::animation::BlendingJob::Layer>( &base, 1 );
+	blending.additive_layers = ozz::span<const ozz::animation::BlendingJob::Layer>( &added, 1 );
+	blending.rest_pose = rest;
 	blending.output = ozz::make_span( m_scratch );
 	if ( blending.Run() )
 	{

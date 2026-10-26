@@ -265,7 +265,7 @@ Moved after the NPCs (decided after M219): polish for animated characters.
 
 | Piece | What |
 |---|---|
-| More of the tree | `TimeScale` (a state's playback speed, an expression) and a stretched custom timeline, crossfade curves: **done (M230)**. Nested state machines, `OneShot`, `Add`: each baked and run the same everywhere |
+| More of the tree | `TimeScale` (a state's playback speed, an expression) and a stretched custom timeline, crossfade curves: **done (M230)**. `OneShot` and `Add2`: **done (M231)**. Nested state machines: baked and run the same everywhere |
 | Layers that are the look's | a layer a character marks as its look's runs on the client alone, with all of Godot's `AnimationTree` (a face, breathing, a tail's wag): it may not move a bone that has a hitbox or say a marker a rule hears, and the bake refuses it if it does |
 
 ## Later

@@ -9504,6 +9504,134 @@ void TestStateSpeed()
 	CHECK( CompileAnimGraph( "cinderbox_graph\t1\nclip\ta\t1\t1\nlayer\tx\nspeed\t2\n", schema, error, warnings ) == nullptr );
 }
 
+// Godot's OneShot and Add2 (M231). A one-shot layer plays its clip once from the tick its request
+// turns true (held, it does not play again; asked again while it plays, it starts over without
+// dropping out), fading in and out, its markers with it. An added layer puts its pose's difference
+// from the rest on top of what is below, by its weight.
+void TestOneShot()
+{
+	ModSchema schema = TestGraphSchema();
+	const std::string text = "cinderbox_graph\t1\n"
+							 "clip\tidle\t2\t1\n"
+							 "clip\tland\t0.3\t0\n"
+							 "marker\tland\t0.15\ttest.impact\n"
+							 "layer\tBase\n"
+							 "state\tIdle\tclip\tidle\t0\n"
+							 "start\tIdle\n"
+							 "layer\tKick\n"
+							 "shot\t0.05\t0.1\ttest.punch\n"
+							 "state\tShot\tclip\tland\t0\n"
+							 "start\tShot\n";
+	std::string error, warnings;
+	auto graph = CompileAnimGraph( text, schema, error, warnings );
+	CHECK( graph != nullptr && graph->layers.size() == 2 && graph->layers[1].shot );
+	if ( graph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	AnimState s;
+	AnimGraphPacks packs;
+	std::vector<int> markers;
+	ModEventRecord punch{};
+	punch.type = uint16_t( schema.FindEvent( "test.punch" ) );
+	punch.netIdA = 7;
+	int impacts = 0;
+	auto step = [&]( bool punched ) {
+		AnimGraphInputs in;
+		in.netId = 7;
+		in.events = punched ? &punch : nullptr;
+		in.eventCount = punched ? 1 : 0;
+		markers.clear();
+		UpdateAnimGraph( s, *graph, packs, in, 0.025f, markers );
+		for ( int m : markers )
+		{
+			impacts += m == schema.FindEvent( "test.impact" ) ? 1 : 0;
+		}
+		return s.graph[1].weight;
+	};
+	CHECK( step( false ) == 0.0f );
+	const float first = step( true );
+	const float second = step( false );
+	std::printf( "    fired: weight %.2f, then %.2f (in over 0.05 s)\n", double( first ), double( second ) );
+	CHECK( std::fabs( first - 0.5f ) < 1e-4f && second == 1.0f );
+	int ticks = 2;
+	while ( s.graph[1].weight > 0.0f && ticks < 40 )
+	{
+		const float w = step( false );
+		++ticks;
+		if ( ticks == 10 )
+		{
+			std::printf( "    0.25 s in, 0.05 s left: weight %.2f (out over 0.1 s)\n", double( w ) );
+			CHECK( std::fabs( w - 0.5f ) < 0.02f );
+		}
+	}
+	std::printf( "    done after %d ticks of 0.025 s (the clip is 0.3 s); its marker %d time\n", ticks, impacts );
+	CHECK( ticks == 12 && impacts == 1 );
+	// Held: once only.
+	for ( int i = 0; i < 20; ++i )
+	{
+		step( true );
+	}
+	CHECK( s.graph[1].weight == 0.0f && impacts == 2 );
+	// Asked again while it plays: from the start, at full weight.
+	step( false );
+	step( true );
+	for ( int i = 0; i < 8; ++i )
+	{
+		step( false );
+	}
+	const float before = s.graph[1].time;
+	step( true );
+	std::printf( "    fired again at %.3f s in: now %.3f s, weight %.2f\n", double( before ), double( s.graph[1].time ), double( s.graph[1].weight ) );
+	CHECK( s.graph[1].time < 0.05f && s.graph[1].weight == 1.0f );
+	CHECK( CompileAnimGraph( "cinderbox_graph\t1\nclip\ta\t1\t1\nlayer\tx\nshot\t0\t0\tjumped\nstate\tA\tclip\ta\t0\nstart\tA\n", schema, error,
+							 warnings ) == nullptr ); // (the base cannot be one)
+
+	// An added layer on the placeholder rig: nothing at weight 0, a difference at 1, about half of
+	// it at 0.5; a layer laid over instead moves the foot elsewhere.
+	auto set = anim::AnimSet::CreateProcedural();
+	auto footWith = [&]( const char* layerLines, float weight ) {
+		const std::string added = std::string( "cinderbox_graph\t1\n"
+											   "clip\tidle\t2\t1\n"
+											   "clip\twalk\t1\t1\n"
+											   "layer\tBase\n"
+											   "state\tIdle\tclip\tidle\t0\n"
+											   "start\tIdle\n"
+											   "layer\tOver\n" ) +
+								  layerLines + "state\tWalk\tclip\twalk\t0\nstart\tWalk\n";
+		std::string why, warned;
+		auto g = CompileAnimGraph( added, ModSchema{}, why, warned );
+		if ( g == nullptr )
+		{
+			std::printf( "    %s\n", why.c_str() );
+			return b3Vec3{};
+		}
+		anim::PoseEvaluator pose( *set );
+		pose.SetGraph( g, warned );
+		AnimState a;
+		a.graph.resize( 2 );
+		a.graph[0].started = a.graph[1].started = 1;
+		a.graph[1].time = 0.25f;
+		a.graph[1].weight = weight;
+		pose.Evaluate( a );
+		float v[4];
+		ozz::math::StorePtrU( pose.Models()[size_t( anim::FindJoint( *set, "LeftFoot" ) )].cols[3], v );
+		return b3Vec3{ v[0], v[1], v[2] };
+	};
+	const b3Vec3 base = footWith( "add\n", 0.0f );
+	const b3Vec3 full = footWith( "add\n", 1.0f );
+	const b3Vec3 half = footWith( "add\n", 0.5f );
+	const b3Vec3 over = footWith( "", 1.0f );
+	const b3Vec3 rest = footWith( "", 0.0f );
+	std::printf( "    the left foot moved %.3f m added, %.3f m at half, %.3f m laid over\n", double( b3Distance( full, base ) ),
+				 double( b3Distance( half, base ) ), double( b3Distance( over, base ) ) );
+	CHECK( b3Distance( base, rest ) < 1e-5f );
+	CHECK( b3Distance( full, base ) > 0.02f );
+	CHECK( std::fabs( b3Distance( half, base ) / b3Distance( full, base ) - 0.5f ) < 0.1f );
+	CHECK( b3Distance( full, over ) > 1e-3f );
+}
+
 void TestAnimGraph()
 {
 	// Numbers read the same everywhere.
@@ -12470,6 +12598,7 @@ int main( int argc, char** argv )
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },
 		{ "state_speed", TestStateSpeed },
+		{ "one_shot", TestOneShot },
 		{ "held_items", TestHeldItems },
 		{ "slots", TestSlots },
 		{ "slot_keys", TestSlotKeys },
