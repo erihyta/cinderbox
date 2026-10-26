@@ -107,12 +107,17 @@ public:
 
 	bool Hurt( Context& ctx, uint32_t attacker, uint32_t victim, int32_t amount, b3Vec3 point, b3Vec3 push )
 	{
-		int slot = victim != 0 && victim != attacker && ctx.IsPlayer( victim ) ? ctx.SlotOf( victim ) : -1;
-		if ( slot < 0 )
+		if ( victim == 0 || victim == attacker )
 		{
 			return false;
 		}
-		if ( m_guard >= 0 && ctx.Using( PlayerSlot( slot ), ItemKindHandle{ m_guard } ) )
+		// A player, or a body a mod drives (an NPC: combat hurts it too).
+		int slot = ctx.IsPlayer( victim ) ? ctx.SlotOf( victim ) : -1;
+		if ( slot < 0 && ctx.DrivenByMod( victim ) == false )
+		{
+			return false;
+		}
+		if ( slot >= 0 && m_guard >= 0 && ctx.Using( PlayerSlot( slot ), ItemKindHandle{ m_guard } ) )
 		{
 			amount = int32_t( std::lround( float( amount ) * kGuardShare ) );
 		}

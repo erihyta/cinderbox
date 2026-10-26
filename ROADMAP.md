@@ -249,6 +249,9 @@ that grow. Tested in a network test (hashes equal, no desyncs) and with bots; ho
 carries, measured. Later: a brain in a sheet (deterministic, so every simulation runs it and an
 NPC's moves are predicted exactly, at a rollback cost).
 
+Ready (M228): an NPC selects and uses items as a player does (its input's slot keys and use button),
+so a wave's NPC can be given the brawl fist and jab with it; brawl's attacks hurt NPCs too.
+
 ### 11. The animation tree, wider
 
 The state machine runs in the simulation (its state decides the pose, the pose the hitboxes, and the

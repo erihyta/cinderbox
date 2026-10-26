@@ -1540,15 +1540,12 @@ void Simulation::StepSlots( const InputFrame& frame )
 	{
 		return;
 	}
-	for ( int slot = 0; slot < kMaxPlayers; ++slot )
+	// (Every driver: the players, and the bodies mods drive, whose items are theirs to use too.)
+	for ( const DriverRef& driver : m_drivers )
 	{
-		uint32_t netId = m_globals.playerNetIds[slot];
-		if ( netId == 0 )
-		{
-			continue;
-		}
+		const uint32_t netId = driver.netId;
 		flecs::entity e = FindEntity( netId );
-		const PlayerInput& in = frame.inputs[slot];
+		const PlayerInput& in = driver.input;
 		const Character& c = e.get<Character>();
 		const bool had = e.has<Slots>();
 		Slots slots = had ? e.get<Slots>() : Slots{ m_config.slots, kNoSlot, in.intentSeq, 0 };
@@ -2250,6 +2247,24 @@ void Simulation::RecordModEvent( const ModEventRecord& record )
 
 void Simulation::MoveCharacters( const InputFrame& frame )
 {
+	// Everyone who moves this tick, and uses what it holds: the players by slot, then the bodies
+	// mods drive (NPCs) by NetId.
+	m_drivers.clear();
+	for ( int slot = 0; slot < kMaxPlayers; ++slot )
+	{
+		if ( const uint32_t netId = m_globals.playerNetIds[slot]; netId != 0 )
+		{
+			m_drivers.push_back( { netId, frame.inputs[slot], slot } );
+		}
+	}
+	for ( const EntityRef& r : m_entities )
+	{
+		// (NetIds in order: the list is sorted.)
+		if ( const ModDriven* npc = flecs::entity( m_world, r.entity ).try_get<ModDriven>() )
+		{
+			m_drivers.push_back( { r.netId, npc->input, -1 } );
+		}
+	}
 	// What the players ask of their slots, first: everything below asks what is in the hand.
 	{
 		auto start = std::chrono::steady_clock::now();
@@ -2312,22 +2327,6 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	// on the world as the tick found it (no one has moved yet), with what they do to other players
 	// kept and applied once all have run, after the targets' own; then every player moves. Within a
 	// pass, slot order: deterministic, and independent of entity creation history.
-	m_drivers.clear();
-	for ( int slot = 0; slot < kMaxPlayers; ++slot )
-	{
-		if ( const uint32_t netId = m_globals.playerNetIds[slot]; netId != 0 )
-		{
-			m_drivers.push_back( { netId, frame.inputs[slot], slot } );
-		}
-	}
-	for ( const EntityRef& r : m_entities )
-	{
-		// (NetIds in order: the list is sorted.)
-		if ( const ModDriven* npc = flecs::entity( m_world, r.entity ).try_get<ModDriven>() )
-		{
-			m_drivers.push_back( { r.netId, npc->input, -1 } );
-		}
-	}
 	std::vector<uint8_t> moving( m_drivers.size(), 0 );
 	m_turnCharacters.resize( m_drivers.size() );
 	m_playerPushes.clear();
