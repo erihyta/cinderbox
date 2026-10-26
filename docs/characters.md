@@ -270,7 +270,10 @@ rollback replays it exactly; the tree itself never runs in the game.
 |---|---|
 | root: a state machine, or a blend tree of state machines stacked with `Blend2` nodes | layers (as many as the tree stacks); a `Blend2`'s filter is the layer's bone mask |
 | states: `Animation` nodes, `BlendSpace1D`, `BlendSpace2D` (points are animations, play mode forward or backward) | clip states, blend states (phase-synced, so feet stay in step; 2D blends inside Godot's triangles) |
-| transitions: Auto advance, advance condition, advance expression, priority, crossfade, Immediate / At End | the same (Sync switching becomes Immediate; crossfades are linear) |
+| a state that is a `BlendTree`: one of those, through a `TimeScale` node, into its output | the state at that speed: the node's `scale`, or an expression for it in `graph_inputs` (`"Swing/Scale/scale": "attack_speed"`), read every tick, held between 0 and 16. Its markers come with it (a swing at half speed hits half as soon), and an At End transition waits for the slower clip |
+| an `Animation` node's custom timeline, stretched (`stretch_time_scale`) | the clip played in the timeline's length: the bat's whole swing in 0.6 s whatever the clip's own length (with a TimeScale too, both) |
+| transitions: Auto advance, advance condition, advance expression, priority, crossfade, Immediate / At End | the same (Sync switching becomes Immediate) |
+| a transition's `xfade_curve` | the fade through the curve (17 samples, read between them): an ease in, a snap at the end |
 | markers on animations | the mod event of the same name, from the player, when the clip passes it (a motion waiting for it hears it the tick after: the grenade's release) |
 | every other track (particles, sounds, lights) | stays in the animation, played by clients in step ([An animation's other tracks](#an-animations-other-tracks)) |
 
@@ -305,7 +308,8 @@ Conditions and expressions read simulation values, never scripts:
 
 The grammar is the [one expression language](looks.md#expressions) (`and or not`, comparisons, arithmetic,
 `?name`, parentheses). A name no mod declares reads as 0 (the server logs it). The bake fails with a reason for anything it cannot run (nested
-state machines, other blend nodes, a missing animation).
+state machines, other blend nodes, a missing animation). It warns about what it bakes otherwise: a
+custom timeline that is not stretched, its start offset, a negative speed (it plays as stopped).
 
 A mod times its effect by the animation with `ctx.AnimationEmits( event )`: the melee mod hits on
 the `melee.strike` marker of its pack's `Sword_Attack`, and on its own timer where no marker is. To

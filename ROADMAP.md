@@ -265,7 +265,7 @@ Moved after the NPCs (decided after M219): polish for animated characters.
 
 | Piece | What |
 |---|---|
-| More of the tree | nested state machines, `OneShot`, `Add`, `TimeScale` (a state's playback speed), crossfade curves; each baked and run the same everywhere |
+| More of the tree | `TimeScale` (a state's playback speed, an expression) and a stretched custom timeline, crossfade curves: **done (M230)**. Nested state machines, `OneShot`, `Add`: each baked and run the same everywhere |
 | Layers that are the look's | a layer a character marks as its look's runs on the client alone, with all of Godot's `AnimationTree` (a face, breathing, a tail's wag): it may not move a bone that has a hitbox or say a marker a rule hears, and the bake refuses it if it does |
 
 ## Later
@@ -369,7 +369,7 @@ What the old steps left, not scheduled. A row moves up into "Next" when it is wa
 | The inventory | a split of one; a slot's item shown while dragged over; a key for the bag's slots; dropping or moving part of a stack; a mod taking one off a stack without throwing it; an off hand (Minecraft's F); a corpse's bag (undecided: the ragdoll carries it, or a box where it fell); predicted answers to a mod's intents; numbers wider than a byte in an intent |
 | Sheets and HUDs | a sheet for a list's rows; an item's HUD drawn on its slot; the mods' HUDs, item uses and motions converted to sheets (their reactions are; step 3 does the motions) |
 | Motions | a lasting force as a C++ command; a test of one player hooked to another; a knocked-down ragdoll state; carrying a player; a preview panel |
-| Animation | a state's playback speed (the bat's whole swing in 0.6 s, a slow-motion finisher; markers move with it); the dash's and the hook's poses are placeholders |
+| Animation | the bat's whole swing in 0.6 s, a slow-motion finisher (a state's speed is in, M230: the packs still to use it); the dash's and the hook's poses are placeholders |
 | Feet on the ground | foot IK, **in the shared pose**, beside the aim chain: each foot's ground found by a ray in the simulation (the server's for hit tests, the client's prediction for drawing: the same shapes, so the same answer), the hips lowered to the lower foot, two-bone IK for each leg. Then the legs' hitboxes are where the feet are drawn. Not Godot's IK nodes: they would run after the pose (visual only, and the bake warns: the legs have hitboxes), and Godot's physics has no level to find (collision is Box3D's) |
 | The client | keys the server says: a server maps keys to what they do, an item's own key included (its action `<kind>.use`), sent once at join; a game's "Q is the dash strike" whatever slot it is in. Costs nothing: the client already turns keys into action bits each frame, only the table's source changes. A player may still rebind (the Keys page, per server), the server's map being the start; cameras a mod places (a round's end, a kill cam). **The UI stays presentation-only** (decided after M211): a screen shows what fields say, is moved through with input, and sends intents from its buttons and boxes (as a Minecraft server's menus are chests). What that cannot say becomes a widget the engine gives (a text box, a slider, a drag, a placement preview), not a script |
 | Games | teams and spectators (mods, once private fields and the board cover them); lists on one entity (array fields, or a `CbList` over a field family) |

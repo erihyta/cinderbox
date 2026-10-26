@@ -9423,6 +9423,87 @@ void TestAnimBlend2D()
 	CHECK( a.graph[0].blend == a.moveRight && a.graph[0].blendY == a.moveForward );
 }
 
+// A state's speed (a TimeScale node, or a stretched custom timeline) and a crossfade's curve: the
+// state's clock runs at its speed, so its markers come with it and an at-end transition waits for
+// the slower clip; the speed is an expression; a fade through its curve.
+void TestStateSpeed()
+{
+	ModSchema schema = TestGraphSchema();
+	const std::string text = "cinderbox_graph\t1\n"
+							 "clip\tidle\t1\t1\n"
+							 "clip\tswing\t1\t0\n"
+							 "marker\tswing\t0.5\ttest.impact\n"
+							 "layer\tFullBody\n"
+							 "state\tIdle\tclip\tidle\t0\n"
+							 "state\tSwing\tclip\tswing\t0\n"
+							 "speed\t0.5\n"
+							 "state\tFast\tclip\tidle\t0\n"
+							 "speed\tspeed * 2\n"
+							 "transition\tIdle\tSwing\t1\t0.2\timmediate\t1\ttest.punch\t0,0.9,1\n"
+							 "transition\tSwing\tIdle\t1\t0\tat_end\t1\t\n"
+							 "transition\tIdle\tFast\t1\t0\timmediate\t1\tspeed > 0\n"
+							 "start\tIdle\n";
+	std::string error, warnings;
+	auto graph = CompileAnimGraph( text, schema, error, warnings );
+	CHECK( graph != nullptr );
+	if ( graph == nullptr )
+	{
+		std::printf( "    %s\n", error.c_str() );
+		return;
+	}
+	const AnimGraphLayer& layer = graph->layers[0];
+	CHECK( layer.states[1].speed.Empty() == false && layer.states[0].speed.Empty() );
+	CHECK( layer.states[0].transitions[0].curve.size() == 3 );
+
+	AnimState s;
+	AnimGraphPacks packs;
+	std::vector<int> markers;
+	ModEventRecord punch{};
+	punch.type = uint16_t( schema.FindEvent( "test.punch" ) );
+	punch.netIdA = 7;
+	auto step = [&]( bool punched, float speed ) {
+		AnimGraphInputs in;
+		in.netId = 7;
+		in.builtins[AnimExpr::Speed] = speed;
+		in.events = punched ? &punch : nullptr;
+		in.eventCount = punched ? 1 : 0;
+		markers.clear();
+		UpdateAnimGraph( s, *graph, packs, in, 0.1f, markers );
+	};
+	step( false, 0.0f );
+	step( true, 0.0f ); // into Swing
+	CHECK( s.graph[0].state == 1 && s.graph[0].fadeLength == 0.2f );
+	// Its fade through the curve: 0.1 s of 0.2 is the curve's middle sample.
+	step( false, 0.0f );
+	const float fade = AnimGraphFadeIn( layer, s.graph[0] );
+	std::printf( "    the swing faded in %.2f after 0.1 s of a 0.2 s fade (its curve's middle: 0.9)\n", double( fade ) );
+	CHECK( std::fabs( fade - 0.9f ) < 1e-4f );
+	// Half speed: the 0.5 s marker after 1 s, the 1 s clip's end (and the way back) after 2 s.
+	int impactAt = -1, backAt = -1;
+	for ( int i = 1; i < 30 && backAt < 0; ++i )
+	{
+		step( false, 0.0f );
+		bool impact = false;
+		for ( int m : markers )
+		{
+			impact |= m == schema.FindEvent( "test.impact" );
+		}
+		impactAt = impact && impactAt < 0 ? i : impactAt;
+		backAt = s.graph[0].state == 0 ? i : backAt;
+	}
+	std::printf( "    at half speed: the marker %d ticks into the swing, back to idle at %d (0.1 s ticks)\n", impactAt + 1, backAt + 1 );
+	CHECK( impactAt + 1 >= 10 && impactAt + 1 <= 11 );
+	CHECK( backAt + 1 >= 20 && backAt + 1 <= 21 );
+	// An expression: twice the speed.
+	step( false, 1.5f ); // into Fast
+	CHECK( s.graph[0].state == 2 );
+	const float before = s.graph[0].time;
+	step( false, 1.5f );
+	std::printf( "    speed * 2 at speed 1.5: %.2f s of clip in a 0.1 s tick\n", double( s.graph[0].time - before ) );
+	CHECK( std::fabs( s.graph[0].time - before - 0.3f ) < 1e-5f );
+	CHECK( CompileAnimGraph( "cinderbox_graph\t1\nclip\ta\t1\t1\nlayer\tx\nspeed\t2\n", schema, error, warnings ) == nullptr );
+}
+
 void TestAnimGraph()
 {
 	// Numbers read the same everywhere.
@@ -12388,6 +12469,7 @@ int main( int argc, char** argv )
 		{ "ragdoll", TestRagdoll },
 		{ "anim_controller", TestAnimController },
 		{ "anim_graph", TestAnimGraph },
+		{ "state_speed", TestStateSpeed },
 		{ "held_items", TestHeldItems },
 		{ "slots", TestSlots },
 		{ "slot_keys", TestSlotKeys },

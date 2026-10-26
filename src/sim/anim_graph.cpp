@@ -903,6 +903,19 @@ std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, cons
 			}
 			layer.states.back().triangles.push_back( t );
 		}
+		else if ( kind == "speed" )
+		{
+			AnimGraphLayer& layer = graph->layers.back();
+			std::string why;
+			if ( layer.states.empty() )
+			{
+				return fail( "speed needs a state before it" );
+			}
+			if ( CompileAnimExpr( f.size() > 1 ? f[1] : "", schema, layer.states.back().speed, why, warnings ) == false )
+			{
+				return fail( why );
+			}
+		}
 		else if ( kind == "start" )
 		{
 			starts.push_back( { graph->layers.size() - 1, f.size() > 1 ? f[1] : "" } );
@@ -947,6 +960,24 @@ std::shared_ptr<const AnimGraph> CompileAnimGraph( const std::string& text, cons
 		}
 		transition.xfade = std::max( transition.xfade, 0.0f );
 		transition.atEnd = f[5] == "at_end";
+		// The crossfade's curve: its samples, with commas between them.
+		for ( size_t at = 0; f.size() > 8 && at < f[8].size(); )
+		{
+			const size_t comma = f[8].find( ',', at );
+			const size_t stop = comma == std::string::npos ? f[8].size() : comma;
+			float v = 0.0f;
+			if ( ParseAnimFloat( f[8].data() + at, stop - at, v ) == false )
+			{
+				error = "graph.cfg line " + std::to_string( t.line ) + ": a crossfade curve is numbers with commas between them";
+				return nullptr;
+			}
+			transition.curve.push_back( std::clamp( v, 0.0f, 1.0f ) );
+			at = stop + 1;
+		}
+		if ( transition.curve.size() == 1 )
+		{
+			transition.curve.clear(); // (one sample says nothing about a fade)
+		}
 		std::string why;
 		if ( CompileAnimExpr( f.size() > 7 ? f[7] : "", schema, transition.condition, why, warnings ) == false )
 		{
@@ -1292,6 +1323,41 @@ bool AnimGraph::UpperLayersRead( AnimExpr::VarKind kind, int index ) const
 	return false;
 }
 
+float AnimStateSpeed( const AnimGraphState& state, const AnimGraphInputs& inputs, float stateTime )
+{
+	return state.speed.Empty() ? 1.0f : std::clamp( EvaluateAnimExpr( state.speed, inputs, stateTime ), 0.0f, kMaxStateSpeed );
+}
+
+float AnimGraphFadeIn( const AnimGraphLayer& layer, const AnimGraphLayerState& L )
+{
+	if ( L.fadeLength <= 0.0f )
+	{
+		return 1.0f;
+	}
+	const float t = std::min( L.stateTime / L.fadeLength, 1.0f );
+	if ( L.state >= layer.states.size() || L.previous >= layer.states.size() )
+	{
+		return t;
+	}
+	// The transition that started this fade: from the state before, or a restart of this one.
+	const std::vector<AnimGraphTransition>& from = L.previous == L.state ? layer.states[L.state].restarts : layer.states[L.previous].transitions;
+	for ( const AnimGraphTransition& transition : from )
+	{
+		if ( ( L.previous == L.state || size_t( transition.to ) == L.state ) && transition.xfade == L.fadeLength )
+		{
+			const std::vector<float>& c = transition.curve;
+			if ( c.size() < 2 )
+			{
+				return t;
+			}
+			const float at = t * float( c.size() - 1 );
+			const size_t i = std::min( size_t( at ), c.size() - 2 );
+			return c[i] + ( c[i + 1] - c[i] ) * ( at - float( i ) );
+		}
+	}
+	return t;
+}
+
 void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphPacks& packs, AnimGraphInputs& in, float dt,
 					  std::vector<int>& markers )
 {
@@ -1346,10 +1412,13 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphP
 		bool entered = L.stateTime == 0.0f;
 		float before = L.time;
 		bool ended = false, previousEnded = false;
-		bool wrapped = Advance( graph, state, L.blend, L.blendY, L.time, dt, 0.0f, ended );
+		const float speed = AnimStateSpeed( state, in, L.stateTime );
+		bool wrapped = Advance( graph, state, L.blend, L.blendY, L.time, dt * speed, 0.0f, ended );
 		if ( L.stateTime < L.fadeLength )
 		{
-			Advance( graph, layer.states[L.previous], L.previousBlend, L.previousBlendY, L.previousTime, dt, 0.0f, previousEnded );
+			const AnimGraphState& fading = layer.states[L.previous];
+			Advance( graph, fading, L.previousBlend, L.previousBlendY, L.previousTime, dt * AnimStateSpeed( fading, in, L.stateTime ), 0.0f,
+					 previousEnded );
 		}
 		L.stateTime = std::min( L.stateTime + dt, kMaxStateTime );
 		FireMarkers( graph, state, before, L.time, wrapped, entered, markers );
@@ -1363,7 +1432,7 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphP
 				if ( state.blend == false && graph.clips[size_t( state.points[0].clip )].loops == false )
 				{
 					float length = graph.clips[size_t( state.points[0].clip )].length;
-					ready = L.time >= length - t.xfade;
+					ready = L.time >= length - t.xfade * speed; // (the fade in real seconds, the clip on its own clock)
 				}
 				if ( ready == false )
 				{
