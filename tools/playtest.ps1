@@ -29,6 +29,7 @@ param(
 	[string]$Preset = "clang-release",
 	[double]$Autoplay = 0,        # seconds the games play by themselves (0: by hand)
 	[switch]$Headless,            # with -Autoplay: no windows, nothing drawn (crashes, desyncs and errors still show)
+	[string[]]$Extra = @(),       # more for each game, after "--" (--spam-use=1)
 	[string]$Out = "",            # where the recordings and logs go
 	[string]$Godot = ""
 )
@@ -102,6 +103,7 @@ for ($i = 0; $i -lt $Clients; $i++) {
 	$gameArgs = @("--path", (Join-Path $root "godot"), "--log-file", (Join-Path $Out "game_$name.log"))
 	$gameArgs += if ($Headless) { @("--headless") } else { @("--position", "$x,$y", "--resolution", "${width}x${height}") }
 	$gameArgs += @("--", "--host=127.0.0.1", "--port=$relay", "--name=$name", "--config=user://playtest_$name.cfg")
+	$gameArgs += $Extra
 	if ($Autoplay -gt 0) {
 		$gameArgs += @("--autoplay=$Autoplay")
 		if (-not $Headless) {

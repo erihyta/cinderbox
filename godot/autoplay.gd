@@ -19,6 +19,9 @@ var view_probe := false
 var _probe_slot := 0
 var _probe_frames_dir := ""
 var _probe_use := false
+## --spam-use=N: the use button pressed over and over with slot N out (finding a stuck animation).
+var spam_slot := 0
+var _next_spam_report := 0.0
 var _probe_body := {}
 var _probe_frames := {} # part -> [Image]
 var _probe_part_since := {} # part -> when it began
@@ -53,6 +56,7 @@ func _init(owner: Node, args: Dictionary) -> void:
 	# its plan, so what is on the screen can be measured (tools outside the game compare them).
 	_probe_frames_dir = args.get("probe-frames", "")
 	_probe_use = args.has("probe-use")
+	spam_slot = int(args.get("spam-use", "0"))
 	if view_probe and _probe_frames_dir != "":
 		RenderingServer.frame_post_draw.connect(_probe_capture)
 	screenshot = args.get("screenshot", "")
@@ -109,7 +113,23 @@ func steer(delta: float) -> Dictionary:
 	elif int(elapsed / 2.0) != _hooks and game.client.get_mod_names().has("grapple"):
 		_hooks = int(elapsed / 2.0)
 		actions |= keys.action_bit("grapple.hook.use")
-	if view_probe:
+	if spam_slot > 0:
+		# --spam-use=N: slot N out, standing still, the use button pressed and let go as fast as
+		# the game reads it, and the own player's animation said twice a second.
+		_select(spam_slot - 1)
+		move = Vector2.ZERO
+		jump = false
+		actions = 0
+		use = Engine.get_process_frames() % 4 < 2
+		if elapsed >= _next_spam_report:
+			_next_spam_report = elapsed + 0.5
+			var anim: Dictionary = game.client.get_local_animation()
+			var parts := []
+			for layer in anim.get("layers", []):
+				parts.append("%d:%d@%.2f/%.2f shown %d@%.2f w%.2f" % [layer.source, layer.state, layer.time, layer.state_time,
+					layer.get("shown_state", -1), layer.get("shown_time", -1.0), layer.weight])
+			print("spam %.1fs lead %.2f | %s" % [elapsed, anim.get("lead", 0.0), " | ".join(parts)])
+	elif view_probe:
 		# With --probe-use it uses what it has out once, a second into standing still: the
 		# frames kept of that part are the use, from the press on.
 		use = _probe_use and elapsed >= 4.0 and elapsed < 4.1

@@ -158,7 +158,9 @@ critter, waves, waves of 32 NPCs) clean after two fixes.
 | The regenerated `ual_mannequin` turned held items 90 degrees (its hand sockets tuned by hand before) | the old sockets put back (M236) |
 | The fist hit and shoved on the click, before the drawn punch reached anyone | fixed (M237): it hits on the clip's marker, or a moment later without one |
 | With the fist out the walk's arm swing does not show (the pack owns the upper body) | the user's own clips to come |
-| HUD lines overlap at half-screen windows (the debug lines over the skills, the hotbar over the keys' line and the health bar) | open |
+| HUD lines overlap at half-screen windows (the debug lines over the skills, the hotbar over the keys' line and the health bar) | not a priority (the user plays full screen), kept |
+| Spamming use breaks the bat's and the guns' animations: their hand-written `predict` lines guess a use every 1.1 s / 0.19 s from the click, the server allows one 1.1 s after its own swing started / every 0.2 s from when the press arrives; guesses outrun it, the drawn swing restarts on a guess the server refuses and snaps back when it is taken back (measured with `--spam-use`, M239) | the fix is [step 5](#5-every-item-a-sheet): a sheet's use is predicted exactly, no guess |
+| Spamming the fist restarts its punch every 0.3 s (its cooldown), before a 0.87 to 1.33 s clip plays out; drawn exactly as simulated (no guess) | a tuning decision: when the next punch may start (a longer cooldown, or a recovery marker in the clip, a cancel window) |
 
 **M230 to M232 in use**: TimeScale and crossfade curves are the fist's (M236: `brawl.fists`, the
 finisher). Still unused: OneShot, Add2, nested state machines.
@@ -359,7 +361,7 @@ notify windows); so do fighting games' frame data.
 | On the animation | Baked to | Read as |
 |---|---|---|
 | a marker (today) | an event at a time | `on melee.strike` |
-| a window: a key track on a `CbWindow` node's `open` (hit, invulnerable, cancel, armor) | a span of the clip | a condition while inside it (`window.hit`) |
+| a window (hit, invulnerable, cancel, armor): two markers, its start and its end (Godot's timeline has points, not spans) | a span of the clip | the sheet forms the interval: what happens between the start's marker and the end's (`then when x.open`, then `when x.close`); a condition `window.hit` only if sheets keep needing it |
 | a hit shape on a bone (a `CollisionShape3D` under a `BoneAttachment3D`) | swept from tick to tick along the pose while its window is open | a cast that follows the bat |
 
 - The simulation poses one chain of the owner's bones while a window is open, not the whole body

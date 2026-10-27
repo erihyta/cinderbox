@@ -58,6 +58,7 @@ void CinderboxClient::_bind_methods()
 	ClassDB::bind_method( D_METHOD( "get_view_layer" ), &CinderboxClient::get_view_layer );
 	ClassDB::bind_method( D_METHOD( "get_view_fov" ), &CinderboxClient::get_view_fov );
 	ClassDB::bind_method( D_METHOD( "get_animations_caught_up" ), &CinderboxClient::get_animations_caught_up );
+	ClassDB::bind_method( D_METHOD( "get_local_animation" ), &CinderboxClient::get_local_animation );
 	ClassDB::bind_method( D_METHOD( "get_drawn_clips", "net_id" ), &CinderboxClient::get_drawn_clips );
 	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "first_person", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE ), "set_first_person",
 				  "get_first_person" );
@@ -1257,6 +1258,42 @@ int64_t CinderboxClient::get_animations_caught_up() const
 								const present::RagdollAnim* ) { count += anim != nullptr ? anim->catchUp.started : 0; } );
 	}
 	return count;
+}
+
+Dictionary CinderboxClient::get_local_animation() const
+{
+	Dictionary out;
+	out["lead"] = m_lead;
+	Array layers;
+	const uint32_t local = m_frame.frame.localNetId;
+	if ( m_mirror && local != 0 )
+	{
+		m_mirror->ForEach( [&]( uint64_t, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim* anim,
+								const present::RagdollAnim* ) {
+			if ( v.netId != local || anim == nullptr )
+			{
+				return;
+			}
+			for ( size_t i = 0; i < anim->current.graph.size(); ++i )
+			{
+				const AnimGraphLayerState& now = anim->current.graph[i];
+				Dictionary layer;
+				layer["state"] = int64_t( now.state );
+				layer["time"] = now.time;
+				layer["state_time"] = now.stateTime;
+				layer["source"] = int64_t( now.source );
+				layer["weight"] = now.weight;
+				if ( i < anim->shown.graph.size() )
+				{
+					layer["shown_state"] = int64_t( anim->shown.graph[i].state );
+					layer["shown_time"] = anim->shown.graph[i].time;
+				}
+				layers.push_back( layer );
+			}
+		} );
+	}
+	out["layers"] = layers;
+	return out;
 }
 
 double CinderboxClient::get_view_fov() const
