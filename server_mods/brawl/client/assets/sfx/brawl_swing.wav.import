@@ -2,13 +2,13 @@
 
 importer="wav"
 type="AudioStreamWAV"
-uid="uid://2y7i6fcisd6b"
-path="res://.godot/imported/swing.wav-fe2e8b66c8d91a80f67819c457004ece.sample"
+uid="uid://co8xhsggiqy05"
+path="res://.godot/imported/brawl_swing.wav-ee5042b34a4b9ee24e4482bc74d280a4.sample"
 
 [deps]
 
-source_file="res://assets/sfx/swing.wav"
-dest_files=["res://.godot/imported/swing.wav-fe2e8b66c8d91a80f67819c457004ece.sample"]
+source_file="res://assets/sfx/brawl_swing.wav"
+dest_files=["res://.godot/imported/brawl_swing.wav-ee5042b34a4b9ee24e4482bc74d280a4.sample"]
 
 [params]
 

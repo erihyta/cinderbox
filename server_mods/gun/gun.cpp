@@ -102,8 +102,6 @@ public:
 		m_damage = declare.Event( "combat.damage" );
 		m_respawned = declare.Event( "combat.respawned" );
 		m_roundStart = declare.Event( "game.round_start" );
-		m_upper = declare.Layer( "upper" );
-		m_stance = declare.Stance( "gun" );
 		m_hand = declare.Socket( "RightHand" );
 		// A gun's rounds: its own field (its scene declares it with the full count, below; this is
 		// the same field, for a scene that does not).
@@ -265,13 +263,12 @@ private:
 		// holds the gun and the arm points it there, in the pose everyone draws and hit tests use.
 		// (What the body says decides, so it is set again where another mod took the layer.)
 		const AnimStateCopy anim = ctx.PlayerAnim( slot );
-		bool lost = holding && s.aiming && anim != nullptr && m_upper.Valid() &&
-					( anim->aiming == 0 || int( anim->stances[m_upper.index] ) != m_stance.index + 1 );
+		// (A new life's animation state has no aim: it is set again.)
+		bool lost = holding && s.aiming && anim != nullptr && anim->aiming == 0;
 		if ( holding != s.aiming || lost )
 		{
 			s.aiming = holding;
 			ctx.Aim( target, holding );
-			ctx.SetStance( target, m_upper, holding ? m_stance : StanceHandle{} );
 			if ( holding )
 			{
 				ctx.FaceCamera( target, true );
@@ -399,8 +396,6 @@ private:
 	EventHandle m_damage;
 	EventHandle m_respawned;
 	EventHandle m_roundStart;
-	LayerHandle m_upper;
-	StanceHandle m_stance;
 	SocketHandle m_hand;
 };
 

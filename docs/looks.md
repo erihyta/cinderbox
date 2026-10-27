@@ -482,7 +482,7 @@ and a rule names it by its path.
 on brawl.jab.hit
     subject $at
     at point
-    sound res://assets/sfx/bat_hit.wav volume -6 jitter 0.1 range 40
+    sound res://assets/sfx/brawl_hit.wav volume -6 jitter 0.1 range 40
 
 while melee.hot
     set Barrel surface_material_override/0:emission_energy_multiplier 4 blend 0.2

@@ -1,6 +1,7 @@
 #include "cue_guard.h"
 
 #include <godot_cpp/classes/animation.hpp>
+#include <godot_cpp/classes/area3d.hpp>
 #include <godot_cpp/classes/camera3d.hpp>
 #include <godot_cpp/classes/animation_library.hpp>
 #include <godot_cpp/classes/animation_node.hpp>
@@ -402,6 +403,22 @@ void RemoveCameras( Node* node )
 		RemoveCameras( child );
 	}
 }
+
+// An Area3D in a look is a region its sheet's motions find things in, read by the bake: in the
+// game it is a physics object of Godot's (Jolt) that would check for overlaps every frame, against a
+// world that has nothing in it (collision is Box3D's). It stays, quiet.
+void QuietAreas( Node* node )
+{
+	if ( Area3D* area = Object::cast_to<Area3D>( node ) )
+	{
+		area->set_monitoring( false );
+		area->set_monitorable( false );
+	}
+	for ( int64_t i = 0; i < node->get_child_count(); ++i )
+	{
+		QuietAreas( node->get_child( i ) );
+	}
+}
 } // namespace
 
 Node* Instantiate( const Ref<PackedScene>& scene )
@@ -419,6 +436,7 @@ Node* Instantiate( const Ref<PackedScene>& scene )
 	if ( node != nullptr )
 	{
 		RemoveCameras( node );
+		QuietAreas( node );
 	}
 	return node;
 }

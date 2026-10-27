@@ -75,7 +75,7 @@ below ([Later](#later), [Parked](#parked), [Leftovers](#leftovers-by-area),
 |---|---|---|
 | 0 | [Decisions](#0-decisions) | **taken**: the server-state model the default, today's a server's choice; `.cbsheet`; Luau; the standard skeleton only |
 | 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | a written playtest checklist, run by bots and by hand with two games under latency and loss; every feature since M215 used by shipped content or removed |
-| 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | dead stances, colliding files, stale docs, two Jolt areas, an old replay, the unmaintained nodes out of sight |
+| 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | **done (M243)**: dead stances, colliding files, stale docs, two Jolt areas, an old replay, the unmaintained nodes out of sight |
 | 3 | [Two network models](#3-two-network-models) | the server's state, sent by what is near, the default; everyone simulating the whole world kept as a choice; the server says which on join |
 | 4 | [The slice](#4-the-slice) | one game, played by people; it starts here and runs beside steps 5 to 8, each done when the slice uses it |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | the bat and the guns the way the fist is: predicted from their sheets, the C++ only deciding damage |
@@ -176,12 +176,12 @@ lean or a breathing sway, once there are clips for it.
 
 | Fix | What |
 |---|---|
-| Dead stances | the gun's `gun` on `upper` goes now; the bat's go with [step 5](#5-every-item-a-sheet) |
-| Colliding files | `vfx/blast.tscn` (frag, grenade), `assets/sfx/bat_hit.wav` and `swing.wav` (melee, brawl): renamed after their mods. [Step 9](#9-cinderbox-studio) makes the folders a rule |
-| Stale docs | characters.md (the mannequin's layers, the stances' examples, "the default characters still have pistol and bat states"); the SDK README's Favorites |
-| The unmaintained motion nodes | `CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`: out of the Favorites now; deleted in [step 6](#6-sheets-improved) (no shipped mod uses them) |
-| Two areas in Jolt | brawl's `Shockwave` (slam.tscn) and frag's `Blast` are `Area3D`s, so every drawn copy is an area in Jolt checking overlaps every physics frame, against nothing. The client turns monitoring off when it instantiates a look (the bake has read the shape) |
-| `mygame.cbr` in the checkout | a replay from Sep 17 (`CBRP`, version 2; today's is 47): git-ignored, nothing can play it. Deleted |
+| Dead stances | **done (M243)**: the gun's `gun` on `upper` gone (the gun aims the holder; its swap test checks the aim); the bat's go with [step 5](#5-every-item-a-sheet) |
+| Colliding files | **done (M243)**: `vfx/frag_blast.tscn`, `vfx/grenade_blast.tscn`, `assets/sfx/brawl_hit.wav`, `brawl_swing.wav`, `melee_bat_hit.wav`, `melee_swing.wav` (brawl's and melee's sounds also shared an import UID: imported again). None collide now, nor with the base game's. [Step 9](#9-cinderbox-studio) makes the folders a rule |
+| Stale docs | **done (M243)**: characters.md (the mannequin's layers, the stances' examples, "the default characters still have pistol and bat states"), server-mods.md (the gun's stance); the SDK README's Favorites |
+| The unmaintained motion nodes | `CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`: **out of the Favorites (M243)**, taken out once from projects that had them; deleted in [step 6](#6-sheets-improved) (no shipped mod uses them) |
+| Two areas in Jolt | **done (M243)**: every `Area3D` of a look is made quiet when the game instantiates it (no monitoring: `cue::Instantiate`, beside taking out cameras); the bake still reads its shapes |
+| `mygame.cbr` in the checkout | **deleted (M243)**: a replay from Sep 17 (`CBRP`, version 2; today's is 47), git-ignored, nothing could play it |
 | An uncommitted file | `godot/addons/cinderbox_maps/check_anim_tree.gd.uid` (M230's check): **committed (M235)** |
 
 **What Jolt does today**: nothing of the simulation's. Godot makes a physics object only for a

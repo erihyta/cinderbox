@@ -12,5 +12,5 @@ on grenade.blast
     subject $at
     at point
     sound res://assets/sfx/prop_destroy.wav volume 2 pitch 0.55 jitter 0.08 range 80
-    scene res://vfx/blast.tscn life 2
+    scene res://vfx/grenade_blast.tscn life 2
     shake 0.25 time 0.35
