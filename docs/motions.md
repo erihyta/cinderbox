@@ -372,11 +372,13 @@ Frag    CbItem   kind "frag.grenade"   use: once a press   slot 6   use_key H   
 └── Rules       CbRules    frag.rules:
 
 motion Throwing on use                 # the arm's throw (its pack reads it); its clip says frag.release
+    item carried
     cooldown 0.7
     lasts 0.7
-
-motion Release on frag.release         # the clip's marker: the one carried leaves the hand
-    item carried
+    then when frag.release within 0.3   # the clip's marker: the one carried leaves the hand
+    emit frag.thrown
+    launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
+    timeout                             # no marker (a body the pack does not fit): a moment later
     emit frag.thrown
     launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
 

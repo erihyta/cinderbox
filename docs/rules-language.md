@@ -269,13 +269,20 @@ motion Slam on use if brawl.cd_slam <= 0 and not grounded
 		emit brawl.slam.hit
 ```
 
-The frag grenade (`server_mods/frag/client/prefabs/frag.rules`): thrown on the arm's marker, it
+The frag grenade (`server_mods/frag/client/prefabs/frag.rules`): thrown on the arm's marker (or a
+moment later on a body the arm's pack does not fit), it
 goes off where it lies when its time is up, on the same tick everywhere; its numbers are the mod's
 options, published as fields.
 
 ```
-motion Release on frag.release
+motion Throwing on use
 	item carried
+	cooldown 0.7
+	lasts 0.7
+	then when frag.release within 0.3
+	emit frag.thrown
+	launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
+	timeout
 	emit frag.thrown
 	launch carried speed 15 lift 3 ahead 0.8 seconds 2.5
 

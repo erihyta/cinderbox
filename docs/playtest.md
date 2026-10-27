@@ -69,7 +69,7 @@ shook against the wall".
 | # | Do | Expect |
 |---|---|---|
 | 3.1 | Both join | both are critters, drawn and animated as the critter (M216, M217) |
-| 3.2 | A: the bat, the pistol | the critter does not hold them in a hand it lacks; skills (the fist's jab, the dash) still work (M219) |
+| 3.2 | A: the bat, the pistol, a grenade (H) | the critter does not hold them in a hand it lacks; skills (the fist's jab, the dash) still work (M219); the grenade is thrown (M238) |
 | 3.3 | Kill B | no ragdoll (the critter has none): B goes, then comes back (M219) |
 | 3.4 | A shoots B's tail, then its head | the hit zones are the critter's |
 
