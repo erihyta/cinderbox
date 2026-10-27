@@ -1,276 +1,463 @@
 # Cinderbox — Roadmap
 
 What comes next, in order, and why. [DESIGN.md](DESIGN.md) says how things work today;
-[docs/HISTORY.md](docs/HISTORY.md) is what is done. Rewritten after M187: the old seven steps are
-done or parked, and what they left is listed by area below.
+[docs/HISTORY.md](docs/HISTORY.md) is what is done. **Rewritten after M234** from a review of the
+whole project, with the decisions taken after it ([step 0](#0-decisions)). The last version's steps 1
+to 11 (M188 to M232) are done; that version is in git history, and what it left that still holds is
+below ([Later](#later), [Parked](#parked), [Leftovers](#leftovers-by-area),
+[Decided earlier](#decided-earlier-still-holds)).
 
-## Where it stands (M187)
+## Where it stands (M234)
 
 | Area | What there is |
 |---|---|
-| The simulation | deterministic on six compilers and three OSes (four reference runs, cross-loaded snapshots); rollback, prediction, a lead for the viewer's own player, a catch-up for others' swings |
-| Movement | motions (presses, holds, events; impulses, forces, probes, links, launches), movement parameters, weight |
-| Items | one scene each: body (any shapes), look, key, use rules, fields, pose, left hand, throws, stacks; slots as places; the inventory screen; chests; intents and a shop |
-| Looks | rules sheets (reactions, predictions, a HUD's lines, an item's use), checked while typing; animation packs and overlays; companion tracks |
-| Maps | `CollisionShape3D` children for everything: boxes, balls, capsules, hulls on any body; triangle meshes and terrain for the level; props and templates drawn by their own nodes; `--map NAME` |
-| The client | the menu, Test locally, a server's mods before joining, typed text, a wrong guess taken back |
-| Modding | the SDK knows the server's names; Test mod; looks republished while the server runs; C++ server mods |
+| The simulation | deterministic on six compilers and three OSes, checked in CI with cross-loaded snapshots and a pose hash; rollback, prediction, a lead for the viewer's own player |
+| Netcode | an authoritative server; every client simulates the whole world from everyone's inputs; replays, view files, bots, a network simulator, a chaos test |
+| Bodies | a character per body, any skeleton, possession (of a body or a prop), NPCs a mod drives on the server's navigation mesh, the `waves` mod |
+| Animation | Godot AnimationTrees baked to a deterministic subset (blend spaces, TimeScale, OneShot, Add2, nested machines); packs and overlays an item brings |
+| Rules | C++ server mods; sheets the simulation runs for what moves bodies (brawl, dash, flight, grapple, frag, grenade, cannon). The bat and the guns are still C++ with hand-written predictions |
+| Looks | reactions, predictions and HUD lines in sheets; the scene guard and the pack validator |
+| The world | props, destructible walls, items, containers; maps baked from Godot scenes |
+| Modding | a Godot project per mod made from the SDK, Test mod, a look republished while the server runs; the editor knows the names after a server build |
+
+## How we work from now
+
+| Rule | Why |
+|---|---|
+| A milestone is done when shipped content uses it and it survived a playtest, not when its test passes | M230 to M232 are tested, and nothing shipped uses them |
+| Features wait until [the slice](#4-the-slice) needs them | an engine with no game makes every feature generic, and a generic feature is never finished |
+| One fact, one place | the bat's swing length is in three places (the clip, the sheet, the C++) |
+| The pack is the source of truth | names declared in C++ make the editor wait for a server build |
+| Standard words in the modders' docs | modders come from Roblox, Unity and Godot: client-side prediction, replicated field, ability, cooldown, hitscan, not "a lead late" or "a body nobody drives" |
+
+## What the review found
+
+### Keep
+
+- The determinism CI: six builds, cross-loaded snapshots, a pose hash. Rare, and it holds.
+- The viewer and its sources: a viewer never knows where its frames come from.
+- Mods act on the world only through commands.
+- Replays, view files, bots, `cb_netsim`, the chaos test.
+- **The brawl model**: skills fully predicted from sheets, the server deciding only damage. Most
+  Roblox fighting games either trust the client's hits or show the server's late.
+
+### Problems
+
+| Problem | Evidence | Fixed by |
+|---|---|---|
+| Speed with no playtest gate | 234 milestones from Sep 16 to Oct 27; M221 to M234 in under 15 hours. CI is green, but nothing checks the features in play together; M223 was crash fixes for M220 to M222 | [step 1](#1-stabilize-m215-to-m234), [the rules above](#how-we-work-from-now) |
+| Features nothing ships | TimeScale, crossfade curves, OneShot, Add2, nested machines (M230 to M232); `CbCurve` and `curve()` (M207) | steps [1](#1-stabilize-m215-to-m234), [6](#6-sheets-improved) |
+| A migration left half done | brawl, dash, flight, grapple, frag, grenade and cannon are sheets; the bat and the guns are C++ plus `predict` lines | [step 5](#5-every-item-a-sheet) |
+| Dead code | melee.cpp sets `melee` and `melee_swing` on a layer `full`, gun.cpp `gun` on `upper`; no state machine reads them (the mannequin's layers are FullBody and UpperBody; the packs start on events). bat.rules predicts `stance melee_swing on full` | steps [2](#2-small-fixes-from-the-review), [5](#5-every-item-a-sheet) |
+| Stale docs | characters.md gives the mannequin an upper-body layer for the pistol and the bat (its graph has `UpperBody` at weight 0, one `Rest` state) and uses those stances as examples; the SDK README lists the unmaintained motion nodes as Favorites | [step 2](#2-small-fixes-from-the-review) |
+| No game | the README says physics sandbox, the notes say Roblox fighting games, the review asked about hundreds of players: three different engines | steps [0](#0-decisions), [3](#3-two-network-models), [4](#4-the-slice) |
+| One fact in three places | the bat: `melee.done` at 1.1 s in the clip, `cooldown 1.1` in bat.rules, `kCooldownSeconds 0.6` in melee.cpp | steps [5](#5-every-item-a-sheet), [7](#7-timing-from-the-clip) |
+| Names declared in C++ | the editor knows a mod's names only after cb_server is built (it writes `cinderbox_names.cfg` into every project) | [step 6](#6-sheets-improved) |
+| 18 Godot projects, one `res://` | files collide already: `vfx/blast.tscn` in frag and grenade (two files that differ), `assets/sfx/bat_hit.wav` and `swing.wav` in melee and brawl. The SDK's rule (name files after the mod) is broken by the shipped mods | steps [2](#2-small-fixes-from-the-review), [9](#9-cinderbox-studio) |
+| Rules need a compiler | a modder builds the engine (CMake, Ninja, Clang); a host cannot run two authors' mods without a build. The workshop covers looks; rules mean forking the server | [step 10](#10-server-rules-in-luau) |
+| Four languages in one file | `motion` / `use` (simulated, indenting counts), `on` / `while` (the viewer's reactions, indenting "for the eye"), `predict` (the viewer's guesses), `show` / `text` / `bind` (HUD). The fist's sheet is all the first kind, the bat's has none of it | [step 6](#6-sheets-improved) |
+
+### Weak points
+
+| Weak point | Why it matters | Where |
+|---|---|---|
+| The player cap | every client steps the whole world, and again for its rollback window: 64 players at a 200 ms round trip take 87% of a core (M139) | [step 3](#3-two-network-models) |
+| Cheating | every client has the whole world: ESP and wallhacks are trivial, and there is no fog of war | [step 3](#3-two-network-models) (the server-state model sends only what is near), [before launch](#before-launch) |
+| Untrusted Godot files | workshop items are scenes loaded on every player's machine; the guard and the validator check what is in them, not Godot's parsers (DESIGN.md says so) | [before launch](#before-launch) |
+| Mods in the server's process | one mod's crash takes the server down | [step 10](#10-server-rules-in-luau) |
+| Packs cannot be unloaded | joining another server restarts the game; per-player avatars as packs would make it worse | [step 11](#11-avatars) |
+| Windows-only tools, no prebuilt SDK | the scripts are PowerShell; the extension is built from source | [step 9](#9-cinderbox-studio) |
+| Big files | `simulation.cpp` about 6,000 lines, `tests/test_main.cpp` about 12,500 | [housekeeping](#housekeeping) |
 
 ## Next, in order
 
-A proposal: the order is open to change. Each row is a milestone or two.
-
 | # | What | In one line |
 |---|---|---|
-| 1 | [Loose ends](#1-loose-ends) | **done (M190 to M192)**: rolling and drag on bodies, slopes too steep to walk, the arms belong to what is held, the camera against meshes and terrain, the two network tests that miss a tick |
-| 2 | [Destructible walls](#2-destructible-walls) | **done (M195 to M198)**: a wall breaks into pieces authored beforehand, by what is made to break it; shared by everyone |
-| 3 | [Rules as a language](#3-rules-as-a-language) | **done (M204 to M211)**: the rules sheet grows into a small language the simulation runs: everything that moves on screen predicted, a mod's C++ left with what only the server decides. [The reference](docs/rules-language.md) |
-| 4 | [A player's slot changes nothing](#4-a-players-slot-changes-nothing) | **done (M212)**: every player's motions in one pass, every player's move in another; what a motion does to another player lands on the same tick, after the target's own |
-| 5 | [The language made regular](#5-the-language-made-regular) | **done (M213 to M215)**: one table of where each line may stand, one word per role, one origin for shapes, `use` a motion, every amount an expression; [the reference](docs/rules-language.md) rewritten from what is built; the motion lines in the debug HUD |
-| 6 | [Characters per entity](#6-characters-per-entity) | **done (M216–M218)**: the server's list of characters, each body its own state machine, hitboxes, capsule, movement and eyes, in the simulation, on the server and in the client's drawing; first person only with a first-person camera in the scene. The third-person camera's distance and height from the body's size moved to step 8 |
-| 7 | [Any skeleton](#7-any-skeleton) | **done (M219)**: any skeleton bakes and plays (the critter); without a humanoid's bones no ragdoll, packs that do not fit are not swapped in, items drawn only in its sockets. Authored ragdolls for other skeletons moved to [Later](#later); a character with no skeleton is step 8's |
-| 8 | [Bodies and who drives them](#8-bodies-and-who-drives-them) | **done (M220 to M222)**: bodies nobody drives, possession of a character's body or a prop, a mod driving a body (an NPC); the character controller is something an entity has while it is driven, read from its scene; a player possesses any entity, a mod drives one (an NPC); nothing extra for a body nobody drives |
-| 9 | [Finding the way](#9-finding-the-way) | **done (M227)**: a navigation mesh on the server (Recast/Detour), `ctx.FindPath`, `NearestWalkable`, `WalkToward` |
-| 10 | [The proof: waves](#10-the-proof-waves) | **done (M228, M229)**: the `waves` mod: NPCs with the brawl fist find their way to the nearest player and jab it, waves that grow; 32 NPCs cost a client about 0.07 ms each a tick |
-| 11 | [The animation tree, wider](#11-the-animation-tree-wider) | **done (M230 to M232)**: TimeScale and crossfade curves, OneShot and Add2, nested state machines |
+| 0 | [Decisions](#0-decisions) | **taken**: the server-state model the default, today's a server's choice; `.cbsheet`; Luau; the standard skeleton only |
+| 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | a written playtest checklist, run by bots and by hand with two games under latency and loss; every feature since M215 used by shipped content or removed |
+| 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | dead stances, colliding files, stale docs, two Jolt areas, an old replay, the unmaintained nodes out of sight |
+| 3 | [Two network models](#3-two-network-models) | the server's state, sent by what is near, the default; everyone simulating the whole world kept as a choice; the server says which on join |
+| 4 | [The slice](#4-the-slice) | one game, played by people; it starts here and runs beside steps 5 to 8, each done when the slice uses it |
+| 5 | [Every item a sheet](#5-every-item-a-sheet) | the bat and the guns the way the fist is: predicted from their sheets, the C++ only deciding damage |
+| 6 | [Sheets improved](#6-sheets-improved) | a resource on the node it is about (CbRules goes), `.cbsheet`, names and parameters in the sheet, readable cooldowns, the warts fixed |
+| 7 | [Timing from the clip](#7-timing-from-the-clip) | windows keyed on the animation (hit, invulnerable, cancel), and a hit shape that follows a bone |
+| 8 | [Body parts with priorities](#8-body-parts-with-priorities) | animation asks for parts at a priority, instead of two named layers and overlays |
+| 9 | [Cinderbox Studio](#9-cinderbox-studio) | the Godot editor made the mod tool: prebuilt SDK, feature profile, a Cinderbox tab, gizmos, export and debugger plugins, one Play, one authoring project |
+| 10 | [Server rules in Luau](#10-server-rules-in-luau) | scripts in the mod's item, sandboxed and reloaded on save; C++ for engine mechanisms |
+| 11 | [Avatars](#11-avatars) | one standard humanoid body; the appearance is the player's, swapped on the client |
+| 12 | [Godot's own, used](#12-godots-own-used) | spring bones, instance uniforms, threaded loading, MultiMesh, translations; cosmetic physics decided |
 
-Steps 4 and 5 of the last version (vehicles, authoring finished) are [Later](#later), with the
-building system.
+- **Why stabilize first**: the last twenty milestones went in "features first, bugs after"; this is
+  the after. Each built on the one before (characters per body, possession, NPCs, NPC items, waves),
+  so a bug found later sits under three layers that changed since.
+- **Why the network model before the slice**: it is the default now, and what the sheets predict
+  and how the slice plays both depend on it.
+- **Why the slice before the tools**: steps 5 to 8 are what a fighting game leans on (predicted
+  skills, timing, full-body moves); the slice says which parts matter. Steps 9 to 11 are for
+  modders and players, and are worth more once there is a game to mod.
 
-- **Why loose ends first**: each is small, and each is felt in play: a ball that never stops, a
-  player who runs up a 60° slope, a rifle held wrong while dashing, a camera that looks through a
-  hillside.
-- **Why walls before vehicles**: the shapes work (M183 to M187) was for them; what is left is the
-  fractured asset and the swap, and the physics questions are answered already (below).
-- **Why vehicles next**: the other big "a sandbox should have this"; they need joints in
-  templates, which walls held together by glue would use too.
-- **Why the language before vehicles** (decided after M202): what a mod's C++ does to bodies is
-  seen a lead late (brawl's slam throws people with `ctx.Push`; a slow is `ctx.SetMove`), because
-  no node could say it: no "when it lands", no "everyone near this point". Adding one node per case
-  would not end; a few general words do. Vehicles' input-to-motors is then written in it too.
-- **Why the slot order first** (decided after M211): small, and a fighting kit leans on it: every
-  `find` that shoves another player depended on who joined first.
-- **Why the language made regular before anything new** (decided after M211): every word added
-  since M204 brought its own rule of where it may stand; each new one would add more. Cleaning it
-  while eight milestones old is cheap; the mods and the SDK's starter are the only sheets.
-- **Why characters before NPCs** (decided after M215): an NPC wants a body of its own (a zombie,
-  a dragon, a chicken), and authoring one should be what a Godot developer does for any character:
-  a scene with its skeleton, its animation tree, its hitboxes, made from zero in the editor. Today a
-  server has one character, humanoid. So the body comes first, then who drives it.
-- **Why possession, not an NPC type**: a player is a controller (its keys, its name, its score);
-  what it drives is a body (an entity whose scene is a character). An NPC is then nothing new: a body
-  a mod drives. The same split gives spectators, Prop Hunt (a player drives a crate), and mind
-  control. (Not vehicles: a possessed body moves by the character controller; a vehicle is a body
-  of motors, so a player sits in it and keeps its own.)
-- **Why the controller is a part, not a kind** (decided after M219): a player today is its own
-  kind of entity, tied to its slot, unlike every other; NPCs would be a second kind and Prop Hunt a
-  hack. Instead the controller (the mover, the state machine, the hit tests' pose) is a set of
-  components an entity has while a player or a mod drives it, and its scene says what it gets. The
-  character system stays one pass of its own, over the driven bodies only, so its cost grows with
-  them and never with how many bodies exist: a body nobody drives costs what it did, with no sleep
-  logic of ours.
-- **Why the solver stays C++**: the controller's collide-and-slide, steps and slopes are the
-  hottest loop (64 players, every tick, again in every rollback) and need loops the sheets do not
-  have on purpose (a sheet's cost is bounded). What a body does with it is already the sheets':
-  its movement numbers (expressions while a motion is on), its dash, its double jump, its grapple.
-- **Why bodies before the wider tree** (decided after M219): possession is what NPCs, Prop Hunt and
-  the waves need; the tree's wider subset is polish for animated characters, and waits.
-- **Vehicles and authoring later**: the core engine first; the nodes (motion nodes and the rest)
-  are reworked once it is complete, and kept as they are until then.
+### 0. Decisions
 
-### 1. Loose ends
+**Taken (2026-10-27):**
 
-| Piece | What |
-|---|---|
-| Things that roll stop | **done (M190)**: `rolling` and `drag` on every body (`CbBody`, a template's `Material` and `Body`, an item's file); a map's `CbProp` starts at rolling 0.05. The case: a ball rolling without slipping loses nothing to friction (that is physics), so it rolls until a wall stops it. Box3D has rolling resistance (spheres, capsules) and damping; a body gets `rolling` and `drag` beside `friction` and `bounce` (a beach ball: much drag; a bowling ball: little). Defaults of 0 keep every reference hash |
-| Slopes too steep to walk | **done (M190)**: `max_slope`, 50°: steeper ground (a ramp, a ball's side) slides the player down. The case: measured (M188): there is no limit. The mover stands wherever its ray down finds ground, so a player stands still on 70° and runs up 60° at nearly full speed; nothing slides. A movement parameter `max_slope` (the ground's normal from that ray; Unity's default is 45°, Unreal's 44.8°; ours would start at 50°): steeper ground does not hold the player up, so it slides down along the slope, cannot walk or jump up it, and lands on what is below. A mod can change it (a climbing game, ice). Every map today is walkable below it (the sandbox's steepest ramp is 45.8°, the arena's 20°), so the reference hashes should not move; a box's edge under the ray is the case to check |
-| The arms belong to what is held | **done (M191)**: the held item's arms are put back over an overlay, shoulder down; only an overlay whose filter names a hand takes it. The case: an overlay (the boots' dash pose, the hook's hang) is laid over the whole body after the held item's layer, so it repaints the arms that hold a two-handed rifle, and the left hand is pulled to a rifle that is no longer where the pose put it. The rule: what the hands hold wins the arms. An overlay still poses the legs and the body; the arms keep the item's pose, unless the overlay says it takes a hand (the grapple's throw does: then that hand lets go, as now). In the shared pose, so hitboxes follow; the dash and the hook poses are placeholders either way |
-| The camera against surfaces | **done (M192)**: the live and replay sources keep a static copy of the level (`LevelQuery`) and answer the camera with a sphere cast in it; a view file keeps the frame's test. The case: the camera stops at boxes, balls, capsules and hulls' bounds; a mesh's or terrain's bounds would be a whole hillside, so it skips them and can look through a cave wall. It could cast its ray in the client's own simulation, which has every shape exactly |
-| Tests that miss a tick | **done (M190)**: they record the server's state at every tick it runs (its tick observer). The case: `net_flight` and `net_grapple` look up exact ticks they sampled from a real-time run and now and then miss one (fails locally about one run in three or five; CI has caught it once on macOS). They should record every tick |
-
-### 2. Destructible walls
-
-**Kept apart from the sandbox**: a wall is static, so it costs nothing in rollback, and only what
-is made to destroy (a charge, a rocket) breaks it, not any loose body that bumps into it.
-
-| Piece | What |
-|---|---|
-| A fractured asset | **done (M195, M196)**: `CbBreakable`, its `CbProp` children its pieces; the Fracture button cuts a wall into irregular chunks (Voronoi cells, convex hulls). The plan: a wall and its pieces authored beforehand (as The Finals bakes how a wall shatters): each piece a body of its own shapes (M185), drawn by its own node |
-| The swap | **done (M195)**: `ctx.Break`; the frag grenade breaks walls near it. The plan: a destruction event takes the wall out of the simulation and puts its pieces in, moving as the blast says; shared by everyone like a ragdoll |
-| Who may move the pieces | **done (M195)**: `CatDebris`. The plan: a collision filter, not mass: a player's capsule is kinematic, which the solver treats as infinitely heavy, so no mass keeps it from shoving debris. Debris gets a category the capsule's shape does not collide with, while the mover's ground and wall casts still include it: players stand on rubble and are stopped by it, but cannot push it; shots move nothing unless a mod pushes |
-| Settling | **done**: Box3D's own sleeping (on by default; the simulation adds nothing of its own). Turning a long-asleep piece static was **dropped**: a sleeping body is already skipped by the solver, and a static one would still be an entity in every snapshot, so it would save next to nothing. A mod can have pieces go after a while (`seconds`) |
-| Holes, not the whole wall | **done (M198)**: a blast takes out the pieces near it; the rest stand, static, while touching pieces join them to the held ones (`held_at`); the rest fall |
-| Glue | **done (M202)**: `CbBreakable.glue`: its pieces bodies from the start, welded (Box3D's weld joints) where they touch, the held ones static; a weld past its glue breaks, so it sags, cracks and falls by its own physics |
-
-### 3. Rules as a language
-
-[docs/rules-language.md](docs/rules-language.md) is the grammar (what is built is marked). In short: a `motion`
-block in a `.rules` sheet, run by every simulation, with triggers (`on use`, `on press`, `on EVENT`,
-`while`, and `when`: once, as an expression turns true), waits (`then when`, `after`, `every`),
-queries (`find` everything inside a shape, `cast` a shape along a direction; a block runs per
-target found), effects on the owner or each target, and numbers that are expressions, with Godot
-`Curve`s read in them. Shapes, markers and paths stay nodes, drawn in the 3D view; the sheet names
-them. The motion nodes keep working and get nothing new.
-
-| Piece | What |
-|---|---|
-| Blocks | **done (M204)**: `motion NAME TRIGGER`, `when`, `then when ... within`, `after`, `timeout`, `if` / `else`, `end`; today's `use` sheets unchanged; the brawl slam's landing is its sheet's |
-| Finding | **find done (M205)**: `find SHAPE`, its shape an `Area3D` or `CollisionShape3D` of the scene (a convex one made from a mesh too) or written inline; a block per thing found; `away`; `move for` given to a player found (a slow, a root); the brawl slam's shockwave is its sheet's. **cast done (M206)**: the probe in a sheet, a line, a ball or a drawn shape swept along the look; the grapple is a sheet. `distance` / `reach` come with curves |
-| Curves and markers | **curves done (M207)**: an impulse's and a force's strength as an expression; `curve(Name, x)` from a `CbCurve`; `time`, and `distance` / `reach` in a find. **markers done (M208)**: directions and launch points from `Marker3D`s, `turn (yaw, pitch)`, `follow` a `Path3D` |
-| Items run motions | **done (M209)**: `owner item`: an item in the world runs its own sheet's motion when its event is said at it (`on expired`); `break`, `remove self`; the frag grenade's blast predicted (its numbers the mod's options, as fields) |
-| Physics words | **done (M210)**: `impulse ... kind momentum` (N·s, so weight counts) beside the change of velocity; `every S` (the rest of a step, again and again) |
-| The mods converted | **done (M211)**: brawl, frag, cannon, grapple, flight, dash and the grenade mod are sheets; their C++ left with damage, charges and rules; the SDK's starter motion set is a sheet |
-
-- **Not "server mods on clients"** (a route not taken, below): the language is data in the look,
-  which clients have already, and deterministic and bounded by design. A mod's C++ stays on the
-  server.
-- **The parked pieces become words**: touching a wall is a condition (`wall`) and a direction, a
-  teleport a statement, passing through a movement parameter.
-
-### 4. A player's slot changes nothing
-
-**Done (M212).** Before, `MoveCharacters` ran each player's motions and then its mover, slot by
-slot: a push from a higher slot reached a lower one a tick late, a `find` saw lower slots already
-moved, and a target's own lunge (`replace horizontal`) wiped out a push from a lower slot only. Now
-every player's motions run first, on the world as the tick found it; what they do to other players
-is kept and lands after the targets' own; then everyone moves. `motion_order` swaps two players'
-slots and checks they end where they did, to the bit.
-
-### 5. The language made regular
-
-What M204 to M211 built works, but each word came with its own rule of where it may stand and how
-its numbers are written, and [docs/rules-language.md](docs/rules-language.md) mixes the built and
-the planned (and contradicts itself). The sheets that exist are the mods' and the SDK's starter, so
-changing the language now costs little; old spellings stay accepted for a while and a tool rewrites
-sheets.
-
-| Piece | Today | After |
+| Decision | Taken | Means |
 |---|---|---|
-| One rule for numbers | an impulse's and a force's strength take a bare expression up to the first option word; a launch's speed only in brackets (`speed (EXPR)`); `break` a number, a name or brackets; `move`, `lift`, `ahead`, `seconds` plain numbers | **done (M214)**: every amount; the motion's times, counts, directions and a cast's range and speed stay numbers (they shape the motion, or are needed before anything is read), and a move's value is read when its step starts. The plan was: every number may be an expression: bare up to the next option word, or in brackets, everywhere (settings like `cooldown` read when the motion starts) |
-| One table of where a line may stand | each statement has its own rule, said in its own error: `cast` only in the first step, not under an `if`, once; `every` once a step, not under an `if`, only one-off lines after it; a find's lines only `impulse`, `move for`, `emit`; an item's motion no steps, `cast`, `cooldown`, `uses`, `lasts`, `until`, `move`, `end`, nor an `if` on its first line | **done (M213)**, the relaxing in part: `change` in a find is in; `if` around `every` or a `cast` is not (an `every` is the rest of its step, a cast is the motion's, not a step's), nor `launch` in a find. The plan was: the places a line can be (a step, an `if`, after `every`, in a find, in a cast, an item's motion) and what each allows: one table in the code that the parser's errors and the reference are both made from. Then relax what is cheap: `if` around `every` and `cast` (an `if` is decided when its step starts, and a cast's step is the first), `change` and `launch` in a find |
-| One word per role | the thing a block is about is `found` in a find and `hit` in a cast (the reference says `target`) | **done (M213)**: `target` in both (`found`, `hit` still read); `$target:FIELD` when fields of the target come |
-| One spelling per direction | `along world direction (0, -1, 0)` in the sheets, `world (x,y,z)` in the reference; a find's `along facing` turns its shape, where `along` is a direction everywhere else | **done (M213)**: `along world (x, y, z)`; a find's shape turned by `turned facing\|look\|none` |
-| One origin for shapes | a drawn find shape around the player's feet; one written in the line (`sphere 3`) around its middle, a metre up; a cast's around the line's tip | **done (M213)**: every find shape at the feet, facing as the find says, with `at (x, y, z)` to move it (no shipped sheet writes one inline); a cast's at its tip, as now |
-| An item's motion is one instant step | its limits listed one by one | **done (M213)**: said once: an item's motion happens in one tick (so no waits, nothing lasting, no cast); it has no look or keys (so directions are `up`, `world`, `away`, `to`) |
-| `use` is a motion | `use` stays beside `motion NAME on use`, its own thing | **done (M213)**: `use [if ...]` is exactly `motion Use on use [if ...]` |
-| The reference | built and planned mixed, the status table contradicting itself (curves "planned" and "built"), `at POINT` and `PATH at T` shown as if they work | **done (M215)**: `docs/rules-language.md` lists only what works, one table per statement with where it may stand; what is planned moves to a short list at the end |
-| A motion inspector | nothing shows why a motion did not happen | **done (M215)**: the debug HUD (F1) lists each motion that is on (its step, what it waits for, how long, what its cast holds) and the last refused start with its reason. The plan was: the debug HUD (F1) gets a row per player: each motion that is on, its step, since when, what it waits for, its target; a refused start says which condition failed |
+| **The network model** | the **server-state model** (the client rolls back to the server's state) is the default; today's model (everyone simulates the whole world from everyone's inputs) stays as a choice. The server picks one and tells each player when it joins | [step 3](#3-two-network-models), right after the fixes |
+| **The sheet's file name** | **`.cbsheet`** (a language name gets taken: Ember is a programming language) | [step 6](#6-sheets-improved) |
+| **How server-only rules are written** | **Luau** | [step 10](#10-server-rules-in-luau) |
+| **Avatars' proportions** | **the standard skeleton only**: no body scales | [step 11](#11-avatars) |
 
-### 6. Characters per entity
+**Open:**
 
-A character is a scene authored in the Godot editor, from zero, as a Godot developer would author
-any character (a player, a monster, a pet): a model on a `Skeleton3D`, an `AnimationPlayer`, an
-`AnimationTree`, `CbHitbox` and `CbSocket` nodes. Saving it bakes it, as today. What changes: a
-server has many, and every body says which it is.
+| Decision | Options | Leaning | Decides |
+|---|---|---|---|
+| Cosmetic physics | Jolt with a static copy of the level; no Jolt at all | decided later | [step 12](#12-godots-own-used) |
+| The slice's game, and the players per server it is made for | an arena brawler like a Roblox fighting game; a big sandbox | the brawler (the notes say Roblox fighting games) | [step 4](#4-the-slice) |
 
-| Piece | What |
+The file name and `.res`: making a sheet a Godot resource does not make it a `.res`. `.res` and
+`.tres` are Godot's generic containers (binary and text) for any resource; Godot's own Shader and
+GDScript are resources kept as their own plain-text files (`.gdshader`, `.gd`) by loaders of their
+own. A sheet is the same: a loader and a saver in the extension for `.cbsheet`
+([step 6](#6-sheets-improved)).
+
+### 1. Stabilize M215 to M234
+
+A written checklist, run by bots, and by hand with two games on one machine (no other testers
+yet), at a 150 ms round trip with 2% loss (`cb_netsim`). What breaks is fixed with a test each.
+
+| Milestones | Check |
 |---|---|
-| Characters are kinds | **done (M216, M217)**, as `declare.Character`; a client draws each body as its own (M217). The plan: a character scene is a kind by its name (`zoo.dragon`), in a mod's look as an item is, or a character item; the server announces every character it uses (players download what they lack, by its hash, as today) and the schema lists them |
-| Each body its own | **done (M216)** on the server and in every simulation (`CharacterKind`, `SetCharacter`). The plan: a character entity says its kind; the simulation runs that kind's state machine for it and the server hit-tests that kind's hitboxes; its animation state is sized by its own layers |
-| Its capsule | **done (M216)**: a `CapsuleShape3D` under the `CbCharacter`. The plan: its height and radius from the scene (today one size for everyone): the mover keeps the feet where they are |
-| Its camera | **done (M218)**: every body is seen from behind; **first person only where the scene has a first-person camera** (a `Camera3D` at the eyes): without one the view key does nothing. The mannequin has one, so it plays as before. The third-person camera's distance and height from the body's size: step 8 (today the same for every body) |
-| Where shots start | **done (M218)**: the first-person camera's place as posed, else an `Eye` marker's, else the head (a humanoid's, as before), else the top of its capsule |
-| The game's own | the mannequin and the placeholder rig stay what a server uses when it names none |
+| M215 (the motion lines) | F1 says why a skill did not start, for every shipped skill |
+| M216 to M218 (characters per body, eyes) | a mod changes a body's character mid-game; first person only with a camera in the scene; shots start at the eyes |
+| M219 (any skeleton) | the critter walks, dies without a ragdoll, keeps its own layer when a pack does not fit |
+| M220, M221, M225, M226 (bodies, props) | leave a body holding an item and take it back; drive a crate through a doorway, along walls, turning in a corner; the camera's distance by size |
+| M222, M224, M228 (NPCs) | an NPC walks, is shot, dies, respawns, jabs with the fist; on screen without jumps |
+| M227 (finding the way) | around obstacles; after a wall breaks (the mesh is not mended: known) |
+| M229 (waves) | 32 NPCs: the client's frame time; a player joining mid-wave; a replay and a view file of it watched to the end |
+| M230 to M232 (the tree, wider) | each used by a shipped character or pack, or removed. Ideas: the bat's swing in 0.6 s (TimeScale), a flinch on `combat.hurt` (OneShot), a nested machine for a combo |
+| M223 (the chaos test) | a long soak with every mod on, under loss |
 
-### 7. Any skeleton
+**Done when** the checklist passes and every feature since M215 is used by shipped content or gone.
 
-What assumes a humanoid becomes what a character has. A humanoid has all of it; a dragon brings its
-own skeleton, state machine, hitboxes and sockets, and has only what fits.
+### 2. Small fixes from the review
 
-| Piece | Today, for everyone | After |
+| Fix | What |
+|---|---|
+| Dead stances | the gun's `gun` on `upper` goes now; the bat's go with [step 5](#5-every-item-a-sheet) |
+| Colliding files | `vfx/blast.tscn` (frag, grenade), `assets/sfx/bat_hit.wav` and `swing.wav` (melee, brawl): renamed after their mods. [Step 9](#9-cinderbox-studio) makes the folders a rule |
+| Stale docs | characters.md (the mannequin's layers, the stances' examples, "the default characters still have pistol and bat states"); the SDK README's Favorites |
+| The unmaintained motion nodes | `CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`: out of the Favorites now; deleted in [step 6](#6-sheets-improved) (no shipped mod uses them) |
+| Two areas in Jolt | brawl's `Shockwave` (slam.tscn) and frag's `Blast` are `Area3D`s, so every drawn copy is an area in Jolt checking overlaps every physics frame, against nothing. The client turns monitoring off when it instantiates a look (the bake has read the shape) |
+| `mygame.cbr` in the checkout | a replay from Sep 17 (`CBRP`, version 2; today's is 47): git-ignored, nothing can play it. Deleted |
+| An uncommitted file | `godot/addons/cinderbox_maps/check_anim_tree.gd.uid` (M230's check) |
+
+**What Jolt does today**: nothing of the simulation's. Godot makes a physics object only for a
+`CollisionShape3D` under a physics node; every Cinderbox authoring node (`CbStatic`, `CbProp`,
+`CbItem`, `CbCharacter`, `CbBreakable`) is a plain `Node3D`, and `CbHitbox` says so in code. The
+shapes are data the bakes read; collision is Box3D's, the camera's too (a Box3D copy of the level).
+The two areas above are the only things in Jolt. Cosmetic physics: [step 12](#12-godots-own-used).
+
+### 3. Two network models
+
+**Decided**: the server-state model is the default; today's stays as a choice. The server picks
+(`cb_server --net-model state|inputs`, `state` when not said), the welcome says which, and the game
+makes the matching source. Everything else is shared: the simulation, the sheets, the mods, the
+viewer.
+
+| | Inputs (today's) | Server state (the default) |
 |---|---|---|
-| The ragdoll | eleven bodies from a fixed humanoid pose | **none for another skeleton (M219)**. Later: another skeleton's authored on its scene (bodies on bones, joints) |
-| Hands and holding | sockets by name, two-handed grips, the arms put back over an overlay | **done (M219), changed**: items stay a body's whatever it is (a critter's skills are items in its slots), drawn only in a socket it has; no `Give` refuses |
-| Animation packs | retargeted by humanoid bone names | **done (M219)**: a pack fits a skeleton with at least half its bones by name; one that does not is not swapped in |
-| The first-person body | the arms and legs copies, the torso hidden | **done (M219)**: the humanoid's as before; another's body hidden from the eye |
-| The look and aim chains | named bones (already per character) | **done (M219)**: by profile name or the bone's own |
-| Hit zones | `head`, `chest`, ... | names a character gives its hitboxes (the critter's `tail`); a mod reading a zone handles one that is not there |
-| No skeleton at all | the placeholder rig is a skeleton | moved to step 8: any entity may be driven, a mesh and its capsule as much as a dragon |
+| What a client gets | every player's input, every tick | the state of what is near or relevant to it, at a rate by priority |
+| What a client simulates | the whole world, from inputs | its own body, its skills and what it touches; the rest is drawn from the server's states, a little in the past |
+| A disagreement | back to its snapshot, everyone's inputs run again | back to the server's state for what it predicts, its own inputs run again |
+| Other players' effects on you (a shove, a slam) | predicted from their last input | seen when the server's state arrives (a round trip) |
+| Fog of war, ESP | impossible: every client has everything | what is not sent cannot be seen |
+| Determinism | required (a desync is a resync) | lowers corrections; still checked in CI (the inputs model and replays need it) |
+| For | small servers (a fighting game's 10 to 30) | the default; many players |
 
-### 8. Bodies and who drives them
+**What is in the way of many players today**: every client steps the whole world, and steps it
+again for the whole rollback window whenever a remote player's input was not what it guessed:
+nearly every tick, since mice turn every tick.
 
-Possession, as Unreal has it (a controller possesses a pawn), with one difference: the character
-controller is not a kind of entity but something an entity has **while it is driven**. A player's
-slot is a controller (its keys, its name, its score); what it drives is a body, and any entity can
-be one. A mod decides which may be (a gameplay rule: no flag in the scene). The keys are always the
-same (move, look, jump, sprint, the actions); what they do comes with the body (its motions, its
-sheets, its items: a chicken's jump can be a flap). The client stays a presenter.
+| | 64 players (M139) | 200 or more (an estimate) |
+|---|---|---|
+| One step | about 0.8 ms | about 2.5 ms or more |
+| At a 200 ms round trip | about 16 steps again each tick: 87% of a core | about 40 ms of work in a 16.7 ms tick |
+| The server | fine (it never rolls back) | still fine |
+| Bandwidth | every input to every client | grows with the players squared, at the server |
 
-**What a body's scene says**, read when it is driven (all of it already baked, M216 to M219):
-
-| In the scene | While driven |
-|---|---|
-| nothing about control (a barrel, a crate) | the standard controller, its capsule fitted around the entity's shapes, upright |
-| a `CapsuleShape3D` (under the root, as a Godot character has its collision shape) | that capsule is the controller's |
-| a first-person `Camera3D` | first person; without one it is seen from behind only |
-| a `Skeleton3D` and an `AnimationTree` (a `CbCharacter`) | its state machine runs in the simulation and its pose is drawn and hit-tested, as today |
-| `CbCharacter.movement` | its movement numbers, over the server's |
+**The pieces**, in order (each a milestone or two):
 
 | Piece | What |
 |---|---|
-| The controller while driven (M220) | **done (M220)**: a slot drives the body `playerNetIds` names; `IdleBody` for one nobody drives (a physics capsule to its feet, rotation locked); `SpawnBody`, `Possess`; joining unchanged. The spawn of any scene and `Give` wait. The plan was: the mover's state, the animation state and the character kind are components an entity has while a player or a mod drives it; the controller's pass runs over those only. Each slot says which body it drives (today a slot *is* its body). `ctx.Possess( slot, entity )` and its release; `ctx.Spawn( kind, position, yaw )` for any scene, a character included (`Give` puts an item in a hand: today's `SpawnItem`; the old verbs stay a while as wrappers). Joining is "spawn the server's character, possess it": it plays exactly as today. The mod API's slot verbs (`Pressed( slot )`, `SlotTarget( slot )`) mean the body the slot drives now |
-| Any entity driven (M221) | **done (M221)**: a loose prop possessed (`DrivenProp`: its body kinematic, its shapes `CatDriven`, the capsule fitted so its feet are the prop's bottom; its bounds cast along each move hold it back), hit as its shapes, no first person, the camera by its size; left, a loose body again; the `possess` mod (P). Not yet: a `CbCharacter` with no skeleton (it bakes none), an item as a body (refused). The plan was: **with a test mod** (`possess`, asked after M220): a key makes the player possess the nearest other body: a prop, or a character's body nobody drives; the one it leaves stands where it is. In the shipped mods, off by default, for trying it in the game. Then: possessing a prop: it leaves the physics and walks with the controller (its scene's capsule, else one fitted around its shapes), upright, drawn as itself; hit as its own shapes while driven (a character as its hitboxes, as now), so a shot past a table's legs misses; released, it is a physics body again where it stands, with the speed it had. A character with no skeleton is the same thing: a mesh and its capsule. The third-person camera's distance and height from the body's size (a barrel and a giant are not seen from the same place) |
-| Driving without a player (M222) | **done (M222)**: a `Drive` command (the input packed in its floats as whole numbers), sent only when it changes; `ModDriven` keeps the body's last input, so every simulation goes on with it; the passes run the players by slot, then the driven bodies by NetId; the server's hit tests pose every driven character. An NPC's items (its slots, its keys) not yet. The plan was: `ctx.Drive( entity, input )`: the same input a player's keys make, each tick, in the frame as what changed (one sender, so cheap). **An NPC is a body a mod drives**: no kind of its own, not under the 64 players' arrays; moved in the same passes as players, after them, by NetId; a client predicts it as another player (its last input again) |
-| A body nobody drives | costs what it did before it was driven: a prop is a prop (the physics sleeps it, as any), a decoration nothing. An animated body (a `CbCharacter`) nobody drives is a physics body of its capsule with its rotation locked (Box3D's motion locks): it stands, falls and can be pushed, and Box3D's own sleeping settles it; it is drawn and hit-tested in its rest pose. Rare: bodies are made for the players and mods that drive them |
-| What is whose | **the body's**: its fields (health), its items and inventory, its motions, its ragdoll. **The controller's**: its name, its score, its private fields, its keys. Who you are stays with you; a mod moves items across when it wants a loadout that follows the player |
-| One answer for each case | a body a player leaves unequips what it held (put away in its slots, not dropped: still the body's); possessing an item someone holds is decided with M221; a ragdoll is not possessed; a container keeps what is in it; a static entity becomes movable while driven. A mod may refuse any of them |
-| Rules see bodies | **combat done (M224)**: NPCs hurt, killed, credited. `Kill`, `Respawn`, `Push`, `SetMove`, fields, events, hit tests work on any body; a `find` gains `npcs` beside `players`; the combat mod hurts and kills any body |
-| Not predicted at first | a possession is the server's, so it is seen a lead late (the old body moves on a moment); a sheet's `possess` could predict it later |
-| What it opens | NPCs, spectators (a controller with no body, or a free camera's), Prop Hunt, mind control. Not vehicles: a body possessed walks by the controller; a vehicle is driven by its motors, so a player sits in it and keeps its own body ([Later](#vehicles): a body's own controls) |
+| The choice | `--net-model`; the welcome carries it; a source per model; today's sessions, tests and CI keep running as the inputs model |
+| The server sends state | per client, the entities near or relevant to it, by priority (near every tick, far a few times a second, coarser), as deltas against what that client acknowledged; the compact codec (64 players at 0.09 MB/s in view files) and the streaming client of M54 (removed in M68) to start from |
+| The client predicts its own | its body, its motions, its items: rolled back to the server's state for them when it differs, then its own inputs since run again |
+| What it touches, predicted | a body or prop the player walks into, holds or ropes is predicted while near and switched back once it settles (Unity's Netcode for Entities calls it prediction switching) |
+| The rest, interpolated | drawn a little in the past from the server's states (the mirror already interpolates and smooths); in the client's world as kinematic bodies, so the player collides with them |
+| Hits | the server's hit tests rewind other players to where the shooter saw them (lag compensation), within a limit |
+| Joining | the state of what is near, not a snapshot of the whole world |
+| Private fields, hiding | a field or an entity sent only to whom it concerns; a mod may hide an entity from a client |
+| Measured | players per server, bandwidth per client, the server's tick, the client's frame: targets set once the first pieces work |
 
-- **Not a goal**: a controller of any other shape. The controller is always the capsule (the
-  scene's, else one fitted to the entity); it does the walking (the ground, steps, slopes).
-- **The entity's shape tied to the capsule** (M221, asked after M219): while driven, an entity
-  whose own shapes are not its capsule has them go along with it, and each tick its move is cast
-  with them too (Box3D casts any shape): where they would hit something, the capsule is held back
-  with them. A big box does not fit through a small doorway, and nothing pokes through a wall. One
-  more cast a tick, only for such a body.
-- **The animations need nothing new**: the state machine reads what the controller gives (the
-  velocity, grounded, airborne time, the facing) and the input's look, as a shoved player plays its
-  walk today. Any driven entity with a skeleton and a state machine is animated by it; one without
-  has nothing to pose.
-- **What it costs**: nothing for an entity nobody drives (it has no controller, so the controller's
-  pass never meets it); a driven entity what a player costs today. The work of M220 is the
-  simulation's, the hit tests' and the mod API's loops over the 64 slots becoming loops over the
-  driven bodies, in a fixed order.
+- **Mods do not change**: they read the server's world and send commands into its simulation in
+  either model. Recordings do not either: the server's simulation is deterministic, so its inputs
+  and commands still re-simulate.
+- **Physics stays one shared world, the server's**: a ragdoll falls the same on every screen.
+- **Open**: how often state goes out (the simulation's 60 Hz or 30); whether other players within
+  arm's reach are predicted from their inputs (sent with the state) for a fighting game's shoves;
+  how a client's simulation runs with only part of the world.
 
-### 9. Finding the way
+**Where the numbers come from** (for the targets):
 
-**Done (M227).** Server only, so it need not be deterministic: a navigation mesh made when the
-server starts (Recast/Detour) from everything static in its physics world, `ctx.FindPath( from, to )`,
-and a mod's helpers to walk it (`NearestWalkable`, `WalkToward`). Later: one mesh per character
-size (it is the server's own character's now), a mesh mended when a wall breaks, off-mesh links
-(a jump, a ladder).
+| Players in one place | What works | Examples |
+|---|---|---|
+| up to about 32 | everyone simulating the whole world from inputs (the inputs model) | fighting games; For Honor's 4v4 |
+| about 50 to 200 | the server's state, sent by what is near, one server | Fortnite, PUBG, Apex |
+| hundreds in one fight | the same, with far players sent rarely and coarsely, fewer collisions | PlanetSide 2 |
+| thousands in one world | many servers per world: zones, copies of a zone, meshing | WoW, EVE (time dilation), Star Citizen |
 
-### 10. The proof: waves
+- **What MMOs add for their numbers** is not a better prediction: sending only what is near,
+  cheaper players (no collision between players, movement checked rather than simulated, 10 to 20
+  ticks a second), hits decided by the server with lag compensation, and the world split across
+  servers.
+- **Shared physics is what makes Cinderbox dear at scale**: MMOs mostly have no props or
+  destruction. The busiest spot (everyone in one square) sets the bandwidth.
+- **The cheap way to many players** is many servers of 50 to 100 per game (how Roblox scales a
+  game), not one server of 1,000. One world across servers is [later](#one-world-across-servers).
+- **The inputs model, tuned** for small servers: `reconcile_every 2`; a better guess of a remote
+  player's input (keep its mouse turning, rather than repeating the last input).
 
-**Done (M228, M229).** A `waves` mod: NPCs that walk to the nearest player and swing at it, waves
-that grow. Tested in a network test (hashes equal, no desyncs) and with bots; how many NPCs a client
-carries, measured. Later: a brain in a sheet (deterministic, so every simulation runs it and an
-NPC's moves are predicted exactly, at a rollback cost).
+### 4. The slice
 
-Ready (M228): an NPC selects and uses items as a player does (its input's slot keys and use button),
-so a wave's NPC can be given the brawl fist and jab with it; brawl's attacks hurt NPCs too.
+One game made with the engine and played by people. Leaning ([step 0](#0-decisions)): **an arena
+brawler**: one map, one mode (rounds and a score), the brawl kit and the bat, a ten-minute session
+that is fun.
 
-Measured (M229, `net_waves_cost`): a client's tick takes about 0.3 ms with no NPCs and 2.6 ms with
-32 coming for it, about 0.07 ms an NPC, resimulated ticks included. Later: NPCs of a character of
-their own (the mod's, declared like any; the server's own character now), a brain in a sheet.
+- Built from now on, beside steps 5 to 8: each of those is done when the slice uses it.
+- Played every week, with latency (by hand with two games until there are testers). What it runs
+  into is the next milestone.
+- **Done when** strangers play a session and want another.
 
-### 11. The animation tree, wider
+### 5. Every item a sheet
 
-The state machine runs in the simulation (its state decides the pose, the pose the hitboxes, and the
-server hit-tests those), so it is baked into a deterministic subset of Godot's `AnimationTree`. The
-subset grows toward what a Godot developer reaches for. (What only the eye needs: see
-[our own animation authoring](#our-own-animation-authoring-apart-from-godots), later.)
-Moved after the NPCs (decided after M219): polish for animated characters.
+The fist's way for every item: the item's sheet runs its use in every simulation (predicted), and
+the mod's C++ turns its hit events into damage (brawl.cpp is the model, 143 lines).
 
-| Piece | What |
+**The bat, today**:
+
+| | |
 |---|---|
-| More of the tree | `TimeScale` (a state's playback speed, an expression) and a stretched custom timeline, crossfade curves: **done (M230)**. `OneShot` and `Add2`: **done (M231)**. Nested state machines: **done (M232)**, flattened by the bake |
+| The swing | melee.cpp (272 lines): five rays fanned out from the chest at the clip's `melee.strike` marker; the hit test poses the target (hit zones) |
+| The look's guess | `predict use as melee.swing`, `cooldown 1.1` copied from the clip, `stance melee_swing on full` (read by nothing) |
+| `melee.hot` | a field on the bat, set by the server when a swing hits a player (`ctx.Set`), cleared by the mod's own timer 2 s later. Not predicted; a prop hit does not heat it |
+| NPCs | cannot swing it: melee.cpp loops over player slots. The fist works for NPCs because sheets run for every driver (M228) |
+| The two sheets | `bat.rules` sits in the bat's scene (paths from the bat, `^^` its holder: the glow, the flames, the sparks, the guess); `reactions_melee.rules` in a world reactions scene loaded once (paths from `$at`: the sounds). Same format, different place, different job; both converted by a script from the old nodes (the `# NodeName` headings, `# FlamesOnSwing` heading nothing, tabs and spaces mixed) |
+
+**The bat, after** (a sketch, not tried):
+
+```
+use
+	until melee.done          # the clip's marker ends it: one place for the swing's length
+	emit melee.swing          # the pack's Swing state starts on it, predicted: no predict line
+
+motion Strike on melee.strike
+	cast sphere 0.25 range 1.8
+		emit melee.hit
+		impulse 7 along look
+```
+
+- melee.cpp turns `melee.hit` into `combat.damage`: about 60 lines. NPCs swing it.
+- **The glow**: only a look, so no field: `on melee.hit` in the bat's sheet sets the emission and
+  sets it back after 2 s, at once, because the hit is predicted. If heat should matter to the game
+  (a hot bat hurts more), the language needs `change` on the item and a timer on a carried item
+  ([step 6](#6-sheets-improved)).
+- **A sheet's cast hits capsules**: the simulation has no pose, the hit test's hit zones are the
+  server's. A bat can live with that, as the fist does; the follow-the-bat shape is
+  [step 7](#7-timing-from-the-clip).
+- **The guns**: the use (ammo, the rate of fire, the cue) moves into the sheet, so their `predict`
+  lines go; the shot's hit stays the server's (hit zones need the posed hitboxes) and hears the
+  sheet's event. A cast that poses what it passes near is possible later: the pose is
+  deterministic (CI checks its hash).
+
+### 6. Sheets improved
+
+The language is right: bounded, deterministic, run by every simulation, so skills are predicted
+(Overwatch does the same with a visual language, Statescript). What changes is how it is attached,
+written and checked.
+
+| Change | Why |
+|---|---|
+| **A resource on the node it is about**: `CbSheet`, read and written by the extension's own loader and saver, plain text in a `.cbsheet` file, as `.gd` and `.gdshader` are. A property on the node: `CbItem.sheet`, `CbMotionSet.sheet`, the world reactions root, the HUD root; the node says which blocks it allows. It may be saved inside the scene, as a built-in script is. **CbRules goes** | `file` is a plain string today: no UID, a rename breaks it, Godot does not see the dependency. Saved inside the scene, the notes stay with the item (Godot drops a scene's comments) |
+| **Not Godot's script slot** | the security story is "every script is refused"; "every script but ours" is a rule someone will probe, and a script language through GDExtension is a large, fragile API for two features (errors in the gutter, completion) |
+| **Where each block runs, said**: the simulated blocks and the viewer's in marked sections (or files of their own), one indenting rule (it counts) | four languages in one file today, with two indenting rules |
+| **Names in the sheet**: `field brawl.combo int`, `event brawl.jab.hit`; the server reads them from the pack | the editor waits for a server build today |
+| **Parameters**: `param damage 8`, shown in the item's inspector, read by the server's rules | numbers written twice (the bat) |
+| **A motion's state readable**: its cooldown left, its charges, whether it is on, in conditions and HUD lines | brawl rebuilds cooldowns: five fields declared in C++, five `while` motions counting them down, an `if` and a `change` per skill, while `cooldown` goes unused |
+| **Rates said**: `change x -= 1 per second` | `change x -= 1` is once in a step and per second in a `while` |
+| **One rule for expressions**: one word bare, anything longer in brackets | an expression ends at "the next option word" today (`impulse (distance < frag.radius) * ... along away` works because `along` is one) |
+| **`let NAME = EXPRESSION`** inside a motion | the frag's falloff written out twice |
+| **A cast and the owner's own effects in one step** | dash_strike.rules: `use if brawl.cd_dash <= 0` and `motion Hit on use if brawl.cd_dash <= 0`, two motions with a copied condition |
+| **`change` on the item; a timer on a carried item** | the bat's heat, if it is ever more than a look |
+| **Curves as resources**: `curve(res://falloff.tres, reach)` or a curves dictionary on the node; the frag's blast falloff the first user. The `CbCurve` node goes | no shipped sheet uses `curve()`; a node found by its name from text |
+| **The planned words**: `$target:FIELD`, `at POINT`, a cast in a later step ([the list](docs/rules-language.md#planned)) | |
+| **Tools**: a formatter; errors in the editor as you type; sheet tests run headless (a motion on a stand-in, then what moved) | |
+| **The unmaintained motion nodes deleted** | the sheet's bake is the only one |
+| **`.rules` becomes `.cbsheet`**: 40 sheets and about 80 files that name `.rules`; `docs/rules-language.md` with it; a `.gitattributes` line and a small VS Code grammar | the name says what the file is, one family with `.cbmap` and `.cbreplay` |
+
+**The dash strike, after** (proposed, not valid today):
+
+```
+use
+	cooldown 3
+	emit brawl.dash_strike.started
+	impulse 16 replace horizontal
+	move for 0.25 friction 0
+	cast ray range 4
+		emit brawl.dash_strike.hit
+		impulse 10 on target along move
+```
+
+Its HUD line reads the cooldown itself: `text Line "DASH STRIKE {cooldown.brawl.dash_strike}s" if
+cooldown.brawl.dash_strike > 0`. brawl's `cd_dash` field and its `CoolDash` motion go.
+
+**Considered and not taken**: a visual graph ([routes not taken](#routes-not-taken)); a
+general deterministic VM ([later](#later)).
+
+### 7. Timing from the clip
+
+The sheet says what; the clip says when. Unreal's ability system works this way (montages with
+notify windows); so do fighting games' frame data.
+
+| On the animation | Baked to | Read as |
+|---|---|---|
+| a marker (today) | an event at a time | `on melee.strike` |
+| a window: a key track on a `CbWindow` node's `open` (hit, invulnerable, cancel, armor) | a span of the clip | a condition while inside it (`window.hit`) |
+| a hit shape on a bone (a `CollisionShape3D` under a `BoneAttachment3D`) | swept from tick to tick along the pose while its window is open | a cast that follows the bat |
+
+- The simulation poses one chain of the owner's bones while a window is open, not the whole body
+  (the pose is deterministic: CI checks its hash). Under the ozz pose, as everything that hits.
+- Gives: the bat's arc, a kick's foot, the critter's tail. Answers the language's open question "a
+  shape that follows a bone (a sword's arc)".
+- Removes: numbers copied from clips (`cooldown 1.1`).
+
+### 8. Body parts with priorities
+
+**Today**: two named layers (`FullBody`, `UpperBody`) a pack replaces by name; up to three overlay
+slots a player fills in the order its items are carried; bone filters that are on or off; two
+special rules ("what the hands hold wins the arms", "a hand an overlay names lets go").
+
+**Short for a fighting game**: most of its skills are full-body (an uppercut, a slam, a dash
+strike), and today a full-body move is an overlay, ordered by which item was picked up first. A
+filter's hard edge at the spine shows when a swing plays over a run. The critter has only `FullBody`.
+
+**After** (Unreal's montage slots and per-bone blending, in the simulation):
+
+| | |
+|---|---|
+| Parts | a character has body parts: a humanoid gets Legs, Torso, Head, LeftArm and RightArm from its bone profile; another skeleton authors its own (Tail, Wings) |
+| Requests | every animation asks for parts, at a priority, with fade times, replacing or added |
+| Who wins | on each part, the highest priority; added ones (a recoil, a flinch) on top |
+| Priorities | locomotion, then the held item, then a skill, then a hit reaction or a stun |
+| Legs | a request keeps the legs walking (a jab on the run) or takes them (a heavy swing roots you) |
+| Borders | weights rising along the spine, not a cut |
+| The two rules | one rule: the held item asks for its arms above an overlay; a throw asks for its arm above that |
+| Authoring | still an AnimationTree per pack; the pack's root says its parts and priority instead of matching layer names |
+
+In the shared pose, so hitboxes follow; its state per part is small (which request, its weight).
+
+### 9. Cinderbox Studio
+
+Godot's editor is the studio (Roblox Studio exists because Roblox owns its engine; Godot's editor is
+ours). The extension makes it the mod tool:
+
+| Godot's hook | Use |
+|---|---|
+| A prebuilt extension from CI (Windows, Linux, macOS) | making a look needs no compiler |
+| `EditorFeatureProfile`, shipped with the SDK | hides script creation, the Asset Library, and every node class the scene guard refuses: a modder cannot build what the game will reject |
+| A main-screen plugin | a Cinderbox tab: the mod's items, names, problems, Publish, Test |
+| `EditorNode3DGizmoPlugin` | everything authored as a number, drawn: a find's shape, a cast's range and radius, a rope's length, sockets, hitboxes, the capsule, the eyes |
+| `EditorExportPlugin` | bake, check and pack on export: replaces `pack_mod.ps1` and `publish_mod.ps1`, on every platform |
+| `EditorDebuggerPlugin` | the F1 motion lines, fields, events and rollbacks in the editor while the test game runs |
+| `EditorScenePostImportPlugin` | a dropped `.glb` becomes a `CbCharacter`: bone map, hitboxes, sockets, a starter tree (`make_mannequin.gd` does it as a script) |
+
+| Also | What |
+|---|---|
+| One authoring project | every mod in a folder of its own (`res://mods/<id>/`); the validator refuses files outside it. Ends the collisions of step 2 and the 18 projects |
+| One Play | save, bake, start a local server and the game with this mod, reload on save: Test mod, on every platform |
+| Starters by kind | an ability, a weapon, a game mode, a character, an avatar, instead of one starter with everything |
+| From "authoring, finished" | names offered inside expressions and sheets; an item used in its preview; the preview with someone else in it (a hit) and the character's own mesh; a change the server reads restarts the test |
+| The modders' docs | in standard words (see [How we work from now](#how-we-work-from-now)) |
+
+### 10. Server rules in Luau
+
+**Decided**: Luau. What was parked as "rules without a relink" comes back: today the workshop
+carries a mod's look, and its rules mean building the engine.
+
+- **Luau**: what Roblox developers write; made to be sandboxed (no files, no OS, a limit on
+  instructions); fast. Rules run on the server only, so they need no determinism.
+- The same verbs as today's C++ (`Declare`, `Start`, `Tick`, the `Context`'s reads and commands),
+  from a script in the mod's item: a server runs items from different authors without a build, and
+  a script reloads on save.
+- A script's error stops its mod, not the server.
+- **C++ stays** for engine mechanisms and a mod too heavy for a script (compiled in, as now).
+- **What is predicted stays in sheets**: a Lua VM's memory cannot be copied cheaply for rollback; a
+  sheet's state is a 28-byte record.
+- The shipped mods move over in the order the slice needs them.
+
+### 11. Avatars
+
+The body and its appearance kept apart:
+
+| | The body: one for everyone | The avatar: one per player |
+|---|---|---|
+| What | the standard humanoid `CbCharacter`: the skeleton with Godot's humanoid bone names, the state machine, hitboxes, capsule, sockets, camera | meshes skinned to the same bone names, material colors, accessories |
+| Who knows it | the server and every simulation | clients only |
+
+- **Spawn the standard scene and swap the model and the materials**: its default mesh hidden, the
+  avatar's `MeshInstance3D`s added with their skins bound to the same `Skeleton3D`, accessories on
+  sockets and `BoneAttachment3D`s, colors as instance uniforms.
+- **The avatar never changes what the server sees**: everyone's hitboxes are the same (fair), and
+  one set of clips and poses serves everyone.
+- **Decided: the standard skeleton only**, no body scales (Roblox's R15 way: held items and hitboxes
+  match the drawing). An avatar made on another rig is retargeted to it when it is published
+  (assets ship baked).
+- **An avatar never blocks joining**: today a missing item refuses the join. An avatar is fetched
+  in the background, and the mannequin is drawn until it arrives.
+- **Budgets checked when publishing**: triangles, materials, texture sizes.
+- **Loading**: packs cannot be unloaded and share `res://`, so avatars as packs would grow memory
+  and collide. To prototype: each avatar one self-contained baked scene (meshes, materials,
+  textures inside), loaded from `user://` by its hash, not mounted; still baked, and freed when
+  nobody wears it.
+- **Which avatar a player wears**: a value per player for looks only: not in the simulation's hash,
+  sent as names are.
+
+### 12. Godot's own, used
+
+| Godot's | For |
+|---|---|
+| `SpringBoneSimulator3D` | tails, hair, capes, after the pose modifier: cosmetic, nothing that can be shot. The critter's tail first |
+| Instance uniforms (`instance uniform` in a shader) | a look per entity (heat, a team color, a hit flash) without a material per entity: the bat copies its material to glow |
+| Threaded loading (`ResourceLoader.load_threaded_request`) | packs and characters while joining |
+| `MultiMeshInstance3D`, visibility ranges | debris, crowds of NPCs |
+| Animation detail by distance | far bodies posed less often: drawing only, hit tests unchanged |
+| Translations | a sheet's HUD text is English in the file |
+| `Theme` resources | client mods restyling the UI |
+| **Cosmetic physics** (decided later) | Jolt has no level (step 2), so a cosmetic shell casing would fall through the floor: Jolt gets a static copy of the level when the map loads, from the same shapes; or Jolt goes, with `RigidBody3D` and `StaticBody3D` out of the scene guard's list |
+| `PhysicalBone3D` | ragdolls for any skeleton ([later](#later)) |
+
+## Before launch
+
+| What | Why |
+|---|---|
+| The pack loaders fuzzed, files limited in size | workshop items are Godot files on every player's machine; the guard checks their content, not Godot's parsers |
+| Cheating, decided | on a server running the inputs model every client holds the whole world, so ESP is trivial there; the server-state model sends only what is near |
+| A mod's crash | takes the server down until step 10 |
+| How players find servers | [parked](#parked) |
+| Translations, tools on every platform | steps 12 and 9 |
 
 ## Later
 
-Postponed after M211 (the core engine first). In the order they would likely come back.
+In the order they would likely come back.
 
 ### Our own animation authoring, apart from Godot's
 
@@ -278,10 +465,11 @@ Decided after M231 instead of layers that are the look's alone (a face, breathin
 the client): when the time comes, the animation the simulation runs gets an authoring mechanism of
 its own, apart from Godot's, and Godot's `AnimationTree`s are left for what is only seen. Only the
 skeletal bones would be replicated on the server. Much later; it needs more decisions first.
+[Body parts with priorities](#8-body-parts-with-priorities) would be its core.
 
 ### Ragdolls for any skeleton
 
-Moved from step 7 (after M219). Today a skeleton without a humanoid's bones falls as no ragdoll.
+Today a skeleton without a humanoid's bones falls as no ragdoll.
 
 | Piece | What |
 |---|---|
@@ -293,22 +481,10 @@ Moved from step 7 (after M219). Today a skeleton without a humanoid's bones fall
 | Piece | What |
 |---|---|
 | Joints in templates | a template of several bodies (each its shapes) joined by Box3D's joints (revolute, prismatic, weld, wheel), authored as nodes in the scene |
-| A seat | a player sits: the mover is off, the player is carried by the body and drawn in its pose. (a seated player keeps its body; the vehicle reads its keys) |
+| A seat | a player sits: the mover is off, the player is carried by the body and drawn in its pose (it keeps its body; the vehicle reads its keys) |
 | Input to motors | as a motion routes input to the mover, a vehicle routes it to its joints' motors and its forces; the rules (who may drive, damage) are a mod's |
-| Platform carry | standing on a moving deck carries the player (its velocity and turn): the mover needs it for a vehicle you stand on, and ships later |
-| A body's own controls (an idea, later) | every body says how it is driven: the character controller (the mover, as today), a vehicle's (its motors and forces), others. Possessing a body takes its controls with it: the same keys drive a character on foot and a car its motors, and a seat could become a possession. Waits for step 8 (possession) and vehicles |
-
-### Authoring, finished
-
-| Piece | What |
-|---|---|
-| Names inside expressions | completion offers names in a property that holds one and in a sheet; not inside a condition or a format in the inspector |
-| A prebuilt SDK | CI builds the extension, so a mod's look needs no compiler |
-| Publish checks a change | a `min` / `max` on a change |
-| An item used in its preview | press the item's key in the editor's preview and watch what it does |
-| The preview, fuller | cues with someone else in them (a hit); the pack chosen from a list; the character's own mesh |
-| A rules change restarts the test | publishing a look while the server runs takes effect at once unless the simulation reads it (an item's body, a pack's state machine, a motion): then the hosted test could restart the server itself |
-| The nodes reworked | the authoring nodes (the motion nodes among them) are kept as they are, not maintained, until the core engine is complete; then reworked together |
+| Platform carry | standing on a moving deck carries the player (its velocity and turn) |
+| A body's own controls | every body says how it is driven: the character controller (the mover), a vehicle's (its motors and forces). Possessing a body takes its controls with it |
 
 ### Building
 
@@ -320,31 +496,20 @@ Players placing pieces into the world (walls, ramps, floors), the way a base is 
 | The preview | the ghost of the piece where it would go, drawn by the viewer from the same cast the placement uses |
 | Holding together | pieces joined where they touch (glue's weld joints, M202), each breakable; what loses its hold falls |
 | Rules | what a piece costs, who may build where, how many: a mod's |
-| Staying | a server mod saves and loads what was built (server only, not the simulation's concern) |
+| Staying | a server mod saves and loads what was built (server only) |
 | The cost | every piece is state in every snapshot: a cap per player and per server, and static pieces where possible |
 
-### A second server model (considered)
+### A deterministic VM for heavy predicted logic
 
-Asked after M211: a model for many more players, chosen by the server's owner. Not scheduled; what
-it would be:
+WebAssembly, for what a sheet cannot say and must still be predicted (an NPC's brain in the
+simulation): any source language, its memory cheap to copy for rollback, deterministic with NaNs
+made canonical and no threads; bounded by an instruction budget. Modders would need a compiler and
+debugging is harder: an escape hatch, not the main way.
 
-| | Today's model (lockstep, rollback) | The second model |
-|---|---|---|
-| Other players | simulated from their inputs, predicted, rolled back | shown from the server's states, interpolated (a little in the past); only the local player predicted |
-| Props | moved by bodies and by actions | moved only by actions (a charge, a blast, a rocket, a swing that hits): a player's body does not push or wake them. The props are then a function of the actions alone, so every client simulates them from the actions the server confirms (with the tick and the place) and rolls back only when one arrives late, not every tick |
-| Two players on one prop | both push it, each predicted | neither pushes it with its body; both hit it, and the two hits land in tick order everywhere |
-| Player against player | bodies collide; a shove is predicted on the shover's screen | no collision between players; a shove is the server's, felt by the victim when it arrives (as in Roblox) |
-| What scales | 64 players: every client steps everyone | the players a client sees (area of interest) and the actions, not every input of every player |
+### One world across servers
 
-- **The same core**: the simulation, the sheets, the mods and the viewer are shared; only who is
-  simulated and what the frames carry differ. A server says which model it runs; the client picks
-  the source for it (the viewer already does not know where frames come from).
-- **What it costs a game**: bodies that shove props (kicking a crate, a ball rolled by walking into
-  it) and predicted knockback on other players; a remote player's swing shows a little after its
-  effect on a prop (two timelines: players in the past, props in the present).
-- **Open**: a prop pulled by a player (a grapple's rope) couples the two every tick: its puller's
-  positions would be sent as actions while it pulls; far props (outside the area of interest) are
-  either all simulated (cheap when few and asleep) or kept by region with a snapshot on entering.
+A seamless world split across server processes (meshing). A project the size of a company (Star
+Citizen took about a decade); many servers per game ([step 3](#3-two-network-models)) comes first.
 
 ## Parked
 
@@ -352,44 +517,67 @@ Decided to wait; each says what it waits for.
 
 | What | Waits for |
 |---|---|
-| Rules without a relink | as long as possible (asked). A server mod's rules as a sandboxed script the server loads and reloads (the same `Declare` / `Start` / `Tick` and `Context` verbs), C++ kept for what is too slow; the SDK's scaffold would write the script. Rules run on the server only, so any language would do |
 | How players find servers | undecided: Steam, a website's "play" link that starts the game, a game's own menu or a desktop shortcut. Until then: join by address, Test locally, a server's mods listed before joining |
 | Steam Workshop as the store | the decision above; the store is a folder today |
-| Ships | Box3D growing what they lack (buoyancy) rather than more patches (two today: `cmake/patches/`). In the simulation, so everyone predicts them: platform carry (vehicles, later), several shapes per body (done), a buoyancy component with a wave function the water's look shares |
-| **The player's body, for motions** | a mod that wants it; once step 3 is in, each is a word of the language ([the language's planned list](docs/rules-language.md#planned)). Small engine pieces, each in the simulation (so a motion using them is predicted like any other), asked about after M200. In the order they would likely be wanted: |
-| · Touching a wall | the mover already meets walls when it clips the velocity; it would say so: a condition (`wall`: touching one, beside or ahead) and a frame along it (`along_wall`, `off_wall`) for forces and impulses. Wallrunning, wall jumps, a climb that knows where the wall ends (no wall ahead: over the ledge), a ledge grab |
-| · Teleport | a motion effect that sets where the player is (`CbTeleport`): to the target (what the probe found, or a field's entity) at an offset in its frame (1.2 m behind it, facing its back), or to the probe's point. Blink, "behind you", swapping places, a return-to-mark |
-| · What the body passes through | movement parameters: `pass_players`, `pass_props`, `pass_level` (0 or 1): the mover ignores those (the player's own capsule too, so others' casts pass it). A dash that goes through the target and ends behind it (the fast-move blink, without a teleport), phasing through crowds, a ghost or a spectator flying through walls (`pass_level` with `move_frame` 1) |
-| · Not hittable | a movement parameter `hittable` (0 or 1): shots, probes and swings pass the player's hitboxes. A dodge roll's invulnerable frames, a phase skill. (Damage itself is the combat mod's; this is whether anything reaches the body) |
-| · The capsule's size | movement parameters for its height and radius, so a crouch fits under a low gap (the sneak mod's crouch only lowers the pose), a shrink or grow potion, a slide under a door. The mover keeps the feet where they are and does not stand up where the full height would not fit |
-| · Keep speed, steer | a motion effect that turns the velocity toward a frame without changing its size (and trades height for speed: a dive speeds up, a climb slows). An elytra-like glide (today's forces push toward a set speed, whatever the pitch), a grind rail, a ricochet |
-| · Hidden from others | a field the viewer reads to fade a player's body (and its held item) for everyone but the player itself. Invisibility, a cloak, a spectator. (Presentation only: the body still collides and is hit, unless the pieces above say otherwise) |
+| Ships | Box3D growing what they lack (buoyancy) rather than more patches (two today: `cmake/patches/`). In the simulation, so everyone predicts them: platform carry (vehicles), a buoyancy component with a wave function the water's look shares |
+| **The player's body, for motions** | a mod that wants it; each a word of the sheet language ([its planned list](docs/rules-language.md#planned)), in the simulation, so a motion using it is predicted. In the order they would likely be wanted: |
+| · Touching a wall | a condition (`wall`: touching one, beside or ahead) and a frame along it for forces and impulses: wallrunning, wall jumps, a ledge grab |
+| · Teleport | a motion effect that sets where the player is: to the target at an offset in its frame (behind it), or to a cast's point. Blink, "behind you", swapping places |
+| · What the body passes through | movement parameters `pass_players`, `pass_props`, `pass_level`: a dash through the target, phasing through crowds, a spectator flying through walls |
+| · Not hittable | a movement parameter `hittable`: shots, casts and swings pass the player's hitboxes. A dodge's invulnerable frames (or a [window](#7-timing-from-the-clip)) |
+| · The capsule's size | movement parameters for its height and radius, so a crouch fits under a low gap; the feet stay, and it does not stand up where the full height would not fit |
+| · Keep speed, steer | a motion effect that turns the velocity without changing its size: a glide, a grind rail, a ricochet |
+| · Hidden from others | a field the viewer reads to fade a body (and what it holds) for everyone but its player: invisibility, a cloak, a spectator |
 
 ## Leftovers, by area
 
-What the old steps left, not scheduled. A row moves up into "Next" when it is wanted.
+Not scheduled. A row moves up into "Next" when the slice wants it.
 
 | Area | What |
 |---|---|
 | Items | a state machine or a motion reading the hand's fields; a lifetime for an item that was not launched; a fuse that starts when the pin is pulled (a cook); bots that use what a mod adds; a bot count in the menu |
-| The inventory | a split of one; a slot's item shown while dragged over; a key for the bag's slots; dropping or moving part of a stack; a mod taking one off a stack without throwing it; an off hand (Minecraft's F); a corpse's bag (undecided: the ragdoll carries it, or a box where it fell); predicted answers to a mod's intents; numbers wider than a byte in an intent |
-| Sheets and HUDs | a sheet for a list's rows; an item's HUD drawn on its slot; the mods' HUDs, item uses and motions converted to sheets (their reactions are; step 3 does the motions) |
-| Motions | a lasting force as a C++ command; a test of one player hooked to another; a knocked-down ragdoll state; carrying a player; a preview panel |
-| Animation | the bat's whole swing in 0.6 s, a slow-motion finisher (a state's speed is in, M230: the packs still to use it); the dash's and the hook's poses are placeholders |
-| Feet on the ground | foot IK, **in the shared pose**, beside the aim chain: each foot's ground found by a ray in the simulation (the server's for hit tests, the client's prediction for drawing: the same shapes, so the same answer), the hips lowered to the lower foot, two-bone IK for each leg. Then the legs' hitboxes are where the feet are drawn. Not Godot's IK nodes: they would run after the pose (visual only, and the bake warns: the legs have hitboxes), and Godot's physics has no level to find (collision is Box3D's) |
-| The client | keys the server says: a server maps keys to what they do, an item's own key included (its action `<kind>.use`), sent once at join; a game's "Q is the dash strike" whatever slot it is in. Costs nothing: the client already turns keys into action bits each frame, only the table's source changes. A player may still rebind (the Keys page, per server), the server's map being the start; cameras a mod places (a round's end, a kill cam). **The UI stays presentation-only** (decided after M211): a screen shows what fields say, is moved through with input, and sends intents from its buttons and boxes (as a Minecraft server's menus are chests). What that cannot say becomes a widget the engine gives (a text box, a slider, a drag, a placement preview), not a script |
+| The inventory | a split of one; a slot's item shown while dragged over; a key for the bag's slots; dropping or moving part of a stack; a mod taking one off a stack without throwing it; a corpse's bag (undecided: the ragdoll carries it, or a box where it fell); predicted answers to a mod's intents; numbers wider than a byte in an intent |
+| Sheets and HUDs | a sheet for a list's rows; an item's HUD drawn on its slot |
+| Motions | a lasting force as a C++ command; a test of one player hooked to another; a knocked-down ragdoll state; carrying a player |
+| Animation | a slow-motion finisher (a state's speed is in, M230); the dash's and the hook's poses are placeholders |
+| Feet on the ground | foot IK in the shared pose, beside the aim chain: each foot's ground found by a ray in the simulation, the hips lowered to the lower foot, two-bone IK per leg, so the legs' hitboxes are where the feet are drawn. Not Godot's IK nodes: they run after the pose (seen only), and Godot's physics has no level |
+| The client | keys the server says: a server maps keys to what they do, an item's own key included, sent once at join; a player may still rebind (per server). Cameras a mod places (a round's end, a kill cam) |
 | Games | teams and spectators (mods, once private fields and the board cover them); lists on one entity (array fields, or a `CbList` over a field family) |
+| Finding the way | one mesh per character size; a mesh mended when a wall breaks; off-mesh links (a jump, a ladder) |
+| NPCs | NPCs of a character of their own; a brain in a sheet (predicted exactly, at a rollback cost) |
+
+## Decided earlier (still holds)
+
+| Decision | Why |
+|---|---|
+| Possession, not an NPC type | a player is a controller (its keys, name, score); what it drives is a body. NPCs, spectators, Prop Hunt and mind control fall out of it |
+| The controller is a part, not a kind | a body nobody drives costs what a prop costs; the controller's pass meets only driven bodies |
+| What a body's scene says decides how it is driven | its capsule, a first-person camera, a skeleton and state machine, its movement numbers |
+| The mover stays C++ | the hottest loop (every player, every tick, again in every rollback); sheets are bounded on purpose |
+| Walls static until broken; debris players cannot push (`CatDebris`); settling by Box3D's own sleeping | a wall costs nothing in rollback; turning sleeping pieces static would save next to nothing |
+| The ozz pose owns the body | hit tests use it; Godot animation only adds what cannot be shot |
+| Physics players react to is shared | ragdolls and falling walls are the same on every screen; cosmetic physics is for what nobody could compare (capes, spring bones, casings) |
+| The UI stays presentation-only | a screen shows fields and sends intents; what it cannot say becomes a widget the engine gives, not a script |
 
 ## Routes not taken
 
 | Route | Why not |
 |---|---|
-| Server mods also run on clients | tried as M55 and dropped: rules would ship to clients and every mod would need to be deterministic |
+| Server mods also run on clients | tried as M55 and dropped: rules would ship to clients and every mod would need to be deterministic. The sheet language took its place |
 | A built-in dash, a built-in grapple | rules in the engine; mods could only tune what the engine thought of |
 | The viewer guesses a command (`CbPrediction` with a push) | the viewer has no simulation: a guessed push cannot collide, and a pull would fight every frame's correction |
 | Separate physics for the map and the game | there is one world; a map's bodies and a mod's are authored the same way (M185) |
 | Godot's physics at runtime | collision is Box3D's on the server and in every client's prediction; Godot's `CollisionShape3D` is only how shapes are authored |
-| Hitboxes as physics bodies | a player is one kinematic capsule in the physics; the hitboxes are shapes on the shared pose that hit tests ask (shots, probes, a melee swing). As bodies, each bone would be moved every tick (15 per player), copied in every snapshot, and shove props with its limbs. Ragdolls are bodies already, when a player falls |
+| Hitboxes as physics bodies | each bone moved every tick, copied in every snapshot, shoving props with its limbs; hitboxes are shapes on the shared pose that hit tests ask |
+| Our own editor | Godot's editor is the studio; rebuilding its viewport, inspector, animation editors and importers would take one person years ([step 9](#9-cinderbox-studio) extends it instead) |
+| A fork of Godot | every Godot release merged by hand; the extension's editor hooks cover step 9 |
+| Sheets in Godot's script slot | "every script is refused" is the security story; a script language through GDExtension is large and fragile for two features ([step 6](#6-sheets-improved)) |
+| Sheets as `.res` or `.tres` | Godot's generic containers would hold the sheet as one quoted string: poor diffs, no editing as text. A loader of its own keeps it plain text, as `.gd` and `.gdshader` are |
+| A visual graph for skills | hard to diff and review; Godot dropped VisualScript for lack of users |
+| A three-letter extension | gains nothing (Godot's own are long: `.gdshader`, `.gdextension`); the `cb` three-letter names are taken: comic archives (`.cbr`, `.cbz`, `.cbt`, `.cb7`), Code::Blocks (`.cbp`), COBOL (`.cbl`) |
+| Naming the sheet language Ember | already a programming language's name |
+| Body scales for avatars | the standard skeleton only (decided after the review): held items and hitboxes match the drawing, nothing to clamp |
+| Everyone simulating the whole world as the default | the rollback window's cost grows with every body; kept as a server's choice for small servers ([step 3](#3-two-network-models)) |
 
 ## Housekeeping
 
@@ -398,10 +586,12 @@ Independent of the path; each is small.
 | What | Note |
 |---|---|
 | The rest of `simulation.cpp` in modules | props, ragdolls, items and animation; the mover went first (M92) |
-| Tools on every platform | the publish, pack and SDK scripts are PowerShell |
+| `tests/test_main.cpp` in files by area | about 12,500 lines in one file |
+| Replays' extension | `.cbr` is also the comic-book archive (a double-click opens a comic reader): `.cbreplay` |
 | A motion's field and a mod's | both may write one (commands first, then motions); the server could warn when a mod sets every tick a field a motion writes |
 | Slots for what is worn | the dash boots take a slot: selected, they are held like a tool |
 | `reconcile_every` 2 as the default | halves a client's rollback work with many players and latency (M139); others are seen up to 2 ticks later: to be looked at in play first |
 | The characters' part of a step | as much as the physics at 64 players (0.4 ms, M140) and not yet looked into |
 | Physics threads beside drawing | on by default (M141), not yet watched in the game: `--physics-threads=0` if frames suffer |
 | The old `build/` folder in the checkout | builds go outside the source tree; the folder is ignored and can be deleted |
+| `brawl.cpp`'s top comment | names the old roadmap's step 5 |
