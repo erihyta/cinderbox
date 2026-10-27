@@ -3954,7 +3954,7 @@ void TestBrawl()
 		{
 			float dx = to->position.x - at->position.x, dz = to->position.z - at->position.z;
 			in.cameraYaw = detmath::RadiansToYaw( std::atan2( dx, dz ) );
-			in.moveForward = dx * dx + dz * dz > 1.6f * 1.6f ? 127 : 0;
+			in.moveForward = dx * dx + dz * dz > 1.0f * 1.0f ? 127 : 0; // (close: its last steps turn its body to B, and the body's facing is where it hits)
 		}
 		in.actions = tick >= 280 && tick < 290 ? kKeySlot1 : 0; // the fist out
 		auto at_ = [&]( uint32_t when ) { return tick >= when && tick < when + 3; };

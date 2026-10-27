@@ -9,6 +9,6 @@ use if brawl.cd_dash <= 0
 
 motion Hit on use if brawl.cd_dash <= 0
 	lasts 0.05
-	cast ray range 4
+	cast ray range 4 along facing
 		emit brawl.dash_strike.hit
-		impulse 10 along move
+		impulse 10 along facing

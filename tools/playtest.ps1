@@ -124,7 +124,8 @@ try {
 	# The server stops by itself once nobody is connected (and writes its recording out); give it
 	# that time, then stop what is left.
 	if (-not $serverProc.WaitForExit(40000)) { Stop-Process -Id $serverProc.Id -Force }
-	if (-not $netsimProc.HasExited) { Stop-Process -Id $netsimProc.Id -Force }
+	# (Always: a relay left behind by a run cut short holds the build's cb_netsim.exe open.)
+	Stop-Process -Id $netsimProc.Id -Force -ErrorAction SilentlyContinue
 }
 
 $failed = @($games | Where-Object { $_.ExitCode -ne 0 } | ForEach-Object { "pid $($_.Id): exit $($_.ExitCode)" })

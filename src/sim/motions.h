@@ -358,6 +358,7 @@ struct Motion
 	bool probe = false;
 	float probeRange = 0.0f;  // metres the line reaches
 	float probeTravel = 0.0f; // m/s it flies at, traced tick by tick (a projectile); 0: it holds at once
+	bool probeFacing = false; // thrown level along the body's facing (cast ... along facing), not the camera's look
 	int holdEvent = -1;		  // schema event said where and when the probe takes hold; -1: none
 	// What it may hold on to (kProbeHolds bits). Something else in its way stops it: it holds nothing.
 	uint8_t probeHolds = kProbeHoldsAll;

@@ -5,7 +5,7 @@ motion Rise on use if not linked and brawl.cd_upper <= 0 and grounded
 	lasts 0.05
 	change brawl.cd_upper = 4
 	emit brawl.uppercut.started
-	cast ray range 3
+	cast ray range 3 along facing
 		emit brawl.uppercut.hit
 		impulse 12 along up replace vertical
 		impulse 6 on self along up replace vertical

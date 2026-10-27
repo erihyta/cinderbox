@@ -1387,7 +1387,7 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 			{
 				// cast SHAPE range R [speed V] [holds level|bodies|players ...]; SHAPE: ray, sphere R, or a
 				// node's path (one convex shape, around its origin)
-				const char* usage = "cast SHAPE range R [speed V] [holds level bodies players], SHAPE ray, sphere R, or a node's path";
+				const char* usage = "cast SHAPE range R [speed V] [holds level bodies players] [along look|facing], SHAPE ray, sphere R, or a node's path";
 				if ( rule.steps.size() > 1 || rule.frames.empty() == false || rule.cast )
 				{
 					fail( number, rule.cast ? "a motion casts once" : "a cast is thrown when the motion starts: in its first step, not under an if" );
@@ -1426,6 +1426,11 @@ std::vector<Rule> ParseRules( const String& text, PackedStringArray& errors )
 					if ( ( word == "range" || word == "speed" ) && i + 1 < w.size() && Number( w[i + 1], a ) && a >= 0.0 )
 					{
 						statement[word] = a;
+						i += 2;
+					}
+					else if ( word == "along" && i + 1 < w.size() && ( w[i + 1].text == "look" || w[i + 1].text == "facing" ) )
+					{
+						statement["along"] = w[i + 1].text;
 						i += 2;
 					}
 					else if ( word == "holds" )
