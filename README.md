@@ -14,7 +14,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | The world | physics props, destructible walls broken into authored pieces, items in the world, containers |
 | Authoring | maps, characters, their animation trees, items and motions are made in the Godot editor and baked for the server |
 
-Milestones M1 to M234 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them. The roadmap was rewritten after M234 from a review of the whole project ([ROADMAP.md](ROADMAP.md)).
+Milestones M1 to M235 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them. The roadmap was rewritten after M234 from a review of the whole project ([ROADMAP.md](ROADMAP.md)).
 
 ## The manual
 
@@ -29,6 +29,7 @@ Milestones M1 to M234 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them. T
 | [docs/rules-language.md](docs/rules-language.md) | the rules language's reference: every line a sheet may hold, where it may stand, what it reads |
 | [docs/maps.md](docs/maps.md) | maps, templates and components |
 | [docs/testing.md](docs/testing.md) | the tools, the determinism checks, CI |
+| [docs/playtest.md](docs/playtest.md) | the playtest checklist, and playing two games against yourself |
 | [sdk/README.md](sdk/README.md) | the Godot project a mod's look is made in |
 | [mods_src/README.md](mods_src/README.md) | client mods: the files the game looks up |
 | [DESIGN.md](DESIGN.md) | how it works, by subsystem; the source layout; known limits |

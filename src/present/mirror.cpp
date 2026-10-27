@@ -196,6 +196,25 @@ flecs::entity Mirror::CreateVisual( const FrameEntity& f, bool withEffect )
 	return e;
 }
 
+bool Mirror::SameThing( const Visual& v, const FrameEntity& f ) const
+{
+	// What an entity is does not change while it lives (a held item and the same item lying about
+	// are both an Item; a prop a player drives is still a Prop; a body is a Player, driven or not).
+	if ( v.kind != f.kind || v.shape != f.shape || v.templateIndex != f.templateIndex )
+	{
+		return false;
+	}
+	if ( f.kind == VisualKind::Item && v.itemKind != f.itemKind )
+	{
+		return false;
+	}
+	if ( f.kind == VisualKind::Ragdoll && f.ragdoll < m_pendingRagdolls.size() && v.owner != m_pendingRagdolls[f.ragdoll].owner )
+	{
+		return false;
+	}
+	return true;
+}
+
 void Mirror::Update( const PresentationFrame& frame, float tickAlpha, float frameSeconds )
 {
 	m_events.clear();
@@ -219,6 +238,23 @@ void Mirror::Sync( const PresentationFrame& frame, float alpha, float frameSecon
 	for ( const FrameEntity& f : frame.entities )
 	{
 		auto found = m_byNetId.find( f.netId );
+		// A NetId comes from a counter in the simulation's state, so after a rollback the number of
+		// something this client predicted (a wall's piece, a prop) can be another thing's (a ragdoll,
+		// a body). The one drawn never was: it goes at once (its node is freed), and the new thing
+		// gets a visual of its own. (Reusing the visual wrote a ragdoll's pose into a prop's.)
+		if ( found != m_byNetId.end() )
+		{
+			flecs::entity old( m_world, found->second.entity );
+			if ( old.is_alive() == false || SameThing( old.get<Visual>(), f ) == false )
+			{
+				if ( old.is_alive() )
+				{
+					old.destruct();
+				}
+				m_byNetId.erase( found );
+				found = m_byNetId.end();
+			}
+		}
 		bool created = found == m_byNetId.end();
 		flecs::entity ve;
 		if ( created )

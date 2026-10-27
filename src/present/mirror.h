@@ -286,6 +286,9 @@ private:
 	void SyncImpacts( const PresentationFrame& frame, bool reset );
 	void SyncModEvents( const PresentationFrame& frame, bool reset );
 	flecs::entity CreateVisual( const FrameEntity& f, bool withEffect );
+	// Whether a frame's entity is still the one a visual was made for (its kind, shape, template,
+	// item kind, a ragdoll's player): a rollback can give a NetId to something else.
+	bool SameThing( const Visual& v, const FrameEntity& f ) const;
 
 	std::vector<Event> m_events; // declared before the world: observers write to it on teardown
 	std::shared_ptr<const anim::AnimSet> m_animSet;

@@ -13,6 +13,10 @@
 //   "inventory.start"    an item property: 1 gives every player one when a life starts
 //   dying                takes back what the life started with and drops the rest
 //
+// A life is a body's: what it started with stays the body's. A player who takes over another body
+// (a possession) finds it with what it carries and is given nothing; back in its own body, that
+// body's starting items are still known as such, and dying takes them back, as before.
+//
 // What an item is like in a slot is said by its own mod, as item properties the engine reads:
 //   "slot"      the slot the kind goes to (1 is the first) if it is free; else, or without it, the
 //               first free slot. A slot is a place, not a kind's: two of a kind are two items, each
@@ -30,6 +34,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -73,19 +78,40 @@ public:
 			ctx.Set( 0, m_columnsField, m_columns );
 			m_said = true;
 		}
+		// Bags of bodies that are gone.
+		for ( auto it = m_bags.begin(); it != m_bags.end(); )
+		{
+			it = ctx.EntityTransform( it->first ) == nullptr ? m_bags.erase( it ) : std::next( it );
+		}
 		for ( int i = 0; i < kMaxPlayers; ++i )
 		{
 			PlayerSlot slot = PlayerSlot( i );
-			Bag& bag = m_bags[size_t( i )];
+			uint32_t& last = m_bodies[size_t( i )];
 			if ( ctx.Joining( slot ) || ctx.Leaving( slot ) )
 			{
-				bag = Bag{};
+				// A player new to the slot, or gone from it: its body's life starts again.
+				m_bags.erase( last );
+				m_bags.erase( ctx.PlayerNetId( slot ) );
+				last = 0;
 			}
 			const Character* c = ctx.PlayerCharacter( slot );
 			if ( ctx.InWorld( slot ) == false || c == nullptr )
 			{
 				continue;
 			}
+			// The body's bag. A body the slot took over (it drove another before) starts as it is:
+			// nothing is given to it.
+			const uint32_t body = ctx.PlayerNetId( slot );
+			const bool tookOver = last != 0 && last != body;
+			last = body;
+			auto found = m_bags.find( body );
+			if ( found == m_bags.end() )
+			{
+				Bag fresh;
+				fresh.gave = tookOver;
+				found = m_bags.emplace( body, fresh ).first;
+			}
+			Bag& bag = found->second;
 			uint32_t target = SlotTarget( slot );
 			std::vector<CarriedItem> carried = ctx.CarriedItems( slot );
 
@@ -173,7 +199,8 @@ private:
 		ctx.FaceCamera( SlotTarget( slot ), false );
 	}
 
-	std::array<Bag, kMaxPlayers> m_bags;
+	std::map<uint32_t, Bag> m_bags; // by body
+	std::array<uint32_t, kMaxPlayers> m_bodies{}; // the body each slot drove last tick
 };
 
 } // namespace
