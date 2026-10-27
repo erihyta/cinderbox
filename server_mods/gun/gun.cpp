@@ -338,8 +338,10 @@ private:
 
 	bool IsLivingPlayer( Context& ctx, uint32_t netId ) const
 	{
+		// A player, or a body a mod drives (an NPC: the combat mod hurts it too).
 		int slot = ctx.SlotOf( netId );
-		const Character* c = slot >= 0 ? ctx.PlayerCharacter( PlayerSlot( slot ) ) : nullptr;
+		const Character* c = slot >= 0 ? ctx.PlayerCharacter( PlayerSlot( slot ) )
+							 : ctx.DrivenByMod( netId ) ? ctx.BodyCharacter( netId ) : nullptr;
 		return c != nullptr && c->dead == 0;
 	}
 
