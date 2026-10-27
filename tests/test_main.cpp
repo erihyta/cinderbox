@@ -4138,6 +4138,98 @@ void TestViewerCharacters()
 	CHECK( characterIn( frame, second ) == 0 && skeletonOf( second ) == small.get() );
 }
 
+// Found in roadmap step 1 (after M234): both games of a waves session crashed at once. A NetId
+// comes from a counter in the simulation's state, so a rollback can give the number of something
+// the client predicted (a piece of a wall, a prop) to something else (a ragdoll). The mirror kept
+// the visual it had for the number and wrote a ragdoll's pose into a prop's visual, which has no
+// room for one (a null component in a release build). A number that names something else now gets
+// a visual of its own: the old one is removed (its node freed) and the new one made.
+void TestMirrorNetIdReused()
+{
+	std::shared_ptr<const anim::AnimSet> rig = anim::AnimSet::CreateProcedural();
+	present::Mirror mirror( rig );
+	present::PresentationFrame frame;
+	auto entity = [&]( present::VisualKind kind ) {
+		present::FrameEntity e;
+		e.netId = 7;
+		e.kind = kind;
+		e.transform.position = { 1.0f, 2.0f, 3.0f };
+		if ( kind == present::VisualKind::Player )
+		{
+			e.hasAnim = true;
+		}
+		return e;
+	};
+	struct Seen
+	{
+		uint64_t id = 0;
+		present::VisualKind kind = present::VisualKind::Static;
+		bool ragdollAnim = false, playerAnim = false;
+		float yaw = 0.0f;
+		int count = 0; // visuals of the number: one
+	};
+	auto seen = [&]() {
+		Seen out;
+		mirror.ForEach( [&]( uint64_t id, const present::Visual& v, const present::RenderPose&, const present::PlayerAnim* a,
+							 const present::RagdollAnim* r ) {
+			if ( v.netId == 7 )
+			{
+				out = { id, v.kind, r != nullptr, a != nullptr, r != nullptr ? r->yaw : 0.0f, out.count + 1 };
+			}
+		} );
+		return out;
+	};
+	auto removedOrSpawned = [&]( uint64_t old ) {
+		bool removed = false, spawned = false;
+		for ( const present::Event& e : mirror.Events() )
+		{
+			removed |= e.type == present::EventType::Removed && e.visual == old;
+			spawned |= e.type == present::EventType::Spawned && e.netId == 7 && e.visual != old;
+		}
+		return removed && spawned;
+	};
+	auto step = [&]( present::FrameEntity e ) {
+		frame.tick += 1;
+		frame.rolledBack = frame.tick > 1;
+		frame.entities = { e };
+		mirror.Update( frame, 0.5f, 1.0f / 60.0f );
+	};
+
+	step( entity( present::VisualKind::Prop ) );
+	const Seen prop = seen();
+	CHECK( prop.count == 1 && prop.kind == present::VisualKind::Prop && prop.ragdollAnim == false );
+	// The rollback's frame: 7 is a ragdoll now.
+	present::FrameRagdoll ragdoll;
+	ragdoll.netId = 7;
+	ragdoll.yaw = 1.25f;
+	frame.ragdolls = { ragdoll };
+	present::FrameEntity asRagdoll = entity( present::VisualKind::Ragdoll );
+	asRagdoll.ragdoll = 0;
+	step( asRagdoll );
+	const Seen rag = seen();
+	std::printf( "    7 a prop (visual %llu), then a ragdoll (visual %llu, posed: %s, yaw %.2f)\n", (unsigned long long)prop.id,
+				 (unsigned long long)rag.id, rag.ragdollAnim ? "yes" : "no", double( rag.yaw ) );
+	CHECK( rag.count == 1 && rag.kind == present::VisualKind::Ragdoll && rag.ragdollAnim && rag.yaw == 1.25f && rag.id != prop.id );
+	CHECK( removedOrSpawned( prop.id ) );
+	// Then an item, then a player's body: each its own visual, the player's animated.
+	frame.ragdolls.clear();
+	present::FrameEntity asItem = entity( present::VisualKind::Item );
+	asItem.itemKind = 2;
+	step( asItem );
+	const Seen item = seen();
+	CHECK( item.count == 1 && item.kind == present::VisualKind::Item && item.id != rag.id && removedOrSpawned( rag.id ) );
+	asItem.itemKind = 3; // another kind of item under the same number
+	step( asItem );
+	const Seen other = seen();
+	CHECK( other.count == 1 && other.id != item.id && removedOrSpawned( item.id ) );
+	step( entity( present::VisualKind::Player ) );
+	const Seen player = seen();
+	CHECK( player.count == 1 && player.kind == present::VisualKind::Player && player.playerAnim && player.id != other.id );
+	// The same thing again keeps its visual.
+	step( entity( present::VisualKind::Player ) );
+	CHECK( seen().id == player.id );
+}
+
 // M218: a character's eyes and whether it may be seen in first person. The mannequin's scene has a
 // first-person camera on its head: its eye is there, where the game's eye always was (9 cm above
 // the head bone); a character whose files give an eye on the body and no camera has that eye and
@@ -12474,6 +12566,7 @@ int main( int argc, char** argv )
 		{ "motion_inspector", TestMotionInspector },
 		{ "characters", TestCharacters },
 		{ "viewer_characters", TestViewerCharacters },
+		{ "mirror_netid_reused", TestMirrorNetIdReused },
 		{ "first_person_camera", TestFirstPersonCamera },
 		{ "any_skeleton", TestAnySkeleton },
 		{ "possession", TestPossession },

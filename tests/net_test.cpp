@@ -4610,6 +4610,128 @@ void TestPossessProp()
 	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
 }
 
+// Found in roadmap step 1 (after M234): the inventory mod kept what a life started with by the
+// player's slot, not by its body. A player who took another body and came back had its own starting
+// items forgotten, so its death dropped them as loot beside the next life's new ones. The bot takes
+// the body a test mod spawned, takes its own back, and dies: the bat its body started with goes with
+// it, and the next life gets one of its own.
+class BodyKitMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_body_kit";
+	}
+	void Declare( mods::Declarations& declare ) override
+	{
+		m_take = declare.Action( "test.take", "" );
+		m_die = declare.Action( "test.die", "" );
+		m_damage = declare.Event( "combat.damage" );
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		if ( m_spawned == false )
+		{
+			m_spawned = true;
+			const b3Vec3 spawn = GetLevelLayout().spawnCenter;
+			ctx.SpawnCharacter( mods::CharacterHandle{ 0 }, b3Vec3{ spawn.x + 3.0f, spawn.y, spawn.z }, 0.0f );
+		}
+		for ( int slot = 0; slot < kMaxPlayers; ++slot )
+		{
+			if ( ctx.Pressed( PlayerSlot( slot ), m_take ) )
+			{
+				const std::vector<uint32_t> idle = ctx.IdleBodies();
+				if ( idle.empty() == false )
+				{
+					ctx.Possess( PlayerSlot( slot ), idle.front() );
+				}
+			}
+			if ( ctx.Pressed( PlayerSlot( slot ), m_die ) )
+			{
+				// A death as a game has one: the combat mod's, so it brings the player back too.
+				const uint32_t body = ctx.PlayerNetId( PlayerSlot( slot ) );
+				ctx.Emit( m_damage, body, body, 1000, b3Vec3{ 0.0f, 0.0f, 0.0f }, b3Vec3{ 0.0f, 0.0f, 0.0f } );
+			}
+		}
+	}
+
+private:
+	mods::ActionHandle m_take, m_die;
+	mods::EventHandle m_damage;
+	bool m_spawned = false;
+};
+
+void TestInventoryBodies()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	extra.push_back( std::make_unique<BodyKitMod>() );
+	Harness h( 47926, {}, {}, {}, {}, std::move( extra ) );
+	const ModSchema& schema = h.server.Schema();
+	const ActionBits take = schema.ActionMask( "test.take" ), die = schema.ActionMask( "test.die" );
+	const int batKind = schema.FindItemKind( "melee.bat" );
+	CHECK( take != 0 && die != 0 && batKind >= 0 );
+	Bot& bot = h.AddBot();
+	bot.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		in.actions = ( tick >= 120 && tick < 124 ) || ( tick >= 240 && tick < 244 ) ? take : ( tick >= 380 && tick < 384 ) ? die : 0;
+		return in;
+	};
+	Simulation& server = h.server.Sim();
+	auto batOf = [&]( uint32_t holder ) {
+		for ( const Simulation::EntityRef& r : server.Entities() )
+		{
+			const HeldItem* item = flecs::entity( server.World(), r.entity ).try_get<HeldItem>();
+			if ( item != nullptr && holder != 0 && item->holder == holder && int( item->kind ) == batKind )
+			{
+				return r.netId;
+			}
+		}
+		return uint32_t( 0 );
+	};
+	// The body it starts in; whether it left it and came back; the bat that body carried just before
+	// it died; and that bat a second after the death.
+	uint32_t first = 0, bat = 0, deathTick = 0;
+	bool left = false, back = false, batGone = false, batLying = false, nextLifeBat = false;
+	h.server.SetTickObserver( [&] {
+		const uint32_t body = server.PlayerNetId( 0 );
+		const flecs::entity e = server.FindEntity( body );
+		const Character* c = e.is_valid() ? e.try_get<Character>() : nullptr;
+		if ( first == 0 && body != 0 && c != nullptr )
+		{
+			first = body;
+		}
+		left |= first != 0 && body != 0 && body != first;
+		back |= left && body == first;
+		if ( back && c != nullptr && c->dead == 0 && deathTick == 0 )
+		{
+			bat = batOf( body );
+		}
+		if ( back && c != nullptr && c->dead != 0 && deathTick == 0 )
+		{
+			deathTick = server.Tick();
+		}
+		if ( deathTick != 0 && server.Tick() == deathTick + 60 && bat != 0 )
+		{
+			const flecs::entity b = server.FindEntity( bat );
+			const HeldItem* item = b.is_valid() ? b.try_get<HeldItem>() : nullptr;
+			batGone = b.is_valid() == false;
+			batLying = item != nullptr && item->holder == 0;
+		}
+		nextLifeBat |= deathTick != 0 && c != nullptr && c->dead == 0 && batOf( body ) != 0;
+	} );
+	h.RunUntil( 12.0 );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	GameClient& client = *h.bots[0].client;
+	std::printf( "    left its body %d, back %d; its bat %u before it died (tick %u): %s; the next life's bat %d; desyncs %u, checksums %u\n",
+				 int( left ), int( back ), bat, deathTick, batGone ? "gone" : batLying ? "LYING IN THE WORLD" : "?", int( nextLifeBat ),
+				 client.GetStats().desyncs, client.GetStats().checksumsVerified );
+	CHECK( left && back && bat != 0 && deathTick != 0 );
+	CHECK( batGone && batLying == false );
+	CHECK( nextLifeBat );
+	CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
+}
+
 // M222: an NPC on a live server. A test mod spawns a body when the game starts and drives it in a
 // square (forward, its look turned a quarter every second): the bot's own simulation predicts it
 // with its last input and agrees (no desyncs); the mod sends only the changes; a shot at it through
@@ -5912,6 +6034,7 @@ int main( int argc, char** argv )
 		{ "any_skeleton", TestAnySkeleton },
 		{ "possession", TestPossession },
 		{ "possess_prop", TestPossessProp },
+		{ "inventory_bodies", TestInventoryBodies },
 		{ "npc", TestNpc },
 		{ "leave_after_firing", TestLeaveAfterFiring },
 		{ "chaos", TestChaos },

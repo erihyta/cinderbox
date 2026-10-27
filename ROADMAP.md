@@ -122,8 +122,11 @@ own. A sheet is the same: a loader and a saver in the extension for `.cbsheet`
 
 ### 1. Stabilize M215 to M234
 
-A written checklist, run by bots, and by hand with two games on one machine (no other testers
-yet), at a 150 ms round trip with 2% loss (`cb_netsim`). What breaks is fixed with a test each.
+A written checklist ([docs/playtest.md](docs/playtest.md)), run by hand with two games on one
+machine (no other testers yet) and unattended, at a 150 ms round trip with 2% loss:
+`tools\playtest.ps1` starts the server, `cb_netsim` and the two games, records the session and
+verifies its replay at the end (`-Autoplay SEC`: the games play by themselves). What breaks is fixed
+with a test each.
 
 | Milestones | Check |
 |---|---|
@@ -139,6 +142,23 @@ yet), at a 150 ms round trip with 2% loss (`cb_netsim`). What breaks is fixed wi
 
 **Done when** the checklist passes and every feature since M215 is used by shipped content or gone.
 
+**So far (M235)**: the launcher and the checklist; unattended sessions (the default mods, the
+critter, waves, waves of 32 NPCs) clean after two fixes.
+
+| Found | State |
+|---|---|
+| Both games of a waves session crashed at once: a rollback gave a NetId to something else, and the viewer wrote a ragdoll's pose into a prop's visual | fixed (M235) |
+| A body taken back lost what its life started with: its death dropped its starting items as loot beside the next life's | fixed (M235) |
+| The local paid `ual_mannequin` predated M218: no first-person camera (first person did nothing), an upper layer reading `pistol or melee or melee_swing` | regenerated (M235) |
+| A grenade is never thrown by a skeleton its arm's pack does not fit (the critter): the throw waits for the pack's `frag.release` marker, and that pack is not played | open: a pack that does not fit could still run its states and markers, without its pose |
+| The waves mod takes any body nobody drives within 0.5 m of a spot it asked for one (a player's left body, say) | open, rare |
+| 32 NPCs: the server sends 1 to 2 Mbit/s to two players (their inputs) | to watch ([step 3](#3-two-network-models)) |
+| With brawl on, the unattended player never reaches the pistol or the bat (the kit takes the first slots) | the checklist covers them by hand |
+
+**Next in step 1**: the checklist by hand (two games); the M230 to M232 features given a use or
+removed (the brawl fist has no animation yet: `Punch_Jab`, `Punch_Cross` and `Hit_Chest` are in the
+free library).
+
 ### 2. Small fixes from the review
 
 | Fix | What |
@@ -149,7 +169,7 @@ yet), at a 150 ms round trip with 2% loss (`cb_netsim`). What breaks is fixed wi
 | The unmaintained motion nodes | `CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, `CbMove`, `CbLaunch`: out of the Favorites now; deleted in [step 6](#6-sheets-improved) (no shipped mod uses them) |
 | Two areas in Jolt | brawl's `Shockwave` (slam.tscn) and frag's `Blast` are `Area3D`s, so every drawn copy is an area in Jolt checking overlaps every physics frame, against nothing. The client turns monitoring off when it instantiates a look (the bake has read the shape) |
 | `mygame.cbr` in the checkout | a replay from Sep 17 (`CBRP`, version 2; today's is 47): git-ignored, nothing can play it. Deleted |
-| An uncommitted file | `godot/addons/cinderbox_maps/check_anim_tree.gd.uid` (M230's check) |
+| An uncommitted file | `godot/addons/cinderbox_maps/check_anim_tree.gd.uid` (M230's check): **committed (M235)** |
 
 **What Jolt does today**: nothing of the simulation's. Godot makes a physics object only for a
 `CollisionShape3D` under a physics node; every Cinderbox authoring node (`CbStatic`, `CbProp`,
@@ -595,3 +615,4 @@ Independent of the path; each is small.
 | Physics threads beside drawing | on by default (M141), not yet watched in the game: `--physics-threads=0` if frames suffer |
 | The old `build/` folder in the checkout | builds go outside the source tree; the folder is ignored and can be deleted |
 | `brawl.cpp`'s top comment | names the old roadmap's step 5 |
+| Old copies of the extension in `godot/bin` | `~libcinderbox...TMP` files, left by rebuilds while Godot had the library open: about 500 MB, git-ignored, can be deleted |

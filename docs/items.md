@@ -237,6 +237,7 @@ The `inventory` mod's rules:
 |---|---|
 | A life starts | every item kind with `inventory.start` is given |
 | Death | what the life started with is taken back; anything else carried drops where the player stood. The next life starts with the slot that was selected |
+| A body taken over | a life is its body's: a player that takes another body (possession) finds it with what it carries and is given nothing; back in its own, that body's starting items are still its life's, and a death takes them back (M235) |
 | Empty hands | freelook again (a weapon turns camera-facing on when it comes out) |
 
 The mod's look (`server_mods/inventory/client`, a workshop item like the others) is all data, and
