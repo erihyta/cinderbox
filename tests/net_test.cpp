@@ -1920,7 +1920,7 @@ void TestGunHurtsNpc()
 		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
 		{
 			const ModEventRecord& e = g.modEvents[i];
-			if ( int( e.type ) == hurt && e.netIdB == mod->npc && e.tick > seenUpTo )
+			if ( int( e.type ) == hurt && e.netIdA == mod->npc && e.tick > seenUpTo )
 			{
 				++hurtNpc;
 				seenUpTo = e.tick;
@@ -1932,6 +1932,77 @@ void TestGunHurtsNpc()
 	std::printf( "    the NPC %u hurt %d times by the pistol; desyncs %u\n", mod->npc.load(), hurtNpc, client.GetStats().desyncs );
 	CHECK( mod->npc != 0 && hurtNpc > 0 );
 	CHECK( client.GetStats().desyncs == 0 );
+}
+
+// M242: hurt, a character flinches. The combat mod says combat.hurt at the victim (it was said at
+// the attacker), and the mannequin's tree has a OneShot on it: Hit_Chest over the upper body. A test
+// mod hurts the bot once; its Flinch layer (the mannequin's third) fades in at once, then out.
+class HurtOnceMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_hurt_once";
+	}
+	void Declare( mods::Declarations& declare ) override
+	{
+		m_damage = declare.Event( "combat.damage" );
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		const uint32_t body = ctx.PlayerNetId( 0 );
+		if ( body != 0 && ctx.InWorld( 0 ) && ++m_ticks == 120 )
+		{
+			ctx.Emit( m_damage, 0, body, 10, b3Vec3{ 0.0f, 0.0f, 0.0f }, b3Vec3{ 0.0f, 0.0f, 0.0f } );
+			hurtAt = ctx.Tick();
+		}
+	}
+	std::atomic<uint32_t> hurtAt{ 0 };
+
+private:
+	mods::EventHandle m_damage;
+	uint32_t m_ticks = 0;
+};
+
+void TestFlinch()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	auto hurt = std::make_unique<HurtOnceMod>();
+	HurtOnceMod* mod = hurt.get();
+	extra.push_back( std::move( hurt ) );
+	const std::string root = CB_SOURCE_DIR;
+	Harness h( 47932, {}, {}, {}, [&]( ServerOptions& options ) {
+		std::string error, warnings;
+		options.character = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
+	}, std::move( extra ) );
+	h.AddBot().script = []( uint32_t ) { return PlayerInput{}; };
+	float before = -1.0f, most = 0.0f, after = -1.0f;
+	h.RunUntil( 5.0, [&]( double ) {
+		Simulation& sim = h.server.Sim();
+		AnimStateCopy a = sim.EntityAnimState( sim.PlayerNetId( 0 ) );
+		const uint32_t at = mod->hurtAt;
+		if ( a == nullptr || a->graph.size() < 3 )
+		{
+			return;
+		}
+		const float weight = a->graph[2].weight;
+		if ( at == 0 )
+		{
+			before = weight;
+		}
+		else if ( sim.Tick() <= at + 20 )
+		{
+			most = std::max( most, weight );
+		}
+		else if ( sim.Tick() > at + 60 )
+		{
+			after = weight;
+		}
+	} );
+	h.Report();
+	std::printf( "    the Flinch layer's weight: %.2f before, up to %.2f just after the hurt, %.2f a second later\n", double( before ),
+				 double( most ), double( after ) );
+	CHECK( mod->hurtAt != 0 && before == 0.0f && most > 0.5f && after == 0.0f );
 }
 
 void TestHeadshot()
@@ -2072,7 +2143,7 @@ void TestCombat()
 		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
 		{
 			const ModEventRecord& e = g.modEvents[i];
-			if ( int( e.type ) == hurtEvent && e.netIdA == shooterId && e.netIdB == victimId )
+			if ( int( e.type ) == hurtEvent && e.netIdA == victimId && e.netIdB == shooterId )
 			{
 				hurts[e.tick] = e.value;
 			}
@@ -6159,6 +6230,7 @@ int main( int argc, char** argv )
 		{ "chat", TestChat },
 		{ "server_info", TestServerInfo },
 		{ "headshot", TestHeadshot },
+		{ "flinch", TestFlinch },
 		{ "gun_npc", TestGunHurtsNpc },
 		{ "pistol_mark", TestPistolMark },
 		{ "rifle", TestRifle },

@@ -10187,7 +10187,7 @@ void MannequinSchema( ModSchema& schema )
 {
 	schema.layers = { "full", "upper" };
 	schema.stances = { "melee", "melee_swing", "gun", "rifle" };
-	schema.events = { "item.use", "melee.strike", "rifle.fired", "melee.swing", "melee.done" };
+	schema.events = { "item.use", "melee.strike", "rifle.fired", "melee.swing", "melee.done", "combat.hurt" };
 	for ( const char* pack : { "melee/melee.hold", "gun/gun.pistol_hold" } )
 	{
 		std::string mod = pack, name = mod.substr( mod.find( '/' ) + 1 ), text;
@@ -10264,7 +10264,8 @@ void TestMannequinCharacter()
 		return;
 	}
 	// The strike is the bat's pack's marker; the character's own clips have none.
-	CHECK( graph->layers.size() == 2 && graph->EmitsEvent( ShippedPacks::Strike ) == false &&
+	// (Its layers: FullBody, UpperBody, and the flinch: M242.)
+	CHECK( graph->layers.size() == 3 && graph->EmitsEvent( ShippedPacks::Strike ) == false &&
 		   packs.graphs[0]->EmitsEvent( ShippedPacks::Strike ) );
 	anim::PoseEvaluator pose( *set );
 	pose.SetGraph( graph, warnings );
@@ -10938,7 +10939,7 @@ void TestUalMannequin()
 	CHECK( set->TurnLegs() == false );
 	ModSchema schema;
 	schema.stances = { "melee", "melee_swing", "pistol", "rifle" };
-	schema.events = { "pistol.fired", "melee.strike", "rifle.fired" };
+	schema.events = { "pistol.fired", "melee.strike", "rifle.fired", "combat.hurt" };
 	auto graph = CompileAnimGraph( set->GraphText(), schema, error, warnings );
 	CHECK( graph != nullptr && warnings.empty() );
 	if ( graph == nullptr )

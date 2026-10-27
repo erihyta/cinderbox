@@ -151,7 +151,8 @@ critter, waves, waves of 32 NPCs) clean after two fixes.
 | A body taken back lost what its life started with: its death dropped its starting items as loot beside the next life's | fixed (M235) |
 | The local paid `ual_mannequin` predated M218: no first-person camera (first person did nothing), an upper layer reading `pistol or melee or melee_swing` | regenerated (M235) |
 | A grenade is never thrown by a skeleton its arm's pack does not fit (the critter): the throw waits for the pack's `frag.release` marker, and that pack is not played | fixed (M238): the throw waits for the marker or a moment, whichever comes first |
-| The waves mod takes any body nobody drives within 0.5 m of a spot it asked for one (a player's left body, say) | open, rare |
+| The waves mod takes any body nobody drives within 0.5 m of a spot it asked for one (a player's left body, say) | fixed (M242): only bodies that were not there when it asked |
+| `combat.hurt` was said at the attacker: a victim's state machine could not react to it (a flinch) | fixed (M242): said at the victim, the attacker as its other entity. A hurt animation per weapon would need the weapon in `combat.damage`, passed on with the hurt: later |
 | 32 NPCs: the server sends 1 to 2 Mbit/s to two players (their inputs) | to watch ([step 3](#3-two-network-models)) |
 | With brawl on, the unattended player never reaches the pistol or the bat (the kit takes the first slots) | the checklist covers them by hand |
 | The pistol and the rifle did not hurt NPCs (only a target with a player's slot counted) | fixed (M236) |
@@ -165,11 +166,11 @@ critter, waves, waves of 32 NPCs) clean after two fixes.
 | A motion's wait (`then when EVENT`) or `if` never heard an animation's marker (said after the motions had run); the fist and the throws always took their timeouts | fixed (M240): they hear it the tick after, as a trigger does |
 
 **M230 to M232 in use**: TimeScale and crossfade curves are the fist's (M236: `brawl.fists`, the
-finisher). Still unused: OneShot, Add2, nested state machines.
+finisher); OneShot is the mannequin's flinch on `combat.hurt` (M242: said at the victim now); the
+nested state machine is the fist's `Guard` (M242). **Add2: kept for later** (decided after M241): a
+lean or a breathing sway, once there are clips for it.
 
-**Next in step 1**: the checklist by hand (two games); OneShot, Add2 and nested machines given a use
-or removed (a flinch is the natural OneShot, but `combat.hurt` is said at the attacker: a hurt
-event at the victim first).
+**Next in step 1**: the checklist by hand (two games).
 
 ### 2. Small fixes from the review
 

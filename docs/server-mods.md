@@ -189,7 +189,7 @@ talks to `combat` through them.
 | emits | `combat.damage` | a = attacker (0: nobody), b = who is hurt, value = damage, point = where, vector = the push the body gets if it dies |
 | emits | `combat.heal` | b = who, value = health given back |
 | emits | `game.round_start` | everyone alive, full health |
-| hears | `combat.hurt` | a = attacker, b = victim, value = health actually lost, point |
+| hears | `combat.hurt` | a = the victim (said at it, so its state machine can flinch: M242), b = attacker (0: nobody), value = health actually lost, point |
 | hears | `combat.killed` | a = killer (0: the world, a fall), b = who died |
 | hears | `combat.respawned` | a = who is back (after dying, or with a new round) |
 
