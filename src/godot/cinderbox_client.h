@@ -121,6 +121,10 @@ public:
 	// How many of other players' clips were first seen late and drawn from their start
 	// (present/anim_catch_up.h), over the players here now.
 	int64_t get_animations_caught_up() const;
+	// The viewer's own player's animation, for finding what goes wrong: { lead (seconds), layers:
+	// [ { state, time, state_time, source, weight (the simulation's, newest tick), shown_state,
+	// shown_time (what is drawn this frame) } ] }.
+	godot::Dictionary get_local_animation() const;
 	// What a player is drawn playing this frame (its pose's state, after the lead and the catch-up):
 	// [ { channel (0: the base layer), clip, time (seconds into it), loops } ].
 	godot::Array get_drawn_clips( int64_t net_id ) const;
