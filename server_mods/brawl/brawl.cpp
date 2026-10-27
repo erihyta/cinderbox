@@ -66,6 +66,8 @@ public:
 		// A marker in the fist's punches (its pack, brawl.fists): the frame the fist lands. The
 		// fist's sheet hits on it, not on the click.
 		declare.Event( "brawl.fist.strike" );
+		// Another: the fist is back, the next punch may start (its sheet waits for it).
+		declare.Event( "brawl.fist.ready" );
 		m_damage = declare.Event( "combat.damage" );
 		declare.Motions( "brawl.moves" );
 		// The five skills: all of them are their scenes'.

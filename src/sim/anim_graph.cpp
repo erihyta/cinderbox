@@ -299,9 +299,14 @@ float ReadVar( const AnimExpr::Step& step, const AnimGraphInputs& in, float stat
 			for ( uint32_t i = 0; in.events != nullptr && i < kept; ++i )
 			{
 				const ModEventRecord& e = in.events[( in.eventCount - 1 - i ) % kModEventHistory];
-				if ( e.tick != in.tick )
+				const bool lastTicksLate = in.hearLate && e.tick + 1 == in.tick;
+				if ( e.tick != in.tick && lastTicksLate == false )
 				{
 					break; // newest first: the rest are older
+				}
+				if ( lastTicksLate && e.late == 0 )
+				{
+					continue; // (heard on its own tick)
 				}
 				if ( e.type == step.index && e.netIdA == in.netId )
 				{

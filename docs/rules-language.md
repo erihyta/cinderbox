@@ -80,6 +80,10 @@ As far in as the motion's first line, not under an `if`, before its first `then`
   while it is the current step (`move for S`: S seconds from its start).
 - **`if` is decided when its step starts** and holds for the whole step. A condition asked every
   tick is a `while` motion's.
+- **Waiting for an animation's marker.** A marker's event is said after the motions have run in
+  its tick, so a motion hears it the tick after, in a trigger (`on EVENT`), a wait (`then when EVENT`)
+  or an `if` alike (before M240 a wait or an `if` never heard one). The fist waits for its punch's
+  `brawl.fist.strike` (the hit) and then `brawl.fist.ready` (the next punch may start).
 - **Giving up.** `then when EXPRESSION within S` gives up after S seconds: its `timeout` lines run,
   and the motion ends (without a `timeout`, it just ends).
 - **It ends** when its `lasts` run out, its `until` holds, an `end` is reached, a wait gives up, or,

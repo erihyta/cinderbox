@@ -24,10 +24,11 @@ const CLIPS := [
 	["melee", "Sword_Idle", true, {}],
 	# The frame the swing connects: the melee mod hits on it.
 	["melee", "Sword_Attack", false, {"melee.strike": 0.4}],
-	# The fist's punches (brawl.fists): the frame the fist is furthest out, where the sheet's cast
-	# hits (the jab's left hand, the cross's right).
-	["brawl", "Punch_Jab", false, {"brawl.fist.strike": 0.2}],
-	["brawl", "Punch_Cross", false, {"brawl.fist.strike": 0.27}],
+	# The fist's punches (brawl.fists): strike, the frame the fist is furthest out, where the sheet
+	# hits (the jab's left hand, the cross's right); ready, the fist mostly back, from where the
+	# next punch may start (a cancel window's opening).
+	["brawl", "Punch_Jab", false, {"brawl.fist.strike": 0.2, "brawl.fist.ready": 0.55}],
+	["brawl", "Punch_Cross", false, {"brawl.fist.strike": 0.27, "brawl.fist.ready": 0.75}],
 ]
 
 
