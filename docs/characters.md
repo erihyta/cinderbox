@@ -65,9 +65,9 @@ The [Universal Animation Library](https://quaternius.com) mannequin by Quaterniu
   UE-style bones (`pelvis`, `spine_01`, `upperarm_r`) onto `SkeletonProfileHumanoid` with
   `source/bone_map.tres`.
 - **State machine**: an ordinary `AnimationTree` in `character.tscn` (see
-  [State machines](#state-machines)): locomotion, jumps, and an upper-body layer for the pistol
-  (with a shot on `item.use`) and the bat (with a swing that strikes on a marker; the bat's
-  fire is the melee mod's own look).
+  [State machines](#state-machines)): locomotion and jumps (`FullBody`), and an upper-body layer
+  (`UpperBody`) that is only a rest at weight 0: a held item's pack swaps in its own (the pistol's
+  shot, the bat's swing, the fist's punches).
 - **Flinch** (M242): a `OneShot` over the upper body (the spine and up: the legs walk on) plays
   `Hit_Chest` once on `combat.hurt`, which the combat mod says at the victim.
 - **Hitboxes**: capsules along the spine, arms and legs sized from the bone lengths, a head
@@ -298,7 +298,7 @@ Conditions and expressions read simulation values, never scripts:
 | `move_forward`, `move_right` | smoothed ground velocity in the body's frame (m/s): for directional blend spaces |
 | `vertical_speed`, `grounded`, `airborne_time`, `jumped` | the body's movement (`jumped`: on the tick of a jump) |
 | `aiming`, `backward`, `state_time` | a mod's Aim; walking backwards; seconds in the current state |
-| a stance's name (`gun`, `melee`) | true while any layer has it (mods' `SetStance`) |
+| a stance's name (`crouch`) | true while any layer has it (mods' `SetStance`) |
 | a mod event's name (`item.use`, `attack`) | on the tick it is emitted at this player: its value (1 if the value is 0), so `attack` and `attack == 2` both work: a trigger |
 | ... the same event, while already in the state it leads to | starts that state over, with the transition's crossfade: a shot fired during the last one's recoil plays the recoil again (the pistol fires every 0.2 s, its clip is 0.63 s). Godot has no transition from a state to itself, so the bake derives this from the transition you drew (the pistol pack's `Hold -> Shoot` on `item.use`). The clip's own keys (a sound, a flash keyed inside it) fire again too, as long as that transition has a crossfade |
 | a board field's name (`inventory.slot`) | the player's value (or the global one) |
@@ -324,8 +324,12 @@ A mod says what a player is doing; the character says what that looks like.
 
 | Who | Does | Example |
 |---|---|---|
-| a mod | declares names: `d.Layer( "upper" )`, `d.Stance( "gun" )`, and sets a stance on a layer: `ctx.SetStance( player, layer, stance )` (a default `StanceHandle` clears it) | the gun mod sets `gun` on `upper` while a gun is out; the bat sets `melee`, and `melee_swing` for a swing |
-| a character | reads stances by name in its state machine's conditions and layer weights | an upper layer weighted by `gun or melee or melee_swing` |
+| a mod | declares names: `d.Layer( "full" )`, `d.Stance( "crouch" )`, and sets a stance on a layer: `ctx.SetStance( player, layer, stance )` (a default `StanceHandle` clears it) | a crouch mod sets `crouch` while C is held |
+| a character | reads stances by name in its state machine's conditions and layer weights | a layer weighted by `crouch`, a transition on `not crouch` |
+
+- **What a held item does with the arms is its pack's**, not a stance's (the pistol's, the bat's
+  and the fist's `UpperBody` swap in while it is out). The bat still sets `melee` and
+  `melee_swing`, which no shipped state machine reads: they go with the bat's sheet (roadmap step 5).
 
 - A stance is a name and nothing more: no clip is tied to it. A character whose machine never
   reads `gun` simply does not change when a gun comes out.
@@ -501,5 +505,5 @@ laid over the whole body (or its own bone filter) with its own weight, which say
   weight 0; a motion turns it up the tick it starts.
 - **The clips** are the SDK placeholder's (`Sprint`, `Jump`'s left arm for the grapple: CC0),
   stand-ins until better ones are put in those scenes.
-The default characters still have pistol and bat states of their own: they play only on a server
-whose look has no such pack.
+The default characters have no item states of their own: what an item does with the arms is its
+pack's.

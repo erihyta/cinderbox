@@ -2386,8 +2386,8 @@ void TestRifle()
 	}
 }
 
-// The two guns set their stances on the same layer. Swapped one for the other, either way, the
-// body has the stance of the one that is out: the one put away does not clear it.
+// Swapped one gun for the other, either way, the body aims with the one that is out: the one put
+// away does not take the aim with it. (The guns set a stance too until M243; nothing read it.)
 void TestGunSwap()
 {
 	Harness h( 47824 );
@@ -2400,11 +2400,7 @@ void TestGunSwap()
 	const ModSchema& schema = h.server.Schema();
 	ActionBits rifle = kKeySlot3;
 	ActionBits pistol = kKeySlot1;
-	int upper = schema.FindLayer( "upper" );
-	int pistolStance = schema.FindStance( "gun" );
-	int rifleStance = schema.FindStance( "gun" );
-	// (One stance for every gun: what differs between them is their own animation pack.)
-	CHECK( rifle != 0 && pistol != 0 && upper >= 0 && pistolStance >= 0 && rifleStance == pistolStance );
+	CHECK( rifle != 0 && pistol != 0 && schema.FindStance( "gun" ) < 0 );
 	// The rifle, the pistol, the rifle, the pistol: a key every second and a half.
 	h.AddBot().script = [=]( uint32_t tick ) {
 		PlayerInput in;
@@ -2422,11 +2418,11 @@ void TestGunSwap()
 		if ( anim != nullptr && step >= 1 && step <= 4 && sim.Tick() % 90 >= 60 )
 		{
 			total[step] += 1;
-			held[step] += anim->aiming != 0 && int( anim->stances[upper] ) == ( step % 2 == 1 ? rifleStance : pistolStance ) + 1 ? 1 : 0;
+			held[step] += anim->aiming != 0 ? 1 : 0;
 		}
 	} );
 	h.Report();
-	std::printf( "    in the stance: rifle %d/%d, then pistol %d/%d, then rifle %d/%d, then pistol %d/%d\n", held[1], total[1], held[2], total[2], held[3],
+	std::printf( "    aiming: rifle %d/%d, then pistol %d/%d, then rifle %d/%d, then pistol %d/%d\n", held[1], total[1], held[2], total[2], held[3],
 				 total[3], held[4], total[4] );
 	for ( int step = 1; step <= 4; ++step )
 	{
@@ -2449,8 +2445,7 @@ void TestMelee()
 	int full = schema.FindLayer( "full" );
 	int ready = schema.FindStance( "melee" );
 	int swing = schema.FindStance( "melee_swing" );
-	int upper = schema.FindLayer( "upper" );
-	CHECK( fire != 0 && bat != 0 && pistol != 0 && full >= 0 && ready >= 0 && swing >= 0 && upper >= 0 );
+	CHECK( fire != 0 && bat != 0 && pistol != 0 && full >= 0 && ready >= 0 && swing >= 0 );
 
 	h.AddBot().script = [=]( uint32_t tick ) {
 		PlayerInput in;

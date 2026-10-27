@@ -32,10 +32,14 @@ namespace
 
 // What a mod's look, motions, characters and maps are made of, in the order a modder meets them.
 const char* const kOfferedNodes[] = {
-	"CbReaction",	"CbPrediction", "CbItem",	"CbLinkLook", "CbMotionSet",   "CbMotion",	"CbProbe", "CbLaunch", "CbImpulse", "CbForce", "CbLink",	"CbFieldLabel",
-	"CbFieldBinding", "CbList", "CbKey", "CbClick", "CbPromptLabel", "CbCharacter", "CbAnimPack",	   "CbHitbox",	"CbSocket",
-	"CbStatic",		"CbProp",		"CbBreakable", "CbSpawn", "CbCharacterBody",	   "CbTemplate",	"CbComponent", "CbEntity",
+	"CbReaction",	"CbPrediction", "CbItem",	"CbLinkLook", "CbMotionSet",	 "CbFieldLabel", "CbFieldBinding", "CbList",
+	"CbKey",		"CbClick",		"CbPromptLabel", "CbCharacter", "CbAnimPack",	   "CbHitbox",	"CbSocket",	   "CbStatic",
+	"CbProp",		"CbBreakable", "CbSpawn",	"CbCharacterBody", "CbTemplate", "CbComponent", "CbEntity",
 };
+
+// Offered before M243, and taken out of the favorites again: the motion nodes, kept but not
+// maintained (a motion is a sheet's block now: docs/rules-language.md).
+const char* const kWithdrawnNodes[] = { "CbMotion", "CbProbe", "CbLaunch", "CbImpulse", "CbForce", "CbLink", "CbMove" };
 
 PackedStringArray ReadLines( const String& path )
 {
@@ -95,6 +99,25 @@ void CbAutoBakePlugin::OfferNodes()
 		{
 			favorites.push_back( name );
 			changedFavorites = true;
+		}
+	}
+	// Withdrawn: out of the favorites, once (the offered file keeps them, so they are not put back).
+	for ( const char* name : kWithdrawnNodes )
+	{
+		const String withdrawn = String( name ) + ".withdrawn";
+		if ( offered.has( withdrawn ) )
+		{
+			continue;
+		}
+		offered.push_back( withdrawn );
+		changedOffered = true;
+		for ( int64_t i = favorites.size() - 1; i >= 0; --i )
+		{
+			if ( favorites[i].get_slicec( ' ', 0 ) == String( name ) )
+			{
+				favorites.remove_at( i );
+				changedFavorites = true;
+			}
 		}
 	}
 	if ( changedFavorites )

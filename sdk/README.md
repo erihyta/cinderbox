@@ -45,7 +45,7 @@ machines. No game and no server are needed to author. The rules are the mod's C+
 
 The editor's **Create New Node** dialog lists the Cinderbox nodes a mod is made of under
 **Favorites**, on its left: `CbReaction`, `CbPrediction`, `CbItem`, `CbLinkLook`,
-`CbMotionSet`, `CbMotion`, `CbProbe`, `CbImpulse`, `CbForce`, `CbLink`, the HUD nodes (`CbList` and `CbKey` among them), and the character and map nodes. The extension puts them
+`CbMotionSet` (its motions are a rules sheet's blocks), the HUD nodes (`CbList` and `CbKey` among them), and the character and map nodes. The extension puts them
 there the first time a project is opened with it. One you take out of the favorites stays out.
 
 ## What `-New <mod>` makes
