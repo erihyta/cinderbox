@@ -2419,6 +2419,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				values.events = m_globals.modEvents;
 				values.eventCount = m_globals.modEventCount;
 				values.tick = m_globals.tick;
+				values.hearLate = true; // (a motion's conditions: an animation's marker of last tick)
 				values.netId = netId;
 				values.heldKinds = held;
 				values.heldCount = heldCount;
@@ -4803,6 +4804,7 @@ void Simulation::RunItemMotions( flecs::entity item, int event, bool expiring )
 		values.events = m_globals.modEvents;
 		values.eventCount = m_globals.modEventCount;
 		values.tick = m_globals.tick;
+		values.hearLate = true;
 		values.netId = itemId;
 		values.curves = &m.curves;
 		const PhysicsBody* pb = item.try_get<PhysicsBody>();

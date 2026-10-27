@@ -308,6 +308,10 @@ struct AnimGraphInputs
 	const ModEventRecord* events = nullptr;
 	uint32_t eventCount = 0; // SimGlobals::modEventCount
 	uint32_t tick = 0;
+	// A motion's: an event also counts the tick after it was recorded late (after the motions had
+	// run: an animation's marker), as a motion's trigger hears it. A state machine runs after the
+	// markers, so it hears them on their own tick.
+	bool hearLate = false;
 	uint32_t netId = 0;
 	// Kinds of the items the player holds (schema indices).
 	// The player's input this tick, for "held.<action>" (motions; null for a state machine).

@@ -115,20 +115,22 @@ func steer(delta: float) -> Dictionary:
 		actions |= keys.action_bit("grapple.hook.use")
 	if spam_slot > 0:
 		# --spam-use=N: slot N out, standing still, the use button pressed and let go as fast as
-		# the game reads it, and the own player's animation said twice a second.
+		# the game reads it, and the own player's animation said ten times a second.
 		_select(spam_slot - 1)
 		move = Vector2.ZERO
 		jump = false
 		actions = 0
 		use = Engine.get_process_frames() % 4 < 2
 		if elapsed >= _next_spam_report:
-			_next_spam_report = elapsed + 0.5
+			_next_spam_report = elapsed + 0.1
 			var anim: Dictionary = game.client.get_local_animation()
 			var parts := []
 			for layer in anim.get("layers", []):
 				parts.append("%d:%d@%.2f/%.2f shown %d@%.2f w%.2f" % [layer.source, layer.state, layer.time, layer.state_time,
 					layer.get("shown_state", -1), layer.get("shown_time", -1.0), layer.weight])
-			print("spam %.1fs lead %.2f | %s" % [elapsed, anim.get("lead", 0.0), " | ".join(parts)])
+			var motions := String(game.client.get_stats().get("motions", "")).strip_edges().replace("
+", " ; ")
+			print("spam %.1fs lead %.2f | %s || %s" % [elapsed, anim.get("lead", 0.0), " | ".join(parts), motions])
 	elif view_probe:
 		# With --probe-use it uses what it has out once, a second into standing still: the
 		# frames kept of that part are the use, from the press on.
