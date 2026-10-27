@@ -747,6 +747,15 @@ bool CompileMotionSet( const std::string& set, const std::string& text, const Mo
 			}
 			m.curves.push_back( curve );
 		}
+		else if ( key == "probe_frame" )
+		{
+			// probe_frame facing: thrown level along the body's facing, not along the look
+			if ( w.size() < 2 || ( w[1] != "facing" && w[1] != "look" ) )
+			{
+				return fail( "probe_frame is facing or look" );
+			}
+			m.probeFacing = w[1] == "facing";
+		}
 		else if ( key == "probe_shape" )
 		{
 			// probe_shape <radius> <x y z>...: what the line sweeps, around its tip

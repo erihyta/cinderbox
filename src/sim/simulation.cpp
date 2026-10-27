@@ -4411,8 +4411,11 @@ bool Simulation::HoldPoint( const MotionHold& hold, b3Vec3& point ) const
 bool Simulation::AttachHold( flecs::entity e, const Transform& t, const PlayerInput& in, const Motion& m, size_t index, uint32_t& holdTick )
 {
 	uint32_t self = e.get<NetId>().value;
-	float yaw = detmath::YawToRadians( in.cameraYaw );
-	b3CosSin pitch = detmath::CosSin( float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f ) );
+	// Along the camera's look (a hook aimed at the crosshair), or level along the body's facing
+	// (a punch's: where the body faces is what it hits, whatever the camera does).
+	const Character* body = m.probeFacing ? e.try_get<Character>() : nullptr;
+	float yaw = body != nullptr ? body->facingYaw : detmath::YawToRadians( in.cameraYaw );
+	b3CosSin pitch = body != nullptr ? detmath::CosSin( 0.0f ) : detmath::CosSin( float( in.cameraPitch ) * ( detmath::kTwoPi / 65536.0f ) );
 	b3Vec3 forward = detmath::YawForward( yaw );
 	b3Vec3 look = { forward.x * pitch.cosine, pitch.sine, forward.z * pitch.cosine };
 

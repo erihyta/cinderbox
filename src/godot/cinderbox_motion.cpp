@@ -1662,6 +1662,10 @@ std::string BakeSheetMotion( const Dictionary& p, const String& kind, const Node
 					probeShape = "probe_" + pieces;
 				}
 				text += "probe\t" + Num( double( statement.get( "range", 40.0 ) ) ) + "\t" + Num( double( statement.get( "speed", 0.0 ) ) ) + "\n";
+				if ( String( statement.get( "along", "look" ) ) == "facing" )
+				{
+					text += "probe_frame\tfacing\n"; // level along the body's facing, not the camera's look
+				}
 				PackedStringArray holds = statement.get( "holds", PackedStringArray() );
 				if ( holds.is_empty() == false && holds.size() < 3 )
 				{

@@ -156,7 +156,7 @@ end, so nothing in them lasts; a cast belongs to the motion, not to a step.
 | Line | Does |
 |---|---|
 | `find SHAPE [players] [bodies] [self] [max N] [turned facing\|look\|none] [at (x, y, z)]` | everything the shape overlaps when its step starts; the lines further in run once for each, nearest first, at most N (16). Players and bodies (props, items lying about) unless one is named; the player itself only with `self`; the shape turned as the player faces (the default), as it looks (with the pitch), or not at all |
-| `cast SHAPE range R [speed V] [holds level bodies players]` | a line thrown along the look when the motion starts: at once (speed 0: it holds what is there, or the motion does not happen) or flying at V m/s, holding what it meets first. The lines further in act **while it holds**; with a cast, what the first step does to bodies goes under it |
+| `cast SHAPE range R [speed V] [holds level bodies players] [along look\|facing]` | a line thrown along the look (`along facing`: level along the body's facing, whatever the camera does: a punch's) when the motion starts: at once (speed 0: it holds what is there, or the motion does not happen) or flying at V m/s, holding what it meets first. The lines further in act **while it holds**; with a cast, what the first step does to bodies goes under it |
 
 | A `SHAPE` | |
 |---|---|
@@ -347,7 +347,7 @@ lasting    := "force" amount { option } | "move" [ "for" num ] { PARAM amount }
             | "link" { link-option } | "follow" NODE "over" num
 order      := "then when" expr [ "within" num ] | "after" num | "timeout" | "every" num
             | "if" expr ... [ "else" ... ]
-finding    := "find" shape { find-option } ... | "cast" shape "range" num [ "speed" num ] [ "holds" ... ] ...
+finding    := "find" shape { find-option } ... | "cast" shape "range" num [ "speed" num ] [ "holds" ... ] [ "along" ( "look" | "facing" ) ] ...
 amount     := a number, or an expression up to the next option word
 option     := "on" who | "along" direction [ "turn" vec2 ] | "replace" ... | "kind" ... | "top" amount
             | "ramp" num | "react"

@@ -161,6 +161,7 @@ critter, waves, waves of 32 NPCs) clean after two fixes.
 | HUD lines overlap at half-screen windows (the debug lines over the skills, the hotbar over the keys' line and the health bar) | not a priority (the user plays full screen), kept |
 | Spamming use breaks the bat's and the guns' animations: their hand-written `predict` lines guess a use every 1.1 s / 0.19 s from the click, the server allows one 1.1 s after its own swing started / every 0.2 s from when the press arrives; guesses outrun it, the drawn swing restarts on a guess the server refuses and snaps back when it is taken back (measured with `--spam-use`, M239) | the fix is [step 5](#5-every-item-a-sheet): a sheet's use is predicted exactly, no guess |
 | Spamming the fist restarts its punch every 0.3 s (its cooldown), before a 0.87 to 1.33 s clip plays out; drawn exactly as simulated (no guess) | fixed (M240): a recovery marker (`brawl.fist.ready`) in each punch; the next starts from there |
+| In third person the fist hit where the camera looked but shoved along the body's facing | fixed (M241): the brawl kit hits and shoves where the body faces (`cast ... along facing`, new); the camera is the default only for what is aimed (the hook) |
 | A motion's wait (`then when EVENT`) or `if` never heard an animation's marker (said after the motions had run); the fist and the throws always took their timeouts | fixed (M240): they hear it the tick after, as a trigger does |
 
 **M230 to M232 in use**: TimeScale and crossfade curves are the fist's (M236: `brawl.fists`, the
