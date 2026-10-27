@@ -150,7 +150,7 @@ critter, waves, waves of 32 NPCs) clean after two fixes.
 | Both games of a waves session crashed at once: a rollback gave a NetId to something else, and the viewer wrote a ragdoll's pose into a prop's visual | fixed (M235) |
 | A body taken back lost what its life started with: its death dropped its starting items as loot beside the next life's | fixed (M235) |
 | The local paid `ual_mannequin` predated M218: no first-person camera (first person did nothing), an upper layer reading `pistol or melee or melee_swing` | regenerated (M235) |
-| A grenade is never thrown by a skeleton its arm's pack does not fit (the critter): the throw waits for the pack's `frag.release` marker, and that pack is not played | open: a pack that does not fit could still run its states and markers, without its pose |
+| A grenade is never thrown by a skeleton its arm's pack does not fit (the critter): the throw waits for the pack's `frag.release` marker, and that pack is not played | fixed (M238): the throw waits for the marker or a moment, whichever comes first |
 | The waves mod takes any body nobody drives within 0.5 m of a spot it asked for one (a player's left body, say) | open, rare |
 | 32 NPCs: the server sends 1 to 2 Mbit/s to two players (their inputs) | to watch ([step 3](#3-two-network-models)) |
 | With brawl on, the unattended player never reaches the pistol or the bat (the kit takes the first slots) | the checklist covers them by hand |
