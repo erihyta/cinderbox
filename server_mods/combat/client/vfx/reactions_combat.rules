@@ -3,7 +3,7 @@
 
 # Hurt
 on combat.hurt if is_local
-    subject $other
+    subject $at
     at point
     flash rgba(0.8, 0.05, 0.05, 0.24) time 0.3
 

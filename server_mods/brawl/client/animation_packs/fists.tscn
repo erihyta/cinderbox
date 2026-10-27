@@ -38,7 +38,7 @@ node_connections = [&"Scale", 0, &"Clip", &"output", 0, &"Scale"]
 _data = [Vector2(0, 0), 0.0, 0.0, 0, 0, Vector2(1, 1), 2.5, 0.0, 0, 0]
 point_count = 2
 
-[sub_resource type="AnimationNodeStateMachineTransition" id="StartToReady"]
+[sub_resource type="AnimationNodeStateMachineTransition" id="GuardStart"]
 advance_mode = 2
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="ReadyToJab"]
@@ -47,11 +47,6 @@ advance_mode = 2
 advance_expression = "motion.brawl.fist.Jab and brawl.combo == 1"
 
 [sub_resource type="AnimationNodeStateMachineTransition" id="CrossToJab"]
-xfade_time = 0.05
-advance_mode = 2
-advance_expression = "motion.brawl.fist.Jab and brawl.combo == 1"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="FinisherToJab"]
 xfade_time = 0.05
 advance_mode = 2
 advance_expression = "motion.brawl.fist.Jab and brawl.combo == 1"
@@ -66,24 +61,6 @@ xfade_time = 0.05
 advance_mode = 2
 advance_expression = "motion.brawl.fist.Jab and brawl.combo == 2"
 
-[sub_resource type="AnimationNodeStateMachineTransition" id="ReadyToFinisher"]
-xfade_time = 0.08
-xfade_curve = SubResource("Snap")
-advance_mode = 2
-advance_expression = "motion.brawl.fist.Finisher"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="JabToFinisher"]
-xfade_time = 0.08
-xfade_curve = SubResource("Snap")
-advance_mode = 2
-advance_expression = "motion.brawl.fist.Finisher"
-
-[sub_resource type="AnimationNodeStateMachineTransition" id="CrossToFinisher"]
-xfade_time = 0.08
-xfade_curve = SubResource("Snap")
-advance_mode = 2
-advance_expression = "motion.brawl.fist.Finisher"
-
 [sub_resource type="AnimationNodeStateMachineTransition" id="JabToReady"]
 xfade_time = 0.2
 switch_mode = 2
@@ -94,21 +71,35 @@ xfade_time = 0.2
 switch_mode = 2
 advance_mode = 2
 
-[sub_resource type="AnimationNodeStateMachineTransition" id="FinisherToReady"]
-xfade_time = 0.25
-switch_mode = 2
-advance_mode = 2
-
-[sub_resource type="AnimationNodeStateMachine" id="UpperBody"]
+[sub_resource type="AnimationNodeStateMachine" id="Guard"]
 states/Ready/node = SubResource("ReadyClip")
 states/Ready/position = Vector2(300, 100)
 states/Jab/node = SubResource("JabClip")
 states/Jab/position = Vector2(550, 0)
 states/Cross/node = SubResource("CrossClip")
 states/Cross/position = Vector2(550, 200)
+transitions = ["Start", "Ready", SubResource("GuardStart"), "Ready", "Jab", SubResource("ReadyToJab"), "Cross", "Jab", SubResource("CrossToJab"), "Ready", "Cross", SubResource("ReadyToCross"), "Jab", "Cross", SubResource("JabToCross"), "Jab", "Ready", SubResource("JabToReady"), "Cross", "Ready", SubResource("CrossToReady")]
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="StartToGuard"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="GuardToFinisher"]
+xfade_time = 0.08
+xfade_curve = SubResource("Snap")
+advance_mode = 2
+advance_expression = "motion.brawl.fist.Finisher"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="FinisherToGuard"]
+xfade_time = 0.25
+switch_mode = 2
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachine" id="UpperBody"]
+states/Guard/node = SubResource("Guard")
+states/Guard/position = Vector2(300, 100)
 states/Finisher/node = SubResource("Finisher")
-states/Finisher/position = Vector2(800, 100)
-transitions = ["Start", "Ready", SubResource("StartToReady"), "Ready", "Jab", SubResource("ReadyToJab"), "Cross", "Jab", SubResource("CrossToJab"), "Finisher", "Jab", SubResource("FinisherToJab"), "Ready", "Cross", SubResource("ReadyToCross"), "Jab", "Cross", SubResource("JabToCross"), "Ready", "Finisher", SubResource("ReadyToFinisher"), "Jab", "Finisher", SubResource("JabToFinisher"), "Cross", "Finisher", SubResource("CrossToFinisher"), "Jab", "Ready", SubResource("JabToReady"), "Cross", "Ready", SubResource("CrossToReady"), "Finisher", "Ready", SubResource("FinisherToReady")]
+states/Finisher/position = Vector2(600, 100)
+transitions = ["Start", "Guard", SubResource("StartToGuard"), "Guard", "Finisher", SubResource("GuardToFinisher"), "Finisher", "Guard", SubResource("FinisherToGuard")]
 
 [sub_resource type="AnimationNodeBlendTree" id="Tree"]
 nodes/output/position = Vector2(608, 160)
@@ -122,7 +113,7 @@ skeleton_path = NodePath("Skeleton3D")
 animation_player_path = NodePath("AnimationPlayer")
 animation_tree_path = NodePath("AnimationTree")
 editor_description = "How the fist punches: an animation pack for the upper body, played instead of the holder's own while the fist is out (prefabs/fist.tscn: animation_pack).
-Ready is the idle. The fist's sheet (prefabs/fist.rules) counts the combo: its Jab motion raises brawl.combo to 1, then 2; its Finisher sets it back to 0. So: the first jab plays Punch_Jab, the second Punch_Cross, the finisher Punch_Cross again at three quarters of its speed (the Finisher state's TimeScale), eased in by its crossfade's curve. Each goes back to Ready at its end.
+Ready is the idle. The fist's sheet (prefabs/fist.rules) counts the combo: its Jab motion raises brawl.combo to 1, then 2; its Finisher sets it back to 0. So: the first jab plays Punch_Jab, the second Punch_Cross, the finisher Punch_Cross again at three quarters of its speed (the Finisher state's TimeScale), eased in by its crossfade's curve. The jabs are a nested state machine, Guard (Ready, Jab, Cross): the finisher leaves it from any of them, and comes back to its start (Ready) at its end (its ready marker comes a tick before, so a new jab starts from Ready).
 The motions are the sheet's, run by every simulation: the punches are predicted with the hit, so they play at the click.
 The clips are the mannequin's (CC0), taken by godot/addons/cinderbox_maps/make_weapon_clips.gd -- --mod=brawl. Skeleton3D is the SDK's placeholder: leave it. Saving this scene bakes it into res://anim/brawl.fists/."
 

@@ -9,7 +9,8 @@
 //   you emit     combat.heal       a = who gave it (or 0), b = who is healed, value = health
 //   you emit     game.round_start  everyone is alive again, at full health
 //
-//   you hear     combat.hurt       damage was taken: a = attacker, b = victim, value = health lost,
+//   you hear     combat.hurt       damage was taken: a = the victim (said at it: its state machine
+//                                  can flinch), b = attacker (0: nobody), value = health lost,
 //                                  point = where
 //   you hear     combat.killed     a = killer (0: the world, a fall), b = who died
 //   you hear     combat.respawned  a = who is back: after dying, or with a new round
@@ -320,7 +321,7 @@ private:
 		int32_t lost = std::min( damage, v.health );
 		v.health -= lost;
 		ctx.Set( victimTarget, m_health, v.health );
-		ctx.Emit( m_hurt, attackerTarget, victimTarget, lost, point );
+		ctx.Emit( m_hurt, victimTarget, attackerTarget, lost, point ); // (said at the victim)
 		if ( v.health > 0 )
 		{
 			victim.set<Fighter>( v );

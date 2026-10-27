@@ -156,6 +156,9 @@ private:
 	{
 		++m_number;
 		const int count = std::min( m_most, m_first + m_grow * ( m_number - 1 ) );
+		// The bodies nobody drives already: none of them is this wave's (a body a player left near
+		// a spot is not taken for an NPC).
+		m_before = ctx.IdleBodies();
 		const b3Vec3 center = GetLevelLayout().spawnCenter;
 		for ( int i = 0; i < count; ++i )
 		{
@@ -184,6 +187,10 @@ private:
 		}
 		for ( uint32_t body : ctx.IdleBodies() )
 		{
+			if ( std::find( m_before.begin(), m_before.end(), body ) != m_before.end() )
+			{
+				continue;
+			}
 			const Transform* t = ctx.EntityTransform( body );
 			for ( size_t i = 0; t != nullptr && i < m_spots.size(); ++i )
 			{
@@ -286,6 +293,7 @@ private:
 	ItemKindHandle m_weapon;
 	std::vector<Npc> m_npcs;
 	std::vector<Spot> m_spots;
+	std::vector<uint32_t> m_before; // the bodies nobody drove when the last wave was asked for
 	uint32_t m_rate = 60;
 	uint32_t m_nextWave = 0;
 	uint32_t m_pauseTicks = 0;

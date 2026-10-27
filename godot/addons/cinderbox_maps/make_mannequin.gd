@@ -13,9 +13,10 @@ extends SceneTree
 ## puts it under a CbCharacter with a CinderboxSkeleton and hitboxes sized from the skeleton's own
 ## bone lengths, and authors its state machine as an ordinary AnimationTree:
 ##
-##   UpperBlend (Blend2, filter: the spine and everything above it)
-##     Base:  Locomotion (1D blend space on forward_speed) <-> JumpStart / Fall / Land
-##     Upper: Rest (blend 0: the base plays alone)
+##   Flinch (OneShot: Hit_Chest, once, on combat.hurt; filter: the spine and up, so the legs walk on)
+##     UpperBlend (Blend2, filter: the spine and everything above it)
+##       Base:  Locomotion (1D blend space on forward_speed) <-> JumpStart / Fall / Land
+##       Upper: Rest (blend 0: the base plays alone)
 ##
 ## The upper layer is a place for items' packs: a held bat or gun swaps in its pack's UpperBody
 ## (server_mods/*/client/animation_packs), which has the item's states, clips and markers. Everything
@@ -195,6 +196,13 @@ func _add_tree(player: AnimationPlayer) -> void:
 	upper.add_node("Rest", _clip("Idle"), Vector2(300, 100))
 	_go(upper, "Start", "Rest")
 
+	# A flinch: hurt, the upper body jolts once over whatever it does (the legs walk on). The combat
+	# mod says combat.hurt at the victim; a OneShot plays its animation once from the tick its
+	# request turns true, faded in and out.
+	var flinch := AnimationNodeOneShot.new()
+	flinch.fadein_time = 0.06
+	flinch.fadeout_time = 0.25
+	flinch.filter_enabled = true
 	var blend := AnimationNodeBlend2.new()
 	blend.filter_enabled = true
 	var spine := _skeleton.find_bone("Spine")
@@ -204,14 +212,19 @@ func _add_tree(player: AnimationPlayer) -> void:
 			b = _skeleton.get_bone_parent(b)
 		if b == spine:
 			blend.set_filter_path(NodePath("Armature/Skeleton3D:" + _skeleton.get_bone_name(bone)), true)
+			flinch.set_filter_path(NodePath("Armature/Skeleton3D:" + _skeleton.get_bone_name(bone)), true)
 
 	var root := AnimationNodeBlendTree.new()
 	root.add_node("FullBody", base, Vector2(0, 0))
 	root.add_node("UpperBody", upper, Vector2(0, 200))
 	root.add_node("UpperBodyBlend", blend, Vector2(250, 100))
+	root.add_node("Hurt", _clip("Hit_Chest"), Vector2(250, 300))
+	root.add_node("Flinch", flinch, Vector2(500, 150))
 	root.connect_node("UpperBodyBlend", 0, "FullBody")
 	root.connect_node("UpperBodyBlend", 1, "UpperBody")
-	root.connect_node("output", 0, "UpperBodyBlend")
+	root.connect_node("Flinch", 0, "UpperBodyBlend")
+	root.connect_node("Flinch", 1, "Hurt")
+	root.connect_node("output", 0, "Flinch")
 
 	var tree := AnimationTree.new()
 	tree.name = "AnimationTree"
@@ -227,6 +240,7 @@ func _add_tree(player: AnimationPlayer) -> void:
 	_root.graph_inputs = {
 		"FullBody/Locomotion/blend_position": "move_right, move_forward" if _pack == "source" else "forward_speed",
 		"UpperBodyBlend/blend_amount": "0",
+		"Flinch/request": "combat.hurt",
 	}
 
 

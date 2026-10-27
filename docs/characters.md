@@ -68,6 +68,8 @@ The [Universal Animation Library](https://quaternius.com) mannequin by Quaterniu
   [State machines](#state-machines)): locomotion, jumps, and an upper-body layer for the pistol
   (with a shot on `item.use`) and the bat (with a swing that strikes on a marker; the bat's
   fire is the melee mod's own look).
+- **Flinch** (M242): a `OneShot` over the upper body (the spine and up: the legs walk on) plays
+  `Hit_Chest` once on `combat.hurt`, which the combat mod says at the victim.
 - **Hitboxes**: capsules along the spine, arms and legs sized from the bone lengths, a head
   sphere, a hips box.
 - **Edit it** in the editor like any scene: saving the scene bakes it. The generator that made
@@ -455,7 +457,7 @@ and stop when it is dropped. A mod's own `SwapLayer` on the same layer wins whil
 | pistol | `gun.pistol_hold` (`server_mods/gun/client/animation_packs/pistol_hold.tscn`) | `UpperBody` | `Hold`; `Shoot` on `item.use`, back at its end |
 | bat | `melee.hold` (`server_mods/melee/client/animation_packs/bat_hold.tscn`) | `UpperBody` | `Ready`; `Swing` on the `melee.swing` event (the look predicts it), started over by the next one, back to `Ready` on the clip's `melee.done` marker (1.1 s, the end of the follow-through). `Sword_Attack` carries `melee.strike` (the hit) and `melee.done` (the end): the mod times the swing by the same markers, so the look and the rule cannot drift apart, and nothing waits for the server's word that a swing ended |
 | rifle | `gun.rifle_hold` (its look is not in the repository) | `UpperBody` | `Hold`; `Fire` on `item.use` |
-| the brawl fist | `brawl.fists` (`server_mods/brawl/client/animation_packs/fists.tscn`) | `UpperBody` | `Ready`; `Jab` and `Cross` on the sheet's `Jab` motion by `brawl.combo` (1, then 2), `Finisher` (the cross at 0.75 speed: a TimeScale, eased in by a crossfade curve) on its `Finisher`; back to `Ready` at their ends. Both clips carry `brawl.fist.strike`, the frame the fist is furthest out (0.2 s, 0.27 s): the sheet hits there (M237); and `brawl.fist.ready`, the fist mostly back (0.55 s, 0.75 s): the next punch may start from there, so spamming plays whole punches (M240). While the fist is out the upper body is the pack's, so the walk's arm swing does not show (the pack's own locomotion arms: to come) |
+| the brawl fist | `brawl.fists` (`server_mods/brawl/client/animation_packs/fists.tscn`) | `UpperBody` | a nested machine `Guard` (M242: `Ready`, `Jab`, `Cross`) and `Finisher`, which leaves `Guard` from any of its states and comes back to its start; `Jab` and `Cross` on the sheet's `Jab` motion by `brawl.combo` (1, then 2), `Finisher` (the cross at 0.75 speed: a TimeScale, eased in by a crossfade curve) on its `Finisher`; back to `Ready` at their ends. Both clips carry `brawl.fist.strike`, the frame the fist is furthest out (0.2 s, 0.27 s): the sheet hits there (M237); and `brawl.fist.ready`, the fist mostly back (0.55 s, 0.75 s): the next punch may start from there, so spamming plays whole punches (M240). While the fist is out the upper body is the pack's, so the walk's arm swing does not show (the pack's own locomotion arms: to come) |
 
 All four are upper-body packs: the legs keep the character's own walk, so a crouch (`sneak` swaps
 `FullBody`) plays under a held bat. Their clips are files in the mod (`animation_packs/source/*.res`).
