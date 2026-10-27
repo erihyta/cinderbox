@@ -5427,14 +5427,35 @@ void TestNpcItems()
 		const Transform* npc = brawler->m_npc != 0 ? server.EntityTransform( brawler->m_npc ) : nullptr;
 		if ( mine != nullptr && npc != nullptr )
 		{
-			in.cameraYaw = detmath::RadiansToYaw( std::atan2( npc->position.x - mine->position.x, npc->position.z - mine->position.z ) );
+			const float dx = npc->position.x - mine->position.x, dz = npc->position.z - mine->position.z;
+			in.cameraYaw = detmath::RadiansToYaw( std::atan2( dx, dz ) );
+			in.moveForward = dx * dx + dz * dz > 1.6f * 1.6f ? 127 : 0; // back to it when knocked away
 		}
 		in.slotKeys = tick > 50 && tick < 54 ? 1 : 0;
 		in.buttons = tick > 90 && tick % 40 < 3 ? uint8_t( BtnUse ) : uint8_t( 0 );
 		return in;
 	};
-	h.RunUntil( 8.0 );
+	// The player's blows (its fist's hit events) and the NPC's, as the server's simulation says them.
+	const int jabHit = h.server.Schema().FindEvent( "brawl.jab.hit" ), finisherHit = h.server.Schema().FindEvent( "brawl.finisher.hit" );
+	int byPlayer = 0, byNpc = 0;
+	uint32_t seen = 0;
+	h.RunUntil( 8.0, [&]( double ) {
+		const SimGlobals& g = server.Globals();
+		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+		{
+			const ModEventRecord& e = g.modEvents[i];
+			if ( ( int( e.type ) == jabHit || int( e.type ) == finisherHit ) && e.tick > seen )
+			{
+				( e.netIdA == brawler->m_npc ? byNpc : byPlayer ) += 1;
+			}
+		}
+		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+		{
+			seen = std::max( seen, g.modEvents[i].tick );
+		}
+	} );
 	h.Report();
+	std::printf( "    blows: the player's %d, the NPC's %d\n", byPlayer, byNpc );
 	const BoardField* field = h.server.Schema().FindField( "combat.health" );
 	auto health = [&]( uint32_t netId ) { return field != nullptr && netId != 0 ? server.BoardValue( netId, field->slot ) : -1; };
 	const uint32_t player = server.PlayerNetId( h.bots[0].client->Slot() );

@@ -156,6 +156,8 @@ critter, waves, waves of 32 NPCs) clean after two fixes.
 | With brawl on, the unattended player never reaches the pistol or the bat (the kit takes the first slots) | the checklist covers them by hand |
 | The pistol and the rifle did not hurt NPCs (only a target with a player's slot counted) | fixed (M236) |
 | The regenerated `ual_mannequin` turned held items 90 degrees (its hand sockets tuned by hand before) | the old sockets put back (M236) |
+| The fist hit and shoved on the click, before the drawn punch reached anyone | fixed (M237): it hits on the clip's marker, or a moment later without one |
+| With the fist out the walk's arm swing does not show (the pack owns the upper body) | the user's own clips to come |
 | HUD lines overlap at half-screen windows (the debug lines over the skills, the hotbar over the keys' line and the health bar) | open |
 
 **M230 to M232 in use**: TimeScale and crossfade curves are the fist's (M236: `brawl.fists`, the

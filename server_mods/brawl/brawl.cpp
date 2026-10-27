@@ -63,6 +63,9 @@ public:
 		m_slamStarted = declare.Event( "brawl.slam.started" );
 		m_slamLanded = declare.Event( "brawl.slam.landed" );
 		m_slamHit = declare.Event( "brawl.slam.hit" );
+		// A marker in the fist's punches (its pack, brawl.fists): the frame the fist lands. The
+		// fist's sheet hits on it, not on the click.
+		declare.Event( "brawl.fist.strike" );
 		m_damage = declare.Event( "combat.damage" );
 		declare.Motions( "brawl.moves" );
 		// The five skills: all of them are their scenes'.
