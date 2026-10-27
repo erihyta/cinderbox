@@ -154,10 +154,16 @@ critter, waves, waves of 32 NPCs) clean after two fixes.
 | The waves mod takes any body nobody drives within 0.5 m of a spot it asked for one (a player's left body, say) | open, rare |
 | 32 NPCs: the server sends 1 to 2 Mbit/s to two players (their inputs) | to watch ([step 3](#3-two-network-models)) |
 | With brawl on, the unattended player never reaches the pistol or the bat (the kit takes the first slots) | the checklist covers them by hand |
+| The pistol and the rifle did not hurt NPCs (only a target with a player's slot counted) | fixed (M236) |
+| The regenerated `ual_mannequin` turned held items 90 degrees (its hand sockets tuned by hand before) | the old sockets put back (M236) |
+| HUD lines overlap at half-screen windows (the debug lines over the skills, the hotbar over the keys' line and the health bar) | open |
 
-**Next in step 1**: the checklist by hand (two games); the M230 to M232 features given a use or
-removed (the brawl fist has no animation yet: `Punch_Jab`, `Punch_Cross` and `Hit_Chest` are in the
-free library).
+**M230 to M232 in use**: TimeScale and crossfade curves are the fist's (M236: `brawl.fists`, the
+finisher). Still unused: OneShot, Add2, nested state machines.
+
+**Next in step 1**: the checklist by hand (two games); OneShot, Add2 and nested machines given a use
+or removed (a flinch is the natural OneShot, but `combat.hurt` is said at the attacker: a hurt
+event at the victim first).
 
 ### 2. Small fixes from the review
 

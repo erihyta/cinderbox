@@ -23,6 +23,7 @@ size = Vector3(0.1, 0.1, 0.1)
 
 [node name="Fist" type="CbItem"]
 kind = "brawl.fist"
+animation_pack = "brawl.fists"
 display_name = "Fist"
 properties = {
 "inventory.start": 1.0

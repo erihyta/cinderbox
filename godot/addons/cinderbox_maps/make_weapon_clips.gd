@@ -2,10 +2,14 @@ extends SceneTree
 ## Puts the mannequin's weapon clips (CC0) into the mods that use them, as files on the SDK's
 ## placeholder skeleton, the way make_sdk_placeholder.gd makes the SDK's locomotion clips:
 ##
-##   godot --headless --path godot --script res://addons/cinderbox_maps/make_weapon_clips.gd
+##   godot --headless --path godot --script res://addons/cinderbox_maps/make_weapon_clips.gd [-- --mod=NAME]
 ##
-##   server_mods/pistol/client/animation_packs/source/   Pistol_Idle.res, Pistol_Shoot.res
+##   server_mods/gun/client/animation_packs/source/      Pistol_Idle.res, Pistol_Shoot.res
 ##   server_mods/melee/client/animation_packs/source/    Sword_Idle.res, Sword_Attack.res
+##   server_mods/brawl/client/animation_packs/source/    Punch_Jab.res, Punch_Cross.res
+##
+## --mod=NAME takes only that mod's clips (the others keep what was edited in them: the bat's
+## melee.done marker was added in the editor).
 ##
 ## The packs that play them are scenes in those projects (animation_packs/*.tscn), edited in the
 ## editor. Run this again only to take the clips from the source again: it overwrites the files,
@@ -15,11 +19,14 @@ const SOURCE := "res://characters/mannequin/source/UAL1_Standard.glb"
 const PLACEHOLDER := "../sdk/placeholder/skeleton.tscn"
 # mod, clip, loops, markers ({name: seconds})
 const CLIPS := [
-	["pistol", "Pistol_Idle", true, {}],
-	["pistol", "Pistol_Shoot", false, {}],
+	["gun", "Pistol_Idle", true, {}],
+	["gun", "Pistol_Shoot", false, {}],
 	["melee", "Sword_Idle", true, {}],
 	# The frame the swing connects: the melee mod hits on it.
 	["melee", "Sword_Attack", false, {"melee.strike": 0.4}],
+	# The fist's punches (brawl.fists): the hit itself is the sheet's cast, on the press.
+	["brawl", "Punch_Jab", false, {}],
+	["brawl", "Punch_Cross", false, {}],
 ]
 
 
@@ -39,7 +46,13 @@ func _initialize() -> void:
 	var skeleton := _find(model, "Skeleton3D") as Skeleton3D
 	var player := _find(model, "AnimationPlayer") as AnimationPlayer
 	var failed := false
+	var only := ""
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--mod="):
+			only = arg.substr(6)
 	for entry in CLIPS:
+		if only != "" and entry[0] != only:
+			continue
 		var out := root.path_join("server_mods/%s/client/animation_packs/source" % entry[0])
 		DirAccess.make_dir_recursive_absolute(out)
 		var animation := player.get_animation(entry[1]).duplicate(true) as Animation

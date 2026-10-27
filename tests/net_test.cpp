@@ -1848,6 +1848,92 @@ void TestSneak()
 	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
 }
 
+// Found in roadmap step 1 (after M235): the gun hurt players only (a hit's target had to have a
+// slot), so a wave's NPCs were shoved and never hurt by the pistol or the rifle, while the brawl
+// fist hurt them. A test mod stands an NPC 4 m in front of the bot; the bot shoots it: it is hurt.
+class GunTargetMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_gun_target";
+	}
+	void Declare( mods::Declarations& ) override
+	{
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		const PlayerSlot slot = 0;
+		if ( m_asked == false && ctx.Tick() > 90 && ctx.InWorld( slot ) )
+		{
+			const Transform* me = ctx.EntityTransform( ctx.PlayerNetId( slot ) );
+			const b3Vec3 aim = ctx.AimDirection( slot );
+			const float level = b3Length( b3Vec3{ aim.x, 0.0f, aim.z } );
+			if ( me != nullptr && level > 0.5f )
+			{
+				b3Vec3 feet = { me->position.x + 4.0f * aim.x / level, me->position.y, me->position.z + 4.0f * aim.z / level };
+				b3Vec3 walkable;
+				feet = ctx.NearestWalkable( feet, walkable ) ? walkable : feet;
+				ctx.SpawnCharacter( mods::CharacterHandle{ 0 }, b3Vec3{ feet.x, feet.y + 0.05f, feet.z }, 0.0f );
+				m_asked = true;
+			}
+		}
+		if ( m_asked && npc == 0 )
+		{
+			for ( uint32_t body : ctx.IdleBodies() )
+			{
+				ctx.Drive( body, PlayerInput{} ); // it stands
+				npc = body;
+				break;
+			}
+		}
+	}
+	std::atomic<uint32_t> npc{ 0 };
+
+private:
+	bool m_asked = false;
+};
+
+void TestGunHurtsNpc()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> extra;
+	auto target = std::make_unique<GunTargetMod>();
+	GunTargetMod* mod = target.get();
+	extra.push_back( std::move( target ) );
+	Harness h( 47928, {}, {}, {}, {}, std::move( extra ) );
+	const int hurt = h.server.Schema().FindEvent( "combat.hurt" );
+	CHECK( hurt >= 0 );
+	h.AddBot().script = []( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraYaw = 16384;
+		in.actions = kKeySlot1; // the pistol
+		if ( tick > 300 && tick < 500 && ( tick % 20 ) < 3 )
+		{
+			in.actions |= kKeyUse;
+		}
+		return in;
+	};
+	int hurtNpc = 0;
+	uint32_t seenUpTo = 0;
+	h.RunUntil( 10.0, [&]( double ) {
+		const SimGlobals& g = h.server.Sim().Globals();
+		for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+		{
+			const ModEventRecord& e = g.modEvents[i];
+			if ( int( e.type ) == hurt && e.netIdB == mod->npc && e.tick > seenUpTo )
+			{
+				++hurtNpc;
+				seenUpTo = e.tick;
+			}
+		}
+	} );
+	h.Report();
+	GameClient& client = *h.bots[0].client;
+	std::printf( "    the NPC %u hurt %d times by the pistol; desyncs %u\n", mod->npc.load(), hurtNpc, client.GetStats().desyncs );
+	CHECK( mod->npc != 0 && hurtNpc > 0 );
+	CHECK( client.GetStats().desyncs == 0 );
+}
+
 void TestHeadshot()
 {
 	Harness h( 47801 );
@@ -6052,6 +6138,7 @@ int main( int argc, char** argv )
 		{ "chat", TestChat },
 		{ "server_info", TestServerInfo },
 		{ "headshot", TestHeadshot },
+		{ "gun_npc", TestGunHurtsNpc },
 		{ "pistol_mark", TestPistolMark },
 		{ "rifle", TestRifle },
 		{ "gun_swap", TestGunSwap },
