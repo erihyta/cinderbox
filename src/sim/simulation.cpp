@@ -816,11 +816,15 @@ flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 pos
 	b3ShapeId shapeId;
 	if ( t.shapes < m_map.shapeSets.size() )
 	{
-		// Its own shapes. What the Shape component would have drawn is the box that holds them.
+		// Its own shapes. What the Shape component would have drawn is the box that holds them; a
+		// single sphere at its centre (a plain ball baked as a template) is that sphere, so a body
+		// with no look of its own is drawn round, as it rolls.
 		b3Vec3 bounds;
-		shapeId = CreateShapeSet( body, m_map.shapeSets[t.shapes], category, material, bounds );
-		shape.kind = ShapeKind::Box;
-		shape.halfExtents = bounds;
+		const std::vector<LevelBox>& set = m_map.shapeSets[t.shapes];
+		shapeId = CreateShapeSet( body, set, category, material, bounds );
+		const bool ball = set.size() == 1 && set[0].kind == ShapeKind::Sphere && b3LengthSquared( set[0].center ) < 1e-8f;
+		shape.kind = ball ? ShapeKind::Sphere : ShapeKind::Box;
+		shape.halfExtents = ball ? b3Vec3{ set[0].halfExtents.x, 0.0f, 0.0f } : bounds;
 	}
 	else
 	{
