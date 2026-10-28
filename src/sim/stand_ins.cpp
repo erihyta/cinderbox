@@ -1,0 +1,624 @@
+// The state network model's side of the simulation (ROADMAP step 3): a server's world as bytes
+// without the physics engine's internals, and a client's world made to agree with it, every entity
+// but its own a stand-in (simulation.h: SaveState, ApplyState).
+//
+// Layout of a state (little-endian):
+//   u32 magic 'CBST'
+//   u32 size, the entity image (SerializeEcs: globals, global board, every entity's components)
+//   u32 count, then for every entity with bodies, in NetId order:
+//     u32 netId, u64 hash of its description, u32 size, its description:
+//       u8 bodies (1: a PhysicsBody; kRagdollParts: a ragdoll's), then each body:
+//         u8 type (0xFF: no body), u8 flags (1 enabled, 2 bullet), u8 locks (a bit each),
+//         f32 gravity scale, linear damping, angular damping, b3MassData,
+//         u8 shapes, then each: u8 type, b3Filter, f32 density, friction, restitution, rolling,
+//         then a sphere (centre, radius), a capsule (two centres, radius), a hull (u16 points,
+//         the points) or nothing (a mesh, a height field: static level pieces, never rebuilt).
+// The physics handles in the image (PhysicsBody, RagdollBodies) are the server's and never read.
+
+#include "simulation.h"
+
+#include "util.h"
+
+#include "box3d/box3d.h"
+#include "box3d/collision.h"
+
+#include <algorithm>
+#include <cstring>
+
+namespace cb
+{
+
+namespace
+{
+
+constexpr uint32_t kStateMagic = 0x54534243u; // 'CBST'
+constexpr uint32_t kEcsMagic = 0x43425331u;	  // 'CBS1' (SerializeEcs)
+constexpr uint8_t kNoBody = 0xFF;
+constexpr int kMaxShapes = 64;
+
+template <typename T>
+void Put( std::vector<uint8_t>& out, const T& value )
+{
+	const auto* p = reinterpret_cast<const uint8_t*>( &value );
+	out.insert( out.end(), p, p + sizeof( T ) );
+}
+
+b3BodyId InWorld( b3BodyId id, b3WorldId world )
+{
+	id.world0 = uint16_t( world.index1 - 1 );
+	return id;
+}
+
+// One entity of the server's image, read but not applied.
+struct EntityRecord
+{
+	uint32_t netId = 0;
+	uint32_t mask = 0;
+	const uint8_t* components[32] = {};
+	// Its bodies' description (null: none).
+	const uint8_t* bodies = nullptr;
+	uint32_t bodiesSize = 0;
+	uint64_t bodiesHash = 0;
+};
+
+// The server's component of a record, copied out (false: it has none).
+template <typename T>
+bool RecordValue( const EntityRecord& record, int index, T& out )
+{
+	if ( index < 0 || ( record.mask & ( uint32_t( 1 ) << index ) ) == 0 || record.components[index] == nullptr )
+	{
+		return false;
+	}
+	std::memcpy( &out, record.components[index], sizeof( T ) );
+	return true;
+}
+
+} // namespace
+
+int Simulation::SnapIndex( flecs::entity_t id ) const
+{
+	for ( size_t i = 0; i < m_snapComponents.size(); ++i )
+	{
+		if ( m_snapComponents[i].id == id )
+		{
+			return int( i );
+		}
+	}
+	return -1;
+}
+
+void Simulation::DescribeBody( b3BodyId body, std::vector<uint8_t>& out ) const
+{
+	if ( b3Body_IsValid( body ) == false )
+	{
+		Put( out, kNoBody );
+		return;
+	}
+	Put( out, uint8_t( b3Body_GetType( body ) ) );
+	Put( out, uint8_t( ( b3Body_IsEnabled( body ) ? 1 : 0 ) | ( b3Body_IsBullet( body ) ? 2 : 0 ) ) );
+	const b3MotionLocks locks = b3Body_GetMotionLocks( body );
+	Put( out, uint8_t( ( locks.linearX ? 1 : 0 ) | ( locks.linearY ? 2 : 0 ) | ( locks.linearZ ? 4 : 0 ) | ( locks.angularX ? 8 : 0 ) |
+					   ( locks.angularY ? 16 : 0 ) | ( locks.angularZ ? 32 : 0 ) ) );
+	Put( out, b3Body_GetGravityScale( body ) );
+	Put( out, b3Body_GetLinearDamping( body ) );
+	Put( out, b3Body_GetAngularDamping( body ) );
+	Put( out, b3Body_GetMassData( body ) );
+
+	b3ShapeId shapes[kMaxShapes];
+	const int count = std::min( b3Body_GetShapes( body, shapes, kMaxShapes ), kMaxShapes );
+	Put( out, uint8_t( count ) );
+	for ( int i = 0; i < count; ++i )
+	{
+		const b3ShapeId shape = shapes[i];
+		const b3ShapeType type = b3Shape_GetType( shape );
+		Put( out, uint8_t( type ) );
+		Put( out, b3Shape_GetFilter( shape ) );
+		const b3SurfaceMaterial material = b3Shape_GetSurfaceMaterial( shape );
+		Put( out, b3Shape_GetDensity( shape ) );
+		Put( out, material.friction );
+		Put( out, material.restitution );
+		Put( out, material.rollingResistance );
+		switch ( type )
+		{
+			case b3_sphereShape:
+				Put( out, b3Shape_GetSphere( shape ) );
+				break;
+			case b3_capsuleShape:
+				Put( out, b3Shape_GetCapsule( shape ) );
+				break;
+			case b3_hullShape:
+			{
+				const b3HullData* hull = b3Shape_GetHull( shape );
+				const int points = hull != nullptr ? hull->vertexCount : 0;
+				Put( out, uint16_t( points ) );
+				if ( points > 0 )
+				{
+					const b3Vec3* p = b3GetHullPoints( hull );
+					const auto* bytes = reinterpret_cast<const uint8_t*>( p );
+					out.insert( out.end(), bytes, bytes + sizeof( b3Vec3 ) * size_t( points ) );
+				}
+				break;
+			}
+			default:
+				break; // a mesh, a height field: static level pieces, which every world has
+		}
+	}
+}
+
+void Simulation::DescribeBodies( flecs::entity e, std::vector<uint8_t>& out ) const
+{
+	out.clear();
+	if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
+	{
+		Put( out, uint8_t( kRagdollParts ) );
+		for ( b3BodyId body : rb->body )
+		{
+			DescribeBody( InWorld( body, m_physicsWorld ), out );
+		}
+	}
+	else if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
+	{
+		Put( out, uint8_t( 1 ) );
+		DescribeBody( BodyOf( *pb ), out );
+	}
+}
+
+b3BodyId Simulation::BuildBody( ByteReader& r, bool standIn, Transform at, b3Vec3 linear, b3Vec3 angular, b3ShapeId& first )
+{
+	first = {};
+	const uint8_t type = r.Read<uint8_t>();
+	if ( type == kNoBody || r.Ok() == false )
+	{
+		return {};
+	}
+	const uint8_t flags = r.Read<uint8_t>();
+	const uint8_t locks = r.Read<uint8_t>();
+	const float gravityScale = r.Read<float>();
+	const float linearDamping = r.Read<float>();
+	const float angularDamping = r.Read<float>();
+	const b3MassData mass = r.Read<b3MassData>();
+	const int shapes = r.Read<uint8_t>();
+	if ( r.Ok() == false || type > uint8_t( b3_dynamicBody ) )
+	{
+		r.Fail();
+		return {};
+	}
+
+	b3BodyDef def = b3DefaultBodyDef();
+	const b3BodyType serverType = b3BodyType( type );
+	// A stand-in is placed, never simulated: kinematic, unless the server's never moves.
+	def.type = standIn && serverType != b3_staticBody ? b3_kinematicBody : serverType;
+	def.position = at.position;
+	def.rotation = at.rotation;
+	if ( def.type != b3_staticBody )
+	{
+		def.linearVelocity = linear;
+		def.angularVelocity = angular;
+	}
+	def.gravityScale = gravityScale;
+	def.linearDamping = linearDamping;
+	def.angularDamping = angularDamping;
+	def.isBullet = ( flags & 2 ) != 0;
+	def.motionLocks = { ( locks & 1 ) != 0, ( locks & 2 ) != 0, ( locks & 4 ) != 0, ( locks & 8 ) != 0, ( locks & 16 ) != 0, ( locks & 32 ) != 0 };
+	b3BodyId body = b3CreateBody( m_physicsWorld, &def );
+
+	for ( int i = 0; i < shapes && r.Ok(); ++i )
+	{
+		const uint8_t shapeType = r.Read<uint8_t>();
+		b3ShapeDef sd = b3DefaultShapeDef();
+		sd.filter = r.Read<b3Filter>();
+		sd.density = r.Read<float>();
+		sd.baseMaterial.friction = r.Read<float>();
+		sd.baseMaterial.restitution = r.Read<float>();
+		sd.baseMaterial.rollingResistance = r.Read<float>();
+		// (As the simulation makes its shapes: MakeShapeDef in simulation.cpp.)
+		sd.enableHitEvents = sd.filter.categoryBits != CatStatic;
+		sd.updateBodyMass = def.type != b3_dynamicBody; // (a dynamic one gets the server's mass below)
+		b3ShapeId made = {};
+		switch ( shapeType )
+		{
+			case b3_sphereShape:
+			{
+				const b3Sphere sphere = r.Read<b3Sphere>();
+				if ( r.Ok() )
+				{
+					made = b3CreateSphereShape( body, &sd, &sphere );
+				}
+				break;
+			}
+			case b3_capsuleShape:
+			{
+				const b3Capsule capsule = r.Read<b3Capsule>();
+				if ( r.Ok() )
+				{
+					made = b3CreateCapsuleShape( body, &sd, &capsule );
+				}
+				break;
+			}
+			case b3_hullShape:
+			{
+				const int count = r.Read<uint16_t>();
+				const uint8_t* bytes = r.Take( sizeof( b3Vec3 ) * size_t( count ) );
+				if ( bytes == nullptr || count < 4 )
+				{
+					break;
+				}
+				std::vector<b3Vec3> points( static_cast<size_t>( count ) );
+				std::memcpy( points.data(), bytes, sizeof( b3Vec3 ) * size_t( count ) );
+				if ( b3HullData* hull = b3CreateHull( points.data(), count, B3_MAX_HULL_VERTICES ) )
+				{
+					made = b3CreateHullShape( body, &sd, hull ); // (the world keeps a copy)
+					b3DestroyHull( hull );
+				}
+				break;
+			}
+			default:
+				break;
+		}
+		if ( first.index1 == 0 && b3Shape_IsValid( made ) )
+		{
+			first = made;
+		}
+	}
+	if ( def.type == b3_dynamicBody )
+	{
+		b3Body_SetMassData( body, mass ); // the server's, exactly
+	}
+	if ( ( flags & 1 ) == 0 )
+	{
+		b3Body_Disable( body );
+	}
+	return body;
+}
+
+void Simulation::DestroyBodies( flecs::entity e )
+{
+	if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
+	{
+		if ( b3Body_IsValid( BodyOf( *pb ) ) )
+		{
+			b3DestroyBody( BodyOf( *pb ) );
+		}
+		e.remove<PhysicsBody>();
+	}
+	if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
+	{
+		for ( b3BodyId body : rb->body )
+		{
+			if ( b3Body_IsValid( InWorld( body, m_physicsWorld ) ) )
+			{
+				b3DestroyBody( InWorld( body, m_physicsWorld ) ); // (and its joints)
+			}
+		}
+		e.remove<RagdollBodies>();
+	}
+}
+
+void Simulation::RemoveForState( flecs::entity e )
+{
+	DestroyBodies( e );
+	e.destruct();
+}
+
+bool Simulation::IsStandIn( uint32_t netId ) const
+{
+	flecs::entity e = m_followsServer ? FindEntity( netId ) : flecs::entity();
+	return e.is_valid() && e.has<StandIn>();
+}
+
+void Simulation::SaveState( std::vector<uint8_t>& out )
+{
+	PhysicsArena::Scope scope( *m_arena );
+	out.clear();
+	Put( out, kStateMagic );
+	SerializeEcs( m_hashScratch );
+	Put( out, uint32_t( m_hashScratch.size() ) );
+	out.insert( out.end(), m_hashScratch.begin(), m_hashScratch.end() );
+
+	const size_t countAt = out.size();
+	Put( out, uint32_t( 0 ) );
+	uint32_t count = 0;
+	std::vector<uint8_t> description;
+	for ( const EntityRef& ref : m_entities )
+	{
+		flecs::entity e( m_world, ref.entity );
+		if ( e.has<PhysicsBody>() == false && e.has<RagdollBodies>() == false )
+		{
+			continue;
+		}
+		DescribeBodies( e, description );
+		Put( out, ref.netId );
+		Put( out, HashBytes( kHashSeed, description.data(), description.size() ) );
+		Put( out, uint32_t( description.size() ) );
+		out.insert( out.end(), description.begin(), description.end() );
+		count += 1;
+	}
+	std::memcpy( out.data() + countAt, &count, sizeof( count ) );
+}
+
+bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
+{
+	// First everything is read and checked; only then is anything changed.
+	ByteReader r( data, size );
+	if ( r.Read<uint32_t>() != kStateMagic )
+	{
+		return false;
+	}
+	const uint32_t ecsSize = r.Read<uint32_t>();
+	const uint8_t* ecs = r.Take( ecsSize );
+	if ( ecs == nullptr )
+	{
+		return false;
+	}
+	ByteReader er( ecs, ecsSize );
+	if ( er.Read<uint32_t>() != kEcsMagic )
+	{
+		return false;
+	}
+	const SimGlobals globals = er.Read<SimGlobals>();
+	const uint8_t* board = er.Take( size_t( m_config.globalFields ) * 4 );
+	const uint32_t count = er.Read<uint32_t>();
+	if ( er.Ok() == false || count > ecsSize )
+	{
+		return false;
+	}
+	std::vector<EntityRecord> records( count );
+	for ( uint32_t n = 0; n < count && er.Ok(); ++n )
+	{
+		EntityRecord& rec = records[n];
+		rec.netId = er.Read<uint32_t>();
+		rec.mask = er.Read<uint32_t>();
+		if ( ( n > 0 && rec.netId <= records[n - 1].netId ) || ( m_snapComponents.size() < 32 && rec.mask >> m_snapComponents.size() ) != 0 )
+		{
+			return false;
+		}
+		for ( size_t i = 0; i < m_snapComponents.size(); ++i )
+		{
+			if ( ( rec.mask & ( uint32_t( 1 ) << i ) ) && m_snapComponents[i].size > 0 )
+			{
+				rec.components[i] = er.Take( m_snapComponents[i].size );
+			}
+		}
+	}
+	if ( er.Ok() == false || er.AtEnd() == false )
+	{
+		return false;
+	}
+	const uint32_t described = r.Read<uint32_t>();
+	if ( r.Ok() == false || described > count )
+	{
+		return false;
+	}
+	size_t at = 0;
+	for ( uint32_t n = 0; n < described; ++n )
+	{
+		const uint32_t netId = r.Read<uint32_t>();
+		const uint64_t hash = r.Read<uint64_t>();
+		const uint32_t bytes = r.Read<uint32_t>();
+		const uint8_t* body = r.Take( bytes );
+		while ( at < records.size() && records[at].netId < netId )
+		{
+			++at;
+		}
+		if ( body == nullptr || at == records.size() || records[at].netId != netId )
+		{
+			return false;
+		}
+		records[at].bodies = body;
+		records[at].bodiesSize = bytes;
+		records[at].bodiesHash = hash;
+	}
+	if ( r.Ok() == false || r.AtEnd() == false )
+	{
+		return false;
+	}
+
+	PhysicsArena::Scope scope( *m_arena );
+	m_followsServer = true;
+	m_world.component<StandIn>();
+	m_world.component<StateBody>();
+	const int physicsIndex = SnapIndex( m_world.component<PhysicsBody>().id() );
+	const int ragdollIndex = SnapIndex( m_world.component<RagdollBodies>().id() );
+	const int heldIndex = SnapIndex( m_world.component<HeldItem>().id() );
+	const int transformIndex = SnapIndex( m_world.component<Transform>().id() );
+	const int velocityIndex = SnapIndex( m_world.component<Velocity>().id() );
+	const int poseIndex = SnapIndex( m_world.component<RagdollPose>().id() );
+	const int characterIndex = SnapIndex( m_world.component<Character>().id() );
+
+	m_globals = globals;
+	if ( m_config.globalFields > 0 )
+	{
+		std::memcpy( m_globalBoard.data(), board, size_t( m_config.globalFields ) * 4 );
+	}
+	const uint32_t ownNetId = own < kMaxPlayers ? m_globals.playerNetIds[own] : 0;
+
+	ecs_world_t* world = m_world.c_ptr();
+	std::vector<EntityRef> restored;
+	restored.reserve( records.size() );
+	std::vector<uint8_t> description;
+	size_t existing = 0;
+	for ( const EntityRecord& rec : records )
+	{
+		while ( existing < m_entities.size() && m_entities[existing].netId < rec.netId )
+		{
+			RemoveForState( flecs::entity( m_world, m_entities[existing].entity ) );
+			++existing;
+		}
+		flecs::entity e;
+		if ( existing < m_entities.size() && m_entities[existing].netId == rec.netId )
+		{
+			e = flecs::entity( m_world, m_entities[existing].entity );
+			++existing;
+		}
+		else
+		{
+			e = flecs::entity( m_world, ecs_new( world ) );
+		}
+
+		// Its components, but the physics handles (this world's own).
+		for ( size_t i = 0; i < m_snapComponents.size(); ++i )
+		{
+			if ( int( i ) == physicsIndex || int( i ) == ragdollIndex )
+			{
+				continue;
+			}
+			const SnapComponent& sc = m_snapComponents[i];
+			if ( rec.mask & ( uint32_t( 1 ) << i ) )
+			{
+				if ( sc.size > 0 )
+				{
+					ecs_set_id( world, e.id(), sc.id, sc.size, rec.components[i] );
+				}
+				else
+				{
+					ecs_add_id( world, e.id(), sc.id );
+				}
+			}
+			else if ( ecs_has_id( world, e.id(), sc.id ) )
+			{
+				ecs_remove_id( world, e.id(), sc.id );
+			}
+		}
+
+		// Whose it is: the slot's body, and what that body carries.
+		HeldItem held;
+		const bool mine = rec.netId == ownNetId || ( RecordValue( rec, heldIndex, held ) && ownNetId != 0 && held.holder == ownNetId );
+		const bool standIn = mine == false;
+
+		// Its bodies: kept when built from the description the server has now, else built again.
+		const bool wants = rec.bodies != nullptr;
+		if ( wants == false )
+		{
+			DestroyBodies( e );
+			e.remove<StateBody>();
+		}
+		else
+		{
+			bool same = false;
+			const bool hasBodies = e.has<PhysicsBody>() || e.has<RagdollBodies>();
+			if ( hasBodies )
+			{
+				const StateBody* sb = e.try_get<StateBody>();
+				// What a stand-in has was built from the server's description; anything else may have
+				// changed here (this world's own, or made by a prediction): described again.
+				if ( sb != nullptr && e.has<StandIn>() )
+				{
+					same = sb->hash == rec.bodiesHash;
+				}
+				else
+				{
+					DescribeBodies( e, description );
+					same = HashBytes( kHashSeed, description.data(), description.size() ) == rec.bodiesHash;
+				}
+				// The same shapes, but no longer whose they were: its own bodies are the server's kind
+				// again, built from the description.
+				if ( same && mine && e.has<StandIn>() )
+				{
+					same = false;
+				}
+			}
+			Transform t;
+			Velocity v;
+			RecordValue( rec, transformIndex, t );
+			RecordValue( rec, velocityIndex, v );
+			RagdollPose pose;
+			const bool hasPose = RecordValue( rec, poseIndex, pose );
+			if ( same == false )
+			{
+				DestroyBodies( e );
+				ByteReader br( rec.bodies, rec.bodiesSize );
+				const int parts = br.Read<uint8_t>();
+				if ( parts == kRagdollParts )
+				{
+					RagdollBodies rb;
+					for ( int i = 0; i < kRagdollParts; ++i )
+					{
+						b3ShapeId shape;
+						const Transform part = hasPose ? pose.part[i] : t;
+						b3BodyId body = BuildBody( br, standIn, part, hasPose ? pose.linear[i] : b3Vec3{}, {}, shape );
+						PhysicsBody stored = MakePhysicsBody( body, shape );
+						rb.body[i] = stored.body;
+						rb.shape[i] = stored.shape;
+					}
+					e.set<RagdollBodies>( rb );
+				}
+				else if ( parts == 1 )
+				{
+					b3ShapeId shape;
+					b3BodyId body = BuildBody( br, standIn, t, v.linear, v.angular, shape );
+					if ( b3Body_IsValid( body ) )
+					{
+						e.set<PhysicsBody>( MakePhysicsBody( body, shape ) );
+					}
+				}
+			}
+			else if ( standIn && e.has<StandIn>() == false )
+			{
+				// Kept, and from now on placed: kinematic, unless it never moves.
+				auto settle = [&]( b3BodyId body ) {
+					if ( b3Body_IsValid( body ) && b3Body_GetType( body ) == b3_dynamicBody )
+					{
+						b3Body_SetType( body, b3_kinematicBody );
+					}
+				};
+				if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
+				{
+					for ( b3BodyId body : rb->body )
+					{
+						settle( InWorld( body, m_physicsWorld ) );
+					}
+				}
+				else if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
+				{
+					settle( BodyOf( *pb ) );
+				}
+			}
+			e.set<StateBody>( { rec.bodiesHash } );
+
+			// Where the server has it, going on as it goes (a character only where it is: the mover
+			// moves it, and a stand-in is not moved).
+			const bool character = characterIndex >= 0 && ( rec.mask & ( uint32_t( 1 ) << characterIndex ) ) != 0;
+			auto place = [&]( b3BodyId body, const Transform& where, b3Vec3 linear, b3Vec3 angular ) {
+				if ( b3Body_IsValid( body ) == false || b3Body_GetType( body ) == b3_staticBody )
+				{
+					return;
+				}
+				b3Body_SetTransform( body, where.position, where.rotation );
+				const bool moves = b3Body_GetType( body ) == b3_dynamicBody || ( standIn && character == false );
+				b3Body_SetLinearVelocity( body, moves ? linear : b3Vec3{} );
+				b3Body_SetAngularVelocity( body, moves ? angular : b3Vec3{} );
+			};
+			if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
+			{
+				for ( int i = 0; i < kRagdollParts; ++i )
+				{
+					place( InWorld( rb->body[i], m_physicsWorld ), hasPose ? pose.part[i] : t, hasPose ? pose.linear[i] : b3Vec3{}, {} );
+				}
+			}
+			else if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
+			{
+				place( BodyOf( *pb ), t, v.linear, v.angular );
+			}
+		}
+
+		if ( standIn )
+		{
+			e.add<StandIn>();
+		}
+		else
+		{
+			e.remove<StandIn>();
+		}
+		restored.push_back( { rec.netId, e.id() } );
+	}
+	while ( existing < m_entities.size() )
+	{
+		RemoveForState( flecs::entity( m_world, m_entities[existing].entity ) );
+		++existing;
+	}
+	m_entities = std::move( restored );
+	IndexesStale();
+	return true;
+}
+
+} // namespace cb

@@ -26,6 +26,8 @@ add_library(cb_sim STATIC
 	physics_threads.cpp
 	rollback.cpp
 	simulation.cpp
+	stand_ins.cpp
+	state_session.cpp
 )
 
 target_link_libraries(cb_sim PUBLIC cb_sim_data)

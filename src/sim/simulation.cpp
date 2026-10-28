@@ -939,6 +939,10 @@ void Simulation::LoosenPieces()
 
 void Simulation::BreakWall( flecs::entity target, b3Vec3 blast, float radius, float speed, uint32_t rubbleTicks )
 {
+	if ( m_followsServer )
+	{
+		return; // what breaks is the server's to say (its state brings the pieces)
+	}
 	// The wall: whole (a template with pieces), or a piece of it left standing by a blast before.
 	uint32_t wallId = 0;
 	uint32_t wallTemplate = kNoTemplate;
@@ -2252,7 +2256,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	m_drivers.clear();
 	for ( int slot = 0; slot < kMaxPlayers; ++slot )
 	{
-		if ( const uint32_t netId = m_globals.playerNetIds[slot]; netId != 0 )
+		// (A stand-in is the server's to move: the state model.)
+		if ( const uint32_t netId = m_globals.playerNetIds[slot]; netId != 0 && ( m_followsServer == false || IsStandIn( netId ) == false ) )
 		{
 			m_drivers.push_back( { netId, frame.inputs[slot], slot } );
 		}
@@ -2260,7 +2265,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	for ( const EntityRef& r : m_entities )
 	{
 		// (NetIds in order: the list is sorted.)
-		if ( const ModDriven* npc = flecs::entity( m_world, r.entity ).try_get<ModDriven>() )
+		if ( const ModDriven* npc = flecs::entity( m_world, r.entity ).try_get<ModDriven>(); npc != nullptr && StandsIn( flecs::entity( m_world, r.entity ) ) == false )
 		{
 			m_drivers.push_back( { r.netId, npc->input, -1 } );
 		}
@@ -3005,7 +3010,7 @@ void Simulation::UpdateFootsteps()
 	{
 		flecs::entity e( m_world, r.entity );
 		Character* c = e.try_get_mut<Character>();
-		if ( c == nullptr )
+		if ( c == nullptr || StandsIn( e ) )
 		{
 			continue;
 		}
@@ -3036,7 +3041,7 @@ void Simulation::HandleOutOfBounds()
 	{
 		flecs::entity e( m_world, r.entity );
 		const Transform* t = e.try_get<Transform>();
-		if ( t == nullptr || t->position.y >= killY || e.has<StaticGeometry>() )
+		if ( t == nullptr || t->position.y >= killY || e.has<StaticGeometry>() || StandsIn( e ) )
 		{
 			continue;
 		}
@@ -3129,11 +3134,18 @@ void Simulation::Step( const InputFrame& given )
 	ApplyCommands( frame );
 	spent( m_profile.commandsNs );
 	MoveCharacters( frame );
-	ExpireProps();
-	EnforcePropCaps();
+	// (Following a server, the world's rules are its own: simulation.h, ApplyState.)
+	if ( m_followsServer == false )
+	{
+		ExpireProps();
+		EnforcePropCaps();
+	}
 	spent( m_profile.charactersNs );
 
-	RememberBreakers();
+	if ( m_followsServer == false )
+	{
+		RememberBreakers();
+	}
 	b3World_Step( m_physicsWorld, m_config.TimeStep(), int( m_config.subSteps ) );
 	spent( m_profile.physicsNs );
 	{
@@ -3149,8 +3161,11 @@ void Simulation::Step( const InputFrame& given )
 	}
 
 	CollectImpacts();
-	BreakGlue();
-	BreakByItems();
+	if ( m_followsServer == false )
+	{
+		BreakGlue();
+		BreakByItems();
+	}
 	RunItemEvents();
 	SyncFromPhysics();
 	FollowHolders();
@@ -4902,7 +4917,7 @@ void Simulation::RunItemEvents()
 	for ( size_t i = said.size(); i-- > 0; )
 	{
 		flecs::entity item = said[i].first != 0 ? FindEntity( said[i].first ) : flecs::entity();
-		const HeldItem* held = item.is_valid() ? item.try_get<HeldItem>() : nullptr;
+		const HeldItem* held = item.is_valid() && StandsIn( item ) == false ? item.try_get<HeldItem>() : nullptr;
 		if ( held != nullptr && size_t( held->kind ) < m_itemMotions.size() && m_itemMotions[size_t( held->kind )].empty() == false )
 		{
 			RunItemMotions( item, said[i].second, false );
