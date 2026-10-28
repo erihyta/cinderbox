@@ -29,6 +29,8 @@ FetchContent_Declare(flecs
 #   and a heap address to every joining client).
 # - box3d-neon-minmax.patch: ARM64 min/max return the same zero sign as x64 (SSE semantics), so
 #   clamped impulses stay bit-identical across architectures.
+# - box3d-snapshot-sections.patch: a snapshot notes where each of its sections begins, so a test
+#   can say which part of two snapshots that should be equal differs (cbx_SnapSections).
 set(BOX3D_DISABLE_SIMD OFF CACHE BOOL "" FORCE)
 set(BOX3D_DOUBLE_PRECISION OFF CACHE BOOL "" FORCE)
 find_package(Git REQUIRED)
@@ -41,6 +43,9 @@ FetchContent_Declare(box3d
 		-P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
 	COMMAND "${CMAKE_COMMAND}" -DGIT=${GIT_EXECUTABLE}
 		-DPATCH=${CMAKE_CURRENT_LIST_DIR}/patches/box3d-neon-minmax.patch
+		-P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
+	COMMAND "${CMAKE_COMMAND}" -DGIT=${GIT_EXECUTABLE}
+		-DPATCH=${CMAKE_CURRENT_LIST_DIR}/patches/box3d-snapshot-sections.patch
 		-P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
 )
 

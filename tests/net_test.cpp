@@ -6343,6 +6343,20 @@ void TestPhysicsAlone()
 						std::printf( " %02x/%02x", theirs[k], mine[k] );
 					}
 					std::printf( "\n" );
+					// (Where in Box3D's snapshot: the follower's was the last made, laid out as the other's.)
+					for ( size_t k = 0, shown = 0; k < theirs.size() && k < mine.size() && shown < 4; ++k )
+					{
+						if ( theirs[k] != mine[k] )
+						{
+							std::printf( "      byte %zu: %s\n", k, Simulation::PhysicsByteSection( k ).c_str() );
+							shown += 1;
+							while ( k + 1 < theirs.size() && k + 1 < mine.size() && k - ( k & ~size_t( 7 ) ) < 7 && theirs[k + 1] != mine[k + 1] )
+							{
+								++k; // (the rest of the same word)
+							}
+						}
+					}
+					std::printf( "      Box3D's structs here: %s\n", Simulation::PhysicsStructSizes().c_str() );
 					for ( const auto& r : follower.Entities() )
 					{
 						flecs::entity w( follower.World(), r.entity );

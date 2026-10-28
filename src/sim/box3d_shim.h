@@ -22,6 +22,11 @@ void* cbx_WorldStructPtr( b3WorldId worldId );
 // ends; the image carries a layout hash and loading fails on mismatch.
 typedef void cbx_WriteFcn( void* context, const void* data, size_t size );
 void cbx_SerializeWorld( b3WorldId worldId, cbx_WriteFcn* write, void* context );
+// Where the sections of the last world serialized began, from the start of its snapshot (after
+// the size cbx_SerializeWorld writes first): up to `capacity` of them; how many there are.
+int cbx_SnapSections( const char** names, int* starts, int capacity );
+// The sizes of Box3D's structs a snapshot holds, as this build lays them out ("b3Body 240 ...").
+void cbx_StructSizes( char* out, int capacity );
 
 // Overwrites an existing world in place. Returns false on a corrupt or incompatible image.
 // `keep` gives lasting memory for what the world keeps pointing at (a triangle mesh's, a height

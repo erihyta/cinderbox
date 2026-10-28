@@ -3397,6 +3397,43 @@ void AppendToVector( void* context, const void* data, size_t size )
 }
 } // namespace
 
+std::string Simulation::PhysicsByteSection( size_t at )
+{
+	const char* names[128];
+	int starts[128];
+	const int count = std::min( cbx_SnapSections( names, starts, 128 ), 128 );
+	// (The bytes begin with the snapshot's size: its own offsets start after it.)
+	const long offset = long( at ) - long( sizeof( uint32_t ) );
+	int found = -1, nth = 0;
+	for ( int i = 0; i < count; ++i )
+	{
+		if ( starts[i] <= offset )
+		{
+			found = i;
+		}
+	}
+	if ( found < 0 )
+	{
+		return "before the snapshot";
+	}
+	for ( int i = 0; i < found; ++i )
+	{
+		nth += std::strcmp( names[i], names[found] ) == 0 ? 1 : 0;
+	}
+	char text[160];
+	std::snprintf( text, sizeof( text ), "%s (its %d%s), %ld bytes in (it starts at %d, the next at %d)", names[found], nth + 1,
+				   nth == 0 ? "st" : nth == 1 ? "nd" : nth == 2 ? "rd" : "th", offset - starts[found], starts[found],
+				   found + 1 < count ? starts[found + 1] : -1 );
+	return text;
+}
+
+std::string Simulation::PhysicsStructSizes()
+{
+	char text[512];
+	cbx_StructSizes( text, int( sizeof( text ) ) );
+	return text;
+}
+
 void Simulation::PhysicsWorldBytes( std::vector<uint8_t>& out )
 {
 	PhysicsArena::Scope scope( *m_arena );
