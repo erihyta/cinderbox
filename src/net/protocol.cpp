@@ -410,7 +410,7 @@ void Encode( const MsgInfo& m, std::vector<uint8_t>& out )
 
 const char* ToString( NetModel model )
 {
-	return model == NetModel::State ? "state" : "inputs";
+	return model == NetModel::Hybrid ? "hybrid" : "inputs";
 }
 
 bool Decode( ByteReader& r, MsgInfo& m )
@@ -444,7 +444,7 @@ bool Decode( ByteReader& r, MsgInfo& m )
 	}
 	const uint8_t model = r.Read<uint8_t>();
 	m.model = NetModel( model );
-	return r.Ok() && model <= uint8_t( NetModel::State );
+	return r.Ok() && model <= uint8_t( NetModel::Hybrid );
 }
 
 std::string SanitizeText( const std::string& text, size_t limit )
@@ -547,7 +547,7 @@ bool Decode( ByteReader& r, MsgWelcome& m )
 	const uint8_t model = r.Read<uint8_t>();
 	m.stateEvery = r.Read<uint8_t>();
 	m.model = NetModel( model );
-	return r.Ok() && model <= uint8_t( NetModel::State ) && m.stateEvery > 0 && m.slot < kMaxPlayers;
+	return r.Ok() && model <= uint8_t( NetModel::Hybrid ) && m.stateEvery > 0 && m.slot < kMaxPlayers;
 }
 
 void Encode( const MsgReject& m, std::vector<uint8_t>& out )
@@ -771,6 +771,7 @@ void Encode( const MsgInput& m, std::vector<uint8_t>& out )
 	size_t n = std::min<size_t>( m.inputs.size(), kMaxInputsPerPacket );
 	w.Write( m.newestTick );
 	w.Write( m.ackTick );
+	w.Write( m.stateAck );
 	w.Write( uint8_t( n ) );
 	// The oldest in full, each later one as what changed since the tick before it: a packet repeats
 	// a dozen ticks so that a lost one costs nothing, and most of them are alike.
@@ -791,6 +792,7 @@ bool Decode( ByteReader& r, MsgInput& m )
 {
 	m.newestTick = r.Read<uint32_t>();
 	m.ackTick = r.Read<uint32_t>();
+	m.stateAck = r.Read<uint32_t>();
 	uint8_t n = r.Read<uint8_t>();
 	if ( r.Ok() == false || n > kMaxInputsPerPacket || n > m.newestTick + 1 )
 	{
@@ -811,9 +813,260 @@ bool Decode( ByteReader& r, MsgInput& m )
 	return true;
 }
 
-// Frame layout: type, tick u32, eventCount u8, events (type u8, slot u8)*, commandCount u16,
-// commands (type u8, field mask u8, the fields present)*, changedMask u64, then the changed fields
-// of each player whose bit is set, in slot order.
+// A physics event (M248): type u8, phase u8, after u16, a field mask u32, then the fields present.
+enum PhysicsEventField : uint32_t
+{
+	PeMode = 1u << 0,
+	PeKind = 1u << 1,
+	PeSlot = 1u << 2,
+	PeCount = 1u << 3,
+	PeNetId = 1u << 4,
+	PeOwner = 1u << 5,
+	PeTicks = 1u << 6,
+	PeMade = 1u << 7,
+	PeAt = 1u << 8,
+	PeVector = 1u << 9,
+	PeHitAt = 1u << 10,
+	PeHitVector = 1u << 11,
+	PeTurn = 1u << 12,
+	PeYaw = 1u << 13,
+	PeMass = 1u << 14,
+	PeBoard = 1u << 15,
+	PeBody = 1u << 16,
+	PeCommand = 1u << 17,
+	PeLast = PeCommand,
+};
+constexpr uint32_t kMaxEventBoard = 4096;
+constexpr uint32_t kMaxEventBody = 1u << 20;
+constexpr uint32_t kMaxFramePhysics = 4096;
+constexpr uint32_t kMaxFramePushers = 4096;
+
+bool IsZeroFloat( float f )
+{
+	return f == 0.0f && std::signbit( f ) == false;
+}
+
+void WritePhysicsEvent( ByteWriter& w, const PhysicsEvent& e )
+{
+	const bool identity = IsZeroFloat( e.turn[0] ) && IsZeroFloat( e.turn[1] ) && IsZeroFloat( e.turn[2] ) && e.turn[3] == 1.0f;
+	uint32_t fields = 0;
+	fields |= e.mode != 0 ? PeMode : 0;
+	fields |= e.kind != 0 ? PeKind : 0;
+	fields |= e.slot != 0 ? PeSlot : 0;
+	fields |= e.count != 0 ? PeCount : 0;
+	fields |= e.netId != 0 ? PeNetId : 0;
+	fields |= e.owner != 0 ? PeOwner : 0;
+	fields |= e.ticks != 0 ? PeTicks : 0;
+	fields |= e.made != 0 ? PeMade : 0;
+	fields |= IsZero( e.at ) ? 0 : PeAt;
+	fields |= IsZero( e.vector ) ? 0 : PeVector;
+	fields |= IsZero( e.hitAt ) ? 0 : PeHitAt;
+	fields |= IsZero( e.hitVector ) ? 0 : PeHitVector;
+	fields |= identity ? 0 : PeTurn;
+	fields |= IsZeroFloat( e.yaw ) ? 0 : PeYaw;
+	fields |= IsZeroFloat( e.mass ) ? 0 : PeMass;
+	fields |= e.board.empty() ? 0 : PeBoard;
+	fields |= e.body.empty() ? 0 : PeBody;
+	fields |= e.command.type != CommandType( 0 ) ? PeCommand : 0;
+	w.Write( uint8_t( e.type ) );
+	w.Write( e.phase );
+	w.Write( e.after );
+	w.Write( fields );
+	if ( fields & PeMode )
+		w.Write( e.mode );
+	if ( fields & PeKind )
+		w.Write( e.kind );
+	if ( fields & PeSlot )
+		w.Write( e.slot );
+	if ( fields & PeCount )
+		w.Write( e.count );
+	if ( fields & PeNetId )
+		w.Write( e.netId );
+	if ( fields & PeOwner )
+		w.Write( e.owner );
+	if ( fields & PeTicks )
+		w.Write( e.ticks );
+	if ( fields & PeMade )
+		w.Write( e.made );
+	if ( fields & PeAt )
+		w.Write( e.at );
+	if ( fields & PeVector )
+		w.Write( e.vector );
+	if ( fields & PeHitAt )
+		w.Write( e.hitAt );
+	if ( fields & PeHitVector )
+		w.Write( e.hitVector );
+	if ( fields & PeTurn )
+	{
+		for ( float f : e.turn )
+		{
+			w.Write( f );
+		}
+	}
+	if ( fields & PeYaw )
+		w.Write( e.yaw );
+	if ( fields & PeMass )
+		w.Write( e.mass );
+	if ( fields & PeBoard )
+	{
+		const uint32_t n = std::min<uint32_t>( uint32_t( e.board.size() ), kMaxEventBoard );
+		w.Write( n );
+		for ( uint32_t i = 0; i < n; ++i )
+		{
+			w.Write( e.board[i] );
+		}
+	}
+	if ( fields & PeBody )
+	{
+		const uint32_t n = std::min<uint32_t>( uint32_t( e.body.size() ), kMaxEventBody );
+		w.Write( n );
+		w.WriteBytes( e.body.data(), n );
+	}
+	if ( fields & PeCommand )
+		WriteCommand( w, e.command );
+}
+
+bool ReadPhysicsEvent( ByteReader& r, PhysicsEvent& e )
+{
+	e = PhysicsEvent{};
+	const uint8_t type = r.Read<uint8_t>();
+	e.phase = r.Read<uint8_t>();
+	e.after = r.Read<uint16_t>();
+	const uint32_t fields = r.Read<uint32_t>();
+	if ( r.Ok() == false || type > uint8_t( PhysicsEventType::Spawn ) || e.phase > 2 || fields >= ( PeLast << 1 ) )
+	{
+		return false;
+	}
+	e.type = PhysicsEventType( type );
+	if ( fields & PeMode )
+		e.mode = r.Read<uint8_t>();
+	if ( fields & PeKind )
+		e.kind = r.Read<uint16_t>();
+	if ( fields & PeSlot )
+		e.slot = r.Read<PlayerSlot>();
+	if ( fields & PeCount )
+		e.count = r.Read<uint8_t>();
+	if ( fields & PeNetId )
+		e.netId = r.Read<uint32_t>();
+	if ( fields & PeOwner )
+		e.owner = r.Read<uint32_t>();
+	if ( fields & PeTicks )
+		e.ticks = r.Read<uint32_t>();
+	if ( fields & PeMade )
+		e.made = r.Read<uint32_t>();
+	if ( fields & PeAt )
+		e.at = r.Read<Float3>();
+	if ( fields & PeVector )
+		e.vector = r.Read<Float3>();
+	if ( fields & PeHitAt )
+		e.hitAt = r.Read<Float3>();
+	if ( fields & PeHitVector )
+		e.hitVector = r.Read<Float3>();
+	if ( fields & PeTurn )
+	{
+		for ( float& f : e.turn )
+		{
+			f = r.Read<float>();
+		}
+	}
+	if ( fields & PeYaw )
+		e.yaw = r.Read<float>();
+	if ( fields & PeMass )
+		e.mass = r.Read<float>();
+	if ( fields & PeBoard )
+	{
+		const uint32_t n = r.Read<uint32_t>();
+		if ( r.Ok() == false || n > kMaxEventBoard )
+		{
+			return false;
+		}
+		e.board.resize( n );
+		for ( int32_t& v : e.board )
+		{
+			v = r.Read<int32_t>();
+		}
+	}
+	if ( fields & PeBody )
+	{
+		const uint32_t n = r.Read<uint32_t>();
+		const uint8_t* bytes = r.Ok() && n <= kMaxEventBody ? r.Take( n ) : nullptr;
+		if ( bytes == nullptr )
+		{
+			return false;
+		}
+		e.body.assign( bytes, bytes + n );
+	}
+	if ( ( fields & PeCommand ) && ReadCommand( r, e.command ) == false )
+	{
+		return false;
+	}
+	return r.Ok();
+}
+
+// Pushers' places (M248): u16 count, then each: u8 flags (1: as a change since the last frame's
+// place of the same NetId, 2: that change in int16s, 4: its size), its NetId as a varint after
+// the previous one's (the list is in NetId order), its place (three int16s or int32s), its size
+// (radius, half height: u16 each) when flag 4.
+enum PusherFlags : uint8_t
+{
+	PushChange = 1,
+	PushShort = 2,
+	PushSize = 4,
+};
+
+void WriteVarint( ByteWriter& w, uint32_t v )
+{
+	while ( v >= 0x80 )
+	{
+		w.Write( uint8_t( v | 0x80 ) );
+		v >>= 7;
+	}
+	w.Write( uint8_t( v ) );
+}
+
+bool ReadVarint( ByteReader& r, uint32_t& v )
+{
+	v = 0;
+	for ( int shift = 0; shift < 35; shift += 7 )
+	{
+		const uint8_t b = r.Read<uint8_t>();
+		if ( r.Ok() == false )
+		{
+			return false;
+		}
+		v |= uint32_t( b & 0x7F ) << shift;
+		if ( ( b & 0x80 ) == 0 )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+const PusherPlace* PreviousPlace( const std::vector<PusherPlace>& previous, uint32_t netId )
+{
+	auto it = std::lower_bound( previous.begin(), previous.end(), netId, []( const PusherPlace& p, uint32_t id ) { return p.netId < id; } );
+	return it != previous.end() && it->netId == netId ? &*it : nullptr;
+}
+
+bool FitsShort( int64_t v )
+{
+	return v >= INT16_MIN && v <= INT16_MAX;
+}
+
+// Frame layout: type, tick u32, flags u8 (1: inputs, 2: physics events, 4: pushers' places, 8: a
+// physics checksum), eventCount u8, events (type u8, slot u8)*, commandCount u16, commands (type
+// u8, field mask u8, the fields present)*; with inputs, changedMask u64, then the changed fields
+// of each player whose bit is set, in slot order; with physics events, u16 count and each; with
+// pushers, theirs; with a checksum, u64.
+enum FrameFlags : uint8_t
+{
+	FrameInputs = 1,
+	FramePhysics = 2,
+	FramePushers = 4,
+	FrameChecksum = 8,
+};
+
 void FrameCodec::Encode( const InputFrame& frame, std::vector<uint8_t>& out )
 {
 	Begin( out, MsgType::Frame );
@@ -826,9 +1079,13 @@ bool FrameCodec::Decode( ByteReader& r, InputFrame& frame )
 	return DecodeBody( r, frame );
 }
 
-void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
+void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w, bool withInputs, uint64_t checksum )
 {
 	w.Write( frame.tick );
+	const size_t physics = std::min<size_t>( frame.physics.size(), kMaxFramePhysics );
+	const size_t pushers = std::min<size_t>( frame.pushers.size(), kMaxFramePushers );
+	w.Write( uint8_t( ( withInputs ? FrameInputs : 0 ) | ( physics > 0 ? FramePhysics : 0 ) | ( pushers > 0 ? FramePushers : 0 ) |
+					  ( checksum != 0 ? FrameChecksum : 0 ) ) );
 	w.Write( uint8_t( frame.events.size() ) );
 	for ( const PlayerEvent& e : frame.events )
 	{
@@ -842,28 +1099,85 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w )
 		WriteCommand( w, frame.commands[i] );
 	}
 
-	uint64_t changed = 0;
-	for ( int i = 0; i < kMaxPlayers; ++i )
+	if ( withInputs )
 	{
-		if ( !( frame.inputs[i] == m_previous[i] ) )
+		uint64_t changed = 0;
+		for ( int i = 0; i < kMaxPlayers; ++i )
 		{
-			changed |= uint64_t( 1 ) << i;
+			if ( !( frame.inputs[i] == m_previous[i] ) )
+			{
+				changed |= uint64_t( 1 ) << i;
+			}
+		}
+		w.Write( changed );
+		for ( int i = 0; i < kMaxPlayers; ++i )
+		{
+			if ( changed & ( uint64_t( 1 ) << i ) )
+			{
+				WriteInputDelta( w, frame.inputs[i], m_previous[i] );
+			}
+		}
+		m_previous = frame.inputs;
+	}
+
+	if ( physics > 0 )
+	{
+		w.Write( uint16_t( physics ) );
+		for ( size_t i = 0; i < physics; ++i )
+		{
+			WritePhysicsEvent( w, frame.physics[i] );
 		}
 	}
-	w.Write( changed );
-	for ( int i = 0; i < kMaxPlayers; ++i )
+	if ( pushers > 0 )
 	{
-		if ( changed & ( uint64_t( 1 ) << i ) )
+		w.Write( uint16_t( pushers ) );
+		uint32_t lastId = 0;
+		for ( size_t i = 0; i < pushers; ++i )
 		{
-			WriteInputDelta( w, frame.inputs[i], m_previous[i] );
+			const PusherPlace& p = frame.pushers[i];
+			const PusherPlace* was = PreviousPlace( m_previousPushers, p.netId );
+			const int64_t dx = was ? int64_t( p.x ) - was->x : p.x;
+			const int64_t dy = was ? int64_t( p.y ) - was->y : p.y;
+			const int64_t dz = was ? int64_t( p.z ) - was->z : p.z;
+			const bool fits = was != nullptr && FitsShort( dx ) && FitsShort( dy ) && FitsShort( dz );
+			const bool size = was == nullptr || was->radius != p.radius || was->halfHeight != p.halfHeight;
+			w.Write( uint8_t( ( fits ? PushChange | PushShort : 0 ) | ( size ? PushSize : 0 ) ) );
+			WriteVarint( w, p.netId - lastId );
+			lastId = p.netId;
+			if ( fits )
+			{
+				w.Write( int16_t( dx ) );
+				w.Write( int16_t( dy ) );
+				w.Write( int16_t( dz ) );
+			}
+			else
+			{
+				w.Write( p.x );
+				w.Write( p.y );
+				w.Write( p.z );
+			}
+			if ( size )
+			{
+				w.Write( p.radius );
+				w.Write( p.halfHeight );
+			}
 		}
 	}
-	m_previous = frame.inputs;
+	m_previousPushers.assign( frame.pushers.begin(), frame.pushers.begin() + std::ptrdiff_t( pushers ) );
+	if ( checksum != 0 )
+	{
+		w.Write( checksum );
+	}
 }
 
-bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame )
+bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame, uint64_t* checksum )
 {
 	frame.tick = r.Read<uint32_t>();
+	const uint8_t flags = r.Read<uint8_t>();
+	if ( flags > ( FrameInputs | FramePhysics | FramePushers | FrameChecksum ) )
+	{
+		return false;
+	}
 	uint8_t eventCount = r.Read<uint8_t>();
 	frame.events.clear();
 	for ( uint8_t i = 0; i < eventCount && r.Ok(); ++i )
@@ -891,24 +1205,106 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame )
 		}
 	}
 
-	uint64_t changed = r.Read<uint64_t>();
 	frame.inputs = m_previous;
-	for ( int i = 0; i < kMaxPlayers && r.Ok(); ++i )
+	if ( flags & FrameInputs )
 	{
-		if ( ( changed & ( uint64_t( 1 ) << i ) ) == 0 )
+		uint64_t changed = r.Read<uint64_t>();
+		for ( int i = 0; i < kMaxPlayers && r.Ok(); ++i )
 		{
-			continue;
+			if ( ( changed & ( uint64_t( 1 ) << i ) ) == 0 )
+			{
+				continue;
+			}
+			if ( ReadInputDelta( r, frame.inputs[i], true ) == false )
+			{
+				return false;
+			}
 		}
-		if ( ReadInputDelta( r, frame.inputs[i], true ) == false )
+	}
+
+	frame.physics.clear();
+	if ( flags & FramePhysics )
+	{
+		const uint16_t count = r.Read<uint16_t>();
+		if ( r.Ok() == false || count > kMaxFramePhysics )
 		{
 			return false;
 		}
+		frame.physics.resize( count );
+		for ( PhysicsEvent& e : frame.physics )
+		{
+			if ( ReadPhysicsEvent( r, e ) == false )
+			{
+				return false;
+			}
+		}
 	}
+	frame.pushers.clear();
+	if ( flags & FramePushers )
+	{
+		const uint16_t count = r.Read<uint16_t>();
+		if ( r.Ok() == false || count > kMaxFramePushers )
+		{
+			return false;
+		}
+		frame.pushers.resize( count );
+		uint32_t lastId = 0;
+		for ( PusherPlace& p : frame.pushers )
+		{
+			const uint8_t pf = r.Read<uint8_t>();
+			uint32_t step = 0;
+			if ( ReadVarint( r, step ) == false || ( pf & ~( PushChange | PushShort | PushSize ) ) != 0 ||
+				 ( &p != frame.pushers.data() && step == 0 ) )
+			{
+				return false;
+			}
+			p.netId = lastId + step;
+			lastId = p.netId;
+			const PusherPlace* was = PreviousPlace( m_previousPushers, p.netId );
+			if ( ( pf & PushChange ) && was == nullptr )
+			{
+				return false;
+			}
+			if ( pf & PushShort )
+			{
+				const int16_t dx = r.Read<int16_t>(), dy = r.Read<int16_t>(), dz = r.Read<int16_t>();
+				p.x = int32_t( int64_t( was->x ) + dx );
+				p.y = int32_t( int64_t( was->y ) + dy );
+				p.z = int32_t( int64_t( was->z ) + dz );
+			}
+			else
+			{
+				p.x = r.Read<int32_t>();
+				p.y = r.Read<int32_t>();
+				p.z = r.Read<int32_t>();
+			}
+			if ( pf & PushSize )
+			{
+				p.radius = r.Read<uint16_t>();
+				p.halfHeight = r.Read<uint16_t>();
+			}
+			else if ( was != nullptr )
+			{
+				p.radius = was->radius;
+				p.halfHeight = was->halfHeight;
+			}
+			else
+			{
+				return false;
+			}
+		}
+	}
+	const uint64_t sum = ( flags & FrameChecksum ) ? r.Read<uint64_t>() : 0;
 	if ( r.Ok() == false )
 	{
 		return false;
 	}
+	if ( checksum != nullptr )
+	{
+		*checksum = sum;
+	}
 	m_previous = frame.inputs;
+	m_previousPushers = frame.pushers;
 	return true;
 }
 
@@ -918,7 +1314,8 @@ bool IsSendableCommand( const SimCommand& c )
 	return uint8_t( c.type ) >= 1 && uint8_t( c.type ) <= kLastCommandType && finite( c.a ) && finite( c.b ) && finite( c.c );
 }
 
-void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, size_t count, std::vector<uint8_t>& out )
+void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, size_t count, std::vector<uint8_t>& out,
+					   bool withInputs, const uint64_t* checksums )
 {
 	Begin( out, MsgType::FrameBatch );
 	ByteWriter w( out );
@@ -929,7 +1326,7 @@ void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, 
 	codec.Reset( base );
 	for ( size_t i = 0; i < count; ++i )
 	{
-		codec.EncodeBody( *frames[i], w );
+		codec.EncodeBody( *frames[i], w, withInputs, checksums != nullptr ? checksums[i] : 0 );
 	}
 }
 
@@ -941,14 +1338,18 @@ bool ReadFrameBatchHeader( ByteReader& r, uint32_t& firstTick, uint32_t& count )
 }
 
 bool ReadFrameBatchBody( ByteReader& r, const InputArray& base, uint32_t firstTick, uint32_t count,
-						 std::vector<InputFrame>& out )
+						 std::vector<InputFrame>& out, std::vector<uint64_t>* checksums )
 {
 	FrameCodec codec;
 	codec.Reset( base );
 	out.resize( count );
+	if ( checksums != nullptr )
+	{
+		checksums->assign( count, 0 );
+	}
 	for ( uint32_t i = 0; i < count; ++i )
 	{
-		if ( codec.DecodeBody( r, out[i] ) == false || out[i].tick != firstTick + i )
+		if ( codec.DecodeBody( r, out[i], checksums != nullptr ? &( *checksums )[i] : nullptr ) == false || out[i].tick != firstTick + i )
 		{
 			return false;
 		}

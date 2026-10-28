@@ -27,7 +27,7 @@
 #include "ozz/animation/runtime/local_to_model_job.h"
 #include "ozz/animation/runtime/sampling_job.h"
 #include "rollback.h"
-#include "state_session.h"
+#include "hybrid_session.h"
 #include "scenario.h"
 #include "simulation.h"
 
@@ -2121,13 +2121,15 @@ void TestRollback()
 	RunRollbackScenario( 12, 8, 55, 8 );
 }
 
-// The state network model, without a network (ROADMAP step 3). A server's simulation plays the
-// scenario (joins and leaves, props, kills with ragdolls, respawns, impulses) and saves its state
-// every second tick; each reaches a client's StateSession for slot 0 some ticks later. The client
-// predicts its own body from its own inputs, everything else a stand-in placed from the states.
-// Checked: a state applied at once gives the server's entities, where the server has them; every
-// state is taken; the client's own body, predicted, is where the server then has it.
-void RunStateScenario( uint32_t maxDelay, uint64_t seed, bool commands )
+// The hybrid network model, without a network (M248; ROADMAP step 3). A server's simulation plays
+// the scenario (joins and leaves, props, kills with ragdolls, respawns, impulses); every tick its
+// physics inputs (the frame's commands, the physics events and pushers it made) and its physics
+// checksum go to a client of slot 0, and every second tick its characters' state, each arriving
+// some ticks later. The client's HybridSession steps the physics `buffer` ticks behind the server
+// and predicts its own character ahead. Checked: the client's physics world is the server's on
+// every tick (its checksum); the others stand where the server had them; the own character,
+// predicted, is where the server then has it.
+void RunHybridScenario( uint32_t maxDelay, uint64_t seed, bool commands )
 {
 	test::ScenarioOptions opt;
 	opt.seed = seed;
@@ -2138,20 +2140,29 @@ void RunStateScenario( uint32_t maxDelay, uint64_t seed, bool commands )
 	const uint32_t total = uint32_t( frames.size() );
 	const PlayerSlot local = 0;
 
-	Simulation server( config );
-	Simulation mirror( config ); // takes each state as it is made
-	StateSession client( config, local, 40 );
+	auto serverSim = std::make_unique<Simulation>( config ); // (two simulations: not on the stack)
+	Simulation& server = *serverSim;
+	HybridSession client( config, local, 40 );
+	{
+		std::vector<uint8_t> image;
+		server.SavePortable( image );
+		CHECK( client.Sim().LoadPortable( image ) );
+		client.Start();
+	}
 	struct Sent
 	{
-		uint32_t tick;
 		uint32_t arrives;
+		bool state;
+		uint32_t tick;
+		InputFrame frame;
+		uint64_t checksum;
 		std::vector<uint8_t> bytes;
-		std::array<PlayerInput, kMaxPlayers> inputs;
 	};
 	std::vector<Sent> wire;
 	uint64_t rng = seed * 131 + 5;
 
-	// Where slot 0's body is, by tick: the server's, and the client's first prediction of it.
+	// Where slot 0's body is, by tick: the server's, and the client's first prediction of it; and
+	// where every character is on the server, by tick.
 	struct Seen
 	{
 		bool has = false;
@@ -2159,6 +2170,7 @@ void RunStateScenario( uint32_t maxDelay, uint64_t seed, bool commands )
 		b3Vec3 at = {};
 	};
 	std::vector<Seen> serverSaw( total + 1 ), clientSaw( total + 1 );
+	std::vector<std::map<uint32_t, b3Vec3>> serverCharacters( total + 1 );
 	auto ownOf = []( Simulation& sim, Seen& seen ) {
 		const uint32_t netId = sim.Globals().playerNetIds[0];
 		const Transform* t = netId != 0 ? sim.EntityTransform( netId ) : nullptr;
@@ -2168,52 +2180,55 @@ void RunStateScenario( uint32_t maxDelay, uint64_t seed, bool commands )
 		}
 	};
 
-	size_t stateBytes = 0, states = 0, mirrored = 0;
-	uint64_t serverNs = 0;
+	size_t stateBytes = 0, states = 0, events = 0;
+	uint32_t othersCompared = 0, othersOff = 0;
+	const uint32_t buffer = maxDelay + 1;
 	const uint32_t lead = maxDelay + 2;
 	for ( uint32_t tick = 0; tick < total; ++tick )
 	{
-		auto start = std::chrono::steady_clock::now();
-		server.Step( frames[tick] );
-		serverNs += uint64_t( std::chrono::duration_cast<std::chrono::nanoseconds>( std::chrono::steady_clock::now() - start ).count() );
-		ownOf( server, serverSaw[server.Tick()] );
+		{
+			std::map<uint32_t, b3Vec3>& seen = serverCharacters[server.Tick()];
+			for ( int slot = 0; slot < kMaxPlayers; ++slot )
+			{
+				const uint32_t netId = server.Globals().playerNetIds[slot];
+				if ( const Transform* t = netId != 0 ? server.EntityTransform( netId ) : nullptr )
+				{
+					seen[netId] = t->position;
+				}
+			}
+		}
 		if ( server.Tick() % 2 == 0 )
 		{
-			Sent sent;
-			sent.tick = server.Tick();
-			sent.arrives = tick + 1 + uint32_t( NextRandom( rng ) % maxDelay );
-			server.SaveState( sent.bytes );
-			sent.inputs = frames[tick].inputs;
+			Sent sent{ tick + uint32_t( NextRandom( rng ) % maxDelay ), true, server.Tick(), {}, 0, {} };
+			server.SaveState( sent.bytes, true );
 			stateBytes += sent.bytes.size();
 			states += 1;
-
-			// Taken at once: the server's world, entity for entity.
-			CHECK( mirror.ApplyState( sent.bytes.data(), sent.bytes.size(), local ) );
-			CHECK( mirror.Tick() == server.Tick() );
-			bool same = mirror.Entities().size() == server.Entities().size();
-			for ( size_t i = 0; same && i < server.Entities().size(); ++i )
-			{
-				const uint32_t netId = server.Entities()[i].netId;
-				same = mirror.Entities()[i].netId == netId;
-				const Transform* a = server.EntityTransform( netId );
-				const Transform* b = mirror.EntityTransform( netId );
-				same = same && ( a == nullptr ) == ( b == nullptr ) &&
-					   ( a == nullptr || ( a->position.x == b->position.x && a->position.y == b->position.y && a->position.z == b->position.z ) );
-			}
-			if ( same == false )
-			{
-				std::printf( "    tick %u: the applied state is not the server's world\n", server.Tick() );
-				CHECK( false );
-			}
-			mirrored += 1;
 			wire.push_back( std::move( sent ) );
 		}
-		// What has arrived (in any order: the session keeps the newest).
+		server.Step( frames[tick] );
+		ownOf( server, serverSaw[server.Tick()] );
+		{
+			Sent sent{ tick + uint32_t( NextRandom( rng ) % maxDelay ), false, tick, frames[tick], server.PhysicsHash(), {} };
+			sent.frame.physics = server.PhysicsMade().physics;
+			sent.frame.pushers = server.PhysicsMade().pushers;
+			events += sent.frame.physics.size();
+			wire.push_back( std::move( sent ) );
+		}
+
+		// What has arrived (in any order).
 		for ( size_t i = 0; i < wire.size(); )
 		{
 			if ( wire[i].arrives <= tick )
 			{
-				client.AddState( wire[i].tick, wire[i].bytes.data(), wire[i].bytes.size(), wire[i].inputs );
+				if ( wire[i].state )
+				{
+					client.AddState( wire[i].tick, wire[i].bytes.data(), wire[i].bytes.size() );
+				}
+				else
+				{
+					client.AddChecksum( wire[i].tick, wire[i].checksum );
+					client.AddFrame( wire[i].frame );
+				}
 				wire.erase( wire.begin() + std::ptrdiff_t( i ) );
 			}
 			else
@@ -2221,24 +2236,41 @@ void RunStateScenario( uint32_t maxDelay, uint64_t seed, bool commands )
 				++i;
 			}
 		}
-		client.Reconcile();
-		// The client runs ahead of the server by about the delay, a tick or two a frame.
-		for ( int step = 0; step < 2 && client.CurrentTick() < std::min( tick + 1 + lead, total ); ++step )
+		// The physics `buffer` ticks behind the server; the others where the server had them then.
+		if ( tick + 1 > buffer )
 		{
-			const uint32_t t = client.CurrentTick();
-			if ( client.AdvanceOne( frames[t].inputs[local] ) == false )
+			client.AdvancePhysics( tick + 1 - buffer );
+		}
+		if ( const uint32_t p = client.PlacedTick(); p != UINT32_MAX )
+		{
+			for ( const auto& [netId, at] : serverCharacters[p] )
+			{
+				if ( netId == client.Sim().Globals().playerNetIds[local] || client.Sim().IsStandIn( netId ) == false )
+				{
+					continue;
+				}
+				const Transform* t = client.Sim().EntityTransform( netId );
+				othersCompared += 1;
+				// (Rounded to 1/1024 m on the way.)
+				othersOff += t == nullptr || b3Length( b3Sub( t->position, at ) ) > 0.002f ? 1 : 0;
+			}
+		}
+		// The own character ahead of the server by about the delay, a tick or two a frame.
+		for ( int step = 0; step < 2 && client.PredictedTick() < std::min( tick + 1 + lead, total ); ++step )
+		{
+			if ( client.Predict( frames[client.PredictedTick()].inputs[local] ) == false )
 			{
 				break;
 			}
-			if ( clientSaw[client.CurrentTick()].has == false )
+			if ( clientSaw[client.PredictedTick()].has == false )
 			{
-				ownOf( client.Sim(), clientSaw[client.CurrentTick()] );
+				ownOf( client.Sim(), clientSaw[client.PredictedTick()] );
 			}
 		}
 	}
 
 	// How far the prediction of its own body was from where the server then had it.
-	uint32_t compared = 0, near = 0;
+	uint32_t compared = 0, nearby = 0;
 	float worst = 0.0f, sum = 0.0f;
 	for ( uint32_t t = 0; t <= total; ++t )
 	{
@@ -2250,37 +2282,39 @@ void RunStateScenario( uint32_t maxDelay, uint64_t seed, bool commands )
 		}
 		const float off = b3Length( b3Sub( a.at, b.at ) );
 		compared += 1;
-		near += off < 0.05f ? 1 : 0;
+		nearby += off < 0.05f ? 1 : 0;
 		sum += off;
 		worst = std::max( worst, off );
 	}
 	const auto& stats = client.GetStats();
-	const double serverMs = double( serverNs ) / 1e6 / double( total );
-	const double clientMs = stats.steps > 0 ? double( stats.stepNs ) / 1e6 / double( stats.steps ) : 0.0;
-	std::printf( "    delay<=%u%s: %zu states of %zu bytes on average, %" PRIu64 " taken (%" PRIu64 " overtaken), %" PRIu64
-				 " ticks run again; own body within 5 cm %u of %u ticks, %.3f m on average, %.3f at most; a step %.3f ms "
-				 "(the server's %.3f), applying %.3f ms\n",
-				 maxDelay, commands ? ", commands" : "", states, states > 0 ? stateBytes / states : 0, stats.states, stats.skipped, stats.resimulatedTicks, near,
-				 compared, compared > 0 ? sum / float( compared ) : 0.0f, worst, clientMs, serverMs,
-				 stats.states > 0 ? double( stats.applyNs ) / 1e6 / double( stats.states ) : 0.0 );
-	CHECK( mirrored == states );
+	std::printf( "    delay<=%u%s: %zu physics events; %zu states of %zu bytes on average, %" PRIu64 " taken; physics %" PRIu64
+				 " ticks (%" PRIu64 " checksums, %" PRIu64 " different, the first at %u), %.3f ms a step; others placed %u, off %u; "
+				 "own body within 5 cm %u of %u ticks, %.3f m on average, %.3f at most (%" PRIu64 " ticks predicted again)\n",
+				 maxDelay, commands ? ", commands" : "", events, states, states > 0 ? stateBytes / states : 0, stats.states,
+				 stats.physicsSteps, stats.checksums, stats.desyncs, client.DesyncTick(),
+				 stats.physicsSteps > 0 ? double( stats.physicsNs ) / 1e6 / double( stats.physicsSteps ) : 0.0, othersCompared, othersOff,
+				 nearby, compared, compared > 0 ? sum / float( compared ) : 0.0f, worst, stats.resimulatedTicks );
 	CHECK( stats.rejected == 0 );
-	CHECK( stats.states > states / 2 );
+	CHECK( stats.physicsSteps + buffer + 2 >= total );
+	CHECK( stats.checksums + buffer + 2 >= total );
+	CHECK( stats.desyncs == 0 );
+	CHECK( othersCompared > 200 );
+	CHECK( othersOff == 0 );
 	CHECK( compared > 300 );
 	if ( commands == false )
 	{
-		// Only bumping into the others (stand-ins, placed by the states) can put it off. With
+		// Only bumping into the others (placed by the states, in the past) can put it off. With
 		// commands, a kill, a respawn or an impulse is the server's, seen a state later.
-		CHECK( near * 10 >= compared * 9 );
+		CHECK( nearby * 10 >= compared * 9 );
 	}
 }
 
-void TestStateModel()
+void TestHybridModel()
 {
-	RunStateScenario( 3, 7, false );
-	RunStateScenario( 10, 8, false );
-	RunStateScenario( 3, 9, true );
-	RunStateScenario( 10, 10, true );
+	RunHybridScenario( 3, 7, false );
+	RunHybridScenario( 10, 8, false );
+	RunHybridScenario( 3, 9, true );
+	RunHybridScenario( 10, 10, true );
 }
 
 void TestRollbackReset()
@@ -12966,7 +13000,7 @@ int main( int argc, char** argv )
 		{ "portable_snapshot", TestPortableSnapshot },
 		{ "portable_bytes", TestPortableBytes },
 		{ "rollback", TestRollback },
-		{ "state_model", TestStateModel },
+		{ "hybrid_model", TestHybridModel },
 		{ "rollback_reset", TestRollbackReset },
 		{ "gameplay_sanity", TestGameplaySanity },
 		{ "commands", TestCommands },

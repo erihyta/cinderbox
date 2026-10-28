@@ -348,7 +348,7 @@ struct Harness
 			RollbackSession* s = c.Session();
 			std::printf( "    bot%zu: %s slot %u tick %u confirmed %u rollbacks %llu checksums ok %llu desyncs %llu welcomes %llu\n", i,
 						 ToString( c.State() ), c.Slot(), c.CurrentTick(), c.ConfirmedTick(),
-						 s ? (unsigned long long)s->GetStats().rollbacks : c.States() ? (unsigned long long)c.States()->GetStats().states : 0ull,
+						 s ? (unsigned long long)s->GetStats().rollbacks : c.Hybrid() ? (unsigned long long)c.Hybrid()->GetStats().states : 0ull,
 						 (unsigned long long)c.GetStats().checksumsVerified, (unsigned long long)c.GetStats().desyncs,
 						 (unsigned long long)c.GetStats().welcomes );
 		}
@@ -2853,6 +2853,7 @@ void TestProtocol()
 		MsgInput sent;
 		sent.newestTick = 90;
 		sent.ackTick = 80;
+		sent.stateAck = 78;
 		for ( int i = 0; i < 6; ++i )
 		{
 			PlayerInput in;
@@ -2871,11 +2872,88 @@ void TestProtocol()
 		CHECK( ReadType( r ) == MsgType::Input );
 		MsgInput got;
 		CHECK( Decode( r, got ) && r.AtEnd() );
-		CHECK( got.inputs == sent.inputs && got.newestTick == 90 && got.ackTick == 80 );
+		CHECK( got.inputs == sent.inputs && got.newestTick == 90 && got.ackTick == 80 && got.stateAck == 78 );
 		std::printf( "    six inputs, their actions from none to all 64: %zu bytes\n", bytes.size() );
-		// 9 of header, 13 an input, and 0 + 1 + 2 + 6 + 8 + 1 bytes of actions; 2 of slot keys in the
+		// 13 of header, 13 an input, and 0 + 1 + 2 + 6 + 8 + 1 bytes of actions; 2 of slot keys in the
 		// first (the later ones say only what changed, and the slot keys did not).
-		CHECK( bytes.size() == 1 + 9 + 6 * 13 + 18 + 2 );
+		CHECK( bytes.size() == 1 + 13 + 6 * 13 + 18 + 2 );
+	}
+
+	// The hybrid's frames (M248): without the inputs, with physics events of every kind, pushers'
+	// places (as changes since the frame before, or whole) and the physics checksum.
+	{
+		std::vector<InputFrame> sent( 3 );
+		for ( uint32_t i = 0; i < 3; ++i )
+		{
+			InputFrame& f = sent[i];
+			f.tick = 500 + i;
+			f.inputs[2].moveForward = 50; // (not sent: decoded as the base's)
+			SimCommand c;
+			c.type = CommandType::SpawnProp;
+			c.a = { 1.0f, 2.0f, 3.0f };
+			f.commands.push_back( c );
+			for ( uint8_t type = 0; type <= uint8_t( PhysicsEventType::Spawn ); ++type )
+			{
+				PhysicsEvent e;
+				e.type = PhysicsEventType( type );
+				e.phase = uint8_t( type % 3 );
+				e.after = uint16_t( type );
+				e.mode = 2;
+				e.kind = uint16_t( 300 + type );
+				e.slot = 4;
+				e.count = 7;
+				e.netId = 0x10000020u + type;
+				e.owner = type % 2 ? 0x10000001u : 0;
+				e.ticks = 600;
+				e.made = type == uint8_t( PhysicsEventType::Ragdoll ) ? 77 : 0;
+				e.at = { -1.5f, 2.25f, 3.0f };
+				e.vector = { 0.0f, -0.0f, 9.5f };
+				e.hitAt = { 4.0f, 0.0f, 0.0f };
+				e.turn[0] = 0.5f;
+				e.turn[3] = 0.5f;
+				e.yaw = -1.25f;
+				e.mass = 80.0f;
+				if ( type == uint8_t( PhysicsEventType::IntoWorld ) )
+				{
+					e.board = { 1, -2, 3 };
+				}
+				if ( type == uint8_t( PhysicsEventType::Enter ) )
+				{
+					e.body = { 9, 8, 7, 6 };
+				}
+				if ( type == uint8_t( PhysicsEventType::Spawn ) )
+				{
+					e.command = c;
+				}
+				f.physics.push_back( e );
+			}
+			// Two that walk, one that jumps far (whole again), and one that joins on the last.
+			f.pushers.push_back( { 0x10000001u, int32_t( 1000 + 20 * i ), 512, -3000, 400, 900 } );
+			f.pushers.push_back( { 0x10000003u, -70000, int32_t( i == 1 ? 900000 : 1024 ), 5, 400, 900 } );
+			if ( i == 2 )
+			{
+				f.pushers.push_back( { 0x10000009u, 1, 2, 3, 350, 800 } );
+			}
+		}
+		const InputFrame* frames[] = { &sent[0], &sent[1], &sent[2] };
+		const uint64_t sums[] = { 0x1234567890abcdefull, 0, 42 };
+		std::vector<uint8_t> bytes;
+		EncodeFrameBatch( {}, frames, 3, bytes, false, sums );
+		ByteReader r( bytes.data(), bytes.size() );
+		uint32_t first = 0, count = 0;
+		std::vector<InputFrame> got;
+		std::vector<uint64_t> gotSums;
+		CHECK( ReadType( r ) == MsgType::FrameBatch && ReadFrameBatchHeader( r, first, count ) && first == 500 && count == 3 );
+		CHECK( ReadFrameBatchBody( r, {}, first, count, got, &gotSums ) && r.AtEnd() );
+		for ( uint32_t i = 0; i < 3 && got.size() == 3; ++i )
+		{
+			CHECK( got[i].physics == sent[i].physics );
+			CHECK( got[i].pushers == sent[i].pushers );
+			CHECK( got[i].commands.size() == 1 && got[i].commands[0].type == CommandType::SpawnProp );
+			CHECK( got[i].inputs[2].moveForward == 0 );
+			CHECK( gotSums[i] == sums[i] );
+		}
+		std::printf( "    three hybrid frames, nine physics events and two or three pushers each: %zu bytes\n", bytes.size() );
 	}
 
 	// Frame batches: a chain from any starting tick decodes back to the same frames.
@@ -6405,7 +6483,15 @@ void TestPhysicsAlone()
 		CHECK( firstWrongWorld == UINT32_MAX );
 #endif
 	}
-	std::filesystem::remove( replayPath );
+	// (Kept with CB_KEEP_REPLAY set: `cb_replay hybrid` measures the hybrid on it.)
+	if ( std::getenv( "CB_KEEP_REPLAY" ) == nullptr )
+	{
+		std::filesystem::remove( replayPath );
+	}
+	else
+	{
+		std::printf( "    kept %s\n", replayPath.string().c_str() );
+	}
 }
 
 // The state message (net/state_codec.h): a world of players and props saved every second tick,
@@ -6501,11 +6587,11 @@ void TestStateCodec()
 	CHECK( change < whole );
 }
 
-// --- The state network model (ROADMAP step 3) -----------------------------------------------------
+// --- The hybrid network model (M248; ROADMAP step 3) ---------------------------------------------
 
-void UseStateModel( ServerOptions& options )
+void UseHybridModel( ServerOptions& options )
 {
-	options.netModel = net::NetModel::State;
+	options.netModel = net::NetModel::Hybrid;
 }
 
 // Where a bot's own body is, by tick: the server's (from its tick observer), and the bot's first
@@ -6524,12 +6610,13 @@ struct OwnTrack
 	void Client( GameClient& game )
 	{
 		Simulation* sim = game.Sim();
-		const Transform* t = sim != nullptr && game.States() != nullptr && game.States()->HasState()
+		// (Its own character is at the predicted tick, ahead of the physics.)
+		const Transform* t = sim != nullptr && game.Hybrid() != nullptr && game.Hybrid()->StateTick() > 0
 								 ? sim->EntityTransform( sim->PlayerNetId( game.Slot() ) )
 								 : nullptr;
 		if ( t != nullptr )
 		{
-			client.emplace( sim->Tick(), t->position );
+			client.emplace( game.Hybrid()->PredictedTick(), t->position );
 		}
 	}
 	// (Ticks both saw; how many of them within 5 cm.)
@@ -6549,24 +6636,26 @@ struct OwnTrack
 	}
 };
 
-void CheckStateClient( GameClient& c )
+void CheckHybridClient( GameClient& c )
 {
 	const GameClient::Stats& s = c.GetStats();
-	std::printf( "    %s: %llu states (%llu of no use), window %u, stalled %.2fs, %llu taken, %.1f ticks run again a state\n",
+	const HybridSession* hs = c.Hybrid();
+	std::printf( "    %s: %llu states (%llu of no use), stalled %.2fs, %llu taken, %.1f ticks predicted again a state; its physics "
+				 "%llu ticks (%llu waited for a frame), %d behind the server, %llu checksums, %llu desyncs\n",
 				 c.Slot() == 0 ? "slot 0" : "a bot", (unsigned long long)s.statesReceived, (unsigned long long)s.statesIgnored,
-				 s.rollbackWindow, s.stalledSeconds, c.States() ? (unsigned long long)c.States()->GetStats().states : 0ull,
-				 c.States() && c.States()->GetStats().states > 0
-					 ? double( c.States()->GetStats().resimulatedTicks ) / double( c.States()->GetStats().states )
-					 : 0.0 );
+				 s.stalledSeconds, hs ? (unsigned long long)hs->GetStats().states : 0ull,
+				 hs && hs->GetStats().states > 0 ? double( hs->GetStats().resimulatedTicks ) / double( hs->GetStats().states ) : 0.0,
+				 hs ? (unsigned long long)hs->GetStats().physicsSteps : 0ull, hs ? (unsigned long long)hs->GetStats().physicsStalls : 0ull,
+				 int( s.physicsBehind ), (unsigned long long)s.checksumsVerified, (unsigned long long)s.desyncs );
 }
 
-// Server mods end to end in the state model: the mods session's shooting (a pistol, a kill, a
-// ragdoll, a respawn, props), every client a state client. Nothing of the inputs model goes out
-// (no frames, no checksums), the states come as changes, and what the server decided reaches the
-// clients through them.
-void TestStateSession()
+// Server mods end to end in the hybrid: the mods session's shooting (a pistol, a kill, a ragdoll, a
+// respawn, props), every client a hybrid client. The frames go without the inputs, the states come
+// as changes, the physics is the server's (its checksums), and what the server decided reaches the
+// clients: a kill by the state, its ragdoll by the physics events.
+void TestHybridSession()
 {
-	Harness h( 47990, {}, {}, {}, UseStateModel );
+	Harness h( 47990, {}, {}, {}, UseHybridModel );
 	const ModSchema& schema = h.server.Schema();
 	ActionBits fire = kKeyUse;
 	ActionBits pistol = kKeySlot1;
@@ -6639,20 +6728,21 @@ void TestStateSession()
 				 (unsigned long long)ss.statesSent, (unsigned long long)ss.statesWhole,
 				 ss.statesSent ? double( ss.stateBytes ) / double( ss.statesSent ) : 0.0,
 				 ss.ticks ? ss.stateMsTotal / double( ss.ticks ) : 0.0, (unsigned long long)ss.batchesSent );
-	CHECK( ss.batchesSent == 0 );
+	CHECK( ss.batchesSent > 0 );
 	CHECK( ss.statesSent > 500 );
 	CHECK( ss.statesWhole * 20 < ss.statesSent ); // whole only the first, and after a lost base
 	for ( Bot& b : h.bots )
 	{
 		GameClient& c = *b.client;
-		CheckStateClient( c );
+		CheckHybridClient( c );
 		CHECK( c.State() == ClientState::Playing );
-		CHECK( c.Model() == net::NetModel::State );
-		CHECK( c.Session() == nullptr && c.States() != nullptr );
-		CHECK( c.GetStats().checksumsVerified == 0 && c.GetStats().desyncs == 0 );
+		CHECK( c.Model() == net::NetModel::Hybrid );
+		CHECK( c.Session() == nullptr && c.Hybrid() != nullptr );
+		CHECK( c.GetStats().checksumsVerified > 10 && c.GetStats().desyncs == 0 );
 		CHECK( c.GetStats().statesReceived > 150 );
 		CHECK( c.GetStats().statesIgnored * 10 < c.GetStats().statesReceived );
-		CHECK( c.States()->GetStats().rejected == 0 );
+		CHECK( c.Hybrid()->GetStats().rejected == 0 );
+		CHECK( c.Hybrid()->GetStats().physicsSteps > 400 );
 	}
 	const auto [both, within] = track.Near();
 	std::printf( "    the walker's own body predicted within 5 cm of the server's %u of %u ticks\n", within, both );
@@ -6660,11 +6750,12 @@ void TestStateSession()
 	CHECK( within * 10 >= both * 8 );
 }
 
-// The state model on a bad connection: ~70 ms round trip with jitter, 3% loss and duplicates. A
-// lost state costs nothing but itself (the next is a few ticks away, against a base the client has).
-void TestStateLossy()
+// The hybrid on a bad connection: ~70 ms round trip with jitter, 3% loss and duplicates. A lost
+// state costs nothing but itself (the next is a few ticks away, against a base the client has); a
+// lost frame comes again in the next packets, and the physics, behind, has waited for it rarely.
+void TestHybridLossy()
 {
-	Harness h( 47993, {}, {}, {}, UseStateModel );
+	Harness h( 47993, {}, {}, {}, UseHybridModel );
 	net::NetSimConfig bad;
 	bad.latencyMs = 30;
 	bad.jitterMs = 10;
@@ -6691,8 +6782,9 @@ void TestStateLossy()
 	CHECK( h.proxy->GetStats().dropped > 0 );
 	for ( Bot& b : h.bots )
 	{
-		CheckStateClient( *b.client );
+		CheckHybridClient( *b.client );
 		CHECK( b.client->State() == ClientState::Playing );
+		CHECK( b.client->GetStats().desyncs == 0 && b.client->GetStats().checksumsVerified > 10 );
 		CHECK( b.client->GetStats().rttMs >= 50 );
 		CHECK( b.client->GetStats().statesReceived > 150 );
 		CHECK( b.client->GetStats().statesIgnored * 4 < b.client->GetStats().statesReceived );
@@ -6703,11 +6795,11 @@ void TestStateLossy()
 	CHECK( within * 10 >= both * 8 );
 }
 
-// A state client that loses its connection comes back as the same player, and its states start
+// A hybrid client that loses its connection comes back as the same player, and its states start
 // again whole (its old bases are gone with the welcome).
-void TestStateReconnect()
+void TestHybridReconnect()
 {
-	Harness h( 47996, {}, {}, {}, UseStateModel );
+	Harness h( 47996, {}, {}, {}, UseHybridModel );
 	h.AddBot();
 	h.AddBot();
 	h.RunUntil( 2.0 );
@@ -6725,7 +6817,7 @@ void TestStateReconnect()
 	for ( Bot& b : h.bots )
 	{
 		CHECK( b.client->State() == ClientState::Playing );
-		CHECK( b.client->States() != nullptr && b.client->States()->HasState() );
+		CHECK( b.client->Hybrid() != nullptr && b.client->Hybrid()->StateTick() > 0 && b.client->GetStats().desyncs == 0 );
 	}
 }
 
@@ -6773,9 +6865,9 @@ int main( int argc, char** argv )
 		{ "reconnect", TestReconnect },
 		{ "physics_alone", TestPhysicsAlone },
 		{ "state_codec", TestStateCodec },
-		{ "state_session", TestStateSession },
-		{ "state_lossy", TestStateLossy },
-		{ "state_reconnect", TestStateReconnect },
+		{ "hybrid_session", TestHybridSession },
+		{ "hybrid_lossy", TestHybridLossy },
+		{ "hybrid_reconnect", TestHybridReconnect },
 		{ "grace_expiry", TestGraceExpiry },
 		{ "lossy_session", TestLossySession },
 		{ "mods_session", TestModsSession },

@@ -473,7 +473,8 @@ uint64_t Simulation::PhysicsHash() const
 	for ( const EntityRef& r : m_entities )
 	{
 		flecs::entity e( m_world, r.entity );
-		if ( ( e.has<PhysicsBody>() == false && e.has<RagdollBodies>() == false ) || e.has<Character>() )
+		// (In the physics world: not a driven prop, which is the characters'.)
+		if ( PhysicsSide( e ) == false || e.has<Pusher>() || e.has<Character>() )
 		{
 			continue;
 		}

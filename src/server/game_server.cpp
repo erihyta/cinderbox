@@ -630,13 +630,10 @@ void GameServer::Update( double now )
 	{
 		// Once for all the ticks of this update, not once a tick: packets sent in one go leave in
 		// one datagram, and are lost together. A frame's three packets have to be three datagrams.
-		if ( m_options.netModel == NetModel::State )
+		SendFrames( now );
+		if ( m_options.netModel == NetModel::Hybrid )
 		{
 			SendStates();
-		}
-		else
-		{
-			SendFrames( now );
 		}
 	}
 	if ( now - m_nextTickTime > 0.25 )
@@ -727,7 +724,7 @@ void GameServer::HandleEvent( const NetEvent& ev, double now )
 					HandleText( *c, msg );
 				}
 			}
-			else if ( *type == MsgType::ResyncRequest && c != nullptr && c->welcomed && m_options.netModel == NetModel::Inputs )
+			else if ( *type == MsgType::ResyncRequest && c != nullptr && c->welcomed )
 			{
 				MsgResyncRequest msg;
 				if ( Decode( r, msg ) )
@@ -826,16 +823,15 @@ void GameServer::HandleHello( PeerId peer, const MsgHello& hello, double now )
 void GameServer::HandleInput( Client& client, const MsgInput& msg, double now )
 {
 	uint32_t current = m_sim->Tick();
-	if ( m_options.netModel == NetModel::State )
+	if ( m_options.netModel == NetModel::Hybrid )
 	{
 		// The newest state it has, if it is one still kept (packets come out of order: only forward).
-		if ( msg.ackTick != 0 && ( client.stateAck == kNoStateBase || msg.ackTick > client.stateAck ) &&
-			 msg.ackTick <= client.stateSent && KeptState( msg.ackTick ) != nullptr )
+		if ( msg.stateAck != 0 && ( client.stateAck == kNoStateBase || msg.stateAck > client.stateAck ) &&
+			 msg.stateAck <= client.stateSent && KeptState( msg.stateAck ) != nullptr )
 		{
-			client.stateAck = msg.ackTick;
+			client.stateAck = msg.stateAck;
 		}
 	}
-	else
 	{
 		// Acknowledgements only move forward (input packets can arrive out of order).
 		uint32_t acked = std::max( client.ackTick, std::min( msg.ackTick, current ) );
@@ -873,8 +869,7 @@ void GameServer::SendSnapshots()
 			continue;
 		}
 
-		// (The state model's client waits for its first state instead: whole, it has none.)
-		if ( built == false && m_options.netModel == NetModel::Inputs )
+		if ( built == false )
 		{
 			m_sim->SavePortable( m_image );
 			built = true;
@@ -889,10 +884,7 @@ void GameServer::SendSnapshots()
 		welcome.baseInputs = m_lastInputs;
 		welcome.mapHash = m_mapHash;
 		welcome.map = m_mapBytes;
-		if ( m_options.netModel == NetModel::Inputs )
-		{
-			welcome.image = m_image;
-		}
+		welcome.image = m_image;
 		welcome.schema = m_schemaBytes;
 		welcome.model = m_options.netModel;
 		welcome.stateEvery = uint8_t( m_options.stateEvery );
@@ -980,10 +972,17 @@ void GameServer::RunTick( double now )
 
 	m_sim->Step( frame );
 
-	m_history[tick % kFrameHistory] = frame;
 	m_lastInputs = frame.inputs;
 	m_replay.AddFrame( frame );
 	RecordView( frame );
+	if ( m_options.netModel == NetModel::Hybrid )
+	{
+		// What its clients' physics is given for the tick: the physics events and pushers' places
+		// it made (the replay has the frame as played: it makes them again).
+		frame.physics = m_sim->PhysicsMade().physics;
+		frame.pushers = m_sim->PhysicsMade().pushers;
+	}
+	m_history[tick % kFrameHistory] = std::move( frame );
 
 	uint32_t stateTick = tick + 1;
 	uint64_t hash = 0;
@@ -1009,14 +1008,20 @@ void GameServer::RunTick( double now )
 		}
 	}
 
-	// The state model: every few ticks, the world as it is now (compact: what clients are sent),
-	// kept for the clients' acknowledgements.
-	if ( m_options.netModel == NetModel::State && stateTick % m_options.stateEvery == 0 && ConnectedClients() > 0 )
+	// The hybrid: the physics checksum, every few ticks; the characters' state, every few ticks (as
+	// they are now, compact: what clients are sent), kept for the clients' acknowledgements.
+	if ( m_options.netModel == NetModel::Hybrid )
+	{
+		m_physicsSums.resize( kFrameHistory );
+		m_physicsSums[tick % kFrameHistory] =
+			m_options.checksumInterval > 0 && stateTick % m_options.checksumInterval == 0 ? m_sim->PhysicsHash() : 0;
+	}
+	if ( m_options.netModel == NetModel::Hybrid && stateTick % m_options.stateEvery == 0 && ConnectedClients() > 0 )
 	{
 		auto start = std::chrono::steady_clock::now();
 		StateFrame state;
 		state.tick = stateTick;
-		state.inputs = frame.inputs;
+		state.inputs = m_lastInputs;
 		m_sim->SaveState( state.state, true );
 		m_states.push_back( std::move( state ) );
 		while ( m_states.size() > kStateHistory )
@@ -1353,7 +1358,21 @@ void GameServer::SendFrames( double now )
 			}
 			cache.push_back( { first, frames.size(), {} } );
 			hit = &cache.back();
-			EncodeFrameBatch( base, frames.data(), frames.size(), hit->bytes );
+			if ( m_options.netModel == NetModel::Hybrid )
+			{
+				// (Without the inputs: the clients simulate no one else's character. With the physics
+				// checksums.)
+				std::vector<uint64_t> sums( frames.size(), 0 );
+				for ( size_t i = 0; i < frames.size(); ++i )
+				{
+					sums[i] = frames[i] != nullptr && m_physicsSums.size() == kFrameHistory ? m_physicsSums[frames[i]->tick % kFrameHistory] : 0;
+				}
+				EncodeFrameBatch( base, frames.data(), frames.size(), hit->bytes, false, sums.data() );
+			}
+			else
+			{
+				EncodeFrameBatch( base, frames.data(), frames.size(), hit->bytes );
+			}
 		}
 		// Out of order is fine, dropped for being overtaken is not: a packet holds frames the next
 		// one may not (it starts later), and the client keeps one it cannot use yet.

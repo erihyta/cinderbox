@@ -28,7 +28,7 @@ add_library(cb_sim STATIC
 	simulation.cpp
 	physics_inputs.cpp
 	stand_ins.cpp
-	state_session.cpp
+	hybrid_session.cpp
 )
 
 target_link_libraries(cb_sim PUBLIC cb_sim_data)

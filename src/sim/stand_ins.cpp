@@ -1,6 +1,8 @@
-// The state network model's side of the simulation (ROADMAP step 3): a server's world as bytes
-// without the physics engine's internals, and a client's world made to agree with it, every entity
-// but its own a stand-in (simulation.h: SaveState, ApplyState).
+// The characters' states, for the hybrid network model (M248; ROADMAP step 3): the characters' side
+// of a server's world as bytes without the physics engine's internals, and a client's characters
+// made to agree with it, every one but its own a stand-in (simulation.h: SaveState, ApplyState).
+// Bodies are described here, and built again from the description, also for moving one between
+// the two worlds (M247).
 //
 // Layout of a state (little-endian), each entity self-contained so a wire codec can line two
 // states up entity by entity (net/state_codec.h) without knowing the components:
@@ -9,7 +11,7 @@
 //   u32 entities, then each, in NetId order:
 //     u32 netId, u32 size, then its record: u32 mask (a bit per snapshot component), the components
 //     u32 size of its bodies' description (0: it has none), then u64 its hash and the description:
-//       u8 bodies (1: a PhysicsBody; kRagdollParts: a ragdoll's), then each body:
+//       u8 bodies (1: a PhysicsBody), then each body:
 //         u8 type (0xFF: no body), u8 flags (1 enabled, 2 bullet), u8 locks (a bit each),
 //         f32 gravity scale, linear damping, angular damping, b3MassData,
 //         u8 shapes, then each: u8 type, b3Filter, f32 density, friction, restitution, rolling,
@@ -365,7 +367,31 @@ bool Simulation::IsStandIn( uint32_t netId ) const
 	return e.is_valid() && e.has<StandIn>();
 }
 
-void Simulation::SaveState( std::vector<uint8_t>& out, bool compact )
+bool Simulation::PhysicsSide( flecs::entity e ) const
+{
+	if ( e.has<RagdollBodies>() || e.has<Pusher>() )
+	{
+		return true;
+	}
+	const PhysicsBody* pb = e.try_get<PhysicsBody>();
+	return pb != nullptr && pb->body.world0 == 0;
+}
+
+bool Simulation::CharacterSide( flecs::entity e ) const
+{
+	if ( PhysicsSide( e ) )
+	{
+		return false;
+	}
+	if ( e.has<Character>() || e.has<PhysicsBody>() )
+	{
+		return true; // (a body not in the physics world is in the characters')
+	}
+	const HeldItem* held = e.try_get<HeldItem>();
+	return held != nullptr && held->holder != 0;
+}
+
+void Simulation::SaveState( std::vector<uint8_t>& out, bool compact, uint32_t only )
 {
 	PhysicsArena::Scope scope( *m_arena );
 	out.clear();
@@ -375,16 +401,30 @@ void Simulation::SaveState( std::vector<uint8_t>& out, bool compact )
 	Put( out, m_globals );
 	const auto* board = reinterpret_cast<const uint8_t*>( m_globalBoard.data() );
 	out.insert( out.end(), board, board + m_globalBoard.size() * 4 );
-	Put( out, uint32_t( m_entities.size() ) );
+	const size_t countAt = out.size();
+	Put( out, uint32_t( 0 ) );
 
 	ecs_world_t* world = m_world.c_ptr();
 	std::vector<uint8_t> description;
 	const int transformIndex = compact ? SnapIndex( m_world.component<Transform>().id() ) : -1;
 	const int velocityIndex = compact ? SnapIndex( m_world.component<Velocity>().id() ) : -1;
-	const int poseIndex = compact ? SnapIndex( m_world.component<RagdollPose>().id() ) : -1;
+	uint32_t count = 0;
 	for ( const EntityRef& ref : m_entities )
 	{
 		flecs::entity e( m_world, ref.entity );
+		if ( CharacterSide( e ) == false )
+		{
+			continue;
+		}
+		if ( only != 0 && ref.netId != only )
+		{
+			const HeldItem* held = e.try_get<HeldItem>();
+			if ( held == nullptr || held->holder != only )
+			{
+				continue;
+			}
+		}
+		count += 1;
 		Put( out, ref.netId );
 		const size_t sizeAt = out.size();
 		Put( out, uint32_t( 0 ) );
@@ -416,23 +456,12 @@ void Simulation::SaveState( std::vector<uint8_t>& out, bool compact )
 					v = { RoundedVec( v.linear, kSpeedGrid ), RoundedVec( v.angular, kSpeedGrid ) };
 					std::memcpy( out.data() + at, &v, sizeof( v ) );
 				}
-				else if ( int( i ) == poseIndex )
-				{
-					RagdollPose pose;
-					std::memcpy( &pose, out.data() + at, sizeof( pose ) );
-					for ( int k = 0; k < kRagdollParts; ++k )
-					{
-						pose.part[k] = Rounded( pose.part[k] );
-						pose.linear[k] = RoundedVec( pose.linear[k], kSpeedGrid );
-					}
-					std::memcpy( out.data() + at, &pose, sizeof( pose ) );
-				}
 			}
 		}
 		const uint32_t record = uint32_t( out.size() - sizeAt - sizeof( uint32_t ) );
 		std::memcpy( out.data() + sizeAt, &record, sizeof( record ) );
 
-		if ( e.has<PhysicsBody>() || e.has<RagdollBodies>() )
+		if ( e.has<PhysicsBody>() )
 		{
 			DescribeBodies( e, description );
 			Put( out, uint32_t( description.size() ) );
@@ -444,9 +473,10 @@ void Simulation::SaveState( std::vector<uint8_t>& out, bool compact )
 			Put( out, uint32_t( 0 ) );
 		}
 	}
+	std::memcpy( out.data() + countAt, &count, sizeof( count ) );
 }
 
-bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
+bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, StateApply which )
 {
 	// First everything is read and checked; only then is anything changed.
 	ByteReader r( data, size );
@@ -521,37 +551,75 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 	const int heldIndex = SnapIndex( m_world.component<HeldItem>().id() );
 	const int transformIndex = SnapIndex( m_world.component<Transform>().id() );
 	const int velocityIndex = SnapIndex( m_world.component<Velocity>().id() );
-	const int poseIndex = SnapIndex( m_world.component<RagdollPose>().id() );
-	const int characterIndex = SnapIndex( m_world.component<Character>().id() );
 
-	m_globals = globals;
-	if ( m_globalBoard.empty() == false )
+	const uint32_t ownNetId = own < kMaxPlayers ? globals.playerNetIds[own] : 0;
+	if ( which == StateApply::Others )
 	{
-		std::memcpy( m_globalBoard.data(), board, m_globalBoard.size() * 4 );
+		// What the characters' side has of the globals: whose the slots are, the next character's
+		// NetId (never back: what this world made meanwhile keeps its own), the mods' fields.
+		std::memcpy( m_globals.playerNetIds, globals.playerNetIds, sizeof( m_globals.playerNetIds ) );
+		m_globals.nextCharacterId = std::max( m_globals.nextCharacterId, globals.nextCharacterId );
+		if ( m_globalBoard.empty() == false )
+		{
+			std::memcpy( m_globalBoard.data(), board, m_globalBoard.size() * 4 );
+		}
 	}
-	const uint32_t ownNetId = own < kMaxPlayers ? m_globals.playerNetIds[own] : 0;
+	// Whether an entity (here, or as the server has it) is the own character's, and whether this
+	// application is about it.
+	auto mineHere = [&]( flecs::entity e, uint32_t netId ) {
+		if ( ownNetId == 0 )
+		{
+			return false;
+		}
+		const HeldItem* held = e.try_get<HeldItem>();
+		return netId == ownNetId || ( held != nullptr && held->holder == ownNetId );
+	};
+	auto about = [&]( bool mine ) { return which == StateApply::Own ? mine : mine == false; };
 
 	ecs_world_t* world = m_world.c_ptr();
 	std::vector<EntityRef> restored;
-	restored.reserve( records.size() );
+	restored.reserve( m_entities.size() + records.size() );
 	std::vector<uint8_t> description;
 	size_t existing = 0;
+	// What is here and not in the state: gone from the characters' side if it was on it (and is
+	// what this application is about); anything else stays.
+	auto passOver = [&]( const EntityRef& ref ) {
+		flecs::entity e( m_world, ref.entity );
+		if ( CharacterSide( e ) && about( mineHere( e, ref.netId ) ) )
+		{
+			RemoveForState( e );
+			return;
+		}
+		restored.push_back( ref );
+	};
 	for ( const EntityRecord& rec : records )
 	{
 		while ( existing < m_entities.size() && m_entities[existing].netId < rec.netId )
 		{
-			RemoveForState( flecs::entity( m_world, m_entities[existing].entity ) );
+			passOver( m_entities[existing] );
 			++existing;
 		}
+		HeldItem held;
+		const bool mine = ownNetId != 0 && ( rec.netId == ownNetId || ( RecordValue( rec, heldIndex, held ) && held.holder == ownNetId ) );
 		flecs::entity e;
 		if ( existing < m_entities.size() && m_entities[existing].netId == rec.netId )
 		{
 			e = flecs::entity( m_world, m_entities[existing].entity );
 			++existing;
+			// Not about it, or still in this world's physics (its event not reached yet): as it is.
+			if ( about( mine ) == false || PhysicsSide( e ) )
+			{
+				restored.push_back( { rec.netId, e.id() } );
+				continue;
+			}
+		}
+		else if ( about( mine ) )
+		{
+			e = flecs::entity( m_world, ecs_new( world ) );
 		}
 		else
 		{
-			e = flecs::entity( m_world, ecs_new( world ) );
+			continue;
 		}
 
 		// Its components, but the physics handles (this world's own).
@@ -559,7 +627,7 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 		{
 			if ( int( i ) == physicsIndex || int( i ) == ragdollIndex || int( i ) == pusherIndex )
 			{
-				continue; // (this world's own handles; a pusher is placed by this world's own step)
+				continue;
 			}
 			const SnapComponent& sc = m_snapComponents[i];
 			if ( rec.mask & ( uint32_t( 1 ) << i ) )
@@ -579,14 +647,10 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 			}
 		}
 
-		// Whose it is: the slot's body, and what that body carries.
-		HeldItem held;
-		const bool mine = rec.netId == ownNetId || ( RecordValue( rec, heldIndex, held ) && ownNetId != 0 && held.holder == ownNetId );
+		// Its body (the characters' world's): kept when built from the description the server has
+		// now, else built again.
 		const bool standIn = mine == false;
-
-		// Its bodies: kept when built from the description the server has now, else built again.
-		const bool wants = rec.bodies != nullptr;
-		if ( wants == false )
+		if ( rec.bodies == nullptr )
 		{
 			DestroyBodies( e );
 			e.remove<StateBody>();
@@ -594,13 +658,10 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 		else
 		{
 			bool same = false;
-			const bool hasBodies = e.has<PhysicsBody>() || e.has<RagdollBodies>();
-			if ( hasBodies )
+			if ( e.has<PhysicsBody>() )
 			{
 				const StateBody* sb = e.try_get<StateBody>();
-				// What a stand-in has was built from the server's description; anything else may have
-				// changed here (this world's own, or made by a prediction): described again.
-				if ( sb != nullptr && e.has<StandIn>() )
+				if ( sb != nullptr && standIn && e.has<StandIn>() )
 				{
 					same = sb->hash == rec.bodiesHash;
 				}
@@ -609,98 +670,37 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 					DescribeBodies( e, description );
 					same = HashBytes( kHashSeed, description.data(), description.size() ) == rec.bodiesHash;
 				}
-				// The same shapes, but no longer whose they were: its own bodies are the server's kind
-				// again, built from the description.
-				if ( same && mine && e.has<StandIn>() )
-				{
-					same = false;
-				}
 			}
 			Transform t;
 			Velocity v;
 			RecordValue( rec, transformIndex, t );
 			RecordValue( rec, velocityIndex, v );
-			RagdollPose pose;
-			const bool hasPose = RecordValue( rec, poseIndex, pose );
 			if ( same == false )
 			{
 				DestroyBodies( e );
 				ByteReader br( rec.bodies, rec.bodiesSize );
-				const int parts = br.Read<uint8_t>();
-				if ( parts == kRagdollParts )
-				{
-					RagdollBodies rb;
-					for ( int i = 0; i < kRagdollParts; ++i )
-					{
-						b3ShapeId shape;
-						const Transform part = hasPose ? pose.part[i] : t;
-						b3BodyId body = BuildBody( br, m_physicsWorld, standIn ? BuildAs::Placed : BuildAs::Described, part,
-												   hasPose ? pose.linear[i] : b3Vec3{}, {}, shape );
-						PhysicsBody stored = MakePhysicsBody( body, shape );
-						rb.body[i] = stored.body;
-						rb.shape[i] = stored.shape;
-					}
-					e.set<RagdollBodies>( rb );
-				}
-				else if ( parts == 1 )
+				if ( br.Read<uint8_t>() == 1 )
 				{
 					b3ShapeId shape;
-					// (A character's body is the characters' world's: M247.)
-					const bool character = characterIndex >= 0 && ( rec.mask & ( uint32_t( 1 ) << characterIndex ) ) != 0;
-					b3BodyId body = BuildBody( br, character ? m_characterWorld : m_physicsWorld,
-											   standIn ? BuildAs::Placed : BuildAs::Described, t, v.linear, v.angular, shape );
+					b3BodyId body = BuildBody( br, m_characterWorld, standIn ? BuildAs::Placed : BuildAs::Described, t, {}, {}, shape );
 					if ( b3Body_IsValid( body ) )
 					{
 						e.set<PhysicsBody>( MakePhysicsBody( body, shape ) );
 					}
 				}
 			}
-			else if ( standIn && e.has<StandIn>() == false )
-			{
-				// Kept, and from now on placed: kinematic, unless it never moves.
-				auto settle = [&]( b3BodyId body ) {
-					if ( b3Body_IsValid( body ) && b3Body_GetType( body ) == b3_dynamicBody )
-					{
-						b3Body_SetType( body, b3_kinematicBody );
-					}
-				};
-				if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
-				{
-					for ( b3BodyId body : rb->body )
-					{
-						settle( InWorld( body, m_physicsWorld ) );
-					}
-				}
-				else if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
-				{
-					settle( BodyOf( *pb ) );
-				}
-			}
 			e.set<StateBody>( { rec.bodiesHash } );
 
-			// Where the server has it, going on as it goes (a character only where it is: the mover
-			// moves it, and a stand-in is not moved).
-			const bool character = characterIndex >= 0 && ( rec.mask & ( uint32_t( 1 ) << characterIndex ) ) != 0;
-			auto place = [&]( b3BodyId body, const Transform& where, b3Vec3 linear, b3Vec3 angular ) {
-				if ( b3Body_IsValid( body ) == false || b3Body_GetType( body ) == b3_staticBody )
-				{
-					return;
-				}
-				b3Body_SetTransform( body, where.position, where.rotation );
-				const bool moves = b3Body_GetType( body ) == b3_dynamicBody || ( standIn && character == false );
-				b3Body_SetLinearVelocity( body, moves ? linear : b3Vec3{} );
-				b3Body_SetAngularVelocity( body, moves ? angular : b3Vec3{} );
-			};
-			if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
+			// Where the server has it; a stand-in stays there (nothing moves it until the next state).
+			if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
 			{
-				for ( int i = 0; i < kRagdollParts; ++i )
+				const b3BodyId body = BodyOf( *pb );
+				if ( b3Body_IsValid( body ) && b3Body_GetType( body ) != b3_staticBody )
 				{
-					place( InWorld( rb->body[i], m_physicsWorld ), hasPose ? pose.part[i] : t, hasPose ? pose.linear[i] : b3Vec3{}, {} );
+					b3Body_SetTransform( body, t.position, t.rotation );
+					b3Body_SetLinearVelocity( body, {} );
+					b3Body_SetAngularVelocity( body, {} );
 				}
-			}
-			else if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
-			{
-				place( BodyOf( *pb ), t, v.linear, v.angular );
 			}
 		}
 
@@ -716,7 +716,7 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 	}
 	while ( existing < m_entities.size() )
 	{
-		RemoveForState( flecs::entity( m_world, m_entities[existing].entity ) );
+		passOver( m_entities[existing] );
 		++existing;
 	}
 	m_entities = std::move( restored );

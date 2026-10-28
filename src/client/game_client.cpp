@@ -201,13 +201,13 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 					break;
 				}
 				case MsgType::FrameBatch:
-					if ( m_state == ClientState::Playing && m_model == NetModel::Inputs )
+					if ( m_state == ClientState::Playing )
 					{
 						HandleFrameBatch( r, now );
 					}
 					break;
 				case MsgType::State:
-					if ( m_state == ClientState::Playing && m_model == NetModel::State )
+					if ( m_state == ClientState::Playing && m_model == NetModel::Hybrid )
 					{
 						HandleState( r, now );
 					}
@@ -328,25 +328,30 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 		return;
 	}
 
-	if ( m_options.simulate && msg.model == NetModel::State )
+	if ( m_options.simulate && msg.model == NetModel::Hybrid )
 	{
-		// The state model: a world of the server's map that waits for its first state (whole).
+		// The hybrid: the server's world, its physics followed from here on (a new session each
+		// time: its physics and its prediction start at the snapshot's tick).
 		m_session.reset();
-		bool rebuild = m_states == nullptr || !( msg.config == m_config ) || msg.slot != m_slot || msg.mapHash != m_mapHash;
-		if ( rebuild )
-		{
-			m_states = std::make_unique<StateSession>( msg.config, msg.slot, m_options.maxRollbackTicks + msg.stateEvery, map );
-			m_states->Sim().SetPhysicsThreaded( m_options.physicsThreaded );
-		}
-		m_states->Sim().SetCharacters( characters );
+		m_hybrid = std::make_unique<HybridSession>( msg.config, msg.slot, m_options.maxRollbackTicks + msg.stateEvery, map );
+		m_hybrid->Sim().SetPhysicsThreaded( m_options.physicsThreaded );
+		m_hybrid->Sim().SetCharacters( characters );
 		std::string packWarnings;
-		m_states->Sim().SetAnimPacks( CompileAnimPacks( schema, packWarnings ) );
-		m_states->Sim().SetMotions( CompileMotions( schema, packWarnings ) );
-		m_states->Sim().SetItemShapes( schema.itemShapes );
+		m_hybrid->Sim().SetAnimPacks( CompileAnimPacks( schema, packWarnings ) );
+		m_hybrid->Sim().SetMotions( CompileMotions( schema, packWarnings ) );
+		m_hybrid->Sim().SetItemShapes( schema.itemShapes );
+		if ( m_hybrid->Sim().LoadPortable( msg.image ) == false )
+		{
+			m_rejectReason = "could not load the server state";
+			m_state = ClientState::Rejected;
+			Log( "rejected: %s", m_rejectReason.c_str() );
+			return;
+		}
+		m_hybrid->Start();
 	}
 	else if ( m_options.simulate )
 	{
-		m_states.reset();
+		m_hybrid.reset();
 		// A different map means a different level, so the session cannot be reused.
 		bool rebuild = m_session == nullptr || !( msg.config == m_config ) || msg.slot != m_slot || msg.mapHash != m_mapHash;
 		if ( rebuild )
@@ -378,6 +383,8 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 	m_stateEvery = msg.stateEvery;
 	m_stateFrames.clear();
 	m_stateAck = 0;
+	m_hybridFrames = msg.snapshotTick;
+	m_hybridDesyncSent = false;
 	m_config = msg.config;
 	m_map = std::move( map );
 	if ( !( schema == m_schema ) || m_schemaGeneration == 0 )
@@ -421,16 +428,12 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 
 uint32_t GameClient::AckTick() const
 {
-	if ( m_model == NetModel::State )
-	{
-		return m_stateAck;
-	}
-	return m_session ? m_session->ConfirmedTick() : m_liteConfirmed;
+	return m_session ? m_session->ConfirmedTick() : m_hybrid ? m_hybridFrames : m_liteConfirmed;
 }
 
-// The state model: one of the server's states, whole or against one we said we have. Kept as a
-// base and handed to the session; older ones than the newest are no use (the next is a few ticks
-// away), nor one against a base we no longer have.
+// The hybrid: one of the server's characters' states, whole or against one we said we have. Kept
+// as a base and handed to the session; older ones than the newest are no use (the next is a few
+// ticks away), nor one against a base we no longer have.
 void GameClient::HandleState( ByteReader& r, double now )
 {
 	uint32_t tick = 0, baseTick = 0;
@@ -466,9 +469,9 @@ void GameClient::HandleState( ByteReader& r, double now )
 		m_stats.statesIgnored += 1;
 		return;
 	}
-	if ( m_states != nullptr )
+	if ( m_hybrid != nullptr )
 	{
-		m_states->AddState( frame.tick, frame.state.data(), frame.state.size(), frame.inputs );
+		m_hybrid->AddState( frame.tick, frame.state.data(), frame.state.size(), frame.inputs );
 	}
 	else
 	{
@@ -505,7 +508,7 @@ void GameClient::HandleFrameBatch( ByteReader& r, double now )
 	{
 		return; // nothing new
 	}
-	if ( m_session == nullptr )
+	if ( m_session == nullptr && m_hybrid == nullptr )
 	{
 		if ( firstTick <= confirmed )
 		{
@@ -545,7 +548,7 @@ void GameClient::HandleFrameBatch( ByteReader& r, double now )
 		for ( size_t i = 0; i < m_waitingBatches.size(); )
 		{
 			WaitingBatch& w = m_waitingBatches[i];
-			uint32_t have = m_session->ConfirmedTick();
+			uint32_t have = AckTick();
 			if ( w.firstTick + w.count - 1 < have )
 			{
 				m_waitingBatches.erase( m_waitingBatches.begin() + ptrdiff_t( i ) );
@@ -566,6 +569,32 @@ void GameClient::HandleFrameBatch( ByteReader& r, double now )
 bool GameClient::UseFrameBatch( uint32_t firstTick, uint32_t count, const uint8_t* body, size_t size )
 {
 	InputArray base{};
+	if ( m_hybrid != nullptr )
+	{
+		// (Without the inputs: no base needed.) Each frame new to it, and the physics checksum it has.
+		ByteReader r( body, size );
+		if ( ReadFrameBatchBody( r, base, firstTick, count, m_batchScratch, &m_checksumScratch ) == false )
+		{
+			Log( "corrupt frame batch at tick %u", firstTick );
+			m_stats.batchesIgnored += 1;
+			return false;
+		}
+		for ( size_t i = 0; i < m_batchScratch.size(); ++i )
+		{
+			const InputFrame& frame = m_batchScratch[i];
+			if ( frame.tick != m_hybridFrames )
+			{
+				continue;
+			}
+			if ( m_checksumScratch[i] != 0 )
+			{
+				m_hybrid->AddChecksum( frame.tick, m_checksumScratch[i] );
+			}
+			m_hybrid->AddFrame( frame );
+			m_hybridFrames += 1;
+		}
+		return true;
+	}
 	if ( firstTick > 0 )
 	{
 		const KnownInputs& k = m_knownInputs[( firstTick - 1 ) % kKnownInputHistory];
@@ -602,14 +631,9 @@ bool GameClient::UseFrameBatch( uint32_t firstTick, uint32_t count, const uint8_
 void GameClient::UpdateRollbackWindow( double rttTicks, double frameDt )
 {
 	double needed = std::ceil( rttTicks ) + double( m_options.leadMarginTicks ) + 2.0;
-	if ( m_states != nullptr )
+	if ( m_hybrid != nullptr )
 	{
-		// How far past the newest state: a round trip and a state's interval (no snapshots: no cost
-		// in going further, so it never shrinks).
-		uint32_t ahead = uint32_t( std::clamp( needed + double( m_stateEvery ), double( m_options.minRollbackTicks ),
-											   double( m_options.maxRollbackTicks + m_stateEvery ) ) );
-		m_states->SetMaxAhead( std::max( ahead, m_states->MaxAhead() ) );
-		m_stats.rollbackWindow = m_states->MaxAhead();
+		m_stats.rollbackWindow = uint32_t( needed );
 		return;
 	}
 	if ( m_session == nullptr )
@@ -708,14 +732,26 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	m_stats.rateScale = scale;
 
 	auto workStart = std::chrono::steady_clock::now();
-	uint64_t rollbacksBefore = m_session ? m_session->GetStats().rollbacks : m_states ? m_states->GetStats().states : 0;
+	uint64_t rollbacksBefore = m_session ? m_session->GetStats().rollbacks : m_hybrid ? m_hybrid->GetStats().states : 0;
 	if ( m_session )
 	{
 		m_session->Reconcile();
 	}
-	if ( m_states )
+	if ( m_hybrid )
 	{
-		m_states->Reconcile();
+		// The physics a little behind the newest frame: the jitter and a margin, so the next one is
+		// here when it is needed. A tick or two a frame, and quicker far behind.
+		const uint32_t buffer = uint32_t( std::clamp( std::ceil( 2.0 * jitter * rate ) + 2.0, 2.0, 30.0 ) );
+		const uint32_t physics = m_hybrid->PhysicsTick();
+		const uint32_t target = m_hybridFrames > buffer ? m_hybridFrames - buffer : 0;
+		if ( target > physics )
+		{
+			const uint32_t behind = target - physics;
+			const uint32_t steps = behind > 8 ? std::min<uint32_t>( behind, kMaxTicksPerFrame ) : std::min<uint32_t>( behind, 2 );
+			m_hybrid->AdvancePhysics( physics + steps );
+		}
+		m_stats.physicsBehind = int64_t( m_latestServerTick ) - int64_t( m_hybrid->PhysicsTick() );
+		m_hybrid->Reconcile();
 	}
 
 	uint32_t ticks = 0;
@@ -723,8 +759,8 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	{
 		uint32_t tick = CurrentTick();
 		PlayerInput input = sampleInput( tick );
-		const bool advanced = m_session ? m_session->AdvanceOne( input ) : m_states ? m_states->AdvanceOne( input ) : true;
-		if ( m_session == nullptr && m_states == nullptr )
+		const bool advanced = m_session ? m_session->AdvanceOne( input ) : m_hybrid ? m_hybrid->Predict( input ) : true;
+		if ( m_session == nullptr && m_hybrid == nullptr )
 		{
 			m_liteTick += 1;
 		}
@@ -749,7 +785,7 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 
 	m_stats.ticksLastFrame = ticks;
 	m_stats.rolledBackLastFrame = m_session ? m_session->GetStats().rollbacks != rollbacksBefore
-										   : m_states && m_states->GetStats().states != rollbacksBefore;
+										   : m_hybrid && m_hybrid->GetStats().states != rollbacksBefore;
 	m_stats.simMsLastFrame = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - workStart ).count();
 	m_stats.simMsMax = std::max( m_stats.simMsMax, m_stats.simMsLastFrame );
 	m_stats.bytesSent = m_transport.BytesSent();
@@ -762,6 +798,19 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	if ( m_session )
 	{
 		VerifyChecksums();
+	}
+	if ( m_hybrid && m_hybrid->DesyncTick() != UINT32_MAX && m_hybridDesyncSent == false )
+	{
+		// The physics is not the server's: its world again (a new welcome).
+		m_hybridDesyncSent = true;
+		m_stats.desyncs += 1;
+		Log( "DESYNC: the physics at tick %u is not the server's, requesting state", m_hybrid->DesyncTick() );
+		Encode( MsgResyncRequest{ m_hybrid->DesyncTick() }, m_buffer );
+		m_transport.Send( m_transport.ServerPeer(), ChannelReliable, m_buffer, true );
+	}
+	if ( m_hybrid )
+	{
+		m_stats.checksumsVerified = m_hybrid->GetStats().checksums - m_hybrid->GetStats().desyncs;
 	}
 }
 
@@ -792,6 +841,7 @@ void GameClient::SendInputs()
 	MsgInput msg;
 	msg.newestTick = m_newestInputTick;
 	msg.ackTick = AckTick();
+	msg.stateAck = m_stateAck;
 	uint32_t count = std::min( m_options.inputRedundancy, m_newestInputTick + 1 );
 	uint32_t first = m_newestInputTick + 1 - count;
 	for ( uint32_t t = first; t <= m_newestInputTick; ++t )

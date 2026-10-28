@@ -368,15 +368,16 @@ void RunWorker( Worker& w, Clock::time_point start, const std::atomic<bool>& sto
 						s.profile.sensorsMs += sp.sensorsMs;
 						s.counts = session->Sim().CountPhysics();
 					}
-					else if ( StateSession* states = c.States() )
+					else if ( HybridSession* states = c.Hybrid() )
 					{
-						// The state model: a state taken is its rollback (back to the server's, the
-						// bot's own inputs run again); applying it is its load.
-						const StateSession::Stats& ss = states->GetStats();
+						// The hybrid: a state taken is its rollback (the bot's own character the
+						// server's again, its inputs run again); applying states is its load; its
+						// steps are the physics'.
+						const HybridSession::Stats& ss = states->GetStats();
 						s.rollbacks += ss.states;
 						s.resimulated += ss.resimulatedTicks;
-						s.parts.steps += ss.steps;
-						s.parts.stepNs += ss.stepNs;
+						s.parts.steps += ss.physicsSteps;
+						s.parts.stepNs += ss.physicsNs + ss.predictNs;
 						s.parts.loads += ss.states;
 						s.parts.loadNs += ss.applyNs;
 						const Simulation::StepProfile& sp = states->Sim().Profile();
