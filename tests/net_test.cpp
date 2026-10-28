@@ -4413,9 +4413,10 @@ void TestFragBreaks()
 	Bricks all, hole, glued;
 	run( 47900, "12", all );
 	CHECK( all.loose == 32 && all.standing.empty() );
-	// A radius of its own, smaller than the default (half the blast's): the grenade lands about a
-	// metre short of the wall, where the default takes its whole foot and so all of it.
-	run( 47902, "1.8", hole );
+	// A radius of its own, smaller than the default (half the blast's): the grenade lands a little
+	// over half a metre short of the wall (it goes through its thrower since M246: characters touch
+	// no body), where the default takes its whole foot and so all of it.
+	run( 47902, "1.3", hole );
 	CHECK( hole.loose > 0 && hole.standing.size() > 8 && hole.loose + int( hole.standing.size() ) == 32 );
 	// Glued (its bricks bodies from the start, welded): the blast takes its foot and what is above,
 	// held up only by welds, comes down by its own weight; the client has the same bricks still glued.
@@ -6143,6 +6144,165 @@ void TestGrapple()
 	}
 }
 
+// Every few seconds a player dies and leaves a ragdoll (shot in the back), and comes back a
+// second later: ragdolls for physics_alone.
+class KillNowAndThenMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_kill_now_and_then";
+	}
+	void Declare( mods::Declarations& ) override
+	{
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		const uint32_t t = ctx.Tick();
+		const PlayerSlot slot = PlayerSlot( ( t / 150 ) % 3 );
+		const uint32_t body = ctx.PlayerNetId( slot );
+		if ( body != 0 && ctx.InWorld( slot ) && t % 150 == 100 )
+		{
+			ctx.Kill( body, true, b3Vec3{ 0.0f, 1.0f, 0.0f }, b3Vec3{ 0.0f, 2.0f, -6.0f } );
+		}
+		if ( body != 0 && t % 150 == 40 )
+		{
+			ctx.Respawn( body );
+		}
+	}
+};
+
+// The physics world is a function of its inputs (M246; ROADMAP step 3): a server's session on
+// test_ground (its balls pushed by characters), the brawl kit and every default mod, three bots
+// pressing everything every tick (punches, dashes, guns, frags, props) and walking into whatever
+// is there. Its recording is played again by a simulation whose every player stands still (all
+// inputs zero), following the server's physics: given each tick's physics events and pushers.
+// Its physics world must be the server's on every tick: what the characters did reached the
+// physics only by those.
+void TestPhysicsAlone()
+{
+	const std::string root = CB_SOURCE_DIR;
+	std::filesystem::path replayPath = std::filesystem::temp_directory_path() / "cinderbox_physics_alone.cbr";
+	std::map<uint32_t, InputFrame> made;   // the server's physics inputs, by tick
+	std::map<uint32_t, uint64_t> hashes;   // its physics hash after that tick
+	// Where its physics bodies are after a tick (to say what differs, when something does).
+	using Bodies = std::vector<std::pair<uint32_t, b3Vec3>>;
+	auto bodiesOf = []( Simulation& sim ) {
+		Bodies out;
+		for ( const auto& r : sim.Entities() )
+		{
+			flecs::entity e( sim.World(), r.entity );
+			if ( ( e.has<PhysicsBody>() || e.has<RagdollBodies>() ) && e.has<Character>() == false && e.has<Transform>() )
+			{
+				out.push_back( { r.netId, e.get<Transform>().position } );
+			}
+		}
+		return out;
+	};
+	std::map<uint32_t, Bodies> bodies;
+	size_t events[4] = {}, pushers = 0;
+	{
+		std::vector<std::unique_ptr<mods::ServerMod>> extra;
+		extra.push_back( std::make_unique<KillNowAndThenMod>() );
+		Harness h( 47946, replayPath.string(), root + "/godot/maps/test_ground.cbmap", { { "test.mods", "brawl" } }, {}, std::move( extra ) );
+		h.server.SetTickObserver( [&] {
+			const InputFrame& m = h.server.Sim().PhysicsMade();
+			made[m.tick] = m;
+			hashes[m.tick] = h.server.Sim().PhysicsHash();
+			bodies[m.tick] = bodiesOf( h.server.Sim() );
+			for ( const PhysicsEvent& e : m.physics )
+			{
+				events[size_t( e.type )] += 1;
+			}
+			pushers += m.pushers.size();
+		} );
+		// Two walk through the balls (test_ground's, a little ahead of the spawn), the fist out and
+		// punching (the brawl kit's first slot); one presses everything (frags, props).
+		for ( int i = 0; i < 2; ++i )
+		{
+			h.AddBot().script = [=]( uint32_t tick ) {
+				PlayerInput in;
+				in.cameraYaw = uint16_t( 32768 + ( i == 0 ? 2000 : -2000 ) );
+				const uint32_t t = tick % 600;
+				in.actions = t >= 30 && t < 40 ? kKeySlot1 : ( t > 60 && t % 25 < 3 ? kKeyUse : 0 );
+				in.moveForward = t > 60 && t < 300 ? int8_t( 90 ) : t >= 300 && t < 540 ? int8_t( -90 ) : int8_t( 0 );
+				return in;
+			};
+		}
+		h.AddBot().brain.chaotic = true;
+		h.RunUntil( 12.0 );
+		h.server.SetTickObserver( {} );
+		h.Report();
+	}
+	std::printf( "    the server made %zu pushes, %zu breaks, %zu items into the world, %zu ragdolls; %zu pushers' places\n", events[0],
+				 events[1], events[2], events[3], pushers );
+	CHECK( pushers > 0 );
+	CHECK( events[0] > 0 ); // (the fist's and the dash's shoves on bodies)
+
+	net::ReplayReader replay;
+	std::string error;
+	CHECK( replay.Open( replayPath.string(), error ) );
+	Simulation follower( replay.Config(), replay.Map() );
+	{
+		std::vector<Simulation::CharacterBody> characters;
+		std::string ignored;
+		Simulation::CharactersOf( replay.Schema(), characters, ignored );
+		follower.SetCharacters( std::move( characters ) );
+	}
+	follower.SetAnimPacks( replay.Packs() );
+	follower.SetMotions( replay.MotionSets() );
+	follower.SetItemShapes( replay.Schema().itemShapes );
+	follower.SetFollowsPhysics( true );
+	size_t compared = 0;
+	uint32_t firstWrong = UINT32_MAX;
+	for ( InputFrame frame : replay.Frames() )
+	{
+		frame.inputs = {}; // (everyone stands still)
+		if ( auto it = made.find( frame.tick ); it != made.end() )
+		{
+			frame.pushers = it->second.pushers;
+			frame.physics = it->second.physics;
+		}
+		follower.Step( frame );
+		if ( auto it = hashes.find( frame.tick ); it != hashes.end() )
+		{
+			compared += 1;
+			if ( it->second != follower.PhysicsHash() && firstWrong == UINT32_MAX )
+			{
+				firstWrong = frame.tick;
+				const Bodies mine = bodiesOf( follower );
+				const Bodies& theirs = bodies[frame.tick];
+				std::printf( "    tick %u: the server has %zu bodies, the follower %zu; inputs that tick: %zu events, %zu pushers\n", frame.tick,
+							 theirs.size(), mine.size(), frame.physics.size(), frame.pushers.size() );
+				for ( size_t k = 0, shown = 0; k < std::max( mine.size(), theirs.size() ) && shown < 6; ++k )
+				{
+					const bool both = k < mine.size() && k < theirs.size();
+					if ( both && mine[k].first == theirs[k].first && b3Distance( mine[k].second, theirs[k].second ) == 0.0f )
+					{
+						continue;
+					}
+					shown += 1;
+					if ( k < mine.size() )
+					{
+						flecs::entity w = follower.FindEntity( mine[k].first );
+						std::printf( "      (it is%s%s%s%s%s)", w.has<Ragdoll>() ? " a ragdoll" : "", w.has<HeldItem>() ? " an item" : "",
+									 w.has<WallPiece>() ? " a wall piece" : "", w.has<TemplateRef>() ? " from a template" : "", w.has<Prop>() ? " a prop" : "" );
+					}
+					std::printf( "      #%zu: server %u (%.4f %.4f %.4f), follower %u (%.4f %.4f %.4f)\n", k, k < theirs.size() ? theirs[k].first : 0,
+								 k < theirs.size() ? theirs[k].second.x : 0.f, k < theirs.size() ? theirs[k].second.y : 0.f,
+								 k < theirs.size() ? theirs[k].second.z : 0.f, k < mine.size() ? mine[k].first : 0, k < mine.size() ? mine[k].second.x : 0.f,
+								 k < mine.size() ? mine[k].second.y : 0.f, k < mine.size() ? mine[k].second.z : 0.f );
+				}
+			}
+		}
+	}
+	std::printf( "    a follower whose players stood still: %zu ticks compared, %s\n", compared,
+				 firstWrong == UINT32_MAX ? "the same physics world on every one" : ( "different from tick " + std::to_string( firstWrong ) ).c_str() );
+	CHECK( compared > 400 );
+	CHECK( firstWrong == UINT32_MAX );
+	std::filesystem::remove( replayPath );
+}
+
 // The state message (net/state_codec.h): a world of players and props saved every second tick,
 // each state encoded whole and against one a few states older, decoded back byte for byte; then
 // cut short and with bytes changed, which must fail or decode to something, never crash.
@@ -6506,6 +6666,7 @@ int main( int argc, char** argv )
 		{ "loopback_session", TestLoopbackSession },
 		{ "late_join", TestLateJoin },
 		{ "reconnect", TestReconnect },
+		{ "physics_alone", TestPhysicsAlone },
 		{ "state_codec", TestStateCodec },
 		{ "state_session", TestStateSession },
 		{ "state_lossy", TestStateLossy },

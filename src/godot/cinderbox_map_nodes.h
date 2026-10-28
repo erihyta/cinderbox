@@ -60,8 +60,9 @@ private:
 	godot::MeshInstance3D* m_preview = nullptr;
 };
 
-// A dynamic prop the level starts with. Players can push these around. A body like any other
-// (CbBody): what it weighs, how it grips, how it bounces.
+// A dynamic prop the level starts with. A body like any other (CbBody): what it weighs, how it
+// grips, how it bounces. Solid to characters (they stand on it and are stopped by it; skills and
+// blasts move it), unless `pushed_by_characters`: then they walk through it and shove it (a ball).
 class CbProp : public CbBody
 {
 	GDCLASS( CbProp, CbBody )
@@ -95,6 +96,14 @@ public:
 	{
 		return m_radius;
 	}
+	void set_pushed_by_characters( bool pushed )
+	{
+		m_pushed = pushed;
+	}
+	bool get_pushed_by_characters() const
+	{
+		return m_pushed;
+	}
 
 	void _notification( int what );
 
@@ -104,6 +113,7 @@ protected:
 private:
 	void UpdatePreview();
 
+	bool m_pushed = false;
 	int m_shape = SHAPE_BOX;
 	godot::Vector3 m_size = godot::Vector3( 0.8f, 0.8f, 0.8f );
 	float m_radius = 0.5f;

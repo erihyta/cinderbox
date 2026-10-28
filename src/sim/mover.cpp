@@ -63,11 +63,12 @@ bool CollectPlanes( b3ShapeId shapeId, const b3PlaneResult* results, int count, 
 		return true;
 	}
 
-	// How far a shape may push the character out of itself. The world, and what is much heavier
-	// than the character: all the way. Something loose: by its share of the two weights, so a
-	// thrown grenade (0.4 kg against 80) does not shove the player it lands on, while a crate of
-	// the player's own weight still does by half. (What the two do to each other's speed is the
-	// exchange of momentum below; this is only about where the character stands.)
+	// Everything a character meets stops it: what it would shove (a body pushed by characters) its
+	// queries never see; its pusher does (M246). How far a shape may push the character out of
+	// itself (it only reads the body: nothing is written): the world, and what is much heavier than
+	// the character, all the way; something loose, by its share of the two weights, so a thrown
+	// grenade (0.4 kg against 80) does not shove the player it flies into, while a falling crate of
+	// the player's own weight still does by half.
 	float pushLimit = FLT_MAX;
 	b3BodyId other = b3Shape_GetBody( shapeId );
 	if ( b3Body_GetType( other ) == b3_dynamicBody )
@@ -185,7 +186,7 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	float pogoRest = 3.0f * body.radius;
 	float rayLength = pogoRest + body.radius;
 	b3Pos rayOrigin = b3Add( t.position, capsule.center1 );
-	b3QueryFilter groundFilter = { CatPlayer, CatStatic | CatProp | CatRagdoll | CatDebris, 0, nullptr };
+	b3QueryFilter groundFilter = { CatPlayer, CatStatic | CatProp | CatDebris, 0, nullptr };
 	b3RayResult ray = b3World_CastRayClosest( body.world, rayOrigin, { 0.0f, -rayLength, 0.0f }, groundFilter );
 
 	// Ground steeper than max_slope does not hold the character up: it slides down it, under gravity,
@@ -257,41 +258,14 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 		}
 	}
 
-	// Dynamic bodies we are touching: the two trade momentum by what they weigh. A light crate is
-	// sent off and barely slows the character; a heavy one hardly moves, and the character loses its
-	// speed into it. (Not a bounce: after it, neither moves into the other.)
-	const float inverseMass = 1.0f / params[MoveParam::Mass];
+	// What it touches stops it: a character never shoves a body itself (its pusher does, in the
+	// physics step, the ones pushed by characters).
 	b3CollisionPlane solid[kMaxPlanes];
 	int solidCount = 0;
 	for ( int i = 0; i < ctx.count; ++i )
 	{
-		b3BodyId other = b3Shape_GetBody( ctx.shapes[i] );
-		if ( b3Body_GetType( other ) != b3_dynamicBody || ( b3Shape_GetFilter( ctx.shapes[i] ).categoryBits & CatDebris ) != 0 )
-		{
-			// What does not move stops the character outright; so does rubble, which a player never
-			// shoves (its pieces move only when something breaks them or lands on them).
-			solid[solidCount++] = ctx.planes[i];
-			continue;
-		}
-
-		b3Pos point = ctx.points[i];
-		b3Vec3 normal = b3Neg( ctx.planes[i].plane.normal );
-		float invMass = b3Body_GetInverseMass( other );
-		b3Matrix3 invI = b3Body_GetWorldInverseRotationalInertia( other );
-		b3Vec3 r = b3SubPos( point, b3Body_GetWorldCenter( other ) );
-		b3Vec3 rn = b3Cross( r, normal );
-		float k = inverseMass + invMass + b3Dot( rn, b3MulMV( invI, rn ) );
-		float normalMass = k > 0.0f ? 1.0f / k : 0.0f;
-		b3Vec3 vOther = b3Add( b3Body_GetLinearVelocity( other ), b3Cross( b3Body_GetAngularVelocity( other ), r ) );
-		float vn = b3Dot( b3Sub( vOther, v ), normal );
-		float impulse = std::max( -normalMass * vn, 0.0f );
-		if ( impulse > 0.0f )
-		{
-			b3Body_ApplyLinearImpulse( other, b3MulSV( impulse, normal ), point, true );
-			v = b3MulSub( v, impulse * inverseMass, normal );
-		}
+		solid[solidCount++] = ctx.planes[i];
 	}
-
 	v = b3ClipVector( v, solid, solidCount );
 	c.velocity = v;
 
@@ -312,7 +286,7 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	}
 	t.rotation = detmath::YawRotation( c.facingYaw );
 
-	// Drive the kinematic body so props feel the motion during the physics step.
+	// Drive the kinematic body (what reads its velocity sees it move; it shoves nothing: M246).
 	b3Body_SetTargetTransform( body.body, { b3Add( t.position, body.offset ), t.rotation }, dt, true );
 }
 

@@ -343,6 +343,7 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<IdleBody>();
 	RegisterSnapComponent<DrivenProp>();
 	RegisterSnapComponent<ModDriven>();
+	RegisterSnapComponent<Pusher>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -412,6 +413,12 @@ void Simulation::DestroyEntity( flecs::entity e )
 	{
 		b3DestroyBody( BodyOf( *pb ) );
 	}
+	if ( const Pusher* pusher = e.try_get<Pusher>() )
+	{
+		b3BodyId body = pusher->body;
+		body.world0 = uint16_t( m_physicsWorld.index1 - 1 );
+		b3DestroyBody( body );
+	}
 	if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
 	{
 		// Destroying a body destroys its joints with it.
@@ -444,9 +451,9 @@ b3ShapeDef MakeShapeDef( uint64_t category, const ShapeMaterial& material )
 	def.baseMaterial.restitution = material.restitution;
 	def.baseMaterial.rollingResistance = material.rolling;
 	def.filter.categoryBits = category;
-	// A player's capsule never touches rubble: the mover meets it with its own casts instead, as
-	// something solid, so players stand on it and are stopped by it but never shove it.
-	def.filter.maskBits = category == CatPlayer ? ~uint64_t( CatDebris ) : ~uint64_t( 0 );
+	// Characters touch no body in the physics step (their movers meet solid ones with casts, their
+	// pushers shove the pushable ones): components.h, CollisionMask.
+	def.filter.maskBits = CollisionMask( category );
 	// Either shape enabling hit events is enough, so the static level does not need them.
 	def.enableHitEvents = category != CatStatic;
 	return def;
@@ -801,7 +808,10 @@ flecs::entity Simulation::CreateFromTemplate( uint32_t templateIndex, b3Vec3 pos
 	material.rolling = TemplateFloat( t, kMaterial, Fnv32( "rolling" ), material.rolling );
 
 	bool isStatic = bodyDef.type == b3_staticBody;
-	const uint64_t category = isStatic ? CatStatic : TemplateHas( t, Fnv32( "Debris" ) ) ? CatDebris : CatProp;
+	const uint64_t category = isStatic									 ? CatStatic
+							  : TemplateHas( t, Fnv32( "Debris" ) )	 ? CatDebris
+							  : TemplateHas( t, Fnv32( "Pushable" ) ) ? CatPushable
+																	 : CatProp;
 	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
 	b3ShapeId shapeId;
 	if ( t.shapes < m_map.shapeSets.size() )
@@ -1164,7 +1174,7 @@ void Simulation::PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotatio
 			const b3Transform at = { { part.center.x, part.center.y, part.center.z },
 									 b3NormalizeQuat( { { part.turn[0], part.turn[1], part.turn[2] }, part.turn[3] } ) };
 			b3ShapeId id =
-				CreatePiece( body, CatProp, material, ShapeKind( part.kind ), { part.half.x, part.half.y, part.half.z }, at, &points, bounds );
+				CreatePiece( body, CatPushable, material, ShapeKind( part.kind ), { part.half.x, part.half.y, part.half.z }, at, &points, bounds );
 			shapeId = shapeId.index1 == 0 ? id : shapeId;
 		}
 		WeighBody( body, look.mass );
@@ -1173,7 +1183,7 @@ void Simulation::PutItemInWorld( flecs::entity item, b3Vec3 grip, b3Quat rotatio
 	}
 	else
 	{
-		shapeId = CreateShape( body, shape, CatProp, material );
+		shapeId = CreateShape( body, shape, CatPushable, material ); // (an item lying about is kicked aside)
 	}
 
 	held.holder = 0;
@@ -1346,7 +1356,7 @@ void Simulation::ThrowOut( flecs::entity item, const Transform& from, uint16_t c
 	float yaw = detmath::YawToRadians( cameraYaw );
 	b3Vec3 ahead = detmath::YawForward( yaw );
 	b3Vec3 grip = b3Add( b3Add( from.position, b3Vec3{ 0.0f, 0.05f, 0.0f } ), b3MulSV( 0.45f, ahead ) );
-	PutItemInWorld( item, grip, detmath::YawRotation( yaw ), b3Add( b3MulSV( 1.0f, ahead ), b3Vec3{ 0.0f, 1.5f, 0.0f } ) );
+	QueueIntoWorld( item, grip, detmath::YawRotation( yaw ), b3Add( b3MulSV( 1.0f, ahead ), b3Vec3{ 0.0f, 1.5f, 0.0f } ) );
 }
 
 bool Simulation::MergeStacks( flecs::entity from, flecs::entity onto, uint32_t count )
@@ -1811,6 +1821,10 @@ flecs::entity Simulation::CreatePlayer( PlayerSlot slot )
 	bodyDef.type = b3_kinematicBody;
 	bodyDef.position = t.position;
 	bodyDef.rotation = t.rotation;
+	// A character's body never sleeps (M246): asleep, Box3D takes it out of its awake bodies, and
+	// that reorders the physics bodies around it (whose contacts are then made in another order),
+	// so whether a player stands still would reach the physics world.
+	bodyDef.enableSleep = false;
 	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
 	b3ShapeId shapeId = CreateShape( body, shape, CatPlayer );
 
@@ -1955,6 +1969,7 @@ void Simulation::MakeDriven( flecs::entity e, PlayerSlot slot )
 	def.type = b3_kinematicBody;
 	def.position = t.position;
 	def.rotation = t.rotation;
+	def.enableSleep = false; // (a character's body never sleeps: CreatePlayer)
 	b3BodyId body = b3CreateBody( m_physicsWorld, &def );
 	b3ShapeId shapeId = CreateShape( body, shape, CatPlayer );
 
@@ -2081,6 +2096,7 @@ void Simulation::DriveProp( flecs::entity e, PlayerSlot slot )
 
 	b3Body_SetTransform( body, origin, upright );
 	b3Body_SetType( body, b3_kinematicBody );
+	b3Body_EnableSleep( body, false ); // (a character's body never sleeps: CreatePlayer)
 	b3Body_SetLinearVelocity( body, { 0.0f, 0.0f, 0.0f } );
 	b3Body_SetAngularVelocity( body, { 0.0f, 0.0f, 0.0f } );
 	b3ShapeId shapes[64];
@@ -2090,6 +2106,7 @@ void Simulation::DriveProp( flecs::entity e, PlayerSlot slot )
 		b3Filter filter = b3Shape_GetFilter( shapes[i] );
 		prop.category = i == 0 ? uint32_t( filter.categoryBits ) : prop.category;
 		filter.categoryBits = CatDriven;
+		filter.maskBits = CollisionMask( CatDriven );
 		b3Shape_SetFilter( shapes[i], filter, true );
 	}
 
@@ -2120,6 +2137,7 @@ void Simulation::ReleaseProp( flecs::entity e )
 	const b3Quat upright = detmath::YawRotation( c.facingYaw );
 	b3Body_SetTransform( body, origin, upright );
 	b3Body_SetType( body, b3_dynamicBody );
+	b3Body_EnableSleep( body, true );
 	b3Body_Enable( body ); // (its driver may have died in it: a dead body is out of the world)
 	b3ShapeId shapes[64];
 	const int count = b3Body_GetShapes( body, shapes, 64 );
@@ -2127,6 +2145,7 @@ void Simulation::ReleaseProp( flecs::entity e )
 	{
 		b3Filter filter = b3Shape_GetFilter( shapes[i] );
 		filter.categoryBits = prop.category != 0 ? prop.category : uint64_t( CatProp );
+		filter.maskBits = CollisionMask( filter.categoryBits );
 		b3Shape_SetFilter( shapes[i], filter, true );
 	}
 	b3Body_SetLinearVelocity( body, c.velocity );
@@ -2622,6 +2641,11 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 // player's own throw is there on the tick of the press.
 void Simulation::CreateLaunched()
 {
+	if ( m_followsPhysics )
+	{
+		m_launched.clear(); // (what is launched comes in the frame's physics events)
+		return;
+	}
 	for ( const Launched& l : m_launched )
 	{
 		flecs::entity item;
@@ -2656,8 +2680,7 @@ void Simulation::CreateLaunched()
 			item.set<HeldItem>( { 0, l.kind, 0, 0 } );
 			StartItemFields( item, l.kind );
 		}
-		PutItemInWorld( item, l.position, l.rotation, l.velocity );
-		item.set<Prop>( { l.owner, m_globals.tick, l.lifetimeTicks > 0 ? m_globals.tick + l.lifetimeTicks : 0u } );
+		QueueIntoWorld( item, l.position, l.rotation, l.velocity, l.owner, l.lifetimeTicks );
 	}
 	m_launched.clear();
 }
@@ -3134,6 +3157,8 @@ void Simulation::Step( const InputFrame& given )
 	ApplyCommands( frame );
 	spent( m_profile.commandsNs );
 	MoveCharacters( frame );
+	m_physicsMade.physics.clear();
+	ApplyPhysicsEvents( frame, 0 );
 	// (Following a server, the world's rules are its own: simulation.h, ApplyState.)
 	if ( m_followsServer == false )
 	{
@@ -3146,6 +3171,7 @@ void Simulation::Step( const InputFrame& given )
 	{
 		RememberBreakers();
 	}
+	PlacePushers( frame );
 	b3World_Step( m_physicsWorld, m_config.TimeStep(), int( m_config.subSteps ) );
 	spent( m_profile.physicsNs );
 	{
@@ -3167,6 +3193,7 @@ void Simulation::Step( const InputFrame& given )
 		BreakByItems();
 	}
 	RunItemEvents();
+	ApplyPhysicsEvents( frame, 1 );
 	SyncFromPhysics();
 	FollowHolders();
 	UpdateFootsteps();
@@ -3770,7 +3797,7 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			{
 				// Dropped, not destroyed: it may be one someone picked up.
 				const Transform& at = player.get<Transform>();
-				PutItemInWorld( FindEntity( old ), b3Add( at.position, b3Vec3{ 0.0f, 0.4f, 0.0f } ), at.rotation, b3Vec3{ 0.0f, 0.0f, 0.0f } );
+				QueueIntoWorld( FindEntity( old ), b3Add( at.position, b3Vec3{ 0.0f, 0.4f, 0.0f } ), at.rotation, b3Vec3{ 0.0f, 0.0f, 0.0f } );
 			}
 			flecs::entity item = CreateEntity();
 			item.set<HeldItem>( { holder, command.index, command.mode, 0 } );
@@ -4046,11 +4073,13 @@ void Simulation::KillPlayer( flecs::entity e, const SimCommand& command )
 
 	if ( command.mode == 1 && Body( CharacterOf( e ) ).ragdoll && e.has<DrivenProp>() == false )
 	{
-		flecs::entity body = CreateRagdoll( e, command.other );
-		SimCommand hit = command;
-		hit.mode = ImpulseVelocity;
-		ApplyImpulse( body, hit );
-		EnforceRagdollCap( command.value > 0 ? uint32_t( command.value ) : 0 );
+		// (Made from the player as it is now, when the physics events are applied: M246.)
+		PhysicsEvent ragdoll = RagdollEvent( e, command.other );
+		ragdoll.hitAt = command.a;
+		ragdoll.hitVector = command.b;
+		ragdoll.mode = uint8_t( ImpulseVelocity );
+		ragdoll.count = uint8_t( std::clamp( command.value, 0, 255 ) );
+		m_physicsQueue.push_back( std::move( ragdoll ) );
 	}
 
 	c.dead = 1;
@@ -4087,15 +4116,31 @@ void Simulation::RespawnPlayer( flecs::entity e, const SimCommand& command )
 	}
 }
 
-flecs::entity Simulation::CreateRagdoll( flecs::entity player, uint32_t lifetimeTicks )
+PhysicsEvent Simulation::RagdollEvent( flecs::entity player, uint32_t lifetimeTicks ) const
+{
+	const Transform t = player.get<Transform>();
+	const Character c = player.get<Character>();
+	const CharacterBody& kind = Body( CharacterOf( player ) );
+	const b3Vec3 feet = b3Sub( t.position, b3Vec3{ 0.0f, mover::FeetBelowCenter( kind.radius, kind.halfHeight ), 0.0f } );
+	PhysicsEvent event;
+	event.type = PhysicsEventType::Ragdoll;
+	event.netId = player.get<NetId>().value;
+	event.slot = c.slot;
+	event.at = { feet.x, feet.y, feet.z };
+	event.yaw = c.facingYaw;
+	event.vector = { c.velocity.x, c.velocity.y, c.velocity.z };
+	event.mass = MoveOf( player )[MoveParam::Mass];
+	event.ticks = lifetimeTicks;
+	return event;
+}
+
+flecs::entity Simulation::CreateRagdoll( const PhysicsEvent& event )
 {
 	using namespace ragdoll;
 
-	const Transform t = player.get<Transform>();
-	const Character c = player.get<Character>();
-	b3Quat facing = detmath::YawRotation( c.facingYaw );
-	const CharacterBody& kind = Body( CharacterOf( player ) );
-	b3Vec3 feet = b3Sub( t.position, b3Vec3{ 0.0f, mover::FeetBelowCenter( kind.radius, kind.halfHeight ), 0.0f } );
+	const b3Quat facing = detmath::YawRotation( event.yaw );
+	const b3Vec3 feet = { event.at.x, event.at.y, event.at.z };
+	const b3Vec3 velocity = { event.vector.x, event.vector.y, event.vector.z };
 
 	// The body weighs what the player did (its mass, a movement parameter): the parts share it by
 	// their volume.
@@ -4120,7 +4165,7 @@ flecs::entity Simulation::CreateRagdoll( flecs::entity player, uint32_t lifetime
 				break; // (no ragdoll part is one)
 		}
 	}
-	const float density = MoveOf( player )[MoveParam::Mass] / volume;
+	const float density = event.mass / volume;
 
 	RagdollBodies bodies;
 	b3BodyId live[PartCount];
@@ -4131,7 +4176,7 @@ flecs::entity Simulation::CreateRagdoll( flecs::entity player, uint32_t lifetime
 		def.type = b3_dynamicBody;
 		def.position = b3Add( feet, b3RotateVector( facing, part.center ) );
 		def.rotation = facing;
-		def.linearVelocity = c.velocity;
+		def.linearVelocity = velocity;
 		def.linearDamping = kLinearDamping;
 		def.angularDamping = kAngularDamping;
 		live[i] = b3CreateBody( m_physicsWorld, &def );
@@ -4199,16 +4244,16 @@ flecs::entity Simulation::CreateRagdoll( flecs::entity player, uint32_t lifetime
 	for ( int i = 0; i < PartCount; ++i )
 	{
 		pose.part[i] = { b3Add( feet, b3RotateVector( facing, kParts[i].center ) ), facing };
-		pose.linear[i] = c.velocity;
+		pose.linear[i] = velocity;
 	}
 
-	flecs::entity e = CreateEntity();
+	flecs::entity e = event.made != 0 ? EntityWithId( event.made ) : CreateEntity();
 	Ragdoll r;
-	r.owner = player.get<NetId>().value;
-	r.slot = c.slot;
+	r.owner = event.netId;
+	r.slot = event.slot;
 	r.spawnTick = m_globals.tick;
-	r.despawnTick = lifetimeTicks > 0 ? m_globals.tick + lifetimeTicks : 0;
-	r.yaw = c.facingYaw;
+	r.despawnTick = event.ticks > 0 ? m_globals.tick + event.ticks : 0;
+	r.yaw = event.yaw;
 	e.set<Ragdoll>( r );
 	e.set<RagdollBodies>( bodies );
 	e.set<RagdollPose>( pose );
@@ -4787,11 +4832,14 @@ void Simulation::RunBreaks( const Motion& m, const MotionStep& step, const Motio
 		const uint32_t rubble = uint32_t( seconds * float( m_config.tickRate ) );
 		for ( uint32_t wall : BreakablesNear( at, radius ) )
 		{
-			flecs::entity target = FindEntity( wall );
-			if ( target.is_valid() )
-			{
-				BreakWall( target, at, radius, speed, rubble );
-			}
+			// (When the physics events are applied: M246.)
+			PhysicsEvent hit;
+			hit.type = PhysicsEventType::Break;
+			hit.netId = wall;
+			hit.at = { at.x, at.y, at.z };
+			hit.vector = { radius, speed, 0.0f };
+			hit.ticks = rubble;
+			m_physicsQueue.push_back( std::move( hit ) );
 		}
 	}
 }
@@ -5019,7 +5067,7 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 				points[i] = b3RotateVector( turn, piece.points[size_t( i )] );
 			}
 			const b3ShapeProxy proxy = { points, count, piece.radius };
-			b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( 0 ), 0, nullptr };
+			b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( CatPusher ), 0, nullptr };
 			struct Found
 			{
 				const Simulation* sim;
@@ -5191,8 +5239,17 @@ void Simulation::PushEnd( const MotionEnd& end, Character& c, b3Vec3 change )
 			break;
 		}
 		case MotionEnd::Kind::Body:
-			b3Body_ApplyLinearImpulse( end.body, b3MulSV( end.mass, change ), end.point, true );
+		{
+			// (When the physics events are applied: M246.)
+			const b3Vec3 impulse = b3MulSV( end.mass, change );
+			PhysicsEvent push;
+			push.type = PhysicsEventType::Push;
+			push.netId = end.entity.get<NetId>().value;
+			push.at = { end.point.x, end.point.y, end.point.z };
+			push.vector = { impulse.x, impulse.y, impulse.z };
+			m_physicsQueue.push_back( std::move( push ) );
 			break;
+		}
 		default:
 			break;
 	}
@@ -5856,7 +5913,7 @@ bool Simulation::CastProbe( const Motion& m, b3Vec3 origin, b3Vec3 translation, 
 	BuildShapeLookup();
 	hit = RayHit{};
 	RayContext ctx{ this, ignoreNetId, &hit, false, false };
-	b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( 0 ), 0, nullptr };
+	b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( CatPusher ), 0, nullptr };
 	b3World_CastShape( m_physicsWorld, origin, &proxy, translation, filter, &Simulation::RayCallback, &ctx );
 	return ctx.found;
 }
@@ -5867,7 +5924,7 @@ bool Simulation::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetI
 	BuildShapeLookup();
 	hit = RayHit{};
 	RayContext ctx{ this, ignoreNetId, &hit, false, skipPlayers };
-	b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( 0 ), 0, nullptr };
+	b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( CatPusher ), 0, nullptr };
 	b3World_CastRay( m_physicsWorld, origin, translation, filter, &Simulation::RayCallback, &ctx );
 	return ctx.found;
 }

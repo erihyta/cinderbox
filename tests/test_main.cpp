@@ -389,6 +389,83 @@ float BallHeightAfter( float restitution, uint32_t ticks )
 	return -1.0f;
 }
 
+// Characters read the physics world and never write it themselves (M246): a player walks at a
+// ball pushed by characters and at a crate that is solid. Through the ball, which its pusher sends
+// off; stopped by the crate, which does not move. Its pusher stands in the world only while
+// something pushable is near.
+void TestPushers()
+{
+	auto walkAt = [&]( bool pushable, b3Vec3& bodyMoved, float& playerZ, float& bodyZ, size_t& pushed ) {
+		LevelLayout map;
+		map.name = "pushers";
+		map.spawnCenter = { 5.25f, 1.5f, 6.0f }; // (slot 0 stands at x 0)
+		map.spawnRadius = 2.0f;
+		map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+		EntityTemplate body;
+		body.name = pushable ? "ball" : "crate";
+		if ( pushable )
+		{
+			body.components.push_back( MakeIntComponent( "Shape", { { "kind", int32_t( ShapeKind::Sphere ) } } ) );
+			body.components[0].fields.push_back( MakeComponent( "Shape", { { "radius", 0.3f } } ).fields[0] );
+			body.components.push_back( MakeComponent( "Pushable", {} ) );
+		}
+		else
+		{
+			body.components.push_back( MakeIntComponent( "Shape", { { "kind", int32_t( ShapeKind::Box ) } } ) ); // (1 m)
+		}
+		body.components.push_back( MakeIntComponent( "Body", { { "type", 2 } } ) );
+		body.components.push_back( MakeComponent( "Material", { { "mass", pushable ? 0.5f : 20.0f } } ) );
+		map.templates.push_back( body );
+		map.instances.push_back( { 0, { 0.0f, pushable ? 0.3f : 0.5f, 3.0f }, 0.0f, 0.0f } );
+		QuantizeLayout( map );
+
+		Simulation sim( TestConfig(), map );
+		InputFrame f;
+		f.events.push_back( { PlayerEventType::Join, 0 } );
+		b3Vec3 start = {};
+		uint32_t bodyId = 0;
+		pushed = 0;
+		for ( uint32_t t = 0; t < 150; ++t )
+		{
+			f.tick = sim.Tick();
+			f.inputs[0].cameraYaw = 32768; // toward -Z
+			f.inputs[0].moveForward = t > 30 ? int8_t( 127 ) : int8_t( 0 );
+			sim.Step( f );
+			f.events.clear();
+			if ( t == 0 )
+			{
+				for ( const auto& r : sim.Entities() )
+				{
+					if ( flecs::entity( sim.World(), r.entity ).has<TemplateRef>() )
+					{
+						bodyId = r.netId;
+						start = sim.EntityTransform( bodyId )->position;
+					}
+				}
+			}
+			pushed += sim.PhysicsMade().pushers.size();
+		}
+		bodyMoved = b3Sub( sim.EntityTransform( bodyId )->position, start );
+		bodyZ = start.z;
+		playerZ = sim.EntityTransform( sim.PlayerNetId( 0 ) )->position.z;
+	};
+
+	b3Vec3 ballMoved, crateMoved;
+	float playerZ = 0.0f, ballZ = 0.0f, crateZ = 0.0f, stoppedZ = 0.0f;
+	size_t ballPushers = 0, cratePushers = 0;
+	walkAt( true, ballMoved, playerZ, ballZ, ballPushers );
+	walkAt( false, crateMoved, stoppedZ, crateZ, cratePushers );
+	std::printf( "    a ball pushed by characters: the player walked through it to z %.2f (it stood at %.2f) and it went %.2f m, "
+				 "a pusher %zu ticks; a solid crate: the player stopped at z %.2f (it stands at %.2f), it moved %.3f m, a pusher %zu ticks\n",
+				 playerZ, ballZ, b3Length( ballMoved ), ballPushers, stoppedZ, crateZ, b3Length( crateMoved ), cratePushers );
+	CHECK( playerZ < ballZ - 1.0f );
+	CHECK( b3Length( ballMoved ) > 0.5f );
+	CHECK( ballPushers > 0 && ballPushers < 150 );
+	CHECK( stoppedZ > crateZ + 0.6f );
+	CHECK( b3Length( crateMoved ) < 0.01f );
+	CHECK( cratePushers == 0 );
+}
+
 // Level pieces of every shape, turned any way (map versions 4 and 5): a box rolled upright is a
 // wall, a capsule rolled over lies along X, a sphere is round, a hull (a pyramid) slopes where its
 // points say and turns over with its piece; the turn is Godot's (yaw, then pitch, then roll); they
@@ -12709,6 +12786,7 @@ int main( int argc, char** argv )
 		{ "holes", TestHoles },
 		{ "item_breaks", TestItemBreaks },
 		{ "glue", TestGlue },
+		{ "pushers", TestPushers },
 		{ "slopes", TestSlopes },
 		{ "templates", TestTemplates },
 		{ "sim_events", TestSimEvents },

@@ -10,7 +10,7 @@ The markers carry the collision the simulation needs; everything else in the sce
 | Node | What it becomes |
 |---|---|
 | `CbStatic` | Solid level geometry: floor, wall, ramp, step, platform. A box of `size` (full size in metres), or the [shapes](#collision-shapes) under it. |
-| `CbProp` | A dynamic body the level starts with: a box or sphere, or the [shapes](#collision-shapes) under it, drawn by its own meshes. A [body](#a-body) like any other: `mass`, `density`, `friction`, `bounce` |
+| `CbProp` | A dynamic body the level starts with: a box or sphere, or the [shapes](#collision-shapes) under it, drawn by its own meshes. A [body](#a-body) like any other: `mass`, `density`, `friction`, `bounce`. Solid to characters unless `pushed_by_characters` ([who pushes what](#who-pushes-what)) |
 | `CbBreakable` | A [wall that breaks](#walls-that-break): static and whole until a mod breaks it, then the `CbProp` pieces under it. |
 | `CbSpawn` | Where players appear. One per map. |
 | `CbCharacterBody` | A character's body standing where it is, facing where it faces, nobody driving it (a player may take it over, a mod may drive it). `character`: a character item's name (`critter`): the server loads it from its item and players download it. Spawned when the game starts. |
@@ -65,8 +65,8 @@ A `CbBreakable` is a wall (or anything static) and what it breaks into, authored
   above comes down under its own weight; a heavy ball cracks the welds it hits. A blast still frees
   the pieces near it. Each piece is a body that sleeps when still, so a glued wall costs a little
   more than a static one: for towers, bridges, wooden things, not every wall of a map.
-- **Pieces are rubble**: players stand on them and are stopped by them, but never shove them (they
-  are in a collision group the player's capsule ignores). Blasts, shots and other bodies move them.
+- **Pieces are rubble**: solid ([who pushes what](#who-pushes-what)): players stand on them and are
+  stopped by them, but never shove them. Blasts, shots and other bodies move them.
 - The bake makes the wall a static template placed where it stands, and each piece a template of its
   own; its pieces are not the map's props. `test_ground.tscn` has two, 12 m north of the spawn:
   `BrickWall` (twelve bricks placed by hand) and `ConcreteWall` (28 chunks cut by the tool below);
@@ -96,6 +96,26 @@ Pieces can be placed by hand (bricks, planks), or cut: select a `CbBreakable` an
   for next time.
 - Scripts can cut too: `preload("res://addons/cinderbox_maps/fracture.gd").fracture(wall, pieces, seed, crowd)`
   (`make_test_ground.gd` does).
+
+
+## Who pushes what
+
+Characters read the physics world and never write it themselves (M246; the hybrid network model
+needs it: [ROADMAP step 3](../ROADMAP.md#3-two-network-models)). A body is one of two kinds, the
+same on every server:
+
+| | Solid (the default) | `pushed_by_characters` (a ball, a can) |
+|---|---|---|
+| A character walking into it | is stopped, and can stand on it | walks through it; its **pusher** (a capsule where it stands, in the physics world) shoves it |
+| What moves it | skills, shots, blasts, other bodies | the same, and pushers |
+| A falling one | pushes the character out, by its share of the two weights (a pebble hardly, a crate of the player's weight by half) | passes through the character |
+
+- Rubble (a broken wall's pieces) and props spawned by mods are solid; items lying about and
+  ragdolls are pushed by characters.
+- Walking does not slow a character against what it pushes: a pusher shoves at its own speed. Heavy
+  things are better solid.
+- A plain `CbProp` with the flag (no shapes, no meshes) is baked as a template, not into the map's
+  simple prop list. `test_ground`'s two balls have it; its crates do not.
 
 ## Collision shapes
 
