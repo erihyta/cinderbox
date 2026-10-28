@@ -62,7 +62,7 @@ below ([Later](#later), [Parked](#parked), [Leftovers](#leftovers-by-area),
 | Weak point | Why it matters | Where |
 |---|---|---|
 | The player cap | every client steps the whole world, and again for its rollback window: 64 players at a 200 ms round trip take 87% of a core (M139) | [step 3](#3-two-network-models) |
-| Cheating | every client has the whole world: ESP and wallhacks are trivial, and there is no fog of war | [step 3](#3-two-network-models) (the server-state model sends only what is near), [before launch](#before-launch) |
+| Cheating | every client has the whole world: ESP and wallhacks are trivial, and there is no fog of war | [step 3](#3-two-network-models) (the hybrid sends only the characters that are near), [before launch](#before-launch) |
 | Untrusted Godot files | workshop items are scenes loaded on every player's machine; the guard and the validator check what is in them, not Godot's parsers (DESIGN.md says so) | [before launch](#before-launch) |
 | Mods in the server's process | one mod's crash takes the server down | [step 10](#10-server-rules-in-luau) |
 | Packs cannot be unloaded | joining another server restarts the game; per-player avatars as packs would make it worse | [step 11](#11-avatars) |
@@ -73,10 +73,10 @@ below ([Later](#later), [Parked](#parked), [Leftovers](#leftovers-by-area),
 
 | # | What | In one line |
 |---|---|---|
-| 0 | [Decisions](#0-decisions) | **taken**: the server-state model the default, today's a server's choice; `.cbsheet`; Luau; the standard skeleton only |
+| 0 | [Decisions](#0-decisions) | **taken**: the hybrid network model the default, today's a server's choice; `.cbsheet`; Luau; the standard skeleton only |
 | 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | a written playtest checklist, run by bots and by hand with two games under latency and loss; every feature since M215 used by shipped content or removed |
 | 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | **done (M243)**: dead stances, colliding files, stale docs, two Jolt areas, an old replay, the unmaintained nodes out of sight |
-| 3 | [Two network models](#3-two-network-models) | the server's state, sent by what is near, the default; everyone simulating the whole world kept as a choice; the server says which on join. **M244, M245 done**: states and stand-ins, on the wire (`--net-model state`); the default stays `inputs` until a two-game playtest |
+| 3 | [Two network models](#3-two-network-models) | the hybrid the default: physics deterministic from the server's events, characters a shooter's (your own predicted, the rest interpolated); everyone simulating the whole world from inputs kept as a choice. M244 and M245's server-state model is dropped (it streamed the physics) |
 | 4 | [The slice](#4-the-slice) | one game, played by people; it starts here and runs beside steps 5 to 8, each done when the slice uses it |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | the bat and the guns the way the fist is: predicted from their sheets, the C++ only deciding damage |
 | 6 | [Sheets improved](#6-sheets-improved) | a resource on the node it is about (CbRules goes), `.cbsheet`, names and parameters in the sheet, readable cooldowns, the warts fixed |
@@ -102,7 +102,7 @@ below ([Later](#later), [Parked](#parked), [Leftovers](#leftovers-by-area),
 
 | Decision | Taken | Means |
 |---|---|---|
-| **The network model** | the **server-state model** (the client rolls back to the server's state) is the default; today's model (everyone simulates the whole world from everyone's inputs) stays as a choice. The server picks one and tells each player when it joins | [step 3](#3-two-network-models), right after the fixes |
+| **The network model** | the **hybrid** is the default (decided 2026-10-28, after M245; it replaced the server-state model decided here first): the physics deterministic, simulated by every client from the server's events, never sent as states; characters the server's, your own predicted, the rest interpolated. Today's model (everyone simulates the whole world from everyone's inputs) stays as a choice. The server picks one and tells each player when it joins | [step 3](#3-two-network-models), right after the fixes |
 | **The sheet's file name** | **`.cbsheet`** (a language name gets taken: Ember is a programming language) | [step 6](#6-sheets-improved) |
 | **How server-only rules are written** | **Luau** | [step 10](#10-server-rules-in-luau) |
 | **Avatars' proportions** | **the standard skeleton only**: no body scales | [step 11](#11-avatars) |
@@ -192,24 +192,81 @@ The two areas above are the only things in Jolt. Cosmetic physics: [step 12](#12
 
 ### 3. Two network models
 
-**Decided**: the server-state model is the default; today's stays as a choice. The server picks
-(`cb_server --net-model state|inputs`, `state` when not said), the welcome says which, and the game
-makes the matching source. Everything else is shared: the simulation, the sheets, the mods, the
-viewer.
+**Decided (2026-10-28, after M245)**: the second model is the **hybrid**: the physics is
+deterministic and driven by events, the characters' netcode is a shooter's. The server-state model
+of M244 and M245 is dropped: it sent the physics world as states, a cost that grows with every
+moving body, and it threw away the determinism the project is built on. Today's inputs model stays
+a server's choice. The server picks (`cb_server --net-model inputs|hybrid`), and the welcome says
+which.
 
-| | Inputs (today's) | Server state (the default) |
+| | Inputs (today's) | Hybrid |
 |---|---|---|
-| What a client gets | every player's input, every tick | the state of what is near or relevant to it, at a rate by priority |
-| What a client simulates | the whole world, from inputs | its own body, its skills and what it touches; the rest is drawn from the server's states, a little in the past |
-| A disagreement | back to its snapshot, everyone's inputs run again | back to the server's state for what it predicts, its own inputs run again |
-| Other players' effects on you (a shove, a slam) | predicted from their last input | seen when the server's state arrives (a round trip) |
-| Fog of war, ESP | impossible: every client has everything | what is not sent cannot be seen |
-| Determinism | required (a desync is a resync) | lowers corrections; still checked in CI (the inputs model and replays need it) |
-| For | small servers (a fighting game's 10 to 30) | the default; many players |
+| Physics (props, debris, ragdolls, items lying about, projectiles) | every client simulates it, rolled back with everything | every client simulates it once a tick from the server's events, a little in the past; never sent as states |
+| Characters (players, NPCs, a driven prop) | every client simulates all of them from inputs, rolled back | the server's: a client predicts its own, and draws the rest from the server's states, interpolated, a little in the past |
+| What crosses | every player's input, every tick | the physics events (a spawn, an impulse, a blast, a break, a body tossed) and the characters' states, by what is near |
+| A client's work grows with | the players and the rollback window | the physics bodies awake (sleeping ones cost little) |
+| Your own effect on a body (a punch at a crate, a cannonball) | at once | a round trip and the buffer late (about 0.2 to 0.25 s at a 150 ms ping); the flash and the sound at once |
+| Others' effect on you (a shove) | predicted from their last input | a round trip late |
+| Fog of war | impossible | for characters: what is not sent cannot be seen (the physics world is everyone's) |
+| For | fighting games, 10 to 30 players | the default; many players and big physics |
 
-**What is in the way of many players today**: every client steps the whole world, and steps it
-again for the whole rollback window whenever a remote player's input was not what it guessed:
-nearly every tick, since mice turn every tick.
+**How the hybrid works**
+
+- **The physics world is a function of its events.** Characters read it (they stand on debris, are
+  stopped by walls, are pushed out of a falling crate) and never write to it. What a character does
+  to a body (a punch's shove, a throw, a launch, a break, a body tossed) is a *physics event*,
+  applied at one point in the step and recorded with its tick. Mods' commands already are.
+- **An event is self-contained**: everything the physics world needs travels in it, and the server
+  applies it exactly as the clients get it, with the same rounded numbers. A tossed body's eleven
+  parts and their speeds are in its event; the server builds the ragdoll from those, not from its
+  own copy of the player.
+- **A client's physics runs in the past.** When it runs at least a one-way trip and the jitter
+  behind the server (a buffer chosen from the measured latency), the events for tick T arrive
+  before it reaches T. So there is no rollback and no state: each tick is stepped once, as a replay
+  is. The other characters are drawn at the same delay, so one standing on debris looks right.
+- **Two Box3D worlds**: the physics world (the level, props, debris, items lying about, ragdolls,
+  projectiles) and the characters' world (their capsules, a driven prop). A character's body cannot
+  be in the physics world, even as a body that collides with nothing: it would take Box3D's ids and
+  change its internal order, and it is in a different place on every client. A body moves between
+  the two by an event (a player tossed and landing, a crate driven and left, a body taken over).
+- **Ids of their own**: the physics world's entities take NetIds from its own counter and the
+  characters' from another range, so a client that has no characters where the server has them
+  still names every body as the server does.
+- **Desync**: the physics world's checksum, as today's; a mismatch resends the physics world
+  (megabytes with much debris).
+- **Joining**: the physics world's snapshot (as a welcome sends today) and the characters' states.
+
+**Limitations, accepted**
+
+| Limitation | What it means |
+|---|---|
+| Your own physical effects are late | a round trip and the buffer: the muzzle flash and the sound at once, the crate flies later. A ball game played by bumping (Rocket League) belongs to the inputs model |
+| Characters never push bodies | walking does not kick crates and balls any more (it already does not move debris); a skill's shove still does, as an event. A grapple pulling a prop, a probe holding one, driving a crate and carrying change ([M249](#3-two-network-models)) |
+| You stand in the present on a world drawn in the past | settled debris is exact; on moving or collapsing debris the server corrects you. Later, if it matters: the server checks a player's move against the physics as that player saw it |
+| The whole map's physics runs on every client | there is no interest management for physics: the weakest client's processor is the world's physics budget |
+| Determinism stays absolute | CI's six builds check it; a desync costs a physics snapshot |
+| Debris passes through characters | a falling crate pushes the player out; the player does not stop it |
+
+**The milestones**
+
+| Milestone | What |
+|---|---|
+| M244, M245 (done) | **The server-state model** ([history](docs/HISTORY.md)). Measured that a simulation's whole state is mostly Box3D's internals (760 KB at 32 players, 670 KB of them), then streamed entity states with stand-ins. Carries over: `--net-model` and the welcome saying which, the state message and its codec (for the characters' states), a session per model in the game, stand-ins (for the other characters), `cb_replay state`, the tests' harness. Goes when M248 lands: streaming props and debris, bodies' descriptions, applying the whole world from a state |
+| **M246** | **Characters read the physics world and never write it.** The mover stops shoving loose bodies; characters' capsules no longer touch physics bodies in Box3D's solver (the mover pushes the character out of them instead). Every write to a physics body from a motion, a slot or a mod's command becomes a self-contained physics event, queued and applied at one point in the step, and recorded in the frame. A simulation can take its physics events from outside instead of making its own. Checked: a scenario run again with different players' inputs, fed the first run's physics events, has the same physics hash on every tick |
+| M247 | **The physics world stands alone.** The characters move to a Box3D world of their own (the mover and the casts ask both); bodies move between the worlds by events (idle bodies, driven props, a ragdoll); NetIds from two counters; the physics world gets its own snapshot and checksum. Checked: the same physics events with no characters at all give the same physics world, byte for byte |
+| M248 | **The hybrid on the wire** (`--net-model hybrid`; `state` goes). The physics events and checksums are streamed (the frame batches, without the inputs); the client's physics runs in the past, its buffer chosen from the latency. The characters' states use M245's codec, characters only: the other characters are interpolated and your own predicted against the physics. Joining sends the physics snapshot. M244 and M245's physics streaming is deleted. The default turns to `hybrid` once it passes a two-game playtest |
+| M249 | **What pushed bodies, reworked**: the grapple and links on props, probes that hold on, driving a crate, carrying; a player tossed (a body in the physics world, breaking walls) and getting up again; your own effects shown at once where they can be (a projectile handed over) |
+| M250 | **Many players**: hits rewind the other characters to where the shooter saw them (lag compensation); characters' states sent by what is near, by priority; private fields and hidden characters; measured with hundreds of bots |
+
+**Open**
+
+- **One rule in both models?** Leaning yes: a map and a mod then play the same whichever model a
+  server runs, and the simulation has one path. The inputs model would lose walking pushes too.
+- **The model's name**: `hybrid` while it is built.
+
+**What is in the way of many players today** (the inputs model): every client steps the whole
+world, and steps it again for the whole rollback window whenever a remote player's input was not
+what it guessed: nearly every tick, since mice turn every tick.
 
 | | 64 players (M139) | 200 or more (an estimate) |
 |---|---|---|
@@ -218,55 +275,15 @@ nearly every tick, since mice turn every tick.
 | The server | fine (it never rolls back) | still fine |
 | Bandwidth | every input to every client | grows with the players squared, at the server |
 
-**Measured first (M244)**, on a recording of 32 chaotic bots (710 entities):
-
-| | Bytes |
-|---|---|
-| The whole simulation state, as a welcome sends it | 760 KB |
-| of which the entities | 90 KB |
-| of which the physics engine's internals (contacts, trees, solver caches) | 670 KB |
-| The whole state as a change against two ticks before | 410 KB (it shifts: a XOR finds little) |
-
-- **So no physics engine state crosses the network.** The server sends its entities and a
-  description of each body (its shapes, read from the physics engine); a client builds a body from
-  the description when it has none or the server's changed. What is not the client's own is a
-  **stand-in**: a kinematic body placed where the server has it, which nothing in the client's step
-  drives. Destruction is then the server's alone, and needs no determinism.
-
-**The milestones**, in order:
-
-| Milestone | What |
-|---|---|
-| **M244** (done) | Offline, no network: `Simulation::SaveState` and `ApplyState`, stand-ins, `StateSession` (the client's prediction: the newest state, then its own inputs again). Applied at once a state is the server's world, entity for entity (every state of a 32-bot session); the client's step costs a sixth to a half of the server's, less the more players there are (stand-ins are not simulated). `cb_replay state` plays the model against any recording |
-| **M245** (done) | The wire: `cb_server --net-model state\|inputs` (protocol 75: the welcome and the server's info say which); a state every second tick, compact (positions, rotations and velocities rounded), sent as a change against the newest the client acknowledged, lined up entity by entity and deflated (`net/state_codec.h`); the client's `StateSession` beside `RollbackSession`; `playtest.ps1 -NetModel state`. Bots on one machine: client work 1.2 ms a frame against 9.1 at 4 players, 3.8 against 37 at 16; download 450 against 387 kbit/s at 4, 1149 against 441 at 16. An unattended two-game session through the simulator: clean. **The default turns to `state` once it plays well in the hand checklist** ([playtest.md, 5](docs/playtest.md#5-the-state-network-model)) |
-| M246 | What the player touches, predicted (prediction switching, as Unity's Netcode for Entities calls it): a loose body near the player is simulated, not placed, until it settles. Moved up by M244's numbers: a stand-in crate stops the player outright where the server's gives way (the mover shoves only what is dynamic) |
-| M247 | Only what is near is sent, by priority (near every state, far a few times a second, coarser); joining sends what is near, not the whole world; the rest drawn a little in the past (the mirror smooths already) |
-| M248 | Hits rewind other players to where the shooter saw them (lag compensation), within a limit; private fields and hidden entities (what is not sent cannot be seen) |
-| Measured | players per server, bandwidth per client, the server's tick, the client's frame: targets set once M245 plays |
-
-**M244's numbers** (`cb_replay state`, states 6 ticks late, every second tick):
-
-| Session | A state, raw | Deflated change | The client's step / the server's | Own body within 5 cm |
-|---|---|---|---|---|
-| 4 bots walking (158 entities) | 42 KB | 4 KB (1 Mbit/s) | 0.045 / 0.106 ms | 96% of ticks (1.6 cm on average) |
-| 4 chaotic bots | 44 KB | 9.6 KB (2.3 Mbit/s) | 0.047 / 0.157 ms | 79% (17 cm): the others' shoves and props are the server's, seen a state later |
-| 32 chaotic bots | 143 KB | 36 KB (8.7 Mbit/s at 30 a second: M245's compact state is needed) | 0.19 / 1.09 ms | 45% (0.4 m): a crowd shoving, and crates that do not give way (M246) |
-
-- **Mods do not change**: they read the server's world and send commands into its simulation in
-  either model. Recordings do not either: the server's simulation is deterministic, so its inputs
-  and commands still re-simulate.
-- **Physics stays one shared world, the server's**: a ragdoll falls the same on every screen.
-- **Open**: how often state goes out (the simulation's 60 Hz or 30); whether other players within
-  arm's reach are predicted from their inputs (sent with the state) for a fighting game's shoves.
-  How a client's simulation runs with only part of the world is answered (M244): what it has are
-  stand-ins, what it lacks is not there.
+In the hybrid a client steps the physics once a tick: 0.3 to 0.4 ms with 300 props in the air
+(M140), whatever the players.
 
 **Where the numbers come from** (for the targets):
 
 | Players in one place | What works | Examples |
 |---|---|---|
 | up to about 32 | everyone simulating the whole world from inputs (the inputs model) | fighting games; For Honor's 4v4 |
-| about 50 to 200 | the server's state, sent by what is near, one server | Fortnite, PUBG, Apex |
+| about 50 to 200 | the server's characters, sent by what is near, one server | Fortnite, PUBG, Apex |
 | hundreds in one fight | the same, with far players sent rarely and coarsely, fewer collisions | PlanetSide 2 |
 | thousands in one world | many servers per world: zones, copies of a zone, meshing | WoW, EVE (time dilation), Star Citizen |
 
@@ -274,8 +291,8 @@ nearly every tick, since mice turn every tick.
   cheaper players (no collision between players, movement checked rather than simulated, 10 to 20
   ticks a second), hits decided by the server with lag compensation, and the world split across
   servers.
-- **Shared physics is what makes Cinderbox dear at scale**: MMOs mostly have no props or
-  destruction. The busiest spot (everyone in one square) sets the bandwidth.
+- **Physics is what makes Cinderbox different at scale**: MMOs mostly have no props or destruction.
+  In the hybrid it costs processor time on every client, not bandwidth.
 - **The cheap way to many players** is many servers of 50 to 100 per game (how Roblox scales a
   game), not one server of 1,000. One world across servers is [later](#one-world-across-servers).
 - **The inputs model, tuned** for small servers: `reconcile_every 2`; a better guess of a remote
@@ -504,7 +521,7 @@ The body and its appearance kept apart:
 | What | Why |
 |---|---|
 | The pack loaders fuzzed, files limited in size | workshop items are Godot files on every player's machine; the guard checks their content, not Godot's parsers |
-| Cheating, decided | on a server running the inputs model every client holds the whole world, so ESP is trivial there; the server-state model sends only what is near |
+| Cheating, decided | on a server running the inputs model every client holds the whole world, so ESP is trivial there; the hybrid sends only the characters that are near (the physics world is everyone's) |
 | A mod's crash | takes the server down until step 10 |
 | How players find servers | [parked](#parked) |
 | Translations, tools on every platform | steps 12 and 9 |
@@ -632,6 +649,7 @@ Not scheduled. A row moves up into "Next" when the slice wants it.
 | Naming the sheet language Ember | already a programming language's name |
 | Body scales for avatars | the standard skeleton only (decided after the review): held items and hitboxes match the drawing, nothing to clamp |
 | Everyone simulating the whole world as the default | the rollback window's cost grows with every body; kept as a server's choice for small servers ([step 3](#3-two-network-models)) |
+| The server's state as the second model (M244, M245) | it sends the physics world as states: bandwidth grows with every moving body, a destruction is hundreds of them at once, and the determinism the project is built on goes unused. The hybrid keeps the physics deterministic and sends only its events ([step 3](#3-two-network-models)) |
 
 ## Housekeeping
 

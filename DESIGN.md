@@ -139,8 +139,9 @@ not rolled back, not recorded, and a state machine cannot read it.
 
 Authoritative server, two network models (`src/net`, `src/client`), the server's choice for
 everyone (`cb_server --net-model inputs|state`; the welcome and the server's info say which;
-ROADMAP step 3). **Inputs** (the default until the state model has passed a playtest): what follows
-below; every client simulates the whole world. **State**:
+ROADMAP step 3). **Inputs** (the default): what follows below; every client simulates the whole
+world. **State** (M244, M245; to be replaced by the hybrid, in which the physics stays
+deterministic and only its events and the characters' states cross, ROADMAP step 3):
 
 - **The server's state, without the physics engine's**: every second tick the server saves its
   entities and a description of each body read from Box3D (`Simulation::SaveState`, compact:

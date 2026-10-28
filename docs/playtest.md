@@ -88,8 +88,9 @@ shook against the wall".
 
 ## 5. The state network model
 
-`tools\playtest.ps1 -NetModel state` (ROADMAP step 3; the server's states, only your own body
-predicted). Then the same with the default (`inputs`) to compare.
+`tools\playtest.ps1 -NetModel state` (M245's server-state model, to be replaced by the hybrid:
+ROADMAP step 3; this section changes with it). Then the same with the default (`inputs`) to
+compare.
 
 | # | Do | Expect |
 |---|---|---|
