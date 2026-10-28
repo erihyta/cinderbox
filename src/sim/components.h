@@ -396,6 +396,18 @@ struct ModDriven
 	PlayerInput input;
 };
 
+// Only in a simulation that follows a server's states (the state network model,
+// Simulation::ApplyState), and never in a snapshot or a hash. StandIn: an entity the server
+// simulates and this simulation only places (a tag). StateBody: the server's description of its
+// bodies, hashed, so a body is built again only when the server's changed.
+struct StandIn
+{
+};
+struct StateBody
+{
+	uint64_t hash = 0;
+};
+
 // A character's body that nobody drives (M220): no controller (no Character, no animation state),
 // a physics body of its capsule with its rotation locked, so it stands, falls and is pushed, and
 // the physics engine sleeps it. A slot possessing it gives it the controller again.

@@ -76,7 +76,7 @@ below ([Later](#later), [Parked](#parked), [Leftovers](#leftovers-by-area),
 | 0 | [Decisions](#0-decisions) | **taken**: the server-state model the default, today's a server's choice; `.cbsheet`; Luau; the standard skeleton only |
 | 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | a written playtest checklist, run by bots and by hand with two games under latency and loss; every feature since M215 used by shipped content or removed |
 | 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | **done (M243)**: dead stances, colliding files, stale docs, two Jolt areas, an old replay, the unmaintained nodes out of sight |
-| 3 | [Two network models](#3-two-network-models) | the server's state, sent by what is near, the default; everyone simulating the whole world kept as a choice; the server says which on join |
+| 3 | [Two network models](#3-two-network-models) | the server's state, sent by what is near, the default; everyone simulating the whole world kept as a choice; the server says which on join. **M244 done**: states and stand-ins, offline |
 | 4 | [The slice](#4-the-slice) | one game, played by people; it starts here and runs beside steps 5 to 8, each done when the slice uses it |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | the bat and the guns the way the fist is: predicted from their sheets, the C++ only deciding damage |
 | 6 | [Sheets improved](#6-sheets-improved) | a resource on the node it is about (CbRules goes), `.cbsheet`, names and parameters in the sheet, readable cooldowns, the warts fixed |
@@ -218,27 +218,48 @@ nearly every tick, since mice turn every tick.
 | The server | fine (it never rolls back) | still fine |
 | Bandwidth | every input to every client | grows with the players squared, at the server |
 
-**The pieces**, in order (each a milestone or two):
+**Measured first (M244)**, on a recording of 32 chaotic bots (710 entities):
 
-| Piece | What |
+| | Bytes |
 |---|---|
-| The choice | `--net-model`; the welcome carries it; a source per model; today's sessions, tests and CI keep running as the inputs model |
-| The server sends state | per client, the entities near or relevant to it, by priority (near every tick, far a few times a second, coarser), as deltas against what that client acknowledged; the compact codec (64 players at 0.09 MB/s in view files) and the streaming client of M54 (removed in M68) to start from |
-| The client predicts its own | its body, its motions, its items: rolled back to the server's state for them when it differs, then its own inputs since run again |
-| What it touches, predicted | a body or prop the player walks into, holds or ropes is predicted while near and switched back once it settles (Unity's Netcode for Entities calls it prediction switching) |
-| The rest, interpolated | drawn a little in the past from the server's states (the mirror already interpolates and smooths); in the client's world as kinematic bodies, so the player collides with them |
-| Hits | the server's hit tests rewind other players to where the shooter saw them (lag compensation), within a limit |
-| Joining | the state of what is near, not a snapshot of the whole world |
-| Private fields, hiding | a field or an entity sent only to whom it concerns; a mod may hide an entity from a client |
-| Measured | players per server, bandwidth per client, the server's tick, the client's frame: targets set once the first pieces work |
+| The whole simulation state, as a welcome sends it | 760 KB |
+| of which the entities | 90 KB |
+| of which the physics engine's internals (contacts, trees, solver caches) | 670 KB |
+| The whole state as a change against two ticks before | 410 KB (it shifts: a XOR finds little) |
+
+- **So no physics engine state crosses the network.** The server sends its entities and a
+  description of each body (its shapes, read from the physics engine); a client builds a body from
+  the description when it has none or the server's changed. What is not the client's own is a
+  **stand-in**: a kinematic body placed where the server has it, which nothing in the client's step
+  drives. Destruction is then the server's alone, and needs no determinism.
+
+**The milestones**, in order:
+
+| Milestone | What |
+|---|---|
+| **M244** (done) | Offline, no network: `Simulation::SaveState` and `ApplyState`, stand-ins, `StateSession` (the client's prediction: the newest state, then its own inputs again). Applied at once a state is the server's world, entity for entity (every state of a 32-bot session); the client's step costs a sixth to a half of the server's, less the more players there are (stand-ins are not simulated). `cb_replay state` plays the model against any recording |
+| M245 | The wire: `cb_server --net-model state\|inputs`, the welcome and the server's info carry it, a source per model; a compact state (positions on a grid, only what changed, a body's description once per client) as changes against what the client acknowledged. The default turns to `state` once it plays well in a two-game test |
+| M246 | What the player touches, predicted (prediction switching, as Unity's Netcode for Entities calls it): a loose body near the player is simulated, not placed, until it settles. Moved up by M244's numbers: a stand-in crate stops the player outright where the server's gives way (the mover shoves only what is dynamic) |
+| M247 | Only what is near is sent, by priority (near every state, far a few times a second, coarser); joining sends what is near, not the whole world; the rest drawn a little in the past (the mirror smooths already) |
+| M248 | Hits rewind other players to where the shooter saw them (lag compensation), within a limit; private fields and hidden entities (what is not sent cannot be seen) |
+| Measured | players per server, bandwidth per client, the server's tick, the client's frame: targets set once M245 plays |
+
+**M244's numbers** (`cb_replay state`, states 6 ticks late, every second tick):
+
+| Session | A state, raw | Deflated change | The client's step / the server's | Own body within 5 cm |
+|---|---|---|---|---|
+| 4 bots walking (158 entities) | 42 KB | 4 KB (1 Mbit/s) | 0.045 / 0.106 ms | 96% of ticks (1.6 cm on average) |
+| 4 chaotic bots | 44 KB | 9.6 KB (2.3 Mbit/s) | 0.047 / 0.157 ms | 79% (17 cm): the others' shoves and props are the server's, seen a state later |
+| 32 chaotic bots | 143 KB | 36 KB (8.7 Mbit/s at 30 a second: M245's compact state is needed) | 0.19 / 1.09 ms | 45% (0.4 m): a crowd shoving, and crates that do not give way (M246) |
 
 - **Mods do not change**: they read the server's world and send commands into its simulation in
   either model. Recordings do not either: the server's simulation is deterministic, so its inputs
   and commands still re-simulate.
 - **Physics stays one shared world, the server's**: a ragdoll falls the same on every screen.
 - **Open**: how often state goes out (the simulation's 60 Hz or 30); whether other players within
-  arm's reach are predicted from their inputs (sent with the state) for a fighting game's shoves;
-  how a client's simulation runs with only part of the world.
+  arm's reach are predicted from their inputs (sent with the state) for a fighting game's shoves.
+  How a client's simulation runs with only part of the world is answered (M244): what it has are
+  stand-ins, what it lacks is not there.
 
 **Where the numbers come from** (for the targets):
 

@@ -7,6 +7,7 @@
 // All state lives in (a) the flecs sim world, (b) SimGlobals and (c) the Box3D arena, and all
 // three are captured by Save()/Load().
 
+#include "bytes.h"
 #include "components.h"
 #include "events.h"
 #include "level.h"
@@ -180,6 +181,27 @@ public:
 	// Self-contained state for another process (late join, desync recovery). Slower.
 	void SavePortable( std::vector<uint8_t>& out );
 	bool LoadPortable( const std::vector<uint8_t>& in );
+
+	// The state network model (ROADMAP step 3; stand_ins.cpp). No physics engine internals cross:
+	// SaveState writes the entities and globals, and a description of every body read from the
+	// physics engine (its type, its shapes). ApplyState makes this simulation's world the server's
+	// as those bytes have it: every entity's components but its physics handles; a body kept when
+	// the server's description of it is the one it was built from, built from the description
+	// otherwise; what the server no longer has removed (nothing else happens: a chest's items do
+	// not fall out). Every entity but `own`'s (the slot's body and what it carries) is then a
+	// stand-in: nothing in Step() moves or drives it, its body is kinematic (a static one stays
+	// static) and placed where the server has it, going on at its velocity until the next state.
+	// From the first state on the world's rules are the server's: props' lifetimes and caps, glue,
+	// breaking and items' events are not run here. False (and nothing changed) for bytes that are
+	// not a state of this simulation's kind (its config, its components).
+	void SaveState( std::vector<uint8_t>& out );
+	bool ApplyState( const uint8_t* data, size_t size, PlayerSlot own );
+	// Whether ApplyState has run: the world's rules are the server's.
+	bool FollowsServer() const
+	{
+		return m_followsServer;
+	}
+	bool IsStandIn( uint32_t netId ) const;
 
 	// Box3D handles for a PhysicsBody component.
 	b3BodyId BodyOf( const PhysicsBody& pb ) const;
@@ -428,6 +450,21 @@ private:
 	void BuildLevel();
 	flecs::entity CreateEntity();
 	void DestroyEntity( flecs::entity e );
+
+	// The state model (stand_ins.cpp).
+	bool m_followsServer = false;
+	bool StandsIn( flecs::entity e ) const
+	{
+		return m_followsServer && e.has<StandIn>();
+	}
+	// An entity's bodies described (the PhysicsBody's, or the ragdoll's parts), and built again.
+	void DescribeBodies( flecs::entity e, std::vector<uint8_t>& out ) const;
+	void DescribeBody( b3BodyId body, std::vector<uint8_t>& out ) const;
+	b3BodyId BuildBody( ByteReader& r, bool standIn, Transform at, b3Vec3 linear, b3Vec3 angular, b3ShapeId& first );
+	void DestroyBodies( flecs::entity e );
+	// Gone from the server's world: its bodies and the entity, nothing else.
+	void RemoveForState( flecs::entity e );
+	int SnapIndex( flecs::entity_t id ) const;
 
 	flecs::entity CreateProp( ShapeKind kind, b3Vec3 position, b3Quat rotation, b3Vec3 halfExtents, b3Vec3 velocity,
 							  uint32_t owner, uint32_t lifetimeTicks, const ShapeMaterial& material = {} );
