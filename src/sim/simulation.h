@@ -217,6 +217,8 @@ public:
 	// Which section of the bytes PhysicsWorldBytes last made a byte is in ("contacts, 1234 in"), and
 	// the sizes of Box3D's structs as this build lays them out.
 	static std::string PhysicsByteSection( size_t at );
+	// What that byte is, when it is in the contacts (`bytes`: what PhysicsWorldBytes made).
+	static std::string PhysicsContactByte( const std::vector<uint8_t>& bytes, size_t at );
 	static std::string PhysicsStructSizes();
 
 	// The state network model (ROADMAP step 3; stand_ins.cpp). No physics engine internals cross:

@@ -52,6 +52,82 @@ void cbx_StructSizes( char* out, int capacity )
 			  (int)sizeof( b3Island ), (int)sizeof( b3IslandSim ), (int)sizeof( b3TreeNode ), (int)sizeof( b3GraphColor ) );
 }
 
+void cbx_DescribeContactByte( const uint8_t* snap, int size, int section, int at, char* out, int capacity )
+{
+	int cursor = section;
+	int count = 0;
+	if ( cursor + 4 > size )
+	{
+		snprintf( out, (size_t)capacity, "no contacts section" );
+		return;
+	}
+	memcpy( &count, snap + cursor, 4 );
+	cursor += 4;
+	for ( int i = 0; i < count; ++i )
+	{
+		if ( cursor + (int)sizeof( b3Contact ) + 4 > size )
+		{
+			break;
+		}
+		b3Contact c;
+		memcpy( &c, snap + cursor, sizeof( b3Contact ) );
+		const bool live = c.contactId == i;
+		const int start = cursor;
+		cursor += (int)sizeof( b3Contact );
+		if ( at >= start && at < cursor )
+		{
+			const int o = at - start;
+			snprintf( out, (size_t)capacity,
+					  "contact %d (%s, flags %u, manifolds %d), its byte %d (flags at %d, manifoldCount at %d, cached at %d, "
+					  "friction at %d, the cache at %d, restitution at %d)",
+					  i, live ? "live" : "free", c.flags, c.manifoldCount, o, (int)offsetof( b3Contact, flags ),
+					  (int)offsetof( b3Contact, manifoldCount ), (int)offsetof( b3Contact, cachedRotationA ),
+					  (int)offsetof( b3Contact, friction ), (int)offsetof( b3Contact, convexContact ),
+					  (int)offsetof( b3Contact, restitution ) );
+			return;
+		}
+		int manifoldCount = 0;
+		memcpy( &manifoldCount, snap + cursor, 4 );
+		cursor += 4;
+		if ( live == false )
+		{
+			continue;
+		}
+		for ( int m = 0; m < manifoldCount && cursor + (int)sizeof( b3Manifold ) <= size; ++m )
+		{
+			if ( at >= cursor && at < cursor + (int)sizeof( b3Manifold ) )
+			{
+				b3Manifold manifold;
+				memcpy( &manifold, snap + cursor, sizeof( b3Manifold ) );
+				const int o = at - cursor;
+				const int point = o / (int)sizeof( b3ManifoldPoint );
+				snprintf( out, (size_t)capacity,
+						  "contact %d (live, flags %u), manifold %d of %d (points used %d), its byte %d: point %d's byte %d "
+						  "(normalImpulse at %d, normalVelocity at %d, featureId at %d; points end at %d)",
+						  i, c.flags, m, manifoldCount, manifold.pointCount, o, point, o - point * (int)sizeof( b3ManifoldPoint ),
+						  (int)offsetof( b3ManifoldPoint, normalImpulse ), (int)offsetof( b3ManifoldPoint, normalVelocity ),
+						  (int)offsetof( b3ManifoldPoint, featureId ), (int)offsetof( b3Manifold, normal ) );
+				return;
+			}
+			cursor += (int)sizeof( b3Manifold );
+		}
+		if ( c.flags & b3_simMeshContact )
+		{
+			int caches = 0;
+			memcpy( &caches, snap + cursor, 4 );
+			cursor += 4;
+			if ( at >= cursor && at < cursor + caches * (int)sizeof( b3TriangleCache ) )
+			{
+				snprintf( out, (size_t)capacity, "contact %d (live, mesh), triangle cache %d, its byte %d", i,
+						  ( at - cursor ) / (int)sizeof( b3TriangleCache ), ( at - cursor ) % (int)sizeof( b3TriangleCache ) );
+				return;
+			}
+			cursor += caches * (int)sizeof( b3TriangleCache );
+		}
+	}
+	snprintf( out, (size_t)capacity, "past the contacts read (%d of them)", count );
+}
+
 int cbx_SnapSections( const char** names, int* starts, int capacity )
 {
 	for ( int i = 0; i < b3SnapSectionCount && i < capacity; ++i )

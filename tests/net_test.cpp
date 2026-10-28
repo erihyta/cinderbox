@@ -6349,6 +6349,7 @@ void TestPhysicsAlone()
 						if ( theirs[k] != mine[k] )
 						{
 							std::printf( "      byte %zu: %s\n", k, Simulation::PhysicsByteSection( k ).c_str() );
+							std::printf( "        %s\n", Simulation::PhysicsContactByte( mine, k ).c_str() );
 							shown += 1;
 							while ( k + 1 < theirs.size() && k + 1 < mine.size() && k - ( k & ~size_t( 7 ) ) < 7 && theirs[k + 1] != mine[k + 1] )
 							{
