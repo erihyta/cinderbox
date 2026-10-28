@@ -499,6 +499,7 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 	m_world.component<StateBody>();
 	const int physicsIndex = SnapIndex( m_world.component<PhysicsBody>().id() );
 	const int ragdollIndex = SnapIndex( m_world.component<RagdollBodies>().id() );
+	const int pusherIndex = SnapIndex( m_world.component<Pusher>().id() );
 	const int heldIndex = SnapIndex( m_world.component<HeldItem>().id() );
 	const int transformIndex = SnapIndex( m_world.component<Transform>().id() );
 	const int velocityIndex = SnapIndex( m_world.component<Velocity>().id() );
@@ -538,9 +539,9 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 		// Its components, but the physics handles (this world's own).
 		for ( size_t i = 0; i < m_snapComponents.size(); ++i )
 		{
-			if ( int( i ) == physicsIndex || int( i ) == ragdollIndex )
+			if ( int( i ) == physicsIndex || int( i ) == ragdollIndex || int( i ) == pusherIndex )
 			{
-				continue;
+				continue; // (this world's own handles; a pusher is placed by this world's own step)
 			}
 			const SnapComponent& sc = m_snapComponents[i];
 			if ( rec.mask & ( uint32_t( 1 ) << i ) )

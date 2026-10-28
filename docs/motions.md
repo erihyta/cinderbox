@@ -251,7 +251,7 @@ Players weigh something: `mass` is a [movement parameter](server-mods.md#movemen
 
 | Where it counts | How |
 |---|---|
-| Walking into a prop | the player and the prop trade momentum by their masses: a 4 kg crate is kicked away, a 2 t block stops you |
+| Walking into a prop | none since M246: a solid prop stops you, one [pushed by characters](maps.md#who-pushes-what) is shoved by your pusher; a falling body pushes you out by its share of the two weights |
 | A `CbForce` of kind Force | newtons divided by the mass |
 | A `react`, a `CbLink` | shared by the two masses |
 | A ragdoll | weighs what its player did |
@@ -414,7 +414,7 @@ near, and flings the bodies it killed.
 | Step | What happens |
 |---|---|
 | The press | every simulation throws it on the same tick, from the thrower's own input: the thrower sees it leave with no round trip (the grenade: at its clip's marker). It also has the thrower's own velocity: a throw on the run goes further |
-| Hitting a player | it does not shove them: what is loose gives way before a player does, by what the two weigh (0.4 kg against 80) |
+| Hitting a player | it flies through them (characters touch no body in the physics step since M246) and hardly moves them: a body pushes a character out of itself by its share of the two weights (0.4 kg against 80) |
 | Flying | it is an item lying in the world, moving: the physics is the simulation's, the same everywhere. `net_grenade`: behind 100 ms, 111 predicted ticks of its flight are exactly the server's |
 | Who threw it | the item knows (`ctx.ThrownBy( item )`), until someone picks it up |
 | What it hits | the server mod's to decide: `ctx.Hits( kind )` is what items of the kind ran into on the tick before (what, how fast, where). The impact grenade goes off on the first hard hit (the frag when its time is up): `combat.damage` to everyone within 4 m, less with distance; a push on everything loose near it (`ctx.BodiesNear( point, radius )`: props, items, ragdolls), given off each body's centre so it tumbles; and `ctx.Destroy( item )`. The living keep their feet; one it kills is thrown, as a ragdoll, all of it (the blast is remembered for a few ticks, until the body has fallen) |

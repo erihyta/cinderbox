@@ -325,12 +325,71 @@ inline PlayerInput UnpackInput( const SimCommand& c )
 
 // Everything the simulation consumes for one tick. The server's copy is authoritative.
 // Events are applied first, then commands in the order listed, then inputs.
+// Where a character's pusher stands for a tick (M246; ROADMAP step 3): a capsule in the physics
+// world that shoves the bodies pushed by characters. Everything the physics world needs is here:
+// a simulation that follows another's physics places pushers from these alone. Its centre on a
+// 1/1024 m grid, its size in millimetres.
+inline constexpr float kPusherGrid = 1024.0f;
+struct PusherPlace
+{
+	uint32_t netId = 0; // the character's
+	int32_t x = 0, y = 0, z = 0;
+	uint16_t radius = 0, halfHeight = 0;
+
+	bool operator==( const PusherPlace& ) const = default;
+};
+
+// What a character does to the physics world (M246; ROADMAP step 3): every write to a physics
+// body that reads a character (its motions' pushes and breaks, what it launches or lets go of, the
+// ragdoll it leaves) is one of these, queued and applied at one of two points in the step (after
+// the characters move, before the physics step; after the items' own motions), self-contained: a simulation that follows another's
+// physics applies these as they are, whatever its own characters do. (A mod's command whose
+// numbers are all in it is applied directly: every simulation has the frame's commands.)
+enum class PhysicsEventType : uint8_t
+{
+	Push = 0,	   // an impulse on a body: `netId`, at `at`, `vector`
+	Break = 1,	   // the breakable `netId` breaks: blast at `at`, radius `vector.x`, speed `vector.y`, rubble lasts `ticks`
+	IntoWorld = 2, // the item `netId` (made with that NetId when missing: of `kind`, `count`, `board`) is put at
+				   // `at` (its grip), turned `turn`, going `vector`; `owner` != 0 also makes it a prop of
+				   // `owner`'s that lasts `ticks` (0: for ever)
+	Ragdoll = 3,   // a ragdoll of the player `netId` (slot `slot`): its feet at `at`, facing `yaw`, going
+				   // `vector`, weighing `mass`, lasting `ticks`; then hit (`hitAt`, `hitVector`, `mode`), and
+				   // the ragdolls kept to `count` (0: no cap). It is made with the NetId `made`
+};
+
+struct PhysicsEvent
+{
+	PhysicsEventType type = PhysicsEventType::Push;
+	// Where in the step it is applied: 0 after the characters move, 1 after the items' own motions
+	// (after the physics step: a frag's blast). Nothing waits for a later tick.
+	uint8_t phase = 0;
+	uint8_t mode = 0;
+	uint16_t kind = 0;
+	PlayerSlot slot = 0;
+	uint8_t count = 0;
+	uint32_t netId = 0;
+	uint32_t owner = 0;
+	uint32_t ticks = 0;
+	uint32_t made = 0; // the entity it made (a ragdoll), once applied
+	Float3 at, vector, hitAt, hitVector;
+	float turn[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	float yaw = 0.0f, mass = 0.0f;
+	std::vector<int32_t> board; // IntoWorld: the item's fields (empty: none)
+
+	bool operator==( const PhysicsEvent& ) const = default;
+};
+
 struct InputFrame
 {
 	uint32_t tick = 0;
 	std::vector<PlayerEvent> events;
 	std::vector<SimCommand> commands;
 	std::array<PlayerInput, kMaxPlayers> inputs{};
+	// The physics world's inputs for a simulation that follows another's physics
+	// (Simulation::SetFollowsPhysics): where the pushers stand, and what the characters did to it.
+	// Empty otherwise, and never sent (yet: M248).
+	std::vector<PusherPlace> pushers;
+	std::vector<PhysicsEvent> physics;
 
 	bool operator==( const InputFrame& ) const = default;
 };

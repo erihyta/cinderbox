@@ -78,7 +78,7 @@ addressed by a stable `NetId`.
 | Part | How |
 |---|---|
 | World | static boxes, ramps, steps and platforms from a baked map; dynamic boxes, spheres and capsules |
-| Player movement | a kinematic capsule mover (move-and-slide with Box3D's mover casts and plane solver); a pogo spring keeps it hovering, which carries it over steps. It has a mass (a movement parameter): where it meets a dynamic body the two trade momentum by what they weigh, so a crate is kicked away and a heavy block stops it. In a file of its own (`mover.*`) |
+| Player movement | a kinematic capsule mover (move-and-slide with Box3D's mover casts and plane solver); a pogo spring keeps it hovering, which carries it over steps. It has a mass (a movement parameter). It reads the physics world and never writes it (M246): what it meets stops it, a loose body pushing it out of itself by its share of the two weights; bodies [pushed by characters](docs/maps.md#who-pushes-what) it never meets (its pusher shoves them). Its capsule touches no body in the physics step and never sleeps (asleep, Box3D would reorder the bodies around it). In a file of its own (`mover.*`) |
 | Motions | what mods add to movement (a dash, a double jump): `CbMotion` nodes baked to text, sent in the schema, compiled against it and run for every player before the mover (`motions.*`). They happen on a press, on a mod event at the player, or hold while their conditions do (which can read the keys held). A motion is a trigger with parts: a **probe** (a ray along the look that has to find a point of the world, of a prop or of a player, and holds on to it after its flight: `MotionHold`, a component), and **effects** on a target (the player, what the probe found, or the entity a field names): an impulse once, a force while it is on (an acceleration, newtons, or toward a speed; ramped in; reacting on the other end), a link (a rope whose tension the two share by weight). The input is what a client already simulates ahead, so a player's own are predicted and rolled back. `MotionState` (a slot per motion: last use, uses, on until) is on players only where a server has motions |
 | Movement parameters | walk and sprint speed, acceleration, friction, air control, gravity, jump speed, turn rate, a fall limit, air friction, whether the movement input goes along the ground or the camera, whether the character is in the air whatever is under it, and what it weighs: values, not constants. The server's set is in `SimConfig::move` (its options, then its character's values); a mod's `SetMove` command gives one player its own (`MoveOverrides`, a component only players a mod touched have) |
 | Controls | WASD relative to the camera, Shift, Space: the engine's. Every other control is an action a mod declares |
@@ -159,8 +159,24 @@ deterministic and only its events and the characters' states cross, ROADMAP step
   alone. No snapshots, no checksums, no desyncs.
 - **Costs** (M245, bots on one machine): client work per frame 1.2 ms against 9.1 at 4 players, 3.8
   against 37 at 16; download 450 against 387 kbit/s at 4, 1149 against 441 at 16 (sending only what
-  is near comes in M247). Others' effects on you (a shove) arrive a round trip late; a loose crate
-  you walk into stops you until M246 predicts what you touch.
+  is near comes in M247). Others' effects on you (a shove) arrive a round trip late.
+
+**The physics world's inputs** (M246, both models; `physics_inputs.cpp`): characters read the
+physics world and never write it themselves, so it is a function of its inputs:
+
+- **Pushers**: a kinematic capsule per character (CatPusher), placed every tick from a list of
+  places on a 1/1024 m grid, which the server makes from its characters near something pushable.
+  They shove bodies pushed by characters and ragdolls, and touch nothing else.
+- **Physics events** (`PhysicsEvent`): every write to a body that reads a character (a motion's push
+  or break, an item launched or let go of, a kill's ragdoll) is queued and applied at one of two
+  points in the step (after the characters move; after the items' own motions), self-contained.
+  Nothing waits for a later tick (snapshots do not hold the queue). A mod's command whose numbers
+  are all in it stays direct: every simulation has the frame's commands.
+- **Following another's physics** (`SetFollowsPhysics`): a simulation takes the pushers and events
+  from its frame and drops its own; `PhysicsMade()` is what a step made, `PhysicsHash()` the physics
+  world's hash without the characters. `net_physics_alone`: a recorded session of punching, frags,
+  props and ragdolls, played again with every player standing still and the server's physics
+  inputs, has the server's physics world on every tick.
 
 The inputs model:
 

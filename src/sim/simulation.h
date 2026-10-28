@@ -183,6 +183,28 @@ public:
 	void SavePortable( std::vector<uint8_t>& out );
 	bool LoadPortable( const std::vector<uint8_t>& in );
 
+	// The physics world's inputs (M246; ROADMAP step 3; physics_inputs.cpp). Characters read the
+	// physics world and never write it themselves: what they do to it goes in by its inputs, which
+	// each step makes (PhysicsMade: the pushers' places) or, following another simulation's physics,
+	// takes from its frame instead (InputFrame::pushers), whatever its own characters do.
+	void SetFollowsPhysics( bool follows )
+	{
+		m_followsPhysics = follows;
+	}
+	bool FollowsPhysics() const
+	{
+		return m_followsPhysics;
+	}
+	// What the last step put into the physics world (its tick, its pushers' places, the physics
+	// events it applied, each with what it made): what a follower is given for that tick.
+	const InputFrame& PhysicsMade() const
+	{
+		return m_physicsMade;
+	}
+	// Hash of the physics world alone: every body that is not a character's, by its components
+	// (not its physics handles: those are this world's own).
+	uint64_t PhysicsHash() const;
+
 	// The state network model (ROADMAP step 3; stand_ins.cpp). No physics engine internals cross:
 	// SaveState writes the entities and globals, and a description of every body read from the
 	// physics engine (its type, its shapes). ApplyState makes this simulation's world the server's
@@ -458,6 +480,22 @@ private:
 	flecs::entity CreateEntity();
 	void DestroyEntity( flecs::entity e );
 
+	// The physics world's inputs (physics_inputs.cpp).
+	bool m_followsPhysics = false;
+	InputFrame m_physicsMade;
+	void PlacePushers( const InputFrame& frame );
+	void MakePusherPlaces( std::vector<PusherPlace>& out );
+	// Physics events: queued while characters act, applied at one point (after the characters move,
+	// before the physics step); a follower applies its frame's instead of its own.
+	std::vector<PhysicsEvent> m_physicsQueue;
+	void ApplyPhysicsEvents( const InputFrame& frame, uint8_t phase );
+	void ApplyPhysicsEvent( PhysicsEvent& event );
+	// An item a character lets go of: out of its hand now, into the world when the events are applied.
+	void QueueIntoWorld( flecs::entity item, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity, uint32_t propOwner = 0, uint32_t lifetimeTicks = 0 );
+	// The entity with this NetId, made when there is none (what a follower's events name).
+	flecs::entity EntityWithId( uint32_t netId );
+	PhysicsEvent RagdollEvent( flecs::entity player, uint32_t lifetimeTicks ) const;
+
 	// The state model (stand_ins.cpp).
 	bool m_followsServer = false;
 	bool StandsIn( flecs::entity e ) const
@@ -547,7 +585,8 @@ private:
 	void ApplyImpulse( flecs::entity e, const SimCommand& command );
 	void KillPlayer( flecs::entity e, const SimCommand& command );
 	void RespawnPlayer( flecs::entity e, const SimCommand& command );
-	flecs::entity CreateRagdoll( flecs::entity player, uint32_t lifetimeTicks );
+	// A ragdoll as a Ragdoll physics event says (RagdollEvent makes one from a player).
+	flecs::entity CreateRagdoll( const PhysicsEvent& event );
 	void EnforceRagdollCap( uint32_t cap );
 	void MoveCharacters( const InputFrame& frame );
 	// Slots (types.h): each player's intent of this tick, before anything asks what it holds.

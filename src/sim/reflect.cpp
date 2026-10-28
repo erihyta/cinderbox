@@ -70,6 +70,12 @@ std::vector<ComponentDef> BuildRegistry()
 	debris.doc = "Rubble: players stand on it and are stopped by it, but do not push it (a broken wall's pieces).";
 	registry.push_back( debris );
 
+	ComponentDef pushable;
+	pushable.name = "Pushable";
+	pushable.doc = "Pushed by characters: they walk through it and shove it (a ball). Without it a body is solid: they stand on it, "
+				   "are stopped by it, and only skills and blasts move it.";
+	registry.push_back( pushable );
+
 	ComponentDef container;
 	container.name = "Container";
 	container.doc = "Slots of its own: a chest. A player looking at it within reach opens it with the inventory, and moves items to and from it.";

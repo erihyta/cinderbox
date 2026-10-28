@@ -44,7 +44,8 @@ shook against the wall".
 | 1.8 | A: a frag (H) at `BrickWall` | it rolls, goes off after 2.5 s on both screens at once; the wall loses the pieces near it, the same on both screens; the rest stands |
 | 1.9 | Kill B | B falls as a ragdoll, the same on both screens; B comes back after a moment |
 | 1.10 | A: first person (`` ` ``), walk, shoot | the arms and the item in view, steady; shots go where the crosshair is |
-| 1.11 | A: walk into `CrateA`, the balls | they are kicked away; `HeavyCrateA` hardly moves |
+| 1.11 | A: walk into `CrateA`, jump onto it; then walk into `BallA` and `BallB` | the crate stops A as a wall does and does not move; A stands on it. A walks through the balls, which are shoved away, the same on B's screen (M246) |
+| 1.12 | A: punch the crate (the fist), then walk into a frag lying on the ground | the punch moves the crate; the frag is kicked aside (an item lying about is pushed by characters) |
 
 ## 2. Bodies
 
@@ -59,7 +60,7 @@ shook against the wall".
 | 2.5 | A: P near `CrateA`, drive it | it walks upright; the camera stands further back for a bigger body; it does not go through walls or `HeavyCrateA`, slides along them, turns in a corner without sticking (M221, M225, M226) |
 | 2.6 | A drives a crate into a gap narrower than it (a hole a frag made, or between two crates) | it stops at the gap, and comes out of it again |
 | 2.7 | B shoots and punches the crate A drives | the crate is hit as its own shape |
-| 2.8 | A: P away from the crate | it is a loose crate again, falls, can be kicked |
+| 2.8 | A: P away from the crate | it is a loose crate again, falls, solid (a skill moves it, walking does not) |
 | 2.9 | A: die while driving the crate | the crate is a loose crate again; A comes back as itself |
 
 ## 3. Another character

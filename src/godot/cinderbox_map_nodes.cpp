@@ -615,7 +615,8 @@ bool BakeBodyProp( CbProp* prop, const Transform3D& here, BakeContext& ctx )
 	std::vector<LevelBox> unused;
 	BakeContext probe; // (only whether it has shapes: the real bake is PropTemplate's)
 	const int found = BakeShapes( prop, ScaleOf( here ), unused, probe );
-	if ( found == 0 && HasLook( prop ) == false )
+	// (A plain one pushed by characters is a template too: the map's prop list has no room for it.)
+	if ( found == 0 && HasLook( prop ) == false && prop->get_pushed_by_characters() == false )
 	{
 		return false;
 	}
@@ -663,6 +664,12 @@ bool PropTemplate( CbProp* prop, const Transform3D& here, bool debris, EntityTem
 	else
 	{
 		t.components.push_back( MakeComponent( "Prop", { { "lifetime_seconds", 0.0 } } ) );
+		if ( prop->get_pushed_by_characters() )
+		{
+			AuthoredComponent pushable;
+			pushable.id = Fnv32( "Pushable" );
+			t.components.push_back( pushable );
+		}
 	}
 	t.shapes = AddShapeSet( ctx, std::move( set ) );
 	t.look = look ? LookOf( ctx, prop ) : kNoLook;
@@ -1329,6 +1336,9 @@ void CbProp::_bind_methods()
 	ADD_PROPERTY( PropertyInfo( Variant::INT, "shape", PROPERTY_HINT_ENUM, "Box,Sphere" ), "set_shape", "get_shape" );
 	ADD_PROPERTY( PropertyInfo( Variant::VECTOR3, "size" ), "set_size", "get_size" );
 	ADD_PROPERTY( PropertyInfo( Variant::FLOAT, "radius" ), "set_radius", "get_radius" );
+	ClassDB::bind_method( D_METHOD( "set_pushed_by_characters", "pushed" ), &CbProp::set_pushed_by_characters );
+	ClassDB::bind_method( D_METHOD( "get_pushed_by_characters" ), &CbProp::get_pushed_by_characters );
+	ADD_PROPERTY( PropertyInfo( Variant::BOOL, "pushed_by_characters" ), "set_pushed_by_characters", "get_pushed_by_characters" );
 }
 
 void CbProp::set_shape( int shape )
@@ -1516,6 +1526,7 @@ Dictionary CinderboxMapBaker::bake( Node* root, const String& path )
 		body["links"] = int( t.links.size() );
 		body["glue"] = double( t.glue );
 		body["debris"] = t.Find( Fnv32( "Debris" ) ) != nullptr;
+		body["pushed_by_characters"] = t.Find( Fnv32( "Pushable" ) ) != nullptr;
 		bodies.push_back( body );
 	}
 	result["bodies"] = bodies;

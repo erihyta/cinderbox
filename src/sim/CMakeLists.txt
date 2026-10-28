@@ -26,6 +26,7 @@ add_library(cb_sim STATIC
 	physics_threads.cpp
 	rollback.cpp
 	simulation.cpp
+	physics_inputs.cpp
 	stand_ins.cpp
 	state_session.cpp
 )

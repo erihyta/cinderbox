@@ -396,6 +396,17 @@ struct ModDriven
 	PlayerInput input;
 };
 
+// A character's pusher (M246): a kinematic capsule in the physics world that shoves the bodies
+// pushed by characters (CatPusher), placed every tick from the frame's PusherPlace. On the
+// character's entity; disabled while its place is not given (far from anything pushable).
+struct Pusher
+{
+	b3BodyId body = {};
+	b3ShapeId shape = {};
+	uint16_t radius = 0, halfHeight = 0; // its capsule's, mm (made again when they change)
+	uint32_t active = 0;
+};
+
 // Only in a simulation that follows a server's states (the state network model,
 // Simulation::ApplyState), and never in a snapshot or a hash. StandIn: an entity the server
 // simulates and this simulation only places (a tag). StateBody: the server's description of its
@@ -527,19 +538,48 @@ CB_CHECK_COMPONENT( MotionHold, 48 );
 
 #undef CB_CHECK_COMPONENT
 
-// Collision categories.
+// Collision categories. Characters read the physics world and never write it themselves (M246):
+// a body is either solid to them (they stand on it and are stopped by it; only events and
+// explosions move it) or pushed by characters (they walk through it, and their pushers shove it).
 enum CollisionCategory : uint64_t
 {
 	CatStatic = 1 << 0,
+	// A solid body (a crate, a body nobody drives).
 	CatProp = 1 << 1,
 	CatPlayer = 1 << 2,
+	// A ragdoll's parts: pushed by characters.
 	CatRagdoll = 1 << 3,
-	// Rubble (a broken wall's pieces): a player's capsule does not collide with it, so a player never
-	// shoves it, while the mover's own casts still meet it (players stand on it and are stopped by it).
+	// Rubble (a broken wall's pieces): solid, as a prop.
 	CatDebris = 1 << 4,
 	// A prop a player drives (M221): its own shapes, moved with the mover. Others walk into it and
 	// shots hit it; its own mover's ground ray does not stand on it (nor anyone's: as a player).
 	CatDriven = 1 << 5,
+	// A body pushed by characters (CbProp's flag; an item lying about): movers never meet it.
+	CatPushable = 1 << 6,
+	// A character's pusher (M246): a capsule in the physics world, placed every tick where the
+	// character is; it shoves pushed-by-characters bodies and ragdolls, and nothing else meets it.
+	CatPusher = 1 << 7,
 };
+
+// What a shape of a category collides with (Box3D's mask: both sides must agree) and is found
+// by. Characters' own shapes touch no physics body in the physics step; pushable bodies are not
+// met by movers (they query as CatPlayer or CatDriven); a pusher meets only what it shoves.
+inline uint64_t CollisionMask( uint64_t category )
+{
+	constexpr uint64_t bodies = CatProp | CatRagdoll | CatDebris | CatPushable;
+	if ( category & ( CatPlayer | CatDriven ) )
+	{
+		return ~( bodies | CatPusher );
+	}
+	if ( category & ( CatPushable | CatRagdoll ) )
+	{
+		return ~uint64_t( CatPlayer | CatDriven );
+	}
+	if ( category & CatPusher )
+	{
+		return CatPushable | CatRagdoll;
+	}
+	return ~uint64_t( CatPusher );
+}
 
 } // namespace cb
