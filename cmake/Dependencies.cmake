@@ -31,6 +31,8 @@ FetchContent_Declare(flecs
 #   clamped impulses stay bit-identical across architectures.
 # - box3d-snapshot-sections.patch: a snapshot notes where each of its sections begins, so a test
 #   can say which part of two snapshots that should be equal differs (cbx_SnapSections).
+# - box3d-snapshot-free-contacts.patch: a free contact slot's cache is zeroed in a snapshot (a mesh
+#   contact's freed triangle cache left its address there: CI's macOS build saw it, M247).
 set(BOX3D_DISABLE_SIMD OFF CACHE BOOL "" FORCE)
 set(BOX3D_DOUBLE_PRECISION OFF CACHE BOOL "" FORCE)
 find_package(Git REQUIRED)
@@ -46,6 +48,9 @@ FetchContent_Declare(box3d
 		-P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
 	COMMAND "${CMAKE_COMMAND}" -DGIT=${GIT_EXECUTABLE}
 		-DPATCH=${CMAKE_CURRENT_LIST_DIR}/patches/box3d-snapshot-sections.patch
+		-P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
+	COMMAND "${CMAKE_COMMAND}" -DGIT=${GIT_EXECUTABLE}
+		-DPATCH=${CMAKE_CURRENT_LIST_DIR}/patches/box3d-snapshot-free-contacts.patch
 		-P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
 )
 

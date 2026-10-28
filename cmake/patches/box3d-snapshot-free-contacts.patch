@@ -1,0 +1,19 @@
+diff --git a/src/world_snapshot.c b/src/world_snapshot.c
+index f06b865..64c7d81 100644
+--- a/src/world_snapshot.c
++++ b/src/world_snapshot.c
+@@ -977,6 +977,14 @@ static void b3SerContacts( b3RecBuffer* buf, b3World* world )
+ 			copy.meshContact.triangleCache.capacity = 0;
+ 		}
+ 		b3ScrubContact( &copy );
++		if ( !isLive )
++		{
++			// A free slot holds no contact, but what its last one left: its cache, or (a mesh contact's,
++			// whose flag went with it) a freed triangle cache's address. Nothing reads it; zeroed, so a
++			// snapshot does not depend on where that memory was.
++			memset( (uint8_t*)&copy + offsetof( b3Contact, convexContact ), 0,
++					offsetof( b3Contact, restitution ) - offsetof( b3Contact, convexContact ) );
++		}
+ 		b3SnapW_Bytes( buf, &copy, sizeof( b3Contact ) );
+ 
+ 		if ( !isLive )
