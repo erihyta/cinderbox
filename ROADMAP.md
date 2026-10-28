@@ -212,10 +212,17 @@ which.
 
 **How the hybrid works**
 
-- **The physics world is a function of its events.** Characters read it (they stand on debris, are
-  stopped by walls, are pushed out of a falling crate) and never write to it. What a character does
-  to a body (a punch's shove, a throw, a launch, a break, a body tossed) is a *physics event*,
-  applied at one point in the step and recorded with its tick. Mods' commands already are.
+- **The physics world is a function of its events and its pushers.** Characters read it (they
+  stand on debris, are stopped by walls, are pushed out of a falling crate) and never write to it
+  themselves. What a character does to a body (a punch's shove, a throw, a launch, a break, a body
+  tossed) is a *physics event*, applied at one point in the step and recorded with its tick. Mods'
+  commands already are.
+- **Pushers**: a capsule per character in the physics world, placed every tick where the server
+  says the character is (rounded; the server's own pusher stands at the rounded place too). It is
+  what walks into bodies: it shoves the ones *pushed by characters* and touches nothing else. The
+  server sends a character's place as physics input only while the character is near something
+  pushable: far from any, a pusher costs nothing. About 9 bytes a pusher a tick: 200 players wading
+  in one ball pit are about 0.9 Mbit/s to each client (accepted).
 - **An event is self-contained**: everything the physics world needs travels in it, and the server
   applies it exactly as the clients get it, with the same rounded numbers. A tossed body's eleven
   parts and their speeds are in its event; the server builds the ragdoll from those, not from its
@@ -241,7 +248,7 @@ which.
 | Limitation | What it means |
 |---|---|
 | Your own physical effects are late | a round trip and the buffer: the muzzle flash and the sound at once, the crate flies later. A ball game played by bumping (Rocket League) belongs to the inputs model |
-| Characters never push bodies | walking does not kick crates and balls any more (it already does not move debris); a skill's shove still does, as an event. A grapple pulling a prop, a probe holding one, driving a crate and carrying change ([M249](#3-two-network-models)) |
+| A body is pushable or solid, not both | **pushed by characters** (a ball): a character walks through it and its pusher shoves it, in both models (a ball pit works, the balls scattering a round trip after you wade in). **Solid** (a crate, a wall piece, debris): it stops a character, who can stand on it; only events move it. Lost from today: standing on what you also push, and a heavy body slowing you (a pusher shoves anything pushable at full strength; a pusher with the player's mass, chasing the player, is possible later, but you would pass through what it fails to move: heavy things are better solid). Why: a walker that bumped into what it pushes would move by where the body is, and in the hybrid a client's predicted walker reads a world drawn in the past, so it would be corrected every tick of pushing. A grapple pulling a prop, a probe holding one, driving a crate and carrying change ([M249](#3-two-network-models)) |
 | You stand in the present on a world drawn in the past | settled debris is exact; on moving or collapsing debris the server corrects you. Later, if it matters: the server checks a player's move against the physics as that player saw it |
 | The whole map's physics runs on every client | there is no interest management for physics: the weakest client's processor is the world's physics budget |
 | Determinism stays absolute | CI's six builds check it; a desync costs a physics snapshot |
@@ -252,17 +259,23 @@ which.
 | Milestone | What |
 |---|---|
 | M244, M245 (done) | **The server-state model** ([history](docs/HISTORY.md)). Measured that a simulation's whole state is mostly Box3D's internals (760 KB at 32 players, 670 KB of them), then streamed entity states with stand-ins. Carries over: `--net-model` and the welcome saying which, the state message and its codec (for the characters' states), a session per model in the game, stand-ins (for the other characters), `cb_replay state`, the tests' harness. Goes when M248 lands: streaming props and debris, bodies' descriptions, applying the whole world from a state |
-| **M246** | **Characters read the physics world and never write it.** The mover stops shoving loose bodies; characters' capsules no longer touch physics bodies in Box3D's solver (the mover pushes the character out of them instead). Every write to a physics body from a motion, a slot or a mod's command becomes a self-contained physics event, queued and applied at one point in the step, and recorded in the frame. A simulation can take its physics events from outside instead of making its own. Checked: a scenario run again with different players' inputs, fed the first run's physics events, has the same physics hash on every tick |
+| **M246** | **Characters read the physics world and never write it themselves.** `CbProp` gets **pushed by characters** (off by default: solid; the balls in `test_ground` on), and today's debris rule becomes that flag off. The mover walks through pushable bodies and collides with solid ones (its shove by weight goes); characters' capsules no longer touch physics bodies in Box3D's solver. Pushers in the physics world, placed from a list in each tick's frame, which the server fills with its characters' rounded places while they are near something pushable. Every write to a physics body from a motion, a slot or a mod's command becomes a self-contained physics event, queued and applied at one point in the step, and recorded in the frame. A simulation can take its physics events and pushers from outside instead of making its own. A physics hash of the physics entities alone. Checked: a scenario run again with different players' inputs, fed the first run's physics events and pushers, has the same physics hash on every tick (if the characters' capsules in the same Box3D world still change it, the second world moves into M246). Reference hashes are made again; the playtest checklist's 1.11 changes |
 | M247 | **The physics world stands alone.** The characters move to a Box3D world of their own (the mover and the casts ask both); bodies move between the worlds by events (idle bodies, driven props, a ragdoll); NetIds from two counters; the physics world gets its own snapshot and checksum. Checked: the same physics events with no characters at all give the same physics world, byte for byte |
 | M248 | **The hybrid on the wire** (`--net-model hybrid`; `state` goes). The physics events and checksums are streamed (the frame batches, without the inputs); the client's physics runs in the past, its buffer chosen from the latency. The characters' states use M245's codec, characters only: the other characters are interpolated and your own predicted against the physics. Joining sends the physics snapshot. M244 and M245's physics streaming is deleted. The default turns to `hybrid` once it passes a two-game playtest |
 | M249 | **What pushed bodies, reworked**: the grapple and links on props, probes that hold on, driving a crate, carrying; a player tossed (a body in the physics world, breaking walls) and getting up again; your own effects shown at once where they can be (a projectile handed over) |
 | M250 | **Many players**: hits rewind the other characters to where the shooter saw them (lag compensation); characters' states sent by what is near, by priority; private fields and hidden characters; measured with hundreds of bots |
 
-**Open**
+**Decided with it (2026-10-28)**
 
-- **One rule in both models?** Leaning yes: a map and a mod then play the same whichever model a
-  server runs, and the simulation has one path. The inputs model would lose walking pushes too.
-- **The model's name**: `hybrid` while it is built.
+- **One meaning in both models**: whether characters push a body is the body's own (`CbProp`'s
+  flag), and it means the same on every server: no model switches it off, and a map plays the same
+  whichever model a server runs. (A single rule, nothing pushable, was considered: it breaks ball
+  pits.)
+- **The flag's default**: solid. Walking through a crate looks wrong and loses standing on it;
+  light things that should scatter (balls, cans) are marked.
+- **Pushers' bandwidth**: accepted as above; it only costs while characters touch pushable things.
+- **The model's name**: `hybrid` while it is built. M245's `state` model stays in the code until
+  M248 replaces it.
 
 **What is in the way of many players today** (the inputs model): every client steps the whole
 world, and steps it again for the whole rollback window whenever a remote player's input was not
