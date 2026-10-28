@@ -3427,6 +3427,24 @@ std::string Simulation::PhysicsByteSection( size_t at )
 	return text;
 }
 
+std::string Simulation::PhysicsContactByte( const std::vector<uint8_t>& bytes, size_t at )
+{
+	const char* names[128];
+	int starts[128];
+	const int count = std::min( cbx_SnapSections( names, starts, 128 ), 128 );
+	for ( int i = 0; i < count; ++i )
+	{
+		if ( std::strcmp( names[i], "contacts" ) == 0 && bytes.size() > sizeof( uint32_t ) )
+		{
+			char text[512];
+			cbx_DescribeContactByte( bytes.data() + sizeof( uint32_t ), int( bytes.size() - sizeof( uint32_t ) ), starts[i],
+									 int( at - sizeof( uint32_t ) ), text, int( sizeof( text ) ) );
+			return text;
+		}
+	}
+	return "no contacts section";
+}
+
 std::string Simulation::PhysicsStructSizes()
 {
 	char text[512];

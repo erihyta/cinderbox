@@ -27,6 +27,10 @@ void cbx_SerializeWorld( b3WorldId worldId, cbx_WriteFcn* write, void* context )
 int cbx_SnapSections( const char** names, int* starts, int capacity );
 // The sizes of Box3D's structs a snapshot holds, as this build lays them out ("b3Body 240 ...").
 void cbx_StructSizes( char* out, int capacity );
+// What a byte of a snapshot's contacts section is (`snap` the snapshot, `section` where the contacts
+// begin in it, `at` the byte): which contact, live or free, its flags, and the field (of the
+// contact, or of a manifold's point: which, and whether the manifold uses it).
+void cbx_DescribeContactByte( const uint8_t* snap, int size, int section, int at, char* out, int capacity );
 
 // Overwrites an existing world in place. Returns false on a corrupt or incompatible image.
 // `keep` gives lasting memory for what the world keeps pointing at (a triangle mesh's, a height
