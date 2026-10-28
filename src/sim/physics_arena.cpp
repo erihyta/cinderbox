@@ -213,6 +213,10 @@ void* PhysicsArena::Allocate( size_t size, size_t alignment )
 	}
 
 	uint8_t* payload = m_base + blockOffset + payloadOffset;
+	// Zeroed: a block used before (by either of a simulation's two worlds: M247) would otherwise hand
+	// its old bytes to whatever Box3D leaves unwritten, and a world's saved bytes would depend on what
+	// else shared the arena (CI's macOS build saw it).
+	std::memset( payload, 0, size );
 	BlockHeader bh = { uint32_t( sizeClass ), uint32_t( payloadOffset ), kMagic, 0 };
 	std::memcpy( payload - sizeof( BlockHeader ), &bh, sizeof( bh ) );
 	h->liveBytes += blockSize;
