@@ -4931,6 +4931,145 @@ void TestModDriven()
 	CHECK( sim.FindEntity( npc ).is_valid() == false );
 }
 
+// The physics world stands alone (M247; ROADMAP step 3): bodies go between it and the characters'
+// world by its events. A body nobody drives taken over (and the player's own left behind), a crate
+// driven, then let go when its driver takes over the body left behind, an item spawned, picked up and
+// dropped, a player killed into a ragdoll. A simulation with no characters at all (no joins, no
+// inputs), given the first's physics events and pushers, has its physics world on every tick, by
+// its entities and by Box3D's own bytes.
+void TestPhysicsWithoutCharacters()
+{
+	const SimConfig config = TestConfig();
+	Simulation sim( config, FlatMap() );
+	std::vector<InputFrame> frames;
+	std::vector<InputFrame> made;
+	std::vector<std::pair<uint64_t, uint64_t>> hashes;
+	uint32_t idle = 0, crate = 0, item = 0;
+	for ( uint32_t t = 0; t < 300; ++t )
+	{
+		InputFrame f;
+		f.tick = t;
+		if ( t == 0 )
+		{
+			f.events.push_back( { PlayerEventType::Join, 0 } );
+			f.events.push_back( { PlayerEventType::Join, 1 } );
+		}
+		SimCommand c;
+		switch ( t )
+		{
+			case 5:
+				c.type = CommandType::SpawnBody;
+				c.a = { 3.0f, 0.0f, 3.0f };
+				idle = sim.Globals().nextNetId;
+				f.commands.push_back( c );
+				break;
+			case 10:
+				c.type = CommandType::SpawnProp;
+				c.value = -1;
+				c.mode = uint8_t( ShapeKind::Box );
+				c.a = { -3.0f, 0.5f, 3.0f };
+				c.c = { 0.4f, 0.4f, 0.4f };
+				crate = sim.Globals().nextNetId;
+				f.commands.push_back( c );
+				break;
+			case 30:
+				c.type = CommandType::Possess;
+				c.target = SlotTarget( 0 );
+				c.other = idle;
+				f.commands.push_back( c );
+				break;
+			case 60:
+				c.type = CommandType::Possess;
+				c.target = SlotTarget( 1 );
+				c.other = crate;
+				f.commands.push_back( c );
+				break;
+			case 120:
+				// Slot 1 takes over the body slot 0 left: the crate is let go.
+				c.type = CommandType::Possess;
+				c.target = SlotTarget( 1 );
+				c.other = kCharacterIdBase; // slot 0's first body (the first character's NetId)
+				f.commands.push_back( c );
+				break;
+			case 150:
+				c.type = CommandType::SpawnItem;
+				c.a = { 0.0f, 1.0f, 2.0f };
+				item = sim.Globals().nextNetId;
+				f.commands.push_back( c );
+				break;
+			case 180:
+				c.type = CommandType::PickUpItem;
+				c.target = SlotTarget( 0 );
+				c.other = item;
+				f.commands.push_back( c );
+				break;
+			case 210:
+				c.type = CommandType::DropItem;
+				c.target = item;
+				c.a = { 1.0f, 1.5f, 1.0f };
+				f.commands.push_back( c );
+				break;
+			case 240:
+				c.type = CommandType::Kill;
+				c.target = SlotTarget( 1 );
+				c.mode = 1;
+				c.b = { 0.0f, 2.0f, 4.0f };
+				f.commands.push_back( c );
+				break;
+			default:
+				break;
+		}
+		f.inputs[0].moveForward = t > 40 && t < 100 ? int8_t( 90 ) : int8_t( 0 );
+		f.inputs[1].moveForward = t > 70 && t < 110 ? int8_t( 127 ) : int8_t( 0 );
+		f.inputs[1].cameraYaw = 16384;
+		sim.Step( f );
+		frames.push_back( f );
+		made.push_back( sim.PhysicsMade() );
+		hashes.push_back( { sim.PhysicsHash(), sim.PhysicsWorldHash() } );
+	}
+	size_t kinds[16] = {};
+	for ( const InputFrame& m : made )
+	{
+		for ( const PhysicsEvent& e : m.physics )
+		{
+			kinds[size_t( e.type ) & 15] += 1;
+		}
+	}
+	std::printf( "    events: %zu take-overs, %zu let go, %zu left behind, %zu into the world, %zu ragdolls, %zu spawns\n",
+				 kinds[size_t( PhysicsEventType::TakeOver )], kinds[size_t( PhysicsEventType::Enter )], kinds[size_t( PhysicsEventType::Idle )],
+				 kinds[size_t( PhysicsEventType::IntoWorld )], kinds[size_t( PhysicsEventType::Ragdoll )], kinds[size_t( PhysicsEventType::Spawn )] );
+	CHECK( kinds[size_t( PhysicsEventType::TakeOver )] >= 4 ); // the body, the crate, the left body, the item
+	CHECK( kinds[size_t( PhysicsEventType::Enter )] == 1 );
+	CHECK( kinds[size_t( PhysicsEventType::Idle )] >= 1 );
+	CHECK( kinds[size_t( PhysicsEventType::IntoWorld )] == 1 );
+	CHECK( kinds[size_t( PhysicsEventType::Ragdoll )] == 1 );
+
+	Simulation alone( config, FlatMap() );
+	alone.SetFollowsPhysics( true );
+	uint32_t wrong = UINT32_MAX, wrongWorld = UINT32_MAX;
+	for ( size_t i = 0; i < frames.size(); ++i )
+	{
+		InputFrame f = frames[i];
+		f.events.clear();
+		f.inputs = {};
+		f.pushers = made[i].pushers;
+		f.physics = made[i].physics;
+		alone.Step( f );
+		if ( alone.PhysicsHash() != hashes[i].first && wrong == UINT32_MAX )
+		{
+			wrong = f.tick;
+		}
+		if ( alone.PhysicsWorldHash() != hashes[i].second && wrongWorld == UINT32_MAX )
+		{
+			wrongWorld = f.tick;
+		}
+	}
+	std::printf( "    with no characters: entities %s, Box3D world %s\n", wrong == UINT32_MAX ? "the same" : ( "differ from tick " + std::to_string( wrong ) ).c_str(),
+				 wrongWorld == UINT32_MAX ? "the same" : ( "differs from tick " + std::to_string( wrongWorld ) ).c_str() );
+	CHECK( wrong == UINT32_MAX );
+	CHECK( wrongWorld == UINT32_MAX );
+}
+
 // Found after M222 (hunting bugs): what a slot drives can be removed: a mod's Destroy, the props
 // cap (the player spawned the crate it drives). The body a slot drives stays; anything else goes.
 void TestDrivenBodyKept()
@@ -9213,7 +9352,8 @@ void TestFastLaunch()
 		d.index = 0;
 		d.a = { 0.0f, 0.03f + drop, 3.0f };
 		f.commands.push_back( d );
-		const uint32_t dartId = sim.Globals().nextNetId + 12;
+		// (The crates are made when the physics events are applied, after the commands: M247.)
+		const uint32_t dartId = sim.Globals().nextNetId;
 		uint32_t dartHits = 0, mostThatTick = 0;
 		uint32_t seen = sim.Globals().impactCount;
 		for ( int t = 0; t < 60; ++t )
@@ -12787,6 +12927,7 @@ int main( int argc, char** argv )
 		{ "item_breaks", TestItemBreaks },
 		{ "glue", TestGlue },
 		{ "pushers", TestPushers },
+		{ "physics_without_characters", TestPhysicsWithoutCharacters },
 		{ "slopes", TestSlopes },
 		{ "templates", TestTemplates },
 		{ "sim_events", TestSimEvents },

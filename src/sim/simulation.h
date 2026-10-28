@@ -97,7 +97,12 @@ private:
 struct SimGlobals
 {
 	uint32_t tick = 0;
+	// NetIds come from two counters (M247): the physics world's entities' from 1, the characters'
+	// (players, the items they make) from kCharacterIdBase. So a simulation without the characters
+	// (following another's physics) still names every physics body as the server does.
 	uint32_t nextNetId = 1;
+	uint32_t nextCharacterId = kCharacterIdBase;
+	uint32_t reserved = 0;
 	uint64_t rngState = 0;
 	uint32_t playerNetIds[kMaxPlayers] = {}; // 0 = slot empty
 	// Only ever grows, so presentation can tell how many impacts it missed. The ring holds the
@@ -109,7 +114,7 @@ struct SimGlobals
 	ModEventRecord modEvents[kModEventHistory] = {};
 };
 
-static_assert( sizeof( SimGlobals ) == 16 + 4 * kMaxPlayers + 8 + kImpactHistory * sizeof( ImpactRecord ) +
+static_assert( sizeof( SimGlobals ) == 24 + 4 * kMaxPlayers + 8 + kImpactHistory * sizeof( ImpactRecord ) +
 											 kModEventHistory * sizeof( ModEventRecord ),
 			   "SimGlobals has padding: it is hashed as raw bytes" );
 
@@ -204,6 +209,9 @@ public:
 	// Hash of the physics world alone: every body that is not a character's, by its components
 	// (not its physics handles: those are this world's own).
 	uint64_t PhysicsHash() const;
+	// Hash of the physics world as Box3D serializes it (M247): every body, shape, joint, contact and
+	// its caches. Two simulations with it equal step on alike.
+	uint64_t PhysicsWorldHash();
 
 	// The state network model (ROADMAP step 3; stand_ins.cpp). No physics engine internals cross:
 	// SaveState writes the entities and globals, and a description of every body read from the
@@ -235,9 +243,17 @@ public:
 	// Box3D handles for a PhysicsBody component.
 	b3BodyId BodyOf( const PhysicsBody& pb ) const;
 	b3ShapeId ShapeOf( const PhysicsBody& pb ) const;
+	// The two Box3D worlds (M247): the physics world (the level, props, debris, items lying about,
+	// ragdolls, pushers: a function of its inputs alone) and the characters' (their capsules, a
+	// driven prop's body). A body is in one or the other; a stored handle says which (world0: 0 the
+	// physics world, 1 the characters'), BodyOf and ShapeOf give the live one.
 	b3WorldId PhysicsWorld() const
 	{
 		return m_physicsWorld;
+	}
+	b3WorldId CharacterWorld() const
+	{
+		return m_characterWorld;
 	}
 
 	// Hash of the canonical ECS image. Every physics body's pose and velocity is mirrored into
@@ -477,7 +493,9 @@ private:
 	void RegisterSnapComponent();
 
 	void BuildLevel();
-	flecs::entity CreateEntity();
+	// A new entity with the next NetId of its side (SimGlobals::nextNetId): the characters' for a
+	// player and what characters make (an item launched, given, split), the physics world's for the rest.
+	flecs::entity CreateEntity( bool character = false );
 	void DestroyEntity( flecs::entity e );
 
 	// The physics world's inputs (physics_inputs.cpp).
@@ -490,6 +508,11 @@ private:
 	std::vector<PhysicsEvent> m_physicsQueue;
 	void ApplyPhysicsEvents( const InputFrame& frame, uint8_t phase );
 	void ApplyPhysicsEvent( PhysicsEvent& event );
+	// A body leaving the physics world for a character (M247): its handle, kept until the TakeOver
+	// event that destroys it is applied (this step), and the event queued. What reads it meanwhile
+	// reads the character's own.
+	std::vector<std::pair<uint32_t, b3BodyId>> m_leaving;
+	void LeavePhysics( flecs::entity e, b3BodyId physicsBody );
 	// An item a character lets go of: out of its hand now, into the world when the events are applied.
 	void QueueIntoWorld( flecs::entity item, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity, uint32_t propOwner = 0, uint32_t lifetimeTicks = 0 );
 	// The entity with this NetId, made when there is none (what a follower's events name).
@@ -505,7 +528,18 @@ private:
 	// An entity's bodies described (the PhysicsBody's, or the ragdoll's parts), and built again.
 	void DescribeBodies( flecs::entity e, std::vector<uint8_t>& out ) const;
 	void DescribeBody( b3BodyId body, std::vector<uint8_t>& out ) const;
-	b3BodyId BuildBody( ByteReader& r, bool standIn, Transform at, b3Vec3 linear, b3Vec3 angular, b3ShapeId& first );
+	// How a body is built from its description: as described; placed (kinematic, a static one static:
+	// a stand-in, a driven prop); dynamic, weighing what its shapes do (a driven prop let go of).
+	enum class BuildAs
+	{
+		Described,
+		Placed,
+		Dynamic,
+	};
+	b3BodyId BuildBody( ByteReader& r, b3WorldId world, BuildAs as, Transform at, b3Vec3 linear, b3Vec3 angular, b3ShapeId& first );
+	// A body moved to the other world (M247: a prop driven, and let go of): the same body, built
+	// there from its description, where it is and as fast; the old one is gone. Its new handles.
+	PhysicsBody MoveBodyToWorld( b3BodyId body, b3WorldId to );
 	void DestroyBodies( flecs::entity e );
 	// Gone from the server's world: its bodies and the entity, nothing else.
 	void RemoveForState( flecs::entity e );
@@ -576,11 +610,14 @@ private:
 						   const std::vector<b3Vec3>* points, b3Vec3& bounds );
 	// The body's shapes' densities scaled so it weighs `mass` (nothing for 0).
 	void WeighBody( b3BodyId body, float mass );
-	static PhysicsBody MakePhysicsBody( b3BodyId body, b3ShapeId shape );
+	// A body's handles as a component keeps them: which world it is in, not the world's id.
+	PhysicsBody MakePhysicsBody( b3BodyId body, b3ShapeId shape ) const;
 
 	void ApplyEvents( const InputFrame& frame );
 	void ApplyCommands( const InputFrame& frame );
 	void ApplyCommand( const SimCommand& command );
+	// A Spawn physics event's prop (the mod's SpawnProp, its owner a NetId).
+	void SpawnProp( const SimCommand& command );
 	uint32_t ResolveTarget( uint32_t target ) const;
 	void ApplyImpulse( flecs::entity e, const SimCommand& command );
 	void KillPlayer( flecs::entity e, const SimCommand& command );
@@ -672,6 +709,7 @@ private:
 	std::vector<std::unique_ptr<uint64_t[]>> m_keptGeometry;
 	std::unique_ptr<PhysicsTasks> m_tasks;
 	b3WorldId m_physicsWorld = {};
+	b3WorldId m_characterWorld = {};
 
 	std::vector<SnapComponent> m_snapComponents;
 	// State whose size the server's mods decide is kept in components that get their size when

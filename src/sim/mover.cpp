@@ -187,7 +187,9 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	float rayLength = pogoRest + body.radius;
 	b3Pos rayOrigin = b3Add( t.position, capsule.center1 );
 	b3QueryFilter groundFilter = { CatPlayer, CatStatic | CatProp | CatDebris, 0, nullptr };
-	b3RayResult ray = b3World_CastRayClosest( body.world, rayOrigin, { 0.0f, -rayLength, 0.0f }, groundFilter );
+	// (The ground is the physics world's: no character stands on another.)
+	const b3WorldId ground = b3World_IsValid( body.scenery ) ? body.scenery : body.world;
+	b3RayResult ray = b3World_CastRayClosest( ground, rayOrigin, { 0.0f, -rayLength, 0.0f }, groundFilter );
 
 	// Ground steeper than max_slope does not hold the character up: it slides down it, under gravity,
 	// along the slope the mover's planes give it, and cannot walk or jump up it.
@@ -245,10 +247,18 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 		ctx.count = 0;
 		ctx.origin = t.position;
 		b3World_CollideMover( body.world, t.position, &capsule, moverFilter, CollectPlanes, &ctx );
+		if ( b3World_IsValid( body.scenery ) )
+		{
+			b3World_CollideMover( body.scenery, t.position, &capsule, moverFilter, CollectPlanes, &ctx );
+		}
 
 		b3Vec3 targetDelta = b3Sub( target, t.position );
 		b3PlaneSolverResult solved = b3SolvePlanes( targetDelta, ctx.planes, ctx.count );
 		float fraction = b3World_CastMover( body.world, t.position, &capsule, solved.delta, moverFilter, MoverFilter, &ctx );
+		if ( b3World_IsValid( body.scenery ) )
+		{
+			fraction = std::min( fraction, b3World_CastMover( body.scenery, t.position, &capsule, solved.delta, moverFilter, MoverFilter, &ctx ) );
+		}
 		b3Vec3 delta = b3MulSV( fraction, solved.delta );
 		t.position = b3Add( t.position, delta );
 
