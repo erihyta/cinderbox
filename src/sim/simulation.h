@@ -506,7 +506,7 @@ private:
 	// Physics events: queued while characters act, applied at one point (after the characters move,
 	// before the physics step); a follower applies its frame's instead of its own.
 	std::vector<PhysicsEvent> m_physicsQueue;
-	void ApplyPhysicsEvents( const InputFrame& frame, uint8_t phase );
+	void ApplyPhysicsEvents( const InputFrame& frame, uint8_t phase, uint16_t after = 0 );
 	void ApplyPhysicsEvent( PhysicsEvent& event );
 	// A body leaving the physics world for a character (M247): its handle, kept until the TakeOver
 	// event that destroys it is applied (this step), and the event queued. What reads it meanwhile

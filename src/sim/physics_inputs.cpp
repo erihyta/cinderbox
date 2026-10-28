@@ -430,7 +430,7 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 	}
 }
 
-void Simulation::ApplyPhysicsEvents( const InputFrame& frame, uint8_t phase )
+void Simulation::ApplyPhysicsEvents( const InputFrame& frame, uint8_t phase, uint16_t after )
 {
 	// What this point of the step applies: the frame's, following another's physics (what its own
 	// characters did is not the physics world's), or what was queued since the last point. Either
@@ -440,7 +440,7 @@ void Simulation::ApplyPhysicsEvents( const InputFrame& frame, uint8_t phase )
 	{
 		for ( const PhysicsEvent& event : frame.physics )
 		{
-			if ( event.phase == phase )
+			if ( event.phase == phase && ( phase != 0 || event.after == after ) )
 			{
 				m_physicsMade.physics.push_back( event );
 			}
@@ -451,6 +451,7 @@ void Simulation::ApplyPhysicsEvents( const InputFrame& frame, uint8_t phase )
 		for ( PhysicsEvent& event : m_physicsQueue )
 		{
 			event.phase = phase;
+			event.after = phase == 0 ? after : 0;
 			m_physicsMade.physics.push_back( std::move( event ) );
 		}
 	}

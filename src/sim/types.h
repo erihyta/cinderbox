@@ -377,6 +377,10 @@ struct PhysicsEvent
 	// after the characters move, 2 after the items' own motions (after the physics step: a frag's
 	// blast). Nothing waits for a later tick.
 	uint8_t phase = 0;
+	// Phase 0: after which of the frame's commands (0: the players' joins and leaves; k + 1: command
+	// k). Each command's are applied before the next command runs, which may read what they did (a
+	// body left behind, taken over in the same tick by another player).
+	uint16_t after = 0;
 	uint8_t mode = 0;
 	uint16_t kind = 0;
 	PlayerSlot slot = 0;

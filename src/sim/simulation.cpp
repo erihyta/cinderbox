@@ -3184,10 +3184,16 @@ void Simulation::Step( const InputFrame& given )
 		last = now;
 	};
 
-	ApplyEvents( frame );
-	ApplyCommands( frame );
+	// The players' joins and leaves, then each command, each followed by the physics events it made
+	// (or, following another's physics, the frame's for it).
 	m_physicsMade.physics.clear();
-	ApplyPhysicsEvents( frame, 0 );
+	ApplyEvents( frame );
+	ApplyPhysicsEvents( frame, 0, 0 );
+	for ( size_t k = 0; k < frame.commands.size(); ++k )
+	{
+		ApplyCommand( frame.commands[k] );
+		ApplyPhysicsEvents( frame, 0, uint16_t( std::min<size_t>( k + 1, 0xFFFF ) ) );
+	}
 	spent( m_profile.commandsNs );
 	MoveCharacters( frame );
 	ApplyPhysicsEvents( frame, 1 );
