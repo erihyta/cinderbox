@@ -5016,6 +5016,25 @@ void TestPhysicsWithoutCharacters()
 				c.b = { 0.0f, 2.0f, 4.0f };
 				f.commands.push_back( c );
 				break;
+			case 260:
+			{
+				// One tick, one body crossing twice: slot 0 takes a new body, leaving the one it drove,
+				// which slot 1 takes at once (each command's events are applied before the next runs).
+				const uint32_t left = sim.PlayerNetId( 0 );
+				c.type = CommandType::SpawnBody;
+				c.a = { 5.0f, 0.0f, 5.0f };
+				const uint32_t fresh = sim.Globals().nextNetId;
+				f.commands.push_back( c );
+				SimCommand take;
+				take.type = CommandType::Possess;
+				take.target = SlotTarget( 0 );
+				take.other = fresh;
+				f.commands.push_back( take );
+				take.target = SlotTarget( 1 );
+				take.other = left;
+				f.commands.push_back( take );
+				break;
+			}
 			default:
 				break;
 		}
@@ -5023,6 +5042,17 @@ void TestPhysicsWithoutCharacters()
 		f.inputs[1].moveForward = t > 70 && t < 110 ? int8_t( 127 ) : int8_t( 0 );
 		f.inputs[1].cameraYaw = 16384;
 		sim.Step( f );
+		if ( t == 261 )
+		{
+			// (Both drive a body of their own, each with its body: a character without one crashed M247's
+			// first version.)
+			for ( PlayerSlot slot : { PlayerSlot( 0 ), PlayerSlot( 1 ) } )
+			{
+				flecs::entity e = sim.FindEntity( sim.PlayerNetId( slot ) );
+				CHECK( e.is_valid() && e.has<Character>() && e.has<PhysicsBody>() && e.get<PhysicsBody>().body.world0 == 1 );
+			}
+			CHECK( sim.PlayerNetId( 0 ) != sim.PlayerNetId( 1 ) );
+		}
 		frames.push_back( f );
 		made.push_back( sim.PhysicsMade() );
 		hashes.push_back( { sim.PhysicsHash(), sim.PhysicsWorldHash() } );
