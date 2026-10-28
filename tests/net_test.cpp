@@ -6273,7 +6273,7 @@ void TestPhysicsAlone()
 		reference.SetAnimPacks( replay.Packs() );
 		reference.SetMotions( replay.MotionSets() );
 		reference.SetItemShapes( replay.Schema().itemShapes );
-		size_t compared = 0;
+		size_t compared = 0, liveOther = 0;
 		uint32_t firstWrong = UINT32_MAX, firstWrongWorld = UINT32_MAX;
 		for ( InputFrame frame : replay.Frames() )
 		{
@@ -6313,7 +6313,13 @@ void TestPhysicsAlone()
 									 k < mine.size() ? mine[k].second.x : 0.f, k < mine.size() ? mine[k].second.y : 0.f, k < mine.size() ? mine[k].second.z : 0.f );
 					}
 				}
-				if ( worlds[frame.tick] != follower.PhysicsWorldHash() && firstWrongWorld == UINT32_MAX )
+				// Box3D's bytes against the server's simulation played again from its recording: the live
+				// server's own bytes also hold what only a live session leaves in them, and that moves no
+				// body (macOS's: its world's bytes not its replay's, every body the same), so they are
+				// only counted.
+				const uint64_t replayed = reference.PhysicsWorldHash();
+				liveOther += worlds[frame.tick] != replayed ? 1 : 0;
+				if ( replayed != follower.PhysicsWorldHash() && firstWrongWorld == UINT32_MAX )
 				{
 					firstWrongWorld = frame.tick;
 					// Where: the server's world again (the recording played as it was) against this one,
@@ -6367,9 +6373,10 @@ void TestPhysicsAlone()
 		auto said = []( uint32_t tick ) {
 			return tick == UINT32_MAX ? std::string( "the same on every one" ) : "different from tick " + std::to_string( tick );
 		};
-		std::printf( "    a follower %s: %zu ticks compared; its physics world's entities %s, its Box3D world %s\n",
+		std::printf( "    a follower %s: %zu ticks compared; its physics world's entities %s (the live server's), its Box3D world %s "
+					 "(the server's simulation played again; the live server's own bytes not that on %zu ticks)\n",
 					 characters ? "whose players stood still" : "with no characters at all", compared, said( firstWrong ).c_str(),
-					 said( firstWrongWorld ).c_str() );
+					 said( firstWrongWorld ).c_str(), liveOther );
 		CHECK( compared > 400 );
 		CHECK( firstWrong == UINT32_MAX );
 		CHECK( firstWrongWorld == UINT32_MAX );
