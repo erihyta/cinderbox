@@ -1,14 +1,19 @@
 #pragma once
 
-// Networked client without any rendering: connection, join/reconnect, clock sync, prediction and
-// rollback, input upload and desync detection. The Godot peer and headless bots both use it.
+// Networked client without any rendering: connection, join/reconnect, clock sync, prediction,
+// input upload. Either network model the server chose (net::NetModel): the inputs model's rollback
+// and desync detection (RollbackSession), or the state model's states and stand-ins (StateSession).
+// The Godot peer and headless bots both use it.
 
 #include "protocol.h"
 #include "map.h"
 #include "mod_schema.h"
 #include "rollback.h"
+#include "state_codec.h"
+#include "state_session.h"
 #include "transport.h"
 
+#include <deque>
 #include <functional>
 #include <memory>
 #include <string>
@@ -80,6 +85,9 @@ public:
 		uint64_t batchesIgnored = 0; // stale, or older than the frames we still know
 		double stalledSeconds = 0.0; // time the prediction window was full and the clock was held
 		double playingSeconds = 0.0;
+		// The state model.
+		uint64_t statesReceived = 0;
+		uint64_t statesIgnored = 0; // older than the newest, against a base no longer kept, or corrupt
 	};
 
 	GameClient();
@@ -100,7 +108,7 @@ public:
 	// Tick the next Update will simulate (or, for a lite client, send input for).
 	uint32_t CurrentTick() const
 	{
-		return m_session ? m_session->CurrentTick() : m_liteTick;
+		return m_session ? m_session->CurrentTick() : m_states ? m_states->CurrentTick() : m_liteTick;
 	}
 
 	void ResetMaxStats()
@@ -108,10 +116,37 @@ public:
 		m_stats.simMsMax = 0.0;
 	}
 
-	// Null until the first Welcome, and always null for a lite client.
+	// The model the server chose (known from its Welcome).
+	net::NetModel Model() const
+	{
+		return m_model;
+	}
+	// The inputs model's session: null until the first Welcome, in the state model, and for a lite
+	// client.
 	RollbackSession* Session()
 	{
 		return m_session.get();
+	}
+	// The state model's: null until the first Welcome, in the inputs model, and for a lite client.
+	StateSession* States()
+	{
+		return m_states.get();
+	}
+	// Either session's simulation (null: none).
+	Simulation* Sim()
+	{
+		return m_session ? &m_session->Sim() : m_states ? &m_states->Sim() : nullptr;
+	}
+	// The frame the newest tick was simulated with, either session's.
+	const InputFrame* LastSimulatedFrame() const
+	{
+		return m_session ? m_session->LastSimulatedFrame() : m_states ? m_states->LastSimulatedFrame() : nullptr;
+	}
+	// What the server has confirmed: the inputs model's confirmed frames, the state model's newest
+	// state applied.
+	uint32_t ConfirmedTick() const
+	{
+		return m_session ? m_session->ConfirmedTick() : m_states ? m_states->StateTick() : 0;
 	}
 
 	// The map the server sent. Presentation uses its name to find the map's visuals.
@@ -192,6 +227,7 @@ private:
 	void Advance( double now, const InputSampler& sampleInput );
 	void OnServerTick( uint32_t tickAfter, double now );
 	void HandleFrameBatch( ByteReader& r, double now );
+	void HandleState( ByteReader& r, double now );
 	bool UseFrameBatch( uint32_t firstTick, uint32_t count, const uint8_t* body, size_t size );
 	void UpdateRollbackWindow( double rttTicks, double frameDt );
 	uint32_t AckTick() const;
@@ -222,6 +258,13 @@ private:
 	uint32_t m_liteConfirmed = 0;
 	double m_windowShrinkTimer = 0.0;
 	std::unique_ptr<RollbackSession> m_session;
+	// The state model: its session, the states kept as bases (decoded, the newest last), and the
+	// newest one, acknowledged.
+	net::NetModel m_model = net::NetModel::Inputs;
+	uint32_t m_stateEvery = 2;
+	std::unique_ptr<StateSession> m_states;
+	std::deque<net::StateFrame> m_stateFrames;
+	uint32_t m_stateAck = 0;
 	SimConfig m_config;
 	// The map the server sent on join. The session is rebuilt when it changes.
 	LevelLayout m_map;

@@ -86,6 +86,21 @@ shook against the wall".
 | 4.5 | With 32 NPCs: F1 | the frame rate holds; rollbacks do not pile up |
 | 4.6 | After the session: watch its view file to the end (the command is printed) | it plays to the end without a crash |
 
+## 5. The state network model
+
+`tools\playtest.ps1 -NetModel state` (ROADMAP step 3; the server's states, only your own body
+predicted). Then the same with the default (`inputs`) to compare.
+
+| # | Do | Expect |
+|---|---|---|
+| 5.1 | Both join, F1 | `net_model state`; the round trip about 150 ms; rollbacks count up about 30 a second (each a state taken) |
+| 5.2 | A: walk, run, jump, turn | as instant as in the inputs model; no shaking or snapping back (M245) |
+| 5.3 | A punches and shoots B | A's own punches and shots play at once; B is pushed and hurt a round trip later on A's screen (the server decides) |
+| 5.4 | B watches A move | smooth, a little behind (A is drawn where the server last said) |
+| 5.5 | Kill B; a frag at `BrickWall` | the ragdoll and the wall's pieces look the same on both screens |
+| 5.6 | A: walk into `CrateA` | known until M246: A stops against it as against a wall, and it moves a round trip later |
+| 5.7 | Compare with `-NetModel inputs` | write down what felt better or worse |
+
 ## After every session
 
 - The script's verdict: the replay verified (no desyncs), the games exited cleanly, the logs clean.

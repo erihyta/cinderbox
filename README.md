@@ -14,7 +14,7 @@ ozz-animation, with a Godot 4 client (rendering, VFX, UI and mods).
 | The world | physics props, destructible walls broken into authored pieces, items in the world, containers |
 | Authoring | maps, characters, their animation trees, items and motions are made in the Godot editor and baked for the server |
 
-Milestones M1 to M244 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them. The roadmap was rewritten after M234 from a review of the whole project ([ROADMAP.md](ROADMAP.md)).
+Milestones M1 to M245 are done; [docs/HISTORY.md](docs/HISTORY.md) lists them. The roadmap was rewritten after M234 from a review of the whole project ([ROADMAP.md](ROADMAP.md)).
 
 ## The manual
 
@@ -156,8 +156,8 @@ A join that fails comes back to the menu and says why:
   starts at the head: aiming over cover you are hidden behind hits the cover.
 - Esc opens the in-game menu (see [The menu](#the-menu)), F1 toggles the debug HUD.
 
-The HUD shows the predicted and confirmed ticks, round-trip time, clock error, rollbacks, stalls and
-checksum results.
+The HUD shows the network model, the predicted and confirmed ticks, round-trip time, clock error,
+rollbacks (in the state model: states taken), stalls and checksum results.
 
 Server and clients can be built with different compilers. The server rejects a client whose
 simulation fingerprint differs from its own.
@@ -217,6 +217,7 @@ The export needs the Godot 4.7.2 export templates, installed either from the edi
 | `--move NAME=VALUE` | how players move ([movement parameters](docs/server-mods.md#movement-parameters)) |
 | `--prop-lifetime SEC`, `--props-per-player N`, `--props-global N` | the props players spawn |
 | `--record FILE`, `--record-view FILE` | a recording, a view file (see [Watching a recording](#watching-a-recording)) |
+| `--net-model inputs\|state` | how players' games are kept: every game simulating the whole world from everyone's inputs (the default), or the server's state sent and only your own body predicted ([DESIGN.md](DESIGN.md#netcode); being tried, ROADMAP step 3) |
 | `--physics-threads N`, `--exit-when-empty SEC`, `--quiet` | threads for the physics; stop once nobody is connected; less output |
 
 ## License

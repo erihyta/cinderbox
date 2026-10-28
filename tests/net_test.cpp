@@ -347,8 +347,8 @@ struct Harness
 			GameClient& c = *bots[i].client;
 			RollbackSession* s = c.Session();
 			std::printf( "    bot%zu: %s slot %u tick %u confirmed %u rollbacks %llu checksums ok %llu desyncs %llu welcomes %llu\n", i,
-						 ToString( c.State() ), c.Slot(), s ? s->CurrentTick() : 0, s ? s->ConfirmedTick() : 0,
-						 s ? (unsigned long long)s->GetStats().rollbacks : 0ull,
+						 ToString( c.State() ), c.Slot(), c.CurrentTick(), c.ConfirmedTick(),
+						 s ? (unsigned long long)s->GetStats().rollbacks : c.States() ? (unsigned long long)c.States()->GetStats().states : 0ull,
 						 (unsigned long long)c.GetStats().checksumsVerified, (unsigned long long)c.GetStats().desyncs,
 						 (unsigned long long)c.GetStats().welcomes );
 		}
@@ -1900,7 +1900,7 @@ void TestGunHurtsNpc()
 	auto target = std::make_unique<GunTargetMod>();
 	GunTargetMod* mod = target.get();
 	extra.push_back( std::move( target ) );
-	Harness h( 47928, {}, {}, {}, {}, std::move( extra ) );
+	Harness h( 47940, {}, {}, {}, {}, std::move( extra ) );
 	const int hurt = h.server.Schema().FindEvent( "combat.hurt" );
 	CHECK( hurt >= 0 );
 	h.AddBot().script = []( uint32_t tick ) {
@@ -1971,7 +1971,7 @@ void TestFlinch()
 	HurtOnceMod* mod = hurt.get();
 	extra.push_back( std::move( hurt ) );
 	const std::string root = CB_SOURCE_DIR;
-	Harness h( 47932, {}, {}, {}, [&]( ServerOptions& options ) {
+	Harness h( 47942, {}, {}, {}, [&]( ServerOptions& options ) {
 		std::string error, warnings;
 		options.character = LoadCharacterFolder( root + "/godot/characters/mannequin", "mannequin", error, warnings );
 	}, std::move( extra ) );
@@ -4817,7 +4817,7 @@ void TestInventoryBodies()
 {
 	std::vector<std::unique_ptr<mods::ServerMod>> extra;
 	extra.push_back( std::make_unique<BodyKitMod>() );
-	Harness h( 47926, {}, {}, {}, {}, std::move( extra ) );
+	Harness h( 47944, {}, {}, {}, {}, std::move( extra ) );
 	const ModSchema& schema = h.server.Schema();
 	const ActionBits take = schema.ActionMask( "test.take" ), die = schema.ActionMask( "test.die" );
 	const int batKind = schema.FindItemKind( "melee.bat" );
@@ -6143,6 +6143,327 @@ void TestGrapple()
 	}
 }
 
+// The state message (net/state_codec.h): a world of players and props saved every second tick,
+// each state encoded whole and against one a few states older, decoded back byte for byte; then
+// cut short and with bytes changed, which must fail or decode to something, never crash.
+void TestStateCodec()
+{
+	SimConfig config;
+	config.physicsArenaMB = 32;
+	Simulation sim( config );
+	uint64_t rng = 99;
+	std::vector<net::StateFrame> states;
+	size_t whole = 0, change = 0, count = 0;
+	for ( uint32_t t = 0; t < 400; ++t )
+	{
+		InputFrame frame;
+		frame.tick = t;
+		if ( t == 0 )
+		{
+			for ( PlayerSlot slot = 0; slot < 6; ++slot )
+			{
+				frame.events.push_back( { PlayerEventType::Join, slot } );
+			}
+		}
+		for ( int i = 0; i < 6; ++i )
+		{
+			const uint64_t r = NextRandom( rng );
+			frame.inputs[i].moveForward = int8_t( int( r % 255 ) - 127 );
+			frame.inputs[i].cameraYaw = uint16_t( r >> 16 );
+		}
+		if ( t % 25 == 5 )
+		{
+			SimCommand spawn;
+			spawn.type = CommandType::SpawnProp;
+			spawn.a = { float( t % 7 ) - 3.0f, 3.0f, 2.0f };
+			frame.commands.push_back( spawn );
+		}
+		sim.Step( frame );
+		if ( sim.Tick() % 2 != 0 )
+		{
+			continue;
+		}
+		net::StateFrame state;
+		state.tick = sim.Tick();
+		state.inputs = frame.inputs;
+		sim.SaveState( state.state, true );
+		const net::StateFrame* base = states.size() >= 4 ? &states[states.size() - 4] : nullptr;
+		for ( const net::StateFrame* against : { (const net::StateFrame*)nullptr, base } )
+		{
+			std::vector<uint8_t> message;
+			net::EncodeState( state, against, message );
+			( against ? change : whole ) += message.size();
+			ByteReader r( message.data(), message.size() );
+			uint32_t tick = 0, baseTick = 0;
+			net::StateFrame back;
+			CHECK( net::ReadType( r ) == net::MsgType::State );
+			CHECK( net::ReadStateHeader( r, tick, baseTick ) );
+			CHECK( tick == state.tick && baseTick == ( against ? against->tick : net::kNoStateBase ) );
+			CHECK( net::DecodeState( r, tick, against, back ) );
+			CHECK( back.state == state.state );
+			CHECK( std::memcmp( back.inputs.data(), state.inputs.data(), sizeof( state.inputs ) ) == 0 );
+
+			// Cut short anywhere, or a byte changed anywhere: never a crash.
+			for ( int k = 0; k < 24; ++k )
+			{
+				std::vector<uint8_t> bad( message );
+				const uint64_t r2 = NextRandom( rng );
+				if ( k % 2 == 0 )
+				{
+					bad.resize( size_t( r2 % bad.size() ) );
+				}
+				else
+				{
+					bad[size_t( r2 % bad.size() )] ^= uint8_t( 1 + ( r2 >> 32 ) % 255 );
+				}
+				ByteReader br( bad.data(), bad.size() );
+				net::StateFrame junk;
+				if ( net::ReadType( br ) == net::MsgType::State && net::ReadStateHeader( br, tick, baseTick ) )
+				{
+					net::DecodeState( br, tick, against, junk );
+				}
+			}
+		}
+		if ( base != nullptr )
+		{
+			count += 1;
+		}
+		states.push_back( std::move( state ) );
+	}
+	std::printf( "    %zu states: %zu bytes whole on average, %zu as a change against one 8 ticks older\n", states.size(),
+				 whole / states.size(), count > 0 ? change / count : 0 );
+	CHECK( count > 100 );
+	CHECK( change < whole );
+}
+
+// --- The state network model (ROADMAP step 3) -----------------------------------------------------
+
+void UseStateModel( ServerOptions& options )
+{
+	options.netModel = net::NetModel::State;
+}
+
+// Where a bot's own body is, by tick: the server's (from its tick observer), and the bot's first
+// prediction of it. How often the prediction was within 5 cm of where the server then had it.
+struct OwnTrack
+{
+	std::map<uint32_t, b3Vec3> server, client;
+
+	void Server( Simulation& sim, PlayerSlot slot )
+	{
+		if ( const Transform* t = sim.EntityTransform( sim.PlayerNetId( slot ) ) )
+		{
+			server[sim.Tick()] = t->position;
+		}
+	}
+	void Client( GameClient& game )
+	{
+		Simulation* sim = game.Sim();
+		const Transform* t = sim != nullptr && game.States() != nullptr && game.States()->HasState()
+								 ? sim->EntityTransform( sim->PlayerNetId( game.Slot() ) )
+								 : nullptr;
+		if ( t != nullptr )
+		{
+			client.emplace( sim->Tick(), t->position );
+		}
+	}
+	// (Ticks both saw; how many of them within 5 cm.)
+	std::pair<uint32_t, uint32_t> Near() const
+	{
+		uint32_t both = 0, within = 0;
+		for ( const auto& [tick, at] : client )
+		{
+			auto it = server.find( tick );
+			if ( it != server.end() )
+			{
+				both += 1;
+				within += b3Distance( it->second, at ) < 0.05f ? 1 : 0;
+			}
+		}
+		return { both, within };
+	}
+};
+
+void CheckStateClient( GameClient& c )
+{
+	const GameClient::Stats& s = c.GetStats();
+	std::printf( "    %s: %llu states (%llu of no use), window %u, stalled %.2fs, %llu taken, %.1f ticks run again a state\n",
+				 c.Slot() == 0 ? "slot 0" : "a bot", (unsigned long long)s.statesReceived, (unsigned long long)s.statesIgnored,
+				 s.rollbackWindow, s.stalledSeconds, c.States() ? (unsigned long long)c.States()->GetStats().states : 0ull,
+				 c.States() && c.States()->GetStats().states > 0
+					 ? double( c.States()->GetStats().resimulatedTicks ) / double( c.States()->GetStats().states )
+					 : 0.0 );
+}
+
+// Server mods end to end in the state model: the mods session's shooting (a pistol, a kill, a
+// ragdoll, a respawn, props), every client a state client. Nothing of the inputs model goes out
+// (no frames, no checksums), the states come as changes, and what the server decided reaches the
+// clients through them.
+void TestStateSession()
+{
+	Harness h( 47990, {}, {}, {}, UseStateModel );
+	const ModSchema& schema = h.server.Schema();
+	ActionBits fire = kKeyUse;
+	ActionBits pistol = kKeySlot1;
+	uint16_t spawn = schema.ActionMask( "spawn_prop" );
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraYaw = 16384;
+		in.cameraPitch = kAimAtChest;
+		uint32_t t = tick % 1000;
+		if ( t >= 100 && t < 110 )
+		{
+			in.actions = pistol;
+		}
+		else if ( t >= 150 && t < 400 && ( t % 20 ) < 3 )
+		{
+			in.actions = fire;
+		}
+		return in;
+	};
+	h.RunUntil( 1.0 );
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.actions = ( tick % 40 ) < 3 ? spawn : 0;
+		return in;
+	};
+	h.RunUntil( 1.5 );
+	h.AddBot(); // walks about (its brain)
+	Bot& shooter = h.bots[0];
+	Bot& target = h.bots[1];
+	Bot& walker = h.bots[2];
+
+	OwnTrack track;
+	h.server.SetTickObserver( [&] { track.Server( h.server.Sim(), walker.client->Slot() ); } );
+	bool sawDeadOnClient = false;
+	bool sawRagdollOnClient = false;
+	const BoardField* deadField = schema.FindField( "combat.dead" );
+	h.RunUntil( 9.0, [&]( double ) {
+		track.Client( *walker.client );
+		Simulation* sim = target.client->Sim();
+		if ( sim == nullptr || target.client->Schema().fields.empty() )
+		{
+			return;
+		}
+		uint32_t me = sim->PlayerNetId( target.client->Slot() );
+		sawDeadOnClient |= me != 0 && sim->BoardValue( me, deadField->slot ) == 1;
+		for ( const auto& r : sim->Entities() )
+		{
+			sawRagdollOnClient |= flecs::entity( sim->World(), r.entity ).has<Ragdoll>();
+		}
+	} );
+	h.server.SetTickObserver( {} );
+	h.Report();
+
+	Simulation& server = h.server.Sim();
+	const uint32_t shooterId = server.PlayerNetId( shooter.client->Slot() );
+	const uint32_t targetId = server.PlayerNetId( target.client->Slot() );
+	CHECK( server.BoardValue( shooterId, schema.FindField( "combat.kills" )->slot ) >= 1 );
+	CHECK( sawDeadOnClient );
+	CHECK( sawRagdollOnClient );
+	uint32_t owned = 0;
+	for ( const auto& r : server.Entities() )
+	{
+		const Prop* p = flecs::entity( server.World(), r.entity ).try_get<Prop>();
+		owned += p != nullptr && p->owner == targetId ? 1 : 0;
+	}
+	CHECK( owned > 0 );
+
+	const GameServer::Stats& ss = h.server.GetStats();
+	std::printf( "    server: %llu states sent (%llu whole), %.0f bytes each, %.2f ms a tick on them; %llu frame batches\n",
+				 (unsigned long long)ss.statesSent, (unsigned long long)ss.statesWhole,
+				 ss.statesSent ? double( ss.stateBytes ) / double( ss.statesSent ) : 0.0,
+				 ss.ticks ? ss.stateMsTotal / double( ss.ticks ) : 0.0, (unsigned long long)ss.batchesSent );
+	CHECK( ss.batchesSent == 0 );
+	CHECK( ss.statesSent > 500 );
+	CHECK( ss.statesWhole * 20 < ss.statesSent ); // whole only the first, and after a lost base
+	for ( Bot& b : h.bots )
+	{
+		GameClient& c = *b.client;
+		CheckStateClient( c );
+		CHECK( c.State() == ClientState::Playing );
+		CHECK( c.Model() == net::NetModel::State );
+		CHECK( c.Session() == nullptr && c.States() != nullptr );
+		CHECK( c.GetStats().checksumsVerified == 0 && c.GetStats().desyncs == 0 );
+		CHECK( c.GetStats().statesReceived > 150 );
+		CHECK( c.GetStats().statesIgnored * 10 < c.GetStats().statesReceived );
+		CHECK( c.States()->GetStats().rejected == 0 );
+	}
+	const auto [both, within] = track.Near();
+	std::printf( "    the walker's own body predicted within 5 cm of the server's %u of %u ticks\n", within, both );
+	CHECK( both > 200 );
+	CHECK( within * 10 >= both * 8 );
+}
+
+// The state model on a bad connection: ~70 ms round trip with jitter, 3% loss and duplicates. A
+// lost state costs nothing but itself (the next is a few ticks away, against a base the client has).
+void TestStateLossy()
+{
+	Harness h( 47993, {}, {}, {}, UseStateModel );
+	net::NetSimConfig bad;
+	bad.latencyMs = 30;
+	bad.jitterMs = 10;
+	bad.lossPercent = 3.0f;
+	bad.duplicatePercent = 1.0f;
+	bad.seed = 11;
+	h.AddNetSim( 47994, bad );
+	for ( int i = 0; i < 3; ++i )
+	{
+		h.AddBot();
+	}
+	h.RunUntil( 4.0 );
+	const uint64_t lateBefore = h.server.GetStats().lateInputs;
+	const uint64_t expectedBefore = h.server.GetStats().inputTicks;
+	OwnTrack track;
+	h.server.SetTickObserver( [&] { track.Server( h.server.Sim(), h.bots[0].client->Slot() ); } );
+	h.RunUntil( 10.0, [&]( double ) { track.Client( *h.bots[0].client ); } );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	const uint64_t late = h.server.GetStats().lateInputs - lateBefore;
+	const uint64_t expected = h.server.GetStats().inputTicks - expectedBefore;
+	std::printf( "    steady state: %llu late inputs of %llu\n", (unsigned long long)late, (unsigned long long)expected );
+	CHECK( kTimingChecks == false || late * 50 < expected );
+	CHECK( h.proxy->GetStats().dropped > 0 );
+	for ( Bot& b : h.bots )
+	{
+		CheckStateClient( *b.client );
+		CHECK( b.client->State() == ClientState::Playing );
+		CHECK( b.client->GetStats().rttMs >= 50 );
+		CHECK( b.client->GetStats().statesReceived > 150 );
+		CHECK( b.client->GetStats().statesIgnored * 4 < b.client->GetStats().statesReceived );
+	}
+	const auto [both, within] = track.Near();
+	std::printf( "    own body predicted within 5 cm of the server's %u of %u ticks\n", within, both );
+	CHECK( both > 200 );
+	CHECK( within * 10 >= both * 8 );
+}
+
+// A state client that loses its connection comes back as the same player, and its states start
+// again whole (its old bases are gone with the welcome).
+void TestStateReconnect()
+{
+	Harness h( 47996, {}, {}, {}, UseStateModel );
+	h.AddBot();
+	h.AddBot();
+	h.RunUntil( 2.0 );
+	const PlayerSlot slot0 = h.bots[0].client->Slot();
+	h.bots[0].client->DropConnectionHard();
+	h.RunUntil( 2.5 );
+	const uint64_t before = h.bots[0].client->GetStats().statesReceived;
+	h.RunUntil( 6.0 );
+	h.Report();
+	CHECK( CountPlayers( h.server.Sim() ) == 2 );
+	CHECK( h.server.GetStats().reconnects == 1 );
+	CHECK( h.bots[0].client->Slot() == slot0 );
+	CHECK( h.bots[0].client->GetStats().welcomes == 2 );
+	CHECK( h.bots[0].client->GetStats().statesReceived > before + 50 );
+	for ( Bot& b : h.bots )
+	{
+		CHECK( b.client->State() == ClientState::Playing );
+		CHECK( b.client->States() != nullptr && b.client->States()->HasState() );
+	}
+}
+
 } // namespace
 
 #if defined( _WIN32 )
@@ -6185,6 +6506,10 @@ int main( int argc, char** argv )
 		{ "loopback_session", TestLoopbackSession },
 		{ "late_join", TestLateJoin },
 		{ "reconnect", TestReconnect },
+		{ "state_codec", TestStateCodec },
+		{ "state_session", TestStateSession },
+		{ "state_lossy", TestStateLossy },
+		{ "state_reconnect", TestStateReconnect },
 		{ "grace_expiry", TestGraceExpiry },
 		{ "lossy_session", TestLossySession },
 		{ "mods_session", TestModsSession },

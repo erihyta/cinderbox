@@ -199,7 +199,7 @@ bool ReadInputs( ByteReader& r, InputArray& inputs )
 std::optional<MsgType> ReadType( ByteReader& r )
 {
 	uint8_t t = r.Read<uint8_t>();
-	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::Info ) )
+	if ( r.Ok() == false || t < uint8_t( MsgType::Hello ) || t > uint8_t( MsgType::State ) )
 	{
 		return std::nullopt;
 	}
@@ -405,6 +405,12 @@ void Encode( const MsgInfo& m, std::vector<uint8_t>& out )
 		WriteShortString( w, m.items[i].mod, 64 );
 		WriteShortString( w, m.items[i].sha256, 64 );
 	}
+	w.Write( uint8_t( m.model ) );
+}
+
+const char* ToString( NetModel model )
+{
+	return model == NetModel::State ? "state" : "inputs";
 }
 
 bool Decode( ByteReader& r, MsgInfo& m )
@@ -436,7 +442,9 @@ bool Decode( ByteReader& r, MsgInfo& m )
 		}
 		m.items.push_back( item );
 	}
-	return r.Ok();
+	const uint8_t model = r.Read<uint8_t>();
+	m.model = NetModel( model );
+	return r.Ok() && model <= uint8_t( NetModel::State );
 }
 
 std::string SanitizeText( const std::string& text, size_t limit )
@@ -512,6 +520,8 @@ void Encode( const MsgWelcome& m, std::vector<uint8_t>& out )
 	w.WriteBlob( m.map );
 	w.WriteBlob( m.image );
 	w.WriteBlob( m.schema );
+	w.Write( uint8_t( m.model ) );
+	w.Write( m.stateEvery );
 }
 
 bool Decode( ByteReader& r, MsgWelcome& m )
@@ -530,7 +540,14 @@ bool Decode( ByteReader& r, MsgWelcome& m )
 		return false;
 	}
 	m.mapHash = r.Read<uint64_t>();
-	return ReadBlobChecked( r, m.map ) && ReadBlobChecked( r, m.image ) && ReadBlobChecked( r, m.schema ) && m.slot < kMaxPlayers;
+	if ( ReadBlobChecked( r, m.map ) == false || ReadBlobChecked( r, m.image ) == false || ReadBlobChecked( r, m.schema ) == false )
+	{
+		return false;
+	}
+	const uint8_t model = r.Read<uint8_t>();
+	m.stateEvery = r.Read<uint8_t>();
+	m.model = NetModel( model );
+	return r.Ok() && model <= uint8_t( NetModel::State ) && m.stateEvery > 0 && m.slot < kMaxPlayers;
 }
 
 void Encode( const MsgReject& m, std::vector<uint8_t>& out )
