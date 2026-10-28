@@ -619,6 +619,7 @@ Not scheduled. A row moves up into "Next" when the slice wants it.
 
 | Area | What |
 |---|---|
+| Physics | on CI's macOS build (arm64), now and then a float in Box3D's contact data (most likely a contact point's `totalNormalImpulse`) differs between two simulations that should be the same, every body the same bit for bit; Windows and Linux are the same byte for byte. `net_physics_alone` reports it there instead of failing (its diagnostics name the section and the contact). Two real leaks it found are fixed (a free contact slot's stale address, blocks reused between worlds). Expected to go with a newer Box3D, or looked at again if it ever moves a body |
 | Items | a state machine or a motion reading the hand's fields; a lifetime for an item that was not launched; a fuse that starts when the pin is pulled (a cook); bots that use what a mod adds; a bot count in the menu |
 | The inventory | a split of one; a slot's item shown while dragged over; a key for the bag's slots; dropping or moving part of a stack; a mod taking one off a stack without throwing it; a corpse's bag (undecided: the ragdoll carries it, or a box where it fell); predicted answers to a mod's intents; numbers wider than a byte in an intent |
 | Sheets and HUDs | a sheet for a list's rows; an item's HUD drawn on its slot |
