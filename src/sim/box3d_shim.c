@@ -5,6 +5,15 @@
 #include "recording.h"
 #include "recording_replay.h"
 #include "world_snapshot.h"
+#include "body.h"
+#include "constraint_graph.h"
+#include "contact.h"
+#include "island.h"
+#include "joint.h"
+#include "shape.h"
+#include "solver_set.h"
+
+#include <stdio.h>
 
 #include "box3d/box3d.h"
 
@@ -27,6 +36,30 @@ void* cbx_WorldStructPtr( b3WorldId worldId )
 static void WriteU32( cbx_WriteFcn* write, void* context, uint32_t value )
 {
 	write( context, &value, sizeof( value ) );
+}
+
+extern int b3SnapSectionCount;
+extern const char* b3SnapSectionNames[];
+extern int b3SnapSectionStarts[];
+
+void cbx_StructSizes( char* out, int capacity )
+{
+	snprintf( out, (size_t)capacity,
+			  "b3Body %d, b3BodySim %d, b3BodyState %d, b3Shape %d, b3Contact %d, b3Manifold %d, b3Joint %d, b3JointSim %d, "
+			  "b3Island %d, b3IslandSim %d, b3TreeNode %d, b3GraphColor %d",
+			  (int)sizeof( b3Body ), (int)sizeof( b3BodySim ), (int)sizeof( b3BodyState ), (int)sizeof( b3Shape ),
+			  (int)sizeof( b3Contact ), (int)sizeof( b3Manifold ), (int)sizeof( b3Joint ), (int)sizeof( b3JointSim ),
+			  (int)sizeof( b3Island ), (int)sizeof( b3IslandSim ), (int)sizeof( b3TreeNode ), (int)sizeof( b3GraphColor ) );
+}
+
+int cbx_SnapSections( const char** names, int* starts, int capacity )
+{
+	for ( int i = 0; i < b3SnapSectionCount && i < capacity; ++i )
+	{
+		names[i] = b3SnapSectionNames[i];
+		starts[i] = b3SnapSectionStarts[i];
+	}
+	return b3SnapSectionCount;
 }
 
 void cbx_SerializeWorld( b3WorldId worldId, cbx_WriteFcn* write, void* context )

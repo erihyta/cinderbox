@@ -1,0 +1,134 @@
+diff --git a/src/world_snapshot.c b/src/world_snapshot.c
+index 0a3ac48..f06b865 100644
+--- a/src/world_snapshot.c
++++ b/src/world_snapshot.c
+@@ -32,6 +32,22 @@
+ #include <stddef.h>
+ #include <string.h>
+ 
++// Where each section of the last snapshot began, from its start (Cinderbox: which part of two
++// snapshots that should be equal differs).
++int b3SnapSectionCount = 0;
++const char* b3SnapSectionNames[128];
++int b3SnapSectionStarts[128];
++static int b3SnapBase = 0;
++static void b3SnapMark( const b3RecBuffer* buf, const char* name )
++{
++	if ( b3SnapSectionCount < 128 )
++	{
++		b3SnapSectionNames[b3SnapSectionCount] = name;
++		b3SnapSectionStarts[b3SnapSectionCount] = buf->size - b3SnapBase;
++		b3SnapSectionCount += 1;
++	}
++}
++
+ // Snapshot image magic 'BNS3' and version
+ #define B3_SNAP_MAGIC 0x33534E42u
+ #define B3_SNAP_VERSION 2u
+@@ -491,11 +507,17 @@ static void b3DesTree( b3SnapReader* r, b3DynamicTree* tree )
+ // Solver set: setIndex + 4 arrays (note: contactIndices is int array, not contactSims)
+ static void b3SerSolverSet( b3RecBuffer* buf, const b3SolverSet* set )
+ {
++	b3SnapMark( buf, "set" );
+ 	b3SnapW_I32( buf, set->setIndex );
++	b3SnapMark( buf, "set.bodySims" );
+ 	b3SerPodArray( buf, set->bodySims );
++	b3SnapMark( buf, "set.bodyStates" );
+ 	b3SerPodArray( buf, set->bodyStates );
++	b3SnapMark( buf, "set.jointSims" );
+ 	b3SerScrubbedArray( buf, set->jointSims, b3JointSim, b3ScrubJointSim );
++	b3SnapMark( buf, "set.contactIndices" );
+ 	b3SerPodArray( buf, set->contactIndices );
++	b3SnapMark( buf, "set.islandSims" );
+ 	b3SerPodArray( buf, set->islandSims );
+ }
+ 
+@@ -1138,6 +1160,9 @@ static void b3FreeLiveSimElements( b3World* world )
+ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
+ {
+ 	int startSize = buf->size;
++	b3SnapSectionCount = 0;
++	b3SnapBase = startSize;
++	b3SnapMark( buf, "header" );
+ 
+ 	// Snapshot header
+ 	b3SnapHeader hdr;
+@@ -1151,7 +1176,9 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
+ 	b3SnapW_Bytes( buf, &hdr, (int)sizeof( hdr ) );
+ 
+ 	// World scalars
++	b3SnapMark( buf, "config" );
+ 	b3SerWorldConfig( buf, world );
++	b3SnapMark( buf, "id pools" );
+ 
+ 	// 6 id pools (Box3D has no chainIdPool)
+ 	b3SerIdPool( buf, &world->bodyIdPool );
+@@ -1170,6 +1197,7 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
+ 	}
+ 
+ 	// Sparse body array (userData is host wiring, zero it on the copy)
++	b3SnapMark( buf, "bodies" );
+ 	{
+ 		int bodyCount = world->bodies.count;
+ 		b3SnapW_I32( buf, bodyCount );
+@@ -1184,10 +1212,13 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
+ 	}
+ 
+ 	// Shape sparse array with geometry interning
++	b3SnapMark( buf, "shapes" );
+ 	b3SerShapes( buf, world, rec );
+ 
+ 	// Contact sparse array with manifold and mesh triangleCache
++	b3SnapMark( buf, "contacts" );
+ 	b3SerContacts( buf, world );
++	b3SnapMark( buf, "joints" );
+ 
+ 	// Joint sparse array (userData scrubbed)
+ 	{
+@@ -1204,6 +1235,7 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
+ 	}
+ 
+ 	// Sensors: shapeId + 3 inner arrays each
++	b3SnapMark( buf, "sensors" );
+ 	{
+ 		int sensorCount = world->sensors.count;
+ 		b3SnapW_I32( buf, sensorCount );
+@@ -1218,6 +1250,7 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
+ 	}
+ 
+ 	// Islands: 4 scalars + 3 inner arrays each
++	b3SnapMark( buf, "islands" );
+ 	{
+ 		int islandCount = world->islands.count;
+ 		b3SnapW_I32( buf, islandCount );
+@@ -1238,23 +1271,30 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
+ 	b3BroadPhase* bp = &world->broadPhase;
+ 	for ( int t = 0; t < b3_bodyTypeCount; ++t )
+ 	{
++		b3SnapMark( buf, "tree" );
+ 		b3SerTree( buf, &bp->trees[t] );
+ 	}
++	b3SnapMark( buf, "moved proxies" );
+ 	for ( int t = 0; t < b3_bodyTypeCount; ++t )
+ 	{
+ 		b3SerBitSet( buf, &bp->movedProxies[t] );
+ 	}
++	b3SnapMark( buf, "move array" );
+ 	b3SerPodArray( buf, bp->moveArray );
++	b3SnapMark( buf, "pair set" );
+ 	b3SerHashSet( buf, &bp->pairSet );
+ 
+ 	// Constraint graph
+ 	b3ConstraintGraph* graph = &world->constraintGraph;
+ 	for ( int c = 0; c < B3_GRAPH_COLOR_COUNT; ++c )
+ 	{
++		b3SnapMark( buf, "graph color" );
+ 		b3SerGraphColor( buf, &graph->colors[c], c == B3_OVERFLOW_INDEX );
+ 	}
+ 
++	b3SnapMark( buf, "names" );
+ 	b3SerNames( buf, &world->names );
++	b3SnapMark( buf, "end" );
+ 
+ 	return buf->size - startSize;
+ }
