@@ -3397,6 +3397,13 @@ void AppendToVector( void* context, const void* data, size_t size )
 }
 } // namespace
 
+void Simulation::PhysicsWorldBytes( std::vector<uint8_t>& out )
+{
+	PhysicsArena::Scope scope( *m_arena );
+	out.clear();
+	cbx_SerializeWorld( m_physicsWorld, AppendToVector, &out );
+}
+
 uint64_t Simulation::PhysicsWorldHash()
 {
 	PhysicsArena::Scope scope( *m_arena );
