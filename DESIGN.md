@@ -172,6 +172,11 @@ physics world and never write it themselves, so it is a function of its inputs:
   points in the step (after the characters move; after the items' own motions), self-contained.
   Nothing waits for a later tick (snapshots do not hold the queue). A mod's command whose numbers
   are all in it stays direct: every simulation has the frame's commands.
+- **Two worlds** (M247): the physics world and the characters' (their capsules, a driven prop),
+  in one arena; a stored body handle says which (`BodyOf`). The mover reads the physics world and
+  meets the other characters in theirs; queries ask both. NetIds from two counters (the characters'
+  from `0x10000000`). Bodies cross by events (TakeOver, Enter, Idle; Remove, Spawn): what a character
+  takes, it copies, and only the event changes the physics world. A character's body never sleeps.
 - **Following another's physics** (`SetFollowsPhysics`): a simulation takes the pushers and events
   from its frame and drops its own; `PhysicsMade()` is what a step made, `PhysicsHash()` the physics
   world's hash without the characters. `net_physics_alone`: a recorded session of punching, frags,

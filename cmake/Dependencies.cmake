@@ -86,6 +86,9 @@ FetchContent_Declare(recastnavigation
 )
 
 FetchContent_MakeAvailable(flecs box3d enet ozz miniz)
+# Every simulation has two Box3D worlds (the physics world and the characters', M247), and tests,
+# bots and a server run many simulations in one process: room for 256 of them.
+target_compile_definitions(box3d PUBLIC B3_MAX_WORLDS=512)
 # (Its CMakeLists asks for a CMake older than 3.5, which CMake 4 refuses: for it alone, taken as 3.5.)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 FetchContent_MakeAvailable(recastnavigation)

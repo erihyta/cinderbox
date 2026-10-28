@@ -42,6 +42,8 @@ constexpr float kStepMinSpeed = 0.5f;
 constexpr float kImpactThreshold = 1.5f;
 
 constexpr uint32_t kSnapMagic = 0x43425331u; // 'CBS1'
+// A shape of the characters' world in the shape lookup (indices are each world's own).
+constexpr uint32_t kCharacterShapeBit = 0x80000000u;
 
 b3Vec3 ToVec( const Float3& f )
 {
@@ -162,6 +164,8 @@ Simulation::Simulation( const SimConfig& config, const LevelLayout& map )
 	def.finishTask = &PhysicsThreads::Finish;
 	def.userTaskContext = m_tasks.get();
 	m_physicsWorld = b3CreateWorld( &def );
+	// The characters' (M247): their capsules and driven props, kinematic, touching nothing.
+	m_characterWorld = b3CreateWorld( &def );
 	lock.unlock();
 
 	BuildLevel();
@@ -177,6 +181,7 @@ Simulation::~Simulation()
 	{
 		std::lock_guard<std::mutex> lock( WorldLifetimeMutex() );
 		PhysicsArena::Scope scope( *m_arena );
+		b3DestroyWorld( m_characterWorld );
 		b3DestroyWorld( m_physicsWorld );
 	}
 	ReleaseFlecsWorld( m_world );
@@ -363,13 +368,15 @@ flecs::entity Simulation::FindEntity( uint32_t netId ) const
 	return flecs::entity( m_world, it->entity );
 }
 
-flecs::entity Simulation::CreateEntity()
+flecs::entity Simulation::CreateEntity( bool character )
 {
-	uint32_t netId = m_globals.nextNetId++;
+	uint32_t netId = character ? m_globals.nextCharacterId++ : m_globals.nextNetId++;
 	flecs::entity e = m_world.entity();
 	e.set<NetId>( { netId } );
-	// NetIds only grow, so appending keeps the list sorted.
-	m_entities.push_back( { netId, e.id() } );
+	// Each side's NetIds only grow, and the characters' are above the physics world's: a
+	// character's goes at the end, a physics entity's before the characters'.
+	auto it = std::lower_bound( m_entities.begin(), m_entities.end(), netId, []( const EntityRef& r, uint32_t id ) { return r.netId < id; } );
+	m_entities.insert( it, { netId, e.id() } );
 	IndexesStale();
 	return e;
 }
@@ -1205,7 +1212,7 @@ void Simulation::TakeItemFromWorld( flecs::entity item, uint32_t holder, uint8_t
 {
 	if ( const PhysicsBody* pb = item.try_get<PhysicsBody>() )
 	{
-		b3DestroyBody( BodyOf( *pb ) );
+		LeavePhysics( item, BodyOf( *pb ) ); // (gone by the event: M247)
 	}
 	item.remove<PhysicsBody>();
 	item.remove<Shape>();
@@ -1729,7 +1736,7 @@ void Simulation::StepSlots( const InputFrame& frame )
 				HeldItem rest = *from;
 				rest.count = uint8_t( StackOf( *from ) - half );
 				a.set<HeldItem>( rest );
-				flecs::entity part = CreateEntity();
+				flecs::entity part = CreateEntity( true );
 				HeldItem split = *from;
 				split.count = uint8_t( half );
 				part.set<HeldItem>( split );
@@ -1780,24 +1787,26 @@ void Simulation::StepSlots( const InputFrame& frame )
 	}
 }
 
-PhysicsBody Simulation::MakePhysicsBody( b3BodyId body, b3ShapeId shape )
+PhysicsBody Simulation::MakePhysicsBody( b3BodyId body, b3ShapeId shape ) const
 {
-	body.world0 = 0;
-	shape.world0 = 0;
+	// (Which of the two, not the world's id: that is this simulation's own, and the component is hashed.)
+	const uint16_t which = b3Body_IsValid( body ) && body.world0 == uint16_t( m_characterWorld.index1 - 1 ) ? 1 : 0;
+	body.world0 = which;
+	shape.world0 = which;
 	return { body, shape };
 }
 
 b3BodyId Simulation::BodyOf( const PhysicsBody& pb ) const
 {
 	b3BodyId id = pb.body;
-	id.world0 = uint16_t( m_physicsWorld.index1 - 1 );
+	id.world0 = uint16_t( ( pb.body.world0 == 1 ? m_characterWorld : m_physicsWorld ).index1 - 1 );
 	return id;
 }
 
 b3ShapeId Simulation::ShapeOf( const PhysicsBody& pb ) const
 {
 	b3ShapeId id = pb.shape;
-	id.world0 = uint16_t( m_physicsWorld.index1 - 1 );
+	id.world0 = uint16_t( ( pb.shape.world0 == 1 ? m_characterWorld : m_physicsWorld ).index1 - 1 );
 	return id;
 }
 
@@ -1815,7 +1824,7 @@ b3Vec3 Simulation::SpawnPoint( PlayerSlot slot ) const
 
 flecs::entity Simulation::CreatePlayer( PlayerSlot slot )
 {
-	flecs::entity e = CreateEntity();
+	flecs::entity e = CreateEntity( true );
 	uint32_t netId = e.get<NetId>().value;
 
 	Transform t{ SpawnPoint( slot ), detmath::YawRotation( 0.0f ) };
@@ -1829,7 +1838,7 @@ flecs::entity Simulation::CreatePlayer( PlayerSlot slot )
 	// that reorders the physics bodies around it (whose contacts are then made in another order),
 	// so whether a player stands still would reach the physics world.
 	bodyDef.enableSleep = false;
-	b3BodyId body = b3CreateBody( m_physicsWorld, &bodyDef );
+	b3BodyId body = b3CreateBody( m_characterWorld, &bodyDef );
 	b3ShapeId shapeId = CreateShape( body, shape, CatPlayer );
 
 	Character c;
@@ -1938,10 +1947,20 @@ void Simulation::MakeIdle( flecs::entity e )
 	t.rotation = detmath::YawRotation( c.facingYaw );
 	const Shape shape = e.get<Shape>();
 
-	b3DestroyBody( BodyOf( e.get<PhysicsBody>() ) );
-	b3ShapeId shapeId;
-	b3BodyId body = CreateIdlePhysics( shape, t, c.velocity, mass, shapeId );
-	e.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );
+	// Its body: a body nobody drives in the physics world, by an Idle event (M247), self-contained.
+	PhysicsEvent idle;
+	idle.type = PhysicsEventType::Idle;
+	idle.netId = netId;
+	idle.kind = character;
+	idle.hitAt = { shape.halfExtents.x, shape.halfExtents.y, 0.0f };
+	idle.at = { t.position.x, t.position.y, t.position.z };
+	idle.turn[0] = t.rotation.v.x;
+	idle.turn[1] = t.rotation.v.y;
+	idle.turn[2] = t.rotation.v.z;
+	idle.turn[3] = t.rotation.s;
+	idle.vector = { c.velocity.x, c.velocity.y, c.velocity.z };
+	idle.mass = mass;
+	m_physicsQueue.push_back( std::move( idle ) );
 	e.set<Transform>( t );
 	e.set<Velocity>( { c.velocity, { 0.0f, 0.0f, 0.0f } } );
 	// The controller goes: its state, its animation, whatever its motions had going.
@@ -1968,13 +1987,13 @@ void Simulation::MakeDriven( flecs::entity e, PlayerSlot slot )
 	Transform t{ at.position, detmath::YawRotation( yaw ) };
 	const Shape shape = e.get<Shape>();
 
-	b3DestroyBody( BodyOf( e.get<PhysicsBody>() ) );
+	LeavePhysics( e, BodyOf( e.get<PhysicsBody>() ) ); // (the physics world's, gone by the event: M247)
 	b3BodyDef def = b3DefaultBodyDef();
 	def.type = b3_kinematicBody;
 	def.position = t.position;
 	def.rotation = t.rotation;
 	def.enableSleep = false; // (a character's body never sleeps: CreatePlayer)
-	b3BodyId body = b3CreateBody( m_physicsWorld, &def );
+	b3BodyId body = b3CreateBody( m_characterWorld, &def );
 	b3ShapeId shapeId = CreateShape( body, shape, CatPlayer );
 
 	Character c;
@@ -2071,14 +2090,21 @@ bool Simulation::SeenInFirstPerson( flecs::entity e ) const
 
 void Simulation::DriveProp( flecs::entity e, PlayerSlot slot )
 {
-	b3BodyId body = BodyOf( e.get<PhysicsBody>() );
-	const b3Vec3 origin = b3Body_GetPosition( body );
-	const b3Vec3 velocity = b3Body_GetLinearVelocity( body );
+	// Its physics body is only read (M247): the character's is a copy in the characters' world, and
+	// the physics world's goes when the TakeOver event is applied.
+	const b3BodyId physicsBody = BodyOf( e.get<PhysicsBody>() );
+	const b3Vec3 origin = b3Body_GetPosition( physicsBody );
+	const b3Vec3 velocity = b3Body_GetLinearVelocity( physicsBody );
 	// Upright, keeping its heading.
-	const b3Vec3 forward = b3RotateVector( b3Body_GetRotation( body ), b3Vec3{ 0.0f, 0.0f, 1.0f } );
+	const b3Vec3 forward = b3RotateVector( b3Body_GetRotation( physicsBody ), b3Vec3{ 0.0f, 0.0f, 1.0f } );
 	const float yaw = forward.x * forward.x + forward.z * forward.z > 1e-6f ? detmath::Atan2( forward.x, forward.z ) : 0.0f;
+	std::vector<uint8_t> description;
+	DescribeBody( physicsBody, description );
+	ByteReader reader( description.data(), description.size() );
+	b3ShapeId firstShape;
 	// Its bounds in its own frame: at the identity rotation, from its origin.
-	b3Body_SetTransform( body, origin, b3Quat_identity );
+	b3BodyId body = BuildBody( reader, m_characterWorld, BuildAs::Placed, { origin, b3Quat_identity }, {}, {}, firstShape );
+	b3Body_Enable( body );
 	const b3AABB box = b3Body_ComputeAABB( body );
 	const b3Quat upright = detmath::YawRotation( yaw );
 	DrivenProp prop;
@@ -2113,6 +2139,8 @@ void Simulation::DriveProp( flecs::entity e, PlayerSlot slot )
 		filter.maskBits = CollisionMask( CatDriven );
 		b3Shape_SetFilter( shapes[i], filter, true );
 	}
+	LeavePhysics( e, physicsBody );
+	e.set<PhysicsBody>( MakePhysicsBody( body, firstShape ) );
 
 	Character c;
 	c.slot = slot;
@@ -2136,24 +2164,23 @@ void Simulation::ReleaseProp( flecs::entity e )
 	const DrivenProp prop = e.get<DrivenProp>();
 	const Character c = e.get<Character>();
 	const Transform t = e.get<Transform>();
-	b3BodyId body = BodyOf( e.get<PhysicsBody>() );
+	const b3BodyId body = BodyOf( e.get<PhysicsBody>() );
 	const b3Vec3 origin = { t.position.x, t.position.y - prop.drop, t.position.z };
 	const b3Quat upright = detmath::YawRotation( c.facingYaw );
-	b3Body_SetTransform( body, origin, upright );
-	b3Body_SetType( body, b3_dynamicBody );
-	b3Body_EnableSleep( body, true );
-	b3Body_Enable( body ); // (its driver may have died in it: a dead body is out of the world)
-	b3ShapeId shapes[64];
-	const int count = b3Body_GetShapes( body, shapes, 64 );
-	for ( int i = 0; i < count; ++i )
-	{
-		b3Filter filter = b3Shape_GetFilter( shapes[i] );
-		filter.categoryBits = prop.category != 0 ? prop.category : uint64_t( CatProp );
-		filter.maskBits = CollisionMask( filter.categoryBits );
-		b3Shape_SetFilter( shapes[i], filter, true );
-	}
-	b3Body_SetLinearVelocity( body, c.velocity );
-	b3Body_SetAwake( body, true );
+	// A loose body again, the physics world's (M247): by an Enter event, self-contained (the body as
+	// its character's describes it; its driver may have died in it: it is enabled again).
+	PhysicsEvent enter;
+	enter.type = PhysicsEventType::Enter;
+	enter.netId = e.get<NetId>().value;
+	DescribeBody( body, enter.body );
+	enter.owner = prop.category != 0 ? prop.category : uint32_t( CatProp );
+	enter.at = { origin.x, origin.y, origin.z };
+	enter.turn[0] = upright.v.x;
+	enter.turn[1] = upright.v.y;
+	enter.turn[2] = upright.v.z;
+	enter.turn[3] = upright.s;
+	enter.vector = { c.velocity.x, c.velocity.y, c.velocity.z };
+	m_physicsQueue.push_back( std::move( enter ) );
 	e.set<Transform>( { origin, upright } );
 	e.set<Velocity>( { c.velocity, { 0.0f, 0.0f, 0.0f } } );
 	e.remove<Character>();
@@ -2565,7 +2592,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		still.cameraYaw = in.cameraYaw;
 		const CharacterBody& bodyKind = Body( CharacterOf( e ) );
 		const DrivenProp* driven = e.try_get<DrivenProp>();
-		mover::Body moving{ m_physicsWorld, BodyOf( pb ), ShapeOf( pb ), bodyKind.radius, bodyKind.halfHeight };
+		mover::Body moving{ m_characterWorld, BodyOf( pb ), ShapeOf( pb ), bodyKind.radius, bodyKind.halfHeight };
+		moving.scenery = m_physicsWorld;
 		if ( driven != nullptr )
 		{
 			moving.radius = driven->radius;
@@ -2669,7 +2697,7 @@ void Simulation::CreateLaunched()
 				rest.count = uint8_t( StackOf( *held ) - 1 );
 				item.set<HeldItem>( rest );
 				flecs::entity stack = item;
-				item = CreateEntity();
+				item = CreateEntity( true );
 				item.set<HeldItem>( { 0, l.kind, 0, 0 } );
 				StartItemFields( item, l.kind );
 				if ( HasBoard( stack ) )
@@ -2680,7 +2708,7 @@ void Simulation::CreateLaunched()
 		}
 		else
 		{
-			item = CreateEntity();
+			item = CreateEntity( true );
 			item.set<HeldItem>( { 0, l.kind, 0, 0 } );
 			StartItemFields( item, l.kind );
 		}
@@ -2798,10 +2826,9 @@ void Simulation::EnforcePropCaps()
 			continue; // (a prop someone drives is a body, not a prop to count)
 		}
 		total += 1;
-		if ( FindEntity( p->owner ).is_valid() )
-		{
-			countOf( p->owner ) += 1;
-		}
+		// (By the owner's NetId alone, whether or not it is still here: the physics world's rules
+		// read no character, M247. One that left spawns no more, so its count only goes down.)
+		countOf( p->owner ) += 1;
 	}
 
 	// Second pass: oldest first, drop while over a cap.
@@ -2814,7 +2841,7 @@ void Simulation::EnforcePropCaps()
 			continue; // (a prop someone drives is a body, not a prop to count)
 		}
 
-		uint32_t* ownerCount = FindEntity( p->owner ).is_valid() ? &countOf( p->owner ) : nullptr;
+		uint32_t* ownerCount = &countOf( p->owner );
 		bool overOwner = ownerCount != nullptr && *ownerCount > m_config.propsPerPlayer;
 		bool overGlobal = total > m_config.propsGlobal;
 		if ( overOwner || overGlobal )
@@ -3159,10 +3186,11 @@ void Simulation::Step( const InputFrame& given )
 
 	ApplyEvents( frame );
 	ApplyCommands( frame );
-	spent( m_profile.commandsNs );
-	MoveCharacters( frame );
 	m_physicsMade.physics.clear();
 	ApplyPhysicsEvents( frame, 0 );
+	spent( m_profile.commandsNs );
+	MoveCharacters( frame );
+	ApplyPhysicsEvents( frame, 1 );
 	// (Following a server, the world's rules are its own: simulation.h, ApplyState.)
 	if ( m_followsServer == false )
 	{
@@ -3177,6 +3205,9 @@ void Simulation::Step( const InputFrame& given )
 	}
 	PlacePushers( frame );
 	b3World_Step( m_physicsWorld, m_config.TimeStep(), int( m_config.subSteps ) );
+	// (The characters' bodies are kinematic and touch nothing: one substep takes them where their
+	// movers sent them.)
+	b3World_Step( m_characterWorld, m_config.TimeStep(), 1 );
 	spent( m_profile.physicsNs );
 	{
 		b3Profile parts = b3World_GetProfile( m_physicsWorld );
@@ -3197,7 +3228,8 @@ void Simulation::Step( const InputFrame& given )
 		BreakByItems();
 	}
 	RunItemEvents();
-	ApplyPhysicsEvents( frame, 1 );
+	ApplyPhysicsEvents( frame, 2 );
+	m_leaving.clear();
 	SyncFromPhysics();
 	FollowHolders();
 	UpdateFootsteps();
@@ -3320,11 +3352,13 @@ void Simulation::Save( Snapshot& out )
 	SerializeEcs( out.ecs );
 	out.hash = HashBytes( kHashSeed, out.ecs.data(), out.ecs.size() );
 
+	// The arena both worlds live in, then the physics world's struct and the characters'.
 	m_arena->Save( out.physics );
 	size_t arenaBytes = out.physics.size();
 	size_t worldBytes = cbx_WorldStructSize();
-	out.physics.resize( arenaBytes + worldBytes );
+	out.physics.resize( arenaBytes + 2 * worldBytes );
 	std::memcpy( out.physics.data() + arenaBytes, cbx_WorldStructPtr( m_physicsWorld ), worldBytes );
+	std::memcpy( out.physics.data() + arenaBytes + worldBytes, cbx_WorldStructPtr( m_characterWorld ), worldBytes );
 }
 
 void Simulation::Load( const Snapshot& snapshot )
@@ -3332,9 +3366,10 @@ void Simulation::Load( const Snapshot& snapshot )
 	DeserializeEcs( snapshot.ecs );
 
 	size_t worldBytes = cbx_WorldStructSize();
-	size_t arenaBytes = snapshot.physics.size() - worldBytes;
+	size_t arenaBytes = snapshot.physics.size() - 2 * worldBytes;
 	m_arena->Restore( snapshot.physics.data(), arenaBytes );
 	std::memcpy( cbx_WorldStructPtr( m_physicsWorld ), snapshot.physics.data() + arenaBytes, worldBytes );
+	std::memcpy( cbx_WorldStructPtr( m_characterWorld ), snapshot.physics.data() + arenaBytes + worldBytes, worldBytes );
 }
 
 uint64_t Simulation::ComputeHash()
@@ -3356,6 +3391,14 @@ void AppendToVector( void* context, const void* data, size_t size )
 }
 } // namespace
 
+uint64_t Simulation::PhysicsWorldHash()
+{
+	PhysicsArena::Scope scope( *m_arena );
+	std::vector<uint8_t> bytes;
+	cbx_SerializeWorld( m_physicsWorld, AppendToVector, &bytes );
+	return HashBytes( kHashSeed, bytes.data(), bytes.size() );
+}
+
 void Simulation::SavePortable( std::vector<uint8_t>& out )
 {
 	PhysicsArena::Scope scope( *m_arena );
@@ -3363,7 +3406,15 @@ void Simulation::SavePortable( std::vector<uint8_t>& out )
 	out.clear();
 	AppendValue( out, uint32_t( m_hashScratch.size() ) );
 	AppendBytes( out, m_hashScratch.data(), m_hashScratch.size() );
-	cbx_SerializeWorld( m_physicsWorld, AppendToVector, &out );
+	// Each world after its size: the physics world, then the characters'.
+	for ( b3WorldId world : { m_physicsWorld, m_characterWorld } )
+	{
+		const size_t at = out.size();
+		AppendValue( out, uint32_t( 0 ) );
+		cbx_SerializeWorld( world, AppendToVector, &out );
+		const uint32_t bytes = uint32_t( out.size() - at - sizeof( uint32_t ) );
+		std::memcpy( out.data() + at, &bytes, sizeof( bytes ) );
+	}
 }
 
 bool Simulation::LoadPortable( const std::vector<uint8_t>& in )
@@ -3379,9 +3430,18 @@ bool Simulation::LoadPortable( const std::vector<uint8_t>& in )
 		kept.push_back( std::make_unique<uint64_t[]>( ( size + 7 ) / 8 ) );
 		return kept.back().get();
 	};
-	if ( cbx_DeserializeWorld( m_physicsWorld, in.data() + rd.cursor, in.size() - rd.cursor, keep, &m_keptGeometry ) == false )
+	for ( b3WorldId world : { m_physicsWorld, m_characterWorld } )
 	{
-		return false;
+		if ( rd.cursor + sizeof( uint32_t ) > in.size() )
+		{
+			return false;
+		}
+		const uint32_t bytes = rd.Read<uint32_t>();
+		if ( bytes > in.size() - rd.cursor || cbx_DeserializeWorld( world, in.data() + rd.cursor, bytes, keep, &m_keptGeometry ) == false )
+		{
+			return false;
+		}
+		rd.cursor += bytes;
 	}
 	m_hashScratch.assign( ecs, ecs + ecsSize );
 	DeserializeEcs( m_hashScratch );
@@ -3666,6 +3726,12 @@ void Simulation::ApplyCommand( const SimCommand& command )
 
 		case CommandType::SpawnProp:
 		{
+			// Whose it is reads the characters: decided here, made when the physics events are applied
+			// (a Spawn event, M247). Following another's physics, its events bring it.
+			if ( m_followsPhysics )
+			{
+				return;
+			}
 			uint32_t owner = 0;
 			if ( command.target != 0 )
 			{
@@ -3675,32 +3741,11 @@ void Simulation::ApplyCommand( const SimCommand& command )
 					return; // the player it was for has left
 				}
 			}
-			b3Vec3 position = ToVec( command.a );
-			b3Vec3 velocity = ToVec( command.b );
-			b3Quat rotation = detmath::YawRotation( detmath::YawToRadians( command.index ) );
-			uint32_t lifetime = command.other;
-
-			if ( command.value >= 0 )
-			{
-				flecs::entity e = CreateFromTemplate( uint32_t( command.value ), position, rotation, velocity, owner );
-				// Whatever the template says, something a player spawned expires and counts against
-				// the caps; otherwise a mod could let players fill the world.
-				if ( e.is_valid() && owner != 0 && ( e.has<Prop>() == false || e.get<Prop>().despawnTick == 0 ) )
-				{
-					uint32_t ticks = lifetime > 0 ? lifetime : m_config.PropLifetimeTicks();
-					e.set<Prop>( { owner, m_globals.tick, m_globals.tick + ticks } );
-				}
-				return;
-			}
-
-			ShapeKind kind = ShapeKind( std::min<uint8_t>( command.mode, uint8_t( ShapeKind::Capsule ) ) );
-			b3Vec3 half = ToVec( command.c );
-			half = { std::clamp( half.x, 0.02f, 8.0f ), std::clamp( half.y, 0.0f, 8.0f ), std::clamp( half.z, 0.02f, 8.0f ) };
-			if ( kind == ShapeKind::Box )
-			{
-				half.y = std::max( half.y, 0.02f );
-			}
-			CreateProp( kind, position, rotation, half, velocity, owner, lifetime );
+			PhysicsEvent spawn;
+			spawn.type = PhysicsEventType::Spawn;
+			spawn.command = command;
+			spawn.command.target = owner;
+			m_physicsQueue.push_back( std::move( spawn ) );
 			return;
 		}
 
@@ -3779,7 +3824,7 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			if ( m_config.slots > 0 )
 			{
 				// Into a slot (its kind's own, or the first free one); with none, onto the floor.
-				flecs::entity item = CreateEntity();
+				flecs::entity item = CreateEntity( true );
 				item.set<HeldItem>( { 0, command.index, kNoSocket, 1 } );
 				StartItemFields( item, command.index );
 				item.set<Transform>( player.get<Transform>() );
@@ -3791,7 +3836,7 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			}
 			if ( command.value == 1 )
 			{
-				flecs::entity item = CreateEntity();
+				flecs::entity item = CreateEntity( true );
 				item.set<HeldItem>( { holder, command.index, command.mode, 1 } );
 				StartItemFields( item, command.index );
 				item.set<Transform>( player.get<Transform>() );
@@ -3803,7 +3848,7 @@ void Simulation::ApplyCommand( const SimCommand& command )
 				const Transform& at = player.get<Transform>();
 				QueueIntoWorld( FindEntity( old ), b3Add( at.position, b3Vec3{ 0.0f, 0.4f, 0.0f } ), at.rotation, b3Vec3{ 0.0f, 0.0f, 0.0f } );
 			}
-			flecs::entity item = CreateEntity();
+			flecs::entity item = CreateEntity( true );
 			item.set<HeldItem>( { holder, command.index, command.mode, 0 } );
 			StartItemFields( item, command.index );
 			item.set<Transform>( player.get<Transform>() );
@@ -3818,7 +3863,8 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			{
 				return;
 			}
-			PutItemInWorld( item, ToVec( command.a ), CommandRotation( command.c ), ToVec( command.b ) );
+			// (A held item may be one a simulation without the characters does not have: an event.)
+			QueueIntoWorld( item, ToVec( command.a ), CommandRotation( command.c ), ToVec( command.b ) );
 			return;
 		}
 
@@ -4003,6 +4049,38 @@ void PushBody( b3BodyId body, b3Vec3 point, b3Vec3 vector, uint8_t mode )
 }
 
 } // namespace
+
+void Simulation::SpawnProp( const SimCommand& command )
+{
+	const uint32_t owner = command.target;
+	b3Vec3 position = ToVec( command.a );
+	b3Vec3 velocity = ToVec( command.b );
+	b3Quat rotation = detmath::YawRotation( detmath::YawToRadians( command.index ) );
+	uint32_t lifetime = command.other;
+
+	if ( command.value >= 0 )
+	{
+		flecs::entity e = CreateFromTemplate( uint32_t( command.value ), position, rotation, velocity, owner );
+		// Whatever the template says, something a player spawned expires and counts against
+		// the caps; otherwise a mod could let players fill the world.
+		if ( e.is_valid() && owner != 0 && ( e.has<Prop>() == false || e.get<Prop>().despawnTick == 0 ) )
+		{
+			uint32_t ticks = lifetime > 0 ? lifetime : m_config.PropLifetimeTicks();
+			e.set<Prop>( { owner, m_globals.tick, m_globals.tick + ticks } );
+		}
+		return;
+	}
+
+	ShapeKind kind = ShapeKind( std::min<uint8_t>( command.mode, uint8_t( ShapeKind::Capsule ) ) );
+	b3Vec3 half = ToVec( command.c );
+	half = { std::clamp( half.x, 0.02f, 8.0f ), std::clamp( half.y, 0.0f, 8.0f ), std::clamp( half.z, 0.02f, 8.0f ) };
+	if ( kind == ShapeKind::Box )
+	{
+		half.y = std::max( half.y, 0.02f );
+	}
+	CreateProp( kind, position, rotation, half, velocity, owner, lifetime );
+	return;
+}
 
 void Simulation::ApplyImpulse( flecs::entity e, const SimCommand& command )
 {
@@ -4315,10 +4393,11 @@ void Simulation::BuildShapeLookup()
 		{
 			// A body of several shapes is one entity whichever of them is hit.
 			b3BodyId body = BodyOf( *pb );
+			const uint32_t world = pb->body.world0 == 1 ? kCharacterShapeBit : 0u; // (shape indices are a world's)
 			const int count = b3Body_IsValid( body ) ? b3Body_GetShapeCount( body ) : 0;
 			if ( count <= 1 )
 			{
-				m_shapeLookup.push_back( { uint32_t( pb->shape.index1 ), r.netId } );
+				m_shapeLookup.push_back( { uint32_t( pb->shape.index1 ) | world, r.netId } );
 			}
 			else
 			{
@@ -4326,7 +4405,7 @@ void Simulation::BuildShapeLookup()
 				const int got = b3Body_GetShapes( body, shapes, int( kMapSetPieceLimit ) );
 				for ( int i = 0; i < got; ++i )
 				{
-					m_shapeLookup.push_back( { uint32_t( shapes[i].index1 ), r.netId } );
+					m_shapeLookup.push_back( { uint32_t( shapes[i].index1 ) | world, r.netId } );
 				}
 			}
 		}
@@ -4348,7 +4427,7 @@ void Simulation::BuildShapeLookup()
 
 uint32_t Simulation::NetIdOfShape( b3ShapeId shape ) const
 {
-	uint32_t index = uint32_t( shape.index1 );
+	uint32_t index = uint32_t( shape.index1 ) | ( shape.world0 == uint16_t( m_characterWorld.index1 - 1 ) ? kCharacterShapeBit : 0u );
 	auto it = std::lower_bound( m_shapeLookup.begin(), m_shapeLookup.end(), std::make_pair( index, uint32_t( 0 ) ) );
 	return ( it != m_shapeLookup.end() && it->first == index ) ? it->second : 0;
 }
@@ -4941,7 +5020,19 @@ void Simulation::RunItemMotions( flecs::entity item, int event, bool expiring )
 		}
 		if ( remove && expiring == false )
 		{
-			DestroyEntity( item );
+			const HeldItem* held = item.try_get<HeldItem>();
+			if ( held != nullptr && held->holder == 0 && item.has<PhysicsBody>() )
+			{
+				// Lying in the world: the physics world's to lose, by an event (M247).
+				PhysicsEvent gone;
+				gone.type = PhysicsEventType::Remove;
+				gone.netId = item.get<NetId>().value;
+				m_physicsQueue.push_back( std::move( gone ) );
+			}
+			else
+			{
+				DestroyEntity( item );
+			}
 			return;
 		}
 	}
@@ -5086,7 +5177,11 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 				}
 				return true; // all of them
 			};
-			b3World_OverlapShape( m_physicsWorld, t.position, &proxy, filter, each, &ctx );
+			// (Both worlds, M247: the physics world's bodies and the characters'.)
+			for ( b3WorldId world : { m_physicsWorld, m_characterWorld } )
+			{
+				b3World_OverlapShape( world, t.position, &proxy, filter, each, &ctx );
+			}
 		}
 	}
 	// What it may find, nearest first (then by id: the same order on every machine), at most so many.
@@ -5918,7 +6013,11 @@ bool Simulation::CastProbe( const Motion& m, b3Vec3 origin, b3Vec3 translation, 
 	hit = RayHit{};
 	RayContext ctx{ this, ignoreNetId, &hit, false, false };
 	b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( CatPusher ), 0, nullptr };
-	b3World_CastShape( m_physicsWorld, origin, &proxy, translation, filter, &Simulation::RayCallback, &ctx );
+	// (Both worlds, M247: the physics world's bodies and the characters'.)
+	for ( b3WorldId world : { m_physicsWorld, m_characterWorld } )
+	{
+		b3World_CastShape( world, origin, &proxy, translation, filter, &Simulation::RayCallback, &ctx );
+	}
 	return ctx.found;
 }
 
@@ -5929,7 +6028,11 @@ bool Simulation::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetI
 	hit = RayHit{};
 	RayContext ctx{ this, ignoreNetId, &hit, false, skipPlayers };
 	b3QueryFilter filter = { ~uint64_t( 0 ), ~uint64_t( CatPusher ), 0, nullptr };
-	b3World_CastRay( m_physicsWorld, origin, translation, filter, &Simulation::RayCallback, &ctx );
+	// (Both worlds, M247: the physics world's bodies and the characters'.)
+	for ( b3WorldId world : { m_physicsWorld, m_characterWorld } )
+	{
+		b3World_CastRay( world, origin, translation, filter, &Simulation::RayCallback, &ctx );
+	}
 	return ctx.found;
 }
 
@@ -5971,17 +6074,21 @@ void Simulation::HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 s
 	auto overlaps = [&]( b3Vec3 origin, float yaw, float inset ) {
 		const b3ShapeProxy proxy = shapeAt( yaw, inset );
 		Overlap o{ this, self, false };
-		b3World_OverlapShape( m_physicsWorld, origin, &proxy, filter,
-							  []( b3ShapeId shape, void* context ) {
-								  auto* o = static_cast<Overlap*>( context );
-								  if ( o->sim->NetIdOfShape( shape ) == o->self || b3Body_GetType( b3Shape_GetBody( shape ) ) == b3_dynamicBody )
-								  {
-									  return true; // (its own shapes; a loose body)
-								  }
-								  o->found = true;
-								  return false;
-							  },
-							  &o );
+		// (Both worlds, M247: the physics world's bodies and the characters'.)
+		for ( b3WorldId world : { m_physicsWorld, m_characterWorld } )
+		{
+			b3World_OverlapShape( world, origin, &proxy, filter,
+								  []( b3ShapeId shape, void* context ) {
+									  auto* o = static_cast<Overlap*>( context );
+									  if ( o->sim->NetIdOfShape( shape ) == o->self || b3Body_GetType( b3Shape_GetBody( shape ) ) == b3_dynamicBody )
+									  {
+										  return true; // (its own shapes; a loose body)
+									  }
+									  o->found = true;
+									  return false;
+								  },
+								  &o );
+		}
 		return o.found;
 	};
 	// How far into something its bounds are, roughly (0: clear): the least inset that clears them.
@@ -6047,22 +6154,26 @@ void Simulation::HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 s
 					float fraction;
 					b3Vec3 normal;
 				} cast{ this, self, false, 1.0f, {} };
-				b3World_CastShape( m_physicsWorld, at, &proxy, left, filter,
-								   []( b3ShapeId shape, b3Pos, b3Vec3 normal, float fraction, uint64_t, int, int, void* context ) -> float {
-									   auto* cast = static_cast<Cast*>( context );
-									   if ( cast->sim->NetIdOfShape( shape ) == cast->self || b3Body_GetType( b3Shape_GetBody( shape ) ) == b3_dynamicBody )
-									   {
-										   return -1.0f; // (its own shapes; a loose body)
-									   }
-									   if ( fraction < cast->fraction || cast->found == false )
-									   {
-										   cast->found = true;
-										   cast->fraction = fraction;
-										   cast->normal = normal;
-									   }
-									   return fraction;
-								   },
-								   &cast );
+				// (Both worlds, M247: the physics world's bodies and the characters'.)
+				for ( b3WorldId world : { m_physicsWorld, m_characterWorld } )
+				{
+					b3World_CastShape( world, at, &proxy, left, filter,
+									   []( b3ShapeId shape, b3Pos, b3Vec3 normal, float fraction, uint64_t, int, int, void* context ) -> float {
+										   auto* cast = static_cast<Cast*>( context );
+										   if ( cast->sim->NetIdOfShape( shape ) == cast->self || b3Body_GetType( b3Shape_GetBody( shape ) ) == b3_dynamicBody )
+										   {
+											   return -1.0f; // (its own shapes; a loose body)
+										   }
+										   if ( fraction < cast->fraction || cast->found == false )
+										   {
+											   cast->found = true;
+											   cast->fraction = fraction;
+											   cast->normal = normal;
+										   }
+										   return fraction;
+									   },
+									   &cast );
+				}
 				if ( cast.found == false )
 				{
 					at = b3Add( at, left );

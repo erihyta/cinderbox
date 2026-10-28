@@ -397,14 +397,19 @@ struct ModDriven
 };
 
 // A character's pusher (M246): a kinematic capsule in the physics world that shoves the bodies
-// pushed by characters (CatPusher), placed every tick from the frame's PusherPlace. On the
-// character's entity; disabled while its place is not given (far from anything pushable).
+// pushed by characters (CatPusher), placed every tick from the frame's PusherPlace. An entity of
+// the physics world's own (M247), named by its character's NetId, so a simulation without the
+// characters has it too; disabled while its place is not given (far from anything pushable), gone
+// after kPusherIdleTicks of that.
+inline constexpr uint32_t kPusherIdleTicks = 600;
 struct Pusher
 {
 	b3BodyId body = {};
 	b3ShapeId shape = {};
+	uint32_t character = 0;
 	uint16_t radius = 0, halfHeight = 0; // its capsule's, mm (made again when they change)
 	uint32_t active = 0;
+	uint32_t idleTicks = 0; // while not given a place
 };
 
 // Only in a simulation that follows a server's states (the state network model,

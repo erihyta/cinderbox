@@ -330,6 +330,8 @@ inline PlayerInput UnpackInput( const SimCommand& c )
 // a simulation that follows another's physics places pushers from these alone. Its centre on a
 // 1/1024 m grid, its size in millimetres.
 inline constexpr float kPusherGrid = 1024.0f;
+// Where the characters' NetIds start (SimGlobals::nextCharacterId); the physics world's are below.
+inline constexpr uint32_t kCharacterIdBase = 0x10000000u;
 struct PusherPlace
 {
 	uint32_t netId = 0; // the character's
@@ -355,13 +357,25 @@ enum class PhysicsEventType : uint8_t
 	Ragdoll = 3,   // a ragdoll of the player `netId` (slot `slot`): its feet at `at`, facing `yaw`, going
 				   // `vector`, weighing `mass`, lasting `ticks`; then hit (`hitAt`, `hitVector`, `mode`), and
 				   // the ragdolls kept to `count` (0: no cap). It is made with the NetId `made`
+	// Bodies between the two worlds (M247): what a character takes from the physics world or gives
+	// back to it.
+	Remove = 4,	  // the entity `netId` is gone (an item its own motion removed)
+	TakeOver = 5, // the body of `netId` leaves the physics world (a prop driven, a body taken over, an item picked up)
+	Enter = 6,	  // the body of `netId` joins it: as `body` describes it (Simulation::DescribeBody), made dynamic,
+				  // its shapes of category `owner`, at `at` turned `turn`, going `vector` (a driven prop let go)
+	Idle = 7,	  // `netId` is a body nobody drives (a player's left behind): of character `kind`, its capsule
+				  // `hitAt` (radius, half height), its centre at `at` turned `turn`, going `vector`, weighing `mass`
+	Spawn = 8,	  // a mod's SpawnProp as `command` says, its owner (`command.target`) the NetId it named: what
+				  // a player spawned is the player's (its caps), which a simulation without the characters
+				  // could not tell
 };
 
 struct PhysicsEvent
 {
 	PhysicsEventType type = PhysicsEventType::Push;
-	// Where in the step it is applied: 0 after the characters move, 1 after the items' own motions
-	// (after the physics step: a frag's blast). Nothing waits for a later tick.
+	// Where in the step it is applied: 0 after the commands (a kill's ragdoll, a body taken over), 1
+	// after the characters move, 2 after the items' own motions (after the physics step: a frag's
+	// blast). Nothing waits for a later tick.
 	uint8_t phase = 0;
 	uint8_t mode = 0;
 	uint16_t kind = 0;
@@ -375,6 +389,8 @@ struct PhysicsEvent
 	float turn[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	float yaw = 0.0f, mass = 0.0f;
 	std::vector<int32_t> board; // IntoWorld: the item's fields (empty: none)
+	std::vector<uint8_t> body;	// Enter: the body's description
+	SimCommand command;			// Spawn
 
 	bool operator==( const PhysicsEvent& ) const = default;
 };

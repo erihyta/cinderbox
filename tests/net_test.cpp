@@ -6200,6 +6200,7 @@ void TestPhysicsAlone()
 		return out;
 	};
 	std::map<uint32_t, Bodies> bodies;
+	std::map<uint32_t, uint64_t> worlds; // its Box3D physics world's hash after that tick
 	size_t events[4] = {}, pushers = 0;
 	{
 		std::vector<std::unique_ptr<mods::ServerMod>> extra;
@@ -6210,6 +6211,7 @@ void TestPhysicsAlone()
 			made[m.tick] = m;
 			hashes[m.tick] = h.server.Sim().PhysicsHash();
 			bodies[m.tick] = bodiesOf( h.server.Sim() );
+			worlds[m.tick] = h.server.Sim().PhysicsWorldHash();
 			for ( const PhysicsEvent& e : m.physics )
 			{
 				events[size_t( e.type )] += 1;
@@ -6242,64 +6244,77 @@ void TestPhysicsAlone()
 	net::ReplayReader replay;
 	std::string error;
 	CHECK( replay.Open( replayPath.string(), error ) );
-	Simulation follower( replay.Config(), replay.Map() );
+	// Twice: with the players there, standing still (their bodies in the characters' world, M247),
+	// and with no characters at all (no joins: commands for players do nothing). The physics world
+	// must be the server's on every tick, by its entities and by Box3D's own bytes.
+	for ( const bool characters : { true, false } )
 	{
-		std::vector<Simulation::CharacterBody> characters;
-		std::string ignored;
-		Simulation::CharactersOf( replay.Schema(), characters, ignored );
-		follower.SetCharacters( std::move( characters ) );
-	}
-	follower.SetAnimPacks( replay.Packs() );
-	follower.SetMotions( replay.MotionSets() );
-	follower.SetItemShapes( replay.Schema().itemShapes );
-	follower.SetFollowsPhysics( true );
-	size_t compared = 0;
-	uint32_t firstWrong = UINT32_MAX;
-	for ( InputFrame frame : replay.Frames() )
-	{
-		frame.inputs = {}; // (everyone stands still)
-		if ( auto it = made.find( frame.tick ); it != made.end() )
+		Simulation follower( replay.Config(), replay.Map() );
 		{
-			frame.pushers = it->second.pushers;
-			frame.physics = it->second.physics;
+			std::vector<Simulation::CharacterBody> kinds;
+			std::string ignored;
+			Simulation::CharactersOf( replay.Schema(), kinds, ignored );
+			follower.SetCharacters( std::move( kinds ) );
 		}
-		follower.Step( frame );
-		if ( auto it = hashes.find( frame.tick ); it != hashes.end() )
+		follower.SetAnimPacks( replay.Packs() );
+		follower.SetMotions( replay.MotionSets() );
+		follower.SetItemShapes( replay.Schema().itemShapes );
+		follower.SetFollowsPhysics( true );
+		size_t compared = 0;
+		uint32_t firstWrong = UINT32_MAX, firstWrongWorld = UINT32_MAX;
+		for ( InputFrame frame : replay.Frames() )
 		{
-			compared += 1;
-			if ( it->second != follower.PhysicsHash() && firstWrong == UINT32_MAX )
+			frame.inputs = {}; // (everyone stands still)
+			if ( characters == false )
 			{
-				firstWrong = frame.tick;
-				const Bodies mine = bodiesOf( follower );
-				const Bodies& theirs = bodies[frame.tick];
-				std::printf( "    tick %u: the server has %zu bodies, the follower %zu; inputs that tick: %zu events, %zu pushers\n", frame.tick,
-							 theirs.size(), mine.size(), frame.physics.size(), frame.pushers.size() );
-				for ( size_t k = 0, shown = 0; k < std::max( mine.size(), theirs.size() ) && shown < 6; ++k )
+				frame.events.clear(); // (nobody joins)
+			}
+			if ( auto it = made.find( frame.tick ); it != made.end() )
+			{
+				frame.pushers = it->second.pushers;
+				frame.physics = it->second.physics;
+			}
+			follower.Step( frame );
+			if ( auto it = hashes.find( frame.tick ); it != hashes.end() )
+			{
+				compared += 1;
+				if ( it->second != follower.PhysicsHash() && firstWrong == UINT32_MAX )
 				{
-					const bool both = k < mine.size() && k < theirs.size();
-					if ( both && mine[k].first == theirs[k].first && b3Distance( mine[k].second, theirs[k].second ) == 0.0f )
+					firstWrong = frame.tick;
+					const Bodies mine = bodiesOf( follower );
+					const Bodies& theirs = bodies[frame.tick];
+					std::printf( "    tick %u: the server has %zu bodies, the follower %zu; inputs that tick: %zu events, %zu pushers\n", frame.tick,
+								 theirs.size(), mine.size(), frame.physics.size(), frame.pushers.size() );
+					for ( size_t k = 0, shown = 0; k < std::max( mine.size(), theirs.size() ) && shown < 6; ++k )
 					{
-						continue;
+						const bool both = k < mine.size() && k < theirs.size();
+						if ( both && mine[k].first == theirs[k].first && b3Distance( mine[k].second, theirs[k].second ) == 0.0f )
+						{
+							continue;
+						}
+						shown += 1;
+						std::printf( "      #%zu: server %u (%.4f %.4f %.4f), follower %u (%.4f %.4f %.4f)\n", k, k < theirs.size() ? theirs[k].first : 0,
+									 k < theirs.size() ? theirs[k].second.x : 0.f, k < theirs.size() ? theirs[k].second.y : 0.f,
+									 k < theirs.size() ? theirs[k].second.z : 0.f, k < mine.size() ? mine[k].first : 0,
+									 k < mine.size() ? mine[k].second.x : 0.f, k < mine.size() ? mine[k].second.y : 0.f, k < mine.size() ? mine[k].second.z : 0.f );
 					}
-					shown += 1;
-					if ( k < mine.size() )
-					{
-						flecs::entity w = follower.FindEntity( mine[k].first );
-						std::printf( "      (it is%s%s%s%s%s)", w.has<Ragdoll>() ? " a ragdoll" : "", w.has<HeldItem>() ? " an item" : "",
-									 w.has<WallPiece>() ? " a wall piece" : "", w.has<TemplateRef>() ? " from a template" : "", w.has<Prop>() ? " a prop" : "" );
-					}
-					std::printf( "      #%zu: server %u (%.4f %.4f %.4f), follower %u (%.4f %.4f %.4f)\n", k, k < theirs.size() ? theirs[k].first : 0,
-								 k < theirs.size() ? theirs[k].second.x : 0.f, k < theirs.size() ? theirs[k].second.y : 0.f,
-								 k < theirs.size() ? theirs[k].second.z : 0.f, k < mine.size() ? mine[k].first : 0, k < mine.size() ? mine[k].second.x : 0.f,
-								 k < mine.size() ? mine[k].second.y : 0.f, k < mine.size() ? mine[k].second.z : 0.f );
+				}
+				if ( worlds[frame.tick] != follower.PhysicsWorldHash() && firstWrongWorld == UINT32_MAX )
+				{
+					firstWrongWorld = frame.tick;
 				}
 			}
 		}
+		auto said = []( uint32_t tick ) {
+			return tick == UINT32_MAX ? std::string( "the same on every one" ) : "different from tick " + std::to_string( tick );
+		};
+		std::printf( "    a follower %s: %zu ticks compared; its physics world's entities %s, its Box3D world %s\n",
+					 characters ? "whose players stood still" : "with no characters at all", compared, said( firstWrong ).c_str(),
+					 said( firstWrongWorld ).c_str() );
+		CHECK( compared > 400 );
+		CHECK( firstWrong == UINT32_MAX );
+		CHECK( firstWrongWorld == UINT32_MAX );
 	}
-	std::printf( "    a follower whose players stood still: %zu ticks compared, %s\n", compared,
-				 firstWrong == UINT32_MAX ? "the same physics world on every one" : ( "different from tick " + std::to_string( firstWrong ) ).c_str() );
-	CHECK( compared > 400 );
-	CHECK( firstWrong == UINT32_MAX );
 	std::filesystem::remove( replayPath );
 }
 

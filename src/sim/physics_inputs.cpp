@@ -108,64 +108,92 @@ void Simulation::PlacePushers( const InputFrame& frame )
 		id.world0 = world0;
 		return id;
 	};
-	// The places are in NetId order, as the entities are: one walk over both.
-	size_t next = 0;
-	const std::vector<PusherPlace>& places = m_physicsMade.pushers;
+	// The pushers there are, by their characters (entities of the physics world's: M247).
+	std::vector<std::pair<uint32_t, flecs::entity_t>> pushers;
 	for ( const EntityRef& r : m_entities )
 	{
-		while ( next < places.size() && places[next].netId < r.netId )
+		if ( const Pusher* p = flecs::entity( m_world, r.entity ).try_get<Pusher>() )
 		{
-			++next; // (a place for nothing this world has: a follower's characters may differ)
+			pushers.push_back( { p->character, r.entity } );
 		}
-		flecs::entity e( m_world, r.entity );
-		const PusherPlace* place = next < places.size() && places[next].netId == r.netId ? &places[next] : nullptr;
-		Pusher* pusher = e.try_get_mut<Pusher>();
-		if ( place == nullptr )
+	}
+	std::sort( pushers.begin(), pushers.end() );
+	std::vector<bool> placed( pushers.size(), false );
+	auto capsuleOf = [&]( const PusherPlace& place, b3Vec3 at ) {
+		b3BodyDef def = b3DefaultBodyDef();
+		def.type = b3_kinematicBody;
+		def.position = at;
+		b3BodyId body = b3CreateBody( m_physicsWorld, &def );
+		const float radius = float( place.radius ) / 1000.0f;
+		const float halfHeight = float( place.halfHeight ) / 1000.0f;
+		b3Capsule capsule = { { 0.0f, -halfHeight, 0.0f }, { 0.0f, halfHeight, 0.0f }, radius };
+		b3ShapeDef shapeDef = b3DefaultShapeDef();
+		shapeDef.filter.categoryBits = CatPusher;
+		shapeDef.filter.maskBits = CollisionMask( CatPusher );
+		b3ShapeId shape = b3CreateCapsuleShape( body, &shapeDef, &capsule );
+		body.world0 = 0;
+		shape.world0 = 0;
+		return std::make_pair( body, shape );
+	};
+	for ( const PusherPlace& place : m_physicsMade.pushers )
+	{
+		const b3Vec3 at = { float( place.x ) / kPusherGrid, float( place.y ) / kPusherGrid, float( place.z ) / kPusherGrid };
+		auto it = std::lower_bound( pushers.begin(), pushers.end(), std::make_pair( place.netId, flecs::entity_t( 0 ) ) );
+		if ( it == pushers.end() || it->first != place.netId )
 		{
-			if ( pusher != nullptr && pusher->active != 0 )
-			{
-				b3Body_Disable( inWorld( pusher->body ) );
-				pusher->active = 0;
-			}
+			// Its first place: a new pusher.
+			flecs::entity e = CreateEntity();
+			const auto [body, shape] = capsuleOf( place, at );
+			e.set<Pusher>( { body, shape, place.netId, place.radius, place.halfHeight, 1, 0 } );
 			continue;
 		}
-		const b3Vec3 at = { float( place->x ) / kPusherGrid, float( place->y ) / kPusherGrid, float( place->z ) / kPusherGrid };
-		if ( pusher != nullptr && ( pusher->radius != place->radius || pusher->halfHeight != place->halfHeight ) )
+		placed[size_t( it - pushers.begin() )] = true;
+		flecs::entity e( m_world, it->second );
+		Pusher pusher = e.get<Pusher>();
+		pusher.idleTicks = 0;
+		if ( pusher.radius != place.radius || pusher.halfHeight != place.halfHeight )
 		{
-			b3DestroyBody( inWorld( pusher->body ) );
-			e.remove<Pusher>();
-			pusher = nullptr;
+			b3DestroyBody( inWorld( pusher.body ) );
+			const auto [body, shape] = capsuleOf( place, at );
+			pusher = { body, shape, place.netId, place.radius, place.halfHeight, 1, 0 };
 		}
-		if ( pusher == nullptr )
-		{
-			b3BodyDef def = b3DefaultBodyDef();
-			def.type = b3_kinematicBody;
-			def.position = at;
-			b3BodyId body = b3CreateBody( m_physicsWorld, &def );
-			const float radius = float( place->radius ) / 1000.0f;
-			const float halfHeight = float( place->halfHeight ) / 1000.0f;
-			b3Capsule capsule = { { 0.0f, -halfHeight, 0.0f }, { 0.0f, halfHeight, 0.0f }, radius };
-			b3ShapeDef shapeDef = b3DefaultShapeDef();
-			shapeDef.filter.categoryBits = CatPusher;
-			shapeDef.filter.maskBits = CollisionMask( CatPusher );
-			b3ShapeId shape = b3CreateCapsuleShape( body, &shapeDef, &capsule );
-			body.world0 = 0;
-			shape.world0 = 0;
-			e.set<Pusher>( { body, shape, place->radius, place->halfHeight, 1 } );
-			continue;
-		}
-		b3BodyId body = inWorld( pusher->body );
-		if ( pusher->active == 0 )
+		else if ( pusher.active == 0 )
 		{
 			// Back where it is now, from wherever it was left: no sweep across the world between.
+			b3BodyId body = inWorld( pusher.body );
 			b3Body_Enable( body );
 			b3Body_SetTransform( body, at, b3Quat{ { 0.0f, 0.0f, 0.0f }, 1.0f } );
 			b3Body_SetLinearVelocity( body, { 0.0f, 0.0f, 0.0f } );
-			pusher->active = 1;
+			pusher.active = 1;
+		}
+		else
+		{
+			// Moved there over the step: what it meets is shoved at its speed.
+			b3Body_SetTargetTransform( inWorld( pusher.body ), { at, b3Quat{ { 0.0f, 0.0f, 0.0f }, 1.0f } }, dt, true );
+		}
+		e.set<Pusher>( pusher );
+	}
+	// Not given a place: out of the world, and after a while gone.
+	for ( size_t i = 0; i < pushers.size(); ++i )
+	{
+		if ( placed[i] )
+		{
 			continue;
 		}
-		// Moved there over the step: what it meets is shoved at its speed.
-		b3Body_SetTargetTransform( body, { at, b3Quat{ { 0.0f, 0.0f, 0.0f }, 1.0f } }, dt, true );
+		flecs::entity e( m_world, pushers[i].second );
+		Pusher pusher = e.get<Pusher>();
+		if ( pusher.active != 0 )
+		{
+			b3Body_Disable( inWorld( pusher.body ) );
+			pusher.active = 0;
+		}
+		pusher.idleTicks += 1;
+		if ( pusher.idleTicks >= kPusherIdleTicks )
+		{
+			DestroyEntity( e );
+			continue;
+		}
+		e.set<Pusher>( pusher );
 	}
 	IndexesStale();
 }
@@ -180,9 +208,19 @@ flecs::entity Simulation::EntityWithId( uint32_t netId )
 	e.set<NetId>( { netId } );
 	auto it = std::lower_bound( m_entities.begin(), m_entities.end(), netId, []( const EntityRef& r, uint32_t id ) { return r.netId < id; } );
 	m_entities.insert( it, { netId, e.id() } );
-	m_globals.nextNetId = std::max( m_globals.nextNetId, netId + 1 );
+	uint32_t& next = netId >= kCharacterIdBase ? m_globals.nextCharacterId : m_globals.nextNetId;
+	next = std::max( next, netId + 1 );
 	IndexesStale();
 	return e;
+}
+
+void Simulation::LeavePhysics( flecs::entity e, b3BodyId physicsBody )
+{
+	m_leaving.push_back( { e.get<NetId>().value, physicsBody } );
+	PhysicsEvent event;
+	event.type = PhysicsEventType::TakeOver;
+	event.netId = e.get<NetId>().value;
+	m_physicsQueue.push_back( std::move( event ) );
 }
 
 void Simulation::QueueIntoWorld( flecs::entity item, b3Vec3 grip, b3Quat rotation, b3Vec3 velocity, uint32_t propOwner, uint32_t lifetimeTicks )
@@ -280,6 +318,102 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 			IndexesStale();
 			break;
 		}
+		case PhysicsEventType::Remove:
+		{
+			if ( flecs::entity e = FindEntity( event.netId ); e.is_valid() )
+			{
+				DestroyEntity( e );
+			}
+			break;
+		}
+		case PhysicsEventType::TakeOver:
+		{
+			// Its physics body: the one kept aside for it (its character's is its own now), or the one
+			// it still has (a simulation where nobody took it: without the characters).
+			flecs::entity e = FindEntity( event.netId );
+			b3BodyId body = {};
+			for ( const auto& [id, kept] : m_leaving )
+			{
+				body = id == event.netId ? kept : body;
+			}
+			const PhysicsBody* pb = e.is_valid() ? e.try_get<PhysicsBody>() : nullptr;
+			const bool stillHers = pb != nullptr && pb->body.world0 == 0;
+			if ( b3Body_IsValid( body ) == false && stillHers )
+			{
+				body = BodyOf( *pb );
+			}
+			if ( b3Body_IsValid( body ) )
+			{
+				b3DestroyBody( body );
+			}
+			if ( stillHers )
+			{
+				e.remove<PhysicsBody>();
+				if ( e.has<HeldItem>() )
+				{
+					// (An item picked up: nothing of the world's left on it.)
+					e.remove<Shape>();
+					e.remove<Velocity>();
+					e.remove<Prop>();
+				}
+			}
+			IndexesStale();
+			break;
+		}
+		case PhysicsEventType::Enter:
+		{
+			flecs::entity e = EntityWithId( event.netId );
+			const b3Quat turn = { { event.turn[0], event.turn[1], event.turn[2] }, event.turn[3] };
+			ByteReader r( event.body.data(), event.body.size() );
+			b3ShapeId first;
+			b3BodyId body = BuildBody( r, m_physicsWorld, BuildAs::Dynamic, { at, turn }, vector, {}, first );
+			if ( b3Body_IsValid( body ) == false )
+			{
+				break;
+			}
+			b3ShapeId shapes[64];
+			const int count = b3Body_GetShapes( body, shapes, 64 );
+			for ( int i = 0; i < count; ++i )
+			{
+				b3Filter filter = b3Shape_GetFilter( shapes[i] );
+				filter.categoryBits = event.owner != 0 ? event.owner : uint64_t( CatProp );
+				filter.maskBits = CollisionMask( filter.categoryBits );
+				b3Shape_SetFilter( shapes[i], filter, true );
+			}
+			b3Body_EnableSleep( body, true );
+			b3Body_Enable( body ); // (its driver may have died in it: a dead body is out of the world)
+			if ( const PhysicsBody* pb = e.try_get<PhysicsBody>(); pb != nullptr && pb->body.world0 == 1 )
+			{
+				b3DestroyBody( BodyOf( *pb ) ); // (its character's, which it was)
+			}
+			e.set<PhysicsBody>( MakePhysicsBody( body, first ) );
+			e.set<Transform>( { at, turn } );
+			e.set<Velocity>( { vector, { 0.0f, 0.0f, 0.0f } } );
+			IndexesStale();
+			break;
+		}
+		case PhysicsEventType::Idle:
+		{
+			flecs::entity e = EntityWithId( event.netId );
+			if ( const PhysicsBody* pb = e.try_get<PhysicsBody>() )
+			{
+				b3DestroyBody( BodyOf( *pb ) ); // (its character's, which it was)
+			}
+			const Shape shape{ ShapeKind::Capsule, {}, { event.hitAt.x, event.hitAt.y, 0.0f } };
+			const Transform t{ at, { { event.turn[0], event.turn[1], event.turn[2] }, event.turn[3] } };
+			b3ShapeId shapeId;
+			b3BodyId body = CreateIdlePhysics( shape, t, vector, event.mass, shapeId );
+			e.set<PhysicsBody>( MakePhysicsBody( body, shapeId ) );
+			e.set<Transform>( t );
+			e.set<Velocity>( { vector, { 0.0f, 0.0f, 0.0f } } );
+			e.set<Shape>( shape );
+			e.set<IdleBody>( { event.kind, 0 } );
+			IndexesStale();
+			break;
+		}
+		case PhysicsEventType::Spawn:
+			SpawnProp( event.command );
+			break;
 		case PhysicsEventType::Ragdoll:
 		{
 			flecs::entity body = CreateRagdoll( event );

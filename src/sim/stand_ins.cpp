@@ -193,7 +193,7 @@ void Simulation::DescribeBodies( flecs::entity e, std::vector<uint8_t>& out ) co
 	}
 }
 
-b3BodyId Simulation::BuildBody( ByteReader& r, bool standIn, Transform at, b3Vec3 linear, b3Vec3 angular, b3ShapeId& first )
+b3BodyId Simulation::BuildBody( ByteReader& r, b3WorldId world, BuildAs as, Transform at, b3Vec3 linear, b3Vec3 angular, b3ShapeId& first )
 {
 	first = {};
 	const uint8_t type = r.Read<uint8_t>();
@@ -217,7 +217,9 @@ b3BodyId Simulation::BuildBody( ByteReader& r, bool standIn, Transform at, b3Vec
 	b3BodyDef def = b3DefaultBodyDef();
 	const b3BodyType serverType = b3BodyType( type );
 	// A stand-in is placed, never simulated: kinematic, unless the server's never moves.
-	def.type = standIn && serverType != b3_staticBody ? b3_kinematicBody : serverType;
+	def.type = as == BuildAs::Dynamic							? b3_dynamicBody
+			   : as == BuildAs::Placed && serverType != b3_staticBody ? b3_kinematicBody
+																	 : serverType;
 	def.position = at.position;
 	def.rotation = at.rotation;
 	if ( def.type != b3_staticBody )
@@ -230,7 +232,7 @@ b3BodyId Simulation::BuildBody( ByteReader& r, bool standIn, Transform at, b3Vec
 	def.angularDamping = angularDamping;
 	def.isBullet = ( flags & 2 ) != 0;
 	def.motionLocks = { ( locks & 1 ) != 0, ( locks & 2 ) != 0, ( locks & 4 ) != 0, ( locks & 8 ) != 0, ( locks & 16 ) != 0, ( locks & 32 ) != 0 };
-	b3BodyId body = b3CreateBody( m_physicsWorld, &def );
+	b3BodyId body = b3CreateBody( world, &def );
 
 	for ( int i = 0; i < shapes && r.Ok(); ++i )
 	{
@@ -243,7 +245,8 @@ b3BodyId Simulation::BuildBody( ByteReader& r, bool standIn, Transform at, b3Vec
 		sd.baseMaterial.rollingResistance = r.Read<float>();
 		// (As the simulation makes its shapes: MakeShapeDef in simulation.cpp.)
 		sd.enableHitEvents = sd.filter.categoryBits != CatStatic;
-		sd.updateBodyMass = def.type != b3_dynamicBody; // (a dynamic one gets the server's mass below)
+		// (A dynamic one as described gets the described mass below; one made dynamic weighs its shapes.)
+		sd.updateBodyMass = def.type != b3_dynamicBody || as == BuildAs::Dynamic;
 		b3ShapeId made = {};
 		switch ( shapeType )
 		{
@@ -290,7 +293,7 @@ b3BodyId Simulation::BuildBody( ByteReader& r, bool standIn, Transform at, b3Vec
 			first = made;
 		}
 	}
-	if ( def.type == b3_dynamicBody )
+	if ( def.type == b3_dynamicBody && as != BuildAs::Dynamic )
 	{
 		b3Body_SetMassData( body, mass ); // the server's, exactly
 	}
@@ -299,6 +302,21 @@ b3BodyId Simulation::BuildBody( ByteReader& r, bool standIn, Transform at, b3Vec
 		b3Body_Disable( body );
 	}
 	return body;
+}
+
+PhysicsBody Simulation::MoveBodyToWorld( b3BodyId body, b3WorldId to )
+{
+	std::vector<uint8_t> description;
+	DescribeBody( body, description );
+	const b3WorldTransform xf = b3Body_GetTransform( body );
+	const b3Vec3 linear = b3Body_GetLinearVelocity( body );
+	const b3Vec3 angular = b3Body_GetAngularVelocity( body );
+	b3DestroyBody( body );
+	ByteReader r( description.data(), description.size() );
+	b3ShapeId first;
+	b3BodyId moved = BuildBody( r, to, BuildAs::Described, { xf.p, xf.q }, linear, angular, first );
+	IndexesStale();
+	return MakePhysicsBody( moved, first );
 }
 
 void Simulation::DestroyBodies( flecs::entity e )
@@ -616,7 +634,8 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 					{
 						b3ShapeId shape;
 						const Transform part = hasPose ? pose.part[i] : t;
-						b3BodyId body = BuildBody( br, standIn, part, hasPose ? pose.linear[i] : b3Vec3{}, {}, shape );
+						b3BodyId body = BuildBody( br, m_physicsWorld, standIn ? BuildAs::Placed : BuildAs::Described, part,
+												   hasPose ? pose.linear[i] : b3Vec3{}, {}, shape );
 						PhysicsBody stored = MakePhysicsBody( body, shape );
 						rb.body[i] = stored.body;
 						rb.shape[i] = stored.shape;
@@ -626,7 +645,10 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 				else if ( parts == 1 )
 				{
 					b3ShapeId shape;
-					b3BodyId body = BuildBody( br, standIn, t, v.linear, v.angular, shape );
+					// (A character's body is the characters' world's: M247.)
+					const bool character = characterIndex >= 0 && ( rec.mask & ( uint32_t( 1 ) << characterIndex ) ) != 0;
+					b3BodyId body = BuildBody( br, character ? m_characterWorld : m_physicsWorld,
+											   standIn ? BuildAs::Placed : BuildAs::Described, t, v.linear, v.angular, shape );
 					if ( b3Body_IsValid( body ) )
 					{
 						e.set<PhysicsBody>( MakePhysicsBody( body, shape ) );

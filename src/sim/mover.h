@@ -22,7 +22,9 @@ inline constexpr float kCapsuleHalfHeight = kDefaultCapsuleHalfHeight; // center
 
 struct Body
 {
-	b3WorldId world;
+	b3WorldId world; // its own: the characters' (M247), where the other characters are
+	// The physics world (the level and its bodies): what it stands on and is stopped by, never
+	// written. A body of no other world (a test's) leaves it null.
 	b3BodyId body;
 	b3ShapeId shape; // the capsule: the mover does not collide with it
 	float radius = kCapsuleRadius;
@@ -30,6 +32,7 @@ struct Body
 	// Where the physics body's origin is from the capsule's centre: a driven prop's sits below it
 	// (its shapes are its own, its capsule a walker fitted to it). The mover meets none of its shapes.
 	b3Vec3 offset = { 0.0f, 0.0f, 0.0f };
+	b3WorldId scenery = {};
 };
 
 // How far below a capsule's centre its feet are: the pogo holds the bottom sphere's centre three
