@@ -6249,7 +6249,8 @@ void TestPhysicsAlone()
 	// must be the server's on every tick, by its entities and by Box3D's own bytes.
 	for ( const bool characters : { true, false } )
 	{
-		Simulation follower( replay.Config(), replay.Map() );
+		auto followerSim = std::make_unique<Simulation>( replay.Config(), replay.Map() ); // (two simulations: not on the stack)
+		Simulation& follower = *followerSim;
 		{
 			std::vector<Simulation::CharacterBody> kinds;
 			std::string ignored;
@@ -6260,10 +6261,23 @@ void TestPhysicsAlone()
 		follower.SetMotions( replay.MotionSets() );
 		follower.SetItemShapes( replay.Schema().itemShapes );
 		follower.SetFollowsPhysics( true );
+		// (The server's simulation again: the recording played as it was, to say where they differ.)
+		auto referenceSim = std::make_unique<Simulation>( replay.Config(), replay.Map() );
+		Simulation& reference = *referenceSim;
+		{
+			std::vector<Simulation::CharacterBody> kinds;
+			std::string ignored;
+			Simulation::CharactersOf( replay.Schema(), kinds, ignored );
+			reference.SetCharacters( std::move( kinds ) );
+		}
+		reference.SetAnimPacks( replay.Packs() );
+		reference.SetMotions( replay.MotionSets() );
+		reference.SetItemShapes( replay.Schema().itemShapes );
 		size_t compared = 0;
 		uint32_t firstWrong = UINT32_MAX, firstWrongWorld = UINT32_MAX;
 		for ( InputFrame frame : replay.Frames() )
 		{
+			reference.Step( frame );
 			frame.inputs = {}; // (everyone stands still)
 			if ( characters == false )
 			{
@@ -6302,6 +6316,51 @@ void TestPhysicsAlone()
 				if ( worlds[frame.tick] != follower.PhysicsWorldHash() && firstWrongWorld == UINT32_MAX )
 				{
 					firstWrongWorld = frame.tick;
+					// Where: the server's world again (the recording played as it was) against this one,
+					// byte by byte, and every body's state bit by bit.
+					std::vector<uint8_t> theirs, mine;
+					reference.PhysicsWorldBytes( theirs );
+					follower.PhysicsWorldBytes( mine );
+					size_t at = 0;
+					while ( at < theirs.size() && at < mine.size() && theirs[at] == mine[at] )
+					{
+						++at;
+					}
+					size_t differing = 0;
+					for ( size_t k = 0; k < theirs.size() && k < mine.size(); ++k )
+					{
+						differing += theirs[k] != mine[k] ? 1 : 0;
+					}
+					std::printf( "    tick %u: Box3D's bytes, %zu and %zu, %zu differ, the first at %zu:", frame.tick, theirs.size(), mine.size(), differing, at );
+					for ( size_t k = at > 8 ? at - 8 : 0; k < at + 24 && k < theirs.size() && k < mine.size(); ++k )
+					{
+						std::printf( " %02x/%02x", theirs[k], mine[k] );
+					}
+					std::printf( "\n" );
+					for ( const auto& r : follower.Entities() )
+					{
+						flecs::entity w( follower.World(), r.entity );
+						flecs::entity v = reference.FindEntity( r.netId );
+						const PhysicsBody* a = w.try_get<PhysicsBody>();
+						const PhysicsBody* b = v.is_valid() ? v.try_get<PhysicsBody>() : nullptr;
+						if ( a == nullptr || b == nullptr || a->body.world0 != 0 )
+						{
+							continue;
+						}
+						const b3BodyId x = follower.BodyOf( *a ), y = reference.BodyOf( *b );
+						const b3Vec3 lx = b3Body_GetLinearVelocity( x ), ly = b3Body_GetLinearVelocity( y );
+						const b3Vec3 ax = b3Body_GetAngularVelocity( x ), ay = b3Body_GetAngularVelocity( y );
+						const b3WorldTransform tx = b3Body_GetTransform( x ), ty = b3Body_GetTransform( y );
+						const bool same = b3Body_IsAwake( x ) == b3Body_IsAwake( y ) && std::memcmp( &lx, &ly, sizeof( lx ) ) == 0 &&
+										  std::memcmp( &ax, &ay, sizeof( ax ) ) == 0 && std::memcmp( &tx, &ty, sizeof( tx ) ) == 0 &&
+										  x.index1 == y.index1;
+						if ( same == false )
+						{
+							std::printf( "      body of %u: awake %d/%d, id %d/%d, velocity (%g %g %g)/(%g %g %g), angular (%g %g %g)/(%g %g %g)\n", r.netId,
+										 int( b3Body_IsAwake( y ) ), int( b3Body_IsAwake( x ) ), y.index1, x.index1, ly.x, ly.y, ly.z, lx.x, lx.y, lx.z, ay.x,
+										 ay.y, ay.z, ax.x, ax.y, ax.z );
+						}
+					}
 				}
 			}
 		}

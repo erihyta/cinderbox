@@ -212,6 +212,8 @@ public:
 	// Hash of the physics world as Box3D serializes it (M247): every body, shape, joint, contact and
 	// its caches. Two simulations with it equal step on alike.
 	uint64_t PhysicsWorldHash();
+	// Those bytes (tests that say where two worlds differ).
+	void PhysicsWorldBytes( std::vector<uint8_t>& out );
 
 	// The state network model (ROADMAP step 3; stand_ins.cpp). No physics engine internals cross:
 	// SaveState writes the entities and globals, and a description of every body read from the
