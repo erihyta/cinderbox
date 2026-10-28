@@ -37,6 +37,7 @@ void GameServer::AddMod( std::unique_ptr<mods::ServerMod> mod )
 bool GameServer::Start( const ServerOptions& options )
 {
 	m_options = options;
+	m_options.stateEvery = std::clamp<uint32_t>( m_options.stateEvery, 1, 30 );
 
 	mods::Declarations declarations;
 	declarations.SetLookItems( options.lookItems );
@@ -444,10 +445,10 @@ bool GameServer::Start( const ServerOptions& options )
 			 options.recordViewCompact ? "compact" : "exact" );
 	}
 
-	Log( "listening on port %u, %u Hz, fingerprint %016llx, map %s (%u statics, %u props, hash %016llx)", options.port,
-		 options.config.tickRate, (unsigned long long)BuildFingerprint(),
+	Log( "listening on port %u, %u Hz, fingerprint %016llx, map %s (%u statics, %u props, hash %016llx), the %s network model",
+		 options.port, options.config.tickRate, (unsigned long long)BuildFingerprint(),
 		 options.mapPath.empty() ? "built-in sandbox" : options.mapPath.c_str(), unsigned( m_map.statics.size() ),
-		 unsigned( m_map.props.size() ), (unsigned long long)m_mapHash );
+		 unsigned( m_map.props.size() ), (unsigned long long)m_mapHash, ToString( options.netModel ) );
 
 	{
 		// Only what differs from the engine's: most servers print nothing here.
@@ -629,7 +630,14 @@ void GameServer::Update( double now )
 	{
 		// Once for all the ticks of this update, not once a tick: packets sent in one go leave in
 		// one datagram, and are lost together. A frame's three packets have to be three datagrams.
-		SendFrames( now );
+		if ( m_options.netModel == NetModel::State )
+		{
+			SendStates();
+		}
+		else
+		{
+			SendFrames( now );
+		}
 	}
 	if ( now - m_nextTickTime > 0.25 )
 	{
@@ -706,6 +714,7 @@ void GameServer::HandleEvent( const NetEvent& ev, double now )
 					info.players += other.used ? 1 : 0;
 				}
 				info.items = m_schema.items;
+				info.model = m_options.netModel;
 				Encode( info, m_buffer );
 				m_transport.Send( ev.peer, ChannelReliable, m_buffer, true );
 				m_stats.infoRequests += 1;
@@ -718,7 +727,7 @@ void GameServer::HandleEvent( const NetEvent& ev, double now )
 					HandleText( *c, msg );
 				}
 			}
-			else if ( *type == MsgType::ResyncRequest && c != nullptr && c->welcomed )
+			else if ( *type == MsgType::ResyncRequest && c != nullptr && c->welcomed && m_options.netModel == NetModel::Inputs )
 			{
 				MsgResyncRequest msg;
 				if ( Decode( r, msg ) )
@@ -817,18 +826,30 @@ void GameServer::HandleHello( PeerId peer, const MsgHello& hello, double now )
 void GameServer::HandleInput( Client& client, const MsgInput& msg, double now )
 {
 	uint32_t current = m_sim->Tick();
-	// Acknowledgements only move forward (input packets can arrive out of order).
-	uint32_t acked = std::max( client.ackTick, std::min( msg.ackTick, current ) );
-	if ( acked > client.ackTick && acked - 1 < client.sentThrough )
+	if ( m_options.netModel == NetModel::State )
 	{
-		// How long an answer takes: from sending the newest frame it now has to hearing so.
-		double took = now - client.frameSentAt[( acked - 1 ) % 256];
-		if ( took >= 0.0 && took < 5.0 )
+		// The newest state it has, if it is one still kept (packets come out of order: only forward).
+		if ( msg.ackTick != 0 && ( client.stateAck == kNoStateBase || msg.ackTick > client.stateAck ) &&
+			 msg.ackTick <= client.stateSent && KeptState( msg.ackTick ) != nullptr )
 		{
-			client.roundTrip += ( took - client.roundTrip ) * 0.1;
+			client.stateAck = msg.ackTick;
 		}
 	}
-	client.ackTick = acked;
+	else
+	{
+		// Acknowledgements only move forward (input packets can arrive out of order).
+		uint32_t acked = std::max( client.ackTick, std::min( msg.ackTick, current ) );
+		if ( acked > client.ackTick && acked - 1 < client.sentThrough )
+		{
+			// How long an answer takes: from sending the newest frame it now has to hearing so.
+			double took = now - client.frameSentAt[( acked - 1 ) % 256];
+			if ( took >= 0.0 && took < 5.0 )
+			{
+				client.roundTrip += ( took - client.roundTrip ) * 0.1;
+			}
+		}
+		client.ackTick = acked;
+	}
 	uint32_t count = uint32_t( msg.inputs.size() );
 	uint32_t first = msg.newestTick + 1 - count;
 	for ( uint32_t i = 0; i < count; ++i )
@@ -852,7 +873,8 @@ void GameServer::SendSnapshots()
 			continue;
 		}
 
-		if ( built == false )
+		// (The state model's client waits for its first state instead: whole, it has none.)
+		if ( built == false && m_options.netModel == NetModel::Inputs )
 		{
 			m_sim->SavePortable( m_image );
 			built = true;
@@ -867,8 +889,13 @@ void GameServer::SendSnapshots()
 		welcome.baseInputs = m_lastInputs;
 		welcome.mapHash = m_mapHash;
 		welcome.map = m_mapBytes;
-		welcome.image = m_image;
+		if ( m_options.netModel == NetModel::Inputs )
+		{
+			welcome.image = m_image;
+		}
 		welcome.schema = m_schemaBytes;
+		welcome.model = m_options.netModel;
+		welcome.stateEvery = uint8_t( m_options.stateEvery );
 		Encode( welcome, m_buffer );
 		m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
 
@@ -879,6 +906,8 @@ void GameServer::SendSnapshots()
 		// The welcome carries the inputs of snapshotTick - 1, so frames start at snapshotTick.
 		c.ackTick = m_sim->Tick();
 		c.sentThrough = c.ackTick;
+		c.stateAck = kNoStateBase;
+		c.stateSent = 0;
 		m_stats.snapshotsSent += 1;
 	}
 }
@@ -980,7 +1009,24 @@ void GameServer::RunTick( double now )
 		}
 	}
 
-	if ( m_options.checksumInterval > 0 && stateTick % m_options.checksumInterval == 0 )
+	// The state model: every few ticks, the world as it is now (compact: what clients are sent),
+	// kept for the clients' acknowledgements.
+	if ( m_options.netModel == NetModel::State && stateTick % m_options.stateEvery == 0 && ConnectedClients() > 0 )
+	{
+		auto start = std::chrono::steady_clock::now();
+		StateFrame state;
+		state.tick = stateTick;
+		state.inputs = frame.inputs;
+		m_sim->SaveState( state.state, true );
+		m_states.push_back( std::move( state ) );
+		while ( m_states.size() > kStateHistory )
+		{
+			m_states.pop_front();
+		}
+		m_stats.stateMsTotal += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
+	}
+
+	if ( m_options.checksumInterval > 0 && stateTick % m_options.checksumInterval == 0 && m_options.netModel == NetModel::Inputs )
 	{
 		if ( haveHash == false )
 		{
@@ -1315,6 +1361,64 @@ void GameServer::SendFrames( double now )
 		m_stats.batchesSent += 1;
 		m_stats.framesSent += hit->frames;
 	}
+}
+
+const StateFrame* GameServer::KeptState( uint32_t tick ) const
+{
+	for ( const StateFrame& s : m_states )
+	{
+		if ( s.tick == tick )
+		{
+			return &s;
+		}
+	}
+	return nullptr;
+}
+
+// The newest state to every client that does not have it, as a change against the newest it has
+// (whole when that is no longer kept, or it has none). Clients with the same base share one
+// encoding. Unreliable and in any order: the client keeps the newest, and the next one is a few
+// ticks away.
+void GameServer::SendStates()
+{
+	if ( m_states.empty() )
+	{
+		return;
+	}
+	auto start = std::chrono::steady_clock::now();
+	const StateFrame& newest = m_states.back();
+	struct Encoded
+	{
+		uint32_t base;
+		std::vector<uint8_t> bytes;
+	};
+	std::vector<Encoded> cache;
+	for ( Client& c : m_clients )
+	{
+		if ( c.used == false || c.connected == false || c.welcomed == false || c.stateSent >= newest.tick )
+		{
+			continue;
+		}
+		const StateFrame* base = c.stateAck != kNoStateBase ? KeptState( c.stateAck ) : nullptr;
+		const uint32_t baseTick = base != nullptr ? base->tick : kNoStateBase;
+		Encoded* hit = nullptr;
+		for ( Encoded& e : cache )
+		{
+			hit = e.base == baseTick ? &e : hit;
+		}
+		if ( hit == nullptr )
+		{
+			cache.push_back( { baseTick, {} } );
+			hit = &cache.back();
+			EncodeState( newest, base, hit->bytes );
+		}
+		m_transport.SendUnordered( c.peer, ChannelInput, hit->bytes );
+		c.stateSent = newest.tick;
+		m_stats.statesSent += 1;
+		m_stats.statesWhole += base == nullptr ? 1 : 0;
+		m_stats.stateBytes += hit->bytes.size();
+	}
+	m_stats.stateMsTotal += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
 }
 
 void GameServer::DropClientHard( PlayerSlot slot, double now )

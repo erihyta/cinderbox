@@ -1,8 +1,10 @@
 #pragma once
 
 // Authoritative server. Runs the one true Simulation at a fixed rate, collects client inputs, and
-// streams the input frames it actually used. It never rolls back: a late input is replaced by the
-// player's previous input.
+// keeps its clients' worlds by one of two network models (net::NetModel): it streams the input
+// frames it used (inputs: every client simulates the whole world), or its world's state every few
+// ticks (state: a client predicts its own body, the rest placed from the states). It never rolls
+// back: a late input is replaced by the player's previous input.
 
 #include "look_item.h"
 #include "anim_graph.h"
@@ -13,11 +15,13 @@
 #include "mod_api.h"
 #include "protocol.h"
 #include "replay.h"
+#include "state_codec.h"
 #include "view_file.h"
 #include "simulation.h"
 #include "transport.h"
 
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <memory>
 #include <functional>
@@ -30,6 +34,10 @@ namespace cb
 struct ServerOptions
 {
 	uint16_t port = net::kDefaultPort;
+	// How clients' worlds are kept (protocol.h). The state model sends a state every `stateEvery`
+	// ticks.
+	net::NetModel netModel = net::NetModel::Inputs;
+	uint32_t stateEvery = 2;
 	SimConfig config;
 	uint32_t maxClients = kMaxPlayers;
 	uint32_t checksumInterval = 30; // ticks
@@ -152,6 +160,11 @@ public:
 		double tickMsMax = 0.0;
 		uint64_t bytesSent = 0;
 		uint64_t bytesReceived = 0;
+		// The state model.
+		uint64_t statesSent = 0;	 // messages, to every client
+		uint64_t statesWhole = 0;	 // of them, against no base
+		uint64_t stateBytes = 0;	 // their bytes
+		double stateMsTotal = 0.0; // saving and encoding them
 	};
 	const Stats& GetStats() const
 	{
@@ -170,6 +183,7 @@ public:
 private:
 	static constexpr uint32_t kInputBuffer = 128;
 	static constexpr uint32_t kFrameHistory = 256; // frames kept for resending
+	static constexpr size_t kStateHistory = 64; // states kept as bases (the state model)
 
 	struct Client
 	{
@@ -195,6 +209,10 @@ private:
 		double roundTrip = 0.1;		// seconds from sending a frame to hearing it acknowledged
 		double frameSentAt[256] = {}; // by tick % 256: when it last went out in full
 		PlayerInput lastInput{};
+		// The state model: the newest state the client has (its base for the next one), and the
+		// newest sent to it.
+		uint32_t stateAck = net::kNoStateBase;
+		uint32_t stateSent = 0;
 		struct Slot
 		{
 			uint32_t tick = UINT32_MAX;
@@ -217,6 +235,10 @@ private:
 	void RunMods( InputFrame& frame );
 	void SendSnapshots();
 	void SendFrames( double now );
+	// The state model: the newest state to everyone, each against the one it has (SendFrames' part).
+	void SendStates();
+	const net::StateFrame* KeptState( uint32_t tick ) const;
+	std::deque<net::StateFrame> m_states; // the newest last
 	const InputFrame* HistoryFrame( uint32_t tick ) const;
 	void Log( const char* fmt, ... ) const;
 

@@ -26,6 +26,7 @@
 #include <memory>
 #include <utility>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -194,7 +195,10 @@ public:
 	// From the first state on the world's rules are the server's: props' lifetimes and caps, glue,
 	// breaking and items' events are not run here. False (and nothing changed) for bytes that are
 	// not a state of this simulation's kind (its config, its components).
-	void SaveState( std::vector<uint8_t>& out );
+	// `compact`: what is sent to clients. Where things are and how they move rounded (positions to
+	// 1/1024 m, rotations to 1/32768 and then made unit again, velocities to 1/256 m/s): their
+	// changes then take fewer bits. This world's own state stays exact.
+	void SaveState( std::vector<uint8_t>& out, bool compact = false );
 	bool ApplyState( const uint8_t* data, size_t size, PlayerSlot own );
 	// Whether ApplyState has run: the world's rules are the server's.
 	bool FollowsServer() const
@@ -202,6 +206,9 @@ public:
 		return m_followsServer;
 	}
 	bool IsStandIn( uint32_t netId ) const;
+	// The components a state's record holds, in its mask's order: each one's name and size (tools
+	// that say where a state's bytes go).
+	std::vector<std::pair<std::string, uint32_t>> StateComponents() const;
 
 	// Box3D handles for a PhysicsBody component.
 	b3BodyId BodyOf( const PhysicsBody& pb ) const;

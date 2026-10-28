@@ -6,6 +6,9 @@
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Add possess,waves     and mods that are off by default
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Character critter     everyone plays the critter
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Latency 0 -Loss 0     no network trouble
+#   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -NetModel state        the state network model (the
+#                                                                                    server's states, only your own
+#                                                                                    body predicted; ROADMAP step 3)
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Autoplay 90           nobody at the keys: the games
 #                                                                                    play by themselves, take pictures
 #                                                                                    and quit (non-zero: a desync)
@@ -20,6 +23,7 @@ param(
 	[string]$Mods = "",           # exactly these mods instead (cb_server --mods)
 	[string]$Map = "test_ground", # a map in godot/maps, or "" for the built-in sandbox
 	[string]$Character = "",      # the character everyone plays (cb_server --character)
+	[string]$NetModel = "inputs", # inputs or state (cb_server --net-model)
 	[string[]]$Option = @(),      # mod options, NAME=VALUE (waves.first=10)
 	[int]$Clients = 2,
 	[int]$Bots = 0,               # cb_bot players too
@@ -69,6 +73,7 @@ $serverArgs = @("--port", $port, "--exit-when-empty", 30, "--record", (Join-Path
 if ($Map) { $serverArgs += @("--map", $Map) }
 if ($Mods) { $serverArgs += @("--mods", $Mods) }
 if ($Character) { $serverArgs += @("--character", $Character) }
+if ($NetModel) { $serverArgs += @("--net-model", $NetModel) }
 foreach ($o in $Option) { $serverArgs += @("--mod-option", $o) }
 
 Write-Host "== server on $port$(if ($Mods) { " (mods: $Mods)" }), simulator on $relay (+$Latency ms each way, $Loss% lost each way)"

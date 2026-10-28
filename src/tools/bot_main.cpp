@@ -112,12 +112,12 @@ PlayerInput Aim( Bot& bot, PlayerInput in, uint32_t tick )
 	{
 		return in;
 	}
-	RollbackSession* session = bot.client->Session();
-	if ( session == nullptr )
+	Simulation* world = bot.client->Sim();
+	if ( world == nullptr )
 	{
 		return in;
 	}
-	Simulation& sim = session->Sim();
+	Simulation& sim = *world;
 	PlayerSlot me = bot.client->Slot();
 	const Transform* mine = sim.EntityTransform( sim.PlayerNetId( me ) );
 	if ( mine == nullptr )
@@ -367,6 +367,25 @@ void RunWorker( Worker& w, Clock::time_point start, const std::atomic<bool>& sto
 						s.profile.sleepMs += sp.sleepMs;
 						s.profile.sensorsMs += sp.sensorsMs;
 						s.counts = session->Sim().CountPhysics();
+					}
+					else if ( StateSession* states = c.States() )
+					{
+						// The state model: a state taken is its rollback (back to the server's, the
+						// bot's own inputs run again); applying it is its load.
+						const StateSession::Stats& ss = states->GetStats();
+						s.rollbacks += ss.states;
+						s.resimulated += ss.resimulatedTicks;
+						s.parts.steps += ss.steps;
+						s.parts.stepNs += ss.stepNs;
+						s.parts.loads += ss.states;
+						s.parts.loadNs += ss.applyNs;
+						const Simulation::StepProfile& sp = states->Sim().Profile();
+						s.profile.steps += sp.steps;
+						s.profile.commandsNs += sp.commandsNs;
+						s.profile.charactersNs += sp.charactersNs;
+						s.profile.physicsNs += sp.physicsNs;
+						s.profile.afterNs += sp.afterNs;
+						s.counts = states->Sim().CountPhysics();
 					}
 					b.simMsSum = 0.0;
 					b.frames = 0;

@@ -64,7 +64,7 @@ void GameClient::Log( const char* fmt, ... ) const
 	}
 	va_list args;
 	va_start( args, fmt );
-	std::printf( "[%s %6u] ", m_options.logName.c_str(), m_session ? m_session->CurrentTick() : 0 );
+	std::printf( "[%s %6u] ", m_options.logName.c_str(), CurrentTick() );
 	std::vprintf( fmt, args );
 	std::printf( "\n" );
 	std::fflush( stdout );
@@ -201,9 +201,15 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 					break;
 				}
 				case MsgType::FrameBatch:
-					if ( m_state == ClientState::Playing )
+					if ( m_state == ClientState::Playing && m_model == NetModel::Inputs )
 					{
 						HandleFrameBatch( r, now );
+					}
+					break;
+				case MsgType::State:
+					if ( m_state == ClientState::Playing && m_model == NetModel::State )
+					{
+						HandleState( r, now );
 					}
 					break;
 				case MsgType::Checksum:
@@ -322,8 +328,25 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 		return;
 	}
 
-	if ( m_options.simulate )
+	if ( m_options.simulate && msg.model == NetModel::State )
 	{
+		// The state model: a world of the server's map that waits for its first state (whole).
+		m_session.reset();
+		bool rebuild = m_states == nullptr || !( msg.config == m_config ) || msg.slot != m_slot || msg.mapHash != m_mapHash;
+		if ( rebuild )
+		{
+			m_states = std::make_unique<StateSession>( msg.config, msg.slot, m_options.maxRollbackTicks + msg.stateEvery, map );
+			m_states->Sim().SetPhysicsThreaded( m_options.physicsThreaded );
+		}
+		m_states->Sim().SetCharacters( characters );
+		std::string packWarnings;
+		m_states->Sim().SetAnimPacks( CompileAnimPacks( schema, packWarnings ) );
+		m_states->Sim().SetMotions( CompileMotions( schema, packWarnings ) );
+		m_states->Sim().SetItemShapes( schema.itemShapes );
+	}
+	else if ( m_options.simulate )
+	{
+		m_states.reset();
 		// A different map means a different level, so the session cannot be reused.
 		bool rebuild = m_session == nullptr || !( msg.config == m_config ) || msg.slot != m_slot || msg.mapHash != m_mapHash;
 		if ( rebuild )
@@ -351,6 +374,10 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 		m_session->Sim().Save( snapshot );
 		m_session->Reset( snapshot, msg.baseInputs );
 	}
+	m_model = msg.model;
+	m_stateEvery = msg.stateEvery;
+	m_stateFrames.clear();
+	m_stateAck = 0;
 	m_config = msg.config;
 	m_map = std::move( map );
 	if ( !( schema == m_schema ) || m_schemaGeneration == 0 )
@@ -388,13 +415,75 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 	m_resetGeneration += 1;
 	m_stats.welcomes += 1;
 
-	Log( "%s as slot %u at tick %u (%zu KB state)", reconnect ? "resumed" : "joined", m_slot, msg.snapshotTick,
-		 msg.image.size() / 1024 );
+	Log( "%s as slot %u at tick %u (the %s network model, %zu KB state)", reconnect ? "resumed" : "joined", m_slot, msg.snapshotTick,
+		 ToString( m_model ), msg.image.size() / 1024 );
 }
 
 uint32_t GameClient::AckTick() const
 {
+	if ( m_model == NetModel::State )
+	{
+		return m_stateAck;
+	}
 	return m_session ? m_session->ConfirmedTick() : m_liteConfirmed;
+}
+
+// The state model: one of the server's states, whole or against one we said we have. Kept as a
+// base and handed to the session; older ones than the newest are no use (the next is a few ticks
+// away), nor one against a base we no longer have.
+void GameClient::HandleState( ByteReader& r, double now )
+{
+	uint32_t tick = 0, baseTick = 0;
+	if ( ReadStateHeader( r, tick, baseTick ) == false )
+	{
+		m_stats.statesIgnored += 1;
+		return;
+	}
+	m_stats.statesReceived += 1;
+	OnServerTick( tick, now );
+	if ( m_stateFrames.empty() == false && tick <= m_stateFrames.back().tick )
+	{
+		m_stats.statesIgnored += 1;
+		return;
+	}
+	const StateFrame* base = nullptr;
+	if ( baseTick != kNoStateBase )
+	{
+		for ( const StateFrame& f : m_stateFrames )
+		{
+			base = f.tick == baseTick ? &f : base;
+		}
+		if ( base == nullptr )
+		{
+			m_stats.statesIgnored += 1;
+			return;
+		}
+	}
+	StateFrame frame;
+	if ( DecodeState( r, tick, base, frame ) == false )
+	{
+		Log( "corrupt state for tick %u", tick );
+		m_stats.statesIgnored += 1;
+		return;
+	}
+	if ( m_states != nullptr )
+	{
+		m_states->AddState( frame.tick, frame.state.data(), frame.state.size(), frame.inputs );
+	}
+	else
+	{
+		// A lite client simulates nothing, but keeps and acknowledges states as a player's game
+		// does: the server's work and the bandwidth are a real client's.
+		m_liteTick = std::max( m_liteTick, tick );
+	}
+	m_stateFrames.push_back( std::move( frame ) );
+	// (Enough for the bases the server may still use: it answers our acknowledgements a round trip
+	// late.)
+	while ( m_stateFrames.size() > 32 )
+	{
+		m_stateFrames.pop_front();
+	}
+	m_stateAck = tick;
 }
 
 // A batch holds the server's newest frames, each for the third time at most (or everything from
@@ -512,11 +601,21 @@ bool GameClient::UseFrameBatch( uint32_t firstTick, uint32_t count, const uint8_
 // window at once when latency rises; shrink it only after latency has stayed lower for a while.
 void GameClient::UpdateRollbackWindow( double rttTicks, double frameDt )
 {
+	double needed = std::ceil( rttTicks ) + double( m_options.leadMarginTicks ) + 2.0;
+	if ( m_states != nullptr )
+	{
+		// How far past the newest state: a round trip and a state's interval (no snapshots: no cost
+		// in going further, so it never shrinks).
+		uint32_t ahead = uint32_t( std::clamp( needed + double( m_stateEvery ), double( m_options.minRollbackTicks ),
+											   double( m_options.maxRollbackTicks + m_stateEvery ) ) );
+		m_states->SetMaxAhead( std::max( ahead, m_states->MaxAhead() ) );
+		m_stats.rollbackWindow = m_states->MaxAhead();
+		return;
+	}
 	if ( m_session == nullptr )
 	{
 		return;
 	}
-	double needed = std::ceil( rttTicks ) + double( m_options.leadMarginTicks ) + 2.0;
 	uint32_t desired = uint32_t( std::clamp( needed, double( m_options.minRollbackTicks ), double( m_options.maxRollbackTicks ) ) );
 	uint32_t current = m_session->MaxRollback();
 	if ( desired > current )
@@ -609,10 +708,14 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	m_stats.rateScale = scale;
 
 	auto workStart = std::chrono::steady_clock::now();
-	uint64_t rollbacksBefore = m_session ? m_session->GetStats().rollbacks : 0;
+	uint64_t rollbacksBefore = m_session ? m_session->GetStats().rollbacks : m_states ? m_states->GetStats().states : 0;
 	if ( m_session )
 	{
 		m_session->Reconcile();
+	}
+	if ( m_states )
+	{
+		m_states->Reconcile();
 	}
 
 	uint32_t ticks = 0;
@@ -620,11 +723,12 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	{
 		uint32_t tick = CurrentTick();
 		PlayerInput input = sampleInput( tick );
-		if ( m_session == nullptr )
+		const bool advanced = m_session ? m_session->AdvanceOne( input ) : m_states ? m_states->AdvanceOne( input ) : true;
+		if ( m_session == nullptr && m_states == nullptr )
 		{
 			m_liteTick += 1;
 		}
-		else if ( m_session->AdvanceOne( input ) == false )
+		else if ( advanced == false )
 		{
 			// Too far ahead of confirmed data (latency above the rollback window, or the server
 			// stopped sending): hold time instead of drifting.
@@ -644,7 +748,8 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	}
 
 	m_stats.ticksLastFrame = ticks;
-	m_stats.rolledBackLastFrame = m_session && m_session->GetStats().rollbacks != rollbacksBefore;
+	m_stats.rolledBackLastFrame = m_session ? m_session->GetStats().rollbacks != rollbacksBefore
+										   : m_states && m_states->GetStats().states != rollbacksBefore;
 	m_stats.simMsLastFrame = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - workStart ).count();
 	m_stats.simMsMax = std::max( m_stats.simMsMax, m_stats.simMsLastFrame );
 	m_stats.bytesSent = m_transport.BytesSent();

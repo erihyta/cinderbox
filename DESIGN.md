@@ -137,7 +137,31 @@ not rolled back, not recorded, and a state machine cannot read it.
 
 ## Netcode
 
-Authoritative server, client rollback (`src/net`, `src/client`).
+Authoritative server, two network models (`src/net`, `src/client`), the server's choice for
+everyone (`cb_server --net-model inputs|state`; the welcome and the server's info say which;
+ROADMAP step 3). **Inputs** (the default until the state model has passed a playtest): what follows
+below; every client simulates the whole world. **State**:
+
+- **The server's state, without the physics engine's**: every second tick the server saves its
+  entities and a description of each body read from Box3D (`Simulation::SaveState`, compact:
+  positions on a 1/1024 m grid, rotations on 1/32768, velocities on 1/256 m/s). No Box3D internals
+  cross (at 32 players the whole simulation state is 760 KB, 670 KB of it contacts, trees and solver
+  caches).
+- **On the wire** (`net/state_codec.h`): the newest state to each client as a change against the
+  newest it acknowledged, lined up entity by entity (unchanged, XOR, whole), a body's description
+  only when its hash is new, then deflated. Unreliable and unordered; the client keeps the newest.
+  Clients with the same base share one encoding.
+- **The client** (`StateSession`): applies the newest state (`Simulation::ApplyState`), then runs its
+  own inputs since that tick again. Its own body and what it carries are simulated; everything else
+  is a **stand-in**: a kinematic body placed where the server has it, which nothing in its step
+  drives. The world's rules (props' lifetimes, glue, breaking, items' events) are the server's
+  alone. No snapshots, no checksums, no desyncs.
+- **Costs** (M245, bots on one machine): client work per frame 1.2 ms against 9.1 at 4 players, 3.8
+  against 37 at 16; download 450 against 387 kbit/s at 4, 1149 against 441 at 16 (sending only what
+  is near comes in M247). Others' effects on you (a shove) arrive a round trip late; a loose crate
+  you walk into stops you until M246 predicts what you touch.
+
+The inputs model:
 
 - **Client**: sends its inputs each tick and simulates the whole world at once, predicting remote players by repeating their last input. When the server's frame for tick N differs from the prediction, it restores the nearest snapshot at or before N and re-simulates, at most once per rendered frame.
 - **Physics threads** (`src/sim/physics_threads.h`): every world is made with 4 workers (`kPhysicsWorkers`); how many threads run them is each machine's own choice and changes nothing that is simulated.

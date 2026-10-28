@@ -12,17 +12,10 @@
 #include "fingerprint.h"
 #include "replay.h"
 #include "simulation.h"
+#include "state_codec.h"
 #include "state_session.h"
 #include "view_file.h"
 
-#if defined( __GNUC__ )
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#endif
-#include <miniz.h>
-#if defined( __GNUC__ )
-#pragma GCC diagnostic pop
-#endif
 
 #include <algorithm>
 #include <chrono>
@@ -140,12 +133,93 @@ void SetUpLike( const net::ReplayReader& replay, Simulation& sim )
 	sim.SetItemShapes( replay.Schema().itemShapes );
 }
 
-size_t Deflated( const std::vector<uint8_t>& in )
+// Where a state's change against a base is, by component (sim/stand_ins.cpp has the layout): the
+// bytes that differ in records of the same mask, by the component they are in; records new or of
+// another mask, whole; bodies described again.
+struct ChangeCost
 {
-	mz_ulong size = mz_compressBound( mz_ulong( in.size() ) );
-	std::vector<uint8_t> out( size );
-	mz_compress2( out.data(), &size, in.data(), mz_ulong( in.size() ), 1 );
-	return size_t( size );
+	std::vector<double> component;
+	double whole = 0.0, bodies = 0.0, entities = 0.0, changedEntities = 0.0;
+};
+
+void CountChange( const std::vector<uint8_t>& now, const std::vector<uint8_t>& was, const std::vector<std::pair<std::string, uint32_t>>& layout,
+				  ChangeCost& cost )
+{
+	struct Span
+	{
+		uint32_t netId = 0, recordSize = 0, bodiesSize = 0;
+		const uint8_t* record = nullptr;
+		uint64_t hash = 0;
+	};
+	auto parse = []( const std::vector<uint8_t>& state, std::vector<Span>& out ) {
+		ByteReader r( state.data(), state.size() );
+		r.Read<uint32_t>();
+		r.Take( r.Read<uint32_t>() );
+		const uint32_t count = r.Read<uint32_t>();
+		for ( uint32_t i = 0; i < count && r.Ok(); ++i )
+		{
+			Span e;
+			e.netId = r.Read<uint32_t>();
+			e.recordSize = r.Read<uint32_t>();
+			e.record = r.Take( e.recordSize );
+			e.bodiesSize = r.Read<uint32_t>();
+			if ( e.bodiesSize > 0 )
+			{
+				e.hash = r.Read<uint64_t>();
+				r.Take( e.bodiesSize );
+			}
+			out.push_back( e );
+		}
+	};
+	std::vector<Span> a, b;
+	parse( now, a );
+	parse( was, b );
+	cost.component.resize( layout.size(), 0.0 );
+	size_t k = 0;
+	for ( const Span& e : a )
+	{
+		while ( k < b.size() && b[k].netId < e.netId )
+		{
+			++k;
+		}
+		const Span* old = k < b.size() && b[k].netId == e.netId ? &b[k] : nullptr;
+		cost.entities += 1.0;
+		if ( e.bodiesSize > 0 && ( old == nullptr || old->hash != e.hash ) )
+		{
+			cost.bodies += double( e.bodiesSize );
+		}
+		uint32_t mask = 0, oldMask = 0;
+		std::memcpy( &mask, e.record, 4 );
+		if ( old != nullptr )
+		{
+			std::memcpy( &oldMask, old->record, 4 );
+		}
+		if ( old == nullptr || oldMask != mask || old->recordSize != e.recordSize )
+		{
+			cost.whole += double( e.recordSize );
+			cost.changedEntities += 1.0;
+			continue;
+		}
+		bool changed = false;
+		size_t at = 4;
+		for ( size_t c = 0; c < layout.size(); ++c )
+		{
+			if ( ( mask & ( 1u << c ) ) == 0 || layout[c].second == 0 )
+			{
+				continue;
+			}
+			for ( uint32_t i = 0; i < layout[c].second; ++i )
+			{
+				if ( e.record[at + i] != old->record[at + i] )
+				{
+					cost.component[c] += 1.0;
+					changed = true;
+				}
+			}
+			at += layout[c].second;
+		}
+		cost.changedEntities += changed ? 1.0 : 0.0;
+	}
 }
 
 double MsSince( std::chrono::steady_clock::time_point start )
@@ -195,8 +269,12 @@ int StateModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t delay
 	};
 
 	double serverMs = 0.0, saveMs = 0.0;
-	size_t states = 0, bytes = 0, most = 0, packed = 0, changed = 0, sampled = 0, wrong = 0, entities = 0;
-	std::vector<uint8_t> previous;
+	size_t states = 0, bytes = 0, most = 0, packed = 0, changed = 0, mostChange = 0, sampled = 0, wrong = 0, undecoded = 0, entities = 0;
+	double encodeMs = 0.0;
+	std::deque<net::StateFrame> kept;
+	const auto layout = server.StateComponents();
+	ChangeCost where;
+	size_t counted = 0;
 	for ( uint32_t i = 0; i < total; ++i )
 	{
 		auto start = std::chrono::steady_clock::now();
@@ -218,22 +296,47 @@ int StateModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t delay
 			sent.inputs = frames[i].inputs;
 			states += 1;
 			bytes += sent.bytes.size();
-			most = std::max( most, sent.bytes.size() );
-			// (A sample: deflating is slow. The change is against the state before it.)
-			if ( states % 8 == 0 && previous.empty() == false )
+			// As the wire has it (net/state_codec.h): whole, and as a change against the state a
+			// client would have acknowledged by now (a round trip before: twice the delay), each
+			// decoded again and checked.
 			{
-				packed += Deflated( sent.bytes );
-				std::vector<uint8_t> x( sent.bytes );
-				for ( size_t k = 0; k < x.size() && k < previous.size(); ++k )
+				net::StateFrame frame;
+				frame.tick = sent.tick;
+				frame.inputs = sent.inputs;
+				server.SaveState( frame.state, true ); // (compact, as a server sends it)
+				const net::StateFrame* base = nullptr;
+				for ( const net::StateFrame& b : kept )
 				{
-					x[k] ^= previous[k];
+					base = b.tick + 2 * delay <= frame.tick ? &b : base;
 				}
-				changed += Deflated( x );
+				std::vector<uint8_t> message;
+				net::EncodeState( frame, nullptr, message );
+				packed += message.size();
+				const auto encodeStart = std::chrono::steady_clock::now();
+				net::EncodeState( frame, base, message );
+				encodeMs += MsSince( encodeStart );
+				changed += message.size();
+				most = std::max( most, sent.bytes.size() );
+				mostChange = std::max( mostChange, message.size() );
 				sampled += 1;
-			}
-			if ( states % 8 == 7 )
-			{
-				previous = sent.bytes;
+				ByteReader r( message.data(), message.size() );
+				uint32_t tick = 0, baseTick = 0;
+				net::StateFrame back;
+				const bool decoded = net::ReadType( r ) == net::MsgType::State && net::ReadStateHeader( r, tick, baseTick ) &&
+									 baseTick == ( base != nullptr ? base->tick : net::kNoStateBase ) &&
+									 net::DecodeState( r, tick, base, back ) && back.state == frame.state &&
+									 std::memcmp( back.inputs.data(), frame.inputs.data(), sizeof( frame.inputs ) ) == 0;
+				undecoded += decoded ? 0 : 1;
+				if ( base != nullptr )
+				{
+					CountChange( frame.state, base->state, layout, where );
+					counted += 1;
+				}
+				kept.push_back( std::move( frame ) );
+				if ( kept.size() > 32 )
+				{
+					kept.pop_front();
+				}
 			}
 
 			bool same = mirror.ApplyState( sent.bytes.data(), sent.bytes.size(), slot ) && mirror.Tick() == server.Tick() &&
@@ -287,9 +390,29 @@ int StateModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t delay
 	const auto& st = client.GetStats();
 	const double n = double( std::max<size_t>( states, 1 ) );
 	const double s = double( std::max<size_t>( sampled, 1 ) );
-	std::printf( "states       %zu (every 2 ticks), %zu entities at most; %zu applied wrong\n", states, entities, wrong );
-	std::printf( "a state      %.0f bytes on average, %zu at most; deflated %.0f; as a deflated change %.0f (%.0f kbit/s at 30 a second)\n",
-				 double( bytes ) / n, most, double( packed ) / s, double( changed ) / s, double( changed ) / s * 30.0 * 8.0 / 1000.0 );
+	std::printf( "states       %zu (every 2 ticks), %zu entities at most; %zu applied wrong, %zu not decoded as they were\n", states,
+				 entities, wrong, undecoded );
+	std::printf( "a state      %.0f bytes on average, %zu at most; on the wire whole %.0f, as a change against one %u ticks before %.0f "
+				 "(%zu at most, %.2f ms to make; %.0f kbit/s at 30 a second)\n",
+				 double( bytes ) / n, most, double( packed ) / s, 2 * delay, double( changed ) / s, mostChange, encodeMs / s,
+				 double( changed ) / s * 30.0 * 8.0 / 1000.0 );
+	if ( counted > 0 )
+	{
+		// Before deflating: bytes that differ, by component, in an average change.
+		const double c = double( counted );
+		std::printf( "of a change  %.0f of %.0f entities differ; bytes that differ:", where.changedEntities / c, where.entities / c );
+		std::vector<std::pair<double, std::string>> parts;
+		for ( size_t i = 0; i < layout.size(); ++i )
+		{
+			parts.push_back( { where.component[i] / c, layout[i].first } );
+		}
+		std::sort( parts.rbegin(), parts.rend() );
+		for ( size_t i = 0; i < parts.size() && i < 8 && parts[i].first >= 1.0; ++i )
+		{
+			std::printf( " %s %.0f", parts[i].second.c_str(), parts[i].first );
+		}
+		std::printf( "; records whole %.0f; bodies %.0f\n", where.whole / c, where.bodies / c );
+	}
 	std::printf( "the server   a step %.3f ms, a state saved %.3f ms\n", serverMs / std::max( 1.0, double( total ) ), saveMs / n );
 	std::printf( "the client   slot %u, states %u ticks late: a step %.3f ms, a state applied %.3f ms; %" PRIu64 " states taken, %" PRIu64
 				 " overtaken, %" PRIu64 " not states; %.1f ticks run again a state\n",
@@ -298,7 +421,7 @@ int StateModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t delay
 				 st.states > 0 ? double( st.resimulatedTicks ) / double( st.states ) : 0.0 );
 	std::printf( "its body     predicted within 5 cm of the server's %u of %u ticks; %.3f m on average, %.3f at most\n", near, compared,
 				 compared > 0 ? sum / float( compared ) : 0.0f, worst );
-	return wrong == 0 && st.rejected == 0 ? 0 : 2;
+	return wrong == 0 && undecoded == 0 && st.rejected == 0 ? 0 : 2;
 }
 
 int PrintViewInfo( const char* path )

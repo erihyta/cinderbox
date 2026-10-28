@@ -2,18 +2,20 @@
 // without the physics engine's internals, and a client's world made to agree with it, every entity
 // but its own a stand-in (simulation.h: SaveState, ApplyState).
 //
-// Layout of a state (little-endian):
-//   u32 magic 'CBST'
-//   u32 size, the entity image (SerializeEcs: globals, global board, every entity's components)
-//   u32 count, then for every entity with bodies, in NetId order:
-//     u32 netId, u64 hash of its description, u32 size, its description:
+// Layout of a state (little-endian), each entity self-contained so a wire codec can line two
+// states up entity by entity (net/state_codec.h) without knowing the components:
+//   u32 magic 'CBS2'
+//   u32 size, then SimGlobals and the global board
+//   u32 entities, then each, in NetId order:
+//     u32 netId, u32 size, then its record: u32 mask (a bit per snapshot component), the components
+//     u32 size of its bodies' description (0: it has none), then u64 its hash and the description:
 //       u8 bodies (1: a PhysicsBody; kRagdollParts: a ragdoll's), then each body:
 //         u8 type (0xFF: no body), u8 flags (1 enabled, 2 bullet), u8 locks (a bit each),
 //         f32 gravity scale, linear damping, angular damping, b3MassData,
 //         u8 shapes, then each: u8 type, b3Filter, f32 density, friction, restitution, rolling,
 //         then a sphere (centre, radius), a capsule (two centres, radius), a hull (u16 points,
 //         the points) or nothing (a mesh, a height field: static level pieces, never rebuilt).
-// The physics handles in the image (PhysicsBody, RagdollBodies) are the server's and never read.
+// The physics handles in a record (PhysicsBody, RagdollBodies) are the server's and never read.
 
 #include "simulation.h"
 
@@ -23,6 +25,7 @@
 #include "box3d/collision.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace cb
@@ -31,8 +34,7 @@ namespace cb
 namespace
 {
 
-constexpr uint32_t kStateMagic = 0x54534243u; // 'CBST'
-constexpr uint32_t kEcsMagic = 0x43425331u;	  // 'CBS1' (SerializeEcs)
+constexpr uint32_t kStateMagic = 0x32534243u; // 'CBS2'
 constexpr uint8_t kNoBody = 0xFF;
 constexpr int kMaxShapes = 64;
 
@@ -47,6 +49,34 @@ b3BodyId InWorld( b3BodyId id, b3WorldId world )
 {
 	id.world0 = uint16_t( world.index1 - 1 );
 	return id;
+}
+
+// The compact state's grids (simulation.h, SaveState).
+constexpr float kPlaceGrid = 1024.0f;
+constexpr float kTurnGrid = 32768.0f;
+constexpr float kSpeedGrid = 256.0f;
+
+float RoundedTo( float v, float grid )
+{
+	return std::nearbyint( v * grid ) / grid;
+}
+b3Vec3 RoundedVec( b3Vec3 v, float grid )
+{
+	return { RoundedTo( v.x, grid ), RoundedTo( v.y, grid ), RoundedTo( v.z, grid ) };
+}
+Transform Rounded( const Transform& t )
+{
+	b3Quat q = { RoundedVec( t.rotation.v, kTurnGrid ), RoundedTo( t.rotation.s, kTurnGrid ) };
+	const float length = std::sqrt( q.v.x * q.v.x + q.v.y * q.v.y + q.v.z * q.v.z + q.s * q.s );
+	if ( length > 0.0f )
+	{
+		q = { { q.v.x / length, q.v.y / length, q.v.z / length }, q.s / length };
+	}
+	else
+	{
+		q = t.rotation;
+	}
+	return { RoundedVec( t.position, kPlaceGrid ), q };
 }
 
 // One entity of the server's image, read but not applied.
@@ -300,40 +330,102 @@ void Simulation::RemoveForState( flecs::entity e )
 	e.destruct();
 }
 
+std::vector<std::pair<std::string, uint32_t>> Simulation::StateComponents() const
+{
+	std::vector<std::pair<std::string, uint32_t>> out;
+	for ( const SnapComponent& sc : m_snapComponents )
+	{
+		const char* name = ecs_get_name( m_world.c_ptr(), sc.id );
+		out.push_back( { name != nullptr ? name : "?", sc.size } );
+	}
+	return out;
+}
+
 bool Simulation::IsStandIn( uint32_t netId ) const
 {
 	flecs::entity e = m_followsServer ? FindEntity( netId ) : flecs::entity();
 	return e.is_valid() && e.has<StandIn>();
 }
 
-void Simulation::SaveState( std::vector<uint8_t>& out )
+void Simulation::SaveState( std::vector<uint8_t>& out, bool compact )
 {
 	PhysicsArena::Scope scope( *m_arena );
 	out.clear();
 	Put( out, kStateMagic );
-	SerializeEcs( m_hashScratch );
-	Put( out, uint32_t( m_hashScratch.size() ) );
-	out.insert( out.end(), m_hashScratch.begin(), m_hashScratch.end() );
+	const uint32_t head = uint32_t( sizeof( SimGlobals ) + m_globalBoard.size() * 4 );
+	Put( out, head );
+	Put( out, m_globals );
+	const auto* board = reinterpret_cast<const uint8_t*>( m_globalBoard.data() );
+	out.insert( out.end(), board, board + m_globalBoard.size() * 4 );
+	Put( out, uint32_t( m_entities.size() ) );
 
-	const size_t countAt = out.size();
-	Put( out, uint32_t( 0 ) );
-	uint32_t count = 0;
+	ecs_world_t* world = m_world.c_ptr();
 	std::vector<uint8_t> description;
+	const int transformIndex = compact ? SnapIndex( m_world.component<Transform>().id() ) : -1;
+	const int velocityIndex = compact ? SnapIndex( m_world.component<Velocity>().id() ) : -1;
+	const int poseIndex = compact ? SnapIndex( m_world.component<RagdollPose>().id() ) : -1;
 	for ( const EntityRef& ref : m_entities )
 	{
 		flecs::entity e( m_world, ref.entity );
-		if ( e.has<PhysicsBody>() == false && e.has<RagdollBodies>() == false )
-		{
-			continue;
-		}
-		DescribeBodies( e, description );
 		Put( out, ref.netId );
-		Put( out, HashBytes( kHashSeed, description.data(), description.size() ) );
-		Put( out, uint32_t( description.size() ) );
-		out.insert( out.end(), description.begin(), description.end() );
-		count += 1;
+		const size_t sizeAt = out.size();
+		Put( out, uint32_t( 0 ) );
+		uint32_t mask = 0;
+		for ( size_t i = 0; i < m_snapComponents.size(); ++i )
+		{
+			mask |= ecs_has_id( world, ref.entity, m_snapComponents[i].id ) ? uint32_t( 1 ) << i : 0;
+		}
+		Put( out, mask );
+		for ( size_t i = 0; i < m_snapComponents.size(); ++i )
+		{
+			const SnapComponent& sc = m_snapComponents[i];
+			if ( ( mask & ( uint32_t( 1 ) << i ) ) && sc.size > 0 )
+			{
+				const auto* p = static_cast<const uint8_t*>( ecs_get_id( world, ref.entity, sc.id ) );
+				const size_t at = out.size();
+				out.insert( out.end(), p, p + sc.size );
+				if ( int( i ) == transformIndex )
+				{
+					Transform t;
+					std::memcpy( &t, out.data() + at, sizeof( t ) );
+					t = Rounded( t );
+					std::memcpy( out.data() + at, &t, sizeof( t ) );
+				}
+				else if ( int( i ) == velocityIndex )
+				{
+					Velocity v;
+					std::memcpy( &v, out.data() + at, sizeof( v ) );
+					v = { RoundedVec( v.linear, kSpeedGrid ), RoundedVec( v.angular, kSpeedGrid ) };
+					std::memcpy( out.data() + at, &v, sizeof( v ) );
+				}
+				else if ( int( i ) == poseIndex )
+				{
+					RagdollPose pose;
+					std::memcpy( &pose, out.data() + at, sizeof( pose ) );
+					for ( int k = 0; k < kRagdollParts; ++k )
+					{
+						pose.part[k] = Rounded( pose.part[k] );
+						pose.linear[k] = RoundedVec( pose.linear[k], kSpeedGrid );
+					}
+					std::memcpy( out.data() + at, &pose, sizeof( pose ) );
+				}
+			}
+		}
+		const uint32_t record = uint32_t( out.size() - sizeAt - sizeof( uint32_t ) );
+		std::memcpy( out.data() + sizeAt, &record, sizeof( record ) );
+
+		if ( e.has<PhysicsBody>() || e.has<RagdollBodies>() )
+		{
+			DescribeBodies( e, description );
+			Put( out, uint32_t( description.size() ) );
+			Put( out, HashBytes( kHashSeed, description.data(), description.size() ) );
+			out.insert( out.end(), description.begin(), description.end() );
+		}
+		else
+		{
+			Put( out, uint32_t( 0 ) );
+		}
 	}
-	std::memcpy( out.data() + countAt, &count, sizeof( count ) );
 }
 
 bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
@@ -344,31 +436,32 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 	{
 		return false;
 	}
-	const uint32_t ecsSize = r.Read<uint32_t>();
-	const uint8_t* ecs = r.Take( ecsSize );
-	if ( ecs == nullptr )
+	const uint32_t head = r.Read<uint32_t>();
+	if ( head != sizeof( SimGlobals ) + m_globalBoard.size() * 4 )
 	{
 		return false;
 	}
-	ByteReader er( ecs, ecsSize );
-	if ( er.Read<uint32_t>() != kEcsMagic )
-	{
-		return false;
-	}
-	const SimGlobals globals = er.Read<SimGlobals>();
-	const uint8_t* board = er.Take( size_t( m_config.globalFields ) * 4 );
-	const uint32_t count = er.Read<uint32_t>();
-	if ( er.Ok() == false || count > ecsSize )
+	const SimGlobals globals = r.Read<SimGlobals>();
+	const uint8_t* board = r.Take( m_globalBoard.size() * 4 );
+	const uint32_t count = r.Read<uint32_t>();
+	if ( r.Ok() == false || count > size / 12 )
 	{
 		return false;
 	}
 	std::vector<EntityRecord> records( count );
-	for ( uint32_t n = 0; n < count && er.Ok(); ++n )
+	for ( uint32_t n = 0; n < count && r.Ok(); ++n )
 	{
 		EntityRecord& rec = records[n];
-		rec.netId = er.Read<uint32_t>();
+		rec.netId = r.Read<uint32_t>();
+		const uint32_t recordSize = r.Read<uint32_t>();
+		const uint8_t* record = r.Take( recordSize );
+		if ( record == nullptr || ( n > 0 && rec.netId <= records[n - 1].netId ) )
+		{
+			return false;
+		}
+		ByteReader er( record, recordSize );
 		rec.mask = er.Read<uint32_t>();
-		if ( ( n > 0 && rec.netId <= records[n - 1].netId ) || ( m_snapComponents.size() < 32 && rec.mask >> m_snapComponents.size() ) != 0 )
+		if ( m_snapComponents.size() < 32 && ( rec.mask >> m_snapComponents.size() ) != 0 )
 		{
 			return false;
 		}
@@ -379,34 +472,21 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 				rec.components[i] = er.Take( m_snapComponents[i].size );
 			}
 		}
-	}
-	if ( er.Ok() == false || er.AtEnd() == false )
-	{
-		return false;
-	}
-	const uint32_t described = r.Read<uint32_t>();
-	if ( r.Ok() == false || described > count )
-	{
-		return false;
-	}
-	size_t at = 0;
-	for ( uint32_t n = 0; n < described; ++n )
-	{
-		const uint32_t netId = r.Read<uint32_t>();
-		const uint64_t hash = r.Read<uint64_t>();
-		const uint32_t bytes = r.Read<uint32_t>();
-		const uint8_t* body = r.Take( bytes );
-		while ( at < records.size() && records[at].netId < netId )
-		{
-			++at;
-		}
-		if ( body == nullptr || at == records.size() || records[at].netId != netId )
+		if ( er.Ok() == false || er.AtEnd() == false )
 		{
 			return false;
 		}
-		records[at].bodies = body;
-		records[at].bodiesSize = bytes;
-		records[at].bodiesHash = hash;
+		const uint32_t bodySize = r.Read<uint32_t>();
+		if ( bodySize > 0 )
+		{
+			rec.bodiesHash = r.Read<uint64_t>();
+			rec.bodies = r.Take( bodySize );
+			rec.bodiesSize = bodySize;
+			if ( rec.bodies == nullptr )
+			{
+				return false;
+			}
+		}
 	}
 	if ( r.Ok() == false || r.AtEnd() == false )
 	{
@@ -426,9 +506,9 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own )
 	const int characterIndex = SnapIndex( m_world.component<Character>().id() );
 
 	m_globals = globals;
-	if ( m_config.globalFields > 0 )
+	if ( m_globalBoard.empty() == false )
 	{
-		std::memcpy( m_globalBoard.data(), board, size_t( m_config.globalFields ) * 4 );
+		std::memcpy( m_globalBoard.data(), board, m_globalBoard.size() * 4 );
 	}
 	const uint32_t ownNetId = own < kMaxPlayers ? m_globals.playerNetIds[own] : 0;
 

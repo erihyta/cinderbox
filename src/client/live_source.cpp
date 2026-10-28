@@ -80,14 +80,15 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 		f.names = client.Names();
 	}
 
+	// Either network model's session: what the viewer is shown is the predicted world either way.
 	RollbackSession::Stats rollback;
 	uint32_t confirmedTick = 0;
 	uint32_t rollbackWindow = 0;
-	if ( RollbackSession* session = client.Session() )
+	if ( Simulation* simulation = client.Sim() )
 	{
-		Simulation& sim = session->Sim();
+		Simulation& sim = *simulation;
 		present::CaptureFrame( sim, f.frame );
-		const InputFrame* last = session->LastSimulatedFrame();
+		const InputFrame* last = client.LastSimulatedFrame();
 		f.frame.hasInputs = last != nullptr;
 		if ( last != nullptr )
 		{
@@ -95,21 +96,33 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 		}
 		f.frame.resetGeneration = client.ResetGeneration();
 		f.frame.localNetId = sim.Globals().playerNetIds[client.Slot()];
-		rollback = session->GetStats();
-		confirmedTick = session->ConfirmedTick();
+		if ( RollbackSession* session = client.Session() )
+		{
+			rollback = session->GetStats();
+			rollbackWindow = session->MaxRollback();
+		}
+		else if ( StateSession* states = client.States() )
+		{
+			// (A state taken is the state model's rollback: back to the server's, inputs run again.)
+			rollback.rollbacks = states->GetStats().states;
+			rollback.lastRollbackDepth = states->GetStats().lastDepth;
+			rollback.resimulatedTicks = states->GetStats().resimulatedTicks;
+			rollbackWindow = states->MaxAhead();
+		}
+		confirmedTick = client.ConfirmedTick();
 		f.confirmedTick = confirmedTick;
-		rollbackWindow = session->MaxRollback();
 		f.hasWorld = true;
 	}
 	// The local player's motions, for the debug HUD (F1): what is on, and why a start was refused.
 	std::string motions;
-	if ( RollbackSession* session = client.Session() )
+	if ( Simulation* sim = client.Sim() )
 	{
-		motions = session->Sim().DescribeMotions( client.Slot() );
+		motions = sim->DescribeMotions( client.Slot() );
 	}
 
 	f.stats.clear();
 	f.stats.push_back( { "reject_reason", client.RejectReason() } );
+	f.stats.push_back( { "net_model", std::string( net::ToString( client.Model() ) ) } );
 	f.stats.push_back( { "tick", int64_t( client.CurrentTick() ) } );
 	f.stats.push_back( { "confirmed_tick", int64_t( confirmedTick ) } );
 	f.stats.push_back( { "rollback_window", int64_t( rollbackWindow ) } );
