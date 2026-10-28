@@ -332,6 +332,10 @@ inline PlayerInput UnpackInput( const SimCommand& c )
 inline constexpr float kPusherGrid = 1024.0f;
 // Where the characters' NetIds start (SimGlobals::nextCharacterId); the physics world's are below.
 inline constexpr uint32_t kCharacterIdBase = 0x10000000u;
+// Where a hybrid client's own NetIds for the characters' side start (M248): what its simulation
+// makes there itself (a mod's character, an item given, in the physics' past or predicted) is never
+// the server's, whose characters come in its states; the next state removes it.
+inline constexpr uint32_t kLocalCharacterIdBase = 0x70000000u;
 struct PusherPlace
 {
 	uint32_t netId = 0; // the character's

@@ -127,20 +127,21 @@ uint32_t HybridSession::AdvancePhysics( uint32_t upTo )
 			m_stats.physicsStalls += 1;
 			break;
 		}
-		// The own character is ahead: what this tick's commands do to it is in a later state.
+		// The own character is ahead. For this tick it stands as the others do, where the server had
+		// it then (a command of this tick reads it: a body taken over, the one left behind), and is
+		// the prediction again after: what this tick's commands did to it is in a later state.
 		const uint32_t own = m_sim->PlayerNetId( m_localSlot );
-		if ( own != 0 )
+		m_sim->SaveState( m_own, false, own != 0 ? own : UINT32_MAX );
+		auto placed = m_states.find( m_placed );
+		if ( placed != m_states.end() )
 		{
-			m_sim->SaveState( m_own, false, own );
+			m_sim->ApplyState( placed->second.bytes.data(), placed->second.bytes.size(), m_localSlot, Simulation::StateApply::Own );
 		}
 		auto start = std::chrono::steady_clock::now();
 		m_sim->Step( frame->second );
 		m_stats.physicsNs += NsSince( start );
 		m_stats.physicsSteps += 1;
-		if ( own != 0 )
-		{
-			m_sim->ApplyState( m_own.data(), m_own.size(), m_localSlot, Simulation::StateApply::Own );
-		}
+		m_sim->ApplyState( m_own.data(), m_own.size(), m_localSlot, Simulation::StateApply::Own );
 		// The others where the server had them at the tick reached (and not where this tick's
 		// commands put them: what a command does to a character is in the server's state).
 		PlaceOthers( m_sim->Tick(), frame->second.commands.empty() == false );

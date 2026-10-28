@@ -23,6 +23,7 @@
 #include <cinttypes>
 #include <cstdlib>
 #include <deque>
+#include <map>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -235,8 +236,39 @@ double MsSince( std::chrono::steady_clock::time_point start )
 // behind, and it predicts that slot's character with the recorded inputs. What each costs on the
 // wire is measured as the server sends it (net/protocol.h, net/state_codec.h), decoded again and
 // checked.
+// What a simulation's physics world has, body by body (to say where two differ).
+struct BodySeen
+{
+	uint32_t netId;
+	b3Vec3 at, linear;
+	bool character;
+	bool operator==( const BodySeen& o ) const
+	{
+		return netId == o.netId && std::memcmp( &at, &o.at, sizeof( at ) ) == 0 && std::memcmp( &linear, &o.linear, sizeof( linear ) ) == 0;
+	}
+};
+std::vector<BodySeen> PhysicsBodies( Simulation& sim )
+{
+	std::vector<BodySeen> out;
+	for ( const auto& r : sim.Entities() )
+	{
+		flecs::entity e( sim.World(), r.entity );
+		const PhysicsBody* pb = e.try_get<PhysicsBody>();
+		if ( ( pb == nullptr || pb->body.world0 != 0 ) && e.has<RagdollBodies>() == false )
+		{
+			continue;
+		}
+		const Transform* t = e.try_get<Transform>();
+		const Velocity* v = e.try_get<Velocity>();
+		out.push_back( { r.netId, t ? t->position : b3Vec3{}, v ? v->linear : b3Vec3{}, e.has<Character>() } );
+	}
+	return out;
+}
+
 int HybridModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t delay )
 {
+	std::map<uint32_t, std::vector<BodySeen>> serverBodies; // (the last few ticks')
+	bool told = false;
 	auto serverSim = std::make_unique<Simulation>( replay.Config(), replay.Map() );
 	Simulation& server = *serverSim;
 	SetUpLike( replay, server );
@@ -350,6 +382,11 @@ int HybridModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t dela
 		{
 			ownOf( server, serverSaw[server.Tick()] );
 		}
+		serverBodies[i] = PhysicsBodies( server );
+		while ( serverBodies.size() > 64 )
+		{
+			serverBodies.erase( serverBodies.begin() );
+		}
 		{
 			Sent sent{ i + delay, false, i, frames[i], server.PhysicsHash(), {}, {} };
 			sent.frame.physics = server.PhysicsMade().physics;
@@ -391,6 +428,48 @@ int HybridModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t dela
 		if ( i + 1 > delay + 2 )
 		{
 			client.AdvancePhysics( i + 1 - ( delay + 2 ) );
+			// The first tick the physics differs: what differs, and what the frame had.
+			if ( told == false && client.DesyncTick() != UINT32_MAX && serverBodies.count( client.DesyncTick() ) != 0 )
+			{
+				told = true;
+				const uint32_t t = client.DesyncTick();
+				const auto mine = PhysicsBodies( client.Sim() );
+				const auto& theirs = serverBodies[t];
+				std::printf( "tick %u: the server has %zu bodies in the physics world, the client %zu (at its tick %u); the frame: %zu "
+							 "commands, %zu physics events, %zu pushers\n",
+							 t, theirs.size(), mine.size(), client.PhysicsTick(), frames[t].commands.size(),
+							 t < total ? size_t( 0 ) : size_t( 0 ), size_t( 0 ) );
+				size_t shown = 0;
+				for ( size_t a = 0, b = 0; ( a < theirs.size() || b < mine.size() ) && shown < 12; )
+				{
+					const BodySeen* x = a < theirs.size() ? &theirs[a] : nullptr;
+					const BodySeen* y = b < mine.size() ? &mine[b] : nullptr;
+					if ( x && y && x->netId == y->netId )
+					{
+						if ( !( *x == *y ) )
+						{
+							std::printf( "  %u%s: server (%.4f %.4f %.4f) going (%.3f %.3f %.3f), client (%.4f %.4f %.4f) going (%.3f %.3f %.3f)\n",
+										 x->netId, x->character ? " (a character's)" : "", x->at.x, x->at.y, x->at.z, x->linear.x,
+										 x->linear.y, x->linear.z, y->at.x, y->at.y, y->at.z, y->linear.x, y->linear.y, y->linear.z );
+							shown += 1;
+						}
+						++a;
+						++b;
+					}
+					else if ( y == nullptr || ( x && x->netId < y->netId ) )
+					{
+						std::printf( "  %u: only the server's (%.4f %.4f %.4f)\n", x->netId, x->at.x, x->at.y, x->at.z );
+						shown += 1;
+						++a;
+					}
+					else
+					{
+						std::printf( "  %u: only the client's (%.4f %.4f %.4f)\n", y->netId, y->at.x, y->at.y, y->at.z );
+						shown += 1;
+						++b;
+					}
+				}
+			}
 		}
 		// The own character ahead of the server by about the delay (a tick a frame, two to catch up).
 		for ( int step = 0; step < 2 && client.PredictedTick() < std::min( server.Tick() + delay + 2, total ); ++step )

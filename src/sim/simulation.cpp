@@ -370,7 +370,8 @@ flecs::entity Simulation::FindEntity( uint32_t netId ) const
 
 flecs::entity Simulation::CreateEntity( bool character )
 {
-	uint32_t netId = character ? m_globals.nextCharacterId++ : m_globals.nextNetId++;
+	// (Following the server's characters, what this simulation makes on their side is its own.)
+	uint32_t netId = character ? ( m_followsServer ? m_localCharacterId++ : m_globals.nextCharacterId++ ) : m_globals.nextNetId++;
 	flecs::entity e = m_world.entity();
 	e.set<NetId>( { netId } );
 	// Each side's NetIds only grow, and the characters' are above the physics world's: a
@@ -2302,10 +2303,18 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	m_drivers.clear();
 	for ( int slot = 0; slot < kMaxPlayers; ++slot )
 	{
-		// (A stand-in is the server's to move, and a body its state has not brought yet is not here:
-		// the hybrid's characters.)
-		if ( const uint32_t netId = m_globals.playerNetIds[slot];
-			 netId != 0 && ( m_followsServer == false || ( IsStandIn( netId ) == false && FindEntity( netId ).is_valid() ) ) )
+		// (Following the server's characters, the hybrid's: a stand-in is the server's to move, and
+		// only a character on their side is driven: not a body its state has not brought yet, nor one
+		// still in this world's physics, in the past.)
+		auto driven = [this]( uint32_t netId ) {
+			if ( m_followsServer == false )
+			{
+				return true;
+			}
+			const flecs::entity e = FindEntity( netId );
+			return e.is_valid() && StandsIn( e ) == false && CharacterSide( e ) && e.has<Character>();
+		};
+		if ( const uint32_t netId = m_globals.playerNetIds[slot]; netId != 0 && driven( netId ) )
 		{
 			m_drivers.push_back( { netId, frame.inputs[slot], slot } );
 		}
@@ -3262,9 +3271,7 @@ void Simulation::StepCharacters( uint32_t tick, PlayerSlot slot, const PlayerInp
 	SyncFromPhysics();
 	FollowHolders();
 	UpdateFootsteps();
-	const uint32_t nextCharacterId = m_globals.nextCharacterId;
 	m_globals = kept;
-	m_globals.nextCharacterId = nextCharacterId;
 }
 
 void Simulation::SerializeEcs( std::vector<uint8_t>& out ) const

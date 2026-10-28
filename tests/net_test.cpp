@@ -44,6 +44,10 @@
 #if defined( _WIN32 )
 #include <windows.h>
 #include <timeapi.h>
+#else
+#include <execinfo.h>
+#include <signal.h>
+#include <unistd.h>
 #endif
 
 using namespace cb;
@@ -5188,13 +5192,16 @@ private:
 	std::vector<uint32_t> m_npcs;
 };
 
-void TestChaos()
+// `hybrid`: the same in the hybrid network model (M248): NPCs, bodies changing hands, driven props
+// and items dropped by others keep every client's physics the server's.
+void RunChaos( bool hybrid )
 {
 	std::vector<std::unique_ptr<mods::ServerMod>> extra;
 	extra.push_back( std::make_unique<ChaosMod>() );
 	const std::string root = CB_SOURCE_DIR;
-	Harness h( 47922, {}, {}, { { "test.mods", "cannon,flight,grenade,sneak,possess" } },
+	Harness h( hybrid ? 47948 : 47922, {}, {}, { { "test.mods", "cannon,flight,grenade,sneak,possess" } },
 			   [&]( ServerOptions& options ) {
+				   options.netModel = hybrid ? net::NetModel::Hybrid : net::NetModel::Inputs;
 				   const char* view = std::getenv( "CB_CHAOS_VIEW" ); // (a view file of it, for the game)
 				   options.recordViewPath = view != nullptr ? view : "";
 				   std::string error, warnings;
@@ -5276,7 +5283,8 @@ void TestChaos()
 	for ( Bot& b : h.bots )
 	{
 		int compared = 0;
-		CHECK( h.CompareWithServer( b, compared ) == 0 && compared > 50 );
+		CHECK( hybrid || ( h.CompareWithServer( b, compared ) == 0 && compared > 50 ) );
+		CHECK( hybrid == false || ( b.client->Hybrid() != nullptr && b.client->Hybrid()->GetStats().physicsSteps > 400 ) );
 	}
 	std::fprintf( stderr, "    bodies changed hands %u times; at most %u NPCs, %u ragdolls, %u props players spawned\n", swaps, mostNpcs,
 				  mostRagdolls, mostProps );
@@ -5287,6 +5295,16 @@ void TestChaos()
 		std::fprintf( stderr, "    bot %zu: desyncs %u, checksums %u\n", b, client.GetStats().desyncs, client.GetStats().checksumsVerified );
 		CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
 	}
+}
+
+void TestChaos()
+{
+	RunChaos( false );
+}
+
+void TestChaosHybrid()
+{
+	RunChaos( true );
 }
 
 // Combat hurts NPCs too (after M223): a test mod drives a body, standing, and has the player hit it
@@ -6841,6 +6859,19 @@ LONG WINAPI SayWhereItCrashed( EXCEPTION_POINTERS* info )
 	std::fflush( stderr );
 	return EXCEPTION_CONTINUE_SEARCH;
 }
+#else
+// The same on Linux and macOS: the stack as backtrace has it, on a stack of its own (so a stack
+// that overflowed says where too).
+void SayWhereItCrashed( int signal )
+{
+	static const char said[] = "crashed: a signal; the stack:\n";
+	(void)!write( 2, said, sizeof( said ) - 1 );
+	void* frames[64];
+	const int count = backtrace( frames, 64 );
+	backtrace_symbols_fd( frames, count, 2 );
+	::signal( signal, SIG_DFL );
+	raise( signal );
+}
 #endif
 
 int main( int argc, char** argv )
@@ -6849,7 +6880,25 @@ int main( int argc, char** argv )
 	Simulation::s_checkIndexes = true;
 #if defined( _WIN32 )
 	SetUnhandledExceptionFilter( SayWhereItCrashed );
+	// (Room left for it when the stack overflows.)
+	ULONG guarantee = 64 * 1024;
+	SetThreadStackGuarantee( &guarantee );
 	timeBeginPeriod( 1 );
+#else
+	{
+		static char own[256 * 1024];
+		stack_t alternate{};
+		alternate.ss_sp = own;
+		alternate.ss_size = sizeof( own );
+		sigaltstack( &alternate, nullptr );
+		struct sigaction action{};
+		action.sa_handler = SayWhereItCrashed;
+		action.sa_flags = SA_ONSTACK;
+		for ( int signal : { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT } )
+		{
+			sigaction( signal, &action, nullptr );
+		}
+	}
 #endif
 
 	struct Test
@@ -6894,6 +6943,7 @@ int main( int argc, char** argv )
 		{ "npc", TestNpc },
 		{ "leave_after_firing", TestLeaveAfterFiring },
 		{ "chaos", TestChaos },
+		{ "chaos_hybrid", TestChaosHybrid },
 		{ "combat_npc", TestCombatNpc },
 		{ "map_body", TestMapBody },
 		{ "navigation", TestNavigation },

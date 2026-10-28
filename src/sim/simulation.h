@@ -544,12 +544,15 @@ private:
 
 	// The characters' states (stand_ins.cpp).
 	bool m_followsServer = false;
+	uint32_t m_localCharacterId = kLocalCharacterIdBase; // (not the server's: CreateEntity)
 	// On the characters' side (SaveState), or in the physics world (a body there, a ragdoll, a pusher).
 	bool CharacterSide( flecs::entity e ) const;
 	bool PhysicsSide( flecs::entity e ) const;
+	// (Only on the characters' side: what went into the physics world since its state is this
+	// world's own, whatever it was.)
 	bool StandsIn( flecs::entity e ) const
 	{
-		return m_followsServer && e.has<StandIn>();
+		return m_followsServer && e.has<StandIn>() && PhysicsSide( e ) == false;
 	}
 	// An entity's bodies described (the PhysicsBody's, or the ragdoll's parts), and built again.
 	void DescribeBodies( flecs::entity e, std::vector<uint8_t>& out ) const;

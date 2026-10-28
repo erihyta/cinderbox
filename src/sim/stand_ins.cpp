@@ -364,7 +364,7 @@ std::vector<std::pair<std::string, uint32_t>> Simulation::StateComponents() cons
 bool Simulation::IsStandIn( uint32_t netId ) const
 {
 	flecs::entity e = m_followsServer ? FindEntity( netId ) : flecs::entity();
-	return e.is_valid() && e.has<StandIn>();
+	return e.is_valid() && StandsIn( e );
 }
 
 bool Simulation::PhysicsSide( flecs::entity e ) const
@@ -555,10 +555,12 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, S
 	const uint32_t ownNetId = own < kMaxPlayers ? globals.playerNetIds[own] : 0;
 	if ( which == StateApply::Others )
 	{
-		// What the characters' side has of the globals: whose the slots are, the next character's
-		// NetId (never back: what this world made meanwhile keeps its own), the mods' fields.
-		std::memcpy( m_globals.playerNetIds, globals.playerNetIds, sizeof( m_globals.playerNetIds ) );
-		m_globals.nextCharacterId = std::max( m_globals.nextCharacterId, globals.nextCharacterId );
+		// What the characters' side has of the globals: whose the slots are (but the own one's, which
+		// is the prediction's: a later state's), the mods' fields.
+		for ( int slot = 0; slot < kMaxPlayers; ++slot )
+		{
+			m_globals.playerNetIds[slot] = slot == own ? m_globals.playerNetIds[slot] : globals.playerNetIds[slot];
+		}
 		if ( m_globalBoard.empty() == false )
 		{
 			std::memcpy( m_globalBoard.data(), board, m_globalBoard.size() * 4 );
@@ -575,6 +577,10 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, S
 		return netId == ownNetId || ( held != nullptr && held->holder == ownNetId );
 	};
 	auto about = [&]( bool mine ) { return which == StateApply::Own ? mine : mine == false; };
+	if ( which == StateApply::Own && own < kMaxPlayers )
+	{
+		m_globals.playerNetIds[own] = ownNetId;
+	}
 
 	ecs_world_t* world = m_world.c_ptr();
 	std::vector<EntityRef> restored;
