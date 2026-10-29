@@ -4067,7 +4067,7 @@ void TestShop()
 
 // The brawler's kit (the brawl mod, step 5's measure): bot A walks up to bot B and goes through it,
 // the skills by their slots' keys (2 to 5: the fist stays in the hand all the while):
-// three jabs (the third a finisher), a dash strike pressed twice (the second within its 3 s does
+// three jabs (the third a finisher, which tosses B: A walks to where it got up), a dash strike pressed twice (the second within its 3 s does
 // nothing), an uppercut, a jump and a ground slam that lands beside B, and a jab while B guards
 // (a quarter of the damage). What each did is counted by its events on the server; B's damage by
 // combat.damage. Nothing is corrected on either client.
@@ -4106,23 +4106,23 @@ void TestBrawl()
 		}
 		in.actions = tick >= 280 && tick < 290 ? kKeySlot1 : 0; // the fist out
 		auto at_ = [&]( uint32_t when ) { return tick >= when && tick < when + 3; };
-		if ( at_( 320 ) || at_( 345 ) || at_( 370 ) || at_( 1010 ) )
+		if ( at_( 320 ) || at_( 345 ) || at_( 370 ) || at_( 1610 ) )
 		{
 			in.actions |= kKeyUse; // jab, jab, finisher; and the jab on a guard
 		}
-		if ( at_( 520 ) || at_( 560 ) )
+		if ( at_( 1120 ) || at_( 1160 ) )
 		{
 			in.slotKeys |= dashKey; // the second within the 3 s: nothing
 		}
-		if ( at_( 700 ) )
+		if ( at_( 1300 ) )
 		{
 			in.slotKeys |= upperKey;
 		}
-		if ( at_( 860 ) )
+		if ( at_( 1460 ) )
 		{
 			in.buttons |= BtnJump;
 		}
-		if ( at_( 880 ) )
+		if ( at_( 1480 ) )
 		{
 			in.slotKeys |= slamKey;
 		}
@@ -4133,15 +4133,21 @@ void TestBrawl()
 	// B stands; it guards around the last jab.
 	b.script = [=]( uint32_t tick ) {
 		PlayerInput in;
-		in.slotKeys = tick >= 990 && tick < 1040 ? guardKey : 0;
+		in.slotKeys = tick >= 1590 && tick < 1640 ? guardKey : 0;
 		return in;
 	};
 	std::map<int, int> count;
 	std::vector<int32_t> damages;
-	uint32_t seen = 0;
+	uint32_t seen = 0, downFrom = 0, downTo = 0;
 	h.server.SetTickObserver( [&] {
 		const SimGlobals& g = server.Globals();
 		uint32_t victim = server.PlayerNetId( b.client->Slot() );
+		// The finisher tosses B (its ragdoll), and B gets up again.
+		if ( flecs::entity be = server.FindEntity( victim ); be.is_valid() && be.has<Downed>() )
+		{
+			downFrom = downFrom == 0 ? server.Tick() : downFrom;
+			downTo = server.Tick();
+		}
 		for ( ; seen < g.modEventCount; ++seen )
 		{
 			const ModEventRecord& e = g.modEvents[seen % kModEventHistory];
@@ -4152,7 +4158,7 @@ void TestBrawl()
 			}
 		}
 	} );
-	h.RunUntil( 18.5 );
+	h.RunUntil( 29.0 );
 	h.server.SetTickObserver( {} );
 	h.Report();
 	std::string list;
@@ -4160,8 +4166,10 @@ void TestBrawl()
 	{
 		list += " " + std::to_string( d );
 	}
-	std::printf( "    jabs %d, finishers %d, dash strikes started %d (pressed twice), hit %d, uppercuts %d, slams landed %d; B's damage:%s\n",
-				 count[jab], count[finisher], count[dashStarted], count[dashHit], count[upperHit], count[landed], list.c_str() );
+	std::printf( "    jabs %d, finishers %d, dash strikes started %d (pressed twice), hit %d, uppercuts %d, slams landed %d; B's damage:%s; B down "
+				 "from tick %u to %u\n",
+				 count[jab], count[finisher], count[dashStarted], count[dashHit], count[upperHit], count[landed], list.c_str(), downFrom, downTo );
+	CHECK( downFrom > 370 && downFrom < 420 && downTo < 1120 ); // (tossed by the finisher, up before the dash strike)
 	CHECK( count[jab] == 3 && count[finisher] == 1 );
 	CHECK( count[dashStarted] == 1 && count[dashHit] == 1 && count[upperHit] == 1 && count[landed] == 1 );
 	// 8, 8, 20, 15, 18, 25, and the guarded jab: 2.
