@@ -56,7 +56,7 @@ void Simulation::MakePusherPlaces( std::vector<PusherPlace>& out )
 	{
 		flecs::entity e( m_world, r.entity );
 		const Character* c = e.try_get<Character>();
-		if ( c == nullptr || c->dead || e.has<PhysicsBody>() == false || StandsIn( e ) )
+		if ( c == nullptr || c->dead || e.has<Downed>() || e.has<PhysicsBody>() == false || StandsIn( e ) )
 		{
 			continue;
 		}
@@ -416,7 +416,31 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 			break;
 		case PhysicsEventType::Ragdoll:
 		{
+			if ( event.kind == 2 )
+			{
+				// A toss's ragdoll, the dead player's now (M249).
+				if ( flecs::entity body = FindEntity( event.made ); body.is_valid() && body.has<Ragdoll>() )
+				{
+					Ragdoll r = body.get<Ragdoll>();
+					r.despawnTick = event.ticks > 0 ? m_globals.tick + event.ticks : 0;
+					body.set<Ragdoll>( r );
+					body.remove<Tossed>();
+					EnforceRagdollCap( event.count );
+				}
+				break;
+			}
 			flecs::entity body = CreateRagdoll( event );
+			if ( event.kind == 1 )
+			{
+				// A toss (M249): its player is down, and says which is its ragdoll.
+				body.set<Tossed>( { event.netId, event.hitAt.x, event.hitAt.y } );
+				if ( flecs::entity player = FindEntity( event.netId ); player.is_valid() && player.has<Downed>() )
+				{
+					Downed down = player.get<Downed>();
+					down.ragdoll = body.get<NetId>().value;
+					player.set<Downed>( down );
+				}
+			}
 			event.made = body.get<NetId>().value;
 			SimCommand hit;
 			hit.type = CommandType::Impulse;

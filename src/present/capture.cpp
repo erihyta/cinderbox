@@ -140,7 +140,7 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 		if ( const Character* ch = e.try_get<Character>() )
 		{
 			f.stepCount = ch->stepCount;
-			f.dead = ch->dead != 0;
+			f.dead = ch->dead != 0 || e.has<Downed>(); // (down, M249: its ragdoll is drawn)
 			f.linked = sim.EntityHold( f.netId, f.linkEnd, f.linkHolds, f.linkMotion, &f.linkMissed );
 			f.motionsOn = sim.EntityMotionsOn( f.netId );
 			f.character = uint8_t( sim.CharacterOf( e ) );

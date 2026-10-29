@@ -236,8 +236,16 @@ enum class CommandType : uint8_t
 	// nobody drives, or a loose prop, gets the controller (as Possess gives it, with no slot). mode
 	// = 0: it is driven no more and stands where it is, nobody's. An NPC is a body a mod drives.
 	Drive = 22,
+	// target = a living character (M249): tossed, a ragdoll in the physics world going at its
+	// velocity and `a` (m/s) more, down and not dead (it does not move, nothing hits its capsule).
+	// It gets up where the ragdoll lies once that has been still for a moment, or after `value`
+	// ticks (0: 5 seconds). While it flies, its ragdoll breaks a breakable it hits at `b.x` m/s or
+	// more (0: none), its hole's radius `b.y` m at 30 m/s, wider the faster, as a thrown item's
+	// (0: 1). A character without a ragdoll, a
+	// driven prop, a dead or downed one: nothing.
+	Toss = 23,
 };
-inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Drive );
+inline constexpr uint8_t kLastCommandType = uint8_t( CommandType::Toss );
 
 enum ImpulseMode : uint8_t
 {
@@ -360,7 +368,10 @@ enum class PhysicsEventType : uint8_t
 				   // `owner`'s that lasts `ticks` (0: for ever)
 	Ragdoll = 3,   // a ragdoll of the player `netId` (slot `slot`): its feet at `at`, facing `yaw`, going
 				   // `vector`, weighing `mass`, lasting `ticks`; then hit (`hitAt`, `hitVector`, `mode`), and
-				   // the ragdolls kept to `count` (0: no cap). It is made with the NetId `made`
+				   // the ragdolls kept to `count` (0: no cap). It is made with the NetId `made`. `kind` 1: a
+				   // toss (M249), the player down, not dead: it breaks walls at `hitAt.x` m/s, its hole
+				   // `hitAt.y` (no hit). `kind` 2: no new one: the toss's ragdoll `made` is the dead player's
+				   // now, lasting `ticks`, the ragdolls kept to `count`
 	// Bodies between the two worlds (M247): what a character takes from the physics world or gives
 	// back to it.
 	Remove = 4,	  // the entity `netId` is gone (an item its own motion removed)

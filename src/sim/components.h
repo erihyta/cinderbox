@@ -265,6 +265,25 @@ struct Ragdoll
 	float yaw = 0.0f;		  // facing when it was created: the parts' rest orientation
 };
 
+// A character tossed (M249: CommandType::Toss): down, not dead, until it gets up where its
+// ragdoll (`ragdoll`, 0 until the physics events made it) lies. `stillTicks`: how long the ragdoll
+// has been still; `mostTicks`: down no longer than that.
+struct Downed
+{
+	uint32_t ragdoll = 0;
+	uint32_t since = 0;
+	uint32_t stillTicks = 0;
+	uint32_t mostTicks = 0;
+};
+// The ragdoll of a tossed character (its `player`'s NetId): it breaks a breakable it hits at
+// `breakSpeed` m/s or more (0: none), its hole's radius `hole` m at 30 m/s (ItemShape::breakHole).
+struct Tossed
+{
+	uint32_t player = 0;
+	float breakSpeed = 0.0f;
+	float hole = 1.0f;
+};
+
 struct RagdollBodies
 {
 	b3BodyId body[kRagdollParts] = {};

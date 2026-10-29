@@ -349,6 +349,8 @@ void Simulation::RegisterComponents()
 	RegisterSnapComponent<DrivenProp>();
 	RegisterSnapComponent<ModDriven>();
 	RegisterSnapComponent<Pusher>();
+	RegisterSnapComponent<Downed>();
+	RegisterSnapComponent<Tossed>();
 
 	if ( m_snapComponents.size() > 32 )
 	{
@@ -2400,7 +2402,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		flecs::entity e = FindEntity( netId );
 		const PlayerInput& in = m_drivers[d].input;
 		Character c = e.get<Character>();
-		if ( c.dead )
+		if ( c.dead || e.has<Downed>() )
 		{
 			// Held buttons are still tracked, so a jump held through the respawn is not a press.
 			c.prevButtons = in.buttons;
@@ -2967,20 +2969,46 @@ void Simulation::CollectImpacts()
 void Simulation::RememberBreakers()
 {
 	m_breakersBefore.clear();
-	if ( m_anyBreaks == false )
+	// (Items that break walls, and tossed ragdolls that do: M249.)
+	const bool tossed = m_world.count<Tossed>() > 0;
+	if ( m_anyBreaks == false && tossed == false )
 	{
 		return;
 	}
 	for ( const EntityRef& r : m_entities )
 	{
 		flecs::entity e( m_world, r.entity );
-		const HeldItem* item = e.try_get<HeldItem>();
+		if ( const Tossed* toss = e.try_get<Tossed>(); toss != nullptr && toss->breakSpeed > 0.0f )
+		{
+			if ( const RagdollBodies* rb = e.try_get<RagdollBodies>() )
+			{
+				b3BodyId pelvis = rb->body[ragdoll::Pelvis];
+				pelvis.world0 = uint16_t( m_physicsWorld.index1 - 1 );
+				m_breakersBefore.push_back( { r.netId, b3Body_GetLinearVelocity( pelvis ) } );
+			}
+			continue;
+		}
+		const HeldItem* item = m_anyBreaks ? e.try_get<HeldItem>() : nullptr;
 		const PhysicsBody* pb = item != nullptr && item->holder == 0 ? e.try_get<PhysicsBody>() : nullptr;
 		if ( pb != nullptr && ItemShapeOf( item->kind ).breakSpeed > 0.0f )
 		{
 			m_breakersBefore.push_back( { r.netId, b3Body_GetLinearVelocity( BodyOf( *pb ) ) } );
 		}
 	}
+}
+
+ItemShape Simulation::BreakerShape( flecs::entity e ) const
+{
+	if ( const Tossed* toss = e.try_get<Tossed>() )
+	{
+		// A tossed ragdoll (M249): it goes on through what it broke, a little slower.
+		ItemShape shape;
+		shape.breakSpeed = toss->breakSpeed;
+		shape.breakHole = toss->hole;
+		shape.breakThrough = 0.6f;
+		return shape;
+	}
+	return ItemShapeOf( e.get<HeldItem>().kind );
 }
 
 void Simulation::BreakByItems()
@@ -3022,7 +3050,7 @@ void Simulation::BreakByItems()
 			{
 				continue;
 			}
-			const ItemShape shape = ItemShapeOf( FindEntity( itemId ).get<HeldItem>().kind );
+			const ItemShape shape = BreakerShape( FindEntity( itemId ) );
 			const float speed = std::max( b3Length( was->second ), hit.speed );
 			if ( speed >= shape.breakSpeed )
 			{
@@ -3038,7 +3066,7 @@ void Simulation::BreakByItems()
 		{
 			continue; // (another item's hole took it this step)
 		}
-		const ItemShape shape = ItemShapeOf( item.get<HeldItem>().kind );
+		const ItemShape shape = BreakerShape( item );
 		const float moving = b3Length( smash.before );
 		const b3Vec3 way = moving > 0.01f ? b3MulSV( 1.0f / moving, smash.before ) : b3Vec3{ 0.0f, 0.0f, 0.0f };
 		// A hole as wide as it was fast; the pieces flung its way (from half a metre behind the hit).
@@ -3047,7 +3075,18 @@ void Simulation::BreakByItems()
 		// It has bounced off in this step: on through the hole instead, with a share of what it had.
 		if ( shape.breakThrough > 0.0f )
 		{
-			b3Body_SetLinearVelocity( BodyOf( item.get<PhysicsBody>() ), b3MulSV( shape.breakThrough, smash.before ) );
+			if ( const RagdollBodies* rb = item.try_get<RagdollBodies>() )
+			{
+				for ( b3BodyId part : rb->body )
+				{
+					part.world0 = uint16_t( m_physicsWorld.index1 - 1 );
+					b3Body_SetLinearVelocity( part, b3MulSV( shape.breakThrough, smash.before ) );
+				}
+			}
+			else
+			{
+				b3Body_SetLinearVelocity( BodyOf( item.get<PhysicsBody>() ), b3MulSV( shape.breakThrough, smash.before ) );
+			}
 		}
 		if ( shape.breakEvent != 0xFFFF )
 		{
@@ -3238,6 +3277,11 @@ void Simulation::Step( const InputFrame& given )
 	BreakGlue();
 	BreakByItems();
 	RunItemEvents();
+	// (Following the server's characters, who gets up is the server's: its state, its event.)
+	if ( m_followsServer == false )
+	{
+		RunGetUps();
+	}
 	ApplyPhysicsEvents( frame, 2 );
 	m_leaving.clear();
 	SyncFromPhysics();
@@ -3876,6 +3920,16 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			return;
 		}
 
+		case CommandType::Toss:
+		{
+			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			if ( e.is_valid() && e.has<Character>() )
+			{
+				TossPlayer( e, command );
+			}
+			return;
+		}
+
 		case CommandType::Respawn:
 		{
 			flecs::entity e = FindEntity( ResolveTarget( command.target ) );
@@ -4249,7 +4303,23 @@ void Simulation::KillPlayer( flecs::entity e, const SimCommand& command )
 		return;
 	}
 
-	if ( command.mode == 1 && Body( CharacterOf( e ) ).ragdoll && e.has<DrivenProp>() == false )
+	if ( const Downed* down = e.try_get<Downed>() )
+	{
+		// Down: its ragdoll is already in the world. It stays, the dead player's, or goes.
+		PhysicsEvent keep;
+		keep.type = command.mode == 1 ? PhysicsEventType::Ragdoll : PhysicsEventType::Remove;
+		keep.kind = 2;
+		keep.netId = command.mode == 1 ? e.get<NetId>().value : down->ragdoll;
+		keep.made = down->ragdoll;
+		keep.ticks = command.other;
+		keep.count = uint8_t( std::clamp( command.value, 0, 255 ) );
+		if ( down->ragdoll != 0 )
+		{
+			m_physicsQueue.push_back( std::move( keep ) );
+		}
+		e.remove<Downed>();
+	}
+	else if ( command.mode == 1 && Body( CharacterOf( e ) ).ragdoll && e.has<DrivenProp>() == false )
 	{
 		// (Made from the player as it is now, when the physics events are applied: M246.)
 		PhysicsEvent ragdoll = RagdollEvent( e, command.other );
@@ -4274,8 +4344,156 @@ void Simulation::KillPlayer( flecs::entity e, const SimCommand& command )
 	b3Body_Disable( BodyOf( e.get<PhysicsBody>() ) );
 }
 
+void Simulation::TossPlayer( flecs::entity e, const SimCommand& command )
+{
+	Character c = e.get<Character>();
+	if ( c.dead || e.has<Downed>() || e.has<DrivenProp>() || Body( CharacterOf( e ) ).ragdoll == false )
+	{
+		return;
+	}
+	// (Made from the player as it is now, when the physics events are applied: M246.)
+	PhysicsEvent ragdoll = RagdollEvent( e, 0 );
+	ragdoll.vector = { ragdoll.vector.x + command.a.x, ragdoll.vector.y + command.a.y, ragdoll.vector.z + command.a.z };
+	ragdoll.kind = 1;
+	ragdoll.at.y += 0.05f; // (off the ground: its feet would drag)
+	ragdoll.hitAt = { std::max( command.b.x, 0.0f ), command.b.y > 0.0f ? command.b.y : 1.0f, 0.0f };
+	m_physicsQueue.push_back( std::move( ragdoll ) );
+
+	Downed down;
+	down.since = m_globals.tick;
+	down.mostTicks = command.value > 0 ? uint32_t( command.value ) : 5 * m_config.tickRate;
+	e.set<Downed>( down );
+	c.velocity = { 0.0f, 0.0f, 0.0f };
+	c.pogoVelocity = 0.0f;
+	c.grounded = 0;
+	c.sprinting = 0;
+	c.airTicks = 0;
+	c.groundTicks = 0;
+	c.stepDistance = 0.0f;
+	e.set<Character>( c );
+	e.set<Velocity>( {} );
+	// Out of the broadphase, as a dead one is, until it gets up.
+	b3Body_Disable( BodyOf( e.get<PhysicsBody>() ) );
+}
+
+void Simulation::RunGetUps()
+{
+	// Those down whose ragdoll has been still a moment (or who have been down long enough) stand up
+	// where it lies; its ragdoll goes by a Remove event. In NetId order: the same in every simulation.
+	// Still: its pelvis hardly moving, no limb more than stirring (on rubble a hand may still slide).
+	constexpr float kPelvisStill = 0.4f; // m/s
+	constexpr float kLimbStill = 1.2f;
+	const uint32_t stillTicks = m_config.tickRate / 2;
+	if ( m_world.count<Downed>() == 0 )
+	{
+		return;
+	}
+	std::vector<uint32_t> downs;
+	for ( const EntityRef& r : m_entities )
+	{
+		if ( flecs::entity( m_world, r.entity ).has<Downed>() )
+		{
+			downs.push_back( r.netId );
+		}
+	}
+	for ( uint32_t netId : downs )
+	{
+		flecs::entity e = FindEntity( netId );
+		Downed down = e.get<Downed>();
+		if ( e.has<Character>() == false )
+		{
+			// Left behind while down (its slot took another body): it is a body nobody drives, where
+			// it was; its ragdoll goes.
+			if ( down.ragdoll != 0 && FindEntity( down.ragdoll ).is_valid() )
+			{
+				PhysicsEvent gone;
+				gone.type = PhysicsEventType::Remove;
+				gone.netId = down.ragdoll;
+				m_physicsQueue.push_back( std::move( gone ) );
+			}
+			e.remove<Downed>();
+			continue;
+		}
+		Character c = e.get<Character>();
+		if ( c.dead != 0 )
+		{
+			e.remove<Downed>();
+			continue;
+		}
+		flecs::entity rag = down.ragdoll != 0 ? FindEntity( down.ragdoll ) : flecs::entity();
+		const RagdollBodies* rb = rag.is_valid() ? rag.try_get<RagdollBodies>() : nullptr;
+		b3Vec3 pelvis = e.get<Transform>().position;
+		float yaw = c.facingYaw;
+		bool up = m_globals.tick - down.since >= down.mostTicks;
+		if ( rb != nullptr )
+		{
+			float fastest = 0.0f, pelvisSpeed = 0.0f;
+			for ( int i = 0; i < kRagdollParts; ++i )
+			{
+				b3BodyId body = rb->body[i];
+				body.world0 = uint16_t( m_physicsWorld.index1 - 1 );
+				fastest = std::max( fastest, b3Length( b3Body_GetLinearVelocity( body ) ) );
+				if ( i == ragdoll::Pelvis )
+				{
+					pelvisSpeed = b3Length( b3Body_GetLinearVelocity( body ) );
+					pelvis = b3Body_GetPosition( body );
+					// Facing where its front faces, flattened (it lies however it fell).
+					const b3Vec3 front = b3RotateVector( b3Body_GetRotation( body ), b3Vec3{ 0.0f, 0.0f, 1.0f } );
+					if ( front.x * front.x + front.z * front.z > 1e-4f )
+					{
+						yaw = detmath::Atan2( front.x, front.z );
+					}
+				}
+			}
+			down.stillTicks = pelvisSpeed < kPelvisStill && fastest < kLimbStill ? down.stillTicks + 1 : 0;
+			up = up || down.stillTicks >= stillTicks;
+		}
+		else if ( down.ragdoll != 0 || m_globals.tick - down.since > 2 )
+		{
+			up = true; // (its ragdoll is gone: a cap, a mod)
+		}
+		if ( up == false )
+		{
+			e.set<Downed>( down );
+			continue;
+		}
+		// On its feet where the ragdoll lies: on what is under its pelvis.
+		const CharacterBody& kind = Body( CharacterOf( e ) );
+		const float centre = mover::FeetBelowCenter( kind.radius, kind.halfHeight );
+		b3Vec3 at = { pelvis.x, pelvis.y - 0.9f + centre, pelvis.z };
+		RayHit hit;
+		if ( CastRay( b3Add( pelvis, b3Vec3{ 0.0f, 0.5f, 0.0f } ), { 0.0f, -3.0f, 0.0f }, netId, hit, true ) )
+		{
+			at = { hit.point.x, hit.point.y + centre + 0.02f, hit.point.z };
+		}
+		if ( rag.is_valid() )
+		{
+			PhysicsEvent gone;
+			gone.type = PhysicsEventType::Remove;
+			gone.netId = down.ragdoll;
+			m_physicsQueue.push_back( std::move( gone ) );
+		}
+		e.remove<Downed>();
+		b3Body_Enable( BodyOf( e.get<PhysicsBody>() ) );
+		PlaceCharacter( e, at, yaw );
+	}
+}
+
 void Simulation::RespawnPlayer( flecs::entity e, const SimCommand& command )
 {
+	if ( const Downed* down = e.try_get<Downed>() )
+	{
+		// (Down, its ragdoll goes.)
+		if ( down->ragdoll != 0 )
+		{
+			PhysicsEvent gone;
+			gone.type = PhysicsEventType::Remove;
+			gone.netId = down->ragdoll;
+			m_physicsQueue.push_back( std::move( gone ) );
+		}
+		e.remove<Downed>();
+		b3Body_Enable( BodyOf( e.get<PhysicsBody>() ) );
+	}
 	Character c = e.get<Character>();
 	b3BodyId body = BodyOf( e.get<PhysicsBody>() );
 	if ( c.dead )

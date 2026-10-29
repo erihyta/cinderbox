@@ -1373,6 +1373,157 @@ void TestItemBreaks()
 	CHECK( slow.whole && slow.standing == 0 && slow.turnedBack && slow.said == false );
 }
 
+// A player tossed (M249: CommandType::Toss). At a 3 x 3 breakable wall at 25 m/s, breaking walls at
+// 10 m/s and up: its ragdoll breaks the wall where it hits and goes on through; the player is down,
+// not dead, its capsule out of the world, until the ragdoll has lain still a moment; then it stands
+// up where the ragdoll lies (beyond the wall), the ragdoll gone. Tossed at 3 m/s, the wall stands
+// whole. Killed while down, the ragdoll stays as the dead player's (it does not get up), lasting
+// what the kill says. A simulation that follows the first one's physics (no characters at all,
+// given its physics events) has its physics world on every tick.
+void TestToss()
+{
+	LevelLayout map;
+	map.name = "toss";
+	map.spawnCenter = { 0.0f, 1.0f, 6.0f };
+	map.spawnRadius = 0.0f;
+	map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 1.5f, 1.5f, 0.2f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );
+	map.shapeSets.push_back( { { { 0.0f, 0.0f, 0.0f }, { 0.49f, 0.49f, 0.19f }, 0.0f, 0.0f, 0.0f, ShapeKind::Box } } );
+	EntityTemplate wall;
+	wall.name = "wall";
+	wall.components.push_back( MakeIntComponent( "Body", { { "type", 0 } } ) );
+	wall.shapes = 0;
+	for ( int i = 0; i < 9; ++i )
+	{
+		TemplatePiece piece = { 1, { float( i % 3 - 1 ), float( i / 3 - 1 ), 0.0f } };
+		piece.held = i < 3;
+		wall.pieces.push_back( piece );
+		if ( i % 3 < 2 )
+		{
+			wall.links.push_back( { uint16_t( i ), uint16_t( i + 1 ) } );
+		}
+		if ( i < 6 )
+		{
+			wall.links.push_back( { uint16_t( i ), uint16_t( i + 3 ) } );
+		}
+	}
+	EntityTemplate brick;
+	brick.name = "brick";
+	brick.shapes = 1;
+	AuthoredComponent debris;
+	debris.id = Fnv32( "Debris" );
+	brick.components.push_back( debris );
+	map.templates = { wall, brick };
+	map.instances.push_back( { 0, { 0.0f, 1.5f, 0.0f }, 0.0f, 0.0f } );
+	QuantizeLayout( map );
+
+	struct Outcome
+	{
+		bool downed = false, ragdoll = false, wallWhole = true, gotUp = false, dead = false, ragdollKept = false;
+		uint32_t upAfter = 0;
+		float upZ = 0.0f, lowest = 0.0f;
+		bool followed = true;
+		bool upEnabled = false, ragdollGone = false;
+	};
+	// `kill`: killed half a second after the toss.
+	auto toss = [&]( float speed, bool kill ) {
+		Outcome out;
+		auto simulation = std::make_unique<Simulation>( TestConfig(), map ); // (two: not on the stack)
+		auto followerSim = std::make_unique<Simulation>( TestConfig(), map );
+		Simulation& sim = *simulation;
+		Simulation& follower = *followerSim;
+		follower.SetFollowsPhysics( true );
+		InputFrame f;
+		auto step = [&]() {
+			f.tick = sim.Tick();
+			sim.Step( f );
+			InputFrame given = f;
+			given.events.clear();
+			given.inputs = {};
+			given.pushers = sim.PhysicsMade().pushers;
+			given.physics = sim.PhysicsMade().physics;
+			follower.Step( given );
+			out.followed = out.followed && follower.PhysicsHash() == sim.PhysicsHash();
+			f.commands.clear();
+			f.events.clear();
+		};
+		f.events.push_back( { PlayerEventType::Join, 0 } );
+		for ( int i = 0; i < 30; ++i )
+		{
+			step();
+		}
+		const uint32_t player = sim.PlayerNetId( 0 );
+		SimCommand c;
+		c.type = CommandType::Toss;
+		c.target = player;
+		{
+			// At the wall's middle, from where the player stands, rising a little.
+			const b3Vec3 from = sim.EntityTransform( player )->position;
+			const b3Vec3 way = b3Normalize( b3Vec3{ -from.x, 0.0f, -from.z } );
+			c.a = { way.x * speed, 3.0f, way.z * speed };
+		}
+		c.b = { 10.0f, 1.5f, 0.0f };
+		f.commands.push_back( c );
+		step();
+		const uint32_t tossedAt = sim.Tick();
+		{
+			flecs::entity e = sim.FindEntity( player );
+			out.downed = e.has<Downed>() && e.get<Character>().dead == 0 && b3Body_IsEnabled( sim.BodyOf( e.get<PhysicsBody>() ) ) == false;
+			const uint32_t rag = e.has<Downed>() ? e.get<Downed>().ragdoll : 0;
+			out.ragdoll = rag != 0 && sim.FindEntity( rag ).has<Tossed>() && sim.FindEntity( rag ).has<RagdollBodies>();
+		}
+		uint32_t ragdoll = out.ragdoll ? sim.FindEntity( player ).get<Downed>().ragdoll : 0;
+		for ( int i = 0; i < 6 * 60; ++i )
+		{
+			if ( kill && sim.Tick() == tossedAt + 30 )
+			{
+				SimCommand k;
+				k.type = CommandType::Kill;
+				k.target = player;
+				k.mode = 1;
+				k.other = 600;
+				f.commands.push_back( k );
+			}
+			step();
+			flecs::entity e = sim.FindEntity( player );
+			if ( out.gotUp == false && e.has<Downed>() == false && e.get<Character>().dead == 0 )
+			{
+				out.gotUp = true;
+				out.upAfter = sim.Tick() - tossedAt;
+				out.upZ = e.get<Transform>().position.z;
+				out.lowest = e.get<Transform>().position.y;
+				out.upEnabled = b3Body_IsEnabled( sim.BodyOf( e.get<PhysicsBody>() ) );
+				out.ragdollGone = sim.FindEntity( ragdoll ).is_valid() == false;
+			}
+		}
+		flecs::entity e = sim.FindEntity( player );
+		out.dead = e.get<Character>().dead != 0 && e.has<Downed>() == false;
+		const flecs::entity rag = sim.FindEntity( ragdoll );
+		out.ragdollKept = rag.is_valid() && rag.has<Tossed>() == false && rag.get<Ragdoll>().despawnTick == tossedAt + 30 + 600;
+		out.wallWhole = false;
+		for ( const Simulation::EntityRef& r : sim.Entities() )
+		{
+			const TemplateRef* ref = flecs::entity( sim.World(), r.entity ).try_get<TemplateRef>();
+			out.wallWhole = out.wallWhole || ( ref != nullptr && ref->index == 0 );
+		}
+		return out;
+	};
+	const Outcome fast = toss( 25.0f, false );
+	const Outcome slow = toss( 3.0f, false );
+	const Outcome killed = toss( 25.0f, true );
+	std::printf( "    at 25 m/s: down %d (its ragdoll %d), the wall %s, up after %.2f s at z %.2f (height %.2f); at 3 m/s: the wall %s, up "
+				 "after %.2f s; killed while down: dead %d, its ragdoll kept %d; followed %d %d %d\n",
+				 int( fast.downed ), int( fast.ragdoll ), fast.wallWhole ? "whole" : "broken", float( fast.upAfter ) / 60.0f, fast.upZ,
+				 fast.lowest, slow.wallWhole ? "whole" : "broken", float( slow.upAfter ) / 60.0f, int( killed.dead ),
+				 int( killed.ragdollKept ), int( fast.followed ), int( slow.followed ), int( killed.followed ) );
+	CHECK( fast.downed && fast.ragdoll && fast.wallWhole == false && fast.gotUp && fast.upZ < -0.5f && fast.upAfter < 5 * 60 );
+	CHECK( fast.lowest > 0.5f && fast.lowest < 2.5f ); // (standing: its capsule's centre, on the floor or the rubble)
+	CHECK( fast.upEnabled && fast.ragdollGone && slow.upEnabled && slow.ragdollGone );
+	CHECK( slow.downed && slow.wallWhole && slow.gotUp && slow.upZ > 0.5f );
+	CHECK( killed.downed && killed.gotUp == false && killed.dead && killed.ragdollKept );
+	CHECK( fast.followed && slow.followed && killed.followed );
+}
+
 // Glue (map version 11: a breakable's glue): its pieces are bodies from the start, welded where they
 // touch, the held ones static.
 // - A tower of four blocks, held at its foot, strongly glued: it stands still. A blast takes the
@@ -13001,6 +13152,7 @@ int main( int argc, char** argv )
 		{ "portable_bytes", TestPortableBytes },
 		{ "rollback", TestRollback },
 		{ "hybrid_model", TestHybridModel },
+		{ "toss", TestToss },
 		{ "rollback_reset", TestRollbackReset },
 		{ "gameplay_sanity", TestGameplaySanity },
 		{ "commands", TestCommands },
