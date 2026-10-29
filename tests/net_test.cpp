@@ -5293,15 +5293,6 @@ void RunChaos( bool hybrid )
 	h.RunUntil( 20.0 );
 	h.server.SetTickObserver( {} );
 	h.Report();
-	for ( Bot& b : h.bots )
-	{
-		int compared = 0;
-		CHECK( hybrid || ( h.CompareWithServer( b, compared ) == 0 && compared > 50 ) );
-		CHECK( hybrid == false || ( b.client->Hybrid() != nullptr && b.client->Hybrid()->GetStats().physicsSteps > 400 ) );
-	}
-	std::fprintf( stderr, "    bodies changed hands %u times; at most %u NPCs, %u ragdolls, %u props players spawned\n", swaps, mostNpcs,
-				  mostRagdolls, mostProps );
-	CHECK( swaps > 0 && mostNpcs > 0 && mostRagdolls > 0 && mostProps > 0 );
 	for ( size_t b = 0; b < h.bots.size(); ++b )
 	{
 		// What a hybrid client's physics differed in, the first time.
@@ -5347,6 +5338,15 @@ void RunChaos( bool hybrid )
 			}
 		}
 	}
+	for ( Bot& b : h.bots )
+	{
+		int compared = 0;
+		CHECK( hybrid || ( h.CompareWithServer( b, compared ) == 0 && compared > 50 ) );
+		CHECK( hybrid == false || ( b.client->Hybrid() != nullptr && b.client->Hybrid()->GetStats().physicsSteps > 400 ) );
+	}
+	std::fprintf( stderr, "    bodies changed hands %u times; at most %u NPCs, %u ragdolls, %u props players spawned\n", swaps, mostNpcs,
+				  mostRagdolls, mostProps );
+	CHECK( swaps > 0 && mostNpcs > 0 && mostRagdolls > 0 && mostProps > 0 );
 	for ( size_t b = 0; b < h.bots.size(); ++b )
 	{
 		const GameClient& client = *h.bots[b].client;
@@ -6710,6 +6710,20 @@ struct OwnTrack
 		}
 		return { both, within };
 	}
+	// How far off the rest were: under 20 cm, under a metre, more (bumped, corrected).
+	std::string Misses() const
+	{
+		uint32_t small = 0, middle = 0, large = 0;
+		for ( const auto& [tick, at] : client )
+		{
+			auto it = server.find( tick );
+			const float off = it != server.end() ? b3Distance( it->second, at ) : 0.0f;
+			small += off >= 0.05f && off < 0.2f ? 1 : 0;
+			middle += off >= 0.2f && off < 1.0f ? 1 : 0;
+			large += off >= 1.0f ? 1 : 0;
+		}
+		return "off by 5 to 20 cm " + std::to_string( small ) + ", 20 cm to 1 m " + std::to_string( middle ) + ", more " + std::to_string( large );
+	}
 };
 
 void CheckHybridClient( GameClient& c )
@@ -6866,7 +6880,7 @@ void TestHybridLossy()
 		CHECK( b.client->GetStats().statesIgnored * 4 < b.client->GetStats().statesReceived );
 	}
 	const auto [both, within] = track.Near();
-	std::printf( "    own body predicted within 5 cm of the server's %u of %u ticks\n", within, both );
+	std::printf( "    own body predicted within 5 cm of the server's %u of %u ticks; %s\n", within, both, track.Misses().c_str() );
 	CHECK( both > 200 );
 	CHECK( within * 10 >= both * 7 ); // (a slow machine's timing: 92% here, 78% on CI's)
 }
