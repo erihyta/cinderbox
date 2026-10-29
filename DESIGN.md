@@ -156,6 +156,9 @@ world. **Hybrid** (M248):
   physics world as it is (in the past); made the server's again by each state and its inputs since
   run again. While the physics steps a past tick, it stands where the server had it then. What
   the client makes on the characters' side itself takes NetIds of its own (from `0x70000000`).
+- **Your own throws drawn at once** (M249, `HybridSession::OwnLaunches`): what your motions launch
+  while predicted is drawn from the press (`Simulation::FlyItem`), never in the physics; the
+  server's copy takes over when it comes, carried forward to your tick while it flies.
 - **Costs** (M248, chaotic bots on one machine): client work 2.7 against 5 to 6.5 ms a frame at 4
   players, 10 against 41 to 115 at 16; download about twice the inputs model's (every character's
   state to everyone until M250 sends what is near). Your own effect on a body arrives a round trip

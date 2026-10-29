@@ -27,6 +27,7 @@ and mods need no determinism of their own.
 | `Push` | an impulse or a velocity change; knockback for characters |
 | `Kill` | a player dies, optionally leaving a ragdoll (lifetime and cap chosen by the mod) |
 | `Respawn` / `RespawnAt` | brings a dead player back |
+| `Toss` | throws a living player as its ragdoll (its velocity and more): down, not dead, its fields and items its own, until the ragdoll lies still a moment (or the most seconds given are up); then it stands where the ragdoll lies. Flying, it breaks the breakables it hits at a speed the mod gives, a hole as a thrown item's. Killed while down, the ragdoll is the dead player's; respawned, it goes. `IsDown` says whether a player is down (M249) |
 | `Freeze` | stops a player moving and acting (it still looks around), or releases it |
 | `Aim` | turns the player's aim chain (its character's arm, by default) toward where it looks, or lets it go |
 | `Facing` | the body faces where the camera looks, or turns toward where it walks (freelook, the default) |
