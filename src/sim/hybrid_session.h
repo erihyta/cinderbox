@@ -121,6 +121,24 @@ public:
 		return m_stats;
 	}
 
+	// The own throws, drawn at once (M249): what the own character's motions launched, flying from
+	// the press as the prediction has it, until the server's copy arrives (in the physics' past);
+	// then that one, carried forward to the predicted tick while it flies, the drawn one handed over
+	// to it in a moment. `server`: `netId` is the server's item (presentation moves it by
+	// `position - its own`); else it is drawn as a new item of `kind` (`netId` this client's own).
+	struct DrawnLaunch
+	{
+		uint32_t netId = 0;
+		bool server = false;
+		uint16_t kind = 0;
+		Transform grip;
+		b3Vec3 velocity = {};
+		// The server's: how far from where it is drawn now it should be (carried forward, blended).
+		float handedOver = 0.0f; // 0: still the prediction's; 1: the server's carried forward
+		b3Vec3 forward = {};	 // the server's carried forward to the predicted tick
+	};
+	void OwnLaunches( std::vector<DrawnLaunch>& out );
+
 private:
 	// The others as the newest state not ahead of `tick` has them (`again`: even when they already
 	// stood as that one: a command may have moved them since).
@@ -155,6 +173,16 @@ private:
 	};
 	std::vector<Sampled> m_sampled;
 	InputFrame m_last;
+	struct OwnLaunch
+	{
+		Simulation::PredictedLaunch launch;
+		uint32_t id = 0;		// this client's own NetId for it, while it is drawn alone
+		uint32_t server = 0;	// the server's item, once its event came
+		uint32_t matchedAt = 0; // the physics' tick then
+	};
+	std::vector<OwnLaunch> m_launches;
+	uint32_t m_nextLaunchId = 0x7F000000u;
+	void MatchLaunches( const InputFrame& frame );
 	std::vector<uint8_t> m_own; // (scratch: the own character around a physics step)
 	Stats m_stats;
 };

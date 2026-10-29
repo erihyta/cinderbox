@@ -961,6 +961,23 @@ void Context::Kill( uint32_t target, bool ragdoll, b3Vec3 hitPoint, b3Vec3 hitVe
 	Add( c );
 }
 
+void Context::Toss( uint32_t target, b3Vec3 velocity, float breakSpeed, float holeRadius, float mostSeconds )
+{
+	SimCommand c;
+	c.type = CommandType::Toss;
+	c.target = target;
+	c.a = ToFloat3( velocity );
+	c.b = { std::max( breakSpeed, 0.0f ), std::max( holeRadius, 0.0f ), 0.0f };
+	c.value = int32_t( std::clamp( mostSeconds, 0.0f, 600.0f ) * float( m_sim.Config().tickRate ) );
+	Add( c );
+}
+
+bool Context::IsDown( uint32_t target ) const
+{
+	flecs::entity e = m_sim.FindEntity( target );
+	return e.is_valid() && e.has<Downed>();
+}
+
 void Context::Respawn( uint32_t target )
 {
 	SimCommand c;

@@ -259,6 +259,27 @@ public:
 	// stepped by Step(), and nothing here changes it; what the character does to it is the
 	// server's to say, by its events). Tick() stays.
 	void StepCharacters( uint32_t tick, PlayerSlot slot, const PlayerInput& input );
+	// What the own character's motions launched while predicted (M249): the server's own copy comes
+	// in its events a round trip and the physics' buffer later, so a client draws this one at once
+	// (HybridSession::OwnLaunches). `position` is its grip, `item` the carried copy thrown (0: a
+	// new one of `kind`). Taken: the list is empty after.
+	struct PredictedLaunch
+	{
+		uint32_t tick = 0;
+		uint16_t kind = 0;
+		b3Vec3 position = {};
+		b3Quat rotation = b3Quat_identity;
+		b3Vec3 velocity = {};
+		uint32_t item = 0;
+	};
+	std::vector<PredictedLaunch> TakePredictedLaunches()
+	{
+		return std::move( m_predictedLaunches );
+	}
+	// Where something thrown with `velocity` from `from` is after `ticks`, flying as a body of the
+	// item kind `kind` does (gravity, its drag), stopped at the first thing in its way; `velocity`
+	// is then its velocity there (zero once stopped). `ignore`: its own NetId, if it is in the world.
+	b3Vec3 FlyItem( uint16_t kind, b3Vec3 from, b3Vec3& velocity, uint32_t ticks, uint32_t ignore = 0 );
 	// The components a state's record holds, in its mask's order: each one's name and size (tools
 	// that say where a state's bytes go).
 	std::vector<std::pair<std::string, uint32_t>> StateComponents() const;
@@ -545,6 +566,8 @@ private:
 	// The characters' states (stand_ins.cpp).
 	bool m_followsServer = false;
 	uint32_t m_localCharacterId = kLocalCharacterIdBase; // (not the server's: CreateEntity)
+	bool m_predicting = false; // (StepCharacters)
+	std::vector<PredictedLaunch> m_predictedLaunches;
 	// On the characters' side (SaveState), or in the physics world (a body there, a ragdoll, a pusher).
 	bool CharacterSide( flecs::entity e ) const;
 	bool PhysicsSide( flecs::entity e ) const;
@@ -651,6 +674,9 @@ private:
 	void ApplyImpulse( flecs::entity e, const SimCommand& command );
 	void KillPlayer( flecs::entity e, const SimCommand& command );
 	void RespawnPlayer( flecs::entity e, const SimCommand& command );
+	// M249: a living character tossed (CommandType::Toss); those down get up (in the step).
+	void TossPlayer( flecs::entity e, const SimCommand& command );
+	void RunGetUps();
 	// A ragdoll as a Ragdoll physics event says (RagdollEvent makes one from a player).
 	flecs::entity CreateRagdoll( const PhysicsEvent& event );
 	void EnforceRagdollCap( uint32_t cap );
@@ -717,6 +743,8 @@ private:
 	// Items that break walls (ItemShape::breakSpeed): how they move before the step, and the walls
 	// they met in it broken, there and then (so every simulation breaks them on the same tick).
 	void RememberBreakers();
+	// What a breaker breaks walls with: an item's kind's, a tossed ragdoll's (M249).
+	ItemShape BreakerShape( flecs::entity e ) const;
 	void BreakByItems();
 	// Advances each character's stride and counts a step whenever it completes one.
 	void UpdateFootsteps();

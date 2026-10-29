@@ -5183,6 +5183,12 @@ public:
 			{
 				ctx.Respawn( SlotTarget( PlayerSlot( slot ) ) );
 			}
+			else if ( roll < 8 )
+			{
+				// Tossed (M249), breaking what it hits hard.
+				const b3Vec3 way = { float( random( 21 ) ) - 10.0f, 3.0f + float( random( 5 ) ), float( random( 21 ) ) - 10.0f };
+				ctx.Toss( body, way, 8.0f, 1.2f );
+			}
 		}
 	}
 
@@ -6839,6 +6845,109 @@ void TestHybridReconnect()
 	}
 }
 
+
+
+// The own throws drawn at once in the hybrid (M249): 50 ms each way, a bot throws a frag. Its
+// client draws one from within a few ticks of the press (the server's comes into its physics, in
+// the past, a round trip and the buffer later); then the server's takes over, carried forward to
+// the predicted tick. What is drawn at each predicted tick is near where the server had its frag
+// at that tick.
+void TestHybridOwnThrow()
+{
+	Harness h( 47956, {}, {}, {}, UseHybridModel );
+	net::NetSimConfig link;
+	link.latencyMs = 50;
+	h.AddNetSim( 47957, link );
+	const ModSchema& schema = h.server.Schema();
+	const ActionBits throwKey = UseKey( schema, "frag.grenade" );
+	const int frag = schema.FindItemKind( "frag.grenade" );
+	CHECK( throwKey != 0 && frag >= 0 );
+	const uint32_t press = 300;
+	h.AddBot().script = [=]( uint32_t tick ) {
+		PlayerInput in;
+		in.cameraPitch = 3000; // (up a little: a long arc)
+		in.actions = tick >= press && tick < press + 4 ? throwKey : ActionBits( 0 );
+		return in;
+	};
+	Simulation& server = h.server.Sim();
+	std::map<uint32_t, b3Vec3> truth; // the server's frag, by tick
+	h.server.SetTickObserver( [&] {
+		for ( const auto& r : server.Entities() )
+		{
+			flecs::entity e( server.World(), r.entity );
+			const HeldItem* item = e.try_get<HeldItem>();
+			if ( item != nullptr && item->holder == 0 && item->kind == uint16_t( frag ) && e.has<Transform>() )
+			{
+				truth[server.Tick()] = e.get<Transform>().position;
+			}
+		}
+	} );
+	struct Drawn
+	{
+		b3Vec3 at;
+		bool server;
+		float handedOver;
+	};
+	std::map<uint32_t, Drawn> drawn; // by predicted tick, as first drawn
+	uint32_t firstDrawn = 0, firstServer = 0;
+	std::vector<HybridSession::DrawnLaunch> launches;
+	h.RunUntil( 9.0, [&]( double ) {
+		HybridSession* hs = h.bots[0].client->Hybrid();
+		if ( hs == nullptr )
+		{
+			return;
+		}
+		hs->OwnLaunches( launches );
+		for ( const HybridSession::DrawnLaunch& d : launches )
+		{
+			if ( d.kind != uint16_t( frag ) )
+			{
+				continue;
+			}
+			b3Vec3 at = d.grip.position;
+			if ( d.server )
+			{
+				const Transform* t = hs->Sim().EntityTransform( d.netId );
+				if ( t == nullptr )
+				{
+					continue;
+				}
+				at = b3Lerp( d.grip.position, b3Add( t->position, d.forward ), d.handedOver );
+				firstServer = firstServer == 0 ? hs->PredictedTick() : firstServer;
+			}
+			firstDrawn = firstDrawn == 0 ? hs->PredictedTick() : firstDrawn;
+			drawn.emplace( hs->PredictedTick(), Drawn{ at, d.server, d.handedOver } );
+		}
+	} );
+	h.server.SetTickObserver( {} );
+	h.Report();
+	uint32_t compared = 0, nearby = 0;
+	float worst = 0.0f, sum = 0.0f;
+	bool handed = false;
+	for ( const auto& [tick, d] : drawn )
+	{
+		auto it = truth.find( tick );
+		if ( it == truth.end() )
+		{
+			continue;
+		}
+		const float off = b3Distance( it->second, d.at );
+		compared += 1;
+		nearby += off < 0.3f ? 1 : 0;
+		sum += off;
+		worst = std::max( worst, off );
+		handed = handed || d.handedOver >= 1.0f;
+	}
+	const uint32_t serverFirst = truth.empty() ? 0 : truth.begin()->first;
+	std::printf( "    pressed at %u: the server's frag from tick %u; drawn from predicted tick %u, the server's taking over at %u; drawn "
+				 "within 30 cm of the server's %u of %u ticks, %.3f m on average, %.3f at most\n",
+				 press, serverFirst, firstDrawn, firstServer, nearby, compared, compared ? sum / float( compared ) : 0.0f, worst );
+	CHECK( firstDrawn != 0 && firstDrawn <= press + 30 && firstDrawn <= serverFirst + 2 );
+	CHECK( firstServer > firstDrawn + 10 ); // (the server's a round trip and the buffer later)
+	CHECK( handed );
+	CHECK( compared > 60 && nearby * 10 >= compared * 9 );
+	CHECK( h.bots[0].client->GetStats().desyncs == 0 );
+}
 } // namespace
 
 #if defined( _WIN32 )
@@ -6917,6 +7026,7 @@ int main( int argc, char** argv )
 		{ "hybrid_session", TestHybridSession },
 		{ "hybrid_lossy", TestHybridLossy },
 		{ "hybrid_reconnect", TestHybridReconnect },
+		{ "hybrid_own_throw", TestHybridOwnThrow },
 		{ "grace_expiry", TestGraceExpiry },
 		{ "lossy_session", TestLossySession },
 		{ "mods_session", TestModsSession },

@@ -1,5 +1,7 @@
 #include "hybrid_session.h"
 
+#include "box3d/box3d.h"
+
 #include <algorithm>
 #include <chrono>
 
@@ -142,6 +144,7 @@ uint32_t HybridSession::AdvancePhysics( uint32_t upTo )
 		m_stats.physicsNs += NsSince( start );
 		m_stats.physicsSteps += 1;
 		m_sim->ApplyState( m_own.data(), m_own.size(), m_localSlot, Simulation::StateApply::Own );
+		MatchLaunches( frame->second );
 		// The others where the server had them at the tick reached (and not where this tick's
 		// commands put them: what a command does to a character is in the server's state).
 		PlaceOthers( m_sim->Tick(), frame->second.commands.empty() == false );
@@ -202,6 +205,7 @@ void HybridSession::Reconcile()
 		m_sim->StepCharacters( t, m_localSlot, s.input );
 		depth += 1;
 	}
+	m_sim->TakePredictedLaunches(); // (drawn already, when first predicted)
 	m_stats.predictNs += NsSince( start );
 	m_stats.resimulatedTicks += depth;
 	m_stats.lastDepth = depth;
@@ -224,12 +228,96 @@ bool HybridSession::Predict( const PlayerInput& input )
 	auto start = std::chrono::steady_clock::now();
 	m_sim->StepCharacters( m_predicted, m_localSlot, input );
 	m_stats.predictNs += NsSince( start );
+	for ( const Simulation::PredictedLaunch& launch : m_sim->TakePredictedLaunches() )
+	{
+		m_launches.push_back( { launch, m_nextLaunchId++, 0, 0 } );
+	}
 	m_stats.predicted += 1;
 	m_last.tick = m_predicted;
 	m_last.inputs = m_othersInputs;
 	m_last.inputs[m_localSlot] = input;
 	m_predicted += 1;
 	return true;
+}
+
+void HybridSession::MatchLaunches( const InputFrame& frame )
+{
+	// The server's copy of an own throw: the carried copy by its NetId, or by its thrower and kind at
+	// about the tick it was predicted (a new one; one split off a stack, which the server named).
+	const uint32_t own = m_sim->PlayerNetId( m_localSlot );
+	for ( const PhysicsEvent& event : frame.physics )
+	{
+		if ( event.type != PhysicsEventType::IntoWorld )
+		{
+			continue;
+		}
+		for ( OwnLaunch& l : m_launches )
+		{
+			const bool same = ( l.launch.item != 0 && event.netId == l.launch.item ) ||
+							  ( event.owner == own && event.kind == l.launch.kind && frame.tick + 3 >= l.launch.tick && frame.tick <= l.launch.tick + 3 );
+			if ( l.server == 0 && same )
+			{
+				l.server = event.netId;
+				l.matchedAt = frame.tick;
+				break;
+			}
+		}
+	}
+	// Done with: one the server never threw (it was predicted wrong), one handed over a while ago,
+	// one whose item is gone.
+	const uint32_t now = m_sim->Tick();
+	const uint32_t rate = m_config.tickRate;
+	m_launches.erase( std::remove_if( m_launches.begin(), m_launches.end(),
+									  [&]( const OwnLaunch& l ) {
+										  if ( l.server == 0 )
+										  {
+											  return now > l.launch.tick + rate; // (a second: never coming)
+										  }
+										  return now > l.matchedAt + 3 * rate || m_sim->FindEntity( l.server ).is_valid() == false;
+									  } ),
+					  m_launches.end() );
+}
+
+void HybridSession::OwnLaunches( std::vector<DrawnLaunch>& out )
+{
+	out.clear();
+	const uint32_t physics = m_sim->Tick();
+	// (Handed over in a fifth of a second.)
+	const float blendTicks = std::max( 1.0f, 0.2f * float( m_config.tickRate ) );
+	for ( const OwnLaunch& l : m_launches )
+	{
+		DrawnLaunch d;
+		d.kind = l.launch.kind;
+		d.grip.rotation = l.launch.rotation;
+		// Where the prediction has it at the predicted tick.
+		b3Vec3 velocity = l.launch.velocity;
+		const uint32_t flown = m_predicted > l.launch.tick ? m_predicted - l.launch.tick : 0;
+		// (Through the server's copy, once that is in the world: it is this one.)
+		d.grip.position = m_sim->FlyItem( l.launch.kind, l.launch.position, velocity, flown, l.server );
+		d.velocity = velocity;
+		if ( l.server == 0 )
+		{
+			d.netId = l.id;
+			out.push_back( d );
+			continue;
+		}
+		const flecs::entity e = m_sim->FindEntity( l.server );
+		const Transform* t = e.is_valid() ? e.try_get<Transform>() : nullptr;
+		const PhysicsBody* pb = e.is_valid() ? e.try_get<PhysicsBody>() : nullptr;
+		if ( t == nullptr || pb == nullptr )
+		{
+			continue;
+		}
+		// The server's, in the past: carried forward to the predicted tick while it flies.
+		b3Vec3 going = b3Body_GetLinearVelocity( m_sim->BodyOf( *pb ) );
+		const uint32_t ahead = m_predicted > physics ? m_predicted - physics : 0;
+		const b3Vec3 later = m_sim->FlyItem( l.launch.kind, t->position, going, ahead, l.server );
+		d.netId = l.server;
+		d.server = true;
+		d.forward = b3Sub( later, t->position );
+		d.handedOver = std::min( 1.0f, float( physics - l.matchedAt ) / blendTicks );
+		out.push_back( d );
+	}
 }
 
 } // namespace cb
