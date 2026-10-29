@@ -36,6 +36,7 @@ public:
 		uint64_t predictStalls = 0; // too far ahead of the newest state
 		uint64_t applyNs = 0;
 		uint64_t checksums = 0, desyncs = 0;
+		uint64_t scrambled = 0; // bodies moved by SetScrambleCharacters (tests)
 		uint32_t lastDepth = 0; // ticks predicted again after the last state
 	};
 
@@ -150,6 +151,14 @@ public:
 	};
 	void OwnLaunches( std::vector<DrawnLaunch>& out );
 
+	// For tests: before each physics step every character is somewhere else (up to `metres`, a
+	// velocity of its own: Simulation::ScrambleCharacters), and placed by its state again after it.
+	// The physics checksums must still match: the client's physics reads no character. 0: off.
+	void SetScrambleCharacters( float metres )
+	{
+		m_scramble = metres;
+	}
+
 private:
 	// The others as the newest state not ahead of `tick` has them (`again`: even when they already
 	// stood as that one: a command may have moved them since).
@@ -185,6 +194,7 @@ private:
 	};
 	std::vector<Sampled> m_sampled;
 	InputFrame m_last;
+	float m_scramble = 0.0f;
 	struct OwnLaunch
 	{
 		Simulation::PredictedLaunch launch;

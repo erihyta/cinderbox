@@ -5295,10 +5295,21 @@ void RunChaos( bool hybrid )
 		mostRagdolls = std::max( mostRagdolls, ragdolls );
 		mostProps = std::max( mostProps, props );
 	} );
-	h.RunUntil( 10.0 );
+	// The hybrid: every client's characters somewhere else before each of its physics steps (the
+	// client's physics reads no character: its checksums must all still match).
+	auto scramble = [&]( double ) {
+		for ( Bot& b : h.bots )
+		{
+			if ( hybrid && b.client->Hybrid() != nullptr )
+			{
+				b.client->Hybrid()->SetScrambleCharacters( 3.0f );
+			}
+		}
+	};
+	h.RunUntil( 10.0, scramble );
 	// A late joiner, from a portable snapshot with NPCs, driven props and bodies nobody drives in it.
 	h.AddBot();
-	h.RunUntil( 20.0 );
+	h.RunUntil( 20.0, scramble );
 	h.server.SetTickObserver( {} );
 	h.Report();
 	for ( size_t b = 0; b < h.bots.size(); ++b )
@@ -5358,7 +5369,9 @@ void RunChaos( bool hybrid )
 	for ( size_t b = 0; b < h.bots.size(); ++b )
 	{
 		const GameClient& client = *h.bots[b].client;
-		std::fprintf( stderr, "    bot %zu: desyncs %u, checksums %u\n", b, client.GetStats().desyncs, client.GetStats().checksumsVerified );
+		std::fprintf( stderr, "    bot %zu: desyncs %u, checksums %u; bodies moved before its physics steps %llu\n", b, client.GetStats().desyncs,
+					  client.GetStats().checksumsVerified,
+					  client.Hybrid() != nullptr ? (unsigned long long)client.Hybrid()->GetStats().scrambled : 0ull );
 		CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
 	}
 }

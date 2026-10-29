@@ -139,6 +139,10 @@ uint32_t HybridSession::AdvancePhysics( uint32_t upTo )
 		{
 			m_sim->ApplyState( placed->second.bytes.data(), placed->second.bytes.size(), m_localSlot, Simulation::StateApply::Own );
 		}
+		if ( m_scramble > 0.0f )
+		{
+			m_stats.scrambled += m_sim->ScrambleCharacters( tick, m_scramble );
+		}
 		auto start = std::chrono::steady_clock::now();
 		m_sim->Step( frame->second );
 		m_stats.physicsNs += NsSince( start );
@@ -147,7 +151,7 @@ uint32_t HybridSession::AdvancePhysics( uint32_t upTo )
 		MatchLaunches( frame->second );
 		// The others where the server had them at the tick reached (and not where this tick's
 		// commands put them: what a command does to a character is in the server's state).
-		PlaceOthers( m_sim->Tick(), frame->second.commands.empty() == false );
+		PlaceOthers( m_sim->Tick(), frame->second.commands.empty() == false || m_scramble > 0.0f );
 		m_frames.erase( frame );
 		stepped += 1;
 

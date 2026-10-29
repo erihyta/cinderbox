@@ -2280,7 +2280,7 @@ void TestRollback()
 // and predicts its own character ahead. Checked: the client's physics world is the server's on
 // every tick (its checksum); the others stand where the server had them; the own character,
 // predicted, is where the server then has it.
-void RunHybridScenario( uint32_t maxDelay, uint64_t seed, bool commands )
+void RunHybridScenario( uint32_t maxDelay, uint64_t seed, bool commands, float scramble = 0.0f )
 {
 	test::ScenarioOptions opt;
 	opt.seed = seed;
@@ -2294,6 +2294,7 @@ void RunHybridScenario( uint32_t maxDelay, uint64_t seed, bool commands )
 	auto serverSim = std::make_unique<Simulation>( config ); // (two simulations: not on the stack)
 	Simulation& server = *serverSim;
 	HybridSession client( config, local, 40 );
+	client.SetScrambleCharacters( scramble );
 	{
 		std::vector<uint8_t> image;
 		server.SavePortable( image );
@@ -2438,7 +2439,13 @@ void RunHybridScenario( uint32_t maxDelay, uint64_t seed, bool commands )
 		worst = std::max( worst, off );
 	}
 	const auto& stats = client.GetStats();
-	std::printf( "    delay<=%u%s: %zu physics events; %zu states of %zu bytes on average, %" PRIu64 " taken; physics %" PRIu64
+	if ( scramble > 0.0f )
+	{
+		std::printf( "    (every character up to %.1f m elsewhere before each physics step: %" PRIu64 " bodies moved)\n", double( scramble ),
+					 client.GetStats().scrambled );
+		CHECK( client.GetStats().scrambled > 1000 );
+	}
+	std::printf( "    delay<=%u%s:%zu physics events; %zu states of %zu bytes on average, %" PRIu64 " taken; physics %" PRIu64
 				 " ticks (%" PRIu64 " checksums, %" PRIu64 " different, the first at %u), %.3f ms a step; others placed %u, off %u; "
 				 "own body within 5 cm %u of %u ticks, %.3f m on average, %.3f at most (%" PRIu64 " ticks predicted again)\n",
 				 maxDelay, commands ? ", commands" : "", events, states, states > 0 ? stateBytes / states : 0, stats.states,
@@ -2466,6 +2473,10 @@ void TestHybridModel()
 	RunHybridScenario( 10, 8, false );
 	RunHybridScenario( 3, 9, true );
 	RunHybridScenario( 10, 10, true );
+	// The client's physics reads no character: every character somewhere else (up to 3 m, going its
+	// own way) before each of its physics steps, and every checksum still the server's.
+	RunHybridScenario( 3, 9, true, 3.0f );
+	RunHybridScenario( 10, 10, true, 3.0f );
 }
 
 void TestRollbackReset()

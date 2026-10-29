@@ -134,6 +134,10 @@ public:
 	{
 		return m_hybrid.get();
 	}
+	const HybridSession* Hybrid() const
+	{
+		return m_hybrid.get();
+	}
 	// The hybrid: the first physics tick this client's physics was not the server's (UINT32_MAX:
 	// none), and its bodies then (tests say what differed; a new welcome keeps them).
 	uint32_t FirstDesyncTick() const
