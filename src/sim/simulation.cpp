@@ -2684,7 +2684,15 @@ void Simulation::CreateLaunched()
 {
 	if ( m_followsPhysics )
 	{
-		m_launched.clear(); // (what is launched comes in the frame's physics events)
+		// (What is launched comes in the frame's physics events; predicted, it is drawn at once.)
+		if ( m_predicting )
+		{
+			for ( const Launched& l : m_launched )
+			{
+				m_predictedLaunches.push_back( { m_globals.tick, l.kind, l.position, l.rotation, l.velocity, l.item } );
+			}
+		}
+		m_launched.clear();
 		return;
 	}
 	for ( const Launched& l : m_launched )
@@ -3301,6 +3309,7 @@ void Simulation::StepCharacters( uint32_t tick, PlayerSlot slot, const PlayerInp
 	// number a motion draws is not the physics world's).
 	const SimGlobals kept = m_globals;
 	m_globals.tick = tick;
+	m_predicting = true;
 	InputFrame frame;
 	frame.tick = tick;
 	if ( slot < kMaxPlayers )
@@ -3316,6 +3325,47 @@ void Simulation::StepCharacters( uint32_t tick, PlayerSlot slot, const PlayerInp
 	FollowHolders();
 	UpdateFootsteps();
 	m_globals = kept;
+	m_predicting = false;
+}
+
+b3Vec3 Simulation::FlyItem( uint16_t kind, b3Vec3 from, b3Vec3& velocity, uint32_t ticks, uint32_t ignore )
+{
+	const float dt = m_config.TimeStep();
+	const ItemShape shape = ItemShapeOf( kind );
+	b3Vec3 at = from;
+	for ( uint32_t i = 0; i < ticks; ++i )
+	{
+		// (As Box3D integrates a body: gravity, then its damping, then the move.)
+		velocity = b3MulAdd( velocity, dt, kGravityVector );
+		velocity = b3MulSV( 1.0f / ( 1.0f + dt * shape.drag ), velocity );
+		const b3Vec3 step = b3MulSV( dt, velocity );
+		RayHit hit;
+		if ( CastRay( at, step, ignore, hit, true ) == false )
+		{
+			at = b3Add( at, step );
+			continue;
+		}
+		// What it meets: it bounces by its restitution, and its friction takes from its slide what
+		// the hit's push allows (as a contact would, roughly). Still enough, it lies there.
+		at = b3MulAdd( hit.point, 0.01f, hit.normal );
+		const float into = b3Dot( velocity, hit.normal );
+		if ( into < 0.0f )
+		{
+			b3Vec3 slide = b3MulSub( velocity, into, hit.normal );
+			float sliding = 0.0f;
+			slide = b3GetLengthAndNormalize( &sliding, slide );
+			// (A ball rolls instead: a ball's slide that turns into rolling keeps 5/7 of it.)
+			const float kept = shape.kind == 1 && shape.parts.empty() ? sliding * 5.0f / 7.0f : 0.0f;
+			sliding = std::max( kept, sliding - shape.friction * ( 1.0f + shape.restitution ) * -into );
+			velocity = b3MulAdd( b3MulSV( sliding, slide ), -shape.restitution * into, hit.normal );
+		}
+		if ( b3Length( velocity ) < 0.2f )
+		{
+			velocity = { 0.0f, 0.0f, 0.0f };
+			return at;
+		}
+	}
+	return at;
 }
 
 void Simulation::SerializeEcs( std::vector<uint8_t>& out ) const

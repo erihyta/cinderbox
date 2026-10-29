@@ -47,6 +47,7 @@ private:
 	ActionBits m_latchedActions = 0;
 	std::vector<std::pair<std::string, std::string>> m_toSend; // typed text, for the thread to send
 	LevelQuery m_level;
+	std::vector<HybridSession::DrawnLaunch> m_launches; // (scratch: Fill)
 };
 
 } // namespace cb

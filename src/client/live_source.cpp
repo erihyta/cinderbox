@@ -103,6 +103,32 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 		}
 		else if ( HybridSession* hybrid = client.Hybrid() )
 		{
+			// The own throws, drawn at once (M249): a new one alone until the server's copy comes, then
+			// that one carried forward to where the prediction is, handed over in a moment.
+			hybrid->OwnLaunches( m_launches );
+			for ( const HybridSession::DrawnLaunch& d : m_launches )
+			{
+				if ( d.server == false )
+				{
+					present::FrameEntity item;
+					item.netId = d.netId;
+					item.kind = present::VisualKind::Item;
+					item.transform = d.grip;
+					item.velocity = d.velocity;
+					item.itemKind = d.kind;
+					f.frame.entities.push_back( item );
+					continue;
+				}
+				for ( present::FrameEntity& e : f.frame.entities )
+				{
+					if ( e.netId == d.netId )
+					{
+						const b3Vec3 forward = b3Add( e.transform.position, d.forward );
+						e.transform.position = b3Lerp( d.grip.position, forward, d.handedOver );
+						break;
+					}
+				}
+			}
 			// (A state taken is the hybrid's rollback: its own character the server's again, its
 			// inputs run again.)
 			rollback.rollbacks = hybrid->GetStats().states;
