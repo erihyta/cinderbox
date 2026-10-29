@@ -147,6 +147,15 @@ world. **Hybrid** (M248):
   checksum (`PhysicsHash`). A client's physics (`HybridSession`) runs a few ticks behind the newest
   frame (twice the jitter and two ticks), each tick stepped once and checked; a mismatch asks for
   the world again. Nothing is rolled back.
+- **The client's physics reads no character** (`Simulation::FollowerSkips`): of a tick's commands
+  it runs only what the physics world alone decides (a break, an item into the world, a push on a
+  body in it, fields, events); a command about a character (a kill, a possession, an item picked
+  up, anything aimed at a player's slot) is skipped: its physics part comes as events, which are
+  self-contained (an `Idle` or `Enter` event lets go of the controller too), its character part
+  in the states. The states come when the link lets them, so a command that read them could do
+  what the server's did not (found: a body taken over while the states were late crashed the
+  client). Tests: every character moved before each physics step, states held back a second, and
+  `cb_replay joins` (a client joining a recording every few ticks, with its states late or none).
 - **The characters are the server's**: every second tick its characters' state (the characters'
   side: every entity not in the physics world; `Simulation::SaveState`, compact) as a change
   against the newest the client acknowledged (`net/state_codec.h`: entity by entity, XOR, deflated).

@@ -158,6 +158,12 @@ public:
 	{
 		m_scramble = metres;
 	}
+	// For tests: every state is held back `ticks` physics ticks before it is used, as a slow link
+	// or a slow machine has it (the characters' side then older than the physics). 0: off.
+	void SetStateLag( uint32_t ticks )
+	{
+		m_stateLag = ticks;
+	}
 
 private:
 	// The others as the newest state not ahead of `tick` has them (`again`: even when they already
@@ -195,6 +201,15 @@ private:
 	std::vector<Sampled> m_sampled;
 	InputFrame m_last;
 	float m_scramble = 0.0f;
+	uint32_t m_stateLag = 0;
+	struct Lagged
+	{
+		uint32_t release = 0, tick = 0;
+		std::vector<uint8_t> bytes;
+		std::array<PlayerInput, kMaxPlayers> inputs;
+	};
+	std::vector<Lagged> m_lagged;
+	bool m_releasing = false;
 	struct OwnLaunch
 	{
 		Simulation::PredictedLaunch launch;

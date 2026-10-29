@@ -5213,7 +5213,8 @@ void RunChaos( bool hybrid )
 	std::vector<std::unique_ptr<mods::ServerMod>> extra;
 	extra.push_back( std::make_unique<ChaosMod>() );
 	const std::string root = CB_SOURCE_DIR;
-	Harness h( hybrid ? 47948 : 47922, {}, {}, { { "test.mods", "cannon,flight,grenade,sneak,possess" } },
+	const char* record = std::getenv( "CB_CHAOS_REPLAY" ); // (a recording of it, for cb_replay)
+	Harness h( hybrid ? 47948 : 47922, record != nullptr ? record : "", {}, { { "test.mods", "cannon,flight,grenade,sneak,possess" } },
 			   [&]( ServerOptions& options ) {
 				   options.netModel = hybrid ? net::NetModel::Hybrid : net::NetModel::Inputs;
 				   const char* view = std::getenv( "CB_CHAOS_VIEW" ); // (a view file of it, for the game)
@@ -5295,14 +5296,16 @@ void RunChaos( bool hybrid )
 		mostRagdolls = std::max( mostRagdolls, ragdolls );
 		mostProps = std::max( mostProps, props );
 	} );
-	// The hybrid: every client's characters somewhere else before each of its physics steps (the
-	// client's physics reads no character: its checksums must all still match).
+	// The hybrid: every client's characters somewhere else before each of its physics steps, and the
+	// second bot's states a second late (a slow link: its characters' side older than its physics).
+	// The client's physics reads no character: its checksums must all still match.
 	auto scramble = [&]( double ) {
-		for ( Bot& b : h.bots )
+		for ( size_t b = 0; b < h.bots.size(); ++b )
 		{
-			if ( hybrid && b.client->Hybrid() != nullptr )
+			if ( HybridSession* hs = hybrid ? h.bots[b].client->Hybrid() : nullptr )
 			{
-				b.client->Hybrid()->SetScrambleCharacters( 3.0f );
+				hs->SetScrambleCharacters( 3.0f );
+				hs->SetStateLag( b == 1 ? 60 : 0 );
 			}
 		}
 	};

@@ -2295,6 +2295,7 @@ void RunHybridScenario( uint32_t maxDelay, uint64_t seed, bool commands, float s
 	Simulation& server = *serverSim;
 	HybridSession client( config, local, 40 );
 	client.SetScrambleCharacters( scramble );
+	client.SetStateLag( scramble > 0.0f ? 30 : 0 ); // (and the characters' side half a second older than the physics)
 	{
 		std::vector<uint8_t> image;
 		server.SavePortable( image );
@@ -2474,7 +2475,8 @@ void TestHybridModel()
 	RunHybridScenario( 3, 9, true );
 	RunHybridScenario( 10, 10, true );
 	// The client's physics reads no character: every character somewhere else (up to 3 m, going its
-	// own way) before each of its physics steps, and every checksum still the server's.
+	// own way) before each of its physics steps, the states half a second late, and every checksum
+	// still the server's.
 	RunHybridScenario( 3, 9, true, 3.0f );
 	RunHybridScenario( 10, 10, true, 3.0f );
 }

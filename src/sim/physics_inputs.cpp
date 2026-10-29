@@ -349,6 +349,7 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 			if ( stillHers )
 			{
 				e.remove<PhysicsBody>();
+				e.remove<IdleBody>(); // (a body taken over: its controller is the characters', in a state)
 				if ( e.has<HeldItem>() )
 				{
 					// (An item picked up: nothing of the world's left on it.)
@@ -389,6 +390,7 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 			e.set<PhysicsBody>( MakePhysicsBody( body, first ) );
 			e.set<Transform>( { at, turn } );
 			e.set<Velocity>( { vector, { 0.0f, 0.0f, 0.0f } } );
+			DropController( e ); // (self-contained: a follower ran no command that let it go)
 			IndexesStale();
 			break;
 		}
@@ -407,6 +409,7 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 			e.set<Transform>( t );
 			e.set<Velocity>( { vector, { 0.0f, 0.0f, 0.0f } } );
 			e.set<Shape>( shape );
+			DropController( e ); // (self-contained: a follower ran no command that let it go)
 			e.set<IdleBody>( { event.kind, 0 } );
 			IndexesStale();
 			break;

@@ -673,6 +673,8 @@ private:
 	void ApplyEvents( const InputFrame& frame );
 	void ApplyCommands( const InputFrame& frame );
 	void ApplyCommand( const SimCommand& command );
+	bool FollowerSkips( const SimCommand& command ) const;
+	void DropController( flecs::entity e ); // (a body nobody drives, or a prop, again)
 	// A Spawn physics event's prop (the mod's SpawnProp, its owner a NetId).
 	void SpawnProp( const SimCommand& command );
 	uint32_t ResolveTarget( uint32_t target ) const;

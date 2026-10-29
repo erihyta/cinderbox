@@ -7,6 +7,10 @@
 //                            the hybrid network model played against the session: what its frames
 //                            and states cost, whether its physics stays the server's, and how a
 //                            client predicts a slot's character
+//   cb_replay joins FILE [--every TICKS] [--follow TICKS] [--state-lag TICKS] [--no-states 1]
+//                            hybrid clients joining the session every TICKS (from the snapshot a
+//                            welcome has), each followed a while: whether its physics stays the
+//                            server's, with the characters' states late or never there
 //
 // Exit codes: 0 ok, 1 usage / unreadable file, 2 checksum mismatch, 3 recorded with another build.
 
@@ -581,10 +585,142 @@ int PrintViewInfo( const char* path )
 	return 0;
 }
 
+// Hybrid clients joining a recording (a hunt for what a mid-game welcome leaves out): every `every`
+// ticks a new client loads the world as the server's welcome has it (the portable snapshot taken
+// just before the tick is stepped) and follows the physics `follow` ticks from the recording's
+// frames, its checksum compared on every tick. Says each join whose physics differs, and how.
+int Joins( const net::ReplayReader& replay, uint32_t every, uint32_t follow, uint32_t stateLag )
+{
+	auto serverSim = std::make_unique<Simulation>( replay.Config(), replay.Map() );
+	Simulation& server = *serverSim;
+	SetUpLike( replay, server );
+	const auto& frames = replay.Frames();
+	const uint32_t total = uint32_t( frames.size() );
+	struct Follower
+	{
+		uint32_t joined = 0;
+		std::unique_ptr<HybridSession> client;
+	};
+	std::vector<Follower> followers;
+	std::map<uint32_t, std::vector<BodySeen>> serverBodies;
+	uint32_t joins = 0, wrong = 0;
+	std::vector<uint8_t> image;
+	for ( uint32_t i = 0; i < total; ++i )
+	{
+		if ( i > 0 && i % every == 0 )
+		{
+			server.SavePortable( image );
+			Follower f;
+			f.joined = i;
+			f.client = std::make_unique<HybridSession>( replay.Config(), PlayerSlot( 0 ), 60, replay.Map() );
+			SetUpLike( replay, f.client->Sim() );
+			if ( f.client->Sim().LoadPortable( image ) == false )
+			{
+				std::printf( "join at %u: the snapshot did not load\n", i );
+				wrong += 1;
+				continue;
+			}
+			f.client->Start();
+			f.client->SetStateLag( stateLag == UINT32_MAX ? 0 : stateLag );
+			followers.push_back( std::move( f ) );
+			joins += 1;
+		}
+		if ( server.Tick() % 2 == 0 && followers.empty() == false && stateLag != UINT32_MAX )
+		{
+			// The characters' state, every second tick, as the server sends it (here at once).
+			std::vector<uint8_t> state;
+			server.SaveState( state, true );
+			for ( Follower& f : followers )
+			{
+				f.client->AddState( server.Tick(), state.data(), state.size(), i > 0 ? frames[i - 1].inputs : net::InputArray{} );
+			}
+		}
+		server.Step( frames[i] );
+		serverBodies[i] = PhysicsBodies( server );
+		while ( serverBodies.size() > follow + 4 )
+		{
+			serverBodies.erase( serverBodies.begin() );
+		}
+		InputFrame frame = frames[i];
+		frame.physics = server.PhysicsMade().physics;
+		frame.pushers = server.PhysicsMade().pushers;
+		const uint64_t checksum = server.PhysicsHash();
+		for ( Follower& f : followers )
+		{
+			f.client->AddChecksum( i, checksum );
+			f.client->AddFrame( frame );
+			f.client->AdvancePhysics( i + 1 );
+		}
+		followers.erase( std::remove_if( followers.begin(), followers.end(),
+										 [&]( Follower& f ) {
+											 const uint32_t t = f.client->DesyncTick();
+											 if ( t != UINT32_MAX )
+											 {
+												 wrong += 1;
+												 std::printf( "join at %u: its physics differs at tick %u\n", f.joined, t );
+												 const auto mine = PhysicsBodies( f.client->Sim() );
+												 const auto& theirs = serverBodies[t];
+												 size_t shown = 0;
+												 for ( size_t a = 0, b = 0; ( a < theirs.size() || b < mine.size() ) && shown < 8; )
+												 {
+													 const BodySeen* x = a < theirs.size() ? &theirs[a] : nullptr;
+													 const BodySeen* y = b < mine.size() ? &mine[b] : nullptr;
+													 if ( x && y && x->netId == y->netId )
+													 {
+														 if ( !( *x == *y ) )
+														 {
+															 std::printf( "  %x: server (%.4f %.4f %.4f), client (%.4f %.4f %.4f)\n", x->netId, x->at.x,
+																		  x->at.y, x->at.z, y->at.x, y->at.y, y->at.z );
+															 shown += 1;
+														 }
+														 ++a;
+														 ++b;
+													 }
+													 else if ( y == nullptr || ( x && x->netId < y->netId ) )
+													 {
+														 std::printf( "  %x: only the server's (%.4f %.4f %.4f)\n", x->netId, x->at.x, x->at.y, x->at.z );
+														 shown += 1;
+														 ++a;
+													 }
+													 else
+													 {
+														 std::printf( "  %x: only the client's (%.4f %.4f %.4f)\n", y->netId, y->at.x, y->at.y, y->at.z );
+														 shown += 1;
+														 ++b;
+													 }
+												 }
+												 return true;
+											 }
+											 return i + 1 >= f.joined + follow;
+										 } ),
+						 followers.end() );
+	}
+	std::printf( "%u joins (every %u ticks, each followed %u ticks): %u with physics not the server's\n", joins, every, follow, wrong );
+	return wrong == 0 ? 0 : 3;
+}
+
 } // namespace
 
 int main( int argc, char** argv )
 {
+	if ( argc >= 3 && std::strcmp( argv[1], "joins" ) == 0 )
+	{
+		net::ReplayReader replay;
+		std::string error;
+		if ( replay.Open( argv[2], error ) == false )
+		{
+			std::printf( "error: %s\n", error.c_str() );
+			return 1;
+		}
+		uint32_t every = 10, follow = 200, stateLag = 0;
+		for ( int i = 3; i + 1 < argc; i += 2 )
+		{
+			every = std::strcmp( argv[i], "--every" ) == 0 ? uint32_t( std::max( 1, std::atoi( argv[i + 1] ) ) ) : every;
+			follow = std::strcmp( argv[i], "--follow" ) == 0 ? uint32_t( std::max( 1, std::atoi( argv[i + 1] ) ) ) : follow;
+			stateLag = std::strcmp( argv[i], "--no-states" ) == 0 ? UINT32_MAX : std::strcmp( argv[i], "--state-lag" ) == 0 ? uint32_t( std::atoi( argv[i + 1] ) ) : stateLag;
+		}
+		return Joins( replay, every, follow, stateLag );
+	}
 	if ( argc == 3 && std::strcmp( argv[1], "view" ) == 0 )
 	{
 		return PrintViewInfo( argv[2] );
