@@ -134,6 +134,16 @@ public:
 	{
 		return m_hybrid.get();
 	}
+	// The hybrid: the first physics tick this client's physics was not the server's (UINT32_MAX:
+	// none), and its bodies then (tests say what differed; a new welcome keeps them).
+	uint32_t FirstDesyncTick() const
+	{
+		return m_firstDesyncTick;
+	}
+	const std::vector<HybridSession::BodyAt>& FirstDesyncBodies() const
+	{
+		return m_firstDesyncBodies;
+	}
 	// Either session's simulation (null: none).
 	Simulation* Sim()
 	{
@@ -267,6 +277,8 @@ private:
 	std::unique_ptr<HybridSession> m_hybrid;
 	uint32_t m_hybridFrames = 0;
 	bool m_hybridDesyncSent = false;
+	uint32_t m_firstDesyncTick = UINT32_MAX;
+	std::vector<HybridSession::BodyAt> m_firstDesyncBodies;
 	std::vector<uint64_t> m_checksumScratch;
 	std::deque<net::StateFrame> m_stateFrames;
 	uint32_t m_stateAck = 0;

@@ -98,6 +98,17 @@ public:
 	{
 		return m_desyncTick;
 	}
+	// The physics world's bodies right after that tick (to say what differs from the server's).
+	struct BodyAt
+	{
+		uint32_t netId = 0;
+		b3Vec3 at = {}, linear = {};
+	};
+	const std::vector<BodyAt>& DesyncBodies() const
+	{
+		return m_desyncBodies;
+	}
+	static void PhysicsBodies( Simulation& sim, std::vector<BodyAt>& out );
 	Simulation& Sim()
 	{
 		return *m_sim;
@@ -164,6 +175,7 @@ private:
 	uint32_t m_reconciled = 0;	  // the state the own character was last made
 	std::map<uint32_t, uint64_t> m_checksums;
 	uint32_t m_desyncTick = UINT32_MAX;
+	std::vector<BodyAt> m_desyncBodies;
 
 	uint32_t m_predicted = 0;
 	struct Sampled
