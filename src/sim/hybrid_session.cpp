@@ -157,6 +157,10 @@ uint32_t HybridSession::AdvancePhysics( uint32_t upTo )
 			if ( sum->second != m_sim->PhysicsHash() )
 			{
 				m_stats.desyncs += 1;
+				if ( m_desyncTick == UINT32_MAX )
+				{
+					PhysicsBodies( *m_sim, m_desyncBodies );
+				}
 				m_desyncTick = std::min( m_desyncTick, tick );
 			}
 		}
@@ -238,6 +242,25 @@ bool HybridSession::Predict( const PlayerInput& input )
 	m_last.inputs[m_localSlot] = input;
 	m_predicted += 1;
 	return true;
+}
+
+void HybridSession::PhysicsBodies( Simulation& sim, std::vector<BodyAt>& out )
+{
+	// (As PhysicsHash has them: in the physics world, not a pusher or a character.)
+	out.clear();
+	for ( const auto& r : sim.Entities() )
+	{
+		flecs::entity e( sim.World(), r.entity );
+		const PhysicsBody* pb = e.try_get<PhysicsBody>();
+		const bool physics = e.has<RagdollBodies>() || ( pb != nullptr && pb->body.world0 == 0 );
+		if ( physics == false || e.has<Pusher>() || e.has<Character>() )
+		{
+			continue;
+		}
+		const Transform* t = e.try_get<Transform>();
+		const Velocity* v = e.try_get<Velocity>();
+		out.push_back( { r.netId, t ? t->position : b3Vec3{}, v ? v->linear : b3Vec3{} } );
+	}
 }
 
 void HybridSession::MatchLaunches( const InputFrame& frame )

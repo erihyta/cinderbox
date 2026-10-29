@@ -804,6 +804,11 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 		// The physics is not the server's: its world again (a new welcome).
 		m_hybridDesyncSent = true;
 		m_stats.desyncs += 1;
+		if ( m_firstDesyncTick == UINT32_MAX )
+		{
+			m_firstDesyncTick = m_hybrid->DesyncTick();
+			m_firstDesyncBodies = m_hybrid->DesyncBodies();
+		}
 		Log( "DESYNC: the physics at tick %u is not the server's, requesting state", m_hybrid->DesyncTick() );
 		Encode( MsgResyncRequest{ m_hybrid->DesyncTick() }, m_buffer );
 		m_transport.Send( m_transport.ServerPeer(), ChannelReliable, m_buffer, true );
