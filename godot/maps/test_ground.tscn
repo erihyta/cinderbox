@@ -5344,6 +5344,62 @@ _surfaces = [{
 "vertex_data": PackedByteArray("UJnVPTaGDD+wgfM9yFyTvnw+YT7nx82+sAv2PVX0Dz8hDZ49UJnVPTaGDD+wgfM9yFyTvgT8Xz6iUaE+yFyTvnw+YT7nx82+RLE2Pp4xBz9HFco9yFyTvgT8Xz6iUaE+UJnVPTaGDD+wgfM9RLE2Pp4xBz9HFco9yFyTvhfNJ79x8/s+yFyTvgT8Xz6iUaE+RLE2Pp4xBz9HFco9j9TzPqgmAz7f0KY9yFyTvhfNJ79x8/s+yFyTvnw+YT7nx82+RLE2Pp4xBz9HFco9sAv2PVX0Dz8hDZ49yFyTvnw+YT7nx82+j9TzPqgmAz7f0KY9RLE2Pp4xBz9HFco9yFyTvnw+YT7nx82+QkaiPgTCIb7ePES+j9TzPqgmAz7f0KY9yFyTvnw+YT7nx82+lnKQPjwiIL44TFy+QkaiPgTCIb7ePES+yFyTvnw+YT7nx82+yFyTvrjTlD1pXPi+lnKQPjwiIL44TFy+sAv2PVX0Dz8hDZ49RLE2Pp4xBz9HFco9UJnVPTaGDD+wgfM9QkaiPgTCIb7ePES+yFyTvhfNJ79x8/s+j9TzPqgmAz7f0KY9QkaiPgTCIb7ePES+yFyTvtMrSL9lsfo9yFyTvhfNJ79x8/s+QkaiPgTCIb7ePES+APsfvffsBr+wuUS8yFyTvtMrSL9lsfo9yFyTvrjTlD1pXPi+APsfvffsBr+wuUS8lnKQPjwiIL44TFy+yFyTvrjTlD1pXPi+yFyTvtMrSL9lsfo9APsfvffsBr+wuUS8lnKQPjwiIL44TFy+APsfvffsBr+wuUS8QkaiPgTCIb7ePES+kkVzxdtN4KqSRXPF203gqpJFc8XbTeCqkkVzxdtN4KqSRXPF203gqpJFc8XbTeCqjJvpkJ1iBZuMm+mQnWIFm4yb6ZCdYgWbjJvpkJ1iBZuMm+mQnWIFm4yb6ZCdYgWbjJvpkJ1iBZuMm+mQnWIFm4yb6ZCdYgWbF+Bo2AK3C5cX4GjYArcLlxfgaNgCtwuXF+Bo2AK3C5cX4GjYArcLlxfgaNgCtwuXF+Bo2AK3C5cX4GjYArcLlxfgaNgCtwuXF+Bo2AK3C5cX4GjYArcLlxfgaNgCtwuXF+Bo2AK3C5cX4GjYArcLlxfgaNgCtwuX3pvHw2w0ysXem8fDbDTKxd6bx8NsNMrFq7zUTSBRAqqrvNRNIFECqqu81E0gUQKqq7zUTSBRAqqrvNRNIFECqqu81E0gUQKqq7zUTSBRAqqrvNRNIFECqqu81E0gUQKqE9CrDIJt+p4T0KsMgm36nhPQqwyCbfqeE9CrDIJt+p4T0KsMgm36nhPQqwyCbfqensx5HaxsGqOezHkdrGwao57MeR2sbBqj")
 }]
 
+[sub_resource type="StandardMaterial3D" id="Mat_PitWall"]
+albedo_color = Color(0.85, 0.85, 0.82, 1)
+roughness = 0.85
+
+[sub_resource type="BoxMesh" id="Mesh_PitWallX"]
+material = SubResource("Mat_PitWall")
+size = Vector3(5.6, 0.7, 0.3)
+
+[sub_resource type="BoxMesh" id="Mesh_PitWallZ"]
+material = SubResource("Mat_PitWall")
+size = Vector3(0.3, 0.7, 5)
+
+[sub_resource type="StandardMaterial3D" id="Mat_PitBall0"]
+albedo_color = Color(0.86, 0.22, 0.2, 1)
+roughness = 0.4
+
+[sub_resource type="SphereMesh" id="Mesh_PitBall0"]
+material = SubResource("Mat_PitBall0")
+radius = 0.25
+height = 0.5
+radial_segments = 16
+rings = 8
+
+[sub_resource type="StandardMaterial3D" id="Mat_PitBall1"]
+albedo_color = Color(0.22, 0.5, 0.86, 1)
+roughness = 0.4
+
+[sub_resource type="SphereMesh" id="Mesh_PitBall1"]
+material = SubResource("Mat_PitBall1")
+radius = 0.25
+height = 0.5
+radial_segments = 16
+rings = 8
+
+[sub_resource type="StandardMaterial3D" id="Mat_PitBall2"]
+albedo_color = Color(0.95, 0.78, 0.2, 1)
+roughness = 0.4
+
+[sub_resource type="SphereMesh" id="Mesh_PitBall2"]
+material = SubResource("Mat_PitBall2")
+radius = 0.25
+height = 0.5
+radial_segments = 16
+rings = 8
+
+[sub_resource type="StandardMaterial3D" id="Mat_PitBall3"]
+albedo_color = Color(0.3, 0.7, 0.32, 1)
+roughness = 0.4
+
+[sub_resource type="SphereMesh" id="Mesh_PitBall3"]
+material = SubResource("Mat_PitBall3")
+radius = 0.25
+height = 0.5
+radial_segments = 16
+rings = 8
+
 [node name="TestGround" type="Node3D" unique_id=758063595]
 
 [node name="Ground" type="CbStatic" parent="." unique_id=1658877823]
@@ -7849,3 +7905,2206 @@ shape = SubResource("ConvexPolygonShape3D_krvb7")
 
 [node name="Mesh" type="MeshInstance3D" parent="GluedTower/Piece39" unique_id=1337411502]
 mesh = SubResource("ArrayMesh_waxgl")
+
+[node name="BallPit" type="Node3D" parent="." unique_id=832270810]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 0, -10)
+
+[node name="WallN" type="CbStatic" parent="BallPit" unique_id=862913111]
+size = Vector3(5.6, 0.7, 0.3)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 2.65)
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/WallN" unique_id=2003642275]
+mesh = SubResource("Mesh_PitWallX")
+
+[node name="WallS" type="CbStatic" parent="BallPit" unique_id=337410978]
+size = Vector3(5.6, 0.7, 0.3)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, -2.65)
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/WallS" unique_id=1207200223]
+mesh = SubResource("Mesh_PitWallX")
+
+[node name="WallE" type="CbStatic" parent="BallPit" unique_id=1441912960]
+size = Vector3(0.3, 0.7, 5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.65, 0.35, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/WallE" unique_id=146639517]
+mesh = SubResource("Mesh_PitWallZ")
+
+[node name="WallW" type="CbStatic" parent="BallPit" unique_id=1510109055]
+size = Vector3(0.3, 0.7, 5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.65, 0.35, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/WallW" unique_id=84029229]
+mesh = SubResource("Mesh_PitWallZ")
+
+[node name="Ball0" type="CbProp" parent="BallPit" unique_id=1200984564]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.25, 0.255, -2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball0" unique_id=517367071]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball1" type="CbProp" parent="BallPit" unique_id=1990308731]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.25, 0.255, -1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball1" unique_id=803743988]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball2" type="CbProp" parent="BallPit" unique_id=566221878]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.25, 0.255, -1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball2" unique_id=2038224144]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball3" type="CbProp" parent="BallPit" unique_id=990221886]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.25, 0.255, -0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball3" unique_id=1380613346]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball4" type="CbProp" parent="BallPit" unique_id=1378430932]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.25, 0.255, -0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball4" unique_id=1917747976]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball5" type="CbProp" parent="BallPit" unique_id=1454222832]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.25, 0.255, 0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball5" unique_id=1757896578]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball6" type="CbProp" parent="BallPit" unique_id=913850875]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.25, 0.255, 0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball6" unique_id=1453343027]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball7" type="CbProp" parent="BallPit" unique_id=1993982783]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.25, 0.255, 1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball7" unique_id=1009336739]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball8" type="CbProp" parent="BallPit" unique_id=458877730]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.25, 0.255, 1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball8" unique_id=1745505681]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball9" type="CbProp" parent="BallPit" unique_id=2068660571]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.25, 0.255, 2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball9" unique_id=980254599]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball10" type="CbProp" parent="BallPit" unique_id=827067138]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, 0.255, -2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball10" unique_id=1414724273]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball11" type="CbProp" parent="BallPit" unique_id=729559906]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, 0.255, -1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball11" unique_id=1318325915]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball12" type="CbProp" parent="BallPit" unique_id=418686823]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, 0.255, -1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball12" unique_id=2007753543]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball13" type="CbProp" parent="BallPit" unique_id=984092983]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, 0.255, -0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball13" unique_id=1837896000]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball14" type="CbProp" parent="BallPit" unique_id=1608078414]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, 0.255, -0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball14" unique_id=2086958749]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball15" type="CbProp" parent="BallPit" unique_id=1757641180]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, 0.255, 0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball15" unique_id=1662542486]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball16" type="CbProp" parent="BallPit" unique_id=531445044]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, 0.255, 0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball16" unique_id=103978728]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball17" type="CbProp" parent="BallPit" unique_id=1826642630]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, 0.255, 1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball17" unique_id=1090178457]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball18" type="CbProp" parent="BallPit" unique_id=1099199843]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, 0.255, 1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball18" unique_id=1020982572]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball19" type="CbProp" parent="BallPit" unique_id=1941396828]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, 0.255, 2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball19" unique_id=1305402212]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball20" type="CbProp" parent="BallPit" unique_id=1049860252]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 0.255, -2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball20" unique_id=1017337651]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball21" type="CbProp" parent="BallPit" unique_id=1225045436]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 0.255, -1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball21" unique_id=1109747989]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball22" type="CbProp" parent="BallPit" unique_id=572525327]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 0.255, -1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball22" unique_id=1405172689]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball23" type="CbProp" parent="BallPit" unique_id=1583058752]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 0.255, -0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball23" unique_id=1978019437]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball24" type="CbProp" parent="BallPit" unique_id=805136625]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 0.255, -0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball24" unique_id=1608117265]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball25" type="CbProp" parent="BallPit" unique_id=525969333]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 0.255, 0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball25" unique_id=1429190373]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball26" type="CbProp" parent="BallPit" unique_id=2131180491]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 0.255, 0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball26" unique_id=263865180]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball27" type="CbProp" parent="BallPit" unique_id=562142785]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 0.255, 1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball27" unique_id=1928398628]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball28" type="CbProp" parent="BallPit" unique_id=1571761413]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 0.255, 1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball28" unique_id=1083723806]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball29" type="CbProp" parent="BallPit" unique_id=732615125]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 0.255, 2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball29" unique_id=45327238]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball30" type="CbProp" parent="BallPit" unique_id=408906452]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 0.255, -2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball30" unique_id=1434309757]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball31" type="CbProp" parent="BallPit" unique_id=771681456]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 0.255, -1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball31" unique_id=2095510111]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball32" type="CbProp" parent="BallPit" unique_id=1455896693]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 0.255, -1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball32" unique_id=1765692674]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball33" type="CbProp" parent="BallPit" unique_id=1178524013]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 0.255, -0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball33" unique_id=92538525]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball34" type="CbProp" parent="BallPit" unique_id=1934162487]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 0.255, -0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball34" unique_id=373863940]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball35" type="CbProp" parent="BallPit" unique_id=834697803]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 0.255, 0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball35" unique_id=1721730732]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball36" type="CbProp" parent="BallPit" unique_id=826875732]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 0.255, 0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball36" unique_id=559716957]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball37" type="CbProp" parent="BallPit" unique_id=85110623]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 0.255, 1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball37" unique_id=327074197]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball38" type="CbProp" parent="BallPit" unique_id=886999589]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 0.255, 1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball38" unique_id=75996876]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball39" type="CbProp" parent="BallPit" unique_id=1333426283]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 0.255, 2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball39" unique_id=101806120]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball40" type="CbProp" parent="BallPit" unique_id=1904971787]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 0.255, -2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball40" unique_id=29489568]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball41" type="CbProp" parent="BallPit" unique_id=791549500]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 0.255, -1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball41" unique_id=1694771371]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball42" type="CbProp" parent="BallPit" unique_id=1884161587]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 0.255, -1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball42" unique_id=1587585164]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball43" type="CbProp" parent="BallPit" unique_id=1780861667]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 0.255, -0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball43" unique_id=64458118]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball44" type="CbProp" parent="BallPit" unique_id=1191578199]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 0.255, -0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball44" unique_id=867743126]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball45" type="CbProp" parent="BallPit" unique_id=124055982]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 0.255, 0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball45" unique_id=593915408]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball46" type="CbProp" parent="BallPit" unique_id=48963694]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 0.255, 0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball46" unique_id=1016144017]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball47" type="CbProp" parent="BallPit" unique_id=743646586]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 0.255, 1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball47" unique_id=546449155]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball48" type="CbProp" parent="BallPit" unique_id=29844442]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 0.255, 1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball48" unique_id=1011710186]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball49" type="CbProp" parent="BallPit" unique_id=1539677658]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, 0.255, 2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball49" unique_id=1007140341]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball50" type="CbProp" parent="BallPit" unique_id=1874253638]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 0.255, -2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball50" unique_id=1992137601]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball51" type="CbProp" parent="BallPit" unique_id=744475823]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 0.255, -1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball51" unique_id=250019707]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball52" type="CbProp" parent="BallPit" unique_id=1453591936]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 0.255, -1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball52" unique_id=804615279]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball53" type="CbProp" parent="BallPit" unique_id=1589193948]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 0.255, -0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball53" unique_id=427095499]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball54" type="CbProp" parent="BallPit" unique_id=819129005]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 0.255, -0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball54" unique_id=244179073]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball55" type="CbProp" parent="BallPit" unique_id=476405349]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 0.255, 0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball55" unique_id=15893542]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball56" type="CbProp" parent="BallPit" unique_id=513166050]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 0.255, 0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball56" unique_id=939270463]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball57" type="CbProp" parent="BallPit" unique_id=172006311]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 0.255, 1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball57" unique_id=541858919]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball58" type="CbProp" parent="BallPit" unique_id=1337767426]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 0.255, 1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball58" unique_id=1580540988]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball59" type="CbProp" parent="BallPit" unique_id=2139824855]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 0.255, 2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball59" unique_id=184244561]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball60" type="CbProp" parent="BallPit" unique_id=131631625]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 0.255, -2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball60" unique_id=654475839]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball61" type="CbProp" parent="BallPit" unique_id=1847388183]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 0.255, -1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball61" unique_id=1915934051]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball62" type="CbProp" parent="BallPit" unique_id=646742669]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 0.255, -1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball62" unique_id=1106823833]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball63" type="CbProp" parent="BallPit" unique_id=126975481]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 0.255, -0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball63" unique_id=1836734086]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball64" type="CbProp" parent="BallPit" unique_id=1609472963]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 0.255, -0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball64" unique_id=1967489099]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball65" type="CbProp" parent="BallPit" unique_id=321442074]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 0.255, 0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball65" unique_id=1846929721]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball66" type="CbProp" parent="BallPit" unique_id=70529375]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 0.255, 0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball66" unique_id=242365091]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball67" type="CbProp" parent="BallPit" unique_id=417844836]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 0.255, 1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball67" unique_id=573006613]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball68" type="CbProp" parent="BallPit" unique_id=97563446]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 0.255, 1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball68" unique_id=1551283732]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball69" type="CbProp" parent="BallPit" unique_id=1714656727]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 0.255, 2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball69" unique_id=1806682317]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball70" type="CbProp" parent="BallPit" unique_id=643010849]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 0.255, -2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball70" unique_id=955906823]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball71" type="CbProp" parent="BallPit" unique_id=74055700]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 0.255, -1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball71" unique_id=499671411]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball72" type="CbProp" parent="BallPit" unique_id=1151604398]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 0.255, -1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball72" unique_id=1568599297]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball73" type="CbProp" parent="BallPit" unique_id=34566555]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 0.255, -0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball73" unique_id=1151649415]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball74" type="CbProp" parent="BallPit" unique_id=1772989153]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 0.255, -0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball74" unique_id=1990304930]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball75" type="CbProp" parent="BallPit" unique_id=444673847]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 0.255, 0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball75" unique_id=1215688765]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball76" type="CbProp" parent="BallPit" unique_id=250345640]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 0.255, 0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball76" unique_id=1898403135]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball77" type="CbProp" parent="BallPit" unique_id=2093209869]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 0.255, 1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball77" unique_id=814200405]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball78" type="CbProp" parent="BallPit" unique_id=2075847256]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 0.255, 1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball78" unique_id=408611453]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball79" type="CbProp" parent="BallPit" unique_id=412365224]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 0.255, 2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball79" unique_id=1016963394]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball80" type="CbProp" parent="BallPit" unique_id=908167270]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, 0.255, -2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball80" unique_id=2144038052]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball81" type="CbProp" parent="BallPit" unique_id=1032265271]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, 0.255, -1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball81" unique_id=1926626158]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball82" type="CbProp" parent="BallPit" unique_id=759568759]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, 0.255, -1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball82" unique_id=1575509044]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball83" type="CbProp" parent="BallPit" unique_id=1417045843]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, 0.255, -0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball83" unique_id=199523401]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball84" type="CbProp" parent="BallPit" unique_id=773265240]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, 0.255, -0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball84" unique_id=1870275316]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball85" type="CbProp" parent="BallPit" unique_id=451062993]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, 0.255, 0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball85" unique_id=1739141613]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball86" type="CbProp" parent="BallPit" unique_id=1547771386]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, 0.255, 0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball86" unique_id=173896154]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball87" type="CbProp" parent="BallPit" unique_id=821201018]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, 0.255, 1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball87" unique_id=1165606141]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball88" type="CbProp" parent="BallPit" unique_id=59553489]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, 0.255, 1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball88" unique_id=1857518408]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball89" type="CbProp" parent="BallPit" unique_id=655319858]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, 0.255, 2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball89" unique_id=77819416]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball90" type="CbProp" parent="BallPit" unique_id=340042616]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.25, 0.255, -2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball90" unique_id=410769268]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball91" type="CbProp" parent="BallPit" unique_id=675405925]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.25, 0.255, -1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball91" unique_id=2039601922]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball92" type="CbProp" parent="BallPit" unique_id=1371366306]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.25, 0.255, -1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball92" unique_id=104104663]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball93" type="CbProp" parent="BallPit" unique_id=2071373243]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.25, 0.255, -0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball93" unique_id=250762142]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball94" type="CbProp" parent="BallPit" unique_id=559780559]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.25, 0.255, -0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball94" unique_id=989438844]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball95" type="CbProp" parent="BallPit" unique_id=1438623797]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.25, 0.255, 0.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball95" unique_id=272116883]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball96" type="CbProp" parent="BallPit" unique_id=722131950]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.25, 0.255, 0.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball96" unique_id=1035909999]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball97" type="CbProp" parent="BallPit" unique_id=941363404]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.25, 0.255, 1.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball97" unique_id=984259671]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball98" type="CbProp" parent="BallPit" unique_id=1963274374]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.25, 0.255, 1.75)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball98" unique_id=1352883555]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball99" type="CbProp" parent="BallPit" unique_id=1333420363]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.25, 0.255, 2.25)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball99" unique_id=1933278236]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball100" type="CbProp" parent="BallPit" unique_id=1026715627]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.6236, -2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball100" unique_id=408168492]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball101" type="CbProp" parent="BallPit" unique_id=1868496516]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.6236, -1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball101" unique_id=243020921]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball102" type="CbProp" parent="BallPit" unique_id=1004364693]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.6236, -1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball102" unique_id=955340087]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball103" type="CbProp" parent="BallPit" unique_id=2029837564]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.6236, -0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball103" unique_id=1420995906]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball104" type="CbProp" parent="BallPit" unique_id=837045954]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.6236, 0)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball104" unique_id=1377898148]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball105" type="CbProp" parent="BallPit" unique_id=729991533]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.6236, 0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball105" unique_id=70088342]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball106" type="CbProp" parent="BallPit" unique_id=268071612]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.6236, 1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball106" unique_id=35045531]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball107" type="CbProp" parent="BallPit" unique_id=1967958194]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.6236, 1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball107" unique_id=1856786616]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball108" type="CbProp" parent="BallPit" unique_id=917489599]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 0.6236, 2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball108" unique_id=517627604]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball109" type="CbProp" parent="BallPit" unique_id=810722301]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.6236, -2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball109" unique_id=1950740032]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball110" type="CbProp" parent="BallPit" unique_id=1283131028]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.6236, -1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball110" unique_id=240784042]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball111" type="CbProp" parent="BallPit" unique_id=1612394581]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.6236, -1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball111" unique_id=1708319824]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball112" type="CbProp" parent="BallPit" unique_id=1510100128]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.6236, -0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball112" unique_id=152999241]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball113" type="CbProp" parent="BallPit" unique_id=1120643363]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.6236, 0)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball113" unique_id=1922895102]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball114" type="CbProp" parent="BallPit" unique_id=1676834888]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.6236, 0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball114" unique_id=48379625]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball115" type="CbProp" parent="BallPit" unique_id=768285804]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.6236, 1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball115" unique_id=1908985192]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball116" type="CbProp" parent="BallPit" unique_id=1389674691]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.6236, 1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball116" unique_id=1881386799]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball117" type="CbProp" parent="BallPit" unique_id=97162025]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.6236, 2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball117" unique_id=1076200284]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball118" type="CbProp" parent="BallPit" unique_id=1867411317]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.6236, -2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball118" unique_id=366810503]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball119" type="CbProp" parent="BallPit" unique_id=403583775]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.6236, -1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball119" unique_id=545004785]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball120" type="CbProp" parent="BallPit" unique_id=2109504167]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.6236, -1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball120" unique_id=719691063]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball121" type="CbProp" parent="BallPit" unique_id=850640516]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.6236, -0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball121" unique_id=1043990226]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball122" type="CbProp" parent="BallPit" unique_id=1513824615]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.6236, 0)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball122" unique_id=2059386560]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball123" type="CbProp" parent="BallPit" unique_id=1592387702]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.6236, 0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball123" unique_id=950063574]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball124" type="CbProp" parent="BallPit" unique_id=2083334891]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.6236, 1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball124" unique_id=101168985]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball125" type="CbProp" parent="BallPit" unique_id=1665606603]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.6236, 1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball125" unique_id=1376114410]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball126" type="CbProp" parent="BallPit" unique_id=930656958]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0.6236, 2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball126" unique_id=1500663917]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball127" type="CbProp" parent="BallPit" unique_id=811427276]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.6236, -2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball127" unique_id=862820307]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball128" type="CbProp" parent="BallPit" unique_id=871601202]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.6236, -1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball128" unique_id=823871971]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball129" type="CbProp" parent="BallPit" unique_id=949117791]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.6236, -1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball129" unique_id=1422179926]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball130" type="CbProp" parent="BallPit" unique_id=622174960]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.6236, -0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball130" unique_id=692872718]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball131" type="CbProp" parent="BallPit" unique_id=1942951613]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.6236, 0)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball131" unique_id=287256631]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball132" type="CbProp" parent="BallPit" unique_id=1584877865]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.6236, 0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball132" unique_id=1529939950]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball133" type="CbProp" parent="BallPit" unique_id=805143720]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.6236, 1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball133" unique_id=664093265]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball134" type="CbProp" parent="BallPit" unique_id=2034785268]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.6236, 1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball134" unique_id=1488922742]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball135" type="CbProp" parent="BallPit" unique_id=690578566]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.6236, 2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball135" unique_id=813502711]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball136" type="CbProp" parent="BallPit" unique_id=496555135]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6236, -2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball136" unique_id=1985444842]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball137" type="CbProp" parent="BallPit" unique_id=2035646306]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6236, -1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball137" unique_id=2096621262]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball138" type="CbProp" parent="BallPit" unique_id=1403633015]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6236, -1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball138" unique_id=1269567769]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball139" type="CbProp" parent="BallPit" unique_id=1005414885]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6236, -0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball139" unique_id=840087263]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball140" type="CbProp" parent="BallPit" unique_id=223794038]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6236, 0)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball140" unique_id=1487671209]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball141" type="CbProp" parent="BallPit" unique_id=780610660]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6236, 0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball141" unique_id=1233853190]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball142" type="CbProp" parent="BallPit" unique_id=2041175420]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6236, 1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball142" unique_id=1913699912]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball143" type="CbProp" parent="BallPit" unique_id=1392470819]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6236, 1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball143" unique_id=1018330966]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball144" type="CbProp" parent="BallPit" unique_id=74919053]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6236, 2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball144" unique_id=594553628]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball145" type="CbProp" parent="BallPit" unique_id=1896194605]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.6236, -2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball145" unique_id=976578153]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball146" type="CbProp" parent="BallPit" unique_id=453465608]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.6236, -1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball146" unique_id=1830756438]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball147" type="CbProp" parent="BallPit" unique_id=679480577]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.6236, -1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball147" unique_id=240100930]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball148" type="CbProp" parent="BallPit" unique_id=1265860604]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.6236, -0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball148" unique_id=650996686]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball149" type="CbProp" parent="BallPit" unique_id=1597123497]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.6236, 0)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball149" unique_id=921678658]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball150" type="CbProp" parent="BallPit" unique_id=54132277]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.6236, 0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball150" unique_id=2045420529]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball151" type="CbProp" parent="BallPit" unique_id=1055817054]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.6236, 1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball151" unique_id=1954886711]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball152" type="CbProp" parent="BallPit" unique_id=964107651]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.6236, 1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball152" unique_id=1331514578]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball153" type="CbProp" parent="BallPit" unique_id=883946997]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.6236, 2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball153" unique_id=1664705397]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball154" type="CbProp" parent="BallPit" unique_id=1954758009]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.6236, -2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball154" unique_id=1380027343]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball155" type="CbProp" parent="BallPit" unique_id=632780474]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.6236, -1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball155" unique_id=277796073]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball156" type="CbProp" parent="BallPit" unique_id=1281315879]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.6236, -1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball156" unique_id=345197582]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball157" type="CbProp" parent="BallPit" unique_id=1672894328]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.6236, -0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball157" unique_id=84885518]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball158" type="CbProp" parent="BallPit" unique_id=696809940]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.6236, 0)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball158" unique_id=1861078581]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball159" type="CbProp" parent="BallPit" unique_id=678337917]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.6236, 0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball159" unique_id=1193000921]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball160" type="CbProp" parent="BallPit" unique_id=1941108204]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.6236, 1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball160" unique_id=502431313]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball161" type="CbProp" parent="BallPit" unique_id=617551112]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.6236, 1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball161" unique_id=151227417]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball162" type="CbProp" parent="BallPit" unique_id=1279595264]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.6236, 2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball162" unique_id=88288243]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball163" type="CbProp" parent="BallPit" unique_id=457115260]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.6236, -2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball163" unique_id=520494934]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball164" type="CbProp" parent="BallPit" unique_id=816739056]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.6236, -1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball164" unique_id=1798774610]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball165" type="CbProp" parent="BallPit" unique_id=155572500]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.6236, -1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball165" unique_id=1478552498]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball166" type="CbProp" parent="BallPit" unique_id=763675787]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.6236, -0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball166" unique_id=1432663]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball167" type="CbProp" parent="BallPit" unique_id=401655842]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.6236, 0)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball167" unique_id=265879766]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball168" type="CbProp" parent="BallPit" unique_id=1943566248]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.6236, 0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball168" unique_id=2065763629]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball169" type="CbProp" parent="BallPit" unique_id=1983574855]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.6236, 1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball169" unique_id=333009077]
+mesh = SubResource("Mesh_PitBall3")
+
+[node name="Ball170" type="CbProp" parent="BallPit" unique_id=797928317]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.6236, 1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball170" unique_id=2324473]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball171" type="CbProp" parent="BallPit" unique_id=1981840968]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.6236, 2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball171" unique_id=829648095]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball172" type="CbProp" parent="BallPit" unique_id=1193921837]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0.6236, -2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball172" unique_id=1187959672]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball173" type="CbProp" parent="BallPit" unique_id=731632574]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0.6236, -1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball173" unique_id=1457281167]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball174" type="CbProp" parent="BallPit" unique_id=217899375]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0.6236, -1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball174" unique_id=335951430]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball175" type="CbProp" parent="BallPit" unique_id=1941952047]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0.6236, -0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball175" unique_id=1306716827]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball176" type="CbProp" parent="BallPit" unique_id=1897417623]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0.6236, 0)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball176" unique_id=1733928524]
+mesh = SubResource("Mesh_PitBall1")
+
+[node name="Ball177" type="CbProp" parent="BallPit" unique_id=2039984659]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0.6236, 0.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball177" unique_id=1767732344]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball178" type="CbProp" parent="BallPit" unique_id=807877065]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0.6236, 1)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball178" unique_id=1073129084]
+mesh = SubResource("Mesh_PitBall2")
+
+[node name="Ball179" type="CbProp" parent="BallPit" unique_id=26359179]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0.6236, 1.5)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball179" unique_id=685571590]
+mesh = SubResource("Mesh_PitBall0")
+
+[node name="Ball180" type="CbProp" parent="BallPit" unique_id=1773451447]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0.6236, 2)
+shape = 1
+radius = 0.25
+pushed_by_characters = true
+density = 15.0
+friction = 0.4
+bounce = 0.3
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball180" unique_id=1505297227]
+mesh = SubResource("Mesh_PitBall0")
