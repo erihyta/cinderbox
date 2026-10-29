@@ -221,29 +221,44 @@ public:
 	static std::string PhysicsContactByte( const std::vector<uint8_t>& bytes, size_t at );
 	static std::string PhysicsStructSizes();
 
-	// The state network model (ROADMAP step 3; stand_ins.cpp). No physics engine internals cross:
-	// SaveState writes the entities and globals, and a description of every body read from the
-	// physics engine (its type, its shapes). ApplyState makes this simulation's world the server's
-	// as those bytes have it: every entity's components but its physics handles; a body kept when
-	// the server's description of it is the one it was built from, built from the description
-	// otherwise; what the server no longer has removed (nothing else happens: a chest's items do
-	// not fall out). Every entity but `own`'s (the slot's body and what it carries) is then a
-	// stand-in: nothing in Step() moves or drives it, its body is kinematic (a static one stays
-	// static) and placed where the server has it, going on at its velocity until the next state.
-	// From the first state on the world's rules are the server's: props' lifetimes and caps, glue,
-	// breaking and items' events are not run here. False (and nothing changed) for bytes that are
-	// not a state of this simulation's kind (its config, its components).
+	// The characters' states, for the hybrid network model (M248; ROADMAP step 3; stand_ins.cpp).
+	// The characters' side of the world is every entity that is not in the physics world: the
+	// characters (players, NPCs) with their bodies in the characters' world, what they hold, a prop
+	// one drives (CharacterSide). No physics engine internals cross: SaveState writes those entities
+	// and the globals, and a description of their bodies (its type, its shapes). `only` != 0: just
+	// that character and what it holds.
 	// `compact`: what is sent to clients. Where things are and how they move rounded (positions to
 	// 1/1024 m, rotations to 1/32768 and then made unit again, velocities to 1/256 m/s): their
 	// changes then take fewer bits. This world's own state stays exact.
-	void SaveState( std::vector<uint8_t>& out, bool compact = false );
-	bool ApplyState( const uint8_t* data, size_t size, PlayerSlot own );
-	// Whether ApplyState has run: the world's rules are the server's.
+	void SaveState( std::vector<uint8_t>& out, bool compact = false, uint32_t only = 0 );
+	// ApplyState makes the characters' side of this world the server's as those bytes have it:
+	// every entity's components but its physics handles; a body kept when the server's description
+	// of it is the one it was built from, built from the description otherwise; what the server no
+	// longer has removed. The physics world is never touched: what is in it here stays (an item
+	// the server's character has picked up is taken by the physics event, when this world's physics
+	// reaches that tick). `Others`: everyone but `own`'s character and what it holds, which are then
+	// stand-ins (nothing in Step() moves or drives them; placed where the server has them), and the
+	// globals the characters' side has (the slots' bodies, the mods' global fields). `Own`: only
+	// those (a prediction made the server's again). From the first state on Step() moves no
+	// character (StepCharacters moves the own one). False (and nothing changed) for bytes that are
+	// not a state of this simulation's kind (its config, its components).
+	enum class StateApply : uint8_t
+	{
+		Others,
+		Own,
+	};
+	bool ApplyState( const uint8_t* data, size_t size, PlayerSlot own, StateApply which );
+	// Whether ApplyState has run: the characters are the server's.
 	bool FollowsServer() const
 	{
 		return m_followsServer;
 	}
 	bool IsStandIn( uint32_t netId ) const;
+	// The hybrid's prediction: `slot`'s character (the one that is not a stand-in) and what it holds
+	// do tick `tick` with `input`, against the physics world as it is (in the past: the physics is
+	// stepped by Step(), and nothing here changes it; what the character does to it is the
+	// server's to say, by its events). Tick() stays.
+	void StepCharacters( uint32_t tick, PlayerSlot slot, const PlayerInput& input );
 	// The components a state's record holds, in its mask's order: each one's name and size (tools
 	// that say where a state's bytes go).
 	std::vector<std::pair<std::string, uint32_t>> StateComponents() const;
@@ -527,11 +542,17 @@ private:
 	flecs::entity EntityWithId( uint32_t netId );
 	PhysicsEvent RagdollEvent( flecs::entity player, uint32_t lifetimeTicks ) const;
 
-	// The state model (stand_ins.cpp).
+	// The characters' states (stand_ins.cpp).
 	bool m_followsServer = false;
+	uint32_t m_localCharacterId = kLocalCharacterIdBase; // (not the server's: CreateEntity)
+	// On the characters' side (SaveState), or in the physics world (a body there, a ragdoll, a pusher).
+	bool CharacterSide( flecs::entity e ) const;
+	bool PhysicsSide( flecs::entity e ) const;
+	// (Only on the characters' side: what went into the physics world since its state is this
+	// world's own, whatever it was.)
 	bool StandsIn( flecs::entity e ) const
 	{
-		return m_followsServer && e.has<StandIn>();
+		return m_followsServer && e.has<StandIn>() && PhysicsSide( e ) == false;
 	}
 	// An entity's bodies described (the PhysicsBody's, or the ragdoll's parts), and built again.
 	void DescribeBodies( flecs::entity e, std::vector<uint8_t>& out ) const;

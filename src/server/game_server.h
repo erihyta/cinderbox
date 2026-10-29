@@ -2,9 +2,10 @@
 
 // Authoritative server. Runs the one true Simulation at a fixed rate, collects client inputs, and
 // keeps its clients' worlds by one of two network models (net::NetModel): it streams the input
-// frames it used (inputs: every client simulates the whole world), or its world's state every few
-// ticks (state: a client predicts its own body, the rest placed from the states). It never rolls
-// back: a late input is replaced by the player's previous input.
+// frames it used (inputs: every client simulates the whole world), or the frames' physics inputs
+// and its characters' states every few ticks (hybrid: a client simulates the physics from those,
+// predicts its own character, and places the rest from the states). It never rolls back: a late
+// input is replaced by the player's previous input.
 
 #include "look_item.h"
 #include "anim_graph.h"
@@ -34,8 +35,8 @@ namespace cb
 struct ServerOptions
 {
 	uint16_t port = net::kDefaultPort;
-	// How clients' worlds are kept (protocol.h). The state model sends a state every `stateEvery`
-	// ticks.
+	// How clients' worlds are kept (protocol.h). The hybrid sends the characters' state every
+	// `stateEvery` ticks, and the physics checksum every `checksumInterval`.
 	net::NetModel netModel = net::NetModel::Inputs;
 	uint32_t stateEvery = 2;
 	SimConfig config;
@@ -160,7 +161,7 @@ public:
 		double tickMsMax = 0.0;
 		uint64_t bytesSent = 0;
 		uint64_t bytesReceived = 0;
-		// The state model.
+		// The hybrid.
 		uint64_t statesSent = 0;	 // messages, to every client
 		uint64_t statesWhole = 0;	 // of them, against no base
 		uint64_t stateBytes = 0;	 // their bytes
@@ -209,8 +210,8 @@ private:
 		double roundTrip = 0.1;		// seconds from sending a frame to hearing it acknowledged
 		double frameSentAt[256] = {}; // by tick % 256: when it last went out in full
 		PlayerInput lastInput{};
-		// The state model: the newest state the client has (its base for the next one), and the
-		// newest sent to it.
+		// The hybrid: the newest characters' state the client has (its base for the next one), and
+		// the newest sent to it.
 		uint32_t stateAck = net::kNoStateBase;
 		uint32_t stateSent = 0;
 		struct Slot
@@ -235,10 +236,12 @@ private:
 	void RunMods( InputFrame& frame );
 	void SendSnapshots();
 	void SendFrames( double now );
-	// The state model: the newest state to everyone, each against the one it has (SendFrames' part).
+	// The hybrid: the newest characters' state to everyone, each against the one it has.
 	void SendStates();
 	const net::StateFrame* KeptState( uint32_t tick ) const;
 	std::deque<net::StateFrame> m_states; // the newest last
+	// The hybrid: the physics checksum after each tick of the history (0: none), by tick % kFrameHistory.
+	std::vector<uint64_t> m_physicsSums;
 	const InputFrame* HistoryFrame( uint32_t tick ) const;
 	void Log( const char* fmt, ... ) const;
 

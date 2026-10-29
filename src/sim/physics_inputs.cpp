@@ -466,14 +466,17 @@ void Simulation::ApplyPhysicsEvents( const InputFrame& frame, uint8_t phase, uin
 
 uint64_t Simulation::PhysicsHash() const
 {
-	const int handles[] = { SnapIndex( m_world.component<PhysicsBody>().id() ), SnapIndex( m_world.component<RagdollBodies>().id() ),
-							SnapIndex( m_world.component<Pusher>().id() ) };
+	// Where its bodies are and how they move: what the physics decides (a body left behind keeps
+	// what its character had, its slots, its fields: the characters' side's, M248).
+	const int kept[] = { SnapIndex( m_world.component<Transform>().id() ), SnapIndex( m_world.component<Velocity>().id() ),
+						 SnapIndex( m_world.component<RagdollPose>().id() ) };
 	std::vector<uint8_t> bytes;
 	ecs_world_t* world = m_world.c_ptr();
 	for ( const EntityRef& r : m_entities )
 	{
 		flecs::entity e( m_world, r.entity );
-		if ( ( e.has<PhysicsBody>() == false && e.has<RagdollBodies>() == false ) || e.has<Character>() )
+		// (In the physics world: not a driven prop, which is the characters'.)
+		if ( PhysicsSide( e ) == false || e.has<Pusher>() || e.has<Character>() )
 		{
 			continue;
 		}
@@ -482,8 +485,7 @@ uint64_t Simulation::PhysicsHash() const
 		for ( size_t i = 0; i < m_snapComponents.size(); ++i )
 		{
 			const SnapComponent& sc = m_snapComponents[i];
-			if ( std::find( std::begin( handles ), std::end( handles ), int( i ) ) != std::end( handles ) ||
-				 ecs_has_id( world, r.entity, sc.id ) == false )
+			if ( std::find( std::begin( kept ), std::end( kept ), int( i ) ) == std::end( kept ) || ecs_has_id( world, r.entity, sc.id ) == false )
 			{
 				continue;
 			}

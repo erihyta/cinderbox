@@ -101,13 +101,14 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 			rollback = session->GetStats();
 			rollbackWindow = session->MaxRollback();
 		}
-		else if ( StateSession* states = client.States() )
+		else if ( HybridSession* hybrid = client.Hybrid() )
 		{
-			// (A state taken is the state model's rollback: back to the server's, inputs run again.)
-			rollback.rollbacks = states->GetStats().states;
-			rollback.lastRollbackDepth = states->GetStats().lastDepth;
-			rollback.resimulatedTicks = states->GetStats().resimulatedTicks;
-			rollbackWindow = states->MaxAhead();
+			// (A state taken is the hybrid's rollback: its own character the server's again, its
+			// inputs run again.)
+			rollback.rollbacks = hybrid->GetStats().states;
+			rollback.lastRollbackDepth = hybrid->GetStats().lastDepth;
+			rollback.resimulatedTicks = hybrid->GetStats().resimulatedTicks;
+			rollbackWindow = client.GetStats().rollbackWindow;
 		}
 		confirmedTick = client.ConfirmedTick();
 		f.confirmedTick = confirmedTick;

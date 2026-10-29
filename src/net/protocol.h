@@ -23,7 +23,7 @@
 namespace cb::net
 {
 
-inline constexpr uint32_t kProtocolVersion = 75; // 75: two network models (the welcome and the info say which; State); 74: bodies a mod drives (Drive, ModDriven in the snapshot); 73: props a slot drives (DrivenProp in the snapshot); 72: bodies nobody drives (IdleBody in the snapshot), SpawnBody and Possess; 71: a character's ragdoll (the schema); 70: a character's first person (the schema); 69: characters per body (the schema's list of characters, each its state machine, capsule and movement; CharacterKind; SetCharacter); 68: amounts that are expressions in a motion set (a move's, a change's, a launch's, a link's, a force's top), a change in a find, MoveValues; 67: impulses of momentum and a step's repeat (every) in a motion set; 66: an item's own motions (owner item), break and remove in a motion set; 65: markers, turns, a launch's start, paths and follow in a motion set; 64: curves and expressions in a motion set (an effect's strength), time, distance and reach; 63: a probe's shape (probe_shape, in a motion set); 62: a motion's finds (shapes in a motion set), movement parameters given for a while (MoveEffects in the snapshot); 61: a motion's steps, guards, ends and edge (motion sets of version 3; its slot 28 bytes); 60: glued breakables (maps of version 11); 59: items that break walls (their break speed, hole, through and smash event in the schema); 58: holes in breakables (a wall piece left standing, a map of version 10, Break with a radius); 57: what a probe may hold on to (holds, in a motion set); 56: the Break command, maps of version 9 (breakables); 55: an item's rolling and drag (the schema), maps of version 8 (a prop's), max_slope; 54: an item's body of several shapes (the schema); maps of version 4 to 6 (pieces of any shape, hulls, bodies of several shapes); 53: asking a server about itself before joining (InfoRequest, Info); 52: typed text (Text, both ways); 51: an item its slot's key uses; 50: a slot is a place (items used from the hand, or by a kind's own key); 49: intents a mod declares (in the schema, in the input); 48: containers (the Open and Close intents, a player's open one in its slots); 47: the Split intent; 46: stacks (a kind's in the schema, an item's count in the frame); 45: an item thrown fast (a bullet) in the schema; 44: an item's time is up (its event in the schema); 43: launch_carried in a motion, an event said after the motions; 42: a line in flight in the snapshot (a projectile); 41: an item's hand in the schema; 40: the slot keys in the input, a slot's suggested key in the schema; 39: an input packet's later ticks as changes, a pitch difference in a frame; 38: a look published again while the server runs (Items); 37: what is loose gives way to a player by its weight; a throw moves a whole ragdoll; 36: launches (a motion makes an item); 35: an item's friction and bounce, a map prop's body; 34: state sized by the mods (how many fields; the config says); 33: the use button, how an item kind is used; 32: slots (a player's intent in its input, an item's slot, the config's slots); 31: (unused: texts, parked); 30: mass; motions as triggers and effects (probes, forces, links, targets); 29: one more movement parameter (airborne); 28: tethers (a component, a line of a motion set); 27: two more movement parameters (air_friction, move_frame); 26: motion sets in the schema; 25: movement parameters (the config, SetMove); 24: an item body's turn; 23: grips as animated; 22: grips in the schema; 21: the view mode in the input; 20: no streaming clients; 19: private fields; 18: one animation system; 17: streaming clients; 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs; 9: layers and stances; 10: characters shipped with the game; 11: state machines in the schema; 12: held items; 13: animation packs; 14: items in the world; 15: stowed items; 16: 32 board slots
+inline constexpr uint32_t kProtocolVersion = 76; // 76: the hybrid network model in place of the state model (a frame says what it carries: inputs, physics events, pushers' places, the physics checksum; the characters' states; an input's state acknowledgement); 75: two network models (the welcome and the info say which; State); 74: bodies a mod drives (Drive, ModDriven in the snapshot); 73: props a slot drives (DrivenProp in the snapshot); 72: bodies nobody drives (IdleBody in the snapshot), SpawnBody and Possess; 71: a character's ragdoll (the schema); 70: a character's first person (the schema); 69: characters per body (the schema's list of characters, each its state machine, capsule and movement; CharacterKind; SetCharacter); 68: amounts that are expressions in a motion set (a move's, a change's, a launch's, a link's, a force's top), a change in a find, MoveValues; 67: impulses of momentum and a step's repeat (every) in a motion set; 66: an item's own motions (owner item), break and remove in a motion set; 65: markers, turns, a launch's start, paths and follow in a motion set; 64: curves and expressions in a motion set (an effect's strength), time, distance and reach; 63: a probe's shape (probe_shape, in a motion set); 62: a motion's finds (shapes in a motion set), movement parameters given for a while (MoveEffects in the snapshot); 61: a motion's steps, guards, ends and edge (motion sets of version 3; its slot 28 bytes); 60: glued breakables (maps of version 11); 59: items that break walls (their break speed, hole, through and smash event in the schema); 58: holes in breakables (a wall piece left standing, a map of version 10, Break with a radius); 57: what a probe may hold on to (holds, in a motion set); 56: the Break command, maps of version 9 (breakables); 55: an item's rolling and drag (the schema), maps of version 8 (a prop's), max_slope; 54: an item's body of several shapes (the schema); maps of version 4 to 6 (pieces of any shape, hulls, bodies of several shapes); 53: asking a server about itself before joining (InfoRequest, Info); 52: typed text (Text, both ways); 51: an item its slot's key uses; 50: a slot is a place (items used from the hand, or by a kind's own key); 49: intents a mod declares (in the schema, in the input); 48: containers (the Open and Close intents, a player's open one in its slots); 47: the Split intent; 46: stacks (a kind's in the schema, an item's count in the frame); 45: an item thrown fast (a bullet) in the schema; 44: an item's time is up (its event in the schema); 43: launch_carried in a motion, an event said after the motions; 42: a line in flight in the snapshot (a projectile); 41: an item's hand in the schema; 40: the slot keys in the input, a slot's suggested key in the schema; 39: an input packet's later ticks as changes, a pitch difference in a frame; 38: a look published again while the server runs (Items); 37: what is loose gives way to a player by its weight; a throw moves a whole ragdoll; 36: launches (a motion makes an item); 35: an item's friction and bounce, a map prop's body; 34: state sized by the mods (how many fields; the config says); 33: the use button, how an item kind is used; 32: slots (a player's intent in its input, an item's slot, the config's slots); 31: (unused: texts, parked); 30: mass; motions as triggers and effects (probes, forces, links, targets); 29: one more movement parameter (airborne); 28: tethers (a component, a line of a motion set); 27: two more movement parameters (air_friction, move_frame); 26: motion sets in the schema; 25: movement parameters (the config, SetMove); 24: an item body's turn; 23: grips as animated; 22: grips in the schema; 21: the view mode in the input; 20: no streaming clients; 19: private fields; 18: one animation system; 17: streaming clients; 4: pitch, mod actions, commands, mod schema; 5: names; 6: character; 7: aim in the pose; 8: facing, legs; 9: layers and stances; 10: characters shipped with the game; 11: state machines in the schema; 12: held items; 13: animation packs; 14: items in the world; 15: stowed items; 16: 32 board slots
 inline constexpr uint16_t kDefaultPort = 7777;
 
 enum Channel : uint8_t
@@ -49,17 +49,19 @@ enum class MsgType : uint8_t
 	Text = 12,
 	InfoRequest = 13,
 	Info = 14,
-	State = 15, // S -> C, the state model: one of the server's states (state_codec.h), unreliable
+	State = 15, // S -> C, the hybrid: the server's characters' state (state_codec.h), unreliable
 };
 
 // How a server keeps its clients' worlds (ROADMAP step 3), its choice for everyone. Inputs: every
-// client simulates the whole world from everyone's inputs (FrameBatch, Checksum, rollback).
-// State: the server sends its world's state now and then (State), and a client predicts only its
-// own body, everything else a stand-in placed from the states (sim/state_session.h).
+// client simulates the whole world from everyone's inputs (FrameBatch with the inputs, Checksum,
+// rollback). Hybrid: every client simulates the physics from the server's events, a little in the
+// past (FrameBatch without the inputs: the commands, the physics events and pushers' places, the
+// physics checksum), and the characters are the server's (State): a client predicts its own, the
+// others stand where the server had them (sim/hybrid_session.h).
 enum class NetModel : uint8_t
 {
 	Inputs = 0,
-	State = 1,
+	Hybrid = 1,
 };
 const char* ToString( NetModel model );
 
@@ -141,11 +143,10 @@ struct MsgPrivateFields
 // "Player <slot + 1>" when nothing is left.
 std::string SanitizeName( const std::string& name, PlayerSlot slot );
 
-// S -> C, on join, reconnect and desync recovery. The inputs model: the client loads `image` (the
-// state before `snapshotTick`), then applies frames starting at `snapshotTick`. `baseInputs` are the
-// inputs of frame snapshotTick - 1 (the delta base and the prediction seed). The state model:
-// `image` is empty, and the client waits for its first State (whole: it has acknowledged none),
-// which comes every `stateEvery` ticks.
+// S -> C, on join, reconnect and desync recovery. The client loads `image` (the state before
+// `snapshotTick`), then applies frames starting at `snapshotTick`. `baseInputs` are the inputs of
+// frame snapshotTick - 1 (the delta base and the prediction seed). The hybrid: the frames bring
+// the physics, and the characters' states come every `stateEvery` ticks.
 //
 // `map` is the server's baked level (a .cbmap, see sim/map.h). The client builds its simulation
 // from these bytes, so it can never run a different level: entities created later (a player
@@ -190,9 +191,10 @@ struct MsgResyncRequest
 struct MsgInput
 {
 	uint32_t newestTick = 0;
-	// The inputs model: the client has every authoritative frame with tick < ackTick. The state
-	// model: the newest state the client has and keeps as a base (0: none).
+	// The client has every authoritative frame with tick < ackTick.
 	uint32_t ackTick = 0;
+	// The hybrid: the newest characters' state the client has and keeps as a base (0: none).
+	uint32_t stateAck = 0;
 	std::vector<PlayerInput> inputs; // oldest first
 };
 
@@ -226,21 +228,26 @@ bool Decode( ByteReader& r, MsgInfo& m );
 // Returns the message type and leaves the reader positioned at the payload.
 std::optional<MsgType> ReadType( ByteReader& r );
 
-// Input frames are delta-coded against the previous frame on the same reliable stream.
+// Input frames are delta-coded against the previous frame on the same reliable stream (its inputs,
+// and its pushers' places).
 class FrameCodec
 {
 public:
 	void Reset( const InputArray& base )
 	{
 		m_previous = base;
+		m_previousPushers.clear();
 	}
 
 	void Encode( const InputFrame& frame, std::vector<uint8_t>& out );
 	bool Decode( ByteReader& r, InputFrame& frame );
 
-	// Frame without the message type byte (used inside batches).
-	void EncodeBody( const InputFrame& frame, ByteWriter& w );
-	bool DecodeBody( ByteReader& r, InputFrame& frame );
+	// Frame without the message type byte (used inside batches). `withInputs` false: the hybrid's,
+	// whose clients simulate no one else's character (decoded, its inputs are the previous ones).
+	// `checksum` != 0: the server's physics checksum after the frame's tick (decoded into
+	// `checksum`, 0 when it has none).
+	void EncodeBody( const InputFrame& frame, ByteWriter& w, bool withInputs = true, uint64_t checksum = 0 );
+	bool DecodeBody( ByteReader& r, InputFrame& frame, uint64_t* checksum = nullptr );
 
 	const InputArray& Previous() const
 	{
@@ -249,18 +256,22 @@ public:
 
 private:
 	InputArray m_previous{};
+	std::vector<PusherPlace> m_previousPushers;
 };
 
 // S -> C frame batch: `frames` must be consecutive; `base` holds the inputs of the frame before
-// the first one (the delta base). Layout: type, u32 firstTick, u8 count, frame bodies.
+// the first one (the delta base). Layout: type, u32 firstTick, u8 count, frame bodies. The hybrid:
+// without the inputs, and with a physics checksum for each frame whose `checksums` entry is not 0.
 inline constexpr size_t kMaxBatchFrames = 64;
-void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, size_t count, std::vector<uint8_t>& out );
+void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, size_t count, std::vector<uint8_t>& out,
+					   bool withInputs = true, const uint64_t* checksums = nullptr );
 
 // First step of decoding: which ticks does the batch cover?
 bool ReadFrameBatchHeader( ByteReader& r, uint32_t& firstTick, uint32_t& count );
-// Second step, once the caller has found the inputs of firstTick - 1.
+// Second step, once the caller has found the inputs of firstTick - 1. `checksums`: each frame's
+// physics checksum (0: none).
 bool ReadFrameBatchBody( ByteReader& r, const InputArray& base, uint32_t firstTick, uint32_t count,
-						 std::vector<InputFrame>& out );
+						 std::vector<InputFrame>& out, std::vector<uint64_t>* checksums = nullptr );
 
 // Commands a server is about to send: anything that is not finite, or not a known type, is dropped
 // here so every client applies exactly the same list.

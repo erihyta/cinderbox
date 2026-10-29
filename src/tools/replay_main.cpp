@@ -3,9 +3,10 @@
 //   cb_replay info FILE      summary of a recorded session
 //   cb_replay verify FILE    re-simulate the whole session and check every recorded checksum
 //   cb_replay view FILE      summary of a view file (cb_server --record-view): frames and their sizes
-//   cb_replay state FILE [--slot N] [--delay TICKS]
-//                            the state network model played against the session: what its states
-//                            cost, whether each applies exactly, and how a client of a slot does
+//   cb_replay hybrid FILE [--slot N] [--delay TICKS]
+//                            the hybrid network model played against the session: what its frames
+//                            and states cost, whether its physics stays the server's, and how a
+//                            client predicts a slot's character
 //
 // Exit codes: 0 ok, 1 usage / unreadable file, 2 checksum mismatch, 3 recorded with another build.
 
@@ -13,7 +14,7 @@
 #include "replay.h"
 #include "simulation.h"
 #include "state_codec.h"
-#include "state_session.h"
+#include "hybrid_session.h"
 #include "view_file.h"
 
 
@@ -22,6 +23,7 @@
 #include <cinttypes>
 #include <cstdlib>
 #include <deque>
+#include <map>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -227,23 +229,69 @@ double MsSince( std::chrono::steady_clock::time_point start )
 	return std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
 }
 
-// The state network model played against a recording (ROADMAP step 3): the recording is the
-// server; every second tick its state (Simulation::SaveState) goes to a client of `slot`, arriving
-// `delay` ticks later, which predicts that slot's body with the recorded inputs and places the
-// rest. Each state is also applied at once to a third simulation and checked against the server's.
-int StateModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t delay )
+// The hybrid network model played against a recording (M248; ROADMAP step 3): the recording is
+// the server. Every tick its physics inputs (the frame's commands, the physics events and pushers'
+// places it made) and its physics checksum go to a client of `slot`, and every second tick its
+// characters' state, each arriving `delay` ticks later; the client's physics runs `delay` + 2 ticks
+// behind, and it predicts that slot's character with the recorded inputs. What each costs on the
+// wire is measured as the server sends it (net/protocol.h, net/state_codec.h), decoded again and
+// checked.
+// What a simulation's physics world has, body by body (to say where two differ).
+struct BodySeen
 {
-	Simulation server( replay.Config(), replay.Map() );
+	uint32_t netId;
+	b3Vec3 at, linear;
+	bool character;
+	bool operator==( const BodySeen& o ) const
+	{
+		return netId == o.netId && std::memcmp( &at, &o.at, sizeof( at ) ) == 0 && std::memcmp( &linear, &o.linear, sizeof( linear ) ) == 0;
+	}
+};
+std::vector<BodySeen> PhysicsBodies( Simulation& sim )
+{
+	std::vector<BodySeen> out;
+	for ( const auto& r : sim.Entities() )
+	{
+		flecs::entity e( sim.World(), r.entity );
+		const PhysicsBody* pb = e.try_get<PhysicsBody>();
+		if ( ( pb == nullptr || pb->body.world0 != 0 ) && e.has<RagdollBodies>() == false )
+		{
+			continue;
+		}
+		const Transform* t = e.try_get<Transform>();
+		const Velocity* v = e.try_get<Velocity>();
+		out.push_back( { r.netId, t ? t->position : b3Vec3{}, v ? v->linear : b3Vec3{}, e.has<Character>() } );
+	}
+	return out;
+}
+
+int HybridModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t delay )
+{
+	std::map<uint32_t, std::vector<BodySeen>> serverBodies; // (the last few ticks')
+	bool told = false;
+	auto serverSim = std::make_unique<Simulation>( replay.Config(), replay.Map() );
+	Simulation& server = *serverSim;
 	SetUpLike( replay, server );
-	Simulation mirror( replay.Config(), replay.Map() );
-	SetUpLike( replay, mirror );
-	StateSession client( replay.Config(), slot, 60, replay.Map() );
+	HybridSession client( replay.Config(), slot, 60, replay.Map() );
 	SetUpLike( replay, client.Sim() );
+	{
+		std::vector<uint8_t> image;
+		server.SavePortable( image );
+		if ( client.Sim().LoadPortable( image ) == false )
+		{
+			std::printf( "error: the client could not load the server's world\n" );
+			return 2;
+		}
+		client.Start();
+	}
 
 	struct Sent
 	{
-		uint32_t tick;
 		uint32_t arrives;
+		bool state;
+		uint32_t tick;
+		InputFrame frame;
+		uint64_t checksum;
 		std::vector<uint8_t> bytes;
 		std::array<PlayerInput, kMaxPlayers> inputs;
 	};
@@ -268,15 +316,65 @@ int StateModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t delay
 		}
 	};
 
-	double serverMs = 0.0, saveMs = 0.0;
-	size_t states = 0, bytes = 0, most = 0, packed = 0, changed = 0, mostChange = 0, sampled = 0, wrong = 0, undecoded = 0, entities = 0;
-	double encodeMs = 0.0;
+	double serverMs = 0.0, saveMs = 0.0, encodeMs = 0.0;
+	size_t states = 0, bytes = 0, most = 0, packed = 0, changed = 0, mostChange = 0, undecoded = 0;
+	size_t frameBytes = 0, frameMost = 0, events = 0, pushers = 0, framesWrong = 0;
 	std::deque<net::StateFrame> kept;
 	const auto layout = server.StateComponents();
 	ChangeCost where;
 	size_t counted = 0;
 	for ( uint32_t i = 0; i < total; ++i )
 	{
+		if ( server.Tick() % 2 == 0 )
+		{
+			Sent sent{ i + delay, true, server.Tick(), {}, 0, {}, i > 0 ? frames[i - 1].inputs : net::InputArray{} };
+			auto start = std::chrono::steady_clock::now();
+			server.SaveState( sent.bytes, true ); // (compact, as a server sends it)
+			saveMs += MsSince( start );
+			states += 1;
+			bytes += sent.bytes.size();
+			most = std::max( most, sent.bytes.size() );
+			// As the wire has it (net/state_codec.h): whole, and as a change against the state a
+			// client would have acknowledged by now (a round trip before: twice the delay), each
+			// decoded again and checked.
+			net::StateFrame frame;
+			frame.tick = sent.tick;
+			frame.inputs = sent.inputs;
+			frame.state = sent.bytes;
+			const net::StateFrame* base = nullptr;
+			for ( const net::StateFrame& b : kept )
+			{
+				base = b.tick + 2 * delay <= frame.tick ? &b : base;
+			}
+			std::vector<uint8_t> message;
+			net::EncodeState( frame, nullptr, message );
+			packed += message.size();
+			const auto encodeStart = std::chrono::steady_clock::now();
+			net::EncodeState( frame, base, message );
+			encodeMs += MsSince( encodeStart );
+			changed += message.size();
+			mostChange = std::max( mostChange, message.size() );
+			ByteReader r( message.data(), message.size() );
+			uint32_t tick = 0, baseTick = 0;
+			net::StateFrame back;
+			const bool decoded = net::ReadType( r ) == net::MsgType::State && net::ReadStateHeader( r, tick, baseTick ) &&
+								 baseTick == ( base != nullptr ? base->tick : net::kNoStateBase ) &&
+								 net::DecodeState( r, tick, base, back ) && back.state == frame.state &&
+								 std::memcmp( back.inputs.data(), frame.inputs.data(), sizeof( frame.inputs ) ) == 0;
+			undecoded += decoded ? 0 : 1;
+			if ( base != nullptr )
+			{
+				CountChange( frame.state, base->state, layout, where );
+				counted += 1;
+			}
+			kept.push_back( std::move( frame ) );
+			if ( kept.size() > 32 )
+			{
+				kept.pop_front();
+			}
+			wire.push_back( std::move( sent ) );
+		}
+
 		auto start = std::chrono::steady_clock::now();
 		server.Step( frames[i] );
 		serverMs += MsSince( start );
@@ -284,97 +382,110 @@ int StateModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t delay
 		{
 			ownOf( server, serverSaw[server.Tick()] );
 		}
-
-		if ( server.Tick() % 2 == 0 )
+		serverBodies[i] = PhysicsBodies( server );
+		while ( serverBodies.size() > 64 )
 		{
-			Sent sent;
-			sent.tick = server.Tick();
-			sent.arrives = i + delay;
-			start = std::chrono::steady_clock::now();
-			server.SaveState( sent.bytes );
-			saveMs += MsSince( start );
-			sent.inputs = frames[i].inputs;
-			states += 1;
-			bytes += sent.bytes.size();
-			// As the wire has it (net/state_codec.h): whole, and as a change against the state a
-			// client would have acknowledged by now (a round trip before: twice the delay), each
-			// decoded again and checked.
-			{
-				net::StateFrame frame;
-				frame.tick = sent.tick;
-				frame.inputs = sent.inputs;
-				server.SaveState( frame.state, true ); // (compact, as a server sends it)
-				const net::StateFrame* base = nullptr;
-				for ( const net::StateFrame& b : kept )
-				{
-					base = b.tick + 2 * delay <= frame.tick ? &b : base;
-				}
-				std::vector<uint8_t> message;
-				net::EncodeState( frame, nullptr, message );
-				packed += message.size();
-				const auto encodeStart = std::chrono::steady_clock::now();
-				net::EncodeState( frame, base, message );
-				encodeMs += MsSince( encodeStart );
-				changed += message.size();
-				most = std::max( most, sent.bytes.size() );
-				mostChange = std::max( mostChange, message.size() );
-				sampled += 1;
-				ByteReader r( message.data(), message.size() );
-				uint32_t tick = 0, baseTick = 0;
-				net::StateFrame back;
-				const bool decoded = net::ReadType( r ) == net::MsgType::State && net::ReadStateHeader( r, tick, baseTick ) &&
-									 baseTick == ( base != nullptr ? base->tick : net::kNoStateBase ) &&
-									 net::DecodeState( r, tick, base, back ) && back.state == frame.state &&
-									 std::memcmp( back.inputs.data(), frame.inputs.data(), sizeof( frame.inputs ) ) == 0;
-				undecoded += decoded ? 0 : 1;
-				if ( base != nullptr )
-				{
-					CountChange( frame.state, base->state, layout, where );
-					counted += 1;
-				}
-				kept.push_back( std::move( frame ) );
-				if ( kept.size() > 32 )
-				{
-					kept.pop_front();
-				}
-			}
-
-			bool same = mirror.ApplyState( sent.bytes.data(), sent.bytes.size(), slot ) && mirror.Tick() == server.Tick() &&
-						mirror.Entities().size() == server.Entities().size();
-			for ( size_t k = 0; same && k < server.Entities().size(); ++k )
-			{
-				const uint32_t netId = server.Entities()[k].netId;
-				const Transform* a = server.EntityTransform( netId );
-				const Transform* b = mirror.EntityTransform( netId );
-				same = mirror.Entities()[k].netId == netId && ( a == nullptr ) == ( b == nullptr ) &&
-					   ( a == nullptr || std::memcmp( &a->position, &b->position, sizeof( b3Vec3 ) ) == 0 );
-			}
-			wrong += same ? 0 : 1;
-			entities = std::max( entities, server.Entities().size() );
+			serverBodies.erase( serverBodies.begin() );
+		}
+		{
+			Sent sent{ i + delay, false, i, frames[i], server.PhysicsHash(), {}, {} };
+			sent.frame.physics = server.PhysicsMade().physics;
+			sent.frame.pushers = server.PhysicsMade().pushers;
+			events += sent.frame.physics.size();
+			pushers += sent.frame.pushers.size();
+			// A frame as a batch of one has it (without the inputs), decoded again.
+			const InputFrame* one = &sent.frame;
+			std::vector<uint8_t> message;
+			net::EncodeFrameBatch( {}, &one, 1, message, false, &sent.checksum );
+			frameBytes += message.size();
+			frameMost = std::max( frameMost, message.size() );
+			ByteReader r( message.data(), message.size() );
+			uint32_t first = 0, count = 0;
+			std::vector<InputFrame> back;
+			std::vector<uint64_t> sums;
+			const bool decoded = net::ReadType( r ) == net::MsgType::FrameBatch && net::ReadFrameBatchHeader( r, first, count ) &&
+								 net::ReadFrameBatchBody( r, {}, first, count, back, &sums ) && back.size() == 1 &&
+								 back[0].commands.size() == sent.frame.commands.size() && back[0].physics == sent.frame.physics &&
+								 back[0].pushers == sent.frame.pushers && sums[0] == sent.checksum;
+			framesWrong += decoded ? 0 : 1;
 			wire.push_back( std::move( sent ) );
 		}
+
 		while ( wire.empty() == false && wire.front().arrives <= i )
 		{
-			client.AddState( wire.front().tick, wire.front().bytes.data(), wire.front().bytes.size(), wire.front().inputs );
+			const Sent& s = wire.front();
+			if ( s.state )
+			{
+				client.AddState( s.tick, s.bytes.data(), s.bytes.size(), s.inputs );
+			}
+			else
+			{
+				client.AddChecksum( s.tick, s.checksum );
+				client.AddFrame( s.frame );
+			}
 			wire.pop_front();
 		}
-		client.Reconcile();
-		// The client ahead of the server by about the delay (a tick a frame, two to catch up).
-		for ( int step = 0; step < 2 && client.CurrentTick() < std::min( server.Tick() + delay + 2, total ); ++step )
+		if ( i + 1 > delay + 2 )
 		{
-			const uint32_t t = client.CurrentTick();
-			if ( client.AdvanceOne( frames[t].inputs[slot] ) == false )
+			client.AdvancePhysics( i + 1 - ( delay + 2 ) );
+			// The first tick the physics differs: what differs, and what the frame had.
+			if ( told == false && client.DesyncTick() != UINT32_MAX && serverBodies.count( client.DesyncTick() ) != 0 )
+			{
+				told = true;
+				const uint32_t t = client.DesyncTick();
+				const auto mine = PhysicsBodies( client.Sim() );
+				const auto& theirs = serverBodies[t];
+				std::printf( "tick %u: the server has %zu bodies in the physics world, the client %zu (at its tick %u); the frame: %zu "
+							 "commands, %zu physics events, %zu pushers\n",
+							 t, theirs.size(), mine.size(), client.PhysicsTick(), frames[t].commands.size(),
+							 t < total ? size_t( 0 ) : size_t( 0 ), size_t( 0 ) );
+				size_t shown = 0;
+				for ( size_t a = 0, b = 0; ( a < theirs.size() || b < mine.size() ) && shown < 12; )
+				{
+					const BodySeen* x = a < theirs.size() ? &theirs[a] : nullptr;
+					const BodySeen* y = b < mine.size() ? &mine[b] : nullptr;
+					if ( x && y && x->netId == y->netId )
+					{
+						if ( !( *x == *y ) )
+						{
+							std::printf( "  %u%s: server (%.4f %.4f %.4f) going (%.3f %.3f %.3f), client (%.4f %.4f %.4f) going (%.3f %.3f %.3f)\n",
+										 x->netId, x->character ? " (a character's)" : "", x->at.x, x->at.y, x->at.z, x->linear.x,
+										 x->linear.y, x->linear.z, y->at.x, y->at.y, y->at.z, y->linear.x, y->linear.y, y->linear.z );
+							shown += 1;
+						}
+						++a;
+						++b;
+					}
+					else if ( y == nullptr || ( x && x->netId < y->netId ) )
+					{
+						std::printf( "  %u: only the server's (%.4f %.4f %.4f)\n", x->netId, x->at.x, x->at.y, x->at.z );
+						shown += 1;
+						++a;
+					}
+					else
+					{
+						std::printf( "  %u: only the client's (%.4f %.4f %.4f)\n", y->netId, y->at.x, y->at.y, y->at.z );
+						shown += 1;
+						++b;
+					}
+				}
+			}
+		}
+		// The own character ahead of the server by about the delay (a tick a frame, two to catch up).
+		for ( int step = 0; step < 2 && client.PredictedTick() < std::min( server.Tick() + delay + 2, total ); ++step )
+		{
+			if ( client.Predict( frames[client.PredictedTick()].inputs[slot] ) == false )
 			{
 				break;
 			}
-			if ( clientSaw[client.CurrentTick()].has == false )
+			if ( clientSaw[client.PredictedTick()].has == false )
 			{
-				ownOf( client.Sim(), clientSaw[client.CurrentTick()] );
+				ownOf( client.Sim(), clientSaw[client.PredictedTick()] );
 			}
 		}
 	}
 
-	uint32_t compared = 0, near = 0;
+	uint32_t compared = 0, nearby = 0;
 	float worst = 0.0f, sum = 0.0f;
 	for ( uint32_t t = 0; t <= total; ++t )
 	{
@@ -382,20 +493,22 @@ int StateModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t delay
 		{
 			const float off = b3Length( b3Sub( serverSaw[t].at, clientSaw[t].at ) );
 			compared += 1;
-			near += off < 0.05f ? 1 : 0;
+			nearby += off < 0.05f ? 1 : 0;
 			sum += off;
 			worst = std::max( worst, off );
 		}
 	}
 	const auto& st = client.GetStats();
 	const double n = double( std::max<size_t>( states, 1 ) );
-	const double s = double( std::max<size_t>( sampled, 1 ) );
-	std::printf( "states       %zu (every 2 ticks), %zu entities at most; %zu applied wrong, %zu not decoded as they were\n", states,
-				 entities, wrong, undecoded );
-	std::printf( "a state      %.0f bytes on average, %zu at most; on the wire whole %.0f, as a change against one %u ticks before %.0f "
-				 "(%zu at most, %.2f ms to make; %.0f kbit/s at 30 a second)\n",
-				 double( bytes ) / n, most, double( packed ) / s, 2 * delay, double( changed ) / s, mostChange, encodeMs / s,
-				 double( changed ) / s * 30.0 * 8.0 / 1000.0 );
+	const double f = double( std::max<uint32_t>( total, 1 ) );
+	std::printf( "frames       %u: %zu physics events, %zu pushers' places; on the wire %.0f bytes on average, %zu at most (%.0f kbit/s "
+				 "at %u a second); %zu not decoded as they were\n",
+				 total, events, pushers, double( frameBytes ) / f, frameMost, double( frameBytes ) / f * replay.Config().tickRate * 8.0 / 1000.0,
+				 unsigned( replay.Config().tickRate ), framesWrong );
+	std::printf( "states       %zu (every 2 ticks): %.0f bytes on average, %zu at most; on the wire whole %.0f, as a change against one "
+				 "%u ticks before %.0f (%zu at most, %.2f ms to make; %.0f kbit/s); %zu not decoded as they were\n",
+				 states, double( bytes ) / n, most, double( packed ) / n, 2 * delay, double( changed ) / n, mostChange, encodeMs / n,
+				 double( changed ) / n * replay.Config().tickRate / 2.0 * 8.0 / 1000.0, undecoded );
 	if ( counted > 0 )
 	{
 		// Before deflating: bytes that differ, by component, in an average change.
@@ -413,15 +526,16 @@ int StateModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t delay
 		}
 		std::printf( "; records whole %.0f; bodies %.0f\n", where.whole / c, where.bodies / c );
 	}
-	std::printf( "the server   a step %.3f ms, a state saved %.3f ms\n", serverMs / std::max( 1.0, double( total ) ), saveMs / n );
-	std::printf( "the client   slot %u, states %u ticks late: a step %.3f ms, a state applied %.3f ms; %" PRIu64 " states taken, %" PRIu64
-				 " overtaken, %" PRIu64 " not states; %.1f ticks run again a state\n",
-				 unsigned( slot ), delay, st.steps > 0 ? double( st.stepNs ) / 1e6 / double( st.steps ) : 0.0,
-				 st.states > 0 ? double( st.applyNs ) / 1e6 / double( st.states ) : 0.0, st.states, st.skipped, st.rejected,
+	std::printf( "the server   a step %.3f ms, a state saved %.3f ms\n", serverMs / f, saveMs / n );
+	std::printf( "the client   slot %u, %u ticks late: its physics %" PRIu64 " ticks, %.3f ms a step, %" PRIu64 " checksums, %" PRIu64
+				 " different (the first at %d); %" PRIu64 " states taken, a state applied %.3f ms, %.1f ticks predicted again a state\n",
+				 unsigned( slot ), delay, st.physicsSteps, st.physicsSteps > 0 ? double( st.physicsNs ) / 1e6 / double( st.physicsSteps ) : 0.0,
+				 st.checksums, st.desyncs, client.DesyncTick() == UINT32_MAX ? -1 : int( client.DesyncTick() ), st.states,
+				 st.states > 0 ? double( st.applyNs ) / 1e6 / double( st.states ) : 0.0,
 				 st.states > 0 ? double( st.resimulatedTicks ) / double( st.states ) : 0.0 );
-	std::printf( "its body     predicted within 5 cm of the server's %u of %u ticks; %.3f m on average, %.3f at most\n", near, compared,
+	std::printf( "its body     predicted within 5 cm of the server's %u of %u ticks; %.3f m on average, %.3f at most\n", nearby, compared,
 				 compared > 0 ? sum / float( compared ) : 0.0f, worst );
-	return wrong == 0 && undecoded == 0 && st.rejected == 0 ? 0 : 2;
+	return framesWrong == 0 && undecoded == 0 && st.rejected == 0 && st.desyncs == 0 ? 0 : 2;
 }
 
 int PrintViewInfo( const char* path )
@@ -475,7 +589,7 @@ int main( int argc, char** argv )
 	{
 		return PrintViewInfo( argv[2] );
 	}
-	const bool state = argc >= 3 && std::strcmp( argv[1], "state" ) == 0;
+	const bool state = argc >= 3 && std::strcmp( argv[1], "hybrid" ) == 0;
 	if ( ( argc != 3 && state == false ) ||
 		 ( state == false && std::strcmp( argv[1], "info" ) != 0 && std::strcmp( argv[1], "verify" ) != 0 ) )
 	{
@@ -512,7 +626,7 @@ int main( int argc, char** argv )
 				delay = uint32_t( std::max( 1, std::atoi( argv[i + 1] ) ) );
 			}
 		}
-		return StateModel( replay, slot, delay );
+		return HybridModel( replay, slot, delay );
 	}
 	return 0;
 }

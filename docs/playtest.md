@@ -87,21 +87,20 @@ shook against the wall".
 | 4.5 | With 32 NPCs: F1 | the frame rate holds; rollbacks do not pile up |
 | 4.6 | After the session: watch its view file to the end (the command is printed) | it plays to the end without a crash |
 
-## 5. The state network model
+## 5. The hybrid network model
 
-`tools\playtest.ps1 -NetModel state` (M245's server-state model, to be replaced by the hybrid:
-ROADMAP step 3; this section changes with it). Then the same with the default (`inputs`) to
-compare.
+`tools\playtest.ps1 -NetModel hybrid` (M248). Then the same with the default (`inputs`) to compare.
 
 | # | Do | Expect |
 |---|---|---|
-| 5.1 | Both join, F1 | `net_model state`; the round trip about 150 ms; rollbacks count up about 30 a second (each a state taken) |
-| 5.2 | A: walk, run, jump, turn | as instant as in the inputs model; no shaking or snapping back (M245) |
+| 5.1 | Both join, F1 | `net_model hybrid`; the round trip about 150 ms; rollbacks count up about 30 a second (each a state taken); checksums count up, no desyncs; the confirmed tick (the physics') 15 to 25 behind the tick |
+| 5.2 | A: walk, run, jump, turn, dash | as instant as in the inputs model; no shaking or snapping back |
 | 5.3 | A punches and shoots B | A's own punches and shots play at once; B is pushed and hurt a round trip later on A's screen (the server decides) |
-| 5.4 | B watches A move | smooth, a little behind (A is drawn where the server last said) |
-| 5.5 | Kill B; a frag at `BrickWall` | the ragdoll and the wall's pieces look the same on both screens |
-| 5.6 | A: walk into `CrateA` | known until M246: A stops against it as against a wall, and it moves a round trip later |
-| 5.7 | Compare with `-NetModel inputs` | write down what felt better or worse |
+| 5.4 | B watches A move | smooth, a little behind (A is drawn where the server had A, at the physics' time) |
+| 5.5 | Kill B; a frag at `BrickWall` | the ragdoll and the wall's pieces look the same on both screens, a little late |
+| 5.6 | A: wade through `BallA`, `BallB`; walk into `CrateA` | the balls scatter a round trip after A reaches them; the crate stops A like a wall |
+| 5.7 | A takes over a body (possess), drops an item, picks one up | no desync; the dropped item lands a round trip later |
+| 5.8 | Compare with `-NetModel inputs` | write down what felt better or worse |
 
 ## After every session
 

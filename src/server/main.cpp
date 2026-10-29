@@ -68,7 +68,7 @@ void Usage()
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
 				 "                 [--map FILE.cbmap | --map NAME] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
 				 "                 [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
-				 "                 [--physics-threads N] [--net-model inputs|state]\n"
+				 "                 [--physics-threads N] [--net-model inputs|hybrid]\n"
 				 "                 [--character NAME [--workshop DIR]] [--quiet]\n" );
 }
 
@@ -226,14 +226,15 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 		if ( arg == "--net-model" && i + 1 < argc )
 		{
 			// How clients' worlds are kept (ROADMAP step 3): every client simulating the whole world
-			// from everyone's inputs, or the server's state sent and only the client's own predicted.
+			// from everyone's inputs, or the hybrid (the physics from the server's events, the characters
+			// the server's, the client's own predicted).
 			const std::string model = argv[++i];
-			if ( model != "inputs" && model != "state" )
+			if ( model != "inputs" && model != "hybrid" )
 			{
-				std::printf( "--net-model is inputs or state, not %s\n", model.c_str() );
+				std::printf( "--net-model is inputs or hybrid, not %s\n", model.c_str() );
 				return false;
 			}
-			o.netModel = model == "state" ? cb::net::NetModel::State : cb::net::NetModel::Inputs;
+			o.netModel = model == "hybrid" ? cb::net::NetModel::Hybrid : cb::net::NetModel::Inputs;
 			continue;
 		}
 		if ( arg == "--record" && i + 1 < argc )

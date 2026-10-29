@@ -138,28 +138,28 @@ not rolled back, not recorded, and a state machine cannot read it.
 ## Netcode
 
 Authoritative server, two network models (`src/net`, `src/client`), the server's choice for
-everyone (`cb_server --net-model inputs|state`; the welcome and the server's info say which;
+everyone (`cb_server --net-model inputs|hybrid`; the welcome and the server's info say which;
 ROADMAP step 3). **Inputs** (the default): what follows below; every client simulates the whole
-world. **State** (M244, M245; to be replaced by the hybrid, in which the physics stays
-deterministic and only its events and the characters' states cross, ROADMAP step 3):
+world. **Hybrid** (M248):
 
-- **The server's state, without the physics engine's**: every second tick the server saves its
-  entities and a description of each body read from Box3D (`Simulation::SaveState`, compact:
-  positions on a 1/1024 m grid, rotations on 1/32768, velocities on 1/256 m/s). No Box3D internals
-  cross (at 32 players the whole simulation state is 760 KB, 670 KB of it contacts, trees and solver
-  caches).
-- **On the wire** (`net/state_codec.h`): the newest state to each client as a change against the
-  newest it acknowledged, lined up entity by entity (unchanged, XOR, whole), a body's description
-  only when its hash is new, then deflated. Unreliable and unordered; the client keeps the newest.
-  Clients with the same base share one encoding.
-- **The client** (`StateSession`): applies the newest state (`Simulation::ApplyState`), then runs its
-  own inputs since that tick again. Its own body and what it carries are simulated; everything else
-  is a **stand-in**: a kinematic body placed where the server has it, which nothing in its step
-  drives. The world's rules (props' lifetimes, glue, breaking, items' events) are the server's
-  alone. No snapshots, no checksums, no desyncs.
-- **Costs** (M245, bots on one machine): client work per frame 1.2 ms against 9.1 at 4 players, 3.8
-  against 37 at 16; download 450 against 387 kbit/s at 4, 1149 against 441 at 16 (sending only what
-  is near comes in M247). Others' effects on you (a shove) arrive a round trip late.
+- **The physics from the server's events**: the frame batches go without the inputs, with each
+  tick's commands, physics events and pushers' places (below) and now and then the physics
+  checksum (`PhysicsHash`). A client's physics (`HybridSession`) runs a few ticks behind the newest
+  frame (twice the jitter and two ticks), each tick stepped once and checked; a mismatch asks for
+  the world again. Nothing is rolled back.
+- **The characters are the server's**: every second tick its characters' state (the characters'
+  side: every entity not in the physics world; `Simulation::SaveState`, compact) as a change
+  against the newest the client acknowledged (`net/state_codec.h`: entity by entity, XOR, deflated).
+  The others are **stand-ins** placed from the newest state not ahead of the physics, so one
+  standing on debris stands on it here too. A state never touches the physics world.
+- **Your own character, predicted** (`Simulation::StepCharacters`): ahead of the server, against the
+  physics world as it is (in the past); made the server's again by each state and its inputs since
+  run again. While the physics steps a past tick, it stands where the server had it then. What
+  the client makes on the characters' side itself takes NetIds of its own (from `0x70000000`).
+- **Costs** (M248, chaotic bots on one machine): client work 2.7 against 5 to 6.5 ms a frame at 4
+  players, 10 against 41 to 115 at 16; download about twice the inputs model's (every character's
+  state to everyone until M250 sends what is near). Your own effect on a body arrives a round trip
+  and the buffer late.
 
 **The physics world's inputs** (M246, both models; `physics_inputs.cpp`): characters read the
 physics world and never write it themselves, so it is a function of its inputs:

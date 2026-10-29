@@ -370,7 +370,8 @@ flecs::entity Simulation::FindEntity( uint32_t netId ) const
 
 flecs::entity Simulation::CreateEntity( bool character )
 {
-	uint32_t netId = character ? m_globals.nextCharacterId++ : m_globals.nextNetId++;
+	// (Following the server's characters, what this simulation makes on their side is its own.)
+	uint32_t netId = character ? ( m_followsServer ? m_localCharacterId++ : m_globals.nextCharacterId++ ) : m_globals.nextNetId++;
 	flecs::entity e = m_world.entity();
 	e.set<NetId>( { netId } );
 	// Each side's NetIds only grow, and the characters' are above the physics world's: a
@@ -960,10 +961,6 @@ void Simulation::LoosenPieces()
 
 void Simulation::BreakWall( flecs::entity target, b3Vec3 blast, float radius, float speed, uint32_t rubbleTicks )
 {
-	if ( m_followsServer )
-	{
-		return; // what breaks is the server's to say (its state brings the pieces)
-	}
 	// The wall: whole (a template with pieces), or a piece of it left standing by a blast before.
 	uint32_t wallId = 0;
 	uint32_t wallTemplate = kNoTemplate;
@@ -2306,8 +2303,18 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	m_drivers.clear();
 	for ( int slot = 0; slot < kMaxPlayers; ++slot )
 	{
-		// (A stand-in is the server's to move: the state model.)
-		if ( const uint32_t netId = m_globals.playerNetIds[slot]; netId != 0 && ( m_followsServer == false || IsStandIn( netId ) == false ) )
+		// (Following the server's characters, the hybrid's: a stand-in is the server's to move, and
+		// only a character on their side is driven: not a body its state has not brought yet, nor one
+		// still in this world's physics, in the past.)
+		auto driven = [this]( uint32_t netId ) {
+			if ( m_followsServer == false )
+			{
+				return true;
+			}
+			const flecs::entity e = FindEntity( netId );
+			return e.is_valid() && StandsIn( e ) == false && CharacterSide( e ) && e.has<Character>();
+		};
+		if ( const uint32_t netId = m_globals.playerNetIds[slot]; netId != 0 && driven( netId ) )
 		{
 			m_drivers.push_back( { netId, frame.inputs[slot], slot } );
 		}
@@ -3195,25 +3202,25 @@ void Simulation::Step( const InputFrame& given )
 		ApplyPhysicsEvents( frame, 0, uint16_t( std::min<size_t>( k + 1, 0xFFFF ) ) );
 	}
 	spent( m_profile.commandsNs );
-	MoveCharacters( frame );
-	ApplyPhysicsEvents( frame, 1 );
-	// (Following a server, the world's rules are its own: simulation.h, ApplyState.)
+	// (Following a server's characters, they are its: StepCharacters moves the own one.)
 	if ( m_followsServer == false )
 	{
-		ExpireProps();
-		EnforcePropCaps();
+		MoveCharacters( frame );
 	}
+	ApplyPhysicsEvents( frame, 1 );
+	ExpireProps();
+	EnforcePropCaps();
 	spent( m_profile.charactersNs );
 
-	if ( m_followsServer == false )
-	{
-		RememberBreakers();
-	}
+	RememberBreakers();
 	PlacePushers( frame );
 	b3World_Step( m_physicsWorld, m_config.TimeStep(), int( m_config.subSteps ) );
 	// (The characters' bodies are kinematic and touch nothing: one substep takes them where their
 	// movers sent them.)
-	b3World_Step( m_characterWorld, m_config.TimeStep(), 1 );
+	if ( m_followsServer == false )
+	{
+		b3World_Step( m_characterWorld, m_config.TimeStep(), 1 );
+	}
 	spent( m_profile.physicsNs );
 	{
 		b3Profile parts = b3World_GetProfile( m_physicsWorld );
@@ -3228,11 +3235,8 @@ void Simulation::Step( const InputFrame& given )
 	}
 
 	CollectImpacts();
-	if ( m_followsServer == false )
-	{
-		BreakGlue();
-		BreakByItems();
-	}
+	BreakGlue();
+	BreakByItems();
 	RunItemEvents();
 	ApplyPhysicsEvents( frame, 2 );
 	m_leaving.clear();
@@ -3244,6 +3248,30 @@ void Simulation::Step( const InputFrame& given )
 	m_profile.steps += 1;
 
 	m_globals.tick += 1;
+}
+
+void Simulation::StepCharacters( uint32_t tick, PlayerSlot slot, const PlayerInput& input )
+{
+	PhysicsArena::Scope scope( *m_arena );
+	// The tick the character is at, ahead of the physics; the physics' own globals kept (a random
+	// number a motion draws is not the physics world's).
+	const SimGlobals kept = m_globals;
+	m_globals.tick = tick;
+	InputFrame frame;
+	frame.tick = tick;
+	if ( slot < kMaxPlayers )
+	{
+		frame.inputs[slot] = input;
+	}
+	MoveCharacters( frame );
+	b3World_Step( m_characterWorld, m_config.TimeStep(), 1 );
+	// What it did to the physics world is the server's to say (its events come in the frames).
+	m_physicsQueue.clear();
+	m_leaving.clear();
+	SyncFromPhysics();
+	FollowHolders();
+	UpdateFootsteps();
+	m_globals = kept;
 }
 
 void Simulation::SerializeEcs( std::vector<uint8_t>& out ) const
