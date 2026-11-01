@@ -2,8 +2,9 @@
 
 // The character mover: a kinematic capsule that walks, jumps and falls by its player's input.
 // Move-and-slide with Box3D's mover casts and plane solver; a pogo spring keeps the capsule
-// hovering above the ground, which carries it over steps and slopes; it pushes the dynamic bodies
-// it touches. Everything it does is a function of the input, the state and the parameters
+// hovering above the ground, which carries it over steps and slopes; it reads the physics world
+// and writes none of it (M246): solid bodies stop it, bodies pushed by characters (its pusher
+// shoves them) are walked through and stood on from above. Everything it does is a function of the input, the state and the parameters
 // (move_params.h), so it runs the same on the server and in every client's prediction.
 
 #include "components.h"

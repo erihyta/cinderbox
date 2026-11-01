@@ -466,6 +466,83 @@ void TestPushers()
 	CHECK( cratePushers == 0 );
 }
 
+// Stood on from above: a crate pushed by characters (light, 8 kg) holds a player dropped onto it,
+// as a solid one does; a ball of 1 kg does not (they are walked through: see TestPushers).
+void TestStandOnPushables()
+{
+	auto pushable = []( const char* name, bool ball, float size, float mass ) {
+		EntityTemplate t;
+		t.name = name;
+		if ( ball )
+		{
+			t.components.push_back( MakeIntComponent( "Shape", { { "kind", int32_t( ShapeKind::Sphere ) } } ) );
+			t.components[0].fields.push_back( MakeComponent( "Shape", { { "radius", size } } ).fields[0] );
+		}
+		else
+		{
+			t.components.push_back( MakeIntComponent( "Shape", { { "kind", int32_t( ShapeKind::Box ) } } ) );
+			AuthoredField f;
+			f.id = Fnv32( "size" );
+			for ( int32_t& raw : f.raw )
+			{
+				raw = MapQuantize( size, kMapPositionScale );
+			}
+			t.components[0].fields.push_back( f );
+		}
+		t.components.push_back( MakeComponent( "Pushable", {} ) );
+		t.components.push_back( MakeIntComponent( "Body", { { "type", 2 } } ) );
+		t.components.push_back( MakeComponent( "Material", { { "mass", mass } } ) );
+		return t;
+	};
+	// The player (slot 0: x 0, z 6) drops from `fall` metres and stands still.
+	auto run = [&]( LevelLayout& map, float fall, uint32_t ticks, std::vector<b3Vec3>* bodies ) {
+		map.spawnCenter = { 5.25f, fall, 6.0f };
+		map.spawnRadius = 2.0f;
+		map.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+		QuantizeLayout( map );
+		Simulation sim( TestConfig(), map );
+		InputFrame f;
+		f.events.push_back( { PlayerEventType::Join, 0 } );
+		for ( uint32_t t = 0; t < ticks; ++t )
+		{
+			f.tick = sim.Tick();
+			sim.Step( f );
+			f.events.clear();
+		}
+		if ( bodies != nullptr )
+		{
+			for ( const auto& r : sim.Entities() )
+			{
+				if ( flecs::entity( sim.World(), r.entity ).has<TemplateRef>() )
+				{
+					bodies->push_back( sim.EntityTransform( r.netId )->position );
+				}
+			}
+		}
+		return sim.EntityTransform( sim.PlayerNetId( 0 ) )->position;
+	};
+
+	// Dropped onto a crate of 0.8 m and 8 kg: it stands on it. Onto a ball of 0.5 m and 1 kg: not.
+	LevelLayout crate;
+	crate.name = "stand_crate";
+	crate.templates.push_back( pushable( "crate", false, 0.8f, 8.0f ) );
+	crate.instances.push_back( { 0, { 0.0f, 0.4f, 6.0f }, 0.0f, 0.0f } );
+	std::vector<b3Vec3> box;
+	const b3Vec3 onCrate = run( crate, 3.5f, 180, &box );
+	LevelLayout flat;
+	flat.name = "stand_flat";
+	const b3Vec3 onFloor = run( flat, 3.5f, 180, nullptr );
+	LevelLayout light;
+	light.name = "stand_light";
+	light.templates.push_back( pushable( "ball", true, 0.5f, 1.0f ) );
+	light.instances.push_back( { 0, { 0.0f, 0.5f, 6.0f }, 0.0f, 0.0f } );
+	const b3Vec3 onBall = run( light, 3.5f, 180, nullptr );
+	std::printf( "    dropped: on the floor the player stands at y %.2f, on the crate (its top at %.2f) at y %.2f, by a ball of 1 kg at y %.2f\n",
+				 onFloor.y, box.empty() ? 0.0f : box[0].y + 0.4f, onCrate.y, onBall.y );
+	CHECK( box.size() == 1 && onCrate.y > onFloor.y + 0.7f );
+	CHECK( onBall.y < onFloor.y + 0.3f );
+}
+
 // Level pieces of every shape, turned any way (map versions 4 and 5): a box rolled upright is a
 // wall, a capsule rolled over lies along X, a sphere is round, a hull (a pyramid) slopes where its
 // points say and turns over with its piece; the turn is Godot's (yaw, then pitch, then roll); they
@@ -13182,6 +13259,7 @@ int main( int argc, char** argv )
 		{ "item_breaks", TestItemBreaks },
 		{ "glue", TestGlue },
 		{ "pushers", TestPushers },
+		{ "stand_on_pushables", TestStandOnPushables },
 		{ "physics_without_characters", TestPhysicsWithoutCharacters },
 		{ "slopes", TestSlopes },
 		{ "templates", TestTemplates },

@@ -63,10 +63,10 @@ bool CollectPlanes( b3ShapeId shapeId, const b3PlaneResult* results, int count, 
 		return true;
 	}
 
-	// Everything a character meets stops it: what it would shove (a body pushed by characters) its
-	// queries never see; its pusher does (M246). How far a shape may push the character out of
-	// itself (it only reads the body: nothing is written): the world, and what is much heavier than
-	// the character, all the way; something loose, by its share of the two weights, so a thrown
+	// Everything a character meets stops it: what it would shove (a body pushed by characters)
+	// these queries never see; its pusher does (M246), and Move stands on it from above (kTopBelow).
+	// How far a shape may push the character out of itself (it only reads the body: nothing is
+	// written): the world, and what is much heavier than the character, all the way; something loose, by its share of the two weights, so a thrown
 	// grenade (0.4 kg against 80) does not shove the player it flies into, while a falling crate of
 	// the player's own weight still does by half.
 	float pushLimit = FLT_MAX;
@@ -86,6 +86,43 @@ bool CollectPlanes( b3ShapeId shapeId, const b3PlaneResult* results, int count, 
 	}
 	return true;
 }
+
+// A body pushed by characters is walked through (its pusher shoves it: M246), but its top is
+// stood on, from above, as a solid body's is: a surface at least this many radii under the bottom
+// sphere's centre (not one the capsule is already in), of a body that weighs at least this share of
+// the character (a crate holds a player up; a ball of a ball pit, 1 kg against 80, does not).
+constexpr float kTopBelow = 0.5f;
+constexpr float kTopWeight = 1.0f / 16.0f;
+
+struct TopContext
+{
+	float nearest; // the least fraction a hit may have
+	float weight; // kg: the least a body may weigh
+	b3RayResult best;
+};
+
+float FindTop( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t, int, int, void* context )
+{
+	auto* ctx = static_cast<TopContext*>( context );
+	b3BodyId other = b3Shape_GetBody( shapeId );
+	if ( fraction < ctx->nearest || b3Body_GetType( other ) != b3_dynamicBody || b3Body_GetMass( other ) < ctx->weight )
+	{
+		return -1.0f; // (passed over)
+	}
+	if ( ctx->best.hit == false || fraction < ctx->best.fraction )
+	{
+		ctx->best = {};
+		ctx->best.shapeId = shapeId;
+		ctx->best.point = point;
+		ctx->best.normal = normal;
+		ctx->best.fraction = fraction;
+		ctx->best.hit = true;
+	}
+	return fraction;
+}
+
+// What a query sees of the bodies pushed by characters (their shapes meet no player's query).
+constexpr b3QueryFilter kPushableFilter = { CatPusher, CatPushable, 0, nullptr };
 
 } // namespace
 
@@ -190,6 +227,13 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	// (The ground is the physics world's: no character stands on another.)
 	const b3WorldId ground = b3World_IsValid( body.scenery ) ? body.scenery : body.world;
 	b3RayResult ray = b3World_CastRayClosest( ground, rayOrigin, { 0.0f, -rayLength, 0.0f }, groundFilter );
+	// A body pushed by characters is stood on from above (walked through from the side).
+	TopContext top = { kTopBelow * body.radius / rayLength, kTopWeight * params[MoveParam::Mass], {} };
+	b3World_CastRay( ground, rayOrigin, { 0.0f, -rayLength, 0.0f }, kPushableFilter, FindTop, &top );
+	if ( top.best.hit && ( ray.hit == false || top.best.fraction < ray.fraction ) )
+	{
+		ray = top.best;
+	}
 
 	// Ground steeper than max_slope does not hold the character up: it slides down it, under gravity,
 	// along the slope the mover's planes give it, and cannot walk or jump up it.

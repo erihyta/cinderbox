@@ -108,7 +108,7 @@ same on every server:
 
 | | Solid (the default) | `pushed_by_characters` (a ball, a can) |
 |---|---|---|
-| A character walking into it | is stopped, and can stand on it | walks through it; its **pusher** (a capsule where it stands, in the physics world) shoves it |
+| A character walking into it | is stopped, and can stand on it | walks through it; its **pusher** (a capsule where it stands, in the physics world) shoves it. From above, it is stood on as a solid one is if it weighs 1/16 of the character or more (an 8 kg crate; not a 1 kg ball) |
 | What moves it | skills, shots, blasts, other bodies | the same, and pushers |
 | A falling one | pushes the character out, by its share of the two weights (a pebble hardly, a crate of the player's weight by half) | passes through the character |
 
@@ -116,6 +116,8 @@ same on every server:
   ragdolls are pushed by characters.
 - Walking does not slow a character against what it pushes: a pusher shoves at its own speed. Heavy
   things are better solid.
+- Balls under half a metre across roll under a standing character's capsule (the default one
+  hovers 0.58 m up), and so under its pusher: in a pit, only the balls on top of others are met.
 - A plain `CbProp` with the flag (no shapes, no meshes) is baked as a template, not into the map's
   simple prop list. `test_ground`'s balls have it (the two by the spawn, the pit's); its crates do not.
 

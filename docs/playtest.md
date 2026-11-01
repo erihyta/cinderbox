@@ -44,7 +44,7 @@ shook against the wall".
 | 1.8 | A: a frag (H) at `BrickWall` | it rolls, goes off after 2.5 s on both screens at once; the wall loses the pieces near it, the same on both screens; the rest stands |
 | 1.9 | Kill B | B falls as a ragdoll, the same on both screens; B comes back after a moment |
 | 1.10 | A: first person (`` ` ``), walk, shoot | the arms and the item in view, steady; shots go where the crosshair is |
-| 1.11 | A: walk into `CrateA`, jump onto it; then walk into `BallA` and `BallB` | the crate stops A as a wall does and does not move; A stands on it. A walks through the balls, which are shoved away, the same on B's screen (M246) |
+| 1.11 | A: walk into `CrateA`, jump onto it; then walk into `BallA` and `BallB` | the crate stops A as a wall does and does not move; A stands on it. A walks into the balls, which are shoved away, the same on B's screen (M246) |
 | 1.12 | A: punch the crate (the fist), then walk into a frag lying on the ground | the punch moves the crate; the frag is kicked aside (an item lying about is pushed by characters) |
 
 ## 2. Bodies
