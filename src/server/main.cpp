@@ -68,7 +68,7 @@ void Usage()
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
 				 "                 [--map FILE.cbmap | --map NAME] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
 				 "                 [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
-				 "                 [--physics-threads N] [--net-model inputs|hybrid]\n"
+				 "                 [--physics-threads N] [--net-model hybrid|inputs]\n"
 				 "                 [--character NAME [--workshop DIR]] [--quiet]\n" );
 }
 
@@ -387,6 +387,9 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 int main( int argc, char** argv )
 {
 	cb::ServerOptions options;
+	// The server's default is the hybrid (since 2026-11-01; ServerOptions' own stays inputs, which the tests
+	// that build a server in place are written for).
+	options.netModel = cb::net::NetModel::Hybrid;
 	std::vector<std::string> modNames;
 	for ( const cb::mods::ModInfo& info : cb::mods::CompiledMods() )
 	{

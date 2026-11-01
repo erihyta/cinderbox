@@ -6,10 +6,11 @@
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Add possess,waves     and mods that are off by default
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Character critter     everyone plays the critter
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Latency 0 -Loss 0     no network trouble
-#   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -NetModel hybrid       the hybrid network model (the
-#                                                                                    physics from the server's events,
-#                                                                                    the characters its states, your
-#                                                                                    own predicted; ROADMAP step 3)
+#   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Move walk_speed=4     a movement parameter (cb_server --move)
+#   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -NetModel inputs       the inputs network model (every
+#                                                                                    game simulates the whole world
+#                                                                                    from everyone's inputs; the
+#                                                                                    default is the hybrid)
 #   powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 -Autoplay 90           nobody at the keys: the games
 #                                                                                    play by themselves, take pictures
 #                                                                                    and quit (non-zero: a desync)
@@ -24,8 +25,9 @@ param(
 	[string]$Mods = "",           # exactly these mods instead (cb_server --mods)
 	[string]$Map = "test_ground", # a map in godot/maps, or "" for the built-in sandbox
 	[string]$Character = "",      # the character everyone plays (cb_server --character)
-	[string]$NetModel = "inputs", # inputs or hybrid (cb_server --net-model)
+	[string]$NetModel = "hybrid", # hybrid or inputs (cb_server --net-model)
 	[string[]]$Option = @(),      # mod options, NAME=VALUE (waves.first=10)
+	[string[]]$Move = @(),        # movement parameters, NAME=VALUE, several with commas (walk_speed=4,jump_speed=8)
 	[int]$Clients = 2,
 	[int]$Bots = 0,               # cb_bot players too
 	[int]$Latency = 75,           # ms added each way: 150 ms round trip
@@ -76,6 +78,7 @@ if ($Mods) { $serverArgs += @("--mods", $Mods) }
 if ($Character) { $serverArgs += @("--character", $Character) }
 if ($NetModel) { $serverArgs += @("--net-model", $NetModel) }
 foreach ($o in $Option) { $serverArgs += @("--mod-option", $o) }
+foreach ($m in ($Move -join ",") -split ",") { if ($m) { $serverArgs += @("--move", $m) } }
 
 Write-Host "== server on $port$(if ($Mods) { " (mods: $Mods)" }), simulator on $relay (+$Latency ms each way, $Loss% lost each way)"
 Write-Host "   recordings and logs: $Out"

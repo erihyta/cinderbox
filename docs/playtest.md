@@ -6,7 +6,7 @@ latency and loss, by one person with two games. Part of the [manual](../README.m
 ## How
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 [-Add MODS] [-Character NAME] [-Option NAME=VALUE]
+powershell -ExecutionPolicy Bypass -File tools\playtest.ps1 [-Add MODS] [-Character NAME] [-Option NAME=VALUE] [-Move NAME=VALUE]
 ```
 
 | It starts | |
@@ -89,7 +89,7 @@ shook against the wall".
 
 ## 5. The hybrid network model
 
-`tools\playtest.ps1 -NetModel hybrid` (M248). Then the same with the default (`inputs`) to compare.
+`tools\playtest.ps1` (the hybrid is the default since 2026-11-01). Then the same with `-NetModel inputs` to compare.
 
 | # | Do | Expect |
 |---|---|---|
