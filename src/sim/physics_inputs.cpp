@@ -377,7 +377,7 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 			for ( int i = 0; i < count; ++i )
 			{
 				b3Filter filter = b3Shape_GetFilter( shapes[i] );
-				filter.categoryBits = event.owner != 0 ? event.owner : uint64_t( CatProp );
+				filter.categoryBits = event.kind != 0 ? event.kind : uint64_t( CatProp );
 				filter.maskBits = CollisionMask( filter.categoryBits );
 				b3Shape_SetFilter( shapes[i], filter, true );
 			}
@@ -391,6 +391,17 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 			e.set<Transform>( { at, turn } );
 			e.set<Velocity>( { vector, { 0.0f, 0.0f, 0.0f } } );
 			DropController( e ); // (self-contained: a follower ran no command that let it go)
+			if ( event.mode == 1 )
+			{
+				Prop prop = e.has<Prop>() ? e.get<Prop>() : Prop{ 0, m_globals.tick, 0 };
+				prop.owner = event.owner;
+				prop.despawnTick = event.ticks;
+				e.set<Prop>( prop );
+			}
+			else
+			{
+				e.remove<Prop>();
+			}
 			IndexesStale();
 			break;
 		}

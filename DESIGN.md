@@ -151,8 +151,9 @@ world. **Hybrid** (M248):
   it runs only what the physics world alone decides (a break, an item into the world, a push on a
   body in it, fields, events); a command about a character (a kill, a possession, an item picked
   up, anything aimed at a player's slot) is skipped: its physics part comes as events, which are
-  self-contained (an `Idle` or `Enter` event lets go of the controller too), its character part
-  in the states. The states come when the link lets them, so a command that read them could do
+  self-contained (an `Idle` or `Enter` event lets go of the controller too; an `Enter` says the
+  prop's owner and end), its character part in the states. The physics world's own rules count
+  only what is in it (the props' caps: a prop someone drives is out of it). The states come when the link lets them, so a command that read them could do
   what the server's did not (found: a body taken over while the states were late crashed the
   client). Tests: every character moved before each physics step, states held back a second, and
   `cb_replay joins` (a client joining a recording every few ticks, with its states late or none).

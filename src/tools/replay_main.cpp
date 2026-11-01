@@ -603,6 +603,7 @@ int Joins( const net::ReplayReader& replay, uint32_t every, uint32_t follow, uin
 	};
 	std::vector<Follower> followers;
 	std::map<uint32_t, std::vector<BodySeen>> serverBodies;
+	std::map<uint32_t, InputFrame> serverFrames; // (with the physics events the server made)
 	uint32_t joins = 0, wrong = 0;
 	std::vector<uint8_t> image;
 	for ( uint32_t i = 0; i < total; ++i )
@@ -645,6 +646,11 @@ int Joins( const net::ReplayReader& replay, uint32_t every, uint32_t follow, uin
 		frame.physics = server.PhysicsMade().physics;
 		frame.pushers = server.PhysicsMade().pushers;
 		const uint64_t checksum = server.PhysicsHash();
+		serverFrames[i] = frame;
+		while ( serverFrames.size() > follow + 4 )
+		{
+			serverFrames.erase( serverFrames.begin() );
+		}
 		for ( Follower& f : followers )
 		{
 			f.client->AddChecksum( i, checksum );
@@ -658,6 +664,20 @@ int Joins( const net::ReplayReader& replay, uint32_t every, uint32_t follow, uin
 											 {
 												 wrong += 1;
 												 std::printf( "join at %u: its physics differs at tick %u\n", f.joined, t );
+												 if ( wrong == 1 && serverFrames.count( t ) != 0 )
+												 {
+													 // (The first: what that tick's frame had.)
+													 for ( const SimCommand& c : serverFrames[t].commands )
+													 {
+														 std::printf( "  command %d target %x other %x mode %d index %d value %d\n", int( c.type ), c.target,
+																	  c.other, int( c.mode ), int( c.index ), c.value );
+													 }
+													 for ( const PhysicsEvent& e : serverFrames[t].physics )
+													 {
+														 std::printf( "  event %d netId %x made %x owner %x after %d phase %d kind %d\n", int( e.type ), e.netId,
+																	  e.made, e.owner, int( e.after ), int( e.phase ), int( e.kind ) );
+													 }
+												 }
 												 const auto mine = PhysicsBodies( f.client->Sim() );
 												 const auto& theirs = serverBodies[t];
 												 size_t shown = 0;
@@ -679,12 +699,56 @@ int Joins( const net::ReplayReader& replay, uint32_t every, uint32_t follow, uin
 													 else if ( y == nullptr || ( x && x->netId < y->netId ) )
 													 {
 														 std::printf( "  %x: only the server's (%.4f %.4f %.4f)\n", x->netId, x->at.x, x->at.y, x->at.z );
+													 const flecs::entity ce = f.client->Sim().FindEntity( y->netId );
+													 const uint32_t theOwner = ce.is_valid() && ce.has<Prop>() ? ce.get<Prop>().owner : 0;
+													 for ( Simulation* sim : { &server, &f.client->Sim() } )
+													 {
+														 const flecs::entity e = sim->FindEntity( x->netId );
+														 const PhysicsBody* pb = e.is_valid() ? e.try_get<PhysicsBody>() : nullptr;
+														 std::printf( "    %s: %s%s%s%s%s%s world %d\n", sim == &server ? "server" : "client",
+																	  e.is_valid() ? "there" : "gone", e.is_valid() && e.has<Character>() ? " Character" : "",
+																	  e.is_valid() && e.has<IdleBody>() ? " IdleBody" : "", e.is_valid() && e.has<Prop>() ? " Prop" : "",
+																	  e.is_valid() && e.has<DrivenProp>() ? " DrivenProp" : "",
+																	  e.is_valid() && e.has<HeldItem>() ? " HeldItem" : "", pb != nullptr ? int( pb->body.world0 ) : -1 );
+													 }
 														 shown += 1;
 														 ++a;
 													 }
 													 else
 													 {
 														 std::printf( "  %x: only the client's (%.4f %.4f %.4f)\n", y->netId, y->at.x, y->at.y, y->at.z );
+													 const flecs::entity ce = f.client->Sim().FindEntity( y->netId );
+													 const uint32_t theOwner = ce.is_valid() && ce.has<Prop>() ? ce.get<Prop>().owner : 0;
+													 for ( Simulation* sim : { &server, &f.client->Sim() } )
+													 {
+														 const flecs::entity e = sim->FindEntity( y->netId );
+														 const PhysicsBody* pb = e.is_valid() ? e.try_get<PhysicsBody>() : nullptr;
+														 const Prop* prop = e.is_valid() ? e.try_get<Prop>() : nullptr;
+														 const HeldItem* held = e.is_valid() ? e.try_get<HeldItem>() : nullptr;
+														 std::printf( "    %s: %s%s%s%s world %d; prop owner %x since %u until %u; held by %x\n",
+																	  sim == &server ? "server" : "client", e.is_valid() ? "there" : "gone",
+																	  e.is_valid() && e.has<Character>() ? " Character" : "",
+																	  e.is_valid() && e.has<IdleBody>() ? " IdleBody" : "",
+																	  e.is_valid() && e.has<StandIn>() ? " StandIn" : "", pb != nullptr ? int( pb->body.world0 ) : -1,
+																	  prop ? prop->owner : 0, prop ? prop->spawnTick : 0, prop ? prop->despawnTick : 0,
+																	  held ? held->holder : 0 );
+														 if ( theOwner != 0 )
+														 {
+															 std::printf( "      its owner's props here:" );
+															 for ( const auto& r : sim->Entities() )
+															 {
+																 const flecs::entity o( sim->World(), r.entity );
+																 const Prop* op = o.try_get<Prop>();
+																 const PhysicsBody* opb = o.try_get<PhysicsBody>();
+																 if ( op != nullptr && op->owner == theOwner )
+																 {
+																	 std::printf( " %x(w%d%s)", r.netId, opb ? int( opb->body.world0 ) : -1,
+																				  o.has<Character>() ? " C" : "" );
+																 }
+															 }
+															 std::printf( "\n" );
+														 }
+													 }
 														 shown += 1;
 														 ++b;
 													 }

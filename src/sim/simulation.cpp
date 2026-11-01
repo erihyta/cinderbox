@@ -2179,7 +2179,15 @@ void Simulation::ReleaseProp( flecs::entity e )
 	enter.type = PhysicsEventType::Enter;
 	enter.netId = e.get<NetId>().value;
 	DescribeBody( body, enter.body );
-	enter.owner = prop.category != 0 ? prop.category : uint32_t( CatProp );
+	enter.kind = uint16_t( prop.category != 0 ? prop.category : uint32_t( CatProp ) );
+	// (A prop's owner and end, the physics world's to count: a client has its character's only
+	// when a state comes.)
+	if ( const Prop* p = e.try_get<Prop>() )
+	{
+		enter.mode = 1;
+		enter.owner = p->owner;
+		enter.ticks = p->despawnTick;
+	}
 	enter.at = { origin.x, origin.y, origin.z };
 	enter.turn[0] = upright.v.x;
 	enter.turn[1] = upright.v.y;
@@ -2816,6 +2824,9 @@ void Simulation::EnforcePropCaps()
 	// Spawned props in NetId order == spawn order, so the front of each list is the oldest. Counted
 	// by the owner's NetId: the body that spawned them, whoever drives it now (a body a player left,
 	// one a mod drives, has no slot to count them by).
+	// Only those in the physics world: a rule of the physics world reads nothing of the characters'
+	// (a client following the physics has a prop just taken over out of it by the TakeOver event,
+	// and its character only when a state comes).
 	std::vector<std::pair<uint32_t, uint32_t>> perOwner; // owner NetId, how many
 	auto countOf = [&]( uint32_t owner ) -> uint32_t& {
 		for ( auto& [id, count] : perOwner )
@@ -2836,9 +2847,9 @@ void Simulation::EnforcePropCaps()
 	{
 		const flecs::entity prop( m_world, r.entity );
 		const Prop* p = prop.try_get<Prop>();
-		if ( p == nullptr || p->owner == 0 || prop.has<Character>() )
+		if ( p == nullptr || p->owner == 0 || PhysicsSide( prop ) == false )
 		{
-			continue; // (a prop someone drives is a body, not a prop to count)
+			continue; // (a prop someone drives is a body, not a prop to count: the characters')
 		}
 		total += 1;
 		// (By the owner's NetId alone, whether or not it is still here: the physics world's rules
@@ -2851,9 +2862,9 @@ void Simulation::EnforcePropCaps()
 	{
 		const flecs::entity prop( m_world, r.entity );
 		const Prop* p = prop.try_get<Prop>();
-		if ( p == nullptr || p->owner == 0 || prop.has<Character>() )
+		if ( p == nullptr || p->owner == 0 || PhysicsSide( prop ) == false )
 		{
-			continue; // (a prop someone drives is a body, not a prop to count)
+			continue; // (a prop someone drives is a body, not a prop to count: the characters')
 		}
 
 		uint32_t* ownerCount = &countOf( p->owner );
