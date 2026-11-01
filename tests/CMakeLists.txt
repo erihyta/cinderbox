@@ -21,3 +21,12 @@ endif()
 foreach(name protocol map_sync loopback_session late_join reconnect physics_alone state_codec hybrid_session hybrid_lossy hybrid_reconnect hybrid_own_throw grace_expiry lossy_session mods_session stall_recovery names deathmatch character_item characters any_skeleton possession possess_prop inventory_bodies npc leave_after_firing chaos chaos_hybrid combat_npc map_body navigation npc_items waves waves_cost item_shapes item_parts level_query sneak move_params dash grenade frag frag_breaks cannon chest shop brawl flight grapple headshot flinch gun_npc pistol_mark rifle gun_swap combat private_fields melee melee_pitch aim_views pickup inventory item_layers item_poses items_replaced sprint_swing view_sources chat server_info)
 	add_test(NAME net_${name} COMMAND cb_net_tests ${name})
 endforeach()
+
+# The hybrid's clients joining the chaos session's recording every few ticks, with the characters'
+# states late or never there: their physics is the server's (cb_replay joins; the client's physics
+# reads no character).
+set_tests_properties(net_chaos_hybrid PROPERTIES ENVIRONMENT "CB_CHAOS_REPLAY=${CMAKE_CURRENT_BINARY_DIR}/chaos_hybrid.cbr"
+	FIXTURES_SETUP chaos_hybrid_recording)
+add_test(NAME replay_joins COMMAND cb_replay joins ${CMAKE_CURRENT_BINARY_DIR}/chaos_hybrid.cbr --every 10 --follow 300 --state-lag 30)
+add_test(NAME replay_joins_no_states COMMAND cb_replay joins ${CMAKE_CURRENT_BINARY_DIR}/chaos_hybrid.cbr --every 10 --follow 300 --no-states 1)
+set_tests_properties(replay_joins replay_joins_no_states PROPERTIES FIXTURES_REQUIRED chaos_hybrid_recording)

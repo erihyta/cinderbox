@@ -35,7 +35,7 @@ shook against the wall".
 | # | Do | Expect |
 |---|---|---|
 | 1.1 | Both join | each sees the other, with names; F1's round trip about 150 ms |
-| 1.2 | A: the fist (1), click three times at B | two jabs and a finisher on A's screen at once, each hitting when the fist is out (not on the click), each played out before the next even when the button is spammed; B is pushed and loses health, the finisher throws B; B sees A's punches a little late but without jumps |
+| 1.2 | A: the fist (1), click three times at B | two jabs and a finisher on A's screen at once, each hitting when the fist is out (not on the click), each played out before the next even when the button is spammed; B is pushed and loses health, the finisher tosses B as a ragdoll and B gets up where it lands (guarding: only pushed); B sees A's punches a little late but without jumps |
 | 1.3 | A: dash strike (2), uppercut (3), slam (4, in the air) at B | each moves A at once; the slam's shockwave throws B; B's health drops |
 | 1.4 | B: guard (hold 5) while A jabs | B slows; the jab takes a quarter |
 | 1.5 | A: a skill again while it cools down, then F1 | the skill does not start; F1 says why (its cooldown or its `if`) (M215) |

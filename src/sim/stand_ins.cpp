@@ -391,6 +391,52 @@ bool Simulation::CharacterSide( flecs::entity e ) const
 	return held != nullptr && held->holder != 0;
 }
 
+uint32_t Simulation::ScrambleCharacters( uint32_t seed, float metres )
+{
+	uint32_t moved = 0;
+	PhysicsArena::Scope scope( *m_arena );
+	uint32_t x = seed * 2654435761u + 1u;
+	auto next = [&]() {
+		x ^= x << 13;
+		x ^= x >> 17;
+		x ^= x << 5;
+		return float( x & 0xFFFFu ) / 65535.0f * 2.0f - 1.0f; // (-1 to 1)
+	};
+	for ( const EntityRef& r : m_entities )
+	{
+		flecs::entity e( m_world, r.entity );
+		const PhysicsBody* pb = e.try_get<PhysicsBody>();
+		if ( pb == nullptr || CharacterSide( e ) == false || e.has<Transform>() == false )
+		{
+			continue;
+		}
+		Transform t = e.get<Transform>();
+		t.position = b3Add( t.position, b3Vec3{ metres * next(), metres * next(), metres * next() } );
+		const b3Vec3 v = { 5.0f * next(), 5.0f * next(), 5.0f * next() };
+		e.set<Transform>( t );
+		if ( const Velocity* vel = e.try_get<Velocity>() )
+		{
+			Velocity moved = *vel;
+			moved.linear = v;
+			e.set<Velocity>( moved );
+		}
+		if ( const Character* c = e.try_get<Character>() )
+		{
+			Character moved = *c;
+			moved.velocity = v;
+			e.set<Character>( moved );
+		}
+		const b3BodyId body = BodyOf( *pb );
+		if ( b3Body_IsValid( body ) )
+		{
+			b3Body_SetTransform( body, t.position, t.rotation );
+			b3Body_SetLinearVelocity( body, v );
+		}
+		moved += 1;
+	}
+	return moved;
+}
+
 void Simulation::SaveState( std::vector<uint8_t>& out, bool compact, uint32_t only )
 {
 	PhysicsArena::Scope scope( *m_arena );

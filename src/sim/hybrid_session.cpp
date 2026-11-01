@@ -64,6 +64,11 @@ void HybridSession::AddFrame( const InputFrame& frame )
 
 void HybridSession::AddState( uint32_t tick, const uint8_t* data, size_t size, const std::array<PlayerInput, kMaxPlayers>& inputs )
 {
+	if ( m_stateLag > 0 && m_releasing == false )
+	{
+		m_lagged.push_back( { m_sim->Tick() + m_stateLag, tick, std::vector<uint8_t>( data, data + size ), inputs } );
+		return;
+	}
 	if ( m_states.count( tick ) != 0 || ( m_placed != UINT32_MAX && tick < m_placed ) )
 	{
 		return;
@@ -123,6 +128,21 @@ uint32_t HybridSession::AdvancePhysics( uint32_t upTo )
 	while ( m_started && m_sim->Tick() < upTo )
 	{
 		const uint32_t tick = m_sim->Tick();
+		if ( m_lagged.empty() == false )
+		{
+			// (Tests: the states held back until now.)
+			m_releasing = true;
+			for ( const Lagged& l : m_lagged )
+			{
+				if ( l.release <= tick )
+				{
+					AddState( l.tick, l.bytes.data(), l.bytes.size(), l.inputs );
+				}
+			}
+			m_releasing = false;
+			m_lagged.erase( std::remove_if( m_lagged.begin(), m_lagged.end(), [tick]( const Lagged& l ) { return l.release <= tick; } ),
+							m_lagged.end() );
+		}
 		auto frame = m_frames.find( tick );
 		if ( frame == m_frames.end() )
 		{
@@ -139,6 +159,10 @@ uint32_t HybridSession::AdvancePhysics( uint32_t upTo )
 		{
 			m_sim->ApplyState( placed->second.bytes.data(), placed->second.bytes.size(), m_localSlot, Simulation::StateApply::Own );
 		}
+		if ( m_scramble > 0.0f )
+		{
+			m_stats.scrambled += m_sim->ScrambleCharacters( tick, m_scramble );
+		}
 		auto start = std::chrono::steady_clock::now();
 		m_sim->Step( frame->second );
 		m_stats.physicsNs += NsSince( start );
@@ -147,7 +171,7 @@ uint32_t HybridSession::AdvancePhysics( uint32_t upTo )
 		MatchLaunches( frame->second );
 		// The others where the server had them at the tick reached (and not where this tick's
 		// commands put them: what a command does to a character is in the server's state).
-		PlaceOthers( m_sim->Tick(), frame->second.commands.empty() == false );
+		PlaceOthers( m_sim->Tick(), frame->second.commands.empty() == false || m_scramble > 0.0f );
 		m_frames.erase( frame );
 		stepped += 1;
 

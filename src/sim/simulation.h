@@ -254,6 +254,11 @@ public:
 		return m_followsServer;
 	}
 	bool IsStandIn( uint32_t netId ) const;
+	// For tests of the hybrid: every body on the characters' side (characters, what they hold, a
+	// driven prop) moved by up to `metres` and given a velocity of its own, from `seed`. A follower's
+	// physics world must not change at all for it (the physics reads no character: it is given the
+	// pushers' places and the events).
+	uint32_t ScrambleCharacters( uint32_t seed, float metres ); // (how many it moved)
 	// The hybrid's prediction: `slot`'s character (the one that is not a stand-in) and what it holds
 	// do tick `tick` with `input`, against the physics world as it is (in the past: the physics is
 	// stepped by Step(), and nothing here changes it; what the character does to it is the
@@ -668,6 +673,8 @@ private:
 	void ApplyEvents( const InputFrame& frame );
 	void ApplyCommands( const InputFrame& frame );
 	void ApplyCommand( const SimCommand& command );
+	bool FollowerSkips( const SimCommand& command ) const;
+	void DropController( flecs::entity e ); // (a body nobody drives, or a prop, again)
 	// A Spawn physics event's prop (the mod's SpawnProp, its owner a NetId).
 	void SpawnProp( const SimCommand& command );
 	uint32_t ResolveTarget( uint32_t target ) const;

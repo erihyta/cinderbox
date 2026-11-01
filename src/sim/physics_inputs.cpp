@@ -349,6 +349,7 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 			if ( stillHers )
 			{
 				e.remove<PhysicsBody>();
+				e.remove<IdleBody>(); // (a body taken over: its controller is the characters', in a state)
 				if ( e.has<HeldItem>() )
 				{
 					// (An item picked up: nothing of the world's left on it.)
@@ -376,7 +377,7 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 			for ( int i = 0; i < count; ++i )
 			{
 				b3Filter filter = b3Shape_GetFilter( shapes[i] );
-				filter.categoryBits = event.owner != 0 ? event.owner : uint64_t( CatProp );
+				filter.categoryBits = event.kind != 0 ? event.kind : uint64_t( CatProp );
 				filter.maskBits = CollisionMask( filter.categoryBits );
 				b3Shape_SetFilter( shapes[i], filter, true );
 			}
@@ -389,6 +390,18 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 			e.set<PhysicsBody>( MakePhysicsBody( body, first ) );
 			e.set<Transform>( { at, turn } );
 			e.set<Velocity>( { vector, { 0.0f, 0.0f, 0.0f } } );
+			DropController( e ); // (self-contained: a follower ran no command that let it go)
+			if ( event.mode == 1 )
+			{
+				Prop prop = e.has<Prop>() ? e.get<Prop>() : Prop{ 0, m_globals.tick, 0 };
+				prop.owner = event.owner;
+				prop.despawnTick = event.ticks;
+				e.set<Prop>( prop );
+			}
+			else
+			{
+				e.remove<Prop>();
+			}
 			IndexesStale();
 			break;
 		}
@@ -407,6 +420,7 @@ void Simulation::ApplyPhysicsEvent( PhysicsEvent& event )
 			e.set<Transform>( t );
 			e.set<Velocity>( { vector, { 0.0f, 0.0f, 0.0f } } );
 			e.set<Shape>( shape );
+			DropController( e ); // (self-contained: a follower ran no command that let it go)
 			e.set<IdleBody>( { event.kind, 0 } );
 			IndexesStale();
 			break;

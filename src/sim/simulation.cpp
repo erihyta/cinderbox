@@ -1962,9 +1962,17 @@ void Simulation::MakeIdle( flecs::entity e )
 	m_physicsQueue.push_back( std::move( idle ) );
 	e.set<Transform>( t );
 	e.set<Velocity>( { c.velocity, { 0.0f, 0.0f, 0.0f } } );
+	DropController( e );
+	e.set<IdleBody>( { character, 0 } );
+}
+
+void Simulation::DropController( flecs::entity e )
+{
 	// The controller goes: its state, its animation, whatever its motions had going.
 	e.remove<Character>();
 	e.remove<CharacterKind>();
+	e.remove<DrivenProp>();
+	e.remove<ModDriven>();
 	e.remove<MotionHold>();
 	e.remove<MoveEffects>();
 	e.remove<MoveValues>();
@@ -1973,7 +1981,6 @@ void Simulation::MakeIdle( flecs::entity e )
 	{
 		ecs_remove_id( m_world.c_ptr(), e.id(), m_motionId );
 	}
-	e.set<IdleBody>( { character, 0 } );
 }
 
 void Simulation::MakeDriven( flecs::entity e, PlayerSlot slot )
@@ -2172,7 +2179,15 @@ void Simulation::ReleaseProp( flecs::entity e )
 	enter.type = PhysicsEventType::Enter;
 	enter.netId = e.get<NetId>().value;
 	DescribeBody( body, enter.body );
-	enter.owner = prop.category != 0 ? prop.category : uint32_t( CatProp );
+	enter.kind = uint16_t( prop.category != 0 ? prop.category : uint32_t( CatProp ) );
+	// (A prop's owner and end, the physics world's to count: a client has its character's only
+	// when a state comes.)
+	if ( const Prop* p = e.try_get<Prop>() )
+	{
+		enter.mode = 1;
+		enter.owner = p->owner;
+		enter.ticks = p->despawnTick;
+	}
 	enter.at = { origin.x, origin.y, origin.z };
 	enter.turn[0] = upright.v.x;
 	enter.turn[1] = upright.v.y;
@@ -2182,16 +2197,7 @@ void Simulation::ReleaseProp( flecs::entity e )
 	m_physicsQueue.push_back( std::move( enter ) );
 	e.set<Transform>( { origin, upright } );
 	e.set<Velocity>( { c.velocity, { 0.0f, 0.0f, 0.0f } } );
-	e.remove<Character>();
-	e.remove<DrivenProp>();
-	e.remove<MotionHold>();
-	e.remove<MoveEffects>();
-	e.remove<MoveValues>();
-	ecs_remove_id( m_world.c_ptr(), e.id(), m_animId );
-	if ( m_motionId != 0 )
-	{
-		ecs_remove_id( m_world.c_ptr(), e.id(), m_motionId );
-	}
+	DropController( e );
 }
 
 
@@ -2818,6 +2824,9 @@ void Simulation::EnforcePropCaps()
 	// Spawned props in NetId order == spawn order, so the front of each list is the oldest. Counted
 	// by the owner's NetId: the body that spawned them, whoever drives it now (a body a player left,
 	// one a mod drives, has no slot to count them by).
+	// Only those in the physics world: a rule of the physics world reads nothing of the characters'
+	// (a client following the physics has a prop just taken over out of it by the TakeOver event,
+	// and its character only when a state comes).
 	std::vector<std::pair<uint32_t, uint32_t>> perOwner; // owner NetId, how many
 	auto countOf = [&]( uint32_t owner ) -> uint32_t& {
 		for ( auto& [id, count] : perOwner )
@@ -2838,9 +2847,9 @@ void Simulation::EnforcePropCaps()
 	{
 		const flecs::entity prop( m_world, r.entity );
 		const Prop* p = prop.try_get<Prop>();
-		if ( p == nullptr || p->owner == 0 || prop.has<Character>() )
+		if ( p == nullptr || p->owner == 0 || PhysicsSide( prop ) == false )
 		{
-			continue; // (a prop someone drives is a body, not a prop to count)
+			continue; // (a prop someone drives is a body, not a prop to count: the characters')
 		}
 		total += 1;
 		// (By the owner's NetId alone, whether or not it is still here: the physics world's rules
@@ -2853,9 +2862,9 @@ void Simulation::EnforcePropCaps()
 	{
 		const flecs::entity prop( m_world, r.entity );
 		const Prop* p = prop.try_get<Prop>();
-		if ( p == nullptr || p->owner == 0 || prop.has<Character>() )
+		if ( p == nullptr || p->owner == 0 || PhysicsSide( prop ) == false )
 		{
-			continue; // (a prop someone drives is a body, not a prop to count)
+			continue; // (a prop someone drives is a body, not a prop to count: the characters')
 		}
 
 		uint32_t* ownerCount = &countOf( p->owner );
@@ -3724,10 +3733,48 @@ void Simulation::ApplyCommands( const InputFrame& frame )
 	}
 }
 
+bool Simulation::FollowerSkips( const SimCommand& command ) const
+{
+	// Following another's physics (the hybrid's client), the characters' side is the server's states,
+	// which come when the link lets them: older than the physics, by a varying amount. A command that
+	// reads a character (who a slot drives, what a player holds, where it stands) would act on that
+	// and could do to the physics what the server's did not (and its checks could fail: a body taken
+	// over the client does not know of yet). So only what the physics world alone decides runs: the
+	// rest is a character's, and comes in the states; what it did to the physics world comes in the
+	// physics events (M247). What a target is, physics world or not, is the same here as on the
+	// server at this tick: that is decided by the physics events alone.
+	if ( ( command.target & kSlotTargetBit ) != 0 && command.type != CommandType::SpawnBody )
+	{
+		return true; // (a player's slot: the characters')
+	}
+	switch ( command.type )
+	{
+		case CommandType::SetField:
+		case CommandType::Event:
+		case CommandType::Break:
+		case CommandType::SpawnBody: // (its body, not who possesses it: ApplyCommand)
+			return false;
+		case CommandType::SpawnItem:
+			return command.target != 0; // (into the world: the physics'; to a holder: the characters')
+		case CommandType::Destroy:
+		case CommandType::Impulse:
+		{
+			const flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+			return e.is_valid() == false || PhysicsSide( e ) == false;
+		}
+		default:
+			return true;
+	}
+}
+
 void Simulation::ApplyCommand( const SimCommand& command )
 {
 	// A server never sends these, but a bad value must not reach Box3D on anyone's machine.
 	if ( IsFinite( command.a ) == false || IsFinite( command.b ) == false || IsFinite( command.c ) == false )
+	{
+		return;
+	}
+	if ( m_followsPhysics && FollowerSkips( command ) )
 	{
 		return;
 	}
@@ -3777,7 +3824,9 @@ void Simulation::ApplyCommand( const SimCommand& command )
 		{
 			const float yaw = detmath::YawToRadians( uint16_t( command.value & 0xFFFF ) );
 			flecs::entity body = CreateIdleBody( command.index, ToVec( command.a ), yaw, { 0.0f, 0.0f, 0.0f } );
-			if ( command.target & kSlotTargetBit )
+			// (Following another's physics: who possesses it is the characters', its body's leaving the
+			// physics world an event: FollowerSkips.)
+			if ( ( command.target & kSlotTargetBit ) && m_followsPhysics == false )
 			{
 				const uint32_t slot = command.target & ~kSlotTargetBit;
 				if ( slot < uint32_t( kMaxPlayers ) )

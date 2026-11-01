@@ -4067,7 +4067,7 @@ void TestShop()
 
 // The brawler's kit (the brawl mod, step 5's measure): bot A walks up to bot B and goes through it,
 // the skills by their slots' keys (2 to 5: the fist stays in the hand all the while):
-// three jabs (the third a finisher), a dash strike pressed twice (the second within its 3 s does
+// three jabs (the third a finisher, which tosses B: A walks to where it got up), a dash strike pressed twice (the second within its 3 s does
 // nothing), an uppercut, a jump and a ground slam that lands beside B, and a jab while B guards
 // (a quarter of the damage). What each did is counted by its events on the server; B's damage by
 // combat.damage. Nothing is corrected on either client.
@@ -4106,23 +4106,23 @@ void TestBrawl()
 		}
 		in.actions = tick >= 280 && tick < 290 ? kKeySlot1 : 0; // the fist out
 		auto at_ = [&]( uint32_t when ) { return tick >= when && tick < when + 3; };
-		if ( at_( 320 ) || at_( 345 ) || at_( 370 ) || at_( 1010 ) )
+		if ( at_( 320 ) || at_( 345 ) || at_( 370 ) || at_( 1610 ) )
 		{
 			in.actions |= kKeyUse; // jab, jab, finisher; and the jab on a guard
 		}
-		if ( at_( 520 ) || at_( 560 ) )
+		if ( at_( 1120 ) || at_( 1160 ) )
 		{
 			in.slotKeys |= dashKey; // the second within the 3 s: nothing
 		}
-		if ( at_( 700 ) )
+		if ( at_( 1300 ) )
 		{
 			in.slotKeys |= upperKey;
 		}
-		if ( at_( 860 ) )
+		if ( at_( 1460 ) )
 		{
 			in.buttons |= BtnJump;
 		}
-		if ( at_( 880 ) )
+		if ( at_( 1480 ) )
 		{
 			in.slotKeys |= slamKey;
 		}
@@ -4133,15 +4133,21 @@ void TestBrawl()
 	// B stands; it guards around the last jab.
 	b.script = [=]( uint32_t tick ) {
 		PlayerInput in;
-		in.slotKeys = tick >= 990 && tick < 1040 ? guardKey : 0;
+		in.slotKeys = tick >= 1590 && tick < 1640 ? guardKey : 0;
 		return in;
 	};
 	std::map<int, int> count;
 	std::vector<int32_t> damages;
-	uint32_t seen = 0;
+	uint32_t seen = 0, downFrom = 0, downTo = 0;
 	h.server.SetTickObserver( [&] {
 		const SimGlobals& g = server.Globals();
 		uint32_t victim = server.PlayerNetId( b.client->Slot() );
+		// The finisher tosses B (its ragdoll), and B gets up again.
+		if ( flecs::entity be = server.FindEntity( victim ); be.is_valid() && be.has<Downed>() )
+		{
+			downFrom = downFrom == 0 ? server.Tick() : downFrom;
+			downTo = server.Tick();
+		}
 		for ( ; seen < g.modEventCount; ++seen )
 		{
 			const ModEventRecord& e = g.modEvents[seen % kModEventHistory];
@@ -4152,7 +4158,7 @@ void TestBrawl()
 			}
 		}
 	} );
-	h.RunUntil( 18.5 );
+	h.RunUntil( 29.0 );
 	h.server.SetTickObserver( {} );
 	h.Report();
 	std::string list;
@@ -4160,8 +4166,10 @@ void TestBrawl()
 	{
 		list += " " + std::to_string( d );
 	}
-	std::printf( "    jabs %d, finishers %d, dash strikes started %d (pressed twice), hit %d, uppercuts %d, slams landed %d; B's damage:%s\n",
-				 count[jab], count[finisher], count[dashStarted], count[dashHit], count[upperHit], count[landed], list.c_str() );
+	std::printf( "    jabs %d, finishers %d, dash strikes started %d (pressed twice), hit %d, uppercuts %d, slams landed %d; B's damage:%s; B down "
+				 "from tick %u to %u\n",
+				 count[jab], count[finisher], count[dashStarted], count[dashHit], count[upperHit], count[landed], list.c_str(), downFrom, downTo );
+	CHECK( downFrom > 370 && downFrom < 420 && downTo < 1120 ); // (tossed by the finisher, up before the dash strike)
 	CHECK( count[jab] == 3 && count[finisher] == 1 );
 	CHECK( count[dashStarted] == 1 && count[dashHit] == 1 && count[upperHit] == 1 && count[landed] == 1 );
 	// 8, 8, 20, 15, 18, 25, and the guarded jab: 2.
@@ -5205,7 +5213,8 @@ void RunChaos( bool hybrid )
 	std::vector<std::unique_ptr<mods::ServerMod>> extra;
 	extra.push_back( std::make_unique<ChaosMod>() );
 	const std::string root = CB_SOURCE_DIR;
-	Harness h( hybrid ? 47948 : 47922, {}, {}, { { "test.mods", "cannon,flight,grenade,sneak,possess" } },
+	const char* record = std::getenv( "CB_CHAOS_REPLAY" ); // (a recording of it, for cb_replay)
+	Harness h( hybrid ? 47948 : 47922, record != nullptr ? record : "", {}, { { "test.mods", "cannon,flight,grenade,sneak,possess" } },
 			   [&]( ServerOptions& options ) {
 				   options.netModel = hybrid ? net::NetModel::Hybrid : net::NetModel::Inputs;
 				   const char* view = std::getenv( "CB_CHAOS_VIEW" ); // (a view file of it, for the game)
@@ -5287,10 +5296,23 @@ void RunChaos( bool hybrid )
 		mostRagdolls = std::max( mostRagdolls, ragdolls );
 		mostProps = std::max( mostProps, props );
 	} );
-	h.RunUntil( 10.0 );
+	// The hybrid: every client's characters somewhere else before each of its physics steps, and the
+	// second bot's states a second late (a slow link: its characters' side older than its physics).
+	// The client's physics reads no character: its checksums must all still match.
+	auto scramble = [&]( double ) {
+		for ( size_t b = 0; b < h.bots.size(); ++b )
+		{
+			if ( HybridSession* hs = hybrid ? h.bots[b].client->Hybrid() : nullptr )
+			{
+				hs->SetScrambleCharacters( 3.0f );
+				hs->SetStateLag( b == 1 ? 60 : 0 );
+			}
+		}
+	};
+	h.RunUntil( 10.0, scramble );
 	// A late joiner, from a portable snapshot with NPCs, driven props and bodies nobody drives in it.
 	h.AddBot();
-	h.RunUntil( 20.0 );
+	h.RunUntil( 20.0, scramble );
 	h.server.SetTickObserver( {} );
 	h.Report();
 	for ( size_t b = 0; b < h.bots.size(); ++b )
@@ -5350,7 +5372,9 @@ void RunChaos( bool hybrid )
 	for ( size_t b = 0; b < h.bots.size(); ++b )
 	{
 		const GameClient& client = *h.bots[b].client;
-		std::fprintf( stderr, "    bot %zu: desyncs %u, checksums %u\n", b, client.GetStats().desyncs, client.GetStats().checksumsVerified );
+		std::fprintf( stderr, "    bot %zu: desyncs %u, checksums %u; bodies moved before its physics steps %llu\n", b, client.GetStats().desyncs,
+					  client.GetStats().checksumsVerified,
+					  client.Hybrid() != nullptr ? (unsigned long long)client.Hybrid()->GetStats().scrambled : 0ull );
 		CHECK( client.GetStats().desyncs == 0 && client.GetStats().checksumsVerified > 0 );
 	}
 }

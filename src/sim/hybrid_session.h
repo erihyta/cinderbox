@@ -36,6 +36,7 @@ public:
 		uint64_t predictStalls = 0; // too far ahead of the newest state
 		uint64_t applyNs = 0;
 		uint64_t checksums = 0, desyncs = 0;
+		uint64_t scrambled = 0; // bodies moved by SetScrambleCharacters (tests)
 		uint32_t lastDepth = 0; // ticks predicted again after the last state
 	};
 
@@ -150,6 +151,20 @@ public:
 	};
 	void OwnLaunches( std::vector<DrawnLaunch>& out );
 
+	// For tests: before each physics step every character is somewhere else (up to `metres`, a
+	// velocity of its own: Simulation::ScrambleCharacters), and placed by its state again after it.
+	// The physics checksums must still match: the client's physics reads no character. 0: off.
+	void SetScrambleCharacters( float metres )
+	{
+		m_scramble = metres;
+	}
+	// For tests: every state is held back `ticks` physics ticks before it is used, as a slow link
+	// or a slow machine has it (the characters' side then older than the physics). 0: off.
+	void SetStateLag( uint32_t ticks )
+	{
+		m_stateLag = ticks;
+	}
+
 private:
 	// The others as the newest state not ahead of `tick` has them (`again`: even when they already
 	// stood as that one: a command may have moved them since).
@@ -185,6 +200,16 @@ private:
 	};
 	std::vector<Sampled> m_sampled;
 	InputFrame m_last;
+	float m_scramble = 0.0f;
+	uint32_t m_stateLag = 0;
+	struct Lagged
+	{
+		uint32_t release = 0, tick = 0;
+		std::vector<uint8_t> bytes;
+		std::array<PlayerInput, kMaxPlayers> inputs;
+	};
+	std::vector<Lagged> m_lagged;
+	bool m_releasing = false;
 	struct OwnLaunch
 	{
 		Simulation::PredictedLaunch launch;

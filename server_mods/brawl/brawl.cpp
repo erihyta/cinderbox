@@ -2,7 +2,8 @@
 // hotbar, as a Roblox fighting game has them, each an item of its own (client/prefabs). The skills
 // are used by their slots' keys where they are (CbItem.slot_key_uses): nothing changes hands.
 //
-//   slot 1  Fist         selected, click: a jab; three in a row, the third a finisher that flings
+//   slot 1  Fist         selected, click: a jab; three in a row, the third a finisher that tosses
+//                        whoever it hits as a ragdoll (they get up where they land; guarding, only shoved)
 //   slot 2  Dash strike  2: a lunge, and whoever is ahead is knocked back (3 s)
 //   slot 3  Uppercut     3, on the ground: whoever is ahead is launched up (4 s)
 //   slot 4  Ground slam  4, in the air: a dive, and a shockwave where you land (5 s)
@@ -92,9 +93,12 @@ public:
 		{
 			for ( size_t i = 0; i < m_hits.size(); ++i )
 			{
-				if ( int( e.type ) == m_hits[i].index )
+				if ( int( e.type ) == m_hits[i].index && Hurt( ctx, e.netIdA, e.netIdB, m_amounts[i], e.point, {} ) && i == 1 &&
+					 Guarding( ctx, e.netIdB ) == false && ctx.IsDown( e.netIdB ) == false )
 				{
-					Hurt( ctx, e.netIdA, e.netIdB, m_amounts[i], e.point, {} );
+					// The finisher tosses: the sheet's shove (predicted) is already its velocity, which
+					// the ragdoll keeps.
+					ctx.Toss( e.netIdB, { 0.0f, 0.0f, 0.0f } );
 				}
 			}
 			// Someone the slam's shockwave found (its sheet throws them): hurt, by the slam's damage.
@@ -122,12 +126,18 @@ public:
 		{
 			return false;
 		}
-		if ( slot >= 0 && m_guard >= 0 && ctx.Using( PlayerSlot( slot ), ItemKindHandle{ m_guard } ) )
+		if ( Guarding( ctx, victim ) )
 		{
 			amount = int32_t( std::lround( float( amount ) * kGuardShare ) );
 		}
 		ctx.Emit( m_damage, attacker, victim, amount, point, push );
 		return true;
+	}
+
+	bool Guarding( Context& ctx, uint32_t victim ) const
+	{
+		const int slot = ctx.IsPlayer( victim ) ? ctx.SlotOf( victim ) : -1;
+		return slot >= 0 && m_guard >= 0 && ctx.Using( PlayerSlot( slot ), ItemKindHandle{ m_guard } );
 	}
 
 	std::array<EventHandle, 4> m_hits;

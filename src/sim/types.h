@@ -377,7 +377,8 @@ enum class PhysicsEventType : uint8_t
 	Remove = 4,	  // the entity `netId` is gone (an item its own motion removed)
 	TakeOver = 5, // the body of `netId` leaves the physics world (a prop driven, a body taken over, an item picked up)
 	Enter = 6,	  // the body of `netId` joins it: as `body` describes it (Simulation::DescribeBody), made dynamic,
-				  // its shapes of category `owner`, at `at` turned `turn`, going `vector` (a driven prop let go)
+				  // its shapes of category `kind`, at `at` turned `turn`, going `vector` (a driven prop let go);
+				  // `mode` 1: a prop of `owner`'s, gone at tick `ticks` (0: never)
 	Idle = 7,	  // `netId` is a body nobody drives (a player's left behind): of character `kind`, its capsule
 				  // `hitAt` (radius, half height), its centre at `at` turned `turn`, going `vector`, weighing `mass`
 	Spawn = 8,	  // a mod's SpawnProp as `command` says, its owner (`command.target`) the NetId it named: what
