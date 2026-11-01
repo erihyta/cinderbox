@@ -272,6 +272,7 @@ std::vector<BodySeen> PhysicsBodies( Simulation& sim )
 int HybridModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t delay )
 {
 	std::map<uint32_t, std::vector<BodySeen>> serverBodies; // (the last few ticks')
+	std::map<uint32_t, std::pair<size_t, size_t>> serverMade; // (their physics events and pushers)
 	bool told = false;
 	auto serverSim = std::make_unique<Simulation>( replay.Config(), replay.Map() );
 	Simulation& server = *serverSim;
@@ -387,9 +388,11 @@ int HybridModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t dela
 			ownOf( server, serverSaw[server.Tick()] );
 		}
 		serverBodies[i] = PhysicsBodies( server );
+		serverMade[i] = { server.PhysicsMade().physics.size(), server.PhysicsMade().pushers.size() };
 		while ( serverBodies.size() > 64 )
 		{
 			serverBodies.erase( serverBodies.begin() );
+			serverMade.erase( serverMade.begin() );
 		}
 		{
 			Sent sent{ i + delay, false, i, frames[i], server.PhysicsHash(), {}, {} };
@@ -442,7 +445,7 @@ int HybridModel( const net::ReplayReader& replay, PlayerSlot slot, uint32_t dela
 				std::printf( "tick %u: the server has %zu bodies in the physics world, the client %zu (at its tick %u); the frame: %zu "
 							 "commands, %zu physics events, %zu pushers\n",
 							 t, theirs.size(), mine.size(), client.PhysicsTick(), frames[t].commands.size(),
-							 t < total ? size_t( 0 ) : size_t( 0 ), size_t( 0 ) );
+							 serverMade[t].first, serverMade[t].second );
 				size_t shown = 0;
 				for ( size_t a = 0, b = 0; ( a < theirs.size() || b < mine.size() ) && shown < 12; )
 				{
@@ -619,12 +622,14 @@ int Joins( const net::ReplayReader& replay, uint32_t every, uint32_t follow, uin
 			{
 				std::printf( "join at %u: the snapshot did not load\n", i );
 				wrong += 1;
-				continue;
 			}
-			f.client->Start();
-			f.client->SetStateLag( stateLag == UINT32_MAX ? 0 : stateLag );
-			followers.push_back( std::move( f ) );
-			joins += 1;
+			else
+			{
+				f.client->Start();
+				f.client->SetStateLag( stateLag == UINT32_MAX ? 0 : stateLag );
+				followers.push_back( std::move( f ) );
+				joins += 1;
+			}
 		}
 		if ( server.Tick() % 2 == 0 && followers.empty() == false && stateLag != UINT32_MAX )
 		{
@@ -699,8 +704,8 @@ int Joins( const net::ReplayReader& replay, uint32_t every, uint32_t follow, uin
 													 else if ( y == nullptr || ( x && x->netId < y->netId ) )
 													 {
 														 std::printf( "  %x: only the server's (%.4f %.4f %.4f)\n", x->netId, x->at.x, x->at.y, x->at.z );
-													 const flecs::entity ce = f.client->Sim().FindEntity( y->netId );
-													 const uint32_t theOwner = ce.is_valid() && ce.has<Prop>() ? ce.get<Prop>().owner : 0;
+													 const flecs::entity se = server.FindEntity( x->netId );
+													 const uint32_t theOwner = se.is_valid() && se.has<Prop>() ? se.get<Prop>().owner : 0;
 													 for ( Simulation* sim : { &server, &f.client->Sim() } )
 													 {
 														 const flecs::entity e = sim->FindEntity( x->netId );
@@ -760,7 +765,7 @@ int Joins( const net::ReplayReader& replay, uint32_t every, uint32_t follow, uin
 						 followers.end() );
 	}
 	std::printf( "%u joins (every %u ticks, each followed %u ticks): %u with physics not the server's\n", joins, every, follow, wrong );
-	return wrong == 0 ? 0 : 3;
+	return wrong == 0 ? 0 : 2; // (as a checksum that differs)
 }
 
 } // namespace
@@ -794,7 +799,8 @@ int main( int argc, char** argv )
 		 ( state == false && std::strcmp( argv[1], "info" ) != 0 && std::strcmp( argv[1], "verify" ) != 0 ) )
 	{
 		std::printf( "usage: cb_replay info FILE\n       cb_replay verify FILE\n       cb_replay view FILE\n"
-					 "       cb_replay state FILE [--slot N] [--delay TICKS]\n" );
+					 "       cb_replay hybrid FILE [--slot N] [--delay TICKS]\n"
+					 "       cb_replay joins FILE [--every TICKS] [--follow TICKS] [--state-lag TICKS | --no-states 1]\n" );
 		return 1;
 	}
 

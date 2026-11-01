@@ -45,21 +45,22 @@ void HybridSession::Start()
 	m_sim->ApplyState( state.data(), state.size(), m_localSlot, Simulation::StateApply::Others );
 }
 
-void HybridSession::AddFrame( const InputFrame& frame )
+bool HybridSession::AddFrame( const InputFrame& frame )
 {
 	if ( frame.tick < m_sim->Tick() || m_frames.count( frame.tick ) != 0 )
 	{
-		return;
+		return true; // (had already)
+	}
+	if ( m_frames.size() >= kMaxFramesKept )
+	{
+		return false;
 	}
 	InputFrame& kept = m_frames[frame.tick];
 	kept = frame;
 	kept.events.clear();
 	kept.inputs = {};
 	m_framesReached = std::max( m_framesReached, frame.tick + 1 );
-	while ( m_frames.size() > kMaxFramesKept )
-	{
-		m_frames.erase( std::prev( m_frames.end() ) ); // (the newest go: the physics needs the oldest first)
-	}
+	return true;
 }
 
 void HybridSession::AddState( uint32_t tick, const uint8_t* data, size_t size, const std::array<PlayerInput, kMaxPlayers>& inputs )

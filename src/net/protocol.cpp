@@ -1261,7 +1261,8 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame, uint64_t* checksu
 			p.netId = lastId + step;
 			lastId = p.netId;
 			const PusherPlace* was = PreviousPlace( m_previousPushers, p.netId );
-			if ( ( pf & PushChange ) && was == nullptr )
+			// (A change, and a short one in particular, is against a place had before: none, corrupt.)
+			if ( ( pf & ( PushChange | PushShort ) ) != 0 && was == nullptr )
 			{
 				return false;
 			}
