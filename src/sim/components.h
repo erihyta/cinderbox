@@ -578,7 +578,8 @@ enum CollisionCategory : uint64_t
 	// A prop a player drives (M221): its own shapes, moved with the mover. Others walk into it and
 	// shots hit it; its own mover's ground ray does not stand on it (nor anyone's: as a player).
 	CatDriven = 1 << 5,
-	// A body pushed by characters (CbProp's flag; an item lying about): movers never meet it.
+	// A body pushed by characters (CbProp's flag; an item lying about): movers' casts never meet it;
+	// the mover stands on it from above (mover.cpp, kTopBelow).
 	CatPushable = 1 << 6,
 	// A character's pusher (M246): a capsule in the physics world, placed every tick where the
 	// character is; it shoves pushed-by-characters bodies and ragdolls, and nothing else meets it.

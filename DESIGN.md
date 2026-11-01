@@ -78,7 +78,7 @@ addressed by a stable `NetId`.
 | Part | How |
 |---|---|
 | World | static boxes, ramps, steps and platforms from a baked map; dynamic boxes, spheres and capsules |
-| Player movement | a kinematic capsule mover (move-and-slide with Box3D's mover casts and plane solver); a pogo spring keeps it hovering, which carries it over steps. It has a mass (a movement parameter). It reads the physics world and never writes it (M246): what it meets stops it, a loose body pushing it out of itself by its share of the two weights; bodies [pushed by characters](docs/maps.md#who-pushes-what) it never meets (its pusher shoves them). Its capsule touches no body in the physics step and never sleeps (asleep, Box3D would reorder the bodies around it). In a file of its own (`mover.*`) |
+| Player movement | a kinematic capsule mover (move-and-slide with Box3D's mover casts and plane solver); a pogo spring keeps it hovering, which carries it over steps; the ground under it is found by a sphere cast down (0.9 of the capsule's radius, the surface's normal from a short ray where it touches, as Unreal's floor check does), so gaps between planks and a ledge under part of it hold it up. It has a mass (a movement parameter). It reads the physics world and never writes it (M246): what it meets stops it, a loose body pushing it out of itself by its share of the two weights; bodies [pushed by characters](docs/maps.md#who-pushes-what) it walks through (its pusher shoves them) and stands on from above when they weigh enough. Its capsule touches no body in the physics step and never sleeps (asleep, Box3D would reorder the bodies around it). In a file of its own (`mover.*`) |
 | Motions | what mods add to movement (a dash, a double jump): `CbMotion` nodes baked to text, sent in the schema, compiled against it and run for every player before the mover (`motions.*`). They happen on a press, on a mod event at the player, or hold while their conditions do (which can read the keys held). A motion is a trigger with parts: a **probe** (a ray along the look that has to find a point of the world, of a prop or of a player, and holds on to it after its flight: `MotionHold`, a component), and **effects** on a target (the player, what the probe found, or the entity a field names): an impulse once, a force while it is on (an acceleration, newtons, or toward a speed; ramped in; reacting on the other end), a link (a rope whose tension the two share by weight). The input is what a client already simulates ahead, so a player's own are predicted and rolled back. `MotionState` (a slot per motion: last use, uses, on until) is on players only where a server has motions |
 | Movement parameters | walk and sprint speed, acceleration, friction, air control, gravity, jump speed, turn rate, a fall limit, air friction, whether the movement input goes along the ground or the camera, whether the character is in the air whatever is under it, and what it weighs: values, not constants. The server's set is in `SimConfig::move` (its options, then its character's values); a mod's `SetMove` command gives one player its own (`MoveOverrides`, a component only players a mod touched have) |
 | Controls | WASD relative to the camera, Shift, Space: the engine's. Every other control is an action a mod declares |
@@ -138,9 +138,9 @@ not rolled back, not recorded, and a state machine cannot read it.
 ## Netcode
 
 Authoritative server, two network models (`src/net`, `src/client`), the server's choice for
-everyone (`cb_server --net-model inputs|hybrid`; the welcome and the server's info say which;
-ROADMAP step 3). **Inputs** (the default): what follows below; every client simulates the whole
-world. **Hybrid** (M248):
+everyone (`cb_server --net-model hybrid|inputs`; the welcome and the server's info say which;
+ROADMAP step 3). **Inputs**: what follows below; every client simulates the whole world.
+**Hybrid** (M248; `cb_server`'s default since 2026-11-01):
 
 - **The physics from the server's events**: the frame batches go without the inputs, with each
   tick's commands, physics events and pushers' places (below) and now and then the physics

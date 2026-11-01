@@ -63,10 +63,10 @@ bool CollectPlanes( b3ShapeId shapeId, const b3PlaneResult* results, int count, 
 		return true;
 	}
 
-	// Everything a character meets stops it: what it would shove (a body pushed by characters) its
-	// queries never see; its pusher does (M246). How far a shape may push the character out of
-	// itself (it only reads the body: nothing is written): the world, and what is much heavier than
-	// the character, all the way; something loose, by its share of the two weights, so a thrown
+	// Everything a character meets stops it: what it would shove (a body pushed by characters)
+	// these queries never see; its pusher does (M246), and Move stands on it from above (kTopWeight).
+	// How far a shape may push the character out of itself (it only reads the body: nothing is
+	// written): the world, and what is much heavier than the character, all the way; something loose, by its share of the two weights, so a thrown
 	// grenade (0.4 kg against 80) does not shove the player it flies into, while a falling crate of
 	// the player's own weight still does by half.
 	float pushLimit = FLT_MAX;
@@ -85,6 +85,104 @@ bool CollectPlanes( b3ShapeId shapeId, const b3PlaneResult* results, int count, 
 		ctx->count += 1;
 	}
 	return true;
+}
+
+// What a query sees of the bodies pushed by characters (their shapes meet no player's query), and
+// of the ground that is not pushed by characters.
+constexpr b3QueryFilter kPushableFilter = { CatPusher, CatPushable, 0, nullptr };
+constexpr b3QueryFilter kGroundFilter = { CatPlayer, CatStatic | CatProp | CatDebris, 0, nullptr };
+
+// The ground is found by a sphere of this share of the capsule's radius, cast down from the bottom
+// sphere's centre: a gap narrower than it (between planks) and a ledge under part of it still hold
+// the character up. On a slope it stands a little higher above the ground under its middle than on
+// flat ground (it touches uphill first: Unreal's capsule does the same; feet IK hides it).
+constexpr float kProbeWidth = 0.9f;
+
+// A body pushed by characters is walked through (its pusher shoves it: M246), but its top is stood
+// on, as a solid body's is, when it weighs at least this share of the character (a crate holds a
+// player up; a ball of a ball pit, 1 kg against 80, does not) and the sphere does not start in it
+// (one the capsule is in is walked through).
+constexpr float kTopWeight = 1.0f / 16.0f;
+
+// What holds a character up: how far under the bottom sphere's centre, and its surface's normal.
+struct Ground
+{
+	bool hit = false;
+	float distance = 0.0f;
+	b3Vec3 normal = { 0.0f, 1.0f, 0.0f };
+};
+
+struct SphereContext
+{
+	bool pushable; // (then: its top only, and only one that holds the character up)
+	float weight;
+	bool hit;
+	float fraction;
+	b3Pos point;
+	b3Vec3 normal;
+};
+
+float FindUnder( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t, int, int, void* context )
+{
+	auto* ctx = static_cast<SphereContext*>( context );
+	if ( ctx->pushable )
+	{
+		// (One it starts in is one the capsule is in: walked through, not stood on.)
+		b3BodyId other = b3Shape_GetBody( shapeId );
+		if ( fraction <= 0.0f || b3Body_GetType( other ) != b3_dynamicBody || b3Body_GetMass( other ) < ctx->weight )
+		{
+			return -1.0f;
+		}
+	}
+	if ( ctx->hit == false || fraction < ctx->fraction )
+	{
+		ctx->hit = true;
+		ctx->fraction = fraction;
+		ctx->point = point;
+		ctx->normal = normal;
+	}
+	return fraction;
+}
+
+// The ground under `from`, `length` at most (to the sphere's lowest point and on): the level's and
+// solid bodies', and the tops of bodies pushed by characters that weigh `weight` or more.
+Ground SphereGround( b3WorldId world, b3Pos from, float length, float radius, float weight )
+{
+	const b3Vec3 centre = { 0.0f, 0.0f, 0.0f };
+	const b3ShapeProxy ball = { &centre, 1, radius };
+	const float travel = length - radius;
+	const b3Vec3 down = { 0.0f, -travel, 0.0f };
+	SphereContext solid = { false, 0.0f, false, 1.0f, {}, {} };
+	SphereContext loose = { true, weight, false, 1.0f, {}, {} };
+	b3World_CastShape( world, from, &ball, down, kGroundFilter, FindUnder, &solid );
+	b3World_CastShape( world, from, &ball, down, kPushableFilter, FindUnder, &loose );
+	const SphereContext* best = loose.hit && ( solid.hit == false || loose.fraction < solid.fraction ) ? &loose : solid.hit ? &solid : nullptr;
+	if ( best == nullptr )
+	{
+		return {};
+	}
+	Ground g = { true, 0.0f, best->normal };
+	// The surface's own normal where the sphere touches it: on an edge the sphere's normal leans out
+	// over the edge, and the slope would let it slide off ground that is level. A short ray down,
+	// just past the touch (away from the sphere's centre: onto the surface the edge belongs to).
+	float off = 0.0f;
+	const b3Vec3 out = b3GetLengthAndNormalize( &off, b3Vec3{ best->point.x - from.x, 0.0f, best->point.z - from.z } );
+	const float nudge = off > 0.001f ? 0.02f : 0.0f;
+	const b3Pos above = { best->point.x + out.x * nudge, from.y, best->point.z + out.z * nudge };
+	const float reach = from.y - best->point.y + 0.05f;
+	if ( reach > 0.0f )
+	{
+		const b3RayResult surface = b3World_CastRayClosest( world, above, { 0.0f, -reach, 0.0f }, best->pushable ? kPushableFilter : kGroundFilter );
+		if ( surface.hit )
+		{
+			g.normal = surface.normal;
+		}
+	}
+	// How far the ground is under the middle, as a ray would find it: on a slope the sphere touches
+	// uphill, its centre radius / cos(slope) over the plane, not radius. (So the character stands as
+	// high on a slope as it did with a ray; past the steepest that holds it up it slides anyway.)
+	g.distance = best->fraction * travel + radius / std::max( g.normal.y, 0.5f );
+	return g;
 }
 
 } // namespace
@@ -181,23 +279,23 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 		v.y = -maxFall;
 	}
 
-	// Pogo spring keeps the capsule hovering above the ground, which smooths steps and slopes.
+	// Pogo spring keeps the capsule hovering above the ground, which smooths steps and slopes. The
+	// ground is found by a sphere cast down from the bottom sphere's centre (kProbeWidth).
 	b3Capsule capsule = { { 0.0f, -body.halfHeight, 0.0f }, { 0.0f, body.halfHeight, 0.0f }, body.radius };
 	float pogoRest = 3.0f * body.radius;
-	float rayLength = pogoRest + body.radius;
-	b3Pos rayOrigin = b3Add( t.position, capsule.center1 );
-	b3QueryFilter groundFilter = { CatPlayer, CatStatic | CatProp | CatDebris, 0, nullptr };
+	float probeLength = pogoRest + body.radius;
+	b3Pos probeOrigin = b3Add( t.position, capsule.center1 );
 	// (The ground is the physics world's: no character stands on another.)
 	const b3WorldId ground = b3World_IsValid( body.scenery ) ? body.scenery : body.world;
-	b3RayResult ray = b3World_CastRayClosest( ground, rayOrigin, { 0.0f, -rayLength, 0.0f }, groundFilter );
+	const Ground under = SphereGround( ground, probeOrigin, probeLength, kProbeWidth * body.radius, kTopWeight * params[MoveParam::Mass] );
 
 	// Ground steeper than max_slope does not hold the character up: it slides down it, under gravity,
 	// along the slope the mover's planes give it, and cannot walk or jump up it.
 	const float maxSlope = params[MoveParam::MaxSlope];
-	const bool tooSteep = ray.hit && maxSlope < 90.0f && ray.normal.y < detmath::CosSin( maxSlope * ( detmath::kPi / 180.0f ) ).cosine;
+	const bool tooSteep = under.hit && maxSlope < 90.0f && under.normal.y < detmath::CosSin( maxSlope * ( detmath::kPi / 180.0f ) ).cosine;
 
 	bool wasGrounded = c.grounded != 0;
-	if ( ray.hit == false || v.y > 0.0f || tooSteep )
+	if ( under.hit == false || v.y > 0.0f || tooSteep )
 	{
 		c.grounded = 0;
 		c.pogoVelocity = 0.0f;
@@ -205,7 +303,7 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	else
 	{
 		c.grounded = 1;
-		float current = ray.fraction * rayLength;
+		float current = under.distance;
 		float omega = 2.0f * detmath::kPi * kPogoHertz;
 		float omegaH = omega * dt;
 		c.pogoVelocity = ( c.pogoVelocity - omega * omegaH * ( current - pogoRest ) ) /
