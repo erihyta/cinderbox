@@ -2958,6 +2958,26 @@ void TestProtocol()
 			CHECK( gotSums[i] == sums[i] );
 		}
 		std::printf( "    three hybrid frames, nine physics events and two or three pushers each: %zu bytes\n", bytes.size() );
+		// A batch with any one byte wrong is read or refused, never read through a missing base (a
+		// pusher's short change with no place before it once was).
+		uint32_t refused = 0, read = 0;
+		for ( size_t at = 3; at < bytes.size(); ++at )
+		{
+			for ( uint8_t flip : { uint8_t( 0x01 ), uint8_t( 0x02 ), uint8_t( 0x80 ), uint8_t( 0xFF ) } )
+			{
+				std::vector<uint8_t> bad = bytes;
+				bad[at] ^= flip;
+				ByteReader br( bad.data(), bad.size() );
+				uint32_t f0 = 0, n = 0;
+				std::vector<InputFrame> back;
+				std::vector<uint64_t> backSums;
+				const bool ok = ReadType( br ) == MsgType::FrameBatch && ReadFrameBatchHeader( br, f0, n ) && n <= 64 &&
+								ReadFrameBatchBody( br, {}, f0, n, back, &backSums );
+				( ok ? read : refused ) += 1;
+			}
+		}
+		std::printf( "    the batch with one byte wrong, %u ways: %u read, %u refused\n", read + refused, read, refused );
+		CHECK( refused > 0 );
 	}
 
 	// Frame batches: a chain from any starting tick decodes back to the same frames.

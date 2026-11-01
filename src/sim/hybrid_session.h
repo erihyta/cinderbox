@@ -52,8 +52,10 @@ public:
 	}
 
 	// The server's physics inputs for frame.tick (the players' joins and leaves are not used: the
-	// characters come in states). Kept until the physics reaches it; older ones are dropped.
-	void AddFrame( const InputFrame& frame );
+	// characters come in states). Kept until the physics reaches it; older ones are dropped. False:
+	// not kept, as many as it keeps are waiting (the caller must not count it as had: it comes again,
+	// or the world does).
+	bool AddFrame( const InputFrame& frame );
 	// The server's characters' state in which its Tick() == `tick` (Simulation::SaveState), and the
 	// inputs it used for the tick before (presentation aims the others with them).
 	void AddState( uint32_t tick, const uint8_t* data, size_t size, const std::array<PlayerInput, kMaxPlayers>& inputs = {} );

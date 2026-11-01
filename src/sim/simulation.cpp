@@ -1490,9 +1490,9 @@ void Simulation::ItemUses( uint32_t player, const PlayerInput& in, uint8_t prevB
 	flecs::entity e = FindEntity( player );
 	const Slots* slots = e.is_valid() ? e.try_get<Slots>() : nullptr;
 	const Character* c = e.is_valid() ? e.try_get<Character>() : nullptr;
-	if ( slots == nullptr || c == nullptr || c->dead != 0 || c->frozen != 0 )
+	if ( slots == nullptr || c == nullptr || c->dead != 0 || c->frozen != 0 || e.has<Downed>() )
 	{
-		return;
+		return; // (down, M249: as the dead, it uses nothing)
 	}
 	auto add = [&]( uint32_t item, uint8_t use, bool down, bool press ) {
 		bool used = press;
@@ -1581,7 +1581,7 @@ void Simulation::StepSlots( const InputFrame& frame )
 			slots.prevKeys = in.slotKeys;
 			slots.prevActions = in.actions;
 		}
-		const bool act = had && c.dead == 0;
+		const bool act = had && c.dead == 0 && e.has<Downed>() == false; // (down: as the dead, M249)
 		// Using an item is recorded where every simulation can see it (the player's own at once): the
 		// kind's event, at the player, with the item.
 		auto used = [&]( uint32_t item ) {
@@ -1641,7 +1641,7 @@ void Simulation::StepSlots( const InputFrame& frame )
 		if ( slots.open != 0 )
 		{
 			flecs::entity box = FindEntity( slots.open );
-			bool keep = box.is_valid() && box.has<Container>() && box.has<Transform>() && c.dead == 0 &&
+			bool keep = box.is_valid() && box.has<Container>() && box.has<Transform>() && c.dead == 0 && e.has<Downed>() == false &&
 						b3Distance( box.get<Transform>().position, e.get<Transform>().position ) <= kContainerKeep;
 			slots.open = keep ? slots.open : 0;
 		}
@@ -2272,6 +2272,14 @@ void Simulation::ApplyEvents( const InputFrame& frame )
 				DestroyEntity( e );
 			}
 			flecs::entity e = FindEntity( netId );
+			if ( const Downed* down = e.is_valid() ? e.try_get<Downed>() : nullptr; down != nullptr && down->ragdoll != 0 )
+			{
+				// Down when it left (M249): its ragdoll goes with it, as when it respawns.
+				PhysicsEvent gone;
+				gone.type = PhysicsEventType::Remove;
+				gone.netId = down->ragdoll;
+				m_physicsQueue.push_back( std::move( gone ) );
+			}
 			if ( e.is_valid() )
 			{
 				DestroyEntity( e );
@@ -3743,7 +3751,9 @@ bool Simulation::FollowerSkips( const SimCommand& command ) const
 	// rest is a character's, and comes in the states; what it did to the physics world comes in the
 	// physics events (M247). What a target is, physics world or not, is the same here as on the
 	// server at this tick: that is decided by the physics events alone.
-	if ( ( command.target & kSlotTargetBit ) != 0 && command.type != CommandType::SpawnBody )
+	// (A mod's event only says something: it runs whatever it names, a player's slot too, so the
+	// presentation and the motions hear it here as well.)
+	if ( ( command.target & kSlotTargetBit ) != 0 && command.type != CommandType::SpawnBody && command.type != CommandType::Event )
 	{
 		return true; // (a player's slot: the characters')
 	}
@@ -3776,6 +3786,17 @@ void Simulation::ApplyCommand( const SimCommand& command )
 	}
 	if ( m_followsPhysics && FollowerSkips( command ) )
 	{
+		if ( command.type == CommandType::SpawnItem && ( command.target & kSlotTargetBit ) == 0 )
+		{
+			// An item into a container (a chest: the physics world's) takes one of the physics world's
+			// NetIds on the server, whatever becomes of it: it is used up here too, so what this
+			// simulation makes next has the server's NetId. (Into a character's slot: a character's.)
+			const flecs::entity holder = FindEntity( ResolveTarget( command.target ) );
+			if ( holder.is_valid() && holder.has<Container>() )
+			{
+				m_globals.nextNetId += 1;
+			}
+		}
 		return;
 	}
 
@@ -4561,7 +4582,8 @@ void Simulation::RunGetUps()
 		const float centre = mover::FeetBelowCenter( kind.radius, kind.halfHeight );
 		b3Vec3 at = { pelvis.x, pelvis.y - 0.9f + centre, pelvis.z };
 		RayHit hit;
-		if ( CastRay( b3Add( pelvis, b3Vec3{ 0.0f, 0.5f, 0.0f } ), { 0.0f, -3.0f, 0.0f }, netId, hit, true ) )
+		// (Past its own ragdoll, still lying there: its capsule is out of the world while it is down.)
+		if ( CastRay( b3Add( pelvis, b3Vec3{ 0.0f, 0.5f, 0.0f } ), { 0.0f, -3.0f, 0.0f }, down.ragdoll, hit, true ) )
 		{
 			at = { hit.point.x, hit.point.y + centre + 0.02f, hit.point.z };
 		}

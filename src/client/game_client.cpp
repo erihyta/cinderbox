@@ -384,7 +384,7 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 	m_stateFrames.clear();
 	m_stateAck = 0;
 	m_hybridFrames = msg.snapshotTick;
-	m_hybridDesyncSent = false;
+	m_hybridDesyncAskedAt = -1.0;
 	m_config = msg.config;
 	m_map = std::move( map );
 	if ( !( schema == m_schema ) || m_schemaGeneration == 0 )
@@ -586,11 +586,16 @@ bool GameClient::UseFrameBatch( uint32_t firstTick, uint32_t count, const uint8_
 			{
 				continue;
 			}
+			// (Not kept: as many frames as it keeps are waiting for the physics. Not had either, so the
+			// acknowledgement stays: it comes again, or the world does when this falls too far behind.)
+			if ( m_hybrid->AddFrame( frame ) == false )
+			{
+				break;
+			}
 			if ( m_checksumScratch[i] != 0 )
 			{
 				m_hybrid->AddChecksum( frame.tick, m_checksumScratch[i] );
 			}
-			m_hybrid->AddFrame( frame );
 			m_hybridFrames += 1;
 		}
 		return true;
@@ -799,17 +804,21 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	{
 		VerifyChecksums();
 	}
-	if ( m_hybrid && m_hybrid->DesyncTick() != UINT32_MAX && m_hybridDesyncSent == false )
+	if ( m_hybrid && m_hybrid->DesyncTick() != UINT32_MAX && ( m_hybridDesyncAskedAt < 0.0 || now - m_hybridDesyncAskedAt >= 1.0 ) )
 	{
-		// The physics is not the server's: its world again (a new welcome).
-		m_hybridDesyncSent = true;
-		m_stats.desyncs += 1;
-		if ( m_firstDesyncTick == UINT32_MAX )
+		// The physics is not the server's: its world again (a new welcome). Asked again every second
+		// until it comes: the server lets one through only so long after the last welcome.
+		if ( m_hybridDesyncAskedAt < 0.0 )
 		{
-			m_firstDesyncTick = m_hybrid->DesyncTick();
-			m_firstDesyncBodies = m_hybrid->DesyncBodies();
+			m_stats.desyncs += 1;
+			if ( m_firstDesyncTick == UINT32_MAX )
+			{
+				m_firstDesyncTick = m_hybrid->DesyncTick();
+				m_firstDesyncBodies = m_hybrid->DesyncBodies();
+			}
+			Log( "DESYNC: the physics at tick %u is not the server's, requesting state", m_hybrid->DesyncTick() );
 		}
-		Log( "DESYNC: the physics at tick %u is not the server's, requesting state", m_hybrid->DesyncTick() );
+		m_hybridDesyncAskedAt = now;
 		Encode( MsgResyncRequest{ m_hybrid->DesyncTick() }, m_buffer );
 		m_transport.Send( m_transport.ServerPeer(), ChannelReliable, m_buffer, true );
 	}

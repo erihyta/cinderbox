@@ -280,7 +280,7 @@ private:
 	uint32_t m_stateEvery = 2;
 	std::unique_ptr<HybridSession> m_hybrid;
 	uint32_t m_hybridFrames = 0;
-	bool m_hybridDesyncSent = false;
+	double m_hybridDesyncAskedAt = -1.0; // (the hybrid: when it last asked for the world again; < 0: not)
 	uint32_t m_firstDesyncTick = UINT32_MAX;
 	std::vector<HybridSession::BodyAt> m_firstDesyncBodies;
 	std::vector<uint64_t> m_checksumScratch;

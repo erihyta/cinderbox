@@ -1425,8 +1425,8 @@ void TestToss()
 		bool followed = true;
 		bool upEnabled = false, ragdollGone = false;
 	};
-	// `kill`: killed half a second after the toss.
-	auto toss = [&]( float speed, bool kill ) {
+	// `kill`: killed half a second after the toss; `leave`: gone from the game then.
+	auto toss = [&]( float speed, bool kill, bool leave = false ) {
 		Outcome out;
 		auto simulation = std::make_unique<Simulation>( TestConfig(), map ); // (two: not on the stack)
 		auto followerSim = std::make_unique<Simulation>( TestConfig(), map );
@@ -1484,9 +1484,13 @@ void TestToss()
 				k.other = 600;
 				f.commands.push_back( k );
 			}
+			if ( leave && sim.Tick() == tossedAt + 30 )
+			{
+				f.events.push_back( { PlayerEventType::Leave, 0 } );
+			}
 			step();
 			flecs::entity e = sim.FindEntity( player );
-			if ( out.gotUp == false && e.has<Downed>() == false && e.get<Character>().dead == 0 )
+			if ( out.gotUp == false && e.is_valid() && e.has<Downed>() == false && e.get<Character>().dead == 0 )
 			{
 				out.gotUp = true;
 				out.upAfter = sim.Tick() - tossedAt;
@@ -1497,8 +1501,9 @@ void TestToss()
 			}
 		}
 		flecs::entity e = sim.FindEntity( player );
-		out.dead = e.get<Character>().dead != 0 && e.has<Downed>() == false;
+		out.dead = e.is_valid() && e.get<Character>().dead != 0 && e.has<Downed>() == false;
 		const flecs::entity rag = sim.FindEntity( ragdoll );
+		out.ragdollGone = out.ragdollGone || ( leave && rag.is_valid() == false );
 		out.ragdollKept = rag.is_valid() && rag.has<Tossed>() == false && rag.get<Ragdoll>().despawnTick == tossedAt + 30 + 600;
 		out.wallWhole = false;
 		for ( const Simulation::EntityRef& r : sim.Entities() )
@@ -1511,6 +1516,7 @@ void TestToss()
 	const Outcome fast = toss( 25.0f, false );
 	const Outcome slow = toss( 3.0f, false );
 	const Outcome killed = toss( 25.0f, true );
+	const Outcome left = toss( 25.0f, false, true ); // (its ragdoll goes with it, on the follower too)
 	std::printf( "    at 25 m/s: down %d (its ragdoll %d), the wall %s, up after %.2f s at z %.2f (height %.2f); at 3 m/s: the wall %s, up "
 				 "after %.2f s; killed while down: dead %d, its ragdoll kept %d; followed %d %d %d\n",
 				 int( fast.downed ), int( fast.ragdoll ), fast.wallWhole ? "whole" : "broken", float( fast.upAfter ) / 60.0f, fast.upZ,
@@ -1522,6 +1528,8 @@ void TestToss()
 	CHECK( slow.downed && slow.wallWhole && slow.gotUp && slow.upZ > 0.5f );
 	CHECK( killed.downed && killed.gotUp == false && killed.dead && killed.ragdollKept );
 	CHECK( fast.followed && slow.followed && killed.followed );
+	std::printf( "    left while down: its ragdoll gone %d, followed %d\n", int( left.ragdollGone ), int( left.followed ) );
+	CHECK( left.downed && left.ragdollGone && left.followed );
 }
 
 // Glue (map version 11: a breakable's glue): its pieces are bodies from the start, welded where they
@@ -2470,6 +2478,25 @@ void RunHybridScenario( uint32_t maxDelay, uint64_t seed, bool commands, float s
 
 void TestHybridModel()
 {
+	{
+		// Following the physics, a command about a character is skipped, but a mod's event aimed at a
+		// player's slot is still heard (the presentation and the motions read it).
+		auto follower = std::make_unique<Simulation>( TestConfig() );
+		follower->SetFollowsPhysics( true );
+		InputFrame f;
+		f.tick = follower->Tick();
+		SimCommand said;
+		said.type = CommandType::Event;
+		said.index = 3;
+		said.target = SlotTarget( PlayerSlot( 1 ) );
+		SimCommand kill;
+		kill.type = CommandType::Kill;
+		kill.target = SlotTarget( PlayerSlot( 1 ) );
+		f.commands = { said, kill };
+		const uint32_t before = follower->Globals().modEventCount;
+		follower->Step( f );
+		CHECK( follower->Globals().modEventCount == before + 1 );
+	}
 	RunHybridScenario( 3, 7, false );
 	RunHybridScenario( 10, 8, false );
 	RunHybridScenario( 3, 9, true );
