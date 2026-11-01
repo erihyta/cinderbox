@@ -466,6 +466,88 @@ void TestPushers()
 	CHECK( cratePushers == 0 );
 }
 
+// The ground is found by a sphere cast (mover.cpp, kProbeWidth): a player walks over a bridge of
+// planks 10 cm wide with gaps of 20 cm, a pit under it, and stands with its middle 20 cm past a
+// ledge. One ray down the middle (as the mover had before) would find a gap two times in three:
+// the player dropped between planks and was in the air 67 ticks of the walk; it fell off the ledge.
+// The sphere keeps it up and grounded on both, as high as on flat ground (a little lower past the
+// ledge: the sphere rolls round the edge).
+void TestGroundProbe()
+{
+	struct Result
+	{
+		uint32_t airborne = 0; // ticks on the bridge in the air
+		float lowest = 99.0f; // the player's centre's lowest on the bridge
+		float onFlat = 0.0f; // standing on the floor before it
+		float atLedge = 0.0f; // standing past the ledge
+		bool ledgeGrounded = false;
+	};
+	auto run = [&]() {
+		Result r;
+		SimConfig config = TestConfig();
+		LevelLayout map;
+		map.name = "planks";
+		map.spawnCenter = { 5.25f, 1.5f, 7.0f };
+		map.spawnRadius = 0.0f;
+		map.statics.push_back( { { 0.0f, -0.5f, 7.0f }, { 3.0f, 0.5f, 3.0f }, 0.0f, 0.0f } ); // z 4 to 10
+		for ( int k = 0; k < 20; ++k )
+		{
+			map.statics.push_back( { { 0.0f, -0.05f, 3.95f - 0.3f * float( k ) }, { 1.5f, 0.05f, 0.05f }, 0.0f, 0.0f } );
+		}
+		map.statics.push_back( { { 0.0f, -0.5f, -5.0f }, { 3.0f, 0.5f, 3.0f }, 0.0f, 0.0f } ); // z -8 to -2
+		map.statics.push_back( { { 0.0f, -6.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } ); // the pit's floor
+		QuantizeLayout( map );
+		Simulation sim( config, map );
+		InputFrame f;
+		f.events.push_back( { PlayerEventType::Join, 0 } );
+		for ( uint32_t t = 0; t < 360; ++t )
+		{
+			f.tick = sim.Tick();
+			f.inputs[0].cameraYaw = 32768; // toward -Z
+			f.inputs[0].moveForward = t < 60 ? int8_t( 0 ) : int8_t( 127 );
+			sim.Step( f );
+			f.events.clear();
+			const b3Vec3 at = sim.EntityTransform( sim.PlayerNetId( 0 ) )->position;
+			if ( t == 59 )
+			{
+				r.onFlat = at.y;
+			}
+			if ( at.z < 3.6f && at.z > -1.4f )
+			{
+				r.airborne += sim.PlayerCharacter( 0 )->grounded ? 0 : 1;
+				r.lowest = std::min( r.lowest, at.y );
+			}
+		}
+
+		// The ledge: a box whose edge is 20 cm short of the player's middle.
+		LevelLayout ledge;
+		ledge.name = "ledge";
+		ledge.spawnCenter = { 5.25f, 1.5f, 0.0f };
+		ledge.spawnRadius = 0.0f;
+		ledge.statics.push_back( { { -2.2f, -0.5f, 0.0f }, { 2.0f, 0.5f, 2.0f }, 0.0f, 0.0f } ); // x -4.2 to -0.2
+		ledge.statics.push_back( { { 0.0f, -6.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+		QuantizeLayout( ledge );
+		Simulation edge( config, ledge );
+		InputFrame g;
+		g.events.push_back( { PlayerEventType::Join, 0 } );
+		for ( uint32_t t = 0; t < 120; ++t )
+		{
+			g.tick = edge.Tick();
+			edge.Step( g );
+			g.events.clear();
+		}
+		r.atLedge = edge.EntityTransform( edge.PlayerNetId( 0 ) )->position.y;
+		r.ledgeGrounded = edge.PlayerCharacter( 0 )->grounded != 0;
+		return r;
+	};
+	const Result r = run();
+	std::printf( "    on the floor at y %.2f; over the planks %u ticks in the air, lowest y %.2f; 20 cm past a ledge at y %.2f (%s)\n", r.onFlat,
+				 r.airborne, r.lowest, r.atLedge, r.ledgeGrounded ? "standing" : "in the air" );
+	CHECK( std::fabs( r.onFlat - 1.38f ) < 0.02f );
+	CHECK( r.airborne <= 2 && r.lowest > 1.3f );
+	CHECK( r.ledgeGrounded && r.atLedge > 1.2f );
+}
+
 // Stood on from above: a crate pushed by characters (light, 8 kg) holds a player dropped onto it,
 // as a solid one does; a ball of 1 kg does not (they are walked through: see TestPushers).
 void TestStandOnPushables()
@@ -13260,6 +13342,7 @@ int main( int argc, char** argv )
 		{ "glue", TestGlue },
 		{ "pushers", TestPushers },
 		{ "stand_on_pushables", TestStandOnPushables },
+		{ "ground_probe", TestGroundProbe },
 		{ "physics_without_characters", TestPhysicsWithoutCharacters },
 		{ "slopes", TestSlopes },
 		{ "templates", TestTemplates },
