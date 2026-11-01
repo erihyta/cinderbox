@@ -79,11 +79,38 @@ foreach ($o in $Option) { $serverArgs += @("--mod-option", $o) }
 
 Write-Host "== server on $port$(if ($Mods) { " (mods: $Mods)" }), simulator on $relay (+$Latency ms each way, $Loss% lost each way)"
 Write-Host "   recordings and logs: $Out"
+# The server, the relay and the bots go when this script's PowerShell goes, however it goes (its
+# window closed, the process stopped): a job object that kills what it holds when its last handle
+# closes. (The finally below only runs when the games are closed or Ctrl+C is pressed.)
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class CbPlaytestJob {
+	[StructLayout(LayoutKind.Sequential)] struct Basic { public long a, b; public uint flags; public UIntPtr c, d; public uint e; public UIntPtr f; public uint g, h; }
+	[StructLayout(LayoutKind.Sequential)] struct Io { public ulong a, b, c, d, e, f; }
+	[StructLayout(LayoutKind.Sequential)] struct Extended { public Basic basic; public Io io; public UIntPtr g, h, i, j; }
+	[DllImport("kernel32.dll")] static extern IntPtr CreateJobObject(IntPtr a, string name);
+	[DllImport("kernel32.dll")] static extern bool SetInformationJobObject(IntPtr job, int kind, ref Extended info, uint size);
+	[DllImport("kernel32.dll")] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+	static IntPtr job;
+	public static void Hold(IntPtr process) {
+		if (job == IntPtr.Zero) {
+			job = CreateJobObject(IntPtr.Zero, null);
+			var info = new Extended();
+			info.basic.flags = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+			SetInformationJobObject(job, 9, ref info, (uint)Marshal.SizeOf(typeof(Extended)));
+		}
+		AssignProcessToJobObject(job, process);
+	}
+}
+"@
 $serverProc = Start-Process -FilePath $server -ArgumentList $serverArgs -PassThru -WindowStyle Hidden `
 	-RedirectStandardOutput (Join-Path $Out "server.log") -RedirectStandardError (Join-Path $Out "server.err.log")
 $netsimProc = Start-Process -FilePath $netsim -PassThru -WindowStyle Hidden `
 	-ArgumentList @("--listen", $relay, "--target", "127.0.0.1:$port", "--latency", $Latency, "--jitter", $Jitter, "--loss", $Loss) `
 	-RedirectStandardOutput (Join-Path $Out "netsim.log") -RedirectStandardError (Join-Path $Out "netsim.err.log")
+[CbPlaytestJob]::Hold($serverProc.Handle)
+[CbPlaytestJob]::Hold($netsimProc.Handle)
 Start-Sleep -Milliseconds 500
 if ($serverProc.HasExited) { throw "the server stopped at once: see $Out\server.log and server.err.log" }
 
@@ -93,6 +120,7 @@ if ($Bots -gt 0) {
 	$botProc = Start-Process -FilePath $bot -PassThru -WindowStyle Hidden `
 		-ArgumentList @("--port", $relay, "--count", $Bots, "--full", 0, "--duration", 3600) `
 		-RedirectStandardOutput (Join-Path $Out "bots.log") -RedirectStandardError (Join-Path $Out "bots.err.log")
+	[CbPlaytestJob]::Hold($botProc.Handle)
 }
 
 # The games side by side, two to a row, each with a config of its own (its name, its keys).
