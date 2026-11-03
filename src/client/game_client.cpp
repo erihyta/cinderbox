@@ -462,8 +462,18 @@ void GameClient::HandleState( ByteReader& r, double now )
 			return;
 		}
 	}
+	// (Updates go on the newest we have, each entity against our state of the tick it names.)
+	auto stateOf = []( const void* context, uint32_t at ) -> const StateFrame* {
+		const StateFrame* found = nullptr;
+		for ( const StateFrame& f : *static_cast<const std::deque<StateFrame>*>( context ) )
+		{
+			found = f.tick == at ? &f : found;
+		}
+		return found;
+	};
 	StateFrame frame;
-	if ( DecodeState( r, tick, base, frame ) == false )
+	const StateFrame* previous = m_stateFrames.empty() ? nullptr : &m_stateFrames.back();
+	if ( DecodeState( r, tick, base, previous, stateOf, &m_stateFrames, frame ) == false )
 	{
 		Log( "corrupt state for tick %u", tick );
 		m_stats.statesIgnored += 1;

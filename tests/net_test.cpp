@@ -6705,6 +6705,149 @@ void TestStateCodec()
 				 whole / states.size(), count > 0 ? change / count : 0 );
 	CHECK( count > 100 );
 	CHECK( change < whole );
+
+	// Updates (M250): odd entities in every state, even ones in every third, each against the
+	// record the client had of it; a new one whole, a gone one named (now and then the first is
+	// taken as gone for a state, and comes back). The client, which gets every
+	// one, has each entity as its last update had it, byte for byte.
+	std::vector<net::StateLayout> layouts( states.size() );
+	for ( size_t i = 0; i < states.size(); ++i )
+	{
+		CHECK( net::ReadLayout( states[i].state, layouts[i] ) );
+	}
+	struct Kept
+	{
+		const std::vector<net::StateFrame>* states;
+		const std::vector<net::StateLayout>* layouts;
+	} kept = { &states, &layouts };
+	auto layoutOf = []( const void* context, uint32_t tick ) -> const net::StateLayout* {
+		const Kept* k = static_cast<const Kept*>( context );
+		for ( size_t i = 0; i < k->states->size(); ++i )
+		{
+			if ( ( *k->states )[i].tick == tick )
+			{
+				return &( *k->layouts )[i];
+			}
+		}
+		return nullptr;
+	};
+	// What the client should have: the newest state's head, each entity as the state of its last
+	// update had it.
+	auto compose = [&]( size_t now, const std::map<uint32_t, uint32_t>& from ) {
+		net::StateFrame f;
+		f.tick = states[now].tick;
+		f.inputs = states[now].inputs;
+		const net::StateLayout& l = layouts[now];
+		auto put = [&]( const void* q, size_t n ) { f.state.insert( f.state.end(), (const uint8_t*)q, (const uint8_t*)q + n ); };
+		put( &l.magic, 4 );
+		put( &l.headSize, 4 );
+		put( l.head, l.headSize );
+		const uint32_t n = uint32_t( from.size() );
+		put( &n, 4 );
+		for ( const auto& [netId, tick] : from )
+		{
+			const net::StateSpan* e = layoutOf( &kept, tick )->Find( netId );
+			put( &e->netId, 4 );
+			put( &e->recordSize, 4 );
+			put( e->record, e->recordSize );
+			put( &e->bodiesSize, 4 );
+			if ( e->bodiesSize > 0 )
+			{
+				put( &e->hash, 8 );
+				put( e->bodies, e->bodiesSize );
+			}
+		}
+		return f;
+	};
+	std::deque<net::StateFrame> client;
+	auto stateOf = []( const void* context, uint32_t tick ) -> const net::StateFrame* {
+		const net::StateFrame* found = nullptr;
+		for ( const net::StateFrame& f : *static_cast<const std::deque<net::StateFrame>*>( context ) )
+		{
+			found = f.tick == tick ? &f : found;
+		}
+		return found;
+	};
+	std::map<uint32_t, uint32_t> last; // each entity the client has: the tick of its last update
+	size_t updateBytes = 0, updateCount = 0, left = 0, removals = 0;
+	for ( size_t i = 4; i < states.size(); ++i )
+	{
+		std::vector<net::EntityUpdate> updates;
+		std::vector<uint32_t> removed;
+		std::map<uint32_t, uint32_t> next;
+		const uint32_t away = i % 20 == 10 && layouts[i].entities.empty() == false ? layouts[i].entities[0].netId : 0;
+		for ( const auto& [netId, tick] : last )
+		{
+			if ( layouts[i].Find( netId ) == nullptr || netId == away )
+			{
+				removed.push_back( netId );
+			}
+		}
+		for ( const net::StateSpan& e : layouts[i].entities )
+		{
+			if ( e.netId == away )
+			{
+				continue;
+			}
+			auto had = last.find( e.netId );
+			if ( had == last.end() || e.netId % 2 == 1 || i % 3 == 0 )
+			{
+				updates.push_back( { e.netId, had != last.end() ? had->second : 0u } );
+				next[e.netId] = states[i].tick;
+			}
+			else
+			{
+				next[e.netId] = had->second;
+				left += 1;
+			}
+		}
+		removals += removed.size();
+		const net::StateFrame* base = i > 4 ? &states[i - 1] : nullptr;
+		std::vector<uint8_t> message;
+		std::vector<PlayerSlot> everyone;
+		for ( int slot = 0; slot < kMaxPlayers; ++slot )
+		{
+			everyone.push_back( PlayerSlot( slot ) );
+		}
+		CHECK( net::EncodeUpdates( states[i], base, updates, removed, everyone, layoutOf, &kept, message ) );
+		ByteReader r( message.data(), message.size() );
+		uint32_t tick = 0, baseTick = 0;
+		net::StateFrame back;
+		CHECK( net::ReadType( r ) == net::MsgType::State && net::ReadStateHeader( r, tick, baseTick ) );
+		CHECK( baseTick == ( base != nullptr ? base->tick : net::kNoStateBase ) );
+		const net::StateFrame* clientBase = base != nullptr ? stateOf( &client, base->tick ) : nullptr;
+		CHECK( net::DecodeState( r, tick, clientBase, client.empty() ? nullptr : &client.back(), stateOf, &client, back ) );
+		for ( int k = 0; k < 12; ++k )
+		{
+			// Cut short anywhere, or a byte changed anywhere: never a crash.
+			std::vector<uint8_t> bad( message );
+			const uint64_t r2 = NextRandom( rng );
+			if ( k % 2 == 0 )
+			{
+				bad.resize( size_t( r2 % bad.size() ) );
+			}
+			else
+			{
+				bad[size_t( r2 % bad.size() )] ^= uint8_t( 1 + ( r2 >> 32 ) % 255 );
+			}
+			ByteReader br( bad.data(), bad.size() );
+			net::StateFrame junk;
+			uint32_t t2 = 0, b2 = 0;
+			if ( net::ReadType( br ) == net::MsgType::State && net::ReadStateHeader( br, t2, b2 ) )
+			{
+				net::DecodeState( br, t2, clientBase, client.empty() ? nullptr : &client.back(), stateOf, &client, junk );
+			}
+		}
+		last = next;
+		CHECK( back.state == compose( i, last ).state );
+		CHECK( std::memcmp( back.inputs.data(), states[i].inputs.data(), sizeof( states[i].inputs ) ) == 0 );
+		client.push_back( std::move( back ) );
+		updateBytes += base != nullptr ? message.size() : 0;
+		updateCount += base != nullptr ? 1 : 0;
+	}
+	std::printf( "    updates: %zu entities left out (kept as the client had them), %zu named gone, %zu bytes a state on average\n", left, removals,
+				 updateBytes / std::max<size_t>( updateCount, 1 ) );
+	CHECK( left > 100 && updateCount > 100 && removals > 0 );
 }
 
 // --- The hybrid network model (M248; ROADMAP step 3) ---------------------------------------------
@@ -6882,6 +7025,150 @@ void TestHybridSession()
 	std::printf( "    the walker's own body predicted within 5 cm of the server's %u of %u ticks\n", within, both );
 	CHECK( both > 200 );
 	CHECK( within * 10 >= both * 8 );
+}
+
+// Puts the first eight players along a line once they are all in: 0, 30, 70, 150 m out and on.
+class SpreadOutMod final : public mods::ServerMod
+{
+public:
+	static constexpr int kPlayers = 8;
+	static constexpr float kAlong[kPlayers] = { 0.0f, 30.0f, 70.0f, 150.0f, 180.0f, 200.0f, 230.0f, 250.0f };
+	const char* Name() const override
+	{
+		return "test_spread_out";
+	}
+	void Declare( mods::Declarations& ) override
+	{
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		bool all = ctx.Tick() > 60;
+		for ( PlayerSlot slot = 0; slot < kPlayers; ++slot )
+		{
+			all = all && ctx.InWorld( slot );
+		}
+		if ( done || all == false )
+		{
+			return;
+		}
+		for ( PlayerSlot slot = 0; slot < kPlayers; ++slot )
+		{
+			ctx.RespawnAt( ctx.PlayerNetId( slot ), { kAlong[slot], 1.5f, 0.0f }, 0.0f );
+		}
+		done = true;
+	}
+	bool done = false;
+};
+
+// States by distance (M250): eight players 30 to 250 m apart on a wide floor, six on a lossy link. Each client's view of the others, against the server's at the same tick: the near ones
+// within a few states' walk (every character in every state: exactly), and refreshed all along;
+// the states smaller than with every character in every state.
+void TestHybridFar()
+{
+	LevelLayout wide;
+	wide.name = "net_test_wide";
+	wide.spawnCenter = { 0.0f, 1.5f, 0.0f };
+	wide.statics.push_back( { { 60.0f, -0.5f, 0.0f }, { 200.0f, 0.5f, 200.0f }, 0.0f, 0.0f } );
+	QuantizeLayout( wide );
+	std::vector<uint8_t> bytes;
+	SerializeMap( wide, bytes );
+	const std::string mapPath = ( std::filesystem::temp_directory_path() / "cb_net_test_wide.cbmap" ).string();
+	std::string error;
+	CHECK( WriteMapFile( mapPath, bytes, error ) );
+
+	struct Run
+	{
+		double bytesPerState = 0.0;
+		float farError = 0.0f; // metres, the worst (the nearest is 30 m away)
+		double errorSum = 0.0;
+		uint32_t compared = 0, refreshes = 0;	 // of the far ones: how often one moved on a client
+		uint64_t desyncs = 0;
+	};
+	auto run = [&]( uint16_t port, bool byDistance ) {
+		std::vector<std::unique_ptr<mods::ServerMod>> mods;
+		mods.push_back( std::make_unique<SpreadOutMod>() );
+		Harness h( port, {}, mapPath, {}, [&]( ServerOptions& o ) {
+			UseHybridModel( o );
+			o.statesByDistance = byDistance;
+		}, std::move( mods ) );
+		h.AddBot();
+		h.AddBot();
+		net::NetSimConfig bad;
+		bad.latencyMs = 25;
+		bad.jitterMs = 5;
+		bad.lossPercent = 3.0f;
+		bad.seed = 5;
+		h.AddNetSim( uint16_t( port + 1 ), bad );
+		for ( int i = 2; i < SpreadOutMod::kPlayers; ++i )
+		{
+			h.AddBot();
+		}
+		h.RunUntil( 4.0 );
+		// Where the server had each of the four, by tick.
+		std::map<uint32_t, std::array<b3Vec3, SpreadOutMod::kPlayers>> had;
+		h.server.SetTickObserver( [&] {
+			Simulation& s = h.server.Sim();
+			std::array<b3Vec3, SpreadOutMod::kPlayers>& at = had[s.Tick()];
+			for ( PlayerSlot slot = 0; slot < SpreadOutMod::kPlayers; ++slot )
+			{
+				const Transform* t = s.EntityTransform( s.PlayerNetId( slot ) );
+				at[slot] = t != nullptr ? t->position : b3Vec3{};
+			}
+		} );
+		Run out;
+		const uint64_t sentBefore = h.server.GetStats().statesSent, bytesBefore = h.server.GetStats().stateBytes;
+		std::array<std::array<b3Vec3, SpreadOutMod::kPlayers>, 2> seen{};
+		h.RunUntil( 9.0, [&]( double ) {
+			for ( int k = 0; k < 2; ++k )
+			{
+				GameClient& c = *h.bots[k == 0 ? 0 : 2].client;
+				Simulation* sim = c.Sim();
+				const PlayerSlot me = c.Slot();
+				auto server = sim != nullptr && c.Hybrid() != nullptr ? had.find( c.Hybrid()->PlacedTick() ) : had.end();
+				if ( server == had.end() )
+				{
+					continue;
+				}
+				for ( PlayerSlot slot = 0; slot < SpreadOutMod::kPlayers; ++slot )
+				{
+					const Transform* t = slot != me ? sim->EntityTransform( sim->PlayerNetId( slot ) ) : nullptr;
+					if ( t == nullptr )
+					{
+						continue;
+					}
+					const float off = b3Length( b3Sub( t->position, server->second[slot] ) );
+					out.farError = std::max( out.farError, off );
+					out.errorSum += off;
+					out.compared += 1;
+					out.refreshes += b3Length( b3Sub( t->position, seen[k][slot] ) ) > 0.001f ? 1 : 0;
+					seen[k][slot] = t->position;
+				}
+			}
+		} );
+		h.server.SetTickObserver( {} );
+		const GameServer::Stats& ss = h.server.GetStats();
+		out.bytesPerState = double( ss.stateBytes - bytesBefore ) / double( std::max<uint64_t>( ss.statesSent - sentBefore, 1 ) );
+		for ( Bot& b : h.bots )
+		{
+			CheckHybridClient( *b.client );
+			out.desyncs += b.client->GetStats().desyncs + b.client->Hybrid()->GetStats().rejected;
+		}
+		return out;
+	};
+	const Run byDistance = run( 48110, true );
+	const Run all = run( 48120, false );
+	const double meanError = byDistance.errorSum / double( std::max( byDistance.compared, 1u ) );
+	std::printf( "    by distance: %.0f bytes a state (every character: %.0f); the others on a client off by %.2f m on average, %.2f at most "
+				 "(%.2f with every character), %u compared, %u moved\n",
+				 byDistance.bytesPerState, all.bytesPerState, meanError, byDistance.farError, all.farError, byDistance.compared, byDistance.refreshes );
+	CHECK( byDistance.desyncs == 0 && all.desyncs == 0 );
+	CHECK( byDistance.compared > 1000 && byDistance.refreshes > 200 );
+	// (A far one is refreshed every 8 states: 16 ticks of walking, twice that when a refresh is lost.)
+	CHECK( meanError < 1.5 && byDistance.farError < 5.0f );
+	CHECK( all.farError < 0.01f );
+	// (The own character and what it holds stay a good part of a state: the far ones' share is what
+	// goes, and it grows with the players; cb_bot measures it.)
+	CHECK( byDistance.bytesPerState < all.bytesPerState * 0.9 );
 }
 
 // The hybrid on a bad connection: ~70 ms round trip with jitter, 3% loss and duplicates. A lost
@@ -7139,6 +7426,7 @@ int main( int argc, char** argv )
 		{ "state_codec", TestStateCodec },
 		{ "hybrid_session", TestHybridSession },
 		{ "hybrid_lossy", TestHybridLossy },
+		{ "hybrid_far", TestHybridFar },
 		{ "hybrid_reconnect", TestHybridReconnect },
 		{ "hybrid_own_throw", TestHybridOwnThrow },
 		{ "grace_expiry", TestGraceExpiry },

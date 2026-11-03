@@ -39,6 +39,12 @@ struct ServerOptions
 	// `stateEvery` ticks, and the physics checksum every `checksumInterval`.
 	net::NetModel netModel = net::NetModel::Inputs;
 	uint32_t stateEvery = 2;
+	// The hybrid (M250): each client is sent the characters by how far they are from its own, a
+	// far one's record refreshed every few states (StatePeriod); off, every one in every state. Off
+	// by default for now: each client's message is its own, and encoding them costs the server
+	// several milliseconds a tick at 64 players in a crowd (every character in every state: one
+	// encoding for all, 0.2 ms).
+	bool statesByDistance = false;
 	SimConfig config;
 	uint32_t maxClients = kMaxPlayers;
 	uint32_t checksumInterval = 30; // ticks
@@ -224,6 +230,23 @@ private:
 		// the newest sent to it.
 		uint32_t stateAck = net::kNoStateBase;
 		uint32_t stateSent = 0;
+		// By distance (M250): every entity it may have, by NetId, with the state of the last update
+		// of it it acknowledged (0: none yet); one gone is named in every state until one that
+		// named it is acknowledged. And the states sent to it: which entities each updated, and
+		// which it named gone.
+		struct Known
+		{
+			uint32_t netId = 0;
+			uint32_t acked = 0;
+			bool removing = false;
+		};
+		std::vector<Known> known;
+		struct Sent
+		{
+			uint32_t tick = 0;
+			std::vector<uint32_t> updated, removed;
+		};
+		std::deque<Sent> sent;
 		struct Slot
 		{
 			uint32_t tick = UINT32_MAX;
@@ -250,6 +273,24 @@ private:
 	void SendStates();
 	const net::StateFrame* KeptState( uint32_t tick ) const;
 	std::deque<net::StateFrame> m_states; // the newest last
+	// Each kept state read (its entities' parts), and where each of its entities was when it was
+	// saved (a held item: its holder; for how often a client is sent it). Alongside m_states.
+	struct Placed
+	{
+		b3Vec3 at = {};
+		uint32_t holder = 0;
+	};
+	struct KeptLayout
+	{
+		net::StateLayout layout;
+		std::vector<Placed> placed; // by layout.entities
+	};
+	std::deque<KeptLayout> m_layouts;
+	net::UpdateCache m_updateCache; // (the newest state's parts, shared by the clients' updates)
+	const KeptLayout* KeptLayoutOf( uint32_t tick ) const;
+	static const net::StateLayout* LayoutOfTick( const void* server, uint32_t tick );
+	// A client acknowledged the state of `tick` (by distance: what it updated is what it has).
+	void StateAcknowledged( Client& c, uint32_t tick );
 	// The hybrid: the physics checksum after each tick of the history (0: none), by tick % kFrameHistory.
 	std::vector<uint64_t> m_physicsSums;
 	const InputFrame* HistoryFrame( uint32_t tick ) const;
