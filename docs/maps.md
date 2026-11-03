@@ -108,7 +108,7 @@ same on every server:
 
 | | Solid (the default) | `pushed_by_characters` (a ball, a can) |
 |---|---|---|
-| A character walking into it | is stopped, and can stand on it | walks through it; its **pusher** (a capsule where it stands, in the physics world) shoves it. From above, it is stood on as a solid one is if it weighs 1/16 of the character or more (an 8 kg crate; not a 1 kg ball) |
+| A character walking into it | is stopped, and can stand on it | walks through it; its **pusher** (a capsule where it stands, in the physics world) shoves it. From above, it is stood on as a solid one is if it weighs 1/16 of the character or more (an 8 kg crate; not a 1 kg ball) and is no steeper there than the character can stand on (a heavy ball rolling in is walked through, not stood on by its side) |
 | What moves it | skills, shots, blasts, other bodies | the same, and pushers |
 | A falling one | pushes the character out, by its share of the two weights (a pebble hardly, a crate of the player's weight by half) | passes through the character |
 

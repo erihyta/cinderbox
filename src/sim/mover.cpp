@@ -145,8 +145,11 @@ float FindUnder( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, 
 }
 
 // The ground under `from`, `length` at most (to the sphere's lowest point and on): the level's and
-// solid bodies', and the tops of bodies pushed by characters that weigh `weight` or more.
-Ground SphereGround( b3WorldId world, b3Pos from, float length, float radius, float weight )
+// solid bodies', and the tops of bodies pushed by characters that weigh `weight` or more and whose
+// surface there is no steeper than `minUp` (the cosine of the steepest that holds the character up):
+// a ball's side, which rolls in under the hovering capsule, is walked through, not ground too steep
+// to stand on (which would drop the character to the floor).
+Ground SphereGround( b3WorldId world, b3Pos from, float length, float radius, float weight, float minUp )
 {
 	const b3Vec3 centre = { 0.0f, 0.0f, 0.0f };
 	const b3ShapeProxy ball = { &centre, 1, radius };
@@ -156,33 +159,39 @@ Ground SphereGround( b3WorldId world, b3Pos from, float length, float radius, fl
 	SphereContext loose = { true, weight, false, 1.0f, {}, {} };
 	b3World_CastShape( world, from, &ball, down, kGroundFilter, FindUnder, &solid );
 	b3World_CastShape( world, from, &ball, down, kPushableFilter, FindUnder, &loose );
-	const SphereContext* best = loose.hit && ( solid.hit == false || loose.fraction < solid.fraction ) ? &loose : solid.hit ? &solid : nullptr;
-	if ( best == nullptr )
-	{
-		return {};
-	}
-	Ground g = { true, 0.0f, best->normal };
-	// The surface's own normal where the sphere touches it: on an edge the sphere's normal leans out
-	// over the edge, and the slope would let it slide off ground that is level. A short ray down,
-	// just past the touch (away from the sphere's centre: onto the surface the edge belongs to).
-	float off = 0.0f;
-	const b3Vec3 out = b3GetLengthAndNormalize( &off, b3Vec3{ best->point.x - from.x, 0.0f, best->point.z - from.z } );
-	const float nudge = off > 0.001f ? 0.02f : 0.0f;
-	const b3Pos above = { best->point.x + out.x * nudge, from.y, best->point.z + out.z * nudge };
-	const float reach = from.y - best->point.y + 0.05f;
-	if ( reach > 0.0f )
-	{
-		const b3RayResult surface = b3World_CastRayClosest( world, above, { 0.0f, -reach, 0.0f }, best->pushable ? kPushableFilter : kGroundFilter );
-		if ( surface.hit )
+	auto groundOf = [&]( const SphereContext& hit ) {
+		Ground g = { true, 0.0f, hit.normal };
+		// The surface's own normal where the sphere touches it: on an edge the sphere's normal leans
+		// out over the edge, and the slope would let it slide off ground that is level. A short ray
+		// down, just past the touch (away from the sphere's centre: onto the surface the edge belongs to).
+		float off = 0.0f;
+		const b3Vec3 out = b3GetLengthAndNormalize( &off, b3Vec3{ hit.point.x - from.x, 0.0f, hit.point.z - from.z } );
+		const float nudge = off > 0.001f ? 0.02f : 0.0f;
+		const b3Pos above = { hit.point.x + out.x * nudge, from.y, hit.point.z + out.z * nudge };
+		const float reach = from.y - hit.point.y + 0.05f;
+		if ( reach > 0.0f )
 		{
-			g.normal = surface.normal;
+			const b3RayResult surface = b3World_CastRayClosest( world, above, { 0.0f, -reach, 0.0f }, hit.pushable ? kPushableFilter : kGroundFilter );
+			if ( surface.hit )
+			{
+				g.normal = surface.normal;
+			}
+		}
+		// How far the ground is under the middle, as a ray would find it: on a slope the sphere touches
+		// uphill, its centre radius / cos(slope) over the plane, not radius. (So the character stands
+		// as high on a slope as it did with a ray; past the steepest that holds it up it slides anyway.)
+		g.distance = hit.fraction * travel + radius / std::max( g.normal.y, 0.5f );
+		return g;
+	};
+	if ( loose.hit && ( solid.hit == false || loose.fraction < solid.fraction ) )
+	{
+		const Ground top = groundOf( loose );
+		if ( top.normal.y >= minUp )
+		{
+			return top;
 		}
 	}
-	// How far the ground is under the middle, as a ray would find it: on a slope the sphere touches
-	// uphill, its centre radius / cos(slope) over the plane, not radius. (So the character stands as
-	// high on a slope as it did with a ray; past the steepest that holds it up it slides anyway.)
-	g.distance = best->fraction * travel + radius / std::max( g.normal.y, 0.5f );
-	return g;
+	return solid.hit ? groundOf( solid ) : Ground{};
 }
 
 } // namespace
@@ -287,12 +296,12 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	b3Pos probeOrigin = b3Add( t.position, capsule.center1 );
 	// (The ground is the physics world's: no character stands on another.)
 	const b3WorldId ground = b3World_IsValid( body.scenery ) ? body.scenery : body.world;
-	const Ground under = SphereGround( ground, probeOrigin, probeLength, kProbeWidth * body.radius, kTopWeight * params[MoveParam::Mass] );
-
 	// Ground steeper than max_slope does not hold the character up: it slides down it, under gravity,
 	// along the slope the mover's planes give it, and cannot walk or jump up it.
 	const float maxSlope = params[MoveParam::MaxSlope];
-	const bool tooSteep = under.hit && maxSlope < 90.0f && under.normal.y < detmath::CosSin( maxSlope * ( detmath::kPi / 180.0f ) ).cosine;
+	const float minUp = maxSlope < 90.0f ? detmath::CosSin( maxSlope * ( detmath::kPi / 180.0f ) ).cosine : -1.0f;
+	const Ground under = SphereGround( ground, probeOrigin, probeLength, kProbeWidth * body.radius, kTopWeight * params[MoveParam::Mass], minUp );
+	const bool tooSteep = under.hit && under.normal.y < minUp;
 
 	bool wasGrounded = c.grounded != 0;
 	if ( under.hit == false || v.y > 0.0f || tooSteep )
