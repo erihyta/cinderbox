@@ -264,7 +264,7 @@ private:
 	// The state after the tick just simulated, as a frame of the view file.
 	void RecordView( const InputFrame& frame );
 	std::vector<InputFrame> m_history; // indexed by tick % kFrameHistory
-	Client m_clients[kMaxPlayers];
+	std::vector<Client> m_clients = std::vector<Client>( kMaxPlayers ); // (255 of them: too big for a stack)
 	std::vector<PlayerEvent> m_pendingEvents;
 	std::function<void()> m_tickObserver;
 	net::InputArray m_lastInputs{};

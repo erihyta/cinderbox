@@ -1813,9 +1813,14 @@ b3Vec3 Simulation::SpawnPoint( PlayerSlot slot ) const
 	{
 		return layout.spawnCenter; // (a body no player drives: an NPC)
 	}
-	float col = float( slot % 8 );
-	float row = float( slot / 8 );
-	return { layout.spawnCenter.x - 5.25f + 1.5f * col, layout.spawnCenter.y, layout.spawnCenter.z + 1.5f * row };
+	// Blocks of 64, 8 by 8, 1.5 m apart: the first in front of the centre, the next behind it, then
+	// to its left and to its right (M250: 255 players stand within about 34 by 22 m).
+	const int block = slot / 64;
+	const float col = float( slot % 8 );
+	const float row = float( ( slot % 64 ) / 8 );
+	const float x = layout.spawnCenter.x - 5.25f + 1.5f * col + ( block == 2 ? -12.0f : block == 3 ? 12.0f : 0.0f );
+	const float z = block == 1 ? layout.spawnCenter.z - 1.5f - 1.5f * row : layout.spawnCenter.z + 1.5f * row;
+	return { x, layout.spawnCenter.y, z };
 }
 
 flecs::entity Simulation::CreatePlayer( PlayerSlot slot )

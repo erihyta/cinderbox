@@ -1101,18 +1101,25 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w, bool withIn
 
 	if ( withInputs )
 	{
-		uint64_t changed = 0;
+		// Which slots' inputs changed: a bit each, in as many bytes as the highest one needs.
+		uint8_t changed[( kMaxPlayers + 7 ) / 8] = {};
+		int bytes = 0;
 		for ( int i = 0; i < kMaxPlayers; ++i )
 		{
 			if ( !( frame.inputs[i] == m_previous[i] ) )
 			{
-				changed |= uint64_t( 1 ) << i;
+				changed[i / 8] |= uint8_t( 1u << ( i % 8 ) );
+				bytes = i / 8 + 1;
 			}
 		}
-		w.Write( changed );
-		for ( int i = 0; i < kMaxPlayers; ++i )
+		w.Write( uint8_t( bytes ) );
+		for ( int b = 0; b < bytes; ++b )
 		{
-			if ( changed & ( uint64_t( 1 ) << i ) )
+			w.Write( changed[b] );
+		}
+		for ( int i = 0; i < bytes * 8 && i < kMaxPlayers; ++i )
+		{
+			if ( changed[i / 8] & ( 1u << ( i % 8 ) ) )
 			{
 				WriteInputDelta( w, frame.inputs[i], m_previous[i] );
 			}
@@ -1208,10 +1215,19 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame, uint64_t* checksu
 	frame.inputs = m_previous;
 	if ( flags & FrameInputs )
 	{
-		uint64_t changed = r.Read<uint64_t>();
-		for ( int i = 0; i < kMaxPlayers && r.Ok(); ++i )
+		uint8_t changed[( kMaxPlayers + 7 ) / 8] = {};
+		const uint8_t bytes = r.Read<uint8_t>();
+		if ( bytes > sizeof( changed ) )
 		{
-			if ( ( changed & ( uint64_t( 1 ) << i ) ) == 0 )
+			return false;
+		}
+		for ( int b = 0; b < bytes; ++b )
+		{
+			changed[b] = r.Read<uint8_t>();
+		}
+		for ( int i = 0; i < bytes * 8 && i < kMaxPlayers && r.Ok(); ++i )
+		{
+			if ( ( changed[i / 8] & ( 1u << ( i % 8 ) ) ) == 0 )
 			{
 				continue;
 			}
