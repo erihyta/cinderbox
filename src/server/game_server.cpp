@@ -832,6 +832,7 @@ void GameServer::HandleInput( Client& client, const MsgInput& msg, double now )
 			 msg.stateAck <= client.stateSent && KeptState( msg.stateAck ) != nullptr )
 		{
 			client.stateAck = msg.stateAck;
+			StateAcknowledged( client, msg.stateAck );
 		}
 	}
 	{
@@ -902,6 +903,8 @@ void GameServer::SendSnapshots()
 		c.sentThrough = c.ackTick;
 		c.stateAck = kNoStateBase;
 		c.stateSent = 0;
+		c.known.clear();
+		c.sent.clear();
 		m_stats.snapshotsSent += 1;
 	}
 }
@@ -1030,9 +1033,26 @@ void GameServer::RunTick( double now )
 		state.inputs = m_lastInputs;
 		m_sim->SaveState( state.state, true );
 		m_states.push_back( std::move( state ) );
+		KeptLayout kept;
+		if ( net::ReadLayout( m_states.back().state, kept.layout ) )
+		{
+			// Where everything is (by NetId, as the state has them): what a client is near.
+			kept.placed.resize( kept.layout.entities.size() );
+			for ( size_t i = 0; i < kept.layout.entities.size(); ++i )
+			{
+				const uint32_t netId = kept.layout.entities[i].netId;
+				const flecs::entity e = m_sim->FindEntity( netId );
+				const cb::HeldItem* held = e.is_valid() ? e.try_get<cb::HeldItem>() : nullptr;
+				const uint32_t holder = held != nullptr ? held->holder : 0;
+				const Transform* at = m_sim->EntityTransform( holder != 0 ? holder : netId );
+				kept.placed[i] = { at != nullptr ? at->position : b3Vec3{}, holder };
+			}
+		}
+		m_layouts.push_back( std::move( kept ) );
 		while ( m_states.size() > kStateHistory )
 		{
 			m_states.pop_front();
+			m_layouts.pop_front();
 		}
 		const double ms = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
 		m_stats.stateMsTotal += ms;
@@ -1402,10 +1422,88 @@ const StateFrame* GameServer::KeptState( uint32_t tick ) const
 	return nullptr;
 }
 
+const GameServer::KeptLayout* GameServer::KeptLayoutOf( uint32_t tick ) const
+{
+	// (Kept in tick order: found by halving.)
+	size_t lo = 0, hi = m_states.size();
+	while ( lo < hi )
+	{
+		const size_t mid = ( lo + hi ) / 2;
+		if ( m_states[mid].tick < tick )
+		{
+			lo = mid + 1;
+		}
+		else
+		{
+			hi = mid;
+		}
+	}
+	return lo < m_states.size() && m_states[lo].tick == tick && lo < m_layouts.size() ? &m_layouts[lo] : nullptr;
+}
+
+const net::StateLayout* GameServer::LayoutOfTick( const void* server, uint32_t tick )
+{
+	const KeptLayout* kept = static_cast<const GameServer*>( server )->KeptLayoutOf( tick );
+	return kept != nullptr ? &kept->layout : nullptr;
+}
+
+namespace
+{
+
+// How often a client is sent the record of a character this far from its own (and of what that
+// one holds): every state near, every 2nd, 4th or 8th further off (M250).
+uint32_t StatePeriod( float distance )
+{
+	return distance < 25.0f ? 1u : distance < 50.0f ? 2u : distance < 100.0f ? 4u : 8u;
+}
+
+// How old the state a client's record of an entity is from may be, in states, for a change
+// against it (the client keeps 32: GameClient::HandleState).
+constexpr uint32_t kOldestBase = 24;
+
+} // namespace
+
+void GameServer::StateAcknowledged( Client& c, uint32_t tick )
+{
+	// (Acknowledgements only move forward: the states sent before this one are done with too.)
+	while ( c.sent.empty() == false && c.sent.front().tick < tick )
+	{
+		c.sent.pop_front();
+	}
+	if ( c.sent.empty() || c.sent.front().tick != tick )
+	{
+		return;
+	}
+	const Client::Sent& sent = c.sent.front();
+	auto find = [&]( uint32_t netId ) {
+		auto it = std::lower_bound( c.known.begin(), c.known.end(), netId, []( const Client::Known& k, uint32_t id ) { return k.netId < id; } );
+		return it != c.known.end() && it->netId == netId ? it : c.known.end();
+	};
+	for ( uint32_t netId : sent.updated )
+	{
+		if ( auto it = find( netId ); it != c.known.end() && it->removing == false )
+		{
+			it->acked = std::max( it->acked, tick );
+		}
+	}
+	for ( uint32_t netId : sent.removed )
+	{
+		if ( auto it = find( netId ); it != c.known.end() && it->removing )
+		{
+			c.known.erase( it );
+		}
+	}
+	c.sent.pop_front();
+}
+
 // The newest state to every client that does not have it, as a change against the newest it has
-// (whole when that is no longer kept, or it has none). Clients with the same base share one
-// encoding. Unreliable and in any order: the client keeps the newest, and the next one is a few
-// ticks away.
+// (whole when that is no longer kept, or it has none). Unreliable and in any order: the client
+// keeps the newest, and the next one is a few ticks away.
+//
+// By distance (M250): each client is sent updates. Its own character, what it holds, everything
+// near it, and what it has not had yet, every state; a far one every few states (StatePeriod),
+// each a change against the record of it the client last acknowledged. What is left out it keeps;
+// what is gone is named until a state naming it is acknowledged.
 void GameServer::SendStates()
 {
 	if ( m_states.empty() )
@@ -1414,12 +1512,37 @@ void GameServer::SendStates()
 	}
 	auto start = std::chrono::steady_clock::now();
 	const StateFrame& newest = m_states.back();
+	const KeptLayout* now = KeptLayoutOf( newest.tick );
+	const uint32_t every = std::max( m_options.stateEvery, 1u );
 	struct Encoded
 	{
 		uint32_t base;
 		std::vector<uint8_t> bytes;
 	};
 	std::vector<Encoded> cache;
+	std::vector<uint8_t> own;
+	std::vector<Client::Known> next;
+	// Whose slot each character is (by NetId): a slot's input goes with its character's update.
+	std::vector<std::pair<uint32_t, PlayerSlot>> players;
+	for ( int slot = 0; slot < kMaxPlayers; ++slot )
+	{
+		if ( const uint32_t id = m_sim->PlayerNetId( PlayerSlot( slot ) ); id != 0 )
+		{
+			players.push_back( { id, PlayerSlot( slot ) } );
+		}
+	}
+	std::sort( players.begin(), players.end() );
+	std::vector<PlayerSlot> inputSlots;
+	// The same updates against the same base make the same message (clients in a crowd, who
+	// acknowledge in step): encoded once. What it says, as numbers, and its bytes.
+	struct Shared
+	{
+		uint64_t hash = 0;
+		std::vector<uint32_t> says;
+		std::vector<uint8_t> bytes;
+	};
+	std::vector<Shared> shared;
+	std::vector<uint32_t> says;
 	for ( Client& c : m_clients )
 	{
 		if ( c.used == false || c.connected == false || c.welcomed == false || c.stateSent >= newest.tick )
@@ -1428,22 +1551,128 @@ void GameServer::SendStates()
 		}
 		const StateFrame* base = c.stateAck != kNoStateBase ? KeptState( c.stateAck ) : nullptr;
 		const uint32_t baseTick = base != nullptr ? base->tick : kNoStateBase;
-		Encoded* hit = nullptr;
-		for ( Encoded& e : cache )
+		const std::vector<uint8_t>* bytes = nullptr;
+		if ( m_options.statesByDistance && now != nullptr )
 		{
-			hit = e.base == baseTick ? &e : hit;
+			const uint32_t ownId = m_sim->PlayerNetId( c.slot );
+			const Transform* ownAt = ownId != 0 ? m_sim->EntityTransform( ownId ) : nullptr;
+			const uint32_t round = newest.tick / every;
+			Client::Sent sent;
+			sent.tick = newest.tick;
+			std::vector<net::EntityUpdate> updates;
+			updates.reserve( now->layout.entities.size() );
+			next.clear();
+			next.reserve( c.known.size() + 16 );
+			size_t k = 0;
+			auto gone = [&]( const Client::Known& had ) {
+				next.push_back( { had.netId, had.acked, true } );
+				sent.removed.push_back( had.netId );
+			};
+			for ( size_t i = 0; i < now->layout.entities.size(); ++i )
+			{
+				const uint32_t netId = now->layout.entities[i].netId;
+				while ( k < c.known.size() && c.known[k].netId < netId )
+				{
+					gone( c.known[k++] );
+				}
+				const Client::Known* had = k < c.known.size() && c.known[k].netId == netId ? &c.known[k++] : nullptr;
+				const uint32_t acked = had != nullptr && had->removing == false ? had->acked : 0;
+				const Placed& placed = now->placed[i];
+				const bool mine = ownId != 0 && ( netId == ownId || placed.holder == ownId );
+				const uint32_t period = ownAt == nullptr || mine ? 1u : StatePeriod( b3Length( b3Sub( placed.at, ownAt->position ) ) );
+				// (Not had yet: every state until it has.)
+				const bool due = period == 1 || acked == 0 || ( round + netId ) % period == 0;
+				if ( due )
+				{
+					// Against the record it has, if that one is still kept here and there.
+					const bool kept = acked != 0 && newest.tick - acked <= kOldestBase * every && KeptLayoutOf( acked ) != nullptr;
+					updates.push_back( { netId, kept ? acked : 0u } );
+					sent.updated.push_back( netId );
+				}
+				if ( due || had != nullptr )
+				{
+					next.push_back( { netId, acked, false } );
+				}
+			}
+			while ( k < c.known.size() )
+			{
+				gone( c.known[k++] );
+			}
+			inputSlots.clear();
+			size_t pl = 0;
+			for ( const net::EntityUpdate& u : updates )
+			{
+				while ( pl < players.size() && players[pl].first < u.netId )
+				{
+					++pl;
+				}
+				if ( pl < players.size() && players[pl].first == u.netId )
+				{
+					inputSlots.push_back( players[pl].second );
+				}
+			}
+			std::sort( inputSlots.begin(), inputSlots.end() );
+			says.clear();
+			says.push_back( baseTick );
+			says.push_back( uint32_t( updates.size() ) );
+			for ( const net::EntityUpdate& u : updates )
+			{
+				says.push_back( u.netId );
+				says.push_back( u.baseTick );
+			}
+			says.push_back( uint32_t( sent.removed.size() ) );
+			says.insert( says.end(), sent.removed.begin(), sent.removed.end() );
+			says.insert( says.end(), inputSlots.begin(), inputSlots.end() );
+			const uint64_t hash = HashBytes( kHashSeed, says.data(), says.size() * sizeof( uint32_t ) );
+			const Shared* same = nullptr;
+			for ( const Shared& m : shared )
+			{
+				same = same == nullptr && m.hash == hash && m.says == says ? &m : same;
+			}
+			if ( same == nullptr &&
+				 net::EncodeUpdates( newest, base, updates, sent.removed, inputSlots, &GameServer::LayoutOfTick, this, own, &m_updateCache ) )
+			{
+				shared.push_back( { hash, says, own } );
+				same = &shared.back();
+			}
+			if ( same != nullptr )
+			{
+				bytes = &same->bytes;
+				c.known.swap( next );
+				c.sent.push_back( std::move( sent ) );
+				while ( c.sent.size() > kStateHistory )
+				{
+					c.sent.pop_front();
+				}
+				m_stats.statesWhole += base == nullptr ? 1 : 0;
+			}
 		}
-		if ( hit == nullptr )
+		if ( bytes == nullptr )
 		{
-			cache.push_back( { baseTick, {} } );
-			hit = &cache.back();
-			EncodeState( newest, base, hit->bytes );
+			// Every entity as it is now: clients with the same base share one encoding. (By distance,
+			// what a client has is not the state of its tick: whole, then, and it has it all.)
+			const StateFrame* against = m_options.statesByDistance ? nullptr : base;
+			const uint32_t againstTick = against != nullptr ? baseTick : kNoStateBase;
+			Encoded* hit = nullptr;
+			for ( Encoded& e : cache )
+			{
+				hit = e.base == againstTick ? &e : hit;
+			}
+			if ( hit == nullptr )
+			{
+				cache.push_back( { againstTick, {} } );
+				hit = &cache.back();
+				EncodeState( newest, against, hit->bytes );
+			}
+			bytes = &hit->bytes;
+			m_stats.statesWhole += against == nullptr ? 1 : 0;
+			c.known.clear();
+			c.sent.clear();
 		}
-		m_transport.SendUnordered( c.peer, ChannelInput, hit->bytes );
+		m_transport.SendUnordered( c.peer, ChannelInput, *bytes );
 		c.stateSent = newest.tick;
 		m_stats.statesSent += 1;
-		m_stats.statesWhole += base == nullptr ? 1 : 0;
-		m_stats.stateBytes += hit->bytes.size();
+		m_stats.stateBytes += bytes->size();
 	}
 	m_stats.stateMsTotal += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
 }

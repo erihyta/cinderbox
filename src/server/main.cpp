@@ -68,7 +68,7 @@ void Usage()
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
 				 "                 [--map FILE.cbmap | --map NAME] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
 				 "                 [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
-				 "                 [--physics-threads N] [--net-model hybrid|inputs]\n"
+				 "                 [--physics-threads N] [--net-model hybrid|inputs] [--states-by-distance]\n"
 				 "                 [--character NAME [--workshop DIR]] [--quiet]\n" );
 }
 
@@ -235,6 +235,13 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 				return false;
 			}
 			o.netModel = model == "hybrid" ? cb::net::NetModel::Hybrid : cb::net::NetModel::Inputs;
+			continue;
+		}
+		if ( arg == "--states-by-distance" )
+		{
+			// The hybrid (M250): each client sent the characters by how far they are (off by default:
+			// the server's cost, ServerOptions::statesByDistance).
+			o.statesByDistance = true;
 			continue;
 		}
 		if ( arg == "--record" && i + 1 < argc )
