@@ -23,7 +23,7 @@ FetchContent_Declare(flecs
 )
 
 # --- Box3D (main @ 2026-08-29) ---
-# Two local patches (cmake/patches/):
+# Local patches (cmake/patches/):
 # - box3d-snapshot-padding.patch: snapshots zero struct padding, union bytes past the active member,
 #   and geometry pointers, so a snapshot holds only simulation state (it used to carry stack bytes
 #   and a heap address to every joining client).
@@ -33,6 +33,8 @@ FetchContent_Declare(flecs
 #   can say which part of two snapshots that should be equal differs (cbx_SnapSections).
 # - box3d-snapshot-free-contacts.patch: a free contact slot's cache is zeroed in a snapshot (a mesh
 #   contact's freed triangle cache left its address there: CI's macOS build saw it, M247).
+# - box3d-mesh-cache-zero.patch: a mesh contact's new triangle cache is zeroed whole, not only its
+#   union's first member (the rest held stack bytes: CI's Linux clang saw them, M250).
 set(BOX3D_DISABLE_SIMD OFF CACHE BOOL "" FORCE)
 set(BOX3D_DOUBLE_PRECISION OFF CACHE BOOL "" FORCE)
 find_package(Git REQUIRED)
@@ -51,6 +53,9 @@ FetchContent_Declare(box3d
 		-P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
 	COMMAND "${CMAKE_COMMAND}" -DGIT=${GIT_EXECUTABLE}
 		-DPATCH=${CMAKE_CURRENT_LIST_DIR}/patches/box3d-snapshot-free-contacts.patch
+		-P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
+	COMMAND "${CMAKE_COMMAND}" -DGIT=${GIT_EXECUTABLE}
+		-DPATCH=${CMAKE_CURRENT_LIST_DIR}/patches/box3d-mesh-cache-zero.patch
 		-P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatch.cmake
 )
 
