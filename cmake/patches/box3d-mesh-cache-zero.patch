@@ -1,0 +1,23 @@
+diff --git a/src/mesh_contact.c b/src/mesh_contact.c
+index b3471ce..4beb195 100644
+--- a/src/mesh_contact.c
++++ b/src/mesh_contact.c
+@@ -10,6 +10,7 @@
+ #include "box3d/types.h"
+ 
+ #include <stdio.h>
++#include <string.h>
+ 
+ #define B3_MAX_POINTS_PER_TRIANGLE 32
+ 
+@@ -138,7 +139,9 @@ static void b3RefreshCache( b3Contact* contact, const b3Shape* shapeA, b3WorldTr
+ 	int index2 = 0;
+ 	for ( int index1 = 0; index1 < triangleCount; ++index1 )
+ 	{
+-		contactCache[index1] = (b3ContactCache){ 0 };
++		// Every byte, not only the union's first member: a snapshot and its checks read them all, and
++		// what the compound literal leaves is whatever the stack held (cinderbox).
++		memset( &contactCache[index1], 0, sizeof( contactCache[index1] ) );
+ 
+ 		while ( index2 < contact->meshContact.triangleCache.count &&
+ 				contact->meshContact.triangleCache.data[index2].triangleIndex < triangleIndices[index1] )
