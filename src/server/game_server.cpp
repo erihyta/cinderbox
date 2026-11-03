@@ -265,6 +265,10 @@ bool GameServer::Start( const ServerOptions& options )
 		layers = std::max( layers, graph ? LayerSlots( *graph ) : size_t( 0 ) );
 	}
 	m_options.config.layers = uint8_t( std::min( layers, size_t( kLayerLimit ) ) );
+	// The hybrid's lag compensation for the motions' finds and probes, in the simulation (a
+	// recording plays it again): as far back as the mods' casts (an input's seenBack is a byte).
+	m_options.config.compensation =
+		m_options.netModel == NetModel::Hybrid ? uint8_t( std::min<uint32_t>( m_options.LagCompensationTicks(), 255 ) ) : uint8_t( 0 );
 	{
 		// What that costs: every client keeps, hashes and rolls back as much.
 		const SimConfig& c = m_options.config;

@@ -173,12 +173,20 @@ ROADMAP step 3). **Inputs**: what follows below; every client simulates the whol
   round trip of a few states it cost as much as it saved).
 - **Lag compensation** (M250, `--lag-compensation MS`, 500 by default): each input says how many
   ticks back the player saw the others (`PlayerInput::seenBack`: its tick minus the state they
-  stand as; the simulation never reads it). The server keeps the characters' places and poses of
-  the last ticks (`GameServer::RecordPast`), and a mod's cast that leaves a player out (its shot,
-  its swing: `Context::CastRay`) meets the other characters' hitboxes as that player saw them; the
-  world as it is. A hybrid game shows the others a round trip and its physics' buffer back (about
-  20 ticks at a 100 ms round trip). Motions' finds and probes, in the simulation, are not
-  compensated yet.
+  stand as). A hybrid game shows the others a round trip and its physics' buffer back (about 20
+  ticks at a 100 ms round trip). Hit tests take the others as that player saw them, the world as
+  it is:
+  - **Mods' casts** (its shot, its swing: `Context::CastRay` leaving a player out): the server
+    keeps the characters' places and poses of the last ticks (`GameServer::RecordPast`) and meets
+    their hitboxes there.
+  - **Motions' finds and probes** (a punch, a hook, a thrown ball), in the simulation: the config
+    says how many ticks (`SimConfig::compensation`, the same limit; 0 in the inputs model). A
+    simulation that moves its characters itself (the server's, a replay's) keeps their capsules as
+    each tick began (`Simulation::RecordPast`); while a player's motions run, a character it saw
+    elsewhere is left out of the world's query and its capsule there tested instead, as Box3D
+    tests one (`CastSeen`). A hold on it is on it where it is now, at the spot hit; a find's
+    distance and "away" are as seen. Kept in snapshots, not in a portable image (no one who loads
+    one moves the characters with it).
 - **Your own character, predicted** (`Simulation::StepCharacters`): ahead of the server, against the
   physics world as it is (in the past); made the server's again by each state and its inputs since
   run again. While the physics steps a past tick, it stands where the server had it then. What

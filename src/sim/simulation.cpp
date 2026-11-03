@@ -13,6 +13,7 @@
 
 #include "box3d/box3d.h"
 #include "box3d/collision.h"
+#include "box3d/constants.h"
 
 #include <algorithm>
 #include <atomic>
@@ -2453,6 +2454,10 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		// and this tick's commands left it, by this tick's input. A frozen player does none.
 		if ( m_motions )
 		{
+			// Lag compensation: a player's finds and probes meet the others as its input says it saw
+			// them (an NPC's: as they are).
+			m_seen = slot >= 0 ? SeenAt( in ) : nullptr;
+			m_seenBy = netId;
 			MotionState motion = GetMotionState( e );
 			FlyHold( e, motion );
 			{
@@ -2575,6 +2580,8 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 				SetMotionState( e, motion );
 				ApplyMotionEffects( e, c, t, in, motion, boardBefore, m_motionActive, values );
 			}
+			m_seen = nullptr;
+			m_seenBy = 0;
 		}
 		// (Stored once every player's motions have run: until then the others read it as it was.)
 		m_turnCharacters[d] = c;
@@ -3248,6 +3255,9 @@ void Simulation::Step( const InputFrame& given )
 	{
 		PhysicsThreads::Wake();
 	}
+	// The characters as the tick begins (what a state of this tick shows them as), for lag
+	// compensation.
+	RecordPast();
 
 	// (The profile: the time between two of these goes to the part named.)
 	auto last = std::chrono::steady_clock::now();
@@ -3506,6 +3516,7 @@ void Simulation::Save( Snapshot& out )
 	out.physics.resize( arenaBytes + 2 * worldBytes );
 	std::memcpy( out.physics.data() + arenaBytes, cbx_WorldStructPtr( m_physicsWorld ), worldBytes );
 	std::memcpy( out.physics.data() + arenaBytes + worldBytes, cbx_WorldStructPtr( m_characterWorld ), worldBytes );
+	out.past.assign( m_past.begin(), m_past.end() );
 }
 
 void Simulation::Load( const Snapshot& snapshot )
@@ -3517,6 +3528,7 @@ void Simulation::Load( const Snapshot& snapshot )
 	m_arena->Restore( snapshot.physics.data(), arenaBytes );
 	std::memcpy( cbx_WorldStructPtr( m_physicsWorld ), snapshot.physics.data() + arenaBytes, worldBytes );
 	std::memcpy( cbx_WorldStructPtr( m_characterWorld ), snapshot.physics.data() + arenaBytes + worldBytes, worldBytes );
+	m_past.assign( snapshot.past.begin(), snapshot.past.end() );
 }
 
 uint64_t Simulation::ComputeHash()
@@ -5145,7 +5157,9 @@ void Simulation::HoldOn( MotionHold& hold, const RayHit& hit ) const
 	if ( a.is_valid() && a.has<Character>() )
 	{
 		hold.anchor = hit.netId;
-		hold.point = b3Sub( hit.point, a.get<Transform>().position );
+		// (Met where its player saw it, lag compensated: on it as seen.)
+		const PastCapsule* seen = SeenCapsule( hit.netId );
+		hold.point = b3Sub( hit.point, seen != nullptr ? seen->position : a.get<Transform>().position );
 	}
 	else if ( a.is_valid() && a.has<PhysicsBody>() && a.has<StaticGeometry>() == false && a.has<RagdollBodies>() == false )
 	{
@@ -5648,7 +5662,8 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 			auto each = []( b3ShapeId shape, void* context ) -> bool {
 				auto* f = static_cast<Found*>( context );
 				uint32_t netId = f->sim->NetIdOfShape( shape );
-				if ( netId != 0 )
+				// (One seen elsewhere is met there: below.)
+				if ( netId != 0 && f->sim->SeenElsewhere( netId ) == false )
 				{
 					f->out->push_back( netId );
 				}
@@ -5658,6 +5673,30 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 			for ( b3WorldId world : { m_physicsWorld, m_characterWorld } )
 			{
 				b3World_OverlapShape( world, t.position, &proxy, filter, each, &ctx );
+			}
+			// Lag compensation: the others' capsules as the player saw them (as the world's query
+			// meets a capsule body there).
+			if ( m_seen != nullptr )
+			{
+				float reach = 0.0f;
+				for ( int i = 0; i < count; ++i )
+				{
+					reach = std::max( reach, b3Length( points[i] ) );
+				}
+				reach += piece.radius;
+				for ( const PastCapsule& past : m_seen->capsules )
+				{
+					const b3Vec3 offset = b3Sub( past.position, t.position );
+					if ( b3Length( offset ) > reach + past.halfHeight + past.radius || SeenCapsule( past.netId ) == nullptr )
+					{
+						continue;
+					}
+					const b3Capsule capsule = { { 0.0f, -past.halfHeight, 0.0f }, { 0.0f, past.halfHeight, 0.0f }, past.radius };
+					if ( b3OverlapCapsule( &capsule, b3Transform{ offset, b3Quat_identity }, &proxy ) )
+					{
+						found.push_back( past.netId );
+					}
+				}
 			}
 		}
 	}
@@ -5678,6 +5717,12 @@ void Simulation::RunFind( flecs::entity e, Character& c, const Transform& t, con
 			continue;
 		}
 		MotionEnd end = EndOf( e, t, FindEntity( netId ) );
+		if ( const PastCapsule* seen = SeenCapsule( netId ); seen != nullptr && end.kind == MotionEnd::Kind::Player )
+		{
+			// Where the player saw it: how far, and which way away, are as it saw them (its effects
+			// are on it as it is).
+			end.point = b3Add( end.point, b3Sub( seen->position, end.entity.get<Transform>().position ) );
+		}
 		bool player = end.kind == MotionEnd::Kind::Player || end.kind == MotionEnd::Kind::Self;
 		if ( end.kind == MotionEnd::Kind::None || ( player && ( find.who & kProbeHoldsPlayers ) == 0 ) ||
 			 ( end.kind == MotionEnd::Kind::Body && ( find.who & kProbeHoldsBodies ) == 0 ) )
@@ -6413,6 +6458,10 @@ float Simulation::RayCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, fl
 	{
 		return -1.0f; // filter: carry on as if it were not there
 	}
+	if ( netId != 0 && ctx->sim->SeenElsewhere( netId ) )
+	{
+		return -1.0f; // (met where the player saw it, lag compensated: CastSeen)
+	}
 	if ( ctx->skipPlayers && netId != 0 )
 	{
 		const flecs::entity who = ctx->sim->FindEntity( netId );
@@ -6495,6 +6544,7 @@ bool Simulation::CastProbe( const Motion& m, b3Vec3 origin, b3Vec3 translation, 
 	{
 		b3World_CastShape( world, origin, &proxy, translation, filter, &Simulation::RayCallback, &ctx );
 	}
+	CastSeen( origin, translation, &proxy, ignoreNetId, hit, ctx.found );
 	return ctx.found;
 }
 
@@ -6510,7 +6560,130 @@ bool Simulation::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetI
 	{
 		b3World_CastRay( world, origin, translation, filter, &Simulation::RayCallback, &ctx );
 	}
+	if ( skipPlayers == false )
+	{
+		CastSeen( origin, translation, nullptr, ignoreNetId, hit, ctx.found );
+	}
 	return ctx.found;
+}
+
+void Simulation::CastSeen( b3Vec3 origin, b3Vec3 translation, const b3ShapeProxy* proxy, uint32_t ignore, RayHit& hit, bool& found ) const
+{
+	if ( m_seen == nullptr )
+	{
+		return;
+	}
+	// What a capsule there would be to the world's query: the ray or the shape in its frame, the
+	// nearest hit kept (a shape that starts in it misses, as the world's cast has it).
+	float reach = 0.0f;
+	for ( int i = 0; proxy != nullptr && i < proxy->count; ++i )
+	{
+		reach = std::max( reach, b3Length( proxy->points[i] ) );
+	}
+	reach += proxy != nullptr ? proxy->radius : 0.0f;
+	const float length = b3Length( translation );
+	for ( const PastCapsule& past : m_seen->capsules )
+	{
+		const b3Vec3 offset = b3Sub( origin, past.position );
+		// (Far from the whole line: skipped.)
+		const float along = length > 0.0f ? std::clamp( -b3Dot( offset, translation ) / ( length * length ), 0.0f, 1.0f ) : 0.0f;
+		if ( b3Length( b3MulAdd( offset, along, translation ) ) > reach + past.halfHeight + past.radius || past.netId == ignore ||
+			 SeenCapsule( past.netId ) == nullptr )
+		{
+			continue;
+		}
+		const b3Capsule capsule = { { 0.0f, -past.halfHeight, 0.0f }, { 0.0f, past.halfHeight, 0.0f }, past.radius };
+		const float most = found ? hit.fraction : 1.0f;
+		b3CastOutput out = {};
+		if ( proxy == nullptr )
+		{
+			const b3RayCastInput input = { offset, translation, most };
+			out = b3RayCastCapsule( &capsule, &input );
+		}
+		else
+		{
+			b3Vec3 points[B3_MAX_SHAPE_CAST_POINTS];
+			const int count = std::min( proxy->count, int( B3_MAX_SHAPE_CAST_POINTS ) );
+			for ( int i = 0; i < count; ++i )
+			{
+				points[i] = b3Add( proxy->points[i], offset );
+			}
+			b3ShapeCastInput input = {};
+			input.proxy = { points, count, proxy->radius };
+			input.translation = translation;
+			input.maxFraction = most;
+			input.canEncroach = false;
+			out = b3ShapeCastCapsule( &capsule, &input );
+		}
+		if ( out.hit && ( found == false || out.fraction < hit.fraction ) )
+		{
+			hit = RayHit{};
+			hit.netId = past.netId;
+			hit.point = b3Add( past.position, out.point );
+			hit.normal = out.normal;
+			hit.fraction = out.fraction;
+			found = true;
+		}
+	}
+}
+
+void Simulation::RecordPast()
+{
+	// (Only a simulation that moves its characters itself: a follower's are the server's.)
+	if ( m_config.compensation == 0 || m_followsPhysics || m_followsServer )
+	{
+		m_past.clear();
+		return;
+	}
+	PastCapsules now;
+	if ( m_past.size() > m_config.compensation )
+	{
+		now = std::move( m_past.front() ); // (its buffer, again)
+		m_past.pop_front();
+	}
+	now.tick = m_globals.tick;
+	now.capsules.clear();
+	for ( const EntityRef& r : m_entities )
+	{
+		// (One that can be hit: alive, up, in its own capsule, not a prop it drives.)
+		const flecs::entity e( m_world, r.entity );
+		const Character* c = e.try_get<Character>();
+		const Shape* shape = c != nullptr ? e.try_get<Shape>() : nullptr;
+		const PhysicsBody* pb = shape != nullptr ? e.try_get<PhysicsBody>() : nullptr;
+		if ( pb == nullptr || c->dead != 0 || shape->kind != ShapeKind::Capsule || e.has<DrivenProp>() || b3Body_IsEnabled( BodyOf( *pb ) ) == false )
+		{
+			continue;
+		}
+		now.capsules.push_back( { r.netId, b3Body_GetPosition( BodyOf( *pb ) ), shape->halfExtents.x, shape->halfExtents.y } );
+	}
+	m_past.push_back( std::move( now ) );
+}
+
+const PastCapsules* Simulation::SeenAt( const PlayerInput& input ) const
+{
+	// (One kept a tick, the newest this tick's. A follower's characters are the server's: its own
+	// stand-ins are where it saw them already.)
+	const uint32_t back = std::min<uint32_t>( input.seenBack, m_config.compensation );
+	if ( back == 0 || back >= m_past.size() || m_followsPhysics || m_followsServer )
+	{
+		return nullptr;
+	}
+	const PastCapsules& seen = m_past[m_past.size() - 1 - back];
+	return seen.tick + back == m_globals.tick ? &seen : nullptr;
+}
+
+const PastCapsule* Simulation::SeenCapsule( uint32_t netId ) const
+{
+	const PastCapsule* past = m_seen != nullptr && netId != m_seenBy ? m_seen->Find( netId ) : nullptr;
+	if ( past == nullptr )
+	{
+		return nullptr;
+	}
+	// (One that can be hit now: alive, up.)
+	const flecs::entity e = FindEntity( netId );
+	const Character* c = e.is_valid() ? e.try_get<Character>() : nullptr;
+	const PhysicsBody* pb = c != nullptr ? e.try_get<PhysicsBody>() : nullptr;
+	return pb != nullptr && c->dead == 0 && b3Body_IsEnabled( BodyOf( *pb ) ) ? past : nullptr;
 }
 
 void Simulation::HoldBackProp( flecs::entity e, const DrivenProp& prop, b3Vec3 start, float startYaw, Transform& t, Character& c )

@@ -7190,10 +7190,14 @@ void TestHybridFar()
 	CHECK( byDistance.bytesPerState < all.bytesPerState * 0.9 );
 }
 
-// Puts slot 0 and slot 1 8 m apart, facing each other, once both are in.
+// Puts slot 0 and slot 1 `apart` metres apart (8 by default), facing each other, once both are in.
 class FaceOffMod final : public mods::ServerMod
 {
 public:
+	explicit FaceOffMod( float apart = 8.0f )
+		: m_apart( apart )
+	{
+	}
 	const char* Name() const override
 	{
 		return "test_face_off";
@@ -7207,12 +7211,196 @@ public:
 		{
 			return;
 		}
-		ctx.RespawnAt( ctx.PlayerNetId( 0 ), { 0.0f, 1.5f, -4.0f }, 0.0f );
-		ctx.RespawnAt( ctx.PlayerNetId( 1 ), { 0.0f, 1.5f, 4.0f }, 3.1415927f );
+		ctx.RespawnAt( ctx.PlayerNetId( 0 ), { 0.0f, 1.5f, -0.5f * m_apart }, 0.0f );
+		ctx.RespawnAt( ctx.PlayerNetId( 1 ), { 0.0f, 1.5f, 0.5f * m_apart }, 3.1415927f );
 		done = true;
 	}
 	bool done = false;
+
+private:
+	float m_apart;
 };
+
+// Lag compensation of the motions (M250, SimConfig::compensation): the brawl kit's jab, a find, from
+// a player 50 ms each way from the server, at a player running across its front 1.6 m away. The
+// jab strikes 22 ticks after the press, so the attacker presses as a player would, when its game
+// shows the target coming in front by then. Each strike, on the server, is compared with what the
+// attacker's own game showed on that tick: the target clearly in the fist's reach, or clearly out
+// of it. With lag compensation the server agrees with every one; without, it strikes where the
+// target is by then, and most of those the attacker saw land are missed.
+void TestBrawlLagCompensation()
+{
+	struct Result
+	{
+		int strikes = 0;
+		int seenIn = 0, hitIn = 0;	 // in reach as the attacker saw it, and of those hit
+		int seenOut = 0, hitOut = 0; // out of reach, and of those hit
+		bool found = false;			 // the jab and its event, in the schema
+		int strayHits = 0;			 // hits on a tick without a strike
+		uint32_t seenBack = 0;		 // the attacker's inputs said, the most
+	};
+	auto run = [&]( uint16_t port, uint32_t ms ) {
+		std::vector<std::unique_ptr<mods::ServerMod>> mods;
+		mods.push_back( std::make_unique<FaceOffMod>( 1.6f ) );
+		const FaceOffMod* faceOff = static_cast<const FaceOffMod*>( mods.back().get() );
+		Harness h( port, {}, {}, { { "test.mods", "brawl" }, { "combat.max_health", "1000000" } }, [&]( ServerOptions& o ) {
+			UseHybridModel( o );
+			o.lagCompensationMs = ms;
+		}, std::move( mods ) );
+		const ModSchema& schema = h.server.Schema();
+		const int jabHit = schema.FindEvent( "brawl.jab.hit" );
+		std::string warnings;
+		const std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+		int jab = -1;
+		for ( size_t i = 0; motions != nullptr && i < motions->list.size(); ++i )
+		{
+			jab = motions->list[i].name == "brawl.fist/Jab" ? int( i ) : jab;
+		}
+		Result out;
+		out.found = jabHit >= 0 && jab >= 0;
+		if ( out.found == false )
+		{
+			return out;
+		}
+		net::NetSimConfig link;
+		link.latencyMs = 50;
+		h.AddNetSim( uint16_t( port + 1 ), link );
+		h.AddBot();
+		h.AddBot();
+		Bot& attacker = h.bots[0];
+		Bot& target = h.bots[1];
+		Simulation& server = h.server.Sim();
+		// The target: running across the attacker's front, sprinting, toward 2.5 m one side and back
+		// (turning about when it gets there), by where it is.
+		target.script = [&]( uint32_t tick ) {
+			PlayerInput in;
+			const Transform* at = server.EntityTransform( server.PlayerNetId( target.client->Slot() ) );
+			const float goal = ( tick / 60 ) % 2 == 0 ? 2.5f : -2.5f;
+			if ( at == nullptr || faceOff->done == false )
+			{
+				return in;
+			}
+			// (Toward +x: yaw a quarter turn, its right +z; toward -x, its right -z.)
+			const bool east = at->position.x < goal;
+			in.cameraYaw = east ? 16384 : 49152;
+			if ( std::fabs( at->position.x - goal ) > 0.1f )
+			{
+				in.moveForward = 127;
+				in.buttons = BtnSprint;
+			}
+			// (And back to 1.6 m away, when a jab has thrown it back.)
+			if ( std::fabs( at->position.z - 0.8f ) > 0.1f )
+			{
+				in.moveRight = ( at->position.z < 0.8f ) == east ? int8_t( 127 ) : int8_t( -127 );
+			}
+			return in;
+		};
+		// The attacker stands facing +z, the fist out, and jabs as a player would: when its own game
+		// shows the target coming to the front by the strike (22 ticks after the press), at most every
+		// 100 ticks (the combo's window is over by then: never a finisher). Where its game has the
+		// target, by tick.
+		std::map<uint32_t, float> seenAcross; // the target's x from the attacker's, as its game shows it
+		uint32_t pressedAt = 0;
+		attacker.script = [&]( uint32_t tick ) {
+			PlayerInput in;
+			in.actions = tick >= 280 && tick < 290 ? kKeySlot1 : 0;
+			Simulation* sim = attacker.client->Sim();
+			const uint32_t me = sim != nullptr ? sim->PlayerNetId( attacker.client->Slot() ) : 0;
+			const uint32_t them = sim != nullptr ? sim->PlayerNetId( target.client->Slot() ) : 0;
+			const Transform* at = me != 0 ? sim->EntityTransform( me ) : nullptr;
+			const Transform* to = them != 0 ? sim->EntityTransform( them ) : nullptr;
+			if ( at != nullptr && to != nullptr )
+			{
+				seenAcross[tick] = to->position.x - at->position.x;
+			}
+			const auto before = seenAcross.find( tick - 4 );
+			if ( faceOff->done && tick > 330 && tick >= pressedAt + 100 && before != seenAcross.end() && seenAcross.count( tick ) > 0 )
+			{
+				const float x = seenAcross[tick];
+				const float coming = x + ( x - before->second ) / 4.0f * 22.0f;
+				pressedAt = std::fabs( coming ) < 0.2f ? tick : pressedAt;
+			}
+			in.actions |= pressedAt != 0 && tick < pressedAt + 3 ? kKeyUse : 0;
+			return in;
+		};
+		h.RunUntil( 4.0 );
+		// Each strike (the strike step ends, its finds run: the step after it starts), and what it hit.
+		std::set<uint32_t> strikes, hits;
+		uint32_t counted = 0;
+		h.server.SetTickObserver( [&] {
+			const uint32_t me = server.PlayerNetId( attacker.client->Slot() );
+			const flecs::entity e = server.FindEntity( me );
+			const uint32_t tick = server.Tick() - 1;
+			if ( e.is_valid() && server.HasMotionState( e ) )
+			{
+				out.seenBack = std::max<uint32_t>( out.seenBack, h.server.LastInputs()[attacker.client->Slot()].seenBack );
+				const MotionState state = server.GetMotionState( e );
+				if ( size_t( jab ) < state.slots.size() && state.slots[size_t( jab )].step == 2 && state.slots[size_t( jab )].stepTick == tick )
+				{
+					strikes.insert( tick );
+				}
+			}
+			const SimGlobals& g = server.Globals();
+			const uint32_t them = server.PlayerNetId( target.client->Slot() );
+			for ( ; counted < g.modEventCount; ++counted )
+			{
+				const ModEventRecord& r = g.modEvents[counted % kModEventHistory];
+				if ( int( r.type ) == jabHit && r.netIdA == me && r.netIdB == them )
+				{
+					hits.insert( r.tick );
+				}
+			}
+		} );
+		counted = server.Globals().modEventCount;
+		h.RunUntil( 26.0 );
+		h.server.SetTickObserver( {} );
+		// (In reach: the target's centre within the fist's box, 0.4 m each side, and its own 0.3 m
+		// round: 0.7 m. Clearly: 0.3 m inside, or 0.15 m outside.)
+		for ( uint32_t tick : strikes )
+		{
+			out.strikes += 1;
+			const auto seen = seenAcross.find( tick );
+			if ( seen == seenAcross.end() )
+			{
+				continue;
+			}
+			const float across = std::fabs( seen->second );
+			const bool hit = hits.count( tick ) > 0;
+			if ( across < 0.4f )
+			{
+				out.seenIn += 1;
+				out.hitIn += hit ? 1 : 0;
+			}
+			else if ( across > 0.85f )
+			{
+				out.seenOut += 1;
+				out.hitOut += hit ? 1 : 0;
+			}
+		}
+		for ( uint32_t tick : hits )
+		{
+			out.strayHits += strikes.count( tick ) == 0 ? 1 : 0;
+		}
+		for ( Bot& b : h.bots )
+		{
+			CheckHybridClient( *b.client );
+		}
+		return out;
+	};
+	const Result with = run( 48160, 500 );
+	const Result without = run( 48170, 0 );
+	CHECK( with.found && without.found );
+	CHECK( with.strayHits == 0 && without.strayHits == 0 ); // (every hit was on a strike)
+	std::printf( "    jabs at a running player (seen %u ticks back at most): %d strikes; seen in reach %d, hit %d; seen out of reach %d, hit %d. "
+				 "Without: %d strikes; in reach %d, hit %d; out %d, hit %d\n",
+				 with.seenBack, with.strikes, with.seenIn, with.hitIn, with.seenOut, with.hitOut, without.strikes, without.seenIn, without.hitIn,
+				 without.seenOut, without.hitOut );
+	CHECK( with.strikes >= 8 && without.strikes >= 8 && with.seenBack >= 4 );
+	// With: every strike clearly in reach hits, none clearly out of it does.
+	CHECK( with.seenIn + with.seenOut >= 3 && with.hitIn == with.seenIn && with.hitOut == 0 );
+	// Without: most of those it saw land are missed.
+	CHECK( without.seenIn >= 3 && without.hitIn * 2 <= without.seenIn );
+}
 
 // Lag compensation (M250): a shooter 50 ms each way from the server fires at a player strafing
 // across its sight 8 m away, aiming where its own game shows the target (a few ticks in the
@@ -7575,6 +7763,7 @@ int main( int argc, char** argv )
 		{ "hybrid_lossy", TestHybridLossy },
 		{ "hybrid_far", TestHybridFar },
 		{ "lag_compensation", TestLagCompensation },
+		{ "brawl_lag_compensation", TestBrawlLagCompensation },
 		{ "hybrid_reconnect", TestHybridReconnect },
 		{ "hybrid_own_throw", TestHybridOwnThrow },
 		{ "grace_expiry", TestGraceExpiry },

@@ -27,6 +27,10 @@ a sheet's motion blocks ──bake──> motions/<set>.cfg ──> the server r
                   the server runs the same motion  ──┘   same input, same state, same result
 ```
 
+**Hitting other players** (the hybrid network model, M250): a find or a probe meets the other
+players where your game showed them when it ran, up to `cb_server --lag-compensation` ms back
+(500 by default); the level and the props as they are. A punch that lands on your screen lands.
+
 ## The two halves
 
 | Half | Where | What |

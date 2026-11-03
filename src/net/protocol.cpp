@@ -137,6 +137,7 @@ void WriteConfig( ByteWriter& w, const SimConfig& c )
 	w.Write( c.globalFields );
 	w.Write( c.motions );
 	w.Write( c.layers );
+	w.Write( c.compensation );
 }
 
 bool ReadConfig( ByteReader& r, SimConfig& c )
@@ -159,6 +160,7 @@ bool ReadConfig( ByteReader& r, SimConfig& c )
 	c.globalFields = r.Read<uint16_t>();
 	c.motions = r.Read<uint16_t>();
 	c.layers = r.Read<uint8_t>();
+	c.compensation = r.Read<uint8_t>();
 	return r.Ok() && c.slots <= kMaxSlots && ValidMoveParams( c.move ) && c.tickRate >= 10 && c.tickRate <= 240 && c.subSteps >= 1 && c.subSteps <= 16 && c.physicsArenaMB >= 8 &&
 		   c.physicsArenaMB <= 4096;
 }

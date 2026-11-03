@@ -122,7 +122,8 @@ struct PlayerInput
 	uint16_t slotKeys = 0;	 // the slots' keys held, a bit each (slot 1: bit 0); the sim detects edges
 	// The hybrid (M250): how many ticks before this input's the other characters were, as the
 	// player saw them (their state's tick). The server's hit tests for this player take them as
-	// they were then (lag compensation); the simulation never reads it. 0: as they are.
+	// they were then (lag compensation): its mods' casts, and its motions' finds and probes in a
+	// simulation whose config compensates (SimConfig::compensation). 0: as they are.
 	uint8_t seenBack = 0;
 	uint8_t reserved = 0;
 
@@ -479,7 +480,11 @@ struct SimConfig
 	// And how many animation layers a player has: the most its character's state machine or the
 	// mods name.
 	uint8_t layers = 0;
-	uint8_t reserved = 0;
+	// The hybrid's lag compensation (M250): how many ticks back a player's motions (its finds and
+	// probes) may meet the other characters, as its input says it saw them (PlayerInput::seenBack).
+	// 0: as they are (the inputs model: every client simulates them now). Only a simulation that
+	// moves its characters itself keeps them (the server's, a replay's of it).
+	uint8_t compensation = 0;
 
 	bool operator==( const SimConfig& ) const = default;
 
