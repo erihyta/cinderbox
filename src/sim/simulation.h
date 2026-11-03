@@ -19,10 +19,12 @@
 #include "world_lifetime.h"
 
 #include "box3d/id.h"
+#include "box3d/types.h"
 #include "flecs.h"
 
 #include <algorithm>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <utility>
 #include <mutex>
@@ -47,12 +49,33 @@ struct ShapeMaterial
 	float drag = 0.0f;
 };
 
+// The hybrid's lag compensation (M250, SimConfig::compensation): where every character that can be
+// hit stood as a tick began (its capsule's centre and size), by NetId.
+struct PastCapsule
+{
+	uint32_t netId = 0;
+	b3Vec3 position = {};
+	float radius = 0.0f;
+	float halfHeight = 0.0f;
+};
+struct PastCapsules
+{
+	uint32_t tick = 0;
+	std::vector<PastCapsule> capsules; // sorted by NetId
+	const PastCapsule* Find( uint32_t netId ) const
+	{
+		auto at = std::lower_bound( capsules.begin(), capsules.end(), netId, []( const PastCapsule& c, uint32_t id ) { return c.netId < id; } );
+		return at != capsules.end() && at->netId == netId ? &*at : nullptr;
+	}
+};
+
 struct Snapshot
 {
 	uint32_t tick = 0;
 	uint64_t hash = 0;
 	std::vector<uint8_t> ecs;	  // canonical ECS + globals image (also what gets hashed)
 	std::vector<uint8_t> physics; // arena image followed by the b3World struct
+	std::vector<PastCapsules> past; // the characters as the last ticks began, when the config compensates
 };
 
 // Singleton sim state that is not a component.
@@ -184,7 +207,9 @@ public:
 	void Save( Snapshot& out );
 	void Load( const Snapshot& snapshot );
 
-	// Self-contained state for another process (late join, desync recovery). Slower.
+	// Self-contained state for another process (late join, desync recovery). Slower. Without the
+	// characters' past (lag compensation): no simulation that loads one moves the characters with it
+	// (a hybrid's clients follow the server's; an inputs server compensates nothing).
 	void SavePortable( std::vector<uint8_t>& out );
 	bool LoadPortable( const std::vector<uint8_t>& in );
 
@@ -799,6 +824,28 @@ private:
 	uint32_t NetIdOfShape( b3ShapeId shape ) const;
 	static float RayCallback( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t material, int triangle,
 							  int child, void* context );
+
+	// Lag compensation (M250, SimConfig::compensation): the characters as each of the last ticks
+	// began, kept by a simulation that moves its characters itself (a hybrid server's, a replay's of
+	// it). While a player's motions run (MoveCharacters), `m_seen` is the tick its input says it saw
+	// the others at: its finds and probes meet their capsules there, everything else as it is (the
+	// world, a character not kept then, itself). Null: as they are.
+	std::deque<PastCapsules> m_past;
+	const PastCapsules* m_seen = nullptr;
+	uint32_t m_seenBy = 0; // whose motions (as it is itself)
+	void RecordPast();
+	const PastCapsules* SeenAt( const PlayerInput& input ) const;
+	// The capsule `netId` was seen as, when it can be hit now (a character alive, not the one
+	// looking); null: it is met as it is.
+	const PastCapsule* SeenCapsule( uint32_t netId ) const;
+	// A query's character shapes left out, for those met where they were seen instead.
+	bool SeenElsewhere( uint32_t netId ) const
+	{
+		return m_seen != nullptr && netId != m_seenBy && m_seen->Find( netId ) != nullptr;
+	}
+	// The capsules seen that a ray (or a probe's shape, `proxy`) from `origin` along `translation`
+	// meets before `hit` (found: there was one), as the world query does: hit is the nearest.
+	void CastSeen( b3Vec3 origin, b3Vec3 translation, const b3ShapeProxy* proxy, uint32_t ignore, RayHit& hit, bool& found ) const;
 
 	// Per-step scratch, never part of the state.
 	std::vector<EntityRef> m_scratch;

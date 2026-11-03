@@ -6012,6 +6012,168 @@ void TestMotionFinds()
 	CHECK( fails( "motion\tA\nwhen\tpress\twave\nfind\tall\t0\t16\tfacing\nshape\t1\t0\t0\t0\nendfind\n" ) == false );
 }
 
+// M250 lag compensation in the simulation (SimConfig::compensation): a player's finds and probes meet
+// the others as its input says it saw them (PlayerInput::seenBack: its tick minus the state's), the
+// world as it is. B stands 2 m in front of A for 20 ticks, then 3 m to the side; 5 ticks after, A
+// shoves (a find), hooks (a ray), grabs (a ray it holds on to) or throws a ball (a shape that flies).
+// Seen 5 to 24 ticks back, B was in front: each hits it, the shove throws it away from A as A saw it,
+// and the grab holds on to it where it is now, at the spot A hit. As it is now, or seen before it
+// came, or further back than the config keeps: nothing. Played again from a snapshot: the same.
+void TestMotionLagCompensation()
+{
+	ModSchema schema;
+	schema.events = { "shoved", "hooked" };
+	schema.actions.push_back( { "shove", 0, "Q" } );
+	schema.actions.push_back( { "hook", 1, "E" } );
+	schema.actions.push_back( { "grab", 2, "R" } );
+	schema.actions.push_back( { "ball", 3, "F" } );
+	const std::string text = "cinderbox_motions\t3\n"
+							 "motion\tShove\nwhen\tpress\tshove\n"
+							 "find\tplayers\t0\t16\tfacing\nshape\t0.6\t0\t0\t1.6\n"
+							 "impulse\tfound\t9\taway\tnone\nemit\tshoved\nendfind\n"
+							 "motion\tHook\nwhen\tpress\thook\nprobe\t10\t0\nhold_emit\thooked\n"
+							 "motion\tGrab\nwhen\tpress\tgrab\nprobe\t10\t0\nhold_emit\thooked\nuntil\tnot held.grab\nlink\thit\t0\t0\n"
+							 "motion\tBall\nwhen\tpress\tball\nprobe\t10\t40\nprobe_shape\t0.2\t0\t0\t0\nhold_emit\thooked\n";
+	schema.motionSets.push_back( { "t", "t.moves", text } );
+	std::string warnings;
+	std::shared_ptr<const Motions> motions = CompileMotions( schema, warnings );
+	CHECK( motions != nullptr && warnings.empty() && motions->list.size() == 4 );
+	if ( motions == nullptr || motions->list.size() != 4 )
+	{
+		std::printf( "    %s\n", warnings.c_str() );
+		return;
+	}
+
+	const int shovedType = schema.FindEvent( "shoved" );
+	struct Outcome
+	{
+		int shoved = 0, hooked = 0; // events about B
+		b3Vec3 velocity = {};		// B's, on the tick of the press
+		b3Vec3 hookAt = {};			// where the hook met it
+		b3Vec3 holdEnd = {};		// the grab's end, the tick after
+		bool holds = false;
+		uint64_t hash = 0; // the world a second after
+	};
+	// `press`: the action; `back`: the input's seenBack; `keep`: the config's compensation;
+	// `replay`: the press played again from a snapshot taken just before it.
+	auto play = [&]( ActionBits press, uint8_t back, uint8_t keep, bool replay = false ) {
+		SimConfig config = TestConfig();
+		config.compensation = keep;
+		Simulation sim( config, FlatMap() );
+		sim.SetMotions( motions );
+		InputFrame f;
+		Outcome out;
+		uint32_t counted = 0;
+		uint32_t b = 0;
+		auto step = [&]( int n ) {
+			for ( int i = 0; i < n; ++i )
+			{
+				f.tick = sim.Tick();
+				sim.Step( f );
+				f.events.clear();
+				f.commands.clear();
+				for ( ; counted < sim.Globals().modEventCount; ++counted )
+				{
+					const ModEventRecord& e = sim.Globals().modEvents[counted % kModEventHistory];
+					const bool shove = int( e.type ) == shovedType;
+					if ( shove ? e.netIdB == b || e.netIdA == b : e.netIdB == b )
+					{
+						( shove ? out.shoved : out.hooked ) += 1;
+						out.hookAt = shove ? out.hookAt : e.point;
+					}
+				}
+			}
+		};
+		auto place = [&]( int slot, b3Vec3 at, uint16_t yaw ) {
+			SimCommand c;
+			c.type = CommandType::Respawn;
+			c.target = sim.PlayerNetId( PlayerSlot( slot ) );
+			c.mode = 1;
+			c.a = { at.x, at.y, at.z };
+			c.index = yaw;
+			f.commands.push_back( c );
+			f.inputs[size_t( slot )].cameraYaw = yaw;
+		};
+		f.events.push_back( { PlayerEventType::Join, 0 } );
+		f.events.push_back( { PlayerEventType::Join, 1 } );
+		step( 2 );
+		b = sim.PlayerNetId( 1 );
+		place( 0, { 0.0f, 1.0f, 0.0f }, 0 );
+		place( 1, { -3.0f, 1.0f, 2.0f }, 32768 );
+		step( 40 );
+		place( 1, { 0.0f, 1.0f, 2.0f }, 32768 ); // in front of A for 20 ticks
+		step( 20 );
+		place( 1, { 3.0f, 1.0f, 2.0f }, 32768 ); // then to the side
+		step( 5 );
+		Snapshot before;
+		if ( replay )
+		{
+			sim.Save( before );
+		}
+		f.inputs[0].actions = press;
+		f.inputs[0].seenBack = back;
+		for ( int run = 0; run < ( replay ? 2 : 1 ); ++run )
+		{
+			if ( run == 1 )
+			{
+				sim.Load( before );
+				counted = sim.Globals().modEventCount;
+				out = Outcome{};
+				f.inputs[0].actions = press;
+			}
+			step( 1 );
+			out.velocity = sim.PlayerCharacter( 1 )->velocity;
+			step( 1 ); // (held: the grab lasts while it is)
+			uint16_t motion = 0;
+			sim.EntityHold( sim.PlayerNetId( 0 ), out.holdEnd, out.holds, motion );
+			f.inputs[0].actions = 0;
+			step( 60 );
+			out.hash = sim.ComputeHash();
+		}
+		return out;
+	};
+
+	// The shove: a find 1.6 m ahead of A, 0.6 m round.
+	const Outcome now = play( 1, 0, 30 );
+	const Outcome seen = play( 1, 10, 30 );
+	const Outcome first = play( 1, 5, 30 );	 // the state of the tick B was moved to the side (before the move)
+	const Outcome after = play( 1, 4, 30 );	 // the state after it
+	const Outcome early = play( 1, 26, 30 ); // before B came
+	const Outcome far = play( 1, 200, 30 );	 // further back than kept: as far as kept (B not there yet)
+	const Outcome off = play( 1, 10, 0 );	 // a config that does not compensate
+	std::printf( "    shove: now %d, seen 10 back %d (B thrown at (%.2f, %.2f, %.2f) m/s), 5 back %d, 4 back %d, 26 back %d, 200 back %d, "
+				 "not kept %d\n",
+				 now.shoved, seen.shoved, seen.velocity.x, seen.velocity.y, seen.velocity.z, first.shoved, after.shoved, early.shoved,
+				 far.shoved, off.shoved );
+	CHECK( now.shoved == 0 && seen.shoved == 1 && first.shoved == 1 && after.shoved == 0 && early.shoved == 0 && far.shoved == 0 &&
+		   off.shoved == 0 );
+	// Away from A as A saw it (straight ahead), not toward where B is now (to the side).
+	CHECK( seen.velocity.z > 8.0f && std::fabs( seen.velocity.x ) < 0.01f );
+
+	// The hook: a ray along A's look.
+	const Outcome hookNow = play( 2, 0, 30 );
+	const Outcome hookSeen = play( 2, 10, 30 );
+	std::printf( "    hook: now %d, seen 10 back %d, met at (%.2f, %.2f, %.2f)\n", hookNow.hooked, hookSeen.hooked, hookSeen.hookAt.x,
+				 hookSeen.hookAt.y, hookSeen.hookAt.z );
+	CHECK( hookNow.hooked == 0 && hookSeen.hooked == 1 && std::fabs( hookSeen.hookAt.x ) < 0.01f && std::fabs( hookSeen.hookAt.z - 1.7f ) < 0.02f );
+
+	// The grab holds on to B as it is now, at the spot A's ray met (its near side).
+	const Outcome grab = play( 4, 10, 30 );
+	std::printf( "    grab: holds %d, its end at (%.2f, %.2f, %.2f)\n", int( grab.holds ), grab.holdEnd.x, grab.holdEnd.y, grab.holdEnd.z );
+	CHECK( grab.hooked == 1 && grab.holds && grab.holdEnd.x > 2.5f && grab.holdEnd.z < 2.0f );
+
+	// A ball thrown at 40 m/s: traced tick by tick, each against the others as A sees them now.
+	const Outcome ballNow = play( 8, 0, 30 );
+	const Outcome ballSeen = play( 8, 10, 30 );
+	std::printf( "    ball: now %d, seen 10 back %d\n", ballNow.hooked, ballSeen.hooked );
+	CHECK( ballNow.hooked == 0 && ballSeen.hooked == 1 );
+
+	// Played again from a snapshot taken just before the press: the same, to the bit.
+	const Outcome again = play( 1, 10, 30, true );
+	const Outcome grabAgain = play( 4, 10, 30, true );
+	CHECK( again.shoved == 1 && again.hash == seen.hash && grabAgain.hash == grab.hash );
+}
+
 // A probe with a shape (a sheet's "cast sphere R", or a node's shape): swept along its line instead of
 // a ray, so it catches what passes beside the line; turned to the line, so what is level stays level.
 void TestMotionCasts()
@@ -13425,6 +13587,7 @@ int main( int argc, char** argv )
 		{ "prop_leaves_walls", TestPropLeavesWalls },
 		{ "motion_finds", TestMotionFinds },
 		{ "motion_casts", TestMotionCasts },
+		{ "motion_lag_compensation", TestMotionLagCompensation },
 		{ "motion_curves", TestMotionCurves },
 		{ "motion_markers", TestMotionMarkers },
 		{ "item_blast", TestItemBlast },
