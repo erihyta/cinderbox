@@ -1584,8 +1584,8 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 		return lastKept;
 	};
 	// How each entity stands: had or not, and how overdue (the time since its last update, in
-	// intervals of its distance's: 1 is due). Its own character and what it holds, and what it has
-	// not had, before anything else.
+	// intervals of its distance's: 1 is due). Its own character and what it holds, and what it was
+	// never sent, before anything else.
 	plan.entries.resize( now.layout.entities.size() );
 	plan.due.clear();
 	for ( size_t i = 0; i < now.layout.entities.size(); ++i )
@@ -1604,7 +1604,10 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 		const uint32_t period = plan.hasOwn == false ? 1u : StatePeriod( b3Length( b3Sub( placed.at, plan.ownAt ) ) );
 		const uint32_t sentAt = entry.had != nullptr ? entry.had->sentAt : 0;
 		const float overdue = sentAt == 0 ? 1e3f : float( newest.tick - sentAt ) / float( period * every );
-		entry.score = mine ? 1e9f : entry.acked == 0 ? 1e6f + overdue : overdue >= 1.0f ? overdue : 0.0f;
+		// (One never sent first; one sent and not acknowledged yet waits its turn as any other does,
+		// and goes whole again: resent every state, a crowd's new ones took a small budget's every
+		// slot while acknowledgements were slow.)
+		entry.score = mine ? 1e9f : sentAt == 0 ? 1e6f : overdue >= 1.0f ? overdue : 0.0f;
 	}
 	while ( k < c.known.size() )
 	{
@@ -1703,7 +1706,7 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 // keeps the newest, and the next one is a few ticks away.
 //
 // By distance (M250): each client is sent updates. Its own character, what it holds, everything
-// near it, and what it has not had yet, every state; a far one every few states (StatePeriod),
+// near it, and what it was never sent, every state; a far one every few states (StatePeriod),
 // each a change against the record of it the client last acknowledged; no more than stateBudget
 // a state, the most overdue first. What is left out it keeps;
 // what is gone is named until a state naming it is acknowledged. Each client's plan is made, and
