@@ -25,6 +25,7 @@
 
 #include "flecs.h"
 
+#include <array>
 #include <functional>
 #include <cstdint>
 #include <map>
@@ -36,6 +37,7 @@ namespace cb
 {
 class NavMesh;
 class HitTester;
+struct PastPoses;
 }
 
 namespace cb::mods
@@ -533,7 +535,9 @@ public:
 	int32_t GetGlobal( FieldHandle field ) const;
 
 	// The closest thing along the ray. Players are hit by their character's hitboxes, posed as they
-	// are this tick, and `hit.zone` names the one hit ("head", "torso", ...).
+	// are this tick, and `hit.zone` names the one hit ("head", "torso", ...). A ray that leaves out a
+	// player (`ignoreNetId`: its own body, as a shot or a swing does) meets the other characters as
+	// that player saw them, on a hybrid server (lag compensation, M250); the world as it is.
 	bool CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit ) const;
 
 	// What kind of entity a NetId is.
@@ -582,6 +586,11 @@ public:
 	void SetHitTester( HitTester* hits )
 	{
 		m_hits = hits;
+	}
+	// Each slot's player's view of the others (null: as they are): lag compensation.
+	void SetPast( const std::array<const PastPoses*, kMaxPlayers>* past )
+	{
+		m_past = past;
 	}
 	void SetNavMesh( const NavMesh* nav )
 	{
@@ -833,6 +842,7 @@ private:
 	int LayerIndex( const std::string& layer ) const;
 	int SlotOfTarget( uint32_t target ) const;
 	HitTester* m_hits = nullptr;
+	const std::array<const PastPoses*, kMaxPlayers>* m_past = nullptr;
 	const NavMesh* m_nav = nullptr;
 };
 

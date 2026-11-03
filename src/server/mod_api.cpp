@@ -521,7 +521,10 @@ bool Context::CastRay( b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, 
 {
 	if ( m_hits != nullptr )
 	{
-		return m_hits->CastRay( m_sim, origin, translation, ignoreNetId, hit );
+		// From a player: the others as it saw them.
+		const int slot = ignoreNetId != 0 && m_past != nullptr ? SlotOf( ignoreNetId ) : -1;
+		const PastPoses* past = slot >= 0 ? ( *m_past )[size_t( slot )] : nullptr;
+		return m_hits->CastRay( m_sim, origin, translation, ignoreNetId, hit, past );
 	}
 	return m_sim.CastRay( origin, translation, ignoreNetId, hit );
 }

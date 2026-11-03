@@ -7190,6 +7190,134 @@ void TestHybridFar()
 	CHECK( byDistance.bytesPerState < all.bytesPerState * 0.9 );
 }
 
+// Puts slot 0 and slot 1 8 m apart, facing each other, once both are in.
+class FaceOffMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_face_off";
+	}
+	void Declare( mods::Declarations& ) override
+	{
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		if ( done || ctx.Tick() < 60 || ctx.InWorld( 0 ) == false || ctx.InWorld( 1 ) == false )
+		{
+			return;
+		}
+		ctx.RespawnAt( ctx.PlayerNetId( 0 ), { 0.0f, 1.5f, -4.0f }, 0.0f );
+		ctx.RespawnAt( ctx.PlayerNetId( 1 ), { 0.0f, 1.5f, 4.0f }, 3.1415927f );
+		done = true;
+	}
+	bool done = false;
+};
+
+// Lag compensation (M250): a shooter 50 ms each way from the server fires at a player strafing
+// across its sight 8 m away, aiming where its own game shows the target (a few ticks in the
+// past). With lag compensation the server tests the shot against the target as the shooter saw it
+// and nearly every one hits; without, against where the target is by then, and many miss.
+void TestLagCompensation()
+{
+	struct Result
+	{
+		int shots = 0, hits = 0;
+		uint32_t seenBack = 0; // the shooter's inputs said, the most
+	};
+	auto run = [&]( uint16_t port, uint32_t ms ) {
+		std::vector<std::unique_ptr<mods::ServerMod>> mods;
+		mods.push_back( std::make_unique<FaceOffMod>() );
+		const FaceOffMod* faceOff = static_cast<const FaceOffMod*>( mods.back().get() );
+		Harness h( port, {}, {}, { { "combat.max_health", "1000000" } }, [&]( ServerOptions& o ) {
+			UseHybridModel( o );
+			o.lagCompensationMs = ms;
+		}, std::move( mods ) );
+		const ModSchema& schema = h.server.Schema();
+		const int useEvent = schema.FindEvent( "item.use" );
+		const int hitEvent = schema.FindEvent( "item.hit" );
+		net::NetSimConfig link;
+		link.latencyMs = 50;
+		h.AddNetSim( uint16_t( port + 1 ), link );
+		h.AddBot();
+		h.AddBot();
+		Bot& shooter = h.bots[0];
+		Bot& target = h.bots[1];
+		// The target strafes, left and right, a direction for 0.4 s.
+		target.script = []( uint32_t tick ) {
+			PlayerInput in;
+			in.cameraYaw = 32768; // (toward the shooter: its right is across the shooter's sight)
+			in.moveRight = ( tick / 24 ) % 2 == 0 ? int8_t( 127 ) : int8_t( -127 );
+			return in;
+		};
+		// The shooter: the pistol out, aiming at the target as its own game has it, a shot every
+		// half a second.
+		shooter.script = [&]( uint32_t tick ) {
+			PlayerInput in;
+			in.actions = kKeySlot1;
+			Simulation* sim = shooter.client->Sim();
+			const uint32_t me = sim != nullptr ? sim->PlayerNetId( shooter.client->Slot() ) : 0;
+			const uint32_t them = sim != nullptr ? sim->PlayerNetId( target.client->Slot() ) : 0;
+			const Transform* at = me != 0 ? sim->EntityTransform( me ) : nullptr;
+			const Transform* to = them != 0 ? sim->EntityTransform( them ) : nullptr;
+			if ( at == nullptr || to == nullptr || faceOff->done == false )
+			{
+				return in;
+			}
+			const float dx = to->position.x - at->position.x;
+			const float dz = to->position.z - at->position.z;
+			const float flat = std::sqrt( dx * dx + dz * dz );
+			const float dy = to->position.y - ( at->position.y + kViewPivotHeight );
+			in.cameraYaw = detmath::RadiansToYaw( std::atan2( dx, dz ) );
+			in.cameraPitch = int16_t( std::atan2( dy, flat ) * 65536.0f / 6.2831853f );
+			in.actions |= tick % 30 == 0 ? kKeyUse : 0;
+			return in;
+		};
+		h.RunUntil( 4.0 );
+		Result out;
+		std::map<uint32_t, uint32_t> shots, hits; // tick -> what it hit
+		const uint32_t shooterId = h.server.Sim().PlayerNetId( shooter.client->Slot() );
+		h.server.SetTickObserver( [&] {
+			out.seenBack = std::max<uint32_t>( out.seenBack, h.server.LastInputs()[shooter.client->Slot()].seenBack );
+		} );
+		h.RunUntil( 10.0, [&]( double ) {
+			const SimGlobals& g = h.server.Sim().Globals();
+			for ( uint32_t i = 0; i < std::min( g.modEventCount, kModEventHistory ); ++i )
+			{
+				const ModEventRecord& e = g.modEvents[i];
+				if ( e.netIdA == shooterId && int( e.type ) == useEvent )
+				{
+					shots[e.tick] = e.netIdB;
+				}
+				if ( e.netIdA == shooterId && int( e.type ) == hitEvent )
+				{
+					hits[e.tick] = e.netIdB;
+				}
+			}
+		} );
+		h.server.SetTickObserver( {} );
+		const uint32_t targetId = h.server.Sim().PlayerNetId( target.client->Slot() );
+		out.shots = int( shots.size() );
+		for ( const auto& [tick, who] : hits )
+		{
+			out.hits += who == targetId ? 1 : 0;
+		}
+		for ( Bot& b : h.bots )
+		{
+			CheckHybridClient( *b.client );
+		}
+		return out;
+	};
+	const Result with = run( 48140, 500 );
+	const Result without = run( 48150, 0 );
+	std::printf( "    lag compensation: %d of %d shots hit (the shooter saw the target %u ticks back at most); without: %d of %d\n", with.hits,
+				 with.shots, with.seenBack, without.hits, without.shots );
+	CHECK( with.shots >= 10 && without.shots >= 10 );
+	CHECK( with.seenBack >= 4 );
+	CHECK( with.hits * 10 >= with.shots * 8 );
+	CHECK( without.hits * 10 <= without.shots * 6 );
+}
+
 // The hybrid on a bad connection: ~70 ms round trip with jitter, 3% loss and duplicates. A lost
 // state costs nothing but itself (the next is a few ticks away, against a base the client has); a
 // lost frame comes again in the next packets, and the physics, behind, has waited for it rarely.
@@ -7446,6 +7574,7 @@ int main( int argc, char** argv )
 		{ "hybrid_session", TestHybridSession },
 		{ "hybrid_lossy", TestHybridLossy },
 		{ "hybrid_far", TestHybridFar },
+		{ "lag_compensation", TestLagCompensation },
 		{ "hybrid_reconnect", TestHybridReconnect },
 		{ "hybrid_own_throw", TestHybridOwnThrow },
 		{ "grace_expiry", TestGraceExpiry },

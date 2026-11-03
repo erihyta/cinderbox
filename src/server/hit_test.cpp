@@ -151,7 +151,13 @@ bool HitTester::BakedEyePosition( Simulation& sim, PlayerSlot slot, b3Vec3& out 
 	return true;
 }
 
-bool HitTester::CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit )
+const PastPose* PastPoses::Find( uint32_t netId ) const
+{
+	auto it = std::lower_bound( poses.begin(), poses.end(), netId, []( const PastPose& p, uint32_t id ) { return p.netId < id; } );
+	return it != poses.end() && it->netId == netId ? &*it : nullptr;
+}
+
+bool HitTester::CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit, const PastPoses* past )
 {
 	bool found = sim.CastRay( origin, translation, ignoreNetId, hit, true );
 	float limit = found ? hit.fraction : 1.0f;
@@ -166,7 +172,15 @@ bool HitTester::CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uin
 		}
 		const Transform* transform = sim.EntityTransform( netId );
 		AnimStateCopy state = sim.EntityAnimState( netId );
-		if ( character == nullptr || character->dead || transform == nullptr || state == nullptr || sim.FindEntity( netId ).has<DrivenProp>() )
+		bool dead = character->dead != 0;
+		if ( const PastPose* then = past != nullptr ? past->Find( netId ) : nullptr )
+		{
+			// As the one who casts saw it.
+			transform = &then->transform;
+			state = AnimStateCopy( then->anim );
+			dead = then->dead;
+		}
+		if ( dead || transform == nullptr || state == nullptr || sim.FindEntity( netId ).has<DrivenProp>() )
 		{
 			continue; // (a driven prop is hit as its own shapes, by the world's cast)
 		}

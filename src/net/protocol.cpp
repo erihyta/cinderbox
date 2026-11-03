@@ -27,7 +27,8 @@ enum InputField : uint16_t
 	FieldIntent = 1 << 8, // intent, intentA, intentB, intentSeq
 	FieldPitchDelta = 1 << 9, // relative, i8 (a mouse moves both angles a little every tick)
 	FieldSlotKeys = 1 << 10,  // u16
-	FieldAll = 0x7FF,
+	FieldSeenBack = 1 << 11,  // u8
+	FieldAll = 0xFFF,
 };
 
 // Which members of a command follow its type byte. Anything left out is zero, so most commands
@@ -629,6 +630,7 @@ void WriteInputDelta( ByteWriter& w, const PlayerInput& now, const PlayerInput& 
 	}
 	fields |= now.actions != before.actions ? FieldActions : 0;
 	fields |= now.slotKeys != before.slotKeys ? FieldSlotKeys : 0;
+	fields |= now.seenBack != before.seenBack ? FieldSeenBack : 0;
 	fields |= now.intent != before.intent || now.intentA != before.intentA || now.intentB != before.intentB || now.intentSeq != before.intentSeq
 				  ? FieldIntent
 				  : 0;
@@ -666,6 +668,8 @@ void WriteInputDelta( ByteWriter& w, const PlayerInput& now, const PlayerInput& 
 	}
 	if ( fields & FieldSlotKeys )
 		w.Write( now.slotKeys );
+	if ( fields & FieldSeenBack )
+		w.Write( now.seenBack );
 }
 
 // `in` holds the input before, and becomes the one read. `some`: an empty mask is not allowed (a
@@ -718,6 +722,8 @@ bool ReadInputDelta( ByteReader& r, PlayerInput& in, bool some )
 	}
 	if ( fields & FieldSlotKeys )
 		in.slotKeys = r.Read<uint16_t>();
+	if ( fields & FieldSeenBack )
+		in.seenBack = r.Read<uint8_t>();
 	return r.Ok();
 }
 

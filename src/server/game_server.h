@@ -46,6 +46,14 @@ struct ServerOptions
 	bool statesByDistance = true;
 	// Threads besides the server's own that encode those states, a client each (0: none).
 	int stateThreads = 0;
+	// The hybrid: how far back a player's hits may take the others, as it saw them (lag
+	// compensation, M250), in milliseconds (0: as they are now). A hybrid game shows the others a
+	// round trip and its physics' buffer in the past: about 330 ms at a 100 ms round trip.
+	uint32_t lagCompensationMs = 500;
+	uint32_t LagCompensationTicks() const
+	{
+		return uint32_t( uint64_t( lagCompensationMs ) * config.tickRate / 1000 );
+	}
 	// The most entities a client is sent in one state by distance, its own character and what it
 	// holds aside: the most overdue first, a character with what it holds (a crowd's come round in
 	// turn).
@@ -184,6 +192,11 @@ public:
 		double saveMs = 0.0;
 		double sendMs = 0.0;
 	};
+	// The inputs of the tick just run (tests).
+	const net::InputArray& LastInputs() const
+	{
+		return m_lastInputs;
+	}
 	const Stats& GetStats() const
 	{
 		return m_stats;
@@ -335,6 +348,11 @@ private:
 	std::vector<Message> m_messages;
 	std::vector<net::UpdateCache> m_updateCaches;
 	WorkerPool m_stateWorkers;
+	// Lag compensation (M250): the characters as they were on each of the last ticks (the newest
+	// last), and each slot's view of them for this tick's mods.
+	std::deque<PastPoses> m_past;
+	std::array<const PastPoses*, kMaxPlayers> m_seenBy{};
+	void RecordPast();
 	void PlanState( Plan& plan, Client& c, const net::StateFrame& newest, const KeptLayout& now,
 					const std::vector<std::pair<uint32_t, PlayerSlot>>& players );
 	const KeptLayout* KeptLayoutOf( uint32_t tick ) const;

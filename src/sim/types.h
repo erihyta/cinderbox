@@ -120,7 +120,11 @@ struct PlayerInput
 	uint8_t intentB = 0;
 	uint8_t intentSeq = 0;	 // counts the player's intents (it wraps)
 	uint16_t slotKeys = 0;	 // the slots' keys held, a bit each (slot 1: bit 0); the sim detects edges
-	uint8_t reserved[2] = {};
+	// The hybrid (M250): how many ticks before this input's the other characters were, as the
+	// player saw them (their state's tick). The server's hit tests for this player take them as
+	// they were then (lag compensation); the simulation never reads it. 0: as they are.
+	uint8_t seenBack = 0;
+	uint8_t reserved = 0;
 
 	bool operator==( const PlayerInput& ) const = default;
 };

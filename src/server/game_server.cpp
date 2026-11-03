@@ -980,6 +980,7 @@ void GameServer::RunTick( double now )
 	const auto stepFrom = std::chrono::steady_clock::now();
 	m_sim->Step( frame );
 	m_stats.stepMs += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - stepFrom ).count();
+	RecordPast();
 
 	m_lastInputs = frame.inputs;
 	m_replay.AddFrame( frame );
@@ -1102,6 +1103,23 @@ void GameServer::RunMods( InputFrame& frame )
 	ctx.SetHitTester( m_hits.get() );
 	ctx.SetNavMesh( &m_nav );
 	ctx.SetTexts( &m_typed, &m_said );
+	// Each player's view of the others, as its input says it saw them (this tick's mods see the
+	// world as of Tick(): a view `seenBack` ticks before, kept by RecordPast), no further back
+	// than lagCompensationTicks.
+	m_seenBy.fill( nullptr );
+	if ( m_options.netModel == NetModel::Hybrid && m_past.empty() == false )
+	{
+		for ( int slot = 0; slot < kMaxPlayers; ++slot )
+		{
+			const uint32_t back = std::min<uint32_t>( frame.inputs[slot].seenBack, m_options.LagCompensationTicks() );
+			const uint32_t at = m_sim->Tick() - std::min( back, m_sim->Tick() );
+			for ( const PastPoses& p : m_past )
+			{
+				m_seenBy[size_t( slot )] = back > 0 && p.tick == at ? &p : m_seenBy[size_t( slot )];
+			}
+		}
+	}
+	ctx.SetPast( &m_seenBy );
 	for ( const auto& mod : m_mods )
 	{
 		mod->Tick( ctx );
@@ -1426,6 +1444,37 @@ const StateFrame* GameServer::KeptState( uint32_t tick ) const
 		}
 	}
 	return nullptr;
+}
+
+void GameServer::RecordPast()
+{
+	// The hybrid: where every character is and how it stands, after the step (as of Tick(): the
+	// state of this tick is what clients are sent, and stand the others as).
+	if ( m_options.netModel != NetModel::Hybrid || m_options.LagCompensationTicks() == 0 )
+	{
+		m_past.clear();
+		return;
+	}
+	PastPoses now;
+	if ( m_past.size() > m_options.LagCompensationTicks() + 1 )
+	{
+		now = std::move( m_past.front() ); // (its buffer, again)
+		m_past.pop_front();
+	}
+	now.tick = m_sim->Tick();
+	now.poses.clear();
+	for ( const Simulation::EntityRef& r : m_sim->Entities() )
+	{
+		const flecs::entity e( m_sim->World(), r.entity );
+		const Character* c = e.try_get<Character>();
+		const Transform* t = c != nullptr ? m_sim->EntityTransform( r.netId ) : nullptr;
+		AnimStateCopy anim = t != nullptr ? m_sim->EntityAnimState( r.netId ) : AnimStateCopy{};
+		if ( anim != nullptr )
+		{
+			now.poses.push_back( { r.netId, *t, *anim, c->dead != 0 } );
+		}
+	}
+	m_past.push_back( std::move( now ) );
 }
 
 const GameServer::KeptLayout* GameServer::KeptLayoutOf( uint32_t tick ) const
