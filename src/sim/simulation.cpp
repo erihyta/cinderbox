@@ -1264,10 +1264,7 @@ const std::vector<Simulation::EntityRef>& Simulation::ItemsOf( uint32_t holder )
 			if ( const HeldItem* item = flecs::entity( m_world, r.entity ).try_get<HeldItem>() )
 			{
 				holderOf[r.entity] = item->holder;
-				if ( item->holder != 0 )
-				{
-					m_itemsByHolder[item->holder].push_back( r );
-				}
+				m_itemsByHolder[item->holder].push_back( r );
 			}
 		}
 		m_itemsByHolderStale = false;
@@ -3682,12 +3679,33 @@ uint32_t Simulation::ResolveTarget( uint32_t target ) const
 std::vector<uint32_t> Simulation::CarriedItemsOf( uint32_t holder ) const
 {
 	std::vector<uint32_t> out;
-	for ( const EntityRef& r : m_entities )
+	if ( holder == 0 )
 	{
-		flecs::entity e( m_world, r.entity );
-		if ( const HeldItem* item = e.try_get<HeldItem>(); item != nullptr && holder != 0 && item->holder == holder )
+		return out;
+	}
+	for ( const EntityRef& r : ItemsOf( holder ) )
+	{
+		const HeldItem* item = flecs::entity( m_world, r.entity ).try_get<HeldItem>();
+		if ( item != nullptr && item->holder == holder )
 		{
 			out.push_back( r.netId );
+		}
+	}
+	if ( s_checkIndexes )
+	{
+		std::vector<uint32_t> scanned;
+		for ( const EntityRef& r : m_entities )
+		{
+			const HeldItem* item = flecs::entity( m_world, r.entity ).try_get<HeldItem>();
+			if ( item != nullptr && item->holder == holder )
+			{
+				scanned.push_back( r.netId );
+			}
+		}
+		if ( scanned != out )
+		{
+			std::fprintf( stderr, "CarriedItemsOf( %u ): the index and every entity differ\n", holder );
+			std::abort();
 		}
 	}
 	return out;
@@ -3718,19 +3736,38 @@ uint32_t Simulation::HeldItemOf( uint32_t holder, uint32_t socket ) const
 	{
 		return 0; // items in the world are held by no one
 	}
-	// NetId order: the same answer everywhere.
-	for ( const EntityRef& r : m_entities )
+	// NetId order (the index keeps it): the same answer everywhere.
+	auto heldThere = [&]( const EntityRef& r ) {
+		const HeldItem* item = flecs::entity( m_world, r.entity ).try_get<HeldItem>();
+		return item != nullptr && item->holder == holder && item->socket == socket && item->stowed == 0;
+	};
+	uint32_t found = 0;
+	for ( const EntityRef& r : ItemsOf( holder ) )
 	{
-		flecs::entity e( m_world, r.entity );
-		if ( const HeldItem* item = e.try_get<HeldItem>() )
+		if ( heldThere( r ) )
 		{
-			if ( item->holder == holder && item->socket == socket && item->stowed == 0 )
-			{
-				return r.netId;
-			}
+			found = r.netId;
+			break;
 		}
 	}
-	return 0;
+	if ( s_checkIndexes )
+	{
+		uint32_t scanned = 0;
+		for ( const EntityRef& r : m_entities )
+		{
+			if ( heldThere( r ) )
+			{
+				scanned = r.netId;
+				break;
+			}
+		}
+		if ( scanned != found )
+		{
+			std::fprintf( stderr, "HeldItemOf( %u, %u ): the index says %u, every entity %u\n", holder, socket, found, scanned );
+			std::abort();
+		}
+	}
+	return found;
 }
 
 void Simulation::ApplyCommands( const InputFrame& frame )

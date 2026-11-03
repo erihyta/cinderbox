@@ -354,6 +354,7 @@ public:
 	uint64_t EntityMotionsOn( uint32_t netId ) const;
 	// Every item a player carries, in the hand or put away, in NetId order.
 	std::vector<uint32_t> CarriedItemsOf( uint32_t holder ) const;
+
 	// A new copy of an item kind: its own fields as its kind says they start (ItemShape::fieldDefaults).
 	void StartItemFields( flecs::entity item, uint16_t kind );
 	bool HasAnimState( flecs::entity e ) const;
@@ -513,6 +514,11 @@ public:
 	const std::vector<EntityRef>& Entities() const
 	{
 		return m_entities;
+	}
+	// Every item lying in the world (held by no one), in NetId order: an index, not a scan.
+	const std::vector<EntityRef>& WorldItems() const
+	{
+		return ItemsOf( 0 );
 	}
 
 	size_t PhysicsBytesInUse() const
@@ -803,7 +809,8 @@ private:
 	// (the observers in RegisterIndexes). Derived data: never hashed, never in a snapshot.
 	std::vector<std::pair<uint32_t, uint32_t>> m_shapeLookup;
 	bool m_shapeLookupStale = true;
-	// Each holder's items, in m_entities' order: what SlotItemOf and SettleSlots walk instead of
+	// Each holder's items, in m_entities' order (holder 0: those lying in the world): what
+	// SlotItemOf, HeldItemOf, CarriedItemsOf, SettleSlots and the mods' ItemsNear walk instead of
 	// every entity. Rebuilt when an item gains, loses or changes its holder (the HeldItem
 	// observer), an entity is added or removed, or a snapshot is loaded. An item's own fields are
 	// read fresh at each use, so only who holds what is cached. Derived data, like the above.
