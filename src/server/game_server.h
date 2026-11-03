@@ -166,6 +166,12 @@ public:
 		uint64_t statesWhole = 0;	 // of them, against no base
 		uint64_t stateBytes = 0;	 // their bytes
 		double stateMsTotal = 0.0; // saving and encoding them
+		// Where a tick's time goes (since the last ResetTickTiming): the mods, the simulation's step,
+		// saving the characters' state (the hybrid), and sending frames and states (not in tickMs).
+		double modsMs = 0.0;
+		double stepMs = 0.0;
+		double saveMs = 0.0;
+		double sendMs = 0.0;
 	};
 	const Stats& GetStats() const
 	{
@@ -176,6 +182,10 @@ public:
 		m_stats.ticks = 0;
 		m_stats.tickMsTotal = 0.0;
 		m_stats.tickMsMax = 0.0;
+		m_stats.modsMs = 0.0;
+		m_stats.stepMs = 0.0;
+		m_stats.saveMs = 0.0;
+		m_stats.sendMs = 0.0;
 	}
 
 	// Test hook: drop a player's connection without telling them.
