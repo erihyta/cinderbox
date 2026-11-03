@@ -796,7 +796,7 @@ void GameServer::HandleHello( PeerId peer, const MsgHello& hello, double now )
 			return;
 		}
 
-		PlayerSlot slot = PlayerSlot( target - m_clients );
+		PlayerSlot slot = PlayerSlot( target - m_clients.data() );
 		*target = Client{};
 		m_privates[slot] = Blackboard{};
 		target->used = true;

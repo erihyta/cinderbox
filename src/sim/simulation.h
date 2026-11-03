@@ -104,7 +104,7 @@ struct SimGlobals
 	uint32_t nextCharacterId = kCharacterIdBase;
 	uint32_t reserved = 0;
 	uint64_t rngState = 0;
-	uint32_t playerNetIds[kMaxPlayers] = {}; // 0 = slot empty
+	uint32_t playerNetIds[kMaxPlayers + 1] = {}; // 0 = slot empty (the last, slot 255, is no one's: no padding after)
 	// Only ever grows, so presentation can tell how many impacts it missed. The ring holds the
 	// most recent ones, newest at (impactCount - 1) % kImpactHistory.
 	uint32_t impactCount = 0;
@@ -114,7 +114,7 @@ struct SimGlobals
 	ModEventRecord modEvents[kModEventHistory] = {};
 };
 
-static_assert( sizeof( SimGlobals ) == 24 + 4 * kMaxPlayers + 8 + kImpactHistory * sizeof( ImpactRecord ) +
+static_assert( sizeof( SimGlobals ) == 24 + 4 * ( kMaxPlayers + 1 ) + 8 + kImpactHistory * sizeof( ImpactRecord ) +
 											 kModEventHistory * sizeof( ModEventRecord ),
 			   "SimGlobals has padding: it is hashed as raw bytes" );
 

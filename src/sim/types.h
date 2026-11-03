@@ -13,7 +13,8 @@
 namespace cb
 {
 
-inline constexpr int kMaxPlayers = 64;
+// Players on one server (M250): a slot is a byte, and 255 is no one's (kNoSlot, where a slot may be none).
+inline constexpr int kMaxPlayers = 255;
 using PlayerSlot = uint8_t;
 
 // Buttons the engine itself understands. "Use" uses the item in the hand (what using it does is
