@@ -68,7 +68,7 @@ void Usage()
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
 				 "                 [--map FILE.cbmap | --map NAME] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
 				 "                 [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
-				 "                 [--physics-threads N] [--net-model hybrid|inputs] [--every-character] [--state-budget N] [--state-threads N]\n"
+				 "                 [--physics-threads N] [--net-model hybrid|inputs] [--every-character] [--state-budget N] [--state-threads N] [--lag-compensation MS]\n"
 				 "                 [--character NAME [--workshop DIR]] [--quiet]\n" );
 }
 
@@ -242,6 +242,12 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 			// The hybrid: every client sent every character in every state, not by how far they are
 			// (M250, ServerOptions::statesByDistance).
 			o.statesByDistance = false;
+			continue;
+		}
+		if ( arg == "--lag-compensation" && i + 1 < argc )
+		{
+			// The hybrid: how far back (ms) a player's hits may take the others, as it saw them (0: none).
+			o.lagCompensationMs = uint32_t( std::max( 0, std::atoi( argv[++i] ) ) );
 			continue;
 		}
 		if ( arg == "--state-budget" && i + 1 < argc )

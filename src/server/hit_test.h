@@ -18,6 +18,22 @@
 namespace cb
 {
 
+// Where the characters were on an earlier tick (lag compensation, M250): what a player's hits are
+// tested against, as it saw them. By NetId.
+struct PastPose
+{
+	uint32_t netId = 0;
+	Transform transform;
+	AnimState anim;
+	bool dead = false;
+};
+struct PastPoses
+{
+	uint32_t tick = 0; // the server's Tick() they are of
+	std::vector<PastPose> poses;
+	const PastPose* Find( uint32_t netId ) const;
+};
+
 class HitTester
 {
 public:
@@ -26,7 +42,8 @@ public:
 	// The next character (ModSchema::characters, in its order). Returns its index.
 	size_t AddCharacter( std::shared_ptr<const CharacterAsset> character );
 
-	bool CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit );
+	// `past`: the characters as they were then (one not in it, as it is now; the world as it is).
+	bool CastRay( Simulation& sim, b3Vec3 origin, b3Vec3 translation, uint32_t ignoreNetId, RayHit& hit, const PastPoses* past = nullptr );
 	// Where a joint of a player is this tick (humanoid-profile name, "Head"), from the same pose
 	// the hit tests use. False for a player that is not there or a rig without the joint.
 	bool JointPosition( Simulation& sim, PlayerSlot slot, const char* joint, b3Vec3& out );
