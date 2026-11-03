@@ -9319,6 +9319,19 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.6236, 0.5)
 [node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball114" unique_id=48379625]
 mesh = SubResource("Mesh_PitBall3")
 
+[node name="Ball181" type="CbProp" parent="BallPit" unique_id=1111559966]
+shape = 1
+radius = 0.3
+pushed_by_characters = true
+mass = 15.0
+density = 15.0
+friction = 0.4
+bounce = 0.3
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.740386, 0.6236, 0.5)
+
+[node name="Mesh" type="MeshInstance3D" parent="BallPit/Ball181" unique_id=646832587]
+mesh = SubResource("Mesh_PitBall3")
+
 [node name="Ball115" type="CbProp" parent="BallPit" unique_id=768285804]
 shape = 1
 radius = 0.25

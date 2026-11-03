@@ -549,7 +549,8 @@ void TestGroundProbe()
 }
 
 // Stood on from above: a crate pushed by characters (light, 8 kg) holds a player dropped onto it,
-// as a solid one does; a ball of 1 kg does not (they are walked through: see TestPushers).
+// as a solid one does; a ball of 1 kg does not (they are walked through: see TestPushers); a heavy
+// ball rolled into a player does not take its footing.
 void TestStandOnPushables()
 {
 	auto pushable = []( const char* name, bool ball, float size, float mass ) {
@@ -623,6 +624,52 @@ void TestStandOnPushables()
 				 onFloor.y, box.empty() ? 0.0f : box[0].y + 0.4f, onCrate.y, onBall.y );
 	CHECK( box.size() == 1 && onCrate.y > onFloor.y + 0.7f );
 	CHECK( onBall.y < onFloor.y + 0.3f );
+
+	// A heavy ball (1 m, 21 kg) rolled into a standing player: its side, in under the hovering
+	// capsule, is too steep to stand on, so it is walked through; the player keeps the floor.
+	LevelLayout roll;
+	roll.name = "stand_roll";
+	roll.templates.push_back( pushable( "ball", true, 0.5f, 21.0f ) );
+	roll.instances.push_back( { 0, { 0.0f, 0.5f, 8.0f }, 0.0f, 0.0f } );
+	roll.spawnCenter = { 5.25f, 1.5f, 6.0f };
+	roll.spawnRadius = 2.0f;
+	roll.statics.push_back( { { 0.0f, -0.5f, 0.0f }, { 20.0f, 0.5f, 20.0f }, 0.0f, 0.0f } );
+	QuantizeLayout( roll );
+	Simulation sim( TestConfig(), roll );
+	InputFrame f;
+	f.events.push_back( { PlayerEventType::Join, 0 } );
+	uint32_t ballId = 0;
+	for ( const auto& r : sim.Entities() )
+	{
+		ballId = flecs::entity( sim.World(), r.entity ).has<TemplateRef>() ? r.netId : ballId;
+	}
+	uint32_t airTicks = 0;
+	float lowest = 99.0f, nearest = 99.0f;
+	for ( uint32_t t = 0; t < 150; ++t )
+	{
+		f.tick = sim.Tick();
+		if ( t == 60 )
+		{
+			SimCommand push;
+			push.type = CommandType::Impulse;
+			push.target = ballId;
+			push.mode = ImpulseVelocity;
+			push.b = { 0.0f, 0.0f, -4.0f };
+			f.commands.push_back( push );
+		}
+		sim.Step( f );
+		f.events.clear();
+		f.commands.clear();
+		if ( t >= 60 )
+		{
+			airTicks += sim.PlayerCharacter( 0 )->grounded ? 0 : 1;
+			lowest = std::min( lowest, sim.EntityTransform( sim.PlayerNetId( 0 ) )->position.y );
+			nearest = std::min( nearest, sim.EntityTransform( ballId )->position.z );
+		}
+	}
+	std::printf( "    a 21 kg ball rolled in (to z %.2f, the player at z 6): %u ticks in the air, lowest y %.2f\n", nearest, airTicks, lowest );
+	CHECK( nearest < 6.9f );
+	CHECK( airTicks == 0 && lowest > onFloor.y - 0.03f );
 }
 
 // Level pieces of every shape, turned any way (map versions 4 and 5): a box rolled upright is a

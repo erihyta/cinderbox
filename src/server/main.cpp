@@ -705,11 +705,12 @@ int main( int argc, char** argv )
 			double upKbps = double( s.bytesSent - lastBytesSent ) * 8.0 / 1000.0 / ( now - lastStatus );
 			uint64_t expected = s.inputTicks - lastInputTicks;
 			double latePercent = expected ? 100.0 * double( s.lateInputs - lastLate ) / double( expected ) : 0.0;
-			std::printf( "[server %6u] %d connected, %zu entities, %zu KB physics | tick %.2f ms avg %.2f max | "
-						 "late inputs %.2f%% | snapshots %llu | out %.0f kbit/s\n",
+			const double per = s.ticks ? 1.0 / double( s.ticks ) : 0.0;
+			std::printf( "[server %6u] %d connected, %zu entities, %zu KB physics | tick %.2f ms avg %.2f max (mods %.2f, step %.2f, "
+						 "state %.2f; sending %.2f) | late inputs %.2f%% | snapshots %llu | out %.0f kbit/s\n",
 						 server.Tick(), server.ConnectedClients(), server.Sim().Entities().size(),
-						 server.Sim().PhysicsBytesInUse() / 1024, avg, s.tickMsMax, latePercent,
-						 (unsigned long long)s.snapshotsSent, upKbps );
+						 server.Sim().PhysicsBytesInUse() / 1024, avg, s.tickMsMax, s.modsMs * per, s.stepMs * per, s.saveMs * per,
+						 s.sendMs * per, latePercent, (unsigned long long)s.snapshotsSent, upKbps );
 			std::fflush( stdout );
 			server.ResetTickTiming();
 			lastBytesSent = s.bytesSent;

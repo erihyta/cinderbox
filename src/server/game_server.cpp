@@ -630,11 +630,13 @@ void GameServer::Update( double now )
 	{
 		// Once for all the ticks of this update, not once a tick: packets sent in one go leave in
 		// one datagram, and are lost together. A frame's three packets have to be three datagrams.
+		const auto sendFrom = std::chrono::steady_clock::now();
 		SendFrames( now );
 		if ( m_options.netModel == NetModel::Hybrid )
 		{
 			SendStates();
 		}
+		m_stats.sendMs += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - sendFrom ).count();
 	}
 	if ( now - m_nextTickTime > 0.25 )
 	{
@@ -939,7 +941,9 @@ void GameServer::RunTick( double now )
 		frame.inputs[c.slot] = c.lastInput;
 	}
 
+	const auto modsFrom = std::chrono::steady_clock::now();
 	RunMods( frame );
+	m_stats.modsMs += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - modsFrom ).count();
 	// The bodies the map places, on the first tick (as commands, so every simulation has them, a
 	// joining one from the snapshot).
 	for ( const LevelBody& body : m_map.bodies )
@@ -970,7 +974,9 @@ void GameServer::RunTick( double now )
 	}
 	SendSnapshots();
 
+	const auto stepFrom = std::chrono::steady_clock::now();
 	m_sim->Step( frame );
+	m_stats.stepMs += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - stepFrom ).count();
 
 	m_lastInputs = frame.inputs;
 	m_replay.AddFrame( frame );
@@ -1028,7 +1034,9 @@ void GameServer::RunTick( double now )
 		{
 			m_states.pop_front();
 		}
-		m_stats.stateMsTotal += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
+		const double ms = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
+		m_stats.stateMsTotal += ms;
+		m_stats.saveMs += ms;
 	}
 
 	if ( m_options.checksumInterval > 0 && stateTick % m_options.checksumInterval == 0 && m_options.netModel == NetModel::Inputs )

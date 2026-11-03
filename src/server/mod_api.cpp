@@ -1225,8 +1225,9 @@ std::vector<CarriedItem> Context::CarriedItems( PlayerSlot slot ) const
 	{
 		return out;
 	}
-	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	for ( uint32_t netId : m_sim.CarriedItemsOf( holder ) )
 	{
+		const Simulation::EntityRef r = { netId, m_sim.FindEntity( netId ).id() };
 		const cb::HeldItem* item = flecs::entity( m_sim.World(), r.entity ).try_get<cb::HeldItem>();
 		if ( item != nullptr && item->holder == holder )
 		{
@@ -1628,7 +1629,8 @@ std::vector<NearBody> Context::BodiesNear( b3Vec3 point, float radius ) const
 std::vector<WorldItem> Context::ItemsNear( b3Vec3 point, float radius ) const
 {
 	std::vector<WorldItem> out;
-	for ( const Simulation::EntityRef& r : m_sim.Entities() )
+	// (The index: nothing here changes hands, so it is not rebuilt under the loop.)
+	for ( const Simulation::EntityRef& r : m_sim.WorldItems() )
 	{
 		flecs::entity e( m_sim.World(), r.entity );
 		const cb::HeldItem* item = e.try_get<cb::HeldItem>();
