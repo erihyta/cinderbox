@@ -162,6 +162,15 @@ ROADMAP step 3). **Inputs**: what follows below; every client simulates the whol
   against the newest the client acknowledged (`net/state_codec.h`: entity by entity, XOR, deflated).
   The others are **stand-ins** placed from the newest state not ahead of the physics, so one
   standing on debris stands on it here too. A state never touches the physics world.
+- **By distance** (M250, the default; `--every-character` turns it off): each client is sent
+  updates (`net::EncodeUpdates`): its own character and what it holds every state, the others as
+  they come due (every state within 25 m, every 2nd, 4th or 8th at 25, 50 and 100 m), a character
+  with what it holds, the most overdue first, at most `stateBudget` entities a state (512). Each
+  is a change against the record the client last acknowledged; what is left out it keeps; what is
+  gone is named until acknowledged. Changes are sparse (runs of unchanged bytes skipped) and the
+  message deflated; clients whose updates say the same share one message, and the messages are
+  encoded on the state threads. A refresh is not repeated until acknowledged (tried first: at a
+  round trip of a few states it cost as much as it saved).
 - **Your own character, predicted** (`Simulation::StepCharacters`): ahead of the server, against the
   physics world as it is (in the past); made the server's again by each state and its inputs since
   run again. While the physics steps a past tick, it stands where the server had it then. What
@@ -171,7 +180,8 @@ ROADMAP step 3). **Inputs**: what follows below; every client simulates the whol
   server's copy takes over when it comes, carried forward to your tick while it flies.
 - **Costs** (M248, chaotic bots on one machine): client work 2.7 against 5 to 6.5 ms a frame at 4
   players, 10 against 41 to 115 at 16; download about twice the inputs model's (every character's
-  state to everyone until M250 sends what is near). Your own effect on a body arrives a round trip
+  state to everyone, until M250 sent them by distance: 33% less at 64 players in a crowd, 43% with
+  players spread 30 to 250 m apart). Your own effect on a body arrives a round trip
   and the buffer late.
 
 **The physics world's inputs** (M246, both models; `physics_inputs.cpp`): characters read the

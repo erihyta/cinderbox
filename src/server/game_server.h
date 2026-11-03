@@ -20,6 +20,7 @@
 #include "view_file.h"
 #include "simulation.h"
 #include "transport.h"
+#include "worker_pool.h"
 
 #include <cstdint>
 #include <deque>
@@ -40,11 +41,15 @@ struct ServerOptions
 	net::NetModel netModel = net::NetModel::Inputs;
 	uint32_t stateEvery = 2;
 	// The hybrid (M250): each client is sent the characters by how far they are from its own, a
-	// far one's record refreshed every few states (StatePeriod); off, every one in every state. Off
-	// by default for now: each client's message is its own, and encoding them costs the server
-	// several milliseconds a tick at 64 players in a crowd (every character in every state: one
-	// encoding for all, 0.2 ms).
-	bool statesByDistance = false;
+	// far one's record refreshed every few states (StatePeriod), within a budget; off, every one in
+	// every state (one encoding for every client, but every character to everyone).
+	bool statesByDistance = true;
+	// Threads besides the server's own that encode those states, a client each (0: none).
+	int stateThreads = 0;
+	// The most entities a client is sent in one state by distance, its own character and what it
+	// holds aside: the most overdue first, a character with what it holds (a crowd's come round in
+	// turn).
+	uint32_t stateBudget = 512;
 	SimConfig config;
 	uint32_t maxClients = kMaxPlayers;
 	uint32_t checksumInterval = 30; // ticks
@@ -239,6 +244,7 @@ private:
 			uint32_t netId = 0;
 			uint32_t acked = 0;
 			bool removing = false;
+			uint32_t sentAt = 0; // the state of the last update of it sent (acknowledged or not)
 		};
 		std::vector<Known> known;
 		struct Sent
@@ -284,9 +290,53 @@ private:
 	{
 		net::StateLayout layout;
 		std::vector<Placed> placed; // by layout.entities
+		// Each entity's group (by layout.entities): a character with what it holds, sent together
+		// (their changes are much alike, and compress well side by side). The index of its head.
+		std::vector<uint32_t> head;
 	};
 	std::deque<KeptLayout> m_layouts;
-	net::UpdateCache m_updateCache; // (the newest state's parts, shared by the clients' updates)
+	// Sending states by distance, a step at a time (SendStates): each client's plan (what it is sent),
+	// the messages they make (one for clients whose plans say the same), and a cache of shared
+	// parts for each thread that encodes them.
+	struct Plan
+	{
+		bool active = false;
+		const net::StateFrame* base = nullptr;
+		uint32_t ownId = 0;
+		bool hasOwn = false;
+		b3Vec3 ownAt = {};
+		std::vector<net::EntityUpdate> updates;
+		std::vector<PlayerSlot> inputSlots;
+		std::vector<uint32_t> says; // what the message says, as numbers: the same for the same message
+		uint64_t hash = 0;
+		Client::Sent sent;
+		std::vector<Client::Known> next;
+		int message = -1;
+		// (Scratch: each entity of the newest state, how it stands for this client.)
+		struct Entry
+		{
+			const Client::Known* had = nullptr;
+			uint32_t acked = 0;
+			float score = 0.0f; // 0: not due
+			bool chosen = false;
+		};
+		std::vector<Entry> entries;
+		std::vector<float> groupScore; // by head (the most overdue of its group's)
+		std::vector<uint8_t> groupChosen;
+		std::vector<std::pair<float, uint32_t>> due; // heads
+	};
+	struct Message
+	{
+		size_t plan = 0; // the first client's whose plan it is
+		bool ok = false;
+		std::vector<uint8_t> bytes;
+	};
+	std::vector<Plan> m_plans;
+	std::vector<Message> m_messages;
+	std::vector<net::UpdateCache> m_updateCaches;
+	WorkerPool m_stateWorkers;
+	void PlanState( Plan& plan, Client& c, const net::StateFrame& newest, const KeptLayout& now,
+					const std::vector<std::pair<uint32_t, PlayerSlot>>& players );
 	const KeptLayout* KeptLayoutOf( uint32_t tick ) const;
 	static const net::StateLayout* LayoutOfTick( const void* server, uint32_t tick );
 	// A client acknowledged the state of `tick` (by distance: what it updated is what it has).
