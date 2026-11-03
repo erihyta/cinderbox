@@ -68,7 +68,7 @@ void Usage()
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
 				 "                 [--map FILE.cbmap | --map NAME] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
 				 "                 [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
-				 "                 [--physics-threads N] [--net-model hybrid|inputs] [--states-by-distance]\n"
+				 "                 [--physics-threads N] [--net-model hybrid|inputs] [--every-character] [--state-budget N] [--state-threads N]\n"
 				 "                 [--character NAME [--workshop DIR]] [--quiet]\n" );
 }
 
@@ -237,11 +237,17 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 			o.netModel = model == "hybrid" ? cb::net::NetModel::Hybrid : cb::net::NetModel::Inputs;
 			continue;
 		}
-		if ( arg == "--states-by-distance" )
+		if ( arg == "--every-character" )
 		{
-			// The hybrid (M250): each client sent the characters by how far they are (off by default:
-			// the server's cost, ServerOptions::statesByDistance).
-			o.statesByDistance = true;
+			// The hybrid: every client sent every character in every state, not by how far they are
+			// (M250, ServerOptions::statesByDistance).
+			o.statesByDistance = false;
+			continue;
+		}
+		if ( arg == "--state-budget" && i + 1 < argc )
+		{
+			// The most entities a client is sent in one state by distance (ServerOptions::stateBudget).
+			o.stateBudget = uint32_t( std::max( 1, std::atoi( argv[++i] ) ) );
 			continue;
 		}
 		if ( arg == "--record" && i + 1 < argc )
@@ -288,6 +294,12 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 		if ( arg == "--exit-when-empty" && i + 1 < argc )
 		{
 			++i; // (read by main)
+			continue;
+		}
+		if ( arg == "--state-threads" && i + 1 < argc )
+		{
+			// Threads besides the server's own that encode each client's state by distance (0: none).
+			o.stateThreads = std::max( 0, std::atoi( argv[++i] ) );
 			continue;
 		}
 		if ( arg == "--physics-threads" && i + 1 < argc )
@@ -397,6 +409,8 @@ int main( int argc, char** argv )
 	// The server's default is the hybrid (since 2026-11-01; ServerOptions' own stays inputs, which the tests
 	// that build a server in place are written for).
 	options.netModel = cb::net::NetModel::Hybrid;
+	// Threads that encode each client's state by distance: a quarter of the machine's, at most 8.
+	options.stateThreads = std::min( 8, int( std::thread::hardware_concurrency() / 4 ) );
 	std::vector<std::string> modNames;
 	for ( const cb::mods::ModInfo& info : cb::mods::CompiledMods() )
 	{

@@ -7060,7 +7060,8 @@ public:
 	bool done = false;
 };
 
-// States by distance (M250): eight players 30 to 250 m apart on a wide floor, six on a lossy link. Each client's view of the others, against the server's at the same tick: the near ones
+// States by distance (M250): eight players 30 to 250 m apart on a wide floor, six on a lossy link;
+// then with a budget much smaller than the entities there are. Each client's view of the others, against the server's at the same tick: the near ones
 // within a few states' walk (every character in every state: exactly), and refreshed all along;
 // the states smaller than with every character in every state.
 void TestHybridFar()
@@ -7084,12 +7085,15 @@ void TestHybridFar()
 		uint32_t compared = 0, refreshes = 0;	 // of the far ones: how often one moved on a client
 		uint64_t desyncs = 0;
 	};
-	auto run = [&]( uint16_t port, bool byDistance ) {
+	auto run = [&]( uint16_t port, bool byDistance, uint32_t budget = 256 ) {
 		std::vector<std::unique_ptr<mods::ServerMod>> mods;
 		mods.push_back( std::make_unique<SpreadOutMod>() );
+		const SpreadOutMod* spread = static_cast<const SpreadOutMod*>( mods.back().get() );
 		Harness h( port, {}, mapPath, {}, [&]( ServerOptions& o ) {
 			UseHybridModel( o );
 			o.statesByDistance = byDistance;
+			o.stateBudget = budget;
+			o.stateThreads = byDistance ? 2 : 0; // (the threaded path: the bytes are the same)
 		}, std::move( mods ) );
 		h.AddBot();
 		h.AddBot();
@@ -7104,6 +7108,12 @@ void TestHybridFar()
 			h.AddBot();
 		}
 		h.RunUntil( 4.0 );
+		// (Once they are spread out, and a second for the far ones to come round.)
+		while ( spread->done == false && h.Now() < 12.0 )
+		{
+			h.RunUntil( h.Now() + 0.1 );
+		}
+		h.RunUntil( h.Now() + 1.0 );
 		// Where the server had each of the four, by tick.
 		std::map<uint32_t, std::array<b3Vec3, SpreadOutMod::kPlayers>> had;
 		h.server.SetTickObserver( [&] {
@@ -7118,7 +7128,8 @@ void TestHybridFar()
 		Run out;
 		const uint64_t sentBefore = h.server.GetStats().statesSent, bytesBefore = h.server.GetStats().stateBytes;
 		std::array<std::array<b3Vec3, SpreadOutMod::kPlayers>, 2> seen{};
-		h.RunUntil( 9.0, [&]( double ) {
+		const double from = h.Now();
+		h.RunUntil( from + 4.0, [&]( double ) {
 			for ( int k = 0; k < 2; ++k )
 			{
 				GameClient& c = *h.bots[k == 0 ? 0 : 2].client;
@@ -7157,6 +7168,11 @@ void TestHybridFar()
 	};
 	const Run byDistance = run( 48110, true );
 	const Run all = run( 48120, false );
+	// A budget of 6 a state, of the 56 entities (7 a player, a group sent whole: one group a state):
+	// they come round in turn.
+	const Run few = run( 48130, true, 6 );
+	const double fewError = few.errorSum / double( std::max( few.compared, 1u ) );
+	std::printf( "    with 6 a state: %.0f bytes a state, off by %.2f m on average, %.2f at most\n", few.bytesPerState, fewError, few.farError );
 	const double meanError = byDistance.errorSum / double( std::max( byDistance.compared, 1u ) );
 	std::printf( "    by distance: %.0f bytes a state (every character: %.0f); the others on a client off by %.2f m on average, %.2f at most "
 				 "(%.2f with every character), %u compared, %u moved\n",
@@ -7166,6 +7182,9 @@ void TestHybridFar()
 	// (A far one is refreshed every 8 states: 16 ticks of walking, twice that when a refresh is lost.)
 	CHECK( meanError < 1.5 && byDistance.farError < 5.0f );
 	CHECK( all.farError < 0.01f );
+	// (Every entity comes round, a few states later in turn.)
+	CHECK( few.desyncs == 0 && few.compared > 1000 && fewError < 2.0 && few.farError < 10.0f );
+	CHECK( few.bytesPerState < byDistance.bytesPerState );
 	// (The own character and what it holds stay a good part of a state: the far ones' share is what
 	// goes, and it grows with the players; cb_bot measures it.)
 	CHECK( byDistance.bytesPerState < all.bytesPerState * 0.9 );

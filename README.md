@@ -217,6 +217,7 @@ The export needs the Godot 4.7.2 export templates, installed either from the edi
 | `--move NAME=VALUE` | how players move ([movement parameters](docs/server-mods.md#movement-parameters)) |
 | `--prop-lifetime SEC`, `--props-per-player N`, `--props-global N` | the props players spawn |
 | `--record FILE`, `--record-view FILE` | a recording, a view file (see [Watching a recording](#watching-a-recording)) |
+| `--every-character`, `--state-budget N`, `--state-threads N` | the hybrid: each player is sent the characters by distance (near ones every state, far ones every few), at most N entities a state (512), encoded on N threads (a quarter of the machine's, at most 8); `--every-character` sends everyone every character in every state |
 | `--net-model hybrid\|inputs` | how players' games are kept: the hybrid (the default): the physics from the server's events, the characters its states, your own predicted; or every game simulating the whole world from everyone's inputs ([DESIGN.md](DESIGN.md#netcode)) |
 | `--physics-threads N`, `--exit-when-empty SEC`, `--quiet` | threads for the physics; stop once nobody is connected; less output |
 
