@@ -255,7 +255,7 @@ void Encode( const MsgPlayerNames& m, std::vector<uint8_t>& out )
 	Begin( out, MsgType::PlayerNames );
 	ByteWriter w( out );
 	size_t n = std::min<size_t>( m.names.size(), kMaxPlayers );
-	w.Write( uint8_t( n ) );
+	w.Write( uint16_t( n ) ); // (two bytes since M252's review: one lost every name past 255)
 	for ( size_t i = 0; i < n; ++i )
 	{
 		w.Write( m.names[i].first );
@@ -341,13 +341,13 @@ bool Decode( ByteReader& r, MsgPrivateFields& m )
 
 bool Decode( ByteReader& r, MsgPlayerNames& m )
 {
-	uint8_t n = r.Read<uint8_t>();
+	const uint16_t n = r.Read<uint16_t>();
 	if ( r.Ok() == false || n > kMaxPlayers )
 	{
 		return false;
 	}
 	m.names.clear();
-	for ( uint8_t i = 0; i < n; ++i )
+	for ( uint16_t i = 0; i < n; ++i )
 	{
 		PlayerSlot slot = r.Read<PlayerSlot>();
 		std::string name;
@@ -1063,7 +1063,7 @@ bool FitsShort( int64_t v )
 }
 
 // Frame layout: type, tick u32, flags u8 (1: inputs, 2: physics events, 4: pushers' places, 8: a
-// physics checksum), eventCount u8, events (type u8, slot u8)*, commandCount u16, commands (type
+// physics checksum), eventCount varint, events (type u8, slot u16)*, commandCount u16, commands (type
 // u8, field mask u8, the fields present)*; with inputs, changedMask u64, then the changed fields
 // of each player whose bit is set, in slot order; with physics events, u16 count and each; with
 // pushers, theirs; with a checksum, u64.
@@ -1094,7 +1094,7 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w, bool withIn
 	const size_t pushers = std::min<size_t>( frame.pushers.size(), kMaxFramePushers );
 	w.Write( uint8_t( ( withInputs ? FrameInputs : 0 ) | ( physics > 0 ? FramePhysics : 0 ) | ( pushers > 0 ? FramePushers : 0 ) |
 					  ( checksum != 0 ? FrameChecksum : 0 ) ) );
-	w.Write( uint8_t( frame.events.size() ) );
+	WriteVarint( w, uint32_t( frame.events.size() ) ); // (a byte until M252's review: 256 joining at once broke the frame)
 	for ( const PlayerEvent& e : frame.events )
 	{
 		w.Write( uint8_t( e.type ) );
@@ -1193,9 +1193,14 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame, uint64_t* checksu
 	{
 		return false;
 	}
-	uint8_t eventCount = r.Read<uint8_t>();
+	// (Each slot joins or leaves at most a few times a tick: more is not a frame.)
+	uint32_t eventCount = 0;
+	if ( ReadVarint( r, eventCount ) == false || eventCount > 4u * uint32_t( kMaxPlayers ) )
+	{
+		return false;
+	}
 	frame.events.clear();
-	for ( uint8_t i = 0; i < eventCount && r.Ok(); ++i )
+	for ( uint32_t i = 0; i < eventCount && r.Ok(); ++i )
 	{
 		uint8_t type = r.Read<uint8_t>();
 		PlayerSlot slot = r.Read<PlayerSlot>();
