@@ -721,7 +721,7 @@ void GameServer::HandleEvent( const NetEvent& ev, double now )
 				MsgInfo info;
 				info.fingerprint = BuildFingerprint();
 				info.map = m_map.name;
-				info.maxPlayers = uint8_t( kMaxPlayers );
+				info.maxPlayers = uint16_t( kMaxPlayers );
 				for ( const Client& other : m_clients )
 				{
 					info.players += other.used ? 1 : 0;
@@ -1225,7 +1225,7 @@ void GameServer::SendSaid()
 		Encode( msg, m_buffer );
 		for ( const Client& c : m_clients )
 		{
-			if ( c.used && c.connected && c.welcomed && ( said.to == kNoSlot || said.to == c.slot ) )
+			if ( c.used && c.connected && c.welcomed && ( said.to == kNoPlayer || said.to == c.slot ) )
 			{
 				Deliver( c, m_buffer, true, &CrowdBench::other );
 			}

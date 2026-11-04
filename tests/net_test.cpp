@@ -3443,7 +3443,7 @@ void TestChat()
 	a.SendText( "chat", "one too many" );
 	h.RunUntil( h.Now() + 1.0 );
 	CHECK( b.TextCount() == 2 && b.Texts().back().text == std::string( 20, 'x' ) );
-	CHECK( a.TextCount() == 3 && a.Texts().back().from == kNoSlot && a.Texts().back().text.rfind( "Slow down", 0 ) == 0 );
+	CHECK( a.TextCount() == 3 && a.Texts().back().from == kNoPlayer && a.Texts().back().text.rfind( "Slow down", 0 ) == 0 );
 	std::printf( "    the sender was told: \"%s\"\n", a.Texts().empty() ? "" : a.Texts().back().text.c_str() );
 	for ( GameClient* c : { &a, &b } )
 	{

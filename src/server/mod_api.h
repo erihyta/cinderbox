@@ -90,8 +90,8 @@ struct SaidText
 {
 	std::string channel;
 	std::string text;
-	PlayerSlot from = kNoSlot; // the player it is from (kNoSlot: the server's own words)
-	PlayerSlot to = kNoSlot;	 // kNoSlot: everyone
+	PlayerSlot from = kNoPlayer; // the player it is from (kNoPlayer: the server's own words)
+	PlayerSlot to = kNoPlayer;	 // kNoPlayer: everyone
 };
 
 // One a player sent (Context::Intents): who, and its two numbers.
@@ -617,10 +617,10 @@ public:
 	uint64_t Random();
 	float RandomRange( float lo, float hi );
 
-	// A line on a channel, to everyone (`to` kNoSlot) or one player, from a player or (`from`
-	// kNoSlot) from nobody: the server's own words. Words only: it never touches the simulation,
+	// A line on a channel, to everyone (`to` kNoPlayer) or one player, from a player or (`from`
+	// kNoPlayer) from nobody: the server's own words. Words only: it never touches the simulation,
 	// and recordings do not keep it. Printable characters, at most net::kMaxText bytes.
-	void Say( const std::string& channel, const std::string& text, PlayerSlot from = kNoSlot, PlayerSlot to = kNoSlot );
+	void Say( const std::string& channel, const std::string& text, PlayerSlot from = kNoPlayer, PlayerSlot to = kNoPlayer );
 
 	// --- Commands -----------------------------------------------------------------------------
 	// Targets are NetIds; use SlotTarget( slot ) for a player, which also works for one joining
@@ -716,9 +716,9 @@ public:
 	void SetCharacter( uint32_t target, CharacterHandle character );
 	// A body of `character` nobody drives, its feet at `feet`, facing `yaw` (radians): drawn as its
 	// character, standing; a physics body of its capsule (it falls, it is pushed, it settles).
-	// `possessor`: a slot that drives it at once, as Possess (kNoSlot: nobody). An invalid handle:
+	// `possessor`: a slot that drives it at once, as Possess (kNoPlayer: nobody). An invalid handle:
 	// the server's own character.
-	void SpawnCharacter( CharacterHandle character, b3Vec3 feet, float yaw, PlayerSlot possessor = kNoSlot );
+	void SpawnCharacter( CharacterHandle character, b3Vec3 feet, float yaw, PlayerSlot possessor = kNoPlayer );
 	// The player in `slot` drives `body` (one of IdleBodies) from the next tick; the body it drove
 	// stands where it is, nobody's, what it held put away (a dead one goes). Nothing happens for a
 	// body someone drives.

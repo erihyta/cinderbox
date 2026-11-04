@@ -71,10 +71,9 @@ struct Character
 	b3Vec3 velocity = { 0.0f, 0.0f, 0.0f };
 	float pogoVelocity = 0.0f;
 	float facingYaw = 0.0f;
-	uint8_t slot = 0;
+	PlayerSlot slot = 0; // (two bytes since M252)
 	uint8_t grounded = 0;
 	uint8_t prevButtons = 0;
-	uint8_t sprinting = 0;
 	// Ticks since the character last left the ground (0 while grounded). Drives jump/fall/land.
 	uint32_t airTicks = 0;
 	// Ticks since landing. Lets presentation play a land clip deterministically.
@@ -93,7 +92,7 @@ struct Character
 	// Set by a Facing command: the body faces where the camera looks (a shooter's stance) instead
 	// of turning toward where it walks (freelook, the default).
 	uint8_t faceCamera = 0;
-	uint8_t reserved = 0;
+	uint8_t sprinting = 0; // (here since M252: the slot took its byte)
 	// Times this character fell below the kill plane and was put back. Mods watch it to count the
 	// fall as a death; the engine only rescues the character.
 	uint32_t fallCount = 0;
@@ -259,7 +258,7 @@ struct Ragdoll
 {
 	uint32_t owner = 0; // NetId of the player it came from (may no longer exist)
 	PlayerSlot slot = 0;
-	uint8_t reserved[3] = {};
+	uint8_t reserved[2] = {}; // (the slot is two bytes since M252)
 	uint32_t spawnTick = 0;
 	uint32_t despawnTick = 0; // 0 = never
 	float yaw = 0.0f;		  // facing when it was created: the parts' rest orientation

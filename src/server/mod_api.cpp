@@ -1151,7 +1151,7 @@ void Context::Say( const std::string& channel, const std::string& text, PlayerSl
 	{
 		return;
 	}
-	m_said->push_back( { channel, std::move( words ), from < kMaxPlayers ? from : kNoSlot, to < kMaxPlayers ? to : kNoSlot } );
+	m_said->push_back( { channel, std::move( words ), from < kMaxPlayers ? from : kNoPlayer, to < kMaxPlayers ? to : kNoPlayer } );
 }
 
 std::vector<IntentSent> Context::Intents( IntentHandle intent ) const

@@ -284,7 +284,8 @@ rolls back, so that is what has a size, and the size is the mods' to choose.
 | Animation layers | as many as the character's state machine and the mods name | 40 bytes on every player, and a state machine sampled and blended per player per tick |
 | Actions (keys of the mods' own) | 64 | a bit in every input; a packet carries only the bytes in use |
 | Events | 65,535 names | nothing until one happens |
-| Commands a tick | 1,024 | they travel in the frame everyone gets |
+| Commands a tick | 1,024 (more wait for the next tick) | they travel in the frame everyone gets |
+| Players | 1,023 (slots 0 to 1022) | a slot is two bytes wherever it is sent |
 | Slots a player | 36 | |
 | Item kinds, stances, sockets, animation packs, motion sets | about 255 each | an id of one byte |
 

@@ -40,12 +40,12 @@ struct ViewStat
 	bool operator==( const ViewStat& ) const = default;
 };
 
-// A line of typed text a mod said (net::MsgText): its channel, who it is from (kNoSlot: the
+// A line of typed text a mod said (net::MsgText): its channel, who it is from (kNoPlayer: the
 // server's own words) and the words.
 struct ViewText
 {
 	std::string channel;
-	PlayerSlot from = kNoSlot;
+	PlayerSlot from = kNoPlayer;
 	std::string text;
 
 	bool operator==( const ViewText& ) const = default;
@@ -76,7 +76,7 @@ struct ViewFrame
 	// for a source that has none (a recording, a view file: they were never written down).
 	Blackboard privates;
 	// Players' names by slot ("" for an empty slot or a source that knows none).
-	std::array<std::string, kMaxPlayers> names;
+	PerPlayer<std::string> names; // (on the heap: M252)
 	uint64_t namesGeneration = 0;
 
 	// --- The world at frame.tick --------------------------------------------------------------

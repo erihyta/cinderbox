@@ -423,7 +423,7 @@ private:
 	// The state after the tick just simulated, as a frame of the view file.
 	void RecordView( const InputFrame& frame );
 	std::vector<InputFrame> m_history; // indexed by tick % kFrameHistory
-	std::vector<Client> m_clients = std::vector<Client>( kMaxPlayers ); // (255 of them: too big for a stack)
+	std::vector<Client> m_clients = std::vector<Client>( kMaxPlayers ); // (1023 of them: too big for a stack)
 	std::vector<PlayerEvent> m_pendingEvents;
 	// The mods' commands a frame had no room for, first in the next (M251: 255 players joining at
 	// once had most of their start items dropped).

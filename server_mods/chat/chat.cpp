@@ -55,7 +55,7 @@ public:
 			}
 			if ( said.size() >= m_burst )
 			{
-				ctx.Say( "chat", "Slow down: a few lines at a time.", kNoSlot, typed.slot );
+				ctx.Say( "chat", "Slow down: a few lines at a time.", kNoPlayer, typed.slot );
 				continue;
 			}
 			said.push_back( ctx.Tick() );

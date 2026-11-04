@@ -102,7 +102,7 @@ struct PresentationFrame
 	// Inputs of the last simulated tick (predicted for other players), when the caller has them:
 	// presentation aims arms from them.
 	bool hasInputs = false;
-	std::array<PlayerInput, kMaxPlayers> inputs{};
+	PerPlayer<PlayerInput> inputs; // (on the heap: M252)
 };
 
 } // namespace cb::present

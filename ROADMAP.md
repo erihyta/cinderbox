@@ -332,15 +332,15 @@ sent every nearby character as the simulation's own record, so a crowd costs pla
 crowd 30 m across, a 100 ms round trip; 20 s counted after 5 s of joining; everything a player
 would get, on the wire):
 
-| | 32 players | 64 players | 255 players |
-|---|---|---|---|
-| To each player | 0.96 Mbit/s | 1.84 Mbit/s | 2.93 Mbit/s |
-| Out of the server | 31 Mbit/s | 118 Mbit/s | 747 Mbit/s |
-| Another character, on the wire (with what it holds and its input) | 96 B a state | 95 B | 112 B |
-| Characters and held items updated in a state (at most 512 entities) | 29 and 261 | 56 and 443 | of 2556 entities |
-| The head of every state (the globals: the event rings, the player list) | 572 B | 1007 B | (not kept) |
-| Frames, to each player a tick (each sent three times) | 136 B | 448 B | 1966 B |
-| Server's work a tick (the tick, then sending; noisy on one machine) | 6.7 ms | 7.5 to 12.7 ms | 44 ms (27 + 17) |
+| | 32 players | 64 players | 255 players | 1023 players (M252; 50 m across) |
+|---|---|---|---|---|
+| To each player | 0.96 Mbit/s | 1.84 Mbit/s | 2.93 Mbit/s | 7.5 Mbit/s |
+| Out of the server | 31 Mbit/s | 118 Mbit/s | 747 Mbit/s | 7.7 Gbit/s |
+| Another character, on the wire (with what it holds and its input) | 96 B a state | 95 B | 112 B | 174 B |
+| Characters and held items updated in a state (at most 512 entities) | 29 and 261 | 56 and 443 | of 2556 entities | 51 and 461, of 10236 |
+| The head of every state (the globals: the event rings, the player list) | 572 B | 1007 B | (not kept) | 1043 B |
+| Frames, to each player a tick (each sent three times) | 136 B | 448 B | 1966 B | 9968 B (pushers 3.9 KB a frame) |
+| Server's work a tick (the tick, then sending; noisy on one machine) | 6.7 ms | 7.5 to 12.7 ms | 44 ms (27 + 17) | 567 ms (164 + 404) |
 
 - **Where another character's bytes go** (changed, before packing, an update): its animation
   state 41 to 46 (every clock in it moves on every tick), the mover's internals 12 to 13, its place
@@ -352,19 +352,29 @@ would get, on the wire):
 - **Frames are a third of the bytes at 255**: 798 B a tick alone, half of it pushers (23 a tick in
   a crowd near the sandbox's balls), the rest commands (10 events a tick) and physics events; then
   sent three times.
+- **At 1023 (M252) frames are two thirds**: 4.7 KB a frame, 3.9 KB of it 215 pushers' places a
+  tick, then sent about twice: pushers are M256's first target, not a maybe.
+- **At 1023 the 512-entity budget starves**: 51 characters a state, so a character waits ~20
+  states for its turn, its base ages out (24 states) and goes whole: 154 records whole a state.
+  M257's byte budget, and records small enough that many fit (M253), are what fix it.
+- **The server at 1023**: 567 ms a tick (34 times its budget): encoding states 346, planning 58,
+  characters 43, mods 36, physics 23 (the bench's own fake inputs another 36).
 - **Found and fixed** (M251): what a player was thought to have went out of NetId order once
   anything was gone (M250's states by distance: the gone ones were put first), and from then on
   every record went whole in every state and the list grew without end: 171 B per other character
   at 64 fighting players, 95 after the fix. And a frame holds 1024 commands: the rest were dropped
   without a word, so 255 players joining at once lost most of their start items; the rest waits
   for the next tick now, and the server says so.
+- **Found and fixed** (M252): a character that fell below the kill plane was put back, and what it
+  carried was destroyed with everything else below it (falling off the map emptied your hands and
+  bag, and no mod was told); it follows its holder back now.
 
 **The milestones**:
 
 | Milestone | What |
 |---|---|
 | **M251** (done) | **The yardstick**: `cb_server --fake-players N` (bot brains inside the server, each a client whose messages are counted and acknowledged a round trip later; `--fake-radius`, `--fake-fight`, `--fake-rtt`, `--fake-seed`) and `--bench SEC` (a clock of its own; the report by part); `cb_net_tests crowd_bench`, a ratchet on the bytes and on what a player is thought to have. The table above; the two fixes it found |
-| M252 | **1023 players**: two-byte slots, the spawn's blocks of 64 beyond four, protocol and replay versions, reference hashes again |
+| **M252** (done) | **1023 players**: two-byte slots (`PlayerSlot`; `kNoPlayer` for no one, apart from an inventory's `kNoSlot`), an item target's socket above the slot's 16 bits, `Character` and `Ragdoll` the same size with a two-byte slot, the states' input slots as varints, view records with a two-byte slot; the spawn's blocks of 64 a ring further out past four; protocol 85, replay 60, view files 9 (`CBV7`); new reference hashes |
 | M253 | **Other characters as puppets**: a bit-packed record of ~8 bytes (place as a change at 1/256 m, facing, aim, flags); stand-ins made from it, placed between their own updates; your own character keeps its full record |
 | M254 | **Animation from events**: clients run the other characters' state machines from what the record and the events say; a layer's new state and its start tick (~3 B) when it changes, taken when the client's own run differs; no clocks on the wire |
 | M255 | **Only what others see**: held items as kinds in the record, not entities; fields owner-only unless shared; no inputs of others; the head down to the tick (the player list and global fields when they change, events with the characters they are at) |

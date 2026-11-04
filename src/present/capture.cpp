@@ -99,7 +99,7 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 		f.shape = shape.kind;
 		f.halfExtents = shape.halfExtents;
 
-		f.slot = kNoSlot; // (a prop's is its driver's: a slot only while one drives it)
+		f.slot = kNoPlayer; // (a prop's is its driver's: a slot only while one drives it)
 		if ( e.has<StaticGeometry>() )
 		{
 			f.kind = VisualKind::Static;
@@ -120,7 +120,7 @@ void CaptureFrame( Simulation& sim, PresentationFrame& out )
 		{
 			// A character's body nobody drives: drawn as its character, standing (no animation state).
 			f.kind = VisualKind::Player;
-			f.slot = kNoSlot;
+			f.slot = kNoPlayer;
 			f.character = uint8_t( sim.CharacterOf( e ) );
 			if ( const Slots* slots = e.try_get<Slots>() )
 			{
