@@ -7064,6 +7064,53 @@ public:
 // then with a budget much smaller than the entities there are. Each client's view of the others, against the server's at the same tick: the near ones
 // within a few states' walk (every character in every state: exactly), and refreshed all along;
 // the states smaller than with every character in every state.
+// The crowd bench (M251) as a ratchet: fake players in a crowd, on a clock of the test's own (the
+// same session, byte for byte, however slow the machine), and what each is sent must stay under
+// the numbers below. Lower them as the bytes go down (ROADMAP: many players); a change that raises
+// them has to say why.
+void TestCrowdBench()
+{
+	// What M251 measured (24 fake players within 10 m, fighting with what the tests' players start
+	// with in the hand, the default mods but brawl; 5 s counted after 5 s of warming up), with a
+	// little room.
+	constexpr double kMostBytesPerOtherCharacter = 70.0; // on the wire, with what it holds and its input (59.5)
+	constexpr double kMostKbitsPerPlayer = 900.0;		  // (775)
+	constexpr double kMostWholeRecordsPerState = 4.5;	  // (3.5: an entity goes whole until its first is acknowledged)
+	Harness h( 47960, {}, {}, {}, [&]( ServerOptions& o ) {
+		o.netModel = net::NetModel::Hybrid;
+		o.fakePlayers = 24;
+		o.fakeRadius = 10.0f;
+		o.fakeRoundTripMs = 100;
+		o.fakeSeed = 7;
+		o.fakeFight = true;
+	} );
+	const double dt = 1.0 / 60.0;
+	for ( int tick = 0; tick < 600; ++tick )
+	{
+		h.server.Update( double( tick ) * dt );
+	}
+	const CrowdBench& b = h.server.Bench();
+	std::printf( "%s", FormatBench( b ).c_str() );
+	CHECK( b.fakes == 24 );
+	CHECK( b.resyncs == 0 );
+	CHECK( b.sampled > 0 && b.othersUpdated > 0 );
+	const double perOther = double( b.sampledBytes - std::min( b.sampledBytes, b.ownOnly ) ) / double( std::max<uint64_t>( b.othersUpdated, 1 ) );
+	const double seconds = double( b.ticks ) / 60.0;
+	const double kbits = double( b.wire ) * 8.0 / 1000.0 / ( double( b.fakes ) * seconds );
+	std::printf( "    %.1f B per other character (at most %.0f), %.0f kbit/s per player (at most %.0f)\n", perOther,
+				 kMostBytesPerOtherCharacter, kbits, kMostKbitsPerPlayer );
+	CHECK( perOther <= kMostBytesPerOtherCharacter );
+	CHECK( kbits <= kMostKbitsPerPlayer );
+	// What a player is thought to have stays the state's entities, and the gone ones not yet
+	// acknowledged (M250 let it grow without end once something was gone: everything after it in
+	// NetId order then went whole in every state).
+	const double wholePerState = double( b.wholeRecords ) / double( std::max<uint64_t>( b.sampled, 1 ) );
+	std::printf( "    %.2f records whole a state (at most %.1f); known %llu at most, against %llu entities\n", wholePerState,
+				 kMostWholeRecordsPerState, (unsigned long long)b.knownMost, (unsigned long long)b.entitiesMost );
+	CHECK( wholePerState <= kMostWholeRecordsPerState );
+	CHECK( b.knownMost <= b.entitiesMost + 64 );
+}
+
 void TestHybridFar()
 {
 	LevelLayout wide;
@@ -7762,6 +7809,7 @@ int main( int argc, char** argv )
 		{ "hybrid_session", TestHybridSession },
 		{ "hybrid_lossy", TestHybridLossy },
 		{ "hybrid_far", TestHybridFar },
+		{ "crowd_bench", TestCrowdBench },
 		{ "lag_compensation", TestLagCompensation },
 		{ "brawl_lag_compensation", TestBrawlLagCompensation },
 		{ "hybrid_reconnect", TestHybridReconnect },

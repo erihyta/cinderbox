@@ -293,6 +293,7 @@ inputs ──> server: mods read the world + this tick's inputs ──> commands
 - **Commands, not access**: `Set`, `Emit`, `SpawnProp`, `SpawnTemplate`, `Destroy`, `Push`, `Kill`, `Respawn`, `Freeze`, `Aim`, `Facing`, `SetStance`, `SwapLayer`, `SetMove`, and the item commands. Mods need no determinism of their own: their decisions reach clients as values.
 - **Targets** are NetIds, `SlotTarget( slot )` or `ItemTarget( slot, socket )` (resolved when the command runs).
 - **Mods read the state before the tick**, so a hitscan is resolved against the world the shooter's input was predicted in.
+- **A frame holds 1024 commands** (`kMaxCommandsPerFrame`): what the mods add beyond waits for the next tick, first in it and in order, and the server says so (255 players joining at once ask for about ten start items each).
 - **Hit tests** (`CastRay`) pose each player near the ray from its `AnimState` and test its character's hitboxes; `RayHit::zone` names the zone. Server only: poses never enter the rolled-back simulation.
 - **Mods cooperate by name**, never by call: board fields, item properties, and events (heard a tick later through `RecentEvents`).
 - **Options**: `--mod-option NAME=VALUE`, read with `ctx.Option`.
@@ -486,7 +487,7 @@ src/sim/          deterministic simulation shared by server and client, as two l
   anim_graph.*      a character's state machine: its text, the compiler and the runner
 src/anim/         ozz: the placeholder rig and baked characters (anim_set.*), the pose from a state machine (pose.*), joint names (profile.*)
 src/net/          wire protocol, ENet wrapper, network simulator (netsim.*), replay files (replay.*)
-src/server/       authoritative GameServer (library), the mod API (mod_api.*), the navigation mesh (navigation.*) and cb_server
+src/server/       authoritative GameServer (library), the mod API (mod_api.*), the navigation mesh (navigation.*), the crowd bench (crowd_bench.*) and cb_server
 server_mods/      gameplay mods compiled into cb_server: inventory, props, gun, melee, brawl, pickup, deathmatch, waves, ...
 godot/characters/ characters shipped with the game (mannequin: source glb, bone map, scene, baked files)
 characters/       character items: <name>/client is the item's Godot project, <name>/client_item.cfg its hash

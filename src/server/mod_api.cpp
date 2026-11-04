@@ -837,9 +837,15 @@ float Context::RandomRange( float lo, float hi )
 
 void Context::Add( const SimCommand& command )
 {
-	if ( m_frame.commands.size() < kMaxCommandsPerFrame )
+	// A frame full (255 players joining at once ask for about ten items each: M251's crowd bench
+	// found them dropped), the rest waits for the next tick, in order, rather than being lost.
+	if ( m_frame.commands.size() < kMaxCommandsPerFrame && ( m_overflow == nullptr || m_overflow->empty() ) )
 	{
 		m_frame.commands.push_back( command );
+	}
+	else if ( m_overflow != nullptr )
+	{
+		m_overflow->push_back( command );
 	}
 }
 

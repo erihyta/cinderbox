@@ -77,6 +77,7 @@ below ([Later](#later), [Parked](#parked), [Leftovers](#leftovers-by-area),
 | 1 | [Stabilize M215 to M234](#1-stabilize-m215-to-m234) | a written playtest checklist, run by bots and by hand with two games under latency and loss; every feature since M215 used by shipped content or removed |
 | 2 | [Small fixes from the review](#2-small-fixes-from-the-review) | **done (M243)**: dead stances, colliding files, stale docs, two Jolt areas, an old replay, the unmaintained nodes out of sight |
 | 3 | [Two network models](#3-two-network-models) | **M246 to M249 done** (characters never write the physics world, which stands alone). The hybrid the default: physics deterministic from the server's events, characters a shooter's (your own predicted, the rest interpolated); everyone simulating the whole world from inputs kept as a choice. M244 and M245's server-state model is dropped (it streamed the physics) |
+| 3b | [Many players](#3b-many-players) | **M251 done** (the crowd bench). The most players a hybrid server can hold, bandwidth first: other characters as ~8-byte records, their animation run on the client from events, only what others see, frames that carry only the physics, a byte budget per client; then the server's and the client's processor time, and 1023 slots |
 | 4 | [The slice](#4-the-slice) | one game, played by people; it starts here and runs beside steps 5 to 8, each done when the slice uses it |
 | 5 | [Every item a sheet](#5-every-item-a-sheet) | the bat and the guns the way the fist is: predicted from their sheets, the C++ only deciding damage |
 | 6 | [Sheets improved](#6-sheets-improved) | a resource on the node it is about (CbRules goes), `.cbsheet`, names and parameters in the sheet, readable cooldowns, the warts fixed |
@@ -310,6 +311,72 @@ In the hybrid a client steps the physics once a tick: 0.3 to 0.4 ms with 300 pro
   game), not one server of 1,000. One world across servers is [later](#one-world-across-servers).
 - **The inputs model, tuned** for small servers: `reconcile_every 2`; a better guess of a remote
   player's input (keep its mouse turning, rather than repeating the last input).
+
+### 3b. Many players
+
+The most players a hybrid server can hold (planned 2026-11-03). Bandwidth first: every client is
+sent every nearby character as the simulation's own record, so a crowd costs players squared.
+
+**Decided (2026-11-03)**:
+
+| Decision | Taken |
+|---|---|
+| The rates | the simulation stays at 60 Hz; a client gets one packet every 2 ticks (30 a second) |
+| Mod fields | to their owner only; fields a character's state machine reads are shared by themselves; fields a look shows on others (a health bar over heads) are marked shared |
+| The cap | 1023 players (a slot becomes two bytes) |
+| The scope | the hybrid model only; the inputs model is kept as it is, for small servers |
+| How it is measured | the crowd bench (M251): fake players inside the server, sent what a player would be, counted; a seed plays the same session however slow the machine |
+
+**Measured by M251** (`cb_server --character mannequin --fake-players N --fake-radius 15
+--fake-fight --bench 25`: the default mods, the players fighting with the brawl kit's fist in a
+crowd 30 m across, a 100 ms round trip; 20 s counted after 5 s of joining; everything a player
+would get, on the wire):
+
+| | 32 players | 64 players | 255 players |
+|---|---|---|---|
+| To each player | 0.96 Mbit/s | 1.84 Mbit/s | 2.93 Mbit/s |
+| Out of the server | 31 Mbit/s | 118 Mbit/s | 747 Mbit/s |
+| Another character, on the wire (with what it holds and its input) | 96 B a state | 95 B | 112 B |
+| Characters and held items updated in a state (at most 512 entities) | 29 and 261 | 56 and 443 | of 2556 entities |
+| The head of every state (the globals: the event rings, the player list) | 572 B | 1007 B | (not kept) |
+| Frames, to each player a tick (each sent three times) | 136 B | 448 B | 1966 B |
+| Server's work a tick (the tick, then sending; noisy on one machine) | 6.7 ms | 7.5 to 12.7 ms | 44 ms (27 + 17) |
+
+- **Where another character's bytes go** (changed, before packing, an update): its animation
+  state 41 to 46 (every clock in it moves on every tick), the mover's internals 12 to 13, its place
+  7, its velocity 3, its fields and motions 4 to 6; and each of the ~9 items it holds, its place
+  again (7 each: `FollowHolders` copies the holder's onto every carried item). Packing squeezes the
+  copies: held items are ~10% of the others' part, their inputs ~5%.
+- **The head grows with what happens**: the event rings are in every state, so a fight's events
+  (hurt, damage, a strike, a marker) cost every player ~1 KB a state at 64.
+- **Frames are a third of the bytes at 255**: 798 B a tick alone, half of it pushers (23 a tick in
+  a crowd near the sandbox's balls), the rest commands (10 events a tick) and physics events; then
+  sent three times.
+- **Found and fixed** (M251): what a player was thought to have went out of NetId order once
+  anything was gone (M250's states by distance: the gone ones were put first), and from then on
+  every record went whole in every state and the list grew without end: 171 B per other character
+  at 64 fighting players, 95 after the fix. And a frame holds 1024 commands: the rest were dropped
+  without a word, so 255 players joining at once lost most of their start items; the rest waits
+  for the next tick now, and the server says so.
+
+**The milestones**:
+
+| Milestone | What |
+|---|---|
+| **M251** (done) | **The yardstick**: `cb_server --fake-players N` (bot brains inside the server, each a client whose messages are counted and acknowledged a round trip later; `--fake-radius`, `--fake-fight`, `--fake-rtt`, `--fake-seed`) and `--bench SEC` (a clock of its own; the report by part); `cb_net_tests crowd_bench`, a ratchet on the bytes and on what a player is thought to have. The table above; the two fixes it found |
+| M252 | **1023 players**: two-byte slots, the spawn's blocks of 64 beyond four, protocol and replay versions, reference hashes again |
+| M253 | **Other characters as puppets**: a bit-packed record of ~8 bytes (place as a change at 1/256 m, facing, aim, flags); stand-ins made from it, placed between their own updates; your own character keeps its full record |
+| M254 | **Animation from events**: clients run the other characters' state machines from what the record and the events say; a layer's new state and its start tick (~3 B) when it changes, taken when the client's own run differs; no clocks on the wire |
+| M255 | **Only what others see**: held items as kinds in the record, not entities; fields owner-only unless shared; no inputs of others; the head down to the tick (the player list and global fields when they change, events with the characters they are at) |
+| M256 | **Frames carry the physics only**: the commands clients skip left out; each frame in two packets, not three, a gap asked for again; frames and the characters' update in one datagram every 2 ticks; pushers at the state rate if they show |
+| M257 | **A byte budget per client**: a priority that grows by nearness, being in view, a changed state, aiming at or hitting the player; far ones coarser; an interest grid instead of every distance |
+| M258 | **The server's processor at 1000**: profiled; characters stepped on threads (each mover reads the others as the tick found them); mods' per-player loops |
+| M259 | **The client's processor at 1000 visible**: poses by distance and on screen (every frame near, every 8th far, none off screen), visibility ranges and cheaper far meshes |
+| M260 | **The uplink**: inputs repeated by measured loss (4, not 12) |
+
+**Targets** (1000 players in one area): another character ≤ 10 B moving, ≤ 2 B still; ≤ 0.5
+Mbit/s to each player; ≤ 500 Mbit/s out of the server; the server's work ≤ 16.7 ms a tick; ≤ 6 ms
+a frame for 1000 characters' animation and drawing on the client.
 
 ### 4. The slice
 
