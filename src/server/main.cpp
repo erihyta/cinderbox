@@ -5,6 +5,16 @@
 //             [--map FILE.cbmap | --map NAME] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]
 //             [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...
 //             [--character NAME [--workshop DIR]] [--quiet]
+//             [--fake-players N [--fake-seed N] [--fake-radius M] [--fake-rtt MS] [--fake-fight]] [--bench SEC]
+//
+// --fake-players N (the crowd bench, M251): the first N slots are played by bot brains in the
+//   server, and each is a client that is sent what a player would be and acknowledges it a round
+//   trip (--fake-rtt, 100 ms) later; nothing goes on the network, it is counted. --fake-radius M:
+//   they walk back toward the spawn once M metres from it (a crowd). --fake-fight: they use what is
+//   in their hands on whoever is within reach. --fake-seed: the same seed plays the same session.
+// --bench SEC: the server runs as fast as it can on a clock of its own for SEC seconds of game,
+//   prints what the fake players would have been sent (per player and per second, by part) and the
+//   tick's parts, and stops.
 //
 // --map NAME: maps/NAME.cbmap, next to this executable, in the working folder, or in a checkout the
 // project's godot/maps.
@@ -43,6 +53,7 @@
 #include "game_server.h"
 #include "registry.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -69,7 +80,8 @@ void Usage()
 				 "                 [--map FILE.cbmap | --map NAME] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
 				 "                 [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
 				 "                 [--physics-threads N] [--net-model hybrid|inputs] [--every-character] [--state-budget N] [--state-threads N] [--lag-compensation MS]\n"
-				 "                 [--character NAME [--workshop DIR]] [--quiet]\n" );
+				 "                 [--character NAME [--workshop DIR]] [--quiet]\n"
+				 "                 [--fake-players N [--fake-seed N] [--fake-radius M] [--fake-rtt MS] [--fake-fight]] [--bench SEC]\n" );
 }
 
 // <dir>/<mod>.item: "sha256=<64 hex digits>" (written by tools/publish_mod.ps1).
@@ -297,9 +309,34 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 			++i; // (handled before anything starts)
 			continue;
 		}
-		if ( arg == "--exit-when-empty" && i + 1 < argc )
+		if ( ( arg == "--exit-when-empty" || arg == "--bench" ) && i + 1 < argc )
 		{
 			++i; // (read by main)
+			continue;
+		}
+		if ( arg == "--fake-players" && i + 1 < argc )
+		{
+			o.fakePlayers = uint32_t( std::clamp( std::atoi( argv[++i] ), 0, cb::kMaxPlayers ) );
+			continue;
+		}
+		if ( arg == "--fake-seed" && i + 1 < argc )
+		{
+			o.fakeSeed = std::strtoull( argv[++i], nullptr, 10 );
+			continue;
+		}
+		if ( arg == "--fake-radius" && i + 1 < argc )
+		{
+			o.fakeRadius = std::max( 0.0f, float( std::atof( argv[++i] ) ) );
+			continue;
+		}
+		if ( arg == "--fake-rtt" && i + 1 < argc )
+		{
+			o.fakeRoundTripMs = uint32_t( std::clamp( std::atoi( argv[++i] ), 0, 2000 ) );
+			continue;
+		}
+		if ( arg == "--fake-fight" )
+		{
+			o.fakeFight = true;
 			continue;
 		}
 		if ( arg == "--state-threads" && i + 1 < argc )
@@ -644,9 +681,36 @@ int main( int argc, char** argv )
 		return 1;
 	}
 
+	// --bench SEC (M251): the server runs on a clock of its own, a tick a step, as fast as it can,
+	// for SEC seconds of game, then says what its fake players would have been sent and stops. A
+	// session is then the same however slow the machine.
+	double benchSeconds = 0.0;
+	for ( int i = 1; i + 1 < argc; ++i )
+	{
+		if ( std::string( argv[i] ) == "--bench" )
+		{
+			// (At least the warm-up and five seconds counted.)
+			benchSeconds = std::max( double( options.fakeWarmupSeconds ) + 5.0, std::atof( argv[i + 1] ) );
+		}
+	}
+	double benchNow = 0.0;
 	using Clock = std::chrono::steady_clock;
 	const auto start = Clock::now();
-	auto seconds = [&] { return std::chrono::duration<double>( Clock::now() - start ).count(); };
+	auto seconds = [&] { return benchSeconds > 0.0 ? benchNow : std::chrono::duration<double>( Clock::now() - start ).count(); };
+	// The tick's parts over the whole run (the status lines' are since the last one).
+	double runTicks = 0.0, runTickMs = 0.0, runMods = 0.0, runStep = 0.0, runSave = 0.0, runSend = 0.0, runTickMax = 0.0;
+	cb::Simulation::StepProfile warm{}; // the step's profile as the bench's warm-up ended
+	uint64_t lastWire = 0;
+	auto keepTiming = [&] {
+		const auto& s = server.GetStats();
+		runTicks += double( s.ticks );
+		runTickMs += s.tickMsTotal;
+		runMods += s.modsMs;
+		runStep += s.stepMs;
+		runSave += s.saveMs;
+		runSend += s.sendMs;
+		runTickMax = std::max( runTickMax, s.tickMsMax );
+	};
 
 	double nextStatus = 5.0;
 	double lastStatus = 0.0;
@@ -734,11 +798,29 @@ int main( int argc, char** argv )
 			double latePercent = expected ? 100.0 * double( s.lateInputs - lastLate ) / double( expected ) : 0.0;
 			const double per = s.ticks ? 1.0 / double( s.ticks ) : 0.0;
 			std::printf( "[server %6u] %d connected, %zu entities, %zu KB physics | tick %.2f ms avg %.2f max (mods %.2f, step %.2f, "
-						 "state %.2f; sending %.2f) | late inputs %.2f%% | snapshots %llu | out %.0f kbit/s\n",
+						 "state %.2f; sending %.2f) | late inputs %.2f%% | snapshots %llu | out %.0f kbit/s",
 						 server.Tick(), server.ConnectedClients(), server.Sim().Entities().size(),
 						 server.Sim().PhysicsBytesInUse() / 1024, avg, s.tickMsMax, s.modsMs * per, s.stepMs * per, s.saveMs * per,
 						 s.sendMs * per, latePercent, (unsigned long long)s.snapshotsSent, upKbps );
+			if ( server.Bench().fakes > 0 )
+			{
+				// (What the fake players would have been sent, on the wire, estimated.)
+				const uint64_t wire = server.Bench().wire;
+				std::printf( " | to the fake players %.0f kbit/s", double( wire - lastWire ) * 8.0 / 1000.0 / ( now - lastStatus ) );
+				lastWire = wire;
+			}
+			std::printf( "\n" );
 			std::fflush( stdout );
+			// (The bench's times from the end of its warm-up on, as what it counts: the first windows
+			// are the joins'.)
+			if ( lastStatus + 1e-6 >= options.fakeWarmupSeconds )
+			{
+				keepTiming();
+			}
+			else if ( now + 1e-6 >= options.fakeWarmupSeconds )
+			{
+				warm = server.Sim().Profile();
+			}
 			server.ResetTickTiming();
 			lastBytesSent = s.bytesSent;
 			lastLate = s.lateInputs;
@@ -747,6 +829,33 @@ int main( int argc, char** argv )
 			nextStatus = now + 5.0;
 		}
 
+		if ( benchSeconds > 0.0 )
+		{
+			benchNow += 1.0 / double( options.config.tickRate );
+			if ( benchNow < benchSeconds )
+			{
+				continue;
+			}
+			keepTiming();
+			cb::Simulation::StepProfile sp = server.Sim().Profile();
+			sp.steps -= warm.steps;
+			sp.commandsNs -= warm.commandsNs;
+			sp.charactersNs -= warm.charactersNs;
+			sp.physicsNs -= warm.physicsNs;
+			sp.afterNs -= warm.afterNs;
+			const double steps = sp.steps > 0 ? double( sp.steps ) : 1.0;
+			const double per = runTicks > 0.0 ? 1.0 / runTicks : 0.0;
+			std::printf( "%s", cb::FormatBench( server.Bench() ).c_str() );
+			// (Sending is outside the tick's own time; the bench's sampling is left out of it.)
+			const double sending = std::max( 0.0, runSend - server.Bench().sampleMs ) * per;
+			std::printf( "server tick   %.2f ms on average of the %.1f a tick has: the tick %.2f (%.2f at most: mods %.2f, step %.2f [commands %.2f, "
+						 "characters %.2f, physics %.2f, after %.2f], saving states %.2f), then sending %.2f\n",
+						 runTickMs * per + sending, 1000.0 / double( options.config.tickRate ), runTickMs * per, runTickMax, runMods * per,
+						 runStep * per, double( sp.commandsNs ) / steps / 1e6, double( sp.charactersNs ) / steps / 1e6,
+						 double( sp.physicsNs ) / steps / 1e6, double( sp.afterNs ) / steps / 1e6, runSave * per, sending );
+			std::printf( "              (%.1f s of game in %.1f s)\n", benchSeconds, std::chrono::duration<double>( Clock::now() - start ).count() );
+			return 0;
+		}
 		double wait = server.TimeUntilNextTick( seconds() );
 		if ( wait > 0.002 )
 		{

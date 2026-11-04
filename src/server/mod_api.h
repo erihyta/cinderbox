@@ -596,6 +596,12 @@ public:
 	{
 		m_nav = nav;
 	}
+	// Where commands go that a frame has no room for (kMaxCommandsPerFrame): the server puts them
+	// first in the next tick's frame, in order (unset: they are dropped).
+	void SetOverflow( std::vector<SimCommand>* overflow )
+	{
+		m_overflow = overflow;
+	}
 	void SetOptions( const std::map<std::string, std::string>* options )
 	{
 		m_options = options;
@@ -842,6 +848,7 @@ private:
 	int LayerIndex( const std::string& layer ) const;
 	int SlotOfTarget( uint32_t target ) const;
 	HitTester* m_hits = nullptr;
+	std::vector<SimCommand>* m_overflow = nullptr;
 	const std::array<const PastPoses*, kMaxPlayers>* m_past = nullptr;
 	const NavMesh* m_nav = nullptr;
 };

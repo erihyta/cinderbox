@@ -420,6 +420,7 @@ bool GameServer::Start( const ServerOptions& options )
 
 	std::random_device rd;
 	m_tokenState = ( uint64_t( rd() ) << 32 ) ^ rd() ^ uint64_t( std::chrono::steady_clock::now().time_since_epoch().count() );
+	AddFakePlayers();
 
 	if ( options.recordHashes )
 	{
@@ -595,6 +596,10 @@ void GameServer::Update( double now )
 	{
 		HandleEvent( ev, now );
 	}
+	if ( m_bench.fakes > 0 )
+	{
+		FakeAcknowledgements( now );
+	}
 
 	// Players whose connection did not come back in time leave the world.
 	for ( Client& c : m_clients )
@@ -636,6 +641,7 @@ void GameServer::Update( double now )
 		// one datagram, and are lost together. A frame's three packets have to be three datagrams.
 		const auto sendFrom = std::chrono::steady_clock::now();
 		SendFrames( now );
+		m_bench.framesMs += BenchCounts() ? std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - sendFrom ).count() : 0.0;
 		if ( m_options.netModel == NetModel::Hybrid )
 		{
 			SendStates();
@@ -652,6 +658,10 @@ void GameServer::Update( double now )
 	{
 		m_namesDirty = false;
 		SendNames();
+	}
+	if ( m_bench.fakes > 0 && ran > 0 )
+	{
+		FakeSent();
 	}
 
 	m_transport.Flush();
@@ -875,6 +885,20 @@ void GameServer::SendSnapshots()
 		{
 			continue;
 		}
+		if ( c.fake )
+		{
+			// (A fake player that fell behind starts over, from what it would have been welcomed with.)
+			c.needsSnapshot = false;
+			c.ackTick = m_sim->Tick();
+			c.sentThrough = c.ackTick;
+			c.stateAck = kNoStateBase;
+			c.stateSent = 0;
+			c.known.clear();
+			c.sent.clear();
+			c.acks.clear();
+			m_bench.resyncs += 1;
+			continue;
+		}
 
 		if ( built == false )
 		{
@@ -927,6 +951,14 @@ void GameServer::RunTick( double now )
 		{
 			continue;
 		}
+		if ( c.fake )
+		{
+			const auto from = std::chrono::steady_clock::now();
+			c.lastInput = FakeInput( c );
+			frame.inputs[c.slot] = c.lastInput;
+			m_bench.fakeInputMs += BenchCounts() ? std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - from ).count() : 0.0;
+			continue;
+		}
 
 		if ( c.connected && c.welcomed )
 		{
@@ -948,8 +980,21 @@ void GameServer::RunTick( double now )
 		frame.inputs[c.slot] = c.lastInput;
 	}
 
+	// What did not fit in the frames before first (Context::SetOverflow), as many as fit.
+	if ( m_overflow.empty() == false )
+	{
+		const size_t take = std::min( m_overflow.size(), kMaxCommandsPerFrame );
+		frame.commands.insert( frame.commands.end(), m_overflow.begin(), m_overflow.begin() + std::ptrdiff_t( take ) );
+		m_overflow.erase( m_overflow.begin(), m_overflow.begin() + std::ptrdiff_t( take ) );
+	}
+	const bool overflowing = m_overflow.empty() == false;
 	const auto modsFrom = std::chrono::steady_clock::now();
 	RunMods( frame );
+	if ( overflowing == false && m_overflow.empty() == false )
+	{
+		Log( "tick %u: the mods' commands are more than a frame holds (%zu): %zu wait for the next tick", tick, kMaxCommandsPerFrame,
+			 m_overflow.size() );
+	}
 	m_stats.modsMs += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - modsFrom ).count();
 	// The bodies the map places, on the first tick (as commands, so every simulation has them, a
 	// joining one from the snapshot).
@@ -995,6 +1040,10 @@ void GameServer::RunTick( double now )
 		// it made (the replay has the frame as played: it makes them again).
 		frame.physics = m_sim->PhysicsMade().physics;
 		frame.pushers = m_sim->PhysicsMade().pushers;
+	}
+	if ( m_bench.fakes > 0 )
+	{
+		CountFrame( frame );
 	}
 	m_history[tick % kFrameHistory] = std::move( frame );
 
@@ -1081,7 +1130,7 @@ void GameServer::RunTick( double now )
 		{
 			if ( c.used && c.connected && c.welcomed )
 			{
-				m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
+				Deliver( c, m_buffer, true, &CrowdBench::other );
 			}
 		}
 	}
@@ -1106,6 +1155,7 @@ void GameServer::RunMods( InputFrame& frame )
 	ctx.SetPrivates( &m_privates, &m_privatesChanged );
 	ctx.SetHitTester( m_hits.get() );
 	ctx.SetNavMesh( &m_nav );
+	ctx.SetOverflow( &m_overflow );
 	ctx.SetTexts( &m_typed, &m_said );
 	// Each player's view of the others, as its input says it saw them (this tick's mods see the
 	// world as of Tick(): a view `seenBack` ticks before, kept by RecordPast), no further back
@@ -1177,7 +1227,7 @@ void GameServer::SendSaid()
 		{
 			if ( c.used && c.connected && c.welcomed && ( said.to == kNoSlot || said.to == c.slot ) )
 			{
-				m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
+				Deliver( c, m_buffer, true, &CrowdBench::other );
 			}
 		}
 	}
@@ -1220,7 +1270,7 @@ void GameServer::SendPrivates( const Client& c )
 	MsgPrivateFields msg;
 	msg.values = m_privates[c.slot];
 	Encode( msg, m_buffer );
-	m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
+	Deliver( c, m_buffer, true, &CrowdBench::other );
 }
 
 bool GameServer::ReplaceItem( const ModItem& item )
@@ -1247,7 +1297,7 @@ bool GameServer::ReplaceItem( const ModItem& item )
 	{
 		if ( c.used && c.connected && c.welcomed )
 		{
-			m_transport.Send( c.peer, ChannelReliable, m_itemsBuffer, true );
+			Deliver( c, m_itemsBuffer, true, &CrowdBench::other );
 		}
 	}
 	return true;
@@ -1268,7 +1318,7 @@ void GameServer::SendNames( PeerId only )
 	{
 		if ( c.used && c.connected && c.welcomed && ( only == 0 || c.peer == only ) )
 		{
-			m_transport.Send( c.peer, ChannelReliable, m_buffer, true );
+			Deliver( c, m_buffer, true, &CrowdBench::other );
 		}
 	}
 }
@@ -1432,7 +1482,7 @@ void GameServer::SendFrames( double now )
 		}
 		// Out of order is fine, dropped for being overtaken is not: a packet holds frames the next
 		// one may not (it starts later), and the client keeps one it cannot use yet.
-		m_transport.SendUnordered( c.peer, ChannelInput, hit->bytes );
+		Deliver( c, hit->bytes, false, &CrowdBench::frames );
 		m_stats.batchesSent += 1;
 		m_stats.framesSent += hit->frames;
 	}
@@ -1655,6 +1705,12 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	{
 		plan.entries[i].chosen = plan.groupChosen[now.head[i]] != 0;
 	}
+	// What it will have: the gone ones are in `next` already (in NetId order, from the walk above),
+	// the rest follow (in the state's order), and the two are merged into one NetId order below. The
+	// next state's walk needs it: out of order (M250 left it so), everything after a gone entity was
+	// taken as new, sent whole in every state, and the list grew by the gone ones it no longer found
+	// (found by the crowd bench, M251: fighting fake players, 87 records whole a state at 64).
+	const size_t goneCount = plan.next.size();
 	for ( size_t i = 0; i < now.layout.entities.size(); ++i )
 	{
 		const uint32_t netId = now.layout.entities[i].netId;
@@ -1672,6 +1728,8 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 			plan.next.push_back( *entry.had );
 		}
 	}
+	std::inplace_merge( plan.next.begin(), plan.next.begin() + std::ptrdiff_t( goneCount ), plan.next.end(),
+						[]( const Client::Known& a, const Client::Known& b ) { return a.netId < b.netId; } );
 	// A slot's input goes with its character's update.
 	size_t pl = 0;
 	for ( const net::EntityUpdate& u : plan.updates )
@@ -1760,10 +1818,13 @@ void GameServer::SendStates()
 			plan.ownAt = at != nullptr ? at->position : b3Vec3{};
 			planned.push_back( i );
 		}
+		const auto planFrom = std::chrono::steady_clock::now();
 		m_stateWorkers.Run( planned.size(), [&]( size_t n, int ) {
 			const size_t i = planned[n];
 			PlanState( m_plans[i], m_clients[i], newest, *now, players );
 		} );
+		const auto encodeFrom = std::chrono::steady_clock::now();
+		m_bench.planMs += BenchCounts() ? std::chrono::duration<double, std::milli>( encodeFrom - planFrom ).count() : 0.0;
 		// One message for the plans that say the same.
 		m_messages.clear();
 		for ( size_t i : planned )
@@ -1787,6 +1848,7 @@ void GameServer::SendStates()
 			message.ok = net::EncodeUpdates( newest, plan.base, plan.updates, plan.sent.removed, plan.inputSlots, &GameServer::LayoutOfTick, this,
 											 message.bytes, &m_updateCaches[size_t( worker )] );
 		} );
+		m_bench.encodeMs += BenchCounts() ? std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - encodeFrom ).count() : 0.0;
 		for ( size_t i : planned )
 		{
 			Client& c = m_clients[i];
@@ -1796,17 +1858,31 @@ void GameServer::SendStates()
 			{
 				continue; // (whole, below)
 			}
+			if ( c.fake && c.slot % 8 == 0 && BenchCounts() )
+			{
+				const auto sampleFrom = std::chrono::steady_clock::now();
+				SampleState( plan, c.slot, newest, *now, message.bytes );
+				m_bench.sampleMs += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - sampleFrom ).count();
+			}
 			c.known.swap( plan.next );
+			if ( c.fake )
+			{
+				// (What a player is thought to have may hold more than the state only by the gone
+				// ones not yet acknowledged.)
+				m_bench.knownMost = std::max<uint64_t>( m_bench.knownMost, c.known.size() );
+				m_bench.entitiesMost = std::max<uint64_t>( m_bench.entitiesMost, now->layout.entities.size() );
+			}
 			c.sent.push_back( plan.sent );
 			while ( c.sent.size() > kStateHistory )
 			{
 				c.sent.pop_front();
 			}
-			m_transport.SendUnordered( c.peer, ChannelInput, message.bytes );
+			Deliver( c, message.bytes, false, &CrowdBench::states );
 			c.stateSent = newest.tick;
 			m_stats.statesSent += 1;
 			m_stats.statesWhole += plan.base == nullptr ? 1 : 0;
 			m_stats.stateBytes += message.bytes.size();
+			m_bench.statesWhole += c.fake && plan.base == nullptr && BenchCounts() ? 1 : 0;
 		}
 	}
 
@@ -1841,11 +1917,12 @@ void GameServer::SendStates()
 		}
 		c.known.clear();
 		c.sent.clear();
-		m_transport.SendUnordered( c.peer, ChannelInput, hit->bytes );
+		Deliver( c, hit->bytes, false, &CrowdBench::states );
 		c.stateSent = newest.tick;
 		m_stats.statesSent += 1;
 		m_stats.statesWhole += against == nullptr ? 1 : 0;
 		m_stats.stateBytes += hit->bytes.size();
+		m_bench.statesWhole += c.fake && against == nullptr && BenchCounts() ? 1 : 0;
 	}
 	m_stats.stateMsTotal += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
 }
@@ -1863,6 +1940,311 @@ void GameServer::DropClientHard( PlayerSlot slot, double now )
 		c.disconnectedAt = now;
 		c.lastInput = {};
 	}
+}
+
+void GameServer::Deliver( const Client& c, const std::vector<uint8_t>& bytes, bool reliable, CrowdBench::Kind CrowdBench::*kind )
+{
+	if ( c.fake )
+	{
+		if ( BenchCounts() )
+		{
+			CrowdBench::Kind& counted = m_bench.*kind;
+			counted.messages += 1;
+			counted.bytes += bytes.size();
+			m_outbox[c.slot].push_back( { uint32_t( bytes.size() ), reliable } );
+		}
+		return;
+	}
+	if ( reliable )
+	{
+		m_transport.Send( c.peer, ChannelReliable, bytes, true );
+	}
+	else
+	{
+		m_transport.SendUnordered( c.peer, ChannelInput, bytes );
+	}
+}
+
+void GameServer::AddFakePlayers()
+{
+	const uint32_t count = std::min<uint32_t>( m_options.fakePlayers, uint32_t( m_clients.size() ) );
+	m_bench = CrowdBench{};
+	m_bench.fakes = count;
+	m_bench.tickRate = m_options.config.tickRate;
+	m_bench.fromTick = uint32_t( std::max( 0.0f, m_options.fakeWarmupSeconds ) * float( m_options.config.tickRate ) );
+	if ( count == 0 )
+	{
+		return;
+	}
+	m_outbox.assign( m_clients.size(), {} );
+	m_fakeTargets.assign( m_clients.size(), 0 );
+	for ( const auto& [name, size] : m_sim->StateComponents() )
+	{
+		m_bench.components.push_back( name );
+		m_bench.componentSizes.push_back( size );
+	}
+	m_bench.changedCharacters.assign( m_bench.components.size(), 0 );
+	m_bench.changedItems.assign( m_bench.components.size(), 0 );
+	m_bench.eventNames = m_schema.events;
+	m_bench.events.assign( m_schema.events.size(), 0 );
+	const ActionBits spawn = m_schema.ActionMask( "spawn_prop" );
+	for ( uint32_t i = 0; i < count; ++i )
+	{
+		// The first slots: connected and welcomed from the start (nothing to load), so they are sent
+		// what a player is from the first tick.
+		Client& c = m_clients[i];
+		c = Client{};
+		c.used = true;
+		c.connected = true;
+		c.welcomed = true;
+		c.inWorld = true;
+		c.fake = true;
+		c.slot = PlayerSlot( i );
+		c.token = NextRandom( m_tokenState ) | 1;
+		c.name = "fake " + std::to_string( i + 1 );
+		c.brain = BotBrain( m_options.fakeSeed * 100003ull + i + 1 );
+		c.brain.spawnAction = spawn;
+		m_privates[c.slot] = Blackboard{};
+		m_pendingEvents.push_back( { PlayerEventType::Join, c.slot } );
+	}
+	m_namesDirty = true;
+	Log( "%u fake players (a round trip of %u ms%s%s)", count, m_options.fakeRoundTripMs,
+		 m_options.fakeRadius > 0.0f ? ", near the spawn" : "", m_options.fakeFight ? ", fighting" : "" );
+}
+
+PlayerInput GameServer::FakeInput( Client& c )
+{
+	PlayerInput in = c.brain.Next();
+	const uint32_t netId = m_sim->PlayerNetId( c.slot );
+	const Transform* mine = netId != 0 ? m_sim->EntityTransform( netId ) : nullptr;
+	if ( mine == nullptr )
+	{
+		return in;
+	}
+	auto face = [&]( b3Vec3 at ) {
+		const b3Vec3 d = b3Sub( at, mine->position );
+		in.cameraYaw = detmath::RadiansToYaw( detmath::Atan2( d.x, d.z ) );
+	};
+	if ( m_options.fakeRadius > 0.0f )
+	{
+		// Too far from the spawn's centre: back toward it (and on that way once inside).
+		const b3Vec3 d = b3Sub( m_map.spawnCenter, mine->position );
+		if ( d.x * d.x + d.z * d.z > m_options.fakeRadius * m_options.fakeRadius )
+		{
+			face( m_map.spawnCenter );
+			in.moveForward = 127;
+			in.moveRight = 0;
+			c.brain.held.cameraYaw = in.cameraYaw;
+		}
+	}
+	if ( m_options.fakeFight )
+	{
+		// Whatever is in the hand (the brawl kit's fist), used on the nearest player in reach:
+		// faced, clicked for 3 ticks twice a second. Who that is is looked for every 10 ticks.
+		const uint32_t tick = m_sim->Tick();
+		// The first slot taken out while the hands are empty (an intent counts when its number
+		// changes; the same slot's key again would empty them).
+		if ( m_sim->SelectedSlot( netId ) == kNoSlot && ( tick + c.slot ) % 30 == 0 )
+		{
+			c.intents = uint8_t( c.intents + 1 );
+		}
+		in.intent = uint8_t( SlotIntent::Select );
+		in.intentA = 0;
+		in.intentSeq = c.intents;
+		uint32_t& target = m_fakeTargets[c.slot]; // (its slot + 1; 0: none)
+		if ( ( tick + c.slot ) % 10 == 0 )
+		{
+			target = 0;
+			float best = 2.5f * 2.5f;
+			for ( size_t slot = 0; slot < m_clients.size(); ++slot )
+			{
+				const uint32_t id = slot != c.slot ? m_sim->PlayerNetId( PlayerSlot( slot ) ) : 0;
+				const Transform* t = id != 0 ? m_sim->EntityTransform( id ) : nullptr;
+				const Character* who = t != nullptr ? m_sim->PlayerCharacter( PlayerSlot( slot ) ) : nullptr;
+				if ( who == nullptr || who->dead )
+				{
+					continue;
+				}
+				const b3Vec3 d = b3Sub( t->position, mine->position );
+				const float d2 = b3Dot( d, d );
+				if ( d2 < best )
+				{
+					best = d2;
+					target = uint32_t( slot ) + 1;
+				}
+			}
+		}
+		const uint32_t id = target != 0 ? m_sim->PlayerNetId( PlayerSlot( target - 1 ) ) : 0;
+		if ( const Transform* t = id != 0 ? m_sim->EntityTransform( id ) : nullptr )
+		{
+			// Walking at it, slowly once close: in freelook the body turns toward where it walks, and the
+			// fist hits where the body faces.
+			face( t->position );
+			in.cameraPitch = 0;
+			in.moveRight = 0;
+			in.moveForward = b3Distance( t->position, mine->position ) > 1.2f ? int8_t( 127 ) : int8_t( 24 );
+			in.buttons &= uint8_t( ~BtnSprint );
+			if ( ( tick + c.slot ) % 30 < 3 )
+			{
+				in.buttons |= BtnUse;
+			}
+		}
+	}
+	return in;
+}
+
+void GameServer::FakeAcknowledgements( double now )
+{
+	const uint32_t tick = m_sim->Tick();
+	for ( Client& c : m_clients )
+	{
+		while ( c.fake && c.acks.empty() == false && c.acks.front().due <= tick )
+		{
+			MsgInput msg;
+			msg.newestTick = tick;
+			msg.ackTick = c.acks.front().ackTick;
+			msg.stateAck = c.acks.front().stateAck;
+			c.acks.pop_front();
+			HandleInput( c, msg, now );
+		}
+	}
+}
+
+void GameServer::FakeSent()
+{
+	const uint32_t roundTrip = std::max<uint32_t>( 1, uint32_t( uint64_t( m_options.fakeRoundTripMs ) * m_options.config.tickRate / 1000 ) );
+	for ( Client& c : m_clients )
+	{
+		if ( c.fake == false )
+		{
+			continue;
+		}
+		std::vector<std::pair<uint32_t, bool>>& box = m_outbox[c.slot];
+		if ( box.empty() == false )
+		{
+			m_bench.wire += WireBytes( box, m_bench.datagrams );
+			box.clear();
+		}
+		// What it has now, said a round trip later.
+		c.acks.push_back( { m_sim->Tick() + roundTrip, c.sentThrough, c.stateSent } );
+	}
+}
+
+void GameServer::CountFrame( const InputFrame& frame )
+{
+	if ( BenchCounts() == false )
+	{
+		// (Warming up: only where the event rings stand, so the first counted tick has only its own.)
+		m_bench.impactCount = m_sim->Globals().impactCount;
+		m_bench.modEventCount = m_sim->Globals().modEventCount;
+		return;
+	}
+	m_bench.ticks += 1;
+	for ( const SimCommand& command : frame.commands )
+	{
+		m_bench.commands[std::min<size_t>( size_t( command.type ), m_bench.commands.size() - 1 )] += 1;
+	}
+	m_bench.physicsEvents += frame.physics.size();
+	m_bench.pushers += frame.pushers.size();
+	// The tick's own events, from the rings (the newest kModEventHistory, if more came at once).
+	const SimGlobals& g = m_sim->Globals();
+	m_bench.impacts += g.impactCount - m_bench.impactCount;
+	m_bench.impactCount = g.impactCount;
+	const uint32_t from = std::max( m_bench.modEventCount, g.modEventCount - std::min( g.modEventCount, kModEventHistory ) );
+	for ( uint32_t n = from; n < g.modEventCount; ++n )
+	{
+		const uint16_t type = g.modEvents[n % kModEventHistory].type;
+		if ( type < m_bench.events.size() )
+		{
+			m_bench.events[type] += 1;
+		}
+	}
+	m_bench.modEventCount = g.modEventCount;
+	// The frame alone, as a batch of one, and again without each part.
+	const bool inputs = m_options.netModel != NetModel::Hybrid;
+	const InputFrame* before = frame.tick > 0 ? HistoryFrame( frame.tick - 1 ) : nullptr;
+	const InputArray base = before != nullptr ? before->inputs : InputArray{};
+	std::vector<uint8_t> out;
+	auto size = [&]( const InputFrame& f ) {
+		const InputFrame* one = &f;
+		EncodeFrameBatch( base, &one, 1, out, inputs );
+		return uint64_t( out.size() );
+	};
+	m_bench.frameAlone += size( frame );
+	InputFrame part = frame;
+	part.commands.clear();
+	m_bench.frameNoCommands += size( part );
+	part = frame;
+	part.physics.clear();
+	m_bench.frameNoPhysics += size( part );
+	part = frame;
+	part.pushers.clear();
+	m_bench.frameNoPushers += size( part );
+}
+
+void GameServer::SampleState( const Plan& plan, PlayerSlot slot, const StateFrame& newest, const KeptLayout& now, const std::vector<uint8_t>& message )
+{
+	// Whose each update is: the player's own (its character, what it holds), another's character, or
+	// what another holds. What changed in another's, against the record the player has.
+	std::vector<net::EntityUpdate> withoutItems, ownOnly;
+	for ( const net::EntityUpdate& u : plan.updates )
+	{
+		const net::StateSpan* span = now.layout.Find( u.netId );
+		if ( span == nullptr )
+		{
+			continue;
+		}
+		const size_t i = size_t( span - now.layout.entities.data() );
+		const uint32_t holder = now.placed[i].holder;
+		if ( plan.ownId != 0 && ( u.netId == plan.ownId || holder == plan.ownId ) )
+		{
+			withoutItems.push_back( u );
+			ownOnly.push_back( u );
+			continue;
+		}
+		if ( holder != 0 )
+		{
+			m_bench.othersItemsUpdated += 1;
+		}
+		else
+		{
+			withoutItems.push_back( u );
+			m_bench.othersUpdated += 1;
+		}
+		const KeptLayout* then = u.baseTick != 0 ? KeptLayoutOf( u.baseTick ) : nullptr;
+		const net::StateSpan* was = then != nullptr ? then->layout.Find( u.netId ) : nullptr;
+		if ( was == nullptr )
+		{
+			const Plan::Entry& entry = plan.entries[i];
+			m_bench.wholeRecords += 1;
+			m_bench.wholeRecordBytes += span->recordSize;
+			m_bench.wholeNew += entry.had == nullptr ? 1 : 0;
+			m_bench.wholeUnacknowledged += entry.had != nullptr && entry.acked == 0 ? 1 : 0;
+			m_bench.wholeOld += entry.had != nullptr && entry.acked != 0 ? 1 : 0;
+			m_bench.wholeCharacters += holder == 0 ? 1 : 0;
+			continue;
+		}
+		CountChangedBytes( span->record, span->recordSize, was->record, was->recordSize, m_bench.componentSizes,
+						   holder != 0 ? m_bench.changedItems : m_bench.changedCharacters );
+	}
+	std::vector<PlayerSlot> ownInput;
+	for ( PlayerSlot s : plan.inputSlots )
+	{
+		if ( s == slot )
+		{
+			ownInput.push_back( s );
+		}
+	}
+	std::vector<uint8_t> out;
+	auto size = [&]( const std::vector<net::EntityUpdate>& updates, const std::vector<uint32_t>& removed, const std::vector<PlayerSlot>& slots ) {
+		return net::EncodeUpdates( newest, plan.base, updates, removed, slots, &GameServer::LayoutOfTick, this, out ) ? uint64_t( out.size() ) : 0;
+	};
+	m_bench.sampled += 1;
+	m_bench.sampledBytes += message.size();
+	m_bench.withoutItems += size( withoutItems, plan.sent.removed, plan.inputSlots );
+	m_bench.withoutInputs += size( plan.updates, plan.sent.removed, ownInput );
+	m_bench.ownOnly += size( ownOnly, {}, ownInput );
+	m_bench.headOnly += size( {}, {}, {} );
 }
 
 } // namespace cb

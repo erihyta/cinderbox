@@ -9,6 +9,8 @@
 
 #include "look_item.h"
 #include "anim_graph.h"
+#include "bot_brain.h"
+#include "crowd_bench.h"
 #include "character_item.h"
 #include "hit_test.h"
 #include "navigation.h"
@@ -110,6 +112,16 @@ struct ServerOptions
 	// Options mods read with Context::Option ("deathmatch.kills" -> "15").
 	std::map<std::string, std::string> modOptions;
 	uint32_t replayChecksumInterval = 60;
+	// Fake players (M251, the crowd bench): the first `fakePlayers` slots are played by bot brains
+	// in the server, and each is also a client that is sent what a player would be (frames, states,
+	// names) and acknowledges it a round trip later. Nothing goes on the network; what would have is
+	// counted (Bench()). The same seed plays the same session.
+	uint32_t fakePlayers = 0;
+	uint64_t fakeSeed = 1;
+	float fakeRadius = 0.0f;		 // metres from the map's spawn centre they walk back within (0: anywhere)
+	uint32_t fakeRoundTripMs = 100;
+	bool fakeFight = false;			 // they take out the first slot's item and use it on whoever is near
+	float fakeWarmupSeconds = 5.0f;	 // what they are sent is counted from then on (not the joins' burst)
 };
 
 class GameServer
@@ -215,6 +227,12 @@ public:
 	// Test hook: drop a player's connection without telling them.
 	void DropClientHard( PlayerSlot slot, double now );
 
+	// The crowd bench (M251): what the fake players would have been sent.
+	const CrowdBench& Bench() const
+	{
+		return m_bench;
+	}
+
 private:
 	static constexpr uint32_t kInputBuffer = 128;
 	static constexpr uint32_t kFrameHistory = 256; // frames kept for resending
@@ -272,6 +290,18 @@ private:
 			PlayerInput input{};
 		};
 		Slot inputs[kInputBuffer];
+		// A fake player (ServerOptions::fakePlayers): its inputs from a brain, what it is sent
+		// counted, its acknowledgements a round trip after each send.
+		bool fake = false;
+		BotBrain brain = BotBrain( 1 );
+		uint8_t intents = 0;
+		struct Ack
+		{
+			uint32_t due = 0; // the tick it arrives at
+			uint32_t ackTick = 0;
+			uint32_t stateAck = 0;
+		};
+		std::deque<Ack> acks;
 	};
 
 	void HandleEvent( const net::NetEvent& ev, double now );
@@ -364,6 +394,26 @@ private:
 	const InputFrame* HistoryFrame( uint32_t tick ) const;
 	void Log( const char* fmt, ... ) const;
 
+	// A message to a client: through the transport (reliable: in order on ChannelReliable;
+	// otherwise unordered on ChannelInput), or, to a fake player, counted (M251) as `kind`.
+	void Deliver( const Client& c, const std::vector<uint8_t>& bytes, bool reliable, CrowdBench::Kind CrowdBench::*kind );
+	// The fake players (M251): made when the server starts; each tick's input from its brain;
+	// their acknowledgements, a round trip after each update sent; the bench's parts.
+	void AddFakePlayers();
+	PlayerInput FakeInput( Client& c );
+	void FakeAcknowledgements( double now );
+	void FakeSent();
+	void CountFrame( const InputFrame& frame );
+	void SampleState( const Plan& plan, PlayerSlot slot, const net::StateFrame& newest, const KeptLayout& now, const std::vector<uint8_t>& message );
+	CrowdBench m_bench;
+	// Whether what the fake players get is counted now (there are some, and the warm-up is over).
+	bool BenchCounts() const
+	{
+		return m_bench.fakes > 0 && m_sim->Tick() >= m_bench.fromTick;
+	}
+	std::vector<std::vector<std::pair<uint32_t, bool>>> m_outbox; // by slot: what a fake player got this update
+	std::vector<uint32_t> m_fakeTargets;							// by slot: who it fights (a NetId, 0: none)
+
 	ServerOptions m_options;
 	std::unique_ptr<Simulation> m_sim;
 	net::Transport m_transport;
@@ -375,6 +425,9 @@ private:
 	std::vector<InputFrame> m_history; // indexed by tick % kFrameHistory
 	std::vector<Client> m_clients = std::vector<Client>( kMaxPlayers ); // (255 of them: too big for a stack)
 	std::vector<PlayerEvent> m_pendingEvents;
+	// The mods' commands a frame had no room for, first in the next (M251: 255 players joining at
+	// once had most of their start items dropped).
+	std::vector<SimCommand> m_overflow;
 	std::function<void()> m_tickObserver;
 	net::InputArray m_lastInputs{};
 
