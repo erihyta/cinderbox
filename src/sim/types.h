@@ -8,14 +8,107 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 namespace cb
 {
 
-// Players on one server (M250): a slot is a byte, and 255 is no one's (kNoSlot, where a slot may be none).
-inline constexpr int kMaxPlayers = 255;
-using PlayerSlot = uint8_t;
+// Players on one server (M252): a slot is two bytes, 0 to 1022, and 1023 is no one's (kNoPlayer,
+// where a player may be none). (An inventory's slots are another thing: kNoSlot below.)
+inline constexpr int kMaxPlayers = 1023;
+using PlayerSlot = uint16_t;
+inline constexpr PlayerSlot kNoPlayer = PlayerSlot( kMaxPlayers );
+
+// A value for every player slot, kept on the heap: with 1023 slots, objects that held such arrays
+// in place overflowed stacks (M252: a test holding a few view frames). Copied, compared and
+// indexed as the array is; `{}` is every slot's default value.
+template <typename T>
+class PerPlayer
+{
+public:
+	using Array = std::array<T, kMaxPlayers>;
+	PerPlayer()
+		: m_values( std::make_unique<Array>() )
+	{
+	}
+	PerPlayer( const Array& values )
+		: m_values( std::make_unique<Array>( values ) )
+	{
+	}
+	PerPlayer( const PerPlayer& other )
+		: m_values( std::make_unique<Array>( *other.m_values ) )
+	{
+	}
+	// (A move leaves a full array behind too: nothing reads a slot of nothing.)
+	PerPlayer( PerPlayer&& other ) noexcept
+		: m_values( std::make_unique<Array>() )
+	{
+		m_values.swap( other.m_values );
+	}
+	PerPlayer& operator=( const PerPlayer& other )
+	{
+		*m_values = *other.m_values;
+		return *this;
+	}
+	PerPlayer& operator=( PerPlayer&& other ) noexcept
+	{
+		m_values.swap( other.m_values );
+		return *this;
+	}
+	PerPlayer& operator=( const Array& values )
+	{
+		*m_values = values;
+		return *this;
+	}
+	T& operator[]( size_t slot )
+	{
+		return ( *m_values )[slot];
+	}
+	const T& operator[]( size_t slot ) const
+	{
+		return ( *m_values )[slot];
+	}
+	T* data()
+	{
+		return m_values->data();
+	}
+	const T* data() const
+	{
+		return m_values->data();
+	}
+	static constexpr size_t size()
+	{
+		return size_t( kMaxPlayers );
+	}
+	auto begin()
+	{
+		return m_values->begin();
+	}
+	auto end()
+	{
+		return m_values->end();
+	}
+	auto begin() const
+	{
+		return m_values->cbegin();
+	}
+	auto end() const
+	{
+		return m_values->cend();
+	}
+	const Array& Values() const
+	{
+		return *m_values;
+	}
+	bool operator==( const PerPlayer& other ) const
+	{
+		return *m_values == *other.m_values;
+	}
+
+private:
+	std::unique_ptr<Array> m_values;
+};
 
 // Buttons the engine itself understands. "Use" uses the item in the hand (what using it does is
 // its mod's). Everything else a game adds (reload, spawn a prop) is a mod action instead: a bit in
@@ -273,7 +366,7 @@ inline constexpr uint32_t SlotTarget( PlayerSlot slot )
 inline constexpr uint32_t kItemTargetBit = 0x40000000u;
 inline constexpr uint32_t ItemTarget( PlayerSlot slot, uint32_t socket )
 {
-	return kItemTargetBit | ( ( socket & 0xFFu ) << 8 ) | uint32_t( slot );
+	return kItemTargetBit | ( ( socket & 0xFFu ) << 16 ) | uint32_t( slot );
 }
 
 // Sockets every character has (the first in every schema); characters may add their own.

@@ -13,7 +13,7 @@ namespace cb::present
 namespace
 {
 
-constexpr uint32_t kMagic = 0x36564243; // "CBV6"
+constexpr uint32_t kMagic = 0x37564243; // "CBV7" (7: two-byte slots, M252)
 
 // What a decoder accepts at most; real frames are far below.
 constexpr uint32_t kMaxEntities = 1u << 16;
@@ -69,8 +69,9 @@ struct EntityFixed
 	uint32_t netId;
 	uint8_t kind;
 	uint8_t shape;
-	uint8_t slot;
+	uint16_t slot; // (two bytes since M252)
 	uint8_t flags; // 1 hasAnim, 2 dead, 4 hasBoard, 8 stowed, 16 linked, 32 the link holds, 64 it missed, 128 an item in use
+	uint8_t reserved[3];
 	uint32_t templateIndex;
 	uint32_t stepCount;
 	b3Vec3 halfExtents;
@@ -89,7 +90,7 @@ struct EntityFixed
 	uint32_t motionsOnHigh;
 	uint32_t container; // players: the container open to it
 };
-static_assert( sizeof( EntityFixed ) == 108, "EntityFixed has padding" );
+static_assert( sizeof( EntityFixed ) == 112, "EntityFixed has padding" );
 static_assert( sizeof( EntityFixed ) % 4 == 0 );
 
 // And what is as long as the server made it: its animation's layers, its fields.
@@ -117,8 +118,8 @@ struct RagdollRecord
 {
 	uint32_t netId;
 	uint32_t owner;
-	uint8_t slot;
-	uint8_t reserved[3];
+	uint16_t slot; // (two bytes since M252)
+	uint8_t reserved[2];
 	float yaw;
 	Transform parts[kRagdollParts];
 };
@@ -165,7 +166,7 @@ FrameEntity FromRecord( const EntityRecord& r )
 	f.netId = r.netId;
 	f.kind = VisualKind( r.kind );
 	f.shape = ShapeKind( r.shape );
-	f.slot = PlayerSlot( r.slot < kMaxPlayers ? r.slot : kNoSlot );
+	f.slot = PlayerSlot( r.slot < kMaxPlayers ? r.slot : kNoPlayer );
 	f.hasAnim = ( r.flags & 1 ) != 0;
 	f.dead = ( r.flags & 2 ) != 0;
 	f.hasBoard = ( r.flags & 4 ) != 0;
@@ -212,7 +213,7 @@ FrameRagdoll FromRecord( const RagdollRecord& r )
 	FrameRagdoll f;
 	f.netId = r.netId;
 	f.owner = r.owner;
-	f.slot = PlayerSlot( r.slot < kMaxPlayers ? r.slot : kNoSlot );
+	f.slot = PlayerSlot( r.slot < kMaxPlayers ? r.slot : kNoPlayer );
 	f.yaw = r.yaw;
 	std::copy( r.parts, r.parts + kRagdollParts, f.parts );
 	return f;
@@ -617,14 +618,15 @@ EntityRecord Seen( const EntityRecord& record )
 	return seen;
 }
 
-// The record without the parts that have groups of their own: thirteen words.
+// The record without the parts that have groups of their own: fifteen words.
 struct RestRecord
 {
 	uint32_t netId;
 	uint8_t kind;
 	uint8_t shape;
-	uint8_t slot;
+	uint16_t slot; // (two bytes since M252)
 	uint8_t flags;
+	uint8_t reserved[3];
 	uint32_t templateIndex;
 	uint32_t stepCount;
 	b3Vec3 halfExtents;
@@ -638,7 +640,7 @@ struct RestRecord
 	uint8_t slotCount;
 	uint16_t linkMotion;
 };
-static_assert( sizeof( RestRecord ) == 56, "RestRecord has padding" );
+static_assert( sizeof( RestRecord ) == 60, "RestRecord has padding" );
 
 RestRecord Rest( const EntityRecord& record )
 {
@@ -1702,11 +1704,11 @@ bool DecodeView( const uint8_t* data, size_t size, const ViewFrame* base, ViewFr
 	else
 	{
 		f.board.clear();
-		f.inputs = {};
+		f.inputs = PerPlayer<PlayerInput>{};
 	}
 	if ( compact )
 	{
-		f.inputs = {};
+		f.inputs = PerPlayer<PlayerInput>{};
 	}
 	else
 	{

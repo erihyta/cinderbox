@@ -2807,7 +2807,7 @@ void TestPhysicsThreads()
 	PhysicsThreads::Start( 0 );
 }
 
-// What two loops cost with a full server: 64 players with eight items each, props about (the
+// What two loops cost with a full server: 1023 players with eight items each, props about (the
 // scenario's). The slots' part of a step, and a ray (a shot, a probe), timed; a report, no limits.
 void TestLoops()
 {
@@ -2884,12 +2884,13 @@ void TestLoops()
 	double rayMs = MsSince( t0 ) / double( rays );
 	std::printf( "    %zu entities (%zu items held); a step %.3f ms, of it the slots %.3f ms; a ray %.4f ms (%d of %d hit)\n",
 				 sim.Entities().size(), held, stepMs, slotsMs, rayMs, hits, rays );
+	// (Every item still held: one that fell off the map with its holder came back with it, M252.)
 	CHECK( held == size_t( 8 * kMaxPlayers ) );
 }
 
 void TestStress()
 {
-	// 64 players, lots of props: timing report for the rollback budget.
+	// A full server (1023 players), lots of props: timing report for the rollback budget.
 	test::ScenarioOptions opt;
 	opt.initialPlayers = kMaxPlayers;
 	opt.maxPlayers = kMaxPlayers;
@@ -5294,7 +5295,7 @@ void TestModDriven()
 	const flecs::entity e = sim.FindEntity( npc );
 	const b3Vec3 walked = sim.EntityTransform( npc )->position;
 	const float speed = sim.GetAnimState( e ).groundSpeed;
-	CHECK( e.has<ModDriven>() && e.has<Character>() && e.get<Character>().slot == kNoSlot && e.has<IdleBody>() == false );
+	CHECK( e.has<ModDriven>() && e.has<Character>() && e.get<Character>().slot == kNoPlayer && e.has<IdleBody>() == false );
 	step( 40 ); // no command: on with the same input
 	const b3Vec3 further = sim.EntityTransform( npc )->position;
 	std::printf( "    driven: %.2f m in 40 ticks, %.2f more in 40 with no command; its walk at %.2f m/s\n", double( walked.z - start.z ),
@@ -13113,7 +13114,7 @@ void TestViewCodec()
 		present::ViewFrame live = plain;
 		live.confirmedTick = live.frame.tick - 3;
 		live.textCount = 2;
-		live.texts = { { "chat", 1, "hello" }, { "chat", kNoSlot, "Slow down" } };
+		live.texts = { { "chat", 1, "hello" }, { "chat", kNoPlayer, "Slow down" } };
 		std::vector<uint8_t> bytes;
 		present::EncodeView( live, nullptr, 0.0, bytes );
 		present::ViewFrame got;

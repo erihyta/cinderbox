@@ -370,7 +370,7 @@ bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::
 	for ( PlayerSlot slot : inputSlots )
 	{
 		const auto* in = reinterpret_cast<const uint8_t*>( &frame.inputs[slot] );
-		payload.push_back( slot );
+		PutVarint( payload, slot ); // (two bytes past 127: M252)
 		PutSparse( payload, in, base != nullptr ? reinterpret_cast<const uint8_t*>( &base->inputs[slot] ) : nullptr, sizeof( PlayerInput ) );
 	}
 	Put( payload, now->magic );
@@ -506,7 +506,7 @@ bool DecodeUpdates( ByteReader& p, uint32_t tick, const StateFrame* base, const 
 	}
 	for ( uint32_t i = 0; i < inputCount; ++i )
 	{
-		const uint8_t slot = p.Read<uint8_t>();
+		const uint32_t slot = ReadVarint( p );
 		if ( p.Ok() == false || slot >= kMaxPlayers ||
 			 takeXor( base != nullptr ? reinterpret_cast<const uint8_t*>( &base->inputs[slot] ) : nullptr, sizeof( PlayerInput ),
 					  reinterpret_cast<uint8_t*>( &out.inputs[slot] ) ) == false )

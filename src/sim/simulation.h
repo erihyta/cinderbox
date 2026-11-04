@@ -127,7 +127,7 @@ struct SimGlobals
 	uint32_t nextCharacterId = kCharacterIdBase;
 	uint32_t reserved = 0;
 	uint64_t rngState = 0;
-	uint32_t playerNetIds[kMaxPlayers + 1] = {}; // 0 = slot empty (the last, slot 255, is no one's: no padding after)
+	uint32_t playerNetIds[kMaxPlayers + 1] = {}; // 0 = slot empty (the last, kNoPlayer, is no one's: no padding after)
 	// Only ever grows, so presentation can tell how many impacts it missed. The ring holds the
 	// most recent ones, newest at (impactCount - 1) % kImpactHistory.
 	uint32_t impactCount = 0;
@@ -358,7 +358,7 @@ public:
 	// 0 if the slot is empty.
 	uint32_t PlayerNetId( PlayerSlot slot ) const
 	{
-		return slot < kMaxPlayers ? m_globals.playerNetIds[slot] : 0; // (kNoSlot: a body no player drives)
+		return slot < kMaxPlayers ? m_globals.playerNetIds[slot] : 0; // (kNoPlayer: a body no player drives)
 	}
 	// Null if the slot is empty.
 	const Character* PlayerCharacter( PlayerSlot slot ) const;

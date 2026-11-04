@@ -428,8 +428,8 @@ bool Decode( ByteReader& r, MsgInfo& m )
 	{
 		return false;
 	}
-	m.players = r.Read<uint8_t>();
-	m.maxPlayers = r.Read<uint8_t>();
+	m.players = r.Read<uint16_t>();
+	m.maxPlayers = r.Read<uint16_t>();
 	uint8_t n = r.Read<uint8_t>();
 	if ( r.Ok() == false || n > kMaxItems )
 	{

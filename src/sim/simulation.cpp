@@ -1815,12 +1815,24 @@ b3Vec3 Simulation::SpawnPoint( PlayerSlot slot ) const
 		return layout.spawnCenter; // (a body no player drives: an NPC)
 	}
 	// Blocks of 64, 8 by 8, 1.5 m apart: the first in front of the centre, the next behind it, then
-	// to its left and to its right (M250: 255 players stand within about 34 by 22 m).
+	// to its left and to its right (M250: 255 players stand within about 34 by 22 m). The other
+	// twelve (M252) fill a square of four by four blocks 12 m apart, nearest first: 1023 players
+	// within about 47 by 47 m (the built-in sandbox is 60 m across).
 	const int block = slot / 64;
 	const float col = float( slot % 8 );
 	const float row = float( ( slot % 64 ) / 8 );
-	const float x = layout.spawnCenter.x - 5.25f + 1.5f * col + ( block == 2 ? -12.0f : block == 3 ? 12.0f : 0.0f );
-	const float z = block == 1 ? layout.spawnCenter.z - 1.5f - 1.5f * row : layout.spawnCenter.z + 1.5f * row;
+	if ( block < 4 )
+	{
+		const float x = layout.spawnCenter.x - 5.25f + 1.5f * col + ( block == 2 ? -12.0f : block == 3 ? 12.0f : 0.0f );
+		const float z = block == 1 ? layout.spawnCenter.z - 1.5f - 1.5f * row : layout.spawnCenter.z + 1.5f * row;
+		return { x, layout.spawnCenter.y, z };
+	}
+	// (Where each further block's corner is, in blocks from the first's.)
+	static constexpr int8_t kBlocks[12][2] = { { -1, -1 }, { 1, -1 }, { 0, 1 },	 { -1, 1 },	 { 1, 1 },	 { -2, 0 },
+											   { -2, -1 }, { -2, 1 }, { 0, -2 }, { -1, -2 }, { 1, -2 }, { -2, -2 } };
+	const int8_t* at = kBlocks[std::min( block - 4, 11 )];
+	const float x = layout.spawnCenter.x - 5.25f + 1.5f * col + 12.0f * float( at[0] );
+	const float z = layout.spawnCenter.z + 1.5f * row + 12.0f * float( at[1] );
 	return { x, layout.spawnCenter.y, z };
 }
 
@@ -3179,6 +3191,12 @@ void Simulation::HandleOutOfBounds()
 		{
 			continue;
 		}
+		// What a character carries goes where its holder is put back (FollowHolders). (Until M252
+		// it was destroyed: a player who fell off the map was rescued with empty hands and bag.)
+		if ( const HeldItem* held = e.try_get<HeldItem>(); held != nullptr && held->holder != 0 )
+		{
+			continue;
+		}
 
 		if ( e.has<Character>() )
 		{
@@ -3685,8 +3703,8 @@ uint32_t Simulation::ResolveTarget( uint32_t target ) const
 	}
 	if ( target & kItemTargetBit )
 	{
-		uint32_t slot = target & 0xFFu;
-		uint32_t socket = ( target >> 8 ) & 0xFFu;
+		uint32_t slot = target & 0xFFFFu;
+		uint32_t socket = ( target >> 16 ) & 0xFFu;
 		uint32_t holder = slot < uint32_t( kMaxPlayers ) ? m_globals.playerNetIds[slot] : 0;
 		return holder != 0 ? HeldItemOf( holder, socket ) : 0;
 	}
@@ -3968,11 +3986,11 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			}
 			if ( e.has<IdleBody>() )
 			{
-				MakeDriven( e, kNoSlot );
+				MakeDriven( e, kNoPlayer );
 			}
 			else
 			{
-				DriveProp( e, kNoSlot );
+				DriveProp( e, kNoPlayer );
 			}
 			e.set<ModDriven>( { in } );
 			return;
