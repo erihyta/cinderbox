@@ -368,16 +368,21 @@ would get, on the wire):
 - **Found and fixed** (M252): a character that fell below the kill plane was put back, and what it
   carried was destroyed with everything else below it (falling off the map emptied your hands and
   bag, and no mod was told); it follows its holder back now.
+- **Found and fixed** (M252's review): two counts were still a byte, a frame's joins and leaves
+  (256 at once broke the frame for everyone) and the names message (past 255 players, the wrong
+  number of names); the map's bodies went past a full first frame. Protocol 86, replay 61.
+- **Names go whole**: every join sends every player's name to every player, ~13 KB each at 1023
+  (M255 sends the change only).
 
 **The milestones**:
 
 | Milestone | What |
 |---|---|
 | **M251** (done) | **The yardstick**: `cb_server --fake-players N` (bot brains inside the server, each a client whose messages are counted and acknowledged a round trip later; `--fake-radius`, `--fake-fight`, `--fake-rtt`, `--fake-seed`) and `--bench SEC` (a clock of its own; the report by part); `cb_net_tests crowd_bench`, a ratchet on the bytes and on what a player is thought to have. The table above; the two fixes it found |
-| **M252** (done) | **1023 players**: two-byte slots (`PlayerSlot`; `kNoPlayer` for no one, apart from an inventory's `kNoSlot`), an item target's socket above the slot's 16 bits, `Character` and `Ragdoll` the same size with a two-byte slot, the states' input slots as varints, view records with a two-byte slot; the spawn's blocks of 64 a ring further out past four; protocol 85, replay 60, view files 9 (`CBV7`); new reference hashes |
+| **M252** (done) | **1023 players**: two-byte slots (`PlayerSlot`; `kNoPlayer` for no one, apart from an inventory's `kNoSlot`), an item target's socket above the slot's 16 bits, `Character` and `Ragdoll` the same size with a two-byte slot, the states' input slots as varints, view records with a two-byte slot; the spawn's blocks of 64 a ring further out past four; protocol 85, replay 60, view files 9 (`CBV7`); new reference hashes. Reviewed: a frame's joins and leaves and the names counted in more than a byte (protocol 86, replay 61) |
 | M253 | **Other characters as puppets**: a bit-packed record of ~8 bytes (place as a change at 1/256 m, facing, aim, flags); stand-ins made from it, placed between their own updates; your own character keeps its full record |
 | M254 | **Animation from events**: clients run the other characters' state machines from what the record and the events say; a layer's new state and its start tick (~3 B) when it changes, taken when the client's own run differs; no clocks on the wire |
-| M255 | **Only what others see**: held items as kinds in the record, not entities; fields owner-only unless shared; no inputs of others; the head down to the tick (the player list and global fields when they change, events with the characters they are at) |
+| M255 | **Only what others see**: held items as kinds in the record, not entities; fields owner-only unless shared; no inputs of others; the head down to the tick (the player list, names and global fields when they change, only what changed; events with the characters they are at) |
 | M256 | **Frames carry the physics only**: the commands clients skip left out; each frame in two packets, not three, a gap asked for again; frames and the characters' update in one datagram every 2 ticks; pushers at the state rate if they show |
 | M257 | **A byte budget per client**: a priority that grows by nearness, being in view, a changed state, aiming at or hitting the player; far ones coarser; an interest grid instead of every distance |
 | M258 | **The server's processor at 1000**: profiled; characters stepped on threads (each mover reads the others as the tick found them); mods' per-player loops |

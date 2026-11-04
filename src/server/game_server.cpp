@@ -990,14 +990,11 @@ void GameServer::RunTick( double now )
 	const bool overflowing = m_overflow.empty() == false;
 	const auto modsFrom = std::chrono::steady_clock::now();
 	RunMods( frame );
-	if ( overflowing == false && m_overflow.empty() == false )
-	{
-		Log( "tick %u: the mods' commands are more than a frame holds (%zu): %zu wait for the next tick", tick, kMaxCommandsPerFrame,
-			 m_overflow.size() );
-	}
 	m_stats.modsMs += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - modsFrom ).count();
 	// The bodies the map places, on the first tick (as commands, so every simulation has them, a
-	// joining one from the snapshot).
+	// joining one from the snapshot). After the mods' and by the same rule (Context::Add): until
+	// M252's review they went past a full frame, simulated here and cut from the frame sent (a
+	// server's fake players all join on the first tick and fill it).
 	for ( const LevelBody& body : m_map.bodies )
 	{
 		if ( m_mapBodiesPlaced )
@@ -1012,9 +1009,20 @@ void GameServer::RunTick( double now )
 		}
 		c.a = { body.feet.x, body.feet.y, body.feet.z };
 		c.value = int32_t( detmath::RadiansToYaw( body.yaw ) );
-		frame.commands.push_back( c );
+		if ( frame.commands.size() < kMaxCommandsPerFrame && m_overflow.empty() )
+		{
+			frame.commands.push_back( c );
+		}
+		else
+		{
+			m_overflow.push_back( c );
+		}
 	}
 	m_mapBodiesPlaced = true;
+	if ( overflowing == false && m_overflow.empty() == false )
+	{
+		Log( "tick %u: the commands are more than a frame holds (%zu): %zu wait for the next tick", tick, kMaxCommandsPerFrame, m_overflow.size() );
+	}
 
 	// Joining / reconnecting / desynced clients get the state before this tick.
 	for ( Client& c : m_clients )

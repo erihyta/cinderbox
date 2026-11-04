@@ -2852,6 +2852,43 @@ void TestProtocol()
 		CHECK( r.AtEnd() );
 	}
 
+	// A full server (M252): every slot joining in one tick (a server's fake players all do), the
+	// highest slot's input changed, and every player's name. Until the count was a varint, more
+	// than 255 joins in a frame lost the rest of it, and more than 255 names most of them.
+	{
+		InputFrame f;
+		f.tick = 7;
+		for ( int i = 0; i < kMaxPlayers; ++i )
+		{
+			f.events.push_back( { PlayerEventType::Join, PlayerSlot( i ) } );
+		}
+		f.inputs[kMaxPlayers - 1].moveForward = 90;
+		SimCommand c;
+		c.type = CommandType::SpawnProp;
+		c.target = SlotTarget( PlayerSlot( kMaxPlayers - 1 ) );
+		f.commands.push_back( c );
+		FrameCodec full, back;
+		std::vector<uint8_t> bytes;
+		full.Encode( f, bytes );
+		ByteReader r( bytes.data(), bytes.size() );
+		CHECK( ReadType( r ) == MsgType::Frame );
+		InputFrame out;
+		CHECK( back.Decode( r, out ) && r.AtEnd() );
+		CHECK( out == f );
+
+		MsgPlayerNames names;
+		for ( int i = 0; i < kMaxPlayers; ++i )
+		{
+			names.names.push_back( { PlayerSlot( i ), "player " + std::to_string( i ) } );
+		}
+		Encode( names, bytes );
+		ByteReader rn( bytes.data(), bytes.size() );
+		CHECK( ReadType( rn ) == MsgType::PlayerNames );
+		MsgPlayerNames got;
+		CHECK( Decode( rn, got ) && rn.AtEnd() );
+		CHECK( got.names == names.names );
+	}
+
 	// A client's inputs: each as few bytes as it needs, whichever of its 64 actions are held.
 	{
 		MsgInput sent;
