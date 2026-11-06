@@ -663,7 +663,7 @@ bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::
 		// (Carried: against the record the client has in its newest state, M257.)
 		const bool carried = u.carried != nullptr;
 		const Span* old = carried ? u.carried : from != nullptr ? from->Find( u.netId ) : nullptr;
-		if ( e == nullptr || ( u.baseTick != 0 && old == nullptr ) || ( carried && ( u.baseTick != 0 || u.puppet == false ) ) )
+		if ( e == nullptr || ( u.baseTick != 0 && old == nullptr ) || ( carried && u.baseTick != 0 ) )
 		{
 			return false;
 		}

@@ -6891,7 +6891,8 @@ void TestStateCodec()
 		return found;
 	};
 	std::map<uint32_t, uint32_t> last; // each entity the client has: the tick of its last update
-	size_t updateBytes = 0, updateCount = 0, left = 0, removals = 0;
+	size_t updateBytes = 0, updateCount = 0, left = 0, removals = 0, carried = 0, eventsSent = 0;
+	uint32_t serial = 0;
 	for ( size_t i = 4; i < states.size(); ++i )
 	{
 		std::vector<net::EntityUpdate> updates;
@@ -6912,7 +6913,18 @@ void TestStateCodec()
 				continue;
 			}
 			auto had = last.find( e.netId );
-			if ( had == last.end() || e.netId % 2 == 1 || i % 3 == 0 )
+			if ( had != last.end() && e.netId % 4 == 2 && i % 5 == 1 )
+			{
+				// Carried (M257): against the record it has in its newest state, whatever its age.
+				net::EntityUpdate u;
+				u.netId = e.netId;
+				u.carried = layoutOf( &kept, had->second )->Find( e.netId );
+				u.version = had->second;
+				updates.push_back( u );
+				next[e.netId] = states[i].tick;
+				carried += 1;
+			}
+			else if ( had == last.end() || e.netId % 2 == 1 || i % 3 == 0 )
 			{
 				updates.push_back( { e.netId, had != last.end() ? had->second : 0u } );
 				next[e.netId] = states[i].tick;
@@ -6931,7 +6943,30 @@ void TestStateCodec()
 		{
 			everyone.push_back( PlayerSlot( slot ) );
 		}
-		CHECK( net::EncodeUpdates( states[i], base, updates, removed, everyone, layoutOf, &kept, message ) );
+		// Events at characters (M257), every other state: two at one, one at another (by NetId), each
+		// before the state's tick, its point to 1/64 m.
+		std::vector<net::CharacterEvent> events;
+		if ( i % 2 == 0 && layouts[i].entities.size() >= 2 )
+		{
+			const uint32_t a = layouts[i].entities[0].netId, b = layouts[i].entities[1].netId;
+			for ( int k = 0; k < 3; ++k )
+			{
+				net::CharacterEvent e;
+				e.character = k < 2 ? a : b;
+				e.serial = serial++;
+				e.record.type = uint16_t( 3 + k );
+				e.record.netIdA = k == 1 ? 777u : e.character;
+				e.record.netIdB = k == 2 ? a : 0u;
+				e.record.tick = states[i].tick - 1 - uint32_t( k );
+				e.record.value = k == 0 ? -5 : 0;
+				e.record.late = k == 1 ? 1 : 0;
+				e.record.point = { float( i ) * 0.25f, 1.5f, float( 2 - k ) * -0.015625f + 0.0f }; // (no -0: it comes back 0)
+				e.record.vector = k == 2 ? b3Vec3{ 0.1f, -2.0f, 3.0f } : b3Vec3{};
+				events.push_back( e );
+			}
+			eventsSent += events.size();
+		}
+		CHECK( net::EncodeUpdates( states[i], base, updates, removed, everyone, layoutOf, &kept, message, nullptr, nullptr, &events ) );
 		ByteReader r( message.data(), message.size() );
 		uint32_t tick = 0, baseTick = 0;
 		net::StateFrame back;
@@ -6962,14 +6997,24 @@ void TestStateCodec()
 		}
 		last = next;
 		CHECK( back.state == compose( i, last ).state );
+		bool eventsSame = back.events.size() == events.size();
+		for ( size_t k = 0; eventsSame && k < events.size(); ++k )
+		{
+			const net::CharacterEvent& x = events[k];
+			const net::CharacterEvent& y = back.events[k];
+			eventsSame = x.character == y.character && x.serial == y.serial &&
+						 std::memcmp( &x.record, &y.record, sizeof( ModEventRecord ) ) == 0; // (the points are 64ths: exact)
+		}
+		CHECK( eventsSame );
 		CHECK( std::memcmp( back.inputs.data(), states[i].inputs.data(), sizeof( states[i].inputs ) ) == 0 );
 		client.push_back( std::move( back ) );
 		updateBytes += base != nullptr ? message.size() : 0;
 		updateCount += base != nullptr ? 1 : 0;
 	}
-	std::printf( "    updates: %zu entities left out (kept as the client had them), %zu named gone, %zu bytes a state on average\n", left, removals,
-				 updateBytes / std::max<size_t>( updateCount, 1 ) );
-	CHECK( left > 100 && updateCount > 100 && removals > 0 );
+	std::printf( "    updates: %zu entities left out (kept as the client had them), %zu named gone, %zu carried, %zu events; %zu bytes a state "
+				 "on average\n",
+				 left, removals, carried, eventsSent, updateBytes / std::max<size_t>( updateCount, 1 ) );
+	CHECK( left > 100 && updateCount > 100 && removals > 0 && carried > 20 && eventsSent > 100 );
 }
 
 // --- The hybrid network model (M248; ROADMAP step 3) ---------------------------------------------
@@ -7366,8 +7411,7 @@ void TestHybridFar()
 	// (Since M253 the others cost a few bytes each, so a budget of entities saves next to nothing:
 	// a state is mostly its head and the own character. What it still must not do is cost more:
 	// what waits longer than a base is kept went whole until M257; it goes against the record the
-	// client has, carried.)
-	CHECK( few.carried > 20 );
+	// client has, carried. How many is the link's timing: state_codec checks them byte for byte.)
 	CHECK( few.bytesPerState < byDistance.bytesPerState * 1.1 );
 	// (The own character and what it holds stay a good part of a state: the far ones' share is what
 	// goes, and it grows with the players; cb_bot measures it.)
@@ -7651,20 +7695,22 @@ void TestHybridPuppets()
 	// The events at the fighter (M257): the server's (each type and tick), and what each game heard
 	// of them from the server (HybridSession::HeardEvents).
 	using Said = std::multiset<std::pair<uint16_t, uint32_t>>;
-	Said onServerEvents, heardBy[2];
-	uint32_t serverSeen = server.Globals().modEventCount, heardSeen[2] = {};
+	Said onServerEvents, saidByModsOnServer, heardBy[2];
+	uint32_t heardSeen[2] = {};
 	const uint32_t eventsFrom = server.Tick() + 30;
 	h.server.SetTickObserver( [&] {
-		const SimGlobals& g = server.Globals();
-		for ( uint32_t n = std::max( serverSeen, g.modEventCount - std::min( g.modEventCount, kModEventHistory ) ); n < g.modEventCount; ++n )
+		// (Those sent with a character: not one for everyone.)
+		for ( const Simulation::StepEvent& s : server.StepEvents() )
 		{
-			const ModEventRecord& e = g.modEvents[n % kModEventHistory];
-			if ( e.netIdA == fighterId )
+			if ( s.record.netIdA == fighterId && s.character != 0 )
 			{
-				onServerEvents.insert( { e.type, e.tick } );
+				onServerEvents.insert( { s.record.type, s.record.tick } );
+				if ( s.command )
+				{
+					saidByModsOnServer.insert( { s.record.type, s.record.tick } );
+				}
 			}
 		}
-		serverSeen = g.modEventCount;
 		if ( const AnimStateCopy a = server.EntityAnimState( fighterId ) )
 		{
 			onServer[server.Tick()] = layersOf( *a );
@@ -7723,22 +7769,21 @@ void TestHybridPuppets()
 	h.server.SetTickObserver( {} );
 	// (Those of the second before the end may still be on their way.)
 	const uint32_t eventsTo = server.Tick() - 60;
-	auto inWindow = [&]( const Said& all, bool commandsOnly ) {
+	auto inWindow = [&]( const Said& all ) {
 		Said out;
 		for ( const auto& [type, tick] : all )
 		{
-			const std::string& name = h.server.Schema().events[type];
-			if ( tick >= eventsFrom && tick < eventsTo && ( commandsOnly == false || name == "item.use" ) )
+			if ( tick >= eventsFrom && tick < eventsTo )
 			{
 				out.insert( { type, tick } );
 			}
 		}
 		return out;
 	};
-	// The other's game hears every one, once; the fighter's own only what a mod said (item.use):
-	// the rest (its fist's used) it says itself, predicting.
-	const Said all = inWindow( onServerEvents, false ), saidByMods = inWindow( onServerEvents, true );
-	const Said watcherHeard = inWindow( heardBy[1], false ), fighterHeard = inWindow( heardBy[0], false );
+	// The other's game hears every one, once; the fighter's own only what a mod said (item.use, a
+	// hit's combat.damage): the rest (its fist's used) it says itself, predicting.
+	const Said all = inWindow( onServerEvents ), saidByMods = inWindow( saidByModsOnServer );
+	const Said watcherHeard = inWindow( heardBy[1] ), fighterHeard = inWindow( heardBy[0] );
 	std::printf( "    the events at the fighter: %zu on the server (%zu a mod's), the other's game heard %zu, its own %zu\n", all.size(), saidByMods.size(),
 				 watcherHeard.size(), fighterHeard.size() );
 	CHECK( all.size() >= 20 && saidByMods.size() >= 10 && all.size() > saidByMods.size() );
