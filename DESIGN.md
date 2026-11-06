@@ -145,8 +145,18 @@ ROADMAP step 3). **Inputs**: what follows below; every client simulates the whol
 - **The physics from the server's events**: the frame batches go without the inputs, with each
   tick's commands, physics events and pushers' places (below) and now and then the physics
   checksum (`PhysicsHash`). A client's physics (`HybridSession`) runs a few ticks behind the newest
-  frame (twice the jitter and two ticks), each tick stepped once and checked; a mismatch asks for
-  the world again. Nothing is rolled back.
+  frame (twice the jitter and two ticks, and a packet's interval: M256), each tick stepped once and
+  checked; a mismatch asks for the world again. Nothing is rolled back. It follows the server's
+  clock as the frames' best arrivals have it, a tick a tick, never past the frames it has.
+- **Frames carry the physics only** (M256): the commands a client skips (below) are left out of
+  them, decided in the server's own step (`Simulation::FollowerSkipped`; an item into a container
+  stays, for the NetId it uses up there too), the physics events after one moved to after the last
+  kept; and the players' joins and leaves. They go with the states, one datagram every
+  `stateEvery` ticks, each frame in two of them. A pusher's place is a change against where it
+  would be going on as it went (a varint per axis that moved), the first frame of a packet against
+  the two frames before it (the client keeps the last frames' places; right after its snapshot, it
+  has none: whole). The states' head is whose the slots are and the global board alone: a client's
+  event rings are its own (from the frames and its physics), and they were ~1 KB of every state.
 - **The client's physics reads no character** (`Simulation::FollowerSkips`): of a tick's commands
   it runs only what the physics world alone decides (a break, an item into the world, a push on a
   body in it, fields, events); a command about a character (a kill, a possession, an item picked
@@ -247,7 +257,7 @@ The inputs model:
   - A task runs inside its world's arena; the arena locks to allocate. Where things lie in the arena is not the same from run to run, and nothing reads that (a snapshot copies it, the hash is of the ECS, a join image holds no addresses).
   - Box3D's sameness across worker counts is its author's aim, not a promise: `physics_threads` (unit test) compares every tick's hash for 1, 2, 4 and 8 workers on 1 to 8 threads, with snapshots restored in between.
   - Cost: 4 workers' own memory is in every snapshot (2.7 MB to 3.5 MB at 64 players). Gain: collisions scale, the solver hardly does at this size; 43% off the physics in a tight loop, 10 to 20% in a game.
-- **Frames go out in three packets each**, one packet an update (a frame every tick, several after a hitch), delivered out of order too; a client keeps a batch that begins after what it has until the hole is filled. From the oldest unacknowledged frame again only when that has been out for longer than an answer takes. Packets sent in one update leave in one datagram and are lost together: three packets have to be three updates (M142).
+- **Frames go out in three packets each** (the hybrid's in two, with its states: M256), one packet an update (a frame every tick, several after a hitch), delivered out of order too; a client keeps a batch that begins after what it has until the hole is filled. From the oldest unacknowledged frame again only when that has been out for longer than an answer takes. Packets sent in one update leave in one datagram and are lost together: three packets have to be three updates (M142).
 - **Snapshots are few**: one before each tick predicted for the first time, and one in each re-simulation, where the confirmed frames end (the next misprediction is almost always there). The re-simulated ticks after it take none.
 - **`reconcile_every`** (`CinderboxPeer`, `--reconcile-every=N`, default 1): a misprediction is fixed only every N ticks. The same ticks are re-simulated less often; what other players do is seen up to N ticks later.
 - **Server**: never rolls back. It waits briefly for each input, reuses the last one when late, and broadcasts what it used.

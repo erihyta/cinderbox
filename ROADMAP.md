@@ -396,6 +396,24 @@ would get, on the wire):
   frame: M256); the head is half a state at 64 (M255); at 1023 the 512-entity budget still decides
   how many characters a state brings (M257); the server spends 95 ms a tick sending (planning 29,
   encoding 67: M257, M258).
+**Measured after M256** (the same):
+
+| | 32 players | 64 players | 255 players | 1023 players |
+|---|---|---|---|---|
+| To each player | 0.18 Mbit/s (0.35) | 0.33 Mbit/s (0.68) | 1.14 Mbit/s (2.0) | 3.35 Mbit/s (7.0) |
+| Out of the server | 5.9 Mbit/s | 21 Mbit/s | 290 Mbit/s | 3.4 Gbit/s |
+| A state | 592 B (head 39) | 1005 B | 3094 B | 6473 B |
+| Frames, of a player's bytes | 17% | 24% | 31% | 51% |
+| A frame alone (pushers of it) | 35 B (7) | 83 B (30) | 358 B (165) | 1713 B (1110) |
+
+- **What went**: the event rings out of every state's head (~1 KB, half a state at 64); the
+  commands clients skip (a third of a frame's, at 255); every pusher's place whole at the start of
+  each packet; each frame's third packet, and half the packets.
+- **What is left at 1023**: frames are half (224 pushers' places a tick, 5 B each: fighters in a
+  crowd change direction all the time, so going on as they went predicts little); the states the
+  other half, as many characters as the 512-entity budget lets (M257).
+- **Server times**: not compared here. While this was measured the machine was busy (88% of its
+  processor taken by other programs): main's own server took 76 ms a tick at 255, as this one did.
 - **Far puppets are an interval late**: one sent less often than every other state is drawn from
   the one before to the last over the time between them, so it moves without jumps but up to 16
   ticks late; a shot at it 100 m off is tested as the shooter saw it, behind. M257 sends what is
@@ -410,7 +428,7 @@ would get, on the wire):
 | **M253** (done) | **Other characters as puppets** (`sim/puppet.h`): where it is at 1/256 m, its facing, its look, flags, its slot, jump and air ticks, steps, motions on, stances, as changes of a few integers (`net::EncodePuppet`, 6 B for a walk and a turn); its record and its held items' as `PuppetView` makes them (what the client keeps of its own as zeros); no inputs of others; nothing sent that a client acknowledged and nothing else was sent of since (by hash). Stand-ins placed by them (`ApplyPuppets`), far ones from the one before over the interval; your own character keeps its full record. Protocol 87 |
 | **M254** (done) | **Animation run by each client**: a puppet's layers say their state, the one fading out and through which transition, their source and the tick they began; the client runs `UpdateAnimState` and the state machine following them (`UpdateAnimGraph`'s `follow`: never its own transitions, a late one caught up), its markers not its own. `net_hybrid_puppets`: through 50 ms each way and 3% lost, the fighter's every layer on the other's game in the server's state at the tick it stands as, its clock the server's, in every one of 4872 looks |
 | M255 | **Only what others see**: held items as kinds in the record, not entities; fields owner-only unless shared; no inputs of others; the head down to the tick (the player list, names and global fields when they change, only what changed; events with the characters they are at) |
-| M256 | **Frames carry the physics only**: the commands clients skip left out; each frame in two packets, not three, a gap asked for again; frames and the characters' update in one datagram every 2 ticks; pushers at the state rate if they show |
+| **M256** (done) | **Frames carry the physics only**: the commands clients skip left out (and the joins and leaves); frames with the states, one datagram every 2 ticks, each frame in two; a pusher's place as a change against where it would be going on as it went, a packet's first frame against the two before; the states' head without the event rings (a client never read them). Asking for a gap was not needed (3% lost: the physics never waited). Pushers at the state rate: not done, it changes how they push (your call). Protocol 88 |
 | M257 | **A byte budget per client**: a priority that grows by nearness, being in view, a changed state, aiming at or hitting the player; far ones coarser; an interest grid instead of every distance |
 | M258 | **The server's processor at 1000**: profiled; characters stepped on threads (each mover reads the others as the tick found them); mods' per-player loops |
 | M259 | **The client's processor at 1000 visible**: poses by distance and on screen (every frame near, every 8th far, none off screen), visibility ranges and cheaper far meshes |

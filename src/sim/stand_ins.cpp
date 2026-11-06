@@ -444,7 +444,19 @@ void Simulation::SaveState( std::vector<uint8_t>& out, bool compact, uint32_t on
 	Put( out, kStateMagic );
 	const uint32_t head = uint32_t( sizeof( SimGlobals ) + m_globalBoard.size() * 4 );
 	Put( out, head );
-	Put( out, m_globals );
+	if ( compact )
+	{
+		// What a client reads of the globals (ApplyState): whose the slots are. The rest (the event
+		// rings, the counters: ~1 KB) it has of its own, from the frames and its physics (M256).
+		SimGlobals read;
+		std::memset( &read, 0, sizeof( read ) );
+		std::memcpy( read.playerNetIds, m_globals.playerNetIds, sizeof( read.playerNetIds ) );
+		Put( out, read );
+	}
+	else
+	{
+		Put( out, m_globals );
+	}
 	const auto* board = reinterpret_cast<const uint8_t*>( m_globalBoard.data() );
 	out.insert( out.end(), board, board + m_globalBoard.size() * 4 );
 	const size_t countAt = out.size();
@@ -706,7 +718,13 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, S
 		// Its components, but the physics handles (this world's own).
 		for ( size_t i = 0; i < m_snapComponents.size(); ++i )
 		{
-			if ( int( i ) == physicsIndex || int( i ) == ragdollIndex || int( i ) == pusherIndex || ( keep & ( uint32_t( 1 ) << i ) ) != 0 )
+			if ( int( i ) == physicsIndex || int( i ) == ragdollIndex || int( i ) == pusherIndex )
+			{
+				continue;
+			}
+			// (Kept: what it has of those, and the record has too. One it lacks, it gets as the record
+			// has it, until ApplyPuppets: a body nobody drove has no character yet.)
+			if ( ( keep & ( uint32_t( 1 ) << i ) ) != 0 && ( rec.mask & ( uint32_t( 1 ) << i ) ) != 0 && ecs_has_id( world, e.id(), m_snapComponents[i].id ) )
 			{
 				continue;
 			}
@@ -756,16 +774,19 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, S
 			Velocity v;
 			RecordValue( rec, transformIndex, t );
 			RecordValue( rec, velocityIndex, v );
-			if ( keep != 0 )
+			if ( puppet )
 			{
-				t = e.has<Transform>() ? e.get<Transform>() : t; // (a puppet's is where ApplyPuppets put it)
-			}
-			else if ( puppet )
-			{
-				// (A new one's record has none: where its puppet says, or its holder is.)
+				// (Its record has no place: where its puppet says, or its holder's does. ApplyPuppets
+				// puts it there too.)
 				const uint32_t whose = isPuppet( rec.netId ) ? rec.netId : held.holder;
 				auto it = std::lower_bound( puppets->begin(), puppets->end(), whose, []( const PuppetEntry& p, uint32_t id ) { return p.netId < id; } );
 				t = it != puppets->end() && it->netId == whose ? PuppetPlace( it->puppet ) : Transform{};
+			}
+			// (Never a turn that is not one into Box3D: a record's zeros are none.)
+			const b3Quat& q = t.rotation;
+			if ( q.v.x * q.v.x + q.v.y * q.v.y + q.v.z * q.v.z + q.s * q.s < 0.5f )
+			{
+				t.rotation = b3Quat_identity;
 			}
 			if ( same == false )
 			{

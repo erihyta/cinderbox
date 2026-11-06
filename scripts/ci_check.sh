@@ -27,7 +27,13 @@ exe="$build/bin/cb_tests"
 [[ -f "$exe.exe" ]] && exe="$exe.exe"
 
 failed=0
-ctest --test-dir "$build" --output-on-failure || failed=1
+if ! ctest --test-dir "$build" --output-on-failure; then
+	failed=1
+	# The network tests' binary too, so a crash's stack (offsets from its start) can be read.
+	net="$build/bin/cb_net_tests"
+	[[ -f "$net.exe" ]] && net="$net.exe"
+	[[ -f "$net" ]] && cp "$net" "$out/"
+fi
 
 echo "== per-tick hashes vs tests/reference_hashes.txt"
 "$exe" --compare tests/reference_hashes.txt || failed=1

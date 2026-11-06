@@ -232,6 +232,13 @@ public:
 	{
 		return m_physicsMade;
 	}
+	// Of the last step's commands, by index, those a follower skips and could do without (M256: a
+	// hybrid server leaves them out of its clients' frames): its FollowerSkips, but an item into a
+	// container (that uses up a NetId of the physics world even there). Empty for a follower.
+	const std::vector<uint8_t>& FollowerSkipped() const
+	{
+		return m_followerSkipped;
+	}
 	// Hash of the physics world alone: every body that is not a character's, by its components
 	// (not its physics handles: those are this world's own).
 	uint64_t PhysicsHash() const;
@@ -255,7 +262,8 @@ public:
 	// that character and what it holds.
 	// `compact`: what is sent to clients. Where things are and how they move rounded (positions to
 	// 1/1024 m, rotations to 1/32768 and then made unit again, velocities to 1/256 m/s): their
-	// changes then take fewer bits. This world's own state stays exact.
+	// changes then take fewer bits. Of the globals, whose the slots are alone (all ApplyState reads;
+	// M256: the event rings were ~1 KB of every state). This world's own state stays exact.
 	void SaveState( std::vector<uint8_t>& out, bool compact = false, uint32_t only = 0 );
 	// ApplyState makes the characters' side of this world the server's as those bytes have it:
 	// every entity's components but its physics handles; a body kept when the server's description
@@ -726,6 +734,8 @@ private:
 	void ApplyCommands( const InputFrame& frame );
 	void ApplyCommand( const SimCommand& command );
 	bool FollowerSkips( const SimCommand& command ) const;
+	bool FollowerDrops( const SimCommand& command ) const;
+	std::vector<uint8_t> m_followerSkipped;
 	void DropController( flecs::entity e ); // (a body nobody drives, or a prop, again)
 	// A Spawn physics event's prop (the mod's SpawnProp, its owner a NetId).
 	void SpawnProp( const SimCommand& command );

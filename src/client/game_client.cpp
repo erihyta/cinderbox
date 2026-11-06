@@ -76,6 +76,7 @@ bool GameClient::Start( const ClientOptions& options, double now )
 	m_options = options;
 	m_inputHistory.assign( std::max<uint32_t>( 64, options.inputRedundancy * 2 ), SentInput{} );
 	m_knownInputs.assign( kKnownInputHistory, KnownInputs{} );
+	m_knownPushers.assign( kKnownInputHistory, KnownPushers{} );
 	m_options.maxRollbackTicks = std::max( m_options.maxRollbackTicks, m_options.minRollbackTicks );
 	m_state = ClientState::Connecting;
 	m_nextConnectAttempt = now;
@@ -384,6 +385,11 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 	m_stateFrames.clear();
 	m_stateAck = 0;
 	m_hybridFrames = msg.snapshotTick;
+	m_framesFrom = msg.snapshotTick;
+	for ( KnownPushers& k : m_knownPushers )
+	{
+		k.tick = UINT32_MAX;
+	}
 	m_hybridDesyncAskedAt = -1.0;
 	m_config = msg.config;
 	m_map = std::move( map );
@@ -581,13 +587,43 @@ bool GameClient::UseFrameBatch( uint32_t firstTick, uint32_t count, const uint8_
 	InputArray base{};
 	if ( m_hybrid != nullptr )
 	{
-		// (Without the inputs: no base needed.) Each frame new to it, and the physics checksum it has.
+		// (Without the inputs: no base needed; its pushers' places against the frame before, but
+		// for the first after the snapshot.) Each frame new to it, and the physics checksum it has.
+		const std::vector<PusherPlace>* pushers = nullptr;
+		const std::vector<PusherPlace>* before = nullptr;
+		if ( firstTick > m_framesFrom )
+		{
+			const KnownPushers& k = m_knownPushers[( firstTick - 1 ) % kKnownInputHistory];
+			if ( k.tick != firstTick - 1 )
+			{
+				m_stats.batchesIgnored += 1;
+				return false;
+			}
+			pushers = &k.pushers;
+			// (And the frame before that, which their moves are predicted from.)
+			if ( firstTick - 1 > m_framesFrom )
+			{
+				const KnownPushers& b = m_knownPushers[( firstTick - 2 ) % kKnownInputHistory];
+				if ( b.tick != firstTick - 2 )
+				{
+					m_stats.batchesIgnored += 1;
+					return false;
+				}
+				before = &b.pushers;
+			}
+		}
 		ByteReader r( body, size );
-		if ( ReadFrameBatchBody( r, base, firstTick, count, m_batchScratch, &m_checksumScratch ) == false )
+		if ( ReadFrameBatchBody( r, base, firstTick, count, m_batchScratch, &m_checksumScratch, pushers, before ) == false )
 		{
 			Log( "corrupt frame batch at tick %u", firstTick );
 			m_stats.batchesIgnored += 1;
 			return false;
+		}
+		for ( const InputFrame& frame : m_batchScratch )
+		{
+			KnownPushers& k = m_knownPushers[frame.tick % kKnownInputHistory];
+			k.tick = frame.tick;
+			k.pushers = frame.pushers;
 		}
 		for ( size_t i = 0; i < m_batchScratch.size(); ++i )
 		{
@@ -755,10 +791,16 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	if ( m_hybrid )
 	{
 		// The physics a little behind the newest frame: the jitter and a margin, so the next one is
-		// here when it is needed. A tick or two a frame, and quicker far behind.
-		const uint32_t buffer = uint32_t( std::clamp( std::ceil( 2.0 * jitter * rate ) + 2.0, 2.0, 30.0 ) );
+		// here when it is needed. A tick or two a frame, and quicker far behind. Frames come with the
+		// states (M256: every stateEvery ticks, that many at once): the physics follows the server's
+		// clock as the frames' best arrivals have it (a tick a tick, not in steps of the packets), a
+		// packet's interval further back, and never past the frames it has.
+		const uint32_t buffer =
+			uint32_t( std::clamp( std::ceil( 2.0 * jitter * rate ) + 2.0 + double( m_stateEvery > 0 ? m_stateEvery - 1 : 0 ), 2.0, 30.0 ) );
 		const uint32_t physics = m_hybrid->PhysicsTick();
-		const uint32_t target = m_hybridFrames > buffer ? m_hybridFrames - buffer : 0;
+		const double arrived = std::min( now * rate + m_clockOffset, double( m_hybridFrames ) + double( m_stateEvery ) );
+		const uint32_t clockTarget = arrived > double( buffer ) ? uint32_t( arrived ) - buffer : 0;
+		const uint32_t target = std::min( clockTarget, m_hybridFrames );
 		if ( target > physics )
 		{
 			const uint32_t behind = target - physics;

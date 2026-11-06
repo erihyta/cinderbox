@@ -639,8 +639,16 @@ void GameServer::Update( double now )
 	{
 		// Once for all the ticks of this update, not once a tick: packets sent in one go leave in
 		// one datagram, and are lost together. A frame's three packets have to be three datagrams.
+		// The hybrid's frames go with its states (M256): one datagram every stateEvery ticks, each
+		// frame in two of them; and on their own when no state has gone for longer than that.
 		const auto sendFrom = std::chrono::steady_clock::now();
-		SendFrames( now );
+		const bool hybrid = m_options.netModel == NetModel::Hybrid;
+		const bool stateMade = m_states.empty() == false && m_states.back().tick == m_sim->Tick();
+		if ( hybrid == false || stateMade || m_sim->Tick() >= m_framesSentAt + 2 * std::max( m_options.stateEvery, 1u ) )
+		{
+			SendFrames( now );
+			m_framesSentAt = m_sim->Tick();
+		}
 		m_bench.framesMs += BenchCounts() ? std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - sendFrom ).count() : 0.0;
 		if ( m_options.netModel == NetModel::Hybrid )
 		{
@@ -890,6 +898,7 @@ void GameServer::SendSnapshots()
 			// (A fake player that fell behind starts over, from what it would have been welcomed with.)
 			c.needsSnapshot = false;
 			c.ackTick = m_sim->Tick();
+			c.framesFrom = c.ackTick;
 			c.sentThrough = c.ackTick;
 			c.stateAck = kNoStateBase;
 			c.stateSent = 0;
@@ -928,6 +937,7 @@ void GameServer::SendSnapshots()
 		SendPrivates( c );
 		// The welcome carries the inputs of snapshotTick - 1, so frames start at snapshotTick.
 		c.ackTick = m_sim->Tick();
+		c.framesFrom = c.ackTick;
 		c.sentThrough = c.ackTick;
 		c.stateAck = kNoStateBase;
 		c.stateSent = 0;
@@ -1048,6 +1058,7 @@ void GameServer::RunTick( double now )
 		// it made (the replay has the frame as played: it makes them again).
 		frame.physics = m_sim->PhysicsMade().physics;
 		frame.pushers = m_sim->PhysicsMade().pushers;
+		LeaveOutSkipped( frame, m_sim->FollowerSkipped() );
 	}
 	if ( m_bench.fakes > 0 )
 	{
@@ -1381,6 +1392,37 @@ void GameServer::RecordView( const InputFrame& frame )
 	}
 }
 
+void GameServer::LeaveOutSkipped( InputFrame& frame, const std::vector<uint8_t>& skipped )
+{
+	// The players' joins and leaves: a hybrid client's characters come in states.
+	frame.events.clear();
+	if ( skipped.size() != frame.commands.size() )
+	{
+		return;
+	}
+	// The commands it skips; a physics event after one of them goes after the last kept before it
+	// (what was left out does nothing there, so it is the same point of the step).
+	std::vector<uint16_t> keptThrough( frame.commands.size() + 1, 0 ); // after = k + 1: how many kept of 0..k
+	size_t kept = 0;
+	for ( size_t k = 0; k < frame.commands.size(); ++k )
+	{
+		if ( skipped[k] == 0 )
+		{
+			frame.commands[kept++] = frame.commands[k];
+		}
+		keptThrough[k + 1] = uint16_t( kept );
+	}
+	m_stats.commandsLeftOut += frame.commands.size() - kept;
+	frame.commands.resize( kept );
+	for ( PhysicsEvent& e : frame.physics )
+	{
+		if ( e.phase == 0 && e.after < keptThrough.size() )
+		{
+			e.after = keptThrough[e.after];
+		}
+	}
+}
+
 const InputFrame* GameServer::HistoryFrame( uint32_t tick ) const
 {
 	const InputFrame& f = m_history[tick % kFrameHistory];
@@ -1395,6 +1437,7 @@ void GameServer::SendFrames( double now )
 	struct Encoded
 	{
 		uint32_t ack;
+		bool pusherBase, pusherBefore;
 		size_t frames;
 		std::vector<uint8_t> bytes;
 	};
@@ -1432,7 +1475,10 @@ void GameServer::SendFrames( double now )
 		bool waited = c.ackTick < c.sentThrough && now - c.frameSentAt[c.ackTick % 256] > std::max( 0.06, c.roundTrip * 1.5 + 0.03 );
 		if ( waited == false && c.sentThrough > c.ackTick )
 		{
-			first = std::max( c.ackTick, std::min( c.sentBefore[1], c.sentThrough ) );
+			// (The hybrid's in two packets, M256: they go every stateEvery ticks, so a frame waits
+			// longer for its third, and the physics' buffer covers a lost one.)
+			const uint32_t before = m_options.netModel == NetModel::Hybrid ? c.sentBefore[0] : c.sentBefore[1];
+			first = std::max( c.ackTick, std::min( before, c.sentThrough ) );
 		}
 		c.sentBefore[1] = c.sentBefore[0];
 		c.sentBefore[0] = c.sentThrough;
@@ -1450,10 +1496,15 @@ void GameServer::SendFrames( double now )
 		}
 		c.sentThrough = std::max( c.sentThrough, newest + 1 );
 
+		// (The hybrid's pushers against the frame before, when the client has that one: not the first
+		// after its snapshot. M256: every packet sent each place whole before.)
+		const bool pusherBase = m_options.netModel == NetModel::Hybrid && first > c.framesFrom && HistoryFrame( first - 1 ) != nullptr;
+		// (And the frame before that one, which its moves are predicted from.)
+		const bool pusherBefore = pusherBase && first - 1 > c.framesFrom && HistoryFrame( first - 2 ) != nullptr;
 		Encoded* hit = nullptr;
 		for ( Encoded& e : cache )
 		{
-			if ( e.ack == first )
+			if ( e.ack == first && e.pusherBase == pusherBase && e.pusherBefore == pusherBefore )
 			{
 				hit = &e;
 				break;
@@ -1471,7 +1522,7 @@ void GameServer::SendFrames( double now )
 			{
 				base = HistoryFrame( first - 1 ) ? HistoryFrame( first - 1 )->inputs : m_lastInputs;
 			}
-			cache.push_back( { first, frames.size(), {} } );
+			cache.push_back( { first, pusherBase, pusherBefore, frames.size(), {} } );
 			hit = &cache.back();
 			if ( m_options.netModel == NetModel::Hybrid )
 			{
@@ -1482,7 +1533,9 @@ void GameServer::SendFrames( double now )
 				{
 					sums[i] = frames[i] != nullptr && m_physicsSums.size() == kFrameHistory ? m_physicsSums[frames[i]->tick % kFrameHistory] : 0;
 				}
-				EncodeFrameBatch( base, frames.data(), frames.size(), hit->bytes, false, sums.data() );
+				EncodeFrameBatch( base, frames.data(), frames.size(), hit->bytes, false, sums.data(),
+								  pusherBase ? &HistoryFrame( first - 1 )->pushers : nullptr,
+								  pusherBefore ? &HistoryFrame( first - 2 )->pushers : nullptr );
 			}
 			else
 			{
@@ -2277,7 +2330,9 @@ void GameServer::CountFrame( const InputFrame& frame )
 	std::vector<uint8_t> out;
 	auto size = [&]( const InputFrame& f ) {
 		const InputFrame* one = &f;
-		EncodeFrameBatch( base, &one, 1, out, inputs );
+		const InputFrame* twoBefore = frame.tick > 1 ? HistoryFrame( frame.tick - 2 ) : nullptr;
+		EncodeFrameBatch( base, &one, 1, out, inputs, nullptr, before != nullptr && inputs == false ? &before->pushers : nullptr,
+						  before != nullptr && twoBefore != nullptr && inputs == false ? &twoBefore->pushers : nullptr );
 		return uint64_t( out.size() );
 	};
 	m_bench.frameAlone += size( frame );

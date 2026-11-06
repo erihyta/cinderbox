@@ -1017,10 +1017,21 @@ bool ReadPhysicsEvent( ByteReader& r, PhysicsEvent& e )
 // (radius, half height: u16 each) when flag 4.
 enum PusherFlags : uint8_t
 {
-	PushChange = 1,
-	PushShort = 2,
+	PushChange = 1, // a change against the place before: each axis that moved as a varint (M256)
 	PushSize = 4,
+	PushX = 8,
+	PushY = 16,
+	PushZ = 32,
 };
+
+uint32_t ZigZag32( int32_t v )
+{
+	return ( uint32_t( v ) << 1 ) ^ uint32_t( v >> 31 );
+}
+int32_t UnZigZag32( uint32_t v )
+{
+	return int32_t( v >> 1 ) ^ -int32_t( v & 1 );
+}
 
 void WriteVarint( ByteWriter& w, uint32_t v )
 {
@@ -1057,9 +1068,19 @@ const PusherPlace* PreviousPlace( const std::vector<PusherPlace>& previous, uint
 	return it != previous.end() && it->netId == netId ? &*it : nullptr;
 }
 
-bool FitsShort( int64_t v )
+bool FitsChange( int64_t v )
 {
-	return v >= INT16_MIN && v <= INT16_MAX;
+	return v >= -( int64_t( 1 ) << 24 ) && v <= ( int64_t( 1 ) << 24 );
+}
+
+// Where a pusher would be if it went on as it went (M256): its place before, and as far again as it
+// went from the one before that (when it was there too); its place before alone else. A change is
+// against this: one walking steadily changes by nothing.
+void PredictPlace( const PusherPlace& was, const PusherPlace* before, int64_t out[3] )
+{
+	out[0] = before != nullptr ? 2 * int64_t( was.x ) - before->x : was.x;
+	out[1] = before != nullptr ? 2 * int64_t( was.y ) - before->y : was.y;
+	out[2] = before != nullptr ? 2 * int64_t( was.z ) - before->z : was.z;
 }
 
 // Frame layout: type, tick u32, flags u8 (1: inputs, 2: physics events, 4: pushers' places, 8: a
@@ -1074,6 +1095,21 @@ enum FrameFlags : uint8_t
 	FramePushers = 4,
 	FrameChecksum = 8,
 };
+
+void FrameCodec::Reset( const InputArray& base, const std::vector<PusherPlace>* pushers, const std::vector<PusherPlace>* before )
+{
+	m_previous = base;
+	// (As those frames were sent: no more than a frame carries.)
+	auto take = []( const std::vector<PusherPlace>* from, std::vector<PusherPlace>& to ) {
+		to.clear();
+		if ( from != nullptr )
+		{
+			to.assign( from->begin(), from->begin() + std::ptrdiff_t( std::min<size_t>( from->size(), kMaxFramePushers ) ) );
+		}
+	};
+	take( pushers, m_previousPushers );
+	take( pushers != nullptr ? before : nullptr, m_beforePushers );
+}
 
 void FrameCodec::Encode( const InputFrame& frame, std::vector<uint8_t>& out )
 {
@@ -1151,19 +1187,30 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w, bool withIn
 		{
 			const PusherPlace& p = frame.pushers[i];
 			const PusherPlace* was = PreviousPlace( m_previousPushers, p.netId );
-			const int64_t dx = was ? int64_t( p.x ) - was->x : p.x;
-			const int64_t dy = was ? int64_t( p.y ) - was->y : p.y;
-			const int64_t dz = was ? int64_t( p.z ) - was->z : p.z;
-			const bool fits = was != nullptr && FitsShort( dx ) && FitsShort( dy ) && FitsShort( dz );
+			int64_t at[3] = { 0, 0, 0 };
+			if ( was != nullptr )
+			{
+				PredictPlace( *was, PreviousPlace( m_beforePushers, p.netId ), at );
+			}
+			const int64_t dx = int64_t( p.x ) - at[0];
+			const int64_t dy = int64_t( p.y ) - at[1];
+			const int64_t dz = int64_t( p.z ) - at[2];
+			// (A change unless it was not there before, or went further than a change says: a jump.)
+			const bool fits = was != nullptr && FitsChange( dx ) && FitsChange( dy ) && FitsChange( dz );
 			const bool size = was == nullptr || was->radius != p.radius || was->halfHeight != p.halfHeight;
-			w.Write( uint8_t( ( fits ? PushChange | PushShort : 0 ) | ( size ? PushSize : 0 ) ) );
+			const uint8_t axes = fits ? uint8_t( ( dx != 0 ? PushX : 0 ) | ( dy != 0 ? PushY : 0 ) | ( dz != 0 ? PushZ : 0 ) ) : uint8_t( 0 );
+			w.Write( uint8_t( ( fits ? PushChange : 0 ) | ( size ? PushSize : 0 ) | axes ) );
 			WriteVarint( w, p.netId - lastId );
 			lastId = p.netId;
 			if ( fits )
 			{
-				w.Write( int16_t( dx ) );
-				w.Write( int16_t( dy ) );
-				w.Write( int16_t( dz ) );
+				for ( const int64_t d : { dx, dy, dz } )
+				{
+					if ( d != 0 )
+					{
+						WriteVarint( w, ZigZag32( int32_t( d ) ) );
+					}
+				}
 			}
 			else
 			{
@@ -1178,6 +1225,7 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w, bool withIn
 			}
 		}
 	}
+	m_beforePushers.swap( m_previousPushers );
 	m_previousPushers.assign( frame.pushers.begin(), frame.pushers.begin() + std::ptrdiff_t( pushers ) );
 	if ( checksum != 0 )
 	{
@@ -1282,25 +1330,34 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame, uint64_t* checksu
 		{
 			const uint8_t pf = r.Read<uint8_t>();
 			uint32_t step = 0;
-			if ( ReadVarint( r, step ) == false || ( pf & ~( PushChange | PushShort | PushSize ) ) != 0 ||
-				 ( &p != frame.pushers.data() && step == 0 ) )
+			if ( ReadVarint( r, step ) == false || ( pf & ~( PushChange | PushSize | PushX | PushY | PushZ ) ) != 0 ||
+				 ( &p != frame.pushers.data() && step == 0 ) || ( ( pf & PushChange ) == 0 && ( pf & ( PushX | PushY | PushZ ) ) != 0 ) )
 			{
 				return false;
 			}
 			p.netId = lastId + step;
 			lastId = p.netId;
 			const PusherPlace* was = PreviousPlace( m_previousPushers, p.netId );
-			// (A change, and a short one in particular, is against a place had before: none, corrupt.)
-			if ( ( pf & ( PushChange | PushShort ) ) != 0 && was == nullptr )
+			// (A change is against a place had before: none, corrupt.)
+			if ( ( pf & PushChange ) != 0 && was == nullptr )
 			{
 				return false;
 			}
-			if ( pf & PushShort )
+			if ( pf & PushChange )
 			{
-				const int16_t dx = r.Read<int16_t>(), dy = r.Read<int16_t>(), dz = r.Read<int16_t>();
-				p.x = int32_t( int64_t( was->x ) + dx );
-				p.y = int32_t( int64_t( was->y ) + dy );
-				p.z = int32_t( int64_t( was->z ) + dz );
+				int32_t* at[3] = { &p.x, &p.y, &p.z };
+				int64_t from[3];
+				PredictPlace( *was, PreviousPlace( m_beforePushers, p.netId ), from );
+				const uint8_t bits[3] = { PushX, PushY, PushZ };
+				for ( int i = 0; i < 3; ++i )
+				{
+					uint32_t v = 0;
+					if ( ( pf & bits[i] ) != 0 && ReadVarint( r, v ) == false )
+					{
+						return false;
+					}
+					*at[i] = int32_t( int64_t( from[i] ) + ( ( pf & bits[i] ) != 0 ? UnZigZag32( v ) : 0 ) );
+				}
 			}
 			else
 			{
@@ -1334,6 +1391,7 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame, uint64_t* checksu
 		*checksum = sum;
 	}
 	m_previous = frame.inputs;
+	m_beforePushers.swap( m_previousPushers );
 	m_previousPushers = frame.pushers;
 	return true;
 }
@@ -1345,7 +1403,8 @@ bool IsSendableCommand( const SimCommand& c )
 }
 
 void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, size_t count, std::vector<uint8_t>& out,
-					   bool withInputs, const uint64_t* checksums )
+					   bool withInputs, const uint64_t* checksums, const std::vector<PusherPlace>* basePushers,
+					   const std::vector<PusherPlace>* beforePushers )
 {
 	Begin( out, MsgType::FrameBatch );
 	ByteWriter w( out );
@@ -1353,7 +1412,7 @@ void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, 
 	w.Write( count > 0 ? frames[0]->tick : uint32_t( 0 ) );
 	w.Write( uint8_t( count ) );
 	FrameCodec codec;
-	codec.Reset( base );
+	codec.Reset( base, basePushers, beforePushers );
 	for ( size_t i = 0; i < count; ++i )
 	{
 		codec.EncodeBody( *frames[i], w, withInputs, checksums != nullptr ? checksums[i] : 0 );
@@ -1368,10 +1427,11 @@ bool ReadFrameBatchHeader( ByteReader& r, uint32_t& firstTick, uint32_t& count )
 }
 
 bool ReadFrameBatchBody( ByteReader& r, const InputArray& base, uint32_t firstTick, uint32_t count,
-						 std::vector<InputFrame>& out, std::vector<uint64_t>* checksums )
+						 std::vector<InputFrame>& out, std::vector<uint64_t>* checksums, const std::vector<PusherPlace>* basePushers,
+						 const std::vector<PusherPlace>* beforePushers )
 {
 	FrameCodec codec;
-	codec.Reset( base );
+	codec.Reset( base, basePushers, beforePushers );
 	out.resize( count );
 	if ( checksums != nullptr )
 	{
