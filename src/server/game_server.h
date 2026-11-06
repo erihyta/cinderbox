@@ -324,6 +324,7 @@ private:
 	void SendNames( net::PeerId only = 0 );
 	std::string UniqueName( const std::string& wanted, const Client& self ) const;
 	bool m_namesDirty = false;
+	std::vector<std::string> m_sentNames; // by slot: as the last change to everyone said (M255)
 	void RunMods( InputFrame& frame );
 	void SendSnapshots();
 	void SendFrames( double now );

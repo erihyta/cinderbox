@@ -52,7 +52,7 @@ public:
 
 	void Declare( Declarations& declare ) override
 	{
-		m_score = declare.Field( "deathmatch.score", BoardType::Int );
+		m_score = declare.Field( "deathmatch.score", BoardType::Int, BoardScope::Entity, true ); // (shared: the scores list)
 		m_phase = declare.Field( "deathmatch.phase", BoardType::Int, BoardScope::Global );
 		m_seconds = declare.Field( "deathmatch.seconds", BoardType::Int, BoardScope::Global );
 		m_winner = declare.Field( "deathmatch.winner", BoardType::Int, BoardScope::Global );

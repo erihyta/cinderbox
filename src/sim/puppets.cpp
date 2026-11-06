@@ -166,6 +166,17 @@ void Simulation::PuppetView( const uint8_t* record, uint32_t size, std::vector<u
 		{
 			std::memset( out.data() + at, 0, sc.size );
 		}
+		else if ( sc.id == m_boardId && m_sharedFields.empty() == false )
+		{
+			// Its fields others see (M255): the rest are its player's alone.
+			for ( size_t slot = 0; slot * 4 + 4 <= sc.size; ++slot )
+			{
+				if ( slot >= m_sharedFields.size() || m_sharedFields[slot] == 0 )
+				{
+					std::memset( out.data() + at + slot * 4, 0, 4 );
+				}
+			}
+		}
 		else if ( sc.id == slots )
 		{
 			// What it shows (how many, which is out, an open chest), not what its keys did last tick.

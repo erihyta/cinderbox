@@ -45,7 +45,7 @@ void Declarations::BeginMod( const std::string& name )
 	m_schema.mods.push_back( name );
 }
 
-FieldHandle Declarations::Field( const std::string& name, BoardType type, BoardScope scope )
+FieldHandle Declarations::Field( const std::string& name, BoardType type, BoardScope scope, bool shared )
 {
 	if ( name.empty() || name.size() > kMaxSchemaName )
 	{
@@ -58,6 +58,10 @@ FieldHandle Declarations::Field( const std::string& name, BoardType type, BoardS
 		{
 			m_errors.push_back( m_mod + ": field \"" + name + "\" was already declared with another type or scope" );
 			return {};
+		}
+		for ( BoardField& f : m_schema.fields )
+		{
+			f.shared = f.shared || ( shared && f.name == name );
 		}
 		return { existing->slot, existing->scope, existing->type };
 	}
@@ -72,6 +76,7 @@ FieldHandle Declarations::Field( const std::string& name, BoardType type, BoardS
 	field.name = name;
 	field.type = type;
 	field.scope = scope;
+	field.shared = shared && scope == BoardScope::Entity;
 	field.slot = uint16_t( used++ );
 	m_schema.fields.push_back( field );
 	return { field.slot, scope, type };

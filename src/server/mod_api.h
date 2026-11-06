@@ -255,7 +255,11 @@ inline uint32_t ItemTarget( PlayerSlot slot, SocketHandle socket )
 class Declarations
 {
 public:
-	FieldHandle Field( const std::string& name, BoardType type, BoardScope scope = BoardScope::Entity );
+	// An entity field goes to its entity's player alone (its own character's, what it holds) unless
+	// `shared`: other players' clients are sent it too (M255). Share what a look shows on others (a
+	// score in a list, a glow); a field a state machine reads is shared by itself. Declared again
+	// by another mod: shared if either says so.
+	FieldHandle Field( const std::string& name, BoardType type, BoardScope scope = BoardScope::Entity, bool shared = false );
 	EventHandle Event( const std::string& name );
 	// Something a player asks of the mod from a screen, with two numbers ("shop.buy", the offer):
 	// a CbClick's mod_intent sends it in the player's input; Context::Intents reads it. What it

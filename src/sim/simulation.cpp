@@ -3812,6 +3812,14 @@ uint32_t Simulation::HeldItemOf( uint32_t holder, uint32_t socket ) const
 
 bool Simulation::FollowerDrops( const SimCommand& command ) const
 {
+	if ( command.type == CommandType::SetField && command.target != 0 && ( command.target & kSlotTargetBit ) == 0 )
+	{
+		// A field of a character or of what one holds: in the states (to its player alone, unless
+		// shared: M255), and nothing in the physics world reads it. (One of the physics world's
+		// stays: an item lying about, a chest.)
+		const flecs::entity e = FindEntity( ResolveTarget( command.target ) );
+		return e.is_valid() && CharacterSide( e );
+	}
 	if ( FollowerSkips( command ) == false )
 	{
 		return false;

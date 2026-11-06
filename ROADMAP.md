@@ -325,6 +325,8 @@ sent every nearby character as the simulation's own record, so a crowd costs pla
 | Mod fields | to their owner only; fields a character's state machine reads are shared by themselves; fields a look shows on others (a health bar over heads) are marked shared |
 | The cap | 1023 players (a slot becomes two bytes) |
 | The scope | the hybrid model only; the inputs model is kept as it is, for small servers |
+| Pushers (2026-11-06) | stay exact: a place every tick (not sent every other tick and filled in: that changes how they push) |
+| Drawing characters (2026-11-06) | one way for every character, the own one too: a look baked from its Godot scene (meshes, skins, materials, sockets, item looks with their field rules) drawn through RenderingServer, no scene per player (M260). Only what the bake understands is drawn; an animation's tracks that do things become timed cues; particles, lights and sounds are pooled nodes while they play. Shadows within 40 m. ozz stays on server and clients (the state machine is the simulation's; one sampler keeps hits where players are drawn) |
 | How it is measured | the crowd bench (M251): fake players inside the server, sent what a player would be, counted; a seed plays the same session however slow the machine |
 
 **Measured by M251** (`cb_server --character mannequin --fake-players N --fake-radius 15
@@ -431,8 +433,9 @@ would get, on the wire):
 | **M256** (done) | **Frames carry the physics only**: the commands clients skip left out (and the joins and leaves); frames with the states, one datagram every 2 ticks, each frame in two; a pusher's place as a change against where it would be going on as it went, a packet's first frame against the two before; the states' head without the event rings (a client never read them). Asking for a gap was not needed (3% lost: the physics never waited). Pushers at the state rate: not done, it changes how they push (your call). Protocol 88 |
 | M257 | **A byte budget per client**: a priority that grows by nearness, being in view, a changed state, aiming at or hitting the player; far ones coarser; an interest grid instead of every distance |
 | M258 | **The server's processor at 1000**: profiled; characters stepped on threads (each mover reads the others as the tick found them); mods' per-player loops |
-| M259 | **The client's processor at 1000 visible**: poses by distance and on screen (every frame near, every 8th far, none off screen), visibility ranges and cheaper far meshes |
-| M260 | **The uplink**: inputs repeated by measured loss (4, not 12) |
+| M259 | **The client's processor at 1000 visible**: the Godot client measured against a crowd of fake players (poses, drawing, the rest); poses by distance and on screen (every frame near, every 8th far, none off screen). Nothing of the drawing that M260 replaces |
+| M260 | **One baked look for every character**: the look baked from its scene in the editor (meshes, skin binds, materials, sockets, item looks and their rules; tracks that do things as timed cues), drawn through RenderingServer (a skeleton and an instance per mesh each, bones straight from ozz, items at their sockets), the own one's first person too; shadows within 40 m; checked against the scenes' drawing by screenshots, then a playtest |
+| M261 | **The uplink**: inputs repeated by measured loss (4, not 12) |
 
 **Targets** (1000 players in one area): another character ≤ 10 B moving, ≤ 2 B still; ≤ 0.5
 Mbit/s to each player; ≤ 500 Mbit/s out of the server; the server's work ≤ 16.7 ms a tick; ≤ 6 ms

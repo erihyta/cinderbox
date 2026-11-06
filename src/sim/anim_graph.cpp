@@ -1324,6 +1324,30 @@ bool UpperLayersRead( const AnimGraph& character, const AnimGraphPacks& packs, A
 	return false;
 }
 
+bool AnimGraph::Reads( AnimExpr::VarKind kind, int index ) const
+{
+	auto reads = [&]( const AnimExpr& expr ) {
+		return std::any_of( expr.steps.begin(), expr.steps.end(),
+							[&]( const AnimExpr::Step& s ) { return s.op == AnimExpr::Op::Var && s.kind == kind && int( s.index ) == index; } );
+	};
+	for ( const AnimGraphLayer& layer : layers )
+	{
+		if ( LayerReads( layer, kind, index ) || reads( layer.request ) )
+		{
+			return true;
+		}
+		for ( const AnimGraphState& state : layer.states )
+		{
+			if ( reads( state.speed ) ||
+				 std::any_of( state.restarts.begin(), state.restarts.end(), [&]( const AnimGraphTransition& t ) { return reads( t.condition ); } ) )
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 bool AnimGraph::UpperLayersRead( AnimExpr::VarKind kind, int index ) const
 {
 	auto reads = [&]( const AnimExpr& expr ) {

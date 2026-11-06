@@ -2886,7 +2886,15 @@ void TestProtocol()
 		CHECK( ReadType( rn ) == MsgType::PlayerNames );
 		MsgPlayerNames got;
 		CHECK( Decode( rn, got ) && rn.AtEnd() );
-		CHECK( got.names == names.names );
+		CHECK( got.names == names.names && got.whole );
+		// Only what changed (M255): a new name, and a slot left ("").
+		MsgPlayerNames change;
+		change.whole = false;
+		change.names = { { PlayerSlot( 700 ), "late" }, { PlayerSlot( 3 ), "" } };
+		Encode( change, bytes );
+		ByteReader rc( bytes.data(), bytes.size() );
+		CHECK( ReadType( rc ) == MsgType::PlayerNames );
+		CHECK( Decode( rc, got ) && rc.AtEnd() && got.whole == false && got.names == change.names );
 	}
 
 	// Puppets (M253): every change of one comes back exactly, against another or none; one that
@@ -7678,6 +7686,79 @@ void TestHybridPuppets()
 	CHECK( within * 100 >= samples * 95 );
 }
 
+// Sets a field only its player sees and one everyone sees on every player, each its slot + 7.
+class TwoFieldsMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_two_fields";
+	}
+	void Declare( mods::Declarations& declare ) override
+	{
+		secret = declare.Field( "test.secret", BoardType::Int );
+		shown = declare.Field( "test.shown", BoardType::Int, BoardScope::Entity, true );
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		for ( PlayerSlot slot = 0; slot < 2; ++slot )
+		{
+			if ( ctx.InWorld( slot ) && ctx.Tick() % 30 == 0 )
+			{
+				ctx.Set( ctx.PlayerNetId( slot ), secret, int32_t( slot ) + 7 );
+				ctx.Set( ctx.PlayerNetId( slot ), shown, int32_t( slot ) + 7 );
+			}
+		}
+	}
+	mods::FieldHandle secret, shown;
+};
+
+// Fields only their player sees (M255): a player's own fields reach its own game; another's reach
+// it only when shared (in its record's view, and no command in a frame says them either).
+void TestHybridOwnFields()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> mods;
+	mods.push_back( std::make_unique<TwoFieldsMod>() );
+	Harness h( 48190, {}, {}, {}, UseHybridModel, std::move( mods ) );
+	h.AddBot();
+	h.AddBot();
+	const ModSchema& schema = h.server.Schema();
+	const BoardField* secret = schema.FindField( "test.secret" );
+	const BoardField* shown = schema.FindField( "test.shown" );
+	CHECK( secret != nullptr && shown != nullptr && secret->shared == false && shown->shared );
+	if ( secret == nullptr || shown == nullptr )
+	{
+		return;
+	}
+	int ownSecret[2] = {}, ownShown[2] = {}, otherShown[2] = {}, otherSecretMost[2] = {};
+	h.RunUntil( 6.0, [&]( double ) {
+		for ( int b = 0; b < 2; ++b )
+		{
+			GameClient& c = *h.bots[size_t( b )].client;
+			Simulation* sim = c.Sim();
+			if ( sim == nullptr || c.Hybrid() == nullptr )
+			{
+				continue;
+			}
+			const PlayerSlot me = c.Slot();
+			const PlayerSlot them = PlayerSlot( 1 - me );
+			ownSecret[b] = std::max( ownSecret[b], sim->BoardValue( sim->PlayerNetId( me ), secret->slot ) );
+			ownShown[b] = std::max( ownShown[b], sim->BoardValue( sim->PlayerNetId( me ), shown->slot ) );
+			otherShown[b] = std::max( otherShown[b], sim->BoardValue( sim->PlayerNetId( them ), shown->slot ) );
+			otherSecretMost[b] = std::max( otherSecretMost[b], sim->BoardValue( sim->PlayerNetId( them ), secret->slot ) );
+		}
+	} );
+	for ( int b = 0; b < 2; ++b )
+	{
+		const int me = int( h.bots[size_t( b )].client->Slot() );
+		std::printf( "    slot %d's game: its own secret %d and shown %d; the other's shown %d, secret %d at most\n", me, ownSecret[b], ownShown[b],
+					 otherShown[b], otherSecretMost[b] );
+		CHECK( ownSecret[b] == me + 7 && ownShown[b] == me + 7 );
+		CHECK( otherShown[b] == ( 1 - me ) + 7 );
+		CHECK( otherSecretMost[b] == 0 );
+	}
+}
+
 // Lag compensation (M250): a shooter 50 ms each way from the server fires at a player strafing
 // across its sight 8 m away, aiming where its own game shows the target (a few ticks in the
 // past). With lag compensation the server tests the shot against the target as the shooter saw it
@@ -8042,6 +8123,7 @@ int main( int argc, char** argv )
 		{ "lag_compensation", TestLagCompensation },
 		{ "brawl_lag_compensation", TestBrawlLagCompensation },
 		{ "hybrid_puppets", TestHybridPuppets },
+		{ "hybrid_own_fields", TestHybridOwnFields },
 		{ "hybrid_reconnect", TestHybridReconnect },
 		{ "hybrid_own_throw", TestHybridOwnThrow },
 		{ "grace_expiry", TestGraceExpiry },

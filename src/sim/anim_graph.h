@@ -226,6 +226,8 @@ struct AnimGraph
 	// True when a layer above the base reads that stance (its number in AnimState) or event (its
 	// schema index) in a weight, a blend input or a transition.
 	bool UpperLayersRead( AnimExpr::VarKind kind, int index ) const;
+	// True when any of its layers reads it (M255: a field it reads is shared).
+	bool Reads( AnimExpr::VarKind kind, int index ) const;
 	// True when some clip's marker emits this schema event.
 	bool EmitsEvent( int event ) const;
 };
