@@ -7347,7 +7347,10 @@ void TestHybridFar()
 	CHECK( all.farError < 0.01f );
 	// (Every entity comes round, a few states later in turn.)
 	CHECK( few.desyncs == 0 && few.compared > 1000 && fewError < 2.0 && few.farError < 10.0f );
-	CHECK( few.bytesPerState < byDistance.bytesPerState );
+	// (Since M253 the others cost a few bytes each, so a budget of entities saves next to nothing:
+	// a state is mostly its head and the own character. What it still must not do is cost much more;
+	// with it, what waits longer than a base is kept goes whole. M257's budget is of bytes.)
+	CHECK( few.bytesPerState < byDistance.bytesPerState * 1.3 );
 	// (The own character and what it holds stay a good part of a state: the far ones' share is what
 	// goes, and it grows with the players; cb_bot measures it.)
 	CHECK( byDistance.bytesPerState < all.bytesPerState * 0.9 );
