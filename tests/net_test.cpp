@@ -7255,6 +7255,7 @@ void TestHybridFar()
 		double errorSum = 0.0;
 		uint32_t compared = 0, refreshes = 0;	 // of the far ones: how often one moved on a client
 		uint64_t desyncs = 0;
+		uint64_t carried = 0, corrupt = 0; // updates against what a client has (M257); states it could not read
 	};
 	auto run = [&]( uint16_t port, bool byDistance, uint32_t budget = 256 ) {
 		std::vector<std::unique_ptr<mods::ServerMod>> mods;
@@ -7298,6 +7299,7 @@ void TestHybridFar()
 		} );
 		Run out;
 		const uint64_t sentBefore = h.server.GetStats().statesSent, bytesBefore = h.server.GetStats().stateBytes;
+		const uint64_t carriedBefore = h.server.GetStats().updatesCarried;
 		std::array<std::array<b3Vec3, SpreadOutMod::kPlayers>, 2> seen{};
 		const double from = h.Now();
 		h.RunUntil( from + 4.0, [&]( double ) {
@@ -7330,10 +7332,12 @@ void TestHybridFar()
 		h.server.SetTickObserver( {} );
 		const GameServer::Stats& ss = h.server.GetStats();
 		out.bytesPerState = double( ss.stateBytes - bytesBefore ) / double( std::max<uint64_t>( ss.statesSent - sentBefore, 1 ) );
+		out.carried = ss.updatesCarried - carriedBefore;
 		for ( Bot& b : h.bots )
 		{
 			CheckHybridClient( *b.client );
 			out.desyncs += b.client->GetStats().desyncs + b.client->Hybrid()->GetStats().rejected;
+			out.corrupt += b.client->GetStats().statesCorrupt;
 		}
 		return out;
 	};
@@ -7343,12 +7347,14 @@ void TestHybridFar()
 	// they come round in turn.
 	const Run few = run( 48130, true, 6 );
 	const double fewError = few.errorSum / double( std::max( few.compared, 1u ) );
-	std::printf( "    with 6 a state: %.0f bytes a state, off by %.2f m on average, %.2f at most\n", few.bytesPerState, fewError, few.farError );
+	std::printf( "    with 6 a state: %.0f bytes a state, off by %.2f m on average, %.2f at most; %llu updates carried\n", few.bytesPerState, fewError,
+				 few.farError, (unsigned long long)few.carried );
 	const double meanError = byDistance.errorSum / double( std::max( byDistance.compared, 1u ) );
 	std::printf( "    by distance: %.0f bytes a state (every character: %.0f); the others on a client off by %.2f m on average, %.2f at most "
 				 "(%.2f with every character), %u compared, %u moved\n",
 				 byDistance.bytesPerState, all.bytesPerState, meanError, byDistance.farError, all.farError, byDistance.compared, byDistance.refreshes );
 	CHECK( byDistance.desyncs == 0 && all.desyncs == 0 );
+	CHECK( byDistance.corrupt == 0 && all.corrupt == 0 && few.corrupt == 0 );
 	CHECK( byDistance.compared > 1000 && byDistance.refreshes > 200 );
 	// (A far one is refreshed every 8 states: 16 ticks of walking, twice that when a refresh is lost.)
 	CHECK( meanError < 1.5 && byDistance.farError < 5.0f );
@@ -7356,9 +7362,11 @@ void TestHybridFar()
 	// (Every entity comes round, a few states later in turn.)
 	CHECK( few.desyncs == 0 && few.compared > 1000 && fewError < 2.0 && few.farError < 10.0f );
 	// (Since M253 the others cost a few bytes each, so a budget of entities saves next to nothing:
-	// a state is mostly its head and the own character. What it still must not do is cost much more;
-	// with it, what waits longer than a base is kept goes whole. M257's budget is of bytes.)
-	CHECK( few.bytesPerState < byDistance.bytesPerState * 1.3 );
+	// a state is mostly its head and the own character. What it still must not do is cost more:
+	// what waits longer than a base is kept went whole until M257; it goes against the record the
+	// client has, carried.)
+	CHECK( few.carried > 20 );
+	CHECK( few.bytesPerState < byDistance.bytesPerState * 1.1 );
 	// (The own character and what it holds stay a good part of a state: the far ones' share is what
 	// goes, and it grows with the players; cb_bot measures it.)
 	CHECK( byDistance.bytesPerState < all.bytesPerState * 0.9 );

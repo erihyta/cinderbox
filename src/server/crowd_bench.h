@@ -65,6 +65,9 @@ struct CrowdBench
 	// Why whole: new to the player, sent before but not acknowledged yet, its base no longer kept;
 	// and how many of them were characters (the rest: held items).
 	uint64_t wholeNew = 0, wholeUnacknowledged = 0, wholeOld = 0, wholeCharacters = 0;
+	// Records carried (M257): their base too old, against the record the player has; how many had
+	// changed since.
+	uint64_t carried = 0, carriedChanged = 0;
 
 	// Frames, once a tick: the newest frame alone, and again without each part; what they held.
 	uint64_t frameAlone = 0, frameNoCommands = 0, frameNoPhysics = 0, frameNoPushers = 0;

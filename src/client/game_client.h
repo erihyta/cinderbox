@@ -89,6 +89,7 @@ public:
 		// The hybrid.
 		uint64_t statesReceived = 0;
 		uint64_t statesIgnored = 0; // older than the newest, against a base no longer kept, or corrupt
+		uint64_t statesCorrupt = 0; // of them, corrupt (or not what we have: a carried record we lack)
 		int64_t physicsBehind = 0;	// how far the physics is behind the server's newest tick heard of
 	};
 

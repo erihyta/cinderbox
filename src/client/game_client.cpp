@@ -487,6 +487,7 @@ void GameClient::HandleState( ByteReader& r, double now )
 	{
 		Log( "corrupt state for tick %u", tick );
 		m_stats.statesIgnored += 1;
+		m_stats.statesCorrupt += 1;
 		return;
 	}
 	if ( m_hybrid != nullptr )

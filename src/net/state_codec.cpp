@@ -130,6 +130,10 @@ enum : uint8_t
 	BodiesKnown = 16, // another entity's, of the base or met before in this state: by its hash
 	HasPuppet = 32,	 // its puppet follows (M253)
 	PuppetBase = 64, // as a change against the base's puppet of it (else against none)
+	// M257: against its record (and bodies) as the client has it in its newest state, not a base's:
+	// one that waited longer than a base is kept, sent nothing since the client acknowledged one.
+	// Its puppet whole.
+	RecordCarried = 128,
 };
 
 uint32_t ZigZag( int32_t v )
@@ -580,8 +584,12 @@ void EncodeState( const StateFrame& frame, const StateFrame* base, std::vector<u
 
 bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::vector<EntityUpdate>& updates, const std::vector<uint32_t>& removed,
 					const std::vector<PlayerSlot>& inputSlots, LayoutOf layoutOf, const void* context, std::vector<uint8_t>& out,
-					UpdateCache* cache )
+					UpdateCache* cache, std::vector<uint32_t>* sizes )
 {
+	if ( sizes != nullptr )
+	{
+		sizes->clear();
+	}
 	const Parsed* now = layoutOf( context, frame.tick );
 	const Parsed* was = base != nullptr ? layoutOf( context, base->tick ) : nullptr;
 	if ( now == nullptr || ( base != nullptr && ( was == nullptr || was->headSize != now->headSize ) ) )
@@ -621,19 +629,26 @@ bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::
 		PutVarint( payload, u.netId - previous );
 		previous = u.netId;
 		// Its part: flags, how far back its base is, its record and bodies (and its puppet).
-		const uint64_t key = ( uint64_t( u.netId ) << 32 ) | u.baseTick | ( u.puppet ? uint64_t( 1 ) << 63 : 0 );
+		const uint64_t key = ( uint64_t( u.netId ) << 32 ) | ( u.carried != nullptr ? u.version : u.baseTick ) | ( u.puppet ? uint64_t( 1 ) << 63 : 0 ) |
+							 ( u.carried != nullptr ? uint64_t( 1 ) << 62 : 0 );
 		if ( cache != nullptr )
 		{
 			if ( auto it = cache->parts.find( key ); it != cache->parts.end() )
 			{
 				PutBytes( payload, it->second.data(), it->second.size() );
+				if ( sizes != nullptr )
+				{
+					sizes->push_back( uint32_t( it->second.size() ) );
+				}
 				continue;
 			}
 		}
 		const Span* e = now->Find( u.netId );
 		const Parsed* from = u.baseTick != 0 ? layoutOf( context, u.baseTick ) : nullptr;
-		const Span* old = from != nullptr ? from->Find( u.netId ) : nullptr;
-		if ( e == nullptr || ( u.baseTick != 0 && old == nullptr ) )
+		// (Carried: against the record the client has in its newest state, M257.)
+		const bool carried = u.carried != nullptr;
+		const Span* old = carried ? u.carried : from != nullptr ? from->Find( u.netId ) : nullptr;
+		if ( e == nullptr || ( u.baseTick != 0 && old == nullptr ) || ( carried && ( u.baseTick != 0 || u.puppet == false ) ) )
 		{
 			return false;
 		}
@@ -656,11 +671,12 @@ bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::
 		flags |= e->bodiesSize > 0 ? HasBodies : 0;
 		flags |= bodiesSame ? BodiesSame : 0;
 		const bool puppet = u.puppet && e->puppet != nullptr;
-		const bool puppetBase = puppet && old != nullptr && old->puppet != nullptr;
+		const bool puppetBase = puppet && old != nullptr && old->puppet != nullptr && carried == false;
 		flags |= puppet ? HasPuppet : 0;
 		flags |= puppetBase ? PuppetBase : 0;
+		flags |= carried ? RecordCarried : 0;
 		part.push_back( flags );
-		PutVarint( part, old != nullptr ? frame.tick - u.baseTick : 0 );
+		PutVarint( part, old != nullptr && carried == false ? frame.tick - u.baseTick : 0 );
 		switch ( flags & RecordMask )
 		{
 			case RecordXor:
@@ -684,6 +700,10 @@ bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::
 			EncodePuppet( *e->puppet, puppetBase ? old->puppet : nullptr, frame.tick, part );
 		}
 		PutBytes( payload, part.data(), part.size() );
+		if ( sizes != nullptr )
+		{
+			sizes->push_back( uint32_t( part.size() ) );
+		}
 		if ( cache != nullptr )
 		{
 			cache->parts.emplace( key, part );
@@ -836,7 +856,16 @@ bool DecodeUpdates( ByteReader& p, uint32_t tick, const StateFrame* base, const 
 		}
 		const Span* old = nullptr;
 		const StateFrame* oldFrame = nullptr;
-		if ( back != 0 )
+		if ( flags & RecordCarried )
+		{
+			// (What it has in its newest state.)
+			old = had.Find( netId );
+			if ( back != 0 || old == nullptr || ( flags & PuppetBase ) != 0 )
+			{
+				return false;
+			}
+		}
+		else if ( back != 0 )
 		{
 			if ( back > tick || stateOf == nullptr )
 			{

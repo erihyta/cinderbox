@@ -1150,6 +1150,7 @@ void GameServer::RunTick( double now )
 			KeepPuppets( kept );
 		}
 		m_layouts.push_back( std::move( kept ) );
+		KeepRecordVersions( m_layouts.back(), stateTick );
 		while ( m_states.size() > kStateHistory )
 		{
 			m_states.pop_front();
@@ -1655,6 +1656,64 @@ const GameServer::KeptLayout* GameServer::KeptLayoutOf( uint32_t tick ) const
 	return lo < m_states.size() && m_states[lo].tick == tick && lo < m_layouts.size() ? &m_layouts[lo] : nullptr;
 }
 
+void GameServer::KeepRecordVersions( const KeptLayout& kept, uint32_t tick )
+{
+	for ( size_t i = 0; i < kept.layout.entities.size() && i < kept.viewRecordHash.size(); ++i )
+	{
+		const uint64_t hash = kept.viewRecordHash[i];
+		if ( hash == 0 )
+		{
+			continue;
+		}
+		const net::StateSpan& s = kept.layout.entities[i];
+		RecordVersions& versions = m_recordVersions[s.netId];
+		versions.seenAt = tick;
+		const size_t ring = versions.ring.size();
+		if ( versions.ring[( versions.next + ring - 1 ) % ring].hash == hash )
+		{
+			continue; // (the newest already)
+		}
+		RecordVersion& v = versions.ring[versions.next];
+		versions.next = uint32_t( ( versions.next + 1 ) % ring );
+		v.hash = hash;
+		v.view.assign( s.view, s.view + s.viewSize );
+		v.span = {};
+		v.span.netId = s.netId;
+		v.span.record = v.view.data();
+		v.span.recordSize = s.viewSize;
+		v.span.view = v.view.data();
+		v.span.viewSize = s.viewSize;
+		v.span.bodiesSize = s.bodiesSize;
+		v.span.hash = s.hash;
+	}
+	// (Those no state has had for longer than any client waits: gone.)
+	if ( tick - m_recordVersionsSwept >= 256 )
+	{
+		m_recordVersionsSwept = tick;
+		for ( auto it = m_recordVersions.begin(); it != m_recordVersions.end(); )
+		{
+			it = tick - it->second.seenAt > 256 ? m_recordVersions.erase( it ) : std::next( it );
+		}
+	}
+}
+
+const net::StateSpan* GameServer::RecordVersionOf( uint32_t netId, uint64_t hash ) const
+{
+	const auto it = m_recordVersions.find( netId );
+	if ( it == m_recordVersions.end() || hash == 0 )
+	{
+		return nullptr;
+	}
+	for ( const RecordVersion& v : it->second.ring )
+	{
+		if ( v.hash == hash )
+		{
+			return &v.span;
+		}
+	}
+	return nullptr;
+}
+
 void GameServer::KeepPuppets( KeptLayout& kept ) const
 {
 	const size_t n = kept.layout.entities.size();
@@ -1663,6 +1722,7 @@ void GameServer::KeepPuppets( KeptLayout& kept ) const
 	kept.viewBytes.clear();
 	kept.fullHash.assign( n, 0 );
 	kept.viewHash.assign( n, 0 );
+	kept.viewRecordHash.assign( n, 0 );
 	// Every character a client may draw as a puppet, its slot's last input saying how it looks.
 	std::vector<int32_t> puppetAt( n, -1 );
 	for ( size_t i = 0; i < n; ++i )
@@ -1718,6 +1778,47 @@ void GameServer::KeepPuppets( KeptLayout& kept ) const
 		s.puppet = puppetAt[i] >= 0 ? &kept.puppets[size_t( puppetAt[i] )] : nullptr;
 		kept.fullHash[i] = version( s.record, s.recordSize, s.hash, nullptr );
 		kept.viewHash[i] = s.view != nullptr ? version( s.view, s.viewSize, s.hash, s.puppet ) : 0;
+		kept.viewRecordHash[i] = s.view != nullptr ? version( s.view, s.viewSize, s.hash, nullptr ) : 0;
+	}
+	// What each costs sent whole (M257): what packing leaves of a record is about its bytes that are
+	// not zeros.
+	auto filled = []( const uint8_t* p, uint32_t size ) {
+		uint32_t count = 0;
+		for ( uint32_t b = 0; b < size; ++b )
+		{
+			count += p[b] != 0 ? 1 : 0;
+		}
+		return count;
+	};
+	kept.wholeView.assign( n, 0 );
+	kept.wholeFull.assign( n, 0 );
+	for ( size_t i = 0; i < n; ++i )
+	{
+		const net::StateSpan& s = kept.layout.entities[i];
+		const uint32_t bodies = s.bodiesSize > 0 ? 8 + s.bodiesSize / 2 : 0;
+		kept.wholeFull[i] = 8 + filled( s.record, s.recordSize ) + bodies;
+		kept.wholeView[i] = s.view != nullptr ? 8 + filled( s.view, s.viewSize ) + bodies + ( s.puppet != nullptr ? 24 : 0 ) : kept.wholeFull[i];
+	}
+	// Which characters did something since the state before (M257): their layers' states, their
+	// flags (a jump, a fall, aiming).
+	kept.changed.assign( n, 0 );
+	const net::StateLayout* before = m_layouts.empty() ? nullptr : &m_layouts.back().layout;
+	for ( size_t i = 0; i < n && before != nullptr; ++i )
+	{
+		const net::StateSpan& s = kept.layout.entities[i];
+		const net::StateSpan* was = s.puppet != nullptr ? before->Find( s.netId ) : nullptr;
+		if ( was == nullptr || was->puppet == nullptr )
+		{
+			continue;
+		}
+		const Puppet& a = *s.puppet;
+		const Puppet& b = *was->puppet;
+		bool differ = a.flags != b.flags || a.layerCount != b.layerCount;
+		for ( size_t l = 0; l < a.layerCount && l < kPuppetLayers && differ == false; ++l )
+		{
+			differ = a.layers[l].state != b.layers[l].state || a.layers[l].start != b.layers[l].start;
+		}
+		kept.changed[i] = differ ? 1 : 0;
 	}
 }
 
@@ -1730,18 +1831,65 @@ const net::StateLayout* GameServer::LayoutOfTick( const void* server, uint32_t t
 namespace
 {
 
-// How often a client is sent the record of a character this far from its own (and of what that
-// one holds): every state near, every 2nd, 4th or 8th further off (M250).
-uint32_t StatePeriod( float distance )
-{
-	return distance < 25.0f ? 1u : distance < 50.0f ? 2u : distance < 100.0f ? 4u : 8u;
-}
+// How much a character matters to a client a state (M257): an update is owed once it adds up to 1.
+// Within this far, every state; further, as much less as it is further (twice as far, every other).
+constexpr float kEveryStateWithin = 12.0f;
+// In the client's view (this far from where its camera looks, either way): twice as much.
+constexpr float kViewCos = 0.34f; // (70 degrees)
+// One that did something (a layer's new state, a jump, aiming): half a state more.
+constexpr float kChangedShare = 0.5f;
+// One looking at the client (this close to it, within this far): a whole state more.
+constexpr float kAimCos = 0.97f; // (14 degrees)
+constexpr float kAimWithin = 60.0f;
+// What a priority adds up to at most (one far off, waiting long, against one near that changes).
+constexpr float kMostOwed = 1000.0f;
 
 // How old the state a client's record of an entity is from may be, in states, for a change
 // against it (the client keeps 32: GameClient::HandleState).
 constexpr uint32_t kOldestBase = 24;
+// What a carried update takes, about (M257: its flags, the change of its record, its puppet whole).
+constexpr uint32_t kCarriedBytes = 48;
 
 } // namespace
+
+float GameServer::Matters( const Plan& plan, const Client& c, const KeptLayout& now, size_t i ) const
+{
+	// (No character of its own: everything, every state.)
+	if ( plan.hasOwn == false )
+	{
+		return 1.0f;
+	}
+	const b3Vec3 to = b3Sub( now.placed[i].at, plan.ownAt );
+	const float d = b3Length( to );
+	const float flat = std::sqrt( to.x * to.x + to.z * to.z );
+	// Near: every state; further, as much less as it is further.
+	float share = 1.0f / std::max( 1.0f, d / kEveryStateWithin );
+	// In its view: where its camera looks, either side (its last input).
+	if ( flat > 0.5f )
+	{
+		const float yaw = detmath::YawToRadians( c.lastInput.cameraYaw );
+		if ( ( std::sin( yaw ) * to.x + std::cos( yaw ) * to.z ) / flat > kViewCos )
+		{
+			share *= 2.0f;
+		}
+	}
+	// It did something: a layer's new state, a flag (a jump, aiming).
+	if ( i < now.changed.size() && now.changed[i] != 0 )
+	{
+		share += kChangedShare;
+	}
+	// It looks at this client, near enough to matter (a shooter aiming at it).
+	const Puppet* p = now.layout.entities[i].puppet;
+	if ( p != nullptr && flat > 0.5f && d < kAimWithin )
+	{
+		const float look = detmath::YawToRadians( p->facing ) + float( p->aimYaw ) * ( detmath::kTwoPi / 256.0f );
+		if ( ( std::sin( look ) * -to.x + std::cos( look ) * -to.z ) / flat > kAimCos )
+		{
+			share += 1.0f;
+		}
+	}
+	return share;
+}
 
 void GameServer::StateAcknowledged( Client& c, uint32_t tick )
 {
@@ -1765,6 +1913,7 @@ void GameServer::StateAcknowledged( Client& c, uint32_t tick )
 		{
 			it->acked = tick;
 			it->ackedHash = i < sent.hashes.size() ? sent.hashes[i] : 0;
+			it->ackedViewHash = i < sent.viewHashes.size() ? sent.viewHashes[i] : 0;
 			it->ackedPuppet = i < sent.puppets.size() && sent.puppets[i] != 0;
 		}
 	}
@@ -1795,6 +1944,7 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	plan.next.reserve( c.known.size() + 16 );
 	plan.updates.reserve( now.layout.entities.size() );
 	plan.sent.hashes.clear();
+	plan.sent.viewHashes.clear();
 	plan.sent.puppets.clear();
 	size_t k = 0;
 	auto gone = [&]( const Client::Known& had ) {
@@ -1839,53 +1989,80 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 		entry.acked = had && otherKind == false ? entry.had->acked : 0;
 		const uint64_t version = entry.puppet ? now.viewHash[i] : now.fullHash[i];
 		entry.same = entry.acked != 0 && entry.had->ackedHash == version && entry.had->sentHash == version;
-		const uint32_t period = plan.hasOwn == false ? 1u : StatePeriod( b3Length( b3Sub( placed.at, plan.ownAt ) ) );
 		const uint32_t sentAt = entry.had != nullptr && otherKind == false ? entry.had->sentAt : 0;
-		const float overdue = sentAt == 0 ? 1e3f : float( newest.tick - sentAt ) / float( period * every );
-		// (One never sent first; one sent and not acknowledged yet waits its turn as any other does,
-		// and goes whole again: resent every state, a crowd's new ones took a small budget's every
-		// slot while acknowledgements were slow.)
-		entry.score = mine ? 1e9f : sentAt == 0 ? 1e6f : overdue >= 1.0f ? overdue : 0.0f;
+		// What it would take: as its last update did, or whole (the bytes packing leaves of it).
+		const bool whole = entry.acked == 0 || keptAt( entry.acked ) == false;
+		// One whose base is too old, sent nothing since it acknowledged one: against the record it
+		// has, if that one is still kept (its puppet whole: M257).
+		entry.carried = whole && entry.acked != 0 && entry.puppet && now.viewRecordHash[i] != 0 && entry.had->updatedAt == entry.acked
+							? RecordVersionOf( netId, entry.had->ackedViewHash )
+							: nullptr;
+		entry.bytes = entry.carried != nullptr			? kCarriedBytes
+					  : whole || entry.had->bytes == 0 ? ( entry.puppet ? now.wholeView[i] : now.wholeFull[i] )
+													   : entry.had->bytes;
+		// What a character (a group's head) is owed: what it was, and this state's share (M257). One
+		// never sent first, nearest first; one sent and not acknowledged yet waits its turn as any
+		// other does, and goes whole again (resent every state, a crowd's new ones took a small
+		// budget's every slot while acknowledgements were slow).
+		const bool head = now.head[i] == uint32_t( i );
+		entry.owed = 0.0f;
+		if ( mine == false && head )
+		{
+			entry.owed = std::min( kMostOwed, ( sentAt != 0 ? entry.had->priority : 0.0f ) + Matters( plan, c, now, i ) );
+		}
+		entry.score = mine ? 1e9f : sentAt == 0 ? 1e6f + entry.owed : entry.owed;
 	}
 	while ( k < c.known.size() )
 	{
 		gone( c.known[k++] );
 	}
-	// By group (a character with what it holds): as overdue as its most overdue.
+	// By group (a character with what it holds): as owed as its most owed (its head, or a new one),
+	// and what its updates would take.
 	const size_t n = now.layout.entities.size();
 	plan.groupScore.assign( n, 0.0f );
 	plan.groupChosen.assign( n, 0 );
 	std::vector<uint32_t> sizes; // (by head)
+	std::vector<uint32_t> bytes; // (by head)
 	sizes.assign( n, 0 );
+	bytes.assign( n, 0 );
 	for ( size_t i = 0; i < n; ++i )
 	{
 		// (What it has already costs nothing: it is not sent.)
 		const uint32_t h = now.head[i];
 		plan.groupScore[h] = std::max( plan.groupScore[h], plan.entries[i].score );
 		sizes[h] += plan.entries[i].same ? 0 : 1;
+		bytes[h] += plan.entries[i].same ? 0 : plan.entries[i].bytes;
 	}
-	// The budget: the most overdue groups first, whole (the rest stay overdue, and come first next
-	// time); the own one aside.
+	// The budget (M257): the groups owed an update (1 or more), most owed first, until the
+	// client's bytes for this state are spent or as many entities as stateBudget; the rest wait
+	// (still owed, and more by the next). The own one aside.
+	const double budget = m_options.clientBudgetKbits > 0 ? double( m_options.clientBudgetKbits ) * 1000.0 / 8.0 * double( every ) /
+																 double( std::max( m_options.config.tickRate, 1u ) )
+														   : 1e30;
 	plan.due.clear();
 	for ( size_t h = 0; h < n; ++h )
 	{
-		if ( sizes[h] > 0 && plan.groupScore[h] > 0.0f )
+		if ( sizes[h] > 0 && plan.groupScore[h] >= 1.0f )
 		{
 			plan.due.push_back( { plan.groupScore[h], uint32_t( h ) } );
 		}
 	}
 	std::sort( plan.due.begin(), plan.due.end(), []( const auto& x, const auto& y ) { return x.first > y.first || ( x.first == y.first && x.second < y.second ); } );
 	size_t spent = 0;
+	double spentBytes = 0.0;
 	for ( const auto& [score, h] : plan.due )
 	{
 		const bool own = score >= 1e9f;
-		if ( own == false && spent > 0 && spent + sizes[h] > m_options.stateBudget )
+		const bool over = spent + sizes[h] > m_options.stateBudget || spentBytes + double( bytes[h] ) > budget;
+		if ( own == false && spent > 0 && over )
 		{
 			continue; // (a smaller group may still fit; the first goes, however big)
 		}
 		plan.groupChosen[h] = 1;
 		spent += own ? 0 : sizes[h];
+		spentBytes += own ? 0.0 : double( bytes[h] );
 	}
+	plan.budgeted = spentBytes;
 	for ( size_t i = 0; i < n; ++i )
 	{
 		plan.entries[i].chosen = plan.groupChosen[now.head[i]] != 0;
@@ -1906,6 +2083,7 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 			// What it has (acknowledged, and nothing else sent since): not sent, its turn taken.
 			Client::Known known = *entry.had;
 			known.sentAt = newest.tick;
+			known.priority = 0.0f;
 			plan.next.push_back( known );
 		}
 		else if ( entry.chosen )
@@ -1913,20 +2091,28 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 			// Against the record it has, if that one is still kept here and there.
 			const bool kept = entry.acked != 0 && keptAt( entry.acked );
 			const uint64_t version = entry.puppet ? now.viewHash[i] : now.fullHash[i];
-			plan.updates.push_back( { netId, kept ? entry.acked : 0u, entry.puppet } );
+			plan.updates.push_back(
+				{ netId, kept ? entry.acked : 0u, entry.puppet, entry.carried, entry.carried != nullptr ? uint32_t( entry.had->ackedViewHash ) : 0u } );
 			plan.sent.updated.push_back( netId );
 			plan.sent.hashes.push_back( version );
+			plan.sent.viewHashes.push_back( entry.puppet ? now.viewRecordHash[i] : 0 );
 			plan.sent.puppets.push_back( entry.puppet ? 1 : 0 );
 			Client::Known known = had ? *entry.had : Client::Known{};
 			known.netId = netId;
 			known.removing = false;
 			known.sentAt = newest.tick;
+			known.updatedAt = newest.tick;
 			known.sentHash = version;
+			known.priority = 0.0f;
+			known.bytes = entry.bytes; // (until the encoding says: SendStates)
 			plan.next.push_back( known );
 		}
 		else if ( entry.had != nullptr )
 		{
-			plan.next.push_back( *entry.had );
+			// (Still owed: what it was, and this state's share. More by the next.)
+			Client::Known known = *entry.had;
+			known.priority = now.head[i] == uint32_t( i ) && had ? entry.owed : known.priority;
+			plan.next.push_back( known );
 		}
 	}
 	std::inplace_merge( plan.next.begin(), plan.next.begin() + std::ptrdiff_t( goneCount ), plan.next.end(),
@@ -1954,8 +2140,8 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	for ( const net::EntityUpdate& u : plan.updates )
 	{
 		plan.says.push_back( u.netId );
-		plan.says.push_back( u.baseTick );
-		plan.says.push_back( u.puppet ? 1u : 0u );
+		plan.says.push_back( u.carried != nullptr ? u.version : u.baseTick );
+		plan.says.push_back( ( u.puppet ? 1u : 0u ) | ( u.carried != nullptr ? 2u : 0u ) );
 	}
 	plan.says.push_back( uint32_t( plan.sent.removed.size() ) );
 	plan.says.insert( plan.says.end(), plan.sent.removed.begin(), plan.sent.removed.end() );
@@ -2052,7 +2238,7 @@ void GameServer::SendStates()
 			Message& message = m_messages[m];
 			const Plan& plan = m_plans[message.plan];
 			message.ok = net::EncodeUpdates( newest, plan.base, plan.updates, plan.sent.removed, plan.inputSlots, &GameServer::LayoutOfTick, this,
-											 message.bytes, &m_updateCaches[size_t( worker )] );
+											 message.bytes, &m_updateCaches[size_t( worker )], &message.sizes );
 		} );
 		m_bench.encodeMs += BenchCounts() ? std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - encodeFrom ).count() : 0.0;
 		for ( size_t i : planned )
@@ -2071,6 +2257,24 @@ void GameServer::SendStates()
 				m_bench.sampleMs += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - sampleFrom ).count();
 			}
 			c.known.swap( plan.next );
+			// What each update took (M257: the next one's estimate). Both in NetId order.
+			size_t at = 0;
+			for ( size_t u = 0; u < plan.updates.size() && u < message.sizes.size(); ++u )
+			{
+				while ( at < c.known.size() && c.known[at].netId < plan.updates[u].netId )
+				{
+					++at;
+				}
+				if ( at < c.known.size() && c.known[at].netId == plan.updates[u].netId )
+				{
+					c.known[at].bytes = message.sizes[u];
+				}
+			}
+			m_stats.stateBudgeted += plan.budgeted;
+			for ( const net::EntityUpdate& u : plan.updates )
+			{
+				m_stats.updatesCarried += u.carried != nullptr ? 1 : 0;
+			}
 			if ( c.fake )
 			{
 				// (What a player is thought to have may hold more than the state only by the gone
@@ -2418,6 +2622,15 @@ void GameServer::SampleState( const Plan& plan, PlayerSlot slot, const StateFram
 		{
 			withoutItems.push_back( u );
 			m_bench.othersUpdated += 1;
+		}
+		if ( u.carried != nullptr )
+		{
+			m_bench.carried += 1;
+			m_bench.carriedChanged += u.carried->view != nullptr && span->view != nullptr && u.carried->viewSize == span->viewSize &&
+											  std::memcmp( u.carried->view, span->view, span->viewSize ) != 0
+										  ? 1
+										  : 0;
+			continue;
 		}
 		const KeptLayout* then = u.baseTick != 0 ? KeptLayoutOf( u.baseTick ) : nullptr;
 		const net::StateSpan* was = then != nullptr ? then->layout.Find( u.netId ) : nullptr;

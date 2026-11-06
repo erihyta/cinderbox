@@ -202,6 +202,12 @@ std::string FormatBench( const CrowdBench& b )
 					   double( b.wholeOld ) / double( std::max<uint64_t>( b.sampled, 1 ) ) );
 		add( line );
 	}
+	if ( b.carried > 0 )
+	{
+		std::snprintf( line, sizeof( line ), "  records carried (base too old, against the one the player has): %.1f a state, %.0f%% of them changed\n",
+					   double( b.carried ) / double( std::max<uint64_t>( b.sampled, 1 ) ), 100.0 * double( b.carriedChanged ) / double( b.carried ) );
+		add( line );
+	}
 
 	if ( b.ticks > 0 )
 	{
