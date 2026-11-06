@@ -197,6 +197,10 @@ ROADMAP step 3). **Inputs**: what follows below; every client simulates the whol
   and when they began are the server's, never its own transitions; clocks, blends and weights run
   here; one that began earlier than it heard catches up). Dead or down, nothing runs it, as on the
   server. Its markers are not its own: the server's come as events.
+- **Fields others see** (M255): an entity field is its player's alone unless shared
+  (`BoardField::shared`; a field a state machine reads is shared by itself). A puppet's view has the
+  rest as zeros, and a SetField of a character or what it holds is not in the frames (it is in the
+  states). Names go as changes after the first list.
 - **Lag compensation** (M250, `--lag-compensation MS`, 500 by default): each input says how many
   ticks back the player saw the others (`PlayerInput::seenBack`: its tick minus the state they
   stand as). A hybrid game shows the others a round trip and its physics' buffer back (about 20

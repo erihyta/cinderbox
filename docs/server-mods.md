@@ -102,6 +102,31 @@ it lives in). They also cooperate through events: `gun`, `melee` and `brawl` say
 `combat` answers with `combat.hurt` and `combat.killed`, `deathmatch` scores the kills, and its
 `game.round_start` gives everyone full health (`combat`) and a full magazine (`gun`).
 
+### Fields others see (the hybrid)
+
+On a hybrid server (the default) a player's game is sent another player's character with only
+the entity fields that are **shared** (M255); its own character and what it holds come with all of
+them. So a field is its player's alone unless the mod shares it:
+
+```cpp
+m_score = declare.Field( "deathmatch.score", BoardType::Int, BoardScope::Entity, true ); // shared
+m_cooldown = declare.Field( "brawl.cd_dash", BoardType::Float );                        // its player's
+```
+
+| | Shared | Not (the default) |
+|---|---|---|
+| Who is sent it | every client that gets the character | its player alone (the character's, or what it holds) |
+| A look on another player reads | its value | 0 |
+| Use it for | what looks show on others: a score in a list, a glow, a health bar over heads | the rest: cooldowns, ammo, what only its HUD shows |
+
+- **A field any state machine reads is shared by itself**: every client runs the others' animation
+  (M254), with their fields.
+- Declared by two mods, a field is shared if either says so.
+- **Shared in the shipped mods**: `combat.kills`, `combat.deaths`, `deathmatch.score` (the scores
+  lists), `melee.hot` (the bat glows), and `brawl.combo` (the fist's state machine reads it).
+- The inputs model (every client simulates every player) has every field everywhere: this is the
+  hybrid's alone. A field that must stay secret even there is a [private field](#private-fields).
+
 ### Private fields
 
 Every client that simulates has the whole world: it could not predict otherwise. So what one
@@ -117,7 +142,7 @@ ctx.Set( SlotTarget( slot ), m_role, 3 );     // that player is told; nobody els
 | | An entity field | A private field |
 |---|---|---|
 | Lives in | the simulation's state (hashed, rolled back, recorded) | the server, per player slot |
-| Sent to | every client, as a command in the frame | its owner only: a reliable message |
+| Sent to | every client (the hybrid: a character's to its player, and to others if [shared](#fields-others-see-the-hybrid)) | its owner only: a reliable message |
 | A look reads it | for any entity | for the viewer's own player (`{cards.role}`, `cards.role == 3`); for anyone else it reads 0 |
 | Predictions | `changes` apply | `changes` apply |
 | State machines | can read it | cannot (the simulation does not have it; the bake and the server say so) |
