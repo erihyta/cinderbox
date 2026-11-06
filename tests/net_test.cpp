@@ -7475,6 +7475,8 @@ void TestBrawlLagCompensation()
 		// target, by tick.
 		std::map<uint32_t, float> seenAcross; // the target's x from the attacker's, as its game shows it
 		uint32_t pressedAt = 0;
+		float lastComing = 0.0f; // (where it saw the target would be by the strike, the tick before)
+		uint32_t lastComingAt = 0;
 		attacker.script = [&]( uint32_t tick ) {
 			PlayerInput in;
 			in.actions = tick >= 280 && tick < 290 ? kKeySlot1 : 0;
@@ -7492,7 +7494,13 @@ void TestBrawlLagCompensation()
 			{
 				const float x = seenAcross[tick];
 				const float coming = x + ( x - before->second ) / 4.0f * 22.0f;
-				pressedAt = std::fabs( coming ) < 0.2f ? tick : pressedAt;
+				// In front by then: close to it, or crossing it since the tick before (its game shows the
+				// target in steps of a state: the estimate may jump over a narrow window, M256).
+				const bool crossing = lastComingAt + 1 == tick && ( coming > 0.0f ) != ( lastComing > 0.0f ) && std::fabs( coming ) < 0.35f &&
+									  std::fabs( lastComing ) < 0.35f;
+				pressedAt = std::fabs( coming ) < 0.2f || crossing ? tick : pressedAt;
+				lastComing = coming;
+				lastComingAt = tick;
 			}
 			in.actions |= pressedAt != 0 && tick < pressedAt + 3 ? kKeyUse : 0;
 			return in;
