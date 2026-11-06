@@ -63,8 +63,8 @@ public:
 
 		m_killed = declare.Event( "combat.killed" );
 		// a = the winner (0: nobody scored), value = the winning score.
-		m_roundEnd = declare.Event( "deathmatch.round_end" );
-		m_roundStart = declare.Event( "game.round_start" );
+		m_roundEnd = declare.Event( "deathmatch.round_end", true ); // (at the winner: everyone's banner)
+		m_roundStart = declare.Event( "game.round_start", true );
 	}
 
 	void Start( Context& ctx ) override

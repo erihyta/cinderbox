@@ -172,17 +172,34 @@ ROADMAP step 3). **Inputs**: what follows below; every client simulates the whol
   against the newest the client acknowledged (`net/state_codec.h`: entity by entity, XOR, deflated).
   The others are **stand-ins** placed from the newest state not ahead of the physics, so one
   standing on debris stands on it here too. A state never touches the physics world.
-- **By distance** (M250, the default; `--every-character` turns it off): each client is sent
-  updates (`net::EncodeUpdates`): its own character and what it holds every state, the others as
-  they come due (every state within 25 m, every 2nd, 4th or 8th at 25, 50 and 100 m), a character
-  with what it holds, the most overdue first, at most `stateBudget` entities a state (512). Each
-  is a change against the record the client last acknowledged; what is left out it keeps; what is
-  gone is named until acknowledged. Changes are sparse (runs of unchanged bytes skipped) and the
-  message deflated; clients whose updates say the same share one message, and the messages are
-  encoded on the state threads. A refresh is not repeated until acknowledged (tried first: at a
-  round trip of a few states it cost as much as it saved). What a client acknowledged having and
-  nothing else was sent of since (by a hash of each record as it is sent) is not sent again (M253):
-  a character standing still, an item in a pocket, cost nothing.
+- **By priority** (M250, M257; the default, `--every-character` turns it off): each client is
+  sent updates (`net::EncodeUpdates`): its own character and what it holds every state, the others
+  by priority within a byte budget. Each character's priority for each client grows every state by
+  what it matters to that client (`GameServer::Matters`: near, every state within 12 m and less
+  further; twice that in its camera's view; more when it did something, a layer's new state or a
+  jump; more again when it aims at the client) and goes to 0 when it is sent; those at 1 or more
+  go, most owed first, a character with what it holds, until the client's budget for the state is
+  spent (`--client-budget`, 256 kbit/s of states, of bytes sent: what packing leaves is measured)
+  or `stateBudget` entities (512). Each is a change against the record the client last
+  acknowledged; what is left out it keeps; what is gone is named until acknowledged. Changes are
+  sparse (runs of unchanged bytes skipped) and the message deflated; clients whose updates say the
+  same share one message, and the messages are encoded on the state threads. A refresh is not
+  repeated until acknowledged (tried first: at a round trip of a few states it cost as much as it
+  saved). What a client acknowledged having and nothing else was sent of since (by a hash of each
+  record as it is sent) is not sent again (M253): a character standing still, an item in a pocket,
+  cost nothing. **Carried** (M257): one that waited longer than a base is kept (24 states), sent
+  nothing since the client acknowledged one, goes against the record the client has in its newest
+  state (the server keeps each puppet's last 8 records: `m_recordVersions`), not whole.
+- **Events go with their characters** (M257): a mod event at a character or what it holds
+  (`Simulation::StepEvents`: a mod's `Emit`, a motion's, a clip's marker, a slot's use) is not in
+  the frames; it goes with that character's update to the clients it is sent to, once (again when
+  the state that had it is lost), for half a second (`kEventWindow`): a far one may not be heard.
+  A client hears each once (by its serial) when the others stand as that state, into a ring of its
+  own (`HybridSession::HeardEvents`; the presentation reads both rings), not the simulation's: the
+  own character's motions read that newest first. Its own character's are sent only what mods
+  said (it says the rest itself, predicting). An event a mod declares for everyone (a kill feed, a
+  round's end: `Declarations::Event`'s `everyone`), or one at nothing, stays in the frames; so do
+  all a mod says with `--every-character` (whole states carry no events).
 - **Other characters are puppets** (M253, M254; `sim/puppet.h`): the server makes a puppet of each
   character of a state (`Simulation::PuppetOf`): where it is (1/256 m), its facing, where it looks,
   a few flags, and where each layer of its state machine is (its state, the one it fades from and
@@ -196,7 +213,8 @@ ROADMAP step 3). **Inputs**: what follows below; every client simulates the whol
   and its state machine following the puppet's layers (`UpdateAnimGraph`'s `follow`: their states
   and when they began are the server's, never its own transitions; clocks, blends and weights run
   here; one that began earlier than it heard catches up). Dead or down, nothing runs it, as on the
-  server. Its markers are not its own: the server's come as events.
+  server. Its markers are not its own: the server's come as events, with it (M257; until then they
+  came nowhere).
 - **Fields others see** (M255): an entity field is its player's alone unless shared
   (`BoardField::shared`; a field a state machine reads is shared by itself). A puppet's view has the
   rest as zeros, and a SetField of a character or what it holds is not in the frames (it is in the

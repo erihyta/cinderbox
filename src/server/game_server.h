@@ -300,6 +300,10 @@ private:
 			// is no matter if the record is still that one (net::EntityUpdate::carried).
 			uint64_t ackedViewHash = 0;
 			uint32_t updatedAt = 0;
+			// M257: a character: the state through whose tick it has the events at it (acknowledged),
+			// and through whose they were sent (each goes once; again from the acknowledged one when a
+			// state that had them is lost: 0).
+			uint32_t eventsAcked = 0, eventsSent = 0;
 		};
 		std::vector<Known> known;
 		struct Sent
@@ -309,6 +313,15 @@ private:
 			std::vector<uint64_t> hashes;	  // (by updated)
 			std::vector<uint64_t> viewHashes; // (by updated) the record alone (M257: Known::ackedViewHash)
 			std::vector<uint8_t> puppets;	  // (by updated)
+			// M257: the characters whose events it said, all there were from a tick on, and the state
+			// through which the client must have had them before for it to have them all after (0:
+			// none: what was older is no longer sent).
+			struct Covered
+			{
+				uint32_t netId = 0;
+				uint32_t needs = 0;
+			};
+			std::vector<Covered> covered;
 		};
 		std::deque<Sent> sent;
 		struct Slot
@@ -380,6 +393,10 @@ private:
 		// packing leaves of them).
 		std::vector<uint8_t> changed;
 		std::vector<uint32_t> wholeView, wholeFull;
+		// M257: by layout.entities, a character's newest event's tick and 1 (0: none kept).
+		std::vector<uint32_t> newestEvent;
+		// M257: by layout.entities, where a puppet looks, flat (x, z: a unit; zeros for the rest).
+		std::vector<float> lookX, lookZ;
 	};
 	std::deque<KeptLayout> m_layouts;
 	// M257: the last few records each puppet (or what one holds) had, as puppets' clients have them
@@ -399,6 +416,21 @@ private:
 		std::array<RecordVersion, 8> ring;
 	};
 	std::unordered_map<uint32_t, RecordVersions> m_recordVersions;
+	// M257: the events at each character (Simulation::StepEvents) of the last kEventWindow ticks, by
+	// its NetId, oldest first: each client is sent those at the characters it is sent, once.
+	struct KeptEvent
+	{
+		ModEventRecord record;
+		bool command = false; // (a mod's: its own game hears it from the server too)
+		uint32_t serial = 0;  // (net::CharacterEvent::serial)
+	};
+	uint32_t m_eventSerial = 0;
+	// A state sent that the client will not have (a later one acknowledged first, or too old): its
+	// characters' events go again, from those it acknowledged.
+	void EventsLost( Client& c, const Client::Sent& sent );
+	std::unordered_map<uint32_t, std::vector<KeptEvent>> m_characterEvents;
+	// Those too old to send dropped; each character's newest in the state kept (KeptLayout::newestEvent).
+	void KeepEvents( KeptLayout& kept, uint32_t tick );
 	uint32_t m_recordVersionsSwept = 0;
 	void KeepRecordVersions( const KeptLayout& kept, uint32_t tick );
 	const net::StateSpan* RecordVersionOf( uint32_t netId, uint64_t hash ) const;
@@ -414,6 +446,7 @@ private:
 		uint32_t ownId = 0;
 		bool hasOwn = false;
 		b3Vec3 ownAt = {};
+		float viewX = 0.0f, viewZ = 1.0f; // where its camera looks, flat (M257: Matters)
 		std::vector<net::EntityUpdate> updates;
 		std::vector<PlayerSlot> inputSlots;
 		std::vector<uint32_t> says; // what the message says, as numbers: the same for the same message
@@ -440,6 +473,7 @@ private:
 		std::vector<uint8_t> groupChosen;
 		std::vector<std::pair<float, uint32_t>> due; // heads
 		double budgeted = 0.0; // M257: the bytes the others' updates were thought to take
+		std::vector<net::CharacterEvent> events; // M257: the events at the characters it is sent
 	};
 	struct Message
 	{
@@ -447,7 +481,11 @@ private:
 		bool ok = false;
 		std::vector<uint8_t> bytes;
 		std::vector<uint32_t> sizes; // each update's bytes (M257)
+		size_t unpacked = 0;		 // its bytes before packing
 	};
+	// M257: what packing leaves of a state's bytes, lately (the budget is of bytes sent; what an
+	// update takes is known before packing).
+	double m_packed = 0.5;
 	std::vector<Plan> m_plans;
 	std::vector<Message> m_messages;
 	std::vector<net::UpdateCache> m_updateCaches;
@@ -462,7 +500,7 @@ private:
 	const KeptLayout* KeptLayoutOf( uint32_t tick ) const;
 	// What a character (a kept state's entity `i`) matters to a client, a state's share of its
 	// priority (M257): near, in its view, doing something, looking at it.
-	float Matters( const Plan& plan, const Client& c, const KeptLayout& now, size_t i ) const;
+	float Matters( const Plan& plan, const KeptLayout& now, size_t i ) const;
 	static const net::StateLayout* LayoutOfTick( const void* server, uint32_t tick );
 	// A client acknowledged the state of `tick` (by distance: what it updated is what it has).
 	void StateAcknowledged( Client& c, uint32_t tick );

@@ -96,6 +96,10 @@ struct PresentationFrame
 	// Same for mod events.
 	uint32_t modEventCount = 0;
 	std::vector<ModEventRecord> modEvents;
+	// A hybrid client's: the server's events at characters it heard (M257: HybridSession::HeardEvents),
+	// a ring of its own, and how many in all.
+	uint32_t heardCount = 0;
+	std::vector<ModEventRecord> heard;
 	std::vector<FrameRagdoll> ragdolls;
 	// The global board.
 	BoardValues board;

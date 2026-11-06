@@ -21,16 +21,16 @@ namespace cb::present
 class ModEventNews
 {
 public:
-	// The places in `ring` (kModEventHistory records, `count` recorded in all) of the events to
-	// show now, oldest first. `reset`: a new world, of which nothing is news.
-	std::vector<uint32_t> Sync( const ModEventRecord* ring, uint32_t count, uint32_t tick, bool reset )
+	// The places in `ring` (`size` records, kModEventHistory by default; `count` recorded in all) of
+	// the events to show now, oldest first. `reset`: a new world, of which nothing is news.
+	std::vector<uint32_t> Sync( const ModEventRecord* ring, uint32_t count, uint32_t tick, bool reset, uint32_t size = kModEventHistory )
 	{
 		std::vector<uint32_t> news;
 		std::vector<Shown> now;
-		const uint32_t held = std::min( count, kModEventHistory );
+		const uint32_t held = std::min( count, size );
 		for ( uint32_t i = 0; i < held; ++i )
 		{
-			const uint32_t at = ( count - held + i ) % kModEventHistory;
+			const uint32_t at = ( count - held + i ) % size;
 			const ModEventRecord& record = ring[at];
 			const Shown key{ record.tick, record.netIdA, record.netIdB, record.value, record.type, 0 };
 			auto seen = Find( now, key );
@@ -54,7 +54,7 @@ public:
 			{
 				still->times = std::max( still->times, was.times );
 			}
-			else if ( reset == false && was.tick + kKeepTicks > tick && now.size() < 4 * kModEventHistory )
+			else if ( reset == false && was.tick + kKeepTicks > tick && now.size() < 4 * size )
 			{
 				now.push_back( was );
 			}

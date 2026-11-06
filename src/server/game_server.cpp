@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
+#include <iterator>
 #include <random>
 
 namespace cb
@@ -403,6 +404,7 @@ bool GameServer::Start( const ServerOptions& options )
 		}
 		m_sim->SetSharedFields( std::move( shared ) );
 	}
+	m_sim->SetEventsForEveryone( m_schema.eventsForEveryone );
 	m_sim->SetMotions( m_motions );
 	m_sim->SetItemShapes( m_schema.itemShapes );
 	{
@@ -1066,6 +1068,7 @@ void GameServer::RunTick( double now )
 	SendSnapshots();
 
 	const auto stepFrom = std::chrono::steady_clock::now();
+	m_sim->KeepStepEvents( m_options.netModel == NetModel::Hybrid && m_options.statesByDistance ); // (whole states have none)
 	m_sim->Step( frame );
 	m_stats.stepMs += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - stepFrom ).count();
 	RecordPast();
@@ -1080,6 +1083,15 @@ void GameServer::RunTick( double now )
 		frame.physics = m_sim->PhysicsMade().physics;
 		frame.pushers = m_sim->PhysicsMade().pushers;
 		LeaveOutSkipped( frame, m_sim->FollowerSkipped() );
+		// The events at characters (M257): not in the frames (the commands that said them are left
+		// out), each sent with its character to those it is sent to, for a while.
+		for ( const Simulation::StepEvent& s : m_sim->StepEvents() )
+		{
+			if ( s.character != 0 && ConnectedClients() > 0 )
+			{
+				m_characterEvents[s.character].push_back( { s.record, s.command, m_eventSerial++ } );
+			}
+		}
 	}
 	if ( m_bench.fakes > 0 )
 	{
@@ -1149,6 +1161,7 @@ void GameServer::RunTick( double now )
 			}
 			KeepPuppets( kept );
 		}
+		KeepEvents( kept, stateTick );
 		m_layouts.push_back( std::move( kept ) );
 		KeepRecordVersions( m_layouts.back(), stateTick );
 		while ( m_states.size() > kStateHistory )
@@ -1697,6 +1710,41 @@ void GameServer::KeepRecordVersions( const KeptLayout& kept, uint32_t tick )
 	}
 }
 
+namespace
+{
+// How long an event at a character is still sent with it, in ticks (M257): one sent later than
+// that would say something long over (a far one, updated now and then, says only its newest).
+constexpr uint32_t kEventWindow = 30;
+} // namespace
+
+void GameServer::KeepEvents( KeptLayout& kept, uint32_t tick )
+{
+	// (Those no update would send any more: gone.)
+	const uint32_t every = std::max( m_options.stateEvery, 1u );
+	kept.newestEvent.assign( kept.layout.entities.size(), 0 );
+	for ( auto it = m_characterEvents.begin(); it != m_characterEvents.end(); )
+	{
+		std::vector<KeptEvent>& list = it->second;
+		list.erase( std::remove_if( list.begin(), list.end(), [&]( const KeptEvent& e ) { return e.record.tick + kEventWindow < tick; } ), list.end() );
+		if ( list.empty() )
+		{
+			it = m_characterEvents.erase( it );
+			continue;
+		}
+		// Its newest; one since the state before is something it did (its update matters more).
+		if ( const net::StateSpan* s = kept.layout.Find( it->first ) )
+		{
+			const size_t i = size_t( s - kept.layout.entities.data() );
+			kept.newestEvent[i] = list.back().record.tick + 1;
+			if ( i < kept.changed.size() && list.back().record.tick + every >= tick )
+			{
+				kept.changed[i] = 1;
+			}
+		}
+		++it;
+	}
+}
+
 const net::StateSpan* GameServer::RecordVersionOf( uint32_t netId, uint64_t hash ) const
 {
 	const auto it = m_recordVersions.find( netId );
@@ -1820,6 +1868,18 @@ void GameServer::KeepPuppets( KeptLayout& kept ) const
 		}
 		kept.changed[i] = differ ? 1 : 0;
 	}
+	// Where each puppet looks (Matters: once a state, not once a client).
+	kept.lookX.assign( n, 0.0f );
+	kept.lookZ.assign( n, 0.0f );
+	for ( size_t i = 0; i < n; ++i )
+	{
+		if ( const Puppet* p = kept.layout.entities[i].puppet )
+		{
+			const float look = detmath::YawToRadians( p->facing ) + float( p->aimYaw ) * ( detmath::kTwoPi / 256.0f );
+			kept.lookX[i] = std::sin( look );
+			kept.lookZ[i] = std::cos( look );
+		}
+	}
 }
 
 const net::StateLayout* GameServer::LayoutOfTick( const void* server, uint32_t tick )
@@ -1849,10 +1909,12 @@ constexpr float kMostOwed = 1000.0f;
 constexpr uint32_t kOldestBase = 24;
 // What a carried update takes, about (M257: its flags, the change of its record, its puppet whole).
 constexpr uint32_t kCarriedBytes = 48;
+// What a character's events add to its update, about.
+constexpr uint32_t kEventsBytes = 16;
 
 } // namespace
 
-float GameServer::Matters( const Plan& plan, const Client& c, const KeptLayout& now, size_t i ) const
+float GameServer::Matters( const Plan& plan, const KeptLayout& now, size_t i ) const
 {
 	// (No character of its own: everything, every state.)
 	if ( plan.hasOwn == false )
@@ -1865,13 +1927,9 @@ float GameServer::Matters( const Plan& plan, const Client& c, const KeptLayout& 
 	// Near: every state; further, as much less as it is further.
 	float share = 1.0f / std::max( 1.0f, d / kEveryStateWithin );
 	// In its view: where its camera looks, either side (its last input).
-	if ( flat > 0.5f )
+	if ( flat > 0.5f && plan.viewX * to.x + plan.viewZ * to.z > kViewCos * flat )
 	{
-		const float yaw = detmath::YawToRadians( c.lastInput.cameraYaw );
-		if ( ( std::sin( yaw ) * to.x + std::cos( yaw ) * to.z ) / flat > kViewCos )
-		{
-			share *= 2.0f;
-		}
+		share *= 2.0f;
 	}
 	// It did something: a layer's new state, a flag (a jump, aiming).
 	if ( i < now.changed.size() && now.changed[i] != 0 )
@@ -1879,23 +1937,34 @@ float GameServer::Matters( const Plan& plan, const Client& c, const KeptLayout& 
 		share += kChangedShare;
 	}
 	// It looks at this client, near enough to matter (a shooter aiming at it).
-	const Puppet* p = now.layout.entities[i].puppet;
-	if ( p != nullptr && flat > 0.5f && d < kAimWithin )
+	if ( i < now.lookX.size() && now.layout.entities[i].puppet != nullptr && flat > 0.5f && d < kAimWithin &&
+		 -( now.lookX[i] * to.x + now.lookZ[i] * to.z ) > kAimCos * flat )
 	{
-		const float look = detmath::YawToRadians( p->facing ) + float( p->aimYaw ) * ( detmath::kTwoPi / 256.0f );
-		if ( ( std::sin( look ) * -to.x + std::cos( look ) * -to.z ) / flat > kAimCos )
-		{
-			share += 1.0f;
-		}
+		share += 1.0f;
 	}
 	return share;
 }
 
+void GameServer::EventsLost( Client& c, const Client::Sent& sent )
+{
+	for ( const Client::Sent::Covered& covered : sent.covered )
+	{
+		auto it = std::lower_bound( c.known.begin(), c.known.end(), covered.netId,
+									[]( const Client::Known& k, uint32_t id ) { return k.netId < id; } );
+		if ( it != c.known.end() && it->netId == covered.netId )
+		{
+			it->eventsSent = 0;
+		}
+	}
+}
+
 void GameServer::StateAcknowledged( Client& c, uint32_t tick )
 {
-	// (Acknowledgements only move forward: the states sent before this one are done with too.)
+	// (Acknowledgements only move forward: the states sent before this one are done with too, and
+	// the client never had them: it keeps the newest. Their events go again: M257.)
 	while ( c.sent.empty() == false && c.sent.front().tick < tick )
 	{
+		EventsLost( c, c.sent.front() );
 		c.sent.pop_front();
 	}
 	if ( c.sent.empty() || c.sent.front().tick != tick )
@@ -1915,6 +1984,15 @@ void GameServer::StateAcknowledged( Client& c, uint32_t tick )
 			it->ackedHash = i < sent.hashes.size() ? sent.hashes[i] : 0;
 			it->ackedViewHash = i < sent.viewHashes.size() ? sent.viewHashes[i] : 0;
 			it->ackedPuppet = i < sent.puppets.size() && sent.puppets[i] != 0;
+		}
+	}
+	// (Each state says a character's events from where the one before stopped: it has them all only
+	// once it had those before too. One lost is sent again from there: EventsLost.)
+	for ( const Client::Sent::Covered& covered : sent.covered )
+	{
+		if ( auto it = find( covered.netId ); it != c.known.end() && it->removing == false && covered.needs <= it->eventsAcked )
+		{
+			it->eventsAcked = std::max( it->eventsAcked, tick );
 		}
 	}
 	for ( uint32_t netId : sent.removed )
@@ -1946,6 +2024,8 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	plan.sent.hashes.clear();
 	plan.sent.viewHashes.clear();
 	plan.sent.puppets.clear();
+	plan.sent.covered.clear();
+	plan.events.clear();
 	size_t k = 0;
 	auto gone = [&]( const Client::Known& had ) {
 		Client::Known removing = had;
@@ -2008,7 +2088,7 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 		entry.owed = 0.0f;
 		if ( mine == false && head )
 		{
-			entry.owed = std::min( kMostOwed, ( sentAt != 0 ? entry.had->priority : 0.0f ) + Matters( plan, c, now, i ) );
+			entry.owed = std::min( kMostOwed, ( sentAt != 0 ? entry.had->priority : 0.0f ) + Matters( plan, now, i ) );
 		}
 		entry.score = mine ? 1e9f : sentAt == 0 ? 1e6f + entry.owed : entry.owed;
 	}
@@ -2033,16 +2113,34 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 		sizes[h] += plan.entries[i].same ? 0 : 1;
 		bytes[h] += plan.entries[i].same ? 0 : plan.entries[i].bytes;
 	}
+	// A character's events it does not have yet (M257): from the state it acknowledged having them
+	// through, or as far back as they are sent. Its update is due for them too.
+	const uint32_t windowFrom = newest.tick > kEventWindow ? newest.tick - kEventWindow : 0;
+	auto eventsFrom = [&]( size_t h ) {
+		const Client::Known* had = plan.entries[h].had;
+		const bool has = had != nullptr && had->removing == false;
+		return std::max( { has ? had->eventsAcked : 0u, has ? had->eventsSent : 0u, windowFrom } );
+	};
+	std::vector<uint8_t> eventsDue( n, 0 );
+	for ( size_t h = 0; h < n && h < now.newestEvent.size(); ++h )
+	{
+		if ( now.newestEvent[h] != 0 && now.head[h] == uint32_t( h ) && now.newestEvent[h] > eventsFrom( h ) )
+		{
+			eventsDue[h] = 1;
+			bytes[h] += kEventsBytes;
+		}
+	}
 	// The budget (M257): the groups owed an update (1 or more), most owed first, until the
 	// client's bytes for this state are spent or as many entities as stateBudget; the rest wait
 	// (still owed, and more by the next). The own one aside.
+	// (Bytes sent; the updates' are before packing, which leaves about m_packed of them.)
 	const double budget = m_options.clientBudgetKbits > 0 ? double( m_options.clientBudgetKbits ) * 1000.0 / 8.0 * double( every ) /
-																 double( std::max( m_options.config.tickRate, 1u ) )
+																 double( std::max( m_options.config.tickRate, 1u ) ) / m_packed
 														   : 1e30;
 	plan.due.clear();
 	for ( size_t h = 0; h < n; ++h )
 	{
-		if ( sizes[h] > 0 && plan.groupScore[h] >= 1.0f )
+		if ( ( sizes[h] > 0 || eventsDue[h] != 0 ) && plan.groupScore[h] >= 1.0f )
 		{
 			plan.due.push_back( { plan.groupScore[h], uint32_t( h ) } );
 		}
@@ -2067,6 +2165,33 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	{
 		plan.entries[i].chosen = plan.groupChosen[now.head[i]] != 0;
 	}
+	// The events at the characters chosen (M257), all it was not sent of those kept (its own
+	// character's, only those a mod said: the rest its game says itself, predicting it).
+	std::vector<uint8_t> eventsCovered( n, 0 );
+	for ( size_t h = 0; h < n && h < now.newestEvent.size(); ++h )
+	{
+		if ( now.newestEvent[h] == 0 || plan.groupChosen[h] == 0 || now.head[h] != uint32_t( h ) )
+		{
+			continue;
+		}
+		const uint32_t netId = now.layout.entities[h].netId;
+		const auto found = m_characterEvents.find( netId );
+		if ( found == m_characterEvents.end() )
+		{
+			continue;
+		}
+		const bool own = netId == plan.ownId;
+		const uint32_t from = eventsFrom( h );
+		for ( const KeptEvent& e : found->second )
+		{
+			if ( e.record.tick >= from && e.record.tick < newest.tick && ( own == false || e.command ) )
+			{
+				plan.events.push_back( { netId, e.record, e.serial } );
+			}
+		}
+		plan.sent.covered.push_back( { netId, from > windowFrom ? from : 0u } );
+		eventsCovered[h] = 1;
+	}
 	// What it will have: the gone ones are in `next` already (in NetId order, from the walk above),
 	// the rest follow (in the state's order), and the two are merged into one NetId order below. The
 	// next state's walk needs it: out of order (M250 left it so), everything after a gone entity was
@@ -2084,6 +2209,7 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 			Client::Known known = *entry.had;
 			known.sentAt = newest.tick;
 			known.priority = 0.0f;
+			known.eventsSent = eventsCovered[i] != 0 ? newest.tick : known.eventsSent;
 			plan.next.push_back( known );
 		}
 		else if ( entry.chosen )
@@ -2105,6 +2231,7 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 			known.sentHash = version;
 			known.priority = 0.0f;
 			known.bytes = entry.bytes; // (until the encoding says: SendStates)
+			known.eventsSent = eventsCovered[i] != 0 ? newest.tick : known.eventsSent;
 			plan.next.push_back( known );
 		}
 		else if ( entry.had != nullptr )
@@ -2146,6 +2273,12 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	plan.says.push_back( uint32_t( plan.sent.removed.size() ) );
 	plan.says.insert( plan.says.end(), plan.sent.removed.begin(), plan.sent.removed.end() );
 	plan.says.insert( plan.says.end(), plan.inputSlots.begin(), plan.inputSlots.end() );
+	// (Each event by its serial.)
+	plan.says.push_back( uint32_t( plan.events.size() ) );
+	for ( const net::CharacterEvent& e : plan.events )
+	{
+		plan.says.push_back( e.serial );
+	}
 	// (A word at a time: only to tell plans apart quickly, compared in full when equal.)
 	uint64_t hash = kHashSeed;
 	for ( uint32_t v : plan.says )
@@ -2208,6 +2341,9 @@ void GameServer::SendStates()
 			const Transform* at = plan.ownId != 0 ? m_sim->EntityTransform( plan.ownId ) : nullptr;
 			plan.hasOwn = at != nullptr;
 			plan.ownAt = at != nullptr ? at->position : b3Vec3{};
+			const float yaw = detmath::YawToRadians( c.lastInput.cameraYaw );
+			plan.viewX = std::sin( yaw );
+			plan.viewZ = std::cos( yaw );
 			planned.push_back( i );
 		}
 		const auto planFrom = std::chrono::steady_clock::now();
@@ -2238,9 +2374,20 @@ void GameServer::SendStates()
 			Message& message = m_messages[m];
 			const Plan& plan = m_plans[message.plan];
 			message.ok = net::EncodeUpdates( newest, plan.base, plan.updates, plan.sent.removed, plan.inputSlots, &GameServer::LayoutOfTick, this,
-											 message.bytes, &m_updateCaches[size_t( worker )], &message.sizes );
+											 message.bytes, &m_updateCaches[size_t( worker )], &message.sizes, &plan.events, &message.unpacked );
 		} );
 		m_bench.encodeMs += BenchCounts() ? std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - encodeFrom ).count() : 0.0;
+		// What packing left of them (M257: the next states' budgets), slowly.
+		double unpacked = 0.0, packed = 0.0;
+		for ( const Message& message : m_messages )
+		{
+			unpacked += message.ok ? double( message.unpacked ) : 0.0;
+			packed += message.ok ? double( message.bytes.size() ) : 0.0;
+		}
+		if ( unpacked > 0.0 )
+		{
+			m_packed = std::clamp( 0.9 * m_packed + 0.1 * packed / unpacked, 0.1, 1.0 );
+		}
 		for ( size_t i : planned )
 		{
 			Client& c = m_clients[i];
@@ -2285,6 +2432,7 @@ void GameServer::SendStates()
 			c.sent.push_back( plan.sent );
 			while ( c.sent.size() > kStateHistory )
 			{
+				EventsLost( c, c.sent.front() );
 				c.sent.pop_front();
 			}
 			Deliver( c, message.bytes, false, &CrowdBench::states );
@@ -2686,13 +2834,20 @@ void GameServer::SampleState( const Plan& plan, PlayerSlot slot, const StateFram
 		}
 	}
 	std::vector<uint8_t> out;
-	auto size = [&]( const std::vector<net::EntityUpdate>& updates, const std::vector<uint32_t>& removed, const std::vector<PlayerSlot>& slots ) {
-		return net::EncodeUpdates( newest, plan.base, updates, removed, slots, &GameServer::LayoutOfTick, this, out ) ? uint64_t( out.size() ) : 0;
+	// (With the events at the others: M257; without, what they take.)
+	auto size = [&]( const std::vector<net::EntityUpdate>& updates, const std::vector<uint32_t>& removed, const std::vector<PlayerSlot>& slots,
+					 bool events = false ) {
+		return net::EncodeUpdates( newest, plan.base, updates, removed, slots, &GameServer::LayoutOfTick, this, out, nullptr, nullptr,
+								   events ? &plan.events : nullptr )
+				   ? uint64_t( out.size() )
+				   : 0;
 	};
 	m_bench.sampled += 1;
 	m_bench.sampledBytes += message.size();
-	m_bench.withoutItems += size( withoutItems, plan.sent.removed, plan.inputSlots );
-	m_bench.withoutInputs += size( plan.updates, plan.sent.removed, ownInput );
+	m_bench.characterEvents += plan.events.size();
+	m_bench.withoutEvents += size( plan.updates, plan.sent.removed, plan.inputSlots );
+	m_bench.withoutItems += size( withoutItems, plan.sent.removed, plan.inputSlots, true );
+	m_bench.withoutInputs += size( plan.updates, plan.sent.removed, ownInput, true );
 	m_bench.ownOnly += size( ownOnly, {}, ownInput );
 	m_bench.headOnly += size( {}, {}, {} );
 }

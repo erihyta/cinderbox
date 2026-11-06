@@ -425,6 +425,28 @@ and 1023; another character 10 B on the wire (others' cooldown timers no longer 
   ticks late; a shot at it 100 m off is tested as the shooter saw it, behind. M257 sends what is
   aimed at more often.
 
+**Measured after M257** (the same; the default budget, 256 kbit/s of others a player):
+
+| | 32 players | 64 players | 255 players | 1023 players |
+|---|---|---|---|---|
+| To each player | 0.16 Mbit/s (0.16) | 0.26 Mbit/s (0.29) | 0.51 Mbit/s (0.99) | 1.91 Mbit/s (3.05) |
+| Out of the server | 5.0 Mbit/s | 17 Mbit/s | 130 Mbit/s | 1.96 Gbit/s |
+| Others updated a state, of | 27 of 31 | 51 of 63 | 41 of 254 | 42 of 1022 |
+| Another character, on the wire | 11.2 B | 11.1 B | 15.6 B | 32.3 B |
+| Events at characters a state (bytes) | 3.6 (36 B) | 8.5 (79 B) | 39 (334 B) | 92 (770 B) |
+| Frames, of a player's bytes | 14% | 19% | 43% | 70% |
+
+- **The budget decides from 255 on**: each other character is sent about 5 times a second at 255
+  (near ones and those in view more), 1.2 at 1023. A character that waited longer than a base is
+  kept goes against the record the player has (carried: 14.5 a state at 1023, where 3.2 still go
+  whole: one whose last update was not acknowledged).
+- **Events now reach the others**: what a character does itself (its motions, clip markers, using
+  its slot's item) never reached another player's game in the hybrid; with its character now,
+  once each. A mod's event at a character no longer goes to everyone in every frame twice.
+- **What is left at 1023**: frames are 70%, 1110 B of a 1327 B frame its 224 pushers'
+  places, each frame in two packets (pushers stay exact: your call); the server plans states for
+  68 ms a tick, every client walking every entity (M258).
+
 **The milestones**:
 
 | Milestone | What |
@@ -435,10 +457,10 @@ and 1023; another character 10 B on the wire (others' cooldown timers no longer 
 | **M254** (done) | **Animation run by each client**: a puppet's layers say their state, the one fading out and through which transition, their source and the tick they began; the client runs `UpdateAnimState` and the state machine following them (`UpdateAnimGraph`'s `follow`: never its own transitions, a late one caught up), its markers not its own. `net_hybrid_puppets`: through 50 ms each way and 3% lost, the fighter's every layer on the other's game in the server's state at the tick it stands as, its clock the server's, in every one of 4872 looks |
 | **M255** (done) | **Only what others see**: an entity field its player's alone unless shared (`BoardField::shared`; shared by itself when a state machine reads it; the shipped mods share their scores and the bat's glow), and a SetField of a character or what it holds out of the frames; names as changes. (No inputs of others, the head without the rings: M253, M256.) **Moved to M257**: held items as kinds in the record (unchanged they cost nothing since M253: what is left is when a character comes into view) and events with the characters they are at (12% of a player's bytes at 1023): both are what each client is sent of a character, M257's question. Protocol 89 |
 | **M256** (done) | **Frames carry the physics only**: the commands clients skip left out (and the joins and leaves); frames with the states, one datagram every 2 ticks, each frame in two; a pusher's place as a change against where it would be going on as it went, a packet's first frame against the two before; the states' head without the event rings (a client never read them). Asking for a gap was not needed (3% lost: the physics never waited). Pushers at the state rate: not done, it changes how they push (your call). Protocol 88 |
-| M257 | **A byte budget per client**: a priority that grows by nearness, being in view, a changed state, aiming at or hitting the player; far ones coarser; an interest grid instead of every distance. From M255: the events at a character in its update to who gets it (not in every frame to everyone), and what it holds as kinds in its puppet (not entities: a character coming into view costs a few bytes, not ten records) |
-| M258 | **The server's processor at 1000**: profiled; characters stepped on threads (each mover reads the others as the tick found them); mods' per-player loops |
+| **M257** (done) | **A byte budget per client**: each other character's priority for a player grows by nearness, being in its view, doing something, aiming at it, and goes to 0 when sent; the most owed go until the player's budget is spent (`--client-budget`, 256 kbit/s of states sent). One that waited longer than a base is kept goes against the record the player has (carried), not whole. **Events go with their characters**: a mod's at a character, and what the others do themselves (motions, markers, slots: until now heard by no other player), once each, for half a second; a mod declares for everyone what all must hear (`Declarations::Event`'s `everyone`: the kill feed, a round's end). **Found and fixed**: CI's `net_chaos_hybrid` crash (a held item of a puppet, new on a client, had no turn). **Moved**: held items as kinds to M260 (it redraws what characters hold), the interest grid to M258 (it is the planner's processor time); far ones coarser not done (a far one is sent rarely). Protocol 90 |
+| M258 | **The server's processor at 1000**: profiled; characters stepped on threads (each mover reads the others as the tick found them); mods' per-player loops; an interest grid for the states (from M257: every client walks every entity, 68 ms a tick at 1023) |
 | M259 | **The client's processor at 1000 visible**: the Godot client measured against a crowd of fake players (poses, drawing, the rest); poses by distance and on screen (every frame near, every 8th far, none off screen). Nothing of the drawing that M260 replaces |
-| M260 | **One baked look for every character**: the look baked from its scene in the editor (meshes, skin binds, materials, sockets, item looks and their rules; tracks that do things as timed cues), drawn through RenderingServer (a skeleton and an instance per mesh each, bones straight from ozz, items at their sockets), the own one's first person too; shadows within 40 m; checked against the scenes' drawing by screenshots, then a playtest |
+| M260 | **One baked look for every character**: the look baked from its scene in the editor (meshes, skin binds, materials, sockets, item looks and their rules; tracks that do things as timed cues), drawn through RenderingServer (a skeleton and an instance per mesh each, bones straight from ozz, items at their sockets), the own one's first person too; shadows within 40 m; checked against the scenes' drawing by screenshots, then a playtest. From M257: what a character holds as kinds in its puppet, not entities (a character coming into view costs a few bytes, not ten records) |
 | M261 | **The uplink**: inputs repeated by measured loss (4, not 12) |
 
 **Targets** (1000 players in one area): another character ≤ 10 B moving, ≤ 2 B still; ≤ 0.5

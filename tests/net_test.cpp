@@ -7192,11 +7192,12 @@ public:
 // them has to say why.
 void TestCrowdBench()
 {
-	// What M255 measured (24 fake players within 10 m, fighting with what the tests' players start
+	// What M257 measured (24 fake players within 10 m, fighting with what the tests' players start
 	// with in the hand, the default mods but brawl; 5 s counted after 5 s of warming up), with a
-	// little room. (M251: 59.5 B, 775 kbit/s, 3.5 whole; M253: 11.9 B, 491 kbit/s; M256: 203 kbit/s.)
-	constexpr double kMostBytesPerOtherCharacter = 12.5; // on the wire, with what it holds and its input (10.7: M255, unshared fields left out)
-	constexpr double kMostKbitsPerPlayer = 220.0;		  // (190)
+	// little room. (M251: 59.5 B, 775 kbit/s, 3.5 whole; M253: 11.9 B, 491 kbit/s; M256: 203 kbit/s;
+	// M255: 10.7 B, 190 kbit/s.)
+	constexpr double kMostBytesPerOtherCharacter = 12.0; // on the wire, with what it holds and its input, not its events (10.6)
+	constexpr double kMostKbitsPerPlayer = 185.0;		  // (163: events with their characters, once, not in every frame twice)
 	// (4.2: an entity goes whole until its first is acknowledged; an item that waited unchanged
 	// longer than a base is kept goes whole when it changes.)
 	constexpr double kMostWholeRecordsPerState = 4.8;
@@ -7218,7 +7219,8 @@ void TestCrowdBench()
 	CHECK( b.fakes == 24 );
 	CHECK( b.resyncs == 0 );
 	CHECK( b.sampled > 0 && b.othersUpdated > 0 );
-	const double perOther = double( b.sampledBytes - std::min( b.sampledBytes, b.ownOnly ) ) / double( std::max<uint64_t>( b.othersUpdated, 1 ) );
+	// (The events at them apart: M257 sends them with their characters, not in the frames.)
+	const double perOther = double( b.withoutEvents - std::min( b.withoutEvents, b.ownOnly ) ) / double( std::max<uint64_t>( b.othersUpdated, 1 ) );
 	const double seconds = double( b.ticks ) / 60.0;
 	const double kbits = double( b.wire ) * 8.0 / 1000.0 / ( double( b.fakes ) * seconds );
 	std::printf( "    %.1f B per other character (at most %.0f), %.0f kbit/s per player (at most %.0f)\n", perOther,
@@ -7646,7 +7648,23 @@ void TestHybridPuppets()
 	};
 	std::map<uint32_t, Layers> onServer;
 	std::set<std::pair<size_t, uint8_t>> statesSeen; // (layer, state) the server's went through
+	// The events at the fighter (M257): the server's (each type and tick), and what each game heard
+	// of them from the server (HybridSession::HeardEvents).
+	using Said = std::multiset<std::pair<uint16_t, uint32_t>>;
+	Said onServerEvents, heardBy[2];
+	uint32_t serverSeen = server.Globals().modEventCount, heardSeen[2] = {};
+	const uint32_t eventsFrom = server.Tick() + 30;
 	h.server.SetTickObserver( [&] {
+		const SimGlobals& g = server.Globals();
+		for ( uint32_t n = std::max( serverSeen, g.modEventCount - std::min( g.modEventCount, kModEventHistory ) ); n < g.modEventCount; ++n )
+		{
+			const ModEventRecord& e = g.modEvents[n % kModEventHistory];
+			if ( e.netIdA == fighterId )
+			{
+				onServerEvents.insert( { e.type, e.tick } );
+			}
+		}
+		serverSeen = g.modEventCount;
 		if ( const AnimStateCopy a = server.EntityAnimState( fighterId ) )
 		{
 			onServer[server.Tick()] = layersOf( *a );
@@ -7665,6 +7683,20 @@ void TestHybridPuppets()
 		if ( sim == nullptr || hs == nullptr )
 		{
 			return;
+		}
+		for ( int b = 0; b < 2; ++b )
+		{
+			const HybridSession* heard = h.bots[size_t( b )].client->Hybrid();
+			const uint32_t count = heard != nullptr ? heard->HeardCount() : 0;
+			for ( uint32_t n = std::max( heardSeen[b], count - std::min( count, HybridSession::kHeardHistory ) ); n < count; ++n )
+			{
+				const ModEventRecord& e = heard->HeardEvents()[n % HybridSession::kHeardHistory];
+				if ( e.netIdA == fighterId )
+				{
+					heardBy[b].insert( { e.type, e.tick } );
+				}
+			}
+			heardSeen[b] = count;
 		}
 		const flecs::entity e = sim->FindEntity( fighterId );
 		const AnimStateCopy a = sim->EntityAnimState( fighterId );
@@ -7689,6 +7721,29 @@ void TestHybridPuppets()
 		worst = allSame ? std::max( worst, off ) : worst;
 	} );
 	h.server.SetTickObserver( {} );
+	// (Those of the second before the end may still be on their way.)
+	const uint32_t eventsTo = server.Tick() - 60;
+	auto inWindow = [&]( const Said& all, bool commandsOnly ) {
+		Said out;
+		for ( const auto& [type, tick] : all )
+		{
+			const std::string& name = h.server.Schema().events[type];
+			if ( tick >= eventsFrom && tick < eventsTo && ( commandsOnly == false || name == "item.use" ) )
+			{
+				out.insert( { type, tick } );
+			}
+		}
+		return out;
+	};
+	// The other's game hears every one, once; the fighter's own only what a mod said (item.use):
+	// the rest (its fist's used) it says itself, predicting.
+	const Said all = inWindow( onServerEvents, false ), saidByMods = inWindow( onServerEvents, true );
+	const Said watcherHeard = inWindow( heardBy[1], false ), fighterHeard = inWindow( heardBy[0], false );
+	std::printf( "    the events at the fighter: %zu on the server (%zu a mod's), the other's game heard %zu, its own %zu\n", all.size(), saidByMods.size(),
+				 watcherHeard.size(), fighterHeard.size() );
+	CHECK( all.size() >= 20 && saidByMods.size() >= 10 && all.size() > saidByMods.size() );
+	CHECK( watcherHeard == all );
+	CHECK( fighterHeard == saidByMods );
 	for ( Bot& b : h.bots )
 	{
 		CheckHybridClient( *b.client );

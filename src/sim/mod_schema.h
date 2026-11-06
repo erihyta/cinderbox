@@ -250,6 +250,9 @@ struct ModSchema
 	std::vector<CharacterInfo> characters = std::vector<CharacterInfo>( 1 );
 	std::vector<BoardField> fields;
 	std::vector<std::string> events; // index = ModEventRecord::type
+	// M257: the events every client hears wherever they are at (Declarations::Event's `everyone`), by
+	// index (shorter: the rest are not). The server's alone: it decides where events go.
+	std::vector<uint8_t> eventsForEveryone;
 	// Intents mods declare ("shop.buy"): a player's input carries one as kFirstModIntent + its index.
 	std::vector<std::string> intents;
 	std::vector<ModAction> actions;

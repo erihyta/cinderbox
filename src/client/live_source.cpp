@@ -103,6 +103,9 @@ void LiveSource::Fill( GameClient& client, uint64_t fingerprint )
 		}
 		else if ( HybridSession* hybrid = client.Hybrid() )
 		{
+			// The server's events at characters it heard (M257).
+			f.frame.heardCount = hybrid->HeardCount();
+			f.frame.heard.assign( hybrid->HeardEvents(), hybrid->HeardEvents() + HybridSession::kHeardHistory );
 			// The own throws, drawn at once (M249): a new one alone until the server's copy comes, then
 			// that one carried forward to where the prediction is, handed over in a moment.
 			hybrid->OwnLaunches( m_launches );

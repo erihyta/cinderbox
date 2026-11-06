@@ -137,7 +137,9 @@ std::string FormatBench( const CrowdBench& b )
 		const double n = double( b.sampled );
 		const double head = double( b.headOnly ) / n;
 		const double own = double( b.ownOnly - std::min( b.ownOnly, b.headOnly ) ) / n;
-		const double others = double( b.sampledBytes - std::min( b.sampledBytes, b.ownOnly ) ) / n;
+		// (The others' records; the events at them apart, M257.)
+		const uint64_t records = b.withoutEvents > 0 ? b.withoutEvents : b.sampledBytes;
+		const double others = double( records - std::min( records, b.ownOnly ) ) / n;
 		const double items = double( b.sampledBytes - std::min( b.sampledBytes, b.withoutItems ) ) / n;
 		const double inputs = double( b.sampledBytes - std::min( b.sampledBytes, b.withoutInputs ) ) / n;
 		const double characters = double( b.othersUpdated ) / n;
@@ -200,6 +202,12 @@ std::string FormatBench( const CrowdBench& b )
 					   100.0 * double( b.wholeCharacters ) / double( b.wholeRecords ), double( b.wholeNew ) / double( std::max<uint64_t>( b.sampled, 1 ) ),
 					   double( b.wholeUnacknowledged ) / double( std::max<uint64_t>( b.sampled, 1 ) ),
 					   double( b.wholeOld ) / double( std::max<uint64_t>( b.sampled, 1 ) ) );
+		add( line );
+	}
+	if ( b.sampled > 0 )
+	{
+		std::snprintf( line, sizeof( line ), "  events at characters: %.1f a state, %.0f B of it\n", double( b.characterEvents ) / double( b.sampled ),
+					   double( b.sampledBytes - std::min( b.sampledBytes, b.withoutEvents ) ) / double( b.sampled ) );
 		add( line );
 	}
 	if ( b.carried > 0 )

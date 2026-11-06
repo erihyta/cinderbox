@@ -82,12 +82,20 @@ FieldHandle Declarations::Field( const std::string& name, BoardType type, BoardS
 	return { field.slot, scope, type };
 }
 
-EventHandle Declarations::Event( const std::string& name )
+EventHandle Declarations::Event( const std::string& name, bool everyone )
 {
+	auto forEveryone = [&]( int index ) {
+		if ( everyone )
+		{
+			m_schema.eventsForEveryone.resize( std::max( m_schema.eventsForEveryone.size(), size_t( index ) + 1 ), 0 );
+			m_schema.eventsForEveryone[size_t( index )] = 1;
+		}
+		return EventHandle{ index };
+	};
 	int existing = m_schema.FindEvent( name );
 	if ( existing >= 0 )
 	{
-		return { existing };
+		return forEveryone( existing );
 	}
 	if ( name.empty() || name.size() > kMaxSchemaName || m_schema.events.size() >= 65535 )
 	{
@@ -95,7 +103,7 @@ EventHandle Declarations::Event( const std::string& name )
 		return {};
 	}
 	m_schema.events.push_back( name );
-	return { int( m_schema.events.size() - 1 ) };
+	return forEveryone( int( m_schema.events.size() - 1 ) );
 }
 
 IntentHandle Declarations::Intent( const std::string& name )

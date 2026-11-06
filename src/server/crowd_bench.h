@@ -68,6 +68,8 @@ struct CrowdBench
 	// Records carried (M257): their base too old, against the record the player has; how many had
 	// changed since.
 	uint64_t carried = 0, carriedChanged = 0;
+	// The events at characters sent with them (M257), and the messages without them.
+	uint64_t characterEvents = 0, withoutEvents = 0;
 
 	// Frames, once a tick: the newest frame alone, and again without each part; what they held.
 	uint64_t frameAlone = 0, frameNoCommands = 0, frameNoPhysics = 0, frameNoPushers = 0;
