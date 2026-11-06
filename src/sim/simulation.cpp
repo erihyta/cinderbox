@@ -6433,6 +6433,10 @@ const Transform* Simulation::EntityTransform( uint32_t netId ) const
 uint64_t Simulation::EntityMotionsOn( uint32_t netId ) const
 {
 	flecs::entity e = FindEntity( netId );
+	if ( const PuppetState* ps = e.is_valid() && StandsIn( e ) ? e.try_get<PuppetState>() : nullptr )
+	{
+		return ps->now.motionsOn; // (a puppet's motions are the server's to run: M253)
+	}
 	// (The last tick simulated: the state is the one after it.)
 	return e.is_valid() && m_motions && HasMotionState( e ) && m_globals.tick > 0 ? MotionsOnAt( GetMotionState( e ), m_globals.tick - 1 ) : 0;
 }

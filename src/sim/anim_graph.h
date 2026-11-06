@@ -36,12 +36,14 @@ namespace cb
 {
 
 struct ModEventRecord;
+struct PuppetLayer;
 
 // What "held.jump" and "held.sprint" are, besides a mod's action bit (0 to kMaxActions - 1).
 inline constexpr int kMotionActionJump = kMaxActions;
 inline constexpr int kMotionActionSprint = kMaxActions + 1;
 
 inline constexpr int kMaxGraphStates = 64;	   // per layer
+inline constexpr float kMaxAnimStateTime = 600.0f; // a state's clock counts no further (seconds)
 inline constexpr int kMaxBlendPoints = 32;	   // per blend space
 inline constexpr float kMaxStateSpeed = 16.0f;
 
@@ -351,8 +353,17 @@ float AnimGraphFadeIn( const AnimGraphLayer& layer, const AnimGraphLayerState& L
 // Advances the graph's layers in `state` by one tick (a layer not started yet begins in its start
 // state). Markers crossed append their schema event
 // indices to `markers`.
+// `follow` (M254: a puppet, sim/puppet.h): the first `followCount` layers take their states from
+// another simulation's instead of their transitions: each layer's state, the one it fades from and
+// how, and the tick it began (`inputs.tick` is the one this call ends); a state that began earlier
+// than this one has it begins there and catches up. Clocks, blends and weights run as ever.
 void UpdateAnimGraph( AnimState& state, const AnimGraph& graph, const AnimGraphPacks& packs, AnimGraphInputs& inputs, float dt,
-					  std::vector<int>& markers );
+					  std::vector<int>& markers, const PuppetLayer* follow = nullptr, size_t followCount = 0 );
+// Which of its transitions a layer's state was entered through (PuppetLayer::via: an index into
+// the previous state's transitions, with 0x80 into this state's restarts; 0xFF: none, or no fade),
+// and the crossfade that names.
+uint8_t AnimGraphVia( const AnimGraphLayer& layer, const AnimGraphLayerState& L );
+float AnimGraphViaFade( const AnimGraphLayer& layer, uint8_t state, uint8_t previous, uint8_t via );
 
 // Parses a decimal number the same way on every machine (not the C library's, which depends on the
 // locale and the platform's rounding): graph.cfg and expressions feed the simulation.

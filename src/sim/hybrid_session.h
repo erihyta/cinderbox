@@ -57,8 +57,10 @@ public:
 	// or the world does).
 	bool AddFrame( const InputFrame& frame );
 	// The server's characters' state in which its Tick() == `tick` (Simulation::SaveState), and the
-	// inputs it used for the tick before (presentation aims the others with them).
-	void AddState( uint32_t tick, const uint8_t* data, size_t size, const std::array<PlayerInput, kMaxPlayers>& inputs = {} );
+	// inputs it used for the tick before (presentation aims the others with them). `puppets` (M253):
+	// the other characters it was sent as puppets (sim/puppet.h), placed by them and animated here.
+	void AddState( uint32_t tick, const uint8_t* data, size_t size, const std::array<PlayerInput, kMaxPlayers>& inputs = {},
+				   const std::vector<PuppetEntry>* puppets = nullptr );
 	// The server's PhysicsHash() after it stepped `tick`.
 	void AddChecksum( uint32_t tick, uint64_t hash );
 
@@ -184,6 +186,7 @@ private:
 	{
 		std::vector<uint8_t> bytes;
 		std::array<PlayerInput, kMaxPlayers> inputs{};
+		std::vector<PuppetEntry> puppets;
 	};
 	std::map<uint32_t, State> m_states;
 	std::array<PlayerInput, kMaxPlayers> m_othersInputs{};
@@ -209,6 +212,7 @@ private:
 		uint32_t release = 0, tick = 0;
 		std::vector<uint8_t> bytes;
 		std::array<PlayerInput, kMaxPlayers> inputs;
+		std::vector<PuppetEntry> puppets;
 	};
 	std::vector<Lagged> m_lagged;
 	bool m_releasing = false;

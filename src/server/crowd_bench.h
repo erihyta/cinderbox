@@ -50,6 +50,11 @@ struct CrowdBench
 	uint64_t headOnly = 0;		// nothing but the head (the globals) and the header
 	uint64_t othersUpdated = 0; // others' characters updated, in the sampled messages
 	uint64_t othersItemsUpdated = 0;
+	// Their puppets (M253): how many went against a base, and those changes' bytes (before packing);
+	// how many changed where they are, their facing, their look, their flags, and their layers (how
+	// many layers in all).
+	uint64_t puppets = 0, puppetBytes = 0;
+	uint64_t puppetPlaces = 0, puppetFacings = 0, puppetAims = 0, puppetFlags = 0, puppetLayerChanges = 0, puppetLayers = 0;
 	// Bytes that changed in others' records against the record the player had, by component
 	// (Simulation::StateComponents' order): characters, and the items they hold. Records sent
 	// whole (first seen) apart.

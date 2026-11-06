@@ -128,7 +128,45 @@ enum : uint8_t
 	HasBodies = 4,
 	BodiesSame = 8,	 // the base's entity's
 	BodiesKnown = 16, // another entity's, of the base or met before in this state: by its hash
+	HasPuppet = 32,	 // its puppet follows (M253)
+	PuppetBase = 64, // as a change against the base's puppet of it (else against none)
 };
+
+uint32_t ZigZag( int32_t v )
+{
+	return ( uint32_t( v ) << 1 ) ^ uint32_t( v >> 31 );
+}
+int32_t UnZigZag( uint32_t v )
+{
+	return int32_t( v >> 1 ) ^ -int32_t( v & 1 );
+}
+
+// What changed in a puppet, a bit each (EncodePuppet).
+enum : uint32_t
+{
+	PuppetPlace = 1,
+	PuppetFacing = 2,
+	PuppetAim = 4,
+	PuppetFlagsChanged = 8,
+	PuppetSlot = 16,
+	PuppetJump = 32,
+	PuppetAir = 64,
+	PuppetStep = 128,
+	PuppetMotions = 256,
+	PuppetStances = 512,
+	PuppetLayersChanged = 1024,
+	PuppetAll = 2047,
+};
+
+// A tick before `tick` as how far back it is (0: none, the tick 0; one not before it: 1 back).
+uint32_t Back( uint32_t tick, uint32_t at )
+{
+	return at == 0 ? 0 : tick > at ? tick - at : 1;
+}
+uint32_t FromBack( uint32_t tick, uint32_t back )
+{
+	return back == 0 || back > tick ? 0 : tick - back;
+}
 
 // The bodies' descriptions either side knows, by hash: the base's, then this state's so far.
 struct Known
@@ -296,6 +334,198 @@ void EncodeParts( const StateFrame& frame, const Parsed& now, const std::vector<
 
 } // namespace
 
+void EncodePuppet( const Puppet& now, const Puppet* base, uint32_t tick, std::vector<uint8_t>& out )
+{
+	const Puppet none;
+	const Puppet& was = base != nullptr ? *base : none;
+	const size_t layers = std::min<size_t>( now.layerCount, kPuppetLayers );
+	uint32_t changed = 0;
+	changed |= now.x != was.x || now.y != was.y || now.z != was.z ? PuppetPlace : 0;
+	changed |= now.facing != was.facing ? PuppetFacing : 0;
+	changed |= now.aimYaw != was.aimYaw || now.aimPitch != was.aimPitch ? PuppetAim : 0;
+	changed |= now.flags != was.flags ? PuppetFlagsChanged : 0;
+	changed |= now.slot != was.slot ? PuppetSlot : 0;
+	changed |= now.lastJumpTick != was.lastJumpTick ? PuppetJump : 0;
+	changed |= now.airSince != was.airSince ? PuppetAir : 0;
+	changed |= now.stepCount != was.stepCount ? PuppetStep : 0;
+	changed |= now.motionsOn != was.motionsOn ? PuppetMotions : 0;
+	changed |= now.layerCount != was.layerCount || std::memcmp( now.stances, was.stances, layers ) != 0 ? PuppetStances : 0;
+	uint32_t layerMask = 0;
+	for ( size_t l = 0; l < layers; ++l )
+	{
+		layerMask |= now.layers[l] == was.layers[l] ? 0 : uint32_t( 1 ) << l;
+	}
+	changed |= layerMask != 0 || now.layerCount != was.layerCount ? PuppetLayersChanged : 0;
+	PutVarint( out, changed );
+	if ( changed & PuppetPlace )
+	{
+		// The axes that moved, then each one's change.
+		const int32_t d[3] = { int32_t( uint32_t( now.x ) - uint32_t( was.x ) ), int32_t( uint32_t( now.y ) - uint32_t( was.y ) ),
+							   int32_t( uint32_t( now.z ) - uint32_t( was.z ) ) };
+		out.push_back( uint8_t( ( d[0] != 0 ? 1 : 0 ) | ( d[1] != 0 ? 2 : 0 ) | ( d[2] != 0 ? 4 : 0 ) ) );
+		for ( int32_t v : d )
+		{
+			if ( v != 0 )
+			{
+				PutVarint( out, ZigZag( v ) );
+			}
+		}
+	}
+	if ( changed & PuppetFacing )
+	{
+		PutVarint( out, ZigZag( int16_t( uint16_t( now.facing - was.facing ) ) ) );
+	}
+	if ( changed & PuppetAim )
+	{
+		out.push_back( uint8_t( now.aimYaw ) );
+		out.push_back( uint8_t( now.aimPitch ) );
+	}
+	if ( changed & PuppetFlagsChanged )
+	{
+		out.push_back( now.flags );
+	}
+	if ( changed & PuppetSlot )
+	{
+		PutVarint( out, now.slot );
+	}
+	if ( changed & PuppetJump )
+	{
+		PutVarint( out, Back( tick, now.lastJumpTick ) );
+	}
+	if ( changed & PuppetAir )
+	{
+		PutVarint( out, Back( tick, now.airSince ) );
+	}
+	if ( changed & PuppetStep )
+	{
+		PutVarint( out, ZigZag( int32_t( now.stepCount - was.stepCount ) ) );
+	}
+	if ( changed & PuppetMotions )
+	{
+		PutVarint( out, uint32_t( now.motionsOn ) );
+		PutVarint( out, uint32_t( now.motionsOn >> 32 ) );
+	}
+	if ( changed & PuppetStances )
+	{
+		out.push_back( uint8_t( layers ) );
+		PutBytes( out, now.stances, layers );
+	}
+	if ( changed & PuppetLayersChanged )
+	{
+		out.push_back( uint8_t( layers ) );
+		PutVarint( out, layerMask );
+		for ( size_t l = 0; l < layers; ++l )
+		{
+			if ( layerMask & ( uint32_t( 1 ) << l ) )
+			{
+				const PuppetLayer& L = now.layers[l];
+				out.push_back( L.state );
+				out.push_back( L.previous );
+				out.push_back( L.via );
+				out.push_back( L.source );
+				PutVarint( out, Back( tick, L.start ) );
+			}
+		}
+	}
+}
+
+bool DecodePuppet( ByteReader& r, const Puppet* base, uint32_t tick, Puppet& out )
+{
+	out = base != nullptr ? *base : Puppet{};
+	const uint32_t changed = ReadVarint( r );
+	if ( r.Ok() == false || ( changed & ~PuppetAll ) != 0 )
+	{
+		return false;
+	}
+	if ( changed & PuppetPlace )
+	{
+		const uint8_t axes = r.Read<uint8_t>();
+		int32_t* at[3] = { &out.x, &out.y, &out.z };
+		for ( int i = 0; i < 3; ++i )
+		{
+			if ( axes & ( 1 << i ) )
+			{
+				*at[i] = int32_t( uint32_t( *at[i] ) + uint32_t( UnZigZag( ReadVarint( r ) ) ) );
+			}
+		}
+	}
+	if ( changed & PuppetFacing )
+	{
+		out.facing = uint16_t( out.facing + uint16_t( int16_t( UnZigZag( ReadVarint( r ) ) ) ) );
+	}
+	if ( changed & PuppetAim )
+	{
+		out.aimYaw = int8_t( r.Read<uint8_t>() );
+		out.aimPitch = int8_t( r.Read<uint8_t>() );
+	}
+	if ( changed & PuppetFlagsChanged )
+	{
+		out.flags = r.Read<uint8_t>();
+	}
+	if ( changed & PuppetSlot )
+	{
+		out.slot = PlayerSlot( ReadVarint( r ) );
+	}
+	if ( changed & PuppetJump )
+	{
+		out.lastJumpTick = FromBack( tick, ReadVarint( r ) );
+	}
+	if ( changed & PuppetAir )
+	{
+		out.airSince = FromBack( tick, ReadVarint( r ) );
+	}
+	if ( changed & PuppetStep )
+	{
+		out.stepCount = uint32_t( int64_t( out.stepCount ) + UnZigZag( ReadVarint( r ) ) );
+	}
+	if ( changed & PuppetMotions )
+	{
+		const uint64_t lo = ReadVarint( r );
+		const uint64_t hi = ReadVarint( r );
+		out.motionsOn = lo | ( hi << 32 );
+	}
+	if ( changed & PuppetStances )
+	{
+		const uint8_t n = r.Read<uint8_t>();
+		const uint8_t* bytes = n <= kPuppetLayers ? r.Take( n ) : nullptr;
+		if ( bytes == nullptr )
+		{
+			return false;
+		}
+		std::memcpy( out.stances, bytes, n );
+		std::memset( out.stances + n, 0, kPuppetLayers - n );
+		out.layerCount = n;
+	}
+	if ( changed & PuppetLayersChanged )
+	{
+		const uint8_t n = r.Read<uint8_t>();
+		const uint32_t mask = ReadVarint( r );
+		if ( r.Ok() == false || n > kPuppetLayers || ( n < 32 && ( mask >> n ) != 0 ) )
+		{
+			return false;
+		}
+		out.layerCount = n;
+		for ( size_t l = 0; l < n; ++l )
+		{
+			if ( mask & ( uint32_t( 1 ) << l ) )
+			{
+				PuppetLayer& L = out.layers[l];
+				L.state = r.Read<uint8_t>();
+				L.previous = r.Read<uint8_t>();
+				L.via = r.Read<uint8_t>();
+				L.source = r.Read<uint8_t>();
+				L.start = FromBack( tick, ReadVarint( r ) );
+			}
+		}
+		// (Past its count a puppet says nothing: as a new one has them.)
+		for ( size_t l = n; l < kPuppetLayers; ++l )
+		{
+			out.layers[l] = PuppetLayer{};
+		}
+	}
+	return r.Ok();
+}
+
 bool ReadLayout( const std::vector<uint8_t>& state, StateLayout& out )
 {
 	ByteReader r( state.data(), state.size() );
@@ -390,8 +620,8 @@ bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::
 	{
 		PutVarint( payload, u.netId - previous );
 		previous = u.netId;
-		// Its part: flags, how far back its base is, its record and bodies.
-		const uint64_t key = ( uint64_t( u.netId ) << 32 ) | u.baseTick;
+		// Its part: flags, how far back its base is, its record and bodies (and its puppet).
+		const uint64_t key = ( uint64_t( u.netId ) << 32 ) | u.baseTick | ( u.puppet ? uint64_t( 1 ) << 63 : 0 );
 		if ( cache != nullptr )
 		{
 			if ( auto it = cache->parts.find( key ); it != cache->parts.end() )
@@ -407,25 +637,38 @@ bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::
 		{
 			return false;
 		}
+		// A puppet's client is sent the view of its record (M253), against the view it has.
+		const uint8_t* record = u.puppet ? e->view : e->record;
+		const uint32_t recordSize = u.puppet ? e->viewSize : e->recordSize;
+		const uint8_t* oldRecord = old == nullptr ? nullptr : u.puppet ? old->view : old->record;
+		const uint32_t oldSize = old == nullptr ? 0 : u.puppet ? old->viewSize : old->recordSize;
+		if ( record == nullptr || ( old != nullptr && oldRecord == nullptr ) )
+		{
+			return false;
+		}
 		part.clear();
 		uint8_t flags = RecordWhole;
-		if ( old != nullptr && old->recordSize == e->recordSize )
+		if ( old != nullptr && oldSize == recordSize )
 		{
-			flags = std::memcmp( old->record, e->record, e->recordSize ) == 0 ? RecordSame : RecordXor;
+			flags = std::memcmp( oldRecord, record, recordSize ) == 0 ? RecordSame : RecordXor;
 		}
 		const bool bodiesSame = old != nullptr && e->bodiesSize > 0 && old->bodiesSize == e->bodiesSize && old->hash == e->hash;
 		flags |= e->bodiesSize > 0 ? HasBodies : 0;
 		flags |= bodiesSame ? BodiesSame : 0;
+		const bool puppet = u.puppet && e->puppet != nullptr;
+		const bool puppetBase = puppet && old != nullptr && old->puppet != nullptr;
+		flags |= puppet ? HasPuppet : 0;
+		flags |= puppetBase ? PuppetBase : 0;
 		part.push_back( flags );
 		PutVarint( part, old != nullptr ? frame.tick - u.baseTick : 0 );
 		switch ( flags & RecordMask )
 		{
 			case RecordXor:
-				PutSparse( part, e->record, old->record, e->recordSize );
+				PutSparse( part, record, oldRecord, recordSize );
 				break;
 			case RecordWhole:
-				PutVarint( part, e->recordSize );
-				PutBytes( part, e->record, e->recordSize );
+				PutVarint( part, recordSize );
+				PutBytes( part, record, recordSize );
 				break;
 			default:
 				break;
@@ -435,6 +678,10 @@ bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::
 			PutVarint( part, e->bodiesSize );
 			Put( part, e->hash );
 			PutBytes( part, e->bodies, e->bodiesSize );
+		}
+		if ( puppet )
+		{
+			EncodePuppet( *e->puppet, puppetBase ? old->puppet : nullptr, frame.tick, part );
 		}
 		PutBytes( payload, part.data(), part.size() );
 		if ( cache != nullptr )
@@ -556,9 +803,26 @@ bool DecodeUpdates( ByteReader& p, uint32_t tick, const StateFrame* base, const 
 		const uint8_t* bodies = nullptr; // (into the message's payload or a base's state)
 		uint32_t bodiesSize = 0;
 		uint64_t hash = 0;
+		bool hasPuppet = false;
+		Puppet puppet;
+	};
+	// A state's puppet of an entity (null: none).
+	auto puppetIn = []( const StateFrame* f, uint32_t id ) -> const PuppetEntry* {
+		if ( f == nullptr )
+		{
+			return nullptr;
+		}
+		auto it = std::lower_bound( f->puppets.begin(), f->puppets.end(), id, []( const PuppetEntry& e, uint32_t n ) { return e.netId < n; } );
+		return it != f->puppets.end() && it->netId == id ? &*it : nullptr;
 	};
 	std::vector<Decoded> sent( count );
-	std::vector<std::pair<uint32_t, Parsed>> bases; // (read once each)
+	struct Base
+	{
+		uint32_t tick = 0;
+		const StateFrame* frame = nullptr;
+		Parsed layout;
+	};
+	std::vector<Base> bases; // (read once each)
 	netId = 0;
 	for ( Decoded& d : sent )
 	{
@@ -571,6 +835,7 @@ bool DecodeUpdates( ByteReader& p, uint32_t tick, const StateFrame* base, const 
 			return false;
 		}
 		const Span* old = nullptr;
+		const StateFrame* oldFrame = nullptr;
 		if ( back != 0 )
 		{
 			if ( back > tick || stateOf == nullptr )
@@ -578,26 +843,27 @@ bool DecodeUpdates( ByteReader& p, uint32_t tick, const StateFrame* base, const 
 				return false;
 			}
 			const uint32_t at = tick - back;
-			const Parsed* layout = nullptr;
-			for ( const auto& [t, l] : bases )
+			const Base* found = nullptr;
+			for ( const Base& b : bases )
 			{
-				layout = t == at ? &l : layout;
+				found = b.tick == at ? &b : found;
 			}
-			if ( layout == nullptr )
+			if ( found == nullptr )
 			{
 				const StateFrame* f = stateOf( context, at );
 				if ( f == nullptr )
 				{
 					return false;
 				}
-				bases.push_back( { at, {} } );
-				if ( Parse( f->state, bases.back().second ) == false )
+				bases.push_back( { at, f, {} } );
+				if ( Parse( f->state, bases.back().layout ) == false )
 				{
 					return false;
 				}
-				layout = &bases.back().second;
+				found = &bases.back();
 			}
-			old = layout->Find( netId );
+			old = found->layout.Find( netId );
+			oldFrame = found->frame;
 			if ( old == nullptr )
 			{
 				return false;
@@ -658,6 +924,20 @@ bool DecodeUpdates( ByteReader& p, uint32_t tick, const StateFrame* base, const 
 				}
 			}
 		}
+		if ( flags & HasPuppet )
+		{
+			// (Against the base's puppet of it: the one it was sent there.)
+			const PuppetEntry* was = ( flags & PuppetBase ) ? puppetIn( oldFrame, netId ) : nullptr;
+			if ( ( ( flags & PuppetBase ) && was == nullptr ) || DecodePuppet( p, was != nullptr ? &was->puppet : nullptr, tick, d.puppet ) == false )
+			{
+				return false;
+			}
+			d.hasPuppet = true;
+		}
+		else if ( flags & PuppetBase )
+		{
+			return false;
+		}
 	}
 	if ( p.Ok() == false || p.AtEnd() == false )
 	{
@@ -693,6 +973,8 @@ bool DecodeUpdates( ByteReader& p, uint32_t tick, const StateFrame* base, const 
 		total += 1;
 		return s.size() <= kMaxStateBytes;
 	};
+	// And the puppets: those sent, and those it had of what it keeps (each from the state it came in).
+	out.puppets.clear();
 	size_t h = 0, k = 0, gone = 0;
 	while ( h < had.entities.size() || k < sent.size() )
 	{
@@ -709,6 +991,10 @@ bool DecodeUpdates( ByteReader& p, uint32_t tick, const StateFrame* base, const 
 			{
 				return false;
 			}
+			if ( d.hasPuppet )
+			{
+				out.puppets.push_back( { d.netId, tick, d.puppet } );
+			}
 			continue;
 		}
 		const Span& e = had.entities[h++];
@@ -723,6 +1009,10 @@ bool DecodeUpdates( ByteReader& p, uint32_t tick, const StateFrame* base, const 
 		if ( putEntity( e.netId, e.record, e.recordSize, e.bodies, e.bodiesSize, e.hash ) == false )
 		{
 			return false;
+		}
+		if ( const PuppetEntry* kept = puppetIn( previous, e.netId ) )
+		{
+			out.puppets.push_back( *kept );
 		}
 	}
 	std::memcpy( s.data() + countAt, &total, sizeof( total ) );
@@ -759,6 +1049,7 @@ bool DecodeState( ByteReader& r, uint32_t tick, const StateFrame* base, const St
 	ByteReader p( payload.data(), payload.size() );
 	out.tick = tick;
 	out.state.clear();
+	out.puppets.clear(); // (a whole state has none: every record whole)
 	const uint8_t kind = p.Read<uint8_t>();
 	if ( kind == 0 )
 	{

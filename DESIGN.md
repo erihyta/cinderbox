@@ -170,7 +170,23 @@ ROADMAP step 3). **Inputs**: what follows below; every client simulates the whol
   gone is named until acknowledged. Changes are sparse (runs of unchanged bytes skipped) and the
   message deflated; clients whose updates say the same share one message, and the messages are
   encoded on the state threads. A refresh is not repeated until acknowledged (tried first: at a
-  round trip of a few states it cost as much as it saved).
+  round trip of a few states it cost as much as it saved). What a client acknowledged having and
+  nothing else was sent of since (by a hash of each record as it is sent) is not sent again (M253):
+  a character standing still, an item in a pocket, cost nothing.
+- **Other characters are puppets** (M253, M254; `sim/puppet.h`): the server makes a puppet of each
+  character of a state (`Simulation::PuppetOf`): where it is (1/256 m), its facing, where it looks,
+  a few flags, and where each layer of its state machine is (its state, the one it fades from and
+  through which transition, its source, the tick it began). Every client but the one driving it gets
+  the puppet as a change of a few integers (`net::EncodePuppet`) and its record, and what it holds,
+  without what a puppet's client keeps of its own (`Simulation::PuppetView`: its Transform, Velocity,
+  Character, AnimState, MotionState, movement and a mod's driving as zeros, so they never change),
+  and no input of it. The client puts it where the puppet says (`Simulation::ApplyPuppets`: one sent
+  every state or two exactly there, one sent less often from the one before to the last, an
+  interval late), its speed from its last two, and runs its animation itself: `UpdateAnimState`,
+  and its state machine following the puppet's layers (`UpdateAnimGraph`'s `follow`: their states
+  and when they began are the server's, never its own transitions; clocks, blends and weights run
+  here; one that began earlier than it heard catches up). Dead or down, nothing runs it, as on the
+  server. Its markers are not its own: the server's come as events.
 - **Lag compensation** (M250, `--lag-compensation MS`, 500 by default): each input says how many
   ticks back the player saw the others (`PlayerInput::seenBack`: its tick minus the state they
   stand as). A hybrid game shows the others a round trip and its physics' buffer back (about 20

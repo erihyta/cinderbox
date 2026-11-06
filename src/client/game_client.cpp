@@ -481,7 +481,7 @@ void GameClient::HandleState( ByteReader& r, double now )
 	}
 	if ( m_hybrid != nullptr )
 	{
-		m_hybrid->AddState( frame.tick, frame.state.data(), frame.state.size(), frame.inputs );
+		m_hybrid->AddState( frame.tick, frame.state.data(), frame.state.size(), frame.inputs, &frame.puppets );
 	}
 	else
 	{

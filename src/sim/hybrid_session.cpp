@@ -63,11 +63,13 @@ bool HybridSession::AddFrame( const InputFrame& frame )
 	return true;
 }
 
-void HybridSession::AddState( uint32_t tick, const uint8_t* data, size_t size, const std::array<PlayerInput, kMaxPlayers>& inputs )
+void HybridSession::AddState( uint32_t tick, const uint8_t* data, size_t size, const std::array<PlayerInput, kMaxPlayers>& inputs,
+							  const std::vector<PuppetEntry>* puppets )
 {
 	if ( m_stateLag > 0 && m_releasing == false )
 	{
-		m_lagged.push_back( { m_sim->Tick() + m_stateLag, tick, std::vector<uint8_t>( data, data + size ), inputs } );
+		m_lagged.push_back( { m_sim->Tick() + m_stateLag, tick, std::vector<uint8_t>( data, data + size ), inputs,
+							  puppets != nullptr ? *puppets : std::vector<PuppetEntry>{} } );
 		return;
 	}
 	if ( m_states.count( tick ) != 0 || ( m_placed != UINT32_MAX && tick < m_placed ) )
@@ -76,6 +78,7 @@ void HybridSession::AddState( uint32_t tick, const uint8_t* data, size_t size, c
 	}
 	m_states[tick].bytes.assign( data, data + size );
 	m_states[tick].inputs = inputs;
+	m_states[tick].puppets = puppets != nullptr ? *puppets : std::vector<PuppetEntry>{};
 	m_newest = std::max( m_newest, tick );
 	while ( m_states.size() > kMaxStatesKept )
 	{
@@ -108,8 +111,13 @@ void HybridSession::PlaceOthers( uint32_t tick, bool again )
 	if ( it->first != m_placed || again )
 	{
 		auto start = std::chrono::steady_clock::now();
-		if ( m_sim->ApplyState( it->second.bytes.data(), it->second.bytes.size(), m_localSlot, Simulation::StateApply::Others ) )
+		const bool newer = it->first != m_placed;
+		if ( m_sim->ApplyState( it->second.bytes.data(), it->second.bytes.size(), m_localSlot, Simulation::StateApply::Others,
+								&it->second.puppets ) )
 		{
+			// The puppets where they say, their animation run up to the state (once a state: again only
+			// placed, where a command may have moved them).
+			m_sim->ApplyPuppets( it->second.puppets, it->first, newer );
 			m_placed = it->first;
 			m_othersInputs = it->second.inputs;
 		}
@@ -137,7 +145,7 @@ uint32_t HybridSession::AdvancePhysics( uint32_t upTo )
 			{
 				if ( l.release <= tick )
 				{
-					AddState( l.tick, l.bytes.data(), l.bytes.size(), l.inputs );
+					AddState( l.tick, l.bytes.data(), l.bytes.size(), l.inputs, &l.puppets );
 				}
 			}
 			m_releasing = false;
