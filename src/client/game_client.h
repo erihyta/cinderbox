@@ -261,6 +261,16 @@ private:
 		net::InputArray inputs{};
 	};
 	std::vector<KnownInputs> m_knownInputs;
+	// The hybrid's: the pushers' places of recent frames, by tick % size (a batch's first frame codes
+	// its against the frame before: M256), and the tick its frames began (its snapshot's: it has no
+	// frame before that one).
+	struct KnownPushers
+	{
+		uint32_t tick = UINT32_MAX;
+		std::vector<PusherPlace> pushers;
+	};
+	std::vector<KnownPushers> m_knownPushers;
+	uint32_t m_framesFrom = 0;
 	std::vector<InputFrame> m_batchScratch;
 	// Batches that begin after the frames we have: packets overtake one another, and since a batch
 	// no longer starts at our acknowledgement, the one that fills the hole may be the next to come.

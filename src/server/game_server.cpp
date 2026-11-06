@@ -890,6 +890,7 @@ void GameServer::SendSnapshots()
 			// (A fake player that fell behind starts over, from what it would have been welcomed with.)
 			c.needsSnapshot = false;
 			c.ackTick = m_sim->Tick();
+			c.framesFrom = c.ackTick;
 			c.sentThrough = c.ackTick;
 			c.stateAck = kNoStateBase;
 			c.stateSent = 0;
@@ -928,6 +929,7 @@ void GameServer::SendSnapshots()
 		SendPrivates( c );
 		// The welcome carries the inputs of snapshotTick - 1, so frames start at snapshotTick.
 		c.ackTick = m_sim->Tick();
+		c.framesFrom = c.ackTick;
 		c.sentThrough = c.ackTick;
 		c.stateAck = kNoStateBase;
 		c.stateSent = 0;
@@ -1048,6 +1050,7 @@ void GameServer::RunTick( double now )
 		// it made (the replay has the frame as played: it makes them again).
 		frame.physics = m_sim->PhysicsMade().physics;
 		frame.pushers = m_sim->PhysicsMade().pushers;
+		LeaveOutSkipped( frame, m_sim->FollowerSkipped() );
 	}
 	if ( m_bench.fakes > 0 )
 	{
@@ -1381,6 +1384,37 @@ void GameServer::RecordView( const InputFrame& frame )
 	}
 }
 
+void GameServer::LeaveOutSkipped( InputFrame& frame, const std::vector<uint8_t>& skipped )
+{
+	// The players' joins and leaves: a hybrid client's characters come in states.
+	frame.events.clear();
+	if ( skipped.size() != frame.commands.size() )
+	{
+		return;
+	}
+	// The commands it skips; a physics event after one of them goes after the last kept before it
+	// (what was left out does nothing there, so it is the same point of the step).
+	std::vector<uint16_t> keptThrough( frame.commands.size() + 1, 0 ); // after = k + 1: how many kept of 0..k
+	size_t kept = 0;
+	for ( size_t k = 0; k < frame.commands.size(); ++k )
+	{
+		if ( skipped[k] == 0 )
+		{
+			frame.commands[kept++] = frame.commands[k];
+		}
+		keptThrough[k + 1] = uint16_t( kept );
+	}
+	m_stats.commandsLeftOut += frame.commands.size() - kept;
+	frame.commands.resize( kept );
+	for ( PhysicsEvent& e : frame.physics )
+	{
+		if ( e.phase == 0 && e.after < keptThrough.size() )
+		{
+			e.after = keptThrough[e.after];
+		}
+	}
+}
+
 const InputFrame* GameServer::HistoryFrame( uint32_t tick ) const
 {
 	const InputFrame& f = m_history[tick % kFrameHistory];
@@ -1395,6 +1429,7 @@ void GameServer::SendFrames( double now )
 	struct Encoded
 	{
 		uint32_t ack;
+		bool pusherBase;
 		size_t frames;
 		std::vector<uint8_t> bytes;
 	};
@@ -1450,10 +1485,13 @@ void GameServer::SendFrames( double now )
 		}
 		c.sentThrough = std::max( c.sentThrough, newest + 1 );
 
+		// (The hybrid's pushers against the frame before, when the client has that one: not the first
+		// after its snapshot. M256: every packet sent each place whole before.)
+		const bool pusherBase = m_options.netModel == NetModel::Hybrid && first > c.framesFrom && HistoryFrame( first - 1 ) != nullptr;
 		Encoded* hit = nullptr;
 		for ( Encoded& e : cache )
 		{
-			if ( e.ack == first )
+			if ( e.ack == first && e.pusherBase == pusherBase )
 			{
 				hit = &e;
 				break;
@@ -1471,7 +1509,7 @@ void GameServer::SendFrames( double now )
 			{
 				base = HistoryFrame( first - 1 ) ? HistoryFrame( first - 1 )->inputs : m_lastInputs;
 			}
-			cache.push_back( { first, frames.size(), {} } );
+			cache.push_back( { first, pusherBase, frames.size(), {} } );
 			hit = &cache.back();
 			if ( m_options.netModel == NetModel::Hybrid )
 			{
@@ -1482,7 +1520,8 @@ void GameServer::SendFrames( double now )
 				{
 					sums[i] = frames[i] != nullptr && m_physicsSums.size() == kFrameHistory ? m_physicsSums[frames[i]->tick % kFrameHistory] : 0;
 				}
-				EncodeFrameBatch( base, frames.data(), frames.size(), hit->bytes, false, sums.data() );
+				EncodeFrameBatch( base, frames.data(), frames.size(), hit->bytes, false, sums.data(),
+								  pusherBase ? &HistoryFrame( first - 1 )->pushers : nullptr );
 			}
 			else
 			{
@@ -2277,7 +2316,7 @@ void GameServer::CountFrame( const InputFrame& frame )
 	std::vector<uint8_t> out;
 	auto size = [&]( const InputFrame& f ) {
 		const InputFrame* one = &f;
-		EncodeFrameBatch( base, &one, 1, out, inputs );
+		EncodeFrameBatch( base, &one, 1, out, inputs, nullptr, before != nullptr && inputs == false ? &before->pushers : nullptr );
 		return uint64_t( out.size() );
 	};
 	m_bench.frameAlone += size( frame );

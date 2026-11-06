@@ -232,6 +232,13 @@ public:
 	{
 		return m_physicsMade;
 	}
+	// Of the last step's commands, by index, those a follower skips and could do without (M256: a
+	// hybrid server leaves them out of its clients' frames): its FollowerSkips, but an item into a
+	// container (that uses up a NetId of the physics world even there). Empty for a follower.
+	const std::vector<uint8_t>& FollowerSkipped() const
+	{
+		return m_followerSkipped;
+	}
 	// Hash of the physics world alone: every body that is not a character's, by its components
 	// (not its physics handles: those are this world's own).
 	uint64_t PhysicsHash() const;
@@ -726,6 +733,8 @@ private:
 	void ApplyCommands( const InputFrame& frame );
 	void ApplyCommand( const SimCommand& command );
 	bool FollowerSkips( const SimCommand& command ) const;
+	bool FollowerDrops( const SimCommand& command ) const;
+	std::vector<uint8_t> m_followerSkipped;
 	void DropController( flecs::entity e ); // (a body nobody drives, or a prop, again)
 	// A Spawn physics event's prop (the mod's SpawnProp, its owner a NetId).
 	void SpawnProp( const SimCommand& command );

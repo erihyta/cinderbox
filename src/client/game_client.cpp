@@ -76,6 +76,7 @@ bool GameClient::Start( const ClientOptions& options, double now )
 	m_options = options;
 	m_inputHistory.assign( std::max<uint32_t>( 64, options.inputRedundancy * 2 ), SentInput{} );
 	m_knownInputs.assign( kKnownInputHistory, KnownInputs{} );
+	m_knownPushers.assign( kKnownInputHistory, KnownPushers{} );
 	m_options.maxRollbackTicks = std::max( m_options.maxRollbackTicks, m_options.minRollbackTicks );
 	m_state = ClientState::Connecting;
 	m_nextConnectAttempt = now;
@@ -384,6 +385,11 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 	m_stateFrames.clear();
 	m_stateAck = 0;
 	m_hybridFrames = msg.snapshotTick;
+	m_framesFrom = msg.snapshotTick;
+	for ( KnownPushers& k : m_knownPushers )
+	{
+		k.tick = UINT32_MAX;
+	}
 	m_hybridDesyncAskedAt = -1.0;
 	m_config = msg.config;
 	m_map = std::move( map );
@@ -581,13 +587,31 @@ bool GameClient::UseFrameBatch( uint32_t firstTick, uint32_t count, const uint8_
 	InputArray base{};
 	if ( m_hybrid != nullptr )
 	{
-		// (Without the inputs: no base needed.) Each frame new to it, and the physics checksum it has.
+		// (Without the inputs: no base needed; its pushers' places against the frame before, but
+		// for the first after the snapshot.) Each frame new to it, and the physics checksum it has.
+		const std::vector<PusherPlace>* pushers = nullptr;
+		if ( firstTick > m_framesFrom )
+		{
+			const KnownPushers& k = m_knownPushers[( firstTick - 1 ) % kKnownInputHistory];
+			if ( k.tick != firstTick - 1 )
+			{
+				m_stats.batchesIgnored += 1;
+				return false;
+			}
+			pushers = &k.pushers;
+		}
 		ByteReader r( body, size );
-		if ( ReadFrameBatchBody( r, base, firstTick, count, m_batchScratch, &m_checksumScratch ) == false )
+		if ( ReadFrameBatchBody( r, base, firstTick, count, m_batchScratch, &m_checksumScratch, pushers ) == false )
 		{
 			Log( "corrupt frame batch at tick %u", firstTick );
 			m_stats.batchesIgnored += 1;
 			return false;
+		}
+		for ( const InputFrame& frame : m_batchScratch )
+		{
+			KnownPushers& k = m_knownPushers[frame.tick % kKnownInputHistory];
+			k.tick = frame.tick;
+			k.pushers = frame.pushers;
 		}
 		for ( size_t i = 0; i < m_batchScratch.size(); ++i )
 		{

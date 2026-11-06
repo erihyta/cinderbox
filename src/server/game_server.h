@@ -181,6 +181,7 @@ public:
 		uint64_t snapshotsSent = 0; // welcomes: joins, reconnects and desync recoveries
 		uint64_t batchesSent = 0;
 		uint64_t framesSent = 0;	 // frames inside batches (resends included)
+		uint64_t commandsLeftOut = 0; // the hybrid: commands its clients skip, not sent (M256)
 		uint64_t framesResent = 0;	 // frames sent again from the oldest unacknowledged one, after a wait
 		uint64_t ackTooOld = 0;		 // clients that fell out of the frame history and got a snapshot
 		uint64_t resyncRequests = 0;
@@ -252,6 +253,7 @@ private:
 		bool welcomed = false;		// has received a Welcome for the current connection
 		bool inWorld = false;		// Join event has been issued
 		uint32_t ackTick = 0;		// the client has every frame with tick < ackTick
+		uint32_t framesFrom = 0;	// its first frame's tick (its snapshot's): it has none before
 		// Frames go out as they are made, each repeated in the next kFrameRepeats packets (a lost
 		// packet or two costs nothing). Only when the oldest one the client has not acknowledged
 		// has been out for longer than an answer takes is everything from it sent again.
@@ -411,6 +413,9 @@ private:
 	// The hybrid: the physics checksum after each tick of the history (0: none), by tick % kFrameHistory.
 	std::vector<uint64_t> m_physicsSums;
 	const InputFrame* HistoryFrame( uint32_t tick ) const;
+	// A hybrid frame as its clients are sent it (M256): without what they skip (the commands about
+	// characters, the joins and leaves), its physics events where they then go.
+	void LeaveOutSkipped( InputFrame& frame, const std::vector<uint8_t>& skipped );
 	void Log( const char* fmt, ... ) const;
 
 	// A message to a client: through the transport (reliable: in order on ChannelReliable;

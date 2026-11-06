@@ -3288,10 +3288,15 @@ void Simulation::Step( const InputFrame& given )
 	// The players' joins and leaves, then each command, each followed by the physics events it made
 	// (or, following another's physics, the frame's for it).
 	m_physicsMade.physics.clear();
+	m_followerSkipped.clear();
 	ApplyEvents( frame );
 	ApplyPhysicsEvents( frame, 0, 0 );
 	for ( size_t k = 0; k < frame.commands.size(); ++k )
 	{
+		if ( m_followsPhysics == false )
+		{
+			m_followerSkipped.push_back( FollowerDrops( frame.commands[k] ) ? 1 : 0 );
+		}
 		ApplyCommand( frame.commands[k] );
 		ApplyPhysicsEvents( frame, 0, uint16_t( std::min<size_t>( k + 1, 0xFFFF ) ) );
 	}
@@ -3803,6 +3808,21 @@ uint32_t Simulation::HeldItemOf( uint32_t holder, uint32_t socket ) const
 		}
 	}
 	return found;
+}
+
+bool Simulation::FollowerDrops( const SimCommand& command ) const
+{
+	if ( FollowerSkips( command ) == false )
+	{
+		return false;
+	}
+	// (An item into a container uses up one of the physics world's NetIds even skipped: kept.)
+	if ( command.type == CommandType::SpawnItem && ( command.target & kSlotTargetBit ) == 0 )
+	{
+		const flecs::entity holder = FindEntity( ResolveTarget( command.target ) );
+		return holder.is_valid() == false || holder.has<Container>() == false;
+	}
+	return true;
 }
 
 void Simulation::ApplyCommands( const InputFrame& frame )
