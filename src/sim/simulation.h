@@ -15,6 +15,7 @@
 #include "motions.h"
 #include "physics_arena.h"
 #include "physics_threads.h"
+#include "puppet.h"
 #include "types.h"
 #include "world_lifetime.h"
 
@@ -272,7 +273,27 @@ public:
 		Others,
 		Own,
 	};
-	bool ApplyState( const uint8_t* data, size_t size, PlayerSlot own, StateApply which );
+	// `puppets` (M253, Others only): the characters in it that are puppets (by NetId: sim/puppet.h),
+	// whose records came without what a puppet's client keeps of its own (PuppetView), and what
+	// they hold: of a stand-in already here those components stay as they are (ApplyPuppets moves
+	// it); a new one gets them as the record has them (zeros) until ApplyPuppets.
+	bool ApplyState( const uint8_t* data, size_t size, PlayerSlot own, StateApply which, const std::vector<PuppetEntry>* puppets = nullptr );
+	// Puppets (M253, M254; sim/puppet.h). A server's: whether an entity is a character a client
+	// draws as one (a slot's or a mod's, not a driven prop or a body nobody drives), and the puppet
+	// of one in the world as it is (`input` the slot's last, for its view; null: an NPC's own).
+	bool IsPuppet( flecs::entity e ) const;
+	bool PuppetOf( uint32_t netId, const PlayerInput* input, Puppet& out ) const;
+	// Where a puppet says its character is, and facing.
+	static Transform PuppetPlace( const Puppet& p );
+	// A record of SaveState as a puppet's client is sent it (the entity's or what it holds): what that
+	// client keeps of its own as zeros (where it is and how it moves, its character and animation, its
+	// motions, its movement, a mod's driving; its slots' last keys), so they never change.
+	void PuppetView( const uint8_t* record, uint32_t size, std::vector<uint8_t>& out ) const;
+	// A client's, after ApplyState with them: each stand-in placed where its puppet says at `tick`
+	// (gone on from there a little when that one is older), its character as it says, and, with
+	// `step`, its animation run up to the state (the end of the tick before `tick`), each of its
+	// layers in the state the puppet says.
+	void ApplyPuppets( const std::vector<PuppetEntry>& puppets, uint32_t tick, bool step = true );
 	// Whether ApplyState has run: the characters are the server's.
 	bool FollowsServer() const
 	{

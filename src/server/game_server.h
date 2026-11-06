@@ -275,13 +275,20 @@ private:
 			uint32_t netId = 0;
 			uint32_t acked = 0;
 			bool removing = false;
-			uint32_t sentAt = 0; // the state of the last update of it sent (acknowledged or not)
+			uint32_t sentAt = 0; // the state of the last update of it sent (acknowledged or not), or found it had
+			// M253: the record (with its puppet) it acknowledged, hashed, and whether that was as a
+			// puppet (its view: the base for the next is the same kind); the one last sent, hashed. One
+			// both are of is not sent again.
+			bool ackedPuppet = false;
+			uint64_t ackedHash = 0, sentHash = 0;
 		};
 		std::vector<Known> known;
 		struct Sent
 		{
 			uint32_t tick = 0;
 			std::vector<uint32_t> updated, removed;
+			std::vector<uint64_t> hashes;	  // (by updated)
+			std::vector<uint8_t> puppets; // (by updated)
 		};
 		std::deque<Sent> sent;
 		struct Slot
@@ -336,8 +343,18 @@ private:
 		// Each entity's group (by layout.entities): a character with what it holds, sent together
 		// (their changes are much alike, and compress well side by side). The index of its head.
 		std::vector<uint32_t> head;
+		// Puppets (M253; sim/puppet.h): whether each is one or what one holds (its record goes as
+		// its view to every client but the one that drives it), the views and the puppets the
+		// layout's spans point into, and each one's record as each kind of client is sent it, hashed
+		// (what a client acknowledged having, so one that has it is not sent it again).
+		std::vector<uint8_t> puppetGroup;
+		std::vector<uint8_t> viewBytes;
+		std::vector<Puppet> puppets;
+		std::vector<uint64_t> fullHash, viewHash;
 	};
 	std::deque<KeptLayout> m_layouts;
+	// A kept state's puppets, their views and the hashes (M253), as the world is when it is saved.
+	void KeepPuppets( KeptLayout& kept ) const;
 	// Sending states by distance, a step at a time (SendStates): each client's plan (what it is sent),
 	// the messages they make (one for clients whose plans say the same), and a cache of shared
 	// parts for each thread that encodes them.
@@ -362,6 +379,8 @@ private:
 			uint32_t acked = 0;
 			float score = 0.0f; // 0: not due
 			bool chosen = false;
+			bool puppet = false; // sent as a puppet's view (M253)
+			bool same = false;	 // what it has of it already (acknowledged, and nothing else sent since)
 		};
 		std::vector<Entry> entries;
 		std::vector<float> groupScore; // by head (the most overdue of its group's)

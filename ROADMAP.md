@@ -374,14 +374,41 @@ would get, on the wire):
 - **Names go whole**: every join sends every player's name to every player, ~13 KB each at 1023
   (M255 sends the change only).
 
+**Measured after M253 and M254** (the same, `--bench 10`: 5 s counted):
+
+| | 32 players | 64 players | 255 players | 1023 players (50 m across) |
+|---|---|---|---|---|
+| To each player | 0.35 Mbit/s (0.96) | 0.68 Mbit/s (1.84) | 2.0 Mbit/s (2.93) | 7.0 Mbit/s (7.5) |
+| Out of the server | 11 Mbit/s (31) | 44 Mbit/s (118) | 509 Mbit/s (747) | 7.2 Gbit/s (7.7) |
+| Another character, on the wire | 13.6 B a state (96) | 13.7 B (95) | 12.7 B (112) | 12.4 B (174) |
+| Of a state, the head | 570 of 1095 B | 989 of 1931 B | 1061 of 4107 B | 1042 of 7491 B |
+| Frames, of a player's bytes | 19% | 27% | 48% | 73% |
+| Server's work a tick (the tick, then sending) | 1.1 ms | 2.2 ms | 10.5 ms (7.3 + 3.3) | 134 ms (39 + 95) |
+
+- **A puppet's change is 11 B** before packing (a player standing still sends none): where it
+  is (60% of changes), its facing and look (about half), its flags (16%), and a layer's new state
+  (30%, 1.7 layers each: the fights). Its record's view changes by its fields alone (0.4 to 2 B);
+  its held items are not sent at all while they stay as they were.
+- **Found on the way**: a layer's start tick, as a OneShot that is not playing or a character
+  dead or down has it (its clock stands), moved every tick, and three of them went in every
+  update (26 B a change, 11 after).
+- **What is left**: at 255 frames are half the bytes, at 1023 three quarters (4 KB of pushers a
+  frame: M256); the head is half a state at 64 (M255); at 1023 the 512-entity budget still decides
+  how many characters a state brings (M257); the server spends 95 ms a tick sending (planning 29,
+  encoding 67: M257, M258).
+- **Far puppets are an interval late**: one sent less often than every other state is drawn from
+  the one before to the last over the time between them, so it moves without jumps but up to 16
+  ticks late; a shot at it 100 m off is tested as the shooter saw it, behind. M257 sends what is
+  aimed at more often.
+
 **The milestones**:
 
 | Milestone | What |
 |---|---|
 | **M251** (done) | **The yardstick**: `cb_server --fake-players N` (bot brains inside the server, each a client whose messages are counted and acknowledged a round trip later; `--fake-radius`, `--fake-fight`, `--fake-rtt`, `--fake-seed`) and `--bench SEC` (a clock of its own; the report by part); `cb_net_tests crowd_bench`, a ratchet on the bytes and on what a player is thought to have. The table above; the two fixes it found |
 | **M252** (done) | **1023 players**: two-byte slots (`PlayerSlot`; `kNoPlayer` for no one, apart from an inventory's `kNoSlot`), an item target's socket above the slot's 16 bits, `Character` and `Ragdoll` the same size with a two-byte slot, the states' input slots as varints, view records with a two-byte slot; the spawn's blocks of 64 a ring further out past four; protocol 85, replay 60, view files 9 (`CBV7`); new reference hashes. Reviewed: a frame's joins and leaves and the names counted in more than a byte (protocol 86, replay 61) |
-| M253 | **Other characters as puppets**: a bit-packed record of ~8 bytes (place as a change at 1/256 m, facing, aim, flags); stand-ins made from it, placed between their own updates; your own character keeps its full record |
-| M254 | **Animation from events**: clients run the other characters' state machines from what the record and the events say; a layer's new state and its start tick (~3 B) when it changes, taken when the client's own run differs; no clocks on the wire |
+| **M253** (done) | **Other characters as puppets** (`sim/puppet.h`): where it is at 1/256 m, its facing, its look, flags, its slot, jump and air ticks, steps, motions on, stances, as changes of a few integers (`net::EncodePuppet`, 6 B for a walk and a turn); its record and its held items' as `PuppetView` makes them (what the client keeps of its own as zeros); no inputs of others; nothing sent that a client acknowledged and nothing else was sent of since (by hash). Stand-ins placed by them (`ApplyPuppets`), far ones from the one before over the interval; your own character keeps its full record. Protocol 87 |
+| **M254** (done) | **Animation run by each client**: a puppet's layers say their state, the one fading out and through which transition, their source and the tick they began; the client runs `UpdateAnimState` and the state machine following them (`UpdateAnimGraph`'s `follow`: never its own transitions, a late one caught up), its markers not its own. `net_hybrid_puppets`: through 50 ms each way and 3% lost, the fighter's every layer on the other's game in the server's state at the tick it stands as, its clock the server's, in every one of 4872 looks |
 | M255 | **Only what others see**: held items as kinds in the record, not entities; fields owner-only unless shared; no inputs of others; the head down to the tick (the player list, names and global fields when they change, only what changed; events with the characters they are at) |
 | M256 | **Frames carry the physics only**: the commands clients skip left out; each frame in two packets, not three, a gap asked for again; frames and the characters' update in one datagram every 2 ticks; pushers at the state rate if they show |
 | M257 | **A byte budget per client**: a priority that grows by nearness, being in view, a changed state, aiming at or hitting the player; far ones coarser; an interest grid instead of every distance |

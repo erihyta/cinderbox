@@ -1115,6 +1115,7 @@ void GameServer::RunTick( double now )
 				const net::StateSpan* holder = kept.placed[i].holder != 0 ? kept.layout.Find( kept.placed[i].holder ) : nullptr;
 				kept.head[i] = holder != nullptr ? uint32_t( holder - kept.layout.entities.data() ) : uint32_t( i );
 			}
+			KeepPuppets( kept );
 		}
 		m_layouts.push_back( std::move( kept ) );
 		while ( m_states.size() > kStateHistory )
@@ -1558,6 +1559,72 @@ const GameServer::KeptLayout* GameServer::KeptLayoutOf( uint32_t tick ) const
 	return lo < m_states.size() && m_states[lo].tick == tick && lo < m_layouts.size() ? &m_layouts[lo] : nullptr;
 }
 
+void GameServer::KeepPuppets( KeptLayout& kept ) const
+{
+	const size_t n = kept.layout.entities.size();
+	kept.puppetGroup.assign( n, 0 );
+	kept.puppets.clear();
+	kept.viewBytes.clear();
+	kept.fullHash.assign( n, 0 );
+	kept.viewHash.assign( n, 0 );
+	// Every character a client may draw as a puppet, its slot's last input saying how it looks.
+	std::vector<int32_t> puppetAt( n, -1 );
+	for ( size_t i = 0; i < n; ++i )
+	{
+		const uint32_t netId = kept.layout.entities[i].netId;
+		const flecs::entity e = m_sim->FindEntity( netId );
+		if ( m_sim->IsPuppet( e ) == false )
+		{
+			continue;
+		}
+		const PlayerSlot slot = e.get<Character>().slot;
+		const PlayerInput* input = slot < kMaxPlayers && m_sim->PlayerNetId( slot ) == netId ? &m_lastInputs[slot] : nullptr;
+		Puppet p;
+		if ( m_sim->PuppetOf( netId, input, p ) )
+		{
+			puppetAt[i] = int32_t( kept.puppets.size() );
+			kept.puppets.push_back( p );
+			kept.puppetGroup[i] = 1;
+		}
+	}
+	// And what each holds (its group's).
+	for ( size_t i = 0; i < n; ++i )
+	{
+		if ( kept.placed[i].holder != 0 && kept.head[i] != i && kept.puppetGroup[kept.head[i]] == 1 )
+		{
+			kept.puppetGroup[i] = 2;
+		}
+	}
+	// Their views, then where the spans find them (once nothing moves the bytes).
+	std::vector<size_t> viewAt( n, SIZE_MAX );
+	std::vector<uint8_t> view;
+	for ( size_t i = 0; i < n; ++i )
+	{
+		if ( kept.puppetGroup[i] != 0 )
+		{
+			const net::StateSpan& s = kept.layout.entities[i];
+			m_sim->PuppetView( s.record, s.recordSize, view );
+			viewAt[i] = kept.viewBytes.size();
+			kept.viewBytes.insert( kept.viewBytes.end(), view.begin(), view.end() );
+		}
+	}
+	// What a client is sent of each, hashed: its record (or view), its bodies, its puppet.
+	auto version = []( const uint8_t* record, uint32_t size, uint64_t bodies, const Puppet* puppet ) {
+		uint64_t h = HashBytes( kHashSeed, record, size );
+		h = HashBytes( h, &bodies, sizeof( bodies ) );
+		return puppet != nullptr ? HashBytes( h, puppet, sizeof( Puppet ) ) : h;
+	};
+	for ( size_t i = 0; i < n; ++i )
+	{
+		net::StateSpan& s = kept.layout.entities[i];
+		s.view = viewAt[i] != SIZE_MAX ? kept.viewBytes.data() + viewAt[i] : nullptr;
+		s.viewSize = s.view != nullptr ? s.recordSize : 0;
+		s.puppet = puppetAt[i] >= 0 ? &kept.puppets[size_t( puppetAt[i] )] : nullptr;
+		kept.fullHash[i] = version( s.record, s.recordSize, s.hash, nullptr );
+		kept.viewHash[i] = s.view != nullptr ? version( s.view, s.viewSize, s.hash, s.puppet ) : 0;
+	}
+}
+
 const net::StateLayout* GameServer::LayoutOfTick( const void* server, uint32_t tick )
 {
 	const KeptLayout* kept = static_cast<const GameServer*>( server )->KeptLayoutOf( tick );
@@ -1596,11 +1663,13 @@ void GameServer::StateAcknowledged( Client& c, uint32_t tick )
 		auto it = std::lower_bound( c.known.begin(), c.known.end(), netId, []( const Client::Known& k, uint32_t id ) { return k.netId < id; } );
 		return it != c.known.end() && it->netId == netId ? it : c.known.end();
 	};
-	for ( uint32_t netId : sent.updated )
+	for ( size_t i = 0; i < sent.updated.size(); ++i )
 	{
-		if ( auto it = find( netId ); it != c.known.end() && it->removing == false )
+		if ( auto it = find( sent.updated[i] ); it != c.known.end() && it->removing == false && tick >= it->acked )
 		{
-			it->acked = std::max( it->acked, tick );
+			it->acked = tick;
+			it->ackedHash = i < sent.hashes.size() ? sent.hashes[i] : 0;
+			it->ackedPuppet = i < sent.puppets.size() && sent.puppets[i] != 0;
 		}
 	}
 	for ( uint32_t netId : sent.removed )
@@ -1629,9 +1698,13 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	plan.next.clear();
 	plan.next.reserve( c.known.size() + 16 );
 	plan.updates.reserve( now.layout.entities.size() );
+	plan.sent.hashes.clear();
+	plan.sent.puppets.clear();
 	size_t k = 0;
 	auto gone = [&]( const Client::Known& had ) {
-		plan.next.push_back( { had.netId, had.acked, true, had.sentAt } );
+		Client::Known removing = had;
+		removing.removing = true;
+		plan.next.push_back( removing );
 		plan.sent.removed.push_back( had.netId );
 	};
 	// Whether a state is kept, by tick: the same few ticks come up for most entities.
@@ -1659,12 +1732,19 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 		}
 		Plan::Entry& entry = plan.entries[i];
 		entry.had = k < c.known.size() && c.known[k].netId == netId ? &c.known[k++] : nullptr;
-		entry.acked = entry.had != nullptr && entry.had->removing == false ? entry.had->acked : 0;
 		entry.chosen = false;
 		const Placed& placed = now.placed[i];
 		const bool mine = plan.ownId != 0 && ( netId == plan.ownId || placed.holder == plan.ownId );
+		// Another's character, or what another's holds: as a puppet (M253). A record it has of the
+		// other kind is no base for this one.
+		entry.puppet = mine == false && i < now.puppetGroup.size() && now.puppetGroup[i] != 0;
+		const bool had = entry.had != nullptr && entry.had->removing == false;
+		const bool otherKind = had && entry.had->acked != 0 && entry.had->ackedPuppet != entry.puppet;
+		entry.acked = had && otherKind == false ? entry.had->acked : 0;
+		const uint64_t version = entry.puppet ? now.viewHash[i] : now.fullHash[i];
+		entry.same = entry.acked != 0 && entry.had->ackedHash == version && entry.had->sentHash == version;
 		const uint32_t period = plan.hasOwn == false ? 1u : StatePeriod( b3Length( b3Sub( placed.at, plan.ownAt ) ) );
-		const uint32_t sentAt = entry.had != nullptr ? entry.had->sentAt : 0;
+		const uint32_t sentAt = entry.had != nullptr && otherKind == false ? entry.had->sentAt : 0;
 		const float overdue = sentAt == 0 ? 1e3f : float( newest.tick - sentAt ) / float( period * every );
 		// (One never sent first; one sent and not acknowledged yet waits its turn as any other does,
 		// and goes whole again: resent every state, a crowd's new ones took a small budget's every
@@ -1683,9 +1763,10 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	sizes.assign( n, 0 );
 	for ( size_t i = 0; i < n; ++i )
 	{
+		// (What it has already costs nothing: it is not sent.)
 		const uint32_t h = now.head[i];
 		plan.groupScore[h] = std::max( plan.groupScore[h], plan.entries[i].score );
-		sizes[h] += 1;
+		sizes[h] += plan.entries[i].same ? 0 : 1;
 	}
 	// The budget: the most overdue groups first, whole (the rest stay overdue, and come first next
 	// time); the own one aside.
@@ -1723,13 +1804,29 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	{
 		const uint32_t netId = now.layout.entities[i].netId;
 		const Plan::Entry& entry = plan.entries[i];
-		if ( entry.chosen )
+		const bool had = entry.had != nullptr && entry.had->removing == false;
+		if ( entry.chosen && entry.same )
+		{
+			// What it has (acknowledged, and nothing else sent since): not sent, its turn taken.
+			Client::Known known = *entry.had;
+			known.sentAt = newest.tick;
+			plan.next.push_back( known );
+		}
+		else if ( entry.chosen )
 		{
 			// Against the record it has, if that one is still kept here and there.
 			const bool kept = entry.acked != 0 && keptAt( entry.acked );
-			plan.updates.push_back( { netId, kept ? entry.acked : 0u } );
+			const uint64_t version = entry.puppet ? now.viewHash[i] : now.fullHash[i];
+			plan.updates.push_back( { netId, kept ? entry.acked : 0u, entry.puppet } );
 			plan.sent.updated.push_back( netId );
-			plan.next.push_back( { netId, entry.acked, false, newest.tick } );
+			plan.sent.hashes.push_back( version );
+			plan.sent.puppets.push_back( entry.puppet ? 1 : 0 );
+			Client::Known known = had ? *entry.had : Client::Known{};
+			known.netId = netId;
+			known.removing = false;
+			known.sentAt = newest.tick;
+			known.sentHash = version;
+			plan.next.push_back( known );
 		}
 		else if ( entry.had != nullptr )
 		{
@@ -1738,10 +1835,14 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	}
 	std::inplace_merge( plan.next.begin(), plan.next.begin() + std::ptrdiff_t( goneCount ), plan.next.end(),
 						[]( const Client::Known& a, const Client::Known& b ) { return a.netId < b.netId; } );
-	// A slot's input goes with its character's update.
+	// A slot's input goes with its character's update (not a puppet's: where it looks is in it).
 	size_t pl = 0;
 	for ( const net::EntityUpdate& u : plan.updates )
 	{
+		if ( u.puppet )
+		{
+			continue;
+		}
 		while ( pl < players.size() && players[pl].first < u.netId )
 		{
 			++pl;
@@ -1758,6 +1859,7 @@ void GameServer::PlanState( Plan& plan, Client& c, const StateFrame& newest, con
 	{
 		plan.says.push_back( u.netId );
 		plan.says.push_back( u.baseTick );
+		plan.says.push_back( u.puppet ? 1u : 0u );
 	}
 	plan.says.push_back( uint32_t( plan.sent.removed.size() ) );
 	plan.says.insert( plan.says.end(), plan.sent.removed.begin(), plan.sent.removed.end() );
@@ -2230,6 +2332,35 @@ void GameServer::SampleState( const Plan& plan, PlayerSlot slot, const StateFram
 			m_bench.wholeUnacknowledged += entry.had != nullptr && entry.acked == 0 ? 1 : 0;
 			m_bench.wholeOld += entry.had != nullptr && entry.acked != 0 ? 1 : 0;
 			m_bench.wholeCharacters += holder == 0 ? 1 : 0;
+			continue;
+		}
+		// (A puppet's view, as it is sent: M253; and its puppet, as its change.)
+		if ( u.puppet && span->view != nullptr && was->view != nullptr )
+		{
+			CountChangedBytes( span->view, span->viewSize, was->view, was->viewSize, m_bench.componentSizes,
+							   holder != 0 ? m_bench.changedItems : m_bench.changedCharacters );
+			if ( span->puppet != nullptr )
+			{
+				std::vector<uint8_t> change;
+				net::EncodePuppet( *span->puppet, was->puppet, newest.tick, change );
+				m_bench.puppets += 1;
+				m_bench.puppetBytes += change.size();
+				if ( const Puppet* a = span->puppet; was->puppet != nullptr )
+				{
+					const Puppet& b = *was->puppet;
+					m_bench.puppetPlaces += a->x != b.x || a->y != b.y || a->z != b.z ? 1 : 0;
+					m_bench.puppetFacings += a->facing != b.facing ? 1 : 0;
+					m_bench.puppetAims += a->aimYaw != b.aimYaw || a->aimPitch != b.aimPitch ? 1 : 0;
+					m_bench.puppetFlags += a->flags != b.flags ? 1 : 0;
+					uint32_t layers = 0;
+					for ( size_t l = 0; l < kPuppetLayers; ++l )
+					{
+						layers += a->layers[l] == b.layers[l] ? 0 : 1;
+					}
+					m_bench.puppetLayerChanges += layers > 0 ? 1 : 0;
+					m_bench.puppetLayers += layers;
+				}
+			}
 			continue;
 		}
 		CountChangedBytes( span->record, span->recordSize, was->record, was->recordSize, m_bench.componentSizes,

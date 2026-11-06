@@ -522,7 +522,7 @@ void Simulation::SaveState( std::vector<uint8_t>& out, bool compact, uint32_t on
 	std::memcpy( out.data() + countAt, &count, sizeof( count ) );
 }
 
-bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, StateApply which )
+bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, StateApply which, const std::vector<PuppetEntry>* puppets )
 {
 	// First everything is read and checked; only then is anything changed.
 	ByteReader r( data, size );
@@ -591,12 +591,30 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, S
 	m_followsServer = true;
 	m_world.component<StandIn>();
 	m_world.component<StateBody>();
+	m_world.component<PuppetState>();
 	const int physicsIndex = SnapIndex( m_world.component<PhysicsBody>().id() );
 	const int ragdollIndex = SnapIndex( m_world.component<RagdollBodies>().id() );
 	const int pusherIndex = SnapIndex( m_world.component<Pusher>().id() );
 	const int heldIndex = SnapIndex( m_world.component<HeldItem>().id() );
 	const int transformIndex = SnapIndex( m_world.component<Transform>().id() );
 	const int velocityIndex = SnapIndex( m_world.component<Velocity>().id() );
+	// A puppet's (M253): what its client keeps of its own (PuppetView), by snapshot index.
+	uint32_t puppetLocal = 0;
+	for ( const flecs::entity_t id : { m_world.component<Transform>().id(), m_world.component<Velocity>().id(), m_world.component<Character>().id(),
+									   m_animId, m_motionId, m_world.component<MoveOverrides>().id(), m_world.component<MoveEffects>().id(),
+									   m_world.component<MoveValues>().id(), m_world.component<ModDriven>().id() } )
+	{
+		const int i = SnapIndex( id );
+		puppetLocal |= i >= 0 ? uint32_t( 1 ) << i : 0;
+	}
+	auto isPuppet = [&]( uint32_t netId ) {
+		if ( puppets == nullptr || netId == 0 )
+		{
+			return false;
+		}
+		auto it = std::lower_bound( puppets->begin(), puppets->end(), netId, []( const PuppetEntry& p, uint32_t id ) { return p.netId < id; } );
+		return it != puppets->end() && it->netId == netId;
+	};
 
 	const uint32_t ownNetId = own < kMaxPlayers ? globals.playerNetIds[own] : 0;
 	if ( which == StateApply::Others )
@@ -652,12 +670,17 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, S
 			++existing;
 		}
 		HeldItem held;
-		const bool mine = ownNetId != 0 && ( rec.netId == ownNetId || ( RecordValue( rec, heldIndex, held ) && held.holder == ownNetId ) );
+		const bool hasHeld = RecordValue( rec, heldIndex, held );
+		const bool mine = ownNetId != 0 && ( rec.netId == ownNetId || ( hasHeld && held.holder == ownNetId ) );
+		// A puppet, or what one holds (M253): its record came as PuppetView makes it.
+		const bool puppet = which == StateApply::Others && ( isPuppet( rec.netId ) || ( hasHeld && isPuppet( held.holder ) ) );
 		flecs::entity e;
+		bool had = false;
 		if ( existing < m_entities.size() && m_entities[existing].netId == rec.netId )
 		{
 			e = flecs::entity( m_world, m_entities[existing].entity );
 			++existing;
+			had = true;
 			// Not about it, or still in this world's physics (its event not reached yet): as it is.
 			if ( about( mine ) == false || PhysicsSide( e ) )
 			{
@@ -673,11 +696,17 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, S
 		{
 			continue;
 		}
+		// (A stand-in that is here keeps what a puppet's client moves itself.)
+		const uint32_t keep = puppet && had && e.has<StandIn>() ? puppetLocal : 0;
+		if ( puppet == false )
+		{
+			e.remove<PuppetState>();
+		}
 
 		// Its components, but the physics handles (this world's own).
 		for ( size_t i = 0; i < m_snapComponents.size(); ++i )
 		{
-			if ( int( i ) == physicsIndex || int( i ) == ragdollIndex || int( i ) == pusherIndex )
+			if ( int( i ) == physicsIndex || int( i ) == ragdollIndex || int( i ) == pusherIndex || ( keep & ( uint32_t( 1 ) << i ) ) != 0 )
 			{
 				continue;
 			}
@@ -727,6 +756,17 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, S
 			Velocity v;
 			RecordValue( rec, transformIndex, t );
 			RecordValue( rec, velocityIndex, v );
+			if ( keep != 0 )
+			{
+				t = e.has<Transform>() ? e.get<Transform>() : t; // (a puppet's is where ApplyPuppets put it)
+			}
+			else if ( puppet )
+			{
+				// (A new one's record has none: where its puppet says, or its holder is.)
+				const uint32_t whose = isPuppet( rec.netId ) ? rec.netId : held.holder;
+				auto it = std::lower_bound( puppets->begin(), puppets->end(), whose, []( const PuppetEntry& p, uint32_t id ) { return p.netId < id; } );
+				t = it != puppets->end() && it->netId == whose ? PuppetPlace( it->puppet ) : Transform{};
+			}
 			if ( same == false )
 			{
 				DestroyBodies( e );

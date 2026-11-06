@@ -28,6 +28,7 @@ add_library(cb_sim STATIC
 	simulation.cpp
 	physics_inputs.cpp
 	stand_ins.cpp
+	puppets.cpp
 	hybrid_session.cpp
 )
 

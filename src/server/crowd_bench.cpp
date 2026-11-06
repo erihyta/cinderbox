@@ -180,6 +180,17 @@ std::string FormatBench( const CrowdBench& b )
 	};
 	changed( "others' characters", b.changedCharacters, b.othersUpdated );
 	changed( "their held items", b.changedItems, b.othersItemsUpdated );
+	if ( b.puppets > 0 )
+	{
+		const double n = double( b.puppets );
+		std::snprintf( line, sizeof( line ),
+					   "  their puppets: %.1f B a change; of the changes %.0f%% moved, %.0f%% turned, %.0f%% looked elsewhere, %.0f%% flags, %.0f%% "
+					   "layers (%.1f layers each)\n",
+					   double( b.puppetBytes ) / n, 100.0 * double( b.puppetPlaces ) / n, 100.0 * double( b.puppetFacings ) / n,
+					   100.0 * double( b.puppetAims ) / n, 100.0 * double( b.puppetFlags ) / n, 100.0 * double( b.puppetLayerChanges ) / n,
+					   b.puppetLayerChanges > 0 ? double( b.puppetLayers ) / double( b.puppetLayerChanges ) : 0.0 );
+		add( line );
+	}
 	if ( b.wholeRecords > 0 )
 	{
 		std::snprintf( line, sizeof( line ),

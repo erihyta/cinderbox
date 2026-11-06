@@ -2889,6 +2889,83 @@ void TestProtocol()
 		CHECK( got.names == names.names );
 	}
 
+	// Puppets (M253): every change of one comes back exactly, against another or none; one that
+	// moved a little and turned costs a few bytes.
+	{
+		uint64_t prng = 11;
+		auto random = [&]( uint32_t n ) { return uint32_t( NextRandom( prng ) % n ); };
+		const uint32_t tick = 90000;
+		auto make = [&]( Puppet base ) {
+			Puppet p = base;
+			if ( random( 2 ) )
+			{
+				p.x += int32_t( random( 400 ) ) - 200;
+				p.z += int32_t( random( 400 ) ) - 200;
+			}
+			if ( random( 4 ) == 0 )
+			{
+				p.y = int32_t( random( 1u << 30 ) ) - ( 1 << 29 );
+			}
+			p.facing = random( 2 ) ? uint16_t( random( 65536 ) ) : p.facing;
+			p.aimYaw = random( 2 ) ? int8_t( random( 256 ) ) : p.aimYaw;
+			p.aimPitch = random( 2 ) ? int8_t( random( 256 ) ) : p.aimPitch;
+			p.flags = random( 3 ) == 0 ? uint8_t( random( 128 ) ) : p.flags;
+			p.slot = random( 8 ) == 0 ? PlayerSlot( random( kMaxPlayers + 1 ) ) : p.slot;
+			p.lastJumpTick = random( 4 ) == 0 ? tick - 1 - random( 5000 ) : p.lastJumpTick;
+			p.airSince = random( 4 ) == 0 ? ( random( 2 ) ? 0 : tick - 1 - random( 300 ) ) : p.airSince;
+			p.stepCount += random( 3 );
+			p.motionsOn = random( 6 ) == 0 ? NextRandom( prng ) : p.motionsOn;
+			p.layerCount = random( 5 ) == 0 ? uint8_t( random( kPuppetLayers + 1 ) ) : p.layerCount;
+			for ( size_t l = 0; l < kPuppetLayers; ++l )
+			{
+				if ( l >= p.layerCount )
+				{
+					p.stances[l] = 0;
+					p.layers[l] = PuppetLayer{};
+					continue;
+				}
+				p.stances[l] = random( 6 ) == 0 ? uint8_t( random( 256 ) ) : p.stances[l];
+				if ( random( 4 ) == 0 )
+				{
+					p.layers[l] = { uint8_t( random( 2 ) ? random( 64 ) : 0xFF ), uint8_t( random( 64 ) ), uint8_t( random( 256 ) ),
+									uint8_t( random( 4 ) ), random( 3 ) == 0 ? 0u : tick - 1 - random( 20000 ) };
+				}
+			}
+			return p;
+		};
+		Puppet was;
+		uint32_t roundTrips = 0;
+		for ( int i = 0; i < 2000; ++i )
+		{
+			const Puppet now = make( was );
+			const bool against = random( 5 ) != 0;
+			std::vector<uint8_t> bytes;
+			EncodePuppet( now, against ? &was : nullptr, tick, bytes );
+			ByteReader r( bytes.data(), bytes.size() );
+			Puppet back;
+			roundTrips += DecodePuppet( r, against ? &was : nullptr, tick, back ) && r.AtEnd() && back == now ? 1 : 0;
+			was = now;
+		}
+		CHECK( roundTrips == 2000 );
+		// Walking (20 cm a state) and turning a little: the place's axes and their changes, the facing.
+		Puppet a;
+		a.x = 5000;
+		a.z = -7000;
+		a.facing = 1000;
+		Puppet b = a;
+		b.x += 51;
+		b.z -= 12;
+		b.facing += 300;
+		std::vector<uint8_t> bytes;
+		EncodePuppet( b, &a, tick, bytes );
+		std::printf( "    a puppet that walked and turned: %zu bytes (a change of nothing: ", bytes.size() );
+		CHECK( bytes.size() <= 6 );
+		bytes.clear();
+		EncodePuppet( b, &b, tick, bytes );
+		std::printf( "%zu)\n", bytes.size() );
+		CHECK( bytes.size() == 1 );
+	}
+
 	// A client's inputs: each as few bytes as it needs, whichever of its 64 actions are held.
 	{
 		MsgInput sent;
@@ -7107,12 +7184,14 @@ public:
 // them has to say why.
 void TestCrowdBench()
 {
-	// What M251 measured (24 fake players within 10 m, fighting with what the tests' players start
+	// What M253 measured (24 fake players within 10 m, fighting with what the tests' players start
 	// with in the hand, the default mods but brawl; 5 s counted after 5 s of warming up), with a
-	// little room.
-	constexpr double kMostBytesPerOtherCharacter = 70.0; // on the wire, with what it holds and its input (59.5)
-	constexpr double kMostKbitsPerPlayer = 900.0;		  // (775)
-	constexpr double kMostWholeRecordsPerState = 4.5;	  // (3.5: an entity goes whole until its first is acknowledged)
+	// little room. (M251: 59.5 B, 775 kbit/s, 3.5 whole.)
+	constexpr double kMostBytesPerOtherCharacter = 14.0; // on the wire, with what it holds and its input (11.9: puppets)
+	constexpr double kMostKbitsPerPlayer = 560.0;		  // (491)
+	// (4.2: an entity goes whole until its first is acknowledged; an item that waited unchanged
+	// longer than a base is kept goes whole when it changes.)
+	constexpr double kMostWholeRecordsPerState = 4.8;
 	Harness h( 47960, {}, {}, {}, [&]( ServerOptions& o ) {
 		o.netModel = net::NetModel::Hybrid;
 		o.fakePlayers = 24;
@@ -7268,7 +7347,10 @@ void TestHybridFar()
 	CHECK( all.farError < 0.01f );
 	// (Every entity comes round, a few states later in turn.)
 	CHECK( few.desyncs == 0 && few.compared > 1000 && fewError < 2.0 && few.farError < 10.0f );
-	CHECK( few.bytesPerState < byDistance.bytesPerState );
+	// (Since M253 the others cost a few bytes each, so a budget of entities saves next to nothing:
+	// a state is mostly its head and the own character. What it still must not do is cost much more;
+	// with it, what waits longer than a base is kept goes whole. M257's budget is of bytes.)
+	CHECK( few.bytesPerState < byDistance.bytesPerState * 1.3 );
 	// (The own character and what it holds stay a good part of a state: the far ones' share is what
 	// goes, and it grows with the players; cb_bot measures it.)
 	CHECK( byDistance.bytesPerState < all.bytesPerState * 0.9 );
@@ -7484,6 +7566,116 @@ void TestBrawlLagCompensation()
 	CHECK( with.seenIn + with.seenOut >= 3 && with.hitIn == with.seenIn && with.hitOut == 0 );
 	// Without: most of those it saw land are missed.
 	CHECK( without.seenIn >= 3 && without.hitIn * 2 <= without.seenIn );
+}
+
+// Puppets (M253, M254): another's character as a few numbers, its animation run by each client.
+// The brawl kit's fighter walks about and jabs at a player 1.6 m off, through a link of 50 ms each
+// way that loses 3% of what it carries; on the other's game it is a puppet (no inputs of it, its
+// record without its animation), and every layer of its state machine is in the state the server's
+// is, at the tick it stands as, its clock within a tick of the server's (never more than a few apart
+// after a lost state: the next brings the layer's state again).
+void TestHybridPuppets()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> mods;
+	mods.push_back( std::make_unique<FaceOffMod>( 1.6f ) );
+	const FaceOffMod* faceOff = static_cast<const FaceOffMod*>( mods.back().get() );
+	Harness h( 48180, {}, {}, { { "test.mods", "brawl" }, { "combat.max_health", "1000000" } }, UseHybridModel, std::move( mods ) );
+	net::NetSimConfig link;
+	link.latencyMs = 50;
+	link.lossPercent = 3.0f;
+	h.AddNetSim( 48181, link );
+	h.AddBot();
+	h.AddBot();
+	Bot& fighter = h.bots[0];
+	Bot& watcher = h.bots[1];
+	// The fighter: the fist out, then a jab every 40 ticks, and walking a while now and then.
+	fighter.script = [&]( uint32_t tick ) {
+		PlayerInput in;
+		in.actions = tick >= 280 && tick < 290 ? kKeySlot1 : 0;
+		if ( faceOff->done && tick > 330 )
+		{
+			in.actions |= tick % 40 < 3 ? kKeyUse : 0;
+			in.moveForward = ( tick / 120 ) % 3 == 1 ? int8_t( 60 ) : int8_t( 0 );
+			in.moveRight = ( tick / 120 ) % 3 == 2 ? int8_t( -90 ) : int8_t( 0 );
+		}
+		return in;
+	};
+	h.RunUntil( 5.0 );
+	Simulation& server = h.server.Sim();
+	const uint32_t fighterId = server.PlayerNetId( fighter.client->Slot() );
+	// The server's animation of it, by the state it is in (after the tick before).
+	struct Layers
+	{
+		uint8_t count = 0;
+		uint8_t state[8] = {};
+		float stateTime[8] = {};
+	};
+	auto layersOf = []( const AnimState& a ) {
+		Layers out;
+		out.count = uint8_t( std::min<size_t>( a.graph.size(), 8 ) );
+		for ( size_t l = 0; l < out.count; ++l )
+		{
+			out.state[l] = a.graph[l].started ? a.graph[l].state : 0xFF;
+			out.stateTime[l] = a.graph[l].stateTime;
+		}
+		return out;
+	};
+	std::map<uint32_t, Layers> onServer;
+	std::set<std::pair<size_t, uint8_t>> statesSeen; // (layer, state) the server's went through
+	h.server.SetTickObserver( [&] {
+		if ( const AnimStateCopy a = server.EntityAnimState( fighterId ) )
+		{
+			onServer[server.Tick()] = layersOf( *a );
+			for ( size_t l = 0; l < a->graph.size(); ++l )
+			{
+				statesSeen.insert( { l, a->graph[l].state } );
+			}
+		}
+	} );
+	uint32_t samples = 0, same = 0, within = 0, puppet = 0;
+	float worst = 0.0f;
+	const float dt = 1.0f / 60.0f;
+	h.RunUntil( 16.0, [&]( double ) {
+		Simulation* sim = watcher.client->Sim();
+		const HybridSession* hs = watcher.client->Hybrid();
+		if ( sim == nullptr || hs == nullptr )
+		{
+			return;
+		}
+		const flecs::entity e = sim->FindEntity( fighterId );
+		const AnimStateCopy a = sim->EntityAnimState( fighterId );
+		const auto it = onServer.find( hs->PlacedTick() );
+		if ( e.is_valid() == false || a == nullptr || it == onServer.end() )
+		{
+			return;
+		}
+		puppet += e.has<PuppetState>() ? 1 : 0;
+		const Layers mine = layersOf( *a );
+		const Layers& theirs = it->second;
+		samples += 1;
+		bool allSame = mine.count == theirs.count;
+		float off = 0.0f;
+		for ( size_t l = 0; allSame && l < mine.count; ++l )
+		{
+			allSame = mine.state[l] == theirs.state[l];
+			off = std::max( off, std::fabs( mine.stateTime[l] - theirs.stateTime[l] ) );
+		}
+		same += allSame ? 1 : 0;
+		within += allSame && off <= 1.5f * dt ? 1 : 0;
+		worst = allSame ? std::max( worst, off ) : worst;
+	} );
+	h.server.SetTickObserver( {} );
+	for ( Bot& b : h.bots )
+	{
+		CheckHybridClient( *b.client );
+	}
+	std::printf( "    the fighter on the other's game: %u looks (%u as a puppet), every layer in the server's state in %u, its clock within a "
+				 "tick in %u (%.0f ms off at most); the server's went through %zu states\n",
+				 samples, puppet, same, within, double( worst ) * 1000.0, statesSeen.size() );
+	CHECK( samples > 300 && puppet == samples );
+	CHECK( statesSeen.size() >= 4 ); // (it walked, jabbed and stood)
+	CHECK( same * 100 >= samples * 97 );
+	CHECK( within * 100 >= samples * 95 );
 }
 
 // Lag compensation (M250): a shooter 50 ms each way from the server fires at a player strafing
@@ -7849,6 +8041,7 @@ int main( int argc, char** argv )
 		{ "crowd_bench", TestCrowdBench },
 		{ "lag_compensation", TestLagCompensation },
 		{ "brawl_lag_compensation", TestBrawlLagCompensation },
+		{ "hybrid_puppets", TestHybridPuppets },
 		{ "hybrid_reconnect", TestHybridReconnect },
 		{ "hybrid_own_throw", TestHybridOwnThrow },
 		{ "grace_expiry", TestGraceExpiry },

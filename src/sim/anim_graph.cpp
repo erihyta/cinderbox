@@ -3,9 +3,11 @@
 #include "events.h"
 #include "expr.h"
 #include "motions.h"
+#include "puppet.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 
 namespace cb
@@ -15,7 +17,7 @@ namespace
 {
 
 constexpr int kMaxExprStack = 32;
-constexpr float kMaxStateTime = 600.0f;
+constexpr float kMaxStateTime = kMaxAnimStateTime;
 constexpr float kMinClipLength = 1.0f / 1024.0f;
 
 const char* const kBuiltinNames[AnimExpr::BuiltinCount] = {
@@ -1452,8 +1454,178 @@ float AnimGraphFadeIn( const AnimGraphLayer& layer, const AnimGraphLayerState& L
 	return t;
 }
 
+uint8_t AnimGraphVia( const AnimGraphLayer& layer, const AnimGraphLayerState& L )
+{
+	if ( L.fadeLength <= 0.0f || L.state >= layer.states.size() || L.previous >= layer.states.size() )
+	{
+		return 0xFF;
+	}
+	// (As AnimGraphFadeIn finds it: a restart of this state, or a transition from the one before.)
+	if ( L.previous == L.state )
+	{
+		const std::vector<AnimGraphTransition>& restarts = layer.states[L.state].restarts;
+		for ( size_t i = 0; i < restarts.size() && i < 0x7F; ++i )
+		{
+			if ( restarts[i].xfade == L.fadeLength )
+			{
+				return uint8_t( 0x80 | i );
+			}
+		}
+		return 0xFF;
+	}
+	const std::vector<AnimGraphTransition>& from = layer.states[L.previous].transitions;
+	for ( size_t i = 0; i < from.size() && i < 0x7F; ++i )
+	{
+		if ( size_t( from[i].to ) == L.state && from[i].xfade == L.fadeLength )
+		{
+			return uint8_t( i );
+		}
+	}
+	return 0xFF;
+}
+
+float AnimGraphViaFade( const AnimGraphLayer& layer, uint8_t state, uint8_t previous, uint8_t via )
+{
+	if ( via == 0xFF || state >= layer.states.size() || previous >= layer.states.size() )
+	{
+		return 0.0f;
+	}
+	const std::vector<AnimGraphTransition>& list = ( via & 0x80 ) ? layer.states[state].restarts : layer.states[previous].transitions;
+	const size_t i = via & 0x7F;
+	return i < list.size() ? list[i].xfade : 0.0f;
+}
+
+namespace
+{
+
+// The most a layer that follows another simulation's catches up at once (a far puppet's late news).
+constexpr uint32_t kMostCatchUpTicks = 240;
+
+// A OneShot's layer as another simulation says it plays (UpdateShot, with the shot fired where
+// `stamp` says instead of by its request).
+void FollowShot( const AnimGraph& graph, const AnimGraphLayer& layer, AnimGraphLayerState& L, const AnimGraphInputs& in, float dt,
+				 std::vector<int>& markers, const PuppetLayer& stamp )
+{
+	const AnimGraphState& state = layer.states[0];
+	L.state = L.previous = 0;
+	L.fadeLength = 0.0f;
+	const bool plays = stamp.state != 0xFF && stamp.via == 1 && stamp.start <= in.tick;
+	const uint32_t ago = plays ? in.tick - stamp.start : 0; // (its clock at the end of this tick, in ticks)
+	const bool playing = L.previousBlend != 0.0f;
+	const bool fired = plays && ( playing == false || uint32_t( std::lround( L.stateTime / dt ) ) + 1 != ago );
+	if ( fired == false && stamp.state != 0xFF && stamp.via == 0 && playing )
+	{
+		L.previousBlend = 0.0f; // (over there: over here too)
+		L.weight = 0.0f;
+		L.time = 0.0f;
+		return;
+	}
+	const float length = state.blend ? 1.0f : graph.clips[size_t( state.points[0].clip )].length;
+	if ( fired )
+	{
+		L.previousBlend = 1.0f;
+		L.time = 0.0f;
+		L.stateTime = 0.0f;
+		L.weight = 0.0f;
+		for ( uint32_t k = 1; k < ago && k < kMostCatchUpTicks; ++k )
+		{
+			bool ended = false;
+			const bool wrapped = Advance( graph, state, L.blend, L.blendY, L.time, dt * AnimStateSpeed( state, in, L.stateTime ), 0.0f, ended );
+			L.stateTime = std::min( L.stateTime + dt, kMaxStateTime );
+			L.weight = layer.fadeIn > 0.0f ? std::min( 1.0f, L.weight + dt / layer.fadeIn ) : 1.0f;
+			if ( wrapped || ( state.blend == false && L.time >= length ) )
+			{
+				L.previousBlend = 0.0f;
+				L.weight = 0.0f;
+				L.time = 0.0f;
+				return;
+			}
+		}
+	}
+	if ( L.previousBlend == 0.0f )
+	{
+		L.weight = 0.0f;
+		return;
+	}
+	if ( state.blend )
+	{
+		L.blend = EvaluateAnimExpr( state.input, in, L.stateTime );
+		L.blendY = state.planar ? EvaluateAnimExpr( state.inputY, in, L.stateTime ) : 0.0f;
+	}
+	const bool entered = L.stateTime == 0.0f;
+	const float before = L.time;
+	const float speed = AnimStateSpeed( state, in, L.stateTime );
+	bool ended = false;
+	const bool wrapped = Advance( graph, state, L.blend, L.blendY, L.time, dt * speed, 0.0f, ended );
+	L.stateTime = std::min( L.stateTime + dt, kMaxStateTime );
+	FireMarkers( graph, state, before, L.time, wrapped, entered, markers );
+	if ( wrapped || ( state.blend == false && L.time >= length ) )
+	{
+		L.previousBlend = 0.0f;
+		L.weight = 0.0f;
+		L.time = 0.0f;
+		return;
+	}
+	const float rise = layer.fadeIn > 0.0f ? L.weight + dt / layer.fadeIn : 1.0f;
+	float left = 1.0f;
+	if ( layer.fadeOut > 0.0f )
+	{
+		const float secondsLeft = state.blend ? 1.0f : ( speed > 0.0f ? ( length - L.time ) / speed : layer.fadeOut );
+		left = secondsLeft / layer.fadeOut;
+	}
+	L.weight = std::clamp( std::min( rise, left ), 0.0f, 1.0f );
+}
+
+// A layer that follows another simulation's (`stamp`), after this tick's advance: when that one's
+// state is not the one here, or began on another tick, this one takes it, as it began there and
+// caught up to now (its clock from then; fading from the state it was in, if that is the one).
+void FollowLayer( const AnimGraph& graph, const AnimGraphLayer& layer, AnimGraphLayerState& L, AnimGraphInputs& in, float dt,
+				  const PuppetLayer& stamp )
+{
+	if ( stamp.state == 0xFF || stamp.state >= layer.states.size() || stamp.start > in.tick )
+	{
+		return;
+	}
+	// (Begun long ago, start 0: in that state, whatever its clock says.)
+	const bool longAgo = stamp.start == 0;
+	const uint32_t ago = longAgo ? kMostCatchUpTicks : in.tick - stamp.start;
+	if ( L.state == stamp.state && ( longAgo || uint32_t( std::lround( L.stateTime / dt ) ) == ago ) )
+	{
+		return;
+	}
+	const uint8_t previous = stamp.previous < layer.states.size() ? stamp.previous : stamp.state;
+	const bool fromHere = L.state == previous;
+	const AnimGraphState& next = layer.states[stamp.state];
+	const AnimGraphState& fading = layer.states[previous];
+	L.previousTime = fromHere ? L.time : 0.0f;
+	L.previousBlend = fromHere ? L.blend : ( fading.blend ? EvaluateAnimExpr( fading.input, in, 0.0f ) : 0.0f );
+	L.previousBlendY = fromHere ? L.blendY : ( fading.planar ? EvaluateAnimExpr( fading.inputY, in, 0.0f ) : 0.0f );
+	L.previous = previous;
+	L.state = stamp.state;
+	L.time = 0.0f;
+	L.stateTime = 0.0f;
+	L.fadeLength = AnimGraphViaFade( layer, stamp.state, previous, stamp.via );
+	L.blend = next.blend ? EvaluateAnimExpr( next.input, in, 0.0f ) : 0.0f;
+	L.blendY = next.planar ? EvaluateAnimExpr( next.inputY, in, 0.0f ) : 0.0f;
+	for ( uint32_t k = 0; k < ago && k < kMostCatchUpTicks; ++k )
+	{
+		bool ended = false;
+		Advance( graph, next, L.blend, L.blendY, L.time, dt * AnimStateSpeed( next, in, L.stateTime ), 0.0f, ended );
+		if ( L.stateTime < L.fadeLength )
+		{
+			Advance( graph, fading, L.previousBlend, L.previousBlendY, L.previousTime, dt * AnimStateSpeed( fading, in, L.stateTime ), 0.0f,
+					 ended );
+		}
+		L.stateTime = std::min( L.stateTime + dt, kMaxStateTime );
+	}
+	// (Past the most it catches up: its clock where it would be.)
+	L.stateTime = std::min( float( ago ) * dt, kMaxStateTime );
+}
+
+} // namespace
+
 void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphPacks& packs, AnimGraphInputs& in, float dt,
-					  std::vector<int>& markers )
+					  std::vector<int>& markers, const PuppetLayer* follow, size_t followCount )
 {
 	in.state = &s;
 	// (All the layers at once: a layer is held by reference below, and the list must not move.)
@@ -1466,6 +1638,14 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphP
 	for ( size_t l = 0; l < slots; ++l )
 	{
 		AnimGraphLayerState& L = s.graph[l];
+		// Following another simulation's layers (a puppet, M254): their states and when they began
+		// are its, never this one's transitions; everything else (clocks, blends, weights) runs here.
+		const PuppetLayer* stamp = follow != nullptr && l < followCount ? &follow[l] : nullptr;
+		if ( stamp != nullptr && stamp->state != 0xFF && stamp->source != L.source )
+		{
+			L = AnimGraphLayerState{};
+			L.source = stamp->source; // (another pack's layer there: from its start, then as it is)
+		}
 		const AnimGraph* owner = nullptr;
 		const AnimGraphLayer& layer = ResolveLayer( character, packs, l, L.source, owner, OverlayNth( character, s.graph, l ) );
 		const AnimGraph& graph = *owner; // the clips this layer plays
@@ -1491,7 +1671,14 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphP
 
 		if ( layer.shot )
 		{
-			UpdateShot( graph, layer, L, in, dt, markers );
+			if ( stamp != nullptr )
+			{
+				FollowShot( graph, layer, L, in, dt, markers, *stamp );
+			}
+			else
+			{
+				UpdateShot( graph, layer, L, in, dt, markers );
+			}
 			continue;
 		}
 		// The layer's weight eases toward its expression, like a stance fading in.
@@ -1521,6 +1708,11 @@ void UpdateAnimGraph( AnimState& s, const AnimGraph& character, const AnimGraphP
 		}
 		L.stateTime = std::min( L.stateTime + dt, kMaxStateTime );
 		FireMarkers( graph, state, before, L.time, wrapped, entered, markers );
+		if ( stamp != nullptr )
+		{
+			FollowLayer( graph, layer, L, in, dt, *stamp );
+			continue;
+		}
 
 		bool switched = false;
 		for ( const AnimGraphTransition& t : state.transitions )
