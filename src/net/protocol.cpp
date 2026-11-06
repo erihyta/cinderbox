@@ -1073,6 +1073,16 @@ bool FitsChange( int64_t v )
 	return v >= -( int64_t( 1 ) << 24 ) && v <= ( int64_t( 1 ) << 24 );
 }
 
+// Where a pusher would be if it went on as it went (M256): its place before, and as far again as it
+// went from the one before that (when it was there too); its place before alone else. A change is
+// against this: one walking steadily changes by nothing.
+void PredictPlace( const PusherPlace& was, const PusherPlace* before, int64_t out[3] )
+{
+	out[0] = before != nullptr ? 2 * int64_t( was.x ) - before->x : was.x;
+	out[1] = before != nullptr ? 2 * int64_t( was.y ) - before->y : was.y;
+	out[2] = before != nullptr ? 2 * int64_t( was.z ) - before->z : was.z;
+}
+
 // Frame layout: type, tick u32, flags u8 (1: inputs, 2: physics events, 4: pushers' places, 8: a
 // physics checksum), eventCount varint, events (type u8, slot u16)*, commandCount u16, commands (type
 // u8, field mask u8, the fields present)*; with inputs, changedMask u64, then the changed fields
@@ -1086,15 +1096,19 @@ enum FrameFlags : uint8_t
 	FrameChecksum = 8,
 };
 
-void FrameCodec::Reset( const InputArray& base, const std::vector<PusherPlace>* pushers )
+void FrameCodec::Reset( const InputArray& base, const std::vector<PusherPlace>* pushers, const std::vector<PusherPlace>* before )
 {
 	m_previous = base;
-	m_previousPushers.clear();
-	if ( pushers != nullptr )
-	{
-		// (As the frame before was sent: no more than a frame carries.)
-		m_previousPushers.assign( pushers->begin(), pushers->begin() + std::ptrdiff_t( std::min<size_t>( pushers->size(), kMaxFramePushers ) ) );
-	}
+	// (As those frames were sent: no more than a frame carries.)
+	auto take = []( const std::vector<PusherPlace>* from, std::vector<PusherPlace>& to ) {
+		to.clear();
+		if ( from != nullptr )
+		{
+			to.assign( from->begin(), from->begin() + std::ptrdiff_t( std::min<size_t>( from->size(), kMaxFramePushers ) ) );
+		}
+	};
+	take( pushers, m_previousPushers );
+	take( pushers != nullptr ? before : nullptr, m_beforePushers );
 }
 
 void FrameCodec::Encode( const InputFrame& frame, std::vector<uint8_t>& out )
@@ -1173,9 +1187,14 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w, bool withIn
 		{
 			const PusherPlace& p = frame.pushers[i];
 			const PusherPlace* was = PreviousPlace( m_previousPushers, p.netId );
-			const int64_t dx = was ? int64_t( p.x ) - was->x : p.x;
-			const int64_t dy = was ? int64_t( p.y ) - was->y : p.y;
-			const int64_t dz = was ? int64_t( p.z ) - was->z : p.z;
+			int64_t at[3] = { 0, 0, 0 };
+			if ( was != nullptr )
+			{
+				PredictPlace( *was, PreviousPlace( m_beforePushers, p.netId ), at );
+			}
+			const int64_t dx = int64_t( p.x ) - at[0];
+			const int64_t dy = int64_t( p.y ) - at[1];
+			const int64_t dz = int64_t( p.z ) - at[2];
 			// (A change unless it was not there before, or went further than a change says: a jump.)
 			const bool fits = was != nullptr && FitsChange( dx ) && FitsChange( dy ) && FitsChange( dz );
 			const bool size = was == nullptr || was->radius != p.radius || was->halfHeight != p.halfHeight;
@@ -1206,6 +1225,7 @@ void FrameCodec::EncodeBody( const InputFrame& frame, ByteWriter& w, bool withIn
 			}
 		}
 	}
+	m_beforePushers.swap( m_previousPushers );
 	m_previousPushers.assign( frame.pushers.begin(), frame.pushers.begin() + std::ptrdiff_t( pushers ) );
 	if ( checksum != 0 )
 	{
@@ -1326,7 +1346,8 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame, uint64_t* checksu
 			if ( pf & PushChange )
 			{
 				int32_t* at[3] = { &p.x, &p.y, &p.z };
-				const int32_t from[3] = { was->x, was->y, was->z };
+				int64_t from[3];
+				PredictPlace( *was, PreviousPlace( m_beforePushers, p.netId ), from );
 				const uint8_t bits[3] = { PushX, PushY, PushZ };
 				for ( int i = 0; i < 3; ++i )
 				{
@@ -1370,6 +1391,7 @@ bool FrameCodec::DecodeBody( ByteReader& r, InputFrame& frame, uint64_t* checksu
 		*checksum = sum;
 	}
 	m_previous = frame.inputs;
+	m_beforePushers.swap( m_previousPushers );
 	m_previousPushers = frame.pushers;
 	return true;
 }
@@ -1381,7 +1403,8 @@ bool IsSendableCommand( const SimCommand& c )
 }
 
 void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, size_t count, std::vector<uint8_t>& out,
-					   bool withInputs, const uint64_t* checksums, const std::vector<PusherPlace>* basePushers )
+					   bool withInputs, const uint64_t* checksums, const std::vector<PusherPlace>* basePushers,
+					   const std::vector<PusherPlace>* beforePushers )
 {
 	Begin( out, MsgType::FrameBatch );
 	ByteWriter w( out );
@@ -1389,7 +1412,7 @@ void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, 
 	w.Write( count > 0 ? frames[0]->tick : uint32_t( 0 ) );
 	w.Write( uint8_t( count ) );
 	FrameCodec codec;
-	codec.Reset( base, basePushers );
+	codec.Reset( base, basePushers, beforePushers );
 	for ( size_t i = 0; i < count; ++i )
 	{
 		codec.EncodeBody( *frames[i], w, withInputs, checksums != nullptr ? checksums[i] : 0 );
@@ -1404,10 +1427,11 @@ bool ReadFrameBatchHeader( ByteReader& r, uint32_t& firstTick, uint32_t& count )
 }
 
 bool ReadFrameBatchBody( ByteReader& r, const InputArray& base, uint32_t firstTick, uint32_t count,
-						 std::vector<InputFrame>& out, std::vector<uint64_t>* checksums, const std::vector<PusherPlace>* basePushers )
+						 std::vector<InputFrame>& out, std::vector<uint64_t>* checksums, const std::vector<PusherPlace>* basePushers,
+						 const std::vector<PusherPlace>* beforePushers )
 {
 	FrameCodec codec;
-	codec.Reset( base, basePushers );
+	codec.Reset( base, basePushers, beforePushers );
 	out.resize( count );
 	if ( checksums != nullptr )
 	{

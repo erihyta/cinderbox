@@ -7184,11 +7184,11 @@ public:
 // them has to say why.
 void TestCrowdBench()
 {
-	// What M253 measured (24 fake players within 10 m, fighting with what the tests' players start
+	// What M256 measured (24 fake players within 10 m, fighting with what the tests' players start
 	// with in the hand, the default mods but brawl; 5 s counted after 5 s of warming up), with a
-	// little room. (M251: 59.5 B, 775 kbit/s, 3.5 whole.)
-	constexpr double kMostBytesPerOtherCharacter = 14.0; // on the wire, with what it holds and its input (11.9: puppets)
-	constexpr double kMostKbitsPerPlayer = 560.0;		  // (491)
+	// little room. (M251: 59.5 B, 775 kbit/s, 3.5 whole; M253: 11.9 B, 491 kbit/s.)
+	constexpr double kMostBytesPerOtherCharacter = 14.0; // on the wire, with what it holds and its input (12.3: puppets)
+	constexpr double kMostKbitsPerPlayer = 240.0;		  // (203: frames with the states, the head without the rings)
 	// (4.2: an entity goes whole until its first is acknowledged; an item that waited unchanged
 	// longer than a base is kept goes whole when it changes.)
 	constexpr double kMostWholeRecordsPerState = 4.8;

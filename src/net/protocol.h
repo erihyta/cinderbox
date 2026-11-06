@@ -234,8 +234,9 @@ class FrameCodec
 {
 public:
 	// `pushers`: the places of the frame before (M256: a batch's first frame codes its pushers
-	// against them; null: none, every place whole).
-	void Reset( const InputArray& base, const std::vector<PusherPlace>* pushers = nullptr );
+	// against them; null: none, every place whole), and `before` those of the frame before that
+	// (a pusher's change is against where it would be going on as it went; null: its place before).
+	void Reset( const InputArray& base, const std::vector<PusherPlace>* pushers = nullptr, const std::vector<PusherPlace>* before = nullptr );
 
 	void Encode( const InputFrame& frame, std::vector<uint8_t>& out );
 	bool Decode( ByteReader& r, InputFrame& frame );
@@ -255,16 +256,18 @@ public:
 private:
 	InputArray m_previous{};
 	std::vector<PusherPlace> m_previousPushers;
+	std::vector<PusherPlace> m_beforePushers; // (the frame's before the previous)
 };
 
 // S -> C frame batch: `frames` must be consecutive; `base` holds the inputs of the frame before
-// the first one (the delta base), and `basePushers` that frame's pushers' places (M256; null: the
-// client has no frame before, its first after a snapshot). Layout: type, u32 firstTick, u8 count,
-// frame bodies. The hybrid: without the inputs, and with a physics checksum for each frame whose
-// `checksums` entry is not 0.
+// the first one (the delta base), and `basePushers` that frame's pushers' places, `beforePushers`
+// the frame's before it (M256; null: the client has no such frame, the first after its snapshot).
+// Layout: type, u32 firstTick, u8 count, frame bodies. The hybrid: without the inputs, and with a
+// physics checksum for each frame whose `checksums` entry is not 0.
 inline constexpr size_t kMaxBatchFrames = 64;
 void EncodeFrameBatch( const InputArray& base, const InputFrame* const* frames, size_t count, std::vector<uint8_t>& out,
-					   bool withInputs = true, const uint64_t* checksums = nullptr, const std::vector<PusherPlace>* basePushers = nullptr );
+					   bool withInputs = true, const uint64_t* checksums = nullptr, const std::vector<PusherPlace>* basePushers = nullptr,
+					   const std::vector<PusherPlace>* beforePushers = nullptr );
 
 // First step of decoding: which ticks does the batch cover?
 bool ReadFrameBatchHeader( ByteReader& r, uint32_t& firstTick, uint32_t& count );
@@ -272,7 +275,7 @@ bool ReadFrameBatchHeader( ByteReader& r, uint32_t& firstTick, uint32_t& count )
 // physics checksum (0: none).
 bool ReadFrameBatchBody( ByteReader& r, const InputArray& base, uint32_t firstTick, uint32_t count,
 						 std::vector<InputFrame>& out, std::vector<uint64_t>* checksums = nullptr,
-						 const std::vector<PusherPlace>* basePushers = nullptr );
+						 const std::vector<PusherPlace>* basePushers = nullptr, const std::vector<PusherPlace>* beforePushers = nullptr );
 
 // Commands a server is about to send: anything that is not finite, or not a known type, is dropped
 // here so every client applies exactly the same list.

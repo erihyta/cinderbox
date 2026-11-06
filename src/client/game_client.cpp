@@ -590,6 +590,7 @@ bool GameClient::UseFrameBatch( uint32_t firstTick, uint32_t count, const uint8_
 		// (Without the inputs: no base needed; its pushers' places against the frame before, but
 		// for the first after the snapshot.) Each frame new to it, and the physics checksum it has.
 		const std::vector<PusherPlace>* pushers = nullptr;
+		const std::vector<PusherPlace>* before = nullptr;
 		if ( firstTick > m_framesFrom )
 		{
 			const KnownPushers& k = m_knownPushers[( firstTick - 1 ) % kKnownInputHistory];
@@ -599,9 +600,20 @@ bool GameClient::UseFrameBatch( uint32_t firstTick, uint32_t count, const uint8_
 				return false;
 			}
 			pushers = &k.pushers;
+			// (And the frame before that, which their moves are predicted from.)
+			if ( firstTick - 1 > m_framesFrom )
+			{
+				const KnownPushers& b = m_knownPushers[( firstTick - 2 ) % kKnownInputHistory];
+				if ( b.tick != firstTick - 2 )
+				{
+					m_stats.batchesIgnored += 1;
+					return false;
+				}
+				before = &b.pushers;
+			}
 		}
 		ByteReader r( body, size );
-		if ( ReadFrameBatchBody( r, base, firstTick, count, m_batchScratch, &m_checksumScratch, pushers ) == false )
+		if ( ReadFrameBatchBody( r, base, firstTick, count, m_batchScratch, &m_checksumScratch, pushers, before ) == false )
 		{
 			Log( "corrupt frame batch at tick %u", firstTick );
 			m_stats.batchesIgnored += 1;

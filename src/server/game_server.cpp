@@ -1437,7 +1437,7 @@ void GameServer::SendFrames( double now )
 	struct Encoded
 	{
 		uint32_t ack;
-		bool pusherBase;
+		bool pusherBase, pusherBefore;
 		size_t frames;
 		std::vector<uint8_t> bytes;
 	};
@@ -1499,10 +1499,12 @@ void GameServer::SendFrames( double now )
 		// (The hybrid's pushers against the frame before, when the client has that one: not the first
 		// after its snapshot. M256: every packet sent each place whole before.)
 		const bool pusherBase = m_options.netModel == NetModel::Hybrid && first > c.framesFrom && HistoryFrame( first - 1 ) != nullptr;
+		// (And the frame before that one, which its moves are predicted from.)
+		const bool pusherBefore = pusherBase && first - 1 > c.framesFrom && HistoryFrame( first - 2 ) != nullptr;
 		Encoded* hit = nullptr;
 		for ( Encoded& e : cache )
 		{
-			if ( e.ack == first && e.pusherBase == pusherBase )
+			if ( e.ack == first && e.pusherBase == pusherBase && e.pusherBefore == pusherBefore )
 			{
 				hit = &e;
 				break;
@@ -1520,7 +1522,7 @@ void GameServer::SendFrames( double now )
 			{
 				base = HistoryFrame( first - 1 ) ? HistoryFrame( first - 1 )->inputs : m_lastInputs;
 			}
-			cache.push_back( { first, pusherBase, frames.size(), {} } );
+			cache.push_back( { first, pusherBase, pusherBefore, frames.size(), {} } );
 			hit = &cache.back();
 			if ( m_options.netModel == NetModel::Hybrid )
 			{
@@ -1532,7 +1534,8 @@ void GameServer::SendFrames( double now )
 					sums[i] = frames[i] != nullptr && m_physicsSums.size() == kFrameHistory ? m_physicsSums[frames[i]->tick % kFrameHistory] : 0;
 				}
 				EncodeFrameBatch( base, frames.data(), frames.size(), hit->bytes, false, sums.data(),
-								  pusherBase ? &HistoryFrame( first - 1 )->pushers : nullptr );
+								  pusherBase ? &HistoryFrame( first - 1 )->pushers : nullptr,
+								  pusherBefore ? &HistoryFrame( first - 2 )->pushers : nullptr );
 			}
 			else
 			{
@@ -2327,7 +2330,9 @@ void GameServer::CountFrame( const InputFrame& frame )
 	std::vector<uint8_t> out;
 	auto size = [&]( const InputFrame& f ) {
 		const InputFrame* one = &f;
-		EncodeFrameBatch( base, &one, 1, out, inputs, nullptr, before != nullptr && inputs == false ? &before->pushers : nullptr );
+		const InputFrame* twoBefore = frame.tick > 1 ? HistoryFrame( frame.tick - 2 ) : nullptr;
+		EncodeFrameBatch( base, &one, 1, out, inputs, nullptr, before != nullptr && inputs == false ? &before->pushers : nullptr,
+						  before != nullptr && twoBefore != nullptr && inputs == false ? &twoBefore->pushers : nullptr );
 		return uint64_t( out.size() );
 	};
 	m_bench.frameAlone += size( frame );
