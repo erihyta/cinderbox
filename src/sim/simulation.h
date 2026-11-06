@@ -262,7 +262,8 @@ public:
 	// that character and what it holds.
 	// `compact`: what is sent to clients. Where things are and how they move rounded (positions to
 	// 1/1024 m, rotations to 1/32768 and then made unit again, velocities to 1/256 m/s): their
-	// changes then take fewer bits. This world's own state stays exact.
+	// changes then take fewer bits. Of the globals, whose the slots are alone (all ApplyState reads;
+	// M256: the event rings were ~1 KB of every state). This world's own state stays exact.
 	void SaveState( std::vector<uint8_t>& out, bool compact = false, uint32_t only = 0 );
 	// ApplyState makes the characters' side of this world the server's as those bytes have it:
 	// every entity's components but its physics handles; a body kept when the server's description

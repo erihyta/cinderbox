@@ -327,6 +327,7 @@ private:
 	void RunMods( InputFrame& frame );
 	void SendSnapshots();
 	void SendFrames( double now );
+	uint32_t m_framesSentAt = 0; // the tick frames last went out (the hybrid's go with its states)
 	// The hybrid: the newest characters' state to everyone, each against the one it has.
 	void SendStates();
 	const net::StateFrame* KeptState( uint32_t tick ) const;

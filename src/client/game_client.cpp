@@ -779,10 +779,16 @@ void GameClient::Advance( double now, const InputSampler& sampleInput )
 	if ( m_hybrid )
 	{
 		// The physics a little behind the newest frame: the jitter and a margin, so the next one is
-		// here when it is needed. A tick or two a frame, and quicker far behind.
-		const uint32_t buffer = uint32_t( std::clamp( std::ceil( 2.0 * jitter * rate ) + 2.0, 2.0, 30.0 ) );
+		// here when it is needed. A tick or two a frame, and quicker far behind. Frames come with the
+		// states (M256: every stateEvery ticks, that many at once): the physics follows the server's
+		// clock as the frames' best arrivals have it (a tick a tick, not in steps of the packets), a
+		// packet's interval further back, and never past the frames it has.
+		const uint32_t buffer =
+			uint32_t( std::clamp( std::ceil( 2.0 * jitter * rate ) + 2.0 + double( m_stateEvery > 0 ? m_stateEvery - 1 : 0 ), 2.0, 30.0 ) );
 		const uint32_t physics = m_hybrid->PhysicsTick();
-		const uint32_t target = m_hybridFrames > buffer ? m_hybridFrames - buffer : 0;
+		const double arrived = std::min( now * rate + m_clockOffset, double( m_hybridFrames ) + double( m_stateEvery ) );
+		const uint32_t clockTarget = arrived > double( buffer ) ? uint32_t( arrived ) - buffer : 0;
+		const uint32_t target = std::min( clockTarget, m_hybridFrames );
 		if ( target > physics )
 		{
 			const uint32_t behind = target - physics;

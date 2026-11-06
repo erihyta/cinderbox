@@ -639,8 +639,16 @@ void GameServer::Update( double now )
 	{
 		// Once for all the ticks of this update, not once a tick: packets sent in one go leave in
 		// one datagram, and are lost together. A frame's three packets have to be three datagrams.
+		// The hybrid's frames go with its states (M256): one datagram every stateEvery ticks, each
+		// frame in two of them; and on their own when no state has gone for longer than that.
 		const auto sendFrom = std::chrono::steady_clock::now();
-		SendFrames( now );
+		const bool hybrid = m_options.netModel == NetModel::Hybrid;
+		const bool stateMade = m_states.empty() == false && m_states.back().tick == m_sim->Tick();
+		if ( hybrid == false || stateMade || m_sim->Tick() >= m_framesSentAt + 2 * std::max( m_options.stateEvery, 1u ) )
+		{
+			SendFrames( now );
+			m_framesSentAt = m_sim->Tick();
+		}
 		m_bench.framesMs += BenchCounts() ? std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - sendFrom ).count() : 0.0;
 		if ( m_options.netModel == NetModel::Hybrid )
 		{
@@ -1467,7 +1475,10 @@ void GameServer::SendFrames( double now )
 		bool waited = c.ackTick < c.sentThrough && now - c.frameSentAt[c.ackTick % 256] > std::max( 0.06, c.roundTrip * 1.5 + 0.03 );
 		if ( waited == false && c.sentThrough > c.ackTick )
 		{
-			first = std::max( c.ackTick, std::min( c.sentBefore[1], c.sentThrough ) );
+			// (The hybrid's in two packets, M256: they go every stateEvery ticks, so a frame waits
+			// longer for its third, and the physics' buffer covers a lost one.)
+			const uint32_t before = m_options.netModel == NetModel::Hybrid ? c.sentBefore[0] : c.sentBefore[1];
+			first = std::max( c.ackTick, std::min( before, c.sentThrough ) );
 		}
 		c.sentBefore[1] = c.sentBefore[0];
 		c.sentBefore[0] = c.sentThrough;
