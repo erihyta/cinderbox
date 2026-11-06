@@ -44,6 +44,10 @@ struct BoardField
 	BoardType type = BoardType::Int;
 	BoardScope scope = BoardScope::Entity;
 	uint16_t slot = 0;
+	// An entity field's: other players' clients are sent it too (M255). Unshared, a player's own
+	// fields and those of what it holds go to that player alone; a mod marks those its looks show on
+	// others (a score in a list, a glow), and a field any state machine reads is shared by itself.
+	bool shared = false;
 
 	bool operator==( const BoardField& ) const = default;
 };

@@ -349,6 +349,16 @@ bool GameServer::Start( const ServerOptions& options )
 			m_schema.itemShapes[size_t( kind )].fieldDefaults = defaults;
 		}
 	}
+	// A field a state machine reads is shared (M255): every client runs the others' (M254).
+	for ( BoardField& f : m_schema.fields )
+	{
+		if ( f.scope != BoardScope::Entity || f.shared )
+		{
+			continue;
+		}
+		auto reads = [&]( const std::shared_ptr<const AnimGraph>& g ) { return g != nullptr && g->Reads( AnimExpr::VarKind::EntityField, f.slot ); };
+		f.shared = std::any_of( m_graphs.begin(), m_graphs.end(), reads ) || std::any_of( m_animPacks.begin(), m_animPacks.end(), reads );
+	}
 	EncodeSchema( m_schema, m_schemaBytes );
 
 	m_map = GetLevelLayout();
@@ -382,6 +392,17 @@ bool GameServer::Start( const ServerOptions& options )
 	m_sim->SetPhysicsThreaded( m_options.physicsThreaded );
 	m_sim->SetCharacters( CharacterBodies() );
 	m_sim->SetAnimPacks( m_animPacks );
+	{
+		std::vector<uint8_t> shared( m_options.config.fields, 0 );
+		for ( const BoardField& f : m_schema.fields )
+		{
+			if ( f.scope == BoardScope::Entity && f.shared && f.slot < shared.size() )
+			{
+				shared[f.slot] = 1;
+			}
+		}
+		m_sim->SetSharedFields( std::move( shared ) );
+	}
 	m_sim->SetMotions( m_motions );
 	m_sim->SetItemShapes( m_schema.itemShapes );
 	{
@@ -1325,13 +1346,35 @@ bool GameServer::ReplaceItem( const ModItem& item )
 
 void GameServer::SendNames( PeerId only )
 {
+	// To one just welcomed, every name; to everyone after a change, the slots whose name changed
+	// since the last such message ("" for one left), so a join costs a name, not the list (M255: at
+	// 1023 players every join sent every player ~13 KB).
 	MsgPlayerNames msg;
-	for ( const Client& c : m_clients )
+	msg.whole = only != 0;
+	if ( m_sentNames.size() != m_clients.size() )
 	{
-		if ( c.used )
+		m_sentNames.assign( m_clients.size(), std::string() );
+	}
+	for ( size_t i = 0; i < m_clients.size(); ++i )
+	{
+		const Client& c = m_clients[i];
+		const std::string now = c.used ? c.name : std::string();
+		if ( msg.whole )
 		{
-			msg.names.push_back( { c.slot, c.name } );
+			if ( c.used )
+			{
+				msg.names.push_back( { c.slot, c.name } );
+			}
 		}
+		else if ( now != m_sentNames[i] )
+		{
+			msg.names.push_back( { PlayerSlot( i ), now } );
+			m_sentNames[i] = now;
+		}
+	}
+	if ( msg.whole == false && msg.names.empty() )
+	{
+		return;
 	}
 	Encode( msg, m_buffer );
 	for ( const Client& c : m_clients )

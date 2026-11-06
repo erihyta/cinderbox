@@ -255,6 +255,7 @@ void Encode( const MsgPlayerNames& m, std::vector<uint8_t>& out )
 	Begin( out, MsgType::PlayerNames );
 	ByteWriter w( out );
 	size_t n = std::min<size_t>( m.names.size(), kMaxPlayers );
+	w.Write( uint8_t( m.whole ? 1 : 0 ) );
 	w.Write( uint16_t( n ) ); // (two bytes since M252's review: one lost every name past 255)
 	for ( size_t i = 0; i < n; ++i )
 	{
@@ -341,11 +342,13 @@ bool Decode( ByteReader& r, MsgPrivateFields& m )
 
 bool Decode( ByteReader& r, MsgPlayerNames& m )
 {
+	const uint8_t whole = r.Read<uint8_t>();
 	const uint16_t n = r.Read<uint16_t>();
-	if ( r.Ok() == false || n > kMaxPlayers )
+	if ( r.Ok() == false || n > kMaxPlayers || whole > 1 )
 	{
 		return false;
 	}
+	m.whole = whole != 0;
 	m.names.clear();
 	for ( uint16_t i = 0; i < n; ++i )
 	{

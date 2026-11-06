@@ -268,7 +268,7 @@ void EncodeSchema( const ModSchema& schema, std::vector<uint8_t>& out )
 		const BoardField& f = schema.fields[i];
 		PutString( out, f.name );
 		PutU8( out, uint8_t( f.type ) );
-		PutU8( out, uint8_t( f.scope ) );
+		PutU8( out, uint8_t( uint8_t( f.scope ) | ( f.shared ? 0x80 : 0 ) ) ); // (its top bit: shared, M255)
 		PutU16( out, f.slot );
 	}
 	PutU16( out, uint16_t( std::min<size_t>( schema.events.size(), 65535 ) ) );
@@ -470,6 +470,8 @@ bool DecodeSchema( const uint8_t* data, size_t size, ModSchema& out )
 		f.name = r.String();
 		uint8_t type = r.U8();
 		uint8_t scope = r.U8();
+		f.shared = ( scope & 0x80 ) != 0;
+		scope &= 0x7F;
 		f.slot = r.U16();
 		if ( type > uint8_t( BoardType::Bool ) || scope > uint8_t( BoardScope::Private ) || f.slot >= kFieldLimit )
 		{

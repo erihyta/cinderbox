@@ -297,6 +297,12 @@ public:
 	// client keeps of its own as zeros (where it is and how it moves, its character and animation, its
 	// motions, its movement, a mod's driving; its slots' last keys), so they never change.
 	void PuppetView( const uint8_t* record, uint32_t size, std::vector<uint8_t>& out ) const;
+	// Which entity fields (by board slot) a puppet's view keeps (M255: BoardField::shared); the rest
+	// are zeros there, their player's alone. Unset (empty): all of them.
+	void SetSharedFields( std::vector<uint8_t> shared )
+	{
+		m_sharedFields = std::move( shared );
+	}
 	// A client's, after ApplyState with them: each stand-in placed where its puppet says at `tick`
 	// (gone on from there a little when that one is older), its character as it says, and, with
 	// `step`, its animation run up to the state (the end of the tick before `tick`), each of its
@@ -735,6 +741,7 @@ private:
 	void ApplyCommand( const SimCommand& command );
 	bool FollowerSkips( const SimCommand& command ) const;
 	bool FollowerDrops( const SimCommand& command ) const;
+	std::vector<uint8_t> m_sharedFields;
 	std::vector<uint8_t> m_followerSkipped;
 	void DropController( flecs::entity e ); // (a body nobody drives, or a prop, again)
 	// A Spawn physics event's prop (the mod's SpawnProp, its owner a NetId).

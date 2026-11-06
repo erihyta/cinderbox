@@ -86,7 +86,7 @@ public:
 		// (This mod says when a bat is used: the item mod's own cue on the press is not wanted.)
 		declare.ItemProperty( m_bat, "item.ruled", 1.0f );
 		declare.ItemProperty( m_bat, "holster", declare.Socket( "Back" ) );
-		m_hot = declare.Field( "melee.hot", BoardType::Bool );
+		m_hot = declare.Field( "melee.hot", BoardType::Bool, BoardScope::Entity, true ); // (shared: the bat glows on others too)
 		m_full = declare.Layer( "full" );
 		m_ready = declare.Stance( "melee" );
 		m_swingStance = declare.Stance( "melee_swing" );

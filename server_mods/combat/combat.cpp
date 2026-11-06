@@ -82,8 +82,8 @@ public:
 		m_health = declare.Field( "combat.health", BoardType::Int );
 		m_maxHealthField = declare.Field( "combat.max_health", BoardType::Int );
 		m_dead = declare.Field( "combat.dead", BoardType::Bool );
-		m_kills = declare.Field( "combat.kills", BoardType::Int );
-		m_deaths = declare.Field( "combat.deaths", BoardType::Int );
+		m_kills = declare.Field( "combat.kills", BoardType::Int, BoardScope::Entity, true ); // (shared: the scores list)
+		m_deaths = declare.Field( "combat.deaths", BoardType::Int, BoardScope::Entity, true );
 
 		m_damage = declare.Event( "combat.damage" );
 		m_heal = declare.Event( "combat.heal" );

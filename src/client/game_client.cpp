@@ -261,7 +261,11 @@ void GameClient::HandleEvent( const NetEvent& ev, double now )
 					MsgPlayerNames msg;
 					if ( Decode( r, msg ) )
 					{
-						m_names = {};
+						// (Every name, or only those that changed: M255.)
+						if ( msg.whole )
+						{
+							m_names = {};
+						}
 						for ( const auto& [slot, name] : msg.names )
 						{
 							m_names[slot] = name;

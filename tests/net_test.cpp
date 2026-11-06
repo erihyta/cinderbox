@@ -2886,7 +2886,15 @@ void TestProtocol()
 		CHECK( ReadType( rn ) == MsgType::PlayerNames );
 		MsgPlayerNames got;
 		CHECK( Decode( rn, got ) && rn.AtEnd() );
-		CHECK( got.names == names.names );
+		CHECK( got.names == names.names && got.whole );
+		// Only what changed (M255): a new name, and a slot left ("").
+		MsgPlayerNames change;
+		change.whole = false;
+		change.names = { { PlayerSlot( 700 ), "late" }, { PlayerSlot( 3 ), "" } };
+		Encode( change, bytes );
+		ByteReader rc( bytes.data(), bytes.size() );
+		CHECK( ReadType( rc ) == MsgType::PlayerNames );
+		CHECK( Decode( rc, got ) && rc.AtEnd() && got.whole == false && got.names == change.names );
 	}
 
 	// Puppets (M253): every change of one comes back exactly, against another or none; one that
@@ -7184,11 +7192,11 @@ public:
 // them has to say why.
 void TestCrowdBench()
 {
-	// What M256 measured (24 fake players within 10 m, fighting with what the tests' players start
+	// What M255 measured (24 fake players within 10 m, fighting with what the tests' players start
 	// with in the hand, the default mods but brawl; 5 s counted after 5 s of warming up), with a
-	// little room. (M251: 59.5 B, 775 kbit/s, 3.5 whole; M253: 11.9 B, 491 kbit/s.)
-	constexpr double kMostBytesPerOtherCharacter = 14.0; // on the wire, with what it holds and its input (12.3: puppets)
-	constexpr double kMostKbitsPerPlayer = 240.0;		  // (203: frames with the states, the head without the rings)
+	// little room. (M251: 59.5 B, 775 kbit/s, 3.5 whole; M253: 11.9 B, 491 kbit/s; M256: 203 kbit/s.)
+	constexpr double kMostBytesPerOtherCharacter = 12.5; // on the wire, with what it holds and its input (10.7: M255, unshared fields left out)
+	constexpr double kMostKbitsPerPlayer = 220.0;		  // (190)
 	// (4.2: an entity goes whole until its first is acknowledged; an item that waited unchanged
 	// longer than a base is kept goes whole when it changes.)
 	constexpr double kMostWholeRecordsPerState = 4.8;
@@ -7467,6 +7475,8 @@ void TestBrawlLagCompensation()
 		// target, by tick.
 		std::map<uint32_t, float> seenAcross; // the target's x from the attacker's, as its game shows it
 		uint32_t pressedAt = 0;
+		float lastComing = 0.0f; // (where it saw the target would be by the strike, the tick before)
+		uint32_t lastComingAt = 0;
 		attacker.script = [&]( uint32_t tick ) {
 			PlayerInput in;
 			in.actions = tick >= 280 && tick < 290 ? kKeySlot1 : 0;
@@ -7484,7 +7494,13 @@ void TestBrawlLagCompensation()
 			{
 				const float x = seenAcross[tick];
 				const float coming = x + ( x - before->second ) / 4.0f * 22.0f;
-				pressedAt = std::fabs( coming ) < 0.2f ? tick : pressedAt;
+				// In front by then: close to it, or crossing it since the tick before (its game shows the
+				// target in steps of a state: the estimate may jump over a narrow window, M256).
+				const bool crossing = lastComingAt + 1 == tick && ( coming > 0.0f ) != ( lastComing > 0.0f ) && std::fabs( coming ) < 0.35f &&
+									  std::fabs( lastComing ) < 0.35f;
+				pressedAt = std::fabs( coming ) < 0.2f || crossing ? tick : pressedAt;
+				lastComing = coming;
+				lastComingAt = tick;
 			}
 			in.actions |= pressedAt != 0 && tick < pressedAt + 3 ? kKeyUse : 0;
 			return in;
@@ -7676,6 +7692,79 @@ void TestHybridPuppets()
 	CHECK( statesSeen.size() >= 4 ); // (it walked, jabbed and stood)
 	CHECK( same * 100 >= samples * 97 );
 	CHECK( within * 100 >= samples * 95 );
+}
+
+// Sets a field only its player sees and one everyone sees on every player, each its slot + 7.
+class TwoFieldsMod final : public mods::ServerMod
+{
+public:
+	const char* Name() const override
+	{
+		return "test_two_fields";
+	}
+	void Declare( mods::Declarations& declare ) override
+	{
+		secret = declare.Field( "test.secret", BoardType::Int );
+		shown = declare.Field( "test.shown", BoardType::Int, BoardScope::Entity, true );
+	}
+	void Tick( mods::Context& ctx ) override
+	{
+		for ( PlayerSlot slot = 0; slot < 2; ++slot )
+		{
+			if ( ctx.InWorld( slot ) && ctx.Tick() % 30 == 0 )
+			{
+				ctx.Set( ctx.PlayerNetId( slot ), secret, int32_t( slot ) + 7 );
+				ctx.Set( ctx.PlayerNetId( slot ), shown, int32_t( slot ) + 7 );
+			}
+		}
+	}
+	mods::FieldHandle secret, shown;
+};
+
+// Fields only their player sees (M255): a player's own fields reach its own game; another's reach
+// it only when shared (in its record's view, and no command in a frame says them either).
+void TestHybridOwnFields()
+{
+	std::vector<std::unique_ptr<mods::ServerMod>> mods;
+	mods.push_back( std::make_unique<TwoFieldsMod>() );
+	Harness h( 48190, {}, {}, {}, UseHybridModel, std::move( mods ) );
+	h.AddBot();
+	h.AddBot();
+	const ModSchema& schema = h.server.Schema();
+	const BoardField* secret = schema.FindField( "test.secret" );
+	const BoardField* shown = schema.FindField( "test.shown" );
+	CHECK( secret != nullptr && shown != nullptr && secret->shared == false && shown->shared );
+	if ( secret == nullptr || shown == nullptr )
+	{
+		return;
+	}
+	int ownSecret[2] = {}, ownShown[2] = {}, otherShown[2] = {}, otherSecretMost[2] = {};
+	h.RunUntil( 6.0, [&]( double ) {
+		for ( int b = 0; b < 2; ++b )
+		{
+			GameClient& c = *h.bots[size_t( b )].client;
+			Simulation* sim = c.Sim();
+			if ( sim == nullptr || c.Hybrid() == nullptr )
+			{
+				continue;
+			}
+			const PlayerSlot me = c.Slot();
+			const PlayerSlot them = PlayerSlot( 1 - me );
+			ownSecret[b] = std::max( ownSecret[b], sim->BoardValue( sim->PlayerNetId( me ), secret->slot ) );
+			ownShown[b] = std::max( ownShown[b], sim->BoardValue( sim->PlayerNetId( me ), shown->slot ) );
+			otherShown[b] = std::max( otherShown[b], sim->BoardValue( sim->PlayerNetId( them ), shown->slot ) );
+			otherSecretMost[b] = std::max( otherSecretMost[b], sim->BoardValue( sim->PlayerNetId( them ), secret->slot ) );
+		}
+	} );
+	for ( int b = 0; b < 2; ++b )
+	{
+		const int me = int( h.bots[size_t( b )].client->Slot() );
+		std::printf( "    slot %d's game: its own secret %d and shown %d; the other's shown %d, secret %d at most\n", me, ownSecret[b], ownShown[b],
+					 otherShown[b], otherSecretMost[b] );
+		CHECK( ownSecret[b] == me + 7 && ownShown[b] == me + 7 );
+		CHECK( otherShown[b] == ( 1 - me ) + 7 );
+		CHECK( otherSecretMost[b] == 0 );
+	}
 }
 
 // Lag compensation (M250): a shooter 50 ms each way from the server fires at a player strafing
@@ -8042,6 +8131,7 @@ int main( int argc, char** argv )
 		{ "lag_compensation", TestLagCompensation },
 		{ "brawl_lag_compensation", TestBrawlLagCompensation },
 		{ "hybrid_puppets", TestHybridPuppets },
+		{ "hybrid_own_fields", TestHybridOwnFields },
 		{ "hybrid_reconnect", TestHybridReconnect },
 		{ "hybrid_own_throw", TestHybridOwnThrow },
 		{ "grace_expiry", TestGraceExpiry },
