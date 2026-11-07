@@ -93,6 +93,9 @@ struct CrowdBench
 	// Planning by part, summed over the state threads (processor time, not the wall's): each
 	// client's walk of the entities, choosing, what it will have, the rest.
 	double planWalkMs = 0.0, planChooseMs = 0.0, planNextMs = 0.0, planRestMs = 0.0;
+	// M258: the server's own thread on a state's updates once they are made (sending them), and
+	// waiting for them to be made (when the next state, or a client, could not wait).
+	double stateFinishMs = 0.0, stateWaitMs = 0.0, stateAcksMs = 0.0; // (of the sending: the acknowledgements that waited)
 	// The bench's own: sampling states by part (in the server's sending time, not a real server's work).
 	double sampleMs = 0.0;
 };

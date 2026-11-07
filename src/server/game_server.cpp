@@ -23,6 +23,7 @@ GameServer::GameServer() = default;
 
 GameServer::~GameServer()
 {
+	FinishStates( true );
 	m_mods.clear(); // before the world their state lives in
 	if ( m_modWorld )
 	{
@@ -391,10 +392,11 @@ bool GameServer::Start( const ServerOptions& options )
 
 	m_sim = std::make_unique<Simulation>( m_options.config, m_map );
 	m_sim->SetPhysicsThreaded( m_options.physicsThreaded );
-	// The characters' movers and animation on the state threads (M258: idle while it steps).
-	m_stateWorkers.Start( m_options.stateThreads );
+	// The characters' movers and animation on threads of their own (M258: the state threads may be
+	// making the last state's updates meanwhile).
+	m_simWorkers.Start( m_options.stateThreads );
 	m_sim->SetParallelFor( [this]( size_t count, const std::function<void( size_t )>& fn ) {
-		m_stateWorkers.Run( count, [&]( size_t i, int ) { fn( i ); } );
+		m_simWorkers.Run( count, [&]( size_t i, int ) { fn( i ); } );
 	} );
 	m_sim->SetCharacters( CharacterBodies() );
 	m_sim->SetAnimPacks( m_animPacks );
@@ -620,6 +622,19 @@ void GameServer::Update( double now )
 {
 	m_events.clear();
 	m_transport.Poll( m_events );
+	// A state's updates made meanwhile go now (M258). A client's coming or going, or anything but an
+	// input, changes what they read: they are finished first.
+	FinishStates( false );
+	for ( const NetEvent& ev : m_events )
+	{
+		ByteReader peek( ev.data.data(), ev.data.size() );
+		const auto type = ev.type == NetEvent::Type::Received ? ReadType( peek ) : std::nullopt;
+		if ( type.has_value() == false || *type != MsgType::Input )
+		{
+			FinishStates( true );
+			break;
+		}
+	}
 	for ( const NetEvent& ev : m_events )
 	{
 		HandleEvent( ev, now );
@@ -634,6 +649,7 @@ void GameServer::Update( double now )
 	{
 		if ( c.used && c.connected == false && now - c.disconnectedAt > m_options.reconnectGraceSeconds )
 		{
+			FinishStates( true );
 			if ( c.inWorld )
 			{
 				m_pendingEvents.push_back( { PlayerEventType::Leave, c.slot } );
@@ -655,8 +671,12 @@ void GameServer::Update( double now )
 	while ( now >= m_nextTickTime && ran < 8 )
 	{
 		auto start = std::chrono::steady_clock::now();
+		m_ticking = true;
+		m_sampledInTick = 0.0;
 		RunTick( now );
-		double ms = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
+		m_ticking = false;
+		// (Less the bench's sampling of a state's updates, sent in the tick when it waited for them.)
+		double ms = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count() - m_sampledInTick;
 		m_stats.ticks += 1;
 		m_stats.tickMsTotal += ms;
 		m_stats.tickMsMax = std::max( m_stats.tickMsMax, ms );
@@ -674,13 +694,29 @@ void GameServer::Update( double now )
 		const bool stateMade = m_states.empty() == false && m_states.back().tick == m_sim->Tick();
 		if ( hybrid == false || stateMade || m_sim->Tick() >= m_framesSentAt + 2 * std::max( m_options.stateEvery, 1u ) )
 		{
-			SendFrames( now );
+			// (A state's updates are made meanwhile: its frames go with them, FinishStates.)
+			if ( hybrid && stateMade && m_options.statesByDistance )
+			{
+				m_framesHeld = true;
+				m_framesHeldAt = now;
+			}
+			else
+			{
+				SendFrames( now );
+			}
 			m_framesSentAt = m_sim->Tick();
 		}
 		m_bench.framesMs += BenchCounts() ? std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - sendFrom ).count() : 0.0;
 		if ( m_options.netModel == NetModel::Hybrid )
 		{
+			m_sendingNow = true;
 			SendStates();
+			m_sendingNow = false;
+		}
+		if ( m_framesHeld && m_makingStates == false )
+		{
+			m_framesHeld = false;
+			SendFrames( m_framesHeldAt ); // (none was made after all)
 		}
 		m_stats.sendMs += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - sendFrom ).count();
 	}
@@ -882,7 +918,14 @@ void GameServer::HandleInput( Client& client, const MsgInput& msg, double now )
 			 msg.stateAck <= client.stateSent && KeptState( msg.stateAck ) != nullptr )
 		{
 			client.stateAck = msg.stateAck;
-			StateAcknowledged( client, msg.stateAck );
+			if ( m_makingStates )
+			{
+				m_heldAcks.push_back( { size_t( &client - m_clients.data() ), msg.stateAck } ); // (FinishStates)
+			}
+			else
+			{
+				StateAcknowledged( client, msg.stateAck );
+			}
 		}
 	}
 	{
@@ -1070,6 +1113,10 @@ void GameServer::RunTick( double now )
 			c.lastResyncAt = now;
 		}
 	}
+	if ( std::any_of( m_clients.begin(), m_clients.end(), []( const Client& c ) { return c.used && c.connected && c.needsSnapshot; } ) )
+	{
+		FinishStates( true ); // (a snapshot's client starts over)
+	}
 	SendSnapshots();
 
 	const auto stepFrom = std::chrono::steady_clock::now();
@@ -1094,7 +1141,11 @@ void GameServer::RunTick( double now )
 		const bool sending = m_options.statesByDistance && ConnectedClients() > 0;
 		for ( const Simulation::StepEvent& s : m_sim->StepEvents() )
 		{
-			if ( s.character != 0 && sending )
+			if ( s.character != 0 && sending && m_makingStates )
+			{
+				m_heldEvents.push_back( { s.character, { s.record, s.command, m_eventSerial++ } } ); // (FinishStates)
+			}
+			else if ( s.character != 0 && sending )
 			{
 				m_characterEvents[s.character].push_back( { s.record, s.command, m_eventSerial++ } );
 			}
@@ -1140,6 +1191,7 @@ void GameServer::RunTick( double now )
 	}
 	if ( m_options.netModel == NetModel::Hybrid && stateTick % m_options.stateEvery == 0 && ConnectedClients() > 0 )
 	{
+		FinishStates( true ); // (the last one's updates read the states kept)
 		auto start = std::chrono::steady_clock::now();
 		auto part = start;
 		auto spentOn = [&]( double& ms ) {
@@ -2456,11 +2508,12 @@ void GameServer::SendStates()
 	}
 	auto start = std::chrono::steady_clock::now();
 	const StateFrame& newest = m_states.back();
-	const KeptLayout* now = KeptLayoutOf( newest.tick );
+	const KeptLayout* layout = KeptLayoutOf( newest.tick );
 	auto due = [&]( const Client& c ) { return c.used && c.connected && c.welcomed && c.stateSent < newest.tick; };
 
-	if ( m_options.statesByDistance && now != nullptr )
+	if ( m_options.statesByDistance && layout != nullptr )
 	{
+		FinishStates( true ); // (one at a time)
 		m_stateWorkers.Start( m_options.stateThreads );
 		// Whose slot each character is (by NetId), and where each client's own one is: read here,
 		// so the threads read no simulation.
@@ -2474,7 +2527,7 @@ void GameServer::SendStates()
 		}
 		std::sort( players.begin(), players.end() );
 		m_plans.resize( m_clients.size() );
-		std::vector<size_t> planned;
+		m_planned.clear();
 		for ( size_t i = 0; i < m_clients.size(); ++i )
 		{
 			Client& c = m_clients[i];
@@ -2493,117 +2546,197 @@ void GameServer::SendStates()
 			const float yaw = detmath::YawToRadians( c.lastInput.cameraYaw );
 			plan.viewX = std::sin( yaw );
 			plan.viewZ = std::cos( yaw );
-			planned.push_back( i );
+			m_planned.push_back( i );
 		}
-		const auto planFrom = std::chrono::steady_clock::now();
-		m_stateWorkers.Run( planned.size(), [&]( size_t n, int ) {
-			const size_t i = planned[n];
-			PlanState( m_plans[i], m_clients[i], newest, *now, players );
+		if ( m_planned.empty() )
+		{
+			return; // (nothing new to anyone)
+		}
+		// The updates are made on the state threads while this one goes on with the next tick (M258:
+		// at 1023 players they took a third of a tick's time here); FinishStates sends them once
+		// they are made. Until then what they read is not changed: what the clients acknowledge,
+		// and the events at characters, wait (m_heldAcks, m_heldEvents); a new client, a state to
+		// keep, a snapshot to send, wait for them.
+		m_made = false;
+		m_makingStates = true;
+		m_making = std::thread( [this, players = std::move( players ), &newest, layout]() {
+			MakeStates( newest, *layout, players );
+			m_made = true;
 		} );
-		const auto encodeFrom = std::chrono::steady_clock::now();
-		m_bench.planMs += BenchCounts() ? std::chrono::duration<double, std::milli>( encodeFrom - planFrom ).count() : 0.0;
-		for ( size_t i : planned )
+		m_stats.stateMsTotal += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
+		return;
+	}
+	SendWholeStates( newest );
+	m_stats.stateMsTotal += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
+}
+
+// Each client's plan and the messages, on the state threads (SendStates): reads the kept states,
+// the plans and what each client has (its own: no one else changes it meanwhile).
+void GameServer::MakeStates( const StateFrame& newest, const KeptLayout& now, const std::vector<std::pair<uint32_t, PlayerSlot>>& players )
+{
+	const auto planFrom = std::chrono::steady_clock::now();
+	m_stateWorkers.Run( m_planned.size(), [&]( size_t n, int ) {
+		const size_t i = m_planned[n];
+		PlanState( m_plans[i], m_clients[i], newest, now, players );
+	} );
+	const auto encodeFrom = std::chrono::steady_clock::now();
+	m_madePlanMs = std::chrono::duration<double, std::milli>( encodeFrom - planFrom ).count();
+	// One message for the plans that say the same.
+	m_messages.clear();
+	std::unordered_map<uint64_t, std::vector<int>> byHash;
+	for ( size_t i : m_planned )
+	{
+		Plan& plan = m_plans[i];
+		std::vector<int>& alike = byHash[plan.hash];
+		for ( size_t a = 0; a < alike.size() && plan.message < 0; ++a )
 		{
-			const Plan& plan = m_plans[i];
-			m_bench.planWalkMs += BenchCounts() ? plan.walkMs : 0.0;
-			m_bench.planChooseMs += BenchCounts() ? plan.chooseMs : 0.0;
-			m_bench.planNextMs += BenchCounts() ? plan.nextMs : 0.0;
-			m_bench.planRestMs += BenchCounts() ? plan.restMs : 0.0;
+			const Plan& first = m_plans[m_messages[size_t( alike[a] )].plan];
+			plan.message = first.says == plan.says ? alike[a] : -1;
 		}
-		// One message for the plans that say the same.
-		m_messages.clear();
-		for ( size_t i : planned )
+		if ( plan.message < 0 )
 		{
-			Plan& plan = m_plans[i];
-			for ( size_t m = 0; m < m_messages.size() && plan.message < 0; ++m )
-			{
-				const Plan& first = m_plans[m_messages[m].plan];
-				plan.message = first.hash == plan.hash && first.says == plan.says ? int( m ) : -1;
-			}
-			if ( plan.message < 0 )
-			{
-				plan.message = int( m_messages.size() );
-				m_messages.push_back( { i, false, {} } );
-			}
-		}
-		// (Parts shared between messages: a few clients' updates are much alike, a crowd's are not:
-		// at 255 and 1023 players the cache cost more than it saved, M258.)
-		m_updateCaches.resize( size_t( m_stateWorkers.Threads() ) + 1 );
-		const bool cached = m_messages.size() <= kCachedMessages;
-		m_stateWorkers.Run( m_messages.size(), [&]( size_t m, int worker ) {
-			Message& message = m_messages[m];
-			const Plan& plan = m_plans[message.plan];
-			message.ok = net::EncodeUpdates( newest, plan.base, plan.updates, plan.sent.removed, plan.inputSlots, &GameServer::LayoutOfTick, this,
-											 message.bytes, cached ? &m_updateCaches[size_t( worker )] : nullptr, &message.sizes, &plan.events,
-											 &message.unpacked );
-		} );
-		m_bench.encodeMs += BenchCounts() ? std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - encodeFrom ).count() : 0.0;
-		// What packing left of them (M257: the next states' budgets), slowly.
-		double unpacked = 0.0, packed = 0.0;
-		for ( const Message& message : m_messages )
-		{
-			unpacked += message.ok ? double( message.unpacked ) : 0.0;
-			packed += message.ok ? double( message.bytes.size() ) : 0.0;
-		}
-		if ( unpacked > 0.0 )
-		{
-			m_packed = std::clamp( 0.9 * m_packed + 0.1 * packed / unpacked, 0.1, 1.0 );
-		}
-		for ( size_t i : planned )
-		{
-			Client& c = m_clients[i];
-			Plan& plan = m_plans[i];
-			const Message& message = m_messages[size_t( plan.message )];
-			if ( message.ok == false )
-			{
-				continue; // (whole, below)
-			}
-			if ( c.fake && c.slot % 8 == 0 && BenchCounts() )
-			{
-				const auto sampleFrom = std::chrono::steady_clock::now();
-				SampleState( plan, c.slot, newest, *now, message.bytes );
-				m_bench.sampleMs += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - sampleFrom ).count();
-			}
-			// What each update took (M257: the next one's estimate). Both in NetId order.
-			auto at = c.known.begin();
-			for ( size_t u = 0; u < plan.updates.size() && u < message.sizes.size(); ++u )
-			{
-				at = std::lower_bound( at, c.known.end(), plan.updates[u].netId, []( const Client::Known& k, uint32_t id ) { return k.netId < id; } );
-				if ( at != c.known.end() && at->netId == plan.updates[u].netId )
-				{
-					at->bytes = message.sizes[u];
-				}
-			}
-			m_stats.stateBudgeted += plan.budgeted;
-			for ( const net::EntityUpdate& u : plan.updates )
-			{
-				m_stats.updatesCarried += u.carried != nullptr ? 1 : 0;
-			}
-			if ( c.fake )
-			{
-				// (What a player is thought to have may hold more than the state only by the gone
-				// ones not yet acknowledged.)
-				m_bench.knownMost = std::max<uint64_t>( m_bench.knownMost, c.known.size() );
-				m_bench.entitiesMost = std::max<uint64_t>( m_bench.entitiesMost, now->layout.entities.size() );
-			}
-			c.sent.push_back( plan.sent );
-			while ( c.sent.size() > kStateHistory )
-			{
-				EventsLost( c, c.sent.front() );
-				c.sent.pop_front();
-			}
-			Deliver( c, message.bytes, false, &CrowdBench::states );
-			c.stateSent = newest.tick;
-			m_stats.statesSent += 1;
-			m_stats.statesWhole += plan.base == nullptr ? 1 : 0;
-			m_stats.stateBytes += message.bytes.size();
-			m_bench.statesWhole += c.fake && plan.base == nullptr && BenchCounts() ? 1 : 0;
+			plan.message = int( m_messages.size() );
+			alike.push_back( plan.message );
+			m_messages.push_back( { i, false, {} } );
 		}
 	}
+	// (Parts shared between messages: a few clients' updates are much alike, a crowd's are not:
+	// at 255 and 1023 players the cache cost more than it saved, M258.)
+	m_updateCaches.resize( size_t( m_stateWorkers.Threads() ) + 1 );
+	const bool cached = m_messages.size() <= kCachedMessages;
+	m_stateWorkers.Run( m_messages.size(), [&]( size_t m, int worker ) {
+		Message& message = m_messages[m];
+		const Plan& plan = m_plans[message.plan];
+		message.ok = net::EncodeUpdates( newest, plan.base, plan.updates, plan.sent.removed, plan.inputSlots, &GameServer::LayoutOfTick, this,
+										 message.bytes, cached ? &m_updateCaches[size_t( worker )] : nullptr, &message.sizes, &plan.events,
+										 &message.unpacked );
+	} );
+	m_madeEncodeMs = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - encodeFrom ).count();
+	// What packing left of them (M257: the next states' budgets), slowly.
+	double unpacked = 0.0, packed = 0.0;
+	for ( const Message& message : m_messages )
+	{
+		unpacked += message.ok ? double( message.unpacked ) : 0.0;
+		packed += message.ok ? double( message.bytes.size() ) : 0.0;
+	}
+	if ( unpacked > 0.0 )
+	{
+		m_packed = std::clamp( 0.9 * m_packed + 0.1 * packed / unpacked, 0.1, 1.0 );
+	}
+}
 
-	// Every entity as it is now (and by distance, a client whose updates could not be made): clients
-	// with the same base share one encoding. (By distance, what a client has is not the state of its
-	// tick: whole, then, and it has it all.)
+void GameServer::FinishStates( bool wait )
+{
+	if ( m_makingStates == false || ( wait == false && m_made == false ) )
+	{
+		return;
+	}
+	const auto waitFrom = std::chrono::steady_clock::now();
+	m_making.join();
+	m_makingStates = false;
+	auto start = std::chrono::steady_clock::now();
+	m_bench.stateWaitMs += BenchCounts() ? std::chrono::duration<double, std::milli>( start - waitFrom ).count() : 0.0;
+	const StateFrame& newest = m_states.back(); // (no state is kept while it is made)
+	const KeptLayout* now = KeptLayoutOf( newest.tick );
+	m_bench.planMs += BenchCounts() ? m_madePlanMs : 0.0;
+	m_bench.encodeMs += BenchCounts() ? m_madeEncodeMs : 0.0;
+	for ( size_t i : m_planned )
+	{
+		const Plan& plan = m_plans[i];
+		m_bench.planWalkMs += BenchCounts() ? plan.walkMs : 0.0;
+		m_bench.planChooseMs += BenchCounts() ? plan.chooseMs : 0.0;
+		m_bench.planNextMs += BenchCounts() ? plan.nextMs : 0.0;
+		m_bench.planRestMs += BenchCounts() ? plan.restMs : 0.0;
+	}
+	// What came while it was made.
+	for ( const auto& [client, tick] : m_heldAcks )
+	{
+		StateAcknowledged( m_clients[client], tick );
+	}
+	m_heldAcks.clear();
+	const auto acksTo = std::chrono::steady_clock::now();
+	m_bench.stateAcksMs += BenchCounts() ? std::chrono::duration<double, std::milli>( acksTo - start ).count() : 0.0;
+	for ( const auto& [character, e] : m_heldEvents )
+	{
+		m_characterEvents[character].push_back( e );
+	}
+	m_heldEvents.clear();
+	// Its frames first (held for it: they go in one datagram, M256), then each client's state.
+	if ( m_framesHeld )
+	{
+		const auto framesFrom = std::chrono::steady_clock::now();
+		m_framesHeld = false;
+		SendFrames( m_framesHeldAt );
+		m_bench.framesMs += BenchCounts() ? std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - framesFrom ).count() : 0.0;
+	}
+	double sampledHere = 0.0;
+	for ( size_t i : m_planned )
+	{
+		Client& c = m_clients[i];
+		Plan& plan = m_plans[i];
+		const Message& message = m_messages[size_t( plan.message )];
+		if ( message.ok == false )
+		{
+			continue; // (whole, below)
+		}
+		if ( c.fake && c.slot % 8 == 0 && BenchCounts() )
+		{
+			const auto sampleFrom = std::chrono::steady_clock::now();
+			SampleState( plan, c.slot, newest, *now, message.bytes );
+			const double sampled = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - sampleFrom ).count();
+			m_bench.sampleMs += m_ticking ? 0.0 : sampled;
+			m_sampledInTick += m_ticking ? sampled : 0.0;
+			sampledHere += sampled;
+		}
+		// What each update took (M257: the next one's estimate). Both in NetId order.
+		auto at = c.known.begin();
+		for ( size_t u = 0; u < plan.updates.size() && u < message.sizes.size(); ++u )
+		{
+			at = std::lower_bound( at, c.known.end(), plan.updates[u].netId, []( const Client::Known& k, uint32_t id ) { return k.netId < id; } );
+			if ( at != c.known.end() && at->netId == plan.updates[u].netId )
+			{
+				at->bytes = message.sizes[u];
+			}
+		}
+		m_stats.stateBudgeted += plan.budgeted;
+		for ( const net::EntityUpdate& u : plan.updates )
+		{
+			m_stats.updatesCarried += u.carried != nullptr ? 1 : 0;
+		}
+		if ( c.fake )
+		{
+			// (What a player is thought to have may hold more than the state only by the gone
+			// ones not yet acknowledged.)
+			m_bench.knownMost = std::max<uint64_t>( m_bench.knownMost, c.known.size() );
+			m_bench.entitiesMost = std::max<uint64_t>( m_bench.entitiesMost, now->layout.entities.size() );
+		}
+		c.sent.push_back( plan.sent );
+		while ( c.sent.size() > kStateHistory )
+		{
+			EventsLost( c, c.sent.front() );
+			c.sent.pop_front();
+		}
+		Deliver( c, message.bytes, false, &CrowdBench::states );
+		c.stateSent = newest.tick;
+		m_stats.statesSent += 1;
+		m_stats.statesWhole += plan.base == nullptr ? 1 : 0;
+		m_stats.stateBytes += message.bytes.size();
+		m_bench.statesWhole += c.fake && plan.base == nullptr && BenchCounts() ? 1 : 0;
+	}
+	// (Those whose updates could not be made: whole.)
+	SendWholeStates( newest );
+	const double ms = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
+	m_stats.stateMsTotal += ms;
+	m_stats.sendMs += m_ticking || m_sendingNow ? 0.0 : ms; // (in a tick, or in the sending, its time is theirs)
+	m_bench.stateFinishMs += BenchCounts() ? ms - sampledHere : 0.0;
+}
+
+// Every entity as it is now (and by distance, a client whose updates could not be made): clients
+// with the same base share one encoding. (By distance, what a client has is not the state of its
+// tick: whole, then, and it has it all.)
+void GameServer::SendWholeStates( const StateFrame& newest )
+{
+	auto due = [&]( const Client& c ) { return c.used && c.connected && c.welcomed && c.stateSent < newest.tick; };
 	struct Encoded
 	{
 		uint32_t base;
@@ -2639,11 +2772,11 @@ void GameServer::SendStates()
 		m_stats.stateBytes += hit->bytes.size();
 		m_bench.statesWhole += c.fake && against == nullptr && BenchCounts() ? 1 : 0;
 	}
-	m_stats.stateMsTotal += std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - start ).count();
 }
 
 void GameServer::DropClientHard( PlayerSlot slot, double now )
 {
+	FinishStates( true );
 	Client& c = m_clients[slot];
 	if ( c.used && c.connected )
 	{

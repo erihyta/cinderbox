@@ -25,12 +25,14 @@
 #include "worker_pool.h"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <map>
 #include <memory>
 #include <functional>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -360,7 +362,9 @@ private:
 	void SendSnapshots();
 	void SendFrames( double now );
 	uint32_t m_framesSentAt = 0; // the tick frames last went out (the hybrid's go with its states)
-	// The hybrid: the newest characters' state to everyone, each against the one it has.
+	// The hybrid: the newest characters' state to everyone, each against the one it has. By
+	// priority, its updates are made on the state threads while the next tick runs (MakeStates)
+	// and sent once made (FinishStates: `wait` for them, or only if they are; M258).
 	void SendStates();
 	const net::StateFrame* KeptState( uint32_t tick ) const;
 	std::deque<net::StateFrame> m_states; // the newest last
@@ -435,6 +439,25 @@ private:
 	std::unordered_map<uint32_t, std::vector<KeptEvent>> m_characterEvents;
 	// Those too old to send dropped; each character's newest in the state kept (KeptLayout::newestEvent).
 	void KeepEvents( KeptLayout& kept, uint32_t tick );
+	// (SendStates, M258.)
+	void MakeStates( const net::StateFrame& newest, const KeptLayout& now, const std::vector<std::pair<uint32_t, PlayerSlot>>& players );
+	void FinishStates( bool wait );
+	void SendWholeStates( const net::StateFrame& newest );
+	std::thread m_making;
+	std::atomic<bool> m_made{ false };
+	bool m_makingStates = false;
+	std::vector<size_t> m_planned; // (the clients whose plans are being made)
+	double m_madePlanMs = 0.0, m_madeEncodeMs = 0.0;
+	// What came while they were made, done after: acknowledgements (client, state), and the events
+	// at characters.
+	std::vector<std::pair<size_t, uint32_t>> m_heldAcks;
+	std::vector<std::pair<uint32_t, KeptEvent>> m_heldEvents;
+	// The frames that go with the state being made (in one datagram, M256).
+	bool m_framesHeld = false;
+	double m_framesHeldAt = 0.0;
+	bool m_sendingNow = false;		 // (Update's sending: what a state sent there takes is its time)
+	bool m_ticking = false;			 // (RunTick: what a state sent there takes is the tick's time)
+	double m_sampledInTick = 0.0; // (the bench's sampling there, left out of it)
 	uint32_t m_recordVersionsSwept = 0;
 	void KeepRecordVersions( const KeptLayout& kept, uint32_t tick );
 	void KeepGroups( KeptLayout& kept ); // (KeptLayout::heads and the rest: M258)
@@ -501,6 +524,7 @@ private:
 	std::vector<Message> m_messages;
 	std::vector<net::UpdateCache> m_updateCaches;
 	WorkerPool m_stateWorkers;
+	WorkerPool m_simWorkers; // the simulation's (Simulation::SetParallelFor)
 	// Lag compensation (M250): the characters as they were on each of the last ticks (the newest
 	// last), and each slot's view of them for this tick's mods.
 	std::deque<PastPoses> m_past;

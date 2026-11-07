@@ -260,21 +260,22 @@ void Simulation::ApplyPuppets( const std::vector<PuppetEntry>& puppets, uint32_t
 		const uint32_t gap = ps.nowTick > ps.beforeTick ? ps.nowTick - ps.beforeTick : 0;
 		const uint32_t since = tick > ps.nowTick ? tick - ps.nowTick : 0;
 		b3Vec3 velocity = {};
+		bool jumped = false;
 		if ( gap > 0 )
 		{
 			velocity = b3MulSV( 1.0f / ( float( gap ) * dt ), b3Sub( FromGrid( ps.now ), FromGrid( ps.before ) ) );
-			if ( b3Length( velocity ) > kMostPuppetSpeed )
-			{
-				velocity = {};
-			}
+			jumped = b3Length( velocity ) > kMostPuppetSpeed;
+			velocity = jumped ? b3Vec3{} : velocity;
 		}
 		// Where it is at `tick`. One sent every state or two: where it was last said to be (one that
 		// stopped is sent again until the client has it, so it stands, and goes at no speed). One sent
 		// less often (far off): from the one before to the last, over as long as between them, so it
 		// moves on until the next comes, an interval late; and still once that is over.
+		// (Not across a jump in place: a respawn, a mod's teleport, there at once. M258: a far one
+		// slid across the map, found by net_hybrid_far under load: 59 m off.)
 		Transform t;
 		bool moving = since <= std::max( gap, kNearGap );
-		if ( gap > kNearGap )
+		if ( gap > kNearGap && jumped == false )
 		{
 			t.position = b3Lerp( FromGrid( ps.before ), FromGrid( p ), std::min( 1.0f, float( since ) / float( gap ) ) );
 			moving = since < gap;
