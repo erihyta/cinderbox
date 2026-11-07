@@ -47,7 +47,9 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <atomic>
 #include <functional>
+#include <thread>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -2805,6 +2807,69 @@ void TestPhysicsThreads()
 	}
 	Simulation::SetWorkersForNewSimulations( kPhysicsWorkers );
 	PhysicsThreads::Start( 0 );
+}
+
+// The characters' movers and animation on several threads (M258, Simulation::SetParallelFor): each
+// reads the world as the tick found it, and what they did is written after in slot order, so the
+// simulation is the same on any number of threads and whatever order they take the players in.
+void TestCharacterThreads()
+{
+	test::ScenarioOptions opt;
+	opt.initialPlayers = 24;
+	opt.maxPlayers = 32;
+	opt.ticks = 600;
+	auto frames = test::MakeScenario( opt );
+	SimConfig config = TestConfig();
+	auto run = [&]( int threads, bool backwards ) {
+		Simulation sim( config );
+		if ( threads > 0 || backwards )
+		{
+			sim.SetParallelFor( [threads, backwards]( size_t count, const std::function<void( size_t )>& fn ) {
+				std::atomic<size_t> next{ 0 };
+				auto take = [&] {
+					for ( size_t i = next.fetch_add( 1 ); i < count; i = next.fetch_add( 1 ) )
+					{
+						fn( backwards ? count - 1 - i : i );
+					}
+				};
+				std::vector<std::thread> pool;
+				for ( int t = 0; t < threads; ++t )
+				{
+					pool.emplace_back( take );
+				}
+				take();
+				for ( std::thread& t : pool )
+				{
+					t.join();
+				}
+			} );
+		}
+		std::vector<uint64_t> hashes;
+		for ( const InputFrame& f : frames )
+		{
+			sim.Step( f );
+			hashes.push_back( sim.ComputeHash() );
+		}
+		return hashes;
+	};
+	const std::vector<uint64_t> reference = run( 0, false );
+	struct Case
+	{
+		int threads;
+		bool backwards;
+	};
+	for ( Case c : { Case{ 0, true }, Case{ 1, false }, Case{ 3, true }, Case{ 7, false } } )
+	{
+		const std::vector<uint64_t> hashes = run( c.threads, c.backwards );
+		size_t first = 0;
+		while ( first < hashes.size() && first < reference.size() && hashes[first] == reference[first] )
+		{
+			++first;
+		}
+		std::printf( "    on %d threads%s: %s\n", c.threads + 1, c.backwards ? ", the players backwards" : "",
+					 first == hashes.size() ? "the same" : "DIFFERENT" );
+		CHECK( first == hashes.size() && hashes.size() == reference.size() );
+	}
 }
 
 // What two loops cost with a full server: 1023 players with eight items each, props about (the
@@ -13639,6 +13704,7 @@ int main( int argc, char** argv )
 		{ "ual_mannequin", TestUalMannequin },
 		{ "anim_pipeline", TestAnimPipeline },
 		{ "physics_threads", TestPhysicsThreads },
+		{ "character_threads", TestCharacterThreads },
 		{ "loops", TestLoops },
 		{ "stress", TestStress },
 	};

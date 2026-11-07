@@ -197,7 +197,7 @@ Ground SphereGround( b3WorldId world, b3Pos from, float length, float radius, fl
 } // namespace
 
 void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, const PlayerInput& in, uint8_t pressed, Character& c,
-		   Transform& t )
+		   Transform& t, b3Transform* bodyTarget )
 {
 	// Camera-relative wish direction
 	float camYaw = detmath::YawToRadians( in.cameraYaw );
@@ -404,7 +404,13 @@ void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, 
 	t.rotation = detmath::YawRotation( c.facingYaw );
 
 	// Drive the kinematic body (what reads its velocity sees it move; it shoves nothing: M246).
-	b3Body_SetTargetTransform( body.body, { b3Add( t.position, body.offset ), t.rotation }, dt, true );
+	const b3Transform to = { b3Add( t.position, body.offset ), t.rotation };
+	if ( bodyTarget != nullptr )
+	{
+		*bodyTarget = to;
+		return;
+	}
+	b3Body_SetTargetTransform( body.body, to, dt, true );
 }
 
 } // namespace cb::mover

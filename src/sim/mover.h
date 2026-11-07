@@ -48,8 +48,10 @@ inline float FeetBelowCenter( float radius, float halfHeight )
 	return halfHeight + 3.0f * radius - 0.02f;
 }
 
-// One tick. `pressed` is the engine buttons that went down this tick; `tick` stamps a jump.
+// One tick. `pressed` is the engine buttons that went down this tick; `tick` stamps a jump. The body
+// is driven to where it ends (its target transform), or, with `target`, that is said there instead
+// and the body left alone (M258: movers on several threads, the bodies driven after on one).
 void Move( const Body& body, const MoveParams& params, float dt, uint32_t tick, const PlayerInput& in, uint8_t pressed, Character& c,
-		   Transform& t );
+		   Transform& t, b3Transform* target = nullptr );
 
 } // namespace cb::mover

@@ -2645,12 +2645,14 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	ApplyPlayerPushes();
 	spentOn( m_profile.motionsNs );
 
-	for ( size_t d = 0; d < m_drivers.size(); ++d )
-	{
-		if ( moving[d] == 0 )
-		{
-			continue;
-		}
+	// Then every player moves, and its animation runs: each on the world as the tick found it (the
+	// movers read bodies, and bodies move in the step: none has yet). So on the host's threads when
+	// it gives them (M258), each driver's results kept, then written in slot order: its body's
+	// target, its markers, its components. A driven prop's driver moves at its turn there (its
+	// holding back is this simulation's own work).
+	m_moved.resize( m_drivers.size() );
+	auto move = [&]( size_t d ) {
+		MovedCharacter& out = m_moved[d];
 		const uint32_t netId = m_drivers[d].netId;
 		flecs::entity e = FindEntity( netId );
 		const PlayerInput& in = m_drivers[d].input;
@@ -2682,15 +2684,16 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		}
 		const b3Vec3 moveStart = t.position;
 		const float yawStart = c.facingYaw;
-		mover::Move( moving, MoveOf( e ), m_config.TimeStep(), m_globals.tick, c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed, c, t );
+		mover::Move( moving, MoveOf( e ), m_config.TimeStep(), m_globals.tick, c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed, c, t,
+					 driven != nullptr ? nullptr : &out.target );
 		if ( driven != nullptr )
 		{
 			HoldBackProp( e, *driven, moveStart, yawStart, t, c );
 		}
 		c.prevButtons = in.buttons;
-		spentOn( m_profile.moverNs );
 
-		AnimState anim = GetAnimState( e );
+		AnimState& anim = out.anim;
+		anim = GetAnimState( e );
 		UpdateAnimState( anim, c, in, m_globals.tick, m_config.TimeStep() );
 		if ( const AnimGraph* graph = Body( CharacterOf( e ) ).graph.get() )
 		{
@@ -2724,28 +2727,71 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			{
 				graphIn.motionsOn = MotionsOnAt( GetMotionState( e ), m_globals.tick );
 			}
-			m_markerScratch.clear();
-			UpdateAnimGraph( anim, *graph, m_animPacks, graphIn, m_config.TimeStep(), m_markerScratch );
-			for ( int event : m_markerScratch )
-			{
-				// A marker the playing clip crossed: the mod event of its name, from this player.
-				// (After its motions: they hear it next tick, a throw released on its marker.)
-				ModEventRecord record;
-				record.type = uint16_t( event );
-				record.netIdA = netId;
-				record.tick = m_globals.tick;
-				record.point = t.position;
-				record.late = 1;
-				RecordModEvent( record );
-			}
+			out.markers.clear();
+			UpdateAnimGraph( anim, *graph, m_animPacks, graphIn, m_config.TimeStep(), out.markers );
 		}
-		SetAnimState( e, anim );
-
-		e.set<Character>( c );
-		e.set<Transform>( t );
-		e.set<Velocity>( { c.velocity, { 0.0f, 0.0f, 0.0f } } );
-		spentOn( m_profile.animNs );
+		else
+		{
+			out.markers.clear();
+		}
+		out.c = c;
+		out.t = t;
+	};
+	m_movingApart.clear();
+	for ( size_t d = 0; d < m_drivers.size(); ++d )
+	{
+		if ( moving[d] != 0 && FindEntity( m_drivers[d].netId ).has<DrivenProp>() == false )
+		{
+			m_movingApart.push_back( uint32_t( d ) );
+		}
 	}
+	if ( m_parallelFor && m_movingApart.size() > 1 )
+	{
+		m_parallelFor( m_movingApart.size(), [&]( size_t k ) { move( m_movingApart[k] ); } );
+	}
+	else
+	{
+		for ( uint32_t d : m_movingApart )
+		{
+			move( d );
+		}
+	}
+	spentOn( m_profile.moverNs );
+	for ( size_t d = 0; d < m_drivers.size(); ++d )
+	{
+		if ( moving[d] == 0 )
+		{
+			continue;
+		}
+		const uint32_t netId = m_drivers[d].netId;
+		flecs::entity e = FindEntity( netId );
+		if ( e.has<DrivenProp>() )
+		{
+			move( d ); // (its body driven there)
+		}
+		else
+		{
+			b3Body_SetTargetTransform( BodyOf( e.get<PhysicsBody>() ), m_moved[d].target, m_config.TimeStep(), true );
+		}
+		const MovedCharacter& out = m_moved[d];
+		for ( int event : out.markers )
+		{
+			// A marker the playing clip crossed: the mod event of its name, from this player.
+			// (After its motions: they hear it next tick, a throw released on its marker.)
+			ModEventRecord record;
+			record.type = uint16_t( event );
+			record.netIdA = netId;
+			record.tick = m_globals.tick;
+			record.point = out.t.position;
+			record.late = 1;
+			RecordModEvent( record );
+		}
+		SetAnimState( e, out.anim );
+		e.set<Character>( out.c );
+		e.set<Transform>( out.t );
+		e.set<Velocity>( { out.c.velocity, { 0.0f, 0.0f, 0.0f } } );
+	}
+	spentOn( m_profile.animNs );
 	CreateLaunched();
 }
 

@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <utility>
 #include <mutex>
@@ -256,6 +257,15 @@ public:
 	void KeepStepEvents( bool keep )
 	{
 		m_keepStepEvents = keep;
+	}
+	// A host's threads for the characters' movers and animation (M258), or none (this thread): `run`
+	// calls fn( i ) for every i below count, on any of them, and returns when all are done. Each
+	// mover reads the world as the tick found it (its bodies move in the step), so the results are
+	// the same on any number of threads.
+	using ParallelFor = std::function<void( size_t count, const std::function<void( size_t )>& fn )>;
+	void SetParallelFor( ParallelFor run )
+	{
+		m_parallelFor = std::move( run );
 	}
 	// A mod's events at characters leave the frames (FollowerSkipped): they go with the characters
 	// (a hybrid server sending states by priority, M257).
@@ -970,6 +980,18 @@ private:
 	}
 	std::vector<ImpactRecord> m_impactScratch;
 	std::vector<int> m_markerScratch;
+	// The characters' second pass (M258): each driver's results, written after all have run.
+	struct MovedCharacter
+	{
+		Character c;
+		Transform t;
+		AnimState anim;
+		b3Transform target{};
+		std::vector<int> markers;
+	};
+	std::vector<MovedCharacter> m_moved;
+	std::vector<uint32_t> m_movingApart; // (drivers moved on the host's threads)
+	ParallelFor m_parallelFor;
 	std::vector<std::pair<uint32_t, uint16_t>> m_heldScratch; // holder NetId, item kind
 	std::vector<std::pair<uint32_t, uint16_t>> m_carriedScratch; // the same, with what is put away
 	std::vector<std::pair<uint32_t, uint16_t>> m_usingScratch;	 // what each is using this tick ("using.<kind>")

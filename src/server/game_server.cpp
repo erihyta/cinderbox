@@ -391,6 +391,11 @@ bool GameServer::Start( const ServerOptions& options )
 
 	m_sim = std::make_unique<Simulation>( m_options.config, m_map );
 	m_sim->SetPhysicsThreaded( m_options.physicsThreaded );
+	// The characters' movers and animation on the state threads (M258: idle while it steps).
+	m_stateWorkers.Start( m_options.stateThreads );
+	m_sim->SetParallelFor( [this]( size_t count, const std::function<void( size_t )>& fn ) {
+		m_stateWorkers.Run( count, [&]( size_t i, int ) { fn( i ); } );
+	} );
 	m_sim->SetCharacters( CharacterBodies() );
 	m_sim->SetAnimPacks( m_animPacks );
 	{
