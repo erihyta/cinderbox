@@ -64,12 +64,13 @@ bool HybridSession::AddFrame( const InputFrame& frame )
 }
 
 void HybridSession::AddState( uint32_t tick, const uint8_t* data, size_t size, const std::array<PlayerInput, kMaxPlayers>& inputs,
-							  const std::vector<PuppetEntry>* puppets )
+							  const std::vector<PuppetEntry>* puppets, const std::vector<ModEventRecord>* events )
 {
 	if ( m_stateLag > 0 && m_releasing == false )
 	{
 		m_lagged.push_back( { m_sim->Tick() + m_stateLag, tick, std::vector<uint8_t>( data, data + size ), inputs,
-							  puppets != nullptr ? *puppets : std::vector<PuppetEntry>{} } );
+							  puppets != nullptr ? *puppets : std::vector<PuppetEntry>{},
+							  events != nullptr ? *events : std::vector<ModEventRecord>{} } );
 		return;
 	}
 	if ( m_states.count( tick ) != 0 || ( m_placed != UINT32_MAX && tick < m_placed ) )
@@ -79,11 +80,23 @@ void HybridSession::AddState( uint32_t tick, const uint8_t* data, size_t size, c
 	m_states[tick].bytes.assign( data, data + size );
 	m_states[tick].inputs = inputs;
 	m_states[tick].puppets = puppets != nullptr ? *puppets : std::vector<PuppetEntry>{};
+	m_states[tick].events = events != nullptr ? *events : std::vector<ModEventRecord>{};
 	m_newest = std::max( m_newest, tick );
 	while ( m_states.size() > kMaxStatesKept )
 	{
+		Hear( m_states.begin()->second ); // (late, but said)
 		m_states.erase( m_states.begin() );
 	}
+}
+
+void HybridSession::Hear( State& state )
+{
+	for ( const ModEventRecord& e : state.events )
+	{
+		m_heard[m_heardCount % kHeardHistory] = e;
+		m_heardCount += 1;
+	}
+	state.events.clear();
 }
 
 void HybridSession::AddChecksum( uint32_t tick, uint64_t hash )
@@ -108,6 +121,11 @@ void HybridSession::PlaceOthers( uint32_t tick, bool again )
 		return;
 	}
 	--it;
+	// Their events, those before it first (M257).
+	for ( auto at = m_states.begin(); at != std::next( it ); ++at )
+	{
+		Hear( at->second );
+	}
 	if ( it->first != m_placed || again )
 	{
 		auto start = std::chrono::steady_clock::now();
@@ -145,7 +163,7 @@ uint32_t HybridSession::AdvancePhysics( uint32_t upTo )
 			{
 				if ( l.release <= tick )
 				{
-					AddState( l.tick, l.bytes.data(), l.bytes.size(), l.inputs, &l.puppets );
+					AddState( l.tick, l.bytes.data(), l.bytes.size(), l.inputs, &l.puppets, &l.events );
 				}
 			}
 			m_releasing = false;

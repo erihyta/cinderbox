@@ -24,12 +24,14 @@
 #include "transport.h"
 #include "worker_pool.h"
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <map>
 #include <memory>
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace cb
@@ -42,9 +44,9 @@ struct ServerOptions
 	// `stateEvery` ticks, and the physics checksum every `checksumInterval`.
 	net::NetModel netModel = net::NetModel::Inputs;
 	uint32_t stateEvery = 2;
-	// The hybrid (M250): each client is sent the characters by how far they are from its own, a
-	// far one's record refreshed every few states (StatePeriod), within a budget; off, every one in
-	// every state (one encoding for every client, but every character to everyone).
+	// The hybrid (M250): each client is sent the characters by what matters to it most (M257: how
+	// near, in its view, changing, aiming at it), within a budget; off, every one in every state (one
+	// encoding for every client, but every character to everyone).
 	bool statesByDistance = true;
 	// Threads besides the server's own that encode those states, a client each (0: none).
 	int stateThreads = 0;
@@ -60,6 +62,9 @@ struct ServerOptions
 	// holds aside: the most overdue first, a character with what it holds (a crowd's come round in
 	// turn).
 	uint32_t stateBudget = 512;
+	// And the most bytes (M257): what the others' updates may take of a client's states, in kbit/s
+	// (before packing; its own character and the head aside). 0: no limit but stateBudget.
+	uint32_t clientBudgetKbits = 256;
 	SimConfig config;
 	uint32_t maxClients = kMaxPlayers;
 	uint32_t checksumInterval = 30; // ticks
@@ -182,6 +187,7 @@ public:
 		uint64_t batchesSent = 0;
 		uint64_t framesSent = 0;	 // frames inside batches (resends included)
 		uint64_t commandsLeftOut = 0; // the hybrid: commands its clients skip, not sent (M256)
+		double stateBudgeted = 0.0;	  // the hybrid: the bytes its plans thought the others' updates took (M257)
 		uint64_t framesResent = 0;	 // frames sent again from the oldest unacknowledged one, after a wait
 		uint64_t ackTooOld = 0;		 // clients that fell out of the frame history and got a snapshot
 		uint64_t resyncRequests = 0;
@@ -196,6 +202,7 @@ public:
 		// The hybrid.
 		uint64_t statesSent = 0;	 // messages, to every client
 		uint64_t statesWhole = 0;	 // of them, against no base
+		uint64_t updatesCarried = 0; // entities' updates against the record a client has, their base too old (M257)
 		uint64_t stateBytes = 0;	 // their bytes
 		double stateMsTotal = 0.0; // saving and encoding them
 		// Where a tick's time goes (since the last ResetTickTiming): the mods, the simulation's step,
@@ -278,11 +285,25 @@ private:
 			uint32_t acked = 0;
 			bool removing = false;
 			uint32_t sentAt = 0; // the state of the last update of it sent (acknowledged or not), or found it had
+			// M257: how much it is owed an update (it grows each state by what it matters to this client;
+			// sent, 0), and what its last update took (bytes before packing; 0: never sent).
+			float priority = 0.0f;
+			uint32_t bytes = 0;
 			// M253: the record (with its puppet) it acknowledged, hashed, and whether that was as a
 			// puppet (its view: the base for the next is the same kind); the one last sent, hashed. One
 			// both are of is not sent again.
 			bool ackedPuppet = false;
 			uint64_t ackedHash = 0, sentHash = 0;
+			// M257: the record alone it acknowledged (as a puppet's client has it, without the puppet),
+			// hashed; and the state of the last update of it sent (0: none). One sent nothing since
+			// it acknowledged one has that record in every state since: a base too old to be kept
+			// is no matter if the record is still that one (net::EntityUpdate::carried).
+			uint64_t ackedViewHash = 0;
+			uint32_t updatedAt = 0;
+			// M257: a character: the state through whose tick it has the events at it (acknowledged),
+			// and through whose they were sent (each goes once; again from the acknowledged one when a
+			// state that had them is lost: 0).
+			uint32_t eventsAcked = 0, eventsSent = 0;
 		};
 		std::vector<Known> known;
 		struct Sent
@@ -290,7 +311,17 @@ private:
 			uint32_t tick = 0;
 			std::vector<uint32_t> updated, removed;
 			std::vector<uint64_t> hashes;	  // (by updated)
-			std::vector<uint8_t> puppets; // (by updated)
+			std::vector<uint64_t> viewHashes; // (by updated) the record alone (M257: Known::ackedViewHash)
+			std::vector<uint8_t> puppets;	  // (by updated)
+			// M257: the characters whose events it said, all there were from a tick on, and the state
+			// through which the client must have had them before for it to have them all after (0:
+			// none: what was older is no longer sent).
+			struct Covered
+			{
+				uint32_t netId = 0;
+				uint32_t needs = 0;
+			};
+			std::vector<Covered> covered;
 		};
 		std::deque<Sent> sent;
 		struct Slot
@@ -355,8 +386,54 @@ private:
 		std::vector<uint8_t> viewBytes;
 		std::vector<Puppet> puppets;
 		std::vector<uint64_t> fullHash, viewHash;
+		std::vector<uint64_t> viewRecordHash; // M257: a puppet's view and bodies without the puppet (0: none)
+		// M257: a character whose layers' states or flags are not what they were in the state before
+		// (it did something: its update matters more); what each would cost sent whole to a puppet's
+		// client and to its own (its record's bytes that are not zeros, and its bodies': about what
+		// packing leaves of them).
+		std::vector<uint8_t> changed;
+		std::vector<uint32_t> wholeView, wholeFull;
+		// M257: by layout.entities, a character's newest event's tick and 1 (0: none kept).
+		std::vector<uint32_t> newestEvent;
+		// M257: by layout.entities, where a puppet looks, flat (x, z: a unit; zeros for the rest).
+		std::vector<float> lookX, lookZ;
 	};
 	std::deque<KeptLayout> m_layouts;
+	// M257: the last few records each puppet (or what one holds) had, as puppets' clients have them
+	// (their views, by KeptLayout::viewRecordHash): one a client acknowledged long ago is still a
+	// base for its next update, carried (net::EntityUpdate::carried). By NetId; dropped once no
+	// state has had it for a while.
+	struct RecordVersion
+	{
+		uint64_t hash = 0;
+		std::vector<uint8_t> view;
+		net::StateSpan span; // (into view: its bodies' size and hash, not the bodies; no puppet)
+	};
+	struct RecordVersions
+	{
+		uint32_t seenAt = 0;
+		uint32_t next = 0;
+		std::array<RecordVersion, 8> ring;
+	};
+	std::unordered_map<uint32_t, RecordVersions> m_recordVersions;
+	// M257: the events at each character (Simulation::StepEvents) of the last kEventWindow ticks, by
+	// its NetId, oldest first: each client is sent those at the characters it is sent, once.
+	struct KeptEvent
+	{
+		ModEventRecord record;
+		bool command = false; // (a mod's: its own game hears it from the server too)
+		uint32_t serial = 0;  // (net::CharacterEvent::serial)
+	};
+	uint32_t m_eventSerial = 0;
+	// A state sent that the client will not have (a later one acknowledged first, or too old): its
+	// characters' events go again, from those it acknowledged.
+	void EventsLost( Client& c, const Client::Sent& sent );
+	std::unordered_map<uint32_t, std::vector<KeptEvent>> m_characterEvents;
+	// Those too old to send dropped; each character's newest in the state kept (KeptLayout::newestEvent).
+	void KeepEvents( KeptLayout& kept, uint32_t tick );
+	uint32_t m_recordVersionsSwept = 0;
+	void KeepRecordVersions( const KeptLayout& kept, uint32_t tick );
+	const net::StateSpan* RecordVersionOf( uint32_t netId, uint64_t hash ) const;
 	// A kept state's puppets, their views and the hashes (M253), as the world is when it is saved.
 	void KeepPuppets( KeptLayout& kept ) const;
 	// Sending states by distance, a step at a time (SendStates): each client's plan (what it is sent),
@@ -369,6 +446,7 @@ private:
 		uint32_t ownId = 0;
 		bool hasOwn = false;
 		b3Vec3 ownAt = {};
+		float viewX = 0.0f, viewZ = 1.0f; // where its camera looks, flat (M257: Matters)
 		std::vector<net::EntityUpdate> updates;
 		std::vector<PlayerSlot> inputSlots;
 		std::vector<uint32_t> says; // what the message says, as numbers: the same for the same message
@@ -385,18 +463,29 @@ private:
 			bool chosen = false;
 			bool puppet = false; // sent as a puppet's view (M253)
 			bool same = false;	 // what it has of it already (acknowledged, and nothing else sent since)
+			float owed = 0.0f;	 // M257: a group head's priority with this state's share (Known::priority)
+			uint32_t bytes = 0;	 // what its update would take, as last time or whole
+			// M257: its base too old, the record the client has (net::EntityUpdate::carried; null: none).
+			const net::StateSpan* carried = nullptr;
 		};
 		std::vector<Entry> entries;
 		std::vector<float> groupScore; // by head (the most overdue of its group's)
 		std::vector<uint8_t> groupChosen;
 		std::vector<std::pair<float, uint32_t>> due; // heads
+		double budgeted = 0.0; // M257: the bytes the others' updates were thought to take
+		std::vector<net::CharacterEvent> events; // M257: the events at the characters it is sent
 	};
 	struct Message
 	{
 		size_t plan = 0; // the first client's whose plan it is
 		bool ok = false;
 		std::vector<uint8_t> bytes;
+		std::vector<uint32_t> sizes; // each update's bytes (M257)
+		size_t unpacked = 0;		 // its bytes before packing
 	};
+	// M257: what packing leaves of a state's bytes, lately (the budget is of bytes sent; what an
+	// update takes is known before packing).
+	double m_packed = 0.5;
 	std::vector<Plan> m_plans;
 	std::vector<Message> m_messages;
 	std::vector<net::UpdateCache> m_updateCaches;
@@ -409,6 +498,9 @@ private:
 	void PlanState( Plan& plan, Client& c, const net::StateFrame& newest, const KeptLayout& now,
 					const std::vector<std::pair<uint32_t, PlayerSlot>>& players );
 	const KeptLayout* KeptLayoutOf( uint32_t tick ) const;
+	// What a character (a kept state's entity `i`) matters to a client, a state's share of its
+	// priority (M257): near, in its view, doing something, looking at it.
+	float Matters( const Plan& plan, const KeptLayout& now, size_t i ) const;
 	static const net::StateLayout* LayoutOfTick( const void* server, uint32_t tick );
 	// A client acknowledged the state of `tick` (by distance: what it updated is what it has).
 	void StateAcknowledged( Client& c, uint32_t tick );

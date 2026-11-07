@@ -239,6 +239,33 @@ public:
 	{
 		return m_followerSkipped;
 	}
+	// Every mod event the last step recorded (the ring keeps the last kModEventHistory), once asked
+	// for (a hybrid server: M257, each goes to its clients with the character it is at): whether a
+	// command said it (a mod's Emit) or the simulation did (a motion, a marker, a slot's use: what a
+	// player's own game says of its own character too), and the character it is at (EventCharacter
+	// then; 0: none).
+	struct StepEvent
+	{
+		ModEventRecord record;
+		uint32_t character = 0;
+		bool command = false;
+	};
+	void KeepStepEvents( bool keep )
+	{
+		m_keepStepEvents = keep;
+	}
+	const std::vector<StepEvent>& StepEvents() const
+	{
+		return m_stepEvents;
+	}
+	// The character an event at this entity is at: it, or who holds it (0: neither).
+	uint32_t EventCharacter( uint32_t netId ) const;
+	// The events every client hears, said by a mod (ModSchema::eventsForEveryone): never with a
+	// character, always in the frames.
+	void SetEventsForEveryone( std::vector<uint8_t> everyone )
+	{
+		m_eventsForEveryone = std::move( everyone );
+	}
 	// Hash of the physics world alone: every body that is not a character's, by its components
 	// (not its physics handles: those are this world's own).
 	uint64_t PhysicsHash() const;
@@ -743,6 +770,14 @@ private:
 	bool FollowerDrops( const SimCommand& command ) const;
 	std::vector<uint8_t> m_sharedFields;
 	std::vector<uint8_t> m_followerSkipped;
+	bool m_keepStepEvents = false;
+	std::vector<uint8_t> m_eventsForEveryone;
+	bool ForEveryone( uint32_t type ) const
+	{
+		return type < m_eventsForEveryone.size() && m_eventsForEveryone[type] != 0;
+	}
+	bool m_recordingCommand = false;
+	std::vector<StepEvent> m_stepEvents;
 	void DropController( flecs::entity e ); // (a body nobody drives, or a prop, again)
 	// A Spawn physics event's prop (the mod's SpawnProp, its owner a NetId).
 	void SpawnProp( const SimCommand& command );

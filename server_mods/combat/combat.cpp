@@ -87,9 +87,9 @@ public:
 
 		m_damage = declare.Event( "combat.damage" );
 		m_heal = declare.Event( "combat.heal" );
-		m_roundStart = declare.Event( "game.round_start" );
+		m_roundStart = declare.Event( "game.round_start", true );
 		m_hurt = declare.Event( "combat.hurt" );
-		m_killed = declare.Event( "combat.killed" );
+		m_killed = declare.Event( "combat.killed", true ); // (every player's kill feed)
 		m_respawned = declare.Event( "combat.respawned" );
 	}
 

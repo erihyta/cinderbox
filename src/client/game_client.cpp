@@ -388,6 +388,8 @@ void GameClient::HandleWelcome( MsgWelcome& msg, double now )
 	m_stateEvery = msg.stateEvery;
 	m_stateFrames.clear();
 	m_stateAck = 0;
+	m_heardSerials.clear();
+	m_heardAt.clear();
 	m_hybridFrames = msg.snapshotTick;
 	m_framesFrom = msg.snapshotTick;
 	for ( KnownPushers& k : m_knownPushers )
@@ -487,11 +489,30 @@ void GameClient::HandleState( ByteReader& r, double now )
 	{
 		Log( "corrupt state for tick %u", tick );
 		m_stats.statesIgnored += 1;
+		m_stats.statesCorrupt += 1;
 		return;
+	}
+	// The events at characters it came with (M257), those not heard yet (one is sent again when a
+	// state that had it was lost; this may be that one, late).
+	std::vector<ModEventRecord> heard;
+	for ( const net::CharacterEvent& e : frame.events )
+	{
+		if ( m_heardSerials.insert( e.serial ).second )
+		{
+			heard.push_back( e.record );
+			m_heardAt.push_back( { tick, e.serial } );
+		}
+	}
+	frame.events.clear();
+	// (Those that could no longer come again: forgotten. The server sends one for half a second.)
+	while ( m_heardAt.empty() == false && m_heardAt.front().first + 600 < tick )
+	{
+		m_heardSerials.erase( m_heardAt.front().second );
+		m_heardAt.pop_front();
 	}
 	if ( m_hybrid != nullptr )
 	{
-		m_hybrid->AddState( frame.tick, frame.state.data(), frame.state.size(), frame.inputs, &frame.puppets );
+		m_hybrid->AddState( frame.tick, frame.state.data(), frame.state.size(), frame.inputs, &frame.puppets, &heard );
 	}
 	else
 	{

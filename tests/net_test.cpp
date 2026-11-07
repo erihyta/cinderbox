@@ -6891,7 +6891,8 @@ void TestStateCodec()
 		return found;
 	};
 	std::map<uint32_t, uint32_t> last; // each entity the client has: the tick of its last update
-	size_t updateBytes = 0, updateCount = 0, left = 0, removals = 0;
+	size_t updateBytes = 0, updateCount = 0, left = 0, removals = 0, carried = 0, eventsSent = 0;
+	uint32_t serial = 0;
 	for ( size_t i = 4; i < states.size(); ++i )
 	{
 		std::vector<net::EntityUpdate> updates;
@@ -6912,7 +6913,18 @@ void TestStateCodec()
 				continue;
 			}
 			auto had = last.find( e.netId );
-			if ( had == last.end() || e.netId % 2 == 1 || i % 3 == 0 )
+			if ( had != last.end() && e.netId % 4 == 2 && i % 5 == 1 )
+			{
+				// Carried (M257): against the record it has in its newest state, whatever its age.
+				net::EntityUpdate u;
+				u.netId = e.netId;
+				u.carried = layoutOf( &kept, had->second )->Find( e.netId );
+				u.version = had->second;
+				updates.push_back( u );
+				next[e.netId] = states[i].tick;
+				carried += 1;
+			}
+			else if ( had == last.end() || e.netId % 2 == 1 || i % 3 == 0 )
 			{
 				updates.push_back( { e.netId, had != last.end() ? had->second : 0u } );
 				next[e.netId] = states[i].tick;
@@ -6931,7 +6943,30 @@ void TestStateCodec()
 		{
 			everyone.push_back( PlayerSlot( slot ) );
 		}
-		CHECK( net::EncodeUpdates( states[i], base, updates, removed, everyone, layoutOf, &kept, message ) );
+		// Events at characters (M257), every other state: two at one, one at another (by NetId), each
+		// before the state's tick, its point to 1/64 m.
+		std::vector<net::CharacterEvent> events;
+		if ( i % 2 == 0 && layouts[i].entities.size() >= 2 )
+		{
+			const uint32_t a = layouts[i].entities[0].netId, b = layouts[i].entities[1].netId;
+			for ( int k = 0; k < 3; ++k )
+			{
+				net::CharacterEvent e;
+				e.character = k < 2 ? a : b;
+				e.serial = serial++;
+				e.record.type = uint16_t( 3 + k );
+				e.record.netIdA = k == 1 ? 777u : e.character;
+				e.record.netIdB = k == 2 ? a : 0u;
+				e.record.tick = states[i].tick - 1 - uint32_t( k );
+				e.record.value = k == 0 ? -5 : 0;
+				e.record.late = k == 1 ? 1 : 0;
+				e.record.point = { float( i ) * 0.25f, 1.5f, float( 2 - k ) * -0.015625f + 0.0f }; // (no -0: it comes back 0)
+				e.record.vector = k == 2 ? b3Vec3{ 0.1f, -2.0f, 3.0f } : b3Vec3{};
+				events.push_back( e );
+			}
+			eventsSent += events.size();
+		}
+		CHECK( net::EncodeUpdates( states[i], base, updates, removed, everyone, layoutOf, &kept, message, nullptr, nullptr, &events ) );
 		ByteReader r( message.data(), message.size() );
 		uint32_t tick = 0, baseTick = 0;
 		net::StateFrame back;
@@ -6962,14 +6997,24 @@ void TestStateCodec()
 		}
 		last = next;
 		CHECK( back.state == compose( i, last ).state );
+		bool eventsSame = back.events.size() == events.size();
+		for ( size_t k = 0; eventsSame && k < events.size(); ++k )
+		{
+			const net::CharacterEvent& x = events[k];
+			const net::CharacterEvent& y = back.events[k];
+			eventsSame = x.character == y.character && x.serial == y.serial &&
+						 std::memcmp( &x.record, &y.record, sizeof( ModEventRecord ) ) == 0; // (the points are 64ths: exact)
+		}
+		CHECK( eventsSame );
 		CHECK( std::memcmp( back.inputs.data(), states[i].inputs.data(), sizeof( states[i].inputs ) ) == 0 );
 		client.push_back( std::move( back ) );
 		updateBytes += base != nullptr ? message.size() : 0;
 		updateCount += base != nullptr ? 1 : 0;
 	}
-	std::printf( "    updates: %zu entities left out (kept as the client had them), %zu named gone, %zu bytes a state on average\n", left, removals,
-				 updateBytes / std::max<size_t>( updateCount, 1 ) );
-	CHECK( left > 100 && updateCount > 100 && removals > 0 );
+	std::printf( "    updates: %zu entities left out (kept as the client had them), %zu named gone, %zu carried, %zu events; %zu bytes a state "
+				 "on average\n",
+				 left, removals, carried, eventsSent, updateBytes / std::max<size_t>( updateCount, 1 ) );
+	CHECK( left > 100 && updateCount > 100 && removals > 0 && carried > 20 && eventsSent > 100 );
 }
 
 // --- The hybrid network model (M248; ROADMAP step 3) ---------------------------------------------
@@ -7192,11 +7237,12 @@ public:
 // them has to say why.
 void TestCrowdBench()
 {
-	// What M255 measured (24 fake players within 10 m, fighting with what the tests' players start
+	// What M257 measured (24 fake players within 10 m, fighting with what the tests' players start
 	// with in the hand, the default mods but brawl; 5 s counted after 5 s of warming up), with a
-	// little room. (M251: 59.5 B, 775 kbit/s, 3.5 whole; M253: 11.9 B, 491 kbit/s; M256: 203 kbit/s.)
-	constexpr double kMostBytesPerOtherCharacter = 12.5; // on the wire, with what it holds and its input (10.7: M255, unshared fields left out)
-	constexpr double kMostKbitsPerPlayer = 220.0;		  // (190)
+	// little room. (M251: 59.5 B, 775 kbit/s, 3.5 whole; M253: 11.9 B, 491 kbit/s; M256: 203 kbit/s;
+	// M255: 10.7 B, 190 kbit/s.)
+	constexpr double kMostBytesPerOtherCharacter = 12.0; // on the wire, with what it holds and its input, not its events (10.6)
+	constexpr double kMostKbitsPerPlayer = 185.0;		  // (163: events with their characters, once, not in every frame twice)
 	// (4.2: an entity goes whole until its first is acknowledged; an item that waited unchanged
 	// longer than a base is kept goes whole when it changes.)
 	constexpr double kMostWholeRecordsPerState = 4.8;
@@ -7218,7 +7264,8 @@ void TestCrowdBench()
 	CHECK( b.fakes == 24 );
 	CHECK( b.resyncs == 0 );
 	CHECK( b.sampled > 0 && b.othersUpdated > 0 );
-	const double perOther = double( b.sampledBytes - std::min( b.sampledBytes, b.ownOnly ) ) / double( std::max<uint64_t>( b.othersUpdated, 1 ) );
+	// (The events at them apart: M257 sends them with their characters, not in the frames.)
+	const double perOther = double( b.withoutEvents - std::min( b.withoutEvents, b.ownOnly ) ) / double( std::max<uint64_t>( b.othersUpdated, 1 ) );
 	const double seconds = double( b.ticks ) / 60.0;
 	const double kbits = double( b.wire ) * 8.0 / 1000.0 / ( double( b.fakes ) * seconds );
 	std::printf( "    %.1f B per other character (at most %.0f), %.0f kbit/s per player (at most %.0f)\n", perOther,
@@ -7255,6 +7302,7 @@ void TestHybridFar()
 		double errorSum = 0.0;
 		uint32_t compared = 0, refreshes = 0;	 // of the far ones: how often one moved on a client
 		uint64_t desyncs = 0;
+		uint64_t carried = 0, corrupt = 0; // updates against what a client has (M257); states it could not read
 	};
 	auto run = [&]( uint16_t port, bool byDistance, uint32_t budget = 256 ) {
 		std::vector<std::unique_ptr<mods::ServerMod>> mods;
@@ -7298,6 +7346,7 @@ void TestHybridFar()
 		} );
 		Run out;
 		const uint64_t sentBefore = h.server.GetStats().statesSent, bytesBefore = h.server.GetStats().stateBytes;
+		const uint64_t carriedBefore = h.server.GetStats().updatesCarried;
 		std::array<std::array<b3Vec3, SpreadOutMod::kPlayers>, 2> seen{};
 		const double from = h.Now();
 		h.RunUntil( from + 4.0, [&]( double ) {
@@ -7330,10 +7379,12 @@ void TestHybridFar()
 		h.server.SetTickObserver( {} );
 		const GameServer::Stats& ss = h.server.GetStats();
 		out.bytesPerState = double( ss.stateBytes - bytesBefore ) / double( std::max<uint64_t>( ss.statesSent - sentBefore, 1 ) );
+		out.carried = ss.updatesCarried - carriedBefore;
 		for ( Bot& b : h.bots )
 		{
 			CheckHybridClient( *b.client );
 			out.desyncs += b.client->GetStats().desyncs + b.client->Hybrid()->GetStats().rejected;
+			out.corrupt += b.client->GetStats().statesCorrupt;
 		}
 		return out;
 	};
@@ -7343,22 +7394,27 @@ void TestHybridFar()
 	// they come round in turn.
 	const Run few = run( 48130, true, 6 );
 	const double fewError = few.errorSum / double( std::max( few.compared, 1u ) );
-	std::printf( "    with 6 a state: %.0f bytes a state, off by %.2f m on average, %.2f at most\n", few.bytesPerState, fewError, few.farError );
+	std::printf( "    with 6 a state: %.0f bytes a state, off by %.2f m on average, %.2f at most; %llu updates carried\n", few.bytesPerState, fewError,
+				 few.farError, (unsigned long long)few.carried );
 	const double meanError = byDistance.errorSum / double( std::max( byDistance.compared, 1u ) );
 	std::printf( "    by distance: %.0f bytes a state (every character: %.0f); the others on a client off by %.2f m on average, %.2f at most "
 				 "(%.2f with every character), %u compared, %u moved\n",
 				 byDistance.bytesPerState, all.bytesPerState, meanError, byDistance.farError, all.farError, byDistance.compared, byDistance.refreshes );
 	CHECK( byDistance.desyncs == 0 && all.desyncs == 0 );
+	CHECK( byDistance.corrupt == 0 && all.corrupt == 0 && few.corrupt == 0 );
 	CHECK( byDistance.compared > 1000 && byDistance.refreshes > 200 );
-	// (A far one is refreshed every 8 states: 16 ticks of walking, twice that when a refresh is lost.)
-	CHECK( meanError < 1.5 && byDistance.farError < 5.0f );
+	// (A far one is refreshed as much less often as it is further, M257: one 250 m off every ~20
+	// states, 10 in view; walking all that time, and twice that when a refresh is lost. M250's
+	// periods stopped at every 8th: at most 5 m off then, 5.6 seen on CI since.)
+	CHECK( meanError < 1.5 && byDistance.farError < 7.0f );
 	CHECK( all.farError < 0.01f );
 	// (Every entity comes round, a few states later in turn.)
 	CHECK( few.desyncs == 0 && few.compared > 1000 && fewError < 2.0 && few.farError < 10.0f );
 	// (Since M253 the others cost a few bytes each, so a budget of entities saves next to nothing:
-	// a state is mostly its head and the own character. What it still must not do is cost much more;
-	// with it, what waits longer than a base is kept goes whole. M257's budget is of bytes.)
-	CHECK( few.bytesPerState < byDistance.bytesPerState * 1.3 );
+	// a state is mostly its head and the own character. What it still must not do is cost more:
+	// what waits longer than a base is kept went whole until M257; it goes against the record the
+	// client has, carried. How many is the link's timing: state_codec checks them byte for byte.)
+	CHECK( few.bytesPerState < byDistance.bytesPerState * 1.1 );
 	// (The own character and what it holds stay a good part of a state: the far ones' share is what
 	// goes, and it grows with the players; cb_bot measures it.)
 	CHECK( byDistance.bytesPerState < all.bytesPerState * 0.9 );
@@ -7638,7 +7694,25 @@ void TestHybridPuppets()
 	};
 	std::map<uint32_t, Layers> onServer;
 	std::set<std::pair<size_t, uint8_t>> statesSeen; // (layer, state) the server's went through
+	// The events at the fighter (M257): the server's (each type and tick), and what each game heard
+	// of them from the server (HybridSession::HeardEvents).
+	using Said = std::multiset<std::pair<uint16_t, uint32_t>>;
+	Said onServerEvents, saidByModsOnServer, heardBy[2];
+	uint32_t heardSeen[2] = {};
+	const uint32_t eventsFrom = server.Tick() + 30;
 	h.server.SetTickObserver( [&] {
+		// (Those sent with a character: not one for everyone.)
+		for ( const Simulation::StepEvent& s : server.StepEvents() )
+		{
+			if ( s.record.netIdA == fighterId && s.character != 0 )
+			{
+				onServerEvents.insert( { s.record.type, s.record.tick } );
+				if ( s.command )
+				{
+					saidByModsOnServer.insert( { s.record.type, s.record.tick } );
+				}
+			}
+		}
 		if ( const AnimStateCopy a = server.EntityAnimState( fighterId ) )
 		{
 			onServer[server.Tick()] = layersOf( *a );
@@ -7657,6 +7731,20 @@ void TestHybridPuppets()
 		if ( sim == nullptr || hs == nullptr )
 		{
 			return;
+		}
+		for ( int b = 0; b < 2; ++b )
+		{
+			const HybridSession* heard = h.bots[size_t( b )].client->Hybrid();
+			const uint32_t count = heard != nullptr ? heard->HeardCount() : 0;
+			for ( uint32_t n = std::max( heardSeen[b], count - std::min( count, HybridSession::kHeardHistory ) ); n < count; ++n )
+			{
+				const ModEventRecord& e = heard->HeardEvents()[n % HybridSession::kHeardHistory];
+				if ( e.netIdA == fighterId )
+				{
+					heardBy[b].insert( { e.type, e.tick } );
+				}
+			}
+			heardSeen[b] = count;
 		}
 		const flecs::entity e = sim->FindEntity( fighterId );
 		const AnimStateCopy a = sim->EntityAnimState( fighterId );
@@ -7681,6 +7769,28 @@ void TestHybridPuppets()
 		worst = allSame ? std::max( worst, off ) : worst;
 	} );
 	h.server.SetTickObserver( {} );
+	// (Those of the second before the end may still be on their way.)
+	const uint32_t eventsTo = server.Tick() - 60;
+	auto inWindow = [&]( const Said& all ) {
+		Said out;
+		for ( const auto& [type, tick] : all )
+		{
+			if ( tick >= eventsFrom && tick < eventsTo )
+			{
+				out.insert( { type, tick } );
+			}
+		}
+		return out;
+	};
+	// The other's game hears every one, once; the fighter's own only what a mod said (item.use, a
+	// hit's combat.damage): the rest (its fist's used) it says itself, predicting.
+	const Said all = inWindow( onServerEvents ), saidByMods = inWindow( saidByModsOnServer );
+	const Said watcherHeard = inWindow( heardBy[1] ), fighterHeard = inWindow( heardBy[0] );
+	std::printf( "    the events at the fighter: %zu on the server (%zu a mod's), the other's game heard %zu, its own %zu\n", all.size(), saidByMods.size(),
+				 watcherHeard.size(), fighterHeard.size() );
+	CHECK( all.size() >= 20 && saidByMods.size() >= 10 && all.size() > saidByMods.size() );
+	CHECK( watcherHeard == all );
+	CHECK( fighterHeard == saidByMods );
 	for ( Bot& b : h.bots )
 	{
 		CheckHybridClient( *b.client );

@@ -412,6 +412,10 @@ uint32_t Simulation::ScrambleCharacters( uint32_t seed, float metres )
 		}
 		Transform t = e.get<Transform>();
 		t.position = b3Add( t.position, b3Vec3{ metres * next(), metres * next(), metres * next() } );
+		if ( b3IsValidQuat( t.rotation ) == false )
+		{
+			t.rotation = b3Quat_identity; // (never one Box3D refuses: ApplyState makes none)
+		}
 		const b3Vec3 v = { 5.0f * next(), 5.0f * next(), 5.0f * next() };
 		e.set<Transform>( t );
 		if ( const Velocity* vel = e.try_get<Velocity>() )
@@ -787,6 +791,17 @@ bool Simulation::ApplyState( const uint8_t* data, size_t size, PlayerSlot own, S
 			if ( q.v.x * q.v.x + q.v.y * q.v.y + q.v.z * q.v.z + q.s * q.s < 0.5f )
 			{
 				t.rotation = b3Quat_identity;
+			}
+			// Nor in its Transform, where a puppet's view left zeros (what a puppet holds, new here):
+			// what reads it before it is placed hands it to Box3D (found: the hybrid chaos test's
+			// scramble, Box3D's check on macOS and Windows GCC since M253). Its holder's place.
+			if ( const Transform* had = e.try_get<Transform>() )
+			{
+				const b3Quat& r = had->rotation;
+				if ( r.v.x * r.v.x + r.v.y * r.v.y + r.v.z * r.v.z + r.s * r.s < 0.5f )
+				{
+					e.set<Transform>( t );
+				}
 			}
 			if ( same == false )
 			{

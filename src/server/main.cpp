@@ -79,7 +79,7 @@ void Usage()
 				 "                 [--prop-lifetime SEC] [--props-per-player N] [--props-global N]\n"
 				 "                 [--map FILE.cbmap | --map NAME] [--record FILE] [--record-view FILE [--view-rate HZ] [--view-compact]] [--mods A,B | --mods none] [--list-mods]\n"
 				 "                 [--dump-names FILE] [--exit-when-empty SEC] [--items DIR] [--mod-option NAME=VALUE]... [--move NAME=VALUE]...\n"
-				 "                 [--physics-threads N] [--net-model hybrid|inputs] [--every-character] [--state-budget N] [--state-threads N] [--lag-compensation MS]\n"
+				 "                 [--physics-threads N] [--net-model hybrid|inputs] [--every-character] [--state-budget N] [--client-budget KBITS] [--state-threads N] [--lag-compensation MS]\n"
 				 "                 [--character NAME [--workshop DIR]] [--quiet]\n"
 				 "                 [--fake-players N [--fake-seed N] [--fake-radius M] [--fake-rtt MS] [--fake-fight]] [--bench SEC]\n" );
 }
@@ -266,6 +266,12 @@ bool ParseArgs( int argc, char** argv, cb::ServerOptions& o, std::vector<std::st
 		{
 			// The most entities a client is sent in one state by distance (ServerOptions::stateBudget).
 			o.stateBudget = uint32_t( std::max( 1, std::atoi( argv[++i] ) ) );
+			continue;
+		}
+		if ( arg == "--client-budget" && i + 1 < argc )
+		{
+			// What the others' updates may take of a client's states, kbit/s (M257; 0: no limit).
+			o.clientBudgetKbits = uint32_t( std::max( 0, std::atoi( argv[++i] ) ) );
 			continue;
 		}
 		if ( arg == "--record" && i + 1 < argc )

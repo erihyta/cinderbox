@@ -59,8 +59,10 @@ public:
 	// The server's characters' state in which its Tick() == `tick` (Simulation::SaveState), and the
 	// inputs it used for the tick before (presentation aims the others with them). `puppets` (M253):
 	// the other characters it was sent as puppets (sim/puppet.h), placed by them and animated here.
+	// `events` (M257): the server's events at characters it came with, new to this client; heard
+	// (HeardEvents) when the others stand as this state, or one after it.
 	void AddState( uint32_t tick, const uint8_t* data, size_t size, const std::array<PlayerInput, kMaxPlayers>& inputs = {},
-				   const std::vector<PuppetEntry>* puppets = nullptr );
+				   const std::vector<PuppetEntry>* puppets = nullptr, const std::vector<ModEventRecord>* events = nullptr );
 	// The server's PhysicsHash() after it stepped `tick`.
 	void AddChecksum( uint32_t tick, uint64_t hash );
 
@@ -97,6 +99,19 @@ public:
 	uint32_t PlacedTick() const
 	{
 		return m_placed;
+	}
+	// The server's events at characters heard so far (M257), a ring of kHeardHistory: what the others
+	// did (their motions, markers, slots: nothing here runs them) and what mods said at anyone's
+	// character. Apart from the simulation's own ring: they are older than its ticks, and the own
+	// character's motions read that one newest first.
+	static constexpr uint32_t kHeardHistory = 128;
+	const ModEventRecord* HeardEvents() const
+	{
+		return m_heard.data();
+	}
+	uint32_t HeardCount() const
+	{
+		return m_heardCount;
 	}
 	// The first physics tick whose checksum differed (UINT32_MAX: none).
 	uint32_t DesyncTick() const
@@ -187,8 +202,13 @@ private:
 		std::vector<uint8_t> bytes;
 		std::array<PlayerInput, kMaxPlayers> inputs{};
 		std::vector<PuppetEntry> puppets;
+		std::vector<ModEventRecord> events;
 	};
 	std::map<uint32_t, State> m_states;
+	// Its events into the heard ring (once: they are taken).
+	void Hear( State& state );
+	std::array<ModEventRecord, kHeardHistory> m_heard{};
+	uint32_t m_heardCount = 0;
 	std::array<PlayerInput, kMaxPlayers> m_othersInputs{};
 	uint32_t m_newest = 0;		  // the newest state's tick
 	uint32_t m_placed = UINT32_MAX; // the state the others stand as
@@ -213,6 +233,7 @@ private:
 		std::vector<uint8_t> bytes;
 		std::array<PlayerInput, kMaxPlayers> inputs;
 		std::vector<PuppetEntry> puppets;
+		std::vector<ModEventRecord> events;
 	};
 	std::vector<Lagged> m_lagged;
 	bool m_releasing = false;

@@ -18,6 +18,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace cb
@@ -89,6 +91,7 @@ public:
 		// The hybrid.
 		uint64_t statesReceived = 0;
 		uint64_t statesIgnored = 0; // older than the newest, against a base no longer kept, or corrupt
+		uint64_t statesCorrupt = 0; // of them, corrupt (or not what we have: a carried record we lack)
 		int64_t physicsBehind = 0;	// how far the physics is behind the server's newest tick heard of
 	};
 
@@ -296,6 +299,10 @@ private:
 	std::vector<uint64_t> m_checksumScratch;
 	std::deque<net::StateFrame> m_stateFrames;
 	uint32_t m_stateAck = 0;
+	// M257: the server's events at characters heard lately, by serial (one sent again, a state that
+	// had it lost or late, is not heard twice), and when (forgotten once none could come again).
+	std::unordered_set<uint32_t> m_heardSerials;
+	std::deque<std::pair<uint32_t, uint32_t>> m_heardAt; // (tick, serial), oldest first
 	SimConfig m_config;
 	// The map the server sent on join. The session is rebuilt when it changes.
 	LevelLayout m_map;

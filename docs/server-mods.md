@@ -127,6 +127,31 @@ m_cooldown = declare.Field( "brawl.cd_dash", BoardType::Float );                
 - The inputs model (every client simulates every player) has every field everywhere: this is the
   hybrid's alone. A field that must stay secret even there is a [private field](#private-fields).
 
+### Events others hear (the hybrid)
+
+On a hybrid server an event goes where the entity it is at (`Emit`'s first entity) goes (M257):
+
+```cpp
+m_hurt = declare.Event( "combat.hurt" );          // with the character: those near it
+m_killed = declare.Event( "combat.killed", true ); // everyone (the kill feed)
+```
+
+| An event | Who hears it | When |
+|---|---|---|
+| at a character, or at what one holds | the players whose games are sent that character | with its next update: at once when it is near, later when it is far |
+| declared for everyone, or at nothing (0), or at the world's things (a crate, an item lying about) | everyone | in the frames, at its tick |
+
+- **Old ones are dropped**: an event is sent with its character for half a second (30 ticks). A
+  far character is sent a few times a second, so a player far from it may not hear all of it.
+- **Something everyone must hear** (a kill feed, a round's end said at its winner) is declared for
+  everyone: either mod declaring it so is enough. What everyone must keep (a score) is a
+  [shared field](#fields-others-see-the-hybrid), not an event. Shipped: `combat.killed`,
+  `game.round_start`, `deathmatch.round_end`.
+- **What a character does itself** (its motions, its clip markers, using its slot's item) is heard
+  by the others too: a player's own game says these itself (it predicts its own character) and is
+  only sent what mods say at it.
+- The inputs model has every event everywhere.
+
 ### Private fields
 
 Every client that simulates has the whole world: it could not predict otherwise. So what one

@@ -137,13 +137,25 @@ struct Reader
 namespace
 {
 std::atomic<uint32_t> s_newWorkers{ kPhysicsWorkers };
+
+// Box3D's own checks (on in every build) stop the program: said first on stderr, written at once
+// (its own says it on stdout, which a crash loses when that is a pipe: CI's net_chaos_hybrid on
+// macOS and Windows GCC died with nothing said).
+int SayBox3DAssertion( const char* condition, const char* fileName, int lineNumber )
+{
+	std::fprintf( stderr, "BOX3D ASSERTION: %s, %s, line %d\n", condition, fileName, lineNumber );
+	std::fflush( stderr );
+	return 1;
 }
+} // namespace
 
 Simulation::Simulation( const SimConfig& config, const LevelLayout& map )
 	: m_config( config )
 	, m_map( map )
 	, m_world( CreateFlecsWorld() )
 {
+	static std::once_flag sayAssertions;
+	std::call_once( sayAssertions, [] { b3SetAssertFcn( SayBox3DAssertion ); } );
 	m_arena = std::make_unique<PhysicsArena>( size_t( config.physicsArenaMB ) * 1024 * 1024 );
 	m_globals.rngState = config.seed;
 	m_globalBoard.resize( config.globalFields );
@@ -2325,6 +2337,28 @@ void Simulation::RecordModEvent( const ModEventRecord& record )
 {
 	m_globals.modEvents[m_globals.modEventCount % kModEventHistory] = record;
 	m_globals.modEventCount += 1;
+	if ( m_keepStepEvents )
+	{
+		// (A mod's for everyone is in the frames. What a character did itself goes with it anyway: a
+		// frame carries only commands.)
+		const bool everyone = m_recordingCommand && ForEveryone( record.type );
+		m_stepEvents.push_back( { record, everyone ? 0u : EventCharacter( record.netIdA ), m_recordingCommand } );
+	}
+}
+
+uint32_t Simulation::EventCharacter( uint32_t netId ) const
+{
+	const flecs::entity e = netId != 0 ? FindEntity( netId ) : flecs::entity();
+	if ( e.is_valid() == false )
+	{
+		return 0;
+	}
+	if ( const HeldItem* held = e.try_get<HeldItem>(); held != nullptr && held->holder != 0 )
+	{
+		const flecs::entity holder = FindEntity( held->holder );
+		return holder.is_valid() && holder.has<Character>() ? held->holder : 0;
+	}
+	return e.has<Character>() ? netId : 0;
 }
 
 void Simulation::MoveCharacters( const InputFrame& frame )
@@ -3289,6 +3323,7 @@ void Simulation::Step( const InputFrame& given )
 	// (or, following another's physics, the frame's for it).
 	m_physicsMade.physics.clear();
 	m_followerSkipped.clear();
+	m_stepEvents.clear();
 	ApplyEvents( frame );
 	ApplyPhysicsEvents( frame, 0, 0 );
 	for ( size_t k = 0; k < frame.commands.size(); ++k )
@@ -3812,6 +3847,13 @@ uint32_t Simulation::HeldItemOf( uint32_t holder, uint32_t socket ) const
 
 bool Simulation::FollowerDrops( const SimCommand& command ) const
 {
+	if ( command.type == CommandType::Event )
+	{
+		// An event at a character or what one holds: sent with it, to the clients it is sent to
+		// (M257: StepEvents, kept when a server sends them so). The rest stay (an event at nothing,
+		// at the world's things, one for everyone).
+		return m_keepStepEvents && ForEveryone( command.index ) == false && EventCharacter( ResolveTarget( command.target ) ) != 0;
+	}
 	if ( command.type == CommandType::SetField && command.target != 0 && ( command.target & kSlotTargetBit ) == 0 )
 	{
 		// A field of a character or of what one holds: in the states (to its player alone, unless
@@ -3937,7 +3979,9 @@ void Simulation::ApplyCommand( const SimCommand& command )
 			record.value = command.value;
 			record.point = ToVec( command.a );
 			record.vector = ToVec( command.b );
+			m_recordingCommand = true;
 			RecordModEvent( record );
+			m_recordingCommand = false;
 			return;
 		}
 

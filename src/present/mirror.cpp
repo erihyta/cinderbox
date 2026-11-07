@@ -435,9 +435,22 @@ void Mirror::SyncModEvents( const PresentationFrame& frame, bool reset )
 	{
 		return;
 	}
+	std::vector<const ModEventRecord*> said;
 	for ( uint32_t at : m_modEventNews.Sync( frame.modEvents.data(), frame.modEventCount, frame.tick, reset ) )
 	{
-		const ModEventRecord& record = frame.modEvents[at];
+		said.push_back( &frame.modEvents[at] );
+	}
+	// And the server's at characters a hybrid client heard (M257), in a ring of their own.
+	if ( frame.heard.empty() == false )
+	{
+		for ( uint32_t at : m_heardNews.Sync( frame.heard.data(), frame.heardCount, frame.tick, reset, uint32_t( frame.heard.size() ) ) )
+		{
+			said.push_back( &frame.heard[at] );
+		}
+	}
+	for ( const ModEventRecord* heard : said )
+	{
+		const ModEventRecord& record = *heard;
 		Event event;
 		event.type = EventType::Mod;
 		event.netId = record.netIdA;

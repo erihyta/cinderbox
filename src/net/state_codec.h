@@ -14,6 +14,7 @@
 // that does not line up with its base fails.
 
 #include "bytes.h"
+#include "events.h"
 #include "puppet.h"
 #include "types.h"
 
@@ -32,12 +33,22 @@ inline constexpr size_t kMaxStateBytes = 16u << 20;
 // Tick() == tick), the inputs the server used for the tick before, and the state. And (M253) the
 // other characters it was sent as puppets (sim/puppet.h), by NetId: their records in `state` are
 // as Simulation::PuppetView makes them, and so are those of what they hold.
+// M257: a mod event at a character (or at what it holds), as a client is sent it: with the
+// character, to the clients it is sent to (not in every frame to everyone). Before the state's tick.
+struct CharacterEvent
+{
+	uint32_t character = 0;
+	ModEventRecord record;
+	uint32_t serial = 0; // the server's count of events: one sent again (a state lost) is heard once
+};
 struct StateFrame
 {
 	uint32_t tick = 0;
 	std::array<PlayerInput, kMaxPlayers> inputs{};
 	std::vector<uint8_t> state;
 	std::vector<PuppetEntry> puppets;
+	// The events at characters it came with (updates only: M257), by character, each's oldest first.
+	std::vector<CharacterEvent> events;
 };
 
 // A puppet as a change against another (null: none), in a state of `tick`: a few bytes for one that
@@ -88,6 +99,12 @@ struct EntityUpdate
 	// As a puppet's client is sent it (M253): its view (StateSpan::view) and its puppet, against the
 	// base's (the client was sent it as a puppet there too).
 	bool puppet = false;
+	// M257: a puppet's record (and bodies) against the one the client has in its newest state, not
+	// a base's: the server knows which (it acknowledged it, and was sent nothing of it since; the
+	// server keeps a puppet's last few records), and the base it was in is no longer kept. Its puppet
+	// whole; baseTick 0. And which record that is (the parts clients share are by it).
+	const StateSpan* carried = nullptr;
+	uint32_t version = 0;
 };
 // The kept state of a tick, read (null: not kept).
 using LayoutOf = const StateLayout* ( * )( const void* context, uint32_t tick );
@@ -104,9 +121,13 @@ struct UpdateCache
 // them). Every change is written sparse (runs of unchanged bytes skipped), an entity's part may
 // come from `cache`, and the whole is deflated. False: a state named is not kept, or an entity is
 // not in it.
+// `sizes` (M257): each update's bytes, by `updates` (before packing). `events` (M257): the events at
+// characters the client is sent (by character, NetId order; each before the state's tick).
+// `unpacked` (M257): the message's bytes before packing (`out` is after).
 bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::vector<EntityUpdate>& updates, const std::vector<uint32_t>& removed,
 					const std::vector<PlayerSlot>& inputSlots, LayoutOf layoutOf, const void* context, std::vector<uint8_t>& out,
-					UpdateCache* cache = nullptr );
+					UpdateCache* cache = nullptr, std::vector<uint32_t>* sizes = nullptr, const std::vector<CharacterEvent>* events = nullptr,
+					size_t* unpacked = nullptr );
 // After ReadType: which state, against which base.
 bool ReadStateHeader( ByteReader& r, uint32_t& tick, uint32_t& baseTick );
 // `base` must be the state named by the header (null when it names none).

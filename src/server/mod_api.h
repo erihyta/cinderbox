@@ -260,7 +260,11 @@ public:
 	// score in a list, a glow); a field a state machine reads is shared by itself. Declared again
 	// by another mod: shared if either says so.
 	FieldHandle Field( const std::string& name, BoardType type, BoardScope scope = BoardScope::Entity, bool shared = false );
-	EventHandle Event( const std::string& name );
+	// An event at a character (or what one holds) is heard by the players sent that character, with
+	// it (M257: near ones at once, far ones later or not at all), unless `everyone`: every player
+	// hears it, at its tick (a kill feed, a round's end). One at nothing (0) everyone hears anyway.
+	// Declared again by another mod: for everyone if either says so.
+	EventHandle Event( const std::string& name, bool everyone = false );
 	// Something a player asks of the mod from a screen, with two numbers ("shop.buy", the offer):
 	// a CbClick's mod_intent sends it in the player's input; Context::Intents reads it. What it
 	// does is the mod's to say (on the server: it is not predicted).

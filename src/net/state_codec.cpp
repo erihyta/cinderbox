@@ -12,6 +12,7 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <unordered_map>
 
@@ -130,7 +131,25 @@ enum : uint8_t
 	BodiesKnown = 16, // another entity's, of the base or met before in this state: by its hash
 	HasPuppet = 32,	 // its puppet follows (M253)
 	PuppetBase = 64, // as a change against the base's puppet of it (else against none)
+	// M257: against its record (and bodies) as the client has it in its newest state, not a base's:
+	// one that waited longer than a base is kept, sent nothing since the client acknowledged one.
+	// Its puppet whole.
+	RecordCarried = 128,
 };
+
+// An event's fields (M257), those not zero (or, for A, not the character it is at).
+enum : uint8_t
+{
+	EventA = 1,
+	EventB = 2,
+	EventValue = 4,
+	EventPoint = 8,
+	EventVector = 16,
+	EventLate = 32,
+};
+// An event's point (M257), to 1/64 m: where something happened is all a client shows it by. As a
+// change from the point before it in the message (a character's events are near one another).
+constexpr float kEventPointScale = 64.0f;
 
 uint32_t ZigZag( int32_t v )
 {
@@ -580,8 +599,12 @@ void EncodeState( const StateFrame& frame, const StateFrame* base, std::vector<u
 
 bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::vector<EntityUpdate>& updates, const std::vector<uint32_t>& removed,
 					const std::vector<PlayerSlot>& inputSlots, LayoutOf layoutOf, const void* context, std::vector<uint8_t>& out,
-					UpdateCache* cache )
+					UpdateCache* cache, std::vector<uint32_t>* sizes, const std::vector<CharacterEvent>* events, size_t* unpacked )
 {
+	if ( sizes != nullptr )
+	{
+		sizes->clear();
+	}
 	const Parsed* now = layoutOf( context, frame.tick );
 	const Parsed* was = base != nullptr ? layoutOf( context, base->tick ) : nullptr;
 	if ( now == nullptr || ( base != nullptr && ( was == nullptr || was->headSize != now->headSize ) ) )
@@ -621,19 +644,26 @@ bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::
 		PutVarint( payload, u.netId - previous );
 		previous = u.netId;
 		// Its part: flags, how far back its base is, its record and bodies (and its puppet).
-		const uint64_t key = ( uint64_t( u.netId ) << 32 ) | u.baseTick | ( u.puppet ? uint64_t( 1 ) << 63 : 0 );
+		const uint64_t key = ( uint64_t( u.netId ) << 32 ) | ( u.carried != nullptr ? u.version : u.baseTick ) | ( u.puppet ? uint64_t( 1 ) << 63 : 0 ) |
+							 ( u.carried != nullptr ? uint64_t( 1 ) << 62 : 0 );
 		if ( cache != nullptr )
 		{
 			if ( auto it = cache->parts.find( key ); it != cache->parts.end() )
 			{
 				PutBytes( payload, it->second.data(), it->second.size() );
+				if ( sizes != nullptr )
+				{
+					sizes->push_back( uint32_t( it->second.size() ) );
+				}
 				continue;
 			}
 		}
 		const Span* e = now->Find( u.netId );
 		const Parsed* from = u.baseTick != 0 ? layoutOf( context, u.baseTick ) : nullptr;
-		const Span* old = from != nullptr ? from->Find( u.netId ) : nullptr;
-		if ( e == nullptr || ( u.baseTick != 0 && old == nullptr ) )
+		// (Carried: against the record the client has in its newest state, M257.)
+		const bool carried = u.carried != nullptr;
+		const Span* old = carried ? u.carried : from != nullptr ? from->Find( u.netId ) : nullptr;
+		if ( e == nullptr || ( u.baseTick != 0 && old == nullptr ) || ( carried && u.baseTick != 0 ) )
 		{
 			return false;
 		}
@@ -656,11 +686,12 @@ bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::
 		flags |= e->bodiesSize > 0 ? HasBodies : 0;
 		flags |= bodiesSame ? BodiesSame : 0;
 		const bool puppet = u.puppet && e->puppet != nullptr;
-		const bool puppetBase = puppet && old != nullptr && old->puppet != nullptr;
+		const bool puppetBase = puppet && old != nullptr && old->puppet != nullptr && carried == false;
 		flags |= puppet ? HasPuppet : 0;
 		flags |= puppetBase ? PuppetBase : 0;
+		flags |= carried ? RecordCarried : 0;
 		part.push_back( flags );
-		PutVarint( part, old != nullptr ? frame.tick - u.baseTick : 0 );
+		PutVarint( part, old != nullptr && carried == false ? frame.tick - u.baseTick : 0 );
 		switch ( flags & RecordMask )
 		{
 			case RecordXor:
@@ -684,10 +715,91 @@ bool EncodeUpdates( const StateFrame& frame, const StateFrame* base, const std::
 			EncodePuppet( *e->puppet, puppetBase ? old->puppet : nullptr, frame.tick, part );
 		}
 		PutBytes( payload, part.data(), part.size() );
+		if ( sizes != nullptr )
+		{
+			sizes->push_back( uint32_t( part.size() ) );
+		}
 		if ( cache != nullptr )
 		{
 			cache->parts.emplace( key, part );
 		}
+	}
+	// The events at characters (M257): how many characters; each its NetId and count, and each event
+	// its fields, type, how many ticks before the state, and what of it is not zero.
+	const std::vector<CharacterEvent> none;
+	const std::vector<CharacterEvent>& said = events != nullptr ? *events : none;
+	uint32_t characters = 0;
+	for ( size_t i = 0; i < said.size(); ++i )
+	{
+		characters += i == 0 || said[i].character != said[i - 1].character ? 1 : 0;
+	}
+	PutVarint( payload, characters );
+	previous = 0;
+	uint32_t serial = 0;
+	int32_t pointWas[3] = {};
+	auto zero = []( const b3Vec3& v ) { return v.x == 0.0f && v.y == 0.0f && v.z == 0.0f; };
+	for ( size_t i = 0; i < said.size(); )
+	{
+		const uint32_t character = said[i].character;
+		size_t end = i;
+		while ( end < said.size() && said[end].character == character )
+		{
+			++end;
+		}
+		if ( character <= previous && i > 0 )
+		{
+			return false; // (not in NetId order)
+		}
+		PutVarint( payload, character - previous );
+		previous = character;
+		PutVarint( payload, uint32_t( end - i ) );
+		for ( ; i < end; ++i )
+		{
+			const ModEventRecord& e = said[i].record;
+			uint8_t fields = 0;
+			fields |= e.netIdA != character ? EventA : 0;
+			fields |= e.netIdB != 0 ? EventB : 0;
+			fields |= e.value != 0 ? EventValue : 0;
+			fields |= zero( e.point ) ? 0 : EventPoint;
+			fields |= zero( e.vector ) ? 0 : EventVector;
+			fields |= e.late != 0 ? EventLate : 0;
+			payload.push_back( fields );
+			PutVarint( payload, ZigZag( int32_t( said[i].serial - serial ) ) );
+			serial = said[i].serial;
+			PutVarint( payload, e.type );
+			PutVarint( payload, frame.tick > e.tick ? frame.tick - e.tick : 0 );
+			if ( fields & EventA )
+			{
+				PutVarint( payload, e.netIdA );
+			}
+			if ( fields & EventB )
+			{
+				PutVarint( payload, e.netIdB );
+			}
+			if ( fields & EventValue )
+			{
+				PutVarint( payload, ZigZag( e.value ) );
+			}
+			if ( fields & EventPoint )
+			{
+				const float at[3] = { e.point.x, e.point.y, e.point.z };
+				for ( int a = 0; a < 3; ++a )
+				{
+					const float scaled = std::clamp( at[a] * kEventPointScale, -1e9f, 1e9f );
+					const int32_t q = int32_t( std::lround( std::isfinite( scaled ) ? scaled : 0.0f ) );
+					PutVarint( payload, ZigZag( q - pointWas[a] ) );
+					pointWas[a] = q;
+				}
+			}
+			if ( fields & EventVector )
+			{
+				Put( payload, e.vector );
+			}
+		}
+	}
+	if ( unpacked != nullptr )
+	{
+		*unpacked = payload.size();
 	}
 	Pack( frame.tick, base != nullptr ? base->tick : kNoStateBase, payload, out );
 	return true;
@@ -836,7 +948,16 @@ bool DecodeUpdates( ByteReader& p, uint32_t tick, const StateFrame* base, const 
 		}
 		const Span* old = nullptr;
 		const StateFrame* oldFrame = nullptr;
-		if ( back != 0 )
+		if ( flags & RecordCarried )
+		{
+			// (What it has in its newest state.)
+			old = had.Find( netId );
+			if ( back != 0 || old == nullptr || ( flags & PuppetBase ) != 0 )
+			{
+				return false;
+			}
+		}
+		else if ( back != 0 )
 		{
 			if ( back > tick || stateOf == nullptr )
 			{
@@ -937,6 +1058,65 @@ bool DecodeUpdates( ByteReader& p, uint32_t tick, const StateFrame* base, const 
 		else if ( flags & PuppetBase )
 		{
 			return false;
+		}
+	}
+	// The events at characters (M257).
+	out.events.clear();
+	const uint32_t characters = ReadVarint( p );
+	if ( p.Ok() == false || characters > kMaxStateBytes / 4 )
+	{
+		return false;
+	}
+	uint32_t character = 0, serial = 0;
+	int32_t pointWas[3] = {};
+	for ( uint32_t c = 0; c < characters; ++c )
+	{
+		const uint32_t step = ReadVarint( p );
+		const uint32_t n = ReadVarint( p );
+		if ( p.Ok() == false || ( c > 0 && step == 0 ) || n == 0 || n > kMaxStateBytes / 4 )
+		{
+			return false;
+		}
+		character += step;
+		for ( uint32_t k = 0; k < n; ++k )
+		{
+			CharacterEvent said;
+			said.character = character;
+			ModEventRecord& e = said.record;
+			const uint8_t fields = p.Read<uint8_t>();
+			serial += uint32_t( UnZigZag( ReadVarint( p ) ) );
+			said.serial = serial;
+			const uint32_t type = ReadVarint( p );
+			const uint32_t back = ReadVarint( p );
+			if ( p.Ok() == false || type > 0xFFFF || back > tick )
+			{
+				return false;
+			}
+			e.type = uint16_t( type );
+			e.tick = tick - back;
+			e.late = ( fields & EventLate ) != 0 ? 1 : 0;
+			e.netIdA = ( fields & EventA ) != 0 ? ReadVarint( p ) : character;
+			e.netIdB = ( fields & EventB ) != 0 ? ReadVarint( p ) : 0;
+			e.value = ( fields & EventValue ) != 0 ? UnZigZag( ReadVarint( p ) ) : 0;
+			if ( fields & EventPoint )
+			{
+				float at[3];
+				for ( int a = 0; a < 3; ++a )
+				{
+					pointWas[a] += UnZigZag( ReadVarint( p ) );
+					at[a] = float( pointWas[a] ) / kEventPointScale;
+				}
+				e.point = { at[0], at[1], at[2] };
+			}
+			if ( fields & EventVector )
+			{
+				e.vector = p.Read<b3Vec3>();
+			}
+			if ( p.Ok() == false )
+			{
+				return false;
+			}
+			out.events.push_back( said );
 		}
 	}
 	if ( p.Ok() == false || p.AtEnd() == false )

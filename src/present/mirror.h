@@ -304,8 +304,9 @@ private:
 	uint64_t m_resetGeneration = UINT64_MAX;
 	// Impacts already played, so a rollback or a skipped frame neither replays nor drops one.
 	uint32_t m_impactCount = 0;
-	// Which mod events were shown already (event_news.h).
+	// Which mod events were shown already (event_news.h), and of the server's a hybrid client heard.
 	ModEventNews m_modEventNews;
+	ModEventNews m_heardNews;
 	BoardValues m_board;
 	uint32_t m_lastTick = 0;
 	flecs::entity m_localPlayer;
