@@ -190,6 +190,16 @@ ROADMAP step 3). **Inputs**: what follows below; every client simulates the whol
   cost nothing. **Carried** (M257): one that waited longer than a base is kept (24 states), sent
   nothing since the client acknowledged one, goes against the record the client has in its newest
   state (the server keeps each puppet's last 8 records: `m_recordVersions`), not whole.
+- **Made while the next tick runs** (M258): the server reads what the plans need of the
+  simulation (`SendStates`: each client's base, its own character's place, where it looks), then
+  the state threads make every client's plan and message (`MakeStates`) while its own thread goes
+  on with the next tick; they go out once made (`FinishStates`), with that state's frames (held for
+  them, one datagram). Until then nothing they read changes: acknowledgements and the events at
+  characters wait (`m_heldAcks`, `m_heldEvents`), and a state to keep, a snapshot, a client coming,
+  going or saying anything but an input wait for them. A plan works by group (a character with what
+  it holds): its walk only finds what the client has of each entity and how owed each group is;
+  what an update would take is worked out for the most owed as their turn comes; what the client
+  has is changed in place. A state's puppets, views and hashes are made on the state threads too.
 - **Events go with their characters** (M257): a mod event at a character or what it holds
   (`Simulation::StepEvents`: a mod's `Emit`, a motion's, a clip's marker, a slot's use) is not in
   the frames; it goes with that character's update to the clients it is sent to, once (again when
@@ -279,6 +289,7 @@ The inputs model:
   - A task runs inside its world's arena; the arena locks to allocate. Where things lie in the arena is not the same from run to run, and nothing reads that (a snapshot copies it, the hash is of the ECS, a join image holds no addresses).
   - Box3D's sameness across worker counts is its author's aim, not a promise: `physics_threads` (unit test) compares every tick's hash for 1, 2, 4 and 8 workers on 1 to 8 threads, with snapshots restored in between.
   - Cost: 4 workers' own memory is in every snapshot (2.7 MB to 3.5 MB at 64 players). Gain: collisions scale, the solver hardly does at this size; 43% off the physics in a tight loop, 10 to 20% in a game.
+- **Characters' threads** (M258, `Simulation::SetParallelFor`; a server gives its own pool, others none): the movers and the characters' animation (state and state machine) run apart, one driver each. A mover reads the world as the tick found it already (bodies move in the step), so each driver's results are kept (`MovedCharacter`) and written after in slot order: its body's target, its markers, its components. A driven prop's driver moves at its turn on the simulation's thread. The motions' pass stays on one thread (what a motion does to others is applied after all have run). `character_threads` (unit test): the same hash on 1 to 8 threads and with the players taken backwards.
 - **Frames go out in three packets each** (the hybrid's in two, with its states: M256), one packet an update (a frame every tick, several after a hitch), delivered out of order too; a client keeps a batch that begins after what it has until the hole is filled. From the oldest unacknowledged frame again only when that has been out for longer than an answer takes. Packets sent in one update leave in one datagram and are lost together: three packets have to be three updates (M142).
 - **Snapshots are few**: one before each tick predicted for the first time, and one in each re-simulation, where the confirmed frames end (the next misprediction is almost always there). The re-simulated ticks after it take none.
 - **`reconcile_every`** (`CinderboxPeer`, `--reconcile-every=N`, default 1): a misprediction is fixed only every N ticks. The same ticks are re-simulated less often; what other players do is seen up to N ticks later.
