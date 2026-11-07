@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <utility>
 #include <mutex>
@@ -177,6 +178,9 @@ public:
 		uint64_t physicsNs = 0;	   // the physics step
 		uint64_t afterNs = 0;	   // what is read back from the physics, and the rest
 		uint64_t slotsNs = 0;	   // of the characters' part: the slots (selecting, moving, settling)
+		uint64_t motionsNs = 0;	   // of it: every driver's motions (the first pass)
+		uint64_t moverNs = 0;	   // of it: the movers (the second pass)
+		uint64_t animNs = 0;	   // of it: their animation (state and state machine)
 		// The physics step's own parts, in milliseconds (the physics library's figures).
 		double pairsMs = 0.0;	   // finding new pairs of shapes that may touch
 		double collideMs = 0.0;	   // working out the contacts
@@ -240,10 +244,10 @@ public:
 		return m_followerSkipped;
 	}
 	// Every mod event the last step recorded (the ring keeps the last kModEventHistory), once asked
-	// for (a hybrid server: M257, each goes to its clients with the character it is at): whether a
-	// command said it (a mod's Emit) or the simulation did (a motion, a marker, a slot's use: what a
-	// player's own game says of its own character too), and the character it is at (EventCharacter
-	// then; 0: none).
+	// for (a server: its mods read them, M258; a hybrid one sends each to its clients with the
+	// character it is at, M257): whether a command said it (a mod's Emit) or the simulation did (a
+	// motion, a marker, a slot's use: what a player's own game says of its own character too), and
+	// the character it is at (EventCharacter then; 0: none).
 	struct StepEvent
 	{
 		ModEventRecord record;
@@ -253,6 +257,21 @@ public:
 	void KeepStepEvents( bool keep )
 	{
 		m_keepStepEvents = keep;
+	}
+	// A host's threads for the characters' movers and animation (M258), or none (this thread): `run`
+	// calls fn( i ) for every i below count, on any of them, and returns when all are done. Each
+	// mover reads the world as the tick found it (its bodies move in the step), so the results are
+	// the same on any number of threads.
+	using ParallelFor = std::function<void( size_t count, const std::function<void( size_t )>& fn )>;
+	void SetParallelFor( ParallelFor run )
+	{
+		m_parallelFor = std::move( run );
+	}
+	// A mod's events at characters leave the frames (FollowerSkipped): they go with the characters
+	// (a hybrid server sending states by priority, M257).
+	void SendEventsWithCharacters( bool with )
+	{
+		m_eventsWithCharacters = with;
 	}
 	const std::vector<StepEvent>& StepEvents() const
 	{
@@ -324,11 +343,17 @@ public:
 	// client keeps of its own as zeros (where it is and how it moves, its character and animation, its
 	// motions, its movement, a mod's driving; its slots' last keys), so they never change.
 	void PuppetView( const uint8_t* record, uint32_t size, std::vector<uint8_t>& out ) const;
+	// The same into `out` (`size` bytes), on any thread once PrepareViews ran on the simulation's
+	// (M258: a state's thousands of views are made on the state threads, with no lookups in the
+	// world there). PrepareViews again when the components or the shared fields change.
+	void PrepareViews();
+	void PuppetViewTo( const uint8_t* record, uint32_t size, uint8_t* out ) const;
 	// Which entity fields (by board slot) a puppet's view keeps (M255: BoardField::shared); the rest
 	// are zeros there, their player's alone. Unset (empty): all of them.
 	void SetSharedFields( std::vector<uint8_t> shared )
 	{
 		m_sharedFields = std::move( shared );
+		m_viewKinds.clear(); // (PrepareViews again)
 	}
 	// A client's, after ApplyState with them: each stand-in placed where its puppet says at `tick`
 	// (gone on from there a little when that one is older), its character as it says, and, with
@@ -769,8 +794,10 @@ private:
 	bool FollowerSkips( const SimCommand& command ) const;
 	bool FollowerDrops( const SimCommand& command ) const;
 	std::vector<uint8_t> m_sharedFields;
+	std::vector<uint8_t> m_viewKinds; // by snapshot component: PuppetView's (ViewKind)
 	std::vector<uint8_t> m_followerSkipped;
 	bool m_keepStepEvents = false;
+	bool m_eventsWithCharacters = false;
 	std::vector<uint8_t> m_eventsForEveryone;
 	bool ForEveryone( uint32_t type ) const
 	{
@@ -953,6 +980,18 @@ private:
 	}
 	std::vector<ImpactRecord> m_impactScratch;
 	std::vector<int> m_markerScratch;
+	// The characters' second pass (M258): each driver's results, written after all have run.
+	struct MovedCharacter
+	{
+		Character c;
+		Transform t;
+		AnimState anim;
+		b3Transform target{};
+		std::vector<int> markers;
+	};
+	std::vector<MovedCharacter> m_moved;
+	std::vector<uint32_t> m_movingApart; // (drivers moved on the host's threads)
+	ParallelFor m_parallelFor;
 	std::vector<std::pair<uint32_t, uint16_t>> m_heldScratch; // holder NetId, item kind
 	std::vector<std::pair<uint32_t, uint16_t>> m_carriedScratch; // the same, with what is put away
 	std::vector<std::pair<uint32_t, uint16_t>> m_usingScratch;	 // what each is using this tick ("using.<kind>")

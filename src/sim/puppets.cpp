@@ -133,16 +133,20 @@ bool Simulation::PuppetOf( uint32_t netId, const PlayerInput* input, Puppet& out
 	return true;
 }
 
-void Simulation::PuppetView( const uint8_t* record, uint32_t size, std::vector<uint8_t>& out ) const
+namespace
 {
-	// What a puppet's client keeps of its own (sim/puppet.h): zeros here, so they never change.
-	out.assign( record, record + size );
-	if ( size < 4 )
-	{
-		return;
-	}
-	uint32_t mask = 0;
-	std::memcpy( &mask, record, 4 );
+// What a puppet's view does to each component of a record (Simulation::PrepareViews).
+enum ViewKind : uint8_t
+{
+	ViewKeep = 0,
+	ViewZero = 1,	// what a puppet's client keeps of its own
+	ViewShared = 2, // the board: its shared fields alone
+	ViewSlots = 3,	// what the slots show, not their last keys
+};
+} // namespace
+
+void Simulation::PrepareViews()
+{
 	const flecs::entity_t local[] = {
 		m_world.component<Transform>().id(),	 m_world.component<Velocity>().id(),	  m_world.component<PhysicsBody>().id(),
 		m_world.component<Character>().id(),	 m_animId,								  m_motionId,
@@ -150,8 +154,39 @@ void Simulation::PuppetView( const uint8_t* record, uint32_t size, std::vector<u
 		m_world.component<ModDriven>().id(),
 	};
 	const flecs::entity_t slots = m_world.component<Slots>().id();
+	m_viewKinds.assign( m_snapComponents.size(), ViewKeep );
+	for ( size_t i = 0; i < m_snapComponents.size(); ++i )
+	{
+		const flecs::entity_t id = m_snapComponents[i].id;
+		m_viewKinds[i] = std::find( std::begin( local ), std::end( local ), id ) != std::end( local ) ? ViewZero
+						 : id == m_boardId && m_sharedFields.empty() == false						  ? ViewShared
+						 : id == slots																  ? ViewSlots
+																									  : ViewKeep;
+	}
+}
+
+void Simulation::PuppetView( const uint8_t* record, uint32_t size, std::vector<uint8_t>& out ) const
+{
+	if ( m_viewKinds.size() != m_snapComponents.size() )
+	{
+		const_cast<Simulation*>( this )->PrepareViews(); // (the simulation's thread: PuppetView's callers)
+	}
+	out.resize( size );
+	PuppetViewTo( record, size, out.data() );
+}
+
+void Simulation::PuppetViewTo( const uint8_t* record, uint32_t size, uint8_t* to ) const
+{
+	// What a puppet's client keeps of its own (sim/puppet.h): zeros here, so they never change.
+	std::memcpy( to, record, size );
+	if ( size < 4 )
+	{
+		return;
+	}
+	uint32_t mask = 0;
+	std::memcpy( &mask, record, 4 );
 	size_t at = 4;
-	for ( size_t i = 0; i < m_snapComponents.size() && at <= size; ++i )
+	for ( size_t i = 0; i < m_snapComponents.size() && i < m_viewKinds.size() && at <= size; ++i )
 	{
 		if ( ( mask & ( uint32_t( 1 ) << i ) ) == 0 || m_snapComponents[i].size == 0 )
 		{
@@ -162,31 +197,32 @@ void Simulation::PuppetView( const uint8_t* record, uint32_t size, std::vector<u
 		{
 			return;
 		}
-		if ( std::find( std::begin( local ), std::end( local ), sc.id ) != std::end( local ) )
+		uint8_t* out = to; // (as the code below names it)
+		if ( m_viewKinds[i] == ViewZero )
 		{
-			std::memset( out.data() + at, 0, sc.size );
+			std::memset( out + at, 0, sc.size );
 		}
-		else if ( sc.id == m_boardId && m_sharedFields.empty() == false )
+		else if ( m_viewKinds[i] == ViewShared )
 		{
 			// Its fields others see (M255): the rest are its player's alone.
 			for ( size_t slot = 0; slot * 4 + 4 <= sc.size; ++slot )
 			{
 				if ( slot >= m_sharedFields.size() || m_sharedFields[slot] == 0 )
 				{
-					std::memset( out.data() + at + slot * 4, 0, 4 );
+					std::memset( out + at + slot * 4, 0, 4 );
 				}
 			}
 		}
-		else if ( sc.id == slots )
+		else if ( m_viewKinds[i] == ViewSlots )
 		{
 			// What it shows (how many, which is out, an open chest), not what its keys did last tick.
 			Slots s;
-			std::memcpy( &s, out.data() + at, sizeof( s ) );
+			std::memcpy( &s, out + at, sizeof( s ) );
 			s.seq = 0;
 			s.resync = 0;
 			s.prevKeys = 0;
 			s.prevActions = 0;
-			std::memcpy( out.data() + at, &s, sizeof( s ) );
+			std::memcpy( out + at, &s, sizeof( s ) );
 		}
 		at += sc.size;
 	}
@@ -224,21 +260,22 @@ void Simulation::ApplyPuppets( const std::vector<PuppetEntry>& puppets, uint32_t
 		const uint32_t gap = ps.nowTick > ps.beforeTick ? ps.nowTick - ps.beforeTick : 0;
 		const uint32_t since = tick > ps.nowTick ? tick - ps.nowTick : 0;
 		b3Vec3 velocity = {};
+		bool jumped = false;
 		if ( gap > 0 )
 		{
 			velocity = b3MulSV( 1.0f / ( float( gap ) * dt ), b3Sub( FromGrid( ps.now ), FromGrid( ps.before ) ) );
-			if ( b3Length( velocity ) > kMostPuppetSpeed )
-			{
-				velocity = {};
-			}
+			jumped = b3Length( velocity ) > kMostPuppetSpeed;
+			velocity = jumped ? b3Vec3{} : velocity;
 		}
 		// Where it is at `tick`. One sent every state or two: where it was last said to be (one that
 		// stopped is sent again until the client has it, so it stands, and goes at no speed). One sent
 		// less often (far off): from the one before to the last, over as long as between them, so it
 		// moves on until the next comes, an interval late; and still once that is over.
+		// (Not across a jump in place: a respawn, a mod's teleport, there at once. M258: a far one
+		// slid across the map, found by net_hybrid_far under load: 59 m off.)
 		Transform t;
 		bool moving = since <= std::max( gap, kNearGap );
-		if ( gap > kNearGap )
+		if ( gap > kNearGap && jumped == false )
 		{
 			t.position = b3Lerp( FromGrid( ps.before ), FromGrid( p ), std::min( 1.0f, float( since ) / float( gap ) ) );
 			moving = since < gap;

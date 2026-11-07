@@ -793,6 +793,19 @@ bool Context::AnimationEmits( EventHandle event ) const
 std::vector<ModEventRecord> Context::RecentEvents() const
 {
 	std::vector<ModEventRecord> out;
+	// All the last step said, when the simulation keeps them (a server's: M258). Its ring keeps the
+	// newest kModEventHistory: a crowd's fight says more a tick, and a hit past them hurt no one.
+	if ( m_sim.StepEvents().empty() == false && m_sim.StepEvents().front().record.tick + 1 == m_frame.tick )
+	{
+		for ( const Simulation::StepEvent& s : m_sim.StepEvents() )
+		{
+			if ( s.record.tick + 1 == m_frame.tick )
+			{
+				out.push_back( s.record );
+			}
+		}
+		return out;
+	}
 	const SimGlobals& g = m_sim.Globals();
 	uint32_t kept = std::min( g.modEventCount, kModEventHistory );
 	for ( uint32_t i = 0; i < kept; ++i )

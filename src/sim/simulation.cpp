@@ -2426,28 +2426,23 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		uint16_t usingKinds[16];
 		uint32_t usingCount = 0;
 	};
-	auto kindsOf = [this]( uint32_t netId, Kinds& k ) {
-		for ( const auto& [holder, kind] : m_heldScratch )
-		{
-			if ( holder == netId && k.heldCount < 16 )
+	// (By holder, each holder's in the order they were found: M258, each player looked its own up in
+	// every list, a thousand players' ten thousand items twice a tick.)
+	auto byHolder = []( const std::pair<uint32_t, uint16_t>& a, const std::pair<uint32_t, uint16_t>& b ) { return a.first < b.first; };
+	std::stable_sort( m_heldScratch.begin(), m_heldScratch.end(), byHolder );
+	std::stable_sort( m_carriedScratch.begin(), m_carriedScratch.end(), byHolder );
+	std::stable_sort( m_usingScratch.begin(), m_usingScratch.end(), byHolder );
+	auto kindsOf = [this, byHolder]( uint32_t netId, Kinds& k ) {
+		auto take = [&]( const std::vector<std::pair<uint32_t, uint16_t>>& list, uint16_t* to, uint32_t& count, uint32_t most ) {
+			const std::pair<uint32_t, uint16_t> key{ netId, 0 };
+			for ( auto it = std::lower_bound( list.begin(), list.end(), key, byHolder ); it != list.end() && it->first == netId && count < most; ++it )
 			{
-				k.held[k.heldCount++] = kind;
+				to[count++] = it->second;
 			}
-		}
-		for ( const auto& [holder, kind] : m_carriedScratch )
-		{
-			if ( holder == netId && k.carriedCount < 32 )
-			{
-				k.carried[k.carriedCount++] = kind;
-			}
-		}
-		for ( const auto& [holder, kind] : m_usingScratch )
-		{
-			if ( holder == netId && k.usingCount < 16 )
-			{
-				k.usingKinds[k.usingCount++] = kind;
-			}
-		}
+		};
+		take( m_heldScratch, k.held, k.heldCount, 16 );
+		take( m_carriedScratch, k.carried, k.carriedCount, 32 );
+		take( m_usingScratch, k.usingKinds, k.usingCount, 16 );
 	};
 
 	// Two passes, so nothing depends on which slot a player has. First every player's motions, each
@@ -2458,6 +2453,12 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	m_turnCharacters.resize( m_drivers.size() );
 	m_playerPushes.clear();
 	m_deferPlayerPushes = true;
+	auto clock = std::chrono::steady_clock::now();
+	auto spentOn = [&clock]( uint64_t& part ) {
+		const auto now = std::chrono::steady_clock::now();
+		part += uint64_t( std::chrono::duration_cast<std::chrono::nanoseconds>( now - clock ).count() );
+		clock = now;
+	};
 	for ( size_t d = 0; d < m_drivers.size(); ++d )
 	{
 		const int slot = m_drivers[d].slot;
@@ -2642,13 +2643,16 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	}
 	// What their motions did to others: after the targets' own, in the order they were done.
 	ApplyPlayerPushes();
+	spentOn( m_profile.motionsNs );
 
-	for ( size_t d = 0; d < m_drivers.size(); ++d )
-	{
-		if ( moving[d] == 0 )
-		{
-			continue;
-		}
+	// Then every player moves, and its animation runs: each on the world as the tick found it (the
+	// movers read bodies, and bodies move in the step: none has yet). So on the host's threads when
+	// it gives them (M258), each driver's results kept, then written in slot order: its body's
+	// target, its markers, its components. A driven prop's driver moves at its turn there (its
+	// holding back is this simulation's own work).
+	m_moved.resize( m_drivers.size() );
+	auto move = [&]( size_t d ) {
+		MovedCharacter& out = m_moved[d];
 		const uint32_t netId = m_drivers[d].netId;
 		flecs::entity e = FindEntity( netId );
 		const PlayerInput& in = m_drivers[d].input;
@@ -2680,14 +2684,16 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		}
 		const b3Vec3 moveStart = t.position;
 		const float yawStart = c.facingYaw;
-		mover::Move( moving, MoveOf( e ), m_config.TimeStep(), m_globals.tick, c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed, c, t );
+		mover::Move( moving, MoveOf( e ), m_config.TimeStep(), m_globals.tick, c.frozen ? still : in, c.frozen ? uint8_t( 0 ) : pressed, c, t,
+					 driven != nullptr ? nullptr : &out.target );
 		if ( driven != nullptr )
 		{
 			HoldBackProp( e, *driven, moveStart, yawStart, t, c );
 		}
 		c.prevButtons = in.buttons;
 
-		AnimState anim = GetAnimState( e );
+		AnimState& anim = out.anim;
+		anim = GetAnimState( e );
 		UpdateAnimState( anim, c, in, m_globals.tick, m_config.TimeStep() );
 		if ( const AnimGraph* graph = Body( CharacterOf( e ) ).graph.get() )
 		{
@@ -2721,27 +2727,71 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			{
 				graphIn.motionsOn = MotionsOnAt( GetMotionState( e ), m_globals.tick );
 			}
-			m_markerScratch.clear();
-			UpdateAnimGraph( anim, *graph, m_animPacks, graphIn, m_config.TimeStep(), m_markerScratch );
-			for ( int event : m_markerScratch )
-			{
-				// A marker the playing clip crossed: the mod event of its name, from this player.
-				// (After its motions: they hear it next tick, a throw released on its marker.)
-				ModEventRecord record;
-				record.type = uint16_t( event );
-				record.netIdA = netId;
-				record.tick = m_globals.tick;
-				record.point = t.position;
-				record.late = 1;
-				RecordModEvent( record );
-			}
+			out.markers.clear();
+			UpdateAnimGraph( anim, *graph, m_animPacks, graphIn, m_config.TimeStep(), out.markers );
 		}
-		SetAnimState( e, anim );
-
-		e.set<Character>( c );
-		e.set<Transform>( t );
-		e.set<Velocity>( { c.velocity, { 0.0f, 0.0f, 0.0f } } );
+		else
+		{
+			out.markers.clear();
+		}
+		out.c = c;
+		out.t = t;
+	};
+	m_movingApart.clear();
+	for ( size_t d = 0; d < m_drivers.size(); ++d )
+	{
+		if ( moving[d] != 0 && FindEntity( m_drivers[d].netId ).has<DrivenProp>() == false )
+		{
+			m_movingApart.push_back( uint32_t( d ) );
+		}
 	}
+	if ( m_parallelFor && m_movingApart.size() > 1 )
+	{
+		m_parallelFor( m_movingApart.size(), [&]( size_t k ) { move( m_movingApart[k] ); } );
+	}
+	else
+	{
+		for ( uint32_t d : m_movingApart )
+		{
+			move( d );
+		}
+	}
+	spentOn( m_profile.moverNs );
+	for ( size_t d = 0; d < m_drivers.size(); ++d )
+	{
+		if ( moving[d] == 0 )
+		{
+			continue;
+		}
+		const uint32_t netId = m_drivers[d].netId;
+		flecs::entity e = FindEntity( netId );
+		if ( e.has<DrivenProp>() )
+		{
+			move( d ); // (its body driven there)
+		}
+		else
+		{
+			b3Body_SetTargetTransform( BodyOf( e.get<PhysicsBody>() ), m_moved[d].target, m_config.TimeStep(), true );
+		}
+		const MovedCharacter& out = m_moved[d];
+		for ( int event : out.markers )
+		{
+			// A marker the playing clip crossed: the mod event of its name, from this player.
+			// (After its motions: they hear it next tick, a throw released on its marker.)
+			ModEventRecord record;
+			record.type = uint16_t( event );
+			record.netIdA = netId;
+			record.tick = m_globals.tick;
+			record.point = out.t.position;
+			record.late = 1;
+			RecordModEvent( record );
+		}
+		SetAnimState( e, out.anim );
+		e.set<Character>( out.c );
+		e.set<Transform>( out.t );
+		e.set<Velocity>( { out.c.velocity, { 0.0f, 0.0f, 0.0f } } );
+	}
+	spentOn( m_profile.animNs );
 	CreateLaunched();
 }
 
@@ -3852,7 +3902,7 @@ bool Simulation::FollowerDrops( const SimCommand& command ) const
 		// An event at a character or what one holds: sent with it, to the clients it is sent to
 		// (M257: StepEvents, kept when a server sends them so). The rest stay (an event at nothing,
 		// at the world's things, one for everyone).
-		return m_keepStepEvents && ForEveryone( command.index ) == false && EventCharacter( ResolveTarget( command.target ) ) != 0;
+		return m_eventsWithCharacters && ForEveryone( command.index ) == false && EventCharacter( ResolveTarget( command.target ) ) != 0;
 	}
 	if ( command.type == CommandType::SetField && command.target != 0 && ( command.target & kSlotTargetBit ) == 0 )
 	{

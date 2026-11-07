@@ -265,9 +265,25 @@ std::string FormatBench( const CrowdBench& b )
 		std::snprintf( line, sizeof( line ), "  the simulation's events a tick: %.2f impacts, %.2f mod events (%s)\n", double( b.impacts ) / t,
 					   double( modEvents ) / t, events.empty() ? "none" : events.c_str() );
 		add( line );
-		std::snprintf( line, sizeof( line ), "server time   a tick: planning states %.2f ms, encoding them %.2f, frames %.2f (the fake players' inputs %.2f)\n",
-					   b.planMs / t, b.encodeMs / t, b.framesMs / t, b.fakeInputMs / t );
+		std::snprintf( line, sizeof( line ),
+					   "server time   a tick: planning states %.2f ms, encoding them %.2f (on the state threads, while the next tick runs), sending "
+					   "them %.2f (the acknowledgements that waited %.2f), waited for them %.2f, frames %.2f (the fake players' inputs %.2f)\n",
+					   b.planMs / t, b.encodeMs / t, b.stateFinishMs / t, b.stateAcksMs / t, b.stateWaitMs / t, b.framesMs / t, b.fakeInputMs / t );
 		add( line );
+		std::snprintf( line, sizeof( line ),
+					   "  planning, summed over threads: the walk %.2f ms, choosing %.2f, what each will have %.2f, the rest %.2f; saving a state: "
+					   "the state %.2f, where things are %.2f, puppets %.2f, events %.2f, record versions %.2f\n",
+					   b.planWalkMs / t, b.planChooseMs / t, b.planNextMs / t, b.planRestMs / t, b.saveStateMs / t, b.saveLayoutMs / t,
+					   b.savePuppetsMs / t, b.saveEventsMs / t, b.saveVersionsMs / t );
+		add( line );
+		std::string mods = "  mods:";
+		for ( size_t m = 0; m < b.modNames.size() && m < b.modMs.size(); ++m )
+		{
+			std::snprintf( line, sizeof( line ), " %s %.2f", b.modNames[m].c_str(), b.modMs[m] / t );
+			mods += line;
+		}
+		mods += " ms\n";
+		add( mods.c_str() );
 	}
 	return out;
 }

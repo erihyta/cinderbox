@@ -25,12 +25,14 @@
 #include "worker_pool.h"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <map>
 #include <memory>
 #include <functional>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -360,7 +362,9 @@ private:
 	void SendSnapshots();
 	void SendFrames( double now );
 	uint32_t m_framesSentAt = 0; // the tick frames last went out (the hybrid's go with its states)
-	// The hybrid: the newest characters' state to everyone, each against the one it has.
+	// The hybrid: the newest characters' state to everyone, each against the one it has. By
+	// priority, its updates are made on the state threads while the next tick runs (MakeStates)
+	// and sent once made (FinishStates: `wait` for them, or only if they are; M258).
 	void SendStates();
 	const net::StateFrame* KeptState( uint32_t tick ) const;
 	std::deque<net::StateFrame> m_states; // the newest last
@@ -378,6 +382,10 @@ private:
 		// Each entity's group (by layout.entities): a character with what it holds, sent together
 		// (their changes are much alike, and compress well side by side). The index of its head.
 		std::vector<uint32_t> head;
+		// M258: the groups: each head (by layout.entities' order), each entity's group (its place in
+		// `heads`), and each group's other members (what it holds: `members` from memberAt[g] to
+		// memberAt[g + 1]).
+		std::vector<uint32_t> heads, groupOf, memberAt, members;
 		// Puppets (M253; sim/puppet.h): whether each is one or what one holds (its record goes as
 		// its view to every client but the one that drives it), the views and the puppets the
 		// layout's spans point into, and each one's record as each kind of client is sent it, hashed
@@ -431,11 +439,31 @@ private:
 	std::unordered_map<uint32_t, std::vector<KeptEvent>> m_characterEvents;
 	// Those too old to send dropped; each character's newest in the state kept (KeptLayout::newestEvent).
 	void KeepEvents( KeptLayout& kept, uint32_t tick );
+	// (SendStates, M258.)
+	void MakeStates( const net::StateFrame& newest, const KeptLayout& now, const std::vector<std::pair<uint32_t, PlayerSlot>>& players );
+	void FinishStates( bool wait );
+	void SendWholeStates( const net::StateFrame& newest );
+	std::thread m_making;
+	std::atomic<bool> m_made{ false };
+	bool m_makingStates = false;
+	std::vector<size_t> m_planned; // (the clients whose plans are being made)
+	double m_madePlanMs = 0.0, m_madeEncodeMs = 0.0;
+	// What came while they were made, done after: acknowledgements (client, state), and the events
+	// at characters.
+	std::vector<std::pair<size_t, uint32_t>> m_heldAcks;
+	std::vector<std::pair<uint32_t, KeptEvent>> m_heldEvents;
+	// The frames that go with the state being made (in one datagram, M256).
+	bool m_framesHeld = false;
+	double m_framesHeldAt = 0.0;
+	bool m_sendingNow = false;		 // (Update's sending: what a state sent there takes is its time)
+	bool m_ticking = false;			 // (RunTick: what a state sent there takes is the tick's time)
+	double m_sampledInTick = 0.0; // (the bench's sampling there, left out of it)
 	uint32_t m_recordVersionsSwept = 0;
 	void KeepRecordVersions( const KeptLayout& kept, uint32_t tick );
+	void KeepGroups( KeptLayout& kept ); // (KeptLayout::heads and the rest: M258)
 	const net::StateSpan* RecordVersionOf( uint32_t netId, uint64_t hash ) const;
 	// A kept state's puppets, their views and the hashes (M253), as the world is when it is saved.
-	void KeepPuppets( KeptLayout& kept ) const;
+	void KeepPuppets( KeptLayout& kept );
 	// Sending states by distance, a step at a time (SendStates): each client's plan (what it is sent),
 	// the messages they make (one for clients whose plans say the same), and a cache of shared
 	// parts for each thread that encodes them.
@@ -452,8 +480,12 @@ private:
 		std::vector<uint32_t> says; // what the message says, as numbers: the same for the same message
 		uint64_t hash = 0;
 		Client::Sent sent;
-		std::vector<Client::Known> next;
 		int message = -1;
+		// M258: each entity's record of what the client has (into its `known`; null: none), the
+		// records new to it (added once the plan is made), and the entities its update sends.
+		std::vector<Client::Known*> knownAt;
+		std::vector<Client::Known> added;
+		std::vector<uint32_t> sending;
 		// (Scratch: each entity of the newest state, how it stands for this client.)
 		struct Entry
 		{
@@ -468,12 +500,14 @@ private:
 			// M257: its base too old, the record the client has (net::EntityUpdate::carried; null: none).
 			const net::StateSpan* carried = nullptr;
 		};
-		std::vector<Entry> entries;
-		std::vector<float> groupScore; // by head (the most overdue of its group's)
-		std::vector<uint8_t> groupChosen;
-		std::vector<std::pair<float, uint32_t>> due; // heads
+		std::vector<Entry> entries;		// (by layout.entities; filled for the heads, and for the members of groups owed)
+		std::vector<float> groupScore;	// by group (KeptLayout::heads): its most owed member's
+		std::vector<uint8_t> groupChosen; // by group
+		std::vector<uint32_t> groupSize, groupBytes; // by group, for those owed: what its update takes
+		std::vector<std::pair<float, uint32_t>> due; // groups owed: score, the head (layout.entities)
 		double budgeted = 0.0; // M257: the bytes the others' updates were thought to take
 		std::vector<net::CharacterEvent> events; // M257: the events at the characters it is sent
+		double walkMs = 0.0, chooseMs = 0.0, nextMs = 0.0, restMs = 0.0; // (the bench's: M258)
 	};
 	struct Message
 	{
@@ -490,6 +524,7 @@ private:
 	std::vector<Message> m_messages;
 	std::vector<net::UpdateCache> m_updateCaches;
 	WorkerPool m_stateWorkers;
+	WorkerPool m_simWorkers; // the simulation's (Simulation::SetParallelFor)
 	// Lag compensation (M250): the characters as they were on each of the last ticks (the newest
 	// last), and each slot's view of them for this tick's mods.
 	std::deque<PastPoses> m_past;

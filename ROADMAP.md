@@ -447,6 +447,29 @@ and 1023; another character 10 B on the wire (others' cooldown timers no longer 
   places, each frame in two packets (pushers stay exact: your call); the server plans states for
   68 ms a tick, every client walking every entity (M258).
 
+**Measured after M258** (the server's own thread a tick, the bench's fake players' inputs left
+out; this laptop's figures move by 10 to 20% from run to run):
+
+| | 64 players | 255 players | 512 players | 1023 players |
+|---|---|---|---|---|
+| The server's thread a tick (M257) | 1.8 ms | 15 to 17.5 ms (22) | 28 ms | 55 ms (178) |
+| Of it: the mods | 0.5 | 3.5 to 5.4 | 9 | 12.6 |
+| The characters, the physics | 0.3, 0.4 | 2.7 to 3.2, 3.0 | 6.7, 3.4 | 10.2, 6.5 |
+| Keeping a state | 0.3 | 2.0 | 4.0 | 9.6 |
+| Planning and encoding the states (on the state threads, while the next tick runs) | 0.4 | 5.7 | 14.5 | 31.5 |
+
+- **255 fighting players fit 60 Hz, just**: the server's thread 15 to 17.5 ms of the 16.7.
+- **What went**: a state's updates on the server's thread (they are made while the next tick
+  runs); a client's walk of ten thousand entities copying its records each state (in place now, by
+  group); a third of a megabyte made for each message's compression; each player looking up its
+  held items in every item's list; the expire mod making a map of every item each tick.
+- **Found**: mods read the last tick's events from the ring of 32. At 1023 fighting players a tick
+  says 114, so most hits hurt no one: mods read all the step said now (`RecentEvents`).
+- **What is left at 1023**: the mods (inventory, frag and the layers each look at every player
+  every tick: about 2 µs a player each), the motions' pass and the slots (one thread), keeping a
+  state (its serialization), the physics; on the state threads, a client's walk of every entity (an
+  interest grid would cut it where players are spread out; in a crowd every one is near).
+
 **The milestones**:
 
 | Milestone | What |
@@ -458,7 +481,7 @@ and 1023; another character 10 B on the wire (others' cooldown timers no longer 
 | **M255** (done) | **Only what others see**: an entity field its player's alone unless shared (`BoardField::shared`; shared by itself when a state machine reads it; the shipped mods share their scores and the bat's glow), and a SetField of a character or what it holds out of the frames; names as changes. (No inputs of others, the head without the rings: M253, M256.) **Moved to M257**: held items as kinds in the record (unchanged they cost nothing since M253: what is left is when a character comes into view) and events with the characters they are at (12% of a player's bytes at 1023): both are what each client is sent of a character, M257's question. Protocol 89 |
 | **M256** (done) | **Frames carry the physics only**: the commands clients skip left out (and the joins and leaves); frames with the states, one datagram every 2 ticks, each frame in two; a pusher's place as a change against where it would be going on as it went, a packet's first frame against the two before; the states' head without the event rings (a client never read them). Asking for a gap was not needed (3% lost: the physics never waited). Pushers at the state rate: not done, it changes how they push (your call). Protocol 88 |
 | **M257** (done) | **A byte budget per client**: each other character's priority for a player grows by nearness, being in its view, doing something, aiming at it, and goes to 0 when sent; the most owed go until the player's budget is spent (`--client-budget`, 256 kbit/s of states sent). One that waited longer than a base is kept goes against the record the player has (carried), not whole. **Events go with their characters**: a mod's at a character, and what the others do themselves (motions, markers, slots: until now heard by no other player), once each, for half a second; a mod declares for everyone what all must hear (`Declarations::Event`'s `everyone`: the kill feed, a round's end). **Found and fixed**: CI's `net_chaos_hybrid` crash (a held item of a puppet, new on a client, had no turn). **Moved**: held items as kinds to M260 (it redraws what characters hold), the interest grid to M258 (it is the planner's processor time); far ones coarser not done (a far one is sent rarely). Protocol 90 |
-| M258 | **The server's processor at 1000**: profiled; characters stepped on threads (each mover reads the others as the tick found them); mods' per-player loops; an interest grid for the states (from M257: every client walks every entity, 68 ms a tick at 1023) |
+| **M258** (done) | **The server's processor at 1000**: profiled (each mod, the characters' parts, a state's keeping and planning by part); a state's updates made on the state threads while the next tick runs, sent with its frames once made; planning by group, in place; puppets, views and hashes on the state threads; a compressor per thread; the characters' movers and animation on threads (`Simulation::SetParallelFor`, each reads the world as the tick found it: the same on any number, `character_threads`); held kinds by holder; the expire mod's list. **Found**: mods heard 32 of a tick's events (a crowd's hits hurt no one); a far puppet slid across the map after a teleport. 255 fighting players at 60 Hz, just (22 ms to 15 to 17.5); 1023 at 55 ms (178). **Not done**: the interest grid (it helps where players are spread out, not in the bench's crowd), the motions' pass on threads, the mods' other per-player loops (the table above) |
 | M259 | **The client's processor at 1000 visible**: the Godot client measured against a crowd of fake players (poses, drawing, the rest); poses by distance and on screen (every frame near, every 8th far, none off screen). Nothing of the drawing that M260 replaces |
 | M260 | **One baked look for every character**: the look baked from its scene in the editor (meshes, skin binds, materials, sockets, item looks and their rules; tracks that do things as timed cues), drawn through RenderingServer (a skeleton and an instance per mesh each, bones straight from ozz, items at their sockets), the own one's first person too; shadows within 40 m; checked against the scenes' drawing by screenshots, then a playtest. From M257: what a character holds as kinds in its puppet, not entities (a character coming into view costs a few bytes, not ten records) |
 | M261 | **The uplink**: inputs repeated by measured loss (4, not 12) |

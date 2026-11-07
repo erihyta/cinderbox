@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <unordered_map>
 
 namespace cb::net
@@ -88,6 +89,11 @@ void PutSparse( std::vector<uint8_t>& out, const uint8_t* now, const uint8_t* ba
 	while ( i < n )
 	{
 		size_t skip = 0;
+		// (Eight unchanged bytes at a time first, M258: a record is mostly what it was.)
+		while ( base != nullptr && i + skip + 8 <= n && std::memcmp( now + i + skip, base + i + skip, 8 ) == 0 )
+		{
+			skip += 8;
+		}
 		while ( i + skip < n && base != nullptr && now[i + skip] == base[i + skip] )
 		{
 			++skip;
@@ -232,7 +238,7 @@ void Pack( uint32_t tick, uint32_t baseTick, const std::vector<uint8_t>& payload
 		PutBytes( out, payload.data(), payload.size() );
 		return;
 	}
-	mz_ulong packed = mz_compressBound( mz_ulong( payload.size() ) );
+	size_t packed = size_t( mz_compressBound( mz_ulong( payload.size() ) ) );
 	out.clear();
 	out.reserve( 13 + packed );
 	out.push_back( uint8_t( MsgType::State ) );
@@ -241,7 +247,18 @@ void Pack( uint32_t tick, uint32_t baseTick, const std::vector<uint8_t>& payload
 	Put( out, uint32_t( payload.size() ) );
 	const size_t at = out.size();
 	out.resize( at + packed );
-	if ( mz_compress2( out.data() + at, &packed, payload.data(), mz_ulong( payload.size() ), 1 ) != MZ_OK )
+	// What mz_compress2 at level 1 writes, with a compressor of the thread's own (M258: it made one
+	// for each message, a third of a megabyte, and a thousand messages a state at 1023 players).
+	thread_local std::unique_ptr<tdefl_compressor> compressor;
+	if ( compressor == nullptr )
+	{
+		compressor.reset( new tdefl_compressor );
+	}
+	const int flags = int( TDEFL_COMPUTE_ADLER32 | tdefl_create_comp_flags_from_zip_params( 1, MZ_DEFAULT_WINDOW_BITS, MZ_DEFAULT_STRATEGY ) );
+	size_t taken = payload.size();
+	if ( tdefl_init( compressor.get(), nullptr, nullptr, flags ) != TDEFL_STATUS_OKAY ||
+		 tdefl_compress( compressor.get(), payload.data(), &taken, out.data() + at, &packed, TDEFL_FINISH ) != TDEFL_STATUS_DONE ||
+		 taken != payload.size() )
 	{
 		out.clear();
 		return;
