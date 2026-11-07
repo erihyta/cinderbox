@@ -849,6 +849,10 @@ int main( int argc, char** argv )
 			sp.charactersNs -= warm.charactersNs;
 			sp.physicsNs -= warm.physicsNs;
 			sp.afterNs -= warm.afterNs;
+			sp.slotsNs -= warm.slotsNs;
+			sp.motionsNs -= warm.motionsNs;
+			sp.moverNs -= warm.moverNs;
+			sp.animNs -= warm.animNs;
 			const double steps = sp.steps > 0 ? double( sp.steps ) : 1.0;
 			const double per = runTicks > 0.0 ? 1.0 / runTicks : 0.0;
 			std::printf( "%s", cb::FormatBench( server.Bench() ).c_str() );
@@ -859,6 +863,8 @@ int main( int argc, char** argv )
 						 runTickMs * per + sending, 1000.0 / double( options.config.tickRate ), runTickMs * per, runTickMax, runMods * per,
 						 runStep * per, double( sp.commandsNs ) / steps / 1e6, double( sp.charactersNs ) / steps / 1e6,
 						 double( sp.physicsNs ) / steps / 1e6, double( sp.afterNs ) / steps / 1e6, runSave * per, sending );
+			std::printf( "              (the characters: slots %.2f, motions %.2f, movers %.2f, animation %.2f)\n", double( sp.slotsNs ) / steps / 1e6,
+						 double( sp.motionsNs ) / steps / 1e6, double( sp.moverNs ) / steps / 1e6, double( sp.animNs ) / steps / 1e6 );
 			std::printf( "              (%.1f s of game in %.1f s)\n", benchSeconds, std::chrono::duration<double>( Clock::now() - start ).count() );
 			return 0;
 		}

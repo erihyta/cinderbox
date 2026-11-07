@@ -9,7 +9,8 @@
 
 #include "mod_api.h"
 
-#include <map>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -49,11 +50,17 @@ public:
 			return;
 		}
 		// Every tick: an item held for a moment between two looks would never be known as held.
-		std::map<uint32_t, Seen> next;
+		// (Both lists by NetId, walked together: M258, a map made again every tick of every item was
+		// a few milliseconds a tick at 1023 players, each carrying ten.)
+		m_next.clear();
+		size_t at = 0;
 		for ( uint32_t item : ctx.Items() )
 		{
-			auto known = m_seen.find( item );
-			Seen seen = known != m_seen.end() ? known->second : Seen{};
+			while ( at < m_seen.size() && m_seen[at].first < item )
+			{
+				++at;
+			}
+			Seen seen = at < m_seen.size() && m_seen[at].first == item ? m_seen[at].second : Seen{};
 			if ( ctx.ItemHolder( item ) != 0 )
 			{
 				seen.held = true;
@@ -71,14 +78,14 @@ public:
 					continue;
 				}
 			}
-			next[item] = seen;
+			m_next.push_back( { item, seen } );
 		}
-		m_seen.swap( next ); // items that are gone drop out
+		m_seen.swap( m_next ); // items that are gone drop out
 	}
 
 private:
 	uint32_t m_ticks = 0;
-	std::map<uint32_t, Seen> m_seen;
+	std::vector<std::pair<uint32_t, Seen>> m_seen, m_next; // (by NetId)
 };
 
 } // namespace

@@ -378,6 +378,10 @@ private:
 		// Each entity's group (by layout.entities): a character with what it holds, sent together
 		// (their changes are much alike, and compress well side by side). The index of its head.
 		std::vector<uint32_t> head;
+		// M258: the groups: each head (by layout.entities' order), each entity's group (its place in
+		// `heads`), and each group's other members (what it holds: `members` from memberAt[g] to
+		// memberAt[g + 1]).
+		std::vector<uint32_t> heads, groupOf, memberAt, members;
 		// Puppets (M253; sim/puppet.h): whether each is one or what one holds (its record goes as
 		// its view to every client but the one that drives it), the views and the puppets the
 		// layout's spans point into, and each one's record as each kind of client is sent it, hashed
@@ -433,9 +437,10 @@ private:
 	void KeepEvents( KeptLayout& kept, uint32_t tick );
 	uint32_t m_recordVersionsSwept = 0;
 	void KeepRecordVersions( const KeptLayout& kept, uint32_t tick );
+	void KeepGroups( KeptLayout& kept ); // (KeptLayout::heads and the rest: M258)
 	const net::StateSpan* RecordVersionOf( uint32_t netId, uint64_t hash ) const;
 	// A kept state's puppets, their views and the hashes (M253), as the world is when it is saved.
-	void KeepPuppets( KeptLayout& kept ) const;
+	void KeepPuppets( KeptLayout& kept );
 	// Sending states by distance, a step at a time (SendStates): each client's plan (what it is sent),
 	// the messages they make (one for clients whose plans say the same), and a cache of shared
 	// parts for each thread that encodes them.
@@ -452,8 +457,12 @@ private:
 		std::vector<uint32_t> says; // what the message says, as numbers: the same for the same message
 		uint64_t hash = 0;
 		Client::Sent sent;
-		std::vector<Client::Known> next;
 		int message = -1;
+		// M258: each entity's record of what the client has (into its `known`; null: none), the
+		// records new to it (added once the plan is made), and the entities its update sends.
+		std::vector<Client::Known*> knownAt;
+		std::vector<Client::Known> added;
+		std::vector<uint32_t> sending;
 		// (Scratch: each entity of the newest state, how it stands for this client.)
 		struct Entry
 		{
@@ -468,12 +477,14 @@ private:
 			// M257: its base too old, the record the client has (net::EntityUpdate::carried; null: none).
 			const net::StateSpan* carried = nullptr;
 		};
-		std::vector<Entry> entries;
-		std::vector<float> groupScore; // by head (the most overdue of its group's)
-		std::vector<uint8_t> groupChosen;
-		std::vector<std::pair<float, uint32_t>> due; // heads
+		std::vector<Entry> entries;		// (by layout.entities; filled for the heads, and for the members of groups owed)
+		std::vector<float> groupScore;	// by group (KeptLayout::heads): its most owed member's
+		std::vector<uint8_t> groupChosen; // by group
+		std::vector<uint32_t> groupSize, groupBytes; // by group, for those owed: what its update takes
+		std::vector<std::pair<float, uint32_t>> due; // groups owed: score, the head (layout.entities)
 		double budgeted = 0.0; // M257: the bytes the others' updates were thought to take
 		std::vector<net::CharacterEvent> events; // M257: the events at the characters it is sent
+		double walkMs = 0.0, chooseMs = 0.0, nextMs = 0.0, restMs = 0.0; // (the bench's: M258)
 	};
 	struct Message
 	{

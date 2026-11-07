@@ -2426,28 +2426,23 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		uint16_t usingKinds[16];
 		uint32_t usingCount = 0;
 	};
-	auto kindsOf = [this]( uint32_t netId, Kinds& k ) {
-		for ( const auto& [holder, kind] : m_heldScratch )
-		{
-			if ( holder == netId && k.heldCount < 16 )
+	// (By holder, each holder's in the order they were found: M258, each player looked its own up in
+	// every list, a thousand players' ten thousand items twice a tick.)
+	auto byHolder = []( const std::pair<uint32_t, uint16_t>& a, const std::pair<uint32_t, uint16_t>& b ) { return a.first < b.first; };
+	std::stable_sort( m_heldScratch.begin(), m_heldScratch.end(), byHolder );
+	std::stable_sort( m_carriedScratch.begin(), m_carriedScratch.end(), byHolder );
+	std::stable_sort( m_usingScratch.begin(), m_usingScratch.end(), byHolder );
+	auto kindsOf = [this, byHolder]( uint32_t netId, Kinds& k ) {
+		auto take = [&]( const std::vector<std::pair<uint32_t, uint16_t>>& list, uint16_t* to, uint32_t& count, uint32_t most ) {
+			const std::pair<uint32_t, uint16_t> key{ netId, 0 };
+			for ( auto it = std::lower_bound( list.begin(), list.end(), key, byHolder ); it != list.end() && it->first == netId && count < most; ++it )
 			{
-				k.held[k.heldCount++] = kind;
+				to[count++] = it->second;
 			}
-		}
-		for ( const auto& [holder, kind] : m_carriedScratch )
-		{
-			if ( holder == netId && k.carriedCount < 32 )
-			{
-				k.carried[k.carriedCount++] = kind;
-			}
-		}
-		for ( const auto& [holder, kind] : m_usingScratch )
-		{
-			if ( holder == netId && k.usingCount < 16 )
-			{
-				k.usingKinds[k.usingCount++] = kind;
-			}
-		}
+		};
+		take( m_heldScratch, k.held, k.heldCount, 16 );
+		take( m_carriedScratch, k.carried, k.carriedCount, 32 );
+		take( m_usingScratch, k.usingKinds, k.usingCount, 16 );
 	};
 
 	// Two passes, so nothing depends on which slot a player has. First every player's motions, each
@@ -2458,6 +2453,12 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	m_turnCharacters.resize( m_drivers.size() );
 	m_playerPushes.clear();
 	m_deferPlayerPushes = true;
+	auto clock = std::chrono::steady_clock::now();
+	auto spentOn = [&clock]( uint64_t& part ) {
+		const auto now = std::chrono::steady_clock::now();
+		part += uint64_t( std::chrono::duration_cast<std::chrono::nanoseconds>( now - clock ).count() );
+		clock = now;
+	};
 	for ( size_t d = 0; d < m_drivers.size(); ++d )
 	{
 		const int slot = m_drivers[d].slot;
@@ -2642,6 +2643,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 	}
 	// What their motions did to others: after the targets' own, in the order they were done.
 	ApplyPlayerPushes();
+	spentOn( m_profile.motionsNs );
 
 	for ( size_t d = 0; d < m_drivers.size(); ++d )
 	{
@@ -2686,6 +2688,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 			HoldBackProp( e, *driven, moveStart, yawStart, t, c );
 		}
 		c.prevButtons = in.buttons;
+		spentOn( m_profile.moverNs );
 
 		AnimState anim = GetAnimState( e );
 		UpdateAnimState( anim, c, in, m_globals.tick, m_config.TimeStep() );
@@ -2741,6 +2744,7 @@ void Simulation::MoveCharacters( const InputFrame& frame )
 		e.set<Character>( c );
 		e.set<Transform>( t );
 		e.set<Velocity>( { c.velocity, { 0.0f, 0.0f, 0.0f } } );
+		spentOn( m_profile.animNs );
 	}
 	CreateLaunched();
 }
@@ -3852,7 +3856,7 @@ bool Simulation::FollowerDrops( const SimCommand& command ) const
 		// An event at a character or what one holds: sent with it, to the clients it is sent to
 		// (M257: StepEvents, kept when a server sends them so). The rest stay (an event at nothing,
 		// at the world's things, one for everyone).
-		return m_keepStepEvents && ForEveryone( command.index ) == false && EventCharacter( ResolveTarget( command.target ) ) != 0;
+		return m_eventsWithCharacters && ForEveryone( command.index ) == false && EventCharacter( ResolveTarget( command.target ) ) != 0;
 	}
 	if ( command.type == CommandType::SetField && command.target != 0 && ( command.target & kSlotTargetBit ) == 0 )
 	{

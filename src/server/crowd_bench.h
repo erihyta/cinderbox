@@ -85,6 +85,14 @@ struct CrowdBench
 	// The server's time for it all, ms: planning and encoding states, encoding frames, and the
 	// fake players' own inputs (not a real server's work).
 	double planMs = 0.0, encodeMs = 0.0, framesMs = 0.0, fakeInputMs = 0.0;
+	// M258: each mod's ticks (by name), and saving a state by part: the state, its layout (where
+	// everything is), the puppets and their views, the events, the record versions.
+	std::vector<std::string> modNames;
+	std::vector<double> modMs;
+	double saveStateMs = 0.0, saveLayoutMs = 0.0, savePuppetsMs = 0.0, saveEventsMs = 0.0, saveVersionsMs = 0.0;
+	// Planning by part, summed over the state threads (processor time, not the wall's): each
+	// client's walk of the entities, choosing, what it will have, the rest.
+	double planWalkMs = 0.0, planChooseMs = 0.0, planNextMs = 0.0, planRestMs = 0.0;
 	// The bench's own: sampling states by part (in the server's sending time, not a real server's work).
 	double sampleMs = 0.0;
 };
