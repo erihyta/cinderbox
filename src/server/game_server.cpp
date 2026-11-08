@@ -2051,6 +2051,10 @@ namespace
 // How much a character matters to a client a state (M257): an update is owed once it adds up to 1.
 // Within this far, every state; further, as much less as it is further (twice as far, every other).
 constexpr float kEveryStateWithin = 12.0f;
+// However far: at least every 12th state (as M250's distances had a far one every 8th). Further than
+// that, one walking 250 m off was sent every 20 states or so, 7 m from where it was (CI's
+// net_hybrid_far on Linux GCC, after M258's merge).
+constexpr float kLeastShare = 1.0f / 12.0f;
 // In the client's view (this far from where its camera looks, either way): twice as much.
 constexpr float kViewCos = 0.34f; // (70 degrees)
 // One that did something (a layer's new state, a jump, aiming): half a state more.
@@ -2085,8 +2089,8 @@ float GameServer::Matters( const Plan& plan, const KeptLayout& now, size_t i ) c
 	const b3Vec3 to = b3Sub( now.placed[i].at, plan.ownAt );
 	const float d = b3Length( to );
 	const float flat = std::sqrt( to.x * to.x + to.z * to.z );
-	// Near: every state; further, as much less as it is further.
-	float share = 1.0f / std::max( 1.0f, d / kEveryStateWithin );
+	// Near: every state; further, as much less as it is further, down to the least.
+	float share = std::max( kLeastShare, 1.0f / std::max( 1.0f, d / kEveryStateWithin ) );
 	// In its view: where its camera looks, either side (its last input).
 	if ( flat > 0.5f && plan.viewX * to.x + plan.viewZ * to.z > kViewCos * flat )
 	{

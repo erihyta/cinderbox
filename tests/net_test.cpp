@@ -7403,9 +7403,9 @@ void TestHybridFar()
 	CHECK( byDistance.desyncs == 0 && all.desyncs == 0 );
 	CHECK( byDistance.corrupt == 0 && all.corrupt == 0 && few.corrupt == 0 );
 	CHECK( byDistance.compared > 1000 && byDistance.refreshes > 200 );
-	// (A far one is refreshed as much less often as it is further, M257: one 250 m off every ~20
-	// states, 10 in view; walking all that time, and twice that when a refresh is lost. M250's
-	// periods stopped at every 8th: at most 5 m off then, 5.6 seen on CI since.)
+	// (A far one is refreshed as much less often as it is further, M257, but at least every 12th
+	// state, 6th in view: walking all that time, and twice that when a refresh is lost. Without the
+	// least, 7.1 m on CI's Linux GCC.)
 	CHECK( meanError < 1.5 && byDistance.farError < 7.0f );
 	CHECK( all.farError < 0.01f );
 	// (Every entity comes round, a few states later in turn.)
